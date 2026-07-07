@@ -12,6 +12,7 @@ import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
 import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.io.File
 import java.nio.ByteBuffer
@@ -193,7 +194,7 @@ class AlarmAudioStore(
                     forceMp3 = trimAsMp3,
                 )
             }.onFailure { error ->
-                Log.e(TAG, "trimToMaxDuration failed", error)
+                AlarmTalkLog.reportError("trimToMaxDuration failed", error)
                 runCatching { trimTarget.delete() }
                 throw IllegalArgumentException(
                     context.getString(R.string.rd_audio_trim_failed),
@@ -205,9 +206,7 @@ class AlarmAudioStore(
             if (trimTarget.exists() && trimTarget.length() >= 4 * 1024 && trimDuration != null && trimDuration > 0L) {
                 trimTarget
             } else {
-                Log.e(
-                    TAG,
-                    "trim output empty path=${trimTarget.absolutePath} size=${trimTarget.length()} duration=$trimDuration",
+                AlarmTalkLog.reportError("trim output empty path=${trimTarget.absolutePath} size=${trimTarget.length()} duration=$trimDuration",
                 )
                 runCatching { trimTarget.delete() }
                 throw IllegalArgumentException(
@@ -230,9 +229,7 @@ class AlarmAudioStore(
         )
         if (trimmedDuration == null || trimmedDuration <= 0L || target.length() < 4 * 1024) {
             // trim/copy 가 사실상 빈 파일을 만들었음. 캐시 남기지 않고 명확히 실패.
-            Log.e(
-                TAG,
-                "Cached audio empty path=${target.absolutePath} size=${target.length()} duration=$trimmedDuration",
+            AlarmTalkLog.reportError("Cached audio empty path=${target.absolutePath} size=${target.length()} duration=$trimmedDuration",
             )
             runCatching { target.delete() }
             throw IllegalArgumentException(context.getString(R.string.rd_audio_extract_failed))
@@ -569,7 +566,10 @@ class AlarmAudioStore(
             }
         }.onFailure { error ->
             target.delete()
+            // 사용자가 고른 미디어 URI(content://…)는 파일명·로컬 식별자가 담겨 PII 소지 —
+            // 전체 URI 는 Logcat 에만 남기고 Sentry 로 가는 메시지에는 scheme 만 포함한다.
             Log.e(TAG, "Failed to trim selected voice audio uri=$sourceUri", error)
+            AlarmTalkLog.reportError("Failed to trim selected voice audio scheme=${sourceUri.scheme}", error)
             throw IllegalArgumentException(context.getString(R.string.rd_audio_over_limit_trim_failed, maxDurationMillis / 1000), error)
         }.getOrThrow()
     }
@@ -618,7 +618,9 @@ class AlarmAudioStore(
             }
         }.onFailure { error ->
             target.delete()
+            // 위 trimMp4 와 동일 — 전체 URI 는 Logcat 전용, Sentry 메시지는 scheme 만.
             Log.e(TAG, "Failed to trim selected mp3 voice audio uri=$sourceUri", error)
+            AlarmTalkLog.reportError("Failed to trim selected mp3 voice audio scheme=${sourceUri.scheme}", error)
             throw IllegalArgumentException(context.getString(R.string.rd_audio_mp3_trim_failed), error)
         }.getOrThrow()
     }

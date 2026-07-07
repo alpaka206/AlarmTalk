@@ -13,13 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CreditCard
-import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.QrCode2
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -41,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
+import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.WakerCardShape
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.WakerPillShape
@@ -50,6 +46,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
+// 알람 홈 좌상단 인사말 — 시간대별 문구. 우측 공간은 비워둔다(추후 알림 등 배치 여지).
 @Composable
 internal fun HomeHeader() {
     val hour = java.time.LocalTime.now().hour
@@ -72,127 +69,275 @@ internal fun HomeHeader() {
             text = greetingBottom,
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
+            // 랜딩 헤드라인처럼 두 번째 줄에 브랜드 액센트를 준다.
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }
 
+// 전체 탭 — 우측 상단 프로필 드롭다운 메뉴를 페이지로 승격한 것(토스 설정 패턴).
+// 프로필 행(→설정)과 드릴인 항목 리스트(이용권 · 공유 이용권/초대 코드)로 구성한다.
 @Composable
-internal fun ProfileMenu(
+internal fun MenuTabPanel(
+    authSession: AuthSession?,
     hasSharedPass: Boolean,
-    onSelectTab: (NativeTab) -> Unit,
-    onOpenSettings: () -> Unit,
+    themeMode: ThemeMode,
+    onChangeTheme: (ThemeMode) -> Unit,
+    onOpenPeople: () -> Unit,
+    onOpenBilling: () -> Unit,
     onOpenMemberManagement: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenConsentHistory: () -> Unit,
+    onDeleteAccount: () -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var themeSheetVisible by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // 프로필 행: 계정·앱 설정 전체가 이 안(설정 화면)에 있다.
         Surface(
-            modifier = Modifier
-                .size(44.dp)
-                .clickable { expanded = true },
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            onClick = onOpenSettings,
+            shape = WakerPanelShape,
+            color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shadowElevation = 4.dp,
         ) {
-            Box(
-                modifier = Modifier.size(44.dp),
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                ) {
+                    Box(
+                        modifier = Modifier.size(48.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Person,
+                            contentDescription = stringResource(R.string.hs_profile_content_desc),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = authSession?.user?.name?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.hs_profile_content_desc),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = stringResource(R.string.menu_profile_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Icon(
-                    imageVector = Icons.Outlined.Person,
-                    contentDescription = stringResource(R.string.hs_profile_content_desc),
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = null,
                     modifier = Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.width(232.dp),
-            shape = WakerCardShape,
-            containerColor = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 14.dp,
+        // 화면·언어 — 토스의 '언어/화면 테마' 행처럼 전체 탭에서 바로 관리한다.
+        Surface(
+            shape = WakerPanelShape,
+            color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
-            Column(
-                modifier = Modifier.padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                if (!hasSharedPass) {
-                    ProfileMenuItem(
-                        icon = Icons.Outlined.QrCode2,
-                        label = stringResource(R.string.hs_profile_menu_invite_code),
-                    ) {
-                        expanded = false
-                        onSelectTab(NativeTab.People)
+            Column(modifier = Modifier.padding(8.dp)) {
+                MenuTabRow(
+                    label = stringResource(R.string.hs_settings_theme),
+                    value = themeModeLabel(context, themeMode),
+                    onClick = { themeSheetVisible = true },
+                )
+                // 앱별 언어는 시스템 설정(Android 13+)에 위임한다 — locales_config 기준으로 목록이 뜬다.
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    val appLocales = context.getSystemService(android.app.LocaleManager::class.java)
+                        ?.applicationLocales
+                    val languageValue = if (appLocales == null || appLocales.isEmpty) {
+                        stringResource(R.string.menu_language_system)
+                    } else {
+                        val locale = appLocales.get(0)
+                        locale.getDisplayLanguage(locale).replaceFirstChar { it.uppercase(locale) }
                     }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    MenuTabRow(
+                        label = stringResource(R.string.menu_language_label),
+                        value = languageValue,
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    android.content.Intent(
+                                        android.provider.Settings.ACTION_APP_LOCALE_SETTINGS,
+                                        android.net.Uri.fromParts("package", context.packageName, null),
+                                    ),
+                                )
+                            }
+                        },
+                    )
                 }
-                ProfileMenuItem(
-                    icon = Icons.Outlined.CreditCard,
+            }
+        }
+        Surface(
+            shape = WakerPanelShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                MenuTabRow(
                     label = stringResource(R.string.hs_profile_menu_pass),
-                ) {
-                    expanded = false
-                    onSelectTab(NativeTab.Billing)
-                }
-                if (hasSharedPass) {
-                    ProfileMenuItem(
-                        icon = Icons.Outlined.People,
-                        label = stringResource(R.string.hs_profile_menu_shared_pass),
-                    ) {
-                        expanded = false
-                        onOpenMemberManagement()
-                    }
-                }
+                    onClick = onOpenBilling,
+                )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.outlineVariant,
                 )
-                ProfileMenuItem(
-                    icon = Icons.Outlined.Settings,
-                    label = stringResource(R.string.hs_profile_menu_settings),
-                ) {
-                    expanded = false
-                    onOpenSettings()
+                if (hasSharedPass) {
+                    MenuTabRow(
+                        label = stringResource(R.string.hs_profile_menu_shared_pass),
+                        onClick = onOpenMemberManagement,
+                    )
+                } else {
+                    MenuTabRow(
+                        label = stringResource(R.string.hs_profile_menu_invite_code),
+                        onClick = onOpenPeople,
+                    )
                 }
+            }
+        }
+        // 법적 정보 — 문서·동의 이력은 '약관 및 개인정보 처리 동의' 화면 한 곳에서만 연다(중복 진입점 금지).
+        Surface(
+            shape = WakerPanelShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text(
+                    text = stringResource(R.string.menu_section_legal),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                MenuTabRow(
+                    label = stringResource(R.string.consent_screen_title),
+                    onClick = onOpenConsentHistory,
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                // 오픈소스 라이선스 — 목록/본문은 oss-licenses-plugin 이 생성한 데이터로 라이브러리 화면이 렌더.
+                val ossLicensesTitle = stringResource(R.string.menu_open_source_licenses)
+                MenuTabRow(
+                    label = ossLicensesTitle,
+                    onClick = {
+                        com.google.android.gms.oss.licenses.OssLicensesMenuActivity
+                            .setActivityTitle(ossLicensesTitle)
+                        context.startActivity(
+                            android.content.Intent(
+                                context,
+                                com.google.android.gms.oss.licenses.OssLicensesMenuActivity::class.java,
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+        // 탈퇴하기 — 토스처럼 독립 카드 행. 확인 다이얼로그는 앱 레벨에서 뜬다.
+        if (authSession != null) {
+            Surface(
+                shape = WakerPanelShape,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    MenuTabRow(
+                        label = stringResource(R.string.hs_settings_delete_account),
+                        onClick = onDeleteAccount,
+                    )
+                }
+            }
+        }
+        Text(
+            text = stringResource(R.string.menu_app_version, BuildConfig.VERSION_NAME),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+    }
+
+    if (themeSheetVisible) {
+        WakerSelectionSheet(
+            title = stringResource(R.string.hs_settings_theme),
+            onDismiss = { themeSheetVisible = false },
+        ) { dismiss ->
+            listOf(ThemeMode.System, ThemeMode.Light, ThemeMode.Dark).forEach { mode ->
+                WakerSheetOptionRow(
+                    title = themeModeLabel(context, mode),
+                    selected = themeMode == mode,
+                    onClick = {
+                        onChangeTheme(mode)
+                        dismiss()
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-internal fun ProfileMenuItem(
-    icon: ImageVector,
+private fun MenuTabRow(
     label: String,
     onClick: () -> Unit,
+    value: String? = null,
 ) {
+    // 토스처럼 텍스트+값+셰브론만 — 행마다 아이콘을 붙이지 않는다.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(52.dp)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            modifier = Modifier.size(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(21.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        }
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
+        )
+        if (value != null) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -204,156 +349,6 @@ internal fun themeModeLabel(context: android.content.Context, mode: ThemeMode): 
     ThemeMode.System -> context.getString(R.string.misc2_theme_mode_system)
     ThemeMode.Light -> context.getString(R.string.misc2_theme_mode_light)
     ThemeMode.Dark -> context.getString(R.string.misc2_theme_mode_dark)
-}
-
-@Composable
-internal fun ThemeModePickerDialog(
-    current: ThemeMode,
-    onDismiss: () -> Unit,
-    onSelect: (ThemeMode) -> Unit,
-) {
-    val options = listOf(
-        ThemeModeOption(
-            mode = ThemeMode.System,
-            title = stringResource(R.string.hs_theme_system_title),
-            description = stringResource(R.string.hs_theme_system_desc),
-            icon = Icons.Outlined.Settings,
-        ),
-        ThemeModeOption(
-            mode = ThemeMode.Light,
-            title = stringResource(R.string.hs_theme_light_title),
-            description = stringResource(R.string.hs_theme_light_desc),
-            icon = Icons.Outlined.LightMode,
-        ),
-        ThemeModeOption(
-            mode = ThemeMode.Dark,
-            title = stringResource(R.string.hs_theme_dark_title),
-            description = stringResource(R.string.hs_theme_dark_desc),
-            icon = Icons.Outlined.DarkMode,
-        ),
-    )
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .widthIn(max = 420.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                ModalDialogTitle(stringResource(R.string.hs_theme_dialog_title), onDismiss = onDismiss)
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    options.forEach { option ->
-                        ThemeModeOptionRow(
-                            option = option,
-                            selected = option.mode == current,
-                            onClick = {
-                                onSelect(option.mode)
-                                onDismiss()
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-private data class ThemeModeOption(
-    val mode: ThemeMode,
-    val title: String,
-    val description: String,
-    val icon: ImageVector,
-)
-
-@Composable
-private fun ThemeModeOptionRow(
-    option: ThemeModeOption,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerPanelShape,
-        color = if (selected) {
-            scheme.primaryContainer.copy(alpha = 0.62f)
-        } else {
-            scheme.surfaceVariant.copy(alpha = 0.34f)
-        },
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (selected) scheme.primary.copy(alpha = 0.52f) else scheme.outlineVariant,
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = if (selected) scheme.primary else scheme.surface,
-                contentColor = if (selected) scheme.onPrimary else scheme.primary,
-                border = BorderStroke(1.dp, scheme.outlineVariant),
-            ) {
-                Box(
-                    modifier = Modifier.size(42.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = option.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = option.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = scheme.onSurface,
-                )
-                Text(
-                    text = option.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
-            if (selected) {
-                Surface(
-                    shape = WakerPillShape,
-                    color = scheme.primary,
-                    contentColor = scheme.onPrimary,
-                ) {
-                    Text(
-                        text = stringResource(R.string.hs_theme_selected),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable
@@ -393,51 +388,6 @@ internal fun NicknameEditDialog(
                     onDismiss = onDismiss,
                     dismissEnabled = !busy,
                 )
-                Surface(
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surface,
-                            contentColor = MaterialTheme.colorScheme.primary,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        ) {
-                            Box(
-                                modifier = Modifier.size(42.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Person,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(22.dp),
-                                )
-                            }
-                        }
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.hs_nickname_display_name_title),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            )
-                            Text(
-                                text = stringResource(R.string.hs_nickname_display_name_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(
                         value = value,

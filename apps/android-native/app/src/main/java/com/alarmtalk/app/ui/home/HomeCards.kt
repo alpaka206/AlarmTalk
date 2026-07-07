@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,9 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -33,15 +29,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerHeroShape
-import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.data.AlarmEntity
 import kotlin.math.PI
@@ -53,47 +48,58 @@ internal fun NextAlarmHeroCard(
     onClick: () -> Unit,
 ) {
     val hasAlarm = nextAlarm != null
+    val scheme = MaterialTheme.colorScheme
     Card(
         onClick = onClick,
         shape = WakerHeroShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = scheme.surface),
+        border = BorderStroke(1.dp, scheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            scheme.primaryContainer.copy(alpha = 0.55f),
+                            scheme.surface,
+                        ),
+                    ),
+                )
+                // 하단에 랜딩 일출의 웜 글로우를 옅게 깔아 '새벽' 무드를 잇는다.
+                .background(
+                    Brush.verticalGradient(
+                        0.5f to Color.Transparent,
+                        1f to WakerDawnGlowColor.copy(alpha = 0.10f),
+                    ),
+                )
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        text = if (hasAlarm) stringResource(R.string.hs_next_alarm_label) else stringResource(R.string.hs_no_alarm_yet),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = nextAlarm?.let { "%02d:%02d".format(it.hour, it.minute) }
-                            ?: stringResource(R.string.hs_reserve_alarm),
-                        style = if (hasAlarm) {
-                            MaterialTheme.typography.displayLarge
-                        } else {
-                            MaterialTheme.typography.displaySmall
-                        },
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Text(
+                    text = if (hasAlarm) stringResource(R.string.hs_next_alarm_label) else stringResource(R.string.hs_no_alarm_yet),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.primary,
+                )
+                Text(
+                    text = nextAlarm?.let { "%02d:%02d".format(it.hour, it.minute) }
+                        ?: stringResource(R.string.hs_reserve_alarm),
+                    style = if (hasAlarm) {
+                        MaterialTheme.typography.displayLarge
+                    } else {
+                        MaterialTheme.typography.displaySmall
+                    },
+                    color = scheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
 
             HomeVoiceWaveform(
@@ -111,8 +117,7 @@ internal fun NextAlarmHeroCard(
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Text(
-                        text = nextAlarm?.label?.takeIf { it.isNotBlank() }
-                            ?: stringResource(R.string.hs_reserve_alarm_with_voice),
+                        text = stringResource(R.string.hs_reserve_alarm_with_voice),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold,
@@ -124,17 +129,28 @@ internal fun NextAlarmHeroCard(
                             stringResource(R.string.hs_edit_alarm)
                         } ?: stringResource(R.string.hs_start_now),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = scheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                Surface(
                     modifier = Modifier.padding(start = 12.dp),
-                )
+                    shape = CircleShape,
+                    color = scheme.primary,
+                    contentColor = scheme.onPrimary,
+                ) {
+                    Box(
+                        modifier = Modifier.size(40.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
             }
         }
     }
@@ -188,136 +204,4 @@ private fun HomeVoiceWaveform(
     }
 }
 
-@Composable
-internal fun QuickStartGrid(
-    onRecordVoice: () -> Unit,
-    onAddAlarm: () -> Unit,
-    canCreateFamilyAlarm: Boolean,
-    onAddFamilyAlarm: () -> Unit,
-    voiceLocked: Boolean = false,
-    alarmLocked: Boolean = false,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.hs_quick_start_title),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HomeActionCard(
-                label = stringResource(R.string.hs_action_voice),
-                icon = Icons.Outlined.Mic,
-                accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                onClick = onRecordVoice,
-                locked = voiceLocked,
-                modifier = Modifier.weight(1f),
-            )
-            HomeActionCard(
-                label = stringResource(R.string.hs_action_new_alarm),
-                icon = Icons.Outlined.Alarm,
-                accentContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                accentContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                onClick = onAddAlarm,
-                locked = alarmLocked,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        if (canCreateFamilyAlarm) {
-            HomeActionCard(
-                label = stringResource(R.string.hs_action_family_alarm),
-                icon = Icons.Outlined.People,
-                accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                onClick = onAddFamilyAlarm,
-                locked = alarmLocked,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-}
-
-@Composable
-internal fun HomeActionCard(
-    label: String,
-    icon: ImageVector,
-    accentContainerColor: Color,
-    accentContentColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    locked: Boolean = false,
-) {
-    Card(
-        onClick = onClick,
-        modifier = modifier,
-        shape = WakerPanelShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(modifier = Modifier.size(48.dp)) {
-                    Surface(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .align(Alignment.CenterStart),
-                        shape = CircleShape,
-                        color = if (locked) {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        } else {
-                            accentContainerColor
-                        },
-                        contentColor = if (locked) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            accentContentColor
-                        },
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(23.dp),
-                            )
-                        }
-                    }
-                    if (locked) {
-                        FeatureLockBadge(
-                            modifier = Modifier.align(Alignment.TopEnd),
-                            size = 20.dp,
-                            iconSize = 11.dp,
-                        )
-                    }
-                }
-                Text(
-                    text = label,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (locked) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
 

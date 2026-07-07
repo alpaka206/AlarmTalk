@@ -3,6 +3,7 @@ package com.alarmtalk.app.data
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
@@ -71,6 +72,34 @@ interface AlarmDao {
     @Upsert
     suspend fun upsert(alarm: AlarmEntity)
 
+    /**
+     * 사용자 편집 커밋용 전체행 upsert. 커밋 직전 같은 트랜잭션 안에서 DB 의 최신
+     * remoteAlarmId/lastSyncedAtMillis 를 다시 읽어 [updated] 에 병합한 뒤 저장한다.
+     * 이 두 값은 sync 만 발급하는 서버 필드이므로 편집이 읽은 스냅샷의 stale 값으로
+     * 절대 덮어써서는 안 된다.
+     *
+     * 이 병합이 없으면 '신규 알람 create 왕복 중 편집' 경합에서 remoteAlarmId 가 유실된다:
+     * 편집이 읽은 스냅샷은 remoteAlarmId=null 인데, 그 사이 sync 의 CAS
+     * ([setSyncStateIfUnchanged])가 발급받은 remoteAlarmId 를 커밋하고, 뒤이어 편집의
+     * 전체행 [upsert] 가 그 값을 stale null 로 되돌린다 → 다음 sync 가 remoteAlarmId==null
+     * 을 보고 create 로 재진입해 서버에 '중복 알람' 을 만든다. CAS 는 '편집 커밋이 CAS 보다
+     * 먼저' 인 순서만 방어하므로, 여기서 @Transaction 으로 재-read+upsert 를 원자화해
+     * '편집 upsert 가 CAS 이후' 순서에서도 유실을 막는다.
+     */
+    @Transaction
+    suspend fun upsertPreservingServerSyncFields(updated: AlarmEntity) {
+        val fresh = getById(updated.id)
+        val merged = if (fresh == null) {
+            updated
+        } else {
+            updated.copy(
+                remoteAlarmId = fresh.remoteAlarmId,
+                lastSyncedAtMillis = fresh.lastSyncedAtMillis,
+            )
+        }
+        upsert(merged)
+    }
+
     @Delete
     suspend fun delete(alarm: AlarmEntity)
 
@@ -122,6 +151,52 @@ interface AlarmDao {
         lastSyncedAtMillis: Long?,
         syncState: String,
         updatedAtMillis: Long,
+    )
+
+    /**
+     * 동시 편집 방어용 조건부 SYNCED 전환. 스냅샷 시점 updatedAtMillis(:expectedUpdatedAtMillis)와
+     * 현재 행의 updatedAtMillis 가 일치할 때만 SYNCED 로 덮는다. 네트워크 sync 구간에 사용자가
+     * 같은 알람을 편집해 updatedAtMillis 가 바뀌었으면 매칭되지 않아 반환값이 0 이 되고, 이때
+     * 호출부가 DIRTY 를 보존해 다음 sync 에서 재전송하도록 한다. 반환값은 갱신된 행 수.
+     */
+    @Query(
+        """
+        UPDATE alarms
+        SET remoteAlarmId = :remoteAlarmId,
+            lastSyncedAtMillis = :lastSyncedAtMillis,
+            syncState = :syncState,
+            updatedAtMillis = :newUpdatedAtMillis
+        WHERE id = :id AND updatedAtMillis = :expectedUpdatedAtMillis
+        """,
+    )
+    suspend fun setSyncStateIfUnchanged(
+        id: String,
+        remoteAlarmId: String?,
+        lastSyncedAtMillis: Long?,
+        syncState: String,
+        newUpdatedAtMillis: Long,
+        expectedUpdatedAtMillis: Long,
+    ): Int
+
+    /**
+     * 신규 생성 커밋 중 동시 편집이 감지됐을 때(create 응답 커밋과 사용자 편집 경합) 쓰는 폴백.
+     * 서버가 발급한 remoteAlarmId 는 반드시 저장해 다음 sync 가 '중복 create' 가 아니라 update 로
+     * 재전송하도록 하되, syncState 는 DIRTY 로 두고 updatedAtMillis 는 건드리지 않아 사용자의 편집
+     * (updatedAtMillis/페이로드)이 SYNCED 로 덮여 유실되지 않게 보존한다.
+     */
+    @Query(
+        """
+        UPDATE alarms
+        SET remoteAlarmId = :remoteAlarmId,
+            lastSyncedAtMillis = :lastSyncedAtMillis,
+            syncState = 'dirty'
+        WHERE id = :id
+        """,
+    )
+    suspend fun markRemoteIdKeepDirty(
+        id: String,
+        remoteAlarmId: String?,
+        lastSyncedAtMillis: Long?,
     )
 
     @Query(

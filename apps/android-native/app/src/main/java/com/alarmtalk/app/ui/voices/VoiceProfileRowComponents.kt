@@ -1,6 +1,11 @@
 package com.alarmtalk.app
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,7 +25,6 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -56,100 +60,55 @@ import com.alarmtalk.app.network.VoiceSpeakerSegment
 
 // VoiceProfileManagement 행/필드/드래프트 하위 컴포넌트.
 
+/**
+ * 파일에 여러 목소리가 섞였을 때 쓰는 보조 진입점 — 화자 수를 미리 고르게 하는 대신,
+ * 필요할 때만 목소리 나누기(화자 분리)를 실행하게 한다. 분리는 자동 감지(최대 3명).
+ */
 @Composable
-internal fun FileSpeakerModeSelector(
-    selected: FileSpeakerMode,
+internal fun MixedVoicesSeparateRow(
+    busy: Boolean,
     enabled: Boolean,
-    onSelect: (FileSpeakerMode) -> Unit,
+    onSeparate: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.voicesr_file_speaker_section_title), fontWeight = FontWeight.SemiBold)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FileSpeakerModeButton(
-                label = stringResource(R.string.voicesr_file_speaker_single),
-                selected = selected == FileSpeakerMode.Single,
-                enabled = enabled,
-                onClick = { onSelect(FileSpeakerMode.Single) },
-                modifier = Modifier.weight(1f),
-            )
-            FileSpeakerModeButton(
-                label = stringResource(R.string.voicesr_file_speaker_multiple),
-                selected = selected == FileSpeakerMode.Multiple,
-                enabled = enabled,
-                onClick = { onSelect(FileSpeakerMode.Multiple) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-@Composable
-internal fun FileSpeakerModeButton(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) {
-    if (selected) {
-        Button(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier,
-            shape = WakerPillShape,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
-            ),
-        ) {
-            Text(label)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier,
-            shape = WakerPillShape,
-        ) {
-            Text(label)
-        }
-    }
-}
-
-@Composable
-internal fun RecordingLevelBars(
-    levels: List<Float>,
-    active: Boolean,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerPanelShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+        border = wakerCardBorder(0.7f),
     ) {
-        levels.forEachIndexed { index, level ->
-            val resolvedLevel = if (active) level else 0.1f + (index % 4) * 0.04f
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height((10 + resolvedLevel * 34).dp)
-                    .background(
-                        if (active) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.outlineVariant
-                        },
-                        WakerPillShape,
-                    ),
-            )
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.voices_mixed_voices_prompt),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                MutedText(stringResource(R.string.voices_mixed_voices_desc))
+            }
+            OutlinedButton(
+                onClick = onSeparate,
+                enabled = enabled && !busy,
+                shape = WakerPillShape,
+                border = wakerCardBorder(),
+                colors = wakerOutlinedButtonColors(),
+            ) {
+                Text(
+                    if (busy) {
+                        stringResource(R.string.voices_separating)
+                    } else {
+                        stringResource(R.string.voices_separate_voices)
+                    },
+                )
+            }
         }
     }
-}
-
-internal enum class FileSpeakerMode {
-    Single,
-    Multiple,
 }
 
 internal enum class VoiceRegistrationStep {
@@ -591,9 +550,12 @@ internal fun SystemVoiceProfileRow(
     selected: Boolean = false,
     onSelect: () -> Unit = {},
 ) {
-    // 카드 본문 탭 = 기본 목소리로 선택, ▶ 버튼 = 인사말 미리듣기. 선택된 건 강조 + 라디오 체크.
+    // 행 전체 탭 = 기본 목소리로 선택 + 인사말 자동 재생(재탭 시 정지). 별도 ▶ 버튼 없음.
     OutlinedCard(
-        onClick = onSelect,
+        onClick = {
+            onSelect()
+            onPlay()
+        },
         shape = WakerCardShape,
         border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(
@@ -607,22 +569,11 @@ internal fun SystemVoiceProfileRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Mic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
+            // 모든 행이 같은 마이크 배지를 반복해 정보가 없었음 — 이름만 보여준다.
             Text(
                 text = profile.name,
                 fontWeight = FontWeight.SemiBold,
@@ -633,14 +584,40 @@ internal fun SystemVoiceProfileRow(
                 },
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = onPlay) {
-                Icon(
-                    imageVector = if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    contentDescription = if (playing) stringResource(R.string.voicesr_stop) else stringResource(R.string.voicesr_listen),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
+            // 재생 중이면 이퀄라이저로 '재생 중'을 알린다(정지는 행 재탭).
+            if (playing) {
+                PlayingEqualizer()
             }
-            RadioButton(selected = selected, onClick = onSelect)
+            RadioButton(selected = selected, onClick = null)
+        }
+    }
+}
+
+/** 인사말 미리듣기 재생 중임을 나타내는 작은 이퀄라이저 애니메이션. */
+@Composable
+private fun PlayingEqualizer() {
+    val transition = rememberInfiniteTransition(label = "voicePlaying")
+    val barColor = MaterialTheme.colorScheme.primary
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf(0, 160, 320, 120).forEachIndexed { index, delayMillis ->
+            val scale by transition.animateFloat(
+                initialValue = 0.35f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 520, delayMillis = delayMillis),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "bar$index",
+            )
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height((6 + scale * 14).dp)
+                    .background(barColor, WakerPillShape),
+            )
         }
     }
 }

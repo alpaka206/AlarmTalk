@@ -212,6 +212,25 @@ internal fun PermissionRow(
     }
 }
 
+/** "7:30" 12시간제(분 0패딩) — 리스트 시각 표시용(오전/오후는 별도 표기). */
+private fun alarmRowClockLabel(hour: Int, minute: Int): String {
+    val hour12 = hour % 12
+    val displayHour = if (hour12 == 0) 12 else hour12
+    return "$displayHour:${"%02d".format(minute)}"
+}
+
+/** 토글 켜진 알람이 다음 울릴 날짜 — 로케일에 맞춘 "7월 7일 (화)" 형태(연도 생략). */
+private fun nextFireDateLabel(context: android.content.Context, fireAtMillis: Long): String =
+    android.text.format.DateUtils.formatDateTime(
+        context,
+        fireAtMillis,
+        android.text.format.DateUtils.FORMAT_SHOW_DATE or
+            android.text.format.DateUtils.FORMAT_ABBREV_MONTH or
+            android.text.format.DateUtils.FORMAT_SHOW_WEEKDAY or
+            android.text.format.DateUtils.FORMAT_ABBREV_WEEKDAY or
+            android.text.format.DateUtils.FORMAT_NO_YEAR,
+    )
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun AlarmRow(
@@ -220,6 +239,7 @@ internal fun AlarmRow(
     onEditAlarm: () -> Unit,
     onDeleteAlarm: () -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val deleteWidth = 92.dp
     val deleteWidthPx = with(LocalDensity.current) { deleteWidth.toPx() }
     var deleteRevealed by remember(alarm.id) { mutableStateOf(false) }
@@ -305,28 +325,52 @@ internal fun AlarmRow(
                     // weight(1f) 로 스위치 공간을 남기고 라벨이 가질 폭을 확정해야
                     // 긴 알람 이름이 ellipsis(말줄임)로 잘려 행 레이아웃이 깨지지 않는다.
                     Column(modifier = Modifier.weight(1f)) {
+                        val timeColor = if (alarm.enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                        // 시각 앞에 오전/오후를 작게 붙이고 12시간제로 표시.
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            Text(
+                                text = if (alarm.hour < 12) {
+                                    stringResource(R.string.rd2_am)
+                                } else {
+                                    stringResource(R.string.rd2_pm)
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = timeColor,
+                                modifier = Modifier.padding(end = 6.dp, bottom = 6.dp),
+                            )
+                            Text(
+                                text = alarmRowClockLabel(alarm.hour, alarm.minute),
+                                style = MaterialTheme.typography.headlineLarge,
+                                fontWeight = FontWeight.Normal,
+                                color = timeColor,
+                            )
+                        }
+                        // 라벨 대신 '다음 울릴 날짜'를 안내(기본 시계 라벨보다 실용적). 꺼진 알람도 미리 보이도록,
+                        // 켜진 건 실제 예약값(fireAtMillis), 꺼진 건 스케줄로 다음 울림을 계산해 표시한다.
+                        val nextFireMillis = if (alarm.enabled) {
+                            alarm.fireAtMillis
+                        } else {
+                            remember(alarm.hour, alarm.minute, alarm.repeatDaysMask, alarm.holidayOff) {
+                                com.alarmtalk.app.data.AlarmTimeCalculator.nextFireAtMillis(
+                                    hour = alarm.hour,
+                                    minute = alarm.minute,
+                                    repeatDaysMask = alarm.repeatDaysMask,
+                                    holidayOff = alarm.holidayOff,
+                                )
+                            }
+                        }
                         Text(
-                            text = "%02d:%02d".format(alarm.hour, alarm.minute),
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Normal,
-                            color = if (alarm.enabled) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                        Text(
-                            text = alarm.label,
+                            text = nextFireDateLabel(context, nextFireMillis),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
-                            // 긴 이름이 여러 줄로 줄바꿈되며 행을 망가뜨리지 않도록 한 줄 말줄임 처리.
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            color = if (alarm.enabled) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Spacer(Modifier.width(8.dp))

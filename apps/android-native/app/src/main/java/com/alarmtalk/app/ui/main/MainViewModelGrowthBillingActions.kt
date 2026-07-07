@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.alarm.SocialNotificationTracker
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -31,6 +32,7 @@ import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.GooglePlayConfirmRequest
 import com.alarmtalk.app.network.LoginRequest
 import com.alarmtalk.app.network.NoteAudioResponse
+import com.alarmtalk.app.network.PromoRedeemRequest
 import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.SendNoteRequest
@@ -92,7 +94,7 @@ internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
             updatedVouchers
         }
     } catch (error: Throwable) {
-        Log.e(TAG, "Failed to refresh share code data", error)
+        AlarmTalkLog.reportError("Failed to refresh share code data", error)
         message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_info_load_failed))
         vouchers
     } finally {
@@ -119,7 +121,7 @@ private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
             }.onSuccess { snapshot ->
                 applyBillingSnapshot(snapshot)
             }.onFailure { error ->
-                Log.e(TAG, "Failed to load billing", error)
+                AlarmTalkLog.reportError("Failed to load billing", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_growth_info_load_failed))
             }
         } finally {
@@ -180,13 +182,36 @@ private fun codeRegistrationFailureMessage(context: android.content.Context, err
         "CODE_EXPIRED" -> context.getString(R.string.msg2_code_fail_code_expired)
         "CODE_ALREADY_USED" -> context.getString(R.string.msg2_code_fail_code_already_used)
         "CODE_ALREADY_REDEEMED_BY_YOU" -> context.getString(R.string.msg2_code_fail_code_already_redeemed_by_you)
-        "SELF_ISSUED" -> context.getString(R.string.msg2_code_fail_self_issued)
+        "SELF_ISSUED", "SELF_ACCEPT" -> context.getString(R.string.msg2_code_fail_self_issued)
         "GROUP_FULL" -> context.getString(R.string.msg2_code_fail_group_full)
         "INVALID_GIFT_PLAN", "INVALID_INVITE_PLAN" -> context.getString(R.string.msg2_code_fail_invalid_plan_type)
         "PLAN_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_plan_not_found)
         "USER_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_user_not_found)
+        // 통합 엔드포인트가 가족그룹 초대/프로모 코드도 처리하므로 그쪽 에러 코드도 매핑한다.
+        "CODE_REVOKED" -> context.getString(R.string.msg2_code_fail_code_revoked)
+        "ALREADY_MEMBER" -> context.getString(R.string.msg2_code_fail_already_member)
+        "CODE_INACTIVE" -> context.getString(R.string.msg2_promo_fail_code_inactive)
+        "CODE_NOT_IN_WINDOW" -> context.getString(R.string.msg2_promo_fail_not_in_window)
+        "CODE_EXHAUSTED" -> context.getString(R.string.msg2_promo_fail_code_exhausted)
+        "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
         else -> fallback
     }
+
+private fun promoRedeemFailureMessage(context: android.content.Context, errorCode: String?, fallback: String): String =
+    when (errorCode) {
+        // 바우처도 프로모도 아닌 코드 → 기존 "등록할 수 없는 코드" 문구 재사용.
+        "CODE_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_code_not_found)
+        "CODE_INACTIVE" -> context.getString(R.string.msg2_promo_fail_code_inactive)
+        "CODE_NOT_IN_WINDOW" -> context.getString(R.string.msg2_promo_fail_not_in_window)
+        "CODE_ALREADY_REDEEMED_BY_YOU" -> context.getString(R.string.msg2_code_fail_code_already_redeemed_by_you)
+        "CODE_EXHAUSTED" -> context.getString(R.string.msg2_promo_fail_code_exhausted)
+        "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
+        "PROMO_REDEEM_FAILED" -> context.getString(R.string.msg2_promo_fail_generic)
+        else -> fallback
+    }
+
+private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Boolean =
+    this != null && (key in setOf("couple", "family") || planType in setOf("couple", "family"))
 
 internal fun MainViewModel.registerCode(code: String) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code)) ?: return
@@ -200,24 +225,70 @@ internal fun MainViewModel.registerCode(code: String) {
         runCatching {
             api.registerCode(authorization, CodeRegisterRequest(trimmedCode))
         }.onSuccess { response ->
-            message = getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
+            message = if (response.type == "promo") {
+                getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeemed)
+            } else {
+                getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
+            }
             refreshBillingAfterMutation(authorization, "code registration")
             refreshSocial()
             refreshAppSession()
-            if (response.type == "invite" || trimmedCode.startsWith("INV-", ignoreCase = true)) {
+            // 서버가 판별한 type 기준: 초대(그룹 합류)거나 커플/가족 플랜이면 공유패스 갱신.
+            val joinedSharedPass = response.type == "invite" ||
+                response.type == "group_invite" ||
+                response.plan.isSharedPassPlan()
+            if (joinedSharedPass) {
                 navigateSharedPassTick++
             } else {
                 navigateHomeTick++
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to register code", error)
-            message = codeRegistrationFailureMessage(
-                getApplication<android.app.Application>(),
-                apiErrorCode(error),
-                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
-            )
+            // errorBody 는 한 번만 읽히므로 error_code 를 먼저 한 번만 추출해 재사용한다.
+            val errorCode = apiErrorCode(error)
+            if (errorCode == "CODE_NOT_FOUND" || errorCode == "INVALID_FORMAT") {
+                // 바우처 코드가 아니면 공용 프로모 코드로 폴백 시도한다. 바우처는 hash 조회
+                // '전에' 형식(INV-/GIFT-...)을 먼저 검사하므로, WELCOME_ALARMTALK 같은 프로모
+                // 코드는 CODE_NOT_FOUND 가 아니라 INVALID_FORMAT 으로 떨어진다(둘 다 폴백 대상).
+                // 그 외 에러(이미 사용 등)는 그대로 노출하고 폴백하지 않는다.
+                redeemPromoCode(authorization, trimmedCode)
+            } else {
+                AlarmTalkLog.reportError("Failed to register code", error)
+                message = codeRegistrationFailureMessage(
+                    getApplication<android.app.Application>(),
+                    errorCode,
+                    userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
+                )
+            }
         }
         billingBusy = false
+    }
+}
+
+/**
+ * 공용 프로모 코드 사용. [registerCode] 의 바우처 등록이 CODE_NOT_FOUND 로 실패했을 때만
+ * 폴백 호출된다(같은 코루틴·billingBusy 유지). 성공 시 바우처 성공과 동일하게 서버 기준으로
+ * 구독/플랜을 재조회하고 홈(또는 공유패스)으로 이동한다.
+ */
+private suspend fun MainViewModel.redeemPromoCode(authorization: String, code: String) {
+    runCatching {
+        api.redeemPromoCode(authorization, PromoRedeemRequest(code))
+    }.onSuccess { response ->
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeemed)
+        refreshBillingAfterMutation(authorization, "promo redeem")
+        refreshSocial()
+        refreshAppSession()
+        if (response.plan.isSharedPassPlan()) {
+            navigateSharedPassTick++
+        } else {
+            navigateHomeTick++
+        }
+    }.onFailure { error ->
+        AlarmTalkLog.reportError("Failed to redeem promo code", error)
+        message = promoRedeemFailureMessage(
+            getApplication<android.app.Application>(),
+            apiErrorCode(error),
+            userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeem_failed)),
+        )
     }
 }
 
@@ -250,7 +321,7 @@ private fun MainViewModel.refreshNotesData(showMessage: Boolean) {
                 )
                 receivedNotes = notes
             }.onFailure { error ->
-                Log.e(TAG, "Failed to refresh notes", error)
+                AlarmTalkLog.reportError("Failed to refresh notes", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_voice_messages_load_failed))
             }
         } finally {
@@ -282,7 +353,7 @@ internal fun MainViewModel.sendNote(receiverId: String, text: String) {
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_message_sent)
             refreshNotes()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to send note", error)
+            AlarmTalkLog.reportError("Failed to send note", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_message_send_failed))
         }
         noteBusy = false
@@ -338,7 +409,7 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_message_sent)
             refreshNotes()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to send TTS note", error)
+            AlarmTalkLog.reportError("Failed to send TTS note", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_voice_message_send_failed))
         }
         noteBusy = false
@@ -367,7 +438,7 @@ internal fun MainViewModel.markNoteRead(noteId: String) {
                 }
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to mark note read id=$noteId", error)
+            AlarmTalkLog.reportError("Failed to mark note read id=$noteId", error)
         }
     }
 }
@@ -418,7 +489,7 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
                 }
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
+            AlarmTalkLog.reportError("Failed to checkout plan key=$planKey gift=$gift", error)
             val fallback = if (gift) getApplication<android.app.Application>().getString(R.string.msg_gb_gift_failed) else getApplication<android.app.Application>().getString(R.string.msg_gb_plan_apply_failed)
             message = billingFailureMessage(getApplication<android.app.Application>(), apiErrorCode(error), userFacingError(error, fallback))
         }
@@ -447,7 +518,7 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
             }
             // launched=true 면 busy 해제는 결제 결과 콜백(onPurchaseReady/Pending/Failed)에서 처리.
         }.onFailure { error ->
-            Log.e(TAG, "Failed to launch Play purchase productId=$productId", error)
+            AlarmTalkLog.reportError("Failed to launch Play purchase productId=$productId", error)
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_google_play_start_failed)
             billingBusy = false
         }
@@ -484,7 +555,7 @@ internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productI
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to confirm Play purchase productId=$productId", error)
+            AlarmTalkLog.reportError("Failed to confirm Play purchase productId=$productId", error)
             message = billingFailureMessage(
                 getApplication<android.app.Application>(),
                 apiErrorCode(error),
@@ -512,7 +583,7 @@ internal fun MainViewModel.ensureFamilyShareCode() {
             refreshBillingAfterMutation(authorization, "family share code")
             refreshSocial()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to ensure family share code", error)
+            AlarmTalkLog.reportError("Failed to ensure family share code", error)
             message = billingFailureMessage(
                 getApplication<android.app.Application>(),
                 apiErrorCode(error),
@@ -541,7 +612,7 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
             refreshBillingAfterMutation(authorization, "regenerate family share code")
             refreshSocial()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to regenerate family share code", error)
+            AlarmTalkLog.reportError("Failed to regenerate family share code", error)
             message = billingFailureMessage(
                 getApplication<android.app.Application>(),
                 apiErrorCode(error),
@@ -572,7 +643,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to cancel subscription mode=$mode", error)
+            AlarmTalkLog.reportError("Failed to cancel subscription mode=$mode", error)
             message = billingFailureMessage(getApplication<android.app.Application>(), apiErrorCode(error), userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_failed)))
         }
         billingBusy = false
@@ -596,7 +667,7 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_free_plan_voice_alarms_deleted)
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to apply free-plan voice lock", error)
+            AlarmTalkLog.reportError("Failed to apply free-plan voice lock", error)
         }
     }
 }
@@ -624,7 +695,7 @@ internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to change plan key=$planKey mode=$mode", error)
+            AlarmTalkLog.reportError("Failed to change plan key=$planKey mode=$mode", error)
             val errorCode = apiErrorCode(error)
             if (errorCode == "NO_ACTIVE_SUBSCRIPTION") {
                 message = billingFailureMessage(getApplication<android.app.Application>(), errorCode, getApplication<android.app.Application>().getString(R.string.msg_gb_no_active_subscription_apply_new))

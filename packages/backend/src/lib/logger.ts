@@ -30,5 +30,12 @@ export function logRouteError(c: Context<any>, err: unknown): void {
   console.error(JSON.stringify(entry));
 
   const sentry = c.get('sentry') as SentryClient | undefined;
-  if (sentry) sentry.captureException(err);
+  if (sentry) {
+    // 관리자가 Sentry 에서 '어디서/무엇' 에러인지 필터·식별할 수 있도록 위치 태그를 붙인다.
+    // toucan-js(Toucan extends Scope)는 setTag/setTags 를 제공하지만, 테스트 목 등 일부
+    // 구현체는 captureException 만 있으므로 옵셔널 체이닝으로 안전하게 호출한다.
+    sentry.setTags?.({ route: c.req.path, method: c.req.method });
+    if (uid) sentry.setTag?.('uid', uid);
+    sentry.captureException(err);
+  }
 }

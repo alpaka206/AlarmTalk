@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmAudioStore
@@ -129,7 +130,6 @@ internal fun AlarmEditorScreen(
     voiceProfileBusy: Boolean,
     stockClips: List<StockClip>,
     defaultVoiceId: String? = null,
-    defaultListenerTitle: String? = null,
     onCancel: () -> Unit,
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
@@ -219,8 +219,7 @@ internal fun AlarmEditorScreen(
     val savedWeatherConfigured = if (familyAlarmMode) {
         selectedFamilyRecipientValue?.dynamicPromptSettingsState?.weatherReady == true
     } else {
-        activeDynamicPromptPreferences.weatherCountry.isNotBlank() &&
-            activeDynamicPromptPreferences.weatherCity.isNotBlank()
+        activeDynamicPromptPreferences.weatherCity.isNotBlank()
     }
     val savedFortuneConfigured = if (familyAlarmMode) {
         selectedFamilyRecipientValue?.dynamicPromptSettingsState?.fortuneReady == true
@@ -364,7 +363,7 @@ internal fun AlarmEditorScreen(
                         startFromPreparedPosition()
                     }
                 }.onFailure { error ->
-                    Log.e(TAG, "Failed to start alarm audio preview", error)
+                    AlarmTalkLog.reportError("Failed to start alarm audio preview", error)
                     stopPreview()
                 }
             }
@@ -372,13 +371,13 @@ internal fun AlarmEditorScreen(
                 if (mediaPlayer === completedPlayer) stopPreview() else completedPlayer.release()
             }
             player.setOnErrorListener { errorPlayer, what, extra ->
-                Log.e(TAG, "Alarm audio preview error what=$what extra=$extra")
+                AlarmTalkLog.reportError("Alarm audio preview error what=$what extra=$extra")
                 if (mediaPlayer === errorPlayer) stopPreview() else errorPlayer.release()
                 true
             }
             player.prepareAsync()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to prepare alarm audio preview", error)
+            AlarmTalkLog.reportError("Failed to prepare alarm audio preview", error)
             stopPreview()
         }
     }
@@ -398,7 +397,7 @@ internal fun AlarmEditorScreen(
                 audioMessage = null
             }
                 .onFailure { error ->
-                    Log.e(TAG, "Failed to cache selected audio", error)
+                    AlarmTalkLog.reportError("Failed to cache selected audio", error)
                     audioMessage = userFacingError(error, context.getString(R.string.editor_error_selected_audio_unusable))
                 }
         }
@@ -470,7 +469,7 @@ internal fun AlarmEditorScreen(
                     target = AudioPreviewTarget.SharedVoiceInfo,
                 )
             }.onFailure { error ->
-                Log.e(TAG, "Failed to preview shared voice in alarm editor", error)
+                AlarmTalkLog.reportError("Failed to preview shared voice in alarm editor", error)
                 stopPreview()
                 audioMessage = userFacingError(error, context.getString(R.string.editor_error_preview_failed))
             }
@@ -522,7 +521,7 @@ internal fun AlarmEditorScreen(
                     clipKeys = keys,
                 )
             }.onFailure { error ->
-                Log.e(TAG, "Failed to select free bucket in alarm editor bucket=$bucket", error)
+                AlarmTalkLog.reportError("Failed to select free bucket in alarm editor bucket=$bucket", error)
                 audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
             }
         }
@@ -559,7 +558,7 @@ internal fun AlarmEditorScreen(
                 applyCachedAudio(audio)
             }.onFailure { error ->
                 isRecording = false
-                Log.e(TAG, "Failed to stop recording", error)
+                AlarmTalkLog.reportError("Failed to stop recording", error)
                 audioMessage = userFacingError(error, context.getString(R.string.editor_error_recording_failed))
             }
         }
@@ -574,7 +573,7 @@ internal fun AlarmEditorScreen(
             recordingLevels = List(18) { 0.08f }
             audioMessage = context.getString(R.string.editor_recording_in_progress)
         }.onFailure { error ->
-            Log.e(TAG, "Failed to start recording", error)
+            AlarmTalkLog.reportError("Failed to start recording", error)
             audioMessage = userFacingError(error, context.getString(R.string.editor_error_recording_start_failed))
         }
     }
@@ -630,7 +629,7 @@ internal fun AlarmEditorScreen(
                         applyCachedAudio(audio)
                         submitDraft(editor.toDraft())
                     }.onFailure { error ->
-                        Log.e(TAG, "Failed to cache cropped local alarm audio", error)
+                        AlarmTalkLog.reportError("Failed to cache cropped local alarm audio", error)
                         audioMessage = userFacingError(error, context.getString(R.string.editor_error_crop_save_failed))
                     }
                     isSaving = false
@@ -671,7 +670,7 @@ internal fun AlarmEditorScreen(
         if (
             editor.voiceRandomPrompt &&
             randomContextUsesWeather(editor.voiceRandomContext) &&
-            (editor.voiceWeatherCountry.isBlank() || editor.voiceWeatherCity.isBlank())
+            editor.voiceWeatherCity.isBlank()
         ) {
             audioMessage = context.getString(R.string.editor_error_weather_location_required)
             return
@@ -698,7 +697,8 @@ internal fun AlarmEditorScreen(
                     voiceProfiles = voiceProfiles,
                     familyVoices = familyVoices,
                 ).trimmedOrNull()
-                ?: defaultListenerTitle?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
+                // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다.
+                ?: authSession?.user?.name?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
         }
         val listenerTitleForSave = resolvedVoiceListenerTitle()
         val usableProfileIds = (
@@ -818,7 +818,7 @@ internal fun AlarmEditorScreen(
                 audioMessage = context.getString(R.string.editor_generated_voice_saved_local)
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
-                Log.e(TAG, "Failed to generate TTS alarm audio", error)
+                AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
                 audioMessage = userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
             }
             isSaving = false
@@ -915,7 +915,7 @@ internal fun AlarmEditorScreen(
         val context = normalizedRandomPromptContext(editor.voiceRandomContext)
         if (
             randomContextUsesWeather(context) &&
-            (editor.voiceWeatherCountry.isBlank() || editor.voiceWeatherCity.isBlank())
+            editor.voiceWeatherCity.isBlank()
         ) {
             return false
         }
@@ -987,7 +987,6 @@ internal fun AlarmEditorScreen(
         if (
             !familyAlarmMode &&
             randomContextUsesWeather(result.randomContext) &&
-            result.weatherCountry.isNotBlank() &&
             result.weatherCity.isNotBlank()
         ) {
             dynamicPromptPreferenceStore.saveWeatherLocation(result.weatherCountry, result.weatherCity)
@@ -1103,8 +1102,6 @@ internal fun AlarmEditorScreen(
                             minute = editor.minute,
                             repeatDaysMask = editor.repeatDaysMask,
                             holidayOff = editor.holidayOff,
-                            label = editor.label,
-                            onLabelChange = { editor.label = it },
                             onToggleDay = { dayIndex ->
                                 val nextMask = editor.repeatDaysMask xor (1 shl dayIndex)
                                 editor.repeatDaysMask = nextMask
@@ -1445,6 +1442,11 @@ internal fun AlarmEditorScreen(
 
     if (voicePlanGateOpen) {
         PlanGateDialog(
+            title = if (freeVoiceTier) {
+                stringResource(R.string.r3dlg_plan_gate_title)
+            } else {
+                stringResource(R.string.editor_plan_gate_login_title)
+            },
             message = if (freeVoiceTier) {
                 stringResource(R.string.editor_plan_gate_paid_features)
             } else {

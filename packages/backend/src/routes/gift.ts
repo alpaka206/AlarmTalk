@@ -195,10 +195,16 @@ gift.patch('/:id/accept', async (c) => {
       return c.json({ error: 'Pending gift not found', error_code: 'PENDING_GIFT_NOT_FOUND' }, 404);
     }
 
-    await db.execute({
-      sql: "UPDATE gifts SET status = 'accepted' WHERE id = ?",
-      args: [id],
+    // 수락을 조건부 UPDATE 로 원자화한다: pending→accepted 전환에 성공한 요청만
+    // 라이브러리에 INSERT 한다. 더블탭/재시도로 두 요청이 동시에 pending 을 읽어
+    // 같은 메시지를 라이브러리에 중복 등록하는 것을 막는다(멱등 처리).
+    const accept = await db.execute({
+      sql: "UPDATE gifts SET status = 'accepted' WHERE id = ? AND recipient_id = ? AND status = 'pending'",
+      args: [id, userId],
     });
+    if ((accept.rowsAffected ?? 0) === 0) {
+      return c.json({ error: 'Pending gift not found', error_code: 'PENDING_GIFT_NOT_FOUND' }, 404);
+    }
 
     const libId = crypto.randomUUID();
     await db.execute({

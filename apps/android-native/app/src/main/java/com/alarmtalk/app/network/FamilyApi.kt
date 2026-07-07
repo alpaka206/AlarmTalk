@@ -20,6 +20,8 @@ data class FamilyGroup(
     @SerializedName("plan_id") val planId: String,
     @SerializedName("max_members") val maxMembers: Int,
     @SerializedName("created_at") val createdAt: String,
+    // 오너 구독 만료일(참여자 '~까지 사용' 안내용). 서버가 안 주면 null.
+    @SerializedName("expires_at") val expiresAt: String? = null,
 )
 
 data class FamilyGroupMember(

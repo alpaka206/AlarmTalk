@@ -110,11 +110,13 @@ describe('POST /code/register common validation', () => {
     expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
   });
 
-  it('rejects legacy numeric invite codes because code registration is voucher_codes only', async () => {
+  it('falls through group-invite and promo lookup for legacy numeric codes and returns CODE_NOT_FOUND', async () => {
+    // 통합 디스패치: 레거시 숫자 코드는 voucher 포맷이 아니므로 가족그룹 초대 조회
+    // (plan_group_invites, 빈 결과) → 프로모 조회(빈 결과) 순으로 폴백 후 404 로 끝난다.
     pushUser();
     const res = await buildApp().request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_FORMAT');
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
   });
 });
 
@@ -128,6 +130,22 @@ describe('POST /code/register voucher redemption', () => {
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
     expect(mockDB.calls[1]!.args[0]).toBe(`hash:${GIFT_CODE}`);
+  });
+
+  it('falls through to promo lookup for a GIFT-format code missing as a voucher', async () => {
+    // GIFT- 포맷이지만 voucher 에 없는(CODE_NOT_FOUND) 코드는 프로모(3단계)까지 폴백해야 한다.
+    // 통합 /code/register 계약: GIFT- 형식과 겹치는 프로모 코드도 등록 가능해야 함.
+    pushUser();
+    mockDB.pushResult([]); // voucher hash 조회 → 없음
+    // 이후 프로모 조회도 비워 최종 CODE_NOT_FOUND 로 끝나되, 프로모 조회 자체는 발생해야 한다.
+
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
+
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
+    // 수정 전에는 GIFT- 가 promo 조회 없이 종료됐다 — promo_codes 조회 도달을 검증해 회귀를 잠근다.
+    const sqls = mockDB.calls.map((call) => call.sql).join('\n');
+    expect(sqls).toMatch(/promo_codes/i);
   });
 
   it('returns CODE_ALREADY_USED when voucher has no remaining uses', async () => {

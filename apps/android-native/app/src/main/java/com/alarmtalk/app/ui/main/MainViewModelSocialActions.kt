@@ -3,6 +3,7 @@ package com.alarmtalk.app
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -45,7 +46,7 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
                 saveFamilyGroupSnapshot(snapshot.familyGroup)
                 familyVoices = snapshot.familyVoices
             }.onFailure { error ->
-                Log.e(TAG, "Failed to refresh social data", error)
+                AlarmTalkLog.reportError("Failed to refresh social data", error)
                 if (showMessage) {
                     message = userFacingError(error, "Failed to load shared plan data")
                 }
@@ -66,14 +67,19 @@ internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
             api.leaveFamilyGroup(authorization, groupId, emptyMap())
         }.onSuccess {
             message = getApplication<android.app.Application>().getString(R.string.msg_left_group)
+            // 성공 시엔 refreshSocial 이 busy 소유권을 이어받는다. 여기서 먼저 내려
+            // refreshSocialData 의 `if (socialBusy) return` 가드를 통과시키고, 이후 무조건적인
+            // `socialBusy = false` 로 진행 중인 refresh 의 true 를 덮어쓰지 않는다(가드 무력화 회귀 방지).
+            socialBusy = false
             refreshSocial()
             refreshBilling()
             refreshAppSession()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to leave family group id=$groupId", error)
+            AlarmTalkLog.reportError("Failed to leave family group id=$groupId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_leave_group_failed))
+            // 실패 시에만 여기서 busy 를 리셋(성공 시엔 refreshSocial 이 소유).
+            socialBusy = false
         }
-        socialBusy = false
     }
 }
 
@@ -87,12 +93,17 @@ internal fun MainViewModel.removeFamilyMember(groupId: String, userId: String) {
             api.removeFamilyMember(authorization, groupId, userId)
         }.onSuccess {
             message = getApplication<android.app.Application>().getString(R.string.msg_member_removed)
+            // 성공 시엔 refreshSocial 이 busy 소유권을 이어받는다. 여기서 먼저 내려
+            // refreshSocialData 의 `if (socialBusy) return` 가드를 통과시키고, 이후 무조건적인
+            // `socialBusy = false` 로 진행 중인 refresh 의 true 를 덮어쓰지 않는다(가드 무력화 회귀 방지).
+            socialBusy = false
             refreshSocial()
             refreshBilling()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to remove family member group=$groupId user=$userId", error)
+            AlarmTalkLog.reportError("Failed to remove family member group=$groupId user=$userId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_remove_member_failed))
+            // 실패 시에만 여기서 busy 를 리셋(성공 시엔 refreshSocial 이 소유).
+            socialBusy = false
         }
-        socialBusy = false
     }
 }

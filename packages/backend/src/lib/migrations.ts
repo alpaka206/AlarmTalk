@@ -1179,6 +1179,42 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_alarms_bucket ON alarms(bucket_id)`,
     ],
   },
+  {
+    // 공용 프로모 쿠폰(관리자 발급). 기존 개인 코드(invite/gift = voucher_codes)와 별개.
+    //  - promo_codes: 관리자가 임의 코드 문자열을 만들어 특정 플랜을 duration_days 만큼 부여.
+    //    등록 가능 유효창(valid_from~valid_until)·총 사용 상한(max_redemptions)·활성 토글.
+    //    code 는 대소문자 무시(NOCASE) UNIQUE.
+    //  - promo_code_redemptions: 사용자당 1회(UNIQUE) + 총 사용량 원자 집계.
+    id: 55,
+    name: 'promo-codes',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS promo_codes (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL,
+        plan_id TEXT NOT NULL,
+        duration_days INTEGER NOT NULL,
+        valid_from TEXT,
+        valid_until TEXT,
+        max_redemptions INTEGER,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        note TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_promo_codes_code ON promo_codes(code COLLATE NOCASE)`,
+      `CREATE TABLE IF NOT EXISTS promo_code_redemptions (
+        id TEXT PRIMARY KEY,
+        promo_code_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        subscription_id TEXT,
+        redeemed_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_promo_redemptions_unique
+        ON promo_code_redemptions(promo_code_id, user_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_promo_redemptions_code
+        ON promo_code_redemptions(promo_code_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

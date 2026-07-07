@@ -62,7 +62,6 @@ internal fun SubscriptionPanel(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     vouchers: List<VoucherItem>,
-    onRegisterCode: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
     onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
@@ -70,10 +69,8 @@ internal fun SubscriptionPanel(
     onLeaveFamilyGroup: (String) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
 ) {
-    var checkoutTarget by remember { mutableStateOf<CheckoutSelection?>(null) }
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
-    var testCodeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
@@ -89,32 +86,34 @@ internal fun SubscriptionPanel(
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val options = listOf(
+        // 감성 설명문 없이 핵심 혜택만 짧게 — 목소리 개수·인원처럼 판단에 필요한 사실 위주로 적는다.
         SubscriptionPlanOption(
             key = "free",
             name = stringResource(R.string.billing_plan_free_name),
             price = stringResource(R.string.billing_plan_free_price),
-            description = stringResource(R.string.billing_plan_free_description),
+            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_free_feature_basic_alarm),
+                stringResource(R.string.billing_plan_free_feature_stock_voice),
             ),
         ),
         SubscriptionPlanOption(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
             price = stringResource(R.string.billing_plan_personal_price),
-            description = stringResource(R.string.billing_plan_personal_description),
+            description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
-                stringResource(R.string.billing_plan_personal_feature_voice_message),
-                stringResource(R.string.billing_plan_personal_feature_gift),
+                stringResource(R.string.billing_plan_personal_feature_daily_prompt),
             ),
         ),
         SubscriptionPlanOption(
             key = "couple",
             name = stringResource(R.string.billing_plan_couple_name),
             price = stringResource(R.string.billing_plan_couple_price),
-            description = stringResource(R.string.billing_plan_couple_description),
+            description = "",
             features = listOf(
+                stringResource(R.string.billing_plan_feature_includes_personal),
                 stringResource(R.string.billing_plan_couple_feature_voice_share),
                 stringResource(R.string.billing_plan_couple_feature_message),
                 stringResource(R.string.billing_plan_couple_feature_max_two),
@@ -124,8 +123,9 @@ internal fun SubscriptionPanel(
             key = "family",
             name = stringResource(R.string.billing_plan_family_name),
             price = stringResource(R.string.billing_plan_family_price),
-            description = stringResource(R.string.billing_plan_family_description),
+            description = "",
             features = listOf(
+                stringResource(R.string.billing_plan_feature_includes_personal),
                 stringResource(R.string.billing_plan_family_feature_voice_share),
                 stringResource(R.string.billing_plan_family_feature_message),
                 stringResource(R.string.billing_plan_family_feature_max_six),
@@ -168,21 +168,35 @@ internal fun SubscriptionPanel(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        CurrentPassSummaryCard(
-            subscription = subscription,
-            currentPlan = currentPlan,
-            nextPlan = nextPlan,
-            hasActive = hasActive,
-            cancelScheduled = cancelScheduled,
-            isSharedMember = isSharedMember,
-        )
+        // 별도 '현재 이용권' 요약 카드 대신, 플랜 리스트의 현재 플랜 카드에 만료일 상태를 인라인으로 보여준다.
+        val statusContext = LocalContext.current
+        val currentExpiresAt = formatPassDate(subscription?.expiresAt)
+        val sharedMemberExpiresAt = formatPassDate(familyGroup?.group?.expiresAt)
+        val currentStatusText = when {
+            isSharedMember && sharedMemberExpiresAt != null ->
+                stringResource(R.string.billing_status_shared_member_until, sharedMemberExpiresAt)
+            isSharedMember -> stringResource(R.string.billing_status_shared_member)
+            cancelScheduled && nextPlan != null -> {
+                val nextName = passPlanName(statusContext, nextPlan.key, nextPlan.name)
+                if (currentExpiresAt != null) {
+                    stringResource(R.string.billing_status_change_to_next_after_date, currentExpiresAt, nextName)
+                } else {
+                    stringResource(R.string.billing_status_change_to_next_scheduled, nextName)
+                }
+            }
+            cancelScheduled -> {
+                if (currentExpiresAt != null) {
+                    stringResource(R.string.billing_status_end_after_date, currentExpiresAt)
+                } else {
+                    stringResource(R.string.billing_status_end_scheduled)
+                }
+            }
+            hasActive && currentExpiresAt != null -> stringResource(R.string.billing_status_available_until, currentExpiresAt)
+            hasActive -> stringResource(R.string.billing_status_in_use)
+            else -> null
+        }
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = stringResource(R.string.billing_plan_select_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
             options.forEach { option ->
                 val currentKey = currentPlan?.key ?: "free"
                 val isCurrent = currentKey == option.key
@@ -190,16 +204,18 @@ internal fun SubscriptionPanel(
                 SubscriptionPlanCard(
                     option = option,
                     isCurrent = isCurrent,
+                    currentStatusText = currentStatusText.takeIf { isCurrent },
                     hasActiveSubscription = hasActive,
                     busy = billingBusy || shareBusy,
                     vouchers = vouchersForPlan,
                     onPurchase = { purchaseTarget = option },
-                    onGift = { testCodeTarget = option },
-                    onChange = { testCodeTarget = option },
+                    onChange = { changeTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
                 )
             }
         }
+
+        // 코드 등록(선물 이용권·프로모션·초대)은 '전체' 탭 통합 입력에서만 받는다 — 이용권 화면 중복 제거.
 
         if (hasActive) {
             OutlinedButton(
@@ -236,27 +252,6 @@ internal fun SubscriptionPanel(
                 if (productId != null && activity != null) {
                     onPurchasePlay(activity, productId)
                 }
-            },
-            // 디버그/개발 빌드에서는 기존 스텁(테스트 초대 코드 등록) 경로도 유지한다.
-            onUseTestCode = if (BuildConfig.DEBUG) {
-                {
-                    purchaseTarget = null
-                    testCodeTarget = option
-                }
-            } else {
-                null
-            },
-        )
-    }
-
-    testCodeTarget?.let { option ->
-        TestInviteCodeDialog(
-            target = option,
-            busy = billingBusy,
-            onDismiss = { testCodeTarget = null },
-            onRegisterCode = { code ->
-                testCodeTarget = null
-                onRegisterCode(code)
             },
         )
     }
@@ -301,36 +296,6 @@ internal fun SubscriptionPanel(
         )
     }
 
-    checkoutTarget?.let { selection ->
-        val target = selection.option
-        BillingActionDialog(
-            title = if (selection.gift) {
-                stringResource(R.string.billing_checkout_gift_title, target.name)
-            } else {
-                stringResource(R.string.billing_checkout_apply_title, target.name)
-            },
-            description = if (selection.gift) {
-                stringResource(R.string.billing_checkout_gift_description)
-            } else {
-                stringResource(R.string.billing_checkout_apply_description, target.name)
-            },
-            onDismiss = { checkoutTarget = null },
-        ) {
-            BillingDialogButton(
-                label = if (selection.gift) {
-                    stringResource(R.string.billing_gift_button)
-                } else {
-                    stringResource(R.string.billing_apply_button)
-                },
-                primary = true,
-                onClick = {
-                    checkoutTarget = null
-                    onCheckoutPlan(target.key, selection.gift)
-                },
-            )
-        }
-    }
-
     if (shareTarget.isNotEmpty()) {
         BillingActionDialog(
             title = stringResource(R.string.billing_share_voucher_select_title),
@@ -363,7 +328,7 @@ internal fun SubscriptionPanel(
 
 /**
  * Google Play 구독 결제 시작 다이얼로그 (월간 구독만 판매).
- * [onUseTestCode] 가 null 이 아니면(디버그 빌드) 기존 테스트 코드 스텁 경로 버튼도 노출한다.
+ * 제목=결론("시작할까요?"), 본문=가격·해지 안내 규칙을 따른다.
  */
 @Composable
 private fun PlayPurchaseDialog(
@@ -371,27 +336,17 @@ private fun PlayPurchaseDialog(
     busy: Boolean,
     onDismiss: () -> Unit,
     onPurchase: () -> Unit,
-    onUseTestCode: (() -> Unit)?,
 ) {
     BillingActionDialog(
         title = stringResource(R.string.billing_play_purchase_title, target.name),
-        description = stringResource(R.string.billing_play_purchase_description),
+        description = stringResource(R.string.billing_play_purchase_description, target.name, target.price),
         onDismiss = onDismiss,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            BillingDialogButton(
-                label = stringResource(R.string.billing_monthly_subscription),
-                primary = true,
-                onClick = { if (!busy) onPurchase() },
-            )
-            if (onUseTestCode != null) {
-                BillingDialogButton(
-                    label = stringResource(R.string.billing_register_test_code_dev),
-                    primary = false,
-                    onClick = onUseTestCode,
-                )
-            }
-        }
+        BillingDialogButton(
+            label = stringResource(R.string.billing_monthly_subscription),
+            primary = true,
+            onClick = { if (!busy) onPurchase() },
+        )
     }
 }
 
@@ -400,52 +355,6 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
-}
-
-@Composable
-private fun TestInviteCodeDialog(
-    target: SubscriptionPlanOption,
-    busy: Boolean,
-    onDismiss: () -> Unit,
-    onRegisterCode: (String) -> Unit,
-) {
-    var code by remember(target.key) { mutableStateOf("") }
-    val prefix = if (target.key == "personal") "GIFT" else "INV"
-    val maxCodeLength = if (prefix == "GIFT") 19 else 18
-
-    BillingActionDialog(
-        title = stringResource(R.string.billing_test_invite_code_title, target.name),
-        description = stringResource(R.string.billing_test_invite_code_description),
-        onDismiss = onDismiss,
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(
-                value = code,
-                onValueChange = { value ->
-                    code = value
-                        .uppercase()
-                        .filter { it.isLetterOrDigit() || it == '-' }
-                        .take(maxCodeLength)
-                },
-                placeholder = { Text("$prefix-XXXX-XXXX-XXXX") },
-                singleLine = true,
-                enabled = !busy,
-                shape = WakerInputShape,
-                colors = wakerOutlinedTextFieldColors(),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            BillingDialogButton(
-                label = stringResource(R.string.billing_register_code_button),
-                primary = true,
-                onClick = {
-                    val trimmed = code.trim()
-                    if (trimmed.isNotBlank()) {
-                        onRegisterCode(trimmed)
-                    }
-                },
-            )
-        }
-    }
 }
 
 @Composable
@@ -564,103 +473,6 @@ private fun BillingDialogButtonRow(content: @Composable RowScope.() -> Unit) {
 }
 
 @Composable
-private fun CurrentPassSummaryCard(
-    subscription: BillingSubscription?,
-    currentPlan: BillingPlan?,
-    nextPlan: BillingPlanSummary?,
-    hasActive: Boolean,
-    cancelScheduled: Boolean,
-    isSharedMember: Boolean,
-) {
-    val context = LocalContext.current
-    val planKey = currentPlan?.key ?: "free"
-    val planName = passPlanName(context, planKey = planKey, fallback = currentPlan?.name)
-    val expiresAt = formatPassDate(subscription?.expiresAt)
-    val statusText = when {
-        isSharedMember -> stringResource(R.string.billing_status_shared_member)
-        cancelScheduled && nextPlan != null -> {
-            val nextName = passPlanName(context, nextPlan.key, nextPlan.name)
-            if (expiresAt != null) {
-                stringResource(R.string.billing_status_change_to_next_after_date, expiresAt, nextName)
-            } else {
-                stringResource(R.string.billing_status_change_to_next_scheduled, nextName)
-            }
-        }
-        cancelScheduled -> {
-            if (expiresAt != null) {
-                stringResource(R.string.billing_status_end_after_date, expiresAt)
-            } else {
-                stringResource(R.string.billing_status_end_scheduled)
-            }
-        }
-        hasActive && expiresAt != null -> stringResource(R.string.billing_status_available_until, expiresAt)
-        hasActive -> stringResource(R.string.billing_status_in_use)
-        else -> stringResource(R.string.billing_status_free_basic)
-    }
-    val priceText = currentPlan?.priceKrw?.takeIf { it > 0 }
-        ?.let { stringResource(R.string.billing_price_monthly, it.formatKrw()) }
-        ?: stringResource(R.string.billing_price_zero)
-    val capacityText = currentPlan?.maxMembers?.takeIf { it > 1 }
-        ?.let { stringResource(R.string.billing_capacity_max_members, it) }
-        ?: stringResource(R.string.billing_capacity_personal)
-
-    OutlinedCard(
-        shape = WakerCardShape,
-        border = wakerCardBorder(),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f),
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(R.string.billing_current_pass_label),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-                Text(
-                    text = planName,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PassSummaryChip(priceText)
-                PassSummaryChip(capacityText)
-            }
-
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun PassSummaryChip(label: String) {
-    Surface(
-        shape = WakerPillShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-}
-
-@Composable
 private fun PlanFeatureRow(text: String) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -687,9 +499,10 @@ internal fun SubscriptionPlanCard(
     busy: Boolean,
     vouchers: List<VoucherItem>,
     onPurchase: () -> Unit,
-    onGift: () -> Unit,
     onChange: () -> Unit,
     onShareVouchers: () -> Unit,
+    // 현재 플랜 카드에만 붙는 만료/전환 상태 한 줄 (예: "7월 20일까지 이용할 수 있어요").
+    currentStatusText: String? = null,
 ) {
     OutlinedCard(
         shape = WakerCardShape,
@@ -753,6 +566,14 @@ internal fun SubscriptionPlanCard(
                     }
                 }
             }
+            if (isCurrent && currentStatusText != null) {
+                Text(
+                    text = currentStatusText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             if (option.description.isNotBlank()) {
                 MutedText(option.description)
             }
@@ -764,49 +585,24 @@ internal fun SubscriptionPlanCard(
                     PlanFeatureRow(feature)
                 }
             }
-            if (option.key != "free" && !isCurrent) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(
-                        onClick = if (hasActiveSubscription) onChange else onPurchase,
-                        enabled = !busy,
-                        modifier = Modifier.weight(1f),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text(
-                            if (hasActiveSubscription) {
-                                stringResource(R.string.billing_change_pass)
-                            } else {
-                                stringResource(R.string.billing_select_button)
-                            },
-                        )
-                    }
-                    if (option.key == "personal") {
-                        OutlinedButton(
-                            onClick = onGift,
-                            enabled = !busy,
-                            modifier = Modifier.weight(1f),
-                            shape = WakerButtonShape,
-                            border = wakerCardBorder(),
-                            colors = wakerOutlinedButtonColors(),
-                        ) {
-                            Text(stringResource(R.string.billing_gift_button))
-                        }
-                    }
-                }
-            }
-            if (option.key == "personal" && isCurrent) {
-                OutlinedButton(
-                    onClick = onGift,
+            // 이용권 변경(/billing/change-plan)은 스텁 결제 전용이라 dev 에서만 노출한다.
+            // 운영 Play 결제에서는 CHECKOUT_DISABLED 로 항상 실패하므로, Play 구독 교체
+            // (업/다운그레이드) 플로우가 붙기 전까지 변경 버튼을 숨긴다.
+            val changePlanSupported = BuildConfig.FLAVOR == "dev"
+            if (option.key != "free" && !isCurrent && (!hasActiveSubscription || changePlanSupported)) {
+                Button(
+                    onClick = if (hasActiveSubscription) onChange else onPurchase,
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
-                    border = wakerCardBorder(),
-                    colors = wakerOutlinedButtonColors(),
                 ) {
-                    Text(stringResource(R.string.billing_gift_personal_pass))
+                    Text(
+                        if (hasActiveSubscription) {
+                            stringResource(R.string.billing_change_pass)
+                        } else {
+                            stringResource(R.string.billing_select_button)
+                        },
+                    )
                 }
             }
             if (vouchers.isNotEmpty()) {
@@ -899,8 +695,4 @@ private fun ChangePlanDialog(
     }
 }
 
-private data class CheckoutSelection(
-    val option: SubscriptionPlanOption,
-    val gift: Boolean,
-)
 

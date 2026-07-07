@@ -48,6 +48,7 @@ describe('GET /family/groups/current', () => {
         max_members: 6,
         created_at: '2026-01-01T00:00:00Z',
         my_role: 'owner',
+        owner_expires_at: '2026-08-06T00:00:00Z',
       },
     ]);
     mockDB.pushResult([
@@ -86,6 +87,7 @@ describe('GET /family/groups/current', () => {
       plan_id: PLAN_ID,
       max_members: 6,
       created_at: '2026-01-01T00:00:00Z',
+      expires_at: '2026-08-06T00:00:00Z',
     });
     expect(data.role).toBe('owner');
     expect(data.members).toHaveLength(2);
@@ -102,6 +104,35 @@ describe('GET /family/groups/current', () => {
       weather_ready: true,
       fortune_ready: true,
     });
+  });
+
+  it('그룹 만료일 서브쿼리는 오너 구독을 우선한다 (멤버 바우처 구독이 만료일을 가리지 않도록)', async () => {
+    pushResolveUserPk(MEMBER_PK);
+    mockDB.pushResult([
+      {
+        id: GROUP_ID,
+        owner_user_id: OWNER_PK,
+        plan_id: PLAN_ID,
+        max_members: 6,
+        created_at: '2026-01-01T00:00:00Z',
+        my_role: 'member',
+        owner_expires_at: '2026-08-06T00:00:00Z',
+      },
+    ]);
+    mockDB.pushResult([]);
+
+    const res = await app.request('/family/groups/current');
+    expect(res.status).toBe(200);
+
+    const groupCall = mockDB.calls.find((call) => call.sql.includes('owner_expires_at'));
+    expect(groupCall).toBeDefined();
+    // 오너 구독 우선(COALESCE 1번째) + 그룹 연결 구독 폴백(2번째)이 유지되는지 SQL 로 고정한다.
+    // 오너 우선을 서브쿼리 ORDER BY 상관 참조로 바꾸면 SQLite 에서 쿼리 자체가 깨지므로
+    // (no such column: pg.owner_user_id) 반드시 WHERE 절 비교 + COALESCE 형태여야 한다.
+    expect(groupCall!.sql).toContain('COALESCE');
+    expect(groupCall!.sql).toContain('s.user_id = pg.owner_user_id');
+    expect(groupCall!.sql).not.toMatch(/ORDER BY[^)]*pg\.owner_user_id/);
+    expect(groupCall!.sql).toContain("s.plan_group_id = pg.id AND s.status = 'active'");
   });
 
   it('returns null group when user not found in DB', async () => {

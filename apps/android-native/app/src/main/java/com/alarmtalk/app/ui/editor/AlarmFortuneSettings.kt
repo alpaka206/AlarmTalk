@@ -20,15 +20,17 @@ import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
 import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -58,7 +60,6 @@ internal fun FortuneInfoDialog(
     gender: String,
     birthDate: String,
     birthTime: String,
-    description: String = stringResource(R.string.editorp_fortune_dialog_description),
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String, String) -> Unit,
 ) {
@@ -68,7 +69,6 @@ internal fun FortuneInfoDialog(
     var draftBirthTime by remember(birthTime) { mutableStateOf(normalizeFortuneBirthTime(birthTime)) }
     var submitted by remember { mutableStateOf(false) }
     var datePickerOpen by remember { mutableStateOf(false) }
-    var timePickerOpen by remember { mutableStateOf(false) }
     val genderError = submitted && draftGender.isBlank()
     val birthDateError = submitted && draftBirthDate.isBlank()
     val birthTimeError = submitted && draftBirthTime.isBlank()
@@ -100,29 +100,6 @@ internal fun FortuneInfoDialog(
                     title = stringResource(R.string.editorp_fortune_dialog_title),
                     onDismiss = onDismissWithoutSave,
                 )
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
-                    border = wakerCardBorder(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.editorp_fortune_only_label),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Text(
-                            text = description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
-                        )
-                    }
-                }
                 FortuneInputSection(title = stringResource(R.string.editorp_fortune_gender_section), error = genderError) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         GenderChoice(
@@ -154,21 +131,10 @@ internal fun FortuneInfoDialog(
                     error = birthTimeError,
                     subtitle = stringResource(R.string.editorp_fortune_birthtime_subtitle),
                 ) {
-                    FortuneTimeChoiceGrid(
-                        selectedValue = draftBirthTime,
+                    FortuneBirthTimeDropdown(
+                        value = draftBirthTime,
+                        error = birthTimeError,
                         onSelect = { draftBirthTime = it },
-                    )
-                    val exactTimePlaceholder = draftBirthTime.isBlank() ||
-                        draftBirthTime == FortuneBirthTimeUnknown
-                    FortuneSelectorRow(
-                        value = if (exactTimePlaceholder) {
-                            stringResource(R.string.editorp_fortune_exact_time_placeholder)
-                        } else {
-                            formatBirthTimeDisplay(context, draftBirthTime)
-                        },
-                        placeholderActive = exactTimePlaceholder,
-                        error = birthTimeError && draftBirthTime.isBlank(),
-                        onClick = { timePickerOpen = true },
                     )
                 }
 
@@ -231,62 +197,85 @@ internal fun FortuneInfoDialog(
         }
     }
 
-    if (timePickerOpen) {
-        val (hourInit, minuteInit) = parseBirthTimeParts(draftBirthTime)
-        val state = rememberTimePickerState(
-            initialHour = hourInit,
-            initialMinute = minuteInit,
-            is24Hour = true,
-        )
-        Dialog(onDismissRequest = { timePickerOpen = false }) {
-            Surface(
-                shape = WakerHeroShape,
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp,
-                shadowElevation = 18.dp,
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    ModalDialogTitle(
-                        title = stringResource(R.string.editorp_fortune_birthtime_section),
-                        onDismiss = { timePickerOpen = false },
-                    )
-                    TimePicker(state = state)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                    ) {
-                        TextButton(
-                            onClick = {
-                                draftBirthTime = String.format(
-                                    Locale.US,
-                                    "%02d:%02d",
-                                    state.hour,
-                                    state.minute,
-                                )
-                                timePickerOpen = false
-                            },
-                        ) { Text(stringResource(R.string.editorp_fortune_time_confirm)) }
-                    }
-                }
-            }
-        }
-    }
 }
 
 internal const val FortuneGenderMale = "남성"
 internal const val FortuneGenderFemale = "여성"
 internal const val FortuneBirthTimeUnknown = "시간 모름"
 
-internal val FortuneBirthTimeChoices: List<Pair<String, Int>> = listOf(
-    FortuneBirthTimeUnknown to R.string.editor2_fortune_time_unknown,
-    "05:00" to R.string.editor2_fortune_time_dawn,
-    "09:00" to R.string.editor2_fortune_time_morning,
-    "15:00" to R.string.editor2_fortune_time_afternoon,
-    "20:00" to R.string.editor2_fortune_time_evening,
+// 태어난 시간 구간 — 사주 시진 경계(한국 표준시 +30분 보정) 그대로. 저장값이 곧
+// 백엔드 프롬프트로 전달되므로 로케일 번역 없이 숫자 구간 문자열을 쓴다.
+internal val FortuneBirthTimeChoices: List<String> = listOf(
+    "00:00~01:30",
+    "01:31~03:30",
+    "03:31~05:30",
+    "05:31~07:30",
+    "07:31~09:30",
+    "09:31~11:30",
+    "11:31~13:30",
+    "13:31~15:30",
+    "15:31~17:30",
+    "17:31~19:30",
+    "19:31~21:30",
+    "21:31~23:30",
+    "23:31~24:00",
 )
+
+// 태어난 시간 드롭다운 — 맨 위 '시간 모름' 다음에 시간 구간 목록.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun FortuneBirthTimeDropdown(
+    value: String,
+    error: Boolean,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val unknownLabel = stringResource(R.string.editor2_fortune_time_unknown)
+    val display = when {
+        value.isBlank() -> stringResource(R.string.editorp_fortune_birthtime_placeholder)
+        value == FortuneBirthTimeUnknown -> unknownLabel
+        else -> value
+    }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+    ) {
+        OutlinedTextField(
+            value = display,
+            onValueChange = {},
+            readOnly = true,
+            singleLine = true,
+            isError = error,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            shape = WakerInputShape,
+            colors = wakerOutlinedTextFieldColors(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text(unknownLabel) },
+                onClick = {
+                    onSelect(FortuneBirthTimeUnknown)
+                    expanded = false
+                },
+            )
+            FortuneBirthTimeChoices.forEach { range ->
+                DropdownMenuItem(
+                    text = { Text(range) },
+                    onClick = {
+                        onSelect(range)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+}
 
 internal fun normalizeFortuneGender(value: String): String =
     when (value.trim()) {
@@ -333,13 +322,6 @@ internal fun parseBirthDateMillis(value: String): Long? {
     return calendar.timeInMillis
 }
 
-internal fun parseBirthTimeParts(value: String): Pair<Int, Int> {
-    val parts = value.split(":")
-    val hour = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 9
-    val minute = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0
-    return hour to minute
-}
-
 internal fun formatBirthDateIso(millis: Long): String {
     val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     formatter.timeZone = TimeZone.getTimeZone("UTC")
@@ -354,27 +336,6 @@ internal fun formatBirthDateDisplay(context: android.content.Context, value: Str
         digits.substring(0, 4),
         digits.substring(4, 6).trimStart('0'),
         digits.substring(6, 8).trimStart('0'),
-    )
-}
-
-internal fun formatBirthTimeDisplay(context: android.content.Context, value: String): String {
-    if (value == FortuneBirthTimeUnknown) {
-        return context.getString(R.string.editor2_fortune_time_unknown)
-    }
-    val parts = value.split(":")
-    val hour = parts.getOrNull(0)?.toIntOrNull() ?: return value
-    val minute = parts.getOrNull(1)?.toIntOrNull() ?: return value
-    val suffix = if (hour < 12) {
-        context.getString(R.string.editor2_am)
-    } else {
-        context.getString(R.string.editor2_pm)
-    }
-    val display = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
-    return context.getString(
-        R.string.editor2_birthtime_display,
-        suffix,
-        display,
-        String.format(Locale.US, "%02d", minute),
     )
 }
 
@@ -417,85 +378,6 @@ internal fun FortuneInputSection(
             }
             content()
         }
-    }
-}
-
-@Composable
-internal fun FortuneTimeChoiceGrid(
-    selectedValue: String,
-    onSelect: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FortuneTimeChoice(
-                label = stringResource(FortuneBirthTimeChoices[0].second),
-                value = FortuneBirthTimeChoices[0].first,
-                selected = selectedValue == FortuneBirthTimeChoices[0].first,
-                onClick = onSelect,
-                modifier = Modifier.weight(1f),
-            )
-            FortuneTimeChoice(
-                label = stringResource(FortuneBirthTimeChoices[1].second),
-                value = FortuneBirthTimeChoices[1].first,
-                selected = selectedValue == FortuneBirthTimeChoices[1].first,
-                onClick = onSelect,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FortuneBirthTimeChoices.drop(2).forEach { (value, labelRes) ->
-                FortuneTimeChoice(
-                    label = stringResource(labelRes),
-                    value = value,
-                    selected = selectedValue == value,
-                    onClick = onSelect,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun FortuneTimeChoice(
-    label: String,
-    value: String,
-    selected: Boolean,
-    onClick: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        onClick = { onClick(value) },
-        shape = WakerChipShape,
-        color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surface
-        },
-        border = BorderStroke(
-            width = if (selected) 1.5.dp else 1.dp,
-            color = if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
-            },
-        ),
-        modifier = modifier,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 11.dp),
-        )
     }
 }
 

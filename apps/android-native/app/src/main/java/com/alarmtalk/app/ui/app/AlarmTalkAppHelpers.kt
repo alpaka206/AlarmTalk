@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -57,7 +58,12 @@ internal fun buildGoogleSignInOptions(requestIdToken: Boolean = false): GoogleSi
 
 internal object AppRoute {
     const val Settings = "settings"
+    const val ConsentHistory = "consents"
+    const val LegalDocTypeArg = "legalDocType"
+    const val LegalDoc = "legal/{$LegalDocTypeArg}"
     const val MemberManagement = "members"
+
+    fun legalDoc(type: String): String = "legal/$type"
     const val FamilyTargetModeArg = "familyTargetMode"
     const val AlarmCreate = "alarm/create/{$FamilyTargetModeArg}"
     const val AlarmIdArg = "alarmId"
@@ -69,12 +75,12 @@ internal object AppRoute {
 
 internal val NativeTab.route: String
     get() = when (this) {
-        NativeTab.Home -> "home"
         NativeTab.Voices -> "voices"
         NativeTab.Alarms -> "alarms"
         NativeTab.People -> "people"
         NativeTab.Messages -> "messages"
         NativeTab.Billing -> "billing"
+        NativeTab.Menu -> "menu"
     }
 
 internal fun String?.toNativeTab(): NativeTab? =
@@ -89,7 +95,7 @@ internal fun alarmPermissionRequiredMessage(context: Context, target: Permission
 
 internal fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
     navigate(tab.route) {
-        popUpTo(NativeTab.Home.route) {
+        popUpTo(NativeTab.Alarms.route) {
             saveState = true
         }
         launchSingleTop = true
@@ -97,10 +103,11 @@ internal fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
     }
 }
 
+// 알람 탭이 곧 홈이다(홈 탭 병합).
 internal fun NavHostController.navigateHomeClearingStack() {
     if (currentDestination == null) return
-    navigate(NativeTab.Home.route) {
-        popUpTo(NativeTab.Home.route)
+    navigate(NativeTab.Alarms.route) {
+        popUpTo(NativeTab.Alarms.route)
         launchSingleTop = true
     }
 }
@@ -165,7 +172,11 @@ internal fun messageSeverity(text: String): MessageSeverity = when {
 }
 
 @Composable
-internal fun PrettySnackbar(message: String) {
+internal fun PrettySnackbar(
+    message: String,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
+) {
     val severity = messageSeverity(message)
     val scheme = MaterialTheme.colorScheme
     val containerColor = when (severity) {
@@ -202,7 +213,19 @@ internal fun PrettySnackbar(message: String) {
             Text(
                 text = message,
                 fontWeight = FontWeight.Medium,
+                // 액션이 있으면 남은 폭을 메시지가 차지해 버튼이 끝에 붙는다.
+                modifier = if (actionLabel != null) Modifier.weight(1f) else Modifier,
             )
+            if (actionLabel != null) {
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = onAction) {
+                    Text(
+                        text = actionLabel,
+                        color = contentColor,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
         }
     }
 }

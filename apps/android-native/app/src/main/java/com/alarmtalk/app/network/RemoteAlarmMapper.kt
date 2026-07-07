@@ -11,7 +11,7 @@ object RemoteAlarmMapper {
             ?.takeUnless { alarm.ttsMessageId != null }
         val hasRemoteVoice = alarm.ttsMessageId != null || rawAudioUrl != null
         return RemoteAlarmWriteRequest(
-            time = "%02d:%02d".format(alarm.hour, alarm.minute),
+            time = String.format(java.util.Locale.US, "%02d:%02d", alarm.hour, alarm.minute),
             repeatDays = repeatMaskToDays(alarm.repeatDaysMask),
             snoozeMinutes = alarm.snoozeMinutes,
             mode = if (hasRemoteVoice) "tts" else "sound-only",

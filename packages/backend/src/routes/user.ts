@@ -41,14 +41,20 @@ user.get('/me', async (c) => {
     }
 
     const u = result.rows[0]!;
+    // 계정 연동으로 JWT sub(userId) 와 users.id(userPk) 가 다를 수 있으므로, 목록
+    // API(alarm-query viewerIds/voice-profile ownerIds)와 동일하게 두 식별자 집합으로
+    // 카운트한다. sub≠users.id 계정에서 통계가 0 으로 과소집계되는 문제를 막는다.
+    const userPk = c.get('userIdPK') || userId;
+    const idSet = Array.from(new Set([userPk, userId]));
+    const idPh = idSet.map(() => '?').join(',');
     const [profileCount, alarmCount] = await Promise.all([
       db.execute({
-        sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL',
-        args: [userId],
+        sql: `SELECT COUNT(*) as count FROM voice_profiles WHERE user_id IN (${idPh}) AND deleted_at IS NULL`,
+        args: idSet,
       }),
       db.execute({
-        sql: 'SELECT COUNT(*) as count FROM alarms WHERE user_id = ?',
-        args: [userId],
+        sql: `SELECT COUNT(*) as count FROM alarms WHERE user_id IN (${idPh})`,
+        args: idSet,
       }),
       db.execute({
         sql: "UPDATE users SET last_active_at = datetime('now') WHERE google_id = ?",
@@ -284,6 +290,18 @@ user.patch('/plan', async (c) => {
 
     if (!['free', 'plus', 'family'].includes(body.plan)) {
       return c.json({ error: 'Invalid plan', error_code: 'INVALID_PLAN' }, 400);
+    }
+    // 보안: 유료 승격(plus/family)은 반드시 결제 검증(store-billing) 또는 바우처
+    // 사용(voucher redemption) 경로로만 이뤄져야 한다. 이 self-service 엔드포인트는
+    // 본인 강등(free)만 허용하고, 무결제 플랜 승격(페이월 우회)을 차단한다.
+    if (body.plan !== 'free') {
+      return c.json(
+        {
+          error: 'Plan upgrades require a verified purchase or voucher',
+          error_code: 'PLAN_UPGRADE_NOT_ALLOWED',
+        },
+        403,
+      );
     }
 
     const result = await withWriteTransaction(db, async (tx) => {

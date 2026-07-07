@@ -9,7 +9,6 @@ import android.os.VibratorManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -131,10 +130,10 @@ internal fun previewVibration(context: Context, patternName: String) {
 internal fun AlarmSettingRow(
     title: String,
     subtitle: String,
-    icon: ImageVector,
     onClick: () -> Unit,
     trailing: @Composable () -> Unit,
 ) {
+    // 전체 탭과 같은 톤 — 행마다 아이콘 배지 없이 제목·요약·컨트롤만.
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -143,21 +142,6 @@ internal fun AlarmSettingRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            modifier = Modifier.size(38.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
-        Spacer(Modifier.width(12.dp))
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -184,6 +168,7 @@ internal fun AlarmSettingRow(
 
 @Composable
 internal fun AlarmSettingDivider() {
+    // 행에 아이콘 배지가 없어 제목 텍스트가 카드 안쪽 left에서 시작 → 구분선도 들여쓰기 없이 텍스트 시작선에 맞춘다.
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -376,24 +361,22 @@ internal fun SnoozeRadioRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    // 최소 터치 타깃 48dp 확보 + 기본 리플 피드백.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 12.dp, vertical = 5.dp),
+            .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CompactSelectionDot(
             selected = selected,
         )
-        Spacer(Modifier.width(9.dp))
+        Spacer(Modifier.width(12.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
         )
     }
@@ -431,9 +414,10 @@ internal fun CompactSelectionDot(selected: Boolean) {
 
 @Composable
 internal fun SnoozeOptionDivider() {
+    // 라디오 점(18dp) + 좌우 여백에 맞춰 텍스트 시작선(14+18+12)까지 들여쓴다.
     Box(
         modifier = Modifier
-            .padding(start = 39.dp)
+            .padding(start = 44.dp)
             .fillMaxWidth()
             .height(1.dp)
             .background(MaterialTheme.colorScheme.outlineVariant),
@@ -453,8 +437,6 @@ internal fun EditorActionButtons(
         modifier = Modifier.fillMaxWidth(),
         shape = WakerButtonShape,
     ) {
-        Icon(Icons.Outlined.Save, contentDescription = null)
-        Spacer(Modifier.width(8.dp))
         Text(
             when {
                 isSaving -> stringResource(R.string.editor_saving)

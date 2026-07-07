@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.network.AuthSessionStore
@@ -24,7 +25,7 @@ class DynamicVoiceRefreshWorker(
             Log.i(TAG, "Dynamic voice refresh worker complete refreshed=$refreshed")
             Result.success()
         }.getOrElse { error ->
-            Log.e(TAG, "Dynamic voice refresh worker failed", error)
+            AlarmTalkLog.reportError("Dynamic voice refresh worker failed", error)
             Result.retry()
         }
     }

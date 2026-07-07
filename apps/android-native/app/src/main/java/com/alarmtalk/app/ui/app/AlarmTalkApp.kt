@@ -9,11 +9,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -32,13 +35,20 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmOrigins
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 
 @Composable
-internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
+internal fun AlarmTalkApp(
+    viewModel: MainViewModel = viewModel(),
+    // Play In-App Update 훅. 프리뷰/테스트에선 no-op 기본값. 실제 트리거는 MainActivity 가
+    // InAppUpdateManager 에 연결한다.
+    onCheckInAppUpdate: () -> Unit = {},
+    onCompleteInAppUpdate: () -> Unit = {},
+) {
     val context = LocalContext.current
     val alarms by viewModel.alarms.collectAsStateWithLifecycle()
     val message = viewModel.message
@@ -58,7 +68,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentTab = navBackStackEntry?.destination?.route.toNativeTab()
-    val selectedTab = currentTab ?: NativeTab.Home
+    val selectedTab = currentTab ?: NativeTab.Alarms
     var planGateDialog by remember { mutableStateOf<PlanGateDialogState?>(null) }
     // 인증 화면 백스택 — 로그인↔회원가입 전환 히스토리를 보존해 뒤로가기가 한 단계씩 돌아가게 한다.
     var authBackStack by remember { mutableStateOf(listOf<AuthRoute>(AuthRoute.Landing)) }
@@ -197,6 +207,27 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
         viewModel.checkAppVersion()
     }
 
+    // 서버 정책(강제/권장) 확정 후 In-App Update 를 조회·시작한다. 콜드스타트에서 onResume
+    // 시점엔 아직 정책이 로드 전일 수 있어, 플래그가 확정될 때 한 번 더 트리거한다(중복은 무해).
+    LaunchedEffect(viewModel.updateRequired, viewModel.updateRecommended) {
+        if (viewModel.updateRequired || viewModel.updateRecommended) {
+            onCheckInAppUpdate()
+        }
+    }
+
+    // FLEXIBLE 업데이트 다운로드 완료 → 재시작 안내 스낵바. 액션 시 completeUpdate() 로 설치 마무리.
+    LaunchedEffect(viewModel.flexibleUpdateDownloaded) {
+        if (!viewModel.flexibleUpdateDownloaded) return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = context.getString(R.string.r3app_update_downloaded),
+            actionLabel = context.getString(R.string.r3app_update_restart),
+            duration = SnackbarDuration.Indefinite,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            onCompleteInAppUpdate()
+        }
+    }
+
     LaunchedEffect(message) {
         val currentMessage = message ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(currentMessage)
@@ -220,7 +251,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     LoginPermissionGate(
         authSession = authSession,
         enabled = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-            !viewModel.showOnboarding && !viewModel.showVoiceSetup,
+            !viewModel.showVoiceSetup,
         permissions = permissions,
         onRequestPermission = ::requestPermission,
         onRequestAllPermissions = ::requestAllMissingPermissions,
@@ -243,7 +274,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
 
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
-            viewModel.checkOnboardingFor(authSession.user.id)
+            viewModel.checkVoiceSetupFor(authSession.user.id)
             viewModel.checkAccountStatus()
             viewModel.checkConsentStatus()
             viewModel.preloadVoiceProfiles()
@@ -286,16 +317,17 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
         if (!tabDataEmpty && last != null && now - last < tabRefreshThrottleMs) return@LaunchedEffect
         lastTabRefreshAt[throttleKey] = now
         when (tab) {
-            NativeTab.Home -> {
-                viewModel.refreshBilling()
-                viewModel.refreshSocial()
-            }
             NativeTab.Voices -> {
                 viewModel.preloadVoiceProfiles()
                 viewModel.loadStockClips()
                 viewModel.preloadSocial()
             }
-            NativeTab.Alarms -> viewModel.syncNow()
+            // 알람 홈: 히어로와 '누구를 깨울까요?' 시트가 구독/가족 데이터를 쓰므로 함께 갱신한다.
+            NativeTab.Alarms -> {
+                viewModel.syncNow()
+                viewModel.refreshBilling()
+                viewModel.refreshSocial()
+            }
             NativeTab.People -> {
                 viewModel.refreshSocial()
                 viewModel.refreshBilling()
@@ -305,6 +337,11 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                 viewModel.refreshNotes()
             }
             NativeTab.Billing -> viewModel.refreshBilling()
+            // 전체 탭: 공유 이용권/가족 여부에 따라 노출 항목이 달라지므로 함께 갱신.
+            NativeTab.Menu -> {
+                viewModel.refreshBilling()
+                viewModel.refreshSocial()
+            }
         }
     }
 
@@ -321,14 +358,12 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
             GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
         }.onFailure { error ->
             if (error is ApiException) {
-                Log.e(
-                    TAG,
-                    "Google sign-in failed resultCode=${result.resultCode} statusCode=${error.statusCode}",
+                AlarmTalkLog.reportError("Google sign-in failed resultCode=${result.resultCode} statusCode=${error.statusCode}",
                     error,
                 )
                 viewModel.showGoogleSignInFailed(googleSignInErrorMessage(context, error.statusCode))
             } else {
-                Log.e(TAG, "Google sign-in failed resultCode=${result.resultCode}", error)
+                AlarmTalkLog.reportError("Google sign-in failed resultCode=${result.resultCode}", error)
                 viewModel.showGoogleSignInFailed(
                     userFacingError(error, context.getString(R.string.r3app_google_signin_failed)),
                 )
@@ -390,14 +425,42 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
         navController.popBackStackOrHome()
     }
 
+    // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드가 모두 이 경로를 탄다.
+    // 가족 알람 자격이 있으면 '누구를 깨울까요?' 시트에서 대상을 먼저 고른다.
+    val canCreateFamilyAlarm = authSession != null &&
+        hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
+        familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
+    var alarmTargetSheetVisible by remember { mutableStateOf(false) }
+    fun startCreateAlarm(familyTargetMode: Boolean) {
+        if (!permissions.alarmReady) {
+            requestFirstMissingAlarmPermission()
+        } else {
+            navController.navigate(AppRoute.alarmCreate(familyTargetMode = familyTargetMode))
+        }
+    }
+    fun requestCreateAlarm() {
+        if (canCreateFamilyAlarm) {
+            alarmTargetSheetVisible = true
+        } else {
+            startCreateAlarm(familyTargetMode = false)
+        }
+    }
+
     if (authSession == null) {
         BackHandler(enabled = authBackStack.size > 1) {
             authBack()
         }
     } else {
         BackHandler(
-            enabled = currentTab != null && currentTab != NativeTab.Home,
-            onBack = { navController.navigateTopLevelTab(NativeTab.Home) },
+            enabled = currentTab != null && currentTab != NativeTab.Alarms,
+            onBack = {
+                // 이용권·코드 등록은 전체 탭의 하위 목적지 — 뒤로가기가 홈이 아니라 전체로 돌아간다.
+                val backTarget = when (currentTab) {
+                    NativeTab.Billing, NativeTab.People -> NativeTab.Menu
+                    else -> NativeTab.Alarms
+                }
+                navController.navigateTopLevelTab(backTarget)
+            },
         )
     }
 
@@ -445,16 +508,43 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     viewModel.duplicateAlarmPrompt?.let { prompt ->
         DuplicateAlarmDialog(
             timeLabel = "%02d:%02d".format(prompt.hour, prompt.minute),
-            existingLabel = prompt.existingLabel,
             onConfirm = prompt.onConfirmReplace,
             onDismiss = viewModel::dismissDuplicateAlarmPrompt,
         )
     }
 
+    if (alarmTargetSheetVisible) {
+        WakerSelectionSheet(
+            title = stringResource(R.string.alarms_target_sheet_title),
+            onDismiss = { alarmTargetSheetVisible = false },
+        ) { dismiss ->
+            WakerSheetOptionRow(
+                title = stringResource(R.string.alarms_target_self_title),
+                description = stringResource(R.string.alarms_target_self_desc),
+                icon = Icons.Outlined.Alarm,
+                selected = false,
+                onClick = {
+                    dismiss()
+                    startCreateAlarm(familyTargetMode = false)
+                },
+            )
+            WakerSheetOptionRow(
+                title = stringResource(R.string.alarms_target_family_title),
+                description = stringResource(R.string.alarms_target_family_desc),
+                icon = Icons.Outlined.People,
+                selected = false,
+                onClick = {
+                    dismiss()
+                    startCreateAlarm(familyTargetMode = true)
+                },
+            )
+        }
+    }
+
     Scaffold(
         bottomBar = {
             if (authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-                !viewModel.showOnboarding && !viewModel.updateRequired &&
+                !viewModel.updateRequired &&
                 !viewModel.pendingDeletion && currentTab != null
             ) {
                 AlarmTalkBottomBar(
@@ -464,6 +554,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                     // 메시지는 커플/가족 전용 — 무료·개인 플랜은 잠금 표시.
                     messagesLocked = !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup),
                     onSelectTab = ::navigateToTab,
+                    onCreateAlarm = ::requestCreateAlarm,
                 )
             }
         },
@@ -484,8 +575,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
           when (val route = authRoute) {
               AuthRoute.Landing -> LandingScreen(
                   contentPadding = padding,
-                  onLogin = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
-                  onRegister = { authNavigate(AuthRoute.Auth(AuthMode.Register)) },
+                  onStart = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
               )
               AuthRoute.ResetPassword -> PasswordResetScreen(
                   contentPadding = padding,
@@ -545,14 +635,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
           )
           return@Scaffold
       }
-      if (viewModel.showOnboarding) {
-          OnboardingScreen(
-              contentPadding = padding,
-              onComplete = viewModel::completeOnboarding,
-          )
-          return@Scaffold
-      }
-      // 온보딩 직후 "목소리 고르기" — 기본 목소리 4개를 다 펼치는 대신 1개를 미리듣고 고른다.
+      // 첫 로그인 "목소리 고르기" — 기본 목소리 4개를 다 펼치는 대신 1개를 미리듣고 고른다.
       if (viewModel.showVoiceSetup) {
           // 시스템 음성이 비어 있으면(무료 플랜 lock 등으로) 다시 받아와 빈 로딩 화면에 갇히지 않게 한다.
           LaunchedEffect(Unit) { viewModel.preloadVoiceProfiles() }
@@ -563,15 +646,22 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
               voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
               stockClips = viewModel.stockClips,
               onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
-              onChoose = { voiceId, listenerTitle -> viewModel.completeVoiceSetup(voiceId, listenerTitle) },
+              onChoose = viewModel::completeVoiceSetup,
               onSkip = viewModel::skipVoiceSetup,
           )
           return@Scaffold
       }
+      // 목소리 선택 직후 실제 알람 에디터를 1회 자동으로 연다 — 별도 온보딩 화면 대신
+      // 진짜 설정 화면(+첫 방문 코치마크)에서 직접 첫 알람을 맞춰보게 한다.
+      LaunchedEffect(viewModel.navigateFirstAlarmEditorTick) {
+          if (viewModel.navigateFirstAlarmEditorTick > 0) {
+              navController.navigate(AppRoute.alarmCreate(familyTargetMode = false))
+          }
+      }
       Box(modifier = Modifier.fillMaxSize()) {
           NavHost(
               navController = navController,
-              startDestination = NativeTab.Home.route,
+              startDestination = NativeTab.Alarms.route,
               modifier = Modifier.fillMaxSize(),
           ) {
               NativeTab.values().forEach { tab ->
@@ -603,8 +693,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,
                           onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
                           onCloneSpeakerDraft = viewModel::cloneSpeakerDraft,
-                          onPromoteDraftVoice = { profileId ->
-                              viewModel.promoteDraftVoice(profileId)
+                          onPromoteDraftVoice = { profileId, draft ->
+                              viewModel.promoteDraftVoice(profileId, draft)
                               viewModel.loadVoiceProfiles()
                           },
                           onDeleteDraftVoice = viewModel::deleteDraftVoice,
@@ -619,8 +709,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                           defaultVoiceId = viewModel.defaultVoiceId,
                           onSetDefaultVoice = viewModel::setDefaultVoice,
-                          defaultListenerTitle = viewModel.defaultListenerTitle,
-                          onSetListenerTitle = viewModel::setDefaultListenerTitle,
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,
@@ -636,20 +724,13 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           onChangePlan = viewModel::changePlan,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,
                           permissions = permissions,
-                          onCreateAlarm = {
-                              if (!permissions.alarmReady) {
-                                  requestFirstMissingAlarmPermission()
-                              } else {
-                                  navController.navigate(AppRoute.alarmCreate(familyTargetMode = false))
-                              }
-                          },
-                          onCreateFamilyAlarm = {
-                              if (!permissions.alarmReady) {
-                                  requestFirstMissingAlarmPermission()
-                              } else {
-                                  navController.navigate(AppRoute.alarmCreate(familyTargetMode = true))
-                              }
-                          },
+                          onCreateAlarm = ::requestCreateAlarm,
+                          onOpenSettings = { navController.navigate(AppRoute.Settings) },
+                          onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
+                          onOpenConsentHistory = { navController.navigate(AppRoute.ConsentHistory) },
+                          onDeleteAccount = viewModel::requestDeleteAccount,
+                          themeMode = themeMode,
+                          onChangeTheme = viewModel::setThemeMode,
                           onToggleEnabled = { id, enabled ->
                               if (enabled && !permissions.alarmReady) {
                                   requestFirstMissingAlarmPermission()
@@ -661,18 +742,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestPermissionGate = ::requestPermission,
                           onRequestAllPermissions = ::requestAllMissingPermissions,
-                          profileMenu = if (tab == NativeTab.Alarms) {
-                              {
-                                  ProfileMenu(
-                                      hasSharedPass = hasSharedPass,
-                                      onSelectTab = ::navigateToTab,
-                                      onOpenSettings = { navController.navigate(AppRoute.Settings) },
-                                      onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
-                                  )
-                              }
-                          } else {
-                              null
-                          },
                       )
                   }
               }
@@ -693,7 +762,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                       voiceProfileBusy = voiceProfileBusy,
                       stockClips = viewModel.stockClips,
                       defaultVoiceId = viewModel.defaultVoiceId,
-                      defaultListenerTitle = viewModel.defaultListenerTitle,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
@@ -735,7 +803,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           voiceProfileBusy = voiceProfileBusy,
                           stockClips = viewModel.stockClips,
                           defaultVoiceId = viewModel.defaultVoiceId,
-                          defaultListenerTitle = viewModel.defaultListenerTitle,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
@@ -761,18 +828,41 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                   SettingsScreen(
                       contentPadding = padding,
                       authSession = authSession,
-                      themeMode = themeMode,
+                      onBack = ::goBackInApp,
+                      onEditNickname = viewModel::requestEditNickname,
+                      onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                      onLogout = ::logout,
+                  )
+              }
+              composable(AppRoute.ConsentHistory) {
+                  ConsentHistoryScreen(
+                      contentPadding = padding,
+                      onBack = ::goBackInApp,
+                      onLoadConsents = { viewModel.loadConsentRecords() },
+                      onOpenTerms = { navController.navigate(AppRoute.legalDoc("terms")) },
+                      onOpenPrivacy = { navController.navigate(AppRoute.legalDoc("privacy")) },
                       marketingConsentAgreed = viewModel.marketingConsentAgreed,
                       marketingConsentBusy = viewModel.marketingConsentWriteInFlight,
                       marketingConsentLoadFailed = viewModel.marketingConsentLoadFailed,
-                      onBack = ::goBackInApp,
-                      onChangeTheme = viewModel::setThemeMode,
-                      onEditNickname = viewModel::requestEditNickname,
-                      onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onLoadMarketingConsent = viewModel::loadMarketingConsent,
                       onChangeMarketingConsent = viewModel::updateMarketingConsent,
-                      onLogout = ::logout,
-                      onDeleteAccount = viewModel::requestDeleteAccount,
+                  )
+              }
+              composable(AppRoute.LegalDoc) { entry ->
+                  val docType = entry.arguments?.getString(AppRoute.LegalDocTypeArg) ?: "terms"
+                  LegalDocumentScreen(
+                      contentPadding = padding,
+                      title = if (docType == "privacy") {
+                          stringResource(R.string.hs_settings_privacy_policy)
+                      } else {
+                          stringResource(R.string.hs_settings_terms_of_service)
+                      },
+                      url = if (docType == "privacy") {
+                          "https://alarm-talk.com/ko/privacy"
+                      } else {
+                          "https://alarm-talk.com/ko/terms"
+                      },
+                      onBack = ::goBackInApp,
                   )
               }
               composable(AppRoute.MemberManagement) {
@@ -793,32 +883,19 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                   )
               }
           }
-          if (currentTab != null) {
-              if (currentTab != NativeTab.Alarms) {
-                  Box(
-                      modifier = Modifier
-                          .align(Alignment.TopEnd)
-                          .padding(
-                              top = padding.calculateTopPadding() + 24.dp,
-                              end = 24.dp,
-                          ),
-                  ) {
-                      ProfileMenu(
-                          hasSharedPass = hasSharedPass,
-                          onSelectTab = ::navigateToTab,
-                          onOpenSettings = { navController.navigate(AppRoute.Settings) },
-                          onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
-                      )
-                  }
-              }
-          }
           SnackbarHost(
               hostState = snackbarHostState,
               modifier = Modifier
                   .align(Alignment.TopCenter)
                   .padding(top = padding.calculateTopPadding() + 8.dp),
           ) { data ->
-              PrettySnackbar(message = data.visuals.message)
+              // actionLabel 을 함께 렌더링해야 FLEXIBLE 업데이트 '재시작' 등
+              // 액션 대기(showSnackbar → ActionPerformed) 스낵바가 동작한다.
+              PrettySnackbar(
+                  message = data.visuals.message,
+                  actionLabel = data.visuals.actionLabel,
+                  onAction = { data.performAction() },
+              )
           }
       }
     }

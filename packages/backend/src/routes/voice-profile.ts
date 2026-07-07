@@ -13,6 +13,10 @@ import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent'
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
+// draft(미승격) 보이스 상한. draft 도 생성 즉시 실제 ElevenLabs 보이스를 만들므로
+// (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
+// 사용자당 개수를 제한해 전역 DoS 를 막는다.
+const MAX_DRAFT_VOICE_PROFILES = 3;
 const MIN_CLONE_DURATION_MS = 60_000;
 const MAX_CLONE_DURATION_MS = 120_000;
 const CLONE_DURATION_TOLERANCE_MS = 5_000;
@@ -474,10 +478,11 @@ voiceProfile.patch('/:id', async (c) => {
   }
 
   // promote(draft=false) 시: 다른 non-draft 음성이 1개 이상이면 한도 초과.
+  // 생성 쿼터와 동일하게 failed 잔여물은 슬롯을 점유하지 않으므로 제외한다.
   if (hasDraft && isDraftUpdate === false) {
     const nonDraftCount = await db.execute({
       sql: `SELECT COUNT(*) as count FROM voice_profiles
-            WHERE user_id IN (${ph}) AND deleted_at IS NULL
+            WHERE user_id IN (${ph}) AND deleted_at IS NULL AND status != 'failed'
               AND COALESCE(is_draft, 0) = 0 AND id != ?`,
       args: [...ids, id],
     });
@@ -526,10 +531,16 @@ voiceProfile.patch('/:id', async (c) => {
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
-  await db.execute({
-    sql: `UPDATE voice_profiles SET ${updates.join(', ')} WHERE id = ?`,
+  // deleted_at IS NULL 재확인: 위 존재 확인과 이 UPDATE 사이에 cron 의 고아 draft
+  // 스윕(cleanupStaleDraftVoices)이 행을 소프트 삭제했을 수 있다. 가드 없이 쓰면
+  // 삭제된(클론 파기 큐 적재까지 끝난) 행을 promote 한 것처럼 200 을 돌려주게 된다.
+  const updateRes = await db.execute({
+    sql: `UPDATE voice_profiles SET ${updates.join(', ')} WHERE id = ? AND deleted_at IS NULL`,
     args,
   });
+  if ((updateRes.rowsAffected ?? 0) === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
 
   return c.json({
     profile: {
@@ -707,20 +718,31 @@ voiceProfile.post('/clone', async (c) => {
         ? null
         : normalizeSpeechFormality(speechFormalityForm);
 
-    // draft 가 아닐 때만 한도(MAX_VOICE_PROFILES) 검사. draft 는 카운트에서 제외.
-    if (!isDraft) {
+    // 한도 검사: non-draft 는 MAX_VOICE_PROFILES, draft 는 MAX_DRAFT_VOICE_PROFILES.
+    // draft 도 즉시 실제 ElevenLabs 보이스를 생성하므로 반드시 상한을 둬야 무제한
+    // draft 생성으로 인한 전역 슬롯 고갈(DoS)을 막는다.
+    // failed 행은 제외: 클론 실패 잔여물은 프로바이더 슬롯을 점유하지 않고(voice_id 없이
+    // 실패), 특히 draft 는 리스트에 노출되지 않아 클라가 지울 수도 없으므로 카운트하면
+    // 일시 장애 몇 번에 한도가 영구 잠식된다.
+    // 클라 정리를 못 거친 고아 draft(앱 강제종료 등)는 cron 의 cleanupStaleDraftVoices 가
+    // DRAFT_VOICE_TTL_HOURS 경과 시 소프트 삭제하므로 이 한도가 영구히 잠기지 않는다.
+    {
       const ids = ownerIds(c);
       const phCount = ids.map(() => '?').join(',');
+      const draftClause = isDraft ? 'COALESCE(is_draft, 0) = 1' : 'COALESCE(is_draft, 0) = 0';
+      const limit = isDraft ? MAX_DRAFT_VOICE_PROFILES : MAX_VOICE_PROFILES;
       const profileCount = await db.execute({
         sql: `SELECT COUNT(*) as count FROM voice_profiles
-              WHERE user_id IN (${phCount}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0`,
+              WHERE user_id IN (${phCount}) AND deleted_at IS NULL AND status != 'failed' AND ${draftClause}`,
         args: ids,
       });
       const count = Number(profileCount.rows[0]!.count);
-      if (count >= MAX_VOICE_PROFILES) {
+      if (count >= limit) {
         return c.json(
           {
-            error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
+            error: isDraft
+              ? `임시 보이스는 최대 ${MAX_DRAFT_VOICE_PROFILES}개까지 만들 수 있습니다`
+              : `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
             error_code: 'VOICE_LIMIT_REACHED',
           },
           403,
