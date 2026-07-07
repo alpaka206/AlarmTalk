@@ -171,7 +171,6 @@
     <string name="common_tab_voices">Voices</string>
     <string name="common_voice_capture_mode_file">File</string>
     <string name="common_voice_capture_mode_record">Record</string>
-    <string name="common_voice_crop_selected_total">Selected %1$s / Total %2$s</string>
     <string name="common_voice_record_start">Record</string>
     <string name="common_voice_record_stop">Stop recording</string>
     <string name="editor_alarm_sound_title">Alarm sound</string>
@@ -693,11 +692,13 @@
     <string name="voices_create_paid_title">Creating your voice is a paid feature</string>
     <string name="voices_create_paid_notice">Default voices stay free to use.</string>
     <string name="voices_crop_duration_notice">Please select a segment between 1 and 2 minutes.</string>
+    <string name="voices_crop_section_title">Segment to use</string>
     <string name="voices_edit_info_desc">Set the name shown in alarms and how this voice calls you.</string>
     <string name="voices_edit_info_title">Edit info</string>
     <string name="voices_expand">Expand</string>
     <string name="voices_file_duration_unknown">Files whose audio length can\'t be confirmed can\'t be used.</string>
-    <string name="voices_file_single_speaker_notice">A file with just one voice works best. If several voices are mixed in, choose \'Multiple\'.</string>
+    <string name="voices_file_selected">File selected</string>
+    <string name="voices_file_single_speaker_notice">You\'ll get the best results when the clip has just one voice.</string>
     <string name="voices_greeting_preview_preparing">Preparing a preview of this voice.</string>
     <string name="voices_invalid_duration">Couldn\'t confirm the voice length. Please select the file again.</string>
     <string name="voices_listener_title_hint">In random messages, this voice will call you by this name.</string>
@@ -713,6 +714,8 @@
     <string name="voices_login_required_body">Sign in to create a voice.</string>
     <string name="voices_login_required_title">Sign-in required</string>
     <string name="voices_mic_permission_required">Microphone permission is required.</string>
+    <string name="voices_mixed_voices_desc">Split the audio and pick one of the voices.</string>
+    <string name="voices_mixed_voices_prompt">Multiple voices in the file?</string>
     <string name="voices_my_voices_title">My Voices</string>
     <string name="voices_name_label">Voice name (required)</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
@@ -726,7 +729,10 @@
     <string name="voices_preparing_audio">Preparing your audio.</string>
     <string name="voices_preview_play_failed">Couldn\'t play the preview.</string>
     <string name="voices_previous">Back</string>
+    <string name="voices_record_done_duration">Recorded · %1$s</string>
     <string name="voices_record_duration_notice">Please record between 1 and 2 minutes.</string>
+    <string name="voices_record_tap_to_start">Tap to start recording</string>
+    <string name="voices_record_tap_to_stop">Tap to stop recording</string>
     <string name="voices_recording_start_failed">Couldn\'t start recording.</string>
     <string name="voices_recording_stop_failed">Recording failed.</string>
     <string name="voices_register">Register</string>
@@ -738,7 +744,6 @@
     <string name="voices_select_separated_voice">Please choose which separated voice to use.</string>
     <string name="voices_select_to_register_hint">Selecting a voice registers it right away. You can edit the name, relationship, and call name after registering.</string>
     <string name="voices_selected_audio_unusable">The selected audio can\'t be used.</string>
-    <string name="voices_separate_done">Separation complete</string>
     <string name="voices_separate_failed">Couldn\'t separate the voices. Please pick a different segment or try again in a moment.</string>
     <string name="voices_separate_requires_paid">Voice splitting is available on a paid plan.</string>
     <string name="voices_separate_segment_too_long">The segment to split must be 2 min or less.</string>
@@ -764,7 +769,9 @@
     <string name="voices_system_voices_count">%1$d default voices</string>
     <string name="voices_default_voice_header">Default voice · %1$s</string>
     <string name="voices_unsupported_audio_format">This audio format isn\'t supported.</string>
+    <string name="voices_upload_change_hint">Tap to choose a different file.</string>
     <string name="voices_upload_file_or_video">Upload a file or video</string>
+    <string name="voices_upload_zone_subtitle">An audio or video file at least 1 minute long</string>
     <string name="voices_usage_guide">Usage guide</string>
     <string name="voicesr_close">Close</string>
     <string name="voicesr_delete">Delete</string>
@@ -773,9 +780,6 @@
     <string name="voicesr_delete_dialog_warning">Messages using this voice will keep only their text, and their alarms will switch to the default alarm sound. The saved audio files will also be deleted.</string>
     <string name="voicesr_edit_info">Edit info</string>
     <string name="voicesr_edit_my_info">Edit my info</string>
-    <string name="voicesr_file_speaker_multiple">2 or more</string>
-    <string name="voicesr_file_speaker_section_title">Voices in the file</string>
-    <string name="voicesr_file_speaker_single">1 person</string>
     <string name="voicesr_listener_preview_heading">This is how the voice will call you</string>
     <string name="voicesr_listener_preview_quote">\"%1$s, it\'s time to wake up\"</string>
     <string name="voicesr_listener_preview_relationship">Relationship · %1$s</string>

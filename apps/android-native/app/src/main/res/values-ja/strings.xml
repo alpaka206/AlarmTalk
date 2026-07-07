@@ -171,7 +171,6 @@
     <string name="common_tab_voices">声</string>
     <string name="common_voice_capture_mode_file">ファイル</string>
     <string name="common_voice_capture_mode_record">録音</string>
-    <string name="common_voice_crop_selected_total">選択 %1$s / 全体 %2$s</string>
     <string name="common_voice_record_start">録音</string>
     <string name="common_voice_record_stop">録音を終了</string>
     <string name="editor_alarm_sound_title">アラーム音</string>
@@ -702,11 +701,13 @@
     <string name="voices_create_paid_title">マイボイスの作成は有料機能です</string>
     <string name="voices_create_paid_notice">基本の声は引き続き無料で使えます。</string>
     <string name="voices_crop_duration_notice">1分以上2分以内の区間を選んでください。</string>
+    <string name="voices_crop_section_title">使用する区間</string>
     <string name="voices_edit_info_desc">アラームで表示される名前と、この声があなたを呼ぶ呼び方を決めます。</string>
     <string name="voices_edit_info_title">情報を編集</string>
     <string name="voices_expand">開く</string>
     <string name="voices_file_duration_unknown">音声の長さを確認できないファイルは使用できません。</string>
-    <string name="voices_file_single_speaker_notice">一人の声だけのファイルがいちばんきれいです。複数人が混ざっている場合は「複数人」を選んでください。</string>
+    <string name="voices_file_selected">ファイル選択済み</string>
+    <string name="voices_file_single_speaker_notice">一人の声だけの区間がいちばんきれいに仕上がります。</string>
     <string name="voices_greeting_preview_preparing">この声のプレビューを準備しています。</string>
     <string name="voices_invalid_duration">音声の長さを確認できませんでした。ファイルをもう一度選択してください。</string>
     <string name="voices_listener_title_hint">ランダムな文言で、この名前であなたを呼びます。</string>
@@ -722,6 +723,8 @@
     <string name="voices_login_required_body">ログインすると声を作成できます。</string>
     <string name="voices_login_required_title">ログインが必要です</string>
     <string name="voices_mic_permission_required">マイクの権限が必要です。</string>
+    <string name="voices_mixed_voices_desc">声を分けて、その中から一人を選べます。</string>
+    <string name="voices_mixed_voices_prompt">複数人の声が混ざっていますか？</string>
     <string name="voices_my_voices_title">マイボイス</string>
     <string name="voices_name_label">声の名前(必須)</string>
     <string name="voices_name_placeholder">例:お母さんの声</string>
@@ -735,7 +738,10 @@
     <string name="voices_preparing_audio">音声を準備しています。</string>
     <string name="voices_preview_play_failed">プレビューを再生できませんでした。</string>
     <string name="voices_previous">戻る</string>
+    <string name="voices_record_done_duration">録音完了 · %1$s</string>
     <string name="voices_record_duration_notice">1分以上2分以内で録音してください。</string>
+    <string name="voices_record_tap_to_start">タップして録音開始</string>
+    <string name="voices_record_tap_to_stop">タップして録音終了</string>
     <string name="voices_recording_start_failed">録音を開始できませんでした。</string>
     <string name="voices_recording_stop_failed">録音に失敗しました。</string>
     <string name="voices_register">登録</string>
@@ -747,7 +753,6 @@
     <string name="voices_select_separated_voice">分けた声の中から使う声を選んでください。</string>
     <string name="voices_select_to_register_hint">声を選ぶとすぐに登録されます。名前・関係・呼び名は登録後に変更できます。</string>
     <string name="voices_selected_audio_unusable">選択した音声は使用できません。</string>
-    <string name="voices_separate_done">分離完了</string>
     <string name="voices_separate_failed">声を分けられませんでした。別の区間を選ぶか、しばらくしてからもう一度お試しください。</string>
     <string name="voices_separate_requires_paid">有料プランで声の分割をご利用いただけます。</string>
     <string name="voices_separate_segment_too_long">分ける区間は2分以下にしてください。</string>
@@ -773,7 +778,9 @@
     <string name="voices_system_voices_count">基本の声 %1$d種類</string>
     <string name="voices_default_voice_header">基本の声・%1$s</string>
     <string name="voices_unsupported_audio_format">対応していない音声形式です。</string>
+    <string name="voices_upload_change_hint">タップして別のファイルを選べます。</string>
     <string name="voices_upload_file_or_video">ファイルまたは動画をアップロード</string>
+    <string name="voices_upload_zone_subtitle">1分以上の音声・動画ファイル</string>
     <string name="voices_usage_guide">使い方ガイド</string>
     <string name="voicesr_close">閉じる</string>
     <string name="voicesr_delete">削除</string>
@@ -782,9 +789,6 @@
     <string name="voicesr_delete_dialog_warning">この声を使うメッセージはテキストだけが残り、アラームは基本のアラーム音に変わります。保存された音源ファイルも一緒に削除されます。</string>
     <string name="voicesr_edit_info">情報を編集</string>
     <string name="voicesr_edit_my_info">自分の情報を編集</string>
-    <string name="voicesr_file_speaker_multiple">2人以上</string>
-    <string name="voicesr_file_speaker_section_title">ファイル内の声</string>
-    <string name="voicesr_file_speaker_single">1人</string>
     <string name="voicesr_listener_preview_heading">この声はこう呼んでくれます</string>
     <string name="voicesr_listener_preview_quote">「%1$s、起きる時間ですよ」</string>
     <string name="voicesr_listener_preview_relationship">関係 · %1$s</string>

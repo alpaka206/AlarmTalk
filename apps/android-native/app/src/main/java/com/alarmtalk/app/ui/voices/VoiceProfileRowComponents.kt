@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -61,100 +60,55 @@ import com.alarmtalk.app.network.VoiceSpeakerSegment
 
 // VoiceProfileManagement 행/필드/드래프트 하위 컴포넌트.
 
+/**
+ * 파일에 여러 목소리가 섞였을 때 쓰는 보조 진입점 — 화자 수를 미리 고르게 하는 대신,
+ * 필요할 때만 목소리 나누기(화자 분리)를 실행하게 한다. 분리는 자동 감지(최대 3명).
+ */
 @Composable
-internal fun FileSpeakerModeSelector(
-    selected: FileSpeakerMode,
+internal fun MixedVoicesSeparateRow(
+    busy: Boolean,
     enabled: Boolean,
-    onSelect: (FileSpeakerMode) -> Unit,
+    onSeparate: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.voicesr_file_speaker_section_title), fontWeight = FontWeight.SemiBold)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FileSpeakerModeButton(
-                label = stringResource(R.string.voicesr_file_speaker_single),
-                selected = selected == FileSpeakerMode.Single,
-                enabled = enabled,
-                onClick = { onSelect(FileSpeakerMode.Single) },
-                modifier = Modifier.weight(1f),
-            )
-            FileSpeakerModeButton(
-                label = stringResource(R.string.voicesr_file_speaker_multiple),
-                selected = selected == FileSpeakerMode.Multiple,
-                enabled = enabled,
-                onClick = { onSelect(FileSpeakerMode.Multiple) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-@Composable
-internal fun FileSpeakerModeButton(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) {
-    if (selected) {
-        Button(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier,
-            shape = WakerPillShape,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
-            ),
-        ) {
-            Text(label)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier,
-            shape = WakerPillShape,
-        ) {
-            Text(label)
-        }
-    }
-}
-
-@Composable
-internal fun RecordingLevelBars(
-    levels: List<Float>,
-    active: Boolean,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerPanelShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+        border = wakerCardBorder(0.7f),
     ) {
-        levels.forEachIndexed { index, level ->
-            val resolvedLevel = if (active) level else 0.1f + (index % 4) * 0.04f
-            Box(
-                modifier = Modifier
-                    .width(4.dp)
-                    .height((10 + resolvedLevel * 34).dp)
-                    .background(
-                        if (active) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.outlineVariant
-                        },
-                        WakerPillShape,
-                    ),
-            )
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.voices_mixed_voices_prompt),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                MutedText(stringResource(R.string.voices_mixed_voices_desc))
+            }
+            OutlinedButton(
+                onClick = onSeparate,
+                enabled = enabled && !busy,
+                shape = WakerPillShape,
+                border = wakerCardBorder(),
+                colors = wakerOutlinedButtonColors(),
+            ) {
+                Text(
+                    if (busy) {
+                        stringResource(R.string.voices_separating)
+                    } else {
+                        stringResource(R.string.voices_separate_voices)
+                    },
+                )
+            }
         }
     }
-}
-
-internal enum class FileSpeakerMode {
-    Single,
-    Multiple,
 }
 
 internal enum class VoiceRegistrationStep {

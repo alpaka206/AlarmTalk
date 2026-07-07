@@ -130,6 +130,17 @@ private fun voiceProfileFileDurationError(context: android.content.Context, dura
     else -> null
 }
 
+// 파일에서 잘라낸 구간 길이 검증 — 파일 흐름에서는 녹음 문구("~녹음해 주세요") 대신
+// 구간 선택 문구로 안내한다.
+private fun voiceProfileCropDurationError(context: android.content.Context, durationMillis: Long?): String? = when {
+    durationMillis == null -> context.getString(R.string.voices2_audio_duration_unknown)
+    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS ||
+        durationMillis > VoiceProfileAudioLimits.MAX_DURATION_MILLIS +
+        VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS ->
+        context.getString(R.string.voices_crop_duration_notice)
+    else -> null
+}
+
 // 처음 목소리를 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
 @Composable
 private fun rememberVoiceCreateGuideSteps(): List<UsageGuideStep> = listOf(
@@ -345,7 +356,6 @@ internal fun VoiceProfileManagementPanel(
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
-    var fileSpeakerMode by remember { mutableStateOf(FileSpeakerMode.Single) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
     var recordingLevels by remember { mutableStateOf(List(18) { 0.08f }) }
@@ -384,6 +394,8 @@ internal fun VoiceProfileManagementPanel(
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var filePreviewPreparing by remember { mutableStateOf(false) }
     var filePreviewPlaying by remember { mutableStateOf(false) }
+    // 방금 녹음한 클립의 미리듣기 재생 상태 (녹음 완료 배지의 ▶ 버튼).
+    var recordPreviewPlaying by remember { mutableStateOf(false) }
     // 기본 제공 목소리는 정보성이라 평소엔 접어두고 헤더만 보여준다.
     var systemVoicesExpanded by remember { mutableStateOf(false) }
     // 지금 인사말 샘플을 재생 중인 기본 목소리 id (재생 아이콘 토글용).
@@ -404,6 +416,7 @@ internal fun VoiceProfileManagementPanel(
         mediaPlayer = null
         filePreviewPreparing = false
         filePreviewPlaying = false
+        recordPreviewPlaying = false
         playingGreetingVoiceId = null
     }
 
@@ -515,6 +528,9 @@ internal fun VoiceProfileManagementPanel(
     }
 
     fun startRecording() {
+        // 미리듣기(방금 녹음 클립 등)가 재생 중이면 먼저 멈춘다 — 스피커 소리가
+        // 새 녹음(클론 원본)에 섞여 들어가는 것을 막는다.
+        stopMediaPreview()
         runCatching {
             recorder.start(maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
             recordingElapsedMillis = 0L
@@ -562,7 +578,6 @@ internal fun VoiceProfileManagementPanel(
         selectedFileDurationMillis = null
         cropStartMillis = 0L
         cropEndMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS
-        fileSpeakerMode = FileSpeakerMode.Single
         detectedSpeakers = emptyList()
         // 다이얼로그 닫힐 때 현재 화면에 남은 draft 가 있으면 모두 삭제 (선택되지 않은 채 닫힘)
         // 진행 중인 prepare Job 도 취소해 닫힌 뒤 server 호출이 이어지지 않게 한다.
@@ -788,12 +803,6 @@ internal fun VoiceProfileManagementPanel(
         localMessage = null
     }
 
-    fun setFileSpeakerMode(mode: FileSpeakerMode) {
-        if (fileSpeakerMode == mode) return
-        fileSpeakerMode = mode
-        resetSpeakers()
-    }
-
     fun playSpeakerDraftPreview(speaker: VoiceSpeakerSegment) {
         val state = speakerDraftStates[speaker.id] ?: return
         val previewUri = state.previewUri ?: return
@@ -939,6 +948,35 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // 방금 녹음한 클립을 들어본다 (녹음 완료 배지의 ▶/⏸ 토글).
+    fun playRecordedPreview() {
+        if (recordPreviewPlaying) {
+            stopMediaPreview()
+            return
+        }
+        val audio = selectedAudio ?: return
+        stopMediaPreview()
+        runCatching {
+            val player = MediaPlayer.create(context, Uri.parse(audio.localAudioUri))
+                ?: error("Failed to create recorded preview player.")
+            mediaPlayer = player.apply {
+                setOnCompletionListener {
+                    it.release()
+                    // 이전 플레이어의 늦은 completion 이 새 재생 상태를 끄지 않도록 가드.
+                    if (mediaPlayer === it) {
+                        mediaPlayer = null
+                        recordPreviewPlaying = false
+                    }
+                }
+                start()
+            }
+            recordPreviewPlaying = true
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to play recorded voice preview", error)
+            localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
+        }
+    }
+
     fun submitCreateProfile(name: String) {
         createSubmitAttempted = true
         val trimmedName = name.trim()
@@ -979,7 +1017,8 @@ internal fun VoiceProfileManagementPanel(
             closeCreateDialog()
             return
         }
-        if (fileSpeakerMode == FileSpeakerMode.Multiple) {
+        // 목소리 나누기를 실행한 상태에서는 나눈 목소리 중 하나를 선택해 등록한다.
+        if (detectedSpeakers.isNotEmpty()) {
             localMessage = context.getString(R.string.voices_select_separated_voice)
             return
         }
@@ -989,7 +1028,7 @@ internal fun VoiceProfileManagementPanel(
             runCatching {
                 croppedFileAudio()
             }.onSuccess { audio ->
-                val error = voiceProfileDurationError(context, audio.durationMillis)
+                val error = voiceProfileCropDurationError(context, audio.durationMillis)
                 if (error != null) {
                     localMessage = error
                 } else {
@@ -1181,8 +1220,8 @@ internal fun VoiceProfileManagementPanel(
         val canSubmitRecord = inputMode == VoiceCaptureMode.Record &&
             (selectedAudio?.durationMillis ?: 0L) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
-            fileSpeakerMode == FileSpeakerMode.Single &&
             selectedFileUri != null &&
+            !hasSeparatedSpeakers && !separatingBusy &&
             (cropEndMillis - cropStartMillis) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         Dialog(
             onDismissRequest = {
@@ -1258,7 +1297,12 @@ internal fun VoiceProfileManagementPanel(
                                     selected = inputMode,
                                     enabled = !isRecording && !createPreparing,
                                     onSelect = {
-                                        if (inputMode != it) stopMediaPreview()
+                                        if (inputMode != it) {
+                                            stopMediaPreview()
+                                            // 이전 모드의 안내(예: "1분 이상 녹음해 주세요")가
+                                            // 새 모드에 남아 헷갈리게 하지 않도록 지운다.
+                                            localMessage = null
+                                        }
                                         inputMode = it
                                     },
                                 )
@@ -1283,17 +1327,12 @@ internal fun VoiceProfileManagementPanel(
                                                 recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                             }
                                         },
+                                        recordedDurationMillis = selectedAudio?.durationMillis,
+                                        isRecordedPreviewActive = recordPreviewPlaying,
+                                        onPreviewRecording = ::playRecordedPreview,
                                     )
                                 } else {
                                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        MutedText(
-                                            stringResource(R.string.voices_file_single_speaker_notice),
-                                        )
-                                        FileSpeakerModeSelector(
-                                            selected = fileSpeakerMode,
-                                            enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
-                                            onSelect = ::setFileSpeakerMode,
-                                        )
                                         VoiceFileControls(
                                             durationMillis = selectedFileDurationMillis,
                                             cropStartMillis = cropStartMillis,
@@ -1304,6 +1343,7 @@ internal fun VoiceProfileManagementPanel(
                                             uploadLabel = stringResource(R.string.voices_upload_file_or_video),
                                             notice = stringResource(R.string.voices_crop_duration_notice),
                                             noticeAfterUpload = true,
+                                            uploadSubtitle = stringResource(R.string.voices_upload_zone_subtitle),
                                             isPreviewActive = filePreviewPlaying,
                                             isPreviewPreparing = filePreviewPreparing,
                                             onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },
@@ -1317,51 +1357,41 @@ internal fun VoiceProfileManagementPanel(
                                             },
                                             onPreviewCrop = { playFileCropPreview() },
                                         )
-                                        if (fileSpeakerMode == FileSpeakerMode.Multiple) {
-                                            selectedFileDurationMillis?.let {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                ) {
-                                                    Button(
-                                                        onClick = { separateSpeakers() },
-                                                        enabled = !separatingBusy && !promotingBusy && !createPreparing && !hasSeparatedSpeakers,
-                                                        modifier = Modifier.weight(1f),
-                                                        shape = WakerButtonShape,
-                                                    ) {
-                                                        Text(
-                                                            when {
-                                                                separatingBusy -> stringResource(R.string.voices_separating)
-                                                                hasSeparatedSpeakers -> stringResource(R.string.voices_separate_done)
-                                                                else -> stringResource(R.string.voices_separate_voices)
-                                                            },
-                                                        )
-                                                    }
-                                                    OutlinedButton(
-                                                        onClick = { resetSpeakers() },
-                                                        enabled = hasSeparatedSpeakers && !promotingBusy && !createPreparing,
-                                                        modifier = Modifier.weight(1f),
-                                                        shape = WakerButtonShape,
-                                                        border = wakerCardBorder(),
-                                                        colors = wakerOutlinedButtonColors(),
-                                                    ) {
-                                                        Text(stringResource(R.string.voices_reset))
-                                                    }
-                                                }
-                                                detectedSpeakers.forEachIndexed { index, speaker ->
-                                                    val draftState = speakerDraftStates[speaker.id] ?: SpeakerDraftState()
-                                                    SpeakerDraftRow(
-                                                        speaker = speaker,
-                                                        index = index,
-                                                        state = draftState,
-                                                        isPlaying = activePlayingSpeakerId == speaker.id,
-                                                        promotingBusy = promotingBusy,
-                                                        onTogglePlay = { playSpeakerDraftPreview(speaker) },
-                                                        onSelect = { selectSpeakerDraft(speaker) },
-                                                    )
-                                                }
+                                        // 화자 수를 미리 고르게 하지 않는다 — 기본은 선택 구간을
+                                        // 그대로 등록(한 사람 목소리일 때 결과가 가장 좋음)하고,
+                                        // 여러 명이 섞인 파일만 목소리 나누기를 거쳐 한 명을 고른다.
+                                        MutedText(stringResource(R.string.voices_file_single_speaker_notice))
+                                        if (selectedFileDurationMillis != null && !hasSeparatedSpeakers) {
+                                            MixedVoicesSeparateRow(
+                                                busy = separatingBusy,
+                                                enabled = !voiceProfileBusy && !promotingBusy && !createPreparing,
+                                                onSeparate = { separateSpeakers() },
+                                            )
+                                        }
+                                        if (hasSeparatedSpeakers) {
+                                            detectedSpeakers.forEachIndexed { index, speaker ->
+                                                val draftState = speakerDraftStates[speaker.id] ?: SpeakerDraftState()
+                                                SpeakerDraftRow(
+                                                    speaker = speaker,
+                                                    index = index,
+                                                    state = draftState,
+                                                    isPlaying = activePlayingSpeakerId == speaker.id,
+                                                    promotingBusy = promotingBusy,
+                                                    onTogglePlay = { playSpeakerDraftPreview(speaker) },
+                                                    onSelect = { selectSpeakerDraft(speaker) },
+                                                )
                                             }
                                             MutedText(stringResource(R.string.voices_select_to_register_hint))
+                                            OutlinedButton(
+                                                onClick = { resetSpeakers() },
+                                                enabled = !promotingBusy && !createPreparing,
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = WakerButtonShape,
+                                                border = wakerCardBorder(),
+                                                colors = wakerOutlinedButtonColors(),
+                                            ) {
+                                                Text(stringResource(R.string.voices_reset))
+                                            }
                                         }
                                     }
                                 }
