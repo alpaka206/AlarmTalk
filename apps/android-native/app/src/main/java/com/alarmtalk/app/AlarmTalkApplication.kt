@@ -63,23 +63,17 @@ class AlarmTalkApplication : Application() {
             // isSendDefaultPii=false 로도 못 막는 경로: 플랫폼 예외(FileNotFoundException,
             // SecurityException 등) 메시지에는 선택한 파일의 전체 URI 가 포함될 수 있고,
             // 이는 captureException 의 exception value 로 그대로 전송된다.
+            // log_message 컨텍스트는 AlarmTalkLog.reportError 가 저장 전에 마스킹한다.
             options.beforeSend = SentryOptions.BeforeSendCallback { event, _ ->
                 event.message?.let { message ->
-                    message.formatted = message.formatted?.let(::redactUris)
-                    message.message = message.message?.let(::redactUris)
+                    message.formatted = message.formatted?.let(AlarmTalkLog::redactUserUris)
+                    message.message = message.message?.let(AlarmTalkLog::redactUserUris)
                 }
                 event.exceptions?.forEach { exception ->
-                    exception.value = exception.value?.let(::redactUris)
+                    exception.value = exception.value?.let(AlarmTalkLog::redactUserUris)
                 }
                 event
             }
         }
-    }
-
-    private fun redactUris(text: String): String =
-        USER_URI_REGEX.replace(text) { match -> "${match.groupValues[1]}://[redacted]" }
-
-    private companion object {
-        val USER_URI_REGEX = Regex("""(content|file)://\S+""")
     }
 }
