@@ -740,11 +740,6 @@
     <string name="voices_previous">戻る</string>
     <string name="voices_record_done_duration">録音完了 · %1$s</string>
     <string name="voices_record_duration_notice">1分以上2分以内で録音してください。</string>
-    <string name="voices_recording_status_done">録音完了</string>
-    <string name="voices_recording_status_ready">録音準備</string>
-    <string name="voices_recording_status_recording">録音中</string>
-    <string name="voices_record_tap_to_start">タップして録音開始</string>
-    <string name="voices_record_tap_to_stop">タップして録音終了</string>
     <string name="voices_recording_start_failed">録音を開始できませんでした。</string>
     <string name="voices_recording_stop_failed">録音に失敗しました。</string>
     <string name="voices_register">登録</string>

@@ -57,7 +57,6 @@ internal enum class VoiceCaptureMode {
     Record,
     File,
 }
-
 internal fun audioTimeLabel(millis: Long): String {
     val totalSeconds = (millis / 1000).coerceAtLeast(0L)
     return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
@@ -96,7 +95,6 @@ internal fun constrainedAudioCropRange(
         AudioCropRange(rawStart.coerceIn(lowerBound, upperBound), safeEnd)
     }
 }
-
 internal fun voicePreviewContentDescription(
     context: android.content.Context,
     active: Boolean,
@@ -212,11 +210,6 @@ internal fun VoiceRecordControls(
     isRecordedPreviewPreparing: Boolean = false,
     onPreviewRecording: (() -> Unit)? = null,
 ) {
-    val statusLabel = when {
-        isRecording -> stringResource(R.string.voices_recording_status_recording)
-        recordedDurationMillis != null -> stringResource(R.string.voices_recording_status_done)
-        else -> stringResource(R.string.voices_recording_status_ready)
-    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = WakerCardShape,
@@ -230,46 +223,7 @@ internal fun VoiceRecordControls(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(46.dp)
-                        .background(
-                            if (isRecording) {
-                                MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
-                            } else {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            },
-                            WakerTileShape,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = if (isRecording) Icons.Outlined.Stop else Icons.Outlined.Mic,
-                        contentDescription = null,
-                        tint = if (isRecording) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        },
-                    )
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Text(
-                        text = statusLabel,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    MutedText(notice)
-                }
-            }
+            MutedText(notice)
             Row {
                 Text(
                     text = audioTimeLabel(elapsedMillis),
@@ -291,10 +245,6 @@ internal fun VoiceRecordControls(
                 )
             }
             VoiceLevelBars(levels = levels, active = isRecording)
-            RecordingProgressBar(
-                progress = (elapsedMillis.toFloat() / maxDurationMillis.toFloat()).coerceIn(0f, 1f),
-                active = isRecording,
-            )
             Box(contentAlignment = Alignment.Center) {
                 RecordPulseRing(active = isRecording)
                 Button(
@@ -364,14 +314,6 @@ internal fun VoiceRecordControls(
                         }
                     }
                 }
-            } else {
-                MutedText(
-                    if (isRecording) {
-                        stringResource(R.string.voices_record_tap_to_stop)
-                    } else {
-                        stringResource(R.string.voices_record_tap_to_start)
-                    },
-                )
             }
         }
     }
@@ -648,28 +590,5 @@ internal fun VoiceLevelBars(
                     ),
             )
         }
-    }
-}
-
-@Composable
-private fun RecordingProgressBar(
-    progress: Float,
-    active: Boolean,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(6.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), WakerPillShape),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(progress)
-                .height(6.dp)
-                .background(
-                    if (active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
-                    WakerPillShape,
-                ),
-        )
     }
 }
