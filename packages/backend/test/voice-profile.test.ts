@@ -347,6 +347,21 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(res.status).toBe(201);
   });
 
+  it('쿼터 카운트는 failed 잔여 행을 제외한다 (일시 실패가 한도를 영구 잠식하지 않도록)', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-quota' });
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), '쿼터'));
+    expect(res.status).toBe(201);
+
+    const quotaCall = mockDB.calls.find((call) =>
+      call.sql.includes('COUNT(*) as count FROM voice_profiles'),
+    );
+    expect(quotaCall).toBeDefined();
+    expect(quotaCall!.sql).toContain("status != 'failed'");
+  });
+
   it('audio 누락 → 400', async () => {
     mockDB.pushResult([{ count: 0 }]);
     const form = new FormData();

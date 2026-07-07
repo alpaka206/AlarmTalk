@@ -478,10 +478,11 @@ voiceProfile.patch('/:id', async (c) => {
   }
 
   // promote(draft=false) 시: 다른 non-draft 음성이 1개 이상이면 한도 초과.
+  // 생성 쿼터와 동일하게 failed 잔여물은 슬롯을 점유하지 않으므로 제외한다.
   if (hasDraft && isDraftUpdate === false) {
     const nonDraftCount = await db.execute({
       sql: `SELECT COUNT(*) as count FROM voice_profiles
-            WHERE user_id IN (${ph}) AND deleted_at IS NULL
+            WHERE user_id IN (${ph}) AND deleted_at IS NULL AND status != 'failed'
               AND COALESCE(is_draft, 0) = 0 AND id != ?`,
       args: [...ids, id],
     });
@@ -714,6 +715,9 @@ voiceProfile.post('/clone', async (c) => {
     // 한도 검사: non-draft 는 MAX_VOICE_PROFILES, draft 는 MAX_DRAFT_VOICE_PROFILES.
     // draft 도 즉시 실제 ElevenLabs 보이스를 생성하므로 반드시 상한을 둬야 무제한
     // draft 생성으로 인한 전역 슬롯 고갈(DoS)을 막는다.
+    // failed 행은 제외: 클론 실패 잔여물은 프로바이더 슬롯을 점유하지 않고(voice_id 없이
+    // 실패), 특히 draft 는 리스트에 노출되지 않아 클라가 지울 수도 없으므로 카운트하면
+    // 일시 장애 몇 번에 한도가 영구 잠식된다.
     {
       const ids = ownerIds(c);
       const phCount = ids.map(() => '?').join(',');
@@ -721,7 +725,7 @@ voiceProfile.post('/clone', async (c) => {
       const limit = isDraft ? MAX_DRAFT_VOICE_PROFILES : MAX_VOICE_PROFILES;
       const profileCount = await db.execute({
         sql: `SELECT COUNT(*) as count FROM voice_profiles
-              WHERE user_id IN (${phCount}) AND deleted_at IS NULL AND ${draftClause}`,
+              WHERE user_id IN (${phCount}) AND deleted_at IS NULL AND status != 'failed' AND ${draftClause}`,
         args: ids,
       });
       const count = Number(profileCount.rows[0]!.count);

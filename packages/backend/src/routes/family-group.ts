@@ -21,12 +21,24 @@ familyGroup.get('/groups/current', async (c) => {
   const userPk = await resolveUserPk(db, userId);
   if (!userPk) return c.json({ group: null, members: [], role: null });
 
+  // 그룹 만료일: 바우처 리딤 멤버도 같은 plan_group_id 로 본인 구독 행을 갖기 때문에,
+  // 그룹을 실제로 뒷받침하는 오너 구독(취소 시 그룹이 해체되는 구독)을 우선 선택한다.
+  // 소유권 이전으로 현 오너 명의 구독이 없으면 그룹에 연결된 나머지 활성 구독으로 폴백.
+  // COALESCE 이중 서브쿼리인 이유: SQLite/libSQL 은 스칼라 서브쿼리의 ORDER BY 절에서
+  // 외부 상관 컬럼(pg.*) 참조를 허용하지 않아, 오너 우선을 정렬로 표현하면 쿼리가 깨진다.
+  const groupExpiresAtSubquery = `COALESCE(
+                 (SELECT s.expires_at FROM subscriptions s
+                  WHERE s.plan_group_id = pg.id AND s.user_id = pg.owner_user_id
+                    AND s.status = 'active' AND datetime(s.expires_at) > datetime('now')
+                  ORDER BY s.starts_at DESC LIMIT 1),
+                 (SELECT s.expires_at FROM subscriptions s
+                  WHERE s.plan_group_id = pg.id AND s.status = 'active' AND datetime(s.expires_at) > datetime('now')
+                  ORDER BY s.starts_at DESC LIMIT 1)) AS owner_expires_at`;
+
   let groupRes = await db.execute({
     sql: `SELECT pg.id, pg.owner_user_id, pg.plan_id, pg.max_members, pg.created_at,
                  m.role AS my_role,
-                 (SELECT s.expires_at FROM subscriptions s
-                  WHERE s.plan_group_id = pg.id AND s.status = 'active' AND datetime(s.expires_at) > datetime('now')
-                  ORDER BY s.starts_at DESC LIMIT 1) AS owner_expires_at
+                 ${groupExpiresAtSubquery}
           FROM plan_group_members m
           JOIN plan_groups pg ON pg.id = m.plan_group_id
           WHERE m.user_id = ?
@@ -41,9 +53,7 @@ familyGroup.get('/groups/current', async (c) => {
         groupRes = await db.execute({
           sql: `SELECT pg.id, pg.owner_user_id, pg.plan_id, pg.max_members, pg.created_at,
                        m.role AS my_role,
-                       (SELECT s.expires_at FROM subscriptions s
-                        WHERE s.plan_group_id = pg.id AND s.status = 'active' AND datetime(s.expires_at) > datetime('now')
-                        ORDER BY s.starts_at DESC LIMIT 1) AS owner_expires_at
+                       ${groupExpiresAtSubquery}
                 FROM plan_group_members m
                 JOIN plan_groups pg ON pg.id = m.plan_group_id
                 WHERE m.user_id = ?
@@ -81,8 +91,8 @@ familyGroup.get('/groups/current', async (c) => {
       plan_id: String(g.plan_id),
       max_members: Number(g.max_members),
       created_at: String(g.created_at),
-      // 참여자에겐 본인 구독이 없으므로, 그룹에 연결된(plan_group_id) 활성 구독 만료일을 실어
-      // '~까지 사용' 안내에 쓴다. 소유권 이전으로 owner_user_id 가 바뀌어도 구독은 그룹에 남으므로 안전.
+      // 참여자에겐 본인 구독이 없으므로, 그룹을 뒷받침하는 오너 활성 구독 만료일을 실어
+      // '~까지 사용' 안내에 쓴다(오너 구독 우선, 소유권 이전 뒤엔 그룹 연결 구독 폴백).
       expires_at: (g.owner_expires_at as string | null) ?? null,
     },
     role: String(g.my_role),
