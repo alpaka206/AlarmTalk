@@ -764,8 +764,8 @@
     <string name="voices_step_indicator">%1$d / 3 · %2$s</string>
     <string name="voices_step_sharing">Sharing settings</string>
     <string name="voices_step_source">Prepare audio</string>
-    <string name="voices_system_voices_count">%1$d default voices</string>
-    <string name="voices_default_voice_header">Default voice · %1$s</string>
+    <string name="voices_default_voice_choose">Choose</string>
+    <string name="voices_default_voice_row_title">Default voice</string>
     <string name="voices_unsupported_audio_format">This audio format isn\'t supported.</string>
     <string name="voices_upload_change_hint">Tap to choose a different file.</string>
     <string name="voices_upload_file_or_video">Upload a file or video</string>

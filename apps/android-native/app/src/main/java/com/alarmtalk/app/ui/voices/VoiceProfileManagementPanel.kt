@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Close
@@ -397,8 +398,8 @@ internal fun VoiceProfileManagementPanel(
     var filePreviewPlaying by remember { mutableStateOf(false) }
     // 방금 녹음한 클립의 미리듣기 재생 상태 (녹음 완료 배지의 ▶ 버튼).
     var recordPreviewPlaying by remember { mutableStateOf(false) }
-    // 기본 제공 목소리는 정보성이라 평소엔 접어두고 헤더만 보여준다.
-    var systemVoicesExpanded by remember { mutableStateOf(false) }
+    // 기본 목소리 선택 시트 — 시트 안 탭 = 선택 + 인사말 미리듣기(닫기는 드래그/스크림).
+    var defaultVoiceSheetOpen by remember { mutableStateOf(false) }
     // 지금 인사말 샘플을 재생 중인 기본 목소리 id (재생 아이콘 토글용).
     var playingGreetingVoiceId by remember { mutableStateOf<String?>(null) }
     var greetingPreviewRequestId by remember { mutableIntStateOf(0) }
@@ -422,15 +423,47 @@ internal fun VoiceProfileManagementPanel(
         playingGreetingVoiceId = null
     }
 
+    fun greetingClipFor(profile: VoiceProfile) = stockClips.firstOrNull {
+        it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY
+    } ?: stockClips.firstOrNull { it.voiceProfileId == profile.id }
+
+    // greeting 클립을 캐시에서 찾고, 없으면 내려받아 캐시한다(탭 재생·시트 프리페치 공용).
+    suspend fun ensureGreetingCached(clip: com.alarmtalk.app.network.StockClip): CachedAlarmAudio {
+        val cacheKey = "greeting_${clip.messageId}"
+        withContext(Dispatchers.IO) { audioStore.getCachedAudio(cacheKey) }?.let { return it }
+        val response = onDownloadStockAudio(clip.messageId)
+        return withContext(Dispatchers.IO) {
+            // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+            audioStore.cacheGeneratedAudio(
+                bytes = bytes,
+                format = response.audioFormat,
+                rawAudioUri = response.audioUrl,
+                displayName = cacheKey,
+                cacheKey = cacheKey,
+                messageId = clip.messageId,
+            )
+        }
+    }
+
+    // 기본 목소리 시트를 여는 순간 인사말 클립을 미리 받아 둔다 — 행 탭 시 지연 없이 재생되게.
+    // 실패는 조용히 넘긴다(탭 시 재시도 경로가 그대로 있음).
+    fun prefetchGreetingPreviews() {
+        scope.launch {
+            systemVoices.forEach { profile ->
+                val clip = greetingClipFor(profile) ?: return@forEach
+                runCatching { ensureGreetingCached(clip) }
+            }
+        }
+    }
+
     // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플(greeting 스톡 클립)을 들려준다.
     fun playGreeting(profile: VoiceProfile) {
         if (playingGreetingVoiceId == profile.id) {
             stopMediaPreview()
             return
         }
-        val clip = stockClips.firstOrNull {
-            it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY
-        } ?: stockClips.firstOrNull { it.voiceProfileId == profile.id }
+        val clip = greetingClipFor(profile)
         if (clip == null) {
             localMessage = context.getString(R.string.voices_greeting_preview_preparing)
             return
@@ -441,19 +474,7 @@ internal fun VoiceProfileManagementPanel(
             stopMediaPreview(invalidateGreetingPreview = false)
             playingGreetingVoiceId = profile.id
             runCatching {
-                val response = onDownloadStockAudio(clip.messageId)
-                val cached = withContext(Dispatchers.IO) {
-                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                    val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = bytes,
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = "greeting_${clip.messageId}",
-                        cacheKey = "greeting_${clip.messageId}",
-                        messageId = clip.messageId,
-                    )
-                }
+                val cached = ensureGreetingCached(clip)
                 val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
                     ?: error("Failed to create greeting preview player.")
                 if (greetingPreviewRequestId != requestId) {
@@ -1134,50 +1155,43 @@ internal fun VoiceProfileManagementPanel(
 
         if (systemVoices.isNotEmpty()) {
             Row(
-                // 확장/축소 토글 — 눌림 리플(indication) 없이 조용히 동작.
+                // 토스식 [제목 … 값 + 셰브론] 행 — 탭하면 기본 목소리 선택 시트를 연다.
+                // 눌림 리플(indication) 없이 조용히 동작.
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                    ) { systemVoicesExpanded = !systemVoicesExpanded }
+                    ) {
+                        // 이전 화면 흐름의 안내가 시트 안에 엉뚱하게 보이지 않게 비우고 연다.
+                        localMessage = null
+                        prefetchGreetingPreviews()
+                        defaultVoiceSheetOpen = true
+                    }
                     .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val defaultVoiceName = systemVoices.firstOrNull { it.id == defaultVoiceId }?.name
                 Text(
-                    // 기본 목소리가 정해져 있으면 그 이름을, 아니면 종 수를 보여준다.
-                    text = if (defaultVoiceName != null) {
-                        stringResource(R.string.voices_default_voice_header, defaultVoiceName)
-                    } else {
-                        stringResource(R.string.voices_system_voices_count, systemVoices.size)
-                    },
+                    text = stringResource(R.string.voices_default_voice_row_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Icon(
-                    imageVector = if (systemVoicesExpanded) {
-                        Icons.Outlined.KeyboardArrowUp
-                    } else {
-                        Icons.Outlined.KeyboardArrowDown
-                    },
-                    contentDescription = if (systemVoicesExpanded) {
-                        stringResource(R.string.voices_collapse)
-                    } else {
-                        stringResource(R.string.voices_expand)
-                    },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (systemVoicesExpanded) {
-                systemVoices.forEach { profile ->
-                    SystemVoiceProfileRow(
-                        profile = profile,
-                        playing = playingGreetingVoiceId == profile.id,
-                        onPlay = { playGreeting(profile) },
-                        selected = profile.id == defaultVoiceId,
-                        onSelect = { onSetDefaultVoice(profile.id) },
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        // 정해진 기본 목소리 이름이 값. 아직 없으면 '선택하기'로 행동을 유도한다.
+                        text = systemVoices.firstOrNull { it.id == defaultVoiceId }?.name
+                            ?: stringResource(R.string.voices_default_voice_choose),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -1210,6 +1224,47 @@ internal fun VoiceProfileManagementPanel(
             },
             onDismiss = { voicePlanGateOpen = false },
         )
+    }
+
+    // 시트가 열린 채 시스템 보이스 목록이 비면(세션 초기화·재로딩) 재생을 멈추고 시트를 정리한다.
+    LaunchedEffect(systemVoices.isEmpty()) {
+        if (systemVoices.isEmpty() && defaultVoiceSheetOpen) {
+            stopMediaPreview()
+            defaultVoiceSheetOpen = false
+        }
+    }
+
+    if (defaultVoiceSheetOpen && systemVoices.isNotEmpty()) {
+        // 다른 선택 시트와 달리 탭해도 닫지 않는다 — 탭 = 선택 + 인사말 미리듣기(재탭 시 정지)라
+        // 여러 목소리를 이어 들어보며 고르는 흐름. 닫기는 드래그/스크림.
+        WakerSelectionSheet(
+            title = stringResource(R.string.voices_default_voice_row_title),
+            onDismiss = {
+                stopMediaPreview()
+                defaultVoiceSheetOpen = false
+            },
+        ) { _ ->
+            systemVoices.forEach { profile ->
+                WakerSheetOptionRow(
+                    title = profile.name,
+                    selected = profile.id == defaultVoiceId,
+                    onClick = {
+                        onSetDefaultVoice(profile.id)
+                        playGreeting(profile)
+                    },
+                    trailing = if (playingGreetingVoiceId == profile.id) {
+                        { PlayingEqualizer() }
+                    } else {
+                        null
+                    },
+                )
+            }
+            // 미리듣기 준비중/실패 안내 — 패널 본문의 MutedText 는 시트 스크림에 가려지므로
+            // 시트가 열려 있는 동안엔 여기서 보여준다(열 때 localMessage 를 비워 회귀 방지).
+            if (localMessage != null) {
+                MutedText(localMessage.orEmpty())
+            }
+        }
     }
 
     if (showCreateForm && !isLimitReached && canCreateVoice) {

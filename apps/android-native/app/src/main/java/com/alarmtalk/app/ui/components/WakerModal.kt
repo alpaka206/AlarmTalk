@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +41,10 @@ import kotlinx.coroutines.launch
 // 앱 안의 선택 UI(테마 모드, 공휴일 국가, 가족 수신자 …)는 전부 이
 // WakerSelectionSheet + WakerSheetOptionRow 조합을 쓴다. 다이얼로그·시트가
 // 화면마다 다른 헤더/버튼/모서리를 갖지 않도록 하는 단일 출처.
+//
+// 기본 동작은 "탭 = 선택 + dismiss()" 지만, 미리듣기가 딸린 선택(기본 목소리)은
+// 여러 옵션을 이어 들어볼 수 있게 탭해도 시트를 닫지 않는다 — 재생 표시는
+// trailing 슬롯에 넣고, 닫기는 드래그/스크림에 맡긴다.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -69,8 +75,10 @@ internal fun WakerSelectionSheet(
         dragHandle = { WakerSheetDragHandle() },
     ) {
         Column(
+            // 옵션 목록이 시트 최대 높이를 넘으면(서버가 주는 동적 목록) 스크롤로 닿게 한다.
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -114,8 +122,9 @@ private fun WakerSheetDragHandle() {
 }
 
 /**
- * 선택형 시트의 공통 옵션 행: [아이콘 배지] 제목/설명 … 선택 표시.
+ * 선택형 시트의 공통 옵션 행: [아이콘 배지] 제목/설명 … [trailing] 선택 표시.
  * 선택 표시는 체크 원(선택) / 빈 링(미선택)으로 통일한다.
+ * trailing 은 선택 표시 바로 앞의 상태 슬롯 — 기본 목소리 시트의 재생 이퀄라이저 등.
  */
 @Composable
 internal fun WakerSheetOptionRow(
@@ -126,6 +135,7 @@ internal fun WakerSheetOptionRow(
     description: String? = null,
     icon: ImageVector? = null,
     leading: (@Composable () -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     Surface(
@@ -178,6 +188,7 @@ internal fun WakerSheetOptionRow(
                     )
                 }
             }
+            trailing?.invoke()
             if (selected) {
                 Icon(
                     imageVector = Icons.Filled.CheckCircle,

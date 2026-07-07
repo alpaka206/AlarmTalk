@@ -581,61 +581,12 @@ internal fun VoiceSharedBadge() {
     }
 }
 
-/** 시스템 제공(스톡) 보이스 행 — 수정/삭제/공유 액션 없이 정보만 보여준다. */
+/**
+ * 인사말 미리듣기 재생 중임을 나타내는 작은 이퀄라이저 애니메이션.
+ * 기본 목소리 선택 시트(VoiceProfileManagementPanel)의 옵션 행 trailing 에 쓰인다.
+ */
 @Composable
-internal fun SystemVoiceProfileRow(
-    profile: VoiceProfile,
-    playing: Boolean,
-    onPlay: () -> Unit,
-    selected: Boolean = false,
-    onSelect: () -> Unit = {},
-) {
-    // 행 전체 탭 = 기본 목소리로 선택 + 인사말 자동 재생(재탭 시 정지). 별도 ▶ 버튼 없음.
-    OutlinedCard(
-        onClick = {
-            onSelect()
-            onPlay()
-        },
-        shape = WakerCardShape,
-        border = wakerCardBorder(),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.secondaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-        ),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // 모든 행이 같은 마이크 배지를 반복해 정보가 없었음 — 이름만 보여준다.
-            Text(
-                text = profile.name,
-                fontWeight = FontWeight.SemiBold,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                modifier = Modifier.weight(1f),
-            )
-            // 재생 중이면 이퀄라이저로 '재생 중'을 알린다(정지는 행 재탭).
-            if (playing) {
-                PlayingEqualizer()
-            }
-            RadioButton(selected = selected, onClick = null)
-        }
-    }
-}
-
-/** 인사말 미리듣기 재생 중임을 나타내는 작은 이퀄라이저 애니메이션. */
-@Composable
-private fun PlayingEqualizer() {
+internal fun PlayingEqualizer() {
     val transition = rememberInfiniteTransition(label = "voicePlaying")
     val barColor = MaterialTheme.colorScheme.primary
     Row(
