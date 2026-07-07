@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -26,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -37,9 +35,8 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerHeroShape
 import com.alarmtalk.app.WakerScrimColor
 
-/** 사용 가이드 한 단계의 내용. */
+/** 사용 가이드 한 단계의 내용. 아이콘 없이 제목=결론 카피만 쓴다. */
 data class UsageGuideStep(
-    val icon: ImageVector,
     val title: String,
     val body: String,
 )
@@ -98,19 +95,6 @@ fun UsageGuideOverlay(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(76.dp)
-                                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = step.icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(34.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
                         Text(
                             text = step.title,
                             style = MaterialTheme.typography.titleLarge,

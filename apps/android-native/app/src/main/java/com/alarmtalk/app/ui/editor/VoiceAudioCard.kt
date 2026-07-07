@@ -148,26 +148,26 @@ internal fun VoiceAudioCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-            OptionChips(
-                options = listOf(
-                    VoiceSources.TTS_PROFILE to stringResource(R.string.editor_voice_source_tts),
-                    VoiceSources.LOCAL_AUDIO to stringResource(R.string.editor_voice_source_local),
-                ),
-                selected = visibleVoiceSource,
-                onSelect = {
-                    if (freeVoiceTier && it == VoiceSources.LOCAL_AUDIO) {
-                        onLockedFeature()
-                        return@OptionChips
-                    }
-                    editor.voiceSource = it
-                    if (it == VoiceSources.TTS_PROFILE) {
-                        editor.clearAudio()
-                        editor.clearTtsMeta()
-                    } else {
-                        editor.clearTtsMeta()
-                    }
-                },
-            )
+            // 무료는 녹음·파일이 잠겨 있어 소스 토글이 사실상 페이월 미끼라 감춘다(항상 TTS).
+            // 유료만 목소리/녹음·파일을 고를 수 있게 토글을 노출한다.
+            if (!freeVoiceTier) {
+                OptionChips(
+                    options = listOf(
+                        VoiceSources.TTS_PROFILE to stringResource(R.string.editor_voice_source_tts),
+                        VoiceSources.LOCAL_AUDIO to stringResource(R.string.editor_voice_source_local),
+                    ),
+                    selected = visibleVoiceSource,
+                    onSelect = {
+                        editor.voiceSource = it
+                        if (it == VoiceSources.TTS_PROFILE) {
+                            editor.clearAudio()
+                            editor.clearTtsMeta()
+                        } else {
+                            editor.clearTtsMeta()
+                        }
+                    },
+                )
+            }
 
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
                 LaunchedEffect(visibleVoiceSource, voiceProfileBusy, profileOptions, editor.voiceProfileId) {
@@ -189,24 +189,43 @@ internal fun VoiceAudioCard(
                 val selectedProfileUnavailable = !voiceProfileBusy &&
                     !editor.voiceProfileId.isNullOrBlank() &&
                     profileOptions.none { it.id == editor.voiceProfileId }
-                Text(stringResource(R.string.editor_voice_to_hear), fontWeight = FontWeight.SemiBold)
-                if (voiceProfileBusy) {
-                    MutedText(stringResource(R.string.editor_voice_loading))
-                } else if (profileOptions.isEmpty()) {
-                    NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
+                // 무료는 목소리를 목소리 탭에서 고른 1개로 고정하므로, 알람창에선 선택기 대신
+                // "○○ 목소리로 울려요" 읽기 전용 1줄만 보여준다(탭하면 목소리 탭으로). 유료는
+                // 알람별로 목소리를 바꿀 수 있어 선택기를 그대로 노출한다.
+                if (freeVoiceTier) {
+                    when {
+                        voiceProfileBusy -> MutedText(stringResource(R.string.editor_voice_loading))
+                        profileOptions.isEmpty() -> NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
+                        else -> {
+                            val activeVoiceName = profileOptions.firstOrNull { it.id == editor.voiceProfileId }?.name
+                                ?: profileOptions.firstOrNull { it.id == defaultVoiceId }?.name
+                                ?: profileOptions.first().name
+                            FreeVoiceSummaryRow(
+                                voiceName = activeVoiceName,
+                                onClick = onCreateVoiceProfileClick,
+                            )
+                        }
+                    }
                 } else {
-                    VoiceProfileSelector(
-                        options = profileOptions,
-                        selectedId = editor.voiceProfileId ?: "",
-                        onSelect = { option ->
-                            val sharedProfile = option.sharedProfile
-                            if (sharedProfile?.requiresViewerInfo() == true) {
-                                onSharedVoiceInfoRequired(sharedProfile)
-                                return@VoiceProfileSelector
-                            }
-                            editor.selectVoiceProfile(option.id)
-                        },
-                    )
+                    Text(stringResource(R.string.editor_voice_to_hear), fontWeight = FontWeight.SemiBold)
+                    if (voiceProfileBusy) {
+                        MutedText(stringResource(R.string.editor_voice_loading))
+                    } else if (profileOptions.isEmpty()) {
+                        NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
+                    } else {
+                        VoiceProfileSelector(
+                            options = profileOptions,
+                            selectedId = editor.voiceProfileId ?: "",
+                            onSelect = { option ->
+                                val sharedProfile = option.sharedProfile
+                                if (sharedProfile?.requiresViewerInfo() == true) {
+                                    onSharedVoiceInfoRequired(sharedProfile)
+                                    return@VoiceProfileSelector
+                                }
+                                editor.selectVoiceProfile(option.id)
+                            },
+                        )
+                    }
                 }
                 // 무료 플랜은 개별 문구 선택 대신 "테마(버킷)"만 고른다. 버킷 안 여러 문구는
                 // 매 울림마다 순차 회전돼 재생되며, 사용자에겐 내용을 노출하지 않는다.
@@ -647,6 +666,45 @@ private fun FreeBucketSelector(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * 무료 플랜에서 알람창에 보여주는 "어떤 목소리로 울리는지" 읽기 전용 1줄.
+ * 목소리 선택·변경은 목소리 탭이 단일 출처라, 여기선 확인용으로만 노출하고 탭하면 목소리 탭으로 보낸다.
+ */
+@Composable
+private fun FreeVoiceSummaryRow(
+    voiceName: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerChipShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.editor_free_voice_summary, voiceName),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+                overflow = TextOverflow.Ellipsis,
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = stringResource(R.string.editor_change),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 

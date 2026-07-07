@@ -11,8 +11,12 @@ stats.get('/', async (c) => {
 
   try {
     const now = new Date();
-    const weekAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
-    const twoWeeksAgo = new Date(now.getTime() - 14 * 86400000).toISOString();
+    // created_at 은 스키마 DEFAULT datetime('now') 로 'YYYY-MM-DD HH:MM:SS'(공백 구분)
+    // 형식으로 저장된다. toISOString()('T'/밀리초/'Z')과 문자열 비교하면 경계일 카운트가
+    // 뒤집히므로, 임계값을 저장 포맷과 동일하게 맞춰 사전식 비교가 정확해지도록 한다.
+    const fmt = (d: Date) => d.toISOString().replace('T', ' ').slice(0, 19);
+    const weekAgo = fmt(new Date(now.getTime() - 7 * 86400000));
+    const twoWeeksAgo = fmt(new Date(now.getTime() - 14 * 86400000));
 
     const trendSql = (table: string, userClause: string) => `
       SELECT

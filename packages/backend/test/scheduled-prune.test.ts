@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // scheduled() 가 호출하는 모든 동적 import 를 no-op 으로 만들어 cron 본문만 검증한다.
 vi.mock('../src/lib/audio-retention', () => ({
   cleanupExpiredAudio: vi.fn().mockResolvedValue(undefined),
+  cleanupStaleDraftVoices: vi.fn().mockResolvedValue(undefined),
   drainExternalDeletions: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/billing-cancel', () => ({

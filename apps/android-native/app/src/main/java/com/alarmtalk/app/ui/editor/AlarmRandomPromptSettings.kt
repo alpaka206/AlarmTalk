@@ -100,7 +100,7 @@ internal fun RandomPromptSettingsPane(
     var fortuneDialogOpen by remember { mutableStateOf(false) }
     val normalizedContext = normalizedRandomPromptContext(draftContext)
     fun hasWeatherInfo(): Boolean =
-        (draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank()) || savedWeatherConfigured
+        draftWeatherCity.isNotBlank() || savedWeatherConfigured
     fun hasFortuneInfo(): Boolean =
         (
             draftFortuneGender.isNotBlank() &&
@@ -376,7 +376,8 @@ internal fun WeatherLocationDialog(
                 locationStatus = context.getString(R.string.editorp_weather_location_failed)
             } else {
                 draftCountry = fix.country.ifBlank { draftCountry }
-                draftCity = fix.city.ifBlank { draftCity }
+                // 도시가 비면 나라라도 채운다(도서 지역 등 지오코딩이 도시를 못 줄 때).
+                draftCity = fix.city.ifBlank { fix.country }.ifBlank { draftCity }
                 locationStatus = if (fix.country.isBlank() && fix.city.isBlank()) {
                     context.getString(R.string.editorp_weather_location_no_address)
                 } else {
@@ -397,7 +398,6 @@ internal fun WeatherLocationDialog(
         }
         startLocationLookup()
     }
-    val countryError = submitted && draftCountry.isBlank()
     val cityError = submitted && draftCity.isBlank()
 
     Dialog(
@@ -496,52 +496,22 @@ internal fun WeatherLocationDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = draftCountry,
-                        onValueChange = { draftCountry = it.take(30) },
-                        label = { Text(stringResource(R.string.editorp_weather_country_label)) },
-                        placeholder = { Text(stringResource(R.string.editorp_weather_country_placeholder)) },
-                        singleLine = true,
-                        isError = countryError,
-                        supportingText = {
-                            if (countryError) Text(stringResource(R.string.editorp_weather_required_field))
-                        },
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = draftCity,
-                        onValueChange = { draftCity = it.take(30) },
-                        label = { Text(stringResource(R.string.editorp_weather_city_label)) },
-                        placeholder = { Text(stringResource(R.string.editorp_weather_city_placeholder)) },
-                        singleLine = true,
-                        isError = cityError,
-                        supportingText = {
-                            if (cityError) Text(stringResource(R.string.editorp_weather_required_field))
-                        },
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Row(
+                WeatherCityPickerField(
+                    city = draftCity,
+                    cityError = cityError,
+                    onCityChange = { draftCity = it },
+                )
+                Button(
+                    onClick = {
+                        submitted = true
+                        if (draftCity.isNotBlank()) {
+                            onConfirm(draftCountry.trim(), draftCity.trim())
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    shape = WakerButtonShape,
                 ) {
-                    Button(
-                        onClick = {
-                            submitted = true
-                            if (draftCountry.isNotBlank() && draftCity.isNotBlank()) {
-                                onConfirm(draftCountry.trim(), draftCity.trim())
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text(stringResource(R.string.editorp_weather_save_button))
-                    }
+                    Text(stringResource(R.string.editorp_weather_save_button))
                 }
             }
         }

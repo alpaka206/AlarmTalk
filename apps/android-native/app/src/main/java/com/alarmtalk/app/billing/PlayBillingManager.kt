@@ -18,9 +18,16 @@ import com.android.billingclient.api.QueryPurchasesParams
 import com.android.billingclient.api.queryProductDetails
 import com.android.billingclient.api.queryPurchasesAsync
 import kotlin.coroutines.resume
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 
 /** Play Console 에 등록된 구독 상품 ID 모음 (월간만 판매). */
 object PlayBillingProducts {
@@ -78,25 +85,41 @@ class PlayBillingManager(
 
     private val connectionMutex = Mutex()
 
+    /** ITEM_ALREADY_OWNED 복구처럼 콜백(비-suspend)에서 suspend 조회를 돌릴 때 쓰는 스코프. */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     /** 앱 시작 시 미리 받아두는 상품 정보 — 구매 시트가 추가 네트워크 없이 바로 뜨게 한다. */
     private val productDetailsCache = mutableMapOf<String, ProductDetails>()
 
     /** 연결을 보장한다. 이미 연결돼 있으면 즉시 true. */
     private suspend fun ensureConnected(): Boolean = connectionMutex.withLock {
         if (billingClient.isReady) return true
-        suspendCancellableCoroutine { continuation ->
-            billingClient.startConnection(object : BillingClientStateListener {
-                override fun onBillingSetupFinished(billingResult: BillingResult) {
-                    if (continuation.isActive) {
-                        continuation.resume(billingResult.responseCode == BillingClient.BillingResponseCode.OK)
-                    }
-                }
+        // 콜백이 전혀 오지 않는 극단 케이스에도 mutex 가 영구 점유되지 않도록 타임아웃으로 감싼다.
+        try {
+            withTimeout(CONNECT_TIMEOUT_MS) {
+                suspendCancellableCoroutine { continuation ->
+                    billingClient.startConnection(object : BillingClientStateListener {
+                        override fun onBillingSetupFinished(billingResult: BillingResult) {
+                            if (continuation.isActive) {
+                                continuation.resume(billingResult.responseCode == BillingClient.BillingResponseCode.OK)
+                            }
+                        }
 
-                override fun onBillingServiceDisconnected() {
-                    // 다음 호출의 ensureConnected 에서 재연결을 시도한다.
-                    Log.w(TAG, "Play billing service disconnected")
+                        override fun onBillingServiceDisconnected() {
+                            // 핸드셰이크 완료 전 서비스가 끊기면 continuation 을 재개해 mutex 를 풀어준다.
+                            // (재개 안 됐을 때만; isActive 가드가 onBillingSetupFinished 후속 도착 시 이중 resume 을 막는다.)
+                            // 다음 호출의 ensureConnected 에서 startConnection 을 재시도한다.
+                            if (continuation.isActive) {
+                                continuation.resume(false)
+                            }
+                            Log.w(TAG, "Play billing service disconnected")
+                        }
+                    })
                 }
-            })
+            }
+        } catch (e: TimeoutCancellationException) {
+            Log.w(TAG, "Play billing connect timed out")
+            false
         }
     }
 
@@ -170,9 +193,11 @@ class PlayBillingManager(
     /**
      * 앱 시작 시 호출: 결제는 됐지만 아직 서버 검증(acknowledge)이 끝나지 않은 구매를
      * 다시 [Listener.onPurchaseReady] 로 흘려 재전송한다. (결제 직후 앱 종료/네트워크 실패 대비)
+     *
+     * @return 재전송한 미확인 구매 수. 0 이면 재전송할 대상이 없었던 것.
      */
-    suspend fun resendUnconfirmedPurchases() {
-        if (!ensureConnected()) return
+    suspend fun resendUnconfirmedPurchases(): Int {
+        if (!ensureConnected()) return 0
         val result = billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
                 .setProductType(BillingClient.ProductType.SUBS)
@@ -180,15 +205,18 @@ class PlayBillingManager(
         )
         if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
             Log.w(TAG, "queryPurchasesAsync failed code=${result.billingResult.responseCode}")
-            return
+            return 0
         }
+        var resent = 0
         result.purchasesList
             .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && !it.isAcknowledged }
             .forEach { purchase ->
                 val productId = purchase.products.firstOrNull() ?: return@forEach
                 Log.i(TAG, "Resending unconfirmed Play purchase productId=$productId")
                 listener.onPurchaseReady(purchase.purchaseToken, productId)
+                resent++
             }
+        return resent
     }
 
     override fun onPurchasesUpdated(billingResult: BillingResult, purchases: List<Purchase>?) {
@@ -213,7 +241,13 @@ class PlayBillingManager(
                 listener.onPurchaseFailed(null)
 
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED ->
-                listener.onPurchaseFailed(appContext.getString(R.string.r3misc_billing_already_owned))
+                // confirm 실패로 미acknowledge 로 남은 구매가 있으면 재전송해 세션 내 복구를 시도하고,
+                // 재전송할 대상이 없을 때만 기존 '이미 구독 중' 안내를 노출한다.
+                scope.launch {
+                    if (resendUnconfirmedPurchases() == 0) {
+                        listener.onPurchaseFailed(appContext.getString(R.string.r3misc_billing_already_owned))
+                    }
+                }
 
             else -> {
                 Log.w(
@@ -227,6 +261,12 @@ class PlayBillingManager(
 
     /** 더 이상 사용하지 않을 때 연결을 정리한다. */
     fun release() {
+        scope.cancel()
         runCatching { billingClient.endConnection() }
+    }
+
+    companion object {
+        /** startConnection 콜백이 전혀 오지 않는 극단 케이스 방어용 연결 타임아웃(ms). */
+        private const val CONNECT_TIMEOUT_MS = 10_000L
     }
 }

@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Notifications
@@ -108,83 +110,80 @@ internal fun AlarmSettingsCard(
     val context = LocalContext.current
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-            Text(
-                text = stringResource(R.string.editor_detail_settings),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.padding(bottom = 6.dp),
-            )
-            AlarmSettingRow(
-                title = stringResource(R.string.editor_snooze_title),
-                subtitle = if (snoozeEnabled) {
-                    stringResource(R.string.editor_snooze_summary, snoozeMinutes, snoozeRepeatLabel(context, snoozeRepeatLimit))
-                } else {
-                    stringResource(R.string.editor_off)
-                },
-                icon = Icons.Outlined.Snooze,
-                onClick = onOpenSnoozeSettings,
-                trailing = {
-                    AlarmTalkSwitch(
-                        checked = snoozeEnabled,
-                        onCheckedChange = onSnoozeEnabledChange,
-                    )
-                },
-            )
-            AlarmSettingDivider()
-            AlarmSettingRow(
-                title = stringResource(R.string.editor_vibration_title),
-                subtitle = vibrationLabel(context, vibrationPattern),
-                icon = Icons.Outlined.Notifications,
-                onClick = onOpenVibrationSettings,
-                trailing = {
-                    AlarmTalkSwitch(
-                        checked = vibrationPattern != VibrationPatterns.NONE,
-                        onCheckedChange = onVibrationEnabledChange,
-                    )
-                },
-            )
-            if (showAlarmSound) {
-                AlarmSettingDivider()
+        Text(
+            text = stringResource(R.string.editor_detail_settings),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = wakerCardBorder(),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                 AlarmSettingRow(
-                    title = stringResource(R.string.editor_alarm_sound_title),
-                    subtitle = alarmSoundSummary(
-                        context = context,
-                        alarmVolumePercent = alarmVolumePercent,
-                        alarmSoundLabel = alarmSoundLabel,
-                    ),
-                    icon = Icons.Outlined.Alarm,
-                    onClick = onOpenAlarmSoundSettings,
+                    title = stringResource(R.string.editor_snooze_title),
+                    subtitle = if (snoozeEnabled) {
+                        stringResource(R.string.editor_snooze_summary, snoozeMinutes, snoozeRepeatLabel(context, snoozeRepeatLimit))
+                    } else {
+                        stringResource(R.string.editor_off)
+                    },
+                    onClick = onOpenSnoozeSettings,
                     trailing = {
                         AlarmTalkSwitch(
-                            checked = alarmVolumePercent > 0,
-                            onCheckedChange = { enabled ->
-                                onAlarmVolumeChange(if (enabled) 100 else 0)
-                            },
+                            checked = snoozeEnabled,
+                            onCheckedChange = onSnoozeEnabledChange,
                         )
                     },
                 )
-            }
-            if (showVoiceOutput) {
                 AlarmSettingDivider()
                 AlarmSettingRow(
-                    title = stringResource(R.string.editor_voice_output_title),
-                    subtitle = voiceOutputSummary(context, voiceVolumePercent, voiceRepeat, voiceRepeatActive),
-                    icon = Icons.AutoMirrored.Outlined.VolumeUp,
-                    onClick = onOpenVoiceOutputSettings,
+                    title = stringResource(R.string.editor_vibration_title),
+                    subtitle = vibrationLabel(context, vibrationPattern),
+                    onClick = onOpenVibrationSettings,
                     trailing = {
-                        Text(
-                            text = ">",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
+                        AlarmTalkSwitch(
+                            checked = vibrationPattern != VibrationPatterns.NONE,
+                            onCheckedChange = onVibrationEnabledChange,
                         )
                     },
                 )
+                if (showAlarmSound) {
+                    AlarmSettingDivider()
+                    AlarmSettingRow(
+                        title = stringResource(R.string.editor_alarm_sound_title),
+                        subtitle = alarmSoundSummary(
+                            context = context,
+                            alarmVolumePercent = alarmVolumePercent,
+                            alarmSoundLabel = alarmSoundLabel,
+                        ),
+                        onClick = onOpenAlarmSoundSettings,
+                        trailing = {
+                            AlarmTalkSwitch(
+                                checked = alarmVolumePercent > 0,
+                                onCheckedChange = { enabled ->
+                                    onAlarmVolumeChange(if (enabled) 100 else 0)
+                                },
+                            )
+                        },
+                    )
+                }
+                if (showVoiceOutput) {
+                    AlarmSettingDivider()
+                    AlarmSettingRow(
+                        title = stringResource(R.string.editor_voice_output_title),
+                        subtitle = voiceOutputSummary(context, voiceVolumePercent, voiceRepeat, voiceRepeatActive),
+                        onClick = onOpenVoiceOutputSettings,
+                        trailing = {},
+                    )
+                }
             }
         }
+    }
 }
 
 private fun voiceOutputSummary(
@@ -252,11 +251,11 @@ private fun AlarmSoundActionRow(
                 )
             }
             Spacer(Modifier.width(12.dp))
-            Text(
-                text = ">",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
     }

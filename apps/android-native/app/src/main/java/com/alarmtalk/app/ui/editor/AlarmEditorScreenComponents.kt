@@ -17,8 +17,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,7 +48,6 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.WakerPillShape
-import com.alarmtalk.app.WakerTileShape
 import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.DynamicPromptPreferences
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -288,30 +287,27 @@ internal fun FamilyAlarmTargetCard(
     } ?: false
 
     if (recipientDialogOpen) {
-        AlertDialog(
-            onDismissRequest = { recipientDialogOpen = false },
-            title = {
-                ModalDialogTitle(
-                    title = stringResource(R.string.editor_select_recipient_title),
-                    onDismiss = { recipientDialogOpen = false },
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    recipients.forEach { recipient ->
-                        RecipientPickerRow(
-                            recipient = recipient,
-                            selected = recipient.userId == selectedRecipient?.userId,
-                            onClick = {
-                                onSelectRecipient(recipient.userId)
-                                recipientDialogOpen = false
-                            },
-                        )
-                    }
+        WakerSelectionSheet(
+            title = stringResource(R.string.editor_select_recipient_title),
+            onDismiss = { recipientDialogOpen = false },
+        ) { dismiss ->
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                recipients.forEach { recipient ->
+                    WakerSheetOptionRow(
+                        title = familyMemberLabel(context, recipient),
+                        description = stringResource(
+                            R.string.editor_quiet_hours_label,
+                            familyAlarmQuietScheduleLabel(context, recipient),
+                        ),
+                        selected = recipient.userId == selectedRecipient?.userId,
+                        onClick = {
+                            onSelectRecipient(recipient.userId)
+                            dismiss()
+                        },
+                    )
                 }
-            },
-            confirmButton = {},
-        )
+            }
+        }
     }
 
     Card(
@@ -388,11 +384,11 @@ internal fun RecipientSummaryRow(
             }
             if (clickable) {
                 Spacer(Modifier.width(12.dp))
-                Text(
-                    text = ">",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -414,47 +410,6 @@ internal fun RecipientSummaryRow(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
         ) {
             content()
-        }
-    }
-}
-
-@Composable
-internal fun RecipientPickerRow(
-    recipient: FamilyGroupMember,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val context = LocalContext.current
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerTileShape,
-        color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        },
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(familyMemberLabel(context, recipient), fontWeight = FontWeight.SemiBold)
-                MutedText(stringResource(R.string.editor_quiet_hours_label, familyAlarmQuietScheduleLabel(context, recipient)))
-            }
-            if (selected) {
-                Text(
-                    text = stringResource(R.string.editor_selected),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
         }
     }
 }

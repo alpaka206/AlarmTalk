@@ -873,9 +873,22 @@ tts.post('/generate', async (c) => {
     const synthesisText = prepared.text;
     const messageText = requestText;
     const deliveryTagsJson = JSON.stringify(prepared.tags);
-    const synthesisLanguage = prepared.translated
-      ? requestedLanguage
-      : inferSynthesisLanguage(synthesisText, sourceLanguage);
+    // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
+    // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.
+    // - 동적 생성 경로(dynamicGenerated): targetLanguage=requestedLanguage 로 생성했으므로 사용.
+    // - 그 외(preset/custom 비번역): 텍스트 스크립트로 추론하되, 라틴 스크립트라 en 으로
+    //   떨어지는 지원언어(fr/it 등)는 요청 언어를 우선한다(en 오판 → 잘못된 발음 방지).
+    let synthesisLanguage: string;
+    if (prepared.translated || dynamicGenerated) {
+      synthesisLanguage = requestedLanguage;
+    } else {
+      const inferred = inferSynthesisLanguage(synthesisText, sourceLanguage);
+      // 라틴 스크립트라 en 으로 오추론되는 지원언어(fr/it)만 요청 언어로 보정한다.
+      // 기본 ko/ja 보이스에 영어 텍스트를 넣은 경우(inferred='en')는 그대로 en 으로
+      // 합성해 정상 발음을 유지한다(과교정 방지).
+      const latinOverride = requestedLanguage === 'fr' || requestedLanguage === 'it';
+      synthesisLanguage = inferred === 'en' && latinOverride ? requestedLanguage : inferred;
+    }
 
     if (synthesisText.length > 200) {
       return c.json(

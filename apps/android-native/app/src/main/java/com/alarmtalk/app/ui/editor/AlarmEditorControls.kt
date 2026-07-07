@@ -47,39 +47,34 @@ internal fun ScheduleDetailsCard(
     minute: Int,
     repeatDaysMask: Int,
     holidayOff: Boolean,
-    label: String,
-    onLabelChange: (String) -> Unit,
     onToggleDay: (Int) -> Unit,
     onHolidayOffChange: (Boolean) -> Unit,
     holidayCountryCode: String,
     upcomingHolidays: List<HolidayDate>,
     onHolidayColdCache: () -> Unit,
 ) {
-    Column(
+    Surface(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        shape = WakerCardShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = wakerCardBorder(),
     ) {
-        RepeatSelector(
-            hour = hour,
-            minute = minute,
-            repeatDaysMask = repeatDaysMask,
-            holidayOff = holidayOff,
-            onToggleDay = onToggleDay,
-            onHolidayOffChange = onHolidayOffChange,
-            holidayCountryCode = holidayCountryCode,
-            upcomingHolidays = upcomingHolidays,
-            onHolidayColdCache = onHolidayColdCache,
-        )
-        OutlinedTextField(
-            value = label,
-            onValueChange = onLabelChange,
-            label = { Text(stringResource(R.string.editor_label_alarm_name)) },
-            placeholder = { Text(stringResource(R.string.editor_placeholder_alarm_name)) },
-            singleLine = true,
-            shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            RepeatSelector(
+                hour = hour,
+                minute = minute,
+                repeatDaysMask = repeatDaysMask,
+                holidayOff = holidayOff,
+                onToggleDay = onToggleDay,
+                onHolidayOffChange = onHolidayOffChange,
+                holidayCountryCode = holidayCountryCode,
+                upcomingHolidays = upcomingHolidays,
+                onHolidayColdCache = onHolidayColdCache,
+            )
+        }
     }
 }
 
@@ -334,31 +329,42 @@ internal fun PlayModeSelector(
     voiceLocked: Boolean = false,
     onLockedVoiceClick: () -> Unit = {},
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        PlayModeChip(
-            label = stringResource(R.string.editor_play_mode_alarm_voice),
-            selected = selected == AlarmPlayModes.ALARM_VOICE,
-            locked = voiceLocked,
-            onClick = {
-                if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.ALARM_VOICE)
-            },
-            modifier = Modifier.weight(1f),
-        )
-        PlayModeChip(
-            label = stringResource(R.string.editor_play_mode_voice_only),
-            selected = selected == AlarmPlayModes.VOICE_ONLY,
-            locked = voiceLocked,
-            onClick = {
-                if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.VOICE_ONLY)
-            },
-            modifier = Modifier.weight(1f),
-        )
-        PlayModeChip(
-            label = stringResource(R.string.editor_play_mode_alarm_only),
-            selected = selected == AlarmPlayModes.ALARM_ONLY,
-            onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
-            modifier = Modifier.weight(1f),
-        )
+    // 세그먼트 컨트롤: 하나의 트랙 안에서 선택 세그먼트만 채워진다.
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerButtonShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        border = wakerCardBorder(),
+    ) {
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            PlayModeChip(
+                label = stringResource(R.string.editor_play_mode_alarm_voice),
+                selected = selected == AlarmPlayModes.ALARM_VOICE,
+                locked = voiceLocked,
+                onClick = {
+                    if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.ALARM_VOICE)
+                },
+                modifier = Modifier.weight(1f),
+            )
+            PlayModeChip(
+                label = stringResource(R.string.editor_play_mode_voice_only),
+                selected = selected == AlarmPlayModes.VOICE_ONLY,
+                locked = voiceLocked,
+                onClick = {
+                    if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.VOICE_ONLY)
+                },
+                modifier = Modifier.weight(1f),
+            )
+            PlayModeChip(
+                label = stringResource(R.string.editor_play_mode_alarm_only),
+                selected = selected == AlarmPlayModes.ALARM_ONLY,
+                onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -376,21 +382,19 @@ internal fun PlayModeChip(
         shape = WakerChipShape,
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
-        } else if (locked) {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
         } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f)
+            Color.Transparent
         },
         border = if (selected) {
             BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f))
         } else {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f))
+            null
         },
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 14.dp),
+                .padding(horizontal = 10.dp, vertical = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(

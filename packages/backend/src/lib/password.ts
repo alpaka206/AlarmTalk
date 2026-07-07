@@ -14,8 +14,24 @@ export function applyPepper(password: string, pepper: string): string {
   return `${password}::${pepper ?? ''}`;
 }
 
+// bcrypt(bcryptjs)는 입력의 첫 72바이트만 사용하고 그 이상은 무시한다. password 뒤에
+// pepper 를 붙이는 구조라, 비밀번호가 길면(특히 한글·이모지는 1자당 3~4바이트) 72바이트
+// 경계를 넘는 뒷부분과 pepper 가 통째로 잘려 해시에 반영되지 않는다(정책상 128자를 받아도
+// 사실상 앞부분만 유효, pepper 방어도 무력화). 이를 막기 위해 password+pepper 를 먼저
+// SHA-256 으로 압축(hex 64자 → 64바이트, 72바이트 미만·null 바이트 없음)한 뒤 bcrypt 에
+// 넣는다. 이렇게 하면 임의 길이 입력의 엔트로피가 온전히 반영되고 pepper 도 항상 적용된다.
+async function prehashPassword(password: string, pepper: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(applyPepper(password, pepper)),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 export async function hashPassword(password: string, pepper: string): Promise<string> {
-  return bcrypt.hash(applyPepper(password, pepper), BCRYPT_ROUNDS);
+  return bcrypt.hash(await prehashPassword(password, pepper), BCRYPT_ROUNDS);
 }
 
 export async function verifyPassword(
@@ -24,5 +40,13 @@ export async function verifyPassword(
   pepper: string,
 ): Promise<boolean> {
   if (!hash) return false;
+  // 신 스킴: bcrypt(SHA-256(password::pepper)).
+  if (await bcrypt.compare(await prehashPassword(password, pepper), hash)) {
+    return true;
+  }
+  // 레거시 폴백: pre-hash 도입 이전에 저장된 해시는 bcrypt(password::pepper) 였다.
+  // 기존 사용자가 잠기지 않도록 옛 스킴으로도 검증한다(출시 전 DB 초기화 시 자연 소멸).
+  // 틀린 비밀번호·부재 사용자(DUMMY_BCRYPT_HASH)는 두 스킴 모두 실패해 항상 2회
+  // 비교하므로, 로그인 실패 경로의 타이밍 균일성(계정 열거 방어)은 유지된다.
   return bcrypt.compare(applyPepper(password, pepper), hash);
 }

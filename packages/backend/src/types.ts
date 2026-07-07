@@ -36,8 +36,8 @@ export interface Env {
   APPLE_IAP_PRIVATE_KEY?: string;
   /** iOS 번들 ID — App Store 트랜잭션의 bundleId 검증에 사용. */
   APPLE_BUNDLE_ID?: string;
-  /** PortOne(구 아임포트) V2 API Secret — 국내 PG 결제 검증. */
-  PORTONE_API_SECRET?: string;
+  /** 관리자 콘솔(/admin) 보호용 시크릿(HTTP Basic 비밀번호). 미설정 시 /admin 은 503. */
+  ADMIN_SECRET?: string;
   /**
    * data.go.kr KASI 특일정보 OpenAPI 서비스키 (getRestDeInfo). KR 공휴일의 대체/임시공휴일
    * 보정용 오버레이에 쓴다. 미설정 시 KR 오버레이를 생략하고 date-holidays 결과만 제공한다.
@@ -58,6 +58,14 @@ export interface Env {
 
 export interface SentryClient {
   captureException(exception: unknown): string;
+  /**
+   * toucan-js 의 Toucan 은 @sentry/core 의 Scope 를 상속해 setTag/setTags 를 제공한다.
+   * 관리자가 Sentry 대시보드에서 에러를 필터·식별할 수 있도록 route/method/uid 같은
+   * 위치 태그를 붙일 때 쓴다. 테스트 목 등 일부 구현체는 captureException 만 가지므로
+   * optional 로 두고, 호출부(logger.ts)에서 옵셔널 체이닝으로 안전하게 호출한다.
+   */
+  setTag?(key: string, value: string | number | boolean | null | undefined): void;
+  setTags?(tags: Record<string, string | number | boolean | null | undefined>): void;
 }
 
 export type AuthVariables = {

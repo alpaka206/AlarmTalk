@@ -13,6 +13,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
 import com.alarmtalk.app.billing.PlayBillingManager
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
@@ -233,21 +234,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var deleteAccountConfirmOpen by mutableStateOf(false)
         internal set
 
-    private val onboardingPrefs = application.getSharedPreferences("voice_alarm_onboarding", android.content.Context.MODE_PRIVATE)
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
-    var showOnboarding by mutableStateOf(false)
+
+    // 첫 로그인 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
+    var showVoiceSetup by mutableStateOf(false)
         internal set
 
-    // 온보딩 직후 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
-    var showVoiceSetup by mutableStateOf(false)
+    // 목소리 선택 직후 실제 알람 에디터를 1회 자동으로 열기 위한 one-shot 틱.
+    // (별도 온보딩 화면 대신, 진짜 설정 화면 + 첫 방문 코치마크로 첫 알람을 만들게 한다)
+    var navigateFirstAlarmEditorTick by mutableStateOf(0)
         internal set
 
     // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
     var defaultVoiceId by mutableStateOf<String?>(null)
-        internal set
-
-    // 기본(시스템) 목소리가 사용자를 부를 호칭. 시스템 음성 알람 TTS 의 listenerTitle 로 사용.
-    var defaultListenerTitle by mutableStateOf<String?>(null)
         internal set
 
     private val consentPrefs = application.getSharedPreferences("voice_alarm_consent", android.content.Context.MODE_PRIVATE)
@@ -285,9 +284,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     // 설치 버전이 백엔드 최소지원버전 미만이면 true → 로그인 전부터 업데이트 차단 화면을 띄운다.
+    // (In-App Update IMMEDIATE 트리거 조건이자, 그 취소/미가용 시의 최종 폴백 게이트)
     var updateRequired by mutableStateOf(false)
         internal set
+    // 설치 버전이 백엔드 최신버전 미만이면 true → 권장(FLEXIBLE) In-App Update 대상.
+    // 강제(updateRequired)와 달리 앱 사용은 막지 않는다.
+    var updateRecommended by mutableStateOf(false)
+        internal set
     var updateStoreUrl by mutableStateOf("")
+        internal set
+    // FLEXIBLE In-App Update 다운로드가 끝나면 InAppUpdateManager 가 true 로 세팅 →
+    // AlarmTalkApp 이 '재시작' 스낵바를 띄우고, 액션 시 completeUpdate() 를 호출한다.
+    var flexibleUpdateDownloaded by mutableStateOf(false)
+        internal set
+    // 권장(FLEXIBLE) 업데이트를 사용자가 취소하면 true → 이 세션(프로세스)에서는 onResume
+    // 재조회가 FLEXIBLE 플로우를 다시 띄우지 않는다(취소 무시하고 매번 되묻는 루프 방지).
+    // 강제(IMMEDIATE)는 영향 없음. ViewModel 에 두는 이유: 화면 회전 등 액티비티 재생성에도 유지.
+    var flexibleUpdateDeclined by mutableStateOf(false)
+        internal set
+    // 마지막으로 시작한 In-App Update 플로우가 FLEXIBLE 인지. 런처 결과 콜백은 플로우 타입을
+    // 알려주지 않으므로 취소가 FLEXIBLE 거절인지 판별하는 근거 — Play 다이얼로그 표시 중
+    // 액티비티가 재생성(다크모드 전환 등)돼도 유지되도록 매니저 필드가 아닌 여기에 둔다.
+    var flexibleUpdateFlowLaunched by mutableStateOf(false)
         internal set
 
     var permissionGateRequest by mutableStateOf<PermissionTarget?>(null)
@@ -315,33 +333,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         duplicateAlarmPrompt = null
     }
 
-    fun checkOnboardingFor(userId: String) {
+    fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
-        val seen = onboardingPrefs.getStringSet("seen_users", emptySet()) ?: emptySet()
-        val shouldShowOnboarding = userId !in seen
-        showOnboarding = shouldShowOnboarding
         defaultVoiceId = defaultVoiceStore.read(userId)
-        defaultListenerTitle = defaultVoiceStore.readListenerTitle(userId)
-        showVoiceSetup = !shouldShowOnboarding && !defaultVoiceStore.hasCompletedSetup(userId)
+        showVoiceSetup = !defaultVoiceStore.hasCompletedSetup(userId)
     }
 
-    fun completeOnboarding() {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
-        if (userId != null) {
-            val seen = onboardingPrefs.getStringSet("seen_users", emptySet())?.toMutableSet() ?: mutableSetOf()
-            seen += userId
-            onboardingPrefs.edit().putStringSet("seen_users", seen).apply()
-        }
-        showOnboarding = false
-        // 온보딩 직후, 기본 목소리를 아직 안 골랐으면 "목소리 고르기" 스텝을 띄운다.
-        showVoiceSetup = userId != null && !defaultVoiceStore.hasCompletedSetup(userId)
-    }
-
-    /** 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때. 기기 설정에 저장하고 스텝을 닫는다. */
-    fun completeVoiceSetup(voiceId: String, listenerTitle: String?) {
+    /** 온보딩 목소리 스텝에서 기본 목소리를 정했을 때. 기기 설정에 저장하고 스텝을 닫는다.
+     *  (호칭은 따로 받지 않는다 — 시스템 음성 TTS 는 계정 닉네임으로 부른다.) */
+    fun completeVoiceSetup(voiceId: String) {
         setDefaultVoice(voiceId)
-        setDefaultListenerTitle(listenerTitle)
         showVoiceSetup = false
+        // 목소리를 고른 흐름에서만 첫 알람 만들기(에디터 자동 진입)로 이어간다(건너뛰기 시엔 홈).
+        navigateFirstAlarmEditorTick++
     }
 
     /** 목소리 스텝을 건너뛸 때(저장 없이 닫기). 나중에 목소리 탭에서 고를 수 있다. */
@@ -355,13 +359,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
         defaultVoiceStore.set(userId, voiceId)
         defaultVoiceId = voiceId
-    }
-
-    /** 기본(시스템) 목소리 호칭을 설정/변경한다(온보딩·목소리 탭 공용). */
-    fun setDefaultListenerTitle(title: String?) {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
-        defaultVoiceStore.setListenerTitle(userId, title)
-        defaultListenerTitle = title?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
@@ -439,7 +436,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfileLoadFinished = false
         showVoiceSetup = false
         defaultVoiceId = null
-        defaultListenerTitle = null
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()
@@ -517,7 +513,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }.onSuccess { scheduled ->
                 Log.i(TAG, "Startup alarm sync complete scheduled=$scheduled")
             }.onFailure { error ->
-                Log.e(TAG, "Startup alarm sync failed", error)
+                AlarmTalkLog.reportError("Startup alarm sync failed", error)
             }
         }
         // 결제 직후 앱 종료 등으로 서버 검증이 누락된 Play 구매를 앱 시작 시 재전송.

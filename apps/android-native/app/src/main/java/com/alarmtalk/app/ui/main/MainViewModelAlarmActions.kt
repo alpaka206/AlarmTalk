@@ -14,6 +14,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.net.toUri
 import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmAudioStore
@@ -114,7 +115,7 @@ internal fun MainViewModel.createAlarm(
                 // 같은 시각 알람이 있으면 교체 여부를 모달로 묻고, 동의 시 교체로 재시도.
                 promptReplaceDuplicateAlarm(error) { createAlarm(draft, replaceExisting = true, onDone) }
             } else {
-                Log.e(TAG, "Failed to create alarm", error)
+                AlarmTalkLog.reportError("Failed to create alarm", error)
                 message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_save_failed))
             }
         }
@@ -150,7 +151,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                     authorization = AlarmTalkApiClient.bearer(session.token),
                     request = FamilyAlarmTalkRequest(
                         recipientUserId = requireNotNull(draft.targetUserId.trimmedOrNull()),
-                        wakeAt = "%02d:%02d".format(draft.hour, draft.minute),
+                        wakeAt = String.format(java.util.Locale.US, "%02d:%02d", draft.hour, draft.minute),
                         voiceUploadId = upload.id,
                         label = draft.label.trimmedOrNull()
                             ?: getApplication<Application>().getString(R.string.msg_family_voice_default_label),
@@ -170,7 +171,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
         message = getApplication<Application>().getString(R.string.msg_family_alarm_set_for_target, target)
         onDone()
     }.onFailure { error ->
-        Log.e(TAG, "Failed to create family target alarm target=${draft.targetUserId}", error)
+        AlarmTalkLog.reportError("Failed to create family target alarm target=${draft.targetUserId}", error)
         message = userFacingError(error, getApplication<Application>().getString(R.string.msg_family_alarm_set_failed))
     }
 }
@@ -202,7 +203,7 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
         ?.takeUnless { ttsMessageId != null }
     val hasRemoteVoice = ttsMessageId != null || rawAudioUrl != null
     return RemoteAlarmWriteRequest(
-        time = "%02d:%02d".format(hour, minute),
+        time = String.format(java.util.Locale.US, "%02d:%02d", hour, minute),
         repeatDays = RemoteAlarmMapper.repeatMaskToDays(repeatDaysMask),
         snoozeMinutes = snoozeMinutes,
         mode = if (hasRemoteVoice) "tts" else "sound-only",
@@ -244,7 +245,7 @@ internal fun MainViewModel.updateAlarm(
                     updateAlarm(alarmId, draft, replaceExisting = true, onDone)
                 }
             } else {
-                Log.e(TAG, "Failed to update alarm id=$alarmId", error)
+                AlarmTalkLog.reportError("Failed to update alarm id=$alarmId", error)
                 message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_update_failed))
             }
         }
@@ -259,7 +260,6 @@ private fun MainViewModel.promptReplaceDuplicateAlarm(
     duplicateAlarmPrompt = DuplicateAlarmPrompt(
         hour = error.hour,
         minute = error.minute,
-        existingLabel = error.existingLabel,
         onConfirmReplace = {
             dismissDuplicateAlarmPrompt()
             onReplace()
@@ -271,7 +271,6 @@ private fun MainViewModel.promptReplaceDuplicateAlarm(
 data class DuplicateAlarmPrompt(
     val hour: Int,
     val minute: Int,
-    val existingLabel: String?,
     val onConfirmReplace: () -> Unit,
 )
 
@@ -283,7 +282,7 @@ internal fun MainViewModel.setAlarmEnabled(alarmId: String, enabled: Boolean) {
         }.onSuccess {
             message = null
         }.onFailure { error ->
-            Log.e(TAG, "Failed to change alarm enabled id=$alarmId", error)
+            AlarmTalkLog.reportError("Failed to change alarm enabled id=$alarmId", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_toggle_failed))
         }
     }
@@ -296,7 +295,7 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
         }.onSuccess {
             message = getApplication<Application>().getString(R.string.msg_alarm_deleted)
         }.onFailure { error ->
-            Log.e(TAG, "Failed to delete alarm id=$alarmId", error)
+            AlarmTalkLog.reportError("Failed to delete alarm id=$alarmId", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_delete_failed))
         }
     }
@@ -310,7 +309,7 @@ internal fun MainViewModel.copyAlarm(alarmId: String) {
         }.onSuccess { alarm ->
             message = getApplication<Application>().getString(R.string.msg_alarm_copied_ten_minutes, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
         }.onFailure { error ->
-            Log.e(TAG, "Failed to copy alarm id=$alarmId", error)
+            AlarmTalkLog.reportError("Failed to copy alarm id=$alarmId", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_copy_failed))
         }
     }
@@ -324,7 +323,7 @@ internal fun MainViewModel.createTestAlarm(delayMinutes: Int) {
         }.onSuccess { alarm ->
             message = getApplication<Application>().getString(R.string.msg_test_alarm_saved, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
         }.onFailure { error ->
-            Log.e(TAG, "Failed to create test alarm", error)
+            AlarmTalkLog.reportError("Failed to create test alarm", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_test_alarm_schedule_failed))
         }
     }

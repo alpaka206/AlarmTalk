@@ -182,7 +182,11 @@ export async function cancelSubscriptionImmediate(
     for (const subRow of memberSubRes.rows) {
       await cancelOneSubscriptionRow(db, String(subRow.id), memberUserId, now);
     }
-    await downgradeUserToFree(db, memberUserId, options);
+    // 멤버 강등에는 소유자의 삭제 옵션(options)을 전파하지 않는다. 취소를 개시하지
+    // 않은 멤버의 알람·음성·메시지가 하드 삭제되는 것을 막기 위해 데이터는 보존한다
+    // (RTDN deactivate 경로와 동일하게 deleteVoiceData:false). 하드 삭제는 취소를
+    // 실제로 개시한 소유자 본인(line 149)에게만 국한한다.
+    await downgradeUserToFree(db, memberUserId, { deleteVoiceData: false });
   }
 
   await db.execute({
@@ -267,7 +271,7 @@ export async function schedulePlanChangeAtPeriodEnd(
   });
 }
 
-async function createNewSubscriptionForPlan(
+export async function createNewSubscriptionForPlan(
   db: DbExecutor,
   params: {
     userPk: string;
@@ -277,7 +281,7 @@ async function createNewSubscriptionForPlan(
     maxMembers: number;
     now: Date;
   },
-): Promise<void> {
+): Promise<string> {
   const startsAt = params.now;
   const expiresAt = new Date(startsAt.getTime() + params.periodDays * 24 * 60 * 60 * 1000);
   const subscriptionId = crypto.randomUUID();
@@ -326,6 +330,8 @@ async function createNewSubscriptionForPlan(
       maxUses: plannedMaxUses(params.planType, params.maxMembers),
     });
   }
+
+  return subscriptionId;
 }
 
 export async function processSubscriptionExpiry(db: Client, now: Date = new Date()): Promise<void> {

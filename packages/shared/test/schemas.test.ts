@@ -123,24 +123,34 @@ describe('AuthResponseSchema', () => {
 });
 
 describe('VoiceProfileSchema', () => {
-  it('parses a valid profile', () => {
+  it('parses a valid profile (backend snake_case row shape)', () => {
     const p = VoiceProfileSchema.parse({
       id: 'vp_1',
-      userId: 'u_1',
+      user_id: 'u_1',
       name: '엄마 목소리',
       status: 'ready',
-      sampleCount: 3,
+      voice_gender: 'female',
+      is_shared: false,
+      created_at: '2026-04-17T00:00:00.000Z',
     });
     expect(VoiceProfileStatusSchema.parse(p.status)).toBe('ready');
   });
-  it('rejects negative sample count', () => {
+  it('rejects a missing user_id', () => {
     expect(() =>
       VoiceProfileSchema.parse({
         id: 'vp_1',
-        userId: 'u_1',
         name: '엄마 목소리',
         status: 'ready',
-        sampleCount: -1,
+      }),
+    ).toThrow();
+  });
+  it('rejects an unknown status', () => {
+    expect(() =>
+      VoiceProfileSchema.parse({
+        id: 'vp_1',
+        user_id: 'u_1',
+        name: '엄마 목소리',
+        status: 'pending',
       }),
     ).toThrow();
   });

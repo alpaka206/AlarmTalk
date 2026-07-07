@@ -172,11 +172,9 @@ export default async function AccountDeletionPage({
   const { locale } = await params;
   setRequestLocale(locale);
   const copy = CONTENT[locale as Locale] ?? CONTENT.ko;
-  const mailSearch = new URLSearchParams({
-    subject: copy.emailSubject,
-    body: copy.emailBody,
-  });
-  const mailHref = `mailto:${PRIVACY_EMAIL}?${mailSearch.toString()}`;
+  const mailHref = `mailto:${PRIVACY_EMAIL}?subject=${encodeURIComponent(
+    copy.emailSubject,
+  )}&body=${encodeURIComponent(copy.emailBody)}`;
 
   return (
     <>

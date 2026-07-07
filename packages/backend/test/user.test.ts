@@ -232,13 +232,12 @@ describe('PATCH /user/me', () => {
 });
 
 describe('PATCH /user/plan', () => {
-  it('유효한 플랜 변경', async () => {
-    mockDB.pushResult([], 1);
+  it('유료 승격(plus)은 403 PLAN_UPGRADE_NOT_ALLOWED 로 차단', async () => {
+    // self-service 엔드포인트로는 무결제 유료 승격 불가(store-billing/voucher 경로로만).
     const app = buildApp();
     const res = await app.request(jsonReq('PATCH', '/user/plan', { plan: 'plus' }));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.plan).toBe('plus');
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('PLAN_UPGRADE_NOT_ALLOWED');
   });
 
   it('잘못된 플랜 → 400 INVALID_PLAN', async () => {
@@ -256,12 +255,11 @@ describe('PATCH /user/plan', () => {
     expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
   });
 
-  it('family 플랜 성공', async () => {
-    mockDB.pushResult([], 1);
+  it('유료 승격(family)은 403 PLAN_UPGRADE_NOT_ALLOWED 로 차단', async () => {
     const app = buildApp();
     const res = await app.request(jsonReq('PATCH', '/user/plan', { plan: 'family' }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).plan).toBe('family');
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('PLAN_UPGRADE_NOT_ALLOWED');
   });
 
   it('잘못된 JSON → 500 UPDATE_PLAN_FAILED', async () => {

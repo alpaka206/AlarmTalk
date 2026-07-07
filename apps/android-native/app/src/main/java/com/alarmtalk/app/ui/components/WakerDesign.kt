@@ -8,6 +8,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,14 +29,26 @@ internal val WakerPanelShape = RoundedCornerShape(18.dp)   // 표준 콘텐츠 �
 internal val WakerCardShape = RoundedCornerShape(22.dp)    // 큰 콘텐츠 카드
 internal val WakerHeroShape = RoundedCornerShape(24.dp)    // 히어로/프로미넌트 카드(홈 NextAlarm), 타임피커 전용 다이얼로그
 internal val WakerDialogShape = RoundedCornerShape(28.dp)  // 모든 모달 다이얼로그 컨테이너 표준(M3 extra-large=28dp, AlertDialog 기본과 일치)
+internal val WakerSheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp) // 바텀시트 컨테이너 표준(다이얼로그 28dp와 동일 스케일, 상단만)
 internal val WakerPillShape = RoundedCornerShape(999.dp)   // 완전 캡슐(pill) — 진행바·세그먼트·상태 배지
 
 /** 오버레이/코치마크 스크림 — 테마 무관 고정 농도 rgba(5,8,14,.74). */
 internal val WakerScrimColor = Color(0xBD05080E)
 
+/**
+ * 랜딩 일출 팔레트의 웜 액센트(sunGlow #FFD494) — 홈 히어로 등 브랜드 '새벽' 글로우 전용.
+ * colorScheme 밖의 문서화된 브랜드 비주얼 예외(WakerScrimColor 와 같은 층위).
+ */
+internal val WakerDawnGlowColor = Color(0xFFFFD494)
+
 @Composable
-internal fun wakerCardBorder(alpha: Float = 1f): BorderStroke =
-    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = alpha))
+internal fun wakerCardBorder(alpha: Float = 1f): BorderStroke {
+    // 다크에서는 테두리를 옅게 깔아 '와이어프레임' 인상을 줄이고 표면 대비에 기댄다.
+    // 라이트는 흰 카드가 배경과 붙지 않도록 기존 농도를 유지한다.
+    val darkScheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val base = if (darkScheme) 0.62f else 1f
+    return BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = base * alpha))
+}
 
 @Composable
 internal fun wakerOutlinedTextFieldColors(): TextFieldColors =

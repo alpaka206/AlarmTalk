@@ -27,6 +27,10 @@ export const GENERATED_TTS_TTL_DAYS = 30;
 // 알람에 연결되지 않은 raw-alarms 업로드의 유예 시간. 업로드 직후 알람에 붙는
 // 정상 흐름은 보존하면서, 이탈로 버려진 클립만 정리할 만큼 넉넉하게 잡는다.
 export const RAW_ALARM_UPLOAD_TTL_DAYS = 2;
+// 화자 분리 후보(draft) 보이스의 유예 시간. 다이얼로그 안에서 몇 분 내 선택/정리되는
+// 임시물이라 1시간이면 충분히 넉넉하다 — 앱 강제종료 등으로 클라이언트 정리를 못 거친
+// 고아만 걸린다.
+export const DRAFT_VOICE_TTL_HOURS = 1;
 
 const DRAIN_BATCH_SIZE = 10;
 const TTL_BATCH_SIZE = 10;
@@ -162,6 +166,57 @@ export async function drainExternalDeletions(db: Client, env: Env): Promise<void
     processed: pending.rows.length,
     succeeded,
   });
+}
+
+/**
+ * TTL 이 지난 고아 draft 보이스를 정리한다 — cron 전용.
+ *
+ * draft(화자 분리 후보)는 목소리 만들기 다이얼로그가 닫힐 때 클라이언트가 지우는
+ * 임시물이지만, 앱 강제종료/크래시로 정리를 못 거치면 영구 고아가 된다: 일반 목록은
+ * is_draft=0 만 노출해 사용자가 지울 방법이 없고, draft 쿼터(MAX_DRAFT_VOICE_PROFILES)와
+ * ElevenLabs 슬롯을 무기한 점유해 이후 draft 생성이 VOICE_LIMIT_REACHED 로 막힌다.
+ * → TTL 경과 draft 를 소프트 삭제하고 클론 voice 는 외부 삭제 큐로 회수한다.
+ *
+ * created_at 은 datetime('now')(공백 구분) 포맷이고 cutoff 는 ISO(T 구분)라, 원시 텍스트
+ * 비교는 같은 날짜에서 항상 참이 되어 방금 만든 draft 까지 쓸어버린다 — 반드시
+ * datetime() 으로 양쪽을 정규화해 비교한다.
+ */
+export async function cleanupStaleDraftVoices(db: Client, now: Date): Promise<void> {
+  const cutoff = new Date(now.getTime() - DRAFT_VOICE_TTL_HOURS * 60 * 60 * 1000).toISOString();
+  const stale = await db.execute({
+    sql: `SELECT id, elevenlabs_voice_id FROM voice_profiles
+          WHERE COALESCE(is_draft, 0) = 1
+            AND deleted_at IS NULL
+            AND datetime(created_at) <= datetime(?)
+          ORDER BY created_at ASC
+          LIMIT ?`,
+    args: [cutoff, TTL_BATCH_SIZE],
+  });
+  let expired = 0;
+  for (const row of stale.rows) {
+    // 소프트 삭제를 먼저 '클레임'하고(가드 재확인), 성공했을 때만 클론 파기를 큐에 넣는다.
+    // 순서를 바꾸면 SELECT 와 UPDATE 사이에 promote(is_draft=0)된 정식 보이스의 클론이
+    // 큐에 적재돼 파기되는 TOCTOU 레이스가 생긴다.
+    const claimed = await db.execute({
+      sql: `UPDATE voice_profiles
+            SET deleted_at = datetime('now'), updated_at = datetime('now')
+            WHERE id = ? AND COALESCE(is_draft, 0) = 1 AND deleted_at IS NULL`,
+      args: [String(row.id)],
+    });
+    if ((claimed.rowsAffected ?? 0) === 0) continue;
+    await enqueueExternalDeletion(
+      db,
+      'elevenlabs_voice',
+      row.elevenlabs_voice_id as string | null,
+    );
+    expired += 1;
+  }
+  if (expired > 0) {
+    logStructured('info', {
+      at: 'audio-retention.stale_drafts',
+      expired,
+    });
+  }
 }
 
 /**

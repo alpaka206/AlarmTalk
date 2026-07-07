@@ -381,6 +381,9 @@ async function createAccessToken(
 
   const response = await fetch(credentials.token_uri, {
     method: 'POST',
+    // 상류(Google OAuth) 지연이 사용자 대면 요청(알람 생성/TTS)을 워커 상한까지 볼모로
+    // 잡지 않도록 타임아웃을 건다. abort 시 fetch reject → 기존 catch 폴백으로 흐른다.
+    signal: AbortSignal.timeout(8000),
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
     },
@@ -416,6 +419,7 @@ export async function generateTranslation(args: {
 
   const response = await fetch(endpoint, {
     method: 'POST',
+    signal: AbortSignal.timeout(15000),
     headers: {
       authorization: `Bearer ${args.accessToken}`,
       'content-type': 'application/json',
@@ -483,6 +487,7 @@ async function generateContentAtEndpoint(
 ): Promise<string> {
   const response = await fetch(endpoint, {
     method: 'POST',
+    signal: AbortSignal.timeout(15000),
     headers: {
       ...extraHeaders,
       'content-type': 'application/json',
@@ -1218,7 +1223,14 @@ function hasUnsupportedListenerAddress(
   const allowedTitle = normalizeAddressLabel(listenerTitle);
   for (const match of text.matchAll(FAMILY_TITLE_RE)) {
     const matchedTitle = normalizeAddressLabel(match[2]);
-    if (!allowedTitle || matchedTitle !== allowedTitle) {
+    // 청자 호칭이 "우리 딸"/"사랑하는 아들"처럼 수식어+가족토큰(공백 구분)이면
+    // FAMILY_TITLE_RE 는 bare 토큰("딸")만 뽑고 allowedTitle 은 공백제거형("우리딸")이라
+    // strict 비교가 항상 어긋난다. matched 토큰이 allowedTitle 의 접미이면 지원 호칭으로 본다.
+    const supported =
+      allowedTitle != null &&
+      matchedTitle != null &&
+      (matchedTitle === allowedTitle || allowedTitle.endsWith(matchedTitle));
+    if (!supported) {
       return true;
     }
   }

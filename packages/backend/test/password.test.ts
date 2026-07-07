@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import bcrypt from 'bcryptjs';
 import {
   hashPassword,
   verifyPassword,
@@ -37,6 +38,14 @@ describe('password hashing', () => {
 
   it('applyPepper 는 페퍼를 비밀번호 뒤에 붙인다', () => {
     expect(applyPepper('pw', 'sauce')).toBe('pw::sauce');
+  });
+
+  it('pre-hash 도입 이전 방식(bcrypt(password::pepper))으로 저장된 해시도 검증된다 (레거시 폴백)', async () => {
+    const pepper = 'test-pepper';
+    // 옛 hashPassword 가 만들던 해시: SHA-256 pre-hash 없이 password::pepper 를 직접 bcrypt.
+    const legacyHash = await bcrypt.hash(applyPepper('correct-horse', pepper), 10);
+    expect(await verifyPassword('correct-horse', legacyHash, pepper)).toBe(true);
+    expect(await verifyPassword('wrong', legacyHash, pepper)).toBe(false);
   });
 
   it('DUMMY_BCRYPT_HASH 는 유효한 bcrypt 해시이며 어떤 평문과도 일치하지 않는다', async () => {

@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alarmtalk.app.alarm.SocialNotificationTracker
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.network.AuthSessionStore
@@ -38,7 +39,7 @@ class RemoteAlarmSyncWorker(
                 Result.success()
             }
         }.getOrElse { error ->
-            Log.e(TAG, "Remote alarm worker failed", error)
+            AlarmTalkLog.reportError("Remote alarm worker failed", error)
             Result.retry()
         }
     }

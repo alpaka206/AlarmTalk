@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_ALARM_TRIGGER
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import kotlinx.coroutines.CoroutineScope
@@ -34,7 +35,7 @@ class AlarmReceiver : BroadcastReceiver() {
             runCatching {
                 AlarmAppContainer.repository(context).markRinging(alarmId)
             }.onFailure { error ->
-                Log.e(TAG, "Failed to mark alarm ringing id=$alarmId", error)
+                AlarmTalkLog.reportError("Failed to mark alarm ringing id=$alarmId", error)
             }
             pendingResult.finish()
         }
@@ -61,10 +62,12 @@ class AlarmReceiver : BroadcastReceiver() {
     private fun postRingingNotificationFallback(context: Context, alarmId: String) {
         runCatching {
             NotificationChannels.ensure(context)
-            val notification = RingingNotificationFactory(context).build(alarmId)
+            // 폴백 전용 채널(IMPORTANCE_HIGH, 알람음+진동)로 게시해, 기기가 잠금 해제(사용 중)라
+            // 전체화면 인텐트가 헤즈업으로만 떠도 소리·진동이 나도록 한다. 정상 FGS 경로는 무음 채널 유지.
+            val notification = RingingNotificationFactory(context).build(alarmId, fallback = true)
             NotificationManagerCompat.from(context).notify(RINGING_FALLBACK_NOTIFICATION_ID, notification)
         }.onFailure { error ->
-            Log.e(TAG, "Failed to post ringing notification fallback id=$alarmId", error)
+            AlarmTalkLog.reportError("Failed to post ringing notification fallback id=$alarmId", error)
         }
     }
 

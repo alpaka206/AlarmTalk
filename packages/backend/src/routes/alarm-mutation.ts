@@ -125,7 +125,8 @@ async function voiceProfileBelongsToCaller(
   voiceProfileId: string,
   ownerIds: [string, string],
 ): Promise<boolean> {
-  const vp = await db.execute({
+  // 본인 소유 또는 시스템 스톡 보이스.
+  const owned = await db.execute({
     sql: `SELECT 1 FROM voice_profiles
           WHERE id = ?
             AND deleted_at IS NULL
@@ -133,7 +134,26 @@ async function voiceProfileBelongsToCaller(
           LIMIT 1`,
     args: [voiceProfileId, ...ownerIds],
   });
-  return vp.rows.length > 0;
+  if (owned.rows.length > 0) return true;
+
+  // 가족/그룹 공유 보이스(is_shared=1, non-draft): 소유자가 호출자와 같은 plan group 이면
+  // 허용한다. tts.ts findUsableVoiceProfile 의 접근 모델과 일치시켜, 공유 음성으로 만든
+  // 알람의 POST/PATCH 가 404 로 막히지 않게 한다(무관한 타인 비공개 프로필은 계속 차단).
+  const shared = await db.execute({
+    sql: `SELECT u.id AS owner_pk
+          FROM voice_profiles vp
+          LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
+          WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
+            AND COALESCE(vp.is_draft, 0) = 0
+            AND vp.deleted_at IS NULL
+          LIMIT 1`,
+    args: [voiceProfileId],
+  });
+  if (shared.rows.length === 0) return false;
+  const ownerPk = typeof shared.rows[0]!.owner_pk === 'string' ? (shared.rows[0]!.owner_pk as string) : null;
+  const viewerPk = ownerIds[0];
+  if (!ownerPk || !viewerPk || viewerPk === ownerPk) return false;
+  return assertSameGroup(db, viewerPk, ownerPk);
 }
 
 alarmMutation.post('/', async (c) => {
@@ -577,6 +597,8 @@ alarmMutation.patch('/:id', async (c) => {
 
 alarmMutation.delete('/:id', async (c) => {
   const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -622,10 +644,13 @@ alarmMutation.delete('/:id', async (c) => {
     });
     const cnt = Number(typedRow<{ cnt: number }>(refRes.rows[0]!).cnt ?? 0);
     if (cnt === 0) {
+      // 소유권 스코프(user_id IN ownerIds)를 걸어 호출자 소유 에셋만 정리한다.
+      // SYSTEM_VOICE_LIBRARY_USER_ID 소유의 공유 스톡 클립 에셋/R2 오브젝트를
+      // 전역 삭제하는 cross-tenant 파괴를 막는다(tts.ts:1284-1298 과 동일 패턴).
       const assetsRes = await db.execute({
         sql: `SELECT audio_object_key FROM generated_audio_assets
-              WHERE message_id = ? AND audio_object_key IS NOT NULL`,
-        args: [messageId],
+              WHERE message_id = ? AND user_id IN (?, ?) AND audio_object_key IS NOT NULL`,
+        args: [messageId, ...ownerIds],
       });
       const bucket = c.env?.VOICE_BUCKET;
       if (bucket && assetsRes.rows.length > 0) {
@@ -641,8 +666,8 @@ alarmMutation.delete('/:id', async (c) => {
         }
       }
       await db.execute({
-        sql: 'DELETE FROM generated_audio_assets WHERE message_id = ?',
-        args: [messageId],
+        sql: 'DELETE FROM generated_audio_assets WHERE message_id = ? AND user_id IN (?, ?)',
+        args: [messageId, ...ownerIds],
       });
     }
   }

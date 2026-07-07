@@ -140,35 +140,7 @@ internal fun MemberManagementScreen(
             return@LazyColumn
         }
 
-        item {
-            Text(
-                text = stringResource(
-                    R.string.social_plan_member_count,
-                    planLabel,
-                    sortedMembers.size,
-                    group.maxMembers,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        if (authSession != null) {
-            item {
-                FamilyAlarmPermissionCard(
-                    allowFamilyAlarms = authSession.user.allowFamilyAlarms,
-                    quietWindows = authSession.user.familyAlarmQuietWindows,
-                    onToggle = {
-                        onChangeFamilyAlarmSettings(
-                            it,
-                            authSession.user.familyAlarmQuietWindows,
-                        )
-                    },
-                    onEditQuietTime = { showFamilyAlarmDialog = true },
-                )
-            }
-        }
-
+        // 1) 공유 코드 (owner 전용) — 최상단
         if (isOwner) {
             item {
                 Text(
@@ -208,57 +180,88 @@ internal fun MemberManagementScreen(
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text(
-                                text = shareVoucher.code,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                text = if (isFull) {
-                                    stringResource(
-                                        R.string.social_voucher_usage_full,
-                                        shareVoucher.useCount,
-                                        shareVoucher.maxUses,
-                                    )
-                                } else {
-                                    stringResource(
-                                        R.string.social_voucher_usage,
-                                        shareVoucher.useCount,
-                                        shareVoucher.maxUses,
-                                    )
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Button(
-                                onClick = { shareCode(shareVoucher.code) },
-                                enabled = !billingBusy && !isFull,
+                            // 코드(좌) + 사용 현황(우상단)
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = WakerChipShape,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Top,
                             ) {
-                                Text(if (isFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
+                                Text(
+                                    text = shareVoucher.code,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = if (isFull) {
+                                        stringResource(
+                                            R.string.social_voucher_usage_full,
+                                            shareVoucher.useCount,
+                                            shareVoucher.maxUses,
+                                        )
+                                    } else {
+                                        stringResource(
+                                            R.string.social_voucher_usage,
+                                            shareVoucher.useCount,
+                                            shareVoucher.maxUses,
+                                        )
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
-                            OutlinedButton(
-                                onClick = { showRegenerateConfirm = true },
-                                enabled = !billingBusy,
+                            // 공유하기 + 재발급 — 한 줄에 나란히
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = WakerChipShape,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Text(stringResource(R.string.social_regenerate_share_code))
+                                Button(
+                                    onClick = { shareCode(shareVoucher.code) },
+                                    enabled = !billingBusy && !isFull,
+                                    modifier = Modifier.weight(1f),
+                                    shape = WakerChipShape,
+                                ) {
+                                    Text(if (isFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
+                                }
+                                OutlinedButton(
+                                    onClick = { showRegenerateConfirm = true },
+                                    enabled = !billingBusy,
+                                    modifier = Modifier.weight(1f),
+                                    shape = WakerChipShape,
+                                ) {
+                                    Text(stringResource(R.string.social_regenerate_share_code))
+                                }
                             }
-                            Text(
-                                text = stringResource(R.string.social_regenerate_share_code_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
                         }
                     }
                 }
             }
         }
 
+        // 2) 상대 알람 허용 — 공유 코드와 구성원 사이
+        if (authSession != null) {
+            item {
+                FamilyAlarmPermissionCard(
+                    title = if (activePlanKey == "couple") {
+                        stringResource(R.string.social_allow_partner_alarm_couple)
+                    } else {
+                        stringResource(R.string.social_allow_partner_alarm)
+                    },
+                    allowFamilyAlarms = authSession.user.allowFamilyAlarms,
+                    quietWindows = authSession.user.familyAlarmQuietWindows,
+                    onToggle = {
+                        onChangeFamilyAlarmSettings(
+                            it,
+                            authSession.user.familyAlarmQuietWindows,
+                        )
+                    },
+                    onEditQuietTime = { showFamilyAlarmDialog = true },
+                )
+            }
+        }
+
+        // 3) 구성원
         item {
             Text(
                 text = stringResource(R.string.social_members_section_title),
@@ -366,6 +369,7 @@ internal fun MemberManagementScreen(
 
 @Composable
 private fun FamilyAlarmPermissionCard(
+    title: String,
     allowFamilyAlarms: Boolean,
     quietWindows: List<FamilyAlarmQuietWindow>,
     onToggle: (Boolean) -> Unit,
@@ -391,14 +395,9 @@ private fun FamilyAlarmPermissionCard(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.social_allow_partner_alarm),
+                        text = title,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = stringResource(R.string.social_allow_partner_alarm_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 AlarmTalkSwitch(

@@ -82,16 +82,6 @@ export function SiteFooter() {
                   </Link>
                 </li>
                 <li>
-                  <a
-                    href="https://github.com/alarmtalk/voice_alarm"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="whitespace-nowrap text-text-muted hover:text-text"
-                  >
-                    {t("linkGithub")}
-                  </a>
-                </li>
-                <li>
                   <Link
                     href="/contact"
                     className="whitespace-nowrap text-text-muted hover:text-text"
