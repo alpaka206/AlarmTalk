@@ -33,7 +33,6 @@ import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
@@ -409,6 +408,7 @@ internal fun VoiceProfileManagementPanel(
     val ownVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem != true } }
     val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
+    val canOpenCreateForm = canCreateVoice && !isLimitReached
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
 
@@ -520,7 +520,14 @@ internal fun VoiceProfileManagementPanel(
                     applySelectedAudio(audio)
                 } else {
                     selectedAudio = null
-                    localMessage = error
+                    localMessage = if (
+                        audio.durationMillis != null &&
+                        audio.durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS
+                    ) {
+                        null
+                    } else {
+                        error
+                    }
                 }
             }.onFailure { error ->
                 isRecording = false
@@ -1092,26 +1099,11 @@ internal fun VoiceProfileManagementPanel(
             )
             Button(
                 onClick = {
-                    if (canCreateVoice) {
-                        showCreateForm = true
-                    } else {
-                        localMessage = null
-                        voicePlanGateOpen = true
-                    }
+                    if (canOpenCreateForm) showCreateForm = true
                 },
-                enabled = !voiceProfileBusy && (!canCreateVoice || !isLimitReached),
+                enabled = canOpenCreateForm,
             ) {
-                if (canCreateVoice) {
-                    Text(stringResource(R.string.voices_add))
-                } else {
-                    // 무료 플랜: 텍스트 없이 자물쇠 아이콘만 — '유료 잠금'을 간결하게.
-                    // 보이는 라벨이 없으므로 contentDescription 으로 스크린리더 라벨('잠금')을 단다.
-                    Icon(
-                        imageVector = Icons.Outlined.Lock,
-                        contentDescription = stringResource(R.string.voices_locked),
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
+                Text(stringResource(R.string.voices_add))
             }
         }
 
@@ -1244,7 +1236,6 @@ internal fun VoiceProfileManagementPanel(
         val fileInputLocked = separatingBusy || hasSeparatedSpeakers
         // 1분 미만이면 "다음" 으로 넘어가지 못하게 막는다. 녹음은 selectedAudio 길이,
         // 파일은 실제 업로드되는 crop 구간 길이로 판정(백엔드 MIN_UPLOAD_DURATION_MS 와 동일 기준).
-        // 짧으면 stopRecording/prepareSelectedFile 가 안내 메시지를 이미 띄운다.
         val canSubmitRecord = inputMode == VoiceCaptureMode.Record &&
             (selectedAudio?.durationMillis ?: 0L) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
@@ -1329,8 +1320,6 @@ internal fun VoiceProfileManagementPanel(
                                     onSelect = {
                                         if (inputMode != it) {
                                             stopMediaPreview()
-                                            // 이전 모드의 안내(예: "1분 이상 녹음해 주세요")가
-                                            // 새 모드에 남아 헷갈리게 하지 않도록 지운다.
                                             localMessage = null
                                         }
                                         inputMode = it

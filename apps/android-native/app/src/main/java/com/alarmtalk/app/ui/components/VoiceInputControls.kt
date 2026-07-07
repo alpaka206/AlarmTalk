@@ -57,12 +57,44 @@ internal enum class VoiceCaptureMode {
     Record,
     File,
 }
-
 internal fun audioTimeLabel(millis: Long): String {
     val totalSeconds = (millis / 1000).coerceAtLeast(0L)
     return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 }
 
+internal data class AudioCropRange(
+    val startMillis: Long,
+    val endMillis: Long,
+)
+
+internal fun constrainedAudioCropRange(
+    currentStartMillis: Long,
+    currentEndMillis: Long,
+    rawStartMillis: Long,
+    rawEndMillis: Long,
+    durationMillis: Long,
+    minDurationMillis: Long,
+    maxDurationMillis: Long,
+): AudioCropRange {
+    val safeDuration = durationMillis.coerceAtLeast(1L)
+    val safeStart = currentStartMillis.coerceIn(0L, safeDuration)
+    val safeEnd = currentEndMillis.coerceIn(safeStart, safeDuration)
+    val rawStart = rawStartMillis.coerceIn(0L, safeDuration)
+    val rawEnd = rawEndMillis.coerceIn(0L, safeDuration)
+    val safeMinDuration = minDurationMillis.coerceAtLeast(0L).coerceAtMost(safeDuration)
+    val safeMaxDuration = maxDurationMillis.coerceAtLeast(safeMinDuration).coerceAtMost(safeDuration)
+    val movingEnd = abs(rawEnd - safeEnd) >= abs(rawStart - safeStart)
+
+    return if (movingEnd) {
+        val lowerBound = (safeStart + safeMinDuration).coerceAtMost(safeDuration)
+        val upperBound = (safeStart + safeMaxDuration).coerceIn(lowerBound, safeDuration)
+        AudioCropRange(safeStart, rawEnd.coerceIn(lowerBound, upperBound))
+    } else {
+        val lowerBound = (safeEnd - safeMaxDuration).coerceAtLeast(0L)
+        val upperBound = (safeEnd - safeMinDuration).coerceAtLeast(lowerBound)
+        AudioCropRange(rawStart.coerceIn(lowerBound, upperBound), safeEnd)
+    }
+}
 internal fun voicePreviewContentDescription(
     context: android.content.Context,
     active: Boolean,
@@ -181,16 +213,17 @@ internal fun VoiceRecordControls(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = WakerCardShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-        border = wakerCardBorder(0.7f),
+        color = MaterialTheme.colorScheme.surface,
+        border = wakerCardBorder(),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            MutedText(notice)
             Row {
                 Text(
                     text = audioTimeLabel(elapsedMillis),
@@ -212,10 +245,6 @@ internal fun VoiceRecordControls(
                 )
             }
             VoiceLevelBars(levels = levels, active = isRecording)
-            RecordingProgressBar(
-                progress = (elapsedMillis.toFloat() / maxDurationMillis.toFloat()).coerceIn(0f, 1f),
-                active = isRecording,
-            )
             Box(contentAlignment = Alignment.Center) {
                 RecordPulseRing(active = isRecording)
                 Button(
@@ -285,16 +314,7 @@ internal fun VoiceRecordControls(
                         }
                     }
                 }
-            } else {
-                MutedText(
-                    if (isRecording) {
-                        stringResource(R.string.voices_record_tap_to_stop)
-                    } else {
-                        stringResource(R.string.voices_record_tap_to_start)
-                    },
-                )
             }
-            MutedText(notice)
         }
     }
 }
@@ -355,18 +375,18 @@ internal fun VoiceFileControls(
             onClick = onPickFile,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
-            shape = WakerPanelShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-            border = wakerCardBorder(0.7f),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = wakerCardBorder(),
         ) {
             Row(
-                modifier = Modifier.padding(14.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(52.dp)
                         .background(MaterialTheme.colorScheme.secondaryContainer, WakerTileShape),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -378,6 +398,7 @@ internal fun VoiceFileControls(
                         },
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(28.dp),
                     )
                 }
                 Column(
@@ -403,12 +424,18 @@ internal fun VoiceFileControls(
                     }
                 }
                 if (durationMillis != null) {
-                    Text(
-                        text = audioTimeLabel(durationMillis),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Surface(
+                        shape = WakerPillShape,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                    ) {
+                        Text(
+                            text = audioTimeLabel(durationMillis),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        )
+                    }
                 }
             }
         }
@@ -484,21 +511,16 @@ internal fun AudioCropRangeSelector(
             RangeSlider(
                 value = safeStart.toFloat()..safeEnd.toFloat(),
                 onValueChange = { range ->
-                    val rawStart = range.start.roundToLong().coerceIn(0L, safeDuration)
-                    val rawEnd = range.endInclusive.roundToLong().coerceIn(0L, safeDuration)
-                    // 실제로 움직인 핸들만 최소/최대 길이 안으로 클램프하고, 반대쪽 핸들은
-                    // 절대 움직이지 않는다. (기존: 한계 초과분만큼 반대쪽 핸들을 밀어서
-                    // 오른쪽 핸들만 왔다갔다해도 왼쪽 시작점이 따라 밀리는 버그가 있었음)
-                    val movingEnd = abs(rawEnd - safeEnd) >= abs(rawStart - safeStart)
-                    if (movingEnd) {
-                        val lowerBound = (safeStart + minDurationMillis).coerceAtMost(safeDuration)
-                        val upperBound = (safeStart + maxDurationMillis).coerceAtMost(safeDuration)
-                        onCropChange(safeStart, rawEnd.coerceIn(lowerBound, upperBound))
-                    } else {
-                        val lowerBound = (safeEnd - maxDurationMillis).coerceAtLeast(0L)
-                        val upperBound = (safeEnd - minDurationMillis).coerceAtLeast(0L)
-                        onCropChange(rawStart.coerceIn(lowerBound, upperBound), safeEnd)
-                    }
+                    val cropRange = constrainedAudioCropRange(
+                        currentStartMillis = safeStart,
+                        currentEndMillis = safeEnd,
+                        rawStartMillis = range.start.roundToLong(),
+                        rawEndMillis = range.endInclusive.roundToLong(),
+                        durationMillis = safeDuration,
+                        minDurationMillis = minDurationMillis,
+                        maxDurationMillis = maxDurationMillis,
+                    )
+                    onCropChange(cropRange.startMillis, cropRange.endMillis)
                 },
                 valueRange = 0f..safeDuration.toFloat(),
             )
@@ -568,28 +590,5 @@ internal fun VoiceLevelBars(
                     ),
             )
         }
-    }
-}
-
-@Composable
-private fun RecordingProgressBar(
-    progress: Float,
-    active: Boolean,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(6.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), WakerPillShape),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(progress)
-                .height(6.dp)
-                .background(
-                    if (active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
-                    WakerPillShape,
-                ),
-        )
     }
 }

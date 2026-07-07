@@ -741,8 +741,6 @@
     <string name="voices_previous">이전</string>
     <string name="voices_record_done_duration">녹음 완료 · %1$s</string>
     <string name="voices_record_duration_notice">1분 이상 2분 이하로 녹음해 주세요.</string>
-    <string name="voices_record_tap_to_start">탭해서 녹음 시작</string>
-    <string name="voices_record_tap_to_stop">탭해서 녹음 종료</string>
     <string name="voices_recording_start_failed">녹음을 시작할 수 없어요.</string>
     <string name="voices_recording_stop_failed">녹음에 실패했어요.</string>
     <string name="voices_register">등록</string>

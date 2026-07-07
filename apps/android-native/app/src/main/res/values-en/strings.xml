@@ -731,8 +731,6 @@
     <string name="voices_previous">Back</string>
     <string name="voices_record_done_duration">Recorded · %1$s</string>
     <string name="voices_record_duration_notice">Please record between 1 and 2 minutes.</string>
-    <string name="voices_record_tap_to_start">Tap to start recording</string>
-    <string name="voices_record_tap_to_stop">Tap to stop recording</string>
     <string name="voices_recording_start_failed">Couldn\'t start recording.</string>
     <string name="voices_recording_stop_failed">Recording failed.</string>
     <string name="voices_register">Register</string>
