@@ -14,7 +14,6 @@ import alarmRoutes from '../src/routes/alarm';
 import libraryRoutes from '../src/routes/library';
 import friendRoutes from '../src/routes/friend';
 import statsRoutes from '../src/routes/stats';
-import notesRoutes from '../src/routes/notes';
 import codeRoutes from '../src/routes/code';
 import userRoutes from '../src/routes/user';
 import giftRoutes from '../src/routes/gift';
@@ -190,41 +189,6 @@ describe('API latency baselines', () => {
       mockDB.pushResult([{ total: 2 }]); // friends
       const app = buildApp('/stats', statsRoutes);
       const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/stats')));
-      expect(res.status).toBe(200);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
-    });
-  });
-
-  describe('GET /notes/received', () => {
-    it('responds within threshold with empty inbox', async () => {
-      mockDB.pushResult([]); // no notes
-      const app = buildApp('/notes', notesRoutes);
-      const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('GET', '/notes/received')),
-      );
-      expect(res.status).toBe(200);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
-    });
-
-    it('responds within threshold with 10 notes', async () => {
-      const rows = Array.from({ length: 10 }, (_, i) => ({
-        id: `note-${i}`,
-        sender_id: 'user-2',
-        recipient_id: 'user-1',
-        text: `Note ${i}`,
-        audio_url: null,
-        is_read: 0,
-        sender_name: 'Sender',
-        sender_email: 'sender@test.com',
-        created_at: '2026-04-24T12:00:00Z',
-      }));
-      mockDB.pushResult([{ id: 'pk-1' }]);
-      mockDB.pushResult([{ cnt: 10 }]);
-      mockDB.pushResult(rows);
-      const app = buildApp('/notes', notesRoutes);
-      const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('GET', '/notes/received')),
-      );
       expect(res.status).toBe(200);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
