@@ -125,6 +125,7 @@ internal fun AlarmEditorScreen(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     familyAlarmMode: Boolean,
+    initialFamilyRecipientId: String? = null,
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
@@ -208,8 +209,16 @@ internal fun AlarmEditorScreen(
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
         familyAlarmRecipients(familyGroup, authSession)
     }
-    var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients) {
-        mutableStateOf(if (familyAlarmMode) familyRecipients.firstOrNull()?.userId else null)
+    var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients, initialFamilyRecipientId) {
+        mutableStateOf(
+            if (familyAlarmMode) {
+                // 시트에서 사람을 미리 골라 들어온 경우 그 사람으로 연다. 유효하지 않으면 첫 멤버로 폴백.
+                initialFamilyRecipientId?.takeIf { id -> familyRecipients.any { it.userId == id } }
+                    ?: familyRecipients.firstOrNull()?.userId
+            } else {
+                null
+            },
+        )
     }
     val selectedFamilyRecipientValue = familyRecipients.firstOrNull { it.userId == selectedFamilyRecipientId }
     val activeDynamicPromptPreferences = if (familyAlarmMode) {

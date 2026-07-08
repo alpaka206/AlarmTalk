@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -427,15 +427,18 @@ internal fun AlarmTalkApp(
 
     // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드가 모두 이 경로를 탄다.
     // 가족 알람 자격이 있으면 '누구를 깨울까요?' 시트에서 대상을 먼저 고른다.
+    val alarmTargetRecipients = familyAlarmRecipients(familyGroup, authSession)
     val canCreateFamilyAlarm = authSession != null &&
         hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
-        familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
+        alarmTargetRecipients.isNotEmpty()
     var alarmTargetSheetVisible by remember { mutableStateOf(false) }
-    fun startCreateAlarm(familyTargetMode: Boolean) {
+    fun startCreateAlarm(familyTargetMode: Boolean, targetUserId: String? = null) {
         if (!permissions.alarmReady) {
             requestFirstMissingAlarmPermission()
         } else {
-            navController.navigate(AppRoute.alarmCreate(familyTargetMode = familyTargetMode))
+            navController.navigate(
+                AppRoute.alarmCreate(familyTargetMode = familyTargetMode, targetUserId = targetUserId),
+            )
         }
     }
     fun requestCreateAlarm() {
@@ -520,7 +523,6 @@ internal fun AlarmTalkApp(
         ) { dismiss ->
             WakerSheetOptionRow(
                 title = stringResource(R.string.alarms_target_self_title),
-                description = stringResource(R.string.alarms_target_self_desc),
                 icon = Icons.Outlined.Alarm,
                 selected = false,
                 onClick = {
@@ -528,16 +530,23 @@ internal fun AlarmTalkApp(
                     startCreateAlarm(familyTargetMode = false)
                 },
             )
-            WakerSheetOptionRow(
-                title = stringResource(R.string.alarms_target_family_title),
-                description = stringResource(R.string.alarms_target_family_desc),
-                icon = Icons.Outlined.People,
-                selected = false,
-                onClick = {
-                    dismiss()
-                    startCreateAlarm(familyTargetMode = true)
-                },
-            )
+            // 가족 알람: 대상을 사람별로 바로 고른다. 각 행에 그 사람의 '받지 않는 시간'을 함께 보여줘
+            // 자동선택으로 엉뚱한 사람에게 알람이 가는 일을 막는다.
+            alarmTargetRecipients.forEach { recipient ->
+                WakerSheetOptionRow(
+                    title = familyMemberLabel(context, recipient),
+                    description = stringResource(
+                        R.string.editor_quiet_hours_label,
+                        familyAlarmQuietScheduleLabel(context, recipient),
+                    ),
+                    icon = Icons.Outlined.Person,
+                    selected = false,
+                    onClick = {
+                        dismiss()
+                        startCreateAlarm(familyTargetMode = true, targetUserId = recipient.userId)
+                    },
+                )
+            }
         }
     }
 
@@ -719,6 +728,7 @@ internal fun AlarmTalkApp(
                           onDownloadNoteAudio = viewModel::downloadNoteAudio,
                           onMarkNoteRead = viewModel::markNoteRead,
                           onCheckoutPlan = viewModel::checkoutPlan,
+                          planPrices = viewModel.billingPlanPrices,
                           onPurchasePlay = viewModel::startPlayPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
@@ -747,9 +757,17 @@ internal fun AlarmTalkApp(
               }
               composable(
                   route = AppRoute.AlarmCreate,
-                  arguments = listOf(navArgument(AppRoute.FamilyTargetModeArg) { type = NavType.BoolType }),
+                  arguments = listOf(
+                      navArgument(AppRoute.FamilyTargetModeArg) { type = NavType.BoolType },
+                      navArgument(AppRoute.TargetUserIdArg) {
+                          type = NavType.StringType
+                          nullable = true
+                          defaultValue = null
+                      },
+                  ),
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
+                  val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
                   AlarmEditorScreen(
                       contentPadding = padding,
                       alarm = null,
@@ -757,6 +775,7 @@ internal fun AlarmTalkApp(
                       subscriptionResponse = subscriptionResponse,
                       familyGroup = familyGroup,
                       familyAlarmMode = familyTargetMode,
+                      initialFamilyRecipientId = targetUserId,
                       voiceProfiles = voiceProfiles,
                       familyVoices = familyVoices,
                       voiceProfileBusy = voiceProfileBusy,

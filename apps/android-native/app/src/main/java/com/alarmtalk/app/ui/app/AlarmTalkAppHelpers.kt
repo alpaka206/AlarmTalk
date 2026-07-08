@@ -65,11 +65,15 @@ internal object AppRoute {
 
     fun legalDoc(type: String): String = "legal/$type"
     const val FamilyTargetModeArg = "familyTargetMode"
-    const val AlarmCreate = "alarm/create/{$FamilyTargetModeArg}"
+    const val TargetUserIdArg = "targetUserId"
+    const val AlarmCreate = "alarm/create/{$FamilyTargetModeArg}?$TargetUserIdArg={$TargetUserIdArg}"
     const val AlarmIdArg = "alarmId"
     const val AlarmEdit = "alarm/edit/{$AlarmIdArg}"
 
-    fun alarmCreate(familyTargetMode: Boolean): String = "alarm/create/$familyTargetMode"
+    fun alarmCreate(familyTargetMode: Boolean, targetUserId: String? = null): String {
+        val base = "alarm/create/$familyTargetMode"
+        return if (targetUserId.isNullOrBlank()) base else "$base?$TargetUserIdArg=${Uri.encode(targetUserId)}"
+    }
     fun alarmEdit(alarmId: String): String = "alarm/edit/${Uri.encode(alarmId)}"
 }
 

@@ -366,9 +366,6 @@
     <string name="editorp_weather_use_current_location">Use current location</string>
     <string name="alarms_target_sheet_title">Who is this alarm for?</string>
     <string name="alarms_target_self_title">Set my alarm</string>
-    <string name="alarms_target_self_desc">Rings on this phone.</string>
-    <string name="alarms_target_family_title">Set a partner\'s alarm</string>
-    <string name="alarms_target_family_desc">Rings on your partner\'s phone — you can wake them with your voice.</string>
     <string name="hs_delete_account_body">Are you sure you want to delete your account? 30 days after you request it, all your data—including alarms, voices, and messages—is permanently deleted. You can cancel and restore it by signing back in before then.</string>
     <string name="hs_delete_account_confirm">Delete</string>
     <string name="hs_delete_account_title">Delete account</string>

@@ -368,9 +368,6 @@
     <string name="editorp_weather_use_current_location">현재 위치 사용</string>
     <string name="alarms_target_sheet_title">누구를 깨울까요?</string>
     <string name="alarms_target_self_title">내 알람 맞추기</string>
-    <string name="alarms_target_self_desc">이 폰에서 울려요.</string>
-    <string name="alarms_target_family_title">상대 알람 맞춰주기</string>
-    <string name="alarms_target_family_desc">연결된 상대의 폰에서 울려요. 내 목소리로 깨워줄 수 있어요.</string>
     <string name="hs_delete_account_body">정말 탈퇴할까요? 신청 후 30일이 지나면 알람, 음성, 메시지 등 모든 데이터가 영구 삭제돼요. 그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요.</string>
     <string name="hs_delete_account_confirm">탈퇴</string>
     <string name="hs_delete_account_title">회원 탈퇴</string>

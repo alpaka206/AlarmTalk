@@ -366,9 +366,6 @@
     <string name="editorp_weather_use_current_location">現在地を使う</string>
     <string name="alarms_target_sheet_title">誰を起こしますか？</string>
     <string name="alarms_target_self_title">自分のアラームを設定</string>
-    <string name="alarms_target_self_desc">このスマホで鳴ります。</string>
-    <string name="alarms_target_family_title">相手のアラームを設定</string>
-    <string name="alarms_target_family_desc">つながっている相手のスマホで鳴ります。自分の声で起こせます。</string>
     <string name="hs_delete_account_body">本当に退会しますか？申請から30日が過ぎると、アラーム・音声・メッセージなどすべてのデータが完全に削除されます。それまでに再ログインして退会を取り消せば復元できます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
     <string name="hs_delete_account_title">退会</string>
