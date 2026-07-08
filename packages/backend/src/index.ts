@@ -344,7 +344,14 @@ async function scheduled(
   const result = await db.execute(
     `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
             mode, voice_profile_id, speaker_id, timezone
-     FROM alarms WHERE is_active = 1`,
+     FROM alarms
+     WHERE is_active = 1
+       AND NOT EXISTS (
+         SELECT 1 FROM alarm_recipient_state ars
+         WHERE ars.alarm_id = alarms.id
+           AND ars.recipient_user_id = alarms.target_user_id
+           AND ars.declined = 1
+       )`,
   );
 
   const alarms: ScheduledAlarm[] = result.rows.map((r) => ({

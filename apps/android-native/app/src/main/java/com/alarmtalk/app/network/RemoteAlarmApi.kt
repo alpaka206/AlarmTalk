@@ -88,4 +88,12 @@ interface RemoteAlarmApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
     )
+
+    // 수신자 '그만받기': 받은 가족 알람을 서버에 영구 opt-out 한다. 로컬 삭제와 달리 재조회·
+    // 재설치·동기화로 되살아나지 않는다(생성자 알람은 보존되는 비파괴 모델).
+    @POST("alarm/{id}/decline")
+    suspend fun declineAlarm(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    )
 }

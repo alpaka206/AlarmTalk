@@ -20,6 +20,7 @@ import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
+import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.CachedAlarmAudio
@@ -290,6 +291,21 @@ internal fun MainViewModel.setAlarmEnabled(alarmId: String, enabled: Boolean) {
 
 internal fun MainViewModel.deleteAlarm(alarmId: String) {
     viewModelScope.launch {
+        // 받은(가족) 알람은 로컬 삭제만으로는 다음 동기화에 되살아난다(감사 A-1). 서버에
+        // '그만받기'(decline)를 먼저 영구 기록해야 재조회·재설치에도 부활하지 않는다. decline 이
+        // 실패하면(오프라인 등) 로컬 삭제도 보류해 '지웠는데 되살아나는' 혼란을 막고 재시도하게 한다.
+        val alarm = repository.getAlarm(alarmId)
+        val remoteId = alarm?.remoteAlarmId
+        if (alarm?.origin == AlarmOrigins.RECEIVED_REMOTE && !remoteId.isNullOrBlank()) {
+            val authorization = bearerOrMessage(
+                getApplication<Application>().getString(R.string.msg_alarm_delete_failed),
+            ) ?: return@launch
+            val declined = runCatching { api.declineAlarm(authorization, remoteId) }.isSuccess
+            if (!declined) {
+                message = getApplication<Application>().getString(R.string.msg_alarm_delete_failed)
+                return@launch
+            }
+        }
         runCatching {
             repository.deleteAlarm(alarmId)
         }.onSuccess {

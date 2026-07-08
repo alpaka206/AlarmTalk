@@ -1215,6 +1215,26 @@ export const migrations: Migration[] = [
         ON promo_code_redemptions(promo_code_id)`,
     ],
   },
+  {
+    // 가족 알람 '그만받기'(수신자 opt-out). 수신자(target_user_id)가 자기에게 온 반복 알람을
+    // 서버에 영구 opt-out 한다. 생성자 소유의 alarms 행/is_active 는 건드리지 않는 비파괴 모델이며,
+    // 읽기 경로(list·tick·cron)가 이 상태로 수신자별 배달을 차단한다. 로컬 삭제와 달리
+    // 재설치·동기화로 부활하지 않는다(감사 A-1/A-2/A-3 봉합).
+    id: 56,
+    name: 'alarm-recipient-state',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS alarm_recipient_state (
+        alarm_id TEXT NOT NULL,
+        recipient_user_id TEXT NOT NULL,
+        declined INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (alarm_id, recipient_user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_alarm_recipient_state_recipient
+        ON alarm_recipient_state(recipient_user_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

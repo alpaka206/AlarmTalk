@@ -24,8 +24,18 @@ alarmQuery.get('/tick', async (c) => {
     sql: `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
                  mode, voice_profile_id, speaker_id, timezone
           FROM alarms
-          WHERE (user_id IN (${idPlaceholders}) OR target_user_id IN (${idPlaceholders})) AND is_active = 1`,
-    args: [...ids, ...ids],
+          WHERE (user_id IN (${idPlaceholders}) OR target_user_id IN (${idPlaceholders})) AND is_active = 1
+            AND NOT (
+              target_user_id IN (${idPlaceholders})
+              AND user_id NOT IN (${idPlaceholders})
+              AND EXISTS (
+                SELECT 1 FROM alarm_recipient_state ars
+                WHERE ars.alarm_id = alarms.id
+                  AND ars.recipient_user_id IN (${idPlaceholders})
+                  AND ars.declined = 1
+              )
+            )`,
+    args: [...ids, ...ids, ...ids, ...ids, ...ids],
   });
 
   const alarms: ScheduledAlarm[] = (result.rows as AlarmRow[]).map((r) => {
@@ -69,8 +79,18 @@ alarmQuery.get('/', async (c) => {
   const isActiveParam = c.req.query('is_active');
   const voiceProfileId = c.req.query('voice_profile_id');
 
-  let whereClause = `WHERE (a.user_id IN (${idPlaceholders}) OR a.target_user_id IN (${idPlaceholders}))`;
-  const whereArgs: (string | number)[] = [...ids, ...ids];
+  let whereClause = `WHERE (a.user_id IN (${idPlaceholders}) OR a.target_user_id IN (${idPlaceholders}))
+        AND NOT (
+          a.target_user_id IN (${idPlaceholders})
+          AND a.user_id NOT IN (${idPlaceholders})
+          AND EXISTS (
+            SELECT 1 FROM alarm_recipient_state ars
+            WHERE ars.alarm_id = a.id
+              AND ars.recipient_user_id IN (${idPlaceholders})
+              AND ars.declined = 1
+          )
+        )`;
+  const whereArgs: (string | number)[] = [...ids, ...ids, ...ids, ...ids, ...ids];
 
   if (isActiveParam === 'true' || isActiveParam === 'false') {
     whereClause += ' AND a.is_active = ?';
