@@ -675,51 +675,6 @@ struct CodeRegisterResponse: Decodable, Equatable {
     var type: String?
 }
 
-struct NoteListResponse: Decodable {
-    var notes: [ReceivedNote]
-    var total: Int?
-    var limit: Int?
-    var offset: Int?
-}
-
-struct ReceivedNote: Decodable, Identifiable, Equatable {
-    var id: String
-    var senderId: String
-    var senderName: String?
-    var senderEmail: String?
-    var senderPicture: String?
-    var text: String
-    var audioUrl: String?
-    var audioAvailable: Bool?
-    var readAt: String?
-    var createdAt: String?
-}
-
-struct SendNoteRequest: Encodable {
-    var receiverId: String
-    var text: String
-    var audioUrl: String?
-}
-
-struct SendNoteResponse: Decodable, Equatable {
-    var success: Bool
-    var note: ReceivedNote
-}
-
-struct MarkNoteReadResponse: Decodable, Equatable {
-    var success: Bool
-    var alreadyRead: Bool?
-    var readAt: String?
-}
-
-struct NoteAudioResponse: Decodable, Equatable {
-    var noteId: String
-    var audioBase64: String
-    var audioFormat: String
-    var audioUrl: String?
-    var text: String
-}
-
 struct BillingSubscriptionResponse: Codable, Equatable {
     var subscription: BillingSubscription?
     var plan: BillingPlan?

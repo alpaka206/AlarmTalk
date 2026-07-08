@@ -208,8 +208,7 @@ struct StockClipPicker: View {
     }
 
     /// 카테고리 한국어 라벨. 알 수 없는 카테고리(예: greeting)는 nil → 라벨 숨김.
-    /// Android `editor2_cat_*` 와 동일하며, iOS MessagesView 에 빠져 있는
-    /// medication("약")·exercise("운동")까지 모두 포함한다.
+    /// Android `editor2_cat_*` 와 동일하며 medication("약")·exercise("운동")까지 모두 포함한다.
     private static func categoryLabel(_ category: String?) -> String? {
         switch category {
         case "morning": return "기상"
