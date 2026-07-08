@@ -31,9 +31,7 @@ import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.SendNoteRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
@@ -514,12 +512,10 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
             message = getApplication<android.app.Application>().getString(R.string.msg_voice_deleted)
-            refreshNotesSilently()
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
                 message = getApplication<android.app.Application>().getString(R.string.msg_voice_already_deleted)
-                refreshNotesSilently()
             } else {
                 if (originalProfile != null) {
                     voiceProfiles = voiceProfiles.map {

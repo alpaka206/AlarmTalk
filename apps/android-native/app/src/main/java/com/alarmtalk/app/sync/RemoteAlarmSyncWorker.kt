@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.alarmtalk.app.alarm.SocialNotificationTracker
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -21,17 +20,9 @@ class RemoteAlarmSyncWorker(
             val api = AlarmTalkApiClient.create()
             val result = AlarmAppContainer.repository(applicationContext)
                 .pullReceivedAlarms(api, session.token, session.user.id)
-            val notes = api
-                .listReceivedNotes(AlarmTalkApiClient.bearer(session.token), limit = 20, offset = 0)
-                .notes
-            SocialNotificationTracker.notifyNewNotes(
-                context = applicationContext,
-                notes = notes,
-                allowInitialNotify = false,
-            )
             Log.i(
                 TAG,
-                "Remote alarm worker complete total=${result.total} imported=${result.imported} updated=${result.updated} failed=${result.failed} notes=${notes.size}",
+                "Remote alarm worker complete total=${result.total} imported=${result.imported} updated=${result.updated} failed=${result.failed}",
             )
             if (result.failed > 0 && result.imported == 0 && result.updated == 0) {
                 Result.retry()

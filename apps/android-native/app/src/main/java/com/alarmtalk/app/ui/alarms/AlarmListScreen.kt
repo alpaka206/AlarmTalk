@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,8 +38,6 @@ import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
-import com.alarmtalk.app.network.NoteAudioResponse
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
@@ -70,8 +67,6 @@ internal fun AlarmListScreen(
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     vouchers: List<VoucherItem>,
-    noteBusy: Boolean,
-    receivedNotes: List<ReceivedNote>,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
@@ -96,11 +91,6 @@ internal fun AlarmListScreen(
     onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
-    onRefreshNotes: () -> Unit,
-    onSendNote: (String, String) -> Unit,
-    onSendTtsNote: (String, String, String) -> Unit,
-    onDownloadNoteAudio: suspend (String) -> NoteAudioResponse,
-    onMarkNoteRead: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
     planPrices: Map<String, String>,
     onPurchasePlay: (android.app.Activity, String) -> Unit,
@@ -267,34 +257,6 @@ internal fun AlarmListScreen(
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRegisterCode = onRegisterCode,
                         onEnsureFamilyShareCode = onEnsureFamilyShareCode,
-                    )
-                }
-            }
-
-            NativeTab.Messages -> {
-                item {
-                    ScreenHeader(title = stringResource(R.string.common_tab_messages))
-                }
-                if (authSession != null) item {
-                    VoiceMessagePanel(
-                        authSession = authSession,
-                        noteBusy = noteBusy,
-                        familyGroup = familyGroup,
-                        subscriptionResponse = subscriptionResponse,
-                        voiceProfiles = voiceProfiles,
-                        familyVoices = familyVoices,
-                        voiceProfileBusy = voiceProfileBusy,
-                        receivedNotes = receivedNotes,
-                        onRefresh = {
-                            onRefreshSocial()
-                            onRefreshNotes()
-                        },
-                        onSendNote = onSendNote,
-                        onSendTtsNote = onSendTtsNote,
-                        onDownloadNoteAudio = onDownloadNoteAudio,
-                        onMarkNoteRead = onMarkNoteRead,
-                        onOpenFamily = { onSelectTab(NativeTab.People) },
-                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
                     )
                 }
             }

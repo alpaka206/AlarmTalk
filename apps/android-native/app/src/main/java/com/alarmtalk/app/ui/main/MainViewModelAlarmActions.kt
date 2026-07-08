@@ -36,11 +36,9 @@ import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyAlarmTalkRequest
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.RemoteAlarmMapper
 import com.alarmtalk.app.network.RemoteAlarmWriteRequest
-import com.alarmtalk.app.network.SendNoteRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage

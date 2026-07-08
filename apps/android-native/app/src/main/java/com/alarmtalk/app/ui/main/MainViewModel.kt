@@ -28,9 +28,7 @@ import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.SendNoteRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
@@ -215,12 +213,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var vouchers by mutableStateOf<List<VoucherItem>>(emptyList())
-        internal set
-
-    var noteBusy by mutableStateOf(false)
-        internal set
-
-    var receivedNotes by mutableStateOf<List<ReceivedNote>>(emptyList())
         internal set
 
     var message by mutableStateOf<String?>(null)
@@ -449,7 +441,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         familyVoices = emptyList()
         subscriptionResponse = null
         vouchers = emptyList()
-        receivedNotes = emptyList()
         receivedAlarmSeenAtMillis = 0L
         registerEmailVerificationSentTo = null
         registerEmailVerified = null

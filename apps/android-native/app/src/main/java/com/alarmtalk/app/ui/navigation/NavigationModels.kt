@@ -33,7 +33,6 @@ internal enum class NativeTab {
     Voices,
     Alarms,
     People,
-    Messages,
     Billing,
     Menu,
 }

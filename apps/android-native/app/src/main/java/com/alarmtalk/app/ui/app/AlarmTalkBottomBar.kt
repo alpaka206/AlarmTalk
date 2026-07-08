@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.automirrored.filled.Message
-import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Menu
@@ -49,8 +47,6 @@ import androidx.compose.ui.unit.dp
 internal fun AlarmTalkBottomBar(
     selectedTab: NativeTab,
     unreadAlarmCount: Int,
-    unreadMessageCount: Int,
-    messagesLocked: Boolean,
     onSelectTab: (NativeTab) -> Unit,
     onCreateAlarm: () -> Unit,
 ) {
@@ -89,17 +85,6 @@ internal fun AlarmTalkBottomBar(
             )
             AlarmCreateBarButton(
                 onClick = onCreateAlarm,
-                modifier = Modifier.weight(1f),
-            )
-            AlarmTalkTabItem(
-                tab = NativeTab.Messages,
-                selectedTab = selectedTab,
-                icon = Icons.AutoMirrored.Outlined.Message,
-                selectedIcon = Icons.AutoMirrored.Filled.Message,
-                label = stringResource(R.string.r3app_bottom_tab_messages),
-                badgeCount = unreadMessageCount,
-                locked = messagesLocked,
-                onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
             AlarmTalkTabItem(

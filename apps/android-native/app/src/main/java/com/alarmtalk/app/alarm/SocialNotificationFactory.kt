@@ -14,20 +14,8 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.data.receivedRemoteAlarmLabel
 
 object SocialNotificationFactory {
-    private const val MESSAGE_GROUP_ID = "voice_alarm_messages"
     private const val ALARM_GROUP_ID = "voice_alarm_received_alarms"
-    private const val BASE_MESSAGE_NOTIFICATION_ID = 2_000
     private const val BASE_ALARM_NOTIFICATION_ID = 3_000
-
-    fun notifyNewMessage(context: Context, noteId: String, senderName: String?, text: String) {
-        notify(
-            context = context,
-            notificationId = BASE_MESSAGE_NOTIFICATION_ID + stableOffset(noteId),
-            title = senderName?.takeIf { it.isNotBlank() } ?: context.getString(R.string.r3misc_notif_new_message_title),
-            body = text.take(80).ifBlank { context.getString(R.string.r3misc_notif_new_message_body) },
-            groupId = MESSAGE_GROUP_ID,
-        )
-    }
 
     fun notifyReceivedAlarm(context: Context, alarmId: String, senderName: String?, time: String) {
         val body = time

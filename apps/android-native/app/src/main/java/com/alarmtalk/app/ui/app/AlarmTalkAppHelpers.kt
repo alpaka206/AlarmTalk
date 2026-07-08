@@ -82,7 +82,6 @@ internal val NativeTab.route: String
         NativeTab.Voices -> "voices"
         NativeTab.Alarms -> "alarms"
         NativeTab.People -> "people"
-        NativeTab.Messages -> "messages"
         NativeTab.Billing -> "billing"
         NativeTab.Menu -> "menu"
     }

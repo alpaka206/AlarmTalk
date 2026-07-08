@@ -63,8 +63,6 @@ internal fun AlarmTalkApp(
     val billingBusy = viewModel.billingBusy
     val subscriptionResponse = viewModel.subscriptionResponse
     val vouchers = viewModel.vouchers
-    val noteBusy = viewModel.noteBusy
-    val receivedNotes = viewModel.receivedNotes
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentTab = navBackStackEntry?.destination?.route.toNativeTab()
@@ -102,10 +100,6 @@ internal fun AlarmTalkApp(
             alarm.origin == AlarmOrigins.RECEIVED_REMOTE &&
                 alarm.createdAtMillis > viewModel.receivedAlarmSeenAtMillis
         }
-    }
-    // 읽지 않은 메시지 수도 receivedNotes 가 바뀔 때만 계산(매 리컴포지션 재계산 방지).
-    val unreadMessageCount = remember(receivedNotes) {
-        receivedNotes.count { it.readAt.isNullOrBlank() }
     }
     val permissionState = rememberPermissionStatusState()
     val permissions = permissionState.snapshot
@@ -281,7 +275,6 @@ internal fun AlarmTalkApp(
             viewModel.loadStockClips()
             viewModel.preloadSocial()
             viewModel.preloadBilling()
-            viewModel.preloadNotes()
         }
     }
 
@@ -331,10 +324,6 @@ internal fun AlarmTalkApp(
             NativeTab.People -> {
                 viewModel.refreshSocial()
                 viewModel.refreshBilling()
-            }
-            NativeTab.Messages -> {
-                viewModel.refreshSocial()
-                viewModel.refreshNotes()
             }
             NativeTab.Billing -> viewModel.refreshBilling()
             // 전체 탭: 공유 이용권/가족 여부에 따라 노출 항목이 달라지므로 함께 갱신.
@@ -404,19 +393,6 @@ internal fun AlarmTalkApp(
     }
 
     fun navigateToTab(tab: NativeTab) {
-        if (
-            tab == NativeTab.Messages &&
-            authSession != null &&
-            subscriptionResponse != null &&
-            familyGroup != null &&
-            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
-        ) {
-            planGateDialog = PlanGateDialogState(
-                title = context.getString(R.string.r3app_messages_plan_gate_title),
-                message = context.getString(R.string.r3app_messages_plan_gate),
-            )
-            return
-        }
         if (selectedTab == tab) return
         navController.navigateTopLevelTab(tab)
     }
@@ -559,9 +535,6 @@ internal fun AlarmTalkApp(
                 AlarmTalkBottomBar(
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
-                    unreadMessageCount = unreadMessageCount,
-                    // 메시지는 커플/가족 전용 — 무료·개인 플랜은 잠금 표시.
-                    messagesLocked = !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup),
                     onSelectTab = ::navigateToTab,
                     onCreateAlarm = ::requestCreateAlarm,
                 )
@@ -691,8 +664,6 @@ internal fun AlarmTalkApp(
                           billingBusy = billingBusy,
                           subscriptionResponse = subscriptionResponse,
                           vouchers = vouchers,
-                          noteBusy = noteBusy,
-                          receivedNotes = receivedNotes,
                           onLogin = viewModel::login,
                           onRegister = viewModel::register,
                           onGoogleSignIn = ::launchGoogleSignIn,
@@ -722,11 +693,6 @@ internal fun AlarmTalkApp(
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,
                           onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
-                          onRefreshNotes = viewModel::refreshNotes,
-                          onSendNote = viewModel::sendNote,
-                          onSendTtsNote = viewModel::sendTtsNote,
-                          onDownloadNoteAudio = viewModel::downloadNoteAudio,
-                          onMarkNoteRead = viewModel::markNoteRead,
                           onCheckoutPlan = viewModel::checkoutPlan,
                           planPrices = viewModel.billingPlanPrices,
                           onPurchasePlay = viewModel::startPlayPurchase,
