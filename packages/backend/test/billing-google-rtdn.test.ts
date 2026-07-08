@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseDeveloperNotification,
   decideSubscriptionAction,
+  selectAuthoritativeLineItem,
 } from '../src/routes/billing-google-rtdn';
 
 function pubsubEnvelope(notification: unknown): { message: { data: string } } {
@@ -89,6 +90,32 @@ describe('billing google RTDN', () => {
 
     it('만료시각이 NaN 이면 deactivate', () => {
       expect(decideSubscriptionAction('SUBSCRIPTION_STATE_ACTIVE', NaN, now)).toBe('deactivate');
+    });
+  });
+
+  // 위조 RTDN 등급상승 방어: 등급 결정용 productId 는 알림 본문(위조 가능)이 아니라
+  // 재조회한 lineItems(권위)에서 와야 한다.
+  describe('selectAuthoritativeLineItem (위조 productId 등급상승 차단)', () => {
+    it('위조된 상위 productId 알림이 와도 실제 구독 lineItem(저가) 을 고른다', () => {
+      const lineItems = [{ productId: 'personal_monthly', expiryTime: '2999-01-01T00:00:00Z' }];
+      // 공격자가 family_monthly 로 위조해도 → 실제 personal lineItem 이 선택됨
+      const picked = selectAuthoritativeLineItem(lineItems, 'family_monthly');
+      expect(picked?.productId).toBe('personal_monthly');
+    });
+
+    it('알림 productId 가 실제 lineItem 과 일치하면 그 항목을 고른다', () => {
+      const lineItems = [
+        { productId: 'personal_monthly' },
+        { productId: 'family_monthly' },
+      ];
+      expect(selectAuthoritativeLineItem(lineItems, 'family_monthly')?.productId).toBe(
+        'family_monthly',
+      );
+    });
+
+    it('lineItems 가 없으면 undefined (등급 부여 불가)', () => {
+      expect(selectAuthoritativeLineItem(undefined, 'family_monthly')).toBeUndefined();
+      expect(selectAuthoritativeLineItem([], 'family_monthly')).toBeUndefined();
     });
   });
 });
