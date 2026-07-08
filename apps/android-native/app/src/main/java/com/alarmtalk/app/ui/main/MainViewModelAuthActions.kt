@@ -743,7 +743,7 @@ internal fun MainViewModel.syncNow() {
         syncBusy = true
         runCatching {
             val push = repository.syncWithBackend(api, session.token)
-            val pull = repository.pullReceivedAlarms(api, session.token, session.user.id)
+            val pull = repository.pullReceivedAlarms(api, session.token)
             push to pull
         }.onSuccess { (push, pull) ->
             val failed = push.failed + pull.failed

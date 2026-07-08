@@ -622,9 +622,8 @@ class AlarmRepository(
     suspend fun pullReceivedAlarms(
         api: AlarmTalkApi,
         token: String,
-        myUserId: String,
     ): RemoteAlarmPullResult =
-        remoteAlarmPullSyncService.pullReceivedAlarms(api, token, myUserId)
+        remoteAlarmPullSyncService.pullReceivedAlarms(api, token)
 
     suspend fun refreshDueDynamicAlarmTalks(
         api: AlarmTalkApi,

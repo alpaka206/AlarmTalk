@@ -89,6 +89,38 @@ describe('normalizeAlarmRow', () => {
     expect(normalizeAlarmRow(row).is_received_family_alarm).toBe(false);
   });
 
+  it('is_received_family_alarm accepts an array of viewer ids', () => {
+    const row = { ...base, category: 'family', user_id: 'sender-1', target_user_id: 'viewer-2' };
+    expect(normalizeAlarmRow(row, ['pk-2', 'viewer-2']).is_received_family_alarm).toBe(true);
+    // 뷰어 집합에 sender 가 포함되면(내가 보낸 것) received 아님
+    expect(normalizeAlarmRow(row, ['pk-1', 'sender-1']).is_received_family_alarm).toBe(false);
+  });
+
+  it('is_received: viewer is target and not creator (category-agnostic)', () => {
+    const row = { ...base, user_id: 'sender-1', target_user_id: 'viewer-2' };
+    expect(normalizeAlarmRow(row, 'viewer-2').is_received).toBe(true);
+    // 내가 만든 알람(내가 sender) → received 아님
+    expect(normalizeAlarmRow(row, 'sender-1').is_received).toBe(false);
+    // target 이 내가 아님 → received 아님
+    expect(normalizeAlarmRow(row, 'other').is_received).toBe(false);
+    // 뷰어 미지정 → received 아님
+    expect(normalizeAlarmRow(row).is_received).toBe(false);
+    // target 없음 → received 아님(가족 플래그와 달리 target 이 필요)
+    expect(normalizeAlarmRow({ ...base, user_id: 'sender-1' }, 'viewer-2').is_received).toBe(false);
+  });
+
+  it('is_received is namespace-safe across account-linking (PK vs login id)', () => {
+    // 계정 연동 사용자: PK(UUID) ≠ 로그인 id(google_id). alarms.user_id·target_user_id 는
+    // 로그인 id 로 저장되고, 클라 session.user.id 는 PK 일 수 있다. 서버가 두 식별자를 모두
+    // 담은 집합으로 판별하므로 '내가 보낸 알람'을 '받은 알람'으로 오분류하지 않는다.
+    const myPk = '11111111-1111-1111-1111-111111111111';
+    const myLoginId = 'google-abc';
+    const sent = { ...base, user_id: myLoginId, target_user_id: 'friend-login' };
+    expect(normalizeAlarmRow(sent, [myPk, myLoginId]).is_received).toBe(false);
+    const received = { ...base, user_id: 'friend-login', target_user_id: myLoginId };
+    expect(normalizeAlarmRow(received, [myPk, myLoginId]).is_received).toBe(true);
+  });
+
   it('extracts sender info', () => {
     const row = { ...base, user_id: 'u1', creator_name: 'Kim', creator_email: 'k@t.co' };
     const r = normalizeAlarmRow(row);

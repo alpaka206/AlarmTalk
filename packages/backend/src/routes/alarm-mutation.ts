@@ -591,7 +591,7 @@ alarmMutation.patch('/:id', async (c) => {
 
   return c.json({
     success: true,
-    alarm: normalizeAlarmRow(updated.rows[0] as AlarmRow, userId),
+    alarm: normalizeAlarmRow(updated.rows[0] as AlarmRow, ownerIds),
   });
 });
 

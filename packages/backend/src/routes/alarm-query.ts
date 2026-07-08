@@ -70,7 +70,6 @@ alarmQuery.get('/tick', async (c) => {
 });
 
 alarmQuery.get('/', async (c) => {
-  const userId = c.get('userId');
   const ids = viewerIds(c);
   const idPlaceholders = inPlaceholders(ids);
   const db = getDB(c.env);
@@ -129,12 +128,11 @@ alarmQuery.get('/', async (c) => {
   ]);
 
   const total = Number(countRes.rows[0]!.total);
-  const alarms = (result.rows as AlarmRow[]).map((r) => normalizeAlarmRow(r, userId));
+  const alarms = (result.rows as AlarmRow[]).map((r) => normalizeAlarmRow(r, ids));
   return c.json({ alarms, total, limit, offset });
 });
 
 alarmQuery.get('/:id', async (c) => {
-  const userId = c.get('userId');
   const ids = viewerIds(c);
   const idPlaceholders = inPlaceholders(ids);
   const db = getDB(c.env);
@@ -160,7 +158,7 @@ alarmQuery.get('/:id', async (c) => {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
   }
 
-  return c.json({ alarm: normalizeAlarmRow(result.rows[0] as AlarmRow, userId) });
+  return c.json({ alarm: normalizeAlarmRow(result.rows[0] as AlarmRow, ids) });
 });
 
 export default alarmQuery;

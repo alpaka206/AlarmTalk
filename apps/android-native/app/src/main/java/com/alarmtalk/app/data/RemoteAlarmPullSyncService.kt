@@ -28,13 +28,13 @@ internal class RemoteAlarmPullSyncService(
     suspend fun pullReceivedAlarms(
         api: AlarmTalkApi,
         token: String,
-        myUserId: String,
     ): RemoteAlarmPullResult {
         val authorization = AlarmTalkApiClient.bearer(token)
         // 서버는 user_id IN (...) OR target_user_id IN (...) 로 이미 스코프해서 보내준다.
-        // 그중 "내가 만든 게 아니라 누군가가 나를 target 으로 만든" 알람만 가져온다.
-        // 기존에는 isReceivedFamilyAlarm(=family/family-voice 카테고리)로 좁혀져 있어서
-        // 일반 /api/alarm 경로(target_user_id 포함)로 보낸 알람이 누락됐다.
+        // 그중 "내가 만든 게 아니라 누군가가 나를 target 으로 만든" 받은 알람만 가져온다 —
+        // 판별은 서버가 뷰어의 두 식별자(PK·로그인 id)를 모두 담은 집합으로 계산한 is_received 를 쓴다.
+        // 클라측 session.user.id 로 sender 를 직접 비교하면 계정 연동(PK≠google_id) 사용자의
+        // '보낸 알람'을 '받은 알람'으로 오분류해 자기 기기에 예약해버린다(PR #536 P1).
         // 페이지네이션으로 전체 스냅샷을 모은다 — 1페이지만 받으면 알람이 많은 사용자는 받은 알람
         // 처리·prune 이 누락된다. 완전 스냅샷(snapshotComplete)일 때만 아래에서 prune 한다.
         val allRemote = mutableListOf<RemoteAlarm>()
@@ -52,14 +52,7 @@ internal class RemoteAlarmPullSyncService(
                 break
             }
         }
-        val remoteAlarms = allRemote
-            .filter { remote ->
-                val sender = remote.senderUserId
-                val target = remote.targetUserId
-                !target.isNullOrBlank() &&
-                    !sender.isNullOrBlank() &&
-                    sender != myUserId
-            }
+        val remoteAlarms = allRemote.filter { it.isReceived }
 
         var imported = 0
         var updated = 0
