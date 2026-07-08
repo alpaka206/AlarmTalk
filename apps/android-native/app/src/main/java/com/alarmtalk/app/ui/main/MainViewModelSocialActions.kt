@@ -69,7 +69,7 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
 // 두 로드가 비동기라 늦게 끝난 쪽(refreshSocial·fetchVoiceProfiles 성공)에서 이 함수를 호출해, 한쪽이
 // 먼저 끝나 스킵돼도 재실행되게 한다. 로드 실패 시 옛 목록을 유지하므로 신선 로드만 신뢰해 오강등을 막는다.
 internal fun MainViewModel.reconcileInaccessibleVoiceAlarms() {
-    if (!familyVoicesLoadedFresh || voiceProfiles.isEmpty()) return
+    if (!familyVoicesLoadedFresh || !voiceProfilesLoadedFresh) return
     val accessibleVoiceIds = (voiceProfiles.map { it.id } + familyVoices.map { it.id }).toSet()
     viewModelScope.launch {
         runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds) }

@@ -196,6 +196,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal var familyVoicesLoadedFresh: Boolean = false
         internal set
 
+    // 내 음성 목록이 API 로 '성공적으로' 로드됐는지(빈 목록도 유효한 신선 로드로 취급). voiceProfiles.isEmpty()
+    // 를 '미로드'로 쓰면 마지막 목소리를 삭제·접근상실한 사용자의 알람 강등이 스킵되므로 별도 플래그로 추적(PR #536 P2).
+    internal var voiceProfilesLoadedFresh: Boolean = false
+        internal set
+
     var billingBusy by mutableStateOf(false)
 
     // planKey("personal"/"couple"/"family") → Play 실제 표시가격(formattedPrice). preloadProducts
@@ -434,6 +439,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal fun clearUserScopedRemoteState() {
         voiceProfiles = emptyList()
         voiceProfileLoadFinished = false
+        voiceProfilesLoadedFresh = false
         showVoiceSetup = false
         defaultVoiceId = null
         ttsMessages = emptyList()
