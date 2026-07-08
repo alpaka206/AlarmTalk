@@ -22,9 +22,6 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -48,7 +45,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -56,63 +52,8 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoiceSpeakerSegment
 
-// VoiceProfileManagement 행/필드/드래프트 하위 컴포넌트.
-
-/**
- * 파일에 여러 목소리가 섞였을 때 쓰는 보조 진입점 — 화자 수를 미리 고르게 하는 대신,
- * 필요할 때만 목소리 나누기(화자 분리)를 실행하게 한다. 분리는 자동 감지(최대 3명).
- */
-@Composable
-internal fun MixedVoicesSeparateRow(
-    busy: Boolean,
-    enabled: Boolean,
-    onSeparate: () -> Unit,
-) {
-    Surface(
-        onClick = onSeparate,
-        enabled = enabled && !busy,
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerCardShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = wakerCardBorder(),
-    ) {
-        Row(
-            // 행 전체가 탭 대상 + 우측 액션 텍스트(토스식 "변경" 패턴) — 넓은 버튼 대신
-            // 짧은 텍스트를 둬서 제목/설명이 한 줄에 들어갈 폭을 확보한다.
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.voices_mixed_voices_prompt),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                MutedText(stringResource(R.string.voices_mixed_voices_desc))
-            }
-            Text(
-                text = if (busy) {
-                    stringResource(R.string.voices_separating)
-                } else {
-                    stringResource(R.string.voices_separate_action)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (busy) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.primary
-                },
-            )
-        }
-    }
-}
+// VoiceProfileManagement 행/필드 하위 컴포넌트.
 
 internal enum class VoiceRegistrationStep {
     Source,
@@ -313,84 +254,6 @@ internal fun parseRelationshipLabel(raw: String?): RelationshipSelection {
         RelationshipSelection(preset = match)
     } else {
         RelationshipSelection(preset = RelationshipPreset.Custom, customLabel = trimmed)
-    }
-}
-
-internal enum class SpeakerDraftStatus {
-    Cloning,
-    Synthesizing,
-    Ready,
-    Failed,
-}
-
-internal data class SpeakerDraftState(
-    val profileId: String? = null,
-    val previewUri: String? = null,
-    val status: SpeakerDraftStatus = SpeakerDraftStatus.Cloning,
-    val errorMessage: String? = null,
-)
-
-internal fun draftStatusLabel(
-    context: android.content.Context,
-    status: SpeakerDraftStatus,
-    errorMessage: String?,
-): String = when (status) {
-    SpeakerDraftStatus.Cloning -> context.getString(R.string.voices2_draft_status_cloning)
-    SpeakerDraftStatus.Synthesizing -> context.getString(R.string.voices2_draft_status_synthesizing)
-    SpeakerDraftStatus.Ready -> context.getString(R.string.voices2_draft_status_ready)
-    SpeakerDraftStatus.Failed ->
-        errorMessage ?: context.getString(R.string.voices2_draft_status_failed)
-}
-
-@Composable
-internal fun SpeakerDraftRow(
-    speaker: VoiceSpeakerSegment,
-    index: Int,
-    state: SpeakerDraftState,
-    isPlaying: Boolean,
-    promotingBusy: Boolean,
-    onTogglePlay: () -> Unit,
-    onSelect: () -> Unit,
-) {
-    val ready = state.status == SpeakerDraftStatus.Ready && state.previewUri != null
-    val context = LocalContext.current
-    OutlinedCard(
-        shape = WakerCardShape,
-        border = wakerCardBorder(if (ready) 1f else 0.58f),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Row(
-            // 준비 상태는 테두리 농도·상태 텍스트·버튼 활성화로 충분 — 선행 아이콘 배지 없음.
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.voicesr_speaker_draft_index, index + 1),
-                    fontWeight = FontWeight.SemiBold,
-                )
-                MutedText(draftStatusLabel(context, state.status, state.errorMessage))
-            }
-            IconButton(
-                onClick = onTogglePlay,
-                enabled = ready,
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    contentDescription = if (isPlaying) stringResource(R.string.voicesr_pause) else stringResource(R.string.voicesr_preview),
-                )
-            }
-            Button(
-                onClick = onSelect,
-                enabled = ready && !promotingBusy,
-                shape = WakerPillShape,
-            ) {
-                Text(stringResource(R.string.voicesr_select))
-            }
-        }
     }
 }
 

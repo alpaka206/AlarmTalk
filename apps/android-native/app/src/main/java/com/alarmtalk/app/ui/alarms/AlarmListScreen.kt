@@ -33,7 +33,6 @@ import kotlinx.coroutines.delay
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
-import com.alarmtalk.app.data.VoiceProfilePromotionDraft
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
@@ -41,7 +40,6 @@ import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoiceSpeakerSegment
 import com.alarmtalk.app.network.VoucherItem
 
 // 홈 첫 방문 안내 — 다음 알람 히어로에 스포트라이트.
@@ -74,10 +72,6 @@ internal fun AlarmListScreen(
     onLogout: () -> Unit,
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, String) -> Unit,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
-    onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
-    onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
-    onPromoteDraftVoice: suspend (String, VoiceProfilePromotionDraft) -> Unit,
-    onDeleteDraftVoice: (String) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     defaultVoiceId: String? = null,
@@ -195,10 +189,6 @@ internal fun AlarmListScreen(
                         authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
                         onCreateVoiceProfiles = onCreateVoiceProfiles,
-                        onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
-                        onCloneSpeakerDraft = onCloneSpeakerDraft,
-                        onPromoteDraftVoice = onPromoteDraftVoice,
-                        onDeleteDraftVoice = onDeleteDraftVoice,
                         onGenerateTts = onGenerateTts,
                         stockClips = stockClips,
                         onDownloadStockAudio = onDownloadStockAudio,

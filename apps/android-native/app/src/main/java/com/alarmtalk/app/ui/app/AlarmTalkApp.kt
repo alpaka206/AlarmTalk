@@ -692,13 +692,6 @@ internal fun AlarmTalkApp(
                           onLogout = ::logout,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,
-                          onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
-                          onCloneSpeakerDraft = viewModel::cloneSpeakerDraft,
-                          onPromoteDraftVoice = { profileId, draft ->
-                              viewModel.promoteDraftVoice(profileId, draft)
-                              viewModel.loadVoiceProfiles()
-                          },
-                          onDeleteDraftVoice = viewModel::deleteDraftVoiceInBackground,
                           onGenerateTts = viewModel::generateTtsAudio,
                           stockClips = viewModel.stockClips,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },

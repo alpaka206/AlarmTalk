@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
-import { getSharedInMemoryVoiceStorage, resetSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
+import { resetSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 
 const V1 = '40000000-0000-4000-8000-000000000001';
 const V404 = '40000000-0000-4000-8000-0000000000ff';
@@ -10,7 +10,6 @@ const V404 = '40000000-0000-4000-8000-0000000000ff';
 const mockDB = createMockDB();
 
 const mockCreateInstantClone = vi.fn();
-const mockDiarize = vi.fn();
 const mockDeleteVoice = vi.fn();
 
 vi.mock('../src/lib/db', () => ({
@@ -20,7 +19,6 @@ vi.mock('../src/lib/db', () => ({
 vi.mock('../src/lib/elevenlabs', () => ({
   ElevenLabsClient: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.createInstantClone = mockCreateInstantClone;
-    this.diarize = mockDiarize;
     this.deleteVoice = mockDeleteVoice;
   }),
 }));
@@ -48,32 +46,10 @@ function reqWithEnv(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
 
-async function storeTestVoiceObject(userId = 'user-1'): Promise<string> {
-  const meta = await getSharedInMemoryVoiceStorage().store({
-    userId,
-    bytes: new Uint8Array([1, 2, 3, 4]),
-    mimeType: 'audio/wav',
-    durationMs: 90_000,
-    originalName: 'sample.wav',
-  });
-  return meta.objectKey;
-}
-
-function diarizationResult(count = 3) {
-  return {
-    speakers: Array.from({ length: count }, (_, index) => ({
-      speaker_id: `speaker-${index + 1}`,
-      // 각 화자 20초 발화 → MIN_SPEAKER_SPEECH_MS(15s) 필터 통과.
-      segments: [{ start: index * 25, end: index * 25 + 20 }],
-    })),
-  };
-}
-
 beforeEach(() => {
   mockDB.reset();
   resetSharedInMemoryVoiceStorage();
   mockCreateInstantClone.mockReset();
-  mockDiarize.mockReset();
   mockDeleteVoice.mockReset();
 });
 
@@ -358,216 +334,6 @@ describe('POST /voice/upload — 원본 오디오 업로드', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('INVALID_DURATION');
-  });
-});
-
-describe('POST /voice/uploads/:uploadId/separate — 화자 분리 mock', () => {
-  const UPLOAD_ID = '50000000-0000-4000-8000-000000000001';
-
-  it('잘못된 UUID 형식이면 400', async () => {
-    const app = buildApp();
-    const res = await reqWithEnv(app, jsonReq('POST', '/voice/uploads/bad-id/separate'));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_UPLOAD_ID');
-  });
-
-  it('업로드가 없으면 404', async () => {
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await reqWithEnv(app, jsonReq('POST', `/voice/uploads/${UPLOAD_ID}/separate`));
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_UPLOAD_NOT_FOUND');
-  });
-
-  it('타인 소유 업로드면 403', async () => {
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'other-user', object_key: 'mem://other/x' }]);
-    const app = buildApp('user-1');
-    const res = await reqWithEnv(app, jsonReq('POST', `/voice/uploads/${UPLOAD_ID}/separate`));
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error_code).toBe('FORBIDDEN');
-  });
-
-  it('정상 호출은 화자 1~3명과 201 을 반환하고 INSERT 를 수행한다', async () => {
-    const objectKey = await storeTestVoiceObject();
-    mockDiarize.mockResolvedValueOnce(diarizationResult());
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1', object_key: objectKey }]);
-    mockDB.pushResult([], 0); // DELETE
-    for (let i = 0; i < 3; i++) mockDB.pushResult([], 1); // INSERTs
-
-    const app = buildApp();
-    const res = await reqWithEnv(app, jsonReq('POST', `/voice/uploads/${UPLOAD_ID}/separate`));
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(Array.isArray(body.speakers)).toBe(true);
-    expect(body.speakers.length).toBeGreaterThanOrEqual(1);
-    expect(body.speakers.length).toBeLessThanOrEqual(3);
-    expect(body.provider).toBe('elevenlabs');
-    expect(body.speakers[0].label).toMatch(/^화자 \d+$/);
-    expect(body.speakers[0].uploadId).toBe(UPLOAD_ID);
-
-    const del = mockDB.calls.find((c) => c.sql.includes('DELETE FROM voice_speakers'));
-    expect(del).toBeDefined();
-    const ins = mockDB.calls.filter((c) => c.sql.includes('INSERT INTO voice_speakers'));
-    expect(ins.length).toBe(body.speakers.length);
-  });
-
-  it('같은 업로드에 대해 재호출해도 멱등적으로 동일한 화자 수', async () => {
-    const objectKey = await storeTestVoiceObject();
-    mockDiarize.mockResolvedValue(diarizationResult());
-    const prime = () => {
-      mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1', object_key: objectKey }]);
-      mockDB.pushResult([], 0);
-      for (let i = 0; i < 3; i++) mockDB.pushResult([], 1);
-    };
-    const app = buildApp();
-    prime();
-    const r1 = await reqWithEnv(app, jsonReq('POST', `/voice/uploads/${UPLOAD_ID}/separate`));
-    const b1 = await r1.json();
-
-    mockDB.reset();
-    prime();
-    const r2 = await reqWithEnv(app, jsonReq('POST', `/voice/uploads/${UPLOAD_ID}/separate`));
-    const b2 = await r2.json();
-    expect(b1.speakers.length).toBe(b2.speakers.length);
-  });
-});
-
-describe('GET /voice/uploads/:uploadId/speakers — 저장된 화자 조회', () => {
-  const UPLOAD_ID = '50000000-0000-4000-8000-000000000002';
-
-  it('잘못된 UUID 형식이면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/voice/uploads/bad/speakers'));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_UPLOAD_ID');
-  });
-
-  it('업로드가 없으면 404', async () => {
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', `/voice/uploads/${UPLOAD_ID}/speakers`));
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_UPLOAD_NOT_FOUND');
-  });
-
-  it('저장된 화자를 start_ms 순으로 돌려준다', async () => {
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1' }]);
-    mockDB.pushResult([
-      {
-        id: 's1',
-        upload_id: UPLOAD_ID,
-        label: '화자 1',
-        start_ms: 0,
-        end_ms: 3000,
-        confidence: 0.9,
-      },
-      {
-        id: 's2',
-        upload_id: UPLOAD_ID,
-        label: '화자 2',
-        start_ms: 3000,
-        end_ms: 6000,
-        confidence: 0.85,
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', `/voice/uploads/${UPLOAD_ID}/speakers`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.speakers).toHaveLength(2);
-    expect(body.speakers[0].label).toBe('화자 1');
-  });
-});
-
-describe('PATCH /voice/uploads/:uploadId/speakers/:speakerId — 화자 라벨 수정', () => {
-  const UPLOAD_ID = '50000000-0000-4000-8000-000000000003';
-  const SPEAKER_ID = '60000000-0000-4000-8000-000000000001';
-
-  function patchReq(uploadId: string, speakerId: string, body: unknown): Request {
-    return new Request(`http://localhost/voice/uploads/${uploadId}/speakers/${speakerId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  }
-
-  it('잘못된 UUID 형식이면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(patchReq('bad', SPEAKER_ID, { label: '엄마' }));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_ID_FORMAT');
-  });
-
-  it('JSON body 가 아니면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(
-      new Request(`http://localhost/voice/uploads/${UPLOAD_ID}/speakers/${SPEAKER_ID}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: 'not-json',
-      }),
-    );
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('JSON_BODY_REQUIRED');
-  });
-
-  it('빈 label 이면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(patchReq(UPLOAD_ID, SPEAKER_ID, { label: '   ' }));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_LABEL_LENGTH');
-  });
-
-  it('업로드가 없으면 404', async () => {
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(patchReq(UPLOAD_ID, SPEAKER_ID, { label: '엄마' }));
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_UPLOAD_NOT_FOUND');
-  });
-
-  it('타인 소유 업로드면 403', async () => {
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'other-user' }]);
-    const app = buildApp('user-1');
-    const res = await app.request(patchReq(UPLOAD_ID, SPEAKER_ID, { label: '엄마' }));
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error_code).toBe('FORBIDDEN');
-  });
-
-  it('화자가 없으면 404', async () => {
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1' }]);
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(patchReq(UPLOAD_ID, SPEAKER_ID, { label: '엄마' }));
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error_code).toBe('SPEAKER_NOT_FOUND');
-  });
-
-  it('정상 호출은 200 과 업데이트된 라벨을 반환한다', async () => {
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1' }]);
-    mockDB.pushResult([{ id: SPEAKER_ID }]);
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(patchReq(UPLOAD_ID, SPEAKER_ID, { label: '  엄마  ' }));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.speaker.id).toBe(SPEAKER_ID);
-    expect(body.speaker.label).toBe('엄마');
-
-    const upd = mockDB.calls.find((c) => c.sql.startsWith('UPDATE voice_speakers'));
-    expect(upd).toBeDefined();
-    expect(upd!.args).toContain('엄마');
   });
 });
 
@@ -863,53 +629,3 @@ describe('POST /voice/clone — 음성 클론', () => {
   });
 });
 
-describe('POST /voice/diarize — 화자 분리 (ElevenLabs)', () => {
-  function diarizeRequest(audio: Uint8Array | null): Request {
-    const form = new FormData();
-    if (audio) {
-      form.append('audio', new Blob([audio], { type: 'audio/wav' }), 'recording.wav');
-    }
-    return new Request('http://localhost/voice/diarize', { method: 'POST', body: form });
-  }
-
-  it('audio 파일 누락 시 400', async () => {
-    const app = buildApp();
-    const form = new FormData();
-    const res = await reqWithEnv(
-      app,
-      new Request('http://localhost/voice/diarize', { method: 'POST', body: form }),
-    );
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('AUDIO_FILE_REQUIRED');
-  });
-
-  it('성공 시 화자 목록 반환', async () => {
-    mockDiarize.mockResolvedValue({
-      speakers: [
-        { speaker_id: 'spk-1', segments: [{ start: 0, end: 5.2 }] },
-        { speaker_id: 'spk-2', segments: [{ start: 5.5, end: 10.0 }] },
-      ],
-    });
-    const app = buildApp();
-    const res = await reqWithEnv(app, diarizeRequest(new Uint8Array([1, 2, 3])));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.speakers).toHaveLength(2);
-    expect(body.speakers[0].speaker_id).toBe('spk-1');
-    expect(body.speakers[0].label).toBe('Speaker 1');
-    expect(body.speakers[0].total_duration).toBeCloseTo(5.2);
-    expect(body.speakers[1].label).toBe('Speaker 2');
-    expect(mockDiarize).toHaveBeenCalledOnce();
-  });
-
-  it('ElevenLabs 실패 시 500', async () => {
-    mockDiarize.mockRejectedValue(new Error('diarize failed'));
-    const app = buildApp();
-    const res = await reqWithEnv(app, diarizeRequest(new Uint8Array([1, 2])));
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error_code).toBe('DIARIZATION_FAILED');
-    expect(body.detail).toBe('diarize failed');
-  });
-});

@@ -18,10 +18,9 @@ const MAX_VOICE_PROFILES = 1;
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
 const MAX_DRAFT_VOICE_PROFILES = 3;
 const MIN_CLONE_DURATION_MS = 60_000;
-// 화자 분리 프리뷰(draft) 클론은 한 화자의 격리 발화만 이어붙인 짧은 클립이라
-// 60초를 못 채우는 경우가 많다. "5초 한마디"는 배제하되 의미 있는 길이면 허용한다.
-// 분리 필터(voice-upload.ts MIN_SPEAKER_SPEECH_MS=15s)보다 약간 낮춰, 세그먼트 이어붙일 때
-// 프레임 경계로 몇백 ms 짧아져도 프리뷰가 거부되지 않도록 여유를 둔다.
+// 프리뷰(draft) 클론은 짧은 클립이라 60초를 못 채우는 경우가 많다.
+// "5초 한마디"는 배제하되, 세그먼트를 이어붙일 때 프레임 경계로 몇백 ms
+// 짧아져도 의미 있는 길이면 프리뷰가 거부되지 않도록 여유를 둔다.
 const MIN_DRAFT_CLONE_DURATION_MS = 12_000;
 const MAX_CLONE_DURATION_MS = 120_000;
 const CLONE_DURATION_TOLERANCE_MS = 5_000;

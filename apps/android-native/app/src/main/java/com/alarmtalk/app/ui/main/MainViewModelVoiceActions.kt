@@ -19,7 +19,6 @@ import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
-import com.alarmtalk.app.data.VoiceProfilePromotionDraft
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthTokenResponse
@@ -40,7 +39,6 @@ import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileRelationshipUpdateRequest
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
-import com.alarmtalk.app.network.VoiceSpeakerSegment
 import com.alarmtalk.app.network.VoucherItem
 import java.time.Instant
 import java.util.UUID
@@ -220,109 +218,6 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
             }
         }
         voiceProfileBusy = false
-    }
-}
-
-internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio): List<VoiceSpeakerSegment> {
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_separate_login_required))
-    check(hasPaidVoiceAccess(subscriptionResponse)) {
-        getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
-    }
-    return withContext(Dispatchers.IO) {
-        val upload = api.uploadVoiceAudio(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            audio = voiceUploadPart(audio),
-            durationMs = (audio.durationMillis ?: 0L).toString().toRequestBody("text/plain".toMediaType()),
-            originalName = audio.displayName.toRequestBody("text/plain".toMediaType()),
-        ).upload
-        api.separateVoiceUpload(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            uploadId = upload.id,
-        ).speakers
-    }
-}
-
-/**
- * 화자 미리듣기용 임시(draft) 보이스 프로파일을 만든다.
- * MAX_VOICE_PROFILES 카운트에서 제외되고, 사용자가 "선택" 하면 promote 로 정식 등록한다.
- */
-internal suspend fun MainViewModel.cloneSpeakerDraft(
-    name: String,
-    audio: CachedAlarmAudio,
-): VoiceProfile {
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_preview_login_required))
-    check(hasPaidVoiceAccess(subscriptionResponse)) {
-        getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
-    }
-    return withContext(Dispatchers.IO) {
-        api.createVoiceClone(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            audio = voiceUploadPart(audio),
-            name = name.toRequestBody("text/plain".toMediaType()),
-            isShared = false.toString().toRequestBody("text/plain".toMediaType()),
-            relationshipLabel = "".toRequestBody("text/plain".toMediaType()),
-            listenerTitle = "".toRequestBody("text/plain".toMediaType()),
-            durationMs = (audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
-            isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
-            voiceGender = "neutral".toRequestBody("text/plain".toMediaType()),
-            speechFormality = "auto".toRequestBody("text/plain".toMediaType()),
-        ).profile
-    }
-}
-
-/**
- * draft=true 프로파일을 promote 해 정식 보이스로 등록한다.
- * 사용자의 기존 non-draft 음성이 있으면 서버가 409 VOICE_LIMIT_REACHED 를 반환한다.
- */
-internal suspend fun MainViewModel.promoteDraftVoice(
-    profileId: String,
-    draft: VoiceProfilePromotionDraft,
-): VoiceProfile {
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_promote_login_required))
-    return withContext(Dispatchers.IO) {
-        api.updateVoiceProfile(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            id = profileId,
-            request = VoiceProfileUpdateRequest(
-                name = draft.name,
-                isShared = draft.shared,
-                isDraft = false,
-                relationshipLabel = draft.relationshipLabel,
-                listenerTitle = draft.listenerTitle,
-                voiceGender = draft.voiceGender,
-                speechFormality = draft.speechFormality,
-            ),
-        ).profile
-    }
-}
-
-/**
- * 미선택 draft 보이스를 화면(패널) 수명과 무관하게 확실히 삭제한다.
- * 패널의 rememberCoroutineScope 는 탭 이탈 시 취소되어 삭제가 중간에 끊길 수 있으므로,
- * 삭제만큼은 viewModelScope 로 fire-and-forget 해 끝까지 진행되게 한다.
- */
-internal fun MainViewModel.deleteDraftVoiceInBackground(profileId: String) {
-    viewModelScope.launch { deleteDraftVoice(profileId) }
-}
-
-/** draft 보이스 정리용. 기존 deleteVoiceProfile 과 동일하게 force=true 로 삭제. */
-internal suspend fun MainViewModel.deleteDraftVoice(profileId: String) {
-    val session = authSession ?: return
-    withContext(Dispatchers.IO) {
-        runCatching {
-            api.deleteVoiceProfile(
-                authorization = AlarmTalkApiClient.bearer(session.token),
-                id = profileId,
-                force = true,
-                // 그 사이 promote 로 정식 등록됐다면 서버가 삭제를 거부한다(등록 보이스 보호).
-                draftOnly = true,
-            )
-        }.onFailure { error ->
-            // 이미 삭제된(404) 경우는 성공으로 간주해 소음을 줄이고, 그 외 실패는 리포트해 추적한다
-            // (조용히 삼키면 미선택 draft 가 서버에 남는 누수를 놓친다).
-            if (apiErrorCode(error) == "VOICE_PROFILE_NOT_FOUND") return@onFailure
-            AlarmTalkLog.reportError("Failed to delete draft voice", error)
-        }
     }
 }
 
