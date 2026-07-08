@@ -26,6 +26,7 @@ import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
+import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
@@ -298,8 +299,13 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
             val authorization = bearerOrMessage(
                 getApplication<Application>().getString(R.string.msg_alarm_delete_failed),
             ) ?: return@launch
-            val declined = runCatching { api.declineAlarm(authorization, remoteId) }.isSuccess
-            if (!declined) {
+            val declineResult = runCatching { api.declineAlarm(authorization, remoteId) }
+            // 서버에서 이미 사라진 알람(발신자가 먼저 삭제 등)은 decline 이 404(ALARM_NOT_FOUND) —
+            // 멱등 성공으로 보고 로컬 삭제로 진행한다(stale 알람이 안 지워지는 것 방지). 진짜
+            // 네트워크/인증 실패만 보류해 재시도하게 한다.
+            val declineOk = declineResult.isSuccess ||
+                declineResult.exceptionOrNull()?.let { apiErrorCode(it) } == "ALARM_NOT_FOUND"
+            if (!declineOk) {
                 message = getApplication<Application>().getString(R.string.msg_alarm_delete_failed)
                 return@launch
             }
