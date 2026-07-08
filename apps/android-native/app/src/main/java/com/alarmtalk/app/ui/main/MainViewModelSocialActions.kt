@@ -22,6 +22,9 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
     if (socialBusy) return
     val authorization = bearerOrMessage("Login is required to load shared plan data.") ?: return
     socialBusy = true
+    // 새 소셜 로드 시작 — 신선-로드 플래그를 내려, 로드 완료 전 fetchVoiceProfiles 가 옛 상태로
+    // 강등 판단하지 않게 한다(성공 시 snapshot.familyVoicesFresh 로 다시 설정).
+    familyVoicesLoadedFresh = false
     viewModelScope.launch {
         try {
             runCatching {

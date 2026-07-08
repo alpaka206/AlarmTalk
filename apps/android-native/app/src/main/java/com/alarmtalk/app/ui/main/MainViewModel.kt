@@ -439,6 +439,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()
+        // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가
+        // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
+        familyVoicesLoadedFresh = false
         subscriptionResponse = null
         vouchers = emptyList()
         receivedAlarmSeenAtMillis = 0L
