@@ -62,6 +62,7 @@ internal object AppRoute {
     const val LegalDocTypeArg = "legalDocType"
     const val LegalDoc = "legal/{$LegalDocTypeArg}"
     const val MemberManagement = "members"
+    const val OssLicenses = "oss-licenses"
 
     fun legalDoc(type: String): String = "legal/$type"
     const val FamilyTargetModeArg = "familyTargetMode"

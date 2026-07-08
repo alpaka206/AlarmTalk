@@ -14,9 +14,6 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-// oss-licenses-plugin 은 buildscript classpath(루트)로 올라와 있어 레거시 apply 로 적용한다.
-apply(plugin = "com.google.android.gms.oss-licenses-plugin")
-
 abstract class GenerateAlarmToneTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -251,8 +248,6 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
-    // OssLicensesMenuActivity 가 AppCompatActivity 를 상속 → 오픈소스 라이선스 화면에만 필요.
-    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
@@ -273,8 +268,6 @@ dependencies {
     implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
-    // 오픈소스 라이선스 목록 화면(OssLicensesMenuActivity). 목록은 oss-licenses-plugin 이 생성.
-    implementation("com.google.android.gms:play-services-oss-licenses:17.1.0")
     implementation("io.sentry:sentry-android-core:8.43.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

@@ -88,6 +88,7 @@ internal fun MenuTabPanel(
     onOpenMemberManagement: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenConsentHistory: () -> Unit,
+    onOpenOssLicenses: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -240,20 +241,10 @@ internal fun MenuTabPanel(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.outlineVariant,
                 )
-                // 오픈소스 라이선스 — 목록/본문은 oss-licenses-plugin 이 생성한 데이터로 라이브러리 화면이 렌더.
-                val ossLicensesTitle = stringResource(R.string.menu_open_source_licenses)
+                // 오픈소스 라이선스 — 인앱 Compose 화면(OssLicensesScreen)으로 이동.
                 MenuTabRow(
-                    label = ossLicensesTitle,
-                    onClick = {
-                        com.google.android.gms.oss.licenses.OssLicensesMenuActivity
-                            .setActivityTitle(ossLicensesTitle)
-                        context.startActivity(
-                            android.content.Intent(
-                                context,
-                                com.google.android.gms.oss.licenses.OssLicensesMenuActivity::class.java,
-                            ),
-                        )
-                    },
+                    label = stringResource(R.string.menu_open_source_licenses),
+                    onClick = onOpenOssLicenses,
                 )
             }
         }

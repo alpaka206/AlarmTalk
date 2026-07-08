@@ -725,6 +725,7 @@ internal fun AlarmTalkApp(
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
                           onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
                           onOpenConsentHistory = { navController.navigate(AppRoute.ConsentHistory) },
+                          onOpenOssLicenses = { navController.navigate(AppRoute.OssLicenses) },
                           onDeleteAccount = viewModel::requestDeleteAccount,
                           themeMode = themeMode,
                           onChangeTheme = viewModel::setThemeMode,
@@ -838,6 +839,12 @@ internal fun AlarmTalkApp(
                       onEditNickname = viewModel::requestEditNickname,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onLogout = ::logout,
+                  )
+              }
+              composable(AppRoute.OssLicenses) {
+                  OssLicensesScreen(
+                      contentPadding = padding,
+                      onBack = ::goBackInApp,
                   )
               }
               composable(AppRoute.ConsentHistory) {

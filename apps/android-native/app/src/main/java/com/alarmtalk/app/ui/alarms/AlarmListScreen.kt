@@ -102,6 +102,7 @@ internal fun AlarmListScreen(
     onOpenSettings: () -> Unit,
     onOpenMemberManagement: () -> Unit,
     onOpenConsentHistory: () -> Unit,
+    onOpenOssLicenses: () -> Unit,
     onDeleteAccount: () -> Unit,
     themeMode: ThemeMode,
     onChangeTheme: (ThemeMode) -> Unit,
@@ -282,6 +283,7 @@ internal fun AlarmListScreen(
                         onOpenMemberManagement = onOpenMemberManagement,
                         onOpenSettings = onOpenSettings,
                         onOpenConsentHistory = onOpenConsentHistory,
+                        onOpenOssLicenses = onOpenOssLicenses,
                         onDeleteAccount = onDeleteAccount,
                     )
                 }
