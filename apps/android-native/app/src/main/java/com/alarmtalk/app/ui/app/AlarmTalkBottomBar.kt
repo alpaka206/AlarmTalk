@@ -74,25 +74,17 @@ internal fun AlarmTalkBottomBar(
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
+            // 생성(＋)을 정중앙에 두고 알람↔목소리를 좌우 대칭으로. '전체'는 상단 우측 ☰ 로 이동.
+            AlarmCreateBarButton(
+                onClick = onCreateAlarm,
+                modifier = Modifier.weight(1f),
+            )
             AlarmTalkTabItem(
                 tab = NativeTab.Voices,
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Mic,
                 selectedIcon = Icons.Filled.Mic,
                 label = stringResource(R.string.r3app_bottom_tab_voices),
-                onSelectTab = onSelectTab,
-                modifier = Modifier.weight(1f),
-            )
-            AlarmCreateBarButton(
-                onClick = onCreateAlarm,
-                modifier = Modifier.weight(1f),
-            )
-            AlarmTalkTabItem(
-                tab = NativeTab.Menu,
-                selectedTab = selectedTab,
-                icon = Icons.Outlined.Menu,
-                selectedIcon = Icons.Filled.Menu,
-                label = stringResource(R.string.r3app_bottom_tab_menu),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
