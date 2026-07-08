@@ -58,12 +58,13 @@ export async function deletePaidVoiceDataForUser(
               )
               OR message_id IN (
                 SELECT id FROM messages
-                WHERE voice_profile_id IN (
-                  SELECT id FROM voice_profiles WHERE user_id IN (${ph})
-                )
+                WHERE user_id IN (${ph})
+                   OR voice_profile_id IN (
+                     SELECT id FROM voice_profiles WHERE user_id IN (${ph})
+                   )
               )
             )`,
-    args: [...ids, ...ids, ...ids],
+    args: [...ids, ...ids, ...ids, ...ids],
   });
 
   await db.execute({

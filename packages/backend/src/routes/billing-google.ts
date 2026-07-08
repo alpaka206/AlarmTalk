@@ -216,6 +216,8 @@ billingGoogle.post('/google/confirm', async (c) => {
             status: ackRes.status,
             detail: (await ackRes.text()).slice(0, 300),
           });
+          // 4xx(이미 acknowledge 됨·잘못된 상태 등)는 재시도해도 동일하므로 즉시 중단. 5xx·네트워크만 재시도.
+          if (ackRes.status < 500) break;
         }
       } catch (err) {
         logStructured('error', { at: 'billing.google.acknowledge', attempt, error: String(err) });
