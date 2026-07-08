@@ -300,6 +300,18 @@ internal fun WeatherCityPickerField(
     }
 }
 
+// 방해금지 요일 프리셋(평일/주말/매일) — 백엔드 family-alarm-settings.ts PRESET_QUIET_DAY_SETS와 동일.
+private data class QuietDayPreset(val days: Set<Int>, val labelRes: Int)
+
+private val QUIET_DAY_PRESETS = listOf(
+    QuietDayPreset(setOf(1, 2, 3, 4, 5), R.string.editor2_quiet_days_weekdays),
+    QuietDayPreset(setOf(0, 6), R.string.editor2_quiet_days_weekend),
+    QuietDayPreset(setOf(0, 1, 2, 3, 4, 5, 6), R.string.editor2_quiet_days_everyday),
+)
+
+// 방해금지 창 최대 개수. 백엔드 MAX_QUIET_WINDOWS(=2) 및 AuthSessionStore와 동일.
+private const val QUIET_WINDOW_MAX = 2
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun FamilyAlarmQuietTimeDialog(
@@ -363,11 +375,8 @@ internal fun FamilyAlarmQuietTimeDialog(
                             index = draftIndex,
                             draft = draft,
                             removable = drafts.size > 1,
-                            onToggleDay = { dayIndex ->
-                                updateDraft(draftIndex) {
-                                    val days = if (dayIndex in it.days) it.days - dayIndex else it.days + dayIndex
-                                    it.copy(days = days)
-                                }
+                            onSelectDays = { presetDays ->
+                                updateDraft(draftIndex) { it.copy(days = presetDays) }
                             },
                             onPickStart = {
                                 timePickerTarget = QuietTimePickerTarget(draftIndex, isStart = true)
@@ -382,7 +391,7 @@ internal fun FamilyAlarmQuietTimeDialog(
                     }
                     OutlinedButton(
                         onClick = {
-                            if (drafts.size < 8) {
+                            if (drafts.size < QUIET_WINDOW_MAX) {
                                 drafts = drafts + FamilyAlarmQuietWindow(
                                     days = listOf(1, 2, 3, 4, 5),
                                     start = "22:00",
@@ -390,7 +399,7 @@ internal fun FamilyAlarmQuietTimeDialog(
                                 ).toDraft()
                             }
                         },
-                        enabled = drafts.size < 8,
+                        enabled = drafts.size < QUIET_WINDOW_MAX,
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                         border = wakerCardBorder(),
@@ -473,12 +482,11 @@ internal fun QuietWindowCard(
     index: Int,
     draft: QuietWindowDraft,
     removable: Boolean,
-    onToggleDay: (Int) -> Unit,
+    onSelectDays: (Set<Int>) -> Unit,
     onPickStart: () -> Unit,
     onPickEnd: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val context = LocalContext.current
     val chipColors = FilterChipDefaults.filterChipColors(
         selectedContainerColor = MaterialTheme.colorScheme.primary,
         selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
@@ -507,20 +515,22 @@ internal fun QuietWindowCard(
                     }
                 }
             }
+            // 요일은 평일/주말/매일 프리셋 3택(단일 선택). 세밀한 개별 요일 지정은 없앰 — 방해금지의
+            // 실사용은 근무/등교 시간대 정도라 프리셋으로 충분하고 시트 라벨도 짧게 유지된다.
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                dayLabels(context).forEachIndexed { dayIndex, label ->
+                QUIET_DAY_PRESETS.forEach { preset ->
                     FilterChip(
-                        selected = dayIndex in draft.days,
-                        onClick = { onToggleDay(dayIndex) },
+                        selected = draft.days == preset.days,
+                        onClick = { onSelectDays(preset.days) },
                         label = {
                             Box(
                                 modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(text = label, fontWeight = FontWeight.SemiBold)
+                                Text(text = stringResource(preset.labelRes), fontWeight = FontWeight.SemiBold)
                             }
                         },
                         colors = chipColors,

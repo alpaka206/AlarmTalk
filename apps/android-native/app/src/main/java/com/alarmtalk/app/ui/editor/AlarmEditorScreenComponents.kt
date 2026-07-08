@@ -471,9 +471,12 @@ internal fun familyMemberLabel(context: Context, member: FamilyGroupMember): Str
 
 internal fun familyAlarmQuietScheduleLabel(context: Context, member: FamilyGroupMember): String {
     val windows = familyAlarmQuietWindows(member)
-    return windows.joinToString(" · ") { window ->
-        "${quietDaysLabelForFamily(context, window.days)} ${window.start}-${window.end}"
-    }
+    if (windows.isEmpty()) return ""
+    // '누구를 깨울까요' 시트·수신자 카드 행에 들어가므로 1개만 노출하고 나머지는 '외 N개'로 축약해
+    // 행 라벨이 길어지지 않게 한다(설정 화면 quietScheduleLabel과 동일 정책).
+    val first = windows.first().let { "${quietDaysLabelForFamily(context, it.days)} ${it.start}-${it.end}" }
+    val hidden = windows.size - 1
+    return if (hidden > 0) context.getString(R.string.misc2_quiet_more, first, hidden) else first
 }
 
 internal fun isFamilyAlarmLeadTooSoon(

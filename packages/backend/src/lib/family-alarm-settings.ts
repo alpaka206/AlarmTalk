@@ -2,7 +2,20 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DEFAULT_QUIET_DAYS = [1, 2, 3, 4, 5];
 const DEFAULT_QUIET_START = '09:00';
 const DEFAULT_QUIET_END = '18:30';
-const MAX_QUIET_WINDOWS = 8;
+// 방해금지 요일은 평일/주말/매일 프리셋만 허용하고, 창은 최대 2개(평일 근무 + 주말 정도)로 제한한다.
+// '누구를 깨울까요' 시트 멤버 행 라벨이 길어지지 않게 하려는 제약(2026-07-08 결정).
+const MAX_QUIET_WINDOWS = 2;
+const WEEKDAY_DAYS = [1, 2, 3, 4, 5];
+const WEEKEND_DAYS = [0, 6];
+const EVERYDAY_DAYS = [0, 1, 2, 3, 4, 5, 6];
+const PRESET_QUIET_DAY_SETS = [WEEKDAY_DAYS, WEEKEND_DAYS, EVERYDAY_DAYS];
+
+export function isPresetQuietDays(days: number[]): boolean {
+  const sorted = Array.from(new Set(days)).sort((a, b) => a - b);
+  return PRESET_QUIET_DAY_SETS.some(
+    (preset) => preset.length === sorted.length && preset.every((day, i) => day === sorted[i]),
+  );
+}
 
 export interface FamilyAlarmQuietWindow {
   days: number[];
@@ -77,7 +90,9 @@ export function validateQuietWindows(raw: unknown): FamilyAlarmQuietWindow[] | n
     const days = validateQuietDays(record.days);
     const start = validateQuietTime(record.start);
     const end = validateQuietTime(record.end);
-    if (days === null || days.length === 0 || start === null || end === null) return null;
+    if (days === null || days.length === 0 || !isPresetQuietDays(days) || start === null || end === null) {
+      return null;
+    }
     windows.push({ days, start, end });
   }
   return windows;
