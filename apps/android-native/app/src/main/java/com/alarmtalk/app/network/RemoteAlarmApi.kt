@@ -8,6 +8,7 @@ import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 data class RemoteAlarmListResponse(
     val alarms: List<RemoteAlarm>,
@@ -68,7 +69,11 @@ data class RemoteAlarmWriteRequest(
 
 interface RemoteAlarmApi {
     @GET("alarm")
-    suspend fun listAlarms(@Header("Authorization") authorization: String): RemoteAlarmListResponse
+    suspend fun listAlarms(
+        @Header("Authorization") authorization: String,
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): RemoteAlarmListResponse
 
     @POST("alarm")
     suspend fun createAlarm(

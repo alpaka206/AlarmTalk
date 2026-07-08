@@ -35,8 +35,24 @@ internal class RemoteAlarmPullSyncService(
         // 그중 "내가 만든 게 아니라 누군가가 나를 target 으로 만든" 알람만 가져온다.
         // 기존에는 isReceivedFamilyAlarm(=family/family-voice 카테고리)로 좁혀져 있어서
         // 일반 /api/alarm 경로(target_user_id 포함)로 보낸 알람이 누락됐다.
-        val response = api.listAlarms(authorization)
-        val remoteAlarms = response.alarms
+        // 페이지네이션으로 전체 스냅샷을 모은다 — 1페이지만 받으면 알람이 많은 사용자는 받은 알람
+        // 처리·prune 이 누락된다. 완전 스냅샷(snapshotComplete)일 때만 아래에서 prune 한다.
+        val allRemote = mutableListOf<RemoteAlarm>()
+        var offset = 0
+        var reportedTotal = 0
+        var snapshotComplete = false
+        val pageSize = 100
+        for (page in 0 until 25) {
+            val resp = api.listAlarms(authorization, pageSize, offset)
+            allRemote.addAll(resp.alarms)
+            reportedTotal = resp.total ?: allRemote.size
+            offset += resp.alarms.size
+            if (resp.alarms.size < pageSize || allRemote.size >= reportedTotal) {
+                snapshotComplete = true
+                break
+            }
+        }
+        val remoteAlarms = allRemote
             .filter { remote ->
                 val sender = remote.senderUserId
                 val target = remote.targetUserId
@@ -103,9 +119,8 @@ internal class RemoteAlarmPullSyncService(
         // decline 게이트가 서버 목록에서 빼므로, 이미 임포트한 기기가 계속 울리지 않도록 prune 한다.
         // 단, 목록이 페이지네이션으로 잘렸으면(size < total) 오삭제 위험이 있어 건너뛴다(완전 스냅샷일 때만).
         var pruned = 0
-        val totalCount = response.total
-        if (totalCount != null && response.alarms.size >= totalCount) {
-            val servedRemoteIds = response.alarms.map { it.id }.toSet()
+        if (snapshotComplete) {
+            val servedRemoteIds = allRemote.map { it.id }.toSet()
             alarmDao.getAllAlarms()
                 .filter {
                     it.origin == AlarmOrigins.RECEIVED_REMOTE &&
