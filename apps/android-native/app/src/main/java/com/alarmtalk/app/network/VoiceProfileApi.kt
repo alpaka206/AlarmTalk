@@ -51,7 +51,9 @@ data class VoiceSpeakerSegment(
     @SerializedName(value = "uploadId", alternate = ["upload_id"]) val uploadId: String? = null,
     val label: String,
     // 이 화자의 실제 발화 구간들(업로드된 크롭 클립 기준 ms). 이 구간만 이어붙여 클론 소스로 쓴다.
-    val segments: List<VoiceSpeakerSpan> = emptyList(),
+    // Gson 은 JSON 에 segments 가 null 이거나 누락이면 기본값(emptyList)을 무시하고 null 을 주입하므로
+    // nullable 로 둔다. 소비 측에서 orEmpty/isNullOrEmpty 로 방어(과거 non-null 선언이 .isEmpty() NPE 크래시 유발).
+    val segments: List<VoiceSpeakerSpan>? = null,
     // 표시·정렬용 봉투(전체 범위)와 순수 발화 총합(ms).
     @SerializedName(value = "startMs", alternate = ["start_ms"]) val startMs: Long = 0L,
     @SerializedName(value = "endMs", alternate = ["end_ms"]) val endMs: Long = 0L,

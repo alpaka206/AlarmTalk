@@ -695,7 +695,7 @@ internal fun VoiceProfileManagementPanel(
     ) {
         // 이 화자의 발화 구간만(diarize 대상인 크롭 클립 기준 0시작) 이어붙여, 그 화자
         // 목소리만으로 클론 소스를 만든다 — 구간 사이의 다른 화자/침묵은 버린다.
-        val segments = speaker.segments
+        val segments = speaker.segments.orEmpty()
             .map { it.startMs to it.endMs }
             .filter { (start, end) -> end > start }
         // 서버에 실제로 만든 draft id — 취소되면 이 draft 를 스스로 삭제해 고아를 남기지 않는다.
@@ -790,7 +790,7 @@ internal fun VoiceProfileManagementPanel(
                 // 화자 세그먼트는 업로드된 '크롭 클립' 기준(0시작)이므로, 잘라 붙일 때도 원본이
                 // 아니라 그 크롭 클립에서 잘라야 좌표가 정확히 맞는다(스냅 드리프트 없음).
                 val croppedUri = Uri.parse(cropped.localAudioUri)
-                val visible = speakers.filter { it.segments.isNotEmpty() }.take(3)
+                val visible = speakers.filter { !it.segments.isNullOrEmpty() }.take(3)
                 detectedSpeakers = visible
                 speakerDraftStates = visible.associate { s ->
                     s.id to SpeakerDraftState(status = SpeakerDraftStatus.Cloning)
