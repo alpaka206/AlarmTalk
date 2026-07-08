@@ -330,6 +330,49 @@ class AlarmRepository(
     }
 
     /**
+     * 접근권을 잃은 음성 프로필(공유 해제·제공자 취소·본인 삭제)을 참조하는 '내 소유(LOCAL_OWNED)'
+     * 음성 알람을 sound-only 로 강등한다. [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
+     * 가족 공유 프로필 id 집합이어야 한다 — 부분/실패 로드로 호출하면 정상 알람을 오강등할 수 있으므로
+     * 호출부(refreshSocial 신선 성공)에서 가드한다. 버킷 회전·녹음(LOCAL_AUDIO)·수신 알람은 대상이 아니다.
+     * 반환값은 강등된 알람 수.
+     */
+    suspend fun degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds: Set<String>): Int {
+        val candidates = alarmDao.getAllAlarms().filter { alarm ->
+            alarm.origin == AlarmOrigins.LOCAL_OWNED &&
+                alarm.voiceSource == VoiceSources.TTS_PROFILE &&
+                alarm.bucketId == null &&
+                !alarm.voiceProfileId.isNullOrBlank() &&
+                alarm.voiceProfileId !in accessibleVoiceIds
+        }
+        var degraded = 0
+        for (current in candidates) {
+            val cacheKey = current.audioCacheKey
+            val updated = current.copy(
+                playMode = AlarmPlayModes.ALARM_ONLY,
+                voiceSource = VoiceSources.LOCAL_AUDIO,
+                voiceProfileId = null,
+                localAudioUri = null,
+                audioCacheKey = null,
+                rawAudioUri = null,
+                ttsMessageId = null,
+                voiceText = null,
+                voiceListenerTitle = null,
+                voiceCategory = null,
+                voiceLanguage = null,
+                voiceRandomPrompt = false,
+                syncState = current.nextLocalSyncState(),
+                updatedAtMillis = System.currentTimeMillis(),
+            )
+            if (updated.enabled) alarmScheduler.schedule(updated)
+            alarmDao.upsertPreservingServerSyncFields(updated)
+            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+            degraded++
+            Log.i(TAG, "Degraded alarm id=${current.id}: voice ${current.voiceProfileId} no longer accessible")
+        }
+        return degraded
+    }
+
+    /**
      * 보이스 클론 업로드에 성공한 직후, 더 이상 필요 없는 로컬 녹음 샘플(음성 생체정보)을 즉시 지운다.
      * 클론 소스 녹음은 알람 재생 오디오가 아니라 업로드 전용이므로, 어떤 알람도 같은 캐시키를
      * 참조하지 않을 때만(즉 재생용으로 공유되지 않을 때만) 실제 파일을 삭제한다.

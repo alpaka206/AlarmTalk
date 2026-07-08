@@ -32,19 +32,35 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
                             api.listFamilyVoiceProfiles(authorization).profiles
                         }.onFailure { error ->
                             Log.w(TAG, "Failed to refresh family voice profiles", error)
-                        }.getOrElse {
-                            familyVoices
                         }
                     }
+                    val sharedVoicesResult = sharedVoices.await()
                     SocialSnapshot(
                         familyGroup = group.await(),
-                        familyVoices = sharedVoices.await(),
+                        familyVoices = sharedVoicesResult.getOrElse { familyVoices },
+                        familyVoicesFresh = sharedVoicesResult.isSuccess,
                     )
                 }
             }.onSuccess { snapshot ->
                 familyGroup = snapshot.familyGroup
                 saveFamilyGroupSnapshot(snapshot.familyGroup)
                 familyVoices = snapshot.familyVoices
+                // 공유 목소리 목록을 '신선하게' 받았고 내 음성 목록도 로드돼 있을 때만, 접근권을 잃은
+                // 공유/본인 목소리를 쓰는 '내 소유' 알람을 sound-only 로 강등한다(감사 B-3 LOCAL_OWNED
+                // 좀비). 로드 실패 시 옛 목록을 유지하므로, 신선 로드만 신뢰해 정상 음성알람 오강등을 막는다.
+                if (snapshot.familyVoicesFresh && voiceProfiles.isNotEmpty()) {
+                    val accessibleVoiceIds =
+                        (voiceProfiles.map { it.id } + snapshot.familyVoices.map { it.id }).toSet()
+                    viewModelScope.launch {
+                        runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds) }
+                            .onSuccess { count ->
+                                if (count > 0) Log.i(TAG, "Degraded $count alarm(s) using inaccessible voice")
+                            }
+                            .onFailure { error ->
+                                Log.w(TAG, "Failed to reconcile inaccessible-voice alarms", error)
+                            }
+                    }
+                }
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to refresh social data", error)
                 if (showMessage) {
