@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -58,6 +59,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Google OSS 라이선스 화면은 AppCompatActivity 라 AppCompat 테마가 필요하다. play-services-oss-licenses
+             가 테마 없이 선언해 앱 기본 테마(Material)를 상속 → getSupportActionBar 크래시. 전용 AppCompat 테마로 덮어쓴다. -->
+        <activity
+            android:name="com.google.android.gms.oss.licenses.OssLicensesMenuActivity"
+            android:theme="@style/Theme.AlarmTalk.OssLicenses"
+            tools:replace="android:theme" />
+        <activity
+            android:name="com.google.android.gms.oss.licenses.OssLicensesActivity"
+            android:theme="@style/Theme.AlarmTalk.OssLicenses"
+            tools:replace="android:theme" />
 
         <service
             android:name=".alarm.RingingService"

@@ -18,4 +18,14 @@
         <item name="android:statusBarColor">@color/voice_alarm_status_bar</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+
+    <!-- Google OSS 라이선스 화면(OssLicensesMenuActivity/OssLicensesActivity)은 AppCompatActivity 라
+         AppCompat 테마가 필수다. 앱 기본 테마(Theme.AlarmTalk=Material)를 상속하면 getSupportActionBar
+         에서 "You need to use a Theme.AppCompat theme" 로 크래시가 나므로 전용 AppCompat 테마로 덮어쓴다.
+         explicit parent 를 지정했으므로 점(.) 이름 규칙에 따른 Theme.AlarmTalk 상속은 적용되지 않는다. -->
+    <style name="Theme.AlarmTalk.OssLicenses" parent="Theme.AppCompat.DayNight.DarkActionBar">
+        <item name="colorPrimary">@color/voice_alarm_app_background</item>
+        <item name="colorPrimaryDark">@color/voice_alarm_app_background</item>
+        <item name="android:statusBarColor">@color/voice_alarm_app_background</item>
+    </style>
 </resources>
