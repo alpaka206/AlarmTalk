@@ -697,12 +697,6 @@
     <string name="voices_listener_title_label">What this voice will call you (required)</string>
     <string name="voices_listener_title_placeholder">e.g. Mom, honey, Mr. Kim</string>
     <string name="voices_locked">Locked</string>
-    <string name="voices_voice_gender_label">Voice gender</string>
-    <string name="voices_voice_gender_male">Male</string>
-    <string name="voices_voice_gender_female">Female</string>
-    <string name="voices_voice_gender_neutral">Neutral</string>
-    <string name="voices_speech_formality_label">Polite Japanese</string>
-    <string name="voices_speech_formality_hint">Use polite speech (desu/masu) when speaking Japanese.</string>
     <string name="voices_login_required_body">Sign in to create a voice.</string>
     <string name="voices_login_required_title">Sign-in required</string>
     <string name="voices_mic_permission_required">Microphone permission is required.</string>

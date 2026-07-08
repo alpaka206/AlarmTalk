@@ -129,7 +129,6 @@ describe('VoiceProfileSchema', () => {
       user_id: 'u_1',
       name: '엄마 목소리',
       status: 'ready',
-      voice_gender: 'female',
       is_shared: false,
       created_at: '2026-04-17T00:00:00.000Z',
     });

@@ -706,12 +706,6 @@
     <string name="voices_listener_title_label">この声があなたを呼ぶ名前(必須)</string>
     <string name="voices_listener_title_placeholder">例:ママ、あなた、キムさん</string>
     <string name="voices_locked">ロック中</string>
-    <string name="voices_voice_gender_label">声の性別</string>
-    <string name="voices_voice_gender_male">男性</string>
-    <string name="voices_voice_gender_female">女性</string>
-    <string name="voices_voice_gender_neutral">中立</string>
-    <string name="voices_speech_formality_label">日本語の敬体</string>
-    <string name="voices_speech_formality_hint">日本語で話すとき丁寧な話し方(です・ます)を使います。</string>
     <string name="voices_login_required_body">ログインすると声を作成できます。</string>
     <string name="voices_login_required_title">ログインが必要です</string>
     <string name="voices_mic_permission_required">マイクの権限が必要です。</string>

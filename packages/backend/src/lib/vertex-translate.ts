@@ -45,9 +45,6 @@ export type WeatherAction = 'umbrella' | 'mask' | 'coat' | 'water' | 'walk';
 export type WeatherCondition = { kind: WeatherConditionKind; action: WeatherAction };
 export type WeatherSignal = { conditions: WeatherCondition[] };
 
-export type VoiceGender = 'male' | 'female' | 'neutral';
-export type SpeechFormality = 'auto' | 'polite';
-
 export type DynamicAlarmTextContext = {
   mode: DynamicAlarmTextMode;
   category: string;
@@ -59,8 +56,6 @@ export type DynamicAlarmTextContext = {
   fortuneProfile?: string | null;
   mealLabel?: string | null;
   alarmTimeLabel?: string | null;
-  voiceGender?: VoiceGender | null;
-  speechFormality?: SpeechFormality | null;
 };
 
 export class AlarmTextTranslationUnavailableError extends Error {
@@ -718,8 +713,8 @@ Korean's polite 해요체 into Japanese.
 終助詞 (the core of natural warmth; choose to match intonation, don't stack): ね = empathy/shared
 feeling (soft); よ = telling/gently urging; な/なあ = soft self-musing; よね/の = soft confirmation.
 Vary them; don't end every sentence with よ.
-GENDER: default GENDER-NEUTRAL ね/よ. Only LIGHTLY shade by the provided voice gender (e.g.
-first-person 私/僕/俺 when used). Do NOT use 役割語/manga-style gendered finals (わ/かしら/ぞ/だぜ) —
+GENDER: stay GENDER-NEUTRAL ね/よ. Prefer pro-drop over any first-person pronoun; if one is truly
+needed, neutral 私 (or omit it). Do NOT use 役割語/manga-style gendered finals (わ/かしら/ぞ/だぜ) —
 modern speakers rarely say them and they sound unnatural.
 PRO-DROP (strong): omit 私/僕/俺/あなた/君 when context is clear; keep first-person consistent if used.
 LOANWORDS/NAMES: natural katakana (コーヒー, マスク, ストレッチ); never literal English calques
@@ -797,32 +792,17 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   const listenerInstruction = listenerTitle
     ? `When addressing the listener, call them "${listenerTitle}" exactly (use this label naturally, do not translate it, and never replace it with grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
     : 'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter. Use a neutral greeting instead.';
-  // speech_formality='polite'면 관계 기반 반말 가이드를 끄고 해요체/です·ます로 격상한다(아래 override).
-  const isPolite = context.speechFormality === 'polite';
+  // 어체는 관계 기반(auto)으로만 결정한다.
   const koreanRegisterInstruction =
-    context.targetLanguage === 'ko' && !isPolite
+    context.targetLanguage === 'ko'
       ? koreanRegisterGuidance(context.relationshipLabel?.trim())
       : '';
   const relationship = context.relationshipLabel?.trim()
     ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. Use this only to choose a natural speech register and warmth. Never mention the relationship label in the text, and never write phrases like "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", or "speaking as your ${context.relationshipLabel}". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
-    context.targetLanguage === 'ko' && !isPolite && isRomanticRelationship(context.relationshipLabel)
+    context.targetLanguage === 'ko' && isRomanticRelationship(context.relationshipLabel)
       ? 'Romantic partner/spouse tone: the line should sound like something an actual boyfriend, girlfriend, wife, or husband would say privately to the listener. Use intimate 반말, not 해요체 or 합니다체, even for spouse labels such as 아내 or 남편. Good examples: "여보, 날씨 좋대. 잠깐 산책 가도 좋겠다", "자기야, 오늘 작은 행운이 온대". Bad examples: "여보, 날씨가 좋대요", "자기야, 일어나세요". Make it tender, warm, and lightly heart-fluttering, but still short and usable as an alarm. Do not become cheesy, poetic, possessive, or overly dramatic. Never mention new romantic connections, romance luck, flirting with others, jealousy, or phrases like "나만 생각해".'
-      : '';
-  // 어체 격상 override + 일본어 화자 성별(1인칭) 보정.
-  const formalityInstruction = isPolite
-    ? context.targetLanguage === 'ja'
-      ? 'POLITENESS OVERRIDE: use polite です・ます for the whole line even if the relationship would normally be casual タメ口 — never stiff ビジネス敬語/文語. This overrides any casual examples elsewhere.'
-      : context.targetLanguage === 'ko'
-        ? 'POLITENESS OVERRIDE: use warm 해요체 (존대) for the whole line even if the relationship would normally be 반말 — never 합니다체/문어체. This overrides any casual examples elsewhere.'
-        : ''
-    : '';
-  const japaneseGenderInstruction =
-    context.targetLanguage === 'ja' && context.voiceGender
-      ? context.voiceGender === 'male'
-        ? 'VOICE GENDER: the speaker is male — keep strong pro-drop, but if a first-person pronoun is truly needed, 僕 or 俺 sounds natural. Never use 役割語/manga-style gendered finals (わ/かしら/ぞ/だぜ).'
-        : `VOICE GENDER: the speaker is ${context.voiceGender} — keep strong pro-drop; if a first-person pronoun is truly needed, use 私 (or omit it). Never use 役割語/manga-style gendered finals (わ/かしら/ぞ/だぜ).`
       : '';
   const modeInstruction = (() => {
     if (context.mode === 'wake_weather') {
@@ -861,8 +841,6 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
     languageBlock,
-    formalityInstruction,
-    japaneseGenderInstruction,
     `Internal date context for freshness only, do not mention it in the final text: ${context.dateLabel}.`,
     context.alarmTimeLabel ? `Alarm time context: ${context.alarmTimeLabel}.` : '',
     `Alarm category: ${context.category}.`,
@@ -874,10 +852,10 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
       : 'For example, if the relationship label is "손녀", do not write "할머니" or "할아버지"; use a neutral greeting instead.',
     'Do not announce the relationship or source of the voice. Avoid phrases like "손녀 목소리로 전해요"; the alarm should sound like a natural alarm line.',
     'Do not mention the exact date, weekday, alarm time, country, city, district, or saved location label unless the user explicitly wrote it as part of the alarm text.',
-    context.targetLanguage === 'ko' && !isPolite
+    context.targetLanguage === 'ko'
       ? '한국어 어체 규칙: 가족·친구·연인·배우자 관계에서는 절대 "~합니다", "~하십시오" 같은 합니다체를 쓰지 말 것. 손녀·손자·손주→조부모는 친근하지만 공손한 해요체와 존대 동사를 써서 "할머니, 일어나실 시간이에요"처럼 말하고, "할머니, 일어날 시간이에요"처럼 낮춰 들리는 표현은 피한다. 자식→부모는 친근한 해요체 ("~해요", "~예요"). 부모→자식은 다정한 반말 또는 해요체 혼용. 형제·자매·친구 사이는 반말. 연인·남자친구·여자친구·아내·남편·배우자는 사적인 반말과 따뜻하고 살짝 설레는 톤. 뉴스 앵커처럼 들리지 않게 진짜 사람이 옆에서 말하는 톤으로.'
       : '',
-    context.targetLanguage === 'ko' && !isPolite
+    context.targetLanguage === 'ko'
       ? '문장 구조 예시 (wake_weather): "할아버지, 일어나실 시간이에요. 오늘은 비가 올 수 있대요. 나가실 때 우산 꼭 챙기세요." / "할머니, 좋은 아침이에요. 미세먼지가 많대요. 외출하실 때 마스크 챙기세요." / "자기야, 일어나자. 비 온대. 나가기 전에 우산 챙겨, 감기 걸리면 안 돼." / "일어나실 시간이에요. 날씨가 좋대요. 잠깐 산책 가기에도 딱이에요." — 위치/날짜/관계/숫자 없이 시작해서, 날씨 상태와 그에 맞는 행동 권유를 한두 마디로 자연스럽게 묶고 짧게 마무리. "예보 보니까" 같은 출처 도입은 선택 사항이며, 강수확률·기온 숫자를 그대로 읽는 패턴은 금지. 손녀→할아버지처럼 손아랫사람이 손윗사람에게 말할 때는 "오늘은 비가 올 수 있대요", "나가실 때 우산 꼭 챙기세요"처럼 조사와 띄어쓰기가 살아 있는 다정한 말투를 우선한다.'
       : '',
     'Make it feel meaningfully different from a prerecorded fixed alarm.',

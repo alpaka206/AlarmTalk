@@ -11,22 +11,12 @@ import { z } from 'zod';
 export const VoiceProfileStatusSchema = z.enum(['processing', 'ready', 'failed']);
 export type VoiceProfileStatus = z.infer<typeof VoiceProfileStatusSchema>;
 
-// 음성(화자)의 성별. 일본어 1인칭(僕/俺/私) 등 언어별 톤을 가볍게 보정하는 데 쓴다.
-export const VoiceGenderSchema = z.enum(['male', 'female', 'neutral']);
-export type VoiceGender = z.infer<typeof VoiceGenderSchema>;
-
-// 어체 격식: 'auto'(관계 기반, 기본) / 'polite'(캐주얼 관계여도 ja=です・ます, ko=해요체로 격상).
-export const SpeechFormalitySchema = z.enum(['auto', 'polite']);
-export type SpeechFormality = z.infer<typeof SpeechFormalitySchema>;
-
 export const VoiceProfileSchema = z.object({
   id: z.string().min(1),
   user_id: z.string().min(1),
   // 백엔드 create/update 가 강제하는 한도와 동일(1-50자). voice-profile.ts:446,760.
   name: z.string().min(1).max(50),
   status: VoiceProfileStatusSchema,
-  voice_gender: VoiceGenderSchema.nullable().optional(),
-  speech_formality: SpeechFormalitySchema.nullable().optional(),
   is_shared: z.boolean().optional(),
   is_draft: z.boolean().optional(),
   is_system: z.boolean().optional(),

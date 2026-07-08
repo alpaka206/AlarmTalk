@@ -22,8 +22,6 @@ import {
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
-  type VoiceGender,
-  type SpeechFormality,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import { isPaidVoicePlan } from './billing-helpers';
@@ -137,14 +135,6 @@ function normalizeRelationshipLabel(value: unknown): string | null {
   const label = value.trim();
   if (!label) return null;
   return label.slice(0, 30);
-}
-
-function normalizeVoiceGender(value: unknown): VoiceGender | null {
-  return value === 'male' || value === 'female' || value === 'neutral' ? value : null;
-}
-
-function normalizeSpeechFormality(value: unknown): SpeechFormality | null {
-  return value === 'auto' || value === 'polite' ? value : null;
 }
 
 function optionalInt(value: unknown, min: number, max: number): number | null {
@@ -789,8 +779,6 @@ tts.post('/generate', async (c) => {
             ),
           })
         : null;
-      // 화자 성별·어체 격식은 voice_profiles 행에서 읽는다(목소리 고유 속성). 공유 프로필도
-      // 소유자 행이므로 그대로 사용한다.
       const generated = await generateDynamicAlarmTextWithVertex(c.env, {
         mode: randomContext,
         category,
@@ -799,8 +787,6 @@ tts.post('/generate', async (c) => {
         relationshipLabel,
         listenerTitle,
         weatherSignal,
-        voiceGender: normalizeVoiceGender(vp.voice_gender),
-        speechFormality: normalizeSpeechFormality(vp.speech_formality),
         fortuneProfile:
           randomContext === 'wake_fortune'
             ? fortuneProfile({

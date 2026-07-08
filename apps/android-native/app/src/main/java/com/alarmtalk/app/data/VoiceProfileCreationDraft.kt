@@ -6,8 +6,4 @@ data class VoiceProfileCreationDraft(
     val shared: Boolean,
     val relationshipLabel: String,
     val listenerTitle: String,
-    // 'male' | 'female' | 'neutral'
-    val voiceGender: String = "neutral",
-    // 'auto' | 'polite'
-    val speechFormality: String = "auto",
 )

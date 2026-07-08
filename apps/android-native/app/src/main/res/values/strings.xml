@@ -707,12 +707,6 @@
     <string name="voices_listener_title_label">이 목소리가 나를 부를 이름 (필수)</string>
     <string name="voices_listener_title_placeholder">예: 엄마, 자기, 김팀장</string>
     <string name="voices_locked">잠금</string>
-    <string name="voices_voice_gender_label">목소리 성별</string>
-    <string name="voices_voice_gender_male">남성</string>
-    <string name="voices_voice_gender_female">여성</string>
-    <string name="voices_voice_gender_neutral">중립</string>
-    <string name="voices_speech_formality_label">일본어 정중체</string>
-    <string name="voices_speech_formality_hint">일본어로 말할 때 정중한 말투(です·ます)를 써요.</string>
     <string name="voices_login_required_body">로그인 후 목소리를 만들 수 있어요.</string>
     <string name="voices_login_required_title">로그인이 필요해요</string>
     <string name="voices_mic_permission_required">마이크 권한이 필요해요.</string>
