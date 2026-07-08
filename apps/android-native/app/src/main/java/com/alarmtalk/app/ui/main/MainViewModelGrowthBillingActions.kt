@@ -551,6 +551,11 @@ internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productI
                 refreshBillingAfterMutation(authorization, "google play confirm")
                 refreshAppSession()
                 refreshSocial()
+                // 커플/가족을 구매하면 초대·구성원 관리로 보내 '내 알람 맞추기 허용'·방해금지 시간을
+                // 바로 확인·설정하게 한다. 코드 등록 경로는 이미 동일하게 이동한다. 개인/plus 구매는 기존대로 유지.
+                if (response.planKey in setOf("couple", "family")) {
+                    navigateSharedPassTick++
+                }
             } else {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)
             }
