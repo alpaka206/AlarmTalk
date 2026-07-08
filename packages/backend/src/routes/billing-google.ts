@@ -193,28 +193,33 @@ billingGoogle.post('/google/confirm', async (c) => {
   }
 
   // acknowledgement 보류 시 서버가 확인 처리 (3일 내 미확인 → Play 자동 환불).
+  // acknowledge 는 멱등하므로 일시 실패 시 최대 3회 재시도해 자동환불 위험을 줄인다.
   if (subscription.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_PENDING') {
-    try {
-      const ackRes = await fetch(
-        `${baseUrl}/purchases/subscriptions/${encodeURIComponent(parsed.product_id)}/tokens/${encodeURIComponent(parsed.purchase_token)}:acknowledge`,
-        {
+    const ackUrl = `${baseUrl}/purchases/subscriptions/${encodeURIComponent(parsed.product_id)}/tokens/${encodeURIComponent(parsed.purchase_token)}:acknowledge`;
+    let acknowledged = false;
+    for (let attempt = 0; attempt < 3 && !acknowledged; attempt++) {
+      try {
+        const ackRes = await fetch(ackUrl, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({}),
-        },
-      );
-      if (!ackRes.ok) {
-        logStructured('warn', {
-          at: 'billing.google.acknowledge',
-          status: ackRes.status,
-          detail: (await ackRes.text()).slice(0, 300),
         });
+        if (ackRes.ok) {
+          acknowledged = true;
+        } else {
+          logStructured('warn', {
+            at: 'billing.google.acknowledge',
+            attempt,
+            status: ackRes.status,
+            detail: (await ackRes.text()).slice(0, 300),
+          });
+        }
+      } catch (err) {
+        logStructured('error', { at: 'billing.google.acknowledge', attempt, error: String(err) });
       }
-    } catch (err) {
-      logStructured('error', { at: 'billing.google.acknowledge', error: String(err) });
     }
   }
 

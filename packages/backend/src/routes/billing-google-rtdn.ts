@@ -6,6 +6,7 @@ import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { cancelActiveSubscriptionsForUser } from '../lib/billing-cancel';
+import { timingSafeEqualStr } from '../lib/timing-safe-equal';
 import {
   ANDROID_PUBLISHER_SCOPE,
   ENTITLED_STATES,
@@ -109,8 +110,8 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   if (!account || !expectedPackage || !verifyToken) {
     return c.json({ error: 'RTDN is not configured', error_code: 'RTDN_UNCONFIGURED' }, 503);
   }
-  // 위조 방지 — Play→Pub/Sub push URL 에 박아둔 비밀 토큰만 허용.
-  if (c.req.query('token') !== verifyToken) {
+  // 위조 방지 — Play→Pub/Sub push URL 에 박아둔 비밀 토큰만 허용. 상수시간 비교로 타이밍 오라클 차단.
+  if (!timingSafeEqualStr(c.req.query('token') ?? '', verifyToken)) {
     return c.json({ error: 'Forbidden', error_code: 'RTDN_BAD_TOKEN' }, 403);
   }
 
