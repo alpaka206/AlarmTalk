@@ -1121,10 +1121,6 @@ internal fun VoiceProfileManagementPanel(
                                     colors = wakerOutlinedTextFieldColors(),
                                     modifier = Modifier.fillMaxWidth(),
                                 )
-                                ListenerTitlePreview(
-                                    listenerTitle = profileListenerTitle.trim(),
-                                    relationshipLabel = relationshipSelection.resolved,
-                                )
                             }
 
                             VoiceRegistrationStep.Sharing -> {

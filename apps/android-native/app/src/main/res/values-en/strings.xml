@@ -749,9 +749,6 @@
     <string name="voicesr_delete_dialog_warning">Messages using this voice will keep only their text, and their alarms will switch to the default alarm sound. The saved audio files will also be deleted.</string>
     <string name="voicesr_edit_info">Edit info</string>
     <string name="voicesr_edit_my_info">Edit my info</string>
-    <string name="voicesr_listener_preview_heading">This is how the voice will call you</string>
-    <string name="voicesr_listener_preview_quote">\"%1$s, it\'s time to wake up\"</string>
-    <string name="voicesr_listener_preview_relationship">Relationship · %1$s</string>
     <string name="voicesr_listener_title_example_a">e.g. Minji, honey</string>
     <string name="voicesr_listener_title_example_b">e.g. Jiho, honey</string>
     <string name="voicesr_listener_title_label">What this voice will call you</string>

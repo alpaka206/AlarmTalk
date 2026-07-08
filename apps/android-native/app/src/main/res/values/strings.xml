@@ -759,9 +759,6 @@
     <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 메시지는 텍스트만 남고, 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
     <string name="voicesr_edit_info">정보 수정</string>
     <string name="voicesr_edit_my_info">내 정보 수정</string>
-    <string name="voicesr_listener_preview_heading">이 목소리는 이렇게 불러줘요</string>
-    <string name="voicesr_listener_preview_quote">\"%1$s, 일어날 시간이에요\"</string>
-    <string name="voicesr_listener_preview_relationship">관계 · %1$s</string>
     <string name="voicesr_listener_title_example_a">예: 민지야, 여보</string>
     <string name="voicesr_listener_title_example_b">예: 지호야, 여보</string>
     <string name="voicesr_listener_title_label">이 목소리가 나를 부를 이름</string>

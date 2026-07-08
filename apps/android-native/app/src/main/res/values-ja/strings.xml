@@ -758,9 +758,6 @@
     <string name="voicesr_delete_dialog_warning">この声を使うメッセージはテキストだけが残り、アラームは基本のアラーム音に変わります。保存された音源ファイルも一緒に削除されます。</string>
     <string name="voicesr_edit_info">情報を編集</string>
     <string name="voicesr_edit_my_info">自分の情報を編集</string>
-    <string name="voicesr_listener_preview_heading">この声はこう呼んでくれます</string>
-    <string name="voicesr_listener_preview_quote">「%1$s、起きる時間ですよ」</string>
-    <string name="voicesr_listener_preview_relationship">関係 · %1$s</string>
     <string name="voicesr_listener_title_example_a">例:ミンジ、あなた</string>
     <string name="voicesr_listener_title_example_b">例:ジホ、あなた</string>
     <string name="voicesr_listener_title_label">この声があなたを呼ぶ名前</string>

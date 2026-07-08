@@ -138,39 +138,6 @@ internal fun RelationshipDropdownField(
 }
 
 @Composable
-internal fun ListenerTitlePreview(
-    listenerTitle: String,
-    relationshipLabel: String,
-) {
-    if (listenerTitle.isBlank()) return
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerCardShape,
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.voicesr_listener_preview_heading),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = stringResource(R.string.voicesr_listener_preview_quote, listenerTitle),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            if (relationshipLabel.isNotBlank()) {
-                MutedText(stringResource(R.string.voicesr_listener_preview_relationship, relationshipLabel))
-            }
-        }
-    }
-}
-
-@Composable
 internal fun SharingOptionCard(
     enabled: Boolean,
     title: String,
