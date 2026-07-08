@@ -57,8 +57,7 @@ import com.alarmtalk.app.network.VoiceProfile
 
 internal enum class VoiceRegistrationStep {
     Source,
-    Identity,
-    Sharing,
+    Details,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

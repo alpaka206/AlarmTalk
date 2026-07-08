@@ -929,8 +929,7 @@ internal fun VoiceProfileManagementPanel(
                             )
                             val stepTitle = when (currentStep) {
                                 VoiceRegistrationStep.Source -> stringResource(R.string.voices_step_source)
-                                VoiceRegistrationStep.Identity -> stringResource(R.string.voices_step_identity)
-                                VoiceRegistrationStep.Sharing -> stringResource(R.string.voices_step_sharing)
+                                VoiceRegistrationStep.Details -> stringResource(R.string.voices_step_details)
                             }
                             val stepPosition =
                                 "${currentStep.ordinal + 1} / ${VoiceRegistrationStep.entries.size}"
@@ -1083,7 +1082,7 @@ internal fun VoiceProfileManagementPanel(
                                 }
                             }
 
-                            VoiceRegistrationStep.Identity -> {
+                            VoiceRegistrationStep.Details -> {
                                 OutlinedTextField(
                                     value = profileName,
                                     onValueChange = { profileName = it.take(50) },
@@ -1121,9 +1120,13 @@ internal fun VoiceProfileManagementPanel(
                                     colors = wakerOutlinedTextFieldColors(),
                                     modifier = Modifier.fillMaxWidth(),
                                 )
-                            }
-
-                            VoiceRegistrationStep.Sharing -> {
+                                // 공유 설정 — 토글 하나뿐이라 단독 단계를 없애고 세부 정보에 합쳤다.
+                                Text(
+                                    text = stringResource(R.string.voices_step_sharing),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
                                 SharingOptionCard(
                                     enabled = true,
                                     title = stringResource(R.string.voices_sharing_private_title),
@@ -1174,11 +1177,7 @@ internal fun VoiceProfileManagementPanel(
                         if (currentStep != VoiceRegistrationStep.Source) {
                             OutlinedButton(
                                 onClick = {
-                                    currentStep = when (currentStep) {
-                                        VoiceRegistrationStep.Sharing -> VoiceRegistrationStep.Identity
-                                        VoiceRegistrationStep.Identity -> VoiceRegistrationStep.Source
-                                        VoiceRegistrationStep.Source -> VoiceRegistrationStep.Source
-                                    }
+                                    currentStep = VoiceRegistrationStep.Source
                                     createSubmitAttempted = false
                                     localMessage = null
                                 },
@@ -1202,7 +1201,7 @@ internal fun VoiceProfileManagementPanel(
                                 Button(
                                     onClick = {
                                         localMessage = null
-                                        currentStep = VoiceRegistrationStep.Identity
+                                        currentStep = VoiceRegistrationStep.Details
                                     },
                                     enabled = canAdvanceFromSource,
                                     modifier = Modifier.weight(1f),
@@ -1218,27 +1217,16 @@ internal fun VoiceProfileManagementPanel(
                                 }
                             }
 
-                            VoiceRegistrationStep.Identity -> {
+                            VoiceRegistrationStep.Details -> {
                                 Button(
                                     onClick = {
                                         createSubmitAttempted = true
                                         if (identityComplete) {
                                             localMessage = null
                                             createSubmitAttempted = false
-                                            currentStep = VoiceRegistrationStep.Sharing
+                                            submitCreateProfile(resolvedProfileName)
                                         }
                                     },
-                                    enabled = !voiceProfileBusy && !createPreparing,
-                                    modifier = Modifier.weight(1f),
-                                    shape = WakerButtonShape,
-                                ) {
-                                    Text(stringResource(R.string.voices_next))
-                                }
-                            }
-
-                            VoiceRegistrationStep.Sharing -> {
-                                Button(
-                                    onClick = { submitCreateProfile(resolvedProfileName) },
                                     enabled = !voiceProfileBusy && !isRecording && !createPreparing &&
                                         (canSubmitRecord || canSubmitSingleFile),
                                     modifier = Modifier.weight(1f),

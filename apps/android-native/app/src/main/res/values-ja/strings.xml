@@ -741,7 +741,7 @@
     <string name="voices_sharing_shared_desc_disabled">共有はカップル/ファミリープランでご利用いただけます。</string>
     <string name="voices_sharing_shared_desc_enabled">登録後、一覧から共有コードを作成して渡せます。</string>
     <string name="voices_sharing_shared_title">家族・恋人と共有</string>
-    <string name="voices_step_identity">誰の声ですか</string>
+    <string name="voices_step_details">詳細</string>
     <string name="voices_step_sharing">共有設定</string>
     <string name="voices_step_source">音声の準備</string>
     <string name="voices_default_voice_choose">選ぶ</string>

@@ -742,7 +742,7 @@
     <string name="voices_sharing_shared_desc_disabled">공유는 커플/가족 이용권에서 사용할 수 있어요.</string>
     <string name="voices_sharing_shared_desc_enabled">등록 후 목록에서 공유 코드를 만들어 전달할 수 있어요.</string>
     <string name="voices_sharing_shared_title">가족·연인과 공유</string>
-    <string name="voices_step_identity">누구의 목소리인가요</string>
+    <string name="voices_step_details">세부 정보</string>
     <string name="voices_step_sharing">공유 설정</string>
     <string name="voices_step_source">음성 준비</string>
     <string name="voices_default_voice_choose">선택하기</string>

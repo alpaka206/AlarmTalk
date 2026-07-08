@@ -732,7 +732,7 @@
     <string name="voices_sharing_shared_desc_disabled">Sharing is available with a Couple or Family plan.</string>
     <string name="voices_sharing_shared_desc_enabled">After registering, you can create a share code from the list and send it.</string>
     <string name="voices_sharing_shared_title">Share with family or partner</string>
-    <string name="voices_step_identity">Whose voice is it?</string>
+    <string name="voices_step_details">Details</string>
     <string name="voices_step_sharing">Sharing settings</string>
     <string name="voices_step_source">Prepare audio</string>
     <string name="voices_default_voice_choose">Choose</string>
