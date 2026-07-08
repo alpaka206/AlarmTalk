@@ -12,11 +12,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material.icons.outlined.People
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,7 +20,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -174,7 +169,13 @@ internal fun AlarmListScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 32.dp),
+        contentPadding = PaddingValues(
+            start = 24.dp,
+            top = 24.dp,
+            end = 24.dp,
+            // 알람 탭은 우하단 FAB(＋)가 마지막 알람 행을 가리지 않게 하단 여유를 더 준다.
+            bottom = if (selectedTab == NativeTab.Alarms) 96.dp else 32.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         when (selectedTab) {
@@ -309,23 +310,7 @@ internal fun AlarmListScreen(
         }
     }
 
-        // '전체'(설정·이용권·구성원관리) 진입 — 하단 탭에서 빼고 홈/목소리 화면 우측 상단 ☰ 로 승격
-        // (원래 우측 상단 프로필 메뉴 패턴으로 복귀). 하단바는 알람 | ＋ | 목소리 좌우 대칭.
-        if (selectedTab == NativeTab.Alarms || selectedTab == NativeTab.Voices) {
-            IconButton(
-                onClick = { onSelectTab(NativeTab.Menu) },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(contentPadding)
-                    .padding(top = 16.dp, end = 12.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Menu,
-                    contentDescription = stringResource(R.string.r3app_bottom_tab_menu),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        // '전체'는 이제 하단바의 3번째 탭(알람 | 목소리 | 전체)이라 우측 상단 ☰ 는 제거했다.
 
         if (homeGuideVisible && selectedTab == NativeTab.Alarms) {
             CoachMarkOverlay(

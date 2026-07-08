@@ -9,9 +9,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -526,18 +531,34 @@ internal fun AlarmTalkApp(
         }
     }
 
+    // 하단바·FAB 등 앱 크롬 노출 조건(로그인·동의 완료, 업데이트 강제/삭제 대기 아님).
+    val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
+        !viewModel.updateRequired && !viewModel.pendingDeletion && currentTab != null
+
     Scaffold(
         bottomBar = {
-            if (authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-                !viewModel.updateRequired &&
-                !viewModel.pendingDeletion && currentTab != null
-            ) {
+            if (showAppChrome) {
                 AlarmTalkBottomBar(
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
                     onSelectTab = ::navigateToTab,
-                    onCreateAlarm = ::requestCreateAlarm,
                 )
+            }
+        },
+        floatingActionButton = {
+            // 알람 생성은 탭이 아닌 '동작'이라 알람 탭에서만 FAB 로 노출한다.
+            if (showAppChrome && selectedTab == NativeTab.Alarms) {
+                FloatingActionButton(
+                    onClick = ::requestCreateAlarm,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = CircleShape,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = stringResource(R.string.r3app_bottom_create_alarm_desc),
+                    )
+                }
             }
         },
     ) { padding ->

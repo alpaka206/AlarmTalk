@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Menu
@@ -48,7 +47,6 @@ internal fun AlarmTalkBottomBar(
     selectedTab: NativeTab,
     unreadAlarmCount: Int,
     onSelectTab: (NativeTab) -> Unit,
-    onCreateAlarm: () -> Unit,
 ) {
     // 배경색과 동일하게 깔아 시스템 내비게이션 바(배경색)와 이음새 없이 이어지게 한다.
     Surface(
@@ -64,6 +62,8 @@ internal fun AlarmTalkBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 알람 | 목소리 | 전체 — 세 개의 동일 탭. 알람 생성(＋)은 탭이 아닌 '동작'이므로
+            // 알람 화면에 뜨는 FAB 로 분리했다(선택 모델 일관 + 바가 휑하지 않게).
             AlarmTalkTabItem(
                 tab = NativeTab.Alarms,
                 selectedTab = selectedTab,
@@ -72,11 +72,6 @@ internal fun AlarmTalkBottomBar(
                 label = stringResource(R.string.r3app_bottom_tab_alarms),
                 badgeCount = unreadAlarmCount,
                 onSelectTab = onSelectTab,
-                modifier = Modifier.weight(1f),
-            )
-            // 생성(＋)을 정중앙에 두고 알람↔목소리를 좌우 대칭으로. '전체'는 상단 우측 ☰ 로 이동.
-            AlarmCreateBarButton(
-                onClick = onCreateAlarm,
                 modifier = Modifier.weight(1f),
             )
             AlarmTalkTabItem(
@@ -88,37 +83,15 @@ internal fun AlarmTalkBottomBar(
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
-        }
-    }
-}
-
-// 중앙 알람 생성 버튼 — 탭이 아닌 유일한 '동작' 슬롯이라 원형 프라이머리로 도드라지게 그린다.
-@Composable
-private fun AlarmCreateBarButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier.fillMaxHeight(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            onClick = onClick,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shadowElevation = 6.dp,
-        ) {
-            Box(
-                modifier = Modifier.size(52.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Add,
-                    contentDescription = stringResource(R.string.r3app_bottom_create_alarm_desc),
-                    modifier = Modifier.size(26.dp),
-                )
-            }
+            AlarmTalkTabItem(
+                tab = NativeTab.Menu,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Menu,
+                selectedIcon = Icons.Filled.Menu,
+                label = stringResource(R.string.r3app_bottom_tab_menu),
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
