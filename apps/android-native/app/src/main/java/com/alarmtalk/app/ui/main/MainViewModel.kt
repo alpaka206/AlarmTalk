@@ -192,6 +192,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var familyVoices by mutableStateOf<List<FamilyVoiceProfile>>(emptyList())
+
+    // 공유 목소리 목록이 API 로 '신선하게' 로드됐는지. 접근권 잃은 목소리 알람 강등 판단은
+    // 이 신선 로드 + voiceProfiles 로드가 모두 확보됐을 때만 수행한다(reconcileInaccessibleVoiceAlarms).
+    internal var familyVoicesLoadedFresh: Boolean = false
         internal set
 
     var billingBusy by mutableStateOf(false)

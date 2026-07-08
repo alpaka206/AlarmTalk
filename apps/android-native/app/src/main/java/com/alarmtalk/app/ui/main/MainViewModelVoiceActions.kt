@@ -87,6 +87,9 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 api.listVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
             }.onSuccess { profiles ->
                 voiceProfiles = profiles
+                // 내 음성 목록이 늦게 로드된 경우에도 접근권 잃은 목소리 알람 강등이 재실행되게 한다
+                // (공유 목소리 목록이 먼저 신선 로드돼 스킵됐을 수 있음).
+                reconcileInaccessibleVoiceAlarms()
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to load voice profiles", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_failed))

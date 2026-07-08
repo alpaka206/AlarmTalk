@@ -45,22 +45,10 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
                 familyGroup = snapshot.familyGroup
                 saveFamilyGroupSnapshot(snapshot.familyGroup)
                 familyVoices = snapshot.familyVoices
-                // 공유 목소리 목록을 '신선하게' 받았고 내 음성 목록도 로드돼 있을 때만, 접근권을 잃은
-                // 공유/본인 목소리를 쓰는 '내 소유' 알람을 sound-only 로 강등한다(감사 B-3 LOCAL_OWNED
-                // 좀비). 로드 실패 시 옛 목록을 유지하므로, 신선 로드만 신뢰해 정상 음성알람 오강등을 막는다.
-                if (snapshot.familyVoicesFresh && voiceProfiles.isNotEmpty()) {
-                    val accessibleVoiceIds =
-                        (voiceProfiles.map { it.id } + snapshot.familyVoices.map { it.id }).toSet()
-                    viewModelScope.launch {
-                        runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds) }
-                            .onSuccess { count ->
-                                if (count > 0) Log.i(TAG, "Degraded $count alarm(s) using inaccessible voice")
-                            }
-                            .onFailure { error ->
-                                Log.w(TAG, "Failed to reconcile inaccessible-voice alarms", error)
-                            }
-                    }
-                }
+                familyVoicesLoadedFresh = snapshot.familyVoicesFresh
+                // 접근권 잃은 목소리 알람 강등 — 내 음성·공유 목소리 두 로드 중 늦게 끝난 쪽에서
+                // 실행되도록 헬퍼로 위임한다(한쪽이 먼저 끝나 스킵돼도 재실행됨).
+                reconcileInaccessibleVoiceAlarms()
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to refresh social data", error)
                 if (showMessage) {
@@ -70,6 +58,24 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
         } finally {
             socialBusy = false
         }
+    }
+}
+
+// 접근권을 잃은 공유/본인 목소리를 쓰는 '내 소유' 알람을 sound-only 로 강등한다(감사 B-3 LOCAL_OWNED 좀비).
+// 내 음성 목록(voiceProfiles)·공유 목소리 목록(familyVoices)이 둘 다 신선하게 확보됐을 때만 판단한다.
+// 두 로드가 비동기라 늦게 끝난 쪽(refreshSocial·fetchVoiceProfiles 성공)에서 이 함수를 호출해, 한쪽이
+// 먼저 끝나 스킵돼도 재실행되게 한다. 로드 실패 시 옛 목록을 유지하므로 신선 로드만 신뢰해 오강등을 막는다.
+internal fun MainViewModel.reconcileInaccessibleVoiceAlarms() {
+    if (!familyVoicesLoadedFresh || voiceProfiles.isEmpty()) return
+    val accessibleVoiceIds = (voiceProfiles.map { it.id } + familyVoices.map { it.id }).toSet()
+    viewModelScope.launch {
+        runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds) }
+            .onSuccess { count ->
+                if (count > 0) Log.i(TAG, "Degraded $count alarm(s) using inaccessible voice")
+            }
+            .onFailure { error ->
+                Log.w(TAG, "Failed to reconcile inaccessible-voice alarms", error)
+            }
     }
 }
 

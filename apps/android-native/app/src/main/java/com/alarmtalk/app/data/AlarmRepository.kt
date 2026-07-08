@@ -360,7 +360,10 @@ class AlarmRepository(
                 voiceCategory = null,
                 voiceLanguage = null,
                 voiceRandomPrompt = false,
-                syncState = current.nextLocalSyncState(),
+                // 서버 알람은 이미 P0-1/P0-2(취소·un-share·목소리 삭제) 경로에서 sound-only 로 강등되므로,
+                // 이 로컬 정리는 push 하지 않는다(SYNCED). 기본 Gson 은 null 필드를 PATCH 에서 누락시켜
+                // 서버 voice 참조를 못 지우고 오히려 stale 상태를 만들 수 있어(PR #536 P2), 로컬 캐시만 정리.
+                syncState = AlarmSyncStates.SYNCED,
                 updatedAtMillis = System.currentTimeMillis(),
             )
             if (updated.enabled) alarmScheduler.schedule(updated)
