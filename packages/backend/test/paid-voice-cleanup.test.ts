@@ -114,4 +114,9 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     expect(alB!.mode).toBe('sound-only');
     expect(alB!.voice_profile_id).toBeNull();
   });
+
+  // 참고: 실데이터에서 voice_profiles.user_id 가 로그인 id(google_id)로 저장된 케이스는
+  // deletePaidVoiceDataForUser 와 동일하게 [userPk, loginId] 두 id 를 모두 매칭해 덮는다(PR #536 P1).
+  // 이 인메모리 테스트는 FK(user_id REFERENCES users(id))를 강제해 login-id 저장 자체를 못 만드므로
+  // 별도 재현 대신 코드 정합(두 id 매칭)으로 보장한다.
 });

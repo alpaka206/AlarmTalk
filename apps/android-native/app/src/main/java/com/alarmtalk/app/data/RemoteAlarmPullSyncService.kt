@@ -35,7 +35,8 @@ internal class RemoteAlarmPullSyncService(
         // 그중 "내가 만든 게 아니라 누군가가 나를 target 으로 만든" 알람만 가져온다.
         // 기존에는 isReceivedFamilyAlarm(=family/family-voice 카테고리)로 좁혀져 있어서
         // 일반 /api/alarm 경로(target_user_id 포함)로 보낸 알람이 누락됐다.
-        val remoteAlarms = api.listAlarms(authorization).alarms
+        val response = api.listAlarms(authorization)
+        val remoteAlarms = response.alarms
             .filter { remote ->
                 val sender = remote.senderUserId
                 val target = remote.targetUserId
@@ -98,9 +99,32 @@ internal class RemoteAlarmPullSyncService(
             }
         }
 
+        // 서버가 더 이상 내려주지 않는(수신자 그만받기·발신자 삭제) 받은 알람을 로컬에서도 제거한다.
+        // decline 게이트가 서버 목록에서 빼므로, 이미 임포트한 기기가 계속 울리지 않도록 prune 한다.
+        // 단, 목록이 페이지네이션으로 잘렸으면(size < total) 오삭제 위험이 있어 건너뛴다(완전 스냅샷일 때만).
+        var pruned = 0
+        val totalCount = response.total
+        if (totalCount != null && response.alarms.size >= totalCount) {
+            val servedRemoteIds = response.alarms.map { it.id }.toSet()
+            alarmDao.getAllAlarms()
+                .filter {
+                    it.origin == AlarmOrigins.RECEIVED_REMOTE &&
+                        !it.remoteAlarmId.isNullOrBlank() &&
+                        it.remoteAlarmId !in servedRemoteIds
+                }
+                .forEach { stale ->
+                    alarmScheduler.cancel(stale.id)
+                    val cacheKey = stale.audioCacheKey
+                    alarmDao.delete(stale)
+                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+                    pruned += 1
+                    Log.i(TAG, "Pruned received alarm no longer served by server remoteId=${stale.remoteAlarmId}")
+                }
+        }
+
         Log.i(
             TAG,
-            "Remote alarm pull complete total=${remoteAlarms.size} imported=$imported updated=$updated skipped=$skipped failed=$failed",
+            "Remote alarm pull complete total=${remoteAlarms.size} imported=$imported updated=$updated skipped=$skipped failed=$failed pruned=$pruned",
         )
         return RemoteAlarmPullResult(
             total = remoteAlarms.size,
