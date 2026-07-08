@@ -108,12 +108,15 @@ internal class RemoteAlarmPullSyncService(
             }
         }
 
-        // 서버가 더 이상 내려주지 않는(수신자 그만받기·발신자 삭제) 받은 알람을 로컬에서도 제거한다.
+        // 서버가 더 이상 '받은 알람'으로 내려주지 않는(수신자 그만받기·발신자 삭제) 로컬 받은 알람을 제거한다.
         // decline 게이트가 서버 목록에서 빼므로, 이미 임포트한 기기가 계속 울리지 않도록 prune 한다.
+        // 비교 기준은 전체(allRemote)가 아니라 '받은 것'(is_received) 하위집합의 id 다 — 구 네임스페이스
+        // 버그로 '보낸 알람'을 RECEIVED_REMOTE 로 잘못 임포트한 기기에서, 그 행의 remoteAlarmId 는 여전히
+        // allRemote(내 보낸 알람)에 있어 안 지워진다. 받은 집합 기준으로 비교해야 그 잔재까지 정리된다.
         // 단, 목록이 페이지네이션으로 잘렸으면(size < total) 오삭제 위험이 있어 건너뛴다(완전 스냅샷일 때만).
         var pruned = 0
         if (snapshotComplete) {
-            val servedRemoteIds = allRemote.map { it.id }.toSet()
+            val servedRemoteIds = remoteAlarms.map { it.id }.toSet()
             alarmDao.getAllAlarms()
                 .filter {
                     it.origin == AlarmOrigins.RECEIVED_REMOTE &&
