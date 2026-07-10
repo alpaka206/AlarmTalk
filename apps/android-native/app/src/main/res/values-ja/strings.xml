@@ -370,6 +370,8 @@
     <string name="hs_delete_account_confirm">退会する</string>
     <string name="hs_delete_account_title">退会</string>
     <string name="hs_edit_alarm">編集する</string>
+    <string name="hs_home_title">アラーム</string>
+    <string name="hs_home_empty_title">好きな声で\n起こします</string>
     <string name="hs_greeting_each_other_bottom">朝を予約しましょう</string>
     <string name="hs_greeting_each_other_top">お互いの声で</string>
     <string name="hs_greeting_morning_bottom">よく起きられましたか？</string>
@@ -388,7 +390,6 @@
     <string name="hs_nickname_field_placeholder">例：りん</string>
     <string name="hs_nickname_save">保存</string>
     <string name="hs_nickname_saving">保存中</string>
-    <string name="hs_no_alarm_yet">まだアラームがありません。</string>
     <string name="hs_profile_content_desc">プロフィール</string>
     <string name="hs_profile_menu_invite_code">招待コードを登録</string>
     <string name="hs_profile_menu_pass">利用券</string>
@@ -402,8 +403,8 @@
     <string name="hs_quiet_time_start">開始時間</string>
     <string name="hs_quiet_window_delete">削除</string>
     <string name="hs_quiet_window_index">時間帯 %1$d</string>
-    <string name="hs_reserve_alarm">アラームを予約</string>
-    <string name="hs_reserve_alarm_with_voice">お気に入りの声でアラームを予約</string>
+    <string name="hs_create_alarm_button">最初のアラームを作成</string>
+    <string name="hs_reserve_alarm">アラーム予約</string>
     <string name="hs_save">保存</string>
     <string name="hs_settings_back">戻る</string>
     <string name="hs_settings_delete_account">退会</string>
@@ -423,7 +424,11 @@
     <string name="settings_holiday_country_title">祝日カレンダー</string>
     <string name="settings_logout_confirm_title">ログアウトしますか？</string>
     <string name="settings_marketing_load_failed">読み込めませんでした · タップで再試行</string>
-    <string name="hs_start_now">さっそく始めましょう。</string>
+    <string name="hs_start_now">時間と声を選んでください。</string>
+    <string name="hs_empty_card_label">まだアラームがありません。</string>
+    <string name="hs_empty_card_helper">時間と声を選択してください。</string>
+    <string name="hs_status_inactive">オンのアラームがありません。</string>
+    <string name="hs_status_next_alarm">次のアラーム %1$s</string>
     <string name="hs_theme_dark_desc">夜に見やすい暗い画面です。</string>
     <string name="hs_theme_dark_title">ダーク</string>
     <string name="hs_theme_dialog_title">テーマを選択</string>
@@ -976,8 +981,8 @@
     <string name="onb_voice_nickname_label">この声に何と呼んでほしいですか？</string>
     <string name="onb_voice_nickname_placeholder">例: ジホ、あなた、部長</string>
     <string name="onb_voice_nickname_hint">空欄なら名前なしで起こします。あとで声タブで変更できます。</string>
-    <string name="misc2_coach_home_hero_title">次のアラームをひと目で</string>
-    <string name="misc2_coach_home_hero_body">次に鳴るアラームがここに表示されます。</string>
+    <string name="misc2_coach_home_hero_title">最初のアラームを作成</string>
+    <string name="misc2_coach_home_hero_body">時間と声を選ぶと、この端末に保存されます。</string>
     <string name="misc2_coach_voice_create_title">自分の声を作りましょう</string>
     <string name="misc2_coach_voice_create_body">自分の声を作っておくと、その声でアラームが起こしてくれます。</string>
     <string name="misc2_theme_mode_system">システム設定に合わせる</string>

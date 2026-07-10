@@ -546,8 +546,7 @@ internal fun AlarmTalkApp(
             }
         },
         floatingActionButton = {
-            // 알람 생성은 탭이 아닌 '동작'이라 알람 탭에서만 FAB 로 노출한다.
-            if (showAppChrome && selectedTab == NativeTab.Alarms) {
+            if (showAppChrome && selectedTab == NativeTab.Alarms && alarms.isNotEmpty()) {
                 FloatingActionButton(
                     onClick = ::requestCreateAlarm,
                     containerColor = MaterialTheme.colorScheme.primary,

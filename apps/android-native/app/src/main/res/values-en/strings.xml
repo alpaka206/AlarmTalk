@@ -370,6 +370,8 @@
     <string name="hs_delete_account_confirm">Delete</string>
     <string name="hs_delete_account_title">Delete account</string>
     <string name="hs_edit_alarm">Edit</string>
+    <string name="hs_home_title">Alarms</string>
+    <string name="hs_home_empty_title">Wake up to\na voice you love</string>
     <string name="hs_greeting_each_other_bottom">let\'s schedule mornings</string>
     <string name="hs_greeting_each_other_top">With each other\'s voices,</string>
     <string name="hs_greeting_morning_bottom">did you wake up well?</string>
@@ -388,7 +390,6 @@
     <string name="hs_nickname_field_placeholder">e.g. Gyuwon</string>
     <string name="hs_nickname_save">Save</string>
     <string name="hs_nickname_saving">Saving</string>
-    <string name="hs_no_alarm_yet">No alarms yet.</string>
     <string name="hs_profile_content_desc">Profile</string>
     <string name="hs_profile_menu_invite_code">Enter invite code</string>
     <string name="hs_profile_menu_pass">Pass</string>
@@ -402,8 +403,8 @@
     <string name="hs_quiet_time_start">Start time</string>
     <string name="hs_quiet_window_delete">Delete</string>
     <string name="hs_quiet_window_index">Time slot %1$d</string>
-    <string name="hs_reserve_alarm">Set an alarm</string>
-    <string name="hs_reserve_alarm_with_voice">Set an alarm with a voice you love</string>
+    <string name="hs_create_alarm_button">Create first alarm</string>
+    <string name="hs_reserve_alarm">Alarm booking</string>
     <string name="hs_save">Save</string>
     <string name="hs_settings_back">Back</string>
     <string name="hs_settings_delete_account">Delete account</string>
@@ -423,7 +424,11 @@
     <string name="settings_holiday_country_title">Holiday calendar</string>
     <string name="settings_logout_confirm_title">Log out?</string>
     <string name="settings_marketing_load_failed">Couldn\'t load · Tap to retry</string>
-    <string name="hs_start_now">Let\'s get started.</string>
+    <string name="hs_start_now">Choose the time and voice.</string>
+    <string name="hs_empty_card_label">No alarms yet.</string>
+    <string name="hs_empty_card_helper">Choose the time and voice.</string>
+    <string name="hs_status_inactive">No active alarms.</string>
+    <string name="hs_status_next_alarm">Next alarm %1$s</string>
     <string name="hs_theme_dark_desc">A dark screen that\'s easy on the eyes at night.</string>
     <string name="hs_theme_dark_title">Dark</string>
     <string name="hs_theme_dialog_title">Choose theme</string>
@@ -967,8 +972,8 @@
     <string name="onb_voice_nickname_label">What should this voice call you?</string>
     <string name="onb_voice_nickname_placeholder">e.g. Jiho, honey, boss</string>
     <string name="onb_voice_nickname_hint">Leave it blank to be woken without a name. You can change it later in the Voices tab.</string>
-    <string name="misc2_coach_home_hero_title">Your next alarm at a glance</string>
-    <string name="misc2_coach_home_hero_body">Your next alarm shows up right here.</string>
+    <string name="misc2_coach_home_hero_title">Create your first alarm</string>
+    <string name="misc2_coach_home_hero_body">Choose a time and voice, and it is saved on this device.</string>
     <string name="misc2_coach_voice_create_title">Create your own voice</string>
     <string name="misc2_coach_voice_create_body">Make your own voice, and it\'ll wake you up.</string>
     <string name="misc2_theme_mode_system">Match system</string>

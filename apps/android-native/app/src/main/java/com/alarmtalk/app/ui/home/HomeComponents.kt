@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -35,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import com.alarmtalk.app.R
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.WakerCardShape
@@ -45,34 +45,36 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.data.AlarmEntity
 
-// 알람 홈 좌상단 인사말 — 시간대별 문구. 우측 공간은 비워둔다(추후 알림 등 배치 여지).
+// 알람 탭 헤더 — 다른 탭과 같은 ScreenHeader 문법에 상태 한 줄(다음 알람/꺼짐/없음)만 얹는다.
 @Composable
-internal fun HomeHeader() {
-    val hour = java.time.LocalTime.now().hour
-    val (greetingTop, greetingBottom) = when {
-        hour < 6 -> stringResource(R.string.hs_greeting_voice_top) to stringResource(R.string.hs_greeting_voice_bottom)
-        hour < 12 -> stringResource(R.string.hs_greeting_morning_top) to stringResource(R.string.hs_greeting_morning_bottom)
-        hour < 17 -> stringResource(R.string.hs_greeting_tomorrow_top) to stringResource(R.string.hs_greeting_tomorrow_bottom)
-        hour < 21 -> stringResource(R.string.hs_greeting_each_other_top) to stringResource(R.string.hs_greeting_each_other_bottom)
-        else -> stringResource(R.string.hs_greeting_voice_top) to stringResource(R.string.hs_greeting_voice_bottom)
+internal fun HomeHeader(
+    nextAlarm: AlarmEntity?,
+    hasAnyAlarm: Boolean,
+) {
+    val statusText: String? = when {
+        nextAlarm != null -> {
+            val period = stringResource(if (nextAlarm.hour < 12) R.string.rd2_am else R.string.rd2_pm)
+            stringResource(
+                R.string.hs_status_next_alarm,
+                "$period ${homeAlarmClockLabel(nextAlarm.hour, nextAlarm.minute)}",
+            )
+        }
+        hasAnyAlarm -> stringResource(R.string.hs_status_inactive)
+        else -> null
     }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = greetingTop,
-            modifier = Modifier.padding(end = 72.dp),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Text(
-            text = greetingBottom,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            // 랜딩 헤드라인처럼 두 번째 줄에 브랜드 액센트를 준다.
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
+    ScreenHeader(
+        title = stringResource(R.string.hs_home_title),
+        subtitle = statusText,
+        titleStyle = MaterialTheme.typography.titleLarge,
+    )
+}
+
+private fun homeAlarmClockLabel(hour: Int, minute: Int): String {
+    val hour12 = hour % 12
+    val displayHour = if (hour12 == 0) 12 else hour12
+    return "$displayHour:${"%02d".format(minute)}"
 }
 
 // 전체 탭 — 우측 상단 프로필 드롭다운 메뉴를 페이지로 승격한 것(토스 설정 패턴).
@@ -446,11 +448,12 @@ internal fun DeleteAccountConfirmDialog(
 internal fun ScreenHeader(
     title: String,
     subtitle: String? = null,
+    titleStyle: TextStyle = MaterialTheme.typography.headlineLarge,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.headlineLarge,
+            style = titleStyle,
             fontWeight = FontWeight.Bold,
         )
         if (!subtitle.isNullOrBlank()) {

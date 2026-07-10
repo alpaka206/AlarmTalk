@@ -372,6 +372,8 @@
     <string name="hs_delete_account_confirm">탈퇴</string>
     <string name="hs_delete_account_title">회원 탈퇴</string>
     <string name="hs_edit_alarm">수정하기</string>
+    <string name="hs_home_title">알람</string>
+    <string name="hs_home_empty_title">좋아하는 목소리로\n깨워드릴게요</string>
     <string name="hs_greeting_each_other_bottom">아침을 예약해요</string>
     <string name="hs_greeting_each_other_top">서로의 목소리로</string>
     <string name="hs_greeting_morning_bottom">잘 일어나셨나요?</string>
@@ -390,7 +392,6 @@
     <string name="hs_nickname_field_placeholder">예: 규원</string>
     <string name="hs_nickname_save">저장</string>
     <string name="hs_nickname_saving">저장 중</string>
-    <string name="hs_no_alarm_yet">아직 알람이 없어요.</string>
     <string name="hs_profile_content_desc">프로필</string>
     <string name="hs_profile_menu_invite_code">초대 코드 등록</string>
     <string name="hs_profile_menu_pass">이용권</string>
@@ -404,8 +405,8 @@
     <string name="hs_quiet_time_start">시작 시간</string>
     <string name="hs_quiet_window_delete">삭제</string>
     <string name="hs_quiet_window_index">시간대 %1$d</string>
+    <string name="hs_create_alarm_button">첫 알람 만들기</string>
     <string name="hs_reserve_alarm">알람 예약</string>
-    <string name="hs_reserve_alarm_with_voice">좋아하는 목소리로 알람 예약</string>
     <string name="hs_save">저장</string>
     <string name="hs_settings_back">뒤로</string>
     <string name="hs_settings_delete_account">회원 탈퇴</string>
@@ -425,7 +426,11 @@
     <string name="settings_holiday_country_title">공휴일 달력</string>
     <string name="settings_logout_confirm_title">로그아웃할까요?</string>
     <string name="settings_marketing_load_failed">불러오지 못했어요 · 다시 시도</string>
-    <string name="hs_start_now">바로 시작해봐요.</string>
+    <string name="hs_start_now">시간과 목소리를 선택해 주세요.</string>
+    <string name="hs_empty_card_label">아직 알람이 없어요</string>
+    <string name="hs_empty_card_helper">시간과 목소리를 선택하세요.</string>
+    <string name="hs_status_inactive">켜진 알람이 없어요.</string>
+    <string name="hs_status_next_alarm">다음 알람 %1$s</string>
     <string name="hs_theme_dark_desc">밤에 보기 편한 어두운 화면이에요.</string>
     <string name="hs_theme_dark_title">어둡게</string>
     <string name="hs_theme_dialog_title">테마 선택</string>
@@ -748,7 +753,7 @@
     <string name="voices_default_voice_choose">선택하기</string>
     <string name="voices_default_voice_row_title">기본 목소리</string>
     <string name="voices_upload_change_hint">다른 파일을 선택하려면 탭하세요.</string>
-    <string name="voices_single_speaker_hint">한 사람 목소리만 들어간 오디오를 넣어주세요. 여러 명이 섞이면 목소리가 정확하지 않아요.</string>
+    <string name="voices_single_speaker_hint">한 사람 목소리만 들어간 오디오를 넣어주세요.\n여러 명의 음성이 들어가 있으면 목소리가 달라질 수 있어요.</string>
     <string name="voices_upload_file_or_video">파일 또는 영상 업로드</string>
     <string name="voices_upload_zone_subtitle">1분 이상의 오디오나 영상으로 준비해 주세요</string>
     <string name="voices_usage_guide">사용 가이드</string>
@@ -977,8 +982,8 @@
     <string name="onb_voice_nickname_label">이 목소리가 나를 뭐라고 부를까요?</string>
     <string name="onb_voice_nickname_placeholder">예: 지호, 자기, 대표님</string>
     <string name="onb_voice_nickname_hint">비워두면 이름 없이 깨워드려요. 나중에 목소리 탭에서 바꿀 수 있어요.</string>
-    <string name="misc2_coach_home_hero_title">다음 알람을 한눈에</string>
-    <string name="misc2_coach_home_hero_body">다음에 울릴 알람을 여기서 바로 볼 수 있어요.</string>
+    <string name="misc2_coach_home_hero_title">첫 알람 만들기</string>
+    <string name="misc2_coach_home_hero_body">시간과 목소리를 고르면 기기에 저장돼요.</string>
     <string name="misc2_coach_voice_create_title">내 목소리를 만들어요</string>
     <string name="misc2_coach_voice_create_body">내 목소리를 만들어 두면, 그 목소리로 알람이 깨워줘요.</string>
     <string name="misc2_theme_mode_system">시스템 설정과 같이</string>

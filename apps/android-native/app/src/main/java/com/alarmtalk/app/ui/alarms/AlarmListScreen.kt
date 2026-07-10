@@ -116,6 +116,7 @@ internal fun AlarmListScreen(
     val nextAlarm = remember(alarms) {
         alarms.filter { it.enabled }.minByOrNull { it.fireAtMillis }
     }
+    val hasAnyAlarm = sortedAlarms.isNotEmpty()
 
     val appContext = LocalContext.current.applicationContext
     val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
@@ -141,8 +142,9 @@ internal fun AlarmListScreen(
     // 겹쳐 버벅이지 않도록, 화면이 자리잡을 시간을 살짝 둔 뒤 부드럽게 띄운다.
     var homeGuideVisible by remember { mutableStateOf(false) }
     var voiceGuideVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(selectedTab, authSession) {
+    LaunchedEffect(selectedTab, authSession, hasAnyAlarm) {
         if (selectedTab == NativeTab.Alarms && authSession != null &&
+            !hasAnyAlarm &&
             !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_HOME)
         ) {
             delay(700)
@@ -165,13 +167,13 @@ internal fun AlarmListScreen(
             .fillMaxSize()
             .padding(contentPadding),
         contentPadding = PaddingValues(
-            start = 24.dp,
+            start = if (selectedTab == NativeTab.Alarms) 20.dp else 24.dp,
             top = 24.dp,
-            end = 24.dp,
+            end = if (selectedTab == NativeTab.Alarms) 20.dp else 24.dp,
             // 알람 탭은 우하단 FAB(＋)가 마지막 알람 행을 가리지 않게 하단 여유를 더 준다.
             bottom = if (selectedTab == NativeTab.Alarms) 96.dp else 32.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(if (selectedTab == NativeTab.Alarms) 14.dp else 16.dp),
     ) {
         when (selectedTab) {
             NativeTab.Voices -> {
@@ -205,19 +207,12 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.Alarms -> {
-                item { HomeHeader() }
-                item {
-                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO, targetRadius = 24.dp)) {
-                        NextAlarmHeroCard(
-                            nextAlarm = nextAlarm,
-                            onClick = {
-                                if (nextAlarm == null) {
-                                    onCreateAlarm()
-                                } else {
-                                    onEditAlarm(nextAlarm)
-                                }
-                            },
-                        )
+                item { HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm) }
+                if (!hasAnyAlarm) {
+                    item {
+                        Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO, targetRadius = 24.dp)) {
+                            EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
+                        }
                     }
                 }
                 if (!permissions.alarmReady) {
@@ -229,7 +224,6 @@ internal fun AlarmListScreen(
                         )
                     }
                 }
-                // 알람이 없을 땐 히어로 카드가 생성 CTA를 겸한다. 생성 버튼은 하단바 중앙 ➕.
                 items(sortedAlarms, key = { it.id }) { alarm ->
                     AlarmRow(
                         alarm = alarm,
@@ -301,9 +295,6 @@ internal fun AlarmListScreen(
             }
         }
     }
-
-        // '전체'는 이제 하단바의 3번째 탭(알람 | 목소리 | 전체)이라 우측 상단 ☰ 는 제거했다.
-
         if (homeGuideVisible && selectedTab == NativeTab.Alarms) {
             CoachMarkOverlay(
                 steps = homeCoachSteps,
