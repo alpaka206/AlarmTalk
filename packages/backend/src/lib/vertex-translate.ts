@@ -251,7 +251,7 @@ export async function generateDynamicAlarmTextWithVertex(
 ): Promise<AlarmTextPreparation> {
   const fallback = dynamicAlarmTextPreparationFallback(context);
 
-  if (!hasGeminiConfiguration(env)) {
+  if (!isDynamicVertexTextEnabled(env) || !hasGeminiConfiguration(env)) {
     return fallback;
   }
 
@@ -1459,6 +1459,10 @@ function isMetaJsonResponse(text: string): boolean {
 
 function hasGeminiConfiguration(env: Env | undefined): boolean {
   return Boolean(env?.GOOGLE_VERTEX_CREDENTIALS_JSON);
+}
+
+function isDynamicVertexTextEnabled(env: Env | undefined): boolean {
+  return env?.GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED === 'true';
 }
 
 function extractTags(text: string): string[] {

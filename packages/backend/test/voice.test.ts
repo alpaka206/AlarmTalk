@@ -619,6 +619,7 @@ describe('POST /voice/clone — 음성 클론', () => {
   it('ElevenLabs 실패 시 500', async () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockCreateInstantClone.mockRejectedValue(new Error('API down'));
     const app = buildApp();
     const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2, 3]), '테스트'));

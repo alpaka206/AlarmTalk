@@ -19,6 +19,10 @@ Cloudflare Workers + Hono 기반 API 서버.
 | `JWT_SECRET` | JWT 서명 시크릿 (32자 이상 권장) | ✅ |
 | `PASSWORD_PEPPER` | 비밀번호 해싱 페퍼 | ✅ |
 | `GOOGLE_CLIENT_ID` | Google OAuth 클라이언트 ID | 선택 |
+| `GOOGLE_VERTEX_CREDENTIALS_JSON` | Vertex AI service account JSON for translation and legacy dynamic text generation | Optional |
+| `GOOGLE_VERTEX_LOCATION` | Vertex AI location override | Optional |
+| `GOOGLE_VERTEX_MODEL` | Vertex AI model override | Optional |
+| `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED` | Set to `true` only to re-enable Gemini-generated dynamic alarm text. Default is off; dynamic contexts use local/preset fallback. | Optional |
 | `APPLE_CLIENT_ID` | Sign in with Apple audience / iOS bundle ID | iOS 로그인 시 필수 |
 | `APPLE_SHARED_SECRET` | App Store Connect "앱 전용 공유 비밀" — `POST /api/billing/apple/confirm` 게이트 | iOS IAP 구독 사용 시 필수 |
 

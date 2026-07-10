@@ -828,11 +828,7 @@ describe('POST /tts/generate — edge cases', () => {
     );
   });
 
-  it('random_context=wake_fortune can use target user dynamic prompt settings', async () => {
-    // 동적 모드는 단일 Vertex 호출로 {text, tag}를 받는다(2차 autoTag 호출 제거).
-    const contentResponses = [
-      geminiText('{"text":"자기야, 오늘은 작은 행운이 온대.","tag":"playfully"}'),
-    ];
+  it('random_context=wake_fortune uses local fallback even when Vertex is configured', async () => {
     const mockFetch = vi.fn(async (url: unknown) => {
       if (String(url) === TOKEN_URI) {
         return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
@@ -840,9 +836,7 @@ describe('POST /tts/generate — edge cases', () => {
           headers: { 'content-type': 'application/json' },
         });
       }
-      const next = contentResponses.shift();
-      if (!next) throw new Error('no content response queued');
-      return next;
+      throw new Error('dynamic Gemini text should not be called');
     });
     vi.stubGlobal('fetch', mockFetch);
     try {
@@ -887,14 +881,10 @@ describe('POST /tts/generate — edge cases', () => {
       );
 
       expect(res.status).toBe(201);
-      const contentCall = mockFetch.mock.calls.find((c) => String(c[0]) !== TOKEN_URI);
-      const requestBody = JSON.parse(String(contentCall?.[1]?.body));
-      const prompt = requestBody.contents[0].parts[0].text;
-      expect(prompt).toContain('birth date=1995-05-20');
-      expect(prompt).toContain('birth time=07:30');
+      expect(mockFetch).not.toHaveBeenCalled();
       const body = await res.json();
-      expect(body.original_text).toBe('자기야, 오늘은 작은 행운이 온대.');
-      expect(body.synthesis_text).toBe('[playfully] 자기야, 오늘은 작은 행운이 온대.');
+      expect(body.original_text).toContain('작은 행운');
+      expect(body.synthesis_text).toContain(body.original_text);
       expect(body.tags).toEqual(['playfully']);
     } finally {
       vi.unstubAllGlobals();

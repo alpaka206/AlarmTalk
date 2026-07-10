@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
@@ -10,6 +10,7 @@ import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
+import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
@@ -26,6 +27,66 @@ const MAX_CLONE_DURATION_MS = 120_000;
 const CLONE_DURATION_TOLERANCE_MS = 5_000;
 const MAX_RELATIONSHIP_LABEL_LENGTH = 30;
 const MAX_LISTENER_TITLE_LENGTH = 30;
+const OFFICIAL_VOICE_CHANGE_TYPE = 'official_voice';
+
+function monthlyVoiceChangeLimitResponse(c: Context<AppEnv>) {
+  return c.json(
+    {
+      error: '목소리는 한 달에 1번만 변경할 수 있습니다.',
+      error_code: 'VOICE_MONTHLY_CHANGE_LIMIT_REACHED',
+    },
+    429,
+  );
+}
+
+function currentKstMonthSql(): string {
+  return "strftime('%Y-%m', 'now', '+9 hours')";
+}
+
+async function reserveMonthlyOfficialVoiceChange(
+  db: DbExecutor,
+  ownerUserId: string,
+  profileId: string,
+): Promise<string | null> {
+  const ledgerId = crypto.randomUUID();
+  const reserved = await db.execute({
+    sql: `INSERT OR IGNORE INTO voice_profile_change_ledger
+            (id, owner_user_id, voice_profile_id, change_month, change_type, status)
+          VALUES (?, ?, ?, ${currentKstMonthSql()}, ?, 'reserved')`,
+    args: [ledgerId, ownerUserId, profileId, OFFICIAL_VOICE_CHANGE_TYPE],
+  });
+  return (reserved.rowsAffected ?? 0) > 0 ? ledgerId : null;
+}
+
+async function markMonthlyOfficialVoiceChange(
+  db: DbExecutor,
+  ledgerId: string | null,
+  status: 'succeeded' | 'failed',
+): Promise<void> {
+  if (!ledgerId) return;
+  await db.execute({
+    sql: `UPDATE voice_profile_change_ledger
+          SET status = ?, updated_at = datetime('now')
+          WHERE id = ? AND status = 'reserved'`,
+    args: [status, ledgerId],
+  });
+}
+
+async function activeOfficialVoiceProfileCount(
+  db: DbExecutor,
+  ids: string[],
+  excludeId?: string,
+): Promise<number> {
+  const ph = ids.map(() => '?').join(',');
+  const excludeClause = excludeId ? 'AND id != ?' : '';
+  const count = await db.execute({
+    sql: `SELECT COUNT(*) as count FROM voice_profiles
+          WHERE user_id IN (${ph}) AND deleted_at IS NULL AND status != 'failed'
+            AND COALESCE(is_draft, 0) = 0 ${excludeClause}`,
+    args: excludeId ? [...ids, excludeId] : ids,
+  });
+  return Number(count.rows[0]?.count ?? 0);
+}
 
 function normalizeRelationshipLabel(value: unknown): string | undefined {
   if (value === undefined) return undefined;
@@ -341,6 +402,7 @@ voiceProfile.get('/:id', async (c) => {
 
 voiceProfile.patch('/:id', async (c) => {
   const ids = ownerIds(c);
+  const userPk = (c.get('userIdPK') as string | undefined) || (c.get('userId') as string);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -416,23 +478,31 @@ voiceProfile.patch('/:id', async (c) => {
 
   const ph = ids.map(() => '?').join(',');
   const existing = await db.execute({
-    sql: `SELECT id FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
+    sql: `SELECT id, COALESCE(is_draft, 0) as is_draft
+          FROM voice_profiles
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
     args: [id, ...ids],
   });
   if (existing.rows.length === 0) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
+  const promotesDraftToOfficial =
+    hasDraft && isDraftUpdate === false && Number(existing.rows[0]!.is_draft ?? 0) === 1;
 
   // promote(draft=false) 시: 다른 non-draft 음성이 1개 이상이면 한도 초과.
   // 생성 쿼터와 동일하게 failed 잔여물은 슬롯을 점유하지 않으므로 제외한다.
-  if (hasDraft && isDraftUpdate === false) {
+  if (promotesDraftToOfficial) {
     const nonDraftCount = await db.execute({
-      sql: `SELECT COUNT(*) as count FROM voice_profiles
-            WHERE user_id IN (${ph}) AND deleted_at IS NULL AND status != 'failed'
-              AND COALESCE(is_draft, 0) = 0 AND id != ?`,
-      args: [...ids, id],
+      sql: `SELECT
+                   SUM(CASE WHEN deleted_at IS NULL AND status != 'failed'
+                              AND COALESCE(is_draft, 0) = 0 AND id != ?
+                       THEN 1 ELSE 0 END) as active_count
+            FROM voice_profiles
+            WHERE user_id IN (${ph})`,
+      args: [id, ...ids],
     });
-    const existingCount = Number(nonDraftCount.rows[0]!.count);
+    const row = nonDraftCount.rows[0]!;
+    const existingCount = Number(row.active_count ?? row.count ?? 0);
     if (existingCount >= MAX_VOICE_PROFILES) {
       return c.json(
         {
@@ -467,15 +537,48 @@ voiceProfile.patch('/:id', async (c) => {
     args.push(listenerTitle ?? '');
   }
   updates.push("updated_at = datetime('now')");
-  args.push(id);
+  args.push(id, ...ids);
 
   // deleted_at IS NULL 재확인: 위 존재 확인과 이 UPDATE 사이에 cron 의 고아 draft
   // 스윕(cleanupStaleDraftVoices)이 행을 소프트 삭제했을 수 있다. 가드 없이 쓰면
   // 삭제된(클론 파기 큐 적재까지 끝난) 행을 promote 한 것처럼 200 을 돌려주게 된다.
-  const updateRes = await db.execute({
-    sql: `UPDATE voice_profiles SET ${updates.join(', ')} WHERE id = ? AND deleted_at IS NULL`,
-    args,
-  });
+  const updateProfile = (tx: DbExecutor, extraWhere = '') =>
+    tx.execute({
+      sql: `UPDATE voice_profiles SET ${updates.join(', ')}
+            WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL ${extraWhere}`,
+      args,
+    });
+  const updateRes = promotesDraftToOfficial
+    ? await withWriteTransaction(db, async (tx) => {
+        const existingCount = await activeOfficialVoiceProfileCount(tx, ids, id);
+        if (existingCount >= MAX_VOICE_PROFILES) {
+          return { status: 'voice_limit' as const, rowsAffected: 0 };
+        }
+        const ledgerId = await reserveMonthlyOfficialVoiceChange(tx, userPk, id);
+        if (!ledgerId) {
+          return { status: 'monthly_limit' as const, rowsAffected: 0 };
+        }
+        const promoted = await updateProfile(tx, 'AND COALESCE(is_draft, 0) = 1');
+        if ((promoted.rowsAffected ?? 0) === 0) {
+          await markMonthlyOfficialVoiceChange(tx, ledgerId, 'failed');
+          return { status: 'not_found' as const, rowsAffected: 0 };
+        }
+        await markMonthlyOfficialVoiceChange(tx, ledgerId, 'succeeded');
+        return { status: 'ok' as const, rowsAffected: promoted.rowsAffected ?? 0 };
+      })
+    : { status: 'ok' as const, ...(await updateProfile(db)) };
+  if (updateRes.status === 'voice_limit') {
+    return c.json(
+      {
+        error: `理쒕? ${MAX_VOICE_PROFILES}媛쒓퉴吏 ?깅줉 媛?ν빀?덈떎`,
+        error_code: 'VOICE_LIMIT_REACHED',
+      },
+      409,
+    );
+  }
+  if (updateRes.status === 'monthly_limit') {
+    return monthlyVoiceChangeLimitResponse(c);
+  }
   if ((updateRes.rowsAffected ?? 0) === 0) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
@@ -590,6 +693,7 @@ voiceProfile.post('/clone', async (c) => {
   // INSERT 후 클론이 실패하면 catch 에서 이 row 를 'failed' 로 정리해야 한다.
   // 그렇지 않으면 status 가 'processing' 에 영구히 갇혀 앱이 "생성중" 으로 표시된다.
   let insertedProfileId: string | null = null;
+  let monthlyLedgerId: string | null = null;
 
   try {
     if (resolvedUserPk) {
@@ -656,11 +760,14 @@ voiceProfile.post('/clone', async (c) => {
       const draftClause = isDraft ? 'COALESCE(is_draft, 0) = 1' : 'COALESCE(is_draft, 0) = 0';
       const limit = isDraft ? MAX_DRAFT_VOICE_PROFILES : MAX_VOICE_PROFILES;
       const profileCount = await db.execute({
-        sql: `SELECT COUNT(*) as count FROM voice_profiles
-              WHERE user_id IN (${phCount}) AND deleted_at IS NULL AND status != 'failed' AND ${draftClause}`,
+        sql: `SELECT
+                SUM(CASE WHEN deleted_at IS NULL AND status != 'failed' AND ${draftClause} THEN 1 ELSE 0 END) as active_count
+              FROM voice_profiles
+              WHERE user_id IN (${phCount})`,
         args: ids,
       });
-      const count = Number(profileCount.rows[0]!.count);
+      const row = profileCount.rows[0]!;
+      const count = Number(row.active_count ?? row.count ?? 0);
       if (count >= limit) {
         return c.json(
           {
@@ -721,19 +828,60 @@ voiceProfile.post('/clone', async (c) => {
     const audioBuffer = await audioFile.arrayBuffer();
     const profileId = crypto.randomUUID();
 
-    await db.execute({
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
-            VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
-      args: [
-        profileId,
-        userId,
-        name,
-        isShared ? 1 : 0,
-        isDraft ? 1 : 0,
-        relationshipLabel,
-        listenerTitle,
-      ],
+    const insertResult = await withWriteTransaction(db, async (tx) => {
+      const ids = ownerIds(c);
+      if (!isDraft) {
+        const existingCount = await activeOfficialVoiceProfileCount(tx, ids);
+        if (existingCount >= MAX_VOICE_PROFILES) {
+          return { status: 'voice_limit' as const, ledgerId: null };
+        }
+        const ledgerId = await reserveMonthlyOfficialVoiceChange(tx, userPk, profileId);
+        if (!ledgerId) {
+          return { status: 'monthly_limit' as const, ledgerId: null };
+        }
+        await tx.execute({
+          sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
+                VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
+          args: [
+            profileId,
+            userId,
+            name,
+            isShared ? 1 : 0,
+            isDraft ? 1 : 0,
+            relationshipLabel,
+            listenerTitle,
+          ],
+        });
+        return { status: 'ok' as const, ledgerId };
+      }
+      await tx.execute({
+        sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
+              VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
+        args: [
+          profileId,
+          userId,
+          name,
+          isShared ? 1 : 0,
+          isDraft ? 1 : 0,
+          relationshipLabel,
+          listenerTitle,
+        ],
+      });
+      return { status: 'ok' as const, ledgerId: null };
     });
+    if (insertResult.status === 'voice_limit') {
+      return c.json(
+        {
+          error: `理쒕? ${MAX_VOICE_PROFILES}媛쒓퉴吏 ?깅줉 媛?ν빀?덈떎`,
+          error_code: 'VOICE_LIMIT_REACHED',
+        },
+        403,
+      );
+    }
+    if (insertResult.status === 'monthly_limit') {
+      return monthlyVoiceChangeLimitResponse(c);
+    }
+    monthlyLedgerId = insertResult.ledgerId;
     insertedProfileId = profileId;
 
     const attempts = createEnrollmentAttempts({
@@ -760,10 +908,13 @@ voiceProfile.post('/clone', async (c) => {
     }
     if (!voiceId) throw lastError;
 
-    await db.execute({
-      sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [voiceId, profileId],
+    await withWriteTransaction(db, async (tx) => {
+      await tx.execute({
+        sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [voiceId, profileId],
+      });
+      await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'succeeded');
     });
 
     return c.json(
@@ -789,10 +940,13 @@ voiceProfile.post('/clone', async (c) => {
     // 'processing' 으로 INSERT 된 row 가 있으면 'failed' 로 종료시켜 stuck 방지.
     if (insertedProfileId) {
       try {
-        await db.execute({
-          sql: `UPDATE voice_profiles SET status = 'failed', updated_at = datetime('now')
-                WHERE id = ? AND status = 'processing'`,
-          args: [insertedProfileId],
+        await withWriteTransaction(db, async (tx) => {
+          await tx.execute({
+            sql: `UPDATE voice_profiles SET status = 'failed', updated_at = datetime('now')
+                  WHERE id = ? AND status = 'processing'`,
+            args: [insertedProfileId],
+          });
+          await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'failed');
         });
       } catch (markErr) {
         logRouteError(c, markErr);

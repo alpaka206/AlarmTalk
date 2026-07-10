@@ -1235,6 +1235,44 @@ export const migrations: Migration[] = [
         ON alarm_recipient_state(recipient_user_id)`,
     ],
   },
+  {
+    id: 57,
+    name: 'voice-profile-monthly-change-ledger',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS voice_profile_change_ledger (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL,
+        voice_profile_id TEXT,
+        change_month TEXT NOT NULL,
+        change_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'reserved' CHECK(status IN ('reserved','succeeded','failed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_profile_change_ledger_monthly
+        ON voice_profile_change_ledger(owner_user_id, change_month, change_type)
+        WHERE status != 'failed'`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_profile_change_ledger_profile
+        ON voice_profile_change_ledger(voice_profile_id)`,
+      `INSERT OR IGNORE INTO voice_profile_change_ledger
+        (id, owner_user_id, voice_profile_id, change_month, change_type, status, created_at, updated_at)
+        SELECT
+          'seed:' || COALESCE(u.id, vp.user_id) || ':' || strftime('%Y-%m', datetime(vp.created_at, '+9 hours')) || ':official_voice',
+          COALESCE(u.id, vp.user_id),
+          MIN(vp.id),
+          strftime('%Y-%m', datetime(vp.created_at, '+9 hours')),
+          'official_voice',
+          'succeeded',
+          MIN(vp.created_at),
+          datetime('now')
+        FROM voice_profiles vp
+        LEFT JOIN users u ON u.id = vp.user_id OR u.google_id = vp.user_id
+        WHERE COALESCE(vp.is_draft, 0) = 0
+          AND COALESCE(vp.status, 'ready') != 'failed'
+          AND vp.created_at IS NOT NULL
+        GROUP BY COALESCE(u.id, vp.user_id), strftime('%Y-%m', datetime(vp.created_at, '+9 hours'))`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
