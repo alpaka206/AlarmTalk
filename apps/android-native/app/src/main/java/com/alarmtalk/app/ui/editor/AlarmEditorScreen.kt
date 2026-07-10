@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -86,7 +87,6 @@ import kotlinx.coroutines.withContext
 private enum class AudioPreviewTarget {
     SelectedCrop,
     CachedAudio,
-    SharedVoiceInfo,
     StockClip,
 }
 
@@ -137,7 +137,6 @@ internal fun AlarmEditorScreen(
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     onDownloadStockAudio: suspend (String) -> TtsMessageAudioResponse,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
-    onUpdateSharedVoiceInfo: (String, String, String, () -> Unit) -> Unit,
     onSave: (AlarmDraft) -> Unit,
 ) {
     // 시스템 스톡 보이스 도입으로 무료 플랜도 음성 모드를 쓸 수 있다 (스톡 보이스 + 프리셋 문구).
@@ -148,15 +147,11 @@ internal fun AlarmEditorScreen(
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
     val context = LocalContext.current
-    // 무료 버킷 회전은 앱 로케일(ko/en/ja, 그 외 ko 폴백) 언어의 클립만 재생한다.
-    val appBucketLanguage = remember(context) {
-        val lang = context.resources.configuration.locales.get(0)?.language
+    val configuration = LocalConfiguration.current
+    val appVoiceLanguage = remember(configuration) {
+        val lang = configuration.locales.get(0)?.language
             ?: java.util.Locale.getDefault().language
-        when (lang) {
-            "en" -> "en"
-            "ja" -> "ja"
-            else -> "ko"
-        }
+        supportedAppVoiceLanguage(lang)
     }
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
@@ -205,7 +200,6 @@ internal fun AlarmEditorScreen(
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
-    var sharedVoiceInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
         familyAlarmRecipients(familyGroup, authSession)
     }
@@ -445,54 +439,13 @@ internal fun AlarmEditorScreen(
         )
     }
 
-    fun playSharedVoiceInfoPreview(profileId: String) {
-        if (previewPreparing) return
-        scope.launch {
-            stopPreview()
-            previewTarget = AudioPreviewTarget.SharedVoiceInfo
-            previewPreparing = true
-            runCatching {
-                val response = onGenerateTts(
-                    TtsGenerateRequest(
-                        voiceProfileId = profileId,
-                        text = context.getString(R.string.editor_shared_voice_preview_prompt),
-                        category = "custom",
-                        language = "ko",
-                        random = false,
-                    ),
-                )
-                withContext(Dispatchers.IO) {
-                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = audioBytes,
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = "shared_voice_preview_$profileId",
-                        cacheKey = "shared_voice_preview_$profileId",
-                        messageId = response.messageId,
-                    )
-                }
-            }.onSuccess { cached ->
-                startPreparedPreview(
-                    uri = Uri.parse(cached.localAudioUri),
-                    target = AudioPreviewTarget.SharedVoiceInfo,
-                )
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to preview shared voice in alarm editor", error)
-                stopPreview()
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_preview_failed))
-            }
-        }
-    }
-
     // 무료 버킷 선택: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
     // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다.
     fun selectBucket(bucket: String) {
         if (isSaving || previewPreparing) return
         val profileId = editor.voiceProfileId ?: return
         val clips = stockClips
-            .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appBucketLanguage }
+            .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appVoiceLanguage }
             .sortedBy { it.variant }
         if (clips.isEmpty()) return
         scope.launch {
@@ -526,7 +479,7 @@ internal fun AlarmEditorScreen(
                     profileId = profileId,
                     messageId = first.messageId,
                     text = first.text,
-                    language = appBucketLanguage,
+                    language = appVoiceLanguage,
                     bucket = bucket,
                     clipKeys = keys,
                 )
@@ -664,15 +617,6 @@ internal fun AlarmEditorScreen(
             audioMessage = context.getString(R.string.editor_error_select_voice)
             return
         }
-        val selectedSharedProfile = familyVoices.firstOrNull {
-            it.id == profileId && it.requiresViewerInfo()
-        }
-        if (selectedSharedProfile != null) {
-            stopPreview()
-            audioMessage = null
-            sharedVoiceInfoTarget = selectedSharedProfile
-            return
-        }
         val text = editor.ttsTextForSave()
         if (text.isBlank() && !editor.voiceRandomPrompt) {
             audioMessage = context.getString(R.string.editor_error_enter_message_or_random)
@@ -714,7 +658,11 @@ internal fun AlarmEditorScreen(
         val listenerTitleForSave = resolvedVoiceListenerTitle()
         val usableProfileIds = (
             voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
-                familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
+                familyVoices.filter {
+                    (it.status == null || it.status == "ready") &&
+                        it.isShared != false &&
+                        !it.requiresViewerInfo()
+                }.map { it.id }
             ).toSet()
         if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text, listenerTitleForSave)) {
             audioMessage = context.getString(R.string.editor_error_deleted_voice_cannot_edit)
@@ -882,10 +830,21 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    // 무료 플랜: 음성 모드는 시스템 스톡 보이스 + 버킷(기상/약) 회전으로 고정.
-    // 개별 문구 선택·직접 입력·동적(날씨/운세) 문구·번역·랜덤 생성은 모두 유료 게이트.
-    // 버킷 회전은 랜덤 생성과 무관하므로 voiceRandomPrompt=false 로 두고, 앱 로케일 언어를 쓴다.
-    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appBucketLanguage) {
+    LaunchedEffect(appVoiceLanguage, editor.playMode, editor.voiceSource, editor.voiceRandomPrompt) {
+        if (editor.playMode != AlarmPlayModes.ALARM_ONLY && editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
+            if (editor.voiceLanguage != appVoiceLanguage) {
+                editor.voiceLanguage = appVoiceLanguage
+                editor.clearTtsMeta()
+            }
+            val automaticTranslation = !editor.voiceRandomPrompt && appVoiceLanguage != "ko"
+            if (editor.voiceTranslationEnabled != automaticTranslation) {
+                editor.voiceTranslationEnabled = automaticTranslation
+                if (!editor.voiceRandomPrompt) editor.clearTtsMeta()
+            }
+        }
+    }
+
+    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage) {
         if (freeVoiceTier && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             if (editor.voiceSource != VoiceSources.TTS_PROFILE) {
                 editor.voiceSource = VoiceSources.TTS_PROFILE
@@ -895,11 +854,11 @@ internal fun AlarmEditorScreen(
             }
             if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
             if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
-            if (editor.voiceLanguage != appBucketLanguage) editor.voiceLanguage = appBucketLanguage
+            if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
             // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
             val profileId = editor.voiceProfileId
             if (!profileId.isNullOrBlank()) {
-                val buckets = freeBucketsFor(stockClips, profileId, appBucketLanguage)
+                val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage)
                 val target = editor.selectedBucket?.takeIf { it in buckets } ?: buckets.firstOrNull()
                 if (target != null &&
                     (editor.selectedBucket != target || editor.bucketResolvedForProfileId != profileId)
@@ -917,7 +876,11 @@ internal fun AlarmEditorScreen(
 
     val usableTtsProfileIds = (
         voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
-            familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
+            familyVoices.filter {
+                (it.status == null || it.status == "ready") &&
+                    it.isShared != false &&
+                    !it.requiresViewerInfo()
+            }.map { it.id }
         ).toSet()
 
     fun randomPromptSettingsComplete(): Boolean {
@@ -984,7 +947,7 @@ internal fun AlarmEditorScreen(
     fun applyRandomPromptSettings(result: RandomPromptSettingsResult) {
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
-        editor.voiceLanguage = result.voiceLanguage
+        editor.voiceLanguage = appVoiceLanguage
         editor.voiceText = ""
         editor.voiceWeatherCountry = result.weatherCountry
         editor.voiceWeatherCity = result.weatherCity
@@ -1034,12 +997,6 @@ internal fun AlarmEditorScreen(
 
     LaunchedEffect(editor.playMode, editor.voiceRandomPrompt) {
         if (editor.playMode == AlarmPlayModes.VOICE_ONLY && settingsDetailPanel == "sound") {
-            settingsDetailPanel = null
-        }
-        if (
-            (editor.voiceRandomPrompt || !editor.voiceTranslationEnabled) &&
-            settingsDetailPanel == "voice_translation"
-        ) {
             settingsDetailPanel = null
         }
     }
@@ -1240,12 +1197,7 @@ internal fun AlarmEditorScreen(
                                 onPreviewCrop = { playSelectedCrop() },
                                 onPreviewAudio = { playCachedAudio() },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
-                                onSharedVoiceInfoRequired = { profile ->
-                                    stopPreview()
-                                    sharedVoiceInfoTarget = profile
-                                },
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
-                                onOpenVoiceTranslationSettings = { settingsDetailPanel = "voice_translation" },
                                 onClear = {
                                     stopPreview()
                                     editor.clearAudio()
@@ -1369,7 +1321,6 @@ internal fun AlarmEditorScreen(
             )
 
             "random_prompt" -> RandomPromptSettingsPane(
-                voiceLanguage = editor.voiceLanguage,
                 randomContext = editor.voiceRandomContext,
                 weatherCountry = editor.voiceWeatherCountry,
                 weatherCity = editor.voiceWeatherCity,
@@ -1386,15 +1337,6 @@ internal fun AlarmEditorScreen(
                 fortuneBirthTime = editor.voiceFortuneBirthTime,
                 onDismissWithoutSave = ::dismissRandomPromptSettingsWithoutSave,
                 onSaveSettings = ::applyRandomPromptSettings,
-            )
-
-            "voice_translation" -> VoiceTranslationSettingsPane(
-                voiceLanguage = editor.voiceLanguage,
-                onDismiss = { settingsDetailPanel = null },
-                onLanguageChange = {
-                    editor.voiceLanguage = it
-                    editor.clearTtsMeta()
-                },
             )
 
             "voice_output" -> VoiceOutputSettingsPane(
@@ -1420,34 +1362,6 @@ internal fun AlarmEditorScreen(
                 },
             )
         }
-    }
-
-    sharedVoiceInfoTarget?.let { profile ->
-        SharedVoiceInfoRequiredDialog(
-            profileName = profile.name,
-            sharedFromLabel = profile.ownerName?.takeIf { it.isNotBlank() }
-                ?.let { stringResource(R.string.editor_shared_voice_from_owner, it) }
-                ?: stringResource(R.string.editor_shared_voice_from_default),
-            initialRelationship = profile.relationshipLabel.orEmpty(),
-            initialListenerTitle = profile.listenerTitle.orEmpty(),
-            saving = voiceProfileBusy,
-            previewing = previewTarget == AudioPreviewTarget.SharedVoiceInfo &&
-                (previewPreparing || mediaPlayer != null),
-            onDismiss = {
-                if (!voiceProfileBusy) {
-                    stopPreview()
-                    sharedVoiceInfoTarget = null
-                }
-            },
-            onPreview = { playSharedVoiceInfoPreview(profile.id) },
-            onConfirm = { relationship, listener ->
-                onUpdateSharedVoiceInfo(profile.id, relationship, listener) {
-                    editor.selectVoiceProfile(profile.id)
-                    stopPreview()
-                    sharedVoiceInfoTarget = null
-                }
-            },
-        )
     }
 
     if (voicePlanGateOpen) {

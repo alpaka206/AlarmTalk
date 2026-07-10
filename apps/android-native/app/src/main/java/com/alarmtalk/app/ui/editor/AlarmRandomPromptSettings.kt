@@ -56,7 +56,6 @@ import androidx.compose.ui.window.DialogProperties
 
 @Composable
 internal fun RandomPromptSettingsPane(
-    voiceLanguage: String,
     randomContext: String,
     weatherCountry: String,
     weatherCity: String,
@@ -75,9 +74,6 @@ internal fun RandomPromptSettingsPane(
     onSaveSettings: (RandomPromptSettingsResult) -> Unit,
 ) {
     val context = LocalContext.current
-    var draftLanguage by remember(voiceLanguage) {
-        mutableStateOf(voiceLanguage.takeIf { language -> TtsLanguages.any { it.first == language } } ?: "ko")
-    }
     var draftContext by remember(randomContext) {
         mutableStateOf(normalizedRandomPromptContext(randomContext))
     }
@@ -111,7 +107,6 @@ internal fun RandomPromptSettingsPane(
     fun saveResolvedSettings() {
         onSaveSettings(
             RandomPromptSettingsResult(
-                voiceLanguage = draftLanguage,
                 randomContext = normalizedContext,
                 weatherCountry = draftWeatherCountry.trim(),
                 weatherCity = draftWeatherCity.trim(),
@@ -228,17 +223,6 @@ internal fun RandomPromptSettingsPane(
                             else -> stringResource(R.string.editorp_random_fortune_required)
                         },
                     )
-                }
-
-                SnoozeOptionSection(title = stringResource(R.string.editorp_random_language_section)) {
-                    TtsLanguages.forEachIndexed { index, (language, labelRes) ->
-                        SnoozeRadioRow(
-                            label = stringResource(labelRes),
-                            selected = draftLanguage == language,
-                            onClick = { draftLanguage = language },
-                        )
-                        if (index != TtsLanguages.lastIndex) SnoozeOptionDivider()
-                    }
                 }
             }
 

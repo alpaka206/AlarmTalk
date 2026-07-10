@@ -1,9 +1,11 @@
 package com.alarmtalk.app
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 
 
 internal val AlarmTalkFontFamily = FontFamily(
@@ -13,22 +15,27 @@ internal val AlarmTalkFontFamily = FontFamily(
     Font(R.font.pretendard_bold, FontWeight.Bold),
 )
 
+private fun TextStyle.alarmTalkTextStyle(): TextStyle = copy(
+    fontFamily = AlarmTalkFontFamily,
+    letterSpacing = 0.sp,
+)
+
 internal val AlarmTalkTypography = Typography().let { base ->
     base.copy(
-        displayLarge = base.displayLarge.copy(fontFamily = AlarmTalkFontFamily),
-        displayMedium = base.displayMedium.copy(fontFamily = AlarmTalkFontFamily),
-        displaySmall = base.displaySmall.copy(fontFamily = AlarmTalkFontFamily),
-        headlineLarge = base.headlineLarge.copy(fontFamily = AlarmTalkFontFamily),
-        headlineMedium = base.headlineMedium.copy(fontFamily = AlarmTalkFontFamily),
-        headlineSmall = base.headlineSmall.copy(fontFamily = AlarmTalkFontFamily),
-        titleLarge = base.titleLarge.copy(fontFamily = AlarmTalkFontFamily),
-        titleMedium = base.titleMedium.copy(fontFamily = AlarmTalkFontFamily),
-        titleSmall = base.titleSmall.copy(fontFamily = AlarmTalkFontFamily),
-        bodyLarge = base.bodyLarge.copy(fontFamily = AlarmTalkFontFamily),
-        bodyMedium = base.bodyMedium.copy(fontFamily = AlarmTalkFontFamily),
-        bodySmall = base.bodySmall.copy(fontFamily = AlarmTalkFontFamily),
-        labelLarge = base.labelLarge.copy(fontFamily = AlarmTalkFontFamily),
-        labelMedium = base.labelMedium.copy(fontFamily = AlarmTalkFontFamily),
-        labelSmall = base.labelSmall.copy(fontFamily = AlarmTalkFontFamily),
+        displayLarge = base.displayLarge.alarmTalkTextStyle(),
+        displayMedium = base.displayMedium.alarmTalkTextStyle(),
+        displaySmall = base.displaySmall.alarmTalkTextStyle(),
+        headlineLarge = base.headlineLarge.alarmTalkTextStyle(),
+        headlineMedium = base.headlineMedium.alarmTalkTextStyle(),
+        headlineSmall = base.headlineSmall.alarmTalkTextStyle(),
+        titleLarge = base.titleLarge.alarmTalkTextStyle(),
+        titleMedium = base.titleMedium.alarmTalkTextStyle(),
+        titleSmall = base.titleSmall.alarmTalkTextStyle(),
+        bodyLarge = base.bodyLarge.alarmTalkTextStyle(),
+        bodyMedium = base.bodyMedium.alarmTalkTextStyle(),
+        bodySmall = base.bodySmall.alarmTalkTextStyle(),
+        labelLarge = base.labelLarge.alarmTalkTextStyle(),
+        labelMedium = base.labelMedium.alarmTalkTextStyle(),
+        labelSmall = base.labelSmall.alarmTalkTextStyle(),
     )
 }

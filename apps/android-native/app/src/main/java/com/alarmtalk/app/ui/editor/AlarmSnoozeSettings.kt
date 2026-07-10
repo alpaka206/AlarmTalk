@@ -53,62 +53,6 @@ import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
 
-// AlarmFortuneSettings 에서 분리: 음성번역/알람 설정 row/스누즈 설정.
-
-@Composable
-internal fun VoiceTranslationSettingsPane(
-    voiceLanguage: String,
-    onDismiss: () -> Unit,
-    onLanguageChange: (String) -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.editor_back),
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_translation_language_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SnoozeOptionSection(title = stringResource(R.string.editor_language)) {
-                    TtsTranslationLanguages.forEachIndexed { index, (language, labelRes) ->
-                        SnoozeRadioRow(
-                            label = stringResource(labelRes),
-                            selected = voiceLanguage == language,
-                            onClick = { onLanguageChange(language) },
-                        )
-                        if (index != TtsTranslationLanguages.lastIndex) SnoozeOptionDivider()
-                    }
-                }
-            }
-        }
-    }
-}
-
 internal fun previewVibration(context: Context, patternName: String) {
     if (patternName == VibrationPatterns.NONE) return
     val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

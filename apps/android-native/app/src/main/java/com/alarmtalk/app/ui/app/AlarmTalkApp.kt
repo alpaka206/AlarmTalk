@@ -767,9 +767,6 @@ internal fun AlarmTalkApp(
                       onGenerateTts = viewModel::generateTtsAudio,
                       onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
-                      onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
-                          viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)
-                      },
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
                               requestFirstMissingAlarmPermission()
@@ -808,9 +805,6 @@ internal fun AlarmTalkApp(
                           onGenerateTts = viewModel::generateTtsAudio,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                           onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
-                          onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
-                              viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)
-                          },
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
                                   requestFirstMissingAlarmPermission()

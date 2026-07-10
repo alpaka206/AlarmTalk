@@ -164,6 +164,8 @@
 
 ### [android-correctness] Dynamic/random-prompt voice refresh worker is never scheduled (dead code) — repeating dynamic alarms replay stale audio
 
+> 2026-07-09 update: launch direction changed to preset-first. Android now intentionally disables dynamic voice refresh scheduling/execution (`DynamicVoiceRefreshEnabled = false`) so repeating alarms reuse saved local audio instead of triggering background Gemini/TTS regeneration. Revisit this audit item only if daily generated copy is re-enabled.
+
 - **파일**: `apps/android-native/app/src/main/java/com/alarmtalk/app/sync/DynamicVoiceRefreshScheduler.kt` :21-46
 - **설명**: DynamicVoiceRefreshScheduler.ensurePeriodic()/runOnce() enqueue DynamicVoiceRefreshWorker, which calls AlarmRepository.refreshDueDynamicAlarmTalks() to regenerate fresh TTS for repeating 'random prompt' voice alarms. However, grep shows ensurePeriodic/runOnce are never called from anywhere (not Application.onCreate, not MainViewModel.init, not BootCompletedReceiver). Only RemoteAlarmSyncScheduler is wired. As a result the worker is never enqueued, refreshDueDynamicAlarmTalks runs nowhere, and a repeating dynamic-voice alarm keeps replaying the audio prepared at creation time every day (shouldRefreshDynamicVoice would return true, but nothing invokes it). The advertised 'fresh daily message / weather / fortune' behavior silently does not happen in the background.
 - **수정안**: Call DynamicVoiceRefreshScheduler.ensurePeriodic(this) in AlarmTalkApplication.onCreate (and runOnce on app start / boot when a session exists), mirroring the RemoteAlarmSyncScheduler wiring, or remove the feature if intentionally cut. Verify with a log that the worker actually runs.

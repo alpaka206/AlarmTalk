@@ -473,17 +473,3 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     "exercise" to R.string.editor2_ctx_exercise,
     "love" to R.string.editor2_ctx_love,
 )
-
-internal val TtsLanguages: List<Pair<String, Int>> = listOf(
-    "ko" to R.string.editor2_lang_ko,
-    "en" to R.string.editor2_lang_en,
-    "ja" to R.string.editor2_lang_ja,
-)
-
-internal val TtsTranslationLanguages: List<Pair<String, Int>> = listOf(
-    "ko" to R.string.editor2_lang_ko,
-    "en" to R.string.editor2_lang_en,
-    "ja" to R.string.editor2_lang_ja,
-    "fr" to R.string.editor2_lang_fr,
-    "it" to R.string.editor2_lang_it,
-)

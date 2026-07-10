@@ -55,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmStates
 import com.alarmtalk.app.data.AlarmSyncStates
@@ -338,14 +339,23 @@ internal fun AlarmRow(
                                 } else {
                                     stringResource(R.string.rd2_pm)
                                 },
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 16.sp,
+                                    lineHeight = 20.sp,
+                                    letterSpacing = 0.sp,
+                                ),
                                 fontWeight = FontWeight.SemiBold,
                                 color = timeColor,
                                 modifier = Modifier.padding(end = 6.dp, bottom = 6.dp),
                             )
                             Text(
                                 text = alarmRowClockLabel(alarm.hour, alarm.minute),
-                                style = MaterialTheme.typography.headlineLarge,
+                                style = MaterialTheme.typography.headlineLarge.copy(
+                                    fontSize = 32.sp,
+                                    lineHeight = 40.sp,
+                                    fontFeatureSettings = "tnum",
+                                    letterSpacing = 0.sp,
+                                ),
                                 fontWeight = FontWeight.Normal,
                                 color = timeColor,
                             )
@@ -366,7 +376,11 @@ internal fun AlarmRow(
                         }
                         Text(
                             text = nextFireDateLabel(context, nextFireMillis),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 15.sp,
+                                lineHeight = 21.sp,
+                                letterSpacing = 0.sp,
+                            ),
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -374,6 +388,7 @@ internal fun AlarmRow(
                         )
                     }
                     Spacer(Modifier.width(8.dp))
+                    // 켜짐/꺼짐 텍스트는 두지 않는다 — 스위치 위치·색이 곧 상태 표시.
                     AlarmTalkSwitch(
                         checked = alarm.enabled,
                         onCheckedChange = onToggleEnabled,

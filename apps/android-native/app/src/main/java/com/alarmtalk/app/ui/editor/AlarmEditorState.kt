@@ -53,6 +53,12 @@ internal fun googleSignInErrorMessage(context: android.content.Context, statusCo
     else -> context.getString(R.string.r3ed_google_signin_error_failed_status, statusCode)
 }
 
+internal fun supportedAppVoiceLanguage(language: String?): String = when (language) {
+    "en" -> "en"
+    "ja" -> "ja"
+    else -> "ko"
+}
+
 internal class AlarmEditorState(
     label: String,
     hour: Int,
@@ -111,7 +117,7 @@ internal class AlarmEditorState(
     var voiceListenerTitleOverride by mutableStateOf(voiceListenerTitle ?: "")
     var voiceText by mutableStateOf(voiceText ?: "")
     var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
-    var voiceLanguage by mutableStateOf(voiceLanguage ?: "ko")
+    var voiceLanguage by mutableStateOf(supportedAppVoiceLanguage(voiceLanguage))
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
     var voiceRandomContext by mutableStateOf(normalizedRandomPromptContext(voiceRandomContext ?: DefaultRandomPromptContext))
     var voiceWeatherCountry by mutableStateOf(voiceWeatherCountry ?: "")
@@ -139,7 +145,7 @@ internal class AlarmEditorState(
                 profileId = voiceProfileId.orEmpty(),
                 text = voiceText.orEmpty(),
                 category = if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom",
-                language = voiceLanguage ?: "ko",
+                language = supportedAppVoiceLanguage(voiceLanguage),
                 listenerTitle = voiceListenerTitle,
             )
         },
@@ -359,14 +365,13 @@ internal class AlarmEditorState(
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
-    fun activeVoiceLanguage(): String =
-        if (selectedBucket != null || voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
+    fun activeVoiceLanguage(): String = supportedAppVoiceLanguage(voiceLanguage)
 
     fun activeVoiceCategory(): String =
         if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
 
     fun shouldTranslateVoiceText(): Boolean =
-        !voiceRandomPrompt && voiceTranslationEnabled && voiceLanguage != "ko"
+        !voiceRandomPrompt && activeVoiceLanguage() != "ko"
 
     fun setPendingServerTts(message: TtsMessage) {
         voiceSource = VoiceSources.SERVER_TTS

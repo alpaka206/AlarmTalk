@@ -7,13 +7,11 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,8 +54,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -918,45 +914,12 @@ internal fun VoiceProfileManagementPanel(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(
+                        Text(
+                            text = stringResource(R.string.voices_create_dialog_title),
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.voices_create_dialog_title),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            val stepTitle = when (currentStep) {
-                                VoiceRegistrationStep.Source -> stringResource(R.string.voices_step_source)
-                                VoiceRegistrationStep.Details -> stringResource(R.string.voices_step_details)
-                            }
-                            val stepPosition =
-                                "${currentStep.ordinal + 1} / ${VoiceRegistrationStep.entries.size}"
-                            // 세그먼트 진행 표시만 노출 — 단계 이름·위치는 스크린리더로만 전달한다.
-                            Row(
-                                modifier = Modifier.semantics {
-                                    contentDescription = "$stepTitle · $stepPosition"
-                                },
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                VoiceRegistrationStep.entries.forEach { step ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(16.dp)
-                                            .height(4.dp)
-                                            .background(
-                                                color = if (step.ordinal <= currentStep.ordinal) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.outlineVariant
-                                                },
-                                                shape = WakerPillShape,
-                                            ),
-                                    )
-                                }
-                            }
-                        }
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
                         IconButton(
                             onClick = { voiceGuideVisible = true },
                             modifier = Modifier.size(42.dp),
@@ -1127,23 +1090,16 @@ internal fun VoiceProfileManagementPanel(
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.padding(top = 4.dp),
                                 )
-                                SharingOptionCard(
-                                    enabled = true,
-                                    title = stringResource(R.string.voices_sharing_private_title),
-                                    description = stringResource(R.string.voices_sharing_private_desc),
-                                    onClick = { shareVoice = false },
-                                    isChosen = !shareVoice,
-                                )
-                                SharingOptionCard(
+                                ShareVoiceToggleCard(
                                     enabled = canShareVoice,
+                                    checked = shareVoice && canShareVoice,
                                     title = stringResource(R.string.voices_sharing_shared_title),
                                     description = if (canShareVoice) {
                                         stringResource(R.string.voices_sharing_shared_desc_enabled)
                                     } else {
                                         stringResource(R.string.voices_sharing_shared_desc_disabled)
                                     },
-                                    onClick = { if (canShareVoice) shareVoice = true },
-                                    isChosen = shareVoice && canShareVoice,
+                                    onCheckedChange = { shareVoice = it },
                                 )
                             }
                         }

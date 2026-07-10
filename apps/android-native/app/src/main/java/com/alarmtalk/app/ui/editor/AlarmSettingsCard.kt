@@ -476,7 +476,6 @@ internal fun VibrationSettingsPane(
 }
 
 internal data class RandomPromptSettingsResult(
-    val voiceLanguage: String,
     val randomContext: String,
     val weatherCountry: String,
     val weatherCity: String,

@@ -630,6 +630,7 @@ class AlarmRepository(
         token: String,
         nowMillis: Long = System.currentTimeMillis(),
     ): Int {
+        if (!DynamicVoiceRefreshEnabled) return 0
         val alarms = alarmDao.getRepeatingDynamicAlarmTalks()
         var refreshed = 0
         alarms.forEach { alarm ->
@@ -849,6 +850,7 @@ class AlarmRepository(
      * 이 wiring 이 없으면 반복 동적 알람이 과거에 캐시된 동일 음성만 재생한다.
      */
     private fun ensureDynamicVoiceRefreshScheduled(alarm: AlarmEntity) {
+        if (!DynamicVoiceRefreshEnabled) return
         if (!isRepeatingDynamicVoiceAlarm(alarm)) return
         runCatching {
             DynamicVoiceRefreshScheduler.ensurePeriodic(context)
@@ -891,6 +893,7 @@ class AlarmRepository(
         }
 
     private companion object {
+        val DynamicVoiceRefreshEnabled = false
         const val DefaultDynamicVoiceContext = "wake_weather"
         val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
     }

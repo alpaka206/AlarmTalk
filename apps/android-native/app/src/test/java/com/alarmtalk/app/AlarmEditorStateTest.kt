@@ -71,4 +71,20 @@ class AlarmEditorStateTest {
 
         assertTrue(editor.hasFreshTtsAudio("profile-1", "wake up"))
     }
+
+    @Test
+    fun activeVoiceLanguageFollowsSupportedAppLanguageWithoutTranslationToggle() {
+        val editor = AlarmEditorState.from(alarm = null)
+        editor.voiceRandomPrompt = false
+        editor.voiceTranslationEnabled = false
+
+        editor.voiceLanguage = "ja"
+
+        assertEquals("ja", editor.activeVoiceLanguage())
+        assertTrue(editor.shouldTranslateVoiceText())
+
+        editor.voiceLanguage = "fr"
+
+        assertEquals("ko", editor.activeVoiceLanguage())
+    }
 }

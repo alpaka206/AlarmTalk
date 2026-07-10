@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun AlarmTalkBottomBar(
@@ -62,8 +63,6 @@ internal fun AlarmTalkBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 알람 | 목소리 | 전체 — 세 개의 동일 탭. 알람 생성(＋)은 탭이 아닌 '동작'이므로
-            // 알람 화면에 뜨는 FAB 로 분리했다(선택 모델 일관 + 바가 휑하지 않게).
             AlarmTalkTabItem(
                 tab = NativeTab.Alarms,
                 selectedTab = selectedTab,
@@ -177,7 +176,11 @@ internal fun AlarmTalkTabItem(
         }
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                letterSpacing = 0.sp,
+            ),
             color = selectedContentColor,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )

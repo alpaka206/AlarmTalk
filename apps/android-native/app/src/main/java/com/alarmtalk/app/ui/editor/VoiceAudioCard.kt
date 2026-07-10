@@ -94,9 +94,7 @@ internal fun VoiceAudioCard(
     onPreviewCrop: () -> Unit,
     onPreviewAudio: () -> Unit,
     onCreateVoiceProfileClick: () -> Unit,
-    onSharedVoiceInfoRequired: (FamilyVoiceProfile) -> Unit,
     onOpenRandomPromptSettings: () -> Unit,
-    onOpenVoiceTranslationSettings: () -> Unit,
     onClear: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -120,7 +118,9 @@ internal fun VoiceAudioCard(
                 )
     }
     val readyFamilyVoices = familyVoices.filter {
-        (it.status == null || it.status == "ready") && it.isShared != false
+        (it.status == null || it.status == "ready") &&
+            it.isShared != false &&
+            !it.requiresViewerInfo()
     }
     val profileOptions = readyProfiles.map {
         VoiceProfileOption(
@@ -134,7 +134,6 @@ internal fun VoiceAudioCard(
                 id = profile.id,
                 name = profile.name,
                 detail = sharedVoiceDetail(context, profile),
-                sharedProfile = profile,
             )
         }
     LaunchedEffect(editor.voiceSource) {
@@ -216,14 +215,7 @@ internal fun VoiceAudioCard(
                         VoiceProfileSelector(
                             options = profileOptions,
                             selectedId = editor.voiceProfileId ?: "",
-                            onSelect = { option ->
-                                val sharedProfile = option.sharedProfile
-                                if (sharedProfile?.requiresViewerInfo() == true) {
-                                    onSharedVoiceInfoRequired(sharedProfile)
-                                    return@VoiceProfileSelector
-                                }
-                                editor.selectVoiceProfile(option.id)
-                            },
+                            onSelect = { option -> editor.selectVoiceProfile(option.id) },
                         )
                     }
                 }
@@ -291,26 +283,14 @@ internal fun VoiceAudioCard(
                     if (!editor.voiceRandomPrompt) {
                         ManualVoiceMessageField(
                             text = editor.voiceText,
-                            translationEnabled = editor.voiceTranslationEnabled,
-                            language = editor.voiceLanguage,
                             onTextChange = {
                                 editor.voiceText = it.take(200)
                                 editor.clearTtsMeta()
                             },
-                            onTranslationEnabledChange = { enabled ->
-                                editor.voiceTranslationEnabled = enabled
-                                if (enabled && editor.voiceLanguage == "ko") {
-                                    editor.voiceLanguage = "en"
-                                }
-                                editor.clearTtsMeta()
-                            },
-                            onOpenTranslationSettings = onOpenVoiceTranslationSettings,
                         )
                     } else {
                         RandomPromptSummaryRow(
-                            language = editor.voiceLanguage,
                             randomContext = editor.voiceRandomContext,
-                            // 동적(날씨/운세) 문구·언어 설정은 유료 — 무료는 기본 프리셋 고정.
                             onClick = if (freeVoiceTier) onLockedFeature else onOpenRandomPromptSettings,
                         )
                     }
@@ -473,7 +453,6 @@ private data class VoiceProfileOption(
     val id: String,
     val name: String,
     val detail: String,
-    val sharedProfile: FamilyVoiceProfile? = null,
 )
 
 @Composable
@@ -716,11 +695,7 @@ private fun FreeVoiceSummaryRow(
 @Composable
 private fun ManualVoiceMessageField(
     text: String,
-    translationEnabled: Boolean,
-    language: String,
     onTextChange: (String) -> Unit,
-    onTranslationEnabledChange: (Boolean) -> Unit,
-    onOpenTranslationSettings: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
         Row(
@@ -745,68 +720,14 @@ private fun ManualVoiceMessageField(
             colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
-        ManualTranslationRow(
-            enabled = translationEnabled,
-            language = language,
-            onEnabledChange = onTranslationEnabledChange,
-            onOpenSettings = onOpenTranslationSettings,
-        )
-    }
-}
-
-@Composable
-private fun ManualTranslationRow(
-    enabled: Boolean,
-    language: String,
-    onEnabledChange: (Boolean) -> Unit,
-    onOpenSettings: () -> Unit,
-) {
-    val languageLabel = voiceOptionLabelRes(TtsTranslationLanguages, language)?.let { stringResource(it) }.orEmpty()
-    Surface(
-        onClick = {
-            if (enabled) onOpenSettings()
-        },
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(stringResource(R.string.editor_translation), fontWeight = FontWeight.SemiBold)
-                MutedText(if (enabled) languageLabel else stringResource(R.string.editor_translation_off))
-            }
-            Spacer(Modifier.width(12.dp))
-            if (enabled) {
-                Text(
-                    text = stringResource(R.string.editor_change),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.width(10.dp))
-            }
-            AlarmTalkSwitch(
-                checked = enabled,
-                onCheckedChange = onEnabledChange,
-            )
-        }
     }
 }
 
 @Composable
 private fun RandomPromptSummaryRow(
-    language: String,
     randomContext: String,
     onClick: () -> Unit,
 ) {
-    val languageLabel = voiceOptionLabelRes(TtsLanguages, language)?.let { stringResource(it) }.orEmpty()
     val contextLabel = voiceOptionLabelRes(
         RandomPromptContexts,
         normalizedRandomPromptContext(randomContext),
@@ -827,7 +748,7 @@ private fun RandomPromptSummaryRow(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(stringResource(R.string.editor_random_prompt_settings), fontWeight = FontWeight.SemiBold)
-                MutedText("$contextLabel · $languageLabel")
+                MutedText(contextLabel)
             }
             Spacer(Modifier.width(12.dp))
             Text(
