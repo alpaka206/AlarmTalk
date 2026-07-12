@@ -747,8 +747,18 @@ internal fun MainViewModel.syncNow() {
             push to pull
         }.onSuccess { (push, pull) ->
             val failed = push.failed + pull.failed
-            if (failed > 0) {
-                message = alarmSyncFailureMessage(pushFailed = push.failed, pullFailed = pull.failed)
+            val app = getApplication<android.app.Application>()
+            when {
+                failed > 0 ->
+                    message = alarmSyncFailureMessage(pushFailed = push.failed, pullFailed = pull.failed)
+                // 앱이 열려 있을 때 새로 받은 상대 알람을 인앱으로도 알린다(시스템 알림에만 의존하지 않음).
+                // syncNow 는 알람 탭 진입 시 자동 실행되므로, 사용자가 보던 메시지를 덮지 않게 비어 있을 때만.
+                pull.imported > 0 && message.isNullOrBlank() ->
+                    message = app.resources.getQuantityString(
+                        R.plurals.msg_received_alarm_arrived,
+                        pull.imported,
+                        pull.imported,
+                    )
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Backend sync failed", error)

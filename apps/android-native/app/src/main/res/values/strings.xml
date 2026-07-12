@@ -521,6 +521,9 @@
     <string name="msg_remove_member_failed">멤버를 내보내지 못했어요</string>
     <string name="msg_remove_member_login_required">멤버를 내보내려면 먼저 로그인해 주세요</string>
     <string name="msg_sync_failed">일시적인 오류로 알람 정보를 주고받지 못했어요. 잠시 후 자동으로 다시 시도해요.</string>
+    <plurals name="msg_received_alarm_arrived">
+        <item quantity="other">상대가 맞춰준 알람 %1$d개가 도착했어요.</item>
+    </plurals>
     <string name="msg_sync_generic_failed">일시적인 오류가 있었어요. 잠시 후 자동으로 다시 시도해요.</string>
     <string name="msg_sync_login_required">동기화하려면 먼저 로그인해 주세요</string>
     <string name="msg_sync_pull_partial_failed">받은 알람 일부를 아직 불러오지 못했어요. 잠시 후 자동으로 다시 시도해요.</string>
