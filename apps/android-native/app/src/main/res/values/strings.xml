@@ -833,6 +833,7 @@
     <string name="editor2_ctx_sleep">취침</string>
     <string name="editor2_ctx_exercise">운동</string>
     <string name="editor2_ctx_love">사랑</string>
+    <string name="editor2_ctx_medication">약</string>
     <string name="editor2_repeat_every_day">매일</string>
     <string name="editor2_repeat_weekly">매주 %1$s</string>
     <string name="editor2_repeat_today">오늘 - %1$s</string>

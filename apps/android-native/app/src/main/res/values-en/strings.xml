@@ -823,6 +823,7 @@
     <string name="editor2_ctx_sleep">Bedtime</string>
     <string name="editor2_ctx_exercise">Exercise</string>
     <string name="editor2_ctx_love">Love</string>
+    <string name="editor2_ctx_medication">Meds</string>
     <string name="editor2_repeat_every_day">Every day</string>
     <string name="editor2_repeat_weekly">Every %1$s</string>
     <string name="editor2_repeat_today">Today - %1$s</string>

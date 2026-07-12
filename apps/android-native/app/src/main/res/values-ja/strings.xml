@@ -832,6 +832,7 @@
     <string name="editor2_ctx_sleep">就寝</string>
     <string name="editor2_ctx_exercise">運動</string>
     <string name="editor2_ctx_love">愛</string>
+    <string name="editor2_ctx_medication">薬</string>
     <string name="editor2_repeat_every_day">毎日</string>
     <string name="editor2_repeat_weekly">毎週 %1$s</string>
     <string name="editor2_repeat_today">今日 - %1$s</string>

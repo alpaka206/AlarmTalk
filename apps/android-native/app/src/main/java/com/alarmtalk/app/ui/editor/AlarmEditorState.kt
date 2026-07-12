@@ -447,6 +447,7 @@ internal fun ttsCategoryForRandomContext(context: String?): String =
         "sleep" -> "night"
         "exercise" -> "exercise"
         "love" -> "love"
+        "medication" -> "medication"
         else -> "morning"
     }
 

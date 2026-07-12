@@ -493,17 +493,20 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     "sleep" to R.string.editor2_ctx_sleep,
     "exercise" to R.string.editor2_ctx_exercise,
     "love" to R.string.editor2_ctx_love,
+    // 약(medication): 동적 생성 모드가 아니라 고정 프리셋. randomContext='medication' 는
+    // 백엔드에서 'preset' 으로 정규화되고 category='medication' 프리셋 문구를 뽑는다.
+    "medication" to R.string.editor2_ctx_medication,
 )
 
 // '직접 입력'(랜덤 끄고 사용자가 문구를 직접 타이핑) 을 나타내는 특수 선택값.
 internal const val ManualMessageContext = "manual"
 
-// 편집기 '문구' 선택기에 노출하는 옵션 — 직접 입력 + 동적 문구(날씨·운세·운동·사랑).
-// 기본문구(preset)·식사·취침은 목록에서 제외한다(preset 은 보이지 않는 기본값으로만 유지).
+// 편집기 '문구' 선택기(유료) 노출 옵션 — 날씨·운세·사랑(동적) + 약(고정 프리셋) + 직접 입력.
+// 운동은 약으로 대체. 기본문구(preset)·식사·취침은 목록에서 제외(preset 은 보이지 않는 기본값).
 internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
-    "exercise" to R.string.editor2_ctx_exercise,
     "love" to R.string.editor2_ctx_love,
+    "medication" to R.string.editor2_ctx_medication,
     ManualMessageContext to R.string.editor_msg_mode_manual,
 )
