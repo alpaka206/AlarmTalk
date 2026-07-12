@@ -24,6 +24,11 @@ import {
   type WeatherCondition,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
+import {
+  refundManualTtsQuota,
+  reserveManualTtsQuota,
+  resolveManualTtsPool,
+} from '../lib/manual-tts-quota';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import {
@@ -734,6 +739,13 @@ tts.post('/generate', async (c) => {
   const missingTtsConsent = await missingConsentType(db, userPk, requiredSensitiveConsents);
   if (missingTtsConsent) return consentRequired(c, missingTtsConsent);
 
+  // 직접 입력(random 아님) = 유료 사용자가 문구를 직접 타이핑한 유료 생성 경로.
+  // 무료는 위(693-729)에서 이미 차단되므로 여기 도달하는 수동 요청은 유료 전용.
+  // 예약은 캐시 미스 뒤(합성 직전)에 하고, 예약됐는데 합성이 실패하면 catch 에서 환불.
+  const isManualGeneration = !randomRequested && Boolean(resolvedUserPk);
+  let manualQuotaPoolKey: string | null = null;
+  let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
+
   try {
     const requestedLanguage = normalizeSynthesisLanguage(body.language);
 
@@ -954,6 +966,28 @@ tts.post('/generate', async (c) => {
       }
     }
 
+    // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.
+    if (isManualGeneration) {
+      const pool = await resolveManualTtsPool(db, ownerIds, userPk);
+      const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
+      if (!reservation.ok) {
+        return c.json(
+          {
+            error: '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+            error_code: 'MANUAL_TTS_QUOTA_EXCEEDED',
+            manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
+          },
+          429,
+        );
+      }
+      manualQuotaPoolKey = pool.poolKey;
+      manualQuotaResult = {
+        used: reservation.used,
+        limit: reservation.limit,
+        remaining: reservation.remaining,
+      };
+    }
+
     let lastError: unknown = noVoiceProviderError();
     for (const { attempt, cacheKey } of preparedAttempts) {
       try {
@@ -1044,6 +1078,7 @@ tts.post('/generate', async (c) => {
             cache_key: cacheKey,
             cache_hit: false,
             random_context: randomRequested ? randomContext : null,
+            manual_quota: manualQuotaResult,
           },
           201,
         );
@@ -1056,6 +1091,14 @@ tts.post('/generate', async (c) => {
 
     throw lastError;
   } catch (err) {
+    // 쿼터를 예약했는데 합성이 끝내 실패했으면 카운터를 되돌린다(실패는 소비 안 함).
+    if (manualQuotaPoolKey) {
+      try {
+        await refundManualTtsQuota(db, manualQuotaPoolKey);
+      } catch (refundErr) {
+        console.error('[tts/generate] manual quota refund failed', refundErr);
+      }
+    }
     console.error(
       '[tts/generate] failed',
       err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : err,

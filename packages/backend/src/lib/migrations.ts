@@ -1273,6 +1273,24 @@ export const migrations: Migration[] = [
         GROUP BY COALESCE(u.id, vp.user_id), strftime('%Y-%m', datetime(vp.created_at, '+9 hours'))`,
     ],
   },
+  {
+    // 직접 입력(사용자 타이핑) TTS 생성의 월 카운터. 유료 플랜만 소비하며 한도는
+    // personal 30 / couple 50 / family 100 (manual-tts-quota.ts). couple/family 는
+    // pool_key = plan_group_id 로 멤버 전원이 한 풀을 공유, personal 은 pool_key = 본인 PK.
+    //  - used_count 를 원자적 upsert(ON CONFLICT DO UPDATE ... WHERE used_count < limit)로
+    //    증가시켜 경합 없이 한도를 강제한다. 월(KST) 경계가 바뀌면 새 행이 생겨 자동 리셋.
+    id: 58,
+    name: 'manual-tts-monthly-usage',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS manual_tts_usage (
+        pool_key TEXT NOT NULL,
+        usage_month TEXT NOT NULL,
+        used_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (pool_key, usage_month)
+      )`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
