@@ -32,6 +32,7 @@ import com.alarmtalk.app.ui.guide.coachMarkTarget
 import kotlinx.coroutines.delay
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -225,8 +226,16 @@ internal fun AlarmListScreen(
                     }
                 }
                 items(sortedAlarms, key = { it.id }) { alarm ->
+                    // TTS 알람만 프로필 이름을 찾는다(녹음·파일 알람은 이름 없이 날짜만).
+                    val voiceName = alarm.voiceProfileId
+                        ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO }
+                        ?.let { profileId ->
+                            voiceProfiles.firstOrNull { it.id == profileId }?.name
+                                ?: familyVoices.firstOrNull { it.id == profileId }?.name
+                        }
                     AlarmRow(
                         alarm = alarm,
+                        voiceName = voiceName,
                         onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
                         onEditAlarm = { onEditAlarm(alarm) },
                         onDeleteAlarm = { onDeleteAlarm(alarm.id) },

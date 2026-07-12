@@ -57,6 +57,7 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 internal fun RandomPromptSettingsPane(
     randomContext: String,
+    manualText: String,
     weatherCountry: String,
     weatherCity: String,
     savedWeatherCountry: String,
@@ -75,7 +76,10 @@ internal fun RandomPromptSettingsPane(
 ) {
     val context = LocalContext.current
     var draftContext by remember(randomContext) {
-        mutableStateOf(normalizedRandomPromptContext(randomContext))
+        mutableStateOf(
+            if (randomContext == ManualMessageContext) ManualMessageContext
+            else normalizedRandomPromptContext(randomContext),
+        )
     }
     var draftWeatherCountry by remember(weatherCountry, savedWeatherCountry) {
         mutableStateOf(weatherCountry.ifBlank { savedWeatherCountry })
@@ -94,7 +98,9 @@ internal fun RandomPromptSettingsPane(
     }
     var weatherDialogOpen by remember { mutableStateOf(false) }
     var fortuneDialogOpen by remember { mutableStateOf(false) }
-    val normalizedContext = normalizedRandomPromptContext(draftContext)
+    var manualDialogOpen by remember { mutableStateOf(false) }
+    val isManual = draftContext == ManualMessageContext
+    val normalizedContext = if (isManual) ManualMessageContext else normalizedRandomPromptContext(draftContext)
     fun hasWeatherInfo(): Boolean =
         draftWeatherCity.isNotBlank() || savedWeatherConfigured
     fun hasFortuneInfo(): Boolean =
@@ -119,6 +125,8 @@ internal fun RandomPromptSettingsPane(
 
     fun requestRequiredInfoOrSave() {
         when {
+            // 직접 입력은 문구를 다이얼로그로만 받는다(빈 문구로 저장되지 않게).
+            isManual -> manualDialogOpen = true
             randomContextUsesWeather(normalizedContext) && !hasWeatherInfo() -> weatherDialogOpen = true
             normalizedContext == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
             else -> saveResolvedSettings()
@@ -127,8 +135,9 @@ internal fun RandomPromptSettingsPane(
 
     fun selectContext(context: String) {
         draftContext = context
-        // 날씨/운세가 들어가는 모드를 고르면 상세 입력을 놓치지 않도록 곧바로 다이얼로그를 띄운다.
+        // 상세 입력이 필요한 모드는 고르는 즉시 다이얼로그를 띄운다(날씨·운세·직접 입력).
         when {
+            context == ManualMessageContext -> manualDialogOpen = true
             randomContextUsesWeather(context) -> weatherDialogOpen = true
             context == "wake_fortune" -> fortuneDialogOpen = true
         }
@@ -168,31 +177,16 @@ internal fun RandomPromptSettingsPane(
                     .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                ) {
-                    Text(
-                        text = stringResource(R.string.editorp_random_intro),
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-
-                SnoozeOptionSection(title = stringResource(R.string.editorp_random_context_section)) {
-                    RandomPromptContexts.forEachIndexed { index, (context, labelRes) ->
+                SnoozeOptionSection {
+                    EditorMessageContexts.forEachIndexed { index, (context, labelRes) ->
                         SnoozeRadioRow(
                             label = stringResource(labelRes),
                             selected = normalizedContext == context,
                             onClick = { selectContext(context) },
                         )
-                        if (index != RandomPromptContexts.lastIndex) SnoozeOptionDivider()
+                        if (index != EditorMessageContexts.lastIndex) SnoozeOptionDivider()
                     }
                 }
-
-                RandomPromptContextDescription(context = normalizedContext)
 
                 if (randomContextUsesWeather(normalizedContext)) {
                     RandomPromptDetailRow(
@@ -238,8 +232,6 @@ internal fun RandomPromptSettingsPane(
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
-                        Icon(Icons.Outlined.Save, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.editorp_random_save_button))
                     }
                 }
@@ -276,35 +268,82 @@ internal fun RandomPromptSettingsPane(
             },
         )
     }
-}
 
-// 선택한 문구 종류가 어떤 톤·내용인지 한 줄로 안내한다(기상=날씨, 운세=가벼운 운세 등).
-@Composable
-private fun RandomPromptContextDescription(context: String) {
-    val descriptionRes = randomPromptContextDescriptionRes(context) ?: return
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-    ) {
-        Text(
-            text = stringResource(descriptionRes),
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    if (manualDialogOpen) {
+        ManualMessageDialog(
+            initialText = manualText,
+            // 취소는 pane 에 머문다(직접 입력 선택만 남고 저장은 안 됨).
+            onDismiss = { manualDialogOpen = false },
+            onConfirm = { text ->
+                manualDialogOpen = false
+                onSaveSettings(
+                    RandomPromptSettingsResult(
+                        randomContext = ManualMessageContext,
+                        weatherCountry = draftWeatherCountry.trim(),
+                        weatherCity = draftWeatherCity.trim(),
+                        fortuneGender = draftFortuneGender.trim(),
+                        fortuneBirthDate = draftFortuneBirthDate.trim(),
+                        fortuneBirthTime = draftFortuneBirthTime.trim(),
+                        manualText = text,
+                    ),
+                )
+            },
         )
     }
 }
 
-private fun randomPromptContextDescriptionRes(context: String): Int? = when (context) {
-    "preset" -> R.string.editorp_random_context_desc_preset
-    "wake_weather" -> R.string.editorp_random_context_desc_wake_weather
-    "wake_fortune" -> R.string.editorp_random_context_desc_wake_fortune
-    "meal" -> R.string.editorp_random_context_desc_meal
-    "sleep" -> R.string.editorp_random_context_desc_sleep
-    "exercise" -> R.string.editorp_random_context_desc_exercise
-    "love" -> R.string.editorp_random_context_desc_love
-    else -> null
+// '직접 입력' 선택 시 뜨는 문구 입력 다이얼로그(날씨·운세 다이얼로그와 같은 층위).
+@Composable
+private fun ManualMessageDialog(
+    initialText: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var draft by remember(initialText) { mutableStateOf(initialText) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 460.dp),
+            shape = WakerDialogShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                ModalDialogTitle(
+                    title = stringResource(R.string.editor_msg_mode_manual),
+                    onDismiss = onDismiss,
+                )
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it.take(200) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp),
+                    placeholder = { Text(stringResource(R.string.editor_manual_input_placeholder)) },
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
+                )
+                Button(
+                    onClick = { onConfirm(draft.trim()) },
+                    enabled = draft.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                ) {
+                    Text(stringResource(R.string.editorp_random_save_button))
+                }
+            }
+        }
+    }
 }
 
 @Composable

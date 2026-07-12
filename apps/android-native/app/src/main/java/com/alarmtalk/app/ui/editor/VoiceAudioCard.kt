@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -150,7 +151,8 @@ internal fun VoiceAudioCard(
             // 무료는 녹음·파일이 잠겨 있어 소스 토글이 사실상 페이월 미끼라 감춘다(항상 TTS).
             // 유료만 목소리/녹음·파일을 고를 수 있게 토글을 노출한다.
             if (!freeVoiceTier) {
-                OptionChips(
+                // 바로 위 '재생 방식'과 같은 세그먼트 트랙으로 통일(크기·선택색 일치).
+                EditorSegmentedSelector(
                     options = listOf(
                         VoiceSources.TTS_PROFILE to stringResource(R.string.editor_voice_source_tts),
                         VoiceSources.LOCAL_AUDIO to stringResource(R.string.editor_voice_source_local),
@@ -206,7 +208,7 @@ internal fun VoiceAudioCard(
                         }
                     }
                 } else {
-                    Text(stringResource(R.string.editor_voice_to_hear), fontWeight = FontWeight.SemiBold)
+                    EditorSectionTitle(stringResource(R.string.editor_voice_to_hear))
                     if (voiceProfileBusy) {
                         MutedText(stringResource(R.string.editor_voice_loading))
                     } else if (profileOptions.isEmpty()) {
@@ -254,85 +256,35 @@ internal fun VoiceAudioCard(
                 }
                 // 무료 플랜은 위 버킷 선택만 노출한다(랜덤 문구 토글·직접 입력·동적 설정은 유료).
                 if (!freeVoiceTier && profileOptions.isNotEmpty()) {
-                    // 호칭은 더 이상 알람창에서 받지 않는다. 시스템 음성은 온보딩/목소리 탭에서 정한
-                    // 기본 호칭을 쓰고, 내/공유 음성은 각 프로필 호칭을 쓴다(저장 경로에서 resolve).
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(stringResource(R.string.editor_random_prompt_use), fontWeight = FontWeight.SemiBold)
-                        }
-                        AlarmTalkSwitch(
-                            checked = editor.voiceRandomPrompt,
-                            onCheckedChange = { checked ->
-                                if (checked) {
-                                    onOpenRandomPromptSettings()
-                                } else if (freeVoiceTier) {
-                                    // 직접 입력은 유료 — 무료는 프리셋 랜덤 문구로 고정.
-                                    onLockedFeature()
-                                } else {
-                                    editor.voiceRandomPrompt = false
-                                    editor.clearAudio()
-                                    editor.clearTtsMeta()
-                                }
-                            },
-                        )
-                    }
-                    if (!editor.voiceRandomPrompt) {
-                        ManualVoiceMessageField(
-                            text = editor.voiceText,
-                            onTextChange = {
-                                editor.voiceText = it.take(200)
-                                editor.clearTtsMeta()
-                            },
-                        )
-                    } else {
-                        RandomPromptSummaryRow(
-                            randomContext = editor.voiceRandomContext,
-                            onClick = if (freeVoiceTier) onLockedFeature else onOpenRandomPromptSettings,
-                        )
-                    }
+                    // 문구는 토글로 랜덤/직접입력을 가르지 않는다. 하나의 선택기에서 '직접 입력'과
+                    // 동적 문구(기상+날씨/운세/운동/사랑)를 함께 고른다. 직접 입력은 목록 맨 아래에서
+                    // 누르면 입력 다이얼로그가 뜬다. '기본 인사말'(preset)은 아무것도 안 고르면 쓰는
+                    // 보이지 않는 기본값(목소리별 사전 렌더)이라 목록엔 없다.
+                    MessageModeSummaryRow(
+                        isManual = !editor.voiceRandomPrompt,
+                        randomContext = editor.voiceRandomContext,
+                        manualText = editor.voiceText,
+                        onClick = onOpenRandomPromptSettings,
+                    )
                 }
             } else {
-                VoiceCaptureModeSelector(
-                    selected = localInputMode,
-                    enabled = !isRecording,
-                    onSelect = onLocalInputModeChange,
+                // 알람 설정에서는 임의 포맷 파일 업로드(코덱·디코드·크롭이 불안정)를 빼고 녹음만 둔다.
+                // 포맷이 통제된 녹음(MPEG4/AAC)만 남겨 안정성을 확보한다. 파일·영상 업로드는
+                // '목소리 만들기'(음성 클로닝)에만 있고, 그 경로는 그대로 유지된다.
+                VoiceRecordControls(
+                    isRecording = isRecording,
+                    elapsedMillis = recordingElapsedMillis,
+                    maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
+                    level = recordingLevel,
+                    enabled = true,
+                    notice = stringResource(R.string.editor_audio_max_duration, AlarmAudioLimits.MAX_DURATION_MILLIS / 1000),
+                    onRecordClick = onRecord,
+                    // 녹음 직후 "눌러서 녹음 시작"으로 되돌아가지 않게 완료 상태를 알린다.
+                    // 미리듣기/삭제는 아래 공용 행이 담당하므로 여기서는 상태 표시만.
+                    recordedDurationMillis = recordingElapsedMillis.takeIf {
+                        it > 0 && editor.localAudioUri != null && selectedFileDurationMillis == null
+                    },
                 )
-                if (localInputMode == VoiceCaptureMode.Record) {
-                    VoiceRecordControls(
-                        isRecording = isRecording,
-                        elapsedMillis = recordingElapsedMillis,
-                        maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
-                        level = recordingLevel,
-                        enabled = true,
-                        notice = stringResource(R.string.editor_audio_max_duration, AlarmAudioLimits.MAX_DURATION_MILLIS / 1000),
-                        onRecordClick = onRecord,
-                        // 녹음 직후 "눌러서 녹음 시작"으로 되돌아가지 않게 완료 상태를 알린다.
-                        // 미리듣기/삭제는 아래 공용 행이 담당하므로 여기서는 상태 표시만.
-                        recordedDurationMillis = recordingElapsedMillis.takeIf {
-                            it > 0 && editor.localAudioUri != null && selectedFileDurationMillis == null
-                        },
-                    )
-                } else {
-                    VoiceFileControls(
-                        durationMillis = selectedFileDurationMillis,
-                        cropStartMillis = cropStartMillis,
-                        cropEndMillis = cropEndMillis,
-                        minDurationMillis = 1_000L,
-                        maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
-                        enabled = !isRecording,
-                        uploadLabel = stringResource(R.string.editor_audio_upload_file),
-                        notice = stringResource(R.string.editor_audio_max_duration, AlarmAudioLimits.MAX_DURATION_MILLIS / 1000),
-                        isPreviewActive = isCropPreviewActive,
-                        isPreviewPreparing = isCropPreviewActive && isPreviewPreparing,
-                        onPickFile = onPick,
-                        onCropChange = onCropChange,
-                        onPreviewCrop = onPreviewCrop,
-                    )
-                }
                 if (editor.localAudioUri != null && !isRecording) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -342,11 +294,6 @@ internal fun VoiceAudioCard(
                             onClick = onPreviewAudio,
                             modifier = Modifier.weight(1f),
                         ) {
-                            VoicePreviewButtonIcon(
-                                active = isCachedAudioPreviewActive,
-                                preparing = isCachedAudioPreviewActive && isPreviewPreparing,
-                            )
-                            Spacer(Modifier.width(8.dp))
                             Text(
                                 text = when {
                                     isCachedAudioPreviewActive && isPreviewPreparing ->
@@ -360,8 +307,6 @@ internal fun VoiceAudioCard(
                             onClick = onClear,
                             modifier = Modifier.weight(1f),
                         ) {
-                            Icon(Icons.Outlined.Delete, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.editor_audio_clear))
                         }
                     }
@@ -498,6 +443,9 @@ private fun VoiceProfileSelector(
     // 고를 게 2개 이상일 때(내 음성·공유 음성이 있을 때)만 펼치는 드롭다운.
     // 기본 목소리 1개뿐이면 어차피 고정이라 펼침/셰브론 없이 그냥 표시한다.
     val canExpand = options.size > 1
+    // 예전엔 indication=null 이라 눌러도 아무 반응이 없었다. 리플 복원 + 눌림 물성으로
+    // '탭되는 행'임을 알린다(다른 세부설정 행과 동일한 피드백).
+    val rowInteraction = remember { MutableInteractionSource() }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = WakerChipShape,
@@ -509,10 +457,12 @@ private fun VoiceProfileSelector(
                     .fillMaxWidth()
                     .then(
                         if (canExpand) {
-                            Modifier.clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) { expanded = !expanded }
+                            Modifier
+                                .wakerPressScale(rowInteraction)
+                                .clickable(
+                                    interactionSource = rowInteraction,
+                                    indication = LocalIndication.current,
+                                ) { expanded = !expanded }
                         } else {
                             Modifier
                         },
@@ -723,15 +673,24 @@ private fun ManualVoiceMessageField(
     }
 }
 
+// '문구' 단일 선택기 요약 행 — 현재 선택(직접 입력 / 기본 인사말 / 동적 문구)을 보여주고
+// 누르면 선택 pane 을 연다. 옛 랜덤/직접입력 토글을 대체한다.
 @Composable
-private fun RandomPromptSummaryRow(
+internal fun MessageModeSummaryRow(
+    isManual: Boolean,
     randomContext: String,
+    manualText: String,
     onClick: () -> Unit,
 ) {
-    val contextLabel = voiceOptionLabelRes(
-        RandomPromptContexts,
-        normalizedRandomPromptContext(randomContext),
-    )?.let { stringResource(it) }.orEmpty()
+    val valueLabel = when {
+        // 직접 입력이면 입력한 문구를 그대로 보여준다(비었으면 '직접 입력').
+        isManual -> manualText.ifBlank { stringResource(R.string.editor_msg_mode_manual) }
+        // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
+        normalizedRandomPromptContext(randomContext) == DefaultRandomPromptContext ->
+            stringResource(R.string.editor_msg_mode_preset)
+        else -> voiceOptionLabelRes(RandomPromptContexts, normalizedRandomPromptContext(randomContext))
+            ?.let { stringResource(it) }.orEmpty()
+    }
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -747,8 +706,8 @@ private fun RandomPromptSummaryRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text(stringResource(R.string.editor_random_prompt_settings), fontWeight = FontWeight.SemiBold)
-                MutedText(contextLabel)
+                Text(stringResource(R.string.editor_msg_section), fontWeight = FontWeight.SemiBold)
+                MutedText(valueLabel)
             }
             Spacer(Modifier.width(12.dp))
             Text(

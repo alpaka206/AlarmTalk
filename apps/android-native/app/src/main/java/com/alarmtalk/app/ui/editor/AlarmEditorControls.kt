@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -194,9 +196,13 @@ internal fun DayTextChip(
     } else {
         weekendColor
     }
+    val interactionSource = remember { MutableInteractionSource() }
     Surface(
         onClick = onClick,
-        modifier = modifier.aspectRatio(1f),
+        modifier = modifier
+            .aspectRatio(1f)
+            .wakerPressScale(interactionSource),
+        interactionSource = interactionSource,
         shape = CircleShape,
         color = if (selected) {
             selectedContainerColor
@@ -307,12 +313,7 @@ internal fun PlayModeCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            text = stringResource(R.string.editor_play_mode_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
+        EditorSectionTitle(stringResource(R.string.editor_play_mode_title))
         PlayModeSelector(
             selected = selected,
             onSelect = onSelect,
@@ -368,6 +369,38 @@ internal fun PlayModeSelector(
     }
 }
 
+// 편집기 공용 세그먼트 선택기 — '재생 방식'과 '목소리/녹음·파일' 소스가 같은 트랙·크기·
+// 선택색(primaryContainer)을 쓰도록 통일한다. PlayModeChip 을 그대로 재사용해 높이·모서리·
+// 굵기가 일치한다(예전엔 소스가 M3 FilterChip 라 더 작고 선택색도 secondaryContainer 였다).
+@Composable
+internal fun EditorSegmentedSelector(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = WakerButtonShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        border = wakerCardBorder(),
+    ) {
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            options.forEach { (value, label) ->
+                PlayModeChip(
+                    label = label,
+                    selected = selected == value,
+                    onClick = { onSelect(value) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 internal fun PlayModeChip(
     label: String,
@@ -376,9 +409,13 @@ internal fun PlayModeChip(
     modifier: Modifier = Modifier,
     locked: Boolean = false,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Surface(
         onClick = onClick,
-        modifier = modifier.alpha(if (locked && !selected) 0.58f else 1f),
+        modifier = modifier
+            .wakerPressScale(interactionSource)
+            .alpha(if (locked && !selected) 0.58f else 1f),
+        interactionSource = interactionSource,
         shape = WakerChipShape,
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
@@ -463,8 +500,11 @@ internal fun freeBucketsFor(
     return FreeBucketOrder.filter { it in available }
 }
 
+// 문구 컨텍스트의 정규화·기본값용 정식 집합(back-compat/normalize 유지). preset 은 새 알람의
+// 보이지 않는 기본값이자 시스템 목소리 사전 렌더 트리거라 여기 남는다. 편집기 선택 목록은
+// 아래 EditorMessageContexts 를 따로 쓴다.
 internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
-    // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값. 무료 플랜은 이것만 사용 가능.
+    // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값(사전 렌더). 무료 플랜도 이것만.
     "preset" to R.string.editor2_ctx_preset,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
@@ -472,4 +512,17 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     "sleep" to R.string.editor2_ctx_sleep,
     "exercise" to R.string.editor2_ctx_exercise,
     "love" to R.string.editor2_ctx_love,
+)
+
+// '직접 입력'(랜덤 끄고 사용자가 문구를 직접 타이핑) 을 나타내는 특수 선택값.
+internal const val ManualMessageContext = "manual"
+
+// 편집기 '문구' 선택기에 노출하는 옵션 — 직접 입력 + 동적 문구(날씨·운세·운동·사랑).
+// 기본문구(preset)·식사·취침은 목록에서 제외한다(preset 은 보이지 않는 기본값으로만 유지).
+internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
+    "wake_weather" to R.string.editor2_ctx_wake_weather,
+    "wake_fortune" to R.string.editor2_ctx_wake_fortune,
+    "exercise" to R.string.editor2_ctx_exercise,
+    "love" to R.string.editor2_ctx_love,
+    ManualMessageContext to R.string.editor_msg_mode_manual,
 )

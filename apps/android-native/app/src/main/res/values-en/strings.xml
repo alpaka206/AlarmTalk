@@ -180,10 +180,10 @@
     <string name="editor_apply">Apply</string>
     <string name="editor_audio_clear">Clear</string>
     <string name="editor_audio_max_duration">Up to %1$d sec</string>
-    <string name="editor_audio_preview_play">Listen</string>
+    <string name="editor_audio_preview_play">Preview</string>
     <string name="editor_audio_preview_stop">Stop</string>
     <string name="editor_audio_preview_preparing">Preparing…</string>
-    <string name="editor_audio_record_or_upload">Record or upload a file</string>
+    <string name="editor_audio_record_or_upload">Record your own voice for the alarm.</string>
     <string name="editor_audio_upload_file">Upload file</string>
     <string name="editor_back">Back</string>
     <string name="editor_change">Change</string>
@@ -225,7 +225,7 @@
     <string name="editor_holiday_cold_cache">Loading…</string>
     <string name="editor_in_use">In use</string>
     <string name="editor_manual_input">Type manually</string>
-    <string name="editor_manual_input_placeholder">Enter the voice message you\'d like to hear in your alarm</string>
+    <string name="editor_manual_input_placeholder">Enter the message to play in your alarm</string>
     <string name="editor_minute_label">min</string>
     <string name="editor_minutes">%1$d min</string>
     <string name="editor_no_voice_profile">You don\'t have any voices to use yet.</string>
@@ -245,6 +245,10 @@
     <string name="editor_quiet_hours_label">Hours they don\'t receive alarms: %1$s</string>
     <string name="editor_random_prompt_settings">Random message settings</string>
     <string name="editor_random_prompt_use">Use random phrases</string>
+    <string name="editor_random_prompt_use_hint">Picks a fitting phrase for each alarm.</string>
+    <string name="editor_msg_section">Message</string>
+    <string name="editor_msg_mode_manual">Type it yourself</string>
+    <string name="editor_msg_mode_preset">Default greeting</string>
     <string name="editor_recipient_empty">They\'ll appear here once they allow you to set their alarms.</string>
     <string name="editor_recipient_header">Who receives the alarm</string>
     <string name="editor_recipient_single_only">This alarm is set for just one selected person.</string>
@@ -252,7 +256,7 @@
     <string name="editor_ringtone_picker_title">Choose alarm sound</string>
     <string name="editor_save_blocked_enter_message_or_random">Please enter a phrase to play or turn on random phrases.</string>
     <string name="editor_save_blocked_random_prompt_incomplete">In random phrase settings, please fill in the weather location and fortune info.</string>
-    <string name="editor_save_blocked_record_or_select_file">Please record the voice to play or pick a file.</string>
+    <string name="editor_save_blocked_record_or_select_file">Please record the voice to play.</string>
     <string name="editor_save_blocked_select_voice">Please choose the voice to hear in the alarm.</string>
     <string name="editor_save_blocked_voice_unusable">The selected voice can\'t be used. Please choose another voice.</string>
     <string name="editor_save_changes">Save changes</string>
@@ -295,7 +299,7 @@
     <string name="editor_voice_repeat_once">Just once</string>
     <string name="editor_voice_repeat_title">Repeat playback</string>
     <string name="editor_voice_select">Select voice</string>
-    <string name="editor_voice_source_local">Recording/file</string>
+    <string name="editor_voice_source_local">Recording</string>
     <string name="editor_voice_source_tts">Voice</string>
     <string name="editor_voice_to_hear">Voice to hear in the alarm</string>
     <string name="editor_voice_volume">Voice volume</string>
@@ -329,7 +333,7 @@
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_intro">Once saved, alarm messages are created from the conditions you choose. If you don\'t save, you\'ll go back to typing manually.</string>
     <string name="editorp_random_save_button">Save</string>
-    <string name="editorp_random_title">Random message settings</string>
+    <string name="editorp_random_title">Message</string>
     <string name="editorp_random_weather_region_required">To use weather-based messages, a city is required.</string>
     <string name="editorp_random_weather_region_saved">Using the weather region your partner saved.</string>
     <string name="editorp_random_weather_region_title">Weather region</string>
@@ -407,11 +411,11 @@
     <string name="settings_holiday_country_title">Holiday calendar</string>
     <string name="settings_logout_confirm_title">Log out?</string>
     <string name="settings_marketing_load_failed">Couldn\'t load · Tap to retry</string>
-    <string name="hs_start_now">Choose the time and voice.</string>
-    <string name="hs_empty_card_label">No alarms yet.</string>
-    <string name="hs_empty_card_helper">Choose the time and voice.</string>
+    <string name="hs_empty_card_helper">Wake up to a voice you love.</string>
     <string name="hs_status_inactive">No active alarms.</string>
-    <string name="hs_status_next_alarm">Next alarm %1$s</string>
+    <string name="hs_status_ring_soon">Ringing soon.</string>
+    <string name="hs_status_ring_in">Rings in %1$s.</string>
+    <string name="hs_alarm_row_date_voice">%1$s · %2$s</string>
     <string name="hs_theme_dark_desc">A dark screen that\'s easy on the eyes at night.</string>
     <string name="hs_theme_dark_title">Dark</string>
     <string name="hs_theme_dialog_title">Choose theme</string>

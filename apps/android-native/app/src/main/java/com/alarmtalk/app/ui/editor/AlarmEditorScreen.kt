@@ -14,6 +14,13 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -95,6 +102,9 @@ private enum class AudioPreviewTarget {
 private const val GUIDE_TARGET_SCHEDULE = "alarm_editor_schedule"
 private const val GUIDE_TARGET_PLAY_MODE = "alarm_editor_play_mode"
 private const val GUIDE_TARGET_SAVE = "alarm_editor_save"
+
+// 세부 설정 pane 슬라이드용 emphasized 이징(타임휠 세틀과 같은 계열의 감속 곡선).
+private val EditorPaneEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
 
 @Composable
 private fun alarmEditorCoachSteps(playModeItemIndex: Int) = listOf(
@@ -870,7 +880,8 @@ internal fun AlarmEditorScreen(
     }
 
     val editorHorizontalPadding = 24.dp
-    val editorBottomPadding = 12.dp
+    // 마지막 카드가 하단 고정 CTA divider 에 붙지 않도록 여유를 준다(구 12dp → 24dp).
+    val editorBottomPadding = 24.dp
     var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
     var randomPromptWasEnabledWhenOpened by remember { mutableStateOf(false) }
 
@@ -945,6 +956,16 @@ internal fun AlarmEditorScreen(
     }
 
     fun applyRandomPromptSettings(result: RandomPromptSettingsResult) {
+        if (result.randomContext == ManualMessageContext) {
+            // '직접 입력' 선택 → 랜덤 끄고, 다이얼로그에서 받은 문구를 그대로 쓴다.
+            editor.voiceRandomPrompt = false
+            editor.voiceText = result.manualText.take(200)
+            editor.voiceLanguage = appVoiceLanguage
+            editor.clearAudio()
+            editor.clearTtsMeta()
+            settingsDetailPanel = null
+            return
+        }
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
         editor.voiceLanguage = appVoiceLanguage
@@ -1044,18 +1065,24 @@ internal fun AlarmEditorScreen(
                     .fillMaxWidth()
                     .weight(1f),
                 contentPadding = PaddingValues(top = 8.dp, bottom = editorBottomPadding),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                // 섹션 사이(20)를 섹션 내부 헤더→콘텐츠(10~12)보다 확실히 크게 벌려 그룹핑을 살린다.
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 item {
-                    AlarmTimePickerCard(
-                        hour = editor.hour,
-                        minute = editor.minute,
-                        onTimeChange = { selectedHour, selectedMinute ->
-                            editor.hour = selectedHour
-                            editor.minute = selectedMinute
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    // 타임휠 히어로도 나머지 카드와 같은 24dp 거터에 정렬한다(단일 출처
+                    // editorHorizontalPadding). 예전엔 내부 Surface만 8dp 인셋이라 좌우로
+                    // 16dp씩 삐져나와 '붕 뜬' 인상을 줬다.
+                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                        AlarmTimePickerCard(
+                            hour = editor.hour,
+                            minute = editor.minute,
+                            onTimeChange = { selectedHour, selectedMinute ->
+                                editor.hour = selectedHour
+                                editor.minute = selectedMinute
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 item {
@@ -1280,7 +1307,21 @@ internal fun AlarmEditorScreen(
             }
         }
 
-        when (settingsDetailPanel) {
+        // 세부 설정 pane 은 하드컷 대신 우측에서 밀려 들어오고 우측으로 나간다(드릴인 서브페이지
+        // 문법). 빠른 픽 성격의 바텀시트(테마·수신자·목소리)와 달리 이건 옵션이 여럿인 전체 페이지라
+        // push 슬라이드가 맞다. exit 중에도 내용이 필요하므로 마지막 패널을 기억해 렌더한다.
+        var lastDetailPanel by remember { mutableStateOf(settingsDetailPanel) }
+        LaunchedEffect(settingsDetailPanel) {
+            if (settingsDetailPanel != null) lastDetailPanel = settingsDetailPanel
+        }
+        AnimatedVisibility(
+            visible = settingsDetailPanel != null,
+            enter = slideInHorizontally(tween(280, easing = EditorPaneEasing)) { it } +
+                fadeIn(tween(160)),
+            exit = slideOutHorizontally(tween(220, easing = EditorPaneEasing)) { it } +
+                fadeOut(tween(180)),
+        ) {
+        when (lastDetailPanel) {
             "snooze" -> SnoozeSettingsPane(
                 snoozeEnabled = editor.snoozeEnabled,
                 snoozeMinutes = editor.snoozeMinutes,
@@ -1321,7 +1362,9 @@ internal fun AlarmEditorScreen(
             )
 
             "random_prompt" -> RandomPromptSettingsPane(
-                randomContext = editor.voiceRandomContext,
+                // 직접 입력 모드면 pane 에서 '직접 입력'이 선택돼 보이도록 manual 을 넘긴다.
+                randomContext = if (editor.voiceRandomPrompt) editor.voiceRandomContext else ManualMessageContext,
+                manualText = editor.voiceText,
                 weatherCountry = editor.voiceWeatherCountry,
                 weatherCity = editor.voiceWeatherCity,
                 savedWeatherCountry = activeDynamicPromptPreferences.weatherCountry,
@@ -1347,6 +1390,7 @@ internal fun AlarmEditorScreen(
                 onRepeatChange = { editor.voiceRepeat = it },
                 onDismiss = { settingsDetailPanel = null },
             )
+        }
         }
 
         if (usageGuideVisible) {

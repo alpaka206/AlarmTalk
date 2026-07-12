@@ -115,11 +115,14 @@ internal fun AlarmEditorTopBar(
     }
 }
 
+// 편집기 섹션 헤더 단일 출처. '재생 방식'·'세부 설정'이 이미 쓰던 titleMedium/Bold/onBackground
+// 규격으로 맞춰, 각 파일에 흩어진 인라인 Text 대신 이 컴포저블로 통일한다.
 @Composable
-internal fun EditorSectionTitle(title: String) {
+internal fun EditorSectionTitle(title: String, modifier: Modifier = Modifier) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleLarge,
+        modifier = modifier,
+        style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onBackground,
     )

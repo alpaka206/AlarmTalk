@@ -1,13 +1,21 @@
 package com.alarmtalk.app
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 
@@ -71,3 +79,26 @@ internal fun wakerOutlinedButtonColors() =
         contentColor = MaterialTheme.colorScheme.onSurface,
         disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f),
     )
+
+/**
+ * 눌림 스케일 피드백(0.97) — 카드형 프레서블 공통 토큰. 리플과 별개로 누르는 순간
+ * 살짝 눌리는 물성을 줘 '듣고 있다'는 즉각 반응을 만든다. 스와이프 등 드래그 제스처와
+ * 겹치는 행(AlarmRow)에는 쓰지 않는다(제스처 시작마다 움찔거림).
+ * 사용: 컴포넌트에 같은 interactionSource 를 넘기고 이 Modifier 를 붙인다.
+ */
+@Composable
+internal fun Modifier.wakerPressScale(interactionSource: InteractionSource): Modifier {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "wakerPressScale",
+    )
+    return graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+}

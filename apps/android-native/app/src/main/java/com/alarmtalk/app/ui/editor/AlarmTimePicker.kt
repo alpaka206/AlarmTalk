@@ -89,9 +89,7 @@ internal fun AlarmTimePickerCard(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(34.dp),
             color = wheelBackgroundColor,
         ) {
@@ -99,8 +97,10 @@ internal fun AlarmTimePickerCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(itemHeight * 3 + verticalWheelPadding * 2)
-                    .padding(horizontal = 22.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                    // 외곽이 8→24dp 로 정렬되며 콘텐츠 폭이 32dp 줄어든 만큼, 숫자 컬럼 폭을
+                    // 지키려고 비핵심 여백(행 패딩 22→12, 컬럼 간격 16→12)에서 정확히 32dp 회수.
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AmPmWheelColumn(

@@ -6,6 +6,12 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -546,7 +552,14 @@ internal fun AlarmTalkApp(
             }
         },
         floatingActionButton = {
-            if (showAppChrome && selectedTab == NativeTab.Alarms && alarms.isNotEmpty()) {
+            // 빈 상태↔리스트 전환 때 하드컷 대신 스케일+페이드. scale 0 에서 시작하지 않고
+            // (무에서 튀어나오는 느낌 방지) 퇴장은 진입보다 빠르게 끊는다.
+            AnimatedVisibility(
+                visible = showAppChrome && selectedTab == NativeTab.Alarms && alarms.isNotEmpty(),
+                enter = scaleIn(initialScale = 0.85f) + fadeIn(),
+                exit = scaleOut(targetScale = 0.85f, animationSpec = tween(120)) +
+                    fadeOut(animationSpec = tween(120)),
+            ) {
                 FloatingActionButton(
                     onClick = ::requestCreateAlarm,
                     containerColor = MaterialTheme.colorScheme.primary,

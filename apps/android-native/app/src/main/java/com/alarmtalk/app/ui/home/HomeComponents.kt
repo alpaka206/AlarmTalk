@@ -1,5 +1,8 @@
 package com.alarmtalk.app
 
+import android.icu.text.MeasureFormat
+import android.icu.util.Measure
+import android.icu.util.MeasureUnit
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,10 +29,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.delay
+import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -53,13 +59,24 @@ internal fun HomeHeader(
     nextAlarm: AlarmEntity?,
     hasAnyAlarm: Boolean,
 ) {
+    // 절대 시각은 바로 아래 카드에 이미 있으니 헤더는 '남은 시간'을 말한다.
+    // 분이 바뀌는 경계마다 갱신해 화면을 켜둔 채로도 어긋나지 않게 한다.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(nextAlarm?.fireAtMillis) {
+        if (nextAlarm == null) return@LaunchedEffect
+        while (true) {
+            delay(60_000L - System.currentTimeMillis() % 60_000L)
+            now = System.currentTimeMillis()
+        }
+    }
     val statusText: String? = when {
         nextAlarm != null -> {
-            val period = stringResource(if (nextAlarm.hour < 12) R.string.rd2_am else R.string.rd2_pm)
-            stringResource(
-                R.string.hs_status_next_alarm,
-                "$period ${homeAlarmClockLabel(nextAlarm.hour, nextAlarm.minute)}",
-            )
+            val remainingMillis = nextAlarm.fireAtMillis - now
+            if (remainingMillis < 60_000L) {
+                stringResource(R.string.hs_status_ring_soon)
+            } else {
+                stringResource(R.string.hs_status_ring_in, remainingDurationLabel(remainingMillis))
+            }
         }
         hasAnyAlarm -> stringResource(R.string.hs_status_inactive)
         else -> null
@@ -67,14 +84,28 @@ internal fun HomeHeader(
     ScreenHeader(
         title = stringResource(R.string.hs_home_title),
         subtitle = statusText,
-        titleStyle = MaterialTheme.typography.titleLarge,
     )
 }
 
-private fun homeAlarmClockLabel(hour: Int, minute: Int): String {
-    val hour12 = hour % 12
-    val displayHour = if (hour12 == 0) 12 else hour12
-    return "$displayHour:${"%02d".format(minute)}"
+/** "13시간 40분"/"2일 5시간" — 다음 울림까지 남은 시간(분 단위 올림, 상위 두 단위만 노출). */
+private fun remainingDurationLabel(remainingMillis: Long): String {
+    val totalMinutes = ((remainingMillis + 59_999L) / 60_000L).toInt()
+    val days = totalMinutes / (24 * 60)
+    val hours = totalMinutes % (24 * 60) / 60
+    val minutes = totalMinutes % 60
+    val measures = when {
+        days > 0 -> listOfNotNull(
+            Measure(days, MeasureUnit.DAY),
+            Measure(hours, MeasureUnit.HOUR).takeIf { hours > 0 },
+        )
+        hours > 0 -> listOfNotNull(
+            Measure(hours, MeasureUnit.HOUR),
+            Measure(minutes, MeasureUnit.MINUTE).takeIf { minutes > 0 },
+        )
+        else -> listOf(Measure(minutes, MeasureUnit.MINUTE))
+    }
+    return MeasureFormat.getInstance(Locale.getDefault(), MeasureFormat.FormatWidth.SHORT)
+        .formatMeasures(*measures.toTypedArray())
 }
 
 // 전체 탭 — 우측 상단 프로필 드롭다운 메뉴를 페이지로 승격한 것(토스 설정 패턴).
