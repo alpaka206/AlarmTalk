@@ -671,6 +671,13 @@
     <string name="voices_preparing">Preparing</string>
     <string name="voices_preparing_audio">Preparing your audio.</string>
     <string name="voices_preview_play_failed">Couldn\'t play the preview.</string>
+    <string name="voices_confirm_new_title">‘%1$s’ voice is ready</string>
+    <string name="voices_confirm_new_body">This voice will wake you in the morning. Give it a listen — you can delete it if it\'s not right. You can change your voice once a month.</string>
+    <string name="voices_confirm_new_preview">Preview</string>
+    <string name="voices_confirm_new_preview_loading">Creating…</string>
+    <string name="voices_confirm_new_preview_stop">Stop</string>
+    <string name="voices_confirm_new_keep">Use this voice</string>
+    <string name="voices_confirm_new_delete">Delete</string>
     <string name="voices_previous">Back</string>
     <string name="voices_record_done_duration">Recorded · %1$s</string>
     <string name="voices_record_script_title">Read this script aloud</string>

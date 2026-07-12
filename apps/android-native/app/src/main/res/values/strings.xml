@@ -681,6 +681,13 @@
     <string name="voices_preparing">준비 중</string>
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
     <string name="voices_preview_play_failed">미리듣기를 재생하지 못했어요.</string>
+    <string name="voices_confirm_new_title">‘%1$s’ 목소리를 만들었어요</string>
+    <string name="voices_confirm_new_body">이 목소리로 아침을 깨워 드릴게요. 미리 들어보고 마음에 안 들면 삭제할 수 있어요. 목소리는 한 달에 한 번만 바꿀 수 있어요.</string>
+    <string name="voices_confirm_new_preview">미리듣기</string>
+    <string name="voices_confirm_new_preview_loading">만드는 중…</string>
+    <string name="voices_confirm_new_preview_stop">정지</string>
+    <string name="voices_confirm_new_keep">이 목소리로 할게요</string>
+    <string name="voices_confirm_new_delete">삭제</string>
     <string name="voices_previous">이전</string>
     <string name="voices_record_done_duration">녹음 완료 · %1$s</string>
     <string name="voices_record_script_title">아래 대사를 따라 읽어 주세요</string>

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +40,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -261,6 +263,14 @@ internal fun VoiceProfileManagementPanel(
     // 지금 인사말 샘플을 재생 중인 기본 목소리 id (재생 아이콘 토글용).
     var playingGreetingVoiceId by remember { mutableStateOf<String?>(null) }
     var greetingPreviewRequestId by remember { mutableIntStateOf(0) }
+    // 방금 등록한 목소리 확인(미리듣기·유지·삭제) 다이얼로그. 목소리는 한 달에 한 번만
+    // 바꿀 수 있어, 등록 직후 어떤 목소리로 깨워줄지 들어보고 결정하게 한다.
+    var confirmNewVoice by remember { mutableStateOf<VoiceProfile?>(null) }
+    var confirmPreviewBusy by remember { mutableStateOf(false) }
+    var confirmPreviewPlaying by remember { mutableStateOf(false) }
+    // 등록 제출 후 새로 생긴 목소리를 감지하기 위한 스냅샷(제출 직전 목소리 id 집합).
+    var awaitingRegisteredVoice by remember { mutableStateOf(false) }
+    var idsBeforeRegister by remember { mutableStateOf<Set<String>>(emptySet()) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
@@ -354,6 +364,73 @@ internal fun VoiceProfileManagementPanel(
                     localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
                 }
             }
+        }
+    }
+
+    // 방금 등록한 목소리로 기본 모닝콜(고정 프리셋)을 즉석 생성해 들려준다. 다시 누르면 정지.
+    // random preset 이라 직접 입력 미터링을 소비하지 않고 서버 캐시로 재생성도 저렴하다.
+    fun previewRegisteredVoice(voice: VoiceProfile) {
+        if (confirmPreviewPlaying) {
+            stopMediaPreview(invalidateGreetingPreview = false)
+            confirmPreviewPlaying = false
+            return
+        }
+        if (confirmPreviewBusy) return
+        scope.launch {
+            stopMediaPreview(invalidateGreetingPreview = false)
+            confirmPreviewBusy = true
+            runCatching {
+                val response = onGenerateTts(
+                    TtsGenerateRequest(
+                        voiceProfileId = voice.id,
+                        category = "morning",
+                        language = "ko",
+                        random = true,
+                        randomContext = "preset",
+                        listenerTitle = voice.listenerTitle,
+                    ),
+                )
+                val cached = withContext(Dispatchers.IO) {
+                    val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                    audioStore.cacheGeneratedAudio(
+                        bytes = bytes,
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" },
+                        displayName = "confirm_${voice.id}",
+                        cacheKey = "confirm_${response.messageId}",
+                        messageId = response.messageId,
+                    )
+                }
+                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
+                    ?: error("Failed to create preview player.")
+                mediaPlayer = player.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                        confirmPreviewPlaying = false
+                    }
+                    start()
+                }
+                confirmPreviewPlaying = true
+            }.onFailure { error ->
+                AlarmTalkLog.reportError("Failed to preview registered voice", error)
+                localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
+            }
+            confirmPreviewBusy = false
+        }
+    }
+
+    // 등록이 끝나면(voiceProfileBusy 가 false 로 떨어지면) 새로 생긴 내 목소리를 잡아 확인 창을 연다.
+    LaunchedEffect(voiceProfileBusy, voiceProfiles) {
+        if (awaitingRegisteredVoice && !voiceProfileBusy) {
+            val newVoice = voiceProfiles.firstOrNull {
+                it.isSystem != true &&
+                    !it.id.startsWith("local-pending-") &&
+                    it.id !in idsBeforeRegister &&
+                    (it.status == null || it.status == "ready")
+            }
+            awaitingRegisteredVoice = false
+            if (newVoice != null) confirmNewVoice = newVoice
         }
     }
 
@@ -642,6 +719,12 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         if (createPreparing) return
+        // 등록 완료 후 새 목소리 감지용 스냅샷(등록 확인 창 트리거).
+        idsBeforeRegister = voiceProfiles
+            .filter { !it.id.startsWith("local-pending-") }
+            .map { it.id }
+            .toSet()
+        awaitingRegisteredVoice = true
         if (inputMode == VoiceCaptureMode.Record) {
             val audio = selectedAudio ?: run {
                 localMessage = context.getString(R.string.voices_prepare_recording_first)
@@ -1193,6 +1276,62 @@ internal fun VoiceProfileManagementPanel(
             onFinish = {
                 usageGuideStore.markSeen(UsageGuideStore.GUIDE_VOICE_CREATE)
                 voiceGuideVisible = false
+            },
+        )
+    }
+
+    // 등록 직후 확인 창 — 이 목소리로 아침을 깨워줄지 미리 듣고 유지/삭제를 고른다.
+    confirmNewVoice?.let { voice ->
+        fun closeConfirm() {
+            stopMediaPreview(invalidateGreetingPreview = false)
+            confirmPreviewPlaying = false
+            confirmNewVoice = null
+        }
+        AlertDialog(
+            onDismissRequest = { closeConfirm() },
+            shape = WakerDialogShape,
+            title = { Text(stringResource(R.string.voices_confirm_new_title, voice.name)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = stringResource(R.string.voices_confirm_new_body),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = { previewRegisteredVoice(voice) },
+                        enabled = !confirmPreviewBusy,
+                        shape = WakerButtonShape,
+                        colors = wakerOutlinedButtonColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            when {
+                                confirmPreviewBusy -> stringResource(R.string.voices_confirm_new_preview_loading)
+                                confirmPreviewPlaying -> stringResource(R.string.voices_confirm_new_preview_stop)
+                                else -> stringResource(R.string.voices_confirm_new_preview)
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { closeConfirm() }) {
+                    Text(stringResource(R.string.voices_confirm_new_keep))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteVoiceProfile(voice.id)
+                        closeConfirm()
+                    },
+                ) {
+                    Text(
+                        text = stringResource(R.string.voices_confirm_new_delete),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             },
         )
     }
