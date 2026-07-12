@@ -194,7 +194,7 @@
     <string name="editor_error_crop_save_failed">Couldn\'t save the selected section.</string>
     <string name="editor_error_deleted_voice_cannot_edit">This voice was deleted, so the phrase can\'t be edited. Please choose another voice.</string>
     <string name="editor_error_enter_message_or_random">Please enter a voice message or use a random phrase.</string>
-    <string name="editor_error_family_alarm_lead_too_soon">Alarms for others can be set for at least 30 min from now.</string>
+    <string name="editor_error_family_alarm_lead_too_soon">Set alarms for others to %1$s or later — they need 30 min to get ready.</string>
     <string name="editor_error_family_alarm_time_unavailable">The other person can\'t receive alarms at this time.</string>
     <string name="editor_error_fortune_info_required">For phrases with fortune, please enter gender, date of birth, and time of birth.</string>
     <string name="editor_error_mic_permission_required">Microphone permission is required.</string>

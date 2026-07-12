@@ -196,7 +196,7 @@
     <string name="editor_error_crop_save_failed">선택한 구간을 저장하지 못했어요.</string>
     <string name="editor_error_deleted_voice_cannot_edit">삭제된 목소리라 문구를 수정할 수 없어요. 다른 목소리를 선택해 주세요.</string>
     <string name="editor_error_enter_message_or_random">음성 메시지를 입력하거나 랜덤 문구를 사용해 주세요.</string>
-    <string name="editor_error_family_alarm_lead_too_soon">상대 알람은 지금부터 30분 뒤부터 설정할 수 있어요.</string>
+    <string name="editor_error_family_alarm_lead_too_soon">상대 알람은 %1$s 이후로 맞춰 주세요. 상대가 준비할 수 있게 30분 여유가 필요해요.</string>
     <string name="editor_error_family_alarm_time_unavailable">상대가 받을 수 없는 시간이에요.</string>
     <string name="editor_error_fortune_info_required">운세가 들어간 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요.</string>
     <string name="editor_error_mic_permission_required">마이크 권한이 필요해요.</string>
