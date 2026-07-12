@@ -421,6 +421,9 @@ internal fun VoiceProfileManagementPanel(
                 }
                 confirmPreviewPlaying = true
             }.onFailure { error ->
+                // 다이얼로그를 닫아 코루틴이 취소된 경우는 오류가 아니다 — 취소는 되던져
+                // 허위 "미리듣기 실패" 메시지가 뜨지 않게 한다.
+                if (error is kotlin.coroutines.cancellation.CancellationException) throw error
                 AlarmTalkLog.reportError("Failed to preview registered voice", error)
                 localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
             }
@@ -714,6 +717,10 @@ internal fun VoiceProfileManagementPanel(
     // 실제 등록 요청 직전에 호출 — 현재 목소리 id 스냅샷을 찍고 확인창 감지를 켠다.
     // 등록이 끝나(voiceProfileBusy↓) 새 id 가 나타나면 확인창을 연다.
     fun armRegistrationConfirm() {
+        // 등록이 실제로 시작되지 못하는 경우(권한 없음·한도 도달)에는 무장하지 않는다.
+        // createVoiceProfiles 가 busy 를 켜기 전에 early-return 하면 arm 이 잔존해, 나중에
+        // 무관한 목소리 변화에 확인창이 잘못 뜨는 것을 막는다(코드리뷰 지적).
+        if (!canCreateVoice || isLimitReached) return
         idsBeforeRegister = voiceProfiles
             .filter { !it.id.startsWith("local-pending-") }
             .map { it.id }
