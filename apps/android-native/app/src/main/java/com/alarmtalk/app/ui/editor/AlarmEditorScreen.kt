@@ -92,7 +92,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private enum class AudioPreviewTarget {
-    SelectedCrop,
     CachedAudio,
     StockClip,
 }
@@ -197,14 +196,9 @@ internal fun AlarmEditorScreen(
     var isSaving by remember { mutableStateOf(false) }
     // 진행 중인 TTS 생성 Job 을 추적해, 사용자가 도중에 시각을 변경하면 취소한다.
     var generationJob by remember { mutableStateOf<Job?>(null) }
-    var localInputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
     // 실제 마이크 입력 진폭(0~1) — 녹음 카드의 미니 레벨 바가 소비한다.
     var recordingLevel by remember { mutableStateOf(0f) }
-    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
-    var selectedFileDurationMillis by remember { mutableStateOf<Long?>(null) }
-    var cropStartMillis by remember { mutableStateOf(0L) }
-    var cropEndMillis by remember { mutableStateOf(AlarmAudioLimits.MAX_DURATION_MILLIS) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var previewTarget by remember { mutableStateOf<AudioPreviewTarget?>(null) }
     var previewPreparing by remember { mutableStateOf(false) }
@@ -396,51 +390,6 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    fun prepareSelectedAudio(uri: Uri) {
-        stopPreview()
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) { audioStore.readDurationMillis(uri) }
-                    ?: throw IllegalArgumentException(context.getString(R.string.editor_error_audio_duration_unreadable))
-            }.onSuccess { durationMillis ->
-                selectedFileUri = uri
-                selectedFileDurationMillis = durationMillis
-                cropStartMillis = 0L
-                cropEndMillis = durationMillis.coerceAtMost(AlarmAudioLimits.MAX_DURATION_MILLIS)
-                editor.clearAudio()
-                audioMessage = null
-            }
-                .onFailure { error ->
-                    AlarmTalkLog.reportError("Failed to cache selected audio", error)
-                    audioMessage = userFacingError(error, context.getString(R.string.editor_error_selected_audio_unusable))
-                }
-        }
-    }
-
-    suspend fun cacheSelectedCrop(): CachedAlarmAudio {
-        val uri = selectedFileUri ?: throw IllegalStateException(context.getString(R.string.editor_error_select_file))
-        val cropDurationMillis = (cropEndMillis - cropStartMillis).coerceIn(1_000L, AlarmAudioLimits.MAX_DURATION_MILLIS)
-        return withContext(Dispatchers.IO) {
-            audioStore.cacheFromUri(
-                sourceUri = uri,
-                maxDurationMillis = cropDurationMillis,
-                startMillis = cropStartMillis,
-            )
-        }
-    }
-
-    fun playSelectedCrop() {
-        val uri = selectedFileUri ?: return
-        val previewDurationMillis = (cropEndMillis - cropStartMillis)
-            .coerceIn(1_000L, AlarmAudioLimits.MAX_DURATION_MILLIS)
-        startPreparedPreview(
-            uri = uri,
-            target = AudioPreviewTarget.SelectedCrop,
-            startMillis = cropStartMillis,
-            stopAfterMillis = previewDurationMillis,
-        )
-    }
-
     fun playCachedAudio() {
         val audioUri = editor.localAudioUri ?: return
         startPreparedPreview(
@@ -526,8 +475,6 @@ internal fun AlarmEditorScreen(
             }.onSuccess { audio ->
                 isRecording = false
                 recordingElapsedMillis = audio.durationMillis ?: recordingElapsedMillis
-                selectedFileUri = null
-                selectedFileDurationMillis = null
                 applyCachedAudio(audio)
             }.onFailure { error ->
                 isRecording = false
@@ -594,22 +541,6 @@ internal fun AlarmEditorScreen(
             return
         }
         if (editor.voiceSource == VoiceSources.LOCAL_AUDIO) {
-            if (selectedFileUri != null) {
-                scope.launch {
-                    isSaving = true
-                    runCatching {
-                        cacheSelectedCrop()
-                    }.onSuccess { audio ->
-                        applyCachedAudio(audio)
-                        submitDraft(editor.toDraft())
-                    }.onFailure { error ->
-                        AlarmTalkLog.reportError("Failed to cache cropped local alarm audio", error)
-                        audioMessage = userFacingError(error, context.getString(R.string.editor_error_crop_save_failed))
-                    }
-                    isSaving = false
-                }
-                return
-            }
             if (editor.localAudioUri.isNullOrBlank()) {
                 audioMessage = context.getString(R.string.editor_error_record_or_select_file)
                 return
@@ -795,9 +726,6 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    val pickAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) prepareSelectedAudio(uri)
-    }
     val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             startRecording()
@@ -834,8 +762,6 @@ internal fun AlarmEditorScreen(
             stopPreview()
             editor.playMode = AlarmPlayModes.ALARM_ONLY
             editor.clearAudio()
-            selectedFileUri = null
-            selectedFileDurationMillis = null
             audioMessage = context.getString(R.string.editor_error_voice_alarm_login_required)
         }
     }
@@ -921,7 +847,7 @@ internal fun AlarmEditorScreen(
     val editorSaveBlockedReason: String? = when {
         editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
         editor.voiceSource == VoiceSources.LOCAL_AUDIO ->
-            if (selectedFileUri != null || !editor.localAudioUri.isNullOrBlank()) {
+            if (!editor.localAudioUri.isNullOrBlank()) {
                 null
             } else {
                 stringResource(R.string.editor_save_blocked_record_or_select_file)
@@ -1178,32 +1104,11 @@ internal fun AlarmEditorScreen(
                                 freeVoiceTier = freeVoiceTier,
                                 onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,
-                                localInputMode = localInputMode,
                                 isRecording = isRecording,
                                 recordingElapsedMillis = recordingElapsedMillis,
                                 recordingLevel = recordingLevel,
-                                selectedFileDurationMillis = selectedFileDurationMillis,
-                                cropStartMillis = cropStartMillis,
-                                cropEndMillis = cropEndMillis,
-                                isCropPreviewActive = previewTarget == AudioPreviewTarget.SelectedCrop,
                                 isCachedAudioPreviewActive = previewTarget == AudioPreviewTarget.CachedAudio,
                                 isPreviewPreparing = previewPreparing,
-                                onLocalInputModeChange = { mode ->
-                                    if (!isRecording && mode != localInputMode) {
-                                        stopPreview()
-                                        if (mode == VoiceCaptureMode.File) {
-                                            editor.clearAudio()
-                                        } else {
-                                            selectedFileUri = null
-                                            selectedFileDurationMillis = null
-                                            cropStartMillis = 0L
-                                            cropEndMillis = AlarmAudioLimits.MAX_DURATION_MILLIS
-                                        }
-                                        audioMessage = null
-                                        localInputMode = mode
-                                    }
-                                },
-                                onPick = { pickAudioLauncher.launch("audio/*") },
                                 onRecord = {
                                     if (isRecording) {
                                         stopRecording()
@@ -1215,21 +1120,12 @@ internal fun AlarmEditorScreen(
                                         recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     }
                                 },
-                                onCropChange = { start, end ->
-                                    stopPreview()
-                                    cropStartMillis = start
-                                    cropEndMillis = end
-                                    editor.clearAudio()
-                                },
-                                onPreviewCrop = { playSelectedCrop() },
                                 onPreviewAudio = { playCachedAudio() },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
                                 onClear = {
                                     stopPreview()
                                     editor.clearAudio()
-                                    selectedFileUri = null
-                                    selectedFileDurationMillis = null
                                     audioMessage = context.getString(R.string.editor_voice_audio_cleared)
                                 },
                             )

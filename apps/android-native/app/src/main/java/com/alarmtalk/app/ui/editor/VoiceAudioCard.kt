@@ -78,21 +78,12 @@ internal fun VoiceAudioCard(
     freeVoiceTier: Boolean,
     onLockedFeature: () -> Unit,
     audioMessage: String?,
-    localInputMode: VoiceCaptureMode,
     isRecording: Boolean,
     recordingElapsedMillis: Long,
     recordingLevel: Float,
-    selectedFileDurationMillis: Long?,
-    cropStartMillis: Long,
-    cropEndMillis: Long,
-    isCropPreviewActive: Boolean,
     isCachedAudioPreviewActive: Boolean,
     isPreviewPreparing: Boolean,
-    onLocalInputModeChange: (VoiceCaptureMode) -> Unit,
-    onPick: () -> Unit,
     onRecord: () -> Unit,
-    onCropChange: (Long, Long) -> Unit,
-    onPreviewCrop: () -> Unit,
     onPreviewAudio: () -> Unit,
     onCreateVoiceProfileClick: () -> Unit,
     onOpenRandomPromptSettings: () -> Unit,
@@ -282,7 +273,7 @@ internal fun VoiceAudioCard(
                     // 녹음 직후 "눌러서 녹음 시작"으로 되돌아가지 않게 완료 상태를 알린다.
                     // 미리듣기/삭제는 아래 공용 행이 담당하므로 여기서는 상태 표시만.
                     recordedDurationMillis = recordingElapsedMillis.takeIf {
-                        it > 0 && editor.localAudioUri != null && selectedFileDurationMillis == null
+                        it > 0 && editor.localAudioUri != null
                     },
                 )
                 if (editor.localAudioUri != null && !isRecording) {
@@ -313,7 +304,6 @@ internal fun VoiceAudioCard(
                 }
                 if (
                     editor.localAudioUri == null &&
-                    selectedFileDurationMillis == null &&
                     !isRecording
                 ) {
                     Text(
