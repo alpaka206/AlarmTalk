@@ -25,7 +25,6 @@ import {
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import {
-  readManualTtsUsage,
   refundManualTtsQuota,
   reserveManualTtsQuota,
   resolveManualTtsPool,
@@ -648,6 +647,8 @@ tts.post('/generate', async (c) => {
   }
 
   let freePlanRestricted = false;
+  // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
+  let callerUserPlan: string | null = null;
   const user = await db.execute({
     sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
@@ -656,6 +657,7 @@ tts.post('/generate', async (c) => {
   if (user.rows.length > 0) {
     const u = user.rows[0]!;
     const plan = u.plan as string;
+    callerUserPlan = plan ?? null;
 
     // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
     // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
@@ -745,6 +747,7 @@ tts.post('/generate', async (c) => {
   // 예약은 캐시 미스 뒤(합성 직전)에 하고, 예약됐는데 합성이 실패하면 catch 에서 환불.
   const isManualGeneration = !randomRequested && Boolean(resolvedUserPk);
   let manualQuotaPoolKey: string | null = null;
+  let manualQuotaMonth: string | null = null;
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
 
   try {
@@ -969,7 +972,7 @@ tts.post('/generate', async (c) => {
 
     // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.
     if (isManualGeneration) {
-      const pool = await resolveManualTtsPool(db, ownerIds, userPk);
+      const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
       const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
       if (!reservation.ok) {
         return c.json(
@@ -982,6 +985,7 @@ tts.post('/generate', async (c) => {
         );
       }
       manualQuotaPoolKey = pool.poolKey;
+      manualQuotaMonth = reservation.month;
       manualQuotaResult = {
         used: reservation.used,
         limit: reservation.limit,
@@ -1093,9 +1097,10 @@ tts.post('/generate', async (c) => {
     throw lastError;
   } catch (err) {
     // 쿼터를 예약했는데 합성이 끝내 실패했으면 카운터를 되돌린다(실패는 소비 안 함).
-    if (manualQuotaPoolKey) {
+    // 예약이 증가시킨 바로 그 월로 환불(월 경계를 넘겨 실패해도 정확히 복구).
+    if (manualQuotaPoolKey && manualQuotaMonth) {
       try {
-        await refundManualTtsQuota(db, manualQuotaPoolKey);
+        await refundManualTtsQuota(db, manualQuotaPoolKey, manualQuotaMonth);
       } catch (refundErr) {
         console.error('[tts/generate] manual quota refund failed', refundErr);
       }
@@ -1140,23 +1145,6 @@ tts.post('/generate', async (c) => {
       500,
     );
   }
-});
-
-// 이번 달 직접 입력 문구 만들기 남은 횟수(다이얼로그 표시용). 카운터를 소비하지 않는다.
-tts.get('/manual-quota', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
-  const db = getDB(c.env);
-
-  const pool = await resolveManualTtsPool(db, ownerIds, userPk);
-  const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
-  return c.json({
-    plan_key: pool.planKey,
-    limit: pool.limit,
-    used,
-    remaining: Math.max(0, pool.limit - used),
-  });
 });
 
 tts.get('/messages', async (c) => {

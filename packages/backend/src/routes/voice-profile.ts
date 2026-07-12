@@ -1186,6 +1186,17 @@ voiceProfile.delete('/:id', async (c) => {
     args: [id],
   });
 
+  // 이번 달 이 목소리 등록으로 소비한 '월 1회 변경' 슬롯을 되돌린다. 등록 직후 확인창에서
+  // '마음에 안 들면 삭제'를 안내하므로, 삭제하면 같은 달에 다른 목소리를 다시 등록할 수 있어야
+  // 한다. voice_profile_id 로 스코프해, 이전 달에 만든 목소리를 지워도 이번 달 슬롯엔 영향 없음.
+  await db.execute({
+    sql: `DELETE FROM voice_profile_change_ledger
+          WHERE voice_profile_id = ?
+            AND owner_user_id IN (${ph})
+            AND change_month = ${currentKstMonthSql()}`,
+    args: [id, ...ids],
+  });
+
   return c.json({ success: true, deleted: true });
 });
 

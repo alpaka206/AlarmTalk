@@ -82,6 +82,7 @@ import com.alarmtalk.app.ui.guide.UsageGuideStep
 import com.alarmtalk.app.ui.guide.UsageGuideStore
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -268,9 +269,14 @@ internal fun VoiceProfileManagementPanel(
     var confirmNewVoice by remember { mutableStateOf<VoiceProfile?>(null) }
     var confirmPreviewBusy by remember { mutableStateOf(false) }
     var confirmPreviewPlaying by remember { mutableStateOf(false) }
+    // 미리듣기 생성 코루틴 — 다이얼로그를 닫으면 취소해 늦은 재생/오디오 유출을 막는다.
+    var confirmPreviewJob by remember { mutableStateOf<Job?>(null) }
     // 등록 제출 후 새로 생긴 목소리를 감지하기 위한 스냅샷(제출 직전 목소리 id 집합).
     var awaitingRegisteredVoice by remember { mutableStateOf(false) }
     var idsBeforeRegister by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // 등록이 실제로 시작(voiceProfileBusy=true)된 것을 본 뒤에만 완료를 판정한다.
+    // (arm 직후 busy 는 ViewModel 에서 비동기로 켜지므로, 그 사이 무관한 sync 로 오발되는 것 차단.)
+    var sawRegisterBusy by remember { mutableStateOf(false) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
@@ -376,7 +382,7 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         if (confirmPreviewBusy) return
-        scope.launch {
+        confirmPreviewJob = scope.launch {
             stopMediaPreview(invalidateGreetingPreview = false)
             confirmPreviewBusy = true
             runCatching {
@@ -406,8 +412,10 @@ internal fun VoiceProfileManagementPanel(
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
                         it.release()
-                        if (mediaPlayer === it) mediaPlayer = null
-                        confirmPreviewPlaying = false
+                        if (mediaPlayer === it) {
+                            mediaPlayer = null
+                            confirmPreviewPlaying = false
+                        }
                     }
                     start()
                 }
@@ -420,18 +428,24 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 등록이 끝나면(voiceProfileBusy 가 false 로 떨어지면) 새로 생긴 내 목소리를 잡아 확인 창을 연다.
+    // 등록이 실제로 시작(busy=true)됐다가 끝(busy=false)나면 새로 생긴 내 목소리를 잡아 확인 창을 연다.
     LaunchedEffect(voiceProfileBusy, voiceProfiles) {
-        if (awaitingRegisteredVoice && !voiceProfileBusy) {
-            val newVoice = voiceProfiles.firstOrNull {
-                it.isSystem != true &&
-                    !it.id.startsWith("local-pending-") &&
-                    it.id !in idsBeforeRegister &&
-                    (it.status == null || it.status == "ready")
-            }
-            awaitingRegisteredVoice = false
-            if (newVoice != null) confirmNewVoice = newVoice
+        if (!awaitingRegisteredVoice) return@LaunchedEffect
+        if (voiceProfileBusy) {
+            sawRegisterBusy = true
+            return@LaunchedEffect
         }
+        // busy 를 아직 한 번도 못 봤다 = 등록이 아직 시작 전(arm→busy 사이 async gap). 대기.
+        if (!sawRegisterBusy) return@LaunchedEffect
+        val newVoice = voiceProfiles.firstOrNull {
+            it.isSystem != true &&
+                !it.id.startsWith("local-pending-") &&
+                it.id !in idsBeforeRegister &&
+                (it.status == null || it.status == "ready")
+        }
+        awaitingRegisteredVoice = false
+        sawRegisterBusy = false
+        if (newVoice != null) confirmNewVoice = newVoice
     }
 
     fun applySelectedAudio(audio: CachedAlarmAudio) {
@@ -697,6 +711,17 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // 실제 등록 요청 직전에 호출 — 현재 목소리 id 스냅샷을 찍고 확인창 감지를 켠다.
+    // 등록이 끝나(voiceProfileBusy↓) 새 id 가 나타나면 확인창을 연다.
+    fun armRegistrationConfirm() {
+        idsBeforeRegister = voiceProfiles
+            .filter { !it.id.startsWith("local-pending-") }
+            .map { it.id }
+            .toSet()
+        sawRegisterBusy = false
+        awaitingRegisteredVoice = true
+    }
+
     fun submitCreateProfile(name: String) {
         createSubmitAttempted = true
         val trimmedName = name.trim()
@@ -719,18 +744,15 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         if (createPreparing) return
-        // 등록 완료 후 새 목소리 감지용 스냅샷(등록 확인 창 트리거).
-        idsBeforeRegister = voiceProfiles
-            .filter { !it.id.startsWith("local-pending-") }
-            .map { it.id }
-            .toSet()
-        awaitingRegisteredVoice = true
         if (inputMode == VoiceCaptureMode.Record) {
             val audio = selectedAudio ?: run {
                 localMessage = context.getString(R.string.voices_prepare_recording_first)
                 return
             }
             if (voiceProfileDurationError(context, audio.durationMillis) != null) return
+            // 검증을 다 통과해 실제로 등록을 보낼 때만 확인창 감지를 무장한다(중단/검증실패 후
+            // 스냅샷이 남아 엉뚱한 목소리에 확인창이 뜨는 것을 막는다).
+            armRegistrationConfirm()
             onCreateVoiceProfile(
                 trimmedName,
                 audio,
@@ -751,6 +773,7 @@ internal fun VoiceProfileManagementPanel(
                 if (error != null) {
                     localMessage = error
                 } else {
+                    armRegistrationConfirm()
                     onCreateVoiceProfile(
                         trimmedName,
                         audio,
@@ -1283,7 +1306,12 @@ internal fun VoiceProfileManagementPanel(
     // 등록 직후 확인 창 — 이 목소리로 아침을 깨워줄지 미리 듣고 유지/삭제를 고른다.
     confirmNewVoice?.let { voice ->
         fun closeConfirm() {
+            // 생성 중인 미리듣기 코루틴을 취소해, 닫은 뒤(또는 삭제한 목소리로) 오디오가
+            // 뒤늦게 재생되는 것을 막는다.
+            confirmPreviewJob?.cancel()
+            confirmPreviewJob = null
             stopMediaPreview(invalidateGreetingPreview = false)
+            confirmPreviewBusy = false
             confirmPreviewPlaying = false
             confirmNewVoice = null
         }
