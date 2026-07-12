@@ -208,12 +208,14 @@
     <string name="editor_error_stock_clip_select_failed">Couldn\'t select the built-in voice.</string>
     <string name="editor_error_voice_alarm_login_required">Voice alarms are available after you sign in.</string>
     <string name="editor_error_voice_generation_failed">Voice generation failed.</string>
+    <string name="editor_error_manual_tts_quota">You\'ve used up this month\'s custom-message creations. They refill next month.</string>
     <string name="editor_error_voice_message_login_required">Voice messages are available after you sign in.</string>
     <string name="editor_error_weather_location_required">For phrases with weather, please enter a city.</string>
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>
     <string name="editor_expand">Expand</string>
     <string name="editor_family_alarm_set">The alarm for the other person is set.</string>
     <string name="editor_generated_voice_saved_local">The generated voice was saved locally.</string>
+    <string name="editor_generated_voice_saved_local_quota">Message created. %1$d left this month.</string>
     <string name="editor_holiday_off_subtitle">Includes substitute and temporary holidays</string>
     <string name="editor_holiday_off_title">Turn off on holidays</string>
     <string name="editor_holiday_country_label">Holiday calendar: %1$s</string>

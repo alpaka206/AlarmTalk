@@ -127,6 +127,18 @@ export async function reserveManualTtsQuota(
 }
 
 /**
+ * 이번 달 풀의 사용량을 읽는다(증가 없음). 조회 엔드포인트(남은 횟수 표시)용.
+ */
+export async function readManualTtsUsage(db: DbExecutor, poolKey: string): Promise<number> {
+  const res = await db.execute({
+    sql: `SELECT used_count FROM manual_tts_usage
+          WHERE pool_key = ? AND usage_month = ${KST_MONTH_SQL}`,
+    args: [poolKey],
+  });
+  return res.rows.length > 0 ? Number(res.rows[0]!.used_count ?? 0) : 0;
+}
+
+/**
  * 예약 후 생성이 실패했을 때 카운터를 1 되돌린다(환불). 0 밑으로는 내려가지 않는다.
  */
 export async function refundManualTtsQuota(db: DbExecutor, poolKey: string): Promise<void> {

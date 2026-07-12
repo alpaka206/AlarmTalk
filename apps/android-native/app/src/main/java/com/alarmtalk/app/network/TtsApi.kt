@@ -38,6 +38,15 @@ data class TtsGenerateResponse(
     @SerializedName("cache_hit") val cacheHit: Boolean = false,
     val provider: String? = null,
     @SerializedName("random_context") val randomContext: String? = null,
+    // 직접 입력(유료 수동 생성)일 때만 채워진다. 프리셋/동적/캐시히트는 null.
+    @SerializedName("manual_quota") val manualQuota: ManualQuota? = null,
+)
+
+/** 직접 입력 문구 만들기 월 한도 사용 현황. */
+data class ManualQuota(
+    val limit: Int = 0,
+    val used: Int = 0,
+    val remaining: Int = 0,
 )
 
 data class TtsMessageListResponse(

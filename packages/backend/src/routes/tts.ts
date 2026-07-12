@@ -25,6 +25,7 @@ import {
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import {
+  readManualTtsUsage,
   refundManualTtsQuota,
   reserveManualTtsQuota,
   resolveManualTtsPool,
@@ -1139,6 +1140,23 @@ tts.post('/generate', async (c) => {
       500,
     );
   }
+});
+
+// 이번 달 직접 입력 문구 만들기 남은 횟수(다이얼로그 표시용). 카운터를 소비하지 않는다.
+tts.get('/manual-quota', async (c) => {
+  const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
+  const db = getDB(c.env);
+
+  const pool = await resolveManualTtsPool(db, ownerIds, userPk);
+  const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+  return c.json({
+    plan_key: pool.planKey,
+    limit: pool.limit,
+    used,
+    remaining: Math.max(0, pool.limit - used),
+  });
 });
 
 tts.get('/messages', async (c) => {

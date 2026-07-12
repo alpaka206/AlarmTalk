@@ -68,6 +68,7 @@ import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -715,11 +716,25 @@ internal fun AlarmEditorScreen(
                     listenerTitle = listenerTitleForSave,
                 )
                 editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
-                audioMessage = context.getString(R.string.editor_generated_voice_saved_local)
+                // 직접 입력(유료 수동 생성)이면 이번 달 남은 횟수를 함께 알려준다.
+                val manualQuota = response.manualQuota
+                audioMessage = if (manualQuota != null) {
+                    context.getString(
+                        R.string.editor_generated_voice_saved_local_quota,
+                        manualQuota.remaining,
+                    )
+                } else {
+                    context.getString(R.string.editor_generated_voice_saved_local)
+                }
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                audioMessage = when (apiErrorCode(error)) {
+                    "MANUAL_TTS_QUOTA_EXCEEDED" ->
+                        context.getString(R.string.editor_error_manual_tts_quota)
+                    else ->
+                        userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                }
             }
             isSaving = false
             generationJob = null
