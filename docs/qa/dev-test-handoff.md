@@ -1,7 +1,27 @@
 # Dev 테스트 핸드오프
 
-> 세션 재개용 라이브 문서. 마지막 갱신 **2026-07-12**. 상태가 바뀌면 이 파일을 갱신/정리한다.
+> 세션 재개용 라이브 문서. 마지막 갱신 **2026-07-13**. 상태가 바뀌면 이 파일을 갱신/정리한다.
 > (다른 컴퓨터에서도 `git pull` 후 이 문서를 읽으면 바로 이어서 진행 가능.)
+
+## 2026-07-13 — 음성 개편 Part 2 착수: 미터링·문구모델 완료(커밋), 등록/사전렌더는 재부팅 대기
+
+**이 PC adb 다운(중요)**: `socketpair: Bad address`(winsock 손상)로 adb 데몬 자체가 기동 실패 → 실기기 설치·탭 검증 불가. `netsh winsock reset` **이미 걸어둠(exit 0)**, **재부팅하면 복구**. gradlew 빌드·vitest 는 정상이라 컴파일/유닛 검증은 계속 가능. 두 폰(R3CW300EZBA·RF9R40323AP)은 연결돼 있고 재부팅만 하면 바로 설치 가능.
+
+**이번 세션 커밋(feature/default-voice-sheet, 빌드/테스트 검증 완료)**:
+- `63251d6` **직접 입력 TTS 월 미터링 백엔드** — migration 58 `manual_tts_usage`(pool_key,usage_month 원자 카운터), `lib/manual-tts-quota.ts`(한도 personal 30/couple 50/family 100, 풀=plan_group_id 공유 or 본인PK, upsert…WHERE used<limit RETURNING 예약·실패시 환불), `/tts/generate` 캐시미스 뒤 예약·429 `MANUAL_TTS_QUOTA_EXCEEDED`·성공시 `manual_quota` 첨부. 단위 12개+전체 1259 통과. 무료 수동입력은 기존 `FREE_PLAN_PRESET_ONLY` 게이트로 이미 차단.
+- `c2ca6d8` **미터링 표시 + 조회 엔드포인트** — `GET /tts/manual-quota`(남은횟수 조회, 소비X), 클라 `TtsGenerateResponse.manualQuota` 파싱, 저장 성공시 "이번 달 N회 남음"·429 전용 문구(ko/en/ja).
+- `87cdde2` **문구 선택기 운동→약** — 유료 picker=날씨·운세·사랑·약·직접입력. 약은 동적모드 없어 고정 프리셋으로 라우팅(category=medication→백엔드가 randomContext를 preset로 정규화→medication 프리셋 문구). 백엔드 변경 불필요.
+
+**실기기 체크리스트(재부팅 후)**:
+- [ ] 유료 계정: 편집기 문구 선택기에 '운동' 없고 '약' 있음 → 약 선택 저장 시 "약 먹을 시간이에요…" 계열 재생
+- [ ] 유료 계정: 직접 입력으로 문구 생성 반복 → 성공 토스트에 "이번 달 N회 남음" 카운트다운, 한도 초과 시 "…횟수를 다 썼어요" 안내(생성 차단)
+- [ ] 무료 계정: 직접 입력/동적 문구 여전히 유료 게이트(변화 없어야 함)
+
+**남은 클러스터(#4 사전렌더 / #5 등록 미리듣기·확인·삭제 / #6 등록 관계·말투·호칭) — 재부팅+dev배포 후 진행**:
+서로 얽혀 있고 (a) 실기기 탭 검증 또는 (b) dev 배포+라이브 ElevenLabs/Gemini 가 있어야 안정 완결됨. 블라인드 대량 구현은 지양. 정확한 통합 지점(구현 즉시 착수용):
+- **#4 사전렌더**: `lib/stock-clips.ts` `generateStockClip`(現 is_system=1 하드게이트: `listSystemVoices` SQL·행 owner=SYSTEM_VOICE_LIBRARY_USER_ID)을 is_system=0(클론)까지 확장 — messages/generated_audio_assets 행 `user_id`=실소유자, R2 key owner도. 트리거 = `voice-profile.ts:911` ready 훅(동기, waitUntil 없음) → cron(`index.ts:267~`, `*/5`)에 `findMissingStockTargets`+소량 `generateStockClip` 배치 신설. `/tts/stock-clips`(tts.ts:1318)·`/messages/:id/audio`(1150)에 소유권(`m.user_id IN(?,?)`) 스코프. 날씨/운세는 **유한 variant 세트를 직접 설계**해 category+variant 로 사전 저장(現 스키마 variant 지원O, 날씨조건 컬럼X). 무료=기본+날씨+약, 유료=기본+날씨+운세+사랑+약. 무료 '날씨' 버킷은 이 사전렌더가 있어야 노출됨(現 `FreeBucketOrder=[morning,medication]` 유지 중).
+- **#5 등록 미리듣기/확인/삭제**: `VoiceProfileManagementPanel.kt`(2스텝 Source→Details) 클론 성공(`MainViewModelVoiceActions.kt:186` onSuccess) 직후 필수 미리듣기(그 목소리로 기본 모닝콜 재생)+유지/삭제. 삭제=기존 `deleteVoiceProfile`. 확인시 월변경 예약=migration 57 `voice_profile_change_ledger`(voice-profile.ts:46 reserve/mark 재사용) + #4 프리셋 렌더 트리거.
+- **#6 등록 관계/말투/호칭**: 짧은 관계 목록 선택+말투 예시 재생+호칭 직접입력. 백엔드 필드 이미 있음(relationship_label·listener_title·voice_gender·speech_formality, migration 53).
 
 ## 지금 상태 (2026-07-12) — 홈 개선 일괄 완료(미커밋), 알람 편집기 디자인 리뷰 진행 중
 
