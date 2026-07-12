@@ -518,6 +518,9 @@
     <string name="msg_remove_member_failed">メンバーを退出させられませんでした。</string>
     <string name="msg_remove_member_login_required">メンバーを退出させるには、まずログインしてください。</string>
     <string name="msg_sync_failed">一時的なエラーでアラーム情報を更新できませんでした。しばらくして自動で再試行します。</string>
+    <plurals name="msg_received_alarm_arrived">
+        <item quantity="other">相手が設定したアラーム%1$d件が届きました。</item>
+    </plurals>
     <string name="msg_sync_generic_failed">一時的なエラーが発生しました。自動で再試行します。</string>
     <string name="msg_sync_login_required">同期するには、まずログインしてください。</string>
     <string name="msg_sync_pull_partial_failed">受け取ったアラームの一部がまだ読み込めていません。しばらくして自動で再試行します。</string>

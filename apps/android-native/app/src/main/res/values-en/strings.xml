@@ -509,6 +509,10 @@
     <string name="msg_remove_member_failed">Couldn\'t remove the member.</string>
     <string name="msg_remove_member_login_required">Please log in first to remove a member.</string>
     <string name="msg_sync_failed">A temporary error kept us from updating your alarm info. We\'ll retry automatically in a moment.</string>
+    <plurals name="msg_received_alarm_arrived">
+        <item quantity="one">A new alarm set for you by your family arrived.</item>
+        <item quantity="other">%1$d new alarms set for you by your family arrived.</item>
+    </plurals>
     <string name="msg_sync_generic_failed">Something went wrong for a moment. We\'ll retry automatically.</string>
     <string name="msg_sync_login_required">Please log in first to sync.</string>
     <string name="msg_sync_pull_partial_failed">Some received alarms haven\'t loaded yet. We\'ll retry automatically in a moment.</string>
