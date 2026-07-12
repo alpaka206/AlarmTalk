@@ -4,6 +4,7 @@ import {
   MANUAL_TTS_MONTHLY_LIMITS,
   manualTtsLimitForUserPlan,
   manualTtsMonthlyLimit,
+  readManualTtsUsage,
   refundManualTtsQuota,
   reserveManualTtsQuota,
   resolveManualTtsPool,
@@ -115,6 +116,17 @@ describe('reserveManualTtsQuota', () => {
     db.pushResult([{ used_count: 30, usage_month: '2026-07' }]);
     const res = await reserveManualTtsQuota(db.client, 'pk-1', 30);
     expect(res).toEqual({ ok: true, used: 30, limit: 30, remaining: 0, month: '2026-07' });
+  });
+});
+
+describe('readManualTtsUsage', () => {
+  it('행이 있으면 used_count 를, 없으면 0 을 준다', async () => {
+    const db = createMockDB();
+    db.pushResult([{ used_count: 12 }]);
+    expect(await readManualTtsUsage(db.client, 'grp-1')).toBe(12);
+    db.pushResult([]);
+    expect(await readManualTtsUsage(db.client, 'grp-1')).toBe(0);
+    expect(db.calls.every((c) => /SELECT used_count FROM manual_tts_usage/.test(c.sql))).toBe(true);
   });
 });
 

@@ -69,6 +69,7 @@ import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.apiErrorCode
+import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -145,6 +146,7 @@ internal fun AlarmEditorScreen(
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    onLoadManualQuota: (suspend () -> ManualQuotaResponse?)? = null,
     onDownloadStockAudio: suspend (String) -> TtsMessageAudioResponse,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onSave: (AlarmDraft) -> Unit,
@@ -195,6 +197,11 @@ internal fun AlarmEditorScreen(
     var audioMessage by remember { mutableStateOf<String?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
+    // 직접 입력 문구 선택기에 '(남은/총)' 을 보여주기 위한 이번 달 사용 현황(유료만 조회).
+    var manualQuota by remember { mutableStateOf<ManualQuotaResponse?>(null) }
+    LaunchedEffect(freeVoiceTier, onLoadManualQuota) {
+        manualQuota = if (!freeVoiceTier && onLoadManualQuota != null) onLoadManualQuota() else null
+    }
     // 진행 중인 TTS 생성 Job 을 추적해, 사용자가 도중에 시각을 변경하면 취소한다.
     var generationJob by remember { mutableStateOf<Job?>(null) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
@@ -723,16 +730,7 @@ internal fun AlarmEditorScreen(
                     listenerTitle = listenerTitleForSave,
                 )
                 editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
-                // 직접 입력(유료 수동 생성)이면 이번 달 남은 횟수를 함께 알려준다.
-                val manualQuota = response.manualQuota
-                audioMessage = if (manualQuota != null) {
-                    context.getString(
-                        R.string.editor_generated_voice_saved_local_quota,
-                        manualQuota.remaining,
-                    )
-                } else {
-                    context.getString(R.string.editor_generated_voice_saved_local)
-                }
+                audioMessage = context.getString(R.string.editor_generated_voice_saved_local)
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
@@ -1283,6 +1281,8 @@ internal fun AlarmEditorScreen(
                 // 직접 입력 모드면 pane 에서 '직접 입력'이 선택돼 보이도록 manual 을 넘긴다.
                 randomContext = if (editor.voiceRandomPrompt) editor.voiceRandomContext else ManualMessageContext,
                 manualText = editor.voiceText,
+                manualRemaining = manualQuota?.remaining,
+                manualLimit = manualQuota?.limit,
                 weatherCountry = editor.voiceWeatherCountry,
                 weatherCity = editor.voiceWeatherCity,
                 savedWeatherCountry = activeDynamicPromptPreferences.weatherCountry,

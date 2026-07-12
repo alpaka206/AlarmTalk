@@ -38,12 +38,11 @@ data class TtsGenerateResponse(
     @SerializedName("cache_hit") val cacheHit: Boolean = false,
     val provider: String? = null,
     @SerializedName("random_context") val randomContext: String? = null,
-    // 직접 입력(유료 수동 생성)일 때만 채워진다. 프리셋/동적/캐시히트는 null.
-    @SerializedName("manual_quota") val manualQuota: ManualQuota? = null,
 )
 
-/** 직접 입력 문구 만들기 월 한도 사용 현황. */
-data class ManualQuota(
+/** 직접 입력 문구 만들기 월 한도 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). */
+data class ManualQuotaResponse(
+    @SerializedName("plan_key") val planKey: String? = null,
     val limit: Int = 0,
     val used: Int = 0,
     val remaining: Int = 0,
@@ -104,6 +103,9 @@ interface TtsApi {
 
     @GET("tts/stock-clips")
     suspend fun getStockClips(@Header("Authorization") authorization: String): StockClipListResponse
+
+    @GET("tts/manual-quota")
+    suspend fun getManualQuota(@Header("Authorization") authorization: String): ManualQuotaResponse
 
     @GET("tts/messages/{id}/audio")
     suspend fun getTtsMessageAudio(

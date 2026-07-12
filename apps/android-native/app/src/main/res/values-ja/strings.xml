@@ -215,7 +215,6 @@
     <string name="editor_expand">広げる</string>
     <string name="editor_family_alarm_set">相手のアラームを設定しました。</string>
     <string name="editor_generated_voice_saved_local">生成した音声をローカルに保存しました。</string>
-    <string name="editor_generated_voice_saved_local_quota">メッセージを作成しました。今月はあと%1$d回です。</string>
     <string name="editor_holiday_off_subtitle">振替休日・臨時祝日を含む</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
     <string name="editor_holiday_country_label">祝日カレンダー: %1$s</string>

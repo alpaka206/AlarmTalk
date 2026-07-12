@@ -217,7 +217,6 @@
     <string name="editor_expand">펼치기</string>
     <string name="editor_family_alarm_set">상대 알람을 설정했어요.</string>
     <string name="editor_generated_voice_saved_local">생성한 음성을 로컬에 저장했어요.</string>
-    <string name="editor_generated_voice_saved_local_quota">문구를 만들었어요. 이번 달 %1$d회 남았어요.</string>
     <string name="editor_holiday_off_subtitle">대체 공휴일 및 임시 공휴일 포함</string>
     <string name="editor_holiday_off_title">공휴일에는 끄기</string>
     <string name="editor_holiday_country_label">공휴일 달력: %1$s</string>

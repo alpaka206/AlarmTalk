@@ -25,6 +25,7 @@ import {
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import {
+  readManualTtsUsage,
   refundManualTtsQuota,
   reserveManualTtsQuota,
   resolveManualTtsPool,
@@ -1145,6 +1146,32 @@ tts.post('/generate', async (c) => {
       500,
     );
   }
+});
+
+// 이번 달 직접 입력 문구 만들기 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). 소비 없음.
+tts.get('/manual-quota', async (c) => {
+  const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
+  const db = getDB(c.env);
+
+  const userRow = await db.execute({
+    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    args: ownerIds,
+  });
+  const callerUserPlan =
+    userRow.rows.length > 0 && userRow.rows[0]!.plan != null
+      ? String(userRow.rows[0]!.plan)
+      : null;
+
+  const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+  const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+  return c.json({
+    plan_key: pool.planKey,
+    limit: pool.limit,
+    used,
+    remaining: Math.max(0, pool.limit - used),
+  });
 });
 
 tts.get('/messages', async (c) => {

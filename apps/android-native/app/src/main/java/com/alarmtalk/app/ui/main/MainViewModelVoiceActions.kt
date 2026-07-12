@@ -34,6 +34,7 @@ import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
+import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
@@ -463,6 +464,17 @@ internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): T
     return withContext(Dispatchers.IO) {
         api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
     }
+}
+
+// 직접 입력 문구 만들기 이번 달 사용 현황(선택기 '직접 입력 (남은/총)' 표시용).
+// 실패/미로그인은 null 로 조용히 넘긴다(표시만 생략, 기능엔 영향 없음).
+internal suspend fun MainViewModel.loadManualQuota(): ManualQuotaResponse? {
+    val session = authSession ?: return null
+    return runCatching {
+        withContext(Dispatchers.IO) {
+            api.getManualQuota(AlarmTalkApiClient.bearer(session.token))
+        }
+    }.getOrNull()
 }
 
 internal fun MainViewModel.loadStockClips() {

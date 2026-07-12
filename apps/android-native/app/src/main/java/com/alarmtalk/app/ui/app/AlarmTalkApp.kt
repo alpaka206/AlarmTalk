@@ -778,6 +778,7 @@ internal fun AlarmTalkApp(
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                       onGenerateTts = viewModel::generateTtsAudio,
+                      onLoadManualQuota = viewModel::loadManualQuota,
                       onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onSave = { draft ->
@@ -816,6 +817,7 @@ internal fun AlarmTalkApp(
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                           onGenerateTts = viewModel::generateTtsAudio,
+                          onLoadManualQuota = viewModel::loadManualQuota,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                           onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                           onSave = { draft ->

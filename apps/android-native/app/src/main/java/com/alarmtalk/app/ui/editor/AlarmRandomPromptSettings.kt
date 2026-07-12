@@ -58,6 +58,9 @@ import androidx.compose.ui.window.DialogProperties
 internal fun RandomPromptSettingsPane(
     randomContext: String,
     manualText: String,
+    // 직접 입력 옵션에 '(남은/총)' 을 붙여 이번 달 남은 만들기 횟수를 보여준다(유료·limit>0 일 때).
+    manualRemaining: Int? = null,
+    manualLimit: Int? = null,
     weatherCountry: String,
     weatherCity: String,
     savedWeatherCountry: String,
@@ -179,8 +182,18 @@ internal fun RandomPromptSettingsPane(
             ) {
                 SnoozeOptionSection {
                     EditorMessageContexts.forEachIndexed { index, (context, labelRes) ->
+                        val baseLabel = stringResource(labelRes)
+                        val label = if (
+                            context == ManualMessageContext &&
+                            manualLimit != null && manualLimit > 0 && manualRemaining != null
+                        ) {
+                            // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
+                            "$baseLabel ($manualRemaining/$manualLimit)"
+                        } else {
+                            baseLabel
+                        }
                         SnoozeRadioRow(
-                            label = stringResource(labelRes),
+                            label = label,
                             selected = normalizedContext == context,
                             onClick = { selectContext(context) },
                         )

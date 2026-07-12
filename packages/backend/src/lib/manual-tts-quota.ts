@@ -116,6 +116,18 @@ export async function resolveManualTtsPool(
   };
 }
 
+/**
+ * 이번 달 풀의 사용량을 읽는다(증가 없음). 조회 엔드포인트(선택기 '직접 입력 (남은/총)' 표시)용.
+ */
+export async function readManualTtsUsage(db: DbExecutor, poolKey: string): Promise<number> {
+  const res = await db.execute({
+    sql: `SELECT used_count FROM manual_tts_usage
+          WHERE pool_key = ? AND usage_month = ${KST_MONTH_SQL}`,
+    args: [poolKey],
+  });
+  return res.rows.length > 0 ? Number(res.rows[0]!.used_count ?? 0) : 0;
+}
+
 export interface ManualTtsReservation {
   ok: boolean;
   used: number;
