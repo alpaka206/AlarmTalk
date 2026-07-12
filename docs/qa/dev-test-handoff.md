@@ -1,7 +1,48 @@
 # Dev 테스트 핸드오프
 
-> 세션 재개용 라이브 문서. 마지막 갱신 **2026-07-13**. 상태가 바뀌면 이 파일을 갱신/정리한다.
+> 세션 재개용 라이브 문서. 마지막 갱신 **2026-07-13(세션2)**. 상태가 바뀌면 이 파일을 갱신/정리한다.
 > (다른 컴퓨터에서도 `git pull` 후 이 문서를 읽으면 바로 이어서 진행 가능.)
+
+## 2026-07-13 세션2 — Part 2 구현·코드리뷰수정·실기기 QA (자율 진행)
+
+**adb 복구법(재확인)**: 재부팅/winsock reset 로 안 됨. 원인=라온 보안 드라이버. 관리자로
+`Stop-Service AnySign4PC Launcher, MagicLine4NXSVC, 'RAON K', WizveraPMSvc` + `sc stop KingsNET` `sc stop TNXNET_SVR` → 즉시 `adb start-server` 성공. (메모리 `reference_winsock_wsaefault_build_workaround` 갱신됨)
+
+**커밋(feature/default-voice-sheet, 전부 빌드+vitest 1262 통과)**:
+- `63251d6`~`c2ca6d8` 미터링(백+표시), `87cdde2` 운동→약, `8e2a0b9` 30분 안내 개선,
+  `02289b6` 등록 확인창, `6fbe7d1` **코드리뷰 지적 수정**(미터링 정합성·확인창 라이프사이클),
+  `7172d94` **직접입력 '(남은/총)' 선택기 표시**(Toast 노이즈 제거).
+- 코드리뷰(xhigh, 27에이전트): 확정 5·유력 3 전부 수정. 미터링 결제자 허위429/월경계 환불/
+  그룹만료누수, 등록 삭제-원장리셋, 확인창 코루틴취소·감지타이밍 등.
+
+**실기기 QA 결과(두 폰: S23=김규원 가족관리자, A32=rel dev 구성원)**:
+- ✅ **운동→약**: 문구 선택기 = 기상+날씨/기상+운세/사랑/**약**/직접입력 (운동 없음) — 확인.
+- ✅ **직접 입력 다이얼로그·생성**: 입력→저장→/tts/generate 생성 성공.
+- ✅ **가족 알람 조용시간 방지**(사용자가 말한 "동일시간 방지" 엣지): 상대 조용시간(평일09:00-18:30)
+  안 시간 선택 시 빨간 경고 "상대가 이 시간에는 알람을 받지 않도록 해뒀어요" + **저장 버튼 비활성**.
+- ✅ 앱 전 화면 렌더·크래시 없음.
+- ⚠️ **`(남은/총)` 카운트·미터링 429**: 백엔드 미터링이 **dev 미배포**(feature 브랜치)라 앱에서
+  `/tts/manual-quota` 404 → 카운트 미표시. **develop 머지→dev 자동배포 후** 표시/작동됨(코드·유닛 정상).
+- 🔴 **가족 알람 배달 안 됨(조사 필요)**: S23에서 rel dev에게 알람 설정("설정했어요") 성공했으나,
+  A32(rel dev) 로컬 Room(voice-alarm.db)에 **수신 알람(origin=received_remote) 미출현**. 앱오픈·
+  pull-refresh·**강제 WorkManager(job 888)** 모두 시도해도 A32엔 자기 알람 1개(local_owned)뿐.
+  클라 전송경로(`submitDraft`→`onSave(targetUserId=recipient)`)는 정상·이번세션 미변경 → **백엔드/dev
+  동기화 계층 이슈**. 감사문서(family-alarm-audit)의 수신자-정지 이슈와 별개(그건 배달됨을 전제).
+  → 배달이 안 돼 RING E2E(무음·무진동)까지는 미검증. 배달 원인 규명(백엔드 create 반영/pull 반환) 필요.
+- 30분 게이트 문구(제 개선)는 rel dev 조용시간이 근접시간을 다 덮어 실기기 재현 불가(빌드검증됨).
+
+**즉시 울림 테스트법(배달 복구 후)**: A32 무음=알람볼륨0 ✓, 무진동=알람 진동패턴 OFF로 생성
+(했음), 로컬 알람id로 `adb shell am broadcast -a com.alarmtalk.app.action.ALARM_TRIGGER --es
+com.alarmtalk.app.extra.ALARM_ID <id> -n com.alarmtalk.app.dev/com.alarmtalk.app.alarm.AlarmReceiver`.
+로컬 id는 run-as sqlite(기기엔 sqlite3 없음→`adb exec-out run-as ... cat databases/voice-alarm.db`
+로 뽑아 python sqlite3).
+
+**깨어나서 할 것(우선순위)**:
+1. 🔴 **가족 알람 배달 갭 조사** — 왜 rel dev 에게 배달 안 되는지(백엔드 create 반영 여부/pull 반환).
+2. feature/default-voice-sheet → develop **PR·머지 → dev 배포** 후 미터링 `(남은/총)`·429·원장리셋 실기기 검증.
+3. 배달 복구되면 가족알람 RING E2E(무음·무진동) 마무리.
+
+---
 
 ## 2026-07-13 — 음성 개편 Part 2 착수: 미터링·문구모델 완료(커밋), 등록/사전렌더는 재부팅 대기
 
