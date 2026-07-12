@@ -284,25 +284,6 @@ private val WeekdayLabels: List<Int> = listOf(
 )
 
 @Composable
-internal fun QuickChip(
-    label: String,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        shape = WakerPillShape,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
 internal fun PlayModeCard(
     selected: String,
     onSelect: (String) -> Unit,

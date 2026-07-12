@@ -167,7 +167,6 @@
     <string name="common_stepper_increase">Increase %1$s</string>
     <string name="common_tab_billing">Plan</string>
     <string name="common_tab_code_register">Register code</string>
-    <string name="common_tab_messages">Messages</string>
     <string name="common_tab_voices">Voices</string>
     <string name="common_voice_capture_mode_file">File</string>
     <string name="common_voice_capture_mode_record">Record</string>
@@ -184,7 +183,6 @@
     <string name="editor_audio_preview_stop">Stop</string>
     <string name="editor_audio_preview_preparing">Preparing…</string>
     <string name="editor_audio_record_or_upload">Record your own voice for the alarm.</string>
-    <string name="editor_audio_upload_file">Upload file</string>
     <string name="editor_back">Back</string>
     <string name="editor_change">Change</string>
     <string name="editor_close">Close</string>
@@ -200,7 +198,6 @@
     <string name="editor_error_family_alarm_time_unavailable">The other person can\'t receive alarms at this time.</string>
     <string name="editor_error_fortune_info_required">For phrases with fortune, please enter gender, date of birth, and time of birth.</string>
     <string name="editor_error_mic_permission_required">Microphone permission is required.</string>
-    <string name="editor_error_preview_failed">Couldn\'t play the preview.</string>
     <string name="editor_error_record_or_select_file">Please record or select a file.</string>
     <string name="editor_error_recording_failed">Recording failed.</string>
     <string name="editor_error_recording_start_failed">Couldn\'t start recording.</string>
@@ -216,7 +213,6 @@
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>
     <string name="editor_expand">Expand</string>
     <string name="editor_family_alarm_set">The alarm for the other person is set.</string>
-    <string name="editor_field_required">This field is required.</string>
     <string name="editor_generated_voice_saved_local">The generated voice was saved locally.</string>
     <string name="editor_holiday_off_subtitle">Includes substitute and temporary holidays</string>
     <string name="editor_holiday_off_title">Turn off on holidays</string>
@@ -224,7 +220,6 @@
     <string name="editor_holiday_show_title">Upcoming holidays</string>
     <string name="editor_holiday_cold_cache">Loading…</string>
     <string name="editor_in_use">In use</string>
-    <string name="editor_manual_input">Type manually</string>
     <string name="editor_manual_input_placeholder">Enter the message to play in your alarm</string>
     <string name="editor_minute_label">min</string>
     <string name="editor_minutes">%1$d min</string>
@@ -239,13 +234,8 @@
     <string name="editor_play_mode_alarm_voice">Alarm + voice</string>
     <string name="editor_play_mode_title">Playback mode</string>
     <string name="editor_play_mode_voice_only">Voice</string>
-    <string name="editor_playing">Playing</string>
     <string name="editor_preparing_voice_alarm">Preparing your voice alarm.</string>
-    <string name="editor_preview">Preview</string>
     <string name="editor_quiet_hours_label">Hours they don\'t receive alarms: %1$s</string>
-    <string name="editor_random_prompt_settings">Random message settings</string>
-    <string name="editor_random_prompt_use">Use random phrases</string>
-    <string name="editor_random_prompt_use_hint">Picks a fitting phrase for each alarm.</string>
     <string name="editor_msg_section">Message</string>
     <string name="editor_msg_mode_manual">Type it yourself</string>
     <string name="editor_msg_mode_preset">Default greeting</string>
@@ -262,8 +252,6 @@
     <string name="editor_save_changes">Save changes</string>
     <string name="editor_saving">Saving</string>
     <string name="editor_select_recipient_title">Choose who receives the alarm</string>
-    <string name="editor_selected">Select</string>
-    <string name="editor_selected_done">Selected</string>
     <string name="editor_selected_ringtone">Selected alarm</string>
     <string name="editor_set_alarm">Set alarm</string>
     <string name="editor_silent">Silent</string>
@@ -311,35 +299,22 @@
     <string name="editorp_fortune_birthtime_placeholder">Select</string>
     <string name="editorp_fortune_date_confirm">OK</string>
     <string name="editorp_fortune_date_title">Date of birth</string>
-    <string name="editorp_fortune_dialog_description">Used only for fortune-based messages. If you don\'t save, random messages will turn off.</string>
     <string name="editorp_fortune_dialog_title">Fortune info</string>
     <string name="editorp_fortune_gender_female">Female</string>
     <string name="editorp_fortune_gender_male">Male</string>
     <string name="editorp_fortune_gender_section">Gender</string>
-    <string name="editorp_fortune_only_label">Used only for fortune messages</string>
     <string name="editorp_fortune_required_suffix">%1$s · Required</string>
     <string name="editorp_fortune_save_button">Save</string>
     <string name="editorp_random_back">Back</string>
-    <string name="editorp_random_context_desc_preset">A ready-to-use greeting that needs no extra info.</string>
-    <string name="editorp_random_context_desc_wake_weather">Shares today\'s weather and suggests what to wear.</string>
-    <string name="editorp_random_context_desc_wake_fortune">Adds a light daily fortune.</string>
-    <string name="editorp_random_context_desc_meal">Gently reminds you to eat.</string>
-    <string name="editorp_random_context_desc_sleep">Speaks in a calm tone to help you wind down.</string>
-    <string name="editorp_random_context_desc_exercise">Cheers you on to get moving.</string>
-    <string name="editorp_random_context_desc_love">Offers a warm, loving word.</string>
-    <string name="editorp_random_context_section">Message type</string>
     <string name="editorp_random_fortune_required">To use fortune-based messages, gender, date of birth, and time of birth are required.</string>
     <string name="editorp_random_fortune_saved">Using the fortune info your partner saved.</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
-    <string name="editorp_random_intro">Once saved, alarm messages are created from the conditions you choose. If you don\'t save, you\'ll go back to typing manually.</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>
     <string name="editorp_random_weather_region_required">To use weather-based messages, a city is required.</string>
     <string name="editorp_random_weather_region_saved">Using the weather region your partner saved.</string>
     <string name="editorp_random_weather_region_title">Weather region</string>
     <string name="editorp_random_weather_region_value">Using the weather for %1$s.</string>
-    <string name="editorp_weather_city_label">City</string>
-    <string name="editorp_weather_city_placeholder">e.g. Seoul</string>
     <string name="editorp_weather_dialog_section_desc">Enter it manually or fill it in with your current location. If you don\'t save, random messages will turn off.</string>
     <string name="editorp_weather_dialog_section_title">Region to use for weather messages</string>
     <string name="editorp_weather_location_denied">Location permission was denied. Turn on location, or enter it manually.</string>
@@ -348,7 +323,6 @@
     <string name="editorp_weather_location_getting">Getting location</string>
     <string name="editorp_weather_location_loading">Getting your current location...</string>
     <string name="editorp_weather_location_no_address">Got your location but couldn\'t find an address. Turn on location, or enter it manually.</string>
-    <string name="editorp_weather_required_field">Please fill this in.</string>
     <string name="editorp_weather_save_button">Save</string>
     <string name="editorp_weather_use_current_location">Use current location</string>
     <string name="alarms_target_sheet_title">Who is this alarm for?</string>
@@ -356,9 +330,7 @@
     <string name="hs_delete_account_body">Are you sure you want to delete your account? 30 days after you request it, all your data—including alarms, voices, and messages—is permanently deleted. You can cancel and restore it by signing back in before then.</string>
     <string name="hs_delete_account_confirm">Delete</string>
     <string name="hs_delete_account_title">Delete account</string>
-    <string name="hs_edit_alarm">Edit</string>
     <string name="hs_home_title">Alarms</string>
-    <string name="hs_home_empty_title">Wake up to\na voice you love</string>
     <string name="hs_greeting_each_other_bottom">let\'s schedule mornings</string>
     <string name="hs_greeting_each_other_top">With each other\'s voices,</string>
     <string name="hs_greeting_morning_bottom">did you wake up well?</string>
@@ -367,8 +339,6 @@
     <string name="hs_greeting_tomorrow_top">Let\'s set up</string>
     <string name="hs_greeting_voice_bottom">with a voice you love</string>
     <string name="hs_greeting_voice_top">We\'ll wake you</string>
-    <string name="hs_fortune_info_description">Used only when creating phrases that include your fortune. It\'s also used as a reference when family or your partner sets your alarm.</string>
-    <string name="hs_next_alarm_label">Next alarm</string>
     <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">Edit nickname</string>
     <string name="hs_nickname_display_name_desc">This name is used on alarm, message, and shared pass screens.</string>
@@ -380,7 +350,6 @@
     <string name="hs_profile_content_desc">Profile</string>
     <string name="hs_profile_menu_invite_code">Enter invite code</string>
     <string name="hs_profile_menu_pass">Pass</string>
-    <string name="hs_profile_menu_settings">Settings</string>
     <string name="hs_profile_menu_shared_pass">Invite &amp; manage members</string>
     <string name="hs_quiet_time_add">+ Add time</string>
     <string name="hs_quiet_time_confirm">OK</string>
@@ -391,7 +360,6 @@
     <string name="hs_quiet_window_delete">Delete</string>
     <string name="hs_quiet_window_index">Time slot %1$d</string>
     <string name="hs_create_alarm_button">Create first alarm</string>
-    <string name="hs_reserve_alarm">Alarm booking</string>
     <string name="hs_save">Save</string>
     <string name="hs_settings_back">Back</string>
     <string name="hs_settings_delete_account">Delete account</string>
@@ -401,7 +369,6 @@
     <string name="hs_settings_no_name">No name</string>
     <string name="hs_settings_privacy_policy">Privacy Policy</string>
     <string name="hs_settings_section_account">Account</string>
-    <string name="hs_settings_section_danger">Dangerous actions</string>
     <string name="hs_settings_section_display">Display</string>
     <string name="hs_settings_section_random_phrase">Random phrase info</string>
     <string name="hs_settings_terms_of_service">Terms of Service</string>
@@ -427,7 +394,6 @@
     <string name="hs_weather_city_label">City</string>
     <string name="hs_weather_city_placeholder">e.g. Seoul</string>
     <string name="hs_weather_dialog_title">Weather region</string>
-    <string name="hs_weather_dialog_desc">This region is used for the weather line in your wake-up alarms.</string>
     <string name="hs_weather_city_custom">Enter manually</string>
     <string-array name="hs_weather_preset_cities" />
     <string name="hs_weather_field_required">This field is required.</string>
@@ -876,8 +842,6 @@
     <string name="editor2_silent">Silent</string>
     <string name="editor2_alarm_sound_summary">%1$s · %2$s</string>
     <string name="editor2_default_alarm_sound">Default alarm sound</string>
-    <string name="editor2_am">AM</string>
-    <string name="editor2_pm">PM</string>
     <string name="editor2_family_member_fallback">Member</string>
     <string name="editor2_quiet_days_none">None</string>
     <string name="editor2_quiet_days_weekdays">Weekdays</string>
@@ -975,7 +939,6 @@
     <string name="misc2_pass_plan_couple">Couple</string>
     <string name="misc2_pass_plan_family">Family</string>
     <string name="misc2_pass_plan_default">Pass</string>
-    <string name="misc2_shared_voice_label">%1$s · Shared</string>
     <string name="misc2_voice_preview_preparing">Preparing preview</string>
     <string name="misc2_voice_preview_pause">Pause preview</string>
     <string name="misc2_voice_preview_play">Play preview</string>

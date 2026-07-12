@@ -167,7 +167,6 @@
     <string name="common_stepper_increase">%1$s を上げる</string>
     <string name="common_tab_billing">利用券</string>
     <string name="common_tab_code_register">コード登録</string>
-    <string name="common_tab_messages">メッセージ</string>
     <string name="common_tab_voices">声</string>
     <string name="common_voice_capture_mode_file">ファイル</string>
     <string name="common_voice_capture_mode_record">録音</string>
@@ -184,7 +183,6 @@
     <string name="editor_audio_preview_stop">停止</string>
     <string name="editor_audio_preview_preparing">準備中…</string>
     <string name="editor_audio_record_or_upload">自分の声を録音してアラームに使います。</string>
-    <string name="editor_audio_upload_file">ファイルをアップロード</string>
     <string name="editor_back">戻る</string>
     <string name="editor_change">変更</string>
     <string name="editor_close">閉じる</string>
@@ -200,7 +198,6 @@
     <string name="editor_error_family_alarm_time_unavailable">相手が受け取れない時間帯です。</string>
     <string name="editor_error_fortune_info_required">占いを含む文には、性別・生年月日・生まれた時間を入力してください。</string>
     <string name="editor_error_mic_permission_required">マイクの権限が必要です。</string>
-    <string name="editor_error_preview_failed">プレビューを再生できませんでした。</string>
     <string name="editor_error_record_or_select_file">録音するか、ファイルを選択してください。</string>
     <string name="editor_error_recording_failed">録音に失敗しました。</string>
     <string name="editor_error_recording_start_failed">録音を開始できませんでした。</string>
@@ -216,7 +213,6 @@
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
     <string name="editor_expand">広げる</string>
     <string name="editor_family_alarm_set">相手のアラームを設定しました。</string>
-    <string name="editor_field_required">必ず入力してください。</string>
     <string name="editor_generated_voice_saved_local">生成した音声をローカルに保存しました。</string>
     <string name="editor_holiday_off_subtitle">振替休日・臨時祝日を含む</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
@@ -224,7 +220,6 @@
     <string name="editor_holiday_show_title">今後の祝日</string>
     <string name="editor_holiday_cold_cache">読み込み中…</string>
     <string name="editor_in_use">使用中</string>
-    <string name="editor_manual_input">直接入力</string>
     <string name="editor_manual_input_placeholder">アラームで流す文を入力してください</string>
     <string name="editor_minute_label">分</string>
     <string name="editor_minutes">%1$d分</string>
@@ -239,13 +234,8 @@
     <string name="editor_play_mode_alarm_voice">アラーム＋声</string>
     <string name="editor_play_mode_title">再生方式</string>
     <string name="editor_play_mode_voice_only">声</string>
-    <string name="editor_playing">再生中</string>
     <string name="editor_preparing_voice_alarm">声のアラームを準備しています。</string>
-    <string name="editor_preview">プレビュー</string>
     <string name="editor_quiet_hours_label">受け取らない時間：%1$s</string>
-    <string name="editor_random_prompt_settings">ランダム文設定</string>
-    <string name="editor_random_prompt_use">ランダム文を使用</string>
-    <string name="editor_random_prompt_use_hint">アラームごとに合う文を選んで読み上げます。</string>
     <string name="editor_msg_section">文</string>
     <string name="editor_msg_mode_manual">自分で入力</string>
     <string name="editor_msg_mode_preset">基本のあいさつ</string>
@@ -262,8 +252,6 @@
     <string name="editor_save_changes">変更を保存</string>
     <string name="editor_saving">保存中</string>
     <string name="editor_select_recipient_title">アラームを受け取る相手を選択</string>
-    <string name="editor_selected">選択</string>
-    <string name="editor_selected_done">選択済み</string>
     <string name="editor_selected_ringtone">選択したアラーム</string>
     <string name="editor_set_alarm">アラームを設定</string>
     <string name="editor_silent">無音</string>
@@ -311,35 +299,22 @@
     <string name="editorp_fortune_birthtime_placeholder">選択</string>
     <string name="editorp_fortune_date_confirm">確定</string>
     <string name="editorp_fortune_date_title">生年月日</string>
-    <string name="editorp_fortune_dialog_description">占いを使った文を作るときだけ使います。保存しないとランダム文がオフになります。</string>
     <string name="editorp_fortune_dialog_title">占い情報</string>
     <string name="editorp_fortune_gender_female">女性</string>
     <string name="editorp_fortune_gender_male">男性</string>
     <string name="editorp_fortune_gender_section">性別</string>
-    <string name="editorp_fortune_only_label">占いの文にだけ使います</string>
     <string name="editorp_fortune_required_suffix">%1$s · 必須入力</string>
     <string name="editorp_fortune_save_button">保存</string>
     <string name="editorp_random_back">戻る</string>
-    <string name="editorp_random_context_desc_preset">追加入力なしですぐ使える基本のあいさつです。</string>
-    <string name="editorp_random_context_desc_wake_weather">今日の天気を伝え、服装をすすめます。</string>
-    <string name="editorp_random_context_desc_wake_fortune">軽い今日の運勢を添えます。</string>
-    <string name="editorp_random_context_desc_meal">食事をとるよう優しくすすめます。</string>
-    <string name="editorp_random_context_desc_sleep">眠りやすいよう落ち着いたトーンで話します。</string>
-    <string name="editorp_random_context_desc_exercise">元気に体を動かせるよう応援します。</string>
-    <string name="editorp_random_context_desc_love">愛のこもった優しい一言を伝えます。</string>
-    <string name="editorp_random_context_section">文の種類</string>
     <string name="editorp_random_fortune_required">占いを使った文を作るには、性別・生年月日・生まれた時間が必要です。</string>
     <string name="editorp_random_fortune_saved">相手が保存した占い情報を使います。</string>
     <string name="editorp_random_fortune_title">占い情報</string>
-    <string name="editorp_random_intro">保存すると、選んだ条件でアラームの文を作ります。保存しない場合は直接入力に戻ります。</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>
     <string name="editorp_random_weather_region_required">天気を使った文を作るには、都市が必要です。</string>
     <string name="editorp_random_weather_region_saved">相手が保存した天気の地域を使います。</string>
     <string name="editorp_random_weather_region_title">天気の地域</string>
     <string name="editorp_random_weather_region_value">%1$sの天気を使います。</string>
-    <string name="editorp_weather_city_label">都市</string>
-    <string name="editorp_weather_city_placeholder">例: 東京</string>
     <string name="editorp_weather_dialog_section_desc">直接入力するか、現在地で入力できます。保存しないとランダム文がオフになります。</string>
     <string name="editorp_weather_dialog_section_title">天気の文に使う地域</string>
     <string name="editorp_weather_location_denied">位置情報の権限が拒否されました。位置情報をオンにするか、直接入力してください。</string>
@@ -348,7 +323,6 @@
     <string name="editorp_weather_location_getting">位置情報を取得中</string>
     <string name="editorp_weather_location_loading">現在地を取得しています...</string>
     <string name="editorp_weather_location_no_address">位置情報は取得しましたが、住所が見つかりませんでした。位置情報をオンにするか、直接入力してください。</string>
-    <string name="editorp_weather_required_field">必ず入力してください。</string>
     <string name="editorp_weather_save_button">保存</string>
     <string name="editorp_weather_use_current_location">現在地を使う</string>
     <string name="alarms_target_sheet_title">誰を起こしますか？</string>
@@ -356,9 +330,7 @@
     <string name="hs_delete_account_body">本当に退会しますか？申請から30日が過ぎると、アラーム・音声・メッセージなどすべてのデータが完全に削除されます。それまでに再ログインして退会を取り消せば復元できます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
     <string name="hs_delete_account_title">退会</string>
-    <string name="hs_edit_alarm">編集する</string>
     <string name="hs_home_title">アラーム</string>
-    <string name="hs_home_empty_title">好きな声で\n起こします</string>
     <string name="hs_greeting_each_other_bottom">朝を予約しましょう</string>
     <string name="hs_greeting_each_other_top">お互いの声で</string>
     <string name="hs_greeting_morning_bottom">よく起きられましたか？</string>
@@ -367,8 +339,6 @@
     <string name="hs_greeting_tomorrow_top">明日のアラームを</string>
     <string name="hs_greeting_voice_bottom">起こしますね</string>
     <string name="hs_greeting_voice_top">お気に入りの声で</string>
-    <string name="hs_fortune_info_description">占いが入った文言を作るときだけ使います。家族や恋人が私のアラームを設定するときも、この情報を基準に使います。</string>
-    <string name="hs_next_alarm_label">次のアラーム</string>
     <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">ニックネームを編集</string>
     <string name="hs_nickname_display_name_desc">アラーム、メッセージ、共有利用券の画面でこの名前を使います。</string>
@@ -380,7 +350,6 @@
     <string name="hs_profile_content_desc">プロフィール</string>
     <string name="hs_profile_menu_invite_code">招待コードを登録</string>
     <string name="hs_profile_menu_pass">利用券</string>
-    <string name="hs_profile_menu_settings">設定</string>
     <string name="hs_profile_menu_shared_pass">招待・メンバー管理</string>
     <string name="hs_quiet_time_add">+ 時間を追加</string>
     <string name="hs_quiet_time_confirm">確認</string>
@@ -391,7 +360,6 @@
     <string name="hs_quiet_window_delete">削除</string>
     <string name="hs_quiet_window_index">時間帯 %1$d</string>
     <string name="hs_create_alarm_button">最初のアラームを作成</string>
-    <string name="hs_reserve_alarm">アラーム予約</string>
     <string name="hs_save">保存</string>
     <string name="hs_settings_back">戻る</string>
     <string name="hs_settings_delete_account">退会</string>
@@ -401,7 +369,6 @@
     <string name="hs_settings_no_name">名前なし</string>
     <string name="hs_settings_privacy_policy">プライバシーポリシー</string>
     <string name="hs_settings_section_account">アカウント</string>
-    <string name="hs_settings_section_danger">危険な操作</string>
     <string name="hs_settings_section_display">画面</string>
     <string name="hs_settings_section_random_phrase">ランダム文言の情報</string>
     <string name="hs_settings_terms_of_service">利用規約</string>
@@ -427,7 +394,6 @@
     <string name="hs_weather_city_label">都市</string>
     <string name="hs_weather_city_placeholder">例：東京</string>
     <string name="hs_weather_dialog_title">天気の地域</string>
-    <string name="hs_weather_dialog_desc">起床アラームの天気のひとことに使う地域です。</string>
     <string name="hs_weather_city_custom">直接入力</string>
     <string-array name="hs_weather_preset_cities">
         <item>東京</item>
@@ -885,8 +851,6 @@
     <string name="editor2_silent">無音</string>
     <string name="editor2_alarm_sound_summary">%1$s · %2$s</string>
     <string name="editor2_default_alarm_sound">基本アラーム音</string>
-    <string name="editor2_am">午前</string>
-    <string name="editor2_pm">午後</string>
     <string name="editor2_family_member_fallback">メンバー</string>
     <string name="editor2_quiet_days_none">なし</string>
     <string name="editor2_quiet_days_weekdays">平日</string>
@@ -984,7 +948,6 @@
     <string name="misc2_pass_plan_couple">カップル</string>
     <string name="misc2_pass_plan_family">家族</string>
     <string name="misc2_pass_plan_default">利用券</string>
-    <string name="misc2_shared_voice_label">%1$s ・共有</string>
     <string name="misc2_voice_preview_preparing">プレビュー準備中</string>
     <string name="misc2_voice_preview_pause">プレビュー一時停止</string>
     <string name="misc2_voice_preview_play">プレビュー再生</string>

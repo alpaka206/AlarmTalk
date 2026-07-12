@@ -43,11 +43,6 @@ internal val WakerPillShape = RoundedCornerShape(999.dp)   // 완전 캡슐(pill
 /** 오버레이/코치마크 스크림 — 테마 무관 고정 농도 rgba(5,8,14,.74). */
 internal val WakerScrimColor = Color(0xBD05080E)
 
-/**
- * 랜딩 일출 팔레트의 웜 액센트(sunGlow #FFD494) — 홈 히어로 등 브랜드 '새벽' 글로우 전용.
- * colorScheme 밖의 문서화된 브랜드 비주얼 예외(WakerScrimColor 와 같은 층위).
- */
-internal val WakerDawnGlowColor = Color(0xFFFFD494)
 
 @Composable
 internal fun wakerCardBorder(alpha: Float = 1f): BorderStroke {

@@ -17,8 +17,6 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Snooze
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,33 +37,6 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.data.VibrationPatterns
 
-@Composable
-internal fun ChipGrid(
-    options: List<Pair<String, String>>,
-    selected: String,
-    onSelect: (String) -> Unit,
-    selectedContainerColor: Color? = null,
-    selectedLabelColor: Color? = null,
-) {
-    val chipColors = FilterChipDefaults.filterChipColors(
-        selectedContainerColor = selectedContainerColor ?: MaterialTheme.colorScheme.primaryContainer,
-        selectedLabelColor = selectedLabelColor ?: MaterialTheme.colorScheme.onPrimaryContainer,
-    )
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.chunked(3).forEach { rowOptions ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowOptions.forEach { (value, label) ->
-                    FilterChip(
-                        selected = selected == value,
-                        onClick = { onSelect(value) },
-                        colors = chipColors,
-                        label = { Text(label) },
-                    )
-                }
-            }
-        }
-    }
-}
 
 internal val SnoozeIntervals = listOf(5, 10, 15, 30)
 

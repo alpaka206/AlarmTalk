@@ -190,23 +190,6 @@ private fun VoiceRecordScriptCard(
 }
 
 @Composable
-internal fun VoiceLoginRequiredCard() {
-    OutlinedCard {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.voices_login_required_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            MutedText(stringResource(R.string.voices_login_required_body))
-        }
-    }
-}
-
-@Composable
 internal fun VoiceProfileManagementPanel(
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,

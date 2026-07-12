@@ -642,37 +642,6 @@ private fun FreeVoiceSummaryRow(
     }
 }
 
-@Composable
-private fun ManualVoiceMessageField(
-    text: String,
-    onTextChange: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(stringResource(R.string.editor_manual_input), fontWeight = FontWeight.SemiBold)
-            Text(
-                text = "${text.length}/200",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        OutlinedTextField(
-            value = text,
-            onValueChange = onTextChange,
-            placeholder = { Text(stringResource(R.string.editor_manual_input_placeholder)) },
-            minLines = 3,
-            maxLines = 5,
-            shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
 // '문구' 단일 선택기 요약 행 — 현재 선택(직접 입력 / 기본 인사말 / 동적 문구)을 보여주고
 // 누르면 선택 pane 을 연다. 옛 랜덤/직접입력 토글을 대체한다.
 @Composable

@@ -17,13 +17,6 @@ import com.alarmtalk.app.network.TtsMessage
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
-internal fun amPmLabel(context: android.content.Context, hour: Int): String =
-    if (floorMod(hour, 24) < 12) {
-        context.getString(R.string.editor2_am)
-    } else {
-        context.getString(R.string.editor2_pm)
-    }
-
 internal fun hour12(hour: Int): Int = when (val value = floorMod(hour, 12)) {
     0 -> 12
     else -> value
@@ -372,41 +365,6 @@ internal class AlarmEditorState(
 
     fun shouldTranslateVoiceText(): Boolean =
         !voiceRandomPrompt && activeVoiceLanguage() != "ko"
-
-    fun setPendingServerTts(message: TtsMessage) {
-        voiceSource = VoiceSources.SERVER_TTS
-        ttsMessageId = message.id
-        voiceProfileId = message.voiceProfileId
-        voiceText = message.text
-        voiceCategory = message.category ?: "custom"
-        voiceRandomPrompt = false
-        clearBucketSelection()
-        localAudioUri = null
-        audioCacheKey = null
-        rawAudioUri = message.audioUrl
-        generatedTtsKey = null
-    }
-
-    fun setServerTtsAudio(
-        audio: CachedAlarmAudio,
-        messageId: String,
-        text: String,
-        category: String?,
-        voiceProfileId: String?,
-        rawAudioUri: String?,
-    ) {
-        voiceSource = VoiceSources.SERVER_TTS
-        ttsMessageId = messageId
-        voiceText = text
-        voiceCategory = category ?: "custom"
-        voiceRandomPrompt = false
-        clearBucketSelection()
-        this.voiceProfileId = voiceProfileId
-        localAudioUri = audio.localAudioUri
-        audioCacheKey = audio.cacheKey
-        this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
-        generatedTtsKey = null
-    }
 
     companion object {
         fun from(
