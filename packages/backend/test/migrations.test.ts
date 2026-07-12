@@ -240,4 +240,15 @@ describe('migrations', () => {
       "ALTER TABLE users ADD COLUMN dynamic_prompt_settings_json TEXT NOT NULL DEFAULT '{}'",
     );
   });
+
+  it('migration #57 stores monthly official voice-change ledger', () => {
+    const m = migrations.find((x) => x.id === 57);
+    expect(m).toBeDefined();
+    const all = m!.statements.join('\n');
+    expect(all).toContain('CREATE TABLE IF NOT EXISTS voice_profile_change_ledger');
+    expect(all).toContain('idx_voice_profile_change_ledger_monthly');
+    expect(all).toContain("WHERE status != 'failed'");
+    expect(all).toContain('INSERT OR IGNORE INTO voice_profile_change_ledger');
+    expect(all).toContain("'+9 hours'");
+  });
 });

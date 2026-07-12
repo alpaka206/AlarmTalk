@@ -157,6 +157,19 @@ class PlayBillingManager(
     }
 
     /**
+     * planKey 의 Play 실제 표시가격(ProductDetails.formattedPrice). 결제 국가/통화가 반영된
+     * 권위 가격이다. 미로딩/미조회면 null → UI 는 문자열 리소스로 폴백한다.
+     * (하드코딩 가격은 청구 통화·금액과 어긋나 Play 정책 위반 소지 → 실가격 표기 필수)
+     */
+    fun formattedPriceForPlan(planKey: String): String? {
+        val productId = PlayBillingProducts.productIdFor(planKey) ?: return null
+        return productDetailsCache[productId]
+            ?.subscriptionOfferDetails?.firstOrNull()
+            ?.pricingPhases?.pricingPhaseList?.firstOrNull()
+            ?.formattedPrice
+    }
+
+    /**
      * 결제 시트를 띄운다. 결과(성공/보류/취소)는 [PurchasesUpdatedListener] 로 비동기 전달된다.
      *
      * @return 결제 플로우 실행에 성공했으면 true. false 면 시트 자체가 뜨지 않은 것.

@@ -34,9 +34,7 @@ import com.alarmtalk.app.network.GoogleLoginRequest
 import com.alarmtalk.app.network.LoginRequest
 import com.alarmtalk.app.network.PasswordResetConfirmRequest
 import com.alarmtalk.app.network.PasswordResetRequest
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.SendNoteRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
@@ -745,7 +743,7 @@ internal fun MainViewModel.syncNow() {
         syncBusy = true
         runCatching {
             val push = repository.syncWithBackend(api, session.token)
-            val pull = repository.pullReceivedAlarms(api, session.token, session.user.id)
+            val pull = repository.pullReceivedAlarms(api, session.token)
             push to pull
         }.onSuccess { (push, pull) ->
             val failed = push.failed + pull.failed
@@ -768,4 +766,46 @@ private fun MainViewModel.alarmSyncFailureMessage(pushFailed: Int, pullFailed: I
     pullFailed > 0 ->
         getApplication<android.app.Application>().getString(R.string.msg_sync_pull_partial_failed)
     else -> getApplication<android.app.Application>().getString(R.string.msg_sync_generic_failed)
+}
+
+internal fun MainViewModel.showGoogleSetupRequired() {
+    message = getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_unavailable)
+}
+
+internal fun MainViewModel.showGoogleSignInFailed(reason: String? = null) {
+    message = reason ?: getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_failed)
+}
+
+internal fun MainViewModel.clearMessage() {
+    message = null
+}
+
+internal fun MainViewModel.refreshAppSession() {
+    val session = authSession ?: return
+    viewModelScope.launch {
+        runCatching {
+            api.me(AlarmTalkApiClient.bearer(session.token)).user
+        }.onSuccess { user ->
+            val response = AuthTokenResponse(
+                token = session.token,
+                user = user,
+            )
+            authSession = if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
+                authSessionStore.saveGoogleSession(response)
+            } else {
+                authSessionStore.saveAppSession(response)
+            }
+        }.onFailure { error ->
+            Log.w(TAG, "Auth refresh failed", error)
+        }
+    }
+}
+
+internal fun MainViewModel.bearerOrMessage(fallbackMessage: String): String? {
+    val session = authSession
+    if (session == null) {
+        message = fallbackMessage
+        return null
+    }
+    return AlarmTalkApiClient.bearer(session.token)
 }

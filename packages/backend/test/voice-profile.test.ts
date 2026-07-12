@@ -256,6 +256,23 @@ describe('PATCH /:id — 이름 변경 (voice-profile)', () => {
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('VOICE_PROFILE_NOT_FOUND');
   });
+
+  it('draft promote is blocked when monthly voice-change ledger is already reserved', async () => {
+    mockDB.pushResult([{ id: V1, is_draft: 1 }]);
+    mockDB.pushResult([{ active_count: 0, monthly_count: 0 }]);
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 0);
+
+    const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V1}`, { is_draft: false }));
+
+    expect(res.status).toBe(429);
+    expect((await res.json()).error_code).toBe('VOICE_MONTHLY_CHANGE_LIMIT_REACHED');
+    const ledgerCall = mockDB.calls.find((call) =>
+      call.sql.includes('INSERT OR IGNORE INTO voice_profile_change_ledger'),
+    );
+    expect(ledgerCall).toBeDefined();
+    expect(mockDB.calls.some((call) => call.sql.startsWith('UPDATE voice_profiles'))).toBe(false);
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -349,6 +366,21 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(body.error).toContain('1');
   });
 
+  it('이번 달에 정식 목소리를 이미 만들었으면 429 VOICE_MONTHLY_CHANGE_LIMIT_REACHED', async () => {
+    mockDB.pushResult([{ active_count: 0, monthly_count: 0 }]);
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 0);
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '새 목소리'));
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_MONTHLY_CHANGE_LIMIT_REACHED');
+    expect(mockCreateInstantClone).not.toHaveBeenCalled();
+    const ledgerCall = mockDB.calls.find((call) =>
+      call.sql.includes('INSERT OR IGNORE INTO voice_profile_change_ledger'),
+    );
+    expect(ledgerCall).toBeDefined();
+  });
+
   it('프로필이 없으면 통과', async () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
@@ -366,11 +398,14 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), '쿼터'));
     expect(res.status).toBe(201);
 
-    const quotaCall = mockDB.calls.find((call) =>
-      call.sql.includes('COUNT(*) as count FROM voice_profiles'),
-    );
+    const quotaCall = mockDB.calls.find((call) => call.sql.includes('FROM voice_profiles'));
     expect(quotaCall).toBeDefined();
     expect(quotaCall!.sql).toContain("status != 'failed'");
+    expect(
+      mockDB.calls.some((call) =>
+        call.sql.includes('INSERT OR IGNORE INTO voice_profile_change_ledger'),
+      ),
+    ).toBe(true);
   });
 
   it('audio 누락 → 400', async () => {
@@ -455,11 +490,13 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(body.profile.voice_id).toBe('elv-ok');
     expect(body.profile.status).toBe('ready');
 
-    const insertCall = mockDB.calls[1]!;
+    const insertCall = mockDB.calls.find((call) =>
+      call.sql.includes('INSERT INTO voice_profiles'),
+    )!;
     expect(insertCall.sql).toContain('INSERT INTO voice_profiles');
     expect(insertCall.sql).toContain("'processing'");
 
-    const updateCall = mockDB.calls[2]!;
+    const updateCall = mockDB.calls.find((call) => call.sql.includes("status = 'ready'"))!;
     expect(updateCall.sql).toContain("status = 'ready'");
     expect(updateCall.args).toContain('elv-ok');
   });
@@ -476,7 +513,9 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(body.detail).toBe('API down');
 
     // 클론 실패 시 stuck 'processing' 방지: 해당 row 를 'failed' 로 정리해야 한다.
-    const insertCall = mockDB.calls[1]!;
+    const insertCall = mockDB.calls.find((call) =>
+      call.sql.includes('INSERT INTO voice_profiles'),
+    )!;
     const insertedId = insertCall.args[0];
     const failedCall = mockDB.calls.find((call) => call.sql.includes("status = 'failed'"));
     expect(failedCall).toBeDefined();
@@ -530,6 +569,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
   it('ElevenLabs 슬롯 부족 시 503 + VOICE_SLOT_EXHAUSTED', async () => {
     mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockRejectedValue(
       new Error(
@@ -819,6 +859,7 @@ describe('POST /clone — edge cases (voice-profile)', () => {
 
   it('non-Error throw → detail = "Unknown error"', async () => {
     mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockRejectedValue('string-error');
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'test'));

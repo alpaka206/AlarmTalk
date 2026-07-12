@@ -180,54 +180,6 @@ describe('ElevenLabsClient', () => {
     });
   });
 
-  describe('diarize', () => {
-    it('FormData로 전송 + 결과 반환', async () => {
-      const diarizeResult = {
-        words: [
-          { text: 'hello', start: 0, end: 0.4, type: 'word', speaker_id: 'speaker_1' },
-          { text: 'world', start: 0.45, end: 0.8, type: 'word', speaker_id: 'speaker_1' },
-          { text: 'again', start: 1.5, end: 2, type: 'word', speaker_id: 'speaker_2' },
-        ],
-      };
-      mockFetch.mockResolvedValueOnce(okJson(diarizeResult));
-
-      const result = await client.diarize(new ArrayBuffer(500));
-
-      const [url, opts] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.elevenlabs.io/v1/speech-to-text');
-      expect(opts.method).toBe('POST');
-      const body = opts.body as FormData;
-      expect(body.get('model_id')).toBe('scribe_v2');
-      expect(body.get('diarize')).toBe('true');
-      expect(body.get('timestamps_granularity')).toBe('word');
-      expect(result.speakers).toHaveLength(2);
-      expect(result.speakers[0].speaker_id).toBe('speaker_1');
-      expect(result.speakers[0].segments).toEqual([{ start: 0, end: 0.8 }]);
-    });
-
-    it('diarize 업로드에서 mp3 MIME 과 파일명을 보존', async () => {
-      mockFetch.mockResolvedValueOnce(okJson({ words: [] }));
-
-      await client.diarize(new ArrayBuffer(500), {
-        mimeType: 'audio/mpeg',
-        fileName: 'recording.mp3',
-      });
-
-      const body = mockFetch.mock.calls[0][1].body as FormData;
-      const file = body.get('file') as Blob & { name?: string };
-      expect(file.type).toBe('audio/mpeg');
-      expect(file.name).toBe('recording.mp3');
-    });
-
-    it('API 에러 시 예외', async () => {
-      mockFetch.mockResolvedValueOnce(errorResponse(500, 'Internal error'));
-
-      await expect(client.diarize(new ArrayBuffer(10))).rejects.toThrow(
-        'ElevenLabs diarize error 500',
-      );
-    });
-  });
-
   describe('deleteVoice', () => {
     it('DELETE 메서드로 요청', async () => {
       mockFetch.mockResolvedValueOnce(new Response(null, { status: 200 }));

@@ -16,6 +16,7 @@ const ENV: Env = {
   TURSO_AUTH_TOKEN: 'x',
   GOOGLE_CLIENT_ID: 'x',
   GOOGLE_VERTEX_CREDENTIALS_JSON: '',
+  GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED: 'true',
   JWT_SECRET: 'test-secret-32-chars-or-longer!',
   PASSWORD_PEPPER: 'pepper',
   ENVIRONMENT: 'test',
@@ -233,6 +234,30 @@ describe('prepareAlarmTextWithVertex', () => {
 });
 
 describe('generateDynamicAlarmTextWithVertex', () => {
+  it('uses local preset-style fallback unless dynamic Gemini text is explicitly enabled', async () => {
+    queueContent(geminiText('{"text":"Gemini should not be used","tag":"cheerfully"}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(
+      {
+        ...ENV,
+        GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED: undefined,
+      },
+      {
+        mode: 'love',
+        category: 'love',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '연인',
+        listenerTitle: '자기야',
+      },
+    );
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).toContain('자기야');
+    expect(generated.text).not.toContain('Gemini should not be used');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('falls back to readable dynamic text when Gemini returns helper text only', async () => {
     queueContent(geminiText('Here Is the json requested:'));
 

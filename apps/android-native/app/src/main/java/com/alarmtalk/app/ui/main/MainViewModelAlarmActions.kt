@@ -20,11 +20,13 @@ import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
+import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
+import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
@@ -35,11 +37,9 @@ import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyAlarmTalkRequest
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.RemoteAlarmMapper
 import com.alarmtalk.app.network.RemoteAlarmWriteRequest
-import com.alarmtalk.app.network.SendNoteRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
@@ -290,6 +290,26 @@ internal fun MainViewModel.setAlarmEnabled(alarmId: String, enabled: Boolean) {
 
 internal fun MainViewModel.deleteAlarm(alarmId: String) {
     viewModelScope.launch {
+        // 받은(가족) 알람은 로컬 삭제만으로는 다음 동기화에 되살아난다(감사 A-1). 서버에
+        // '그만받기'(decline)를 먼저 영구 기록해야 재조회·재설치에도 부활하지 않는다. decline 이
+        // 실패하면(오프라인 등) 로컬 삭제도 보류해 '지웠는데 되살아나는' 혼란을 막고 재시도하게 한다.
+        val alarm = repository.getAlarm(alarmId)
+        val remoteId = alarm?.remoteAlarmId
+        if (alarm?.origin == AlarmOrigins.RECEIVED_REMOTE && !remoteId.isNullOrBlank()) {
+            val authorization = bearerOrMessage(
+                getApplication<Application>().getString(R.string.msg_alarm_delete_failed),
+            ) ?: return@launch
+            val declineResult = runCatching { api.declineAlarm(authorization, remoteId) }
+            // 서버에서 이미 사라진 알람(발신자가 먼저 삭제 등)은 decline 이 404(ALARM_NOT_FOUND) —
+            // 멱등 성공으로 보고 로컬 삭제로 진행한다(stale 알람이 안 지워지는 것 방지). 진짜
+            // 네트워크/인증 실패만 보류해 재시도하게 한다.
+            val declineOk = declineResult.isSuccess ||
+                declineResult.exceptionOrNull()?.let { apiErrorCode(it) } == "ALARM_NOT_FOUND"
+            if (!declineOk) {
+                message = getApplication<Application>().getString(R.string.msg_alarm_delete_failed)
+                return@launch
+            }
+        }
         runCatching {
             repository.deleteAlarm(alarmId)
         }.onSuccess {

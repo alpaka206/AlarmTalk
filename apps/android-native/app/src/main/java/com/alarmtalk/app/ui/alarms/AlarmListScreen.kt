@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,18 +32,15 @@ import com.alarmtalk.app.ui.guide.coachMarkTarget
 import kotlinx.coroutines.delay
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
-import com.alarmtalk.app.data.VoiceProfilePromotionDraft
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
-import com.alarmtalk.app.network.NoteAudioResponse
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoiceSpeakerSegment
 import com.alarmtalk.app.network.VoucherItem
 
 // 홈 첫 방문 안내 — 다음 알람 히어로에 스포트라이트.
@@ -70,19 +66,13 @@ internal fun AlarmListScreen(
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     vouchers: List<VoucherItem>,
-    noteBusy: Boolean,
-    receivedNotes: List<ReceivedNote>,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, String) -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
-    onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
-    onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
-    onPromoteDraftVoice: suspend (String, VoiceProfilePromotionDraft) -> Unit,
-    onDeleteDraftVoice: suspend (String) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     defaultVoiceId: String? = null,
@@ -96,12 +86,8 @@ internal fun AlarmListScreen(
     onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
-    onRefreshNotes: () -> Unit,
-    onSendNote: (String, String) -> Unit,
-    onSendTtsNote: (String, String, String) -> Unit,
-    onDownloadNoteAudio: suspend (String) -> NoteAudioResponse,
-    onMarkNoteRead: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
+    planPrices: Map<String, String>,
     onPurchasePlay: (android.app.Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
@@ -111,6 +97,7 @@ internal fun AlarmListScreen(
     onOpenSettings: () -> Unit,
     onOpenMemberManagement: () -> Unit,
     onOpenConsentHistory: () -> Unit,
+    onOpenOssLicenses: () -> Unit,
     onDeleteAccount: () -> Unit,
     themeMode: ThemeMode,
     onChangeTheme: (ThemeMode) -> Unit,
@@ -130,6 +117,7 @@ internal fun AlarmListScreen(
     val nextAlarm = remember(alarms) {
         alarms.filter { it.enabled }.minByOrNull { it.fireAtMillis }
     }
+    val hasAnyAlarm = sortedAlarms.isNotEmpty()
 
     val appContext = LocalContext.current.applicationContext
     val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
@@ -155,8 +143,9 @@ internal fun AlarmListScreen(
     // 겹쳐 버벅이지 않도록, 화면이 자리잡을 시간을 살짝 둔 뒤 부드럽게 띄운다.
     var homeGuideVisible by remember { mutableStateOf(false) }
     var voiceGuideVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(selectedTab, authSession) {
+    LaunchedEffect(selectedTab, authSession, hasAnyAlarm) {
         if (selectedTab == NativeTab.Alarms && authSession != null &&
+            !hasAnyAlarm &&
             !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_HOME)
         ) {
             delay(700)
@@ -178,8 +167,14 @@ internal fun AlarmListScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(
+            start = if (selectedTab == NativeTab.Alarms) 20.dp else 24.dp,
+            top = 24.dp,
+            end = if (selectedTab == NativeTab.Alarms) 20.dp else 24.dp,
+            // 알람 탭은 우하단 FAB(＋)가 마지막 알람 행을 가리지 않게 하단 여유를 더 준다.
+            bottom = if (selectedTab == NativeTab.Alarms) 96.dp else 32.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(if (selectedTab == NativeTab.Alarms) 14.dp else 16.dp),
     ) {
         when (selectedTab) {
             NativeTab.Voices -> {
@@ -197,10 +192,6 @@ internal fun AlarmListScreen(
                         authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
                         onCreateVoiceProfiles = onCreateVoiceProfiles,
-                        onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
-                        onCloneSpeakerDraft = onCloneSpeakerDraft,
-                        onPromoteDraftVoice = onPromoteDraftVoice,
-                        onDeleteDraftVoice = onDeleteDraftVoice,
                         onGenerateTts = onGenerateTts,
                         stockClips = stockClips,
                         onDownloadStockAudio = onDownloadStockAudio,
@@ -217,19 +208,12 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.Alarms -> {
-                item { HomeHeader() }
-                item {
-                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO, targetRadius = 24.dp)) {
-                        NextAlarmHeroCard(
-                            nextAlarm = nextAlarm,
-                            onClick = {
-                                if (nextAlarm == null) {
-                                    onCreateAlarm()
-                                } else {
-                                    onEditAlarm(nextAlarm)
-                                }
-                            },
-                        )
+                item { HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm) }
+                if (!hasAnyAlarm) {
+                    item {
+                        Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO, targetRadius = 24.dp)) {
+                            EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
+                        }
                     }
                 }
                 if (!permissions.alarmReady) {
@@ -241,10 +225,17 @@ internal fun AlarmListScreen(
                         )
                     }
                 }
-                // 알람이 없을 땐 히어로 카드가 생성 CTA를 겸한다. 생성 버튼은 하단바 중앙 ➕.
                 items(sortedAlarms, key = { it.id }) { alarm ->
+                    // TTS 알람만 프로필 이름을 찾는다(녹음·파일 알람은 이름 없이 날짜만).
+                    val voiceName = alarm.voiceProfileId
+                        ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO }
+                        ?.let { profileId ->
+                            voiceProfiles.firstOrNull { it.id == profileId }?.name
+                                ?: familyVoices.firstOrNull { it.id == profileId }?.name
+                        }
                     AlarmRow(
                         alarm = alarm,
+                        voiceName = voiceName,
                         onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
                         onEditAlarm = { onEditAlarm(alarm) },
                         onDeleteAlarm = { onDeleteAlarm(alarm.id) },
@@ -270,34 +261,6 @@ internal fun AlarmListScreen(
                 }
             }
 
-            NativeTab.Messages -> {
-                item {
-                    ScreenHeader(title = stringResource(R.string.common_tab_messages))
-                }
-                if (authSession != null) item {
-                    VoiceMessagePanel(
-                        authSession = authSession,
-                        noteBusy = noteBusy,
-                        familyGroup = familyGroup,
-                        subscriptionResponse = subscriptionResponse,
-                        voiceProfiles = voiceProfiles,
-                        familyVoices = familyVoices,
-                        voiceProfileBusy = voiceProfileBusy,
-                        receivedNotes = receivedNotes,
-                        onRefresh = {
-                            onRefreshSocial()
-                            onRefreshNotes()
-                        },
-                        onSendNote = onSendNote,
-                        onSendTtsNote = onSendTtsNote,
-                        onDownloadNoteAudio = onDownloadNoteAudio,
-                        onMarkNoteRead = onMarkNoteRead,
-                        onOpenFamily = { onSelectTab(NativeTab.People) },
-                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
-                    )
-                }
-            }
-
             NativeTab.Menu -> {
                 item {
                     ScreenHeader(title = stringResource(R.string.r3app_bottom_tab_menu))
@@ -313,6 +276,7 @@ internal fun AlarmListScreen(
                         onOpenMemberManagement = onOpenMemberManagement,
                         onOpenSettings = onOpenSettings,
                         onOpenConsentHistory = onOpenConsentHistory,
+                        onOpenOssLicenses = onOpenOssLicenses,
                         onDeleteAccount = onDeleteAccount,
                     )
                 }
@@ -328,6 +292,7 @@ internal fun AlarmListScreen(
                         subscriptionResponse = subscriptionResponse,
                         familyGroup = familyGroup,
                         vouchers = vouchers,
+                        planPrices = planPrices,
                         onCheckoutPlan = onCheckoutPlan,
                         onPurchasePlay = onPurchasePlay,
                         onCancelSubscription = onCancelSubscription,
@@ -339,7 +304,6 @@ internal fun AlarmListScreen(
             }
         }
     }
-
         if (homeGuideVisible && selectedTab == NativeTab.Alarms) {
             CoachMarkOverlay(
                 steps = homeCoachSteps,

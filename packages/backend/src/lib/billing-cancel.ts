@@ -66,9 +66,40 @@ export async function downgradeUserToFree(
     await deletePaidVoiceDataForUser(db, userPk, await resolveUserLoginId(db, userPk));
     return;
   }
+  // voice_profiles.user_id·alarms.user_id 는 로그인 id(google_id)로 저장되므로 PK(userPk)와
+  // 로그인 id 를 모두 매칭한다(deletePaidVoiceDataForUser 와 동일 — 한쪽만 쓰면 일반 케이스를
+  // 놓쳐 un-share·강등이 누락되고 취소된 목소리가 좀비로 계속 울린다).
+  const loginId = await resolveUserLoginId(db, userPk);
+  const ownerIds = Array.from(new Set([userPk, loginId].filter((x): x is string => Boolean(x))));
+  const ph = ownerIds.map(() => '?').join(',');
   await db.execute({
-    sql: `UPDATE voice_profiles SET is_shared = 0 WHERE user_id = ? AND is_shared = 1`,
-    args: [userPk],
+    sql: `UPDATE voice_profiles SET is_shared = 0 WHERE user_id IN (${ph}) AND is_shared = 1`,
+    args: ownerIds,
+  });
+  // 공유가 해제되면(강등/RTDN 비활성) 그 목소리를 참조하던 '타인 소유' 알람은 접근권을 잃으므로
+  // sound-only 로 강등한다 — 취소된 목소리가 좀비로 계속 울리지 않도록. (클라는 재동기화 시 반영)
+  await db.execute({
+    sql: `UPDATE alarms
+          SET mode = 'sound-only',
+              wake_mode = 'sound_then_voice',
+              message_id = NULL,
+              voice_profile_id = NULL,
+              speaker_id = NULL,
+              raw_audio_url = NULL,
+              raw_audio_duration_ms = NULL
+          WHERE user_id NOT IN (${ph})
+            AND (
+              voice_profile_id IN (
+                SELECT id FROM voice_profiles WHERE user_id IN (${ph})
+              )
+              OR message_id IN (
+                SELECT id FROM messages
+                WHERE voice_profile_id IN (
+                  SELECT id FROM voice_profiles WHERE user_id IN (${ph})
+                )
+              )
+            )`,
+    args: [...ownerIds, ...ownerIds, ...ownerIds],
   });
 }
 

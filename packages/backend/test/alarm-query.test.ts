@@ -89,7 +89,8 @@ describe('GET /alarms/tick', () => {
     await buildApp('me').request(new Request('http://localhost/alarms/tick'));
     const call = mockDB.calls[0];
     expect(call!.args).toContain('me');
-    expect(call!.args.filter((a) => a === 'me').length).toBe(2);
+    // user_id·target_user_id 필터(2) + 수신자 decline 게이트의 target·NOT-creator·recipient 서브쿼리(3) = 5
+    expect(call!.args.filter((a) => a === 'me').length).toBe(5);
   });
 });
 

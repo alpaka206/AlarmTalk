@@ -18,6 +18,7 @@ export type AlarmRow = Record<string, unknown> & {
   voice_profile_id?: unknown;
   speaker_id?: unknown;
   user_id?: unknown;
+  target_user_id?: unknown;
   creator_email?: unknown;
   creator_name?: unknown;
   category?: unknown;
@@ -25,7 +26,7 @@ export type AlarmRow = Record<string, unknown> & {
   raw_audio_duration_ms?: unknown;
 };
 
-export function normalizeAlarmRow(row: AlarmRow, viewerUserId?: string | null) {
+export function normalizeAlarmRow(row: AlarmRow, viewer?: string | string[] | null) {
   const rawRepeat = row.repeat_days;
   let repeatDays: number[] = [];
   if (typeof rawRepeat === 'string' && rawRepeat.length > 0) {
@@ -55,10 +56,24 @@ export function normalizeAlarmRow(row: AlarmRow, viewerUserId?: string | null) {
   const category = typeof row.category === 'string' ? row.category : null;
   const isFamilyAlarm = category === 'family' || category === 'family-voice';
   const senderUserId = typeof row.user_id === 'string' ? row.user_id : null;
+  const targetUserId = typeof row.target_user_id === 'string' ? row.target_user_id : null;
   const senderName = typeof row.creator_name === 'string' ? row.creator_name : null;
   const senderEmail = typeof row.creator_email === 'string' ? row.creator_email : null;
+  // 뷰어 식별자 집합. 계정 연동(email/UUID 계정 ↔ google 로그인) 사용자는 PK(users.id)와
+  // 로그인 id(google_id=JWT sub)가 서로 다르다. 단일 값이 아니라 집합으로 비교해야
+  // '내가 보낸 알람'을 '받은 알람'으로 오분류하지 않는다(PR #536 P1).
+  const viewerIds = (Array.isArray(viewer) ? viewer : viewer != null ? [viewer] : []).filter(
+    (x): x is string => typeof x === 'string' && x.length > 0,
+  );
+  const viewerSet = new Set(viewerIds);
+  const viewerIsCreator = senderUserId !== null && viewerSet.has(senderUserId);
+  // 서버 권위 판별: 내가 target 이고 내가 만든 게 아니면 '받은 알람'(카테고리 무관).
+  // 클라 pull 은 클라측 네임스페이스 비교(session.user.id) 대신 이 플래그로 받은 알람만 임포트한다.
+  const isReceived =
+    viewerSet.size > 0 && targetUserId !== null && viewerSet.has(targetUserId) && !viewerIsCreator;
+  // 기존 의미 유지: 가족 알람이고 보낸 사람이 뷰어가 아니면 '받은 가족 알람'(target 없어도 성립).
   const isReceivedFamilyAlarm =
-    isFamilyAlarm && !!viewerUserId && !!senderUserId && senderUserId !== viewerUserId;
+    isFamilyAlarm && viewerSet.size > 0 && senderUserId !== null && !viewerIsCreator;
 
   return {
     ...row,
@@ -78,6 +93,7 @@ export function normalizeAlarmRow(row: AlarmRow, viewerUserId?: string | null) {
     sender_name: senderName,
     sender_email: senderEmail,
     is_family_alarm: isFamilyAlarm,
+    is_received: isReceived,
     is_received_family_alarm: isReceivedFamilyAlarm,
   };
 }

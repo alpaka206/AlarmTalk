@@ -2,7 +2,34 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DEFAULT_QUIET_DAYS = [1, 2, 3, 4, 5];
 const DEFAULT_QUIET_START = '09:00';
 const DEFAULT_QUIET_END = '18:30';
-const MAX_QUIET_WINDOWS = 8;
+// 방해금지 요일은 평일/주말/매일 프리셋만 허용하고, 창은 최대 2개(평일 근무 + 주말 정도)로 제한한다.
+// '누구를 깨울까요' 시트 멤버 행 라벨이 길어지지 않게 하려는 제약(2026-07-08 결정).
+const MAX_QUIET_WINDOWS = 2;
+const WEEKDAY_DAYS = [1, 2, 3, 4, 5];
+const WEEKEND_DAYS = [0, 6];
+const EVERYDAY_DAYS = [0, 1, 2, 3, 4, 5, 6];
+const PRESET_QUIET_DAY_SETS = [WEEKDAY_DAYS, WEEKEND_DAYS, EVERYDAY_DAYS];
+
+export function isPresetQuietDays(days: number[]): boolean {
+  const sorted = Array.from(new Set(days)).sort((a, b) => a - b);
+  return PRESET_QUIET_DAY_SETS.some(
+    (preset) => preset.length === sorted.length && preset.every((day, i) => day === sorted[i]),
+  );
+}
+
+// 레거시(개별 요일 선택) 방해금지 창을 프리셋(평일/주말/매일)으로 흡수한다. 정확히 프리셋이면
+// 표준 정렬형으로, 아니면 포함하는 요일에 따라 가장 가까운(감싸는) 프리셋으로 확장 — 저장 시
+// 거부(400)로 막지 않고 프리셋 저장 규약을 유지하기 위함(PR #536 P2).
+export function coerceToPresetDays(days: number[]): number[] {
+  const sorted = Array.from(new Set(days)).sort((a, b) => a - b);
+  if (isPresetQuietDays(sorted)) return sorted;
+  const set = new Set(sorted);
+  const hasWeekday = WEEKDAY_DAYS.some((d) => set.has(d));
+  const hasWeekend = WEEKEND_DAYS.some((d) => set.has(d));
+  if (hasWeekday && hasWeekend) return [...EVERYDAY_DAYS];
+  if (hasWeekend) return [...WEEKEND_DAYS];
+  return [...WEEKDAY_DAYS];
+}
 
 export interface FamilyAlarmQuietWindow {
   days: number[];
@@ -77,8 +104,11 @@ export function validateQuietWindows(raw: unknown): FamilyAlarmQuietWindow[] | n
     const days = validateQuietDays(record.days);
     const start = validateQuietTime(record.start);
     const end = validateQuietTime(record.end);
-    if (days === null || days.length === 0 || start === null || end === null) return null;
-    windows.push({ days, start, end });
+    if (days === null || days.length === 0 || start === null || end === null) {
+      return null;
+    }
+    // 레거시 개별 요일은 거부하지 않고 프리셋으로 흡수한다(무관한 시간 편집이 400 나지 않도록).
+    windows.push({ days: coerceToPresetDays(days), start, end });
   }
   return windows;
 }
@@ -123,7 +153,7 @@ function normalizeQuietWindow(raw: unknown): FamilyAlarmQuietWindow | null {
   const start = validateQuietTime(record.start);
   const end = validateQuietTime(record.end);
   if (days === null || days.length === 0 || start === null || end === null) return null;
-  return { days, start, end };
+  return { days: coerceToPresetDays(days), start, end };
 }
 
 function toMinutes(value: string): number {

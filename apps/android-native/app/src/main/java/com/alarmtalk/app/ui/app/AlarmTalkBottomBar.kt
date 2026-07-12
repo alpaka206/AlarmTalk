@@ -17,13 +17,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.automirrored.filled.Message
-import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Menu
@@ -44,15 +41,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun AlarmTalkBottomBar(
     selectedTab: NativeTab,
     unreadAlarmCount: Int,
-    unreadMessageCount: Int,
-    messagesLocked: Boolean,
     onSelectTab: (NativeTab) -> Unit,
-    onCreateAlarm: () -> Unit,
 ) {
     // 배경색과 동일하게 깔아 시스템 내비게이션 바(배경색)와 이음새 없이 이어지게 한다.
     Surface(
@@ -87,21 +82,6 @@ internal fun AlarmTalkBottomBar(
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
-            AlarmCreateBarButton(
-                onClick = onCreateAlarm,
-                modifier = Modifier.weight(1f),
-            )
-            AlarmTalkTabItem(
-                tab = NativeTab.Messages,
-                selectedTab = selectedTab,
-                icon = Icons.AutoMirrored.Outlined.Message,
-                selectedIcon = Icons.AutoMirrored.Filled.Message,
-                label = stringResource(R.string.r3app_bottom_tab_messages),
-                badgeCount = unreadMessageCount,
-                locked = messagesLocked,
-                onSelectTab = onSelectTab,
-                modifier = Modifier.weight(1f),
-            )
             AlarmTalkTabItem(
                 tab = NativeTab.Menu,
                 selectedTab = selectedTab,
@@ -111,37 +91,6 @@ internal fun AlarmTalkBottomBar(
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
-        }
-    }
-}
-
-// 중앙 알람 생성 버튼 — 탭이 아닌 유일한 '동작' 슬롯이라 원형 프라이머리로 도드라지게 그린다.
-@Composable
-private fun AlarmCreateBarButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier.fillMaxHeight(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            onClick = onClick,
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            shadowElevation = 6.dp,
-        ) {
-            Box(
-                modifier = Modifier.size(52.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Add,
-                    contentDescription = stringResource(R.string.r3app_bottom_create_alarm_desc),
-                    modifier = Modifier.size(26.dp),
-                )
-            }
         }
     }
 }
@@ -227,7 +176,11 @@ internal fun AlarmTalkTabItem(
         }
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                letterSpacing = 0.sp,
+            ),
             color = selectedContentColor,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )

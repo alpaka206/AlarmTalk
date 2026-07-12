@@ -17,8 +17,6 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Snooze
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,48 +37,22 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.data.VibrationPatterns
 
-@Composable
-internal fun ChipGrid(
-    options: List<Pair<String, String>>,
-    selected: String,
-    onSelect: (String) -> Unit,
-    selectedContainerColor: Color? = null,
-    selectedLabelColor: Color? = null,
-) {
-    val chipColors = FilterChipDefaults.filterChipColors(
-        selectedContainerColor = selectedContainerColor ?: MaterialTheme.colorScheme.primaryContainer,
-        selectedLabelColor = selectedLabelColor ?: MaterialTheme.colorScheme.onPrimaryContainer,
-    )
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.chunked(3).forEach { rowOptions ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowOptions.forEach { (value, label) ->
-                    FilterChip(
-                        selected = selected == value,
-                        onClick = { onSelect(value) },
-                        colors = chipColors,
-                        label = { Text(label) },
-                    )
-                }
-            }
-        }
-    }
-}
 
 internal val SnoozeIntervals = listOf(5, 10, 15, 30)
 
+// 라벨은 로케일별 리소스(vibrationLabel)로 해석한다 — 코드에 언어를 박지 않는다.
 private val VibrationOptions = listOf(
-    VibrationPatterns.DEFAULT to "Basic call",
-    VibrationPatterns.STRONG to "Strong",
-    VibrationPatterns.SHORT to "Short",
-    VibrationPatterns.MEDIUM to "Medium",
-    VibrationPatterns.HEARTBEAT to "Heartbeat",
-    VibrationPatterns.TICKTOCK to "Ticktock",
-    VibrationPatterns.WALTZ to "Waltz",
-    VibrationPatterns.ZIGZAG to "Zig-zig-zig",
-    VibrationPatterns.OFF_BEAT to "Off-beat",
-    VibrationPatterns.RIPPLE to "Ripple",
-    VibrationPatterns.SIREN to "Siren",
+    VibrationPatterns.DEFAULT,
+    VibrationPatterns.STRONG,
+    VibrationPatterns.SHORT,
+    VibrationPatterns.MEDIUM,
+    VibrationPatterns.HEARTBEAT,
+    VibrationPatterns.TICKTOCK,
+    VibrationPatterns.WALTZ,
+    VibrationPatterns.ZIGZAG,
+    VibrationPatterns.OFF_BEAT,
+    VibrationPatterns.RIPPLE,
+    VibrationPatterns.SIREN,
 )
 
 @Composable
@@ -112,12 +84,7 @@ internal fun AlarmSettingsCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            text = stringResource(R.string.editor_detail_settings),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
+        EditorSectionTitle(stringResource(R.string.editor_detail_settings))
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = WakerCardShape,
@@ -307,6 +274,7 @@ internal fun AlarmSoundSettingsPane(
                 Surface(
                     shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.surface,
+                    border = wakerCardBorder(),
                 ) {
                     Row(
                         modifier = Modifier
@@ -429,6 +397,7 @@ internal fun VibrationSettingsPane(
                 Surface(
                     shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.surface,
+                    border = wakerCardBorder(),
                 ) {
                     Row(
                         modifier = Modifier
@@ -455,9 +424,9 @@ internal fun VibrationSettingsPane(
                 }
 
                 SnoozeOptionSection(title = stringResource(R.string.editor_pattern)) {
-                    VibrationOptions.forEachIndexed { index, (pattern, label) ->
+                    VibrationOptions.forEachIndexed { index, pattern ->
                         SnoozeRadioRow(
-                            label = label,
+                            label = vibrationLabel(context, pattern),
                             selected = selectedPattern == pattern,
                             onClick = {
                                 onVibrationEnabledChange(true)
@@ -476,12 +445,13 @@ internal fun VibrationSettingsPane(
 }
 
 internal data class RandomPromptSettingsResult(
-    val voiceLanguage: String,
     val randomContext: String,
     val weatherCountry: String,
     val weatherCity: String,
     val fortuneGender: String,
     val fortuneBirthDate: String,
     val fortuneBirthTime: String,
+    // '직접 입력' 선택 시 다이얼로그에서 받은 문구.
+    val manualText: String = "",
 )
 

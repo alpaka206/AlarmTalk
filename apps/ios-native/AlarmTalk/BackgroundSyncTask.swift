@@ -129,7 +129,6 @@ final class BackgroundSyncTask {
             _ = try await push.runOnce()
             let pullResult = try await pull.runOnce()
             if let session = KeychainStore.readSession() {
-                await socialFeatures.refreshNotesSilently(session: session)
                 _ = await dynamicVoice.refreshDue(token: session.token)
             }
             // PR3: `.fixed` 공휴일off one-shot proactive 재무장 sweep. iOS 의 유일한 주기

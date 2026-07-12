@@ -6,6 +6,7 @@ import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import { cancelActiveSubscriptionsForUser } from '../lib/billing-cancel';
+import { timingSafeEqualStr } from '../lib/timing-safe-equal';
 import {
   ANDROID_PUBLISHER_SCOPE,
   ENTITLED_STATES,
@@ -89,6 +90,17 @@ export function decideSubscriptionAction(
   return 'deactivate';
 }
 
+// RTDN 알림 본문(subscriptionId)은 위조 가능하므로, 등급 결정에 쓸 lineItem 은 재조회한
+// subscription.lineItems(Google 권위 응답)에서 고른다. 알림 productId 와 일치하는 항목이 있으면
+// 그것, 없으면 첫 항목 — 어느 쪽이든 productId 는 위조 본문이 아니라 권위 응답에서 온다.
+// (저가 구독 토큰에 상위 productId 를 실어 셀프 등급상승하는 것을 차단)
+export function selectAuthoritativeLineItem<T extends { productId?: string }>(
+  lineItems: T[] | undefined,
+  notifiedProductId: string,
+): T | undefined {
+  return lineItems?.find((item) => item.productId === notifiedProductId) ?? lineItems?.[0];
+}
+
 const billingGoogleRtdn = new Hono<AppEnv>();
 
 billingGoogleRtdn.post('/rtdn', async (c) => {
@@ -98,8 +110,8 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   if (!account || !expectedPackage || !verifyToken) {
     return c.json({ error: 'RTDN is not configured', error_code: 'RTDN_UNCONFIGURED' }, 503);
   }
-  // 위조 방지 — Play→Pub/Sub push URL 에 박아둔 비밀 토큰만 허용.
-  if (c.req.query('token') !== verifyToken) {
+  // 위조 방지 — Play→Pub/Sub push URL 에 박아둔 비밀 토큰만 허용. 상수시간 비교로 타이밍 오라클 차단.
+  if (!timingSafeEqualStr(c.req.query('token') ?? '', verifyToken)) {
     return c.json({ error: 'Forbidden', error_code: 'RTDN_BAD_TOKEN' }, 403);
   }
 
@@ -175,17 +187,27 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
 
   const subscription = (await lookupRes.json()) as SubscriptionV2Response;
   const state = subscription.subscriptionState ?? '';
-  const lineItem =
-    subscription.lineItems?.find((item) => item.productId === productId) ??
-    subscription.lineItems?.[0];
+  const lineItem = selectAuthoritativeLineItem(subscription.lineItems, productId);
+  // 플랜 등급은 위조 가능한 알림 본문(sub.subscriptionId=productId)이 아니라, 권위 재조회한
+  // lineItem.productId 로만 결정한다. (confirm 경로의 PRODUCT_MISMATCH 방어와 동일 — RTDN
+  // 공유토큰 보유자가 저가 구독 토큰에 상위 productId 를 실어 셀프 등급상승하는 것을 차단)
+  const authoritativeProductId = lineItem?.productId ?? null;
   const expiryMs = lineItem?.expiryTime ? new Date(lineItem.expiryTime).getTime() : NaN;
   const action = decideSubscriptionAction(state, expiryMs, Date.now());
 
   if (action === 'entitle') {
-    const planKey = googlePlanKeyFromProductId(productId);
+    if (!authoritativeProductId) {
+      logStructured('warn', { at: 'billing.google.rtdn', note: 'no_line_item', productId });
+      return c.json({ success: true, ignored: 'no_line_item' });
+    }
+    const planKey = googlePlanKeyFromProductId(authoritativeProductId);
     const plan = planKey ? await loadPlanByKey(db, planKey) : null;
     if (!plan) {
-      logStructured('warn', { at: 'billing.google.rtdn', note: 'plan_not_found', productId });
+      logStructured('warn', {
+        at: 'billing.google.rtdn',
+        note: 'plan_not_found',
+        productId: authoritativeProductId,
+      });
       return c.json({ success: true, ignored: 'plan_not_found' });
     }
     await withWriteTransaction(db, (tx) =>
@@ -193,7 +215,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         userPk,
         provider: 'google',
         providerTransactionId: purchaseToken,
-        productId,
+        productId: authoritativeProductId,
         plan,
         startsAt: new Date(),
         expiresAt: new Date(expiryMs),

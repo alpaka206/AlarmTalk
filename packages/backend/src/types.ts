@@ -11,6 +11,7 @@ export interface Env {
    */
   APPLE_SHARED_SECRET?: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
+  GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED?: string;
   GOOGLE_VERTEX_LOCATION?: string;
   GOOGLE_VERTEX_MODEL?: string;
   RESEND_API_KEY?: string;

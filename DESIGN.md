@@ -95,6 +95,14 @@ Use a 4 dp/pt base unit, with the app-level rhythm built on the existing 8-point
 - States: destructive row label uses the error token; confirmation dialog explains the 30-day grace period.
 - Usage: account deletion and future irreversible account-level actions.
 
+### Empty Alarm Preview
+
+- Structure: keep the home title above a single first-alarm card. Hide the persistent add FAB while no alarms exist; the whole card is the one creation path. Do not add a reliability strip, preview schedule, decorative illustration, or additional empty-list row.
+- Information balance: state that no alarm exists, name the first-alarm action, and give one concise setup prompt. Never show a default time, schedule, device, network, voice-profile metadata, or playback waveform before the user has created an alarm.
+- Type and scale: use `Title` for the empty home title, `Headline` for the card action, and `Body` for supporting copy. The card is a focused first-run action, not a promotional hero.
+- Surface: use one outlined hero card with the standard 24 dp radius and a single 40 dp primary circular arrow affordance. Do not use gradients, glass, decorative illustrations, nested cards, or a second competing FAB.
+- Usage: alarm home only when the user has no saved alarms.
+
 ## 6. Motion & Interaction
 
 ### Timing

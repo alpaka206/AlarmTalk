@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { typedRow } from '../lib/db-types';
@@ -591,8 +591,61 @@ alarmMutation.patch('/:id', async (c) => {
 
   return c.json({
     success: true,
-    alarm: normalizeAlarmRow(updated.rows[0] as AlarmRow, userId),
+    alarm: normalizeAlarmRow(updated.rows[0] as AlarmRow, ownerIds),
   });
+});
+
+// 수신자 '그만받기'(opt-out). 자기가 대상(target_user_id)인 알람만 가능하며, 생성자 소유의
+// 알람 행은 건드리지 않고 alarm_recipient_state 에 수신자별 decline 만 영구 기록한다. 이후
+// list/tick/cron 이 이 수신자에게는 해당 알람을 배달하지 않는다(재설치·동기화로 부활 안 함).
+async function resolveDeclineTarget(
+  c: Context<AppEnv>,
+): Promise<{ id: string; target: string } | { error: Response }> {
+  const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const viewer = Array.from(new Set([userPk, userId]));
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+  if (!id || !UUID_RE.test(id)) {
+    return { error: c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400) };
+  }
+  const res = await db.execute({
+    sql: 'SELECT target_user_id FROM alarms WHERE id = ? LIMIT 1',
+    args: [id],
+  });
+  const target = res.rows.length > 0
+    ? (typedRow<{ target_user_id: string | null }>(res.rows[0]!).target_user_id ?? null)
+    : null;
+  // 대상이 아니면(생성자/무관자 포함) 존재 노출 최소화로 404. 생성자는 일반 삭제(DELETE /:id)를 쓴다.
+  if (!target || !viewer.includes(target)) {
+    return { error: c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404) };
+  }
+  return { id, target };
+}
+
+alarmMutation.post('/:id/decline', async (c) => {
+  const resolved = await resolveDeclineTarget(c);
+  if ('error' in resolved) return resolved.error;
+  const db = getDB(c.env);
+  await db.execute({
+    sql: `INSERT INTO alarm_recipient_state (alarm_id, recipient_user_id, declined, created_at, updated_at)
+          VALUES (?, ?, 1, datetime('now'), datetime('now'))
+          ON CONFLICT(alarm_id, recipient_user_id)
+          DO UPDATE SET declined = 1, updated_at = datetime('now')`,
+    args: [resolved.id, resolved.target],
+  });
+  return c.json({ success: true, declined: true });
+});
+
+alarmMutation.delete('/:id/decline', async (c) => {
+  const resolved = await resolveDeclineTarget(c);
+  if ('error' in resolved) return resolved.error;
+  const db = getDB(c.env);
+  await db.execute({
+    sql: 'DELETE FROM alarm_recipient_state WHERE alarm_id = ? AND recipient_user_id = ?',
+    args: [resolved.id, resolved.target],
+  });
+  return c.json({ success: true, declined: false });
 });
 
 alarmMutation.delete('/:id', async (c) => {

@@ -27,7 +27,6 @@ import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
 import familyRoutes from './routes/family';
 import codeRoutes from './routes/code';
-import notesRoutes from './routes/notes';
 import holidayRoutes from './routes/holiday';
 import adminRoutes from './routes/admin';
 
@@ -241,7 +240,6 @@ api.route('/stats', statsRoutes);
 api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
 api.route('/code', codeRoutes);
-api.route('/notes', notesRoutes);
 
 // 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(HTTP Basic)로 보호한다
 // (admin.ts 내부 미들웨어). 프로모 쿠폰 발급/관리 등 SQL 수기 없이 웹 폼에서.
@@ -344,7 +342,14 @@ async function scheduled(
   const result = await db.execute(
     `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
             mode, voice_profile_id, speaker_id, timezone
-     FROM alarms WHERE is_active = 1`,
+     FROM alarms
+     WHERE is_active = 1
+       AND NOT EXISTS (
+         SELECT 1 FROM alarm_recipient_state ars
+         WHERE ars.alarm_id = alarms.id
+           AND ars.recipient_user_id = alarms.target_user_id
+           AND ars.declined = 1
+       )`,
   );
 
   const alarms: ScheduledAlarm[] = result.rows.map((r) => ({

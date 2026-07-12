@@ -330,6 +330,52 @@ class AlarmRepository(
     }
 
     /**
+     * 접근권을 잃은 음성 프로필(공유 해제·제공자 취소·본인 삭제)을 참조하는 '내 소유(LOCAL_OWNED)'
+     * 음성 알람을 sound-only 로 강등한다. [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
+     * 가족 공유 프로필 id 집합이어야 한다 — 부분/실패 로드로 호출하면 정상 알람을 오강등할 수 있으므로
+     * 호출부(refreshSocial 신선 성공)에서 가드한다. 버킷 회전·녹음(LOCAL_AUDIO)·수신 알람은 대상이 아니다.
+     * 반환값은 강등된 알람 수.
+     */
+    suspend fun degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds: Set<String>): Int {
+        val candidates = alarmDao.getAllAlarms().filter { alarm ->
+            alarm.origin == AlarmOrigins.LOCAL_OWNED &&
+                alarm.voiceSource == VoiceSources.TTS_PROFILE &&
+                alarm.bucketId == null &&
+                !alarm.voiceProfileId.isNullOrBlank() &&
+                alarm.voiceProfileId !in accessibleVoiceIds
+        }
+        var degraded = 0
+        for (current in candidates) {
+            val cacheKey = current.audioCacheKey
+            val updated = current.copy(
+                playMode = AlarmPlayModes.ALARM_ONLY,
+                voiceSource = VoiceSources.LOCAL_AUDIO,
+                voiceProfileId = null,
+                localAudioUri = null,
+                audioCacheKey = null,
+                rawAudioUri = null,
+                ttsMessageId = null,
+                voiceText = null,
+                voiceListenerTitle = null,
+                voiceCategory = null,
+                voiceLanguage = null,
+                voiceRandomPrompt = false,
+                // 서버 알람은 이미 P0-1/P0-2(취소·un-share·목소리 삭제) 경로에서 sound-only 로 강등되므로,
+                // 이 로컬 정리는 push 하지 않는다(SYNCED). 기본 Gson 은 null 필드를 PATCH 에서 누락시켜
+                // 서버 voice 참조를 못 지우고 오히려 stale 상태를 만들 수 있어(PR #536 P2), 로컬 캐시만 정리.
+                syncState = AlarmSyncStates.SYNCED,
+                updatedAtMillis = System.currentTimeMillis(),
+            )
+            if (updated.enabled) alarmScheduler.schedule(updated)
+            alarmDao.upsertPreservingServerSyncFields(updated)
+            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+            degraded++
+            Log.i(TAG, "Degraded alarm id=${current.id}: voice ${current.voiceProfileId} no longer accessible")
+        }
+        return degraded
+    }
+
+    /**
      * 보이스 클론 업로드에 성공한 직후, 더 이상 필요 없는 로컬 녹음 샘플(음성 생체정보)을 즉시 지운다.
      * 클론 소스 녹음은 알람 재생 오디오가 아니라 업로드 전용이므로, 어떤 알람도 같은 캐시키를
      * 참조하지 않을 때만(즉 재생용으로 공유되지 않을 때만) 실제 파일을 삭제한다.
@@ -576,15 +622,15 @@ class AlarmRepository(
     suspend fun pullReceivedAlarms(
         api: AlarmTalkApi,
         token: String,
-        myUserId: String,
     ): RemoteAlarmPullResult =
-        remoteAlarmPullSyncService.pullReceivedAlarms(api, token, myUserId)
+        remoteAlarmPullSyncService.pullReceivedAlarms(api, token)
 
     suspend fun refreshDueDynamicAlarmTalks(
         api: AlarmTalkApi,
         token: String,
         nowMillis: Long = System.currentTimeMillis(),
     ): Int {
+        if (!DynamicVoiceRefreshEnabled) return 0
         val alarms = alarmDao.getRepeatingDynamicAlarmTalks()
         var refreshed = 0
         alarms.forEach { alarm ->
@@ -804,6 +850,7 @@ class AlarmRepository(
      * 이 wiring 이 없으면 반복 동적 알람이 과거에 캐시된 동일 음성만 재생한다.
      */
     private fun ensureDynamicVoiceRefreshScheduled(alarm: AlarmEntity) {
+        if (!DynamicVoiceRefreshEnabled) return
         if (!isRepeatingDynamicVoiceAlarm(alarm)) return
         runCatching {
             DynamicVoiceRefreshScheduler.ensurePeriodic(context)
@@ -846,6 +893,7 @@ class AlarmRepository(
         }
 
     private companion object {
+        val DynamicVoiceRefreshEnabled = false
         const val DefaultDynamicVoiceContext = "wake_weather"
         val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
     }

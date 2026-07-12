@@ -6,9 +6,11 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,62 +55,6 @@ import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
 
-// AlarmFortuneSettings 에서 분리: 음성번역/알람 설정 row/스누즈 설정.
-
-@Composable
-internal fun VoiceTranslationSettingsPane(
-    voiceLanguage: String,
-    onDismiss: () -> Unit,
-    onLanguageChange: (String) -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.editor_back),
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_translation_language_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SnoozeOptionSection(title = stringResource(R.string.editor_language)) {
-                    TtsTranslationLanguages.forEachIndexed { index, (language, labelRes) ->
-                        SnoozeRadioRow(
-                            label = stringResource(labelRes),
-                            selected = voiceLanguage == language,
-                            onClick = { onLanguageChange(language) },
-                        )
-                        if (index != TtsTranslationLanguages.lastIndex) SnoozeOptionDivider()
-                    }
-                }
-            }
-        }
-    }
-}
-
 internal fun previewVibration(context: Context, patternName: String) {
     if (patternName == VibrationPatterns.NONE) return
     val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -134,10 +80,17 @@ internal fun AlarmSettingRow(
     trailing: @Composable () -> Unit,
 ) {
     // 전체 탭과 같은 톤 — 행마다 아이콘 배지 없이 제목·요약·컨트롤만.
+    // 누르는 순간 살짝 눌리는 물성(홈 카드와 같은 wakerPressScale)으로 즉각 반응을 준다.
+    val interactionSource = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .wakerPressScale(interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            )
             .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -225,6 +178,7 @@ internal fun SnoozeSettingsPane(
                 Surface(
                     shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.surface,
+                    border = wakerCardBorder(),
                 ) {
                     Row(
                         modifier = Modifier
@@ -333,20 +287,23 @@ internal fun SnoozeSettingsPane(
 
 @Composable
 internal fun SnoozeOptionSection(
-    title: String,
+    title: String? = null,
     content: @Composable () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(start = 4.dp),
-        )
+        if (title != null) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
         Surface(
             shape = WakerChipShape,
             color = MaterialTheme.colorScheme.surface,
+            border = wakerCardBorder(),
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 content()
@@ -361,13 +318,13 @@ internal fun SnoozeRadioRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    // 최소 터치 타깃 48dp 확보 + 기본 리플 피드백.
+    // 리스트 행은 최소 터치 타깃(48dp)보다 여유를 둬 삼성/토스식 넉넉한 간격(56dp)으로.
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .heightIn(min = 48.dp)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
+            .heightIn(min = 56.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CompactSelectionDot(

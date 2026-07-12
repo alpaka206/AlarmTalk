@@ -252,6 +252,220 @@ class AlarmAudioStore(
         )
     }
 
+    /**
+     * 원본에서 여러 발화 구간([startMillis, endMillis])만 잘라 하나로 이어붙인 클립을 만든다.
+     * 화자 분리에서 "그 화자 발화 구간"만 모아 클론 소스로 쓰기 위한 용도 — 구간 사이의
+     * 다른 화자/침묵은 버린다. 구간 합이 maxDurationMillis 를 넘으면 앞에서부터 채우고 자른다.
+     */
+    fun cacheFromUriSegments(
+        sourceUri: Uri,
+        segments: List<Pair<Long, Long>>,
+        maxDurationMillis: Long = AlarmAudioLimits.MAX_DURATION_MILLIS,
+    ): CachedAlarmAudio {
+        val durationMillis = readDurationMillis(sourceUri)
+            ?: throw IllegalArgumentException(context.getString(R.string.rd_audio_duration_unreadable))
+        // 유효 구간만 남긴다: [0,duration] 클램프, start<end, 시작순 정렬, 합이 max 를 넘으면 잘라 담는다.
+        val cleaned = ArrayList<Pair<Long, Long>>()
+        var accMillis = 0L
+        for ((rawStart, rawEnd) in segments.sortedBy { it.first }) {
+            if (accMillis >= maxDurationMillis) break
+            val start = rawStart.coerceIn(0L, durationMillis)
+            val end = rawEnd.coerceIn(0L, durationMillis)
+            if (end <= start) continue
+            val remaining = maxDurationMillis - accMillis
+            val clippedEnd = if (end - start > remaining) start + remaining else end
+            cleaned.add(start to clippedEnd)
+            accMillis += clippedEnd - start
+        }
+        require(cleaned.isNotEmpty()) { context.getString(R.string.rd_audio_extract_failed) }
+
+        val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
+        val extension = extensionFor(sourceUri, displayName)
+        val trackMimeType = audioTrackMime(sourceUri)
+        val trimAsMp3 = extension == "mp3" || isMp3Mime(trackMimeType)
+
+        val segToken = cleaned.joinToString(";") { "${it.first}-${it.second}" }
+        val cacheKey = audioCacheKeyForSource(
+            sourceUri = "$sourceUri#seg:$segToken",
+            durationMillis = accMillis,
+            startMillis = 0L,
+            maxDurationMillis = maxDurationMillis,
+        )
+        val lock = cacheKeyLock(cacheKey)
+        lock.lock()
+        return try {
+            val cachedHit = findCachedFile(cacheKey)?.let { cached ->
+                val cachedDuration = readDurationMillis(cached.toUri())
+                if (cachedDuration != null && cachedDuration > 0L && cached.length() >= 4 * 1024) {
+                    CachedAlarmAudio(
+                        localAudioUri = cached.toUri().toString(),
+                        rawAudioUri = sourceUri.toString(),
+                        displayName = displayName,
+                        // 헤더 없는 MP3 concat 은 MediaMetadataRetriever 가 길이를 오판할 수 있어,
+                        // 실제 잘라 담은 세그먼트 합(accMillis)을 길이로 쓴다(클론 게이트 정합).
+                        durationMillis = accMillis,
+                        cacheKey = cacheKey,
+                        messageId = null,
+                    )
+                } else {
+                    runCatching { cached.delete() }
+                    null
+                }
+            }
+            if (cachedHit != null) {
+                cachedHit
+            } else {
+                val outExtension = if (trimAsMp3) "mp3" else "m4a"
+                val target = File(audioDir, "${safeCacheKey(cacheKey)}.$outExtension")
+                runCatching {
+                    concatSegments(sourceUri = sourceUri, target = target, segments = cleaned, forceMp3 = trimAsMp3)
+                }.onFailure { error ->
+                    runCatching { target.delete() }
+                    Log.e(TAG, "Failed to concat voice speaker segments uri=$sourceUri", error)
+                    AlarmTalkLog.reportError("Failed to concat voice speaker segments scheme=${sourceUri.scheme}", error)
+                    throw IllegalArgumentException(context.getString(R.string.rd_audio_extract_failed), error)
+                }.getOrThrow()
+
+                // 파일이 실제로 만들어졌는지(빈 출력 아님)만 검증하고, 신고 길이는 세그먼트 합을 쓴다.
+                // 헤더 없는 MP3 는 추출기 길이 추정이 어긋날 수 있어 accMillis 가 더 정확하다.
+                val outDuration = if (target.exists()) readDurationMillis(target.toUri()) else null
+                if (outDuration == null || outDuration <= 0L || target.length() < 4 * 1024) {
+                    runCatching { target.delete() }
+                    throw IllegalArgumentException(context.getString(R.string.rd_audio_extract_failed))
+                }
+                CachedAlarmAudio(
+                    localAudioUri = target.toUri().toString(),
+                    rawAudioUri = sourceUri.toString(),
+                    displayName = displayName,
+                    durationMillis = accMillis,
+                    cacheKey = cacheKey,
+                    messageId = null,
+                )
+            }
+        } finally {
+            lock.unlock()
+            releaseCacheKeyLockIfUnused(cacheKey, lock)
+        }
+    }
+
+    private fun concatSegments(
+        sourceUri: Uri,
+        target: File,
+        segments: List<Pair<Long, Long>>,
+        forceMp3: Boolean,
+    ) {
+        if (forceMp3 || isMp3Mime(audioTrackMime(sourceUri))) {
+            concatSegmentsMp3(sourceUri, target, segments)
+        } else {
+            concatSegmentsMp4(sourceUri, target, segments)
+        }
+    }
+
+    /**
+     * MP3: 구간별 프레임 바이트를 그대로 이어 쓴다(재인코딩 없음). MP3 프레임은 대체로 독립적이나
+     * bit reservoir 로 앞 프레임을 참조할 수 있어 경계 프레임에 미세 글리치가 남을 수 있다 —
+     * 클론 소스(음색 추출)로는 무시할 수준이라 그대로 둔다.
+     */
+    private fun concatSegmentsMp3(sourceUri: Uri, target: File, segments: List<Pair<Long, Long>>) {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(context, sourceUri, null)
+            val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            } ?: error("No audio track found.")
+            extractor.selectTrack(trackIndex)
+            val inputFormat = extractor.getTrackFormat(trackIndex)
+            val maxInputSize = (
+                if (inputFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                    inputFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                } else {
+                    256 * 1024
+                }
+                ).coerceAtLeast(64 * 1024)
+            val buffer = ByteBuffer.allocate(maxInputSize)
+            target.outputStream().use { output ->
+                for ((startMs, endMs) in segments) {
+                    val startUs = startMs * 1_000
+                    val endUs = endMs * 1_000
+                    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                    while (true) {
+                        val sampleTimeUs = extractor.sampleTime
+                        if (sampleTimeUs < 0 || sampleTimeUs >= endUs) break
+                        // closest-sync 가 구간 시작보다 앞 프레임에 착지하면 그 선행(=다른 화자/침묵)
+                        // 프레임은 버려 경계 혼입을 줄인다.
+                        if (sampleTimeUs < startUs) {
+                            extractor.advance()
+                            continue
+                        }
+                        buffer.clear()
+                        val sampleSize = extractor.readSampleData(buffer, 0)
+                        if (sampleSize < 0) break
+                        output.write(buffer.array(), 0, sampleSize)
+                        extractor.advance()
+                    }
+                }
+            }
+        } finally {
+            extractor.release()
+        }
+    }
+
+    /** MP4/AAC 등: MediaMuxer 로 구간별 샘플을 이어붙이되, 출력 PTS 를 누적해 연속 증가시킨다. */
+    private fun concatSegmentsMp4(sourceUri: Uri, target: File, segments: List<Pair<Long, Long>>) {
+        val extractor = MediaExtractor()
+        val muxer = MediaMuxer(target.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        try {
+            extractor.setDataSource(context, sourceUri, null)
+            val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+            } ?: error("No audio track found.")
+            extractor.selectTrack(trackIndex)
+            val inputFormat = extractor.getTrackFormat(trackIndex)
+            val outputTrackIndex = muxer.addTrack(inputFormat)
+            val maxInputSize = (
+                if (inputFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                    inputFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                } else {
+                    256 * 1024
+                }
+                ).coerceAtLeast(64 * 1024)
+            val buffer = ByteBuffer.allocate(maxInputSize)
+            val bufferInfo = MediaCodec.BufferInfo()
+            muxer.start()
+            // 이어붙일 출력 타임라인의 현재 위치. 각 구간을 이 위치부터 다시 0 기준으로 얹는다.
+            var outputBaseUs = 0L
+            for ((startMs, endMs) in segments) {
+                val startUs = startMs * 1_000
+                val endUs = endMs * 1_000
+                extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                // closest-sync 가 구간 시작보다 앞이면 선행(=다른 화자/침묵) 프레임을 버려 경계 혼입을 줄인다.
+                while (extractor.sampleTime in 0 until startUs) extractor.advance()
+                val segAnchorUs = extractor.sampleTime.takeIf { it >= 0L } ?: startUs
+                var lastRelUs = 0L
+                var wroteAny = false
+                while (true) {
+                    val sampleTimeUs = extractor.sampleTime
+                    if (sampleTimeUs < 0 || sampleTimeUs >= endUs) break
+                    buffer.clear()
+                    val sampleSize = extractor.readSampleData(buffer, 0)
+                    if (sampleSize < 0) break
+                    val relUs = (sampleTimeUs - segAnchorUs).coerceAtLeast(0L)
+                    bufferInfo.set(0, sampleSize, outputBaseUs + relUs, codecBufferFlags(extractor.sampleFlags))
+                    muxer.writeSampleData(outputTrackIndex, buffer, bufferInfo)
+                    lastRelUs = relUs
+                    wroteAny = true
+                    extractor.advance()
+                }
+                // 다음 구간 첫 샘플 PTS 가 이전 구간 마지막과 같아지지 않도록 한 프레임(~23ms)만큼 벌린다.
+                if (wroteAny) outputBaseUs += lastRelUs + 23_000L
+            }
+        } finally {
+            runCatching { muxer.stop() }
+            muxer.release()
+            extractor.release()
+        }
+    }
+
     fun cacheGeneratedAudio(
         bytes: ByteArray,
         format: String,

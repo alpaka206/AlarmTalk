@@ -36,30 +36,12 @@ data class VoiceUpload(
     val createdAt: String? = null,
 )
 
-data class VoiceSpeakerListResponse(
-    val speakers: List<VoiceSpeakerSegment>,
-    val provider: String? = null,
-)
-
-data class VoiceSpeakerSegment(
-    val id: String,
-    @SerializedName(value = "uploadId", alternate = ["upload_id"]) val uploadId: String? = null,
-    val label: String,
-    @SerializedName(value = "startMs", alternate = ["start_ms"]) val startMs: Long,
-    @SerializedName(value = "endMs", alternate = ["end_ms"]) val endMs: Long,
-    val confidence: Double? = null,
-)
-
 data class VoiceProfileUpdateRequest(
     val name: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("is_draft") val isDraft: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
-    // 'male' | 'female' | 'neutral'
-    @SerializedName("voice_gender") val voiceGender: String? = null,
-    // 'auto' | 'polite'
-    @SerializedName("speech_formality") val speechFormality: String? = null,
 )
 
 data class VoiceProfileRelationshipUpdateRequest(
@@ -114,10 +96,6 @@ interface VoiceProfileApi {
         @Part("listenerTitle") listenerTitle: RequestBody,
         @Part("durationMs") durationMs: RequestBody,
         @Part("isDraft") isDraft: RequestBody,
-        // 'male' | 'female' | 'neutral'
-        @Part("voiceGender") voiceGender: RequestBody,
-        // 'auto' | 'polite'
-        @Part("speechFormality") speechFormality: RequestBody,
     ): VoiceProfileResponse
 
     @Multipart
@@ -128,12 +106,6 @@ interface VoiceProfileApi {
         @Part("durationMs") durationMs: RequestBody,
         @Part("originalName") originalName: RequestBody,
     ): VoiceUploadResponse
-
-    @POST("voice/uploads/{uploadId}/separate")
-    suspend fun separateVoiceUpload(
-        @Header("Authorization") authorization: String,
-        @Path("uploadId") uploadId: String,
-    ): VoiceSpeakerListResponse
 
     @PATCH("voice/{id}")
     suspend fun updateVoiceProfile(
@@ -154,6 +126,8 @@ interface VoiceProfileApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
         @Query("force") force: Boolean? = null,
+        // draft 정리 전용 삭제 — 서버는 아직 is_draft=1 인 경우에만 실제 삭제한다(등록된 보이스 보호).
+        @Query("draftOnly") draftOnly: Boolean? = null,
     )
 
     @GET("voice/family")

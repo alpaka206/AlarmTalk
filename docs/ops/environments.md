@@ -46,6 +46,12 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 - 로컬 개발 값은 ignored 파일인 `packages/backend/.dev.vars.dev`, `packages/backend/.dev.vars.prod`에 둔다.
 - GitHub Actions 배포에 필요한 값은 GitHub Secrets에 둔다.
 
+#### Vertex / Gemini dynamic text
+
+- `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL` are optional and are used for translation plus the legacy dynamic text path.
+- `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED` must be omitted by default. Set it to `true` only when product intentionally re-enables Gemini-generated alarm copy after preset review and QA.
+- Launch policy is preset-first: dynamic alarm contexts use local/preset fallback unless `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`.
+
 ### Email verification
 
 Production email verification delivery requires a verified sender domain and these Worker secrets:

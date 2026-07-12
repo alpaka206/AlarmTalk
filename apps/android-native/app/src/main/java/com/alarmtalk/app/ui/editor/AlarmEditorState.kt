@@ -17,13 +17,6 @@ import com.alarmtalk.app.network.TtsMessage
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
-internal fun amPmLabel(context: android.content.Context, hour: Int): String =
-    if (floorMod(hour, 24) < 12) {
-        context.getString(R.string.editor2_am)
-    } else {
-        context.getString(R.string.editor2_pm)
-    }
-
 internal fun hour12(hour: Int): Int = when (val value = floorMod(hour, 12)) {
     0 -> 12
     else -> value
@@ -51,6 +44,12 @@ internal fun googleSignInErrorMessage(context: android.content.Context, statusCo
     12501 -> context.getString(R.string.r3ed_google_signin_error_canceled)
     12502 -> context.getString(R.string.r3ed_google_signin_error_in_progress)
     else -> context.getString(R.string.r3ed_google_signin_error_failed_status, statusCode)
+}
+
+internal fun supportedAppVoiceLanguage(language: String?): String = when (language) {
+    "en" -> "en"
+    "ja" -> "ja"
+    else -> "ko"
 }
 
 internal class AlarmEditorState(
@@ -111,7 +110,7 @@ internal class AlarmEditorState(
     var voiceListenerTitleOverride by mutableStateOf(voiceListenerTitle ?: "")
     var voiceText by mutableStateOf(voiceText ?: "")
     var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
-    var voiceLanguage by mutableStateOf(voiceLanguage ?: "ko")
+    var voiceLanguage by mutableStateOf(supportedAppVoiceLanguage(voiceLanguage))
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
     var voiceRandomContext by mutableStateOf(normalizedRandomPromptContext(voiceRandomContext ?: DefaultRandomPromptContext))
     var voiceWeatherCountry by mutableStateOf(voiceWeatherCountry ?: "")
@@ -139,7 +138,7 @@ internal class AlarmEditorState(
                 profileId = voiceProfileId.orEmpty(),
                 text = voiceText.orEmpty(),
                 category = if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom",
-                language = voiceLanguage ?: "ko",
+                language = supportedAppVoiceLanguage(voiceLanguage),
                 listenerTitle = voiceListenerTitle,
             )
         },
@@ -359,49 +358,13 @@ internal class AlarmEditorState(
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
-    fun activeVoiceLanguage(): String =
-        if (selectedBucket != null || voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
+    fun activeVoiceLanguage(): String = supportedAppVoiceLanguage(voiceLanguage)
 
     fun activeVoiceCategory(): String =
         if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
 
     fun shouldTranslateVoiceText(): Boolean =
-        !voiceRandomPrompt && voiceTranslationEnabled && voiceLanguage != "ko"
-
-    fun setPendingServerTts(message: TtsMessage) {
-        voiceSource = VoiceSources.SERVER_TTS
-        ttsMessageId = message.id
-        voiceProfileId = message.voiceProfileId
-        voiceText = message.text
-        voiceCategory = message.category ?: "custom"
-        voiceRandomPrompt = false
-        clearBucketSelection()
-        localAudioUri = null
-        audioCacheKey = null
-        rawAudioUri = message.audioUrl
-        generatedTtsKey = null
-    }
-
-    fun setServerTtsAudio(
-        audio: CachedAlarmAudio,
-        messageId: String,
-        text: String,
-        category: String?,
-        voiceProfileId: String?,
-        rawAudioUri: String?,
-    ) {
-        voiceSource = VoiceSources.SERVER_TTS
-        ttsMessageId = messageId
-        voiceText = text
-        voiceCategory = category ?: "custom"
-        voiceRandomPrompt = false
-        clearBucketSelection()
-        this.voiceProfileId = voiceProfileId
-        localAudioUri = audio.localAudioUri
-        audioCacheKey = audio.cacheKey
-        this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
-        generatedTtsKey = null
-    }
+        !voiceRandomPrompt && activeVoiceLanguage() != "ko"
 
     companion object {
         fun from(
@@ -484,6 +447,7 @@ internal fun ttsCategoryForRandomContext(context: String?): String =
         "sleep" -> "night"
         "exercise" -> "exercise"
         "love" -> "love"
+        "medication" -> "medication"
         else -> "morning"
     }
 

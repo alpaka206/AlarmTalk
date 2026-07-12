@@ -1215,6 +1215,82 @@ export const migrations: Migration[] = [
         ON promo_code_redemptions(promo_code_id)`,
     ],
   },
+  {
+    // 가족 알람 '그만받기'(수신자 opt-out). 수신자(target_user_id)가 자기에게 온 반복 알람을
+    // 서버에 영구 opt-out 한다. 생성자 소유의 alarms 행/is_active 는 건드리지 않는 비파괴 모델이며,
+    // 읽기 경로(list·tick·cron)가 이 상태로 수신자별 배달을 차단한다. 로컬 삭제와 달리
+    // 재설치·동기화로 부활하지 않는다(감사 A-1/A-2/A-3 봉합).
+    id: 56,
+    name: 'alarm-recipient-state',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS alarm_recipient_state (
+        alarm_id TEXT NOT NULL,
+        recipient_user_id TEXT NOT NULL,
+        declined INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (alarm_id, recipient_user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_alarm_recipient_state_recipient
+        ON alarm_recipient_state(recipient_user_id)`,
+    ],
+  },
+  {
+    id: 57,
+    name: 'voice-profile-monthly-change-ledger',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS voice_profile_change_ledger (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL,
+        voice_profile_id TEXT,
+        change_month TEXT NOT NULL,
+        change_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'reserved' CHECK(status IN ('reserved','succeeded','failed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_profile_change_ledger_monthly
+        ON voice_profile_change_ledger(owner_user_id, change_month, change_type)
+        WHERE status != 'failed'`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_profile_change_ledger_profile
+        ON voice_profile_change_ledger(voice_profile_id)`,
+      `INSERT OR IGNORE INTO voice_profile_change_ledger
+        (id, owner_user_id, voice_profile_id, change_month, change_type, status, created_at, updated_at)
+        SELECT
+          'seed:' || COALESCE(u.id, vp.user_id) || ':' || strftime('%Y-%m', datetime(vp.created_at, '+9 hours')) || ':official_voice',
+          COALESCE(u.id, vp.user_id),
+          MIN(vp.id),
+          strftime('%Y-%m', datetime(vp.created_at, '+9 hours')),
+          'official_voice',
+          'succeeded',
+          MIN(vp.created_at),
+          datetime('now')
+        FROM voice_profiles vp
+        LEFT JOIN users u ON u.id = vp.user_id OR u.google_id = vp.user_id
+        WHERE COALESCE(vp.is_draft, 0) = 0
+          AND COALESCE(vp.status, 'ready') != 'failed'
+          AND vp.created_at IS NOT NULL
+        GROUP BY COALESCE(u.id, vp.user_id), strftime('%Y-%m', datetime(vp.created_at, '+9 hours'))`,
+    ],
+  },
+  {
+    // 직접 입력(사용자 타이핑) TTS 생성의 월 카운터. 유료 플랜만 소비하며 한도는
+    // personal 30 / couple 50 / family 100 (manual-tts-quota.ts). couple/family 는
+    // pool_key = plan_group_id 로 멤버 전원이 한 풀을 공유, personal 은 pool_key = 본인 PK.
+    //  - used_count 를 원자적 upsert(ON CONFLICT DO UPDATE ... WHERE used_count < limit)로
+    //    증가시켜 경합 없이 한도를 강제한다. 월(KST) 경계가 바뀌면 새 행이 생겨 자동 리셋.
+    id: 58,
+    name: 'manual-tts-monthly-usage',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS manual_tts_usage (
+        pool_key TEXT NOT NULL,
+        usage_month TEXT NOT NULL,
+        used_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (pool_key, usage_month)
+      )`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

@@ -62,6 +62,8 @@ internal fun SubscriptionPanel(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     vouchers: List<VoucherItem>,
+    // planKey → Play 실제 표시가격(formattedPrice). 비어 있으면 문자열 리소스로 폴백.
+    planPrices: Map<String, String>,
     onCheckoutPlan: (String, Boolean) -> Unit,
     onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
@@ -100,7 +102,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
-            price = stringResource(R.string.billing_plan_personal_price),
+            price = planPrices["personal"] ?: stringResource(R.string.billing_plan_personal_price),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
@@ -110,7 +112,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "couple",
             name = stringResource(R.string.billing_plan_couple_name),
-            price = stringResource(R.string.billing_plan_couple_price),
+            price = planPrices["couple"] ?: stringResource(R.string.billing_plan_couple_price),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -122,7 +124,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "family",
             name = stringResource(R.string.billing_plan_family_name),
-            price = stringResource(R.string.billing_plan_family_price),
+            price = planPrices["family"] ?: stringResource(R.string.billing_plan_family_price),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),

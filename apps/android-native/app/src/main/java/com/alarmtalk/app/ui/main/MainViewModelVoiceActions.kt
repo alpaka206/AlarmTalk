@@ -19,7 +19,6 @@ import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
-import com.alarmtalk.app.data.VoiceProfilePromotionDraft
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthTokenResponse
@@ -31,18 +30,16 @@ import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.SendNoteRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
+import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileRelationshipUpdateRequest
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
-import com.alarmtalk.app.network.VoiceSpeakerSegment
 import com.alarmtalk.app.network.VoucherItem
 import java.time.Instant
 import java.util.UUID
@@ -87,6 +84,10 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 api.listVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
             }.onSuccess { profiles ->
                 voiceProfiles = profiles
+                voiceProfilesLoadedFresh = true
+                // 내 음성 목록이 늦게 로드된 경우에도 접근권 잃은 목소리 알람 강등이 재실행되게 한다
+                // (공유 목소리 목록이 먼저 신선 로드돼 스킵됐을 수 있음). 빈 목록도 유효한 로드다.
+                reconcileInaccessibleVoiceAlarms()
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to load voice profiles", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_failed))
@@ -104,8 +105,6 @@ internal fun MainViewModel.createVoiceProfile(
     shared: Boolean,
     relationshipLabel: String,
     listenerTitle: String,
-    voiceGender: String,
-    speechFormality: String,
 ) {
     createVoiceProfiles(
         listOf(
@@ -115,8 +114,6 @@ internal fun MainViewModel.createVoiceProfile(
                 shared = shared,
                 relationshipLabel = relationshipLabel,
                 listenerTitle = listenerTitle,
-                voiceGender = voiceGender,
-                speechFormality = speechFormality,
             ),
         ),
     )
@@ -184,8 +181,6 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                         listenerTitle = draft.listenerTitle.toRequestBody("text/plain".toMediaType()),
                         durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
                         isDraft = false.toString().toRequestBody("text/plain".toMediaType()),
-                        voiceGender = draft.voiceGender.toRequestBody("text/plain".toMediaType()),
-                        speechFormality = draft.speechFormality.toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }
@@ -218,95 +213,6 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
             }
         }
         voiceProfileBusy = false
-    }
-}
-
-internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio): List<VoiceSpeakerSegment> {
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_separate_login_required))
-    check(hasPaidVoiceAccess(subscriptionResponse)) {
-        getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
-    }
-    return withContext(Dispatchers.IO) {
-        val upload = api.uploadVoiceAudio(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            audio = voiceUploadPart(audio),
-            durationMs = (audio.durationMillis ?: 0L).toString().toRequestBody("text/plain".toMediaType()),
-            originalName = audio.displayName.toRequestBody("text/plain".toMediaType()),
-        ).upload
-        api.separateVoiceUpload(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            uploadId = upload.id,
-        ).speakers
-    }
-}
-
-/**
- * 화자 미리듣기용 임시(draft) 보이스 프로파일을 만든다.
- * MAX_VOICE_PROFILES 카운트에서 제외되고, 사용자가 "선택" 하면 promote 로 정식 등록한다.
- */
-internal suspend fun MainViewModel.cloneSpeakerDraft(
-    name: String,
-    audio: CachedAlarmAudio,
-): VoiceProfile {
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_preview_login_required))
-    check(hasPaidVoiceAccess(subscriptionResponse)) {
-        getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
-    }
-    return withContext(Dispatchers.IO) {
-        api.createVoiceClone(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            audio = voiceUploadPart(audio),
-            name = name.toRequestBody("text/plain".toMediaType()),
-            isShared = false.toString().toRequestBody("text/plain".toMediaType()),
-            relationshipLabel = "".toRequestBody("text/plain".toMediaType()),
-            listenerTitle = "".toRequestBody("text/plain".toMediaType()),
-            durationMs = (audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
-            isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
-            voiceGender = "neutral".toRequestBody("text/plain".toMediaType()),
-            speechFormality = "auto".toRequestBody("text/plain".toMediaType()),
-        ).profile
-    }
-}
-
-/**
- * draft=true 프로파일을 promote 해 정식 보이스로 등록한다.
- * 사용자의 기존 non-draft 음성이 있으면 서버가 409 VOICE_LIMIT_REACHED 를 반환한다.
- */
-internal suspend fun MainViewModel.promoteDraftVoice(
-    profileId: String,
-    draft: VoiceProfilePromotionDraft,
-): VoiceProfile {
-    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_promote_login_required))
-    return withContext(Dispatchers.IO) {
-        api.updateVoiceProfile(
-            authorization = AlarmTalkApiClient.bearer(session.token),
-            id = profileId,
-            request = VoiceProfileUpdateRequest(
-                name = draft.name,
-                isShared = draft.shared,
-                isDraft = false,
-                relationshipLabel = draft.relationshipLabel,
-                listenerTitle = draft.listenerTitle,
-                voiceGender = draft.voiceGender,
-                speechFormality = draft.speechFormality,
-            ),
-        ).profile
-    }
-}
-
-/** draft 보이스 정리용. 기존 deleteVoiceProfile 과 동일하게 force=true 로 삭제. */
-internal suspend fun MainViewModel.deleteDraftVoice(profileId: String) {
-    val session = authSession ?: return
-    withContext(Dispatchers.IO) {
-        runCatching {
-            api.deleteVoiceProfile(
-                authorization = AlarmTalkApiClient.bearer(session.token),
-                id = profileId,
-                force = true,
-            )
-        }.onFailure { error ->
-            Log.w(TAG, "Failed to delete draft voice id=$profileId", error)
-        }
     }
 }
 
@@ -497,12 +403,10 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
             message = getApplication<android.app.Application>().getString(R.string.msg_voice_deleted)
-            refreshNotesSilently()
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
                 message = getApplication<android.app.Application>().getString(R.string.msg_voice_already_deleted)
-                refreshNotesSilently()
             } else {
                 if (originalProfile != null) {
                     voiceProfiles = voiceProfiles.map {
@@ -560,6 +464,17 @@ internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): T
     return withContext(Dispatchers.IO) {
         api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
     }
+}
+
+// 직접 입력 문구 만들기 이번 달 사용 현황(선택기 '직접 입력 (남은/총)' 표시용).
+// 실패/미로그인은 null 로 조용히 넘긴다(표시만 생략, 기능엔 영향 없음).
+internal suspend fun MainViewModel.loadManualQuota(): ManualQuotaResponse? {
+    val session = authSession ?: return null
+    return runCatching {
+        withContext(Dispatchers.IO) {
+            api.getManualQuota(AlarmTalkApiClient.bearer(session.token))
+        }
+    }.getOrNull()
 }
 
 internal fun MainViewModel.loadStockClips() {

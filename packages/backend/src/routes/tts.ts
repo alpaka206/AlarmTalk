@@ -22,10 +22,14 @@ import {
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
-  type VoiceGender,
-  type SpeechFormality,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
+import {
+  readManualTtsUsage,
+  refundManualTtsQuota,
+  reserveManualTtsQuota,
+  resolveManualTtsPool,
+} from '../lib/manual-tts-quota';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import {
@@ -137,14 +141,6 @@ function normalizeRelationshipLabel(value: unknown): string | null {
   const label = value.trim();
   if (!label) return null;
   return label.slice(0, 30);
-}
-
-function normalizeVoiceGender(value: unknown): VoiceGender | null {
-  return value === 'male' || value === 'female' || value === 'neutral' ? value : null;
-}
-
-function normalizeSpeechFormality(value: unknown): SpeechFormality | null {
-  return value === 'auto' || value === 'polite' ? value : null;
 }
 
 function optionalInt(value: unknown, min: number, max: number): number | null {
@@ -652,6 +648,8 @@ tts.post('/generate', async (c) => {
   }
 
   let freePlanRestricted = false;
+  // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
+  let callerUserPlan: string | null = null;
   const user = await db.execute({
     sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
@@ -660,6 +658,7 @@ tts.post('/generate', async (c) => {
   if (user.rows.length > 0) {
     const u = user.rows[0]!;
     const plan = u.plan as string;
+    callerUserPlan = plan ?? null;
 
     // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
     // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
@@ -744,6 +743,14 @@ tts.post('/generate', async (c) => {
   const missingTtsConsent = await missingConsentType(db, userPk, requiredSensitiveConsents);
   if (missingTtsConsent) return consentRequired(c, missingTtsConsent);
 
+  // 직접 입력(random 아님) = 유료 사용자가 문구를 직접 타이핑한 유료 생성 경로.
+  // 무료는 위(693-729)에서 이미 차단되므로 여기 도달하는 수동 요청은 유료 전용.
+  // 예약은 캐시 미스 뒤(합성 직전)에 하고, 예약됐는데 합성이 실패하면 catch 에서 환불.
+  const isManualGeneration = !randomRequested && Boolean(resolvedUserPk);
+  let manualQuotaPoolKey: string | null = null;
+  let manualQuotaMonth: string | null = null;
+  let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
+
   try {
     const requestedLanguage = normalizeSynthesisLanguage(body.language);
 
@@ -789,8 +796,6 @@ tts.post('/generate', async (c) => {
             ),
           })
         : null;
-      // 화자 성별·어체 격식은 voice_profiles 행에서 읽는다(목소리 고유 속성). 공유 프로필도
-      // 소유자 행이므로 그대로 사용한다.
       const generated = await generateDynamicAlarmTextWithVertex(c.env, {
         mode: randomContext,
         category,
@@ -799,8 +804,6 @@ tts.post('/generate', async (c) => {
         relationshipLabel,
         listenerTitle,
         weatherSignal,
-        voiceGender: normalizeVoiceGender(vp.voice_gender),
-        speechFormality: normalizeSpeechFormality(vp.speech_formality),
         fortuneProfile:
           randomContext === 'wake_fortune'
             ? fortuneProfile({
@@ -968,6 +971,29 @@ tts.post('/generate', async (c) => {
       }
     }
 
+    // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.
+    if (isManualGeneration) {
+      const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+      const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
+      if (!reservation.ok) {
+        return c.json(
+          {
+            error: '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+            error_code: 'MANUAL_TTS_QUOTA_EXCEEDED',
+            manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
+          },
+          429,
+        );
+      }
+      manualQuotaPoolKey = pool.poolKey;
+      manualQuotaMonth = reservation.month;
+      manualQuotaResult = {
+        used: reservation.used,
+        limit: reservation.limit,
+        remaining: reservation.remaining,
+      };
+    }
+
     let lastError: unknown = noVoiceProviderError();
     for (const { attempt, cacheKey } of preparedAttempts) {
       try {
@@ -1058,6 +1084,7 @@ tts.post('/generate', async (c) => {
             cache_key: cacheKey,
             cache_hit: false,
             random_context: randomRequested ? randomContext : null,
+            manual_quota: manualQuotaResult,
           },
           201,
         );
@@ -1070,6 +1097,15 @@ tts.post('/generate', async (c) => {
 
     throw lastError;
   } catch (err) {
+    // 쿼터를 예약했는데 합성이 끝내 실패했으면 카운터를 되돌린다(실패는 소비 안 함).
+    // 예약이 증가시킨 바로 그 월로 환불(월 경계를 넘겨 실패해도 정확히 복구).
+    if (manualQuotaPoolKey && manualQuotaMonth) {
+      try {
+        await refundManualTtsQuota(db, manualQuotaPoolKey, manualQuotaMonth);
+      } catch (refundErr) {
+        console.error('[tts/generate] manual quota refund failed', refundErr);
+      }
+    }
     console.error(
       '[tts/generate] failed',
       err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : err,
@@ -1110,6 +1146,32 @@ tts.post('/generate', async (c) => {
       500,
     );
   }
+});
+
+// 이번 달 직접 입력 문구 만들기 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). 소비 없음.
+tts.get('/manual-quota', async (c) => {
+  const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
+  const db = getDB(c.env);
+
+  const userRow = await db.execute({
+    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    args: ownerIds,
+  });
+  const callerUserPlan =
+    userRow.rows.length > 0 && userRow.rows[0]!.plan != null
+      ? String(userRow.rows[0]!.plan)
+      : null;
+
+  const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+  const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+  return c.json({
+    plan_key: pool.planKey,
+    limit: pool.limit,
+    used,
+    remaining: Math.max(0, pool.limit - used),
+  });
 });
 
 tts.get('/messages', async (c) => {

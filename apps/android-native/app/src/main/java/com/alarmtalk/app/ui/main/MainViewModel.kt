@@ -28,9 +28,7 @@ import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.SendNoteRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
@@ -192,9 +190,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var familyVoices by mutableStateOf<List<FamilyVoiceProfile>>(emptyList())
+
+    // 공유 목소리 목록이 API 로 '신선하게' 로드됐는지. 접근권 잃은 목소리 알람 강등 판단은
+    // 이 신선 로드 + voiceProfiles 로드가 모두 확보됐을 때만 수행한다(reconcileInaccessibleVoiceAlarms).
+    internal var familyVoicesLoadedFresh: Boolean = false
+        internal set
+
+    // 내 음성 목록이 API 로 '성공적으로' 로드됐는지(빈 목록도 유효한 신선 로드로 취급). voiceProfiles.isEmpty()
+    // 를 '미로드'로 쓰면 마지막 목소리를 삭제·접근상실한 사용자의 알람 강등이 스킵되므로 별도 플래그로 추적(PR #536 P2).
+    internal var voiceProfilesLoadedFresh: Boolean = false
         internal set
 
     var billingBusy by mutableStateOf(false)
+
+    // planKey("personal"/"couple"/"family") → Play 실제 표시가격(formattedPrice). preloadProducts
+    // 성공 시 채워지며, 비면 UI 가 문자열 리소스로 폴백한다. 하드코딩 대신 청구 통화·금액을 정확히 표기.
+    var billingPlanPrices by mutableStateOf<Map<String, String>>(emptyMap())
         internal set
 
     // 이용권 패널 진입 시의 read-only 새로고침 플래그. billingBusy(구매·해지 등
@@ -207,12 +218,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var vouchers by mutableStateOf<List<VoucherItem>>(emptyList())
-        internal set
-
-    var noteBusy by mutableStateOf(false)
-        internal set
-
-    var receivedNotes by mutableStateOf<List<ReceivedNote>>(emptyList())
         internal set
 
     var message by mutableStateOf<String?>(null)
@@ -434,14 +439,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal fun clearUserScopedRemoteState() {
         voiceProfiles = emptyList()
         voiceProfileLoadFinished = false
+        voiceProfilesLoadedFresh = false
         showVoiceSetup = false
         defaultVoiceId = null
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()
+        // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가
+        // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
+        familyVoicesLoadedFresh = false
         subscriptionResponse = null
         vouchers = emptyList()
-        receivedNotes = emptyList()
         receivedAlarmSeenAtMillis = 0L
         registerEmailVerificationSentTo = null
         registerEmailVerified = null
@@ -526,6 +534,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // BillingClient 연결 + 상품 정보 선로드 — 이용권 패널의 구매 시트가 즉시 뜨게 한다.
         viewModelScope.launch {
             runCatching { playBilling.preloadProducts() }
+                .onSuccess {
+                    billingPlanPrices = listOf("personal", "couple", "family")
+                        .mapNotNull { key -> playBilling.formattedPriceForPlan(key)?.let { key to it } }
+                        .toMap()
+                }
                 .onFailure { error -> Log.w(TAG, "Failed to preload Play products", error) }
         }
         refreshAppSession()

@@ -62,14 +62,19 @@ internal object AppRoute {
     const val LegalDocTypeArg = "legalDocType"
     const val LegalDoc = "legal/{$LegalDocTypeArg}"
     const val MemberManagement = "members"
+    const val OssLicenses = "oss-licenses"
 
     fun legalDoc(type: String): String = "legal/$type"
     const val FamilyTargetModeArg = "familyTargetMode"
-    const val AlarmCreate = "alarm/create/{$FamilyTargetModeArg}"
+    const val TargetUserIdArg = "targetUserId"
+    const val AlarmCreate = "alarm/create/{$FamilyTargetModeArg}?$TargetUserIdArg={$TargetUserIdArg}"
     const val AlarmIdArg = "alarmId"
     const val AlarmEdit = "alarm/edit/{$AlarmIdArg}"
 
-    fun alarmCreate(familyTargetMode: Boolean): String = "alarm/create/$familyTargetMode"
+    fun alarmCreate(familyTargetMode: Boolean, targetUserId: String? = null): String {
+        val base = "alarm/create/$familyTargetMode"
+        return if (targetUserId.isNullOrBlank()) base else "$base?$TargetUserIdArg=${Uri.encode(targetUserId)}"
+    }
     fun alarmEdit(alarmId: String): String = "alarm/edit/${Uri.encode(alarmId)}"
 }
 
@@ -78,7 +83,6 @@ internal val NativeTab.route: String
         NativeTab.Voices -> "voices"
         NativeTab.Alarms -> "alarms"
         NativeTab.People -> "people"
-        NativeTab.Messages -> "messages"
         NativeTab.Billing -> "billing"
         NativeTab.Menu -> "menu"
     }

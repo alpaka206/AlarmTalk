@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,16 +17,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,8 +36,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
 import com.alarmtalk.app.WakerPanelShape
@@ -58,140 +50,6 @@ import com.alarmtalk.app.network.VoiceProfile
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
-
-@Composable
-internal fun SharedVoiceInfoRequiredDialog(
-    profileName: String,
-    sharedFromLabel: String,
-    initialRelationship: String,
-    initialListenerTitle: String,
-    saving: Boolean,
-    previewing: Boolean,
-    onDismiss: () -> Unit,
-    onPreview: () -> Unit,
-    onConfirm: (String, String) -> Unit,
-) {
-    var draftRelationship by remember(initialRelationship) { mutableStateOf(initialRelationship) }
-    var draftListenerTitle by remember(initialListenerTitle) { mutableStateOf(initialListenerTitle) }
-    var submitted by remember { mutableStateOf(false) }
-    val relationshipError = submitted && draftRelationship.isBlank()
-    val listenerTitleError = submitted && draftListenerTitle.isBlank()
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .widthIn(max = 460.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 620.dp)
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.editor_voice_settings_title),
-                    onDismiss = onDismiss,
-                )
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                    border = wakerCardBorder(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = profileName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        Text(
-                            text = sharedFromLabel,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
-                        )
-                    }
-                }
-                OutlinedTextField(
-                    value = draftRelationship,
-                    onValueChange = { draftRelationship = it.take(30) },
-                    label = { Text(stringResource(R.string.editor_relationship_label)) },
-                    placeholder = { Text(stringResource(R.string.editor_relationship_placeholder)) },
-                    singleLine = true,
-                    isError = relationshipError,
-                    supportingText = {
-                        if (relationshipError) Text(stringResource(R.string.editor_field_required))
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = draftListenerTitle,
-                    onValueChange = { draftListenerTitle = it.take(30) },
-                    label = { Text(stringResource(R.string.editor_listener_title_label)) },
-                    placeholder = { Text(stringResource(R.string.editor_listener_title_placeholder)) },
-                    singleLine = true,
-                    isError = listenerTitleError,
-                    supportingText = {
-                        if (listenerTitleError) Text(stringResource(R.string.editor_field_required))
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedButton(
-                    onClick = onPreview,
-                    enabled = !saving && !previewing,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                    border = wakerCardBorder(),
-                    colors = wakerOutlinedButtonColors(),
-                ) {
-                    if (previewing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.editor_playing))
-                    } else {
-                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.editor_preview))
-                    }
-                }
-                Button(
-                    onClick = {
-                        submitted = true
-                        if (draftRelationship.isNotBlank() && draftListenerTitle.isNotBlank()) {
-                            onConfirm(draftRelationship.trim(), draftListenerTitle.trim())
-                        }
-                    },
-                    enabled = !saving,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Text(if (saving) stringResource(R.string.editor_saving) else stringResource(R.string.editor_save_and_select))
-                }
-            }
-        }
-    }
-}
 
 
 internal fun resolveListenerTitle(
@@ -257,11 +115,14 @@ internal fun AlarmEditorTopBar(
     }
 }
 
+// 편집기 섹션 헤더 단일 출처. '재생 방식'·'세부 설정'이 이미 쓰던 titleMedium/Bold/onBackground
+// 규격으로 맞춰, 각 파일에 흩어진 인라인 Text 대신 이 컴포저블로 통일한다.
 @Composable
-internal fun EditorSectionTitle(title: String) {
+internal fun EditorSectionTitle(title: String, modifier: Modifier = Modifier) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleLarge,
+        modifier = modifier,
+        style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onBackground,
     )
@@ -471,9 +332,12 @@ internal fun familyMemberLabel(context: Context, member: FamilyGroupMember): Str
 
 internal fun familyAlarmQuietScheduleLabel(context: Context, member: FamilyGroupMember): String {
     val windows = familyAlarmQuietWindows(member)
-    return windows.joinToString(" · ") { window ->
-        "${quietDaysLabelForFamily(context, window.days)} ${window.start}-${window.end}"
-    }
+    if (windows.isEmpty()) return ""
+    // '누구를 깨울까요' 시트·수신자 카드 행에 들어가므로 1개만 노출하고 나머지는 '외 N개'로 축약해
+    // 행 라벨이 길어지지 않게 한다(설정 화면 quietScheduleLabel과 동일 정책).
+    val first = windows.first().let { "${quietDaysLabelForFamily(context, it.days)} ${it.start}-${it.end}" }
+    val hidden = windows.size - 1
+    return if (hidden > 0) context.getString(R.string.misc2_quiet_more, first, hidden) else first
 }
 
 internal fun isFamilyAlarmLeadTooSoon(

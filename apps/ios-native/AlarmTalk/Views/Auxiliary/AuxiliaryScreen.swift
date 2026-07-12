@@ -1,6 +1,6 @@
 import Foundation
 
-/// 본 메인 탭 4개 외에 시트로 띄우는 보조 화면들의 식별자.
+/// 본 메인 탭 3개 외에 시트로 띄우는 보조 화면들의 식별자.
 ///
 /// ContentView 안에 `private enum` 으로 묶여 있던 것을 internal 로 끌어올린다.
 /// MainTabsView, Settings 화면, Home 의 빠른 가기 카드 모두에서 참조한다.
@@ -50,7 +50,7 @@ struct AlarmEditorTarget: Identifiable, Equatable {
     }
 }
 
-/// 본 앱의 4개 메인 탭 enum.
+/// 본 앱의 3개 메인 탭 enum.
 ///
 /// ContentView 안의 `private enum NativeTab` 을 그대로 옮긴 것. internal 가시성으로
 /// 끌어올려 BottomNavBar 와 MainTabsView 에서 공유한다.
@@ -58,7 +58,6 @@ enum NativeTab: String, CaseIterable, Identifiable {
     case home
     case voices
     case alarms
-    case messages
 
     var id: String { rawValue }
 
@@ -67,7 +66,6 @@ enum NativeTab: String, CaseIterable, Identifiable {
         case .home: return "홈"
         case .voices: return "목소리"
         case .alarms: return "알람"
-        case .messages: return "메시지"
         }
     }
 
@@ -83,7 +81,6 @@ enum NativeTab: String, CaseIterable, Identifiable {
         case .home: return "house"
         case .voices: return "mic"
         case .alarms: return "alarm"
-        case .messages: return "message"
         }
     }
 }

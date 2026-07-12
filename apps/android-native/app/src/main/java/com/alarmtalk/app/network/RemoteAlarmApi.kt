@@ -8,6 +8,7 @@ import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 data class RemoteAlarmListResponse(
     val alarms: List<RemoteAlarm>,
@@ -43,6 +44,9 @@ data class RemoteAlarm(
     @SerializedName("sender_email") val senderEmail: String? = null,
     @SerializedName("is_family_alarm") val isFamilyAlarm: Boolean = false,
     @SerializedName("is_received_family_alarm") val isReceivedFamilyAlarm: Boolean = false,
+    // 서버 권위 판별: 내가 target 이고 내가 만든 게 아니면 true(카테고리 무관). pull 은 이 값으로
+    // 받은 알람만 임포트한다 — 클라측 session.user.id 비교는 계정 연동 시 네임스페이스가 어긋난다.
+    @SerializedName("is_received") val isReceived: Boolean = false,
     @SerializedName("bucket_id") val bucketId: String? = null,
 )
 
@@ -68,7 +72,11 @@ data class RemoteAlarmWriteRequest(
 
 interface RemoteAlarmApi {
     @GET("alarm")
-    suspend fun listAlarms(@Header("Authorization") authorization: String): RemoteAlarmListResponse
+    suspend fun listAlarms(
+        @Header("Authorization") authorization: String,
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): RemoteAlarmListResponse
 
     @POST("alarm")
     suspend fun createAlarm(
@@ -85,6 +93,14 @@ interface RemoteAlarmApi {
 
     @DELETE("alarm/{id}")
     suspend fun deleteAlarm(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    )
+
+    // 수신자 '그만받기': 받은 가족 알람을 서버에 영구 opt-out 한다. 로컬 삭제와 달리 재조회·
+    // 재설치·동기화로 되살아나지 않는다(생성자 알람은 보존되는 비파괴 모델).
+    @POST("alarm/{id}/decline")
+    suspend fun declineAlarm(
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
     )
