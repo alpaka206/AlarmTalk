@@ -56,7 +56,6 @@ import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
-import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -525,13 +524,7 @@ internal fun AlarmEditorScreen(
                 audioMessage = context.getString(R.string.editor_error_select_recipient)
                 return
             }
-            val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-                hour = editor.hour,
-                minute = editor.minute,
-                repeatDaysMask = editor.repeatDaysMask,
-                holidayOff = editor.holidayOff,
-            )
-            if (fireAtMillis - System.currentTimeMillis() < FAMILY_ALARM_MIN_LEAD_MILLIS) {
+            if (isFamilyAlarmLeadTooSoon(editor.hour, editor.minute, editor.repeatDaysMask, editor.holidayOff)) {
                 // 그냥 막지 말고 "언제부터 되는지"를 구체 시각으로 알려 바로 고치게 한다.
                 val earliestMillis = System.currentTimeMillis() + FAMILY_ALARM_MIN_LEAD_MILLIS
                 val earliestLabel = android.text.format.DateFormat.getTimeFormat(context)

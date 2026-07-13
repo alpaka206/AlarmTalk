@@ -181,10 +181,8 @@
     <string name="editor_recorded_done">Recorded</string>
     <string name="editor_record_again">Record again</string>
     <string name="editor_audio_preview_stop">Stop</string>
-    <string name="editor_audio_preview_preparing">Preparing…</string>
     <string name="editor_back">Back</string>
     <string name="editor_change">Change</string>
-    <string name="editor_close">Close</string>
     <string name="editor_collapse">Collapse</string>
     <string name="editor_create_voice">Create a voice</string>
     <string name="editor_default_alarm_sound">Default alarm sound</string>
@@ -243,7 +241,6 @@
     <string name="editor_save_blocked_random_prompt_incomplete">In random phrase settings, please fill in the weather location and fortune info.</string>
     <string name="editor_save_blocked_select_voice">Please choose the voice to hear in the alarm.</string>
     <string name="editor_save_blocked_voice_unusable">The selected voice can\'t be used. Please choose another voice.</string>
-    <string name="editor_save_changes">Save changes</string>
     <string name="editor_save">Save</string>
     <string name="editor_save_for">Save for %1$s</string>
     <string name="editor_cancel">Cancel</string>

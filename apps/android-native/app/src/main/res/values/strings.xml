@@ -183,10 +183,8 @@
     <string name="editor_recorded_done">녹음 완료</string>
     <string name="editor_record_again">다시 녹음</string>
     <string name="editor_audio_preview_stop">정지</string>
-    <string name="editor_audio_preview_preparing">준비 중…</string>
     <string name="editor_back">뒤로</string>
     <string name="editor_change">변경</string>
-    <string name="editor_close">닫기</string>
     <string name="editor_collapse">접기</string>
     <string name="editor_create_voice">목소리 만들기</string>
     <string name="editor_default_alarm_sound">기본 알람음</string>
@@ -245,7 +243,6 @@
     <string name="editor_save_blocked_random_prompt_incomplete">랜덤 문구 설정에서 날씨 지역·운세 정보를 채워 주세요.</string>
     <string name="editor_save_blocked_select_voice">알람에서 들을 목소리를 선택해 주세요.</string>
     <string name="editor_save_blocked_voice_unusable">선택한 목소리를 쓸 수 없어요. 다른 목소리를 선택해 주세요.</string>
-    <string name="editor_save_changes">변경사항 저장</string>
     <string name="editor_save">저장</string>
     <string name="editor_save_for">%1$s에게 저장</string>
     <string name="editor_cancel">취소</string>

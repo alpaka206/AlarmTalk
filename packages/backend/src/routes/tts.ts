@@ -19,7 +19,7 @@ import {
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
   generateDynamicAlarmTextWithVertex,
-  stripApprovedDeliveryTags,
+  deriveAlarmDisplayText,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
@@ -875,10 +875,14 @@ tts.post('/generate', async (c) => {
       });
     }
     const synthesisText = prepared.text;
-    // 표시/저장 문구는 '실제 음성 텍스트(synthesisText, 번역됐으면 번역본)에서 승인 전달 태그만 제거'한 것.
-    // 이러면 (1) 번역 경로에서도 화면 문구가 음성과 일치하고, (2) 직접 입력의 '[after lunch]' 같은
-    // 정상 대괄호는 승인 태그가 아니므로 보존된다(통째 대괄호도 안 날아감).
-    const messageText = stripApprovedDeliveryTags(synthesisText);
+    // 표시/저장 문구(messageText): 실제 음성 텍스트(synthesisText, 번역됐으면 번역본)에서
+    // '우리가 자동으로 맨 앞에 붙인 delivery 태그'만 벗긴 값. requestText 에 사용자가 친 대괄호가
+    // 있으면 자동 태그가 아니므로 원문 보존, 없으면 맨 앞 태그 1개만 제거한다(deriveAlarmDisplayText).
+    // → (1) 번역 경로에서도 화면 문구가 음성 언어와 일치하고, (2) '[after lunch]'·'[calm]'만 입력 등
+    //   사용자 대괄호가 안 지워지며, (3) 모델이 붙인 비승인 태그도 화면엔 새지 않는다.
+    const messageText = dynamicGenerated
+      ? dynamicGenerated.text
+      : deriveAlarmDisplayText(synthesisText, requestText);
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.

@@ -4,33 +4,12 @@ import android.content.Context
 import android.media.RingtoneManager
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerChipShape
-import com.alarmtalk.app.WakerPanelShape
-import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.DynamicPromptPreferences
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -77,6 +56,25 @@ internal fun EditorSectionTitle(title: String, modifier: Modifier = Modifier) {
 }
 
 internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
+
+// 가족 알람은 수신자가 준비할 여유가 필요해 다음 울림까지 최소 30분 리드타임을 요구한다.
+// saveEditor()와 단위 테스트가 함께 쓰는 단일 판정 출처.
+internal fun isFamilyAlarmLeadTooSoon(
+    hour: Int,
+    minute: Int,
+    repeatDaysMask: Int,
+    holidayOff: Boolean,
+    nowMillis: Long = System.currentTimeMillis(),
+): Boolean {
+    val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+        hour = hour,
+        minute = minute,
+        repeatDaysMask = repeatDaysMask,
+        holidayOff = holidayOff,
+        nowMillis = nowMillis,
+    )
+    return fireAtMillis - nowMillis < FAMILY_ALARM_MIN_LEAD_MILLIS
+}
 
 internal fun ringtoneTitle(context: Context, uri: Uri): String =
     runCatching {
