@@ -1,7 +1,185 @@
 # Dev 테스트 핸드오프
 
-> 세션 재개용 라이브 문서. 마지막 갱신 **2026-07-13(세션2)**. 상태가 바뀌면 이 파일을 갱신/정리한다.
+> 세션 재개용 라이브 문서. 마지막 갱신 **2026-07-13(세션3)**. 상태가 바뀌면 이 파일을 갱신/정리한다.
 > (다른 컴퓨터에서도 `git pull` 후 이 문서를 읽으면 바로 이어서 진행 가능.)
+> **⬇︎ 재개하면 이 "세션3 전체 현황" 블록부터 읽을 것. 아래 세션2/이전 블록은 히스토리(참고용).**
+
+---
+
+# 📍 2026-07-13 세션3 — 전체 작업 현황 & 남은 계획 (단일 진실 소스)
+
+무엇이 이미 개발됐고 무엇이 안 됐는지 한 곳에 정리. **재설명 없이 이 표만 보면 됨.**
+
+## 0. 브랜치 / PR 지도 (지금 어디에 뭐가 있나)
+
+| 브랜치 | 내용 | 상태 |
+|---|---|---|
+| `develop` | 최신 통합. 아래 PR들 머지됨 | dev 백엔드 자동배포됨 |
+| ├ #536 default-voice-sheet | 직접입력 미터링(백+표시), 문구모델 개편, 운동→약 | ✅ 머지 |
+| ├ #537 faster-family-alarm-delivery | **이름과 달리** 실제론 "가족 수신 인앱 스낵바"만(14줄) | ✅ 머지 |
+| ├ #538 ringing-screen-and-tags | 울림화면 문구표시·노브 화살표, 태그 스트립, 편집기 대개조(타임피커박스 제거·상단바 제거·취소\|저장·받을사람 CTA), 홈 빈상태 | ✅ 머지 |
+| ├ #539 display-text-tag-hardening | `deriveAlarmDisplayText` 전면 태그 스트립 | ✅ 머지 |
+| └ #540 fortune-save-icon | 운세/날씨 저장 CTA 앞 이모지 제거 | ✅ 머지 |
+| **`feat/clone-voice-prerender`** (**PR #541**) | **#4 사전렌더 전체** (백+클라) | 🟡 푸시됨·코드리뷰 Round3 진행중·**머지 대기** |
+| `wip/handoff-samples-20260713` | 이 핸드오프 노트+`sampleimage/` 백업 | 🔵 유실방지 백업(PR 아님, 무시 가능) |
+
+---
+
+## 0.5 큰 그림 — 사용자가 원한 것 & 왜 이렇게 만들었나 (의도·결정 근거)
+
+> 나중에 재설명 없이도 "무엇을 하려 했고 왜 이렇게 바꿨는지"를 알 수 있게 원문·근거를 남긴다.
+
+**전체 비전:** 음성 알람 앱을 "목소리가 깨워주는" 경험으로. 유료 사용자가 가족/지인 목소리를 클론해서, **매일 상황에 맞는 문구**(날씨·운세·사랑·약)를 **그 목소리로** 들려준다. 프리셋(기본 인사)은 목소리별 사전 렌더된 기본값이고, 편집기에서 고르는 문구는 직접입력 + 동적문구.
+
+**#4 사전렌더 — 사용자가 원한 것(원문 그대로):**
+- *"목소리 선택시 만들어져야하는데 기본 기상 알람 소리(목소리 미리듣기로 보여줄거 1개) 날씨에 맞는거, 운세 미리해서, 사랑(너무 많지는 않아도 됨) 약은(약 먹을 시간이다. 건강 챙겨라. 오늘 하루도 힘내자) 이런식으로 조금만 있어도 될거같아."*
+- *"말투는 고정이 아니라 호칭과 관계를 보고 그에 맞게 되도록"*
+- *"날씨는 좀 더 자세하게 맑음/흐림/비/눈/미세먼지 이런식으로 하고 지역을 받은게 있으므로 그거 토대로 날씨 파악해서 맞는걸로 매칭해서 진행, 그리고 모든 말투는 딱딱하지 않고 실제 사람이 말하는것처럼 자연스러우면서 열심히 알아본채로"*
+- *"어차피 날씨들에 대한거 다 만들어두고 반복이면 전날 22시든 그리고 생성할때든 받아둔 위치를 토대로 gemini가 날씨를 예측하고 그거에 해당하는 오디오로 알람을 맞춰주면 되잖아"*
+- *"안정적으로 되는 방법으로 해봐봐 출시 전이라 지금은 괜찮아"* / *"운세 날씨 저런식으로 다 하면 되잖아? 앞으로 그렇게 해"*(미루지 말고 끝까지 구현)
+
+**왜 이렇게 결정했나(설계 근거):**
+- **왜 "사전 렌더"(미리 다 만들어두기)?** ElevenLabs TTS를 발사 시점에 부르면 Workers CPU 한계·네트워크 의존으로 불안정. 미리 렌더해 두면 발사는 **오프라인 로컬 재생**(검증된 무료버킷 경로 재사용)이라 안정적. → 사용자 "안정적으로".
+- **왜 날씨/운세=매칭(절대 인덱스), 사랑/약=로테이션(순차)?** 날씨·운세는 "그날 상황에 맞는 하나"를 골라야 해서 조건→인덱스 매칭. 사랑·약은 맞고 틀림이 없어 순차 회전으로 다양성만.
+- **왜 날씨를 서버(open-meteo)에서 분류?** 기기가 날씨 API 직접 호출·키관리하는 부담 없이, **받아둔 지역**으로 서버가 준비창(발사 전)에 조건 확정. → 사용자 "지역 토대로 예측해서 매칭". 운세는 사주 기반 결정적이라 기기 계산으로 충분(서버 왕복 불필요).
+- **왜 날씨 8종(nice/rain/snow/dust/cloud/fog/heat/cold)?** 사용자가 "맑음/흐림/비/눈/미세먼지" 수준의 구체성 요구 → 거기에 안개·폭염·한파 추가.
+- **왜 Vertex 톤 적응 생성?** 고정 문구는 어색. 관계/호칭을 반영해 자연스럽게. → 사용자 "말투는 관계·호칭 보고, 실제 사람처럼 자연스럽게".
+- **왜 문구-음성 정합(`bucketClipTextsJson`)?** 매칭 버킷에서 오디오는 '비 와요'인데 잠금화면 문구가 다른 variant면 어긋남 → **같은 인덱스의 문구**를 저장해 화면·소리 일치(2차 리뷰 지적).
+- **왜 `!familyAlarmMode` 가드?** 가족 알람에 발신자 로컬 클립을 붙이면 수신자 기기엔 그 파일이 없어 **무음**. 그래서 가족 알람은 클론버킷 대상에서 제외(1차 리뷰가 놓쳐 회귀 발생 → 2차에서 수정).
+- **왜 유료만·월 1회·앱 언어?** 사용자 결정(아래 결정 로그).
+
+**결정 로그(AskUserQuestion 확정):** 운세=제네릭만 사전렌더 / 자격=유료 구독자 **월 1회** 확정, **앱 언어**로 / 버킷=유료에만 **날씨·운세·사랑·약**, 편집기 명칭은 "날씨/운세" / 생성=Vertex **톤 적응** / 운세 선택=**사주 매칭** / 날씨·운세 타이밍=**지금은 서버 인덱스**(준비창 확정) / 클론 소실 시=**기본 알람음으로 다운그레이드** / 남은 리뷰 지적=**전부 수정(계속 하드닝)**.
+
+---
+
+## 1. #4 사전렌더(유료 클론 목소리 프리셋) — ✅ **개발 완료** (머지·dev배포·실기기검증만 남음)
+
+**"아직 개발 안 됐냐?" → 아님. 코드는 100% 완성돼 `feat/clone-voice-prerender`(PR #541)에 다 있음.** 남은 건 리뷰 클린 → 머지 → dev 배포 → 라이브 실기기 검증뿐.
+
+**무엇을 하는 기능인가:** 유료 구독자가 목소리를 등록하면, 그 목소리 톤으로 **날씨·운세·사랑·약** 4종 프리셋 오디오를 **서버가 미리 렌더**해 두고, 앱은 알람 발사 때 **네트워크 없이 오프라인**으로 그 목소리 클립을 재생한다(무료 버킷 재생 경로 재사용). 말투는 관계/호칭에 맞게 Vertex가 적응 생성.
+
+**동작 원리(중요):**
+- **날씨/운세 = 매칭 버킷**(절대 인덱스 선택). 날씨=지역 기반 open-meteo 분류 8종(`nice/rain/snow/dust/cloud/fog/heat/cold`), 운세=사주+발사일 결정적 해시 테마 5종(`luck/caution/wealth/health/relationship`).
+- **사랑/약 = 로테이션 버킷**(순차 %N).
+- 날씨 인덱스는 준비창(발사 전)에 `/tts/prerender-variant` 워커가 지역으로 예측·확정. 운세 인덱스는 기기에서 결정적 계산.
+- **발사 파이프라인(RingingService/AlarmReceiver)은 전혀 안 건드림** — 무료 버킷과 같은 경로.
+
+**백엔드 조각(전부 develop 아님, feat 브랜치):**
+- `packages/backend/src/lib/stock-clips.ts` — `generateStockClip`(클론 소유자 치환), `generatePrerenderClipText`(톤 적응), 큐(enqueue/claim/mark), `findMissingStockTargets`, `CLONE_WEATHER_CONDITIONS`(8), `CLONE_FORTUNE_THEMES`(5), seed.
+- `packages/backend/src/routes/tts.ts` — `/tts/prerender-variant`(날씨/운세 인덱스 resolve, 실패시 null), `resolvePrerenderWeatherIndex`, weather code NaN 가드.
+- `packages/backend/src/index.ts` — cron 드레인(실패 클립 skip·계속, `*/5`), `packages/backend/src/lib/vertex-translate.ts` — `generatePrerenderClipText`.
+- 트리거: 목소리 ready 훅 → cron 배치 렌더. 확정=유료 구독자 월1회, 앱 언어로 렌더.
+- 테스트: prerender-variant 21개 + 전체 vitest **1293 통과**.
+
+**클라 조각(feat 브랜치):**
+- 오프라인 소비: `AlarmRepository.resolveBucketClipLocalUri`(무료버킷 경로 재사용), `AlarmEntity.bucketVariantIndex()`(운세=기기해시/날씨=서버인덱스/그외=로테이션 공유 헬퍼).
+- 문구-음성 정합: `bucketClipTextsJson`(Room v19) 왕복 저장 → `RingingActivity`가 오디오와 같은 인덱스의 **문구**를 잠금화면에 표시(날씨 '비와요' 음성 ↔ 문구 일치).
+- 편집기: `hasCompleteCloneBucket`(날씨8·운세5 완전세트 요구), 저장 시 클론버킷 시도(`!familyAlarmMode` 가드=가족 무음 회귀 방지), `bindStockBucketClips`.
+- 언어소스: `deviceAppVoiceLanguage`=앱 리소스 `configuration.locales[0]`(편집기와 동일 소스), 클론 생성/수정 시 서버에 언어 전송.
+- 매니페스트: Alarms/Voices 탭 진입 시 `loadStockClips(forceReload=true)`(세션 중 생성된 클론클립 반영).
+- due 게이트: `resolveDueCloneBucketVariants` 12h staleness + (country,city) 중복제거.
+
+**남은 것:**
+1. 🟡 코드리뷰 Round3 클린까지 수정 반복(진행중, 이 세션 백그라운드).
+2. PR #541 → develop 머지(사용자가) → dev 자동배포.
+3. **라이브 실기기 검증**: dev 배포 후 실제 클론 목소리 등록 → cron이 4버킷 렌더(ElevenLabs/Gemini 라이브) → 유료계정 편집기에서 날씨/운세/사랑/약 선택 저장 → **오프라인(비행기모드)** 발사 시 그 목소리 클립 재생 + 잠금화면 문구 일치.
+
+---
+
+## 2. #10 가족 알람 즉시/빠른 배달 — ❌ **미개발** (인앱 스낵바만 머지됨)
+
+**"아직 개발 안 됐냐?" → 진짜 즉시배달(푸시)은 안 됨.** #537 "faster-family-alarm-delivery"는 이름과 달리 **인앱 스낵바 14줄**("상대가 맞춘 알람 N개 도착")만 넣은 것.
+
+**현재 배달 메커니즘(조사 완료):**
+- 수신자는 **오직 pull 동기화**로만 받음. push(FCM) 배달 경로 **없음**.
+- Android: `RemoteAlarmSyncScheduler.kt:23` **15분 주기** WorkManager pull 워커 + `runOnce()` 즉시 pull + **알람 탭 진입 시 `syncNow()`**(`AlarmTalkApp.kt:332`) 즉시 pull. → **앱을 열고 알람탭 들어가면 사실상 즉시**, 백그라운드면 최대 15분(+WorkManager 지연).
+- 백엔드: 가족 알람 생성(`family-alarm.ts`)은 **DB INSERT만**, 수신자에게 아무 신호 안 보냄. 수신자 기기가 `GET /api/alarm` 폴링할 때 `target_user_id` 매칭으로 발견(`alarm-query.ts:72`).
+- FCM 인프라: 백엔드 `lib/fcm.ts`는 있으나 **end-to-end 죽어있음** — (a) 가족알람 생성 시 호출 안 함, (b) **Android에 FCM 클라이언트 자체가 없음**(firebase 의존성·google-services.json·FirebaseMessagingService 전무), (c) **푸시토큰 등록 엔드포인트 없음**(`INSERT INTO push_tokens` 전무). `sendAlarmPush` 유일 호출처는 예약 cron(울릴 시각 알람 푸시)뿐 — 이것도 토큰이 안 채워져 no-op.
+
+**즉시 배달을 진짜로 하려면(옵션, 결정 필요):**
+- **옵션 A — FCM 풀 배선(제대로):** Android에 firebase-messaging + google-services.json 추가 → FirebaseMessagingService·`onNewToken` → 토큰 등록 엔드포인트 신설(`INSERT INTO push_tokens`) → 가족알람 생성 시 `sendAlarmPush(수신자)` 호출 → 수신 시 즉시 pull. **가장 확실하지만 인프라(Firebase 프로젝트·서비스계정 시크릿·스토어 설정) 필요.**
+- **옵션 B — 포그라운드 즉시성 강화(가벼움):** 앱이 포그라운드로 돌아올 때(ON_RESUME 전역) 무조건 `runOnce()` pull. 백그라운드 즉시는 여전히 안 되지만 "열면 바로"가 더 촘촘해짐. #537 커밋이 race/배터리 우려로 미룬 부분.
+- **옵션 C — 폴백 주기 단축:** 15분 → WorkManager 최소도 15분이라 큰 개선 없음. expedited work도 제약 큼. 실효성 낮음.
+- **현실 판단:** 진짜 "즉시"는 옵션 A(FCM)만 됨. 지금은 "앱 열면 즉시, 백그라운드는 15분 폴백"이 최선. 출시 전 우선순위 결정 필요.
+
+**관련 파일:** `sync/RemoteAlarmSyncScheduler.kt`, `sync/RemoteAlarmSyncWorker.kt`, `data/RemoteAlarmPullSyncService.kt`, `ui/main/MainViewModelAuthActions.kt`(syncNow), `routes/family-alarm.ts`, `routes/alarm-query.ts`, `lib/fcm.ts`, `index.ts`.
+
+---
+
+## 3. #13 / #18 울림 화면(RingingActivity) 실기기 라이브 검증 — ⏳ **기기 대기(18시 이후만)**
+
+- 코드는 #538로 머지됨(문구 표시·노브 화살표·전체화면 인텐트). **실기기에서 실제 알람 발사로 RingingActivity가 잠금화면 위에 뜨는지**만 미검증(`am start`는 exported=false로 차단, 실제 발사 필요).
+- **사용자 규칙: 18시 이전엔 알람 울리게 하지 말 것.** 설정까지는 OK, 발사는 18시 이후.
+- 무음·무진동 발사법: A32 알람볼륨0 + 진동패턴 OFF로 생성 → `adb shell am broadcast -a com.alarmtalk.app.action.ALARM_TRIGGER --es com.alarmtalk.app.extra.ALARM_ID <id> -n com.alarmtalk.app.dev/com.alarmtalk.app.alarm.AlarmReceiver`. 로컬 id는 `adb exec-out run-as ... cat databases/voice-alarm.db` → python sqlite3.
+
+## 4. 확인 필요(코드상 해결됐으나 실기기 재확인 권장)
+
+- **"내 알람 맞추기"가 가족모드로 열리던 버그** → 코드상 **해결됨**. `AlarmTalkApp.kt:521`이 "내 알람 맞추기"에서 `startCreateAlarm(familyTargetMode = false)` 명시. 나머지 분기(:537 가족, :766 nav arg→familyAlarmMode)도 정합. #538 편집기 개조에서 정리된 것으로 보임. 실기기 1회 재확인만.
+
+## 5. 재개 절차
+
+1. `git checkout feat/clone-voice-prerender && git pull` → 이 문서 다시 읽기.
+2. 코드리뷰 Round3 결과 확인(이 세션 백그라운드) → 지적 수정 → 빌드+테스트 → 커밋(한국어)·푸시.
+3. 리뷰 클린 + CI green → 사용자가 PR #541 머지 → dev 배포.
+4. dev 배포 후 #4 라이브 실기기 검증(위 1번 "남은 것").
+5. 그 다음 #10(즉시배달 옵션 결정) / #13·#18(18시 이후 울림 검증).
+
+**빌드/adb 주의(이 PC):** 소켓 WSAEFAULT(10014)로 Gradle데몬·adb 간헐 실패 → 재시도. adb 다운 시 라온 보안드라이버 정지(`Stop-Service AnySign4PC Launcher, MagicLine4NXSVC, 'RAON K', WizveraPMSvc` + `sc stop KingsNET`/`TNXNET_SVR`) 후 `adb start-server`. K2 캐스케이드 시 clean 재빌드. 상세=메모리 `reference_winsock_wsaefault_build_workaround`.
+
+---
+
+# 🛠 개발 스펙(남은 구현) — 파일별 상세
+
+> "무엇을, 어디를, 왜, 어떻게" 다 적어 재설명 없이 바로 착수 가능하게. QA(위)와 별개로 **코드로 만들어야 하는 것**만.
+
+## A. #10 가족 알람 즉시/빠른 배달 — **가장 큰 남은 개발** (미착수)
+
+**목표(사용자 의도):** 발신자가 가족에게 알람을 맞추면 수신자 기기에 **가능한 즉시** 반영. 지금은 수신자가 앱을 열어 알람탭에 들어가야(또는 최대 15분 백그라운드 폴백) 받음 → 백그라운드에서도 빨리.
+
+**왜 지금 안 되나(근본):** push 경로가 없음. 배달은 100% pull(15분 주기 + 포그라운드 syncNow). 백엔드 `fcm.ts`는 있으나 (a) 가족알람 생성 시 미호출, (b) Android FCM 클라 없음, (c) 토큰 등록 엔드포인트 없음 → E2E 죽어있음.
+
+### 옵션 A — FCM 풀 배선 (진짜 즉시, 인프라 필요) **[권장: 출시 전후]**
+
+*파일별 구현 순서:*
+1. **Firebase 프로젝트 준비(외부):** 콘솔에서 프로젝트 생성 → Android 앱 2개 등록(`com.alarmtalk.app.dev`, `com.alarmtalk.app`) → `google-services.json` 2개 확보. flavor별 배치(`app/src/dev/google-services.json`, `app/src/prod/…` 또는 루트+flavor 처리). **⚠️ 시크릿 파일 — .gitignore 확인, CI secret 주입.**
+2. **`apps/android-native/build.gradle`(root):** `classpath 'com.google.gms:google-services:4.4.x'`. **`app/build.gradle`:** `apply plugin: 'com.google.gms.google-services'` + `implementation 'com.google.firebase:firebase-messaging-ktx'`(BoM 권장).
+3. **`AlarmTalkMessagingService`(신규, `com.alarmtalk.app.fcm`):** `FirebaseMessagingService` 상속.
+   - `onNewToken(token)` → 인증 세션 있으면 서버 `POST /api/push/register` 호출(토큰 등록). 세션 복원/로그인 시점(`MainViewModelAuthActions`)에도 현재 토큰 재등록.
+   - `onMessageReceived(msg)` → data payload `{type:"family_alarm"}` 확인 → `RemoteAlarmSyncScheduler.runOnce(context)` 즉시 pull(기존 경로 재사용, `RemoteAlarmPullSyncService`가 upsert + `notifyReceivedAlarm`).
+   - `AndroidManifest.xml`에 `<service ... INTENT_FILTER com.google.firebase.MESSAGING_EVENT>` 등록.
+4. **백엔드 토큰 등록 엔드포인트(신규):** `routes/push.ts` `POST /api/push/register`(auth 필수) → `INSERT INTO push_tokens(user_id, token, platform, updated_at) ON CONFLICT(token) DO UPDATE`. 스키마는 이미 `migrations.ts:365`에 존재(테이블만 있고 INSERT 경로가 없던 것). zod 바디 검증, `?`-바인딩(규약).
+5. **가족알람 생성 시 푸시(핵심 배선):** `routes/family-alarm.ts` 알람 INSERT 성공 후 `sendAlarmPush(env, 수신자userId, {type:"family_alarm", alarmId})` 호출 — **data-only payload**(알림표시는 클라가 pull 후 `notifyReceivedAlarm`으로). `c.executionCtx.waitUntil(...)`로 논블로킹. `family-alarm.ts:153-178`(문자), `:343-360`(음성) 두 경로.
+6. **시크릿:** `FIREBASE_SERVICE_ACCOUNT_JSON`, `FIREBASE_PROJECT_ID`(dev/prod) → `.dev.vars.{dev,prod}` + `npm run secrets:sync:{dev,prod}`. 미설정이면 `fcm.ts`가 `MOCK_SEND` 로그만(안 깨짐).
+7. **검증:** 두 폰 — S23(발신)→A32(수신, 백그라운드/화면꺼짐) 알람 설정 시 A32에 수 초 내 시스템 알림 + Room 반영.
+
+*주의:* 배터리 최적화/Doze에서 data-only는 지연될 수 있음 → 필요 시 `priority:high`. FCM 실패해도 15분 pull 폴백이 살아있어 **안전한 점진 강화**(사용자 "안정적으로").
+
+### 옵션 B — 포그라운드 즉시성 강화 (가벼움, 인프라 0) **[권장: 지금 당장]**
+
+- `AlarmTalkApp`/Application에 `ProcessLifecycleOwner.get().lifecycle` 옵저버 → `ON_RESUME`(앱이 포그라운드 복귀)마다 `RemoteAlarmSyncScheduler.runOnce()`. 지금은 "알람탭 진입 시"만 즉시 pull(`AlarmTalkApp.kt:332`) → **어느 탭/화면에서 복귀해도** 즉시 pull로 확장.
+- 스팸 방지 throttle(예: 최근 30초 내 skip). #537 커밋이 race/배터리 우려로 미룬 부분 — throttle로 해소.
+- 백그라운드 즉시는 여전히 안 됨(그건 옵션 A 필요). 하지만 "열면 바로"가 훨씬 촘촘.
+
+### 옵션 C — 폴백 주기 단축: **비권장.** WorkManager 주기 최소 15분, expedited도 제약 커 실효 낮음.
+
+**결론:** 옵션 B를 먼저(즉시·저위험), 옵션 A는 Firebase 셋업 되면. 진짜 "백그라운드 즉시"는 A만 가능.
+
+---
+
+## B. #4 사전렌더 — 코드리뷰 Round3에서 잡힌 회귀 수정(진행중, feat 브랜치)
+
+2차 하드닝 커밋(`5857da3f`)이 새 버그를 만든 것들. 여러 파인더가 독립 지적 → 실화. **검증 후 전부 수정 예정:**
+1. `AlarmRepository.kt:750` **due-gate 무한 재호출**: `updateContextVariantIndex`를 인덱스가 *바뀔 때만* 호출 → 날씨 안정 시 `updatedAtMillis` 안 올라가 매 워커틱마다 open-meteo 재호출(12h 스로틀 무력화, 배터리·API 429 위험). → **해결 시 인덱스 동일해도 타임스탬프(또는 별도 resolved_at) 무조건 갱신**.
+2. `AlarmEditorScreen.kt:702` **저장 시 인덱스 소실**: `bindStockBucketClips(cat, profileId)`가 `contextVariantIndex=null` 기본값 → `setBucketAudio`가 덮어씀 → 해결됐던 날씨 알람 재저장 시 0(맑음)으로 리셋. → **저장 경로에서 `editor.contextVariantIndex` 전달**.
+3. `RingingActivity.kt:529` / `AlarmRepository.kt:559` **폴백 문구-음성 어긋남**: 오디오는 클립 없으면 첫 클립 폴백, 텍스트는 정확 인덱스 → 폴백 시 화면·소리 불일치. → **텍스트도 실제 재생된 인덱스로 폴백**(발사 때 인덱스 1회 계산해 오디오·텍스트 공유가 근본).
+4. `tts.ts:386` **NaN 가드가 라이브 죽임**: `loadWeatherSignalInput`의 `!Number.isFinite(code)→null`이 라이브 `wake_weather` 경로도 타 → weather_code 없고 강수/기온만 있어도 날씨멘트 전부 소실. → **code 없으면 기온/강수 기반 분류로 폴백**(prerender에서만 엄격).
+5. `tts.ts:480` **cold 임계 divergence**: 라이브 buildWeatherSignal은 `maxTemp<=12`도 cold인데 prerender resolver는 `<=5`만 → 6~12°C에서 '맑음' 오재. → **cold 임계 라이브와 일치(≤12)**.
+6. `AlarmEntity.kt:166` **운세 자정 스트래들**: fortune 인덱스를 `LocalDate.now()`로 오디오·텍스트가 각각 독립 계산 → 자정 직전 발사 시 테마 불일치. (희귀) → 발사 때 인덱스 1회 스냅샷 공유로 근본 해결(위 3과 동일 뿌리).
+7. `MainViewModelVoiceActions.kt:487` **언어매핑 중복**: `supportedAppVoiceLanguage`(ui.editor) 재구현 — ui.main에서 import 불가라 inline했으나 확장 시 한쪽만 갱신 위험. → **공용 위치(core/data)로 매핑 추출해 양쪽이 공유**.
+8. `AlarmEditorScreen.kt:423` **8/5 하드코딩**: 클라 개수 리터럴이 백엔드 상수와 이중화(백엔드 테스트는 TS만 검증). 백엔드가 9종 되면 클라 8 고정 → 세트 비교 실패로 버킷 조용히 미부착. → **배달된 클립셋에서 개수 유도(max variant+1)**.
+9. `AlarmTalkApp.kt:327` **매 탭진입 forceReload**: 홈/보이스 탭 누를 때마다 전체 매니페스트 재fetch. → **이벤트기반(클론 확정 후에만) 또는 throttle**.
+
+---
 
 ## 2026-07-13 세션2 — Part 2 구현·코드리뷰수정·실기기 QA (자율 진행)
 
