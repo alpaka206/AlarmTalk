@@ -475,11 +475,12 @@ internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
     when (normalizedRandomPromptContext(context ?: "")) {
         "love" -> "love"
         "medication" -> "medication"
-        // 운세: 발사 시점 기기에서 매일 신선 계산이라 반복 알람도 정확 → 지금 오프라인.
+        // 운세: 발사 시점 기기에서 매일 신선 계산이라 반복 알람도 정확(fortuneThemeIndex).
         "wake_fortune" -> "fortune"
-        // 날씨: 실시간 판정이 서버 전용이라 발사 전 네트워크가 필요한데, 반복 알람이 매일 맞으려면
-        // 저장-시점 스냅샷(하루 종일 고정)이 아니라 '매일 준비창 갱신(워커)'이 필요하다. 워커 연결
-        // 전까지는 라이브 유지(저장-시점 스냅샷은 반복에서 오재라 채택 안 함). 인프라는 준비됨.
+        // 날씨: 실시간 판정이 서버 전용이라, 저장 직후 + 반복이면 매일 준비창(전날 22시)에
+        // 저장 위치로 서버가 조건을 resolve 해 contextVariantIndex 를 갱신(ContextVariantResolveWorker).
+        // 발사는 그 인덱스로 오프라인 lookup.
+        "wake_weather" -> "weather"
         else -> null
     }
 

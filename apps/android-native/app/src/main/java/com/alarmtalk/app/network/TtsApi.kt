@@ -6,6 +6,7 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 data class TtsGenerateRequest(
     @SerializedName("voice_profile_id") val voiceProfileId: String,
@@ -91,6 +92,11 @@ data class StockClip(
     @SerializedName("audio_url") val audioUrl: String? = null,
 )
 
+data class PrerenderVariantResponse(
+    val context: String? = null,
+    @SerializedName("variant_index") val variantIndex: Int? = null,
+)
+
 interface TtsApi {
     @POST("tts/generate")
     suspend fun generateTts(
@@ -103,6 +109,15 @@ interface TtsApi {
 
     @GET("tts/stock-clips")
     suspend fun getStockClips(@Header("Authorization") authorization: String): StockClipListResponse
+
+    // 사전렌더 버킷(날씨)의 '어느 variant 를 틀지' 인덱스만 서버가 resolve. 오디오는 이미 로컬 캐시.
+    @GET("tts/prerender-variant")
+    suspend fun getPrerenderVariant(
+        @Header("Authorization") authorization: String,
+        @Query("context") context: String,
+        @Query("country") country: String?,
+        @Query("city") city: String?,
+    ): PrerenderVariantResponse
 
     @GET("tts/manual-quota")
     suspend fun getManualQuota(@Header("Authorization") authorization: String): ManualQuotaResponse

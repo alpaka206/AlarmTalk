@@ -724,6 +724,36 @@ class AlarmRepository(
     }
 
     /**
+     * 사전렌더 '날씨' 버킷 알람의 조건 인덱스를 서버로 resolve 해 contextVariantIndex 를 갱신한다.
+     * 저장 위치로 서버가 실시간 날씨(open-meteo)를 판정→CLONE_WEATHER_CONDITIONS 순서 인덱스를 반환.
+     * 발사는 그 인덱스로 오프라인 lookup. 준비창 워커가 매일(반복 알람 전날) + 저장 직후(runOnce)
+     * 호출한다. DynamicVoiceRefreshEnabled 플래그와 무관하게 항상 동작(오프라인 날씨 매칭 전용).
+     */
+    suspend fun resolveDueCloneBucketVariants(api: AlarmTalkApi, token: String): Int {
+        val alarms = alarmDao.getEnabledWeatherBucketAlarms()
+        var resolved = 0
+        alarms.forEach { alarm ->
+            runCatching {
+                val response = api.getPrerenderVariant(
+                    authorization = AlarmTalkApiClient.bearer(token),
+                    context = "wake_weather",
+                    country = alarm.voiceWeatherCountry.trimmedOrNull(),
+                    city = alarm.voiceWeatherCity.trimmedOrNull(),
+                )
+                val index = response.variantIndex
+                if (index != null && index != alarm.contextVariantIndex) {
+                    alarmDao.updateContextVariantIndex(alarm.id, index, System.currentTimeMillis())
+                    resolved += 1
+                }
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to resolve weather variant id=${alarm.id}", error)
+            }
+        }
+        if (resolved > 0) Log.i(TAG, "Resolved weather bucket variants count=$resolved")
+        return resolved
+    }
+
+    /**
      * 어떤 알람도 참조하지 않고 30일 넘게 손대지 않은 캐시 음성 파일을 정리한다.
      * 앱 시작 시 백그라운드에서 1회 호출되는 것을 전제로 한다.
      */
@@ -877,14 +907,18 @@ class AlarmRepository(
      * 이 wiring 이 없으면 반복 동적 알람이 과거에 캐시된 동일 음성만 재생한다.
      */
     private fun ensureDynamicVoiceRefreshScheduled(alarm: AlarmEntity) {
-        if (!DynamicVoiceRefreshEnabled) return
-        if (!isRepeatingDynamicVoiceAlarm(alarm)) return
+        // (1) 동적 음성 갱신(플래그 on + 반복 동적 알람) 또는 (2) 사전렌더 '날씨' 버킷 알람이면
+        // 준비창 워커를 예약한다. 날씨 버킷은 저장 직후 runOnce 로 조건 인덱스를 즉시 resolve 하고,
+        // ensurePeriodic 로 반복 알람의 매일 전날 갱신을 건다(플래그와 무관).
+        val needsWorker = (DynamicVoiceRefreshEnabled && isRepeatingDynamicVoiceAlarm(alarm)) ||
+            alarm.bucketId == "weather"
+        if (!needsWorker) return
         runCatching {
             DynamicVoiceRefreshScheduler.ensurePeriodic(context)
             DynamicVoiceRefreshScheduler.runOnce(context)
-            Log.i(TAG, "Scheduled dynamic voice refresh for alarm id=${alarm.id}")
+            Log.i(TAG, "Scheduled voice refresh worker for alarm id=${alarm.id}")
         }.onFailure { error ->
-            Log.w(TAG, "Failed to schedule dynamic voice refresh id=${alarm.id}", error)
+            Log.w(TAG, "Failed to schedule voice refresh worker id=${alarm.id}", error)
         }
     }
 

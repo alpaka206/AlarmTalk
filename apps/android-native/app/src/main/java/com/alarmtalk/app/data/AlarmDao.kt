@@ -44,6 +44,22 @@ interface AlarmDao {
     )
     suspend fun getRepeatingDynamicAlarmTalks(): List<AlarmEntity>
 
+    // 사전렌더 '날씨' 버킷 알람(반복+일회성). 준비창 워커가 저장 위치로 서버에 조건을 resolve 해
+    // contextVariantIndex 를 갱신한다. dismiss 로 enabled=0 된 일회성은 자동 제외.
+    @Query(
+        """
+        SELECT * FROM alarms
+        WHERE enabled = 1
+          AND bucketId = 'weather'
+          AND voiceProfileId IS NOT NULL
+        ORDER BY fireAtMillis ASC
+        """,
+    )
+    suspend fun getEnabledWeatherBucketAlarms(): List<AlarmEntity>
+
+    @Query("UPDATE alarms SET contextVariantIndex = :index, updatedAtMillis = :updatedAtMillis WHERE id = :id")
+    suspend fun updateContextVariantIndex(id: String, index: Int?, updatedAtMillis: Long)
+
     @Query(
         """
         SELECT COUNT(*) FROM alarms
