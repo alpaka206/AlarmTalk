@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { resolvePrerenderWeatherIndex, type WeatherSignalInput } from '../src/routes/tts';
-import { CLONE_WEATHER_CONDITIONS } from '../src/lib/stock-clips';
+import { CLONE_WEATHER_CONDITIONS, CLONE_FORTUNE_THEMES } from '../src/lib/stock-clips';
+
+// 클라 hasCompleteCloneBucket 가 날씨=8·운세=5 를 하드코딩하므로(오프라인 버킷 '완전' 판정),
+// 백엔드 개수가 바뀌면 이 단언이 깨져 클라 상수 동기화를 강제한다.
+describe('클론 매칭 버킷 개수 계약', () => {
+  it('날씨 조건=8, 운세 테마=5 (클라 하드코딩과 일치해야 함)', () => {
+    expect(CLONE_WEATHER_CONDITIONS.length).toBe(8);
+    expect(CLONE_FORTUNE_THEMES.length).toBe(5);
+  });
+});
 
 const base: WeatherSignalInput = {
   code: 0,
@@ -32,6 +41,11 @@ describe('resolvePrerenderWeatherIndex (CLONE_WEATHER_CONDITIONS 순서 인덱�
   });
   it('흐림 코드(2/3) → cloud', () => {
     expect(resolvePrerenderWeatherIndex({ ...base, code: 3 })).toBe(idx('cloud'));
+  });
+  it('맑고 추운 날(최저<=0/최고<=5) → cold (nice 오재 방지)', () => {
+    expect(resolvePrerenderWeatherIndex({ ...base, code: 0, maxTemp: 2, minTemp: -7 })).toBe(
+      idx('cold'),
+    );
   });
   it('맑음(기본) → nice', () => {
     expect(resolvePrerenderWeatherIndex(base)).toBe(idx('nice'));

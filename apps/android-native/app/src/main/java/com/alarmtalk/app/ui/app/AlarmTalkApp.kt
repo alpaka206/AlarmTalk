@@ -332,6 +332,9 @@ internal fun AlarmTalkApp(
                 viewModel.syncNow()
                 viewModel.refreshBilling()
                 viewModel.refreshSocial()
+                // 편집기가 이 탭에서 열리고, cron 이 세션 중 만든 클론 클립을 오프라인 버킷 판정
+                // (hasCompleteCloneBucket)에 반영하려면 매니페스트를 새로 받아야 한다.
+                viewModel.loadStockClips(forceReload = true)
             }
             NativeTab.People -> {
                 viewModel.refreshSocial()

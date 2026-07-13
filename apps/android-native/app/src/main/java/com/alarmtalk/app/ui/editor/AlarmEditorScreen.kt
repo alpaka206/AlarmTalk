@@ -407,8 +407,8 @@ internal fun AlarmEditorScreen(
 
     // 오프라인 클론 버킷이 '완전한지' 판정. 날씨/운세는 서버가 조건/테마 '절대 인덱스'로 클립을 고르므로
     // variant 0..N-1 이 전부 캐시돼 있어야 인덱스가 안 엉킨다(부분 세트면 엉뚱한 조건 재생 → 라이브 유지).
-    // 사랑/약은 순차 회전이라 1개 이상이면 안전. 개수는 백엔드 CLONE_WEATHER_CONDITIONS(7)·
-    // CLONE_FORTUNE_THEMES(5) 와 맞춘다.
+    // 사랑/약은 순차 회전이라 1개 이상이면 안전. 개수는 백엔드 CLONE_WEATHER_CONDITIONS(8: 맑음/비/눈/
+    // 미세먼지/흐림/안개/더위/추위)·CLONE_FORTUNE_THEMES(5)와 맞춘다(백엔드 test '개수 계약'이 강제).
     fun hasCompleteCloneBucket(category: String, profileId: String): Boolean {
         val variants = stockClips
             .filter {
@@ -420,7 +420,7 @@ internal fun AlarmEditorScreen(
             .toSet()
         if (variants.isEmpty()) return false
         val fullCount = when (category) {
-            "weather" -> 7
+            "weather" -> 8
             "fortune" -> 5
             else -> return true
         }
@@ -439,8 +439,12 @@ internal fun AlarmEditorScreen(
         val clips = stockClips
             .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appVoiceLanguage }
             .sortedBy { it.variant }
+            // variant 중복 제거: 매칭 버킷은 절대 인덱스로 keys[i] 를 고르므로, 중복 variant 가 있으면
+            // 뒤 인덱스가 밀려 엉뚱한 조건 클립이 재생된다(같은 variant 는 첫 행만).
+            .distinctBy { it.variant }
         if (clips.isEmpty()) return false
         val keys = mutableListOf<String>()
+        val texts = mutableListOf<String>()
         val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
         clips.forEach { clip ->
             val cacheKey = "stock_${clip.messageId}"
@@ -458,6 +462,8 @@ internal fun AlarmEditorScreen(
                 }
             }
             keys.add(cached.cacheKey ?: cacheKey)
+            // 잠금화면이 발사 variant 의 문구를 보여줄 수 있도록 keys 와 같은 순서로 텍스트도 저장.
+            texts.add(clip.text)
             cachedClips.add(cached)
         }
         val representative = cachedClips.firstOrNull() ?: return false
@@ -470,6 +476,7 @@ internal fun AlarmEditorScreen(
             language = appVoiceLanguage,
             bucket = bucket,
             clipKeys = keys,
+            clipTexts = texts,
             contextVariantIndex = contextVariantIndex,
         )
         return true

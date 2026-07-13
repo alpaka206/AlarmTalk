@@ -25,6 +25,7 @@ import {
   type WeatherCondition,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
+import { CLONE_WEATHER_CONDITIONS } from '../lib/stock-clips';
 import {
   readManualTtsUsage,
   refundManualTtsQuota,
@@ -380,9 +381,13 @@ async function loadWeatherSignalInput(args: {
       .json<WeatherForecastResponse>()
       .catch(() => ({}) as WeatherForecastResponse);
     if (!response.ok || !json.daily) return null;
+    const code = Number(json.daily.weather_code?.[0]);
+    // weather_code 가 없으면(NaN) 눈/비/안개/흐림을 신뢰성 있게 분류할 수 없다 → null 로 반환해
+    // 클라가 '맑음'으로 오분류·덮어쓰지 않고 마지막 유효 인덱스를 유지하게 한다.
+    if (!Number.isFinite(code)) return null;
     const hasDust = await loadDustSignal(location);
     return {
-      code: Number(json.daily.weather_code?.[0]),
+      code,
       maxTemp: Number(json.daily.temperature_2m_max?.[0]),
       minTemp: Number(json.daily.temperature_2m_min?.[0]),
       rainProbability: Number(json.daily.precipitation_probability_max?.[0]),
@@ -458,18 +463,25 @@ const CLOUD_WMO_CODES = [2, 3]; // partly cloudy / overcast = 흐림
  * 우선순위: 눈>비>미세먼지>안개>더위>흐림>맑음(기본).
  */
 export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number {
-  const { code, maxTemp, rainProbability, precipitation, hasDust } = input;
+  const { code, maxTemp, minTemp, rainProbability, precipitation, hasDust } = input;
+  // 인덱스는 CLONE_WEATHER_CONDITIONS 순서에서 파생(하드코딩 대신 → 순서 바뀌어도 안전).
+  const idx = (kind: (typeof CLONE_WEATHER_CONDITIONS)[number]) =>
+    Math.max(0, CLONE_WEATHER_CONDITIONS.indexOf(kind));
   const rainy =
     (Number.isFinite(rainProbability) && rainProbability >= 30) ||
     (Number.isFinite(precipitation) && precipitation > 0) ||
     RAIN_WMO_CODES.includes(code);
-  if (SNOW_WMO_CODES.includes(code)) return 2;
-  if (rainy) return 1;
-  if (hasDust) return 3;
-  if (FOG_WMO_CODES.includes(code)) return 5;
-  if (Number.isFinite(maxTemp) && maxTemp >= 30) return 6;
-  if (CLOUD_WMO_CODES.includes(code)) return 4;
-  return 0;
+  if (SNOW_WMO_CODES.includes(code)) return idx('snow');
+  if (rainy) return idx('rain');
+  if (hasDust) return idx('dust');
+  if (FOG_WMO_CODES.includes(code)) return idx('fog');
+  if (Number.isFinite(maxTemp) && maxTemp >= 30) return idx('heat');
+  // 추위: 라이브 buildWeatherSignal 과 동일 기준(최저<=0 또는 최고<=5). 맑고 추운 날 '산책' 오재 방지.
+  if ((Number.isFinite(minTemp) && minTemp <= 0) || (Number.isFinite(maxTemp) && maxTemp <= 5)) {
+    return idx('cold');
+  }
+  if (CLOUD_WMO_CODES.includes(code)) return idx('cloud');
+  return idx('nice');
 }
 
 

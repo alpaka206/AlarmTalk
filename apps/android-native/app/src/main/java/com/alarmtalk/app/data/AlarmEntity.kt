@@ -46,6 +46,9 @@ data class AlarmEntity(
     val bucketId: String? = null,
     val bucketRotationIndex: Int = 0,
     val bucketClipKeysJson: String? = null,
+    // bucketClipKeysJson 과 같은 순서(variant 순)의 표시 문구 목록. 매칭형 버킷은 발사 시 고른
+    // variant 의 클립을 재생하므로, 잠금화면 문구도 같은 인덱스의 이 목록에서 골라야 음성과 일치한다.
+    val bucketClipTextsJson: String? = null,
     // 매칭형 버킷(날씨/운세)에서 '어느 variant 를 틀지'의 인덱스. 발사 전날 준비창에 서버
     // /tts/prerender-variant 가 resolve 한 값을 스냅샷한다(발사는 오프라인 lookup). null 이면
     // 회전(사랑·약·기상 등) 또는 미해결(→ variant0 폴백).
@@ -99,6 +102,7 @@ data class AlarmDraft(
     val ttsMessageId: String? = null,
     val bucketId: String? = null,
     val bucketClipKeysJson: String? = null,
+    val bucketClipTextsJson: String? = null,
     val contextVariantIndex: Int? = null,
     val alarmVolumePercent: Int = 100,
     val alarmSoundUri: String? = null,
@@ -141,4 +145,29 @@ internal fun fortuneThemeIndex(
         hash = (hash * 31 + ch.code) and 0xFFFFFFFFL
     }
     return (hash % count).toInt()
+}
+
+/** bucketClipTextsJson(JSON 배열) → 표시 문구 목록(variant 순, bucketClipKeys 와 동일 인덱스). */
+fun AlarmEntity.bucketClipTexts(): List<String> = decodeBucketClipKeys(bucketClipTextsJson)
+
+/**
+ * 이 버킷 알람이 발사 시 재생/표시할 variant 인덱스(0..N-1). 오디오(resolveBucketClipLocalUri)와
+ * 잠금화면 문구(RingingActivity)가 같은 이 인덱스를 써야 음성=문구가 일치한다.
+ * 운세=사주+발사일자 결정적 계산, 날씨=준비창 스냅샷 조건 인덱스, 그 외=순차 회전.
+ */
+fun AlarmEntity.bucketVariantIndex(): Int {
+    val size = bucketClipKeys().size
+    if (size <= 0) return 0
+    val raw = when (bucketId) {
+        "fortune" -> fortuneThemeIndex(
+            gender = voiceFortuneGender,
+            birthDate = voiceFortuneBirthDate,
+            birthTime = voiceFortuneBirthTime,
+            date = java.time.LocalDate.now().toString(),
+            count = size,
+        )
+        "weather" -> contextVariantIndex ?: 0
+        else -> bucketRotationIndex
+    }
+    return ((raw % size) + size) % size
 }

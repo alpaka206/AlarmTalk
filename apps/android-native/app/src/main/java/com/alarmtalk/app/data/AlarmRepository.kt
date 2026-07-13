@@ -164,6 +164,7 @@ class AlarmRepository(
             bucketId = draft.bucketId,
             bucketRotationIndex = 0,
             bucketClipKeysJson = draft.bucketClipKeysJson,
+            bucketClipTextsJson = draft.bucketClipTextsJson,
             contextVariantIndex = draft.contextVariantIndex,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
@@ -250,6 +251,7 @@ class AlarmRepository(
             bucketRotationIndex =
                 if (draft.bucketId != null && draft.bucketId == current.bucketId) current.bucketRotationIndex else 0,
             bucketClipKeysJson = draft.bucketClipKeysJson,
+            bucketClipTextsJson = draft.bucketClipTextsJson,
             contextVariantIndex = draft.contextVariantIndex,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
@@ -551,21 +553,8 @@ class AlarmRepository(
     fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? {
         val keys = alarm.bucketClipKeys()
         if (alarm.bucketId == null || keys.isEmpty()) return null
-        val rawIndex = when (alarm.bucketId) {
-            // 운세 = 사주+발사일자로 발사 시점 기기에서 결정적 계산(매일 신선, 완전 오프라인).
-            "fortune" -> fortuneThemeIndex(
-                gender = alarm.voiceFortuneGender,
-                birthDate = alarm.voiceFortuneBirthDate,
-                birthTime = alarm.voiceFortuneBirthTime,
-                date = LocalDate.now().toString(),
-                count = keys.size,
-            )
-            // 날씨 = 저장 시점에 서버가 resolve 한 조건 인덱스 스냅샷(미해결이면 variant0 폴백).
-            "weather" -> alarm.contextVariantIndex ?: 0
-            // 사랑·약·기상 등 = 매 에피소드 순차 회전.
-            else -> alarm.bucketRotationIndex
-        }
-        val index = ((rawIndex % keys.size) + keys.size) % keys.size
+        // 오디오와 잠금화면 문구가 같은 인덱스를 쓰도록 단일 출처(bucketVariantIndex)에서 계산.
+        val index = alarm.bucketVariantIndex()
         alarmAudioStore.getCachedAudio(keys[index])?.let { return it.localAudioUri }
         for (key in keys) {
             alarmAudioStore.getCachedAudio(key)?.let { return it.localAudioUri }
@@ -730,7 +719,12 @@ class AlarmRepository(
      * 호출한다. DynamicVoiceRefreshEnabled 플래그와 무관하게 항상 동작(오프라인 날씨 매칭 전용).
      */
     suspend fun resolveDueCloneBucketVariants(api: AlarmTalkApi, token: String): Int {
+        val now = System.currentTimeMillis()
+        // 준비창 게이트: open-meteo 는 하루 예보라 시간마다 갱신은 무의미하고 쿼터·배터리만 낭비한다.
+        // 아직 미해결(null)이거나 마지막 갱신이 ~12h 이전인 알람만 대상으로 삼아 최대 하루 1~2회로 제한.
+        val staleBefore = now - 12 * 60 * 60 * 1000L
         val alarms = alarmDao.getEnabledWeatherBucketAlarms()
+            .filter { it.contextVariantIndex == null || it.updatedAtMillis < staleBefore }
         if (alarms.isEmpty()) return 0
         // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
         val byLocation = alarms.groupBy {

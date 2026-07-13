@@ -89,6 +89,7 @@ internal class AlarmEditorState(
     alarmSoundLabel: String?,
     bucketId: String? = null,
     bucketClipKeysJson: String? = null,
+    bucketClipTextsJson: String? = null,
     contextVariantIndex: Int? = null,
 ) {
     var label by mutableStateOf(label)
@@ -132,6 +133,7 @@ internal class AlarmEditorState(
     // 그리고 그 클립이 어떤 보이스로 캐시됐는지(보이스 변경 시 재선택 판단용, 영속 안 함).
     var selectedBucket by mutableStateOf(bucketId)
     var bucketClipKeysJson by mutableStateOf(bucketClipKeysJson)
+    var bucketClipTextsJson by mutableStateOf(bucketClipTextsJson)
     var bucketResolvedForProfileId by mutableStateOf(if (bucketId != null) voiceProfileId else null)
     // 날씨 버킷: 저장 시점에 서버가 resolve 한 조건 인덱스 스냅샷(발사 오프라인 lookup 용). 기존
     // 알람 편집 시 값을 보존해야 재저장으로 인덱스가 null 로 날아가지 않는다. 운세는 발사 시점 기기
@@ -219,6 +221,7 @@ internal class AlarmEditorState(
             // 남아 있던 selectedBucket/clipKeys 를 persist 하지 않도록(울림 시 옛 버킷 오디오 방지).
             bucketId = if (isActiveBucketAlarm()) selectedBucket else null,
             bucketClipKeysJson = if (isActiveBucketAlarm()) bucketClipKeysJson else null,
+            bucketClipTextsJson = if (isActiveBucketAlarm()) bucketClipTextsJson else null,
             contextVariantIndex = if (isActiveBucketAlarm()) contextVariantIndex else null,
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
             alarmSoundUri = alarmSoundUri,
@@ -358,6 +361,7 @@ internal class AlarmEditorState(
         language: String,
         bucket: String,
         clipKeys: List<String>,
+        clipTexts: List<String> = emptyList(),
         contextVariantIndex: Int? = null,
     ) {
         voiceSource = VoiceSources.TTS_PROFILE
@@ -373,6 +377,7 @@ internal class AlarmEditorState(
         ttsMessageId = messageId.takeIf { it.isNotBlank() }
         selectedBucket = bucket
         bucketClipKeysJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipKeys)
+        bucketClipTextsJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipTexts)
         bucketResolvedForProfileId = profileId
         this.contextVariantIndex = contextVariantIndex
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
@@ -430,6 +435,7 @@ internal class AlarmEditorState(
                 alarmSoundLabel = alarm?.alarmSoundLabel,
                 bucketId = alarm?.bucketId,
                 bucketClipKeysJson = alarm?.bucketClipKeysJson,
+                bucketClipTextsJson = alarm?.bucketClipTextsJson,
                 contextVariantIndex = alarm?.contextVariantIndex,
             )
         }
