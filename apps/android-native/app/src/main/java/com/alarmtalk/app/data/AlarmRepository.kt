@@ -731,22 +731,32 @@ class AlarmRepository(
      */
     suspend fun resolveDueCloneBucketVariants(api: AlarmTalkApi, token: String): Int {
         val alarms = alarmDao.getEnabledWeatherBucketAlarms()
+        if (alarms.isEmpty()) return 0
+        // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
+        val byLocation = alarms.groupBy {
+            (it.voiceWeatherCountry?.trim().orEmpty()) to (it.voiceWeatherCity?.trim().orEmpty())
+        }
         var resolved = 0
-        alarms.forEach { alarm ->
-            runCatching {
-                val response = api.getPrerenderVariant(
+        for ((location, group) in byLocation) {
+            val (country, city) = location
+            val index = runCatching {
+                api.getPrerenderVariant(
                     authorization = AlarmTalkApiClient.bearer(token),
                     context = "wake_weather",
-                    country = alarm.voiceWeatherCountry.trimmedOrNull(),
-                    city = alarm.voiceWeatherCity.trimmedOrNull(),
-                )
-                val index = response.variantIndex
-                if (index != null && index != alarm.contextVariantIndex) {
+                    country = country.takeIf { it.isNotBlank() },
+                    city = city.takeIf { it.isNotBlank() },
+                ).variantIndex
+            }.getOrElse { error ->
+                Log.w(TAG, "Failed to resolve weather variant country=$country city=$city", error)
+                null
+            }
+            // 조회 실패(null)면 '맑음(0)'으로 덮어쓰지 않고 기존 인덱스를 유지한다.
+            if (index == null) continue
+            for (alarm in group) {
+                if (index != alarm.contextVariantIndex) {
                     alarmDao.updateContextVariantIndex(alarm.id, index, System.currentTimeMillis())
                     resolved += 1
                 }
-            }.onFailure { error ->
-                Log.w(TAG, "Failed to resolve weather variant id=${alarm.id}", error)
             }
         }
         if (resolved > 0) Log.i(TAG, "Resolved weather bucket variants count=$resolved")

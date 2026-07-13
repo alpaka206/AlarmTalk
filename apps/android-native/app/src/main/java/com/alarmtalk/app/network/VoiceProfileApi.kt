@@ -42,6 +42,8 @@ data class VoiceProfileUpdateRequest(
     @SerializedName("is_draft") val isDraft: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
+    // draft→official 승격 시 사전렌더할 앱 언어(서버는 promote 시점에만 사용, 미전송 시 'ko').
+    val language: String? = null,
 )
 
 data class VoiceProfileRelationshipUpdateRequest(
@@ -96,6 +98,8 @@ interface VoiceProfileApi {
         @Part("listenerTitle") listenerTitle: RequestBody,
         @Part("durationMs") durationMs: RequestBody,
         @Part("isDraft") isDraft: RequestBody,
+        // 사전렌더할 앱 언어(미전송 시 서버가 'ko' 폴백 → 비-ko 유저가 클론 버킷을 못 받음).
+        @Part("language") language: RequestBody,
     ): VoiceProfileResponse
 
     @Multipart

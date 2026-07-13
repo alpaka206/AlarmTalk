@@ -14,6 +14,7 @@ import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import java.util.Locale
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
@@ -181,6 +182,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                         listenerTitle = draft.listenerTitle.toRequestBody("text/plain".toMediaType()),
                         durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
                         isDraft = false.toString().toRequestBody("text/plain".toMediaType()),
+                        language = deviceAppVoiceLanguage().toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }
@@ -255,6 +257,8 @@ internal fun MainViewModel.renameVoiceProfile(
                         name = trimmedName,
                         relationshipLabel = trimmedRelationship,
                         listenerTitle = trimmedListener,
+                        // draft→official 승격이 이 경로로 일어나면 서버가 이 언어로 사전렌더 큐잉한다.
+                        language = deviceAppVoiceLanguage(),
                     ),
                 ).profile
             }
@@ -475,6 +479,14 @@ internal suspend fun MainViewModel.loadManualQuota(): ManualQuotaResponse? {
             api.getManualQuota(AlarmTalkApiClient.bearer(session.token))
         }
     }.getOrNull()
+}
+
+// 디바이스 로케일 → 사전렌더 앱 언어(편집기 supportedAppVoiceLanguage 와 동일 규칙 en/ja/else→ko).
+// 클론 확정 시 서버에 이 언어를 보내 그 언어로 사전렌더한다(미전송 시 서버 'ko' 폴백 → 비-ko 유저 차단).
+private fun deviceAppVoiceLanguage(): String = when (Locale.getDefault().language) {
+    "en" -> "en"
+    "ja" -> "ja"
+    else -> "ko"
 }
 
 internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {

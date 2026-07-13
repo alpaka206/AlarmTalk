@@ -25,7 +25,6 @@ import {
   type WeatherCondition,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
-import { CLONE_FORTUNE_THEMES } from '../lib/stock-clips';
 import {
   readManualTtsUsage,
   refundManualTtsQuota,
@@ -473,26 +472,6 @@ export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number 
   return 0;
 }
 
-/**
- * 사주(성별·생년월일·시)+발사일자로 CLONE_FORTUNE_THEMES 인덱스(0..themeCount-1)를 결정적으로
- * 고른다. 오락용이라 개인정보를 클립에 담지 않고 '어느 제네릭 테마 클립을 틀지'만 결정한다.
- * 사람·날짜가 같으면 항상 같은 테마(하루 단위 안정). 서버가 이 규칙을 단독 소유해 클라와 발산 없음.
- */
-export function resolveFortuneThemeIndex(
-  gender: string,
-  birthDate: string,
-  birthTime: string,
-  date: string,
-  themeCount: number,
-): number {
-  if (themeCount <= 0) return 0;
-  const seed = `${gender.trim()}|${birthDate.trim()}|${birthTime.trim()}|${date.trim()}`;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
-  }
-  return hash % themeCount;
-}
 
 async function loadDustSignal(location: {
   latitude: number;
@@ -1493,19 +1472,12 @@ tts.get('/prerender-variant', async (c) => {
       country: c.req.query('country'),
       city: c.req.query('city'),
     });
-    return c.json({ context, variant_index: input ? resolvePrerenderWeatherIndex(input) : 0 });
+    // 날씨 조회 실패(open-meteo 불통·위치 미상 등)면 null 을 돌려, 클라가 '맑음(index 0)'과
+    // '해결 실패'를 구분해 잘못된 스냅샷을 저장하지 않게 한다.
+    return c.json({ context, variant_index: input ? resolvePrerenderWeatherIndex(input) : null });
   }
-  if (context === 'wake_fortune') {
-    const index = resolveFortuneThemeIndex(
-      c.req.query('fortune_gender') ?? '',
-      c.req.query('fortune_birth_date') ?? '',
-      c.req.query('fortune_birth_time') ?? '',
-      c.req.query('date') ?? '',
-      CLONE_FORTUNE_THEMES.length,
-    );
-    return c.json({ context, variant_index: index });
-  }
-  // love/medication/greeting 등 매칭 불필요 컨텍스트는 회전이라 인덱스 없음(클라가 회전 처리).
+  // 운세는 클라가 사주+날짜로 온디바이스 결정(fortuneThemeIndex)한다. 그 외(love/medication 회전)도
+  // 서버 인덱스 불필요.
   return c.json({ context, variant_index: null });
 });
 

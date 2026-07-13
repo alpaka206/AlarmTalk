@@ -422,20 +422,32 @@ async function scheduled(
       for (const voice of cloneVoices) {
         if (rendered >= MAX_CLIPS_PER_TICK) break;
         const targets = await findMissingStockTargets(db, [voice]);
+        if (targets.length === 0) {
+          await markPrerenderDone(db, voice.id);
+          continue;
+        }
+        let voiceRendered = 0;
+        let voiceError = false;
         for (const target of targets) {
           if (rendered >= MAX_CLIPS_PER_TICK) break;
           try {
             await generateStockClip(db, env, target);
             rendered += 1;
+            voiceRendered += 1;
           } catch (genErr) {
+            // 한 클립 실패가 이 보이스의 나머지 클립(예: love/medication)을 버리지 않도록, 그 클립만
+            // 건너뛰고 계속한다. 진전이 있으면 pending 유지(다음 틱 재시도), 진전 0+에러면 실패 처리.
             captureCron('scheduled.stock_clips.generate', genErr);
-            await markPrerenderFailed(db, voice.id);
-            break;
+            voiceError = true;
           }
         }
-        // 이 목소리의 남은 클립이 없으면 완료 처리(부분 렌더면 pending 유지 → 다음 틱 계속).
-        const remaining = await findMissingStockTargets(db, [voice]);
-        if (remaining.length === 0) await markPrerenderDone(db, voice.id);
+        // 재조회 없이 판정: 이번 틱에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.
+        if (voiceRendered === targets.length && !voiceError) {
+          await markPrerenderDone(db, voice.id);
+        } else if (voiceError && voiceRendered === 0) {
+          // 이 틱에 아무것도 못 만들고 에러만 → attempts 증가(영구 실패 클립의 무한 재시도 방지).
+          await markPrerenderFailed(db, voice.id);
+        }
       }
       if (rendered > 0) {
         logStructured('info', { at: 'scheduled.stock_clips', rendered, claimed: claimed.length });

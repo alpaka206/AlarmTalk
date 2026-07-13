@@ -405,6 +405,28 @@ internal fun AlarmEditorScreen(
         )
     }
 
+    // 오프라인 클론 버킷이 '완전한지' 판정. 날씨/운세는 서버가 조건/테마 '절대 인덱스'로 클립을 고르므로
+    // variant 0..N-1 이 전부 캐시돼 있어야 인덱스가 안 엉킨다(부분 세트면 엉뚱한 조건 재생 → 라이브 유지).
+    // 사랑/약은 순차 회전이라 1개 이상이면 안전. 개수는 백엔드 CLONE_WEATHER_CONDITIONS(7)·
+    // CLONE_FORTUNE_THEMES(5) 와 맞춘다.
+    fun hasCompleteCloneBucket(category: String, profileId: String): Boolean {
+        val variants = stockClips
+            .filter {
+                it.voiceProfileId == profileId &&
+                    it.category == category &&
+                    (it.language ?: "ko") == appVoiceLanguage
+            }
+            .map { it.variant }
+            .toSet()
+        if (variants.isEmpty()) return false
+        val fullCount = when (category) {
+            "weather" -> 7
+            "fortune" -> 5
+            else -> return true
+        }
+        return variants == (0 until fullCount).toSet()
+    }
+
     // 버킷 선택 코어: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
     // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다. 무료 시스템
     // 버킷과 유료 클론 버킷(사랑/약 등)이 저장/재생 계약이 동일하므로 이 코어를 공유한다.
@@ -654,38 +676,26 @@ internal fun AlarmEditorScreen(
             }
         }
 
-        // 유료 클론 + 사전렌더 대상 컨텍스트(사랑·약) + 해당 클립 존재 → 라이브 생성 대신 그 목소리
-        // 톤 사전렌더 클립을 오프라인 버킷으로 바인딩(회전). 클립 없거나 캐시 실패면 아래 라이브로 폴백.
-        val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
-        if (
-            editor.voiceRandomPrompt &&
-            cloneBucketCategory != null &&
-            !isSystemVoiceId(profileId) &&
-            stockClips.any {
-                it.voiceProfileId == profileId &&
-                    it.category == cloneBucketCategory &&
-                    (it.language ?: "ko") == appVoiceLanguage
-            }
-        ) {
-            generationJob?.cancel()
-            generationJob = scope.launch {
-                isSaving = true
-                val bound = runCatching { bindStockBucketClips(cloneBucketCategory, profileId) }
-                    .getOrDefault(false)
-                isSaving = false
-                if (bound) {
-                    submitDraft(editor.toDraft())
-                } else {
-                    audioMessage = context.getString(R.string.editor_error_stock_clip_select_failed)
-                }
-            }
-            return
-        }
-
         // 이전에 진행 중이던 generation 이 남아 있다면 취소.
         generationJob?.cancel()
         generationJob = scope.launch {
             isSaving = true
+            // 1) 유료 클론 오프라인 버킷 시도: 사전렌더 대상 컨텍스트(사랑/약/운세/날씨)이고 그 목소리의
+            //    '완전한' 클립 세트가 캐시돼 있으면 라이브 생성 대신 오프라인 버킷으로 바인딩한다.
+            //    날씨/운세는 서버 조건/테마 '절대 인덱스'로 고르므로 부분 세트면 인덱스가 엉킨다 →
+            //    hasCompleteCloneBucket 으로 풀셋일 때만 바인딩(부분/실패면 아래 라이브로 폴백).
+            val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
+            val tryCloneBucket = editor.voiceRandomPrompt && cloneBucketCategory != null &&
+                !isSystemVoiceId(profileId) && hasCompleteCloneBucket(cloneBucketCategory, profileId)
+            if (
+                tryCloneBucket &&
+                runCatching { bindStockBucketClips(cloneBucketCategory!!, profileId) }.getOrDefault(false)
+            ) {
+                isSaving = false
+                submitDraft(editor.toDraft())
+                return@launch
+            }
+            // 2) 버킷 미대상/캐시 실패 → 기존 라이브 생성으로 폴백(알람이 아예 안 저장되는 것 방지).
             audioMessage = context.getString(R.string.editor_preparing_voice_alarm)
             showFamilyAlarmToast(context.getString(R.string.editor_preparing_voice_alarm))
             runCatching {

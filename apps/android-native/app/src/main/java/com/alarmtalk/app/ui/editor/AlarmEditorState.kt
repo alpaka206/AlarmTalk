@@ -89,6 +89,7 @@ internal class AlarmEditorState(
     alarmSoundLabel: String?,
     bucketId: String? = null,
     bucketClipKeysJson: String? = null,
+    contextVariantIndex: Int? = null,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -132,9 +133,10 @@ internal class AlarmEditorState(
     var selectedBucket by mutableStateOf(bucketId)
     var bucketClipKeysJson by mutableStateOf(bucketClipKeysJson)
     var bucketResolvedForProfileId by mutableStateOf(if (bucketId != null) voiceProfileId else null)
-    // 날씨 버킷: 저장 시점에 서버가 resolve 한 조건 인덱스 스냅샷(발사 오프라인 lookup 용).
-    // 운세는 발사 시점 기기 계산이라 여기 안 담는다. 회전형(사랑/약)도 null.
-    var contextVariantIndex by mutableStateOf<Int?>(null)
+    // 날씨 버킷: 저장 시점에 서버가 resolve 한 조건 인덱스 스냅샷(발사 오프라인 lookup 용). 기존
+    // 알람 편집 시 값을 보존해야 재저장으로 인덱스가 null 로 날아가지 않는다. 운세는 발사 시점 기기
+    // 계산이라 안 담고, 회전형(사랑/약)도 null.
+    var contextVariantIndex by mutableStateOf(contextVariantIndex)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -183,27 +185,29 @@ internal class AlarmEditorState(
             } else {
                 normalizedRandomPromptContext(voiceRandomContext)
             },
-            voiceWeatherCountry = if (voiceRandomPrompt && randomContextUsesWeather(voiceRandomContext)) {
+            // 날씨는 라이브 랜덤 알람뿐 아니라 '날씨 버킷' 알람도 위치가 있어야 준비창 워커가 조건을
+            // resolve 한다(없으면 서버가 서울로 폴백). 운세 버킷도 사주가 있어야 온디바이스 테마 계산.
+            voiceWeatherCountry = if (weatherContextForSave()) {
                 voiceWeatherCountry.trim().takeIf { it.isNotBlank() }
             } else {
                 null
             },
-            voiceWeatherCity = if (voiceRandomPrompt && randomContextUsesWeather(voiceRandomContext)) {
+            voiceWeatherCity = if (weatherContextForSave()) {
                 voiceWeatherCity.trim().takeIf { it.isNotBlank() }
             } else {
                 null
             },
-            voiceFortuneGender = if (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") {
+            voiceFortuneGender = if (fortuneContextForSave()) {
                 voiceFortuneGender.trim().takeIf { it.isNotBlank() }
             } else {
                 null
             },
-            voiceFortuneBirthDate = if (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") {
+            voiceFortuneBirthDate = if (fortuneContextForSave()) {
                 voiceFortuneBirthDate.trim().takeIf { it.isNotBlank() }
             } else {
                 null
             },
-            voiceFortuneBirthTime = if (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") {
+            voiceFortuneBirthTime = if (fortuneContextForSave()) {
                 voiceFortuneBirthTime.trim().takeIf { it.isNotBlank() }
             } else {
                 null
@@ -249,6 +253,16 @@ internal class AlarmEditorState(
         val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)
         return keys.isNotEmpty() && audioCacheKey != null && keys.contains(audioCacheKey)
     }
+
+    // 날씨/운세 컨텍스트가 '저장에 위치/사주를 남겨야 하는가': 라이브 랜덤 알람이거나, 그 컨텍스트의
+    // 오프라인 클론 버킷 알람이면 true(준비창 워커·온디바이스 테마 계산이 그 필드를 쓴다).
+    private fun weatherContextForSave(): Boolean =
+        (voiceRandomPrompt && randomContextUsesWeather(voiceRandomContext)) ||
+            (isActiveBucketAlarm() && selectedBucket == "weather")
+
+    private fun fortuneContextForSave(): Boolean =
+        (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") ||
+            (isActiveBucketAlarm() && selectedBucket == "fortune")
 
     /** 버킷(회전) 메타데이터를 비운다. 일반/생성/녹음 등 비-버킷 경로로 전환할 때 호출. */
     private fun clearBucketSelection() {
@@ -416,6 +430,7 @@ internal class AlarmEditorState(
                 alarmSoundLabel = alarm?.alarmSoundLabel,
                 bucketId = alarm?.bucketId,
                 bucketClipKeysJson = alarm?.bucketClipKeysJson,
+                contextVariantIndex = alarm?.contextVariantIndex,
             )
         }
     }
@@ -477,8 +492,9 @@ internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
         "medication" -> "medication"
         // 운세: 발사 시점 기기에서 매일 신선 계산이라 반복 알람도 정확(fortuneThemeIndex).
         "wake_fortune" -> "fortune"
-        // 날씨: 실시간 판정이 서버 전용이라, 저장 직후 + 반복이면 매일 준비창(전날 22시)에
-        // 저장 위치로 서버가 조건을 resolve 해 contextVariantIndex 를 갱신(ContextVariantResolveWorker).
+        // 날씨: 실시간 판정이 서버 전용이라, 저장 직후(runOnce) + 반복이면 준비창에 DynamicVoiceRefreshWorker
+        // →AlarmRepository.resolveDueCloneBucketVariants 가 저장 위치로 서버(/tts/prerender-variant)에
+        // 조건을 resolve 해 contextVariantIndex 를 갱신한다(편집기가 저장 시점에 직접 resolve 하지는 않음).
         // 발사는 그 인덱스로 오프라인 lookup.
         "wake_weather" -> "weather"
         else -> null
