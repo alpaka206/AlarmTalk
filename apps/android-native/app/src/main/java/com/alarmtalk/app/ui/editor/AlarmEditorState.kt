@@ -46,11 +46,9 @@ internal fun googleSignInErrorMessage(context: android.content.Context, statusCo
     else -> context.getString(R.string.r3ed_google_signin_error_failed_status, statusCode)
 }
 
-internal fun supportedAppVoiceLanguage(language: String?): String = when (language) {
-    "en" -> "en"
-    "ja" -> "ja"
-    else -> "ko"
-}
+// 매핑 단일 출처는 data.appVoiceLanguageOf. MainViewModel 과 어긋나지 않도록 여기서도 그걸 위임한다.
+internal fun supportedAppVoiceLanguage(language: String?): String =
+    com.alarmtalk.app.data.appVoiceLanguageOf(language)
 
 internal class AlarmEditorState(
     label: String,

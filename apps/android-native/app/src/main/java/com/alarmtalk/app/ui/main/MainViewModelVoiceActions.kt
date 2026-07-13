@@ -489,11 +489,8 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
     val locales = getApplication<Application>().resources.configuration.locales
     val language = (if (!locales.isEmpty) locales[0] else null)?.language
         ?: Locale.getDefault().language
-    return when (language) {
-        "en" -> "en"
-        "ja" -> "ja"
-        else -> "ko"
-    }
+    // 매핑 단일 출처(data.appVoiceLanguageOf) — 편집기 supportedAppVoiceLanguage 와 같은 함수라 divergence 없음.
+    return com.alarmtalk.app.data.appVoiceLanguageOf(language)
 }
 
 internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {

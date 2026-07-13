@@ -155,6 +155,17 @@ internal fun fortuneThemeIndex(
 fun AlarmEntity.bucketClipTexts(): List<String> = decodeBucketClipKeys(bucketClipTextsJson)
 
 /**
+ * 앱 로케일 언어 → 사전렌더/버킷이 지원하는 언어(en/ja/else→ko)의 단일 출처. 편집기(클립 필터)와
+ * MainViewModel(클론 생성 시 서버 전송 언어)이 반드시 같은 매핑을 써야 서버 렌더 언어와 편집기 필터
+ * 언어가 어긋나지 않는다(어긋나면 오프라인 버킷이 영영 안 붙음). 그래서 data 패키지에 두어 양쪽이 공유한다.
+ */
+fun appVoiceLanguageOf(language: String?): String = when (language) {
+    "en" -> "en"
+    "ja" -> "ja"
+    else -> "ko"
+}
+
+/**
  * 이 버킷 알람이 발사 시 재생/표시할 variant 인덱스(0..N-1). 오디오(resolveBucketClipLocalUri)와
  * 잠금화면 문구(RingingActivity)가 같은 이 인덱스를 써야 음성=문구가 일치한다.
  * 운세=사주+발사일자 결정적 계산, 날씨=준비창 스냅샷 조건 인덱스, 그 외=순차 회전.

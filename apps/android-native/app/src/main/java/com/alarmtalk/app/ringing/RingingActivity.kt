@@ -526,7 +526,13 @@ private fun AlarmEntity.toRingingUiState(context: android.content.Context): Ring
     // 표시 텍스트: 버킷 알람이면 발사 시 고른 variant 의 문구를 쓴다(오디오와 같은 bucketVariantIndex).
     // 그래야 날씨/운세 매칭 버킷에서 음성('비 와요')과 잠금화면 문구가 어긋나지 않는다. 버킷이 아니면
     // 기존 voiceText. 서버가 delivery 태그를 이미 제거하지만 과거분/회귀 대비 랜덤 문구는 한 번 더 벗긴다.
-    val bucketText = if (bucketId != null) bucketClipTexts().getOrNull(bucketVariantIndex()) else null
+    // 빈/공백 문구는 null 로 취급해 대표 voiceText 로 폴백한다(Elvis 는 null 에만 걸려, "" 면 잠금화면
+    // 문구가 통째로 사라진다). 한 variant 의 text 가 비어도 대표 문구는 보인다.
+    val bucketText = if (bucketId != null) {
+        bucketClipTexts().getOrNull(bucketVariantIndex())?.takeIf { it.isNotBlank() }
+    } else {
+        null
+    }
     val voiceMessage = (bucketText ?: voiceText)
         ?.let { raw -> if (voiceRandomPrompt) raw.stripDeliveryTags() else raw.trim() }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
