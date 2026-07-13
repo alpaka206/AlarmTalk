@@ -25,6 +25,7 @@ import {
   type WeatherCondition,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
+import { CLONE_FORTUNE_THEMES } from '../lib/stock-clips';
 import {
   readManualTtsUsage,
   refundManualTtsQuota,
@@ -343,6 +344,18 @@ async function loadWeatherSignal(args: {
   country?: unknown;
   city?: unknown;
 }): Promise<WeatherSignal | null> {
+  const input = await loadWeatherSignalInput(args);
+  return input ? buildWeatherSignal(input) : null;
+}
+
+/** open-meteo 원시 데이터(코드·기온·강수·미세먼지)를 가져와 구조화 입력으로만 환원한다. */
+async function loadWeatherSignalInput(args: {
+  latitude?: unknown;
+  longitude?: unknown;
+  locationLabel?: unknown;
+  country?: unknown;
+  city?: unknown;
+}): Promise<WeatherSignalInput | null> {
   const location = await resolveWeatherLocation(args);
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', String(location.latitude));
@@ -368,26 +381,21 @@ async function loadWeatherSignal(args: {
       .json<WeatherForecastResponse>()
       .catch(() => ({}) as WeatherForecastResponse);
     if (!response.ok || !json.daily) return null;
-    const code = Number(json.daily.weather_code?.[0]);
-    const maxTemp = Number(json.daily.temperature_2m_max?.[0]);
-    const minTemp = Number(json.daily.temperature_2m_min?.[0]);
-    const rainProbability = Number(json.daily.precipitation_probability_max?.[0]);
-    const precipitation = Number(json.daily.precipitation_sum?.[0]);
     const hasDust = await loadDustSignal(location);
-    return buildWeatherSignal({
-      code,
-      maxTemp,
-      minTemp,
-      rainProbability,
-      precipitation,
+    return {
+      code: Number(json.daily.weather_code?.[0]),
+      maxTemp: Number(json.daily.temperature_2m_max?.[0]),
+      minTemp: Number(json.daily.temperature_2m_min?.[0]),
+      rainProbability: Number(json.daily.precipitation_probability_max?.[0]),
+      precipitation: Number(json.daily.precipitation_sum?.[0]),
       hasDust,
-    });
+    };
   } catch {
     return null;
   }
 }
 
-interface WeatherSignalInput {
+export interface WeatherSignalInput {
   code: number;
   maxTemp: number;
   minTemp: number;
@@ -440,6 +448,50 @@ function buildWeatherSignal(input: WeatherSignalInput): WeatherSignal | null {
 
   if (conditions.length === 0) return null;
   return { conditions: conditions.slice(0, 2) };
+}
+
+const FOG_WMO_CODES = [45, 48];
+const CLOUD_WMO_CODES = [2, 3]; // partly cloudy / overcast = 흐림
+
+/**
+ * open-meteo 원시 입력을 CLONE_WEATHER_CONDITIONS(nice/rain/snow/dust/cloud/fog/heat) 인덱스로
+ * 분류한다. 사전렌더 weather 클립은 이 순서로 저장되므로, 클라가 이 인덱스로 오프라인 선택한다.
+ * 우선순위: 눈>비>미세먼지>안개>더위>흐림>맑음(기본).
+ */
+export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number {
+  const { code, maxTemp, rainProbability, precipitation, hasDust } = input;
+  const rainy =
+    (Number.isFinite(rainProbability) && rainProbability >= 30) ||
+    (Number.isFinite(precipitation) && precipitation > 0) ||
+    RAIN_WMO_CODES.includes(code);
+  if (SNOW_WMO_CODES.includes(code)) return 2;
+  if (rainy) return 1;
+  if (hasDust) return 3;
+  if (FOG_WMO_CODES.includes(code)) return 5;
+  if (Number.isFinite(maxTemp) && maxTemp >= 30) return 6;
+  if (CLOUD_WMO_CODES.includes(code)) return 4;
+  return 0;
+}
+
+/**
+ * 사주(성별·생년월일·시)+발사일자로 CLONE_FORTUNE_THEMES 인덱스(0..themeCount-1)를 결정적으로
+ * 고른다. 오락용이라 개인정보를 클립에 담지 않고 '어느 제네릭 테마 클립을 틀지'만 결정한다.
+ * 사람·날짜가 같으면 항상 같은 테마(하루 단위 안정). 서버가 이 규칙을 단독 소유해 클라와 발산 없음.
+ */
+export function resolveFortuneThemeIndex(
+  gender: string,
+  birthDate: string,
+  birthTime: string,
+  date: string,
+  themeCount: number,
+): number {
+  if (themeCount <= 0) return 0;
+  const seed = `${gender.trim()}|${birthDate.trim()}|${birthTime.trim()}|${date.trim()}`;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return hash % themeCount;
 }
 
 async function loadDustSignal(location: {
@@ -1429,6 +1481,32 @@ tts.get('/stock-clips', async (c) => {
       tags: parseDeliveryTags(row.delivery_tags_json),
     })),
   });
+});
+
+// 사전렌더 클론 버킷(날씨/운세)의 '어느 variant 를 틀지' 인덱스만 서버가 resolve 한다. 클라는
+// 발사 전날 준비창(온라인)에서 이걸 호출해 알람에 인덱스를 스냅샷하고, 발사는 오프라인 lookup 만
+// 한다(발사 순간 네트워크 0). 오디오는 이미 로컬 캐시돼 있으므로 여기서 생성/전송하지 않는다.
+tts.get('/prerender-variant', async (c) => {
+  const context = c.req.query('context') ?? '';
+  if (context === 'wake_weather') {
+    const input = await loadWeatherSignalInput({
+      country: c.req.query('country'),
+      city: c.req.query('city'),
+    });
+    return c.json({ context, variant_index: input ? resolvePrerenderWeatherIndex(input) : 0 });
+  }
+  if (context === 'wake_fortune') {
+    const index = resolveFortuneThemeIndex(
+      c.req.query('fortune_gender') ?? '',
+      c.req.query('fortune_birth_date') ?? '',
+      c.req.query('fortune_birth_time') ?? '',
+      c.req.query('date') ?? '',
+      CLONE_FORTUNE_THEMES.length,
+    );
+    return c.json({ context, variant_index: index });
+  }
+  // love/medication/greeting 등 매칭 불필요 컨텍스트는 회전이라 인덱스 없음(클라가 회전 처리).
+  return c.json({ context, variant_index: null });
 });
 
 async function findCachedGeneratedAudio(
