@@ -168,23 +168,27 @@
 
 ## B. #4 사전렌더 — 코드리뷰 Round3 수정 현황(feat 브랜치)
 
-**✅ 수정·푸시 완료(커밋 1ebc0ee6·fc8eed14):**
-- [자체리뷰] due-gate 무한재호출 → 전용 컬럼 contextResolvedAtMillis(Room v20) 무조건 갱신
-- [자체리뷰] 저장 시 contextVariantIndex 소실 → bindStockBucketClips 에 전달
+**✅ 수정·푸시 완료(커밋 1ebc0ee6·fc8eed14·daa205a2):**
+- [양쪽] due-gate 무한재호출 → 전용 컬럼 contextResolvedAtMillis(Room v20) 무조건 갱신 (+무관편집 리셋도 차단)
 - [자체리뷰] 라이브 NaN 가드 완화(code 단독 아님) / cold 임계 라이브와 일치(≤12)
 - [Codex] 유료 버킷 alarm 동기화 거부(INVALID_BUCKET_ID) → 검증기 PAID_BUCKET_CATEGORIES 허용 **(중요)**
 - [Codex] 사전렌더 저각성 태그 → 드롭(안 깨우는 알람 클립 방지)
 - [Codex] cron 큐 중복 렌더 → messages 조건부 INSERT(NOT EXISTS)
 - [Codex] 미래 알람 오늘날씨 스냅샷 → 준비창 48h 필터
+- [자체리뷰 CONFIRMED] 빈/공백 버킷문구가 잠금화면 문구를 통째 소실 → isNotBlank 폴백
+- [자체리뷰 CONFIRMED cleanup] 언어매핑 중복 → data.appVoiceLanguageOf 단일화(양쪽 위임)
 
-**⬜ 남음(다음 세션, 낮은 위험/희귀 엣지):**
-- [자체리뷰 CONFIRMED] 텍스트/음성 폴백 불일치(변형N 클립이 캐시에 없을 때 오디오는 첫 클립으로
-  폴백, 텍스트는 정확 인덱스) → resolveBucketClip 이 (uri,text) 한 쌍을 함께 반환해 잠금화면이 실제
-  재생 클립의 문구를 쓰게 리팩터. (degraded-cache 엣지)
-- [자체리뷰 PLAUSIBLE] 운세 자정 스트래들·워커 동시성 레이스(발사 때 인덱스 1회 스냅샷 공유가 근본).
-- [자체리뷰 PLAUSIBLE] 언어매핑 중복(supportedAppVoiceLanguage 를 공용 위치로 추출).
-- [자체리뷰 PLAUSIBLE] 클라 8/5 하드코딩(매니페스트에서 개수 유도 or 서버가 count 전달).
-- [자체리뷰] 매 탭진입 forceReload → 이벤트기반/throttle.
+**❌ 최종 리뷰가 기각(REFUTED, 손댈 필요 없음):**
+- 저장 시 contextVariantIndex 소실(702) — 버킷 알람은 voiceRandomPrompt=false 라 재저장 경로가 안 탐(내가 넣은 전달은 무해).
+- 매 탭진입 forceReload(327) — 60s tabRefreshThrottleMs 로 이미 스로틀됨.
+
+**⬜ 남음(다음 세션 — 발사/표시 경로라 18시 이후 실기기 검증 병행 필요):**
+- [CONFIRMED] 미해결 날씨가 index 0='맑음' 폴백(AlarmEntity:169) — 비 오는데 '맑음' 재생 가능. 준비창
+  48h 필터로 완화됐으나 근본은 미해결 시 발사 폴백 정책 결정(라이브 폴백/무매칭). 발사경로+기기검증.
+- [CONFIRMED] 텍스트/음성 폴백 불일치(RingingActivity:529 / AlarmRepository:559) — 변형N 클립이 캐시에
+  없을 때 오디오는 첫 클립 폴백, 텍스트는 정확 인덱스 → resolveBucketClip 이 (uri,text) 쌍 반환하게 리팩터.
+- [PLAUSIBLE] 운세 자정 스트래들·워커 동시성 레이스 — 발사 때 인덱스 1회 스냅샷 공유가 근본(위와 함께).
+- [PLAUSIBLE cleanup] 클라 8/5 하드코딩 — 매니페스트 개수 유도 or 서버가 count 전달.
 
 <details><summary>원 지적 상세(9건)</summary>
 
