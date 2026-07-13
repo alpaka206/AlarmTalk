@@ -170,18 +170,21 @@ fun appVoiceLanguageOf(language: String?): String = when (language) {
  * 잠금화면 문구(RingingActivity)가 같은 이 인덱스를 써야 음성=문구가 일치한다.
  * 운세=사주+발사일자 결정적 계산, 날씨=준비창 스냅샷 조건 인덱스, 그 외=순차 회전.
  */
-fun AlarmEntity.bucketVariantIndex(): Int {
+fun AlarmEntity.bucketVariantIndex(): Int? {
     val size = bucketClipKeys().size
-    if (size <= 0) return 0
+    if (size <= 0) return null
     val raw = when (bucketId) {
         "fortune" -> fortuneThemeIndex(
             gender = voiceFortuneGender,
             birthDate = voiceFortuneBirthDate,
             birthTime = voiceFortuneBirthTime,
-            date = java.time.LocalDate.now().toString(),
+            date = java.time.Instant.ofEpochMilli(fireAtMillis)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDate()
+                .toString(),
             count = size,
         )
-        "weather" -> contextVariantIndex ?: 0
+        "weather" -> contextVariantIndex ?: return null
         else -> bucketRotationIndex
     }
     return ((raw % size) + size) % size

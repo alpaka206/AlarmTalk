@@ -563,22 +563,23 @@ class AlarmRepository(
         return next
     }
 
-    /**
-     * 버킷 회전 알람의 "현재 회전 클립" 로컬 재생 URI. 미리 캐시한 N개 중 bucketRotationIndex
-     * 위치의 클립을 돌려준다. 해당 클립이 캐시에 없으면 같은 버킷의 다른 클립으로 폴백하고,
-     * 그래도 없으면 null(호출자가 alarm.localAudioUri = 대표 클립으로 폴백).
-     */
-    fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? {
+    fun resolveBucketClipSelection(alarm: AlarmEntity): BucketClipSelection? {
         val keys = alarm.bucketClipKeys()
         if (alarm.bucketId == null || keys.isEmpty()) return null
-        // 오디오와 잠금화면 문구가 같은 인덱스를 쓰도록 단일 출처(bucketVariantIndex)에서 계산.
-        val index = alarm.bucketVariantIndex()
-        alarmAudioStore.getCachedAudio(keys[index])?.let { return it.localAudioUri }
-        for (key in keys) {
-            alarmAudioStore.getCachedAudio(key)?.let { return it.localAudioUri }
+        val preferredIndex = alarm.bucketVariantIndex() ?: return null
+        alarmAudioStore.getCachedAudio(keys[preferredIndex])?.let { audio ->
+            return BucketClipSelection(preferredIndex, audio.localAudioUri)
+        }
+        for ((index, key) in keys.withIndex()) {
+            alarmAudioStore.getCachedAudio(key)?.let { audio ->
+                return BucketClipSelection(index, audio.localAudioUri)
+            }
         }
         return null
     }
+
+    fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? =
+        resolveBucketClipSelection(alarm)?.localAudioUri
 
     /**
      * dismiss(에피소드 종료) 시 다음 회전 인덱스. 버킷이 아니거나 클립 1개 이하면 그대로.
@@ -764,7 +765,7 @@ class AlarmRepository(
                     city = city.takeIf { it.isNotBlank() },
                 ).variantIndex
             }.getOrElse { error ->
-                Log.w(TAG, "Failed to resolve weather variant country=$country city=$city", error)
+                Log.w(TAG, "Failed to resolve weather variant", error)
                 null
             }
             // 조회 실패(null)면 '맑음(0)'으로 덮어쓰지 않고 기존 인덱스를 유지한다.
@@ -996,6 +997,11 @@ class AlarmRepository(
         val MATCHING_BUCKET_IDS = setOf("weather", "fortune")
     }
 }
+
+data class BucketClipSelection(
+    val variantIndex: Int,
+    val localAudioUri: String,
+)
 
 internal fun shouldResetWeatherVariant(
     currentBucketId: String?,

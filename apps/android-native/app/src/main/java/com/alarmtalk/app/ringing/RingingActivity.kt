@@ -73,7 +73,6 @@ import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.bucketClipTexts
-import com.alarmtalk.app.data.bucketVariantIndex
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -100,9 +99,11 @@ class RingingActivity : ComponentActivity() {
             LaunchedEffect(currentAlarmId) {
                 uiState = currentAlarmId?.let { id ->
                     withContext(Dispatchers.IO) {
-                        AlarmAppContainer.repository(appContext)
-                            .getAlarm(id)
-                            ?.toRingingUiState(appContext)
+                        val repository = AlarmAppContainer.repository(appContext)
+                        repository.getAlarm(id)?.let { alarm ->
+                            val playbackVariantIndex = repository.resolveBucketClipSelection(alarm)?.variantIndex
+                            alarm.toRingingUiState(appContext, playbackVariantIndex)
+                        }
                     }
                 } ?: defaultRingingUiState(appContext)
             }
@@ -520,7 +521,10 @@ private val RINGING_DELIVERY_TAG_RE = Regex("""\[[a-z][a-z -]{1,32}]""", RegexOp
 private fun String.stripDeliveryTags(): String =
     replace(RINGING_DELIVERY_TAG_RE, " ").replace(Regex("""\s+"""), " ").trim()
 
-private fun AlarmEntity.toRingingUiState(context: android.content.Context): RingingUiState {
+private fun AlarmEntity.toRingingUiState(
+    context: android.content.Context,
+    playbackVariantIndex: Int?,
+): RingingUiState {
     val customTitle = label.trim()
         .takeIf { it.isNotBlank() && it != context.getString(R.string.rd_default_alarm_label) }
     // 표시 텍스트: 버킷 알람이면 발사 시 고른 variant 의 문구를 쓴다(오디오와 같은 bucketVariantIndex).
@@ -528,12 +532,13 @@ private fun AlarmEntity.toRingingUiState(context: android.content.Context): Ring
     // 기존 voiceText. 서버가 delivery 태그를 이미 제거하지만 과거분/회귀 대비 랜덤 문구는 한 번 더 벗긴다.
     // 빈/공백 문구는 null 로 취급해 대표 voiceText 로 폴백한다(Elvis 는 null 에만 걸려, "" 면 잠금화면
     // 문구가 통째로 사라진다). 한 variant 의 text 가 비어도 대표 문구는 보인다.
-    val bucketText = if (bucketId != null) {
-        bucketClipTexts().getOrNull(bucketVariantIndex())?.takeIf { it.isNotBlank() }
+    val bucketText = if (bucketId != null && playbackVariantIndex != null) {
+        bucketClipTexts().getOrNull(playbackVariantIndex)?.takeIf { it.isNotBlank() }
     } else {
         null
     }
-    val voiceMessage = (bucketText ?: voiceText)
+    val displayedVoiceText = if (bucketId != null) bucketText else voiceText
+    val voiceMessage = displayedVoiceText
         ?.let { raw -> if (voiceRandomPrompt) raw.stripDeliveryTags() else raw.trim() }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
     val snoozeAvailable = snoozeEnabled &&
