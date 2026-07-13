@@ -177,7 +177,6 @@
     <string name="common_voice_record_stop">Stop recording</string>
     <string name="editor_alarm_sound_title">Alarm sound</string>
     <string name="editor_apply">Apply</string>
-    <string name="editor_audio_clear">Clear</string>
     <string name="editor_audio_preview_play">Preview</string>
     <string name="editor_recorded_done">Recorded</string>
     <string name="editor_record_again">Record again</string>
@@ -239,9 +238,6 @@
     <string name="editor_msg_section">Message</string>
     <string name="editor_msg_mode_manual">Type it yourself</string>
     <string name="editor_msg_mode_preset">Default greeting</string>
-    <string name="editor_recipient_empty">They\'ll appear here once they allow you to set their alarms.</string>
-    <string name="editor_recipient_header">Who receives the alarm</string>
-    <string name="editor_recipient_single_only">This alarm is set for just one selected person.</string>
     <string name="editor_ringtone_picker_title">Choose alarm sound</string>
     <string name="editor_save_blocked_enter_message_or_random">Please enter a phrase to play or turn on random phrases.</string>
     <string name="editor_save_blocked_random_prompt_incomplete">In random phrase settings, please fill in the weather location and fortune info.</string>
@@ -252,7 +248,6 @@
     <string name="editor_save_for">Save for %1$s</string>
     <string name="editor_cancel">Cancel</string>
     <string name="editor_saving">Saving</string>
-    <string name="editor_select_recipient_title">Choose who receives the alarm</string>
     <string name="editor_selected_ringtone">Selected alarm</string>
     <string name="editor_silent">Silent</string>
     <string name="editor_snooze_custom">Custom</string>
@@ -265,9 +260,6 @@
     <string name="editor_snooze_repeat_three">3 times</string>
     <string name="editor_snooze_summary">%1$d min · %2$s</string>
     <string name="editor_snooze_title">Snooze</string>
-    <string name="editor_status_available">Available</string>
-    <string name="editor_status_lead_too_soon">You can set alarms for at least 30 min from now.</string>
-    <string name="editor_status_quiet_unavailable">The other person doesn\'t receive alarms at this time.</string>
     <string name="editor_free_bucket_title">Theme</string>
     <string name="editor_free_bucket_hint">A different line from the theme plays each time the alarm rings.</string>
     <string name="editor_free_voice_summary">Rings in %1$s\'s voice</string>

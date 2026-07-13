@@ -177,7 +177,6 @@
     <string name="common_voice_record_stop">録音を終了</string>
     <string name="editor_alarm_sound_title">アラーム音</string>
     <string name="editor_apply">適用</string>
-    <string name="editor_audio_clear">消去</string>
     <string name="editor_audio_preview_play">プレビュー</string>
     <string name="editor_recorded_done">録音完了</string>
     <string name="editor_record_again">録り直す</string>
@@ -239,9 +238,6 @@
     <string name="editor_msg_section">文</string>
     <string name="editor_msg_mode_manual">自分で入力</string>
     <string name="editor_msg_mode_preset">基本のあいさつ</string>
-    <string name="editor_recipient_empty">相手があなたのアラーム設定を許可すると、ここに表示されます。</string>
-    <string name="editor_recipient_header">アラームを受け取る相手</string>
-    <string name="editor_recipient_single_only">このアラームは、選択した1人だけに設定されます。</string>
     <string name="editor_ringtone_picker_title">アラーム音の選択</string>
     <string name="editor_save_blocked_enter_message_or_random">流す文を入力するか、ランダム文をオンにしてください。</string>
     <string name="editor_save_blocked_random_prompt_incomplete">ランダム文の設定で、天気の地域・占いの情報を入力してください。</string>
@@ -252,7 +248,6 @@
     <string name="editor_save_for">%1$sさんに保存</string>
     <string name="editor_cancel">キャンセル</string>
     <string name="editor_saving">保存中</string>
-    <string name="editor_select_recipient_title">アラームを受け取る相手を選択</string>
     <string name="editor_selected_ringtone">選択したアラーム</string>
     <string name="editor_silent">無音</string>
     <string name="editor_snooze_custom">カスタム設定</string>
@@ -265,9 +260,6 @@
     <string name="editor_snooze_repeat_three">3回</string>
     <string name="editor_snooze_summary">%1$d分 · %2$s</string>
     <string name="editor_snooze_title">再通知</string>
-    <string name="editor_status_available">設定可能</string>
-    <string name="editor_status_lead_too_soon">今から30分後以降のアラームから設定できます。</string>
-    <string name="editor_status_quiet_unavailable">相手はこの時間にアラームを受け取らない設定にしています。</string>
     <string name="editor_free_bucket_title">テーマ</string>
     <string name="editor_free_bucket_hint">アラームが鳴るたびに、テーマ内のフレーズが順番に再生されます。</string>
     <string name="editor_free_voice_summary">%1$sの声で鳴ります</string>

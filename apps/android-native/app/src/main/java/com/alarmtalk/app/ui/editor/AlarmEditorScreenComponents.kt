@@ -13,15 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -82,188 +76,6 @@ internal fun EditorSectionTitle(title: String, modifier: Modifier = Modifier) {
     )
 }
 
-@Composable
-internal fun FamilyAlarmTargetCard(
-    recipients: List<FamilyGroupMember>,
-    selectedRecipientId: String?,
-    hour: Int,
-    minute: Int,
-    repeatDaysMask: Int,
-    holidayOff: Boolean,
-    onSelectRecipient: (String) -> Unit,
-) {
-    val context = LocalContext.current
-    var recipientDialogOpen by remember { mutableStateOf(false) }
-    val selectedRecipient = recipients.firstOrNull { it.userId == selectedRecipientId }
-        ?: recipients.firstOrNull()
-    val leadTooSoon = isFamilyAlarmLeadTooSoon(hour, minute, repeatDaysMask, holidayOff)
-    val quietUnavailable = selectedRecipient?.let {
-        isFamilyAlarmTimeUnavailable(it, hour, minute, repeatDaysMask)
-    } ?: false
-
-    if (recipientDialogOpen) {
-        WakerSelectionSheet(
-            title = stringResource(R.string.editor_select_recipient_title),
-            onDismiss = { recipientDialogOpen = false },
-        ) { dismiss ->
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                recipients.forEach { recipient ->
-                    WakerSheetOptionRow(
-                        title = familyMemberLabel(context, recipient),
-                        description = stringResource(
-                            R.string.editor_quiet_hours_label,
-                            familyAlarmQuietScheduleLabel(context, recipient),
-                        ),
-                        selected = recipient.userId == selectedRecipient?.userId,
-                        onClick = {
-                            onSelectRecipient(recipient.userId)
-                            dismiss()
-                        },
-                    )
-                }
-            }
-        }
-    }
-
-    Card(
-        shape = WakerPanelShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(R.string.editor_recipient_header), fontWeight = FontWeight.SemiBold)
-                if (recipients.size > 1) {
-                    TextButton(onClick = { recipientDialogOpen = true }) {
-                        Text(stringResource(R.string.editor_change))
-                    }
-                }
-            }
-            if (recipients.isEmpty()) {
-                MutedText(stringResource(R.string.editor_recipient_empty))
-            } else {
-                RecipientSummaryRow(
-                    recipient = requireNotNull(selectedRecipient),
-                    clickable = recipients.size > 1,
-                    onClick = { recipientDialogOpen = true },
-                )
-
-                FamilyAlarmTargetStatus(
-                    leadTooSoon = leadTooSoon,
-                    quietUnavailable = quietUnavailable,
-                    quietLabel = familyAlarmQuietScheduleLabel(context, selectedRecipient),
-                )
-
-                if (recipients.size == 1) {
-                    MutedText(stringResource(R.string.editor_recipient_single_only))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun RecipientSummaryRow(
-    recipient: FamilyGroupMember,
-    clickable: Boolean,
-    onClick: () -> Unit,
-) {
-    val context = LocalContext.current
-    val content: @Composable () -> Unit = {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = familyMemberLabel(context, recipient),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                recipient.email?.takeIf { it.isNotBlank() }?.let { email ->
-                    MutedText(email)
-                }
-            }
-            if (clickable) {
-                Spacer(Modifier.width(12.dp))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
-    }
-
-    if (clickable) {
-        Surface(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth(),
-            shape = WakerChipShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
-        ) {
-            content()
-        }
-    } else {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = WakerChipShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-internal fun FamilyAlarmTargetStatus(
-    leadTooSoon: Boolean,
-    quietUnavailable: Boolean,
-    quietLabel: String,
-) {
-    val blocked = leadTooSoon || quietUnavailable
-    val statusText = when {
-        leadTooSoon -> stringResource(R.string.editor_status_lead_too_soon)
-        quietUnavailable -> stringResource(R.string.editor_status_quiet_unavailable)
-        else -> stringResource(R.string.editor_status_available)
-    }
-    Surface(
-        shape = WakerPillShape,
-        color = if (blocked) {
-            MaterialTheme.colorScheme.errorContainer
-        } else {
-            MaterialTheme.colorScheme.primaryContainer
-        },
-        contentColor = if (blocked) {
-            MaterialTheme.colorScheme.onErrorContainer
-        } else {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        },
-    ) {
-        Text(
-            text = statusText,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-    MutedText(stringResource(R.string.editor_quiet_hours_label, quietLabel))
-}
-
 internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
 
 internal fun ringtoneTitle(context: Context, uri: Uri): String =
@@ -292,23 +104,6 @@ internal fun familyAlarmQuietScheduleLabel(context: Context, member: FamilyGroup
     val first = windows.first().let { "${quietDaysLabelForFamily(context, it.days)} ${it.start}-${it.end}" }
     val hidden = windows.size - 1
     return if (hidden > 0) context.getString(R.string.misc2_quiet_more, first, hidden) else first
-}
-
-internal fun isFamilyAlarmLeadTooSoon(
-    hour: Int,
-    minute: Int,
-    repeatDaysMask: Int,
-    holidayOff: Boolean,
-    nowMillis: Long = System.currentTimeMillis(),
-): Boolean {
-    val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-        hour = hour,
-        minute = minute,
-        repeatDaysMask = repeatDaysMask,
-        holidayOff = holidayOff,
-        nowMillis = nowMillis,
-    )
-    return fireAtMillis - nowMillis < FAMILY_ALARM_MIN_LEAD_MILLIS
 }
 
 internal fun isFamilyAlarmTimeUnavailable(

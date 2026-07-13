@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -239,7 +238,7 @@ private fun RingingRoute(
             Spacer(Modifier.height(6.dp))
             RingingClock(ampm = uiState.ampm, time = uiState.timeText)
 
-            // 풀스크린+소리 자체가 '울리는 중'이므로 상태 문구 없이 라벨·파형만 보여준다(멘트 문구는 음성으로만).
+            // 라벨(알람 이름)과 음성으로 재생되는 멘트 문구를 카드로 보여준다(전달 태그는 제거된 상태).
             if (uiState.label != null || uiState.voiceText != null) {
                 Spacer(Modifier.height(30.dp))
                 RingingVoiceCard(uiState)

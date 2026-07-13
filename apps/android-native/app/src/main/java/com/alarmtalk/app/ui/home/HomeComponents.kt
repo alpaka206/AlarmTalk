@@ -53,7 +53,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.data.AlarmEntity
 
-// 알람 탭 헤더 — 다른 탭과 같은 ScreenHeader 문법에 상태 한 줄(다음 알람/꺼짐/없음)만 얹는다.
+// 알람 탭 헤더 — '알람' 제목 대신 상태 한 줄(다음 알람/꺼짐/없음)을 헤드라인으로 승격한다.
 @Composable
 internal fun HomeHeader(
     nextAlarm: AlarmEntity?,

@@ -1502,6 +1502,16 @@ export function normalizeAlarmTextWithoutTags(text: string): string {
     .trim();
 }
 
+// 표시/저장 문구용: 실제 합성 텍스트(번역 포함)에서 '승인된 전달 태그(큐레이트 세트)만' 제거한다.
+// 사용자가 친 '[after lunch]' 같은 정상 대괄호는 승인 태그가 아니므로 그대로 보존된다.
+export function stripApprovedDeliveryTags(text: string): string {
+  return text
+    .replace(/\s*\[([a-z][a-z -]{1,32})\]\s*/gi, (match, name: string) =>
+      normalizeApprovedTag(name) ? ' ' : match,
+    )
+    .trim();
+}
+
 function pickApprovedTag(tags: string[]): string | null {
   for (const tag of tags) {
     // 큐레이트 세트에 있으면 채택, 아니면 다음 후보로(세트 밖 옛 태그는 무시).
