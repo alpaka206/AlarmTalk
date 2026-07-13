@@ -684,8 +684,11 @@ internal fun AlarmEditorScreen(
             //    '완전한' 클립 세트가 캐시돼 있으면 라이브 생성 대신 오프라인 버킷으로 바인딩한다.
             //    날씨/운세는 서버 조건/테마 '절대 인덱스'로 고르므로 부분 세트면 인덱스가 엉킨다 →
             //    hasCompleteCloneBucket 으로 풀셋일 때만 바인딩(부분/실패면 아래 라이브로 폴백).
+            // 가족 알람은 서버가 수신자별로 목소리를 생성(onGenerateTts targetUserId)해야 하고, 내 로컬
+            // 사전렌더 클립은 수신자가 소유·캐시하지 못하므로 오프라인 버킷을 쓰면 수신자에게 무음이 된다.
+            // → 가족 모드에서는 사전렌더 버킷을 쓰지 않고 아래 라이브 생성 경로로 간다.
             val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
-            val tryCloneBucket = editor.voiceRandomPrompt && cloneBucketCategory != null &&
+            val tryCloneBucket = !familyAlarmMode && editor.voiceRandomPrompt && cloneBucketCategory != null &&
                 !isSystemVoiceId(profileId) && hasCompleteCloneBucket(cloneBucketCategory, profileId)
             if (
                 tryCloneBucket &&
