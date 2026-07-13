@@ -99,6 +99,7 @@ data class AlarmDraft(
     val ttsMessageId: String? = null,
     val bucketId: String? = null,
     val bucketClipKeysJson: String? = null,
+    val contextVariantIndex: Int? = null,
     val alarmVolumePercent: Int = 100,
     val alarmSoundUri: String? = null,
     val alarmSoundLabel: String? = null,
@@ -120,3 +121,24 @@ fun decodeBucketClipKeys(json: String?): List<String> =
 
 /** 이 알람이 버킷 회전에 쓸, 미리 캐시된 N개 클립의 audioCacheKey 목록(variant 순). */
 fun AlarmEntity.bucketClipKeys(): List<String> = decodeBucketClipKeys(bucketClipKeysJson)
+
+/**
+ * 운세 버킷의 테마 인덱스(0..count-1)를 사주+날짜로 결정적으로 고른다. 발사 시점 기기에서 계산해
+ * 매일 신선한 테마를 완전 오프라인으로 선택한다(네트워크·서버 불필요). 같은 사람·같은 날은 항상 같은 테마.
+ */
+internal fun fortuneThemeIndex(
+    gender: String?,
+    birthDate: String?,
+    birthTime: String?,
+    date: String,
+    count: Int,
+): Int {
+    if (count <= 0) return 0
+    val seed = "${gender?.trim().orEmpty()}|${birthDate?.trim().orEmpty()}|" +
+        "${birthTime?.trim().orEmpty()}|${date.trim()}"
+    var hash = 0L
+    for (ch in seed) {
+        hash = (hash * 31 + ch.code) and 0xFFFFFFFFL
+    }
+    return (hash % count).toInt()
+}

@@ -132,6 +132,9 @@ internal class AlarmEditorState(
     var selectedBucket by mutableStateOf(bucketId)
     var bucketClipKeysJson by mutableStateOf(bucketClipKeysJson)
     var bucketResolvedForProfileId by mutableStateOf(if (bucketId != null) voiceProfileId else null)
+    // 날씨 버킷: 저장 시점에 서버가 resolve 한 조건 인덱스 스냅샷(발사 오프라인 lookup 용).
+    // 운세는 발사 시점 기기 계산이라 여기 안 담는다. 회전형(사랑/약)도 null.
+    var contextVariantIndex by mutableStateOf<Int?>(null)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -212,6 +215,7 @@ internal class AlarmEditorState(
             // 남아 있던 selectedBucket/clipKeys 를 persist 하지 않도록(울림 시 옛 버킷 오디오 방지).
             bucketId = if (isActiveBucketAlarm()) selectedBucket else null,
             bucketClipKeysJson = if (isActiveBucketAlarm()) bucketClipKeysJson else null,
+            contextVariantIndex = if (isActiveBucketAlarm()) contextVariantIndex else null,
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
             alarmSoundUri = alarmSoundUri,
             alarmSoundLabel = alarmSoundLabel,
@@ -340,6 +344,7 @@ internal class AlarmEditorState(
         language: String,
         bucket: String,
         clipKeys: List<String>,
+        contextVariantIndex: Int? = null,
     ) {
         voiceSource = VoiceSources.TTS_PROFILE
         voiceProfileId = profileId
@@ -355,6 +360,7 @@ internal class AlarmEditorState(
         selectedBucket = bucket
         bucketClipKeysJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipKeys)
         bucketResolvedForProfileId = profileId
+        this.contextVariantIndex = contextVariantIndex
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
@@ -460,13 +466,20 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
 /**
  * 유료 클론 사전렌더 클립으로 '오프라인 버킷'을 붙일 수 있는 컨텍스트 → 백엔드 category.
  * 이 category 로 stockClips 를 필터해 셀렉트 버킷 경로를 재사용한다(bucketId=category).
- * 날씨/운세는 발사 시점 조건/테마 매칭(준비창 워커)이 있어야 정확하므로, 그 전까지는 여기서
- * null 을 돌려 기존 라이브 생성 경로를 유지한다(항상 variant0 오재 방지).
+ * - 사랑/약: 매칭 불필요(순차 회전).
+ * - 날씨: 저장 시점에 서버 /tts/prerender-variant 로 조건 인덱스를 1회 스냅샷(현행 동적 알람과
+ *   동일 신선도). 발사는 오프라인 lookup. (매일 갱신은 준비창 워커 후속 enhancement)
+ * - 운세: 사주+날짜 결정적 계산이라 발사 시점 기기에서 매일 신선하게 고른다(네트워크 0).
  */
 internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
     when (normalizedRandomPromptContext(context ?: "")) {
         "love" -> "love"
         "medication" -> "medication"
+        // 운세: 발사 시점 기기에서 매일 신선 계산이라 반복 알람도 정확 → 지금 오프라인.
+        "wake_fortune" -> "fortune"
+        // 날씨: 실시간 판정이 서버 전용이라 발사 전 네트워크가 필요한데, 반복 알람이 매일 맞으려면
+        // 저장-시점 스냅샷(하루 종일 고정)이 아니라 '매일 준비창 갱신(워커)'이 필요하다. 워커 연결
+        // 전까지는 라이브 유지(저장-시점 스냅샷은 반복에서 오재라 채택 안 함). 인프라는 준비됨.
         else -> null
     }
 

@@ -164,6 +164,7 @@ class AlarmRepository(
             bucketId = draft.bucketId,
             bucketRotationIndex = 0,
             bucketClipKeysJson = draft.bucketClipKeysJson,
+            contextVariantIndex = draft.contextVariantIndex,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
@@ -249,6 +250,7 @@ class AlarmRepository(
             bucketRotationIndex =
                 if (draft.bucketId != null && draft.bucketId == current.bucketId) current.bucketRotationIndex else 0,
             bucketClipKeysJson = draft.bucketClipKeysJson,
+            contextVariantIndex = draft.contextVariantIndex,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
@@ -549,14 +551,21 @@ class AlarmRepository(
     fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? {
         val keys = alarm.bucketClipKeys()
         if (alarm.bucketId == null || keys.isEmpty()) return null
-        val index = if (alarm.bucketId in MATCHING_BUCKET_IDS) {
-            // 날씨/운세 = 준비창에서 서버가 resolve 한 조건/테마 인덱스로 매칭(회전 아님).
-            // 미해결(오프라인 등)이면 variant0 폴백.
-            (((alarm.contextVariantIndex ?: 0) % keys.size) + keys.size) % keys.size
-        } else {
+        val rawIndex = when (alarm.bucketId) {
+            // 운세 = 사주+발사일자로 발사 시점 기기에서 결정적 계산(매일 신선, 완전 오프라인).
+            "fortune" -> fortuneThemeIndex(
+                gender = alarm.voiceFortuneGender,
+                birthDate = alarm.voiceFortuneBirthDate,
+                birthTime = alarm.voiceFortuneBirthTime,
+                date = LocalDate.now().toString(),
+                count = keys.size,
+            )
+            // 날씨 = 저장 시점에 서버가 resolve 한 조건 인덱스 스냅샷(미해결이면 variant0 폴백).
+            "weather" -> alarm.contextVariantIndex ?: 0
             // 사랑·약·기상 등 = 매 에피소드 순차 회전.
-            ((alarm.bucketRotationIndex % keys.size) + keys.size) % keys.size
+            else -> alarm.bucketRotationIndex
         }
+        val index = ((rawIndex % keys.size) + keys.size) % keys.size
         alarmAudioStore.getCachedAudio(keys[index])?.let { return it.localAudioUri }
         for (key in keys) {
             alarmAudioStore.getCachedAudio(key)?.let { return it.localAudioUri }

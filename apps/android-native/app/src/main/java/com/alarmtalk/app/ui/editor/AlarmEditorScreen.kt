@@ -409,7 +409,11 @@ internal fun AlarmEditorScreen(
     // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다. 무료 시스템
     // 버킷과 유료 클론 버킷(사랑/약 등)이 저장/재생 계약이 동일하므로 이 코어를 공유한다.
     // 반환 true=바인딩 성공. 클립이 없거나 캐시 실패면 false(호출자가 라이브 폴백/에러 처리).
-    suspend fun bindStockBucketClips(bucket: String, profileId: String): Boolean {
+    suspend fun bindStockBucketClips(
+        bucket: String,
+        profileId: String,
+        contextVariantIndex: Int? = null,
+    ): Boolean {
         val clips = stockClips
             .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appVoiceLanguage }
             .sortedBy { it.variant }
@@ -444,6 +448,7 @@ internal fun AlarmEditorScreen(
             language = appVoiceLanguage,
             bucket = bucket,
             clipKeys = keys,
+            contextVariantIndex = contextVariantIndex,
         )
         return true
     }
