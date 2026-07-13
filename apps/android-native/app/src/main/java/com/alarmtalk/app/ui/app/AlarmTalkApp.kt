@@ -323,7 +323,8 @@ internal fun AlarmTalkApp(
         when (tab) {
             NativeTab.Voices -> {
                 viewModel.preloadVoiceProfiles()
-                viewModel.loadStockClips()
+                // 유료 클론 확정 후 cron 이 세션 중 새로 만든 사전렌더 클립을 반영하려면 강제 재조회.
+                viewModel.loadStockClips(forceReload = true)
                 viewModel.preloadSocial()
             }
             // 알람 홈: 히어로와 '누구를 깨울까요?' 시트가 구독/가족 데이터를 쓰므로 함께 갱신한다.

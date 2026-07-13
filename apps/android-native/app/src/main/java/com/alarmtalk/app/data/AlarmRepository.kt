@@ -340,8 +340,10 @@ class AlarmRepository(
         val candidates = alarmDao.getAllAlarms().filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
                 alarm.voiceSource == VoiceSources.TTS_PROFILE &&
-                alarm.bucketId == null &&
                 !alarm.voiceProfileId.isNullOrBlank() &&
+                // 시스템 스톡 버킷/보이스는 영구라 보존. 클론(비-system) 보이스는 단일클립·버킷 모두
+                // 접근권 상실(공유해제·제공자취소·삭제) 시 강등 대상.
+                !isSystemVoiceId(alarm.voiceProfileId) &&
                 alarm.voiceProfileId !in accessibleVoiceIds
         }
         var degraded = 0
@@ -360,6 +362,11 @@ class AlarmRepository(
                 voiceCategory = null,
                 voiceLanguage = null,
                 voiceRandomPrompt = false,
+                // 클론 버킷 알람도 여기서 강등되므로 버킷 상태를 함께 비운다(존재하지 않는 클립/캐시 참조 방지).
+                bucketId = null,
+                bucketClipKeysJson = null,
+                bucketRotationIndex = 0,
+                contextVariantIndex = null,
                 // 서버 알람은 이미 P0-1/P0-2(취소·un-share·목소리 삭제) 경로에서 sound-only 로 강등되므로,
                 // 이 로컬 정리는 push 하지 않는다(SYNCED). 기본 Gson 은 null 필드를 PATCH 에서 누락시켜
                 // 서버 voice 참조를 못 지우고 오히려 stale 상태를 만들 수 있어(PR #536 P2), 로컬 캐시만 정리.
@@ -542,7 +549,14 @@ class AlarmRepository(
     fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? {
         val keys = alarm.bucketClipKeys()
         if (alarm.bucketId == null || keys.isEmpty()) return null
-        val index = ((alarm.bucketRotationIndex % keys.size) + keys.size) % keys.size
+        val index = if (alarm.bucketId in MATCHING_BUCKET_IDS) {
+            // 날씨/운세 = 준비창에서 서버가 resolve 한 조건/테마 인덱스로 매칭(회전 아님).
+            // 미해결(오프라인 등)이면 variant0 폴백.
+            (((alarm.contextVariantIndex ?: 0) % keys.size) + keys.size) % keys.size
+        } else {
+            // 사랑·약·기상 등 = 매 에피소드 순차 회전.
+            ((alarm.bucketRotationIndex % keys.size) + keys.size) % keys.size
+        }
         alarmAudioStore.getCachedAudio(keys[index])?.let { return it.localAudioUri }
         for (key in keys) {
             alarmAudioStore.getCachedAudio(key)?.let { return it.localAudioUri }
@@ -550,10 +564,14 @@ class AlarmRepository(
         return null
     }
 
-    /** dismiss(에피소드 종료) 시 다음 회전 인덱스. 버킷이 아니거나 클립이 1개 이하면 그대로. */
+    /**
+     * dismiss(에피소드 종료) 시 다음 회전 인덱스. 버킷이 아니거나 클립 1개 이하면 그대로.
+     * 매칭형(날씨/운세)은 조건/테마 인덱스로 고르므로 회전을 전진시키지 않는다.
+     */
     private fun advancedBucketRotationIndex(alarm: AlarmEntity): Int {
         val size = alarm.bucketClipKeys().size
         if (alarm.bucketId == null || size <= 1) return alarm.bucketRotationIndex
+        if (alarm.bucketId in MATCHING_BUCKET_IDS) return alarm.bucketRotationIndex
         return (alarm.bucketRotationIndex + 1) % size
     }
 
@@ -896,6 +914,9 @@ class AlarmRepository(
         val DynamicVoiceRefreshEnabled = false
         const val DefaultDynamicVoiceContext = "wake_weather"
         val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
+        // 발사 시 '조건/테마 매칭'으로 variant 를 고르는 버킷(그 외는 순차 회전). bucketId 는
+        // 백엔드 category 와 동일 문자열이다(클론 사전렌더 category = 'weather'/'fortune').
+        val MATCHING_BUCKET_IDS = setOf("weather", "fortune")
     }
 }
 

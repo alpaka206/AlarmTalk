@@ -46,6 +46,10 @@ data class AlarmEntity(
     val bucketId: String? = null,
     val bucketRotationIndex: Int = 0,
     val bucketClipKeysJson: String? = null,
+    // 매칭형 버킷(날씨/운세)에서 '어느 variant 를 틀지'의 인덱스. 발사 전날 준비창에 서버
+    // /tts/prerender-variant 가 resolve 한 값을 스냅샷한다(발사는 오프라인 lookup). null 이면
+    // 회전(사랑·약·기상 등) 또는 미해결(→ variant0 폴백).
+    val contextVariantIndex: Int? = null,
     val remoteAlarmId: String?,
     val lastSyncedAtMillis: Long?,
     val syncState: String,

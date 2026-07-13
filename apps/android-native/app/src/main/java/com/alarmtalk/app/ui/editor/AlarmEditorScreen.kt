@@ -405,54 +405,58 @@ internal fun AlarmEditorScreen(
         )
     }
 
-    // 무료 버킷 선택: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
-    // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다.
-    fun selectBucket(bucket: String) {
-        if (isSaving || previewPreparing) return
-        val profileId = editor.voiceProfileId ?: return
+    // 버킷 선택 코어: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
+    // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다. 무료 시스템
+    // 버킷과 유료 클론 버킷(사랑/약 등)이 저장/재생 계약이 동일하므로 이 코어를 공유한다.
+    // 반환 true=바인딩 성공. 클립이 없거나 캐시 실패면 false(호출자가 라이브 폴백/에러 처리).
+    suspend fun bindStockBucketClips(bucket: String, profileId: String): Boolean {
         val clips = stockClips
             .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appVoiceLanguage }
             .sortedBy { it.variant }
-        if (clips.isEmpty()) return
-        scope.launch {
-            runCatching {
-                val keys = mutableListOf<String>()
-                val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
-                clips.forEach { clip ->
-                    val cacheKey = "stock_${clip.messageId}"
-                    val cached = audioStore.getCachedAudio(cacheKey) ?: run {
-                        val response = onDownloadStockAudio(clip.messageId)
-                        withContext(Dispatchers.IO) {
-                            audioStore.cacheGeneratedAudio(
-                                bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
-                                format = response.audioFormat,
-                                rawAudioUri = response.audioUrl,
-                                displayName = cacheKey,
-                                cacheKey = cacheKey,
-                                messageId = clip.messageId,
-                            )
-                        }
-                    }
-                    keys.add(cached.cacheKey ?: cacheKey)
-                    cachedClips.add(cached)
+        if (clips.isEmpty()) return false
+        val keys = mutableListOf<String>()
+        val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
+        clips.forEach { clip ->
+            val cacheKey = "stock_${clip.messageId}"
+            val cached = audioStore.getCachedAudio(cacheKey) ?: run {
+                val response = onDownloadStockAudio(clip.messageId)
+                withContext(Dispatchers.IO) {
+                    audioStore.cacheGeneratedAudio(
+                        bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl,
+                        displayName = cacheKey,
+                        cacheKey = cacheKey,
+                        messageId = clip.messageId,
+                    )
                 }
-                keys to cachedClips
-            }.onSuccess { (keys, cachedClips) ->
-                val representative = cachedClips.firstOrNull() ?: return@onSuccess
-                val first = clips.first()
-                editor.setBucketAudio(
-                    audio = representative,
-                    profileId = profileId,
-                    messageId = first.messageId,
-                    text = first.text,
-                    language = appVoiceLanguage,
-                    bucket = bucket,
-                    clipKeys = keys,
-                )
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to select free bucket in alarm editor bucket=$bucket", error)
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
             }
+            keys.add(cached.cacheKey ?: cacheKey)
+            cachedClips.add(cached)
+        }
+        val representative = cachedClips.firstOrNull() ?: return false
+        val first = clips.first()
+        editor.setBucketAudio(
+            audio = representative,
+            profileId = profileId,
+            messageId = first.messageId,
+            text = first.text,
+            language = appVoiceLanguage,
+            bucket = bucket,
+            clipKeys = keys,
+        )
+        return true
+    }
+
+    fun selectBucket(bucket: String) {
+        if (isSaving || previewPreparing) return
+        val profileId = editor.voiceProfileId ?: return
+        scope.launch {
+            runCatching { bindStockBucketClips(bucket, profileId) }
+                .onFailure { error ->
+                    AlarmTalkLog.reportError("Failed to select free bucket in alarm editor bucket=$bucket", error)
+                    audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
+                }
         }
     }
 
@@ -643,6 +647,34 @@ internal fun AlarmEditorScreen(
                 submitDraft(editor.toDraft())
                 return
             }
+        }
+
+        // 유료 클론 + 사전렌더 대상 컨텍스트(사랑·약) + 해당 클립 존재 → 라이브 생성 대신 그 목소리
+        // 톤 사전렌더 클립을 오프라인 버킷으로 바인딩(회전). 클립 없거나 캐시 실패면 아래 라이브로 폴백.
+        val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
+        if (
+            editor.voiceRandomPrompt &&
+            cloneBucketCategory != null &&
+            !isSystemVoiceId(profileId) &&
+            stockClips.any {
+                it.voiceProfileId == profileId &&
+                    it.category == cloneBucketCategory &&
+                    (it.language ?: "ko") == appVoiceLanguage
+            }
+        ) {
+            generationJob?.cancel()
+            generationJob = scope.launch {
+                isSaving = true
+                val bound = runCatching { bindStockBucketClips(cloneBucketCategory, profileId) }
+                    .getOrDefault(false)
+                isSaving = false
+                if (bound) {
+                    submitDraft(editor.toDraft())
+                } else {
+                    audioMessage = context.getString(R.string.editor_error_stock_clip_select_failed)
+                }
+            }
+            return
         }
 
         // 이전에 진행 중이던 generation 이 남아 있다면 취소.

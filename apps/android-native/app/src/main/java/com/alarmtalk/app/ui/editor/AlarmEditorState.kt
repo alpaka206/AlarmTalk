@@ -457,6 +457,19 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
         else -> false
     }
 
+/**
+ * 유료 클론 사전렌더 클립으로 '오프라인 버킷'을 붙일 수 있는 컨텍스트 → 백엔드 category.
+ * 이 category 로 stockClips 를 필터해 셀렉트 버킷 경로를 재사용한다(bucketId=category).
+ * 날씨/운세는 발사 시점 조건/테마 매칭(준비창 워커)이 있어야 정확하므로, 그 전까지는 여기서
+ * null 을 돌려 기존 라이브 생성 경로를 유지한다(항상 variant0 오재 방지).
+ */
+internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
+    when (normalizedRandomPromptContext(context ?: "")) {
+        "love" -> "love"
+        "medication" -> "medication"
+        else -> null
+    }
+
 private const val DefaultRandomTtsCategory = "morning"
 // 기본은 추가 입력이 필요 없는 고정 문구(preset) — 목소리만 고르면 바로 저장할 수 있다.
 internal const val DefaultRandomPromptContext = "preset"

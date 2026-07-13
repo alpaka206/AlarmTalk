@@ -477,9 +477,11 @@ internal suspend fun MainViewModel.loadManualQuota(): ManualQuotaResponse? {
     }.getOrNull()
 }
 
-internal fun MainViewModel.loadStockClips() {
+internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
     val session = authSession ?: return
-    if (stockClips.isNotEmpty()) return
+    // stockClips 는 세션 전용 in-memory 캐시라 한번 채우면 재조회 안 함. 유료 클론 클립은 확정 후
+    // cron 이 세션 중에 만들 수 있으므로, 클론 편집 진입 시 forceReload=true 로 매니페스트를 새로 받는다.
+    if (!forceReload && stockClips.isNotEmpty()) return
     viewModelScope.launch {
         runCatching {
             api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
