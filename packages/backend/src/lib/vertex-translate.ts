@@ -867,6 +867,108 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     .join('\n');
 }
 
+// ── 사전렌더(유료 클론) 톤 적응 생성 ─────────────────────────────────────────────
+// 라이브 동적 경로(generateDynamicAlarmTextWithVertex)와 분리된, seed 기반 1회 생성기.
+// 카테고리 outcome 을 자연어 seed 로 받아 그 목소리의 관계/호칭/말투에 맞춘 알람 문구를 만든다.
+// 동적 경로의 품질 규칙(관계 어체·호칭 호출·자연스러움·태그 allowlist·few-shot)을 그대로 재사용해
+// "할아버지, 약 먹을 시간이에요. 까먹지 말고 꼭 드시고 건강하셔야 해요!" 수준을 보장한다.
+function prerenderClipPrompt(params: {
+  seed: string;
+  relationshipLabel?: string | null;
+  listenerTitle?: string | null;
+  targetLanguage: string;
+  defaultTag?: string;
+}): string {
+  const targetName = LANGUAGE_NAMES[params.targetLanguage] || params.targetLanguage;
+  const listenerTitle = params.listenerTitle?.trim();
+  const listenerInstruction = listenerTitle
+    ? `When addressing the listener, call them "${listenerTitle}" exactly (use it naturally, do not translate it, and never replace it with guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
+    : 'Do not address the listener by guessed family titles. Use a neutral warm address instead.';
+  const koreanRegisterInstruction =
+    params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
+  const relationship = params.relationshipLabel?.trim()
+    ? `The selected voice belongs to the user's "${params.relationshipLabel}" relationship. Use this ONLY to choose a natural speech register and warmth. Never mention the relationship label in the text. ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
+  const romanticToneInstruction =
+    params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
+      ? '연인/배우자 톤: 실제 남자친구·여자친구·아내·남편이 사적으로 건네는 말투로. 친밀한 반말을 쓰고 해요체/합니다체를 쓰지 말 것(아내·남편도). 따뜻하고 살짝 설레게, 하지만 짧게. 새 인연·연애운·질투·다른 사람에게 끌림 언급 금지.'
+      : '';
+  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${APPROVED_TAGS.map(
+    (tag) => `[${tag}]`,
+  ).join(
+    ' ',
+  )}. Return it in the separate "tag" field WITHOUT brackets, or "" for none. A fitting default here is "${params.defaultTag ?? 'cheerfully'}". The low-arousal tags ${LOW_AROUSAL_TAGS.map(
+    (tag) => `[${tag}]`,
+  ).join(
+    ' ',
+  )} are for calm/bedtime intents only. One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
+  return [
+    `LANGUAGE: write the spoken line in ${targetName}.`,
+    activeLanguageBlock(params.targetLanguage),
+    `Alarm intent (semantic seed): ${params.seed}`,
+    relationship,
+    romanticToneInstruction,
+    'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
+    'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
+    params.targetLanguage === 'ko'
+      ? '뉴스 앵커처럼 들리지 않게 진짜 옆에서 말하는 톤. 손녀·손자·손주→조부모, 자식→부모는 존대 해요체("일어나실 시간이에요", "챙기세요")로, 형제·자매·친구는 반말, 연인·배우자는 사적인 반말로. 조사와 띄어쓰기를 살려 다정하게.'
+      : '',
+    'Make it feel warm and human, not a robotic prerecorded template.',
+    tagAllowlistInstruction,
+    fewShotBlock(params.targetLanguage),
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, no brackets","tag":"one allowlisted tag name without brackets, or empty string"}.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * 사전렌더 클립 1개의 톤 적응 문구를 생성한다(유료 클론 전용). 실패(Vertex 미설정/네트워크/
+ * 검증 위반)하면 throw 하여 호출자(cron)가 재시도하도록 한다 — 나쁜 폴백 문구를 저장하지 않는다.
+ */
+export async function generatePrerenderClipText(
+  env: Env,
+  params: {
+    seed: string;
+    relationshipLabel?: string | null;
+    listenerTitle?: string | null;
+    targetLanguage: string;
+    defaultTag?: string;
+  },
+): Promise<{ text: string; tag: string }> {
+  const targetLanguage = params.targetLanguage || 'ko';
+  if (!hasGeminiConfiguration(env)) {
+    throw new AlarmTextPreparationInvalidError();
+  }
+  const prompt = prerenderClipPrompt({ ...params, targetLanguage });
+  let raw: string;
+  try {
+    raw = await generateContentText(env, prompt, {
+      temperature: 0.6,
+      maxOutputTokens: 256,
+      systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
+      responseSchema: DYNAMIC_RESPONSE_SCHEMA,
+    });
+  } catch {
+    throw new AlarmTextPreparationInvalidError();
+  }
+  const parsed = parseDynamicAlarmTextResult(raw);
+  const text = parsed.text.trim();
+  if (
+    !text ||
+    isMetaJsonResponse(text) ||
+    text.length > 200 ||
+    hasLanguageMismatch(text, targetLanguage) ||
+    hasDeliveryTagOrStageDirection(text) ||
+    hasUnsupportedListenerAddress(text, params.listenerTitle) ||
+    hasRelationshipLabelLeak(text, params.relationshipLabel, params.listenerTitle)
+  ) {
+    throw new AlarmTextPreparationInvalidError();
+  }
+  const tag = normalizeApprovedTag(parsed.tag) || normalizeApprovedTag(params.defaultTag ?? '');
+  return { text, tag };
+}
+
 // 폴백 회전(§4.7): 고정 단일 문구 대신 mode+dateLabel 해시로 몇 개 템플릿을 회전한다.
 // 골격(오프너·날씨팁·핵심 안부)은 고정하고 닫는 케어 문구/도입만 변주해 자연스러움을 유지하면서
 // 매일 같은 문구가 반복되지 않게 한다.

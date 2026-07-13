@@ -4,6 +4,7 @@ import {
   AlarmTextPreparationInvalidError,
   deriveAlarmDisplayText,
   generateDynamicAlarmTextWithVertex,
+  generatePrerenderClipText,
   prepareAlarmTextWithVertex,
 } from '../src/lib/vertex-translate';
 
@@ -640,5 +641,45 @@ describe('deriveAlarmDisplayText', () => {
 
   it('사용자가 승인 태그와 겹치는 대괄호를 쳐도 삭제하지 않는다', () => {
     expect(deriveAlarmDisplayText('오늘도 [happy]', '오늘도 [happy]')).toBe('오늘도 [happy]');
+  });
+});
+
+describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
+  it('seed·관계·호칭으로 톤 적응 문구를 만들고 승인 태그를 돌려준다', async () => {
+    queueContent(
+      geminiText(
+        JSON.stringify({ text: '규원아, 약 먹을 시간이야. 물이랑 같이 꼭 챙겨 먹어.', tag: 'cheerfully' }),
+      ),
+    );
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 다정하게 알린다.',
+      relationshipLabel: '할머니',
+      listenerTitle: '규원아',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+    });
+    expect(out.text).toContain('약 먹을 시간');
+    expect(out.tag).toBe('cheerfully');
+    // 프롬프트에 seed 와 호칭이 실린다.
+    const body = JSON.stringify(contentRequestBody());
+    expect(body).toContain('약 먹을 시간이라고');
+    expect(body).toContain('규원아');
+  });
+
+  it('모델이 태그를 비우면 카테고리 기본 태그로 채운다', async () => {
+    queueContent(geminiText(JSON.stringify({ text: '오늘 비 온대. 나갈 때 우산 꼭 챙겨.', tag: '' })));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '비 온다고 알리고 우산 챙기라고.',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+    });
+    expect(out.tag).toBe('cheerfully');
+  });
+
+  it('문구 안에 대괄호/지문이 새면 throw 해서 나쁜 클립을 저장하지 않는다', async () => {
+    queueContent(geminiText(JSON.stringify({ text: '[shouting] 일어나!', tag: '' })));
+    await expect(
+      generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
+    ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);
   });
 });

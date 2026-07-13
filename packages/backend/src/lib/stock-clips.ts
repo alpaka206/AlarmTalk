@@ -3,7 +3,7 @@ import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
-import { prepareAlarmTextWithVertex } from './vertex-translate';
+import { prepareAlarmTextWithVertex, generatePrerenderClipText } from './vertex-translate';
 
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
@@ -69,25 +69,93 @@ export const FREE_BUCKET_CATEGORIES: readonly string[] = STOCK_CLIP_PRESETS
 
 /**
  * 유료 클론 목소리에 사전렌더할 알람 버킷 카테고리(greeting 미리듣기는 별도로 항상 포함).
- * 날씨는 조건별(맑음/흐림/비/눈/미세먼지)로 category 를 분화해 유한 variant 세트를 만든다.
- * Phase 2 에서 STOCK_CLIP_PRESETS 에 이 카테고리들의 문구를 추가하면 findMissingStockTargets
- * 매트릭스가 자동 확장된다(현재는 medication 만 존재해 클론은 medication+greeting 부터 렌더).
+ * 날씨/운세는 '조건·테마'를 variant 인덱스로 담는다(category 는 하나, variant 순서가 조건/테마).
+ * 재생 시 클라가 (날씨=지역 신호 / 운세=사주+날짜)로 로컬에서 조건·테마 인덱스를 골라 매칭한다.
  */
-export const PAID_BUCKET_CATEGORIES: readonly string[] = [
-  'weather_clear',
-  'weather_cloud',
-  'weather_rain',
-  'weather_snow',
-  'weather_dust',
-  'fortune',
-  'love',
-  'medication',
-];
+export const PAID_BUCKET_CATEGORIES: readonly string[] = ['weather', 'fortune', 'love', 'medication'];
 
-/** 유료 클론이 사전렌더 대상으로 삼는 카테고리(알람 버킷 + greeting 미리듣기). */
+/** 유료 클론이 사전렌더 대상으로 삼는 카테고리(알람 버킷 + greeting 미리듣기 겸 기상 인사). */
 export const CLONE_PRERENDER_CATEGORIES: readonly string[] = [
   ...PAID_BUCKET_CATEGORIES,
   STOCK_GREETING_CATEGORY,
+];
+
+/**
+ * 날씨 variant 인덱스 ↔ 조건. 클라가 라이브 날씨 신호를 이 순서의 인덱스로 매핑해 해당 클립을
+ * 고른다. 순서를 바꾸면 기존 사전렌더 인덱스와 어긋나므로 append-only 로 관리한다.
+ */
+export const CLONE_WEATHER_CONDITIONS = [
+  'nice',
+  'rain',
+  'snow',
+  'dust',
+  'cloud',
+  'fog',
+  'heat',
+] as const;
+
+/** 운세 variant 인덱스 ↔ 테마(오락용, 개인정보 미포함). 클라가 사주+날짜로 인덱스를 고른다. */
+export const CLONE_FORTUNE_THEMES = ['luck', 'caution', 'wealth', 'health', 'relationship'] as const;
+
+/**
+ * 유료 클론 사전렌더의 '의미 seed'. 각 문자열은 최종 문구가 아니라 생성 지시(outcome)이며,
+ * generatePrerenderClipText 가 그 목소리의 관계/호칭/말투에 맞춰 실제 문구로 만든다. 소량 유지.
+ * greeting=기상 인사(미리듣기 겸용). weather=CLONE_WEATHER_CONDITIONS 순서, fortune=CLONE_FORTUNE_THEMES 순서.
+ */
+export const CLONE_CLIP_SEEDS: {
+  category: string;
+  defaultTag: string;
+  seeds: readonly string[];
+}[] = [
+  {
+    category: STOCK_GREETING_CATEGORY,
+    defaultTag: 'cheerfully',
+    seeds: [
+      '다정하게 아침 인사를 하며 잘 잤는지 안부를 묻고, 오늘 하루도 기분 좋게 시작하자고 따뜻하게 깨워 준다.',
+    ],
+  },
+  {
+    category: 'weather',
+    defaultTag: 'cheerfully',
+    seeds: [
+      '오늘 날씨가 맑고 좋다고 알리며, 잠깐 바깥바람을 쐬거나 산책하기에도 좋겠다고 가볍게 권한다.',
+      '오늘 비가 온다고 알리고, 나갈 때 우산을 꼭 챙기고 길이 미끄러우니 조심하라고 다정하게 당부한다.',
+      '오늘 눈이 온다고 알리고, 미끄러우니 따뜻하게 입고 발밑을 조심하라고 챙긴다.',
+      '오늘 미세먼지가 심하다고 알리고, 외출할 때 마스크를 꼭 챙기라고 다정하게 당부한다.',
+      '오늘 하늘이 흐리다고 알리며, 그래도 기분까지 흐려지지 않게 오늘 하루도 힘내라고 따뜻하게 챙긴다.',
+      '오늘 안개가 짙다고 알리고, 길을 나설 때 시야가 안 좋으니 천천히 조심해서 다니라고 챙긴다.',
+      '오늘 날이 많이 덥다고 알리고, 물을 자주 마시고 더위 먹지 않게 조심하라고 다정하게 챙긴다.',
+    ],
+  },
+  {
+    category: 'fortune',
+    defaultTag: 'playfully',
+    seeds: [
+      '오늘은 전반적으로 운이 좋은 날이라고 가볍고 재미로 전하며, 좋은 일이 있을 것 같으니 기대해도 좋겠다고 한다.',
+      '오늘은 작은 실수나 서두름만 조심하면 괜찮은 날이라고 가볍게, 천천히 하면 다 잘될 거라고 다독인다.',
+      '오늘은 재물운이 살짝 따르는 날이라고 재미로 전하며, 뜻밖의 좋은 소식이 있을지도 모른다고 가볍게 한다.',
+      '오늘은 컨디션을 잘 챙기면 좋은 날이라고, 무리하지 말고 몸을 아끼라고 다정하게 당부한다.',
+      '오늘은 사람들과의 사이에서 기분 좋은 일이 있을 수 있다고 가볍게, 주변에 다정하게 대하면 좋겠다고 한다.',
+    ],
+  },
+  {
+    category: 'love',
+    defaultTag: 'happy',
+    seeds: [
+      '사랑하는 마음을 담아, 오늘도 곁에서 응원하고 있다고 다정하게 힘을 준다.',
+      '보고 싶었다는 마음과 함께, 오늘 하루도 잘 보내고 밥 잘 챙겨 먹으라고 따뜻하게 챙긴다.',
+      '힘든 일이 있으면 언제든 기대도 된다고, 늘 네 편이라고 다정하게 응원한다.',
+    ],
+  },
+  {
+    category: 'medication',
+    defaultTag: 'cheerfully',
+    seeds: [
+      '약 먹을 시간이라고 알리고, 까먹지 말고 물이랑 꼭 챙겨 드시고 건강 잘 챙기시라고 다정하게 당부한다.',
+      '약 챙길 시간이라고 부드럽게 알리고, 잊지 말고 지금 바로 드시라고 챙긴다.',
+      '약 드실 시간이라고 알리며, 오늘 하루도 건강하게 잘 보내시라고 따뜻하게 응원한다.',
+    ],
+  },
 ];
 
 /**
@@ -125,6 +193,16 @@ export interface StockClipTarget {
   language: string;
   /** 같은 (보이스·카테고리·언어) 안에서 문구를 구분/정렬하는 0-based 인덱스. */
   variantIndex: number;
+  /**
+   * true 면 baseText 를 '의미 seed' 로 보고 그 목소리의 관계/호칭/말투에 맞춰 문구를 생성한다
+   * (유료 클론). false(시스템)면 baseText 를 리터럴로 번역+태깅만 한다.
+   */
+  toneAdapt: boolean;
+  /** 톤 적응 생성용 관계/호칭(클론만). generatePrerenderClipText 로 전달된다. */
+  relationshipLabel?: string | null;
+  listenerTitle?: string | null;
+  /** 톤 적응 생성 시 카테고리 기본 delivery 태그. */
+  defaultTag?: string;
 }
 
 /** 사전렌더 대상 보이스(시스템 or 유료 클론). ownerUserId·categories 로 소유자/버킷을 구분. */
@@ -140,6 +218,11 @@ export interface PrerenderVoice {
    * 미지정 시 각 preset 의 languages 를 그대로 쓴다(시스템=ko/en/ja).
    */
   languageOverride?: string;
+  /** true 면 CLONE_CLIP_SEEDS(톤 적응)로, 아니면 STOCK_CLIP_PRESETS(리터럴)로 대상 계산. */
+  isClone?: boolean;
+  /** 클론 톤 적응 생성용 관계/호칭. */
+  relationshipLabel?: string | null;
+  listenerTitle?: string | null;
 }
 
 export interface GeneratedStockClip {
@@ -199,7 +282,7 @@ export async function listReadyCloneVoices(
   const ids = [...byId.keys()];
   const ph = ids.map(() => '?').join(',');
   const res = await db.execute({
-    sql: `SELECT id, name, elevenlabs_voice_id
+    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title
           FROM voice_profiles
           WHERE COALESCE(is_system, 0) = 0
             AND deleted_at IS NULL
@@ -215,6 +298,8 @@ export async function listReadyCloneVoices(
     const req = byId.get(id);
     const elevenlabsVoiceId = String(row.elevenlabs_voice_id ?? '');
     if (!req || elevenlabsVoiceId.length === 0) continue;
+    const relationshipLabel = ((row.relationship_label as string | null) ?? '').trim() || null;
+    const listenerTitle = ((row.listener_title as string | null) ?? '').trim() || null;
     out.push({
       id,
       name: String(row.name),
@@ -222,6 +307,9 @@ export async function listReadyCloneVoices(
       ownerUserId: req.ownerUserId,
       categories: CLONE_PRERENDER_CATEGORIES,
       languageOverride: normalizeSynthesisLanguage(req.language),
+      isClone: true,
+      relationshipLabel,
+      listenerTitle,
     });
   }
   return out;
@@ -257,27 +345,47 @@ export async function findMissingStockTargets(
 
   const targets: StockClipTarget[] = [];
   for (const voice of prerenderVoices) {
-    for (const preset of STOCK_CLIP_PRESETS) {
-      if (!voice.categories.includes(preset.category)) continue;
-      const languages = voice.languageOverride ? [voice.languageOverride] : preset.languages;
-      preset.variants.forEach((variantText, variantIndex) => {
+    // 클론=CLONE_CLIP_SEEDS(관계/호칭 톤 적응), 시스템=STOCK_CLIP_PRESETS(리터럴 번역+태깅).
+    const sources = voice.isClone
+      ? CLONE_CLIP_SEEDS.map((s) => ({
+          category: s.category,
+          defaultTag: s.defaultTag,
+          languages: undefined as readonly string[] | undefined,
+          entries: s.seeds,
+        }))
+      : STOCK_CLIP_PRESETS.map((p) => ({
+          category: p.category,
+          defaultTag: undefined as string | undefined,
+          languages: p.languages as readonly string[],
+          entries: p.variants as readonly string[],
+        }));
+    for (const source of sources) {
+      if (!voice.categories.includes(source.category)) continue;
+      const languages = voice.languageOverride
+        ? [voice.languageOverride]
+        : (source.languages ?? ['ko']);
+      source.entries.forEach((entry, variantIndex) => {
         for (const language of languages) {
           const lang = normalizeSynthesisLanguage(language);
-          if (seen.has(`${voice.id}|${preset.category}|${lang}|${variantIndex}`)) continue;
-          // greeting 은 시스템 보이스별 개성 멘트가 있으면 그것을, 없으면 기본 문구를 쓴다.
+          if (seen.has(`${voice.id}|${source.category}|${lang}|${variantIndex}`)) continue;
+          // 시스템 greeting 은 보이스별 개성 멘트가 있으면 그것을 리터럴로 쓴다.
           const baseText =
-            preset.category === STOCK_GREETING_CATEGORY
-              ? (VOICE_GREETING_OVERRIDES[voice.elevenlabsVoiceId] ?? variantText)
-              : variantText;
+            !voice.isClone && source.category === STOCK_GREETING_CATEGORY
+              ? (VOICE_GREETING_OVERRIDES[voice.elevenlabsVoiceId] ?? entry)
+              : entry;
           targets.push({
             voiceProfileId: voice.id,
             voiceName: voice.name,
             elevenlabsVoiceId: voice.elevenlabsVoiceId,
             ownerUserId: voice.ownerUserId,
-            category: preset.category,
+            category: source.category,
             baseText,
             language: lang,
             variantIndex,
+            toneAdapt: Boolean(voice.isClone),
+            relationshipLabel: voice.relationshipLabel ?? null,
+            listenerTitle: voice.listenerTitle ?? null,
+            defaultTag: source.defaultTag,
           });
         }
       });
@@ -449,15 +557,33 @@ export async function generateStockClip(
 ): Promise<GeneratedStockClip> {
   const language = normalizeSynthesisLanguage(target.language);
 
-  const prepared = await prepareAlarmTextWithVertex(env, target.baseText, {
-    targetLanguage: language,
-    sourceLanguage: 'ko',
-    translate: language !== 'ko',
-    autoTag: true,
-  });
-  const synthesisText = prepared.text;
-  const displayText = stripDeliveryTags(synthesisText) || stripDeliveryTags(target.baseText);
-  const deliveryTagsJson = JSON.stringify(prepared.tags);
+  let synthesisText: string;
+  let displayText: string;
+  let deliveryTagsJson: string;
+  if (target.toneAdapt) {
+    // 유료 클론: baseText 를 '의미 seed' 로 보고 그 목소리의 관계/호칭/말투에 맞춰 문구 생성.
+    // 실패 시 throw → 호출자(cron)가 재시도(나쁜 폴백 문구를 저장하지 않는다).
+    const generated = await generatePrerenderClipText(env, {
+      seed: target.baseText,
+      relationshipLabel: target.relationshipLabel,
+      listenerTitle: target.listenerTitle,
+      targetLanguage: language,
+      defaultTag: target.defaultTag,
+    });
+    displayText = generated.text;
+    synthesisText = generated.tag ? `[${generated.tag}] ${generated.text}` : generated.text;
+    deliveryTagsJson = JSON.stringify(generated.tag ? [generated.tag] : []);
+  } else {
+    const prepared = await prepareAlarmTextWithVertex(env, target.baseText, {
+      targetLanguage: language,
+      sourceLanguage: 'ko',
+      translate: language !== 'ko',
+      autoTag: true,
+    });
+    synthesisText = prepared.text;
+    displayText = stripDeliveryTags(synthesisText) || stripDeliveryTags(target.baseText);
+    deliveryTagsJson = JSON.stringify(prepared.tags);
+  }
 
   const attempts = createSynthesisAttempts({
     env,

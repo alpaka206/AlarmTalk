@@ -8,8 +8,12 @@ import {
   markPrerenderDone,
   markPrerenderFailed,
   CLONE_PRERENDER_CATEGORIES,
+  CLONE_CLIP_SEEDS,
   type PrerenderVoice,
 } from '../src/lib/stock-clips';
+
+// 클론이 앱 언어 1개로 렌더하는 총 클립 수 = 모든 seed 개수 합(greeting+weather+fortune+love+medication).
+const CLONE_TOTAL_SEEDS = CLONE_CLIP_SEEDS.reduce((n, s) => n + s.seeds.length, 0);
 
 // 실제 libSQL(인메모리)로 사전렌더 큐/스코프 로직을 검증한다(외부 TTS 호출 없는 DB 계층만).
 async function setupDb() {
@@ -23,6 +27,8 @@ async function setupDb() {
       status TEXT DEFAULT 'processing',
       is_system INTEGER DEFAULT 0,
       is_draft INTEGER DEFAULT 0,
+      relationship_label TEXT DEFAULT '',
+      listener_title TEXT DEFAULT '',
       deleted_at TEXT
     );
     CREATE TABLE messages (
@@ -106,7 +112,7 @@ describe('listReadyCloneVoices', () => {
   });
 });
 
-describe('findMissingStockTargets (클론 스코프)', () => {
+describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
   const cloneVoice = (over: Partial<PrerenderVoice> = {}): PrerenderVoice => ({
     id: 'clone-ready',
     name: 'clone-ready',
@@ -114,23 +120,33 @@ describe('findMissingStockTargets (클론 스코프)', () => {
     ownerUserId: 'owner-1',
     categories: CLONE_PRERENDER_CATEGORIES,
     languageOverride: 'ko',
+    isClone: true,
+    relationshipLabel: '할머니',
+    listenerTitle: '규원아',
     ...over,
   });
 
-  it('클론 카테고리(medication·greeting)만, languageOverride 언어 1개로, ownerUserId 를 실어 생성', async () => {
+  it('클론은 CLONE_CLIP_SEEDS 전량을 앱 언어 1개로, toneAdapt·관계/호칭·소유자를 실어 생성', async () => {
     const db = await setupDb();
     await insertVoice(db, { id: 'clone-ready' });
 
     const targets = await findMissingStockTargets(db, [cloneVoice()]);
 
-    // 현재 STOCK_CLIP_PRESETS ∩ CLONE_PRERENDER_CATEGORIES = medication(2)+greeting(1). morning 제외.
-    expect(targets).toHaveLength(3);
-    expect(new Set(targets.map((t) => t.category))).toEqual(new Set(['medication', 'greeting']));
-    // languageOverride='ko' → en/ja 는 생성 안 함(비용 곱연산 회피).
+    expect(targets).toHaveLength(CLONE_TOTAL_SEEDS);
+    expect(new Set(targets.map((t) => t.category))).toEqual(
+      new Set(['greeting', 'weather', 'fortune', 'love', 'medication']),
+    );
+    // languageOverride='ko' → 앱 언어 1개만(비용 곱연산 회피).
     expect(new Set(targets.map((t) => t.language))).toEqual(new Set(['ko']));
-    // 소유자는 실소유자.
+    // 클론은 전부 톤 적응 + 관계/호칭 전달 + 실소유자.
+    expect(targets.every((t) => t.toneAdapt === true)).toBe(true);
+    expect(targets.every((t) => t.relationshipLabel === '할머니' && t.listenerTitle === '규원아')).toBe(
+      true,
+    );
     expect(targets.every((t) => t.ownerUserId === 'owner-1')).toBe(true);
     expect(targets.every((t) => t.voiceProfileId === 'clone-ready')).toBe(true);
+    // baseText 는 최종 문구가 아니라 생성 seed(지시문).
+    expect(targets.find((t) => t.category === 'weather')?.baseText).toContain('알리');
   });
 
   it('languageOverride 를 en 으로 주면 en 으로만 대상 생성', async () => {
@@ -138,6 +154,7 @@ describe('findMissingStockTargets (클론 스코프)', () => {
     await insertVoice(db, { id: 'clone-ready' });
     const targets = await findMissingStockTargets(db, [cloneVoice({ languageOverride: 'en' })]);
     expect(new Set(targets.map((t) => t.language))).toEqual(new Set(['en']));
+    expect(targets).toHaveLength(CLONE_TOTAL_SEEDS);
   });
 
   it('이미 렌더된 (보이스·카테고리·언어·변형) 조합은 seen 으로 건너뛴다', async () => {
@@ -145,15 +162,12 @@ describe('findMissingStockTargets (클론 스코프)', () => {
     await insertVoice(db, { id: 'clone-ready' });
     await db.execute({
       sql: `INSERT INTO messages (id, user_id, voice_profile_id, category, language, variant, is_preset, audio_url)
-            VALUES ('m1', 'owner-1', 'clone-ready', 'medication', 'ko', 0, 1, 'r2://x')`,
+            VALUES ('m1', 'owner-1', 'clone-ready', 'weather', 'ko', 0, 1, 'r2://x')`,
       args: [],
     });
     const targets = await findMissingStockTargets(db, [cloneVoice()]);
-    // medication variant 0 은 이미 존재 → 제외. 남은 = medication#1 + greeting#0 = 2.
-    expect(targets).toHaveLength(2);
-    expect(
-      targets.find((t) => t.category === 'medication' && t.variantIndex === 0),
-    ).toBeUndefined();
+    expect(targets).toHaveLength(CLONE_TOTAL_SEEDS - 1);
+    expect(targets.find((t) => t.category === 'weather' && t.variantIndex === 0)).toBeUndefined();
   });
 
   it('다른 보이스의 기존 클립은 이 보이스 스코프에 영향 없음(전유저 스캔 아님)', async () => {
@@ -161,12 +175,29 @@ describe('findMissingStockTargets (클론 스코프)', () => {
     await insertVoice(db, { id: 'clone-ready' });
     await db.execute({
       sql: `INSERT INTO messages (id, user_id, voice_profile_id, category, language, variant, is_preset, audio_url)
-            VALUES ('m2', 'owner-2', 'other-voice', 'medication', 'ko', 0, 1, 'r2://y')`,
+            VALUES ('m2', 'owner-2', 'other-voice', 'weather', 'ko', 0, 1, 'r2://y')`,
       args: [],
     });
     const targets = await findMissingStockTargets(db, [cloneVoice()]);
-    // 다른 보이스 클립은 seen 에 안 잡혀야 함 → 여전히 medication 2개 다 대상.
-    expect(targets.filter((t) => t.category === 'medication')).toHaveLength(2);
+    // 다른 보이스 클립은 seen 에 안 잡혀야 함 → 여전히 전량 대상.
+    expect(targets).toHaveLength(CLONE_TOTAL_SEEDS);
+  });
+
+  it('listReadyCloneVoices 로 만든 클론 보이스는 isClone·관계/호칭이 실려 톤 적응 대상이 된다', async () => {
+    const db = await setupDb();
+    await db.execute({
+      sql: `INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id, status, is_system, is_draft, relationship_label, listener_title)
+            VALUES ('clone-ready', 'owner-1', 'clone-ready', 'el_x', 'ready', 0, 0, '아빠', '아들')`,
+      args: [],
+    });
+    const voices = await listReadyCloneVoices(db, [
+      { voiceProfileId: 'clone-ready', ownerUserId: 'owner-1', language: 'ko' },
+    ]);
+    expect(voices[0]!.isClone).toBe(true);
+    expect(voices[0]!.relationshipLabel).toBe('아빠');
+    expect(voices[0]!.listenerTitle).toBe('아들');
+    const targets = await findMissingStockTargets(db, voices);
+    expect(targets.every((t) => t.toneAdapt && t.relationshipLabel === '아빠')).toBe(true);
   });
 });
 
