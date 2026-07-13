@@ -32,6 +32,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -46,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
@@ -383,23 +385,46 @@ internal fun SnoozeOptionDivider() {
 
 @Composable
 internal fun EditorActionButtons(
-    isEditing: Boolean,
     isSaving: Boolean,
     canSave: Boolean,
     onSave: () -> Unit,
+    onCancel: () -> Unit,
+    recipientName: String? = null,
 ) {
-    Button(
-        onClick = onSave,
-        enabled = canSave && !isSaving,
+    // 상단바를 없앴으므로 취소·저장을 하단에 한 쌍으로 모은다(삼성 시계식). 취소=외곽선, 저장=채움.
+    // 두 버튼은 같은 폭(각 weight 1). 저장은 '○○에게 저장'처럼 길어지면 maxLines=1 로 ... 축약된다.
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        shape = WakerButtonShape,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            when {
-                isSaving -> stringResource(R.string.editor_saving)
-                isEditing -> stringResource(R.string.editor_save_changes)
-                else -> stringResource(R.string.editor_set_alarm)
-            },
-        )
+        OutlinedButton(
+            onClick = onCancel,
+            enabled = !isSaving,
+            modifier = Modifier.weight(1f),
+            shape = WakerButtonShape,
+        ) {
+            Text(
+                text = stringResource(R.string.editor_cancel),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Button(
+            onClick = onSave,
+            enabled = canSave && !isSaving,
+            modifier = Modifier.weight(1f),
+            shape = WakerButtonShape,
+        ) {
+            Text(
+                text = when {
+                    isSaving -> stringResource(R.string.editor_saving)
+                    recipientName != null -> stringResource(R.string.editor_save_for, recipientName)
+                    else -> stringResource(R.string.editor_save)
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -23,10 +24,12 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -87,7 +90,7 @@ internal fun VoiceAudioCard(
     onPreviewAudio: () -> Unit,
     onCreateVoiceProfileClick: () -> Unit,
     onOpenRandomPromptSettings: () -> Unit,
-    onClear: () -> Unit,
+    onOpenVoiceOutputSettings: () -> Unit,
 ) {
     val context = LocalContext.current
     val visibleVoiceSource = if (editor.voiceSource == VoiceSources.SERVER_TTS) {
@@ -199,17 +202,39 @@ internal fun VoiceAudioCard(
                         }
                     }
                 } else {
-                    EditorSectionTitle(stringResource(R.string.editor_voice_to_hear))
                     if (voiceProfileBusy) {
                         MutedText(stringResource(R.string.editor_voice_loading))
                     } else if (profileOptions.isEmpty()) {
                         NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
                     } else {
-                        VoiceProfileSelector(
-                            options = profileOptions,
-                            selectedId = editor.voiceProfileId ?: "",
-                            onSelect = { option -> editor.selectVoiceProfile(option.id) },
-                        )
+                        // 목소리(미나)와 문구를 개별 박스로 흩지 않고 하나의 카드+구분선으로 묶는다(삼성 설정식).
+                        // 모서리는 일정·세부설정 카드와 같은 WakerCardShape 로 통일한다.
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = WakerCardShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border = wakerCardBorder(),
+                        ) {
+                            Column {
+                                VoiceProfileSelector(
+                                    options = profileOptions,
+                                    selectedId = editor.voiceProfileId ?: "",
+                                    onSelect = { option -> editor.selectVoiceProfile(option.id) },
+                                )
+                                AlarmSettingDivider()
+                                MessageModeSummaryRow(
+                                    isManual = !editor.voiceRandomPrompt,
+                                    randomContext = editor.voiceRandomContext,
+                                    manualText = editor.voiceText,
+                                    onClick = onOpenRandomPromptSettings,
+                                )
+                                AlarmSettingDivider()
+                                VoiceVolumeSummaryRow(
+                                    volumePercent = editor.voiceVolumePercent,
+                                    onClick = onOpenVoiceOutputSettings,
+                                )
+                            }
+                        }
                     }
                 }
                 // 무료 플랜은 개별 문구 선택 대신 "테마(버킷)"만 고른다. 버킷 안 여러 문구는
@@ -245,75 +270,44 @@ internal fun VoiceAudioCard(
                         }
                     }
                 }
-                // 무료 플랜은 위 버킷 선택만 노출한다(랜덤 문구 토글·직접 입력·동적 설정은 유료).
-                if (!freeVoiceTier && profileOptions.isNotEmpty()) {
-                    // 문구는 토글로 랜덤/직접입력을 가르지 않는다. 하나의 선택기에서 '직접 입력'과
-                    // 동적 문구(기상+날씨/운세/운동/사랑)를 함께 고른다. 직접 입력은 목록 맨 아래에서
-                    // 누르면 입력 다이얼로그가 뜬다. '기본 인사말'(preset)은 아무것도 안 고르면 쓰는
-                    // 보이지 않는 기본값(목소리별 사전 렌더)이라 목록엔 없다.
-                    MessageModeSummaryRow(
-                        isManual = !editor.voiceRandomPrompt,
-                        randomContext = editor.voiceRandomContext,
-                        manualText = editor.voiceText,
-                        onClick = onOpenRandomPromptSettings,
-                    )
-                }
+                // 문구(MessageModeSummaryRow)는 위 목소리 카드 안으로 옮겨 구분선으로 묶었다(개별 박스 제거).
             } else {
                 // 알람 설정에서는 임의 포맷 파일 업로드(코덱·디코드·크롭이 불안정)를 빼고 녹음만 둔다.
                 // 포맷이 통제된 녹음(MPEG4/AAC)만 남겨 안정성을 확보한다. 파일·영상 업로드는
                 // '목소리 만들기'(음성 클로닝)에만 있고, 그 경로는 그대로 유지된다.
-                VoiceRecordControls(
-                    isRecording = isRecording,
-                    elapsedMillis = recordingElapsedMillis,
-                    maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
-                    level = recordingLevel,
-                    enabled = true,
-                    notice = stringResource(R.string.editor_audio_max_duration, AlarmAudioLimits.MAX_DURATION_MILLIS / 1000),
-                    onRecordClick = onRecord,
-                    // 녹음 직후 "눌러서 녹음 시작"으로 되돌아가지 않게 완료 상태를 알린다.
-                    // 미리듣기/삭제는 아래 공용 행이 담당하므로 여기서는 상태 표시만.
-                    recordedDurationMillis = recordingElapsedMillis.takeIf {
-                        it > 0 && editor.localAudioUri != null
-                    },
-                )
+                // 녹음이 끝나면 마이크→재생 버튼, 우측 시간→'다시 녹음' 아이콘으로 바꾼다.
+                // 미리듣기·지우기 별도 버튼은 두지 않는다(재생/다시 녹음이 대신한다).
                 if (editor.localAudioUri != null && !isRecording) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        OutlinedButton(
-                            onClick = onPreviewAudio,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(
-                                text = when {
-                                    isCachedAudioPreviewActive && isPreviewPreparing ->
-                                        stringResource(R.string.editor_audio_preview_preparing)
-                                    isCachedAudioPreviewActive -> stringResource(R.string.editor_audio_preview_stop)
-                                    else -> stringResource(R.string.editor_audio_preview_play)
-                                },
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = onClear,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text(stringResource(R.string.editor_audio_clear))
-                        }
-                    }
+                    RecordedPlaybackControls(
+                        isPreviewActive = isCachedAudioPreviewActive,
+                        isPreparing = isPreviewPreparing,
+                        onPlay = onPreviewAudio,
+                        onRedo = onRecord,
+                    )
+                } else {
+                    VoiceRecordControls(
+                        isRecording = isRecording,
+                        elapsedMillis = recordingElapsedMillis,
+                        maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
+                        level = recordingLevel,
+                        enabled = true,
+                        onRecordClick = onRecord,
+                    )
                 }
-                if (
-                    editor.localAudioUri == null &&
-                    !isRecording
+                // 녹음 모드에도 목소리 크기를 녹음 박스 바로 아래에 둔다(세부설정엔 두지 않음).
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerCardShape,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = wakerCardBorder(),
                 ) {
-                    Text(
-                        text = stringResource(R.string.editor_audio_record_or_upload),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    VoiceVolumeSummaryRow(
+                        volumePercent = editor.voiceVolumePercent,
+                        onClick = onOpenVoiceOutputSettings,
                     )
                 }
             }
-            // 목소리 크기·반복 재생은 "세부 설정 > 음성 소리" 모달로 옮겼다.
+            // 목소리 반복 재생은 목소리 크기 상세(목소리 출력 pane)에 함께 있다.
             if (audioMessage != null) {
                 Text(
                     text = audioMessage,
@@ -436,10 +430,11 @@ private fun VoiceProfileSelector(
     // 예전엔 indication=null 이라 눌러도 아무 반응이 없었다. 리플 복원 + 눌림 물성으로
     // '탭되는 행'임을 알린다(다른 세부설정 행과 동일한 피드백).
     val rowInteraction = remember { MutableInteractionSource() }
+    // 상위 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명).
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = WakerChipShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        color = Color.Transparent,
     ) {
         Column {
             Row(
@@ -650,11 +645,12 @@ internal fun MessageModeSummaryRow(
         else -> voiceOptionLabelRes(RandomPromptContexts, normalizedRandomPromptContext(randomContext))
             ?.let { stringResource(it) }.orEmpty()
     }
+    // 상위 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명).
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = WakerChipShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        color = Color.Transparent,
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -667,6 +663,101 @@ internal fun MessageModeSummaryRow(
             ) {
                 Text(stringResource(R.string.editor_msg_section), fontWeight = FontWeight.SemiBold)
                 MutedText(valueLabel)
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = stringResource(R.string.editor_change),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+// 녹음 완료 상태 — 마이크 자리는 재생(▶/■), 우측 시간 자리는 '다시 녹음'(↻) 아이콘.
+// 미리듣기·지우기 별도 버튼을 없애고 이 카드가 재생·재녹음을 모두 담당한다.
+@Composable
+private fun RecordedPlaybackControls(
+    isPreviewActive: Boolean,
+    isPreparing: Boolean,
+    onPlay: () -> Unit,
+    onRedo: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerCardShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = wakerCardBorder(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(
+                onClick = onPlay,
+                // 캐시 오디오 준비 중엔 눌러도 소용없으므로 비활성으로 로딩을 알린다.
+                enabled = !isPreparing,
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Icon(
+                    imageVector = if (isPreviewActive) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                    contentDescription = stringResource(
+                        if (isPreviewActive) R.string.editor_audio_preview_stop else R.string.editor_audio_preview_play,
+                    ),
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+            Text(
+                text = stringResource(R.string.editor_recorded_done),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            IconButton(
+                onClick = onRedo,
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = stringResource(R.string.editor_record_again),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+// '목소리 크기' 요약 행 — 현재 볼륨(%)을 보여주고 누르면 목소리 출력 pane(볼륨·반복)을 연다.
+// 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명). 볼륨을 세부설정에서 이 카드로 옮겼다.
+@Composable
+private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerChipShape,
+        color = Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(stringResource(R.string.editor_voice_volume), fontWeight = FontWeight.SemiBold)
+                MutedText("$volumePercent%")
             }
             Spacer(Modifier.width(12.dp))
             Text(

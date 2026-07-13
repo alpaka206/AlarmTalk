@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,6 +21,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -48,6 +53,19 @@ private const val GUIDE_TARGET_HOME_HERO = "home_next_alarm"
 
 // 목소리 등록 첫 방문 안내 — 내 목소리 만들기 버튼에 스포트라이트.
 private const val GUIDE_TARGET_VOICE_CREATE = "voice_register_create"
+
+// 로그인 배경(AuthBackdrop)의 딥 네이비 감성을 알람 홈에도 가져온다 — 라이트/다크 두 버전.
+// 생 Color 리터럴은 로그인/랜딩과 같은 '브랜드 비주얼' 예외(CLAUDE.md 색 토큰 규약의 문서화된 예외).
+private val HomeGradientDark = Brush.verticalGradient(
+    0f to Color(0xFF1A2A52),
+    0.55f to Color(0xFF0E1938),
+    1f to Color(0xFF070C1D),
+)
+private val HomeGradientLight = Brush.verticalGradient(
+    0f to Color(0xFFF4F7FD),
+    0.5f to Color(0xFFDBE6F7),
+    1f to Color(0xFFBED2EF),
+)
 
 @Composable
 internal fun AlarmListScreen(
@@ -161,7 +179,20 @@ internal fun AlarmListScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // 그라데이션 명암은 시스템 값이 아니라 앱이 실제 쓰는 테마(현재 컬러스킴)에 맞춘다.
+    val homeGradient = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+        HomeGradientDark
+    } else {
+        HomeGradientLight
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // 알람 리스트 홈에만 로그인식 그라데이션 배경을 깐다(다른 탭은 평소 배경 유지).
+            .then(
+                if (selectedTab == NativeTab.Alarms) Modifier.background(homeGradient) else Modifier,
+            ),
+    ) {
     LazyColumn(
         state = listState,
         modifier = Modifier

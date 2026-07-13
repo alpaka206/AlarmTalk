@@ -53,7 +53,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.data.AlarmEntity
 
-// 알람 탭 헤더 — 다른 탭과 같은 ScreenHeader 문법에 상태 한 줄(다음 알람/꺼짐/없음)만 얹는다.
+// 알람 탭 헤더 — '알람' 제목 대신 상태 한 줄(다음 알람/꺼짐/없음)을 헤드라인으로 승격한다.
 @Composable
 internal fun HomeHeader(
     nextAlarm: AlarmEntity?,
@@ -79,12 +79,18 @@ internal fun HomeHeader(
             }
         }
         hasAnyAlarm -> stringResource(R.string.hs_status_inactive)
-        else -> null
+        else -> stringResource(R.string.hs_status_no_alarm)
     }
-    ScreenHeader(
-        title = stringResource(R.string.hs_home_title),
-        subtitle = statusText,
-    )
+    // '알람' 라벨을 따로 두지 않고, 상태 문구(다음 울림/모두 꺼짐/알람 없음)를 그대로 헤드라인으로 승격한다.
+    // 디자인 언어(제목=결론)에 맞춰 지금 상태가 곧 화면의 첫 줄이 되게 한다.
+    if (!statusText.isNullOrBlank()) {
+        Text(
+            text = statusText,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+    }
 }
 
 /** "13시간 40분"/"2일 5시간" — 다음 울림까지 남은 시간(분 단위 올림, 상위 두 단위만 노출). */
