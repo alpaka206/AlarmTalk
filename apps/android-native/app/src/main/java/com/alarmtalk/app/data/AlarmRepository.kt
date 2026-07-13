@@ -211,6 +211,16 @@ class AlarmRepository(
             nowMillis = now,
             isHoliday = holidayPredicate,
         )
+        val resetWeatherVariant = shouldResetWeatherVariant(
+            currentBucketId = current.bucketId,
+            nextBucketId = draft.bucketId,
+            currentVoiceProfileId = current.voiceProfileId,
+            nextVoiceProfileId = draft.voiceProfileId,
+            currentCountry = current.voiceWeatherCountry,
+            nextCountry = draft.voiceWeatherCountry,
+            currentCity = current.voiceWeatherCity,
+            nextCity = draft.voiceWeatherCity,
+        )
         val updated = current.copy(
             label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
             hour = draft.hour,
@@ -252,7 +262,8 @@ class AlarmRepository(
                 if (draft.bucketId != null && draft.bucketId == current.bucketId) current.bucketRotationIndex else 0,
             bucketClipKeysJson = draft.bucketClipKeysJson,
             bucketClipTextsJson = draft.bucketClipTextsJson,
-            contextVariantIndex = draft.contextVariantIndex,
+            contextVariantIndex = draft.contextVariantIndex.takeUnless { resetWeatherVariant },
+            contextResolvedAtMillis = current.contextResolvedAtMillis.takeUnless { resetWeatherVariant },
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
@@ -970,6 +981,25 @@ class AlarmRepository(
         // 백엔드 category 와 동일 문자열이다(클론 사전렌더 category = 'weather'/'fortune').
         val MATCHING_BUCKET_IDS = setOf("weather", "fortune")
     }
+}
+
+internal fun shouldResetWeatherVariant(
+    currentBucketId: String?,
+    nextBucketId: String?,
+    currentVoiceProfileId: String?,
+    nextVoiceProfileId: String?,
+    currentCountry: String?,
+    nextCountry: String?,
+    currentCity: String?,
+    nextCity: String?,
+): Boolean {
+    val involvesWeather = currentBucketId == "weather" || nextBucketId == "weather"
+    if (!involvesWeather) return false
+
+    return currentBucketId != nextBucketId ||
+        currentVoiceProfileId != nextVoiceProfileId ||
+        currentCountry?.trim().orEmpty() != nextCountry?.trim().orEmpty() ||
+        currentCity?.trim().orEmpty() != nextCity?.trim().orEmpty()
 }
 
 /**
