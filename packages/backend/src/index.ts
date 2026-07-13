@@ -406,6 +406,7 @@ async function scheduled(
       generateStockClip,
       markPrerenderDone,
       markPrerenderFailed,
+      releasePrerenderClaim,
     } = await import('./lib/stock-clips');
     const MAX_CLIPS_PER_TICK = 3;
     const claimed = await claimPendingPrerenderVoices(db, 5);
@@ -420,7 +421,10 @@ async function scheduled(
       }
       let rendered = 0;
       for (const voice of cloneVoices) {
-        if (rendered >= MAX_CLIPS_PER_TICK) break;
+        if (rendered >= MAX_CLIPS_PER_TICK) {
+          await releasePrerenderClaim(db, voice.id);
+          continue;
+        }
         const targets = await findMissingStockTargets(db, [voice]);
         if (targets.length === 0) {
           await markPrerenderDone(db, voice.id);
@@ -447,6 +451,8 @@ async function scheduled(
         } else if (voiceError && voiceRendered === 0) {
           // 이 틱에 아무것도 못 만들고 에러만 → attempts 증가(영구 실패 클립의 무한 재시도 방지).
           await markPrerenderFailed(db, voice.id);
+        } else {
+          await releasePrerenderClaim(db, voice.id);
         }
       }
       if (rendered > 0) {

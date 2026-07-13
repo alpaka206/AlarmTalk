@@ -1313,6 +1313,11 @@ export const migrations: Migration[] = [
         ON voice_prerender_queue(status, requested_at)`,
     ],
   },
+  {
+    id: 60,
+    name: 'voice-prerender-claim-lease',
+    statements: [`ALTER TABLE voice_prerender_queue ADD COLUMN claimed_at TEXT`],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

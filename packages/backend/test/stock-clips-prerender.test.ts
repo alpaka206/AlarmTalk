@@ -5,6 +5,7 @@ import {
   listReadyCloneVoices,
   enqueuePrerender,
   claimPendingPrerenderVoices,
+  releasePrerenderClaim,
   markPrerenderDone,
   markPrerenderFailed,
   CLONE_PRERENDER_CATEGORIES,
@@ -48,6 +49,7 @@ async function setupDb() {
       language TEXT NOT NULL DEFAULT 'ko',
       status TEXT NOT NULL DEFAULT 'pending',
       attempts INTEGER NOT NULL DEFAULT 0,
+      claimed_at TEXT,
       requested_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -217,6 +219,35 @@ describe('사전렌더 큐 헬퍼', () => {
     expect(claimed).toEqual([{ voiceProfileId: 'v1', ownerUserId: 'owner-1', language: 'en' }]);
     await markPrerenderDone(db, 'v1');
     expect(await claimPendingPrerenderVoices(db, 5)).toEqual([]);
+  });
+
+  it('첫 cron이 임대한 pending 행은 겹친 cron이 다시 claim하지 않는다', async () => {
+    const db = await setupDb();
+    await enqueuePrerender(db, 'v1', 'owner-1', 'en');
+
+    expect(await claimPendingPrerenderVoices(db, 5)).toHaveLength(1);
+    expect(await claimPendingPrerenderVoices(db, 5)).toEqual([]);
+  });
+
+  it('만료된 claim은 다음 cron이 회수한다', async () => {
+    const db = await setupDb();
+    await enqueuePrerender(db, 'v1', 'owner-1', 'en');
+    expect(await claimPendingPrerenderVoices(db, 5)).toHaveLength(1);
+    await db.execute(
+      `UPDATE voice_prerender_queue SET claimed_at = datetime('now', '-16 minutes') WHERE voice_profile_id = 'v1'`,
+    );
+
+    expect(await claimPendingPrerenderVoices(db, 5)).toHaveLength(1);
+  });
+
+  it('부분 렌더 뒤 claim을 해제하면 다음 cron이 즉시 이어받는다', async () => {
+    const db = await setupDb();
+    await enqueuePrerender(db, 'v1', 'owner-1', 'en');
+    expect(await claimPendingPrerenderVoices(db, 5)).toHaveLength(1);
+
+    await releasePrerenderClaim(db, 'v1');
+
+    expect(await claimPendingPrerenderVoices(db, 5)).toHaveLength(1);
   });
 
   it('markPrerenderFailed 는 attempts 를 올리고 5회 초과 시 failed 로 내려 무한 재시도를 막는다', async () => {

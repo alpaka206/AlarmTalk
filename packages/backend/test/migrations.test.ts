@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { migrations, type Migration } from '../src/lib/migrations';
+import { createClient } from '@libsql/client';
+import { migrations, runMigrationsRange, type Migration } from '../src/lib/migrations';
 import { PRESETS } from '../src/data/presets';
 
 describe('migrations', () => {
@@ -250,5 +251,30 @@ describe('migrations', () => {
     expect(all).toContain("WHERE status != 'failed'");
     expect(all).toContain('INSERT OR IGNORE INTO voice_profile_change_ledger');
     expect(all).toContain("'+9 hours'");
+  });
+
+  it('migration #60 adds the prerender queue claim lease', () => {
+    const migration = migrations.find((item) => item.id === 60);
+    expect(migration).toBeDefined();
+    expect(migration?.statements.join('\n')).toContain(
+      'ALTER TABLE voice_prerender_queue ADD COLUMN claimed_at TEXT',
+    );
+  });
+
+  it('migration #60 applies claimed_at to an existing prerender queue', async () => {
+    const db = createClient({ url: ':memory:' });
+    await db.execute(`CREATE TABLE voice_prerender_queue (
+      voice_profile_id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      language TEXT NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL,
+      requested_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
+
+    expect(await runMigrationsRange(db, 60, 60)).toEqual(['60_voice-prerender-claim-lease']);
+    const columns = await db.execute('PRAGMA table_info(voice_prerender_queue)');
+    expect(columns.rows.map((row) => String(row.name))).toContain('claimed_at');
   });
 });

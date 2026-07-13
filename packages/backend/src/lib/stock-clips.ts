@@ -415,17 +415,25 @@ export async function enqueuePrerender(
   });
 }
 
-/** cron 이 드레인할 pending 큐 항목 소량. limit 은 1..50 로 클램프. */
+/** cron 이 드레인할 pending 큐 항목을 15분 임대로 원자적 claim. limit 은 1..50 로 클램프. */
 export async function claimPendingPrerenderVoices(
   db: Client,
   limit: number,
 ): Promise<{ voiceProfileId: string; ownerUserId: string; language: string }[]> {
   const res = await db.execute({
-    sql: `SELECT voice_profile_id, owner_user_id, language
-          FROM voice_prerender_queue
-          WHERE status = 'pending'
-          ORDER BY requested_at ASC
-          LIMIT ?`,
+    sql: `UPDATE voice_prerender_queue
+          SET claimed_at = datetime('now'), updated_at = datetime('now')
+          WHERE voice_profile_id IN (
+            SELECT voice_profile_id
+            FROM voice_prerender_queue
+            WHERE status = 'pending'
+              AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
+            ORDER BY requested_at ASC
+            LIMIT ?
+          )
+            AND status = 'pending'
+            AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
+          RETURNING voice_profile_id, owner_user_id, language`,
     args: [Math.max(1, Math.min(Math.trunc(limit), 50))],
   });
   return res.rows.map((row) => ({
@@ -433,6 +441,15 @@ export async function claimPendingPrerenderVoices(
     ownerUserId: String(row.owner_user_id),
     language: String(row.language),
   }));
+}
+
+export async function releasePrerenderClaim(db: Client, voiceProfileId: string): Promise<void> {
+  await db.execute({
+    sql: `UPDATE voice_prerender_queue
+          SET claimed_at = NULL, updated_at = datetime('now')
+          WHERE voice_profile_id = ? AND status = 'pending'`,
+    args: [voiceProfileId],
+  });
 }
 
 /** 해당 목소리의 사전렌더 완료 표시(missing 이 0이 됐을 때). */
@@ -451,6 +468,7 @@ export async function markPrerenderFailed(db: Client, voiceProfileId: string): P
     sql: `UPDATE voice_prerender_queue
           SET attempts = attempts + 1,
               status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'pending' END,
+              claimed_at = NULL,
               updated_at = datetime('now')
           WHERE voice_profile_id = ?`,
     args: [voiceProfileId],
