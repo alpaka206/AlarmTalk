@@ -1,5 +1,5 @@
 import type { DbExecutor } from './transactions';
-import { enqueueUserVoiceArtifacts } from './audio-retention';
+import { enqueueExternalDeletion, enqueueUserVoiceArtifacts } from './audio-retention';
 
 function uniqueIds(ids: Array<string | null | undefined>): string[] {
   return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
@@ -138,7 +138,32 @@ export async function deleteSensitiveVoiceDataForUser(
   if (ids.length === 0) return;
   const ph = placeholders(ids);
 
-  await enqueueUserVoiceArtifacts(db, ids);
+  const providerVoices = await db.execute({
+    sql: `SELECT elevenlabs_voice_id FROM voice_profiles
+          WHERE user_id IN (${ph}) AND elevenlabs_voice_id IS NOT NULL`,
+    args: ids,
+  });
+  for (const row of providerVoices.rows) {
+    await enqueueExternalDeletion(db, 'elevenlabs_voice', row.elevenlabs_voice_id as string);
+  }
+  const uploadObjects = await db.execute({
+    sql: `SELECT object_key FROM voice_uploads WHERE user_id IN (${ph})`,
+    args: ids,
+  });
+  for (const row of uploadObjects.rows) {
+    await enqueueExternalDeletion(db, 'r2_object', row.object_key as string);
+  }
+  const generatedObjects = await db.execute({
+    sql: `SELECT audio_object_key FROM generated_audio_assets
+          WHERE audio_object_key IS NOT NULL
+            AND (user_id IN (${ph}) OR voice_profile_id IN (
+              SELECT id FROM voice_profiles WHERE user_id IN (${ph})
+            ))`,
+    args: [...ids, ...ids],
+  });
+  for (const row of generatedObjects.rows) {
+    await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
+  }
 
   await db.execute({
     sql: `UPDATE notes SET audio_url = NULL
