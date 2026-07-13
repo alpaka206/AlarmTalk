@@ -512,13 +512,20 @@ private fun defaultRingingUiState(context: android.content.Context): RingingUiSt
     )
 }
 
+// elevenlabs delivery 태그(대괄호 안 지시문) 형태. 서버 normalizeAlarmTextWithoutTags 와 동일 규격.
+private val RINGING_DELIVERY_TAG_RE = Regex("""\[[a-z][a-z -]{1,32}]""", RegexOption.IGNORE_CASE)
+
+private fun String.stripDeliveryTags(): String =
+    replace(RINGING_DELIVERY_TAG_RE, " ").replace(Regex("""\s+"""), " ").trim()
+
 private fun AlarmEntity.toRingingUiState(context: android.content.Context): RingingUiState {
     val customTitle = label.trim()
         .takeIf { it.isNotBlank() && it != context.getString(R.string.rd_default_alarm_label) }
-    // 표시 텍스트는 서버가 이미 태그를 제거해(랜덤 경로) 저장하고, 직접 입력은 원문 그대로다.
-    // 여기서 추가로 대괄호를 지우면 "[after lunch]" 같은 정상 문구까지 날아가므로 트림만 한다.
+    // 표시 텍스트: 서버가 랜덤/생성 문구에서 delivery 태그를 이미 제거해 저장한다. 다만 과거(태그
+    // 제거 전) 저장분이나 회귀에 대비해, 랜덤 문구에 한해 잠금화면에서 태그를 한 번 더 벗긴다.
+    // 직접 입력은 "[after lunch]" 같은 정상 대괄호를 지우면 안 되므로 트림만 한다.
     val voiceMessage = voiceText
-        ?.trim()
+        ?.let { raw -> if (voiceRandomPrompt) raw.stripDeliveryTags() else raw.trim() }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
     val snoozeAvailable = snoozeEnabled &&
         (
