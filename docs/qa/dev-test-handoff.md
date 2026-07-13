@@ -166,9 +166,29 @@
 
 ---
 
-## B. #4 사전렌더 — 코드리뷰 Round3에서 잡힌 회귀 수정(진행중, feat 브랜치)
+## B. #4 사전렌더 — 코드리뷰 Round3 수정 현황(feat 브랜치)
 
-2차 하드닝 커밋(`5857da3f`)이 새 버그를 만든 것들. 여러 파인더가 독립 지적 → 실화. **검증 후 전부 수정 예정:**
+**✅ 수정·푸시 완료(커밋 1ebc0ee6·fc8eed14):**
+- [자체리뷰] due-gate 무한재호출 → 전용 컬럼 contextResolvedAtMillis(Room v20) 무조건 갱신
+- [자체리뷰] 저장 시 contextVariantIndex 소실 → bindStockBucketClips 에 전달
+- [자체리뷰] 라이브 NaN 가드 완화(code 단독 아님) / cold 임계 라이브와 일치(≤12)
+- [Codex] 유료 버킷 alarm 동기화 거부(INVALID_BUCKET_ID) → 검증기 PAID_BUCKET_CATEGORIES 허용 **(중요)**
+- [Codex] 사전렌더 저각성 태그 → 드롭(안 깨우는 알람 클립 방지)
+- [Codex] cron 큐 중복 렌더 → messages 조건부 INSERT(NOT EXISTS)
+- [Codex] 미래 알람 오늘날씨 스냅샷 → 준비창 48h 필터
+
+**⬜ 남음(다음 세션, 낮은 위험/희귀 엣지):**
+- [자체리뷰 CONFIRMED] 텍스트/음성 폴백 불일치(변형N 클립이 캐시에 없을 때 오디오는 첫 클립으로
+  폴백, 텍스트는 정확 인덱스) → resolveBucketClip 이 (uri,text) 한 쌍을 함께 반환해 잠금화면이 실제
+  재생 클립의 문구를 쓰게 리팩터. (degraded-cache 엣지)
+- [자체리뷰 PLAUSIBLE] 운세 자정 스트래들·워커 동시성 레이스(발사 때 인덱스 1회 스냅샷 공유가 근본).
+- [자체리뷰 PLAUSIBLE] 언어매핑 중복(supportedAppVoiceLanguage 를 공용 위치로 추출).
+- [자체리뷰 PLAUSIBLE] 클라 8/5 하드코딩(매니페스트에서 개수 유도 or 서버가 count 전달).
+- [자체리뷰] 매 탭진입 forceReload → 이벤트기반/throttle.
+
+<details><summary>원 지적 상세(9건)</summary>
+
+2차 하드닝 커밋(`5857da3f`)이 새 버그를 만든 것들. 여러 파인더가 독립 지적 → 실화:
 1. `AlarmRepository.kt:750` **due-gate 무한 재호출**: `updateContextVariantIndex`를 인덱스가 *바뀔 때만* 호출 → 날씨 안정 시 `updatedAtMillis` 안 올라가 매 워커틱마다 open-meteo 재호출(12h 스로틀 무력화, 배터리·API 429 위험). → **해결 시 인덱스 동일해도 타임스탬프(또는 별도 resolved_at) 무조건 갱신**.
 2. `AlarmEditorScreen.kt:702` **저장 시 인덱스 소실**: `bindStockBucketClips(cat, profileId)`가 `contextVariantIndex=null` 기본값 → `setBucketAudio`가 덮어씀 → 해결됐던 날씨 알람 재저장 시 0(맑음)으로 리셋. → **저장 경로에서 `editor.contextVariantIndex` 전달**.
 3. `RingingActivity.kt:529` / `AlarmRepository.kt:559` **폴백 문구-음성 어긋남**: 오디오는 클립 없으면 첫 클립 폴백, 텍스트는 정확 인덱스 → 폴백 시 화면·소리 불일치. → **텍스트도 실제 재생된 인덱스로 폴백**(발사 때 인덱스 1회 계산해 오디오·텍스트 공유가 근본).
@@ -178,6 +198,8 @@
 7. `MainViewModelVoiceActions.kt:487` **언어매핑 중복**: `supportedAppVoiceLanguage`(ui.editor) 재구현 — ui.main에서 import 불가라 inline했으나 확장 시 한쪽만 갱신 위험. → **공용 위치(core/data)로 매핑 추출해 양쪽이 공유**.
 8. `AlarmEditorScreen.kt:423` **8/5 하드코딩**: 클라 개수 리터럴이 백엔드 상수와 이중화(백엔드 테스트는 TS만 검증). 백엔드가 9종 되면 클라 8 고정 → 세트 비교 실패로 버킷 조용히 미부착. → **배달된 클립셋에서 개수 유도(max variant+1)**.
 9. `AlarmTalkApp.kt:327` **매 탭진입 forceReload**: 홈/보이스 탭 누를 때마다 전체 매니페스트 재fetch. → **이벤트기반(클론 확정 후에만) 또는 throttle**.
+
+</details>
 
 ---
 
