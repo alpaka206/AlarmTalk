@@ -68,6 +68,29 @@ export const FREE_BUCKET_CATEGORIES: readonly string[] = STOCK_CLIP_PRESETS
   .filter((category) => category !== STOCK_GREETING_CATEGORY);
 
 /**
+ * 유료 클론 목소리에 사전렌더할 알람 버킷 카테고리(greeting 미리듣기는 별도로 항상 포함).
+ * 날씨는 조건별(맑음/흐림/비/눈/미세먼지)로 category 를 분화해 유한 variant 세트를 만든다.
+ * Phase 2 에서 STOCK_CLIP_PRESETS 에 이 카테고리들의 문구를 추가하면 findMissingStockTargets
+ * 매트릭스가 자동 확장된다(현재는 medication 만 존재해 클론은 medication+greeting 부터 렌더).
+ */
+export const PAID_BUCKET_CATEGORIES: readonly string[] = [
+  'weather_clear',
+  'weather_cloud',
+  'weather_rain',
+  'weather_snow',
+  'weather_dust',
+  'fortune',
+  'love',
+  'medication',
+];
+
+/** 유료 클론이 사전렌더 대상으로 삼는 카테고리(알람 버킷 + greeting 미리듣기). */
+export const CLONE_PRERENDER_CATEGORIES: readonly string[] = [
+  ...PAID_BUCKET_CATEGORIES,
+  STOCK_GREETING_CATEGORY,
+];
+
+/**
  * 보이스별 인사말(greeting 카테고리) 문구. 키는 elevenlabs_voice_id.
  * 없는 보이스는 STOCK_CLIP_PRESETS 의 기본 greeting 문구를 쓴다.
  * 미리듣기에서 각 목소리의 개성이 드러나도록 톤을 음성별로 맞췄다.
@@ -92,11 +115,31 @@ export interface StockClipTarget {
   voiceProfileId: string;
   voiceName: string;
   elevenlabsVoiceId: string;
+  /**
+   * 이 클립을 소유할 유저. 시스템 보이스는 SYSTEM_VOICE_LIBRARY_USER_ID, 유료 클론은
+   * 실소유자 PK. messages/generated_audio_assets.user_id 와 R2 object key owner 로 쓰인다.
+   */
+  ownerUserId: string;
   category: string;
   baseText: string;
   language: string;
   /** 같은 (보이스·카테고리·언어) 안에서 문구를 구분/정렬하는 0-based 인덱스. */
   variantIndex: number;
+}
+
+/** 사전렌더 대상 보이스(시스템 or 유료 클론). ownerUserId·categories 로 소유자/버킷을 구분. */
+export interface PrerenderVoice {
+  id: string;
+  name: string;
+  elevenlabsVoiceId: string;
+  ownerUserId: string;
+  /** 이 보이스에 렌더할 카테고리 집합. 시스템=전체, 클론=CLONE_PRERENDER_CATEGORIES. */
+  categories: readonly string[];
+  /**
+   * 지정 시 이 보이스의 모든 카테고리를 이 언어 1개로만 렌더(클론=확정 시점 앱 언어).
+   * 미지정 시 각 preset 의 languages 를 그대로 쓴다(시스템=ko/en/ja).
+   */
+  languageOverride?: string;
 }
 
 export interface GeneratedStockClip {
@@ -130,15 +173,80 @@ export async function listSystemVoices(db: Client): Promise<SystemVoiceRow[]> {
     .filter((row) => row.elevenlabsVoiceId.length > 0);
 }
 
-/** 아직 생성되지 않은 (보이스 × 카테고리 × 언어) 조합. */
-export async function findMissingStockTargets(db: Client): Promise<StockClipTarget[]> {
-  const voices = await listSystemVoices(db);
+/** 시스템 보이스를 사전렌더 대상(전 카테고리·preset 언어 그대로)으로 변환. */
+export function systemPrerenderVoices(voices: SystemVoiceRow[]): PrerenderVoice[] {
+  const allCategories = STOCK_CLIP_PRESETS.map((preset) => preset.category);
+  return voices.map((voice) => ({
+    id: voice.id,
+    name: voice.name,
+    elevenlabsVoiceId: voice.elevenlabsVoiceId,
+    ownerUserId: SYSTEM_VOICE_LIBRARY_USER_ID,
+    categories: allCategories,
+  }));
+}
 
+/**
+ * 큐가 지목한 id 들 중 사전렌더 준비된(ready) 유료 클론 목소리 목록. 실소유자(user_id)를
+ * ownerUserId 로 싣고 CLONE_PRERENDER_CATEGORIES(+앱 언어 1개)로 스코프한다. voiceIds 가
+ * 비면 빈 배열(전유저 스캔 방지).
+ */
+export async function listReadyCloneVoices(
+  db: Client,
+  requests: readonly { voiceProfileId: string; ownerUserId: string; language: string }[],
+): Promise<PrerenderVoice[]> {
+  if (requests.length === 0) return [];
+  const byId = new Map(requests.map((r) => [r.voiceProfileId, r]));
+  const ids = [...byId.keys()];
+  const ph = ids.map(() => '?').join(',');
+  const res = await db.execute({
+    sql: `SELECT id, name, elevenlabs_voice_id
+          FROM voice_profiles
+          WHERE COALESCE(is_system, 0) = 0
+            AND deleted_at IS NULL
+            AND COALESCE(is_draft, 0) = 0
+            AND status = 'ready'
+            AND elevenlabs_voice_id IS NOT NULL
+            AND id IN (${ph})`,
+    args: ids,
+  });
+  const out: PrerenderVoice[] = [];
+  for (const row of res.rows) {
+    const id = String(row.id);
+    const req = byId.get(id);
+    const elevenlabsVoiceId = String(row.elevenlabs_voice_id ?? '');
+    if (!req || elevenlabsVoiceId.length === 0) continue;
+    out.push({
+      id,
+      name: String(row.name),
+      elevenlabsVoiceId,
+      ownerUserId: req.ownerUserId,
+      categories: CLONE_PRERENDER_CATEGORIES,
+      languageOverride: normalizeSynthesisLanguage(req.language),
+    });
+  }
+  return out;
+}
+
+/**
+ * 아직 생성되지 않은 (보이스 × 카테고리 × 언어) 조합. voices 를 주면 그 목록으로,
+ * 안 주면 시스템 보이스 전체로 계산한다. 대상 보이스 id 로 기존 클립 조회를 스코프해
+ * 전유저 is_preset 스캔(CPU/메모리 폭증)을 피한다.
+ */
+export async function findMissingStockTargets(
+  db: Client,
+  voices?: PrerenderVoice[],
+): Promise<StockClipTarget[]> {
+  const prerenderVoices = voices ?? systemPrerenderVoices(await listSystemVoices(db));
+  if (prerenderVoices.length === 0) return [];
+
+  const voiceIds = prerenderVoices.map((voice) => voice.id);
+  const ph = voiceIds.map(() => '?').join(',');
   const existing = await db.execute({
     sql: `SELECT voice_profile_id, category, language, variant
           FROM messages
-          WHERE COALESCE(is_preset, 0) = 1 AND audio_url IS NOT NULL`,
-    args: [],
+          WHERE COALESCE(is_preset, 0) = 1 AND audio_url IS NOT NULL
+            AND voice_profile_id IN (${ph})`,
+    args: voiceIds,
   });
   const seen = new Set(
     existing.rows.map(
@@ -148,13 +256,15 @@ export async function findMissingStockTargets(db: Client): Promise<StockClipTarg
   );
 
   const targets: StockClipTarget[] = [];
-  for (const voice of voices) {
+  for (const voice of prerenderVoices) {
     for (const preset of STOCK_CLIP_PRESETS) {
+      if (!voice.categories.includes(preset.category)) continue;
+      const languages = voice.languageOverride ? [voice.languageOverride] : preset.languages;
       preset.variants.forEach((variantText, variantIndex) => {
-        for (const language of preset.languages) {
+        for (const language of languages) {
           const lang = normalizeSynthesisLanguage(language);
           if (seen.has(`${voice.id}|${preset.category}|${lang}|${variantIndex}`)) continue;
-          // greeting 은 보이스별 개성 멘트가 있으면 그것을, 없으면 기본 문구를 쓴다.
+          // greeting 은 시스템 보이스별 개성 멘트가 있으면 그것을, 없으면 기본 문구를 쓴다.
           const baseText =
             preset.category === STOCK_GREETING_CATEGORY
               ? (VOICE_GREETING_OVERRIDES[voice.elevenlabsVoiceId] ?? variantText)
@@ -163,6 +273,7 @@ export async function findMissingStockTargets(db: Client): Promise<StockClipTarg
             voiceProfileId: voice.id,
             voiceName: voice.name,
             elevenlabsVoiceId: voice.elevenlabsVoiceId,
+            ownerUserId: voice.ownerUserId,
             category: preset.category,
             baseText,
             language: lang,
@@ -173,6 +284,67 @@ export async function findMissingStockTargets(db: Client): Promise<StockClipTarg
     }
   }
   return targets;
+}
+
+/**
+ * 사전렌더 큐에 유료 클론 목소리를 적재. voice_profile_id PK 라 이미 있으면 무시(멱등) —
+ * 재확정/훅 중복 트리거가 있어도 큐가 1행으로 유지되고, 이미 done 인 목소리를 다시 pending
+ * 으로 되돌려 재합성 낭비를 만들지 않는다(문구변경 재렌더는 follow-up).
+ */
+export async function enqueuePrerender(
+  db: Client,
+  voiceProfileId: string,
+  ownerUserId: string,
+  language: string,
+): Promise<void> {
+  await db.execute({
+    sql: `INSERT INTO voice_prerender_queue (voice_profile_id, owner_user_id, language)
+          VALUES (?, ?, ?)
+          ON CONFLICT(voice_profile_id) DO NOTHING`,
+    args: [voiceProfileId, ownerUserId, normalizeSynthesisLanguage(language)],
+  });
+}
+
+/** cron 이 드레인할 pending 큐 항목 소량. limit 은 1..50 로 클램프. */
+export async function claimPendingPrerenderVoices(
+  db: Client,
+  limit: number,
+): Promise<{ voiceProfileId: string; ownerUserId: string; language: string }[]> {
+  const res = await db.execute({
+    sql: `SELECT voice_profile_id, owner_user_id, language
+          FROM voice_prerender_queue
+          WHERE status = 'pending'
+          ORDER BY requested_at ASC
+          LIMIT ?`,
+    args: [Math.max(1, Math.min(Math.trunc(limit), 50))],
+  });
+  return res.rows.map((row) => ({
+    voiceProfileId: String(row.voice_profile_id),
+    ownerUserId: String(row.owner_user_id),
+    language: String(row.language),
+  }));
+}
+
+/** 해당 목소리의 사전렌더 완료 표시(missing 이 0이 됐을 때). */
+export async function markPrerenderDone(db: Client, voiceProfileId: string): Promise<void> {
+  await db.execute({
+    sql: `UPDATE voice_prerender_queue
+          SET status = 'done', updated_at = datetime('now')
+          WHERE voice_profile_id = ?`,
+    args: [voiceProfileId],
+  });
+}
+
+/** 사전렌더 실패 1회 기록. attempts 상한(5) 초과 시 failed 로 내려 무한 재시도를 막는다. */
+export async function markPrerenderFailed(db: Client, voiceProfileId: string): Promise<void> {
+  await db.execute({
+    sql: `UPDATE voice_prerender_queue
+          SET attempts = attempts + 1,
+              status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'pending' END,
+              updated_at = datetime('now')
+          WHERE voice_profile_id = ?`,
+    args: [voiceProfileId],
+  });
 }
 
 /** 스톡 클립 삭제 필터. 비우면 전체(reset), 채우면 특정 보이스(+카테고리)만. */
@@ -319,13 +491,13 @@ export async function generateStockClip(
   }
   const storage = new R2VoiceStorage(env.VOICE_BUCKET);
   const audioObjectKey = generatedTtsObjectKey(
-    SYSTEM_VOICE_LIBRARY_USER_ID,
+    target.ownerUserId,
     cacheKey,
     generated.outputFormat,
   );
   await storage.storeAtKey(audioObjectKey, {
     bytes,
-    userId: SYSTEM_VOICE_LIBRARY_USER_ID,
+    userId: target.ownerUserId,
     mimeType: generated.mimeType,
     originalName: `stock_${cacheKey}.${generated.outputFormat}`,
   });
@@ -339,7 +511,7 @@ export async function generateStockClip(
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
     args: [
       messageId,
-      SYSTEM_VOICE_LIBRARY_USER_ID,
+      target.ownerUserId,
       target.voiceProfileId,
       displayText,
       synthesisText,
@@ -359,7 +531,7 @@ export async function generateStockClip(
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       crypto.randomUUID(),
-      SYSTEM_VOICE_LIBRARY_USER_ID,
+      target.ownerUserId,
       target.voiceProfileId,
       messageId,
       generated.provider,

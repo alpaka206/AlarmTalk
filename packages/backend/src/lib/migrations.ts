@@ -1291,6 +1291,28 @@ export const migrations: Migration[] = [
       )`,
     ],
   },
+  {
+    // 유료 클론 목소리 preset 사전렌더 큐. 유료 구독자가 목소리를 확정(등록/승격)하면
+    // 훅에서 INSERT OR IGNORE 로 1행 적재하고, cron(scheduled)이 status='pending' 을 소량씩
+    // 드레인해 그 목소리 말투로 카테고리 클립을 생성한다(stock-clips.ts). voice_profile_id 를
+    // PK 로 둬 재확정/중복 트리거가 있어도 큐가 1행으로 멱등하다. language 는 확정 시점의 앱
+    // 언어 1개를 담아 cron 이 그 언어로만 렌더하도록 한다(3개국어 곱연산 비용 회피).
+    id: 59,
+    name: 'voice-prerender-queue',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS voice_prerender_queue (
+        voice_profile_id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL,
+        language TEXT NOT NULL DEFAULT 'ko',
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done','failed')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_prerender_queue_pending
+        ON voice_prerender_queue(status, requested_at)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
