@@ -500,7 +500,8 @@ internal fun AlarmEditorScreen(
             isRecording = true
             recordingElapsedMillis = 0L
             recordingLevel = 0f
-            audioMessage = context.getString(R.string.editor_recording_in_progress)
+            // '녹음 중...' 상태 문구는 두지 않는다(경과 시간이 오른쪽에 표시됨).
+            audioMessage = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to start recording", error)
             audioMessage = userFacingError(error, context.getString(R.string.editor_error_recording_start_failed))
@@ -825,7 +826,7 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    val editorHorizontalPadding = 24.dp
+    val editorHorizontalPadding = 16.dp
     // 마지막 카드가 하단 고정 CTA divider 에 붙지 않도록 여유를 준다(구 12dp → 24dp).
     val editorBottomPadding = 24.dp
     var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
@@ -866,12 +867,8 @@ internal fun AlarmEditorScreen(
     // 저장 버튼 위에 사유를 함께 보여준다. null 이면 저장 가능.
     val editorSaveBlockedReason: String? = when {
         editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
-        editor.voiceSource == VoiceSources.LOCAL_AUDIO ->
-            if (!editor.localAudioUri.isNullOrBlank()) {
-                null
-            } else {
-                stringResource(R.string.editor_save_blocked_record_or_select_file)
-            }
+        // 녹음 모드 안내 문구는 두지 않는다(녹음 버튼 자체가 CTA). 미녹음 시 저장은 아래 recordingReady 로 막는다.
+        editor.voiceSource == VoiceSources.LOCAL_AUDIO -> null
         else -> {
             val profileId = editor.voiceProfileId?.takeIf { it.isNotBlank() }
             val text = editor.ttsTextForSave()
@@ -887,7 +884,11 @@ internal fun AlarmEditorScreen(
             }
         }
     }
-    val editorCanSave = editorSaveBlockedReason == null
+    // 녹음 모드에서 아직 녹음 파일이 없으면 안내 문구 없이 저장만 비활성화한다.
+    val recordingReady = editor.playMode == AlarmPlayModes.ALARM_ONLY ||
+        editor.voiceSource != VoiceSources.LOCAL_AUDIO ||
+        !editor.localAudioUri.isNullOrBlank()
+    val editorCanSave = editorSaveBlockedReason == null && recordingReady
 
     fun openRandomPromptSettings() {
         randomPromptWasEnabledWhenOpened = editor.voiceRandomPrompt
@@ -999,18 +1000,14 @@ internal fun AlarmEditorScreen(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            AlarmEditorTopBar(
-                isEditing = alarm != null,
-                familyAlarmMode = familyAlarmMode,
-                onCancel = onCancel,
-                onShowGuide = { usageGuideVisible = true },
-            )
+            // 상단바(제목·뒤로가기·가이드)는 제거하고, 취소·저장을 하단에 모았다.
+            // 시간 휠이 화면 맨 위에 오도록 상단 여백만 살짝 준다(상태바 인셋은 contentPadding에 포함).
             LazyColumn(
                 state = editorListState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                contentPadding = PaddingValues(top = 8.dp, bottom = editorBottomPadding),
+                contentPadding = PaddingValues(top = 20.dp, bottom = editorBottomPadding),
                 // 섹션 사이(20)를 섹션 내부 헤더→콘텐츠(10~12)보다 확실히 크게 벌려 그룹핑을 살린다.
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
@@ -1065,21 +1062,8 @@ internal fun AlarmEditorScreen(
                     }
                 }
 
-                if (familyAlarmMode) {
-                    item {
-                        Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                            FamilyAlarmTargetCard(
-                                recipients = familyRecipients,
-                                selectedRecipientId = selectedFamilyRecipientId,
-                                hour = editor.hour,
-                                minute = editor.minute,
-                                repeatDaysMask = editor.repeatDaysMask,
-                                holidayOff = editor.holidayOff,
-                                onSelectRecipient = { selectedFamilyRecipientId = it },
-                            )
-                        }
-                    }
-                }
+                // 받을 사람 카드는 본문에서 제거했다. 수신자는 진입 전 '누구를 깨울까요?' 시트에서
+                // 이미 고르므로, 편집기에선 하단 저장 버튼 위에 '○○에게 설정돼요'로만 짧게 알린다.
 
                 item {
                     Box(
@@ -1143,10 +1127,12 @@ internal fun AlarmEditorScreen(
                                 onPreviewAudio = { playCachedAudio() },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
+                                onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                                 onClear = {
                                     stopPreview()
                                     editor.clearAudio()
-                                    audioMessage = context.getString(R.string.editor_voice_audio_cleared)
+                                    // 녹음을 지우면 경과 시간 표시도 00초로 되돌린다(안내 메시지는 두지 않음).
+                                    recordingElapsedMillis = 0L
                                 },
                             )
                         }
@@ -1163,7 +1149,9 @@ internal fun AlarmEditorScreen(
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
                             showAlarmSound = editor.playMode != AlarmPlayModes.VOICE_ONLY,
-                            showVoiceOutput = editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            // 목소리 크기는 TTS면 목소리 카드, 녹음이면 녹음 박스 아래 행에서 연다.
+                            // 그래서 세부설정엔 '목소리' 행을 두지 않는다.
+                            showVoiceOutput = false,
                             voiceVolumePercent = editor.voiceVolumePercent,
                             voiceRepeat = editor.voiceRepeat,
                             voiceRepeatActive = editor.playMode == AlarmPlayModes.VOICE_ONLY,
@@ -1213,10 +1201,16 @@ internal fun AlarmEditorScreen(
                             .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_SAVE),
                     ) {
                         EditorActionButtons(
-                            isEditing = alarm != null,
                             isSaving = isSaving,
                             canSave = editorCanSave,
                             onSave = ::saveEditor,
+                            onCancel = onCancel,
+                            recipientName = if (familyAlarmMode) {
+                                selectedFamilyRecipientValue?.name?.trimmedOrNull()
+                                    ?: selectedFamilyRecipientValue?.email?.trimmedOrNull()
+                            } else {
+                                null
+                            },
                         )
                     }
                 }

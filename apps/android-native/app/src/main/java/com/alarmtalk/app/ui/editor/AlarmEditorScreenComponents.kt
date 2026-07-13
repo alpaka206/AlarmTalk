@@ -85,32 +85,12 @@ internal fun AlarmEditorTopBar(
             .padding(start = 8.dp, top = 4.dp, end = 12.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 제목·가이드(?)는 두지 않고, 탈출 경로로 왼쪽 위 뒤로가기만 남긴다.
         IconButton(onClick = onCancel) {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                 contentDescription = stringResource(R.string.editor_close),
             )
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = when {
-                familyAlarmMode -> stringResource(R.string.editor_title_family_alarm)
-                isEditing -> stringResource(R.string.editor_title_edit_alarm)
-                else -> stringResource(R.string.editor_title_new_alarm)
-            },
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
-        )
-        if (onShowGuide != null) {
-            IconButton(onClick = onShowGuide) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                    contentDescription = stringResource(R.string.editor_usage_guide),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }

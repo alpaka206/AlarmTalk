@@ -35,8 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -69,7 +68,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import com.alarmtalk.app.AlarmTalkDarkColorScheme
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerDialogShape
-import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -297,7 +295,10 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
         color = Color(0xFF122034).copy(alpha = 0.66f),
         border = BorderStroke(1.dp, Color(0x24FFFFFF)),
     ) {
-        Column(modifier = Modifier.padding(22.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             uiState.label?.let { label ->
                 Text(
                     text = label,
@@ -306,11 +307,23 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(14.dp))
             }
-            // 멘트 문구는 화면에 표시하지 않는다(음성으로만 재생). 파형이 '음성 재생 중'을 나타낸다.
-            RingingVoiceWaveform()
+            // 파형 시각화 대신, 음성으로 재생되는 실제 멘트 문구를 그대로 보여준다(전달 태그 제거된 상태).
+            uiState.voiceText?.let { voice ->
+                if (uiState.label != null) Spacer(Modifier.height(12.dp))
+                Text(
+                    text = voice,
+                    color = Color(0xFFEAF1FB),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 30.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -437,7 +450,7 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Outlined.Alarm,
+                imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
                 contentDescription = stringResource(R.string.rd_slide_to_dismiss),
                 tint = Color(0xFF06243E),
                 modifier = Modifier.size(24.dp),
@@ -474,38 +487,6 @@ private fun SlideHintArrows(modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun RingingVoiceWaveform() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(40.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val levels = listOf(
-            0.16f, 0.28f, 0.22f, 0.42f, 0.30f, 0.64f, 0.44f, 0.86f,
-            0.52f, 0.72f, 0.38f, 0.58f, 0.34f, 0.66f, 0.42f, 0.78f,
-            0.36f, 0.54f, 0.24f, 0.40f, 0.20f,
-        )
-        levels.forEachIndexed { index, level ->
-            Box(
-                modifier = Modifier
-                    .width(2.dp)
-                    .height((8 + level * 30).dp)
-                    .background(
-                        color = when (index) {
-                            in 5..14 -> MaterialTheme.colorScheme.primary
-                            15, 16, 17 -> MaterialTheme.colorScheme.secondary
-                            else -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.52f)
-                        },
-                        shape = WakerPillShape,
-                    ),
-            )
-        }
-    }
-}
-
 private data class RingingUiState(
     /** 사용자가 지은 알람 이름 — 없으면 카드에 라벨 줄을 그리지 않는다. */
     val label: String? = null,
@@ -535,7 +516,7 @@ private fun AlarmEntity.toRingingUiState(context: android.content.Context): Ring
     val customTitle = label.trim()
         .takeIf { it.isNotBlank() && it != context.getString(R.string.rd_default_alarm_label) }
     val voiceMessage = voiceText
-        ?.trim()
+        ?.let { stripDeliveryTags(it) }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
     val snoozeAvailable = snoozeEnabled &&
         (
@@ -568,6 +549,12 @@ private fun todayDateLabel(context: android.content.Context): String {
         weekday,
     )
 }
+
+// 전달 태그([cheerfully] 등)가 남아 있는 옛 알람 대비, 표시 직전에도 한 번 더 제거한다.
+private val DeliveryTagRegex = Regex("""\s*\[[a-z][a-z -]{1,32}]\s*""", RegexOption.IGNORE_CASE)
+
+private fun stripDeliveryTags(text: String): String =
+    text.replace(DeliveryTagRegex, " ").replace(Regex("""\s+"""), " ").trim()
 
 /** "6:30" 형태(12시간제, 분 0패딩) — 큰 시계 표시용. */
 private fun alarmClockLabel(hour: Int, minute: Int): String {

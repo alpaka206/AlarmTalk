@@ -182,6 +182,8 @@
     <string name="editor_audio_clear">지우기</string>
     <string name="editor_audio_max_duration">최대 %1$d초</string>
     <string name="editor_audio_preview_play">미리듣기</string>
+    <string name="editor_recorded_done">녹음 완료</string>
+    <string name="editor_record_again">다시 녹음</string>
     <string name="editor_audio_preview_stop">정지</string>
     <string name="editor_audio_preview_preparing">준비 중…</string>
     <string name="editor_audio_record_or_upload">내 목소리를 녹음해 알람으로 써요.</string>
@@ -233,10 +235,10 @@
     <string name="editor_plan_gate_login_title">로그인이 필요해요</string>
     <string name="editor_plan_gate_login_required">로그인하면 목소리 알람을 만들 수 있어요.</string>
     <string name="editor_plan_gate_paid_features">이용권을 연결하면 직접 만든 목소리·녹음·직접 입력 문구로 알람을 만들 수 있어요.</string>
-    <string name="editor_play_mode_alarm_only">알람</string>
+    <string name="editor_play_mode_alarm_only">알람만</string>
     <string name="editor_play_mode_alarm_voice">알람 + 목소리</string>
     <string name="editor_play_mode_title">재생 방식</string>
-    <string name="editor_play_mode_voice_only">목소리</string>
+    <string name="editor_play_mode_voice_only">목소리만</string>
     <string name="editor_preparing_voice_alarm">목소리 알람을 준비하는 중이에요.</string>
     <string name="editor_quiet_hours_label">받지 않는 시간: %1$s</string>
     <string name="editor_msg_section">문구</string>
@@ -253,6 +255,10 @@
     <string name="editor_save_blocked_select_voice">알람에서 들을 목소리를 선택해 주세요.</string>
     <string name="editor_save_blocked_voice_unusable">선택한 목소리를 쓸 수 없어요. 다른 목소리를 선택해 주세요.</string>
     <string name="editor_save_changes">변경사항 저장</string>
+    <string name="editor_save">저장</string>
+    <string name="editor_save_for">%1$s에게 저장</string>
+    <string name="editor_cancel">취소</string>
+    <string name="editor_family_recipient_hint">%1$s에게 설정돼요</string>
     <string name="editor_saving">저장 중</string>
     <string name="editor_select_recipient_title">알람 받을 사람 선택</string>
     <string name="editor_selected_ringtone">선택한 알람</string>
@@ -290,8 +296,8 @@
     <string name="editor_voice_repeat_once">한 번만</string>
     <string name="editor_voice_repeat_title">반복 재생</string>
     <string name="editor_voice_select">목소리 선택</string>
-    <string name="editor_voice_source_local">녹음</string>
-    <string name="editor_voice_source_tts">목소리</string>
+    <string name="editor_voice_source_local">직접 녹음</string>
+    <string name="editor_voice_source_tts">목소리 선택</string>
     <string name="editor_voice_to_hear">알람에서 들을 목소리</string>
     <string name="editor_voice_volume">목소리 크기</string>
     <string name="editor_volume">볼륨</string>
@@ -382,7 +388,8 @@
     <string name="settings_logout_confirm_title">로그아웃할까요?</string>
     <string name="settings_marketing_load_failed">불러오지 못했어요 · 다시 시도</string>
     <string name="hs_empty_card_helper">듣고 싶은 목소리가 깨워줘요.</string>
-    <string name="hs_status_inactive">켜진 알람이 없어요.</string>
+    <string name="hs_status_inactive">모든 알람이 꺼진 상태입니다.</string>
+    <string name="hs_status_no_alarm">알람이 없습니다.</string>
     <string name="hs_status_ring_soon">곧 울려요.</string>
     <string name="hs_status_ring_in">%1$s 후에 울려요.</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s 목소리</string>
@@ -765,18 +772,18 @@
     <string name="label_snooze_repeat_forever">계속 반복</string>
     <string name="label_snooze_repeat_count">%1$d회</string>
     <string name="label_snooze_list">%1$d분 · %2$s</string>
-    <string name="label_vibration_strong">강하게</string>
-    <string name="label_vibration_short">짧게</string>
-    <string name="label_vibration_medium">중간</string>
-    <string name="label_vibration_heartbeat">하트비트</string>
-    <string name="label_vibration_ticktock">틱톡</string>
-    <string name="label_vibration_waltz">왈츠</string>
-    <string name="label_vibration_zigzag">지그재그</string>
-    <string name="label_vibration_off_beat">엇박자</string>
-    <string name="label_vibration_ripple">물결</string>
-    <string name="label_vibration_siren">사이렌</string>
-    <string name="label_vibration_off">꺼짐</string>
-    <string name="label_vibration_basic_call">기본</string>
+    <string name="label_vibration_strong" translatable="false">Strong</string>
+    <string name="label_vibration_short" translatable="false">Short</string>
+    <string name="label_vibration_medium" translatable="false">Medium</string>
+    <string name="label_vibration_heartbeat" translatable="false">Heartbeat</string>
+    <string name="label_vibration_ticktock" translatable="false">Ticktock</string>
+    <string name="label_vibration_waltz" translatable="false">Waltz</string>
+    <string name="label_vibration_zigzag" translatable="false">Zigzag</string>
+    <string name="label_vibration_off_beat" translatable="false">Off-beat</string>
+    <string name="label_vibration_ripple" translatable="false">Ripple</string>
+    <string name="label_vibration_siren" translatable="false">Siren</string>
+    <string name="label_vibration_off" translatable="false">Off</string>
+    <string name="label_vibration_basic_call" translatable="false">Basic</string>
     <string name="label_play_mode_voice_only">목소리</string>
     <string name="label_play_mode_alarm_voice">알람 + 목소리</string>
     <string name="label_play_mode_alarm">알람</string>

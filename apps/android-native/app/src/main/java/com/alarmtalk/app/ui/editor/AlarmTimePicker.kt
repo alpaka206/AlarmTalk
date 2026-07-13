@@ -54,13 +54,15 @@ internal fun AlarmTimePickerCard(
     // 휠 글자는 sp(폰트 스케일에 비례)인데 행 높이가 고정 dp 면 큰 글꼴 설정에서 숫자가 잘린다.
     // 시스템 폰트 스케일에 맞춰 행 높이를 키우되, 과도한 확대는 1.5배로 제한해 레이아웃 균형을 유지한다.
     val fontScale = LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
-    val itemHeight = 72.dp * fontScale
+    // 박스를 없앤 만큼 위아래 숫자 간격을 넉넉히(삼성 시계 편집기 수준) 벌린다.
+    val itemHeight = 92.dp * fontScale
     val verticalWheelPadding = 24.dp
     var workingHour by remember { mutableIntStateOf(hour) }
     var workingMinute by remember { mutableIntStateOf(minute) }
-    val wheelBackgroundColor = MaterialTheme.colorScheme.primaryContainer
-    val selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer
-    val unselectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer
+    // 시계에 박스를 두지 않고 배경에 시간 휠만 띄운다(삼성 시계식). 글자는 배경 대비로.
+    val wheelBackgroundColor = Color.Transparent
+    val selectedTextColor = MaterialTheme.colorScheme.onSurface
+    val unselectedTextColor = MaterialTheme.colorScheme.onSurface
 
     LaunchedEffect(hour, minute) {
         workingHour = hour

@@ -423,7 +423,7 @@ internal fun VibrationSettingsPane(
                     }
                 }
 
-                SnoozeOptionSection(title = stringResource(R.string.editor_pattern)) {
+                SnoozeOptionSection {
                     VibrationOptions.forEachIndexed { index, pattern ->
                         SnoozeRadioRow(
                             label = vibrationLabel(context, pattern),
