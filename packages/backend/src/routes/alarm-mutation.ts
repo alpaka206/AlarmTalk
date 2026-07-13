@@ -317,9 +317,19 @@ alarmMutation.post('/', async (c) => {
   // the same audio URL so the alarm row is satisfied. We attach it to the
   // user's first voice profile because messages.voice_profile_id is NOT NULL.
   let resolvedMessageId: string | null = body.message_id ?? null;
+  if (
+    body.voice_profile_id &&
+    !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
+  ) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
   if (!resolvedMessageId && body.raw_audio_url) {
     const firstVoice = await db.execute({
-      sql: 'SELECT id FROM voice_profiles WHERE user_id IN (?, ?) AND deleted_at IS NULL LIMIT 1',
+      sql: `SELECT id FROM voice_profiles
+            WHERE user_id IN (?, ?) AND deleted_at IS NULL
+              AND COALESCE(is_draft, 0) = 0
+            LIMIT 1`,
       args: ownerIds,
     });
     if (firstVoice.rows.length === 0) {

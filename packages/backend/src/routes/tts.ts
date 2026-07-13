@@ -1074,6 +1074,30 @@ tts.post('/generate', async (c) => {
       }),
     );
 
+    if (draftPreviewRequested && !vp.previewed_at) {
+      const previewClaimToken = crypto.randomUUID();
+      const claimed = await db.execute({
+        sql: `UPDATE voice_profiles
+              SET preview_claimed_at = datetime('now'), preview_claim_token = ?,
+                  updated_at = datetime('now')
+              WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
+                AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
+        args: [previewClaimToken, body.voice_profile_id, userPk, userId],
+      });
+      if ((claimed.rowsAffected ?? 0) === 0) {
+        return c.json(
+          {
+            error: 'Voice preview is already being prepared.',
+            error_code: 'VOICE_PREVIEW_IN_PROGRESS',
+          },
+          409,
+        );
+      }
+      previewClaimed = true;
+      activePreviewClaimToken = previewClaimToken;
+    }
+
     for (const { cacheKey } of preparedAttempts) {
       // 시스템 보이스는 (보이스 × 문구)당 단 한 번만 생성되도록 전체 사용자가
       // 캐시를 공유한다 — 무료 플랜의 한계 비용을 0에 가깝게 유지.
@@ -1081,13 +1105,14 @@ tts.post('/generate', async (c) => {
         anyUser: isSystemVoice,
       });
       if (cached) {
-        if (draftPreviewRequested) {
+        if (draftPreviewRequested && activePreviewClaimToken) {
           const marked = await db.execute({
             sql: `UPDATE voice_profiles SET previewed_at = datetime('now'), preview_claimed_at = NULL,
                         preview_claim_token = NULL, updated_at = datetime('now')
                   WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
-                    AND COALESCE(is_draft, 0) = 1 AND status = 'ready'`,
-            args: [body.voice_profile_id, userPk, userId],
+                    AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
+                    AND preview_claim_token = ?`,
+            args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
           });
           if ((marked.rowsAffected ?? 0) === 0) {
             return c.json(
@@ -1123,7 +1148,7 @@ tts.post('/generate', async (c) => {
       }
     }
 
-    if (draftPreviewRequested) {
+    if (draftPreviewRequested && !previewClaimed) {
       if (vp.previewed_at) {
         return c.json(
           {
@@ -1133,27 +1158,6 @@ tts.post('/generate', async (c) => {
           409,
         );
       }
-      const previewClaimToken = crypto.randomUUID();
-      const claimed = await db.execute({
-        sql: `UPDATE voice_profiles
-              SET preview_claimed_at = datetime('now'), preview_claim_token = ?,
-                  updated_at = datetime('now')
-              WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
-                AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
-                AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
-        args: [previewClaimToken, body.voice_profile_id, userPk, userId],
-      });
-      if ((claimed.rowsAffected ?? 0) === 0) {
-        return c.json(
-          {
-            error: 'Voice preview is already being prepared.',
-            error_code: 'VOICE_PREVIEW_IN_PROGRESS',
-          },
-          409,
-        );
-      }
-      previewClaimed = true;
-      activePreviewClaimToken = previewClaimToken;
     }
 
     // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.

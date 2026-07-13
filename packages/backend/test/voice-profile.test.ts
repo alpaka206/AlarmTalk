@@ -402,6 +402,8 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-consent-ok' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), '엄마 목소리'));
     expect(res.status).toBe(201);
@@ -434,6 +436,8 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-1' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), '첫번째'));
     expect(res.status).toBe(201);
@@ -441,6 +445,8 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
   it('쿼터 카운트는 failed 잔여 행을 제외한다 (일시 실패가 한도를 영구 잠식하지 않도록)', async () => {
     mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-quota' });
@@ -507,6 +513,8 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '125000'));
     expect(res.status).toBe(201);
@@ -523,6 +531,8 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-2' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), 'a'.repeat(50)));
     expect(res.status).toBe(201);
@@ -530,6 +540,8 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
   it('성공 시 INSERT processing → UPDATE ready 순서', async () => {
     mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
@@ -576,6 +588,8 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-x' });
     await req(buildApp(), cloneForm(new Uint8Array([10, 20, 30]), '이름'));
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
@@ -595,6 +609,8 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
   it('mp3 clone 업로드 MIME 과 파일명을 ElevenLabs 로 전달', async () => {
     mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-x' });
@@ -903,6 +919,8 @@ describe('PATCH /:id — name edge cases (voice-profile)', () => {
 describe('POST /clone — edge cases (voice-profile)', () => {
   it('프로필 0개이면 정상 생성', async () => {
     mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-zero' });

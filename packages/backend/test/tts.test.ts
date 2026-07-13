@@ -176,8 +176,8 @@ describe('POST /tts/generate — TTS 생성', () => {
         listener_title: '우리 아들',
       },
     ]);
-    mockDB.pushResult([]);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);

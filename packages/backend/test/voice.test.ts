@@ -565,6 +565,8 @@ describe('POST /voice/clone — 음성 클론', () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-voice-001' });
     const app = buildApp();
     const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2, 3, 4]), '엄마 목소리'));
@@ -593,6 +595,8 @@ describe('POST /voice/clone — 음성 클론', () => {
     form.append('relationshipLabel', '손녀');
     form.append('isDraft', 'true');
     mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-voice-001' });

@@ -124,6 +124,11 @@ export async function deletePaidVoiceDataForUser(
   });
 
   await db.execute({
+    sql: `DELETE FROM voice_prerender_queue WHERE owner_user_id IN (${ph})`,
+    args: ids,
+  });
+
+  await db.execute({
     sql: `DELETE FROM voice_profiles WHERE user_id IN (${ph})`,
     args: ids,
   });
@@ -179,8 +184,7 @@ export async function deleteSensitiveVoiceDataForUser(
   await db.execute({
     sql: `UPDATE alarms
           SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-              message_id = NULL, voice_profile_id = NULL, speaker_id = NULL,
-              raw_audio_url = NULL, raw_audio_duration_ms = NULL
+              message_id = NULL, voice_profile_id = NULL, speaker_id = NULL
           WHERE voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))
              OR message_id IN (
                SELECT id FROM messages

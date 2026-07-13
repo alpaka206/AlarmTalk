@@ -1114,14 +1114,31 @@ voiceProfile.post('/clone', async (c) => {
     }
     if (!voiceId) throw lastError;
 
-    await withWriteTransaction(db, async (tx) => {
-      await tx.execute({
+    const completion = await withWriteTransaction(db, async (tx) => {
+      const missingConsent = await missingConsentType(tx, userPk, SENSITIVE_REQUIRED_CONSENTS);
+      if (missingConsent) {
+        await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'failed');
+        return { status: 'consent_withdrawn' as const };
+      }
+      const updated = await tx.execute({
         sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
-              WHERE id = ?`,
+              WHERE id = ? AND status = 'processing' AND deleted_at IS NULL`,
         args: [voiceId, profileId],
       });
+      if ((updated.rowsAffected ?? 0) === 0) {
+        await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'failed');
+        return { status: 'draft_unavailable' as const };
+      }
       await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'succeeded');
+      return { status: 'ok' as const };
     });
+    if (completion.status !== 'ok') {
+      throw new Error(
+        completion.status === 'consent_withdrawn'
+          ? 'Voice consent was withdrawn during cloning.'
+          : 'Voice draft was removed during cloning.',
+      );
+    }
 
     return c.json(
       {

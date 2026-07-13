@@ -125,6 +125,10 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
     await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-A');
     await db.execute({
+      sql: `UPDATE alarms SET raw_audio_url = 'r2://raw-alarm' WHERE id IN ('al-A', 'al-B')`,
+      args: [],
+    });
+    await db.execute({
       sql: `UPDATE voice_profiles SET elevenlabs_voice_id = 'provider-A' WHERE id = 'vp-A'`,
       args: [],
     });
@@ -137,6 +141,7 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
       expect(alarm!.mode).toBe('sound-only');
       expect(alarm!.voice_profile_id).toBeNull();
       expect(alarm!.message_id).toBeNull();
+      expect(alarm!.raw_audio_url).toBe('r2://raw-alarm');
     }
     expect((await db.execute(`SELECT * FROM voice_profiles WHERE id = 'vp-A'`)).rows).toEqual([]);
     expect(
