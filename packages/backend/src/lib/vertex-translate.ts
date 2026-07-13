@@ -965,7 +965,14 @@ export async function generatePrerenderClipText(
   ) {
     throw new AlarmTextPreparationInvalidError();
   }
-  const tag = normalizeApprovedTag(parsed.tag) || normalizeApprovedTag(params.defaultTag ?? '');
+  // 사전렌더 클립은 전부 기상/알림용(sleep 카테고리 없음). 저각성 태그(calm/tired/whispers/quietly)는
+  // 기상을 방해하므로 동적 경로 sanitizeDeliveryTag(mode≠sleep) 와 동일하게 여기서도 드롭한다. 안 그러면
+  // 모델이 medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
+  const sanitizePrerenderTag = (raw: string): string => {
+    const approved = normalizeApprovedTag(raw);
+    return approved && !LOW_AROUSAL_TAGS.includes(approved) ? approved : '';
+  };
+  const tag = sanitizePrerenderTag(parsed.tag) || sanitizePrerenderTag(params.defaultTag ?? '');
   return { text, tag };
 }
 

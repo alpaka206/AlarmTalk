@@ -632,11 +632,19 @@ export async function generateStockClip(
   const audioUrl = `r2://${audioObjectKey}`;
 
   const messageId = crypto.randomUUID();
+  // 조건부 INSERT: 같은 (voice·category·language·variant) preset 이 이미 있으면 no-op. cron 이 겹쳐
+  // 두 호출이 같은 target 을 동시에 렌더해도(findMissingStockTargets 는 순차 멱등만 보장) 중복 행이
+  // 생기지 않는다. SQLite 단일 writer 라 INSERT…SELECT WHERE NOT EXISTS 가 원자적으로 직렬화된다.
   await db.execute({
     sql: `INSERT INTO messages
           (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json,
            category, language, variant, is_preset, audio_url)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?
+          WHERE NOT EXISTS (
+            SELECT 1 FROM messages
+            WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
+              AND COALESCE(is_preset, 0) = 1
+          )`,
     args: [
       messageId,
       target.ownerUserId,
@@ -648,6 +656,10 @@ export async function generateStockClip(
       language,
       target.variantIndex,
       audioUrl,
+      target.voiceProfileId,
+      target.category,
+      language,
+      target.variantIndex,
     ],
   });
 

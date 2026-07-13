@@ -723,7 +723,12 @@ class AlarmRepository(
         // 준비창 게이트: open-meteo 는 하루 예보라 시간마다 갱신은 무의미하고 쿼터·배터리만 낭비한다.
         // 아직 미해결(null)이거나 마지막 갱신이 ~12h 이전인 알람만 대상으로 삼아 최대 하루 1~2회로 제한.
         val staleBefore = now - 12 * 60 * 60 * 1000L
+        // 준비창: 곧(48h 내) 울릴 알람만 대상. open-meteo 는 '오늘' 예보라, 며칠 뒤 울릴 알람을 지금
+        // 오늘 날씨로 스냅샷하면 엉뚱한 조건이 굳는다. 반복 알람의 다음 발사(fireAtMillis)는 보통 창 안이고,
+        // 먼 일회성/주간 알람은 발사 48h 전에야 해결돼 더 신선한 날씨로 매칭된다.
+        val prepareWindow = now + 48 * 60 * 60 * 1000L
         val alarms = alarmDao.getEnabledWeatherBucketAlarms()
+            .filter { it.fireAtMillis <= prepareWindow }
             .filter { it.contextVariantIndex == null || (it.contextResolvedAtMillis ?: 0L) < staleBefore }
         if (alarms.isEmpty()) return 0
         // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
