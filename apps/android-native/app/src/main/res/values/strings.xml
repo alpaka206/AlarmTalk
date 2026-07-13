@@ -818,8 +818,8 @@
     <string name="editor2_cat_medication">약</string>
     <string name="editor2_cat_exercise">운동</string>
     <string name="editor2_ctx_preset">기본 문구</string>
-    <string name="editor2_ctx_wake_weather">기상 + 날씨</string>
-    <string name="editor2_ctx_wake_fortune">기상 + 운세</string>
+    <string name="editor2_ctx_wake_weather">날씨</string>
+    <string name="editor2_ctx_wake_fortune">운세</string>
     <string name="editor2_ctx_meal">식사</string>
     <string name="editor2_ctx_sleep">취침</string>
     <string name="editor2_ctx_exercise">운동</string>

@@ -805,8 +805,8 @@
     <string name="editor2_cat_medication">服薬</string>
     <string name="editor2_cat_exercise">運動</string>
     <string name="editor2_ctx_preset">基本メッセージ</string>
-    <string name="editor2_ctx_wake_weather">起床 + 天気</string>
-    <string name="editor2_ctx_wake_fortune">起床 + 運勢</string>
+    <string name="editor2_ctx_wake_weather">天気</string>
+    <string name="editor2_ctx_wake_fortune">運勢</string>
     <string name="editor2_ctx_meal">食事</string>
     <string name="editor2_ctx_sleep">就寝</string>
     <string name="editor2_ctx_exercise">運動</string>

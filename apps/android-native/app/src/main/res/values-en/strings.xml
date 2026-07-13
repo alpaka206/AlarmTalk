@@ -797,8 +797,8 @@
     <string name="editor2_cat_medication">Medication</string>
     <string name="editor2_cat_exercise">Exercise</string>
     <string name="editor2_ctx_preset">Default message</string>
-    <string name="editor2_ctx_wake_weather">Wake up + Weather</string>
-    <string name="editor2_ctx_wake_fortune">Wake up + Fortune</string>
+    <string name="editor2_ctx_wake_weather">Weather</string>
+    <string name="editor2_ctx_wake_fortune">Fortune</string>
     <string name="editor2_ctx_meal">Meal</string>
     <string name="editor2_ctx_sleep">Bedtime</string>
     <string name="editor2_ctx_exercise">Exercise</string>
