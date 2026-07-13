@@ -394,6 +394,56 @@ async function scheduled(
       ),
     );
   }
+
+  // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
+  // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
+  // 대상이라 전유저 스캔이 없고, 한 건 실패가 나머지를 막지 않도록 격리한다.
+  try {
+    const {
+      claimPendingPrerenderVoices,
+      listReadyCloneVoices,
+      findMissingStockTargets,
+      generateStockClip,
+      markPrerenderDone,
+      markPrerenderFailed,
+    } = await import('./lib/stock-clips');
+    const MAX_CLIPS_PER_TICK = 3;
+    const claimed = await claimPendingPrerenderVoices(db, 5);
+    if (claimed.length > 0) {
+      const cloneVoices = await listReadyCloneVoices(db, claimed);
+      // 큐엔 있으나 ready 클론이 아닌 항목(삭제/실패/draft 등)은 실패 처리해 무한 pending 을 막는다.
+      const readyIds = new Set(cloneVoices.map((v) => v.id));
+      for (const req of claimed) {
+        if (!readyIds.has(req.voiceProfileId)) {
+          await markPrerenderFailed(db, req.voiceProfileId);
+        }
+      }
+      let rendered = 0;
+      for (const voice of cloneVoices) {
+        if (rendered >= MAX_CLIPS_PER_TICK) break;
+        const targets = await findMissingStockTargets(db, [voice]);
+        for (const target of targets) {
+          if (rendered >= MAX_CLIPS_PER_TICK) break;
+          try {
+            await generateStockClip(db, env, target);
+            rendered += 1;
+          } catch (genErr) {
+            captureCron('scheduled.stock_clips.generate', genErr);
+            await markPrerenderFailed(db, voice.id);
+            break;
+          }
+        }
+        // 이 목소리의 남은 클립이 없으면 완료 처리(부분 렌더면 pending 유지 → 다음 틱 계속).
+        const remaining = await findMissingStockTargets(db, [voice]);
+        if (remaining.length === 0) await markPrerenderDone(db, voice.id);
+      }
+      if (rendered > 0) {
+        logStructured('info', { at: 'scheduled.stock_clips', rendered, claimed: claimed.length });
+      }
+    }
+  } catch (err) {
+    captureCron('scheduled.stock_clips', err);
+  }
 }
 
 export default {

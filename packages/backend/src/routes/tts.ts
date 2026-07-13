@@ -1398,20 +1398,23 @@ tts.get('/presets', async (c) => {
 
 // 무료 플랜용 스톡(미리 만든) 알람 클립 목록. 시스템 보이스로 서버에서 합성해 둔
 // 고정 클립을 보이스 × 언어 × 카테고리로 노출한다. 오디오는 message_id 로
-// GET /tts/messages/:id/audio 에서 받는다 (스톡은 모든 사용자가 조회 가능).
+// 오디오 자체는 GET /tts/messages/:id/audio 에서 받는다. 시스템 스톡은 모든 사용자가 조회
+// 가능하고, 유료 클론 사전렌더 클립은 '소유자 본인'에게만 노출한다(is_system=0·실소유자 user_id).
 tts.get('/stock-clips', async (c) => {
   const db = getDB(c.env);
+  const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
                  m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name
           FROM messages m
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1
-            AND COALESCE(vp.is_system, 0) = 1
+            AND (COALESCE(vp.is_system, 0) = 1 OR m.user_id IN (?, ?))
             AND vp.deleted_at IS NULL
             AND m.audio_url IS NOT NULL
           ORDER BY vp.id ASC, m.category ASC, m.language ASC, m.variant ASC`,
-    args: [],
+    args: [userPk, userId],
   });
   return c.json({
     clips: result.rows.map((row) => ({

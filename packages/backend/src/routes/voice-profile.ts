@@ -11,6 +11,7 @@ import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
+import { enqueuePrerender } from '../lib/stock-clips';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
@@ -423,12 +424,19 @@ voiceProfile.patch('/:id', async (c) => {
     relationshipLabel?: unknown;
     listener_title?: unknown;
     listenerTitle?: unknown;
+    language?: unknown;
+    app_language?: unknown;
   };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
+  // draft→official 확정 시 사전렌더할 앱 언어(클라 전송, 미전송 시 ko).
+  const prerenderLanguage =
+    typeof (body.language ?? body.app_language) === 'string'
+      ? String(body.language ?? body.app_language)
+      : 'ko';
 
   const hasName = body.name !== undefined;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -581,6 +589,16 @@ voiceProfile.patch('/:id', async (c) => {
   }
   if ((updateRes.rowsAffected ?? 0) === 0) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
+  // draft→official 확정(미리듣기 후 결정) 시 사전렌더 큐에 적재한다. clone 을 draft 로 만든 뒤
+  // promote 하는 경로는 status 훅만 보면 놓치므로 여기서도 커버. 큐 실패는 응답을 깨지 않게 격리.
+  if (promotesDraftToOfficial) {
+    try {
+      await enqueuePrerender(db, id, userPk, prerenderLanguage);
+    } catch (queueErr) {
+      logRouteError(c, queueErr);
+    }
   }
 
   return c.json({
@@ -737,6 +755,8 @@ voiceProfile.post('/clone', async (c) => {
     const isDraft = ['true', '1', 'yes'].includes(
       String(formData.get('isDraft') ?? formData.get('is_draft') ?? 'false'),
     );
+    // 사전렌더할 앱 언어(클라가 전송, 미전송 시 ko). 확정된(비-draft) 클론만 큐잉한다.
+    const prerenderLanguage = String(formData.get('language') ?? formData.get('app_language') ?? 'ko');
     const relationshipLabel =
       normalizeRelationshipLabel(
         formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
@@ -916,6 +936,17 @@ voiceProfile.post('/clone', async (c) => {
       });
       await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'succeeded');
     });
+
+    // 확정된(비-draft) 유료 클론이 ready 되면 사전렌더 큐에 적재한다(cron 이 그 목소리 말투로
+    // 카테고리 클립 생성). draft(미리듣기 단계)는 promote 시점에 큐잉한다. 트랜잭션 밖·성공
+    // 경로에서만, 큐 실패가 클론 응답을 깨지 않도록 격리한다.
+    if (!isDraft) {
+      try {
+        await enqueuePrerender(db, profileId, userPk, prerenderLanguage);
+      } catch (queueErr) {
+        logRouteError(c, queueErr);
+      }
+    }
 
     return c.json(
       {
