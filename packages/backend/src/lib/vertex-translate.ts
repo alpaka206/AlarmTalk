@@ -958,7 +958,7 @@ export async function generatePrerenderClipText(
     !text ||
     isMetaJsonResponse(text) ||
     text.length > 200 ||
-    hasLanguageMismatch(text, targetLanguage) ||
+    hasLanguageMismatch(text, targetLanguage, params.listenerTitle) ||
     hasDeliveryTagOrStageDirection(text) ||
     hasUnsupportedListenerAddress(text, params.listenerTitle) ||
     hasRelationshipLabelLeak(text, params.relationshipLabel, params.listenerTitle)
@@ -1423,10 +1423,16 @@ function hasRomanticForbiddenContent(text: string, context: DynamicAlarmTextCont
 
 // 타깃 언어 불일치(§4.7 HARD). 보수적으로만 판정한다: ko면 한글, ja면 가나/한자,
 // en이면 한글·가나가 없어야 한다.
-function hasLanguageMismatch(text: string, targetLanguage: string): boolean {
-  const hasHangul = /[가-힣]/.test(text);
-  const hasKana = /[぀-ヿㇰ-ㇿ]/.test(text);
-  const hasKanji = /[一-鿿]/.test(text);
+function hasLanguageMismatch(
+  text: string,
+  targetLanguage: string,
+  allowedForeignText?: string | null,
+): boolean {
+  const allowed = allowedForeignText?.trim();
+  const checkedText = allowed ? text.split(allowed).join('') : text;
+  const hasHangul = /[가-힣]/.test(checkedText);
+  const hasKana = /[぀-ヿㇰ-ㇿ]/.test(checkedText);
+  const hasKanji = /[一-鿿]/.test(checkedText);
   if (targetLanguage === 'ko') return !hasHangul;
   if (targetLanguage === 'ja') return !hasKana && !hasKanji;
   if (targetLanguage === 'en') return hasHangul || hasKana;

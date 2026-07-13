@@ -645,6 +645,24 @@ describe('deriveAlarmDisplayText', () => {
 });
 
 describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
+  it('영문 문구의 정확한 비영문 호칭은 언어 불일치에서 제외한다', async () => {
+    queueContent(
+      geminiText(
+        JSON.stringify({ text: '할아버지, it is time for your medicine. Please take care.', tag: 'cheerfully' }),
+      ),
+    );
+
+    const out = await generatePrerenderClipText(ENV, {
+      seed: 'Remind the listener to take medicine.',
+      relationshipLabel: 'grandchild',
+      listenerTitle: '할아버지',
+      targetLanguage: 'en',
+      defaultTag: 'cheerfully',
+    });
+
+    expect(out.text).toContain('할아버지');
+  });
+
   it('seed·관계·호칭으로 톤 적응 문구를 만들고 승인 태그를 돌려준다', async () => {
     queueContent(
       geminiText(
