@@ -59,8 +59,25 @@ interface AlarmDao {
 
     // resolvedAtMillis 는 전용 게이트 컬럼(contextResolvedAtMillis). updatedAtMillis 를 건드리지 않아
     // (a) 인덱스 불변이어도 게이트가 전진하고 (b) 무관 편집이 날씨 재해결 시계를 리셋하지 않는다.
-    @Query("UPDATE alarms SET contextVariantIndex = :index, contextResolvedAtMillis = :resolvedAtMillis WHERE id = :id")
-    suspend fun updateContextVariantIndex(id: String, index: Int?, resolvedAtMillis: Long)
+    @Query(
+        """
+        UPDATE alarms
+        SET contextVariantIndex = :index, contextResolvedAtMillis = :resolvedAtMillis
+        WHERE id = :id
+          AND bucketId = 'weather'
+          AND COALESCE(voiceProfileId, '') = :voiceProfileId
+          AND TRIM(COALESCE(voiceWeatherCountry, '')) = :country
+          AND TRIM(COALESCE(voiceWeatherCity, '')) = :city
+        """,
+    )
+    suspend fun updateContextVariantIndexIfContextMatches(
+        id: String,
+        index: Int,
+        resolvedAtMillis: Long,
+        voiceProfileId: String,
+        country: String,
+        city: String,
+    ): Int
 
     @Query(
         """
@@ -92,9 +109,9 @@ interface AlarmDao {
 
     /**
      * 사용자 편집 커밋용 전체행 upsert. 커밋 직전 같은 트랜잭션 안에서 DB 의 최신
-     * remoteAlarmId/lastSyncedAtMillis 를 다시 읽어 [updated] 에 병합한 뒤 저장한다.
-     * 이 두 값은 sync 만 발급하는 서버 필드이므로 편집이 읽은 스냅샷의 stale 값으로
-     * 절대 덮어써서는 안 된다.
+     * remoteAlarmId/lastSyncedAtMillis 와, 동일 날씨 컨텍스트의 variant/freshness 를
+     * [updated] 에 병합한 뒤 저장한다. sync/worker 만 갱신하는 값을 편집이 읽은 stale
+     * 스냅샷으로 덮어쓰지 않는다.
      *
      * 이 병합이 없으면 '신규 알람 create 왕복 중 편집' 경합에서 remoteAlarmId 가 유실된다:
      * 편집이 읽은 스냅샷은 remoteAlarmId=null 인데, 그 사이 sync 의 CAS
@@ -110,9 +127,30 @@ interface AlarmDao {
         val merged = if (fresh == null) {
             updated
         } else {
+            val preserveFreshWeatherVariant = updated.bucketId == "weather" &&
+                !shouldResetWeatherVariant(
+                    currentBucketId = fresh.bucketId,
+                    nextBucketId = updated.bucketId,
+                    currentVoiceProfileId = fresh.voiceProfileId,
+                    nextVoiceProfileId = updated.voiceProfileId,
+                    currentCountry = fresh.voiceWeatherCountry,
+                    nextCountry = updated.voiceWeatherCountry,
+                    currentCity = fresh.voiceWeatherCity,
+                    nextCity = updated.voiceWeatherCity,
+                )
             updated.copy(
                 remoteAlarmId = fresh.remoteAlarmId,
                 lastSyncedAtMillis = fresh.lastSyncedAtMillis,
+                contextVariantIndex = if (preserveFreshWeatherVariant) {
+                    fresh.contextVariantIndex
+                } else {
+                    updated.contextVariantIndex
+                },
+                contextResolvedAtMillis = if (preserveFreshWeatherVariant) {
+                    fresh.contextResolvedAtMillis
+                } else {
+                    updated.contextResolvedAtMillis
+                },
             )
         }
         upsert(merged)

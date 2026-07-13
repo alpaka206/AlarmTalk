@@ -221,6 +221,13 @@ class AlarmRepository(
             currentCity = current.voiceWeatherCity,
             nextCity = draft.voiceWeatherCity,
         )
+        val weatherVariantState = nextWeatherVariantState(
+            nextBucketId = draft.bucketId,
+            resetWeatherVariant = resetWeatherVariant,
+            currentIndex = current.contextVariantIndex,
+            draftIndex = draft.contextVariantIndex,
+            currentResolvedAtMillis = current.contextResolvedAtMillis,
+        )
         val updated = current.copy(
             label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
             hour = draft.hour,
@@ -262,8 +269,8 @@ class AlarmRepository(
                 if (draft.bucketId != null && draft.bucketId == current.bucketId) current.bucketRotationIndex else 0,
             bucketClipKeysJson = draft.bucketClipKeysJson,
             bucketClipTextsJson = draft.bucketClipTextsJson,
-            contextVariantIndex = draft.contextVariantIndex.takeUnless { resetWeatherVariant },
-            contextResolvedAtMillis = current.contextResolvedAtMillis.takeUnless { resetWeatherVariant },
+            contextVariantIndex = weatherVariantState.index,
+            contextResolvedAtMillis = weatherVariantState.resolvedAtMillis,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
@@ -765,8 +772,15 @@ class AlarmRepository(
             for (alarm in group) {
                 // 인덱스가 그대로여도 resolvedAt 은 무조건 갱신해 12h 게이트를 전진시킨다. (change 일 때만
                 // 갱신하면 안정 날씨는 시계가 안 올라가 매 워커틱마다 open-meteo 재호출 → 배터리·쿼터 낭비.)
-                alarmDao.updateContextVariantIndex(alarm.id, index, System.currentTimeMillis())
-                if (index != alarm.contextVariantIndex) resolved += 1
+                val updatedRows = alarmDao.updateContextVariantIndexIfContextMatches(
+                    id = alarm.id,
+                    index = index,
+                    resolvedAtMillis = System.currentTimeMillis(),
+                    voiceProfileId = alarm.voiceProfileId.orEmpty(),
+                    country = alarm.voiceWeatherCountry?.trim().orEmpty(),
+                    city = alarm.voiceWeatherCity?.trim().orEmpty(),
+                )
+                if (updatedRows > 0 && index != alarm.contextVariantIndex) resolved += 1
             }
         }
         if (resolved > 0) Log.i(TAG, "Resolved weather bucket variants count=$resolved")
@@ -1000,6 +1014,26 @@ internal fun shouldResetWeatherVariant(
         currentVoiceProfileId != nextVoiceProfileId ||
         currentCountry?.trim().orEmpty() != nextCountry?.trim().orEmpty() ||
         currentCity?.trim().orEmpty() != nextCity?.trim().orEmpty()
+}
+
+internal data class WeatherVariantState(
+    val index: Int?,
+    val resolvedAtMillis: Long?,
+)
+
+internal fun nextWeatherVariantState(
+    nextBucketId: String?,
+    resetWeatherVariant: Boolean,
+    currentIndex: Int?,
+    draftIndex: Int?,
+    currentResolvedAtMillis: Long?,
+): WeatherVariantState = when {
+    resetWeatherVariant -> WeatherVariantState(index = null, resolvedAtMillis = null)
+    nextBucketId == "weather" -> WeatherVariantState(
+        index = currentIndex,
+        resolvedAtMillis = currentResolvedAtMillis,
+    )
+    else -> WeatherVariantState(index = draftIndex, resolvedAtMillis = null)
 }
 
 /**
