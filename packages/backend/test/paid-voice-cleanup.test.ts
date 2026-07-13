@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { runMigrations } from '../src/lib/migrations';
-import { deletePaidVoiceDataForUser } from '../src/lib/paid-voice-cleanup';
+import {
+  deletePaidVoiceDataForUser,
+  deleteSensitiveVoiceDataForUser,
+} from '../src/lib/paid-voice-cleanup';
 import { downgradeUserToFree } from '../src/lib/billing-cancel';
 
 // 실제 libSQL(인메모리) + 실제 마이그레이션으로 검증한다. 공유 목소리 제공자가 취소/강등될 때
@@ -105,7 +108,10 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     await downgradeUserToFree(db, 'A', { deleteVoiceData: false });
 
     // 공유 해제
-    const vp = await db.execute({ sql: `SELECT is_shared FROM voice_profiles WHERE id = 'vp-A'`, args: [] });
+    const vp = await db.execute({
+      sql: `SELECT is_shared FROM voice_profiles WHERE id = 'vp-A'`,
+      args: [],
+    });
     expect(Number(vp.rows[0]!.is_shared)).toBe(0);
 
     // B의 알람은 유지되되 sound-only로 강등(취소된 목소리가 계속 울리지 않도록)
@@ -113,6 +119,33 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     expect(alB).not.toBeNull();
     expect(alB!.mode).toBe('sound-only');
     expect(alB!.voice_profile_id).toBeNull();
+  });
+
+  it('민감 음성 동의 철회는 본인과 타인의 알람을 보존하고 음성 데이터만 제거한다', async () => {
+    await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
+    await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-A');
+    await db.execute({
+      sql: `UPDATE voice_profiles SET elevenlabs_voice_id = 'provider-A' WHERE id = 'vp-A'`,
+      args: [],
+    });
+
+    await deleteSensitiveVoiceDataForUser(db, 'A');
+
+    for (const alarmId of ['al-A', 'al-B']) {
+      const alarm = await getAlarm(db, alarmId);
+      expect(alarm).not.toBeNull();
+      expect(alarm!.mode).toBe('sound-only');
+      expect(alarm!.voice_profile_id).toBeNull();
+      expect(alarm!.message_id).toBeNull();
+    }
+    expect((await db.execute(`SELECT * FROM voice_profiles WHERE id = 'vp-A'`)).rows).toEqual([]);
+    expect(
+      (
+        await db.execute(
+          `SELECT * FROM pending_external_deletions WHERE kind = 'elevenlabs_voice' AND ref = 'provider-A'`,
+        )
+      ).rows,
+    ).toHaveLength(1);
   });
 
   // 참고: 실데이터에서 voice_profiles.user_id 가 로그인 id(google_id)로 저장된 케이스는

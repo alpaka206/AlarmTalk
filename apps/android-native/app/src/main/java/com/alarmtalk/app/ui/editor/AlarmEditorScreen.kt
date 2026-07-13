@@ -92,6 +92,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal fun expectedCloneBucketVariantCount(category: String): Int? =
+    when (category) {
+        "weather" -> 8
+        "fortune" -> 5
+        "love" -> 3
+        "medication" -> 2
+        "greeting" -> 1
+        else -> null
+    }
+
 private enum class AudioPreviewTarget {
     CachedAudio,
     StockClip,
@@ -407,8 +417,6 @@ internal fun AlarmEditorScreen(
 
     // 오프라인 클론 버킷이 '완전한지' 판정. 날씨/운세는 서버가 조건/테마 '절대 인덱스'로 클립을 고르므로
     // variant 0..N-1 이 전부 캐시돼 있어야 인덱스가 안 엉킨다(부분 세트면 엉뚱한 조건 재생 → 라이브 유지).
-    // 사랑/약은 순차 회전이라 1개 이상이면 안전. 개수는 백엔드 CLONE_WEATHER_CONDITIONS(8: 맑음/비/눈/
-    // 미세먼지/흐림/안개/더위/추위)·CLONE_FORTUNE_THEMES(5)와 맞춘다(백엔드 test '개수 계약'이 강제).
     fun hasCompleteCloneBucket(category: String, profileId: String): Boolean {
         val variants = stockClips
             .filter {
@@ -419,11 +427,7 @@ internal fun AlarmEditorScreen(
             .map { it.variant }
             .toSet()
         if (variants.isEmpty()) return false
-        val fullCount = when (category) {
-            "weather" -> 8
-            "fortune" -> 5
-            else -> return true
-        }
+        val fullCount = expectedCloneBucketVariantCount(category) ?: return false
         return variants == (0 until fullCount).toSet()
     }
 

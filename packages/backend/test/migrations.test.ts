@@ -276,6 +276,9 @@ describe('migrations', () => {
     expect(sql).toContain('voice_draft_attempt_usage');
     expect(sql).toContain('attempt_month');
     expect(sql).toContain('previewed_at');
+    expect(sql).toContain('preview_claimed_at');
+    expect(sql).toContain('preview_claim_token');
+    expect(sql).toContain('preview_language');
   });
 
   it('migration #60 applies claimed_at to an existing prerender queue', async () => {

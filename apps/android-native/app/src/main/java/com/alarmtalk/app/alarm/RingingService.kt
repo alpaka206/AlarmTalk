@@ -509,7 +509,12 @@ class RingingService : Service() {
                 ?.takeIf { it.playMode == AlarmPlayModes.ALARM_VOICE }
                 ?.let {
                     repository.resolveBucketClipLocalUri(it)
-                        ?: it.localAudioUri?.takeIf { uri -> it.bucketId == null && uri.isNotBlank() }
+                        ?: storedVoiceFallbackUri(
+                            localAudioUri = it.localAudioUri,
+                            bucketId = it.bucketId,
+                            bucketClipCount = decodeBucketClipKeys(it.bucketClipKeysJson).size,
+                            bucketSelectionAvailable = false,
+                        )
                 }
                 ?.let(Uri::parse)
             if (voiceUri != null && !voiceAfterAlarmStarted) {

@@ -96,16 +96,22 @@ describe('listReadyCloneVoices', () => {
     await insertVoice(db, { id: 'sys-voice', isSystem: true });
 
     const voices = await listReadyCloneVoices(db, [
-      { voiceProfileId: 'clone-ready', ownerUserId: 'owner-1', language: 'en' },
-      { voiceProfileId: 'clone-draft', ownerUserId: 'owner-1', language: 'ko' },
-      { voiceProfileId: 'clone-processing', ownerUserId: 'owner-1', language: 'ko' },
-      { voiceProfileId: 'clone-deleted', ownerUserId: 'owner-1', language: 'ko' },
-      { voiceProfileId: 'sys-voice', ownerUserId: 'owner-1', language: 'ko' },
+      { voiceProfileId: 'clone-ready', ownerUserId: 'owner-1', language: 'en', claimToken: 'c1' },
+      { voiceProfileId: 'clone-draft', ownerUserId: 'owner-1', language: 'ko', claimToken: 'c2' },
+      {
+        voiceProfileId: 'clone-processing',
+        ownerUserId: 'owner-1',
+        language: 'ko',
+        claimToken: 'c3',
+      },
+      { voiceProfileId: 'clone-deleted', ownerUserId: 'owner-1', language: 'ko', claimToken: 'c4' },
+      { voiceProfileId: 'sys-voice', ownerUserId: 'owner-1', language: 'ko', claimToken: 'c5' },
     ]);
 
     expect(voices.map((v) => v.id)).toEqual(['clone-ready']);
     expect(voices[0]!.ownerUserId).toBe('owner-1');
     expect(voices[0]!.languageOverride).toBe('en');
+    expect(voices[0]!.claimToken).toBe('c1');
     expect(voices[0]!.categories).toEqual(CLONE_PRERENDER_CATEGORIES);
   });
 
@@ -126,6 +132,7 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     isClone: true,
     relationshipLabel: '할머니',
     listenerTitle: '규원아',
+    claimToken: 'claim-current',
     ...over,
   });
 
@@ -148,6 +155,7 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     ).toBe(true);
     expect(targets.every((t) => t.ownerUserId === 'owner-1')).toBe(true);
     expect(targets.every((t) => t.voiceProfileId === 'clone-ready')).toBe(true);
+    expect(targets.every((t) => t.claimToken === 'claim-current')).toBe(true);
     // baseText 는 최종 문구가 아니라 생성 seed(지시문).
     expect(targets.find((t) => t.category === 'weather')?.baseText).toContain('알리');
   });
@@ -194,7 +202,7 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
       args: [],
     });
     const voices = await listReadyCloneVoices(db, [
-      { voiceProfileId: 'clone-ready', ownerUserId: 'owner-1', language: 'ko' },
+      { voiceProfileId: 'clone-ready', ownerUserId: 'owner-1', language: 'ko', claimToken: 'c1' },
     ]);
     expect(voices[0]!.isClone).toBe(true);
     expect(voices[0]!.relationshipLabel).toBe('아빠');

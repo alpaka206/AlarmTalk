@@ -262,6 +262,8 @@ describe('PATCH /:id — 이름 변경 (voice-profile)', () => {
   it('draft promote is blocked when monthly voice-change ledger is already reserved', async () => {
     mockDB.pushResult([{ id: V1, is_draft: 1, previewed_at: '2026-07-14 00:00:00' }]);
     mockDB.pushResult([{ active_count: 0, monthly_count: 0 }]);
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([consentRow('voice_biometric'), consentRow('overseas_transfer')]);
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 0);
 
@@ -274,6 +276,19 @@ describe('PATCH /:id — 이름 변경 (voice-profile)', () => {
     );
     expect(ledgerCall).toBeDefined();
     expect(mockDB.calls.some((call) => call.sql.startsWith('UPDATE voice_profiles'))).toBe(false);
+  });
+
+  it('draft promotion cannot change the previewed persona in the same request', async () => {
+    mockDB.pushResult([{ id: V1, is_draft: 1, previewed_at: '2026-07-14 00:00:00' }]);
+
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}`, { is_draft: false, listener_title: '다른 호칭' }),
+    );
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('VOICE_PROMOTION_FIELDS_NOT_ALLOWED');
+    expect(mockDB.calls).toHaveLength(1);
   });
 });
 

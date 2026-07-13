@@ -1336,6 +1336,9 @@ export const migrations: Migration[] = [
         PRIMARY KEY (owner_user_id, attempt_month)
       )`,
       `ALTER TABLE voice_profiles ADD COLUMN previewed_at TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN preview_claimed_at TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN preview_claim_token TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN preview_language TEXT NOT NULL DEFAULT 'ko'`,
     ],
   },
 ];

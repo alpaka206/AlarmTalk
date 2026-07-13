@@ -39,6 +39,8 @@ import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
   dynamicPromptSettingsFromRow,
 } from '../lib/dynamic-prompt-settings';
+import { withWriteTransaction } from '../lib/transactions';
+import { enqueueExternalDeletion } from '../lib/audio-retention';
 
 const tts = new Hono<AppEnv>();
 const TTS_CATEGORIES = [
@@ -424,7 +426,7 @@ async function loadWeatherSignalInput(args: {
     ) {
       return null;
     }
-    const hasDust = await loadDustSignal(location);
+    const hasDust = await loadDustSignal(location, targetDate, timezone);
     return { code, maxTemp, minTemp, rainProbability, precipitation, hasDust };
   } catch {
     return null;
@@ -517,13 +519,22 @@ export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number 
   return idx('nice');
 }
 
-async function loadDustSignal(location: { latitude: number; longitude: number }): Promise<boolean> {
+async function loadDustSignal(
+  location: { latitude: number; longitude: number },
+  targetDate: string | null,
+  timezone: string,
+): Promise<boolean> {
   const url = new URL('https://air-quality-api.open-meteo.com/v1/air-quality');
   url.searchParams.set('latitude', String(location.latitude));
   url.searchParams.set('longitude', String(location.longitude));
   url.searchParams.set('hourly', ['pm10', 'pm2_5'].join(','));
-  url.searchParams.set('timezone', 'Asia/Seoul');
-  url.searchParams.set('forecast_days', '1');
+  url.searchParams.set('timezone', timezone);
+  if (targetDate) {
+    url.searchParams.set('start_date', targetDate);
+    url.searchParams.set('end_date', targetDate);
+  } else {
+    url.searchParams.set('forecast_days', '1');
+  }
 
   try {
     const response = await fetch(url.toString(), {
@@ -704,7 +715,7 @@ tts.post('/generate', async (c) => {
   }
 
   let requestText = draftPreviewRequested
-    ? draftPreviewText(normalizeSynthesisLanguage(body.language))
+    ? draftPreviewText('ko')
     : randomRequested && randomContext === 'preset'
       ? await pickRandomPresetText(c.env, category)
       : (body.text ?? '').trim();
@@ -785,13 +796,19 @@ tts.post('/generate', async (c) => {
       409,
     );
   }
+  const storedPreviewLanguage = normalizeSynthesisLanguage(
+    typeof vp.preview_language === 'string' ? vp.preview_language : 'ko',
+  );
+  if (draftPreviewRequested) requestText = draftPreviewText(storedPreviewLanguage);
 
   const isSystemVoice = Boolean(Number(vp.is_system ?? 0));
   if ((randomRequested && randomContext === 'preset') || draftPreviewRequested) {
     const isSharedVoiceProfileForPreset =
       typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
     const listenerTitle =
-      normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
+      (draftPreviewRequested
+        ? normalizeRelationshipLabel(vp.listener_title)
+        : normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle)) ??
       (isSharedVoiceProfileForPreset
         ? await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)
         : null) ??
@@ -849,9 +866,13 @@ tts.post('/generate', async (c) => {
   let manualQuotaPoolKey: string | null = null;
   let manualQuotaMonth: string | null = null;
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
+  let previewClaimed = false;
+  let activePreviewClaimToken: string | null = null;
 
   try {
-    const requestedLanguage = normalizeSynthesisLanguage(body.language);
+    const requestedLanguage = draftPreviewRequested
+      ? storedPreviewLanguage
+      : normalizeSynthesisLanguage(body.language);
 
     // 국외 이전 동의(B4): 동적 문구 생성(wake_weather/wake_fortune 등)과 번역은
     // 텍스트를 국외(Google Vertex)로 전송하므로 overseas_transfer 동의가 필요하다.
@@ -950,7 +971,13 @@ tts.post('/generate', async (c) => {
     // 2차 Vertex 호출(prepareAlarmTextWithVertex autoTag) 없이 [tag] +text 를 직접 조립한다.
     // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
     let prepared: { text: string; translated: boolean; tags: string[] };
-    if (dynamicGenerated) {
+    if (draftPreviewRequested) {
+      prepared = {
+        text: `[cheerfully] ${requestText}`,
+        translated: false,
+        tags: ['cheerfully'],
+      };
+    } else if (dynamicGenerated) {
       const dynamicTag = dynamicGenerated.tags[0] ?? '';
       const taggedText = dynamicTag
         ? `[${dynamicTag}] ${dynamicGenerated.text}`
@@ -1055,12 +1082,22 @@ tts.post('/generate', async (c) => {
       });
       if (cached) {
         if (draftPreviewRequested) {
-          await db.execute({
-            sql: `UPDATE voice_profiles SET previewed_at = datetime('now'), updated_at = datetime('now')
+          const marked = await db.execute({
+            sql: `UPDATE voice_profiles SET previewed_at = datetime('now'), preview_claimed_at = NULL,
+                        preview_claim_token = NULL, updated_at = datetime('now')
                   WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                     AND COALESCE(is_draft, 0) = 1 AND status = 'ready'`,
             args: [body.voice_profile_id, userPk, userId],
           });
+          if ((marked.rowsAffected ?? 0) === 0) {
+            return c.json(
+              {
+                error: 'Voice draft is no longer available.',
+                error_code: 'VOICE_PROFILE_NOT_FOUND',
+              },
+              409,
+            );
+          }
         }
         return c.json(
           {
@@ -1084,6 +1121,39 @@ tts.post('/generate', async (c) => {
           200,
         );
       }
+    }
+
+    if (draftPreviewRequested) {
+      if (vp.previewed_at) {
+        return c.json(
+          {
+            error: 'The saved preview audio is no longer available.',
+            error_code: 'VOICE_PREVIEW_UNAVAILABLE',
+          },
+          409,
+        );
+      }
+      const previewClaimToken = crypto.randomUUID();
+      const claimed = await db.execute({
+        sql: `UPDATE voice_profiles
+              SET preview_claimed_at = datetime('now'), preview_claim_token = ?,
+                  updated_at = datetime('now')
+              WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
+                AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
+        args: [previewClaimToken, body.voice_profile_id, userPk, userId],
+      });
+      if ((claimed.rowsAffected ?? 0) === 0) {
+        return c.json(
+          {
+            error: 'Voice preview is already being prepared.',
+            error_code: 'VOICE_PREVIEW_IN_PROGRESS',
+          },
+          409,
+        );
+      }
+      previewClaimed = true;
+      activePreviewClaimToken = previewClaimToken;
     }
 
     // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.
@@ -1130,73 +1200,82 @@ tts.post('/generate', async (c) => {
         }
 
         const messageId = crypto.randomUUID();
-        await db.execute({
-          sql: `INSERT INTO messages
+        try {
+          await withWriteTransaction(db, async (tx) => {
+            await tx.execute({
+              sql: `INSERT INTO messages
                 (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json, category, audio_url)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [
-            messageId,
-            userPk,
-            body.voice_profile_id,
-            messageText,
-            synthesisText,
-            deliveryTagsJson,
-            category,
-            audioUrl,
-          ],
-        });
+              args: [
+                messageId,
+                userPk,
+                body.voice_profile_id,
+                messageText,
+                synthesisText,
+                deliveryTagsJson,
+                category,
+                audioUrl,
+              ],
+            });
 
-        if (audioUrl) {
-          await db.execute({
-            sql: `INSERT OR IGNORE INTO generated_audio_assets
+            if (audioUrl) {
+              await tx.execute({
+                sql: `INSERT OR IGNORE INTO generated_audio_assets
                   (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                    model_id, language, request_hash, text, original_text, delivery_tags_json, category, audio_url,
                    audio_object_key, audio_format, mime_type, size_bytes)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            args: [
-              crypto.randomUUID(),
-              userPk,
-              body.voice_profile_id,
-              messageId,
-              generated.provider,
-              generated.providerVoiceId,
-              generated.modelId,
-              synthesisLanguage,
-              cacheKey,
-              synthesisText,
-              messageText,
-              deliveryTagsJson,
-              category,
-              audioUrl,
-              audioObjectKey,
-              generated.outputFormat,
-              generated.mimeType,
-              bytes.byteLength,
-            ],
-          });
-        }
+                args: [
+                  crypto.randomUUID(),
+                  userPk,
+                  body.voice_profile_id,
+                  messageId,
+                  generated.provider,
+                  generated.providerVoiceId,
+                  generated.modelId,
+                  synthesisLanguage,
+                  cacheKey,
+                  synthesisText,
+                  messageText,
+                  deliveryTagsJson,
+                  category,
+                  audioUrl,
+                  audioObjectKey,
+                  generated.outputFormat,
+                  generated.mimeType,
+                  bytes.byteLength,
+                ],
+              });
+            }
 
-        await db.execute({
-          sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
-          args: [crypto.randomUUID(), userPk, messageId],
-        });
+            await tx.execute({
+              sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
+              args: [crypto.randomUUID(), userPk, messageId],
+            });
 
-        if (draftPreviewRequested) {
-          const marked = await db.execute({
-            sql: `UPDATE voice_profiles SET previewed_at = datetime('now'), updated_at = datetime('now')
+            if (draftPreviewRequested) {
+              const marked = await tx.execute({
+                sql: `UPDATE voice_profiles SET previewed_at = datetime('now'), preview_claimed_at = NULL,
+                        preview_claim_token = NULL, updated_at = datetime('now')
                   WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
-                    AND COALESCE(is_draft, 0) = 1 AND status = 'ready'`,
-            args: [body.voice_profile_id, userPk, userId],
+                    AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
+                    AND preview_claim_token = ?`,
+                args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+              });
+              if ((marked.rowsAffected ?? 0) === 0) {
+                throw new Error('Voice draft is no longer available.');
+              }
+            }
           });
-          if ((marked.rowsAffected ?? 0) === 0) {
-            return c.json(
-              {
-                error: 'Voice draft is no longer available.',
-                error_code: 'VOICE_PROFILE_NOT_FOUND',
-              },
-              409,
-            );
+        } catch (publicationError) {
+          if (audioObjectKey && c.env.VOICE_BUCKET) {
+            try {
+              await new R2VoiceStorage(c.env.VOICE_BUCKET).delete(audioObjectKey);
+            } catch {
+              await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
+            }
           }
+          throw publicationError;
         }
 
         return c.json(
@@ -1237,6 +1316,19 @@ tts.post('/generate', async (c) => {
         await refundManualTtsQuota(db, manualQuotaPoolKey, manualQuotaMonth);
       } catch (refundErr) {
         console.error('[tts/generate] manual quota refund failed', refundErr);
+      }
+    }
+    if (previewClaimed) {
+      try {
+        await db.execute({
+          sql: `UPDATE voice_profiles SET preview_claimed_at = NULL, preview_claim_token = NULL,
+                      updated_at = datetime('now')
+                WHERE id = ? AND user_id IN (?, ?) AND COALESCE(is_draft, 0) = 1
+                  AND previewed_at IS NULL AND preview_claim_token = ?`,
+          args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+        });
+      } catch (previewReleaseError) {
+        console.error('[tts/generate] failed to release preview claim', previewReleaseError);
       }
     }
     console.error(

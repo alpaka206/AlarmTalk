@@ -163,6 +163,51 @@ describe('POST /tts/generate — TTS 생성', () => {
     expect((await res.json()).error_code).toBe('VOICE_DRAFT_NOT_USABLE');
     expect(mockTextToSpeech).not.toHaveBeenCalled();
   });
+
+  it('draft 미리듣기는 요청 text를 무시하고 고정 문구를 합성한 뒤 완료 시각을 기록한다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        listener_title: '우리 아들',
+      },
+    ]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        text: '공격자가 바꾼 문구',
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
+    expect(body.synthesis_text).toBe(
+      '[cheerfully] 우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.',
+    );
+    expect(mockTextToSpeech).toHaveBeenCalledWith(
+      'el-draft',
+      body.synthesis_text,
+      expect.any(Object),
+    );
+    expect(mockDB.calls.some((call) => call.sql.includes('SET previewed_at = datetime'))).toBe(
+      true,
+    );
+  });
   it('필수 필드 없으면 400', async () => {
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/tts/generate', {}));

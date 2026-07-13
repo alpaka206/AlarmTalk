@@ -2,7 +2,10 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
-import { deletePaidVoiceDataForUser } from '../lib/paid-voice-cleanup';
+import {
+  deletePaidVoiceDataForUser,
+  deleteSensitiveVoiceDataForUser,
+} from '../lib/paid-voice-cleanup';
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
 import {
@@ -417,10 +420,7 @@ user.post('/consents', async (c) => {
           (row) => !row.agreed && SENSITIVE_REQUIRED_CONSENTS.some((type) => type === row.type),
         )
       ) {
-        await tx.execute({
-          sql: 'DELETE FROM voice_prerender_queue WHERE owner_user_id = ?',
-          args: [userPk],
-        });
+        await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userId'));
       }
     });
     return c.json({ success: true, recorded: rows.length });

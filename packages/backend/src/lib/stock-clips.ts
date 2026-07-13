@@ -4,8 +4,9 @@ import { R2VoiceStorage } from './r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
 import { prepareAlarmTextWithVertex, generatePrerenderClipText } from './vertex-translate';
-import type { DbExecutor } from './transactions';
+import { withWriteTransaction, type DbExecutor } from './transactions';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
+import { enqueueExternalDeletion } from './audio-retention';
 
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
@@ -218,6 +219,7 @@ export interface StockClipTarget {
   listenerTitle?: string | null;
   /** 톤 적응 생성 시 카테고리 기본 delivery 태그. */
   defaultTag?: string;
+  claimToken?: string;
 }
 
 /** 사전렌더 대상 보이스(시스템 or 유료 클론). ownerUserId·categories 로 소유자/버킷을 구분. */
@@ -238,6 +240,7 @@ export interface PrerenderVoice {
   /** 클론 톤 적응 생성용 관계/호칭. */
   relationshipLabel?: string | null;
   listenerTitle?: string | null;
+  claimToken?: string;
 }
 
 export interface GeneratedStockClip {
@@ -290,7 +293,12 @@ export function systemPrerenderVoices(voices: SystemVoiceRow[]): PrerenderVoice[
  */
 export async function listReadyCloneVoices(
   db: Client,
-  requests: readonly { voiceProfileId: string; ownerUserId: string; language: string }[],
+  requests: readonly {
+    voiceProfileId: string;
+    ownerUserId: string;
+    language: string;
+    claimToken: string;
+  }[],
 ): Promise<PrerenderVoice[]> {
   if (requests.length === 0) return [];
   const byId = new Map(requests.map((r) => [r.voiceProfileId, r]));
@@ -325,6 +333,7 @@ export async function listReadyCloneVoices(
       isClone: true,
       relationshipLabel,
       listenerTitle,
+      claimToken: req.claimToken,
     });
   }
   return out;
@@ -401,6 +410,7 @@ export async function findMissingStockTargets(
             relationshipLabel: voice.relationshipLabel ?? null,
             listenerTitle: voice.listenerTitle ?? null,
             defaultTag: source.defaultTag,
+            claimToken: voice.claimToken,
           });
         }
       });
@@ -615,13 +625,14 @@ export async function generateStockClip(
   }
   const assertCloneAuthorization = async () => {
     if (!target.toneAdapt) return;
+    if (!target.claimToken) throw new Error('Voice prerender claim token is missing.');
     const authorized = await db.execute({
       sql: `SELECT vp.id FROM voice_profiles vp
             JOIN voice_prerender_queue q ON q.voice_profile_id = vp.id
             WHERE vp.id = ? AND vp.deleted_at IS NULL AND vp.status = 'ready'
               AND COALESCE(vp.is_draft, 0) = 0 AND q.owner_user_id = ?
-              AND q.status = 'pending' AND q.claim_token IS NOT NULL`,
-      args: [target.voiceProfileId, target.ownerUserId],
+              AND q.status = 'pending' AND q.claim_token = ?`,
+      args: [target.voiceProfileId, target.ownerUserId, target.claimToken],
     });
     if (authorized.rows.length === 0) throw new Error('Voice prerender authorization expired.');
     if (await missingConsentType(db, target.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
@@ -705,8 +716,9 @@ export async function generateStockClip(
   // 조건부 INSERT: 같은 (voice·category·language·variant) preset 이 이미 있으면 no-op. cron 이 겹쳐
   // 두 호출이 같은 target 을 동시에 렌더해도(findMissingStockTargets 는 순차 멱등만 보장) 중복 행이
   // 생기지 않는다. SQLite 단일 writer 라 INSERT…SELECT WHERE NOT EXISTS 가 원자적으로 직렬화된다.
-  const insertedMessage = await db.execute({
-    sql: `INSERT INTO messages
+  const publication = await withWriteTransaction(db, async (tx) => {
+    const insertedMessage = await tx.execute({
+      sql: `INSERT INTO messages
           (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json,
            category, language, variant, is_preset, audio_url)
           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?
@@ -714,82 +726,108 @@ export async function generateStockClip(
             SELECT 1 FROM messages
             WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
               AND COALESCE(is_preset, 0) = 1
-          )`,
-    args: [
-      messageId,
-      target.ownerUserId,
-      target.voiceProfileId,
-      displayText,
-      synthesisText,
-      deliveryTagsJson,
-      target.category,
-      language,
-      target.variantIndex,
-      audioUrl,
-      target.voiceProfileId,
-      target.category,
-      language,
-      target.variantIndex,
-    ],
+          )
+            AND (? = 0 OR EXISTS (
+              SELECT 1 FROM voice_profiles vp
+              JOIN voice_prerender_queue q ON q.voice_profile_id = vp.id
+              WHERE vp.id = ? AND vp.deleted_at IS NULL AND vp.status = 'ready'
+                AND COALESCE(vp.is_draft, 0) = 0 AND q.owner_user_id = ?
+                AND q.status = 'pending' AND q.claim_token = ?
+            ))`,
+      args: [
+        messageId,
+        target.ownerUserId,
+        target.voiceProfileId,
+        displayText,
+        synthesisText,
+        deliveryTagsJson,
+        target.category,
+        language,
+        target.variantIndex,
+        audioUrl,
+        target.voiceProfileId,
+        target.category,
+        language,
+        target.variantIndex,
+        target.toneAdapt ? 1 : 0,
+        target.voiceProfileId,
+        target.ownerUserId,
+        target.claimToken ?? '',
+      ],
+    });
+
+    if ((insertedMessage.rowsAffected ?? 0) === 0) {
+      const existing = await tx.execute({
+        sql: `SELECT id, text, audio_url FROM messages
+              WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
+                AND COALESCE(is_preset, 0) = 1
+              LIMIT 1`,
+        args: [target.voiceProfileId, target.category, language, target.variantIndex],
+      });
+      const row = existing.rows[0];
+      return row
+        ? {
+            inserted: false as const,
+            messageId: String(row.id),
+            text: String(row.text ?? displayText),
+            audioUrl: String(row.audio_url ?? ''),
+          }
+        : null;
+    }
+
+    await tx.execute({
+      sql: `INSERT OR IGNORE INTO generated_audio_assets
+            (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
+             model_id, language, request_hash, text, original_text, delivery_tags_json,
+             category, audio_url, audio_object_key, audio_format, mime_type, size_bytes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        crypto.randomUUID(),
+        target.ownerUserId,
+        target.voiceProfileId,
+        messageId,
+        generated.provider,
+        generated.providerVoiceId,
+        generated.modelId,
+        language,
+        cacheKey,
+        synthesisText,
+        displayText,
+        deliveryTagsJson,
+        target.category,
+        audioUrl,
+        audioObjectKey,
+        generated.outputFormat,
+        generated.mimeType,
+        bytes.byteLength,
+      ],
+    });
+    return { inserted: true as const, messageId, text: displayText, audioUrl };
   });
 
-  if ((insertedMessage.rowsAffected ?? 0) === 0) {
-    const existing = await db.execute({
-      sql: `SELECT id, text, audio_url FROM messages
-            WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
-              AND COALESCE(is_preset, 0) = 1
-            LIMIT 1`,
-      args: [target.voiceProfileId, target.category, language, target.variantIndex],
-    });
-    const row = existing.rows[0];
-    if (!row) throw new Error('Concurrent preset publication could not be resolved.');
-    if (row.audio_url !== audioUrl) await storage.delete(audioObjectKey);
-    return {
-      message_id: String(row.id),
-      voice_profile_id: target.voiceProfileId,
-      voice_name: target.voiceName,
-      category: target.category,
-      language,
-      variant: target.variantIndex,
-      text: String(row.text ?? displayText),
-    };
+  if (!publication) {
+    try {
+      await storage.delete(audioObjectKey);
+    } catch {
+      await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
+    }
+    throw new Error('Preset publication authorization expired.');
+  }
+  if (!publication.inserted && publication.audioUrl !== audioUrl) {
+    try {
+      await storage.delete(audioObjectKey);
+    } catch {
+      await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
+    }
   }
 
-  await db.execute({
-    sql: `INSERT OR IGNORE INTO generated_audio_assets
-          (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
-           model_id, language, request_hash, text, original_text, delivery_tags_json,
-           category, audio_url, audio_object_key, audio_format, mime_type, size_bytes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      crypto.randomUUID(),
-      target.ownerUserId,
-      target.voiceProfileId,
-      messageId,
-      generated.provider,
-      generated.providerVoiceId,
-      generated.modelId,
-      language,
-      cacheKey,
-      synthesisText,
-      displayText,
-      deliveryTagsJson,
-      target.category,
-      audioUrl,
-      audioObjectKey,
-      generated.outputFormat,
-      generated.mimeType,
-      bytes.byteLength,
-    ],
-  });
-
   return {
-    message_id: messageId,
+    message_id: publication.messageId,
     voice_profile_id: target.voiceProfileId,
     voice_name: target.voiceName,
     category: target.category,
     language,
     variant: target.variantIndex,
-    text: displayText,
+    text: publication.text,
   };
 }
