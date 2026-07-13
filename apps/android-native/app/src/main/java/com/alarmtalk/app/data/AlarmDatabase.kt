@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 19,
+    version = 20,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -45,6 +45,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_16_17,
                     MIGRATION_17_18,
                     MIGRATION_18_19,
+                    MIGRATION_19_20,
                 )
                     // 캐릭터/성장 기능 제거에 따른 스키마 변경. 개발 중 미정의 마이그레이션은
                     // 파괴적 재생성으로 처리한다(출시 전이라 보존할 데이터 없음).
@@ -197,6 +198,13 @@ abstract class AlarmDatabase : RoomDatabase() {
         private val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN contextVariantIndex INTEGER")
+            }
+        }
+
+        // 날씨 variant 인덱스의 마지막 resolve 시각(준비창 12h 게이트 전용, 범용 updatedAtMillis 재사용 회귀 차단).
+        private val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN contextResolvedAtMillis INTEGER")
             }
         }
 

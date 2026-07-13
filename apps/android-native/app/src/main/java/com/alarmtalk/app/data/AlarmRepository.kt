@@ -724,7 +724,7 @@ class AlarmRepository(
         // 아직 미해결(null)이거나 마지막 갱신이 ~12h 이전인 알람만 대상으로 삼아 최대 하루 1~2회로 제한.
         val staleBefore = now - 12 * 60 * 60 * 1000L
         val alarms = alarmDao.getEnabledWeatherBucketAlarms()
-            .filter { it.contextVariantIndex == null || it.updatedAtMillis < staleBefore }
+            .filter { it.contextVariantIndex == null || (it.contextResolvedAtMillis ?: 0L) < staleBefore }
         if (alarms.isEmpty()) return 0
         // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
         val byLocation = alarms.groupBy {
@@ -747,10 +747,10 @@ class AlarmRepository(
             // 조회 실패(null)면 '맑음(0)'으로 덮어쓰지 않고 기존 인덱스를 유지한다.
             if (index == null) continue
             for (alarm in group) {
-                if (index != alarm.contextVariantIndex) {
-                    alarmDao.updateContextVariantIndex(alarm.id, index, System.currentTimeMillis())
-                    resolved += 1
-                }
+                // 인덱스가 그대로여도 resolvedAt 은 무조건 갱신해 12h 게이트를 전진시킨다. (change 일 때만
+                // 갱신하면 안정 날씨는 시계가 안 올라가 매 워커틱마다 open-meteo 재호출 → 배터리·쿼터 낭비.)
+                alarmDao.updateContextVariantIndex(alarm.id, index, System.currentTimeMillis())
+                if (index != alarm.contextVariantIndex) resolved += 1
             }
         }
         if (resolved > 0) Log.i(TAG, "Resolved weather bucket variants count=$resolved")

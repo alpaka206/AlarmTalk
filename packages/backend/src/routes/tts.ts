@@ -382,18 +382,25 @@ async function loadWeatherSignalInput(args: {
       .catch(() => ({}) as WeatherForecastResponse);
     if (!response.ok || !json.daily) return null;
     const code = Number(json.daily.weather_code?.[0]);
-    // weather_code 가 없으면(NaN) 눈/비/안개/흐림을 신뢰성 있게 분류할 수 없다 → null 로 반환해
-    // 클라가 '맑음'으로 오분류·덮어쓰지 않고 마지막 유효 인덱스를 유지하게 한다.
-    if (!Number.isFinite(code)) return null;
+    const maxTemp = Number(json.daily.temperature_2m_max?.[0]);
+    const minTemp = Number(json.daily.temperature_2m_min?.[0]);
+    const rainProbability = Number(json.daily.precipitation_probability_max?.[0]);
+    const precipitation = Number(json.daily.precipitation_sum?.[0]);
+    // 코드·기온·강수가 모두 없으면(전부 NaN) 분류 불가 → null. 이때만 클라가 마지막 인덱스를 유지하고
+    // 라이브는 generic 으로 떨어진다. 단 weather_code 만 없고 기온/강수가 있으면 그것으로 분류 가능하므로
+    // 통과시킨다 — buildWeatherSignal(라이브)의 우산·한파 멘트, resolvePrerenderWeatherIndex 의
+    // 비/더위/추위 인덱스는 code 없이도 산출된다. (code 만으로 null 반환하면 라이브 날씨멘트가 통째 사라짐)
+    if (
+      !Number.isFinite(code) &&
+      !Number.isFinite(maxTemp) &&
+      !Number.isFinite(minTemp) &&
+      !Number.isFinite(rainProbability) &&
+      !Number.isFinite(precipitation)
+    ) {
+      return null;
+    }
     const hasDust = await loadDustSignal(location);
-    return {
-      code,
-      maxTemp: Number(json.daily.temperature_2m_max?.[0]),
-      minTemp: Number(json.daily.temperature_2m_min?.[0]),
-      rainProbability: Number(json.daily.precipitation_probability_max?.[0]),
-      precipitation: Number(json.daily.precipitation_sum?.[0]),
-      hasDust,
-    };
+    return { code, maxTemp, minTemp, rainProbability, precipitation, hasDust };
   } catch {
     return null;
   }
@@ -476,8 +483,9 @@ export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number 
   if (hasDust) return idx('dust');
   if (FOG_WMO_CODES.includes(code)) return idx('fog');
   if (Number.isFinite(maxTemp) && maxTemp >= 30) return idx('heat');
-  // 추위: 라이브 buildWeatherSignal 과 동일 기준(최저<=0 또는 최고<=5). 맑고 추운 날 '산책' 오재 방지.
-  if ((Number.isFinite(minTemp) && minTemp <= 0) || (Number.isFinite(maxTemp) && maxTemp <= 5)) {
+  // 추위: 라이브 buildWeatherSignal 과 동일 기준(최저<=0 또는 최고<=12). buildWeatherSignal 은 최고<=5
+  // 와 최고<=12 두 분기 모두 cold 로 밀어넣으므로 실질 기준이 <=12 → 6~12°C 맑은 날 '산책' 오재 방지.
+  if ((Number.isFinite(minTemp) && minTemp <= 0) || (Number.isFinite(maxTemp) && maxTemp <= 12)) {
     return idx('cold');
   }
   if (CLOUD_WMO_CODES.includes(code)) return idx('cloud');

@@ -699,7 +699,11 @@ internal fun AlarmEditorScreen(
                 !isSystemVoiceId(profileId) && hasCompleteCloneBucket(cloneBucketCategory, profileId)
             if (
                 tryCloneBucket &&
-                runCatching { bindStockBucketClips(cloneBucketCategory!!, profileId) }.getOrDefault(false)
+                // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
+                // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
+                runCatching {
+                    bindStockBucketClips(cloneBucketCategory!!, profileId, editor.contextVariantIndex)
+                }.getOrDefault(false)
             ) {
                 isSaving = false
                 submitDraft(editor.toDraft())

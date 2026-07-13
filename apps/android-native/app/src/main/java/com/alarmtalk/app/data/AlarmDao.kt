@@ -57,8 +57,10 @@ interface AlarmDao {
     )
     suspend fun getEnabledWeatherBucketAlarms(): List<AlarmEntity>
 
-    @Query("UPDATE alarms SET contextVariantIndex = :index, updatedAtMillis = :updatedAtMillis WHERE id = :id")
-    suspend fun updateContextVariantIndex(id: String, index: Int?, updatedAtMillis: Long)
+    // resolvedAtMillis 는 전용 게이트 컬럼(contextResolvedAtMillis). updatedAtMillis 를 건드리지 않아
+    // (a) 인덱스 불변이어도 게이트가 전진하고 (b) 무관 편집이 날씨 재해결 시계를 리셋하지 않는다.
+    @Query("UPDATE alarms SET contextVariantIndex = :index, contextResolvedAtMillis = :resolvedAtMillis WHERE id = :id")
+    suspend fun updateContextVariantIndex(id: String, index: Int?, resolvedAtMillis: Long)
 
     @Query(
         """

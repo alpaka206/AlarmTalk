@@ -53,6 +53,10 @@ data class AlarmEntity(
     // /tts/prerender-variant 가 resolve 한 값을 스냅샷한다(발사는 오프라인 lookup). null 이면
     // 회전(사랑·약·기상 등) 또는 미해결(→ variant0 폴백).
     val contextVariantIndex: Int? = null,
+    // contextVariantIndex 를 마지막으로 resolve 한 시각. 준비창 워커의 12h 게이트 전용(범용 updatedAtMillis
+    // 재사용 시: 인덱스 불변이면 갱신 누락→매시간 재호출, 무관 편집이 시계 리셋 두 버그 발생). 날씨 resolve
+    // 마다 무조건 갱신하고, 이 값만으로 staleness 판정한다.
+    val contextResolvedAtMillis: Long? = null,
     val remoteAlarmId: String?,
     val lastSyncedAtMillis: Long?,
     val syncState: String,
