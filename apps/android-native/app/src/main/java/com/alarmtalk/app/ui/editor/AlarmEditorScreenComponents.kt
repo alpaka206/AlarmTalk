@@ -14,13 +14,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -71,29 +68,6 @@ internal fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferenc
         fortuneBirthDate = fortune.birthDate?.trim().orEmpty(),
         fortuneBirthTime = fortune.birthTime?.trim().orEmpty(),
     )
-
-@Composable
-internal fun AlarmEditorTopBar(
-    isEditing: Boolean,
-    familyAlarmMode: Boolean,
-    onCancel: () -> Unit,
-    onShowGuide: (() -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 8.dp, top = 4.dp, end = 12.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // 제목·가이드(?)는 두지 않고, 탈출 경로로 왼쪽 위 뒤로가기만 남긴다.
-        IconButton(onClick = onCancel) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                contentDescription = stringResource(R.string.editor_close),
-            )
-        }
-    }
-}
 
 // 편집기 섹션 헤더 단일 출처. '재생 방식'·'세부 설정'이 이미 쓰던 titleMedium/Bold/onBackground
 // 규격으로 맞춰, 각 파일에 흩어진 인라인 Text 대신 이 컴포저블로 통일한다.

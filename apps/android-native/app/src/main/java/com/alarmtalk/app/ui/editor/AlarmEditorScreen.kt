@@ -183,7 +183,7 @@ internal fun AlarmEditorScreen(
         }.getOrDefault(emptyList())
     }
     val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
-    // 처음 새 알람을 만들 때 한 번만 자동 노출. 상단 도움말 버튼으로 다시 볼 수 있다.
+    // 처음 새 알람을 만들 때 한 번만 자동 노출. 상단바(도움말 버튼 포함)를 없앴으므로 다시 보기는 없다.
     var usageGuideVisible by remember {
         mutableStateOf(
             alarm == null && !familyAlarmMode &&
@@ -1128,12 +1128,6 @@ internal fun AlarmEditorScreen(
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
-                                onClear = {
-                                    stopPreview()
-                                    editor.clearAudio()
-                                    // 녹음을 지우면 경과 시간 표시도 00초로 되돌린다(안내 메시지는 두지 않음).
-                                    recordingElapsedMillis = 0L
-                                },
                             )
                         }
                     }
@@ -1149,9 +1143,10 @@ internal fun AlarmEditorScreen(
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
                             showAlarmSound = editor.playMode != AlarmPlayModes.VOICE_ONLY,
-                            // 목소리 크기는 TTS면 목소리 카드, 녹음이면 녹음 박스 아래 행에서 연다.
-                            // 그래서 세부설정엔 '목소리' 행을 두지 않는다.
-                            showVoiceOutput = false,
+                            // 유료는 목소리 크기를 목소리 카드(TTS)·녹음 박스 아래(녹음)에서 열므로 세부설정엔 두지 않는다.
+                            // 무료 플랜 목소리 카드엔 볼륨 행이 없으므로, 무료 음성 알람일 때만 세부설정 '목소리' 행을 남긴다.
+                            showVoiceOutput = freeVoiceTier &&
+                                editor.playMode != AlarmPlayModes.ALARM_ONLY,
                             voiceVolumePercent = editor.voiceVolumePercent,
                             voiceRepeat = editor.voiceRepeat,
                             voiceRepeatActive = editor.playMode == AlarmPlayModes.VOICE_ONLY,

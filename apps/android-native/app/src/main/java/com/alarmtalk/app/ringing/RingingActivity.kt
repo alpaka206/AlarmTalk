@@ -320,7 +320,8 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
                     fontWeight = FontWeight.Medium,
                     lineHeight = 30.sp,
                     textAlign = TextAlign.Center,
-                    maxLines = 6,
+                    // 긴 문구가 스누즈/해제 컨트롤을 화면 밖으로 밀지 않도록 줄 수를 제한한다(전문은 음성으로 재생).
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -515,8 +516,10 @@ private fun defaultRingingUiState(context: android.content.Context): RingingUiSt
 private fun AlarmEntity.toRingingUiState(context: android.content.Context): RingingUiState {
     val customTitle = label.trim()
         .takeIf { it.isNotBlank() && it != context.getString(R.string.rd_default_alarm_label) }
+    // 표시 텍스트는 서버가 이미 태그를 제거해(랜덤 경로) 저장하고, 직접 입력은 원문 그대로다.
+    // 여기서 추가로 대괄호를 지우면 "[after lunch]" 같은 정상 문구까지 날아가므로 트림만 한다.
     val voiceMessage = voiceText
-        ?.let { stripDeliveryTags(it) }
+        ?.trim()
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
     val snoozeAvailable = snoozeEnabled &&
         (
@@ -549,12 +552,6 @@ private fun todayDateLabel(context: android.content.Context): String {
         weekday,
     )
 }
-
-// 전달 태그([cheerfully] 등)가 남아 있는 옛 알람 대비, 표시 직전에도 한 번 더 제거한다.
-private val DeliveryTagRegex = Regex("""\s*\[[a-z][a-z -]{1,32}]\s*""", RegexOption.IGNORE_CASE)
-
-private fun stripDeliveryTags(text: String): String =
-    text.replace(DeliveryTagRegex, " ").replace(Regex("""\s+"""), " ").trim()
 
 /** "6:30" 형태(12시간제, 분 0패딩) — 큰 시계 표시용. */
 private fun alarmClockLabel(hour: Int, minute: Int): String {

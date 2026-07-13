@@ -91,7 +91,6 @@ internal fun VoiceAudioCard(
     onCreateVoiceProfileClick: () -> Unit,
     onOpenRandomPromptSettings: () -> Unit,
     onOpenVoiceOutputSettings: () -> Unit,
-    onClear: () -> Unit,
 ) {
     val context = LocalContext.current
     val visibleVoiceSource = if (editor.voiceSource == VoiceSources.SERVER_TTS) {
@@ -281,6 +280,7 @@ internal fun VoiceAudioCard(
                 if (editor.localAudioUri != null && !isRecording) {
                     RecordedPlaybackControls(
                         isPreviewActive = isCachedAudioPreviewActive,
+                        isPreparing = isPreviewPreparing,
                         onPlay = onPreviewAudio,
                         onRedo = onRecord,
                     )
@@ -680,6 +680,7 @@ internal fun MessageModeSummaryRow(
 @Composable
 private fun RecordedPlaybackControls(
     isPreviewActive: Boolean,
+    isPreparing: Boolean,
     onPlay: () -> Unit,
     onRedo: () -> Unit,
 ) {
@@ -698,6 +699,8 @@ private fun RecordedPlaybackControls(
         ) {
             Button(
                 onClick = onPlay,
+                // 캐시 오디오 준비 중엔 눌러도 소용없으므로 비활성으로 로딩을 알린다.
+                enabled = !isPreparing,
                 modifier = Modifier.size(48.dp),
                 shape = CircleShape,
                 contentPadding = PaddingValues(0.dp),

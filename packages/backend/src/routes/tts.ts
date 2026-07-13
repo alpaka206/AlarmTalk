@@ -875,9 +875,12 @@ tts.post('/generate', async (c) => {
       });
     }
     const synthesisText = prepared.text;
-    // 표시/저장 텍스트는 전달 태그([cheerfully] 등)를 제거한 순수 문구로 둔다.
-    // 합성용(synthesisText)만 태그를 유지한다.
-    const messageText = normalizeAlarmTextWithoutTags(requestText);
+    // 표시/저장 텍스트는 전달 태그([cheerfully] 등)를 제거한 순수 문구로 둔다(합성용 synthesisText만 태그 유지).
+    // 단, 전달 태그가 붙는 건 프리셋·동적(random) 경로뿐이다. 직접 입력(manual)은 사용자가 친 원문을
+    // 그대로 둔다 — 그러지 않으면 정규식이 "[after lunch]" 같은 정상 대괄호까지 지워 텍스트·음성이 어긋난다.
+    const messageText = randomRequested
+      ? normalizeAlarmTextWithoutTags(requestText)
+      : requestText;
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.
