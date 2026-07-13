@@ -97,7 +97,7 @@ internal fun expectedCloneBucketVariantCount(category: String): Int? =
         "weather" -> 8
         "fortune" -> 5
         "love" -> 3
-        "medication" -> 2
+        "medication" -> 3
         "greeting" -> 1
         else -> null
     }

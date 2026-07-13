@@ -12,7 +12,7 @@ class AlarmEditorStateTest {
         assertEquals(8, expectedCloneBucketVariantCount("weather"))
         assertEquals(5, expectedCloneBucketVariantCount("fortune"))
         assertEquals(3, expectedCloneBucketVariantCount("love"))
-        assertEquals(2, expectedCloneBucketVariantCount("medication"))
+        assertEquals(3, expectedCloneBucketVariantCount("medication"))
         assertEquals(1, expectedCloneBucketVariantCount("greeting"))
         assertNull(expectedCloneBucketVariantCount("unknown"))
     }
