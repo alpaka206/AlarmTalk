@@ -572,6 +572,7 @@ voiceProfile.patch('/:id', async (c) => {
           return { status: 'not_found' as const, rowsAffected: 0 };
         }
         await markMonthlyOfficialVoiceChange(tx, ledgerId, 'succeeded');
+        await enqueuePrerender(tx, id, userPk, prerenderLanguage);
         return { status: 'ok' as const, rowsAffected: promoted.rowsAffected ?? 0 };
       })
     : { status: 'ok' as const, ...(await updateProfile(db)) };
@@ -589,16 +590,6 @@ voiceProfile.patch('/:id', async (c) => {
   }
   if ((updateRes.rowsAffected ?? 0) === 0) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
-  }
-
-  // draft→official 확정(미리듣기 후 결정) 시 사전렌더 큐에 적재한다. clone 을 draft 로 만든 뒤
-  // promote 하는 경로는 status 훅만 보면 놓치므로 여기서도 커버. 큐 실패는 응답을 깨지 않게 격리.
-  if (promotesDraftToOfficial) {
-    try {
-      await enqueuePrerender(db, id, userPk, prerenderLanguage);
-    } catch (queueErr) {
-      logRouteError(c, queueErr);
-    }
   }
 
   return c.json({
@@ -730,7 +721,11 @@ voiceProfile.post('/clone', async (c) => {
       }
     }
 
-    const missingSensitiveConsent = await missingConsentType(db, userPk, SENSITIVE_REQUIRED_CONSENTS);
+    const missingSensitiveConsent = await missingConsentType(
+      db,
+      userPk,
+      SENSITIVE_REQUIRED_CONSENTS,
+    );
     if (missingSensitiveConsent) {
       return c.json(
         {
@@ -756,7 +751,9 @@ voiceProfile.post('/clone', async (c) => {
       String(formData.get('isDraft') ?? formData.get('is_draft') ?? 'false'),
     );
     // 사전렌더할 앱 언어(클라가 전송, 미전송 시 ko). 확정된(비-draft) 클론만 큐잉한다.
-    const prerenderLanguage = String(formData.get('language') ?? formData.get('app_language') ?? 'ko');
+    const prerenderLanguage = String(
+      formData.get('language') ?? formData.get('app_language') ?? 'ko',
+    );
     const relationshipLabel =
       normalizeRelationshipLabel(
         formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
@@ -935,18 +932,10 @@ voiceProfile.post('/clone', async (c) => {
         args: [voiceId, profileId],
       });
       await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'succeeded');
-    });
-
-    // 확정된(비-draft) 유료 클론이 ready 되면 사전렌더 큐에 적재한다(cron 이 그 목소리 말투로
-    // 카테고리 클립 생성). draft(미리듣기 단계)는 promote 시점에 큐잉한다. 트랜잭션 밖·성공
-    // 경로에서만, 큐 실패가 클론 응답을 깨지 않도록 격리한다.
-    if (!isDraft) {
-      try {
-        await enqueuePrerender(db, profileId, userPk, prerenderLanguage);
-      } catch (queueErr) {
-        logRouteError(c, queueErr);
+      if (!isDraft) {
+        await enqueuePrerender(tx, profileId, userPk, prerenderLanguage);
       }
-    }
+    });
 
     return c.json(
       {
@@ -1017,7 +1006,10 @@ function isVoiceSlotExhaustedError(detail: string): boolean {
   );
 }
 
-function validateCloneDuration(value: unknown, isDraft = false): {
+function validateCloneDuration(
+  value: unknown,
+  isDraft = false,
+): {
   status: 400;
   body: { error: string; error_code: string };
 } | null {
@@ -1151,18 +1143,22 @@ voiceProfile.delete('/:id', async (c) => {
           WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
     args: [id],
   });
-  const deletedAudioUrls = Array.from(new Set(
-    assetsRes.rows
-      .flatMap((row) => {
-        const typed = typedRow<{ audio_url: string | null; audio_object_key: string | null }>(row);
-        return [
-          typed.audio_url,
-          typed.audio_object_key,
-          typed.audio_object_key ? `r2://${typed.audio_object_key}` : null,
-        ];
-      })
-      .filter((url): url is string => Boolean(url)),
-  ));
+  const deletedAudioUrls = Array.from(
+    new Set(
+      assetsRes.rows
+        .flatMap((row) => {
+          const typed = typedRow<{ audio_url: string | null; audio_object_key: string | null }>(
+            row,
+          );
+          return [
+            typed.audio_url,
+            typed.audio_object_key,
+            typed.audio_object_key ? `r2://${typed.audio_object_key}` : null,
+          ];
+        })
+        .filter((url): url is string => Boolean(url)),
+    ),
+  );
   const bucket = c.env?.VOICE_BUCKET;
   if (bucket && assetsRes.rows.length > 0) {
     const storage = new R2VoiceStorage(bucket);
@@ -1211,21 +1207,15 @@ voiceProfile.delete('/:id', async (c) => {
   });
 
   await db.execute({
+    sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?',
+    args: [id],
+  });
+
+  await db.execute({
     sql: `UPDATE voice_profiles
           SET deleted_at = datetime('now'), is_shared = 0, updated_at = datetime('now')
           WHERE id = ?`,
     args: [id],
-  });
-
-  // 이번 달 이 목소리 등록으로 소비한 '월 1회 변경' 슬롯을 되돌린다. 등록 직후 확인창에서
-  // '마음에 안 들면 삭제'를 안내하므로, 삭제하면 같은 달에 다른 목소리를 다시 등록할 수 있어야
-  // 한다. voice_profile_id 로 스코프해, 이전 달에 만든 목소리를 지워도 이번 달 슬롯엔 영향 없음.
-  await db.execute({
-    sql: `DELETE FROM voice_profile_change_ledger
-          WHERE voice_profile_id = ?
-            AND owner_user_id IN (${ph})
-            AND change_month = ${currentKstMonthSql()}`,
-    args: [id, ...ids],
   });
 
   return c.json({ success: true, deleted: true });

@@ -50,6 +50,7 @@ async function setupDb() {
       status TEXT NOT NULL DEFAULT 'pending',
       attempts INTEGER NOT NULL DEFAULT 0,
       claimed_at TEXT,
+      claim_token TEXT,
       requested_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -142,9 +143,9 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     expect(new Set(targets.map((t) => t.language))).toEqual(new Set(['ko']));
     // 클론은 전부 톤 적응 + 관계/호칭 전달 + 실소유자.
     expect(targets.every((t) => t.toneAdapt === true)).toBe(true);
-    expect(targets.every((t) => t.relationshipLabel === '할머니' && t.listenerTitle === '규원아')).toBe(
-      true,
-    );
+    expect(
+      targets.every((t) => t.relationshipLabel === '할머니' && t.listenerTitle === '규원아'),
+    ).toBe(true);
     expect(targets.every((t) => t.ownerUserId === 'owner-1')).toBe(true);
     expect(targets.every((t) => t.voiceProfileId === 'clone-ready')).toBe(true);
     // baseText 는 최종 문구가 아니라 생성 seed(지시문).
@@ -216,8 +217,13 @@ describe('사전렌더 큐 헬퍼', () => {
     const db = await setupDb();
     await enqueuePrerender(db, 'v1', 'owner-1', 'en');
     const claimed = await claimPendingPrerenderVoices(db, 5);
-    expect(claimed).toEqual([{ voiceProfileId: 'v1', ownerUserId: 'owner-1', language: 'en' }]);
-    await markPrerenderDone(db, 'v1');
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0]).toMatchObject({
+      voiceProfileId: 'v1',
+      ownerUserId: 'owner-1',
+      language: 'en',
+    });
+    await markPrerenderDone(db, 'v1', claimed[0]!.claimToken);
     expect(await claimPendingPrerenderVoices(db, 5)).toEqual([]);
   });
 
@@ -243,9 +249,10 @@ describe('사전렌더 큐 헬퍼', () => {
   it('부분 렌더 뒤 claim을 해제하면 다음 cron이 즉시 이어받는다', async () => {
     const db = await setupDb();
     await enqueuePrerender(db, 'v1', 'owner-1', 'en');
-    expect(await claimPendingPrerenderVoices(db, 5)).toHaveLength(1);
+    const claimed = await claimPendingPrerenderVoices(db, 5);
+    expect(claimed).toHaveLength(1);
 
-    await releasePrerenderClaim(db, 'v1');
+    await releasePrerenderClaim(db, 'v1', claimed[0]!.claimToken);
 
     expect(await claimPendingPrerenderVoices(db, 5)).toHaveLength(1);
   });
@@ -254,11 +261,34 @@ describe('사전렌더 큐 헬퍼', () => {
     const db = await setupDb();
     await enqueuePrerender(db, 'v1', 'owner-1', 'ko');
     for (let i = 0; i < 4; i += 1) {
-      await markPrerenderFailed(db, 'v1');
+      const [claim] = await claimPendingPrerenderVoices(db, 5);
+      expect(claim).toBeDefined();
+      await markPrerenderFailed(db, 'v1', claim!.claimToken);
       // 4회까지는 pending 유지 → 계속 claim 가능.
-      expect(await claimPendingPrerenderVoices(db, 5)).toHaveLength(1);
+      const row = await db.execute(
+        "SELECT status FROM voice_prerender_queue WHERE voice_profile_id = 'v1'",
+      );
+      expect(row.rows[0]!.status).toBe('pending');
     }
-    await markPrerenderFailed(db, 'v1'); // 5회째 → failed
+    const [lastClaim] = await claimPendingPrerenderVoices(db, 5);
+    await markPrerenderFailed(db, 'v1', lastClaim!.claimToken); // 5회째 → failed
     expect(await claimPendingPrerenderVoices(db, 5)).toEqual([]);
+  });
+  it('rejects stale claim tokens after a lease is reclaimed', async () => {
+    const db = await setupDb();
+    await enqueuePrerender(db, 'v1', 'owner-1', 'ko');
+    const [staleClaim] = await claimPendingPrerenderVoices(db, 1);
+    await db.execute(
+      `UPDATE voice_prerender_queue SET claimed_at = datetime('now', '-16 minutes') WHERE voice_profile_id = 'v1'`,
+    );
+    const [currentClaim] = await claimPendingPrerenderVoices(db, 1);
+
+    expect(currentClaim!.claimToken).not.toBe(staleClaim!.claimToken);
+    await releasePrerenderClaim(db, 'v1', staleClaim!.claimToken);
+    await markPrerenderDone(db, 'v1', staleClaim!.claimToken);
+    expect(await claimPendingPrerenderVoices(db, 1)).toEqual([]);
+
+    await releasePrerenderClaim(db, 'v1', currentClaim!.claimToken);
+    expect(await claimPendingPrerenderVoices(db, 1)).toHaveLength(1);
   });
 });

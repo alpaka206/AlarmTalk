@@ -4,6 +4,7 @@ import { R2VoiceStorage } from './r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
 import { prepareAlarmTextWithVertex, generatePrerenderClipText } from './vertex-translate';
+import type { DbExecutor } from './transactions';
 
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
@@ -63,16 +64,21 @@ export const STOCK_CLIP_PRESETS = [
  * 무료 플랜이 알람 버킷으로 고를 수 있는 카테고리(greeting 제외). 스톡 프리셋이 단일
  * 출처이므로, STOCK_CLIP_PRESETS 에 카테고리를 추가하면 자동으로 버킷 후보가 된다.
  */
-export const FREE_BUCKET_CATEGORIES: readonly string[] = STOCK_CLIP_PRESETS
-  .map((preset) => preset.category)
-  .filter((category) => category !== STOCK_GREETING_CATEGORY);
+export const FREE_BUCKET_CATEGORIES: readonly string[] = STOCK_CLIP_PRESETS.map(
+  (preset) => preset.category,
+).filter((category) => category !== STOCK_GREETING_CATEGORY);
 
 /**
  * 유료 클론 목소리에 사전렌더할 알람 버킷 카테고리(greeting 미리듣기는 별도로 항상 포함).
  * 날씨/운세는 '조건·테마'를 variant 인덱스로 담는다(category 는 하나, variant 순서가 조건/테마).
  * 재생 시 클라가 (날씨=지역 신호 / 운세=사주+날짜)로 로컬에서 조건·테마 인덱스를 골라 매칭한다.
  */
-export const PAID_BUCKET_CATEGORIES: readonly string[] = ['weather', 'fortune', 'love', 'medication'];
+export const PAID_BUCKET_CATEGORIES: readonly string[] = [
+  'weather',
+  'fortune',
+  'love',
+  'medication',
+];
 
 /** 유료 클론이 사전렌더 대상으로 삼는 카테고리(알람 버킷 + greeting 미리듣기 겸 기상 인사). */
 export const CLONE_PRERENDER_CATEGORIES: readonly string[] = [
@@ -96,7 +102,13 @@ export const CLONE_WEATHER_CONDITIONS = [
 ] as const;
 
 /** 운세 variant 인덱스 ↔ 테마(오락용, 개인정보 미포함). 클라가 사주+날짜로 인덱스를 고른다. */
-export const CLONE_FORTUNE_THEMES = ['luck', 'caution', 'wealth', 'health', 'relationship'] as const;
+export const CLONE_FORTUNE_THEMES = [
+  'luck',
+  'caution',
+  'wealth',
+  'health',
+  'relationship',
+] as const;
 
 /**
  * 유료 클론 사전렌더의 '의미 seed'. 각 문자열은 최종 문구가 아니라 생성 지시(outcome)이며,
@@ -402,7 +414,7 @@ export async function findMissingStockTargets(
  * 으로 되돌려 재합성 낭비를 만들지 않는다(문구변경 재렌더는 follow-up).
  */
 export async function enqueuePrerender(
-  db: Client,
+  db: DbExecutor,
   voiceProfileId: string,
   ownerUserId: string,
   language: string,
@@ -419,10 +431,11 @@ export async function enqueuePrerender(
 export async function claimPendingPrerenderVoices(
   db: Client,
   limit: number,
-): Promise<{ voiceProfileId: string; ownerUserId: string; language: string }[]> {
+): Promise<PrerenderClaim[]> {
+  const claimToken = crypto.randomUUID();
   const res = await db.execute({
     sql: `UPDATE voice_prerender_queue
-          SET claimed_at = datetime('now'), updated_at = datetime('now')
+          SET claimed_at = datetime('now'), claim_token = ?, updated_at = datetime('now')
           WHERE voice_profile_id IN (
             SELECT voice_profile_id
             FROM voice_prerender_queue
@@ -433,45 +446,66 @@ export async function claimPendingPrerenderVoices(
           )
             AND status = 'pending'
             AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
-          RETURNING voice_profile_id, owner_user_id, language`,
-    args: [Math.max(1, Math.min(Math.trunc(limit), 50))],
+          RETURNING voice_profile_id, owner_user_id, language, claim_token`,
+    args: [claimToken, Math.max(1, Math.min(Math.trunc(limit), 50))],
   });
   return res.rows.map((row) => ({
     voiceProfileId: String(row.voice_profile_id),
     ownerUserId: String(row.owner_user_id),
     language: String(row.language),
+    claimToken: String(row.claim_token),
   }));
 }
 
-export async function releasePrerenderClaim(db: Client, voiceProfileId: string): Promise<void> {
+export type PrerenderClaim = {
+  readonly voiceProfileId: string;
+  readonly ownerUserId: string;
+  readonly language: string;
+  readonly claimToken: string;
+};
+
+export async function releasePrerenderClaim(
+  db: Client,
+  voiceProfileId: string,
+  claimToken: string,
+): Promise<void> {
   await db.execute({
     sql: `UPDATE voice_prerender_queue
-          SET claimed_at = NULL, updated_at = datetime('now')
-          WHERE voice_profile_id = ? AND status = 'pending'`,
-    args: [voiceProfileId],
+          SET claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
+          WHERE voice_profile_id = ? AND status = 'pending' AND claim_token = ?`,
+    args: [voiceProfileId, claimToken],
   });
 }
 
 /** 해당 목소리의 사전렌더 완료 표시(missing 이 0이 됐을 때). */
-export async function markPrerenderDone(db: Client, voiceProfileId: string): Promise<void> {
+export async function markPrerenderDone(
+  db: Client,
+  voiceProfileId: string,
+  claimToken: string,
+): Promise<void> {
   await db.execute({
     sql: `UPDATE voice_prerender_queue
-          SET status = 'done', updated_at = datetime('now')
-          WHERE voice_profile_id = ?`,
-    args: [voiceProfileId],
+          SET status = 'done', claimed_at = NULL, claim_token = NULL, updated_at = datetime('now')
+          WHERE voice_profile_id = ? AND status = 'pending' AND claim_token = ?`,
+    args: [voiceProfileId, claimToken],
   });
 }
 
 /** 사전렌더 실패 1회 기록. attempts 상한(5) 초과 시 failed 로 내려 무한 재시도를 막는다. */
-export async function markPrerenderFailed(db: Client, voiceProfileId: string): Promise<void> {
+export async function markPrerenderFailed(
+  db: Client,
+  voiceProfileId: string,
+  claimToken: string,
+): Promise<void> {
   await db.execute({
     sql: `UPDATE voice_prerender_queue
           SET attempts = attempts + 1,
               status = CASE WHEN attempts + 1 >= 5 THEN 'failed' ELSE 'pending' END,
               claimed_at = NULL,
+              claim_token = NULL,
               updated_at = datetime('now')
-          WHERE voice_profile_id = ?`,
-    args: [voiceProfileId],
+          WHERE voice_profile_id = ? AND status = 'pending' AND claim_token = ?`,
+    args: [voiceProfileId, claimToken],
   });
 }
 
@@ -575,6 +609,9 @@ export async function generateStockClip(
   env: Env,
   target: StockClipTarget,
 ): Promise<GeneratedStockClip> {
+  if (!env.VOICE_BUCKET) {
+    throw new Error('VOICE_BUCKET (R2) is not configured.');
+  }
   const language = normalizeSynthesisLanguage(target.language);
 
   let synthesisText: string;
@@ -632,9 +669,6 @@ export async function generateStockClip(
   const generated = await attempt.synthesize();
   const bytes = generated.bytes;
 
-  if (!env.VOICE_BUCKET) {
-    throw new Error('VOICE_BUCKET (R2) is not configured.');
-  }
   const storage = new R2VoiceStorage(env.VOICE_BUCKET);
   const audioObjectKey = generatedTtsObjectKey(
     target.ownerUserId,

@@ -256,11 +256,7 @@ app.onError((err, c) => {
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
 // 주기를 바꾸면 lib/scheduler.ts 의 CRON_WINDOW_MINUTES 도 함께 바꿔야 한다.
-async function scheduled(
-  event: ScheduledEvent,
-  env: Env,
-  ctx: ExecutionContext,
-): Promise<void> {
+async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   const db = getDB(env);
   const now = new Date(event.scheduledTime);
 
@@ -268,7 +264,11 @@ async function scheduled(
   // 만든다(DSN 미설정 시 no-op). captureCron 은 구조화 로그 + Sentry 캡처를 함께 해
   // 정상 복구되지 않는 cron 오류를 관리자가 즉시 인지하게 한다.
   const sentry = env.SENTRY_DSN
-    ? new Toucan({ dsn: env.SENTRY_DSN, context: ctx, environment: env.ENVIRONMENT || 'production' })
+    ? new Toucan({
+        dsn: env.SENTRY_DSN,
+        context: ctx,
+        environment: env.ENVIRONMENT || 'production',
+      })
     : null;
   const captureCron = (at: string, err: unknown): void => {
     logStructured('error', { at, error: String(err) });
@@ -277,9 +277,8 @@ async function scheduled(
 
   // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
   try {
-    const { drainExternalDeletions, cleanupExpiredAudio, cleanupStaleDraftVoices } = await import(
-      './lib/audio-retention'
-    );
+    const { drainExternalDeletions, cleanupExpiredAudio, cleanupStaleDraftVoices } =
+      await import('./lib/audio-retention');
     await cleanupExpiredAudio(db, now);
     // 앱 강제종료 등으로 클라이언트 정리를 못 거친 고아 draft 보이스 회수
     // (draft 쿼터·ElevenLabs 슬롯 영구 점유 방지).
@@ -312,9 +311,8 @@ async function scheduled(
   // 탈퇴 유예(30일) 경과 계정 영구파기 (개인정보보호법 제21조). 파기 전 결제·구독 기록은
   // 전자상거래법(5년) 보존을 위해 가명처리해 분리 테이블로 옮긴다.
   try {
-    const { purgeUserAccount, pseudonymizeBillingForRetention } = await import(
-      './lib/account-deletion'
-    );
+    const { purgeUserAccount, pseudonymizeBillingForRetention } =
+      await import('./lib/account-deletion');
     const { withWriteTransaction } = await import('./lib/transactions');
     const due = await db.execute({
       sql: `SELECT id, google_id FROM users
@@ -408,35 +406,43 @@ async function scheduled(
       markPrerenderFailed,
       releasePrerenderClaim,
     } = await import('./lib/stock-clips');
+    const { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } = await import('./lib/consent');
     const MAX_CLIPS_PER_TICK = 3;
     const claimed = await claimPendingPrerenderVoices(db, 5);
     if (claimed.length > 0) {
       const cloneVoices = await listReadyCloneVoices(db, claimed);
+      const claimByVoiceId = new Map(claimed.map((request) => [request.voiceProfileId, request]));
       // 큐엔 있으나 ready 클론이 아닌 항목(삭제/실패/draft 등)은 실패 처리해 무한 pending 을 막는다.
       const readyIds = new Set(cloneVoices.map((v) => v.id));
       for (const req of claimed) {
         if (!readyIds.has(req.voiceProfileId)) {
-          await markPrerenderFailed(db, req.voiceProfileId);
+          await markPrerenderFailed(db, req.voiceProfileId, req.claimToken);
         }
       }
       let rendered = 0;
       for (const voice of cloneVoices) {
+        const claim = claimByVoiceId.get(voice.id);
+        if (!claim) continue;
+        if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
+          await markPrerenderFailed(db, voice.id, claim.claimToken);
+          continue;
+        }
         if (rendered >= MAX_CLIPS_PER_TICK) {
-          await releasePrerenderClaim(db, voice.id);
+          await releasePrerenderClaim(db, voice.id, claim.claimToken);
           continue;
         }
         const targets = await findMissingStockTargets(db, [voice]);
         if (targets.length === 0) {
-          await markPrerenderDone(db, voice.id);
+          await markPrerenderDone(db, voice.id, claim.claimToken);
           continue;
         }
         let voiceRendered = 0;
         let voiceError = false;
         for (const target of targets) {
           if (rendered >= MAX_CLIPS_PER_TICK) break;
+          rendered += 1;
           try {
             await generateStockClip(db, env, target);
-            rendered += 1;
             voiceRendered += 1;
           } catch (genErr) {
             // 한 클립 실패가 이 보이스의 나머지 클립(예: love/medication)을 버리지 않도록, 그 클립만
@@ -447,12 +453,12 @@ async function scheduled(
         }
         // 재조회 없이 판정: 이번 틱에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.
         if (voiceRendered === targets.length && !voiceError) {
-          await markPrerenderDone(db, voice.id);
+          await markPrerenderDone(db, voice.id, claim.claimToken);
         } else if (voiceError && voiceRendered === 0) {
           // 이 틱에 아무것도 못 만들고 에러만 → attempts 증가(영구 실패 클립의 무한 재시도 방지).
-          await markPrerenderFailed(db, voice.id);
+          await markPrerenderFailed(db, voice.id, claim.claimToken);
         } else {
-          await releasePrerenderClaim(db, voice.id);
+          await releasePrerenderClaim(db, voice.id, claim.claimToken);
         }
       }
       if (rendered > 0) {

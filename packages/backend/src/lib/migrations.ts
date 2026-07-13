@@ -1126,9 +1126,7 @@ export const migrations: Migration[] = [
     //    이로써 탈취·유출된 기존 토큰을 만료 전에도 즉시 무효화할 수 있다.
     id: 51,
     name: 'user-token-epoch',
-    statements: [
-      `ALTER TABLE users ADD COLUMN token_epoch INTEGER NOT NULL DEFAULT 0`,
-    ],
+    statements: [`ALTER TABLE users ADD COLUMN token_epoch INTEGER NOT NULL DEFAULT 0`],
   },
   {
     // 가격정책 + 가족 정원 6→5인. (근거: 루트 PRICING.md)
@@ -1317,6 +1315,11 @@ export const migrations: Migration[] = [
     id: 60,
     name: 'voice-prerender-claim-lease',
     statements: [`ALTER TABLE voice_prerender_queue ADD COLUMN claimed_at TEXT`],
+  },
+  {
+    id: 61,
+    name: 'voice-prerender-claim-token',
+    statements: [`ALTER TABLE voice_prerender_queue ADD COLUMN claim_token TEXT`],
   },
 ];
 

@@ -261,6 +261,14 @@ describe('migrations', () => {
     );
   });
 
+  it('migration #61 adds the prerender queue claim token', () => {
+    const migration = migrations.find((item) => item.id === 61);
+    expect(migration).toBeDefined();
+    expect(migration?.statements.join('\n')).toContain(
+      'ALTER TABLE voice_prerender_queue ADD COLUMN claim_token TEXT',
+    );
+  });
+
   it('migration #60 applies claimed_at to an existing prerender queue', async () => {
     const db = createClient({ url: ':memory:' });
     await db.execute(`CREATE TABLE voice_prerender_queue (
@@ -276,5 +284,25 @@ describe('migrations', () => {
     expect(await runMigrationsRange(db, 60, 60)).toEqual(['60_voice-prerender-claim-lease']);
     const columns = await db.execute('PRAGMA table_info(voice_prerender_queue)');
     expect(columns.rows.map((row) => String(row.name))).toContain('claimed_at');
+  });
+
+  it('migration #61 applies claim_token after the lease migration', async () => {
+    const db = createClient({ url: ':memory:' });
+    await db.execute(`CREATE TABLE voice_prerender_queue (
+      voice_profile_id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      language TEXT NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL,
+      requested_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
+
+    expect(await runMigrationsRange(db, 60, 61)).toEqual([
+      '60_voice-prerender-claim-lease',
+      '61_voice-prerender-claim-token',
+    ]);
+    const columns = await db.execute('PRAGMA table_info(voice_prerender_queue)');
+    expect(columns.rows.map((row) => String(row.name))).toContain('claim_token');
   });
 });

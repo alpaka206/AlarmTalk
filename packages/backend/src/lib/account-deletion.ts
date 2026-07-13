@@ -202,6 +202,10 @@ export async function purgeUserAccount(
       args: userIds,
     });
     await tx.execute({
+      sql: `DELETE FROM voice_prerender_queue WHERE owner_user_id IN (?, ?)`,
+      args: userIds,
+    });
+    await tx.execute({
       sql: `DELETE FROM voice_profiles WHERE user_id IN (?, ?)`,
       args: userIds,
     });
