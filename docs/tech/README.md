@@ -28,8 +28,8 @@ System architecture, database schema, and HTTP API for AlarmTalk.
            ▼                  ▼                 ▼
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
-   │ 18 tables    │  │ voice + tts  │  │ ElevenLabs           │
-   │ 32 migrations│  │ objects      │  │ Google JWKS          │
+   │ domain tables│  │ voice + tts  │  │ ElevenLabs           │
+   │ 62 migrations│  │ objects      │  │ Google JWKS          │
    └──────────────┘  └──────────────┘  │ Apple JWKS           │
                                        │ Sentry               │
                                        └──────────────────────┘
@@ -170,8 +170,8 @@ Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrad
 ## 2. Database
 
 - **DB**: Turso (libSQL / SQLite)
-- **Tables**: 18 + `_migrations`
-- **Migrations**: 32, defined in `packages/backend/src/lib/migrations.ts`
+- **Tables**: domain tables plus the `_migrations` ledger
+- **Migrations**: 62, defined in `packages/backend/src/lib/migrations.ts`
 
 ### Entity overview
 
