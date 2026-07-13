@@ -77,6 +77,7 @@ internal fun AlarmListScreen(
     authBusy: Boolean,
     syncBusy: Boolean,
     voiceProfiles: List<VoiceProfile>,
+    pendingVoiceDraft: VoiceProfile?,
     voiceProfileBusy: Boolean,
     socialBusy: Boolean,
     familyGroup: FamilyGroupCurrentResponse?,
@@ -100,6 +101,8 @@ internal fun AlarmListScreen(
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
+    onPromoteVoiceDraft: (String) -> Unit,
+    onDeleteVoiceDraft: (String) -> Unit,
     onRefreshSocial: () -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,
@@ -216,6 +219,7 @@ internal fun AlarmListScreen(
                     Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_VOICE_CREATE)) {
                     VoiceProfileManagementPanel(
                         voiceProfiles = voiceProfiles,
+                        pendingVoiceDraft = pendingVoiceDraft,
                         familyVoices = familyVoices,
                         voiceProfileBusy = voiceProfileBusy,
                         subscriptionResponse = subscriptionResponse,
@@ -230,6 +234,8 @@ internal fun AlarmListScreen(
                         onShareVoiceProfile = onShareVoiceProfile,
                         onUpdateSharedVoiceInfo = onUpdateSharedVoiceInfo,
                         onDeleteVoiceProfile = onDeleteVoiceProfile,
+                        onPromoteVoiceDraft = onPromoteVoiceDraft,
+                        onDeleteVoiceDraft = onDeleteVoiceDraft,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         defaultVoiceId = defaultVoiceId,
                         onSetDefaultVoice = onSetDefaultVoice,

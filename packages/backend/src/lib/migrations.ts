@@ -1321,6 +1321,23 @@ export const migrations: Migration[] = [
     name: 'voice-prerender-claim-token',
     statements: [`ALTER TABLE voice_prerender_queue ADD COLUMN claim_token TEXT`],
   },
+  {
+    // 초안 생성은 외부 음성 제공자 슬롯/비용을 즉시 사용한다. 삭제-재생성으로 공식 월 1회
+    // 장부를 우회하지 못하도록, 공식 등록 장부와 별개로 KST 월 3회 제공자 시도를 원자적으로 센다.
+    // previewed_at 은 서버가 실제 미리듣기 오디오를 반환한 뒤에만 기록하며 승격의 전제조건이다.
+    id: 62,
+    name: 'voice-draft-attempt-and-preview',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS voice_draft_attempt_usage (
+        owner_user_id TEXT NOT NULL,
+        attempt_month TEXT NOT NULL,
+        used_count INTEGER NOT NULL DEFAULT 0 CHECK(used_count >= 0),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (owner_user_id, attempt_month)
+      )`,
+      `ALTER TABLE voice_profiles ADD COLUMN previewed_at TEXT`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

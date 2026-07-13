@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="msg_voice_monthly_limit_reached">이번 달 음성 초안 생성 횟수를 모두 사용했어요</string>
     <string name="app_name">AlarmTalk</string>
     <string name="ringing_notification_title">알람이 울려요</string>
     <string name="ringing_notification_text">일어날 시간이에요</string>

@@ -695,8 +695,9 @@ internal fun AlarmEditorScreen(
             // 사전렌더 클립은 수신자가 소유·캐시하지 못하므로 오프라인 버킷을 쓰면 수신자에게 무음이 된다.
             // → 가족 모드에서는 사전렌더 버킷을 쓰지 않고 아래 라이브 생성 경로로 간다.
             val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
-            val tryCloneBucket = !familyAlarmMode && editor.voiceRandomPrompt && cloneBucketCategory != null &&
-                !isSystemVoiceId(profileId) && hasCompleteCloneBucket(cloneBucketCategory, profileId)
+            val requiresCloneBucket = !familyAlarmMode && editor.voiceRandomPrompt && cloneBucketCategory != null &&
+                !isSystemVoiceId(profileId)
+            val tryCloneBucket = requiresCloneBucket && hasCompleteCloneBucket(cloneBucketCategory, profileId)
             if (
                 tryCloneBucket &&
                 // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
@@ -707,6 +708,12 @@ internal fun AlarmEditorScreen(
             ) {
                 isSaving = false
                 submitDraft(editor.toDraft())
+                return@launch
+            }
+            if (requiresCloneBucket) {
+                isSaving = false
+                audioMessage = context.getString(R.string.editor_preparing_voice_alarm)
+                showFamilyAlarmToast(context.getString(R.string.editor_preparing_voice_alarm))
                 return@launch
             }
             // 2) 버킷 미대상/캐시 실패 → 기존 라이브 생성으로 폴백(알람이 아예 안 저장되는 것 방지).

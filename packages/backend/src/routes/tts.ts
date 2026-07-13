@@ -258,6 +258,12 @@ function presetTextWithListenerTitle(text: string, listenerTitle: string | null)
   return withTitle.length <= 200 ? withTitle : base;
 }
 
+function draftPreviewText(language: string): string {
+  if (language === 'ja') return 'おはよう。今日も気持ちよく起きよう。';
+  if (language === 'en') return 'Good morning. It is time to start your day.';
+  return '좋은 아침이야. 오늘도 기분 좋게 일어나자.';
+}
+
 async function findUsableVoiceProfile(
   db: ReturnType<typeof getDB>,
   userId: string,
@@ -355,6 +361,8 @@ async function loadWeatherSignalInput(args: {
   locationLabel?: unknown;
   country?: unknown;
   city?: unknown;
+  targetDate?: unknown;
+  timezone?: unknown;
 }): Promise<WeatherSignalInput | null> {
   const location = await resolveWeatherLocation(args);
   const url = new URL('https://api.open-meteo.com/v1/forecast');
@@ -370,8 +378,21 @@ async function loadWeatherSignalInput(args: {
       'precipitation_sum',
     ].join(','),
   );
-  url.searchParams.set('timezone', 'Asia/Seoul');
-  url.searchParams.set('forecast_days', '1');
+  const targetDate =
+    typeof args.targetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.targetDate)
+      ? args.targetDate
+      : null;
+  const timezone =
+    typeof args.timezone === 'string' && /^[A-Za-z0-9_+\-/]{1,64}$/.test(args.timezone)
+      ? args.timezone
+      : 'Asia/Seoul';
+  url.searchParams.set('timezone', timezone);
+  if (targetDate) {
+    url.searchParams.set('start_date', targetDate);
+    url.searchParams.set('end_date', targetDate);
+  } else {
+    url.searchParams.set('forecast_days', '1');
+  }
 
   try {
     const response = await fetch(url.toString(), {
@@ -381,11 +402,15 @@ async function loadWeatherSignalInput(args: {
       .json<WeatherForecastResponse>()
       .catch(() => ({}) as WeatherForecastResponse);
     if (!response.ok || !json.daily) return null;
-    const code = Number(json.daily.weather_code?.[0]);
-    const maxTemp = Number(json.daily.temperature_2m_max?.[0]);
-    const minTemp = Number(json.daily.temperature_2m_min?.[0]);
-    const rainProbability = Number(json.daily.precipitation_probability_max?.[0]);
-    const precipitation = Number(json.daily.precipitation_sum?.[0]);
+    const targetIndex = targetDate
+      ? (json.daily.time?.findIndex((value) => value === targetDate) ?? -1)
+      : 0;
+    if (targetIndex < 0) return null;
+    const code = Number(json.daily.weather_code?.[targetIndex]);
+    const maxTemp = Number(json.daily.temperature_2m_max?.[targetIndex]);
+    const minTemp = Number(json.daily.temperature_2m_min?.[targetIndex]);
+    const rainProbability = Number(json.daily.precipitation_probability_max?.[targetIndex]);
+    const precipitation = Number(json.daily.precipitation_sum?.[targetIndex]);
     // 코드·기온·강수가 모두 없으면(전부 NaN) 분류 불가 → null. 이때만 클라가 마지막 인덱스를 유지하고
     // 라이브는 generic 으로 떨어진다. 단 weather_code 만 없고 기온/강수가 있으면 그것으로 분류 가능하므로
     // 통과시킨다 — buildWeatherSignal(라이브)의 우산·한파 멘트, resolvePrerenderWeatherIndex 의
@@ -492,11 +517,7 @@ export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number 
   return idx('nice');
 }
 
-
-async function loadDustSignal(location: {
-  latitude: number;
-  longitude: number;
-}): Promise<boolean> {
+async function loadDustSignal(location: { latitude: number; longitude: number }): Promise<boolean> {
   const url = new URL('https://air-quality-api.open-meteo.com/v1/air-quality');
   url.searchParams.set('latitude', String(location.latitude));
   url.searchParams.set('longitude', String(location.longitude));
@@ -635,6 +656,8 @@ tts.post('/generate', async (c) => {
     fortune_birth_time?: string;
     fortuneBirthTime?: string;
     birthTime?: string;
+    draft_preview?: boolean;
+    draftPreview?: boolean;
   }>();
 
   if (!body.voice_profile_id) {
@@ -651,7 +674,10 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  const category = normalizeTtsCategory(body.category ?? 'custom');
+  const draftPreviewRequested = body.draft_preview === true || body.draftPreview === true;
+  const category = normalizeTtsCategory(
+    draftPreviewRequested ? 'morning' : (body.category ?? 'custom'),
+  );
   if (!category) {
     return c.json(
       {
@@ -661,7 +687,7 @@ tts.post('/generate', async (c) => {
       400,
     );
   }
-  const randomRequested = body.random === true;
+  const randomRequested = !draftPreviewRequested && body.random === true;
   const randomContext = randomRequested
     ? normalizeRandomContextWithAliases(
         body.random_context ?? body.randomContext ?? body.random_mode ?? body.randomMode,
@@ -677,8 +703,9 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  let requestText =
-    randomRequested && randomContext === 'preset'
+  let requestText = draftPreviewRequested
+    ? draftPreviewText(normalizeSynthesisLanguage(body.language))
+    : randomRequested && randomContext === 'preset'
       ? await pickRandomPresetText(c.env, category)
       : (body.text ?? '').trim();
   if (!requestText) {
@@ -739,8 +766,28 @@ tts.post('/generate', async (c) => {
     );
   }
 
+  const isDraftVoice = Number(vp.is_draft ?? 0) === 1;
+  if (isDraftVoice && !draftPreviewRequested) {
+    return c.json(
+      {
+        error: 'Draft voices can only be used for their confirmation preview.',
+        error_code: 'VOICE_DRAFT_NOT_USABLE',
+      },
+      403,
+    );
+  }
+  if (!isDraftVoice && draftPreviewRequested) {
+    return c.json(
+      {
+        error: 'Only a private draft can use the confirmation preview.',
+        error_code: 'VOICE_PREVIEW_DRAFT_REQUIRED',
+      },
+      409,
+    );
+  }
+
   const isSystemVoice = Boolean(Number(vp.is_system ?? 0));
-  if (randomRequested && randomContext === 'preset') {
+  if ((randomRequested && randomContext === 'preset') || draftPreviewRequested) {
     const isSharedVoiceProfileForPreset =
       typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
     const listenerTitle =
@@ -798,7 +845,7 @@ tts.post('/generate', async (c) => {
   // 직접 입력(random 아님) = 유료 사용자가 문구를 직접 타이핑한 유료 생성 경로.
   // 무료는 위(693-729)에서 이미 차단되므로 여기 도달하는 수동 요청은 유료 전용.
   // 예약은 캐시 미스 뒤(합성 직전)에 하고, 예약됐는데 합성이 실패하면 catch 에서 환불.
-  const isManualGeneration = !randomRequested && Boolean(resolvedUserPk);
+  const isManualGeneration = !randomRequested && !draftPreviewRequested && Boolean(resolvedUserPk);
   let manualQuotaPoolKey: string | null = null;
   let manualQuotaMonth: string | null = null;
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
@@ -810,9 +857,8 @@ tts.post('/generate', async (c) => {
     // 텍스트를 국외(Google Vertex)로 전송하므로 overseas_transfer 동의가 필요하다.
     // 동의가 없으면 해당 크로스보더 경로를 차단(403)한다. 프리셋·동일언어 비번역
     // 합성은 국외 이전이 없어 게이트 대상이 아니다.
-    let dynamicGenerated: Awaited<
-      ReturnType<typeof generateDynamicAlarmTextWithVertex>
-    > | null = null;
+    let dynamicGenerated: Awaited<ReturnType<typeof generateDynamicAlarmTextWithVertex>> | null =
+      null;
     if (randomRequested && randomContext !== 'preset') {
       const alarmHour = optionalInt(body.alarm_hour ?? body.alarmHour, 0, 23);
       const alarmMinute = optionalInt(body.alarm_minute ?? body.alarmMinute, 0, 59);
@@ -906,7 +952,9 @@ tts.post('/generate', async (c) => {
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (dynamicGenerated) {
       const dynamicTag = dynamicGenerated.tags[0] ?? '';
-      const taggedText = dynamicTag ? `[${dynamicTag}] ${dynamicGenerated.text}` : dynamicGenerated.text;
+      const taggedText = dynamicTag
+        ? `[${dynamicTag}] ${dynamicGenerated.text}`
+        : dynamicGenerated.text;
       // 태그를 붙인 길이가 200자를 넘으면 태그를 버린다 — 이때 tags 배열도 비워서
       // DB delivery_tags/캐시 메타와 실제 합성 텍스트가 어긋나지 않게 한다.
       const tagApplied = dynamicTag !== '' && taggedText.length <= 200;
@@ -1006,6 +1054,14 @@ tts.post('/generate', async (c) => {
         anyUser: isSystemVoice,
       });
       if (cached) {
+        if (draftPreviewRequested) {
+          await db.execute({
+            sql: `UPDATE voice_profiles SET previewed_at = datetime('now'), updated_at = datetime('now')
+                  WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                    AND COALESCE(is_draft, 0) = 1 AND status = 'ready'`,
+            args: [body.voice_profile_id, userPk, userId],
+          });
+        }
         return c.json(
           {
             message_id: cached.messageId,
@@ -1125,6 +1181,24 @@ tts.post('/generate', async (c) => {
           args: [crypto.randomUUID(), userPk, messageId],
         });
 
+        if (draftPreviewRequested) {
+          const marked = await db.execute({
+            sql: `UPDATE voice_profiles SET previewed_at = datetime('now'), updated_at = datetime('now')
+                  WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                    AND COALESCE(is_draft, 0) = 1 AND status = 'ready'`,
+            args: [body.voice_profile_id, userPk, userId],
+          });
+          if ((marked.rowsAffected ?? 0) === 0) {
+            return c.json(
+              {
+                error: 'Voice draft is no longer available.',
+                error_code: 'VOICE_PROFILE_NOT_FOUND',
+              },
+              409,
+            );
+          }
+        }
+
         return c.json(
           {
             message_id: messageId,
@@ -1219,9 +1293,7 @@ tts.get('/manual-quota', async (c) => {
     args: ownerIds,
   });
   const callerUserPlan =
-    userRow.rows.length > 0 && userRow.rows[0]!.plan != null
-      ? String(userRow.rows[0]!.plan)
-      : null;
+    userRow.rows.length > 0 && userRow.rows[0]!.plan != null ? String(userRow.rows[0]!.plan) : null;
 
   const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
   const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
@@ -1491,6 +1563,8 @@ tts.get('/prerender-variant', async (c) => {
     const input = await loadWeatherSignalInput({
       country: c.req.query('country'),
       city: c.req.query('city'),
+      targetDate: c.req.query('target_date'),
+      timezone: c.req.query('timezone'),
     });
     // 날씨 조회 실패(open-meteo 불통·위치 미상 등)면 null 을 돌려, 클라가 '맑음(index 0)'과
     // '해결 실패'를 구분해 잘못된 스냅샷을 저장하지 않게 한다.

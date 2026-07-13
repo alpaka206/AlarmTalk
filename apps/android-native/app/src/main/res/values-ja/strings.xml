@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="msg_voice_monthly_limit_reached">今月の音声ドラフト作成回数をすべて使用しました。</string>
     <string name="app_name">AlarmTalk</string>
     <string name="auth_back">戻る</string>
     <string name="auth_confirm">確認</string>

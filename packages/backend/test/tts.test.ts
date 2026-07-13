@@ -150,6 +150,19 @@ beforeEach(() => {
 });
 
 describe('POST /tts/generate — TTS 생성', () => {
+  it('draft 음성은 명시적인 미리듣기 요청 외 일반 TTS에 사용할 수 없다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', is_draft: 1, elevenlabs_voice_id: 'el-draft' }]);
+    const app = buildApp();
+
+    const res = await app.request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '임의 문구' }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_DRAFT_NOT_USABLE');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+  });
   it('필수 필드 없으면 400', async () => {
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/tts/generate', {}));
@@ -196,9 +209,7 @@ describe('POST /tts/generate — TTS 생성', () => {
 
   it('음성 프로필 ready 아니면 400', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
-    mockDB.pushResult([
-      { id: V1, status: 'processing', elevenlabs_voice_id: null },
-    ]);
+    mockDB.pushResult([{ id: V1, status: 'processing', elevenlabs_voice_id: null }]);
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -927,7 +938,6 @@ describe('POST /tts/generate — edge cases', () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('VOICE_AND_TEXT_REQUIRED');
   });
-
 });
 
 /* ------------------------------------------------------------------ */

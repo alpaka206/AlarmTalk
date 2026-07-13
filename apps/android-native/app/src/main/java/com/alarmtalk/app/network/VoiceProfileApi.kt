@@ -22,6 +22,10 @@ data class VoiceProfileResponse(
     val profile: VoiceProfile,
 )
 
+data class VoiceProfileDraftResponse(
+    val profile: VoiceProfile? = null,
+)
+
 data class VoiceUploadResponse(
     val upload: VoiceUpload,
 )
@@ -86,6 +90,9 @@ data class FamilyVoiceProfileListResponse(
 interface VoiceProfileApi {
     @GET("voice")
     suspend fun listVoiceProfiles(@Header("Authorization") authorization: String): VoiceProfileListResponse
+
+    @GET("voice/draft")
+    suspend fun getVoiceDraft(@Header("Authorization") authorization: String): VoiceProfileDraftResponse
 
     @Multipart
     @POST("voice/clone")

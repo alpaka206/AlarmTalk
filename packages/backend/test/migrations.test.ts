@@ -269,6 +269,15 @@ describe('migrations', () => {
     );
   });
 
+  it('migration #62 adds a monthly draft-attempt ledger and preview marker', () => {
+    const migration = migrations.find((item) => item.id === 62);
+    expect(migration).toBeDefined();
+    const sql = migration?.statements.join('\n') ?? '';
+    expect(sql).toContain('voice_draft_attempt_usage');
+    expect(sql).toContain('attempt_month');
+    expect(sql).toContain('previewed_at');
+  });
+
   it('migration #60 applies claimed_at to an existing prerender queue', async () => {
     const db = createClient({ url: ':memory:' });
     await db.execute(`CREATE TABLE voice_prerender_queue (

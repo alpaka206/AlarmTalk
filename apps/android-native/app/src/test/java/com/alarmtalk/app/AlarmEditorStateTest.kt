@@ -8,6 +8,11 @@ import org.junit.Test
 
 class AlarmEditorStateTest {
     @Test
+    fun defaultPresetContextUsesGreetingPrerenderBucket() {
+        assertEquals("greeting", clonePrerenderBucketCategoryFor("preset"))
+    }
+
+    @Test
     fun selectVoiceProfileClearsStaleListenerTitleWhenVoiceChanges() {
         val editor = AlarmEditorState.from(alarm = null)
         editor.voiceProfileId = "old-profile"

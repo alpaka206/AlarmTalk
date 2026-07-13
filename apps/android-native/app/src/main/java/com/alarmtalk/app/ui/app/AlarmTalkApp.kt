@@ -67,6 +67,7 @@ internal fun AlarmTalkApp(
     val authBusy = viewModel.authBusy
     val syncBusy = viewModel.syncBusy
     val voiceProfiles = viewModel.voiceProfiles
+    val pendingVoiceDraft = viewModel.pendingVoiceDraft
     val voiceProfileBusy = viewModel.voiceProfileBusy
     val socialBusy = viewModel.socialBusy
     val familyGroup = viewModel.familyGroup
@@ -694,6 +695,7 @@ internal fun AlarmTalkApp(
                           authBusy = authBusy,
                           syncBusy = syncBusy,
                           voiceProfiles = voiceProfiles,
+                          pendingVoiceDraft = pendingVoiceDraft,
                           voiceProfileBusy = voiceProfileBusy,
                           socialBusy = socialBusy,
                           familyGroup = familyGroup,
@@ -717,6 +719,8 @@ internal fun AlarmTalkApp(
                               viewModel.updateSharedVoiceViewerInfo(id, relationship, listener)
                           },
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
+                          onPromoteVoiceDraft = viewModel::promoteVoiceDraft,
+                          onDeleteVoiceDraft = viewModel::deleteVoiceDraft,
                           defaultVoiceId = viewModel.defaultVoiceId,
                           onSetDefaultVoice = viewModel::setDefaultVoice,
                           onRefreshSocial = viewModel::refreshSocial,

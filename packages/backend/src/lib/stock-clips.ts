@@ -5,6 +5,7 @@ import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
 import { prepareAlarmTextWithVertex, generatePrerenderClipText } from './vertex-translate';
 import type { DbExecutor } from './transactions';
+import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
@@ -612,6 +613,22 @@ export async function generateStockClip(
   if (!env.VOICE_BUCKET) {
     throw new Error('VOICE_BUCKET (R2) is not configured.');
   }
+  const assertCloneAuthorization = async () => {
+    if (!target.toneAdapt) return;
+    const authorized = await db.execute({
+      sql: `SELECT vp.id FROM voice_profiles vp
+            JOIN voice_prerender_queue q ON q.voice_profile_id = vp.id
+            WHERE vp.id = ? AND vp.deleted_at IS NULL AND vp.status = 'ready'
+              AND COALESCE(vp.is_draft, 0) = 0 AND q.owner_user_id = ?
+              AND q.status = 'pending' AND q.claim_token IS NOT NULL`,
+      args: [target.voiceProfileId, target.ownerUserId],
+    });
+    if (authorized.rows.length === 0) throw new Error('Voice prerender authorization expired.');
+    if (await missingConsentType(db, target.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
+      throw new Error('Voice prerender consent was withdrawn.');
+    }
+  };
+  await assertCloneAuthorization();
   const language = normalizeSynthesisLanguage(target.language);
 
   let synthesisText: string;
@@ -668,6 +685,7 @@ export async function generateStockClip(
 
   const generated = await attempt.synthesize();
   const bytes = generated.bytes;
+  await assertCloneAuthorization();
 
   const storage = new R2VoiceStorage(env.VOICE_BUCKET);
   const audioObjectKey = generatedTtsObjectKey(
@@ -687,7 +705,7 @@ export async function generateStockClip(
   // 조건부 INSERT: 같은 (voice·category·language·variant) preset 이 이미 있으면 no-op. cron 이 겹쳐
   // 두 호출이 같은 target 을 동시에 렌더해도(findMissingStockTargets 는 순차 멱등만 보장) 중복 행이
   // 생기지 않는다. SQLite 단일 writer 라 INSERT…SELECT WHERE NOT EXISTS 가 원자적으로 직렬화된다.
-  await db.execute({
+  const insertedMessage = await db.execute({
     sql: `INSERT INTO messages
           (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json,
            category, language, variant, is_preset, audio_url)
@@ -714,6 +732,28 @@ export async function generateStockClip(
       target.variantIndex,
     ],
   });
+
+  if ((insertedMessage.rowsAffected ?? 0) === 0) {
+    const existing = await db.execute({
+      sql: `SELECT id, text, audio_url FROM messages
+            WHERE voice_profile_id = ? AND category = ? AND language = ? AND variant = ?
+              AND COALESCE(is_preset, 0) = 1
+            LIMIT 1`,
+      args: [target.voiceProfileId, target.category, language, target.variantIndex],
+    });
+    const row = existing.rows[0];
+    if (!row) throw new Error('Concurrent preset publication could not be resolved.');
+    if (row.audio_url !== audioUrl) await storage.delete(audioObjectKey);
+    return {
+      message_id: String(row.id),
+      voice_profile_id: target.voiceProfileId,
+      voice_name: target.voiceName,
+      category: target.category,
+      language,
+      variant: target.variantIndex,
+      text: String(row.text ?? displayText),
+    };
+  }
 
   await db.execute({
     sql: `INSERT OR IGNORE INTO generated_audio_assets

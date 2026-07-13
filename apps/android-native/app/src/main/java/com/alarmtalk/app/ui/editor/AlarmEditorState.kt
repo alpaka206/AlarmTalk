@@ -492,6 +492,7 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
  */
 internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
     when (normalizedRandomPromptContext(context ?: "")) {
+        "preset" -> "greeting"
         "love" -> "love"
         "medication" -> "medication"
         // 운세: 발사 시점 기기에서 매일 신선 계산이라 반복 알람도 정확(fortuneThemeIndex).

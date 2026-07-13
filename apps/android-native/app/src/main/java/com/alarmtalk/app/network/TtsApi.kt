@@ -25,6 +25,7 @@ data class TtsGenerateRequest(
     @SerializedName("fortune_birth_time") val fortuneBirthTime: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
     @SerializedName("target_user_id") val targetUserId: String? = null,
+    @SerializedName("draft_preview") val draftPreview: Boolean = false,
 )
 
 data class TtsGenerateResponse(
@@ -117,6 +118,8 @@ interface TtsApi {
         @Query("context") context: String,
         @Query("country") country: String?,
         @Query("city") city: String?,
+        @Query("target_date") targetDate: String?,
+        @Query("timezone") timezone: String?,
     ): PrerenderVariantResponse
 
     @GET("tts/manual-quota")

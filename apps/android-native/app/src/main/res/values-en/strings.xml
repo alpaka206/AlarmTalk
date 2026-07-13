@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="msg_voice_monthly_limit_reached">You have used all voice draft attempts for this month.</string>
     <string name="app_name">AlarmTalk</string>
     <string name="auth_back">Back</string>
     <string name="auth_confirm">Confirm</string>

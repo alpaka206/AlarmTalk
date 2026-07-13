@@ -751,11 +751,17 @@ class AlarmRepository(
             .filter { it.contextVariantIndex == null || (it.contextResolvedAtMillis ?: 0L) < staleBefore }
         if (alarms.isEmpty()) return 0
         // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
-        val byLocation = alarms.groupBy {
-            (it.voiceWeatherCountry?.trim().orEmpty()) to (it.voiceWeatherCity?.trim().orEmpty())
+        val zone = java.time.ZoneId.systemDefault()
+        val byLocationAndDate = alarms.groupBy {
+            Triple(
+                it.voiceWeatherCountry?.trim().orEmpty() to it.voiceWeatherCity?.trim().orEmpty(),
+                java.time.Instant.ofEpochMilli(it.fireAtMillis).atZone(zone).toLocalDate().toString(),
+                zone.id,
+            )
         }
         var resolved = 0
-        for ((location, group) in byLocation) {
+        for ((locationAndDate, group) in byLocationAndDate) {
+            val (location, targetDate, timezone) = locationAndDate
             val (country, city) = location
             val index = runCatching {
                 api.getPrerenderVariant(
@@ -763,6 +769,8 @@ class AlarmRepository(
                     context = "wake_weather",
                     country = country.takeIf { it.isNotBlank() },
                     city = city.takeIf { it.isNotBlank() },
+                    targetDate = targetDate,
+                    timezone = timezone,
                 ).variantIndex
             }.getOrElse { error ->
                 Log.w(TAG, "Failed to resolve weather variant", error)

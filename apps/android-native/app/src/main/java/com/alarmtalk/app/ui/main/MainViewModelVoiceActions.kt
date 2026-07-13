@@ -82,9 +82,13 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
         voiceProfileBusy = true
         try {
             runCatching {
-                api.listVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
-            }.onSuccess { profiles ->
+                val authorization = AlarmTalkApiClient.bearer(session.token)
+                val profiles = api.listVoiceProfiles(authorization).profiles
+                val draft = api.getVoiceDraft(authorization).profile
+                profiles to draft
+            }.onSuccess { (profiles, draft) ->
                 voiceProfiles = profiles
+                pendingVoiceDraft = draft
                 voiceProfilesLoadedFresh = true
                 // 내 음성 목록이 늦게 로드된 경우에도 접근권 잃은 목소리 알람 강등이 재실행되게 한다
                 // (공유 목소리 목록이 먼저 신선 로드돼 스킵됐을 수 있음). 빈 목록도 유효한 로드다.
@@ -150,7 +154,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
         return
     }
     // 시스템 스톡 보이스는 개수 제한에서 제외 — 내가 만든 목소리만 센다.
-    if (voiceProfiles.count { it.isSystem != true } + drafts.size > MAX_VOICE_PROFILES) {
+    if (voiceProfiles.count { it.isSystem != true } >= MAX_VOICE_PROFILES || pendingVoiceDraft != null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
         return
     }
@@ -158,18 +162,6 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
-        val pendingProfiles = drafts.map { draft ->
-            VoiceProfile(
-                id = "local-pending-${UUID.randomUUID()}",
-                name = draft.name,
-                status = "processing",
-                isShared = draft.shared,
-                relationshipLabel = draft.relationshipLabel,
-                listenerTitle = draft.listenerTitle,
-            )
-        }
-        val pendingIds = pendingProfiles.map { it.id }.toSet()
-        voiceProfiles = pendingProfiles + voiceProfiles
         runCatching {
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
@@ -181,14 +173,13 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                         relationshipLabel = draft.relationshipLabel.toRequestBody("text/plain".toMediaType()),
                         listenerTitle = draft.listenerTitle.toRequestBody("text/plain".toMediaType()),
                         durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
-                        isDraft = false.toString().toRequestBody("text/plain".toMediaType()),
+                        isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
                         language = deviceAppVoiceLanguage().toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }
         }.onSuccess { profiles ->
-            val newIds = profiles.map { it.id }.toSet()
-            voiceProfiles = profiles + voiceProfiles.filterNot { it.id in pendingIds || it.id in newIds }
+            pendingVoiceDraft = profiles.firstOrNull()
             // 클론 성공 직후 로컬 녹음 샘플(음성 생체정보 평문 .m4a)을 즉시 정리한다.
             withContext(Dispatchers.IO) {
                 drafts.forEach { draft ->
@@ -196,13 +187,8 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                         .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
                 }
             }
-            message = if (profiles.size == 1) {
-                getApplication<android.app.Application>().getString(R.string.msg_voice_created_single, profiles.first().name)
-            } else {
-                getApplication<android.app.Application>().getString(R.string.msg_voice_created_multiple, profiles.size)
-            }
+            message = null
         }.onFailure { error ->
-            voiceProfiles = voiceProfiles.filterNot { it.id in pendingIds }
             AlarmTalkLog.reportError("Failed to create voice profile", error)
             val app = getApplication<android.app.Application>()
             message = when (apiErrorCode(error)) {
@@ -210,9 +196,66 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                 "VOICE_CLONE_AUDIO_TOO_LONG" -> app.getString(R.string.msg_voice_clone_audio_too_long)
                 "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
                 "VOICE_SLOT_EXHAUSTED" -> app.getString(R.string.msg_voice_slot_exhausted)
+                "VOICE_DRAFT_ATTEMPT_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_limit_reached)
                 "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.msg_voice_paid_plan_required)
                 else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
+        }
+        voiceProfileBusy = false
+    }
+}
+
+internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
+    val session = authSession ?: return
+    viewModelScope.launch {
+        if (voiceProfileBusy) return@launch
+        voiceProfileBusy = true
+        runCatching {
+            withContext(Dispatchers.IO) {
+                api.updateVoiceProfile(
+                    authorization = AlarmTalkApiClient.bearer(session.token),
+                    id = profileId,
+                    request = VoiceProfileUpdateRequest(isDraft = false, language = deviceAppVoiceLanguage()),
+                ).profile
+            }
+        }.onSuccess { profile ->
+            val draft = pendingVoiceDraft
+            val official = profile.copy(
+                name = profile.name.ifBlank { draft?.name.orEmpty() },
+                isShared = profile.isShared ?: draft?.isShared,
+                isDraft = false,
+                relationshipLabel = profile.relationshipLabel ?: draft?.relationshipLabel,
+                listenerTitle = profile.listenerTitle ?: draft?.listenerTitle,
+            )
+            pendingVoiceDraft = null
+            voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
+            message = getApplication<android.app.Application>().getString(R.string.msg_voice_created_single, official.name)
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to promote voice draft id=$profileId", error)
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_create_failed))
+        }
+        voiceProfileBusy = false
+    }
+}
+
+internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
+    val session = authSession ?: return
+    viewModelScope.launch {
+        if (voiceProfileBusy) return@launch
+        voiceProfileBusy = true
+        runCatching {
+            withContext(Dispatchers.IO) {
+                api.deleteVoiceProfile(
+                    authorization = AlarmTalkApiClient.bearer(session.token),
+                    id = profileId,
+                    draftOnly = true,
+                )
+            }
+        }.onSuccess {
+            if (pendingVoiceDraft?.id == profileId) pendingVoiceDraft = null
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to delete voice draft id=$profileId", error)
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_delete_failed))
         }
         voiceProfileBusy = false
     }
@@ -255,10 +298,6 @@ internal fun MainViewModel.renameVoiceProfile(
                     id = profileId,
                     request = VoiceProfileUpdateRequest(
                         name = trimmedName,
-                        relationshipLabel = trimmedRelationship,
-                        listenerTitle = trimmedListener,
-                        // draft→official 승격이 이 경로로 일어나면 서버가 이 언어로 사전렌더 큐잉한다.
-                        language = deviceAppVoiceLanguage(),
                     ),
                 ).profile
             }

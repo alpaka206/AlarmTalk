@@ -41,6 +41,7 @@ function cloneRequest(): Request {
   form.append('audio', new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' }), 'sample.wav');
   form.append('name', '테스트');
   form.append('durationMs', '90000');
+  form.append('isDraft', 'true');
   return new Request('http://localhost/vp/clone', { method: 'POST', body: form });
 }
 
@@ -59,9 +60,7 @@ describe('paid voice access gates', () => {
   it('blocks TTS generation with a personal voice for a resolved free-plan user', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
     // findUsableVoiceProfile: 본인 소유의 (시스템이 아닌) 보이스
-    mockDB.pushResult([
-      { id: ID.alarm, user_id: 'user-pk-1', status: 'ready', is_system: 0 },
-    ]);
+    mockDB.pushResult([{ id: ID.alarm, user_id: 'user-pk-1', status: 'ready', is_system: 0 }]);
 
     const res = await buildApp().request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: ID.alarm, text: 'hello' }),
@@ -75,9 +74,7 @@ describe('paid voice access gates', () => {
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([]); // findUsableVoiceProfile: owned 보이스 없음
     // findUsableVoiceProfile: 시스템 스톡 보이스
-    mockDB.pushResult([
-      { id: ID.alarm, user_id: 'system-user', status: 'ready', is_system: 1 },
-    ]);
+    mockDB.pushResult([{ id: ID.alarm, user_id: 'system-user', status: 'ready', is_system: 1 }]);
 
     const res = await buildApp().request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: ID.alarm, text: 'hello' }),

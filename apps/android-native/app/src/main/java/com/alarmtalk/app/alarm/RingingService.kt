@@ -35,6 +35,7 @@ import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
+import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+internal fun storedVoiceFallbackUri(
+    localAudioUri: String?,
+    bucketId: String?,
+    bucketClipCount: Int,
+    bucketSelectionAvailable: Boolean,
+): String? = localAudioUri?.takeIf {
+    bucketId == null || bucketClipCount == 0 || !bucketSelectionAvailable
+}
 
 class RingingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -155,7 +165,14 @@ class RingingService : Service() {
     private fun startRingingAudio(alarm: AlarmEntity?, voiceUriOverride: String? = null) {
         if (mediaPlayer?.isPlaying == true) return
 
-        val storedVoiceUri = alarm?.localAudioUri?.takeIf { alarm.bucketId == null }
+        val storedVoiceUri = alarm?.let {
+            storedVoiceFallbackUri(
+                it.localAudioUri,
+                it.bucketId,
+                decodeBucketClipKeys(it.bucketClipKeysJson).size,
+                voiceUriOverride != null,
+            )
+        }
         val voiceUri = (voiceUriOverride ?: storedVoiceUri)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
         val playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY
         val alarmVolumePercent = alarm?.alarmVolumePercent ?: 100

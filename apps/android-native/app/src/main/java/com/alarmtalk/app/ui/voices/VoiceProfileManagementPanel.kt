@@ -195,6 +195,7 @@ private fun VoiceRecordScriptCard(
 @Composable
 internal fun VoiceProfileManagementPanel(
     voiceProfiles: List<VoiceProfile>,
+    pendingVoiceDraft: VoiceProfile?,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
@@ -209,11 +210,16 @@ internal fun VoiceProfileManagementPanel(
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
+    onPromoteVoiceDraft: (String) -> Unit,
+    onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
     defaultVoiceId: String? = null,
     onSetDefaultVoice: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
+        LocalConfiguration.current.locales[0].language,
+    )
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
@@ -269,19 +275,14 @@ internal fun VoiceProfileManagementPanel(
     var confirmNewVoice by remember { mutableStateOf<VoiceProfile?>(null) }
     var confirmPreviewBusy by remember { mutableStateOf(false) }
     var confirmPreviewPlaying by remember { mutableStateOf(false) }
+    var confirmPreviewCompleted by remember { mutableStateOf(false) }
     // 미리듣기 생성 코루틴 — 다이얼로그를 닫으면 취소해 늦은 재생/오디오 유출을 막는다.
     var confirmPreviewJob by remember { mutableStateOf<Job?>(null) }
-    // 등록 제출 후 새로 생긴 목소리를 감지하기 위한 스냅샷(제출 직전 목소리 id 집합).
-    var awaitingRegisteredVoice by remember { mutableStateOf(false) }
-    var idsBeforeRegister by remember { mutableStateOf<Set<String>>(emptySet()) }
-    // 등록이 실제로 시작(voiceProfileBusy=true)된 것을 본 뒤에만 완료를 판정한다.
-    // (arm 직후 busy 는 ViewModel 에서 비동기로 켜지므로, 그 사이 무관한 sync 로 오발되는 것 차단.)
-    var sawRegisterBusy by remember { mutableStateOf(false) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
     val ownVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem != true } }
-    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES
+    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
     val canOpenCreateForm = canCreateVoice && !isLimitReached
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
@@ -390,9 +391,8 @@ internal fun VoiceProfileManagementPanel(
                     TtsGenerateRequest(
                         voiceProfileId = voice.id,
                         category = "morning",
-                        language = "ko",
-                        random = true,
-                        randomContext = "preset",
+                        language = previewLanguage,
+                        draftPreview = true,
                         listenerTitle = voice.listenerTitle,
                     ),
                 )
@@ -415,6 +415,7 @@ internal fun VoiceProfileManagementPanel(
                         if (mediaPlayer === it) {
                             mediaPlayer = null
                             confirmPreviewPlaying = false
+                            confirmPreviewCompleted = true
                         }
                     }
                     start()
@@ -431,24 +432,19 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 등록이 실제로 시작(busy=true)됐다가 끝(busy=false)나면 새로 생긴 내 목소리를 잡아 확인 창을 연다.
-    LaunchedEffect(voiceProfileBusy, voiceProfiles) {
-        if (!awaitingRegisteredVoice) return@LaunchedEffect
-        if (voiceProfileBusy) {
-            sawRegisterBusy = true
-            return@LaunchedEffect
+    LaunchedEffect(pendingVoiceDraft?.id, pendingVoiceDraft?.status) {
+        val draft = pendingVoiceDraft
+        if (draft != null && (draft.status == null || draft.status == "ready")) {
+            confirmPreviewCompleted = false
+            confirmNewVoice = draft
+        } else if (draft == null && confirmNewVoice?.isDraft == true) {
+            confirmPreviewJob?.cancel()
+            confirmPreviewJob = null
+            stopMediaPreview(invalidateGreetingPreview = false)
+            confirmPreviewBusy = false
+            confirmPreviewPlaying = false
+            confirmNewVoice = null
         }
-        // busy 를 아직 한 번도 못 봤다 = 등록이 아직 시작 전(arm→busy 사이 async gap). 대기.
-        if (!sawRegisterBusy) return@LaunchedEffect
-        val newVoice = voiceProfiles.firstOrNull {
-            it.isSystem != true &&
-                !it.id.startsWith("local-pending-") &&
-                it.id !in idsBeforeRegister &&
-                (it.status == null || it.status == "ready")
-        }
-        awaitingRegisteredVoice = false
-        sawRegisterBusy = false
-        if (newVoice != null) confirmNewVoice = newVoice
     }
 
     fun applySelectedAudio(audio: CachedAlarmAudio) {
@@ -714,21 +710,6 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 실제 등록 요청 직전에 호출 — 현재 목소리 id 스냅샷을 찍고 확인창 감지를 켠다.
-    // 등록이 끝나(voiceProfileBusy↓) 새 id 가 나타나면 확인창을 연다.
-    fun armRegistrationConfirm() {
-        // 등록이 실제로 시작되지 못하는 경우(권한 없음·한도 도달)에는 무장하지 않는다.
-        // createVoiceProfiles 가 busy 를 켜기 전에 early-return 하면 arm 이 잔존해, 나중에
-        // 무관한 목소리 변화에 확인창이 잘못 뜨는 것을 막는다(코드리뷰 지적).
-        if (!canCreateVoice || isLimitReached) return
-        idsBeforeRegister = voiceProfiles
-            .filter { !it.id.startsWith("local-pending-") }
-            .map { it.id }
-            .toSet()
-        sawRegisterBusy = false
-        awaitingRegisteredVoice = true
-    }
-
     fun submitCreateProfile(name: String) {
         createSubmitAttempted = true
         val trimmedName = name.trim()
@@ -759,7 +740,6 @@ internal fun VoiceProfileManagementPanel(
             if (voiceProfileDurationError(context, audio.durationMillis) != null) return
             // 검증을 다 통과해 실제로 등록을 보낼 때만 확인창 감지를 무장한다(중단/검증실패 후
             // 스냅샷이 남아 엉뚱한 목소리에 확인창이 뜨는 것을 막는다).
-            armRegistrationConfirm()
             onCreateVoiceProfile(
                 trimmedName,
                 audio,
@@ -780,7 +760,6 @@ internal fun VoiceProfileManagementPanel(
                 if (error != null) {
                     localMessage = error
                 } else {
-                    armRegistrationConfirm()
                     onCreateVoiceProfile(
                         trimmedName,
                         audio,
@@ -1323,7 +1302,7 @@ internal fun VoiceProfileManagementPanel(
             confirmNewVoice = null
         }
         AlertDialog(
-            onDismissRequest = { closeConfirm() },
+            onDismissRequest = {},
             shape = WakerDialogShape,
             title = { Text(stringResource(R.string.voices_confirm_new_title, voice.name)) },
             text = {
@@ -1351,15 +1330,19 @@ internal fun VoiceProfileManagementPanel(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { closeConfirm() }) {
+                TextButton(
+                    onClick = {
+                        onPromoteVoiceDraft(voice.id)
+                    },
+                    enabled = confirmPreviewCompleted && !voiceProfileBusy,
+                ) {
                     Text(stringResource(R.string.voices_confirm_new_keep))
                 }
             },
             dismissButton = {
                 TextButton(
                     onClick = {
-                        onDeleteVoiceProfile(voice.id)
-                        closeConfirm()
+                        onDeleteVoiceDraft(voice.id)
                     },
                 ) {
                     Text(

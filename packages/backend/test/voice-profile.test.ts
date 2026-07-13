@@ -56,11 +56,13 @@ function cloneForm(
   durationMs = '90000',
   audioType = 'audio/wav',
   audioName = 'sample.wav',
+  isDraft = true,
 ): Request {
   const form = new FormData();
   if (audio) form.append('audio', new Blob([audio], { type: audioType }), audioName);
   if (name) form.append('name', name);
   if (durationMs) form.append('durationMs', durationMs);
+  form.append('isDraft', String(isDraft));
   return new Request('http://localhost/vp/clone', { method: 'POST', body: form });
 }
 
@@ -258,7 +260,7 @@ describe('PATCH /:id — 이름 변경 (voice-profile)', () => {
   });
 
   it('draft promote is blocked when monthly voice-change ledger is already reserved', async () => {
-    mockDB.pushResult([{ id: V1, is_draft: 1 }]);
+    mockDB.pushResult([{ id: V1, is_draft: 1, previewed_at: '2026-07-14 00:00:00' }]);
     mockDB.pushResult([{ active_count: 0, monthly_count: 0 }]);
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 0);
@@ -319,6 +321,40 @@ describe('GET /:id/stats — 통계 (voice-profile)', () => {
 /*  POST /vp/clone — 음성 클론                                         */
 /* ------------------------------------------------------------------ */
 describe('POST /clone — 음성 클론 (voice-profile)', () => {
+  it('정식 음성 직접 생성은 미리듣기 우회이므로 거부한다', async () => {
+    const res = await req(
+      buildApp(),
+      cloneForm(new Uint8Array([1, 2, 3]), '우회 시도', '90000', 'audio/wav', 'sample.wav', false),
+    );
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('VOICE_DRAFT_REQUIRED');
+    expect(mockCreateInstantClone).not.toHaveBeenCalled();
+  });
+
+  it('draft 미리듣기 완료 전에는 정식 음성으로 승격할 수 없다', async () => {
+    mockDB.pushResult([{ id: V1, is_draft: 1, previewed_at: null }]);
+
+    const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V1}`, { is_draft: false }));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('VOICE_PREVIEW_REQUIRED');
+    expect(mockDB.calls.some((call) => call.sql.includes('voice_profile_change_ledger'))).toBe(
+      false,
+    );
+  });
+
+  it('정식 등록 후 관계와 호칭은 프리셋 정합성을 위해 변경할 수 없다', async () => {
+    mockDB.pushResult([{ id: V1, is_draft: 0, previewed_at: '2026-07-14 00:00:00' }]);
+
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}`, { relationship_label: '친구' }),
+    );
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('VOICE_PERSONA_LOCKED');
+  });
   it('voice_biometric 동의 없으면 403 CONSENT_REQUIRED (B4)', async () => {
     // 생체정보(음성 클론) 별도 동의 미충족 시 클로닝을 차단한다. 동의 쿼리는
     // missing 모드로 두고 빈 결과(미동의)를 돌려준다.
@@ -366,18 +402,16 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(body.error).toContain('1');
   });
 
-  it('이번 달에 정식 목소리를 이미 만들었으면 429 VOICE_MONTHLY_CHANGE_LIMIT_REACHED', async () => {
+  it('이번 달 초안 제공자 시도를 모두 썼으면 429 VOICE_DRAFT_ATTEMPT_LIMIT_REACHED', async () => {
     mockDB.pushResult([{ active_count: 0, monthly_count: 0 }]);
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 0);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '새 목소리'));
     expect(res.status).toBe(429);
     const body = await res.json();
-    expect(body.error_code).toBe('VOICE_MONTHLY_CHANGE_LIMIT_REACHED');
+    expect(body.error_code).toBe('VOICE_DRAFT_ATTEMPT_LIMIT_REACHED');
     expect(mockCreateInstantClone).not.toHaveBeenCalled();
-    const ledgerCall = mockDB.calls.find((call) =>
-      call.sql.includes('INSERT OR IGNORE INTO voice_profile_change_ledger'),
-    );
+    const ledgerCall = mockDB.calls.find((call) => call.sql.includes('voice_draft_attempt_usage'));
     expect(ledgerCall).toBeDefined();
   });
 
@@ -401,17 +435,17 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     const quotaCall = mockDB.calls.find((call) => call.sql.includes('FROM voice_profiles'));
     expect(quotaCall).toBeDefined();
     expect(quotaCall!.sql).toContain("status != 'failed'");
-    expect(
-      mockDB.calls.some((call) =>
-        call.sql.includes('INSERT OR IGNORE INTO voice_profile_change_ledger'),
-      ),
-    ).toBe(true);
+    expect(mockDB.calls.some((call) => call.sql.includes('voice_draft_attempt_usage'))).toBe(true);
+    expect(mockDB.calls.some((call) => call.sql.includes('voice_profile_change_ledger'))).toBe(
+      false,
+    );
   });
 
   it('audio 누락 → 400', async () => {
     mockDB.pushResult([{ count: 0 }]);
     const form = new FormData();
     form.append('name', 'test');
+    form.append('isDraft', 'true');
     const res = await req(
       buildApp(),
       new Request('http://localhost/vp/clone', { method: 'POST', body: form }),
@@ -424,6 +458,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     mockDB.pushResult([{ count: 0 }]);
     const form = new FormData();
     form.append('audio', new Blob([new Uint8Array([1])], { type: 'audio/wav' }), 'a.wav');
+    form.append('isDraft', 'true');
     const res = await req(
       buildApp(),
       new Request('http://localhost/vp/clone', { method: 'POST', body: form }),
@@ -446,9 +481,9 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect((await res.json()).error_code).toBe('INVALID_DURATION');
   });
 
-  it('1분 미만 durationMs 는 400', async () => {
+  it('초안 최소 12초 미만 durationMs 는 400', async () => {
     mockDB.pushResult([{ count: 0 }]);
-    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '59999'));
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '11999'));
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('VOICE_CLONE_AUDIO_TOO_SHORT');
   });
@@ -643,10 +678,14 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
 
   it('삭제된 목소리로 만든 쪽지는 오디오 URL을 비움', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
-    mockDB.pushResult([{
-      audio_url: 'https://cdn.example.com/generated/voice-note.mp3',
-      audio_object_key: 'generated/voice-note.mp3',
-    }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([
+      {
+        audio_url: 'https://cdn.example.com/generated/voice-note.mp3',
+        audio_object_key: 'generated/voice-note.mp3',
+      },
+    ]);
     const res = await req(
       buildApp(),
       new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }),
