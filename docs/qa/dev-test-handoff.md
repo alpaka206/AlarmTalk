@@ -166,15 +166,18 @@
 
 ---
 
-## B. #4 사전렌더 — 코드리뷰 Round3 수정 현황(feat 브랜치)
+## B. #4 사전렌더 — Codex 재리뷰 수정 현황(feat 브랜치)
 
-**✅ 수정·푸시 완료(커밋 1ebc0ee6·fc8eed14·daa205a2):**
+**✅ 수정 완료(재리뷰 푸시 전):**
 - [양쪽] due-gate 무한재호출 → 전용 컬럼 contextResolvedAtMillis(Room v20) 무조건 갱신 (+무관편집 리셋도 차단)
+- [Android] 위치·버킷·클론 프로필 변경 시 날씨 variant/freshness 초기화
+- [Android] 편집기 스냅샷 대신 DB 최신 variant 보존 + in-flight resolver의 조건부 UPDATE로 stale 덮어쓰기 차단
 - [자체리뷰] 라이브 NaN 가드 완화(code 단독 아님) / cold 임계 라이브와 일치(≤12)
 - [Codex] 유료 버킷 alarm 동기화 거부(INVALID_BUCKET_ID) → 검증기 PAID_BUCKET_CATEGORIES 허용 **(중요)**
 - [Codex] 사전렌더 저각성 태그 → 드롭(안 깨우는 알람 클립 방지)
-- [Codex] cron 큐 중복 렌더 → messages 조건부 INSERT(NOT EXISTS)
+- [Codex] cron 큐 중복 렌더 → 원자적 15분 claim lease(migration #60) + 부분 렌더 release + messages 조건부 INSERT
 - [Codex] 미래 알람 오늘날씨 스냅샷 → 준비창 48h 필터
+- [Codex] 영문 사전렌더의 한글/일본어 정확 호칭을 언어 불일치 검사에서 제외
 - [자체리뷰 CONFIRMED] 빈/공백 버킷문구가 잠금화면 문구를 통째 소실 → isNotBlank 폴백
 - [자체리뷰 CONFIRMED cleanup] 언어매핑 중복 → data.appVoiceLanguageOf 단일화(양쪽 위임)
 
