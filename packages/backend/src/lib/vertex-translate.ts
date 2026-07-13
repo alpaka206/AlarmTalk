@@ -1495,7 +1495,7 @@ function normalizeSameLanguageTaggedText(
   return tagged.length <= 200 ? tagged : originalText;
 }
 
-function normalizeAlarmTextWithoutTags(text: string): string {
+export function normalizeAlarmTextWithoutTags(text: string): string {
   return text
     .replace(/\s*\[[a-z][a-z -]{1,32}\]\s*/gi, ' ')
     .replace(/\s+/g, ' ')

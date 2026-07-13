@@ -19,6 +19,7 @@ import {
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
   generateDynamicAlarmTextWithVertex,
+  normalizeAlarmTextWithoutTags,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
@@ -874,7 +875,9 @@ tts.post('/generate', async (c) => {
       });
     }
     const synthesisText = prepared.text;
-    const messageText = requestText;
+    // 표시/저장 텍스트는 전달 태그([cheerfully] 등)를 제거한 순수 문구로 둔다.
+    // 합성용(synthesisText)만 태그를 유지한다.
+    const messageText = normalizeAlarmTextWithoutTags(requestText);
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.
