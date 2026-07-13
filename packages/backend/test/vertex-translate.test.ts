@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/types';
 import {
   AlarmTextPreparationInvalidError,
+  deriveAlarmDisplayText,
   generateDynamicAlarmTextWithVertex,
   prepareAlarmTextWithVertex,
 } from '../src/lib/vertex-translate';
@@ -597,5 +598,47 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).not.toContain('5월 19일');
     expect(generated.text).not.toContain('생년월일');
     expect(generated.text).not.toContain('태어난 시간');
+  });
+});
+
+describe('deriveAlarmDisplayText', () => {
+  it('사용자가 대괄호를 안 치면 맨 앞 자동 delivery 태그를 제거한다', () => {
+    expect(deriveAlarmDisplayText('[cheerfully] 좋은 아침이에요', '좋은 아침이에요')).toBe(
+      '좋은 아침이에요',
+    );
+  });
+
+  it('모델이 지시를 어기고 태그를 2개 붙여도 모두 제거한다', () => {
+    expect(deriveAlarmDisplayText('[happy] [excited] Good morning', 'good morning')).toBe(
+      'Good morning',
+    );
+  });
+
+  it('문장 중간에 낀 모델 태그도 제거한다', () => {
+    expect(deriveAlarmDisplayText('Good [whispers] morning', 'good morning')).toBe('Good morning');
+  });
+
+  it('태그 제거 후 남는 이중 공백을 한 칸으로 정리한다', () => {
+    expect(deriveAlarmDisplayText('take your  pills', 'take your pills')).toBe('take your pills');
+  });
+
+  it('번역 경로에서도 앞 태그만 벗기고 번역 본문은 유지한다', () => {
+    expect(deriveAlarmDisplayText('[cheerfully] Good morning', '좋은 아침이에요')).toBe(
+      'Good morning',
+    );
+  });
+
+  it('사용자가 직접 친 대괄호는 그대로 보존한다', () => {
+    expect(
+      deriveAlarmDisplayText('오늘도 [after lunch] 화이팅', '오늘도 [after lunch] 화이팅'),
+    ).toBe('오늘도 [after lunch] 화이팅');
+  });
+
+  it('사용자 문구가 대괄호 하나뿐이어도 비우지 않는다', () => {
+    expect(deriveAlarmDisplayText('[calm]', '[calm]')).toBe('[calm]');
+  });
+
+  it('사용자가 승인 태그와 겹치는 대괄호를 쳐도 삭제하지 않는다', () => {
+    expect(deriveAlarmDisplayText('오늘도 [happy]', '오늘도 [happy]')).toBe('오늘도 [happy]');
   });
 });
