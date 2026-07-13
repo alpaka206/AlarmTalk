@@ -1502,21 +1502,21 @@ export function normalizeAlarmTextWithoutTags(text: string): string {
     .trim();
 }
 
-// 표시/저장 문구(messageText)용: 우리가 자동으로 맨 앞에 붙인 delivery 태그만 벗기고,
+// 표시/저장 문구(messageText)용: 우리가 자동으로 붙인 delivery 태그는 제거하되,
 // 사용자가 직접 입력한 대괄호는 그대로 보존한다.
 //
 // 근거: 자동 태그는 prepareAlarmTextWithVertex 에서 '사용자가 대괄호를 하나도 안 쳤을 때만'
-// (shouldTag = autoTag && !TAG_RE.test) 맨 앞에 '[tag] ' 형태로 붙는다. 그러므로
-// - originalText 에 대괄호가 있으면: 자동 태그가 아니므로 합성 텍스트를 그대로 쓴다
-//   ('[after lunch]'·'오늘도 [happy]'·'[calm]'만 입력해도 문구가 안 지워짐).
-// - 없으면: 맨 앞 대괄호 1개(=자동/모델이 붙인 delivery 태그)만 제거한다. 승인 여부와 무관하게
-//   맨 앞 것만 벗기므로 번역 경로에서 모델이 비승인 태그를 붙여도 화면엔 새지 않고,
-//   맨 앞 1개만 건드려 인접 태그로 인한 이중 공백도 생기지 않는다.
+// (shouldTag = autoTag && !TAG_RE.test) 붙는다. 그러므로
+// - originalText 에 대괄호가 있으면: 자동 태그가 아니므로 합성 텍스트를 그대로 쓴다(트림만).
+//   '[after lunch]'·'오늘도 [happy]'·'[calm]'만 입력해도 문구가 안 지워진다.
+// - 없으면: 합성 텍스트 안의 대괄호는 전부 자동/모델이 붙인 delivery 태그이므로 위치·개수와
+//   무관하게 모두 제거하고 내부 공백을 한 칸으로 정리한다. 모델이 지시를 어기고 태그를 2개
+//   붙이거나 문장 중간·이중 공백을 내도 화면에 새지 않는다(normalizeAlarmTextWithoutTags 재사용).
 export function deriveAlarmDisplayText(synthesisText: string, originalText: string): string {
   if (TAG_RE.test(originalText.trim())) {
     return synthesisText.trim();
   }
-  return synthesisText.replace(/^\s*\[[a-z][a-z -]{1,32}\]\s*/i, '').trim();
+  return normalizeAlarmTextWithoutTags(synthesisText);
 }
 
 function pickApprovedTag(tags: string[]): string | null {
