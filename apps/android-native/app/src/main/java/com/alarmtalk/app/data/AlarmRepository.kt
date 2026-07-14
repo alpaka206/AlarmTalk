@@ -526,6 +526,22 @@ class AlarmRepository(
                 nowMillis = now,
                 isHoliday = holidayPredicate,
             )
+            // 반복 날씨 알람은 dismiss 로 다음 발생(=다른 날짜)으로 넘어가면 이전 날짜로 resolve 된
+            // contextVariantIndex 가 fresh 타임스탬프째 남아, 준비창 워커가 12h 게이트로 재resolve 를 건너뛴다.
+            // 그 사이 오프라인이면 어제 날씨 클립을 재생 → 편집/재활성화와 동일 기준(shouldResetWeatherVariant,
+            // 날짜 변경 감지)으로 롤오버 시 무효화해 새 날짜로 재resolve 하게 한다.
+            val resetWeatherVariant = shouldResetWeatherVariant(
+                currentBucketId = current.bucketId,
+                nextBucketId = current.bucketId,
+                currentVoiceProfileId = current.voiceProfileId,
+                nextVoiceProfileId = current.voiceProfileId,
+                currentCountry = current.voiceWeatherCountry,
+                nextCountry = current.voiceWeatherCountry,
+                currentCity = current.voiceWeatherCity,
+                nextCity = current.voiceWeatherCity,
+                currentFireAtMillis = current.fireAtMillis,
+                nextFireAtMillis = nextFireAt,
+            )
             val next = current.copy(
                 fireAtMillis = nextFireAt,
                 enabled = true,
@@ -533,6 +549,9 @@ class AlarmRepository(
                 // 에피소드 종료(dismiss) 시 다음 회전 클립으로 +1. 스누즈는 회전하지 않으므로
                 // 같은 에피소드 내 모든 울림은 동일 클립을 재생한다.
                 bucketRotationIndex = advancedBucketRotationIndex(current),
+                contextVariantIndex = if (resetWeatherVariant) null else current.contextVariantIndex,
+                contextResolvedAtMillis =
+                    if (resetWeatherVariant) null else current.contextResolvedAtMillis,
                 state = AlarmStates.SCHEDULED,
                 updatedAtMillis = now,
             )
