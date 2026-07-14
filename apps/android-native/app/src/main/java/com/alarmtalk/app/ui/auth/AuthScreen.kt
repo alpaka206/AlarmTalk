@@ -1,5 +1,9 @@
 package com.alarmtalk.app
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.os.Build
 import android.util.Patterns
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -37,6 +41,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +50,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -52,6 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 
 internal enum class AuthMode { Login, Register }
 
@@ -61,18 +70,57 @@ private val AuthFieldGlass = Color(0x14FFFFFF)
 internal val AuthLine = Color(0x3DFFFFFF)
 internal val AuthLineSoft = Color(0x29FFFFFF)
 internal val AuthTextMuted = Color(0x99FFFFFF)
+private val AuthSceneTop = Color(0xFF1A2A52)
+private val AuthSceneBottom = Color(0xFF070C1D)
+
+/**
+ * 고정 다크 씬(랜딩·인증 플로우)이 보이는 동안 시스템 바를 씬 색으로 덮어쓴다.
+ * 테마(AppSystemBars)는 상태바를 theme background 로 칠하므로 라이트 모드에선
+ * 네이비 씬 위에 흰 상태바 띠가 생긴다 — 씬을 벗어나면 테마 기본으로 복원한다.
+ */
+@Composable
+internal fun SceneSystemBars(top: Color, bottom: Color) {
+    val view = LocalView.current
+    val themeBackground = MaterialTheme.colorScheme.background
+    DisposableEffect(view, top, bottom, themeBackground) {
+        val window = view.context.findActivity()?.window
+        fun apply(statusColor: Color, navColor: Color, lightIcons: Boolean) {
+            window ?: return
+            window.statusBarColor = statusColor.toArgb()
+            window.navigationBarColor = navColor.toArgb()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.navigationBarDividerColor = navColor.toArgb()
+            }
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = lightIcons
+                isAppearanceLightNavigationBars = lightIcons
+            }
+        }
+        apply(top, bottom, lightIcons = false)
+        onDispose {
+            apply(themeBackground, themeBackground, lightIcons = themeBackground.luminance() > 0.5f)
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 /** 인증 플로우 공통 배경 — 은은한 네이비 그라데이션 + 상단 브랜드 글로우. */
 @Composable
 internal fun AuthBackdrop(content: @Composable BoxScope.() -> Unit) {
+    SceneSystemBars(top = AuthSceneTop, bottom = AuthSceneBottom)
     Box(
         Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    0f to Color(0xFF1A2A52),
+                    0f to AuthSceneTop,
                     0.55f to Color(0xFF0E1938),
-                    1f to Color(0xFF070C1D),
+                    1f to AuthSceneBottom,
                 ),
             ),
     ) {
