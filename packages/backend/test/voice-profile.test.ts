@@ -736,10 +736,28 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(update?.sql).toContain('is_shared = 0');
   });
 
+  it('삭제 시 이번 달 목소리 변경 원장을 지워 같은 달 재등록 허용', async () => {
+    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
+    mockDB.pushResult([], 1);
+    const res = await req(
+      buildApp(),
+      new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(200);
+    const ledgerDelete = mockDB.calls.find((c) =>
+      c.sql.startsWith('DELETE FROM voice_profile_change_ledger'),
+    );
+    expect(ledgerDelete).toBeDefined();
+    expect(ledgerDelete!.sql).toContain('voice_profile_id = ?');
+    expect(ledgerDelete!.sql).toContain('change_month');
+    expect(ledgerDelete!.args).toContain(V1);
+  });
+
   it('삭제된 목소리로 만든 쪽지는 오디오 URL을 비움', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1); // voice_profile_change_ledger 삭제 (같은 달 재등록 허용)
     mockDB.pushResult([
       {
         audio_url: 'https://cdn.example.com/generated/voice-note.mp3',

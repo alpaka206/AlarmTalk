@@ -1413,6 +1413,17 @@ voiceProfile.delete('/:id', async (c) => {
       sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?',
       args: [id],
     });
+    // '마음에 안 들면 삭제'를 안내하므로, 삭제하면 같은 달에 다른 목소리를 다시 등록할 수 있어야
+    // 한다. voice_profile_id 로 스코프해, 이전 달에 만든 목소리를 지워도 이번 달 슬롯엔 영향 없음.
+    // (등록 확인창에서 promote 후 삭제 시 reserveMonthlyOfficialVoiceChange 의 월 예약이 남아
+    //  다음 등록이 VOICE_MONTHLY_CHANGE_LIMIT_REACHED 로 막히는 것을 방지.)
+    await tx.execute({
+      sql: `DELETE FROM voice_profile_change_ledger
+            WHERE voice_profile_id = ?
+              AND owner_user_id IN (${ph})
+              AND change_month = ${currentKstMonthSql()}`,
+      args: [id, ...ids],
+    });
     await enqueueExternalDeletion(
       tx,
       'elevenlabs_voice',

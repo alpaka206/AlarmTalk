@@ -537,7 +537,7 @@ private fun AlarmEntity.toRingingUiState(
     } else {
         null
     }
-    val displayedVoiceText = if (bucketId != null) bucketText else voiceText
+    val displayedVoiceText = bucketText ?: voiceText
     val voiceMessage = displayedVoiceText
         ?.let { raw -> if (voiceRandomPrompt) raw.stripDeliveryTags() else raw.trim() }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
