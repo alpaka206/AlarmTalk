@@ -882,6 +882,7 @@ voiceProfile.patch('/:id/relationship', async (c) => {
       sql: `UPDATE voice_profiles
             SET relationship_label = ?, listener_title = ?, previewed_at = NULL,
                 preview_claimed_at = NULL, preview_claim_token = NULL,
+                preview_text = NULL, preview_tag = NULL,
                 updated_at = datetime('now')
             WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 1`,

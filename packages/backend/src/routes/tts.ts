@@ -929,13 +929,25 @@ tts.post('/generate', async (c) => {
             // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
             // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
             // 이미 영속된(재생될) 문구를 덮어써 재생 결정성을 깨지 못한다. 지면 승자 문구를 재사용.
+            // 페르소나 predicate(관계/호칭, preview claim 과 동일 기준): 생성 왕복 중 관계·호칭이
+            // 편집됐으면 옛 페르소나로 만든 문구를 저장하지 않는다(써 두면 다음 미리듣기가 재사용).
             const persisted = await db.execute({
               sql: `UPDATE voice_profiles
                     SET preview_text = ?, preview_tag = ?, updated_at = datetime('now')
                     WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                       AND COALESCE(is_draft, 0) = 1
+                      AND COALESCE(relationship_label, '') = ?
+                      AND COALESCE(listener_title, '') = ?
                       AND COALESCE(preview_text, '') = ''`,
-              args: [generated.text, draftPreviewTag, body.voice_profile_id, userPk, userId],
+              args: [
+                generated.text,
+                draftPreviewTag,
+                body.voice_profile_id,
+                userPk,
+                userId,
+                String(vp.relationship_label ?? ''),
+                String(vp.listener_title ?? ''),
+              ],
             });
             if ((persisted.rowsAffected ?? 0) === 0) {
               const winner = await db.execute({
