@@ -256,6 +256,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    // 앱 프로세스 포그라운드 복귀 감지(ProcessLifecycleOwner) — 복귀 시 원격 알람 즉시 pull.
+    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.room:room-runtime:2.6.1")

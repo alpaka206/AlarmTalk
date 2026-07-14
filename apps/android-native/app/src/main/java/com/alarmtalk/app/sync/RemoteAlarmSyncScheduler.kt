@@ -1,6 +1,7 @@
 package com.alarmtalk.app.sync
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -43,5 +44,19 @@ object RemoteAlarmSyncScheduler {
             ExistingWorkPolicy.REPLACE,
             request,
         )
+    }
+
+    // 앱이 포그라운드로 복귀할 때마다 호출되는 즉시 pull. 짧은 시간 연속 복귀(탭 전환 등)로 인한 중복
+    // 실행을 minIntervalMs throttle 로 막는다. 첫 호출은 항상 실행(=null). elapsedRealtime 은 부팅 후
+    // 경과라 초기 0 비교 이슈를 피하려 nullable 로 둔다.
+    @Volatile
+    private var lastForegroundRunAtMs: Long? = null
+
+    fun runOnceThrottled(context: Context, minIntervalMs: Long = 60_000L) {
+        val now = SystemClock.elapsedRealtime()
+        val last = lastForegroundRunAtMs
+        if (last != null && now - last < minIntervalMs) return
+        lastForegroundRunAtMs = now
+        runOnce(context)
     }
 }
