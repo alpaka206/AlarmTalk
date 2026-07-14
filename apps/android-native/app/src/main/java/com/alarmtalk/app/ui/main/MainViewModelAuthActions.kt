@@ -187,6 +187,7 @@ internal fun MainViewModel.register(
             registerEmailVerified = null
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
+            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email registration failed", error)
