@@ -1473,9 +1473,15 @@ tts.get('/messages', async (c) => {
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10) || 50, 1), 100);
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
 
-  // 내부 프리셋 버킷 클립(is_preset=1)은 사용자의 '저장한 문구'가 아니다. 노출하면 목록을 어지럽히고
-  // 삭제까지 가능해져 /tts/stock-clips 오프라인 버킷이 불완전해진다 → 제외(정상 유저 메시지는 is_preset=0).
+  // /tts/messages 는 사용자가 '저장한 문구' 라이브러리(message_library)만 반환한다. messages 테이블에는
+  // 내부 프리셋 버킷 클립(is_preset=1), 드래프트 미리듣기(승격 후 non-draft 로 노출), 알람 raw 플레이스홀더,
+  // 가족 수신 클립 등 저장 문구가 아닌 내부 행이 섞이는데 이들은 message_library 에 등록되지 않는다 →
+  // 라이브러리 멤버십으로 거른다. (is_preset 은 라이브러리에 없어 이미 제외되지만, 명시적 가드로도 남긴다.)
   let whereClause = `WHERE m.user_id IN (?, ?)
+    AND EXISTS (
+      SELECT 1 FROM message_library ml
+      WHERE ml.message_id = m.id AND ml.user_id IN (?, ?)
+    )
     AND COALESCE(m.is_preset, 0) = 0
     AND EXISTS (
       SELECT 1 FROM voice_profiles visible_vp
@@ -1483,7 +1489,7 @@ tts.get('/messages', async (c) => {
         AND visible_vp.deleted_at IS NULL
         AND COALESCE(visible_vp.is_draft, 0) = 0
     )`;
-  const filterArgs: (string | number)[] = [...ownerIds];
+  const filterArgs: (string | number)[] = [...ownerIds, ...ownerIds];
 
   if (category) {
     whereClause += ' AND m.category = ?';

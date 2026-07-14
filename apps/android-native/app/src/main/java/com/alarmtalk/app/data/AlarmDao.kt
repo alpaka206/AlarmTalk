@@ -59,6 +59,9 @@ interface AlarmDao {
 
     // resolvedAtMillis 는 전용 게이트 컬럼(contextResolvedAtMillis). updatedAtMillis 를 건드리지 않아
     // (a) 인덱스 불변이어도 게이트가 전진하고 (b) 무관 편집이 날씨 재해결 시계를 리셋하지 않는다.
+    // fireDateStart/End: variant 는 특정 타깃 날짜로 resolve 되므로, 네트워크 왕복 중 사용자가 시간·날짜를
+    // 바꿔 fireAtMillis 가 그 날짜 범위를 벗어났으면 옛 날짜 결과를 쓰지 않는다(써 버리면 fresh 타임스탬프로
+    // 12h 게이트가 전진해 올바른 재해결이 막힌다). 범위는 [start, end) 반개구간.
     @Query(
         """
         UPDATE alarms
@@ -68,6 +71,8 @@ interface AlarmDao {
           AND COALESCE(voiceProfileId, '') = :voiceProfileId
           AND TRIM(COALESCE(voiceWeatherCountry, '')) = :country
           AND TRIM(COALESCE(voiceWeatherCity, '')) = :city
+          AND fireAtMillis >= :fireDateStartMillis
+          AND fireAtMillis < :fireDateEndMillis
         """,
     )
     suspend fun updateContextVariantIndexIfContextMatches(
@@ -77,6 +82,8 @@ interface AlarmDao {
         voiceProfileId: String,
         country: String,
         city: String,
+        fireDateStartMillis: Long,
+        fireDateEndMillis: Long,
     ): Int
 
     @Query(

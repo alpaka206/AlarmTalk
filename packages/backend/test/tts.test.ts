@@ -346,6 +346,7 @@ describe('GET /tts/messages — 메시지 목록', () => {
     expect(body.total).toBe(0);
     expect(mockDB.calls[0]!.sql).toContain('COALESCE(visible_vp.is_draft, 0) = 0');
     expect(mockDB.calls[0]!.sql).toContain('COALESCE(m.is_preset, 0) = 0');
+    expect(mockDB.calls[0]!.sql).toContain('FROM message_library ml');
   });
 
   it('메시지 목록 반환', async () => {

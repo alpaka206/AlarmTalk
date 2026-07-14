@@ -782,6 +782,11 @@ class AlarmRepository(
         for ((locationAndDate, group) in byLocationAndDate) {
             val (location, targetDate, timezone) = locationAndDate
             val (country, city) = location
+            // variant 는 이 타깃 날짜로 resolve 된다. 네트워크 왕복 중 알람의 발사 날짜가 바뀌면(편집)
+            // 아래 DAO 가드가 옛 결과를 거른다. 경계는 resolver 와 동일 존 기준 [자정, 다음날 자정).
+            val targetLocalDate = java.time.LocalDate.parse(targetDate)
+            val fireDateStartMillis = targetLocalDate.atStartOfDay(zone).toInstant().toEpochMilli()
+            val fireDateEndMillis = targetLocalDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
             val index = runCatching {
                 api.getPrerenderVariant(
                     authorization = AlarmTalkApiClient.bearer(token),
@@ -807,6 +812,8 @@ class AlarmRepository(
                     voiceProfileId = alarm.voiceProfileId.orEmpty(),
                     country = alarm.voiceWeatherCountry?.trim().orEmpty(),
                     city = alarm.voiceWeatherCity?.trim().orEmpty(),
+                    fireDateStartMillis = fireDateStartMillis,
+                    fireDateEndMillis = fireDateEndMillis,
                 )
                 if (updatedRows > 0 && index != alarm.contextVariantIndex) resolved += 1
             }
