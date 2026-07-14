@@ -235,6 +235,228 @@ describe('POST /tts/generate — TTS 생성', () => {
     expect(claimCall?.sql).toContain("COALESCE(listener_title, '') = ?");
   });
 
+  it('draft 미리듣기는 Vertex 설정 시 관계·호칭 톤 적응 문구로 합성한다', async () => {
+    const toneText = '우리 아들, 잘 잤어? 오늘도 기분 좋게 하루 시작해 보자.';
+    const mockFetch = vi.fn(async (url: unknown) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      // Gemini 톤 적응 생성 응답 — {text, tag} JSON
+      return geminiText(JSON.stringify({ text: toneText, tag: 'cheerfully' }));
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1,
+          user_id: 'user-1',
+          status: 'ready',
+          is_draft: 1,
+          elevenlabs_voice_id: 'el-draft',
+          relationship_label: '엄마',
+          listener_title: '우리 아들',
+        },
+      ]);
+      mockDB.pushResult([], 1); // preview_text 영속 UPDATE
+      mockDB.pushResult([], 1); // preview claim UPDATE
+      mockDB.pushResult([]);
+      pushPublicationVoice({
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        relationship_label: '엄마',
+        listener_title: '우리 아들',
+      });
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          language: 'ko',
+          draft_preview: true,
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      // 고정 예문이 아니라 관계·호칭 톤 적응 생성 문구로 합성/표시된다.
+      expect(body.text).toBe(toneText);
+      expect(body.synthesis_text).toBe(`[cheerfully] ${toneText}`);
+      expect(mockTextToSpeech).toHaveBeenCalledWith(
+        'el-draft',
+        body.synthesis_text,
+        expect.any(Object),
+      );
+      expect(body.preview_playback_token).toBeTypeOf('string');
+      // 생성 문구를 draft 행에 영속해 이후 재생이 같은 문구(=캐시 히트)로 성립하게 한다.
+      const persist = mockDB.calls.find((call) => call.sql.includes('SET preview_text'));
+      expect(persist).toBeDefined();
+      expect(persist!.args).toContain(toneText);
+      // 확정/활성 claim 중에는 저장 금지(늦은 영속이 실제 합성 문구와 어긋나는 것 방지).
+      expect(persist!.sql).toContain('previewed_at IS NULL');
+      expect(persist!.sql).toContain('preview_claimed_at IS NULL');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('동시 첫-미리듣기 레이스에서 진 쪽은 승자의 preview_text 를 재사용한다', async () => {
+    const loserText = '우리 아들, 오늘도 상쾌하게 일어나 볼까?';
+    const winnerText = '우리 아들, 잘 잤어? 오늘 하루도 힘내자.';
+    const mockFetch = vi.fn(async (url: unknown) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return geminiText(JSON.stringify({ text: loserText, tag: 'cheerfully' }));
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1,
+          user_id: 'user-1',
+          status: 'ready',
+          is_draft: 1,
+          elevenlabs_voice_id: 'el-draft',
+          relationship_label: '엄마',
+          listener_title: '우리 아들',
+        },
+      ]);
+      mockDB.pushResult([], 0); // 조건부 영속 실패(다른 요청이 먼저 씀)
+      mockDB.pushResult([{ preview_text: winnerText, preview_tag: 'cheerfully' }]); // 승자 재조회
+      mockDB.pushResult([], 1); // preview claim
+      mockDB.pushResult([]);
+      pushPublicationVoice({
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        relationship_label: '엄마',
+        listener_title: '우리 아들',
+      });
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          language: 'ko',
+          draft_preview: true,
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      // 진 쪽의 새 생성 문구(loserText)가 아니라 이미 영속된 승자 문구로 합성된다.
+      expect(body.text).toBe(winnerText);
+      expect(body.synthesis_text).toBe(`[cheerfully] ${winnerText}`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('확정됐지만 preview_text 없는 레거시 draft 재생은 새로 생성하지 않는다(고정 폴백 유지)', async () => {
+    const mockFetch = vi.fn(async () => {
+      throw new Error('legacy replay must not call Vertex');
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1,
+          user_id: 'user-1',
+          status: 'ready',
+          is_draft: 1,
+          elevenlabs_voice_id: 'el-draft',
+          relationship_label: '엄마',
+          listener_title: '우리 아들',
+          previewed_at: '2026-07-15 00:00:00',
+        },
+      ]);
+      // previewed_at 이 있으므로 claim 없음. 캐시 미스(mock 빈 결과) → 409 VOICE_PREVIEW_UNAVAILABLE
+      // 가 정상 경로다(실환경에선 고정 문구가 이미 합성돼 있어 캐시 히트로 재생됨). 핵심 단언은
+      // '생성/영속을 시도하지 않는다' — 새 문구를 만들면 캐시 키가 어긋나 재생이 영구히 깨진다.
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          language: 'ko',
+          draft_preview: true,
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+
+      expect(res.status).toBe(409);
+      expect((await res.json()).error_code).toBe('VOICE_PREVIEW_UNAVAILABLE');
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('draft 미리듣기는 저장된 preview_text 가 있으면 재생성 없이 재사용한다', async () => {
+    const storedText = '우리 아들, 잘 잤어? 오늘도 힘내 보자.';
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        relationship_label: '엄마',
+        listener_title: '우리 아들',
+        preview_text: storedText,
+        preview_tag: 'cheerfully',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      relationship_label: '엄마',
+      listener_title: '우리 아들',
+    });
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    // 고정 예문/새 생성이 아니라 저장된 문구 그대로 — 재생이 결정적(같은 캐시키)이다.
+    expect(body.text).toBe(storedText);
+    expect(body.synthesis_text).toBe(`[cheerfully] ${storedText}`);
+    // 재사용 경로는 재생성/재영속하지 않는다.
+    expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
+  });
+
   it('합성 중 민감 동의를 철회하면 생성 결과를 게시하지 않는다', async () => {
     mockDB.setConsentMissing(true);
     mockDB.pushResult([{ plan: 'plus' }]);

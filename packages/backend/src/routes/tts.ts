@@ -19,13 +19,18 @@ import {
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
   generateDynamicAlarmTextWithVertex,
+  generatePrerenderClipText,
   deriveAlarmDisplayText,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
-import { CLONE_WEATHER_CONDITIONS } from '../lib/stock-clips';
+import {
+  CLONE_CLIP_SEEDS,
+  CLONE_WEATHER_CONDITIONS,
+  STOCK_GREETING_CATEGORY,
+} from '../lib/stock-clips';
 import {
   readManualTtsUsage,
   refundManualTtsQuota,
@@ -816,6 +821,7 @@ tts.post('/generate', async (c) => {
   if (draftPreviewRequested) requestText = draftPreviewText(storedPreviewLanguage);
 
   const isSystemVoice = Boolean(Number(vp.is_system ?? 0));
+  let draftPreviewListenerTitle: string | null = null;
   if ((randomRequested && randomContext === 'preset') || draftPreviewRequested) {
     const isSharedVoiceProfileForPreset =
       typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
@@ -827,6 +833,9 @@ tts.post('/generate', async (c) => {
         ? await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)
         : null) ??
       normalizeRelationshipLabel(vp.listener_title);
+    if (draftPreviewRequested) draftPreviewListenerTitle = listenerTitle ?? null;
+    // 미리듣기는 아래에서 관계·호칭 톤 적응 생성을 시도한다 — 여기서 만든 '고정 예문+호칭 접두어'는
+    // 생성 실패(Vertex 미설정/모델 오류) 시의 폴백 문구가 된다.
     requestText = presetTextWithListenerTitle(requestText, listenerTitle);
   }
   if (freePlanRestricted) {
@@ -882,11 +891,97 @@ tts.post('/generate', async (c) => {
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
+  let draftPreviewTag = 'cheerfully';
 
   try {
     const requestedLanguage = draftPreviewRequested
       ? storedPreviewLanguage
       : normalizeSynthesisLanguage(body.language);
+
+    if (draftPreviewRequested) {
+      // 미리듣기 문구를 keep(승격) 후 사전렌더될 greeting 과 같은 seed 로 '관계·호칭 톤 적응' 생성한다
+      // — 사용자가 확정 전에 그 목소리의 실제 말투(관계에 맞는 어투 + 호칭)를 듣고 결정하게 하기 위함.
+      // 생성 문구는 요청마다 달라질 수 있으므로 첫 생성분을 draft 행(preview_text/preview_tag)에 영속해
+      // 재생을 결정적으로 만든다 — previewed_at 이후 재생은 캐시 히트로만 성립하므로 같은 문구가 필수.
+      // 관계/호칭 수정 시 previewed_at 과 함께 리셋돼 새 문구로 재생성된다(voice-profile PATCH).
+      // 실패(Vertex 미설정·모델 오류·검증 탈락) 시 위의 고정 예문(+호칭 접두어)으로 폴백해 미리듣기
+      // 자체는 절대 막지 않는다. Vertex(국외) 전송은 위 missingTtsConsent(overseas_transfer 포함) 통과
+      // 뒤에만 일어난다.
+      const storedText =
+        typeof vp.preview_text === 'string' && vp.preview_text.trim() ? vp.preview_text.trim() : null;
+      if (storedText) {
+        requestText = storedText;
+        const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
+        if (storedTag) draftPreviewTag = storedTag;
+      } else if (vp.previewed_at) {
+        // 이미 확정(previewed_at)됐는데 저장 문구가 없는 draft = 이 기능 이전(또는 고정 폴백으로 확정).
+        // 그때 합성된 문구는 '고정 예문+호칭'이므로 새로 생성하면 캐시 키가 어긋나 재생이
+        // VOICE_PREVIEW_UNAVAILABLE 이 된다 → 생성하지 않고 고정 폴백을 유지해 재생 캐시 히트를 지킨다.
+      } else {
+        try {
+          const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
+          if (greetingSeed) {
+            const generated = await generatePrerenderClipText(c.env, {
+              seed: greetingSeed.seeds[0]!,
+              relationshipLabel: normalizeRelationshipLabel(vp.relationship_label) ?? null,
+              listenerTitle: draftPreviewListenerTitle,
+              targetLanguage: storedPreviewLanguage,
+              defaultTag: greetingSeed.defaultTag,
+            });
+            requestText = generated.text;
+            if (generated.tag) draftPreviewTag = generated.tag;
+            // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
+            // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
+            // 이미 영속된(재생될) 문구를 덮어써 재생 결정성을 깨지 못한다. 지면 승자 문구를 재사용.
+            // 페르소나 predicate(관계/호칭, preview claim 과 동일 기준): 생성 왕복 중 관계·호칭이
+            // 편집됐으면 옛 페르소나로 만든 문구를 저장하지 않는다(써 두면 다음 미리듣기가 재사용).
+            // previewed_at/claim 가드: 다른 요청이 이미 확정했거나(폴백 문구로 합성됐을 수 있음)
+            // 활성 claim 으로 합성 중이면 저장하지 않는다 — 늦은 영속이 '실제 합성된 문구'와 다른
+            // 문구를 남겨 재생 캐시 키를 어긋내는 것 방지(claim 과 동일한 5분 lease 기준).
+            const persisted = await db.execute({
+              sql: `UPDATE voice_profiles
+                    SET preview_text = ?, preview_tag = ?, updated_at = datetime('now')
+                    WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                      AND COALESCE(is_draft, 0) = 1
+                      AND COALESCE(relationship_label, '') = ?
+                      AND COALESCE(listener_title, '') = ?
+                      AND COALESCE(preview_text, '') = ''
+                      AND previewed_at IS NULL
+                      AND (preview_claimed_at IS NULL
+                        OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
+              args: [
+                generated.text,
+                draftPreviewTag,
+                body.voice_profile_id,
+                userPk,
+                userId,
+                String(vp.relationship_label ?? ''),
+                String(vp.listener_title ?? ''),
+              ],
+            });
+            if ((persisted.rowsAffected ?? 0) === 0) {
+              const winner = await db.execute({
+                sql: `SELECT preview_text, preview_tag FROM voice_profiles
+                      WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                      LIMIT 1`,
+                args: [body.voice_profile_id, userPk, userId],
+              });
+              const winnerRow = winner.rows[0];
+              const winnerText =
+                typeof winnerRow?.preview_text === 'string' ? winnerRow.preview_text.trim() : '';
+              if (winnerText) {
+                requestText = winnerText;
+                const winnerTag =
+                  typeof winnerRow?.preview_tag === 'string' ? winnerRow.preview_tag.trim() : '';
+                draftPreviewTag = winnerTag || 'cheerfully';
+              }
+            }
+          }
+        } catch {
+          // 고정 예문 폴백 유지 (requestText 는 이미 예문+호칭으로 설정돼 있음)
+        }
+      }
+    }
 
     // 국외 이전 동의(B4): 동적 문구 생성(wake_weather/wake_fortune 등)과 번역은
     // 텍스트를 국외(Google Vertex)로 전송하므로 overseas_transfer 동의가 필요하다.
@@ -986,10 +1081,14 @@ tts.post('/generate', async (c) => {
     // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (draftPreviewRequested) {
+      // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 cheerfully 를 쓴다.
+      // 동적 경로와 동일하게 태그 포함 길이가 200을 넘으면 태그를 버려 메타와 합성 텍스트를 일치시킨다.
+      const taggedText = `[${draftPreviewTag}] ${requestText}`;
+      const tagApplied = taggedText.length <= 200;
       prepared = {
-        text: `[cheerfully] ${requestText}`,
+        text: tagApplied ? taggedText : requestText,
         translated: false,
-        tags: ['cheerfully'],
+        tags: tagApplied ? [draftPreviewTag] : [],
       };
     } else if (dynamicGenerated) {
       const dynamicTag = dynamicGenerated.tags[0] ?? '';
