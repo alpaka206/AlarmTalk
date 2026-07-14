@@ -345,6 +345,7 @@ describe('GET /tts/messages — 메시지 목록', () => {
     expect(body.messages).toHaveLength(0);
     expect(body.total).toBe(0);
     expect(mockDB.calls[0]!.sql).toContain('COALESCE(visible_vp.is_draft, 0) = 0');
+    expect(mockDB.calls[0]!.sql).toContain('COALESCE(m.is_preset, 0) = 0');
   });
 
   it('메시지 목록 반환', async () => {
@@ -385,7 +386,17 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
     expect(res.status).toBe(400);
   });
 
+  it('preset 클립은 삭제 거부(403)', async () => {
+    mockDB.pushResult([{ is_preset: 1 }]); // preset check
+    const app = buildApp();
+    const res = await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('MESSAGE_PRESET_LOCKED');
+  });
+
   it('연관 알람 있으면 409 경고', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 2 }]);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
@@ -396,6 +407,7 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
   });
 
   it('force=true로 연관 알람 있어도 삭제', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 2 }]); // alarm check
     mockDB.pushResult([], 1); // UPDATE alarms (detach)
     mockDB.pushResult([], 1); // DELETE message_library
@@ -420,6 +432,7 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
   });
 
   it('메시지 없으면 404', async () => {
+    mockDB.pushResult([]); // preset check (없음)
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 0);
     mockDB.pushResult([], 0);
@@ -430,6 +443,7 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
   });
 
   it('정상 삭제', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 0 }]); // alarm check
     mockDB.pushResult([], 1); // DELETE message_library
     mockDB.pushResult([]); // SELECT audio_object_key
@@ -1148,6 +1162,7 @@ describe('GET /tts/messages — edge cases', () => {
 /* ------------------------------------------------------------------ */
 describe('DELETE /tts/messages/:id — edge cases', () => {
   it('삭제 시 message_library부터 삭제 후 messages 삭제 (순서 검증)', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 0 }]); // alarm check
     mockDB.pushResult([], 1); // DELETE message_library
     mockDB.pushResult([]); // SELECT audio_object_key (정리할 R2 오브젝트 없음)
@@ -1155,13 +1170,14 @@ describe('DELETE /tts/messages/:id — edge cases', () => {
     mockDB.pushResult([], 1); // DELETE messages
     const app = buildApp();
     await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
-    expect(mockDB.calls[1].sql).toContain('DELETE FROM message_library');
-    expect(mockDB.calls[2].sql).toContain('SELECT audio_object_key');
-    expect(mockDB.calls[3].sql).toContain('DELETE FROM generated_audio_assets');
-    expect(mockDB.calls[4].sql).toContain('DELETE FROM messages');
+    expect(mockDB.calls[2].sql).toContain('DELETE FROM message_library');
+    expect(mockDB.calls[3].sql).toContain('SELECT audio_object_key');
+    expect(mockDB.calls[4].sql).toContain('DELETE FROM generated_audio_assets');
+    expect(mockDB.calls[5].sql).toContain('DELETE FROM messages');
   });
 
   it('삭제 SQL에 user_id 포함 (사용자 격리)', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([]); // SELECT audio_object_key
@@ -1169,12 +1185,13 @@ describe('DELETE /tts/messages/:id — edge cases', () => {
     mockDB.pushResult([], 1);
     const app = buildApp('user-99');
     await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
-    expect(mockDB.calls[1].args).toContain('user-99');
-    expect(mockDB.calls[3].args).toContain('user-99');
+    expect(mockDB.calls[2].args).toContain('user-99');
     expect(mockDB.calls[4].args).toContain('user-99');
+    expect(mockDB.calls[5].args).toContain('user-99');
   });
 
   it('force=true이고 알람 0개여도 정상 삭제', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([]); // SELECT audio_object_key

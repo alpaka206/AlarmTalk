@@ -1473,7 +1473,10 @@ tts.get('/messages', async (c) => {
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10) || 50, 1), 100);
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
 
+  // 내부 프리셋 버킷 클립(is_preset=1)은 사용자의 '저장한 문구'가 아니다. 노출하면 목록을 어지럽히고
+  // 삭제까지 가능해져 /tts/stock-clips 오프라인 버킷이 불완전해진다 → 제외(정상 유저 메시지는 is_preset=0).
   let whereClause = `WHERE m.user_id IN (?, ?)
+    AND COALESCE(m.is_preset, 0) = 0
     AND EXISTS (
       SELECT 1 FROM voice_profiles visible_vp
       WHERE visible_vp.id = m.voice_profile_id
@@ -1610,6 +1613,21 @@ tts.delete('/messages/:id', async (c) => {
 
   if (!UUID_RE.test(id)) {
     return c.json({ error: 'Invalid message ID format', error_code: 'INVALID_MESSAGE_ID' }, 400);
+  }
+
+  // 내부 프리셋 버킷 클립은 삭제 금지 — 삭제하면 /tts/stock-clips 오프라인 버킷이 불완전해진다.
+  // R2/asset 삭제 부수효과가 아래에서 먼저 실행되므로, 반드시 그 전에 early-return 으로 막는다
+  // (messages DELETE 에만 is_preset 가드를 걸면 오디오가 이미 지워진 뒤 404 로 no-op 됨).
+  const presetCheck = await db.execute({
+    sql: `SELECT COALESCE(is_preset, 0) AS is_preset FROM messages
+          WHERE id = ? AND user_id IN (?, ?)`,
+    args: [id, ...ownerIds],
+  });
+  if (presetCheck.rows.length > 0 && Number(presetCheck.rows[0]!.is_preset) === 1) {
+    return c.json(
+      { error: 'Preset stock clips cannot be deleted.', error_code: 'MESSAGE_PRESET_LOCKED' },
+      403,
+    );
   }
 
   const alarmCheck = await db.execute({

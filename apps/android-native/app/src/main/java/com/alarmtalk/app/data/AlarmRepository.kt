@@ -220,6 +220,8 @@ class AlarmRepository(
             nextCountry = draft.voiceWeatherCountry,
             currentCity = current.voiceWeatherCity,
             nextCity = draft.voiceWeatherCity,
+            currentFireAtMillis = current.fireAtMillis,
+            nextFireAtMillis = nextFireAt,
         )
         val weatherVariantState = nextWeatherVariantState(
             nextBucketId = draft.bucketId,
@@ -304,19 +306,36 @@ class AlarmRepository(
                 countryCode = currentHolidayCountry(),
                 startDate = currentLocalDate(now),
             )
+            val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
+                hour = current.hour,
+                minute = current.minute,
+                repeatDaysMask = current.repeatDaysMask,
+                holidayOff = current.holidayOff,
+                nowMillis = now,
+                isHoliday = holidayPredicate,
+            )
+            // 재활성화로 다음 발사 날짜가 바뀌면 날씨 variant 를 무효화(이전 날짜 조건이 12h 게이트 동안
+            // 남아 오재생되는 것 방지). 버킷/보이스/위치는 안 바뀌므로 사실상 날짜 변경만 반영된다.
+            val resetWeatherVariant = shouldResetWeatherVariant(
+                currentBucketId = current.bucketId,
+                nextBucketId = current.bucketId,
+                currentVoiceProfileId = current.voiceProfileId,
+                nextVoiceProfileId = current.voiceProfileId,
+                currentCountry = current.voiceWeatherCountry,
+                nextCountry = current.voiceWeatherCountry,
+                currentCity = current.voiceWeatherCity,
+                nextCity = current.voiceWeatherCity,
+                currentFireAtMillis = current.fireAtMillis,
+                nextFireAtMillis = nextFireAt,
+            )
             current.copy(
-                fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-                    hour = current.hour,
-                    minute = current.minute,
-                    repeatDaysMask = current.repeatDaysMask,
-                    holidayOff = current.holidayOff,
-                    nowMillis = now,
-                    isHoliday = holidayPredicate,
-                ),
+                fireAtMillis = nextFireAt,
                 enabled = true,
                 snoozeCount = 0,
                 state = AlarmStates.SCHEDULED,
                 syncState = current.nextLocalSyncState(),
+                contextVariantIndex = if (resetWeatherVariant) null else current.contextVariantIndex,
+                contextResolvedAtMillis = if (resetWeatherVariant) null else current.contextResolvedAtMillis,
                 updatedAtMillis = now,
             )
         } else {
@@ -1020,14 +1039,25 @@ internal fun shouldResetWeatherVariant(
     nextCountry: String?,
     currentCity: String?,
     nextCity: String?,
+    currentFireAtMillis: Long,
+    nextFireAtMillis: Long,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
 ): Boolean {
     val involvesWeather = currentBucketId == "weather" || nextBucketId == "weather"
     if (!involvesWeather) return false
 
+    // 날씨 variant 는 특정 타깃 날짜(=fireAtMillis 의 로컬 날짜, resolveDueCloneBucketVariants 와 동일 존)로
+    // resolve 된다. 보이스·위치가 그대로여도 다음 발사 날짜가 바뀌면(시간·반복 편집, 재활성화 등) 이전 날짜
+    // 기준 조건이 12h 게이트 동안 남아 오재생되므로, 날짜가 바뀌면 무효화해 준비창 워커가 재resolve 하게 한다.
+    val fireDateChanged =
+        java.time.Instant.ofEpochMilli(currentFireAtMillis).atZone(zone).toLocalDate() !=
+            java.time.Instant.ofEpochMilli(nextFireAtMillis).atZone(zone).toLocalDate()
+
     return currentBucketId != nextBucketId ||
         currentVoiceProfileId != nextVoiceProfileId ||
         currentCountry?.trim().orEmpty() != nextCountry?.trim().orEmpty() ||
-        currentCity?.trim().orEmpty() != nextCity?.trim().orEmpty()
+        currentCity?.trim().orEmpty() != nextCity?.trim().orEmpty() ||
+        fireDateChanged
 }
 
 internal data class WeatherVariantState(

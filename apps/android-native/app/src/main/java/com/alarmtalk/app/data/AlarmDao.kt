@@ -137,6 +137,9 @@ interface AlarmDao {
                     nextCountry = updated.voiceWeatherCountry,
                     currentCity = fresh.voiceWeatherCity,
                     nextCity = updated.voiceWeatherCity,
+                    // 발사 날짜가 바뀐 편집/재활성화면 리셋된 null 을 fresh 의 옛 인덱스로 되덮지 않는다.
+                    currentFireAtMillis = fresh.fireAtMillis,
+                    nextFireAtMillis = updated.fireAtMillis,
                 )
             updated.copy(
                 remoteAlarmId = fresh.remoteAlarmId,
