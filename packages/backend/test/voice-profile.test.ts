@@ -151,6 +151,33 @@ describe('GET / — 프로필 목록 (voice-profile)', () => {
 /* ------------------------------------------------------------------ */
 /*  GET /vp/:id — 프로필 상세                                          */
 /* ------------------------------------------------------------------ */
+describe('GET /draft — 드래프트 조회 (voice-profile)', () => {
+  it('공유로 만든 드래프트는 실제 is_shared=true 를 반환(마스킹 금지)', async () => {
+    mockDB.pushResult([{ id: V1, name: 'draft', is_shared: 1, is_draft: 1, status: 'ready' }]);
+    const res = await req(buildApp(), new Request('http://localhost/vp/draft'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.profile.is_shared).toBe(true);
+    expect(body.profile.is_draft).toBe(true);
+    expect(body.profile.is_system).toBe(false);
+  });
+
+  it('비공유 드래프트는 is_shared=false', async () => {
+    mockDB.pushResult([{ id: V1, name: 'draft', is_shared: 0, is_draft: 1, status: 'ready' }]);
+    const res = await req(buildApp(), new Request('http://localhost/vp/draft'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.profile.is_shared).toBe(false);
+  });
+
+  it('드래프트 없으면 profile=null', async () => {
+    mockDB.pushResult([]);
+    const res = await req(buildApp(), new Request('http://localhost/vp/draft'));
+    expect(res.status).toBe(200);
+    expect((await res.json()).profile).toBe(null);
+  });
+});
+
 describe('GET /:id — 프로필 상세 (voice-profile)', () => {
   it('잘못된 UUID → 400', async () => {
     const res = await req(buildApp(), new Request(`http://localhost/vp/${V_BAD}`));
@@ -439,13 +466,23 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
   });
 
-  it('프로필 1개 이상이면 403 VOICE_LIMIT_REACHED', async () => {
-    mockDB.pushResult([{ count: 1 }]);
+  it('draft 슬롯이 차 있으면 403 VOICE_LIMIT_REACHED', async () => {
+    mockDB.pushResult([{ draft_count: 1, official_count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트'));
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error_code).toBe('VOICE_LIMIT_REACHED');
     expect(body.error).toContain('1');
+  });
+
+  it('official 슬롯이 차 있으면 403 (stranded draft 방지, attempt 미소모)', async () => {
+    mockDB.pushResult([{ draft_count: 0, official_count: 1 }]);
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트2'));
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_LIMIT_REACHED');
+    // official 한도로 조기 차단하므로 월간 draft attempt 쿼터를 소모하지 않아야 한다.
+    expect(mockDB.calls.some((call) => call.sql.includes('voice_draft_attempt_usage'))).toBe(false);
   });
 
   it('이번 달 초안 제공자 시도를 모두 썼으면 429 VOICE_DRAFT_ATTEMPT_LIMIT_REACHED', async () => {

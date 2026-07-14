@@ -513,7 +513,8 @@ describe('POST /voice/clone — 음성 클론', () => {
   }
 
   it('프로필 1개 이상이면 403', async () => {
-    mockDB.pushResult([{ count: 1 }]);
+    // 한도 검사는 draft/official 슬롯을 함께 센다(둘 중 하나라도 차면 차단).
+    mockDB.pushResult([{ draft_count: 1, official_count: 1 }]);
     const app = buildApp();
     const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2, 3]), '테스트'));
     expect(res.status).toBe(403);

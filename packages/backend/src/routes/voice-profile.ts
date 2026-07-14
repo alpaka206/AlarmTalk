@@ -341,7 +341,9 @@ voiceProfile.get('/draft', async (c) => {
     profile: row
       ? {
           ...row,
-          is_shared: false,
+          // 드래프트는 isShared=true 로도 생성될 수 있고(공유 예약), promote 시 서버가 그 값으로 공유한다.
+          // false 로 마스킹하면 앱이 '공유 안 함'으로 표시한 채 실제로는 공유돼 UI 가 어긋난다 → 실제 값 반환.
+          is_shared: Boolean(Number(row.is_shared ?? 0)),
           is_draft: true,
           is_system: false,
         }
@@ -1012,21 +1014,25 @@ voiceProfile.post('/clone', async (c) => {
     {
       const ids = ownerIds(c);
       const phCount = ids.map(() => '?').join(',');
-      const draftClause = isDraft ? 'COALESCE(is_draft, 0) = 1' : 'COALESCE(is_draft, 0) = 0';
-      const limit = isDraft ? MAX_DRAFT_VOICE_PROFILES : MAX_VOICE_PROFILES;
+      // draft 생성도 official 슬롯이 꽉 차 있으면 거부한다: 안 그러면 promote(활성 official 한도)에서 막혀
+      // 월간 draft attempt 만 소모한 채 keep 할 수 없는 stranded draft 가 된다. draft/official 슬롯을 함께 센다.
       const profileCount = await db.execute({
         sql: `SELECT
-                SUM(CASE WHEN deleted_at IS NULL AND status != 'failed' AND ${draftClause} THEN 1 ELSE 0 END) as active_count
+                SUM(CASE WHEN deleted_at IS NULL AND status != 'failed' AND COALESCE(is_draft, 0) = 1 THEN 1 ELSE 0 END) as draft_count,
+                SUM(CASE WHEN deleted_at IS NULL AND status != 'failed' AND COALESCE(is_draft, 0) = 0 THEN 1 ELSE 0 END) as official_count
               FROM voice_profiles
               WHERE user_id IN (${phCount})`,
         args: ids,
       });
       const row = profileCount.rows[0]!;
-      const count = Number(row.active_count ?? row.count ?? 0);
-      if (count >= limit) {
+      const draftCount = Number(row.draft_count ?? 0);
+      const officialCount = Number(row.official_count ?? 0);
+      const draftLimitReached = isDraft && draftCount >= MAX_DRAFT_VOICE_PROFILES;
+      const officialLimitReached = officialCount >= MAX_VOICE_PROFILES;
+      if (draftLimitReached || officialLimitReached) {
         return c.json(
           {
-            error: isDraft
+            error: draftLimitReached
               ? `임시 보이스는 최대 ${MAX_DRAFT_VOICE_PROFILES}개까지 만들 수 있습니다`
               : `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
             error_code: 'VOICE_LIMIT_REACHED',
@@ -1085,13 +1091,25 @@ voiceProfile.post('/clone', async (c) => {
 
     const insertResult = await withWriteTransaction(db, async (tx) => {
       const ids = ownerIds(c);
-      const activeDrafts = await tx.execute({
-        sql: `SELECT COUNT(*) AS count FROM voice_profiles
+      // draft 슬롯과 official 슬롯을 한 스냅샷으로 함께 센다(둘 사이 TOCTOU 없음). 둘 중 하나라도 한도면 차단.
+      // official 이 이미 꽉 찼으면(=MAX_VOICE_PROFILES 개 등록) 새 draft 를 만들어도 promote 가
+      // activeOfficialVoiceProfileCount 한도로 거부돼(아래 PATCH), 월간 draft attempt 만 소모한 채 영영 keep 할 수
+      // 없는 stranded draft 가 된다. promote 와 동일 기준으로 여기서 조기 차단한다(새 목소리 등록은 기존 official
+      // 을 먼저 삭제). attempt 예약(reserveMonthlyDraftAttempt) 전에 두어 draft 쿼터도 소모하지 않는다.
+      const slotCounts = await tx.execute({
+        sql: `SELECT
+                SUM(CASE WHEN COALESCE(is_draft, 0) = 1 THEN 1 ELSE 0 END) AS draft_count,
+                SUM(CASE WHEN COALESCE(is_draft, 0) = 0 THEN 1 ELSE 0 END) AS official_count
+              FROM voice_profiles
               WHERE user_id IN (${ids.map(() => '?').join(',')}) AND deleted_at IS NULL
-                AND status != 'failed' AND COALESCE(is_draft, 0) = 1`,
+                AND status != 'failed'`,
         args: ids,
       });
-      if (Number(activeDrafts.rows[0]?.count ?? 0) >= MAX_DRAFT_VOICE_PROFILES) {
+      const slotRow = slotCounts.rows[0];
+      if (
+        Number(slotRow?.draft_count ?? 0) >= MAX_DRAFT_VOICE_PROFILES ||
+        Number(slotRow?.official_count ?? 0) >= MAX_VOICE_PROFILES
+      ) {
         return { status: 'voice_limit' as const, ledgerId: null };
       }
       draftAttemptMonth = await reserveMonthlyDraftAttempt(tx, userPk);
