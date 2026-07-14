@@ -305,6 +305,67 @@ describe('POST /tts/generate — TTS 생성', () => {
     }
   });
 
+  it('동시 첫-미리듣기 레이스에서 진 쪽은 승자의 preview_text 를 재사용한다', async () => {
+    const loserText = '우리 아들, 오늘도 상쾌하게 일어나 볼까?';
+    const winnerText = '우리 아들, 잘 잤어? 오늘 하루도 힘내자.';
+    const mockFetch = vi.fn(async (url: unknown) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return geminiText(JSON.stringify({ text: loserText, tag: 'cheerfully' }));
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1,
+          user_id: 'user-1',
+          status: 'ready',
+          is_draft: 1,
+          elevenlabs_voice_id: 'el-draft',
+          relationship_label: '엄마',
+          listener_title: '우리 아들',
+        },
+      ]);
+      mockDB.pushResult([], 0); // 조건부 영속 실패(다른 요청이 먼저 씀)
+      mockDB.pushResult([{ preview_text: winnerText, preview_tag: 'cheerfully' }]); // 승자 재조회
+      mockDB.pushResult([], 1); // preview claim
+      mockDB.pushResult([]);
+      pushPublicationVoice({
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        relationship_label: '엄마',
+        listener_title: '우리 아들',
+      });
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          language: 'ko',
+          draft_preview: true,
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      // 진 쪽의 새 생성 문구(loserText)가 아니라 이미 영속된 승자 문구로 합성된다.
+      expect(body.text).toBe(winnerText);
+      expect(body.synthesis_text).toBe(`[cheerfully] ${winnerText}`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('draft 미리듣기는 저장된 preview_text 가 있으면 재생성 없이 재사용한다', async () => {
     const storedText = '우리 아들, 잘 잤어? 오늘도 힘내 보자.';
     mockDB.pushResult([{ plan: 'plus' }]);
