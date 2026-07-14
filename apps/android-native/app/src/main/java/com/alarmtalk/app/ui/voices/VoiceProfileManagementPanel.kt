@@ -932,20 +932,23 @@ internal fun VoiceProfileManagementPanel(
                 defaultVoiceSheetOpen = false
             },
         ) { _ ->
-            systemVoices.forEach { profile ->
-                WakerSheetOptionRow(
-                    title = profile.name,
-                    selected = profile.id == defaultVoiceId,
-                    onClick = {
-                        onSetDefaultVoice(profile.id)
-                        playGreeting(profile)
-                    },
-                    trailing = if (playingGreetingVoiceId == profile.id) {
-                        { PlayingEqualizer() }
-                    } else {
-                        null
-                    },
-                )
+            WakerSheetOptionGroup {
+                systemVoices.forEachIndexed { index, profile ->
+                    WakerSheetOptionRow(
+                        title = profile.name,
+                        selected = profile.id == defaultVoiceId,
+                        onClick = {
+                            onSetDefaultVoice(profile.id)
+                            playGreeting(profile)
+                        },
+                        trailing = if (playingGreetingVoiceId == profile.id) {
+                            { PlayingEqualizer() }
+                        } else {
+                            null
+                        },
+                        divider = index != systemVoices.lastIndex,
+                    )
+                }
             }
             // 미리듣기 준비중/실패 안내 — 패널 본문의 MutedText 는 시트 스크림에 가려지므로
             // 시트가 열려 있는 동안엔 여기서 보여준다(열 때 localMessage 를 비워 회귀 방지).

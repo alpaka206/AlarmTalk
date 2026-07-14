@@ -1,6 +1,8 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -122,9 +125,30 @@ private fun WakerSheetDragHandle() {
 }
 
 /**
+ * 옵션 행들을 담는 그룹 컨테이너 — 시트의 옵션 목록을 pane 카드(SnoozeOptionSection)와 같은
+ * '한 카드 안 행 + 헤어라인 구분선' 문법으로 통일한다. 행마다 테두리 버튼을 두지 않는다
+ * (버튼 크로마가 겹치면 시트가 무겁고, 편집기 카드·세부 pane 과 문법이 어긋난다).
+ */
+@Composable
+internal fun WakerSheetOptionGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = WakerPanelShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
+        border = wakerCardBorder(),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) { content() }
+    }
+}
+
+/**
  * 선택형 시트의 공통 옵션 행: [아이콘 배지] 제목/설명 … [trailing] 선택 표시.
  * 선택 표시는 체크 원(선택) / 빈 링(미선택)으로 통일한다.
  * trailing 은 선택 표시 바로 앞의 상태 슬롯 — 기본 목소리 시트의 재생 이퀄라이저 등.
+ * 반드시 [WakerSheetOptionGroup] 안에서 쓰고, 마지막 행이 아니면 divider=true 로 헤어라인을 잇는다.
  */
 @Composable
 internal fun WakerSheetOptionRow(
@@ -136,24 +160,17 @@ internal fun WakerSheetOptionRow(
     icon: ImageVector? = null,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    divider: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        shape = WakerPanelShape,
-        color = if (selected) {
-            scheme.primaryContainer.copy(alpha = 0.55f)
-        } else {
-            scheme.surfaceVariant.copy(alpha = 0.34f)
-        },
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (selected) scheme.primary.copy(alpha = 0.5f) else scheme.outlineVariant,
-        ),
-    ) {
+    val hasLeading = leading != null || icon != null
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -209,6 +226,17 @@ internal fun WakerSheetOptionRow(
                     ) {}
                 }
             }
+        }
+        if (divider) {
+            // 텍스트 시작선까지 들여쓴 헤어라인 — pane(SnoozeOptionDivider)과 동일 문법.
+            // 아이콘 배지(40) + 간격(12) + 좌패딩(14) = 66, 배지 없으면 좌패딩만.
+            Box(
+                modifier = Modifier
+                    .padding(start = if (hasLeading) 66.dp else 14.dp)
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(scheme.outlineVariant),
+            )
         }
     }
 }

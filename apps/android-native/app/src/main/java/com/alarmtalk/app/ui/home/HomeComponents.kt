@@ -318,15 +318,19 @@ internal fun MenuTabPanel(
             title = stringResource(R.string.hs_settings_theme),
             onDismiss = { themeSheetVisible = false },
         ) { dismiss ->
-            listOf(ThemeMode.System, ThemeMode.Light, ThemeMode.Dark).forEach { mode ->
-                WakerSheetOptionRow(
-                    title = themeModeLabel(context, mode),
-                    selected = themeMode == mode,
-                    onClick = {
-                        onChangeTheme(mode)
-                        dismiss()
-                    },
-                )
+            val modes = listOf(ThemeMode.System, ThemeMode.Light, ThemeMode.Dark)
+            WakerSheetOptionGroup {
+                modes.forEachIndexed { index, mode ->
+                    WakerSheetOptionRow(
+                        title = themeModeLabel(context, mode),
+                        selected = themeMode == mode,
+                        onClick = {
+                            onChangeTheme(mode)
+                            dismiss()
+                        },
+                        divider = index != modes.lastIndex,
+                    )
+                }
             }
         }
     }

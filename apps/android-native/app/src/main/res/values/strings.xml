@@ -748,18 +748,18 @@
     <string name="label_snooze_repeat_forever">계속 반복</string>
     <string name="label_snooze_repeat_count">%1$d회</string>
     <string name="label_snooze_list">%1$d분 · %2$s</string>
-    <string name="label_vibration_strong" translatable="false">Strong</string>
-    <string name="label_vibration_short" translatable="false">Short</string>
-    <string name="label_vibration_medium" translatable="false">Medium</string>
-    <string name="label_vibration_heartbeat" translatable="false">Heartbeat</string>
-    <string name="label_vibration_ticktock" translatable="false">Ticktock</string>
-    <string name="label_vibration_waltz" translatable="false">Waltz</string>
-    <string name="label_vibration_zigzag" translatable="false">Zigzag</string>
-    <string name="label_vibration_off_beat" translatable="false">Off-beat</string>
-    <string name="label_vibration_ripple" translatable="false">Ripple</string>
-    <string name="label_vibration_siren" translatable="false">Siren</string>
-    <string name="label_vibration_off" translatable="false">Off</string>
-    <string name="label_vibration_basic_call" translatable="false">Basic</string>
+    <string name="label_vibration_strong">강하게</string>
+    <string name="label_vibration_short">짧게</string>
+    <string name="label_vibration_medium">중간</string>
+    <string name="label_vibration_heartbeat">하트비트</string>
+    <string name="label_vibration_ticktock">틱톡</string>
+    <string name="label_vibration_waltz">왈츠</string>
+    <string name="label_vibration_zigzag">지그재그</string>
+    <string name="label_vibration_off_beat">엇박자</string>
+    <string name="label_vibration_ripple">물결</string>
+    <string name="label_vibration_siren">사이렌</string>
+    <string name="label_vibration_off">꺼짐</string>
+    <string name="label_vibration_basic_call">기본</string>
     <string name="label_play_mode_voice_only">목소리</string>
     <string name="label_play_mode_alarm_voice">알람 + 목소리</string>
     <string name="label_play_mode_alarm">알람</string>
