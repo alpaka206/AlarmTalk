@@ -1367,6 +1367,17 @@ export const migrations: Migration[] = [
        WHERE status = 'done'`,
     ],
   },
+  {
+    id: 65,
+    name: 'voice-draft-preview-text',
+    statements: [
+      // 등록 미리듣기의 관계·호칭 톤 적응 문구는 요청마다 달라질 수 있어, 첫 생성분을 draft 행에
+      // 영속해 재생(replay)을 결정적으로 만든다(같은 문구 → 같은 캐시키 → previewed_at 이후 재생이
+      // 캐시 히트로 성립). 관계/호칭 수정 시 previewed_at 과 함께 리셋해 새 문구로 재생성한다.
+      `ALTER TABLE voice_profiles ADD COLUMN preview_text TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN preview_tag TEXT`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
