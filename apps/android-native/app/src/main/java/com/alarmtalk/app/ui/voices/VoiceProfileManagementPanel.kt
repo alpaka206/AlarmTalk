@@ -210,6 +210,7 @@ internal fun VoiceProfileManagementPanel(
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
+    onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onPromoteVoiceDraft: (String) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
@@ -415,7 +416,24 @@ internal fun VoiceProfileManagementPanel(
                         if (mediaPlayer === it) {
                             mediaPlayer = null
                             confirmPreviewPlaying = false
-                            confirmPreviewCompleted = true
+                            scope.launch {
+                                runCatching {
+                                    val token = response.previewPlaybackToken
+                                    if (token != null) {
+                                        onConfirmVoicePreviewPlayed(voice.id, token)
+                                    } else if (!response.previewPlaybackConfirmed) {
+                                        error("Preview playback confirmation token missing")
+                                    }
+                                }.onSuccess {
+                                    confirmPreviewCompleted = true
+                                }.onFailure { error ->
+                                    AlarmTalkLog.reportError("Failed to confirm preview playback", error)
+                                    localMessage = userFacingError(
+                                        error,
+                                        context.getString(R.string.voices_preview_play_failed),
+                                    )
+                                }
+                            }
                         }
                     }
                     start()

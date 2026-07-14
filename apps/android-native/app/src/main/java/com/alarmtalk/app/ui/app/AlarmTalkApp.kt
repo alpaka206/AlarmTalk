@@ -719,6 +719,7 @@ internal fun AlarmTalkApp(
                               viewModel.updateSharedVoiceViewerInfo(id, relationship, listener)
                           },
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
+                          onConfirmVoicePreviewPlayed = viewModel::confirmVoicePreviewPlayed,
                           onPromoteVoiceDraft = viewModel::promoteVoiceDraft,
                           onDeleteVoiceDraft = viewModel::deleteVoiceDraft,
                           defaultVoiceId = viewModel.defaultVoiceId,

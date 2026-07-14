@@ -402,7 +402,7 @@ The backend verifies the Apple token signature against Apple JWKS, checks issuer
 #### `POST /voice/clone` (multipart)
 
 - Body: `audio` (file), `name` (string), `isDraft=true`, relationship/title fields, and app `language`.
-- Direct official creation is rejected. The client must create one private draft, request its deterministic preview, wait for playback completion, and then promote it with `PATCH /voice/:id` and `is_draft=false`.
+- Direct official creation is rejected. The client must create one private draft, request its deterministic preview, report the server-issued playback token to `POST /voice/:id/preview-played` only after local playback completion, and then promote it with `PATCH /voice/:id` and `is_draft=false`.
 - Draft provider enrollment is limited to three attempts per KST month and one active draft. Promotion is limited to one official registration per KST month; deleting an official voice does not refund that registration.
 - Provider: ElevenLabs. Drafts cannot be shared, attached to alarms/gifts, or used for general TTS.
 

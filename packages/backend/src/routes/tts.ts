@@ -87,6 +87,13 @@ function consentRequired(c: Context<AppEnv>, consent: string) {
   return c.json({ error, error_code: 'CONSENT_REQUIRED', consent }, 403);
 }
 
+class ConsentWithdrawnDuringTtsError extends Error {
+  constructor(readonly consent: string) {
+    super(`Required consent was withdrawn during TTS generation: ${consent}`);
+    this.name = 'ConsentWithdrawnDuringTtsError';
+  }
+}
+
 type WeatherForecastResponse = {
   daily?: {
     time?: unknown[];
@@ -1082,8 +1089,17 @@ tts.post('/generate', async (c) => {
                   updated_at = datetime('now')
               WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                 AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
+                AND COALESCE(relationship_label, '') = ?
+                AND COALESCE(listener_title, '') = ?
                 AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
-        args: [previewClaimToken, body.voice_profile_id, userPk, userId],
+        args: [
+          previewClaimToken,
+          body.voice_profile_id,
+          userPk,
+          userId,
+          String(vp.relationship_label ?? ''),
+          String(vp.listener_title ?? ''),
+        ],
       });
       if ((claimed.rowsAffected ?? 0) === 0) {
         return c.json(
@@ -1107,8 +1123,8 @@ tts.post('/generate', async (c) => {
       if (cached) {
         if (draftPreviewRequested && activePreviewClaimToken) {
           const marked = await db.execute({
-            sql: `UPDATE voice_profiles SET previewed_at = datetime('now'), preview_claimed_at = NULL,
-                        preview_claim_token = NULL, updated_at = datetime('now')
+            sql: `UPDATE voice_profiles SET preview_claimed_at = NULL,
+                        updated_at = datetime('now')
                   WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                     AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
                     AND preview_claim_token = ?`,
@@ -1142,6 +1158,8 @@ tts.post('/generate', async (c) => {
             cache_key: cacheKey,
             cache_hit: true,
             random_context: randomRequested ? randomContext : null,
+            preview_playback_token: activePreviewClaimToken,
+            preview_playback_confirmed: Boolean(vp.previewed_at),
           },
           200,
         );
@@ -1206,6 +1224,16 @@ tts.post('/generate', async (c) => {
         const messageId = crypto.randomUUID();
         try {
           await withWriteTransaction(db, async (tx) => {
+            if (!isSystemVoice) {
+              const missingPublicationConsent = await missingConsentType(
+                tx,
+                userPk,
+                requiredSensitiveConsents,
+              );
+              if (missingPublicationConsent) {
+                throw new ConsentWithdrawnDuringTtsError(missingPublicationConsent);
+              }
+            }
             await tx.execute({
               sql: `INSERT INTO messages
                 (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json, category, audio_url)
@@ -1252,15 +1280,17 @@ tts.post('/generate', async (c) => {
               });
             }
 
-            await tx.execute({
-              sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
-              args: [crypto.randomUUID(), userPk, messageId],
-            });
+            if (!draftPreviewRequested) {
+              await tx.execute({
+                sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
+                args: [crypto.randomUUID(), userPk, messageId],
+              });
+            }
 
             if (draftPreviewRequested) {
               const marked = await tx.execute({
-                sql: `UPDATE voice_profiles SET previewed_at = datetime('now'), preview_claimed_at = NULL,
-                        preview_claim_token = NULL, updated_at = datetime('now')
+                sql: `UPDATE voice_profiles SET preview_claimed_at = NULL,
+                        updated_at = datetime('now')
                   WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                     AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
                     AND preview_claim_token = ?`,
@@ -1301,6 +1331,8 @@ tts.post('/generate', async (c) => {
             cache_hit: false,
             random_context: randomRequested ? randomContext : null,
             manual_quota: manualQuotaResult,
+            preview_playback_token: activePreviewClaimToken,
+            preview_playback_confirmed: false,
           },
           201,
         );
@@ -1347,6 +1379,9 @@ tts.post('/generate', async (c) => {
         },
         503,
       );
+    }
+    if (err instanceof ConsentWithdrawnDuringTtsError) {
+      return consentRequired(c, err.consent);
     }
     if (err instanceof AlarmTextPreparationInvalidError) {
       return c.json(
@@ -1411,7 +1446,13 @@ tts.get('/messages', async (c) => {
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10) || 50, 1), 100);
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
 
-  let whereClause = 'WHERE m.user_id IN (?, ?)';
+  let whereClause = `WHERE m.user_id IN (?, ?)
+    AND EXISTS (
+      SELECT 1 FROM voice_profiles visible_vp
+      WHERE visible_vp.id = m.voice_profile_id
+        AND visible_vp.deleted_at IS NULL
+        AND COALESCE(visible_vp.is_draft, 0) = 0
+    )`;
   const filterArgs: (string | number)[] = [...ownerIds];
 
   if (category) {
@@ -1466,6 +1507,12 @@ tts.get('/messages/:id/audio', async (c) => {
                  delivery_tags_json, audio_url, category
           FROM messages
           WHERE id = ?
+            AND EXISTS (
+              SELECT 1 FROM voice_profiles visible_vp
+              WHERE visible_vp.id = messages.voice_profile_id
+                AND visible_vp.deleted_at IS NULL
+                AND COALESCE(visible_vp.is_draft, 0) = 0
+            )
             AND (
               user_id IN (?, ?)
               OR EXISTS (

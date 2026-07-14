@@ -72,6 +72,10 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
   it('deletePaidVoiceDataForUser(A): A 본인 알람은 삭제, B의 알람은 sound-only로 강등·보존', async () => {
     await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A'); // A 본인 → 삭제 대상
     await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-A'); // 타인 소유 → 강등·보존
+    await db.execute({
+      sql: `UPDATE alarms SET raw_audio_url = 'r2://independent-raw' WHERE id = 'al-B'`,
+      args: [],
+    });
 
     await deletePaidVoiceDataForUser(db, 'A');
 
@@ -85,6 +89,7 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     expect(alB!.voice_profile_id).toBeNull();
     expect(alB!.message_id).toBeNull();
     expect(alB!.wake_mode).toBe('sound_then_voice');
+    expect(alB!.raw_audio_url).toBe('r2://independent-raw');
   });
 
   it('deletePaidVoiceDataForUser(A): 메시지 경유로만 A 목소리를 참조하는 타인 알람도 강등·보존', async () => {

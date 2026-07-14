@@ -463,6 +463,54 @@ voiceProfile.get('/:id', async (c) => {
   });
 });
 
+voiceProfile.post('/:id/preview-played', async (c) => {
+  const ids = ownerIds(c);
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+
+  let body: { preview_playback_token?: unknown; previewPlaybackToken?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
+  }
+  const token = body.preview_playback_token ?? body.previewPlaybackToken;
+  if (typeof token !== 'string' || !UUID_RE.test(token)) {
+    return c.json(
+      { error: 'Valid preview playback token required', error_code: 'INVALID_PREVIEW_TOKEN' },
+      400,
+    );
+  }
+
+  const ph = ids.map(() => '?').join(',');
+  const confirmed = await db.execute({
+    sql: `UPDATE voice_profiles
+          SET previewed_at = datetime('now'), preview_claim_token = NULL,
+              updated_at = datetime('now')
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
+            AND preview_claimed_at IS NULL AND preview_claim_token = ?`,
+    args: [id, ...ids, token],
+  });
+  if ((confirmed.rowsAffected ?? 0) === 0) {
+    return c.json(
+      {
+        error: 'Preview playback token is stale or the draft changed.',
+        error_code: 'VOICE_PREVIEW_CONFIRMATION_CONFLICT',
+      },
+      409,
+    );
+  }
+  return c.json({ success: true, previewed: true });
+});
+
 voiceProfile.patch('/:id', async (c) => {
   const ids = ownerIds(c);
   const userId = c.get('userId') as string;
@@ -1331,26 +1379,26 @@ voiceProfile.delete('/:id', async (c) => {
   }
 
   const ph = ids.map(() => '?').join(',');
-  const result = await db.execute({
-    sql: `SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
-    args: [id, ...ids],
-  });
-
-  if (result.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
-  }
-
-  const profile = result.rows[0]!;
-
-  // draft 정리 전용 삭제(draftOnly=true): 클라가 '미선택 draft'로 알고 지우려 해도, 그 사이
-  // promote 로 is_draft=0(정식 등록)이 됐다면(응답 유실 등 '팬텀 성공') 절대 지우지 않는다.
-  // 방금 등록된 보이스와 그 외부 클론이 하드 삭제되는 데이터 손실을 막는 게이트.
   const draftOnly = c.req.query('draftOnly') === 'true';
-  if (draftOnly && Number(profile.is_draft ?? 0) !== 1) {
-    return c.json({ success: true, skipped: 'not_a_draft', voice_profile_id: id });
-  }
 
   const deletionState = await withWriteTransaction(db, async (tx) => {
+    const current = await tx.execute({
+      sql: `SELECT * FROM voice_profiles
+            WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
+      args: [id, ...ids],
+    });
+    if (current.rows.length === 0) {
+      return { status: 'not_found' as const, profile: null, tombstoned: null, assets: [] };
+    }
+    const currentProfile = current.rows[0]!;
+    if (draftOnly && Number(currentProfile.is_draft ?? 0) !== 1) {
+      return {
+        status: 'not_a_draft' as const,
+        profile: currentProfile,
+        tombstoned: null,
+        assets: [],
+      };
+    }
     const tombstoned = await tx.execute({
       sql: `UPDATE voice_profiles
             SET deleted_at = datetime('now'), is_shared = 0, updated_at = datetime('now')
@@ -1358,7 +1406,9 @@ voiceProfile.delete('/:id', async (c) => {
               ${draftOnly ? 'AND COALESCE(is_draft, 0) = 1' : ''}`,
       args: [id],
     });
-    if ((tombstoned.rowsAffected ?? 0) === 0) return { tombstoned, assets: [] };
+    if ((tombstoned.rowsAffected ?? 0) === 0) {
+      return { status: 'not_found' as const, profile: currentProfile, tombstoned, assets: [] };
+    }
     await tx.execute({
       sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?',
       args: [id],
@@ -1366,7 +1416,7 @@ voiceProfile.delete('/:id', async (c) => {
     await enqueueExternalDeletion(
       tx,
       'elevenlabs_voice',
-      profile.elevenlabs_voice_id as string | null,
+      currentProfile.elevenlabs_voice_id as string | null,
     );
     const assets = await tx.execute({
       sql: `SELECT audio_url, audio_object_key FROM generated_audio_assets
@@ -1376,14 +1426,20 @@ voiceProfile.delete('/:id', async (c) => {
     for (const asset of assets.rows) {
       await enqueueExternalDeletion(tx, 'r2_object', asset.audio_object_key as string | null);
     }
-    return { tombstoned, assets: assets.rows };
+    return {
+      status: 'deleted' as const,
+      profile: currentProfile,
+      tombstoned,
+      assets: assets.rows,
+    };
   });
-  const tombstoned = deletionState.tombstoned;
-  if ((tombstoned.rowsAffected ?? 0) === 0) {
-    return draftOnly
-      ? c.json({ success: true, skipped: 'not_a_draft', voice_profile_id: id })
-      : c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  if (deletionState.status === 'not_a_draft') {
+    return c.json({ success: true, skipped: 'not_a_draft', voice_profile_id: id });
   }
+  if (deletionState.status === 'not_found' || !deletionState.profile) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  const profile = deletionState.profile;
   if (profile.elevenlabs_voice_id) {
     const providerVoiceId = profile.elevenlabs_voice_id as string;
     try {
@@ -1454,9 +1510,7 @@ voiceProfile.delete('/:id', async (c) => {
               wake_mode = 'sound_then_voice',
               message_id = NULL,
               voice_profile_id = NULL,
-              speaker_id = NULL,
-              raw_audio_url = NULL,
-              raw_audio_duration_ms = NULL
+              speaker_id = NULL
           WHERE voice_profile_id = ?
              OR message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)`,
     args: [id, id],

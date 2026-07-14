@@ -50,6 +50,15 @@ data class VoiceProfileUpdateRequest(
     val language: String? = null,
 )
 
+data class VoicePreviewPlayedRequest(
+    @SerializedName("preview_playback_token") val previewPlaybackToken: String,
+)
+
+data class VoicePreviewPlayedResponse(
+    val success: Boolean,
+    val previewed: Boolean,
+)
+
 data class VoiceProfileRelationshipUpdateRequest(
     @SerializedName("relationship_label") val relationshipLabel: String,
     @SerializedName("listener_title") val listenerTitle: String,
@@ -124,6 +133,13 @@ interface VoiceProfileApi {
         @Path("id") id: String,
         @Body request: VoiceProfileUpdateRequest,
     ): VoiceProfileResponse
+
+    @POST("voice/{id}/preview-played")
+    suspend fun confirmVoicePreviewPlayed(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body request: VoicePreviewPlayedRequest,
+    ): VoicePreviewPlayedResponse
 
     @PATCH("voice/{id}/relationship")
     suspend fun updateVoiceProfileRelationship(

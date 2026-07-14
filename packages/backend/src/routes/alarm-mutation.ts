@@ -19,6 +19,7 @@ import {
   type WakeMode,
 } from './alarm-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
+import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 
 const alarmMutation = new Hono<AppEnv>();
 
@@ -128,7 +129,7 @@ async function messageBelongsToCaller(
  * 타인 voice_profile_id 를 알람에 기록하는 IDOR 을 막는다.
  */
 async function voiceProfileBelongsToCaller(
-  db: ReturnType<typeof getDB>,
+  db: DbExecutor,
   voiceProfileId: string,
   ownerIds: [string, string],
 ): Promise<boolean> {
@@ -364,31 +365,41 @@ alarmMutation.post('/', async (c) => {
   const vibPattern: VibrationPattern =
     (body.vibration_pattern as VibrationPattern | undefined) ?? 'default';
   const wakeMode: WakeMode = (body.wake_mode as WakeMode | undefined) ?? 'sound_then_voice';
-  await db.execute({
-    sql: `INSERT INTO alarms
+  const insertAlarm = (executor: DbExecutor) =>
+    executor.execute({
+      sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id, speaker_id,
              raw_audio_url, raw_audio_duration_ms, timezone, bucket_id)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      alarmId,
-      userId,
-      targetUserIdForAlarm,
-      resolvedMessageId,
-      body.time,
-      JSON.stringify(body.repeat_days ?? []),
-      body.snooze_minutes ?? 5,
-      mode,
-      vibPattern,
-      wakeMode,
-      body.voice_profile_id ?? null,
-      body.speaker_id ?? null,
-      body.raw_audio_url ?? null,
-      body.raw_audio_duration_ms ?? null,
-      timezone,
-      body.bucket_id ?? null,
-    ],
-  });
+      args: [
+        alarmId,
+        userId,
+        targetUserIdForAlarm,
+        resolvedMessageId,
+        body.time,
+        JSON.stringify(body.repeat_days ?? []),
+        body.snooze_minutes ?? 5,
+        mode,
+        vibPattern,
+        wakeMode,
+        body.voice_profile_id ?? null,
+        body.speaker_id ?? null,
+        body.raw_audio_url ?? null,
+        body.raw_audio_duration_ms ?? null,
+        timezone,
+        body.bucket_id ?? null,
+      ],
+    });
+  const inserted = body.voice_profile_id
+    ? await withWriteTransaction(db, async (tx) => {
+        if (!(await voiceProfileBelongsToCaller(tx, body.voice_profile_id!, ownerIds))) return null;
+        return insertAlarm(tx);
+      })
+    : await insertAlarm(db);
+  if (!inserted) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
 
   return c.json(
     {
@@ -569,10 +580,22 @@ alarmMutation.patch('/:id', async (c) => {
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
-  await db.execute({
-    sql: `UPDATE alarms SET ${updates.join(', ')} WHERE id = ?`,
-    args,
-  });
+  const updateAlarm = (executor: DbExecutor) =>
+    executor.execute({
+      sql: `UPDATE alarms SET ${updates.join(', ')} WHERE id = ?`,
+      args,
+    });
+  const updateResult =
+    body.voice_profile_id !== undefined && body.voice_profile_id !== null
+      ? await withWriteTransaction(db, async (tx) => {
+          if (!(await voiceProfileBelongsToCaller(tx, body.voice_profile_id!, ownerIds)))
+            return null;
+          return updateAlarm(tx);
+        })
+      : await updateAlarm(db);
+  if (!updateResult) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
 
   // raw_audio_url 을 새 값으로 교체하면 이전 R2 녹음이 어떤 알람에서도 참조되지
   // 않을 수 있다. DELETE 핸들러와 동일하게, 더 이상 쓰이지 않는 이전 오브젝트를

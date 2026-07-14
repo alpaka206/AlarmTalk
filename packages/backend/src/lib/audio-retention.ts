@@ -113,10 +113,25 @@ export async function enqueueUserVoiceArtifacts(tx: DbExecutor, ownerIds: string
 /** 큐를 배치로 비운다 — cron 전용. 외부 API 호출이 있으므로 트랜잭션 밖에서 실행. */
 export async function drainExternalDeletions(db: Client, env: Env): Promise<void> {
   const pending = await db.execute({
-    sql: `SELECT id, kind, ref, attempts FROM pending_external_deletions
-          ORDER BY attempts ASC, created_at ASC
-          LIMIT ?`,
-    args: [DRAIN_BATCH_SIZE],
+    sql: `WITH
+            retry AS (
+              SELECT id, kind, ref, attempts, created_at
+              FROM pending_external_deletions
+              WHERE attempts > 0
+              ORDER BY attempts ASC, created_at ASC
+              LIMIT ?
+            ),
+            fresh AS (
+              SELECT id, kind, ref, attempts, created_at
+              FROM pending_external_deletions
+              WHERE attempts = 0
+              ORDER BY created_at ASC
+              LIMIT ?
+            )
+          SELECT id, kind, ref, attempts FROM retry
+          UNION ALL
+          SELECT id, kind, ref, attempts FROM fresh`,
+    args: [Math.floor(DRAIN_BATCH_SIZE / 2), Math.ceil(DRAIN_BATCH_SIZE / 2)],
   });
   if (pending.rows.length === 0) return;
 

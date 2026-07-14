@@ -204,9 +204,54 @@ describe('POST /tts/generate — TTS 생성', () => {
       body.synthesis_text,
       expect.any(Object),
     );
+    expect(body.preview_playback_token).toBeTypeOf('string');
+    expect(body.preview_playback_confirmed).toBe(false);
     expect(mockDB.calls.some((call) => call.sql.includes('SET previewed_at = datetime'))).toBe(
-      true,
+      false,
     );
+    expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO message_library'))).toBe(
+      false,
+    );
+    const claimCall = mockDB.calls.find((call) => call.sql.includes('preview_claim_token = ?'));
+    expect(claimCall?.sql).toContain("COALESCE(relationship_label, '') = ?");
+    expect(claimCall?.sql).toContain("COALESCE(listener_title, '') = ?");
+  });
+
+  it('합성 중 민감 동의를 철회하면 생성 결과를 게시하지 않는다', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        relationship_label: '엄마',
+        listener_title: '우리 아들',
+      },
+    ]);
+    mockDB.pushResult([
+      { consent_type: 'voice_biometric', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { consent_type: 'overseas_transfer', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+    ]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
+    mockDB.pushResult([]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('CONSENT_REQUIRED');
+    expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO messages'))).toBe(false);
   });
   it('필수 필드 없으면 400', async () => {
     const app = buildApp();
@@ -275,6 +320,7 @@ describe('GET /tts/messages — 메시지 목록', () => {
     const body = await res.json();
     expect(body.messages).toHaveLength(0);
     expect(body.total).toBe(0);
+    expect(mockDB.calls[0]!.sql).toContain('COALESCE(visible_vp.is_draft, 0) = 0');
   });
 
   it('메시지 목록 반환', async () => {

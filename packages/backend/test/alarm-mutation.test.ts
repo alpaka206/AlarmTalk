@@ -287,6 +287,7 @@ describe('POST /alarms', () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
     mockDB.pushResult([{ id: vpId }]);
+    mockDB.pushResult([{ id: vpId }]);
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(

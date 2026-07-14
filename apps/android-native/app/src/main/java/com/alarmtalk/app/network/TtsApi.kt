@@ -40,6 +40,8 @@ data class TtsGenerateResponse(
     @SerializedName("cache_hit") val cacheHit: Boolean = false,
     val provider: String? = null,
     @SerializedName("random_context") val randomContext: String? = null,
+    @SerializedName("preview_playback_token") val previewPlaybackToken: String? = null,
+    @SerializedName("preview_playback_confirmed") val previewPlaybackConfirmed: Boolean = false,
 )
 
 /** 직접 입력 문구 만들기 월 한도 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). */

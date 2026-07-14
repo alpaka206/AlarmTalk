@@ -238,6 +238,17 @@ internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
     }
 }
 
+internal suspend fun MainViewModel.confirmVoicePreviewPlayed(profileId: String, token: String) {
+    val session = authSession ?: error("Authentication required")
+    withContext(Dispatchers.IO) {
+        api.confirmVoicePreviewPlayed(
+            authorization = AlarmTalkApiClient.bearer(session.token),
+            id = profileId,
+            request = com.alarmtalk.app.network.VoicePreviewPlayedRequest(token),
+        )
+    }
+}
+
 internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
     val session = authSession ?: return
     viewModelScope.launch {

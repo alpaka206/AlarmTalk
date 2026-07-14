@@ -307,6 +307,7 @@ describe('POST /alarm — 알람 생성', () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: voiceProfileId }]);
     mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([{ id: voiceProfileId }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
@@ -405,6 +406,7 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
     const speakerId = '50000000-0000-4000-8000-0000000000bb';
     mockDB.pushResult([{ id: ID.alarm }]); // existing
     mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller → 소유 확인
+    mockDB.pushResult([{ '1': 1 }]);
     mockDB.pushResult([], 1); // update
     mockDB.pushResult([
       {

@@ -184,6 +184,35 @@ describe('GET /:id — 프로필 상세 (voice-profile)', () => {
 /* ------------------------------------------------------------------ */
 /*  PATCH /vp/:id — 이름 변경                                         */
 /* ------------------------------------------------------------------ */
+describe('POST /:id/preview-played — 미리듣기 재생 확인', () => {
+  it('서버가 발급한 최신 토큰으로 draft 재생 완료를 기록한다', async () => {
+    mockDB.pushResult([], 1);
+
+    const res = await req(
+      buildApp(),
+      jsonReq('POST', `/vp/${V1}/preview-played`, { preview_playback_token: V2 }),
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).previewed).toBe(true);
+    expect(mockDB.calls[0]!.sql).toContain('preview_claim_token = ?');
+    expect(mockDB.calls[0]!.sql).toContain('preview_claimed_at IS NULL');
+    expect(mockDB.calls[0]!.args).toContain(V2);
+  });
+
+  it('stale token은 재생 완료로 인정하지 않는다', async () => {
+    mockDB.pushResult([], 0);
+
+    const res = await req(
+      buildApp(),
+      jsonReq('POST', `/vp/${V1}/preview-played`, { preview_playback_token: V2 }),
+    );
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('VOICE_PREVIEW_CONFIRMATION_CONFLICT');
+  });
+});
+
 describe('PATCH /:id — 이름 변경 (voice-profile)', () => {
   it('잘못된 UUID → 400', async () => {
     const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V_BAD}`, { name: 'ok' }));
