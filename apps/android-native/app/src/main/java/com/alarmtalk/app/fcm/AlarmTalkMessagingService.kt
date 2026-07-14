@@ -50,6 +50,11 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
             val session = AuthSessionStore(context).read() ?: return
             if (token.isBlank()) return
             ioScope.launch {
+                // 등록 API 를 쏘기 직전에 세션이 아직 이 세션 그대로인지 재확인한다. 로그인/앱 시작 시 시작된
+                // 등록(fire-and-forget)이 로그아웃/계정전환 뒤에 늦게 완료돼 옛 세션으로 토큰을 되살리는
+                // 레이스를 막는다(서버 로그아웃은 JWT 만 무효화하고 push_tokens 를 지우지 않으므로).
+                val current = AuthSessionStore(context).read()
+                if (current == null || current.token != session.token) return@launch
                 runCatching {
                     AlarmTalkApiClient.create().registerPushToken(
                         AlarmTalkApiClient.bearer(session.token),
