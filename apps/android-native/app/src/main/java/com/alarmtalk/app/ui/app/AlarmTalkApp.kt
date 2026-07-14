@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -514,9 +512,10 @@ internal fun AlarmTalkApp(
             onDismiss = { alarmTargetSheetVisible = false },
         ) { dismiss ->
             WakerSheetOptionGroup {
+                // 아이콘 배지 없이 텍스트만 — 제목이 이미 대상을 다 말해주고, 같은 사람 아이콘이 행마다
+                // 반복되면 장식일 뿐이다(기본 아이콘 남용 금지). 다른 선택 시트(테마/국가/목소리)와 동일 문법.
                 WakerSheetOptionRow(
                     title = stringResource(R.string.alarms_target_self_title),
-                    icon = Icons.Outlined.Alarm,
                     selected = false,
                     onClick = {
                         dismiss()
@@ -533,7 +532,6 @@ internal fun AlarmTalkApp(
                             R.string.editor_quiet_hours_label,
                             familyAlarmQuietScheduleLabel(context, recipient),
                         ),
-                        icon = Icons.Outlined.Person,
                         selected = false,
                         onClick = {
                             dismiss()
