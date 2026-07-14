@@ -384,6 +384,10 @@ internal fun MainViewModel.cancelAccountDeletion() {
             api.cancelAccountDeletion(authorization)
         }.onSuccess {
             pendingDeletion = false
+            // 철회로 계정이 'active' 로 복구됐으니, 삭제 신청 때 제거됐던 이 기기 FCM 토큰을 다시 등록한다.
+            // (pending 중엔 로그인해도 게이트가 /push/register 를 막아 등록이 안 됐다.) 그래야 가족 알람
+            // push 가 이 기기에 다시 온다 — active 복구 후라 등록 게이트를 통과한다.
+            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancelled)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to cancel account deletion", error)
