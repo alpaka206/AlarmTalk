@@ -160,13 +160,21 @@ class PlayBillingManager(
      * planKey 의 Play 실제 표시가격(ProductDetails.formattedPrice). 결제 국가/통화가 반영된
      * 권위 가격이다. 미로딩/미조회면 null → UI 는 문자열 리소스로 폴백한다.
      * (하드코딩 가격은 청구 통화·금액과 어긋나 Play 정책 위반 소지 → 실가격 표기 필수)
+     *
+     * 표시가는 '기본 구독가' = 무한 반복(INFINITE_RECURRING) 페이즈의 가격이다. 첫 페이즈를 쓰면
+     * Play Console 에 무료체험/인트로 오퍼를 추가하는 순간 표시가가 '₩0/인트로가'로 깨진다 —
+     * 어떤 오퍼든 페이즈 목록의 마지막은 기본 구독가로 끝나므로 무한 반복 페이즈(폴백: 마지막)를 쓴다.
      */
     fun formattedPriceForPlan(planKey: String): String? {
         val productId = PlayBillingProducts.productIdFor(planKey) ?: return null
-        return productDetailsCache[productId]
+        val phases = productDetailsCache[productId]
             ?.subscriptionOfferDetails?.firstOrNull()
-            ?.pricingPhases?.pricingPhaseList?.firstOrNull()
-            ?.formattedPrice
+            ?.pricingPhases?.pricingPhaseList
+            ?: return null
+        val basePhase = phases.lastOrNull {
+            it.recurrenceMode == ProductDetails.RecurrenceMode.INFINITE_RECURRING
+        } ?: phases.lastOrNull()
+        return basePhase?.formattedPrice
     }
 
     /**
@@ -181,7 +189,14 @@ class PlayBillingManager(
                 Log.w(TAG, "Play product not found productId=$productId")
                 return false
             }
-        val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken ?: run {
+        // Play 는 이 사용자가 '자격 있는' 오퍼만 돌려준다. 여러 개면(기본가 + 무료체험/인트로 오퍼)
+        // 첫 페이즈 가격이 가장 싼 오퍼를 고른다 — 체험이 있으면 체험으로 시작하는 게 사용자에게 유리.
+        // firstOrNull 은 임의 선택이라 체험이 있어도 기본가부터 청구될 수 있다.
+        val offerToken = productDetails.subscriptionOfferDetails
+            ?.minByOrNull { offer ->
+                offer.pricingPhases.pricingPhaseList.firstOrNull()?.priceAmountMicros ?: Long.MAX_VALUE
+            }
+            ?.offerToken ?: run {
             Log.w(TAG, "Play subscription offer not found productId=$productId")
             return false
         }
