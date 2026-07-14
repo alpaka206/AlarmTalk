@@ -12,7 +12,6 @@ import { sentryMiddleware } from './middleware/sentry';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
 import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
-import { sendAlarmPush } from './lib/fcm';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
 import ttsRoutes from './routes/tts';
@@ -382,18 +381,10 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     firing_ids: firing.map((a) => a.id),
   });
 
-  // 알람 푸시를 순차(await in loop)로 보내면 동시에 울릴 알람이 많을 때 지연이
-  // 선형으로 쌓인다(마지막 사용자는 늦게 울림). Workers 의 subrequest 상한을
-  // 고려해 청크 단위로 병렬 전송하고, 한 건 실패가 나머지를 막지 않도록 allSettled.
-  const PUSH_CONCURRENCY = 10;
-  for (let i = 0; i < firing.length; i += PUSH_CONCURRENCY) {
-    const chunk = firing.slice(i, i + PUSH_CONCURRENCY);
-    await Promise.allSettled(
-      chunk.map((alarm) =>
-        sendAlarmPush(db, env, alarm.target_user_id ?? alarm.user_id, alarm.id, alarm.time),
-      ),
-    );
-  }
+  // 발사 시각 서버 push 는 보내지 않는다: 알람은 각 기기가 로컬 AlarmManager 로 직접 울리고(수신 가족
+  // 알람도 pull→로컬 스케줄), 서버가 발사 때 type=alarm notification 을 또 보내면 로컬 링과 중복 알림이
+  // 된다(push_tokens 는 즉시 배달용 토큰이라 이 경로가 소비하면 안 됨). '새 가족 알람 도착' 즉시성은 생성
+  // 시점의 sendFamilyAlarmPush(data-only)로 처리하고, 발사 자체는 로컬에 맡긴다.
 
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
