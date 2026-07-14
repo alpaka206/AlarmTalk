@@ -79,14 +79,19 @@ internal fun WakerSelectionSheet(
     ) {
         Column(
             // 옵션 목록이 시트 최대 높이를 넘으면(서버가 주는 동적 목록) 스크롤로 닿게 한다.
+            // 좌우 패딩은 타이틀 블록에만 준다 — 옵션 행(WakerSheetOptionRow)은 시트 폭 전체로
+            // 퍼지는 민짜 행(iOS 액션시트 문법)이라 리플/구분선이 가장자리까지 이어져야 한다.
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
-                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+                .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleLarge,
@@ -125,23 +130,16 @@ private fun WakerSheetDragHandle() {
 }
 
 /**
- * 옵션 행들을 담는 그룹 컨테이너 — 시트의 옵션 목록을 pane 카드(SnoozeOptionSection)와 같은
- * '한 카드 안 행 + 헤어라인 구분선' 문법으로 통일한다. 행마다 테두리 버튼을 두지 않는다
- * (버튼 크로마가 겹치면 시트가 무겁고, 편집기 카드·세부 pane 과 문법이 어긋난다).
+ * 옵션 행들을 묶는 그룹 — 박스(테두리/틴트) 없이 민짜 행 + 헤어라인만 둔다. 시트 자체가 이미
+ * 둥근 컨테이너라 안에 카드를 또 두면 이중 컨테이너가 된다(페이지=그룹 카드, 오버레이 시트=민짜 행).
+ * 행은 시트 폭 전체로 퍼져 리플/구분선이 가장자리까지 이어진다(iOS 액션시트 문법).
  */
 @Composable
 internal fun WakerSheetOptionGroup(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = WakerPanelShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
-        border = wakerCardBorder(),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) { content() }
-    }
+    Column(modifier = modifier.fillMaxWidth()) { content() }
 }
 
 /**
@@ -170,7 +168,7 @@ internal fun WakerSheetOptionRow(
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
                 .heightIn(min = 56.dp)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 20.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -229,10 +227,10 @@ internal fun WakerSheetOptionRow(
         }
         if (divider) {
             // 텍스트 시작선까지 들여쓴 헤어라인 — pane(SnoozeOptionDivider)과 동일 문법.
-            // 아이콘 배지(40) + 간격(12) + 좌패딩(14) = 66, 배지 없으면 좌패딩만.
+            // 아이콘 배지(40) + 간격(12) + 좌패딩(20) = 72, 배지 없으면 좌패딩만.
             Box(
                 modifier = Modifier
-                    .padding(start = if (hasLeading) 66.dp else 14.dp)
+                    .padding(start = if (hasLeading) 72.dp else 20.dp)
                     .fillMaxWidth()
                     .height(1.dp)
                     .background(scheme.outlineVariant),

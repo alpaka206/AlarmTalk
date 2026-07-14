@@ -12,6 +12,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -952,8 +953,11 @@ internal fun VoiceProfileManagementPanel(
             }
             // 미리듣기 준비중/실패 안내 — 패널 본문의 MutedText 는 시트 스크림에 가려지므로
             // 시트가 열려 있는 동안엔 여기서 보여준다(열 때 localMessage 를 비워 회귀 방지).
+            // 시트 콘텐츠는 풀블리드(민짜 행)라 텍스트에는 좌우 패딩을 직접 준다.
             if (localMessage != null) {
-                MutedText(localMessage.orEmpty())
+                Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    MutedText(localMessage.orEmpty())
+                }
             }
         }
     }
