@@ -29,7 +29,7 @@ System architecture, database schema, and HTTP API for AlarmTalk.
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
    │ domain tables│  │ voice + tts  │  │ ElevenLabs           │
-   │ 64 migrations│  │ objects      │  │ Google JWKS          │
+   │ 65 migrations│  │ objects      │  │ Google JWKS          │
    └──────────────┘  └──────────────┘  │ Apple JWKS           │
                                        │ Sentry               │
                                        └──────────────────────┘
@@ -202,7 +202,7 @@ users ── dub_jobs
 | # | Table | Purpose | Key relationships |
 |---|---|---|---|
 | 1 | `users` | Account, plan, settings | many-to-many |
-| 2 | `voice_profiles` | Voice profile (official ≤ 1 per user, + 1 active draft) | `users 1:0..1` |
+| 2 | `voice_profiles` | Voice profile (official ≤ 1 per user; ≤ 1 active draft, creatable only while no official exists) | `users 1:0..1` |
 | 3 | `voice_uploads` | Raw uploaded audio | `users 1:N` |
 | 4 | `voice_speakers` | Speaker-diarization output | `voice_uploads 1:N` |
 | 5 | `messages` | TTS message | `voice_profiles 1:N` |
@@ -224,7 +224,7 @@ users ── dub_jobs
 
 ### Key constraints
 
-- `voice_profiles` at most 1 official per user (`MAX_VOICE_PROFILES = 1` in `routes/voice-profile.ts`) plus 1 active draft — enforced at the route layer with COUNT.
+- `voice_profiles` at most 1 official per user (`MAX_VOICE_PROFILES = 1` in `routes/voice-profile.ts`) and at most 1 active draft — enforced at the route layer with COUNT. Draft creation is also rejected while an official voice exists (the official slot must be free, since promotion would exceed it); replacing a voice requires deleting the official first.
 - `plan_group_invites.code` UNIQUE, 10-minute TTL, lazy `expired` transition on read.
 - Risk-of-rollback flows (subscription, voucher redemption, ownership transfer) use BEGIN/COMMIT through `lib/transactions.ts`.
 

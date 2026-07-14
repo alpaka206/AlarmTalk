@@ -83,7 +83,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-6.1 | Four tiers: free / personal / couple / family | P1 | ✅ |
 | FR-6.2 | Checkout stub (mock PG) | P2 | ✅ |
 | FR-6.3 | Cron-driven subscription expiry → auto plan downgrade | P1 | ✅ |
-| FR-6.4 | Real-payment integration (Google Play Billing / Apple IAP) | P0 before launch | 🔧 code complete (confirm + RTDN); Play Console setup pending |
+| FR-6.4 | Real-payment integration (Google Play Billing / Apple IAP) | P0 before launch | 🔧 Google: code complete (confirm + RTDN), Play Console setup pending · Apple: confirm endpoint only, ASSN V2 not implemented (iOS on hold) |
 
 ### FR-7. Operations & Observability
 
