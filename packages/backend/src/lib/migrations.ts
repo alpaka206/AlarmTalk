@@ -1341,6 +1341,17 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_profiles ADD COLUMN preview_language TEXT NOT NULL DEFAULT 'ko'`,
     ],
   },
+  {
+    id: 63,
+    name: 'push-tokens-token-index',
+    statements: [
+      // /push/register 의 재배정 삭제(WHERE token = ? AND user_id != ?)와 /push/unregister(WHERE token = ?)
+      // 는 token 으로 조회·삭제한다. 기존 인덱스(idx_push_tokens_user=user_id, idx_push_tokens_unique=
+      // (user_id, token))는 모두 user_id 선행이라 token 단독 predicate 에 안 걸려, 앱 시작/로그인마다
+      // 호출되는 등록이 push_tokens full scan 으로 저하될 수 있다 → token 선행 인덱스로 방지.
+      'CREATE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)',
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
