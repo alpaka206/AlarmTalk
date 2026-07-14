@@ -12,19 +12,22 @@ AlarmTalk should feel like a quiet, dependable alarm control room: calm enough f
 |---|---|---|---|---|
 | Brand/primary | Material `primary` | `#175FB0` | `#A6D2FF` | Primary CTAs, links, selected controls |
 | Brand/onPrimary | Material `onPrimary` | `#FFFFFF` | `#08243C` | Text and icons on primary |
-| Surface/background | Material `background` | `#F7F7FA` | `#090A0F` | Screen background |
-| Surface/card | Material `surface` | `#FFFFFF` | `#14161E` | Cards, sheets, dialogs |
-| Surface/variant | Material `surfaceVariant` | `#EDEEF3` | `#20232D` | Secondary surfaces, icon backgrounds |
-| Text/primary | Material `onSurface` | `#181922` | `#F7F7FA` | Primary labels and body text |
-| Text/secondary | Material `onSurfaceVariant` | `#5F6470` | `#A8AEBA` | Captions, settings values, helper text |
-| Border/default | Material `outline` | `#CCCED8` | `#3A3D49` | Outlined controls |
-| Border/subtle | Material `outlineVariant` | `#E0E2EA` | `#2D313D` | Card outlines, dividers |
+| Surface/background | Material `background` | `#F7F7FA` | `#090D16` | Screen background |
+| Surface/card | Material `surface` | `#FFFFFF` | `#131825` | Cards, sheets, dialogs |
+| Surface/variant | Material `surfaceVariant` | `#EDEEF3` | `#1D2434` | Secondary surfaces, icon backgrounds |
+| Text/primary | Material `onSurface` | `#181922` | `#F7F8FC` | Primary labels and body text |
+| Text/secondary | Material `onSurfaceVariant` | `#5F6470` | `#A7AFC0` | Captions, settings values, helper text |
+| Border/default | Material `outline` | `#CCCED8` | `#3A4257` | Outlined controls |
+| Border/subtle | Material `outlineVariant` | `#E0E2EA` | `#272F42` | Card outlines, dividers |
 | Status/error | Material `error` | `#C23E32` | `#FF9A8A` | Destructive actions and error states |
+
+Dark surfaces are deliberately deep-navy tinted (not neutral gray) so the landing's night-sea tone carries into the app.
 
 ### Rules
 
 - Android `AlarmTalkTheme.kt` is the source of truth for Material color values.
-- iOS `AlarmTalkPalette` mirrors Android values and should not diverge.
+- iOS `AlarmTalkPalette` should mirror Android values. iOS is currently on hold and its dark values still predate the navy-tinted update — re-sync from `AlarmTalkTheme.kt` before any iOS release.
+- Always consume colors via `MaterialTheme.colorScheme`; raw `Color(0x…)` literals are forbidden outside the documented exceptions (RingingActivity's fixed lock-screen palette, notification accents, landing/login brand visuals, alarm-home background gradient).
 - Use `error` only for destructive actions or real errors, never as decoration.
 
 ## 3. Typography
@@ -33,7 +36,7 @@ AlarmTalk should feel like a quiet, dependable alarm control room: calm enough f
 
 | Level | Size | Weight | Line Height | Usage |
 |---|---:|---:|---:|---|
-| Display | 64 | 800 | 1.0 | Ringing clock |
+| Display | 104 | 700 | 1.0 | Ringing clock |
 | Headline | 24 | 700 | 1.3 | Screen titles |
 | Title | 16 | 700 | 1.4 | Card titles |
 | Body | 16 | 500 | 1.5 | Primary body |

@@ -68,6 +68,8 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 | TC-ALM-010 | Copy alarm | Swipe → copy | Reuses cached local audio; no provider call | P2 |
 | TC-ALM-011 | Swipe delete | Swipe left → confirm | Removed from list, Room, and AlarmManager | P1 |
 | TC-ALM-012 | Toggle ON/OFF | Tap card switch | OFF cancels OS alarm; ON re-registers | P0 |
+| TC-ALM-013 | Bucket rotation playback | Free preset alarm fires → dismiss → let it fire again; separately snooze once | Dismiss advances to the next clip in the bucket (+1); snooze replays the same clip | P1 |
+| TC-ALM-014 | Clone prerender flight-mode fire | Paid clone voice alarm with prerendered clips → airplane mode → wait for fire | Rings from local prerendered clip, no network; spoken phrase matches the expected clip text for that category/variant | P0 |
 
 ### Voice profile (VOC)
 
@@ -75,7 +77,7 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 |---|---|---|---|---|
 | TC-VOC-001 | 30-second record | Record → stop within 30 s | Profile transitions to `ready` | P0 |
 | TC-VOC-002 | File upload over 30 s | Upload 1-minute file | Auto-trimmed to first 30 s; succeeds | P0 |
-| TC-VOC-003 | 2-profile limit | Try to create a 3rd profile | `VOICE_LIMIT_REACHED` shown; recording is blocked | P1 |
+| TC-VOC-003 | 1-profile limit | Try to create a 2nd official profile | `VOICE_LIMIT_REACHED` shown; recording is blocked | P1 |
 | TC-VOC-004 | Family share | Owner creates profile | Member sees it in shared voices (read-only) | P1 |
 | TC-VOC-005 | Mic denied | Deny mic permission → tap record | Permission guide + system settings deep link | P0 |
 | TC-VOC-006 | Rename | Edit name → save | List refreshes; PATCH 200 | P1 |
@@ -86,9 +88,10 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 |---|---|---|---|---|
 | TC-TTS-001 | Same input → cache hit | Save the same (profile, text, lang) twice | First saves with provider; second only reads R2 | P0 |
 | TC-TTS-002 | Preset message | Pick category + language | Fields auto-fill; save succeeds | P1 |
-| TC-TTS-003 | Daily cap | Approach `daily_tts_count` limit | Server returns cap message; UI shows guidance | P1 |
+| TC-TTS-003 | Monthly manual-text quota | Exhaust the monthly manual-input quota (personal 30 / couple 50 / family 100, KST month, group shared pool) → save one more | 429 `MANUAL_TTS_QUOTA_EXCEEDED` with `manual_quota` remaining=0; UI shows quota guidance | P1 |
 | TC-TTS-004 | Voice-only ring | Let voice-only alarm fire | Local file plays; no fetch | P0 |
 | TC-TTS-005 | Very long text | Try near upper limit | Server returns 400 with reason | P2 |
+| TC-TTS-006 | Weather-unresolved fallback clip | Clone weather alarm; keep device offline through the 48 h prep window so no weather index snapshot arrives → fire | Plays the dedicated "couldn't check the weather" guidance clip (last weather variant), not silence and not a wrong sunny clip | P1 |
 
 ### Auth (AUTH)
 
@@ -110,6 +113,8 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 | TC-FAM-004 | Self invite | Owner redeems own code | `SELF_INVITE` error | P2 |
 | TC-FAM-005 | Group leave | Member leaves | Shared voices revoked instantly | P1 |
 | TC-FAM-006 | Ownership transfer | Owner transfers to member | Plan / subscription follows | P1 |
+| TC-FAM-007 | FCM instant delivery | Recipient app in background → sender creates a family alarm for them | Recipient device receives data-only FCM within seconds; alarm is pulled and scheduled locally without opening the app | P1 |
+| TC-FAM-008 | Recipient delete = persistent decline | Recipient deletes a received family alarm → re-sync / app restart | Decline persisted server-side (`alarm_recipient_state`); alarm never reappears for the recipient; sender's alarm unaffected | P1 |
 
 ### Billing (BILL)
 

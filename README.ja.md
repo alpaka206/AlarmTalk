@@ -10,11 +10,11 @@
 
 ## 現状
 
-- **バージョン**: `v0.1.0` (Closed Beta 準備中)
+- **バージョン**: `v0.1.2` (Closed Beta 準備中)
 - **ブランチ**: `develop`
 - **Android**: Phase 1–6 実装完了、実機検証済み
-- **iOS**: AlarmKit (iOS 26+) PoC 進行中
-- **Backend**: Cloudflare Workers + Hono + Turso にデプロイ済み
+- **iOS**: AlarmKit (iOS 26+) PoC — 保留中(未運営、CI は手動トリガーのみ)
+- **Backend**: Cloudflare Workers + Hono + Turso — CI で自動デプロイ + DB マイグレーション(`develop` → dev、`main` → prod)
 
 ## 技術スタック
 
@@ -63,10 +63,12 @@ npm run deploy     # wrangler deploy --env production
 
 ```bash
 cd apps/android-native
-./gradlew :app:assembleDebug
-./gradlew :app:testDebugUnitTest
-./gradlew :app:installDebug
+./gradlew :app:assembleDevDebug
+./gradlew :app:testDevDebugUnitTest
+./gradlew :app:installDevDebug
 ```
+
+`dev` / `prod` の product flavor があります。日常開発では dev バックエンドを向く `dev` フレーバー(パッケージ `com.alarmtalk.app.dev`)を使います。
 
 Android SDK が自動検出されない場合は `apps/android-native/local.properties` を作成し `sdk.dir=...` を追加します(gitignore 済み)。
 
@@ -82,7 +84,7 @@ open AlarmTalkNative.xcodeproj
 ## 譲れないルール
 
 1. アラーム鳴動経路は **OS ネイティブスケジューリング + ローカル音声** のみを使用します。プッシュ・サーバー cron・鳴動時点でのネットワーク fetch は禁止。
-2. 音声 AI 呼び出し(クローン・TTS)はユーザーの明示的なアクションでのみ発生し、バックグラウンドタスクや自動テストでは呼び出しません。
+2. 音声クローンと単発 TTS は、ユーザーの明示的なアクションからのみ開始されます。ユーザーがプライベートなドラフトを試聴して明示的に確定(keep)した場合に限り、その 1 回のアクションが、文書化されたプリセットマニフェストをレンダリングする固定・有限・永続的なバックグラウンドジョブ 1 件を承認できます。自律的なスキャンや上限のない AI 処理は許可されず、自動テストでは有料プロバイダーを常にスタブ化します。
 3. 音声データは家族・パートナーのグループ内でのみ共有されます。外部ダウンロードは設計上ブロックされます。
 
 ## ドキュメント

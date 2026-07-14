@@ -1,3 +1,5 @@
+> ⚠️ 아카이브(2026-07-15): iOS 패리티 정비(2026-06-28) 이전 스냅샷. 현행 iOS 상태 아님.
+
 # iOS ↔ Android 1:1 패리티 감사 보고서
 
 > Android(`apps/android-native`, Kotlin/Compose)를 **기준(baseline)**으로 iOS(`apps/ios-native`, SwiftUI)가 로직·통신·UI·스타일에서 얼마나 일치하는지 14개 영역으로 나눠 비교. 통신 계약은 `packages/shared` + `packages/backend/src/routes`를 진실로 간주. high/critical 발견은 별도 에이전트가 적대적으로 재검증.
