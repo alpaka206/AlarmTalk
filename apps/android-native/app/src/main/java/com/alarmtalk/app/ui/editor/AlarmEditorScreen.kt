@@ -94,7 +94,8 @@ import kotlinx.coroutines.withContext
 
 internal fun expectedCloneBucketVariantCount(category: String): Int? =
     when (category) {
-        "weather" -> 8
+        // 날씨 = 조건 8 + '인터넷 안 돼서 못 알아봤어요' 미해결 안내 1 = 9(마지막 클립이 안내).
+        "weather" -> 9
         "fortune" -> 5
         "love" -> 3
         "medication" -> 3

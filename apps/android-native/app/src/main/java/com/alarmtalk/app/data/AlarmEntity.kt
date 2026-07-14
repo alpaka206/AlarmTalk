@@ -184,7 +184,10 @@ fun AlarmEntity.bucketVariantIndex(): Int? {
                 .toString(),
             count = size,
         )
-        "weather" -> contextVariantIndex ?: return null
+        // 날씨 미해결(준비창에서 인터넷이 안 돼 조건을 못 받아옴)이면 마지막 클립(=서버가 마지막 seed 로
+        // 넣은 '인터넷이 안 돼서 날씨를 못 알아봤어요' 안내)으로 폴백한다. 무음/오재생(맑음=0) 대신 정직한
+        // 안내. 서버 조건 인덱스는 0..size-2 만 오므로 size-1 은 안내 전용이다.
+        "weather" -> contextVariantIndex ?: (size - 1)
         else -> bucketRotationIndex
     }
     return ((raw % size) + size) % size

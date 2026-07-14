@@ -115,7 +115,8 @@ export const CLONE_FORTUNE_THEMES = [
 /**
  * 유료 클론 사전렌더의 '의미 seed'. 각 문자열은 최종 문구가 아니라 생성 지시(outcome)이며,
  * generatePrerenderClipText 가 그 목소리의 관계/호칭/말투에 맞춰 실제 문구로 만든다. 소량 유지.
- * greeting=기상 인사(미리듣기 겸용). weather=CLONE_WEATHER_CONDITIONS 순서, fortune=CLONE_FORTUNE_THEMES 순서.
+ * greeting=기상 인사(미리듣기 겸용). weather=CLONE_WEATHER_CONDITIONS 순서(0..7) + 미해결 안내 1(마지막),
+ * fortune=CLONE_FORTUNE_THEMES 순서(기기 결정적이라 미해결 없음).
  */
 export const CLONE_CLIP_SEEDS: {
   category: string;
@@ -132,6 +133,10 @@ export const CLONE_CLIP_SEEDS: {
   {
     category: 'weather',
     defaultTag: 'cheerfully',
+    // seeds[0..7] = CLONE_WEATHER_CONDITIONS 순서(nice/rain/snow/dust/cloud/fog/heat/cold).
+    // seeds[8] = '날씨 미해결' 안내(반드시 마지막). 준비창에서 인터넷이 안 돼 날씨를 못 받아온 경우,
+    // 클라가 무음/오재생(맑음) 대신 이 클립으로 폴백해 정직하게 안내한다(클라 bucketVariantIndex 의
+    // size-1 규약 = 마지막 클립). resolvePrerenderWeatherIndex 는 0..7 만 반환하므로 8 은 오직 폴백용.
     seeds: [
       '오늘 날씨가 맑고 좋다고 알리며, 잠깐 바깥바람을 쐬거나 산책하기에도 좋겠다고 가볍게 권한다.',
       '오늘 비가 온다고 알리고, 나갈 때 우산을 꼭 챙기고 길이 미끄러우니 조심하라고 다정하게 당부한다.',
@@ -141,6 +146,7 @@ export const CLONE_CLIP_SEEDS: {
       '오늘 안개가 짙다고 알리고, 길을 나설 때 시야가 안 좋으니 천천히 조심해서 다니라고 챙긴다.',
       '오늘 날이 많이 덥다고 알리고, 물을 자주 마시고 더위 먹지 않게 조심하라고 다정하게 챙긴다.',
       '오늘 날이 많이 춥다고 알리고, 따뜻하게 든든히 입고 감기 걸리지 않게 조심하라고 다정하게 챙긴다.',
+      '인터넷이 연결되지 않아 오늘 날씨를 미리 확인하지 못했다고 미안한 듯 알리고, 그래도 오늘 하루 좋은 일만 가득하길 바란다고 다정하게 응원한다.',
     ],
   },
   {

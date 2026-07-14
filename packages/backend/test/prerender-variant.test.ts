@@ -1,13 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import { resolvePrerenderWeatherIndex, type WeatherSignalInput } from '../src/routes/tts';
-import { CLONE_WEATHER_CONDITIONS, CLONE_FORTUNE_THEMES } from '../src/lib/stock-clips';
+import {
+  CLONE_WEATHER_CONDITIONS,
+  CLONE_FORTUNE_THEMES,
+  CLONE_CLIP_SEEDS,
+} from '../src/lib/stock-clips';
 
-// 클라 hasCompleteCloneBucket 가 날씨=8·운세=5 를 하드코딩하므로(오프라인 버킷 '완전' 판정),
-// 백엔드 개수가 바뀌면 이 단언이 깨져 클라 상수 동기화를 강제한다.
+// 클라 hasCompleteCloneBucket 가 날씨=9(조건 8 + 미해결 안내 1)·운세=5 를 하드코딩하므로(오프라인 버킷
+// '완전' 판정), 백엔드 개수가 바뀌면 이 단언이 깨져 클라 상수 동기화를 강제한다.
 describe('클론 매칭 버킷 개수 계약', () => {
-  it('날씨 조건=8, 운세 테마=5 (클라 하드코딩과 일치해야 함)', () => {
+  it('날씨 조건=8, 운세 테마=5', () => {
     expect(CLONE_WEATHER_CONDITIONS.length).toBe(8);
     expect(CLONE_FORTUNE_THEMES.length).toBe(5);
+  });
+
+  it('날씨 클립=조건+미해결안내(9), 운세 클립=테마(5) — 클라 하드코딩과 일치', () => {
+    const weatherSeeds = CLONE_CLIP_SEEDS.find((s) => s.category === 'weather')?.seeds.length ?? 0;
+    const fortuneSeeds = CLONE_CLIP_SEEDS.find((s) => s.category === 'fortune')?.seeds.length ?? 0;
+    // 날씨는 준비창에서 인터넷이 안 되면 미해결이라 안내 클립 1개를 마지막에 더한다(클라 size-1 폴백).
+    expect(weatherSeeds).toBe(CLONE_WEATHER_CONDITIONS.length + 1);
+    expect(weatherSeeds).toBe(9);
+    // 운세는 기기 결정적 계산이라 미해결이 없어 테마 개수 = 클립 개수.
+    expect(fortuneSeeds).toBe(CLONE_FORTUNE_THEMES.length);
+    expect(fortuneSeeds).toBe(5);
   });
 });
 
