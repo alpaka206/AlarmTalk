@@ -1352,6 +1352,21 @@ export const migrations: Migration[] = [
       'CREATE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)',
     ],
   },
+  {
+    id: 64,
+    name: 'requeue-clone-prerender-for-weather-unknown-clip',
+    statements: [
+      // 날씨 버킷에 '미해결 안내' 클립(variant 8)이 추가돼, 이 배포 전 이미 렌더된(status='done') 클론
+      // 목소리는 weather 클립이 8개라 클라 hasCompleteCloneBucket(=9)에 미달해 오프라인 버킷이 안 붙는다.
+      // 스케줄 cron 은 voice_prerender_queue 의 'pending' 만 처리하므로(완료 목소리는 재스캔 안 함), 완료
+      // 클론 목소리를 requeue 해 다음 cron 이 findMissingStockTargets 로 '빠진 variant 8 만' 채우게 한다
+      // (기존 8개는 messages 에 있어 'seen' 이라 스킵). 신규 launch DB 는 done 행이 없어 무해(no-op).
+      `UPDATE voice_prerender_queue
+         SET status = 'pending', claimed_at = NULL, claim_token = NULL, attempts = 0,
+             updated_at = datetime('now')
+       WHERE status = 'done'`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
