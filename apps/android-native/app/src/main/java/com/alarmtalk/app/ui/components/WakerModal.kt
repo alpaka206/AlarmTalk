@@ -1,6 +1,5 @@
 package com.alarmtalk.app
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,7 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -144,7 +143,8 @@ internal fun WakerSheetOptionGroup(
 
 /**
  * 선택형 시트의 공통 옵션 행: [아이콘 배지] 제목/설명 … [trailing] 선택 표시.
- * 선택 표시는 체크 원(선택) / 빈 링(미선택)으로 통일한다.
+ * 선택 표시는 '선택된 행에만' 체크(✓) — 미선택 행은 아무 표시 없음(iOS 정석). 선택 상태가 없는
+ * 액션 시트(예: 누구를 깨울까요, selected=false 고정)는 자연히 표시가 없다.
  * trailing 은 선택 표시 바로 앞의 상태 슬롯 — 기본 목소리 시트의 재생 이퀄라이저 등.
  * 반드시 [WakerSheetOptionGroup] 안에서 쓰고, 마지막 행이 아니면 divider=true 로 헤어라인을 잇는다.
  */
@@ -204,25 +204,16 @@ internal fun WakerSheetOptionRow(
                 }
             }
             trailing?.invoke()
+            // 선택 표시는 '선택된 행에만' 체크(✓) — iOS 정석. 미선택 행의 빈 링은 라디오 문법의
+            // 노이즈이고, 선택 상태가 없는 액션 시트(누구를 깨울까요)에선 표시 자체가 무의미하다
+            // (그 시트는 selected=false 라 자연히 아무 표시 없음).
             if (selected) {
                 Icon(
-                    imageVector = Icons.Filled.CheckCircle,
+                    imageVector = Icons.Filled.Check,
                     contentDescription = null,
                     tint = scheme.primary,
                     modifier = Modifier.size(22.dp),
                 )
-            } else {
-                Box(
-                    modifier = Modifier.size(22.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Surface(
-                        modifier = Modifier.size(20.dp),
-                        shape = androidx.compose.foundation.shape.CircleShape,
-                        color = Color.Transparent,
-                        border = BorderStroke(1.5.dp, scheme.outline),
-                    ) {}
-                }
             }
         }
         if (divider) {
