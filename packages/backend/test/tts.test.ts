@@ -300,6 +300,9 @@ describe('POST /tts/generate — TTS 생성', () => {
       const persist = mockDB.calls.find((call) => call.sql.includes('SET preview_text'));
       expect(persist).toBeDefined();
       expect(persist!.args).toContain(toneText);
+      // 확정/활성 claim 중에는 저장 금지(늦은 영속이 실제 합성 문구와 어긋나는 것 방지).
+      expect(persist!.sql).toContain('previewed_at IS NULL');
+      expect(persist!.sql).toContain('preview_claimed_at IS NULL');
     } finally {
       vi.unstubAllGlobals();
     }
