@@ -253,7 +253,12 @@ internal fun AlarmRow(
     // 손가락과 1:1 로 따라오고(snapTo), 놓으면 놓는 순간의 속도를 이어받아 스프링으로
     // 정착한다(animateTo + initialVelocity). 드래그↔애니메이션 사이 이음새를 없애고,
     // 정착 중에 다시 잡아도 현재 위치에서 그대로 이어진다.
-    val offsetX = remember(alarm.id) { Animatable(0f) }
+    // 바운드 [-deleteWidthPx, 0]: 세게 플릭하면 스프링이 큰 초기 속도를 이어받아 목표를 지나치는데
+    // (무진동 감쇠도 초기 속도가 크면 1회 오버슈트), 그러면 카드가 삭제 버튼(고정 92dp)보다 더 밀려
+    // '삭제와 분리'돼 보인다 → Animatable 바운드로 양방향 오버슈트를 물리적으로 차단한다.
+    val offsetX = remember(alarm.id, deleteWidthPx) {
+        Animatable(0f).apply { updateBounds(lowerBound = -deleteWidthPx, upperBound = 0f) }
+    }
     val scope = rememberCoroutineScope()
     // 빠른 플릭은 거리가 짧아도 의도가 분명하므로 위치보다 속도 부호를 우선한다.
     val flingVelocityPx = with(LocalDensity.current) { 420.dp.toPx() }
