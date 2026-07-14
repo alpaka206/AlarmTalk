@@ -913,6 +913,10 @@ tts.post('/generate', async (c) => {
         requestText = storedText;
         const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
         if (storedTag) draftPreviewTag = storedTag;
+      } else if (vp.previewed_at) {
+        // 이미 확정(previewed_at)됐는데 저장 문구가 없는 draft = 이 기능 이전(또는 고정 폴백으로 확정).
+        // 그때 합성된 문구는 '고정 예문+호칭'이므로 새로 생성하면 캐시 키가 어긋나 재생이
+        // VOICE_PREVIEW_UNAVAILABLE 이 된다 → 생성하지 않고 고정 폴백을 유지해 재생 캐시 히트를 지킨다.
       } else {
         try {
           const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);

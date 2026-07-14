@@ -366,6 +366,47 @@ describe('POST /tts/generate — TTS 생성', () => {
     }
   });
 
+  it('확정됐지만 preview_text 없는 레거시 draft 재생은 새로 생성하지 않는다(고정 폴백 유지)', async () => {
+    const mockFetch = vi.fn(async () => {
+      throw new Error('legacy replay must not call Vertex');
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1,
+          user_id: 'user-1',
+          status: 'ready',
+          is_draft: 1,
+          elevenlabs_voice_id: 'el-draft',
+          relationship_label: '엄마',
+          listener_title: '우리 아들',
+          previewed_at: '2026-07-15 00:00:00',
+        },
+      ]);
+      // previewed_at 이 있으므로 claim 없음. 캐시 미스(mock 빈 결과) → 409 VOICE_PREVIEW_UNAVAILABLE
+      // 가 정상 경로다(실환경에선 고정 문구가 이미 합성돼 있어 캐시 히트로 재생됨). 핵심 단언은
+      // '생성/영속을 시도하지 않는다' — 새 문구를 만들면 캐시 키가 어긋나 재생이 영구히 깨진다.
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          language: 'ko',
+          draft_preview: true,
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+
+      expect(res.status).toBe(409);
+      expect((await res.json()).error_code).toBe('VOICE_PREVIEW_UNAVAILABLE');
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('draft 미리듣기는 저장된 preview_text 가 있으면 재생성 없이 재사용한다', async () => {
     const storedText = '우리 아들, 잘 잤어? 오늘도 힘내 보자.';
     mockDB.pushResult([{ plan: 'plus' }]);
