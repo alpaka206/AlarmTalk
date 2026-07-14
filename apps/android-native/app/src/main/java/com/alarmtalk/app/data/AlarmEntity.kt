@@ -166,6 +166,13 @@ fun appVoiceLanguageOf(language: String?): String = when (language) {
 }
 
 /**
+ * 날씨 클론 버킷의 '완전한' 클립 수 = 조건 8(CLONE_WEATHER_CONDITIONS) + '미해결 안내' 1(마지막).
+ * hasCompleteCloneBucket(완전 판정)과 발사 시 미해결 폴백(마지막=안내 클립)이 공유하는 단일 상수.
+ * 백엔드 CLONE_CLIP_SEEDS weather 개수와 일치해야 한다(개수 계약 테스트가 동기화 강제).
+ */
+const val WEATHER_CLONE_CLIP_COUNT = 9
+
+/**
  * 이 버킷 알람이 발사 시 재생/표시할 variant 인덱스(0..N-1). 오디오(resolveBucketClipLocalUri)와
  * 잠금화면 문구(RingingActivity)가 같은 이 인덱스를 써야 음성=문구가 일치한다.
  * 운세=사주+발사일자 결정적 계산, 날씨=준비창 스냅샷 조건 인덱스, 그 외=순차 회전.
@@ -184,7 +191,19 @@ fun AlarmEntity.bucketVariantIndex(): Int? {
                 .toString(),
             count = size,
         )
-        "weather" -> contextVariantIndex ?: return null
+        // 날씨 미해결(준비창에서 인터넷이 안 돼 조건을 못 받아옴)이면 마지막 클립(=서버가 마지막 seed 로
+        // 넣은 '인터넷이 안 돼서 날씨를 못 알아봤어요' 안내)으로 폴백한다. 무음/오재생(맑음=0) 대신 정직한
+        // 안내. 단 안내 클립이 실제로 있는 새 버킷(size == WEATHER_CLONE_CLIP_COUNT)에서만 — 이 변경 전
+        // 저장된 옛 버킷은 조건 클립만 있어(size < 9) size-1 이 마지막 '조건'(cold)을 가리키므로, 폴백하지
+        // 않고 null(대표)로 둔다. 재바인딩(재저장/매니페스트 갱신)되면 안내 클립이 채워져 정상 폴백된다.
+        "weather" -> {
+            val resolved = contextVariantIndex
+            when {
+                resolved != null -> resolved
+                size >= WEATHER_CLONE_CLIP_COUNT -> size - 1
+                else -> return null
+            }
+        }
         else -> bucketRotationIndex
     }
     return ((raw % size) + size) % size

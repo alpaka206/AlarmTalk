@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
+import type { Client } from '@libsql/client/web';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { resolveUserPk, assertSameGroup } from '../lib/family-helpers';
@@ -8,6 +10,7 @@ import {
 } from '../lib/family-alarm-settings';
 import { prepareAlarmTextWithVertex } from '../lib/vertex-translate';
 import { inferSynthesisLanguage } from '../lib/voice-provider';
+import { sendFamilyAlarmPush } from '../lib/fcm';
 
 const familyAlarm = new Hono<AppEnv>();
 
@@ -20,6 +23,26 @@ function normalizeRepeatDays(raw: unknown): number[] {
     .filter((n): n is number => Number.isInteger(n) && n >= 0 && n <= 6)
     .sort((a, b) => a - b);
   return Array.from(new Set(filtered));
+}
+
+// 가족 알람 생성 시 수신자에게 즉시 data-only push — 앱이 백그라운드여도 onMessageReceived 가 바로
+// pull 해 로컬 스케줄+알림(notifyReceivedAlarm)을 그린다. 논블로킹(waitUntil), 실패해도 15분 주기 pull
+// 폴백. recipient.id=users.id(PK) 로 타깃(push_tokens.user_id FK 정합). executionCtx 가 없는
+// 컨텍스트(테스트 등)에선 c.executionCtx 접근이 던지므로 try 로 감싸 push 를 생략한다(그 경우
+// sendFamilyAlarmPush 자체가 호출되지 않아 mock DB FIFO 순서도 밀리지 않는다).
+function notifyRecipientOfFamilyAlarm(
+  c: Context<AppEnv>,
+  db: Client,
+  recipient: Record<string, unknown>,
+  alarmId: string,
+): void {
+  try {
+    c.executionCtx.waitUntil(
+      sendFamilyAlarmPush(db, c.env, String(recipient.id), alarmId).catch(() => {}),
+    );
+  } catch {
+    // executionCtx 없음(비-fetch/테스트) → push 생략, 15분 주기 pull 폴백.
+  }
 }
 
 familyAlarm.post('/alarms', async (c) => {
@@ -179,6 +202,8 @@ familyAlarm.post('/alarms', async (c) => {
       JSON.stringify(repeatDays),
     ],
   });
+
+  notifyRecipientOfFamilyAlarm(c, db, recipient, alarmId);
 
   return c.json(
     {
@@ -362,6 +387,8 @@ familyAlarm.post('/alarms/voice', async (c) => {
       JSON.stringify(repeatDays),
     ],
   });
+
+  notifyRecipientOfFamilyAlarm(c, db, recipient, alarmId);
 
   let dubJob: { id: string; target_language: DubLanguage; status: 'processing' } | null = null;
   if (dubTarget) {

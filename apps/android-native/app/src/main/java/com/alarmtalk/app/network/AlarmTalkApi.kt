@@ -8,4 +8,5 @@ interface AlarmTalkApi :
     FamilyApi,
     CodeApi,
     BillingApi,
-    HolidayApi
+    HolidayApi,
+    PushApi

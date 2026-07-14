@@ -94,7 +94,9 @@ import kotlinx.coroutines.withContext
 
 internal fun expectedCloneBucketVariantCount(category: String): Int? =
     when (category) {
-        "weather" -> 8
+        // 날씨 = 조건 8 + '인터넷 안 돼서 못 알아봤어요' 미해결 안내 1(마지막 클립이 안내). data 계층
+        // 상수를 참조해 발사 폴백(bucketVariantIndex)과 단일 출처로 유지.
+        "weather" -> com.alarmtalk.app.data.WEATHER_CLONE_CLIP_COUNT
         "fortune" -> 5
         "love" -> 3
         "medication" -> 3

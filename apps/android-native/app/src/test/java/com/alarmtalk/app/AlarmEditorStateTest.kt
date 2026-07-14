@@ -9,7 +9,7 @@ import org.junit.Test
 class AlarmEditorStateTest {
     @Test
     fun cloneBucketsRequireEveryBackendVariant() {
-        assertEquals(8, expectedCloneBucketVariantCount("weather"))
+        assertEquals(9, expectedCloneBucketVariantCount("weather")) // 조건 8 + 미해결 안내 1
         assertEquals(5, expectedCloneBucketVariantCount("fortune"))
         assertEquals(3, expectedCloneBucketVariantCount("love"))
         assertEquals(3, expectedCloneBucketVariantCount("medication"))

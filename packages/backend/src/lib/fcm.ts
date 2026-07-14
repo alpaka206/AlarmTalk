@@ -34,13 +34,45 @@ export interface FcmSendResult {
 
 const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 
+/**
+ * FCM v1 메시지 본문 구성. title/body 가 모두 비면 data-only 로 보낸다(가족 알람 신호처럼 클라가
+ * 직접 pull 후 알림을 그릴 때). data-only 는 notification 블록을 빼(시스템 트레이 중복 알림 방지),
+ * onMessageReceived 가 백그라운드에서도 호출돼 즉시 pull→로컬 스케줄이 되게 한다. iOS 는
+ * content-available 로 백그라운드 깨움만 요청. title/body 가 있으면 기존 notification 방식 그대로.
+ */
+function buildFcmMessage(msg: FcmMessage): Record<string, unknown> {
+  const hasNotification = Boolean(msg.title || msg.body);
+  const message: Record<string, unknown> = {
+    token: msg.token,
+    data: msg.data ?? {},
+    android: {
+      priority: 'HIGH',
+      ...(hasNotification ? { notification: { channel_id: msg.data?.channelId ?? 'alarms' } } : {}),
+    },
+    apns: {
+      headers: { 'apns-priority': hasNotification ? '10' : '5' },
+      payload: hasNotification ? { aps: { sound: 'default' } } : { aps: { 'content-available': 1 } },
+    },
+  };
+  if (hasNotification) {
+    message.notification = { title: msg.title, body: msg.body };
+  }
+  return message;
+}
+
 /** 영구적으로 무효한 토큰을 뜻하는 FCM v1 에러 코드 — push_tokens 에서 제거 대상. */
 const STALE_TOKEN_ERRORS = new Set(['UNREGISTERED', 'INVALID_ARGUMENT', 'NOT_FOUND']);
 
 export async function getTokensForUser(db: Client, userId: string): Promise<string[]> {
+  // push_tokens.user_id 는 users.id(PK, FK REFERENCES users(id))로 저장한다. 하지만 호출부는 users.id
+  // (가족 push=recipient.id) 또는 로그인 ID(예약 알람 push=alarm.target_user_id/user_id)를 넘긴다.
+  // 로그인 ID 는 계정 종류별로 google_id/apple_id/email-계정=users.id 로 다르므로(auth.ts loginSub),
+  // users 로 조인해 세 식별자(id/google_id/apple_id) 모두 매칭한다(각각 유니크라 최대 1명 매칭).
   const result = await db.execute({
-    sql: 'SELECT token FROM push_tokens WHERE user_id = ?',
-    args: [userId],
+    sql: `SELECT pt.token FROM push_tokens pt
+          JOIN users u ON u.id = pt.user_id
+          WHERE u.id = ? OR u.google_id = ? OR u.apple_id = ?`,
+    args: [userId, userId, userId],
   });
   return result.rows.map((r) => String(r.token));
 }
@@ -100,21 +132,7 @@ export async function sendPushNotifications(
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          message: {
-            token: msg.token,
-            notification: { title: msg.title, body: msg.body },
-            data: msg.data ?? {},
-            android: {
-              priority: 'HIGH',
-              notification: { channel_id: msg.data?.channelId ?? 'alarms' },
-            },
-            apns: {
-              headers: { 'apns-priority': '10' },
-              payload: { aps: { sound: 'default' } },
-            },
-          },
-        }),
+        body: JSON.stringify({ message: buildFcmMessage(msg) }),
       });
 
       if (res.ok) {
@@ -157,6 +175,33 @@ export async function pruneStaleTokens(db: Client, results: FcmSendResult[]): Pr
       logStructured('error', { at: 'fcm.pruneStaleTokens', error: String(err) });
     }
   }
+}
+
+/**
+ * 가족 알람 생성 시 수신자에게 보내는 data-only 신호. 클라(onMessageReceived)가 받으면 즉시 원격
+ * 알람을 pull 해 로컬 스케줄+알림(notifyReceivedAlarm)을 그린다 — 여기서 notification 을 넣지 않아
+ * 중복 알림을 막는다. 앱이 완전 종료돼 신호를 놓쳐도 15분 주기 pull 이 폴백. 토큰 없으면 no-op.
+ * userId 는 수신자의 users.id(PK) — push_tokens.user_id(=FK users(id))와 정합.
+ */
+export async function sendFamilyAlarmPush(
+  db: Client,
+  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  recipientUserId: string,
+  alarmId: string,
+): Promise<FcmSendResult[]> {
+  const tokens = await getTokensForUser(db, recipientUserId);
+  if (tokens.length === 0) return [];
+
+  const messages: FcmMessage[] = tokens.map((token) => ({
+    token,
+    title: '',
+    body: '',
+    data: { type: 'family_alarm', alarmId },
+  }));
+
+  const results = await sendPushNotifications(messages, env);
+  await pruneStaleTokens(db, results);
+  return results;
 }
 
 export async function sendAlarmPush(

@@ -6,6 +6,7 @@ import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
+import { sendFamilyAlarmPush } from '../lib/fcm';
 import {
   familyAlarmSettingsFromRow,
   isBlockedByFamilyAlarmQuietTime,
@@ -414,6 +415,21 @@ alarmMutation.post('/', async (c) => {
   }
   if (inserted.status === 'message_not_found') {
     return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
+  }
+
+  // 가족 알람(target_user_id 지정)이면 수신자에게 즉시 push — /family/alarms 뿐 아니라 이 일반 생성
+  // 경로(stock/TTS/녹음 가족 알람, 클라 createAlarm)도 즉시 배달한다. getTokensForUser 가
+  // google_id/apple_id/id 를 정규화하므로 targetLoginId 그대로 전달. 논블로킹(waitUntil), executionCtx
+  // 없는 컨텍스트(테스트)에선 c.executionCtx 접근이 던지므로 try 로 감싸 생략(그 경우 쿼리도 안 돌아 mock
+  // FIFO 도 안 밀림), 15분 주기 pull 폴백.
+  if (targetUserIdForAlarm) {
+    try {
+      c.executionCtx.waitUntil(
+        sendFamilyAlarmPush(db, c.env, targetUserIdForAlarm, alarmId).catch(() => {}),
+      );
+    } catch {
+      // executionCtx 없음(비-fetch/테스트) → push 생략, pull 폴백.
+    }
   }
 
   return c.json(

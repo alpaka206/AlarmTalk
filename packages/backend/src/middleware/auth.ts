@@ -128,7 +128,10 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         const method = c.req.method;
         const isCancelDeletion = method === 'DELETE' && path.endsWith('/user/me/deletion');
         const isReadMe = method === 'GET' && path.endsWith('/user/me');
-        if (!isCancelDeletion && !isReadMe) {
+        // FCM 토큰 해제는 허용한다 — 클라가 삭제 신청 '성공 후'(=pending 전환 후) 이 기기 토큰을 제거해
+        // 유예 기간 push 를 막는데, 이걸 차단하면 토큰이 영구파기까지 남아 push 가 계속 온다.
+        const isPushUnregister = method === 'POST' && path.endsWith('/push/unregister');
+        if (!isCancelDeletion && !isReadMe && !isPushUnregister) {
           return c.json(
             {
               error: 'Account is scheduled for deletion',
