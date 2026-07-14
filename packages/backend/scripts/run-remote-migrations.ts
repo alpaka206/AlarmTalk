@@ -49,14 +49,31 @@ function parseNumberArg(name: string, fallback: number): number {
 
 async function postMigration(url: string, headers: Record<string, string>): Promise<{ ran?: string[] }> {
   let lastError = '';
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  // 마이그레이션이 레이트리밋 창(60req/분/IP)보다 많아지면 429 가 정상적으로 발생한다
+  // (migration 65개 시점에 실제 배포 실패 발생). retryAfter 만큼 기다렸다 재시도해
+  // 배포가 마이그레이션 개수에 비례해 깨지지 않게 한다.
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
     const res = await fetch(url, { method: 'POST', headers });
     const text = await res.text();
     if (res.ok) {
       return text ? (JSON.parse(text) as { ran?: string[] }) : {};
     }
     lastError = `${res.status} ${text}`;
-    if (res.status < 500 || attempt === 3) break;
+    if (res.status === 429 && attempt < 8) {
+      let retryAfter = Number(res.headers.get('retry-after'));
+      if (!Number.isFinite(retryAfter) || retryAfter <= 0) {
+        try {
+          retryAfter = Number((JSON.parse(text) as { retryAfter?: number }).retryAfter);
+        } catch {
+          retryAfter = Number.NaN;
+        }
+      }
+      const waitSeconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter + 1 : 30;
+      console.log(`rate limited (429); waiting ${waitSeconds}s before retrying...`);
+      await new Promise((resolveRetry) => setTimeout(resolveRetry, waitSeconds * 1000));
+      continue;
+    }
+    if (res.status < 500 || attempt === 8) break;
     await new Promise((resolveRetry) => setTimeout(resolveRetry, 1000 * attempt));
   }
   throw new Error(`Migration request failed: ${lastError}`);

@@ -722,6 +722,7 @@ internal fun AlarmTalkApp(
                           },
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                           onConfirmVoicePreviewPlayed = viewModel::confirmVoicePreviewPlayed,
+                          onUpdateVoicePreviewText = viewModel::updateVoicePreviewText,
                           onPromoteVoiceDraft = viewModel::promoteVoiceDraft,
                           onDeleteVoiceDraft = viewModel::deleteVoiceDraft,
                           defaultVoiceId = viewModel.defaultVoiceId,

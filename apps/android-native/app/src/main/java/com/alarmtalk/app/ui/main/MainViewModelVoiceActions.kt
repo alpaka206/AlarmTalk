@@ -249,6 +249,21 @@ internal suspend fun MainViewModel.confirmVoicePreviewPlayed(profileId: String, 
     }
 }
 
+/**
+ * 등록 미리듣기 문구 직접 수정. 서버가 previewed_at 을 리셋하므로 호출 후에는
+ * 수정본을 끝까지 다시 들어야 승격(keep)할 수 있다. 정규화된 최종 문구를 돌려준다.
+ */
+internal suspend fun MainViewModel.updateVoicePreviewText(profileId: String, text: String): String {
+    val session = authSession ?: error("Authentication required")
+    return withContext(Dispatchers.IO) {
+        api.updateVoicePreviewText(
+            authorization = AlarmTalkApiClient.bearer(session.token),
+            id = profileId,
+            request = com.alarmtalk.app.network.VoicePreviewTextUpdateRequest(previewText = text),
+        ).previewText
+    }
+}
+
 internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
     val session = authSession ?: return
     viewModelScope.launch {

@@ -13,6 +13,7 @@ import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent'
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueuePrerender } from '../lib/stock-clips';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
+import { VoicePreviewTextUpdateSchema } from '@alarmtalk/shared';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
@@ -511,6 +512,68 @@ voiceProfile.post('/:id/preview-played', async (c) => {
     );
   }
   return c.json({ success: true, previewed: true });
+});
+
+// 등록 미리듣기 문구 직접 수정(초안 전용) — "말투가 마음에 안 들면 수정" 플로우.
+// 수정한 문구가 이후 미리듣기 합성 문구(캐시 키)이자 사전렌더 톤 스타일 레퍼런스가 된다.
+// previewed_at/claim 을 함께 리셋해 수정본을 끝까지 다시 들어야 승격(keep)할 수 있게 한다.
+voiceProfile.patch('/:id/preview-text', async (c) => {
+  const ids = ownerIds(c);
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
+  }
+  const parsed = VoicePreviewTextUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      {
+        error: 'Preview text must be 1-200 characters without brackets.',
+        error_code: 'VOICE_PREVIEW_TEXT_INVALID',
+      },
+      400,
+    );
+  }
+  // 합성 문구는 한 줄로 조립되므로 개행/연속 공백은 단일 공백으로 정규화한다.
+  const previewText = parsed.data.preview_text.replace(/\s+/g, ' ').trim();
+  if (!previewText) {
+    return c.json(
+      {
+        error: 'Preview text must be 1-200 characters without brackets.',
+        error_code: 'VOICE_PREVIEW_TEXT_INVALID',
+      },
+      400,
+    );
+  }
+
+  const ph = ids.map(() => '?').join(',');
+  const updated = await db.execute({
+    sql: `UPDATE voice_profiles
+          SET preview_text = ?, previewed_at = NULL,
+              preview_claimed_at = NULL, preview_claim_token = NULL,
+              updated_at = datetime('now')
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_draft, 0) = 1 AND status = 'ready'`,
+    args: [previewText, id, ...ids],
+  });
+  if ((updated.rowsAffected ?? 0) === 0) {
+    return c.json(
+      { error: 'Voice draft not found', error_code: 'VOICE_PROFILE_NOT_FOUND' },
+      404,
+    );
+  }
+  return c.json({ success: true, preview_text: previewText });
 });
 
 voiceProfile.patch('/:id', async (c) => {

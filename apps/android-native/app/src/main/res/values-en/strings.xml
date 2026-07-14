@@ -664,6 +664,19 @@
     <string name="voices_confirm_new_preview_stop">Stop</string>
     <string name="voices_confirm_new_keep">Use this voice</string>
     <string name="voices_confirm_new_delete">Delete</string>
+    <string name="voices_creating_title">Creating your voice</string>
+    <string name="voices_creating_body">Hang tight — this usually takes under a minute.
+We\'ll play it for you as soon as it\'s ready.</string>
+    <string name="voices_preview_text_label">Preview line</string>
+    <string name="voices_preview_text_loading">Preparing the line…</string>
+    <string name="voices_preview_text_retry_hint">The line isn\'t ready yet. Tap Preview to try again.</string>
+    <string name="voices_preview_edit_hint">Not happy with the tone? Edit the line — your edit becomes the style guide for daily lines.</string>
+    <string name="voices_preview_edit_action">Edit line</string>
+    <string name="voices_preview_edit_save">Save</string>
+    <string name="voices_preview_edit_saving">Saving…</string>
+    <string name="voices_preview_edit_cancel">Cancel</string>
+    <string name="voices_preview_edit_empty">Please enter a line.</string>
+    <string name="voices_preview_edit_failed">Couldn\'t update the line.</string>
     <string name="voices_previous">Back</string>
     <string name="voices_record_done_duration">Recorded · %1$s</string>
     <string name="voices_record_script_title">Read this script aloud</string>
