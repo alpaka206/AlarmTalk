@@ -714,13 +714,10 @@ internal fun AlarmEditorScreen(
                 submitDraft(editor.toDraft())
                 return@launch
             }
-            if (requiresCloneBucket) {
-                isSaving = false
-                audioMessage = context.getString(R.string.editor_preparing_voice_alarm)
-                showFamilyAlarmToast(context.getString(R.string.editor_preparing_voice_alarm))
-                return@launch
-            }
-            // 2) 버킷 미대상/캐시 실패 → 기존 라이브 생성으로 폴백(알람이 아예 안 저장되는 것 방지).
+            // 2) 버킷 미대상/캐시 실패(사전렌더 미완성·클립 다운로드 실패 포함) → 기존 라이브 생성으로 폴백.
+            //    이미 등록된 클론 목소리라도 준비창 cron 이 풀셋을 만들기 전이면 '준비 중'에서 멈추지 말고
+            //    여기서 라이브로 저장한다(알람이 여러 cron 틱 동안 아예 저장 안 되는 것 방지). 라이브 생성은
+            //    random 경로라 월간 등록·원장·수동 quota 를 건드리지 않으므로 등록 전 목소리 이슈 없음.
             audioMessage = context.getString(R.string.editor_preparing_voice_alarm)
             showFamilyAlarmToast(context.getString(R.string.editor_preparing_voice_alarm))
             runCatching {
