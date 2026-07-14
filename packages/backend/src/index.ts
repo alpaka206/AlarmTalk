@@ -400,7 +400,10 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
       releasePrerenderClaim,
     } = await import('./lib/stock-clips');
     const { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } = await import('./lib/consent');
-    const MAX_CLIPS_PER_TICK = 3;
+    // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드라 서브리퀘스트·
+    // 비용·rate 를 제한하되, 목소리 1개 풀셋(21클립)이 너무 늦지 않게 6으로 잡는다(≈4틱, keep 후 ~20분).
+    // 발사 시각 알람 푸시는 cron 에서 제거돼(중복 알림) 이 드레인이 틱의 시간민감 작업을 막을 일은 없다.
+    const MAX_CLIPS_PER_TICK = 6;
     const claimed = await claimPendingPrerenderVoices(db, 5);
     if (claimed.length > 0) {
       const cloneVoices = await listReadyCloneVoices(db, claimed);

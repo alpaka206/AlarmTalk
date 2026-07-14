@@ -235,6 +235,71 @@ describe('POST /tts/generate — TTS 생성', () => {
     expect(claimCall?.sql).toContain("COALESCE(listener_title, '') = ?");
   });
 
+  it('draft 미리듣기는 Vertex 설정 시 관계·호칭 톤 적응 문구로 합성한다', async () => {
+    const toneText = '우리 아들, 잘 잤어? 오늘도 기분 좋게 하루 시작해 보자.';
+    const mockFetch = vi.fn(async (url: unknown) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      // Gemini 톤 적응 생성 응답 — {text, tag} JSON
+      return geminiText(JSON.stringify({ text: toneText, tag: 'cheerfully' }));
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus' }]);
+      mockDB.pushResult([
+        {
+          id: V1,
+          user_id: 'user-1',
+          status: 'ready',
+          is_draft: 1,
+          elevenlabs_voice_id: 'el-draft',
+          relationship_label: '엄마',
+          listener_title: '우리 아들',
+        },
+      ]);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([]);
+      pushPublicationVoice({
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        relationship_label: '엄마',
+        listener_title: '우리 아들',
+      });
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+      const res = await buildApp().request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          language: 'ko',
+          draft_preview: true,
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
+      );
+
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      // 고정 예문이 아니라 관계·호칭 톤 적응 생성 문구로 합성/표시된다.
+      expect(body.text).toBe(toneText);
+      expect(body.synthesis_text).toBe(`[cheerfully] ${toneText}`);
+      expect(mockTextToSpeech).toHaveBeenCalledWith(
+        'el-draft',
+        body.synthesis_text,
+        expect.any(Object),
+      );
+      expect(body.preview_playback_token).toBeTypeOf('string');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('합성 중 민감 동의를 철회하면 생성 결과를 게시하지 않는다', async () => {
     mockDB.setConsentMissing(true);
     mockDB.pushResult([{ plan: 'plus' }]);

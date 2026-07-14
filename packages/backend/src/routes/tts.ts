@@ -19,13 +19,18 @@ import {
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
   generateDynamicAlarmTextWithVertex,
+  generatePrerenderClipText,
   deriveAlarmDisplayText,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
-import { CLONE_WEATHER_CONDITIONS } from '../lib/stock-clips';
+import {
+  CLONE_CLIP_SEEDS,
+  CLONE_WEATHER_CONDITIONS,
+  STOCK_GREETING_CATEGORY,
+} from '../lib/stock-clips';
 import {
   readManualTtsUsage,
   refundManualTtsQuota,
@@ -816,6 +821,7 @@ tts.post('/generate', async (c) => {
   if (draftPreviewRequested) requestText = draftPreviewText(storedPreviewLanguage);
 
   const isSystemVoice = Boolean(Number(vp.is_system ?? 0));
+  let draftPreviewListenerTitle: string | null = null;
   if ((randomRequested && randomContext === 'preset') || draftPreviewRequested) {
     const isSharedVoiceProfileForPreset =
       typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
@@ -827,6 +833,9 @@ tts.post('/generate', async (c) => {
         ? await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)
         : null) ??
       normalizeRelationshipLabel(vp.listener_title);
+    if (draftPreviewRequested) draftPreviewListenerTitle = listenerTitle ?? null;
+    // 미리듣기는 아래에서 관계·호칭 톤 적응 생성을 시도한다 — 여기서 만든 '고정 예문+호칭 접두어'는
+    // 생성 실패(Vertex 미설정/모델 오류) 시의 폴백 문구가 된다.
     requestText = presetTextWithListenerTitle(requestText, listenerTitle);
   }
   if (freePlanRestricted) {
@@ -882,11 +891,36 @@ tts.post('/generate', async (c) => {
   let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
   let previewClaimed = false;
   let activePreviewClaimToken: string | null = null;
+  let draftPreviewTag = 'cheerfully';
 
   try {
     const requestedLanguage = draftPreviewRequested
       ? storedPreviewLanguage
       : normalizeSynthesisLanguage(body.language);
+
+    if (draftPreviewRequested) {
+      // 미리듣기 문구를 keep(승격) 후 사전렌더될 greeting 과 같은 seed 로 '관계·호칭 톤 적응' 생성한다
+      // — 사용자가 확정 전에 그 목소리의 실제 말투(관계에 맞는 어투 + 호칭)를 듣고 결정하게 하기 위함.
+      // 실패(Vertex 미설정·모델 오류·검증 탈락) 시 위의 고정 예문(+호칭 접두어)으로 폴백해 미리듣기
+      // 자체는 절대 막지 않는다. Vertex(국외) 전송은 위 missingTtsConsent(overseas_transfer 포함) 통과
+      // 뒤에만 일어난다.
+      try {
+        const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
+        if (greetingSeed) {
+          const generated = await generatePrerenderClipText(c.env, {
+            seed: greetingSeed.seeds[0]!,
+            relationshipLabel: normalizeRelationshipLabel(vp.relationship_label) ?? null,
+            listenerTitle: draftPreviewListenerTitle,
+            targetLanguage: storedPreviewLanguage,
+            defaultTag: greetingSeed.defaultTag,
+          });
+          requestText = generated.text;
+          if (generated.tag) draftPreviewTag = generated.tag;
+        }
+      } catch {
+        // 고정 예문 폴백 유지 (requestText 는 이미 예문+호칭으로 설정돼 있음)
+      }
+    }
 
     // 국외 이전 동의(B4): 동적 문구 생성(wake_weather/wake_fortune 등)과 번역은
     // 텍스트를 국외(Google Vertex)로 전송하므로 overseas_transfer 동의가 필요하다.
@@ -986,10 +1020,14 @@ tts.post('/generate', async (c) => {
     // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (draftPreviewRequested) {
+      // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 cheerfully 를 쓴다.
+      // 동적 경로와 동일하게 태그 포함 길이가 200을 넘으면 태그를 버려 메타와 합성 텍스트를 일치시킨다.
+      const taggedText = `[${draftPreviewTag}] ${requestText}`;
+      const tagApplied = taggedText.length <= 200;
       prepared = {
-        text: `[cheerfully] ${requestText}`,
+        text: tagApplied ? taggedText : requestText,
         translated: false,
-        tags: ['cheerfully'],
+        tags: tagApplied ? [draftPreviewTag] : [],
       };
     } else if (dynamicGenerated) {
       const dynamicTag = dynamicGenerated.tags[0] ?? '';
