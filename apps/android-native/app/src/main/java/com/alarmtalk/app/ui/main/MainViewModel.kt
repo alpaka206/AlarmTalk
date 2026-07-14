@@ -168,6 +168,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var voiceProfiles by mutableStateOf<List<VoiceProfile>>(emptyList())
         internal set
 
+    var pendingVoiceDraft by mutableStateOf<VoiceProfile?>(null)
+        internal set
+
     var voiceProfileBusy by mutableStateOf(false)
         internal set
 
@@ -438,6 +441,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     internal fun clearUserScopedRemoteState() {
         voiceProfiles = emptyList()
+        pendingVoiceDraft = null
         voiceProfileLoadFinished = false
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false

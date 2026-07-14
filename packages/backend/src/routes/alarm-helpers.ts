@@ -1,6 +1,6 @@
 import { UUID_RE } from '../lib/validate';
 import { isStoredAudioUrl } from '../lib/audio-loader';
-import { FREE_BUCKET_CATEGORIES } from '../lib/stock-clips';
+import { FREE_BUCKET_CATEGORIES, CLONE_PRERENDER_CATEGORIES } from '../lib/stock-clips';
 
 export const ALARM_MODES = ['sound-only', 'tts'] as const;
 export type AlarmMode = (typeof ALARM_MODES)[number];
@@ -119,11 +119,17 @@ export function validateAlarmFields(body: {
     return { error: 'Invalid message_id format', error_code: 'INVALID_MESSAGE_ID' };
   }
 
-  // 무료 버킷은 알려진 스톡 카테고리(기상/약 …)만 허용. null=버킷 해제.
+  // 무료 버킷(기상/약) + 유료 클론 사전렌더 버킷(날씨/운세/사랑/약 + greeting) 카테고리만 허용. null=버킷 해제.
+  // 유료 클론 오프라인 버킷 알람은 bucket_id 로 love/fortune/weather 뿐 아니라 기본 preset 컨텍스트의
+  // greeting(기상 인사) 도 실어 동기화한다(AlarmEditorState.clonePrerenderBucketCategoryFor: preset→greeting).
+  // CLONE_PRERENDER_CATEGORIES(=유료 버킷+greeting) 로 허용하지 않으면 기본 클론 알람이 INVALID_BUCKET_ID
+  // 로 거부돼 영구 미동기화된다.
   if (
     body.bucket_id !== undefined &&
     body.bucket_id !== null &&
-    (typeof body.bucket_id !== 'string' || !FREE_BUCKET_CATEGORIES.includes(body.bucket_id))
+    (typeof body.bucket_id !== 'string' ||
+      (!FREE_BUCKET_CATEGORIES.includes(body.bucket_id) &&
+        !CLONE_PRERENDER_CATEGORIES.includes(body.bucket_id)))
   ) {
     return { error: 'Invalid bucket_id', error_code: 'INVALID_BUCKET_ID' };
   }

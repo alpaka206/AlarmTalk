@@ -22,6 +22,10 @@ data class VoiceProfileResponse(
     val profile: VoiceProfile,
 )
 
+data class VoiceProfileDraftResponse(
+    val profile: VoiceProfile? = null,
+)
+
 data class VoiceUploadResponse(
     val upload: VoiceUpload,
 )
@@ -42,6 +46,17 @@ data class VoiceProfileUpdateRequest(
     @SerializedName("is_draft") val isDraft: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
+    // draft→official 승격 시 사전렌더할 앱 언어(서버는 promote 시점에만 사용, 미전송 시 'ko').
+    val language: String? = null,
+)
+
+data class VoicePreviewPlayedRequest(
+    @SerializedName("preview_playback_token") val previewPlaybackToken: String,
+)
+
+data class VoicePreviewPlayedResponse(
+    val success: Boolean,
+    val previewed: Boolean,
 )
 
 data class VoiceProfileRelationshipUpdateRequest(
@@ -85,6 +100,9 @@ interface VoiceProfileApi {
     @GET("voice")
     suspend fun listVoiceProfiles(@Header("Authorization") authorization: String): VoiceProfileListResponse
 
+    @GET("voice/draft")
+    suspend fun getVoiceDraft(@Header("Authorization") authorization: String): VoiceProfileDraftResponse
+
     @Multipart
     @POST("voice/clone")
     suspend fun createVoiceClone(
@@ -96,6 +114,8 @@ interface VoiceProfileApi {
         @Part("listenerTitle") listenerTitle: RequestBody,
         @Part("durationMs") durationMs: RequestBody,
         @Part("isDraft") isDraft: RequestBody,
+        // 사전렌더할 앱 언어(미전송 시 서버가 'ko' 폴백 → 비-ko 유저가 클론 버킷을 못 받음).
+        @Part("language") language: RequestBody,
     ): VoiceProfileResponse
 
     @Multipart
@@ -113,6 +133,13 @@ interface VoiceProfileApi {
         @Path("id") id: String,
         @Body request: VoiceProfileUpdateRequest,
     ): VoiceProfileResponse
+
+    @POST("voice/{id}/preview-played")
+    suspend fun confirmVoicePreviewPlayed(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body request: VoicePreviewPlayedRequest,
+    ): VoicePreviewPlayedResponse
 
     @PATCH("voice/{id}/relationship")
     suspend fun updateVoiceProfileRelationship(

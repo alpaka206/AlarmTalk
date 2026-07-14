@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 17,
+    version = 20,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -43,6 +43,9 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_14_15,
                     MIGRATION_15_16,
                     MIGRATION_16_17,
+                    MIGRATION_17_18,
+                    MIGRATION_18_19,
+                    MIGRATION_19_20,
                 )
                     // 캐릭터/성장 기능 제거에 따른 스키마 변경. 개발 중 미정의 마이그레이션은
                     // 파괴적 재생성으로 처리한다(출시 전이라 보존할 데이터 없음).
@@ -188,6 +191,27 @@ abstract class AlarmDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN bucketId TEXT")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN bucketRotationIndex INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN bucketClipKeysJson TEXT")
+            }
+        }
+
+        // 매칭형 버킷(날씨/운세)의 variant 인덱스 스냅샷(준비창에서 서버 resolve). nullable.
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN contextVariantIndex INTEGER")
+            }
+        }
+
+        // 날씨 variant 인덱스의 마지막 resolve 시각(준비창 12h 게이트 전용, 범용 updatedAtMillis 재사용 회귀 차단).
+        private val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN contextResolvedAtMillis INTEGER")
+            }
+        }
+
+        // 버킷 클립들의 표시 문구(variant 순). 잠금화면이 발사 variant 문구를 음성과 맞춰 보여주기 위함.
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN bucketClipTextsJson TEXT")
             }
         }
     }

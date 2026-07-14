@@ -1126,9 +1126,7 @@ export const migrations: Migration[] = [
     //    이로써 탈취·유출된 기존 토큰을 만료 전에도 즉시 무효화할 수 있다.
     id: 51,
     name: 'user-token-epoch',
-    statements: [
-      `ALTER TABLE users ADD COLUMN token_epoch INTEGER NOT NULL DEFAULT 0`,
-    ],
+    statements: [`ALTER TABLE users ADD COLUMN token_epoch INTEGER NOT NULL DEFAULT 0`],
   },
   {
     // 가격정책 + 가족 정원 6→5인. (근거: 루트 PRICING.md)
@@ -1289,6 +1287,58 @@ export const migrations: Migration[] = [
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         PRIMARY KEY (pool_key, usage_month)
       )`,
+    ],
+  },
+  {
+    // 유료 클론 목소리 preset 사전렌더 큐. 유료 구독자가 목소리를 확정(등록/승격)하면
+    // 훅에서 INSERT OR IGNORE 로 1행 적재하고, cron(scheduled)이 status='pending' 을 소량씩
+    // 드레인해 그 목소리 말투로 카테고리 클립을 생성한다(stock-clips.ts). voice_profile_id 를
+    // PK 로 둬 재확정/중복 트리거가 있어도 큐가 1행으로 멱등하다. language 는 확정 시점의 앱
+    // 언어 1개를 담아 cron 이 그 언어로만 렌더하도록 한다(3개국어 곱연산 비용 회피).
+    id: 59,
+    name: 'voice-prerender-queue',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS voice_prerender_queue (
+        voice_profile_id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL,
+        language TEXT NOT NULL DEFAULT 'ko',
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done','failed')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        requested_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_prerender_queue_pending
+        ON voice_prerender_queue(status, requested_at)`,
+    ],
+  },
+  {
+    id: 60,
+    name: 'voice-prerender-claim-lease',
+    statements: [`ALTER TABLE voice_prerender_queue ADD COLUMN claimed_at TEXT`],
+  },
+  {
+    id: 61,
+    name: 'voice-prerender-claim-token',
+    statements: [`ALTER TABLE voice_prerender_queue ADD COLUMN claim_token TEXT`],
+  },
+  {
+    // 초안 생성은 외부 음성 제공자 슬롯/비용을 즉시 사용한다. 삭제-재생성으로 공식 월 1회
+    // 장부를 우회하지 못하도록, 공식 등록 장부와 별개로 KST 월 3회 제공자 시도를 원자적으로 센다.
+    // previewed_at 은 서버가 실제 미리듣기 오디오를 반환한 뒤에만 기록하며 승격의 전제조건이다.
+    id: 62,
+    name: 'voice-draft-attempt-and-preview',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS voice_draft_attempt_usage (
+        owner_user_id TEXT NOT NULL,
+        attempt_month TEXT NOT NULL,
+        used_count INTEGER NOT NULL DEFAULT 0 CHECK(used_count >= 0),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (owner_user_id, attempt_month)
+      )`,
+      `ALTER TABLE voice_profiles ADD COLUMN previewed_at TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN preview_claimed_at TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN preview_claim_token TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN preview_language TEXT NOT NULL DEFAULT 'ko'`,
     ],
   },
 ];

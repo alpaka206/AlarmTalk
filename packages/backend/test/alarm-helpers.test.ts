@@ -6,6 +6,11 @@ import {
   VIBRATION_PATTERNS,
   WAKE_MODES,
 } from '../src/routes/alarm-helpers';
+import {
+  FREE_BUCKET_CATEGORIES,
+  CLONE_PRERENDER_CATEGORIES,
+  STOCK_GREETING_CATEGORY,
+} from '../src/lib/stock-clips';
 
 describe('normalizeAlarmRow', () => {
   const base = { id: 'a1', user_id: 'u1' };
@@ -359,5 +364,39 @@ describe('validateAlarmFields', () => {
 
   it('rejects time 24:00', () => {
     expect(validateAlarmFields({ time: '24:00' })?.error_code).toBe('INVALID_TIME_VALUE');
+  });
+});
+
+describe('validateAlarmFields — bucket_id', () => {
+  it('accepts null/undefined (버킷 해제)', () => {
+    expect(validateAlarmFields({ bucket_id: null })).toBeNull();
+    expect(validateAlarmFields({ bucket_id: undefined })).toBeNull();
+  });
+
+  it('accepts every free bucket category', () => {
+    for (const cat of FREE_BUCKET_CATEGORIES) {
+      expect(validateAlarmFields({ bucket_id: cat })).toBeNull();
+    }
+  });
+
+  it('accepts every clone prerender bucket category (유료 버킷 + greeting)', () => {
+    for (const cat of CLONE_PRERENDER_CATEGORIES) {
+      expect(validateAlarmFields({ bucket_id: cat })).toBeNull();
+    }
+  });
+
+  it('accepts greeting — 기본 preset 컨텍스트 클론 알람 동기화 회귀 방지', () => {
+    // AlarmEditorState.clonePrerenderBucketCategoryFor: preset→greeting 를 bucket_id 로 실어 보내므로
+    // greeting 이 거부되면 기본 유료 클론 알람이 INVALID_BUCKET_ID 로 영구 미동기화된다.
+    expect(STOCK_GREETING_CATEGORY).toBe('greeting');
+    expect(validateAlarmFields({ bucket_id: 'greeting' })).toBeNull();
+  });
+
+  it('rejects unknown / non-bucket values', () => {
+    expect(validateAlarmFields({ bucket_id: 'sleep' })?.error_code).toBe('INVALID_BUCKET_ID');
+    expect(validateAlarmFields({ bucket_id: '' })?.error_code).toBe('INVALID_BUCKET_ID');
+    expect(
+      validateAlarmFields({ bucket_id: 123 as unknown as string })?.error_code,
+    ).toBe('INVALID_BUCKET_ID');
   });
 });

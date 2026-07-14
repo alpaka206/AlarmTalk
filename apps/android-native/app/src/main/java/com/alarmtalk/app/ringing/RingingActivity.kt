@@ -72,6 +72,7 @@ import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
+import com.alarmtalk.app.data.bucketClipTexts
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -98,9 +99,11 @@ class RingingActivity : ComponentActivity() {
             LaunchedEffect(currentAlarmId) {
                 uiState = currentAlarmId?.let { id ->
                     withContext(Dispatchers.IO) {
-                        AlarmAppContainer.repository(appContext)
-                            .getAlarm(id)
-                            ?.toRingingUiState(appContext)
+                        val repository = AlarmAppContainer.repository(appContext)
+                        repository.getAlarm(id)?.let { alarm ->
+                            val playbackVariantIndex = repository.resolveBucketClipSelection(alarm)?.variantIndex
+                            alarm.toRingingUiState(appContext, playbackVariantIndex)
+                        }
                     }
                 } ?: defaultRingingUiState(appContext)
             }
@@ -518,13 +521,24 @@ private val RINGING_DELIVERY_TAG_RE = Regex("""\[[a-z][a-z -]{1,32}]""", RegexOp
 private fun String.stripDeliveryTags(): String =
     replace(RINGING_DELIVERY_TAG_RE, " ").replace(Regex("""\s+"""), " ").trim()
 
-private fun AlarmEntity.toRingingUiState(context: android.content.Context): RingingUiState {
+private fun AlarmEntity.toRingingUiState(
+    context: android.content.Context,
+    playbackVariantIndex: Int?,
+): RingingUiState {
     val customTitle = label.trim()
         .takeIf { it.isNotBlank() && it != context.getString(R.string.rd_default_alarm_label) }
-    // 표시 텍스트: 서버가 랜덤/생성 문구에서 delivery 태그를 이미 제거해 저장한다. 다만 과거(태그
-    // 제거 전) 저장분이나 회귀에 대비해, 랜덤 문구에 한해 잠금화면에서 태그를 한 번 더 벗긴다.
-    // 직접 입력은 "[after lunch]" 같은 정상 대괄호를 지우면 안 되므로 트림만 한다.
-    val voiceMessage = voiceText
+    // 표시 텍스트: 버킷 알람이면 발사 시 고른 variant 의 문구를 쓴다(오디오와 같은 bucketVariantIndex).
+    // 그래야 날씨/운세 매칭 버킷에서 음성('비 와요')과 잠금화면 문구가 어긋나지 않는다. 버킷이 아니면
+    // 기존 voiceText. 서버가 delivery 태그를 이미 제거하지만 과거분/회귀 대비 랜덤 문구는 한 번 더 벗긴다.
+    // 빈/공백 문구는 null 로 취급해 대표 voiceText 로 폴백한다(Elvis 는 null 에만 걸려, "" 면 잠금화면
+    // 문구가 통째로 사라진다). 한 variant 의 text 가 비어도 대표 문구는 보인다.
+    val bucketText = if (bucketId != null && playbackVariantIndex != null) {
+        bucketClipTexts().getOrNull(playbackVariantIndex)?.takeIf { it.isNotBlank() }
+    } else {
+        null
+    }
+    val displayedVoiceText = bucketText ?: voiceText
+    val voiceMessage = displayedVoiceText
         ?.let { raw -> if (voiceRandomPrompt) raw.stripDeliveryTags() else raw.trim() }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
     val snoozeAvailable = snoozeEnabled &&

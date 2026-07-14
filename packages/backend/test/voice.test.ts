@@ -189,7 +189,7 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
   });
 
   it('정상 변경은 200 과 새 이름을 반환하고 updated_at 이 갱신된다', async () => {
-    mockDB.pushResult([{ id: V1 }]);
+    mockDB.pushResult([{ id: V1, is_draft: 1 }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('PATCH', `/voice/${V1}`, { name: '  엄마 목소리  ' }));
@@ -206,7 +206,7 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
   });
 
   it('updates relationship label', async () => {
-    mockDB.pushResult([{ id: V1 }]);
+    mockDB.pushResult([{ id: V1, is_draft: 1 }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('PATCH', `/voice/${V1}`, { relationship_label: '손녀' }));
@@ -356,9 +356,7 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
   });
 
   it('연관 메시지가 있어도 프로필만 숨김 처리', async () => {
-    mockDB.pushResult([
-      { id: V1, name: 'Voice A', elevenlabs_voice_id: null },
-    ]);
+    mockDB.pushResult([{ id: V1, name: 'Voice A', elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/voice/${V1}`));
@@ -369,9 +367,7 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
   });
 
   it('force=true로 요청해도 메시지와 알람은 삭제하지 않음', async () => {
-    mockDB.pushResult([
-      { id: V1, name: 'Voice A', elevenlabs_voice_id: null },
-    ]);
+    mockDB.pushResult([{ id: V1, name: 'Voice A', elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/voice/${V1}?force=true`));
@@ -382,9 +378,7 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
   });
 
   it('draftOnly=true인데 이미 등록된(is_draft=0) 보이스면 삭제하지 않는다(팬텀 성공 보호)', async () => {
-    mockDB.pushResult([
-      { id: V1, name: 'Voice A', elevenlabs_voice_id: 'el-1', is_draft: 0 },
-    ]);
+    mockDB.pushResult([{ id: V1, name: 'Voice A', elevenlabs_voice_id: 'el-1', is_draft: 0 }]);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/voice/${V1}?draftOnly=true`));
     expect(res.status).toBe(200);
@@ -395,9 +389,7 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
   });
 
   it('draftOnly=true여도 실제 draft(is_draft=1)면 정상 삭제한다', async () => {
-    mockDB.pushResult([
-      { id: V1, name: 'Voice A', elevenlabs_voice_id: null, is_draft: 1 },
-    ]);
+    mockDB.pushResult([{ id: V1, name: 'Voice A', elevenlabs_voice_id: null, is_draft: 1 }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/voice/${V1}?draftOnly=true`));
@@ -408,9 +400,7 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
   });
 
   it('연관 메시지가 없어도 소프트 삭제', async () => {
-    mockDB.pushResult([
-      { id: V1, name: 'Voice A', elevenlabs_voice_id: null },
-    ]);
+    mockDB.pushResult([{ id: V1, name: 'Voice A', elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/voice/${V1}`));
@@ -518,11 +508,13 @@ describe('POST /voice/clone — 음성 클론', () => {
     if (durationMs) {
       form.append('durationMs', durationMs);
     }
+    form.append('isDraft', 'true');
     return new Request('http://localhost/voice/clone', { method: 'POST', body: form });
   }
 
   it('프로필 1개 이상이면 403', async () => {
-    mockDB.pushResult([{ count: 1 }]);
+    // 한도 검사는 draft/official 슬롯을 함께 센다(둘 중 하나라도 차면 차단).
+    mockDB.pushResult([{ draft_count: 1, official_count: 1 }]);
     const app = buildApp();
     const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2, 3]), '테스트'));
     expect(res.status).toBe(403);
@@ -534,6 +526,7 @@ describe('POST /voice/clone — 음성 클론', () => {
     mockDB.pushResult([{ count: 0 }]);
     const form = new FormData();
     form.append('name', '테스트');
+    form.append('isDraft', 'true');
     const app = buildApp();
     const res = await reqWithEnv(
       app,
@@ -548,6 +541,7 @@ describe('POST /voice/clone — 음성 클론', () => {
     mockDB.pushResult([{ count: 0 }]);
     const form = new FormData();
     form.append('audio', new Blob([new Uint8Array([1])], { type: 'audio/wav' }), 'a.wav');
+    form.append('isDraft', 'true');
     const app = buildApp();
     const res = await reqWithEnv(
       app,
@@ -570,6 +564,8 @@ describe('POST /voice/clone — 음성 클론', () => {
 
   it('성공 시 201 + 프로필 반환', async () => {
     mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-voice-001' });
@@ -598,7 +594,10 @@ describe('POST /voice/clone — 음성 클론', () => {
     form.append('name', 'Child voice');
     form.append('durationMs', '90000');
     form.append('relationshipLabel', '손녀');
+    form.append('isDraft', 'true');
     mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-voice-001' });
@@ -629,4 +628,3 @@ describe('POST /voice/clone — 음성 클론', () => {
     expect(body.detail).toBe('API down');
   });
 });
-

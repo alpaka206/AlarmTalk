@@ -16,7 +16,7 @@
  *  - overseas_transfer 국외 이전 — 크로스보더 TTS/번역(Vertex)이 텍스트를 국외로
  *                     전송하므로 해당 경로 사용 시 별도 필수.
  */
-import type { Client } from '@libsql/client/web';
+import type { DbExecutor } from './transactions';
 
 export const CONSENT_TYPES = [
   'terms',
@@ -53,7 +53,7 @@ export const CURRENT_POLICY_VERSION = '3';
  * user_consents 의 유형별 최신 1건만 보고 판정한다 (created_at DESC, rowid DESC).
  */
 export async function missingConsentType(
-  db: Client,
+  db: DbExecutor,
   userIdPK: string,
   requiredTypes: readonly string[],
 ): Promise<string | null> {
@@ -82,7 +82,7 @@ export async function missingConsentType(
 }
 
 export async function needsConsent(
-  db: Client,
+  db: DbExecutor,
   userIdPK: string,
   requiredTypes: readonly string[],
 ): Promise<boolean> {

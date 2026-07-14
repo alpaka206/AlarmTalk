@@ -11,13 +11,16 @@ import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
+import { enqueuePrerender } from '../lib/stock-clips';
+import { enqueueExternalDeletion } from '../lib/audio-retention';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
 // draft(미승격) 보이스 상한. draft 도 생성 즉시 실제 ElevenLabs 보이스를 만들므로
 // (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
-const MAX_DRAFT_VOICE_PROFILES = 3;
+const MAX_DRAFT_VOICE_PROFILES = 1;
+const MAX_DRAFT_ATTEMPTS_PER_MONTH = 3;
 const MIN_CLONE_DURATION_MS = 60_000;
 // 프리뷰(draft) 클론은 짧은 클립이라 60초를 못 채우는 경우가 많다.
 // "5초 한마디"는 배제하되, 세그먼트를 이어붙일 때 프레임 경계로 몇백 ms
@@ -69,6 +72,42 @@ async function markMonthlyOfficialVoiceChange(
           SET status = ?, updated_at = datetime('now')
           WHERE id = ? AND status = 'reserved'`,
     args: [status, ledgerId],
+  });
+}
+
+async function reserveMonthlyDraftAttempt(
+  db: DbExecutor,
+  ownerUserId: string,
+): Promise<string | null> {
+  const monthParts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date());
+  const attemptMonth = `${monthParts.find((part) => part.type === 'year')!.value}-${monthParts.find((part) => part.type === 'month')!.value}`;
+  const result = await db.execute({
+    sql: `INSERT INTO voice_draft_attempt_usage
+            (owner_user_id, attempt_month, used_count)
+          VALUES (?, ?, 1)
+          ON CONFLICT(owner_user_id, attempt_month) DO UPDATE SET
+            used_count = used_count + 1,
+            updated_at = datetime('now')
+          WHERE used_count < ?`,
+    args: [ownerUserId, attemptMonth, MAX_DRAFT_ATTEMPTS_PER_MONTH],
+  });
+  return (result.rowsAffected ?? 0) > 0 ? attemptMonth : null;
+}
+
+async function refundMonthlyDraftAttempt(
+  db: DbExecutor,
+  ownerUserId: string,
+  attemptMonth: string,
+): Promise<void> {
+  await db.execute({
+    sql: `UPDATE voice_draft_attempt_usage
+          SET used_count = MAX(used_count - 1, 0), updated_at = datetime('now')
+          WHERE owner_user_id = ? AND attempt_month = ?`,
+    args: [ownerUserId, attemptMonth],
   });
 }
 
@@ -286,6 +325,32 @@ voiceProfile.get('/', async (c) => {
   });
 });
 
+voiceProfile.get('/draft', async (c) => {
+  const ids = ownerIds(c);
+  const db = getDB(c.env);
+  const ph = ids.map(() => '?').join(',');
+  const result = await db.execute({
+    sql: `SELECT * FROM voice_profiles
+          WHERE user_id IN (${ph}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 1
+            AND status != 'failed'
+          ORDER BY created_at DESC LIMIT 1`,
+    args: ids,
+  });
+  const row = result.rows[0];
+  return c.json({
+    profile: row
+      ? {
+          ...row,
+          // 드래프트는 isShared=true 로도 생성될 수 있고(공유 예약), promote 시 서버가 그 값으로 공유한다.
+          // false 로 마스킹하면 앱이 '공유 안 함'으로 표시한 채 실제로는 공유돼 UI 가 어긋난다 → 실제 값 반환.
+          is_shared: Boolean(Number(row.is_shared ?? 0)),
+          is_draft: true,
+          is_system: false,
+        }
+      : null,
+  });
+});
+
 voiceProfile.get('/family', async (c) => {
   const userId = c.get('userId');
   const userPk = c.get('userIdPK') || userId;
@@ -400,9 +465,58 @@ voiceProfile.get('/:id', async (c) => {
   });
 });
 
+voiceProfile.post('/:id/preview-played', async (c) => {
+  const ids = ownerIds(c);
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+
+  let body: { preview_playback_token?: unknown; previewPlaybackToken?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
+  }
+  const token = body.preview_playback_token ?? body.previewPlaybackToken;
+  if (typeof token !== 'string' || !UUID_RE.test(token)) {
+    return c.json(
+      { error: 'Valid preview playback token required', error_code: 'INVALID_PREVIEW_TOKEN' },
+      400,
+    );
+  }
+
+  const ph = ids.map(() => '?').join(',');
+  const confirmed = await db.execute({
+    sql: `UPDATE voice_profiles
+          SET previewed_at = datetime('now'), preview_claim_token = NULL,
+              updated_at = datetime('now')
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
+            AND preview_claimed_at IS NULL AND preview_claim_token = ?`,
+    args: [id, ...ids, token],
+  });
+  if ((confirmed.rowsAffected ?? 0) === 0) {
+    return c.json(
+      {
+        error: 'Preview playback token is stale or the draft changed.',
+        error_code: 'VOICE_PREVIEW_CONFIRMATION_CONFLICT',
+      },
+      409,
+    );
+  }
+  return c.json({ success: true, previewed: true });
+});
+
 voiceProfile.patch('/:id', async (c) => {
   const ids = ownerIds(c);
-  const userPk = (c.get('userIdPK') as string | undefined) || (c.get('userId') as string);
+  const userId = c.get('userId') as string;
+  const userPk = (c.get('userIdPK') as string | undefined) || userId;
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -423,12 +537,19 @@ voiceProfile.patch('/:id', async (c) => {
     relationshipLabel?: unknown;
     listener_title?: unknown;
     listenerTitle?: unknown;
+    language?: unknown;
+    app_language?: unknown;
   };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
+  // draft→official 확정 시 사전렌더할 앱 언어(클라 전송, 미전송 시 ko).
+  const prerenderLanguage =
+    typeof (body.language ?? body.app_language) === 'string'
+      ? String(body.language ?? body.app_language)
+      : 'ko';
 
   const hasName = body.name !== undefined;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -478,7 +599,7 @@ voiceProfile.patch('/:id', async (c) => {
 
   const ph = ids.map(() => '?').join(',');
   const existing = await db.execute({
-    sql: `SELECT id, COALESCE(is_draft, 0) as is_draft
+    sql: `SELECT id, COALESCE(is_draft, 0) as is_draft, previewed_at
           FROM voice_profiles
           WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
     args: [id, ...ids],
@@ -488,6 +609,41 @@ voiceProfile.patch('/:id', async (c) => {
   }
   const promotesDraftToOfficial =
     hasDraft && isDraftUpdate === false && Number(existing.rows[0]!.is_draft ?? 0) === 1;
+
+  if (promotesDraftToOfficial && (hasRelationship || hasListenerTitle)) {
+    return c.json(
+      {
+        error: 'Preview persona fields cannot change during registration.',
+        error_code: 'VOICE_PROMOTION_FIELDS_NOT_ALLOWED',
+      },
+      409,
+    );
+  }
+
+  if (hasDraft && isDraftUpdate === true && Number(existing.rows[0]!.is_draft ?? 0) === 0) {
+    return c.json(
+      { error: 'An official voice cannot become a draft.', error_code: 'INVALID_VOICE_TRANSITION' },
+      409,
+    );
+  }
+  if (promotesDraftToOfficial && !existing.rows[0]!.previewed_at) {
+    return c.json(
+      {
+        error: 'Listen to the preview before keeping this voice.',
+        error_code: 'VOICE_PREVIEW_REQUIRED',
+      },
+      409,
+    );
+  }
+  if (Number(existing.rows[0]!.is_draft ?? 0) === 0 && (hasRelationship || hasListenerTitle)) {
+    return c.json(
+      {
+        error: 'Relationship and title are fixed after registration.',
+        error_code: 'VOICE_PERSONA_LOCKED',
+      },
+      409,
+    );
+  }
 
   // promote(draft=false) 시: 다른 non-draft 음성이 1개 이상이면 한도 초과.
   // 생성 쿼터와 동일하게 failed 잔여물은 슬롯을 점유하지 않으므로 제외한다.
@@ -531,10 +687,18 @@ voiceProfile.patch('/:id', async (c) => {
   if (hasRelationship) {
     updates.push('relationship_label = ?');
     args.push(relationshipLabel ?? '');
+    updates.push('previewed_at = NULL');
+    updates.push('preview_claimed_at = NULL');
+    updates.push('preview_claim_token = NULL');
   }
   if (hasListenerTitle) {
     updates.push('listener_title = ?');
     args.push(listenerTitle ?? '');
+    if (!hasRelationship) {
+      updates.push('previewed_at = NULL');
+      updates.push('preview_claimed_at = NULL');
+      updates.push('preview_claim_token = NULL');
+    }
   }
   updates.push("updated_at = datetime('now')");
   args.push(id, ...ids);
@@ -550,6 +714,17 @@ voiceProfile.patch('/:id', async (c) => {
     });
   const updateRes = promotesDraftToOfficial
     ? await withWriteTransaction(db, async (tx) => {
+        const plan = await tx.execute({
+          sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+          args: [userPk, userId],
+        });
+        if (plan.rows.length === 0 || !isPaidVoicePlan(plan.rows[0]!.plan)) {
+          return { status: 'paid_required' as const, rowsAffected: 0 };
+        }
+        const missingConsent = await missingConsentType(tx, userPk, SENSITIVE_REQUIRED_CONSENTS);
+        if (missingConsent) {
+          return { status: 'consent_required' as const, consent: missingConsent, rowsAffected: 0 };
+        }
         const existingCount = await activeOfficialVoiceProfileCount(tx, ids, id);
         if (existingCount >= MAX_VOICE_PROFILES) {
           return { status: 'voice_limit' as const, rowsAffected: 0 };
@@ -558,15 +733,25 @@ voiceProfile.patch('/:id', async (c) => {
         if (!ledgerId) {
           return { status: 'monthly_limit' as const, rowsAffected: 0 };
         }
-        const promoted = await updateProfile(tx, 'AND COALESCE(is_draft, 0) = 1');
+        const promoted = await updateProfile(
+          tx,
+          'AND COALESCE(is_draft, 0) = 1 AND previewed_at IS NOT NULL',
+        );
         if ((promoted.rowsAffected ?? 0) === 0) {
           await markMonthlyOfficialVoiceChange(tx, ledgerId, 'failed');
           return { status: 'not_found' as const, rowsAffected: 0 };
         }
         await markMonthlyOfficialVoiceChange(tx, ledgerId, 'succeeded');
+        await enqueuePrerender(tx, id, userPk, prerenderLanguage);
         return { status: 'ok' as const, rowsAffected: promoted.rowsAffected ?? 0 };
       })
-    : { status: 'ok' as const, ...(await updateProfile(db)) };
+    : {
+        status: 'ok' as const,
+        ...(await updateProfile(
+          db,
+          hasRelationship || hasListenerTitle ? 'AND COALESCE(is_draft, 0) = 1' : '',
+        )),
+      };
   if (updateRes.status === 'voice_limit') {
     return c.json(
       {
@@ -579,7 +764,35 @@ voiceProfile.patch('/:id', async (c) => {
   if (updateRes.status === 'monthly_limit') {
     return monthlyVoiceChangeLimitResponse(c);
   }
+  if (updateRes.status === 'paid_required') {
+    return c.json(
+      {
+        error: 'Voice features require a paid plan.',
+        error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+      },
+      403,
+    );
+  }
+  if (updateRes.status === 'consent_required') {
+    return c.json(
+      {
+        error: 'Required voice consent is missing.',
+        error_code: 'CONSENT_REQUIRED',
+        consent: updateRes.consent,
+      },
+      403,
+    );
+  }
   if ((updateRes.rowsAffected ?? 0) === 0) {
+    if (promotesDraftToOfficial || hasRelationship || hasListenerTitle) {
+      return c.json(
+        {
+          error: 'Voice state changed. Refresh and try again.',
+          error_code: 'VOICE_TRANSITION_CONFLICT',
+        },
+        409,
+      );
+    }
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
@@ -645,17 +858,39 @@ voiceProfile.patch('/:id/relationship', async (c) => {
   }
 
   const owned = await db.execute({
-    sql: 'SELECT id FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
+    sql: `SELECT id, COALESCE(is_draft, 0) AS is_draft
+          FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL`,
     args: [id, userPk, userId],
   });
 
   if (owned.rows.length > 0) {
-    await db.execute({
+    if (Number(owned.rows[0]!.is_draft ?? 0) !== 1) {
+      return c.json(
+        {
+          error: 'Relationship and title are fixed after registration.',
+          error_code: 'VOICE_PERSONA_LOCKED',
+        },
+        409,
+      );
+    }
+    const updated = await db.execute({
       sql: `UPDATE voice_profiles
-            SET relationship_label = ?, listener_title = ?, updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [relationshipLabel, listenerTitle, id],
+            SET relationship_label = ?, listener_title = ?, previewed_at = NULL,
+                preview_claimed_at = NULL, preview_claim_token = NULL,
+                updated_at = datetime('now')
+            WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+              AND COALESCE(is_draft, 0) = 1`,
+      args: [relationshipLabel, listenerTitle, id, userPk, userId],
     });
+    if ((updated.rowsAffected ?? 0) === 0) {
+      return c.json(
+        {
+          error: 'Voice state changed. Refresh and try again.',
+          error_code: 'VOICE_TRANSITION_CONFLICT',
+        },
+        409,
+      );
+    }
   } else {
     const canUse = await canUseSharedVoiceProfile(db, userPk, id);
     if (!canUse) {
@@ -694,8 +929,24 @@ voiceProfile.post('/clone', async (c) => {
   // 그렇지 않으면 status 가 'processing' 에 영구히 갇혀 앱이 "생성중" 으로 표시된다.
   let insertedProfileId: string | null = null;
   let monthlyLedgerId: string | null = null;
+  let draftAttemptMonth: string | null = null;
+  let providerVoiceCreated = false;
+  let createdProviderVoiceId: string | null = null;
 
   try {
+    const formData = await c.req.formData();
+    const isDraft = ['true', '1', 'yes'].includes(
+      String(formData.get('isDraft') ?? formData.get('is_draft') ?? 'false'),
+    );
+    if (!isDraft) {
+      return c.json(
+        {
+          error: 'Create a private draft and preview it before registration.',
+          error_code: 'VOICE_DRAFT_REQUIRED',
+        },
+        409,
+      );
+    }
     if (resolvedUserPk) {
       const userPlan = await db.execute({
         sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
@@ -712,7 +963,11 @@ voiceProfile.post('/clone', async (c) => {
       }
     }
 
-    const missingSensitiveConsent = await missingConsentType(db, userPk, SENSITIVE_REQUIRED_CONSENTS);
+    const missingSensitiveConsent = await missingConsentType(
+      db,
+      userPk,
+      SENSITIVE_REQUIRED_CONSENTS,
+    );
     if (missingSensitiveConsent) {
       return c.json(
         {
@@ -727,16 +982,18 @@ voiceProfile.post('/clone', async (c) => {
       );
     }
 
-    const formData = await c.req.formData();
     const audioFile = getFormFile(formData, 'audio');
     const rawName = formData.get('name');
     const name = typeof rawName === 'string' ? rawName.trim() : '';
     const isShared = ['true', '1', 'yes'].includes(
       String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'),
     );
-    const isDraft = ['true', '1', 'yes'].includes(
-      String(formData.get('isDraft') ?? formData.get('is_draft') ?? 'false'),
-    );
+    const requestedPreviewLanguage = String(
+      formData.get('language') ?? formData.get('app_language') ?? 'ko',
+    ).toLowerCase();
+    const previewLanguage = ['en', 'ja'].includes(requestedPreviewLanguage)
+      ? requestedPreviewLanguage
+      : 'ko';
     const relationshipLabel =
       normalizeRelationshipLabel(
         formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
@@ -757,21 +1014,25 @@ voiceProfile.post('/clone', async (c) => {
     {
       const ids = ownerIds(c);
       const phCount = ids.map(() => '?').join(',');
-      const draftClause = isDraft ? 'COALESCE(is_draft, 0) = 1' : 'COALESCE(is_draft, 0) = 0';
-      const limit = isDraft ? MAX_DRAFT_VOICE_PROFILES : MAX_VOICE_PROFILES;
+      // draft 생성도 official 슬롯이 꽉 차 있으면 거부한다: 안 그러면 promote(활성 official 한도)에서 막혀
+      // 월간 draft attempt 만 소모한 채 keep 할 수 없는 stranded draft 가 된다. draft/official 슬롯을 함께 센다.
       const profileCount = await db.execute({
         sql: `SELECT
-                SUM(CASE WHEN deleted_at IS NULL AND status != 'failed' AND ${draftClause} THEN 1 ELSE 0 END) as active_count
+                SUM(CASE WHEN deleted_at IS NULL AND status != 'failed' AND COALESCE(is_draft, 0) = 1 THEN 1 ELSE 0 END) as draft_count,
+                SUM(CASE WHEN deleted_at IS NULL AND status != 'failed' AND COALESCE(is_draft, 0) = 0 THEN 1 ELSE 0 END) as official_count
               FROM voice_profiles
               WHERE user_id IN (${phCount})`,
         args: ids,
       });
       const row = profileCount.rows[0]!;
-      const count = Number(row.active_count ?? row.count ?? 0);
-      if (count >= limit) {
+      const draftCount = Number(row.draft_count ?? 0);
+      const officialCount = Number(row.official_count ?? 0);
+      const draftLimitReached = isDraft && draftCount >= MAX_DRAFT_VOICE_PROFILES;
+      const officialLimitReached = officialCount >= MAX_VOICE_PROFILES;
+      if (draftLimitReached || officialLimitReached) {
         return c.json(
           {
-            error: isDraft
+            error: draftLimitReached
               ? `임시 보이스는 최대 ${MAX_DRAFT_VOICE_PROFILES}개까지 만들 수 있습니다`
               : `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
             error_code: 'VOICE_LIMIT_REACHED',
@@ -830,33 +1091,35 @@ voiceProfile.post('/clone', async (c) => {
 
     const insertResult = await withWriteTransaction(db, async (tx) => {
       const ids = ownerIds(c);
-      if (!isDraft) {
-        const existingCount = await activeOfficialVoiceProfileCount(tx, ids);
-        if (existingCount >= MAX_VOICE_PROFILES) {
-          return { status: 'voice_limit' as const, ledgerId: null };
-        }
-        const ledgerId = await reserveMonthlyOfficialVoiceChange(tx, userPk, profileId);
-        if (!ledgerId) {
-          return { status: 'monthly_limit' as const, ledgerId: null };
-        }
-        await tx.execute({
-          sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
-                VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
-          args: [
-            profileId,
-            userId,
-            name,
-            isShared ? 1 : 0,
-            isDraft ? 1 : 0,
-            relationshipLabel,
-            listenerTitle,
-          ],
-        });
-        return { status: 'ok' as const, ledgerId };
+      // draft 슬롯과 official 슬롯을 한 스냅샷으로 함께 센다(둘 사이 TOCTOU 없음). 둘 중 하나라도 한도면 차단.
+      // official 이 이미 꽉 찼으면(=MAX_VOICE_PROFILES 개 등록) 새 draft 를 만들어도 promote 가
+      // activeOfficialVoiceProfileCount 한도로 거부돼(아래 PATCH), 월간 draft attempt 만 소모한 채 영영 keep 할 수
+      // 없는 stranded draft 가 된다. promote 와 동일 기준으로 여기서 조기 차단한다(새 목소리 등록은 기존 official
+      // 을 먼저 삭제). attempt 예약(reserveMonthlyDraftAttempt) 전에 두어 draft 쿼터도 소모하지 않는다.
+      const slotCounts = await tx.execute({
+        sql: `SELECT
+                SUM(CASE WHEN COALESCE(is_draft, 0) = 1 THEN 1 ELSE 0 END) AS draft_count,
+                SUM(CASE WHEN COALESCE(is_draft, 0) = 0 THEN 1 ELSE 0 END) AS official_count
+              FROM voice_profiles
+              WHERE user_id IN (${ids.map(() => '?').join(',')}) AND deleted_at IS NULL
+                AND status != 'failed'`,
+        args: ids,
+      });
+      const slotRow = slotCounts.rows[0];
+      if (
+        Number(slotRow?.draft_count ?? 0) >= MAX_DRAFT_VOICE_PROFILES ||
+        Number(slotRow?.official_count ?? 0) >= MAX_VOICE_PROFILES
+      ) {
+        return { status: 'voice_limit' as const, ledgerId: null };
+      }
+      draftAttemptMonth = await reserveMonthlyDraftAttempt(tx, userPk);
+      if (!draftAttemptMonth) {
+        return { status: 'draft_attempt_limit' as const, ledgerId: null };
       }
       await tx.execute({
-        sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
-              VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
+        sql: `INSERT INTO voice_profiles
+              (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, preview_language)
+              VALUES (?, ?, ?, 'processing', ?, ?, ?, ?, ?)`,
         args: [
           profileId,
           userId,
@@ -865,6 +1128,7 @@ voiceProfile.post('/clone', async (c) => {
           isDraft ? 1 : 0,
           relationshipLabel,
           listenerTitle,
+          previewLanguage,
         ],
       });
       return { status: 'ok' as const, ledgerId: null };
@@ -878,8 +1142,14 @@ voiceProfile.post('/clone', async (c) => {
         403,
       );
     }
-    if (insertResult.status === 'monthly_limit') {
-      return monthlyVoiceChangeLimitResponse(c);
+    if (insertResult.status === 'draft_attempt_limit') {
+      return c.json(
+        {
+          error: '이번 달 음성 초안 생성 횟수를 모두 사용했습니다.',
+          error_code: 'VOICE_DRAFT_ATTEMPT_LIMIT_REACHED',
+        },
+        429,
+      );
     }
     monthlyLedgerId = insertResult.ledgerId;
     insertedProfileId = profileId;
@@ -899,6 +1169,8 @@ voiceProfile.post('/clone', async (c) => {
         const result = await attempt.enroll();
         provider = result.provider;
         voiceId = result.providerVoiceId;
+        providerVoiceCreated = true;
+        createdProviderVoiceId = voiceId;
         break;
       } catch (err) {
         lastError = err;
@@ -908,14 +1180,31 @@ voiceProfile.post('/clone', async (c) => {
     }
     if (!voiceId) throw lastError;
 
-    await withWriteTransaction(db, async (tx) => {
-      await tx.execute({
+    const completion = await withWriteTransaction(db, async (tx) => {
+      const missingConsent = await missingConsentType(tx, userPk, SENSITIVE_REQUIRED_CONSENTS);
+      if (missingConsent) {
+        await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'failed');
+        return { status: 'consent_withdrawn' as const };
+      }
+      const updated = await tx.execute({
         sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
-              WHERE id = ?`,
+              WHERE id = ? AND status = 'processing' AND deleted_at IS NULL`,
         args: [voiceId, profileId],
       });
+      if ((updated.rowsAffected ?? 0) === 0) {
+        await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'failed');
+        return { status: 'draft_unavailable' as const };
+      }
       await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'succeeded');
+      return { status: 'ok' as const };
     });
+    if (completion.status !== 'ok') {
+      throw new Error(
+        completion.status === 'consent_withdrawn'
+          ? 'Voice consent was withdrawn during cloning.'
+          : 'Voice draft was removed during cloning.',
+      );
+    }
 
     return c.json(
       {
@@ -953,6 +1242,24 @@ voiceProfile.post('/clone', async (c) => {
       }
     }
 
+    // 제공자에 실제 보이스가 만들어지기 전 실패(네트워크/설정 오류)만 시도 횟수를 돌려준다.
+    // providerVoiceCreated 이후에는 응답 유실·DB 오류가 있어도 비용이 발생했으므로 환불하지 않는다.
+    if (draftAttemptMonth && !providerVoiceCreated) {
+      try {
+        await refundMonthlyDraftAttempt(db, userPk, draftAttemptMonth);
+      } catch (refundErr) {
+        logRouteError(c, refundErr);
+      }
+    }
+    if (providerVoiceCreated && createdProviderVoiceId) {
+      try {
+        const { enqueueExternalDeletion } = await import('../lib/audio-retention');
+        await enqueueExternalDeletion(db, 'elevenlabs_voice', createdProviderVoiceId);
+      } catch (cleanupErr) {
+        logRouteError(c, cleanupErr);
+      }
+    }
+
     if (isVoiceSlotExhaustedError(detail)) {
       return c.json(
         {
@@ -986,7 +1293,10 @@ function isVoiceSlotExhaustedError(detail: string): boolean {
   );
 }
 
-function validateCloneDuration(value: unknown, isDraft = false): {
+function validateCloneDuration(
+  value: unknown,
+  isDraft = false,
+): {
   status: 400;
   body: { error: string; error_code: string };
 } | null {
@@ -1087,51 +1397,110 @@ voiceProfile.delete('/:id', async (c) => {
   }
 
   const ph = ids.map(() => '?').join(',');
-  const result = await db.execute({
-    sql: `SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
-    args: [id, ...ids],
-  });
-
-  if (result.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
-  }
-
-  const profile = result.rows[0]!;
-
-  // draft 정리 전용 삭제(draftOnly=true): 클라가 '미선택 draft'로 알고 지우려 해도, 그 사이
-  // promote 로 is_draft=0(정식 등록)이 됐다면(응답 유실 등 '팬텀 성공') 절대 지우지 않는다.
-  // 방금 등록된 보이스와 그 외부 클론이 하드 삭제되는 데이터 손실을 막는 게이트.
   const draftOnly = c.req.query('draftOnly') === 'true';
-  if (draftOnly && Number(profile.is_draft ?? 0) !== 1) {
+
+  const deletionState = await withWriteTransaction(db, async (tx) => {
+    const current = await tx.execute({
+      sql: `SELECT * FROM voice_profiles
+            WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
+      args: [id, ...ids],
+    });
+    if (current.rows.length === 0) {
+      return { status: 'not_found' as const, profile: null, tombstoned: null, assets: [] };
+    }
+    const currentProfile = current.rows[0]!;
+    if (draftOnly && Number(currentProfile.is_draft ?? 0) !== 1) {
+      return {
+        status: 'not_a_draft' as const,
+        profile: currentProfile,
+        tombstoned: null,
+        assets: [],
+      };
+    }
+    const tombstoned = await tx.execute({
+      sql: `UPDATE voice_profiles
+            SET deleted_at = datetime('now'), is_shared = 0, updated_at = datetime('now')
+            WHERE id = ? AND deleted_at IS NULL
+              ${draftOnly ? 'AND COALESCE(is_draft, 0) = 1' : ''}`,
+      args: [id],
+    });
+    if ((tombstoned.rowsAffected ?? 0) === 0) {
+      return { status: 'not_found' as const, profile: currentProfile, tombstoned, assets: [] };
+    }
+    await tx.execute({
+      sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?',
+      args: [id],
+    });
+    // '마음에 안 들면 삭제'를 안내하므로, 삭제하면 같은 달에 다른 목소리를 다시 등록할 수 있어야
+    // 한다. voice_profile_id 로 스코프해, 이전 달에 만든 목소리를 지워도 이번 달 슬롯엔 영향 없음.
+    // (등록 확인창에서 promote 후 삭제 시 reserveMonthlyOfficialVoiceChange 의 월 예약이 남아
+    //  다음 등록이 VOICE_MONTHLY_CHANGE_LIMIT_REACHED 로 막히는 것을 방지.)
+    await tx.execute({
+      sql: `DELETE FROM voice_profile_change_ledger
+            WHERE voice_profile_id = ?
+              AND owner_user_id IN (${ph})
+              AND change_month = ${currentKstMonthSql()}`,
+      args: [id, ...ids],
+    });
+    await enqueueExternalDeletion(
+      tx,
+      'elevenlabs_voice',
+      currentProfile.elevenlabs_voice_id as string | null,
+    );
+    const assets = await tx.execute({
+      sql: `SELECT audio_url, audio_object_key FROM generated_audio_assets
+            WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
+      args: [id],
+    });
+    for (const asset of assets.rows) {
+      await enqueueExternalDeletion(tx, 'r2_object', asset.audio_object_key as string | null);
+    }
+    return {
+      status: 'deleted' as const,
+      profile: currentProfile,
+      tombstoned,
+      assets: assets.rows,
+    };
+  });
+  if (deletionState.status === 'not_a_draft') {
     return c.json({ success: true, skipped: 'not_a_draft', voice_profile_id: id });
   }
-
-  try {
-    if (profile.elevenlabs_voice_id) {
+  if (deletionState.status === 'not_found' || !deletionState.profile) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  const profile = deletionState.profile;
+  if (profile.elevenlabs_voice_id) {
+    const providerVoiceId = profile.elevenlabs_voice_id as string;
+    try {
       const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
-      await client.deleteVoice(profile.elevenlabs_voice_id as string);
+      await client.deleteVoice(providerVoiceId);
+      await db.execute({
+        sql: `DELETE FROM pending_external_deletions
+              WHERE kind = 'elevenlabs_voice' AND ref = ?`,
+        args: [providerVoiceId],
+      });
+    } catch (error) {
+      logRouteError(c, error);
     }
-  } catch {
-    // 외부 API 삭제 실패해도 로컬은 삭제 진행
   }
 
-  const assetsRes = await db.execute({
-    sql: `SELECT audio_url, audio_object_key FROM generated_audio_assets
-          WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
-    args: [id],
-  });
-  const deletedAudioUrls = Array.from(new Set(
-    assetsRes.rows
-      .flatMap((row) => {
-        const typed = typedRow<{ audio_url: string | null; audio_object_key: string | null }>(row);
-        return [
-          typed.audio_url,
-          typed.audio_object_key,
-          typed.audio_object_key ? `r2://${typed.audio_object_key}` : null,
-        ];
-      })
-      .filter((url): url is string => Boolean(url)),
-  ));
+  const assetsRes = { rows: deletionState.assets };
+  const deletedAudioUrls = Array.from(
+    new Set(
+      assetsRes.rows
+        .flatMap((row) => {
+          const typed = typedRow<{ audio_url: string | null; audio_object_key: string | null }>(
+            row,
+          );
+          return [
+            typed.audio_url,
+            typed.audio_object_key,
+            typed.audio_object_key ? `r2://${typed.audio_object_key}` : null,
+          ];
+        })
+        .filter((url): url is string => Boolean(url)),
+    ),
+  );
   const bucket = c.env?.VOICE_BUCKET;
   if (bucket && assetsRes.rows.length > 0) {
     const storage = new R2VoiceStorage(bucket);
@@ -1140,6 +1509,10 @@ voiceProfile.delete('/:id', async (c) => {
       if (!key) continue;
       try {
         await storage.delete(key);
+        await db.execute({
+          sql: `DELETE FROM pending_external_deletions WHERE kind = 'r2_object' AND ref = ?`,
+          args: [key],
+        });
       } catch (err) {
         // R2 객체 삭제 실패해도 DB 정리는 진행
         logRouteError(c, err);
@@ -1166,9 +1539,7 @@ voiceProfile.delete('/:id', async (c) => {
               wake_mode = 'sound_then_voice',
               message_id = NULL,
               voice_profile_id = NULL,
-              speaker_id = NULL,
-              raw_audio_url = NULL,
-              raw_audio_duration_ms = NULL
+              speaker_id = NULL
           WHERE voice_profile_id = ?
              OR message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)`,
     args: [id, id],
@@ -1177,24 +1548,6 @@ voiceProfile.delete('/:id', async (c) => {
   await db.execute({
     sql: `UPDATE messages SET audio_url = NULL WHERE voice_profile_id = ?`,
     args: [id],
-  });
-
-  await db.execute({
-    sql: `UPDATE voice_profiles
-          SET deleted_at = datetime('now'), is_shared = 0, updated_at = datetime('now')
-          WHERE id = ?`,
-    args: [id],
-  });
-
-  // 이번 달 이 목소리 등록으로 소비한 '월 1회 변경' 슬롯을 되돌린다. 등록 직후 확인창에서
-  // '마음에 안 들면 삭제'를 안내하므로, 삭제하면 같은 달에 다른 목소리를 다시 등록할 수 있어야
-  // 한다. voice_profile_id 로 스코프해, 이전 달에 만든 목소리를 지워도 이번 달 슬롯엔 영향 없음.
-  await db.execute({
-    sql: `DELETE FROM voice_profile_change_ledger
-          WHERE voice_profile_id = ?
-            AND owner_user_id IN (${ph})
-            AND change_month = ${currentKstMonthSql()}`,
-    args: [id, ...ids],
   });
 
   return c.json({ success: true, deleted: true });

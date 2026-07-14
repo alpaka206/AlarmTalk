@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="msg_voice_monthly_limit_reached">You have used all voice draft attempts for this month.</string>
     <string name="app_name">AlarmTalk</string>
     <string name="auth_back">Back</string>
     <string name="auth_confirm">Confirm</string>
@@ -797,8 +798,8 @@
     <string name="editor2_cat_medication">Medication</string>
     <string name="editor2_cat_exercise">Exercise</string>
     <string name="editor2_ctx_preset">Default message</string>
-    <string name="editor2_ctx_wake_weather">Wake up + Weather</string>
-    <string name="editor2_ctx_wake_fortune">Wake up + Fortune</string>
+    <string name="editor2_ctx_wake_weather">Weather</string>
+    <string name="editor2_ctx_wake_fortune">Fortune</string>
     <string name="editor2_ctx_meal">Meal</string>
     <string name="editor2_ctx_sleep">Bedtime</string>
     <string name="editor2_ctx_exercise">Exercise</string>

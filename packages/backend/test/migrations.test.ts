@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { migrations, type Migration } from '../src/lib/migrations';
+import { createClient } from '@libsql/client';
+import { migrations, runMigrationsRange, type Migration } from '../src/lib/migrations';
 import { PRESETS } from '../src/data/presets';
 
 describe('migrations', () => {
@@ -250,5 +251,70 @@ describe('migrations', () => {
     expect(all).toContain("WHERE status != 'failed'");
     expect(all).toContain('INSERT OR IGNORE INTO voice_profile_change_ledger');
     expect(all).toContain("'+9 hours'");
+  });
+
+  it('migration #60 adds the prerender queue claim lease', () => {
+    const migration = migrations.find((item) => item.id === 60);
+    expect(migration).toBeDefined();
+    expect(migration?.statements.join('\n')).toContain(
+      'ALTER TABLE voice_prerender_queue ADD COLUMN claimed_at TEXT',
+    );
+  });
+
+  it('migration #61 adds the prerender queue claim token', () => {
+    const migration = migrations.find((item) => item.id === 61);
+    expect(migration).toBeDefined();
+    expect(migration?.statements.join('\n')).toContain(
+      'ALTER TABLE voice_prerender_queue ADD COLUMN claim_token TEXT',
+    );
+  });
+
+  it('migration #62 adds a monthly draft-attempt ledger and preview marker', () => {
+    const migration = migrations.find((item) => item.id === 62);
+    expect(migration).toBeDefined();
+    const sql = migration?.statements.join('\n') ?? '';
+    expect(sql).toContain('voice_draft_attempt_usage');
+    expect(sql).toContain('attempt_month');
+    expect(sql).toContain('previewed_at');
+    expect(sql).toContain('preview_claimed_at');
+    expect(sql).toContain('preview_claim_token');
+    expect(sql).toContain('preview_language');
+  });
+
+  it('migration #60 applies claimed_at to an existing prerender queue', async () => {
+    const db = createClient({ url: ':memory:' });
+    await db.execute(`CREATE TABLE voice_prerender_queue (
+      voice_profile_id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      language TEXT NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL,
+      requested_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
+
+    expect(await runMigrationsRange(db, 60, 60)).toEqual(['60_voice-prerender-claim-lease']);
+    const columns = await db.execute('PRAGMA table_info(voice_prerender_queue)');
+    expect(columns.rows.map((row) => String(row.name))).toContain('claimed_at');
+  });
+
+  it('migration #61 applies claim_token after the lease migration', async () => {
+    const db = createClient({ url: ':memory:' });
+    await db.execute(`CREATE TABLE voice_prerender_queue (
+      voice_profile_id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      language TEXT NOT NULL,
+      status TEXT NOT NULL,
+      attempts INTEGER NOT NULL,
+      requested_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
+
+    expect(await runMigrationsRange(db, 60, 61)).toEqual([
+      '60_voice-prerender-claim-lease',
+      '61_voice-prerender-claim-token',
+    ]);
+    const columns = await db.execute('PRAGMA table_info(voice_prerender_queue)');
+    expect(columns.rows.map((row) => String(row.name))).toContain('claim_token');
   });
 });

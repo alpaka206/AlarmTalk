@@ -46,11 +46,9 @@ internal fun googleSignInErrorMessage(context: android.content.Context, statusCo
     else -> context.getString(R.string.r3ed_google_signin_error_failed_status, statusCode)
 }
 
-internal fun supportedAppVoiceLanguage(language: String?): String = when (language) {
-    "en" -> "en"
-    "ja" -> "ja"
-    else -> "ko"
-}
+// 매핑 단일 출처는 data.appVoiceLanguageOf. MainViewModel 과 어긋나지 않도록 여기서도 그걸 위임한다.
+internal fun supportedAppVoiceLanguage(language: String?): String =
+    com.alarmtalk.app.data.appVoiceLanguageOf(language)
 
 internal class AlarmEditorState(
     label: String,
@@ -89,6 +87,8 @@ internal class AlarmEditorState(
     alarmSoundLabel: String?,
     bucketId: String? = null,
     bucketClipKeysJson: String? = null,
+    bucketClipTextsJson: String? = null,
+    contextVariantIndex: Int? = null,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -131,7 +131,12 @@ internal class AlarmEditorState(
     // 그리고 그 클립이 어떤 보이스로 캐시됐는지(보이스 변경 시 재선택 판단용, 영속 안 함).
     var selectedBucket by mutableStateOf(bucketId)
     var bucketClipKeysJson by mutableStateOf(bucketClipKeysJson)
+    var bucketClipTextsJson by mutableStateOf(bucketClipTextsJson)
     var bucketResolvedForProfileId by mutableStateOf(if (bucketId != null) voiceProfileId else null)
+    // 날씨 버킷: 저장 시점에 서버가 resolve 한 조건 인덱스 스냅샷(발사 오프라인 lookup 용). 기존
+    // 알람 편집 시 값을 보존해야 재저장으로 인덱스가 null 로 날아가지 않는다. 운세는 발사 시점 기기
+    // 계산이라 안 담고, 회전형(사랑/약)도 null.
+    var contextVariantIndex by mutableStateOf(contextVariantIndex)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -180,27 +185,29 @@ internal class AlarmEditorState(
             } else {
                 normalizedRandomPromptContext(voiceRandomContext)
             },
-            voiceWeatherCountry = if (voiceRandomPrompt && randomContextUsesWeather(voiceRandomContext)) {
+            // 날씨는 라이브 랜덤 알람뿐 아니라 '날씨 버킷' 알람도 위치가 있어야 준비창 워커가 조건을
+            // resolve 한다(없으면 서버가 서울로 폴백). 운세 버킷도 사주가 있어야 온디바이스 테마 계산.
+            voiceWeatherCountry = if (weatherContextForSave()) {
                 voiceWeatherCountry.trim().takeIf { it.isNotBlank() }
             } else {
                 null
             },
-            voiceWeatherCity = if (voiceRandomPrompt && randomContextUsesWeather(voiceRandomContext)) {
+            voiceWeatherCity = if (weatherContextForSave()) {
                 voiceWeatherCity.trim().takeIf { it.isNotBlank() }
             } else {
                 null
             },
-            voiceFortuneGender = if (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") {
+            voiceFortuneGender = if (fortuneContextForSave()) {
                 voiceFortuneGender.trim().takeIf { it.isNotBlank() }
             } else {
                 null
             },
-            voiceFortuneBirthDate = if (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") {
+            voiceFortuneBirthDate = if (fortuneContextForSave()) {
                 voiceFortuneBirthDate.trim().takeIf { it.isNotBlank() }
             } else {
                 null
             },
-            voiceFortuneBirthTime = if (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") {
+            voiceFortuneBirthTime = if (fortuneContextForSave()) {
                 voiceFortuneBirthTime.trim().takeIf { it.isNotBlank() }
             } else {
                 null
@@ -212,6 +219,8 @@ internal class AlarmEditorState(
             // 남아 있던 selectedBucket/clipKeys 를 persist 하지 않도록(울림 시 옛 버킷 오디오 방지).
             bucketId = if (isActiveBucketAlarm()) selectedBucket else null,
             bucketClipKeysJson = if (isActiveBucketAlarm()) bucketClipKeysJson else null,
+            bucketClipTextsJson = if (isActiveBucketAlarm()) bucketClipTextsJson else null,
+            contextVariantIndex = if (isActiveBucketAlarm()) contextVariantIndex else null,
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
             alarmSoundUri = alarmSoundUri,
             alarmSoundLabel = alarmSoundLabel,
@@ -245,6 +254,16 @@ internal class AlarmEditorState(
         val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)
         return keys.isNotEmpty() && audioCacheKey != null && keys.contains(audioCacheKey)
     }
+
+    // 날씨/운세 컨텍스트가 '저장에 위치/사주를 남겨야 하는가': 라이브 랜덤 알람이거나, 그 컨텍스트의
+    // 오프라인 클론 버킷 알람이면 true(준비창 워커·온디바이스 테마 계산이 그 필드를 쓴다).
+    private fun weatherContextForSave(): Boolean =
+        (voiceRandomPrompt && randomContextUsesWeather(voiceRandomContext)) ||
+            (isActiveBucketAlarm() && selectedBucket == "weather")
+
+    private fun fortuneContextForSave(): Boolean =
+        (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") ||
+            (isActiveBucketAlarm() && selectedBucket == "fortune")
 
     /** 버킷(회전) 메타데이터를 비운다. 일반/생성/녹음 등 비-버킷 경로로 전환할 때 호출. */
     private fun clearBucketSelection() {
@@ -340,6 +359,8 @@ internal class AlarmEditorState(
         language: String,
         bucket: String,
         clipKeys: List<String>,
+        clipTexts: List<String> = emptyList(),
+        contextVariantIndex: Int? = null,
     ) {
         voiceSource = VoiceSources.TTS_PROFILE
         voiceProfileId = profileId
@@ -354,7 +375,9 @@ internal class AlarmEditorState(
         ttsMessageId = messageId.takeIf { it.isNotBlank() }
         selectedBucket = bucket
         bucketClipKeysJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipKeys)
+        bucketClipTextsJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipTexts)
         bucketResolvedForProfileId = profileId
+        this.contextVariantIndex = contextVariantIndex
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
@@ -410,6 +433,8 @@ internal class AlarmEditorState(
                 alarmSoundLabel = alarm?.alarmSoundLabel,
                 bucketId = alarm?.bucketId,
                 bucketClipKeysJson = alarm?.bucketClipKeysJson,
+                bucketClipTextsJson = alarm?.bucketClipTextsJson,
+                contextVariantIndex = alarm?.contextVariantIndex,
             )
         }
     }
@@ -455,6 +480,29 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
         "wake_weather", "meal", "exercise" -> true
         else -> false
+    }
+
+/**
+ * 유료 클론 사전렌더 클립으로 '오프라인 버킷'을 붙일 수 있는 컨텍스트 → 백엔드 category.
+ * 이 category 로 stockClips 를 필터해 셀렉트 버킷 경로를 재사용한다(bucketId=category).
+ * - 사랑/약: 매칭 불필요(순차 회전).
+ * - 날씨: 저장 시점에 서버 /tts/prerender-variant 로 조건 인덱스를 1회 스냅샷(현행 동적 알람과
+ *   동일 신선도). 발사는 오프라인 lookup. (매일 갱신은 준비창 워커 후속 enhancement)
+ * - 운세: 사주+날짜 결정적 계산이라 발사 시점 기기에서 매일 신선하게 고른다(네트워크 0).
+ */
+internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
+    when (normalizedRandomPromptContext(context ?: "")) {
+        "preset" -> "greeting"
+        "love" -> "love"
+        "medication" -> "medication"
+        // 운세: 발사 시점 기기에서 매일 신선 계산이라 반복 알람도 정확(fortuneThemeIndex).
+        "wake_fortune" -> "fortune"
+        // 날씨: 실시간 판정이 서버 전용이라, 저장 직후(runOnce) + 반복이면 준비창에 DynamicVoiceRefreshWorker
+        // →AlarmRepository.resolveDueCloneBucketVariants 가 저장 위치로 서버(/tts/prerender-variant)에
+        // 조건을 resolve 해 contextVariantIndex 를 갱신한다(편집기가 저장 시점에 직접 resolve 하지는 않음).
+        // 발사는 그 인덱스로 오프라인 lookup.
+        "wake_weather" -> "weather"
+        else -> null
     }
 
 private const val DefaultRandomTtsCategory = "morning"

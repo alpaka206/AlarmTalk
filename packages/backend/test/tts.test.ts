@@ -118,6 +118,19 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function pushPublicationVoice(overrides: Record<string, string | number | null> = {}) {
+  mockDB.pushResult([
+    {
+      id: V1,
+      user_id: 'user-1',
+      status: 'ready',
+      is_draft: 0,
+      elevenlabs_voice_id: 'el-voice-1',
+      ...overrides,
+    },
+  ]);
+}
+
 function reqWithEnv(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
@@ -150,6 +163,120 @@ beforeEach(() => {
 });
 
 describe('POST /tts/generate — TTS 생성', () => {
+  it('draft 음성은 명시적인 미리듣기 요청 외 일반 TTS에 사용할 수 없다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', is_draft: 1, elevenlabs_voice_id: 'el-draft' }]);
+    const app = buildApp();
+
+    const res = await app.request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: '임의 문구' }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_DRAFT_NOT_USABLE');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+  });
+
+  it('draft 미리듣기는 요청 text를 무시하고 고정 문구를 합성한 뒤 완료 시각을 기록한다', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        listener_title: '우리 아들',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      listener_title: '우리 아들',
+    });
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        text: '공격자가 바꾼 문구',
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
+    expect(body.synthesis_text).toBe(
+      '[cheerfully] 우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.',
+    );
+    expect(mockTextToSpeech).toHaveBeenCalledWith(
+      'el-draft',
+      body.synthesis_text,
+      expect.any(Object),
+    );
+    expect(body.preview_playback_token).toBeTypeOf('string');
+    expect(body.preview_playback_confirmed).toBe(false);
+    expect(mockDB.calls.some((call) => call.sql.includes('SET previewed_at = datetime'))).toBe(
+      false,
+    );
+    expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO message_library'))).toBe(
+      false,
+    );
+    const claimCall = mockDB.calls.find((call) => call.sql.includes('preview_claim_token = ?'));
+    expect(claimCall?.sql).toContain("COALESCE(relationship_label, '') = ?");
+    expect(claimCall?.sql).toContain("COALESCE(listener_title, '') = ?");
+  });
+
+  it('합성 중 민감 동의를 철회하면 생성 결과를 게시하지 않는다', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        relationship_label: '엄마',
+        listener_title: '우리 아들',
+      },
+    ]);
+    mockDB.pushResult([
+      { consent_type: 'voice_biometric', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+      { consent_type: 'overseas_transfer', policy_version: CURRENT_POLICY_VERSION, agreed: 1 },
+    ]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      relationship_label: '엄마',
+      listener_title: '우리 아들',
+    });
+    mockDB.pushResult([]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('CONSENT_REQUIRED');
+    expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO messages'))).toBe(false);
+  });
   it('필수 필드 없으면 400', async () => {
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/tts/generate', {}));
@@ -196,9 +323,7 @@ describe('POST /tts/generate — TTS 생성', () => {
 
   it('음성 프로필 ready 아니면 400', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
-    mockDB.pushResult([
-      { id: V1, status: 'processing', elevenlabs_voice_id: null },
-    ]);
+    mockDB.pushResult([{ id: V1, status: 'processing', elevenlabs_voice_id: null }]);
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -219,6 +344,9 @@ describe('GET /tts/messages — 메시지 목록', () => {
     const body = await res.json();
     expect(body.messages).toHaveLength(0);
     expect(body.total).toBe(0);
+    expect(mockDB.calls[0]!.sql).toContain('COALESCE(visible_vp.is_draft, 0) = 0');
+    expect(mockDB.calls[0]!.sql).toContain('COALESCE(m.is_preset, 0) = 0');
+    expect(mockDB.calls[0]!.sql).toContain('FROM message_library ml');
   });
 
   it('메시지 목록 반환', async () => {
@@ -259,7 +387,17 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
     expect(res.status).toBe(400);
   });
 
+  it('preset 클립은 삭제 거부(403)', async () => {
+    mockDB.pushResult([{ is_preset: 1 }]); // preset check
+    const app = buildApp();
+    const res = await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('MESSAGE_PRESET_LOCKED');
+  });
+
   it('연관 알람 있으면 409 경고', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 2 }]);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
@@ -270,6 +408,7 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
   });
 
   it('force=true로 연관 알람 있어도 삭제', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 2 }]); // alarm check
     mockDB.pushResult([], 1); // UPDATE alarms (detach)
     mockDB.pushResult([], 1); // DELETE message_library
@@ -294,6 +433,7 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
   });
 
   it('메시지 없으면 404', async () => {
+    mockDB.pushResult([]); // preset check (없음)
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 0);
     mockDB.pushResult([], 0);
@@ -304,6 +444,7 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
   });
 
   it('정상 삭제', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 0 }]); // alarm check
     mockDB.pushResult([], 1); // DELETE message_library
     mockDB.pushResult([]); // SELECT audio_object_key
@@ -462,7 +603,9 @@ describe('POST /tts/generate — edge cases', () => {
   it('성공 시 201 + message_id, audio_base64, category 기본값 custom', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
+    pushPublicationVoice();
     mockDB.pushResult([], 1); // INSERT messages
     mockDB.pushResult([], 1); // INSERT message_library
     const app = buildApp();
@@ -487,6 +630,9 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]); // cache lookup (miss)
     mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
+    pushPublicationVoice();
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -580,8 +726,9 @@ describe('POST /tts/generate — edge cases', () => {
   it('성공 시 category 명시하면 해당 category 저장', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([1]).buffer);
-    mockDB.pushResult([], 1);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await reqWithEnv(
@@ -599,8 +746,9 @@ describe('POST /tts/generate — edge cases', () => {
     const taggedText = `[cheerfully] ${text}`;
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([2]).buffer);
-    mockDB.pushResult([], 1);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await reqWithEnv(
@@ -639,8 +787,9 @@ describe('POST /tts/generate — edge cases', () => {
     const taggedText = `[cheerfully] ${text}`;
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([3]).buffer);
-    mockDB.pushResult([], 1);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await reqWithEnv(
@@ -700,8 +849,9 @@ describe('POST /tts/generate — edge cases', () => {
     ]);
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([7]).buffer);
     mockDB.pushResult([]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([7]).buffer);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -751,8 +901,12 @@ describe('POST /tts/generate — edge cases', () => {
         elevenlabs_voice_id: 'el-system-1',
       },
     ]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([10]).buffer);
     mockDB.pushResult([]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([10]).buffer);
+    pushPublicationVoice({
+      is_system: 1,
+      elevenlabs_voice_id: 'el-system-1',
+    });
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -794,8 +948,10 @@ describe('POST /tts/generate — edge cases', () => {
       },
     ]);
     mockDB.pushResult([]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([8]).buffer);
     mockDB.pushResult([]);
+    mockDB.pushResult([]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([8]).buffer);
+    pushPublicationVoice({ relationship_label: '손녀' });
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -858,8 +1014,9 @@ describe('POST /tts/generate — edge cases', () => {
         },
       ]);
       mockDB.pushResult([]);
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([9]).buffer);
       mockDB.pushResult([]);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([9]).buffer);
+      pushPublicationVoice({ relationship_label: '여자친구' });
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
 
@@ -903,8 +1060,9 @@ describe('POST /tts/generate — edge cases', () => {
   it('text 정확히 200자면 허용', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([0]).buffer);
-    mockDB.pushResult([], 1);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await reqWithEnv(
@@ -927,7 +1085,6 @@ describe('POST /tts/generate — edge cases', () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('VOICE_AND_TEXT_REQUIRED');
   });
-
 });
 
 /* ------------------------------------------------------------------ */
@@ -1006,6 +1163,7 @@ describe('GET /tts/messages — edge cases', () => {
 /* ------------------------------------------------------------------ */
 describe('DELETE /tts/messages/:id — edge cases', () => {
   it('삭제 시 message_library부터 삭제 후 messages 삭제 (순서 검증)', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 0 }]); // alarm check
     mockDB.pushResult([], 1); // DELETE message_library
     mockDB.pushResult([]); // SELECT audio_object_key (정리할 R2 오브젝트 없음)
@@ -1013,13 +1171,14 @@ describe('DELETE /tts/messages/:id — edge cases', () => {
     mockDB.pushResult([], 1); // DELETE messages
     const app = buildApp();
     await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
-    expect(mockDB.calls[1].sql).toContain('DELETE FROM message_library');
-    expect(mockDB.calls[2].sql).toContain('SELECT audio_object_key');
-    expect(mockDB.calls[3].sql).toContain('DELETE FROM generated_audio_assets');
-    expect(mockDB.calls[4].sql).toContain('DELETE FROM messages');
+    expect(mockDB.calls[2].sql).toContain('DELETE FROM message_library');
+    expect(mockDB.calls[3].sql).toContain('SELECT audio_object_key');
+    expect(mockDB.calls[4].sql).toContain('DELETE FROM generated_audio_assets');
+    expect(mockDB.calls[5].sql).toContain('DELETE FROM messages');
   });
 
   it('삭제 SQL에 user_id 포함 (사용자 격리)', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([]); // SELECT audio_object_key
@@ -1027,12 +1186,13 @@ describe('DELETE /tts/messages/:id — edge cases', () => {
     mockDB.pushResult([], 1);
     const app = buildApp('user-99');
     await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
-    expect(mockDB.calls[1].args).toContain('user-99');
-    expect(mockDB.calls[3].args).toContain('user-99');
+    expect(mockDB.calls[2].args).toContain('user-99');
     expect(mockDB.calls[4].args).toContain('user-99');
+    expect(mockDB.calls[5].args).toContain('user-99');
   });
 
   it('force=true이고 알람 0개여도 정상 삭제', async () => {
+    mockDB.pushResult([{ is_preset: 0 }]); // preset check
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([]); // SELECT audio_object_key

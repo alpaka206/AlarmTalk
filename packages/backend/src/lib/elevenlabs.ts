@@ -14,6 +14,7 @@ export class ElevenLabsClient {
     const url = `${ELEVENLABS_BASE_URL}${path}`;
     const res = await fetch(url, {
       ...options,
+      signal: options.signal ?? AbortSignal.timeout(60_000),
       headers: {
         'xi-api-key': this.apiKey,
         ...options.headers,
@@ -147,4 +148,3 @@ function extensionForAudioMimeType(mimeType: string): string {
   if (mimeType.includes('flac')) return 'flac';
   return 'wav';
 }
-

@@ -19,6 +19,7 @@ import {
   type WakeMode,
 } from './alarm-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
+import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 
 const alarmMutation = new Hono<AppEnv>();
 
@@ -42,12 +43,14 @@ function alarmUsesPaidVoice(body: {
   speaker_id?: string | null;
   raw_audio_url?: string | null;
 }): boolean {
-  return body.mode === 'tts' ||
+  return (
+    body.mode === 'tts' ||
     body.wake_mode === 'voice_only' ||
     !!body.message_id ||
     !!body.voice_profile_id ||
     !!body.speaker_id ||
-    !!body.raw_audio_url;
+    !!body.raw_audio_url
+  );
 }
 
 /**
@@ -92,13 +95,18 @@ async function usesOnlySystemStockVoice(
  * 맞춰, PATCH 에서 타인 메시지 id 를 알람에 끼워 넣는 IDOR 을 막는다.
  */
 async function messageBelongsToCaller(
-  db: ReturnType<typeof getDB>,
+  db: DbExecutor,
   messageId: string,
   ownerIds: [string, string],
 ): Promise<boolean> {
   const msg = await db.execute({
     sql: `SELECT 1 FROM messages
           WHERE id = ?
+            AND NOT EXISTS (
+              SELECT 1 FROM voice_profiles draft_vp
+              WHERE draft_vp.id = messages.voice_profile_id
+                AND COALESCE(draft_vp.is_draft, 0) = 1
+            )
             AND (
               user_id IN (?, ?)
               OR (
@@ -121,7 +129,7 @@ async function messageBelongsToCaller(
  * 타인 voice_profile_id 를 알람에 기록하는 IDOR 을 막는다.
  */
 async function voiceProfileBelongsToCaller(
-  db: ReturnType<typeof getDB>,
+  db: DbExecutor,
   voiceProfileId: string,
   ownerIds: [string, string],
 ): Promise<boolean> {
@@ -130,6 +138,7 @@ async function voiceProfileBelongsToCaller(
     sql: `SELECT 1 FROM voice_profiles
           WHERE id = ?
             AND deleted_at IS NULL
+            AND COALESCE(is_draft, 0) = 0
             AND (user_id IN (?, ?) OR COALESCE(is_system, 0) = 1)
           LIMIT 1`,
     args: [voiceProfileId, ...ownerIds],
@@ -150,7 +159,8 @@ async function voiceProfileBelongsToCaller(
     args: [voiceProfileId],
   });
   if (shared.rows.length === 0) return false;
-  const ownerPk = typeof shared.rows[0]!.owner_pk === 'string' ? (shared.rows[0]!.owner_pk as string) : null;
+  const ownerPk =
+    typeof shared.rows[0]!.owner_pk === 'string' ? (shared.rows[0]!.owner_pk as string) : null;
   const viewerPk = ownerIds[0];
   if (!ownerPk || !viewerPk || viewerPk === ownerPk) return false;
   return assertSameGroup(db, viewerPk, ownerPk);
@@ -278,9 +288,8 @@ alarmMutation.post('/', async (c) => {
     sql: 'SELECT plan FROM users WHERE google_id = ?',
     args: [alarmOwner],
   });
-  let creatorPlanValue = alarmOwner === userId && user.rows.length > 0
-    ? user.rows[0]!.plan
-    : undefined;
+  let creatorPlanValue =
+    alarmOwner === userId && user.rows.length > 0 ? user.rows[0]!.plan : undefined;
   if (resolvedUserPk && alarmOwner !== userId) {
     const creatorPlan = await db.execute({
       sql: 'SELECT plan FROM users WHERE google_id = ? OR id = ? LIMIT 1',
@@ -288,9 +297,8 @@ alarmMutation.post('/', async (c) => {
     });
     creatorPlanValue = creatorPlan.rows[0]?.plan;
   }
-  const creatorHasPaidVoice = !resolvedUserPk ||
-    creatorPlanValue === undefined ||
-    isPaidVoicePlan(creatorPlanValue);
+  const creatorHasPaidVoice =
+    !resolvedUserPk || creatorPlanValue === undefined || isPaidVoicePlan(creatorPlanValue);
   if (
     !creatorHasPaidVoice &&
     alarmUsesPaidVoice(body) &&
@@ -310,9 +318,19 @@ alarmMutation.post('/', async (c) => {
   // the same audio URL so the alarm row is satisfied. We attach it to the
   // user's first voice profile because messages.voice_profile_id is NOT NULL.
   let resolvedMessageId: string | null = body.message_id ?? null;
+  if (
+    body.voice_profile_id &&
+    !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
+  ) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
   if (!resolvedMessageId && body.raw_audio_url) {
     const firstVoice = await db.execute({
-      sql: 'SELECT id FROM voice_profiles WHERE user_id IN (?, ?) AND deleted_at IS NULL LIMIT 1',
+      sql: `SELECT id FROM voice_profiles
+            WHERE user_id IN (?, ?) AND deleted_at IS NULL
+              AND COALESCE(is_draft, 0) = 0
+            LIMIT 1`,
       args: ownerIds,
     });
     if (firstVoice.rows.length === 0) {
@@ -342,37 +360,61 @@ alarmMutation.post('/', async (c) => {
   }
 
   const alarmId = crypto.randomUUID();
-  const mode: AlarmMode = (body.mode as AlarmMode | undefined) ?? (
-    creatorHasPaidVoice ? 'tts' : 'sound-only'
-  );
+  const mode: AlarmMode =
+    (body.mode as AlarmMode | undefined) ?? (creatorHasPaidVoice ? 'tts' : 'sound-only');
   const vibPattern: VibrationPattern =
     (body.vibration_pattern as VibrationPattern | undefined) ?? 'default';
   const wakeMode: WakeMode = (body.wake_mode as WakeMode | undefined) ?? 'sound_then_voice';
-  await db.execute({
-    sql: `INSERT INTO alarms
+  const insertAlarm = (executor: DbExecutor) =>
+    executor.execute({
+      sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id, speaker_id,
              raw_audio_url, raw_audio_duration_ms, timezone, bucket_id)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      alarmId,
-      userId,
-      targetUserIdForAlarm,
-      resolvedMessageId,
-      body.time,
-      JSON.stringify(body.repeat_days ?? []),
-      body.snooze_minutes ?? 5,
-      mode,
-      vibPattern,
-      wakeMode,
-      body.voice_profile_id ?? null,
-      body.speaker_id ?? null,
-      body.raw_audio_url ?? null,
-      body.raw_audio_duration_ms ?? null,
-      timezone,
-      body.bucket_id ?? null,
-    ],
-  });
+      args: [
+        alarmId,
+        userId,
+        targetUserIdForAlarm,
+        resolvedMessageId,
+        body.time,
+        JSON.stringify(body.repeat_days ?? []),
+        body.snooze_minutes ?? 5,
+        mode,
+        vibPattern,
+        wakeMode,
+        body.voice_profile_id ?? null,
+        body.speaker_id ?? null,
+        body.raw_audio_url ?? null,
+        body.raw_audio_duration_ms ?? null,
+        timezone,
+        body.bucket_id ?? null,
+      ],
+    });
+  const inserted =
+    body.voice_profile_id || resolvedMessageId
+      ? await withWriteTransaction(db, async (tx) => {
+          if (
+            body.voice_profile_id &&
+            !(await voiceProfileBelongsToCaller(tx, body.voice_profile_id, ownerIds))
+          ) {
+            return { status: 'voice_not_found' as const, result: null };
+          }
+          if (
+            resolvedMessageId &&
+            !(await messageBelongsToCaller(tx, resolvedMessageId, ownerIds))
+          ) {
+            return { status: 'message_not_found' as const, result: null };
+          }
+          return { status: 'ok' as const, result: await insertAlarm(tx) };
+        })
+      : { status: 'ok' as const, result: await insertAlarm(db) };
+  if (inserted.status === 'voice_not_found') {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  if (inserted.status === 'message_not_found') {
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
+  }
 
   return c.json(
     {
@@ -441,14 +483,14 @@ alarmMutation.patch('/:id', async (c) => {
     user_plan?: string | null;
   }>(existing.rows[0]!);
   const resolvedUserPk = c.get('userIdPK');
-  const creatorHasPaidVoice = !resolvedUserPk ||
-    current.user_plan === undefined ||
-    isPaidVoicePlan(current.user_plan);
+  const creatorHasPaidVoice =
+    !resolvedUserPk || current.user_plan === undefined || isPaidVoicePlan(current.user_plan);
   const effectiveVoiceFields = {
     mode: body.mode !== undefined ? body.mode : current.mode,
     wake_mode: body.wake_mode !== undefined ? body.wake_mode : current.wake_mode,
     message_id: body.message_id !== undefined ? body.message_id : current.message_id,
-    voice_profile_id: body.voice_profile_id !== undefined ? body.voice_profile_id : current.voice_profile_id,
+    voice_profile_id:
+      body.voice_profile_id !== undefined ? body.voice_profile_id : current.voice_profile_id,
     speaker_id: body.speaker_id !== undefined ? body.speaker_id : current.speaker_id,
     raw_audio_url: body.raw_audio_url !== undefined ? body.raw_audio_url : current.raw_audio_url,
   };
@@ -483,10 +525,7 @@ alarmMutation.patch('/:id', async (c) => {
     body.voice_profile_id !== null &&
     !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
   ) {
-    return c.json(
-      { error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' },
-      404,
-    );
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
   const updates: string[] = [];
@@ -556,20 +595,45 @@ alarmMutation.patch('/:id', async (c) => {
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
-  await db.execute({
-    sql: `UPDATE alarms SET ${updates.join(', ')} WHERE id = ?`,
-    args,
-  });
+  const updateAlarm = (executor: DbExecutor) =>
+    executor.execute({
+      sql: `UPDATE alarms SET ${updates.join(', ')} WHERE id = ?`,
+      args,
+    });
+  const updateResult =
+    (body.voice_profile_id !== undefined && body.voice_profile_id !== null) ||
+    (body.message_id !== undefined && body.message_id !== null)
+      ? await withWriteTransaction(db, async (tx) => {
+          if (
+            body.voice_profile_id !== undefined &&
+            body.voice_profile_id !== null &&
+            !(await voiceProfileBelongsToCaller(tx, body.voice_profile_id, ownerIds))
+          ) {
+            return { status: 'voice_not_found' as const, result: null };
+          }
+          if (
+            body.message_id !== undefined &&
+            body.message_id !== null &&
+            !(await messageBelongsToCaller(tx, body.message_id, ownerIds))
+          ) {
+            return { status: 'message_not_found' as const, result: null };
+          }
+          return { status: 'ok' as const, result: await updateAlarm(tx) };
+        })
+      : { status: 'ok' as const, result: await updateAlarm(db) };
+  if (updateResult.status === 'voice_not_found') {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  if (updateResult.status === 'message_not_found') {
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
+  }
 
   // raw_audio_url 을 새 값으로 교체하면 이전 R2 녹음이 어떤 알람에서도 참조되지
   // 않을 수 있다. DELETE 핸들러와 동일하게, 더 이상 쓰이지 않는 이전 오브젝트를
   // 삭제 큐에 적재해 영구 고아를 막는다(교체 경로에는 기존에 이 정리가 없었다).
   if (body.raw_audio_url !== undefined) {
     const previousRawUrl = current.raw_audio_url;
-    if (
-      previousRawUrl?.startsWith('r2://') &&
-      previousRawUrl !== body.raw_audio_url
-    ) {
+    if (previousRawUrl?.startsWith('r2://') && previousRawUrl !== body.raw_audio_url) {
       const stillReferenced = await db.execute({
         sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE raw_audio_url = ?',
         args: [previousRawUrl],
@@ -607,15 +671,18 @@ async function resolveDeclineTarget(
   const db = getDB(c.env);
   const id = c.req.param('id');
   if (!id || !UUID_RE.test(id)) {
-    return { error: c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400) };
+    return {
+      error: c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400),
+    };
   }
   const res = await db.execute({
     sql: 'SELECT target_user_id FROM alarms WHERE id = ? LIMIT 1',
     args: [id],
   });
-  const target = res.rows.length > 0
-    ? (typedRow<{ target_user_id: string | null }>(res.rows[0]!).target_user_id ?? null)
-    : null;
+  const target =
+    res.rows.length > 0
+      ? (typedRow<{ target_user_id: string | null }>(res.rows[0]!).target_user_id ?? null)
+      : null;
   // 대상이 아니면(생성자/무관자 포함) 존재 노출 최소화로 404. 생성자는 일반 삭제(DELETE /:id)를 쓴다.
   if (!target || !viewer.includes(target)) {
     return { error: c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404) };
@@ -663,9 +730,10 @@ alarmMutation.delete('/:id', async (c) => {
     sql: 'SELECT message_id, raw_audio_url FROM alarms WHERE id = ? AND user_id = ? LIMIT 1',
     args: [id, userId],
   });
-  const targetAlarm = targetRes.rows.length > 0
-    ? typedRow<{ message_id: string | null; raw_audio_url: string | null }>(targetRes.rows[0]!)
-    : null;
+  const targetAlarm =
+    targetRes.rows.length > 0
+      ? typedRow<{ message_id: string | null; raw_audio_url: string | null }>(targetRes.rows[0]!)
+      : null;
   const messageId = targetAlarm?.message_id ?? null;
   const rawAudioUrl = targetAlarm?.raw_audio_url ?? null;
 

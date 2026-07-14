@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="msg_voice_monthly_limit_reached">이번 달 음성 초안 생성 횟수를 모두 사용했어요</string>
     <string name="app_name">AlarmTalk</string>
     <string name="ringing_notification_title">알람이 울려요</string>
     <string name="ringing_notification_text">일어날 시간이에요</string>
@@ -818,8 +819,8 @@
     <string name="editor2_cat_medication">약</string>
     <string name="editor2_cat_exercise">운동</string>
     <string name="editor2_ctx_preset">기본 문구</string>
-    <string name="editor2_ctx_wake_weather">기상 + 날씨</string>
-    <string name="editor2_ctx_wake_fortune">기상 + 운세</string>
+    <string name="editor2_ctx_wake_weather">날씨</string>
+    <string name="editor2_ctx_wake_fortune">운세</string>
     <string name="editor2_ctx_meal">식사</string>
     <string name="editor2_ctx_sleep">취침</string>
     <string name="editor2_ctx_exercise">운동</string>

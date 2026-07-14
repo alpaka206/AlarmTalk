@@ -17,12 +17,12 @@ class DynamicVoiceRefreshWorker(
     override suspend fun doWork(): Result {
         val session = AuthSessionStore(applicationContext).read() ?: return Result.success()
         return runCatching {
-            val refreshed = AlarmAppContainer.repository(applicationContext)
-                .refreshDueDynamicAlarmTalks(
-                    api = AlarmTalkApiClient.create(),
-                    token = session.token,
-                )
-            Log.i(TAG, "Dynamic voice refresh worker complete refreshed=$refreshed")
+            val repository = AlarmAppContainer.repository(applicationContext)
+            val api = AlarmTalkApiClient.create()
+            val refreshed = repository.refreshDueDynamicAlarmTalks(api = api, token = session.token)
+            // 사전렌더 '날씨' 버킷 알람의 조건 인덱스 갱신(오프라인 날씨 매칭). 플래그와 무관하게 실행.
+            val weatherVariants = repository.resolveDueCloneBucketVariants(api = api, token = session.token)
+            Log.i(TAG, "Voice refresh worker complete refreshed=$refreshed weatherVariants=$weatherVariants")
             Result.success()
         }.getOrElse { error ->
             AlarmTalkLog.reportError("Dynamic voice refresh worker failed", error)

@@ -18,6 +18,10 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function pushMessageBelongsToCaller() {
+  mockDB.pushResult([{ '1': 1 }]);
+}
+
 beforeEach(() => {
   mockDB.reset();
 });
@@ -164,13 +168,17 @@ describe('POST /alarm — 알람 생성', () => {
 
   it('잘못된 time 형식이면 400', async () => {
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/alarm', { message_id: ID.message, time: '7pm' }));
+    const res = await app.request(
+      jsonReq('POST', '/alarm', { message_id: ID.message, time: '7pm' }),
+    );
     expect(res.status).toBe(400);
   });
 
   it('시간 범위 초과 (25:00) 면 400', async () => {
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/alarm', { message_id: ID.message, time: '25:00' }));
+    const res = await app.request(
+      jsonReq('POST', '/alarm', { message_id: ID.message, time: '25:00' }),
+    );
     expect(res.status).toBe(400);
   });
 
@@ -194,7 +202,11 @@ describe('POST /alarm — 알람 생성', () => {
     mockDB.pushResult([]); // friendship check
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00', target_user_id: 'user-2' }),
+      jsonReq('POST', '/alarm', {
+        message_id: ID.message,
+        time: '07:00',
+        target_user_id: 'user-2',
+      }),
     );
     expect(res.status).toBe(403);
   });
@@ -202,9 +214,12 @@ describe('POST /alarm — 알람 생성', () => {
   it('���료 플랜 무료 플랜도 알람 개수 제한 없이 201', async () => {
     mockDB.pushResult([{ plan: 'free' }]); // user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1); // insert alarm
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00' }));
+    const res = await app.request(
+      jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00' }),
+    );
     expect(res.status).toBe(201);
   });
 
@@ -221,6 +236,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('정상 생성이면 201', async () => {
     mockDB.pushResult([{ plan: 'plus' }]); // user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1); // insert alarm
     const app = buildApp();
     const res = await app.request(
@@ -234,21 +250,28 @@ describe('POST /alarm — 알람 생성', () => {
 
   it('target_user_id 있고 친구이면 201', async () => {
     // target user allows family alarms
-    mockDB.pushResult([{
-      id: 'user-2-pk',
-      google_id: 'user-2',
-      allow_family_alarms: 1,
-      family_alarm_quiet_days: '[1,2,3,4,5]',
-      family_alarm_quiet_start: '09:00',
-      family_alarm_quiet_end: '18:30',
-    }]);
+    mockDB.pushResult([
+      {
+        id: 'user-2-pk',
+        google_id: 'user-2',
+        allow_family_alarms: 1,
+        family_alarm_quiet_days: '[1,2,3,4,5]',
+        family_alarm_quiet_start: '09:00',
+        family_alarm_quiet_end: '18:30',
+      },
+    ]);
     mockDB.pushResult([{ id: ID.friendship }]); // friendship exists
     mockDB.pushResult([{ plan: 'plus' }]); // target user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1); // insert
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/alarm', { message_id: ID.message, time: '08:00', target_user_id: 'user-2' }),
+      jsonReq('POST', '/alarm', {
+        message_id: ID.message,
+        time: '08:00',
+        target_user_id: 'user-2',
+      }),
     );
     expect(res.status).toBe(201);
   });
@@ -289,7 +312,10 @@ describe('POST /alarm — 알람 생성', () => {
     const voiceProfileId = '40000000-0000-4000-8000-000000000001';
     const speakerId = '50000000-0000-4000-8000-000000000001';
     mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: voiceProfileId }]);
     mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([{ id: voiceProfileId }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
@@ -318,6 +344,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('mode 미지정 시 기본값은 tts', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
@@ -333,6 +360,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('POST 응답에 voice_profile_id/speaker_id 가 null 로 명시된다', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
@@ -371,7 +399,9 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
   it('정상 수정', async () => {
     mockDB.pushResult([{ id: ID.alarm }]); // existing
     mockDB.pushResult([], 1); // update
-    mockDB.pushResult([{ id: ID.alarm, time: '09:30', is_active: 0, snooze_minutes: 5, repeat_days: '[]' }]); // select updated
+    mockDB.pushResult([
+      { id: ID.alarm, time: '09:30', is_active: 0, snooze_minutes: 5, repeat_days: '[]' },
+    ]); // select updated
     const app = buildApp();
     const res = await app.request(
       jsonReq('PATCH', `/alarm/${ID.alarm}`, { time: '09:30', is_active: false }),
@@ -386,6 +416,7 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
     const speakerId = '50000000-0000-4000-8000-0000000000bb';
     mockDB.pushResult([{ id: ID.alarm }]); // existing
     mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller → 소유 확인
+    mockDB.pushResult([{ '1': 1 }]);
     mockDB.pushResult([], 1); // update
     mockDB.pushResult([
       {
@@ -529,7 +560,11 @@ describe('error_code 일관성 검증', () => {
   it('POST — 잘못된 vibration_pattern 시 INVALID_VIBRATION_PATTERN', async () => {
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00', vibration_pattern: 'extreme' }),
+      jsonReq('POST', '/alarm', {
+        message_id: ID.message,
+        time: '07:00',
+        vibration_pattern: 'extreme',
+      }),
     );
     const body = await res.json();
     expect(body.error_code).toBe('INVALID_VIBRATION_PATTERN');

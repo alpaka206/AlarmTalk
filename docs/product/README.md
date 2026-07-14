@@ -78,5 +78,5 @@ Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost b
 ## Non-negotiable Rules
 
 1. The alarm ring path must use OS-native scheduling and local audio only.
-2. Voice AI calls (cloning, TTS) only happen on explicit user actions, never from background tasks or automated tests.
+2. Voice cloning and one-off TTS start only from explicit user actions. After the user previews a private draft and explicitly keeps it, that action may authorize one fixed, bounded, durable background job for the documented paid preset manifest. Background workers may not scan for new work or expand the authorized categories, and automated tests always stub paid providers.
 3. Voice data is only shared inside a user's family/partner group. External download is disabled by design.

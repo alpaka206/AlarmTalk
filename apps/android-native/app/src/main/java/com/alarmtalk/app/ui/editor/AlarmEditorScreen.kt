@@ -92,6 +92,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal fun expectedCloneBucketVariantCount(category: String): Int? =
+    when (category) {
+        "weather" -> 8
+        "fortune" -> 5
+        "love" -> 3
+        "medication" -> 3
+        "greeting" -> 1
+        else -> null
+    }
+
 private enum class AudioPreviewTarget {
     CachedAudio,
     StockClip,
@@ -405,54 +415,86 @@ internal fun AlarmEditorScreen(
         )
     }
 
-    // 무료 버킷 선택: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
-    // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다.
-    fun selectBucket(bucket: String) {
-        if (isSaving || previewPreparing) return
-        val profileId = editor.voiceProfileId ?: return
+    // 오프라인 클론 버킷이 '완전한지' 판정. 날씨/운세는 서버가 조건/테마 '절대 인덱스'로 클립을 고르므로
+    // variant 0..N-1 이 전부 캐시돼 있어야 인덱스가 안 엉킨다(부분 세트면 엉뚱한 조건 재생 → 라이브 유지).
+    fun hasCompleteCloneBucket(category: String, profileId: String): Boolean {
+        val variants = stockClips
+            .filter {
+                it.voiceProfileId == profileId &&
+                    it.category == category &&
+                    (it.language ?: "ko") == appVoiceLanguage
+            }
+            .map { it.variant }
+            .toSet()
+        if (variants.isEmpty()) return false
+        val fullCount = expectedCloneBucketVariantCount(category) ?: return false
+        return variants == (0 until fullCount).toSet()
+    }
+
+    // 버킷 선택 코어: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
+    // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다. 무료 시스템
+    // 버킷과 유료 클론 버킷(사랑/약 등)이 저장/재생 계약이 동일하므로 이 코어를 공유한다.
+    // 반환 true=바인딩 성공. 클립이 없거나 캐시 실패면 false(호출자가 라이브 폴백/에러 처리).
+    suspend fun bindStockBucketClips(
+        bucket: String,
+        profileId: String,
+        contextVariantIndex: Int? = null,
+    ): Boolean {
         val clips = stockClips
             .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appVoiceLanguage }
             .sortedBy { it.variant }
-        if (clips.isEmpty()) return
-        scope.launch {
-            runCatching {
-                val keys = mutableListOf<String>()
-                val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
-                clips.forEach { clip ->
-                    val cacheKey = "stock_${clip.messageId}"
-                    val cached = audioStore.getCachedAudio(cacheKey) ?: run {
-                        val response = onDownloadStockAudio(clip.messageId)
-                        withContext(Dispatchers.IO) {
-                            audioStore.cacheGeneratedAudio(
-                                bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
-                                format = response.audioFormat,
-                                rawAudioUri = response.audioUrl,
-                                displayName = cacheKey,
-                                cacheKey = cacheKey,
-                                messageId = clip.messageId,
-                            )
-                        }
-                    }
-                    keys.add(cached.cacheKey ?: cacheKey)
-                    cachedClips.add(cached)
+            // variant 중복 제거: 매칭 버킷은 절대 인덱스로 keys[i] 를 고르므로, 중복 variant 가 있으면
+            // 뒤 인덱스가 밀려 엉뚱한 조건 클립이 재생된다(같은 variant 는 첫 행만).
+            .distinctBy { it.variant }
+        if (clips.isEmpty()) return false
+        val keys = mutableListOf<String>()
+        val texts = mutableListOf<String>()
+        val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
+        clips.forEach { clip ->
+            val cacheKey = "stock_${clip.messageId}"
+            val cached = audioStore.getCachedAudio(cacheKey) ?: run {
+                val response = onDownloadStockAudio(clip.messageId)
+                withContext(Dispatchers.IO) {
+                    audioStore.cacheGeneratedAudio(
+                        bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl,
+                        displayName = cacheKey,
+                        cacheKey = cacheKey,
+                        messageId = clip.messageId,
+                    )
                 }
-                keys to cachedClips
-            }.onSuccess { (keys, cachedClips) ->
-                val representative = cachedClips.firstOrNull() ?: return@onSuccess
-                val first = clips.first()
-                editor.setBucketAudio(
-                    audio = representative,
-                    profileId = profileId,
-                    messageId = first.messageId,
-                    text = first.text,
-                    language = appVoiceLanguage,
-                    bucket = bucket,
-                    clipKeys = keys,
-                )
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to select free bucket in alarm editor bucket=$bucket", error)
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
             }
+            keys.add(cached.cacheKey ?: cacheKey)
+            // 잠금화면이 발사 variant 의 문구를 보여줄 수 있도록 keys 와 같은 순서로 텍스트도 저장.
+            texts.add(clip.text)
+            cachedClips.add(cached)
+        }
+        val representative = cachedClips.firstOrNull() ?: return false
+        val first = clips.first()
+        editor.setBucketAudio(
+            audio = representative,
+            profileId = profileId,
+            messageId = first.messageId,
+            text = first.text,
+            language = appVoiceLanguage,
+            bucket = bucket,
+            clipKeys = keys,
+            clipTexts = texts,
+            contextVariantIndex = contextVariantIndex,
+        )
+        return true
+    }
+
+    fun selectBucket(bucket: String) {
+        if (isSaving || previewPreparing) return
+        val profileId = editor.voiceProfileId ?: return
+        scope.launch {
+            runCatching { bindStockBucketClips(bucket, profileId) }
+                .onFailure { error ->
+                    AlarmTalkLog.reportError("Failed to select free bucket in alarm editor bucket=$bucket", error)
+                    audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
+                }
         }
     }
 
@@ -649,6 +691,33 @@ internal fun AlarmEditorScreen(
         generationJob?.cancel()
         generationJob = scope.launch {
             isSaving = true
+            // 1) 유료 클론 오프라인 버킷 시도: 사전렌더 대상 컨텍스트(사랑/약/운세/날씨)이고 그 목소리의
+            //    '완전한' 클립 세트가 캐시돼 있으면 라이브 생성 대신 오프라인 버킷으로 바인딩한다.
+            //    날씨/운세는 서버 조건/테마 '절대 인덱스'로 고르므로 부분 세트면 인덱스가 엉킨다 →
+            //    hasCompleteCloneBucket 으로 풀셋일 때만 바인딩(부분/실패면 아래 라이브로 폴백).
+            // 가족 알람은 서버가 수신자별로 목소리를 생성(onGenerateTts targetUserId)해야 하고, 내 로컬
+            // 사전렌더 클립은 수신자가 소유·캐시하지 못하므로 오프라인 버킷을 쓰면 수신자에게 무음이 된다.
+            // → 가족 모드에서는 사전렌더 버킷을 쓰지 않고 아래 라이브 생성 경로로 간다.
+            val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
+            val requiresCloneBucket = !familyAlarmMode && editor.voiceRandomPrompt && cloneBucketCategory != null &&
+                !isSystemVoiceId(profileId)
+            val tryCloneBucket = requiresCloneBucket && hasCompleteCloneBucket(cloneBucketCategory, profileId)
+            if (
+                tryCloneBucket &&
+                // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
+                // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
+                runCatching {
+                    bindStockBucketClips(cloneBucketCategory!!, profileId, editor.contextVariantIndex)
+                }.getOrDefault(false)
+            ) {
+                isSaving = false
+                submitDraft(editor.toDraft())
+                return@launch
+            }
+            // 2) 버킷 미대상/캐시 실패(사전렌더 미완성·클립 다운로드 실패 포함) → 기존 라이브 생성으로 폴백.
+            //    이미 등록된 클론 목소리라도 준비창 cron 이 풀셋을 만들기 전이면 '준비 중'에서 멈추지 말고
+            //    여기서 라이브로 저장한다(알람이 여러 cron 틱 동안 아예 저장 안 되는 것 방지). 라이브 생성은
+            //    random 경로라 월간 등록·원장·수동 quota 를 건드리지 않으므로 등록 전 목소리 이슈 없음.
             audioMessage = context.getString(R.string.editor_preparing_voice_alarm)
             showFamilyAlarmToast(context.getString(R.string.editor_preparing_voice_alarm))
             runCatching {

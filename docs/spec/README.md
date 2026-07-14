@@ -219,6 +219,6 @@ A longer list with acceptance criteria belongs in the team's issue tracker. This
 ## 6. Constraints
 
 - Alarm ring path: OS-native + local audio only. No push, no server cron, no fetch at ring time.
-- External voice-AI calls only on explicit user actions. Automated QA and tests must not trigger them.
+- External voice-AI calls require explicit user authorization. Keeping a previewed private voice draft authorizes exactly one durable, bounded render of the fixed paid preset manifest; it does not authorize autonomous scans, new prompt categories, or recurring generation. Automated QA and tests must stub providers and never consume paid credits.
 - Voice data: shared only inside a user's family/partner group. External download blocked.
 - Environment files (`.env`, `.dev.vars*`, `local.properties`, signing keys) are never committed.

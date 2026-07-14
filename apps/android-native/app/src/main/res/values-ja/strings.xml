@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="msg_voice_monthly_limit_reached">今月の音声ドラフト作成回数をすべて使用しました。</string>
     <string name="app_name">AlarmTalk</string>
     <string name="auth_back">戻る</string>
     <string name="auth_confirm">確認</string>
@@ -805,8 +806,8 @@
     <string name="editor2_cat_medication">服薬</string>
     <string name="editor2_cat_exercise">運動</string>
     <string name="editor2_ctx_preset">基本メッセージ</string>
-    <string name="editor2_ctx_wake_weather">起床 + 天気</string>
-    <string name="editor2_ctx_wake_fortune">起床 + 運勢</string>
+    <string name="editor2_ctx_wake_weather">天気</string>
+    <string name="editor2_ctx_wake_fortune">運勢</string>
     <string name="editor2_ctx_meal">食事</string>
     <string name="editor2_ctx_sleep">就寝</string>
     <string name="editor2_ctx_exercise">運動</string>

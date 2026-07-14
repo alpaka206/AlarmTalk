@@ -33,13 +33,22 @@ gift.post('/', async (c) => {
     }>();
 
     if (!body.recipient_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.recipient_email)) {
-      return c.json({ error: '유효한 이메일 주소를 입력해주세요.', error_code: 'INVALID_EMAIL' }, 400);
+      return c.json(
+        { error: '유효한 이메일 주소를 입력해주세요.', error_code: 'INVALID_EMAIL' },
+        400,
+      );
     }
     if (!body.message_id || !UUID_RE.test(body.message_id)) {
-      return c.json({ error: 'Invalid or missing message_id', error_code: 'INVALID_MESSAGE_ID' }, 400);
+      return c.json(
+        { error: 'Invalid or missing message_id', error_code: 'INVALID_MESSAGE_ID' },
+        400,
+      );
     }
     if (body.note && body.note.length > 200) {
-      return c.json({ error: '메모는 200자 이내로 작성해주세요.', error_code: 'NOTE_TOO_LONG' }, 400);
+      return c.json(
+        { error: '메모는 200자 이내로 작성해주세요.', error_code: 'NOTE_TOO_LONG' },
+        400,
+      );
     }
 
     const recipient = await db.execute({
@@ -48,7 +57,10 @@ gift.post('/', async (c) => {
     });
 
     if (recipient.rows.length === 0) {
-      return c.json({ error: '받는 사람을 찾을 수 없습니다.', error_code: 'RECIPIENT_NOT_FOUND' }, 404);
+      return c.json(
+        { error: '받는 사람을 찾을 수 없습니다.', error_code: 'RECIPIENT_NOT_FOUND' },
+        404,
+      );
     }
 
     const recipientId = recipient.rows[0]!.google_id as string;
@@ -58,11 +70,20 @@ gift.post('/', async (c) => {
     }
 
     if (!(await areFriends(db, userId, recipientId))) {
-      return c.json({ error: '친구 관계인 사용자에게만 선물할 수 있습니다.', error_code: 'NOT_FRIENDS' }, 403);
+      return c.json(
+        { error: '친구 관계인 사용자에게만 선물할 수 있습니다.', error_code: 'NOT_FRIENDS' },
+        403,
+      );
     }
 
     const msg = await db.execute({
-      sql: 'SELECT id FROM messages WHERE id = ? AND user_id = ?',
+      sql: `SELECT id FROM messages
+            WHERE id = ? AND user_id = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM voice_profiles vp
+                WHERE vp.id = messages.voice_profile_id
+                  AND COALESCE(vp.is_draft, 0) = 1
+              )`,
       args: [body.message_id, userId],
     });
     if (msg.rows.length === 0) {
@@ -125,7 +146,10 @@ gift.get('/received', async (c) => {
     return c.json({ gifts: result.rows, total, limit, offset });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to fetch received gifts', error_code: 'FETCH_RECEIVED_FAILED' }, 500);
+    return c.json(
+      { error: 'Failed to fetch received gifts', error_code: 'FETCH_RECEIVED_FAILED' },
+      500,
+    );
   }
 });
 

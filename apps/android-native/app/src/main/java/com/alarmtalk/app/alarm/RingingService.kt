@@ -35,6 +35,7 @@ import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
+import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+internal fun storedVoiceFallbackUri(
+    localAudioUri: String?,
+    bucketId: String?,
+    bucketClipCount: Int,
+    bucketSelectionAvailable: Boolean,
+): String? = localAudioUri?.takeIf {
+    bucketId == null || bucketClipCount == 0 || !bucketSelectionAvailable
+}
 
 class RingingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -143,7 +153,6 @@ class RingingService : Service() {
             voiceAfterAlarmStarted = false
             voiceHasPlayedThisRing = false
             requestAlarmAudioFocus()
-            // 무료 버킷 회전 알람이면 현재 회전 클립을 재생한다(없으면 대표 클립으로 폴백).
             val bucketVoiceUri = alarm?.let { repository.resolveBucketClipLocalUri(it) }
             startRingingAudio(alarm, bucketVoiceUri)
             val pattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT
@@ -156,7 +165,15 @@ class RingingService : Service() {
     private fun startRingingAudio(alarm: AlarmEntity?, voiceUriOverride: String? = null) {
         if (mediaPlayer?.isPlaying == true) return
 
-        val voiceUri = (voiceUriOverride ?: alarm?.localAudioUri)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        val storedVoiceUri = alarm?.let {
+            storedVoiceFallbackUri(
+                it.localAudioUri,
+                it.bucketId,
+                decodeBucketClipKeys(it.bucketClipKeysJson).size,
+                voiceUriOverride != null,
+            )
+        }
+        val voiceUri = (voiceUriOverride ?: storedVoiceUri)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
         val playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY
         val alarmVolumePercent = alarm?.alarmVolumePercent ?: 100
         val voiceVolumePercent = alarm?.voiceVolumePercent ?: 100
@@ -488,10 +505,17 @@ class RingingService : Service() {
         serviceScope.launch {
             val repository = AlarmAppContainer.repository(applicationContext)
             val alarm = currentAlarm ?: repository.getAlarm(alarmId)
-            // ALARM_VOICE 모드의 dismiss-후-음성도 버킷 회전 클립을 따른다(없으면 대표 클립).
             val voiceUri = alarm
                 ?.takeIf { it.playMode == AlarmPlayModes.ALARM_VOICE }
-                ?.let { repository.resolveBucketClipLocalUri(it) ?: it.localAudioUri?.takeIf { uri -> uri.isNotBlank() } }
+                ?.let {
+                    repository.resolveBucketClipLocalUri(it)
+                        ?: storedVoiceFallbackUri(
+                            localAudioUri = it.localAudioUri,
+                            bucketId = it.bucketId,
+                            bucketClipCount = decodeBucketClipKeys(it.bucketClipKeysJson).size,
+                            bucketSelectionAvailable = false,
+                        )
+                }
                 ?.let(Uri::parse)
             if (voiceUri != null && !voiceAfterAlarmStarted) {
                 startDismissVoiceThenFinish(alarmId, startId, voiceUri, alarm)

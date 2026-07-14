@@ -28,8 +28,8 @@ System architecture, database schema, and HTTP API for AlarmTalk.
            ▼                  ▼                 ▼
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
-   │ 18 tables    │  │ voice + tts  │  │ ElevenLabs           │
-   │ 32 migrations│  │ objects      │  │ Google JWKS          │
+   │ domain tables│  │ voice + tts  │  │ ElevenLabs           │
+   │ 62 migrations│  │ objects      │  │ Google JWKS          │
    └──────────────┘  └──────────────┘  │ Apple JWKS           │
                                        │ Sentry               │
                                        └──────────────────────┘
@@ -170,8 +170,8 @@ Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrad
 ## 2. Database
 
 - **DB**: Turso (libSQL / SQLite)
-- **Tables**: 18 + `_migrations`
-- **Migrations**: 32, defined in `packages/backend/src/lib/migrations.ts`
+- **Tables**: domain tables plus the `_migrations` ledger
+- **Migrations**: 62, defined in `packages/backend/src/lib/migrations.ts`
 
 ### Entity overview
 
@@ -401,9 +401,10 @@ The backend verifies the Apple token signature against Apple JWKS, checks issuer
 
 #### `POST /voice/clone` (multipart)
 
-- Body: `audio` (file), `name` (string)
-- 422 on size > limit, `VOICE_LIMIT_REACHED` when user already has 2 profiles.
-- Provider: ElevenLabs.
+- Body: `audio` (file), `name` (string), `isDraft=true`, relationship/title fields, and app `language`.
+- Direct official creation is rejected. The client must create one private draft, request its deterministic preview, report the server-issued playback token to `POST /voice/:id/preview-played` only after local playback completion, and then promote it with `PATCH /voice/:id` and `is_draft=false`.
+- Draft provider enrollment is limited to three attempts per KST month and one active draft. Promotion is limited to one official registration per KST month; deleting an official voice does not refund that registration.
+- Provider: ElevenLabs. Drafts cannot be shared, attached to alarms/gifts, or used for general TTS.
 
 #### `POST /tts/generate`
 
@@ -466,7 +467,9 @@ the owner of the new shared plan group. These bootstrap codes are single-use.
 
 ### Cron
 
-`*/5 * * * *` — the `scheduled` handler runs (in order): `processSubscriptionExpiry(db, now)` (active subscriptions past `expires_at` → `expired`, owner downgraded to `free`), 탈퇴 유예 경과 계정 영구파기, 그리고 `selectFiringAlarms()`로 추린 알람에 대해 `sendAlarmPush()`.
+`*/5 * * * *` — the `scheduled` handler runs subscription expiry/downgrade, account purge, auxiliary alarm push, external audio deletion reconciliation, and explicitly authorized voice-prerender jobs.
+
+Keeping a previewed private draft creates one durable, owner-scoped prerender job. Its fixed manifest is exactly one app language with `greeting` 1, `weather` 8, `fortune` 5, `love` 3, and `medication` 3 clips. Workers may only resume that bounded manifest with its exact claim token; they recheck voice ownership/state and sensitive consents before synthesis and before publication. They never discover users autonomously or add categories beyond this manifest.
 
 > **주의**: 실제 알람 **울림**은 온디바이스(`AlarmManager`/`AlarmKit`)이며 네트워크에 의존하지 않는다. 여기서 보내는 푸시는 가족/대상 알람 알림 등 **보조 경로**다. 단, 현재 정확-분(UTC) 매칭이 5분 주기 cron과 어긋나 일부 알람이 푸시되지 않는 알려진 이슈가 있다 — [`backend-findings.ko.md` F1](backend-findings.ko.md) 참고.
 

@@ -8,6 +8,21 @@ import org.junit.Test
 
 class AlarmEditorStateTest {
     @Test
+    fun cloneBucketsRequireEveryBackendVariant() {
+        assertEquals(8, expectedCloneBucketVariantCount("weather"))
+        assertEquals(5, expectedCloneBucketVariantCount("fortune"))
+        assertEquals(3, expectedCloneBucketVariantCount("love"))
+        assertEquals(3, expectedCloneBucketVariantCount("medication"))
+        assertEquals(1, expectedCloneBucketVariantCount("greeting"))
+        assertNull(expectedCloneBucketVariantCount("unknown"))
+    }
+
+    @Test
+    fun defaultPresetContextUsesGreetingPrerenderBucket() {
+        assertEquals("greeting", clonePrerenderBucketCategoryFor("preset"))
+    }
+
+    @Test
     fun selectVoiceProfileClearsStaleListenerTitleWhenVoiceChanges() {
         val editor = AlarmEditorState.from(alarm = null)
         editor.voiceProfileId = "old-profile"
