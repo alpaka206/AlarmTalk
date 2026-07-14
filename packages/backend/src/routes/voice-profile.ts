@@ -690,6 +690,9 @@ voiceProfile.patch('/:id', async (c) => {
     updates.push('previewed_at = NULL');
     updates.push('preview_claimed_at = NULL');
     updates.push('preview_claim_token = NULL');
+    // 관계가 바뀌면 톤 적응 미리듣기 문구도 무효 — 리셋해 다음 미리듣기가 새 관계로 재생성되게 한다.
+    updates.push('preview_text = NULL');
+    updates.push('preview_tag = NULL');
   }
   if (hasListenerTitle) {
     updates.push('listener_title = ?');
@@ -698,6 +701,8 @@ voiceProfile.patch('/:id', async (c) => {
       updates.push('previewed_at = NULL');
       updates.push('preview_claimed_at = NULL');
       updates.push('preview_claim_token = NULL');
+      updates.push('preview_text = NULL');
+      updates.push('preview_tag = NULL');
     }
   }
   updates.push("updated_at = datetime('now')");

@@ -261,7 +261,8 @@ describe('POST /tts/generate — TTS 생성', () => {
           listener_title: '우리 아들',
         },
       ]);
-      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1); // preview_text 영속 UPDATE
+      mockDB.pushResult([], 1); // preview claim UPDATE
       mockDB.pushResult([]);
       pushPublicationVoice({
         is_draft: 1,
@@ -295,9 +296,60 @@ describe('POST /tts/generate — TTS 생성', () => {
         expect.any(Object),
       );
       expect(body.preview_playback_token).toBeTypeOf('string');
+      // 생성 문구를 draft 행에 영속해 이후 재생이 같은 문구(=캐시 히트)로 성립하게 한다.
+      const persist = mockDB.calls.find((call) => call.sql.includes('SET preview_text'));
+      expect(persist).toBeDefined();
+      expect(persist!.args).toContain(toneText);
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('draft 미리듣기는 저장된 preview_text 가 있으면 재생성 없이 재사용한다', async () => {
+    const storedText = '우리 아들, 잘 잤어? 오늘도 힘내 보자.';
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        relationship_label: '엄마',
+        listener_title: '우리 아들',
+        preview_text: storedText,
+        preview_tag: 'cheerfully',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      relationship_label: '엄마',
+      listener_title: '우리 아들',
+    });
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    // 고정 예문/새 생성이 아니라 저장된 문구 그대로 — 재생이 결정적(같은 캐시키)이다.
+    expect(body.text).toBe(storedText);
+    expect(body.synthesis_text).toBe(`[cheerfully] ${storedText}`);
+    // 재사용 경로는 재생성/재영속하지 않는다.
+    expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
   });
 
   it('합성 중 민감 동의를 철회하면 생성 결과를 게시하지 않는다', async () => {

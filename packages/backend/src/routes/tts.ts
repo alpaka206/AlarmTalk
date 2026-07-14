@@ -901,24 +901,43 @@ tts.post('/generate', async (c) => {
     if (draftPreviewRequested) {
       // 미리듣기 문구를 keep(승격) 후 사전렌더될 greeting 과 같은 seed 로 '관계·호칭 톤 적응' 생성한다
       // — 사용자가 확정 전에 그 목소리의 실제 말투(관계에 맞는 어투 + 호칭)를 듣고 결정하게 하기 위함.
+      // 생성 문구는 요청마다 달라질 수 있으므로 첫 생성분을 draft 행(preview_text/preview_tag)에 영속해
+      // 재생을 결정적으로 만든다 — previewed_at 이후 재생은 캐시 히트로만 성립하므로 같은 문구가 필수.
+      // 관계/호칭 수정 시 previewed_at 과 함께 리셋돼 새 문구로 재생성된다(voice-profile PATCH).
       // 실패(Vertex 미설정·모델 오류·검증 탈락) 시 위의 고정 예문(+호칭 접두어)으로 폴백해 미리듣기
       // 자체는 절대 막지 않는다. Vertex(국외) 전송은 위 missingTtsConsent(overseas_transfer 포함) 통과
       // 뒤에만 일어난다.
-      try {
-        const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
-        if (greetingSeed) {
-          const generated = await generatePrerenderClipText(c.env, {
-            seed: greetingSeed.seeds[0]!,
-            relationshipLabel: normalizeRelationshipLabel(vp.relationship_label) ?? null,
-            listenerTitle: draftPreviewListenerTitle,
-            targetLanguage: storedPreviewLanguage,
-            defaultTag: greetingSeed.defaultTag,
-          });
-          requestText = generated.text;
-          if (generated.tag) draftPreviewTag = generated.tag;
+      const storedText =
+        typeof vp.preview_text === 'string' && vp.preview_text.trim() ? vp.preview_text.trim() : null;
+      if (storedText) {
+        requestText = storedText;
+        const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
+        if (storedTag) draftPreviewTag = storedTag;
+      } else {
+        try {
+          const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
+          if (greetingSeed) {
+            const generated = await generatePrerenderClipText(c.env, {
+              seed: greetingSeed.seeds[0]!,
+              relationshipLabel: normalizeRelationshipLabel(vp.relationship_label) ?? null,
+              listenerTitle: draftPreviewListenerTitle,
+              targetLanguage: storedPreviewLanguage,
+              defaultTag: greetingSeed.defaultTag,
+            });
+            requestText = generated.text;
+            if (generated.tag) draftPreviewTag = generated.tag;
+            // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
+            await db.execute({
+              sql: `UPDATE voice_profiles
+                    SET preview_text = ?, preview_tag = ?, updated_at = datetime('now')
+                    WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                      AND COALESCE(is_draft, 0) = 1`,
+              args: [generated.text, draftPreviewTag, body.voice_profile_id, userPk, userId],
+            });
+          }
+        } catch {
+          // 고정 예문 폴백 유지 (requestText 는 이미 예문+호칭으로 설정돼 있음)
         }
-      } catch {
-        // 고정 예문 폴백 유지 (requestText 는 이미 예문+호칭으로 설정돼 있음)
       }
     }
 
