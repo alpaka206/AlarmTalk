@@ -328,12 +328,13 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
     viewModelScope.launch {
         authBusy = true
         try {
-            // 삭제 신청 전에(세션 토큰 유효할 때) 이 기기 FCM 토큰을 서버에서 제거한다. 유예 기간 동안
-            // 삭제 신청한 계정의 알람 push 가 이 기기로 계속 오는 것을 막는다(로그아웃과 동일 처리).
+            api.requestAccountDeletion(authorization)
+            // 삭제 신청이 '성공한 뒤에만' 이 기기 FCM 토큰을 제거한다(유예 기간 동안 push 방지). 신청이
+            // 실패하면 사용자는 로그인 유지 상태이므로 토큰을 지우지 않아 즉시 push 를 계속 받게 한다.
+            // /me/deletion 은 token_epoch 를 올리지 않아(user.ts) 신청 후에도 세션 토큰이 유효하다.
             runCatching {
                 com.alarmtalk.app.fcm.AlarmTalkMessagingService.unregisterCurrentToken(session.token)
             }.onFailure { error -> Log.w(TAG, "FCM unregister on deletion failed (continuing)", error) }
-            api.requestAccountDeletion(authorization)
             if (shouldSignOutGoogle) {
                 runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
             }
