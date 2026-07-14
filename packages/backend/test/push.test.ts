@@ -21,13 +21,20 @@ function buildApp(userId = 'user-1') {
 describe('POST /push/register — FCM 토큰 등록', () => {
   beforeEach(() => mockDB.reset());
 
-  it('유효 토큰+플랫폼 → success, push_tokens upsert', async () => {
+  it('유효 토큰+플랫폼 → success, 재배정 DELETE 후 upsert', async () => {
+    mockDB.pushResult([], 0); // DELETE 다른 소유자 행
     mockDB.pushResult([], 1); // INSERT ... ON CONFLICT push_tokens
     const res = await buildApp('user-1').request(
       jsonReq('POST', '/push/register', { token: 'fcm-token-abc', platform: 'android' }),
     );
     expect(res.status).toBe(200);
     expect((await res.json()).success).toBe(true);
+    // 이 토큰의 다른 소유자 행을 먼저 제거(전역 단일 소유자) — A→B 로그인 시 오배달 방지.
+    const del = mockDB.calls.find((c) => c.sql.startsWith('DELETE FROM push_tokens'));
+    expect(del).toBeDefined();
+    expect(del!.sql).toContain('token = ?');
+    expect(del!.sql).toContain('user_id != ?');
+    expect(del!.args).toEqual(['fcm-token-abc', 'user-1']);
     const insert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO push_tokens'));
     expect(insert).toBeDefined();
     expect(insert!.sql).toContain('ON CONFLICT(user_id, token)');

@@ -37,6 +37,13 @@ push.post('/register', async (c) => {
     );
   }
 
+  // 이 기기 토큰을 현재 사용자 전용으로 재배정한다. 같은 기기에서 A 로그아웃→B 로그인 시 Firebase 등록
+  // 토큰은 그대로라, 옛 소유자(A) 행이 남으면 A 의 알람 push 가 이 기기로 잘못 배달된다(P1). 그러니 이
+  // 토큰의 다른 소유자 행을 먼저 제거해 (user, token) 이 전역에서 현재 사용자 하나만 남게 한다.
+  await db.execute({
+    sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id != ?',
+    args: [token, userPk],
+  });
   // 같은 (user, token) 이면 platform/updated_at 만 갱신(멱등). 고유 인덱스 idx_push_tokens_unique(user_id, token).
   await db.execute({
     sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)

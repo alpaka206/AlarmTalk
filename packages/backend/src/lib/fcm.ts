@@ -64,9 +64,15 @@ function buildFcmMessage(msg: FcmMessage): Record<string, unknown> {
 const STALE_TOKEN_ERRORS = new Set(['UNREGISTERED', 'INVALID_ARGUMENT', 'NOT_FOUND']);
 
 export async function getTokensForUser(db: Client, userId: string): Promise<string[]> {
+  // push_tokens.user_id 는 users.id(PK, FK REFERENCES users(id))로 저장한다. 하지만 호출부는 users.id
+  // (가족 push=recipient.id) 또는 로그인 ID/google_id(예약 알람 push=alarm.target_user_id/user_id)를
+  // 넘긴다 — Google 등 users.id != google_id 인 계정에서 후자가 안 맞으면 토큰을 못 찾는다. users 로
+  // 조인해 두 식별자 모두 매칭한다(id/google_id 는 각각 유니크라 최대 1명 매칭).
   const result = await db.execute({
-    sql: 'SELECT token FROM push_tokens WHERE user_id = ?',
-    args: [userId],
+    sql: `SELECT pt.token FROM push_tokens pt
+          JOIN users u ON u.id = pt.user_id
+          WHERE u.id = ? OR u.google_id = ?`,
+    args: [userId, userId],
   });
   return result.rows.map((r) => String(r.token));
 }
