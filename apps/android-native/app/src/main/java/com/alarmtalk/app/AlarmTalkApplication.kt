@@ -6,6 +6,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.alarmtalk.app.alarm.NotificationChannels
+import com.alarmtalk.app.fcm.AlarmTalkMessagingService
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -50,6 +51,9 @@ class AlarmTalkApplication : Application() {
                 },
             )
         }.onFailure { AlarmTalkLog.reportError("ProcessLifecycle observer registration failed", it) }
+        // 로그인 세션이 있으면 현재 FCM 토큰을 서버에 등록(가족 알람 push 대상). 세션 없으면 내부에서 no-op.
+        runCatching { AlarmTalkMessagingService.registerCurrentToken(this) }
+            .onFailure { AlarmTalkLog.reportError("FCM token registration failed", it) }
         // 30일 이상 미참조 음성 캐시를 백그라운드에서 정리. 실패해도 앱 진입에 영향 없음.
         applicationScope.launch {
             runCatching { AlarmAppContainer.repository(this@AlarmTalkApplication).sweepStaleAudioCache() }

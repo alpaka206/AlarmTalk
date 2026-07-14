@@ -72,6 +72,7 @@ internal fun MainViewModel.login(email: String, password: String) {
             restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
+            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_login_failed))
@@ -270,6 +271,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
             restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
+            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
             message = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Google token exchange failed", error)
