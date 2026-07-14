@@ -95,7 +95,7 @@ async function usesOnlySystemStockVoice(
  * 맞춰, PATCH 에서 타인 메시지 id 를 알람에 끼워 넣는 IDOR 을 막는다.
  */
 async function messageBelongsToCaller(
-  db: ReturnType<typeof getDB>,
+  db: DbExecutor,
   messageId: string,
   ownerIds: [string, string],
 ): Promise<boolean> {
@@ -391,14 +391,29 @@ alarmMutation.post('/', async (c) => {
         body.bucket_id ?? null,
       ],
     });
-  const inserted = body.voice_profile_id
-    ? await withWriteTransaction(db, async (tx) => {
-        if (!(await voiceProfileBelongsToCaller(tx, body.voice_profile_id!, ownerIds))) return null;
-        return insertAlarm(tx);
-      })
-    : await insertAlarm(db);
-  if (!inserted) {
+  const inserted =
+    body.voice_profile_id || resolvedMessageId
+      ? await withWriteTransaction(db, async (tx) => {
+          if (
+            body.voice_profile_id &&
+            !(await voiceProfileBelongsToCaller(tx, body.voice_profile_id, ownerIds))
+          ) {
+            return { status: 'voice_not_found' as const, result: null };
+          }
+          if (
+            resolvedMessageId &&
+            !(await messageBelongsToCaller(tx, resolvedMessageId, ownerIds))
+          ) {
+            return { status: 'message_not_found' as const, result: null };
+          }
+          return { status: 'ok' as const, result: await insertAlarm(tx) };
+        })
+      : { status: 'ok' as const, result: await insertAlarm(db) };
+  if (inserted.status === 'voice_not_found') {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  if (inserted.status === 'message_not_found') {
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
   }
 
   return c.json(
@@ -586,15 +601,31 @@ alarmMutation.patch('/:id', async (c) => {
       args,
     });
   const updateResult =
-    body.voice_profile_id !== undefined && body.voice_profile_id !== null
+    (body.voice_profile_id !== undefined && body.voice_profile_id !== null) ||
+    (body.message_id !== undefined && body.message_id !== null)
       ? await withWriteTransaction(db, async (tx) => {
-          if (!(await voiceProfileBelongsToCaller(tx, body.voice_profile_id!, ownerIds)))
-            return null;
-          return updateAlarm(tx);
+          if (
+            body.voice_profile_id !== undefined &&
+            body.voice_profile_id !== null &&
+            !(await voiceProfileBelongsToCaller(tx, body.voice_profile_id, ownerIds))
+          ) {
+            return { status: 'voice_not_found' as const, result: null };
+          }
+          if (
+            body.message_id !== undefined &&
+            body.message_id !== null &&
+            !(await messageBelongsToCaller(tx, body.message_id, ownerIds))
+          ) {
+            return { status: 'message_not_found' as const, result: null };
+          }
+          return { status: 'ok' as const, result: await updateAlarm(tx) };
         })
-      : await updateAlarm(db);
-  if (!updateResult) {
+      : { status: 'ok' as const, result: await updateAlarm(db) };
+  if (updateResult.status === 'voice_not_found') {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  if (updateResult.status === 'message_not_found') {
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
   }
 
   // raw_audio_url 을 새 값으로 교체하면 이전 R2 녹음이 어떤 알람에서도 참조되지

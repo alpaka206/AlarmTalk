@@ -6,7 +6,7 @@ import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../lib/audio-cache';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
-import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
+import { assertSameGroup } from '../lib/family-helpers';
 import {
   createSynthesisAttempts,
   inferSynthesisLanguage,
@@ -39,7 +39,7 @@ import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
   dynamicPromptSettingsFromRow,
 } from '../lib/dynamic-prompt-settings';
-import { withWriteTransaction } from '../lib/transactions';
+import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
 
 const tts = new Hono<AppEnv>();
@@ -91,6 +91,13 @@ class ConsentWithdrawnDuringTtsError extends Error {
   constructor(readonly consent: string) {
     super(`Required consent was withdrawn during TTS generation: ${consent}`);
     this.name = 'ConsentWithdrawnDuringTtsError';
+  }
+}
+
+class VoiceAuthorizationChangedDuringTtsError extends Error {
+  constructor() {
+    super('Voice authorization changed during TTS generation.');
+    this.name = 'VoiceAuthorizationChangedDuringTtsError';
   }
 }
 
@@ -274,7 +281,7 @@ function draftPreviewText(language: string): string {
 }
 
 async function findUsableVoiceProfile(
-  db: ReturnType<typeof getDB>,
+  db: DbExecutor,
   userId: string,
   userPk: string,
   voiceProfileId: string,
@@ -307,7 +314,7 @@ async function findUsableVoiceProfile(
   if (shared.rows.length === 0) return null;
 
   const row = shared.rows[0] as Record<string, unknown>;
-  const viewerPk = userPk || (await resolveUserPk(db, userId));
+  const viewerPk = userPk;
   const ownerPk = typeof row.owner_pk === 'string' ? row.owner_pk : null;
   if (!viewerPk || !ownerPk || viewerPk === ownerPk) return null;
 
@@ -1224,15 +1231,26 @@ tts.post('/generate', async (c) => {
         const messageId = crypto.randomUUID();
         try {
           await withWriteTransaction(db, async (tx) => {
-            if (!isSystemVoice) {
-              const missingPublicationConsent = await missingConsentType(
-                tx,
-                userPk,
-                requiredSensitiveConsents,
-              );
-              if (missingPublicationConsent) {
-                throw new ConsentWithdrawnDuringTtsError(missingPublicationConsent);
-              }
+            const publicationVoice = await findUsableVoiceProfile(
+              tx,
+              userId,
+              userPk,
+              body.voice_profile_id,
+            );
+            if (
+              !publicationVoice ||
+              publicationVoice.status !== 'ready' ||
+              (Number(publicationVoice.is_draft ?? 0) === 1) !== draftPreviewRequested
+            ) {
+              throw new VoiceAuthorizationChangedDuringTtsError();
+            }
+            const missingPublicationConsent = await missingConsentType(
+              tx,
+              userPk,
+              requiredSensitiveConsents,
+            );
+            if (missingPublicationConsent) {
+              throw new ConsentWithdrawnDuringTtsError(missingPublicationConsent);
             }
             await tx.execute({
               sql: `INSERT INTO messages
@@ -1382,6 +1400,15 @@ tts.post('/generate', async (c) => {
     }
     if (err instanceof ConsentWithdrawnDuringTtsError) {
       return consentRequired(c, err.consent);
+    }
+    if (err instanceof VoiceAuthorizationChangedDuringTtsError) {
+      return c.json(
+        {
+          error: 'Voice authorization changed while generating audio.',
+          error_code: 'VOICE_AUTHORIZATION_CHANGED',
+        },
+        409,
+      );
     }
     if (err instanceof AlarmTextPreparationInvalidError) {
       return c.json(

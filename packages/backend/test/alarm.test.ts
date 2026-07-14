@@ -18,6 +18,10 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function pushMessageBelongsToCaller() {
+  mockDB.pushResult([{ '1': 1 }]);
+}
+
 beforeEach(() => {
   mockDB.reset();
 });
@@ -210,6 +214,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('���료 플랜 무료 플랜도 알람 개수 제한 없이 201', async () => {
     mockDB.pushResult([{ plan: 'free' }]); // user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1); // insert alarm
     const app = buildApp();
     const res = await app.request(
@@ -231,6 +236,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('정상 생성이면 201', async () => {
     mockDB.pushResult([{ plan: 'plus' }]); // user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1); // insert alarm
     const app = buildApp();
     const res = await app.request(
@@ -257,6 +263,7 @@ describe('POST /alarm — 알람 생성', () => {
     mockDB.pushResult([{ id: ID.friendship }]); // friendship exists
     mockDB.pushResult([{ plan: 'plus' }]); // target user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1); // insert
     const app = buildApp();
     const res = await app.request(
@@ -308,6 +315,7 @@ describe('POST /alarm — 알람 생성', () => {
     mockDB.pushResult([{ id: voiceProfileId }]);
     mockDB.pushResult([{ id: ID.message }]);
     mockDB.pushResult([{ id: voiceProfileId }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
@@ -336,6 +344,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('mode 미지정 시 기본값은 tts', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
@@ -351,6 +360,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('POST 응답에 voice_profile_id/speaker_id 가 null 로 명시된다', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(

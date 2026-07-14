@@ -28,6 +28,10 @@ function buildApp(route: string, handler: Hono<AppEnv>, userId = 'user-1') {
   return app;
 }
 
+function pushMessageBelongsToCaller() {
+  mockDB.pushResult([{ '1': 1 }]);
+}
+
 async function measureLatency(fn: () => Promise<Response>): Promise<{ res: Response; ms: number }> {
   const start = performance.now();
   const res = await fn();
@@ -97,6 +101,7 @@ describe('API latency baselines', () => {
     it('responds within write threshold', async () => {
       mockDB.pushResult([{ plan: 'plus' }]); // user plan check
       mockDB.pushResult([{ id: ID.message }]); // message exists
+      pushMessageBelongsToCaller();
       mockDB.pushResult([], 1); // INSERT
       const app = buildApp('/alarm', alarmRoutes);
       const { res, ms } = await measureLatency(() =>

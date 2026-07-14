@@ -116,7 +116,9 @@ familyAlarm.post('/alarms', async (c) => {
     typeof body.voice_profile_id === 'string' ? body.voice_profile_id.trim() : '';
   if (voiceProfileId) {
     const owned = await db.execute({
-      sql: `SELECT id FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL`,
+      sql: `SELECT id FROM voice_profiles
+            WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+              AND status = 'ready' AND COALESCE(is_draft, 0) = 0`,
       args: [voiceProfileId, recipientPk],
     });
     if (owned.rows.length === 0) {
@@ -128,6 +130,7 @@ familyAlarm.post('/alarms', async (c) => {
   } else {
     const latest = await db.execute({
       sql: `SELECT id FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL
+              AND status = 'ready' AND COALESCE(is_draft, 0) = 0
             ORDER BY created_at DESC LIMIT 1`,
       args: [recipientPk],
     });
@@ -325,6 +328,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
 
   const latestVp = await db.execute({
     sql: `SELECT id FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL
+            AND status = 'ready' AND COALESCE(is_draft, 0) = 0
           ORDER BY created_at DESC LIMIT 1`,
     args: [recipientPk],
   });

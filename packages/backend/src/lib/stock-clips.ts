@@ -711,12 +711,26 @@ export async function generateStockClip(
     originalName: `stock_${cacheKey}.${generated.outputFormat}`,
   });
   const audioUrl = `r2://${audioObjectKey}`;
+  const discardStagedAudio = async () => {
+    try {
+      await storage.delete(audioObjectKey);
+    } catch {
+      await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
+    }
+  };
 
   const messageId = crypto.randomUUID();
   // 조건부 INSERT: 같은 (voice·category·language·variant) preset 이 이미 있으면 no-op. cron 이 겹쳐
   // 두 호출이 같은 target 을 동시에 렌더해도(findMissingStockTargets 는 순차 멱등만 보장) 중복 행이
   // 생기지 않는다. SQLite 단일 writer 라 INSERT…SELECT WHERE NOT EXISTS 가 원자적으로 직렬화된다.
-  const publication = await withWriteTransaction(db, async (tx) => {
+  const publish = () =>
+    withWriteTransaction(db, async (tx) => {
+      if (
+        target.toneAdapt &&
+        (await missingConsentType(tx, target.ownerUserId, SENSITIVE_REQUIRED_CONSENTS))
+      ) {
+        throw new Error('Voice prerender consent was withdrawn.');
+      }
     const insertedMessage = await tx.execute({
       sql: `INSERT INTO messages
           (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json,
@@ -803,22 +817,21 @@ export async function generateStockClip(
       ],
     });
     return { inserted: true as const, messageId, text: displayText, audioUrl };
-  });
+    });
+  let publication: Awaited<ReturnType<typeof publish>>;
+  try {
+    publication = await publish();
+  } catch (error) {
+    await discardStagedAudio();
+    throw error;
+  }
 
   if (!publication) {
-    try {
-      await storage.delete(audioObjectKey);
-    } catch {
-      await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
-    }
+    await discardStagedAudio();
     throw new Error('Preset publication authorization expired.');
   }
   if (!publication.inserted && publication.audioUrl !== audioUrl) {
-    try {
-      await storage.delete(audioObjectKey);
-    } catch {
-      await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
-    }
+    await discardStagedAudio();
   }
 
   return {

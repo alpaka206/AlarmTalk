@@ -18,6 +18,10 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function pushMessageBelongsToCaller() {
+  mockDB.pushResult([{ '1': 1 }]);
+}
+
 beforeEach(() => {
   mockDB.reset();
 });
@@ -78,6 +82,7 @@ describe('POST /alarms', () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     // message existence check → found
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     // INSERT → success
     mockDB.pushResult([], 1);
 
@@ -92,6 +97,7 @@ describe('POST /alarms', () => {
     mockDB.pushResult([{ plan: 'free' }]);
     // message check → found
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     // INSERT
     mockDB.pushResult([], 1);
 
@@ -104,6 +110,7 @@ describe('POST /alarms', () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     // message check
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     // INSERT
     mockDB.pushResult([], 1);
 
@@ -126,6 +133,7 @@ describe('POST /alarms', () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     // message check
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     // INSERT
     mockDB.pushResult([], 1);
 
@@ -142,6 +150,7 @@ describe('POST /alarms', () => {
   it('기본값: mode=tts, vibration_pattern=default, wake_mode=sound_then_voice', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
@@ -153,6 +162,7 @@ describe('POST /alarms', () => {
   it('커스텀 mode/vibration/wake_mode 전달', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(
@@ -186,6 +196,7 @@ describe('POST /alarms', () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     // message check
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     // INSERT
     mockDB.pushResult([], 1);
 
@@ -198,6 +209,7 @@ describe('POST /alarms', () => {
   it('voice_profile_id, speaker_id null 기본값', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
@@ -273,6 +285,7 @@ describe('POST /alarms', () => {
   it('repeat_days INSERT SQL에 JSON.stringify 반영', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     await buildApp().request(jsonReq('POST', '/alarms', { ...validBody, repeat_days: [1, 3, 5] }));
@@ -288,6 +301,7 @@ describe('POST /alarms', () => {
     mockDB.pushResult([{ id: ID.message }]);
     mockDB.pushResult([{ id: vpId }]);
     mockDB.pushResult([{ id: vpId }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(
@@ -325,6 +339,7 @@ describe('POST /alarms', () => {
     mockDB.pushResult([]);
     // message check
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     // INSERT
     mockDB.pushResult([], 1);
 
@@ -335,6 +350,7 @@ describe('POST /alarms', () => {
   it('family 플랜도 알람 개수 제한 없음', async () => {
     mockDB.pushResult([{ plan: 'family' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
@@ -344,6 +360,7 @@ describe('POST /alarms', () => {
   it('snooze_minutes 커스텀 값 INSERT 반영', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     await buildApp().request(jsonReq('POST', '/alarms', { ...validBody, snooze_minutes: 15 }));
@@ -386,6 +403,7 @@ describe('POST /alarms', () => {
   it('time "00:00" 경계값 허용', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(
@@ -397,6 +415,7 @@ describe('POST /alarms', () => {
   it('time "23:59" 경계값 허용', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(
@@ -416,6 +435,7 @@ describe('POST /alarms', () => {
   it('snooze_minutes 경계값 1 (최소) 허용', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(
@@ -427,6 +447,7 @@ describe('POST /alarms', () => {
   it('snooze_minutes 경계값 30 (최대) 허용', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(
@@ -817,6 +838,7 @@ describe('PATCH /alarms/:id', () => {
     ]);
     // messageBelongsToCaller → 소유 확인 (1 row)
     mockDB.pushResult([{ '1': 1 }]);
+    pushMessageBelongsToCaller();
     // UPDATE
     mockDB.pushResult([], 1);
     // SELECT updated

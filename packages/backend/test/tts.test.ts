@@ -118,6 +118,19 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function pushPublicationVoice(overrides: Record<string, string | number | null> = {}) {
+  mockDB.pushResult([
+    {
+      id: V1,
+      user_id: 'user-1',
+      status: 'ready',
+      is_draft: 0,
+      elevenlabs_voice_id: 'el-voice-1',
+      ...overrides,
+    },
+  ]);
+}
+
 function reqWithEnv(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
@@ -178,6 +191,11 @@ describe('POST /tts/generate — TTS 생성', () => {
     ]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      listener_title: '우리 아들',
+    });
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -237,6 +255,12 @@ describe('POST /tts/generate — TTS 생성', () => {
     ]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      relationship_label: '엄마',
+      listener_title: '우리 아들',
+    });
     mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
 
@@ -564,7 +588,9 @@ describe('POST /tts/generate — edge cases', () => {
   it('성공 시 201 + message_id, audio_base64, category 기본값 custom', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
+    pushPublicationVoice();
     mockDB.pushResult([], 1); // INSERT messages
     mockDB.pushResult([], 1); // INSERT message_library
     const app = buildApp();
@@ -589,6 +615,9 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]); // cache lookup (miss)
     mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
+    pushPublicationVoice();
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -682,8 +711,9 @@ describe('POST /tts/generate — edge cases', () => {
   it('성공 시 category 명시하면 해당 category 저장', async () => {
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([1]).buffer);
-    mockDB.pushResult([], 1);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await reqWithEnv(
@@ -701,8 +731,9 @@ describe('POST /tts/generate — edge cases', () => {
     const taggedText = `[cheerfully] ${text}`;
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([2]).buffer);
-    mockDB.pushResult([], 1);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await reqWithEnv(
@@ -741,8 +772,9 @@ describe('POST /tts/generate — edge cases', () => {
     const taggedText = `[cheerfully] ${text}`;
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([3]).buffer);
-    mockDB.pushResult([], 1);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await reqWithEnv(
@@ -802,8 +834,9 @@ describe('POST /tts/generate — edge cases', () => {
     ]);
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([7]).buffer);
     mockDB.pushResult([]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([7]).buffer);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -853,8 +886,12 @@ describe('POST /tts/generate — edge cases', () => {
         elevenlabs_voice_id: 'el-system-1',
       },
     ]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([10]).buffer);
     mockDB.pushResult([]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([10]).buffer);
+    pushPublicationVoice({
+      is_system: 1,
+      elevenlabs_voice_id: 'el-system-1',
+    });
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -896,8 +933,10 @@ describe('POST /tts/generate — edge cases', () => {
       },
     ]);
     mockDB.pushResult([]);
-    mockTextToSpeech.mockResolvedValue(new Uint8Array([8]).buffer);
     mockDB.pushResult([]);
+    mockDB.pushResult([]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([8]).buffer);
+    pushPublicationVoice({ relationship_label: '손녀' });
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -960,8 +999,9 @@ describe('POST /tts/generate — edge cases', () => {
         },
       ]);
       mockDB.pushResult([]);
-      mockTextToSpeech.mockResolvedValue(new Uint8Array([9]).buffer);
       mockDB.pushResult([]);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([9]).buffer);
+      pushPublicationVoice({ relationship_label: '여자친구' });
       mockDB.pushResult([], 1);
       mockDB.pushResult([], 1);
 
@@ -1005,8 +1045,9 @@ describe('POST /tts/generate — edge cases', () => {
   it('text 정확히 200자면 허용', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([0]).buffer);
-    mockDB.pushResult([], 1);
+    pushPublicationVoice();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await reqWithEnv(
