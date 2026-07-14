@@ -5,7 +5,9 @@ import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.PushTokenRegisterRequest
+import com.alarmtalk.app.network.PushTokenUnregisterRequest
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
+import com.google.android.gms.tasks.Tasks
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -13,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * FCM 수신 서비스. 가족 알람 push(data-only)를 받으면 즉시 원격 알람을 pull 해 로컬 스케줄+알림을
@@ -54,6 +57,26 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
                     )
                 }.onFailure { AlarmTalkLog.reportError("Push token register failed", it) }
             }
+        }
+
+        /**
+         * 로그아웃 시 이 기기의 FCM 토큰을 서버에서 제거해, 로그아웃한(또는 공유) 기기가 이 계정의 알람
+         * push 를 더 받지 않게 한다. 반드시 /auth/logout(=token_epoch 무효화) '전에' 유효한 세션 토큰으로
+         * 호출해야 한다. 현재 토큰을 받아 서버 unregister 까지 끝나면 반환(suspend). 실패해도 로그아웃은 계속.
+         */
+        suspend fun unregisterCurrentToken(authorizationToken: String) {
+            runCatching {
+                val token = withContext(Dispatchers.IO) {
+                    Tasks.await(FirebaseMessaging.getInstance().token)
+                }
+                if (token.isNullOrBlank()) return
+                withContext(Dispatchers.IO) {
+                    AlarmTalkApiClient.create().unregisterPushToken(
+                        AlarmTalkApiClient.bearer(authorizationToken),
+                        PushTokenUnregisterRequest(token = token),
+                    )
+                }
+            }.onFailure { AlarmTalkLog.reportError("Push token unregister failed", it) }
         }
     }
 }

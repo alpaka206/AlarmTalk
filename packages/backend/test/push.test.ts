@@ -78,3 +78,26 @@ describe('POST /push/register — FCM 토큰 등록', () => {
     expect((await res.json()).error_code).toBe('INVALID_JSON');
   });
 });
+
+describe('POST /push/unregister — 토큰 해제(로그아웃)', () => {
+  beforeEach(() => mockDB.reset());
+
+  it('토큰 전역 제거 → success', async () => {
+    mockDB.pushResult([], 1); // DELETE FROM push_tokens WHERE token = ?
+    const res = await buildApp('user-1').request(
+      jsonReq('POST', '/push/unregister', { token: 'fcm-token-abc' }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+    const del = mockDB.calls.find((c) => c.sql.startsWith('DELETE FROM push_tokens'));
+    expect(del).toBeDefined();
+    expect(del!.sql).toContain('WHERE token = ?');
+    expect(del!.args).toEqual(['fcm-token-abc']);
+  });
+
+  it('token 누락 → 400', async () => {
+    const res = await buildApp().request(jsonReq('POST', '/push/unregister', {}));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_PUSH_TOKEN');
+  });
+});

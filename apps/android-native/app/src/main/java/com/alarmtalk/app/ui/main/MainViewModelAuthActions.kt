@@ -290,6 +290,11 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
         // 서버에 로그아웃을 알려 token_epoch 를 올린다(남아있던 토큰 전부 401 TOKEN_REVOKED).
         // 네트워크 실패가 로컬 로그아웃을 막지 않도록 best-effort 로 처리한다.
         if (session != null) {
+            // token_epoch 를 올리기 전에(=세션 토큰 유효할 때) 이 기기 FCM 토큰을 서버에서 먼저 제거한다.
+            // 로그아웃한(또는 공유) 기기에 이 계정의 알람 push 가 계속 오는 것을 막는다.
+            runCatching {
+                com.alarmtalk.app.fcm.AlarmTalkMessagingService.unregisterCurrentToken(session.token)
+            }.onFailure { error -> Log.w(TAG, "FCM unregister on logout failed (continuing)", error) }
             runCatching {
                 api.logout(com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token))
             }.onFailure { error ->

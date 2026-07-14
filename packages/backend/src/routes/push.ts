@@ -57,4 +57,30 @@ push.post('/register', async (c) => {
   return c.json({ success: true });
 });
 
+// 로그아웃/기기 해제 시 이 기기의 FCM 토큰을 제거해 더 이상 alarm push 가 오지 않게 한다. 기기 토큰은
+// delete-on-register 로 전역 단일 소유자라, 토큰 자체로 삭제하면 로그아웃한(또는 공유) 기기가 이전
+// 계정의 알람 알림을 계속 받는 것을 막는다. 로그아웃 시 클라가 token_epoch 무효화(/auth/logout) 전에 호출.
+push.post('/unregister', async (c) => {
+  const db = getDB(c.env);
+
+  let body: { token?: unknown };
+  try {
+    body = (await c.req.json()) as { token?: unknown };
+  } catch {
+    return c.json({ error: 'Invalid JSON body', error_code: 'INVALID_JSON' }, 400);
+  }
+
+  const token = typeof body.token === 'string' ? body.token.trim() : '';
+  if (!token || token.length > TOKEN_MAX) {
+    return c.json({ error: 'token is required', error_code: 'INVALID_PUSH_TOKEN' }, 400);
+  }
+
+  await db.execute({
+    sql: 'DELETE FROM push_tokens WHERE token = ?',
+    args: [token],
+  });
+
+  return c.json({ success: true });
+});
+
 export default push;
