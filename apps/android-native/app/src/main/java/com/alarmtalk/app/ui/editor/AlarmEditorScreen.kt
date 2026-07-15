@@ -81,11 +81,6 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.trimmedOrNull
-import com.alarmtalk.app.ui.guide.CoachMarkOverlay
-import com.alarmtalk.app.ui.guide.CoachMarkRegistry
-import com.alarmtalk.app.ui.guide.CoachMarkStep
-import com.alarmtalk.app.ui.guide.UsageGuideStore
-import com.alarmtalk.app.ui.guide.coachMarkTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -109,35 +104,8 @@ private enum class AudioPreviewTarget {
     StockClip,
 }
 
-// 처음 알람을 만드는 사용자를 위한 위치 앵커형 코치마크 가이드.
-// 각 단계가 실제 컨트롤에 스포트라이트를 비추므로 "어디서 하는지"가 함께 전달된다.
-private const val GUIDE_TARGET_SCHEDULE = "alarm_editor_schedule"
-private const val GUIDE_TARGET_PLAY_MODE = "alarm_editor_play_mode"
-private const val GUIDE_TARGET_SAVE = "alarm_editor_save"
-
 // 세부 설정 pane 슬라이드용 emphasized 이징(타임휠 세틀과 같은 계열의 감속 곡선).
 private val EditorPaneEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
-
-@Composable
-private fun alarmEditorCoachSteps(playModeItemIndex: Int) = listOf(
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_SCHEDULE,
-        title = stringResource(R.string.editor2_coach_schedule_title),
-        body = stringResource(R.string.editor2_coach_schedule_body),
-        lazyItemIndex = 1,
-    ),
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_PLAY_MODE,
-        title = stringResource(R.string.editor2_coach_play_mode_title),
-        body = stringResource(R.string.editor2_coach_play_mode_body),
-        lazyItemIndex = playModeItemIndex,
-    ),
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_SAVE,
-        title = stringResource(R.string.editor2_coach_save_title),
-        body = stringResource(R.string.editor2_coach_save_body),
-    ),
-)
 
 @Composable
 internal fun AlarmEditorScreen(
@@ -193,15 +161,6 @@ internal fun AlarmEditorScreen(
             alarmRepository.upcomingHolidays(countryCode = holidayCountryCode)
         }.getOrDefault(emptyList())
     }
-    val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
-    // 처음 새 알람을 만들 때 한 번만 자동 노출. 상단바(도움말 버튼 포함)를 없앴으므로 다시 보기는 없다.
-    var usageGuideVisible by remember {
-        mutableStateOf(
-            alarm == null && !familyAlarmMode &&
-                !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_ALARM_EDITOR),
-        )
-    }
-    val coachMarkRegistry = remember { CoachMarkRegistry() }
     val editorListState = rememberLazyListState()
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
@@ -1094,9 +1053,7 @@ internal fun AlarmEditorScreen(
 
                 item {
                     Box(
-                        modifier = Modifier
-                            .padding(horizontal = editorHorizontalPadding)
-                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_SCHEDULE),
+                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
                     ) {
                         ScheduleDetailsCard(
                             hour = editor.hour,
@@ -1131,9 +1088,7 @@ internal fun AlarmEditorScreen(
 
                 item {
                     Box(
-                        modifier = Modifier
-                            .padding(horizontal = editorHorizontalPadding)
-                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_PLAY_MODE),
+                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
                     ) {
                         PlayModeCard(
                             selected = editor.playMode,
@@ -1256,8 +1211,7 @@ internal fun AlarmEditorScreen(
                                 end = 16.dp,
                                 top = 10.dp,
                                 bottom = 10.dp,
-                            )
-                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_SAVE),
+                            ),
                     ) {
                         EditorActionButtons(
                             isSaving = isSaving,
@@ -1362,20 +1316,6 @@ internal fun AlarmEditorScreen(
                 onDismiss = { settingsDetailPanel = null },
             )
         }
-        }
-
-        if (usageGuideVisible) {
-            CoachMarkOverlay(
-                steps = alarmEditorCoachSteps(
-                    playModeItemIndex = if (familyAlarmMode) 3 else 2,
-                ),
-                registry = coachMarkRegistry,
-                listState = editorListState,
-                onFinish = {
-                    usageGuideStore.markSeen(UsageGuideStore.GUIDE_ALARM_EDITOR)
-                    usageGuideVisible = false
-                },
-            )
         }
     }
 

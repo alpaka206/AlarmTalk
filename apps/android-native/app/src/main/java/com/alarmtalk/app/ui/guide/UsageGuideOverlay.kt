@@ -47,7 +47,7 @@ data class UsageGuideStep(
  * handoff 프로토타입의 코치마크(어두운 스크림 + "가이드 n/N" 팁 카드 +
  * 건너뛰기/다음/시작하기)를 폼이 긴 화면에 맞게 단계 카드로 옮긴 것.
  * 화면 전체를 덮는 부모(Box) 안에서 마지막 자식으로 그려야 한다.
- * 노출 이력은 호출자가 `UsageGuideStore` 로 관리한다.
+ * 자동 노출 없이 도움말(?) 버튼으로만 열린다(첫 방문 팝업 제거).
  */
 @Composable
 fun UsageGuideOverlay(

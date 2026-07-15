@@ -815,12 +815,6 @@
     <string name="label_sync_state_dirty">저장 대기</string>
     <string name="label_sync_state_failed">서버에 저장하지 못했어요</string>
     <string name="label_sync_state_device_only">기기에만 저장됨</string>
-    <string name="editor2_coach_schedule_title">반복과 이름을 정해요</string>
-    <string name="editor2_coach_schedule_body">요일을 누르면 매주 반복돼요. 반복을 켜면 공휴일에 끄기도 고를 수 있고, 알람 이름도 여기서 바꿔요.</string>
-    <string name="editor2_coach_play_mode_title">재생 방식을 골라요</string>
-    <string name="editor2_coach_play_mode_body">\'알람 + 목소리\'를 고르면 등록한 목소리가 함께 울려요. 랜덤 문구를 켜면 아침마다 새로운 메시지로 깨워줘요.</string>
-    <string name="editor2_coach_save_title">저장하면 끝이에요</string>
-    <string name="editor2_coach_save_body">음량·진동·스누즈는 바로 위 카드에서 바꿀 수 있어요. 저장을 누르면 알람이 바로 예약돼요.</string>
     <string name="editor2_cat_morning">기상</string>
     <string name="editor2_cat_lunch">점심 식사</string>
     <string name="editor2_cat_evening">퇴근</string>
@@ -932,10 +926,6 @@
     <string name="onb_voice_nickname_label">이 목소리가 나를 뭐라고 부를까요?</string>
     <string name="onb_voice_nickname_placeholder">예: 지호, 자기, 대표님</string>
     <string name="onb_voice_nickname_hint">비워두면 이름 없이 깨워드려요. 나중에 목소리 탭에서 바꿀 수 있어요.</string>
-    <string name="misc2_coach_home_hero_title">첫 알람 만들기</string>
-    <string name="misc2_coach_home_hero_body">시간과 목소리를 고르면 기기에 저장돼요.</string>
-    <string name="misc2_coach_voice_create_title">내 목소리를 만들어요</string>
-    <string name="misc2_coach_voice_create_body">내 목소리를 만들어 두면, 그 목소리로 알람이 깨워줘요.</string>
     <string name="misc2_theme_mode_system">시스템 설정과 같이</string>
     <string name="misc2_theme_mode_light">밝은 모드</string>
     <string name="misc2_theme_mode_dark">어두운 모드</string>
