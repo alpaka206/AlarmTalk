@@ -42,16 +42,17 @@ internal fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferenc
         fortuneBirthTime = fortune.birthTime?.trim().orEmpty(),
     )
 
-// 편집기 섹션 헤더 단일 출처. '재생 방식'·'세부 설정'이 이미 쓰던 titleMedium/Bold/onBackground
-// 규격으로 맞춰, 각 파일에 흩어진 인라인 Text 대신 이 컴포저블로 통일한다.
+// 편집기 섹션 헤더 단일 출처. 예전 titleMedium/Bold 는 카드 안 행 제목(titleMedium/SemiBold)과
+// 크기가 같아 섹션 경계가 안 읽혔다 — 그룹 리스트 헤더 관례대로 한 단계 조용하게
+// (titleSmall + onSurfaceVariant) 낮춰 행 제목과 위계를 분리한다.
 @Composable
 internal fun EditorSectionTitle(title: String, modifier: Modifier = Modifier) {
     Text(
         text = title,
         modifier = modifier,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onBackground,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 

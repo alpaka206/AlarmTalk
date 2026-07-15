@@ -1193,7 +1193,9 @@ internal fun AlarmEditorScreen(
                 shadowElevation = 0.dp,
             ) {
                 Column {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                    // 바 배경이 페이지 배경과 같아 경계가 없으면 스크롤 콘텐츠가 '잘린' 것처럼
+                    // 보인다 — 다른 카드 구분선과 같은 풀 톤 헤어라인으로 바의 시작을 분명히 한다.
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     if (editorSaveBlockedReason != null) {
                         Text(
                             text = editorSaveBlockedReason,

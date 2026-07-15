@@ -185,10 +185,8 @@
     <string name="editor_record_again">다시 녹음</string>
     <string name="editor_audio_preview_stop">정지</string>
     <string name="editor_back">뒤로</string>
-    <string name="editor_change">변경</string>
     <string name="editor_collapse">접기</string>
     <string name="editor_create_voice">목소리 만들기</string>
-    <string name="editor_default_alarm_sound">기본 알람음</string>
     <string name="editor_detail_settings">세부 설정</string>
     <string name="editor_error_audio_duration_unreadable">오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.</string>
     <string name="editor_error_crop_save_failed">선택한 구간을 저장하지 못했어요.</string>

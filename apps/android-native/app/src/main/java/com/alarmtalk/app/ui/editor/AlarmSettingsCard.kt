@@ -25,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +56,24 @@ private val VibrationOptions = listOf(
     VibrationPatterns.SIREN,
 )
 
+// '기본 알람음'이라는 정보량 없는 표기 대신 시스템 기본 알람음의 실제 이름을 보여준다.
+// 타이틀 조회는 바인더 호출이라 컴포지션당 한 번만 하고, 실패 시에만 기존 문구로 폴백.
+@Composable
+internal fun rememberDefaultAlarmSoundTitle(): String {
+    val context = LocalContext.current
+    val fallback = stringResource(R.string.editor2_default_alarm_sound)
+    return remember(context, fallback) {
+        runCatching {
+            android.media.RingtoneManager.getActualDefaultRingtoneUri(
+                context,
+                android.media.RingtoneManager.TYPE_ALARM,
+            )?.let { uri ->
+                android.media.RingtoneManager.getRingtone(context, uri)?.getTitle(context)
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: fallback
+    }
+}
+
 @Composable
 internal fun AlarmSettingsCard(
     snoozeEnabled: Boolean,
@@ -80,6 +99,8 @@ internal fun AlarmSettingsCard(
     onOpenVoiceOutputSettings: () -> Unit,
 ) {
     val context = LocalContext.current
+    // 라벨이 없으면(시스템 기본) 실제 기본 알람음 이름으로 보여준다.
+    val resolvedAlarmSoundLabel = alarmSoundLabel ?: rememberDefaultAlarmSoundTitle()
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -126,7 +147,7 @@ internal fun AlarmSettingsCard(
                         subtitle = alarmSoundSummary(
                             context = context,
                             alarmVolumePercent = alarmVolumePercent,
-                            alarmSoundLabel = alarmSoundLabel,
+                            alarmSoundLabel = resolvedAlarmSoundLabel,
                         ),
                         onClick = onOpenAlarmSoundSettings,
                         trailing = {
@@ -306,7 +327,7 @@ internal fun AlarmSoundSettingsPane(
                     SnoozeOptionSection(title = stringResource(R.string.editor_alarm_sound_title)) {
                         AlarmSoundActionRow(
                             title = stringResource(R.string.editor_alarm_sound_title),
-                            subtitle = alarmSoundLabel ?: stringResource(R.string.editor_default_alarm_sound),
+                            subtitle = alarmSoundLabel ?: rememberDefaultAlarmSoundTitle(),
                             onClick = onPickAlarmSound,
                         )
                     }
