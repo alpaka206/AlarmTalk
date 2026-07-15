@@ -255,6 +255,8 @@ describe('PATCH /:id/preview-text — 미리듣기 문구 수정 (voice-profile)
     expect(body.preview_text).toBe('좋은 아침이야, 오늘도 힘내자');
     const sql = mockDB.calls[0]!.sql;
     expect(sql).toContain('preview_text = ?');
+    // 이전 문구 기준으로 고른 delivery 태그가 수정본에 남지 않게 함께 리셋된다.
+    expect(sql).toContain('preview_tag = NULL');
     expect(sql).toContain('previewed_at = NULL');
     expect(sql).toContain('preview_claimed_at = NULL');
     expect(sql).toContain('preview_claim_token = NULL');

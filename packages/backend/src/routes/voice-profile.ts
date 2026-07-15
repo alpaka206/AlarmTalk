@@ -516,7 +516,9 @@ voiceProfile.post('/:id/preview-played', async (c) => {
 
 // 등록 미리듣기 문구 직접 수정(초안 전용) — "말투가 마음에 안 들면 수정" 플로우.
 // 수정한 문구가 이후 미리듣기 합성 문구(캐시 키)이자 사전렌더 톤 스타일 레퍼런스가 된다.
-// previewed_at/claim 을 함께 리셋해 수정본을 끝까지 다시 들어야 승격(keep)할 수 있게 한다.
+// previewed_at/claim 을 함께 리셋해 수정본을 끝까지 다시 들어야 승격(keep)할 수 있게 하고,
+// preview_tag 도 함께 비운다 — 이전 문구 기준으로 골랐던 delivery 태그가 수정본에 그대로
+// 붙으면(예: 차분한 수정본이 [excited] 로) 어긋나므로, 수정본은 중립 기본 태그로 합성된다.
 voiceProfile.patch('/:id/preview-text', async (c) => {
   const ids = ownerIds(c);
   const db = getDB(c.env);
@@ -560,7 +562,7 @@ voiceProfile.patch('/:id/preview-text', async (c) => {
   const ph = ids.map(() => '?').join(',');
   const updated = await db.execute({
     sql: `UPDATE voice_profiles
-          SET preview_text = ?, previewed_at = NULL,
+          SET preview_text = ?, preview_tag = NULL, previewed_at = NULL,
               preview_claimed_at = NULL, preview_claim_token = NULL,
               updated_at = datetime('now')
           WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
