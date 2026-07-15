@@ -122,10 +122,11 @@ internal fun AlarmSettingRow(
 }
 
 @Composable
-internal fun AlarmSettingDivider() {
-    // 행에 아이콘 배지가 없어 제목 텍스트가 카드 안쪽 left에서 시작 → 구분선도 들여쓰기 없이 텍스트 시작선에 맞춘다.
+internal fun AlarmSettingDivider(modifier: Modifier = Modifier) {
+    // 구분선은 행 텍스트 시작선에 맞춘다 — 세부 설정 카드는 카드 자체 패딩이 있어 그대로,
+    // 목소리 카드처럼 행이 자체 패딩을 갖는 곳은 호출부에서 같은 값으로 인셋을 준다.
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(1.dp)
             .background(MaterialTheme.colorScheme.outlineVariant),

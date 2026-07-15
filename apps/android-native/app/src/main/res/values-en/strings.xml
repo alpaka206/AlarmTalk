@@ -183,10 +183,8 @@
     <string name="editor_record_again">Record again</string>
     <string name="editor_audio_preview_stop">Stop</string>
     <string name="editor_back">Back</string>
-    <string name="editor_change">Change</string>
     <string name="editor_collapse">Collapse</string>
     <string name="editor_create_voice">Create a voice</string>
-    <string name="editor_default_alarm_sound">Default alarm sound</string>
     <string name="editor_detail_settings">Detailed settings</string>
     <string name="editor_error_audio_duration_unreadable">Files whose audio length can\'t be read can\'t be used.</string>
     <string name="editor_error_crop_save_failed">Couldn\'t save the selected section.</string>

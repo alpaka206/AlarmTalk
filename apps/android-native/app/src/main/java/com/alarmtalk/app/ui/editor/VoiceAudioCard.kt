@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
@@ -221,14 +222,14 @@ internal fun VoiceAudioCard(
                                     selectedId = editor.voiceProfileId ?: "",
                                     onSelect = { option -> editor.selectVoiceProfile(option.id) },
                                 )
-                                AlarmSettingDivider()
+                                AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
                                 MessageModeSummaryRow(
                                     isManual = !editor.voiceRandomPrompt,
                                     randomContext = editor.voiceRandomContext,
                                     manualText = editor.voiceText,
                                     onClick = onOpenRandomPromptSettings,
                                 )
-                                AlarmSettingDivider()
+                                AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
                                 VoiceVolumeSummaryRow(
                                     volumePercent = editor.voiceVolumePercent,
                                     onClick = onOpenVoiceOutputSettings,
@@ -617,11 +618,11 @@ private fun FreeVoiceSummaryRow(
                 maxLines = 1,
             )
             Spacer(Modifier.width(12.dp))
-            Text(
-                text = stringResource(R.string.editor_change),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
     }
@@ -665,11 +666,11 @@ internal fun MessageModeSummaryRow(
                 MutedText(valueLabel)
             }
             Spacer(Modifier.width(12.dp))
-            Text(
-                text = stringResource(R.string.editor_change),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
     }
@@ -760,11 +761,11 @@ private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
                 MutedText("$volumePercent%")
             }
             Spacer(Modifier.width(12.dp))
-            Text(
-                text = stringResource(R.string.editor_change),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
     }

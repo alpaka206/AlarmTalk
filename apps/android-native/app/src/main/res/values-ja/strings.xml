@@ -183,10 +183,8 @@
     <string name="editor_record_again">録り直す</string>
     <string name="editor_audio_preview_stop">停止</string>
     <string name="editor_back">戻る</string>
-    <string name="editor_change">変更</string>
     <string name="editor_collapse">折りたたむ</string>
     <string name="editor_create_voice">声を作る</string>
-    <string name="editor_default_alarm_sound">標準アラーム音</string>
     <string name="editor_detail_settings">詳細設定</string>
     <string name="editor_error_audio_duration_unreadable">音声の長さを確認できないファイルは使用できません。</string>
     <string name="editor_error_crop_save_failed">選択した区間を保存できませんでした。</string>
