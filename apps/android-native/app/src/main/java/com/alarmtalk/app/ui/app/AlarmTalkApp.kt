@@ -545,8 +545,10 @@ internal fun AlarmTalkApp(
     }
 
     // 하단바·FAB 등 앱 크롬 노출 조건(로그인·동의 완료, 업데이트 강제/삭제 대기 아님).
+    // 온보딩 목소리 고르기 중에는 하단 탭·알람 추가 FAB 를 감춘다 — 선택을 끝내기 전에
+    // 다른 화면으로 샐 수 있는 출구를 두지 않는다.
     val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-        !viewModel.updateRequired && !viewModel.pendingDeletion && currentTab != null
+        !viewModel.updateRequired && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
 
     Scaffold(
         bottomBar = {

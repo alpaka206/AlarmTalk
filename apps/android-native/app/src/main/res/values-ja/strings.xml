@@ -897,11 +897,10 @@
     <string name="msg2_promo_fail_owns_active_group">すでに利用中のグループプランがあるため、プロモコードを適用できません</string>
     <string name="msg2_promo_fail_generic">プロモコードを適用できませんでした。しばらくしてからもう一度お試しください</string>
     <string name="onb_voice_title">基本の声を選んでください</string>
-    <string name="onb_voice_subtitle">お気に入りの1つだけでOKです。\nあとからいつでも変更できます。</string>
+    <string name="onb_voice_subtitle">あとからいつでも変更できます。</string>
     <string name="onb_voice_loading">声を読み込んでいます…</string>
     <string name="onb_voice_confirm">この声で始める</string>
     <string name="onb_voice_skip">あとで選ぶ</string>
-    <string name="onb_voice_preview">試聴</string>
     <string name="onb_voice_nickname_label">この声に何と呼んでほしいですか？</string>
     <string name="onb_voice_nickname_placeholder">例: ジホ、あなた、部長</string>
     <string name="onb_voice_nickname_hint">空欄なら名前なしで起こします。あとで声タブで変更できます。</string>

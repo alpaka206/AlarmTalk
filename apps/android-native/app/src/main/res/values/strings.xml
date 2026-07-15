@@ -914,11 +914,10 @@
     <string name="msg2_promo_fail_owns_active_group">이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요</string>
     <string name="msg2_promo_fail_generic">프로모 코드를 적용하지 못했어요. 잠시 후 다시 시도해 주세요</string>
     <string name="onb_voice_title">기본 목소리를 골라보세요</string>
-    <string name="onb_voice_subtitle">마음에 드는 하나면 충분해요.\n나중에 언제든 바꿀 수 있어요.</string>
+    <string name="onb_voice_subtitle">나중에 언제든 바꿀 수 있어요.</string>
     <string name="onb_voice_loading">목소리를 불러오는 중이에요…</string>
     <string name="onb_voice_confirm">이 목소리로 시작하기</string>
     <string name="onb_voice_skip">나중에 고르기</string>
-    <string name="onb_voice_preview">들어보기</string>
     <string name="onb_voice_nickname_label">이 목소리가 나를 뭐라고 부를까요?</string>
     <string name="onb_voice_nickname_placeholder">예: 지호, 자기, 대표님</string>
     <string name="onb_voice_nickname_hint">비워두면 이름 없이 깨워드려요. 나중에 목소리 탭에서 바꿀 수 있어요.</string>
