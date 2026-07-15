@@ -110,6 +110,7 @@ internal fun MainViewModel.createVoiceProfile(
     shared: Boolean,
     relationshipLabel: String,
     listenerTitle: String,
+    language: String,
 ): Boolean =
     createVoiceProfiles(
         listOf(
@@ -119,6 +120,7 @@ internal fun MainViewModel.createVoiceProfile(
                 shared = shared,
                 relationshipLabel = relationshipLabel,
                 listenerTitle = listenerTitle,
+                language = language,
             ),
         ),
     )
@@ -177,7 +179,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                         listenerTitle = draft.listenerTitle.toRequestBody("text/plain".toMediaType()),
                         durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
                         isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
-                        language = deviceAppVoiceLanguage().toRequestBody("text/plain".toMediaType()),
+                        language = (draft.language ?: deviceAppVoiceLanguage()).toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }

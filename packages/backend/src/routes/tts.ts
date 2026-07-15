@@ -22,6 +22,7 @@ import {
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   deriveAlarmDisplayText,
+  parseSpeechStyle,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
@@ -928,6 +929,8 @@ tts.post('/generate', async (c) => {
               listenerTitle: draftPreviewListenerTitle,
               targetLanguage: storedPreviewLanguage,
               defaultTag: greetingSeed.defaultTag,
+              // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로.
+              speechStyle: parseSpeechStyle(vp.speech_style),
             });
             requestText = generated.text;
             if (generated.tag) draftPreviewTag = generated.tag;

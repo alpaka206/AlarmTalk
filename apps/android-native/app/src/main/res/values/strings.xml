@@ -649,6 +649,10 @@
     <string name="voices_mic_permission_required">마이크 권한이 필요해요.</string>
     <string name="voices_my_voices_title">내 목소리</string>
     <string name="voices_name_label">목소리 이름</string>
+    <string name="voices_language_label">문구 언어</string>
+    <string name="voices_lang_ko" translatable="false">한국어</string>
+    <string name="voices_lang_en" translatable="false">English</string>
+    <string name="voices_lang_ja" translatable="false">日本語</string>
     <string name="voices_name_placeholder">예: 엄마 목소리</string>
     <string name="voices_next">다음</string>
     <string name="voices_no_voices_yet">아직 만든 목소리가 없어요.</string>

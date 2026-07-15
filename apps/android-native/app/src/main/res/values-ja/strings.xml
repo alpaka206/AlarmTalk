@@ -648,6 +648,7 @@
     <string name="voices_mic_permission_required">マイクの権限が必要です。</string>
     <string name="voices_my_voices_title">マイボイス</string>
     <string name="voices_name_label">声の名前</string>
+    <string name="voices_language_label">フレーズの言語</string>
     <string name="voices_name_placeholder">例:お母さんの声</string>
     <string name="voices_next">次へ</string>
     <string name="voices_no_voices_yet">まだ作成した声はありません。</string>

@@ -640,6 +640,7 @@
     <string name="voices_mic_permission_required">Microphone permission is required.</string>
     <string name="voices_my_voices_title">My Voices</string>
     <string name="voices_name_label">Voice name</string>
+    <string name="voices_language_label">Message language</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
     <string name="voices_no_voices_yet">You haven\'t created any voices yet.</string>

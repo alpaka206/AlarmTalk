@@ -185,7 +185,7 @@ internal fun VoiceProfileManagementPanel(
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Boolean,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
@@ -229,6 +229,15 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
+    // 미리듣기·사전렌더 문구 언어 — 기본은 앱 로케일(ko/en/ja 외엔 ko).
+    val configuration = LocalConfiguration.current
+    val defaultVoiceLanguage = remember(configuration) {
+        com.alarmtalk.app.data.appVoiceLanguageOf(
+            configuration.locales.takeIf { !it.isEmpty }?.get(0)?.language
+                ?: java.util.Locale.getDefault().language,
+        )
+    }
+    var profileVoiceLanguage by remember { mutableStateOf(defaultVoiceLanguage) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
@@ -567,6 +576,7 @@ internal fun VoiceProfileManagementPanel(
         createPreparing = false
         createSubmitAttempted = false
         profileName = ""
+        profileVoiceLanguage = defaultVoiceLanguage
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
         shareVoice = false
@@ -879,6 +889,7 @@ internal fun VoiceProfileManagementPanel(
                 shareVoice,
                 trimmedRelationship,
                 trimmedListener,
+                profileVoiceLanguage,
             )
             if (accepted) enterCreatingStep()
             return
@@ -899,6 +910,7 @@ internal fun VoiceProfileManagementPanel(
                         shareVoice,
                         trimmedRelationship,
                         trimmedListener,
+                        profileVoiceLanguage,
                     )
                     if (accepted) enterCreatingStep()
                 }
@@ -1292,6 +1304,22 @@ internal fun VoiceProfileManagementPanel(
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
                                     modifier = Modifier.fillMaxWidth(),
+                                )
+                                // 문구 언어 — 미리듣기와 매일 사전렌더 문구가 이 언어로 만들어진다.
+                                Text(
+                                    text = stringResource(R.string.voices_language_label),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                                EditorSegmentedSelector(
+                                    options = listOf(
+                                        "ko" to stringResource(R.string.voices_lang_ko),
+                                        "en" to stringResource(R.string.voices_lang_en),
+                                        "ja" to stringResource(R.string.voices_lang_ja),
+                                    ),
+                                    selected = profileVoiceLanguage,
+                                    onSelect = { profileVoiceLanguage = it },
                                 )
                                 // 공유 설정 — 토글 하나뿐이라 단독 단계를 없애고 세부 정보에 합쳤다.
                                 Text(

@@ -13,6 +13,7 @@ import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent'
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueuePrerender } from '../lib/stock-clips';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
+import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
 import { VoicePreviewTextUpdateSchema } from '@alarmtalk/shared';
 
 const voiceProfile = new Hono<AppEnv>();
@@ -825,7 +826,7 @@ voiceProfile.patch('/:id', async (c) => {
   if (updateRes.status === 'voice_limit') {
     return c.json(
       {
-        error: `理쒕? ${MAX_VOICE_PROFILES}媛쒓퉴吏 ?깅줉 媛?ν빀?덈떎`,
+        error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
         error_code: 'VOICE_LIMIT_REACHED',
       },
       409,
@@ -1207,7 +1208,7 @@ voiceProfile.post('/clone', async (c) => {
     if (insertResult.status === 'voice_limit') {
       return c.json(
         {
-          error: `理쒕? ${MAX_VOICE_PROFILES}媛쒓퉴吏 ?깅줉 媛?ν빀?덈떎`,
+          error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
           error_code: 'VOICE_LIMIT_REACHED',
         },
         403,
@@ -1275,6 +1276,46 @@ voiceProfile.post('/clone', async (c) => {
           ? 'Voice consent was withdrawn during cloning.'
           : 'Voice draft was removed during cloning.',
       );
+    }
+
+    // 화자 말투(사투리·존댓말·특징 어미) 분석 — 응답을 지연시키지 않도록 waitUntil 로
+    // 비동기 실행(best-effort, 실패해도 등록은 성공). 전사는 ElevenLabs Scribe(이미 음성을
+    // 처리하는 고지된 수탁사), Vertex 에는 음성이 아니라 전사 텍스트만 전송한다.
+    // 첫 자동 미리듣기와 레이스할 수 있다 — 그 경우 첫 미리듣기만 기본 톤이고,
+    // 문구 수정·재생성과 매일 사전렌더부터는 분석 결과가 반영된다.
+    if (c.env.ELEVENLABS_API_KEY) {
+      const analysisEnv = c.env;
+      const analysisAudio = audioBuffer;
+      const analysisMime = audioMimeType;
+      const analysisFileName = audioFile.name || undefined;
+      try {
+        // 테스트/로컬 등 ExecutionContext 없는 환경에선 getter 가 throw — 분석을 건너뛴다.
+        const executionCtx = c.executionCtx;
+        executionCtx.waitUntil(
+          (async () => {
+            const client = new ElevenLabsClient(analysisEnv.ELEVENLABS_API_KEY!);
+            const transcript = await client.speechToText(analysisAudio, {
+              mimeType: analysisMime,
+              fileName: analysisFileName,
+            });
+            const style = await analyzeSpeechStyleWithVertex(
+              analysisEnv,
+              transcript,
+              previewLanguage,
+            );
+            if (!style) return;
+            await getDB(analysisEnv).execute({
+              sql: `UPDATE voice_profiles SET speech_style = ?, updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL`,
+              args: [JSON.stringify(style), profileId],
+            });
+          })().catch((analysisErr) => {
+            console.warn('[voice] speech style analysis failed', analysisErr);
+          }),
+        );
+      } catch {
+        // best-effort — 분석 없이도 등록은 성공이며, 미리듣기 문구 수정으로 말투 교정 가능.
+      }
     }
 
     return c.json(

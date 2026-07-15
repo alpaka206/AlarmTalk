@@ -3,7 +3,7 @@ import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
-import { applyDeliveryTagPerSentence, prepareAlarmTextWithVertex, generatePrerenderClipText } from './vertex-translate';
+import { applyDeliveryTagPerSentence, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, type SpeechStyle } from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
@@ -232,6 +232,8 @@ export interface StockClipTarget {
   defaultTag?: string;
   /** 등록 미리듣기에서 확정된 preview_text(클론만) — 톤/어투 스타일 레퍼런스. */
   styleReference?: string | null;
+  /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등, 클론만). */
+  speechStyle?: SpeechStyle | null;
   claimToken?: string;
 }
 
@@ -255,6 +257,8 @@ export interface PrerenderVoice {
   listenerTitle?: string | null;
   /** 등록 미리듣기에서 확정된 preview_text(클론만) — 톤/어투 스타일 레퍼런스. */
   styleReference?: string | null;
+  /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등, 클론만). */
+  speechStyle?: SpeechStyle | null;
   claimToken?: string;
 }
 
@@ -320,7 +324,7 @@ export async function listReadyCloneVoices(
   const ids = [...byId.keys()];
   const ph = ids.map(() => '?').join(',');
   const res = await db.execute({
-    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text
+    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style
           FROM voice_profiles
           WHERE COALESCE(is_system, 0) = 0
             AND deleted_at IS NULL
@@ -339,6 +343,7 @@ export async function listReadyCloneVoices(
     const relationshipLabel = ((row.relationship_label as string | null) ?? '').trim() || null;
     const listenerTitle = ((row.listener_title as string | null) ?? '').trim() || null;
     const styleReference = ((row.preview_text as string | null) ?? '').trim() || null;
+    const speechStyle = parseSpeechStyle(row.speech_style);
     out.push({
       id,
       name: String(row.name),
@@ -350,6 +355,7 @@ export async function listReadyCloneVoices(
       relationshipLabel,
       listenerTitle,
       styleReference,
+      speechStyle,
       claimToken: req.claimToken,
     });
   }
@@ -428,6 +434,7 @@ export async function findMissingStockTargets(
             listenerTitle: voice.listenerTitle ?? null,
             defaultTag: source.defaultTag,
             styleReference: voice.styleReference ?? null,
+            speechStyle: voice.speechStyle ?? null,
             claimToken: voice.claimToken,
           });
         }
@@ -673,6 +680,7 @@ export async function generateStockClip(
       targetLanguage: language,
       defaultTag: target.defaultTag,
       styleReference: target.styleReference,
+      speechStyle: target.speechStyle ?? null,
     });
     displayText = generated.text;
     // 태그를 문장마다 다시 앞세워 클립 끝까지 전달 톤이 풀리지 않게 한다.
