@@ -240,6 +240,77 @@ describe('POST /:id/preview-played — 미리듣기 재생 확인', () => {
   });
 });
 
+describe('PATCH /:id/preview-text — 미리듣기 문구 수정 (voice-profile)', () => {
+  it('문구를 갱신하고 previewed_at·claim 을 리셋한다(재청취 강제)', async () => {
+    mockDB.pushResult([], 1);
+
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/preview-text`, { preview_text: '  좋은  아침이야,\n오늘도 힘내자  ' }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // 개행/연속 공백은 단일 공백으로 정규화된다.
+    expect(body.preview_text).toBe('좋은 아침이야, 오늘도 힘내자');
+    const sql = mockDB.calls[0]!.sql;
+    expect(sql).toContain('preview_text = ?');
+    // 이전 문구 기준으로 고른 delivery 태그가 수정본에 남지 않게 함께 리셋된다.
+    expect(sql).toContain('preview_tag = NULL');
+    expect(sql).toContain('previewed_at = NULL');
+    expect(sql).toContain('preview_claimed_at = NULL');
+    expect(sql).toContain('preview_claim_token = NULL');
+    expect(sql).toContain("COALESCE(is_draft, 0) = 1");
+    expect(sql).toContain("status = 'ready'");
+  });
+
+  it('대괄호(태그 주입)는 400', async () => {
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/preview-text`, { preview_text: '[whispers] 일어나' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('VOICE_PREVIEW_TEXT_INVALID');
+  });
+
+  it('200자 초과는 400', async () => {
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/preview-text`, { preview_text: '가'.repeat(201) }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('VOICE_PREVIEW_TEXT_INVALID');
+  });
+
+  it('빈 문구는 400', async () => {
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/preview-text`, { preview_text: '   ' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('VOICE_PREVIEW_TEXT_INVALID');
+  });
+
+  it('내 draft 가 아니면(또는 official) 404', async () => {
+    mockDB.pushResult([], 0);
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V1}/preview-text`, { preview_text: '일어나야지' }),
+    );
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('VOICE_PROFILE_NOT_FOUND');
+  });
+
+  it('잘못된 UUID → 400', async () => {
+    const res = await req(
+      buildApp(),
+      jsonReq('PATCH', `/vp/${V_BAD}/preview-text`, { preview_text: '일어나야지' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_VOICE_PROFILE_ID');
+  });
+});
+
 describe('PATCH /:id — 이름 변경 (voice-profile)', () => {
   it('잘못된 UUID → 400', async () => {
     const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V_BAD}`, { name: 'ok' }));

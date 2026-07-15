@@ -878,6 +878,8 @@ function prerenderClipPrompt(params: {
   listenerTitle?: string | null;
   targetLanguage: string;
   defaultTag?: string;
+  /** 사용자가 등록 미리듣기에서 확정(직접 수정 포함)한 문구 — 톤/어투 기준. 내용 복제 금지. */
+  styleReference?: string | null;
 }): string {
   const targetName = LANGUAGE_NAMES[params.targetLanguage] || params.targetLanguage;
   const listenerTitle = params.listenerTitle?.trim();
@@ -902,12 +904,17 @@ function prerenderClipPrompt(params: {
   ).join(
     ' ',
   )} are for calm/bedtime intents only. One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
+  const styleReference = params.styleReference?.trim();
+  const styleReferenceInstruction = styleReference
+    ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
+    : '';
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
     activeLanguageBlock(params.targetLanguage),
     `Alarm intent (semantic seed): ${params.seed}`,
     relationship,
     romanticToneInstruction,
+    styleReferenceInstruction,
     'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
     'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
     params.targetLanguage === 'ko'
@@ -934,6 +941,8 @@ export async function generatePrerenderClipText(
     listenerTitle?: string | null;
     targetLanguage: string;
     defaultTag?: string;
+    /** 등록 미리듣기에서 확정된 preview_text — 있으면 톤/어투 스타일 레퍼런스로 쓴다. */
+    styleReference?: string | null;
   },
 ): Promise<{ text: string; tag: string }> {
   const targetLanguage = params.targetLanguage || 'ko';

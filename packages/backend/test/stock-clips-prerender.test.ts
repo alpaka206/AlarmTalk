@@ -30,6 +30,7 @@ async function setupDb() {
       is_draft INTEGER DEFAULT 0,
       relationship_label TEXT DEFAULT '',
       listener_title TEXT DEFAULT '',
+      preview_text TEXT,
       deleted_at TEXT
     );
     CREATE TABLE messages (
@@ -209,6 +210,22 @@ describe('findMissingStockTargets (클론 톤 적응 스코프)', () => {
     expect(voices[0]!.listenerTitle).toBe('아들');
     const targets = await findMissingStockTargets(db, voices);
     expect(targets.every((t) => t.toneAdapt && t.relationshipLabel === '아빠')).toBe(true);
+  });
+
+  it('확정된 preview_text 는 styleReference 로 실려 모든 톤 적응 대상에 전달된다', async () => {
+    const db = await setupDb();
+    await db.execute({
+      sql: `INSERT INTO voice_profiles (id, user_id, name, elevenlabs_voice_id, status, is_system, is_draft, relationship_label, listener_title, preview_text)
+            VALUES ('clone-style', 'owner-1', 'clone-style', 'el_y', 'ready', 0, 0, '엄마', '딸', '딸, 좋은 아침이야. 오늘도 잘 보내자.')`,
+      args: [],
+    });
+    const voices = await listReadyCloneVoices(db, [
+      { voiceProfileId: 'clone-style', ownerUserId: 'owner-1', language: 'ko', claimToken: 'c2' },
+    ]);
+    expect(voices[0]!.styleReference).toBe('딸, 좋은 아침이야. 오늘도 잘 보내자.');
+    const targets = await findMissingStockTargets(db, voices);
+    expect(targets.length).toBeGreaterThan(0);
+    expect(targets.every((t) => t.styleReference === '딸, 좋은 아침이야. 오늘도 잘 보내자.')).toBe(true);
   });
 });
 

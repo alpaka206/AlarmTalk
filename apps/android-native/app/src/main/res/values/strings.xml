@@ -673,6 +673,19 @@
     <string name="voices_confirm_new_preview_stop">정지</string>
     <string name="voices_confirm_new_keep">이 목소리로 할게요</string>
     <string name="voices_confirm_new_delete">삭제</string>
+    <string name="voices_creating_title">목소리를 만드는 중이에요</string>
+    <string name="voices_creating_body">잠시만 기다려 주세요. 보통 1분 안에 끝나요.
+완성되면 바로 들려드릴게요.</string>
+    <string name="voices_preview_text_label">미리듣기 문구</string>
+    <string name="voices_preview_text_loading">문구를 준비하고 있어요…</string>
+    <string name="voices_preview_text_retry_hint">문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요.</string>
+    <string name="voices_preview_edit_hint">말투가 마음에 안 들면 문구를 수정해 보세요. 수정한 말투가 매일 아침 문구의 기준이 돼요.</string>
+    <string name="voices_preview_edit_action">문구 수정</string>
+    <string name="voices_preview_edit_save">저장</string>
+    <string name="voices_preview_edit_saving">저장 중…</string>
+    <string name="voices_preview_edit_cancel">취소</string>
+    <string name="voices_preview_edit_empty">문구를 입력해 주세요.</string>
+    <string name="voices_preview_edit_failed">문구를 수정하지 못했어요.</string>
     <string name="voices_previous">이전</string>
     <string name="voices_record_done_duration">녹음 완료 · %1$s</string>
     <string name="voices_record_script_title">아래 대사를 따라 읽어 주세요</string>
