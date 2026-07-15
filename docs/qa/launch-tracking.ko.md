@@ -55,8 +55,8 @@ PR #548로 푸시토큰 수집이 실동작을 시작했다: `POST /api/push/reg
 ### M3 — 애플 서버 간 결제 알림(ASSN V2) 부재 *(2026-07-15: 축소 — 구글은 해결, 애플은 iOS 보류로 비차단)*
 구글 RTDN은 완비됐다: `billing-google-rtdn.ts`가 Pub/Sub push를 받아 purchaseToken 권위 재조회 후 갱신/예약취소/정지/해지를 동기화하므로, 구글 측 환불·취소 반영 지연은 해소. 애플 App Store Server Notifications V2는 여전히 없으나 **iOS는 미운영·보류**라 Android 출시를 막지 않는다 — iOS 재개 시 필수 작업으로 이월.
 
-### N1 — 구글 로그인 nonce/리플레이 검사 없음 *(2026-07-15: 변동 없음)*
-애플 로그인은 nonce를 검증하지만(`oauth.ts`), `verifyGoogleIdToken`은 iss/aud/exp/email_verified만 검사하고 nonce 검사가 없다. id_token 재전송(리플레이) 방어가 한 겹 부족하다.
+### N1 — 소셜 로그인 nonce/리플레이 검사 공백 *(2026-07-15: 애플도 부분 공백으로 정정)*
+애플 로그인은 클라이언트가 raw nonce를 보낸 경우에만 검증한다(`auth.ts`): 토큰에 nonce 클레임이 있는데 raw nonce가 빠지면 거부하지만, **둘 다 없는 legacy 요청은 경고 로그만 남기고 통과** — 그 경로에선 리플레이 방어가 비활성이다. iOS 재개 시 nonce 필수화(무-nonce 요청 거부)로 이월. `verifyGoogleIdToken`은 iss/aud/exp/email_verified만 검사하고 nonce 검사가 없다. id_token 재전송(리플레이) 방어가 한 겹 부족하다.
 
 ### N2 — 결제 웹훅(RTDN) 인증 토큰이 쿼리스트링에 있음 *(2026-07-15: 축소)*
 토큰 비교는 상수시간 비교(`timingSafeEqualStr`)로 교체돼 타이밍 오라클은 해소(`billing-google-rtdn.ts`). **쿼리스트링(`?token=`) 위치만 잔존** — 오류 시 모니터링(요청 URL)에 토큰이 캡처될 수 있으니 헤더 이동 또는 URL 스크럽 권장.
