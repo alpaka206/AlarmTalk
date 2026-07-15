@@ -824,7 +824,9 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage) {
+    // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
+    val isOnline by rememberIsOnline()
+    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage, isOnline) {
         if (freeVoiceTier && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             if (editor.voiceSource != VoiceSources.TTS_PROFILE) {
                 editor.voiceSource = VoiceSources.TTS_PROFILE
@@ -903,11 +905,12 @@ internal fun AlarmEditorScreen(
                     stringResource(R.string.editor_save_blocked_random_prompt_incomplete)
                 // 무료는 문구를 직접 입력하지 않는다(테마 클립 자동 회전) — 빈 문구는
                 // 클립이 아직 준비되지 않은 상태이므로 '입력하라'는 안내 대신 준비 중 안내.
+                // 오프라인이면 기다려도 안 되므로 연결 안내로 정직하게 분기한다.
                 !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
-                    if (freeVoiceTier) {
-                        stringResource(R.string.editor_save_blocked_free_clips_loading)
-                    } else {
-                        stringResource(R.string.editor_save_blocked_enter_message_or_random)
+                    when {
+                        !freeVoiceTier -> stringResource(R.string.editor_save_blocked_enter_message_or_random)
+                        !isOnline -> stringResource(R.string.editor_save_blocked_free_clips_offline)
+                        else -> stringResource(R.string.editor_save_blocked_free_clips_loading)
                     }
                 else -> null
             }

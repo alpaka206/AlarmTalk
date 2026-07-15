@@ -258,6 +258,8 @@
     <string name="editor_snooze_title">再通知</string>
     <string name="editor_free_bucket_loading">メッセージを準備しています</string>
     <string name="editor_save_blocked_free_clips_loading">アラームのメッセージを準備しています。しばらくお待ちください。</string>
+    <string name="editor_free_bucket_offline">オフラインのためフレーズを読み込めませんでした</string>
+    <string name="editor_save_blocked_free_clips_offline">オフラインのためアラームのフレーズを読み込めませんでした。接続が戻ると自動で再試行します。</string>
     <string name="voices_clone_requires_paid_hint">自分の声で起こすアラームは有料プランで作成できます。</string>
     <string name="editor_stop">停止</string>
     <string name="editor_vibration_title">バイブレーション</string>

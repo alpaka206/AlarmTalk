@@ -469,8 +469,13 @@ private fun FreeThemeSummaryRow(
     selectedBucket: String?,
     onClick: () -> Unit,
 ) {
-    val valueLabel = selectedBucket?.let { stringResource(freeBucketLabelRes(it)) }
-        ?: stringResource(R.string.editor_free_bucket_loading)
+    // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
+    val isOnline by rememberIsOnline()
+    val valueLabel = when {
+        selectedBucket != null -> stringResource(freeBucketLabelRes(selectedBucket))
+        !isOnline -> stringResource(R.string.editor_free_bucket_offline)
+        else -> stringResource(R.string.editor_free_bucket_loading)
+    }
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
