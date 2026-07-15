@@ -225,6 +225,8 @@ export interface StockClipTarget {
   listenerTitle?: string | null;
   /** 톤 적응 생성 시 카테고리 기본 delivery 태그. */
   defaultTag?: string;
+  /** 등록 미리듣기에서 확정된 preview_text(클론만) — 톤/어투 스타일 레퍼런스. */
+  styleReference?: string | null;
   claimToken?: string;
 }
 
@@ -246,6 +248,8 @@ export interface PrerenderVoice {
   /** 클론 톤 적응 생성용 관계/호칭. */
   relationshipLabel?: string | null;
   listenerTitle?: string | null;
+  /** 등록 미리듣기에서 확정된 preview_text(클론만) — 톤/어투 스타일 레퍼런스. */
+  styleReference?: string | null;
   claimToken?: string;
 }
 
@@ -311,7 +315,7 @@ export async function listReadyCloneVoices(
   const ids = [...byId.keys()];
   const ph = ids.map(() => '?').join(',');
   const res = await db.execute({
-    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title
+    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text
           FROM voice_profiles
           WHERE COALESCE(is_system, 0) = 0
             AND deleted_at IS NULL
@@ -329,6 +333,7 @@ export async function listReadyCloneVoices(
     if (!req || elevenlabsVoiceId.length === 0) continue;
     const relationshipLabel = ((row.relationship_label as string | null) ?? '').trim() || null;
     const listenerTitle = ((row.listener_title as string | null) ?? '').trim() || null;
+    const styleReference = ((row.preview_text as string | null) ?? '').trim() || null;
     out.push({
       id,
       name: String(row.name),
@@ -339,6 +344,7 @@ export async function listReadyCloneVoices(
       isClone: true,
       relationshipLabel,
       listenerTitle,
+      styleReference,
       claimToken: req.claimToken,
     });
   }
@@ -416,6 +422,7 @@ export async function findMissingStockTargets(
             relationshipLabel: voice.relationshipLabel ?? null,
             listenerTitle: voice.listenerTitle ?? null,
             defaultTag: source.defaultTag,
+            styleReference: voice.styleReference ?? null,
             claimToken: voice.claimToken,
           });
         }
@@ -660,6 +667,7 @@ export async function generateStockClip(
       listenerTitle: target.listenerTitle,
       targetLanguage: language,
       defaultTag: target.defaultTag,
+      styleReference: target.styleReference,
     });
     displayText = generated.text;
     synthesisText = generated.tag ? `[${generated.tag}] ${generated.text}` : generated.text;

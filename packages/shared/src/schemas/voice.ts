@@ -24,3 +24,18 @@ export const VoiceProfileSchema = z.object({
   updated_at: z.string().optional(),
 });
 export type VoiceProfile = z.infer<typeof VoiceProfileSchema>;
+
+/**
+ * 등록 미리듣기 문구 직접 수정(초안 전용) 요청 바디.
+ * 길이 한도는 생성 경로(generatePrerenderClipText)의 검증 상한(200자)과 동일.
+ * 합성 텍스트가 "[태그] 문구" 로 조립되므로 대괄호는 태그 주입 방지를 위해 금지.
+ */
+export const VoicePreviewTextUpdateSchema = z.object({
+  preview_text: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine((text) => !/[[\]]/.test(text), { message: 'Brackets are not allowed' }),
+});
+export type VoicePreviewTextUpdate = z.infer<typeof VoicePreviewTextUpdateSchema>;

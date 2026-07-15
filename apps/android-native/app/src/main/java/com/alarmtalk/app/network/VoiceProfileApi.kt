@@ -59,6 +59,16 @@ data class VoicePreviewPlayedResponse(
     val previewed: Boolean,
 )
 
+data class VoicePreviewTextUpdateRequest(
+    @SerializedName("preview_text") val previewText: String,
+)
+
+data class VoicePreviewTextUpdateResponse(
+    val success: Boolean,
+    // 서버가 공백 정규화한 최종 문구 — 이후 미리듣기 합성 문구(캐시 키)와 동일.
+    @SerializedName("preview_text") val previewText: String,
+)
+
 data class VoiceProfileRelationshipUpdateRequest(
     @SerializedName("relationship_label") val relationshipLabel: String,
     @SerializedName("listener_title") val listenerTitle: String,
@@ -140,6 +150,14 @@ interface VoiceProfileApi {
         @Path("id") id: String,
         @Body request: VoicePreviewPlayedRequest,
     ): VoicePreviewPlayedResponse
+
+    // 등록 미리듣기 문구 직접 수정(초안 전용) — 서버가 previewed_at 을 리셋해 재청취를 강제한다.
+    @PATCH("voice/{id}/preview-text")
+    suspend fun updateVoicePreviewText(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body request: VoicePreviewTextUpdateRequest,
+    ): VoicePreviewTextUpdateResponse
 
     @PATCH("voice/{id}/relationship")
     suspend fun updateVoiceProfileRelationship(

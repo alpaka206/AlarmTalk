@@ -58,6 +58,12 @@ import com.alarmtalk.app.network.VoiceProfile
 internal enum class VoiceRegistrationStep {
     Source,
     Details,
+
+    /** 등록 요청 후 클론 생성 대기 — 결정 전까지 플로우 밖으로 나가지 않는다. */
+    Creating,
+
+    /** 생성 완료 — 미리듣기 문구 확인·수정 후 유지/삭제를 결정하는 스텝. */
+    Preview,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -15,7 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -76,14 +78,19 @@ internal fun WakerSelectionSheet(
     ) {
         Column(
             // 옵션 목록이 시트 최대 높이를 넘으면(서버가 주는 동적 목록) 스크롤로 닿게 한다.
+            // 좌우 패딩은 타이틀 블록에만 준다 — 옵션 행(WakerSheetOptionRow)은 시트 폭 전체로
+            // 퍼지는 민짜 행(iOS 액션시트 문법)이라 리플/구분선이 가장자리까지 이어져야 한다.
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
-                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+                .padding(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleLarge,
@@ -122,9 +129,24 @@ private fun WakerSheetDragHandle() {
 }
 
 /**
+ * 옵션 행들을 묶는 그룹 — 박스(테두리/틴트) 없이 민짜 행 + 헤어라인만 둔다. 시트 자체가 이미
+ * 둥근 컨테이너라 안에 카드를 또 두면 이중 컨테이너가 된다(페이지=그룹 카드, 오버레이 시트=민짜 행).
+ * 행은 시트 폭 전체로 퍼져 리플/구분선이 가장자리까지 이어진다(iOS 액션시트 문법).
+ */
+@Composable
+internal fun WakerSheetOptionGroup(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(modifier = modifier.fillMaxWidth()) { content() }
+}
+
+/**
  * 선택형 시트의 공통 옵션 행: [아이콘 배지] 제목/설명 … [trailing] 선택 표시.
- * 선택 표시는 체크 원(선택) / 빈 링(미선택)으로 통일한다.
+ * 선택 표시는 '선택된 행에만' 체크(✓) — 미선택 행은 아무 표시 없음(iOS 정석). 선택 상태가 없는
+ * 액션 시트(예: 누구를 깨울까요, selected=false 고정)는 자연히 표시가 없다.
  * trailing 은 선택 표시 바로 앞의 상태 슬롯 — 기본 목소리 시트의 재생 이퀄라이저 등.
+ * 반드시 [WakerSheetOptionGroup] 안에서 쓰고, 마지막 행이 아니면 divider=true 로 헤어라인을 잇는다.
  */
 @Composable
 internal fun WakerSheetOptionRow(
@@ -136,24 +158,17 @@ internal fun WakerSheetOptionRow(
     icon: ImageVector? = null,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    divider: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        shape = WakerPanelShape,
-        color = if (selected) {
-            scheme.primaryContainer.copy(alpha = 0.55f)
-        } else {
-            scheme.surfaceVariant.copy(alpha = 0.34f)
-        },
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (selected) scheme.primary.copy(alpha = 0.5f) else scheme.outlineVariant,
-        ),
-    ) {
+    val hasLeading = leading != null || icon != null
+    Column(modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 20.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -189,26 +204,28 @@ internal fun WakerSheetOptionRow(
                 }
             }
             trailing?.invoke()
+            // 선택 표시는 '선택된 행에만' 체크(✓) — iOS 정석. 미선택 행의 빈 링은 라디오 문법의
+            // 노이즈이고, 선택 상태가 없는 액션 시트(누구를 깨울까요)에선 표시 자체가 무의미하다
+            // (그 시트는 selected=false 라 자연히 아무 표시 없음).
             if (selected) {
                 Icon(
-                    imageVector = Icons.Filled.CheckCircle,
+                    imageVector = Icons.Filled.Check,
                     contentDescription = null,
                     tint = scheme.primary,
                     modifier = Modifier.size(22.dp),
                 )
-            } else {
-                Box(
-                    modifier = Modifier.size(22.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Surface(
-                        modifier = Modifier.size(20.dp),
-                        shape = androidx.compose.foundation.shape.CircleShape,
-                        color = Color.Transparent,
-                        border = BorderStroke(1.5.dp, scheme.outline),
-                    ) {}
-                }
             }
+        }
+        if (divider) {
+            // 텍스트 시작선까지 들여쓴 헤어라인 — pane(SnoozeOptionDivider)과 동일 문법.
+            // 아이콘 배지(40) + 간격(12) + 좌패딩(20) = 72, 배지 없으면 좌패딩만.
+            Box(
+                modifier = Modifier
+                    .padding(start = if (hasLeading) 72.dp else 20.dp)
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(scheme.outlineVariant),
+            )
         }
     }
 }

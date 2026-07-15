@@ -61,18 +61,21 @@ private val AuthFieldGlass = Color(0x14FFFFFF)
 internal val AuthLine = Color(0x3DFFFFFF)
 internal val AuthLineSoft = Color(0x29FFFFFF)
 internal val AuthTextMuted = Color(0x99FFFFFF)
+private val AuthSceneTop = Color(0xFF1A2A52)
+private val AuthSceneBottom = Color(0xFF070C1D)
 
 /** 인증 플로우 공통 배경 — 은은한 네이비 그라데이션 + 상단 브랜드 글로우. */
 @Composable
 internal fun AuthBackdrop(content: @Composable BoxScope.() -> Unit) {
+    SceneSystemBars(top = AuthSceneTop, bottom = AuthSceneBottom)
     Box(
         Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    0f to Color(0xFF1A2A52),
+                    0f to AuthSceneTop,
                     0.55f to Color(0xFF0E1938),
-                    1f to Color(0xFF070C1D),
+                    1f to AuthSceneBottom,
                 ),
             ),
     ) {

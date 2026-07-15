@@ -228,8 +228,8 @@ private fun HolidayCountryPickerDialog(
         title = stringResource(R.string.settings_holiday_country_title),
         onDismiss = onDismiss,
     ) { dismiss ->
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            HolidayCountryPreferenceStore.SUPPORTED.forEach { code ->
+        WakerSheetOptionGroup {
+            HolidayCountryPreferenceStore.SUPPORTED.forEachIndexed { index, code ->
                 WakerSheetOptionRow(
                     title = holidayCountryDisplayLabel(code),
                     selected = code == current,
@@ -237,6 +237,7 @@ private fun HolidayCountryPickerDialog(
                         onSelect(code)
                         dismiss()
                     },
+                    divider = index != HolidayCountryPreferenceStore.SUPPORTED.lastIndex,
                 )
             }
         }

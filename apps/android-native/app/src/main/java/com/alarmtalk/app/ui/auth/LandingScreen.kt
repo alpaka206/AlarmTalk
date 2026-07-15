@@ -131,6 +131,7 @@ internal fun LandingScreen(
     contentPadding: PaddingValues,
     onStart: () -> Unit,
 ) {
+    SceneSystemBars(top = LandingScene.skyStops.first().second, bottom = LandingScene.seaBottom)
     Box(Modifier.fillMaxSize()) {
         SunriseScene(palette = LandingScene, modifier = Modifier.fillMaxSize())
         Column(

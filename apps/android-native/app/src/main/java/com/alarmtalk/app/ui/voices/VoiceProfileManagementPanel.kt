@@ -12,6 +12,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,8 +31,8 @@ import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -201,7 +202,8 @@ internal fun VoiceProfileManagementPanel(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
+    // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
@@ -211,6 +213,7 @@ internal fun VoiceProfileManagementPanel(
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
+    onUpdateVoicePreviewText: suspend (String, String) -> String,
     onPromoteVoiceDraft: (String) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
@@ -249,7 +252,10 @@ internal fun VoiceProfileManagementPanel(
     var voiceGuideVisible by remember { mutableStateOf(false) }
     // 목소리 만들기를 처음 열 때 한 번만 자동 노출. 다이얼로그 도움말 버튼으로 다시 볼 수 있다.
     LaunchedEffect(showCreateForm) {
-        if (showCreateForm && !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_VOICE_CREATE)) {
+        // 앱 재시작으로 미리듣기/만드는 중 스텝으로 곧장 복귀한 경우엔 가이드를 겹치지 않는다.
+        if (showCreateForm && currentStep == VoiceRegistrationStep.Source &&
+            !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_VOICE_CREATE)
+        ) {
             voiceGuideVisible = true
         }
     }
@@ -279,6 +285,12 @@ internal fun VoiceProfileManagementPanel(
     var confirmPreviewCompleted by remember { mutableStateOf(false) }
     // 미리듣기 생성 코루틴 — 다이얼로그를 닫으면 취소해 늦은 재생/오디오 유출을 막는다.
     var confirmPreviewJob by remember { mutableStateOf<Job?>(null) }
+    // 미리듣기 문구(서버가 관계·호칭 톤으로 생성/사용자가 수정) — Preview 스텝에 표시하고
+    // 수정하면 이후 미리듣기와 매일 사전렌더 문구의 말투 기준이 된다.
+    var confirmPreviewText by remember { mutableStateOf<String?>(null) }
+    var confirmPreviewEditing by remember { mutableStateOf(false) }
+    var confirmPreviewEditText by remember { mutableStateOf("") }
+    var confirmPreviewSaving by remember { mutableStateOf(false) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
@@ -286,6 +298,10 @@ internal fun VoiceProfileManagementPanel(
     val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
     val canOpenCreateForm = canCreateVoice && !isLimitReached
+    // 생성~결정(만드는 중/미리듣기) 구간 — 이 동안은 다이얼로그를 닫거나 밖으로 나갈 수 없다
+    // (유지/삭제를 골라야만 끝난다). draft 가 생겨 isLimitReached 가 돼도 다이얼로그를 유지한다.
+    val inDraftDecisionFlow = currentStep == VoiceRegistrationStep.Creating ||
+        currentStep == VoiceRegistrationStep.Preview
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
 
@@ -397,6 +413,10 @@ internal fun VoiceProfileManagementPanel(
                         listenerTitle = voice.listenerTitle,
                     ),
                 )
+                // 합성된 실제 문구 — Preview 스텝에 표시하고 수정의 기준이 된다.
+                if (response.text.isNotBlank()) confirmPreviewText = response.text
+                // 이전 시도의 실패 메시지가 성공한 화면에 남지 않게 지운다.
+                localMessage = null
                 val cached = withContext(Dispatchers.IO) {
                     val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
@@ -450,18 +470,46 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    LaunchedEffect(pendingVoiceDraft?.id, pendingVoiceDraft?.status) {
-        val draft = pendingVoiceDraft
-        if (draft != null && (draft.status == null || draft.status == "ready")) {
-            confirmPreviewCompleted = false
-            confirmNewVoice = draft
-        } else if (draft == null && confirmNewVoice?.isDraft == true) {
+    // 미리듣기 문구 수정 저장: 서버에 반영(재청취 게이트 리셋) 후 수정본으로 즉시 재합성·재생.
+    // 수정한 문구는 이후 매일 사전렌더 문구의 말투(스타일) 기준으로도 쓰인다.
+    fun savePreviewTextEdit(voice: VoiceProfile) {
+        val newText = confirmPreviewEditText.trim()
+        if (newText.isBlank()) {
+            localMessage = context.getString(R.string.voices_preview_edit_empty)
+            return
+        }
+        if (confirmPreviewSaving) return
+        if (newText == confirmPreviewText) {
+            confirmPreviewEditing = false
+            return
+        }
+        scope.launch {
+            confirmPreviewSaving = true
+            localMessage = null
+            // 진행 중 재생/합성을 멈춘다 — 이후 재생은 수정본 기준이어야 한다.
             confirmPreviewJob?.cancel()
             confirmPreviewJob = null
             stopMediaPreview(invalidateGreetingPreview = false)
-            confirmPreviewBusy = false
             confirmPreviewPlaying = false
-            confirmNewVoice = null
+            confirmPreviewBusy = false
+            runCatching {
+                onUpdateVoicePreviewText(voice.id, newText)
+            }.onSuccess { normalized ->
+                confirmPreviewText = normalized
+                confirmPreviewCompleted = false
+                confirmPreviewEditing = false
+                confirmPreviewEditText = ""
+                // 수정본을 바로 들려준다(끝까지 들으면 keep 버튼이 다시 열린다).
+                previewRegisteredVoice(voice)
+            }.onFailure { error ->
+                if (error is kotlin.coroutines.cancellation.CancellationException) throw error
+                AlarmTalkLog.reportError("Failed to update voice preview text", error)
+                localMessage = userFacingError(
+                    error,
+                    context.getString(R.string.voices_preview_edit_failed),
+                )
+            }
+            confirmPreviewSaving = false
         }
     }
 
@@ -558,6 +606,97 @@ internal fun VoiceProfileManagementPanel(
         mediaPlayer = null
         showCreateForm = false
         localMessage = null
+        // 미리듣기 스텝 상태 정리 — 진행 중 합성 코루틴을 취소해 늦은 재생을 막는다.
+        confirmPreviewJob?.cancel()
+        confirmPreviewJob = null
+        confirmPreviewBusy = false
+        confirmPreviewPlaying = false
+        confirmPreviewText = null
+        confirmPreviewEditing = false
+        confirmPreviewEditText = ""
+        confirmPreviewSaving = false
+    }
+
+    // 등록 요청을 보낸 뒤에도 다이얼로그를 닫지 않고 '만드는 중' 스텝으로 전환한다 —
+    // 유지/삭제를 결정할 때까지 플로우 밖으로 나가지 않는다(사용자 요구).
+    fun enterCreatingStep() {
+        if (recorder.isRecording) recorder.cancel()
+        isRecording = false
+        recordingElapsedMillis = 0L
+        recordingLevel = 0f
+        stopMediaPreview()
+        selectedAudio = null
+        selectedFileUri = null
+        selectedFileDurationMillis = null
+        createPreparing = false
+        createSubmitAttempted = false
+        localMessage = null
+        currentStep = VoiceRegistrationStep.Creating
+    }
+
+    LaunchedEffect(pendingVoiceDraft?.id, pendingVoiceDraft?.status) {
+        val draft = pendingVoiceDraft
+        when {
+            // 생성 완료 → 만들기 다이얼로그 안 미리듣기 스텝으로. 앱 재시작/재로그인으로
+            // ready draft 가 남아 있으면 이 스텝으로 바로 복귀한다(결정 전 이탈 방지).
+            draft != null && (draft.status == null || draft.status == "ready") -> {
+                if (confirmNewVoice?.id != draft.id) {
+                    confirmPreviewCompleted = false
+                    confirmPreviewText = null
+                    confirmPreviewEditing = false
+                    confirmPreviewEditText = ""
+                }
+                confirmNewVoice = draft
+                showCreateForm = true
+                currentStep = VoiceRegistrationStep.Preview
+            }
+
+            // 아직 클론 생성 중(서버 processing) → 만드는 중 스텝 유지/복귀.
+            draft != null && draft.status == "processing" -> {
+                showCreateForm = true
+                if (currentStep != VoiceRegistrationStep.Creating) {
+                    currentStep = VoiceRegistrationStep.Creating
+                }
+            }
+
+            // 생성 실패 draft → 플로우를 닫고 목록/메시지로 처리하게 한다.
+            draft != null && draft.status == "failed" -> {
+                if (showCreateForm) closeCreateDialog()
+            }
+
+            // draft 소멸(삭제/승격) → 미리듣기 상태 정리 + 플로우 종료.
+            draft == null && confirmNewVoice?.isDraft == true -> {
+                confirmPreviewJob?.cancel()
+                confirmPreviewJob = null
+                stopMediaPreview(invalidateGreetingPreview = false)
+                confirmPreviewBusy = false
+                confirmPreviewPlaying = false
+                confirmNewVoice = null
+                if (showCreateForm) closeCreateDialog()
+            }
+        }
+    }
+
+    // 미리듣기 스텝 진입 시 문구·오디오를 자동 준비(합성+재생) — 문구가 화면에 뜨고
+    // 끝까지 들으면 '이 목소리로 할게요' 가 열린다.
+    LaunchedEffect(currentStep, confirmNewVoice?.id) {
+        val voice = confirmNewVoice
+        if (currentStep == VoiceRegistrationStep.Preview && voice != null &&
+            confirmPreviewText == null && !confirmPreviewBusy && !confirmPreviewSaving
+        ) {
+            previewRegisteredVoice(voice)
+        }
+    }
+
+    // 만드는 중 스텝에서 생성 요청이 draft 행도 못 만들고 실패하면(업로드/클론 오류)
+    // 세부 정보 스텝으로 되돌린다. Creating 진입은 요청 수락(busy=true 동기 설정) 후에만
+    // 일어나므로, busy 도 아니고 draft 도 없으면 생성이 끝났는데 실패한 것이다.
+    // 오류 메시지는 ViewModel 이 전역 message 로 띄운다.
+    LaunchedEffect(voiceProfileBusy, pendingVoiceDraft?.id, currentStep) {
+        if (currentStep != VoiceRegistrationStep.Creating) return@LaunchedEffect
+        if (!voiceProfileBusy && pendingVoiceDraft == null) {
+            currentStep = VoiceRegistrationStep.Details
+        }
     }
 
     val pickAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -592,7 +731,11 @@ internal fun VoiceProfileManagementPanel(
     }
 
     LaunchedEffect(canCreateVoice) {
-        if (!canCreateVoice && showCreateForm) {
+        // 결정 구간에선 구독 상태가 흔들려도 플로우를 강제 종료하지 않는다(결정이 먼저).
+        if (!canCreateVoice && showCreateForm &&
+            currentStep != VoiceRegistrationStep.Creating &&
+            currentStep != VoiceRegistrationStep.Preview
+        ) {
             closeCreateDialog()
         }
     }
@@ -758,14 +901,16 @@ internal fun VoiceProfileManagementPanel(
             if (voiceProfileDurationError(context, audio.durationMillis) != null) return
             // 검증을 다 통과해 실제로 등록을 보낼 때만 확인창 감지를 무장한다(중단/검증실패 후
             // 스냅샷이 남아 엉뚱한 목소리에 확인창이 뜨는 것을 막는다).
-            onCreateVoiceProfile(
+            // ViewModel 이 요청을 시작하지 못했으면(false — 스테일 세션/플랜/개수 상태 등)
+            // '만드는 중' 스텝에 진입하지 않는다 — 못 닫는 화면에 갇히는 것을 막는다.
+            val accepted = onCreateVoiceProfile(
                 trimmedName,
                 audio,
                 shareVoice,
                 trimmedRelationship,
                 trimmedListener,
             )
-            closeCreateDialog()
+            if (accepted) enterCreatingStep()
             return
         }
         scope.launch {
@@ -778,14 +923,14 @@ internal fun VoiceProfileManagementPanel(
                 if (error != null) {
                     localMessage = error
                 } else {
-                    onCreateVoiceProfile(
+                    val accepted = onCreateVoiceProfile(
                         trimmedName,
                         audio,
                         shareVoice,
                         trimmedRelationship,
                         trimmedListener,
                     )
-                    closeCreateDialog()
+                    if (accepted) enterCreatingStep()
                 }
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to prepare selected voice file", error)
@@ -932,30 +1077,37 @@ internal fun VoiceProfileManagementPanel(
                 defaultVoiceSheetOpen = false
             },
         ) { _ ->
-            systemVoices.forEach { profile ->
-                WakerSheetOptionRow(
-                    title = profile.name,
-                    selected = profile.id == defaultVoiceId,
-                    onClick = {
-                        onSetDefaultVoice(profile.id)
-                        playGreeting(profile)
-                    },
-                    trailing = if (playingGreetingVoiceId == profile.id) {
-                        { PlayingEqualizer() }
-                    } else {
-                        null
-                    },
-                )
+            WakerSheetOptionGroup {
+                systemVoices.forEachIndexed { index, profile ->
+                    WakerSheetOptionRow(
+                        title = profile.name,
+                        selected = profile.id == defaultVoiceId,
+                        onClick = {
+                            onSetDefaultVoice(profile.id)
+                            playGreeting(profile)
+                        },
+                        trailing = if (playingGreetingVoiceId == profile.id) {
+                            { PlayingEqualizer() }
+                        } else {
+                            null
+                        },
+                        divider = index != systemVoices.lastIndex,
+                    )
+                }
             }
             // 미리듣기 준비중/실패 안내 — 패널 본문의 MutedText 는 시트 스크림에 가려지므로
             // 시트가 열려 있는 동안엔 여기서 보여준다(열 때 localMessage 를 비워 회귀 방지).
+            // 시트 콘텐츠는 풀블리드(민짜 행)라 텍스트에는 좌우 패딩을 직접 준다.
             if (localMessage != null) {
-                MutedText(localMessage.orEmpty())
+                Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                    MutedText(localMessage.orEmpty())
+                }
             }
         }
     }
 
-    if (showCreateForm && !isLimitReached && canCreateVoice) {
+    // 만드는 중/미리듣기 스텝에선 draft 존재로 isLimitReached 가 돼도 다이얼로그를 유지한다.
+    if (showCreateForm && (inDraftDecisionFlow || (!isLimitReached && canCreateVoice))) {
         val useManualSystemInsets = Build.VERSION.SDK_INT >= 35
         val actionBottomPadding = 10.dp + if (useManualSystemInsets) {
             androidNavigationBarHeightPadding() + AndroidEdgeToEdgeNavigationExtraPadding
@@ -984,7 +1136,9 @@ internal fun VoiceProfileManagementPanel(
             (cropEndMillis - cropStartMillis) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         Dialog(
             onDismissRequest = {
-                if (!voiceProfileBusy) closeCreateDialog()
+                // 결정 구간(만드는 중/미리듣기)에선 뒤로가기/바깥 탭으로 닫히지 않는다 —
+                // 유지 또는 삭제를 골라야만 플로우가 끝난다.
+                if (!voiceProfileBusy && !inDraftDecisionFlow) closeCreateDialog()
             },
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
@@ -1023,12 +1177,14 @@ internal fun VoiceProfileManagementPanel(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(
-                            onClick = ::closeCreateDialog,
-                            enabled = !voiceProfileBusy,
-                            modifier = Modifier.size(42.dp),
-                        ) {
-                            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
+                        if (!inDraftDecisionFlow) {
+                            IconButton(
+                                onClick = ::closeCreateDialog,
+                                enabled = !voiceProfileBusy,
+                                modifier = Modifier.size(42.dp),
+                            ) {
+                                Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
+                            }
                         }
                     }
 
@@ -1195,6 +1351,153 @@ internal fun VoiceProfileManagementPanel(
                                     onCheckedChange = { shareVoice = it },
                                 )
                             }
+
+                            VoiceRegistrationStep.Creating -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 72.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                                ) {
+                                    CircularProgressIndicator()
+                                    Text(
+                                        text = stringResource(R.string.voices_creating_title),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.voices_creating_body),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
+                            }
+
+                            VoiceRegistrationStep.Preview -> {
+                                val previewVoice = confirmNewVoice
+                                if (previewVoice != null) {
+                                    Text(
+                                        text = stringResource(R.string.voices_confirm_new_title, previewVoice.name),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.voices_confirm_new_body),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    OutlinedCard(
+                                        shape = WakerPanelShape,
+                                        border = wakerCardBorder(),
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Text(
+                                                text = stringResource(R.string.voices_preview_text_label),
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            if (confirmPreviewEditing) {
+                                                OutlinedTextField(
+                                                    value = confirmPreviewEditText,
+                                                    onValueChange = { confirmPreviewEditText = it.take(200) },
+                                                    minLines = 2,
+                                                    enabled = !confirmPreviewSaving,
+                                                    shape = WakerInputShape,
+                                                    colors = wakerOutlinedTextFieldColors(),
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                )
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                ) {
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            confirmPreviewEditing = false
+                                                            confirmPreviewEditText = ""
+                                                        },
+                                                        enabled = !confirmPreviewSaving,
+                                                        modifier = Modifier.weight(1f),
+                                                        shape = WakerButtonShape,
+                                                        border = wakerCardBorder(),
+                                                        colors = wakerOutlinedButtonColors(),
+                                                    ) {
+                                                        Text(stringResource(R.string.voices_preview_edit_cancel))
+                                                    }
+                                                    Button(
+                                                        onClick = { savePreviewTextEdit(previewVoice) },
+                                                        enabled = !confirmPreviewSaving && confirmPreviewEditText.isNotBlank(),
+                                                        modifier = Modifier.weight(1f),
+                                                        shape = WakerButtonShape,
+                                                    ) {
+                                                        Text(
+                                                            if (confirmPreviewSaving) {
+                                                                stringResource(R.string.voices_preview_edit_saving)
+                                                            } else {
+                                                                stringResource(R.string.voices_preview_edit_save)
+                                                            },
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                Text(
+                                                    text = when {
+                                                        confirmPreviewText != null -> "“$confirmPreviewText”"
+                                                        confirmPreviewBusy -> stringResource(R.string.voices_preview_text_loading)
+                                                        // 자동 준비 실패(잠시 후 재시도 가능한 409 등) — 준비 중이라고
+                                                        // 속이지 않고 미리듣기 버튼으로 다시 시도하게 안내한다.
+                                                        else -> stringResource(R.string.voices_preview_text_retry_hint)
+                                                    },
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    color = if (confirmPreviewText != null) {
+                                                        MaterialTheme.colorScheme.onSurface
+                                                    } else {
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                    },
+                                                )
+                                                if (confirmPreviewText != null) {
+                                                    TextButton(
+                                                        onClick = {
+                                                            confirmPreviewEditText = confirmPreviewText.orEmpty()
+                                                            confirmPreviewEditing = true
+                                                        },
+                                                        enabled = !confirmPreviewBusy && !confirmPreviewSaving,
+                                                    ) {
+                                                        Text(stringResource(R.string.voices_preview_edit_action))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        text = stringResource(R.string.voices_preview_edit_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    OutlinedButton(
+                                        onClick = { previewRegisteredVoice(previewVoice) },
+                                        enabled = !confirmPreviewBusy && !confirmPreviewEditing && !confirmPreviewSaving,
+                                        shape = WakerButtonShape,
+                                        border = wakerCardBorder(),
+                                        colors = wakerOutlinedButtonColors(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text(
+                                            when {
+                                                confirmPreviewBusy -> stringResource(R.string.voices_confirm_new_preview_loading)
+                                                confirmPreviewPlaying -> stringResource(R.string.voices_confirm_new_preview_stop)
+                                                else -> stringResource(R.string.voices_confirm_new_preview)
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         }
 
                         if (createPreparing) {
@@ -1223,7 +1526,7 @@ internal fun VoiceProfileManagementPanel(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (currentStep != VoiceRegistrationStep.Source) {
+                        if (currentStep == VoiceRegistrationStep.Details) {
                             OutlinedButton(
                                 onClick = {
                                     currentStep = VoiceRegistrationStep.Source
@@ -1290,6 +1593,30 @@ internal fun VoiceProfileManagementPanel(
                                     )
                                 }
                             }
+
+                            // 만드는 중 — 결정할 것이 없어 하단 액션이 없다(닫기도 불가).
+                            VoiceRegistrationStep.Creating -> Unit
+
+                            VoiceRegistrationStep.Preview -> {
+                                TextButton(
+                                    onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
+                                    enabled = !voiceProfileBusy && !confirmPreviewSaving,
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.voices_confirm_new_delete),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                                Button(
+                                    onClick = { confirmNewVoice?.let { onPromoteVoiceDraft(it.id) } },
+                                    enabled = confirmPreviewCompleted && !voiceProfileBusy &&
+                                        !confirmPreviewEditing && !confirmPreviewSaving,
+                                    modifier = Modifier.weight(1f),
+                                    shape = WakerButtonShape,
+                                ) {
+                                    Text(stringResource(R.string.voices_confirm_new_keep))
+                                }
+                            }
                         }
                     }
                 }
@@ -1303,71 +1630,6 @@ internal fun VoiceProfileManagementPanel(
             onFinish = {
                 usageGuideStore.markSeen(UsageGuideStore.GUIDE_VOICE_CREATE)
                 voiceGuideVisible = false
-            },
-        )
-    }
-
-    // 등록 직후 확인 창 — 이 목소리로 아침을 깨워줄지 미리 듣고 유지/삭제를 고른다.
-    confirmNewVoice?.let { voice ->
-        fun closeConfirm() {
-            // 생성 중인 미리듣기 코루틴을 취소해, 닫은 뒤(또는 삭제한 목소리로) 오디오가
-            // 뒤늦게 재생되는 것을 막는다.
-            confirmPreviewJob?.cancel()
-            confirmPreviewJob = null
-            stopMediaPreview(invalidateGreetingPreview = false)
-            confirmPreviewBusy = false
-            confirmPreviewPlaying = false
-            confirmNewVoice = null
-        }
-        AlertDialog(
-            onDismissRequest = {},
-            shape = WakerDialogShape,
-            title = { Text(stringResource(R.string.voices_confirm_new_title, voice.name)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = stringResource(R.string.voices_confirm_new_body),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OutlinedButton(
-                        onClick = { previewRegisteredVoice(voice) },
-                        enabled = !confirmPreviewBusy,
-                        shape = WakerButtonShape,
-                        colors = wakerOutlinedButtonColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            when {
-                                confirmPreviewBusy -> stringResource(R.string.voices_confirm_new_preview_loading)
-                                confirmPreviewPlaying -> stringResource(R.string.voices_confirm_new_preview_stop)
-                                else -> stringResource(R.string.voices_confirm_new_preview)
-                            },
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onPromoteVoiceDraft(voice.id)
-                    },
-                    enabled = confirmPreviewCompleted && !voiceProfileBusy,
-                ) {
-                    Text(stringResource(R.string.voices_confirm_new_keep))
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteVoiceDraft(voice.id)
-                    },
-                ) {
-                    Text(
-                        text = stringResource(R.string.voices_confirm_new_delete),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
             },
         )
     }

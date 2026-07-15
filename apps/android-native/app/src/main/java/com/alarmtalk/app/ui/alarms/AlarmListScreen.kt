@@ -54,7 +54,9 @@ private const val GUIDE_TARGET_HOME_HERO = "home_next_alarm"
 // 목소리 등록 첫 방문 안내 — 내 목소리 만들기 버튼에 스포트라이트.
 private const val GUIDE_TARGET_VOICE_CREATE = "voice_register_create"
 
-// 로그인 배경(AuthBackdrop)의 딥 네이비 감성을 알람 홈에도 가져온다 — 라이트/다크 두 버전.
+// 로그인 배경(AuthBackdrop)의 딥 네이비 감성을 탭 화면 전체에 가져온다 — 라이트/다크 두 버전.
+// 알람 홈에만 깔면 탭 전환(알람↔목소리↔더보기)마다 배경 분위기가 뚝 바뀌어 어색해서,
+// 같은 그라데이션을 모든 탭에 깔아 앱을 한 공간으로 묶는다.
 // 생 Color 리터럴은 로그인/랜딩과 같은 '브랜드 비주얼' 예외(CLAUDE.md 색 토큰 규약의 문서화된 예외).
 private val HomeGradientDark = Brush.verticalGradient(
     0f to Color(0xFF1A2A52),
@@ -90,7 +92,7 @@ internal fun AlarmListScreen(
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
@@ -102,6 +104,7 @@ internal fun AlarmListScreen(
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
+    onUpdateVoicePreviewText: suspend (String, String) -> String,
     onPromoteVoiceDraft: (String) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onRefreshSocial: () -> Unit,
@@ -192,10 +195,8 @@ internal fun AlarmListScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // 알람 리스트 홈에만 로그인식 그라데이션 배경을 깐다(다른 탭은 평소 배경 유지).
-            .then(
-                if (selectedTab == NativeTab.Alarms) Modifier.background(homeGradient) else Modifier,
-            ),
+            // 모든 탭에 같은 그라데이션 배경 — 탭 전환 시 배경 톤이 튀지 않게 한 공간으로.
+            .background(homeGradient),
     ) {
     LazyColumn(
         state = listState,
@@ -236,6 +237,7 @@ internal fun AlarmListScreen(
                         onUpdateSharedVoiceInfo = onUpdateSharedVoiceInfo,
                         onDeleteVoiceProfile = onDeleteVoiceProfile,
                         onConfirmVoicePreviewPlayed = onConfirmVoicePreviewPlayed,
+                        onUpdateVoicePreviewText = onUpdateVoicePreviewText,
                         onPromoteVoiceDraft = onPromoteVoiceDraft,
                         onDeleteVoiceDraft = onDeleteVoiceDraft,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },

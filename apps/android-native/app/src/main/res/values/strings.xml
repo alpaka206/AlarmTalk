@@ -673,6 +673,19 @@
     <string name="voices_confirm_new_preview_stop">정지</string>
     <string name="voices_confirm_new_keep">이 목소리로 할게요</string>
     <string name="voices_confirm_new_delete">삭제</string>
+    <string name="voices_creating_title">목소리를 만드는 중이에요</string>
+    <string name="voices_creating_body">잠시만 기다려 주세요. 보통 1분 안에 끝나요.
+완성되면 바로 들려드릴게요.</string>
+    <string name="voices_preview_text_label">미리듣기 문구</string>
+    <string name="voices_preview_text_loading">문구를 준비하고 있어요…</string>
+    <string name="voices_preview_text_retry_hint">문구를 아직 준비하지 못했어요. 미리듣기를 눌러 다시 시도해 주세요.</string>
+    <string name="voices_preview_edit_hint">말투가 마음에 안 들면 문구를 수정해 보세요. 수정한 말투가 매일 아침 문구의 기준이 돼요.</string>
+    <string name="voices_preview_edit_action">문구 수정</string>
+    <string name="voices_preview_edit_save">저장</string>
+    <string name="voices_preview_edit_saving">저장 중…</string>
+    <string name="voices_preview_edit_cancel">취소</string>
+    <string name="voices_preview_edit_empty">문구를 입력해 주세요.</string>
+    <string name="voices_preview_edit_failed">문구를 수정하지 못했어요.</string>
     <string name="voices_previous">이전</string>
     <string name="voices_record_done_duration">녹음 완료 · %1$s</string>
     <string name="voices_record_script_title">아래 대사를 따라 읽어 주세요</string>
@@ -748,18 +761,18 @@
     <string name="label_snooze_repeat_forever">계속 반복</string>
     <string name="label_snooze_repeat_count">%1$d회</string>
     <string name="label_snooze_list">%1$d분 · %2$s</string>
-    <string name="label_vibration_strong" translatable="false">Strong</string>
-    <string name="label_vibration_short" translatable="false">Short</string>
-    <string name="label_vibration_medium" translatable="false">Medium</string>
-    <string name="label_vibration_heartbeat" translatable="false">Heartbeat</string>
-    <string name="label_vibration_ticktock" translatable="false">Ticktock</string>
-    <string name="label_vibration_waltz" translatable="false">Waltz</string>
-    <string name="label_vibration_zigzag" translatable="false">Zigzag</string>
-    <string name="label_vibration_off_beat" translatable="false">Off-beat</string>
-    <string name="label_vibration_ripple" translatable="false">Ripple</string>
-    <string name="label_vibration_siren" translatable="false">Siren</string>
-    <string name="label_vibration_off" translatable="false">Off</string>
-    <string name="label_vibration_basic_call" translatable="false">Basic</string>
+    <string name="label_vibration_strong">강하게</string>
+    <string name="label_vibration_short">짧게</string>
+    <string name="label_vibration_medium">중간</string>
+    <string name="label_vibration_heartbeat">하트비트</string>
+    <string name="label_vibration_ticktock">틱톡</string>
+    <string name="label_vibration_waltz">왈츠</string>
+    <string name="label_vibration_zigzag">지그재그</string>
+    <string name="label_vibration_off_beat">엇박자</string>
+    <string name="label_vibration_ripple">물결</string>
+    <string name="label_vibration_siren">사이렌</string>
+    <string name="label_vibration_off">꺼짐</string>
+    <string name="label_vibration_basic_call">기본</string>
     <string name="label_play_mode_voice_only">목소리</string>
     <string name="label_play_mode_alarm_voice">알람 + 목소리</string>
     <string name="label_play_mode_alarm">알람</string>
