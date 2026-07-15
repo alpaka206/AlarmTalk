@@ -11,10 +11,10 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 ## Status
 
 - **Version**: `v0.1.2` (closed beta preparation)
-- **Android** — primary platform, verified on physical devices:
+- **Android** — primary platform; core alarm engine verified on physical devices:
   - Free tier: system voices with pre-rendered alarm preset clips, rotated locally on each dismiss (bucket rotation)
-  - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time
-  - Family alarms delivered to members instantly via FCM data push (the ring itself stays local — see rule #1)
+  - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time — offline (flight-mode) ring pending device QA
+  - Family alarms delivered to members instantly via FCM data push (the ring itself stays local — see rule #1) — background delivery pending device QA
   - Google Play Billing: code-complete, awaiting Play Console configuration
 - **iOS**: on hold — not operated; CI builds disabled (manual `workflow_dispatch` only)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
