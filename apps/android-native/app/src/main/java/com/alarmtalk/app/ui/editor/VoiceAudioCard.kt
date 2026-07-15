@@ -99,26 +99,20 @@ internal fun VoiceAudioCard(
     } else {
         editor.voiceSource
     }
-    // 알람창에선 기본(시스템) 목소리를 바꿀 수 없다(변경은 목소리 탭). 기본 목소리와
-    // 기존 알람의 저장된 시스템 목소리만 남겨, 편집 중 조용한 목소리 변경을 막는다.
-    val hasDefaultSystemVoice = defaultVoiceId != null &&
-        voiceProfiles.any { it.id == defaultVoiceId && it.isSystem == true }
-    val selectedProfileId = editor.voiceProfileId
-    val readyProfiles = voiceProfiles.filter {
-        (it.status == null || it.status == "ready") &&
-            (
-                it.isSystem != true ||
-                    !hasDefaultSystemVoice ||
-                    it.id == defaultVoiceId ||
-                    it.id == selectedProfileId
-                )
+    // 알람별로 목소리를 자유롭게 바꾼다 — 내 목소리·공유받은 목소리·기본(시스템) 목소리를
+    // 전부 시트에 노출한다(내 것 → 공유 → 기본 순).
+    val readyOwnProfiles = voiceProfiles.filter {
+        (it.status == null || it.status == "ready") && it.isSystem != true
+    }
+    val readySystemProfiles = voiceProfiles.filter {
+        (it.status == null || it.status == "ready") && it.isSystem == true
     }
     val readyFamilyVoices = familyVoices.filter {
         (it.status == null || it.status == "ready") &&
             it.isShared != false &&
             !it.requiresViewerInfo()
     }
-    val profileOptions = readyProfiles.map {
+    val profileOptions = readyOwnProfiles.map {
         VoiceProfileOption(
             id = it.id,
             name = it.name,
@@ -130,6 +124,13 @@ internal fun VoiceAudioCard(
                 id = profile.id,
                 name = profile.name,
                 detail = sharedVoiceDetail(context, profile),
+            )
+        } +
+        readySystemProfiles.map {
+            VoiceProfileOption(
+                id = it.id,
+                name = it.name,
+                detail = ownedVoiceDetail(context, it),
             )
         }
     LaunchedEffect(editor.voiceSource) {
@@ -396,113 +397,25 @@ private fun NoUsableVoiceProfileCallout(
     }
 }
 
-// 목소리가 여러 개(내 목소리 + 공유받은 + 기본 제공)면 목록이 길어지므로,
-// 평소엔 선택된 목소리 1줄만 보여주고 누르면 펼쳐서 전체에서 고르는 접이식 선택기.
+// 목소리 행 — 탭하면 바텀시트가 올라와 내 목소리·공유받은 목소리·기본 목소리 전체에서
+// 고른다(문구·목소리 크기 행과 같은 [제목/값 + 셰브론] 문법).
 @Composable
 private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
     selectedId: String,
     onSelect: (VoiceProfileOption) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var sheetOpen by remember { mutableStateOf(false) }
     val selectedOption = options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
-    // 고를 게 2개 이상일 때(내 음성·공유 음성이 있을 때)만 펼치는 드롭다운.
-    // 기본 목소리 1개뿐이면 어차피 고정이라 펼침/셰브론 없이 그냥 표시한다.
-    val canExpand = options.size > 1
-    // 예전엔 indication=null 이라 눌러도 아무 반응이 없었다. 리플 복원 + 눌림 물성으로
-    // '탭되는 행'임을 알린다(다른 세부설정 행과 동일한 피드백).
-    val rowInteraction = remember { MutableInteractionSource() }
     // 상위 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명).
     Surface(
+        onClick = { sheetOpen = true },
         modifier = Modifier.fillMaxWidth(),
         shape = WakerChipShape,
         color = Color.Transparent,
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (canExpand) {
-                            Modifier
-                                .wakerPressScale(rowInteraction)
-                                .clickable(
-                                    interactionSource = rowInteraction,
-                                    indication = LocalIndication.current,
-                                ) { expanded = !expanded }
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Text(
-                        text = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (selectedOption != null) {
-                        MutedText(selectedOption.detail)
-                    }
-                }
-                if (canExpand) {
-                    Spacer(Modifier.width(12.dp))
-                    Icon(
-                        imageVector = if (expanded) {
-                            Icons.Outlined.KeyboardArrowUp
-                        } else {
-                            Icons.Outlined.KeyboardArrowDown
-                        },
-                        contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            if (canExpand && expanded) {
-                Column(
-                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    options.forEach { option ->
-                        VoiceProfileOptionRow(
-                            option = option,
-                            selected = option.id == selectedId,
-                            onClick = {
-                                onSelect(option)
-                                expanded = false
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun VoiceProfileOptionRow(
-    option: VoiceProfileOption,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        },
-    ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -511,27 +424,40 @@ private fun VoiceProfileOptionRow(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
-                    text = option.name,
+                    text = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
                 )
-                Text(
-                    text = option.detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.74f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                if (selectedOption != null) {
+                    MutedText(selectedOption.detail)
+                }
             }
             Spacer(Modifier.width(12.dp))
-            VoiceSelectionDot(selected = selected)
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+    if (sheetOpen) {
+        WakerSelectionSheet(
+            title = stringResource(R.string.editor_voice_select),
+            onDismiss = { sheetOpen = false },
+        ) { dismiss ->
+            options.forEachIndexed { index, option ->
+                WakerSheetOptionRow(
+                    title = option.name,
+                    description = option.detail,
+                    selected = option.id == selectedOption?.id,
+                    onClick = {
+                        onSelect(option)
+                        dismiss()
+                    },
+                    divider = index != options.lastIndex,
+                )
+            }
         }
     }
 }
@@ -859,33 +785,6 @@ private fun VoiceVolumeSelector(
             valueRange = MinVoiceVolumePercent.toFloat()..100f,
             steps = 6,
         )
-    }
-}
-
-@Composable
-private fun VoiceSelectionDot(selected: Boolean) {
-    Box(
-        modifier = Modifier
-            .size(18.dp)
-            .background(
-                color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape = CircleShape,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (selected) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .background(MaterialTheme.colorScheme.onPrimary, CircleShape),
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(MaterialTheme.colorScheme.outline, CircleShape),
-            )
-        }
     }
 }
 
