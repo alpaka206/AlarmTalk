@@ -202,7 +202,8 @@ internal fun VoiceProfileManagementPanel(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
+    // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
@@ -290,9 +291,6 @@ internal fun VoiceProfileManagementPanel(
     var confirmPreviewEditing by remember { mutableStateOf(false) }
     var confirmPreviewEditText by remember { mutableStateOf("") }
     var confirmPreviewSaving by remember { mutableStateOf(false) }
-    // '만드는 중' 스텝에서 생성 요청이 실제로 돌기 시작했는지(=busy true 를 봤는지).
-    // draft 행도 못 만들고 실패한 경우를 감지해 세부 정보 스텝으로 되돌리는 데 쓴다.
-    var creationBusySeen by remember { mutableStateOf(false) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
@@ -617,7 +615,6 @@ internal fun VoiceProfileManagementPanel(
         confirmPreviewEditing = false
         confirmPreviewEditText = ""
         confirmPreviewSaving = false
-        creationBusySeen = false
     }
 
     // 등록 요청을 보낸 뒤에도 다이얼로그를 닫지 않고 '만드는 중' 스텝으로 전환한다 —
@@ -633,7 +630,6 @@ internal fun VoiceProfileManagementPanel(
         selectedFileDurationMillis = null
         createPreparing = false
         createSubmitAttempted = false
-        creationBusySeen = false
         localMessage = null
         currentStep = VoiceRegistrationStep.Creating
     }
@@ -692,15 +688,13 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 만드는 중 스텝에서 생성 요청이 draft 행도 못 만들고 실패하면(업로드/클론 오류 —
-    // busy 가 true 였다가 false 로 끝났는데 draft 가 없음) 세부 정보 스텝으로 되돌린다.
+    // 만드는 중 스텝에서 생성 요청이 draft 행도 못 만들고 실패하면(업로드/클론 오류)
+    // 세부 정보 스텝으로 되돌린다. Creating 진입은 요청 수락(busy=true 동기 설정) 후에만
+    // 일어나므로, busy 도 아니고 draft 도 없으면 생성이 끝났는데 실패한 것이다.
     // 오류 메시지는 ViewModel 이 전역 message 로 띄운다.
     LaunchedEffect(voiceProfileBusy, pendingVoiceDraft?.id, currentStep) {
         if (currentStep != VoiceRegistrationStep.Creating) return@LaunchedEffect
-        if (voiceProfileBusy) {
-            creationBusySeen = true
-        } else if (creationBusySeen && pendingVoiceDraft == null) {
-            creationBusySeen = false
+        if (!voiceProfileBusy && pendingVoiceDraft == null) {
             currentStep = VoiceRegistrationStep.Details
         }
     }
@@ -907,14 +901,16 @@ internal fun VoiceProfileManagementPanel(
             if (voiceProfileDurationError(context, audio.durationMillis) != null) return
             // 검증을 다 통과해 실제로 등록을 보낼 때만 확인창 감지를 무장한다(중단/검증실패 후
             // 스냅샷이 남아 엉뚱한 목소리에 확인창이 뜨는 것을 막는다).
-            onCreateVoiceProfile(
+            // ViewModel 이 요청을 시작하지 못했으면(false — 스테일 세션/플랜/개수 상태 등)
+            // '만드는 중' 스텝에 진입하지 않는다 — 못 닫는 화면에 갇히는 것을 막는다.
+            val accepted = onCreateVoiceProfile(
                 trimmedName,
                 audio,
                 shareVoice,
                 trimmedRelationship,
                 trimmedListener,
             )
-            enterCreatingStep()
+            if (accepted) enterCreatingStep()
             return
         }
         scope.launch {
@@ -927,14 +923,14 @@ internal fun VoiceProfileManagementPanel(
                 if (error != null) {
                     localMessage = error
                 } else {
-                    onCreateVoiceProfile(
+                    val accepted = onCreateVoiceProfile(
                         trimmedName,
                         audio,
                         shareVoice,
                         trimmedRelationship,
                         trimmedListener,
                     )
-                    enterCreatingStep()
+                    if (accepted) enterCreatingStep()
                 }
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to prepare selected voice file", error)

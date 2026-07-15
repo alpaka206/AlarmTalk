@@ -110,7 +110,7 @@ internal fun MainViewModel.createVoiceProfile(
     shared: Boolean,
     relationshipLabel: String,
     listenerTitle: String,
-) {
+): Boolean =
     createVoiceProfiles(
         listOf(
             VoiceProfileCreationDraft(
@@ -122,17 +122,18 @@ internal fun MainViewModel.createVoiceProfile(
             ),
         ),
     )
-}
 
-internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationDraft>) {
+// 반환값: 클론 생성 요청을 실제로 시작했는지. false 면 검증 실패로 아무 요청도 나가지
+// 않은 것 — 호출측(등록 패널)은 이때 '만드는 중' 스텝에 진입하면 안 된다(갇힘 방지).
+internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationDraft>): Boolean {
     val session = authSession
     if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_create_login_required)
-        return
+        return false
     }
     if (!hasPaidVoiceAccess(subscriptionResponse)) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
-        return
+        return false
     }
     val drafts = items.map {
         it.copy(
@@ -143,25 +144,27 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
     }
     if (drafts.isEmpty() || drafts.any { it.name.isBlank() }) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
-        return
+        return false
     }
     if (drafts.any { it.relationshipLabel.isBlank() }) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_relationship_required)
-        return
+        return false
     }
     if (drafts.any { it.listenerTitle.isBlank() }) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_listener_title_required)
-        return
+        return false
     }
     // 시스템 스톡 보이스는 개수 제한에서 제외 — 내가 만든 목소리만 센다.
     if (voiceProfiles.count { it.isSystem != true } >= MAX_VOICE_PROFILES || pendingVoiceDraft != null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
-        return
+        return false
     }
+    if (voiceProfileBusy) return false
 
+    // busy 는 launch 안이 아니라 여기서 세운다 — true 를 반환하는 순간 이미 busy 인 것이
+    // 보장돼야 호출측 '만드는 중' 스텝의 종료 감지(!busy && draft 없음)가 어긋나지 않는다.
+    voiceProfileBusy = true
     viewModelScope.launch {
-        if (voiceProfileBusy) return@launch
-        voiceProfileBusy = true
         runCatching {
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
@@ -203,6 +206,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
         }
         voiceProfileBusy = false
     }
+    return true
 }
 
 internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
