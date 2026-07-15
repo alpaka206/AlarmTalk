@@ -1,3 +1,5 @@
+> ⚠️ 아카이브(2026-07-15): launch-tracking.ko.md 로 대체됨.
+
 # AlarmTalk 출시 전 감사 리포트
 
 생성: 멀티에이전트 감사(8개 차원, 적대적 검증) · 확정 54건, 기각 7건
@@ -433,7 +435,7 @@
 ## ⏳ 남은 항목
 
 > 이 리포트는 6/22 감사 시점의 스냅샷이다. 그 뒤 코드와 다시 대조해 **미해결로 남은 것만**
-> [`docs/qa/launch-tracking.ko.md`](launch-tracking.ko.md) 한 곳에 모았다(읽기 편한 한국어 추적용).
+> [`docs/qa/launch-tracking.ko.md`](../launch-tracking.ko.md) 한 곳에 모았다(읽기 편한 한국어 추적용).
 > 출시 전 남은 작업은 그 문서를 단일 출처로 본다.
 
 대조 후 추가로 해결 확인:

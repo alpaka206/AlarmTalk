@@ -20,8 +20,8 @@ System architecture, database schema, and HTTP API for AlarmTalk.
 │ securityHeaders → sentry → logger → rateLimit → bodyLimit      │
 │              → cors → auth (for /api/*) → cache                │
 │                                                                 │
-│ Routes: /auth /user /voice /tts /alarm /friend /family         │
-│         /code /billing /library /dub /notes /stats             │
+│ Routes: /auth /user /voice /tts /alarm /friend /gift /family   │
+│         /code /billing /library /stats /push /holiday /admin   │
 │ Cron:   */5 * * * *  (subscription expiry, account purge, …)   │
 └──────────┬──────────────────┬─────────────────┬─────────────────┘
            │                  │                 │
@@ -29,7 +29,7 @@ System architecture, database schema, and HTTP API for AlarmTalk.
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
    │ domain tables│  │ voice + tts  │  │ ElevenLabs           │
-   │ 62 migrations│  │ objects      │  │ Google JWKS          │
+   │ 65 migrations│  │ objects      │  │ Google JWKS          │
    └──────────────┘  └──────────────┘  │ Apple JWKS           │
                                        │ Sentry               │
                                        └──────────────────────┘
@@ -112,6 +112,8 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 | Turso libSQL | Primary DB | libSQL HTTP client |
 | Cloudflare R2 | Object store (voice / TTS) | Workers binding `VOICE_BUCKET` |
 | ElevenLabs | Voice clone + TTS | HTTPS REST |
+| Firebase FCM (HTTP v1) | Data-only sync-trigger push (family alarm creation) | HTTPS REST, service-account OAuth |
+| Resend | Email verification code delivery | HTTPS REST |
 | Google JWKS | ID token verification | HTTPS |
 | Apple JWKS | Sign in with Apple ID token signature verification | HTTPS |
 | Sentry | Error capture | toucan-js (server) + Android client SDK (DSN-gated) |
@@ -146,13 +148,14 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 | iOS | Xcode → TestFlight (macOS workstation) |
 | Landing | Static deploy (Cloudflare Pages or any static host) |
 
-Backend secrets are managed as Cloudflare Worker secrets:
+Backend secrets are managed as Cloudflare Worker secrets. The authoritative list is the `Env` interface in `packages/backend/src/types.ts`; main groups:
 
-- `JWT_SECRET`
-- `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
-- `ELEVENLABS_API_KEY`
-- `SENTRY_DSN`
-- `GOOGLE_CLIENT_ID`, `APPLE_CLIENT_ID`
+- Core: `JWT_SECRET`, `PASSWORD_PEPPER`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `ELEVENLABS_API_KEY`
+- Auth / email: `GOOGLE_CLIENT_ID`, `APPLE_CLIENT_ID`, `RESEND_API_KEY`, `AUTH_EMAIL_FROM` (verification email via Resend)
+- Push (FCM HTTP v1): `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON` (unset → push logs MOCK only)
+- Dynamic text (Vertex): `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL`
+- Billing: `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`, `ANDROID_PACKAGE_NAME`, `GOOGLE_RTDN_VERIFICATION_TOKEN`, `APPLE_SHARED_SECRET`, `APPLE_ISSUER_ID`, `APPLE_KEY_ID`, `APPLE_IAP_PRIVATE_KEY`, `APPLE_BUNDLE_ID`
+- Ops: `INIT_DB_SECRET` (migration gate), `ADMIN_SECRET` (`/admin` HTTP Basic), `SENTRY_DSN`, `KASI_SERVICE_KEY` (KR holiday overlay), `TEST_CODE_ISSUER_EMAILS`
 
 R2 binding: `VOICE_BUCKET → voice-alarm-voices` in dev and `VOICE_BUCKET → voice-alarm-voices-prod` in production.
 
@@ -171,7 +174,7 @@ Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrad
 
 - **DB**: Turso (libSQL / SQLite)
 - **Tables**: domain tables plus the `_migrations` ledger
-- **Migrations**: 62, defined in `packages/backend/src/lib/migrations.ts`
+- **Migrations**: 65 (latest id `65` = 등록 미리듣기 preview_text 영속, PR #549; ids 11–13 unused), defined in `packages/backend/src/lib/migrations.ts`
 
 ### Entity overview
 
@@ -199,7 +202,7 @@ users ── dub_jobs
 | # | Table | Purpose | Key relationships |
 |---|---|---|---|
 | 1 | `users` | Account, plan, settings | many-to-many |
-| 2 | `voice_profiles` | Voice profile (≤ 2 per user) | `users 1:1..2` |
+| 2 | `voice_profiles` | Voice profile (official ≤ 1 per user; ≤ 1 active draft, creatable only while no official exists) | `users 1:0..1` |
 | 3 | `voice_uploads` | Raw uploaded audio | `users 1:N` |
 | 4 | `voice_speakers` | Speaker-diarization output | `voice_uploads 1:N` |
 | 5 | `messages` | TTS message | `voice_profiles 1:N` |
@@ -214,14 +217,14 @@ users ── dub_jobs
 | 14 | `plan_groups` | Family/couple group | `users(owner)` |
 | 15 | `plan_group_members` | Group membership | `plan_groups · users` |
 | 16 | `plan_group_invites` | 6-digit invite codes | `plan_groups · users(issuer/redeemer)` |
-| 17 | `push_tokens` | FCM / APNs tokens (legacy, ring path does not use them) | `users · platform` |
+| 17 | `push_tokens` | FCM registration tokens — **active**. Written by `POST /api/push/register`, removed by `POST /api/push/unregister`; consumed by the creation-time data-only family-alarm push. Never used on the ring path. | `users · platform` |
 | 18 | `notes` | Text notes | `users × users` |
 
 `dub_jobs` also exists for dubbing workflow but is not surfaced in the native app.
 
 ### Key constraints
 
-- `voice_profiles` at most 2 per user — enforced at the route layer with COUNT.
+- `voice_profiles` at most 1 official per user (`MAX_VOICE_PROFILES = 1` in `routes/voice-profile.ts`) and at most 1 active draft — enforced at the route layer with COUNT. Draft creation is also rejected while an official voice exists (the official slot must be free, since promotion would exceed it); replacing a voice requires deleting the official first.
 - `plan_group_invites.code` UNIQUE, 10-minute TTL, lazy `expired` transition on read.
 - Risk-of-rollback flows (subscription, voucher redemption, ownership transfer) use BEGIN/COMMIT through `lib/transactions.ts`.
 
@@ -310,6 +313,8 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | 17 | alarm-wake-mode | `alarms.wake_mode` |
 | 18 | notes-table | `notes` |
 | 35 | apple-login-users | `users.apple_id` + unique nullable Apple ID index |
+| 63 | push-tokens-token-index | token-leading index for `/push/register`·`/unregister` lookups |
+| 64 | requeue-clone-prerender-for-weather-unknown-clip | requeue `done` prerender rows so the new weather fallback variant (index 8) gets rendered |
 
 ### Operations
 
@@ -354,13 +359,14 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | `/alarm` | Alarm CRUD |
 | `/friend` | Friend |
 | `/family` | Family group, invites, family alarm |
-| `/billing` | Subscription, voucher |
+| `/billing` | Subscription, voucher; `/billing/google/rtdn` is a public RTDN webhook (query-token protected, no user auth) |
 | `/code` | Unified code register (VA-XXX / 6-digit) |
 | `/library` | Message library |
-| `/notes` | Notes |
 | `/gift` | Gift |
-| `/dub` | Speaker separation and derived voice tooling |
 | `/stats` | Stats |
+| `/push` | FCM token register / unregister (`POST /push/register`, `POST /push/unregister`) |
+| `/holiday` | Public holiday lookup (no auth, public cache) |
+| `/admin` | Admin console — mounted at `/admin` (not `/api`), protected by HTTP Basic with `ADMIN_SECRET` |
 
 ### Selected endpoints
 
@@ -467,11 +473,11 @@ the owner of the new shared plan group. These bootstrap codes are single-use.
 
 ### Cron
 
-`*/5 * * * *` — the `scheduled` handler runs subscription expiry/downgrade, account purge, auxiliary alarm push, external audio deletion reconciliation, and explicitly authorized voice-prerender jobs.
+`*/5 * * * *` — the `scheduled` handler runs external audio deletion reconciliation, expired email-code pruning, subscription expiry/downgrade, account purge (30-day grace), and explicitly authorized voice-prerender jobs. It sends **no fire-time alarm push** — firing alarms are computed for logging only.
 
-Keeping a previewed private draft creates one durable, owner-scoped prerender job. Its fixed manifest is exactly one app language with `greeting` 1, `weather` 8, `fortune` 5, `love` 3, and `medication` 3 clips. Workers may only resume that bounded manifest with its exact claim token; they recheck voice ownership/state and sensitive consents before synthesis and before publication. They never discover users autonomously or add categories beyond this manifest.
+Keeping a previewed private draft creates one durable, owner-scoped prerender job. Its fixed manifest is exactly one app language with `greeting` 1, `weather` 9, `fortune` 5, `love` 3, and `medication` 3 clips (21 total). The nine `weather` variants are the eight conditions of `CLONE_WEATHER_CONDITIONS` (indexes 0–7) plus — always last — one "weather unresolved" fallback clip: when the client could not resolve weather during the preparation window, it plays this clip instead of silence or a wrong condition (client convention: last clip = `size - 1`; `resolvePrerenderWeatherIndex` only returns 0–7, so index 8 is fallback-only). Workers may only resume that bounded manifest with its exact claim token; they recheck voice ownership/state and sensitive consents before synthesis and before publication. They never discover users autonomously or add categories beyond this manifest.
 
-> **주의**: 실제 알람 **울림**은 온디바이스(`AlarmManager`/`AlarmKit`)이며 네트워크에 의존하지 않는다. 여기서 보내는 푸시는 가족/대상 알람 알림 등 **보조 경로**다. 단, 현재 정확-분(UTC) 매칭이 5분 주기 cron과 어긋나 일부 알람이 푸시되지 않는 알려진 이슈가 있다 — [`backend-findings.ko.md` F1](backend-findings.ko.md) 참고.
+> **원칙**: 실제 알람 **울림은 온디바이스**(`AlarmManager`/`AlarmKit`)이며 네트워크에 의존하지 않는다. **서버 push 는 동기화 트리거 전용** — 가족 알람 *생성* 시 수신자에게 data-only FCM 신호(`sendFamilyAlarmPush`)를 1회 보내 앱이 즉시 pull→로컬 스케줄하게 할 뿐, 발사 시각에는 어떤 push 도 보내지 않는다(로컬 링과의 중복 알림 방지 — `src/index.ts` scheduled 주석 참고).
 
 ### Change management
 

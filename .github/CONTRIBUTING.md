@@ -14,8 +14,8 @@ Thank you for your interest in contributing! This guide will help you get starte
 ### Setup
 
 ```bash
-git clone https://github.com/alarmtalk/voice_alarm.git
-cd voice_alarm
+git clone https://github.com/alpaka206/AlarmTalk.git
+cd AlarmTalk
 npm install
 ```
 
@@ -30,9 +30,16 @@ npm test
 
 # Backend (Cloudflare Workers)
 cd packages/backend && npm run dev
+```
 
-# Android native build
-cd apps/android-native && ./gradlew.bat :app:assembleDebug
+```powershell
+# Android dev debug build (Windows, from repo root)
+apps\android-native\gradlew.bat -p apps\android-native :app:assembleDevDebug
+```
+
+```bash
+# Android dev debug build (macOS/Linux, from repo root)
+apps/android-native/gradlew -p apps/android-native :app:assembleDevDebug
 ```
 
 ## How to Contribute
@@ -66,13 +73,13 @@ cd apps/android-native && ./gradlew.bat :app:assembleDebug
 
 ### Commit Messages
 
-We follow [Conventional Commits](https://www.conventionalcommits.org/):
+We follow [Conventional Commits](https://www.conventionalcommits.org/) prefixes, with the message body written in **Korean** (repository convention):
 
 ```
-feat(backend): add voice profile API
-fix(android): resolve alarm scheduling crash
-docs(docs): update API documentation
-test(web): add dashboard component tests
+feat: 음성 프로필 API 추가
+fix: 알람 스케줄링 크래시 수정
+docs: dev 테스트 핸드오프 문서 갱신
+refactor: 알람 쿼리 헬퍼 분리
 ```
 
 ## Code Standards

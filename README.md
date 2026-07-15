@@ -2,7 +2,7 @@
 
 > [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-**AlarmTalk** is an OS-native voice alarm app. At the scheduled time, it rings a real alarm using a voice the user picked — a recorded one, an uploaded clip, a voice shared by family or a partner, or a voice cloned by AI.
+**AlarmTalk** is an OS-native voice alarm app. At the scheduled time, it rings a real alarm using a voice the user picked — a recorded one, a voice shared by family or a partner, or a voice cloned by AI.
 
 ## Why a "real" alarm
 
@@ -10,18 +10,21 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 
 ## Status
 
-- **Version**: `v0.1.0` (Closed Beta preparation)
-- **Branch**: `develop`
-- **Android**: Phase 1–6 implemented, verified on a physical device
-- **iOS**: AlarmKit (iOS 26+) PoC in progress
-- **Backend**: Cloudflare Workers + Hono + Turso, deployed
+- **Version**: `v0.1.2` (closed beta preparation)
+- **Android** — primary platform; core alarm engine verified on physical devices:
+  - Free tier: system voices with pre-rendered alarm preset clips, rotated locally on each dismiss (bucket rotation)
+  - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time — offline (flight-mode) ring pending device QA
+  - Family alarms delivered to members instantly via FCM data push (the ring itself stays local — see rule #1) — background delivery pending device QA
+  - Google Play Billing: code-complete, awaiting Play Console configuration
+- **iOS**: on hold — not operated; CI builds disabled (manual `workflow_dispatch` only)
+- **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
 
 ## Stack
 
 | Layer | Stack |
 |---|---|
 | Android | Kotlin 2.0 · Jetpack Compose · Material 3 · Room · DataStore · Retrofit · WorkManager · `AlarmManager.setAlarmClock` |
-| iOS (PoC) | Swift · SwiftUI · AlarmKit · ActivityKit (Live Activity) |
+| iOS (on hold) | Swift · SwiftUI · AlarmKit · ActivityKit (Live Activity) |
 | Backend | TypeScript 6 · Hono 4 · Cloudflare Workers · Zod · Vitest |
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (deterministic TTS cache) |
@@ -35,8 +38,8 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 .
 ├── apps/
 │   ├── android-native/   Kotlin + Jetpack Compose Android app
-│   ├── ios-native/       SwiftUI + AlarmKit PoC
-│   └── landing/          Static landing page
+│   ├── ios-native/       SwiftUI + AlarmKit app (on hold)
+│   └── landing/          Next.js landing page (static export)
 ├── packages/
 │   ├── backend/          Cloudflare Workers + Hono API
 │   ├── shared/           Shared types and Zod schemas
@@ -52,20 +55,22 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 ```bash
 cd packages/backend
 npm install
-npm run dev        # wrangler dev --env dev
+npm run dev        # wrangler dev --env dev --env-file .dev.vars.dev
 npm test           # vitest
-npm run deploy     # wrangler deploy --env production
+npm run deploy     # wrangler deploy --env production (CI deploys automatically on push)
 ```
 
 Set up local secrets in ignored files: `packages/backend/.dev.vars.dev` and `packages/backend/.dev.vars.prod`. See [`docs/tech/`](docs/tech/README.md) for the full list.
 
 ### Android
 
+The app has `dev`/`prod` product flavors; the `dev` flavor (`com.alarmtalk.app.dev`) targets the dev backend.
+
 ```bash
 cd apps/android-native
-./gradlew :app:assembleDebug
-./gradlew :app:testDebugUnitTest
-./gradlew :app:installDebug
+./gradlew :app:assembleDevDebug
+./gradlew :app:testDevDebugUnitTest
+./gradlew :app:installDevDebug
 ```
 
 If the Android SDK is not auto-detected, create an ignored `apps/android-native/local.properties` with `sdk.dir=...`.
