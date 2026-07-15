@@ -18,6 +18,7 @@ import {
   DynamicAlarmTextGenerationInvalidError,
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
+  applyDeliveryTagPerSentence,
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   deriveAlarmDisplayText,
@@ -1082,24 +1083,21 @@ tts.post('/generate', async (c) => {
     let prepared: { text: string; translated: boolean; tags: string[] };
     if (draftPreviewRequested) {
       // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 cheerfully 를 쓴다.
-      // 동적 경로와 동일하게 태그 포함 길이가 200을 넘으면 태그를 버려 메타와 합성 텍스트를 일치시킨다.
-      const taggedText = `[${draftPreviewTag}] ${requestText}`;
-      const tagApplied = taggedText.length <= 200;
+      // 태그는 문장마다 다시 앞세워 끝까지 톤을 고정하고, 상한 초과 시 태그 없이 폴백한다
+      // (그때 tags 배열도 비워 메타와 합성 텍스트를 일치시킨다).
+      const taggedText = applyDeliveryTagPerSentence(draftPreviewTag, requestText);
+      const tagApplied = taggedText !== requestText;
       prepared = {
-        text: tagApplied ? taggedText : requestText,
+        text: taggedText,
         translated: false,
         tags: tagApplied ? [draftPreviewTag] : [],
       };
     } else if (dynamicGenerated) {
       const dynamicTag = dynamicGenerated.tags[0] ?? '';
-      const taggedText = dynamicTag
-        ? `[${dynamicTag}] ${dynamicGenerated.text}`
-        : dynamicGenerated.text;
-      // 태그를 붙인 길이가 200자를 넘으면 태그를 버린다 — 이때 tags 배열도 비워서
-      // DB delivery_tags/캐시 메타와 실제 합성 텍스트가 어긋나지 않게 한다.
-      const tagApplied = dynamicTag !== '' && taggedText.length <= 200;
+      const taggedText = applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text);
+      const tagApplied = dynamicTag !== '' && taggedText !== dynamicGenerated.text;
       prepared = {
-        text: tagApplied ? taggedText : dynamicGenerated.text,
+        text: taggedText,
         translated: false,
         tags: tagApplied ? [dynamicTag] : [],
       };

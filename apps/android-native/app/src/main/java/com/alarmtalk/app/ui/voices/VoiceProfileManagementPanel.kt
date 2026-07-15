@@ -29,6 +29,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -1356,11 +1359,6 @@ internal fun VoiceProfileManagementPanel(
                                                 .padding(16.dp),
                                             verticalArrangement = Arrangement.spacedBy(8.dp),
                                         ) {
-                                            Text(
-                                                text = stringResource(R.string.voices_preview_text_label),
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
                                             if (confirmPreviewEditing) {
                                                 OutlinedTextField(
                                                     value = confirmPreviewEditText,
@@ -1388,6 +1386,7 @@ internal fun VoiceProfileManagementPanel(
                                                     ) {
                                                         Text(stringResource(R.string.voices_preview_edit_cancel))
                                                     }
+                                                    // 재생성 — 수정한 문구로 저장하고 바로 다시 합성해 들려준다.
                                                     Button(
                                                         onClick = { savePreviewTextEdit(previewVoice) },
                                                         enabled = !confirmPreviewSaving && confirmPreviewEditText.isNotBlank(),
@@ -1404,30 +1403,66 @@ internal fun VoiceProfileManagementPanel(
                                                     }
                                                 }
                                             } else {
-                                                Text(
-                                                    text = when {
-                                                        confirmPreviewText != null -> "“$confirmPreviewText”"
-                                                        confirmPreviewBusy -> stringResource(R.string.voices_preview_text_loading)
-                                                        // 자동 준비 실패(잠시 후 재시도 가능한 409 등) — 준비 중이라고
-                                                        // 속이지 않고 미리듣기 버튼으로 다시 시도하게 안내한다.
-                                                        else -> stringResource(R.string.voices_preview_text_retry_hint)
-                                                    },
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = if (confirmPreviewText != null) {
-                                                        MaterialTheme.colorScheme.onSurface
-                                                    } else {
-                                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                                    },
-                                                )
-                                                if (confirmPreviewText != null) {
-                                                    TextButton(
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Text(
+                                                        text = when {
+                                                            confirmPreviewText != null -> "“$confirmPreviewText”"
+                                                            confirmPreviewBusy -> stringResource(R.string.voices_preview_text_loading)
+                                                            // 자동 준비 실패(잠시 후 재시도 가능한 409 등) — 준비 중이라고
+                                                            // 속이지 않고 다시 듣기로 재시도하게 안내한다.
+                                                            else -> stringResource(R.string.voices_preview_text_retry_hint)
+                                                        },
+                                                        modifier = Modifier.weight(1f),
+                                                        style = MaterialTheme.typography.bodyLarge,
+                                                        color = if (confirmPreviewText != null) {
+                                                            MaterialTheme.colorScheme.onSurface
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        },
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    // 연필 — 문구 수정 모드로 전환.
+                                                    IconButton(
                                                         onClick = {
                                                             confirmPreviewEditText = confirmPreviewText.orEmpty()
                                                             confirmPreviewEditing = true
                                                         },
-                                                        enabled = !confirmPreviewBusy && !confirmPreviewSaving,
+                                                        enabled = confirmPreviewText != null && !confirmPreviewBusy && !confirmPreviewSaving,
+                                                        modifier = Modifier.size(36.dp),
                                                     ) {
-                                                        Text(stringResource(R.string.voices_preview_edit_action))
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.Edit,
+                                                            contentDescription = stringResource(R.string.voices_preview_edit_action),
+                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.size(20.dp),
+                                                        )
+                                                    }
+                                                    // 다시 듣기 — 준비된 문구를 다시 재생(합성 실패 시 재시도 겸용).
+                                                    IconButton(
+                                                        onClick = { previewRegisteredVoice(previewVoice) },
+                                                        enabled = !confirmPreviewBusy && !confirmPreviewSaving,
+                                                        modifier = Modifier.size(36.dp),
+                                                    ) {
+                                                        if (confirmPreviewBusy) {
+                                                            CircularProgressIndicator(
+                                                                modifier = Modifier.size(18.dp),
+                                                                strokeWidth = 2.dp,
+                                                            )
+                                                        } else {
+                                                            Icon(
+                                                                imageVector = if (confirmPreviewPlaying) {
+                                                                    Icons.Outlined.Stop
+                                                                } else {
+                                                                    Icons.Outlined.PlayArrow
+                                                                },
+                                                                contentDescription = stringResource(R.string.voices_confirm_new_preview),
+                                                                tint = MaterialTheme.colorScheme.primary,
+                                                                modifier = Modifier.size(22.dp),
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1438,22 +1473,6 @@ internal fun VoiceProfileManagementPanel(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
-                                    OutlinedButton(
-                                        onClick = { previewRegisteredVoice(previewVoice) },
-                                        enabled = !confirmPreviewBusy && !confirmPreviewEditing && !confirmPreviewSaving,
-                                        shape = WakerButtonShape,
-                                        border = wakerCardBorder(),
-                                        colors = wakerOutlinedButtonColors(),
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) {
-                                        Text(
-                                            when {
-                                                confirmPreviewBusy -> stringResource(R.string.voices_confirm_new_preview_loading)
-                                                confirmPreviewPlaying -> stringResource(R.string.voices_confirm_new_preview_stop)
-                                                else -> stringResource(R.string.voices_confirm_new_preview)
-                                            },
-                                        )
-                                    }
                                 }
                             }
                         }

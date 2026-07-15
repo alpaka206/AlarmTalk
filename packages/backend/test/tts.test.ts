@@ -215,7 +215,7 @@ describe('POST /tts/generate — TTS 생성', () => {
     const body = await res.json();
     expect(body.text).toBe('우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.');
     expect(body.synthesis_text).toBe(
-      '[cheerfully] 우리 아들, 좋은 아침이야. 오늘도 기분 좋게 일어나자.',
+      '[cheerfully] 우리 아들, 좋은 아침이야. [cheerfully] 오늘도 기분 좋게 일어나자.',
     );
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-draft',
@@ -289,7 +289,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       const body = await res.json();
       // 고정 예문이 아니라 관계·호칭 톤 적응 생성 문구로 합성/표시된다.
       expect(body.text).toBe(toneText);
-      expect(body.synthesis_text).toBe(`[cheerfully] ${toneText}`);
+      expect(body.synthesis_text).toBe('[cheerfully] 우리 아들, 잘 잤어? [cheerfully] 오늘도 기분 좋게 하루 시작해 보자.');
       expect(mockTextToSpeech).toHaveBeenCalledWith(
         'el-draft',
         body.synthesis_text,
@@ -363,7 +363,7 @@ describe('POST /tts/generate — TTS 생성', () => {
       const body = await res.json();
       // 진 쪽의 새 생성 문구(loserText)가 아니라 이미 영속된 승자 문구로 합성된다.
       expect(body.text).toBe(winnerText);
-      expect(body.synthesis_text).toBe(`[cheerfully] ${winnerText}`);
+      expect(body.synthesis_text).toBe('[cheerfully] 우리 아들, 잘 잤어? [cheerfully] 오늘 하루도 힘내자.');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -452,7 +452,7 @@ describe('POST /tts/generate — TTS 생성', () => {
     const body = await res.json();
     // 고정 예문/새 생성이 아니라 저장된 문구 그대로 — 재생이 결정적(같은 캐시키)이다.
     expect(body.text).toBe(storedText);
-    expect(body.synthesis_text).toBe(`[cheerfully] ${storedText}`);
+    expect(body.synthesis_text).toBe('[cheerfully] 우리 아들, 잘 잤어? [cheerfully] 오늘도 힘내 보자.');
     // 재사용 경로는 재생성/재영속하지 않는다.
     expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
   });
@@ -1091,7 +1091,9 @@ describe('POST /tts/generate — edge cases', () => {
     const body = await res.json();
     expect(body.original_text).toBe('서버가 고른 아침 문구');
     expect(body.text).toBe(body.original_text);
-    expect(body.synthesis_text).toContain(body.original_text);
+    expect(
+      body.synthesis_text.replace(/\s*\[[a-z][a-z -]*\]\s*/gi, ' ').replace(/\s+/g, ' ').trim(),
+    ).toContain(body.original_text);
     expect(body.tags).toContain('cheerfully');
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
@@ -1198,7 +1200,9 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.original_text).not.toContain('손녀 목소리');
     expect(body.original_text).not.toContain('생년월일');
     expect(body.original_text).not.toContain('태어난 시간');
-    expect(body.synthesis_text).toContain(body.original_text);
+    expect(
+      body.synthesis_text.replace(/\s*\[[a-z][a-z -]*\]\s*/gi, ' ').replace(/\s+/g, ' ').trim(),
+    ).toContain(body.original_text);
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
       body.synthesis_text,
@@ -1263,7 +1267,9 @@ describe('POST /tts/generate — edge cases', () => {
       expect(mockFetch).not.toHaveBeenCalled();
       const body = await res.json();
       expect(body.original_text).toContain('작은 행운');
-      expect(body.synthesis_text).toContain(body.original_text);
+      expect(
+      body.synthesis_text.replace(/\s*\[[a-z][a-z -]*\]\s*/gi, ' ').replace(/\s+/g, ' ').trim(),
+    ).toContain(body.original_text);
       expect(body.tags).toEqual(['playfully']);
     } finally {
       vi.unstubAllGlobals();

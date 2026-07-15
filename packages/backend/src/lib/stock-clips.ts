@@ -3,7 +3,7 @@ import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
-import { prepareAlarmTextWithVertex, generatePrerenderClipText } from './vertex-translate';
+import { applyDeliveryTagPerSentence, prepareAlarmTextWithVertex, generatePrerenderClipText } from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
@@ -670,7 +670,10 @@ export async function generateStockClip(
       styleReference: target.styleReference,
     });
     displayText = generated.text;
-    synthesisText = generated.tag ? `[${generated.tag}] ${generated.text}` : generated.text;
+    // 태그를 문장마다 다시 앞세워 클립 끝까지 전달 톤이 풀리지 않게 한다.
+    synthesisText = generated.tag
+      ? applyDeliveryTagPerSentence(generated.tag, generated.text)
+      : generated.text;
     deliveryTagsJson = JSON.stringify(generated.tag ? [generated.tag] : []);
   } else {
     const prepared = await prepareAlarmTextWithVertex(env, target.baseText, {

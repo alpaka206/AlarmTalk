@@ -110,7 +110,8 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    expect(prepared.text).toContain('Good morning. Wake up.');
+    // 문장마다 태그를 다시 앞세운다(끝까지 톤 유지) — 태그 제거 시 원문과 동일해야 한다.
+    expect(prepared.text).toContain('[cheerfully] Good morning. [cheerfully] Wake up.');
     expect(prepared.text).not.toContain('json requested');
     // 신 allowlist 기준 로컬 기본 태그(구 [warmly] 폐기).
     expect(prepared.tags).toEqual(['cheerfully']);
@@ -148,8 +149,8 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    // 승인 태그가 여러 개여도 첫 번째만 선두에 남긴다(텍스트는 불변).
-    expect(prepared.text).toBe(`[cheerfully] ${text}`);
+    // 승인 태그가 여러 개여도 첫 태그 하나만 채택하고, 문장마다 다시 앞세운다(텍스트 불변).
+    expect(prepared.text).toBe('[cheerfully] Today is your stage. [cheerfully] Wake up with confidence.');
     expect(prepared.tags).toEqual(['cheerfully']);
   });
 

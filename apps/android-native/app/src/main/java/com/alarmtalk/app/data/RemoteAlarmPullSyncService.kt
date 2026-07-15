@@ -25,7 +25,24 @@ internal class RemoteAlarmPullSyncService(
     private val alarmAudioStore: AlarmAudioStore,
     private val context: android.content.Context,
 ) {
+    // pull 이 동시에 두 번 돌면(FCM 수신 + 주기 sync 등) 둘 다 '기존 행 없음'으로 보고
+    // 같은 받은 알람을 서로 다른 로컬 id 로 두 번 임포트한다(같은 시각 중복 울림).
+    // 직렬화로 레이스를 제거한다.
+    private val pullMutex = kotlinx.coroutines.sync.Mutex()
+
     suspend fun pullReceivedAlarms(
+        api: AlarmTalkApi,
+        token: String,
+    ): RemoteAlarmPullResult {
+        pullMutex.lock()
+        try {
+            return pullReceivedAlarmsLocked(api, token)
+        } finally {
+            pullMutex.unlock()
+        }
+    }
+
+    private suspend fun pullReceivedAlarmsLocked(
         api: AlarmTalkApi,
         token: String,
     ): RemoteAlarmPullResult {
@@ -61,7 +78,17 @@ internal class RemoteAlarmPullSyncService(
 
         remoteAlarms.forEach { remote ->
             runCatching {
-                val existing = alarmDao.getByRemoteAlarmId(remote.id)
+                // 과거 동시 pull 레이스로 같은 서버 알람이 여러 로컬 행으로 임포트됐다면
+                // 가장 오래된 행만 남기고 나머지를 정리한다(같은 시각 중복 울림 자가 치유).
+                val existingRows = alarmDao.getAllByRemoteAlarmId(remote.id)
+                existingRows.drop(1).forEach { duplicate ->
+                    alarmScheduler.cancel(duplicate.id)
+                    val duplicateCacheKey = duplicate.audioCacheKey
+                    alarmDao.delete(duplicate)
+                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, duplicateCacheKey)
+                    Log.i(TAG, "Removed duplicate received alarm row remoteId=${remote.id} localId=${duplicate.id}")
+                }
+                val existing = existingRows.firstOrNull()
                 val local = buildLocalAlarm(
                     api = api,
                     authorization = authorization,

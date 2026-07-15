@@ -18,6 +18,10 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId LIMIT 1")
     suspend fun getByRemoteAlarmId(remoteAlarmId: String): AlarmEntity?
 
+    /** 같은 서버 알람을 가리키는 모든 로컬 행 — 과거 동시 pull 레이스로 생긴 중복 임포트 정리용. */
+    @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId ORDER BY createdAtMillis")
+    suspend fun getAllByRemoteAlarmId(remoteAlarmId: String): List<AlarmEntity>
+
     @Query(
         """
         SELECT * FROM alarms

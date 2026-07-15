@@ -1615,8 +1615,28 @@ function normalizeSameLanguageTaggedText(
   }
   const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
   if (!tag) return null;
-  const tagged = `[${tag}] ${originalText}`;
-  return tagged.length <= 200 ? tagged : originalText;
+  return applyDeliveryTagPerSentence(tag, originalText, 200);
+}
+
+// ElevenLabs v3 delivery 태그는 뒤따르는 구간에서 갈수록 효력이 약해져, 여러 문장을
+// 선두 태그 하나로 합성하면 끝 문장에서 톤이 풀리고 말이 빨라지는 드리프트가 생긴다.
+// 문장 경계마다 같은 태그를 다시 앞세워 전달 톤을 끝까지 고정한다(태그는 발화되지 않음).
+// 상한을 넘으면 선두 1회 태그로, 그것도 넘으면 원문 그대로 폴백한다.
+export function applyDeliveryTagPerSentence(tag: string, text: string, maxLength = 300): string {
+  const trimmed = text.trim();
+  if (!tag) return trimmed;
+  const sentences =
+    trimmed
+      .match(/[^.!?…]+[.!?…]*/g)
+      ?.map((sentence) => sentence.trim())
+      .filter(Boolean) ?? [];
+  const perSentence =
+    sentences.length > 1
+      ? sentences.map((sentence) => `[${tag}] ${sentence}`).join(' ')
+      : `[${tag}] ${trimmed}`;
+  if (perSentence.length <= maxLength) return perSentence;
+  const single = `[${tag}] ${trimmed}`;
+  return single.length <= maxLength ? single : trimmed;
 }
 
 export function normalizeAlarmTextWithoutTags(text: string): string {

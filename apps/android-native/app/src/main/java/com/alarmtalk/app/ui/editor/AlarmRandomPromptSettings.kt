@@ -393,47 +393,6 @@ internal fun WeatherLocationDialog(
     var draftCountry by remember(country) { mutableStateOf(country) }
     var draftCity by remember(city) { mutableStateOf(city) }
     var submitted by remember { mutableStateOf(false) }
-    var locationBusy by remember { mutableStateOf(false) }
-    var locationStatus by remember { mutableStateOf<String?>(null) }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    fun startLocationLookup() {
-        if (locationBusy) return
-        scope.launch {
-            locationBusy = true
-            locationStatus = context.getString(R.string.editorp_weather_location_loading)
-            val fix = withContext(Dispatchers.IO) {
-                runCatching {
-                    com.alarmtalk.app.location.WeatherLocationProvider.resolve(context)
-                }.getOrNull()
-            }
-            if (fix == null) {
-                locationStatus = context.getString(R.string.editorp_weather_location_failed)
-            } else {
-                draftCountry = fix.country.ifBlank { draftCountry }
-                // 도시가 비면 나라라도 채운다(도서 지역 등 지오코딩이 도시를 못 줄 때).
-                draftCity = fix.city.ifBlank { fix.country }.ifBlank { draftCity }
-                locationStatus = if (fix.country.isBlank() && fix.city.isBlank()) {
-                    context.getString(R.string.editorp_weather_location_no_address)
-                } else {
-                    context.getString(R.string.editorp_weather_location_filled)
-                }
-            }
-            locationBusy = false
-        }
-    }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { results ->
-        val granted = results.values.any { it }
-        if (!granted) {
-            locationStatus = context.getString(R.string.editorp_weather_location_denied)
-            return@rememberLauncherForActivityResult
-        }
-        startLocationLookup()
-    }
     val cityError = submitted && draftCity.isBlank()
 
     Dialog(
@@ -481,56 +440,7 @@ internal fun WeatherLocationDialog(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        OutlinedButton(
-                            onClick = {
-                                if (com.alarmtalk.app.location.WeatherLocationProvider.hasPermission(context)) {
-                                    startLocationLookup()
-                                } else {
-                                    locationPermissionLauncher.launch(
-                                        arrayOf(
-                                            Manifest.permission.ACCESS_COARSE_LOCATION,
-                                            Manifest.permission.ACCESS_FINE_LOCATION,
-                                        ),
-                                    )
-                                }
-                            },
-                            enabled = !locationBusy,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = WakerButtonShape,
-                            border = wakerCardBorder(),
-                            colors = wakerOutlinedButtonColors(),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (locationBusy) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(stringResource(R.string.editorp_weather_location_getting))
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Outlined.MyLocation,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(stringResource(R.string.editorp_weather_use_current_location))
-                                }
-                            }
-                        }
                     }
-                }
-                locationStatus?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
                 WeatherCityPickerField(
                     city = draftCity,
