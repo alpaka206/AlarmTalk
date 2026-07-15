@@ -212,6 +212,7 @@ internal fun VoiceAudioCard(
                             if (freeVoiceTier) {
                                 FreeThemeSummaryRow(
                                     selectedBucket = editor.selectedBucket,
+                                    weatherCity = editor.voiceWeatherCity,
                                     onClick = onOpenFreeBucketSettings,
                                 )
                             } else {
@@ -467,11 +468,15 @@ private fun VoiceProfileSelector(
 @Composable
 private fun FreeThemeSummaryRow(
     selectedBucket: String?,
+    weatherCity: String,
     onClick: () -> Unit,
 ) {
     // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
     val isOnline by rememberIsOnline()
     val valueLabel = when {
+        // 날씨 버킷은 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
+        selectedBucket == "weather" && weatherCity.isNotBlank() ->
+            "${stringResource(freeBucketLabelRes(selectedBucket))} · $weatherCity"
         selectedBucket != null -> stringResource(freeBucketLabelRes(selectedBucket))
         !isOnline -> stringResource(R.string.editor_free_bucket_offline)
         else -> stringResource(R.string.editor_free_bucket_loading)

@@ -856,6 +856,8 @@ internal fun AlarmEditorScreen(
     val editorBottomPadding = 24.dp
     var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
     var randomPromptWasEnabledWhenOpened by remember { mutableStateOf(false) }
+    // 무료 날씨 버킷 선택 시 도시 입력/확인 다이얼로그.
+    var freeWeatherDialogOpen by remember { mutableStateOf(false) }
 
     val usableTtsProfileIds = (
         voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
@@ -903,6 +905,10 @@ internal fun AlarmEditorScreen(
                     stringResource(R.string.editor_save_blocked_voice_unusable)
                 editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
                     stringResource(R.string.editor_save_blocked_random_prompt_incomplete)
+                // 무료 날씨 버킷은 도시가 있어야 조건 매칭이 된다 — 없으면 저장을 막고 안내.
+                freeVoiceTier && editor.selectedBucket == "weather" &&
+                    editor.voiceWeatherCity.isBlank() ->
+                    stringResource(R.string.editor_error_weather_location_required)
                 // 무료는 문구를 직접 입력하지 않는다(테마 클립 자동 회전) — 빈 문구는
                 // 클립이 아직 준비되지 않은 상태이므로 '입력하라'는 안내 대신 준비 중 안내.
                 // 오프라인이면 기다려도 안 되므로 연결 안내로 정직하게 분기한다.
@@ -1321,7 +1327,15 @@ internal fun AlarmEditorScreen(
             "free_bucket" -> FreeBucketSettingsPane(
                 buckets = freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage),
                 selectedBucket = editor.selectedBucket,
-                onSelectBucket = ::selectBucket,
+                onSelectBucket = { bucket ->
+                    if (bucket == "weather") {
+                        // 날씨는 저장한 도시 기준으로 매칭되므로, 고르는 시점에 도시를
+                        // 확인/수정하게 한다(이미 입력돼 있어도 다이얼로그에 채워서 보여줌).
+                        freeWeatherDialogOpen = true
+                    } else {
+                        selectBucket(bucket)
+                    }
+                },
                 onDismiss = { settingsDetailPanel = null },
             )
 
@@ -1335,6 +1349,20 @@ internal fun AlarmEditorScreen(
             )
         }
         }
+    }
+
+    if (freeWeatherDialogOpen) {
+        WeatherLocationDialog(
+            country = editor.voiceWeatherCountry,
+            city = editor.voiceWeatherCity,
+            onDismissWithoutSave = { freeWeatherDialogOpen = false },
+            onConfirm = { country, city ->
+                editor.voiceWeatherCountry = country
+                editor.voiceWeatherCity = city
+                freeWeatherDialogOpen = false
+                selectBucket("weather")
+            },
+        )
     }
 
     if (voicePlanGateOpen) {

@@ -352,6 +352,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun completeVoiceSetup(voiceId: String) {
         setDefaultVoice(voiceId)
         showVoiceSetup = false
+        // 고른 목소리의 무료 버킷 클립을 미리 받아, 첫 알람 만들기가 대기 없이
+        // (이후엔 오프라인에서도) 되게 한다.
+        prefetchFreeBucketClips(voiceId)
         // 목소리를 고른 흐름에서만 첫 알람 만들기(에디터 자동 진입)로 이어간다(건너뛰기 시엔 홈).
         navigateFirstAlarmEditorTick++
     }
