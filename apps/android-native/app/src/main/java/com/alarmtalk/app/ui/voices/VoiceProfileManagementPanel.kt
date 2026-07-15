@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
@@ -78,8 +77,6 @@ import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.ui.guide.UsageGuideDialog
-import com.alarmtalk.app.ui.guide.UsageGuideStep
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -127,23 +124,6 @@ private fun voiceProfileCropDurationError(context: android.content.Context, dura
         context.getString(R.string.voices_crop_duration_notice)
     else -> null
 }
-
-// 처음 목소리를 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
-@Composable
-private fun rememberVoiceCreateGuideSteps(): List<UsageGuideStep> = listOf(
-    UsageGuideStep(
-        title = stringResource(R.string.voices2_guide_record_title),
-        body = stringResource(R.string.voices2_guide_record_body),
-    ),
-    UsageGuideStep(
-        title = stringResource(R.string.voices2_guide_identity_title),
-        body = stringResource(R.string.voices2_guide_identity_body),
-    ),
-    UsageGuideStep(
-        title = stringResource(R.string.voices2_guide_register_title),
-        body = stringResource(R.string.voices2_guide_register_body),
-    ),
-)
 
 /**
  * 추천 대사 카드. [fillHeight] 가 true 면 호출부(스크롤 없는 Column)의 weight 와 짝을 이뤄
@@ -246,9 +226,6 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
-    val voiceCreateGuideSteps = rememberVoiceCreateGuideSteps()
-    // 자동 노출 없이 다이얼로그 도움말(?) 버튼으로만 연다 — 첫 방문 팝업 간소화.
-    var voiceGuideVisible by remember { mutableStateOf(false) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
@@ -1160,16 +1137,6 @@ internal fun VoiceProfileManagementPanel(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
-                        IconButton(
-                            onClick = { voiceGuideVisible = true },
-                            modifier = Modifier.size(42.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                                contentDescription = stringResource(R.string.voices_usage_guide),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                         if (!inDraftDecisionFlow) {
                             IconButton(
                                 onClick = ::closeCreateDialog,
@@ -1317,8 +1284,6 @@ internal fun VoiceProfileManagementPanel(
                                     supportingText = {
                                         if (listenerRequiredError) {
                                             Text(stringResource(R.string.voices_required_field))
-                                        } else {
-                                            Text(stringResource(R.string.voices_listener_title_hint))
                                         }
                                     },
                                     shape = WakerInputShape,
@@ -1615,13 +1580,6 @@ internal fun VoiceProfileManagementPanel(
                 }
             }
         }
-    }
-
-    if (voiceGuideVisible) {
-        UsageGuideDialog(
-            steps = voiceCreateGuideSteps,
-            onFinish = { voiceGuideVisible = false },
-        )
     }
 
     renameTarget?.let { profile ->
