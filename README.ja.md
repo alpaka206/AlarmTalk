@@ -2,7 +2,7 @@
 
 > [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-**AlarmTalk** は OS ネイティブの音声アラームアプリです。指定された時刻に、ユーザーが選んだ声 — 録音した音声、アップロードしたクリップ、家族や恋人と共有した音声、または AI でクローンされた音声 — で実際のアラームを鳴らします。
+**AlarmTalk** は OS ネイティブの音声アラームアプリです。指定された時刻に、ユーザーが選んだ声 — 録音した音声、家族や恋人と共有した音声、または AI でクローンされた音声 — で実際のアラームを鳴らします。
 
 ## なぜ「本物の」アラームなのか
 
@@ -11,9 +11,12 @@
 ## 現状
 
 - **バージョン**: `v0.1.2` (Closed Beta 準備中)
-- **ブランチ**: `develop`
-- **Android**: Phase 1–6 実装完了、実機検証済み
-- **iOS**: AlarmKit (iOS 26+) PoC — 保留中(未運営、CI は手動トリガーのみ)
+- **Android** — 主力プラットフォーム。コアアラームエンジンは実機検証済み:
+  - 無料: システムボイス + 事前レンダリングされたアラームプリセットクリップ、解除ごとにローカルでローテーション(バケットローテーション)
+  - 有料: AI クローンボイスのプリセットを「キープ」確定後にサーバー側で事前レンダリング、鳴動時は完全オフライン再生 — オフライン(機内モード)鳴動は実機 QA 待ち
+  - 家族アラームは FCM データプッシュでメンバーに即時配信(鳴動自体はローカル — ルール #1) — バックグラウンド配信は実機 QA 待ち
+  - Google Play Billing: コード完成、Play Console 設定待ち
+- **iOS**: 保留中 — 未運営、CI ビルド無効(手動 `workflow_dispatch` のみ)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI で自動デプロイ + DB マイグレーション(`develop` → dev、`main` → prod)
 
 ## 技術スタック
@@ -21,7 +24,7 @@
 | レイヤー | スタック |
 |---|---|
 | Android | Kotlin 2.0 · Jetpack Compose · Material 3 · Room · DataStore · Retrofit · WorkManager · `AlarmManager.setAlarmClock` |
-| iOS (PoC) | Swift · SwiftUI · AlarmKit · ActivityKit (Live Activity) |
+| iOS (保留) | Swift · SwiftUI · AlarmKit · ActivityKit (Live Activity) |
 | Backend | TypeScript 6 · Hono 4 · Cloudflare Workers · Zod · Vitest |
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (決定論的 TTS キャッシュ) |

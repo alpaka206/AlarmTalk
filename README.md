@@ -2,7 +2,7 @@
 
 > [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-**AlarmTalk** is an OS-native voice alarm app. At the scheduled time, it rings a real alarm using a voice the user picked — a recorded one, an uploaded clip, a voice shared by family or a partner, or a voice cloned by AI.
+**AlarmTalk** is an OS-native voice alarm app. At the scheduled time, it rings a real alarm using a voice the user picked — a recorded one, a voice shared by family or a partner, or a voice cloned by AI.
 
 ## Why a "real" alarm
 
