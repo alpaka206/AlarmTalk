@@ -912,16 +912,18 @@ function prerenderClipPrompt(params: {
     : '';
   const speechStyle = params.speechStyle;
   const speechStyleInstruction =
-    speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0)
+    speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona)
       ? `SPEAKER DIALECT/STYLE (analyzed from this speaker's own recording): dialect="${
           speechStyle.dialect || 'standard'
         }"${speechStyle.strength ? ` (strength: ${speechStyle.strength})` : ''}${
           speechStyle.register ? `, register: ${speechStyle.register}` : ''
         }${
+          speechStyle.persona ? `, verbal identity: "${speechStyle.persona}"` : ''
+        }${
           speechStyle.markers.length > 0
             ? `, typical endings/expressions: ${speechStyle.markers.map((m) => `"${m}"`).join(', ')}`
             : ''
-        }. Write the line the way THIS person actually talks — use the dialect's natural sentence endings and vocabulary, not standard textbook language. Do not exaggerate or stack dialect markers; if strength is low, keep it to a light touch on sentence endings only. If a STYLE REFERENCE line is present above, it wins over this analysis.`
+        }. Write the line the way THIS speaker actually talks — keep their first-person pronoun, signature sentence endings (語尾癖) and energy, using the dialect's natural endings and vocabulary instead of standard textbook language. Do not exaggerate or stack markers; if strength is low, keep it to a light touch on sentence endings only. If a STYLE REFERENCE line is present above, it wins over this analysis.`
       : '';
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
@@ -1015,8 +1017,14 @@ export interface SpeechStyle {
   strength: '' | 'low' | 'medium' | 'high';
   /** 말단 격식. 예: 'banmal'(반말), 'jondaemal'(존댓말), 'casual', 'polite'. */
   register: string;
-  /** 화자가 실제로 쓴 특징 어미/표현(최대 5개). */
+  /** 화자가 실제로 쓴 특징 어미/말버릇/캐치프레이즈(최대 5개, 원문 그대로). */
   markers: string[];
+  /**
+   * 화자(사람 또는 캐릭터)의 말투 특징 한 줄 요약 — 같은 성우가 연기한 다른 캐릭터도
+   * 어미 습관(語尾癖)·1인칭·에너지로 구분되도록 한다. 예: "장난기 많은 소년투, 1인칭 オレ,
+   * 어미를 늘이며 반말". 특징이 없으면 ''.
+   */
+  persona: string;
 }
 
 const SPEECH_STYLE_RESPONSE_SCHEMA = {
@@ -1026,23 +1034,24 @@ const SPEECH_STYLE_RESPONSE_SCHEMA = {
     strength: { type: 'STRING', enum: ['', 'low', 'medium', 'high'] },
     register: { type: 'STRING' },
     markers: { type: 'ARRAY', items: { type: 'STRING' } },
+    persona: { type: 'STRING' },
     confidence: { type: 'NUMBER' },
   },
-  required: ['dialect', 'strength', 'register', 'markers', 'confidence'],
+  required: ['dialect', 'strength', 'register', 'markers', 'persona', 'confidence'],
 } as const;
 
 function speechStylePrompt(transcript: string, language: string): string {
   const dialectGuide =
     language === 'ja'
-      ? 'Japanese dialects to consider: 関西 (Kansai — e.g. 〜やねん/〜へん/ほんま), 東北 (Tohoku), 博多/九州 (Hakata/Kyushu — e.g. 〜と?/〜ばい), 広島, 名古屋, 沖縄. Standard = 標準語.'
+      ? 'Japanese dialects to consider: 関西 (Kansai — e.g. 〜やねん/〜へん/ほんま), 東北 (Tohoku), 博多/九州 (Hakata/Kyushu — e.g. 〜と?/〜ばい), 広島, 名古屋, 沖縄. Standard = 標準語. Japanese speakers/characters are ALSO identified by signature sentence-final quirks (語尾癖 such as 〜だってばよ／〜ですわ／〜のだ／〜にゃ), their first-person pronoun (俺/僕/私/わし/あたし…), and catchphrases — capture these even when the dialect is standard.'
       : language === 'en'
-        ? 'For English, dialect detection is usually not reliable from a transcript — leave dialect "" unless wording is unmistakably regional; focus on register (casual/polite) and habitual expressions.'
-        : 'Korean dialects to consider: 경상 (e.g. ~했나/~아이가/~카이/~심더), 전라 (e.g. ~잉/~부러/~것이), 충청 (e.g. ~여/~유), 강원, 제주 (e.g. ~수다/~마씸). Standard = 표준어.';
+        ? 'For English, dialect detection is usually not reliable from a transcript — leave dialect "" unless wording is unmistakably regional; focus on register (casual/polite) and habitual expressions/catchphrases.'
+        : 'Korean dialects to consider: 경상 (e.g. ~했나/~아이가/~카이/~심더), 전라 (e.g. ~잉/~부러/~것이), 충청 (e.g. ~여/~유), 강원, 제주 (e.g. ~수다/~마씸). Standard = 표준어. Also capture personal verbal habits (특유의 어미·감탄사·말버릇) even for standard speakers.';
   return [
-    'You are analyzing how a REAL person talks, from a transcript of their voice-clone enrollment recording. The recording is them reading a suggested script, so they may sound more standard than usual — only report a dialect when the transcript clearly shows regional endings/vocabulary.',
+    'You are analyzing how a speaker talks, from a transcript of their voice-clone enrollment recording. The speaker may be a real person reading a suggested script (they may sound more standard than usual — only report a dialect when clearly shown), or a fictional character with a distinctive verbal identity: the SAME voice actor can play different characters, so it is the verbal habits — signature sentence endings, first-person pronoun, catchphrases, energy — that tell characters apart. Capture whichever is present.',
     dialectGuide,
-    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions the speaker actually used"],"confidence":0.0-1.0}.',
-    'Be conservative: when unsure, dialect="" and confidence low. markers must be copied from the transcript, not invented.',
+    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","confidence":0.0-1.0}.',
+    'Be conservative: when unsure, dialect="" and confidence low. markers must be copied from the transcript, not invented. persona describes only what the transcript shows — no guessed names or identities.',
     `TRANSCRIPT (${language}):`,
     transcript.slice(0, 2000),
   ].join('\n');
@@ -1095,9 +1104,13 @@ export async function analyzeSpeechStyleWithVertex(
           .filter(Boolean)
           .slice(0, 5)
       : [];
-    if (!dialect && !register && markers.length === 0) return null;
+    const persona =
+      typeof (parsed as { persona?: unknown }).persona === 'string'
+        ? String((parsed as { persona?: unknown }).persona).trim().slice(0, 120)
+        : '';
+    if (!dialect && !register && markers.length === 0 && !persona) return null;
     // 표준어인데 사투리 강도만 있는 모순 정리.
-    return { dialect, strength: dialect ? strength : '', register, markers };
+    return { dialect, strength: dialect ? strength : '', register, markers, persona };
   } catch {
     return null;
   }
@@ -1117,6 +1130,7 @@ export function parseSpeechStyle(value: unknown): SpeechStyle | null {
       markers: Array.isArray(parsed.markers)
         ? parsed.markers.filter((m): m is string => typeof m === 'string').slice(0, 5)
         : [],
+      persona: typeof parsed.persona === 'string' ? parsed.persona.slice(0, 120) : '',
     };
   } catch {
     return null;
