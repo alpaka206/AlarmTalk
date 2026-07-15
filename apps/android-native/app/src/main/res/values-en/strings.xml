@@ -258,7 +258,9 @@
     <string name="editor_snooze_title">Snooze</string>
     <string name="editor_free_bucket_title">Theme</string>
     <string name="editor_free_bucket_hint">A different line from the theme plays each time the alarm rings.</string>
-    <string name="editor_free_voice_summary">Rings in %1$s\'s voice</string>
+    <string name="editor_free_bucket_loading">Preparing your messages</string>
+    <string name="editor_save_blocked_free_clips_loading">Preparing your alarm messages. Please wait a moment.</string>
+    <string name="voices_clone_requires_paid_hint">Alarms that wake you in your own voice are available on paid plans.</string>
     <string name="editor_stop">Stop</string>
     <string name="editor_vibration_title">Vibration</string>
     <string name="editor_voice_deleted_desc">The voice saved to this alarm will still play, but to change the phrase, please choose another voice.</string>

@@ -260,7 +260,9 @@
     <string name="editor_snooze_title">다시 울림</string>
     <string name="editor_free_bucket_title">테마</string>
     <string name="editor_free_bucket_hint">알람이 울릴 때마다 테마 안의 문구가 순서대로 바뀌어 재생돼요.</string>
-    <string name="editor_free_voice_summary">%1$s의 목소리로 울려요</string>
+    <string name="editor_free_bucket_loading">문구를 준비하고 있어요</string>
+    <string name="editor_save_blocked_free_clips_loading">알람 문구를 준비하고 있어요. 잠시만 기다려 주세요.</string>
+    <string name="voices_clone_requires_paid_hint">내 목소리로 깨워주는 알람은 유료 플랜에서 만들 수 있어요.</string>
     <string name="editor_stop">정지</string>
     <string name="editor_vibration_title">진동</string>
     <string name="editor_voice_deleted_desc">이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.</string>

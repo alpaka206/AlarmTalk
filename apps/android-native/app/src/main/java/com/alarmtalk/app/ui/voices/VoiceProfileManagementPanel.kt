@@ -957,6 +957,9 @@ internal fun VoiceProfileManagementPanel(
 
         if (ownVoices.isEmpty() && canCreateVoice) {
             MutedText(stringResource(R.string.voices_no_voices_yet))
+        } else if (ownVoices.isEmpty() && authSession != null) {
+            // 무료 플랜 — 빈 자리로 두지 않고, 내 목소리 클론이 유료 기능임을 조용히 알린다.
+            MutedText(stringResource(R.string.voices_clone_requires_paid_hint))
         } else if (ownVoices.isNotEmpty()) {
             ownVoices.forEach { profile ->
                 VoiceProfileRow(

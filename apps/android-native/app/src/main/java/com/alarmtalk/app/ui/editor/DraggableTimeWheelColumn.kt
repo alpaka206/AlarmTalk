@@ -55,6 +55,8 @@ internal fun DraggableTimeWheelColumn(
     maxStepsPerGesture: Int,
     onStep: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    // 좁은 화면에서 숫자가 컬럼 폭을 넘지 않게 타이포를 함께 줄이는 배율(1f = 그대로).
+    textScale: Float = 1f,
 ) {
     val scope = rememberCoroutineScope()
     val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
@@ -147,9 +149,9 @@ internal fun DraggableTimeWheelColumn(
                     else -> 0.08f
                 }
                 val style = if (distance == 0) {
-                    MaterialTheme.typography.displayLarge
+                    MaterialTheme.typography.displayLarge.scaledBy(textScale)
                 } else {
-                    MaterialTheme.typography.displayMedium
+                    MaterialTheme.typography.displayMedium.scaledBy(textScale)
                 }
                 Surface(
                     onClick = {

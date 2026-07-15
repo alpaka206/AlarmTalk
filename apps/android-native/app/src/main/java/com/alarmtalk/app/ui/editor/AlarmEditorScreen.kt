@@ -901,8 +901,14 @@ internal fun AlarmEditorScreen(
                     stringResource(R.string.editor_save_blocked_voice_unusable)
                 editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
                     stringResource(R.string.editor_save_blocked_random_prompt_incomplete)
+                // 무료는 문구를 직접 입력하지 않는다(테마 클립 자동 회전) — 빈 문구는
+                // 클립이 아직 준비되지 않은 상태이므로 '입력하라'는 안내 대신 준비 중 안내.
                 !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
-                    stringResource(R.string.editor_save_blocked_enter_message_or_random)
+                    if (freeVoiceTier) {
+                        stringResource(R.string.editor_save_blocked_free_clips_loading)
+                    } else {
+                        stringResource(R.string.editor_save_blocked_enter_message_or_random)
+                    }
                 else -> null
             }
         }
@@ -1146,6 +1152,7 @@ internal fun AlarmEditorScreen(
                                 onPreviewAudio = { playCachedAudio() },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
+                                onOpenFreeBucketSettings = { settingsDetailPanel = "free_bucket" },
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                             )
                         }
@@ -1162,10 +1169,9 @@ internal fun AlarmEditorScreen(
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
                             showAlarmSound = editor.playMode != AlarmPlayModes.VOICE_ONLY,
-                            // 유료는 목소리 크기를 목소리 카드(TTS)·녹음 박스 아래(녹음)에서 열므로 세부설정엔 두지 않는다.
-                            // 무료 플랜 목소리 카드엔 볼륨 행이 없으므로, 무료 음성 알람일 때만 세부설정 '목소리' 행을 남긴다.
-                            showVoiceOutput = freeVoiceTier &&
-                                editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            // 목소리 크기는 무료·유료 모두 목소리 카드 안의 행에서 연다(UI 통일) —
+                            // 세부설정의 '목소리' 행은 더 이상 쓰지 않는다.
+                            showVoiceOutput = false,
                             voiceVolumePercent = editor.voiceVolumePercent,
                             voiceRepeat = editor.voiceRepeat,
                             voiceRepeatActive = editor.playMode == AlarmPlayModes.VOICE_ONLY,
@@ -1307,6 +1313,13 @@ internal fun AlarmEditorScreen(
                 fortuneBirthTime = editor.voiceFortuneBirthTime,
                 onDismissWithoutSave = ::dismissRandomPromptSettingsWithoutSave,
                 onSaveSettings = ::applyRandomPromptSettings,
+            )
+
+            "free_bucket" -> FreeBucketSettingsPane(
+                buckets = freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage),
+                selectedBucket = editor.selectedBucket,
+                onSelectBucket = ::selectBucket,
+                onDismiss = { settingsDetailPanel = null },
             )
 
             "voice_output" -> VoiceOutputSettingsPane(
