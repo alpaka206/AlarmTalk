@@ -616,7 +616,7 @@ internal fun FreeBucketSettingsPane(
                     .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                SnoozeOptionSection(title = stringResource(R.string.editor_free_bucket_title)) {
+                SnoozeOptionSection {
                     buckets.forEachIndexed { index, bucket ->
                         SnoozeRadioRow(
                             label = stringResource(freeBucketLabelRes(bucket)),
@@ -628,7 +628,6 @@ internal fun FreeBucketSettingsPane(
                         }
                     }
                 }
-                MutedText(stringResource(R.string.editor_free_bucket_hint))
             }
         }
     }

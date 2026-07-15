@@ -41,12 +41,16 @@ import com.alarmtalk.app.data.VibrationPatterns
 
 internal val SnoozeIntervals = listOf(5, 10, 15, 30)
 
-// 라벨은 로케일별 리소스(vibrationLabel)로 해석한다 — 코드에 언어를 박지 않는다.
+// 라벨은 리소스(vibrationLabel)로 해석한다 — 패턴 고유명은 전 로케일 영어 고정.
 private val VibrationOptions = listOf(
     VibrationPatterns.DEFAULT,
     VibrationPatterns.STRONG,
-    VibrationPatterns.SHORT,
     VibrationPatterns.MEDIUM,
+    VibrationPatterns.SHORT,
+    VibrationPatterns.RISE,
+    VibrationPatterns.PULSE,
+    VibrationPatterns.BOUNCE,
+    VibrationPatterns.DRUMROLL,
     VibrationPatterns.HEARTBEAT,
     VibrationPatterns.TICKTOCK,
     VibrationPatterns.WALTZ,
@@ -54,6 +58,8 @@ private val VibrationOptions = listOf(
     VibrationPatterns.OFF_BEAT,
     VibrationPatterns.RIPPLE,
     VibrationPatterns.SIREN,
+    VibrationPatterns.SOFT,
+    VibrationPatterns.SOS,
 )
 
 // '기본 알람음'이라는 정보량 없는 표기 대신 시스템 기본 알람음의 실제 이름을 보여준다.

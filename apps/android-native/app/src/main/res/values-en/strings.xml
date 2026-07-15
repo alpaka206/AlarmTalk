@@ -256,8 +256,6 @@
     <string name="editor_snooze_repeat_three">3 times</string>
     <string name="editor_snooze_summary">%1$d min · %2$s</string>
     <string name="editor_snooze_title">Snooze</string>
-    <string name="editor_free_bucket_title">Theme</string>
-    <string name="editor_free_bucket_hint">A different line from the theme plays each time the alarm rings.</string>
     <string name="editor_free_bucket_loading">Preparing your messages</string>
     <string name="editor_save_blocked_free_clips_loading">Preparing your alarm messages. Please wait a moment.</string>
     <string name="voices_clone_requires_paid_hint">Alarms that wake you in your own voice are available on paid plans.</string>
@@ -755,16 +753,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="label_play_mode_voice_only">Voice</string>
     <string name="label_play_mode_alarm_voice">Alarm + voice</string>
     <string name="label_play_mode_alarm">Alarm</string>
-    <string name="label_vibration_strong">Strong</string>
-    <string name="label_vibration_short">Short</string>
-    <string name="label_vibration_medium">Medium</string>
-    <string name="label_vibration_heartbeat">Heartbeat</string>
-    <string name="label_vibration_ticktock">Ticktock</string>
-    <string name="label_vibration_waltz">Waltz</string>
-    <string name="label_vibration_zigzag">Zigzag</string>
-    <string name="label_vibration_off_beat">Off-beat</string>
-    <string name="label_vibration_ripple">Ripple</string>
-    <string name="label_vibration_siren">Siren</string>
     <string name="label_vibration_off">Off</string>
     <string name="label_vibration_basic_call">Basic</string>
     <string name="label_provider_google">Google</string>

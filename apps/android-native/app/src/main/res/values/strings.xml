@@ -258,8 +258,6 @@
     <string name="editor_snooze_repeat_three">3회</string>
     <string name="editor_snooze_summary">%1$d분 · %2$s</string>
     <string name="editor_snooze_title">다시 울림</string>
-    <string name="editor_free_bucket_title">테마</string>
-    <string name="editor_free_bucket_hint">알람이 울릴 때마다 테마 안의 문구가 순서대로 바뀌어 재생돼요.</string>
     <string name="editor_free_bucket_loading">문구를 준비하고 있어요</string>
     <string name="editor_save_blocked_free_clips_loading">알람 문구를 준비하고 있어요. 잠시만 기다려 주세요.</string>
     <string name="voices_clone_requires_paid_hint">내 목소리로 깨워주는 알람은 유료 플랜에서 만들 수 있어요.</string>
@@ -761,16 +759,22 @@
     <string name="label_snooze_repeat_forever">계속 반복</string>
     <string name="label_snooze_repeat_count">%1$d회</string>
     <string name="label_snooze_list">%1$d분 · %2$s</string>
-    <string name="label_vibration_strong">강하게</string>
-    <string name="label_vibration_short">짧게</string>
-    <string name="label_vibration_medium">중간</string>
-    <string name="label_vibration_heartbeat">하트비트</string>
-    <string name="label_vibration_ticktock">틱톡</string>
-    <string name="label_vibration_waltz">왈츠</string>
-    <string name="label_vibration_zigzag">지그재그</string>
-    <string name="label_vibration_off_beat">엇박자</string>
-    <string name="label_vibration_ripple">물결</string>
-    <string name="label_vibration_siren">사이렌</string>
+    <string name="label_vibration_strong" translatable="false">Strong</string>
+    <string name="label_vibration_short" translatable="false">Short</string>
+    <string name="label_vibration_medium" translatable="false">Medium</string>
+    <string name="label_vibration_heartbeat" translatable="false">Heartbeat</string>
+    <string name="label_vibration_ticktock" translatable="false">Ticktock</string>
+    <string name="label_vibration_waltz" translatable="false">Waltz</string>
+    <string name="label_vibration_zigzag" translatable="false">Zigzag</string>
+    <string name="label_vibration_off_beat" translatable="false">Offbeat</string>
+    <string name="label_vibration_ripple" translatable="false">Ripple</string>
+    <string name="label_vibration_siren" translatable="false">Siren</string>
+    <string name="label_vibration_rise" translatable="false">Rise</string>
+    <string name="label_vibration_pulse" translatable="false">Pulse</string>
+    <string name="label_vibration_bounce" translatable="false">Bounce</string>
+    <string name="label_vibration_drumroll" translatable="false">Drumroll</string>
+    <string name="label_vibration_soft" translatable="false">Soft</string>
+    <string name="label_vibration_sos" translatable="false">SOS</string>
     <string name="label_vibration_off">꺼짐</string>
     <string name="label_vibration_basic_call">기본</string>
     <string name="label_play_mode_voice_only">목소리</string>

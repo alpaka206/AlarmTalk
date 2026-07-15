@@ -256,8 +256,6 @@
     <string name="editor_snooze_repeat_three">3回</string>
     <string name="editor_snooze_summary">%1$d分 · %2$s</string>
     <string name="editor_snooze_title">再通知</string>
-    <string name="editor_free_bucket_title">テーマ</string>
-    <string name="editor_free_bucket_hint">アラームが鳴るたびに、テーマ内のフレーズが順番に再生されます。</string>
     <string name="editor_free_bucket_loading">メッセージを準備しています</string>
     <string name="editor_save_blocked_free_clips_loading">アラームのメッセージを準備しています。しばらくお待ちください。</string>
     <string name="voices_clone_requires_paid_hint">自分の声で起こすアラームは有料プランで作成できます。</string>
@@ -763,16 +761,6 @@
     <string name="label_play_mode_voice_only">声</string>
     <string name="label_play_mode_alarm_voice">アラーム＋声</string>
     <string name="label_play_mode_alarm">アラーム</string>
-    <string name="label_vibration_strong">ストロング</string>
-    <string name="label_vibration_short">ショート</string>
-    <string name="label_vibration_medium">ミディアム</string>
-    <string name="label_vibration_heartbeat">ハートビート</string>
-    <string name="label_vibration_ticktock">チクタク</string>
-    <string name="label_vibration_waltz">ワルツ</string>
-    <string name="label_vibration_zigzag">ジグザグ</string>
-    <string name="label_vibration_off_beat">オフビート</string>
-    <string name="label_vibration_ripple">リップル</string>
-    <string name="label_vibration_siren">サイレン</string>
     <string name="label_vibration_off">オフ</string>
     <string name="label_vibration_basic_call">ベーシック</string>
     <string name="label_provider_google">Google</string>
