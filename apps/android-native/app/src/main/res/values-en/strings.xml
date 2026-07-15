@@ -806,12 +806,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="label_sync_state_dirty">Pending save</string>
     <string name="label_sync_state_failed">Couldn\'t save to the server</string>
     <string name="label_sync_state_device_only">Saved on device only</string>
-    <string name="editor2_coach_schedule_title">Set the repeat and name</string>
-    <string name="editor2_coach_schedule_body">Tap a weekday to repeat it every week. When repeat is on, you can also choose to skip holidays, and you can change the alarm name here too.</string>
-    <string name="editor2_coach_play_mode_title">Choose the play mode</string>
-    <string name="editor2_coach_play_mode_body">Choose \'Alarm + Voice\' and the voice you registered will play along. Turn on random messages to be woken with a fresh message each morning.</string>
-    <string name="editor2_coach_save_title">Just save and you\'re done</string>
-    <string name="editor2_coach_save_body">You can change the volume, vibration, and snooze in the card right above. Tap Save and the alarm is scheduled right away.</string>
     <string name="editor2_cat_morning">Wake up</string>
     <string name="editor2_cat_lunch">Lunch</string>
     <string name="editor2_cat_evening">Off work</string>
@@ -923,10 +917,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="onb_voice_nickname_label">What should this voice call you?</string>
     <string name="onb_voice_nickname_placeholder">e.g. Jiho, honey, boss</string>
     <string name="onb_voice_nickname_hint">Leave it blank to be woken without a name. You can change it later in the Voices tab.</string>
-    <string name="misc2_coach_home_hero_title">Create your first alarm</string>
-    <string name="misc2_coach_home_hero_body">Choose a time and voice, and it is saved on this device.</string>
-    <string name="misc2_coach_voice_create_title">Create your own voice</string>
-    <string name="misc2_coach_voice_create_body">Make your own voice, and it\'ll wake you up.</string>
     <string name="misc2_theme_mode_system">Match system</string>
     <string name="misc2_theme_mode_light">Light mode</string>
     <string name="misc2_theme_mode_dark">Dark mode</string>

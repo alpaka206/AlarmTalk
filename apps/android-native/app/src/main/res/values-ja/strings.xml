@@ -814,12 +814,6 @@
     <string name="label_sync_state_dirty">保存待ち</string>
     <string name="label_sync_state_failed">サーバーに保存できませんでした</string>
     <string name="label_sync_state_device_only">端末のみに保存</string>
-    <string name="editor2_coach_schedule_title">繰り返しと名前を決めましょう</string>
-    <string name="editor2_coach_schedule_body">曜日をタップすると毎週繰り返します。繰り返しをオンにすると祝日にオフにすることも選べて、アラームの名前もここで変えられます。</string>
-    <string name="editor2_coach_play_mode_title">再生方式を選びましょう</string>
-    <string name="editor2_coach_play_mode_body">\'アラーム＋声\'を選ぶと、登録した声も一緒に鳴ります。ランダムメッセージをオンにすると、毎朝新しいメッセージで起こしてくれます。</string>
-    <string name="editor2_coach_save_title">保存すれば完了です</string>
-    <string name="editor2_coach_save_body">音量・振動・スヌーズはすぐ上のカードで変えられます。保存を押すと、アラームがすぐに予約されます。</string>
     <string name="editor2_cat_morning">起床</string>
     <string name="editor2_cat_lunch">昼食</string>
     <string name="editor2_cat_evening">退勤</string>
@@ -931,10 +925,6 @@
     <string name="onb_voice_nickname_label">この声に何と呼んでほしいですか？</string>
     <string name="onb_voice_nickname_placeholder">例: ジホ、あなた、部長</string>
     <string name="onb_voice_nickname_hint">空欄なら名前なしで起こします。あとで声タブで変更できます。</string>
-    <string name="misc2_coach_home_hero_title">最初のアラームを作成</string>
-    <string name="misc2_coach_home_hero_body">時間と声を選ぶと、この端末に保存されます。</string>
-    <string name="misc2_coach_voice_create_title">自分の声を作りましょう</string>
-    <string name="misc2_coach_voice_create_body">自分の声を作っておくと、その声でアラームが起こしてくれます。</string>
     <string name="misc2_theme_mode_system">システム設定に合わせる</string>
     <string name="misc2_theme_mode_light">ライトモード</string>
     <string name="misc2_theme_mode_dark">ダークモード</string>

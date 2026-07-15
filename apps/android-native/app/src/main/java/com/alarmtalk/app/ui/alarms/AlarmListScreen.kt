@@ -15,26 +15,15 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
-import com.alarmtalk.app.ui.guide.CoachMarkOverlay
-import com.alarmtalk.app.ui.guide.CoachMarkRegistry
-import com.alarmtalk.app.ui.guide.CoachMarkStep
-import com.alarmtalk.app.ui.guide.UsageGuideStore
-import com.alarmtalk.app.ui.guide.coachMarkTarget
-import kotlinx.coroutines.delay
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
@@ -47,12 +36,6 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoucherItem
-
-// 홈 첫 방문 안내 — 다음 알람 히어로에 스포트라이트.
-private const val GUIDE_TARGET_HOME_HERO = "home_next_alarm"
-
-// 목소리 등록 첫 방문 안내 — 내 목소리 만들기 버튼에 스포트라이트.
-private const val GUIDE_TARGET_VOICE_CREATE = "voice_register_create"
 
 // 로그인 배경(AuthBackdrop)의 딥 네이비 감성을 탭 화면 전체에 가져온다 — 라이트/다크 두 버전.
 // 알람 홈에만 깔면 탭 전환(알람↔목소리↔더보기)마다 배경 분위기가 뚝 바뀌어 어색해서,
@@ -144,47 +127,7 @@ internal fun AlarmListScreen(
     }
     val hasAnyAlarm = sortedAlarms.isNotEmpty()
 
-    val appContext = LocalContext.current.applicationContext
-    val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
-    val coachMarkRegistry = remember { CoachMarkRegistry() }
     val listState = rememberLazyListState()
-
-    val homeCoachSteps = listOf(
-        CoachMarkStep(
-            targetKey = GUIDE_TARGET_HOME_HERO,
-            title = stringResource(R.string.misc2_coach_home_hero_title),
-            body = stringResource(R.string.misc2_coach_home_hero_body),
-        ),
-    )
-    val voiceRegisterCoachSteps = listOf(
-        CoachMarkStep(
-            targetKey = GUIDE_TARGET_VOICE_CREATE,
-            title = stringResource(R.string.misc2_coach_voice_create_title),
-            body = stringResource(R.string.misc2_coach_voice_create_body),
-        ),
-    )
-
-    // 홈/목소리 탭 첫 방문 시 한 번만 자동 노출. 온보딩 직후 화면·권한과 한꺼번에
-    // 겹쳐 버벅이지 않도록, 화면이 자리잡을 시간을 살짝 둔 뒤 부드럽게 띄운다.
-    var homeGuideVisible by remember { mutableStateOf(false) }
-    var voiceGuideVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(selectedTab, authSession, hasAnyAlarm) {
-        if (selectedTab == NativeTab.Alarms && authSession != null &&
-            !hasAnyAlarm &&
-            !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_HOME)
-        ) {
-            delay(700)
-            homeGuideVisible = true
-        }
-    }
-    LaunchedEffect(selectedTab, authSession) {
-        if (selectedTab == NativeTab.Voices && authSession != null &&
-            !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_VOICE_REGISTER)
-        ) {
-            delay(700)
-            voiceGuideVisible = true
-        }
-    }
 
     // 그라데이션 명암은 시스템 값이 아니라 앱이 실제 쓰는 테마(현재 컬러스킴)에 맞춘다.
     val homeGradient = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
@@ -218,7 +161,6 @@ internal fun AlarmListScreen(
                     ScreenHeader(title = stringResource(R.string.common_tab_voices))
                 }
                 item {
-                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_VOICE_CREATE)) {
                     VoiceProfileManagementPanel(
                         voiceProfiles = voiceProfiles,
                         pendingVoiceDraft = pendingVoiceDraft,
@@ -244,7 +186,6 @@ internal fun AlarmListScreen(
                         defaultVoiceId = defaultVoiceId,
                         onSetDefaultVoice = onSetDefaultVoice,
                     )
-                    }
                 }
             }
 
@@ -252,9 +193,7 @@ internal fun AlarmListScreen(
                 item { HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm) }
                 if (!hasAnyAlarm) {
                     item {
-                        Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO, targetRadius = 24.dp)) {
-                            EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
-                        }
+                        EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
                     }
                 }
                 if (!permissions.alarmReady) {
@@ -345,27 +284,5 @@ internal fun AlarmListScreen(
             }
         }
     }
-        if (homeGuideVisible && selectedTab == NativeTab.Alarms) {
-            CoachMarkOverlay(
-                steps = homeCoachSteps,
-                registry = coachMarkRegistry,
-                listState = listState,
-                onFinish = {
-                    usageGuideStore.markSeen(UsageGuideStore.GUIDE_HOME)
-                    homeGuideVisible = false
-                },
-            )
-        }
-        if (voiceGuideVisible && selectedTab == NativeTab.Voices) {
-            CoachMarkOverlay(
-                steps = voiceRegisterCoachSteps,
-                registry = coachMarkRegistry,
-                listState = listState,
-                onFinish = {
-                    usageGuideStore.markSeen(UsageGuideStore.GUIDE_VOICE_REGISTER)
-                    voiceGuideVisible = false
-                },
-            )
-        }
     }
 }

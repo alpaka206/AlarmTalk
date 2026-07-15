@@ -80,7 +80,6 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.ui.guide.UsageGuideDialog
 import com.alarmtalk.app.ui.guide.UsageGuideStep
-import com.alarmtalk.app.ui.guide.UsageGuideStore
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -247,18 +246,9 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
-    val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
     val voiceCreateGuideSteps = rememberVoiceCreateGuideSteps()
+    // 자동 노출 없이 다이얼로그 도움말(?) 버튼으로만 연다 — 첫 방문 팝업 간소화.
     var voiceGuideVisible by remember { mutableStateOf(false) }
-    // 목소리 만들기를 처음 열 때 한 번만 자동 노출. 다이얼로그 도움말 버튼으로 다시 볼 수 있다.
-    LaunchedEffect(showCreateForm) {
-        // 앱 재시작으로 미리듣기/만드는 중 스텝으로 곧장 복귀한 경우엔 가이드를 겹치지 않는다.
-        if (showCreateForm && currentStep == VoiceRegistrationStep.Source &&
-            !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_VOICE_CREATE)
-        ) {
-            voiceGuideVisible = true
-        }
-    }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
@@ -1627,10 +1617,7 @@ internal fun VoiceProfileManagementPanel(
     if (voiceGuideVisible) {
         UsageGuideDialog(
             steps = voiceCreateGuideSteps,
-            onFinish = {
-                usageGuideStore.markSeen(UsageGuideStore.GUIDE_VOICE_CREATE)
-                voiceGuideVisible = false
-            },
+            onFinish = { voiceGuideVisible = false },
         )
     }
 
