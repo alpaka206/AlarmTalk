@@ -14,7 +14,6 @@ struct MainTabsView: View {
     @EnvironmentObject private var store: LocalAlarmStore
 
     @State private var selectedTab: NativeTab = .home
-    @State private var planGate: PlanGateState?
     @State private var receivedAlarmSeenAtMillis: Int64 = 0
 
     /// 탭 전환 시 매번 네트워크 요청이 나가면 살짝 버벅인다. 탭+토큰별 마지막
@@ -118,9 +117,6 @@ struct MainTabsView: View {
                     onCodeRegistered: handleCodeRegistrationDestination
                 )
             }
-            .planGate(item: $planGate) {
-                openBillingAfterPlanGate()
-            }
             .task(id: auth.session?.token) {
                 loadReceivedAlarmBadgeState()
                 await refreshAll()
@@ -160,27 +156,7 @@ struct MainTabsView: View {
 
     private func selectTab(_ tab: NativeTab) {
         guard selectedTab != tab else { return }
-        if let gate = planGateFor(tab) {
-            planGate = gate
-            return
-        }
         selectedTab = tab
-    }
-
-    private func planGateFor(_ tab: NativeTab) -> PlanGateState? {
-        switch tab {
-        case .home, .alarms, .voices:
-            // Android parity: 목소리 탭은 로그인 사용자 모두 접근 가능(스톡 보이스 무료).
-            // 커스텀 음성 생성만 패널 내부에서 per-action 게이팅된다.
-            return nil
-        }
-    }
-
-    private func openBillingAfterPlanGate() {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            auxiliaryScreen = .billing
-        }
     }
 
     private func handleCodeRegistrationDestination(_ destination: CodeRegistrationDestination) {

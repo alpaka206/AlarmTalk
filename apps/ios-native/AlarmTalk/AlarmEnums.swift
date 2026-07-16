@@ -20,12 +20,8 @@ enum AlarmPlayMode: String, Codable, CaseIterable, Identifiable {
 
     /// Legacy / Android 호환: "alarm_voice" 도 sound_then_voice 로 매핑.
     static func decode(_ raw: String) -> AlarmPlayMode {
-        switch raw {
-        case AlarmPlayMode.alarmOnly.rawValue: return .alarmOnly
-        case AlarmPlayMode.voiceOnly.rawValue: return .voiceOnly
-        case AlarmPlayMode.soundThenVoice.rawValue, "alarm_voice": return .soundThenVoice
-        default: return .alarmOnly
-        }
+        if raw == "alarm_voice" { return .soundThenVoice }
+        return AlarmPlayMode(rawValue: raw) ?? .alarmOnly
     }
 
     var label: String {
@@ -74,17 +70,7 @@ enum AlarmRuntimeState: String, Codable, CaseIterable {
     case disabled
 
     static func decode(_ raw: String) -> AlarmRuntimeState {
-        switch raw {
-        case "scheduled": return .armed
-        case AlarmRuntimeState.idle.rawValue: return .idle
-        case AlarmRuntimeState.armed.rawValue: return .armed
-        case AlarmRuntimeState.ringing.rawValue: return .ringing
-        case AlarmRuntimeState.snoozed.rawValue: return .snoozed
-        case AlarmRuntimeState.dismissed.rawValue: return .dismissed
-        case AlarmRuntimeState.failed.rawValue: return .failed
-        case AlarmRuntimeState.disabled.rawValue: return .disabled
-        default: return .idle
-        }
+        raw == "scheduled" ? .armed : (AlarmRuntimeState(rawValue: raw) ?? .idle)
     }
 }
 
@@ -112,8 +98,6 @@ enum VibrationPattern: String, Codable, CaseIterable {
     case ripple
     case siren
     case none
-
-    static var allRawValues: [String] { allCases.map(\.rawValue) }
 }
 
 // MARK: - Snooze Repeat Limit
@@ -173,12 +157,6 @@ enum AlarmAudioLimits {
     /// `MediaMetadataRetriever` 가 ms 단위 끝자리에서 들쭉날쭉할 수 있어
     /// Android 와 동일하게 750ms tolerance.
     static let durationToleranceMillis: Int64 = 750
-}
-
-enum VoiceProfileAudioLimits {
-    static let minDurationMillis: Int64 = 60_000
-    static let recommendedDurationMillis: Int64 = 90_000
-    static let maxDurationMillis: Int64 = 120_000
 }
 
 // MARK: - Random Prompt Context

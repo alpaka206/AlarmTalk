@@ -228,44 +228,6 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    /// **Phase 4-D1 이후 deprecated** — App Store 심사 통과를 위해 일반 사용자
-    /// 구독 결제는 `SubscriptionManager.purchase(_:)` 가 권위. 본 메서드는 비-IAP
-    /// gift voucher 발급 등 백엔드 stub 흐름에만 사용해야 하며, BillingPanel UI 의
-    /// 카드 "선택" 버튼은 본 메서드를 호출하지 않는다.
-    ///
-    /// 본 메서드는 호환성 유지를 위해 남겨두며, 향후 dead code 정리 시 제거 가능.
-    @available(*, deprecated, message: "Apple IAP 로 통합. SubscriptionManager.purchase 사용.")
-    func checkout(planKey: String, gift: Bool = false, session: AuthSession?) async {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            // deprecated 호출이라 Swift 가 경고를 띄우지만, 본 메서드 자체가 deprecated
-            // 라 호출은 정당하다. 메서드 단위 silence.
-            #if compiler(>=5.6)
-            _ = try await callDeprecatedCheckout(planKey: planKey, gift: gift, token: token)
-            #else
-            _ = try await api.checkoutPlan(planKey: planKey, gift: gift, token: token)
-            #endif
-            await refreshAllAfterMutation(session: session, successMessage: "이용권 상태를 갱신했어요.")
-        } catch {
-            let fallback = gift ? "선물하기에 실패했어요" : "이용권 적용에 실패했어요"
-            statusMessage = Self.billingErrorMessage(error, fallback: fallback)
-        }
-    }
-
-    /// `api.checkoutPlan` 의 deprecation 경고를 메서드 경계에 격리.
-    /// 본 helper 만 silence 하면 호출 사이트가 깨끗하다.
-    @available(*, deprecated)
-    private func callDeprecatedCheckout(planKey: String, gift: Bool, token: String) async throws -> CheckoutResponse {
-        try await api.checkoutPlan(planKey: planKey, gift: gift, token: token)
-    }
-
     func cancelSubscription(mode: String = "at_period_end", session: AuthSession?) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."

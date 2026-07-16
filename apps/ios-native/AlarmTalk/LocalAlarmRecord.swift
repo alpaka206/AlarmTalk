@@ -308,47 +308,20 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case createdAtMillis
         case updatedAtMillis
         case alarmKitID
-
-        // Legacy 17필드 호환 키 (iOS 초기 빌드 JSON). 디코딩 전용.
-        // alarmKitID 는 동일 키를 String/UUID 두 형식으로 시도하므로 별도 케이스 불필요.
-        case legacyRemoteID = "remoteID"
-        case legacyRepeatWeekdays = "repeatWeekdays"
-        case legacyVoiceProfileID = "voiceProfileID"
-        case legacyMessageID = "messageID"
-        case legacyRawAudioURL = "rawAudioURL"
-        case legacyLocalAudioFilePath = "localAudioFilePath"
-        case legacyUpdatedAt = "updatedAt"
     }
 
-    /// Codable 디코딩. 신규 필드 누락 시 default + legacy 17필드 JSON 호환.
+    /// Codable 디코딩. 신규 필드 누락 시 default 폴백.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
 
-        // id 는 String 직렬화가 기본. 단 legacy 가 UUID 객체로 인코딩됐을 수 있어 폴백.
-        if let raw = try? c.decode(String.self, forKey: .id) {
-            self.id = raw
-        } else if let uuid = try? c.decode(UUID.self, forKey: .id) {
-            self.id = uuid.uuidString
-        } else {
-            self.id = UUID().uuidString
-        }
+        // id 는 String 직렬화가 기본. 없으면 새 UUID.
+        self.id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
 
         self.label = try c.decodeIfPresent(String.self, forKey: .label) ?? "알람"
         self.hour = try c.decodeIfPresent(Int.self, forKey: .hour) ?? 7
         self.minute = try c.decodeIfPresent(Int.self, forKey: .minute) ?? 0
 
-        // repeatDaysMask: 신규 우선, 없으면 legacy `repeatWeekdays` (1..7 Calendar) 에서 변환
-        if let mask = try c.decodeIfPresent(Int.self, forKey: .repeatDaysMask) {
-            self.repeatDaysMask = mask
-        } else if let legacy = try c.decodeIfPresent([Int].self, forKey: .legacyRepeatWeekdays) {
-            // legacy [Int] 가 1..7 Calendar weekday 였음 (1=Sun..7=Sat).
-            self.repeatDaysMask = legacy.reduce(0) { acc, weekday in
-                guard let day = RepeatDay.fromCalendarWeekday(weekday) else { return acc }
-                return acc | day.mask
-            }
-        } else {
-            self.repeatDaysMask = 0
-        }
+        self.repeatDaysMask = try c.decodeIfPresent(Int.self, forKey: .repeatDaysMask) ?? 0
 
         self.holidayOff = try c.decodeIfPresent(Bool.self, forKey: .holidayOff) ?? false
         self.snoozeEnabled = try c.decodeIfPresent(Bool.self, forKey: .snoozeEnabled) ?? true
@@ -369,18 +342,14 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.defaultAlarmSoundId = try c.decodeIfPresent(String.self, forKey: .defaultAlarmSoundId)
             ?? DefaultAlarmSounds.bundledDefault
 
-        // localAudioUri 신규 우선, 없으면 legacy localAudioFilePath 사용 (파일명만 보관됐던 시절).
         self.localAudioUri = try c.decodeIfPresent(String.self, forKey: .localAudioUri)
-            ?? c.decodeIfPresent(String.self, forKey: .legacyLocalAudioFilePath)
 
         self.audioCacheKey = try c.decodeIfPresent(String.self, forKey: .audioCacheKey)
         self.rawAudioUri = try c.decodeIfPresent(String.self, forKey: .rawAudioUri)
-            ?? c.decodeIfPresent(String.self, forKey: .legacyRawAudioURL)
 
         self.voiceSource = try c.decodeIfPresent(String.self, forKey: .voiceSource)
             ?? VoiceSource.ttsProfile.rawValue
         self.voiceProfileId = try c.decodeIfPresent(String.self, forKey: .voiceProfileId)
-            ?? c.decodeIfPresent(String.self, forKey: .legacyVoiceProfileID)
         self.voiceListenerTitle = try c.decodeIfPresent(String.self, forKey: .voiceListenerTitle)
         self.voiceText = try c.decodeIfPresent(String.self, forKey: .voiceText)
         self.voiceCategory = try c.decodeIfPresent(String.self, forKey: .voiceCategory)
@@ -399,13 +368,11 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceRepeat = try c.decodeIfPresent(Bool.self, forKey: .voiceRepeat) ?? true
         self.voiceVolumePercent = try c.decodeIfPresent(Int.self, forKey: .voiceVolumePercent) ?? 100
         self.ttsMessageId = try c.decodeIfPresent(String.self, forKey: .ttsMessageId)
-            ?? c.decodeIfPresent(String.self, forKey: .legacyMessageID)
         self.voiceBucket = try c.decodeIfPresent(String.self, forKey: .voiceBucket)
         self.voiceRotationIndex = try c.decodeIfPresent(Int.self, forKey: .voiceRotationIndex) ?? 0
         self.voiceBucketClipKeys = try c.decodeIfPresent([String].self, forKey: .voiceBucketClipKeys)
 
         self.remoteAlarmId = try c.decodeIfPresent(String.self, forKey: .remoteAlarmId)
-            ?? c.decodeIfPresent(String.self, forKey: .legacyRemoteID)
         self.lastSyncedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .lastSyncedAtMillis)
 
         // syncState 보정: remoteAlarmId 가 있으면 synced, 없으면 local_only.
@@ -428,24 +395,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         self.createdAtMillis = try c.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? now
 
-        if let updated = try c.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) {
-            self.updatedAtMillis = updated
-        } else if let legacyUpdated = try c.decodeIfPresent(Date.self, forKey: .legacyUpdatedAt) {
-            self.updatedAtMillis = Int64(legacyUpdated.timeIntervalSince1970 * 1000)
-        } else {
-            self.updatedAtMillis = now
-        }
+        self.updatedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? now
 
-        // alarmKitID: 신규는 String 직렬화. legacy 는 UUID 객체로 인코딩됐을 수 있어 두 경로 시도.
-        if let stringID = try? c.decode(String.self, forKey: .alarmKitID) {
-            self.alarmKitID = stringID
-        } else if let uuid = try? c.decode(UUID.self, forKey: .alarmKitID) {
-            self.alarmKitID = uuid.uuidString
-        } else {
-            self.alarmKitID = nil
-        }
+        // alarmKitID: String 직렬화. 없으면 nil.
+        self.alarmKitID = try c.decodeIfPresent(String.self, forKey: .alarmKitID)
 
-        // fireAtMillis: 신규는 Int64. legacy JSON 에는 없을 수 있어 hour/minute 으로 today/tomorrow 기본값.
+        // fireAtMillis: 신규는 Int64. 없으면 hour/minute 으로 today/tomorrow 기본값.
         if let raw = try c.decodeIfPresent(Int64.self, forKey: .fireAtMillis) {
             self.fireAtMillis = raw
         } else {
@@ -457,8 +412,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         }
     }
 
-    /// Encodable. legacy 키 케이스는 디코딩 전용이라 auto-synthesis 가 실패하므로
-    /// stored property 만 직렬화하는 인코더를 직접 구현한다.
+    /// Encodable. 커스텀 디코더(default 폴백)와 짝을 맞춰 stored property 만
+    /// 직렬화하는 인코더를 직접 구현한다.
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id)

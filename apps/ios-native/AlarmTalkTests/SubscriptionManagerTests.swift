@@ -59,7 +59,7 @@ final class SubscriptionManagerTests: XCTestCase {
     func testFromProductIDRoundTrip() {
         for product in SubscriptionProduct.allCases {
             XCTAssertEqual(
-                SubscriptionProduct.from(productID: product.rawValue),
+                SubscriptionProduct(rawValue: product.rawValue),
                 product,
                 "round-trip 실패: \(product.rawValue)"
             )
@@ -67,9 +67,9 @@ final class SubscriptionManagerTests: XCTestCase {
     }
 
     func testFromProductIDReturnsNilForUnknown() {
-        XCTAssertNil(SubscriptionProduct.from(productID: "com.unknown.product"))
-        XCTAssertNil(SubscriptionProduct.from(productID: ""))
-        XCTAssertNil(SubscriptionProduct.from(productID: "com.voicealarm.nativeapp.ios.premium"))
+        XCTAssertNil(SubscriptionProduct(rawValue: "com.unknown.product"))
+        XCTAssertNil(SubscriptionProduct(rawValue: ""))
+        XCTAssertNil(SubscriptionProduct(rawValue: "com.voicealarm.nativeapp.ios.premium"))
     }
 
     // MARK: - make(tier:) factory

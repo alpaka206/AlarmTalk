@@ -160,7 +160,7 @@ struct MemberManagementView: View {
             Text("재발급하면 지금 코드는 더 이상 쓸 수 없어요. 이미 코드를 보낸 사람에게는 새 코드를 다시 보내야 해요.")
         }
         .sheet(isPresented: $isSharePresented) {
-            ActivityShareSheet(text: shareText)
+            BillingActivityShareSheet(text: shareText)
                 .ignoresSafeArea()
         }
         .sheet(isPresented: $showFamilyAlarmDialog) {
@@ -446,18 +446,6 @@ private struct MemberRow: View {
         if isMe { return "나" }
         return nil
     }
-}
-
-/// UIKit Share Sheet 를 SwiftUI 에서 띄우기 위한 래퍼.
-/// Android 의 `Intent.ACTION_SEND` 와 동등.
-private struct ActivityShareSheet: UIViewControllerRepresentable {
-    let text: String
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: [text], applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #if DEBUG

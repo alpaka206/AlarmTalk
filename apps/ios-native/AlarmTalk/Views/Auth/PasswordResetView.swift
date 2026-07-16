@@ -97,7 +97,7 @@ struct PasswordResetView: View {
     // MARK: - Sections
 
     private var emailField: some View {
-        ResetTextField(
+        VocaTextField(
             title: "이메일",
             text: $email,
             keyboardType: .emailAddress,
@@ -121,7 +121,7 @@ struct PasswordResetView: View {
 
     private var codeField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ResetTextField(
+            VocaTextField(
                 title: "인증 코드",
                 text: $code,
                 keyboardType: .numberPad,
@@ -135,7 +135,7 @@ struct PasswordResetView: View {
     }
 
     private var newPasswordField: some View {
-        ResetSecureField(
+        VocaSecureField(
             title: "새 비밀번호",
             text: $password,
             isVisible: $isPasswordVisible,
@@ -164,80 +164,6 @@ struct PasswordResetView: View {
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
         .disabled(!canConfirm)
         .padding(.top, 4)
-    }
-}
-
-// MARK: - Inputs
-//
-// `LoginView` 의 VocaTextField/VocaSecureField 는 file-private 라 재사용할 수 없어,
-// 동일한 외형(라벨 + 외곽선 입력칸)을 본 화면 전용으로 다시 둔다.
-
-private struct ResetTextField: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-    let title: String
-    @Binding var text: String
-    var keyboardType: UIKeyboardType = .default
-    var enabled: Bool = true
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(theme.typography.labelMedium)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-            TextField("", text: $text)
-                .keyboardType(keyboardType)
-                .submitLabel(.next)
-                .disabled(!enabled)
-                .padding(.vertical, 12)
-                .padding(.horizontal, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                        .stroke(theme.palette.outline, lineWidth: 1)
-                )
-        }
-    }
-}
-
-private struct ResetSecureField: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-    let title: String
-    @Binding var text: String
-    @Binding var isVisible: Bool
-    var enabled: Bool = true
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(theme.typography.labelMedium)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-            HStack(spacing: 8) {
-                Group {
-                    if isVisible {
-                        TextField("", text: $text)
-                    } else {
-                        SecureField("", text: $text)
-                    }
-                }
-                .disabled(!enabled)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-                Button {
-                    isVisible.toggle()
-                } label: {
-                    Image(systemName: isVisible ? "eye.slash" : "eye")
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isVisible ? "비밀번호 숨기기" : "비밀번호 보기")
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 14)
-            .background(
-                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                    .stroke(theme.palette.outline, lineWidth: 1)
-            )
-        }
     }
 }
 
