@@ -63,7 +63,6 @@ internal fun AlarmTalkApp(
     val message = viewModel.message
     val authSession = viewModel.authSession
     val authBusy = viewModel.authBusy
-    val syncBusy = viewModel.syncBusy
     val voiceProfiles = viewModel.voiceProfiles
     val pendingVoiceDraft = viewModel.pendingVoiceDraft
     val voiceProfileBusy = viewModel.voiceProfileBusy
@@ -696,8 +695,6 @@ internal fun AlarmTalkApp(
                           onSelectTab = ::navigateToTab,
                           alarms = alarms,
                           authSession = authSession,
-                          authBusy = authBusy,
-                          syncBusy = syncBusy,
                           voiceProfiles = voiceProfiles,
                           pendingVoiceDraft = pendingVoiceDraft,
                           voiceProfileBusy = voiceProfileBusy,
@@ -707,11 +704,6 @@ internal fun AlarmTalkApp(
                           billingBusy = billingBusy,
                           subscriptionResponse = subscriptionResponse,
                           vouchers = vouchers,
-                          onLogin = viewModel::login,
-                          onRegister = viewModel::register,
-                          onGoogleSignIn = ::launchGoogleSignIn,
-                          onSyncNow = viewModel::syncNow,
-                          onLogout = ::logout,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,
                           onGenerateTts = viewModel::generateTtsAudio,

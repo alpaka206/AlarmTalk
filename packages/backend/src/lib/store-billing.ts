@@ -10,7 +10,7 @@
 import { issueVoucherCode } from './voucher-issue';
 import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
-import { planTypeToUserPlan } from '../routes/billing-helpers';
+import { planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
 
 export type StoreProvider = 'apple' | 'google';
 
@@ -68,11 +68,6 @@ export async function loadPlanByKey(db: DbExecutor, planKey: string): Promise<St
     max_members: Number(row.max_members) || 1,
     price_krw: Number(row.price_krw) || 0,
   };
-}
-
-function plannedMaxUses(planType: string, maxMembers: number): number {
-  if (planType === 'family') return Math.max(1, maxMembers - 1);
-  return 1;
 }
 
 async function currentSubscriptionPlanId(

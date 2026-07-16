@@ -329,38 +329,22 @@ async function findUsableVoiceProfile(
   return inSameGroup ? row : null;
 }
 
-async function findViewerRelationshipLabel(
+async function findViewerRelationshipField(
   db: ReturnType<typeof getDB>,
   userPk: string,
   userId: string,
   voiceProfileId: string,
+  column: 'relationship_label' | 'listener_title',
 ): Promise<string | null> {
   const result = await db.execute({
-    sql: `SELECT relationship_label
+    sql: `SELECT ${column}
           FROM voice_profile_relationships
           WHERE voice_profile_id = ? AND user_id IN (?, ?)
           ORDER BY updated_at DESC
           LIMIT 1`,
     args: [voiceProfileId, userPk, userId],
   });
-  return normalizeRelationshipLabel(result.rows[0]?.relationship_label);
-}
-
-async function findViewerListenerTitle(
-  db: ReturnType<typeof getDB>,
-  userPk: string,
-  userId: string,
-  voiceProfileId: string,
-): Promise<string | null> {
-  const result = await db.execute({
-    sql: `SELECT listener_title
-          FROM voice_profile_relationships
-          WHERE voice_profile_id = ? AND user_id IN (?, ?)
-          ORDER BY updated_at DESC
-          LIMIT 1`,
-    args: [voiceProfileId, userPk, userId],
-  });
-  return normalizeRelationshipLabel(result.rows[0]?.listener_title);
+  return normalizeRelationshipLabel(result.rows[0]?.[column]);
 }
 
 const RAIN_WMO_CODES = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
@@ -832,7 +816,7 @@ tts.post('/generate', async (c) => {
         ? normalizeRelationshipLabel(vp.listener_title)
         : normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle)) ??
       (isSharedVoiceProfileForPreset
-        ? await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)
+        ? await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'listener_title')
         : null) ??
       normalizeRelationshipLabel(vp.listener_title);
     if (draftPreviewRequested) draftPreviewListenerTitle = listenerTitle ?? null;
@@ -1005,11 +989,11 @@ tts.post('/generate', async (c) => {
         typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
       const relationshipLabel =
         normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
-        (await findViewerRelationshipLabel(db, userPk, userId, body.voice_profile_id)) ??
+        (await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'relationship_label')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.relationship_label));
       const listenerTitle =
         normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
-        (await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)) ??
+        (await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'listener_title')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.listener_title));
       const weatherSignal = randomContextUsesWeather(randomContext)
         ? await loadWeatherSignal({

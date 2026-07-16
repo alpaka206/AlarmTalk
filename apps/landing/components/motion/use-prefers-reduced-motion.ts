@@ -18,21 +18,3 @@ export function usePrefersReducedMotion(): boolean {
   useEffect(() => setMounted(true), []);
   return mounted && reduced;
 }
-
-/**
- * True on coarse pointers (touch). SSR-stable (false until mounted). Used to no-op
- * pointer-tracking effects like <Magnetic> on phones/tablets.
- */
-export function useCoarsePointer(): boolean {
-  const [coarse, setCoarse] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(pointer: coarse)");
-    setCoarse(mq.matches);
-    const onChange = (event: MediaQueryListEvent) => setCoarse(event.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-
-  return coarse;
-}

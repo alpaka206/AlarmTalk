@@ -315,21 +315,6 @@ function dynamicTextHardFailure(text: string, context: DynamicAlarmTextContext):
   return false;
 }
 
-export async function translateTextWithVertex(
-  env: Env,
-  text: string,
-  targetLanguage: string,
-  sourceLanguage = 'ko',
-): Promise<string> {
-  const prepared = await prepareAlarmTextWithVertex(env, text, {
-    targetLanguage,
-    sourceLanguage,
-    translate: true,
-    autoTag: false,
-  });
-  return prepared.text;
-}
-
 function readVertexCredentials(env: Env): Required<
   Pick<VertexServiceAccount, 'client_email' | 'private_key' | 'project_id'>
 > & {
@@ -394,60 +379,6 @@ async function createAccessToken(
     );
   }
   return json.access_token;
-}
-
-export async function generateTranslation(args: {
-  env: Env;
-  credentials: ReturnType<typeof readVertexCredentials>;
-  accessToken: string;
-  text: string;
-  targetLanguage: string;
-  sourceLanguage: string;
-}): Promise<string> {
-  const location = args.env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
-  const model = args.env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
-  const endpoint =
-    `https://aiplatform.googleapis.com/v1/projects/${args.credentials.project_id}` +
-    `/locations/${location}/publishers/google/models/${model}:generateContent`;
-  const targetName = LANGUAGE_NAMES[args.targetLanguage] || args.targetLanguage;
-  const sourceName = LANGUAGE_NAMES[args.sourceLanguage] || args.sourceLanguage;
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    signal: AbortSignal.timeout(15000),
-    headers: {
-      authorization: `Bearer ${args.accessToken}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text:
-                `Translate the following alarm message from ${sourceName} to ${targetName}. ` +
-                'Return only the translated sentence, with no explanation, no markdown, and no quotes.\n\n' +
-                args.text,
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 256,
-      },
-    }),
-  });
-  const json: VertexGenerateContentResponse & { error?: { message?: string } } = await response
-    .json<VertexGenerateContentResponse & { error?: { message?: string } }>()
-    .catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(json.error?.message || `Vertex translation failed (${response.status})`);
-  }
-  return (json.candidates?.[0]?.content?.parts?.[0]?.text || '')
-    .trim()
-    .replace(/^["“”]+|["“”]+$/g, '');
 }
 
 type GenerateContentConfig = {

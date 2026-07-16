@@ -11,7 +11,7 @@ export function Hero() {
     <section className="relative">
       <div className="mx-auto grid max-w-6xl items-center gap-16 px-5 pb-20 pt-12 md:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-12 lg:pb-28 lg:pt-20">
         {/* Left column — staggered on-load entrance. Text stays server-rendered;
-            only the thin Reveal/Magnetic wrappers are client. */}
+            only the thin Reveal wrappers are client. */}
         <RevealGroup className="flex flex-col" stagger={0.07} delay={0.05} trigger="mount">
           <RevealItem
             as="h1"

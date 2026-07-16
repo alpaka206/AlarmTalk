@@ -135,18 +135,8 @@ function normalizeRelationshipLabel(value: unknown): string | undefined {
   return String(value).trim();
 }
 
-function validateRelationshipLabel(label: string | undefined): boolean {
-  return label === undefined || label.length <= MAX_RELATIONSHIP_LABEL_LENGTH;
-}
-
-function normalizeListenerTitle(value: unknown): string | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return '';
-  return String(value).trim();
-}
-
-function validateListenerTitle(label: string | undefined): boolean {
-  return label === undefined || label.length <= MAX_LISTENER_TITLE_LENGTH;
+function validateLabelLength(label: string | undefined, max: number): boolean {
+  return label === undefined || label.length <= max;
 }
 
 async function canUseSharedVoiceProfile(
@@ -631,7 +621,7 @@ voiceProfile.patch('/:id', async (c) => {
     body.relationship_label ?? body.relationshipLabel,
   );
   const hasListenerTitle = body.listener_title !== undefined || body.listenerTitle !== undefined;
-  const listenerTitle = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
+  const listenerTitle = normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle);
   if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
     return c.json(
       { error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' },
@@ -644,7 +634,7 @@ voiceProfile.patch('/:id', async (c) => {
       400,
     );
   }
-  if (!validateRelationshipLabel(relationshipLabel)) {
+  if (!validateLabelLength(relationshipLabel, MAX_RELATIONSHIP_LABEL_LENGTH)) {
     return c.json(
       {
         error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
@@ -653,7 +643,7 @@ voiceProfile.patch('/:id', async (c) => {
       400,
     );
   }
-  if (!validateListenerTitle(listenerTitle)) {
+  if (!validateLabelLength(listenerTitle, MAX_LISTENER_TITLE_LENGTH)) {
     return c.json(
       {
         error: `listener_title must be ${MAX_LISTENER_TITLE_LENGTH} characters or less`,
@@ -907,7 +897,10 @@ voiceProfile.patch('/:id/relationship', async (c) => {
   const relationshipLabel = normalizeRelationshipLabel(
     body.relationship_label ?? body.relationshipLabel,
   );
-  if (relationshipLabel === undefined || !validateRelationshipLabel(relationshipLabel)) {
+  if (
+    relationshipLabel === undefined ||
+    !validateLabelLength(relationshipLabel, MAX_RELATIONSHIP_LABEL_LENGTH)
+  ) {
     return c.json(
       {
         error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
@@ -916,9 +909,9 @@ voiceProfile.patch('/:id/relationship', async (c) => {
       400,
     );
   }
-  const listenerTitleRaw = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
+  const listenerTitleRaw = normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle);
   const listenerTitle = listenerTitleRaw ?? '';
-  if (!validateListenerTitle(listenerTitle)) {
+  if (!validateLabelLength(listenerTitle, MAX_LISTENER_TITLE_LENGTH)) {
     return c.json(
       {
         error: `listener_title must be ${MAX_LISTENER_TITLE_LENGTH} characters or less`,
@@ -1071,7 +1064,7 @@ voiceProfile.post('/clone', async (c) => {
         formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
       ) ?? '';
     const listenerTitle =
-      normalizeListenerTitle(
+      normalizeRelationshipLabel(
         formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
       ) ?? '';
 
@@ -1139,7 +1132,7 @@ voiceProfile.post('/clone', async (c) => {
         400,
       );
     }
-    if (!validateRelationshipLabel(relationshipLabel)) {
+    if (!validateLabelLength(relationshipLabel, MAX_RELATIONSHIP_LABEL_LENGTH)) {
       return c.json(
         {
           error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
@@ -1148,7 +1141,7 @@ voiceProfile.post('/clone', async (c) => {
         400,
       );
     }
-    if (!validateListenerTitle(listenerTitle)) {
+    if (!validateLabelLength(listenerTitle, MAX_LISTENER_TITLE_LENGTH)) {
       return c.json(
         {
           error: `listener_title must be ${MAX_LISTENER_TITLE_LENGTH} characters or less`,
@@ -1365,7 +1358,6 @@ voiceProfile.post('/clone', async (c) => {
     }
     if (providerVoiceCreated && createdProviderVoiceId) {
       try {
-        const { enqueueExternalDeletion } = await import('../lib/audio-retention');
         await enqueueExternalDeletion(db, 'elevenlabs_voice', createdProviderVoiceId);
       } catch (cleanupErr) {
         logRouteError(c, cleanupErr);

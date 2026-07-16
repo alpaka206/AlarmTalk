@@ -698,82 +698,11 @@ class AlarmRepository(
     ): RemoteAlarmPullResult =
         remoteAlarmPullSyncService.pullReceivedAlarms(api, token)
 
-    suspend fun refreshDueDynamicAlarmTalks(
-        api: AlarmTalkApi,
-        token: String,
-        nowMillis: Long = System.currentTimeMillis(),
-    ): Int {
-        if (!DynamicVoiceRefreshEnabled) return 0
-        val alarms = alarmDao.getRepeatingDynamicAlarmTalks()
-        var refreshed = 0
-        alarms.forEach { alarm ->
-            if (!shouldRefreshDynamicVoice(alarm, nowMillis)) return@forEach
-            val profileId = alarm.voiceProfileId?.takeIf { it.isNotBlank() } ?: return@forEach
-            runCatching {
-                val response = api.generateTts(
-                    authorization = AlarmTalkApiClient.bearer(token),
-                    request = TtsGenerateRequest(
-                        voiceProfileId = profileId,
-                        text = "",
-                        category = alarm.voiceCategory ?: randomTtsCategoryForContext(alarm.voiceRandomContext),
-                        language = alarm.voiceLanguage ?: "ko",
-                        random = true,
-                        randomContext = alarm.voiceRandomContext ?: DefaultDynamicVoiceContext,
-                        alarmHour = alarm.hour,
-                        alarmMinute = alarm.minute,
-                        weatherCountry = alarm.voiceWeatherCountry.trimmedOrNull(),
-                        weatherCity = alarm.voiceWeatherCity.trimmedOrNull(),
-                        fortuneGender = alarm.voiceFortuneGender.trimmedOrNull(),
-                        fortuneBirthDate = alarm.voiceFortuneBirthDate.trimmedOrNull(),
-                        fortuneBirthTime = alarm.voiceFortuneBirthTime.trimmedOrNull(),
-                        listenerTitle = alarm.voiceListenerTitle.trimmedOrNull(),
-                    ),
-                )
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
-                val cacheKey = AlarmAudioStore.ttsCacheKey(
-                    profileId = profileId,
-                    text = response.text,
-                    category = alarm.voiceCategory ?: randomTtsCategoryForContext(response.randomContext),
-                    language = alarm.voiceLanguage ?: "ko",
-                    serverCacheKey = response.cacheKey,
-                )
-                val cachedAudio = alarmAudioStore.cacheGeneratedAudio(
-                    bytes = audioBytes,
-                    format = response.audioFormat,
-                    rawAudioUri = rawAudioUri,
-                    cacheKey = cacheKey,
-                    messageId = response.messageId,
-                )
-                val oldCacheKey = alarm.audioCacheKey
-                alarmDao.updateDynamicVoiceAudio(
-                    id = alarm.id,
-                    localAudioUri = cachedAudio.localAudioUri,
-                    audioCacheKey = cachedAudio.cacheKey,
-                    rawAudioUri = rawAudioUri,
-                    voiceText = response.text,
-                    ttsMessageId = response.messageId,
-                    preparedForFireAtMillis = alarm.fireAtMillis,
-                    updatedAtMillis = System.currentTimeMillis(),
-                )
-                // 랜덤 문구 알람이 새 음성으로 교체됐으면 이전 캐시는 미참조일 때만 정리.
-                if (!oldCacheKey.isNullOrBlank() && oldCacheKey != cachedAudio.cacheKey) {
-                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, oldCacheKey)
-                }
-                refreshed += 1
-                Log.i(TAG, "Refreshed dynamic voice alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
-            }.onFailure { error ->
-                Log.w(TAG, "Failed to refresh dynamic voice alarm id=${alarm.id}", error)
-            }
-        }
-        return refreshed
-    }
-
     /**
      * 사전렌더 '날씨' 버킷 알람의 조건 인덱스를 서버로 resolve 해 contextVariantIndex 를 갱신한다.
      * 저장 위치로 서버가 실시간 날씨(open-meteo)를 판정→CLONE_WEATHER_CONDITIONS 순서 인덱스를 반환.
      * 발사는 그 인덱스로 오프라인 lookup. 준비창 워커가 매일(반복 알람 전날) + 저장 직후(runOnce)
-     * 호출한다. DynamicVoiceRefreshEnabled 플래그와 무관하게 항상 동작(오프라인 날씨 매칭 전용).
+     * 호출한다. 항상 동작(오프라인 날씨 매칭 전용).
      */
     suspend fun resolveDueCloneBucketVariants(api: AlarmTalkApi, token: String): Int {
         val now = System.currentTimeMillis()
@@ -977,29 +906,14 @@ class AlarmRepository(
         )
 
     /**
-     * 반복되는 랜덤 문구(동적 음성) 알람인지 판별한다.
-     * AlarmDao.getRepeatingDynamicAlarmTalks 의 조건과 동일하게 맞춘다.
-     */
-    private fun isRepeatingDynamicVoiceAlarm(alarm: AlarmEntity): Boolean =
-        alarm.enabled &&
-            alarm.repeatDaysMask != 0 &&
-            alarm.voiceRandomPrompt &&
-            alarm.playMode != AlarmPlayModes.ALARM_ONLY &&
-            !alarm.voiceProfileId.isNullOrBlank() &&
-            // 무료 버킷 회전 알람은 사전 렌더 정적 클립을 쓰므로 동적 음성 갱신 대상이 아니다.
-            alarm.bucketId == null
-
-    /**
      * 반복 랜덤 문구 알람은 매번 새 음성으로 갱신돼야 한다. 알람 생성/수정/활성화 시
      * 이 메서드를 호출해 DynamicVoiceRefreshWorker(WorkManager)를 예약한다.
      * 이 wiring 이 없으면 반복 동적 알람이 과거에 캐시된 동일 음성만 재생한다.
      */
     private fun ensureDynamicVoiceRefreshScheduled(alarm: AlarmEntity) {
-        // (1) 동적 음성 갱신(플래그 on + 반복 동적 알람) 또는 (2) 사전렌더 '날씨' 버킷 알람이면
-        // 준비창 워커를 예약한다. 날씨 버킷은 저장 직후 runOnce 로 조건 인덱스를 즉시 resolve 하고,
-        // ensurePeriodic 로 반복 알람의 매일 전날 갱신을 건다(플래그와 무관).
-        val needsWorker = (DynamicVoiceRefreshEnabled && isRepeatingDynamicVoiceAlarm(alarm)) ||
-            alarm.bucketId == "weather"
+        // 사전렌더 '날씨' 버킷 알람이면 준비창 워커를 예약한다. 저장 직후 runOnce 로 조건 인덱스를
+        // 즉시 resolve 하고, ensurePeriodic 로 반복 알람의 매일 전날 갱신을 건다.
+        val needsWorker = alarm.bucketId == "weather"
         if (!needsWorker) return
         runCatching {
             DynamicVoiceRefreshScheduler.ensurePeriodic(context)
@@ -1010,30 +924,6 @@ class AlarmRepository(
         }
     }
 
-    private fun shouldRefreshDynamicVoice(alarm: AlarmEntity, nowMillis: Long): Boolean {
-        if (alarm.dynamicVoicePreparedForFireAtMillis == alarm.fireAtMillis) return false
-        val zoneId = ZoneId.systemDefault()
-        val fireAt = Instant.ofEpochMilli(alarm.fireAtMillis).atZone(zoneId)
-        val prepareAtMillis = fireAt
-            .toLocalDate()
-            .minusDays(1)
-            .atTime(DynamicVoicePrepareTime)
-            .atZone(zoneId)
-            .toInstant()
-            .toEpochMilli()
-        val latestPrepareMillis = alarm.fireAtMillis - 60_000L
-        return nowMillis >= prepareAtMillis && nowMillis < latestPrepareMillis
-    }
-
-    private fun randomTtsCategoryForContext(context: String?): String =
-        when (context) {
-            "meal" -> "lunch"
-            "sleep" -> "night"
-            "exercise" -> "exercise"
-            "love" -> "love"
-            else -> "morning"
-        }
-
     private fun AlarmEntity.nextLocalSyncState(): String =
         when {
             origin == AlarmOrigins.RECEIVED_REMOTE -> AlarmSyncStates.SYNCED
@@ -1042,9 +932,6 @@ class AlarmRepository(
         }
 
     private companion object {
-        val DynamicVoiceRefreshEnabled = false
-        const val DefaultDynamicVoiceContext = "wake_weather"
-        val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
         // 발사 시 '조건/테마 매칭'으로 variant 를 고르는 버킷(그 외는 순차 회전). bucketId 는
         // 백엔드 category 와 동일 문자열이다(클론 사전렌더 category = 'weather'/'fortune').
         val MATCHING_BUCKET_IDS = setOf("weather", "fortune")

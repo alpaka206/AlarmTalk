@@ -15,8 +15,6 @@ import androidx.compose.material.icons.outlined.Message
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
-import com.alarmtalk.app.data.AlarmPlayModes
-import com.alarmtalk.app.data.AlarmSyncStates
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
@@ -26,9 +24,7 @@ import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyGroupMember
 import java.io.File
 import java.time.Instant
-import java.time.LocalDateTime
 import java.time.ZoneId
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -36,14 +32,8 @@ import okhttp3.RequestBody.Companion.asRequestBody
 
 // DateTimeFormatter 는 스레드 안전하며 불변이므로 호출마다 새로 만들 필요가 없어
 // top-level val 로 1회만 할당한다.
-private val DateTimeMinuteFormatter: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 private val DotDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy.MM.dd")
-private val BackendSecondFormatter: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-private val BackendMinuteFormatter: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
 internal fun Context.canScheduleExactAlarms(): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
@@ -96,12 +86,6 @@ internal fun Context.startSettingsActivity(intent: Intent) {
     }
 }
 
-internal fun formatFireTime(millis: Long): String {
-    return Instant.ofEpochMilli(millis)
-        .atZone(ZoneId.systemDefault())
-        .format(DateTimeMinuteFormatter)
-}
-
 internal fun formatVoucherIssuedAt(isoString: String?): String? {
     if (isoString.isNullOrBlank()) return null
     return runCatching {
@@ -110,31 +94,6 @@ internal fun formatVoucherIssuedAt(isoString: String?): String? {
             .format(DotDateFormatter)
     }.getOrNull()
 }
-
-internal fun formatNoteCreatedAt(isoString: String?, zoneId: ZoneId = ZoneId.systemDefault()): String? {
-    val value = isoString?.trim()?.takeIf { it.isNotBlank() } ?: return null
-    val instant = parseBackendTimestamp(value)
-    return instant
-        ?.atZone(zoneId)
-        ?.format(DateTimeMinuteFormatter)
-        ?: value
-            .replace('T', ' ')
-            .take(16)
-            .takeIf { it.isNotBlank() }
-}
-
-private fun parseBackendTimestamp(value: String): Instant? =
-    runCatching { Instant.parse(value) }.getOrNull()
-        ?: runCatching {
-            LocalDateTime.parse(value, BackendSecondFormatter)
-                .atZone(ZoneOffset.UTC)
-                .toInstant()
-        }.getOrNull()
-        ?: runCatching {
-            LocalDateTime.parse(value, BackendMinuteFormatter)
-                .atZone(ZoneOffset.UTC)
-                .toInstant()
-        }.getOrNull()
 
 internal fun audioFileLabel(context: Context, localAudioUri: String): String =
     Uri.parse(localAudioUri).lastPathSegment
@@ -184,17 +143,6 @@ internal fun snoozeRepeatLabel(context: Context, limit: Int): String = when (lim
     else -> context.getString(R.string.label_snooze_repeat_count, limit)
 }
 
-internal fun snoozeListLabel(context: Context, enabled: Boolean, minutes: Int, repeatLimit: Int): String? =
-    if (enabled) {
-        context.getString(
-            R.string.label_snooze_list,
-            minutes,
-            snoozeRepeatLabel(context, repeatLimit),
-        )
-    } else {
-        null
-    }
-
 // 패턴 이름은 알람음 이름(예: Homecoming)과 같은 고유명 취급 — 전 로케일 영어 고정
 // (base strings 에 translatable=false). '기본'·'꺼짐' 같은 의미어만 로컬라이즈한다.
 internal fun vibrationLabel(context: Context, pattern: String): String = when (pattern) {
@@ -218,20 +166,8 @@ internal fun vibrationLabel(context: Context, pattern: String): String = when (p
     else -> context.getString(R.string.label_vibration_basic_call)
 }
 
-internal fun playModeLabel(context: Context, mode: String): String = when (mode) {
-    AlarmPlayModes.VOICE_ONLY -> context.getString(R.string.label_play_mode_voice_only)
-    AlarmPlayModes.ALARM_VOICE -> context.getString(R.string.label_play_mode_alarm_voice)
-    else -> context.getString(R.string.label_play_mode_alarm)
-}
-
 internal fun userFacingError(error: Throwable, fallback: String): String =
     error.message?.takeIf { it.any { char -> char in '\uAC00'..'\uD7A3' } } ?: fallback
-
-internal fun providerLabel(context: Context, provider: String?): String = when (provider) {
-    "google" -> context.getString(R.string.label_provider_google)
-    "app" -> context.getString(R.string.label_provider_email)
-    else -> provider ?: context.getString(R.string.label_provider_app)
-}
 
 internal fun hasCoupleOrFamilyAccess(
     subscriptionResponse: BillingSubscriptionResponse?,
@@ -284,67 +220,4 @@ internal fun familyAlarmRecipients(
             member.email != currentEmail &&
             member.allowFamilyAlarms
     }
-}
-
-internal fun roleLabel(context: Context, role: String?): String = when (role) {
-    "owner" -> context.getString(R.string.label_role_owner)
-    "admin" -> context.getString(R.string.label_role_admin)
-    "member" -> context.getString(R.string.label_role_member)
-    else -> role ?: context.getString(R.string.label_role_member)
-}
-
-internal fun inviteStatusLabel(context: Context, status: String?): String = when (status) {
-    "pending" -> context.getString(R.string.label_invite_status_pending)
-    "used" -> context.getString(R.string.label_invite_status_used)
-    "expired" -> context.getString(R.string.label_invite_status_expired)
-    "revoked" -> context.getString(R.string.label_invite_status_revoked)
-    else -> status ?: context.getString(R.string.label_invite_status_unknown)
-}
-
-internal fun voiceStatusLabel(context: Context, status: String?): String = when (status) {
-    null, "ready" -> context.getString(R.string.label_voice_status_ready)
-    "processing" -> context.getString(R.string.label_voice_status_processing)
-    "failed" -> context.getString(R.string.label_voice_status_failed)
-    else -> status
-}
-
-internal fun planTypeLabel(context: Context, type: String?): String = when (type) {
-    "free" -> context.getString(R.string.label_plan_type_free)
-    "personal", "individual", "plus" -> context.getString(R.string.label_plan_type_personal)
-    "couple" -> context.getString(R.string.label_plan_type_couple)
-    "family" -> context.getString(R.string.label_plan_type_family)
-    else -> type ?: context.getString(R.string.label_plan_type_default)
-}
-
-internal fun voucherStatusLabel(context: Context, status: String?): String = when (status) {
-    "active", "issued" -> context.getString(R.string.label_voucher_status_available)
-    "pending" -> context.getString(R.string.label_voucher_status_pending)
-    "redeemed", "used" -> context.getString(R.string.label_voucher_status_used)
-    "expired" -> context.getString(R.string.label_voucher_status_expired)
-    "revoked" -> context.getString(R.string.label_voucher_status_revoked)
-    else -> status ?: context.getString(R.string.label_voucher_status_unknown)
-}
-
-internal fun codeTypeLabel(context: Context, type: String): String = when (type) {
-    "voucher" -> context.getString(R.string.label_code_type_voucher)
-    "invite" -> context.getString(R.string.label_code_type_invite)
-    "subscription" -> context.getString(R.string.label_code_type_subscription)
-    else -> type
-}
-
-internal fun alarmStateLabel(context: Context, state: String?): String = when (state) {
-    "scheduled" -> context.getString(R.string.label_alarm_state_scheduled)
-    "ringing" -> context.getString(R.string.label_alarm_state_ringing)
-    "snoozed" -> context.getString(R.string.label_alarm_state_snoozed)
-    "dismissed" -> context.getString(R.string.label_alarm_state_dismissed)
-    "missed" -> context.getString(R.string.label_alarm_state_missed)
-    "failed" -> context.getString(R.string.label_alarm_state_failed)
-    else -> state ?: context.getString(R.string.label_alarm_state_local)
-}
-
-internal fun syncStateLabel(context: Context, state: String): String = when (state) {
-    AlarmSyncStates.SYNCED -> context.getString(R.string.label_sync_state_synced)
-    AlarmSyncStates.DIRTY -> context.getString(R.string.label_sync_state_dirty)
-    AlarmSyncStates.FAILED -> context.getString(R.string.label_sync_state_failed)
-    else -> context.getString(R.string.label_sync_state_device_only)
 }

@@ -129,13 +129,6 @@ internal suspend fun signOutGoogleAccount(context: Context) {
         .awaitCompletion()
 }
 
-internal suspend fun revokeGoogleAccountAccess(context: Context) {
-    GoogleSignIn
-        .getClient(context.applicationContext, buildGoogleSignInOptions())
-        .revokeAccess()
-        .awaitCompletion()
-}
-
 internal suspend fun Task<Void>.awaitCompletion() {
     suspendCancellableCoroutine { continuation ->
         addOnCompleteListener { task ->

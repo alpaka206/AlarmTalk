@@ -69,15 +69,3 @@ export const AppleLoginRequestSchema = z.object({
   nonce: z.string().min(16).max(128).optional(),
 });
 export type AppleLoginRequest = z.infer<typeof AppleLoginRequestSchema>;
-
-export const AuthResponseSchema = z.object({
-  token: z.string().min(1),
-  user: z.object({
-    id: z.string().min(1),
-    email: z.string().email(),
-    name: z.string(),
-    plan: z.enum(['free', 'plus', 'family']),
-    apple_user_id: z.string().nullable().optional(),
-  }),
-});
-export type AuthResponse = z.infer<typeof AuthResponseSchema>;
