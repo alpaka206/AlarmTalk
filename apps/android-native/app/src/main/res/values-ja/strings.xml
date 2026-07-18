@@ -543,6 +543,7 @@
     <string name="msg_voice_fetch_login_required">音声を読み込むには、まずログインしてください。</string>
     <string name="msg_voice_info_update_failed">情報の更新に失敗しました。</string>
     <string name="msg_voice_info_updated">情報を更新しました。</string>
+    <string name="msg_voice_invalid_audio_format">対応していない音声形式です。別のファイルでもう一度お試しください。</string>
     <string name="msg_voice_invalid_duration">音声の長さを確認できませんでした。ファイルをもう一度選んでください。</string>
     <string name="msg_voice_listener_title_required">この声があなたを呼ぶ名前を入力してください。</string>
     <string name="msg_voice_max_profiles_reached">声は最大%1$d個まで作成できます。</string>

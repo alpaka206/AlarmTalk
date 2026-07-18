@@ -7,11 +7,13 @@ import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oau
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import {
   cancelSubscriptionImmediate,
+  resolvePlanAfterSuspend,
   schedulePaidVoiceRetention,
   type ActiveSubscription,
 } from '../lib/billing-cancel';
 import { timingSafeEqualStr } from '../lib/timing-safe-equal';
 import {
+  acknowledgeGoogleSubscription,
   ANDROID_PUBLISHER_SCOPE,
   ENTITLED_STATES,
   googlePlanKeyFromProductId,
@@ -229,6 +231,17 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         rawPayload: JSON.stringify({ via: 'rtdn', state, notificationType: sub.notificationType }),
       }),
     );
+    // 권위 재조회 결과 acknowledgement 이 보류면 서버가 확인 처리한다 — 앱 미실행으로
+    // confirm 이 오지 않아도 RTDN(구매/갱신 알림)이 서버측 ack 재시도 경로가 된다
+    // (미확인 시 3일 후 Play 자동 환불). confirm 과 동일한 ack 헬퍼를 재사용한다.
+    if (subscription.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_PENDING') {
+      await acknowledgeGoogleSubscription({
+        baseUrl,
+        productId: authoritativeProductId,
+        purchaseToken,
+        accessToken,
+      });
+    }
     logStructured('info', { at: 'billing.google.rtdn', action: 'entitle', state, userPk });
     return c.json({ success: true, action: 'entitled' });
   }
@@ -318,11 +331,21 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   const isRecoverable =
     state === 'SUBSCRIPTION_STATE_ON_HOLD' || state === 'SUBSCRIPTION_STATE_PAUSED';
   if (isRecoverable) {
-    await db.execute({
-      sql: `UPDATE users SET plan = 'free', updated_at = datetime('now') WHERE id = ?`,
-      args: [userPk],
+    // 매핑(정지된) 구독을 제외한 다른 활성 유료 구독이 있으면 그 plan 을 유지하고,
+    // 없을 때만 free 로 내린다 (deactivate 의 E2 잔여구독 유지와 대칭). 회복형 상태라
+    // 음성 접근 정리 없이 users.plan 만 보수적으로 회수한다 — 결제 복구 시 entitle 가 원복.
+    const keptPlanType = await resolvePlanAfterSuspend(
+      db,
+      userPk,
+      mappedSubscription.subscriptionId,
+    );
+    logStructured('info', {
+      at: 'billing.google.rtdn',
+      action: 'suspend',
+      state,
+      userPk,
+      keptPlanType,
     });
-    logStructured('info', { at: 'billing.google.rtdn', action: 'suspend', state, userPk });
     return c.json({ success: true, action: 'suspended' });
   }
 

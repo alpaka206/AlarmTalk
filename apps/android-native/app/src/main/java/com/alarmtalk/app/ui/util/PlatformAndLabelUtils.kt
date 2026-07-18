@@ -106,13 +106,13 @@ internal fun voiceUploadPart(audio: CachedAlarmAudio): MultipartBody.Part {
     require(uri.scheme == "file") { "로컬에 저장된 오디오만 업로드할 수 있어요." }
     val file = File(requireNotNull(uri.path) { "오디오 파일 경로를 찾을 수 없어요." })
     require(file.exists()) { "오디오 파일을 찾을 수 없어요." }
-    val mediaType = when (file.extension.lowercase()) {
-        "m4a", "mp4", "aac" -> "audio/mp4"
-        "mp3" -> "audio/mpeg"
-        "wav" -> "audio/wav"
-        "ogg" -> "audio/ogg"
-        else -> "application/octet-stream"
-    }.toMediaType()
+    // 확장자→MIME 매핑 단일 출처는 AlarmAudioStore.UPLOAD_AUDIO_MIME_BY_EXTENSION.
+    // 목록 밖 컨테이너는 cacheFromUri 가 미리 m4a 로 트랜스코드하므로 여기 octet-stream 폴백은
+    // 사실상 도달하지 않지만, 방어적으로 남겨 둔다.
+    val mediaType = (
+        com.alarmtalk.app.data.AlarmAudioStore.UPLOAD_AUDIO_MIME_BY_EXTENSION[file.extension.lowercase()]
+            ?: "application/octet-stream"
+        ).toMediaType()
     val uploadName = audio.displayName.ifBlank { file.name }
     return MultipartBody.Part.createFormData(
         name = "audio",

@@ -5,7 +5,7 @@ import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
-import { R2VoiceStorage } from '../lib/r2-storage';
+import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
@@ -1208,6 +1208,21 @@ voiceProfile.post('/clone', async (c) => {
       );
     }
 
+    // 크기 가드(J): arrayBuffer→R2→ElevenLabs 호출 전에 0바이트/과대 파일을 차단한다
+    // (voice-upload.ts /upload 와 동일 패턴·공용 상수).
+    if (audioFile.size === 0) {
+      return c.json({ error: 'audio file is empty', error_code: 'AUDIO_FILE_EMPTY' }, 400);
+    }
+    if (audioFile.size > MAX_VOICE_UPLOAD_BYTES) {
+      return c.json(
+        {
+          error: `audio file exceeds ${MAX_VOICE_UPLOAD_BYTES} bytes (got ${audioFile.size})`,
+          error_code: 'AUDIO_FILE_TOO_LARGE',
+        },
+        413,
+      );
+    }
+
     const durationCheck = validateCloneDuration(formData.get('durationMs'), isDraft);
     if (durationCheck) return c.json(durationCheck.body, durationCheck.status);
     // 검증 통과 후의 durationMs — 아래 voice_uploads 보관(재시도용 원본)에 기록한다.
@@ -1365,6 +1380,10 @@ voiceProfile.post('/clone', async (c) => {
     // R2 오브젝트·행을 함께 정리하고, 계정 삭제(account-deletion)·유료 음성 정리
     // (paid-voice-cleanup)도 voice_uploads 를 사용자 단위로 지운다. draft 가 승격 전에
     // 삭제돼 행이 남아도 같은 TTL sweep 이 거둔다.
+    // R2 저장은 성공했는데 아래 INSERT 가 실패하면 추적행 없는 고아 객체가 남는다
+    // (TTL sweep 은 voice_uploads 행 기준이라 회수 못 함) → catch 에서 보상 삭제 큐에
+    // 적재할 수 있도록 저장된 키를 바깥 스코프로 올린다.
+    let storedUploadKey: string | null = null;
     try {
       // 동의 철회 경쟁(H): 클론 완료(ready 전환)와 이 보관 사이에 사용자가 음성/국외이전
       // 동의를 철회했을 수 있다 — 철회됐으면 원본을 새로 보관하지 않는다(저장 스킵 + 로그).
@@ -1387,6 +1406,7 @@ voiceProfile.post('/clone', async (c) => {
           durationMs: cloneDurationMs,
           originalName: audioFile.name || undefined,
         });
+        storedUploadKey = uploadMeta.objectKey;
         await db.execute({
           sql: `INSERT INTO voice_uploads
                 (id, user_id, object_key, mime_type, size_bytes, duration_ms, original_name, voice_profile_id)
@@ -1405,6 +1425,14 @@ voiceProfile.post('/clone', async (c) => {
       }
     } catch (uploadErr) {
       logRouteError(c, uploadErr);
+      // R2 put 은 성공했는데 INSERT 가 실패한 경우(고아) 보상 삭제 큐에 적재해 누수를 막는다(C).
+      if (storedUploadKey) {
+        try {
+          await enqueueExternalDeletion(db, 'r2_object', storedUploadKey);
+        } catch (cleanupErr) {
+          logRouteError(c, cleanupErr);
+        }
+      }
     }
 
     // 화자 말투(사투리·존댓말·특징 어미) 분석 — 응답을 지연시키지 않도록 waitUntil 로
@@ -1501,12 +1529,15 @@ voiceProfile.post('/clone', async (c) => {
       }
     }
 
+    // K1: detail 에 제공자(ElevenLabs) 응답 원문(err.message)을 반사하지 않는다. 원문은
+    // 위 logRouteError 로만 남기고, 응답에는 안정 에러코드만 노출한다. 슬롯 소진 판별은
+    // throw 전 서버 내부(isVoiceSlotExhaustedError(detail))에서 하므로 그대로 동작한다.
     if (isVoiceSlotExhaustedError(detail)) {
       return c.json(
         {
           error: '서비스가 확장중이에요. 잠시만 기다려주세요!',
           error_code: 'VOICE_SLOT_EXHAUSTED',
-          detail,
+          detail: 'VOICE_SLOT_EXHAUSTED',
         },
         503,
       );
@@ -1516,7 +1547,7 @@ voiceProfile.post('/clone', async (c) => {
       {
         error: 'Voice cloning failed',
         error_code: 'VOICE_CLONING_FAILED',
-        detail,
+        detail: 'VOICE_CLONING_FAILED',
       },
       500,
     );

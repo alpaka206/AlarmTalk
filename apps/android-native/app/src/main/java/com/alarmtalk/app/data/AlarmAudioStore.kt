@@ -176,10 +176,14 @@ class AlarmAudioStore(
                 }
             }
         }
-        val needsTrim = forceExtractAudio || resolvedStartMillis > 0 || durationMillis > maxDurationMillis
+        // 업로드 화이트리스트 밖 컨테이너(FLAC/WebM/OPUS 등 낯선 확장자)는 그대로 올리면
+        // octet-stream 으로 나가 백엔드가 거절한다 — 항상 트랜스코드 경로로 보내 m4a 로 정규화한다.
+        val unknownUploadContainer = extension.lowercase(Locale.US) !in UPLOAD_AUDIO_MIME_BY_EXTENSION
+        val needsTrim = forceExtractAudio || resolvedStartMillis > 0 || durationMillis > maxDurationMillis ||
+            unknownUploadContainer
         Log.i(
             TAG,
-            "cacheFromUri source=$sourceUri sourceMime=$sourceMimeType trackMime=$trackMimeType ext=$extension duration=$durationMillis max=$maxDurationMillis start=$resolvedStartMillis needsTrim=$needsTrim trimAsMp3=$trimAsMp3",
+            "cacheFromUri source=$sourceUri sourceMime=$sourceMimeType trackMime=$trackMimeType ext=$extension duration=$durationMillis max=$maxDurationMillis start=$resolvedStartMillis needsTrim=$needsTrim unknownContainer=$unknownUploadContainer trimAsMp3=$trimAsMp3",
         )
         val target = if (needsTrim) {
             val trimExtension = if (trimAsMp3) "mp3" else "m4a"
@@ -806,6 +810,24 @@ class AlarmAudioStore(
     companion object {
         private const val AUDIO_DIR = "alarm-audio"
         private const val META_EXTENSION = "meta"
+
+        // 백엔드 /voice/clone 은 audio/* 접두 MIME 만 받는다(아니면 INVALID_AUDIO_MIME_TYPE).
+        // 이 확장자들은 업로드 시 대응 audio/* 로 매핑되고(voiceUploadPart), 목록 밖 컨테이너는
+        // cacheFromUri 가 m4a 로 트랜스코드해 application/octet-stream 거절을 막는다.
+        val UPLOAD_AUDIO_MIME_BY_EXTENSION: Map<String, String> = mapOf(
+            "m4a" to "audio/mp4",
+            "mp4" to "audio/mp4",
+            "aac" to "audio/mp4",
+            "mp3" to "audio/mpeg",
+            "wav" to "audio/wav",
+            "ogg" to "audio/ogg",
+            "flac" to "audio/flac",
+            "webm" to "audio/webm",
+            "opus" to "audio/opus",
+            "3ga" to "audio/3gpp",
+            "3gp" to "audio/3gpp",
+            "amr" to "audio/amr",
+        )
 
         /** 이 기간 이상 손대지 않은(미참조) 캐시 파일은 앱 시작 시 백그라운드 sweep 으로 정리한다. */
         const val STALE_CACHE_MAX_AGE_MILLIS: Long = 30L * 24 * 60 * 60 * 1_000

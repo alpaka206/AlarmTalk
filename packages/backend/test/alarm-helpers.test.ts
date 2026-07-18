@@ -540,4 +540,23 @@ describe('computeNextAlarmFire — DST 경계(달력 날짜 단위 전진)', () 
     expect(fire.fireAt.toISOString()).toBe('2026-03-08T11:00:00.000Z');
     expect(fire.fireDayOfWeek).toBe(0);
   });
+
+  it('gap(존재하지 않는 벽시계): 02:30 은 gap 이전(01:30)이 아니라 gap 이후(03:30 EDT)로 확정', () => {
+    // NY 2026-03-08 02:00 EST → 03:00 EDT 스프링포워드로 02:00-02:59 는 존재하지 않는다.
+    // now = 06:00Z(= 01:00 EST) → 오늘 '02:30' 발사. 2회 보정만으로는 01:30 EST(06:30Z)로
+    // 수렴하지만, gap 감지 보정으로 03:30 EDT(= UTC 07:30)로 확정돼야 한다.
+    const now = new Date('2026-03-08T06:00:00Z');
+    const fire = computeNextAlarmFire('02:30', [], 'America/New_York', now)!;
+    expect(fire.fireAt.toISOString()).toBe('2026-03-08T07:30:00.000Z');
+    expect(fire.fireDayOfWeek).toBe(0);
+  });
+
+  it('ambiguous(두 번 나타나는 벽시계): 01:30 은 이른 쪽(01:30 EDT)으로 확정', () => {
+    // NY 2026-11-01 02:00 EDT → 01:00 EST 폴백으로 01:00-01:59 는 두 번 나타난다.
+    // 정책상 이른 쪽(01:30 EDT = UTC 05:30)을 선택한다(늦은 쪽 01:30 EST = 06:30 아님).
+    const now = new Date('2026-11-01T04:00:00Z');
+    const fire = computeNextAlarmFire('01:30', [], 'America/New_York', now)!;
+    expect(fire.fireAt.toISOString()).toBe('2026-11-01T05:30:00.000Z');
+    expect(fire.fireDayOfWeek).toBe(0);
+  });
 });

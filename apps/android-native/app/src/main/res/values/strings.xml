@@ -546,6 +546,7 @@
     <string name="msg_voice_fetch_login_required">음성을 불러오려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_info_update_failed">정보 수정에 실패했어요</string>
     <string name="msg_voice_info_updated">정보를 수정했어요</string>
+    <string name="msg_voice_invalid_audio_format">지원하지 않는 오디오 형식이에요. 다른 파일로 다시 시도해 주세요.</string>
     <string name="msg_voice_invalid_duration">음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요.</string>
     <string name="msg_voice_listener_title_required">이 목소리가 나를 부를 이름을 입력해 주세요</string>
     <string name="msg_voice_max_profiles_reached">목소리는 최대 %1$d개까지 만들 수 있어요</string>

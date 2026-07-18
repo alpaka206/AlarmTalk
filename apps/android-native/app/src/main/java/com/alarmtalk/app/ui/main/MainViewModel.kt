@@ -269,6 +269,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 진행 중인 프리페치 잡 — 목소리를 연달아 바꾸면 이전 잡을 취소하고 마지막 선택만 받는다.
     internal var voicePrefetchJob: kotlinx.coroutines.Job? = null
 
+    // setDefaultVoice 시점에 매니페스트(stockClips)가 아직 안 왔으면 프리페치가 빈손으로 끝난다.
+    // 대상 목소리를 여기 담아 두고 loadStockClips 성공 시 1회 재시도한다(재시도 후 클리어).
+    internal var pendingPrefetchVoiceId: String? = null
+
     private val consentPrefs = application.getSharedPreferences("voice_alarm_consent", android.content.Context.MODE_PRIVATE)
 
     // 필수 개인정보/약관 동의가 아직 안 된 경우 true → 로그인 후 동의 화면을 띄운다.
@@ -381,6 +385,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
         defaultVoiceStore.set(userId, voiceId)
         defaultVoiceId = voiceId
+        // 매니페스트가 아직 없으면 이번 프리페치는 빈손으로 끝난다 — 대상을 기억해 두고
+        // loadStockClips 성공 시 재시도한다(온보딩 중 목소리 선택이 매니페스트보다 빠른 경우).
+        if (stockClips.isEmpty()) pendingPrefetchVoiceId = voiceId
         prefetchFreeBucketClips(voiceId)
     }
 
@@ -461,6 +468,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voicePrefetchJob?.cancel()
         voicePrefetchJob = null
         voicePrefetchProgress = null
+        pendingPrefetchVoiceId = null
         voiceProfiles = emptyList()
         pendingVoiceDraft = null
         voiceProfileLoadFinished = false

@@ -2,6 +2,10 @@ import { UUID_RE } from '../lib/validate';
 import { isStoredAudioUrl } from '../lib/audio-loader';
 import { FREE_BUCKET_CATEGORIES, CLONE_PRERENDER_CATEGORIES } from '../lib/stock-clips';
 import { DEFAULT_ALARM_TIMEZONE } from '../lib/scheduler';
+import {
+  isBlockedByFamilyAlarmQuietTime,
+  type FamilyAlarmSettings,
+} from '../lib/family-alarm-settings';
 import type { DbExecutor } from '../lib/transactions';
 
 export const ALARM_MODES = ['sound-only', 'tts'] as const;
@@ -284,7 +288,16 @@ function wallClockAt(at: Date, timezone: string): WallClock {
   return clock;
 }
 
-/** 시간대의 (y,m,d HH:mm) 벽시계 시각을 UTC Date 로 변환한다(2회 보정으로 DST 경계 흡수). */
+/**
+ * 시간대의 (y,m,d HH:mm) 벽시계 시각을 UTC Date 로 변환한다(2회 보정으로 DST 경계 흡수).
+ *
+ * DST 경계 정책:
+ *  - gap(스프링포워드로 존재하지 않는 벽시계, 예 NY 2026-03-08 02:30): 2회 보정만으로는
+ *    gap '이전'(01:30 EST)으로 수렴한다. 보정 후 결과 벽시계의 HH:mm 이 요청과 다르면
+ *    잔여 오프셋을 한 번 더 더해 gap '이후'(03:30 EDT)로 확정한다.
+ *  - ambiguous(폴백으로 두 번 나타나는 벽시계, 예 NY 2026-11-01 01:30): 2회 보정이 자연히
+ *    '이른 쪽'(01:30 EDT)으로 수렴하며 HH:mm 이 일치하므로 추가 보정 없이 그대로 둔다.
+ */
 function zonedWallTimeToUtc(
   year: number,
   month: number,
@@ -298,6 +311,19 @@ function zonedWallTimeToUtc(
   for (let i = 0; i < 2; i++) {
     const clock = wallClockAt(new Date(ts), timezone);
     const asUtc = Date.UTC(clock.year, clock.month - 1, clock.day, clock.hour, clock.minute);
+    ts += target - asUtc;
+  }
+  // gap 감지: 보정 결과의 벽시계 HH:mm 이 요청과 다르면 존재하지 않는 시각이므로 잔여
+  // 오프셋을 한 번 더 더해 gap 이후 시각으로 확정한다(위 정책 주석 참고).
+  const settled = wallClockAt(new Date(ts), timezone);
+  if (settled.hour !== hour || settled.minute !== minute) {
+    const asUtc = Date.UTC(
+      settled.year,
+      settled.month - 1,
+      settled.day,
+      settled.hour,
+      settled.minute,
+    );
     ts += target - asUtc;
   }
   return new Date(ts);
@@ -419,4 +445,66 @@ export async function claimTargetedAlarmSlot(
     args: [recipientIds[0], recipientIds[1], time, alarmId],
   });
   return { alarmId, reused, previousMessageId };
+}
+
+/** 타인 발신 알람 시각 가드 결과 — 통과(효과 시간대 반환) 또는 거부(에러 응답 필드). */
+export type FamilyAlarmTimingGuardResult =
+  | { ok: true; effectiveTimezone: string; nextFire: NextAlarmFire | null }
+  | { ok: false; error: string; error_code: string; status: 400 | 403 };
+
+/**
+ * 타인 발신(가족/친구) 알람의 시각 가드 — POST(생성)·PATCH(수정) 공용.
+ * 발신자 body.timezone 은 어떤 경우에도 신뢰하지 않고, resolveEffectiveTimezone 이 산출한
+ * 효과 시간대(수신자 최근 알람 tz → Asia/Seoul)로 다음 발사 시각을 구해 판정한다.
+ *  ① 수신자가 알람 수신을 허용하지 않으면 403 FAMILY_ALARM_DISABLED
+ *  ② 다음 발사 시각이 30분 리드타임 미만이면 400 FAMILY_ALARM_LEAD_TIME
+ *  ③ 다음 발사 요일·시각이 수신자 quiet 창에 걸리면 403 FAMILY_ALARM_QUIET_TIME
+ * 통과 시 { ok:true, effectiveTimezone } — 호출부는 이 효과 시간대를 알람 행(timezone)에
+ * 그대로 저장해 cron 스케줄러가 검증과 같은 시간대로 HH:mm 을 해석하게 한다.
+ */
+export async function evaluateFamilyAlarmTimingGuard(
+  db: DbExecutor,
+  recipientIds: [string, string],
+  settings: FamilyAlarmSettings,
+  time: string,
+  repeatDays: number[],
+  now: Date = new Date(),
+): Promise<FamilyAlarmTimingGuardResult> {
+  if (!settings.allowFamilyAlarms) {
+    return {
+      ok: false,
+      error: '상대방이 알람 설정을 허용하지 않았습니다.',
+      error_code: 'FAMILY_ALARM_DISABLED',
+      status: 403,
+    };
+  }
+  const effectiveTimezone = await resolveEffectiveTimezone(db, recipientIds);
+  const nextFire = computeNextAlarmFire(time, repeatDays, effectiveTimezone, now);
+  if (
+    nextFire &&
+    nextFire.fireAt.getTime() - now.getTime() < FAMILY_ALARM_MIN_LEAD_MINUTES * 60_000
+  ) {
+    return {
+      ok: false,
+      error: `알람은 최소 ${FAMILY_ALARM_MIN_LEAD_MINUTES}분 이후 시각으로만 보낼 수 있습니다.`,
+      error_code: 'FAMILY_ALARM_LEAD_TIME',
+      status: 400,
+    };
+  }
+  if (
+    isBlockedByFamilyAlarmQuietTime(
+      time,
+      repeatDays,
+      settings,
+      nextFire?.fireDayOfWeek ?? now.getDay(),
+    )
+  ) {
+    return {
+      ok: false,
+      error: '상대방이 설정한 불가 시간에는 알람을 만들 수 없습니다.',
+      error_code: 'FAMILY_ALARM_QUIET_TIME',
+      status: 403,
+    };
+  }
+  return { ok: true, effectiveTimezone, nextFire };
 }
