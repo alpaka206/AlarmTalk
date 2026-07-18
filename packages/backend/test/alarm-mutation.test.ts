@@ -1269,6 +1269,15 @@ describe('B: raw_audio_url 소유권', () => {
     expect(insertAlarm!.args).toContain(ownKey);
   });
 
+  it('POST: 잘못된 퍼센트 인코딩 raw_audio_url 은 500 이 아니라 403(Codex #563)', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { time: '07:30', raw_audio_url: 'r2://raw-alarms/%/clip' }),
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('RAW_AUDIO_FORBIDDEN');
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
+  });
+
   it('PATCH: 타인 소유 raw_audio_url → 403, UPDATE·삭제큐 미적재', async () => {
     mockDB.pushResult([{ id: ID.alarm }]); // 기존 알람 SELECT (소유 확인 통과)
     const res = await buildApp().request(

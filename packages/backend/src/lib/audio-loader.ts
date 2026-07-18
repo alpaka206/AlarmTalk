@@ -55,7 +55,14 @@ function r2KeyOwner(objectKey: string): string | null {
       const rest = objectKey.slice(prefix.length);
       const slash = rest.indexOf('/');
       if (slash <= 0) return null;
-      return decodeURIComponent(rest.slice(0, slash));
+      // 클라 제공 raw_audio_url 은 형식만 통과하면 여기 도달할 수 있다. 잘못된 퍼센트
+      // 인코딩(예: '%')이면 decodeURIComponent 가 throw 하는데, 이를 500 이 아니라
+      // '소유자 판별 불가(null)'로 처리해 호출자 소유권 게이트가 403/400 을 내게 한다.
+      try {
+        return decodeURIComponent(rest.slice(0, slash));
+      } catch {
+        return null;
+      }
     }
   }
   return null;
