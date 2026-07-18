@@ -12,14 +12,14 @@ import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
 import type { DbExecutor } from '../lib/transactions';
 import { withWriteTransaction } from '../lib/transactions';
 import { redeemVoucherCode, VoucherRedemptionError } from '../lib/voucher-redemption';
-import { PAID_PLAN_TYPES, planTypeToUserPlan, resolveUserPk } from './billing-helpers';
+import {
+  PAID_PLAN_TYPES,
+  planTypeToUserPlan,
+  plannedMaxUses,
+  resolveUserPk,
+} from './billing-helpers';
 
 const billingMutation = new Hono<AppEnv>();
-
-function plannedMaxUses(planType: string, maxMembers: number): number {
-  if (planType === 'family') return Math.max(1, maxMembers - 1);
-  return 1;
-}
 
 interface BillablePlan {
   id: string;

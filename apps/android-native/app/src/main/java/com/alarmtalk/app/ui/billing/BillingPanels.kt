@@ -172,8 +172,8 @@ internal fun SubscriptionPanel(
     ) {
         // 별도 '현재 이용권' 요약 카드 대신, 플랜 리스트의 현재 플랜 카드에 만료일 상태를 인라인으로 보여준다.
         val statusContext = LocalContext.current
-        val currentExpiresAt = formatPassDate(subscription?.expiresAt)
-        val sharedMemberExpiresAt = formatPassDate(familyGroup?.group?.expiresAt)
+        val currentExpiresAt = formatPass(subscription?.expiresAt, PassDateFormatter)
+        val sharedMemberExpiresAt = formatPass(familyGroup?.group?.expiresAt, PassDateFormatter)
         val currentStatusText = when {
             isSharedMember && sharedMemberExpiresAt != null ->
                 stringResource(R.string.billing_status_shared_member_until, sharedMemberExpiresAt)
@@ -639,7 +639,7 @@ private fun CancelSubscriptionDialog(
     onDismiss: () -> Unit,
     onConfirm: (atPeriodEnd: Boolean) -> Unit,
 ) {
-    val endDate = formatPassShortDate(subscription?.expiresAt)
+    val endDate = formatPass(subscription?.expiresAt, PassShortDateFormatter)
     val finalDescription = if (endDate != null) {
         stringResource(R.string.billing_cancel_description_with_date, endDate)
     } else {

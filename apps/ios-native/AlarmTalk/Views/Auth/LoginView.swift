@@ -177,7 +177,7 @@ struct LoginView: View {
             title: "이메일",
             text: $email,
             keyboardType: .emailAddress,
-            submitLabel: mode == .login ? .next : .next,
+            submitLabel: .next,
             enabled: !auth.isBusy
         )
         .textInputAutocapitalization(.never)
@@ -413,7 +413,7 @@ private struct ModePicker: View {
 
 // MARK: - Inputs
 
-private struct VocaTextField: View {
+struct VocaTextField: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String
     @Binding var text: String
@@ -440,7 +440,7 @@ private struct VocaTextField: View {
     }
 }
 
-private struct VocaSecureField: View {
+struct VocaSecureField: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String
     @Binding var text: String

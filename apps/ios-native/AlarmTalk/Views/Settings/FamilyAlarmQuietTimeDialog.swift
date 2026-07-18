@@ -19,9 +19,6 @@ struct FamilyAlarmQuietTimeDialog: View {
 
     private static let maxWindows = 8
 
-    /// 한 행의 0..6 일 인덱스 → 한글 1글자.
-    private static let dayLabels: [String] = ["일", "월", "화", "수", "목", "금", "토"]
-
     private var isValid: Bool {
         !drafts.isEmpty && drafts.allSatisfy { $0.isValid }
     }
@@ -308,7 +305,7 @@ private struct QuietWindowCard: View {
         Button(action: action) {
             Text(label)
                 .font(.title3.weight(.bold))
-                .foregroundStyle(AlarmTalkTheme.primaryDark)
+                .foregroundStyle(AlarmTalkTheme.primary)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(AlarmTalkTheme.primary.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
                 .overlay(

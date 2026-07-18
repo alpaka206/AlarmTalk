@@ -556,38 +556,6 @@ private struct SettingsSheetHeader: View {
     }
 }
 
-private struct SettingsTextField: View {
-    let title: String
-    let placeholder: String
-    @Binding var text: String
-    var keyboardType: UIKeyboardType = .default
-    var showError: Bool
-    var errorText: String = "꼭 입력해 주세요."
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
-            TextField(placeholder, text: $text)
-                .textFieldStyle(.roundedBorder)
-                .keyboardType(keyboardType)
-                .textInputAutocapitalization(.never)
-                .disableAutocorrection(true)
-                .onChange(of: text) { _, newValue in
-                    if newValue.count > 80 {
-                        text = String(newValue.prefix(80))
-                    }
-                }
-            if showError {
-                Text(errorText)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.error)
-            }
-        }
-    }
-}
-
 #if DEBUG
 #Preview("SettingsView (light)") {
     NavigationStack {

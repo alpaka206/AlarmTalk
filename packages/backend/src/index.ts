@@ -11,6 +11,7 @@ import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
+import { timingSafeEqualStr } from './lib/timing-safe-equal';
 import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
@@ -92,16 +93,6 @@ app.get('/health', async (c) => c.json(await healthPayload(c.env)));
 // init-db / seed 는 파괴적 DDL + 유료 합성을 수행하므로 모든 환경에서 INIT_DB_SECRET 헤더를
 // 요구한다. 시크릿이 설정돼 있지 않으면(=의도적으로 비활성) 무조건 거부한다(404).
 // 헤더 비교는 상수시간(timingSafeEqualStr)으로 수행해 타이밍 오라클을 차단한다.
-function timingSafeEqualStr(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const ab = enc.encode(a);
-  const bb = enc.encode(b);
-  if (ab.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ab.length; i++) diff |= ab[i]! ^ bb[i]!;
-  return diff === 0;
-}
-
 function canRunInitDb(c: { env: Env; req: { header: (name: string) => string | undefined } }) {
   const expected = c.env.INIT_DB_SECRET;
   if (!expected) return false;

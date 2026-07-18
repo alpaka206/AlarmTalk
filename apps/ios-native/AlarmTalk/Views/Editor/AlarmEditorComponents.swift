@@ -305,7 +305,7 @@ struct FamilyAlarmTargetPicker: View {
     private func targetStatus(blocked: Bool, text: String) -> some View {
         Text(text)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(blocked ? AlarmTalkTheme.error : AlarmTalkTheme.primaryDark)
+            .foregroundStyle(blocked ? AlarmTalkTheme.error : AlarmTalkTheme.primary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(

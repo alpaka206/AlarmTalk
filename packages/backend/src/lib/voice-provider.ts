@@ -108,7 +108,7 @@ export function createSynthesisAttempts(params: {
           params.text,
           {
             model_id: ELEVENLABS_V3_MODEL_ID,
-            language_code: normalizeLanguageCode(params.language),
+            language_code: normalizeSynthesisLanguage(params.language),
             ...params.voiceSettings,
           },
         );
@@ -143,8 +143,4 @@ export function inferSynthesisLanguage(text: string, fallback = 'ko'): string {
   if (/[\u3040-\u30FF\u31F0-\u31FF]/.test(text)) return 'ja';
   if (/[A-Za-z]/.test(text)) return 'en';
   return normalizeSynthesisLanguage(fallback);
-}
-
-function normalizeLanguageCode(language: string): string {
-  return normalizeSynthesisLanguage(language);
 }

@@ -124,25 +124,10 @@ internal fun rememberPermissionStatusState(): PermissionStatusState {
     return state
 }
 
-internal fun Context.hasAlarmPermissions(): Boolean =
-    PermissionSnapshot.read(this).alarmReady
-
-internal fun Context.hasRecordAudioPermission(): Boolean =
-    PermissionSnapshot.read(this).recordAudio
-
 internal fun Context.shouldRequestNotificationRuntimePermission(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
         PackageManager.PERMISSION_GRANTED
-
-internal fun Context.openPermissionSettingsFor(target: PermissionTarget) {
-    when (target) {
-        PermissionTarget.Notifications -> openNotificationSettings()
-        PermissionTarget.ExactAlarms -> openExactAlarmSettings()
-        PermissionTarget.FullScreenIntent -> openFullScreenIntentSettings()
-        PermissionTarget.RecordAudio -> openAppDetailsSettings()
-    }
-}
 
 internal fun Context.openNotificationSettings() {
     val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
@@ -164,26 +149,23 @@ internal fun PermissionGateDialog(
     onDismiss: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val (title, body, action) = when (target) {
-        PermissionTarget.Notifications -> Triple(
+    val action = stringResource(R.string.common_permission_gate_allow_action)
+    val (title, body) = when (target) {
+        PermissionTarget.Notifications -> Pair(
             stringResource(R.string.common_permission_gate_notifications_title),
             stringResource(R.string.common_permission_gate_notifications_body),
-            stringResource(R.string.common_permission_gate_allow_action),
         )
-        PermissionTarget.ExactAlarms -> Triple(
+        PermissionTarget.ExactAlarms -> Pair(
             stringResource(R.string.common_permission_gate_exact_alarm_title),
             stringResource(R.string.common_permission_gate_exact_alarm_body),
-            stringResource(R.string.common_permission_gate_allow_action),
         )
-        PermissionTarget.FullScreenIntent -> Triple(
+        PermissionTarget.FullScreenIntent -> Pair(
             stringResource(R.string.common_permission_gate_full_screen_title),
             stringResource(R.string.common_permission_gate_full_screen_body),
-            stringResource(R.string.common_permission_gate_allow_action),
         )
-        PermissionTarget.RecordAudio -> Triple(
+        PermissionTarget.RecordAudio -> Pair(
             stringResource(R.string.common_permission_gate_mic_title),
             stringResource(R.string.common_permission_gate_mic_body),
-            stringResource(R.string.common_permission_gate_allow_action),
         )
     }
 

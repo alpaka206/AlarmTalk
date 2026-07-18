@@ -28,19 +28,11 @@ internal fun passPlanName(
     else -> fallback?.takeIf { it.isNotBlank() } ?: context.getString(R.string.misc2_pass_plan_default)
 }
 
-internal fun formatPassDate(value: String?): String? =
+internal fun formatPass(value: String?, formatter: DateTimeFormatter): String? =
     value?.let {
         runCatching {
             val dateTime = Instant.parse(it).atZone(ZoneId.systemDefault())
-            PassDateFormatter.format(dateTime)
-        }.getOrNull()
-    }
-
-internal fun formatPassShortDate(value: String?): String? =
-    value?.let {
-        runCatching {
-            val dateTime = Instant.parse(it).atZone(ZoneId.systemDefault())
-            PassShortDateFormatter.format(dateTime)
+            formatter.format(dateTime)
         }.getOrNull()
     }
 

@@ -120,19 +120,19 @@ internal fun isFamilyAlarmTimeUnavailable(
 
 internal fun familyAlarmQuietWindows(member: FamilyGroupMember): List<FamilyAlarmQuietWindow> {
     val fallback = FamilyAlarmQuietWindow(
-        days = safeQuietDays(runCatching { member.familyAlarmQuietDays }.getOrNull()),
-        start = safeQuietTime(runCatching { member.familyAlarmQuietStart }.getOrNull(), "09:00"),
-        end = safeQuietTime(runCatching { member.familyAlarmQuietEnd }.getOrNull(), "18:30"),
+        days = safeQuietDays(member.familyAlarmQuietDays),
+        start = safeQuietTime(member.familyAlarmQuietStart, "09:00"),
+        end = safeQuietTime(member.familyAlarmQuietEnd, "18:30"),
     )
-    return runCatching { member.familyAlarmQuietWindows }.getOrNull()
+    return member.familyAlarmQuietWindows
         ?.mapNotNull { window ->
-            val start = safeQuietTime(runCatching { window.start }.getOrNull(), "")
-            val end = safeQuietTime(runCatching { window.end }.getOrNull(), "")
+            val start = safeQuietTime(window.start, "")
+            val end = safeQuietTime(window.end, "")
             if (start.isBlank() || end.isBlank()) {
                 null
             } else {
                 FamilyAlarmQuietWindow(
-                    days = safeQuietDays(runCatching { window.days }.getOrNull()),
+                    days = safeQuietDays(window.days),
                     start = start,
                     end = end,
                 )

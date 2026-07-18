@@ -11,6 +11,11 @@ export function planTypeToUserPlan(planType: string): 'free' | 'plus' | 'family'
   return 'free';
 }
 
+export function plannedMaxUses(planType: string, maxMembers: number): number {
+  if (planType === 'family') return Math.max(1, maxMembers - 1);
+  return 1;
+}
+
 /**
  * iOS StoreKit2 productID → 백엔드 plans.key 매핑.
  *

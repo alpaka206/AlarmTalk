@@ -1,15 +1,17 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { motion, useTransform } from "motion/react";
+import { motion, useScroll, useSpring, useTransform } from "motion/react";
 import { Link } from "@/i18n/navigation";
 import { BrandMark } from "./brand-mark";
 import { MobileMenu } from "./mobile-menu";
-import { useScrollProgress } from "./motion/use-scroll-progress";
 
 export function SiteHeader() {
   const t = useTranslations("nav");
-  const { scrollY, progress } = useScrollProgress();
+  // Single scroll subscriber for the page: scrollY drives the chrome threshold,
+  // the spring-smoothed progress drives the coral voice-spine fill.
+  const { scrollY, scrollYProgress } = useScroll();
+  const progress = useSpring(scrollYProgress, { stiffness: 60, damping: 20 });
 
   // Scroll-linked, not class-toggled, so the chrome fades in smoothly.
   const bgOpacity = useTransform(scrollY, [0, 48], [0, 0.85]);

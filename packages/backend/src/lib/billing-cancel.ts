@@ -3,7 +3,7 @@ import { issueVoucherCode } from './voucher-issue';
 import type { DbExecutor } from './transactions';
 import { withWriteTransaction } from './transactions';
 import { deletePaidVoiceDataForUser } from './paid-voice-cleanup';
-import { planTypeToUserPlan } from '../routes/billing-helpers';
+import { planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
 
 export interface ActiveSubscription {
   subscriptionId: string;
@@ -144,11 +144,6 @@ async function releaseInviteUseForMember(
       args: [voucherId, voucherId],
     });
   }
-}
-
-function plannedMaxUses(planType: string, maxMembers: number): number {
-  if (planType === 'family') return Math.max(1, maxMembers - 1);
-  return 1;
 }
 
 async function cancelOneSubscriptionRow(

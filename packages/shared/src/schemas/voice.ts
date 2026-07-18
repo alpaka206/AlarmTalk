@@ -8,23 +8,6 @@
  */
 import { z } from 'zod';
 
-export const VoiceProfileStatusSchema = z.enum(['processing', 'ready', 'failed']);
-export type VoiceProfileStatus = z.infer<typeof VoiceProfileStatusSchema>;
-
-export const VoiceProfileSchema = z.object({
-  id: z.string().min(1),
-  user_id: z.string().min(1),
-  // 백엔드 create/update 가 강제하는 한도와 동일(1-50자). voice-profile.ts:446,760.
-  name: z.string().min(1).max(50),
-  status: VoiceProfileStatusSchema,
-  is_shared: z.boolean().optional(),
-  is_draft: z.boolean().optional(),
-  is_system: z.boolean().optional(),
-  created_at: z.string().optional(),
-  updated_at: z.string().optional(),
-});
-export type VoiceProfile = z.infer<typeof VoiceProfileSchema>;
-
 /**
  * 등록 미리듣기 문구 직접 수정(초안 전용) 요청 바디.
  * 길이 한도는 생성 경로(generatePrerenderClipText)의 검증 상한(200자)과 동일.

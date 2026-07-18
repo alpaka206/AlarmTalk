@@ -85,7 +85,7 @@ struct VoucherRow: View {
             }
             Spacer()
             Image(systemName: "qrcode")
-                .foregroundStyle(AlarmTalkTheme.primaryDark)
+                .foregroundStyle(AlarmTalkTheme.primary)
         }
         .padding(12)
         .background(AlarmTalkTheme.surfaceVariant)

@@ -46,20 +46,6 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms ORDER BY hour ASC, minute ASC, createdAtMillis ASC")
     suspend fun getAllAlarms(): List<AlarmEntity>
 
-    @Query(
-        """
-        SELECT * FROM alarms
-        WHERE enabled = 1
-          AND repeatDaysMask != 0
-          AND voiceRandomPrompt = 1
-          AND playMode != 'alarm_only'
-          AND voiceProfileId IS NOT NULL
-          AND bucketId IS NULL
-        ORDER BY fireAtMillis ASC
-        """,
-    )
-    suspend fun getRepeatingDynamicAlarmTalks(): List<AlarmEntity>
-
     // 사전렌더 '날씨' 버킷 알람(반복+일회성). 준비창 워커가 저장 위치로 서버에 조건을 resolve 해
     // contextVariantIndex 를 갱신한다. dismiss 로 enabled=0 된 일회성은 자동 제외.
     @Query(

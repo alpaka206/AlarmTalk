@@ -194,7 +194,7 @@ final class SubscriptionManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
             newSet.insert(transaction.productID)
-            if let plan = SubscriptionProduct.from(productID: transaction.productID) {
+            if let plan = SubscriptionProduct(rawValue: transaction.productID) {
                 if plan.planTier.tierOrder > maxTier.tierOrder {
                     maxTier = plan.planTier
                 }

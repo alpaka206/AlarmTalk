@@ -74,8 +74,6 @@ internal fun VoiceAudioCard(
     voiceProfileBusy: Boolean,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     defaultVoiceId: String? = null,
-    // 무료 버킷(기상/약) 선택 — 해당 버킷의 N개 클립을 캐시해 매 울림마다 순차 회전한다.
-    onSelectBucket: (String) -> Unit,
     // 무료 플랜 제한 모드 — 녹음/파일·직접 입력·동적 문구는 [onLockedFeature] 로 게이트.
     freeVoiceTier: Boolean,
     onLockedFeature: () -> Unit,

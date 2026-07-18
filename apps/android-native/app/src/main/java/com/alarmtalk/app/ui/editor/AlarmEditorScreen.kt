@@ -1138,7 +1138,6 @@ internal fun AlarmEditorScreen(
                                 voiceProfileBusy = voiceProfileBusy,
                                 stockClips = stockClips,
                                 defaultVoiceId = defaultVoiceId,
-                                onSelectBucket = { bucket -> selectBucket(bucket) },
                                 freeVoiceTier = freeVoiceTier,
                                 onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,

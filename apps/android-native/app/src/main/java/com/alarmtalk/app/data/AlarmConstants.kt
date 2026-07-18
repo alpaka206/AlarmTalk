@@ -24,8 +24,6 @@ object AlarmSyncStates {
 object AlarmOrigins {
     const val LOCAL_OWNED = "local_owned"
     const val RECEIVED_REMOTE = "received_remote"
-
-    val all = listOf(LOCAL_OWNED, RECEIVED_REMOTE)
 }
 
 object VibrationPatterns {
