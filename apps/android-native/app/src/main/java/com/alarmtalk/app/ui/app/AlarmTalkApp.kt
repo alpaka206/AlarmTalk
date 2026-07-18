@@ -721,6 +721,11 @@ internal fun AlarmTalkApp(
                           onDeleteVoiceDraft = viewModel::deleteVoiceDraft,
                           defaultVoiceId = viewModel.defaultVoiceId,
                           onSetDefaultVoice = viewModel::setDefaultVoice,
+                          voicePrefetchProgress = viewModel.voicePrefetchProgress,
+                          onGetVoicePrerenderStatus = viewModel::fetchVoicePrerenderStatus,
+                          onRetryVoicePrerender = viewModel::retryVoicePrerender,
+                          onRetryVoiceSpeechStyle = viewModel::retryVoiceSpeechStyleAnalysis,
+                          onReloadStockClips = { viewModel.loadStockClips(forceReload = true) },
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,
@@ -731,6 +736,7 @@ internal fun AlarmTalkApp(
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,
+                          onDeleteVoiceDataNow = viewModel::deleteVoiceDataNow,
                           permissions = permissions,
                           onCreateAlarm = ::requestCreateAlarm,
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
@@ -915,6 +921,14 @@ internal fun AlarmTalkApp(
                   message = data.visuals.message,
                   actionLabel = data.visuals.actionLabel,
                   onAction = { data.performAction() },
+              )
+          }
+          // 서버가 Play 구독을 직접 해지하지 못한 경우(PLAY_CANCEL_FAILED 등) —
+          // 어느 화면에 있든 Google Play 구독 관리로 보내는 안내 다이얼로그를 띄운다.
+          viewModel.billingPlayManageUrl?.let { manageUrl ->
+              PlayStoreManageDialog(
+                  manageUrl = manageUrl,
+                  onDismiss = { viewModel.billingPlayManageUrl = null },
               )
           }
       }

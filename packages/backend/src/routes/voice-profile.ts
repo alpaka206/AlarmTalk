@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import type { AppEnv } from '../types';
+import type { AppEnv, Env } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
@@ -11,9 +11,10 @@ import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
-import { enqueuePrerender } from '../lib/stock-clips';
+import { enqueuePrerender, CLONE_CLIP_SEEDS } from '../lib/stock-clips';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
 import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
+import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { VoicePreviewTextUpdateSchema } from '@alarmtalk/shared';
 
 const voiceProfile = new Hono<AppEnv>();
@@ -173,6 +174,69 @@ function ownerIds(c: { get: (k: 'userId' | 'userIdPK') => string | undefined }):
 }
 
 /**
+ * 유료 클론이 사전렌더할 총 클립 수 — CLONE_CLIP_SEEDS 시드 개수의 합(단일 언어 렌더).
+ * 시드가 늘면 자동으로 따라간다(하드코딩 금지). 현재 21 = greeting1+weather9+fortune5+love3+medication3.
+ */
+const CLONE_PRERENDER_TOTAL = CLONE_CLIP_SEEDS.reduce((sum, group) => sum + group.seeds.length, 0);
+
+/** speech_style_status 기록. NULL=대상 아님, pending=진행중, done=완료, failed=실패(재시도 가능). */
+async function setSpeechStyleStatus(
+  db: DbExecutor,
+  profileId: string,
+  status: 'pending' | 'done' | 'failed',
+): Promise<void> {
+  await db.execute({
+    sql: `UPDATE voice_profiles SET speech_style_status = ?, updated_at = datetime('now')
+          WHERE id = ? AND deleted_at IS NULL`,
+    args: [status, profileId],
+  });
+}
+
+/**
+ * 등록 녹음 전사(ElevenLabs Scribe) → Vertex 말투 분석 → speech_style 저장.
+ * 결과와 무관하게 speech_style_status 를 반드시 기록한다('done' | 'failed') — 실패를 조용히
+ * 삼키면 클라가 알 길이 없다. 클론 등록의 waitUntil 경로와 재시도 엔드포인트(동기)가 공유한다.
+ */
+async function runSpeechStyleAnalysis(
+  env: Env,
+  profileId: string,
+  audioData: ArrayBuffer,
+  options: { mimeType?: string | null; fileName?: string | null; language: string },
+): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  const db = getDB(env);
+  try {
+    if (!env.ELEVENLABS_API_KEY) {
+      throw new Error('ELEVENLABS_API_KEY is not configured for speech style analysis.');
+    }
+    const client = new ElevenLabsClient(env.ELEVENLABS_API_KEY);
+    const transcript = await client.speechToText(audioData, {
+      mimeType: options.mimeType,
+      fileName: options.fileName,
+    });
+    // null = Vertex 미설정/호출 실패/전사가 너무 짧음(전사 실패 의심) — 재시도로 복구 여지가
+    // 있으므로 'failed' 로 기록한다(성공 판단은 speech_style 저장 여부).
+    const style = await analyzeSpeechStyleWithVertex(env, transcript, options.language);
+    if (!style) {
+      throw new Error('Speech style analysis produced no result (empty transcript or Vertex failure).');
+    }
+    await db.execute({
+      sql: `UPDATE voice_profiles
+            SET speech_style = ?, speech_style_status = 'done', updated_at = datetime('now')
+            WHERE id = ? AND deleted_at IS NULL`,
+      args: [JSON.stringify(style), profileId],
+    });
+    return { ok: true };
+  } catch (error) {
+    try {
+      await setSpeechStyleStatus(db, profileId, 'failed');
+    } catch {
+      // 상태 기록까지 실패해도 분석 실패 자체는 아래 error 로 호출자가 로깅한다.
+    }
+    return { ok: false, error };
+  }
+}
+
+/**
  * Dev/cleanup helper: delete every voice profile (and its dependent
  * messages + alarms) belonging to the calling user. Useful for wiping
  * failed clones that piled up during testing. R2 objects are left for
@@ -310,6 +374,8 @@ voiceProfile.get('/', async (c) => {
       is_shared: Boolean(Number(row.is_shared ?? 0)),
       is_draft: Boolean(Number(row.is_draft ?? 0)),
       is_system: Boolean(Number(row.is_system ?? 0)),
+      // 말투 분석 상태(NULL=대상 아님) — 클라가 실패 표시·재시도 버튼을 띄우는 근거.
+      speech_style_status: (row.speech_style_status as string | null) ?? null,
     })),
     total,
     limit,
@@ -338,6 +404,7 @@ voiceProfile.get('/draft', async (c) => {
           is_shared: Boolean(Number(row.is_shared ?? 0)),
           is_draft: true,
           is_system: false,
+          speech_style_status: (row.speech_style_status as string | null) ?? null,
         }
       : null,
   });
@@ -453,6 +520,7 @@ voiceProfile.get('/:id', async (c) => {
       ...row,
       is_shared: Boolean(Number(row.is_shared ?? 0)),
       is_draft: Boolean(Number(row.is_draft ?? 0)),
+      speech_style_status: (row.speech_style_status as string | null) ?? null,
     },
   });
 });
@@ -1125,6 +1193,8 @@ voiceProfile.post('/clone', async (c) => {
 
     const durationCheck = validateCloneDuration(formData.get('durationMs'), isDraft);
     if (durationCheck) return c.json(durationCheck.body, durationCheck.status);
+    // 검증 통과 후의 durationMs — 아래 voice_uploads 보관(재시도용 원본)에 기록한다.
+    const cloneDurationMs = Number.parseInt(String(formData.get('durationMs')), 10);
 
     if (name.length > 50) {
       return c.json(
@@ -1271,44 +1341,83 @@ voiceProfile.post('/clone', async (c) => {
       );
     }
 
+    // 등록 원본을 R2+voice_uploads 에 프로필 연결(voice_profile_id)로 남긴다 —
+    // 말투 분석 재시도(/:id/speech-style/retry)의 전사 소스. 실패해도 등록은 막지
+    // 않는다(best-effort, 재시도가 SOURCE_AUDIO_MISSING 409 로 대신 안내).
+    // 수명주기는 별도 관리 불필요: TTL 7일 sweep(audio-retention.cleanupExpiredAudio)이
+    // R2 오브젝트·행을 함께 정리하고, 계정 삭제(account-deletion)·유료 음성 정리
+    // (paid-voice-cleanup)도 voice_uploads 를 사용자 단위로 지운다. draft 가 승격 전에
+    // 삭제돼 행이 남아도 같은 TTL sweep 이 거둔다.
+    try {
+      const uploadStorage = c.env.VOICE_BUCKET
+        ? new R2VoiceStorage(c.env.VOICE_BUCKET)
+        : getSharedInMemoryVoiceStorage();
+      // object key 는 JWT 인증 주체(userId=sub) + 타임스탬프로 생성된다(R2VoiceStorage.store)
+      // — 사용자 입력에서 파생된 세그먼트가 없어 경로 조작 불가.
+      const uploadMeta = await uploadStorage.store({
+        userId,
+        bytes: new Uint8Array(audioBuffer),
+        mimeType: audioMimeType,
+        durationMs: cloneDurationMs,
+        originalName: audioFile.name || undefined,
+      });
+      await db.execute({
+        sql: `INSERT INTO voice_uploads
+              (id, user_id, object_key, mime_type, size_bytes, duration_ms, original_name, voice_profile_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          crypto.randomUUID(),
+          userId,
+          uploadMeta.objectKey,
+          uploadMeta.mimeType,
+          uploadMeta.sizeBytes,
+          uploadMeta.durationMs ?? null,
+          uploadMeta.originalName ?? null,
+          profileId,
+        ],
+      });
+    } catch (uploadErr) {
+      logRouteError(c, uploadErr);
+    }
+
     // 화자 말투(사투리·존댓말·특징 어미) 분석 — 응답을 지연시키지 않도록 waitUntil 로
-    // 비동기 실행(best-effort, 실패해도 등록은 성공). 전사는 ElevenLabs Scribe(이미 음성을
+    // 비동기 실행(실패해도 등록은 성공). 전사는 ElevenLabs Scribe(이미 음성을
     // 처리하는 고지된 수탁사), Vertex 에는 음성이 아니라 전사 텍스트만 전송한다.
+    // 결과 상태는 speech_style_status 에 반드시 기록한다(pending→done|failed) — 과거처럼
+    // 조용히 삼키면 클라가 알 수 없으므로, failed 는 /:id/speech-style/retry 로 복구한다.
     // 첫 자동 미리듣기와 레이스할 수 있다 — 그 경우 첫 미리듣기만 기본 톤이고,
     // 문구 수정·재생성과 매일 사전렌더부터는 분석 결과가 반영된다.
+    await setSpeechStyleStatus(db, profileId, 'pending');
+    let analysisScheduled = false;
     if (c.env.ELEVENLABS_API_KEY) {
       const analysisEnv = c.env;
       const analysisAudio = audioBuffer;
       const analysisMime = audioMimeType;
       const analysisFileName = audioFile.name || undefined;
       try {
-        // 테스트/로컬 등 ExecutionContext 없는 환경에선 getter 가 throw — 분석을 건너뛴다.
+        // 테스트/로컬 등 ExecutionContext 없는 환경에선 getter 가 throw — 아래 공통 failed 처리.
         const executionCtx = c.executionCtx;
         executionCtx.waitUntil(
-          (async () => {
-            const client = new ElevenLabsClient(analysisEnv.ELEVENLABS_API_KEY!);
-            const transcript = await client.speechToText(analysisAudio, {
-              mimeType: analysisMime,
-              fileName: analysisFileName,
-            });
-            const style = await analyzeSpeechStyleWithVertex(
-              analysisEnv,
-              transcript,
-              previewLanguage,
-            );
-            if (!style) return;
-            await getDB(analysisEnv).execute({
-              sql: `UPDATE voice_profiles SET speech_style = ?, updated_at = datetime('now')
-                    WHERE id = ? AND deleted_at IS NULL`,
-              args: [JSON.stringify(style), profileId],
-            });
-          })().catch((analysisErr) => {
-            console.warn('[voice] speech style analysis failed', analysisErr);
+          runSpeechStyleAnalysis(analysisEnv, profileId, analysisAudio, {
+            mimeType: analysisMime,
+            fileName: analysisFileName,
+            language: previewLanguage,
+          }).then((analysis) => {
+            if (!analysis.ok) logRouteError(c, analysis.error);
           }),
         );
+        analysisScheduled = true;
       } catch {
-        // best-effort — 분석 없이도 등록은 성공이며, 미리듣기 문구 수정으로 말투 교정 가능.
+        // fallthrough — 아래에서 failed 기록.
       }
+    }
+    if (!analysisScheduled) {
+      // 키 미설정/ExecutionContext 부재로 분석을 시작조차 못 함 — failed 로 남겨 재시도를 유도한다.
+      await setSpeechStyleStatus(db, profileId, 'failed');
+      logRouteError(
+        c,
+        new Error('speech style analysis was not scheduled (missing API key or execution context)'),
+      );
     }
 
     return c.json(
@@ -1486,6 +1595,180 @@ voiceProfile.get('/:id/stats', async (c) => {
     messages: Number(typedRow<{ count: number }>(msgRes.rows[0]!).count ?? 0),
     alarms: Number(typedRow<{ count: number }>(alarmRes.rows[0]!).count ?? 0),
   });
+});
+
+// 말투 분석 재시도 — 등록 시 waitUntil 분석이 실패(speech_style_status='failed')했을 때
+// 클라가 동기로 다시 돌린다. 전사 소스는 clone 등록 성공 시 이 프로필에 연결해 보관한
+// 원본 녹음(voice_uploads.voice_profile_id, TTL 7일)이며, TTL 정리로 사라졌거나 보관
+// 자체가 실패했으면 409 — 이때는 목소리를 다시 등록해야 말투를 분석할 수 있다.
+voiceProfile.post('/:id/speech-style/retry', async (c) => {
+  const ids = ownerIds(c);
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+
+  const ph = ids.map(() => '?').join(',');
+  const profileRes = await db.execute({
+    sql: `SELECT id, preview_language FROM voice_profiles
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_system, 0) = 0`,
+    args: [id, ...ids],
+  });
+  if (profileRes.rows.length === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  // 등록 때와 동일한 언어 화이트리스트(ko/en/ja)로 분석 언어 확정.
+  const requestedLanguage = String(profileRes.rows[0]!.preview_language ?? 'ko').toLowerCase();
+  const language = ['en', 'ja'].includes(requestedLanguage) ? requestedLanguage : 'ko';
+
+  // 전사 소스: clone 등록이 이 프로필에 연결해 남긴 원본 업로드만 쓴다.
+  // '사용자 최신 1건' 폴백은 두지 않는다 — 가족알람용 녹음 등 이 목소리와 무관한
+  // 업로드를 말투 분석에 쓰는 사고를 막는다(연결본이 없으면 아래 409).
+  const uploadRes = await db.execute({
+    sql: `SELECT object_key, mime_type, original_name FROM voice_uploads
+          WHERE user_id IN (${ph}) AND voice_profile_id = ?
+          ORDER BY created_at DESC
+          LIMIT 1`,
+    args: [...ids, id],
+  });
+  const upload = uploadRes.rows[0];
+  const storage = c.env.VOICE_BUCKET
+    ? new R2VoiceStorage(c.env.VOICE_BUCKET)
+    : getSharedInMemoryVoiceStorage();
+  const stored = upload ? await storage.get(String(upload.object_key)) : null;
+  if (!stored) {
+    return c.json(
+      {
+        error: 'Source recording is no longer available. Re-register the voice to analyze it.',
+        error_code: 'SOURCE_AUDIO_MISSING',
+      },
+      409,
+    );
+  }
+
+  await setSpeechStyleStatus(db, id, 'pending');
+  // Uint8Array 뷰 → 정확한 구간만 ArrayBuffer 로 복사(오프셋 있는 버퍼 안전).
+  const audioBuffer = stored.bytes.buffer.slice(
+    stored.bytes.byteOffset,
+    stored.bytes.byteOffset + stored.bytes.byteLength,
+  ) as ArrayBuffer;
+  const result = await runSpeechStyleAnalysis(c.env, id, audioBuffer, {
+    mimeType: (upload!.mime_type as string | null) ?? stored.meta.mimeType,
+    fileName: (upload!.original_name as string | null) ?? stored.meta.originalName ?? null,
+    language,
+  });
+  if (!result.ok) {
+    logRouteError(c, result.error);
+    return c.json(
+      {
+        error: 'Speech style analysis failed. Try again later.',
+        error_code: 'SPEECH_STYLE_ANALYSIS_FAILED',
+        status: 'failed',
+      },
+      502,
+    );
+  }
+  return c.json({ success: true, status: 'done' });
+});
+
+// 유료 프리셋(사전렌더) 준비 상태 — 클론 목소리별 클립 생성 진행(n/total)·실패를 클라가 조회한다.
+// 시스템 보이스/타인 목소리는 소유권 게이트에서 404.
+voiceProfile.get('/:id/prerender-status', async (c) => {
+  const ids = ownerIds(c);
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+
+  const ph = ids.map(() => '?').join(',');
+  const profileRes = await db.execute({
+    sql: `SELECT id FROM voice_profiles
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_system, 0) = 0 AND COALESCE(is_draft, 0) = 0`,
+    args: [id, ...ids],
+  });
+  if (profileRes.rows.length === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
+  const [generatedRes, queueRes] = await Promise.all([
+    db.execute({
+      sql: `SELECT COUNT(*) as count FROM messages
+            WHERE voice_profile_id = ? AND COALESCE(is_preset, 0) = 1 AND audio_url IS NOT NULL`,
+      args: [id],
+    }),
+    db.execute({
+      sql: 'SELECT status, attempts FROM voice_prerender_queue WHERE voice_profile_id = ?',
+      args: [id],
+    }),
+  ]);
+  const generated = Number(generatedRes.rows[0]?.count ?? 0);
+  const queue = queueRes.rows[0];
+  const queueStatus = queue ? String(queue.status ?? '') : '';
+  // 큐 행이 없으면(적재 전/삭제됨) 'none' — 클라는 prerender-retry 로 재적재할 수 있다.
+  const status = ['pending', 'done', 'failed'].includes(queueStatus) ? queueStatus : 'none';
+  return c.json({
+    status,
+    total: CLONE_PRERENDER_TOTAL,
+    generated,
+    attempts: queue ? Number(queue.attempts ?? 0) : 0,
+  });
+});
+
+// 사전렌더 재시도 — attempts 상한(5) 초과로 'failed' 가 된 큐 행을 pending 으로 리셋해
+// 다음 cron 이 빠진 클립만 다시 채우게 한다(findMissingStockTargets 가 기존 클립은 스킵).
+// 행이 아예 없으면(promote 이전 큐 유실 등) 확정 언어(preview_language)로 재적재한다.
+voiceProfile.post('/:id/prerender-retry', async (c) => {
+  const ids = ownerIds(c);
+  const userId = c.get('userId') as string;
+  const userPk = (c.get('userIdPK') as string | undefined) || userId;
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+
+  const ph = ids.map(() => '?').join(',');
+  // 사전렌더 대상은 확정(공식)·ready 클론뿐 — draft/시스템/타인은 404.
+  const profileRes = await db.execute({
+    sql: `SELECT id, preview_language FROM voice_profiles
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_system, 0) = 0 AND COALESCE(is_draft, 0) = 0
+            AND status = 'ready'`,
+    args: [id, ...ids],
+  });
+  if (profileRes.rows.length === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
+  const reset = await db.execute({
+    sql: `UPDATE voice_prerender_queue
+          SET status = 'pending', attempts = 0, claimed_at = NULL, claim_token = NULL,
+              updated_at = datetime('now')
+          WHERE voice_profile_id = ? AND status = 'failed'`,
+    args: [id],
+  });
+  if ((reset.rowsAffected ?? 0) === 0) {
+    // failed 행이 없었다면: 행 자체가 없을 때만 재적재된다(enqueuePrerender 는
+    // ON CONFLICT DO NOTHING 이라 pending/done 행은 건드리지 않는 멱등 no-op).
+    await enqueuePrerender(db, id, userPk, String(profileRes.rows[0]!.preview_language ?? 'ko'));
+  }
+  return c.json({ success: true });
 });
 
 voiceProfile.delete('/:id', async (c) => {

@@ -89,6 +89,9 @@ import kotlinx.coroutines.withContext
 
 private val AndroidEdgeToEdgeNavigationExtraPadding = 24.dp
 
+// 클론 사전렌더 알람 버킷 4종(잠금화면 발사용). greeting 은 미리듣기 전용이라 준비 게이트에서 제외.
+private val CloneAlarmBucketCategories = listOf("weather", "fortune", "love", "medication")
+
 @Composable
 private fun androidNavigationBarHeightPadding(): Dp {
     val context = LocalContext.current
@@ -201,6 +204,16 @@ internal fun VoiceProfileManagementPanel(
     onOpenBilling: () -> Unit,
     defaultVoiceId: String? = null,
     onSetDefaultVoice: (String) -> Unit = {},
+    // 기본 목소리 무료 버킷 프리페치 진행(다운로드 n to 전체). null = 진행 중 아님.
+    voicePrefetchProgress: Pair<Int, Int>? = null,
+    // 유료 클론 사전렌더(R2 21클립) 상태 조회/재시도 — 목소리 탭 준비 표시가 폴링한다.
+    onGetVoicePrerenderStatus: suspend (String) -> com.alarmtalk.app.network.VoicePrerenderStatusResponse =
+        { com.alarmtalk.app.network.VoicePrerenderStatusResponse() },
+    onRetryVoicePrerender: suspend (String) -> Boolean = { false },
+    // 말투 분석 재시도 — 성공 시 ViewModel 이 프로필 speech_style_status 를 갱신한다.
+    onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
+    // 서버 사전렌더 완료를 감지했을 때 stockClips 매니페스트를 강제 재조회.
+    onReloadStockClips: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -229,6 +242,8 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
+    // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 띄우는 '임시 목소리 삭제' 경고.
+    var draftExitWarningOpen by remember { mutableStateOf(false) }
     // 미리듣기·사전렌더 문구 언어 — 기본은 앱 로케일(ko/en/ja 외엔 ko).
     val configuration = LocalConfiguration.current
     val defaultVoiceLanguage = remember(configuration) {
@@ -727,6 +742,148 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // ── 유료 클론 알람 음성 준비 상태(서버 사전렌더 + 로컬 다운로드) ──
+    // '준비 완료'는 서버 21/21(status=done) && 로컬 알람 버킷 완전 다운로드일 때만(표시 제거).
+    // 준비 중이어도 기존 캐시/프리셋은 삭제하지 않는다 — 새 버전이 준비될 때까지 기존 버전이 동작한다.
+    var prerenderStatuses by remember {
+        mutableStateOf<Map<String, com.alarmtalk.app.network.VoicePrerenderStatusResponse>>(emptyMap())
+    }
+    var cloneLocalReadyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var prerenderRetryBusyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var speechStyleRetryBusyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // 실패 후 [다시 시도] 수락 시 증가 — 멈춘 폴링 루프를 재시작한다.
+    var prerenderPollTick by remember { mutableIntStateOf(0) }
+
+    // 알람 버킷 4종이 매니페스트에 풀셋으로 존재하는지 — AlarmEditorScreen.hasCompleteCloneBucket
+    // 과 동일한 variant 절대 인덱스 판정. greeting 은 미리듣기 전용이라 게이트에서 제외한다.
+    fun cloneManifestComplete(profileId: String): Boolean = CloneAlarmBucketCategories.all { category ->
+        val fullCount = expectedCloneBucketVariantCount(category) ?: return@all false
+        val variants = stockClips
+            .filter {
+                it.voiceProfileId == profileId && it.category == category &&
+                    (it.language ?: "ko") == previewLanguage
+            }
+            .map { it.variant }
+            .toSet()
+        variants == (0 until fullCount).toSet()
+    }
+
+    // 매니페스트의 알람 버킷 클립을 전부 로컬 캐시(있으면 재사용, 편집기와 같은 stock_ 키).
+    // true = 로컬 완전 다운로드 완료.
+    suspend fun downloadCloneBuckets(profileId: String): Boolean = withContext(Dispatchers.IO) {
+        var allCached = true
+        CloneAlarmBucketCategories.forEach { category ->
+            stockClips
+                .filter {
+                    it.voiceProfileId == profileId && it.category == category &&
+                        (it.language ?: "ko") == previewLanguage
+                }
+                .forEach { clip ->
+                    val cacheKey = "stock_${clip.messageId}"
+                    if (audioStore.getCachedAudio(cacheKey) == null) {
+                        runCatching {
+                            val response = onDownloadStockAudio(clip.messageId)
+                            audioStore.cacheGeneratedAudio(
+                                bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
+                                format = response.audioFormat,
+                                rawAudioUri = response.audioUrl,
+                                displayName = cacheKey,
+                                cacheKey = cacheKey,
+                                messageId = clip.messageId,
+                            )
+                        }.onFailure { error ->
+                            if (error is kotlin.coroutines.cancellation.CancellationException) throw error
+                            allCached = false
+                        }
+                    }
+                }
+        }
+        allCached && cloneManifestComplete(profileId)
+    }
+
+    // 준비 상태 폴링 — 목소리 탭이 보이는 동안만 짧은 주기로(화면 이탈 시 이펙트가 취소된다).
+    val cloneReadinessIds = ownVoices.filter { it.status == null || it.status == "ready" }.map { it.id }
+    LaunchedEffect(cloneReadinessIds, stockClips, prerenderPollTick) {
+        if (cloneReadinessIds.isEmpty()) return@LaunchedEffect
+        var manifestReloadRequested = false
+        while (true) {
+            var anyPending = false
+            cloneReadinessIds.forEach { voiceId ->
+                if (voiceId in cloneLocalReadyIds) return@forEach
+                val status = runCatching { onGetVoicePrerenderStatus(voiceId) }
+                    .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+                    .getOrNull()
+                if (status == null) {
+                    // 일시 네트워크 실패 — 다음 틱에 재시도.
+                    anyPending = true
+                    return@forEach
+                }
+                prerenderStatuses = prerenderStatuses + (voiceId to status)
+                when (status.status) {
+                    "pending" -> anyPending = true
+                    "done" -> {
+                        if (cloneManifestComplete(voiceId)) {
+                            val ready = runCatching { downloadCloneBuckets(voiceId) }
+                                .onFailure {
+                                    if (it is kotlin.coroutines.cancellation.CancellationException) throw it
+                                }
+                                .getOrDefault(false)
+                            if (ready) {
+                                cloneLocalReadyIds = cloneLocalReadyIds + voiceId
+                            } else {
+                                anyPending = true
+                            }
+                        } else {
+                            // 서버는 완료인데 세션 매니페스트가 옛것 — 한 번 새로 받는다.
+                            // stockClips 가 갱신되면 이 이펙트가 재시작돼 다시 판정한다.
+                            if (!manifestReloadRequested) {
+                                manifestReloadRequested = true
+                                onReloadStockClips()
+                            }
+                            anyPending = true
+                        }
+                    }
+                    // "failed" → 실패 표시 + [다시 시도] 대기(폴링 중단). "none"/기타 → 표시 없음.
+                }
+            }
+            if (!anyPending) break
+            delay(5_000)
+        }
+    }
+
+    fun retryPrerender(profileId: String) {
+        if (profileId in prerenderRetryBusyIds) return
+        prerenderRetryBusyIds = prerenderRetryBusyIds + profileId
+        scope.launch {
+            val accepted = runCatching { onRetryVoicePrerender(profileId) }
+                .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+                .getOrDefault(false)
+            if (accepted) {
+                val current = prerenderStatuses[profileId]
+                prerenderStatuses = prerenderStatuses + (
+                    profileId to (
+                        current?.copy(status = "pending")
+                            ?: com.alarmtalk.app.network.VoicePrerenderStatusResponse(status = "pending")
+                        )
+                    )
+                prerenderPollTick += 1
+            }
+            prerenderRetryBusyIds = prerenderRetryBusyIds - profileId
+        }
+    }
+
+    fun retrySpeechStyle(profileId: String) {
+        if (profileId in speechStyleRetryBusyIds) return
+        speechStyleRetryBusyIds = speechStyleRetryBusyIds + profileId
+        scope.launch {
+            // 성공 시 ViewModel 이 프로필 speech_style_status 를 갱신해 안내가 사라진다.
+            // 실패 메시지도 ViewModel 이 전역 message 로 띄운다.
+            runCatching { onRetryVoiceSpeechStyle(profileId) }
+                .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+            speechStyleRetryBusyIds = speechStyleRetryBusyIds - profileId
+        }
+    }
+
     suspend fun croppedFileAudio(): CachedAlarmAudio {
         val uri = selectedFileUri ?: throw IllegalStateException(context.getString(R.string.voices_select_file_first))
         val cropDurationMillis = (cropEndMillis - cropStartMillis)
@@ -854,17 +1011,10 @@ internal fun VoiceProfileManagementPanel(
     fun submitCreateProfile(name: String) {
         createSubmitAttempted = true
         val trimmedName = name.trim()
+        // 관계·호칭은 선택 입력 — 비어 있으면 빈 값 그대로 넘기고 ViewModel 이 미전송 처리한다.
         val trimmedRelationship = relationshipSelection.resolved
         val trimmedListener = profileListenerTitle.trim()
         if (trimmedName.isBlank()) {
-            localMessage = null
-            return
-        }
-        if (trimmedRelationship.isBlank()) {
-            localMessage = null
-            return
-        }
-        if (trimmedListener.isBlank()) {
             localMessage = null
             return
         }
@@ -954,6 +1104,18 @@ internal fun VoiceProfileManagementPanel(
             MutedText(stringResource(R.string.voices_clone_requires_paid_hint))
         } else if (ownVoices.isNotEmpty()) {
             ownVoices.forEach { profile ->
+                // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬 다운로드 중
+                // "다운로드 중" → 둘 다 완료(준비 완료)면 표시 없음. 조회 전에도 표시하지 않는다.
+                val prerenderStatus = prerenderStatuses[profile.id]
+                val readiness = when {
+                    profile.id in cloneLocalReadyIds -> null
+                    prerenderStatus == null -> null
+                    prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
+                    prerenderStatus.status == "done" -> CloneVoiceReadiness.Downloading
+                    prerenderStatus.status == "pending" && prerenderStatus.total > 0 ->
+                        CloneVoiceReadiness.Preparing(prerenderStatus.generated, prerenderStatus.total)
+                    else -> null
+                }
                 VoiceProfileRow(
                     profile = profile,
                     enabled = !voiceProfileBusy,
@@ -967,6 +1129,12 @@ internal fun VoiceProfileManagementPanel(
                     },
                     onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
                     onDelete = { deleteTarget = profile },
+                    readiness = readiness,
+                    onRetryPrerender = { retryPrerender(profile.id) },
+                    retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
+                    speechStyleFailed = profile.speechStyleStatus == "failed",
+                    onRetrySpeechStyle = { retrySpeechStyle(profile.id) },
+                    retrySpeechStyleBusy = profile.id in speechStyleRetryBusyIds,
                 )
             }
         }
@@ -1012,6 +1180,13 @@ internal fun VoiceProfileManagementPanel(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            // 기본 목소리 변경 직후 무료 버킷 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다
+            // (실패해도 편집기 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
+            voicePrefetchProgress?.let { (done, total) ->
+                VoiceProgressMessage(
+                    stringResource(R.string.voices_default_voice_prefetching, done, total),
+                )
             }
             // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다
             // (AlarmEditorScreen.resolvedVoiceListenerTitle). 관계·호칭은 내/공유 목소리에만 있다.
@@ -1107,11 +1282,7 @@ internal fun VoiceProfileManagementPanel(
             Modifier.fillMaxSize()
         }
         val resolvedProfileName = profileName.trim()
-        val resolvedRelationship = relationshipSelection.resolved
-        val resolvedListener = profileListenerTitle.trim()
         val nameRequiredError = createSubmitAttempted && resolvedProfileName.isBlank()
-        val relationshipRequiredError = createSubmitAttempted && resolvedRelationship.isBlank()
-        val listenerRequiredError = createSubmitAttempted && resolvedListener.isBlank()
         // 1분 미만이면 "다음" 으로 넘어가지 못하게 막는다. 녹음은 selectedAudio 길이,
         // 파일은 실제 업로드되는 crop 구간 길이로 판정(백엔드 MIN_UPLOAD_DURATION_MS 와 동일 기준).
         val canSubmitRecord = inputMode == VoiceCaptureMode.Record &&
@@ -1121,9 +1292,13 @@ internal fun VoiceProfileManagementPanel(
             (cropEndMillis - cropStartMillis) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         Dialog(
             onDismissRequest = {
-                // 결정 구간(만드는 중/미리듣기)에선 뒤로가기/바깥 탭으로 닫히지 않는다 —
-                // 유지 또는 삭제를 골라야만 플로우가 끝난다.
-                if (!voiceProfileBusy && !inDraftDecisionFlow) closeCreateDialog()
+                when {
+                    // 업로드/클론 생성 등 API 호출이 나가는 순간만 잠시 차단(통신 무결성).
+                    voiceProfileBusy -> Unit
+                    // 결정 구간(만드는 중/미리듣기) — 그냥 닫지 않고 '임시 목소리 삭제' 경고를 띄운다.
+                    inDraftDecisionFlow -> draftExitWarningOpen = true
+                    else -> closeCreateDialog()
+                }
             },
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
@@ -1152,14 +1327,19 @@ internal fun VoiceProfileManagementPanel(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
-                        if (!inDraftDecisionFlow) {
-                            IconButton(
-                                onClick = ::closeCreateDialog,
-                                enabled = !voiceProfileBusy,
-                                modifier = Modifier.size(42.dp),
-                            ) {
-                                Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
-                            }
+                        IconButton(
+                            onClick = {
+                                // 결정 구간에서도 닫기는 가능 — 대신 '임시 목소리 삭제' 경고를 거친다.
+                                if (inDraftDecisionFlow) {
+                                    draftExitWarningOpen = true
+                                } else {
+                                    closeCreateDialog()
+                                }
+                            },
+                            enabled = !voiceProfileBusy,
+                            modifier = Modifier.size(42.dp),
+                        ) {
+                            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
                         }
                     }
 
@@ -1284,10 +1464,10 @@ internal fun VoiceProfileManagementPanel(
                                     colors = wakerOutlinedTextFieldColors(),
                                     modifier = Modifier.fillMaxWidth(),
                                 )
+                                // 관계·호칭은 선택 입력 — 비워도 다음 단계로 진행할 수 있다.
                                 RelationshipDropdownField(
                                     selection = relationshipSelection,
                                     onSelectionChange = { relationshipSelection = it },
-                                    isError = relationshipRequiredError,
                                 )
                                 OutlinedTextField(
                                     value = profileListenerTitle,
@@ -1295,12 +1475,6 @@ internal fun VoiceProfileManagementPanel(
                                     label = { Text(stringResource(R.string.voices_listener_title_label)) },
                                     placeholder = { Text(stringResource(R.string.voices_listener_title_placeholder)) },
                                     singleLine = true,
-                                    isError = listenerRequiredError,
-                                    supportingText = {
-                                        if (listenerRequiredError) {
-                                            Text(stringResource(R.string.voices_required_field))
-                                        }
-                                    },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
                                     modifier = Modifier.fillMaxWidth(),
@@ -1516,9 +1690,8 @@ internal fun VoiceProfileManagementPanel(
 
                     val canAdvanceFromSource = !voiceProfileBusy && !isRecording && !createPreparing &&
                         (canSubmitRecord || canSubmitSingleFile)
-                    val identityComplete = profileName.trim().isNotBlank() &&
-                        relationshipSelection.isComplete &&
-                        profileListenerTitle.trim().isNotBlank()
+                    // 관계·호칭은 선택 입력 — 이름만 있으면 등록으로 진행할 수 있다.
+                    val identityComplete = profileName.trim().isNotBlank()
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1629,13 +1802,72 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 — 나가면 임시 목소리(초안)가 삭제됨을 경고.
+    if (draftExitWarningOpen) {
+        val exitDraftId = (confirmNewVoice ?: pendingVoiceDraft)?.id
+        Dialog(
+            onDismissRequest = { draftExitWarningOpen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                shape = WakerDialogShape,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+                shadowElevation = 18.dp,
+                border = wakerCardBorder(),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = stringResource(R.string.voices_draft_exit_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        MutedText(stringResource(R.string.voices_draft_exit_body))
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(
+                            onClick = {
+                                draftExitWarningOpen = false
+                                // 명시적 '삭제' 버튼과 동일한 draft 삭제 경로를 태운 뒤 플로우를 닫는다.
+                                exitDraftId?.let(onDeleteVoiceDraft)
+                                closeCreateDialog()
+                            },
+                            enabled = !voiceProfileBusy,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.voices_draft_exit_leave),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        Button(
+                            onClick = { draftExitWarningOpen = false },
+                            modifier = Modifier.weight(1f),
+                            shape = WakerButtonShape,
+                        ) {
+                            Text(stringResource(R.string.voices_draft_exit_stay))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     renameTarget?.let { profile ->
         val resolvedRenameName = renameName.trim()
-        val resolvedRenameRelationship = renameRelationship.trim()
-        val resolvedRenameListener = renameListenerTitle.trim()
         val renameNameError = renameSubmitAttempted && resolvedRenameName.isBlank()
-        val renameRelationshipError = renameSubmitAttempted && resolvedRenameRelationship.isBlank()
-        val renameListenerError = renameSubmitAttempted && resolvedRenameListener.isBlank()
         VoiceProfileEditDialog(
             title = stringResource(R.string.voices_edit_info_title),
             description = stringResource(R.string.voices_edit_info_desc),
@@ -1643,24 +1875,19 @@ internal fun VoiceProfileManagementPanel(
             relationship = renameRelationship,
             listenerTitle = renameListenerTitle,
             nameError = renameNameError,
-            relationshipError = renameRelationshipError,
-            listenerError = renameListenerError,
             onNameChange = { renameName = it.take(50) },
             onRelationshipChange = { renameRelationship = it.take(30) },
             onListenerTitleChange = { renameListenerTitle = it.take(30) },
             onDismiss = { renameTarget = null },
             onConfirm = {
                 renameSubmitAttempted = true
-                if (
-                    resolvedRenameName.isNotBlank() &&
-                    resolvedRenameRelationship.isNotBlank() &&
-                    resolvedRenameListener.isNotBlank()
-                ) {
+                // 관계·호칭은 선택 입력 — 이름만 채워지면 저장한다.
+                if (resolvedRenameName.isNotBlank()) {
                     onRenameVoiceProfile(
                         profile.id,
                         resolvedRenameName,
-                        resolvedRenameRelationship,
-                        resolvedRenameListener,
+                        renameRelationship.trim(),
+                        renameListenerTitle.trim(),
                     )
                     renameTarget = null
                 }

@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.network.apiError
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CancelSubscriptionRequest
@@ -310,7 +311,8 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
  * [MainViewModel.playBilling] 의 리스너로 비동기 전달되어 [confirmGooglePurchase] 로 이어진다.
  */
 internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, productId: String) {
-    if (authSession == null) {
+    val session = authSession
+    if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_purchase_plan)
         return
     }
@@ -318,7 +320,8 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
     viewModelScope.launch {
         billingBusy = true
         runCatching {
-            playBilling.launchPurchase(activity, productId)
+            // userId(=서버 users.id)는 구매-계정 바인딩용. 비어 있으면(비정상 세션) 바인딩만 생략.
+            playBilling.launchPurchase(activity, productId, userId = session.user.id.takeIf { it.isNotBlank() })
         }.onSuccess { launched ->
             if (!launched) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_google_play_start_failed)
@@ -439,6 +442,14 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
 private fun com.alarmtalk.app.network.BillingPlan.isSharedPassPlan(): Boolean =
     key in setOf("couple", "family") || planType in setOf("couple", "family")
 
+// 서버가 스토어 구독을 직접 해지하지 못해 사용자를 스토어 구독 관리로 보내야 하는 에러 코드.
+// 502(PLAY_*) / 409(STORE_CANCEL_UNSUPPORTED) 모두 서버·앱 상태 무변경 → 안내 다이얼로그만 띄운다.
+private val STORE_MANAGE_REQUIRED_CODES = setOf(
+    "PLAY_CANCEL_FAILED",
+    "PLAY_REVOKE_FAILED",
+    "STORE_CANCEL_UNSUPPORTED",
+)
+
 internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
     val mode = if (atPeriodEnd) "at_period_end" else "immediate"
@@ -446,18 +457,52 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
         billingBusy = true
         runCatching {
             api.cancelSubscription(authorization, CancelSubscriptionRequest(mode = mode))
-        }.onSuccess {
-            message = if (atPeriodEnd) {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_at_period_end)
-            } else {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled)
+        }.onSuccess { response ->
+            val retentionDate = formatPass(response.voiceRetentionUntil, PassDateFormatter)
+            message = when {
+                atPeriodEnd -> getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_at_period_end)
+                retentionDate != null ->
+                    getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled_voice_retained, retentionDate)
+                else -> getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled)
             }
             refreshBillingAfterMutation(authorization, "subscription cancellation")
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to cancel subscription mode=$mode", error)
-            message = billingFailureMessage(getApplication<android.app.Application>(), apiErrorCode(error), userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_failed)))
+            // errorBody 는 한 번만 읽히므로 apiError 로 code·manage_url 을 함께 추출한다.
+            val apiFailure = apiError(error)
+            if (apiFailure.code in STORE_MANAGE_REQUIRED_CODES) {
+                // 서버·앱 상태 모두 무변경 — 스낵바 대신 Google Play 직접 관리 안내 다이얼로그.
+                billingPlayManageUrl = apiFailure.manageUrl
+                    ?: playSubscriptionManageUrl(subscriptionResponse?.plan?.key)
+            } else {
+                message = billingFailureMessage(getApplication<android.app.Application>(), apiFailure.code, userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_failed)))
+            }
+        }
+        billingBusy = false
+    }
+}
+
+/**
+ * 보관 중인 유료 음성 데이터 즉시 삭제(/billing/voice-data/delete-now).
+ * 활성 유료 구독이 있으면 서버가 409 SUBSCRIPTION_STILL_ACTIVE 로 거절한다.
+ */
+internal fun MainViewModel.deleteVoiceDataNow() {
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            api.deleteVoiceDataNow(authorization)
+        }.onSuccess {
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_data_deleted_now)
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to delete voice data now", error)
+            message = if (apiErrorCode(error) == "SUBSCRIPTION_STILL_ACTIVE") {
+                getApplication<android.app.Application>().getString(R.string.msg_gb_voice_data_delete_blocked_active)
+            } else {
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_voice_data_delete_failed))
+            }
         }
         billingBusy = false
     }

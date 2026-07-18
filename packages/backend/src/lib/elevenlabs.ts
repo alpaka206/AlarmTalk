@@ -31,12 +31,13 @@ export class ElevenLabsClient {
 
   /**
    * 음성 → 텍스트 전사(Scribe). 클론 등록 녹음의 말투(사투리·존댓말) 분석 입력으로 쓴다.
-   * 실패는 호출자가 best-effort 로 처리한다(전사 실패가 등록을 막지 않음).
+   * 실패해도 등록은 막지 않지만, 호출자는 speech_style_status 로 실패를 기록해야 한다.
+   * scribe_v1 은 2026-07-09 ElevenLabs 에서 제거됨 — scribe_v2 사용(응답 {text} 동일).
    */
   async speechToText(audioData: ArrayBuffer, options?: AudioUploadOptions): Promise<string> {
     const formData = new FormData();
     const mimeType = normalizeAudioMimeType(options?.mimeType);
-    formData.append('model_id', 'scribe_v1');
+    formData.append('model_id', 'scribe_v2');
     formData.append(
       'file',
       new Blob([audioData], { type: mimeType }),

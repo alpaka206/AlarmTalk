@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq, ID } from './helpers';
@@ -24,6 +24,14 @@ function pushMessageBelongsToCaller() {
 
 beforeEach(() => {
   mockDB.reset();
+  // 타깃 알람 생성의 30분 리드타임 판정이 실제 시계에 좌우되지 않도록 고정한다.
+  // 2026-07-15T00:00Z = KST 수요일 09:00 → 테스트 알람 시각들은 항상 30분 이상 남는다.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('GET /alarm — 알람 목록', () => {
@@ -260,10 +268,13 @@ describe('POST /alarm — 알람 생성', () => {
         family_alarm_quiet_end: '18:30',
       },
     ]);
+    mockDB.pushResult([]); // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
     mockDB.pushResult([{ id: ID.friendship }]); // friendship exists
     mockDB.pushResult([{ plan: 'plus' }]); // target user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
-    pushMessageBelongsToCaller();
+    pushMessageBelongsToCaller(); // 트랜잭션 내 재검증
+    mockDB.pushResult([]); // 멱등 슬롯 조회(기존 발신 알람 없음)
+    mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
     mockDB.pushResult([], 1); // insert
     const app = buildApp();
     const res = await app.request(

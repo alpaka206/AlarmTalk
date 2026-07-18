@@ -117,14 +117,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
         return false
     }
-    if (drafts.any { it.relationshipLabel.isBlank() }) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_relationship_required)
-        return false
-    }
-    if (drafts.any { it.listenerTitle.isBlank() }) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_listener_title_required)
-        return false
-    }
+    // 관계·호칭은 선택 입력 — 비어 있으면 파트를 보내지 않는다(백엔드 옵셔널).
     // 시스템 스톡 보이스는 개수 제한에서 제외 — 내가 만든 목소리만 센다.
     if (voiceProfiles.count { it.isSystem != true } >= MAX_VOICE_PROFILES || pendingVoiceDraft != null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
@@ -144,8 +137,10 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                         audio = voiceUploadPart(draft.audio),
                         name = draft.name.toRequestBody("text/plain".toMediaType()),
                         isShared = draft.shared.toString().toRequestBody("text/plain".toMediaType()),
-                        relationshipLabel = draft.relationshipLabel.toRequestBody("text/plain".toMediaType()),
-                        listenerTitle = draft.listenerTitle.toRequestBody("text/plain".toMediaType()),
+                        relationshipLabel = draft.relationshipLabel.takeIf { it.isNotBlank() }
+                            ?.toRequestBody("text/plain".toMediaType()),
+                        listenerTitle = draft.listenerTitle.takeIf { it.isNotBlank() }
+                            ?.toRequestBody("text/plain".toMediaType()),
                         durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
                         isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
                         language = (draft.language ?: deviceAppVoiceLanguage()).toRequestBody("text/plain".toMediaType()),
@@ -274,20 +269,11 @@ internal fun MainViewModel.renameVoiceProfile(
         return
     }
     val trimmedName = name.trim()
-    val trimmedRelationship = relationshipLabel.trim()
-    val trimmedListener = listenerTitle.trim()
     if (trimmedName.isBlank()) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
         return
     }
-    if (trimmedRelationship.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_relationship_required)
-        return
-    }
-    if (trimmedListener.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_listener_title_required)
-        return
-    }
+    // 관계·호칭은 선택 입력 — 비어 있어도 저장을 막지 않는다.
 
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
@@ -534,38 +520,108 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
 }
 
 /**
- * 온보딩에서 기본 목소리를 정한 직후, 그 목소리의 무료 버킷 클립(기상·날씨·약)을 백그라운드로
- * 미리 내려받는다 — 첫 알람 만들기에서 대기 없이, 이후엔 오프라인에서도 바로 쓸 수 있게.
+ * 기본 목소리를 정한 직후(온보딩·목소리 탭 공용), 그 목소리의 무료 버킷 클립(날씨·약)을
+ * 백그라운드로 미리 내려받는다 — 첫 알람 만들기에서 대기 없이, 이후엔 오프라인에서도 바로 쓸 수 있게.
+ * 진행 상태는 voicePrefetchProgress(다운로드 n/전체)로 노출한다(목소리 탭의 작은 진행 표시).
  * best-effort: 실패해도 알람 저장 시점의 기존 다운로드 경로가 다시 시도한다.
  */
 internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String) {
-    viewModelScope.launch(Dispatchers.IO) {
-        runCatching {
+    // 목소리를 연달아 바꾸면 이전 프리페치는 취소하고 마지막 선택만 받는다.
+    voicePrefetchJob?.cancel()
+    var job: kotlinx.coroutines.Job? = null
+    job = viewModelScope.launch(Dispatchers.IO) {
+        try {
             val language = deviceAppVoiceLanguage()
             val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
-            stockClips
-                .filter {
-                    it.voiceProfileId == voiceProfileId &&
-                        (it.language ?: "ko") == language &&
-                        it.category != com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
+            val clips = stockClips.filter {
+                it.voiceProfileId == voiceProfileId &&
+                    (it.language ?: "ko") == language &&
+                    it.category != com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
+            }
+            if (clips.isEmpty()) return@launch
+            // 이미 캐시된 클립도 진행 수에 포함해 n/전체가 실제 준비율을 보여주게 한다.
+            voicePrefetchProgress = 0 to clips.size
+            var done = 0
+            clips.forEach { clip ->
+                val cacheKey = "stock_${clip.messageId}"
+                if (audioStore.getCachedAudio(cacheKey) == null) {
+                    val response = downloadTtsMessageAudio(clip.messageId)
+                    audioStore.cacheGeneratedAudio(
+                        bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl,
+                        displayName = cacheKey,
+                        cacheKey = cacheKey,
+                        messageId = clip.messageId,
+                    )
                 }
-                .forEach { clip ->
-                    val cacheKey = "stock_${clip.messageId}"
-                    if (audioStore.getCachedAudio(cacheKey) == null) {
-                        val response = downloadTtsMessageAudio(clip.messageId)
-                        audioStore.cacheGeneratedAudio(
-                            bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
-                            format = response.audioFormat,
-                            rawAudioUri = response.audioUrl,
-                            displayName = cacheKey,
-                            cacheKey = cacheKey,
-                            messageId = clip.messageId,
-                        )
-                    }
-                }
-        }.onFailure { error ->
+                done += 1
+                voicePrefetchProgress = done to clips.size
+            }
+        } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            // 실패는 조용히 — 편집기의 온디맨드 다운로드가 폴백한다.
             Log.w(TAG, "Failed to prefetch free bucket clips voice=$voiceProfileId", error)
+        } finally {
+            // 새 프리페치가 이미 시작됐다면 그쪽 진행 표시를 지우지 않는다.
+            if (voicePrefetchJob === job) voicePrefetchProgress = null
         }
+    }
+    voicePrefetchJob = job
+}
+
+/** 유료 클론 사전렌더 진행 상태 조회 — 실패는 호출측(목소리 탭 폴링)이 처리한다. */
+internal suspend fun MainViewModel.fetchVoicePrerenderStatus(
+    profileId: String,
+): com.alarmtalk.app.network.VoicePrerenderStatusResponse {
+    val session = authSession ?: error("Authentication required")
+    return withContext(Dispatchers.IO) {
+        api.getVoicePrerenderStatus(AlarmTalkApiClient.bearer(session.token), profileId)
+    }
+}
+
+/** 사전렌더 실패 시 재생성 요청. true 면 재시작 수락 — 호출측이 폴링을 재개한다. */
+internal suspend fun MainViewModel.retryVoicePrerender(profileId: String): Boolean {
+    val session = authSession ?: return false
+    return try {
+        withContext(Dispatchers.IO) {
+            api.retryVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId)
+        }.success
+    } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        AlarmTalkLog.reportError("Failed to retry voice prerender id=$profileId", error)
+        message = userFacingError(
+            error,
+            getApplication<android.app.Application>().getString(R.string.msg_voice_prerender_retry_failed),
+        )
+        false
+    }
+}
+
+/** 말투 분석 재시도. 성공하면 프로필의 speech_style_status 를 갱신해 실패 안내가 사라지게 한다. */
+internal suspend fun MainViewModel.retryVoiceSpeechStyleAnalysis(profileId: String): Boolean {
+    val session = authSession ?: return false
+    return try {
+        val response = withContext(Dispatchers.IO) {
+            api.retryVoiceSpeechStyle(AlarmTalkApiClient.bearer(session.token), profileId)
+        }
+        if (response.success) {
+            voiceProfiles = voiceProfiles.map {
+                if (it.id == profileId) it.copy(speechStyleStatus = response.status ?: "done") else it
+            }
+        }
+        response.success
+    } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        AlarmTalkLog.reportError("Failed to retry voice speech style analysis id=$profileId", error)
+        message = userFacingError(
+            error,
+            getApplication<android.app.Application>().getString(R.string.msg_voice_speech_style_retry_failed),
+        )
+        false
     }
 }
 

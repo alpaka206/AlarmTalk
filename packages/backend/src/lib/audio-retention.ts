@@ -238,6 +238,9 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
   ).toISOString();
 
   // 1) 클론 학습용 업로드 원본 — 클론 완료 후 보관 불필요.
+  //    voice_profile_id 로 프로필에 연결된 행(clone 등록 원본, 말투 분석 재시도 소스)도
+  //    동일하게 7일 후 정리된다 — draft/목소리 삭제 시 별도 정리가 필요 없는 이유.
+  //    재시도는 소스가 사라지면 409 SOURCE_AUDIO_MISSING 으로 재등록을 안내한다.
   const uploads = await db.execute({
     sql: `SELECT id, object_key FROM voice_uploads
           WHERE created_at <= ?

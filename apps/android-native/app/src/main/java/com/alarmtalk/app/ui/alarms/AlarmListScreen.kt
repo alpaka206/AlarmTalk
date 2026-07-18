@@ -74,6 +74,14 @@ internal fun AlarmListScreen(
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     defaultVoiceId: String? = null,
     onSetDefaultVoice: (String) -> Unit = {},
+    // 기본 목소리 무료 버킷 프리페치 진행(다운로드 n to 전체). null = 진행 중 아님.
+    voicePrefetchProgress: Pair<Int, Int>? = null,
+    // 유료 클론 사전렌더 준비 상태 조회/재시도 + 매니페스트 강제 재조회(목소리 탭 준비 표시용).
+    onGetVoicePrerenderStatus: suspend (String) -> com.alarmtalk.app.network.VoicePrerenderStatusResponse =
+        { com.alarmtalk.app.network.VoicePrerenderStatusResponse() },
+    onRetryVoicePrerender: suspend (String) -> Boolean = { false },
+    onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
+    onReloadStockClips: () -> Unit = {},
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
@@ -93,6 +101,7 @@ internal fun AlarmListScreen(
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
+    onDeleteVoiceDataNow: () -> Unit,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -178,6 +187,11 @@ internal fun AlarmListScreen(
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         defaultVoiceId = defaultVoiceId,
                         onSetDefaultVoice = onSetDefaultVoice,
+                        voicePrefetchProgress = voicePrefetchProgress,
+                        onGetVoicePrerenderStatus = onGetVoicePrerenderStatus,
+                        onRetryVoicePrerender = onRetryVoicePrerender,
+                        onRetryVoiceSpeechStyle = onRetryVoiceSpeechStyle,
+                        onReloadStockClips = onReloadStockClips,
                     )
                 }
             }
@@ -272,6 +286,7 @@ internal fun AlarmListScreen(
                         onChangePlan = onChangePlan,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRefreshShareCodeData = onRefreshShareCodeData,
+                        onDeleteVoiceDataNow = onDeleteVoiceDataNow,
                     )
                 }
             }
