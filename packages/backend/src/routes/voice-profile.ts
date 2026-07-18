@@ -196,15 +196,27 @@ async function setSpeechStyleStatus(
  * 등록 녹음 전사(ElevenLabs Scribe) → Vertex 말투 분석 → speech_style 저장.
  * 결과와 무관하게 speech_style_status 를 반드시 기록한다('done' | 'failed') — 실패를 조용히
  * 삼키면 클라가 알 길이 없다. 클론 등록의 waitUntil 경로와 재시도 엔드포인트(동기)가 공유한다.
+ * 시작 시·저장 직전에 민감 동의(음성/국외이전)를 재확인한다 — 진행 중 철회되면 외부 전사/
+ * 저장을 중단한다(stock-clips generateStockClip 의 assertCloneAuthorization 패턴).
  */
 async function runSpeechStyleAnalysis(
   env: Env,
   profileId: string,
   audioData: ArrayBuffer,
-  options: { mimeType?: string | null; fileName?: string | null; language: string },
+  options: {
+    mimeType?: string | null;
+    fileName?: string | null;
+    language: string;
+    ownerPk: string;
+  },
 ): Promise<{ ok: true } | { ok: false; error: unknown }> {
   const db = getDB(env);
   try {
+    // 동의 철회 경쟁(H): 시작 시 재확인 — 철회됐으면 원본을 외부 전사(ElevenLabs)로 보내지 않는다.
+    const missingAtStart = await missingConsentType(db, options.ownerPk, SENSITIVE_REQUIRED_CONSENTS);
+    if (missingAtStart) {
+      throw new Error(`Speech style analysis aborted: consent withdrawn (${missingAtStart}).`);
+    }
     if (!env.ELEVENLABS_API_KEY) {
       throw new Error('ELEVENLABS_API_KEY is not configured for speech style analysis.');
     }
@@ -218,6 +230,11 @@ async function runSpeechStyleAnalysis(
     const style = await analyzeSpeechStyleWithVertex(env, transcript, options.language);
     if (!style) {
       throw new Error('Speech style analysis produced no result (empty transcript or Vertex failure).');
+    }
+    // 저장 직전 재확인 — 전사·분석 왕복 중 철회됐으면 파생 결과(speech_style)를 저장하지 않는다.
+    const missingBeforeSave = await missingConsentType(db, options.ownerPk, SENSITIVE_REQUIRED_CONSENTS);
+    if (missingBeforeSave) {
+      throw new Error(`Speech style analysis discarded: consent withdrawn (${missingBeforeSave}).`);
     }
     await db.execute({
       sql: `UPDATE voice_profiles
@@ -1349,33 +1366,43 @@ voiceProfile.post('/clone', async (c) => {
     // (paid-voice-cleanup)도 voice_uploads 를 사용자 단위로 지운다. draft 가 승격 전에
     // 삭제돼 행이 남아도 같은 TTL sweep 이 거둔다.
     try {
-      const uploadStorage = c.env.VOICE_BUCKET
-        ? new R2VoiceStorage(c.env.VOICE_BUCKET)
-        : getSharedInMemoryVoiceStorage();
-      // object key 는 JWT 인증 주체(userId=sub) + 타임스탬프로 생성된다(R2VoiceStorage.store)
-      // — 사용자 입력에서 파생된 세그먼트가 없어 경로 조작 불가.
-      const uploadMeta = await uploadStorage.store({
-        userId,
-        bytes: new Uint8Array(audioBuffer),
-        mimeType: audioMimeType,
-        durationMs: cloneDurationMs,
-        originalName: audioFile.name || undefined,
-      });
-      await db.execute({
-        sql: `INSERT INTO voice_uploads
-              (id, user_id, object_key, mime_type, size_bytes, duration_ms, original_name, voice_profile_id)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
-          crypto.randomUUID(),
+      // 동의 철회 경쟁(H): 클론 완료(ready 전환)와 이 보관 사이에 사용자가 음성/국외이전
+      // 동의를 철회했을 수 있다 — 철회됐으면 원본을 새로 보관하지 않는다(저장 스킵 + 로그).
+      const uploadConsentMissing = await missingConsentType(db, userPk, SENSITIVE_REQUIRED_CONSENTS);
+      if (uploadConsentMissing) {
+        logRouteError(
+          c,
+          new Error(`Clone source upload skipped: consent withdrawn (${uploadConsentMissing}).`),
+        );
+      } else {
+        const uploadStorage = c.env.VOICE_BUCKET
+          ? new R2VoiceStorage(c.env.VOICE_BUCKET)
+          : getSharedInMemoryVoiceStorage();
+        // object key 는 JWT 인증 주체(userId=sub) + 타임스탬프로 생성된다(R2VoiceStorage.store)
+        // — 사용자 입력에서 파생된 세그먼트가 없어 경로 조작 불가.
+        const uploadMeta = await uploadStorage.store({
           userId,
-          uploadMeta.objectKey,
-          uploadMeta.mimeType,
-          uploadMeta.sizeBytes,
-          uploadMeta.durationMs ?? null,
-          uploadMeta.originalName ?? null,
-          profileId,
-        ],
-      });
+          bytes: new Uint8Array(audioBuffer),
+          mimeType: audioMimeType,
+          durationMs: cloneDurationMs,
+          originalName: audioFile.name || undefined,
+        });
+        await db.execute({
+          sql: `INSERT INTO voice_uploads
+                (id, user_id, object_key, mime_type, size_bytes, duration_ms, original_name, voice_profile_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            crypto.randomUUID(),
+            userId,
+            uploadMeta.objectKey,
+            uploadMeta.mimeType,
+            uploadMeta.sizeBytes,
+            uploadMeta.durationMs ?? null,
+            uploadMeta.originalName ?? null,
+            profileId,
+          ],
+        });
+      }
     } catch (uploadErr) {
       logRouteError(c, uploadErr);
     }
@@ -1402,6 +1429,7 @@ voiceProfile.post('/clone', async (c) => {
             mimeType: analysisMime,
             fileName: analysisFileName,
             language: previewLanguage,
+            ownerPk: userPk,
           }).then((analysis) => {
             if (!analysis.ok) logRouteError(c, analysis.error);
           }),
@@ -1603,6 +1631,7 @@ voiceProfile.get('/:id/stats', async (c) => {
 // 자체가 실패했으면 409 — 이때는 목소리를 다시 등록해야 말투를 분석할 수 있다.
 voiceProfile.post('/:id/speech-style/retry', async (c) => {
   const ids = ownerIds(c);
+  const userPk = (c.get('userIdPK') as string | undefined) || (c.get('userId') as string);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -1622,6 +1651,23 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
   });
   if (profileRes.rows.length === 0) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
+  // 동의 철회 경쟁(H): 재시도 시작 시 민감 동의(음성/국외이전)를 재확인한다 —
+  // 등록 후 철회한 사용자의 원본을 다시 외부 전사(ElevenLabs)로 보내지 않는다.
+  const missingRetryConsent = await missingConsentType(db, userPk, SENSITIVE_REQUIRED_CONSENTS);
+  if (missingRetryConsent) {
+    return c.json(
+      {
+        error:
+          missingRetryConsent === 'voice_biometric'
+            ? 'Voice biometric consent is required to analyze the voice.'
+            : 'Overseas transfer consent is required for speech style analysis.',
+        error_code: 'CONSENT_REQUIRED',
+        consent: missingRetryConsent,
+      },
+      403,
+    );
   }
   // 등록 때와 동일한 언어 화이트리스트(ko/en/ja)로 분석 언어 확정.
   const requestedLanguage = String(profileRes.rows[0]!.preview_language ?? 'ko').toLowerCase();
@@ -1652,7 +1698,24 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
     );
   }
 
-  await setSpeechStyleStatus(db, id, 'pending');
+  // 원자적 상태 점유(H): failed 일 때만 pending 으로 클레임한다 — 동시 재시도가 겹치면
+  // 한 요청만 실행되고 나머지는 409 로 떨어져 중복 전사/분석(외부 호출 비용)을 차단한다.
+  // 이미 pending(진행 중)이거나 done/NULL(재시도 대상 아님)이어도 같은 409.
+  const claimed = await db.execute({
+    sql: `UPDATE voice_profiles
+          SET speech_style_status = 'pending', updated_at = datetime('now')
+          WHERE id = ? AND speech_style_status = 'failed' AND deleted_at IS NULL`,
+    args: [id],
+  });
+  if ((claimed.rowsAffected ?? 0) === 0) {
+    return c.json(
+      {
+        error: 'Speech style analysis is already running or not in a retryable state.',
+        error_code: 'SPEECH_STYLE_RETRY_CONFLICT',
+      },
+      409,
+    );
+  }
   // Uint8Array 뷰 → 정확한 구간만 ArrayBuffer 로 복사(오프셋 있는 버퍼 안전).
   const audioBuffer = stored.bytes.buffer.slice(
     stored.bytes.byteOffset,
@@ -1662,6 +1725,7 @@ voiceProfile.post('/:id/speech-style/retry', async (c) => {
     mimeType: (upload!.mime_type as string | null) ?? stored.meta.mimeType,
     fileName: (upload!.original_name as string | null) ?? stored.meta.originalName ?? null,
     language,
+    ownerPk: userPk,
   });
   if (!result.ok) {
     logRouteError(c, result.error);

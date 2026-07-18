@@ -457,6 +457,84 @@ describe('POST /tts/generate — TTS 생성', () => {
     expect(mockDB.calls.some((call) => call.sql.includes('SET preview_text'))).toBe(false);
   });
 
+  // 태그 부착 상한 = /tts/generate 의 200자 상한(경계 정합). 기본 상한(300)을 쓰면
+  // 원문은 200자 이내인데 문장별 태그 부착으로 200을 넘긴 텍스트가 폴백 없이 통과했다가
+  // 뒤늦게 TEXT_TOO_LONG(400)으로 거부된다 — 폴백(선두 1회 태그/무태그)으로 성공해야 한다.
+  function pushStoredPreviewFlow(storedText: string) {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        user_id: 'user-1',
+        status: 'ready',
+        is_draft: 1,
+        elevenlabs_voice_id: 'el-draft',
+        relationship_label: '엄마',
+        listener_title: '우리 아들',
+        preview_text: storedText,
+        preview_tag: 'cheerfully',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([]);
+    pushPublicationVoice({
+      is_draft: 1,
+      elevenlabs_voice_id: 'el-draft',
+      relationship_label: '엄마',
+      listener_title: '우리 아들',
+    });
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+  }
+
+  it('문장별 태그가 200자를 넘기면 선두 1회 태그로 폴백해 성공한다(경계 정합)', async () => {
+    // 183자 2문장: 문장별 태그(209자) > 200, 선두 1회 태그(196자) ≤ 200.
+    const s1 = `${'a'.repeat(90)}.`;
+    const s2 = `${'b'.repeat(90)}.`;
+    const storedText = `${s1} ${s2}`;
+    expect(storedText.length).toBe(183);
+    pushStoredPreviewFlow(storedText);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.synthesis_text).toBe(`[cheerfully] ${storedText}`);
+    expect(body.synthesis_text.length).toBeLessThanOrEqual(200);
+    expect(body.text).toBe(storedText);
+  });
+
+  it('선두 1회 태그도 200자를 넘기면 무태그로 폴백해 성공한다(TEXT_TOO_LONG 아님)', async () => {
+    // 195자 1문장: 태그 부착 시 208자 > 200 → 원문 그대로 합성.
+    const storedText = `${'c'.repeat(194)}.`;
+    expect(storedText.length).toBe(195);
+    pushStoredPreviewFlow(storedText);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([1, 2]).buffer);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        language: 'ko',
+        draft_preview: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.synthesis_text).toBe(storedText);
+    expect(body.text).toBe(storedText);
+  });
+
   it('합성 중 민감 동의를 철회하면 생성 결과를 게시하지 않는다', async () => {
     mockDB.setConsentMissing(true);
     mockDB.pushResult([{ plan: 'plus' }]);

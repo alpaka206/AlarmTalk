@@ -53,7 +53,8 @@ function postAlarm(
 
 async function alarmRow(id: string) {
   const res = await db.execute({
-    sql: `SELECT id, user_id, target_user_id, time, is_active, snooze_minutes FROM alarms WHERE id = ?`,
+    sql: `SELECT id, user_id, target_user_id, time, is_active, snooze_minutes, timezone
+          FROM alarms WHERE id = ?`,
     args: [id],
   });
   return res.rows[0] ?? null;
@@ -152,6 +153,8 @@ describe('타인 발신 알람 — (수신자, HH:mm) 슬롯 원자 교체', () 
     const row = await alarmRow(id1);
     expect(Number(row!.is_active)).toBe(1);
     expect(Number(row!.snooze_minutes)).toBe(12); // 재전송 내용으로 UPDATE 됨
+    // 재사용 UPDATE 도 검증에 쓴 효과 시간대를 저장한다(수신자 기록 없음 → Asia/Seoul).
+    expect(String(row!.timezone)).toBe('Asia/Seoul');
   });
 
   it('수신자 본인이 만든 같은 시각 알람(target 없음)은 서버가 건드리지 않는다', async () => {
@@ -236,19 +239,39 @@ describe('타인 발신 알람 — 수신자 시간대 기준 30분 리드타임
     );
   });
 
-  it('수신자 저장 tz 기록이 없으면 body timezone 으로 폴백해 판정', async () => {
+  it('수신자 저장 tz 기록이 없으면 발신자 body timezone 을 무시하고 Asia/Seoul 로 판정·저장', async () => {
     // 수신자 소유 알람이 하나도 없음(beforeEach 에서 전체 삭제됨).
-    // body = America/New_York → now = NY 7/14 20:00, '20:15' 는 15분 뒤 → 400.
-    // (기본값 Asia/Seoul 로 해석했다면 11시간 이상 남아 201 이 났을 것.)
+    // 발신자가 body 에 America/New_York 을 보내도 폴백으로 신뢰하지 않는다 —
+    // NY 로 해석하면 '20:15' 는 15분 뒤라 400 이 났겠지만, 효과 시간대는 기본값
+    // Asia/Seoul(11시간 이상 리드타임)이므로 201 이어야 한다. 저장 timezone 도
+    // 발신자 값이 아니라 효과 시간대여야 한다.
     const res = await postAlarm(SENDER_A, {
       time: '20:15',
       target_user_id: RECIPIENT.login,
       timezone: 'America/New_York',
     });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error_code: string }).error_code).toBe(
-      'FAMILY_ALARM_LEAD_TIME',
-    );
+    expect(res.status).toBe(201);
+    const id = ((await res.json()) as { alarm: { id: string } }).alarm.id;
+    expect(String((await alarmRow(id))!.timezone)).toBe('Asia/Seoul');
+  });
+
+  it('수신자 저장 tz 가 있으면 그 tz 가 행에 저장된다(발신자 body tz 아님)', async () => {
+    // 수신자 기기가 마지막으로 보고한 시간대 = America/New_York.
+    await db.execute({
+      sql: `INSERT INTO alarms (id, user_id, time, timezone, is_active)
+            VALUES ('guard-tz', ?, '12:00', 'America/New_York', 1)`,
+      args: [RECIPIENT.login],
+    });
+    // now = NY 7/14 20:00 → '21:00' 은 NY 기준 1시간 뒤(리드타임 통과).
+    const res = await postAlarm(SENDER_A, {
+      time: '21:00',
+      target_user_id: RECIPIENT.login,
+      timezone: 'Asia/Seoul', // 발신자 값 — 판정·저장 어디에도 쓰이면 안 된다
+    });
+    expect(res.status).toBe(201);
+    const id = ((await res.json()) as { alarm: { id: string } }).alarm.id;
+    // cron 스케줄러가 검증(NY 기준 리드타임)과 같은 시간대로 해석하도록 효과 tz 저장.
+    expect(String((await alarmRow(id))!.timezone)).toBe('America/New_York');
   });
 });
 

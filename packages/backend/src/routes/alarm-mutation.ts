@@ -26,6 +26,7 @@ import {
 } from './alarm-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
+import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
 
 const alarmMutation = new Hono<AppEnv>();
 
@@ -160,6 +161,42 @@ async function voiceProfileBelongsToCaller(
   return assertSameGroup(db, viewerPk, ownerPk);
 }
 
+/**
+ * greeting 버킷 정책: 알람이 쓰는 보이스가 non-system 클론인지 판정한다.
+ * greeting 문구는 목소리 미리듣기 전용이지만, '유료 클론의 기본(기상 인사) 알람 버킷'
+ * 으로만 예외 허용한다(validateAlarmFields 의 greeting 허용 주석 참고). 시스템 스톡
+ * 보이스 + greeting 조합은 미리듣기 클립을 무료 알람으로 돌려 쓰는 우회라 차단한다.
+ * 접근 가능 여부(소유/공유/프리셋)는 voiceProfileBelongsToCaller /
+ * messageBelongsToCaller 가 별도로 강제하므로 여기서는 클론(비-시스템) 여부만 본다.
+ */
+async function greetingBucketUsesCloneVoice(
+  db: DbExecutor,
+  fields: { voice_profile_id?: string | null; message_id?: string | null },
+): Promise<boolean> {
+  if (fields.voice_profile_id) {
+    const res = await db.execute({
+      sql: `SELECT 1 FROM voice_profiles
+            WHERE id = ? AND COALESCE(is_system, 0) = 0 AND deleted_at IS NULL
+              AND COALESCE(is_draft, 0) = 0
+            LIMIT 1`,
+      args: [fields.voice_profile_id],
+    });
+    return res.rows.length > 0;
+  }
+  if (fields.message_id) {
+    const res = await db.execute({
+      sql: `SELECT 1 FROM messages m
+            JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+            WHERE m.id = ? AND COALESCE(vp.is_system, 0) = 0 AND vp.deleted_at IS NULL
+            LIMIT 1`,
+      args: [fields.message_id],
+    });
+    return res.rows.length > 0;
+  }
+  // 보이스 지정이 전혀 없는 알람(alarm-only 등)은 greeting 버킷을 가질 이유가 없다.
+  return false;
+}
+
 alarmMutation.post('/', async (c) => {
   const userId = c.get('userId');
   const resolvedUserPk = c.get('userIdPK');
@@ -202,6 +239,8 @@ alarmMutation.post('/', async (c) => {
   let targetUserIdForAlarm: string | null = null;
   // 타깃 경로에서 (수신자 PK, 수신자 로그인 id) — 슬롯 교체(claimTargetedAlarmSlot)에 쓴다.
   let targetIdsForReplace: [string, string] | null = null;
+  // 타깃 경로 검증에 쓴 효과 시간대 — 행 저장에도 그대로 쓴다(검증≠저장 불일치 방지).
+  let targetEffectiveTimezone: string | null = null;
   if (body.target_user_id) {
     const rawTargetUserId = body.target_user_id.trim();
     if (!rawTargetUserId) {
@@ -240,12 +279,10 @@ alarmMutation.post('/', async (c) => {
           403,
         );
       }
-      // 수신자 시간대 기준 서버 검증: 효과 시간대(body.timezone → 수신자 최근 알람 tz →
-      // Asia/Seoul)로 다음 발사 시각을 구해 30분 리드타임과 quiet 요일을 판정한다.
-      const effectiveTimezone = await resolveEffectiveTimezone(db, body.timezone, [
-        targetPk,
-        targetLoginId,
-      ]);
+      // 수신자 시간대 기준 서버 검증: 효과 시간대(수신자 최근 알람 tz → Asia/Seoul)로
+      // 다음 발사 시각을 구해 30분 리드타임과 quiet 요일을 판정한다. 발신자 body.timezone
+      // 은 판정·저장 어디에도 쓰지 않는다(우회 차단 — resolveEffectiveTimezone 주석 참고).
+      const effectiveTimezone = await resolveEffectiveTimezone(db, [targetPk, targetLoginId]);
       const nextFire = computeNextAlarmFire(body.time, body.repeat_days ?? [], effectiveTimezone);
       if (
         nextFire &&
@@ -302,6 +339,7 @@ alarmMutation.post('/', async (c) => {
         targetUserIdForAlarm = targetLoginId;
       }
       targetIdsForReplace = [targetPk, targetLoginId];
+      targetEffectiveTimezone = effectiveTimezone;
     }
   }
 
@@ -382,12 +420,34 @@ alarmMutation.post('/', async (c) => {
     }
   }
 
+  // greeting 버킷 정책: greeting 은 '유료 클론의 기본(기상 인사) 알람'으로만 예외 허용.
+  // 시스템 스톡 보이스 + greeting 조합(무료 우회)은 400 으로 차단한다.
+  if (body.bucket_id === STOCK_GREETING_CATEGORY) {
+    const usesClone = await greetingBucketUsesCloneVoice(db, {
+      voice_profile_id: body.voice_profile_id ?? null,
+      message_id: resolvedMessageId,
+    });
+    if (!usesClone) {
+      return c.json(
+        {
+          error: 'greeting 버킷은 클론 보이스 알람에만 쓸 수 있습니다',
+          error_code: 'INVALID_BUCKET_ID',
+        },
+        400,
+      );
+    }
+  }
+
   let alarmId = crypto.randomUUID();
   const mode: AlarmMode =
     (body.mode as AlarmMode | undefined) ?? (creatorHasPaidVoice ? 'tts' : 'sound-only');
   const vibPattern: VibrationPattern =
     (body.vibration_pattern as VibrationPattern | undefined) ?? 'default';
   const wakeMode: WakeMode = (body.wake_mode as WakeMode | undefined) ?? 'sound_then_voice';
+  // 저장 timezone: 타깃 경로는 검증에 쓴 효과 시간대를 그대로 저장해 cron 스케줄러가
+  // 검증과 같은 시간대로 HH:mm 을 해석하게 한다(발신자 body.timezone 불신).
+  // 본인 알람(비-target)은 기존대로 본인 기기 timezone(body)을 저장한다.
+  const storedTimezone = targetUserIdForAlarm ? targetEffectiveTimezone : timezone;
   const insertAlarm = (executor: DbExecutor) =>
     executor.execute({
       sql: `INSERT INTO alarms
@@ -410,7 +470,7 @@ alarmMutation.post('/', async (c) => {
         body.speaker_id ?? null,
         body.raw_audio_url ?? null,
         body.raw_audio_duration_ms ?? null,
-        timezone,
+        storedTimezone,
         body.bucket_id ?? null,
       ],
     });
@@ -442,7 +502,7 @@ alarmMutation.post('/', async (c) => {
           body.speaker_id ?? null,
           body.raw_audio_url ?? null,
           body.raw_audio_duration_ms ?? null,
-          timezone,
+          storedTimezone,
           body.bucket_id ?? null,
           claimed.alarmId,
         ],
@@ -543,7 +603,7 @@ alarmMutation.patch('/:id', async (c) => {
 
   const existing = await db.execute({
     sql: `SELECT a.id, a.message_id, a.mode, a.wake_mode, a.voice_profile_id,
-                 a.speaker_id, a.raw_audio_url, u.plan AS user_plan
+                 a.speaker_id, a.raw_audio_url, a.bucket_id, u.plan AS user_plan
           FROM alarms a
           LEFT JOIN users u ON u.google_id = a.user_id OR u.id = a.user_id
           WHERE a.id = ? AND a.user_id = ?`,
@@ -560,6 +620,7 @@ alarmMutation.patch('/:id', async (c) => {
     voice_profile_id: string | null;
     speaker_id: string | null;
     raw_audio_url: string | null;
+    bucket_id?: string | null;
     user_plan?: string | null;
   }>(existing.rows[0]!);
   const resolvedUserPk = c.get('userIdPK');
@@ -606,6 +667,32 @@ alarmMutation.patch('/:id', async (c) => {
     !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
   ) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
+  // greeting 버킷 정책: PATCH 로 bucket/voice/message 를 바꿔 '시스템 보이스 + greeting'
+  // 조합(무료 우회)을 만들 수 없게, 수정 결과(effective) 기준으로 클론 여부를 검증한다.
+  // 관련 필드를 건드리지 않는 PATCH(예: time 만 변경)는 검사하지 않는다.
+  const effectiveBucketId =
+    body.bucket_id !== undefined ? body.bucket_id : (current.bucket_id ?? null);
+  if (
+    effectiveBucketId === STOCK_GREETING_CATEGORY &&
+    (body.bucket_id !== undefined ||
+      body.voice_profile_id !== undefined ||
+      body.message_id !== undefined)
+  ) {
+    const usesClone = await greetingBucketUsesCloneVoice(db, {
+      voice_profile_id: effectiveVoiceFields.voice_profile_id,
+      message_id: effectiveVoiceFields.message_id,
+    });
+    if (!usesClone) {
+      return c.json(
+        {
+          error: 'greeting 버킷은 클론 보이스 알람에만 쓸 수 있습니다',
+          error_code: 'INVALID_BUCKET_ID',
+        },
+        400,
+      );
+    }
   }
 
   const updates: string[] = [];

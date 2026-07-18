@@ -20,7 +20,9 @@ export async function deletePaidVoiceDataForUser(
 
   // ElevenLabs 클론/R2 오디오 외부 삭제 참조를 행 삭제 전에 큐에 적재 —
   // 다운그레이드로 유료 음성 데이터가 사라질 때 클로닝 본체도 함께 사라지게 한다.
-  await enqueueUserVoiceArtifacts(db, ids);
+  // includeAlarmsTargetingUser:false — 나를 target 으로 한 '타인(발신자) 소유' 알람의
+  // raw 오디오는 발신자의 데이터이므로 여기서 파기하지 않는다(아래 알람 삭제 스코프와 동일).
+  await enqueueUserVoiceArtifacts(db, ids, { includeAlarmsTargetingUser: false });
 
   await db.execute({
     sql: `DELETE FROM notes WHERE sender_id = ? OR receiver_id = ?`,
@@ -65,11 +67,13 @@ export async function deletePaidVoiceDataForUser(
     args: [...ids, ...ids, ...ids, ...ids],
   });
 
+  // 삭제 스코프는 '호출 사용자 소유 데이터'로 한정한다. 나를 target 으로 한 타인(발신자)
+  // 소유 알람 행은 발신자의 데이터이므로 삭제하지 않는다 — 그 알람이 내 목소리/메시지를
+  // 참조하는 경우는 위 sound-only 강등 UPDATE 가 이미 끊었다. (계정 삭제는 이 함수가 아니라
+  // purgeUserAccount(account-deletion.ts)가 자체 스코프로 target 알람까지 정리한다.)
   await db.execute({
-    sql: `DELETE FROM alarms
-          WHERE user_id IN (${ph})
-             OR target_user_id IN (${ph})`,
-    args: [...ids, ...ids],
+    sql: `DELETE FROM alarms WHERE user_id IN (${ph})`,
+    args: ids,
   });
 
   await db.execute({

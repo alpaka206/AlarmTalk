@@ -1072,7 +1072,9 @@ tts.post('/generate', async (c) => {
       // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 cheerfully 를 쓴다.
       // 태그는 문장마다 다시 앞세워 끝까지 톤을 고정하고, 상한 초과 시 태그 없이 폴백한다
       // (그때 tags 배열도 비워 메타와 합성 텍스트를 일치시킨다).
-      const taggedText = applyDeliveryTagPerSentence(draftPreviewTag, requestText);
+      // 상한 200 = 아래 synthesisText 200자 검증과 동일 값 — 기본 300을 쓰면 태그 부착으로
+      // 200을 넘긴 텍스트가 폴백 없이 통과했다가 뒤늦게 TEXT_TOO_LONG 으로 거부된다.
+      const taggedText = applyDeliveryTagPerSentence(draftPreviewTag, requestText, 200);
       const tagApplied = taggedText !== requestText;
       prepared = {
         text: taggedText,
@@ -1081,7 +1083,8 @@ tts.post('/generate', async (c) => {
       };
     } else if (dynamicGenerated) {
       const dynamicTag = dynamicGenerated.tags[0] ?? '';
-      const taggedText = applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text);
+      // 상한 200: 위 draft 미리듣기 경로와 동일 — 태그 부착이 200자 검증을 넘기지 않게 한다.
+      const taggedText = applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
       const tagApplied = dynamicTag !== '' && taggedText !== dynamicGenerated.text;
       prepared = {
         text: taggedText,

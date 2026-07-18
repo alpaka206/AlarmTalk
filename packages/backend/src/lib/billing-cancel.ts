@@ -11,7 +11,7 @@ import {
   type PlayEnv,
   type SubscriptionV2Response,
 } from './play-subscriptions';
-import { planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
+import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
 
 export interface ActiveSubscription {
   subscriptionId: string;
@@ -225,12 +225,15 @@ async function releaseInviteUseForMember(
   }
 }
 
+/**
+ * 구독 행 한 건을 취소 상태로 바꾸고, 그 구독이 발급한 미사용 코드를 만료시킨다.
+ * 사용자 plan 정리는 여기서 하지 않는다 — 호출자가 그 사용자의 구독 취소를 모두
+ * 마친 뒤 syncUserPlanAfterCancel 로 마무리한다(구독별 중복 강등 방지).
+ */
 async function cancelOneSubscriptionRow(
   db: DbExecutor,
   subscriptionId: string,
-  userPk: string,
   now: Date,
-  options: CancelCleanupOptions = {},
 ): Promise<void> {
   await db.execute({
     sql: `UPDATE subscriptions
@@ -241,8 +244,32 @@ async function cancelOneSubscriptionRow(
           WHERE id = ? AND status = 'active'`,
     args: [now.toISOString(), now.toISOString(), subscriptionId],
   });
-  await downgradeUserToFree(db, userPk, options);
   await expireUnusedVouchersFor(db, subscriptionId);
+}
+
+/**
+ * 구독 취소 후 사용자 plan 을 "실제 남은 활성 구독" 기준으로 재정렬한다 (E2).
+ * 부분 취소(/cancel 의 스냅샷 단위 취소, RTDN 스테일/단일 토큰 만료 처리 등)에서
+ * 다른 활성 유료 구독이 남아 있으면 free 로 내리지 않고 그 구독의 plan 으로 유지하며,
+ * is_shared 해제·타인 알람 강등 같은 음성 접근 정리도 하지 않는다(여전히 유료다).
+ * 남은 활성 유료 구독이 없을 때만 free 강등 + 접근 정리를 수행한다.
+ */
+async function syncUserPlanAfterCancel(
+  db: DbExecutor,
+  userPk: string,
+  options: CancelCleanupOptions = {},
+): Promise<void> {
+  const remaining = await findActiveSubscriptionsByUserPk(db, userPk);
+  // 조회가 starts_at DESC 정렬이므로 가장 최근 유료 구독이 우선된다.
+  const paid = remaining.find((s) => PAID_PLAN_TYPES.has(s.planType));
+  if (paid) {
+    await db.execute({
+      sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+      args: [planTypeToUserPlan(paid.planType), userPk],
+    });
+    return;
+  }
+  await downgradeUserToFree(db, userPk, options);
 }
 
 // 결제 해지/만료 흐름의 기본은 "음성 보존"이다. 하드 삭제는 보관 유예(sweep)나
@@ -253,7 +280,8 @@ export async function cancelSubscriptionImmediate(
   now: Date = new Date(),
   options: CancelCleanupOptions = { deleteVoiceData: false },
 ): Promise<void> {
-  await cancelOneSubscriptionRow(db, subscription.subscriptionId, subscription.userPk, now, options);
+  await cancelOneSubscriptionRow(db, subscription.subscriptionId, now);
+  await syncUserPlanAfterCancel(db, subscription.userPk, options);
 
   if (!subscription.planGroupId) return;
 
@@ -287,13 +315,18 @@ export async function cancelSubscriptionImmediate(
       args: [memberUserId, subscription.planGroupId],
     });
     for (const subRow of memberSubRes.rows) {
-      await cancelOneSubscriptionRow(db, String(subRow.id), memberUserId, now);
+      await cancelOneSubscriptionRow(db, String(subRow.id), now);
     }
     // 멤버 강등에는 소유자의 삭제 옵션(options)을 전파하지 않는다. 취소를 개시하지
     // 않은 멤버의 알람·음성·메시지가 하드 삭제되는 것을 막기 위해 데이터는 보존한다
     // (RTDN deactivate 경로와 동일하게 deleteVoiceData:false). 하드 삭제는 취소를
-    // 실제로 개시한 소유자 본인(line 149)에게만 국한한다.
-    await downgradeUserToFree(db, memberUserId, { deleteVoiceData: false });
+    // 실제로 개시한 소유자 본인에게만 국한한다.
+    await syncUserPlanAfterCancel(db, memberUserId, { deleteVoiceData: false });
+    // 소유자 해지로 유료 접근을 잃는 멤버도 소유자와 동일 정책으로 유료 음성 30일
+    // 보관을 예약한다 — 예약이 없으면 멤버의 유료 음성이 sweep 대상에서 빠져 영구
+    // 잔존한다. 멤버가 자기 결제로 재구독하면 entitle/redeem 경로가 유예를 해제하고,
+    // sweep 도 삭제 직전에 활성 유료 구독을 재확인하므로 과삭제 위험은 없다.
+    await schedulePaidVoiceRetention(db, memberUserId, now);
   }
 
   await db.execute({
@@ -338,17 +371,11 @@ export async function leavePlanGroupMember(
   });
 
   for (const row of subscriptionRes.rows) {
-    await cancelOneSubscriptionRow(
-      db,
-      String(row.id),
-      params.userPk,
-      now,
-      { deleteVoiceData: false },
-    );
+    await cancelOneSubscriptionRow(db, String(row.id), now);
   }
-  if (subscriptionRes.rows.length === 0) {
-    await downgradeUserToFree(db, params.userPk, { deleteVoiceData: false });
-  }
+  // 그룹 구독 유무와 무관하게 남은 활성 구독 기준으로 plan 을 재정렬한다
+  // (다른 유료 구독이 남아 있으면 유지, 없으면 free 강등 + 음성 접근 정리).
+  await syncUserPlanAfterCancel(db, params.userPk, { deleteVoiceData: false });
   // 그룹 이탈로 유료 접근을 잃어도 음성은 즉시 삭제하지 않고 30일 보관 유예를 건다.
   await schedulePaidVoiceRetention(db, params.userPk, now);
 

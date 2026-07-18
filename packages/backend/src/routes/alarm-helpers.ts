@@ -327,9 +327,21 @@ export function computeNextAlarmFire(
   const minute = Number(match[2]);
   const zone = isSupportedTimezone(timezone) ? timezone : DEFAULT_ALARM_TIMEZONE;
   // 오늘부터 최대 8일(반복 요일 한 바퀴 + 자정 경계 여유)을 훑어 첫 매칭 시각을 찾는다.
+  // 후보 날짜는 고정 86,400,000ms 더하기가 아니라 '효과 시간대의 달력 날짜' 단위로
+  // 전진시킨다 — DST 지역은 로컬 하루가 23/25시간이라 now+24h 반복은 전환일 직전
+  // 자정 부근에서 달력 날짜를 건너뛰거나(春) 중복 방문(秋)해 발사일이 하루 밀린다.
+  // UTC 정오 앵커로 순수 날짜 산술만 하므로 월/연 롤오버 포함 DST 와 무관하게 안전하다.
+  const today = wallClockAt(now, zone);
   for (let dayOffset = 0; dayOffset <= 8; dayOffset++) {
-    const probe = wallClockAt(new Date(now.getTime() + dayOffset * 86_400_000), zone);
-    const candidate = zonedWallTimeToUtc(probe.year, probe.month, probe.day, hour, minute, zone);
+    const probeDate = new Date(Date.UTC(today.year, today.month - 1, today.day + dayOffset, 12));
+    const candidate = zonedWallTimeToUtc(
+      probeDate.getUTCFullYear(),
+      probeDate.getUTCMonth() + 1,
+      probeDate.getUTCDate(),
+      hour,
+      minute,
+      zone,
+    );
     if (candidate.getTime() <= now.getTime()) continue;
     const fireDayOfWeek = wallClockAt(candidate, zone).dayOfWeek;
     if (repeatDays.length > 0 && !repeatDays.includes(fireDayOfWeek)) continue;
@@ -339,18 +351,19 @@ export function computeNextAlarmFire(
 }
 
 /**
- * 타인 발신 알람 검증(리드타임·quiet) 전용 효과 시간대. 우선순위:
+ * 타인 발신 알람 검증(리드타임·quiet)·저장 전용 효과 시간대. 우선순위:
  *  ① 수신자의 가장 최근 '소유' 알람에 저장된 timezone (수신자 기기가 마지막으로 보고한 시간대)
- *  ② 요청 body 의 timezone (수신자 기록이 없을 때만 폴백 — 정규화 + Intl 지원 확인 통과 시)
- *  ③ DEFAULT_ALARM_TIMEZONE('Asia/Seoul')
+ *  ② DEFAULT_ALARM_TIMEZONE('Asia/Seoul')
  *
- * body.timezone 은 '발신자' 기기 값이라 신뢰할 수 없다 — 발신자가 오프셋이 다른 시간대를
- * 보내 30분 리드타임/quiet 판정을 우회할 수 있으므로, 수신자 저장 시간대가 항상 우선한다.
- * (본인 알람 생성의 timezone 저장 동작과는 무관 — 이 함수는 검증 판정에만 쓰인다.)
+ * 요청 body 의 timezone 은 '발신자' 기기 값이라 어떤 경우에도 판정 기준으로 신뢰하지
+ * 않는다 — 수신자 기록이 없을 때 body 로 폴백하면 발신자가 오프셋이 다른 시간대를 보내
+ * 30분 리드타임/quiet 판정을 우회할 수 있으므로, 폴백은 Asia/Seoul 고정이다.
+ * 호출부는 이 함수가 돌려준 효과 시간대를 알람 행(timezone)에 그대로 저장해, cron
+ * 스케줄러가 검증과 같은 시간대로 HH:mm 을 해석하게 한다.
+ * (본인 알람(비-target) 생성의 timezone 저장 동작과는 무관.)
  */
 export async function resolveEffectiveTimezone(
   db: DbExecutor,
-  bodyTimezone: unknown,
   recipientIds: [string, string],
 ): Promise<string> {
   // 수신자 '소유' 알람(user_id 매칭)의 timezone 이 수신자 기기 시간대를 반영한다.
@@ -363,8 +376,6 @@ export async function resolveEffectiveTimezone(
   });
   const stored = res.rows.length > 0 ? String(res.rows[0]!.timezone ?? '') : '';
   if (stored && isSupportedTimezone(stored)) return stored;
-  const requested = normalizeTimezone(bodyTimezone);
-  if (requested && isSupportedTimezone(requested)) return requested;
   return DEFAULT_ALARM_TIMEZONE;
 }
 
@@ -374,7 +385,9 @@ export async function resolveEffectiveTimezone(
  *
  * 1) 멱등: 같은 발신자(senderUserId)·같은 수신자·같은 time 의 active 알람이 이미 있으면
  *    새 행을 만들지 않고 그 id 를 재사용한다(호출부가 내용을 UPDATE). 같은 요청 재전송이
- *    중복 행을 만들지 않는다.
+ *    중복 행을 만들지 않는다. 이때 기존 행이 가리키던 message_id(previousMessageId)를
+ *    함께 돌려줘, 호출부가 교체로 고아가 된 이전 message 행을 같은 트랜잭션에서 정리할
+ *    수 있게 한다(가족 알람 멱등 재전송 시 미사용 메시지 누적 방지).
  * 2) 교체: 다른 발신자 것을 포함해 `target_user_id = 수신자 AND time = ? AND is_active = 1`
  *    인 기존 발신 알람을 전부 비활성화한다(최신 생성 우선). 비활성화는 클라 pull 동기화
  *    (RemoteAlarm.is_active → resolveReceivedRemoteEnabled)로 수신자 기기에 전파된다.
@@ -388,20 +401,22 @@ export async function claimTargetedAlarmSlot(
   recipientIds: [string, string],
   time: string,
   newAlarmId: string,
-): Promise<{ alarmId: string; reused: boolean }> {
+): Promise<{ alarmId: string; reused: boolean; previousMessageId: string | null }> {
   const existing = await executor.execute({
-    sql: `SELECT id FROM alarms
+    sql: `SELECT id, message_id FROM alarms
           WHERE user_id = ? AND target_user_id IN (?, ?) AND time = ? AND is_active = 1
           ORDER BY created_at DESC LIMIT 1`,
     args: [senderUserId, recipientIds[0], recipientIds[1], time],
   });
   const reused = existing.rows.length > 0;
   const alarmId = reused ? String(existing.rows[0]!.id) : newAlarmId;
+  const previousMessageId =
+    reused && existing.rows[0]!.message_id != null ? String(existing.rows[0]!.message_id) : null;
   // 유지할 행(id 재사용 시 그 행)만 남기고 같은 슬롯의 나머지 발신 알람을 비활성화.
   await executor.execute({
     sql: `UPDATE alarms SET is_active = 0, updated_at = datetime('now')
           WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
     args: [recipientIds[0], recipientIds[1], time, alarmId],
   });
-  return { alarmId, reused };
+  return { alarmId, reused, previousMessageId };
 }

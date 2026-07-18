@@ -55,8 +55,8 @@ function pushRecipient(
 }
 
 function pushRecipientTimezone() {
-  // 효과 시간대 결정: 수신자 최근 알람 timezone 조회. 수신자 저장 tz 가 body timezone 보다
-  // 우선하므로 body 유무와 무관하게 항상 실행된다(없음 → body tz → Asia/Seoul 폴백).
+  // 효과 시간대 결정: 수신자 최근 알람 timezone 조회. 발신자 body timezone 은 어떤
+  // 경우에도 판정에 쓰지 않으므로 항상 실행된다(기록 없음 → Asia/Seoul 직행).
   mockDB.pushResult([]);
 }
 
@@ -560,6 +560,45 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     expect(dubInsert).toBeDefined();
   });
 
+  it('dub_jobs INSERT 는 알람/메시지와 같은 트랜잭션 안(커밋 전)에서 실행된다', async () => {
+    // 커밋 후 별도 실행이면 dub insert 실패/워커 종료 시 '더빙 없는 알람'만 커밋된 채
+    // 수신자에게 노출되는 창이 생긴다 — 커밋 시점에 이미 실행됐는지 검증한다.
+    pushResolveUserPk(SENDER_PK);
+    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
+    pushRecipient();
+    pushRecipientTimezone();
+    mockDB.pushResult([{ id: UPLOAD_ID, user_id: SENDER_PK, object_key: 'audio/voice.wav' }]);
+    pushLatestVoiceProfile(true);
+    pushInserts();
+    mockDB.pushResult([], 1); // INSERT dub_jobs (트랜잭션 내부)
+
+    const client = mockDB.client as unknown as {
+      transaction: () => Promise<{ commit: () => Promise<void> }>;
+    };
+    const origTransaction = client.transaction.bind(mockDB.client);
+    let dubInsertedBeforeCommit = false;
+    client.transaction = async () => {
+      const tx = await origTransaction();
+      const origCommit = tx.commit.bind(tx);
+      tx.commit = async () => {
+        dubInsertedBeforeCommit = mockDB.calls.some((c) => c.sql.includes('INSERT INTO dub_jobs'));
+        await origCommit();
+      };
+      return tx;
+    };
+    try {
+      const app = buildApp();
+      const res = await app.request(
+        jsonReq('POST', '/family-alarm/alarms/voice', validVoiceBody({ dub_target_language: 'en' })),
+      );
+      expect(res.status).toBe(201);
+      expect((await res.json()).dub_job).not.toBeNull();
+    } finally {
+      client.transaction = origTransaction;
+    }
+    expect(dubInsertedBeforeCommit).toBe(true);
+  });
+
   it('repeat_days 정규화 (voice 엔드포인트)', async () => {
     pushVoiceHappyPath();
 
@@ -624,7 +663,7 @@ describe('POST /family-alarm/alarms — 수신자 시간대 가드', () => {
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient({ quietWindows: '[]' });
-    pushRecipientTimezone(); // 수신자 저장 tz 없음 → body 의 Asia/Seoul. KST 09:20 은 20분 뒤 → 거부.
+    pushRecipientTimezone(); // 수신자 저장 tz 없음 → Asia/Seoul 기본값. KST 09:20 은 20분 뒤 → 거부.
 
     const app = buildApp();
     const res = await app.request(

@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
+import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
 import {
   getSharedInMemoryVoiceStorage,
   resetSharedInMemoryVoiceStorage,
@@ -114,6 +115,24 @@ function statusCalls(status: string) {
     (call) =>
       call.sql.includes('speech_style_status = ?') && call.args.includes(status),
   );
+}
+
+/** 재시도 원자적 클레임(failed → pending) UPDATE 콜 조회. */
+function retryClaimCalls() {
+  return mockDB.calls.filter(
+    (call) =>
+      call.sql.includes("speech_style_status = 'pending'") &&
+      call.sql.includes("speech_style_status = 'failed'"),
+  );
+}
+
+/** 민감 동의(음성/국외이전) 동의 완료 행 — setConsentMissing(true) 큐 제어용. */
+function sensitiveConsentRows() {
+  return ['voice_biometric', 'overseas_transfer'].map((t) => ({
+    consent_type: t,
+    policy_version: CURRENT_POLICY_VERSION,
+    agreed: 1,
+  }));
 }
 
 beforeEach(() => {
@@ -228,6 +247,67 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
     const stored = await getSharedInMemoryVoiceStorage().get(objectKey);
     expect(stored).not.toBeNull();
   });
+
+  it('클론 완료 직후 동의 철회 시 원본 보관을 스킵하고 외부 전사도 시작하지 않는다 (H)', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult(sensitiveConsentRows()); // 1) 라우트 진입 동의 확인 — 동의됨
+    mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 2) 프로필 수
+    mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 3) 슬롯 수(tx)
+    mockDB.pushResult([], 1); // 4) 월간 attempt 예약
+    mockDB.pushResult([], 1); // 5) voice_profiles INSERT
+    mockDB.pushResult(sensitiveConsentRows()); // 6) 완료 tx 동의 재확인 — 아직 동의됨
+    mockDB.pushResult([], 1); // 7) status='ready' 전환
+    mockDB.pushResult([]); // 8) 원본 보관 직전 재확인 — 철회됨(빈 결과)
+    // 이후(상태 pending 기록, 분석 시작 동의 재확인)는 큐 소진 → 기본 빈 결과(=철회 유지).
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
+
+    const { ctx, drain } = fakeExecutionCtx();
+    const app = buildApp();
+    const res = await app.request(cloneForm(), undefined, ENV, ctx);
+    expect(res.status).toBe(201); // 등록 자체는 이미 완료 — 보관/분석만 중단한다
+    await drain();
+
+    // 철회 후에는 원본을 R2/voice_uploads 에 새로 남기지 않는다.
+    expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO voice_uploads'))).toBe(false);
+    // 분석 시작 재확인에도 걸려 외부 전사(ElevenLabs)로 원본을 보내지 않는다.
+    expect(mockSpeechToText).not.toHaveBeenCalled();
+    expect(statusCalls('pending')).toHaveLength(1);
+    expect(statusCalls('failed')).toHaveLength(1);
+  });
+
+  it('분석 왕복 중 동의 철회 시 말투 결과를 저장하지 않는다 (H — 저장 직전 재확인)', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult(sensitiveConsentRows()); // 1) 라우트 진입
+    mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 2) 프로필 수
+    mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 3) 슬롯 수
+    mockDB.pushResult([], 1); // 4) attempt 예약
+    mockDB.pushResult([], 1); // 5) voice_profiles INSERT
+    mockDB.pushResult(sensitiveConsentRows()); // 6) 완료 tx 재확인
+    mockDB.pushResult([], 1); // 7) ready 전환
+    mockDB.pushResult(sensitiveConsentRows()); // 8) 원본 보관 직전 재확인 — 동의됨(보관 진행)
+    mockDB.pushResult([], 1); // 9) voice_uploads INSERT
+    mockDB.pushResult([], 1); // 10) status='pending'
+    mockDB.pushResult(sensitiveConsentRows()); // 11) 분석 시작 재확인 — 동의됨
+    mockDB.pushResult([]); // 12) 저장 직전 재확인 — 철회됨
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
+    mockSpeechToText.mockResolvedValue('마 오늘 아침은 우째 이래 좋노, 퍼뜩 일어나라 마');
+    mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
+
+    const { ctx, drain } = fakeExecutionCtx();
+    const app = buildApp();
+    const res = await app.request(cloneForm(), undefined, ENV, ctx);
+    expect(res.status).toBe(201);
+    await drain();
+
+    // 철회 전에 시작된 전사는 있었지만, 파생 결과(speech_style)는 저장하지 않는다.
+    expect(mockSpeechToText).toHaveBeenCalled();
+    expect(mockDB.calls.some((call) => call.sql.includes("speech_style_status = 'done'"))).toBe(
+      false,
+    );
+    expect(statusCalls('failed')).toHaveLength(1);
+    // 보관은 철회 전에 이뤄졌으므로 존재한다(원본 보관 스킵과 구분).
+    expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO voice_uploads'))).toBe(true);
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -275,8 +355,9 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error_code).toBe('SOURCE_AUDIO_MISSING');
     expect(mockSpeechToText).not.toHaveBeenCalled();
-    // 소스가 없으면 상태를 pending 으로 바꾸지 않는다(기존 failed 유지).
+    // 소스가 없으면 상태를 pending 으로 바꾸지 않는다(기존 failed 유지 — 클레임도 없음).
     expect(statusCalls('pending')).toHaveLength(0);
+    expect(retryClaimCalls()).toHaveLength(0);
     expectProfileScopedSourceQuery();
   });
 
@@ -309,6 +390,7 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     mockDB.pushResult([
       { object_key: meta.objectKey, mime_type: 'audio/wav', original_name: 'sample.wav' },
     ]);
+    mockDB.pushResult([], 1); // 원자적 클레임(failed → pending) 성공
     mockSpeechToText.mockResolvedValue('오늘도 존댓말로 또박또박 말하는 전사 텍스트입니다');
     mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
 
@@ -323,7 +405,10 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
       mimeType: 'audio/wav',
       fileName: 'sample.wav',
     });
-    expect(statusCalls('pending')).toHaveLength(1);
+    // pending 전환은 무조건 UPDATE 가 아니라 failed 일 때만 성립하는 원자적 클레임이다.
+    const claims = retryClaimCalls();
+    expect(claims).toHaveLength(1);
+    expect(claims[0]!.args).toContain(V1);
     const doneCall = mockDB.calls.find((call) =>
       call.sql.includes("speech_style_status = 'done'"),
     );
@@ -332,12 +417,45 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     expect(doneCall!.args).toContain(V1);
   });
 
+  it('동시 재시도 경쟁: 클레임(failed→pending) 0행이면 409 + 분석 미실행', async () => {
+    const meta = await storeSourceUpload();
+    mockDB.pushResult([{ id: V1, preview_language: 'ko' }]);
+    mockDB.pushResult([
+      { object_key: meta.objectKey, mime_type: 'audio/wav', original_name: 'sample.wav' },
+    ]);
+    mockDB.pushResult([], 0); // 다른 요청이 이미 pending 점유(또는 failed 아님)
+
+    const res = await req(buildApp(), jsonReq('POST', `/vp/${V1}/speech-style/retry`));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('SPEECH_STYLE_RETRY_CONFLICT');
+    // 진 쪽은 전사/분석(외부 호출)을 시작하지 않는다.
+    expect(mockSpeechToText).not.toHaveBeenCalled();
+    expect(mockAnalyzeSpeechStyle).not.toHaveBeenCalled();
+  });
+
+  it('동의 철회 후 재시도는 403 CONSENT_REQUIRED — 전사/클레임 없이 차단', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([{ id: V1, preview_language: 'ko' }]); // 소유권 조회
+    mockDB.pushResult([]); // user_consents — 철회 상태(빈 결과)
+
+    const res = await req(buildApp(), jsonReq('POST', `/vp/${V1}/speech-style/retry`));
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('CONSENT_REQUIRED');
+    expect(body.consent).toBe('voice_biometric');
+    expect(mockSpeechToText).not.toHaveBeenCalled();
+    expect(retryClaimCalls()).toHaveLength(0);
+  });
+
   it('preview_language=ja 는 분석 언어로 전달된다', async () => {
     const meta = await storeSourceUpload();
     mockDB.pushResult([{ id: V1, preview_language: 'ja' }]);
     mockDB.pushResult([
       { object_key: meta.objectKey, mime_type: 'audio/wav', original_name: 'sample.wav' },
     ]);
+    mockDB.pushResult([], 1); // 원자적 클레임 성공
     mockSpeechToText.mockResolvedValue('関西弁でほんまに元気よく話す文字起こしテキストやで');
     mockAnalyzeSpeechStyle.mockResolvedValue(SAMPLE_STYLE);
 
@@ -352,6 +470,7 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
     mockDB.pushResult([
       { object_key: meta.objectKey, mime_type: 'audio/wav', original_name: 'sample.wav' },
     ]);
+    mockDB.pushResult([], 1); // 원자적 클레임 성공
     mockSpeechToText.mockRejectedValue(new Error('scribe down'));
 
     const res = await req(buildApp(), jsonReq('POST', `/vp/${V1}/speech-style/retry`));

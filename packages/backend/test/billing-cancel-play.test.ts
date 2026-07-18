@@ -26,6 +26,7 @@ vi.mock('../src/lib/google-oauth', () => ({
 import billingMutation from '../src/routes/billing-mutation';
 import billingGoogle from '../src/routes/billing-google';
 import {
+  cancelSubscriptionImmediate,
   processSubscriptionExpiry,
   sweepPaidVoiceRetention,
 } from '../src/lib/billing-cancel';
@@ -141,9 +142,8 @@ describe('POST /billing/cancel (google 결제)', () => {
   it('immediate: Play :revoke 성공 → 구독 cancelled·음성 보존·30일 보관 예약', async () => {
     const fetchMock = stubPlayFetch(200, {});
     mockDB.pushResult([{ id: 'user-pk-1' }]); // resolveUserPk
-    mockDB.pushResult([SUB_ROW]); // 활성 구독 (라우트)
+    mockDB.pushResult([SUB_ROW]); // 활성 구독 스냅샷 (라우트, 트랜잭션 안에서 재조회 없음)
     mockDB.pushResult([GOOGLE_TXN_ROW]); // store_transactions
-    mockDB.pushResult([SUB_ROW]); // cancelActiveSubscriptionsForUser 내부 재조회
 
     const res = await buildApp().request(
       jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
@@ -304,9 +304,8 @@ describe('POST /billing/cancel — 다중 구독 토큰', () => {
   it('immediate 도 모든 토큰에 :revoke 를 호출한다', async () => {
     const fetchMock = stubPlayFetch(200, {});
     mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([SUB_ROW, SUB_ROW_2]);
+    mockDB.pushResult([SUB_ROW, SUB_ROW_2]); // 활성 구독 스냅샷 (트랜잭션 안에서 재조회 없음)
     mockDB.pushResult([GOOGLE_TXN_ROW, GOOGLE_TXN_ROW_2]);
-    mockDB.pushResult([SUB_ROW, SUB_ROW_2]); // cancelActiveSubscriptionsForUser 내부 재조회
 
     const res = await buildApp().request(
       jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
@@ -401,9 +400,8 @@ describe('POST /billing/cancel — 이미 취소/철회된 토큰 수렴 (C5)', 
       );
     vi.stubGlobal('fetch', fetchMock);
     mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([SUB_ROW]);
+    mockDB.pushResult([SUB_ROW]); // 활성 구독 스냅샷 (트랜잭션 안에서 재조회 없음)
     mockDB.pushResult([GOOGLE_TXN_ROW]);
-    mockDB.pushResult([SUB_ROW]); // cancelActiveSubscriptionsForUser 내부 재조회
 
     const res = await buildApp().request(
       jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
@@ -445,9 +443,8 @@ describe('POST /billing/cancel (apple·스텁)', () => {
   it('스토어 트랜잭션 없는 구독(dev 스텁/프로모) immediate: Play 호출 없이 해지 + 보관 예약', async () => {
     const fetchMock = stubPlayFetch(200, {});
     mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([SUB_ROW]);
+    mockDB.pushResult([SUB_ROW]); // 활성 구독 스냅샷 (트랜잭션 안에서 재조회 없음)
     mockDB.pushResult([]); // store_transactions 없음
-    mockDB.pushResult([SUB_ROW]); // cancelActiveSubscriptionsForUser 내부 재조회
 
     const res = await buildApp().request(
       jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
@@ -462,6 +459,126 @@ describe('POST /billing/cancel (apple·스텁)', () => {
     expect(findCall("status = 'cancelled'")).toBeDefined();
     expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
     expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /billing/cancel — 스냅샷-트랜잭션 정합 (E1)
+// ---------------------------------------------------------------------------
+describe('POST /billing/cancel — 스냅샷 단위 취소 (E1)', () => {
+  it('Play 호출 중 새 구독이 confirm 되면 스냅샷만 취소하고 새 구독·plan 은 보존한다', async () => {
+    stubPlayFetch(200, {});
+    const NEW_SUB_ROW = { ...SUB_ROW, sub_id: 'sub-new' };
+    mockDB.pushResult([{ id: 'user-pk-1' }]); // resolveUserPk
+    mockDB.pushResult([SUB_ROW]); // 활성 구독 스냅샷 (Play revoke 대상)
+    mockDB.pushResult([GOOGLE_TXN_ROW]); // store_transactions
+    mockDB.pushResult([], 1); // UPDATE subscriptions — sub-1 취소
+    mockDB.pushResult([], 1); // 미사용 코드 만료
+    mockDB.pushResult([NEW_SUB_ROW]); // plan 재정렬 조회 — 그 사이 confirm 된 새 활성 구독
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
+      undefined,
+      PLAY_ENV,
+    );
+
+    expect(res.status).toBe(200);
+    // 취소는 스냅샷의 sub-1 한 건만 — 새 구독(sub-new)은 건드리지 않는다.
+    const cancelCalls = mockDB.calls.filter((c) => c.sql.includes("status = 'cancelled'"));
+    expect(cancelCalls).toHaveLength(1);
+    expect(cancelCalls[0]!.args).toContain('sub-1');
+    expect(cancelCalls[0]!.args).not.toContain('sub-new');
+    // 남은 활성 구독이 유료(personal)이므로 free 강등·음성 접근 정리를 하지 않는다.
+    expect(findCall("plan = 'free'")).toBeUndefined();
+    expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['plus', 'user-pk-1']);
+    expect(findCall('UPDATE voice_profiles')).toBeUndefined();
+    expect(findCall('UPDATE alarms')).toBeUndefined();
+    // 보관 예약은 유지 — sweep 이 삭제 전 활성 유료 구독을 재확인한다.
+    expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cancelSubscriptionImmediate — 남은 활성 구독 기준 plan 재정렬 (E2)
+// ---------------------------------------------------------------------------
+describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
+  const SUB_1 = {
+    subscriptionId: 'sub-1',
+    userPk: 'user-pk-1',
+    planId: 'plan-1',
+    planType: 'personal',
+    planGroupId: null,
+  };
+
+  it('활성 2구독 중 1개만 취소하면 남은 구독의 plan 을 유지한다 (free 강등 없음)', async () => {
+    mockDB.pushResult([], 1); // UPDATE subscriptions — sub-1 취소
+    mockDB.pushResult([], 1); // 미사용 코드 만료
+    mockDB.pushResult([
+      { sub_id: 'sub-2', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal' },
+    ]); // 남은 활성 구독 조회
+    mockDB.pushResult([], 1); // UPDATE users SET plan = ? (유지)
+
+    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date());
+
+    expect(findCall("plan = 'free'")).toBeUndefined();
+    expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['plus', 'user-pk-1']);
+    // 여전히 유료이므로 is_shared 해제·타인 알람 강등을 하지 않는다.
+    expect(findCall('UPDATE voice_profiles')).toBeUndefined();
+    expect(findCall('UPDATE alarms')).toBeUndefined();
+  });
+
+  it('마지막 활성 구독을 취소하면 free 강등 + 음성 접근 정리를 수행한다', async () => {
+    mockDB.pushResult([], 1); // UPDATE subscriptions — sub-1 취소
+    mockDB.pushResult([], 1); // 미사용 코드 만료
+    mockDB.pushResult([]); // 남은 활성 구독 없음
+
+    await cancelSubscriptionImmediate(mockDB.client as never, SUB_1, new Date());
+
+    expect(findCall("plan = 'free'")).toBeDefined();
+    expect(findCall('UPDATE voice_profiles')).toBeDefined();
+    expect(findCall('UPDATE alarms')).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cancelSubscriptionImmediate — 가족 소유자 즉시 해지 시 멤버 보관 예약 (B)
+// ---------------------------------------------------------------------------
+describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
+  it('멤버 구독 취소 + 멤버에게도 유료 음성 30일 보관을 예약한다', async () => {
+    const OWNER_SUB = {
+      subscriptionId: 'sub-owner',
+      userPk: 'owner-pk',
+      planId: 'plan-f',
+      planType: 'family',
+      planGroupId: 'group-1',
+    };
+    mockDB.pushResult([], 1); // UPDATE subscriptions — 소유자 구독 취소
+    mockDB.pushResult([], 1); // 소유자 구독 미사용 코드 만료
+    mockDB.pushResult([]); // 소유자 남은 활성 구독 없음 → free 강등
+    mockDB.pushResult([], 1); // UPDATE users free (소유자)
+    mockDB.pushResult([]); // resolveUserLoginId (소유자)
+    mockDB.pushResult([], 1); // UPDATE voice_profiles (소유자)
+    mockDB.pushResult([], 1); // UPDATE alarms (소유자)
+    mockDB.pushResult([{ owner_user_id: 'owner-pk' }]); // plan_groups — 소유자 본인
+    mockDB.pushResult([
+      { user_id: 'owner-pk', role: 'owner' },
+      { user_id: 'member-pk', role: 'member' },
+    ]); // plan_group_members
+    mockDB.pushResult([{ id: 'sub-member' }]); // 멤버의 그룹 구독
+    // 이후(멤버 취소·강등·보관 예약·그룹 삭제)는 기본 빈 결과로 진행.
+
+    await cancelSubscriptionImmediate(mockDB.client as never, OWNER_SUB, new Date());
+
+    // 멤버 구독도 취소된다.
+    const cancelCalls = mockDB.calls.filter((c) => c.sql.includes("status = 'cancelled'"));
+    expect(cancelCalls.some((c) => c.args.includes('sub-member'))).toBe(true);
+    // 멤버에게도 30일 보관 예약이 생성된다 (소유자와 동일 정책).
+    const retentionInserts = mockDB.calls.filter((c) =>
+      c.sql.includes('INSERT INTO paid_voice_retention'),
+    );
+    expect(retentionInserts.map((c) => c.args[0])).toContain('member-pk');
+    // 그룹 멤버십 정리는 유지된다.
+    expect(findCall('DELETE FROM plan_group_members')).toBeDefined();
   });
 });
 
@@ -840,9 +957,32 @@ describe('POST /billing/google/confirm — 계정 바인딩 (C4)', () => {
     expect((await res.json()).success).toBe(true);
   });
 
-  it('식별자가 없으면(계약 이전 구버전 구매) 기존대로 허용한다', async () => {
+  // F: 출시 전 fresh DB 전제 — 새 클라는 항상 obfuscatedAccountId 를 설정하므로
+  // 식별자 없는 토큰의 "최초 바인딩"은 403 으로 거절한다(구클라는 업데이트 유도).
+  it('식별자 부재 + 미바인딩 토큰(첫 청구)은 403 TRANSACTION_ACCOUNT_UNVERIFIED + DB 무변경', async () => {
     stubPlayFetch(200, CONFIRM_SUB);
-    pushConfirmHappyPathResults();
+    mockDB.pushResult([{ id: 'user-pk-1' }]); // resolveUserPk
+    mockDB.pushResult([]); // store_transactions 바인딩 조회 — 없음(첫 청구)
+
+    const res = await buildGoogleApp().request(
+      jsonReq('POST', '/billing/google/confirm', CONFIRM_BODY),
+      undefined,
+      PLAY_ENV,
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('TRANSACTION_ACCOUNT_UNVERIFIED');
+    expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
+    expect(mockDB.transactions.commits).toBe(0);
+  });
+
+  it('식별자 부재라도 이미 바인딩된 토큰 재전송(갱신)은 기존 로직대로 통과한다', async () => {
+    stubPlayFetch(200, CONFIRM_SUB);
+    mockDB.pushResult([{ id: 'user-pk-1' }]); // resolveUserPk
+    mockDB.pushResult([{ user_id: 'user-pk-1' }]); // store_transactions 바인딩 조회 — 기존 바인딩
+    mockDB.pushResult([PLAN_ROW]); // loadPlanByKey
+    mockDB.pushResult([{ user_id: 'user-pk-1', subscription_id: 'sub-1' }]); // applyStoreEntitlement — 기존 트랜잭션
+    mockDB.pushResult([{ plan_id: 'plan-1' }]); // currentSubscriptionPlanId — 동일 plan → 갱신 분기
 
     const res = await buildGoogleApp().request(
       jsonReq('POST', '/billing/google/confirm', CONFIRM_BODY),
@@ -852,6 +992,7 @@ describe('POST /billing/google/confirm — 계정 바인딩 (C4)', () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).success).toBe(true);
-    expect(findCall('INSERT OR REPLACE INTO store_transactions')).toBeDefined();
+    // 갱신 분기 — 기존 구독 만료를 스토어 값으로 연장한다.
+    expect(findCall('SET expires_at = ?')).toBeDefined();
   });
 });

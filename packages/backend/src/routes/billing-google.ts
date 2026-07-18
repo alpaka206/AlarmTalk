@@ -167,13 +167,13 @@ billingGoogle.post('/google/confirm', async (c) => {
     return c.json({ error: 'Subscription is expired', error_code: 'SUBSCRIPTION_EXPIRED' }, 400);
   }
 
+  const db = getDB(c.env);
+
   // 구매-계정 바인딩 검증 — store_transactions 최초 바인딩 전에 수행한다.
   // 계약(Android PlayBillingManager 와 공유): 클라는 구매 시
   // setObfuscatedAccountId(sha256hex(로그인 사용자 id — JWT sub 와 동일한 세션 user id))
   // 를 설정한다. Play 응답의 식별자가 호출자(sub 또는 users.id PK)의 해시와 다르면
-  // 훔친/다른 계정의 purchaseToken 이므로 403 으로 거절한다. 식별자가 없으면
-  // (계약 이전 구버전 구매) 기존대로 허용하고, applyStoreEntitlement 의 first-claim
-  // 409(TRANSACTION_OWNED_BY_OTHER_USER)가 심층방어로 남는다.
+  // 훔친/다른 계정의 purchaseToken 이므로 403 으로 거절한다.
   const obfuscatedId =
     subscription.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim();
   if (obfuscatedId) {
@@ -195,9 +195,33 @@ billingGoogle.post('/google/confirm', async (c) => {
         403,
       );
     }
+  } else {
+    // 식별자 부재 시 "최초 바인딩"은 거절한다. 출시 전 fresh DB 전제 — 새 클라는
+    // 구매 시 항상 setObfuscatedAccountId 를 설정하므로 식별자 없는 토큰은 계약 이전
+    // 구클라 구매뿐이고, 이는 앱 업데이트를 유도한다(허용하면 유출 토큰을 아무
+    // 계정이나 선점하는 first-claim 구멍이 남는다). 이미 바인딩된 토큰의 재전송
+    // (갱신)은 기존 로직대로 통과 — applyStoreEntitlement 의 소유자 검증
+    // (409 TRANSACTION_OWNED_BY_OTHER_USER)이 심층방어로 남는다.
+    const boundRes = await db.execute({
+      sql: `SELECT user_id FROM store_transactions
+            WHERE provider = 'google' AND provider_transaction_id = ?`,
+      args: [parsed.purchase_token],
+    });
+    if (boundRes.rows.length === 0) {
+      logStructured('warn', {
+        at: 'billing.google.confirm',
+        step: 'account_binding',
+        error: 'obfuscatedExternalAccountId missing on first claim',
+      });
+      return c.json(
+        {
+          error: 'Purchase is missing the account identifier',
+          error_code: 'TRANSACTION_ACCOUNT_UNVERIFIED',
+        },
+        403,
+      );
+    }
   }
-
-  const db = getDB(c.env);
   const plan = await loadPlanByKey(db, planKey);
   if (!plan) {
     return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
