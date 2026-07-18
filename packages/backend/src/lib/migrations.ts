@@ -1378,6 +1378,15 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_profiles ADD COLUMN preview_tag TEXT`,
     ],
   },
+  {
+    id: 66,
+    name: 'voice-speech-style',
+    statements: [
+      // 클론 등록 녹음 전사에서 분석한 화자 말투(사투리 지역·강도·격식·특징 어미) JSON.
+      // 미리듣기·사전렌더 문구 생성 프롬프트에 주입돼 그 사람 말투로 문구가 나오게 한다.
+      `ALTER TABLE voice_profiles ADD COLUMN speech_style TEXT`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

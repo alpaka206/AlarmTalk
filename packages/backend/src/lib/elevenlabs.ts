@@ -29,6 +29,29 @@ export class ElevenLabsClient {
     return res;
   }
 
+  /**
+   * 음성 → 텍스트 전사(Scribe). 클론 등록 녹음의 말투(사투리·존댓말) 분석 입력으로 쓴다.
+   * 실패는 호출자가 best-effort 로 처리한다(전사 실패가 등록을 막지 않음).
+   */
+  async speechToText(audioData: ArrayBuffer, options?: AudioUploadOptions): Promise<string> {
+    const formData = new FormData();
+    const mimeType = normalizeAudioMimeType(options?.mimeType);
+    formData.append('model_id', 'scribe_v1');
+    formData.append(
+      'file',
+      new Blob([audioData], { type: mimeType }),
+      normalizeAudioFileName(options?.fileName, 'sample', mimeType),
+    );
+    const res = await this.request('/v1/speech-to-text', {
+      method: 'POST',
+      body: formData,
+      // 1~2분 녹음 전사는 클론 생성보다 오래 걸릴 수 있어 여유를 둔다.
+      signal: AbortSignal.timeout(120_000),
+    });
+    const json = (await res.json()) as { text?: string };
+    return (json.text ?? '').trim();
+  }
+
   /** Instant Voice Clone - 짧은 샘플로 즉시 음성 클론 */
   async createInstantClone(
     audioData: ArrayBuffer,

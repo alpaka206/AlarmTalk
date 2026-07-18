@@ -71,7 +71,7 @@ internal fun previewVibration(context: Context, patternName: String) {
         .build()
     vibrator.cancel()
     @Suppress("DEPRECATION")
-    vibrator.vibrate(VibrationEffect.createWaveform(VibrationPatternLibrary.waveform(patternName), -1), attributes)
+    vibrator.vibrate(VibrationPatternLibrary.effect(patternName, repeat = false), attributes)
 }
 
 @Composable

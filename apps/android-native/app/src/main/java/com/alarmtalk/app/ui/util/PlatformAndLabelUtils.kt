@@ -195,10 +195,16 @@ internal fun snoozeListLabel(context: Context, enabled: Boolean, minutes: Int, r
         null
     }
 
+// 패턴 이름은 알람음 이름(예: Homecoming)과 같은 고유명 취급 — 전 로케일 영어 고정
+// (base strings 에 translatable=false). '기본'·'꺼짐' 같은 의미어만 로컬라이즈한다.
 internal fun vibrationLabel(context: Context, pattern: String): String = when (pattern) {
     VibrationPatterns.STRONG -> context.getString(R.string.label_vibration_strong)
     VibrationPatterns.SHORT -> context.getString(R.string.label_vibration_short)
     VibrationPatterns.MEDIUM -> context.getString(R.string.label_vibration_medium)
+    VibrationPatterns.RISE -> context.getString(R.string.label_vibration_rise)
+    VibrationPatterns.PULSE -> context.getString(R.string.label_vibration_pulse)
+    VibrationPatterns.BOUNCE -> context.getString(R.string.label_vibration_bounce)
+    VibrationPatterns.DRUMROLL -> context.getString(R.string.label_vibration_drumroll)
     VibrationPatterns.HEARTBEAT -> context.getString(R.string.label_vibration_heartbeat)
     VibrationPatterns.TICKTOCK -> context.getString(R.string.label_vibration_ticktock)
     VibrationPatterns.WALTZ -> context.getString(R.string.label_vibration_waltz)
@@ -206,6 +212,8 @@ internal fun vibrationLabel(context: Context, pattern: String): String = when (p
     VibrationPatterns.OFF_BEAT -> context.getString(R.string.label_vibration_off_beat)
     VibrationPatterns.RIPPLE -> context.getString(R.string.label_vibration_ripple)
     VibrationPatterns.SIREN -> context.getString(R.string.label_vibration_siren)
+    VibrationPatterns.SOFT -> context.getString(R.string.label_vibration_soft)
+    VibrationPatterns.SOS -> context.getString(R.string.label_vibration_sos)
     VibrationPatterns.NONE -> context.getString(R.string.label_vibration_off)
     else -> context.getString(R.string.label_vibration_basic_call)
 }

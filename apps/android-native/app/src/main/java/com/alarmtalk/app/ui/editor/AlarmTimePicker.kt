@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -85,11 +87,12 @@ internal fun AlarmTimePickerCard(
         commitTime(workingHour, floorMod(workingMinute + steps, 60))
     }
 
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        // 좁은 화면(360dp급, S22 등)에선 오전/오후 고정폭 + displayLarge 숫자가 컬럼 폭을
+        // 넘어 분 숫자 오른쪽이 잘렸다 — 가용 폭에 비례해 휠 타이포·고정폭을 함께 줄인다.
+        // 392dp 이상(대부분의 큰 폰)은 1.0 그대로.
+        val wheelScale = (maxWidth / 392.dp).coerceIn(0.78f, 1f)
+        val scaledItemHeight = itemHeight * wheelScale
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(34.dp),
@@ -98,7 +101,7 @@ internal fun AlarmTimePickerCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(itemHeight * 3 + verticalWheelPadding * 2)
+                    .height(scaledItemHeight * 3 + verticalWheelPadding * 2)
                     // 외곽이 8→24dp 로 정렬되며 콘텐츠 폭이 32dp 줄어든 만큼, 숫자 컬럼 폭을
                     // 지키려고 비핵심 여백(행 패딩 22→12, 컬럼 간격 16→12)에서 정확히 32dp 회수.
                     .padding(horizontal = 12.dp),
@@ -107,9 +110,10 @@ internal fun AlarmTimePickerCard(
             ) {
                 AmPmWheelColumn(
                     hour = workingHour,
-                    itemHeight = itemHeight,
+                    itemHeight = scaledItemHeight,
                     selectedTextColor = selectedTextColor,
                     unselectedTextColor = unselectedTextColor,
+                    textScale = wheelScale,
                     onStep = { steps ->
                         if (abs(steps) % 2 == 1) {
                             commitTime((workingHour + 12) % 24, workingMinute)
@@ -117,34 +121,36 @@ internal fun AlarmTimePickerCard(
                     },
                 )
                 DraggableTimeWheelColumn(
-                    itemHeight = itemHeight,
+                    itemHeight = scaledItemHeight,
                     selectedTextColor = selectedTextColor,
                     unselectedTextColor = unselectedTextColor,
                     itemLabel = { offset -> "%d".format(hour12(workingHour + offset)) },
                     maxStepsPerGesture = 15,
+                    textScale = wheelScale,
                     onStep = ::applyHourSteps,
                     modifier = Modifier.weight(1f),
                 )
                 Box(
                     modifier = Modifier
-                        .width(36.dp)
-                        .height(itemHeight * 3),
+                        .width(36.dp * wheelScale)
+                        .height(scaledItemHeight * 3),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = ":",
-                        style = MaterialTheme.typography.displayLarge,
+                        style = MaterialTheme.typography.displayLarge.scaledBy(wheelScale),
                         fontWeight = FontWeight.Bold,
                         color = selectedTextColor,
                         textAlign = TextAlign.Center,
                     )
                 }
                 DraggableTimeWheelColumn(
-                    itemHeight = itemHeight,
+                    itemHeight = scaledItemHeight,
                     selectedTextColor = selectedTextColor,
                     unselectedTextColor = unselectedTextColor,
                     itemLabel = { offset -> "%02d".format(floorMod(workingMinute + offset, 60)) },
                     maxStepsPerGesture = 15,
+                    textScale = wheelScale,
                     onStep = ::applyMinuteSteps,
                     modifier = Modifier.weight(1f),
                 )
@@ -152,3 +158,14 @@ internal fun AlarmTimePickerCard(
         }
     }
 }
+
+// 휠 타이포를 축소 배율에 맞게 줄인다(fontSize·lineHeight 동시 축소, 미지정이면 그대로).
+internal fun androidx.compose.ui.text.TextStyle.scaledBy(scale: Float): androidx.compose.ui.text.TextStyle =
+    if (scale >= 1f) {
+        this
+    } else {
+        copy(
+            fontSize = if (fontSize.isSpecified) fontSize * scale else fontSize,
+            lineHeight = if (lineHeight.isSpecified) lineHeight * scale else lineHeight,
+        )
+    }

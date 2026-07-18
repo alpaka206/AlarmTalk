@@ -41,12 +41,16 @@ import com.alarmtalk.app.data.VibrationPatterns
 
 internal val SnoozeIntervals = listOf(5, 10, 15, 30)
 
-// 라벨은 로케일별 리소스(vibrationLabel)로 해석한다 — 코드에 언어를 박지 않는다.
+// 라벨은 리소스(vibrationLabel)로 해석한다 — 패턴 고유명은 전 로케일 영어 고정.
 private val VibrationOptions = listOf(
     VibrationPatterns.DEFAULT,
     VibrationPatterns.STRONG,
-    VibrationPatterns.SHORT,
     VibrationPatterns.MEDIUM,
+    VibrationPatterns.SHORT,
+    VibrationPatterns.RISE,
+    VibrationPatterns.PULSE,
+    VibrationPatterns.BOUNCE,
+    VibrationPatterns.DRUMROLL,
     VibrationPatterns.HEARTBEAT,
     VibrationPatterns.TICKTOCK,
     VibrationPatterns.WALTZ,
@@ -54,6 +58,8 @@ private val VibrationOptions = listOf(
     VibrationPatterns.OFF_BEAT,
     VibrationPatterns.RIPPLE,
     VibrationPatterns.SIREN,
+    VibrationPatterns.SOFT,
+    VibrationPatterns.SOS,
 )
 
 // '기본 알람음'이라는 정보량 없는 표기 대신 시스템 기본 알람음의 실제 이름을 보여준다.
@@ -142,6 +148,9 @@ internal fun AlarmSettingsCard(
                 )
                 if (showAlarmSound) {
                     AlarmSettingDivider()
+                    // 알람음을 울릴지 말지는 '재생 방식' 세그먼트가 단일 출처다 — 여기 토글을 두면
+                    // '알람+목소리' + 알람음 꺼짐 = 사실상 '목소리만'이 되어 두 컨트롤이 모순된다.
+                    // 이 행은 어떤 소리·볼륨을 쓸지만 다룬다(무음은 pane 의 볼륨 0).
                     AlarmSettingRow(
                         title = stringResource(R.string.editor_alarm_sound_title),
                         subtitle = alarmSoundSummary(
@@ -150,14 +159,7 @@ internal fun AlarmSettingsCard(
                             alarmSoundLabel = resolvedAlarmSoundLabel,
                         ),
                         onClick = onOpenAlarmSoundSettings,
-                        trailing = {
-                            AlarmTalkSwitch(
-                                checked = alarmVolumePercent > 0,
-                                onCheckedChange = { enabled ->
-                                    onAlarmVolumeChange(if (enabled) 100 else 0)
-                                },
-                            )
-                        },
+                        trailing = {},
                     )
                 }
                 if (showVoiceOutput) {
@@ -258,7 +260,6 @@ internal fun AlarmSoundSettingsPane(
     onPickAlarmSound: () -> Unit,
 ) {
     val context = LocalContext.current
-    val alarmEnabled = alarmVolumePercent > 0
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -286,51 +287,20 @@ internal fun AlarmSoundSettingsPane(
                 )
             }
 
+            // 켜고 끄는 사용/무음 토글은 두지 않는다 — 알람음 여부는 '재생 방식'이 정하고,
+            // 여기선 어떤 소리를 얼마나 크게 울릴지만 고른다(볼륨 0 = 무음).
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Surface(
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.surface,
-                    border = wakerCardBorder(),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 9.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = if (alarmEnabled) stringResource(R.string.editor_in_use) else stringResource(R.string.editor_silent),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (alarmEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                        )
-                        AlarmTalkSwitch(
-                            checked = alarmEnabled,
-                            onCheckedChange = { enabled ->
-                                onAlarmVolumeChange(if (enabled) 100 else 0)
-                            },
-                        )
-                    }
-                }
-
-                if (alarmEnabled) {
-                    SnoozeOptionSection(title = stringResource(R.string.editor_alarm_sound_title)) {
-                        AlarmSoundActionRow(
-                            title = stringResource(R.string.editor_alarm_sound_title),
-                            subtitle = alarmSoundLabel ?: rememberDefaultAlarmSoundTitle(),
-                            onClick = onPickAlarmSound,
-                        )
-                    }
+                SnoozeOptionSection(title = stringResource(R.string.editor_alarm_sound_title)) {
+                    AlarmSoundActionRow(
+                        title = stringResource(R.string.editor_alarm_sound_title),
+                        subtitle = alarmSoundLabel ?: rememberDefaultAlarmSoundTitle(),
+                        onClick = onPickAlarmSound,
+                    )
                 }
 
                 SnoozeOptionSection(title = stringResource(R.string.editor_volume)) {
@@ -362,7 +332,6 @@ internal fun AlarmSoundSettingsPane(
                             onValueChange = { onAlarmVolumeChange(it.toInt().coerceIn(0, 100)) },
                             valueRange = 0f..100f,
                             steps = 9,
-                            enabled = alarmEnabled,
                         )
                     }
                 }

@@ -3,7 +3,7 @@ import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
-import { prepareAlarmTextWithVertex, generatePrerenderClipText } from './vertex-translate';
+import { applyDeliveryTagPerSentence, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, type SpeechStyle } from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
@@ -28,30 +28,35 @@ export const STOCK_GREETING_CATEGORY = 'greeting';
 export const STOCK_CLIP_PRESETS = [
   // 무료 플랜 알람 "버킷". 카테고리당 여러 variants(문구)를 시스템 보이스마다 한국어·
   // 영어·일본어로 미리 합성해 둔다(en/ja 는 Vertex 번역). 앱은 한 버킷의 변형들을 전부
-  // 로컬 캐시한 뒤, 알람이 울릴 때마다 순차로 돌려가며 재생한다(완전 오프라인).
-  //  - 무료 버킷 = 기상(morning) 8문구 + 약(medication) 2문구. (보이스당 (8+2)×3언어 = 30클립)
+  // 로컬 캐시한 뒤 완전 오프라인으로 재생한다.
+  //  - 무료 버킷 = 날씨(weather) 9문구(조건 매칭) + 약(medication) 2문구(순차 회전).
+  //    (보이스당 (9+2)×3언어 = 33클립)
   //  - greeting 은 알람이 아니라 목소리 미리듣기용 1문구(한국어).
   //  - 버킷을 늘리려면 카테고리를 추가하고 재시드하면 된다(FREE_BUCKET_CATEGORIES 가 자동 반영).
+  // 날씨 9문구 — variant 순서가 CLONE_WEATHER_CONDITIONS(0..7)와 반드시 일치해야 하고,
+  // 마지막(8)은 '날씨 미확인' 폴백이다(클라 매칭 규약: 마지막 인덱스 = 폴백).
+  // 무료도 저장한 도시 기준으로 전날 조건을 확인해(무료 API) 그날 클립을 매칭 재생한다.
   {
-    category: 'morning',
+    category: 'weather',
     languages: ['ko', 'en', 'ja'],
     variants: [
-      '좋은 아침이에요. 잘 잤어요? 천천히 기지개 켜고 오늘 하루도 산뜻하게 시작해 봐요.',
-      '아침이 밝았어요. 이불 속에서 조금만 더 있고 싶겠지만, 지금 살짝 일어나 볼까요?',
-      '일어날 시간이에요. 무겁게 생각하지 말고 발끝부터 꼼지락 움직이면서 깨워 봐요.',
-      '굿모닝! 오늘은 어떤 하루가 기다리고 있을까요. 가볍게 웃으면서 시작해요.',
-      '창밖이 벌써 환해졌어요. 물 한 잔 마시고 정신을 깨우면 하루가 한결 수월해질 거예요.',
-      '자, 이제 진짜 일어날 시간이에요. 딱 한 번 크게 기지개 켜고 몸을 일으켜 봐요.',
-      '오늘도 당신을 위한 아침이 왔어요. 서두르지 말고 천천히 하루를 열어 봐요.',
-      '알람이 울렸어요. 눈 한번 깜빡이고, 심호흡 한 번 하고, 가볍게 일어나 봐요.',
+      '오늘 날씨 진짜 좋아요. 나갈 때 하늘 한 번 봐요, 기분이 달라질 거예요.',
+      '오늘 비 와요. 우산 꼭 챙기고요, 바닥 미끄러우니까 조심히 다녀요.',
+      '밖에 눈 와요. 따뜻하게 입고, 미끄러우니까 발밑 조심해요.',
+      '오늘 미세먼지가 심해요. 나갈 때 마스크 꼭 챙겨요.',
+      '오늘 하늘이 좀 흐려요. 그래도 기분까지 흐려질 건 없죠. 잘 다녀와요.',
+      '오늘 안개가 짙어요. 앞이 잘 안 보이니까 천천히, 조심해서 다녀요.',
+      '오늘 많이 더워요. 물 자주 마시고, 너무 무리하지 말아요.',
+      '오늘 진짜 추워요. 든든하게 챙겨 입어요. 감기 걸리면 안 되니까.',
+      '인터넷이 안 돼서 오늘 날씨를 미리 못 봤어요. 그래도 좋은 하루 보내요.',
     ],
   },
   {
     category: 'medication',
     languages: ['ko', 'en', 'ja'],
     variants: [
-      '약 먹을 시간이에요. 물 한 잔과 함께 잊지 말고 꼭 챙겨 드세요.',
-      '약 챙길 시간이에요. 잠깐이면 되니까 지금 바로 드시고 가요.',
+      '약 먹을 시간이에요. 물 한 잔이랑 같이 지금 챙겨 드세요.',
+      '잠깐, 약부터 챙겨요. 드시고 나서 하던 일 마저 해요.',
     ],
   },
   {
@@ -227,6 +232,8 @@ export interface StockClipTarget {
   defaultTag?: string;
   /** 등록 미리듣기에서 확정된 preview_text(클론만) — 톤/어투 스타일 레퍼런스. */
   styleReference?: string | null;
+  /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등, 클론만). */
+  speechStyle?: SpeechStyle | null;
   claimToken?: string;
 }
 
@@ -250,6 +257,8 @@ export interface PrerenderVoice {
   listenerTitle?: string | null;
   /** 등록 미리듣기에서 확정된 preview_text(클론만) — 톤/어투 스타일 레퍼런스. */
   styleReference?: string | null;
+  /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등, 클론만). */
+  speechStyle?: SpeechStyle | null;
   claimToken?: string;
 }
 
@@ -315,7 +324,7 @@ export async function listReadyCloneVoices(
   const ids = [...byId.keys()];
   const ph = ids.map(() => '?').join(',');
   const res = await db.execute({
-    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text
+    sql: `SELECT id, name, elevenlabs_voice_id, relationship_label, listener_title, preview_text, speech_style
           FROM voice_profiles
           WHERE COALESCE(is_system, 0) = 0
             AND deleted_at IS NULL
@@ -334,6 +343,7 @@ export async function listReadyCloneVoices(
     const relationshipLabel = ((row.relationship_label as string | null) ?? '').trim() || null;
     const listenerTitle = ((row.listener_title as string | null) ?? '').trim() || null;
     const styleReference = ((row.preview_text as string | null) ?? '').trim() || null;
+    const speechStyle = parseSpeechStyle(row.speech_style);
     out.push({
       id,
       name: String(row.name),
@@ -345,6 +355,7 @@ export async function listReadyCloneVoices(
       relationshipLabel,
       listenerTitle,
       styleReference,
+      speechStyle,
       claimToken: req.claimToken,
     });
   }
@@ -423,6 +434,7 @@ export async function findMissingStockTargets(
             listenerTitle: voice.listenerTitle ?? null,
             defaultTag: source.defaultTag,
             styleReference: voice.styleReference ?? null,
+            speechStyle: voice.speechStyle ?? null,
             claimToken: voice.claimToken,
           });
         }
@@ -668,9 +680,13 @@ export async function generateStockClip(
       targetLanguage: language,
       defaultTag: target.defaultTag,
       styleReference: target.styleReference,
+      speechStyle: target.speechStyle ?? null,
     });
     displayText = generated.text;
-    synthesisText = generated.tag ? `[${generated.tag}] ${generated.text}` : generated.text;
+    // 태그를 문장마다 다시 앞세워 클립 끝까지 전달 톤이 풀리지 않게 한다.
+    synthesisText = generated.tag
+      ? applyDeliveryTagPerSentence(generated.tag, generated.text)
+      : generated.text;
     deliveryTagsJson = JSON.stringify(generated.tag ? [generated.tag] : []);
   } else {
     const prepared = await prepareAlarmTextWithVertex(env, target.baseText, {

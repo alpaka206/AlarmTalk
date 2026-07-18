@@ -31,7 +31,6 @@ import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +54,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
@@ -91,6 +89,8 @@ internal fun VoiceAudioCard(
     onPreviewAudio: () -> Unit,
     onCreateVoiceProfileClick: () -> Unit,
     onOpenRandomPromptSettings: () -> Unit,
+    // 무료 문구 행 — 테마(버킷) 선택 pane 을 연다(유료의 문구 pane 과 같은 자리).
+    onOpenFreeBucketSettings: () -> Unit,
     onOpenVoiceOutputSettings: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -99,26 +99,20 @@ internal fun VoiceAudioCard(
     } else {
         editor.voiceSource
     }
-    // 알람창에선 기본(시스템) 목소리를 바꿀 수 없다(변경은 목소리 탭). 기본 목소리와
-    // 기존 알람의 저장된 시스템 목소리만 남겨, 편집 중 조용한 목소리 변경을 막는다.
-    val hasDefaultSystemVoice = defaultVoiceId != null &&
-        voiceProfiles.any { it.id == defaultVoiceId && it.isSystem == true }
-    val selectedProfileId = editor.voiceProfileId
-    val readyProfiles = voiceProfiles.filter {
-        (it.status == null || it.status == "ready") &&
-            (
-                it.isSystem != true ||
-                    !hasDefaultSystemVoice ||
-                    it.id == defaultVoiceId ||
-                    it.id == selectedProfileId
-                )
+    // 알람별로 목소리를 자유롭게 바꾼다 — 내 목소리·공유받은 목소리·기본(시스템) 목소리를
+    // 전부 시트에 노출한다(내 것 → 공유 → 기본 순).
+    val readyOwnProfiles = voiceProfiles.filter {
+        (it.status == null || it.status == "ready") && it.isSystem != true
+    }
+    val readySystemProfiles = voiceProfiles.filter {
+        (it.status == null || it.status == "ready") && it.isSystem == true
     }
     val readyFamilyVoices = familyVoices.filter {
         (it.status == null || it.status == "ready") &&
             it.isShared != false &&
             !it.requiresViewerInfo()
     }
-    val profileOptions = readyProfiles.map {
+    val profileOptions = readyOwnProfiles.map {
         VoiceProfileOption(
             id = it.id,
             name = it.name,
@@ -130,6 +124,13 @@ internal fun VoiceAudioCard(
                 id = profile.id,
                 name = profile.name,
                 detail = sharedVoiceDetail(context, profile),
+            )
+        } +
+        readySystemProfiles.map {
+            VoiceProfileOption(
+                id = it.id,
+                name = it.name,
+                detail = ownedVoiceDetail(context, it),
             )
         }
     LaunchedEffect(editor.voiceSource) {
@@ -185,68 +186,50 @@ internal fun VoiceAudioCard(
                 val selectedProfileUnavailable = !voiceProfileBusy &&
                     !editor.voiceProfileId.isNullOrBlank() &&
                     profileOptions.none { it.id == editor.voiceProfileId }
-                // 무료는 목소리를 목소리 탭에서 고른 1개로 고정하므로, 알람창에선 선택기 대신
-                // "○○ 목소리로 울려요" 읽기 전용 1줄만 보여준다(탭하면 목소리 탭으로). 유료는
-                // 알람별로 목소리를 바꿀 수 있어 선택기를 그대로 노출한다.
-                if (freeVoiceTier) {
-                    when {
-                        voiceProfileBusy -> MutedText(stringResource(R.string.editor_voice_loading))
-                        profileOptions.isEmpty() -> NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
-                        else -> {
-                            val activeVoiceName = profileOptions.firstOrNull { it.id == editor.voiceProfileId }?.name
-                                ?: profileOptions.firstOrNull { it.id == defaultVoiceId }?.name
-                                ?: profileOptions.first().name
-                            FreeVoiceSummaryRow(
-                                voiceName = activeVoiceName,
-                                onClick = onCreateVoiceProfileClick,
-                            )
-                        }
-                    }
+                // 무료·유료 모두 같은 '카드 + 구분선 행'(목소리/문구/목소리 크기) 구조를 쓴다.
+                // 무료는 문구 행이 개별 문구 대신 "테마(버킷)"를 고르는 pane 을 연다 — 버킷 안
+                // 여러 문구는 매 울림마다 순차 회전되며 내용은 노출하지 않는다.
+                if (voiceProfileBusy) {
+                    MutedText(stringResource(R.string.editor_voice_loading))
+                } else if (profileOptions.isEmpty()) {
+                    NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
                 } else {
-                    if (voiceProfileBusy) {
-                        MutedText(stringResource(R.string.editor_voice_loading))
-                    } else if (profileOptions.isEmpty()) {
-                        NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
-                    } else {
-                        // 목소리(미나)와 문구를 개별 박스로 흩지 않고 하나의 카드+구분선으로 묶는다(삼성 설정식).
-                        // 모서리는 일정·세부설정 카드와 같은 WakerCardShape 로 통일한다.
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = WakerCardShape,
-                            color = MaterialTheme.colorScheme.surface,
-                            border = wakerCardBorder(),
-                        ) {
-                            Column {
-                                VoiceProfileSelector(
-                                    options = profileOptions,
-                                    selectedId = editor.voiceProfileId ?: "",
-                                    onSelect = { option -> editor.selectVoiceProfile(option.id) },
+                    // 목소리(미나)와 문구를 개별 박스로 흩지 않고 하나의 카드+구분선으로 묶는다(삼성 설정식).
+                    // 모서리는 일정·세부설정 카드와 같은 WakerCardShape 로 통일한다.
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = WakerCardShape,
+                        color = MaterialTheme.colorScheme.surface,
+                        border = wakerCardBorder(),
+                    ) {
+                        Column {
+                            VoiceProfileSelector(
+                                options = profileOptions,
+                                selectedId = editor.voiceProfileId ?: "",
+                                onSelect = { option -> editor.selectVoiceProfile(option.id) },
+                            )
+                            AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
+                            if (freeVoiceTier) {
+                                FreeThemeSummaryRow(
+                                    selectedBucket = editor.selectedBucket,
+                                    weatherCity = editor.voiceWeatherCity,
+                                    onClick = onOpenFreeBucketSettings,
                                 )
-                                AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
+                            } else {
                                 MessageModeSummaryRow(
                                     isManual = !editor.voiceRandomPrompt,
                                     randomContext = editor.voiceRandomContext,
                                     manualText = editor.voiceText,
                                     onClick = onOpenRandomPromptSettings,
                                 )
-                                AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
-                                VoiceVolumeSummaryRow(
-                                    volumePercent = editor.voiceVolumePercent,
-                                    onClick = onOpenVoiceOutputSettings,
-                                )
                             }
+                            AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
+                            VoiceVolumeSummaryRow(
+                                volumePercent = editor.voiceVolumePercent,
+                                onClick = onOpenVoiceOutputSettings,
+                            )
                         }
                     }
-                }
-                // 무료 플랜은 개별 문구 선택 대신 "테마(버킷)"만 고른다. 버킷 안 여러 문구는
-                // 매 울림마다 순차 회전돼 재생되며, 사용자에겐 내용을 노출하지 않는다.
-                // 유료 플랜은 랜덤 문구/직접 입력으로 충분하므로 버킷 UI 를 노출하지 않는다.
-                if (freeVoiceTier) {
-                    FreeBucketSelector(
-                        buckets = freeBucketsFor(stockClips, editor.voiceProfileId, editor.voiceLanguage),
-                        selectedBucket = editor.selectedBucket,
-                        onSelectBucket = onSelectBucket,
-                    )
                 }
                 if (selectedProfileUnavailable) {
                     Surface(
@@ -415,113 +398,25 @@ private fun NoUsableVoiceProfileCallout(
     }
 }
 
-// 목소리가 여러 개(내 목소리 + 공유받은 + 기본 제공)면 목록이 길어지므로,
-// 평소엔 선택된 목소리 1줄만 보여주고 누르면 펼쳐서 전체에서 고르는 접이식 선택기.
+// 목소리 행 — 탭하면 바텀시트가 올라와 내 목소리·공유받은 목소리·기본 목소리 전체에서
+// 고른다(문구·목소리 크기 행과 같은 [제목/값 + 셰브론] 문법).
 @Composable
 private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
     selectedId: String,
     onSelect: (VoiceProfileOption) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var sheetOpen by remember { mutableStateOf(false) }
     val selectedOption = options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
-    // 고를 게 2개 이상일 때(내 음성·공유 음성이 있을 때)만 펼치는 드롭다운.
-    // 기본 목소리 1개뿐이면 어차피 고정이라 펼침/셰브론 없이 그냥 표시한다.
-    val canExpand = options.size > 1
-    // 예전엔 indication=null 이라 눌러도 아무 반응이 없었다. 리플 복원 + 눌림 물성으로
-    // '탭되는 행'임을 알린다(다른 세부설정 행과 동일한 피드백).
-    val rowInteraction = remember { MutableInteractionSource() }
     // 상위 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명).
     Surface(
+        onClick = { sheetOpen = true },
         modifier = Modifier.fillMaxWidth(),
         shape = WakerChipShape,
         color = Color.Transparent,
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (canExpand) {
-                            Modifier
-                                .wakerPressScale(rowInteraction)
-                                .clickable(
-                                    interactionSource = rowInteraction,
-                                    indication = LocalIndication.current,
-                                ) { expanded = !expanded }
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Text(
-                        text = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (selectedOption != null) {
-                        MutedText(selectedOption.detail)
-                    }
-                }
-                if (canExpand) {
-                    Spacer(Modifier.width(12.dp))
-                    Icon(
-                        imageVector = if (expanded) {
-                            Icons.Outlined.KeyboardArrowUp
-                        } else {
-                            Icons.Outlined.KeyboardArrowDown
-                        },
-                        contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            if (canExpand && expanded) {
-                Column(
-                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    options.forEach { option ->
-                        VoiceProfileOptionRow(
-                            option = option,
-                            selected = option.id == selectedId,
-                            onClick = {
-                                onSelect(option)
-                                expanded = false
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun VoiceProfileOptionRow(
-    option: VoiceProfileOption,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        },
-    ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -530,93 +425,14 @@ private fun VoiceProfileOptionRow(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
-                    text = option.name,
+                    text = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
                 )
-                Text(
-                    text = option.detail,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.74f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                if (selectedOption != null) {
+                    MutedText(selectedOption.detail)
+                }
             }
-            Spacer(Modifier.width(12.dp))
-            VoiceSelectionDot(selected = selected)
-        }
-    }
-}
-
-/**
- * 무료 플랜 "테마(버킷)" 선택. 사용 가능한 버킷(기상/약 …) 칩만 노출하고, 각 버킷 안의
- * 개별 문구는 보여주지 않는다. 선택하면 그 버킷의 N개 클립이 캐시되어 매 울림마다 순차 회전한다.
- */
-@Composable
-private fun FreeBucketSelector(
-    buckets: List<String>,
-    selectedBucket: String?,
-    onSelectBucket: (String) -> Unit,
-) {
-    if (buckets.isEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = stringResource(R.string.editor_free_bucket_title),
-            fontWeight = FontWeight.SemiBold,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            buckets.forEach { bucket ->
-                FilterChip(
-                    selected = selectedBucket == bucket,
-                    onClick = { onSelectBucket(bucket) },
-                    label = { Text(stringResource(freeBucketLabelRes(bucket))) },
-                    shape = WakerChipShape,
-                )
-            }
-        }
-        Text(
-            text = stringResource(R.string.editor_free_bucket_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/**
- * 무료 플랜에서 알람창에 보여주는 "어떤 목소리로 울리는지" 읽기 전용 1줄.
- * 목소리 선택·변경은 목소리 탭이 단일 출처라, 여기선 확인용으로만 노출하고 탭하면 목소리 탭으로 보낸다.
- */
-@Composable
-private fun FreeVoiceSummaryRow(
-    voiceName: String,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.editor_free_voice_summary, voiceName),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold,
-                overflow = TextOverflow.Ellipsis,
-                maxLines = 1,
-            )
             Spacer(Modifier.width(12.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
@@ -624,6 +440,131 @@ private fun FreeVoiceSummaryRow(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
             )
+        }
+    }
+    if (sheetOpen) {
+        WakerSelectionSheet(
+            title = stringResource(R.string.editor_voice_select),
+            onDismiss = { sheetOpen = false },
+        ) { dismiss ->
+            options.forEachIndexed { index, option ->
+                WakerSheetOptionRow(
+                    title = option.name,
+                    description = option.detail,
+                    selected = option.id == selectedOption?.id,
+                    onClick = {
+                        onSelect(option)
+                        dismiss()
+                    },
+                    divider = index != options.lastIndex,
+                )
+            }
+        }
+    }
+}
+
+// 무료 문구 행 — 현재 테마(기상/약 …)를 값으로 보여주고 누르면 테마 선택 pane 을 연다.
+// 유료의 문구 행(MessageModeSummaryRow)과 같은 문법(제목/값 + 셰브론)으로 UI 를 통일한다.
+@Composable
+private fun FreeThemeSummaryRow(
+    selectedBucket: String?,
+    weatherCity: String,
+    onClick: () -> Unit,
+) {
+    // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
+    val isOnline by rememberIsOnline()
+    val valueLabel = when {
+        // 날씨 버킷은 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
+        selectedBucket == "weather" && weatherCity.isNotBlank() ->
+            "${stringResource(freeBucketLabelRes(selectedBucket))} · $weatherCity"
+        selectedBucket != null -> stringResource(freeBucketLabelRes(selectedBucket))
+        !isOnline -> stringResource(R.string.editor_free_bucket_offline)
+        else -> stringResource(R.string.editor_free_bucket_loading)
+    }
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerChipShape,
+        color = Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(stringResource(R.string.editor_msg_section), fontWeight = FontWeight.SemiBold)
+                MutedText(valueLabel)
+            }
+            Spacer(Modifier.width(12.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 무료 테마(버킷) 선택 pane — 진동·스누즈와 같은 드릴인 서브페이지 문법.
+ * 버킷 안 개별 문구는 노출하지 않고, 선택하면 그 버킷의 N개 클립이 캐시되어
+ * 매 울림마다 순차 회전한다.
+ */
+@Composable
+internal fun FreeBucketSettingsPane(
+    buckets: List<String>,
+    selectedBucket: String?,
+    onSelectBucket: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = stringResource(R.string.editor_back),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.editor_msg_section),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SnoozeOptionSection {
+                    buckets.forEachIndexed { index, bucket ->
+                        SnoozeRadioRow(
+                            label = stringResource(freeBucketLabelRes(bucket)),
+                            selected = selectedBucket == bucket,
+                            onClick = { onSelectBucket(bucket) },
+                        )
+                        if (index != buckets.lastIndex) {
+                            SnoozeOptionDivider()
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -854,33 +795,6 @@ private fun VoiceVolumeSelector(
             valueRange = MinVoiceVolumePercent.toFloat()..100f,
             steps = 6,
         )
-    }
-}
-
-@Composable
-private fun VoiceSelectionDot(selected: Boolean) {
-    Box(
-        modifier = Modifier
-            .size(18.dp)
-            .background(
-                color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape = CircleShape,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (selected) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .background(MaterialTheme.colorScheme.onPrimary, CircleShape),
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .background(MaterialTheme.colorScheme.outline, CircleShape),
-            )
-        }
     }
 }
 

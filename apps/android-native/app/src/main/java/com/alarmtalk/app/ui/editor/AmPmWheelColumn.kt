@@ -55,6 +55,8 @@ internal fun AmPmWheelColumn(
     selectedTextColor: Color,
     unselectedTextColor: Color,
     onStep: (Int) -> Unit,
+    // 좁은 화면에서 컬럼 고정폭·글자를 함께 줄이는 배율(1f = 그대로).
+    textScale: Float = 1f,
 ) {
     val amPmIndex = if (hour >= 12) 1 else 0
     val isPm = amPmIndex == 1
@@ -96,7 +98,7 @@ internal fun AmPmWheelColumn(
 
     Box(
         modifier = Modifier
-            .width(96.dp)
+            .width(96.dp * textScale)
             .height(itemHeight * 3)
             .clipToBounds()
             .draggable(
@@ -161,8 +163,8 @@ internal fun AmPmWheelColumn(
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             text = label,
-                            fontSize = if (selected) 38.sp else 32.sp,
-                            lineHeight = if (selected) 42.sp else 36.sp,
+                            fontSize = (if (selected) 38.sp else 32.sp) * textScale,
+                            lineHeight = (if (selected) 42.sp else 36.sp) * textScale,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
                             color = if (selected) {
                                 selectedTextColor

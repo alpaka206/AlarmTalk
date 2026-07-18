@@ -824,7 +824,9 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage) {
+    // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
+    val isOnline by rememberIsOnline()
+    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage, isOnline) {
         if (freeVoiceTier && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             if (editor.voiceSource != VoiceSources.TTS_PROFILE) {
                 editor.voiceSource = VoiceSources.TTS_PROFILE
@@ -854,6 +856,8 @@ internal fun AlarmEditorScreen(
     val editorBottomPadding = 24.dp
     var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
     var randomPromptWasEnabledWhenOpened by remember { mutableStateOf(false) }
+    // 무료 날씨 버킷 선택 시 도시 입력/확인 다이얼로그.
+    var freeWeatherDialogOpen by remember { mutableStateOf(false) }
 
     val usableTtsProfileIds = (
         voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
@@ -901,8 +905,19 @@ internal fun AlarmEditorScreen(
                     stringResource(R.string.editor_save_blocked_voice_unusable)
                 editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
                     stringResource(R.string.editor_save_blocked_random_prompt_incomplete)
+                // 무료 날씨 버킷은 도시가 있어야 조건 매칭이 된다 — 없으면 저장을 막고 안내.
+                freeVoiceTier && editor.selectedBucket == "weather" &&
+                    editor.voiceWeatherCity.isBlank() ->
+                    stringResource(R.string.editor_error_weather_location_required)
+                // 무료는 문구를 직접 입력하지 않는다(테마 클립 자동 회전) — 빈 문구는
+                // 클립이 아직 준비되지 않은 상태이므로 '입력하라'는 안내 대신 준비 중 안내.
+                // 오프라인이면 기다려도 안 되므로 연결 안내로 정직하게 분기한다.
                 !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
-                    stringResource(R.string.editor_save_blocked_enter_message_or_random)
+                    when {
+                        !freeVoiceTier -> stringResource(R.string.editor_save_blocked_enter_message_or_random)
+                        !isOnline -> stringResource(R.string.editor_save_blocked_free_clips_offline)
+                        else -> stringResource(R.string.editor_save_blocked_free_clips_loading)
+                    }
                 else -> null
             }
         }
@@ -1146,6 +1161,7 @@ internal fun AlarmEditorScreen(
                                 onPreviewAudio = { playCachedAudio() },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
+                                onOpenFreeBucketSettings = { settingsDetailPanel = "free_bucket" },
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                             )
                         }
@@ -1162,10 +1178,9 @@ internal fun AlarmEditorScreen(
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
                             showAlarmSound = editor.playMode != AlarmPlayModes.VOICE_ONLY,
-                            // 유료는 목소리 크기를 목소리 카드(TTS)·녹음 박스 아래(녹음)에서 열므로 세부설정엔 두지 않는다.
-                            // 무료 플랜 목소리 카드엔 볼륨 행이 없으므로, 무료 음성 알람일 때만 세부설정 '목소리' 행을 남긴다.
-                            showVoiceOutput = freeVoiceTier &&
-                                editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            // 목소리 크기는 무료·유료 모두 목소리 카드 안의 행에서 연다(UI 통일) —
+                            // 세부설정의 '목소리' 행은 더 이상 쓰지 않는다.
+                            showVoiceOutput = false,
                             voiceVolumePercent = editor.voiceVolumePercent,
                             voiceRepeat = editor.voiceRepeat,
                             voiceRepeatActive = editor.playMode == AlarmPlayModes.VOICE_ONLY,
@@ -1309,6 +1324,21 @@ internal fun AlarmEditorScreen(
                 onSaveSettings = ::applyRandomPromptSettings,
             )
 
+            "free_bucket" -> FreeBucketSettingsPane(
+                buckets = freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage),
+                selectedBucket = editor.selectedBucket,
+                onSelectBucket = { bucket ->
+                    if (bucket == "weather") {
+                        // 날씨는 저장한 도시 기준으로 매칭되므로, 고르는 시점에 도시를
+                        // 확인/수정하게 한다(이미 입력돼 있어도 다이얼로그에 채워서 보여줌).
+                        freeWeatherDialogOpen = true
+                    } else {
+                        selectBucket(bucket)
+                    }
+                },
+                onDismiss = { settingsDetailPanel = null },
+            )
+
             "voice_output" -> VoiceOutputSettingsPane(
                 volumePercent = editor.voiceVolumePercent,
                 onVolumeChange = { editor.voiceVolumePercent = it },
@@ -1319,6 +1349,20 @@ internal fun AlarmEditorScreen(
             )
         }
         }
+    }
+
+    if (freeWeatherDialogOpen) {
+        WeatherLocationDialog(
+            country = editor.voiceWeatherCountry,
+            city = editor.voiceWeatherCity,
+            onDismissWithoutSave = { freeWeatherDialogOpen = false },
+            onConfirm = { country, city ->
+                editor.voiceWeatherCountry = country
+                editor.voiceWeatherCity = city
+                freeWeatherDialogOpen = false
+                selectBucket("weather")
+            },
+        )
     }
 
     if (voicePlanGateOpen) {

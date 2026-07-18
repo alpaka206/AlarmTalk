@@ -110,6 +110,7 @@ internal fun MainViewModel.createVoiceProfile(
     shared: Boolean,
     relationshipLabel: String,
     listenerTitle: String,
+    language: String,
 ): Boolean =
     createVoiceProfiles(
         listOf(
@@ -119,6 +120,7 @@ internal fun MainViewModel.createVoiceProfile(
                 shared = shared,
                 relationshipLabel = relationshipLabel,
                 listenerTitle = listenerTitle,
+                language = language,
             ),
         ),
     )
@@ -177,7 +179,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                         listenerTitle = draft.listenerTitle.toRequestBody("text/plain".toMediaType()),
                         durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
                         isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
-                        language = deviceAppVoiceLanguage().toRequestBody("text/plain".toMediaType()),
+                        language = (draft.language ?: deviceAppVoiceLanguage()).toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }
@@ -560,6 +562,42 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
         ?: Locale.getDefault().language
     // 매핑 단일 출처(data.appVoiceLanguageOf) — 편집기 supportedAppVoiceLanguage 와 같은 함수라 divergence 없음.
     return com.alarmtalk.app.data.appVoiceLanguageOf(language)
+}
+
+/**
+ * 온보딩에서 기본 목소리를 정한 직후, 그 목소리의 무료 버킷 클립(기상·날씨·약)을 백그라운드로
+ * 미리 내려받는다 — 첫 알람 만들기에서 대기 없이, 이후엔 오프라인에서도 바로 쓸 수 있게.
+ * best-effort: 실패해도 알람 저장 시점의 기존 다운로드 경로가 다시 시도한다.
+ */
+internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String) {
+    viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+            val language = deviceAppVoiceLanguage()
+            val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+            stockClips
+                .filter {
+                    it.voiceProfileId == voiceProfileId &&
+                        (it.language ?: "ko") == language &&
+                        it.category != com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
+                }
+                .forEach { clip ->
+                    val cacheKey = "stock_${clip.messageId}"
+                    if (audioStore.getCachedAudio(cacheKey) == null) {
+                        val response = downloadTtsMessageAudio(clip.messageId)
+                        audioStore.cacheGeneratedAudio(
+                            bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
+                            format = response.audioFormat,
+                            rawAudioUri = response.audioUrl,
+                            displayName = cacheKey,
+                            cacheKey = cacheKey,
+                            messageId = clip.messageId,
+                        )
+                    }
+                }
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to prefetch free bucket clips voice=$voiceProfileId", error)
+        }
+    }
 }
 
 internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {

@@ -880,6 +880,8 @@ function prerenderClipPrompt(params: {
   defaultTag?: string;
   /** 사용자가 등록 미리듣기에서 확정(직접 수정 포함)한 문구 — 톤/어투 기준. 내용 복제 금지. */
   styleReference?: string | null;
+  /** 등록 녹음 전사에서 분석한 화자 말투(사투리·존댓말·특징 어미). styleReference 가 우선. */
+  speechStyle?: SpeechStyle | null;
 }): string {
   const targetName = LANGUAGE_NAMES[params.targetLanguage] || params.targetLanguage;
   const listenerTitle = params.listenerTitle?.trim();
@@ -908,12 +910,28 @@ function prerenderClipPrompt(params: {
   const styleReferenceInstruction = styleReference
     ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
     : '';
+  const speechStyle = params.speechStyle;
+  const speechStyleInstruction =
+    speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona)
+      ? `SPEAKER DIALECT/STYLE (analyzed from this speaker's own recording): dialect="${
+          speechStyle.dialect || 'standard'
+        }"${speechStyle.strength ? ` (strength: ${speechStyle.strength})` : ''}${
+          speechStyle.register ? `, register: ${speechStyle.register}` : ''
+        }${
+          speechStyle.persona ? `, verbal identity: "${speechStyle.persona}"` : ''
+        }${
+          speechStyle.markers.length > 0
+            ? `, typical endings/expressions: ${speechStyle.markers.map((m) => `"${m}"`).join(', ')}`
+            : ''
+        }. Write the line the way THIS speaker actually talks — keep their first-person pronoun, signature sentence endings (語尾癖) and energy, using the dialect's natural endings and vocabulary instead of standard textbook language. Do not exaggerate or stack markers; if strength is low, keep it to a light touch on sentence endings only. If a STYLE REFERENCE line is present above, it wins over this analysis.`
+      : '';
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
     activeLanguageBlock(params.targetLanguage),
     `Alarm intent (semantic seed): ${params.seed}`,
     relationship,
     romanticToneInstruction,
+    speechStyleInstruction,
     styleReferenceInstruction,
     'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
     'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
@@ -943,6 +961,8 @@ export async function generatePrerenderClipText(
     defaultTag?: string;
     /** 등록 미리듣기에서 확정된 preview_text — 있으면 톤/어투 스타일 레퍼런스로 쓴다. */
     styleReference?: string | null;
+    /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등) — 문구를 그 말투로 작성. */
+    speechStyle?: SpeechStyle | null;
   },
 ): Promise<{ text: string; tag: string }> {
   const targetLanguage = params.targetLanguage || 'ko';
@@ -983,6 +1003,138 @@ export async function generatePrerenderClipText(
   };
   const tag = sanitizePrerenderTag(parsed.tag) || sanitizePrerenderTag(params.defaultTag ?? '');
   return { text, tag };
+}
+
+/**
+ * 등록 녹음 전사에서 분석한 화자 말투. voice_profiles.speech_style 에 JSON 으로 영속되고,
+ * 미리듣기·사전렌더 문구 생성 프롬프트에 주입돼 "그 사람이 실제로 말하는 방식"으로 문구가
+ * 나오게 한다(사투리는 텍스트+클론 억양의 조합으로 구현되므로 텍스트 쪽 절반을 담당).
+ */
+export interface SpeechStyle {
+  /** 사투리/방언 지역(표준어면 ''). 예: '경상', '전라', '関西', '博多'. */
+  dialect: string;
+  /** 사투리 강도. 표준어면 ''. */
+  strength: '' | 'low' | 'medium' | 'high';
+  /** 말단 격식. 예: 'banmal'(반말), 'jondaemal'(존댓말), 'casual', 'polite'. */
+  register: string;
+  /** 화자가 실제로 쓴 특징 어미/말버릇/캐치프레이즈(최대 5개, 원문 그대로). */
+  markers: string[];
+  /**
+   * 화자(사람 또는 캐릭터)의 말투 특징 한 줄 요약 — 같은 성우가 연기한 다른 캐릭터도
+   * 어미 습관(語尾癖)·1인칭·에너지로 구분되도록 한다. 예: "장난기 많은 소년투, 1인칭 オレ,
+   * 어미를 늘이며 반말". 특징이 없으면 ''.
+   */
+  persona: string;
+}
+
+const SPEECH_STYLE_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    dialect: { type: 'STRING' },
+    strength: { type: 'STRING', enum: ['', 'low', 'medium', 'high'] },
+    register: { type: 'STRING' },
+    markers: { type: 'ARRAY', items: { type: 'STRING' } },
+    persona: { type: 'STRING' },
+    confidence: { type: 'NUMBER' },
+  },
+  required: ['dialect', 'strength', 'register', 'markers', 'persona', 'confidence'],
+} as const;
+
+function speechStylePrompt(transcript: string, language: string): string {
+  const dialectGuide =
+    language === 'ja'
+      ? 'Japanese dialects to consider: 関西 (Kansai — e.g. 〜やねん/〜へん/ほんま), 東北 (Tohoku), 博多/九州 (Hakata/Kyushu — e.g. 〜と?/〜ばい), 広島, 名古屋, 沖縄. Standard = 標準語. Japanese speakers/characters are ALSO identified by signature sentence-final quirks (語尾癖 such as 〜だってばよ／〜ですわ／〜のだ／〜にゃ), their first-person pronoun (俺/僕/私/わし/あたし…), and catchphrases — capture these even when the dialect is standard.'
+      : language === 'en'
+        ? 'For English, dialect detection is usually not reliable from a transcript — leave dialect "" unless wording is unmistakably regional; focus on register (casual/polite) and habitual expressions/catchphrases.'
+        : 'Korean dialects to consider: 경상 (e.g. ~했나/~아이가/~카이/~심더), 전라 (e.g. ~잉/~부러/~것이), 충청 (e.g. ~여/~유), 강원, 제주 (e.g. ~수다/~마씸). Standard = 표준어. Also capture personal verbal habits (특유의 어미·감탄사·말버릇) even for standard speakers.';
+  return [
+    'You are analyzing how a speaker talks, from a transcript of their voice-clone enrollment recording. The speaker may be a real person reading a suggested script (they may sound more standard than usual — only report a dialect when clearly shown), or a fictional character with a distinctive verbal identity: the SAME voice actor can play different characters, so it is the verbal habits — signature sentence endings, first-person pronoun, catchphrases, energy — that tell characters apart. Capture whichever is present.',
+    dialectGuide,
+    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","confidence":0.0-1.0}.',
+    'Be conservative: when unsure, dialect="" and confidence low. markers must be copied from the transcript, not invented. persona describes only what the transcript shows — no guessed names or identities.',
+    `TRANSCRIPT (${language}):`,
+    transcript.slice(0, 2000),
+  ].join('\n');
+}
+
+/**
+ * 전사 텍스트에서 화자 말투(사투리·격식·특징 어미)를 분석한다. confidence 가 낮거나
+ * 실패하면 null — 호출자는 저장을 건너뛴다(표준어로 동작, 사용자 미리듣기 수정으로 교정 가능).
+ */
+export async function analyzeSpeechStyleWithVertex(
+  env: Env,
+  transcript: string,
+  language: string,
+): Promise<SpeechStyle | null> {
+  if (!hasGeminiConfiguration(env)) return null;
+  const trimmed = transcript.trim();
+  if (trimmed.length < 20) return null;
+  let raw: string;
+  try {
+    raw = await generateContentText(env, speechStylePrompt(trimmed, language), {
+      temperature: 0.1,
+      maxOutputTokens: 256,
+      responseSchema: SPEECH_STYLE_RESPONSE_SCHEMA,
+    });
+  } catch {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as {
+      dialect?: unknown;
+      strength?: unknown;
+      register?: unknown;
+      markers?: unknown;
+      confidence?: unknown;
+    };
+    const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+    if (confidence < 0.6) return null;
+    const dialect = typeof parsed.dialect === 'string' ? parsed.dialect.trim().slice(0, 20) : '';
+    const strengthRaw = typeof parsed.strength === 'string' ? parsed.strength.trim() : '';
+    const strength = (['low', 'medium', 'high'].includes(strengthRaw) ? strengthRaw : '') as
+      | ''
+      | 'low'
+      | 'medium'
+      | 'high';
+    const register = typeof parsed.register === 'string' ? parsed.register.trim().slice(0, 20) : '';
+    const markers = Array.isArray(parsed.markers)
+      ? parsed.markers
+          .filter((m): m is string => typeof m === 'string')
+          .map((m) => m.trim())
+          .filter(Boolean)
+          .slice(0, 5)
+      : [];
+    const persona =
+      typeof (parsed as { persona?: unknown }).persona === 'string'
+        ? String((parsed as { persona?: unknown }).persona).trim().slice(0, 120)
+        : '';
+    if (!dialect && !register && markers.length === 0 && !persona) return null;
+    // 표준어인데 사투리 강도만 있는 모순 정리.
+    return { dialect, strength: dialect ? strength : '', register, markers, persona };
+  } catch {
+    return null;
+  }
+}
+
+/** voice_profiles.speech_style JSON 컬럼 → SpeechStyle (없거나 깨졌으면 null). */
+export function parseSpeechStyle(value: unknown): SpeechStyle | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<SpeechStyle>;
+    return {
+      dialect: typeof parsed.dialect === 'string' ? parsed.dialect : '',
+      strength: (['low', 'medium', 'high'].includes(String(parsed.strength))
+        ? parsed.strength
+        : '') as SpeechStyle['strength'],
+      register: typeof parsed.register === 'string' ? parsed.register : '',
+      markers: Array.isArray(parsed.markers)
+        ? parsed.markers.filter((m): m is string => typeof m === 'string').slice(0, 5)
+        : [],
+      persona: typeof parsed.persona === 'string' ? parsed.persona.slice(0, 120) : '',
+    };
+  } catch {
+    return null;
+  }
 }
 
 // 폴백 회전(§4.7): 고정 단일 문구 대신 mode+dateLabel 해시로 몇 개 템플릿을 회전한다.
@@ -1615,8 +1767,28 @@ function normalizeSameLanguageTaggedText(
   }
   const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
   if (!tag) return null;
-  const tagged = `[${tag}] ${originalText}`;
-  return tagged.length <= 200 ? tagged : originalText;
+  return applyDeliveryTagPerSentence(tag, originalText, 200);
+}
+
+// ElevenLabs v3 delivery 태그는 뒤따르는 구간에서 갈수록 효력이 약해져, 여러 문장을
+// 선두 태그 하나로 합성하면 끝 문장에서 톤이 풀리고 말이 빨라지는 드리프트가 생긴다.
+// 문장 경계마다 같은 태그를 다시 앞세워 전달 톤을 끝까지 고정한다(태그는 발화되지 않음).
+// 상한을 넘으면 선두 1회 태그로, 그것도 넘으면 원문 그대로 폴백한다.
+export function applyDeliveryTagPerSentence(tag: string, text: string, maxLength = 300): string {
+  const trimmed = text.trim();
+  if (!tag) return trimmed;
+  const sentences =
+    trimmed
+      .match(/[^.!?…]+[.!?…]*/g)
+      ?.map((sentence) => sentence.trim())
+      .filter(Boolean) ?? [];
+  const perSentence =
+    sentences.length > 1
+      ? sentences.map((sentence) => `[${tag}] ${sentence}`).join(' ')
+      : `[${tag}] ${trimmed}`;
+  if (perSentence.length <= maxLength) return perSentence;
+  const single = `[${tag}] ${trimmed}`;
+  return single.length <= maxLength ? single : trimmed;
 }
 
 export function normalizeAlarmTextWithoutTags(text: string): string {

@@ -31,6 +31,7 @@ async function setupDb() {
       relationship_label TEXT DEFAULT '',
       listener_title TEXT DEFAULT '',
       preview_text TEXT,
+      speech_style TEXT,
       deleted_at TEXT
     );
     CREATE TABLE messages (

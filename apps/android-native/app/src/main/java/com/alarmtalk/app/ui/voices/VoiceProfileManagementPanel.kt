@@ -27,9 +27,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -78,8 +80,6 @@ import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.ui.guide.UsageGuideDialog
-import com.alarmtalk.app.ui.guide.UsageGuideStep
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -127,23 +127,6 @@ private fun voiceProfileCropDurationError(context: android.content.Context, dura
         context.getString(R.string.voices_crop_duration_notice)
     else -> null
 }
-
-// 처음 목소리를 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
-@Composable
-private fun rememberVoiceCreateGuideSteps(): List<UsageGuideStep> = listOf(
-    UsageGuideStep(
-        title = stringResource(R.string.voices2_guide_record_title),
-        body = stringResource(R.string.voices2_guide_record_body),
-    ),
-    UsageGuideStep(
-        title = stringResource(R.string.voices2_guide_identity_title),
-        body = stringResource(R.string.voices2_guide_identity_body),
-    ),
-    UsageGuideStep(
-        title = stringResource(R.string.voices2_guide_register_title),
-        body = stringResource(R.string.voices2_guide_register_body),
-    ),
-)
 
 /**
  * 추천 대사 카드. [fillHeight] 가 true 면 호출부(스크롤 없는 Column)의 weight 와 짝을 이뤄
@@ -202,7 +185,7 @@ internal fun VoiceProfileManagementPanel(
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Boolean,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
@@ -246,9 +229,15 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
-    val voiceCreateGuideSteps = rememberVoiceCreateGuideSteps()
-    // 자동 노출 없이 다이얼로그 도움말(?) 버튼으로만 연다 — 첫 방문 팝업 간소화.
-    var voiceGuideVisible by remember { mutableStateOf(false) }
+    // 미리듣기·사전렌더 문구 언어 — 기본은 앱 로케일(ko/en/ja 외엔 ko).
+    val configuration = LocalConfiguration.current
+    val defaultVoiceLanguage = remember(configuration) {
+        com.alarmtalk.app.data.appVoiceLanguageOf(
+            configuration.locales.takeIf { !it.isEmpty }?.get(0)?.language
+                ?: java.util.Locale.getDefault().language,
+        )
+    }
+    var profileVoiceLanguage by remember { mutableStateOf(defaultVoiceLanguage) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
@@ -587,6 +576,7 @@ internal fun VoiceProfileManagementPanel(
         createPreparing = false
         createSubmitAttempted = false
         profileName = ""
+        profileVoiceLanguage = defaultVoiceLanguage
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
         shareVoice = false
@@ -899,6 +889,7 @@ internal fun VoiceProfileManagementPanel(
                 shareVoice,
                 trimmedRelationship,
                 trimmedListener,
+                profileVoiceLanguage,
             )
             if (accepted) enterCreatingStep()
             return
@@ -919,6 +910,7 @@ internal fun VoiceProfileManagementPanel(
                         shareVoice,
                         trimmedRelationship,
                         trimmedListener,
+                        profileVoiceLanguage,
                     )
                     if (accepted) enterCreatingStep()
                 }
@@ -957,6 +949,9 @@ internal fun VoiceProfileManagementPanel(
 
         if (ownVoices.isEmpty() && canCreateVoice) {
             MutedText(stringResource(R.string.voices_no_voices_yet))
+        } else if (ownVoices.isEmpty() && authSession != null) {
+            // 무료 플랜 — 빈 자리로 두지 않고, 내 목소리 클론이 유료 기능임을 조용히 알린다.
+            MutedText(stringResource(R.string.voices_clone_requires_paid_hint))
         } else if (ownVoices.isNotEmpty()) {
             ownVoices.forEach { profile ->
                 VoiceProfileRow(
@@ -1157,16 +1152,6 @@ internal fun VoiceProfileManagementPanel(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
-                        IconButton(
-                            onClick = { voiceGuideVisible = true },
-                            modifier = Modifier.size(42.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                                contentDescription = stringResource(R.string.voices_usage_guide),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                         if (!inDraftDecisionFlow) {
                             IconButton(
                                 onClick = ::closeCreateDialog,
@@ -1314,13 +1299,27 @@ internal fun VoiceProfileManagementPanel(
                                     supportingText = {
                                         if (listenerRequiredError) {
                                             Text(stringResource(R.string.voices_required_field))
-                                        } else {
-                                            Text(stringResource(R.string.voices_listener_title_hint))
                                         }
                                     },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
                                     modifier = Modifier.fillMaxWidth(),
+                                )
+                                // 문구 언어 — 미리듣기와 매일 사전렌더 문구가 이 언어로 만들어진다.
+                                Text(
+                                    text = stringResource(R.string.voices_language_label),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                                EditorSegmentedSelector(
+                                    options = listOf(
+                                        "ko" to stringResource(R.string.voices_lang_ko),
+                                        "en" to stringResource(R.string.voices_lang_en),
+                                        "ja" to stringResource(R.string.voices_lang_ja),
+                                    ),
+                                    selected = profileVoiceLanguage,
+                                    onSelect = { profileVoiceLanguage = it },
                                 )
                                 // 공유 설정 — 토글 하나뿐이라 단독 단계를 없애고 세부 정보에 합쳤다.
                                 Text(
@@ -1388,11 +1387,6 @@ internal fun VoiceProfileManagementPanel(
                                                 .padding(16.dp),
                                             verticalArrangement = Arrangement.spacedBy(8.dp),
                                         ) {
-                                            Text(
-                                                text = stringResource(R.string.voices_preview_text_label),
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
                                             if (confirmPreviewEditing) {
                                                 OutlinedTextField(
                                                     value = confirmPreviewEditText,
@@ -1420,6 +1414,7 @@ internal fun VoiceProfileManagementPanel(
                                                     ) {
                                                         Text(stringResource(R.string.voices_preview_edit_cancel))
                                                     }
+                                                    // 재생성 — 수정한 문구로 저장하고 바로 다시 합성해 들려준다.
                                                     Button(
                                                         onClick = { savePreviewTextEdit(previewVoice) },
                                                         enabled = !confirmPreviewSaving && confirmPreviewEditText.isNotBlank(),
@@ -1436,30 +1431,66 @@ internal fun VoiceProfileManagementPanel(
                                                     }
                                                 }
                                             } else {
-                                                Text(
-                                                    text = when {
-                                                        confirmPreviewText != null -> "“$confirmPreviewText”"
-                                                        confirmPreviewBusy -> stringResource(R.string.voices_preview_text_loading)
-                                                        // 자동 준비 실패(잠시 후 재시도 가능한 409 등) — 준비 중이라고
-                                                        // 속이지 않고 미리듣기 버튼으로 다시 시도하게 안내한다.
-                                                        else -> stringResource(R.string.voices_preview_text_retry_hint)
-                                                    },
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = if (confirmPreviewText != null) {
-                                                        MaterialTheme.colorScheme.onSurface
-                                                    } else {
-                                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                                    },
-                                                )
-                                                if (confirmPreviewText != null) {
-                                                    TextButton(
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Text(
+                                                        text = when {
+                                                            confirmPreviewText != null -> "“$confirmPreviewText”"
+                                                            confirmPreviewBusy -> stringResource(R.string.voices_preview_text_loading)
+                                                            // 자동 준비 실패(잠시 후 재시도 가능한 409 등) — 준비 중이라고
+                                                            // 속이지 않고 다시 듣기로 재시도하게 안내한다.
+                                                            else -> stringResource(R.string.voices_preview_text_retry_hint)
+                                                        },
+                                                        modifier = Modifier.weight(1f),
+                                                        style = MaterialTheme.typography.bodyLarge,
+                                                        color = if (confirmPreviewText != null) {
+                                                            MaterialTheme.colorScheme.onSurface
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        },
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    // 연필 — 문구 수정 모드로 전환.
+                                                    IconButton(
                                                         onClick = {
                                                             confirmPreviewEditText = confirmPreviewText.orEmpty()
                                                             confirmPreviewEditing = true
                                                         },
-                                                        enabled = !confirmPreviewBusy && !confirmPreviewSaving,
+                                                        enabled = confirmPreviewText != null && !confirmPreviewBusy && !confirmPreviewSaving,
+                                                        modifier = Modifier.size(36.dp),
                                                     ) {
-                                                        Text(stringResource(R.string.voices_preview_edit_action))
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.Edit,
+                                                            contentDescription = stringResource(R.string.voices_preview_edit_action),
+                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.size(20.dp),
+                                                        )
+                                                    }
+                                                    // 다시 듣기 — 준비된 문구를 다시 재생(합성 실패 시 재시도 겸용).
+                                                    IconButton(
+                                                        onClick = { previewRegisteredVoice(previewVoice) },
+                                                        enabled = !confirmPreviewBusy && !confirmPreviewSaving,
+                                                        modifier = Modifier.size(36.dp),
+                                                    ) {
+                                                        if (confirmPreviewBusy) {
+                                                            CircularProgressIndicator(
+                                                                modifier = Modifier.size(18.dp),
+                                                                strokeWidth = 2.dp,
+                                                            )
+                                                        } else {
+                                                            Icon(
+                                                                imageVector = if (confirmPreviewPlaying) {
+                                                                    Icons.Outlined.Stop
+                                                                } else {
+                                                                    Icons.Outlined.PlayArrow
+                                                                },
+                                                                contentDescription = stringResource(R.string.voices_confirm_new_preview),
+                                                                tint = MaterialTheme.colorScheme.primary,
+                                                                modifier = Modifier.size(22.dp),
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -1470,22 +1501,6 @@ internal fun VoiceProfileManagementPanel(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
-                                    OutlinedButton(
-                                        onClick = { previewRegisteredVoice(previewVoice) },
-                                        enabled = !confirmPreviewBusy && !confirmPreviewEditing && !confirmPreviewSaving,
-                                        shape = WakerButtonShape,
-                                        border = wakerCardBorder(),
-                                        colors = wakerOutlinedButtonColors(),
-                                        modifier = Modifier.fillMaxWidth(),
-                                    ) {
-                                        Text(
-                                            when {
-                                                confirmPreviewBusy -> stringResource(R.string.voices_confirm_new_preview_loading)
-                                                confirmPreviewPlaying -> stringResource(R.string.voices_confirm_new_preview_stop)
-                                                else -> stringResource(R.string.voices_confirm_new_preview)
-                                            },
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -1612,13 +1627,6 @@ internal fun VoiceProfileManagementPanel(
                 }
             }
         }
-    }
-
-    if (voiceGuideVisible) {
-        UsageGuideDialog(
-            steps = voiceCreateGuideSteps,
-            onFinish = { voiceGuideVisible = false },
-        )
     }
 
     renameTarget?.let { profile ->

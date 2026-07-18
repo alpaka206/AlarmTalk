@@ -15,12 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -132,10 +128,12 @@ internal fun VoiceOnboardingScreen(
                             name = profile.name,
                             sample = sampleText(profile),
                             selected = profile.id == selectedId,
-                            previewing = previewController.playingVoiceId == profile.id,
                             preparing = previewController.preparingVoiceId == profile.id,
-                            onSelect = { selectedId = profile.id },
-                            onPreview = { previewController.previewVoice(profile, stockClips) },
+                            // 별도 재생 버튼 없이, 카드를 누르면 선택과 동시에 샘플이 재생된다.
+                            onSelect = {
+                                selectedId = profile.id
+                                previewController.previewVoice(profile, stockClips)
+                            },
                         )
                     }
                 }
@@ -183,10 +181,8 @@ private fun VoiceChoiceRow(
     name: String,
     sample: String?,
     selected: Boolean,
-    previewing: Boolean,
     preparing: Boolean,
     onSelect: () -> Unit,
-    onPreview: () -> Unit,
 ) {
     Surface(
         onClick = onSelect,
@@ -200,7 +196,7 @@ private fun VoiceChoiceRow(
         border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 14.dp),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
@@ -232,29 +228,11 @@ private fun VoiceChoiceRow(
                 }
             }
             Spacer(Modifier.width(8.dp))
-            Surface(
-                onClick = onPreview,
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                modifier = Modifier.size(40.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    if (preparing) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(
-                            imageVector = if (previewing) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
-                            contentDescription = if (previewing) {
-                                stringResource(R.string.editor_stop)
-                            } else {
-                                stringResource(R.string.onb_voice_preview)
-                            },
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
+            // 샘플 준비 중에만 자리 표시 — 평소엔 선택 점만 남겨 카드가 조용하다.
+            if (preparing) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
             }
-            Spacer(Modifier.width(8.dp))
             VoiceChoiceDot(selected = selected)
         }
     }

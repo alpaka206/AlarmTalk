@@ -18,6 +18,22 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId LIMIT 1")
     suspend fun getByRemoteAlarmId(remoteAlarmId: String): AlarmEntity?
 
+    /** 같은 서버 알람을 가리키는 모든 로컬 행 — 과거 동시 pull 레이스로 생긴 중복 임포트 정리용. */
+    @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId ORDER BY createdAtMillis")
+    suspend fun getAllByRemoteAlarmId(remoteAlarmId: String): List<AlarmEntity>
+
+    /** 같은 시각에 켜져 있는 알람 전부 — 받은 알람 임포트 시 '보낸 사람 알람 우선' 대체 정책에 쓴다. */
+    @Query(
+        """
+        SELECT * FROM alarms
+        WHERE hour = :hour
+          AND minute = :minute
+          AND enabled = 1
+          AND (:excludeId IS NULL OR id != :excludeId)
+        """,
+    )
+    suspend fun getEnabledAtTime(hour: Int, minute: Int, excludeId: String? = null): List<AlarmEntity>
+
     @Query(
         """
         SELECT * FROM alarms

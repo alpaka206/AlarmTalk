@@ -478,13 +478,12 @@ class RingingService : Service() {
             return
         }
 
-        val pattern = VibrationPatternLibrary.waveform(patternName)
         val alarmAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
-        vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0), alarmAttributes)
+        vibrator?.vibrate(VibrationPatternLibrary.effect(patternName, repeat = true), alarmAttributes)
     }
 
     private fun openRingingActivity(alarmId: String) {
