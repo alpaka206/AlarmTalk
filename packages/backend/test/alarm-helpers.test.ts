@@ -2,10 +2,15 @@ import { describe, it, expect } from 'vitest';
 import {
   normalizeAlarmRow,
   validateAlarmFields,
+  normalizeTimezone,
+  isSupportedTimezone,
+  computeNextAlarmFire,
+  resolveEffectiveTimezone,
   ALARM_MODES,
   VIBRATION_PATTERNS,
   WAKE_MODES,
 } from '../src/routes/alarm-helpers';
+import type { DbExecutor } from '../src/lib/transactions';
 import {
   FREE_BUCKET_CATEGORIES,
   CLONE_PRERENDER_CATEGORIES,
@@ -398,5 +403,110 @@ describe('validateAlarmFields — bucket_id', () => {
     expect(
       validateAlarmFields({ bucket_id: 123 as unknown as string })?.error_code,
     ).toBe('INVALID_BUCKET_ID');
+  });
+});
+
+describe('normalizeTimezone / isSupportedTimezone', () => {
+  it('normalizeTimezone: 형식이 맞으면 trim 해 반환, 아니면 null', () => {
+    expect(normalizeTimezone(' Asia/Seoul ')).toBe('Asia/Seoul');
+    expect(normalizeTimezone('America/New_York')).toBe('America/New_York');
+    expect(normalizeTimezone('')).toBeNull();
+    expect(normalizeTimezone(123)).toBeNull();
+    expect(normalizeTimezone('bad zone!')).toBeNull();
+    expect(normalizeTimezone('a'.repeat(65))).toBeNull();
+  });
+
+  it('isSupportedTimezone: 형식만 맞는 가짜 시간대를 걸러낸다', () => {
+    expect(isSupportedTimezone('Asia/Seoul')).toBe(true);
+    expect(isSupportedTimezone('America/New_York')).toBe(true);
+    expect(isSupportedTimezone('Not/AZone')).toBe(false);
+  });
+});
+
+describe('resolveEffectiveTimezone — 수신자 저장 tz 우선(발신자 body tz 우회 차단)', () => {
+  /** 수신자 저장 timezone 조회를 흉내내는 DbExecutor. storedTz=null 이면 기록 없음. */
+  function fakeDb(storedTz: string | null): DbExecutor & { args: unknown[] } {
+    const captured: unknown[] = [];
+    return {
+      args: captured,
+      execute: (async (stmt: { sql: string; args: unknown[] }) => {
+        captured.push(...stmt.args);
+        return { rows: storedTz === null ? [] : [{ timezone: storedTz }] };
+      }) as unknown as DbExecutor['execute'],
+    };
+  }
+
+  const RECIPIENT_IDS: [string, string] = ['r-pk', 'r-login'];
+
+  it('수신자 저장 tz 가 있으면 body tz 를 무시하고 저장 tz 를 반환한다', async () => {
+    const db = fakeDb('America/New_York');
+    await expect(resolveEffectiveTimezone(db, 'Asia/Seoul', RECIPIENT_IDS)).resolves.toBe(
+      'America/New_York',
+    );
+    // 조회는 수신자 두 식별자(user_id IN)로 바인딩된다.
+    expect(db.args).toEqual(['r-pk', 'r-login']);
+  });
+
+  it('수신자 기록이 없으면 body tz 로 폴백한다', async () => {
+    await expect(
+      resolveEffectiveTimezone(fakeDb(null), 'America/New_York', RECIPIENT_IDS),
+    ).resolves.toBe('America/New_York');
+  });
+
+  it('저장 tz 가 Intl 미지원 값이면 body tz 로 폴백한다', async () => {
+    await expect(
+      resolveEffectiveTimezone(fakeDb('Not/AZone'), 'Asia/Tokyo', RECIPIENT_IDS),
+    ).resolves.toBe('Asia/Tokyo');
+  });
+
+  it('저장 tz 도 없고 body tz 도 무효면 Asia/Seoul 기본값', async () => {
+    await expect(resolveEffectiveTimezone(fakeDb(null), undefined, RECIPIENT_IDS)).resolves.toBe(
+      'Asia/Seoul',
+    );
+    await expect(
+      resolveEffectiveTimezone(fakeDb(null), 'bad zone!', RECIPIENT_IDS),
+    ).resolves.toBe('Asia/Seoul');
+  });
+});
+
+describe('computeNextAlarmFire — 수신자 시간대 기준 다음 발사 시각', () => {
+  // 고정 기준: 2026-07-15T00:00Z = KST 수요일 09:00.
+  const NOW = new Date('2026-07-15T00:00:00Z');
+
+  it('일회성: 오늘 시각이 안 지났으면 오늘 발사', () => {
+    const fire = computeNextAlarmFire('10:00', [], 'Asia/Seoul', NOW)!;
+    expect(fire.fireAt.toISOString()).toBe('2026-07-15T01:00:00.000Z');
+    expect(fire.fireDayOfWeek).toBe(3); // 수요일
+  });
+
+  it('일회성: 오늘 시각이 지났으면 내일 발사', () => {
+    const fire = computeNextAlarmFire('08:00', [], 'Asia/Seoul', NOW)!;
+    expect(fire.fireAt.toISOString()).toBe('2026-07-15T23:00:00.000Z'); // KST 목 08:00
+    expect(fire.fireDayOfWeek).toBe(4); // 목요일
+  });
+
+  it('반복: 다음 매칭 요일로 이동', () => {
+    const fire = computeNextAlarmFire('10:00', [6], 'Asia/Seoul', NOW)!;
+    expect(fire.fireAt.toISOString()).toBe('2026-07-18T01:00:00.000Z'); // KST 토 10:00
+    expect(fire.fireDayOfWeek).toBe(6);
+  });
+
+  it('서버 UTC 요일과 수신자 시간대 요일이 다른 경계: UTC 금 15:30 = KST 토 00:30', () => {
+    const now = new Date('2026-07-17T14:00:00Z'); // UTC 금 14:00 = KST 금 23:00
+    const fire = computeNextAlarmFire('00:30', [], 'Asia/Seoul', now)!;
+    expect(fire.fireAt.toISOString()).toBe('2026-07-17T15:30:00.000Z');
+    expect(fire.fireAt.getUTCDay()).toBe(5); // UTC 로는 아직 금요일
+    expect(fire.fireDayOfWeek).toBe(6); // 수신자(KST) 기준으로는 토요일
+  });
+
+  it('지원하지 않는 시간대는 Asia/Seoul 폴백', () => {
+    const seoul = computeNextAlarmFire('10:00', [], 'Asia/Seoul', NOW)!;
+    const fallback = computeNextAlarmFire('10:00', [], 'Not/AZone', NOW)!;
+    expect(fallback.fireAt.getTime()).toBe(seoul.fireAt.getTime());
+  });
+
+  it('시간 형식이 틀리면 null', () => {
+    expect(computeNextAlarmFire('9:00', [], 'Asia/Seoul', NOW)).toBeNull();
+    expect(computeNextAlarmFire('25:00', [], 'Asia/Seoul', NOW)).toBeNull();
   });
 });

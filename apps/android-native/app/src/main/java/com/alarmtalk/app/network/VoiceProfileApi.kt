@@ -74,6 +74,25 @@ data class VoiceProfileRelationshipUpdateRequest(
     @SerializedName("listener_title") val listenerTitle: String,
 )
 
+/** GET voice/{id}/prerender-status 응답 — 유료 클론 사전렌더(R2 21클립) 진행 상태. */
+data class VoicePrerenderStatusResponse(
+    // "pending" | "done" | "failed" | "none"
+    val status: String? = null,
+    val total: Int = 0,
+    val generated: Int = 0,
+    val attempts: Int = 0,
+)
+
+data class VoicePrerenderRetryResponse(
+    val success: Boolean = false,
+)
+
+data class VoiceSpeechStyleRetryResponse(
+    val success: Boolean = false,
+    // 성공 시 "done".
+    val status: String? = null,
+)
+
 data class VoiceProfile(
     val id: String,
     // Gson 은 JSON 에 name 이 누락되거나 null 이어도 기본값을 통하지 않고 그대로 null 을 주입할 수 있어
@@ -87,6 +106,8 @@ data class VoiceProfile(
     @SerializedName("is_system") val isSystem: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
+    // 말투(스피치 스타일) 분석 상태: null | "pending" | "done" | "failed". 클론 보이스 전용.
+    @SerializedName("speech_style_status") val speechStyleStatus: String? = null,
 )
 
 data class FamilyVoiceProfile(
@@ -120,8 +141,9 @@ interface VoiceProfileApi {
         @Part audio: MultipartBody.Part,
         @Part("name") name: RequestBody,
         @Part("isShared") isShared: RequestBody,
-        @Part("relationshipLabel") relationshipLabel: RequestBody,
-        @Part("listenerTitle") listenerTitle: RequestBody,
+        // 관계·호칭은 선택 입력 — 비우면 파트 자체를 보내지 않는다(백엔드 옵셔널).
+        @Part("relationshipLabel") relationshipLabel: RequestBody?,
+        @Part("listenerTitle") listenerTitle: RequestBody?,
         @Part("durationMs") durationMs: RequestBody,
         @Part("isDraft") isDraft: RequestBody,
         // 사전렌더할 앱 언어(미전송 시 서버가 'ko' 폴백 → 비-ko 유저가 클론 버킷을 못 받음).
@@ -177,4 +199,24 @@ interface VoiceProfileApi {
 
     @GET("voice/family")
     suspend fun listFamilyVoiceProfiles(@Header("Authorization") authorization: String): FamilyVoiceProfileListResponse
+
+    // 유료 클론 사전렌더(R2 21클립) 진행 상태 — 목소리 탭 준비 표시가 짧게 폴링한다.
+    @GET("voice/{id}/prerender-status")
+    suspend fun getVoicePrerenderStatus(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): VoicePrerenderStatusResponse
+
+    @POST("voice/{id}/prerender-retry")
+    suspend fun retryVoicePrerender(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): VoicePrerenderRetryResponse
+
+    // 말투 분석 재시도 — 실패 502 { error_code: SPEECH_STYLE_ANALYSIS_FAILED }, 소스 없음 409.
+    @POST("voice/{id}/speech-style/retry")
+    suspend fun retryVoiceSpeechStyle(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): VoiceSpeechStyleRetryResponse
 }

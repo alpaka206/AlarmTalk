@@ -14,6 +14,11 @@ import {
 import {
   validateAlarmFields,
   normalizeAlarmRow,
+  normalizeTimezone,
+  resolveEffectiveTimezone,
+  computeNextAlarmFire,
+  claimTargetedAlarmSlot,
+  FAMILY_ALARM_MIN_LEAD_MINUTES,
   type AlarmRow,
   type AlarmMode,
   type VibrationPattern,
@@ -23,18 +28,6 @@ import { isPaidVoicePlan } from './billing-helpers';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 
 const alarmMutation = new Hono<AppEnv>();
-
-/**
- * 클라이언트가 보낸 IANA timezone 을 정규화한다. 푸시 스케줄러가 알람 HH:mm 을
- * 이 시간대로 판정한다. 형식이 어긋나면 null (스케줄러가 Asia/Seoul 폴백).
- */
-function normalizeTimezone(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 64) return null;
-  if (!/^[A-Za-z][A-Za-z0-9_+\-/]*$/.test(trimmed)) return null;
-  return trimmed;
-}
 
 function alarmUsesPaidVoice(body: {
   mode?: string | null;
@@ -207,6 +200,8 @@ alarmMutation.post('/', async (c) => {
   if (fieldError) return c.json(fieldError, 400);
 
   let targetUserIdForAlarm: string | null = null;
+  // 타깃 경로에서 (수신자 PK, 수신자 로그인 id) — 슬롯 교체(claimTargetedAlarmSlot)에 쓴다.
+  let targetIdsForReplace: [string, string] | null = null;
   if (body.target_user_id) {
     const rawTargetUserId = body.target_user_id.trim();
     if (!rawTargetUserId) {
@@ -245,7 +240,33 @@ alarmMutation.post('/', async (c) => {
           403,
         );
       }
-      if (isBlockedByFamilyAlarmQuietTime(body.time, body.repeat_days ?? [], targetSettings)) {
+      // 수신자 시간대 기준 서버 검증: 효과 시간대(body.timezone → 수신자 최근 알람 tz →
+      // Asia/Seoul)로 다음 발사 시각을 구해 30분 리드타임과 quiet 요일을 판정한다.
+      const effectiveTimezone = await resolveEffectiveTimezone(db, body.timezone, [
+        targetPk,
+        targetLoginId,
+      ]);
+      const nextFire = computeNextAlarmFire(body.time, body.repeat_days ?? [], effectiveTimezone);
+      if (
+        nextFire &&
+        nextFire.fireAt.getTime() - Date.now() < FAMILY_ALARM_MIN_LEAD_MINUTES * 60_000
+      ) {
+        return c.json(
+          {
+            error: `알람은 최소 ${FAMILY_ALARM_MIN_LEAD_MINUTES}분 이후 시각으로만 보낼 수 있습니다.`,
+            error_code: 'FAMILY_ALARM_LEAD_TIME',
+          },
+          400,
+        );
+      }
+      if (
+        isBlockedByFamilyAlarmQuietTime(
+          body.time,
+          body.repeat_days ?? [],
+          targetSettings,
+          nextFire?.fireDayOfWeek ?? new Date().getDay(),
+        )
+      ) {
         return c.json(
           {
             error: '상대방이 설정한 불가 시간에는 알람을 만들 수 없습니다.',
@@ -280,6 +301,7 @@ alarmMutation.post('/', async (c) => {
         }
         targetUserIdForAlarm = targetLoginId;
       }
+      targetIdsForReplace = [targetPk, targetLoginId];
     }
   }
 
@@ -360,7 +382,7 @@ alarmMutation.post('/', async (c) => {
     }
   }
 
-  const alarmId = crypto.randomUUID();
+  let alarmId = crypto.randomUUID();
   const mode: AlarmMode =
     (body.mode as AlarmMode | undefined) ?? (creatorHasPaidVoice ? 'tts' : 'sound-only');
   const vibPattern: VibrationPattern =
@@ -392,8 +414,46 @@ alarmMutation.post('/', async (c) => {
         body.bucket_id ?? null,
       ],
     });
+  // 타인 발신 알람: 같은 (수신자, time) 슬롯을 멱등·교체 규칙으로 원자 점유한다.
+  // 같은 발신자의 재전송이면 기존 행을 새 내용으로 UPDATE(id 유지), 다른 발신자의 기존
+  // 발신 알람은 비활성화(최신 우선). 수신자 본인 알람(target 없음)은 건드리지 않는다 —
+  // 클라 로컬 교체 확인창이 담당(claimTargetedAlarmSlot 주석 참고).
+  const upsertTargetedAlarm = async (
+    executor: DbExecutor,
+    recipientIds: [string, string],
+  ): Promise<string> => {
+    const claimed = await claimTargetedAlarmSlot(executor, userId, recipientIds, body.time, alarmId);
+    if (claimed.reused) {
+      await executor.execute({
+        sql: `UPDATE alarms SET
+                message_id = ?, repeat_days = ?, snooze_minutes = ?, mode = ?,
+                vibration_pattern = ?, wake_mode = ?, voice_profile_id = ?, speaker_id = ?,
+                raw_audio_url = ?, raw_audio_duration_ms = ?, timezone = ?, bucket_id = ?,
+                is_active = 1, updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [
+          resolvedMessageId,
+          JSON.stringify(body.repeat_days ?? []),
+          body.snooze_minutes ?? 5,
+          mode,
+          vibPattern,
+          wakeMode,
+          body.voice_profile_id ?? null,
+          body.speaker_id ?? null,
+          body.raw_audio_url ?? null,
+          body.raw_audio_duration_ms ?? null,
+          timezone,
+          body.bucket_id ?? null,
+          claimed.alarmId,
+        ],
+      });
+    } else {
+      await insertAlarm(executor);
+    }
+    return claimed.alarmId;
+  };
   const inserted =
-    body.voice_profile_id || resolvedMessageId
+    targetUserIdForAlarm || body.voice_profile_id || resolvedMessageId
       ? await withWriteTransaction(db, async (tx) => {
           if (
             body.voice_profile_id &&
@@ -406,6 +466,10 @@ alarmMutation.post('/', async (c) => {
             !(await messageBelongsToCaller(tx, resolvedMessageId, ownerIds))
           ) {
             return { status: 'message_not_found' as const, result: null };
+          }
+          if (targetUserIdForAlarm && targetIdsForReplace) {
+            alarmId = await upsertTargetedAlarm(tx, targetIdsForReplace);
+            return { status: 'ok' as const, result: null };
           }
           return { status: 'ok' as const, result: await insertAlarm(tx) };
         })

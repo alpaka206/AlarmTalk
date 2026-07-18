@@ -459,8 +459,9 @@ internal val TtsCategories: List<Pair<String, Int>> = listOf(
 /**
  * 무료 플랜이 알람 "버킷"으로 고를 수 있는 카테고리(노출 순서). 실제 노출은 stockClips
  * manifest 와 교차한다 → 서버에 버킷을 추가/재시드하면 여기에만 추가하면 칩이 늘어난다.
+ * 백엔드 확정 무료 버킷(stock-clips.ts FREE_BUCKET_CATEGORIES)과 동일: 날씨 + 약.
  */
-internal val FreeBucketOrder: List<String> = listOf("morning", "medication")
+internal val FreeBucketOrder: List<String> = listOf("weather", "medication")
 
 /** 버킷 칩 라벨. 카테고리 라벨 문자열을 재사용한다(기상·약 …). */
 internal fun freeBucketLabelRes(category: String): Int = when (category) {

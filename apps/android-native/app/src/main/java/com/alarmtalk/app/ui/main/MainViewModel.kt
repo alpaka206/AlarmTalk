@@ -206,6 +206,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     var billingBusy by mutableStateOf(false)
 
+    // 서버가 Play 구독을 직접 해지하지 못했을 때(PLAY_CANCEL_FAILED 등) 띄우는
+    // "Google Play에서 직접 관리" 안내 다이얼로그의 구독 관리 URL. null 이면 숨김.
+    var billingPlayManageUrl by mutableStateOf<String?>(null)
+
     // planKey("personal"/"couple"/"family") → Play 실제 표시가격(formattedPrice). preloadProducts
     // 성공 시 채워지며, 비면 UI 가 문자열 리소스로 폴백한다. 하드코딩 대신 청구 통화·금액을 정확히 표기.
     var billingPlanPrices by mutableStateOf<Map<String, String>>(emptyMap())
@@ -256,6 +260,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
     var defaultVoiceId by mutableStateOf<String?>(null)
         internal set
+
+    // 기본 목소리 무료 버킷 프리페치 진행(다운로드 완료 수 to 전체). null = 진행 중 아님.
+    // 목소리 탭의 기본 목소리 행 아래에 "알람 음성 준비 중 n/전체"로 표시된다.
+    var voicePrefetchProgress by mutableStateOf<Pair<Int, Int>?>(null)
+        internal set
+
+    // 진행 중인 프리페치 잡 — 목소리를 연달아 바꾸면 이전 잡을 취소하고 마지막 선택만 받는다.
+    internal var voicePrefetchJob: kotlinx.coroutines.Job? = null
 
     private val consentPrefs = application.getSharedPreferences("voice_alarm_consent", android.content.Context.MODE_PRIVATE)
 
@@ -350,11 +362,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 온보딩 목소리 스텝에서 기본 목소리를 정했을 때. 기기 설정에 저장하고 스텝을 닫는다.
      *  (호칭은 따로 받지 않는다 — 시스템 음성 TTS 는 계정 닉네임으로 부른다.) */
     fun completeVoiceSetup(voiceId: String) {
+        // setDefaultVoice 가 무료 버킷 클립 프리페치까지 함께 태운다(온보딩·목소리 탭 동일 경로).
         setDefaultVoice(voiceId)
         showVoiceSetup = false
-        // 고른 목소리의 무료 버킷 클립을 미리 받아, 첫 알람 만들기가 대기 없이
-        // (이후엔 오프라인에서도) 되게 한다.
-        prefetchFreeBucketClips(voiceId)
         // 목소리를 고른 흐름에서만 첫 알람 만들기(에디터 자동 진입)로 이어간다(건너뛰기 시엔 홈).
         navigateFirstAlarmEditorTick++
     }
@@ -365,11 +375,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showVoiceSetup = false
     }
 
-    /** 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신. */
+    /** 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신하고,
+     *  그 목소리의 무료 버킷 클립을 미리 받는다(진행은 voicePrefetchProgress 로 노출). */
     fun setDefaultVoice(voiceId: String) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
         defaultVoiceStore.set(userId, voiceId)
         defaultVoiceId = voiceId
+        prefetchFreeBucketClips(voiceId)
     }
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
@@ -443,6 +455,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     internal fun clearUserScopedRemoteState() {
+        // 진행 중이던 목소리 프리페치 잡을 끊고 진행 표시를 지운다 — 다음 계정에 이전 계정의
+        // 늦은 다운로드 응답/진행률이 섞이지 않게 한다. (클론 사전렌더 준비 폴링은 목소리 탭
+        // 컴포저블 로컬 상태라 아래 voiceProfiles 초기화로 폴링 대상이 비면서 함께 멈춘다.)
+        voicePrefetchJob?.cancel()
+        voicePrefetchJob = null
+        voicePrefetchProgress = null
         voiceProfiles = emptyList()
         pendingVoiceDraft = null
         voiceProfileLoadFinished = false
@@ -457,6 +475,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         familyVoicesLoadedFresh = false
         subscriptionResponse = null
         vouchers = emptyList()
+        billingPlayManageUrl = null
         receivedAlarmSeenAtMillis = 0L
         registerEmailVerificationSentTo = null
         registerEmailVerified = null

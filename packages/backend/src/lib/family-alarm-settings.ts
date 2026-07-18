@@ -134,11 +134,15 @@ export function isBlockedByFamilyAlarmQuietTime(
   wakeAt: string,
   repeatDays: number[],
   settings: FamilyAlarmSettings,
-  now: Date = new Date(),
+  oneTimeFireDayOfWeek: number,
 ): boolean {
   if (!TIME_RE.test(wakeAt) || settings.quietWindows.length === 0) return false;
 
-  const daysToCheck = repeatDays.length > 0 ? repeatDays : [now.getDay()];
+  // 반복 알람은 선택한 요일 그대로, 일회성 알람은 호출부가 계산한 '다음 발사 시각의
+  // 수신자 시간대 요일'(computeNextAlarmFire.fireDayOfWeek)로 판정한다. 이전 구현은
+  // now.getDay()(Workers 서버 = UTC 요일)를 써서 수신자 로컬 자정 부근에 요일이 하루
+  // 어긋났다(예: UTC 금 15:30 = KST 토 00:30 → 토요일 quiet 창을 놓침).
+  const daysToCheck = repeatDays.length > 0 ? repeatDays : [oneTimeFireDayOfWeek];
   return settings.quietWindows.some(
     (window) =>
       isTimeWithinWindow(wakeAt, window.start, window.end) &&

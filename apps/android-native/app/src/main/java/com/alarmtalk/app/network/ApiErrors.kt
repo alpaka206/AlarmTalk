@@ -10,7 +10,12 @@ import retrofit2.HttpException
  * JSON 본문을 반환한다. HttpException 의 errorBody 는 한 번만 읽을 수 있으므로 한 번 파싱해
  * 필요한 필드를 함께 돌려준다.
  */
-data class ApiError(val code: String?, val provider: String?)
+data class ApiError(
+    val code: String?,
+    val provider: String?,
+    // 스토어 직접 해지 안내(PLAY_CANCEL_FAILED 등)에서 내려오는 구독 관리 URL.
+    val manageUrl: String? = null,
+)
 
 fun apiError(error: Throwable): ApiError {
     val body = (error as? HttpException)
@@ -24,6 +29,7 @@ fun apiError(error: Throwable): ApiError {
         ApiError(
             code = json.optString("error_code").takeIf { it.isNotBlank() },
             provider = json.optString("provider").takeIf { it.isNotBlank() },
+            manageUrl = json.optString("manage_url").takeIf { it.isNotBlank() },
         )
     }.getOrElse { ApiError(null, null) }
 }

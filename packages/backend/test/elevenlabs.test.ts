@@ -131,6 +131,43 @@ describe('ElevenLabsClient', () => {
     });
   });
 
+  describe('speechToText', () => {
+    it('scribe_v2 모델로 전사 요청 (scribe_v1 은 2026-07-09 제거됨)', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ text: '  안녕하세요 반갑습니다  ' }));
+
+      const text = await client.speechToText(new ArrayBuffer(100), {
+        mimeType: 'audio/mpeg',
+        fileName: 'voice.mp3',
+      });
+
+      expect(mockFetch).toHaveBeenCalledOnce();
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toBe('https://api.elevenlabs.io/v1/speech-to-text');
+      expect(opts.method).toBe('POST');
+      expect(opts.headers['xi-api-key']).toBe('test-api-key-123');
+      const body = opts.body as FormData;
+      expect(body.get('model_id')).toBe('scribe_v2');
+      const file = body.get('file') as Blob & { name?: string };
+      expect(file.type).toBe('audio/mpeg');
+      expect(file.name).toBe('voice.mp3');
+      // 응답 {text} 는 trim 되어 반환된다.
+      expect(text).toBe('안녕하세요 반갑습니다');
+    });
+
+    it('text 필드 없으면 빈 문자열', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({}));
+      const text = await client.speechToText(new ArrayBuffer(10));
+      expect(text).toBe('');
+    });
+
+    it('API 에러 시 예외 (호출자가 failed 상태를 기록)', async () => {
+      mockFetch.mockResolvedValueOnce(errorResponse(400, 'invalid_model_id'));
+      await expect(client.speechToText(new ArrayBuffer(10))).rejects.toThrow(
+        'ElevenLabs API error 400',
+      );
+    });
+  });
+
   describe('createInstantClone', () => {
     it('FormData로 전송', async () => {
       mockFetch.mockResolvedValueOnce(okJson({ voice_id: 'new-voice-id' }));

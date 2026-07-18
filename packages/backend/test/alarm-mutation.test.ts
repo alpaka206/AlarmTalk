@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq, ID } from './helpers';
@@ -24,6 +24,14 @@ function pushMessageBelongsToCaller() {
 
 beforeEach(() => {
   mockDB.reset();
+  // 타깃 알람 생성의 30분 리드타임 판정이 실제 시계에 좌우되지 않도록 고정한다.
+  // 2026-07-15T00:00Z = KST 수요일 09:00 → 테스트 알람 시각들은 항상 30분 이상 남는다.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 // ---------------------------------------------------------------------------
@@ -190,13 +198,17 @@ describe('POST /alarms', () => {
         family_alarm_quiet_end: '18:30',
       },
     ]);
+    // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
+    mockDB.pushResult([]);
     // friendship check → found
     mockDB.pushResult([{ id: ID.friendship }]);
     // user plan for target
     mockDB.pushResult([{ plan: 'personal' }]);
     // message check
     mockDB.pushResult([{ id: ID.message }]);
-    pushMessageBelongsToCaller();
+    pushMessageBelongsToCaller(); // 트랜잭션 내 재검증
+    mockDB.pushResult([]); // 멱등 슬롯 조회(기존 발신 알람 없음)
+    mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
     // INSERT
     mockDB.pushResult([], 1);
 
@@ -204,6 +216,64 @@ describe('POST /alarms', () => {
       jsonReq('POST', '/alarms', { ...validBody, target_user_id: 'friend-1' }),
     );
     expect(res.status).toBe(201);
+
+    // 교체 UPDATE 가 수신자 두 식별자(PK·로그인 id) + time 으로 바인딩됐는지 확인.
+    const deactivate = mockDB.calls.find((c) => c.sql.includes('SET is_active = 0'));
+    expect(deactivate).toBeDefined();
+    expect(deactivate!.args).toContain('friend-pk-1');
+    expect(deactivate!.args).toContain('friend-1');
+    expect(deactivate!.args).toContain('07:30');
+  });
+
+  it('타깃 알람: 수신자 시간대 기준 30분 미만이면 400 FAMILY_ALARM_LEAD_TIME', async () => {
+    // now = 2026-07-15T00:00Z = KST 09:00 → KST 09:20 은 20분 뒤.
+    mockDB.pushResult([
+      {
+        id: 'friend-pk-1',
+        google_id: 'friend-1',
+        allow_family_alarms: 1,
+        // quiet 창을 비워 리드타임 판정만 검증한다.
+        family_alarm_quiet_windows: '[]',
+      },
+    ]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', {
+        ...validBody,
+        time: '09:20',
+        target_user_id: 'friend-1',
+        timezone: 'Asia/Seoul',
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('FAMILY_ALARM_LEAD_TIME');
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
+  });
+
+  it('타깃 알람: 일회성 quiet 요일은 수신자 시간대의 다음 발사 요일로 판정', async () => {
+    // now = 2026-07-17T14:00Z = UTC 금요일. KST 로는 금 23:00 → '00:30' 다음 발사는
+    // KST 토요일 00:30(= UTC 금 15:30). 주말 00:00-08:00 quiet 창에 걸려야 한다.
+    // (구버전은 서버 UTC 요일(금)로 판정해 토요일 창을 놓쳤다.)
+    vi.setSystemTime(new Date('2026-07-17T14:00:00Z'));
+    mockDB.pushResult([
+      {
+        id: 'friend-pk-1',
+        google_id: 'friend-1',
+        allow_family_alarms: 1,
+        family_alarm_quiet_windows: '[{"days":[0,6],"start":"00:00","end":"08:00"}]',
+      },
+    ]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', {
+        ...validBody,
+        time: '00:30',
+        target_user_id: 'friend-1',
+        timezone: 'Asia/Seoul',
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('FAMILY_ALARM_QUIET_TIME');
   });
 
   it('voice_profile_id, speaker_id null 기본값', async () => {

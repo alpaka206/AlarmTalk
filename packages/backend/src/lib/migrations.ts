@@ -1387,6 +1387,36 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_profiles ADD COLUMN speech_style TEXT`,
     ],
   },
+  {
+    // 구독 해지와 음성 삭제를 분리한다: 해지/만료 시 유료 음성을 즉시 하드삭제하지 않고
+    // 30일 보관 유예를 기록, cron 이 delete_after 경과분만 정리한다. 재구독 시 행을 지워
+    // 보존하고, '지금 삭제'는 이 유예와 무관하게 즉시 삭제한다.
+    id: 67,
+    name: 'paid-voice-retention',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS paid_voice_retention (
+        user_id TEXT PRIMARY KEY,
+        delete_after TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+    ],
+  },
+  {
+    // 말투 분석(전사→Vertex)의 결과 상태. best-effort 로 조용히 삼키던 실패를 클라에
+    // 노출하고 재시도할 수 있게 한다. NULL=분석 대상 아님(구버전/시스템), pending=진행중,
+    // done=완료, failed=실패(재시도 가능).
+    id: 68,
+    name: 'voice-speech-style-status',
+    statements: [`ALTER TABLE voice_profiles ADD COLUMN speech_style_status TEXT`],
+  },
+  {
+    // 말투 분석 재시도의 소스를 클론 등록 원본과 정확히 연결한다. 클론 등록 시 원본
+    // 녹음을 R2+voice_uploads 에 남기고 이 컬럼으로 프로필에 묶어, 재시도가 '사용자
+    // 최신 업로드'(가족알람 녹음 등 무관한 파일일 수 있음) 대신 등록 원본만 쓰게 한다.
+    id: 69,
+    name: 'voice-uploads-profile-link',
+    statements: [`ALTER TABLE voice_uploads ADD COLUMN voice_profile_id TEXT`],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

@@ -78,8 +78,6 @@ internal fun VoiceProfileEditDialog(
     relationship: String,
     listenerTitle: String,
     nameError: Boolean,
-    relationshipError: Boolean,
-    listenerError: Boolean,
     onNameChange: (String) -> Unit,
     onRelationshipChange: (String) -> Unit,
     onListenerTitleChange: (String) -> Unit,
@@ -105,16 +103,13 @@ internal fun VoiceProfileEditDialog(
             colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
+        // 관계·호칭은 선택 입력 — 비워도 저장할 수 있다.
         OutlinedTextField(
             value = relationship,
             onValueChange = onRelationshipChange,
             label = { Text(stringResource(R.string.voicesr_relationship_label)) },
             placeholder = { Text(stringResource(R.string.voicesr_relationship_example_a)) },
             singleLine = true,
-            isError = relationshipError,
-            supportingText = {
-                if (relationshipError) Text(stringResource(R.string.voicesr_required_field))
-            },
             shape = WakerInputShape,
             colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.fillMaxWidth(),
@@ -125,10 +120,6 @@ internal fun VoiceProfileEditDialog(
             label = { Text(stringResource(R.string.voicesr_listener_title_label)) },
             placeholder = { Text(stringResource(R.string.voicesr_listener_title_example_a)) },
             singleLine = true,
-            isError = listenerError,
-            supportingText = {
-                if (listenerError) Text(stringResource(R.string.voicesr_required_field))
-            },
             shape = WakerInputShape,
             colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.fillMaxWidth(),

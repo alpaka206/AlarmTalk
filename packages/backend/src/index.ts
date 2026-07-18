@@ -293,9 +293,10 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   }
 
   // 구독 만료 / 결제일 도달 정리. 알람 푸시보다 먼저 처리해 plan 다운그레이드를 반영.
+  // env 를 넘겨 만료 처리 전 Play 실상태 재조회(RTDN 유실 대비 reconciliation)를 켠다.
   try {
     const { processSubscriptionExpiry } = await import('./lib/billing-cancel');
-    await processSubscriptionExpiry(db, now);
+    await processSubscriptionExpiry(db, env, now);
   } catch (err) {
     captureCron('scheduled.subscription_expiry', err);
   }

@@ -5,6 +5,11 @@ import { withWriteTransaction } from '../lib/transactions';
 import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
+import {
+  ANDROID_PUBLISHER_SCOPE,
+  ENTITLED_STATES,
+  type SubscriptionV2Response,
+} from '../lib/play-subscriptions';
 import { resolveUserPk } from './billing-helpers';
 
 // MARK: - POST /billing/google/confirm
@@ -18,8 +23,12 @@ import { resolveUserPk } from './billing-helpers';
 // 3일 내 미확인 시 Play 가 자동 환불하므로 서버 확인이 권위).
 //
 // 필요 secrets: GOOGLE_PLAY_SERVICE_ACCOUNT_JSON, ANDROID_PACKAGE_NAME.
+//
+// scope·응답 타입·ENTITLED_STATES 는 lib/play-subscriptions.ts 가 단일 출처
+// (해지/RTDN/reconciliation 과 공유). 기존 import 경로 유지를 위해 re-export 한다.
 
-export const ANDROID_PUBLISHER_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
+export { ANDROID_PUBLISHER_SCOPE, ENTITLED_STATES };
+export type { SubscriptionV2Response };
 
 /**
  * Play Console 구독 상품 ID → plans.key 매핑.
@@ -44,6 +53,14 @@ interface ConfirmRequest {
   package_name?: string;
 }
 
+/** Workers 런타임(crypto.subtle) SHA-256 → 소문자 hex 64자. 계정 바인딩 대조용. */
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 function parseConfirmRequest(value: unknown): ConfirmRequest | { error: string } {
   if (!value || typeof value !== 'object') {
     return { error: 'Request body must be a JSON object' };
@@ -56,18 +73,6 @@ function parseConfirmRequest(value: unknown): ConfirmRequest | { error: string }
   if (!productId) return { error: 'product_id is required' };
   return { purchase_token: purchaseToken, product_id: productId, package_name: packageName };
 }
-
-export interface SubscriptionV2Response {
-  subscriptionState?: string;
-  acknowledgementState?: string;
-  lineItems?: Array<{ productId?: string; expiryTime?: string }>;
-  latestOrderId?: string;
-}
-
-export const ENTITLED_STATES = new Set([
-  'SUBSCRIPTION_STATE_ACTIVE',
-  'SUBSCRIPTION_STATE_IN_GRACE_PERIOD',
-]);
 
 const billingGoogle = new Hono<AppEnv>();
 
@@ -160,6 +165,36 @@ billingGoogle.post('/google/confirm', async (c) => {
   const expiresAt = new Date(lineItem.expiryTime);
   if (Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
     return c.json({ error: 'Subscription is expired', error_code: 'SUBSCRIPTION_EXPIRED' }, 400);
+  }
+
+  // 구매-계정 바인딩 검증 — store_transactions 최초 바인딩 전에 수행한다.
+  // 계약(Android PlayBillingManager 와 공유): 클라는 구매 시
+  // setObfuscatedAccountId(sha256hex(로그인 사용자 id — JWT sub 와 동일한 세션 user id))
+  // 를 설정한다. Play 응답의 식별자가 호출자(sub 또는 users.id PK)의 해시와 다르면
+  // 훔친/다른 계정의 purchaseToken 이므로 403 으로 거절한다. 식별자가 없으면
+  // (계약 이전 구버전 구매) 기존대로 허용하고, applyStoreEntitlement 의 first-claim
+  // 409(TRANSACTION_OWNED_BY_OTHER_USER)가 심층방어로 남는다.
+  const obfuscatedId =
+    subscription.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim();
+  if (obfuscatedId) {
+    const expectedHashes = await Promise.all([
+      sha256Hex(c.get('userId')),
+      sha256Hex(userPk),
+    ]);
+    if (!expectedHashes.includes(obfuscatedId.toLowerCase())) {
+      logStructured('warn', {
+        at: 'billing.google.confirm',
+        step: 'account_binding',
+        error: 'obfuscatedExternalAccountId mismatch',
+      });
+      return c.json(
+        {
+          error: 'Purchase is bound to another account',
+          error_code: 'TRANSACTION_ACCOUNT_MISMATCH',
+        },
+        403,
+      );
+    }
   }
 
   const db = getDB(c.env);

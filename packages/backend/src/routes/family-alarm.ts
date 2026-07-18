@@ -11,6 +11,13 @@ import {
 import { prepareAlarmTextWithVertex } from '../lib/vertex-translate';
 import { inferSynthesisLanguage } from '../lib/voice-provider';
 import { sendFamilyAlarmPush } from '../lib/fcm';
+import { withWriteTransaction } from '../lib/transactions';
+import {
+  resolveEffectiveTimezone,
+  computeNextAlarmFire,
+  claimTargetedAlarmSlot,
+  FAMILY_ALARM_MIN_LEAD_MINUTES,
+} from './alarm-helpers';
 
 const familyAlarm = new Hono<AppEnv>();
 
@@ -55,6 +62,8 @@ familyAlarm.post('/alarms', async (c) => {
     message_text?: unknown;
     repeat_days?: unknown;
     voice_profile_id?: unknown;
+    /** 발신 클라 기준 수신자 시간대(IANA). 없으면 수신자 최근 알람 tz → Asia/Seoul 폴백. */
+    timezone?: unknown;
   };
   const body: AlarmBody = await c.req.json<AlarmBody>().catch(() => ({}) as AlarmBody);
 
@@ -124,8 +133,35 @@ familyAlarm.post('/alarms', async (c) => {
       403,
     );
   }
+  const recipientLoginId = (recipient.google_id as string | null) ?? String(recipient.id);
   const repeatDays = normalizeRepeatDays(body.repeat_days);
-  if (isBlockedByFamilyAlarmQuietTime(wakeAt, repeatDays, recipientSettings)) {
+  // 수신자 시간대 기준 서버 검증: 효과 시간대(body.timezone → 수신자 최근 알람 tz →
+  // Asia/Seoul)로 다음 발사 시각을 구해 30분 리드타임과 quiet 요일을 판정한다.
+  const effectiveTimezone = await resolveEffectiveTimezone(db, body.timezone, [
+    recipientPk,
+    recipientLoginId,
+  ]);
+  const nextFire = computeNextAlarmFire(wakeAt, repeatDays, effectiveTimezone);
+  if (
+    nextFire &&
+    nextFire.fireAt.getTime() - Date.now() < FAMILY_ALARM_MIN_LEAD_MINUTES * 60_000
+  ) {
+    return c.json(
+      {
+        error: `알람은 최소 ${FAMILY_ALARM_MIN_LEAD_MINUTES}분 이후 시각으로만 보낼 수 있습니다`,
+        error_code: 'FAMILY_ALARM_LEAD_TIME',
+      },
+      400,
+    );
+  }
+  if (
+    isBlockedByFamilyAlarmQuietTime(
+      wakeAt,
+      repeatDays,
+      recipientSettings,
+      nextFire?.fireDayOfWeek ?? new Date().getDay(),
+    )
+  ) {
     return c.json(
       {
         error: '수신자가 설정한 불가 시간에는 알람을 만들 수 없습니다',
@@ -167,7 +203,7 @@ familyAlarm.post('/alarms', async (c) => {
   }
 
   const messageId = crypto.randomUUID();
-  const alarmId = crypto.randomUUID();
+  const newAlarmId = crypto.randomUUID();
   const messageLanguage = inferSynthesisLanguage(messageText, 'ko');
   const preparedMessage = await prepareAlarmTextWithVertex(c.env, messageText, {
     targetLanguage: messageLanguage,
@@ -176,31 +212,53 @@ familyAlarm.post('/alarms', async (c) => {
     autoTag: true,
   });
 
-  await db.execute({
-    sql: `INSERT INTO messages
-          (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json, audio_url, category)
-          VALUES (?, ?, ?, ?, ?, ?, NULL, 'family')`,
-    args: [
-      messageId,
-      recipientPk,
-      voiceProfileId,
-      messageText,
-      preparedMessage.text,
-      JSON.stringify(preparedMessage.tags),
-    ],
-  });
-
-  await db.execute({
-    sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, repeat_days, mode)
-          VALUES (?, ?, ?, ?, ?, ?, 'tts')`,
-    args: [
-      alarmId,
+  // 메시지 insert + (수신자, time) 슬롯 점유를 한 트랜잭션으로: 같은 발신자의 재전송은
+  // 기존 알람 행을 새 메시지로 UPDATE(멱등, id 유지), 다른 발신자의 같은 시각 발신 알람은
+  // 비활성화(최신 우선). 수신자 본인 알람(target 없음)은 서버가 건드리지 않는다 —
+  // 클라 로컬 교체 확인창 담당(claimTargetedAlarmSlot 주석 참고).
+  const alarmId = await withWriteTransaction(db, async (tx) => {
+    await tx.execute({
+      sql: `INSERT INTO messages
+            (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json, audio_url, category)
+            VALUES (?, ?, ?, ?, ?, ?, NULL, 'family')`,
+      args: [
+        messageId,
+        recipientPk,
+        voiceProfileId,
+        messageText,
+        preparedMessage.text,
+        JSON.stringify(preparedMessage.tags),
+      ],
+    });
+    const claimed = await claimTargetedAlarmSlot(
+      tx,
       userId,
-      (recipient.google_id as string | null) ?? String(recipient.id),
-      messageId,
+      [recipientPk, recipientLoginId],
       wakeAt,
-      JSON.stringify(repeatDays),
-    ],
+      newAlarmId,
+    );
+    if (claimed.reused) {
+      await tx.execute({
+        sql: `UPDATE alarms SET message_id = ?, repeat_days = ?, mode = 'tts',
+                is_active = 1, updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [messageId, JSON.stringify(repeatDays), claimed.alarmId],
+      });
+    } else {
+      await tx.execute({
+        sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, repeat_days, mode)
+              VALUES (?, ?, ?, ?, ?, ?, 'tts')`,
+        args: [
+          claimed.alarmId,
+          userId,
+          recipientLoginId,
+          messageId,
+          wakeAt,
+          JSON.stringify(repeatDays),
+        ],
+      });
+    }
+    return claimed.alarmId;
   });
 
   notifyRecipientOfFamilyAlarm(c, db, recipient, alarmId);
@@ -244,6 +302,8 @@ familyAlarm.post('/alarms/voice', async (c) => {
     label?: unknown;
     dub_target_language?: unknown;
     repeat_days?: unknown;
+    /** 발신 클라 기준 수신자 시간대(IANA). 없으면 수신자 최근 알람 tz → Asia/Seoul 폴백. */
+    timezone?: unknown;
   };
   const body: VoiceBody = await c.req.json<VoiceBody>().catch(() => ({}) as VoiceBody);
 
@@ -328,8 +388,34 @@ familyAlarm.post('/alarms/voice', async (c) => {
       403,
     );
   }
+  const recipientLoginId = (recipient.google_id as string | null) ?? String(recipient.id);
   const repeatDays = normalizeRepeatDays(body.repeat_days);
-  if (isBlockedByFamilyAlarmQuietTime(wakeAt, repeatDays, recipientSettings)) {
+  // 수신자 시간대 기준 서버 검증 — TTS 경로와 동일(30분 리드타임 + quiet 요일).
+  const effectiveTimezone = await resolveEffectiveTimezone(db, body.timezone, [
+    recipientPk,
+    recipientLoginId,
+  ]);
+  const nextFire = computeNextAlarmFire(wakeAt, repeatDays, effectiveTimezone);
+  if (
+    nextFire &&
+    nextFire.fireAt.getTime() - Date.now() < FAMILY_ALARM_MIN_LEAD_MINUTES * 60_000
+  ) {
+    return c.json(
+      {
+        error: `알람은 최소 ${FAMILY_ALARM_MIN_LEAD_MINUTES}분 이후 시각으로만 보낼 수 있습니다`,
+        error_code: 'FAMILY_ALARM_LEAD_TIME',
+      },
+      400,
+    );
+  }
+  if (
+    isBlockedByFamilyAlarmQuietTime(
+      wakeAt,
+      repeatDays,
+      recipientSettings,
+      nextFire?.fireDayOfWeek ?? new Date().getDay(),
+    )
+  ) {
     return c.json(
       {
         error: '수신자가 설정한 불가 시간에는 알람을 만들 수 없습니다',
@@ -366,26 +452,46 @@ familyAlarm.post('/alarms/voice', async (c) => {
   const voiceProfileId = String(latestVp.rows[0]!.id);
 
   const messageId = crypto.randomUUID();
-  const alarmId = crypto.randomUUID();
+  const newAlarmId = crypto.randomUUID();
   const audioUrl = dubTarget ? null : objectKey;
 
-  await db.execute({
-    sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
-          VALUES (?, ?, ?, ?, ?, 'family-voice')`,
-    args: [messageId, recipientPk, voiceProfileId, label, audioUrl],
-  });
-
-  await db.execute({
-    sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, repeat_days, mode)
-          VALUES (?, ?, ?, ?, ?, ?, 'sound-only')`,
-    args: [
-      alarmId,
+  // TTS 경로와 동일한 원자 교체: 같은 발신자 재전송은 기존 행 UPDATE(멱등, id 유지),
+  // 다른 발신자의 같은 시각 발신 알람은 비활성화. 수신자 본인 알람은 건드리지 않는다.
+  const alarmId = await withWriteTransaction(db, async (tx) => {
+    await tx.execute({
+      sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
+            VALUES (?, ?, ?, ?, ?, 'family-voice')`,
+      args: [messageId, recipientPk, voiceProfileId, label, audioUrl],
+    });
+    const claimed = await claimTargetedAlarmSlot(
+      tx,
       userId,
-      (recipient.google_id as string | null) ?? String(recipient.id),
-      messageId,
+      [recipientPk, recipientLoginId],
       wakeAt,
-      JSON.stringify(repeatDays),
-    ],
+      newAlarmId,
+    );
+    if (claimed.reused) {
+      await tx.execute({
+        sql: `UPDATE alarms SET message_id = ?, repeat_days = ?, mode = 'sound-only',
+                is_active = 1, updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [messageId, JSON.stringify(repeatDays), claimed.alarmId],
+      });
+    } else {
+      await tx.execute({
+        sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, repeat_days, mode)
+              VALUES (?, ?, ?, ?, ?, ?, 'sound-only')`,
+        args: [
+          claimed.alarmId,
+          userId,
+          recipientLoginId,
+          messageId,
+          wakeAt,
+          JSON.stringify(repeatDays),
+        ],
+      });
+    }
+    return claimed.alarmId;
   });
 
   notifyRecipientOfFamilyAlarm(c, db, recipient, alarmId);

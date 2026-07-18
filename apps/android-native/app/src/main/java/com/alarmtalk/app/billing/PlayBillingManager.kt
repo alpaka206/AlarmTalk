@@ -17,6 +17,8 @@ import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 import com.android.billingclient.api.queryProductDetails
 import com.android.billingclient.api.queryPurchasesAsync
+import java.security.MessageDigest
+import java.util.Locale
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -180,9 +182,12 @@ class PlayBillingManager(
     /**
      * 결제 시트를 띄운다. 결과(성공/보류/취소)는 [PurchasesUpdatedListener] 로 비동기 전달된다.
      *
+     * @param userId 로그인 세션 사용자 id(서버 users.id 와 동일한 값). 구매를 앱 계정에
+     *   바인딩하기 위해 SHA-256 hex 로 obfuscatedAccountId 에 실린다. null/공백이면 생략
+     *   (레거시 허용 — 서버도 부재 시 허용).
      * @return 결제 플로우 실행에 성공했으면 true. false 면 시트 자체가 뜨지 않은 것.
      */
-    suspend fun launchPurchase(activity: Activity, productId: String): Boolean {
+    suspend fun launchPurchase(activity: Activity, productId: String, userId: String? = null): Boolean {
         val productDetails = productDetailsCache[productId]
             ?: queryProductDetails(listOf(productId)).firstOrNull()
             ?: run {
@@ -200,7 +205,7 @@ class PlayBillingManager(
             Log.w(TAG, "Play subscription offer not found productId=$productId")
             return false
         }
-        val flowParams = BillingFlowParams.newBuilder()
+        val flowParamsBuilder = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(
                 listOf(
                     BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -209,14 +214,57 @@ class PlayBillingManager(
                         .build(),
                 ),
             )
-            .build()
-        val result = billingClient.launchBillingFlow(activity, flowParams)
+        // 구매-계정 바인딩(서버와 공유하는 계약: SHA-256 hex 소문자 64자, 입력은 로그인 사용자 id).
+        // 서버가 confirm/RTDN 검증 시 어느 계정의 구매인지 대조할 수 있게 한다.
+        if (!userId.isNullOrBlank()) {
+            flowParamsBuilder.setObfuscatedAccountId(sha256Hex(userId))
+        }
+        // 다른 상품으로의 '전환' 구매면 기존 활성 구독을 교체 모드로 잇는다 — 교체 없이 사면
+        // Play 구독이 나란히 2개 생겨 이중 결제가 된다. 같은 상품 재구매/기존 구매 없음이면 현행대로.
+        findActiveSubscriptionToReplace(productId)?.let { existing ->
+            flowParamsBuilder.setSubscriptionUpdateParams(
+                BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                    .setOldPurchaseToken(existing.purchaseToken)
+                    .setSubscriptionReplacementMode(
+                        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.WITH_TIME_PRORATION,
+                    )
+                    .build(),
+            )
+        }
+        val result = billingClient.launchBillingFlow(activity, flowParamsBuilder.build())
         if (result.responseCode != BillingClient.BillingResponseCode.OK) {
             Log.w(TAG, "launchBillingFlow failed code=${result.responseCode} message=${result.debugMessage}")
             return false
         }
         return true
     }
+
+    /**
+     * [productId] 로 전환할 때 교체 대상이 되는 기존 활성(PURCHASED) 구독 구매.
+     * 같은 상품이거나 활성 구독이 없으면 null(교체 아님). 여러 개면(과거 이중 구독 잔재) 최신 구매.
+     * 조회 실패 시에도 null — 결제 자체를 막지 않고 현행(신규 구매) 플로우로 진행한다.
+     */
+    private suspend fun findActiveSubscriptionToReplace(productId: String): Purchase? {
+        if (!ensureConnected()) return null
+        val result = billingClient.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build(),
+        )
+        if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            Log.w(TAG, "queryPurchasesAsync before purchase failed code=${result.billingResult.responseCode}")
+            return null
+        }
+        return result.purchasesList
+            .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && productId !in it.products }
+            .maxByOrNull { it.purchaseTime }
+    }
+
+    /** 계정 바인딩 계약(서버와 공유): SHA-256 hex 소문자 64자. */
+    private fun sha256Hex(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(Locale.ROOT, it) }
 
     /**
      * 앱 시작 시 호출: 결제는 됐지만 아직 서버 검증(acknowledge)이 끝나지 않은 구매를

@@ -1,6 +1,8 @@
 import { UUID_RE } from '../lib/validate';
 import { isStoredAudioUrl } from '../lib/audio-loader';
 import { FREE_BUCKET_CATEGORIES, CLONE_PRERENDER_CATEGORIES } from '../lib/stock-clips';
+import { DEFAULT_ALARM_TIMEZONE } from '../lib/scheduler';
+import type { DbExecutor } from '../lib/transactions';
 
 export const ALARM_MODES = ['sound-only', 'tts'] as const;
 export type AlarmMode = (typeof ALARM_MODES)[number];
@@ -193,4 +195,213 @@ export function validateAlarmFields(body: {
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// 타인 발신(가족/친구) 알람 가드 — 수신자 시간대 판정 + (수신자, time) 슬롯 원자 점유
+// ---------------------------------------------------------------------------
+
+/** 타인 발신 알람의 최소 리드타임(분). 다음 발사 시각이 이보다 임박하면 400 으로 거부한다. */
+export const FAMILY_ALARM_MIN_LEAD_MINUTES = 30;
+
+/**
+ * 클라이언트가 보낸 IANA timezone 을 정규화한다. 푸시 스케줄러가 알람 HH:mm 을
+ * 이 시간대로 판정한다. 형식이 어긋나면 null (스케줄러가 Asia/Seoul 폴백).
+ */
+export function normalizeTimezone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 64) return null;
+  if (!/^[A-Za-z][A-Za-z0-9_+\-/]*$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+// Workers 는 Intl.DateTimeFormat 의 timeZone 옵션을 지원한다. 알람 time(HH:mm)은 수신자
+// 로컬 벽시계 시각이므로 리드타임·quiet 요일 판정은 반드시 수신자 시간대 기준으로 한다.
+const wallClockFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function getWallClockFormatter(timeZone: string): Intl.DateTimeFormat {
+  let formatter = wallClockFormatterCache.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      weekday: 'short',
+    });
+    wallClockFormatterCache.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
+/** Intl 이 실제로 아는 시간대인지 확인한다(형식만 맞는 가짜 값 걸러내기). */
+export function isSupportedTimezone(timezone: string): boolean {
+  try {
+    getWallClockFormatter(timezone);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const WEEKDAY_TO_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+
+interface WallClock {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  /** 0=일요일 … 6=토요일 (해당 시간대 기준). */
+  dayOfWeek: number;
+}
+
+/** UTC 시각을 주어진 IANA 시간대의 벽시계 성분으로 분해한다. */
+function wallClockAt(at: Date, timezone: string): WallClock {
+  const parts = getWallClockFormatter(timezone).formatToParts(at);
+  const clock: WallClock = { year: 1970, month: 1, day: 1, hour: 0, minute: 0, dayOfWeek: 0 };
+  for (const part of parts) {
+    if (part.type === 'year') clock.year = Number(part.value);
+    else if (part.type === 'month') clock.month = Number(part.value);
+    else if (part.type === 'day') clock.day = Number(part.value);
+    // hour12:false 는 환경에 따라 자정을 '24' 로 줄 수 있다(scheduler.ts 와 동일 보정).
+    else if (part.type === 'hour') clock.hour = Number(part.value) % 24;
+    else if (part.type === 'minute') clock.minute = Number(part.value);
+    else if (part.type === 'weekday') clock.dayOfWeek = WEEKDAY_TO_INDEX[part.value] ?? 0;
+  }
+  return clock;
+}
+
+/** 시간대의 (y,m,d HH:mm) 벽시계 시각을 UTC Date 로 변환한다(2회 보정으로 DST 경계 흡수). */
+function zonedWallTimeToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timezone: string,
+): Date {
+  const target = Date.UTC(year, month - 1, day, hour, minute);
+  let ts = target;
+  for (let i = 0; i < 2; i++) {
+    const clock = wallClockAt(new Date(ts), timezone);
+    const asUtc = Date.UTC(clock.year, clock.month - 1, clock.day, clock.hour, clock.minute);
+    ts += target - asUtc;
+  }
+  return new Date(ts);
+}
+
+export interface NextAlarmFire {
+  /** 지금 이후 첫 발사 시각(UTC). */
+  fireAt: Date;
+  /** 발사 시각의 효과 시간대 요일(0=일 … 6=토). 일회성 알람 quiet 요일 판정에 쓴다. */
+  fireDayOfWeek: number;
+}
+
+/**
+ * (time HH:mm, repeat_days, 효과 시간대)로 지금 이후 첫 발사 시각을 구한다.
+ * 일회성(repeat_days 빈 배열)은 오늘 그 시각, 이미 지났으면 내일. 반복은 다음 매칭 요일.
+ * time 형식이 틀리면 null (호출부 validateAlarmFields/WAKE_AT_RE 가 먼저 거른다).
+ */
+export function computeNextAlarmFire(
+  time: string,
+  repeatDays: number[],
+  timezone: string,
+  now: Date = new Date(),
+): NextAlarmFire | null {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time.trim());
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const zone = isSupportedTimezone(timezone) ? timezone : DEFAULT_ALARM_TIMEZONE;
+  // 오늘부터 최대 8일(반복 요일 한 바퀴 + 자정 경계 여유)을 훑어 첫 매칭 시각을 찾는다.
+  for (let dayOffset = 0; dayOffset <= 8; dayOffset++) {
+    const probe = wallClockAt(new Date(now.getTime() + dayOffset * 86_400_000), zone);
+    const candidate = zonedWallTimeToUtc(probe.year, probe.month, probe.day, hour, minute, zone);
+    if (candidate.getTime() <= now.getTime()) continue;
+    const fireDayOfWeek = wallClockAt(candidate, zone).dayOfWeek;
+    if (repeatDays.length > 0 && !repeatDays.includes(fireDayOfWeek)) continue;
+    return { fireAt: candidate, fireDayOfWeek };
+  }
+  return null; // repeat_days 가 0-6 검증을 통과했다면 도달 불가
+}
+
+/**
+ * 타인 발신 알람 검증(리드타임·quiet) 전용 효과 시간대. 우선순위:
+ *  ① 수신자의 가장 최근 '소유' 알람에 저장된 timezone (수신자 기기가 마지막으로 보고한 시간대)
+ *  ② 요청 body 의 timezone (수신자 기록이 없을 때만 폴백 — 정규화 + Intl 지원 확인 통과 시)
+ *  ③ DEFAULT_ALARM_TIMEZONE('Asia/Seoul')
+ *
+ * body.timezone 은 '발신자' 기기 값이라 신뢰할 수 없다 — 발신자가 오프셋이 다른 시간대를
+ * 보내 30분 리드타임/quiet 판정을 우회할 수 있으므로, 수신자 저장 시간대가 항상 우선한다.
+ * (본인 알람 생성의 timezone 저장 동작과는 무관 — 이 함수는 검증 판정에만 쓰인다.)
+ */
+export async function resolveEffectiveTimezone(
+  db: DbExecutor,
+  bodyTimezone: unknown,
+  recipientIds: [string, string],
+): Promise<string> {
+  // 수신자 '소유' 알람(user_id 매칭)의 timezone 이 수신자 기기 시간대를 반영한다.
+  // (target_user_id 로 수신한 알람의 timezone 은 발신자 기기 값이라 신뢰하지 않는다.)
+  const res = await db.execute({
+    sql: `SELECT timezone FROM alarms
+          WHERE user_id IN (?, ?) AND timezone IS NOT NULL AND timezone != ''
+          ORDER BY updated_at DESC LIMIT 1`,
+    args: [recipientIds[0], recipientIds[1]],
+  });
+  const stored = res.rows.length > 0 ? String(res.rows[0]!.timezone ?? '') : '';
+  if (stored && isSupportedTimezone(stored)) return stored;
+  const requested = normalizeTimezone(bodyTimezone);
+  if (requested && isSupportedTimezone(requested)) return requested;
+  return DEFAULT_ALARM_TIMEZONE;
+}
+
+/**
+ * 타인 발신 알람의 (수신자, time) 슬롯을 원자적으로 점유한다. 반드시
+ * withWriteTransaction 안에서 호출할 것(조회→비활성화→insert/update 가 한 트랜잭션).
+ *
+ * 1) 멱등: 같은 발신자(senderUserId)·같은 수신자·같은 time 의 active 알람이 이미 있으면
+ *    새 행을 만들지 않고 그 id 를 재사용한다(호출부가 내용을 UPDATE). 같은 요청 재전송이
+ *    중복 행을 만들지 않는다.
+ * 2) 교체: 다른 발신자 것을 포함해 `target_user_id = 수신자 AND time = ? AND is_active = 1`
+ *    인 기존 발신 알람을 전부 비활성화한다(최신 생성 우선). 비활성화는 클라 pull 동기화
+ *    (RemoteAlarm.is_active → resolveReceivedRemoteEnabled)로 수신자 기기에 전파된다.
+ *
+ * 스코프: 수신자 '본인이 만든' 알람(target_user_id 없음)은 서버에서 건드리지 않는다 —
+ * 받은 알람과 같은 시각의 내 알람 교체는 클라 로컬 확인창(받은 알람 우선 규칙)이 담당한다.
+ */
+export async function claimTargetedAlarmSlot(
+  executor: DbExecutor,
+  senderUserId: string,
+  recipientIds: [string, string],
+  time: string,
+  newAlarmId: string,
+): Promise<{ alarmId: string; reused: boolean }> {
+  const existing = await executor.execute({
+    sql: `SELECT id FROM alarms
+          WHERE user_id = ? AND target_user_id IN (?, ?) AND time = ? AND is_active = 1
+          ORDER BY created_at DESC LIMIT 1`,
+    args: [senderUserId, recipientIds[0], recipientIds[1], time],
+  });
+  const reused = existing.rows.length > 0;
+  const alarmId = reused ? String(existing.rows[0]!.id) : newAlarmId;
+  // 유지할 행(id 재사용 시 그 행)만 남기고 같은 슬롯의 나머지 발신 알람을 비활성화.
+  await executor.execute({
+    sql: `UPDATE alarms SET is_active = 0, updated_at = datetime('now')
+          WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
+    args: [recipientIds[0], recipientIds[1], time, alarmId],
+  });
+  return { alarmId, reused };
 }

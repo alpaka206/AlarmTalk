@@ -38,6 +38,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -71,7 +72,6 @@ internal enum class VoiceRegistrationStep {
 internal fun RelationshipDropdownField(
     selection: RelationshipSelection,
     onSelectionChange: (RelationshipSelection) -> Unit,
-    isError: Boolean,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val presetLabel = selection.preset?.let { stringResource(it.labelRes) }.orEmpty()
@@ -85,13 +85,10 @@ internal fun RelationshipDropdownField(
                 value = presetLabel,
                 onValueChange = {},
                 readOnly = true,
+                // 관계는 선택 입력 — 비워도 등록할 수 있다.
                 label = { Text(stringResource(R.string.voicesr_relationship_label_required)) },
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_placeholder)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                isError = isError && !selection.isComplete,
-                supportingText = {
-                    if (isError && !selection.isComplete) Text(stringResource(R.string.voicesr_required_field))
-                },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
                 modifier = Modifier
@@ -130,10 +127,6 @@ internal fun RelationshipDropdownField(
                 label = { Text(stringResource(R.string.voicesr_relationship_custom_label)) },
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_custom_placeholder)) },
                 singleLine = true,
-                isError = isError && !selection.isComplete,
-                supportingText = {
-                    if (isError && !selection.isComplete) Text(stringResource(R.string.voicesr_required_field))
-                },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
@@ -234,6 +227,18 @@ internal fun parseRelationshipLabel(raw: String?): RelationshipSelection {
     }
 }
 
+/** 유료 클론 목소리의 알람 음성 준비 상태(서버 사전렌더 + 로컬 다운로드) 표시용. */
+internal sealed interface CloneVoiceReadiness {
+    /** 서버 사전렌더 진행 중 — "준비 중 n/전체". */
+    data class Preparing(val generated: Int, val total: Int) : CloneVoiceReadiness
+
+    /** 서버 사전렌더 완료, 로컬 클립 다운로드 중. */
+    object Downloading : CloneVoiceReadiness
+
+    /** 사전렌더 생성 실패 — [다시 시도] 버튼 노출. */
+    object Failed : CloneVoiceReadiness
+}
+
 @Composable
 internal fun VoiceProfileRow(
     profile: VoiceProfile,
@@ -242,6 +247,12 @@ internal fun VoiceProfileRow(
     onRename: () -> Unit,
     onShareChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
+    readiness: CloneVoiceReadiness? = null,
+    onRetryPrerender: () -> Unit = {},
+    retryPrerenderBusy: Boolean = false,
+    speechStyleFailed: Boolean = false,
+    onRetrySpeechStyle: () -> Unit = {},
+    retrySpeechStyleBusy: Boolean = false,
 ) {
     val isProcessing = profile.status == "processing"
     val isDeleting = profile.status == "deleting"
@@ -340,6 +351,55 @@ internal fun VoiceProfileRow(
             }
 
             if (!isProcessing && !isDeleting) {
+                // 알람 음성(사전렌더 21클립) 준비 상태 — 준비 완료(서버 21/21 + 로컬 다운로드
+                // 완료)면 아무것도 표시하지 않는다.
+                when (readiness) {
+                    is CloneVoiceReadiness.Preparing -> VoiceProgressMessage(
+                        stringResource(
+                            R.string.voicesr_prerender_preparing,
+                            readiness.generated,
+                            readiness.total,
+                        ),
+                    )
+
+                    CloneVoiceReadiness.Downloading ->
+                        VoiceProgressMessage(stringResource(R.string.voicesr_prerender_downloading))
+
+                    CloneVoiceReadiness.Failed -> Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            MutedText(stringResource(R.string.voicesr_prerender_failed))
+                        }
+                        TextButton(
+                            onClick = onRetryPrerender,
+                            enabled = rowEnabled && !retryPrerenderBusy,
+                        ) {
+                            Text(stringResource(R.string.voicesr_prerender_retry))
+                        }
+                    }
+
+                    null -> Unit
+                }
+                if (speechStyleFailed) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            MutedText(stringResource(R.string.voicesr_speech_style_failed))
+                        }
+                        TextButton(
+                            onClick = onRetrySpeechStyle,
+                            enabled = rowEnabled && !retrySpeechStyleBusy,
+                        ) {
+                            Text(stringResource(R.string.voicesr_speech_style_retry))
+                        }
+                    }
+                }
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerPanelShape,
