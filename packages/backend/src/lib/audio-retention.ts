@@ -55,9 +55,20 @@ export async function enqueueExternalDeletion(
 /**
  * 사용자의 음성 외부 자원(클론 voice + R2 오브젝트) 전부를 큐에 적재한다.
  * purgeUserAccount / deletePaidVoiceDataForUser 가 행을 지우기 전에 호출해야 한다.
+ *
+ * options.includeAlarmsTargetingUser (기본 true):
+ *  - true  = 계정 삭제(purgeUserAccount) 경로 — target_user_id 알람 행까지 함께 지우므로
+ *            그 raw 오디오도 회수한다(기존 동작 보존).
+ *  - false = 유료 음성 정리(deletePaidVoiceDataForUser) 경로 — 나를 target 으로 한
+ *            '타인(발신자) 소유' 알람은 살아남으므로 발신자의 raw 오디오를 파기하면 안 된다.
  */
-export async function enqueueUserVoiceArtifacts(tx: DbExecutor, ownerIds: string[]): Promise<void> {
+export async function enqueueUserVoiceArtifacts(
+  tx: DbExecutor,
+  ownerIds: string[],
+  options: { includeAlarmsTargetingUser?: boolean } = {},
+): Promise<void> {
   if (ownerIds.length === 0) return;
+  const includeAlarmsTargetingUser = options.includeAlarmsTargetingUser !== false;
   const ph = ownerIds.map(() => '?').join(',');
 
   const voices = await tx.execute({
@@ -90,10 +101,14 @@ export async function enqueueUserVoiceArtifacts(tx: DbExecutor, ownerIds: string
 
   // 알람에 직접 연결된 사용자 녹음 원본 (r2://<key>).
   const rawAlarms = await tx.execute({
-    sql: `SELECT raw_audio_url FROM alarms
-          WHERE raw_audio_url LIKE 'r2://%'
-            AND (user_id IN (${ph}) OR target_user_id IN (${ph}))`,
-    args: [...ownerIds, ...ownerIds],
+    sql: includeAlarmsTargetingUser
+      ? `SELECT raw_audio_url FROM alarms
+         WHERE raw_audio_url LIKE 'r2://%'
+           AND (user_id IN (${ph}) OR target_user_id IN (${ph}))`
+      : `SELECT raw_audio_url FROM alarms
+         WHERE raw_audio_url LIKE 'r2://%'
+           AND user_id IN (${ph})`,
+    args: includeAlarmsTargetingUser ? [...ownerIds, ...ownerIds] : ownerIds,
   });
   for (const row of rawAlarms.rows) {
     const url = String(row.raw_audio_url ?? '');

@@ -216,12 +216,14 @@ class PlayBillingManager(
             )
         // 구매-계정 바인딩(서버와 공유하는 계약: SHA-256 hex 소문자 64자, 입력은 로그인 사용자 id).
         // 서버가 confirm/RTDN 검증 시 어느 계정의 구매인지 대조할 수 있게 한다.
-        if (!userId.isNullOrBlank()) {
-            flowParamsBuilder.setObfuscatedAccountId(sha256Hex(userId))
+        val accountHash = userId?.takeIf { it.isNotBlank() }?.let { sha256Hex(it) }
+        if (accountHash != null) {
+            flowParamsBuilder.setObfuscatedAccountId(accountHash)
         }
         // 다른 상품으로의 '전환' 구매면 기존 활성 구독을 교체 모드로 잇는다 — 교체 없이 사면
         // Play 구독이 나란히 2개 생겨 이중 결제가 된다. 같은 상품 재구매/기존 구매 없음이면 현행대로.
-        findActiveSubscriptionToReplace(productId)?.let { existing ->
+        // accountHash 가 없으면(비로그인 등) 교체 대상 계정 대조가 불가능하므로 교체 없이 신규 구매.
+        findActiveSubscriptionToReplace(productId, accountHash)?.let { existing ->
             flowParamsBuilder.setSubscriptionUpdateParams(
                 BillingFlowParams.SubscriptionUpdateParams.newBuilder()
                     .setOldPurchaseToken(existing.purchaseToken)
@@ -243,8 +245,14 @@ class PlayBillingManager(
      * [productId] 로 전환할 때 교체 대상이 되는 기존 활성(PURCHASED) 구독 구매.
      * 같은 상품이거나 활성 구독이 없으면 null(교체 아님). 여러 개면(과거 이중 구독 잔재) 최신 구매.
      * 조회 실패 시에도 null — 결제 자체를 막지 않고 현행(신규 구매) 플로우로 진행한다.
+     *
+     * [accountHash](sha256Hex(userId))가 일치하는 구매만 교체 후보로 삼는다. 같은 기기·같은
+     * Google 계정에 **다른 AlarmTalk 계정**으로 결제된 구독이 있을 수 있는데, 그것을 교체하면
+     * 남의 구독을 취소/비례정산시키게 된다. 구매에 식별자가 없거나(레거시) 불일치하면, 또는
+     * accountHash 가 null 이면(비로그인) 소유 확인이 불가능하므로 교체 없이 신규 구매로 진행한다.
      */
-    private suspend fun findActiveSubscriptionToReplace(productId: String): Purchase? {
+    private suspend fun findActiveSubscriptionToReplace(productId: String, accountHash: String?): Purchase? {
+        if (accountHash == null) return null
         if (!ensureConnected()) return null
         val result = billingClient.queryPurchasesAsync(
             QueryPurchasesParams.newBuilder()
@@ -256,7 +264,11 @@ class PlayBillingManager(
             return null
         }
         return result.purchasesList
-            .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && productId !in it.products }
+            .filter {
+                it.purchaseState == Purchase.PurchaseState.PURCHASED &&
+                    productId !in it.products &&
+                    it.accountIdentifiers?.obfuscatedAccountId == accountHash
+            }
             .maxByOrNull { it.purchaseTime }
     }
 

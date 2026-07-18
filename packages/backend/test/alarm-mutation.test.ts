@@ -544,6 +544,146 @@ describe('POST /alarms', () => {
 });
 
 // ---------------------------------------------------------------------------
+// greeting 버킷 정책 — 유료 클론(비-시스템) 보이스 전용, 시스템 보이스 우회 차단
+// ---------------------------------------------------------------------------
+describe('greeting 버킷 정책 (POST/PATCH)', () => {
+  const vpId = '50000000-0000-4000-8000-000000000010';
+
+  it('POST: 시스템 보이스 + greeting → 400 INVALID_BUCKET_ID (무료 우회 차단)', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]); // user plan
+    mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller(시스템 보이스도 접근은 허용)
+    mockDB.pushResult([]); // greeting 게이트: non-system 클론 아님(시스템 보이스)
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { time: '07:30', voice_profile_id: vpId, bucket_id: 'greeting' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_BUCKET_ID');
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
+  });
+
+  it('POST: 클론(비-시스템) 보이스 + greeting → 201', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]); // user plan
+    mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller(사전 검증)
+    mockDB.pushResult([{ '1': 1 }]); // greeting 게이트: non-system 클론 확인
+    mockDB.pushResult([{ '1': 1 }]); // 트랜잭션 내 voice_profile 재검증
+    mockDB.pushResult([], 1); // INSERT alarms
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { time: '07:30', voice_profile_id: vpId, bucket_id: 'greeting' }),
+    );
+    expect(res.status).toBe(201);
+    const insert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO alarms'));
+    expect(insert).toBeDefined();
+    expect(insert!.args).toContain('greeting');
+  });
+
+  it('POST: 시스템 스톡 클립 message + greeting → 400 (message 의 voice_profile 로 판정)', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]); // user plan
+    mockDB.pushResult([{ '1': 1 }]); // messageBelongsToCaller(프리셋 접근은 허용)
+    mockDB.pushResult([]); // greeting 게이트: 시스템 보이스 메시지 → 클론 아님
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { time: '07:30', message_id: ID.message, bucket_id: 'greeting' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_BUCKET_ID');
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
+  });
+
+  it('POST: 보이스 지정이 전혀 없는 greeting 버킷 → 400', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]); // user plan (게이트는 추가 조회 없이 거부)
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { time: '07:30', bucket_id: 'greeting' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_BUCKET_ID');
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
+  });
+
+  function pushExistingAlarmRow(overrides: Record<string, unknown> = {}) {
+    mockDB.pushResult([
+      {
+        id: ID.alarm,
+        message_id: null,
+        mode: 'tts',
+        wake_mode: 'sound_then_voice',
+        voice_profile_id: null,
+        speaker_id: null,
+        raw_audio_url: null,
+        bucket_id: null,
+        user_plan: 'personal',
+        ...overrides,
+      },
+    ]);
+  }
+
+  it('PATCH: bucket_id=greeting + 시스템 voice_profile → 400 INVALID_BUCKET_ID', async () => {
+    pushExistingAlarmRow();
+    mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller
+    mockDB.pushResult([]); // greeting 게이트: 시스템 보이스
+
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { bucket_id: 'greeting', voice_profile_id: vpId }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_BUCKET_ID');
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE alarms'))).toBe(false);
+  });
+
+  it('PATCH: bucket_id=greeting + 클론 voice_profile → 200', async () => {
+    pushExistingAlarmRow();
+    mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller
+    mockDB.pushResult([{ '1': 1 }]); // greeting 게이트: 클론 확인
+    mockDB.pushResult([{ '1': 1 }]); // 트랜잭션 내 voice_profile 재검증
+    mockDB.pushResult([], 1); // UPDATE alarms
+    mockDB.pushResult([
+      {
+        id: ID.alarm,
+        user_id: 'user-1',
+        target_user_id: null,
+        message_id: null,
+        time: '07:30',
+        repeat_days: '[]',
+        is_active: 1,
+        snooze_minutes: 5,
+        mode: 'tts',
+        vibration_pattern: 'default',
+        wake_mode: 'sound_then_voice',
+        voice_profile_id: vpId,
+        speaker_id: null,
+        bucket_id: 'greeting',
+        created_at: '2026-01-01',
+        updated_at: '2026-01-02',
+      },
+    ]);
+
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { bucket_id: 'greeting', voice_profile_id: vpId }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE alarms'))).toBe(true);
+  });
+
+  it('PATCH: 기존 greeting 알람의 voice_profile 을 시스템 보이스로 교체 시도 → 400', async () => {
+    // bucket_id 를 안 건드려도 결과 조합(effective)이 시스템+greeting 이면 거부한다.
+    pushExistingAlarmRow({ bucket_id: 'greeting', voice_profile_id: vpId });
+    mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller(새 시스템 보이스 접근 허용)
+    mockDB.pushResult([]); // greeting 게이트: 시스템 보이스 → 클론 아님
+
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, {
+        voice_profile_id: '50000000-0000-4000-8000-0000000000bb',
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_BUCKET_ID');
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE alarms'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // PATCH /alarms/:id — 알람 수정
 // ---------------------------------------------------------------------------
 describe('PATCH /alarms/:id', () => {

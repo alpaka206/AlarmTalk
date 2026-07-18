@@ -811,8 +811,16 @@ billingMutation.post('/cancel', async (c) => {
   }
 
   const voiceRetentionUntil = await withWriteTransaction(db, async (tx) => {
-    await cancelActiveSubscriptionsForUser(tx, userPk, now, { deleteVoiceData: false });
+    // 트랜잭션 안에서 '사용자 전체 활성 구독'을 다시 조회해 취소하지 않는다 — Play
+    // 호출 동안 새 결제 confirm 으로 생긴 활성 구독은 위 revoke 대상이 아니었으므로
+    // Play 에선 그대로 유지된다. DB 만 취소하면 상태가 갈라지므로, Play 성공을 확인한
+    // 스냅샷(activeSubscriptions)의 구독만 취소하고 새 구독은 건드리지 않는다.
+    // (plan 재정렬은 cancelSubscriptionImmediate 내부에서 남은 활성 구독 기준으로 처리)
+    for (const subscription of activeSubscriptions) {
+      await cancelSubscriptionImmediate(tx, subscription, now, { deleteVoiceData: false });
+    }
     // 즉시 해지여도 음성은 30일 보관 — '지금 삭제'는 /voice-data/delete-now 로 분리.
+    // (그 사이 새 유료 구독이 생겼어도 sweep 이 삭제 전 활성 유료 구독을 재확인한다.)
     return schedulePaidVoiceRetention(tx, userPk, now);
   });
   return c.json({

@@ -423,7 +423,7 @@ describe('normalizeTimezone / isSupportedTimezone', () => {
   });
 });
 
-describe('resolveEffectiveTimezone — 수신자 저장 tz 우선(발신자 body tz 우회 차단)', () => {
+describe('resolveEffectiveTimezone — 수신자 저장 tz 우선(발신자 body tz 는 어떤 경우에도 불신)', () => {
   /** 수신자 저장 timezone 조회를 흉내내는 DbExecutor. storedTz=null 이면 기록 없음. */
   function fakeDb(storedTz: string | null): DbExecutor & { args: unknown[] } {
     const captured: unknown[] = [];
@@ -438,34 +438,25 @@ describe('resolveEffectiveTimezone — 수신자 저장 tz 우선(발신자 body
 
   const RECIPIENT_IDS: [string, string] = ['r-pk', 'r-login'];
 
-  it('수신자 저장 tz 가 있으면 body tz 를 무시하고 저장 tz 를 반환한다', async () => {
+  it('수신자 저장 tz 가 있으면 그것을 반환한다', async () => {
     const db = fakeDb('America/New_York');
-    await expect(resolveEffectiveTimezone(db, 'Asia/Seoul', RECIPIENT_IDS)).resolves.toBe(
-      'America/New_York',
-    );
+    await expect(resolveEffectiveTimezone(db, RECIPIENT_IDS)).resolves.toBe('America/New_York');
     // 조회는 수신자 두 식별자(user_id IN)로 바인딩된다.
     expect(db.args).toEqual(['r-pk', 'r-login']);
   });
 
-  it('수신자 기록이 없으면 body tz 로 폴백한다', async () => {
-    await expect(
-      resolveEffectiveTimezone(fakeDb(null), 'America/New_York', RECIPIENT_IDS),
-    ).resolves.toBe('America/New_York');
-  });
-
-  it('저장 tz 가 Intl 미지원 값이면 body tz 로 폴백한다', async () => {
-    await expect(
-      resolveEffectiveTimezone(fakeDb('Not/AZone'), 'Asia/Tokyo', RECIPIENT_IDS),
-    ).resolves.toBe('Asia/Tokyo');
-  });
-
-  it('저장 tz 도 없고 body tz 도 무효면 Asia/Seoul 기본값', async () => {
-    await expect(resolveEffectiveTimezone(fakeDb(null), undefined, RECIPIENT_IDS)).resolves.toBe(
+  it('수신자 기록이 없으면 Asia/Seoul 로 직행한다(발신자 body tz 폴백 없음)', async () => {
+    // 발신자가 준 timezone 은 시그니처에서 아예 제거됐다 — 수신자 기록이 없어도
+    // 발신자 값으로 판정하지 않고 기본값(Asia/Seoul)으로 판정·저장한다.
+    await expect(resolveEffectiveTimezone(fakeDb(null), RECIPIENT_IDS)).resolves.toBe(
       'Asia/Seoul',
     );
-    await expect(
-      resolveEffectiveTimezone(fakeDb(null), 'bad zone!', RECIPIENT_IDS),
-    ).resolves.toBe('Asia/Seoul');
+  });
+
+  it('저장 tz 가 Intl 미지원 값이어도 Asia/Seoul 기본값', async () => {
+    await expect(resolveEffectiveTimezone(fakeDb('Not/AZone'), RECIPIENT_IDS)).resolves.toBe(
+      'Asia/Seoul',
+    );
   });
 });
 
@@ -508,5 +499,45 @@ describe('computeNextAlarmFire — 수신자 시간대 기준 다음 발사 시�
   it('시간 형식이 틀리면 null', () => {
     expect(computeNextAlarmFire('9:00', [], 'Asia/Seoul', NOW)).toBeNull();
     expect(computeNextAlarmFire('25:00', [], 'Asia/Seoul', NOW)).toBeNull();
+  });
+});
+
+describe('computeNextAlarmFire — DST 경계(달력 날짜 단위 전진)', () => {
+  // 미국 2026년 DST: 3/8(春, 23시간 하루) 시작, 11/1(秋, 25시간 하루) 종료.
+
+  it('봄 전환 직전 자정 부근: 다음 발사일이 전환일(3/8)을 건너뛰지 않는다', () => {
+    // now = 2026-03-08T04:30Z = NY 3/7(토) 23:30 EST. '23:00' 은 오늘 지남 → 다음날 3/8(일).
+    // 구버전(고정 86,400,000ms 전진)은 now+24h 가 3/9 00:30 EDT 라 달력 3/8 을 건너뛰어
+    // 하루 늦게 발사했다.
+    const now = new Date('2026-03-08T04:30:00Z');
+    const fire = computeNextAlarmFire('23:00', [], 'America/New_York', now)!;
+    // 3/8 23:00 EDT(-04) = UTC 3/9 03:00.
+    expect(fire.fireAt.toISOString()).toBe('2026-03-09T03:00:00.000Z');
+    expect(fire.fireDayOfWeek).toBe(0); // 전환일 당일(일요일)
+  });
+
+  it('봄 전환일 요일 반복: 매칭 요일(일)이 한 주 뒤로 밀리지 않는다', () => {
+    const now = new Date('2026-03-08T04:30:00Z');
+    const fire = computeNextAlarmFire('23:00', [0], 'America/New_York', now)!;
+    // 구버전은 3/8 을 건너뛰어 다음 일요일(3/15)로 한 주 밀렸다.
+    expect(fire.fireAt.toISOString()).toBe('2026-03-09T03:00:00.000Z');
+    expect(fire.fireDayOfWeek).toBe(0);
+  });
+
+  it('가을 전환(25시간 하루)도 정확한 벽시계 시각·요일로 발사', () => {
+    // now = 2026-11-01T03:30Z = NY 10/31(토) 23:30 EDT → '23:00' 다음 발사는 11/1(일) 23:00 EST.
+    const now = new Date('2026-11-01T03:30:00Z');
+    const fire = computeNextAlarmFire('23:00', [], 'America/New_York', now)!;
+    expect(fire.fireAt.toISOString()).toBe('2026-11-02T04:00:00.000Z'); // EST(-05) 23:00
+    expect(fire.fireDayOfWeek).toBe(0);
+  });
+
+  it('전환일 아침 알람: 전환 이후 오프셋(EDT)으로 벽시계 시각이 유지된다', () => {
+    // now = 2026-03-08T09:00Z = NY 3/8(일) 04:00 EST... 아님 — 3/8 02:00 에 EDT 전환됐으므로
+    // 09:00Z = 05:00 EDT. '07:00' 발사는 같은 날 07:00 EDT = 11:00Z 여야 한다(12:00Z 아님).
+    const now = new Date('2026-03-08T09:00:00Z');
+    const fire = computeNextAlarmFire('07:00', [], 'America/New_York', now)!;
+    expect(fire.fireAt.toISOString()).toBe('2026-03-08T11:00:00.000Z');
+    expect(fire.fireDayOfWeek).toBe(0);
   });
 });

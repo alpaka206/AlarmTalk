@@ -6,6 +6,7 @@ import {
   deleteSensitiveVoiceDataForUser,
 } from '../src/lib/paid-voice-cleanup';
 import { downgradeUserToFree } from '../src/lib/billing-cancel';
+import { purgeUserAccount } from '../src/lib/account-deletion';
 
 // 실제 libSQL(인메모리) + 실제 마이그레이션으로 검증한다. 공유 목소리 제공자가 취소/강등될 때
 // 그 목소리를 참조하는 '타인 소유' 알람이 하드 삭제되면 수신자의 기상 알람이 통째로 사라지는
@@ -162,4 +163,79 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
   // deletePaidVoiceDataForUser 와 동일하게 [userPk, loginId] 두 id 를 모두 매칭해 덮는다(PR #536 P1).
   // 이 인메모리 테스트는 FK(user_id REFERENCES users(id))를 강제해 login-id 저장 자체를 못 만드므로
   // 별도 재현 대신 코드 정합(두 id 매칭)으로 보장한다.
+
+  // ---- G(P1): 삭제 스코프는 '호출 사용자 소유 데이터'로 한정 ----
+  // 나를 target 으로 한 타인(발신자) 소유 알람 행과 그 raw 오디오는 발신자의 데이터다.
+  // 수신자의 delete-now/보관만료/강등이 발신자 데이터를 파기하면 안 된다.
+
+  async function enqueuedRefs(db: Client): Promise<string[]> {
+    const res = await db.execute(`SELECT ref FROM pending_external_deletions`);
+    return res.rows.map((r) => String(r.ref));
+  }
+
+  it('deletePaidVoiceDataForUser(B): 발신자(A)가 B에게 보낸 알람 행·raw 오디오는 보존, B 본인 알람은 삭제', async () => {
+    // A → B 가족 알람(행 소유 A, target 만 B) — A 자신의 목소리/메시지/녹음 사용.
+    await db.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, raw_audio_url)
+            VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts', 'r2://sender-raw')`,
+      args: [],
+    });
+    // B 본인 소유 알람(B의 정리 대상).
+    await db.execute({
+      sql: `INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time, mode, raw_audio_url)
+            VALUES ('al-B-own', 'B', 'msg-B', 'vp-A', '08:00', 'tts', 'r2://b-own-raw')`,
+      args: [],
+    });
+
+    await deletePaidVoiceDataForUser(db, 'B');
+
+    // B 본인 알람은 삭제 + raw 오디오 외부 삭제 큐 적재.
+    expect(await getAlarm(db, 'al-B-own')).toBeNull();
+    const refs = await enqueuedRefs(db);
+    expect(refs).toContain('b-own-raw');
+
+    // 발신자 소유 알람 행은 무손상 생존(강등도 없음 — A의 목소리/메시지만 참조).
+    const sent = await getAlarm(db, 'al-sent');
+    expect(sent).not.toBeNull();
+    expect(sent!.mode).toBe('tts');
+    expect(sent!.voice_profile_id).toBe('vp-A');
+    expect(sent!.message_id).toBe('msg-A');
+    expect(sent!.raw_audio_url).toBe('r2://sender-raw');
+    // 발신자 raw 오디오는 외부 삭제 큐에 올라가면 안 된다.
+    expect(refs).not.toContain('sender-raw');
+  });
+
+  it('deletePaidVoiceDataForUser(B): 나를 target 으로 한 타인 알람이 B의 목소리를 참조하면 삭제 대신 강등', async () => {
+    await insertSharedVoiceProfile(db, 'vp-B', 'B');
+    await insertMessage(db, 'msg-AB', 'A', 'vp-B'); // A의 메시지가 B의 공유 목소리로 합성됨
+    await db.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode)
+            VALUES ('al-sent2', 'A', 'B', 'msg-AB', 'vp-B', '07:30', 'tts')`,
+      args: [],
+    });
+
+    await deletePaidVoiceDataForUser(db, 'B');
+
+    // 행은 발신자 소유라 생존하되, B의 목소리 참조는 sound-only 강등으로 끊는다.
+    const sent2 = await getAlarm(db, 'al-sent2');
+    expect(sent2).not.toBeNull();
+    expect(sent2!.mode).toBe('sound-only');
+    expect(sent2!.voice_profile_id).toBeNull();
+    expect(sent2!.message_id).toBeNull();
+  });
+
+  it('purgeUserAccount(B, 계정 삭제): target 알람 삭제 + 발신자 raw 오디오 회수(기존 동작 보존)', async () => {
+    await db.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, raw_audio_url)
+            VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts', 'r2://sender-raw')`,
+      args: [],
+    });
+
+    await purgeUserAccount(db, 'B', 'google-B');
+
+    // 계정 삭제는 수신자 없는 알람을 남기지 않는다 — target 알람 행 삭제 + raw 오디오 회수.
+    expect(await getAlarm(db, 'al-sent')).toBeNull();
+    expect(await enqueuedRefs(db)).toContain('sender-raw');
+    expect((await db.execute(`SELECT id FROM users WHERE id = 'B'`)).rows).toEqual([]);
+  });
 });

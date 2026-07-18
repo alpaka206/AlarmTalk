@@ -255,8 +255,8 @@ describe('billing google RTDN', () => {
       expect(cancelCalls).toHaveLength(1);
       expect(cancelCalls[0]!.sql).toContain("WHERE id = ? AND status = 'active'");
       expect(cancelCalls[0]!.args).toContain('sub-old');
-      // 사용자 전체 활성 구독 나열(cancelActiveSubscriptionsForUser 경로)이 없어야 한다.
-      expect(findCall('ORDER BY s.starts_at DESC')).toBeUndefined();
+      // plan 재정렬(E2)을 위한 남은 활성 구독 '조회'는 허용된다 — 사용자 전체 '취소'가
+      // 없다는 보장은 위의 cancelCalls(1건·WHERE id = ? 스코프) 단언이 담당한다.
       // 30일 보관 예약은 유지된다 (sweep 이 삭제 전 활성 유료 구독을 재확인).
       expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
       expect(mockDB.transactions.commits).toBe(1);
