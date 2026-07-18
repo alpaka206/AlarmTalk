@@ -854,6 +854,14 @@ alarmMutation.patch('/:id', async (c) => {
     }
   }
 
+  // 슬롯 재점유 경로에서는 PATCH 대상이 (수신자, time) 슬롯의 유일 승자이므로 반드시 활성으로
+  // 남긴다. time 만 바꾸는 경우 is_active 가 updates 에 없어 기존 활성값이 유지되지만, 명시적으로
+  // 1 을 보장해 아래 슬롯 비활성화 UPDATE 로 대상이 함께 꺼지는 일이 없게 한다.
+  if (familyReclaim && !updates.includes('is_active = ?')) {
+    updates.push('is_active = ?');
+    args.push(1);
+  }
+
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
   }
@@ -886,24 +894,18 @@ alarmMutation.patch('/:id', async (c) => {
             return { status: 'message_not_found' as const, result: null };
           }
           if (familyReclaim) {
-            // (수신자, 새 time) 슬롯을 원자 재점유 — 이 알람(id)을 keeper 로 두고 같은 슬롯의
-            // 다른 활성 발신 알람(다른 발신자·이전 중복)을 비활성화한다. 같은 발신자가 그 시각에
-            // 다른 활성 알람을 이미 갖고 있으면(같은 시각 이중 예약) claim 이 그 행을 keeper 로
-            // 고를 수 있으므로, PATCH 대상(id)이 승자가 되도록 그 행도 비활성화한다.
-            const claimed = await claimTargetedAlarmSlot(
-              tx,
-              userId,
-              familyReclaim.ids,
-              familyReclaim.time,
-              id,
-            );
-            if (claimed.reused && claimed.alarmId !== id) {
-              await tx.execute({
-                sql: `UPDATE alarms SET is_active = 0, updated_at = datetime('now')
-                      WHERE id = ? AND target_user_id IN (?, ?)`,
-                args: [claimed.alarmId, familyReclaim.ids[0], familyReclaim.ids[1]],
-              });
-            }
+            // (수신자, 새 time) 슬롯을 PATCH 대상(id)이 유일 승자가 되도록 원자 재점유한다.
+            // 같은 슬롯의 다른 활성 발신 알람(다른 발신자 + 같은 발신자의 같은 시각 이중 예약
+            // 포함)을 전부 비활성화하되 PATCH 대상(id != ?)은 제외한다. 대상은 위에서 is_active=1
+            // 을 보장했으므로 아래 updateAlarm 으로 활성 상태로 확정된다.
+            // (POST 용 claimTargetedAlarmSlot 은 '기존 행을 keeper 로 재사용'하는 의미라 특정
+            //  행을 수정하는 PATCH 에는 부적합 — 대상이 아닌 행이 keeper 로 뽑혀 대상까지
+            //  비활성화돼 두 알람이 모두 꺼지는 버그가 있었다: Codex #563.)
+            await tx.execute({
+              sql: `UPDATE alarms SET is_active = 0, updated_at = datetime('now')
+                    WHERE target_user_id IN (?, ?) AND time = ? AND is_active = 1 AND id != ?`,
+              args: [familyReclaim.ids[0], familyReclaim.ids[1], familyReclaim.time, id],
+            });
           }
           return { status: 'ok' as const, result: await updateAlarm(tx) };
         })

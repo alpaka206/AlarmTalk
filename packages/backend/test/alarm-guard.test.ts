@@ -385,6 +385,30 @@ describe('타인 발신 알람 — PATCH 가 POST 가드를 effective(수정 결
     expect(Number((await alarmRow(idB))!.is_active)).toBe(0); // 이전 활성(B) 비활성화
   });
 
+  it('같은 슬롯에 발신자 활성 알람이 둘이어도 PATCH 대상이 승자로 남고 나머지만 비활성화(Codex #563)', async () => {
+    // 비정상 상태((수신자, time) 슬롯에 발신자 A 의 활성 알람 2개)를 직접 만든 뒤 그 중 하나를
+    // PATCH 하면 대상이 유일 승자로 남아야 한다. 구버전은 POST 용 claimTargetedAlarmSlot 이
+    // 다른 행을 keeper 로 골라 PATCH 대상까지 비활성화해 둘 다 꺼지는 버그가 있었다.
+    const DBX = '11111111-1111-4111-8111-111111111111';
+    const DBY = '22222222-2222-4222-8222-222222222222';
+    // 무료 발신자 알람은 sound-only(POST 가 무료 플랜에 넣는 기본값)로 넣어 플랜 게이트를 피한다.
+    await db.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, time, is_active, timezone, mode)
+            VALUES (?, ?, ?, '23:00', 1, 'Asia/Seoul', 'sound-only'),
+                   (?, ?, ?, '23:00', 1, 'Asia/Seoul', 'sound-only')`,
+      args: [DBX, SENDER_A.login, RECIPIENT.login, DBY, SENDER_A.login, RECIPIENT.login],
+    });
+    const res = await patchAlarm(SENDER_A, DBX, { time: '23:00' });
+    expect(res.status).toBe(200);
+    expect(Number((await alarmRow(DBX))!.is_active)).toBe(1); // 대상 = 승자
+    expect(Number((await alarmRow(DBY))!.is_active)).toBe(0); // 나머지 비활성화
+    const active = await db.execute({
+      sql: `SELECT COUNT(*) AS cnt FROM alarms WHERE target_user_id = ? AND time = '23:00' AND is_active = 1`,
+      args: [RECIPIENT.login],
+    });
+    expect(Number(active.rows[0]!.cnt)).toBe(1); // 슬롯에 정확히 하나만 활성
+  });
+
   it('본인 알람(target 없음) PATCH 는 가드가 걸리지 않는다(리드타임 미만이어도 200)', async () => {
     // 본인 알람은 리드타임/quiet 가드 대상이 아니다 — target_user_id 가 없으면 재실행하지 않는다.
     const create = await postAlarm(SENDER_A, { time: '12:00', timezone: 'Asia/Seoul' });
