@@ -272,6 +272,34 @@ async function syncUserPlanAfterCancel(
   await downgradeUserToFree(db, userPk, options);
 }
 
+/**
+ * suspend(ON_HOLD/PAUSED) 전용 plan 재정렬 (E). 매핑(정지된) 구독을 제외한 다른 활성 유료
+ * 구독이 남아 있으면 그 plan 을 유지하고, 없을 때만 free 로 내린다 — deactivate 경로
+ * (syncUserPlanAfterCancel)의 E2(잔여 유료 구독 유지)와 대칭.
+ *
+ * deactivate 와 달리 ON_HOLD/PAUSED 는 결제 복구로 되살아날 수 있는 회복형 상태라,
+ * is_shared 해제·타인 알람 강등 같은 음성 접근 정리는 하지 않는다(그룹·공유 구조 보존).
+ * 소유자 users.plan 만 보수적으로 회수하며, 결제가 복구되면 entitle 가 users.plan 을 원복한다.
+ * (매핑 구독은 suspend 에서 취소하지 않아 여전히 active 이므로 subscriptionId 로 명시 제외한다.)
+ * 반환값: 유지된 plan_type(없으면 null — free 로 내림).
+ */
+export async function resolvePlanAfterSuspend(
+  db: DbExecutor,
+  userPk: string,
+  excludeSubscriptionId: string,
+): Promise<string | null> {
+  const remaining = await findActiveSubscriptionsByUserPk(db, userPk);
+  // 조회가 starts_at DESC 정렬이므로 가장 최근 유료 구독이 우선된다. 매핑(정지된) 구독은 제외.
+  const paid = remaining.find(
+    (s) => s.subscriptionId !== excludeSubscriptionId && PAID_PLAN_TYPES.has(s.planType),
+  );
+  await db.execute({
+    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+    args: [paid ? planTypeToUserPlan(paid.planType) : 'free', userPk],
+  });
+  return paid ? paid.planType : null;
+}
+
 // 결제 해지/만료 흐름의 기본은 "음성 보존"이다. 하드 삭제는 보관 유예(sweep)나
 // 계정 삭제(account-deletion) 같은 명시적 경로에서만 deleteVoiceData:true 로 요청한다.
 export async function cancelSubscriptionImmediate(

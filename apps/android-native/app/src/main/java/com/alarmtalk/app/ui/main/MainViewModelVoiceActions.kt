@@ -164,6 +164,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                 "VOICE_CLONE_AUDIO_TOO_SHORT" -> app.getString(R.string.msg_voice_clone_audio_too_short)
                 "VOICE_CLONE_AUDIO_TOO_LONG" -> app.getString(R.string.msg_voice_clone_audio_too_long)
                 "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
+                "INVALID_AUDIO_MIME_TYPE" -> app.getString(R.string.msg_voice_invalid_audio_format)
                 "VOICE_SLOT_EXHAUSTED" -> app.getString(R.string.msg_voice_slot_exhausted)
                 "VOICE_DRAFT_ATTEMPT_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_limit_reached)
                 "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.msg_voice_paid_plan_required)
@@ -635,6 +636,12 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
             api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
         }.onSuccess { clips ->
             stockClips = clips
+            // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
+            // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
+            pendingPrefetchVoiceId?.let { voiceId ->
+                pendingPrefetchVoiceId = null
+                prefetchFreeBucketClips(voiceId)
+            }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to load stock clips", error)
         }

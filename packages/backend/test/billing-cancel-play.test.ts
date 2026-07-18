@@ -995,4 +995,66 @@ describe('POST /billing/google/confirm — 계정 바인딩 (C4)', () => {
     // 갱신 분기 — 기존 구독 만료를 스토어 값으로 연장한다.
     expect(findCall('SET expires_at = ?')).toBeDefined();
   });
+
+  // -------------------------------------------------------------------------
+  // D: acknowledgement 보류 시 서버 ack (백오프 재시도, 실패해도 success 유지)
+  // -------------------------------------------------------------------------
+  it('ack 가 PENDING 이면 서버가 :acknowledge 를 호출하고 성공 시 재시도하지 않는다 (D)', async () => {
+    const subBody = JSON.stringify({
+      ...CONFIRM_SUB,
+      acknowledgementState: 'ACKNOWLEDGEMENT_STATE_PENDING',
+      externalAccountIdentifiers: { obfuscatedExternalAccountId: await sha256HexOf('google-1') },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(subBody, { status: 200 })) // 구독 lookup
+      .mockResolvedValueOnce(new Response('{}', { status: 200 })); // :acknowledge 성공
+    vi.stubGlobal('fetch', fetchMock);
+    pushConfirmHappyPathResults();
+
+    const res = await buildGoogleApp().request(
+      jsonReq('POST', '/billing/google/confirm', CONFIRM_BODY),
+      undefined,
+      PLAY_ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+    // lookup + ack 1회 — 성공했으므로 재시도 없음.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]![0])).toContain(
+      '/purchases/subscriptions/personal_monthly/tokens/play-token-1:acknowledge',
+    );
+  });
+
+  it('ack 가 PENDING 인데 재시도 3회 모두 실패해도 confirm 은 success 를 반환한다 (D)', async () => {
+    const subBody = JSON.stringify({
+      ...CONFIRM_SUB,
+      acknowledgementState: 'ACKNOWLEDGEMENT_STATE_PENDING',
+      externalAccountIdentifiers: { obfuscatedExternalAccountId: await sha256HexOf('google-1') },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(subBody, { status: 200 })) // 구독 lookup
+      .mockResolvedValue(new Response('{}', { status: 500 })); // :acknowledge 3회 모두 5xx
+    vi.stubGlobal('fetch', fetchMock);
+    pushConfirmHappyPathResults();
+
+    const res = await buildGoogleApp().request(
+      jsonReq('POST', '/billing/google/confirm', CONFIRM_BODY),
+      undefined,
+      PLAY_ENV,
+    );
+
+    // entitlement 는 이미 커밋됐고, ack 실패는 success 를 막지 않는다(RTDN 이 보강).
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+    expect(findCall('INSERT OR REPLACE INTO store_transactions')).toBeDefined();
+    // lookup 1 + ack 재시도 3 = 4회 (백오프 후 3회 재시도 유지).
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const ackCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).includes(':acknowledge'),
+    );
+    expect(ackCalls).toHaveLength(3);
+  });
 });

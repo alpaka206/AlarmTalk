@@ -709,7 +709,9 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error_code).toBe('VOICE_CLONING_FAILED');
-    expect(body.detail).toBe('API down');
+    // K1: 제공자 응답 원문(err.message)은 detail 로 반사하지 않고 안정 에러코드만 노출한다.
+    expect(body.detail).toBe('VOICE_CLONING_FAILED');
+    expect(JSON.stringify(body)).not.toContain('API down');
 
     // 클론 실패 시 stuck 'processing' 방지: 해당 row 를 'failed' 로 정리해야 한다.
     const insertCall = mockDB.calls.find((call) =>
@@ -784,6 +786,52 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     const body = await res.json();
     expect(body.error_code).toBe('VOICE_SLOT_EXHAUSTED');
     expect(body.error).toContain('서비스가 확장중');
+  });
+
+  it('J: 0바이트 오디오 → 400 AUDIO_FILE_EMPTY (arrayBuffer/클론 전 차단)', async () => {
+    mockDB.pushResult([{ count: 0 }]); // 한도 체크 SELECT
+    const res = await req(buildApp(), cloneForm(new Uint8Array([]), 'name'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUDIO_FILE_EMPTY');
+    expect(mockCreateInstantClone).not.toHaveBeenCalled();
+  });
+
+  it('J: 25 MiB 초과 오디오 → 413 AUDIO_FILE_TOO_LARGE', async () => {
+    mockDB.pushResult([{ count: 0 }]); // 한도 체크 SELECT
+    const big = new Uint8Array(25 * 1024 * 1024 + 1);
+    const res = await req(buildApp(), cloneForm(big, 'name'));
+    expect(res.status).toBe(413);
+    expect((await res.json()).error_code).toBe('AUDIO_FILE_TOO_LARGE');
+    expect(mockCreateInstantClone).not.toHaveBeenCalled();
+  });
+
+  it('C: 원본 R2 저장 성공 후 voice_uploads INSERT 실패 시 R2 삭제 큐 적재', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
+
+    // voice_uploads INSERT 만 실패시킨다(R2 put 은 이미 성공한 상태를 재현).
+    const origExecute = mockDB.client.execute;
+    mockDB.client.execute = async (q: { sql: string; args: (string | number | null)[] }) => {
+      if (q.sql.includes('INSERT INTO voice_uploads')) throw new Error('insert boom');
+      return origExecute(q);
+    };
+    try {
+      const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '엄마'));
+      // 원본 보관은 best-effort — 클론 자체는 성공(201).
+      expect(res.status).toBe(201);
+      const enqueueCall = mockDB.calls.find((call) =>
+        call.sql.includes('INSERT OR IGNORE INTO pending_external_deletions'),
+      );
+      expect(enqueueCall).toBeDefined();
+      expect(enqueueCall!.args[1]).toBe('r2_object'); // kind
+      expect(String(enqueueCall!.args[2] ?? '')).not.toBe(''); // 고아 objectKey
+    } finally {
+      mockDB.client.execute = origExecute;
+    }
   });
 });
 
@@ -1084,14 +1132,14 @@ describe('POST /clone — edge cases (voice-profile)', () => {
     expect((await res.json()).profile.status).toBe('ready');
   });
 
-  it('non-Error throw → detail = "Unknown error"', async () => {
+  it('non-Error throw 여도 detail 은 안정 코드(K1)', async () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockRejectedValue('string-error');
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'test'));
     expect(res.status).toBe(500);
-    expect((await res.json()).detail).toBe('Unknown error');
+    expect((await res.json()).detail).toBe('VOICE_CLONING_FAILED');
   });
 });
 

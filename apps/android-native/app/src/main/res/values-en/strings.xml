@@ -535,6 +535,7 @@
     <string name="msg_voice_fetch_login_required">Please log in first to load the voice.</string>
     <string name="msg_voice_info_update_failed">Couldn\'t update your info.</string>
     <string name="msg_voice_info_updated">Your info has been updated.</string>
+    <string name="msg_voice_invalid_audio_format">That audio format isn\'t supported. Please try another file.</string>
     <string name="msg_voice_invalid_duration">Couldn\'t check the audio length. Please select the file again.</string>
     <string name="msg_voice_listener_title_required">Please enter what this voice will call you.</string>
     <string name="msg_voice_max_profiles_reached">You can create up to %1$d voices.</string>

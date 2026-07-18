@@ -59,7 +59,10 @@ describe('ElevenLabsClient', () => {
       await client.textToSpeech('voice-123', '안녕하세요');
 
       const [url, opts] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.elevenlabs.io/v1/text-to-speech/voice-123');
+      // K2: output_format 을 명시 고정한다(제공자 기본값 의존 제거).
+      expect(url).toBe(
+        'https://api.elevenlabs.io/v1/text-to-speech/voice-123?output_format=mp3_44100_128',
+      );
       expect(opts.method).toBe('POST');
       const body = JSON.parse(opts.body);
       expect(body.text).toBe('안녕하세요');

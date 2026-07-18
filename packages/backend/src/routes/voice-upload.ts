@@ -4,7 +4,7 @@ import type { VoiceStorage } from '@alarmtalk/voice';
 import { getDB } from '../lib/db';
 import { getFormFile } from '../lib/db-types';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
-import { R2VoiceStorage } from '../lib/r2-storage';
+import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 
@@ -14,7 +14,7 @@ function getStorage(env?: { VOICE_BUCKET?: R2Bucket }): VoiceStorage {
 }
 
 const voiceUpload = new Hono<AppEnv>();
-const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MiB for up to 2 minutes of voice audio.
+const MAX_UPLOAD_BYTES = MAX_VOICE_UPLOAD_BYTES; // 25 MiB for up to 2 minutes of voice audio (공용 상수).
 const MIN_UPLOAD_DURATION_MS = 60_000;
 const MAX_UPLOAD_DURATION_MS = 120_000;
 const UPLOAD_DURATION_TOLERANCE_MS = 5_000;

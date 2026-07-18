@@ -14,10 +14,13 @@ const MAX_AUDIO_URL_LENGTH = 2048;
 
 /**
  * R2 객체 키 네임스페이스. 보이스/녹음 원본은 voices/{userId}/...,
- * 생성 TTS 캐시는 generated-tts/{userId}/... 형태로 저장된다
- * (r2-storage.ts, audio-cache.ts 참고). 키의 둘째 path segment 가 소유자 id.
+ * 생성 TTS 캐시는 generated-tts/{userId}/..., 알람 직접재생 클립은
+ * raw-alarms/{userId}/... 형태로 저장된다(r2-storage.ts, audio-cache.ts,
+ * alarm-source.ts 참고). 키의 둘째 path segment 가 소유자 id.
+ * raw-alarms/ 는 alarm.raw_audio_url 소유권 게이트(alarm-mutation.ts)가
+ * isR2KeyAuthorized({kind:'owner'}) 로 이 네임스페이스를 검증하는 데 쓴다.
  */
-const R2_USER_PREFIXES = ['voices/', 'generated-tts/'] as const;
+const R2_USER_PREFIXES = ['voices/', 'generated-tts/', 'raw-alarms/'] as const;
 
 export type AudioAccess =
   /**

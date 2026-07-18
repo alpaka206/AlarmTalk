@@ -7,18 +7,13 @@ import { logRouteError } from '../lib/logger';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { sendFamilyAlarmPush } from '../lib/fcm';
-import {
-  familyAlarmSettingsFromRow,
-  isBlockedByFamilyAlarmQuietTime,
-} from '../lib/family-alarm-settings';
+import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
   validateAlarmFields,
   normalizeAlarmRow,
   normalizeTimezone,
-  resolveEffectiveTimezone,
-  computeNextAlarmFire,
   claimTargetedAlarmSlot,
-  FAMILY_ALARM_MIN_LEAD_MINUTES,
+  evaluateFamilyAlarmTimingGuard,
   type AlarmRow,
   type AlarmMode,
   type VibrationPattern,
@@ -27,8 +22,22 @@ import {
 import { isPaidVoicePlan } from './billing-helpers';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
+import { isR2KeyAuthorized } from '../lib/audio-loader';
 
 const alarmMutation = new Hono<AppEnv>();
+
+/**
+ * raw_audio_url(사용자 녹음 원본, r2://raw-alarms/{userId}/...)의 소유권을 검증한다.
+ * validateAlarmFields 의 isStoredAudioUrl 은 r2:// 형식만 확인하므로, 그것만으로는
+ * 공격자가 타인 R2 키를 자기 알람 raw_audio_url 에 끼워 넣고 DELETE/PATCH 로 참조를
+ * 0 으로 만들어(삭제 큐 적재) 타인 객체를 지우는 벡터가 열린다. 키에 박힌 소유자
+ * segment 가 호출자(ownerIds)와 일치할 때만 허용한다(isR2KeyAuthorized owner 게이트 재사용).
+ */
+function rawAudioUrlBelongsToCaller(rawAudioUrl: string, ownerIds: string[]): boolean {
+  const trimmed = rawAudioUrl.trim();
+  const key = trimmed.startsWith('r2://') ? trimmed.slice('r2://'.length) : trimmed;
+  return isR2KeyAuthorized(key, { kind: 'owner', ownerIds });
+}
 
 function alarmUsesPaidVoice(body: {
   mode?: string | null;
@@ -169,6 +178,17 @@ async function voiceProfileBelongsToCaller(
  * 접근 가능 여부(소유/공유/프리셋)는 voiceProfileBelongsToCaller /
  * messageBelongsToCaller 가 별도로 강제하므로 여기서는 클론(비-시스템) 여부만 본다.
  */
+async function messageGreetingUsesCloneVoice(db: DbExecutor, messageId: string): Promise<boolean> {
+  const res = await db.execute({
+    sql: `SELECT 1 FROM messages m
+          JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+          WHERE m.id = ? AND COALESCE(vp.is_system, 0) = 0 AND vp.deleted_at IS NULL
+          LIMIT 1`,
+    args: [messageId],
+  });
+  return res.rows.length > 0;
+}
+
 async function greetingBucketUsesCloneVoice(
   db: DbExecutor,
   fields: { voice_profile_id?: string | null; message_id?: string | null },
@@ -181,17 +201,15 @@ async function greetingBucketUsesCloneVoice(
             LIMIT 1`,
       args: [fields.voice_profile_id],
     });
-    return res.rows.length > 0;
+    if (res.rows.length === 0) return false;
+    // vp 는 클론이지만 message_id 가 함께 지정되면(클론 vp + 시스템 greeting 메시지 혼합)
+    // 그 message 의 voice_profile 도 비-시스템(클론)인지 AND 로 검증한다 — 시스템 greeting
+    // 미리듣기 클립을 클론 vp 뒤에 끼워 무료 알람으로 돌려 쓰는 우회를 방어심화한다.
+    if (fields.message_id) return messageGreetingUsesCloneVoice(db, fields.message_id);
+    return true;
   }
   if (fields.message_id) {
-    const res = await db.execute({
-      sql: `SELECT 1 FROM messages m
-            JOIN voice_profiles vp ON vp.id = m.voice_profile_id
-            WHERE m.id = ? AND COALESCE(vp.is_system, 0) = 0 AND vp.deleted_at IS NULL
-            LIMIT 1`,
-      args: [fields.message_id],
-    });
-    return res.rows.length > 0;
+    return messageGreetingUsesCloneVoice(db, fields.message_id);
   }
   // 보이스 지정이 전혀 없는 알람(alarm-only 등)은 greeting 버킷을 가질 이유가 없다.
   return false;
@@ -236,6 +254,15 @@ alarmMutation.post('/', async (c) => {
   const fieldError = validateAlarmFields(body);
   if (fieldError) return c.json(fieldError, 400);
 
+  // raw_audio_url 소유권 검증(B): 저장 전에 r2:// 키의 소유자 segment 가 호출자인지 확인한다.
+  // 타인 키를 넣어 두면 이후 DELETE/PATCH 교체 시 참조 0 판정으로 타인 R2 객체가 삭제 큐에 적재된다.
+  if (
+    body.raw_audio_url != null &&
+    !rawAudioUrlBelongsToCaller(body.raw_audio_url, ownerIds)
+  ) {
+    return c.json({ error: 'Raw audio not found', error_code: 'RAW_AUDIO_FORBIDDEN' }, 403);
+  }
+
   let targetUserIdForAlarm: string | null = null;
   // 타깃 경로에서 (수신자 PK, 수신자 로그인 id) — 슬롯 교체(claimTargetedAlarmSlot)에 쓴다.
   let targetIdsForReplace: [string, string] | null = null;
@@ -270,48 +297,20 @@ alarmMutation.post('/', async (c) => {
       const targetPk = String(target.id);
       const targetLoginId = (target.google_id as string | null) ?? targetPk;
       const targetSettings = familyAlarmSettingsFromRow(target as Record<string, unknown>);
-      if (!targetSettings.allowFamilyAlarms) {
-        return c.json(
-          {
-            error: '상대방이 알람 설정을 허용하지 않았습니다.',
-            error_code: 'FAMILY_ALARM_DISABLED',
-          },
-          403,
-        );
+      // 수신자 기준 시각 가드(허용 여부·30분 리드타임·quiet 요일). 발신자 body.timezone 은
+      // 판정·저장 어디에도 쓰지 않고, 헬퍼가 산출한 효과 시간대(수신자 최근 알람 tz →
+      // Asia/Seoul)로 판정한다. PATCH 수정 경로와 동일 헬퍼를 공유한다(중복 구현 방지).
+      const guard = await evaluateFamilyAlarmTimingGuard(
+        db,
+        [targetPk, targetLoginId],
+        targetSettings,
+        body.time,
+        body.repeat_days ?? [],
+      );
+      if (!guard.ok) {
+        return c.json({ error: guard.error, error_code: guard.error_code }, guard.status);
       }
-      // 수신자 시간대 기준 서버 검증: 효과 시간대(수신자 최근 알람 tz → Asia/Seoul)로
-      // 다음 발사 시각을 구해 30분 리드타임과 quiet 요일을 판정한다. 발신자 body.timezone
-      // 은 판정·저장 어디에도 쓰지 않는다(우회 차단 — resolveEffectiveTimezone 주석 참고).
-      const effectiveTimezone = await resolveEffectiveTimezone(db, [targetPk, targetLoginId]);
-      const nextFire = computeNextAlarmFire(body.time, body.repeat_days ?? [], effectiveTimezone);
-      if (
-        nextFire &&
-        nextFire.fireAt.getTime() - Date.now() < FAMILY_ALARM_MIN_LEAD_MINUTES * 60_000
-      ) {
-        return c.json(
-          {
-            error: `알람은 최소 ${FAMILY_ALARM_MIN_LEAD_MINUTES}분 이후 시각으로만 보낼 수 있습니다.`,
-            error_code: 'FAMILY_ALARM_LEAD_TIME',
-          },
-          400,
-        );
-      }
-      if (
-        isBlockedByFamilyAlarmQuietTime(
-          body.time,
-          body.repeat_days ?? [],
-          targetSettings,
-          nextFire?.fireDayOfWeek ?? new Date().getDay(),
-        )
-      ) {
-        return c.json(
-          {
-            error: '상대방이 설정한 불가 시간에는 알람을 만들 수 없습니다.',
-            error_code: 'FAMILY_ALARM_QUIET_TIME',
-          },
-          403,
-        );
-      }
+      const effectiveTimezone = guard.effectiveTimezone;
 
       const friendship = await db.execute({
         sql: `SELECT id FROM friendships
@@ -572,6 +571,19 @@ alarmMutation.post('/', async (c) => {
   );
 });
 
+/** 저장된 repeat_days JSON 문자열('[1,3,5]')을 number[] 로 파싱한다(0-6 정수만). */
+function parseStoredRepeatDays(raw: unknown): number[] {
+  if (typeof raw === 'string' && raw.length > 0) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter((n): n is number => Number.isInteger(n));
+    } catch {
+      // 손상 값은 빈 배열로 취급.
+    }
+  }
+  return [];
+}
+
 alarmMutation.patch('/:id', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
@@ -602,7 +614,8 @@ alarmMutation.patch('/:id', async (c) => {
   if (fieldError) return c.json(fieldError, 400);
 
   const existing = await db.execute({
-    sql: `SELECT a.id, a.message_id, a.mode, a.wake_mode, a.voice_profile_id,
+    sql: `SELECT a.id, a.target_user_id, a.time, a.repeat_days, a.is_active,
+                 a.message_id, a.mode, a.wake_mode, a.voice_profile_id,
                  a.speaker_id, a.raw_audio_url, a.bucket_id, u.plan AS user_plan
           FROM alarms a
           LEFT JOIN users u ON u.google_id = a.user_id OR u.id = a.user_id
@@ -614,6 +627,10 @@ alarmMutation.patch('/:id', async (c) => {
   }
 
   const current = typedRow<{
+    target_user_id?: string | null;
+    time?: string | null;
+    repeat_days?: string | null;
+    is_active?: number | null;
     message_id: string | null;
     mode: string | null;
     wake_mode: string | null;
@@ -669,6 +686,15 @@ alarmMutation.patch('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
+  // raw_audio_url 소유권 검증(B): 새 값으로 교체할 때 타인 R2 키를 기록해 이후 삭제
+  // 벡터를 열지 못하게 한다. null(클리어)은 소유권 검증이 필요 없어 통과.
+  if (
+    body.raw_audio_url != null &&
+    !rawAudioUrlBelongsToCaller(body.raw_audio_url, ownerIds)
+  ) {
+    return c.json({ error: 'Raw audio not found', error_code: 'RAW_AUDIO_FORBIDDEN' }, 403);
+  }
+
   // greeting 버킷 정책: PATCH 로 bucket/voice/message 를 바꿔 '시스템 보이스 + greeting'
   // 조합(무료 우회)을 만들 수 없게, 수정 결과(effective) 기준으로 클론 여부를 검증한다.
   // 관련 필드를 건드리지 않는 PATCH(예: time 만 변경)는 검사하지 않는다.
@@ -692,6 +718,66 @@ alarmMutation.patch('/:id', async (c) => {
         },
         400,
       );
+    }
+  }
+
+  // 타인 발신(가족/친구) 알람 가드 재실행(A): 발신자가 PATCH 로 time/repeat_days/timezone 을
+  // 바꾸거나 비활성 알람을 재활성(is_active 0→1)해 POST 의 리드타임·quiet·수신자 시간대 가드를
+  // 우회하지 못하게, 수정 결과(effective)가 '활성'이 되는 경우에 한해 POST 와 동일한 헬퍼를 다시
+  // 돈다. 본인 알람(target_user_id 없음)·최종 비활성 알람은 대상 아님(울리지 않으므로).
+  const patchTargetUserId =
+    typeof current.target_user_id === 'string' && current.target_user_id.length > 0
+      ? current.target_user_id
+      : null;
+  const reactivating = body.is_active === true && Number(current.is_active) === 0;
+  const willBeActive =
+    body.is_active !== undefined ? body.is_active : Number(current.is_active) === 1;
+  const changesTiming =
+    body.time !== undefined || body.repeat_days !== undefined || body.timezone !== undefined;
+  // 통과 시 저장할 효과 시간대(발신자 body.timezone 대신 이 값을 행에 기록).
+  let familyGuardTimezone: string | null = null;
+  // (수신자, 새 time) 슬롯 원자 재점유 파라미터(time 변경 또는 재활성화 시).
+  let familyReclaim: { ids: [string, string]; time: string } | null = null;
+  if (patchTargetUserId && willBeActive && (changesTiming || reactivating)) {
+    // 수신자 재조회(allowFamilyAlarms·quiet). target_user_id 는 로그인 id(google_id) 또는 pk.
+    const recipientRes = await db.execute({
+      sql: `SELECT id, google_id, allow_family_alarms,
+                   family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
+                   family_alarm_quiet_windows
+            FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
+      args: [patchTargetUserId, patchTargetUserId],
+    });
+    if (recipientRes.rows.length === 0) {
+      // 수신자를 확인할 수 없으면 수신 허용·quiet 를 검증할 수 없어 시각 변경/재활성화를 거부한다.
+      return c.json(
+        { error: '상대방이 알람 설정을 허용하지 않았습니다.', error_code: 'FAMILY_ALARM_DISABLED' },
+        403,
+      );
+    }
+    const recipient = recipientRes.rows[0]!;
+    const recipientPk = String(recipient.id);
+    const recipientLoginId = (recipient.google_id as string | null) ?? recipientPk;
+    const recipientSettings = familyAlarmSettingsFromRow(recipient as Record<string, unknown>);
+    // effective 값: PATCH 로 안 바꾼 필드는 기존 행 값을 쓴다(수정 결과 기준 판정).
+    const effectiveTime = body.time !== undefined ? body.time : String(current.time ?? '');
+    const effectiveRepeatDays =
+      body.repeat_days !== undefined
+        ? body.repeat_days
+        : parseStoredRepeatDays(current.repeat_days);
+    const guard = await evaluateFamilyAlarmTimingGuard(
+      db,
+      [recipientPk, recipientLoginId],
+      recipientSettings,
+      effectiveTime,
+      effectiveRepeatDays,
+    );
+    if (!guard.ok) {
+      return c.json({ error: guard.error, error_code: guard.error_code }, guard.status);
+    }
+    familyGuardTimezone = guard.effectiveTimezone;
+    // time 변경 또는 재활성화면 (수신자, 새 time) 슬롯을 원자 재점유해 이 알람만 활성으로 남긴다.
+    if (body.time !== undefined || reactivating) {
+      familyReclaim = { ids: [recipientPk, recipientLoginId], time: effectiveTime };
     }
   }
 
@@ -755,6 +841,19 @@ alarmMutation.patch('/:id', async (c) => {
     args.push(body.bucket_id);
   }
 
+  // 타인 발신 알람 가드가 돌았으면 저장 timezone 을 효과 시간대로 강제한다(발신자 body.timezone
+  // 무시 — 검증=저장 정합, cron 이 검증과 같은 시간대로 해석). body.timezone 절이 이미 있으면
+  // 그 값을 효과 시간대로 덮고, 없으면 새 절을 추가한다.
+  if (familyGuardTimezone !== null) {
+    const tzIdx = updates.indexOf('timezone = ?');
+    if (tzIdx >= 0) {
+      args[tzIdx] = familyGuardTimezone;
+    } else {
+      updates.push('timezone = ?');
+      args.push(familyGuardTimezone);
+    }
+  }
+
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
   }
@@ -769,7 +868,8 @@ alarmMutation.patch('/:id', async (c) => {
     });
   const updateResult =
     (body.voice_profile_id !== undefined && body.voice_profile_id !== null) ||
-    (body.message_id !== undefined && body.message_id !== null)
+    (body.message_id !== undefined && body.message_id !== null) ||
+    familyReclaim
       ? await withWriteTransaction(db, async (tx) => {
           if (
             body.voice_profile_id !== undefined &&
@@ -784,6 +884,26 @@ alarmMutation.patch('/:id', async (c) => {
             !(await messageBelongsToCaller(tx, body.message_id, ownerIds))
           ) {
             return { status: 'message_not_found' as const, result: null };
+          }
+          if (familyReclaim) {
+            // (수신자, 새 time) 슬롯을 원자 재점유 — 이 알람(id)을 keeper 로 두고 같은 슬롯의
+            // 다른 활성 발신 알람(다른 발신자·이전 중복)을 비활성화한다. 같은 발신자가 그 시각에
+            // 다른 활성 알람을 이미 갖고 있으면(같은 시각 이중 예약) claim 이 그 행을 keeper 로
+            // 고를 수 있으므로, PATCH 대상(id)이 승자가 되도록 그 행도 비활성화한다.
+            const claimed = await claimTargetedAlarmSlot(
+              tx,
+              userId,
+              familyReclaim.ids,
+              familyReclaim.time,
+              id,
+            );
+            if (claimed.reused && claimed.alarmId !== id) {
+              await tx.execute({
+                sql: `UPDATE alarms SET is_active = 0, updated_at = datetime('now')
+                      WHERE id = ? AND target_user_id IN (?, ?)`,
+                args: [claimed.alarmId, familyReclaim.ids[0], familyReclaim.ids[1]],
+              });
+            }
           }
           return { status: 'ok' as const, result: await updateAlarm(tx) };
         })

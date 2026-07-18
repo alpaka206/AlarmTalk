@@ -625,6 +625,8 @@ describe('POST /voice/clone — 음성 클론', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error_code).toBe('VOICE_CLONING_FAILED');
-    expect(body.detail).toBe('API down');
+    // K1: 제공자 응답 원문(err.message)은 detail 로 반사하지 않고 안정 에러코드만 노출한다.
+    expect(body.detail).toBe('VOICE_CLONING_FAILED');
+    expect(JSON.stringify(body)).not.toContain('API down');
   });
 });

@@ -1,6 +1,10 @@
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
 const DEFAULT_TTS_MODEL_ID = 'eleven_v3';
 const DEFAULT_AUDIO_MIME_TYPE = 'audio/wav';
+// TTS 출력 포맷을 명시 고정한다(미지정 시 제공자 기본값에 의존). mp3 44.1kHz 128kbps →
+// mimeType audio/mpeg, 파일 확장자 'mp3' 와 일치한다(voice-provider.ts 의 outputFormat 라벨/
+// 캐시키가 'mp3' 인 것과 어긋나지 않는다).
+export const ELEVENLABS_TTS_OUTPUT_FORMAT = 'mp3_44100_128';
 
 type AudioUploadOptions = {
   mimeType?: string | null;
@@ -124,14 +128,17 @@ export class ElevenLabsClient {
     };
     body.voice_settings = voiceSettings;
 
-    const res = await this.request(`/v1/text-to-speech/${voiceId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'audio/mpeg',
+    const res = await this.request(
+      `/v1/text-to-speech/${voiceId}?output_format=${ELEVENLABS_TTS_OUTPUT_FORMAT}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'audio/mpeg',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+    );
 
     return res.arrayBuffer();
   }

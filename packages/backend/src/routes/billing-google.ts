@@ -74,6 +74,56 @@ function parseConfirmRequest(value: unknown): ConfirmRequest | { error: string }
   return { purchase_token: purchaseToken, product_id: productId, package_name: packageName };
 }
 
+/** acknowledge 재시도 사이 백오프(ms). Workers 호환 — setTimeout 을 Promise 로 감싼다. */
+const ACK_BACKOFF_MS = [200, 1000];
+
+/**
+ * Play 구독 acknowledgement 확인. acknowledge 는 멱등하므로 일시 실패(5xx/네트워크) 시
+ * 위 백오프를 두고 최대 3회 시도한다. 4xx(이미 확인됨·잘못된 상태 등)는 재시도해도 동일하므로
+ * 즉시 중단한다.
+ *
+ * confirm(구매 직후)·RTDN(구매/갱신 알림) 양쪽에서 재사용한다 — 앱이 confirm 을 못 보내도
+ * RTDN 이 서버측 ack 재시도 경로가 되게 해, 미확인 시 3일 후 Play 자동 환불 위험을 줄인다.
+ * 반환값은 확인 성공 여부지만, 호출자는 실패해도 흐름을 막지 않는다(다음 RTDN/재confirm 이 보강).
+ */
+export async function acknowledgeGoogleSubscription(params: {
+  baseUrl: string;
+  productId: string;
+  purchaseToken: string;
+  accessToken: string;
+}): Promise<boolean> {
+  const { baseUrl, productId, purchaseToken, accessToken } = params;
+  const ackUrl = `${baseUrl}/purchases/subscriptions/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}:acknowledge`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      // 직전 시도 실패 → 백오프 후 재시도 (200ms, 1000ms).
+      await new Promise((resolve) => setTimeout(resolve, ACK_BACKOFF_MS[attempt - 1]));
+    }
+    try {
+      const ackRes = await fetch(ackUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      if (ackRes.ok) return true;
+      logStructured('warn', {
+        at: 'billing.google.acknowledge',
+        attempt,
+        status: ackRes.status,
+        detail: (await ackRes.text()).slice(0, 300),
+      });
+      // 4xx(이미 acknowledge 됨·잘못된 상태 등)는 재시도해도 동일하므로 즉시 중단. 5xx·네트워크만 재시도.
+      if (ackRes.status < 500) return false;
+    } catch (err) {
+      logStructured('error', { at: 'billing.google.acknowledge', attempt, error: String(err) });
+    }
+  }
+  return false;
+}
+
 const billingGoogle = new Hono<AppEnv>();
 
 billingGoogle.post('/google/confirm', async (c) => {
@@ -252,36 +302,15 @@ billingGoogle.post('/google/confirm', async (c) => {
   }
 
   // acknowledgement 보류 시 서버가 확인 처리 (3일 내 미확인 → Play 자동 환불).
-  // acknowledge 는 멱등하므로 일시 실패 시 최대 3회 재시도해 자동환불 위험을 줄인다.
+  // 전부 실패해도 success 는 유지한다(entitlement 는 이미 커밋됨) — RTDN entitle 경로가
+  // 서버측 ack 재시도로 보강한다.
   if (subscription.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_PENDING') {
-    const ackUrl = `${baseUrl}/purchases/subscriptions/${encodeURIComponent(parsed.product_id)}/tokens/${encodeURIComponent(parsed.purchase_token)}:acknowledge`;
-    let acknowledged = false;
-    for (let attempt = 0; attempt < 3 && !acknowledged; attempt++) {
-      try {
-        const ackRes = await fetch(ackUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({}),
-        });
-        if (ackRes.ok) {
-          acknowledged = true;
-        } else {
-          logStructured('warn', {
-            at: 'billing.google.acknowledge',
-            attempt,
-            status: ackRes.status,
-            detail: (await ackRes.text()).slice(0, 300),
-          });
-          // 4xx(이미 acknowledge 됨·잘못된 상태 등)는 재시도해도 동일하므로 즉시 중단. 5xx·네트워크만 재시도.
-          if (ackRes.status < 500) break;
-        }
-      } catch (err) {
-        logStructured('error', { at: 'billing.google.acknowledge', attempt, error: String(err) });
-      }
-    }
+    await acknowledgeGoogleSubscription({
+      baseUrl,
+      productId: parsed.product_id,
+      purchaseToken: parsed.purchase_token,
+      accessToken,
+    });
   }
 
   return c.json({

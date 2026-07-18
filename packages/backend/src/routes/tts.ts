@@ -1515,11 +1515,13 @@ tts.post('/generate', async (c) => {
         502,
       );
     }
+    // K1: 제공자(ElevenLabs/Vertex) 응답 원문을 detail 로 반사하지 않는다. 원문은 위
+    // console.error 로만 남기고, 응답에는 안정 에러코드만 노출한다.
     return c.json(
       {
         error: 'TTS generation failed',
         error_code: 'TTS_GENERATION_FAILED',
-        detail: err instanceof Error ? err.message : 'Unknown error',
+        detail: 'TTS_GENERATION_FAILED',
       },
       500,
     );

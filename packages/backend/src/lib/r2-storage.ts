@@ -2,6 +2,12 @@ import type { VoiceStorage, StoreInput, StoredObject } from '@alarmtalk/voice';
 
 type StoreAtKeyInput = Omit<StoreInput, 'bytes'> & { bytes: Uint8Array<ArrayBufferLike> };
 
+/**
+ * 음성 업로드/클론 원본 최대 크기(25 MiB ≈ 2분 음성). voice-upload(/upload)·
+ * voice-profile(/clone) 공용 — arrayBuffer→R2→ElevenLabs 전에 크기 가드로 쓴다.
+ */
+export const MAX_VOICE_UPLOAD_BYTES = 25 * 1024 * 1024;
+
 export class R2VoiceStorage implements VoiceStorage {
   readonly name = 'r2';
   private bucket: R2Bucket;

@@ -870,7 +870,7 @@ describe('POST /tts/generate — edge cases', () => {
     expect(mockTextToSpeech).not.toHaveBeenCalled();
   });
 
-  it('ElevenLabs 실패 시 500 + detail 포함', async () => {
+  it('ElevenLabs 실패 시 500 + 제공자 원문 미노출(K1)', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]); // cache lookup (miss)
@@ -883,10 +883,12 @@ describe('POST /tts/generate — edge cases', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error_code).toBe('TTS_GENERATION_FAILED');
-    expect(body.detail).toBe('ElevenLabs quota exceeded');
+    // K1: 제공자 응답 원문은 detail 로 반사하지 않고 안정 에러코드만 노출한다.
+    expect(body.detail).toBe('TTS_GENERATION_FAILED');
+    expect(JSON.stringify(body)).not.toContain('ElevenLabs quota exceeded');
   });
 
-  it('ElevenLabs가 비-Error를 throw하면 detail "Unknown error"', async () => {
+  it('ElevenLabs가 비-Error를 throw해도 detail 은 안정 코드(K1)', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]); // cache lookup (miss)
@@ -897,7 +899,7 @@ describe('POST /tts/generate — edge cases', () => {
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
     expect(res.status).toBe(500);
-    expect((await res.json()).detail).toBe('Unknown error');
+    expect((await res.json()).detail).toBe('TTS_GENERATION_FAILED');
   });
 
   it('성공 시 201 + message_id, audio_base64, category 기본값 custom', async () => {

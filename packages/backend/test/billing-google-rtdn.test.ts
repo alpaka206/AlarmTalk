@@ -334,5 +334,117 @@ describe('billing google RTDN', () => {
       expect(renewCall).toBeDefined();
       expect(renewCall!.args).toContain('sub-old');
     });
+
+    // -------------------------------------------------------------------------
+    // D: RTDN entitle 경로 서버측 ack — 앱 미실행으로 confirm 이 안 와도 RTDN 이
+    //    ack 재시도 경로가 되게 한다 (미ack → 3일 후 Play 자동 환불 방지).
+    // -------------------------------------------------------------------------
+    const PLAN_ROW = {
+      id: 'plan-1',
+      key: 'personal',
+      name: '개인',
+      plan_type: 'personal',
+      period_days: 30,
+      max_members: 1,
+      price_krw: 4900,
+    };
+
+    it('entitle 시 acknowledgement 이 PENDING 이면 서버가 :acknowledge 를 호출한다 (D)', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+              acknowledgementState: 'ACKNOWLEDGEMENT_STATE_PENDING',
+              lineItems: [{ productId: 'personal_monthly', expiryTime: FUTURE }],
+            }),
+            { status: 200 },
+          ),
+        ) // 권위 재조회
+        .mockResolvedValueOnce(new Response('{}', { status: 200 })); // :acknowledge 성공
+      vi.stubGlobal('fetch', fetchMock);
+      mockDB.pushResult([TXN_ROW]); // store_transactions 매핑
+      mockDB.pushResult([PLAN_ROW]); // loadPlanByKey
+      mockDB.pushResult([TXN_ROW]); // applyStoreEntitlement 기존 트랜잭션
+      mockDB.pushResult([{ plan_id: 'plan-1' }]); // currentSubscriptionPlanId — 동일 plan → 갱신 분기
+
+      const res = await buildApp().request(rtdnRequest(2), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).action).toBe('entitled');
+      // 권위 lookup 다음 두 번째 fetch 가 :acknowledge 여야 한다.
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(String(fetchMock.mock.calls[1]![0])).toContain(
+        '/purchases/subscriptions/personal_monthly/tokens/play-token-old:acknowledge',
+      );
+    });
+
+    it('entitle 시 이미 ACKNOWLEDGED 면 ack 를 호출하지 않는다 (D)', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+            acknowledgementState: 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED',
+            lineItems: [{ productId: 'personal_monthly', expiryTime: FUTURE }],
+          }),
+          { status: 200 },
+        ),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      mockDB.pushResult([TXN_ROW]);
+      mockDB.pushResult([PLAN_ROW]);
+      mockDB.pushResult([TXN_ROW]);
+      mockDB.pushResult([{ plan_id: 'plan-1' }]);
+
+      const res = await buildApp().request(rtdnRequest(2), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      // lookup 한 번뿐 — ack 호출 없음.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    // -------------------------------------------------------------------------
+    // E: suspend(ON_HOLD/PAUSED)도 잔여 활성 유료 구독을 존중 (deactivate E2 와 대칭).
+    //    매핑(정지된) 구독을 제외한 다른 활성 유료 구독이 있으면 free 로 내리지 않는다.
+    // -------------------------------------------------------------------------
+    it('suspend 시 매핑 구독 외 다른 활성 유료 구독이 있으면 그 plan 을 유지한다 (E)', async () => {
+      stubPlayLookup('SUBSCRIPTION_STATE_ON_HOLD', FUTURE);
+      mockDB.pushResult([TXN_ROW]); // store_transactions 매핑 (subscription_id='sub-old')
+      mockDB.pushResult([ACTIVE_MAPPED_ROW]); // 매핑 구독이 현재 활성 (게이트 통과)
+      mockDB.pushResult([
+        { sub_id: 'sub-other', user_id: 'user-pk-1', plan_id: 'plan-2', plan_group_id: null, plan_type: 'family' },
+        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal' },
+      ]); // 남은 활성 구독 (매핑 sub-old + 다른 유료 sub-other)
+
+      const res = await buildApp().request(rtdnRequest(5), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).action).toBe('suspended');
+      // 매핑(sub-old) 제외한 다른 활성 유료 구독(family)의 plan 으로 유지 — free 강등 아님.
+      expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['family', 'user-pk-1']);
+      expect(findCall("plan = 'free'")).toBeUndefined();
+      // 회복형 상태 — 음성 접근 정리(is_shared 해제·타인 알람 강등)는 하지 않는다.
+      expect(findCall('UPDATE voice_profiles')).toBeUndefined();
+      expect(findCall('UPDATE alarms')).toBeUndefined();
+    });
+
+    it('suspend 시 매핑 구독뿐이면(다른 유료 구독 없음) free 로 내린다 (E)', async () => {
+      stubPlayLookup('SUBSCRIPTION_STATE_PAUSED', FUTURE);
+      mockDB.pushResult([TXN_ROW]);
+      mockDB.pushResult([ACTIVE_MAPPED_ROW]);
+      mockDB.pushResult([
+        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal' },
+      ]); // 남은 활성 구독은 매핑(정지된) 구독뿐 → 제외하면 유료 없음
+
+      const res = await buildApp().request(rtdnRequest(6), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).action).toBe('suspended');
+      expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['free', 'user-pk-1']);
+      // 회복형 free 강등은 음성 접근 정리 없이 users.plan 만 회수한다.
+      expect(findCall('UPDATE voice_profiles')).toBeUndefined();
+      expect(findCall('UPDATE alarms')).toBeUndefined();
+    });
   });
 });
