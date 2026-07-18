@@ -1281,4 +1281,31 @@ describe('B: raw_audio_url 소유권', () => {
     expect(mockDB.calls.some((c) => c.sql.includes('UPDATE alarms SET'))).toBe(false);
     expect(mockDB.calls.some((c) => c.sql.includes('pending_external_deletions'))).toBe(false);
   });
+
+  // 정리 경로 회귀(Codex #563): 쓰기 게이트 이전에 생성된 레거시 알람이 타인 키를
+  // 참조하더라도, DELETE 시 그 타인 객체를 삭제 큐에 넣지 않는다(cross-tenant 삭제 차단).
+  it('DELETE: 레거시 알람의 타인 raw_audio_url 은 삭제 큐에 미적재', async () => {
+    mockDB.pushResult([{ message_id: null, raw_audio_url: 'r2://raw-alarms/victim-2/legacy-clip' }]);
+    mockDB.pushResult([], 1); // DELETE FROM alarms
+    const res = await buildApp().request(
+      new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(200);
+    // 소유권 불일치라 참조 카운트 조회도, 삭제 큐 적재도 하지 않는다.
+    expect(mockDB.calls.some((c) => c.sql.includes('pending_external_deletions'))).toBe(false);
+    expect(
+      mockDB.calls.some((c) => c.sql.includes('COUNT(*)') && c.sql.includes('raw_audio_url')),
+    ).toBe(false);
+  });
+
+  it('DELETE: 본인 raw_audio_url 은 참조 0이면 삭제 큐 적재', async () => {
+    mockDB.pushResult([{ message_id: null, raw_audio_url: 'r2://raw-alarms/user-1/own-clip' }]);
+    mockDB.pushResult([], 1); // DELETE FROM alarms
+    mockDB.pushResult([{ cnt: 0 }]); // 참조 카운트
+    const res = await buildApp().request(
+      new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockDB.calls.some((c) => c.sql.includes('pending_external_deletions'))).toBe(true);
+  });
 });

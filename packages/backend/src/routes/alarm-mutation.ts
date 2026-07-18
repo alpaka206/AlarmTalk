@@ -918,9 +918,16 @@ alarmMutation.patch('/:id', async (c) => {
   // raw_audio_url 을 새 값으로 교체하면 이전 R2 녹음이 어떤 알람에서도 참조되지
   // 않을 수 있다. DELETE 핸들러와 동일하게, 더 이상 쓰이지 않는 이전 오브젝트를
   // 삭제 큐에 적재해 영구 고아를 막는다(교체 경로에는 기존에 이 정리가 없었다).
+  // 단, 쓰기 게이트(rawAudioUrlBelongsToCaller) 이전에 생성된 레거시 알람은 타인
+  // 키를 참조할 수 있으므로, 삭제 큐 적재 전에도 소유권을 확인해 타인 오브젝트가
+  // 삭제되지 않게 한다(cross-tenant 삭제 차단).
   if (body.raw_audio_url !== undefined) {
     const previousRawUrl = current.raw_audio_url;
-    if (previousRawUrl?.startsWith('r2://') && previousRawUrl !== body.raw_audio_url) {
+    if (
+      previousRawUrl?.startsWith('r2://') &&
+      previousRawUrl !== body.raw_audio_url &&
+      rawAudioUrlBelongsToCaller(previousRawUrl, ownerIds)
+    ) {
       const stillReferenced = await db.execute({
         sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE raw_audio_url = ?',
         args: [previousRawUrl],
@@ -1034,7 +1041,9 @@ alarmMutation.delete('/:id', async (c) => {
   }
 
   // 사용자 녹음 원본(r2://)이 더 이상 어떤 알람에도 쓰이지 않으면 R2 삭제 큐에 적재.
-  if (rawAudioUrl?.startsWith('r2://')) {
+  // 쓰기 게이트 이전의 레거시 알람이 타인 키를 참조할 수 있으므로, 삭제 큐 적재 전에
+  // 소유권을 확인해 타인 오브젝트가 삭제되지 않게 한다(cross-tenant 삭제 차단).
+  if (rawAudioUrl?.startsWith('r2://') && rawAudioUrlBelongsToCaller(rawAudioUrl, ownerIds)) {
     const rawRefRes = await db.execute({
       sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE raw_audio_url = ?',
       args: [rawAudioUrl],
