@@ -158,6 +158,29 @@ final class VoiceStudioViewModel: ObservableObject {
         defaultVoiceStore.markSkipped(userID: activeUserID)
     }
 
+    /// 앱 언어 → 스톡 클립 언어(en/ja 외엔 ko). Android `data.appVoiceLanguageOf` 미러.
+    nonisolated static func appVoiceLanguage() -> String {
+        let code = Locale.preferredLanguages.first
+            .flatMap { Locale(identifier: $0).language.languageCode?.identifier }
+        switch code {
+        case "en": return "en"
+        case "ja": return "ja"
+        default: return "ko"
+        }
+    }
+
+    /// 미리듣기용 greeting 스톡 클립 선택의 단일 출처. greeting 은 보이스당 3개 언어(ko/en/ja)가
+    /// 있고 서버 /tts/stock-clips 는 language ASC 정렬이라, 무필터 first 는 항상 영어(en)를 잡는다.
+    /// 앱 언어 → ko → 아무 greeting → 그 보이스의 아무 클립 순. Android `greetingStockClipFor` 미러.
+    func greetingClip(voiceId: String) -> StockClip? {
+        let greetings = stockClips.filter { $0.voiceProfileId == voiceId && $0.category == "greeting" }
+        let appLanguage = Self.appVoiceLanguage()
+        return greetings.first { ($0.language ?? "ko") == appLanguage }
+            ?? greetings.first { ($0.language ?? "ko") == "ko" }
+            ?? greetings.first
+            ?? stockClips.first { $0.voiceProfileId == voiceId }
+    }
+
     /// 온보딩/목소리 탭의 시스템 음성 "들어보기" — greeting 스톡 클립을 받아 미리 재생한다.
     /// 같은 음성을 다시 누르면 정지. (미리듣기 전용 — preparedAlarm 을 건드리지만 알람 흐름이 아니라 무해)
     func previewGreeting(voiceId: String, session: AuthSession?) async {
@@ -167,9 +190,7 @@ final class VoiceStudioViewModel: ObservableObject {
             previewingGreetingVoiceId = nil
             return
         }
-        let clip = stockClips.first { $0.voiceProfileId == voiceId && $0.category == "greeting" }
-            ?? stockClips.first { $0.voiceProfileId == voiceId }
-        guard let clip else { return }
+        guard let clip = greetingClip(voiceId: voiceId) else { return }
         greetingPreviewRequestId += 1
         let requestId = greetingPreviewRequestId
         previewPlayer.stop()

@@ -131,8 +131,8 @@ struct VoiceSetupView: View {
     }
 
     private func sampleText(for voiceId: String) -> String? {
-        let greeting = voiceStudio.stockClips.first { $0.voiceProfileId == voiceId && $0.category == "greeting" }
-        return (greeting ?? voiceStudio.stockClips.first { $0.voiceProfileId == voiceId })?.text
+        // greeting 은 3개 언어가 있으므로 앱 언어로 골라야 한다(무필터 first 는 항상 en).
+        voiceStudio.greetingClip(voiceId: voiceId)?.text
     }
 
     private func confirm() {

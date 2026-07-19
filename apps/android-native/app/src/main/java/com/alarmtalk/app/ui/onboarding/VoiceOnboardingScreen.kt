@@ -30,13 +30,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.VoiceProfile
@@ -67,9 +67,12 @@ internal fun VoiceOnboardingScreen(
         mutableStateOf(systemVoices.firstOrNull()?.id)
     }
     val voiceLoadFinished = voiceProfileLoadFinished && !voiceProfileBusy
+    // greeting 은 3개 언어가 있으므로 앱 언어로 골라야 한다(무필터 firstOrNull 이면 항상 en).
+    val appVoiceLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
+        LocalConfiguration.current.locales.takeIf { !it.isEmpty }?.get(0)?.language,
+    )
     fun sampleText(profile: VoiceProfile): String? =
-        (stockClips.firstOrNull { it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY }
-            ?: stockClips.firstOrNull { it.voiceProfileId == profile.id })?.text
+        com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, appVoiceLanguage)?.text
 
     Column(
         modifier = Modifier
