@@ -82,3 +82,6 @@ test/*
 !apps/android-native/**/res/raw/**
 
 handoff
+# 로컬 전용(커밋 안 함): omo 툴 스크래치, 목소리 프리뷰 클립(30MB, 로컬 청취용)
+.omo/
+voice-preview/
