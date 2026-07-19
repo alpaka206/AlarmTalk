@@ -506,7 +506,8 @@ private fun VoicePreviewCard(accent: Color) {
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = TextOnScene,
-                    maxLines = 2,
+                    // 자막 = 실제 미리듣기 음성 대사 3문장(인사·날씨·당부) 그대로.
+                    maxLines = 3,
                 )
                 MiniWaveform(progress = progress, accent = accent)
             }

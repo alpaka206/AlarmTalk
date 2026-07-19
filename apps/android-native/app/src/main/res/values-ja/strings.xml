@@ -50,7 +50,7 @@
     <string name="auth_landing_login_with_email">メールでログイン</string>
     <string name="auth_landing_preview_pause">プレビューを一時停止</string>
     <string name="auth_landing_preview_play">声をプレビュー</string>
-    <string name="auth_landing_sample_message">おじいちゃん、おはようございます\n出かけるときは傘を忘れずに</string>
+    <string name="auth_landing_sample_message">おじいちゃん、おはようございます\n今日はソウルで雨の予報です\n出かけるときは傘を忘れずに</string>
     <string name="auth_password_hide">パスワードを隠す</string>
     <string name="auth_password_mismatch">パスワードが一致しません。</string>
     <string name="auth_password_rule_alnum">英字と数字を含む</string>
