@@ -1572,6 +1572,19 @@ export const migrations: Migration[] = [
          AND redemption_group IS NULL`,
     ],
   },
+  {
+    // 웰컴 3종 등록기한: 2026-08-31(KST)까지 — 2026-08-31T15:00:00Z = 2026-09-01 00:00 KST 부터
+    // 등록 불가(valid_until 은 배타 비교: datetime(valid_until) > datetime('now') 일 때만 허용).
+    // #72 시드는 이미 dev 에 적용돼 본문을 바꿀 수 없으므로(불변) 별도 스탬프로 수렴한다.
+    // valid_until IS NULL 조건: 운영자가 이후 admin 에서 기한을 조정했다면 존중한다.
+    id: 74,
+    name: 'promo-welcome-deadline-2026-08-31',
+    statements: [
+      `UPDATE promo_codes SET valid_until = '2026-08-31T15:00:00Z', updated_at = datetime('now')
+       WHERE code COLLATE NOCASE IN ('WELCOME_PERSONAL', 'WELCOME_COUPLE', 'WELCOME_FAMILY')
+         AND valid_until IS NULL`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

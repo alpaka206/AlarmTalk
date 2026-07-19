@@ -224,3 +224,26 @@ describe('배포→마이그레이션 창 호환 (#72 적용 전 스키마)', ()
     legacyDb.close();
   });
 });
+
+describe('마이그레이션 #74 — 웰컴 등록기한 (2026-08-31 KST 까지)', () => {
+  it('웰컴 3종의 valid_until 이 2026-08-31T15:00:00Z(= 9/1 00:00 KST)로 스탬프된다', async () => {
+    const res = await db.execute(
+      `SELECT code, valid_until FROM promo_codes WHERE redemption_group = 'welcome' ORDER BY code`,
+    );
+    expect(res.rows).toHaveLength(3);
+    for (const r of res.rows) {
+      expect(r.valid_until).toBe('2026-08-31T15:00:00Z');
+    }
+  });
+
+  it('기한이 지난 웰컴 코드는 CODE_NOT_IN_WINDOW 로 거부된다', async () => {
+    // datetime('now') 는 주입할 수 없으므로 이미 지난 기한의 웰컴 그룹 코드로 윈도우 판정을 검증.
+    await db.execute(
+      `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active, valid_until, redemption_group)
+       SELECT 'pw-expired', 'WELCOME_EXPIRED_TEST', id, 30, 1, '2020-01-01T00:00:00Z', 'welcome'
+       FROM plans WHERE key = 'personal'`,
+    );
+    await insertUser('pw-d');
+    await expectPromoError(redeem('pw-d', 'WELCOME_EXPIRED_TEST'), 'CODE_NOT_IN_WINDOW');
+  });
+});
