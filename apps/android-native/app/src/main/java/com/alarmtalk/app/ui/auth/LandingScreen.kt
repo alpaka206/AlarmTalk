@@ -506,8 +506,9 @@ private fun VoicePreviewCard(accent: Color) {
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = TextOnScene,
-                    // 자막 = 실제 미리듣기 음성 대사 3문장(인사·날씨·당부) 그대로.
-                    maxLines = 3,
+                    // 자막 = 실제 미리듣기 음성 대사 3문장(인사·날씨·당부) 그대로. 좁은 기기(360dp)
+                    // 에서는 문장이 줄바꿈돼 논리 3줄이 시각 4~5줄이 되므로 줄 수 제한을 두지 않는다
+                    // — 어떤 로케일에서도 마지막 당부 문장이 잘리지 않아야 한다.
                 )
                 MiniWaveform(progress = progress, accent = accent)
             }
