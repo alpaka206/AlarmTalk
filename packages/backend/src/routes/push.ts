@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { withWriteTransaction } from '../lib/transactions';
 
 const push = new Hono<AppEnv>();
 
@@ -39,18 +40,25 @@ push.post('/register', async (c) => {
 
   // 이 기기 토큰을 현재 사용자 전용으로 재배정한다. 같은 기기에서 A 로그아웃→B 로그인 시 Firebase 등록
   // 토큰은 그대로라, 옛 소유자(A) 행이 남으면 A 의 알람 push 가 이 기기로 잘못 배달된다(P1).
-  // 이전의 'DELETE 타소유자 → UPSERT(user_id, token)' 2문장은 빠른 계정 전환으로 두 세션의 등록이
-  // 동시에 도착하면 서로의 DELETE 가 상대 INSERT 앞에 실행돼 소유자 2행이 남는 레이스가 있었다
-  // (Codex #567 P1). token 전역 UNIQUE(마이그레이션 #71) 위에서 단일 UPSERT 로 원자 재배정한다 —
-  // 마지막 등록이 유일 승자이고, 어떤 인터리빙에서도 토큰당 소유자는 1행이다.
-  await db.execute({
-    sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
-          VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
-          ON CONFLICT(token) DO UPDATE SET
-            user_id = excluded.user_id,
-            platform = excluded.platform,
-            updated_at = datetime('now')`,
-    args: [crypto.randomUUID(), userPk, token, platform],
+  // 이전의 비트랜잭션 'DELETE 타소유자 → UPSERT' 2문장은 빠른 계정 전환으로 두 세션의 등록이 동시에
+  // 도착하면 서로의 DELETE 가 상대 INSERT 앞에 실행돼 소유자 2행이 남는 레이스가 있었다(Codex #567 P1).
+  // 쓰기 트랜잭션(단일 writer 락)으로 두 문장을 원자화해 어떤 인터리빙에서도 마지막 커밋이 유일 승자다.
+  // ON CONFLICT 타깃은 #14 부터 존재하는 (user_id, token) 유니크를 유지한다 — deploy-backend.yml 이
+  // 배포 '후' 마이그레이션을 돌리므로, ON CONFLICT(token) 을 쓰면 #71(token 전역 UNIQUE) 적용 전
+  // 창에서 모든 등록이 500 난다(Codex #568 P2). #71 이후엔 token 전역 UNIQUE 가 DB 수준 이중 방어.
+  await withWriteTransaction(db, async (tx) => {
+    await tx.execute({
+      sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id != ?',
+      args: [token, userPk],
+    });
+    await tx.execute({
+      sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(user_id, token) DO UPDATE SET
+              platform = excluded.platform,
+              updated_at = datetime('now')`,
+      args: [crypto.randomUUID(), userPk, token, platform],
+    });
   });
 
   return c.json({ success: true });

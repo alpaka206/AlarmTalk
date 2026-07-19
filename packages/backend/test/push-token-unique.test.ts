@@ -12,17 +12,26 @@ const db: Client = createClient({ url: `file:${DB_PATH}` });
 
 const migration71 = migrations.find((m) => m.id === 71)!;
 
-// 라우트(push.ts /register)와 동일한 UPSERT
+// 라우트(push.ts /register)와 동일한 트랜잭션 재배정(DELETE 타소유자 + UPSERT(user_id, token))
 async function registerLike(userId: string, token: string, platform = 'android') {
-  await db.execute({
-    sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
-          VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
-          ON CONFLICT(token) DO UPDATE SET
-            user_id = excluded.user_id,
-            platform = excluded.platform,
-            updated_at = datetime('now')`,
-    args: [crypto.randomUUID(), userId, token, platform],
-  });
+  const tx = await db.transaction('write');
+  try {
+    await tx.execute({
+      sql: 'DELETE FROM push_tokens WHERE token = ? AND user_id != ?',
+      args: [token, userId],
+    });
+    await tx.execute({
+      sql: `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(user_id, token) DO UPDATE SET
+              platform = excluded.platform,
+              updated_at = datetime('now')`,
+      args: [crypto.randomUUID(), userId, token, platform],
+    });
+    await tx.commit();
+  } finally {
+    if (!tx.closed) tx.close();
+  }
 }
 
 async function ownersOf(token: string): Promise<string[]> {
