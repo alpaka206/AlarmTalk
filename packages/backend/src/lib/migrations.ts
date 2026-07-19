@@ -1500,13 +1500,23 @@ export const migrations: Migration[] = [
     ],
   },
   {
-    // /push/register 의 'DELETE 타소유자 → UPSERT(user_id, token)' 2문장은 같은 기기의 빠른 계정
-    // 전환에서 두 세션의 등록이 인터리빙되면 한 token 에 소유자 2행이 남아 가족알람 push 가 두
-    // 계정 모두에게 가는 레이스가 있었다(Codex #567 P1). token 을 전역 UNIQUE 로 만들고 라우트를
-    // ON CONFLICT(token) 단일 UPSERT 로 교체한다. 기존 중복은 최신(updated_at) 행만 남긴다.
+    // /push/register 의 비트랜잭션 'DELETE 타소유자 → UPSERT(user_id, token)' 2문장은 같은 기기의
+    // 빠른 계정 전환에서 두 세션의 등록이 인터리빙되면 한 token 에 소유자 2행이 남아 가족알람
+    // push 가 두 계정 모두에게 가는 레이스가 있었다(Codex #567 P1). 라우트는 쓰기 트랜잭션으로
+    // 원자화했고(push.ts), 여기서 token 전역 UNIQUE 를 더해 DB 수준 불변식으로 이중 방어한다.
+    // 기존 중복은 최신 행만 남긴다.
+    //
+    // 원자성 노트(Codex #570): runMigrations 는 문장을 개별 실행하므로 dedupe→CREATE 사이가
+    // 완전 원자는 아니다. 대신 (1) 배포가 먼저 나가는 새 라우트는 트랜잭션 재배정이라 신규
+    // 중복을 만들 수 없고(옛 코드 in-flight 는 배포 후 수초 내 소진, 마이그레이션은 그 뒤 실행),
+    // (2) dedupe 를 CREATE 바로 앞에 붙여 갭을 한 문장 경계로 최소화했으며, (3) 세 문장 모두
+    // 멱등이라 혹시 CREATE 가 UNIQUE 위반으로 실패해도 다음 migrate 재실행에서 수렴한다.
     id: 71,
     name: 'push-tokens-global-unique-token',
     statements: [
+      // #63 의 비유니크 token 인덱스를 유니크로 교체(이름 유지). CREATE ... IF NOT EXISTS 는
+      // '이름' 존재만 보므로 반드시 DROP 후 CREATE — 안 그러면 비유니크 인덱스가 그대로 남는다.
+      'DROP INDEX IF EXISTS idx_push_tokens_token',
       // 타이브레이커는 rowid(삽입 순서 근사) — 레이스로 남은 중복은 대부분 같은 초에 찍혀
       // updated_at/created_at 이 동률인데, UUID(id) 비교는 삽입 순서와 무관해 이른 소유자가
       // 남을 수 있다. rowid 가 크면 나중 INSERT = 마지막 등록이 승자.
@@ -1517,10 +1527,6 @@ export const migrations: Migration[] = [
           ) AS rn FROM push_tokens
         ) WHERE rn = 1
       )`,
-      // #63 의 비유니크 token 인덱스를 유니크로 교체(이름 유지). CREATE ... IF NOT EXISTS 는
-      // '이름' 존재만 보므로 반드시 DROP 후 CREATE — 안 그러면 비유니크 인덱스가 그대로 남아
-      // ON CONFLICT(token) 이 매칭할 유니크 제약이 없어 등록이 실패한다.
-      'DROP INDEX IF EXISTS idx_push_tokens_token',
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)',
     ],
   },
