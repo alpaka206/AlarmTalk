@@ -74,7 +74,8 @@ async function redeemPromoInTransaction(
       args: [code],
     });
   } catch (err) {
-    if (!/no such column/i.test(String(err))) throw err;
+    // SELECT 는 "no such column", INSERT 는 "has no column named" — admin.ts 와 동일 판별.
+    if (!/no such column|has no column named/i.test(String(err))) throw err;
     promoRes = await db.execute({
       sql: `SELECT id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions,
                    is_active

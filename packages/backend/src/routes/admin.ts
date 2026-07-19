@@ -20,6 +20,14 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * 배포→마이그레이션 사이 창에서 아직 없는 컬럼을 참조했는지 판별.
+ * SELECT 는 "no such column: X", INSERT 컬럼 목록은 "table T has no column named X" 로 온다.
+ */
+function isMissingColumnError(err: unknown): boolean {
+  return /no such column|has no column named/i.test(String(err));
+}
+
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -111,15 +119,32 @@ admin.get('/promo', async (c) => {
   const plansRes = await db.execute({
     sql: `SELECT key, name, plan_type FROM plans WHERE is_active = 1 ORDER BY price_krw`,
   });
-  const codesRes = await db.execute({
-    sql: `SELECT p.id, p.code, p.duration_days, p.valid_from, p.valid_until,
-                 p.max_redemptions, p.is_active, p.note, p.created_at, p.redemption_group,
-                 pl.key AS plan_key, pl.name AS plan_name,
-                 (SELECT COUNT(*) FROM promo_code_redemptions r WHERE r.promo_code_id = p.id) AS used
-          FROM promo_codes p
-          LEFT JOIN plans pl ON pl.id = p.plan_id
-          ORDER BY p.created_at DESC`,
-  });
+  // deploy-backend.yml 이 배포 '후' 마이그레이션을 돌리므로, redemption_group(#72) 컬럼이
+  // 아직 없는 창에서도 콘솔이 500 나지 않게 레거시 스키마로 폴백한다(promo-redemption.ts 와
+  // 동일 패턴). NULL AS redemption_group 으로 렌더러는 그대로 쓴다.
+  let codesRes;
+  try {
+    codesRes = await db.execute({
+      sql: `SELECT p.id, p.code, p.duration_days, p.valid_from, p.valid_until,
+                   p.max_redemptions, p.is_active, p.note, p.created_at, p.redemption_group,
+                   pl.key AS plan_key, pl.name AS plan_name,
+                   (SELECT COUNT(*) FROM promo_code_redemptions r WHERE r.promo_code_id = p.id) AS used
+            FROM promo_codes p
+            LEFT JOIN plans pl ON pl.id = p.plan_id
+            ORDER BY p.created_at DESC`,
+    });
+  } catch (err) {
+    if (!isMissingColumnError(err)) throw err;
+    codesRes = await db.execute({
+      sql: `SELECT p.id, p.code, p.duration_days, p.valid_from, p.valid_until,
+                   p.max_redemptions, p.is_active, p.note, p.created_at, NULL AS redemption_group,
+                   pl.key AS plan_key, pl.name AS plan_name,
+                   (SELECT COUNT(*) FROM promo_code_redemptions r WHERE r.promo_code_id = p.id) AS used
+            FROM promo_codes p
+            LEFT JOIN plans pl ON pl.id = p.plan_id
+            ORDER BY p.created_at DESC`,
+    });
+  }
 
   const planOptions = plansRes.rows
     .map(
@@ -251,22 +276,41 @@ admin.post('/promo', async (c) => {
       return c.redirect('/admin/promo?err=' + encodeURIComponent('이미 존재하는 코드입니다'), 303);
     }
 
-    await db.execute({
-      sql: `INSERT INTO promo_codes
-              (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-      args: [
-        crypto.randomUUID(),
-        code,
-        plan.id,
-        durationDays,
-        validFrom,
-        validUntil,
-        maxRedemptions,
-        note,
-        redemptionGroup,
-      ],
-    });
+    try {
+      await db.execute({
+        sql: `INSERT INTO promo_codes
+                (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
+              VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+        args: [
+          crypto.randomUUID(),
+          code,
+          plan.id,
+          durationDays,
+          validFrom,
+          validUntil,
+          maxRedemptions,
+          note,
+          redemptionGroup,
+        ],
+      });
+    } catch (err) {
+      // 배포→마이그레이션(#72) 창: redemption_group 컬럼이 아직 없다. 그룹 없는 발급은
+      // 레거시 스키마로 그대로 진행하고, 그룹 지정 발급만 마이그레이션 이후로 안내한다.
+      if (!isMissingColumnError(err)) throw err;
+      if (redemptionGroup) {
+        return c.redirect(
+          '/admin/promo?err=' +
+            encodeURIComponent('리딤 그룹은 DB 마이그레이션(#72) 적용 후 사용할 수 있습니다'),
+          303,
+        );
+      }
+      await db.execute({
+        sql: `INSERT INTO promo_codes
+                (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note)
+              VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+        args: [crypto.randomUUID(), code, plan.id, durationDays, validFrom, validUntil, maxRedemptions, note],
+      });
+    }
     return c.redirect('/admin/promo?ok=' + encodeURIComponent('코드 발급 완료: ' + code), 303);
   } catch (err) {
     logRouteError(c, err);
