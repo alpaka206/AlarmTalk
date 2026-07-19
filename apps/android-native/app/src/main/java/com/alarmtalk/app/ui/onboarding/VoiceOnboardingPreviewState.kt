@@ -14,7 +14,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.VoiceProfile
@@ -50,9 +49,13 @@ internal class VoiceOnboardingPreviewController(
             stopPreview()
             return
         }
-        val clip = stockClips.firstOrNull {
-            it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY
-        } ?: stockClips.firstOrNull { it.voiceProfileId == profile.id } ?: return
+        // greeting 은 3개 언어가 있으므로 앱 언어로 골라야 한다(무필터 firstOrNull 이면 항상 en).
+        val locales = context.resources.configuration.locales
+        val appLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
+            (if (!locales.isEmpty) locales[0] else null)?.language,
+        )
+        val clip = com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, appLanguage)
+            ?: return
 
         val requestId = previewRequestId + 1
         previewRequestId = requestId

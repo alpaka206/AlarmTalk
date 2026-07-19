@@ -68,7 +68,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.data.AlarmAudioStore
-import com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
 import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileAudioLimits
@@ -309,9 +308,9 @@ internal fun VoiceProfileManagementPanel(
         playingGreetingVoiceId = null
     }
 
-    fun greetingClipFor(profile: VoiceProfile) = stockClips.firstOrNull {
-        it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY
-    } ?: stockClips.firstOrNull { it.voiceProfileId == profile.id }
+    // greeting 은 3개 언어가 있으므로 앱 언어로 골라야 한다(무필터 firstOrNull 이면 항상 en).
+    fun greetingClipFor(profile: VoiceProfile) =
+        com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, previewLanguage)
 
     // greeting 클립을 캐시에서 찾고, 없으면 내려받아 캐시한다(탭 재생·시트 프리페치 공용).
     suspend fun ensureGreetingCached(clip: com.alarmtalk.app.network.StockClip): CachedAlarmAudio {
