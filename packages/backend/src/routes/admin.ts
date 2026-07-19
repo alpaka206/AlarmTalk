@@ -113,7 +113,7 @@ admin.get('/promo', async (c) => {
   });
   const codesRes = await db.execute({
     sql: `SELECT p.id, p.code, p.duration_days, p.valid_from, p.valid_until,
-                 p.max_redemptions, p.is_active, p.note, p.created_at,
+                 p.max_redemptions, p.is_active, p.note, p.created_at, p.redemption_group,
                  pl.key AS plan_key, pl.name AS plan_name,
                  (SELECT COUNT(*) FROM promo_code_redemptions r WHERE r.promo_code_id = p.id) AS used
           FROM promo_codes p
@@ -141,6 +141,7 @@ admin.get('/promo', async (c) => {
         <td>${escapeHtml(r.duration_days)}일</td>
         <td>${escapeHtml(r.used)} / ${max}</td>
         <td>${from}<br>~ ${until}</td>
+        <td>${r.redemption_group ? `<code>${escapeHtml(r.redemption_group)}</code>` : '—'}</td>
         <td>${active ? '✅' : '⛔'}</td>
         <td class="muted">${escapeHtml(r.note ?? '')}</td>
         <td>
@@ -180,6 +181,9 @@ ${renderMsg(c)}
   </label>
   <input type="hidden" name="valid_from">
   <input type="hidden" name="valid_until">
+  <label>리딤 그룹(빈칸=없음)
+    <input name="redemption_group" placeholder="예: welcome" maxlength="64" autocomplete="off">
+  </label>
   <label class="full">메모(관리용)
     <input name="note" placeholder="예: 6월 런칭 프로모" maxlength="200">
   </label>
@@ -187,8 +191,8 @@ ${renderMsg(c)}
 </form>
 <h2>발급된 코드</h2>
 <table>
-  <thead><tr><th>코드</th><th>플랜</th><th>기간</th><th>사용/상한</th><th>유효창</th><th>활성</th><th>메모</th><th></th></tr></thead>
-  <tbody>${rows || '<tr><td colspan="8" class="muted">아직 발급된 코드가 없습니다.</td></tr>'}</tbody>
+  <thead><tr><th>코드</th><th>플랜</th><th>기간</th><th>사용/상한</th><th>유효창</th><th>그룹</th><th>활성</th><th>메모</th><th></th></tr></thead>
+  <tbody>${rows || '<tr><td colspan="9" class="muted">아직 발급된 코드가 없습니다.</td></tr>'}</tbody>
 </table>
 <script>
 (function () {
@@ -222,6 +226,8 @@ admin.post('/promo', async (c) => {
     const validFrom = String(form.valid_from ?? '').trim() || null;
     const validUntil = String(form.valid_until ?? '').trim() || null;
     const note = String(form.note ?? '').trim() || null;
+    // 리딤 그룹: 같은 그룹의 코드는 계정당 통틀어 1회만 사용 가능(예: 웰컴 3종).
+    const redemptionGroup = String(form.redemption_group ?? '').trim() || null;
 
     if (!code) return c.redirect('/admin/promo?err=' + encodeURIComponent('코드를 입력하세요'), 303);
     if (!Number.isInteger(durationDays) || durationDays <= 0) {
@@ -247,9 +253,19 @@ admin.post('/promo', async (c) => {
 
     await db.execute({
       sql: `INSERT INTO promo_codes
-              (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-      args: [crypto.randomUUID(), code, plan.id, durationDays, validFrom, validUntil, maxRedemptions, note],
+              (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      args: [
+        crypto.randomUUID(),
+        code,
+        plan.id,
+        durationDays,
+        validFrom,
+        validUntil,
+        maxRedemptions,
+        note,
+        redemptionGroup,
+      ],
     });
     return c.redirect('/admin/promo?ok=' + encodeURIComponent('코드 발급 완료: ' + code), 303);
   } catch (err) {

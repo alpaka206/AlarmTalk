@@ -908,6 +908,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg2_promo_fail_code_inactive">This promo code isn\'t available right now</string>
     <string name="msg2_promo_fail_not_in_window">This promo code isn\'t active yet or has ended</string>
     <string name="msg2_promo_fail_code_exhausted">This promo code has reached its usage limit</string>
+    <string name="msg2_promo_fail_group_already_redeemed">You\'ve already used a promo code from this promotion. This benefit is limited to once per account</string>
     <string name="msg2_promo_fail_owns_active_group">You already have an active group plan, so this promo code can\'t be applied</string>
     <string name="msg2_promo_fail_generic">Couldn\'t apply the promo code. Please try again in a moment</string>
     <string name="onb_voice_title">Pick your default voice</string>

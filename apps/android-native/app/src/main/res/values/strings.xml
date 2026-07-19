@@ -936,6 +936,7 @@
     <string name="msg2_promo_fail_code_inactive">지금은 사용할 수 없는 프로모 코드예요</string>
     <string name="msg2_promo_fail_not_in_window">아직 사용 기간이 아니거나 종료된 프로모 코드예요</string>
     <string name="msg2_promo_fail_code_exhausted">사용 가능 횟수가 모두 소진된 프로모 코드예요</string>
+    <string name="msg2_promo_fail_group_already_redeemed">이미 같은 계열의 프로모 코드를 사용했어요. 이 혜택은 계정당 한 번만 받을 수 있어요</string>
     <string name="msg2_promo_fail_owns_active_group">이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요</string>
     <string name="msg2_promo_fail_generic">프로모 코드를 적용하지 못했어요. 잠시 후 다시 시도해 주세요</string>
     <string name="onb_voice_title">기본 목소리를 골라보세요</string>
