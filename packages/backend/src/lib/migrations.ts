@@ -1530,6 +1530,61 @@ export const migrations: Migration[] = [
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)',
     ],
   },
+  {
+    // 웰컴 프로모 3종(개인/커플/가족, 각 30일). '웰컴 계열 전체에서 계정당 1회' 규칙을 위해
+    // promo_codes.redemption_group 을 추가한다 — 같은 group 의 어떤 코드든 한 번 사용한 계정은
+    // 그 group 의 다른 코드를 다시 사용할 수 없다(집행은 promo-redemption.ts 원자 claim).
+    // group 이 NULL 인 기존/일반 코드는 코드별 1회 규칙만 그대로 적용된다.
+    id: 72,
+    name: 'promo-welcome-codes-redemption-group',
+    statements: [
+      `ALTER TABLE promo_codes ADD COLUMN redemption_group TEXT`,
+      // 시드는 코드 문자열(UNIQUE NOCASE) 기준 멱등 — 이미 있으면 건드리지 않는다(운영자가
+      // admin 에서 상한/유효창을 조정했어도 재실행이 덮어쓰지 않음).
+      `INSERT OR IGNORE INTO promo_codes
+         (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
+       SELECT '90000000-0000-4000-9000-000000000001', 'WELCOME_PERSONAL', id, 30, NULL, NULL, NULL, 1,
+              '웰컴 프로모 — 퍼스널 1개월 (웰컴 계열 계정당 1회)', 'welcome'
+       FROM plans WHERE key = 'personal'`,
+      `INSERT OR IGNORE INTO promo_codes
+         (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
+       SELECT '90000000-0000-4000-9000-000000000002', 'WELCOME_COUPLE', id, 30, NULL, NULL, NULL, 1,
+              '웰컴 프로모 — 커플 1개월 (웰컴 계열 계정당 1회)', 'welcome'
+       FROM plans WHERE key = 'couple'`,
+      `INSERT OR IGNORE INTO promo_codes
+         (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
+       SELECT '90000000-0000-4000-9000-000000000003', 'WELCOME_FAMILY', id, 30, NULL, NULL, NULL, 1,
+              '웰컴 프로모 — 패밀리 1개월 (웰컴 계열 계정당 1회)', 'welcome'
+       FROM plans WHERE key = 'family'`,
+    ],
+  },
+  {
+    // #72 의 INSERT OR IGNORE 는 운영자가 그 전에 같은 이름(대소문자 무관)의 코드를 이미
+    // 발급해뒀으면 그 행을 건드리지 않아 redemption_group 이 NULL 로 남는다 — 그 코드만
+    // 웰컴 1회 규칙에서 빠진다. 이름 충돌 행에 그룹을 스탬프해 수렴시킨다(기간·상한 등
+    // 운영자 설정은 존중). #72 를 고치지 않고 별도 마이그레이션으로 두는 이유: #72 는 이미
+    // 적용된 DB(원장 기록)가 있어 본문을 바꿔도 재실행되지 않는다 — 백필은 새 id 로 돌린다.
+    id: 73,
+    name: 'promo-welcome-group-backfill',
+    statements: [
+      `UPDATE promo_codes SET redemption_group = 'welcome', updated_at = datetime('now')
+       WHERE code COLLATE NOCASE IN ('WELCOME_PERSONAL', 'WELCOME_COUPLE', 'WELCOME_FAMILY')
+         AND redemption_group IS NULL`,
+    ],
+  },
+  {
+    // 웰컴 3종 등록기한: 2026-08-31(KST)까지 — 2026-08-31T15:00:00Z = 2026-09-01 00:00 KST 부터
+    // 등록 불가(valid_until 은 배타 비교: datetime(valid_until) > datetime('now') 일 때만 허용).
+    // #72 시드는 이미 dev 에 적용돼 본문을 바꿀 수 없으므로(불변) 별도 스탬프로 수렴한다.
+    // valid_until IS NULL 조건: 운영자가 이후 admin 에서 기한을 조정했다면 존중한다.
+    id: 74,
+    name: 'promo-welcome-deadline-2026-08-31',
+    statements: [
+      `UPDATE promo_codes SET valid_until = '2026-08-31T15:00:00Z', updated_at = datetime('now')
+       WHERE code COLLATE NOCASE IN ('WELCOME_PERSONAL', 'WELCOME_COUPLE', 'WELCOME_FAMILY')
+         AND valid_until IS NULL`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
