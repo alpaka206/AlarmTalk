@@ -8,7 +8,7 @@ import { createClient, type Client } from '@libsql/client';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runMigrations } from '../src/lib/migrations';
+import { runMigrations, runMigrationsRange } from '../src/lib/migrations';
 import { redeemPromoCode, PromoRedemptionError } from '../src/lib/promo-redemption';
 
 const DB_PATH = join(tmpdir(), 'alarmtalk-promo-welcome-group.db');
@@ -92,5 +92,35 @@ describe('웰컴 계열 계정당 1회 규칙', () => {
     const plain = await redeem('pw-c', 'PLAIN_TEST_CODE');
     expect(plain.plan.key).toBe('personal');
     await expectPromoError(redeem('pw-c', 'PLAIN_TEST_CODE'), 'CODE_ALREADY_REDEEMED_BY_YOU');
+  });
+});
+
+describe('배포→마이그레이션 창 호환 (#72 적용 전 스키마)', () => {
+  // deploy-backend.yml 이 배포 후 마이그레이션을 돌리므로, 새 코드가 redemption_group 컬럼이
+  // 없는 DB(#71까지만 적용)를 만나도 리딤이 500 나지 않고 레거시 규칙으로 동작해야 한다.
+  it('redemption_group 컬럼이 없어도 리딤이 정상 동작한다(레거시 폴백)', async () => {
+    const LEGACY_PATH = join(tmpdir(), 'alarmtalk-promo-legacy-schema.db');
+    rmSync(LEGACY_PATH, { force: true });
+    const legacyDb = createClient({ url: `file:${LEGACY_PATH}` });
+    await runMigrationsRange(legacyDb, 1, 71);
+    await legacyDb.execute({
+      sql: 'INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)',
+      args: ['legacy-u', 'legacy-u', 'legacy@test'],
+    });
+    await legacyDb.execute(
+      `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active)
+       SELECT 'legacy-code-id', 'LEGACY_WINDOW_CODE', id, 7, 1 FROM plans WHERE key = 'personal'`,
+    );
+
+    const result = await redeemPromoCode(legacyDb, {
+      userPk: 'legacy-u',
+      rawCode: 'LEGACY_WINDOW_CODE',
+    });
+    expect(result.plan.key).toBe('personal');
+    await expectPromoError(
+      redeemPromoCode(legacyDb, { userPk: 'legacy-u', rawCode: 'LEGACY_WINDOW_CODE' }),
+      'CODE_ALREADY_REDEEMED_BY_YOU',
+    );
+    legacyDb.close();
   });
 });

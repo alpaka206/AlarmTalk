@@ -61,12 +61,27 @@ async function redeemPromoInTransaction(
   }
 
   // 코드 매칭은 대소문자 무시(발급 시 UNIQUE 도 NOCASE).
-  const promoRes = await db.execute({
-    sql: `SELECT id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions,
-                 is_active, redemption_group
-          FROM promo_codes WHERE code = ? COLLATE NOCASE`,
-    args: [code],
-  });
+  // deploy-backend.yml 이 배포 '후' 마이그레이션을 돌리므로, redemption_group(#72) 컬럼이
+  // 아직 없는 창에서도 리딤이 500 나지 않게 레거시 스키마로 폴백한다(Codex #574 P1).
+  // 그룹 코드는 #72 가 시드하므로 마이그레이션 전엔 존재할 수 없다 — 폴백 경로에서
+  // 그룹 규칙이 빠져도 잘못 통과되는 코드는 없다.
+  let promoRes;
+  try {
+    promoRes = await db.execute({
+      sql: `SELECT id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions,
+                   is_active, redemption_group
+            FROM promo_codes WHERE code = ? COLLATE NOCASE`,
+      args: [code],
+    });
+  } catch (err) {
+    if (!/no such column/i.test(String(err))) throw err;
+    promoRes = await db.execute({
+      sql: `SELECT id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions,
+                   is_active
+            FROM promo_codes WHERE code = ? COLLATE NOCASE`,
+      args: [code],
+    });
+  }
   if (promoRes.rows.length === 0) {
     throw new PromoRedemptionError(404, 'CODE_NOT_FOUND', 'Promo code not found');
   }
@@ -159,9 +174,18 @@ async function redeemPromoInTransaction(
     );
   }
 
-  // 원자 claim: 활성·유효창·총 상한·사용자당 1회·그룹당 1회 를 한 문장으로 gate 한다.
-  // SQLite/libSQL 단일 라이터에서 동시 사용 중 상한 초과가 발생하지 않는다.
+  // 원자 claim: 활성·유효창·총 상한·사용자당 1회·(그룹 코드면) 그룹당 1회 를 한 문장으로
+  // gate 한다. SQLite/libSQL 단일 라이터에서 동시 사용 중 상한 초과가 발생하지 않는다.
+  // 그룹 절은 이 코드가 그룹을 가질 때만 붙인다 — 그룹 코드는 #72 이후에만 존재하므로
+  // redemption_group 컬럼이 없는 배포 창에서 이 SQL 이 컬럼을 참조하는 일도 없다.
   const redemptionId = crypto.randomUUID();
+  const groupClause = redemptionGroup
+    ? `AND NOT EXISTS (
+         SELECT 1 FROM promo_code_redemptions r
+         JOIN promo_codes pg ON pg.id = r.promo_code_id
+         WHERE r.user_id = ? AND pg.redemption_group = ?
+       )`
+    : '';
   const claim = await db.execute({
     sql: `INSERT INTO promo_code_redemptions (id, promo_code_id, user_id, redeemed_at)
           SELECT ?, ?, ?, ?
@@ -179,13 +203,7 @@ async function redeemPromoInTransaction(
           AND NOT EXISTS (
             SELECT 1 FROM promo_code_redemptions WHERE promo_code_id = ? AND user_id = ?
           )
-          AND NOT EXISTS (
-            SELECT 1 FROM promo_code_redemptions r
-            JOIN promo_codes pg ON pg.id = r.promo_code_id
-            WHERE r.user_id = ?
-              AND pg.redemption_group IS NOT NULL
-              AND pg.redemption_group = (SELECT redemption_group FROM promo_codes WHERE id = ?)
-          )`,
+          ${groupClause}`,
     args: [
       redemptionId,
       promoId,
@@ -194,8 +212,7 @@ async function redeemPromoInTransaction(
       promoId,
       promoId,
       params.userPk,
-      params.userPk,
-      promoId,
+      ...(redemptionGroup ? [params.userPk, redemptionGroup] : []),
     ],
   });
   if ((claim.rowsAffected ?? 0) === 0) {
