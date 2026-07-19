@@ -54,6 +54,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
@@ -507,8 +508,11 @@ private fun VoicePreviewCard(accent: Color) {
                     fontWeight = FontWeight.Medium,
                     color = TextOnScene,
                     // 자막 = 실제 미리듣기 음성 대사 3문장(인사·날씨·당부) 그대로. 좁은 기기(360dp)
-                    // 에서는 문장이 줄바꿈돼 논리 3줄이 시각 4~5줄이 되므로 줄 수 제한을 두지 않는다
-                    // — 어떤 로케일에서도 마지막 당부 문장이 잘리지 않아야 한다.
+                    // 에서는 줄바꿈으로 논리 3줄이 시각 4~5줄이 되므로 상한을 6으로 잡는다 — 일반
+                    // 환경·전 로케일에서 전문이 다 보이고, 접근성 글꼴 확대/멀티윈도우 같은 극단
+                    // 케이스에서만 말줄임돼 비스크롤 랜딩의 '시작하기' CTA 가 화면 밖으로 밀리지 않는다.
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 MiniWaveform(progress = progress, accent = accent)
             }
