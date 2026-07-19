@@ -106,7 +106,7 @@ describe('마이그레이션 #72 — 기존 동명 코드 충돌 수렴', () => 
       `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active)
        SELECT 'op-issued', 'welcome_personal', id, 14, 1 FROM plans WHERE key = 'personal'`,
     );
-    await runMigrationsRange(collideDb, 72, 72);
+    await runMigrationsRange(collideDb, 72, 73);
 
     const row = await collideDb.execute(
       `SELECT code, duration_days, redemption_group FROM promo_codes
