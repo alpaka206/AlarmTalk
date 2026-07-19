@@ -113,4 +113,25 @@ describe('push_tokens 전역 단일 소유 (마이그레이션 #71 + 원자 UPSE
       }),
     ).rejects.toThrow(/UNIQUE/i);
   });
+
+  it('#71 dedupe 는 타임스탬프 동률이면 나중에 삽입된 행(rowid)이 이긴다 — UUID 순서에 좌우되지 않음', async () => {
+    // 레이스 중복은 대부분 같은 초에 찍힌다. id(UUID) DESC 타이브레이커라면 'z-first' 가
+    // 남았을 어긋난 케이스: 먼저 삽입된 행의 UUID 가 사전순으로 더 크게 만들어 둔다.
+    await db.execute('DROP INDEX IF EXISTS idx_push_tokens_token');
+    const sameTime = "datetime('now','-30 minutes')";
+    await db.execute(
+      `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
+       VALUES ('z-first', 'pt-a', 'tok-tie', 'android', ${sameTime}, ${sameTime})`,
+    );
+    await db.execute(
+      `INSERT INTO push_tokens (id, user_id, token, platform, created_at, updated_at)
+       VALUES ('a-second', 'pt-b', 'tok-tie', 'android', ${sameTime}, ${sameTime})`,
+    );
+
+    for (const sql of migration71.statements) {
+      await db.execute(sql);
+    }
+    // 나중 INSERT(pt-b, rowid 큼)가 유일 승자 — 마지막 등록 보존 의도와 일치.
+    expect(await ownersOf('tok-tie')).toEqual(['pt-b']);
+  });
 });
