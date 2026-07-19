@@ -50,6 +50,63 @@ function ttsPresetUpsert(category: string): string {
       updated_at = datetime('now')`;
 }
 
+// 2026-07-19 확정 스톡 클립 대사(마이그레이션 #70 전용 '동결 사본').
+// stock-clips.ts 의 STOCK_CLIP_PRESETS 를 import 하지 않는다 — 마이그레이션은 적용 후
+// 불변이어야 하는데, 살아있는 상수를 참조하면 이후 문구가 또 바뀔 때 이 마이그레이션의
+// 동작까지 소급 변경되기 때문. 문구가 다시 바뀌면 그때의 동결 사본으로 새 마이그레이션을 만든다.
+const STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19: readonly string[] = [
+  // ko — weather 9 · medication 2 · greeting 1
+  '[brightly] 오늘은 날씨가 맑대요. 나갈 때 하늘 한 번 올려다보는 거 어떨까요? 생각보다 기분이 좋아질 거예요.',
+  '[gently] 오늘은 비가 올 수도 있대요. 나갈 때 우산 챙겨 가고, 길이 미끄러울 수 있으니까 발밑도 조심해요.',
+  '[gently] 오늘은 눈이 올 수도 있대요. 옷 따뜻하게 입고, 길 미끄러울 수 있으니까 평소보다 조금만 천천히 걸어요.',
+  '[warmly] 오늘은 미세먼지가 심하대요. 나갈 때 마스크 꼭 챙기고요. 바깥 공기는 좀 답답하더라도, 기분 좋은 하루 보냈으면 좋겠어요.',
+  '[reassuringly] 오늘은 하늘이 흐리대요. 비가 올 수도 있으니 작은 우산 하나 챙기세요. 흐린 날씨에 너무 처지지 말고, 오늘도 기분 좋게 다녀와요.',
+  '[calmly] 오늘은 안개가 짙게 낀대요. 앞이 잘 안 보일 수 있으니까, 서두르지 말고 천천히 가요. 오늘은 안전이 제일이에요.',
+  '[caring] 오늘은 햇볕도 강하고 꽤 덥대요. 물 자주 마시고, 한낮에는 너무 무리하지 말아요.',
+  '[warmly] 오늘은 많이 춥대요. 외투 따뜻하게 챙겨 입고 나가요. 감기 걸리면 속상하니까요.',
+  '[lightly] 인터넷이 안 돼서 오늘 날씨는 미리 못 봤어요. 나가기 전에 창밖 한 번 살펴봐요. 그래도 오늘 하루, 잘 다녀와요.',
+  '[warmly] 약 먹을 시간이에요. 잊어버리기 전에, 물 한 잔이랑 같이 지금 챙겨 먹어요.',
+  '[gently] 밥은 챙겨 먹었어요? 이제 약 먹을 시간이에요. 바빠도 약부터 먹고, 하던 일은 그다음에 해요.',
+  '[brightly] 안녕하세요! 만나서 정말 반가워요. [warmly] 앞으로 매일 아침, 제 목소리로 기분 좋게 깨워 드릴게요. 우리 잘 지내봐요!',
+  // en
+  "[brightly] They say it's going to be a beautiful clear day. How about looking up at the sky on your way out? It'll lift your mood more than you'd expect.",
+  '[gently] It might rain today. Take an umbrella with you, and watch your step — the ground could be slippery.',
+  '[gently] It might snow today. Dress warm, and walk a little slower than usual — the streets could be slippery.',
+  "[warmly] The air quality isn't great today. Don't forget your mask on the way out. It might feel a little stuffy, but I hope you have a lovely day anyway.",
+  "[reassuringly] It looks pretty cloudy today. Tuck a small umbrella in your bag, just in case. Don't let the gray skies get you down — have a good one.",
+  "[calmly] They say it's quite foggy this morning. Take it slow and watch where you're going. No need to rush — safety first today.",
+  "[caring] It's going to be a hot one today, with strong sun. Drink plenty of water, and don't push yourself too hard around midday.",
+  "[warmly] It's really cold out today. Bundle up in a warm coat before you head out — I'd hate for you to catch a cold.",
+  "[lightly] I couldn't check today's weather — no internet this morning. Take a peek out the window before you leave. Have a great day out there.",
+  "[warmly] It's time for your medicine. Take it now with a glass of water, before it slips your mind.",
+  "[gently] Have you eaten? It's time for your medicine. Even if you're busy, take it first — everything else can wait a moment.",
+  "[brightly] Hi there! It's so nice to meet you. [warmly] From now on, I'll be waking you up every morning with my voice. We're going to get along just fine!",
+  // ja
+  '[brightly] 今日はよく晴れるそうですよ。出かけるとき、空をちょっと見上げてみませんか?思ったより気分が明るくなりますよ。',
+  '[gently] 今日は雨が降るかもしれないそうです。傘を持って出かけてくださいね。道がすべりやすいかもしれないので、足元にも気をつけて。',
+  '[gently] 今日は雪が降るかもしれません。あたたかくして、道がすべりやすいかもしれないから、いつもより少しゆっくり歩いてくださいね。',
+  '[warmly] 今日は空気があまりよくないみたいです。出かけるときはマスクを忘れずに。ちょっと息苦しくても、気分のいい一日になりますように。',
+  '[reassuringly] 今日は曇りみたいですよ。雨が降るかもしれないから、小さい傘をひとつ持っていってくださいね。曇り空に気分まで沈まないで、今日も元気にいってらっしゃい。',
+  '[calmly] 今日は霧が濃いそうです。急がずに、周りをよく見ながらゆっくり歩いてくださいね。今日は安全がいちばんですよ。',
+  '[caring] 今日は日差しも強くて、かなり暑くなるそうです。水分をこまめにとって、昼間は無理しすぎないでくださいね。',
+  '[warmly] 今日はとても寒いそうですよ。あたたかいコートを着て出かけてくださいね。風邪をひいたら大変ですから。',
+  '[lightly] インターネットがつながらなくて、今日の天気は確認できませんでした。出かける前に、窓の外をちょっと見てみてくださいね。今日もいい一日を。',
+  '[warmly] お薬の時間ですよ。忘れないうちに、お水と一緒に今飲んでくださいね。',
+  '[gently] ごはんはちゃんと食べましたか?お薬の時間ですよ。忙しくても、まずお薬を飲んでから、続きをしましょうね。',
+  '[brightly] こんにちは!お会いできてうれしいです。[warmly] これから毎朝、私の声で気持ちよく起こしますね。よろしくお願いします!',
+];
+
+// 시스템 보이스 preset 중 확정 리터럴(위 36종)과 문구가 다른 '낡은' 행의 id 집합.
+// 2026-07-19 시딩으로 이미 최신 문구가 들어간 DB(dev/prod)에서는 정확히 0행 = no-op.
+const STALE_STOCK_PRESET_SUBQUERY_2026_07_19 = `SELECT m.id FROM messages m
+  WHERE COALESCE(m.is_preset, 0) = 1
+    AND m.voice_profile_id IN (
+      SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+    )
+    AND COALESCE(m.synthesis_text, m.text, '') NOT IN (
+      ${STOCK_PRESET_SYNTHESIS_TEXTS_2026_07_19.map(sqlLiteral).join(',\n      ')}
+    )`;
+
 export const migrations: Migration[] = [
   {
     id: 1,
@@ -1416,6 +1473,31 @@ export const migrations: Migration[] = [
     id: 69,
     name: 'voice-uploads-profile-link',
     statements: [`ALTER TABLE voice_uploads ADD COLUMN voice_profile_id TEXT`],
+  },
+  {
+    // 스톡 클립 대사 전면 교체(2026-07-19 확정: 날씨/약 새 문구 + greeting 4보이스 공통·3언어)에
+    // 맞춰, 확정 리터럴과 문구가 '다른' 시스템 preset 행만 무효화한다(#47 과 동일 패턴의 수렴형).
+    //  - findMissingStockTargets 는 (voice|category|language|variant) 존재만 보므로, 낡은 행을
+    //    지워야 다음 seed(POST /api/admin/seed-stock-clips, reset 불필요)가 새 문구로 채운다.
+    //  - 2026-07-19 에 로컬 시딩으로 이미 새 문구가 들어간 DB(dev/prod)에서는 문구가 전부
+    //    일치하므로 0행 no-op — 승인된 실오디오를 지우지 않는다.
+    //  - 낡은 클립을 참조하던 알람은 sound-only 로 떼어낸다. R2 오브젝트는 #47 과 마찬가지로
+    //    여기서 지우지 않는다(마이그레이션은 DB 전용; 소량 누수는 출시 전 prod 초기화로 정리).
+    id: 70,
+    name: 'refresh-stock-clips-2026-07-19-script',
+    statements: [
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL, speaker_id = NULL,
+            raw_audio_url = NULL, raw_audio_duration_ms = NULL
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_07_19})`,
+      `DELETE FROM message_library
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_07_19})`,
+      `DELETE FROM generated_audio_assets
+        WHERE message_id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_07_19})`,
+      `DELETE FROM messages
+        WHERE id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_07_19})`,
+    ],
   },
 ];
 
