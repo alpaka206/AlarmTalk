@@ -1556,6 +1556,13 @@ export const migrations: Migration[] = [
        SELECT '90000000-0000-4000-9000-000000000003', 'WELCOME_FAMILY', id, 30, NULL, NULL, NULL, 1,
               '웰컴 프로모 — 패밀리 1개월 (웰컴 계열 계정당 1회)', 'welcome'
        FROM plans WHERE key = 'family'`,
+      // 운영자가 이 마이그레이션 전에 같은 이름(대소문자 무관)의 코드를 이미 발급해뒀다면
+      // 위 INSERT OR IGNORE 는 그 행을 건드리지 않아 redemption_group 이 NULL 로 남는다 —
+      // 그러면 그 코드만 웰컴 1회 규칙에서 빠진다. 이름이 충돌하는 기존 행에도 그룹을
+      // 스탬프해 수렴시킨다(그 외 컬럼은 운영자 설정 존중).
+      `UPDATE promo_codes SET redemption_group = 'welcome', updated_at = datetime('now')
+       WHERE code COLLATE NOCASE IN ('WELCOME_PERSONAL', 'WELCOME_COUPLE', 'WELCOME_FAMILY')
+         AND redemption_group IS NULL`,
     ],
   },
 ];
