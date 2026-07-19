@@ -95,6 +95,36 @@ describe('웰컴 계열 계정당 1회 규칙', () => {
   });
 });
 
+describe('마이그레이션 #72 — 기존 동명 코드 충돌 수렴', () => {
+  it('운영자가 미리 발급해둔 동명 코드(대소문자 달라도)에 그룹이 스탬프된다', async () => {
+    const COLLIDE_PATH = join(tmpdir(), 'alarmtalk-promo-collide.db');
+    rmSync(COLLIDE_PATH, { force: true });
+    const collideDb = createClient({ url: `file:${COLLIDE_PATH}` });
+    await runMigrationsRange(collideDb, 1, 71);
+    // 마이그레이션 전 운영자 발급 시나리오: 소문자·그룹 없음·기간 14일(운영자 설정)
+    await collideDb.execute(
+      `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active)
+       SELECT 'op-issued', 'welcome_personal', id, 14, 1 FROM plans WHERE key = 'personal'`,
+    );
+    await runMigrationsRange(collideDb, 72, 73);
+
+    const row = await collideDb.execute(
+      `SELECT code, duration_days, redemption_group FROM promo_codes
+       WHERE code = 'welcome_personal' COLLATE NOCASE AND id = 'op-issued'`,
+    );
+    // INSERT OR IGNORE 가 기존 행을 존중하되(기간 14일 유지), 그룹은 스탬프돼 웰컴 규칙에 포함.
+    expect(row.rows).toHaveLength(1);
+    expect(Number(row.rows[0]!.duration_days)).toBe(14);
+    expect(row.rows[0]!.redemption_group).toBe('welcome');
+    // NOCASE 유니크라 시드가 중복 행을 만들지 않는다 — 나머지 2종만 새로 생긴다.
+    const count = await collideDb.execute(
+      `SELECT COUNT(*) AS n FROM promo_codes WHERE redemption_group = 'welcome'`,
+    );
+    expect(Number(count.rows[0]!.n)).toBe(3);
+    collideDb.close();
+  });
+});
+
 describe('배포→마이그레이션 창 호환 (#72 적용 전 스키마)', () => {
   // deploy-backend.yml 이 배포 후 마이그레이션을 돌리므로, 새 코드가 redemption_group 컬럼이
   // 없는 DB(#71까지만 적용)를 만나도 리딤이 500 나지 않고 레거시 규칙으로 동작해야 한다.
