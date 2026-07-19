@@ -151,6 +151,36 @@ describe('배포→마이그레이션 창 호환 (#72 적용 전 스키마)', ()
       redeemPromoCode(legacyDb, { userPk: 'legacy-u', rawCode: 'LEGACY_WINDOW_CODE' }),
       'CODE_ALREADY_REDEEMED_BY_YOU',
     );
+
+    // 사전 존재하는 WELCOME_* 동명 코드도 배포 창에서 웰컴 1회 규칙을 우회할 수 없다 —
+    // 컬럼이 없으므로 '이름 기반' 게이트가 대신 선다(대소문자 달라도).
+    await legacyDb.execute(
+      `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active)
+       SELECT 'legacy-wp', 'WELCOME_PERSONAL', id, 30, 1 FROM plans WHERE key = 'personal'`,
+    );
+    await legacyDb.execute(
+      `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active)
+       SELECT 'legacy-wc', 'welcome_couple', id, 30, 1 FROM plans WHERE key = 'couple'`,
+    );
+    await legacyDb.execute({
+      sql: 'INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)',
+      args: ['legacy-w', 'legacy-w', 'legacy-w@test'],
+    });
+    const welcome = await redeemPromoCode(legacyDb, {
+      userPk: 'legacy-w',
+      rawCode: 'WELCOME_PERSONAL',
+    });
+    expect(welcome.plan.key).toBe('personal');
+    await expectPromoError(
+      redeemPromoCode(legacyDb, { userPk: 'legacy-w', rawCode: 'welcome_couple' }),
+      'CODE_GROUP_ALREADY_REDEEMED',
+    );
+    // 일반 코드는 이름 게이트와 무관하게 여전히 사용 가능
+    const stillPlain = await redeemPromoCode(legacyDb, {
+      userPk: 'legacy-w',
+      rawCode: 'LEGACY_WINDOW_CODE',
+    });
+    expect(stillPlain.plan.key).toBe('personal');
     legacyDb.close();
   });
 });
