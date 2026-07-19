@@ -1530,6 +1530,34 @@ export const migrations: Migration[] = [
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)',
     ],
   },
+  {
+    // 웰컴 프로모 3종(개인/커플/가족, 각 30일). '웰컴 계열 전체에서 계정당 1회' 규칙을 위해
+    // promo_codes.redemption_group 을 추가한다 — 같은 group 의 어떤 코드든 한 번 사용한 계정은
+    // 그 group 의 다른 코드를 다시 사용할 수 없다(집행은 promo-redemption.ts 원자 claim).
+    // group 이 NULL 인 기존/일반 코드는 코드별 1회 규칙만 그대로 적용된다.
+    id: 72,
+    name: 'promo-welcome-codes-redemption-group',
+    statements: [
+      `ALTER TABLE promo_codes ADD COLUMN redemption_group TEXT`,
+      // 시드는 코드 문자열(UNIQUE NOCASE) 기준 멱등 — 이미 있으면 건드리지 않는다(운영자가
+      // admin 에서 상한/유효창을 조정했어도 재실행이 덮어쓰지 않음).
+      `INSERT OR IGNORE INTO promo_codes
+         (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
+       SELECT '90000000-0000-4000-9000-000000000001', 'WELCOME_PERSONAL', id, 30, NULL, NULL, NULL, 1,
+              '웰컴 프로모 — 퍼스널 1개월 (웰컴 계열 계정당 1회)', 'welcome'
+       FROM plans WHERE key = 'personal'`,
+      `INSERT OR IGNORE INTO promo_codes
+         (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
+       SELECT '90000000-0000-4000-9000-000000000002', 'WELCOME_COUPLE', id, 30, NULL, NULL, NULL, 1,
+              '웰컴 프로모 — 커플 1개월 (웰컴 계열 계정당 1회)', 'welcome'
+       FROM plans WHERE key = 'couple'`,
+      `INSERT OR IGNORE INTO promo_codes
+         (id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active, note, redemption_group)
+       SELECT '90000000-0000-4000-9000-000000000003', 'WELCOME_FAMILY', id, 30, NULL, NULL, NULL, 1,
+              '웰컴 프로모 — 패밀리 1개월 (웰컴 계열 계정당 1회)', 'welcome'
+       FROM plans WHERE key = 'family'`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

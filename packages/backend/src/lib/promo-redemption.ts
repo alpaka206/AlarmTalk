@@ -62,7 +62,8 @@ async function redeemPromoInTransaction(
 
   // 코드 매칭은 대소문자 무시(발급 시 UNIQUE 도 NOCASE).
   const promoRes = await db.execute({
-    sql: `SELECT id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions, is_active
+    sql: `SELECT id, code, plan_id, duration_days, valid_from, valid_until, max_redemptions,
+                 is_active, redemption_group
           FROM promo_codes WHERE code = ? COLLATE NOCASE`,
     args: [code],
   });
@@ -109,6 +110,27 @@ async function redeemPromoInTransaction(
     );
   }
 
+  // 리딤 그룹(예: 웰컴 3종) 규칙: 같은 group 의 어떤 코드든 이미 사용한 계정은 다른 코드도
+  // 사용할 수 없다 — 개인/커플/가족 웰컴을 갈아타며 무한 연장하는 것을 막는다. 여기는
+  // 사용자 친화 에러 목적의 사전 검사이고, 최종 판정은 아래 원자 claim 이 담당한다.
+  const redemptionGroup = (promo.redemption_group as string | null) ?? null;
+  if (redemptionGroup) {
+    const groupDupRes = await db.execute({
+      sql: `SELECT 1 FROM promo_code_redemptions r
+            JOIN promo_codes pg ON pg.id = r.promo_code_id
+            WHERE r.user_id = ? AND pg.redemption_group = ?
+            LIMIT 1`,
+      args: [params.userPk, redemptionGroup],
+    });
+    if (groupDupRes.rows.length > 0) {
+      throw new PromoRedemptionError(
+        409,
+        'CODE_GROUP_ALREADY_REDEEMED',
+        'You already redeemed a code from this promotion',
+      );
+    }
+  }
+
   const planRes = await db.execute({
     sql: `SELECT id, key, name, plan_type, max_members FROM plans WHERE id = ? AND is_active = 1`,
     args: [planId],
@@ -137,8 +159,8 @@ async function redeemPromoInTransaction(
     );
   }
 
-  // 원자 claim: 활성·유효창·총 상한·사용자당 1회 를 한 문장으로 gate 한다. SQLite/libSQL
-  // 단일 라이터에서 동시 사용 중 상한 초과가 발생하지 않는다.
+  // 원자 claim: 활성·유효창·총 상한·사용자당 1회·그룹당 1회 를 한 문장으로 gate 한다.
+  // SQLite/libSQL 단일 라이터에서 동시 사용 중 상한 초과가 발생하지 않는다.
   const redemptionId = crypto.randomUUID();
   const claim = await db.execute({
     sql: `INSERT INTO promo_code_redemptions (id, promo_code_id, user_id, redeemed_at)
@@ -156,8 +178,25 @@ async function redeemPromoInTransaction(
           )
           AND NOT EXISTS (
             SELECT 1 FROM promo_code_redemptions WHERE promo_code_id = ? AND user_id = ?
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM promo_code_redemptions r
+            JOIN promo_codes pg ON pg.id = r.promo_code_id
+            WHERE r.user_id = ?
+              AND pg.redemption_group IS NOT NULL
+              AND pg.redemption_group = (SELECT redemption_group FROM promo_codes WHERE id = ?)
           )`,
-    args: [redemptionId, promoId, params.userPk, now.toISOString(), promoId, promoId, params.userPk],
+    args: [
+      redemptionId,
+      promoId,
+      params.userPk,
+      now.toISOString(),
+      promoId,
+      promoId,
+      params.userPk,
+      params.userPk,
+      promoId,
+    ],
   });
   if ((claim.rowsAffected ?? 0) === 0) {
     throw new PromoRedemptionError(409, 'CODE_EXHAUSTED', 'Promo code is no longer redeemable');

@@ -153,6 +153,8 @@ private fun codeRegistrationFailureMessage(context: android.content.Context, err
         "CODE_INACTIVE" -> context.getString(R.string.msg2_promo_fail_code_inactive)
         "CODE_NOT_IN_WINDOW" -> context.getString(R.string.msg2_promo_fail_not_in_window)
         "CODE_EXHAUSTED" -> context.getString(R.string.msg2_promo_fail_code_exhausted)
+        // 리딤 그룹(예: 웰컴 3종) — 같은 계열 코드를 이미 썼으면 다른 코드도 불가.
+        "CODE_GROUP_ALREADY_REDEEMED" -> context.getString(R.string.msg2_promo_fail_group_already_redeemed)
         "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
         else -> fallback
     }
@@ -165,6 +167,8 @@ private fun promoRedeemFailureMessage(context: android.content.Context, errorCod
         "CODE_NOT_IN_WINDOW" -> context.getString(R.string.msg2_promo_fail_not_in_window)
         "CODE_ALREADY_REDEEMED_BY_YOU" -> context.getString(R.string.msg2_code_fail_code_already_redeemed_by_you)
         "CODE_EXHAUSTED" -> context.getString(R.string.msg2_promo_fail_code_exhausted)
+        // 리딤 그룹(예: 웰컴 3종) — 같은 계열 코드를 이미 썼으면 다른 코드도 불가.
+        "CODE_GROUP_ALREADY_REDEEMED" -> context.getString(R.string.msg2_promo_fail_group_already_redeemed)
         "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
         "PROMO_REDEEM_FAILED" -> context.getString(R.string.msg2_promo_fail_generic)
         else -> fallback

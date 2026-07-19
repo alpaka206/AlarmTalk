@@ -916,6 +916,7 @@
     <string name="msg2_promo_fail_code_inactive">現在は使用できないプロモコードです</string>
     <string name="msg2_promo_fail_not_in_window">まだ利用期間ではないか、終了したプロモコードです</string>
     <string name="msg2_promo_fail_code_exhausted">利用回数の上限に達したプロモコードです</string>
+    <string name="msg2_promo_fail_group_already_redeemed">同じキャンペーンのプロモコードをすでに使用しています。この特典はアカウントごとに1回のみです</string>
     <string name="msg2_promo_fail_owns_active_group">すでに利用中のグループプランがあるため、プロモコードを適用できません</string>
     <string name="msg2_promo_fail_generic">プロモコードを適用できませんでした。しばらくしてからもう一度お試しください</string>
     <string name="onb_voice_title">基本の声を選んでください</string>
