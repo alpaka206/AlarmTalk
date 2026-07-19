@@ -26,7 +26,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 
 | ID | Requirement | P | Status |
 |---|---|---|---|
-| FR-2.1 | Max 2 voice profiles per user | P0 | ✅ |
+| FR-2.1 | Max 1 voice profile per user | P0 | ✅ |
 | FR-2.2 | In-app voice recording (max 30 seconds, requires mic permission) | P0 | ✅ |
 | FR-2.3 | Audio file upload with automatic 30-second trim on overflow | P0 | ✅ |
 | FR-2.4 | Instant Voice Clone (ElevenLabs) | P0 | ✅ |
@@ -60,6 +60,8 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-4.4 | Android side caches in app-private storage; ring uses local file | P0 | ✅ |
 | FR-4.5 | Public preset messages (categories and languages) | P1 | ✅ |
 | FR-4.6 | Message library (received, favorites, category filter) | P2 | ✅ |
+| FR-4.7 | Free prerendered clip buckets — 10 preset phrases (morning 8 / medication 2) × ko/en/ja per system voice, local sequential rotation (advance on dismiss, hold on snooze) | P1 | ✅ |
+| FR-4.8 | Paid clone prerender — after keep(promote), cron renders 21 clips in the app language (greeting 1 / weather 9 incl. unresolved-fallback / fortune 5 / love 3 / medication 3); weather picked from a 48 h prep-window server index snapshot, fortune device-deterministic, playback fully offline | P1 | ✅ |
 
 ### FR-5. Social (friend / family / code)
 
@@ -71,7 +73,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-5.4 | Code entry → group join / leave / forced removal | P0 | ✅ |
 | FR-5.5 | Ownership transfer (owner-only) | P1 | ✅ |
 | FR-5.6 | Voucher code `VA-XXXX-XXXX-XXXX` → subscription | P1 | ✅ |
-| FR-5.7 | Family alarm (schedule an alarm on another member's device) | P1 | ✅ backend / 🚧 mobile UI |
+| FR-5.7 | Family alarm (schedule an alarm on another member's device) | P1 | ✅ backend + mobile UI, FCM data push for instant delivery (fire stays local) |
 | FR-5.8 | Family notes (500-character text, same group only) | P2 | ✅ |
 
 ### FR-6. Billing & Plan
@@ -81,7 +83,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-6.1 | Four tiers: free / personal / couple / family | P1 | ✅ |
 | FR-6.2 | Checkout stub (mock PG) | P2 | ✅ |
 | FR-6.3 | Cron-driven subscription expiry → auto plan downgrade | P1 | ✅ |
-| FR-6.4 | Real-payment integration (Toss / Apple IAP / Google Play Billing) | P0 before launch | 🚧 |
+| FR-6.4 | Real-payment integration (Google Play Billing / Apple IAP) | P0 before launch | 🔧 Google: code complete (confirm + RTDN), Play Console setup pending · Apple: confirm endpoint only, ASSN V2 not implemented (iOS on hold) |
 
 ### FR-7. Operations & Observability
 
@@ -140,7 +142,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 
 - Stay within Cloudflare Workers free-plan daily request budget for non-production traffic.
 - Monitor Turso row-read budget weekly.
-- Voice-provider spend gated by per-plan daily TTS caps and deterministic caching.
+- Voice-provider spend gated by monthly manual-TTS quotas (personal 30 / couple 50 / family 100 per KST month, shared as a group pool), the fixed prerender manifests (free buckets / paid clone), and deterministic caching.
 
 ## 3. User Stories (excerpt)
 
@@ -178,7 +180,7 @@ A longer list with acceptance criteria belongs in the team's issue tracker. This
   10. Android decodes and writes to app-private storage with a stable local cache key.
   11. Room inserts the alarm. `AlarmScheduler` registers the next fire time via `AlarmManager.setAlarmClock`.
 - **Alternate flow A**: cache hit. Step 8 returns immediately from R2, no provider call.
-- **Alternate flow B**: audio source = `Record/File`. The user records up to 30 seconds or picks an audio file (auto-trimmed). No provider call.
+- **Alternate flow B**: audio source = `Record`. The user records up to 30 seconds in-app. No provider call. (File upload is not an alarm audio source; uploads exist only for voice-clone creation.)
 - **Exception flows**
   - No voice profile → redirect to voice-profile creation.
   - `SCHEDULE_EXACT_ALARM` denied → permission gate with deep link.
@@ -219,6 +221,6 @@ A longer list with acceptance criteria belongs in the team's issue tracker. This
 ## 6. Constraints
 
 - Alarm ring path: OS-native + local audio only. No push, no server cron, no fetch at ring time.
-- External voice-AI calls only on explicit user actions. Automated QA and tests must not trigger them.
+- External voice-AI calls require explicit user authorization. Keeping a previewed private voice draft authorizes exactly one durable, bounded render of the fixed paid preset manifest; it does not authorize autonomous scans, new prompt categories, or recurring generation. Automated QA and tests must stub providers and never consume paid credits.
 - Voice data: shared only inside a user's family/partner group. External download blocked.
 - Environment files (`.env`, `.dev.vars*`, `local.properties`, signing keys) are never committed.

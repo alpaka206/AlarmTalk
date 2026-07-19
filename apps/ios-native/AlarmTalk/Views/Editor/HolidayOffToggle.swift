@@ -9,8 +9,6 @@ struct HolidayOffToggle: View {
     @Binding var isOn: Bool
     /// 반복 요일이 하나도 없으면(mask == 0) 의미가 없어 숨긴다. 부모(에디터)가 mask 로 판단해 전달.
     var enabled: Bool = true
-    /// (호출부 시그니처 호환용 보존) Android 는 선택 국가와 무관하게 고정 서브타이틀을 쓰므로 더는 참조하지 않는다.
-    var subtitleCountryName: String? = nil
 
     @Environment(\.voiceAlarmTheme) private var theme
 

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +29,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -62,17 +64,21 @@ internal fun SubscriptionPanel(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     vouchers: List<VoucherItem>,
+    // planKey → Play 실제 표시가격(formattedPrice). 비어 있으면 문자열 리소스로 폴백.
+    planPrices: Map<String, String>,
     onCheckoutPlan: (String, Boolean) -> Unit,
     onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
+    onDeleteVoiceDataNow: () -> Unit,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
+    var showVoiceDataDeleteDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
     var shareBusy by remember { mutableStateOf(false) }
     val subscription = subscriptionResponse?.subscription
@@ -100,7 +106,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
-            price = stringResource(R.string.billing_plan_personal_price),
+            price = planPrices["personal"] ?: stringResource(R.string.billing_plan_personal_price),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
@@ -110,7 +116,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "couple",
             name = stringResource(R.string.billing_plan_couple_name),
-            price = stringResource(R.string.billing_plan_couple_price),
+            price = planPrices["couple"] ?: stringResource(R.string.billing_plan_couple_price),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -122,7 +128,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "family",
             name = stringResource(R.string.billing_plan_family_name),
-            price = stringResource(R.string.billing_plan_family_price),
+            price = planPrices["family"] ?: stringResource(R.string.billing_plan_family_price),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -170,8 +176,8 @@ internal fun SubscriptionPanel(
     ) {
         // 별도 '현재 이용권' 요약 카드 대신, 플랜 리스트의 현재 플랜 카드에 만료일 상태를 인라인으로 보여준다.
         val statusContext = LocalContext.current
-        val currentExpiresAt = formatPassDate(subscription?.expiresAt)
-        val sharedMemberExpiresAt = formatPassDate(familyGroup?.group?.expiresAt)
+        val currentExpiresAt = formatPass(subscription?.expiresAt, PassDateFormatter)
+        val sharedMemberExpiresAt = formatPass(familyGroup?.group?.expiresAt, PassDateFormatter)
         val currentStatusText = when {
             isSharedMember && sharedMemberExpiresAt != null ->
                 stringResource(R.string.billing_status_shared_member_until, sharedMemberExpiresAt)
@@ -238,6 +244,41 @@ internal fun SubscriptionPanel(
                 )
             }
         }
+        // 앱 내 해지가 막혀도 항상 열리는 대체 경로 — Google Play 구독 관리 바로가기.
+        // (클라는 결제 수단을 모르므로 활성 구독 소유자 전원에게 노출한다.)
+        if (hasActive && !isSharedMember) {
+            TextButton(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(playSubscriptionManageUrl(currentPlan?.key))),
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = WakerButtonShape,
+            ) {
+                Text(
+                    text = stringResource(R.string.billing_manage_on_google_play),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        // 즉시 해지 후 30일 보관 중인 유료 음성 데이터를 바로 지우는 파괴적 액션.
+        // 클라는 보관 데이터 존재 여부를 모르므로 상시 노출 — 활성 구독 중엔 서버가 409 로 거절한다.
+        if (subscriptionResponse != null && !isSharedMember) {
+            TextButton(
+                onClick = { showVoiceDataDeleteDialog = true },
+                enabled = !billingBusy,
+                modifier = Modifier.fillMaxWidth(),
+                shape = WakerButtonShape,
+            ) {
+                Text(
+                    text = stringResource(R.string.billing_voice_data_delete_now),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
     }
 
     purchaseTarget?.let { option ->
@@ -265,6 +306,24 @@ internal fun SubscriptionPanel(
                 onCancelSubscription(atPeriodEnd)
             },
         )
+    }
+
+    if (showVoiceDataDeleteDialog) {
+        BillingActionDialog(
+            title = stringResource(R.string.billing_voice_data_delete_title),
+            description = stringResource(R.string.billing_voice_data_delete_description),
+            onDismiss = { showVoiceDataDeleteDialog = false },
+        ) {
+            BillingDialogButton(
+                label = stringResource(R.string.billing_voice_data_delete_button),
+                primary = true,
+                destructive = true,
+                onClick = {
+                    showVoiceDataDeleteDialog = false
+                    onDeleteVoiceDataNow()
+                },
+            )
+        }
     }
 
     if (showLeaveDialog && sharedGroupId != null) {
@@ -631,20 +690,40 @@ private fun shareableVouchersForPlan(
             voucher.planKey == planKey
     }
 
+/**
+ * 해지 2단계 플로우: (1) 해지 시점 선택 → (2) 즉시 해지는 비례 환불·음성 30일 보관을
+ * 한 번 더 확인하고 나서야 실행한다(파괴적 액션 재확인).
+ */
 @Composable
 private fun CancelSubscriptionDialog(
     subscription: BillingSubscription?,
     onDismiss: () -> Unit,
     onConfirm: (atPeriodEnd: Boolean) -> Unit,
 ) {
-    val endDate = formatPassShortDate(subscription?.expiresAt)
+    var confirmImmediate by remember { mutableStateOf(false) }
+    val endDate = formatPass(subscription?.expiresAt, PassShortDateFormatter)
+    if (confirmImmediate) {
+        BillingActionDialog(
+            title = stringResource(R.string.billing_cancel_immediate_title),
+            description = stringResource(R.string.billing_cancel_immediate_description),
+            onDismiss = onDismiss,
+        ) {
+            BillingDialogButton(
+                label = stringResource(R.string.billing_cancel_now),
+                primary = true,
+                destructive = true,
+                onClick = { onConfirm(false) },
+            )
+        }
+        return
+    }
     val finalDescription = if (endDate != null) {
         stringResource(R.string.billing_cancel_description_with_date, endDate)
     } else {
         stringResource(R.string.billing_cancel_description_no_date)
     }
     BillingActionDialog(
-        title = stringResource(R.string.billing_cancel_pass),
+        title = stringResource(R.string.billing_cancel_dialog_title),
         description = finalDescription,
         onDismiss = onDismiss,
     ) {
@@ -661,9 +740,37 @@ private fun CancelSubscriptionDialog(
                 primary = true,
                 destructive = true,
                 modifier = Modifier.weight(1f),
-                onClick = { onConfirm(false) },
+                onClick = { confirmImmediate = true },
             )
         }
+    }
+}
+
+/**
+ * 서버가 스토어 구독을 직접 해지하지 못했을 때(PLAY_CANCEL_FAILED 등)의 안내.
+ * 앱·서버 상태는 무변경이므로 여기서는 Google Play 구독 관리로 보내기만 한다.
+ */
+@Composable
+internal fun PlayStoreManageDialog(
+    manageUrl: String,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    BillingActionDialog(
+        title = stringResource(R.string.billing_play_manage_title),
+        description = stringResource(R.string.billing_play_manage_description),
+        onDismiss = onDismiss,
+    ) {
+        BillingDialogButton(
+            label = stringResource(R.string.billing_play_manage_open),
+            primary = true,
+            onClick = {
+                onDismiss()
+                runCatching {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(manageUrl)))
+                }
+            },
+        )
     }
 }
 

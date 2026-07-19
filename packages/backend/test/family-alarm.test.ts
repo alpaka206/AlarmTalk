@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
@@ -37,7 +37,9 @@ function pushAssertSameGroup(senderGroups: string[], recipientGroups: string[]) 
   mockDB.pushResult(recipientGroups.map((id) => ({ plan_group_id: id })));
 }
 
-function pushRecipient(opts: { allowAlarms?: boolean; notFound?: boolean } = {}) {
+function pushRecipient(
+  opts: { allowAlarms?: boolean; notFound?: boolean; quietWindows?: string } = {},
+) {
   if (opts.notFound) {
     mockDB.pushResult([]);
   } else {
@@ -45,8 +47,17 @@ function pushRecipient(opts: { allowAlarms?: boolean; notFound?: boolean } = {})
       id: RECIPIENT_PK,
       google_id: 'google-recipient',
       allow_family_alarms: opts.allowAlarms !== false ? 1 : 0,
+      ...(opts.quietWindows !== undefined
+        ? { family_alarm_quiet_windows: opts.quietWindows }
+        : {}),
     }]);
   }
+}
+
+function pushRecipientTimezone() {
+  // 효과 시간대 결정: 수신자 최근 알람 timezone 조회. 발신자 body timezone 은 어떤
+  // 경우에도 판정에 쓰지 않으므로 항상 실행된다(기록 없음 → Asia/Seoul 직행).
+  mockDB.pushResult([]);
 }
 
 function pushVoiceProfileOwned(found: boolean) {
@@ -59,6 +70,8 @@ function pushLatestVoiceProfile(found: boolean) {
 
 function pushInserts() {
   mockDB.pushResult([], 1); // INSERT messages
+  mockDB.pushResult([]); // 멱등 슬롯 조회(같은 발신자·수신자·time 기존 발신 알람 없음)
+  mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
   mockDB.pushResult([], 1); // INSERT alarms
 }
 
@@ -82,6 +95,14 @@ function validVoiceBody(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   mockDB.reset();
+  // 30분 리드타임 판정이 실제 시계에 좌우되지 않도록 고정한다.
+  // 2026-07-15T00:00Z = KST 수요일 09:00 → wake_at 07:30 은 다음날 07:30(충분한 리드타임).
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 // ─── POST /family-alarm/alarms (TTS) ────────────────────────────
@@ -129,6 +150,7 @@ describe('POST /family-alarm/alarms — TTS 가족 알람', () => {
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     pushLatestVoiceProfile(true);
     pushInserts();
 
@@ -205,6 +227,7 @@ describe('POST /family-alarm/alarms — TTS 가족 알람', () => {
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     pushVoiceProfileOwned(false);
 
     const app = buildApp();
@@ -217,6 +240,7 @@ describe('POST /family-alarm/alarms — TTS 가족 알람', () => {
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     pushLatestVoiceProfile(false);
 
     const app = buildApp();
@@ -231,6 +255,7 @@ describe('POST /family-alarm/alarms — TTS 가족 알람', () => {
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     pushLatestVoiceProfile(true);
     pushInserts();
 
@@ -266,6 +291,7 @@ describe('POST /family-alarm/alarms — TTS 가족 알람', () => {
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     pushVoiceProfileOwned(true);
     pushInserts();
 
@@ -280,6 +306,7 @@ describe('POST /family-alarm/alarms — TTS 가족 알람', () => {
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     pushLatestVoiceProfile(true);
     pushInserts();
 
@@ -296,6 +323,7 @@ describe('POST /family-alarm/alarms — TTS 가족 알람', () => {
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     pushLatestVoiceProfile(true);
     pushInserts();
 
@@ -422,6 +450,7 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     mockDB.pushResult([]); // voice_uploads SELECT empty
 
     const app = buildApp();
@@ -434,6 +463,7 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'other-user', object_key: 'audio/test.wav' }]);
 
     const app = buildApp();
@@ -446,6 +476,7 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     mockDB.pushResult([{ id: UPLOAD_ID, user_id: SENDER_PK, object_key: 'audio/test.wav' }]);
     pushLatestVoiceProfile(false);
 
@@ -461,6 +492,7 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     mockDB.pushResult([{ id: UPLOAD_ID, user_id: SENDER_PK, object_key: 'audio/family-voice.wav' }]);
     pushLatestVoiceProfile(true);
     pushInserts(); // messages + alarms
@@ -507,6 +539,7 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     pushResolveUserPk(SENDER_PK);
     pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
     pushRecipient();
+    pushRecipientTimezone();
     mockDB.pushResult([{ id: UPLOAD_ID, user_id: SENDER_PK, object_key: 'audio/voice.wav' }]);
     pushLatestVoiceProfile(true);
     pushInserts();
@@ -527,6 +560,45 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     expect(dubInsert).toBeDefined();
   });
 
+  it('dub_jobs INSERT 는 알람/메시지와 같은 트랜잭션 안(커밋 전)에서 실행된다', async () => {
+    // 커밋 후 별도 실행이면 dub insert 실패/워커 종료 시 '더빙 없는 알람'만 커밋된 채
+    // 수신자에게 노출되는 창이 생긴다 — 커밋 시점에 이미 실행됐는지 검증한다.
+    pushResolveUserPk(SENDER_PK);
+    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
+    pushRecipient();
+    pushRecipientTimezone();
+    mockDB.pushResult([{ id: UPLOAD_ID, user_id: SENDER_PK, object_key: 'audio/voice.wav' }]);
+    pushLatestVoiceProfile(true);
+    pushInserts();
+    mockDB.pushResult([], 1); // INSERT dub_jobs (트랜잭션 내부)
+
+    const client = mockDB.client as unknown as {
+      transaction: () => Promise<{ commit: () => Promise<void> }>;
+    };
+    const origTransaction = client.transaction.bind(mockDB.client);
+    let dubInsertedBeforeCommit = false;
+    client.transaction = async () => {
+      const tx = await origTransaction();
+      const origCommit = tx.commit.bind(tx);
+      tx.commit = async () => {
+        dubInsertedBeforeCommit = mockDB.calls.some((c) => c.sql.includes('INSERT INTO dub_jobs'));
+        await origCommit();
+      };
+      return tx;
+    };
+    try {
+      const app = buildApp();
+      const res = await app.request(
+        jsonReq('POST', '/family-alarm/alarms/voice', validVoiceBody({ dub_target_language: 'en' })),
+      );
+      expect(res.status).toBe(201);
+      expect((await res.json()).dub_job).not.toBeNull();
+    } finally {
+      client.transaction = origTransaction;
+    }
+    expect(dubInsertedBeforeCommit).toBe(true);
+  });
+
   it('repeat_days 정규화 (voice 엔드포인트)', async () => {
     pushVoiceHappyPath();
 
@@ -544,6 +616,7 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
       pushResolveUserPk(SENDER_PK);
       pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
       pushRecipient();
+      pushRecipientTimezone();
       mockDB.pushResult([{ id: UPLOAD_ID, user_id: SENDER_PK, object_key: 'audio/v.wav' }]);
       pushLatestVoiceProfile(true);
       pushInserts();
@@ -578,5 +651,120 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     const res = await app.request(jsonReq('POST', '/family-alarm/alarms/voice', validVoiceBody({ label: label200 })));
     expect(res.status).toBe(201);
     expect((await res.json()).message.text).toBe(label200);
+  });
+});
+
+// ─── 수신자 시간대 기준 가드(리드타임·quiet 요일) + 멱등/교체 ─────────────────
+
+describe('POST /family-alarm/alarms — 수신자 시간대 가드', () => {
+  // beforeEach 에서 now = 2026-07-15T00:00Z (= KST 수요일 09:00) 로 고정된다.
+
+  it('30분 미만 리드타임 → 400 FAMILY_ALARM_LEAD_TIME', async () => {
+    pushResolveUserPk(SENDER_PK);
+    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
+    pushRecipient({ quietWindows: '[]' });
+    pushRecipientTimezone(); // 수신자 저장 tz 없음 → Asia/Seoul 기본값. KST 09:20 은 20분 뒤 → 거부.
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/family-alarm/alarms', validTtsBody({ wake_at: '09:20', timezone: 'Asia/Seoul' })),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('FAMILY_ALARM_LEAD_TIME');
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
+  });
+
+  it('수신자 저장 tz 가 있으면 발신자 body timezone 을 무시하고 수신자 tz 로 판정(우회 차단)', async () => {
+    pushResolveUserPk(SENDER_PK);
+    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
+    pushRecipient({ quietWindows: '[]' });
+    mockDB.pushResult([{ timezone: 'America/New_York' }]); // 수신자 저장 tz
+    // now = 2026-07-15T00:00Z = NY(EDT) 7/14 20:00 → wake_at 20:15 는 NY 기준 15분 뒤.
+    // 발신자 body 의 Asia/Seoul 로 해석하면 11시간 이상 남아 201 이 났을 것(리드타임 우회).
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/family-alarm/alarms', validTtsBody({ wake_at: '20:15', timezone: 'Asia/Seoul' })),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('FAMILY_ALARM_LEAD_TIME');
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
+  });
+
+  it('30분 이상 리드타임 → 201', async () => {
+    pushResolveUserPk(SENDER_PK);
+    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
+    pushRecipient({ quietWindows: '[]' });
+    pushRecipientTimezone();
+    pushLatestVoiceProfile(true);
+    pushInserts();
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/family-alarm/alarms', validTtsBody({ wake_at: '09:40', timezone: 'Asia/Seoul' })),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('일회성 quiet 요일: UTC 금요일이라도 수신자(KST) 토요일 창이면 403', async () => {
+    // now = 2026-07-17T14:00Z(UTC 금) = KST 금 23:00 → '00:30' 다음 발사는 KST 토 00:30.
+    // 구버전은 서버 UTC 요일(금)로 판정해 토요일 quiet 창을 놓쳤다.
+    vi.setSystemTime(new Date('2026-07-17T14:00:00Z'));
+    pushResolveUserPk(SENDER_PK);
+    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
+    pushRecipient({ quietWindows: '[{"days":[0,6],"start":"00:00","end":"08:00"}]' });
+    pushRecipientTimezone();
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/family-alarm/alarms', validTtsBody({ wake_at: '00:30', timezone: 'Asia/Seoul' })),
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('FAMILY_ALARM_QUIET_TIME');
+  });
+
+  it('일회성 quiet 요일: 발사 요일(토)이 quiet 요일(평일 프리셋)에 없으면 201', async () => {
+    // 같은 시각이지만 quiet 창이 평일 프리셋이면(발사일=토) 차단하지 않아야 한다 —
+    // 요일 판정이 UTC(금)가 아니라 수신자 시간대(토)로 이뤄짐을 반대 방향으로 증명.
+    vi.setSystemTime(new Date('2026-07-17T14:00:00Z'));
+    pushResolveUserPk(SENDER_PK);
+    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
+    pushRecipient({ quietWindows: '[{"days":[1,2,3,4,5],"start":"00:00","end":"08:00"}]' });
+    pushRecipientTimezone();
+    pushLatestVoiceProfile(true);
+    pushInserts();
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/family-alarm/alarms', validTtsBody({ wake_at: '00:30', timezone: 'Asia/Seoul' })),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('멱등 재전송: 같은 (발신자,수신자,time) 슬롯이 있으면 INSERT 대신 기존 행 UPDATE(id 유지)', async () => {
+    const existingAlarmId = 'existing-alarm-001';
+    pushResolveUserPk(SENDER_PK);
+    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
+    pushRecipient({ quietWindows: '[]' });
+    pushRecipientTimezone();
+    pushLatestVoiceProfile(true);
+    mockDB.pushResult([], 1); // INSERT messages
+    mockDB.pushResult([{ id: existingAlarmId }]); // 멱등 슬롯 조회 → 기존 행 발견
+    mockDB.pushResult([], 0); // 교체 UPDATE(기존 행 제외 비활성화 대상 없음)
+    mockDB.pushResult([], 1); // 기존 행 내용 UPDATE
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/family-alarm/alarms', validTtsBody({ timezone: 'Asia/Seoul' })),
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.alarm.id).toBe(existingAlarmId); // 새 행 대신 기존 id 재사용
+
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
+    const contentUpdate = mockDB.calls.find(
+      (c) => c.sql.includes('UPDATE alarms SET message_id') && c.sql.includes('is_active = 1'),
+    );
+    expect(contentUpdate).toBeDefined();
+    expect(contentUpdate!.args).toContain(existingAlarmId);
   });
 });

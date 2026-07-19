@@ -1,5 +1,7 @@
 package com.alarmtalk.app.data
 
+import com.alarmtalk.app.network.StockClip
+
 /**
  * 백엔드 migration 43(system-stock-voices)에서 시드되는 시스템 스톡 보이스의
  * 고정 UUID prefix. 서버가 단일 진실 공급원이며, 클라이언트는 오프라인 판정
@@ -63,3 +65,23 @@ private fun usesFreeSystemVoiceAlarm(
  * 알람 에디터의 기본 제공 음성 목록에서는 제외한다.
  */
 const val STOCK_GREETING_CATEGORY = "greeting"
+
+/**
+ * 미리듣기용 greeting 스톡 클립 선택의 단일 출처. greeting 은 보이스당 3개 언어(ko/en/ja)가
+ * 있고 서버 /tts/stock-clips 는 language ASC 정렬이라, 언어 필터 없이 firstOrNull 을 쓰면
+ * 항상 영어(en)가 잡힌다. 반드시 앱 언어(appVoiceLanguageOf)로 고르고,
+ * 앱 언어 클립이 없으면 ko → 아무 greeting → 그 보이스의 아무 클립 순으로 폴백한다.
+ */
+fun greetingStockClipFor(
+    clips: List<StockClip>,
+    voiceProfileId: String,
+    appLanguage: String,
+): StockClip? {
+    val greetings = clips.filter {
+        it.voiceProfileId == voiceProfileId && it.category == STOCK_GREETING_CATEGORY
+    }
+    return greetings.firstOrNull { (it.language ?: "ko") == appLanguage }
+        ?: greetings.firstOrNull { (it.language ?: "ko") == "ko" }
+        ?: greetings.firstOrNull()
+        ?: clips.firstOrNull { it.voiceProfileId == voiceProfileId }
+}

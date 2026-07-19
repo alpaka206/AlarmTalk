@@ -47,7 +47,7 @@ class RemoteAlarmPullSyncServiceTest {
 
     @Test
     fun remoteAlarmDoesNotDownloadMessageAudioWhenAudioUrlWasCleared() {
-        val remote = RemoteAlarm(id = "remote-id", mode = "sound-only", messageId = "message-id")
+        val remote = RemoteAlarm(id = "remote-id", messageId = "message-id")
 
         assertFalse(shouldDownloadRemoteMessageAudio(remote))
     }
@@ -56,7 +56,6 @@ class RemoteAlarmPullSyncServiceTest {
     fun remoteAlarmWithVoiceMessageAudioDownloadsAudio() {
         val remote = RemoteAlarm(
             id = "remote-id",
-            mode = "sound-only",
             messageId = "message-id",
             messageAudioUrl = "r2://message-audio.mp3",
         )
@@ -66,7 +65,7 @@ class RemoteAlarmPullSyncServiceTest {
 
     @Test
     fun remoteAlarmWithoutMessageIdDoesNotDownloadAudio() {
-        val remote = RemoteAlarm(id = "remote-id", mode = "tts", messageId = " ")
+        val remote = RemoteAlarm(id = "remote-id", messageId = " ")
 
         assertFalse(shouldDownloadRemoteMessageAudio(remote))
     }

@@ -22,6 +22,10 @@ data class VoiceProfileResponse(
     val profile: VoiceProfile,
 )
 
+data class VoiceProfileDraftResponse(
+    val profile: VoiceProfile? = null,
+)
+
 data class VoiceUploadResponse(
     val upload: VoiceUpload,
 )
@@ -36,35 +40,57 @@ data class VoiceUpload(
     val createdAt: String? = null,
 )
 
-data class VoiceSpeakerListResponse(
-    val speakers: List<VoiceSpeakerSegment>,
-    val provider: String? = null,
-)
-
-data class VoiceSpeakerSegment(
-    val id: String,
-    @SerializedName(value = "uploadId", alternate = ["upload_id"]) val uploadId: String? = null,
-    val label: String,
-    @SerializedName(value = "startMs", alternate = ["start_ms"]) val startMs: Long,
-    @SerializedName(value = "endMs", alternate = ["end_ms"]) val endMs: Long,
-    val confidence: Double? = null,
-)
-
 data class VoiceProfileUpdateRequest(
     val name: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("is_draft") val isDraft: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
-    // 'male' | 'female' | 'neutral'
-    @SerializedName("voice_gender") val voiceGender: String? = null,
-    // 'auto' | 'polite'
-    @SerializedName("speech_formality") val speechFormality: String? = null,
+    // draft→official 승격 시 사전렌더할 앱 언어(서버는 promote 시점에만 사용, 미전송 시 'ko').
+    val language: String? = null,
+)
+
+data class VoicePreviewPlayedRequest(
+    @SerializedName("preview_playback_token") val previewPlaybackToken: String,
+)
+
+data class VoicePreviewPlayedResponse(
+    val success: Boolean,
+    val previewed: Boolean,
+)
+
+data class VoicePreviewTextUpdateRequest(
+    @SerializedName("preview_text") val previewText: String,
+)
+
+data class VoicePreviewTextUpdateResponse(
+    val success: Boolean,
+    // 서버가 공백 정규화한 최종 문구 — 이후 미리듣기 합성 문구(캐시 키)와 동일.
+    @SerializedName("preview_text") val previewText: String,
 )
 
 data class VoiceProfileRelationshipUpdateRequest(
     @SerializedName("relationship_label") val relationshipLabel: String,
     @SerializedName("listener_title") val listenerTitle: String,
+)
+
+/** GET voice/{id}/prerender-status 응답 — 유료 클론 사전렌더(R2 21클립) 진행 상태. */
+data class VoicePrerenderStatusResponse(
+    // "pending" | "done" | "failed" | "none"
+    val status: String? = null,
+    val total: Int = 0,
+    val generated: Int = 0,
+    val attempts: Int = 0,
+)
+
+data class VoicePrerenderRetryResponse(
+    val success: Boolean = false,
+)
+
+data class VoiceSpeechStyleRetryResponse(
+    val success: Boolean = false,
+    // 성공 시 "done".
+    val status: String? = null,
 )
 
 data class VoiceProfile(
@@ -80,6 +106,8 @@ data class VoiceProfile(
     @SerializedName("is_system") val isSystem: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
+    // 말투(스피치 스타일) 분석 상태: null | "pending" | "done" | "failed". 클론 보이스 전용.
+    @SerializedName("speech_style_status") val speechStyleStatus: String? = null,
 )
 
 data class FamilyVoiceProfile(
@@ -103,6 +131,9 @@ interface VoiceProfileApi {
     @GET("voice")
     suspend fun listVoiceProfiles(@Header("Authorization") authorization: String): VoiceProfileListResponse
 
+    @GET("voice/draft")
+    suspend fun getVoiceDraft(@Header("Authorization") authorization: String): VoiceProfileDraftResponse
+
     @Multipart
     @POST("voice/clone")
     suspend fun createVoiceClone(
@@ -110,14 +141,13 @@ interface VoiceProfileApi {
         @Part audio: MultipartBody.Part,
         @Part("name") name: RequestBody,
         @Part("isShared") isShared: RequestBody,
-        @Part("relationshipLabel") relationshipLabel: RequestBody,
-        @Part("listenerTitle") listenerTitle: RequestBody,
+        // 관계·호칭은 선택 입력 — 비우면 파트 자체를 보내지 않는다(백엔드 옵셔널).
+        @Part("relationshipLabel") relationshipLabel: RequestBody?,
+        @Part("listenerTitle") listenerTitle: RequestBody?,
         @Part("durationMs") durationMs: RequestBody,
         @Part("isDraft") isDraft: RequestBody,
-        // 'male' | 'female' | 'neutral'
-        @Part("voiceGender") voiceGender: RequestBody,
-        // 'auto' | 'polite'
-        @Part("speechFormality") speechFormality: RequestBody,
+        // 사전렌더할 앱 언어(미전송 시 서버가 'ko' 폴백 → 비-ko 유저가 클론 버킷을 못 받음).
+        @Part("language") language: RequestBody,
     ): VoiceProfileResponse
 
     @Multipart
@@ -129,18 +159,27 @@ interface VoiceProfileApi {
         @Part("originalName") originalName: RequestBody,
     ): VoiceUploadResponse
 
-    @POST("voice/uploads/{uploadId}/separate")
-    suspend fun separateVoiceUpload(
-        @Header("Authorization") authorization: String,
-        @Path("uploadId") uploadId: String,
-    ): VoiceSpeakerListResponse
-
     @PATCH("voice/{id}")
     suspend fun updateVoiceProfile(
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
         @Body request: VoiceProfileUpdateRequest,
     ): VoiceProfileResponse
+
+    @POST("voice/{id}/preview-played")
+    suspend fun confirmVoicePreviewPlayed(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body request: VoicePreviewPlayedRequest,
+    ): VoicePreviewPlayedResponse
+
+    // 등록 미리듣기 문구 직접 수정(초안 전용) — 서버가 previewed_at 을 리셋해 재청취를 강제한다.
+    @PATCH("voice/{id}/preview-text")
+    suspend fun updateVoicePreviewText(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body request: VoicePreviewTextUpdateRequest,
+    ): VoicePreviewTextUpdateResponse
 
     @PATCH("voice/{id}/relationship")
     suspend fun updateVoiceProfileRelationship(
@@ -154,8 +193,30 @@ interface VoiceProfileApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
         @Query("force") force: Boolean? = null,
+        // draft 정리 전용 삭제 — 서버는 아직 is_draft=1 인 경우에만 실제 삭제한다(등록된 보이스 보호).
+        @Query("draftOnly") draftOnly: Boolean? = null,
     )
 
     @GET("voice/family")
     suspend fun listFamilyVoiceProfiles(@Header("Authorization") authorization: String): FamilyVoiceProfileListResponse
+
+    // 유료 클론 사전렌더(R2 21클립) 진행 상태 — 목소리 탭 준비 표시가 짧게 폴링한다.
+    @GET("voice/{id}/prerender-status")
+    suspend fun getVoicePrerenderStatus(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): VoicePrerenderStatusResponse
+
+    @POST("voice/{id}/prerender-retry")
+    suspend fun retryVoicePrerender(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): VoicePrerenderRetryResponse
+
+    // 말투 분석 재시도 — 실패 502 { error_code: SPEECH_STYLE_ANALYSIS_FAILED }, 소스 없음 409.
+    @POST("voice/{id}/speech-style/retry")
+    suspend fun retryVoiceSpeechStyle(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): VoiceSpeechStyleRetryResponse
 }

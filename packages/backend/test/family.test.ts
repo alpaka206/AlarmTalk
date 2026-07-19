@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
@@ -24,6 +24,14 @@ const VALID_CODE = '123456';
 
 beforeEach(() => {
   mockDB.reset();
+  // 가족 알람 생성의 30분 리드타임 판정이 실제 시계에 좌우되지 않도록 고정한다.
+  // 2026-07-15T00:00Z = KST 수요일 09:00 → wake_at 07:30/08:00 은 다음날(충분한 리드타임).
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('POST /family/invites', () => {
@@ -580,12 +588,15 @@ describe('POST /family/alarms (text mode)', () => {
     mockDB.pushResult([
       { id: recipientPk, google_id: recipientGoogleId, allow_family_alarms: allow },
     ]); // recipient row
+    mockDB.pushResult([]); // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
     if (opts.voiceProfileId === null) {
       mockDB.pushResult([]); // no voice profile
     } else {
       mockDB.pushResult([{ id: opts.voiceProfileId ?? 'vp-recipient-1' }]); // latest vp
     }
     mockDB.pushResult([], 1); // messages INSERT
+    mockDB.pushResult([]); // 멱등 슬롯 조회(기존 발신 알람 없음)
+    mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
     mockDB.pushResult([], 1); // alarms INSERT
   }
 
@@ -625,9 +636,12 @@ describe('POST /family/alarms (text mode)', () => {
     mockDB.pushResult([
       { id: 'user-recipient', google_id: 'google-recipient', allow_family_alarms: 1 },
     ]);
+    mockDB.pushResult([]); // 효과 시간대: 수신자 최근 알람 timezone 조회
     mockDB.pushResult([{ id: 'vp-custom' }]); // voice_profile ownership check
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1); // messages INSERT
+    mockDB.pushResult([]); // 멱등 슬롯 조회
+    mockDB.pushResult([], 1); // 교체 UPDATE
+    mockDB.pushResult([], 1); // alarms INSERT
 
     const app = buildApp('google-sender');
     const res = await app.request(
@@ -762,6 +776,7 @@ describe('POST /family/alarms/voice', () => {
         allow_family_alarms: opts.allowFamily ?? 1,
       },
     ]); // recipient
+    mockDB.pushResult([]); // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
     if (opts.uploadMissing) {
       mockDB.pushResult([]); // upload missing
     } else {
@@ -779,6 +794,8 @@ describe('POST /family/alarms/voice', () => {
       mockDB.pushResult([{ id: 'vp-recipient-1' }]);
     }
     mockDB.pushResult([], 1); // messages INSERT
+    mockDB.pushResult([]); // 멱등 슬롯 조회(기존 발신 알람 없음)
+    mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
     mockDB.pushResult([], 1); // alarms INSERT
     if (opts.dub) mockDB.pushResult([], 1); // dub_jobs INSERT
   }

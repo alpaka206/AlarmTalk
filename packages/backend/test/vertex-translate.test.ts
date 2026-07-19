@@ -2,7 +2,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/types';
 import {
   AlarmTextPreparationInvalidError,
+  deriveAlarmDisplayText,
   generateDynamicAlarmTextWithVertex,
+  generatePrerenderClipText,
   prepareAlarmTextWithVertex,
 } from '../src/lib/vertex-translate';
 
@@ -16,6 +18,7 @@ const ENV: Env = {
   TURSO_AUTH_TOKEN: 'x',
   GOOGLE_CLIENT_ID: 'x',
   GOOGLE_VERTEX_CREDENTIALS_JSON: '',
+  GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED: 'true',
   JWT_SECRET: 'test-secret-32-chars-or-longer!',
   PASSWORD_PEPPER: 'pepper',
   ENVIRONMENT: 'test',
@@ -107,7 +110,8 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    expect(prepared.text).toContain('Good morning. Wake up.');
+    // 문장마다 태그를 다시 앞세운다(끝까지 톤 유지) — 태그 제거 시 원문과 동일해야 한다.
+    expect(prepared.text).toContain('[cheerfully] Good morning. [cheerfully] Wake up.');
     expect(prepared.text).not.toContain('json requested');
     // 신 allowlist 기준 로컬 기본 태그(구 [warmly] 폐기).
     expect(prepared.tags).toEqual(['cheerfully']);
@@ -145,8 +149,8 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    // 승인 태그가 여러 개여도 첫 번째만 선두에 남긴다(텍스트는 불변).
-    expect(prepared.text).toBe(`[cheerfully] ${text}`);
+    // 승인 태그가 여러 개여도 첫 태그 하나만 채택하고, 문장마다 다시 앞세운다(텍스트 불변).
+    expect(prepared.text).toBe('[cheerfully] Today is your stage. [cheerfully] Wake up with confidence.');
     expect(prepared.tags).toEqual(['cheerfully']);
   });
 
@@ -233,6 +237,30 @@ describe('prepareAlarmTextWithVertex', () => {
 });
 
 describe('generateDynamicAlarmTextWithVertex', () => {
+  it('uses local preset-style fallback unless dynamic Gemini text is explicitly enabled', async () => {
+    queueContent(geminiText('{"text":"Gemini should not be used","tag":"cheerfully"}'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(
+      {
+        ...ENV,
+        GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED: undefined,
+      },
+      {
+        mode: 'love',
+        category: 'love',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '연인',
+        listenerTitle: '자기야',
+      },
+    );
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).toContain('자기야');
+    expect(generated.text).not.toContain('Gemini should not be used');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('falls back to readable dynamic text when Gemini returns helper text only', async () => {
     queueContent(geminiText('Here Is the json requested:'));
 
@@ -572,5 +600,105 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).not.toContain('5월 19일');
     expect(generated.text).not.toContain('생년월일');
     expect(generated.text).not.toContain('태어난 시간');
+  });
+});
+
+describe('deriveAlarmDisplayText', () => {
+  it('사용자가 대괄호를 안 치면 맨 앞 자동 delivery 태그를 제거한다', () => {
+    expect(deriveAlarmDisplayText('[cheerfully] 좋은 아침이에요', '좋은 아침이에요')).toBe(
+      '좋은 아침이에요',
+    );
+  });
+
+  it('모델이 지시를 어기고 태그를 2개 붙여도 모두 제거한다', () => {
+    expect(deriveAlarmDisplayText('[happy] [excited] Good morning', 'good morning')).toBe(
+      'Good morning',
+    );
+  });
+
+  it('문장 중간에 낀 모델 태그도 제거한다', () => {
+    expect(deriveAlarmDisplayText('Good [whispers] morning', 'good morning')).toBe('Good morning');
+  });
+
+  it('태그 제거 후 남는 이중 공백을 한 칸으로 정리한다', () => {
+    expect(deriveAlarmDisplayText('take your  pills', 'take your pills')).toBe('take your pills');
+  });
+
+  it('번역 경로에서도 앞 태그만 벗기고 번역 본문은 유지한다', () => {
+    expect(deriveAlarmDisplayText('[cheerfully] Good morning', '좋은 아침이에요')).toBe(
+      'Good morning',
+    );
+  });
+
+  it('사용자가 직접 친 대괄호는 그대로 보존한다', () => {
+    expect(
+      deriveAlarmDisplayText('오늘도 [after lunch] 화이팅', '오늘도 [after lunch] 화이팅'),
+    ).toBe('오늘도 [after lunch] 화이팅');
+  });
+
+  it('사용자 문구가 대괄호 하나뿐이어도 비우지 않는다', () => {
+    expect(deriveAlarmDisplayText('[calm]', '[calm]')).toBe('[calm]');
+  });
+
+  it('사용자가 승인 태그와 겹치는 대괄호를 쳐도 삭제하지 않는다', () => {
+    expect(deriveAlarmDisplayText('오늘도 [happy]', '오늘도 [happy]')).toBe('오늘도 [happy]');
+  });
+});
+
+describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
+  it('영문 문구의 정확한 비영문 호칭은 언어 불일치에서 제외한다', async () => {
+    queueContent(
+      geminiText(
+        JSON.stringify({ text: '할아버지, it is time for your medicine. Please take care.', tag: 'cheerfully' }),
+      ),
+    );
+
+    const out = await generatePrerenderClipText(ENV, {
+      seed: 'Remind the listener to take medicine.',
+      relationshipLabel: 'grandchild',
+      listenerTitle: '할아버지',
+      targetLanguage: 'en',
+      defaultTag: 'cheerfully',
+    });
+
+    expect(out.text).toContain('할아버지');
+  });
+
+  it('seed·관계·호칭으로 톤 적응 문구를 만들고 승인 태그를 돌려준다', async () => {
+    queueContent(
+      geminiText(
+        JSON.stringify({ text: '규원아, 약 먹을 시간이야. 물이랑 같이 꼭 챙겨 먹어.', tag: 'cheerfully' }),
+      ),
+    );
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '약 먹을 시간이라고 다정하게 알린다.',
+      relationshipLabel: '할머니',
+      listenerTitle: '규원아',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+    });
+    expect(out.text).toContain('약 먹을 시간');
+    expect(out.tag).toBe('cheerfully');
+    // 프롬프트에 seed 와 호칭이 실린다.
+    const body = JSON.stringify(contentRequestBody());
+    expect(body).toContain('약 먹을 시간이라고');
+    expect(body).toContain('규원아');
+  });
+
+  it('모델이 태그를 비우면 카테고리 기본 태그로 채운다', async () => {
+    queueContent(geminiText(JSON.stringify({ text: '오늘 비 온대. 나갈 때 우산 꼭 챙겨.', tag: '' })));
+    const out = await generatePrerenderClipText(ENV, {
+      seed: '비 온다고 알리고 우산 챙기라고.',
+      targetLanguage: 'ko',
+      defaultTag: 'cheerfully',
+    });
+    expect(out.tag).toBe('cheerfully');
+  });
+
+  it('문구 안에 대괄호/지문이 새면 throw 해서 나쁜 클립을 저장하지 않는다', async () => {
+    queueContent(geminiText(JSON.stringify({ text: '[shouting] 일어나!', tag: '' })));
+    await expect(
+      generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
+    ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);
   });
 });

@@ -105,6 +105,12 @@ data class CancelSubscriptionResponse(
     val success: Boolean,
     val mode: String,
     @SerializedName("subscription_id") val subscriptionId: String? = null,
+    // immediate 해지 성공 시에만 내려온다 — 유료 음성 데이터 30일 보관 만료 시점(ISO).
+    @SerializedName("voice_retention_until") val voiceRetentionUntil: String? = null,
+)
+
+data class VoiceDataDeleteNowResponse(
+    val success: Boolean = false,
 )
 
 data class ChangePlanRequest(
@@ -157,6 +163,12 @@ interface BillingApi {
         @Header("Authorization") authorization: String,
         @Body request: CancelSubscriptionRequest,
     ): CancelSubscriptionResponse
+
+    /** 보관 중인 유료 음성 데이터 즉시 삭제. 활성 유료 구독이 있으면 409 SUBSCRIPTION_STILL_ACTIVE. */
+    @POST("billing/voice-data/delete-now")
+    suspend fun deleteVoiceDataNow(
+        @Header("Authorization") authorization: String,
+    ): VoiceDataDeleteNowResponse
 
     @POST("billing/change-plan")
     suspend fun changePlan(

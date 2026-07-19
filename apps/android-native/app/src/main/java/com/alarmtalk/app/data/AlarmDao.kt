@@ -18,6 +18,22 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId LIMIT 1")
     suspend fun getByRemoteAlarmId(remoteAlarmId: String): AlarmEntity?
 
+    /** 같은 서버 알람을 가리키는 모든 로컬 행 — 과거 동시 pull 레이스로 생긴 중복 임포트 정리용. */
+    @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId ORDER BY createdAtMillis")
+    suspend fun getAllByRemoteAlarmId(remoteAlarmId: String): List<AlarmEntity>
+
+    /** 같은 시각에 켜져 있는 알람 전부 — 받은 알람 임포트 시 '보낸 사람 알람 우선' 대체 정책에 쓴다. */
+    @Query(
+        """
+        SELECT * FROM alarms
+        WHERE hour = :hour
+          AND minute = :minute
+          AND enabled = 1
+          AND (:excludeId IS NULL OR id != :excludeId)
+        """,
+    )
+    suspend fun getEnabledAtTime(hour: Int, minute: Int, excludeId: String? = null): List<AlarmEntity>
+
     @Query(
         """
         SELECT * FROM alarms
@@ -30,19 +46,47 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms ORDER BY hour ASC, minute ASC, createdAtMillis ASC")
     suspend fun getAllAlarms(): List<AlarmEntity>
 
+    // 사전렌더 '날씨' 버킷 알람(반복+일회성). 준비창 워커가 저장 위치로 서버에 조건을 resolve 해
+    // contextVariantIndex 를 갱신한다. dismiss 로 enabled=0 된 일회성은 자동 제외.
     @Query(
         """
         SELECT * FROM alarms
         WHERE enabled = 1
-          AND repeatDaysMask != 0
-          AND voiceRandomPrompt = 1
-          AND playMode != 'alarm_only'
+          AND bucketId = 'weather'
           AND voiceProfileId IS NOT NULL
-          AND bucketId IS NULL
         ORDER BY fireAtMillis ASC
         """,
     )
-    suspend fun getRepeatingDynamicAlarmTalks(): List<AlarmEntity>
+    suspend fun getEnabledWeatherBucketAlarms(): List<AlarmEntity>
+
+    // resolvedAtMillis 는 전용 게이트 컬럼(contextResolvedAtMillis). updatedAtMillis 를 건드리지 않아
+    // (a) 인덱스 불변이어도 게이트가 전진하고 (b) 무관 편집이 날씨 재해결 시계를 리셋하지 않는다.
+    // fireDateStart/End: variant 는 특정 타깃 날짜로 resolve 되므로, 네트워크 왕복 중 사용자가 시간·날짜를
+    // 바꿔 fireAtMillis 가 그 날짜 범위를 벗어났으면 옛 날짜 결과를 쓰지 않는다(써 버리면 fresh 타임스탬프로
+    // 12h 게이트가 전진해 올바른 재해결이 막힌다). 범위는 [start, end) 반개구간.
+    @Query(
+        """
+        UPDATE alarms
+        SET contextVariantIndex = :index, contextResolvedAtMillis = :resolvedAtMillis
+        WHERE id = :id
+          AND bucketId = 'weather'
+          AND COALESCE(voiceProfileId, '') = :voiceProfileId
+          AND TRIM(COALESCE(voiceWeatherCountry, '')) = :country
+          AND TRIM(COALESCE(voiceWeatherCity, '')) = :city
+          AND fireAtMillis >= :fireDateStartMillis
+          AND fireAtMillis < :fireDateEndMillis
+        """,
+    )
+    suspend fun updateContextVariantIndexIfContextMatches(
+        id: String,
+        index: Int,
+        resolvedAtMillis: Long,
+        voiceProfileId: String,
+        country: String,
+        city: String,
+        fireDateStartMillis: Long,
+        fireDateEndMillis: Long,
+    ): Int
 
     @Query(
         """
@@ -74,9 +118,9 @@ interface AlarmDao {
 
     /**
      * 사용자 편집 커밋용 전체행 upsert. 커밋 직전 같은 트랜잭션 안에서 DB 의 최신
-     * remoteAlarmId/lastSyncedAtMillis 를 다시 읽어 [updated] 에 병합한 뒤 저장한다.
-     * 이 두 값은 sync 만 발급하는 서버 필드이므로 편집이 읽은 스냅샷의 stale 값으로
-     * 절대 덮어써서는 안 된다.
+     * remoteAlarmId/lastSyncedAtMillis 와, 동일 날씨 컨텍스트의 variant/freshness 를
+     * [updated] 에 병합한 뒤 저장한다. sync/worker 만 갱신하는 값을 편집이 읽은 stale
+     * 스냅샷으로 덮어쓰지 않는다.
      *
      * 이 병합이 없으면 '신규 알람 create 왕복 중 편집' 경합에서 remoteAlarmId 가 유실된다:
      * 편집이 읽은 스냅샷은 remoteAlarmId=null 인데, 그 사이 sync 의 CAS
@@ -92,9 +136,33 @@ interface AlarmDao {
         val merged = if (fresh == null) {
             updated
         } else {
+            val preserveFreshWeatherVariant = updated.bucketId == "weather" &&
+                !shouldResetWeatherVariant(
+                    currentBucketId = fresh.bucketId,
+                    nextBucketId = updated.bucketId,
+                    currentVoiceProfileId = fresh.voiceProfileId,
+                    nextVoiceProfileId = updated.voiceProfileId,
+                    currentCountry = fresh.voiceWeatherCountry,
+                    nextCountry = updated.voiceWeatherCountry,
+                    currentCity = fresh.voiceWeatherCity,
+                    nextCity = updated.voiceWeatherCity,
+                    // 발사 날짜가 바뀐 편집/재활성화면 리셋된 null 을 fresh 의 옛 인덱스로 되덮지 않는다.
+                    currentFireAtMillis = fresh.fireAtMillis,
+                    nextFireAtMillis = updated.fireAtMillis,
+                )
             updated.copy(
                 remoteAlarmId = fresh.remoteAlarmId,
                 lastSyncedAtMillis = fresh.lastSyncedAtMillis,
+                contextVariantIndex = if (preserveFreshWeatherVariant) {
+                    fresh.contextVariantIndex
+                } else {
+                    updated.contextVariantIndex
+                },
+                contextResolvedAtMillis = if (preserveFreshWeatherVariant) {
+                    fresh.contextResolvedAtMillis
+                } else {
+                    updated.contextResolvedAtMillis
+                },
             )
         }
         upsert(merged)

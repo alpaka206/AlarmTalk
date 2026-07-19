@@ -14,9 +14,8 @@ import SwiftUI
 ///   `QuickStartGrid.swift`
 /// - 알람 화면: `Views/Alarms/AlarmsListView.swift`, `AlarmRow.swift`,
 ///   `AlarmPermissionSection.swift`
-/// - 음성 화면: `Views/Voices/VoicesPanelView.swift`, `VoiceProfilePicker.swift`
-/// - 메시지 화면: `Views/Messages/MessagesView.swift`, `VoiceMessagePanel.swift`
-/// - 설정 화면: `Views/Settings/SettingsView.swift`, `SettingsRow.swift`,
+/// - 음성 화면: `Views/Voices/VoicesPanelView.swift`
+/// - 설정 화면: `Views/Settings/SettingsView.swift`,
 ///   `AccountPanel.swift`, `PeoplePanel.swift`, `BillingPanel.swift`
 /// - 알람 편집 시트: `Views/Editor/AlarmEditorSheet.swift`
 /// - 보조 시트 호스트: `Views/Auxiliary/AuxiliarySheetHost.swift`

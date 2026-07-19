@@ -332,7 +332,8 @@ class AuthSessionStore(context: Context) {
         private const val KEY_FAMILY_ALARM_QUIET_END = "family_alarm_quiet_end"
         private const val KEY_FAMILY_ALARM_QUIET_WINDOWS = "family_alarm_quiet_windows"
         private const val KEY_DYNAMIC_PROMPT_SETTINGS = "dynamic_prompt_settings"
-        private const val MAX_QUIET_WINDOWS = 8
+        // 방해금지 창은 최대 2개(평일 근무 + 주말 정도). 백엔드 family-alarm-settings.ts와 동일.
+        private const val MAX_QUIET_WINDOWS = 2
     }
 }
 

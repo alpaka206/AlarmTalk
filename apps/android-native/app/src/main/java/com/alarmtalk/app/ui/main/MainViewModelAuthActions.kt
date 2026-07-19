@@ -2,61 +2,24 @@ package com.alarmtalk.app
 
 import android.app.Application
 import android.util.Log
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Message
-import androidx.compose.material3.Text
-import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
-import com.alarmtalk.app.data.AlarmAppContainer
-import com.alarmtalk.app.data.AlarmDraft
-import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.network.AuthTokenResponse
-import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
-import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CheckoutRequest
-import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.DynamicPromptSettings
-import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
-import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.EmailVerificationConfirmRequest
 import com.alarmtalk.app.network.EmailVerificationRequest
 import com.alarmtalk.app.network.GoogleLoginRequest
 import com.alarmtalk.app.network.LoginRequest
 import com.alarmtalk.app.network.PasswordResetConfirmRequest
 import com.alarmtalk.app.network.PasswordResetRequest
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.SendNoteRequest
-import com.alarmtalk.app.network.TtsGenerateRequest
-import com.alarmtalk.app.network.TtsGenerateResponse
-import com.alarmtalk.app.network.TtsMessage
-import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
-import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoiceProfileUpdateRequest
-import com.alarmtalk.app.network.VoucherItem
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
-import java.time.Instant
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -74,6 +37,7 @@ internal fun MainViewModel.login(email: String, password: String) {
             restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
+            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_login_failed))
@@ -188,6 +152,7 @@ internal fun MainViewModel.register(
             registerEmailVerified = null
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
+            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email registration failed", error)
@@ -272,6 +237,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
             restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
+            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
             message = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Google token exchange failed", error)
@@ -289,6 +255,11 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
         // 서버에 로그아웃을 알려 token_epoch 를 올린다(남아있던 토큰 전부 401 TOKEN_REVOKED).
         // 네트워크 실패가 로컬 로그아웃을 막지 않도록 best-effort 로 처리한다.
         if (session != null) {
+            // token_epoch 를 올리기 전에(=세션 토큰 유효할 때) 이 기기 FCM 토큰을 서버에서 먼저 제거한다.
+            // 로그아웃한(또는 공유) 기기에 이 계정의 알람 push 가 계속 오는 것을 막는다.
+            runCatching {
+                com.alarmtalk.app.fcm.AlarmTalkMessagingService.unregisterCurrentToken(session.token)
+            }.onFailure { error -> Log.w(TAG, "FCM unregister on logout failed (continuing)", error) }
             runCatching {
                 api.logout(com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token))
             }.onFailure { error ->
@@ -323,6 +294,12 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
         authBusy = true
         try {
             api.requestAccountDeletion(authorization)
+            // 삭제 신청이 '성공한 뒤에만' 이 기기 FCM 토큰을 제거한다(유예 기간 동안 push 방지). 신청이
+            // 실패하면 사용자는 로그인 유지 상태이므로 토큰을 지우지 않아 즉시 push 를 계속 받게 한다.
+            // /me/deletion 은 token_epoch 를 올리지 않아(user.ts) 신청 후에도 세션 토큰이 유효하다.
+            runCatching {
+                com.alarmtalk.app.fcm.AlarmTalkMessagingService.unregisterCurrentToken(session.token)
+            }.onFailure { error -> Log.w(TAG, "FCM unregister on deletion failed (continuing)", error) }
             if (shouldSignOutGoogle) {
                 runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
             }
@@ -372,6 +349,10 @@ internal fun MainViewModel.cancelAccountDeletion() {
             api.cancelAccountDeletion(authorization)
         }.onSuccess {
             pendingDeletion = false
+            // 철회로 계정이 'active' 로 복구됐으니, 삭제 신청 때 제거됐던 이 기기 FCM 토큰을 다시 등록한다.
+            // (pending 중엔 로그인해도 게이트가 /push/register 를 막아 등록이 안 됐다.) 그래야 가족 알람
+            // push 가 이 기기에 다시 온다 — active 복구 후라 등록 게이트를 통과한다.
+            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancelled)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to cancel account deletion", error)
@@ -745,12 +726,22 @@ internal fun MainViewModel.syncNow() {
         syncBusy = true
         runCatching {
             val push = repository.syncWithBackend(api, session.token)
-            val pull = repository.pullReceivedAlarms(api, session.token, session.user.id)
+            val pull = repository.pullReceivedAlarms(api, session.token)
             push to pull
         }.onSuccess { (push, pull) ->
             val failed = push.failed + pull.failed
-            if (failed > 0) {
-                message = alarmSyncFailureMessage(pushFailed = push.failed, pullFailed = pull.failed)
+            val app = getApplication<android.app.Application>()
+            when {
+                failed > 0 ->
+                    message = alarmSyncFailureMessage(pushFailed = push.failed, pullFailed = pull.failed)
+                // 앱이 열려 있을 때 새로 받은 상대 알람을 인앱으로도 알린다(시스템 알림에만 의존하지 않음).
+                // syncNow 는 알람 탭 진입 시 자동 실행되므로, 사용자가 보던 메시지를 덮지 않게 비어 있을 때만.
+                pull.imported > 0 && message.isNullOrBlank() ->
+                    message = app.resources.getQuantityString(
+                        R.plurals.msg_received_alarm_arrived,
+                        pull.imported,
+                        pull.imported,
+                    )
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Backend sync failed", error)
@@ -768,4 +759,46 @@ private fun MainViewModel.alarmSyncFailureMessage(pushFailed: Int, pullFailed: I
     pullFailed > 0 ->
         getApplication<android.app.Application>().getString(R.string.msg_sync_pull_partial_failed)
     else -> getApplication<android.app.Application>().getString(R.string.msg_sync_generic_failed)
+}
+
+internal fun MainViewModel.showGoogleSetupRequired() {
+    message = getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_unavailable)
+}
+
+internal fun MainViewModel.showGoogleSignInFailed(reason: String? = null) {
+    message = reason ?: getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_failed)
+}
+
+internal fun MainViewModel.clearMessage() {
+    message = null
+}
+
+internal fun MainViewModel.refreshAppSession() {
+    val session = authSession ?: return
+    viewModelScope.launch {
+        runCatching {
+            api.me(AlarmTalkApiClient.bearer(session.token)).user
+        }.onSuccess { user ->
+            val response = AuthTokenResponse(
+                token = session.token,
+                user = user,
+            )
+            authSession = if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
+                authSessionStore.saveGoogleSession(response)
+            } else {
+                authSessionStore.saveAppSession(response)
+            }
+        }.onFailure { error ->
+            Log.w(TAG, "Auth refresh failed", error)
+        }
+    }
+}
+
+internal fun MainViewModel.bearerOrMessage(fallbackMessage: String): String? {
+    val session = authSession
+    if (session == null) {
+        message = fallbackMessage
+        return null
+    }
+    return AlarmTalkApiClient.bearer(session.token)
 }

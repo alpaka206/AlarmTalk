@@ -6,7 +6,7 @@ import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../lib/audio-cache';
 import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
-import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
+import { assertSameGroup } from '../lib/family-helpers';
 import {
   createSynthesisAttempts,
   inferSynthesisLanguage,
@@ -18,14 +18,27 @@ import {
   DynamicAlarmTextGenerationInvalidError,
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
+  applyDeliveryTagPerSentence,
   generateDynamicAlarmTextWithVertex,
+  generatePrerenderClipText,
+  deriveAlarmDisplayText,
+  parseSpeechStyle,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
   type WeatherCondition,
-  type VoiceGender,
-  type SpeechFormality,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
+import {
+  CLONE_CLIP_SEEDS,
+  CLONE_WEATHER_CONDITIONS,
+  STOCK_GREETING_CATEGORY,
+} from '../lib/stock-clips';
+import {
+  readManualTtsUsage,
+  refundManualTtsQuota,
+  reserveManualTtsQuota,
+  resolveManualTtsPool,
+} from '../lib/manual-tts-quota';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import {
@@ -33,6 +46,8 @@ import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
   dynamicPromptSettingsFromRow,
 } from '../lib/dynamic-prompt-settings';
+import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
+import { enqueueExternalDeletion } from '../lib/audio-retention';
 
 const tts = new Hono<AppEnv>();
 const TTS_CATEGORIES = [
@@ -77,6 +92,20 @@ function consentRequired(c: Context<AppEnv>, consent: string) {
       ? 'Voice biometric consent is required to use a custom voice for TTS.'
       : 'Overseas transfer consent is required for ElevenLabs TTS generation.';
   return c.json({ error, error_code: 'CONSENT_REQUIRED', consent }, 403);
+}
+
+class ConsentWithdrawnDuringTtsError extends Error {
+  constructor(readonly consent: string) {
+    super(`Required consent was withdrawn during TTS generation: ${consent}`);
+    this.name = 'ConsentWithdrawnDuringTtsError';
+  }
+}
+
+class VoiceAuthorizationChangedDuringTtsError extends Error {
+  constructor() {
+    super('Voice authorization changed during TTS generation.');
+    this.name = 'VoiceAuthorizationChangedDuringTtsError';
+  }
 }
 
 type WeatherForecastResponse = {
@@ -137,14 +166,6 @@ function normalizeRelationshipLabel(value: unknown): string | null {
   const label = value.trim();
   if (!label) return null;
   return label.slice(0, 30);
-}
-
-function normalizeVoiceGender(value: unknown): VoiceGender | null {
-  return value === 'male' || value === 'female' || value === 'neutral' ? value : null;
-}
-
-function normalizeSpeechFormality(value: unknown): SpeechFormality | null {
-  return value === 'auto' || value === 'polite' ? value : null;
 }
 
 function optionalInt(value: unknown, min: number, max: number): number | null {
@@ -260,8 +281,14 @@ function presetTextWithListenerTitle(text: string, listenerTitle: string | null)
   return withTitle.length <= 200 ? withTitle : base;
 }
 
+function draftPreviewText(language: string): string {
+  if (language === 'ja') return 'おはよう。今日も気持ちよく起きよう。';
+  if (language === 'en') return 'Good morning. It is time to start your day.';
+  return '좋은 아침이야. 오늘도 기분 좋게 일어나자.';
+}
+
 async function findUsableVoiceProfile(
-  db: ReturnType<typeof getDB>,
+  db: DbExecutor,
   userId: string,
   userPk: string,
   voiceProfileId: string,
@@ -294,7 +321,7 @@ async function findUsableVoiceProfile(
   if (shared.rows.length === 0) return null;
 
   const row = shared.rows[0] as Record<string, unknown>;
-  const viewerPk = userPk || (await resolveUserPk(db, userId));
+  const viewerPk = userPk;
   const ownerPk = typeof row.owner_pk === 'string' ? row.owner_pk : null;
   if (!viewerPk || !ownerPk || viewerPk === ownerPk) return null;
 
@@ -302,38 +329,22 @@ async function findUsableVoiceProfile(
   return inSameGroup ? row : null;
 }
 
-async function findViewerRelationshipLabel(
+async function findViewerRelationshipField(
   db: ReturnType<typeof getDB>,
   userPk: string,
   userId: string,
   voiceProfileId: string,
+  column: 'relationship_label' | 'listener_title',
 ): Promise<string | null> {
   const result = await db.execute({
-    sql: `SELECT relationship_label
+    sql: `SELECT ${column}
           FROM voice_profile_relationships
           WHERE voice_profile_id = ? AND user_id IN (?, ?)
           ORDER BY updated_at DESC
           LIMIT 1`,
     args: [voiceProfileId, userPk, userId],
   });
-  return normalizeRelationshipLabel(result.rows[0]?.relationship_label);
-}
-
-async function findViewerListenerTitle(
-  db: ReturnType<typeof getDB>,
-  userPk: string,
-  userId: string,
-  voiceProfileId: string,
-): Promise<string | null> {
-  const result = await db.execute({
-    sql: `SELECT listener_title
-          FROM voice_profile_relationships
-          WHERE voice_profile_id = ? AND user_id IN (?, ?)
-          ORDER BY updated_at DESC
-          LIMIT 1`,
-    args: [voiceProfileId, userPk, userId],
-  });
-  return normalizeRelationshipLabel(result.rows[0]?.listener_title);
+  return normalizeRelationshipLabel(result.rows[0]?.[column]);
 }
 
 const RAIN_WMO_CODES = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
@@ -346,6 +357,20 @@ async function loadWeatherSignal(args: {
   country?: unknown;
   city?: unknown;
 }): Promise<WeatherSignal | null> {
+  const input = await loadWeatherSignalInput(args);
+  return input ? buildWeatherSignal(input) : null;
+}
+
+/** open-meteo 원시 데이터(코드·기온·강수·미세먼지)를 가져와 구조화 입력으로만 환원한다. */
+async function loadWeatherSignalInput(args: {
+  latitude?: unknown;
+  longitude?: unknown;
+  locationLabel?: unknown;
+  country?: unknown;
+  city?: unknown;
+  targetDate?: unknown;
+  timezone?: unknown;
+}): Promise<WeatherSignalInput | null> {
   const location = await resolveWeatherLocation(args);
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', String(location.latitude));
@@ -360,8 +385,21 @@ async function loadWeatherSignal(args: {
       'precipitation_sum',
     ].join(','),
   );
-  url.searchParams.set('timezone', 'Asia/Seoul');
-  url.searchParams.set('forecast_days', '1');
+  const targetDate =
+    typeof args.targetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.targetDate)
+      ? args.targetDate
+      : null;
+  const timezone =
+    typeof args.timezone === 'string' && /^[A-Za-z0-9_+\-/]{1,64}$/.test(args.timezone)
+      ? args.timezone
+      : 'Asia/Seoul';
+  url.searchParams.set('timezone', timezone);
+  if (targetDate) {
+    url.searchParams.set('start_date', targetDate);
+    url.searchParams.set('end_date', targetDate);
+  } else {
+    url.searchParams.set('forecast_days', '1');
+  }
 
   try {
     const response = await fetch(url.toString(), {
@@ -371,26 +409,36 @@ async function loadWeatherSignal(args: {
       .json<WeatherForecastResponse>()
       .catch(() => ({}) as WeatherForecastResponse);
     if (!response.ok || !json.daily) return null;
-    const code = Number(json.daily.weather_code?.[0]);
-    const maxTemp = Number(json.daily.temperature_2m_max?.[0]);
-    const minTemp = Number(json.daily.temperature_2m_min?.[0]);
-    const rainProbability = Number(json.daily.precipitation_probability_max?.[0]);
-    const precipitation = Number(json.daily.precipitation_sum?.[0]);
-    const hasDust = await loadDustSignal(location);
-    return buildWeatherSignal({
-      code,
-      maxTemp,
-      minTemp,
-      rainProbability,
-      precipitation,
-      hasDust,
-    });
+    const targetIndex = targetDate
+      ? (json.daily.time?.findIndex((value) => value === targetDate) ?? -1)
+      : 0;
+    if (targetIndex < 0) return null;
+    const code = Number(json.daily.weather_code?.[targetIndex]);
+    const maxTemp = Number(json.daily.temperature_2m_max?.[targetIndex]);
+    const minTemp = Number(json.daily.temperature_2m_min?.[targetIndex]);
+    const rainProbability = Number(json.daily.precipitation_probability_max?.[targetIndex]);
+    const precipitation = Number(json.daily.precipitation_sum?.[targetIndex]);
+    // 코드·기온·강수가 모두 없으면(전부 NaN) 분류 불가 → null. 이때만 클라가 마지막 인덱스를 유지하고
+    // 라이브는 generic 으로 떨어진다. 단 weather_code 만 없고 기온/강수가 있으면 그것으로 분류 가능하므로
+    // 통과시킨다 — buildWeatherSignal(라이브)의 우산·한파 멘트, resolvePrerenderWeatherIndex 의
+    // 비/더위/추위 인덱스는 code 없이도 산출된다. (code 만으로 null 반환하면 라이브 날씨멘트가 통째 사라짐)
+    if (
+      !Number.isFinite(code) &&
+      !Number.isFinite(maxTemp) &&
+      !Number.isFinite(minTemp) &&
+      !Number.isFinite(rainProbability) &&
+      !Number.isFinite(precipitation)
+    ) {
+      return null;
+    }
+    const hasDust = await loadDustSignal(location, targetDate, timezone);
+    return { code, maxTemp, minTemp, rainProbability, precipitation, hasDust };
   } catch {
     return null;
   }
 }
 
-interface WeatherSignalInput {
+export interface WeatherSignalInput {
   code: number;
   maxTemp: number;
   minTemp: number;
@@ -445,16 +493,53 @@ function buildWeatherSignal(input: WeatherSignalInput): WeatherSignal | null {
   return { conditions: conditions.slice(0, 2) };
 }
 
-async function loadDustSignal(location: {
-  latitude: number;
-  longitude: number;
-}): Promise<boolean> {
+const FOG_WMO_CODES = [45, 48];
+const CLOUD_WMO_CODES = [2, 3]; // partly cloudy / overcast = 흐림
+
+/**
+ * open-meteo 원시 입력을 CLONE_WEATHER_CONDITIONS(nice/rain/snow/dust/cloud/fog/heat) 인덱스로
+ * 분류한다. 사전렌더 weather 클립은 이 순서로 저장되므로, 클라가 이 인덱스로 오프라인 선택한다.
+ * 우선순위: 눈>비>미세먼지>안개>더위>흐림>맑음(기본).
+ */
+export function resolvePrerenderWeatherIndex(input: WeatherSignalInput): number {
+  const { code, maxTemp, minTemp, rainProbability, precipitation, hasDust } = input;
+  // 인덱스는 CLONE_WEATHER_CONDITIONS 순서에서 파생(하드코딩 대신 → 순서 바뀌어도 안전).
+  const idx = (kind: (typeof CLONE_WEATHER_CONDITIONS)[number]) =>
+    Math.max(0, CLONE_WEATHER_CONDITIONS.indexOf(kind));
+  const rainy =
+    (Number.isFinite(rainProbability) && rainProbability >= 30) ||
+    (Number.isFinite(precipitation) && precipitation > 0) ||
+    RAIN_WMO_CODES.includes(code);
+  if (SNOW_WMO_CODES.includes(code)) return idx('snow');
+  if (rainy) return idx('rain');
+  if (hasDust) return idx('dust');
+  if (FOG_WMO_CODES.includes(code)) return idx('fog');
+  if (Number.isFinite(maxTemp) && maxTemp >= 30) return idx('heat');
+  // 추위: 라이브 buildWeatherSignal 과 동일 기준(최저<=0 또는 최고<=12). buildWeatherSignal 은 최고<=5
+  // 와 최고<=12 두 분기 모두 cold 로 밀어넣으므로 실질 기준이 <=12 → 6~12°C 맑은 날 '산책' 오재 방지.
+  if ((Number.isFinite(minTemp) && minTemp <= 0) || (Number.isFinite(maxTemp) && maxTemp <= 12)) {
+    return idx('cold');
+  }
+  if (CLOUD_WMO_CODES.includes(code)) return idx('cloud');
+  return idx('nice');
+}
+
+async function loadDustSignal(
+  location: { latitude: number; longitude: number },
+  targetDate: string | null,
+  timezone: string,
+): Promise<boolean> {
   const url = new URL('https://air-quality-api.open-meteo.com/v1/air-quality');
   url.searchParams.set('latitude', String(location.latitude));
   url.searchParams.set('longitude', String(location.longitude));
   url.searchParams.set('hourly', ['pm10', 'pm2_5'].join(','));
-  url.searchParams.set('timezone', 'Asia/Seoul');
-  url.searchParams.set('forecast_days', '1');
+  url.searchParams.set('timezone', timezone);
+  if (targetDate) {
+    url.searchParams.set('start_date', targetDate);
+    url.searchParams.set('end_date', targetDate);
+  } else {
+    url.searchParams.set('forecast_days', '1');
+  }
 
   try {
     const response = await fetch(url.toString(), {
@@ -587,6 +672,8 @@ tts.post('/generate', async (c) => {
     fortune_birth_time?: string;
     fortuneBirthTime?: string;
     birthTime?: string;
+    draft_preview?: boolean;
+    draftPreview?: boolean;
   }>();
 
   if (!body.voice_profile_id) {
@@ -603,7 +690,10 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  const category = normalizeTtsCategory(body.category ?? 'custom');
+  const draftPreviewRequested = body.draft_preview === true || body.draftPreview === true;
+  const category = normalizeTtsCategory(
+    draftPreviewRequested ? 'morning' : (body.category ?? 'custom'),
+  );
   if (!category) {
     return c.json(
       {
@@ -613,7 +703,7 @@ tts.post('/generate', async (c) => {
       400,
     );
   }
-  const randomRequested = body.random === true;
+  const randomRequested = !draftPreviewRequested && body.random === true;
   const randomContext = randomRequested
     ? normalizeRandomContextWithAliases(
         body.random_context ?? body.randomContext ?? body.random_mode ?? body.randomMode,
@@ -629,8 +719,9 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  let requestText =
-    randomRequested && randomContext === 'preset'
+  let requestText = draftPreviewRequested
+    ? draftPreviewText('ko')
+    : randomRequested && randomContext === 'preset'
       ? await pickRandomPresetText(c.env, category)
       : (body.text ?? '').trim();
   if (!requestText) {
@@ -652,6 +743,8 @@ tts.post('/generate', async (c) => {
   }
 
   let freePlanRestricted = false;
+  // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
+  let callerUserPlan: string | null = null;
   const user = await db.execute({
     sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
@@ -660,6 +753,7 @@ tts.post('/generate', async (c) => {
   if (user.rows.length > 0) {
     const u = user.rows[0]!;
     const plan = u.plan as string;
+    callerUserPlan = plan ?? null;
 
     // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
     // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
@@ -688,16 +782,46 @@ tts.post('/generate', async (c) => {
     );
   }
 
+  const isDraftVoice = Number(vp.is_draft ?? 0) === 1;
+  if (isDraftVoice && !draftPreviewRequested) {
+    return c.json(
+      {
+        error: 'Draft voices can only be used for their confirmation preview.',
+        error_code: 'VOICE_DRAFT_NOT_USABLE',
+      },
+      403,
+    );
+  }
+  if (!isDraftVoice && draftPreviewRequested) {
+    return c.json(
+      {
+        error: 'Only a private draft can use the confirmation preview.',
+        error_code: 'VOICE_PREVIEW_DRAFT_REQUIRED',
+      },
+      409,
+    );
+  }
+  const storedPreviewLanguage = normalizeSynthesisLanguage(
+    typeof vp.preview_language === 'string' ? vp.preview_language : 'ko',
+  );
+  if (draftPreviewRequested) requestText = draftPreviewText(storedPreviewLanguage);
+
   const isSystemVoice = Boolean(Number(vp.is_system ?? 0));
-  if (randomRequested && randomContext === 'preset') {
+  let draftPreviewListenerTitle: string | null = null;
+  if ((randomRequested && randomContext === 'preset') || draftPreviewRequested) {
     const isSharedVoiceProfileForPreset =
       typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
     const listenerTitle =
-      normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
+      (draftPreviewRequested
+        ? normalizeRelationshipLabel(vp.listener_title)
+        : normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle)) ??
       (isSharedVoiceProfileForPreset
-        ? await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)
+        ? await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'listener_title')
         : null) ??
       normalizeRelationshipLabel(vp.listener_title);
+    if (draftPreviewRequested) draftPreviewListenerTitle = listenerTitle ?? null;
+    // 미리듣기는 아래에서 관계·호칭 톤 적응 생성을 시도한다 — 여기서 만든 '고정 예문+호칭 접두어'는
+    // 생성 실패(Vertex 미설정/모델 오류) 시의 폴백 문구가 된다.
     requestText = presetTextWithListenerTitle(requestText, listenerTitle);
   }
   if (freePlanRestricted) {
@@ -744,16 +868,115 @@ tts.post('/generate', async (c) => {
   const missingTtsConsent = await missingConsentType(db, userPk, requiredSensitiveConsents);
   if (missingTtsConsent) return consentRequired(c, missingTtsConsent);
 
+  // 직접 입력(random 아님) = 유료 사용자가 문구를 직접 타이핑한 유료 생성 경로.
+  // 무료는 위(693-729)에서 이미 차단되므로 여기 도달하는 수동 요청은 유료 전용.
+  // 예약은 캐시 미스 뒤(합성 직전)에 하고, 예약됐는데 합성이 실패하면 catch 에서 환불.
+  const isManualGeneration = !randomRequested && !draftPreviewRequested && Boolean(resolvedUserPk);
+  let manualQuotaPoolKey: string | null = null;
+  let manualQuotaMonth: string | null = null;
+  let manualQuotaResult: { used: number; limit: number; remaining: number } | null = null;
+  let previewClaimed = false;
+  let activePreviewClaimToken: string | null = null;
+  let draftPreviewTag = 'cheerfully';
+
   try {
-    const requestedLanguage = normalizeSynthesisLanguage(body.language);
+    const requestedLanguage = draftPreviewRequested
+      ? storedPreviewLanguage
+      : normalizeSynthesisLanguage(body.language);
+
+    if (draftPreviewRequested) {
+      // 미리듣기 문구를 keep(승격) 후 사전렌더될 greeting 과 같은 seed 로 '관계·호칭 톤 적응' 생성한다
+      // — 사용자가 확정 전에 그 목소리의 실제 말투(관계에 맞는 어투 + 호칭)를 듣고 결정하게 하기 위함.
+      // 생성 문구는 요청마다 달라질 수 있으므로 첫 생성분을 draft 행(preview_text/preview_tag)에 영속해
+      // 재생을 결정적으로 만든다 — previewed_at 이후 재생은 캐시 히트로만 성립하므로 같은 문구가 필수.
+      // 관계/호칭 수정 시 previewed_at 과 함께 리셋돼 새 문구로 재생성된다(voice-profile PATCH).
+      // 실패(Vertex 미설정·모델 오류·검증 탈락) 시 위의 고정 예문(+호칭 접두어)으로 폴백해 미리듣기
+      // 자체는 절대 막지 않는다. Vertex(국외) 전송은 위 missingTtsConsent(overseas_transfer 포함) 통과
+      // 뒤에만 일어난다.
+      const storedText =
+        typeof vp.preview_text === 'string' && vp.preview_text.trim() ? vp.preview_text.trim() : null;
+      if (storedText) {
+        requestText = storedText;
+        const storedTag = typeof vp.preview_tag === 'string' ? vp.preview_tag.trim() : '';
+        if (storedTag) draftPreviewTag = storedTag;
+      } else if (vp.previewed_at) {
+        // 이미 확정(previewed_at)됐는데 저장 문구가 없는 draft = 이 기능 이전(또는 고정 폴백으로 확정).
+        // 그때 합성된 문구는 '고정 예문+호칭'이므로 새로 생성하면 캐시 키가 어긋나 재생이
+        // VOICE_PREVIEW_UNAVAILABLE 이 된다 → 생성하지 않고 고정 폴백을 유지해 재생 캐시 히트를 지킨다.
+      } else {
+        try {
+          const greetingSeed = CLONE_CLIP_SEEDS.find((s) => s.category === STOCK_GREETING_CATEGORY);
+          if (greetingSeed) {
+            const generated = await generatePrerenderClipText(c.env, {
+              seed: greetingSeed.seeds[0]!,
+              relationshipLabel: normalizeRelationshipLabel(vp.relationship_label) ?? null,
+              listenerTitle: draftPreviewListenerTitle,
+              targetLanguage: storedPreviewLanguage,
+              defaultTag: greetingSeed.defaultTag,
+              // 등록 녹음에서 분석한 화자 말투(사투리 등) — 미리듣기 문구를 그 말투로.
+              speechStyle: parseSpeechStyle(vp.speech_style),
+            });
+            requestText = generated.text;
+            if (generated.tag) draftPreviewTag = generated.tag;
+            // 합성 전에 영속: 합성이 실패해도 재시도가 같은 문구를 쓰게(중복 생성 방지 + 캐시 정합).
+            // 조건부(비어있을 때만) 쓰기 = first-writer-wins: 동시 첫-미리듣기 요청이 겹쳐도 늦은 쪽이
+            // 이미 영속된(재생될) 문구를 덮어써 재생 결정성을 깨지 못한다. 지면 승자 문구를 재사용.
+            // 페르소나 predicate(관계/호칭, preview claim 과 동일 기준): 생성 왕복 중 관계·호칭이
+            // 편집됐으면 옛 페르소나로 만든 문구를 저장하지 않는다(써 두면 다음 미리듣기가 재사용).
+            // previewed_at/claim 가드: 다른 요청이 이미 확정했거나(폴백 문구로 합성됐을 수 있음)
+            // 활성 claim 으로 합성 중이면 저장하지 않는다 — 늦은 영속이 '실제 합성된 문구'와 다른
+            // 문구를 남겨 재생 캐시 키를 어긋내는 것 방지(claim 과 동일한 5분 lease 기준).
+            const persisted = await db.execute({
+              sql: `UPDATE voice_profiles
+                    SET preview_text = ?, preview_tag = ?, updated_at = datetime('now')
+                    WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                      AND COALESCE(is_draft, 0) = 1
+                      AND COALESCE(relationship_label, '') = ?
+                      AND COALESCE(listener_title, '') = ?
+                      AND COALESCE(preview_text, '') = ''
+                      AND previewed_at IS NULL
+                      AND (preview_claimed_at IS NULL
+                        OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
+              args: [
+                generated.text,
+                draftPreviewTag,
+                body.voice_profile_id,
+                userPk,
+                userId,
+                String(vp.relationship_label ?? ''),
+                String(vp.listener_title ?? ''),
+              ],
+            });
+            if ((persisted.rowsAffected ?? 0) === 0) {
+              const winner = await db.execute({
+                sql: `SELECT preview_text, preview_tag FROM voice_profiles
+                      WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                      LIMIT 1`,
+                args: [body.voice_profile_id, userPk, userId],
+              });
+              const winnerRow = winner.rows[0];
+              const winnerText =
+                typeof winnerRow?.preview_text === 'string' ? winnerRow.preview_text.trim() : '';
+              if (winnerText) {
+                requestText = winnerText;
+                const winnerTag =
+                  typeof winnerRow?.preview_tag === 'string' ? winnerRow.preview_tag.trim() : '';
+                draftPreviewTag = winnerTag || 'cheerfully';
+              }
+            }
+          }
+        } catch {
+          // 고정 예문 폴백 유지 (requestText 는 이미 예문+호칭으로 설정돼 있음)
+        }
+      }
+    }
 
     // 국외 이전 동의(B4): 동적 문구 생성(wake_weather/wake_fortune 등)과 번역은
     // 텍스트를 국외(Google Vertex)로 전송하므로 overseas_transfer 동의가 필요하다.
     // 동의가 없으면 해당 크로스보더 경로를 차단(403)한다. 프리셋·동일언어 비번역
     // 합성은 국외 이전이 없어 게이트 대상이 아니다.
-    let dynamicGenerated: Awaited<
-      ReturnType<typeof generateDynamicAlarmTextWithVertex>
-    > | null = null;
+    let dynamicGenerated: Awaited<ReturnType<typeof generateDynamicAlarmTextWithVertex>> | null =
+      null;
     if (randomRequested && randomContext !== 'preset') {
       const alarmHour = optionalInt(body.alarm_hour ?? body.alarmHour, 0, 23);
       const alarmMinute = optionalInt(body.alarm_minute ?? body.alarmMinute, 0, 59);
@@ -766,11 +989,11 @@ tts.post('/generate', async (c) => {
         typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
       const relationshipLabel =
         normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
-        (await findViewerRelationshipLabel(db, userPk, userId, body.voice_profile_id)) ??
+        (await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'relationship_label')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.relationship_label));
       const listenerTitle =
         normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
-        (await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)) ??
+        (await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'listener_title')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.listener_title));
       const weatherSignal = randomContextUsesWeather(randomContext)
         ? await loadWeatherSignal({
@@ -789,8 +1012,6 @@ tts.post('/generate', async (c) => {
             ),
           })
         : null;
-      // 화자 성별·어체 격식은 voice_profiles 행에서 읽는다(목소리 고유 속성). 공유 프로필도
-      // 소유자 행이므로 그대로 사용한다.
       const generated = await generateDynamicAlarmTextWithVertex(c.env, {
         mode: randomContext,
         category,
@@ -799,8 +1020,6 @@ tts.post('/generate', async (c) => {
         relationshipLabel,
         listenerTitle,
         weatherSignal,
-        voiceGender: normalizeVoiceGender(vp.voice_gender),
-        speechFormality: normalizeSpeechFormality(vp.speech_formality),
         fortuneProfile:
           randomContext === 'wake_fortune'
             ? fortuneProfile({
@@ -849,14 +1068,26 @@ tts.post('/generate', async (c) => {
     // 2차 Vertex 호출(prepareAlarmTextWithVertex autoTag) 없이 [tag] +text 를 직접 조립한다.
     // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
     let prepared: { text: string; translated: boolean; tags: string[] };
-    if (dynamicGenerated) {
-      const dynamicTag = dynamicGenerated.tags[0] ?? '';
-      const taggedText = dynamicTag ? `[${dynamicTag}] ${dynamicGenerated.text}` : dynamicGenerated.text;
-      // 태그를 붙인 길이가 200자를 넘으면 태그를 버린다 — 이때 tags 배열도 비워서
-      // DB delivery_tags/캐시 메타와 실제 합성 텍스트가 어긋나지 않게 한다.
-      const tagApplied = dynamicTag !== '' && taggedText.length <= 200;
+    if (draftPreviewRequested) {
+      // 톤 적응 생성이 성공했으면 그 delivery 태그를, 폴백(고정 예문)이면 기본 cheerfully 를 쓴다.
+      // 태그는 문장마다 다시 앞세워 끝까지 톤을 고정하고, 상한 초과 시 태그 없이 폴백한다
+      // (그때 tags 배열도 비워 메타와 합성 텍스트를 일치시킨다).
+      // 상한 200 = 아래 synthesisText 200자 검증과 동일 값 — 기본 300을 쓰면 태그 부착으로
+      // 200을 넘긴 텍스트가 폴백 없이 통과했다가 뒤늦게 TEXT_TOO_LONG 으로 거부된다.
+      const taggedText = applyDeliveryTagPerSentence(draftPreviewTag, requestText, 200);
+      const tagApplied = taggedText !== requestText;
       prepared = {
-        text: tagApplied ? taggedText : dynamicGenerated.text,
+        text: taggedText,
+        translated: false,
+        tags: tagApplied ? [draftPreviewTag] : [],
+      };
+    } else if (dynamicGenerated) {
+      const dynamicTag = dynamicGenerated.tags[0] ?? '';
+      // 상한 200: 위 draft 미리듣기 경로와 동일 — 태그 부착이 200자 검증을 넘기지 않게 한다.
+      const taggedText = applyDeliveryTagPerSentence(dynamicTag, dynamicGenerated.text, 200);
+      const tagApplied = dynamicTag !== '' && taggedText !== dynamicGenerated.text;
+      prepared = {
+        text: taggedText,
         translated: false,
         tags: tagApplied ? [dynamicTag] : [],
       };
@@ -871,7 +1102,14 @@ tts.post('/generate', async (c) => {
       });
     }
     const synthesisText = prepared.text;
-    const messageText = requestText;
+    // 표시/저장 문구(messageText): 실제 음성 텍스트(synthesisText, 번역됐으면 번역본)에서
+    // '우리가 자동으로 맨 앞에 붙인 delivery 태그'만 벗긴 값. requestText 에 사용자가 친 대괄호가
+    // 있으면 자동 태그가 아니므로 원문 보존, 없으면 맨 앞 태그 1개만 제거한다(deriveAlarmDisplayText).
+    // → (1) 번역 경로에서도 화면 문구가 음성 언어와 일치하고, (2) '[after lunch]'·'[calm]'만 입력 등
+    //   사용자 대괄호가 안 지워지며, (3) 모델이 붙인 비승인 태그도 화면엔 새지 않는다.
+    const messageText = dynamicGenerated
+      ? dynamicGenerated.text
+      : deriveAlarmDisplayText(synthesisText, requestText);
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.
@@ -937,6 +1175,39 @@ tts.post('/generate', async (c) => {
       }),
     );
 
+    if (draftPreviewRequested && !vp.previewed_at) {
+      const previewClaimToken = crypto.randomUUID();
+      const claimed = await db.execute({
+        sql: `UPDATE voice_profiles
+              SET preview_claimed_at = datetime('now'), preview_claim_token = ?,
+                  updated_at = datetime('now')
+              WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                AND COALESCE(is_draft, 0) = 1 AND status = 'ready' AND previewed_at IS NULL
+                AND COALESCE(relationship_label, '') = ?
+                AND COALESCE(listener_title, '') = ?
+                AND (preview_claimed_at IS NULL OR preview_claimed_at <= datetime('now', '-5 minutes'))`,
+        args: [
+          previewClaimToken,
+          body.voice_profile_id,
+          userPk,
+          userId,
+          String(vp.relationship_label ?? ''),
+          String(vp.listener_title ?? ''),
+        ],
+      });
+      if ((claimed.rowsAffected ?? 0) === 0) {
+        return c.json(
+          {
+            error: 'Voice preview is already being prepared.',
+            error_code: 'VOICE_PREVIEW_IN_PROGRESS',
+          },
+          409,
+        );
+      }
+      previewClaimed = true;
+      activePreviewClaimToken = previewClaimToken;
+    }
+
     for (const { cacheKey } of preparedAttempts) {
       // 시스템 보이스는 (보이스 × 문구)당 단 한 번만 생성되도록 전체 사용자가
       // 캐시를 공유한다 — 무료 플랜의 한계 비용을 0에 가깝게 유지.
@@ -944,6 +1215,25 @@ tts.post('/generate', async (c) => {
         anyUser: isSystemVoice,
       });
       if (cached) {
+        if (draftPreviewRequested && activePreviewClaimToken) {
+          const marked = await db.execute({
+            sql: `UPDATE voice_profiles SET preview_claimed_at = NULL,
+                        updated_at = datetime('now')
+                  WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                    AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
+                    AND preview_claim_token = ?`,
+            args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+          });
+          if ((marked.rowsAffected ?? 0) === 0) {
+            return c.json(
+              {
+                error: 'Voice draft is no longer available.',
+                error_code: 'VOICE_PROFILE_NOT_FOUND',
+              },
+              409,
+            );
+          }
+        }
         return c.json(
           {
             message_id: cached.messageId,
@@ -962,10 +1252,47 @@ tts.post('/generate', async (c) => {
             cache_key: cacheKey,
             cache_hit: true,
             random_context: randomRequested ? randomContext : null,
+            preview_playback_token: activePreviewClaimToken,
+            preview_playback_confirmed: Boolean(vp.previewed_at),
           },
           200,
         );
       }
+    }
+
+    if (draftPreviewRequested && !previewClaimed) {
+      if (vp.previewed_at) {
+        return c.json(
+          {
+            error: 'The saved preview audio is no longer available.',
+            error_code: 'VOICE_PREVIEW_UNAVAILABLE',
+          },
+          409,
+        );
+      }
+    }
+
+    // 캐시 미스 확정 후 합성 직전에 직접 입력 월 쿼터를 예약(원자적 +1). 초과면 429.
+    if (isManualGeneration) {
+      const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+      const reservation = await reserveManualTtsQuota(db, pool.poolKey, pool.limit);
+      if (!reservation.ok) {
+        return c.json(
+          {
+            error: '이번 달 직접 입력 문구 만들기 횟수를 모두 사용했어요.',
+            error_code: 'MANUAL_TTS_QUOTA_EXCEEDED',
+            manual_quota: { limit: reservation.limit, used: reservation.used, remaining: 0 },
+          },
+          429,
+        );
+      }
+      manualQuotaPoolKey = pool.poolKey;
+      manualQuotaMonth = reservation.month;
+      manualQuotaResult = {
+        used: reservation.used,
+        limit: reservation.limit,
+        remaining: reservation.remaining,
+      };
     }
 
     let lastError: unknown = noVoiceProviderError();
@@ -989,56 +1316,106 @@ tts.post('/generate', async (c) => {
         }
 
         const messageId = crypto.randomUUID();
-        await db.execute({
-          sql: `INSERT INTO messages
+        try {
+          await withWriteTransaction(db, async (tx) => {
+            const publicationVoice = await findUsableVoiceProfile(
+              tx,
+              userId,
+              userPk,
+              body.voice_profile_id,
+            );
+            if (
+              !publicationVoice ||
+              publicationVoice.status !== 'ready' ||
+              (Number(publicationVoice.is_draft ?? 0) === 1) !== draftPreviewRequested
+            ) {
+              throw new VoiceAuthorizationChangedDuringTtsError();
+            }
+            const missingPublicationConsent = await missingConsentType(
+              tx,
+              userPk,
+              requiredSensitiveConsents,
+            );
+            if (missingPublicationConsent) {
+              throw new ConsentWithdrawnDuringTtsError(missingPublicationConsent);
+            }
+            await tx.execute({
+              sql: `INSERT INTO messages
                 (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json, category, audio_url)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [
-            messageId,
-            userPk,
-            body.voice_profile_id,
-            messageText,
-            synthesisText,
-            deliveryTagsJson,
-            category,
-            audioUrl,
-          ],
-        });
+              args: [
+                messageId,
+                userPk,
+                body.voice_profile_id,
+                messageText,
+                synthesisText,
+                deliveryTagsJson,
+                category,
+                audioUrl,
+              ],
+            });
 
-        if (audioUrl) {
-          await db.execute({
-            sql: `INSERT OR IGNORE INTO generated_audio_assets
+            if (audioUrl) {
+              await tx.execute({
+                sql: `INSERT OR IGNORE INTO generated_audio_assets
                   (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
                    model_id, language, request_hash, text, original_text, delivery_tags_json, category, audio_url,
                    audio_object_key, audio_format, mime_type, size_bytes)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            args: [
-              crypto.randomUUID(),
-              userPk,
-              body.voice_profile_id,
-              messageId,
-              generated.provider,
-              generated.providerVoiceId,
-              generated.modelId,
-              synthesisLanguage,
-              cacheKey,
-              synthesisText,
-              messageText,
-              deliveryTagsJson,
-              category,
-              audioUrl,
-              audioObjectKey,
-              generated.outputFormat,
-              generated.mimeType,
-              bytes.byteLength,
-            ],
-          });
-        }
+                args: [
+                  crypto.randomUUID(),
+                  userPk,
+                  body.voice_profile_id,
+                  messageId,
+                  generated.provider,
+                  generated.providerVoiceId,
+                  generated.modelId,
+                  synthesisLanguage,
+                  cacheKey,
+                  synthesisText,
+                  messageText,
+                  deliveryTagsJson,
+                  category,
+                  audioUrl,
+                  audioObjectKey,
+                  generated.outputFormat,
+                  generated.mimeType,
+                  bytes.byteLength,
+                ],
+              });
+            }
 
-        await db.execute({
-          sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
-          args: [crypto.randomUUID(), userPk, messageId],
-        });
+            if (!draftPreviewRequested) {
+              await tx.execute({
+                sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
+                args: [crypto.randomUUID(), userPk, messageId],
+              });
+            }
+
+            if (draftPreviewRequested) {
+              const marked = await tx.execute({
+                sql: `UPDATE voice_profiles SET preview_claimed_at = NULL,
+                        updated_at = datetime('now')
+                  WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
+                    AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
+                    AND preview_claim_token = ?`,
+                args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+              });
+              if ((marked.rowsAffected ?? 0) === 0) {
+                throw new Error('Voice draft is no longer available.');
+              }
+            }
+          });
+        } catch (publicationError) {
+          if (audioObjectKey && c.env.VOICE_BUCKET) {
+            try {
+              await new R2VoiceStorage(c.env.VOICE_BUCKET).delete(audioObjectKey);
+            } catch {
+              await enqueueExternalDeletion(db, 'r2_object', audioObjectKey);
+            }
+          }
+          throw publicationError;
+        }
 
         return c.json(
           {
@@ -1058,6 +1435,9 @@ tts.post('/generate', async (c) => {
             cache_key: cacheKey,
             cache_hit: false,
             random_context: randomRequested ? randomContext : null,
+            manual_quota: manualQuotaResult,
+            preview_playback_token: activePreviewClaimToken,
+            preview_playback_confirmed: false,
           },
           201,
         );
@@ -1070,6 +1450,28 @@ tts.post('/generate', async (c) => {
 
     throw lastError;
   } catch (err) {
+    // 쿼터를 예약했는데 합성이 끝내 실패했으면 카운터를 되돌린다(실패는 소비 안 함).
+    // 예약이 증가시킨 바로 그 월로 환불(월 경계를 넘겨 실패해도 정확히 복구).
+    if (manualQuotaPoolKey && manualQuotaMonth) {
+      try {
+        await refundManualTtsQuota(db, manualQuotaPoolKey, manualQuotaMonth);
+      } catch (refundErr) {
+        console.error('[tts/generate] manual quota refund failed', refundErr);
+      }
+    }
+    if (previewClaimed) {
+      try {
+        await db.execute({
+          sql: `UPDATE voice_profiles SET preview_claimed_at = NULL, preview_claim_token = NULL,
+                      updated_at = datetime('now')
+                WHERE id = ? AND user_id IN (?, ?) AND COALESCE(is_draft, 0) = 1
+                  AND previewed_at IS NULL AND preview_claim_token = ?`,
+          args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+        });
+      } catch (previewReleaseError) {
+        console.error('[tts/generate] failed to release preview claim', previewReleaseError);
+      }
+    }
     console.error(
       '[tts/generate] failed',
       err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : err,
@@ -1081,6 +1483,18 @@ tts.post('/generate', async (c) => {
           error_code: 'TRANSLATION_NOT_CONFIGURED',
         },
         503,
+      );
+    }
+    if (err instanceof ConsentWithdrawnDuringTtsError) {
+      return consentRequired(c, err.consent);
+    }
+    if (err instanceof VoiceAuthorizationChangedDuringTtsError) {
+      return c.json(
+        {
+          error: 'Voice authorization changed while generating audio.',
+          error_code: 'VOICE_AUTHORIZATION_CHANGED',
+        },
+        409,
       );
     }
     if (err instanceof AlarmTextPreparationInvalidError) {
@@ -1101,15 +1515,41 @@ tts.post('/generate', async (c) => {
         502,
       );
     }
+    // K1: 제공자(ElevenLabs/Vertex) 응답 원문을 detail 로 반사하지 않는다. 원문은 위
+    // console.error 로만 남기고, 응답에는 안정 에러코드만 노출한다.
     return c.json(
       {
         error: 'TTS generation failed',
         error_code: 'TTS_GENERATION_FAILED',
-        detail: err instanceof Error ? err.message : 'Unknown error',
+        detail: 'TTS_GENERATION_FAILED',
       },
       500,
     );
   }
+});
+
+// 이번 달 직접 입력 문구 만들기 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). 소비 없음.
+tts.get('/manual-quota', async (c) => {
+  const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
+  const db = getDB(c.env);
+
+  const userRow = await db.execute({
+    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    args: ownerIds,
+  });
+  const callerUserPlan =
+    userRow.rows.length > 0 && userRow.rows[0]!.plan != null ? String(userRow.rows[0]!.plan) : null;
+
+  const pool = await resolveManualTtsPool(db, ownerIds, userPk, callerUserPlan);
+  const used = pool.limit > 0 ? await readManualTtsUsage(db, pool.poolKey) : 0;
+  return c.json({
+    plan_key: pool.planKey,
+    limit: pool.limit,
+    used,
+    remaining: Math.max(0, pool.limit - used),
+  });
 });
 
 tts.get('/messages', async (c) => {
@@ -1122,8 +1562,23 @@ tts.get('/messages', async (c) => {
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10) || 50, 1), 100);
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
 
-  let whereClause = 'WHERE m.user_id IN (?, ?)';
-  const filterArgs: (string | number)[] = [...ownerIds];
+  // /tts/messages 는 사용자가 '저장한 문구' 라이브러리(message_library)만 반환한다. messages 테이블에는
+  // 내부 프리셋 버킷 클립(is_preset=1), 드래프트 미리듣기(승격 후 non-draft 로 노출), 알람 raw 플레이스홀더,
+  // 가족 수신 클립 등 저장 문구가 아닌 내부 행이 섞이는데 이들은 message_library 에 등록되지 않는다 →
+  // 라이브러리 멤버십으로 거른다. (is_preset 은 라이브러리에 없어 이미 제외되지만, 명시적 가드로도 남긴다.)
+  let whereClause = `WHERE m.user_id IN (?, ?)
+    AND EXISTS (
+      SELECT 1 FROM message_library ml
+      WHERE ml.message_id = m.id AND ml.user_id IN (?, ?)
+    )
+    AND COALESCE(m.is_preset, 0) = 0
+    AND EXISTS (
+      SELECT 1 FROM voice_profiles visible_vp
+      WHERE visible_vp.id = m.voice_profile_id
+        AND visible_vp.deleted_at IS NULL
+        AND COALESCE(visible_vp.is_draft, 0) = 0
+    )`;
+  const filterArgs: (string | number)[] = [...ownerIds, ...ownerIds];
 
   if (category) {
     whereClause += ' AND m.category = ?';
@@ -1177,6 +1632,12 @@ tts.get('/messages/:id/audio', async (c) => {
                  delivery_tags_json, audio_url, category
           FROM messages
           WHERE id = ?
+            AND EXISTS (
+              SELECT 1 FROM voice_profiles visible_vp
+              WHERE visible_vp.id = messages.voice_profile_id
+                AND visible_vp.deleted_at IS NULL
+                AND COALESCE(visible_vp.is_draft, 0) = 0
+            )
             AND (
               user_id IN (?, ?)
               OR EXISTS (
@@ -1247,6 +1708,21 @@ tts.delete('/messages/:id', async (c) => {
 
   if (!UUID_RE.test(id)) {
     return c.json({ error: 'Invalid message ID format', error_code: 'INVALID_MESSAGE_ID' }, 400);
+  }
+
+  // 내부 프리셋 버킷 클립은 삭제 금지 — 삭제하면 /tts/stock-clips 오프라인 버킷이 불완전해진다.
+  // R2/asset 삭제 부수효과가 아래에서 먼저 실행되므로, 반드시 그 전에 early-return 으로 막는다
+  // (messages DELETE 에만 is_preset 가드를 걸면 오디오가 이미 지워진 뒤 404 로 no-op 됨).
+  const presetCheck = await db.execute({
+    sql: `SELECT COALESCE(is_preset, 0) AS is_preset FROM messages
+          WHERE id = ? AND user_id IN (?, ?)`,
+    args: [id, ...ownerIds],
+  });
+  if (presetCheck.rows.length > 0 && Number(presetCheck.rows[0]!.is_preset) === 1) {
+    return c.json(
+      { error: 'Preset stock clips cannot be deleted.', error_code: 'MESSAGE_PRESET_LOCKED' },
+      403,
+    );
   }
 
   const alarmCheck = await db.execute({
@@ -1328,20 +1804,23 @@ tts.get('/presets', async (c) => {
 
 // 무료 플랜용 스톡(미리 만든) 알람 클립 목록. 시스템 보이스로 서버에서 합성해 둔
 // 고정 클립을 보이스 × 언어 × 카테고리로 노출한다. 오디오는 message_id 로
-// GET /tts/messages/:id/audio 에서 받는다 (스톡은 모든 사용자가 조회 가능).
+// 오디오 자체는 GET /tts/messages/:id/audio 에서 받는다. 시스템 스톡은 모든 사용자가 조회
+// 가능하고, 유료 클론 사전렌더 클립은 '소유자 본인'에게만 노출한다(is_system=0·실소유자 user_id).
 tts.get('/stock-clips', async (c) => {
   const db = getDB(c.env);
+  const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
                  m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name
           FROM messages m
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1
-            AND COALESCE(vp.is_system, 0) = 1
+            AND (COALESCE(vp.is_system, 0) = 1 OR m.user_id IN (?, ?))
             AND vp.deleted_at IS NULL
             AND m.audio_url IS NOT NULL
           ORDER BY vp.id ASC, m.category ASC, m.language ASC, m.variant ASC`,
-    args: [],
+    args: [userPk, userId],
   });
   return c.json({
     clips: result.rows.map((row) => ({
@@ -1356,6 +1835,27 @@ tts.get('/stock-clips', async (c) => {
       tags: parseDeliveryTags(row.delivery_tags_json),
     })),
   });
+});
+
+// 사전렌더 클론 버킷(날씨/운세)의 '어느 variant 를 틀지' 인덱스만 서버가 resolve 한다. 클라는
+// 발사 전날 준비창(온라인)에서 이걸 호출해 알람에 인덱스를 스냅샷하고, 발사는 오프라인 lookup 만
+// 한다(발사 순간 네트워크 0). 오디오는 이미 로컬 캐시돼 있으므로 여기서 생성/전송하지 않는다.
+tts.get('/prerender-variant', async (c) => {
+  const context = c.req.query('context') ?? '';
+  if (context === 'wake_weather') {
+    const input = await loadWeatherSignalInput({
+      country: c.req.query('country'),
+      city: c.req.query('city'),
+      targetDate: c.req.query('target_date'),
+      timezone: c.req.query('timezone'),
+    });
+    // 날씨 조회 실패(open-meteo 불통·위치 미상 등)면 null 을 돌려, 클라가 '맑음(index 0)'과
+    // '해결 실패'를 구분해 잘못된 스냅샷을 저장하지 않게 한다.
+    return c.json({ context, variant_index: input ? resolvePrerenderWeatherIndex(input) : null });
+  }
+  // 운세는 클라가 사주+날짜로 온디바이스 결정(fortuneThemeIndex)한다. 그 외(love/medication 회전)도
+  // 서버 인덱스 불필요.
+  return c.json({ context, variant_index: null });
 });
 
 async function findCachedGeneratedAudio(

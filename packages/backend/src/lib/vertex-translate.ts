@@ -45,9 +45,6 @@ export type WeatherAction = 'umbrella' | 'mask' | 'coat' | 'water' | 'walk';
 export type WeatherCondition = { kind: WeatherConditionKind; action: WeatherAction };
 export type WeatherSignal = { conditions: WeatherCondition[] };
 
-export type VoiceGender = 'male' | 'female' | 'neutral';
-export type SpeechFormality = 'auto' | 'polite';
-
 export type DynamicAlarmTextContext = {
   mode: DynamicAlarmTextMode;
   category: string;
@@ -59,8 +56,6 @@ export type DynamicAlarmTextContext = {
   fortuneProfile?: string | null;
   mealLabel?: string | null;
   alarmTimeLabel?: string | null;
-  voiceGender?: VoiceGender | null;
-  speechFormality?: SpeechFormality | null;
 };
 
 export class AlarmTextTranslationUnavailableError extends Error {
@@ -256,7 +251,7 @@ export async function generateDynamicAlarmTextWithVertex(
 ): Promise<AlarmTextPreparation> {
   const fallback = dynamicAlarmTextPreparationFallback(context);
 
-  if (!hasGeminiConfiguration(env)) {
+  if (!isDynamicVertexTextEnabled(env) || !hasGeminiConfiguration(env)) {
     return fallback;
   }
 
@@ -318,21 +313,6 @@ function dynamicTextHardFailure(text: string, context: DynamicAlarmTextContext):
     return true;
   }
   return false;
-}
-
-export async function translateTextWithVertex(
-  env: Env,
-  text: string,
-  targetLanguage: string,
-  sourceLanguage = 'ko',
-): Promise<string> {
-  const prepared = await prepareAlarmTextWithVertex(env, text, {
-    targetLanguage,
-    sourceLanguage,
-    translate: true,
-    autoTag: false,
-  });
-  return prepared.text;
 }
 
 function readVertexCredentials(env: Env): Required<
@@ -399,60 +379,6 @@ async function createAccessToken(
     );
   }
   return json.access_token;
-}
-
-export async function generateTranslation(args: {
-  env: Env;
-  credentials: ReturnType<typeof readVertexCredentials>;
-  accessToken: string;
-  text: string;
-  targetLanguage: string;
-  sourceLanguage: string;
-}): Promise<string> {
-  const location = args.env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
-  const model = args.env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
-  const endpoint =
-    `https://aiplatform.googleapis.com/v1/projects/${args.credentials.project_id}` +
-    `/locations/${location}/publishers/google/models/${model}:generateContent`;
-  const targetName = LANGUAGE_NAMES[args.targetLanguage] || args.targetLanguage;
-  const sourceName = LANGUAGE_NAMES[args.sourceLanguage] || args.sourceLanguage;
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    signal: AbortSignal.timeout(15000),
-    headers: {
-      authorization: `Bearer ${args.accessToken}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text:
-                `Translate the following alarm message from ${sourceName} to ${targetName}. ` +
-                'Return only the translated sentence, with no explanation, no markdown, and no quotes.\n\n' +
-                args.text,
-            },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0,
-        maxOutputTokens: 256,
-      },
-    }),
-  });
-  const json: VertexGenerateContentResponse & { error?: { message?: string } } = await response
-    .json<VertexGenerateContentResponse & { error?: { message?: string } }>()
-    .catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(json.error?.message || `Vertex translation failed (${response.status})`);
-  }
-  return (json.candidates?.[0]?.content?.parts?.[0]?.text || '')
-    .trim()
-    .replace(/^["“”]+|["“”]+$/g, '');
 }
 
 type GenerateContentConfig = {
@@ -718,8 +644,8 @@ Korean's polite 해요체 into Japanese.
 終助詞 (the core of natural warmth; choose to match intonation, don't stack): ね = empathy/shared
 feeling (soft); よ = telling/gently urging; な/なあ = soft self-musing; よね/の = soft confirmation.
 Vary them; don't end every sentence with よ.
-GENDER: default GENDER-NEUTRAL ね/よ. Only LIGHTLY shade by the provided voice gender (e.g.
-first-person 私/僕/俺 when used). Do NOT use 役割語/manga-style gendered finals (わ/かしら/ぞ/だぜ) —
+GENDER: stay GENDER-NEUTRAL ね/よ. Prefer pro-drop over any first-person pronoun; if one is truly
+needed, neutral 私 (or omit it). Do NOT use 役割語/manga-style gendered finals (わ/かしら/ぞ/だぜ) —
 modern speakers rarely say them and they sound unnatural.
 PRO-DROP (strong): omit 私/僕/俺/あなた/君 when context is clear; keep first-person consistent if used.
 LOANWORDS/NAMES: natural katakana (コーヒー, マスク, ストレッチ); never literal English calques
@@ -797,32 +723,17 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   const listenerInstruction = listenerTitle
     ? `When addressing the listener, call them "${listenerTitle}" exactly (use this label naturally, do not translate it, and never replace it with grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
     : 'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter. Use a neutral greeting instead.';
-  // speech_formality='polite'면 관계 기반 반말 가이드를 끄고 해요체/です·ます로 격상한다(아래 override).
-  const isPolite = context.speechFormality === 'polite';
+  // 어체는 관계 기반(auto)으로만 결정한다.
   const koreanRegisterInstruction =
-    context.targetLanguage === 'ko' && !isPolite
+    context.targetLanguage === 'ko'
       ? koreanRegisterGuidance(context.relationshipLabel?.trim())
       : '';
   const relationship = context.relationshipLabel?.trim()
     ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. Use this only to choose a natural speech register and warmth. Never mention the relationship label in the text, and never write phrases like "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", or "speaking as your ${context.relationshipLabel}". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const romanticToneInstruction =
-    context.targetLanguage === 'ko' && !isPolite && isRomanticRelationship(context.relationshipLabel)
+    context.targetLanguage === 'ko' && isRomanticRelationship(context.relationshipLabel)
       ? 'Romantic partner/spouse tone: the line should sound like something an actual boyfriend, girlfriend, wife, or husband would say privately to the listener. Use intimate 반말, not 해요체 or 합니다체, even for spouse labels such as 아내 or 남편. Good examples: "여보, 날씨 좋대. 잠깐 산책 가도 좋겠다", "자기야, 오늘 작은 행운이 온대". Bad examples: "여보, 날씨가 좋대요", "자기야, 일어나세요". Make it tender, warm, and lightly heart-fluttering, but still short and usable as an alarm. Do not become cheesy, poetic, possessive, or overly dramatic. Never mention new romantic connections, romance luck, flirting with others, jealousy, or phrases like "나만 생각해".'
-      : '';
-  // 어체 격상 override + 일본어 화자 성별(1인칭) 보정.
-  const formalityInstruction = isPolite
-    ? context.targetLanguage === 'ja'
-      ? 'POLITENESS OVERRIDE: use polite です・ます for the whole line even if the relationship would normally be casual タメ口 — never stiff ビジネス敬語/文語. This overrides any casual examples elsewhere.'
-      : context.targetLanguage === 'ko'
-        ? 'POLITENESS OVERRIDE: use warm 해요체 (존대) for the whole line even if the relationship would normally be 반말 — never 합니다체/문어체. This overrides any casual examples elsewhere.'
-        : ''
-    : '';
-  const japaneseGenderInstruction =
-    context.targetLanguage === 'ja' && context.voiceGender
-      ? context.voiceGender === 'male'
-        ? 'VOICE GENDER: the speaker is male — keep strong pro-drop, but if a first-person pronoun is truly needed, 僕 or 俺 sounds natural. Never use 役割語/manga-style gendered finals (わ/かしら/ぞ/だぜ).'
-        : `VOICE GENDER: the speaker is ${context.voiceGender} — keep strong pro-drop; if a first-person pronoun is truly needed, use 私 (or omit it). Never use 役割語/manga-style gendered finals (わ/かしら/ぞ/だぜ).`
       : '';
   const modeInstruction = (() => {
     if (context.mode === 'wake_weather') {
@@ -861,8 +772,6 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
     languageBlock,
-    formalityInstruction,
-    japaneseGenderInstruction,
     `Internal date context for freshness only, do not mention it in the final text: ${context.dateLabel}.`,
     context.alarmTimeLabel ? `Alarm time context: ${context.alarmTimeLabel}.` : '',
     `Alarm category: ${context.category}.`,
@@ -874,10 +783,10 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
       : 'For example, if the relationship label is "손녀", do not write "할머니" or "할아버지"; use a neutral greeting instead.',
     'Do not announce the relationship or source of the voice. Avoid phrases like "손녀 목소리로 전해요"; the alarm should sound like a natural alarm line.',
     'Do not mention the exact date, weekday, alarm time, country, city, district, or saved location label unless the user explicitly wrote it as part of the alarm text.',
-    context.targetLanguage === 'ko' && !isPolite
+    context.targetLanguage === 'ko'
       ? '한국어 어체 규칙: 가족·친구·연인·배우자 관계에서는 절대 "~합니다", "~하십시오" 같은 합니다체를 쓰지 말 것. 손녀·손자·손주→조부모는 친근하지만 공손한 해요체와 존대 동사를 써서 "할머니, 일어나실 시간이에요"처럼 말하고, "할머니, 일어날 시간이에요"처럼 낮춰 들리는 표현은 피한다. 자식→부모는 친근한 해요체 ("~해요", "~예요"). 부모→자식은 다정한 반말 또는 해요체 혼용. 형제·자매·친구 사이는 반말. 연인·남자친구·여자친구·아내·남편·배우자는 사적인 반말과 따뜻하고 살짝 설레는 톤. 뉴스 앵커처럼 들리지 않게 진짜 사람이 옆에서 말하는 톤으로.'
       : '',
-    context.targetLanguage === 'ko' && !isPolite
+    context.targetLanguage === 'ko'
       ? '문장 구조 예시 (wake_weather): "할아버지, 일어나실 시간이에요. 오늘은 비가 올 수 있대요. 나가실 때 우산 꼭 챙기세요." / "할머니, 좋은 아침이에요. 미세먼지가 많대요. 외출하실 때 마스크 챙기세요." / "자기야, 일어나자. 비 온대. 나가기 전에 우산 챙겨, 감기 걸리면 안 돼." / "일어나실 시간이에요. 날씨가 좋대요. 잠깐 산책 가기에도 딱이에요." — 위치/날짜/관계/숫자 없이 시작해서, 날씨 상태와 그에 맞는 행동 권유를 한두 마디로 자연스럽게 묶고 짧게 마무리. "예보 보니까" 같은 출처 도입은 선택 사항이며, 강수확률·기온 숫자를 그대로 읽는 패턴은 금지. 손녀→할아버지처럼 손아랫사람이 손윗사람에게 말할 때는 "오늘은 비가 올 수 있대요", "나가실 때 우산 꼭 챙기세요"처럼 조사와 띄어쓰기가 살아 있는 다정한 말투를 우선한다.'
       : '',
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
@@ -887,6 +796,276 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+// ── 사전렌더(유료 클론) 톤 적응 생성 ─────────────────────────────────────────────
+// 라이브 동적 경로(generateDynamicAlarmTextWithVertex)와 분리된, seed 기반 1회 생성기.
+// 카테고리 outcome 을 자연어 seed 로 받아 그 목소리의 관계/호칭/말투에 맞춘 알람 문구를 만든다.
+// 동적 경로의 품질 규칙(관계 어체·호칭 호출·자연스러움·태그 allowlist·few-shot)을 그대로 재사용해
+// "할아버지, 약 먹을 시간이에요. 까먹지 말고 꼭 드시고 건강하셔야 해요!" 수준을 보장한다.
+function prerenderClipPrompt(params: {
+  seed: string;
+  relationshipLabel?: string | null;
+  listenerTitle?: string | null;
+  targetLanguage: string;
+  defaultTag?: string;
+  /** 사용자가 등록 미리듣기에서 확정(직접 수정 포함)한 문구 — 톤/어투 기준. 내용 복제 금지. */
+  styleReference?: string | null;
+  /** 등록 녹음 전사에서 분석한 화자 말투(사투리·존댓말·특징 어미). styleReference 가 우선. */
+  speechStyle?: SpeechStyle | null;
+}): string {
+  const targetName = LANGUAGE_NAMES[params.targetLanguage] || params.targetLanguage;
+  const listenerTitle = params.listenerTitle?.trim();
+  const listenerInstruction = listenerTitle
+    ? `When addressing the listener, call them "${listenerTitle}" exactly (use it naturally, do not translate it, and never replace it with guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
+    : 'Do not address the listener by guessed family titles. Use a neutral warm address instead.';
+  const koreanRegisterInstruction =
+    params.targetLanguage === 'ko' ? koreanRegisterGuidance(params.relationshipLabel?.trim()) : '';
+  const relationship = params.relationshipLabel?.trim()
+    ? `The selected voice belongs to the user's "${params.relationshipLabel}" relationship. Use this ONLY to choose a natural speech register and warmth. Never mention the relationship label in the text. ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
+  const romanticToneInstruction =
+    params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
+      ? '연인/배우자 톤: 실제 남자친구·여자친구·아내·남편이 사적으로 건네는 말투로. 친밀한 반말을 쓰고 해요체/합니다체를 쓰지 말 것(아내·남편도). 따뜻하고 살짝 설레게, 하지만 짧게. 새 인연·연애운·질투·다른 사람에게 끌림 언급 금지.'
+      : '';
+  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${APPROVED_TAGS.map(
+    (tag) => `[${tag}]`,
+  ).join(
+    ' ',
+  )}. Return it in the separate "tag" field WITHOUT brackets, or "" for none. A fitting default here is "${params.defaultTag ?? 'cheerfully'}". The low-arousal tags ${LOW_AROUSAL_TAGS.map(
+    (tag) => `[${tag}]`,
+  ).join(
+    ' ',
+  )} are for calm/bedtime intents only. One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
+  const styleReference = params.styleReference?.trim();
+  const styleReferenceInstruction = styleReference
+    ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
+    : '';
+  const speechStyle = params.speechStyle;
+  const speechStyleInstruction =
+    speechStyle && (speechStyle.dialect || speechStyle.markers.length > 0 || speechStyle.persona)
+      ? `SPEAKER DIALECT/STYLE (analyzed from this speaker's own recording): dialect="${
+          speechStyle.dialect || 'standard'
+        }"${speechStyle.strength ? ` (strength: ${speechStyle.strength})` : ''}${
+          speechStyle.register ? `, register: ${speechStyle.register}` : ''
+        }${
+          speechStyle.persona ? `, verbal identity: "${speechStyle.persona}"` : ''
+        }${
+          speechStyle.markers.length > 0
+            ? `, typical endings/expressions: ${speechStyle.markers.map((m) => `"${m}"`).join(', ')}`
+            : ''
+        }. Write the line the way THIS speaker actually talks — keep their first-person pronoun, signature sentence endings (語尾癖) and energy, using the dialect's natural endings and vocabulary instead of standard textbook language. Do not exaggerate or stack markers; if strength is low, keep it to a light touch on sentence endings only. If a STYLE REFERENCE line is present above, it wins over this analysis.`
+      : '';
+  return [
+    `LANGUAGE: write the spoken line in ${targetName}.`,
+    activeLanguageBlock(params.targetLanguage),
+    `Alarm intent (semantic seed): ${params.seed}`,
+    relationship,
+    romanticToneInstruction,
+    speechStyleInstruction,
+    styleReferenceInstruction,
+    'Write it like ONE real person speaking warmly and naturally to the listener — call them by their title when provided, hold the relationship register, and make it caring and specific. Do NOT just state a bare fact ("비가 와요" alone is not enough); pair it with a short, natural caring action or wish that fits the intent (weather → suggest umbrella/mask/warm clothes/careful steps; medication → remind kindly and wish good health; fortune → a light playful mood, entertainment only). Keep it to one or two short sentences, usable as an alarm.',
+    'Do not announce the relationship or source of the voice. Do not mention the exact date, weekday, alarm time, numbers/percentages/temperatures, or location/city/country names.',
+    params.targetLanguage === 'ko'
+      ? '뉴스 앵커처럼 들리지 않게 진짜 옆에서 말하는 톤. 손녀·손자·손주→조부모, 자식→부모는 존대 해요체("일어나실 시간이에요", "챙기세요")로, 형제·자매·친구는 반말, 연인·배우자는 사적인 반말로. 조사와 띄어쓰기를 살려 다정하게.'
+      : '',
+    'Make it feel warm and human, not a robotic prerecorded template.',
+    tagAllowlistInstruction,
+    fewShotBlock(params.targetLanguage),
+    'Return STRICT JSON only: {"text":"final spoken line in the target language, no brackets","tag":"one allowlisted tag name without brackets, or empty string"}.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * 사전렌더 클립 1개의 톤 적응 문구를 생성한다(유료 클론 전용). 실패(Vertex 미설정/네트워크/
+ * 검증 위반)하면 throw 하여 호출자(cron)가 재시도하도록 한다 — 나쁜 폴백 문구를 저장하지 않는다.
+ */
+export async function generatePrerenderClipText(
+  env: Env,
+  params: {
+    seed: string;
+    relationshipLabel?: string | null;
+    listenerTitle?: string | null;
+    targetLanguage: string;
+    defaultTag?: string;
+    /** 등록 미리듣기에서 확정된 preview_text — 있으면 톤/어투 스타일 레퍼런스로 쓴다. */
+    styleReference?: string | null;
+    /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등) — 문구를 그 말투로 작성. */
+    speechStyle?: SpeechStyle | null;
+  },
+): Promise<{ text: string; tag: string }> {
+  const targetLanguage = params.targetLanguage || 'ko';
+  if (!hasGeminiConfiguration(env)) {
+    throw new AlarmTextPreparationInvalidError();
+  }
+  const prompt = prerenderClipPrompt({ ...params, targetLanguage });
+  let raw: string;
+  try {
+    raw = await generateContentText(env, prompt, {
+      temperature: 0.6,
+      maxOutputTokens: 256,
+      systemInstruction: DYNAMIC_SYSTEM_INSTRUCTION,
+      responseSchema: DYNAMIC_RESPONSE_SCHEMA,
+    });
+  } catch {
+    throw new AlarmTextPreparationInvalidError();
+  }
+  const parsed = parseDynamicAlarmTextResult(raw);
+  const text = parsed.text.trim();
+  if (
+    !text ||
+    isMetaJsonResponse(text) ||
+    text.length > 200 ||
+    hasLanguageMismatch(text, targetLanguage, params.listenerTitle) ||
+    hasDeliveryTagOrStageDirection(text) ||
+    hasUnsupportedListenerAddress(text, params.listenerTitle) ||
+    hasRelationshipLabelLeak(text, params.relationshipLabel, params.listenerTitle)
+  ) {
+    throw new AlarmTextPreparationInvalidError();
+  }
+  // 사전렌더 클립은 전부 기상/알림용(sleep 카테고리 없음). 저각성 태그(calm/tired/whispers/quietly)는
+  // 기상을 방해하므로 동적 경로 sanitizeDeliveryTag(mode≠sleep) 와 동일하게 여기서도 드롭한다. 안 그러면
+  // 모델이 medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
+  const sanitizePrerenderTag = (raw: string): string => {
+    const approved = normalizeApprovedTag(raw);
+    return approved && !LOW_AROUSAL_TAGS.includes(approved) ? approved : '';
+  };
+  const tag = sanitizePrerenderTag(parsed.tag) || sanitizePrerenderTag(params.defaultTag ?? '');
+  return { text, tag };
+}
+
+/**
+ * 등록 녹음 전사에서 분석한 화자 말투. voice_profiles.speech_style 에 JSON 으로 영속되고,
+ * 미리듣기·사전렌더 문구 생성 프롬프트에 주입돼 "그 사람이 실제로 말하는 방식"으로 문구가
+ * 나오게 한다(사투리는 텍스트+클론 억양의 조합으로 구현되므로 텍스트 쪽 절반을 담당).
+ */
+export interface SpeechStyle {
+  /** 사투리/방언 지역(표준어면 ''). 예: '경상', '전라', '関西', '博多'. */
+  dialect: string;
+  /** 사투리 강도. 표준어면 ''. */
+  strength: '' | 'low' | 'medium' | 'high';
+  /** 말단 격식. 예: 'banmal'(반말), 'jondaemal'(존댓말), 'casual', 'polite'. */
+  register: string;
+  /** 화자가 실제로 쓴 특징 어미/말버릇/캐치프레이즈(최대 5개, 원문 그대로). */
+  markers: string[];
+  /**
+   * 화자(사람 또는 캐릭터)의 말투 특징 한 줄 요약 — 같은 성우가 연기한 다른 캐릭터도
+   * 어미 습관(語尾癖)·1인칭·에너지로 구분되도록 한다. 예: "장난기 많은 소년투, 1인칭 オレ,
+   * 어미를 늘이며 반말". 특징이 없으면 ''.
+   */
+  persona: string;
+}
+
+const SPEECH_STYLE_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    dialect: { type: 'STRING' },
+    strength: { type: 'STRING', enum: ['', 'low', 'medium', 'high'] },
+    register: { type: 'STRING' },
+    markers: { type: 'ARRAY', items: { type: 'STRING' } },
+    persona: { type: 'STRING' },
+    confidence: { type: 'NUMBER' },
+  },
+  required: ['dialect', 'strength', 'register', 'markers', 'persona', 'confidence'],
+} as const;
+
+function speechStylePrompt(transcript: string, language: string): string {
+  const dialectGuide =
+    language === 'ja'
+      ? 'Japanese dialects to consider: 関西 (Kansai — e.g. 〜やねん/〜へん/ほんま), 東北 (Tohoku), 博多/九州 (Hakata/Kyushu — e.g. 〜と?/〜ばい), 広島, 名古屋, 沖縄. Standard = 標準語. Japanese speakers/characters are ALSO identified by signature sentence-final quirks (語尾癖 such as 〜だってばよ／〜ですわ／〜のだ／〜にゃ), their first-person pronoun (俺/僕/私/わし/あたし…), and catchphrases — capture these even when the dialect is standard.'
+      : language === 'en'
+        ? 'For English, dialect detection is usually not reliable from a transcript — leave dialect "" unless wording is unmistakably regional; focus on register (casual/polite) and habitual expressions/catchphrases.'
+        : 'Korean dialects to consider: 경상 (e.g. ~했나/~아이가/~카이/~심더), 전라 (e.g. ~잉/~부러/~것이), 충청 (e.g. ~여/~유), 강원, 제주 (e.g. ~수다/~마씸). Standard = 표준어. Also capture personal verbal habits (특유의 어미·감탄사·말버릇) even for standard speakers.';
+  return [
+    'You are analyzing how a speaker talks, from a transcript of their voice-clone enrollment recording. The speaker may be a real person reading a suggested script (they may sound more standard than usual — only report a dialect when clearly shown), or a fictional character with a distinctive verbal identity: the SAME voice actor can play different characters, so it is the verbal habits — signature sentence endings, first-person pronoun, catchphrases, energy — that tell characters apart. Capture whichever is present.',
+    dialectGuide,
+    'Return STRICT JSON: {"dialect":"region name in its own language, or empty string for standard","strength":"low|medium|high or empty when standard","register":"banmal|jondaemal for Korean, casual|polite otherwise","markers":["up to 5 verbatim endings/expressions/catchphrases the speaker actually used"],"persona":"one short line describing the speaker\'s verbal identity (tone, first-person pronoun, ending habits), or empty string when unremarkable","confidence":0.0-1.0}.',
+    'Be conservative: when unsure, dialect="" and confidence low. markers must be copied from the transcript, not invented. persona describes only what the transcript shows — no guessed names or identities.',
+    `TRANSCRIPT (${language}):`,
+    transcript.slice(0, 2000),
+  ].join('\n');
+}
+
+/**
+ * 전사 텍스트에서 화자 말투(사투리·격식·특징 어미)를 분석한다. confidence 가 낮거나
+ * 실패하면 null — 호출자는 저장을 건너뛴다(표준어로 동작, 사용자 미리듣기 수정으로 교정 가능).
+ */
+export async function analyzeSpeechStyleWithVertex(
+  env: Env,
+  transcript: string,
+  language: string,
+): Promise<SpeechStyle | null> {
+  if (!hasGeminiConfiguration(env)) return null;
+  const trimmed = transcript.trim();
+  if (trimmed.length < 20) return null;
+  let raw: string;
+  try {
+    raw = await generateContentText(env, speechStylePrompt(trimmed, language), {
+      temperature: 0.1,
+      maxOutputTokens: 256,
+      responseSchema: SPEECH_STYLE_RESPONSE_SCHEMA,
+    });
+  } catch {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as {
+      dialect?: unknown;
+      strength?: unknown;
+      register?: unknown;
+      markers?: unknown;
+      confidence?: unknown;
+    };
+    const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+    if (confidence < 0.6) return null;
+    const dialect = typeof parsed.dialect === 'string' ? parsed.dialect.trim().slice(0, 20) : '';
+    const strengthRaw = typeof parsed.strength === 'string' ? parsed.strength.trim() : '';
+    const strength = (['low', 'medium', 'high'].includes(strengthRaw) ? strengthRaw : '') as
+      | ''
+      | 'low'
+      | 'medium'
+      | 'high';
+    const register = typeof parsed.register === 'string' ? parsed.register.trim().slice(0, 20) : '';
+    const markers = Array.isArray(parsed.markers)
+      ? parsed.markers
+          .filter((m): m is string => typeof m === 'string')
+          .map((m) => m.trim())
+          .filter(Boolean)
+          .slice(0, 5)
+      : [];
+    const persona =
+      typeof (parsed as { persona?: unknown }).persona === 'string'
+        ? String((parsed as { persona?: unknown }).persona).trim().slice(0, 120)
+        : '';
+    if (!dialect && !register && markers.length === 0 && !persona) return null;
+    // 표준어인데 사투리 강도만 있는 모순 정리.
+    return { dialect, strength: dialect ? strength : '', register, markers, persona };
+  } catch {
+    return null;
+  }
+}
+
+/** voice_profiles.speech_style JSON 컬럼 → SpeechStyle (없거나 깨졌으면 null). */
+export function parseSpeechStyle(value: unknown): SpeechStyle | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<SpeechStyle>;
+    return {
+      dialect: typeof parsed.dialect === 'string' ? parsed.dialect : '',
+      strength: (['low', 'medium', 'high'].includes(String(parsed.strength))
+        ? parsed.strength
+        : '') as SpeechStyle['strength'],
+      register: typeof parsed.register === 'string' ? parsed.register : '',
+      markers: Array.isArray(parsed.markers)
+        ? parsed.markers.filter((m): m is string => typeof m === 'string').slice(0, 5)
+        : [],
+      persona: typeof parsed.persona === 'string' ? parsed.persona.slice(0, 120) : '',
+    };
+  } catch {
+    return null;
+  }
 }
 
 // 폴백 회전(§4.7): 고정 단일 문구 대신 mode+dateLabel 해시로 몇 개 템플릿을 회전한다.
@@ -1336,10 +1515,16 @@ function hasRomanticForbiddenContent(text: string, context: DynamicAlarmTextCont
 
 // 타깃 언어 불일치(§4.7 HARD). 보수적으로만 판정한다: ko면 한글, ja면 가나/한자,
 // en이면 한글·가나가 없어야 한다.
-function hasLanguageMismatch(text: string, targetLanguage: string): boolean {
-  const hasHangul = /[가-힣]/.test(text);
-  const hasKana = /[぀-ヿㇰ-ㇿ]/.test(text);
-  const hasKanji = /[一-鿿]/.test(text);
+function hasLanguageMismatch(
+  text: string,
+  targetLanguage: string,
+  allowedForeignText?: string | null,
+): boolean {
+  const allowed = allowedForeignText?.trim();
+  const checkedText = allowed ? text.split(allowed).join('') : text;
+  const hasHangul = /[가-힣]/.test(checkedText);
+  const hasKana = /[぀-ヿㇰ-ㇿ]/.test(checkedText);
+  const hasKanji = /[一-鿿]/.test(checkedText);
   if (targetLanguage === 'ko') return !hasHangul;
   if (targetLanguage === 'ja') return !hasKana && !hasKanji;
   if (targetLanguage === 'en') return hasHangul || hasKana;
@@ -1483,6 +1668,10 @@ function hasGeminiConfiguration(env: Env | undefined): boolean {
   return Boolean(env?.GOOGLE_VERTEX_CREDENTIALS_JSON);
 }
 
+function isDynamicVertexTextEnabled(env: Env | undefined): boolean {
+  return env?.GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED === 'true';
+}
+
 function extractTags(text: string): string[] {
   const matches = text.match(/\[([a-z][a-z -]{1,32})\]/gi) ?? [];
   return Array.from(new Set(matches.map((tag) => normalizeTag(tag))));
@@ -1509,15 +1698,52 @@ function normalizeSameLanguageTaggedText(
   }
   const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
   if (!tag) return null;
-  const tagged = `[${tag}] ${originalText}`;
-  return tagged.length <= 200 ? tagged : originalText;
+  return applyDeliveryTagPerSentence(tag, originalText, 200);
 }
 
-function normalizeAlarmTextWithoutTags(text: string): string {
+// ElevenLabs v3 delivery 태그는 뒤따르는 구간에서 갈수록 효력이 약해져, 여러 문장을
+// 선두 태그 하나로 합성하면 끝 문장에서 톤이 풀리고 말이 빨라지는 드리프트가 생긴다.
+// 문장 경계마다 같은 태그를 다시 앞세워 전달 톤을 끝까지 고정한다(태그는 발화되지 않음).
+// 상한을 넘으면 선두 1회 태그로, 그것도 넘으면 원문 그대로 폴백한다.
+export function applyDeliveryTagPerSentence(tag: string, text: string, maxLength = 300): string {
+  const trimmed = text.trim();
+  if (!tag) return trimmed;
+  const sentences =
+    trimmed
+      .match(/[^.!?…]+[.!?…]*/g)
+      ?.map((sentence) => sentence.trim())
+      .filter(Boolean) ?? [];
+  const perSentence =
+    sentences.length > 1
+      ? sentences.map((sentence) => `[${tag}] ${sentence}`).join(' ')
+      : `[${tag}] ${trimmed}`;
+  if (perSentence.length <= maxLength) return perSentence;
+  const single = `[${tag}] ${trimmed}`;
+  return single.length <= maxLength ? single : trimmed;
+}
+
+export function normalizeAlarmTextWithoutTags(text: string): string {
   return text
     .replace(/\s*\[[a-z][a-z -]{1,32}\]\s*/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+// 표시/저장 문구(messageText)용: 우리가 자동으로 붙인 delivery 태그는 제거하되,
+// 사용자가 직접 입력한 대괄호는 그대로 보존한다.
+//
+// 근거: 자동 태그는 prepareAlarmTextWithVertex 에서 '사용자가 대괄호를 하나도 안 쳤을 때만'
+// (shouldTag = autoTag && !TAG_RE.test) 붙는다. 그러므로
+// - originalText 에 대괄호가 있으면: 자동 태그가 아니므로 합성 텍스트를 그대로 쓴다(트림만).
+//   '[after lunch]'·'오늘도 [happy]'·'[calm]'만 입력해도 문구가 안 지워진다.
+// - 없으면: 합성 텍스트 안의 대괄호는 전부 자동/모델이 붙인 delivery 태그이므로 위치·개수와
+//   무관하게 모두 제거하고 내부 공백을 한 칸으로 정리한다. 모델이 지시를 어기고 태그를 2개
+//   붙이거나 문장 중간·이중 공백을 내도 화면에 새지 않는다(normalizeAlarmTextWithoutTags 재사용).
+export function deriveAlarmDisplayText(synthesisText: string, originalText: string): string {
+  if (TAG_RE.test(originalText.trim())) {
+    return synthesisText.trim();
+  }
+  return normalizeAlarmTextWithoutTags(synthesisText);
 }
 
 function pickApprovedTag(tags: string[]): string | null {

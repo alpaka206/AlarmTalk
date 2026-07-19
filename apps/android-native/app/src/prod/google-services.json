@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "927504470160",
+    "project_id": "alarm-9b3e3",
+    "storage_bucket": "alarm-9b3e3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:927504470160:android:2636920829e01f67340815",
+        "android_client_info": {
+          "package_name": "com.alarmtalk.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQcHXXaFN9QvRkoNrlw8G7P20B378DFJk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:927504470160:android:6e8e33d481553269340815",
+        "android_client_info": {
+          "package_name": "com.alarmtalk.app.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQcHXXaFN9QvRkoNrlw8G7P20B378DFJk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

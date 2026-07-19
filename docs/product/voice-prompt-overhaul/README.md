@@ -19,6 +19,8 @@ AlarmTalk 음성 알람 문구 생성(Vertex Gemini → ElevenLabs v3) 프롬프
 > 산출 근거: 코드베이스 심층조사 + ElevenLabs v3 공식문서 30+ 출처 + 메아리(mearri) 기법 이식 + 외부 동료심사 논문 27편 + 4제안×3심사×1종합 토의 워크플로.
 > 작업 규칙: 프롬프트·생성로직 변경은 **커밋 보류**(Gemini 실서비스 반영 전 사용자 검토). UI/UX 변경은 커밋 허용(브랜치+PR). 스키마 확장은 선택 트랙.
 
+> 2026-07-09 policy update: Gemini-generated dynamic alarm text is default-off. `generateDynamicAlarmTextWithVertex` uses local/preset fallback unless `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`. Exact preset categories/copy remain a product decision track; do not re-enable direct generation for launch without preset review and QA.
+
 ## 구현 현황 (2026-06-28, 워킹트리 — 커밋 안 함)
 적용·검증 완료(타입체크 통과, 백엔드 1308 테스트 통과, 3관점 적대적 코드검증 후 결함 4건 수정):
 - `lib/elevenlabs.ts` — **voice_settings 버그픽스**(v3에 항상 전송, stability 0.5 Natural).

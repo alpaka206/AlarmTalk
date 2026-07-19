@@ -164,6 +164,8 @@ class AlarmRepository(
             bucketId = draft.bucketId,
             bucketRotationIndex = 0,
             bucketClipKeysJson = draft.bucketClipKeysJson,
+            bucketClipTextsJson = draft.bucketClipTextsJson,
+            contextVariantIndex = draft.contextVariantIndex,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
@@ -209,6 +211,25 @@ class AlarmRepository(
             nowMillis = now,
             isHoliday = holidayPredicate,
         )
+        val resetWeatherVariant = shouldResetWeatherVariant(
+            currentBucketId = current.bucketId,
+            nextBucketId = draft.bucketId,
+            currentVoiceProfileId = current.voiceProfileId,
+            nextVoiceProfileId = draft.voiceProfileId,
+            currentCountry = current.voiceWeatherCountry,
+            nextCountry = draft.voiceWeatherCountry,
+            currentCity = current.voiceWeatherCity,
+            nextCity = draft.voiceWeatherCity,
+            currentFireAtMillis = current.fireAtMillis,
+            nextFireAtMillis = nextFireAt,
+        )
+        val weatherVariantState = nextWeatherVariantState(
+            nextBucketId = draft.bucketId,
+            resetWeatherVariant = resetWeatherVariant,
+            currentIndex = current.contextVariantIndex,
+            draftIndex = draft.contextVariantIndex,
+            currentResolvedAtMillis = current.contextResolvedAtMillis,
+        )
         val updated = current.copy(
             label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
             hour = draft.hour,
@@ -249,6 +270,9 @@ class AlarmRepository(
             bucketRotationIndex =
                 if (draft.bucketId != null && draft.bucketId == current.bucketId) current.bucketRotationIndex else 0,
             bucketClipKeysJson = draft.bucketClipKeysJson,
+            bucketClipTextsJson = draft.bucketClipTextsJson,
+            contextVariantIndex = weatherVariantState.index,
+            contextResolvedAtMillis = weatherVariantState.resolvedAtMillis,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
@@ -282,19 +306,36 @@ class AlarmRepository(
                 countryCode = currentHolidayCountry(),
                 startDate = currentLocalDate(now),
             )
+            val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
+                hour = current.hour,
+                minute = current.minute,
+                repeatDaysMask = current.repeatDaysMask,
+                holidayOff = current.holidayOff,
+                nowMillis = now,
+                isHoliday = holidayPredicate,
+            )
+            // 재활성화로 다음 발사 날짜가 바뀌면 날씨 variant 를 무효화(이전 날짜 조건이 12h 게이트 동안
+            // 남아 오재생되는 것 방지). 버킷/보이스/위치는 안 바뀌므로 사실상 날짜 변경만 반영된다.
+            val resetWeatherVariant = shouldResetWeatherVariant(
+                currentBucketId = current.bucketId,
+                nextBucketId = current.bucketId,
+                currentVoiceProfileId = current.voiceProfileId,
+                nextVoiceProfileId = current.voiceProfileId,
+                currentCountry = current.voiceWeatherCountry,
+                nextCountry = current.voiceWeatherCountry,
+                currentCity = current.voiceWeatherCity,
+                nextCity = current.voiceWeatherCity,
+                currentFireAtMillis = current.fireAtMillis,
+                nextFireAtMillis = nextFireAt,
+            )
             current.copy(
-                fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-                    hour = current.hour,
-                    minute = current.minute,
-                    repeatDaysMask = current.repeatDaysMask,
-                    holidayOff = current.holidayOff,
-                    nowMillis = now,
-                    isHoliday = holidayPredicate,
-                ),
+                fireAtMillis = nextFireAt,
                 enabled = true,
                 snoozeCount = 0,
                 state = AlarmStates.SCHEDULED,
                 syncState = current.nextLocalSyncState(),
+                contextVariantIndex = if (resetWeatherVariant) null else current.contextVariantIndex,
+                contextResolvedAtMillis = if (resetWeatherVariant) null else current.contextResolvedAtMillis,
                 updatedAtMillis = now,
             )
         } else {
@@ -327,6 +368,59 @@ class AlarmRepository(
         alarmDao.delete(current)
         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         Log.i(TAG, "Deleted alarm id=$alarmId")
+    }
+
+    /**
+     * 접근권을 잃은 음성 프로필(공유 해제·제공자 취소·본인 삭제)을 참조하는 '내 소유(LOCAL_OWNED)'
+     * 음성 알람을 sound-only 로 강등한다. [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
+     * 가족 공유 프로필 id 집합이어야 한다 — 부분/실패 로드로 호출하면 정상 알람을 오강등할 수 있으므로
+     * 호출부(refreshSocial 신선 성공)에서 가드한다. 버킷 회전·녹음(LOCAL_AUDIO)·수신 알람은 대상이 아니다.
+     * 반환값은 강등된 알람 수.
+     */
+    suspend fun degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds: Set<String>): Int {
+        val candidates = alarmDao.getAllAlarms().filter { alarm ->
+            alarm.origin == AlarmOrigins.LOCAL_OWNED &&
+                alarm.voiceSource == VoiceSources.TTS_PROFILE &&
+                !alarm.voiceProfileId.isNullOrBlank() &&
+                // 시스템 스톡 버킷/보이스는 영구라 보존. 클론(비-system) 보이스는 단일클립·버킷 모두
+                // 접근권 상실(공유해제·제공자취소·삭제) 시 강등 대상.
+                !isSystemVoiceId(alarm.voiceProfileId) &&
+                alarm.voiceProfileId !in accessibleVoiceIds
+        }
+        var degraded = 0
+        for (current in candidates) {
+            val cacheKey = current.audioCacheKey
+            val updated = current.copy(
+                playMode = AlarmPlayModes.ALARM_ONLY,
+                voiceSource = VoiceSources.LOCAL_AUDIO,
+                voiceProfileId = null,
+                localAudioUri = null,
+                audioCacheKey = null,
+                rawAudioUri = null,
+                ttsMessageId = null,
+                voiceText = null,
+                voiceListenerTitle = null,
+                voiceCategory = null,
+                voiceLanguage = null,
+                voiceRandomPrompt = false,
+                // 클론 버킷 알람도 여기서 강등되므로 버킷 상태를 함께 비운다(존재하지 않는 클립/캐시 참조 방지).
+                bucketId = null,
+                bucketClipKeysJson = null,
+                bucketRotationIndex = 0,
+                contextVariantIndex = null,
+                // 서버 알람은 이미 P0-1/P0-2(취소·un-share·목소리 삭제) 경로에서 sound-only 로 강등되므로,
+                // 이 로컬 정리는 push 하지 않는다(SYNCED). 기본 Gson 은 null 필드를 PATCH 에서 누락시켜
+                // 서버 voice 참조를 못 지우고 오히려 stale 상태를 만들 수 있어(PR #536 P2), 로컬 캐시만 정리.
+                syncState = AlarmSyncStates.SYNCED,
+                updatedAtMillis = System.currentTimeMillis(),
+            )
+            if (updated.enabled) alarmScheduler.schedule(updated)
+            alarmDao.upsertPreservingServerSyncFields(updated)
+            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+            degraded++
+            Log.i(TAG, "Degraded alarm id=${current.id}: voice ${current.voiceProfileId} no longer accessible")
+        }
+        return degraded
     }
 
     /**
@@ -432,6 +526,22 @@ class AlarmRepository(
                 nowMillis = now,
                 isHoliday = holidayPredicate,
             )
+            // 반복 날씨 알람은 dismiss 로 다음 발생(=다른 날짜)으로 넘어가면 이전 날짜로 resolve 된
+            // contextVariantIndex 가 fresh 타임스탬프째 남아, 준비창 워커가 12h 게이트로 재resolve 를 건너뛴다.
+            // 그 사이 오프라인이면 어제 날씨 클립을 재생 → 편집/재활성화와 동일 기준(shouldResetWeatherVariant,
+            // 날짜 변경 감지)으로 롤오버 시 무효화해 새 날짜로 재resolve 하게 한다.
+            val resetWeatherVariant = shouldResetWeatherVariant(
+                currentBucketId = current.bucketId,
+                nextBucketId = current.bucketId,
+                currentVoiceProfileId = current.voiceProfileId,
+                nextVoiceProfileId = current.voiceProfileId,
+                currentCountry = current.voiceWeatherCountry,
+                nextCountry = current.voiceWeatherCountry,
+                currentCity = current.voiceWeatherCity,
+                nextCity = current.voiceWeatherCity,
+                currentFireAtMillis = current.fireAtMillis,
+                nextFireAtMillis = nextFireAt,
+            )
             val next = current.copy(
                 fireAtMillis = nextFireAt,
                 enabled = true,
@@ -439,6 +549,9 @@ class AlarmRepository(
                 // 에피소드 종료(dismiss) 시 다음 회전 클립으로 +1. 스누즈는 회전하지 않으므로
                 // 같은 에피소드 내 모든 울림은 동일 클립을 재생한다.
                 bucketRotationIndex = advancedBucketRotationIndex(current),
+                contextVariantIndex = if (resetWeatherVariant) null else current.contextVariantIndex,
+                contextResolvedAtMillis =
+                    if (resetWeatherVariant) null else current.contextResolvedAtMillis,
                 state = AlarmStates.SCHEDULED,
                 updatedAtMillis = now,
             )
@@ -488,26 +601,32 @@ class AlarmRepository(
         return next
     }
 
-    /**
-     * 버킷 회전 알람의 "현재 회전 클립" 로컬 재생 URI. 미리 캐시한 N개 중 bucketRotationIndex
-     * 위치의 클립을 돌려준다. 해당 클립이 캐시에 없으면 같은 버킷의 다른 클립으로 폴백하고,
-     * 그래도 없으면 null(호출자가 alarm.localAudioUri = 대표 클립으로 폴백).
-     */
-    fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? {
+    fun resolveBucketClipSelection(alarm: AlarmEntity): BucketClipSelection? {
         val keys = alarm.bucketClipKeys()
         if (alarm.bucketId == null || keys.isEmpty()) return null
-        val index = ((alarm.bucketRotationIndex % keys.size) + keys.size) % keys.size
-        alarmAudioStore.getCachedAudio(keys[index])?.let { return it.localAudioUri }
-        for (key in keys) {
-            alarmAudioStore.getCachedAudio(key)?.let { return it.localAudioUri }
+        val preferredIndex = alarm.bucketVariantIndex() ?: return null
+        alarmAudioStore.getCachedAudio(keys[preferredIndex])?.let { audio ->
+            return BucketClipSelection(preferredIndex, audio.localAudioUri)
+        }
+        for ((index, key) in keys.withIndex()) {
+            alarmAudioStore.getCachedAudio(key)?.let { audio ->
+                return BucketClipSelection(index, audio.localAudioUri)
+            }
         }
         return null
     }
 
-    /** dismiss(에피소드 종료) 시 다음 회전 인덱스. 버킷이 아니거나 클립이 1개 이하면 그대로. */
+    fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? =
+        resolveBucketClipSelection(alarm)?.localAudioUri
+
+    /**
+     * dismiss(에피소드 종료) 시 다음 회전 인덱스. 버킷이 아니거나 클립 1개 이하면 그대로.
+     * 매칭형(날씨/운세)은 조건/테마 인덱스로 고르므로 회전을 전진시키지 않는다.
+     */
     private fun advancedBucketRotationIndex(alarm: AlarmEntity): Int {
         val size = alarm.bucketClipKeys().size
         if (alarm.bucketId == null || size <= 1) return alarm.bucketRotationIndex
+        if (alarm.bucketId in MATCHING_BUCKET_IDS) return alarm.bucketRotationIndex
         return (alarm.bucketRotationIndex + 1) % size
     }
 
@@ -576,78 +695,79 @@ class AlarmRepository(
     suspend fun pullReceivedAlarms(
         api: AlarmTalkApi,
         token: String,
-        myUserId: String,
     ): RemoteAlarmPullResult =
-        remoteAlarmPullSyncService.pullReceivedAlarms(api, token, myUserId)
+        remoteAlarmPullSyncService.pullReceivedAlarms(api, token)
 
-    suspend fun refreshDueDynamicAlarmTalks(
-        api: AlarmTalkApi,
-        token: String,
-        nowMillis: Long = System.currentTimeMillis(),
-    ): Int {
-        val alarms = alarmDao.getRepeatingDynamicAlarmTalks()
-        var refreshed = 0
-        alarms.forEach { alarm ->
-            if (!shouldRefreshDynamicVoice(alarm, nowMillis)) return@forEach
-            val profileId = alarm.voiceProfileId?.takeIf { it.isNotBlank() } ?: return@forEach
-            runCatching {
-                val response = api.generateTts(
+    /**
+     * 사전렌더 '날씨' 버킷 알람의 조건 인덱스를 서버로 resolve 해 contextVariantIndex 를 갱신한다.
+     * 저장 위치로 서버가 실시간 날씨(open-meteo)를 판정→CLONE_WEATHER_CONDITIONS 순서 인덱스를 반환.
+     * 발사는 그 인덱스로 오프라인 lookup. 준비창 워커가 매일(반복 알람 전날) + 저장 직후(runOnce)
+     * 호출한다. 항상 동작(오프라인 날씨 매칭 전용).
+     */
+    suspend fun resolveDueCloneBucketVariants(api: AlarmTalkApi, token: String): Int {
+        val now = System.currentTimeMillis()
+        // 준비창 게이트: open-meteo 는 하루 예보라 시간마다 갱신은 무의미하고 쿼터·배터리만 낭비한다.
+        // 아직 미해결(null)이거나 마지막 갱신이 ~12h 이전인 알람만 대상으로 삼아 최대 하루 1~2회로 제한.
+        val staleBefore = now - 12 * 60 * 60 * 1000L
+        // 준비창: 곧(48h 내) 울릴 알람만 대상. open-meteo 는 '오늘' 예보라, 며칠 뒤 울릴 알람을 지금
+        // 오늘 날씨로 스냅샷하면 엉뚱한 조건이 굳는다. 반복 알람의 다음 발사(fireAtMillis)는 보통 창 안이고,
+        // 먼 일회성/주간 알람은 발사 48h 전에야 해결돼 더 신선한 날씨로 매칭된다.
+        val prepareWindow = now + 48 * 60 * 60 * 1000L
+        val alarms = alarmDao.getEnabledWeatherBucketAlarms()
+            .filter { it.fireAtMillis <= prepareWindow }
+            .filter { it.contextVariantIndex == null || (it.contextResolvedAtMillis ?: 0L) < staleBefore }
+        if (alarms.isEmpty()) return 0
+        // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
+        val zone = java.time.ZoneId.systemDefault()
+        val byLocationAndDate = alarms.groupBy {
+            Triple(
+                it.voiceWeatherCountry?.trim().orEmpty() to it.voiceWeatherCity?.trim().orEmpty(),
+                java.time.Instant.ofEpochMilli(it.fireAtMillis).atZone(zone).toLocalDate().toString(),
+                zone.id,
+            )
+        }
+        var resolved = 0
+        for ((locationAndDate, group) in byLocationAndDate) {
+            val (location, targetDate, timezone) = locationAndDate
+            val (country, city) = location
+            // variant 는 이 타깃 날짜로 resolve 된다. 네트워크 왕복 중 알람의 발사 날짜가 바뀌면(편집)
+            // 아래 DAO 가드가 옛 결과를 거른다. 경계는 resolver 와 동일 존 기준 [자정, 다음날 자정).
+            val targetLocalDate = java.time.LocalDate.parse(targetDate)
+            val fireDateStartMillis = targetLocalDate.atStartOfDay(zone).toInstant().toEpochMilli()
+            val fireDateEndMillis = targetLocalDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val index = runCatching {
+                api.getPrerenderVariant(
                     authorization = AlarmTalkApiClient.bearer(token),
-                    request = TtsGenerateRequest(
-                        voiceProfileId = profileId,
-                        text = "",
-                        category = alarm.voiceCategory ?: randomTtsCategoryForContext(alarm.voiceRandomContext),
-                        language = alarm.voiceLanguage ?: "ko",
-                        random = true,
-                        randomContext = alarm.voiceRandomContext ?: DefaultDynamicVoiceContext,
-                        alarmHour = alarm.hour,
-                        alarmMinute = alarm.minute,
-                        weatherCountry = alarm.voiceWeatherCountry.trimmedOrNull(),
-                        weatherCity = alarm.voiceWeatherCity.trimmedOrNull(),
-                        fortuneGender = alarm.voiceFortuneGender.trimmedOrNull(),
-                        fortuneBirthDate = alarm.voiceFortuneBirthDate.trimmedOrNull(),
-                        fortuneBirthTime = alarm.voiceFortuneBirthTime.trimmedOrNull(),
-                        listenerTitle = alarm.voiceListenerTitle.trimmedOrNull(),
-                    ),
-                )
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
-                val cacheKey = AlarmAudioStore.ttsCacheKey(
-                    profileId = profileId,
-                    text = response.text,
-                    category = alarm.voiceCategory ?: randomTtsCategoryForContext(response.randomContext),
-                    language = alarm.voiceLanguage ?: "ko",
-                    serverCacheKey = response.cacheKey,
-                )
-                val cachedAudio = alarmAudioStore.cacheGeneratedAudio(
-                    bytes = audioBytes,
-                    format = response.audioFormat,
-                    rawAudioUri = rawAudioUri,
-                    cacheKey = cacheKey,
-                    messageId = response.messageId,
-                )
-                val oldCacheKey = alarm.audioCacheKey
-                alarmDao.updateDynamicVoiceAudio(
+                    context = "wake_weather",
+                    country = country.takeIf { it.isNotBlank() },
+                    city = city.takeIf { it.isNotBlank() },
+                    targetDate = targetDate,
+                    timezone = timezone,
+                ).variantIndex
+            }.getOrElse { error ->
+                Log.w(TAG, "Failed to resolve weather variant", error)
+                null
+            }
+            // 조회 실패(null)면 '맑음(0)'으로 덮어쓰지 않고 기존 인덱스를 유지한다.
+            if (index == null) continue
+            for (alarm in group) {
+                // 인덱스가 그대로여도 resolvedAt 은 무조건 갱신해 12h 게이트를 전진시킨다. (change 일 때만
+                // 갱신하면 안정 날씨는 시계가 안 올라가 매 워커틱마다 open-meteo 재호출 → 배터리·쿼터 낭비.)
+                val updatedRows = alarmDao.updateContextVariantIndexIfContextMatches(
                     id = alarm.id,
-                    localAudioUri = cachedAudio.localAudioUri,
-                    audioCacheKey = cachedAudio.cacheKey,
-                    rawAudioUri = rawAudioUri,
-                    voiceText = response.text,
-                    ttsMessageId = response.messageId,
-                    preparedForFireAtMillis = alarm.fireAtMillis,
-                    updatedAtMillis = System.currentTimeMillis(),
+                    index = index,
+                    resolvedAtMillis = System.currentTimeMillis(),
+                    voiceProfileId = alarm.voiceProfileId.orEmpty(),
+                    country = alarm.voiceWeatherCountry?.trim().orEmpty(),
+                    city = alarm.voiceWeatherCity?.trim().orEmpty(),
+                    fireDateStartMillis = fireDateStartMillis,
+                    fireDateEndMillis = fireDateEndMillis,
                 )
-                // 랜덤 문구 알람이 새 음성으로 교체됐으면 이전 캐시는 미참조일 때만 정리.
-                if (!oldCacheKey.isNullOrBlank() && oldCacheKey != cachedAudio.cacheKey) {
-                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, oldCacheKey)
-                }
-                refreshed += 1
-                Log.i(TAG, "Refreshed dynamic voice alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
-            }.onFailure { error ->
-                Log.w(TAG, "Failed to refresh dynamic voice alarm id=${alarm.id}", error)
+                if (updatedRows > 0 && index != alarm.contextVariantIndex) resolved += 1
             }
         }
-        return refreshed
+        if (resolved > 0) Log.i(TAG, "Resolved weather bucket variants count=$resolved")
+        return resolved
     }
 
     /**
@@ -786,57 +906,23 @@ class AlarmRepository(
         )
 
     /**
-     * 반복되는 랜덤 문구(동적 음성) 알람인지 판별한다.
-     * AlarmDao.getRepeatingDynamicAlarmTalks 의 조건과 동일하게 맞춘다.
-     */
-    private fun isRepeatingDynamicVoiceAlarm(alarm: AlarmEntity): Boolean =
-        alarm.enabled &&
-            alarm.repeatDaysMask != 0 &&
-            alarm.voiceRandomPrompt &&
-            alarm.playMode != AlarmPlayModes.ALARM_ONLY &&
-            !alarm.voiceProfileId.isNullOrBlank() &&
-            // 무료 버킷 회전 알람은 사전 렌더 정적 클립을 쓰므로 동적 음성 갱신 대상이 아니다.
-            alarm.bucketId == null
-
-    /**
      * 반복 랜덤 문구 알람은 매번 새 음성으로 갱신돼야 한다. 알람 생성/수정/활성화 시
      * 이 메서드를 호출해 DynamicVoiceRefreshWorker(WorkManager)를 예약한다.
      * 이 wiring 이 없으면 반복 동적 알람이 과거에 캐시된 동일 음성만 재생한다.
      */
     private fun ensureDynamicVoiceRefreshScheduled(alarm: AlarmEntity) {
-        if (!isRepeatingDynamicVoiceAlarm(alarm)) return
+        // 사전렌더 '날씨' 버킷 알람이면 준비창 워커를 예약한다. 저장 직후 runOnce 로 조건 인덱스를
+        // 즉시 resolve 하고, ensurePeriodic 로 반복 알람의 매일 전날 갱신을 건다.
+        val needsWorker = alarm.bucketId == "weather"
+        if (!needsWorker) return
         runCatching {
             DynamicVoiceRefreshScheduler.ensurePeriodic(context)
             DynamicVoiceRefreshScheduler.runOnce(context)
-            Log.i(TAG, "Scheduled dynamic voice refresh for alarm id=${alarm.id}")
+            Log.i(TAG, "Scheduled voice refresh worker for alarm id=${alarm.id}")
         }.onFailure { error ->
-            Log.w(TAG, "Failed to schedule dynamic voice refresh id=${alarm.id}", error)
+            Log.w(TAG, "Failed to schedule voice refresh worker id=${alarm.id}", error)
         }
     }
-
-    private fun shouldRefreshDynamicVoice(alarm: AlarmEntity, nowMillis: Long): Boolean {
-        if (alarm.dynamicVoicePreparedForFireAtMillis == alarm.fireAtMillis) return false
-        val zoneId = ZoneId.systemDefault()
-        val fireAt = Instant.ofEpochMilli(alarm.fireAtMillis).atZone(zoneId)
-        val prepareAtMillis = fireAt
-            .toLocalDate()
-            .minusDays(1)
-            .atTime(DynamicVoicePrepareTime)
-            .atZone(zoneId)
-            .toInstant()
-            .toEpochMilli()
-        val latestPrepareMillis = alarm.fireAtMillis - 60_000L
-        return nowMillis >= prepareAtMillis && nowMillis < latestPrepareMillis
-    }
-
-    private fun randomTtsCategoryForContext(context: String?): String =
-        when (context) {
-            "meal" -> "lunch"
-            "sleep" -> "night"
-            "exercise" -> "exercise"
-            "love" -> "love"
-            else -> "morning"
-        }
 
     private fun AlarmEntity.nextLocalSyncState(): String =
         when {
@@ -846,9 +932,65 @@ class AlarmRepository(
         }
 
     private companion object {
-        const val DefaultDynamicVoiceContext = "wake_weather"
-        val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
+        // 발사 시 '조건/테마 매칭'으로 variant 를 고르는 버킷(그 외는 순차 회전). bucketId 는
+        // 백엔드 category 와 동일 문자열이다(클론 사전렌더 category = 'weather'/'fortune').
+        val MATCHING_BUCKET_IDS = setOf("weather", "fortune")
     }
+}
+
+data class BucketClipSelection(
+    val variantIndex: Int,
+    val localAudioUri: String,
+)
+
+internal fun shouldResetWeatherVariant(
+    currentBucketId: String?,
+    nextBucketId: String?,
+    currentVoiceProfileId: String?,
+    nextVoiceProfileId: String?,
+    currentCountry: String?,
+    nextCountry: String?,
+    currentCity: String?,
+    nextCity: String?,
+    currentFireAtMillis: Long,
+    nextFireAtMillis: Long,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+): Boolean {
+    val involvesWeather = currentBucketId == "weather" || nextBucketId == "weather"
+    if (!involvesWeather) return false
+
+    // 날씨 variant 는 특정 타깃 날짜(=fireAtMillis 의 로컬 날짜, resolveDueCloneBucketVariants 와 동일 존)로
+    // resolve 된다. 보이스·위치가 그대로여도 다음 발사 날짜가 바뀌면(시간·반복 편집, 재활성화 등) 이전 날짜
+    // 기준 조건이 12h 게이트 동안 남아 오재생되므로, 날짜가 바뀌면 무효화해 준비창 워커가 재resolve 하게 한다.
+    val fireDateChanged =
+        java.time.Instant.ofEpochMilli(currentFireAtMillis).atZone(zone).toLocalDate() !=
+            java.time.Instant.ofEpochMilli(nextFireAtMillis).atZone(zone).toLocalDate()
+
+    return currentBucketId != nextBucketId ||
+        currentVoiceProfileId != nextVoiceProfileId ||
+        currentCountry?.trim().orEmpty() != nextCountry?.trim().orEmpty() ||
+        currentCity?.trim().orEmpty() != nextCity?.trim().orEmpty() ||
+        fireDateChanged
+}
+
+internal data class WeatherVariantState(
+    val index: Int?,
+    val resolvedAtMillis: Long?,
+)
+
+internal fun nextWeatherVariantState(
+    nextBucketId: String?,
+    resetWeatherVariant: Boolean,
+    currentIndex: Int?,
+    draftIndex: Int?,
+    currentResolvedAtMillis: Long?,
+): WeatherVariantState = when {
+    resetWeatherVariant -> WeatherVariantState(index = null, resolvedAtMillis = null)
+    nextBucketId == "weather" -> WeatherVariantState(
+        index = currentIndex,
+        resolvedAtMillis = currentResolvedAtMillis,
+    )
+    else -> WeatherVariantState(index = draftIndex, resolvedAtMillis = null)
 }
 
 /**

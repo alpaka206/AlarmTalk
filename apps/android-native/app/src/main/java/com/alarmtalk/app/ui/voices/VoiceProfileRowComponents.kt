@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,24 +23,22 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -47,7 +46,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,77 +53,18 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoiceSpeakerSegment
 
-// VoiceProfileManagement 행/필드/드래프트 하위 컴포넌트.
-
-/**
- * 파일에 여러 목소리가 섞였을 때 쓰는 보조 진입점 — 화자 수를 미리 고르게 하는 대신,
- * 필요할 때만 목소리 나누기(화자 분리)를 실행하게 한다. 분리는 자동 감지(최대 3명).
- */
-@Composable
-internal fun MixedVoicesSeparateRow(
-    busy: Boolean,
-    enabled: Boolean,
-    onSeparate: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerCardShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = wakerCardBorder(),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(MaterialTheme.colorScheme.secondaryContainer, WakerTileShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Mic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.voices_mixed_voices_prompt),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                MutedText(stringResource(R.string.voices_mixed_voices_desc))
-            }
-            OutlinedButton(
-                onClick = onSeparate,
-                enabled = enabled && !busy,
-                shape = WakerPillShape,
-                border = wakerCardBorder(),
-                colors = wakerOutlinedButtonColors(),
-            ) {
-                Text(
-                    if (busy) {
-                        stringResource(R.string.voices_separating)
-                    } else {
-                        stringResource(R.string.voices_separate_voices)
-                    },
-                )
-            }
-        }
-    }
-}
+// VoiceProfileManagement 행/필드 하위 컴포넌트.
 
 internal enum class VoiceRegistrationStep {
     Source,
-    Identity,
-    Sharing,
+    Details,
+
+    /** 등록 요청 후 클론 생성 대기 — 결정 전까지 플로우 밖으로 나가지 않는다. */
+    Creating,
+
+    /** 생성 완료 — 미리듣기 문구 확인·수정 후 유지/삭제를 결정하는 스텝. */
+    Preview,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -133,7 +72,6 @@ internal enum class VoiceRegistrationStep {
 internal fun RelationshipDropdownField(
     selection: RelationshipSelection,
     onSelectionChange: (RelationshipSelection) -> Unit,
-    isError: Boolean,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val presetLabel = selection.preset?.let { stringResource(it.labelRes) }.orEmpty()
@@ -147,18 +85,15 @@ internal fun RelationshipDropdownField(
                 value = presetLabel,
                 onValueChange = {},
                 readOnly = true,
+                // 관계는 선택 입력 — 비워도 등록할 수 있다.
                 label = { Text(stringResource(R.string.voicesr_relationship_label_required)) },
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_placeholder)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                isError = isError && !selection.isComplete,
-                supportingText = {
-                    if (isError && !selection.isComplete) Text(stringResource(R.string.voicesr_required_field))
-                },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .menuAnchor(),
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
             )
             ExposedDropdownMenu(
                 expanded = expanded,
@@ -192,10 +127,6 @@ internal fun RelationshipDropdownField(
                 label = { Text(stringResource(R.string.voicesr_relationship_custom_label)) },
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_custom_placeholder)) },
                 singleLine = true,
-                isError = isError && !selection.isComplete,
-                supportingText = {
-                    if (isError && !selection.isComplete) Text(stringResource(R.string.voicesr_required_field))
-                },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
@@ -205,72 +136,44 @@ internal fun RelationshipDropdownField(
 }
 
 @Composable
-internal fun ListenerTitlePreview(
-    listenerTitle: String,
-    relationshipLabel: String,
-) {
-    if (listenerTitle.isBlank()) return
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerCardShape,
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.voicesr_listener_preview_heading),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = stringResource(R.string.voicesr_listener_preview_quote, listenerTitle),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            if (relationshipLabel.isNotBlank()) {
-                MutedText(stringResource(R.string.voicesr_listener_preview_relationship, relationshipLabel))
-            }
-        }
-    }
-}
-
-@Composable
-internal fun SharingOptionCard(
+internal fun ShareVoiceToggleCard(
     enabled: Boolean,
+    checked: Boolean,
     title: String,
     description: String,
-    isChosen: Boolean,
-    onClick: () -> Unit,
+    onCheckedChange: (Boolean) -> Unit,
 ) {
-    val containerColor = if (isChosen) {
-        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
-    OutlinedCard(
-        shape = WakerCardShape,
-        border = wakerCardBorder(if (enabled) 1f else 0.4f),
-        colors = CardDefaults.outlinedCardColors(containerColor = containerColor),
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onCheckedChange(!checked) },
+        shape = WakerPanelShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        border = wakerCardBorder(if (enabled) 0.72f else 0.36f),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RadioButton(
-                selected = isChosen,
-                onClick = onClick,
-                enabled = enabled,
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.SemiBold)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 MutedText(description)
             }
+            AlarmTalkSwitch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                enabled = enabled,
+            )
         }
     }
 }
@@ -324,106 +227,16 @@ internal fun parseRelationshipLabel(raw: String?): RelationshipSelection {
     }
 }
 
-internal enum class SpeakerDraftStatus {
-    Cloning,
-    Synthesizing,
-    Ready,
-    Failed,
-}
+/** 유료 클론 목소리의 알람 음성 준비 상태(서버 사전렌더 + 로컬 다운로드) 표시용. */
+internal sealed interface CloneVoiceReadiness {
+    /** 서버 사전렌더 진행 중 — "준비 중 n/전체". */
+    data class Preparing(val generated: Int, val total: Int) : CloneVoiceReadiness
 
-internal data class SpeakerDraftState(
-    val profileId: String? = null,
-    val previewUri: String? = null,
-    val status: SpeakerDraftStatus = SpeakerDraftStatus.Cloning,
-    val errorMessage: String? = null,
-)
+    /** 서버 사전렌더 완료, 로컬 클립 다운로드 중. */
+    object Downloading : CloneVoiceReadiness
 
-internal fun draftStatusLabel(
-    context: android.content.Context,
-    status: SpeakerDraftStatus,
-    errorMessage: String?,
-): String = when (status) {
-    SpeakerDraftStatus.Cloning -> context.getString(R.string.voices2_draft_status_cloning)
-    SpeakerDraftStatus.Synthesizing -> context.getString(R.string.voices2_draft_status_synthesizing)
-    SpeakerDraftStatus.Ready -> context.getString(R.string.voices2_draft_status_ready)
-    SpeakerDraftStatus.Failed ->
-        errorMessage ?: context.getString(R.string.voices2_draft_status_failed)
-}
-
-@Composable
-internal fun SpeakerDraftRow(
-    speaker: VoiceSpeakerSegment,
-    index: Int,
-    state: SpeakerDraftState,
-    isPlaying: Boolean,
-    promotingBusy: Boolean,
-    onTogglePlay: () -> Unit,
-    onSelect: () -> Unit,
-) {
-    val ready = state.status == SpeakerDraftStatus.Ready && state.previewUri != null
-    val context = LocalContext.current
-    val durationLabel = audioTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
-    OutlinedCard(
-        shape = WakerCardShape,
-        border = wakerCardBorder(if (ready) 1f else 0.58f),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(
-                        if (ready) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                        WakerTileShape,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Mic,
-                    contentDescription = null,
-                    tint = if (ready) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.voicesr_speaker_draft_index, index + 1),
-                    fontWeight = FontWeight.SemiBold,
-                )
-                MutedText("${draftStatusLabel(context, state.status, state.errorMessage)} · $durationLabel")
-            }
-            IconButton(
-                onClick = onTogglePlay,
-                enabled = ready,
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    contentDescription = if (isPlaying) stringResource(R.string.voicesr_pause) else stringResource(R.string.voicesr_preview),
-                )
-            }
-            Button(
-                onClick = onSelect,
-                enabled = ready && !promotingBusy,
-                shape = WakerPillShape,
-            ) {
-                Text(stringResource(R.string.voicesr_select))
-            }
-        }
-    }
+    /** 사전렌더 생성 실패 — [다시 시도] 버튼 노출. */
+    object Failed : CloneVoiceReadiness
 }
 
 @Composable
@@ -434,6 +247,12 @@ internal fun VoiceProfileRow(
     onRename: () -> Unit,
     onShareChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
+    readiness: CloneVoiceReadiness? = null,
+    onRetryPrerender: () -> Unit = {},
+    retryPrerenderBusy: Boolean = false,
+    speechStyleFailed: Boolean = false,
+    onRetrySpeechStyle: () -> Unit = {},
+    retrySpeechStyleBusy: Boolean = false,
 ) {
     val isProcessing = profile.status == "processing"
     val isDeleting = profile.status == "deleting"
@@ -532,6 +351,55 @@ internal fun VoiceProfileRow(
             }
 
             if (!isProcessing && !isDeleting) {
+                // 알람 음성(사전렌더 21클립) 준비 상태 — 준비 완료(서버 21/21 + 로컬 다운로드
+                // 완료)면 아무것도 표시하지 않는다.
+                when (readiness) {
+                    is CloneVoiceReadiness.Preparing -> VoiceProgressMessage(
+                        stringResource(
+                            R.string.voicesr_prerender_preparing,
+                            readiness.generated,
+                            readiness.total,
+                        ),
+                    )
+
+                    CloneVoiceReadiness.Downloading ->
+                        VoiceProgressMessage(stringResource(R.string.voicesr_prerender_downloading))
+
+                    CloneVoiceReadiness.Failed -> Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            MutedText(stringResource(R.string.voicesr_prerender_failed))
+                        }
+                        TextButton(
+                            onClick = onRetryPrerender,
+                            enabled = rowEnabled && !retryPrerenderBusy,
+                        ) {
+                            Text(stringResource(R.string.voicesr_prerender_retry))
+                        }
+                    }
+
+                    null -> Unit
+                }
+                if (speechStyleFailed) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            MutedText(stringResource(R.string.voicesr_speech_style_failed))
+                        }
+                        TextButton(
+                            onClick = onRetrySpeechStyle,
+                            enabled = rowEnabled && !retrySpeechStyleBusy,
+                        ) {
+                            Text(stringResource(R.string.voicesr_speech_style_retry))
+                        }
+                    }
+                }
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerPanelShape,
@@ -581,61 +449,12 @@ internal fun VoiceSharedBadge() {
     }
 }
 
-/** 시스템 제공(스톡) 보이스 행 — 수정/삭제/공유 액션 없이 정보만 보여준다. */
+/**
+ * 인사말 미리듣기 재생 중임을 나타내는 작은 이퀄라이저 애니메이션.
+ * 기본 목소리 선택 시트(VoiceProfileManagementPanel)의 옵션 행 trailing 에 쓰인다.
+ */
 @Composable
-internal fun SystemVoiceProfileRow(
-    profile: VoiceProfile,
-    playing: Boolean,
-    onPlay: () -> Unit,
-    selected: Boolean = false,
-    onSelect: () -> Unit = {},
-) {
-    // 행 전체 탭 = 기본 목소리로 선택 + 인사말 자동 재생(재탭 시 정지). 별도 ▶ 버튼 없음.
-    OutlinedCard(
-        onClick = {
-            onSelect()
-            onPlay()
-        },
-        shape = WakerCardShape,
-        border = wakerCardBorder(),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.secondaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-        ),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // 모든 행이 같은 마이크 배지를 반복해 정보가 없었음 — 이름만 보여준다.
-            Text(
-                text = profile.name,
-                fontWeight = FontWeight.SemiBold,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                modifier = Modifier.weight(1f),
-            )
-            // 재생 중이면 이퀄라이저로 '재생 중'을 알린다(정지는 행 재탭).
-            if (playing) {
-                PlayingEqualizer()
-            }
-            RadioButton(selected = selected, onClick = null)
-        }
-    }
-}
-
-/** 인사말 미리듣기 재생 중임을 나타내는 작은 이퀄라이저 애니메이션. */
-@Composable
-private fun PlayingEqualizer() {
+internal fun PlayingEqualizer() {
     val transition = rememberInfiniteTransition(label = "voicePlaying")
     val barColor = MaterialTheme.colorScheme.primary
     Row(

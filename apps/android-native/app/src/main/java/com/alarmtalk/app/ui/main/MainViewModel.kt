@@ -28,9 +28,7 @@ import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.SendNoteRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
@@ -170,6 +168,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var voiceProfiles by mutableStateOf<List<VoiceProfile>>(emptyList())
         internal set
 
+    var pendingVoiceDraft by mutableStateOf<VoiceProfile?>(null)
+        internal set
+
     var voiceProfileBusy by mutableStateOf(false)
         internal set
 
@@ -192,9 +193,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var familyVoices by mutableStateOf<List<FamilyVoiceProfile>>(emptyList())
+
+    // 공유 목소리 목록이 API 로 '신선하게' 로드됐는지. 접근권 잃은 목소리 알람 강등 판단은
+    // 이 신선 로드 + voiceProfiles 로드가 모두 확보됐을 때만 수행한다(reconcileInaccessibleVoiceAlarms).
+    internal var familyVoicesLoadedFresh: Boolean = false
+        internal set
+
+    // 내 음성 목록이 API 로 '성공적으로' 로드됐는지(빈 목록도 유효한 신선 로드로 취급). voiceProfiles.isEmpty()
+    // 를 '미로드'로 쓰면 마지막 목소리를 삭제·접근상실한 사용자의 알람 강등이 스킵되므로 별도 플래그로 추적(PR #536 P2).
+    internal var voiceProfilesLoadedFresh: Boolean = false
         internal set
 
     var billingBusy by mutableStateOf(false)
+
+    // 서버가 Play 구독을 직접 해지하지 못했을 때(PLAY_CANCEL_FAILED 등) 띄우는
+    // "Google Play에서 직접 관리" 안내 다이얼로그의 구독 관리 URL. null 이면 숨김.
+    var billingPlayManageUrl by mutableStateOf<String?>(null)
+
+    // planKey("personal"/"couple"/"family") → Play 실제 표시가격(formattedPrice). preloadProducts
+    // 성공 시 채워지며, 비면 UI 가 문자열 리소스로 폴백한다. 하드코딩 대신 청구 통화·금액을 정확히 표기.
+    var billingPlanPrices by mutableStateOf<Map<String, String>>(emptyMap())
         internal set
 
     // 이용권 패널 진입 시의 read-only 새로고침 플래그. billingBusy(구매·해지 등
@@ -207,12 +225,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var vouchers by mutableStateOf<List<VoucherItem>>(emptyList())
-        internal set
-
-    var noteBusy by mutableStateOf(false)
-        internal set
-
-    var receivedNotes by mutableStateOf<List<ReceivedNote>>(emptyList())
         internal set
 
     var message by mutableStateOf<String?>(null)
@@ -248,6 +260,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
     var defaultVoiceId by mutableStateOf<String?>(null)
         internal set
+
+    // 기본 목소리 무료 버킷 프리페치 진행(다운로드 완료 수 to 전체). null = 진행 중 아님.
+    // 목소리 탭의 기본 목소리 행 아래에 "알람 음성 준비 중 n/전체"로 표시된다.
+    var voicePrefetchProgress by mutableStateOf<Pair<Int, Int>?>(null)
+        internal set
+
+    // 진행 중인 프리페치 잡 — 목소리를 연달아 바꾸면 이전 잡을 취소하고 마지막 선택만 받는다.
+    internal var voicePrefetchJob: kotlinx.coroutines.Job? = null
+
+    // setDefaultVoice 시점에 매니페스트(stockClips)가 아직 안 왔으면 프리페치가 빈손으로 끝난다.
+    // 대상 목소리를 여기 담아 두고 loadStockClips 성공 시 1회 재시도한다(재시도 후 클리어).
+    internal var pendingPrefetchVoiceId: String? = null
 
     private val consentPrefs = application.getSharedPreferences("voice_alarm_consent", android.content.Context.MODE_PRIVATE)
 
@@ -342,6 +366,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 온보딩 목소리 스텝에서 기본 목소리를 정했을 때. 기기 설정에 저장하고 스텝을 닫는다.
      *  (호칭은 따로 받지 않는다 — 시스템 음성 TTS 는 계정 닉네임으로 부른다.) */
     fun completeVoiceSetup(voiceId: String) {
+        // setDefaultVoice 가 무료 버킷 클립 프리페치까지 함께 태운다(온보딩·목소리 탭 동일 경로).
         setDefaultVoice(voiceId)
         showVoiceSetup = false
         // 목소리를 고른 흐름에서만 첫 알람 만들기(에디터 자동 진입)로 이어간다(건너뛰기 시엔 홈).
@@ -354,11 +379,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showVoiceSetup = false
     }
 
-    /** 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신. */
+    /** 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신하고,
+     *  그 목소리의 무료 버킷 클립을 미리 받는다(진행은 voicePrefetchProgress 로 노출). */
     fun setDefaultVoice(voiceId: String) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
         defaultVoiceStore.set(userId, voiceId)
         defaultVoiceId = voiceId
+        // 매니페스트가 아직 없으면 이번 프리페치는 빈손으로 끝난다 — 대상을 기억해 두고
+        // loadStockClips 성공 시 재시도한다(온보딩 중 목소리 선택이 매니페스트보다 빠른 경우).
+        if (stockClips.isEmpty()) pendingPrefetchVoiceId = voiceId
+        prefetchFreeBucketClips(voiceId)
     }
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
@@ -432,16 +462,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     internal fun clearUserScopedRemoteState() {
+        // 진행 중이던 목소리 프리페치 잡을 끊고 진행 표시를 지운다 — 다음 계정에 이전 계정의
+        // 늦은 다운로드 응답/진행률이 섞이지 않게 한다. (클론 사전렌더 준비 폴링은 목소리 탭
+        // 컴포저블 로컬 상태라 아래 voiceProfiles 초기화로 폴링 대상이 비면서 함께 멈춘다.)
+        voicePrefetchJob?.cancel()
+        voicePrefetchJob = null
+        voicePrefetchProgress = null
+        pendingPrefetchVoiceId = null
         voiceProfiles = emptyList()
+        pendingVoiceDraft = null
         voiceProfileLoadFinished = false
+        voiceProfilesLoadedFresh = false
         showVoiceSetup = false
         defaultVoiceId = null
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()
+        // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가
+        // refreshSocial 전에 강등 판단해, 공유 목소리 쓰는 알람이 오강등될 수 있다(PR #536 P2).
+        familyVoicesLoadedFresh = false
         subscriptionResponse = null
         vouchers = emptyList()
-        receivedNotes = emptyList()
+        billingPlayManageUrl = null
         receivedAlarmSeenAtMillis = 0L
         registerEmailVerificationSentTo = null
         registerEmailVerified = null
@@ -526,6 +568,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // BillingClient 연결 + 상품 정보 선로드 — 이용권 패널의 구매 시트가 즉시 뜨게 한다.
         viewModelScope.launch {
             runCatching { playBilling.preloadProducts() }
+                .onSuccess {
+                    billingPlanPrices = listOf("personal", "couple", "family")
+                        .mapNotNull { key -> playBilling.formattedPriceForPlan(key)?.let { key to it } }
+                        .toMap()
+                }
                 .onFailure { error -> Log.w(TAG, "Failed to preload Play products", error) }
         }
         refreshAppSession()

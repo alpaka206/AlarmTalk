@@ -59,7 +59,10 @@ describe('ElevenLabsClient', () => {
       await client.textToSpeech('voice-123', '안녕하세요');
 
       const [url, opts] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.elevenlabs.io/v1/text-to-speech/voice-123');
+      // K2: output_format 을 명시 고정한다(제공자 기본값 의존 제거).
+      expect(url).toBe(
+        'https://api.elevenlabs.io/v1/text-to-speech/voice-123?output_format=mp3_44100_128',
+      );
       expect(opts.method).toBe('POST');
       const body = JSON.parse(opts.body);
       expect(body.text).toBe('안녕하세요');
@@ -131,6 +134,43 @@ describe('ElevenLabsClient', () => {
     });
   });
 
+  describe('speechToText', () => {
+    it('scribe_v2 모델로 전사 요청 (scribe_v1 은 2026-07-09 제거됨)', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ text: '  안녕하세요 반갑습니다  ' }));
+
+      const text = await client.speechToText(new ArrayBuffer(100), {
+        mimeType: 'audio/mpeg',
+        fileName: 'voice.mp3',
+      });
+
+      expect(mockFetch).toHaveBeenCalledOnce();
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toBe('https://api.elevenlabs.io/v1/speech-to-text');
+      expect(opts.method).toBe('POST');
+      expect(opts.headers['xi-api-key']).toBe('test-api-key-123');
+      const body = opts.body as FormData;
+      expect(body.get('model_id')).toBe('scribe_v2');
+      const file = body.get('file') as Blob & { name?: string };
+      expect(file.type).toBe('audio/mpeg');
+      expect(file.name).toBe('voice.mp3');
+      // 응답 {text} 는 trim 되어 반환된다.
+      expect(text).toBe('안녕하세요 반갑습니다');
+    });
+
+    it('text 필드 없으면 빈 문자열', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({}));
+      const text = await client.speechToText(new ArrayBuffer(10));
+      expect(text).toBe('');
+    });
+
+    it('API 에러 시 예외 (호출자가 failed 상태를 기록)', async () => {
+      mockFetch.mockResolvedValueOnce(errorResponse(400, 'invalid_model_id'));
+      await expect(client.speechToText(new ArrayBuffer(10))).rejects.toThrow(
+        'ElevenLabs API error 400',
+      );
+    });
+  });
+
   describe('createInstantClone', () => {
     it('FormData로 전송', async () => {
       mockFetch.mockResolvedValueOnce(okJson({ voice_id: 'new-voice-id' }));
@@ -176,54 +216,6 @@ describe('ElevenLabsClient', () => {
 
       await expect(client.createInstantClone(new ArrayBuffer(10), 'test')).rejects.toThrow(
         'ElevenLabs clone error 400: Bad audio',
-      );
-    });
-  });
-
-  describe('diarize', () => {
-    it('FormData로 전송 + 결과 반환', async () => {
-      const diarizeResult = {
-        words: [
-          { text: 'hello', start: 0, end: 0.4, type: 'word', speaker_id: 'speaker_1' },
-          { text: 'world', start: 0.45, end: 0.8, type: 'word', speaker_id: 'speaker_1' },
-          { text: 'again', start: 1.5, end: 2, type: 'word', speaker_id: 'speaker_2' },
-        ],
-      };
-      mockFetch.mockResolvedValueOnce(okJson(diarizeResult));
-
-      const result = await client.diarize(new ArrayBuffer(500));
-
-      const [url, opts] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.elevenlabs.io/v1/speech-to-text');
-      expect(opts.method).toBe('POST');
-      const body = opts.body as FormData;
-      expect(body.get('model_id')).toBe('scribe_v2');
-      expect(body.get('diarize')).toBe('true');
-      expect(body.get('timestamps_granularity')).toBe('word');
-      expect(result.speakers).toHaveLength(2);
-      expect(result.speakers[0].speaker_id).toBe('speaker_1');
-      expect(result.speakers[0].segments).toEqual([{ start: 0, end: 0.8 }]);
-    });
-
-    it('diarize 업로드에서 mp3 MIME 과 파일명을 보존', async () => {
-      mockFetch.mockResolvedValueOnce(okJson({ words: [] }));
-
-      await client.diarize(new ArrayBuffer(500), {
-        mimeType: 'audio/mpeg',
-        fileName: 'recording.mp3',
-      });
-
-      const body = mockFetch.mock.calls[0][1].body as FormData;
-      const file = body.get('file') as Blob & { name?: string };
-      expect(file.type).toBe('audio/mpeg');
-      expect(file.name).toBe('recording.mp3');
-    });
-
-    it('API 에러 시 예외', async () => {
-      mockFetch.mockResolvedValueOnce(errorResponse(500, 'Internal error'));
-
-      await expect(client.diarize(new ArrayBuffer(10))).rejects.toThrow(
-        'ElevenLabs diarize error 500',
       );
     });
   });

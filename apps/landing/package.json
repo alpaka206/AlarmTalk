@@ -9,21 +9,21 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "lucide-react": "^1.23.0",
+    "lucide-react": "^1.24.0",
     "motion": "^12.42.2",
     "next": "^16.2.10",
-    "next-intl": "^4.13.1",
+    "next-intl": "^4.13.2",
     "pretendard": "^1.3.9",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
-    "postcss": "^8.5.16",
+    "postcss": "^8.5.19",
     "tailwindcss": "^4.0.0",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }

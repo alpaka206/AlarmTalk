@@ -489,29 +489,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("code/register", method: "POST", token: token, body: CodeRegisterRequest(code: code))
     }
 
-    func listReceivedNotes(token: String) async throws -> [ReceivedNote] {
-        let response: NoteListResponse = try await request("notes/received", token: token)
-        return response.notes
-    }
-
-    func sendNote(receiverId: String, text: String, audioUrl: String? = nil, token: String) async throws -> ReceivedNote {
-        let response: SendNoteResponse = try await request(
-            "notes",
-            method: "POST",
-            token: token,
-            body: SendNoteRequest(receiverId: receiverId, text: text, audioUrl: audioUrl)
-        )
-        return response.note
-    }
-
-    func getNoteAudio(id: String, token: String) async throws -> NoteAudioResponse {
-        try await request("notes/\(id)/audio", token: token)
-    }
-
-    func markNoteRead(id: String, token: String) async throws -> MarkNoteReadResponse {
-        try await request("notes/\(id)/read", method: "PATCH", token: token)
-    }
-
     func getSubscription(token: String) async throws -> BillingSubscriptionResponse {
         try await request("billing/subscription", token: token)
     }

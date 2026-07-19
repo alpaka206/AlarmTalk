@@ -1,5 +1,8 @@
 package com.alarmtalk.app
 
+import android.icu.text.MeasureFormat
+import android.icu.util.Measure
+import android.icu.util.MeasureUnit
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -27,14 +29,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.delay
+import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import com.alarmtalk.app.R
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.WakerCardShape
@@ -45,34 +51,67 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.data.AlarmEntity
 
-// 알람 홈 좌상단 인사말 — 시간대별 문구. 우측 공간은 비워둔다(추후 알림 등 배치 여지).
+// 알람 탭 헤더 — '알람' 제목 대신 상태 한 줄(다음 알람/꺼짐/없음)을 헤드라인으로 승격한다.
 @Composable
-internal fun HomeHeader() {
-    val hour = java.time.LocalTime.now().hour
-    val (greetingTop, greetingBottom) = when {
-        hour < 6 -> stringResource(R.string.hs_greeting_voice_top) to stringResource(R.string.hs_greeting_voice_bottom)
-        hour < 12 -> stringResource(R.string.hs_greeting_morning_top) to stringResource(R.string.hs_greeting_morning_bottom)
-        hour < 17 -> stringResource(R.string.hs_greeting_tomorrow_top) to stringResource(R.string.hs_greeting_tomorrow_bottom)
-        hour < 21 -> stringResource(R.string.hs_greeting_each_other_top) to stringResource(R.string.hs_greeting_each_other_bottom)
-        else -> stringResource(R.string.hs_greeting_voice_top) to stringResource(R.string.hs_greeting_voice_bottom)
+internal fun HomeHeader(
+    nextAlarm: AlarmEntity?,
+    hasAnyAlarm: Boolean,
+) {
+    // 절대 시각은 바로 아래 카드에 이미 있으니 헤더는 '남은 시간'을 말한다.
+    // 분이 바뀌는 경계마다 갱신해 화면을 켜둔 채로도 어긋나지 않게 한다.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(nextAlarm?.fireAtMillis) {
+        if (nextAlarm == null) return@LaunchedEffect
+        while (true) {
+            delay(60_000L - System.currentTimeMillis() % 60_000L)
+            now = System.currentTimeMillis()
+        }
     }
-    Column(modifier = Modifier.fillMaxWidth()) {
+    val statusText: String? = when {
+        nextAlarm != null -> {
+            val remainingMillis = nextAlarm.fireAtMillis - now
+            if (remainingMillis < 60_000L) {
+                stringResource(R.string.hs_status_ring_soon)
+            } else {
+                stringResource(R.string.hs_status_ring_in, remainingDurationLabel(remainingMillis))
+            }
+        }
+        hasAnyAlarm -> stringResource(R.string.hs_status_inactive)
+        else -> stringResource(R.string.hs_status_no_alarm)
+    }
+    // '알람' 라벨을 따로 두지 않고, 상태 문구(다음 울림/모두 꺼짐/알람 없음)를 그대로 헤드라인으로 승격한다.
+    // 디자인 언어(제목=결론)에 맞춰 지금 상태가 곧 화면의 첫 줄이 되게 한다.
+    if (!statusText.isNullOrBlank()) {
         Text(
-            text = greetingTop,
-            modifier = Modifier.padding(end = 72.dp),
-            style = MaterialTheme.typography.headlineMedium,
+            text = statusText,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
         )
-        Text(
-            text = greetingBottom,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            // 랜딩 헤드라인처럼 두 번째 줄에 브랜드 액센트를 준다.
-            color = MaterialTheme.colorScheme.primary,
-        )
     }
+}
+
+/** "13시간 40분"/"2일 5시간" — 다음 울림까지 남은 시간(분 단위 올림, 상위 두 단위만 노출). */
+private fun remainingDurationLabel(remainingMillis: Long): String {
+    val totalMinutes = ((remainingMillis + 59_999L) / 60_000L).toInt()
+    val days = totalMinutes / (24 * 60)
+    val hours = totalMinutes % (24 * 60) / 60
+    val minutes = totalMinutes % 60
+    val measures = when {
+        days > 0 -> listOfNotNull(
+            Measure(days, MeasureUnit.DAY),
+            Measure(hours, MeasureUnit.HOUR).takeIf { hours > 0 },
+        )
+        hours > 0 -> listOfNotNull(
+            Measure(hours, MeasureUnit.HOUR),
+            Measure(minutes, MeasureUnit.MINUTE).takeIf { minutes > 0 },
+        )
+        else -> listOf(Measure(minutes, MeasureUnit.MINUTE))
+    }
+    return MeasureFormat.getInstance(Locale.getDefault(), MeasureFormat.FormatWidth.SHORT)
+        .formatMeasures(*measures.toTypedArray())
 }
 
 // 전체 탭 — 우측 상단 프로필 드롭다운 메뉴를 페이지로 승격한 것(토스 설정 패턴).
@@ -88,6 +127,7 @@ internal fun MenuTabPanel(
     onOpenMemberManagement: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenConsentHistory: () -> Unit,
+    onOpenOssLicenses: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -240,20 +280,10 @@ internal fun MenuTabPanel(
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.outlineVariant,
                 )
-                // 오픈소스 라이선스 — 목록/본문은 oss-licenses-plugin 이 생성한 데이터로 라이브러리 화면이 렌더.
-                val ossLicensesTitle = stringResource(R.string.menu_open_source_licenses)
+                // 오픈소스 라이선스 — 인앱 Compose 화면(OssLicensesScreen)으로 이동.
                 MenuTabRow(
-                    label = ossLicensesTitle,
-                    onClick = {
-                        com.google.android.gms.oss.licenses.OssLicensesMenuActivity
-                            .setActivityTitle(ossLicensesTitle)
-                        context.startActivity(
-                            android.content.Intent(
-                                context,
-                                com.google.android.gms.oss.licenses.OssLicensesMenuActivity::class.java,
-                            ),
-                        )
-                    },
+                    label = stringResource(R.string.menu_open_source_licenses),
+                    onClick = onOpenOssLicenses,
                 )
             }
         }
@@ -288,15 +318,19 @@ internal fun MenuTabPanel(
             title = stringResource(R.string.hs_settings_theme),
             onDismiss = { themeSheetVisible = false },
         ) { dismiss ->
-            listOf(ThemeMode.System, ThemeMode.Light, ThemeMode.Dark).forEach { mode ->
-                WakerSheetOptionRow(
-                    title = themeModeLabel(context, mode),
-                    selected = themeMode == mode,
-                    onClick = {
-                        onChangeTheme(mode)
-                        dismiss()
-                    },
-                )
+            val modes = listOf(ThemeMode.System, ThemeMode.Light, ThemeMode.Dark)
+            WakerSheetOptionGroup {
+                modes.forEachIndexed { index, mode ->
+                    WakerSheetOptionRow(
+                        title = themeModeLabel(context, mode),
+                        selected = themeMode == mode,
+                        onClick = {
+                            onChangeTheme(mode)
+                            dismiss()
+                        },
+                        divider = index != modes.lastIndex,
+                    )
+                }
             }
         }
     }
@@ -455,11 +489,12 @@ internal fun DeleteAccountConfirmDialog(
 internal fun ScreenHeader(
     title: String,
     subtitle: String? = null,
+    titleStyle: TextStyle = MaterialTheme.typography.headlineLarge,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.headlineLarge,
+            style = titleStyle,
             fontWeight = FontWeight.Bold,
         )
         if (!subtitle.isNullOrBlank()) {

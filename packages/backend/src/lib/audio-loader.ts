@@ -14,10 +14,13 @@ const MAX_AUDIO_URL_LENGTH = 2048;
 
 /**
  * R2 객체 키 네임스페이스. 보이스/녹음 원본은 voices/{userId}/...,
- * 생성 TTS 캐시는 generated-tts/{userId}/... 형태로 저장된다
- * (r2-storage.ts, audio-cache.ts 참고). 키의 둘째 path segment 가 소유자 id.
+ * 생성 TTS 캐시는 generated-tts/{userId}/..., 알람 직접재생 클립은
+ * raw-alarms/{userId}/... 형태로 저장된다(r2-storage.ts, audio-cache.ts,
+ * alarm-source.ts 참고). 키의 둘째 path segment 가 소유자 id.
+ * raw-alarms/ 는 alarm.raw_audio_url 소유권 게이트(alarm-mutation.ts)가
+ * isR2KeyAuthorized({kind:'owner'}) 로 이 네임스페이스를 검증하는 데 쓴다.
  */
-const R2_USER_PREFIXES = ['voices/', 'generated-tts/'] as const;
+const R2_USER_PREFIXES = ['voices/', 'generated-tts/', 'raw-alarms/'] as const;
 
 export type AudioAccess =
   /**
@@ -52,7 +55,14 @@ function r2KeyOwner(objectKey: string): string | null {
       const rest = objectKey.slice(prefix.length);
       const slash = rest.indexOf('/');
       if (slash <= 0) return null;
-      return decodeURIComponent(rest.slice(0, slash));
+      // 클라 제공 raw_audio_url 은 형식만 통과하면 여기 도달할 수 있다. 잘못된 퍼센트
+      // 인코딩(예: '%')이면 decodeURIComponent 가 throw 하는데, 이를 500 이 아니라
+      // '소유자 판별 불가(null)'로 처리해 호출자 소유권 게이트가 403/400 을 내게 한다.
+      try {
+        return decodeURIComponent(rest.slice(0, slash));
+      } catch {
+        return null;
+      }
     }
   }
   return null;

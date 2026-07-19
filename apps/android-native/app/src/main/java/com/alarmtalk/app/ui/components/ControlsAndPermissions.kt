@@ -1,5 +1,8 @@
 package com.alarmtalk.app
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
@@ -44,17 +47,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerTileShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmStates
 import com.alarmtalk.app.data.AlarmSyncStates
@@ -67,13 +74,20 @@ internal fun AlarmTalkSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    // 다크 팔레트는 onPrimary 가 진네이비라 켜짐 썸이 트랙보다 어두워져 꺼짐으로 오독될 수
+    // 있다 — 다크에선 밝은 썸(onPrimaryContainer)으로 켜짐을 명확히 하고, 라이트는 흰 썸 유지.
+    val checkedThumbColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onPrimary
+    }
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         enabled = enabled,
         modifier = modifier,
         colors = SwitchDefaults.colors(
-            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+            checkedThumbColor = checkedThumbColor,
             checkedTrackColor = MaterialTheme.colorScheme.primary,
             checkedBorderColor = Color.Transparent,
             uncheckedThumbColor = MaterialTheme.colorScheme.surface,
@@ -235,6 +249,7 @@ private fun nextFireDateLabel(context: android.content.Context, fireAtMillis: Lo
 @Composable
 internal fun AlarmRow(
     alarm: AlarmEntity,
+    voiceName: String?,
     onToggleEnabled: (Boolean) -> Unit,
     onEditAlarm: () -> Unit,
     onDeleteAlarm: () -> Unit,
@@ -243,17 +258,33 @@ internal fun AlarmRow(
     val deleteWidth = 92.dp
     val deleteWidthPx = with(LocalDensity.current) { deleteWidth.toPx() }
     var deleteRevealed by remember(alarm.id) { mutableStateOf(false) }
-    var dragOffsetPx by remember(alarm.id) { mutableStateOf(0f) }
+    // 손가락과 1:1 로 따라오고(snapTo), 놓으면 놓는 순간의 속도를 이어받아 스프링으로
+    // 정착한다(animateTo + initialVelocity). 드래그↔애니메이션 사이 이음새를 없애고,
+    // 정착 중에 다시 잡아도 현재 위치에서 그대로 이어진다.
+    // 바운드 [-deleteWidthPx, 0]: 세게 플릭하면 스프링이 큰 초기 속도를 이어받아 목표를 지나치는데
+    // (무진동 감쇠도 초기 속도가 크면 1회 오버슈트), 그러면 카드가 삭제 버튼(고정 92dp)보다 더 밀려
+    // '삭제와 분리'돼 보인다 → Animatable 바운드로 양방향 오버슈트를 물리적으로 차단한다.
+    val offsetX = remember(alarm.id, deleteWidthPx) {
+        Animatable(0f).apply { updateBounds(lowerBound = -deleteWidthPx, upperBound = 0f) }
+    }
+    val scope = rememberCoroutineScope()
+    // 빠른 플릭은 거리가 짧아도 의도가 분명하므로 위치보다 속도 부호를 우선한다.
+    val flingVelocityPx = with(LocalDensity.current) { 420.dp.toPx() }
+    val settleSpec = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+    )
     val warningText = alarmRowWarningResId(alarm)?.let { stringResource(it) }
     // 스와이프 외에 접근성(TalkBack/지체장애) 대체 삭제 수단: 길게 눌러 메뉴 노출.
     var menuExpanded by remember(alarm.id) { mutableStateOf(false) }
-    val settledOffsetPx = if (deleteRevealed) -deleteWidthPx else 0f
-    val currentOffsetPx = if (dragOffsetPx != 0f) dragOffsetPx else settledOffsetPx
-    val deleteVisible = deleteRevealed || currentOffsetPx < -0.5f
+    val deleteVisible = offsetX.value < -0.5f
+    // 우측 모서리는 드러난 정도에 비례해 22→0dp 로 연속 변형(불연속 형태 전환 방지).
+    val revealFraction = (-offsetX.value / deleteWidthPx).coerceIn(0f, 1f)
+    val endCornerRadius = 22.dp * (1f - revealFraction)
     val alarmCardShape = RoundedCornerShape(
         topStart = 22.dp,
-        topEnd = if (deleteVisible) 0.dp else 22.dp,
-        bottomEnd = if (deleteVisible) 0.dp else 22.dp,
+        topEnd = endCornerRadius,
+        bottomEnd = endCornerRadius,
         bottomStart = 22.dp,
     )
     val deleteButtonShape = RoundedCornerShape(
@@ -263,7 +294,9 @@ internal fun AlarmRow(
         bottomStart = 0.dp,
     )
     val dragState = rememberDraggableState { delta ->
-        dragOffsetPx = (dragOffsetPx + delta).coerceIn(-deleteWidthPx, 0f)
+        scope.launch {
+            offsetX.snapTo((offsetX.value + delta).coerceIn(-deleteWidthPx, 0f))
+        }
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
@@ -282,7 +315,7 @@ internal fun AlarmRow(
 
         Card(
             modifier = Modifier
-                .offset { IntOffset(currentOffsetPx.roundToInt(), 0) }
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
                 // 클릭=수정/펼침 해제, 길게 누르기=삭제 메뉴. 길게 누르기로 스와이프와 별개의
                 // 접근성 친화 삭제 경로를 제공한다.
                 .combinedClickable(
@@ -291,7 +324,7 @@ internal fun AlarmRow(
                             onEditAlarm()
                         } else {
                             deleteRevealed = false
-                            dragOffsetPx = 0f
+                            scope.launch { offsetX.animateTo(0f, settleSpec) }
                         }
                     },
                     onLongClick = { menuExpanded = true },
@@ -299,13 +332,20 @@ internal fun AlarmRow(
                 .draggable(
                     state = dragState,
                     orientation = Orientation.Horizontal,
-                    onDragStarted = {
-                        dragOffsetPx = settledOffsetPx
-                        deleteRevealed = false
-                    },
-                    onDragStopped = {
-                        deleteRevealed = dragOffsetPx <= -deleteWidthPx * 0.42f
-                        dragOffsetPx = 0f
+                    onDragStopped = { velocity ->
+                        val open = when {
+                            velocity < -flingVelocityPx -> true
+                            velocity > flingVelocityPx -> false
+                            else -> offsetX.value <= -deleteWidthPx * 0.42f
+                        }
+                        deleteRevealed = open
+                        scope.launch {
+                            offsetX.animateTo(
+                                targetValue = if (open) -deleteWidthPx else 0f,
+                                animationSpec = settleSpec,
+                                initialVelocity = velocity,
+                            )
+                        }
                     },
                 ),
             shape = alarmCardShape,
@@ -314,8 +354,8 @@ internal fun AlarmRow(
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
             Column(
-                modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -338,14 +378,23 @@ internal fun AlarmRow(
                                 } else {
                                     stringResource(R.string.rd2_pm)
                                 },
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 16.sp,
+                                    lineHeight = 20.sp,
+                                    letterSpacing = 0.sp,
+                                ),
                                 fontWeight = FontWeight.SemiBold,
                                 color = timeColor,
                                 modifier = Modifier.padding(end = 6.dp, bottom = 6.dp),
                             )
                             Text(
                                 text = alarmRowClockLabel(alarm.hour, alarm.minute),
-                                style = MaterialTheme.typography.headlineLarge,
+                                style = MaterialTheme.typography.headlineLarge.copy(
+                                    fontSize = 32.sp,
+                                    lineHeight = 40.sp,
+                                    fontFeatureSettings = "tnum",
+                                    letterSpacing = 0.sp,
+                                ),
                                 fontWeight = FontWeight.Normal,
                                 color = timeColor,
                             )
@@ -364,9 +413,20 @@ internal fun AlarmRow(
                                 )
                             }
                         }
+                        // 날짜 뒤에 '누구 목소리로 울리는지'를 붙인다 — 홈에서 알람을 구분하는
+                        // 이 앱 고유의 정보라, 라벨 없는 리스트에서 구분자 역할도 겸한다.
+                        val dateLabel = nextFireDateLabel(context, nextFireMillis)
                         Text(
-                            text = nextFireDateLabel(context, nextFireMillis),
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = if (voiceName.isNullOrBlank()) {
+                                dateLabel
+                            } else {
+                                stringResource(R.string.hs_alarm_row_date_voice, dateLabel, voiceName)
+                            },
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 15.sp,
+                                lineHeight = 21.sp,
+                                letterSpacing = 0.sp,
+                            ),
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -374,6 +434,7 @@ internal fun AlarmRow(
                         )
                     }
                     Spacer(Modifier.width(8.dp))
+                    // 켜짐/꺼짐 텍스트는 두지 않는다 — 스위치 위치·색이 곧 상태 표시.
                     AlarmTalkSwitch(
                         checked = alarm.enabled,
                         onCheckedChange = onToggleEnabled,

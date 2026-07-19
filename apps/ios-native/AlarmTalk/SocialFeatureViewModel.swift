@@ -5,33 +5,18 @@ enum CodeRegistrationDestination: Equatable {
     case sharedPass
 }
 
-struct ReceivedNoteRefreshState: Equatable {
-    var notes: [ReceivedNote]
-    var unavailableAudioNoteIDs: Set<String>
-    var revealedNoteIDs: Set<String>
-    var playingNoteID: String?
-}
-
 @MainActor
 final class SocialFeatureViewModel: ObservableObject {
     @Published var familyGroup: FamilyGroupCurrentResponse?
     @Published var familyVoices: [FamilyVoiceProfile] = []
-    @Published var receivedNotes: [ReceivedNote] = []
     @Published var subscription: BillingSubscriptionResponse?
     @Published var vouchers: [VoucherItem] = []
-    @Published var selectedReceiverID: String?
     @Published var inviteCode = ""
-    @Published var noteText = "오늘도 좋은 아침이에요. 잘 일어나길 바라요."
     @Published var isBusy = false
     @Published var statusMessage: String?
-    @Published var loadingNoteID: String?
-    @Published var playingNoteID: String?
-    @Published var unavailableAudioNoteIDs: Set<String> = []
-    @Published var revealedNoteIDs: Set<String> = []
 
     private let api: AlarmTalkAPI
     private let accessSnapshotStore: AccessSnapshotStore
-    private let notePreviewPlayer = AudioPreviewPlayer()
     private var activeUserID: String?
 
     init(
@@ -40,17 +25,10 @@ final class SocialFeatureViewModel: ObservableObject {
     ) {
         self.api = api
         self.accessSnapshotStore = accessSnapshotStore
-        notePreviewPlayer.onFinish = { [weak self] in
-            self?.playingNoteID = nil
-        }
     }
 
     var selectableMembers: [FamilyGroupMember] {
         familyGroup?.members ?? []
-    }
-
-    var unreadNoteCount: Int {
-        receivedNotes.filter { $0.readAt == nil }.count
     }
 
     func restoreAccessSnapshot(session: AuthSession?) {
@@ -67,19 +45,12 @@ final class SocialFeatureViewModel: ObservableObject {
 
     func clearUserScopedRemoteState() {
         activeUserID = nil
-        notePreviewPlayer.stop()
         familyGroup = nil
         familyVoices = []
-        receivedNotes = []
         subscription = nil
         vouchers = []
-        selectedReceiverID = nil
         inviteCode = ""
         statusMessage = nil
-        loadingNoteID = nil
-        playingNoteID = nil
-        unavailableAudioNoteIDs = []
-        revealedNoteIDs = []
     }
 
     func refreshAll(session: AuthSession?, force: Bool = false) async {
@@ -103,12 +74,6 @@ final class SocialFeatureViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             familyGroup = nextFamilyGroup
             accessSnapshotStore.updateFamilyGroup(userID: userID, response: nextFamilyGroup)
-            selectedReceiverID = Self.normalizedMessageReceiverID(
-                selected: selectedReceiverID,
-                members: nextFamilyGroup.members,
-                currentUserID: userID,
-                currentUserEmail: session?.user.email ?? ""
-            )
         } catch {
             messages.append(Self.scopedRefreshErrorMessage(
                 label: "가족 그룹",
@@ -130,19 +95,6 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         do {
-            let nextReceivedNotes = try await api.listReceivedNotes(token: token)
-            guard activeUserID == userID else { return }
-            await SocialNotificationTracker.notifyNewNotes(notes: nextReceivedNotes, userID: userID)
-            applyReceivedNotes(nextReceivedNotes)
-        } catch {
-            messages.append(Self.scopedRefreshErrorMessage(
-                label: "메시지",
-                error: error,
-                fallback: "음성 메시지를 불러오지 못했어요"
-            ))
-        }
-
-        do {
             async let nextSubscription = api.getSubscription(token: token)
             async let nextVouchers = api.listVouchers(token: token)
             let resolvedSubscription = try await nextSubscription
@@ -160,24 +112,8 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         guard activeUserID == userID else { return }
-        // Android 의 social/notes refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
+        // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
-    }
-
-    func refreshNotesSilently(session: AuthSession?) async {
-        guard let token = session?.token,
-              let userID = normalizedUserID(session?.user.id) else {
-            return
-        }
-        activeUserID = userID
-        do {
-            let nextReceivedNotes = try await api.listReceivedNotes(token: token)
-            guard activeUserID == userID else { return }
-            await SocialNotificationTracker.notifyNewNotes(notes: nextReceivedNotes, userID: userID)
-            applyReceivedNotes(nextReceivedNotes)
-        } catch {
-            // Android `refreshNotesSilently()` keeps background/message refresh failures quiet.
-        }
     }
 
     /// 구독 정보만 조용히 재조회. Apple IAP confirm 이 `success: true` 로 끝난 직후
@@ -205,82 +141,9 @@ final class SocialFeatureViewModel: ObservableObject {
         statusMessage = successMessage
     }
 
-    private func applyReceivedNotes(_ notes: [ReceivedNote]) {
-        let state = Self.receivedNoteRefreshState(
-            notes: notes,
-            unavailableAudioNoteIDs: unavailableAudioNoteIDs,
-            revealedNoteIDs: revealedNoteIDs,
-            playingNoteID: playingNoteID
-        )
-        receivedNotes = state.notes
-        unavailableAudioNoteIDs = state.unavailableAudioNoteIDs
-        revealedNoteIDs = state.revealedNoteIDs
-        if playingNoteID != nil, state.playingNoteID == nil {
-            notePreviewPlayer.stop()
-        }
-        playingNoteID = state.playingNoteID
-    }
-
-    private func applyNoteRead(id: String, readAt: String?) {
-        let fallbackReadAt = ISO8601DateFormatter().string(from: Date())
-        let normalizedReadAt = readAt?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let nextReadAt = normalizedReadAt.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackReadAt
-        receivedNotes = receivedNotes.map { note in
-            guard note.id == id, note.readAt == nil else { return note }
-            var next = note
-            next.readAt = nextReadAt
-            return next
-        }
-    }
-
-    static func receivedNoteRefreshState(
-        notes: [ReceivedNote],
-        unavailableAudioNoteIDs: Set<String>,
-        revealedNoteIDs: Set<String>,
-        playingNoteID: String?
-    ) -> ReceivedNoteRefreshState {
-        let serverUnavailableAudioIDs = Set(notes.compactMap { note in
-            note.audioUrl != nil && note.audioAvailable == false ? note.id : nil
-        })
-        let playableAudioIDs = Set(notes.compactMap { note in
-            note.audioUrl != nil && note.audioAvailable != false ? note.id : nil
-        })
-        let activeIDs = Set(notes.map(\.id))
-        return ReceivedNoteRefreshState(
-            notes: notes,
-            unavailableAudioNoteIDs: unavailableAudioNoteIDs.intersection(serverUnavailableAudioIDs),
-            revealedNoteIDs: revealedNoteIDs.intersection(activeIDs),
-            playingNoteID: playingNoteID.flatMap { playableAudioIDs.contains($0) ? $0 : nil }
-        )
-    }
-
     private func normalizedUserID(_ userID: String?) -> String? {
         let normalized = userID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return normalized.isEmpty ? nil : normalized
-    }
-
-    static func normalizedMessageReceiverID(
-        selected: String?,
-        members: [FamilyGroupMember],
-        currentUserID: String,
-        currentUserEmail: String
-    ) -> String? {
-        let currentID = currentUserID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let currentEmail = currentUserEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-        let recipientIDs = members.compactMap { member -> String? in
-            let memberID = member.userId.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !memberID.isEmpty, memberID != currentID else { return nil }
-            let memberEmail = member.email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !currentEmail.isEmpty && memberEmail == currentEmail {
-                return nil
-            }
-            return memberID
-        }
-        let selectedID = selected?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !selectedID.isEmpty, recipientIDs.contains(selectedID) {
-            return selectedID
-        }
-        return recipientIDs.first
     }
 
     func registerCode(_ codeOverride: String? = nil, session: AuthSession?) async -> CodeRegistrationDestination? {
@@ -308,109 +171,6 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = userFacingErrorMessage(error, fallback: "코드 등록에 실패했어요.")
             return nil
         }
-    }
-
-    func sendNote(session: AuthSession?) async {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return
-        }
-        let normalizedReceiverID = selectedReceiverID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !normalizedReceiverID.isEmpty else {
-            statusMessage = "메시지를 받을 가족 멤버를 선택해 주세요."
-            return
-        }
-        let text = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            statusMessage = "메시지 내용을 입력해 주세요."
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            _ = try await api.sendNote(receiverId: normalizedReceiverID, text: text, token: token)
-            noteText = ""
-            await refreshAllAfterMutation(session: session, successMessage: "메시지를 보냈어요.")
-        } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "메시지 전송에 실패했어요")
-        }
-    }
-
-    func markRead(_ note: ReceivedNote, session: AuthSession?) async {
-        guard let token = session?.token else { return }
-        do {
-            let response = try await api.markNoteRead(id: note.id, token: token)
-            applyNoteRead(id: note.id, readAt: response.readAt)
-        } catch {
-            // Android keeps mark-read failures quiet; the next note refresh reconciles state.
-        }
-    }
-
-    func hasPlayableAudio(_ note: ReceivedNote) -> Bool {
-        note.audioUrl != nil &&
-            note.audioAvailable != false &&
-            !unavailableAudioNoteIDs.contains(note.id)
-    }
-
-    func playNoteAudio(_ note: ReceivedNote, session: AuthSession?) async {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return
-        }
-        if playingNoteID == note.id {
-            notePreviewPlayer.stop()
-            playingNoteID = nil
-            return
-        }
-        guard hasPlayableAudio(note) else { return }
-        guard loadingNoteID == nil else { return }
-
-        loadingNoteID = note.id
-        defer { loadingNoteID = nil }
-
-        do {
-            let response = try await api.getNoteAudio(id: note.id, token: token)
-            let url = try cacheNoteAudio(response)
-            try notePreviewPlayer.play(url: url)
-            playingNoteID = note.id
-            revealedNoteIDs.insert(note.id)
-            let markRead = try? await api.markNoteRead(id: note.id, token: token)
-            applyNoteRead(id: note.id, readAt: markRead?.readAt)
-        } catch {
-            if isMissingNoteAudio(error) {
-                unavailableAudioNoteIDs.insert(note.id)
-            }
-            statusMessage = userFacingErrorMessage(error, fallback: "음성 메시지를 재생하지 못했어요")
-        }
-    }
-
-    private func cacheNoteAudio(_ response: NoteAudioResponse) throws -> URL {
-        guard let data = Data(base64Encoded: response.audioBase64) else {
-            throw AudioCacheError.invalidBase64
-        }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("note-audio", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: directory.path) {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        }
-        let ext: String
-        switch response.audioFormat.lowercased() {
-        case "wav":
-            ext = "wav"
-        case "m4a", "aac", "mp4":
-            ext = "m4a"
-        default:
-            ext = "mp3"
-        }
-        let url = directory.appendingPathComponent("\(response.noteId).\(ext)")
-        try data.write(to: url, options: [.atomic])
-        return url
-    }
-
-    private func isMissingNoteAudio(_ error: Error) -> Bool {
-        let text = String(describing: error)
-        return text.contains("NOTE_AUDIO_MISSING") || text.contains("NOTE_AUDIO_NOT_FOUND")
     }
 
     func ensureFamilyShareCode(session: AuthSession?) async {
@@ -466,44 +226,6 @@ final class SocialFeatureViewModel: ObservableObject {
                 fallback: "\(planLabel) 공유 코드를 불러오지 못했어요"
             )
         }
-    }
-
-    /// **Phase 4-D1 이후 deprecated** — App Store 심사 통과를 위해 일반 사용자
-    /// 구독 결제는 `SubscriptionManager.purchase(_:)` 가 권위. 본 메서드는 비-IAP
-    /// gift voucher 발급 등 백엔드 stub 흐름에만 사용해야 하며, BillingPanel UI 의
-    /// 카드 "선택" 버튼은 본 메서드를 호출하지 않는다.
-    ///
-    /// 본 메서드는 호환성 유지를 위해 남겨두며, 향후 dead code 정리 시 제거 가능.
-    @available(*, deprecated, message: "Apple IAP 로 통합. SubscriptionManager.purchase 사용.")
-    func checkout(planKey: String, gift: Bool = false, session: AuthSession?) async {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            // deprecated 호출이라 Swift 가 경고를 띄우지만, 본 메서드 자체가 deprecated
-            // 라 호출은 정당하다. 메서드 단위 silence.
-            #if compiler(>=5.6)
-            _ = try await callDeprecatedCheckout(planKey: planKey, gift: gift, token: token)
-            #else
-            _ = try await api.checkoutPlan(planKey: planKey, gift: gift, token: token)
-            #endif
-            await refreshAllAfterMutation(session: session, successMessage: "이용권 상태를 갱신했어요.")
-        } catch {
-            let fallback = gift ? "선물하기에 실패했어요" : "이용권 적용에 실패했어요"
-            statusMessage = Self.billingErrorMessage(error, fallback: fallback)
-        }
-    }
-
-    /// `api.checkoutPlan` 의 deprecation 경고를 메서드 경계에 격리.
-    /// 본 helper 만 silence 하면 호출 사이트가 깨끗하다.
-    @available(*, deprecated)
-    private func callDeprecatedCheckout(planKey: String, gift: Bool, token: String) async throws -> CheckoutResponse {
-        try await api.checkoutPlan(planKey: planKey, gift: gift, token: token)
     }
 
     func cancelSubscription(mode: String = "at_period_end", session: AuthSession?) async {
@@ -709,73 +431,6 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    /// 음성 노트(TTS 메시지) 보내기. Android
-    /// `MainViewModelGrowthBillingActions.kt:275` `sendTtsNote` 와 동등.
-    ///
-    /// 1) `TtsGenerateRequest` 로 음원을 만들고
-    /// 2) 그 결과 URL 또는 messageId 와 함께 `sendNote` 호출.
-    /// 실패 시 statusMessage 에 사유 전달.
-    func sendTtsNote(
-        recipientId: String,
-        voiceProfileId: String,
-        text: String,
-        session: AuthSession?
-    ) async {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return
-        }
-        let normalizedRecipientID = recipientId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalizedVoiceProfileID = voiceProfileId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedRecipientID.isEmpty else {
-            statusMessage = "메시지를 받을 가족 멤버를 선택해 주세요."
-            return
-        }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            statusMessage = "메시지 내용을 입력해 주세요."
-            return
-        }
-        guard trimmed.count <= 200 else {
-            statusMessage = "음성 메시지는 200자까지 보낼 수 있어요."
-            return
-        }
-        guard !normalizedVoiceProfileID.isEmpty else {
-            statusMessage = "목소리를 선택해 주세요."
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let tts = try await api.generateTTS(
-                    TtsGenerateRequest(
-                        voiceProfileId: normalizedVoiceProfileID,
-                        text: trimmed,
-                        category: "custom",
-                        language: "ko",
-                        translate: false,
-                        random: false
-                ),
-                token: token
-            )
-            guard let remoteAudioURI = tts.remoteAudioURI else {
-                statusMessage = "생성된 음성 파일을 저장하지 못했어요."
-                return
-            }
-            _ = try await api.sendNote(
-                receiverId: normalizedRecipientID,
-                text: trimmed,
-                audioUrl: remoteAudioURI,
-                token: token
-            )
-            await refreshAllAfterMutation(session: session, successMessage: "음성 메시지를 보냈어요.")
-        } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "음성 메시지 전송에 실패했어요")
-        }
-    }
-
     /// Android `MainViewModelGrowthBillingActions.applyFreePlanVoiceLock` equivalent.
     /// When paid voice access is gone, remove local voice alarms and clear paid voice state.
     @discardableResult
@@ -795,14 +450,7 @@ final class SocialFeatureViewModel: ObservableObject {
     }
 
     func clearPaidVoiceState(deletedAlarmCount: Int = 0) {
-        notePreviewPlayer.stop()
         familyVoices = []
-        receivedNotes = []
-        selectedReceiverID = nil
-        loadingNoteID = nil
-        playingNoteID = nil
-        unavailableAudioNoteIDs = []
-        revealedNoteIDs = []
         if deletedAlarmCount > 0 {
             statusMessage = "무료 이용권으로 전환되어 목소리 알람을 삭제했어요."
         }

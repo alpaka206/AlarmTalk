@@ -4,22 +4,31 @@ import { getDB } from '../lib/db';
 import {
   cancelActiveSubscriptionsForUser,
   cancelSubscriptionImmediate,
+  clearPaidVoiceRetention,
   findActiveSubscriptionsByUserPk,
   scheduleCancelAtPeriodEnd,
+  schedulePaidVoiceRetention,
   schedulePlanChangeAtPeriodEnd,
 } from '../lib/billing-cancel';
 import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
+import { logStructured } from '../lib/logger';
+import { deletePaidVoiceDataForUser } from '../lib/paid-voice-cleanup';
+import {
+  playCancelSubscription,
+  playManageUrl,
+  playRevokeSubscription,
+} from '../lib/play-subscriptions';
 import type { DbExecutor } from '../lib/transactions';
 import { withWriteTransaction } from '../lib/transactions';
 import { redeemVoucherCode, VoucherRedemptionError } from '../lib/voucher-redemption';
-import { PAID_PLAN_TYPES, planTypeToUserPlan, resolveUserPk } from './billing-helpers';
+import {
+  PAID_PLAN_TYPES,
+  planTypeToUserPlan,
+  plannedMaxUses,
+  resolveUserPk,
+} from './billing-helpers';
 
 const billingMutation = new Hono<AppEnv>();
-
-function plannedMaxUses(planType: string, maxMembers: number): number {
-  if (planType === 'family') return Math.max(1, maxMembers - 1);
-  return 1;
-}
 
 interface BillablePlan {
   id: string;
@@ -215,6 +224,9 @@ async function createPaidSubscriptionArtifacts(
           maxUses: plannedMaxUses(params.plan.plan_type, params.plan.max_members),
         })
       : null;
+
+  // 재구독(스텁 결제 성공) — 예약된 유료 음성 보관 삭제를 해제한다.
+  await clearPaidVoiceRetention(db, params.userPk);
 
   return {
     subscription: {
@@ -673,16 +685,35 @@ billingMutation.post('/vouchers/family-share/regenerate', async (c) => {
   return c.json({ success: true, voucher: result.voucher });
 });
 
+// MARK: - POST /billing/cancel
+//
+// 구독 해지. mode=at_period_end(기간종료 해지) | immediate(즉시 해지·비례 환불).
+// 스토어(Google Play) 결제 구독이면 **Play 성공을 확인하기 전에는 로컬 DB·음성
+// 데이터를 절대 변경하지 않는다** — Play 호출 실패 시 502 + manage_url 로 스토어
+// 직접 관리 화면을 안내한다. Apple 은 서버 취소 API 가 없어 409 로 안내만 한다.
+// 어느 경로든 즉시 해지 시 유료 음성은 하드삭제 대신 30일 보관 유예를 건다.
 billingMutation.post('/cancel', async (c) => {
+  const body = await c.req
+    .json<{ mode?: unknown }>()
+    .catch((): { mode?: unknown } => ({ mode: undefined }));
+  // mode 화이트리스트: 누락/오타가 조용히 immediate(= Play revoke + 비례 환불)로
+  // 떨어지면 의도치 않은 환불·즉시 권한 상실이 생기므로 두 값 외에는 400 으로 거절한다.
+  // (Android 클라는 항상 명시적으로 "at_period_end" | "immediate" 를 보낸다.)
+  const mode = body.mode;
+  if (mode !== 'at_period_end' && mode !== 'immediate') {
+    return c.json(
+      {
+        error: 'mode must be "at_period_end" or "immediate"',
+        error_code: 'INVALID_CANCEL_MODE',
+      },
+      400,
+    );
+  }
+
   const userPk = await resolveUserPk(c);
   if (!userPk) {
     return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
   }
-
-  const body = await c.req
-    .json<{ mode?: unknown }>()
-    .catch((): { mode?: unknown } => ({ mode: undefined }));
-  const mode = body.mode === 'at_period_end' ? 'at_period_end' : 'immediate';
 
   const db = getDB(c.env);
   const activeSubscriptions = await findActiveSubscriptionsByUserPk(db, userPk);
@@ -694,7 +725,65 @@ billingMutation.post('/cancel', async (c) => {
     );
   }
 
+  // 활성 구독들이 어느 스토어 결제에 묶여 있는지 확인. 없으면 dev 스텁/프로모/바우처
+  // 구독이므로 서버 로컬 해지만 수행한다. 다중 활성 구독이 각각 다른 Play 토큰에 묶인
+  // 엣지 케이스까지 전부 조회한다 — 첫 구독 토큰만 취소하면 나머지 토큰이 계속 과금된다.
+  // (IN 플레이스홀더는 개발자 고정 조각 — 값은 전부 ?-바인딩.)
+  const subIds = activeSubscriptions.map((s) => s.subscriptionId);
+  const inPh = subIds.map(() => '?').join(', ');
+  const txnRes = await db.execute({
+    sql: `SELECT provider, provider_transaction_id, product_id
+          FROM store_transactions WHERE subscription_id IN (${inPh})`,
+    args: subIds,
+  });
+  const storeTxns = txnRes.rows.map((row) => ({
+    provider: String(row.provider),
+    purchaseToken: String(row.provider_transaction_id),
+    productId: String(row.product_id),
+  }));
+
+  // Apple 은 서버 측 취소 API 가 없다 — 하나라도 섞여 있으면 설정 앱/App Store 에서
+  // 직접 해지하도록 안내한다(부분 취소로 상태가 갈라지는 것 방지).
+  if (storeTxns.some((txn) => txn.provider === 'apple')) {
+    return c.json(
+      {
+        error: 'App Store subscriptions must be cancelled from the App Store',
+        error_code: 'STORE_CANCEL_UNSUPPORTED',
+        manage_url: 'https://apps.apple.com/account/subscriptions',
+      },
+      409,
+    );
+  }
+
+  // 같은 토큰이 여러 구독 행에 걸쳐 있어도 Play 호출은 토큰당 한 번만 한다.
+  const googleTxns = new Map<string, { purchaseToken: string; productId: string }>();
+  for (const txn of storeTxns) {
+    if (txn.provider === 'google') googleTxns.set(txn.purchaseToken, txn);
+  }
+
+  const now = new Date();
+
   if (mode === 'at_period_end') {
+    // Play 자동갱신 해제가 먼저다. 모든 토큰이 성공해야만 DB 를 바꾼다 — 하나라도
+    // 실패하면 502 + DB 무변경. 로컬만 예약취소 상태가 되면 Play 는 다음 결제일에
+    // 그대로 과금해 상태가 갈라진다. 이미 성공한 토큰이 있어도 안전하다:
+    // play-subscriptions.ts 의 수렴 처리(이미 취소된 토큰 재시도는 성공 간주) 덕에
+    // 사용자가 재시도하면 성공분은 그대로 성공으로 수렴해 전체가 완결된다.
+    for (const txn of googleTxns.values()) {
+      try {
+        await playCancelSubscription(c.env, txn.purchaseToken);
+      } catch (err) {
+        logStructured('error', { at: 'billing.cancel.play_cancel', error: String(err) });
+        return c.json(
+          {
+            error: 'Failed to cancel the Google Play subscription',
+            error_code: 'PLAY_CANCEL_FAILED',
+            manage_url: playManageUrl(txn.productId, c.env.ANDROID_PACKAGE_NAME),
+          },
+          502,
+        );
+      }
+    }
     await withWriteTransaction(db, async (tx) => {
       for (const subscription of activeSubscriptions) {
         await scheduleCancelAtPeriodEnd(tx, subscription.subscriptionId);
@@ -703,10 +792,81 @@ billingMutation.post('/cancel', async (c) => {
     return c.json({ success: true, mode, subscription_id: active.subscriptionId });
   }
 
-  await withWriteTransaction(db, (tx) =>
-    cancelActiveSubscriptionsForUser(tx, userPk, undefined, { deleteVoiceData: true }),
-  );
-  return c.json({ success: true, mode, subscription_id: active.subscriptionId });
+  // immediate — google 결제면 모든 토큰의 Play revoke(비례 환불) 성공을 먼저 확인한다.
+  // 실패 시 DB 무변경은 at_period_end 와 동일 — 성공분은 수렴 처리로 재시도가 안전하다.
+  for (const txn of googleTxns.values()) {
+    try {
+      await playRevokeSubscription(c.env, txn.purchaseToken);
+    } catch (err) {
+      logStructured('error', { at: 'billing.cancel.play_revoke', error: String(err) });
+      return c.json(
+        {
+          error: 'Failed to revoke the Google Play subscription',
+          error_code: 'PLAY_REVOKE_FAILED',
+          manage_url: playManageUrl(txn.productId, c.env.ANDROID_PACKAGE_NAME),
+        },
+        502,
+      );
+    }
+  }
+
+  const voiceRetentionUntil = await withWriteTransaction(db, async (tx) => {
+    // 트랜잭션 안에서 '사용자 전체 활성 구독'을 다시 조회해 취소하지 않는다 — Play
+    // 호출 동안 새 결제 confirm 으로 생긴 활성 구독은 위 revoke 대상이 아니었으므로
+    // Play 에선 그대로 유지된다. DB 만 취소하면 상태가 갈라지므로, Play 성공을 확인한
+    // 스냅샷(activeSubscriptions)의 구독만 취소하고 새 구독은 건드리지 않는다.
+    // (plan 재정렬은 cancelSubscriptionImmediate 내부에서 남은 활성 구독 기준으로 처리)
+    for (const subscription of activeSubscriptions) {
+      await cancelSubscriptionImmediate(tx, subscription, now, { deleteVoiceData: false });
+    }
+    // 즉시 해지여도 음성은 30일 보관 — '지금 삭제'는 /voice-data/delete-now 로 분리.
+    // (그 사이 새 유료 구독이 생겼어도 sweep 이 삭제 전 활성 유료 구독을 재확인한다.)
+    return schedulePaidVoiceRetention(tx, userPk, now);
+  });
+  return c.json({
+    success: true,
+    mode,
+    subscription_id: active.subscriptionId,
+    voice_retention_until: voiceRetentionUntil,
+  });
+});
+
+// MARK: - POST /billing/voice-data/delete-now
+//
+// 30일 보관 유예 중인 유료 음성 데이터를 사용자가 즉시 삭제한다.
+// 활성 유료 구독이 있으면 거부 — 구독 해지와 데이터 삭제는 별개 행위다.
+billingMutation.post('/voice-data/delete-now', async (c) => {
+  const userPk = await resolveUserPk(c);
+  if (!userPk) {
+    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
+  }
+
+  const db = getDB(c.env);
+  // 로그인 id(google_id)는 JWT sub — voice_profiles.user_id 가 로그인 id 로 저장된
+  // 일반 케이스를 함께 지우기 위해 PK 와 둘 다 넘긴다(deletePaidVoiceDataForUser 규약).
+  const loginId = c.get('userId');
+  // 활성 구독 확인을 삭제와 같은 쓰기 트랜잭션 안에서 수행한다(TOCTOU 하드닝) —
+  // 확인과 삭제 사이에 재구독(confirm/RTDN/바우처)이 끼어들어 유료 사용자의 음성이
+  // 지워지는 창을 없앤다.
+  const blocked = await withWriteTransaction(db, async (tx) => {
+    const activeSubscriptions = await findActiveSubscriptionsByUserPk(tx, userPk);
+    if (activeSubscriptions.some((s) => PAID_PLAN_TYPES.has(s.planType))) {
+      return true;
+    }
+    await deletePaidVoiceDataForUser(tx, userPk, loginId);
+    await clearPaidVoiceRetention(tx, userPk);
+    return false;
+  });
+  if (blocked) {
+    return c.json(
+      {
+        error: 'Cancel the active subscription before deleting voice data',
+        error_code: 'SUBSCRIPTION_STILL_ACTIVE',
+      },
+      409,
+    );
+  }
+  return c.json({ success: true });
 });
 
 billingMutation.post('/change-plan', async (c) => {

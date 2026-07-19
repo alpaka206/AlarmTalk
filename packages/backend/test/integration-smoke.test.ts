@@ -145,7 +145,6 @@ describe('Protected Routes — 인증 없이 요청 시 401', () => {
     ['GET', '/api/billing/vouchers'],
     ['GET', '/api/family/group'],
     ['POST', '/api/code/register'],
-    ['GET', '/api/notes/received'],
   ];
 
   for (const [method, path] of protectedEndpoints) {

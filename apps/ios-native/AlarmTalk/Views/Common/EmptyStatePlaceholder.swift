@@ -14,7 +14,7 @@ struct EmptyStatePlaceholder: View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: icon)
                 .font(.title2)
-                .foregroundStyle(AlarmTalkTheme.primaryDark)
+                .foregroundStyle(AlarmTalkTheme.primary)
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AlarmTalkTheme.text)

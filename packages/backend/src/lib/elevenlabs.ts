@@ -1,37 +1,10 @@
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
 const DEFAULT_TTS_MODEL_ID = 'eleven_v3';
-const DIARIZATION_MERGE_GAP_SECONDS = 0.35;
 const DEFAULT_AUDIO_MIME_TYPE = 'audio/wav';
-// 가족/연인 녹음은 보통 1~3명이다. 앱의 화자 처리 상한과 동일하게 맞춰 과분할을 막는다.
-const DEFAULT_MAX_DIARIZATION_SPEAKERS = 3;
-const SCRIBE_MAX_SPEAKERS = 32;
-
-function clampSpeakerCount(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_MAX_DIARIZATION_SPEAKERS;
-  return Math.max(1, Math.min(SCRIBE_MAX_SPEAKERS, Math.round(value)));
-}
-
-type TranscriptWord = {
-  start?: number;
-  end?: number;
-  type?: string;
-  speaker_id?: string | null;
-};
-
-type SpeechToTextResponse = {
-  words?: TranscriptWord[];
-  transcripts?: Array<{
-    words?: TranscriptWord[];
-  }>;
-};
-
-type DiarizedSpeaker = {
-  speaker_id: string;
-  segments: Array<{
-    start: number;
-    end: number;
-  }>;
-};
+// TTS 출력 포맷을 명시 고정한다(미지정 시 제공자 기본값에 의존). mp3 44.1kHz 128kbps →
+// mimeType audio/mpeg, 파일 확장자 'mp3' 와 일치한다(voice-provider.ts 의 outputFormat 라벨/
+// 캐시키가 'mp3' 인 것과 어긋나지 않는다).
+export const ELEVENLABS_TTS_OUTPUT_FORMAT = 'mp3_44100_128';
 
 type AudioUploadOptions = {
   mimeType?: string | null;
@@ -45,6 +18,7 @@ export class ElevenLabsClient {
     const url = `${ELEVENLABS_BASE_URL}${path}`;
     const res = await fetch(url, {
       ...options,
+      signal: options.signal ?? AbortSignal.timeout(60_000),
       headers: {
         'xi-api-key': this.apiKey,
         ...options.headers,
@@ -57,6 +31,30 @@ export class ElevenLabsClient {
     }
 
     return res;
+  }
+
+  /**
+   * 음성 → 텍스트 전사(Scribe). 클론 등록 녹음의 말투(사투리·존댓말) 분석 입력으로 쓴다.
+   * 실패해도 등록은 막지 않지만, 호출자는 speech_style_status 로 실패를 기록해야 한다.
+   * scribe_v1 은 2026-07-09 ElevenLabs 에서 제거됨 — scribe_v2 사용(응답 {text} 동일).
+   */
+  async speechToText(audioData: ArrayBuffer, options?: AudioUploadOptions): Promise<string> {
+    const formData = new FormData();
+    const mimeType = normalizeAudioMimeType(options?.mimeType);
+    formData.append('model_id', 'scribe_v2');
+    formData.append(
+      'file',
+      new Blob([audioData], { type: mimeType }),
+      normalizeAudioFileName(options?.fileName, 'sample', mimeType),
+    );
+    const res = await this.request('/v1/speech-to-text', {
+      method: 'POST',
+      body: formData,
+      // 1~2분 녹음 전사는 클론 생성보다 오래 걸릴 수 있어 여유를 둔다.
+      signal: AbortSignal.timeout(120_000),
+    });
+    const json = (await res.json()) as { text?: string };
+    return (json.text ?? '').trim();
   }
 
   /** Instant Voice Clone - 짧은 샘플로 즉시 음성 클론 */
@@ -130,62 +128,19 @@ export class ElevenLabsClient {
     };
     body.voice_settings = voiceSettings;
 
-    const res = await this.request(`/v1/text-to-speech/${voiceId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'audio/mpeg',
+    const res = await this.request(
+      `/v1/text-to-speech/${voiceId}?output_format=${ELEVENLABS_TTS_OUTPUT_FORMAT}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'audio/mpeg',
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+    );
 
     return res.arrayBuffer();
-  }
-
-  /** Speaker Diarization - 화자 분리 */
-  async diarize(
-    audioData: ArrayBuffer,
-    options?: AudioUploadOptions & { numSpeakers?: number; languageCode?: string | null },
-  ): Promise<{
-    speakers: DiarizedSpeaker[];
-  }> {
-    const formData = new FormData();
-    const mimeType = normalizeAudioMimeType(options?.mimeType);
-    formData.append(
-      'file',
-      new Blob([audioData], { type: mimeType }),
-      normalizeAudioFileName(options?.fileName, 'recording', mimeType),
-    );
-    formData.append('model_id', 'scribe_v2');
-    formData.append('diarize', 'true');
-    formData.append('timestamps_granularity', 'word');
-    formData.append('tag_audio_events', 'false');
-    // num_speakers 를 지정하지 않으면 scribe 가 화자 수를 모델 최대치로 가정해
-    // 한두 명짜리 녹음을 여러 '유령 화자'로 과분할한다 → 분리 결과가 애매해진다.
-    // 앱이 실제로 지원하는 화자 수 상한으로 고정해 과분할을 억제한다(정확도 개선).
-    const numSpeakers = clampSpeakerCount(options?.numSpeakers ?? DEFAULT_MAX_DIARIZATION_SPEAKERS);
-    formData.append('num_speakers', String(numSpeakers));
-    // 언어를 알면 전사 정확도가 올라가 단어 타임스탬프(화자 분리의 입력)도 좋아진다.
-    // 모르면 생략해 자동 감지에 맡긴다(다국어 녹음 회귀 방지).
-    if (options?.languageCode) {
-      formData.append('language_code', options.languageCode);
-    }
-
-    const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/speech-to-text`, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': this.apiKey,
-      },
-      body: formData,
-    });
-
-    if (!res.ok) {
-      const errorBody = await res.text();
-      throw new Error(`ElevenLabs diarize error ${res.status}: ${errorBody}`);
-    }
-
-    const transcript = (await res.json()) as SpeechToTextResponse;
-    return { speakers: diarizedSpeakersFromTranscript(transcript) };
   }
 
   /** 음성 프로필 삭제 */
@@ -223,48 +178,4 @@ function extensionForAudioMimeType(mimeType: string): string {
   if (mimeType.includes('webm')) return 'webm';
   if (mimeType.includes('flac')) return 'flac';
   return 'wav';
-}
-
-function diarizedSpeakersFromTranscript(transcript: SpeechToTextResponse): DiarizedSpeaker[] {
-  const words = [
-    ...(transcript.words ?? []),
-    ...(transcript.transcripts ?? []).flatMap((item) => item.words ?? []),
-  ];
-  const bySpeaker = new Map<string, Array<{ start: number; end: number }>>();
-
-  for (const word of words) {
-    if (!word.speaker_id || word.type === 'spacing') continue;
-    if (typeof word.start !== 'number' || typeof word.end !== 'number') continue;
-    if (word.end <= word.start) continue;
-
-    const segments = bySpeaker.get(word.speaker_id) ?? [];
-    segments.push({ start: word.start, end: word.end });
-    bySpeaker.set(word.speaker_id, segments);
-  }
-
-  return Array.from(bySpeaker.entries())
-    .map(([speakerId, segments]) => ({
-      speaker_id: speakerId,
-      segments: mergeDiarizedSegments(segments),
-    }))
-    .filter((speaker) => speaker.segments.length > 0)
-    .sort((a, b) => a.segments[0]!.start - b.segments[0]!.start);
-}
-
-function mergeDiarizedSegments(
-  segments: Array<{ start: number; end: number }>,
-): Array<{ start: number; end: number }> {
-  const sorted = [...segments].sort((a, b) => a.start - b.start);
-  const merged: Array<{ start: number; end: number }> = [];
-
-  for (const segment of sorted) {
-    const previous = merged[merged.length - 1];
-    if (!previous || segment.start > previous.end + DIARIZATION_MERGE_GAP_SECONDS) {
-      merged.push({ ...segment });
-      continue;
-    }
-    previous.end = Math.max(previous.end, segment.end);
-  }
-
-  return merged;
 }

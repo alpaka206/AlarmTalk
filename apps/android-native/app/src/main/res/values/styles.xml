@@ -18,4 +18,5 @@
         <item name="android:statusBarColor">@color/voice_alarm_status_bar</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+
 </resources>

@@ -31,12 +31,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -69,12 +67,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import com.alarmtalk.app.AlarmTalkDarkColorScheme
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerDialogShape
-import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
+import com.alarmtalk.app.data.bucketClipTexts
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -101,9 +99,11 @@ class RingingActivity : ComponentActivity() {
             LaunchedEffect(currentAlarmId) {
                 uiState = currentAlarmId?.let { id ->
                     withContext(Dispatchers.IO) {
-                        AlarmAppContainer.repository(appContext)
-                            .getAlarm(id)
-                            ?.toRingingUiState(appContext)
+                        val repository = AlarmAppContainer.repository(appContext)
+                        repository.getAlarm(id)?.let { alarm ->
+                            val playbackVariantIndex = repository.resolveBucketClipSelection(alarm)?.variantIndex
+                            alarm.toRingingUiState(appContext, playbackVariantIndex)
+                        }
                     }
                 } ?: defaultRingingUiState(appContext)
             }
@@ -241,7 +241,7 @@ private fun RingingRoute(
             Spacer(Modifier.height(6.dp))
             RingingClock(ampm = uiState.ampm, time = uiState.timeText)
 
-            // 풀스크린+소리 자체가 '울리는 중'이므로 상태 문구 없이 라벨·파형만 보여준다(멘트 문구는 음성으로만).
+            // 라벨(알람 이름)과 음성으로 재생되는 멘트 문구를 카드로 보여준다(전달 태그는 제거된 상태).
             if (uiState.label != null || uiState.voiceText != null) {
                 Spacer(Modifier.height(30.dp))
                 RingingVoiceCard(uiState)
@@ -297,7 +297,10 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
         color = Color(0xFF122034).copy(alpha = 0.66f),
         border = BorderStroke(1.dp, Color(0x24FFFFFF)),
     ) {
-        Column(modifier = Modifier.padding(22.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             uiState.label?.let { label ->
                 Text(
                     text = label,
@@ -306,11 +309,24 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(14.dp))
             }
-            // 멘트 문구는 화면에 표시하지 않는다(음성으로만 재생). 파형이 '음성 재생 중'을 나타낸다.
-            RingingVoiceWaveform()
+            // 파형 시각화 대신, 음성으로 재생되는 실제 멘트 문구를 그대로 보여준다(전달 태그 제거된 상태).
+            uiState.voiceText?.let { voice ->
+                if (uiState.label != null) Spacer(Modifier.height(12.dp))
+                Text(
+                    text = voice,
+                    color = Color(0xFFEAF1FB),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 30.sp,
+                    textAlign = TextAlign.Center,
+                    // 긴 문구가 스누즈/해제 컨트롤을 화면 밖으로 밀지 않도록 줄 수를 제한한다(전문은 음성으로 재생).
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -437,7 +453,7 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = Icons.Outlined.Alarm,
+                imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
                 contentDescription = stringResource(R.string.rd_slide_to_dismiss),
                 tint = Color(0xFF06243E),
                 modifier = Modifier.size(24.dp),
@@ -474,38 +490,6 @@ private fun SlideHintArrows(modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun RingingVoiceWaveform() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(40.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val levels = listOf(
-            0.16f, 0.28f, 0.22f, 0.42f, 0.30f, 0.64f, 0.44f, 0.86f,
-            0.52f, 0.72f, 0.38f, 0.58f, 0.34f, 0.66f, 0.42f, 0.78f,
-            0.36f, 0.54f, 0.24f, 0.40f, 0.20f,
-        )
-        levels.forEachIndexed { index, level ->
-            Box(
-                modifier = Modifier
-                    .width(2.dp)
-                    .height((8 + level * 30).dp)
-                    .background(
-                        color = when (index) {
-                            in 5..14 -> MaterialTheme.colorScheme.primary
-                            15, 16, 17 -> MaterialTheme.colorScheme.secondary
-                            else -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.52f)
-                        },
-                        shape = WakerPillShape,
-                    ),
-            )
-        }
-    }
-}
-
 private data class RingingUiState(
     /** 사용자가 지은 알람 이름 — 없으면 카드에 라벨 줄을 그리지 않는다. */
     val label: String? = null,
@@ -531,11 +515,31 @@ private fun defaultRingingUiState(context: android.content.Context): RingingUiSt
     )
 }
 
-private fun AlarmEntity.toRingingUiState(context: android.content.Context): RingingUiState {
+// elevenlabs delivery 태그(대괄호 안 지시문) 형태. 서버 normalizeAlarmTextWithoutTags 와 동일 규격.
+private val RINGING_DELIVERY_TAG_RE = Regex("""\[[a-z][a-z -]{1,32}]""", RegexOption.IGNORE_CASE)
+
+private fun String.stripDeliveryTags(): String =
+    replace(RINGING_DELIVERY_TAG_RE, " ").replace(Regex("""\s+"""), " ").trim()
+
+private fun AlarmEntity.toRingingUiState(
+    context: android.content.Context,
+    playbackVariantIndex: Int?,
+): RingingUiState {
     val customTitle = label.trim()
         .takeIf { it.isNotBlank() && it != context.getString(R.string.rd_default_alarm_label) }
-    val voiceMessage = voiceText
-        ?.trim()
+    // 표시 텍스트: 버킷 알람이면 발사 시 고른 variant 의 문구를 쓴다(오디오와 같은 bucketVariantIndex).
+    // 그래야 날씨/운세 매칭 버킷에서 음성('비 와요')과 잠금화면 문구가 어긋나지 않는다. 버킷이 아니면
+    // 기존 voiceText. 서버가 delivery 태그를 이미 제거하지만 과거분/회귀 대비 랜덤 문구는 한 번 더 벗긴다.
+    // 빈/공백 문구는 null 로 취급해 대표 voiceText 로 폴백한다(Elvis 는 null 에만 걸려, "" 면 잠금화면
+    // 문구가 통째로 사라진다). 한 variant 의 text 가 비어도 대표 문구는 보인다.
+    val bucketText = if (bucketId != null && playbackVariantIndex != null) {
+        bucketClipTexts().getOrNull(playbackVariantIndex)?.takeIf { it.isNotBlank() }
+    } else {
+        null
+    }
+    val displayedVoiceText = bucketText ?: voiceText
+    val voiceMessage = displayedVoiceText
+        ?.let { raw -> if (voiceRandomPrompt) raw.stripDeliveryTags() else raw.trim() }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
     val snoozeAvailable = snoozeEnabled &&
         (

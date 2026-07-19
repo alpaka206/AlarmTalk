@@ -14,6 +14,13 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -48,7 +56,6 @@ import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
-import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -60,6 +67,8 @@ import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.network.apiErrorCode
+import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -72,50 +81,31 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.trimmedOrNull
-import com.alarmtalk.app.ui.guide.CoachMarkOverlay
-import com.alarmtalk.app.ui.guide.CoachMarkRegistry
-import com.alarmtalk.app.ui.guide.CoachMarkStep
-import com.alarmtalk.app.ui.guide.UsageGuideStore
-import com.alarmtalk.app.ui.guide.coachMarkTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal fun expectedCloneBucketVariantCount(category: String): Int? =
+    when (category) {
+        // 날씨 = 조건 8 + '인터넷 안 돼서 못 알아봤어요' 미해결 안내 1(마지막 클립이 안내). data 계층
+        // 상수를 참조해 발사 폴백(bucketVariantIndex)과 단일 출처로 유지.
+        "weather" -> com.alarmtalk.app.data.WEATHER_CLONE_CLIP_COUNT
+        "fortune" -> 5
+        "love" -> 3
+        "medication" -> 3
+        "greeting" -> 1
+        else -> null
+    }
+
 private enum class AudioPreviewTarget {
-    SelectedCrop,
     CachedAudio,
-    SharedVoiceInfo,
     StockClip,
 }
 
-// 처음 알람을 만드는 사용자를 위한 위치 앵커형 코치마크 가이드.
-// 각 단계가 실제 컨트롤에 스포트라이트를 비추므로 "어디서 하는지"가 함께 전달된다.
-private const val GUIDE_TARGET_SCHEDULE = "alarm_editor_schedule"
-private const val GUIDE_TARGET_PLAY_MODE = "alarm_editor_play_mode"
-private const val GUIDE_TARGET_SAVE = "alarm_editor_save"
-
-@Composable
-private fun alarmEditorCoachSteps(playModeItemIndex: Int) = listOf(
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_SCHEDULE,
-        title = stringResource(R.string.editor2_coach_schedule_title),
-        body = stringResource(R.string.editor2_coach_schedule_body),
-        lazyItemIndex = 1,
-    ),
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_PLAY_MODE,
-        title = stringResource(R.string.editor2_coach_play_mode_title),
-        body = stringResource(R.string.editor2_coach_play_mode_body),
-        lazyItemIndex = playModeItemIndex,
-    ),
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_SAVE,
-        title = stringResource(R.string.editor2_coach_save_title),
-        body = stringResource(R.string.editor2_coach_save_body),
-    ),
-)
+// 세부 설정 pane 슬라이드용 emphasized 이징(타임휠 세틀과 같은 계열의 감속 곡선).
+private val EditorPaneEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
 
 @Composable
 internal fun AlarmEditorScreen(
@@ -125,6 +115,7 @@ internal fun AlarmEditorScreen(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     familyAlarmMode: Boolean,
+    initialFamilyRecipientId: String? = null,
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
@@ -134,9 +125,9 @@ internal fun AlarmEditorScreen(
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    onLoadManualQuota: (suspend () -> ManualQuotaResponse?)? = null,
     onDownloadStockAudio: suspend (String) -> TtsMessageAudioResponse,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
-    onUpdateSharedVoiceInfo: (String, String, String, () -> Unit) -> Unit,
     onSave: (AlarmDraft) -> Unit,
 ) {
     // 시스템 스톡 보이스 도입으로 무료 플랜도 음성 모드를 쓸 수 있다 (스톡 보이스 + 프리셋 문구).
@@ -147,15 +138,11 @@ internal fun AlarmEditorScreen(
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
     val context = LocalContext.current
-    // 무료 버킷 회전은 앱 로케일(ko/en/ja, 그 외 ko 폴백) 언어의 클립만 재생한다.
-    val appBucketLanguage = remember(context) {
-        val lang = context.resources.configuration.locales.get(0)?.language
+    val configuration = LocalConfiguration.current
+    val appVoiceLanguage = remember(configuration) {
+        val lang = configuration.locales.get(0)?.language
             ?: java.util.Locale.getDefault().language
-        when (lang) {
-            "en" -> "en"
-            "ja" -> "ja"
-            else -> "ko"
-        }
+        supportedAppVoiceLanguage(lang)
     }
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
@@ -174,41 +161,40 @@ internal fun AlarmEditorScreen(
             alarmRepository.upcomingHolidays(countryCode = holidayCountryCode)
         }.getOrDefault(emptyList())
     }
-    val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
-    // 처음 새 알람을 만들 때 한 번만 자동 노출. 상단 도움말 버튼으로 다시 볼 수 있다.
-    var usageGuideVisible by remember {
-        mutableStateOf(
-            alarm == null && !familyAlarmMode &&
-                !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_ALARM_EDITOR),
-        )
-    }
-    val coachMarkRegistry = remember { CoachMarkRegistry() }
     val editorListState = rememberLazyListState()
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
     var audioMessage by remember { mutableStateOf<String?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
+    // 직접 입력 문구 선택기에 '(남은/총)' 을 보여주기 위한 이번 달 사용 현황(유료만 조회).
+    var manualQuota by remember { mutableStateOf<ManualQuotaResponse?>(null) }
+    LaunchedEffect(freeVoiceTier, onLoadManualQuota) {
+        manualQuota = if (!freeVoiceTier && onLoadManualQuota != null) onLoadManualQuota() else null
+    }
     // 진행 중인 TTS 생성 Job 을 추적해, 사용자가 도중에 시각을 변경하면 취소한다.
     var generationJob by remember { mutableStateOf<Job?>(null) }
-    var localInputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
-    var recordingLevels by remember { mutableStateOf(List(18) { 0.08f }) }
-    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
-    var selectedFileDurationMillis by remember { mutableStateOf<Long?>(null) }
-    var cropStartMillis by remember { mutableStateOf(0L) }
-    var cropEndMillis by remember { mutableStateOf(AlarmAudioLimits.MAX_DURATION_MILLIS) }
+    // 실제 마이크 입력 진폭(0~1) — 녹음 카드의 미니 레벨 바가 소비한다.
+    var recordingLevel by remember { mutableStateOf(0f) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var previewTarget by remember { mutableStateOf<AudioPreviewTarget?>(null) }
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
-    var sharedVoiceInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
         familyAlarmRecipients(familyGroup, authSession)
     }
-    var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients) {
-        mutableStateOf(if (familyAlarmMode) familyRecipients.firstOrNull()?.userId else null)
+    var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients, initialFamilyRecipientId) {
+        mutableStateOf(
+            if (familyAlarmMode) {
+                // 시트에서 사람을 미리 골라 들어온 경우 그 사람으로 연다. 유효하지 않으면 첫 멤버로 폴백.
+                initialFamilyRecipientId?.takeIf { id -> familyRecipients.any { it.userId == id } }
+                    ?: familyRecipients.firstOrNull()?.userId
+            } else {
+                null
+            },
+        )
     }
     val selectedFamilyRecipientValue = familyRecipients.firstOrNull { it.userId == selectedFamilyRecipientId }
     val activeDynamicPromptPreferences = if (familyAlarmMode) {
@@ -382,51 +368,6 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    fun prepareSelectedAudio(uri: Uri) {
-        stopPreview()
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) { audioStore.readDurationMillis(uri) }
-                    ?: throw IllegalArgumentException(context.getString(R.string.editor_error_audio_duration_unreadable))
-            }.onSuccess { durationMillis ->
-                selectedFileUri = uri
-                selectedFileDurationMillis = durationMillis
-                cropStartMillis = 0L
-                cropEndMillis = durationMillis.coerceAtMost(AlarmAudioLimits.MAX_DURATION_MILLIS)
-                editor.clearAudio()
-                audioMessage = null
-            }
-                .onFailure { error ->
-                    AlarmTalkLog.reportError("Failed to cache selected audio", error)
-                    audioMessage = userFacingError(error, context.getString(R.string.editor_error_selected_audio_unusable))
-                }
-        }
-    }
-
-    suspend fun cacheSelectedCrop(): CachedAlarmAudio {
-        val uri = selectedFileUri ?: throw IllegalStateException(context.getString(R.string.editor_error_select_file))
-        val cropDurationMillis = (cropEndMillis - cropStartMillis).coerceIn(1_000L, AlarmAudioLimits.MAX_DURATION_MILLIS)
-        return withContext(Dispatchers.IO) {
-            audioStore.cacheFromUri(
-                sourceUri = uri,
-                maxDurationMillis = cropDurationMillis,
-                startMillis = cropStartMillis,
-            )
-        }
-    }
-
-    fun playSelectedCrop() {
-        val uri = selectedFileUri ?: return
-        val previewDurationMillis = (cropEndMillis - cropStartMillis)
-            .coerceIn(1_000L, AlarmAudioLimits.MAX_DURATION_MILLIS)
-        startPreparedPreview(
-            uri = uri,
-            target = AudioPreviewTarget.SelectedCrop,
-            startMillis = cropStartMillis,
-            stopAfterMillis = previewDurationMillis,
-        )
-    }
-
     fun playCachedAudio() {
         val audioUri = editor.localAudioUri ?: return
         startPreparedPreview(
@@ -435,95 +376,86 @@ internal fun AlarmEditorScreen(
         )
     }
 
-    fun playSharedVoiceInfoPreview(profileId: String) {
-        if (previewPreparing) return
-        scope.launch {
-            stopPreview()
-            previewTarget = AudioPreviewTarget.SharedVoiceInfo
-            previewPreparing = true
-            runCatching {
-                val response = onGenerateTts(
-                    TtsGenerateRequest(
-                        voiceProfileId = profileId,
-                        text = context.getString(R.string.editor_shared_voice_preview_prompt),
-                        category = "custom",
-                        language = "ko",
-                        random = false,
-                    ),
-                )
-                withContext(Dispatchers.IO) {
-                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = audioBytes,
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = "shared_voice_preview_$profileId",
-                        cacheKey = "shared_voice_preview_$profileId",
-                        messageId = response.messageId,
-                    )
-                }
-            }.onSuccess { cached ->
-                startPreparedPreview(
-                    uri = Uri.parse(cached.localAudioUri),
-                    target = AudioPreviewTarget.SharedVoiceInfo,
-                )
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to preview shared voice in alarm editor", error)
-                stopPreview()
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_preview_failed))
+    // 오프라인 클론 버킷이 '완전한지' 판정. 날씨/운세는 서버가 조건/테마 '절대 인덱스'로 클립을 고르므로
+    // variant 0..N-1 이 전부 캐시돼 있어야 인덱스가 안 엉킨다(부분 세트면 엉뚱한 조건 재생 → 라이브 유지).
+    fun hasCompleteCloneBucket(category: String, profileId: String): Boolean {
+        val variants = stockClips
+            .filter {
+                it.voiceProfileId == profileId &&
+                    it.category == category &&
+                    (it.language ?: "ko") == appVoiceLanguage
             }
-        }
+            .map { it.variant }
+            .toSet()
+        if (variants.isEmpty()) return false
+        val fullCount = expectedCloneBucketVariantCount(category) ?: return false
+        return variants == (0 until fullCount).toSet()
     }
 
-    // 무료 버킷 선택: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
-    // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다.
+    // 버킷 선택 코어: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
+    // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다. 무료 시스템
+    // 버킷과 유료 클론 버킷(사랑/약 등)이 저장/재생 계약이 동일하므로 이 코어를 공유한다.
+    // 반환 true=바인딩 성공. 클립이 없거나 캐시 실패면 false(호출자가 라이브 폴백/에러 처리).
+    suspend fun bindStockBucketClips(
+        bucket: String,
+        profileId: String,
+        contextVariantIndex: Int? = null,
+    ): Boolean {
+        val clips = stockClips
+            .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appVoiceLanguage }
+            .sortedBy { it.variant }
+            // variant 중복 제거: 매칭 버킷은 절대 인덱스로 keys[i] 를 고르므로, 중복 variant 가 있으면
+            // 뒤 인덱스가 밀려 엉뚱한 조건 클립이 재생된다(같은 variant 는 첫 행만).
+            .distinctBy { it.variant }
+        if (clips.isEmpty()) return false
+        val keys = mutableListOf<String>()
+        val texts = mutableListOf<String>()
+        val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
+        clips.forEach { clip ->
+            val cacheKey = "stock_${clip.messageId}"
+            val cached = audioStore.getCachedAudio(cacheKey) ?: run {
+                val response = onDownloadStockAudio(clip.messageId)
+                withContext(Dispatchers.IO) {
+                    audioStore.cacheGeneratedAudio(
+                        bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl,
+                        displayName = cacheKey,
+                        cacheKey = cacheKey,
+                        messageId = clip.messageId,
+                    )
+                }
+            }
+            keys.add(cached.cacheKey ?: cacheKey)
+            // 잠금화면이 발사 variant 의 문구를 보여줄 수 있도록 keys 와 같은 순서로 텍스트도 저장.
+            texts.add(clip.text)
+            cachedClips.add(cached)
+        }
+        val representative = cachedClips.firstOrNull() ?: return false
+        val first = clips.first()
+        editor.setBucketAudio(
+            audio = representative,
+            profileId = profileId,
+            messageId = first.messageId,
+            text = first.text,
+            language = appVoiceLanguage,
+            bucket = bucket,
+            clipKeys = keys,
+            clipTexts = texts,
+            contextVariantIndex = contextVariantIndex,
+        )
+        return true
+    }
+
     fun selectBucket(bucket: String) {
         if (isSaving || previewPreparing) return
         val profileId = editor.voiceProfileId ?: return
-        val clips = stockClips
-            .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appBucketLanguage }
-            .sortedBy { it.variant }
-        if (clips.isEmpty()) return
         scope.launch {
-            runCatching {
-                val keys = mutableListOf<String>()
-                val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
-                clips.forEach { clip ->
-                    val cacheKey = "stock_${clip.messageId}"
-                    val cached = audioStore.getCachedAudio(cacheKey) ?: run {
-                        val response = onDownloadStockAudio(clip.messageId)
-                        withContext(Dispatchers.IO) {
-                            audioStore.cacheGeneratedAudio(
-                                bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
-                                format = response.audioFormat,
-                                rawAudioUri = response.audioUrl,
-                                displayName = cacheKey,
-                                cacheKey = cacheKey,
-                                messageId = clip.messageId,
-                            )
-                        }
-                    }
-                    keys.add(cached.cacheKey ?: cacheKey)
-                    cachedClips.add(cached)
+            runCatching { bindStockBucketClips(bucket, profileId) }
+                .onFailure { error ->
+                    AlarmTalkLog.reportError("Failed to select free bucket in alarm editor bucket=$bucket", error)
+                    audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
                 }
-                keys to cachedClips
-            }.onSuccess { (keys, cachedClips) ->
-                val representative = cachedClips.firstOrNull() ?: return@onSuccess
-                val first = clips.first()
-                editor.setBucketAudio(
-                    audio = representative,
-                    profileId = profileId,
-                    messageId = first.messageId,
-                    text = first.text,
-                    language = appBucketLanguage,
-                    bucket = bucket,
-                    clipKeys = keys,
-                )
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to select free bucket in alarm editor bucket=$bucket", error)
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
-            }
         }
     }
 
@@ -553,11 +485,10 @@ internal fun AlarmEditorScreen(
             }.onSuccess { audio ->
                 isRecording = false
                 recordingElapsedMillis = audio.durationMillis ?: recordingElapsedMillis
-                selectedFileUri = null
-                selectedFileDurationMillis = null
                 applyCachedAudio(audio)
             }.onFailure { error ->
                 isRecording = false
+                recordingElapsedMillis = 0L
                 AlarmTalkLog.reportError("Failed to stop recording", error)
                 audioMessage = userFacingError(error, context.getString(R.string.editor_error_recording_failed))
             }
@@ -570,8 +501,9 @@ internal fun AlarmEditorScreen(
             recorder.start(maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS)
             isRecording = true
             recordingElapsedMillis = 0L
-            recordingLevels = List(18) { 0.08f }
-            audioMessage = context.getString(R.string.editor_recording_in_progress)
+            recordingLevel = 0f
+            // '녹음 중...' 상태 문구는 두지 않는다(경과 시간이 오른쪽에 표시됨).
+            audioMessage = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to start recording", error)
             audioMessage = userFacingError(error, context.getString(R.string.editor_error_recording_start_failed))
@@ -595,14 +527,15 @@ internal fun AlarmEditorScreen(
                 audioMessage = context.getString(R.string.editor_error_select_recipient)
                 return
             }
-            val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-                hour = editor.hour,
-                minute = editor.minute,
-                repeatDaysMask = editor.repeatDaysMask,
-                holidayOff = editor.holidayOff,
-            )
-            if (fireAtMillis - System.currentTimeMillis() < FAMILY_ALARM_MIN_LEAD_MILLIS) {
-                val message = context.getString(R.string.editor_error_family_alarm_lead_too_soon)
+            if (isFamilyAlarmLeadTooSoon(editor.hour, editor.minute, editor.repeatDaysMask, editor.holidayOff)) {
+                // 그냥 막지 말고 "언제부터 되는지"를 구체 시각으로 알려 바로 고치게 한다.
+                val earliestMillis = System.currentTimeMillis() + FAMILY_ALARM_MIN_LEAD_MILLIS
+                val earliestLabel = android.text.format.DateFormat.getTimeFormat(context)
+                    .format(java.util.Date(earliestMillis))
+                val message = context.getString(
+                    R.string.editor_error_family_alarm_lead_too_soon,
+                    earliestLabel,
+                )
                 audioMessage = message
                 showFamilyAlarmToast(message)
                 return
@@ -620,22 +553,6 @@ internal fun AlarmEditorScreen(
             return
         }
         if (editor.voiceSource == VoiceSources.LOCAL_AUDIO) {
-            if (selectedFileUri != null) {
-                scope.launch {
-                    isSaving = true
-                    runCatching {
-                        cacheSelectedCrop()
-                    }.onSuccess { audio ->
-                        applyCachedAudio(audio)
-                        submitDraft(editor.toDraft())
-                    }.onFailure { error ->
-                        AlarmTalkLog.reportError("Failed to cache cropped local alarm audio", error)
-                        audioMessage = userFacingError(error, context.getString(R.string.editor_error_crop_save_failed))
-                    }
-                    isSaving = false
-                }
-                return
-            }
             if (editor.localAudioUri.isNullOrBlank()) {
                 audioMessage = context.getString(R.string.editor_error_record_or_select_file)
                 return
@@ -651,15 +568,6 @@ internal fun AlarmEditorScreen(
             ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
         if (profileId.isNullOrBlank()) {
             audioMessage = context.getString(R.string.editor_error_select_voice)
-            return
-        }
-        val selectedSharedProfile = familyVoices.firstOrNull {
-            it.id == profileId && it.requiresViewerInfo()
-        }
-        if (selectedSharedProfile != null) {
-            stopPreview()
-            audioMessage = null
-            sharedVoiceInfoTarget = selectedSharedProfile
             return
         }
         val text = editor.ttsTextForSave()
@@ -703,7 +611,11 @@ internal fun AlarmEditorScreen(
         val listenerTitleForSave = resolvedVoiceListenerTitle()
         val usableProfileIds = (
             voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
-                familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
+                familyVoices.filter {
+                    (it.status == null || it.status == "ready") &&
+                        it.isShared != false &&
+                        !it.requiresViewerInfo()
+                }.map { it.id }
             ).toSet()
         if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text, listenerTitleForSave)) {
             audioMessage = context.getString(R.string.editor_error_deleted_voice_cannot_edit)
@@ -740,6 +652,33 @@ internal fun AlarmEditorScreen(
         generationJob?.cancel()
         generationJob = scope.launch {
             isSaving = true
+            // 1) 유료 클론 오프라인 버킷 시도: 사전렌더 대상 컨텍스트(사랑/약/운세/날씨)이고 그 목소리의
+            //    '완전한' 클립 세트가 캐시돼 있으면 라이브 생성 대신 오프라인 버킷으로 바인딩한다.
+            //    날씨/운세는 서버 조건/테마 '절대 인덱스'로 고르므로 부분 세트면 인덱스가 엉킨다 →
+            //    hasCompleteCloneBucket 으로 풀셋일 때만 바인딩(부분/실패면 아래 라이브로 폴백).
+            // 가족 알람은 서버가 수신자별로 목소리를 생성(onGenerateTts targetUserId)해야 하고, 내 로컬
+            // 사전렌더 클립은 수신자가 소유·캐시하지 못하므로 오프라인 버킷을 쓰면 수신자에게 무음이 된다.
+            // → 가족 모드에서는 사전렌더 버킷을 쓰지 않고 아래 라이브 생성 경로로 간다.
+            val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
+            val requiresCloneBucket = !familyAlarmMode && editor.voiceRandomPrompt && cloneBucketCategory != null &&
+                !isSystemVoiceId(profileId)
+            val tryCloneBucket = requiresCloneBucket && hasCompleteCloneBucket(cloneBucketCategory, profileId)
+            if (
+                tryCloneBucket &&
+                // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
+                // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
+                runCatching {
+                    bindStockBucketClips(cloneBucketCategory!!, profileId, editor.contextVariantIndex)
+                }.getOrDefault(false)
+            ) {
+                isSaving = false
+                submitDraft(editor.toDraft())
+                return@launch
+            }
+            // 2) 버킷 미대상/캐시 실패(사전렌더 미완성·클립 다운로드 실패 포함) → 기존 라이브 생성으로 폴백.
+            //    이미 등록된 클론 목소리라도 준비창 cron 이 풀셋을 만들기 전이면 '준비 중'에서 멈추지 말고
+            //    여기서 라이브로 저장한다(알람이 여러 cron 틱 동안 아예 저장 안 되는 것 방지). 라이브 생성은
+            //    random 경로라 월간 등록·원장·수동 quota 를 건드리지 않으므로 등록 전 목소리 이슈 없음.
             audioMessage = context.getString(R.string.editor_preparing_voice_alarm)
             showFamilyAlarmToast(context.getString(R.string.editor_preparing_voice_alarm))
             runCatching {
@@ -819,16 +758,18 @@ internal fun AlarmEditorScreen(
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                audioMessage = when (apiErrorCode(error)) {
+                    "MANUAL_TTS_QUOTA_EXCEEDED" ->
+                        context.getString(R.string.editor_error_manual_tts_quota)
+                    else ->
+                        userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
+                }
             }
             isSaving = false
             generationJob = null
         }
     }
 
-    val pickAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) prepareSelectedAudio(uri)
-    }
     val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             startRecording()
@@ -843,8 +784,7 @@ internal fun AlarmEditorScreen(
             while (isRecording) {
                 recordingElapsedMillis = (System.currentTimeMillis() - startedAt)
                     .coerceAtMost(AlarmAudioLimits.MAX_DURATION_MILLIS)
-                val level = (recorder.maxAmplitude().toFloat() / 32767f).coerceIn(0.06f, 1f)
-                recordingLevels = recordingLevels.drop(1) + level
+                recordingLevel = (recorder.maxAmplitude().toFloat() / 32767f).coerceIn(0f, 1f)
                 if (recordingElapsedMillis >= AlarmAudioLimits.MAX_DURATION_MILLIS) {
                     stopRecording()
                     break
@@ -866,16 +806,27 @@ internal fun AlarmEditorScreen(
             stopPreview()
             editor.playMode = AlarmPlayModes.ALARM_ONLY
             editor.clearAudio()
-            selectedFileUri = null
-            selectedFileDurationMillis = null
             audioMessage = context.getString(R.string.editor_error_voice_alarm_login_required)
         }
     }
 
-    // 무료 플랜: 음성 모드는 시스템 스톡 보이스 + 버킷(기상/약) 회전으로 고정.
-    // 개별 문구 선택·직접 입력·동적(날씨/운세) 문구·번역·랜덤 생성은 모두 유료 게이트.
-    // 버킷 회전은 랜덤 생성과 무관하므로 voiceRandomPrompt=false 로 두고, 앱 로케일 언어를 쓴다.
-    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appBucketLanguage) {
+    LaunchedEffect(appVoiceLanguage, editor.playMode, editor.voiceSource, editor.voiceRandomPrompt) {
+        if (editor.playMode != AlarmPlayModes.ALARM_ONLY && editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
+            if (editor.voiceLanguage != appVoiceLanguage) {
+                editor.voiceLanguage = appVoiceLanguage
+                editor.clearTtsMeta()
+            }
+            val automaticTranslation = !editor.voiceRandomPrompt && appVoiceLanguage != "ko"
+            if (editor.voiceTranslationEnabled != automaticTranslation) {
+                editor.voiceTranslationEnabled = automaticTranslation
+                if (!editor.voiceRandomPrompt) editor.clearTtsMeta()
+            }
+        }
+    }
+
+    // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
+    val isOnline by rememberIsOnline()
+    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage, isOnline) {
         if (freeVoiceTier && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             if (editor.voiceSource != VoiceSources.TTS_PROFILE) {
                 editor.voiceSource = VoiceSources.TTS_PROFILE
@@ -885,11 +836,11 @@ internal fun AlarmEditorScreen(
             }
             if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
             if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
-            if (editor.voiceLanguage != appBucketLanguage) editor.voiceLanguage = appBucketLanguage
+            if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
             // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
             val profileId = editor.voiceProfileId
             if (!profileId.isNullOrBlank()) {
-                val buckets = freeBucketsFor(stockClips, profileId, appBucketLanguage)
+                val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage)
                 val target = editor.selectedBucket?.takeIf { it in buckets } ?: buckets.firstOrNull()
                 if (target != null &&
                     (editor.selectedBucket != target || editor.bucketResolvedForProfileId != profileId)
@@ -900,14 +851,21 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    val editorHorizontalPadding = 24.dp
-    val editorBottomPadding = 12.dp
+    val editorHorizontalPadding = 16.dp
+    // 마지막 카드가 하단 고정 CTA divider 에 붙지 않도록 여유를 준다(구 12dp → 24dp).
+    val editorBottomPadding = 24.dp
     var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
     var randomPromptWasEnabledWhenOpened by remember { mutableStateOf(false) }
+    // 무료 날씨 버킷 선택 시 도시 입력/확인 다이얼로그.
+    var freeWeatherDialogOpen by remember { mutableStateOf(false) }
 
     val usableTtsProfileIds = (
         voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
-            familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
+            familyVoices.filter {
+                (it.status == null || it.status == "ready") &&
+                    it.isShared != false &&
+                    !it.requiresViewerInfo()
+            }.map { it.id }
         ).toSet()
 
     fun randomPromptSettingsComplete(): Boolean {
@@ -936,12 +894,8 @@ internal fun AlarmEditorScreen(
     // 저장 버튼 위에 사유를 함께 보여준다. null 이면 저장 가능.
     val editorSaveBlockedReason: String? = when {
         editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
-        editor.voiceSource == VoiceSources.LOCAL_AUDIO ->
-            if (selectedFileUri != null || !editor.localAudioUri.isNullOrBlank()) {
-                null
-            } else {
-                stringResource(R.string.editor_save_blocked_record_or_select_file)
-            }
+        // 녹음 모드 안내 문구는 두지 않는다(녹음 버튼 자체가 CTA). 미녹음 시 저장은 아래 recordingReady 로 막는다.
+        editor.voiceSource == VoiceSources.LOCAL_AUDIO -> null
         else -> {
             val profileId = editor.voiceProfileId?.takeIf { it.isNotBlank() }
             val text = editor.ttsTextForSave()
@@ -951,13 +905,28 @@ internal fun AlarmEditorScreen(
                     stringResource(R.string.editor_save_blocked_voice_unusable)
                 editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
                     stringResource(R.string.editor_save_blocked_random_prompt_incomplete)
+                // 무료 날씨 버킷은 도시가 있어야 조건 매칭이 된다 — 없으면 저장을 막고 안내.
+                freeVoiceTier && editor.selectedBucket == "weather" &&
+                    editor.voiceWeatherCity.isBlank() ->
+                    stringResource(R.string.editor_error_weather_location_required)
+                // 무료는 문구를 직접 입력하지 않는다(테마 클립 자동 회전) — 빈 문구는
+                // 클립이 아직 준비되지 않은 상태이므로 '입력하라'는 안내 대신 준비 중 안내.
+                // 오프라인이면 기다려도 안 되므로 연결 안내로 정직하게 분기한다.
                 !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
-                    stringResource(R.string.editor_save_blocked_enter_message_or_random)
+                    when {
+                        !freeVoiceTier -> stringResource(R.string.editor_save_blocked_enter_message_or_random)
+                        !isOnline -> stringResource(R.string.editor_save_blocked_free_clips_offline)
+                        else -> stringResource(R.string.editor_save_blocked_free_clips_loading)
+                    }
                 else -> null
             }
         }
     }
-    val editorCanSave = editorSaveBlockedReason == null
+    // 녹음 모드에서 아직 녹음 파일이 없으면 안내 문구 없이 저장만 비활성화한다.
+    val recordingReady = editor.playMode == AlarmPlayModes.ALARM_ONLY ||
+        editor.voiceSource != VoiceSources.LOCAL_AUDIO ||
+        !editor.localAudioUri.isNullOrBlank()
+    val editorCanSave = editorSaveBlockedReason == null && recordingReady
 
     fun openRandomPromptSettings() {
         randomPromptWasEnabledWhenOpened = editor.voiceRandomPrompt
@@ -972,9 +941,19 @@ internal fun AlarmEditorScreen(
     }
 
     fun applyRandomPromptSettings(result: RandomPromptSettingsResult) {
+        if (result.randomContext == ManualMessageContext) {
+            // '직접 입력' 선택 → 랜덤 끄고, 다이얼로그에서 받은 문구를 그대로 쓴다.
+            editor.voiceRandomPrompt = false
+            editor.voiceText = result.manualText.take(200)
+            editor.voiceLanguage = appVoiceLanguage
+            editor.clearAudio()
+            editor.clearTtsMeta()
+            settingsDetailPanel = null
+            return
+        }
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
-        editor.voiceLanguage = result.voiceLanguage
+        editor.voiceLanguage = appVoiceLanguage
         editor.voiceText = ""
         editor.voiceWeatherCountry = result.weatherCountry
         editor.voiceWeatherCity = result.weatherCity
@@ -1026,12 +1005,6 @@ internal fun AlarmEditorScreen(
         if (editor.playMode == AlarmPlayModes.VOICE_ONLY && settingsDetailPanel == "sound") {
             settingsDetailPanel = null
         }
-        if (
-            (editor.voiceRandomPrompt || !editor.voiceTranslationEnabled) &&
-            settingsDetailPanel == "voice_translation"
-        ) {
-            settingsDetailPanel = null
-        }
     }
 
     // 랜덤 문구는 알람 시각이 프롬프트 컨텍스트로 들어가므로,
@@ -1065,37 +1038,37 @@ internal fun AlarmEditorScreen(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            AlarmEditorTopBar(
-                isEditing = alarm != null,
-                familyAlarmMode = familyAlarmMode,
-                onCancel = onCancel,
-                onShowGuide = { usageGuideVisible = true },
-            )
+            // 상단바(제목·뒤로가기·가이드)는 제거하고, 취소·저장을 하단에 모았다.
+            // 시간 휠이 화면 맨 위에 오도록 상단 여백만 살짝 준다(상태바 인셋은 contentPadding에 포함).
             LazyColumn(
                 state = editorListState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                contentPadding = PaddingValues(top = 8.dp, bottom = editorBottomPadding),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(top = 20.dp, bottom = editorBottomPadding),
+                // 섹션 사이(20)를 섹션 내부 헤더→콘텐츠(10~12)보다 확실히 크게 벌려 그룹핑을 살린다.
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 item {
-                    AlarmTimePickerCard(
-                        hour = editor.hour,
-                        minute = editor.minute,
-                        onTimeChange = { selectedHour, selectedMinute ->
-                            editor.hour = selectedHour
-                            editor.minute = selectedMinute
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    // 타임휠 히어로도 나머지 카드와 같은 24dp 거터에 정렬한다(단일 출처
+                    // editorHorizontalPadding). 예전엔 내부 Surface만 8dp 인셋이라 좌우로
+                    // 16dp씩 삐져나와 '붕 뜬' 인상을 줬다.
+                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                        AlarmTimePickerCard(
+                            hour = editor.hour,
+                            minute = editor.minute,
+                            onTimeChange = { selectedHour, selectedMinute ->
+                                editor.hour = selectedHour
+                                editor.minute = selectedMinute
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 item {
                     Box(
-                        modifier = Modifier
-                            .padding(horizontal = editorHorizontalPadding)
-                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_SCHEDULE),
+                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
                     ) {
                         ScheduleDetailsCard(
                             hour = editor.hour,
@@ -1125,27 +1098,12 @@ internal fun AlarmEditorScreen(
                     }
                 }
 
-                if (familyAlarmMode) {
-                    item {
-                        Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                            FamilyAlarmTargetCard(
-                                recipients = familyRecipients,
-                                selectedRecipientId = selectedFamilyRecipientId,
-                                hour = editor.hour,
-                                minute = editor.minute,
-                                repeatDaysMask = editor.repeatDaysMask,
-                                holidayOff = editor.holidayOff,
-                                onSelectRecipient = { selectedFamilyRecipientId = it },
-                            )
-                        }
-                    }
-                }
+                // 받을 사람 카드는 본문에서 제거했다. 수신자는 진입 전 '누구를 깨울까요?' 시트에서
+                // 이미 고르므로, 편집기에선 하단 저장 버튼 위에 '○○에게 설정돼요'로만 짧게 알린다.
 
                 item {
                     Box(
-                        modifier = Modifier
-                            .padding(horizontal = editorHorizontalPadding)
-                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_PLAY_MODE),
+                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
                     ) {
                         PlayModeCard(
                             selected = editor.playMode,
@@ -1180,36 +1138,14 @@ internal fun AlarmEditorScreen(
                                 voiceProfileBusy = voiceProfileBusy,
                                 stockClips = stockClips,
                                 defaultVoiceId = defaultVoiceId,
-                                onSelectBucket = { bucket -> selectBucket(bucket) },
                                 freeVoiceTier = freeVoiceTier,
                                 onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,
-                                localInputMode = localInputMode,
                                 isRecording = isRecording,
                                 recordingElapsedMillis = recordingElapsedMillis,
-                                recordingLevels = recordingLevels,
-                                selectedFileDurationMillis = selectedFileDurationMillis,
-                                cropStartMillis = cropStartMillis,
-                                cropEndMillis = cropEndMillis,
-                                isCropPreviewActive = previewTarget == AudioPreviewTarget.SelectedCrop,
+                                recordingLevel = recordingLevel,
                                 isCachedAudioPreviewActive = previewTarget == AudioPreviewTarget.CachedAudio,
                                 isPreviewPreparing = previewPreparing,
-                                onLocalInputModeChange = { mode ->
-                                    if (!isRecording && mode != localInputMode) {
-                                        stopPreview()
-                                        if (mode == VoiceCaptureMode.File) {
-                                            editor.clearAudio()
-                                        } else {
-                                            selectedFileUri = null
-                                            selectedFileDurationMillis = null
-                                            cropStartMillis = 0L
-                                            cropEndMillis = AlarmAudioLimits.MAX_DURATION_MILLIS
-                                        }
-                                        audioMessage = null
-                                        localInputMode = mode
-                                    }
-                                },
-                                onPick = { pickAudioLauncher.launch("audio/*") },
                                 onRecord = {
                                     if (isRecording) {
                                         stopRecording()
@@ -1221,28 +1157,11 @@ internal fun AlarmEditorScreen(
                                         recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     }
                                 },
-                                onCropChange = { start, end ->
-                                    stopPreview()
-                                    cropStartMillis = start
-                                    cropEndMillis = end
-                                    editor.clearAudio()
-                                },
-                                onPreviewCrop = { playSelectedCrop() },
                                 onPreviewAudio = { playCachedAudio() },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
-                                onSharedVoiceInfoRequired = { profile ->
-                                    stopPreview()
-                                    sharedVoiceInfoTarget = profile
-                                },
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
-                                onOpenVoiceTranslationSettings = { settingsDetailPanel = "voice_translation" },
-                                onClear = {
-                                    stopPreview()
-                                    editor.clearAudio()
-                                    selectedFileUri = null
-                                    selectedFileDurationMillis = null
-                                    audioMessage = context.getString(R.string.editor_voice_audio_cleared)
-                                },
+                                onOpenFreeBucketSettings = { settingsDetailPanel = "free_bucket" },
+                                onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                             )
                         }
                     }
@@ -1258,7 +1177,9 @@ internal fun AlarmEditorScreen(
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
                             showAlarmSound = editor.playMode != AlarmPlayModes.VOICE_ONLY,
-                            showVoiceOutput = editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            // 목소리 크기는 무료·유료 모두 목소리 카드 안의 행에서 연다(UI 통일) —
+                            // 세부설정의 '목소리' 행은 더 이상 쓰지 않는다.
+                            showVoiceOutput = false,
                             voiceVolumePercent = editor.voiceVolumePercent,
                             voiceRepeat = editor.voiceRepeat,
                             voiceRepeatActive = editor.playMode == AlarmPlayModes.VOICE_ONLY,
@@ -1286,7 +1207,9 @@ internal fun AlarmEditorScreen(
                 shadowElevation = 0.dp,
             ) {
                 Column {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                    // 바 배경이 페이지 배경과 같아 경계가 없으면 스크롤 콘텐츠가 '잘린' 것처럼
+                    // 보인다 — 다른 카드 구분선과 같은 풀 톤 헤어라인으로 바의 시작을 분명히 한다.
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     if (editorSaveBlockedReason != null) {
                         Text(
                             text = editorSaveBlockedReason,
@@ -1304,21 +1227,40 @@ internal fun AlarmEditorScreen(
                                 end = 16.dp,
                                 top = 10.dp,
                                 bottom = 10.dp,
-                            )
-                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_SAVE),
+                            ),
                     ) {
                         EditorActionButtons(
-                            isEditing = alarm != null,
                             isSaving = isSaving,
                             canSave = editorCanSave,
                             onSave = ::saveEditor,
+                            onCancel = onCancel,
+                            recipientName = if (familyAlarmMode) {
+                                selectedFamilyRecipientValue?.name?.trimmedOrNull()
+                                    ?: selectedFamilyRecipientValue?.email?.trimmedOrNull()
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
             }
         }
 
-        when (settingsDetailPanel) {
+        // 세부 설정 pane 은 하드컷 대신 우측에서 밀려 들어오고 우측으로 나간다(드릴인 서브페이지
+        // 문법). 빠른 픽 성격의 바텀시트(테마·수신자·목소리)와 달리 이건 옵션이 여럿인 전체 페이지라
+        // push 슬라이드가 맞다. exit 중에도 내용이 필요하므로 마지막 패널을 기억해 렌더한다.
+        var lastDetailPanel by remember { mutableStateOf(settingsDetailPanel) }
+        LaunchedEffect(settingsDetailPanel) {
+            if (settingsDetailPanel != null) lastDetailPanel = settingsDetailPanel
+        }
+        AnimatedVisibility(
+            visible = settingsDetailPanel != null,
+            enter = slideInHorizontally(tween(280, easing = EditorPaneEasing)) { it } +
+                fadeIn(tween(160)),
+            exit = slideOutHorizontally(tween(220, easing = EditorPaneEasing)) { it } +
+                fadeOut(tween(180)),
+        ) {
+        when (lastDetailPanel) {
             "snooze" -> SnoozeSettingsPane(
                 snoozeEnabled = editor.snoozeEnabled,
                 snoozeMinutes = editor.snoozeMinutes,
@@ -1359,8 +1301,11 @@ internal fun AlarmEditorScreen(
             )
 
             "random_prompt" -> RandomPromptSettingsPane(
-                voiceLanguage = editor.voiceLanguage,
-                randomContext = editor.voiceRandomContext,
+                // 직접 입력 모드면 pane 에서 '직접 입력'이 선택돼 보이도록 manual 을 넘긴다.
+                randomContext = if (editor.voiceRandomPrompt) editor.voiceRandomContext else ManualMessageContext,
+                manualText = editor.voiceText,
+                manualRemaining = manualQuota?.remaining,
+                manualLimit = manualQuota?.limit,
                 weatherCountry = editor.voiceWeatherCountry,
                 weatherCity = editor.voiceWeatherCity,
                 savedWeatherCountry = activeDynamicPromptPreferences.weatherCountry,
@@ -1378,13 +1323,19 @@ internal fun AlarmEditorScreen(
                 onSaveSettings = ::applyRandomPromptSettings,
             )
 
-            "voice_translation" -> VoiceTranslationSettingsPane(
-                voiceLanguage = editor.voiceLanguage,
-                onDismiss = { settingsDetailPanel = null },
-                onLanguageChange = {
-                    editor.voiceLanguage = it
-                    editor.clearTtsMeta()
+            "free_bucket" -> FreeBucketSettingsPane(
+                buckets = freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage),
+                selectedBucket = editor.selectedBucket,
+                onSelectBucket = { bucket ->
+                    if (bucket == "weather") {
+                        // 날씨는 저장한 도시 기준으로 매칭되므로, 고르는 시점에 도시를
+                        // 확인/수정하게 한다(이미 입력돼 있어도 다이얼로그에 채워서 보여줌).
+                        freeWeatherDialogOpen = true
+                    } else {
+                        selectBucket(bucket)
+                    }
                 },
+                onDismiss = { settingsDetailPanel = null },
             )
 
             "voice_output" -> VoiceOutputSettingsPane(
@@ -1396,46 +1347,19 @@ internal fun AlarmEditorScreen(
                 onDismiss = { settingsDetailPanel = null },
             )
         }
-
-        if (usageGuideVisible) {
-            CoachMarkOverlay(
-                steps = alarmEditorCoachSteps(
-                    playModeItemIndex = if (familyAlarmMode) 3 else 2,
-                ),
-                registry = coachMarkRegistry,
-                listState = editorListState,
-                onFinish = {
-                    usageGuideStore.markSeen(UsageGuideStore.GUIDE_ALARM_EDITOR)
-                    usageGuideVisible = false
-                },
-            )
         }
     }
 
-    sharedVoiceInfoTarget?.let { profile ->
-        SharedVoiceInfoRequiredDialog(
-            profileName = profile.name,
-            sharedFromLabel = profile.ownerName?.takeIf { it.isNotBlank() }
-                ?.let { stringResource(R.string.editor_shared_voice_from_owner, it) }
-                ?: stringResource(R.string.editor_shared_voice_from_default),
-            initialRelationship = profile.relationshipLabel.orEmpty(),
-            initialListenerTitle = profile.listenerTitle.orEmpty(),
-            saving = voiceProfileBusy,
-            previewing = previewTarget == AudioPreviewTarget.SharedVoiceInfo &&
-                (previewPreparing || mediaPlayer != null),
-            onDismiss = {
-                if (!voiceProfileBusy) {
-                    stopPreview()
-                    sharedVoiceInfoTarget = null
-                }
-            },
-            onPreview = { playSharedVoiceInfoPreview(profile.id) },
-            onConfirm = { relationship, listener ->
-                onUpdateSharedVoiceInfo(profile.id, relationship, listener) {
-                    editor.selectVoiceProfile(profile.id)
-                    stopPreview()
-                    sharedVoiceInfoTarget = null
-                }
+    if (freeWeatherDialogOpen) {
+        WeatherLocationDialog(
+            country = editor.voiceWeatherCountry,
+            city = editor.voiceWeatherCity,
+            onDismissWithoutSave = { freeWeatherDialogOpen = false },
+            onConfirm = { country, city ->
+                editor.voiceWeatherCountry = country
+                editor.voiceWeatherCity = city
+                freeWeatherDialogOpen = false
+                selectBucket("weather")
             },
         )
     }

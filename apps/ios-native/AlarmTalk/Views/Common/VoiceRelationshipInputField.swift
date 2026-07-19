@@ -84,10 +84,6 @@ struct VoiceRelationshipInputField: View {
     var required: Bool = true
     var placeholder: String = "예: 손녀, 연인, 동료"
 
-    private var options: [VoiceRelationshipPreset] {
-        [.custom] + VoiceRelationshipPreset.allCases.filter { $0 != .custom }
-    }
-
     private var isError: Bool {
         submitted && required && !selection.isComplete
     }
@@ -100,7 +96,7 @@ struct VoiceRelationshipInputField: View {
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
 
             Menu {
-                ForEach(options) { preset in
+                ForEach(VoiceRelationshipPreset.allCases) { preset in
                     Button(preset.label) {
                         if preset == .custom {
                             selection = VoiceRelationshipSelection(
@@ -168,7 +164,7 @@ struct VoiceListenerPreviewCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("이 목소리는 이렇게 불러줘요")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.primaryDark)
+                    .foregroundStyle(AlarmTalkTheme.primary)
                 Text("\"\(trimmedListener), 일어날 시간이에요\"")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.text)

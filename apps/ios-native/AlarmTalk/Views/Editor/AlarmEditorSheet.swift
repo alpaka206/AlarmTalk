@@ -132,11 +132,7 @@ struct AlarmEditorSheet: View {
                 if draft.repeatDaysMask != 0 {
                     HolidayOffToggle(
                         isOn: $draft.holidayOff,
-                        enabled: true,
-                        // KR 은 nil 을 넘겨 기존 '대체·임시 공휴일 포함' 안내를 유지, 그 외만 국가 기준 표기.
-                        subtitleCountryName: holidayStore.selectedCountryCode == "KR"
-                            ? nil
-                            : HolidayStore.localizedCountryName(holidayStore.selectedCountryCode)
+                        enabled: true
                     )
 
                     if draft.holidayOff {

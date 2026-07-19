@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq, ID } from './helpers';
@@ -18,8 +18,20 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function pushMessageBelongsToCaller() {
+  mockDB.pushResult([{ '1': 1 }]);
+}
+
 beforeEach(() => {
   mockDB.reset();
+  // 타깃 알람 생성의 30분 리드타임 판정이 실제 시계에 좌우되지 않도록 고정한다.
+  // 2026-07-15T00:00Z = KST 수요일 09:00 → 테스트 알람 시각들은 항상 30분 이상 남는다.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-07-15T00:00:00Z'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('GET /alarm — 알람 목록', () => {
@@ -164,13 +176,17 @@ describe('POST /alarm — 알람 생성', () => {
 
   it('잘못된 time 형식이면 400', async () => {
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/alarm', { message_id: ID.message, time: '7pm' }));
+    const res = await app.request(
+      jsonReq('POST', '/alarm', { message_id: ID.message, time: '7pm' }),
+    );
     expect(res.status).toBe(400);
   });
 
   it('시간 범위 초과 (25:00) 면 400', async () => {
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/alarm', { message_id: ID.message, time: '25:00' }));
+    const res = await app.request(
+      jsonReq('POST', '/alarm', { message_id: ID.message, time: '25:00' }),
+    );
     expect(res.status).toBe(400);
   });
 
@@ -194,7 +210,11 @@ describe('POST /alarm — 알람 생성', () => {
     mockDB.pushResult([]); // friendship check
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00', target_user_id: 'user-2' }),
+      jsonReq('POST', '/alarm', {
+        message_id: ID.message,
+        time: '07:00',
+        target_user_id: 'user-2',
+      }),
     );
     expect(res.status).toBe(403);
   });
@@ -202,9 +222,12 @@ describe('POST /alarm — 알람 생성', () => {
   it('���료 플랜 무료 플랜도 알람 개수 제한 없이 201', async () => {
     mockDB.pushResult([{ plan: 'free' }]); // user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1); // insert alarm
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00' }));
+    const res = await app.request(
+      jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00' }),
+    );
     expect(res.status).toBe(201);
   });
 
@@ -221,6 +244,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('정상 생성이면 201', async () => {
     mockDB.pushResult([{ plan: 'plus' }]); // user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1); // insert alarm
     const app = buildApp();
     const res = await app.request(
@@ -234,21 +258,31 @@ describe('POST /alarm — 알람 생성', () => {
 
   it('target_user_id 있고 친구이면 201', async () => {
     // target user allows family alarms
-    mockDB.pushResult([{
-      id: 'user-2-pk',
-      google_id: 'user-2',
-      allow_family_alarms: 1,
-      family_alarm_quiet_days: '[1,2,3,4,5]',
-      family_alarm_quiet_start: '09:00',
-      family_alarm_quiet_end: '18:30',
-    }]);
+    mockDB.pushResult([
+      {
+        id: 'user-2-pk',
+        google_id: 'user-2',
+        allow_family_alarms: 1,
+        family_alarm_quiet_days: '[1,2,3,4,5]',
+        family_alarm_quiet_start: '09:00',
+        family_alarm_quiet_end: '18:30',
+      },
+    ]);
+    mockDB.pushResult([]); // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
     mockDB.pushResult([{ id: ID.friendship }]); // friendship exists
     mockDB.pushResult([{ plan: 'plus' }]); // target user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
+    pushMessageBelongsToCaller(); // 트랜잭션 내 재검증
+    mockDB.pushResult([]); // 멱등 슬롯 조회(기존 발신 알람 없음)
+    mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
     mockDB.pushResult([], 1); // insert
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/alarm', { message_id: ID.message, time: '08:00', target_user_id: 'user-2' }),
+      jsonReq('POST', '/alarm', {
+        message_id: ID.message,
+        time: '08:00',
+        target_user_id: 'user-2',
+      }),
     );
     expect(res.status).toBe(201);
   });
@@ -289,7 +323,10 @@ describe('POST /alarm — 알람 생성', () => {
     const voiceProfileId = '40000000-0000-4000-8000-000000000001';
     const speakerId = '50000000-0000-4000-8000-000000000001';
     mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: voiceProfileId }]);
     mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([{ id: voiceProfileId }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
@@ -318,6 +355,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('mode 미지정 시 기본값은 tts', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
@@ -333,6 +371,7 @@ describe('POST /alarm — 알람 생성', () => {
   it('POST 응답에 voice_profile_id/speaker_id 가 null 로 명시된다', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: ID.message }]);
+    pushMessageBelongsToCaller();
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(
@@ -371,7 +410,9 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
   it('정상 수정', async () => {
     mockDB.pushResult([{ id: ID.alarm }]); // existing
     mockDB.pushResult([], 1); // update
-    mockDB.pushResult([{ id: ID.alarm, time: '09:30', is_active: 0, snooze_minutes: 5, repeat_days: '[]' }]); // select updated
+    mockDB.pushResult([
+      { id: ID.alarm, time: '09:30', is_active: 0, snooze_minutes: 5, repeat_days: '[]' },
+    ]); // select updated
     const app = buildApp();
     const res = await app.request(
       jsonReq('PATCH', `/alarm/${ID.alarm}`, { time: '09:30', is_active: false }),
@@ -386,6 +427,7 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
     const speakerId = '50000000-0000-4000-8000-0000000000bb';
     mockDB.pushResult([{ id: ID.alarm }]); // existing
     mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller → 소유 확인
+    mockDB.pushResult([{ '1': 1 }]);
     mockDB.pushResult([], 1); // update
     mockDB.pushResult([
       {
@@ -529,7 +571,11 @@ describe('error_code 일관성 검증', () => {
   it('POST — 잘못된 vibration_pattern 시 INVALID_VIBRATION_PATTERN', async () => {
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00', vibration_pattern: 'extreme' }),
+      jsonReq('POST', '/alarm', {
+        message_id: ID.message,
+        time: '07:00',
+        vibration_pattern: 'extreme',
+      }),
     );
     const body = await res.json();
     expect(body.error_code).toBe('INVALID_VIBRATION_PATTERN');

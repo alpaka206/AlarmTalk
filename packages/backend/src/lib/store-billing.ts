@@ -9,8 +9,8 @@
  */
 import { issueVoucherCode } from './voucher-issue';
 import type { DbExecutor } from './transactions';
-import { cancelActiveSubscriptionsForUser } from './billing-cancel';
-import { planTypeToUserPlan } from '../routes/billing-helpers';
+import { cancelActiveSubscriptionsForUser, clearPaidVoiceRetention } from './billing-cancel';
+import { planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
 
 export type StoreProvider = 'apple' | 'google';
 
@@ -68,11 +68,6 @@ export async function loadPlanByKey(db: DbExecutor, planKey: string): Promise<St
     max_members: Number(row.max_members) || 1,
     price_krw: Number(row.price_krw) || 0,
   };
-}
-
-function plannedMaxUses(planType: string, maxMembers: number): number {
-  if (planType === 'family') return Math.max(1, maxMembers - 1);
-  return 1;
 }
 
 async function currentSubscriptionPlanId(
@@ -143,6 +138,8 @@ export async function applyStoreEntitlement(
         sql: `UPDATE store_transactions SET expires_at = ? WHERE provider = ? AND provider_transaction_id = ?`,
         args: [expiresAtIso, input.provider, input.providerTransactionId],
       });
+      // 갱신/복구로 유료가 이어지면 예약된 유료 음성 보관 삭제를 해제한다.
+      await clearPaidVoiceRetention(tx, input.userPk);
       return {
         ok: true,
         subscription: {
@@ -220,6 +217,9 @@ export async function applyStoreEntitlement(
       input.rawPayload ?? null,
     ],
   });
+
+  // 재구독(신규 트랜잭션)으로 유료가 되살아나면 예약된 유료 음성 보관 삭제를 해제한다.
+  await clearPaidVoiceRetention(tx, input.userPk);
 
   return {
     ok: true,

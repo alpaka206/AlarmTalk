@@ -99,6 +99,8 @@ export function createSynthesisAttempts(params: {
       provider: 'elevenlabs',
       providerVoiceId: params.profile.elevenlabs_voice_id,
       modelId: ELEVENLABS_V3_MODEL_ID,
+      // 파일 확장자/캐시키용 coarse 라벨. 실제 제공자 출력은 elevenlabs.ts 의
+      // ELEVENLABS_TTS_OUTPUT_FORMAT(mp3_44100_128) 로 고정되며 그 형식은 mp3(audio/mpeg)라 일치한다.
       outputFormat: 'mp3',
       voiceSettings: params.voiceSettings,
       synthesize: async () => {
@@ -108,7 +110,7 @@ export function createSynthesisAttempts(params: {
           params.text,
           {
             model_id: ELEVENLABS_V3_MODEL_ID,
-            language_code: normalizeLanguageCode(params.language),
+            language_code: normalizeSynthesisLanguage(params.language),
             ...params.voiceSettings,
           },
         );
@@ -143,8 +145,4 @@ export function inferSynthesisLanguage(text: string, fallback = 'ko'): string {
   if (/[\u3040-\u30FF\u31F0-\u31FF]/.test(text)) return 'ja';
   if (/[A-Za-z]/.test(text)) return 'en';
   return normalizeSynthesisLanguage(fallback);
-}
-
-function normalizeLanguageCode(language: string): string {
-  return normalizeSynthesisLanguage(language);
 }

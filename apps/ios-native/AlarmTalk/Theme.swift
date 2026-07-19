@@ -33,9 +33,6 @@ extension Color {
 enum AlarmTalkTheme {
     // Brand / primary — 다이내믹(밝게/어둡게).
     static let primary = Color.dynamicScheme(light: AlarmTalkPalette.light.primary, dark: AlarmTalkPalette.dark.primary)
-    /// 읽기 좋은 전경 강조(아이콘/셰브론)용. 밝게에서는 brand primary, 어둡게에서는
-    /// 어두운 표면에 대비되는 dark primary(연한 파랑)로 해석된다.
-    static let primaryDark = Color.dynamicScheme(light: AlarmTalkPalette.light.primary, dark: AlarmTalkPalette.dark.primary)
     static let secondary = Color.dynamicScheme(light: AlarmTalkPalette.light.secondary, dark: AlarmTalkPalette.dark.secondary)
     static let accent = Color.dynamicScheme(light: AlarmTalkPalette.light.tertiary, dark: AlarmTalkPalette.dark.tertiary)
 

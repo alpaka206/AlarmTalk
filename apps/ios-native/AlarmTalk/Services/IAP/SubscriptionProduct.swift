@@ -29,12 +29,6 @@ enum SubscriptionProduct: String, CaseIterable {
         }
     }
 
-    /// productID 문자열에서 SubscriptionProduct 매핑. 알 수 없는 값은 nil.
-    /// `SubscriptionManager.refreshPurchasedProducts()` 가 사용한다.
-    static func from(productID: String) -> SubscriptionProduct? {
-        SubscriptionProduct(rawValue: productID)
-    }
-
     /// `PlanTier` 로 productID 를 찾는다. BillingPanel UI 가 카드를 그릴 때 사용.
     static func make(tier: PlanTier) -> SubscriptionProduct? {
         switch tier {

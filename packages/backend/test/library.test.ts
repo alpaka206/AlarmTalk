@@ -59,7 +59,9 @@ describe('PATCH /library/:id/favorite', () => {
     mockDB.pushResult([{ is_favorite: 0 }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/library/550e8400-e29b-41d4-a716-446655440000/favorite'));
+    const res = await app.request(
+      jsonReq('PATCH', '/library/550e8400-e29b-41d4-a716-446655440000/favorite'),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.is_favorite).toBe(true);
@@ -69,7 +71,9 @@ describe('PATCH /library/:id/favorite', () => {
     mockDB.pushResult([{ is_favorite: 1 }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/library/550e8400-e29b-41d4-a716-446655440000/favorite'));
+    const res = await app.request(
+      jsonReq('PATCH', '/library/550e8400-e29b-41d4-a716-446655440000/favorite'),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.is_favorite).toBe(false);
@@ -78,7 +82,9 @@ describe('PATCH /library/:id/favorite', () => {
   it('존재하지 않는 항목 → 404', async () => {
     mockDB.pushResult([]);
     const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/library/550e8400-e29b-41d4-a716-446655440000/favorite'));
+    const res = await app.request(
+      jsonReq('PATCH', '/library/550e8400-e29b-41d4-a716-446655440000/favorite'),
+    );
     expect(res.status).toBe(404);
   });
 
@@ -93,7 +99,9 @@ describe('DELETE /library/:id', () => {
   it('항목 삭제 성공', async () => {
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await app.request(jsonReq('DELETE', '/library/550e8400-e29b-41d4-a716-446655440000'));
+    const res = await app.request(
+      jsonReq('DELETE', '/library/550e8400-e29b-41d4-a716-446655440000'),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
@@ -102,7 +110,9 @@ describe('DELETE /library/:id', () => {
   it('존재하지 않는 항목 → 404', async () => {
     mockDB.pushResult([], 0);
     const app = buildApp();
-    const res = await app.request(jsonReq('DELETE', '/library/550e8400-e29b-41d4-a716-446655440000'));
+    const res = await app.request(
+      jsonReq('DELETE', '/library/550e8400-e29b-41d4-a716-446655440000'),
+    );
     expect(res.status).toBe(404);
   });
 
@@ -228,7 +238,7 @@ describe('GET /library — 엣지 케이스', () => {
     await app.request(jsonReq('GET', '/library?filter=unknown'));
     const countSql = mockDB.calls[0]!.sql;
     expect(countSql).not.toContain('is_favorite');
-    expect(countSql).not.toContain('voice_profile_id');
+    expect(countSql).not.toContain('m.voice_profile_id = ?');
     expect(countSql).not.toContain('date(ml.received_at)');
   });
 

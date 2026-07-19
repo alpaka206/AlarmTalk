@@ -17,8 +17,6 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Snooze
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,49 +38,47 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.data.VibrationPatterns
 
-@Composable
-internal fun ChipGrid(
-    options: List<Pair<String, String>>,
-    selected: String,
-    onSelect: (String) -> Unit,
-    selectedContainerColor: Color? = null,
-    selectedLabelColor: Color? = null,
-) {
-    val chipColors = FilterChipDefaults.filterChipColors(
-        selectedContainerColor = selectedContainerColor ?: MaterialTheme.colorScheme.primaryContainer,
-        selectedLabelColor = selectedLabelColor ?: MaterialTheme.colorScheme.onPrimaryContainer,
-    )
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.chunked(3).forEach { rowOptions ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowOptions.forEach { (value, label) ->
-                    FilterChip(
-                        selected = selected == value,
-                        onClick = { onSelect(value) },
-                        colors = chipColors,
-                        label = { Text(label) },
-                    )
-                }
-            }
-        }
-    }
-}
 
 internal val SnoozeIntervals = listOf(5, 10, 15, 30)
 
+// 라벨은 리소스(vibrationLabel)로 해석한다 — 패턴 고유명은 전 로케일 영어 고정.
 private val VibrationOptions = listOf(
-    VibrationPatterns.DEFAULT to "Basic call",
-    VibrationPatterns.STRONG to "Strong",
-    VibrationPatterns.SHORT to "Short",
-    VibrationPatterns.MEDIUM to "Medium",
-    VibrationPatterns.HEARTBEAT to "Heartbeat",
-    VibrationPatterns.TICKTOCK to "Ticktock",
-    VibrationPatterns.WALTZ to "Waltz",
-    VibrationPatterns.ZIGZAG to "Zig-zig-zig",
-    VibrationPatterns.OFF_BEAT to "Off-beat",
-    VibrationPatterns.RIPPLE to "Ripple",
-    VibrationPatterns.SIREN to "Siren",
+    VibrationPatterns.DEFAULT,
+    VibrationPatterns.STRONG,
+    VibrationPatterns.MEDIUM,
+    VibrationPatterns.SHORT,
+    VibrationPatterns.RISE,
+    VibrationPatterns.PULSE,
+    VibrationPatterns.BOUNCE,
+    VibrationPatterns.DRUMROLL,
+    VibrationPatterns.HEARTBEAT,
+    VibrationPatterns.TICKTOCK,
+    VibrationPatterns.WALTZ,
+    VibrationPatterns.ZIGZAG,
+    VibrationPatterns.OFF_BEAT,
+    VibrationPatterns.RIPPLE,
+    VibrationPatterns.SIREN,
+    VibrationPatterns.SOFT,
+    VibrationPatterns.SOS,
 )
+
+// '기본 알람음'이라는 정보량 없는 표기 대신 시스템 기본 알람음의 실제 이름을 보여준다.
+// 타이틀 조회는 바인더 호출이라 컴포지션당 한 번만 하고, 실패 시에만 기존 문구로 폴백.
+@Composable
+internal fun rememberDefaultAlarmSoundTitle(): String {
+    val context = LocalContext.current
+    val fallback = stringResource(R.string.editor2_default_alarm_sound)
+    return remember(context, fallback) {
+        runCatching {
+            android.media.RingtoneManager.getActualDefaultRingtoneUri(
+                context,
+                android.media.RingtoneManager.TYPE_ALARM,
+            )?.let { uri ->
+                android.media.RingtoneManager.getRingtone(context, uri)?.getTitle(context)
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: fallback
+    }
+}
 
 @Composable
 internal fun AlarmSettingsCard(
@@ -108,16 +105,13 @@ internal fun AlarmSettingsCard(
     onOpenVoiceOutputSettings: () -> Unit,
 ) {
     val context = LocalContext.current
+    // 라벨이 없으면(시스템 기본) 실제 기본 알람음 이름으로 보여준다.
+    val resolvedAlarmSoundLabel = alarmSoundLabel ?: rememberDefaultAlarmSoundTitle()
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text(
-            text = stringResource(R.string.editor_detail_settings),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
+        EditorSectionTitle(stringResource(R.string.editor_detail_settings))
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = WakerCardShape,
@@ -154,22 +148,18 @@ internal fun AlarmSettingsCard(
                 )
                 if (showAlarmSound) {
                     AlarmSettingDivider()
+                    // 알람음을 울릴지 말지는 '재생 방식' 세그먼트가 단일 출처다 — 여기 토글을 두면
+                    // '알람+목소리' + 알람음 꺼짐 = 사실상 '목소리만'이 되어 두 컨트롤이 모순된다.
+                    // 이 행은 어떤 소리·볼륨을 쓸지만 다룬다(무음은 pane 의 볼륨 0).
                     AlarmSettingRow(
                         title = stringResource(R.string.editor_alarm_sound_title),
                         subtitle = alarmSoundSummary(
                             context = context,
                             alarmVolumePercent = alarmVolumePercent,
-                            alarmSoundLabel = alarmSoundLabel,
+                            alarmSoundLabel = resolvedAlarmSoundLabel,
                         ),
                         onClick = onOpenAlarmSoundSettings,
-                        trailing = {
-                            AlarmTalkSwitch(
-                                checked = alarmVolumePercent > 0,
-                                onCheckedChange = { enabled ->
-                                    onAlarmVolumeChange(if (enabled) 100 else 0)
-                                },
-                            )
-                        },
+                        trailing = {},
                     )
                 }
                 if (showVoiceOutput) {
@@ -270,7 +260,6 @@ internal fun AlarmSoundSettingsPane(
     onPickAlarmSound: () -> Unit,
 ) {
     val context = LocalContext.current
-    val alarmEnabled = alarmVolumePercent > 0
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -298,50 +287,20 @@ internal fun AlarmSoundSettingsPane(
                 )
             }
 
+            // 켜고 끄는 사용/무음 토글은 두지 않는다 — 알람음 여부는 '재생 방식'이 정하고,
+            // 여기선 어떤 소리를 얼마나 크게 울릴지만 고른다(볼륨 0 = 무음).
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Surface(
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.surface,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 9.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = if (alarmEnabled) stringResource(R.string.editor_in_use) else stringResource(R.string.editor_silent),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (alarmEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                        )
-                        AlarmTalkSwitch(
-                            checked = alarmEnabled,
-                            onCheckedChange = { enabled ->
-                                onAlarmVolumeChange(if (enabled) 100 else 0)
-                            },
-                        )
-                    }
-                }
-
-                if (alarmEnabled) {
-                    SnoozeOptionSection(title = stringResource(R.string.editor_alarm_sound_title)) {
-                        AlarmSoundActionRow(
-                            title = stringResource(R.string.editor_alarm_sound_title),
-                            subtitle = alarmSoundLabel ?: stringResource(R.string.editor_default_alarm_sound),
-                            onClick = onPickAlarmSound,
-                        )
-                    }
+                SnoozeOptionSection(title = stringResource(R.string.editor_alarm_sound_title)) {
+                    AlarmSoundActionRow(
+                        title = stringResource(R.string.editor_alarm_sound_title),
+                        subtitle = alarmSoundLabel ?: rememberDefaultAlarmSoundTitle(),
+                        onClick = onPickAlarmSound,
+                    )
                 }
 
                 SnoozeOptionSection(title = stringResource(R.string.editor_volume)) {
@@ -373,7 +332,6 @@ internal fun AlarmSoundSettingsPane(
                             onValueChange = { onAlarmVolumeChange(it.toInt().coerceIn(0, 100)) },
                             valueRange = 0f..100f,
                             steps = 9,
-                            enabled = alarmEnabled,
                         )
                     }
                 }
@@ -429,6 +387,7 @@ internal fun VibrationSettingsPane(
                 Surface(
                     shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.surface,
+                    border = wakerCardBorder(),
                 ) {
                     Row(
                         modifier = Modifier
@@ -454,10 +413,10 @@ internal fun VibrationSettingsPane(
                     }
                 }
 
-                SnoozeOptionSection(title = stringResource(R.string.editor_pattern)) {
-                    VibrationOptions.forEachIndexed { index, (pattern, label) ->
+                SnoozeOptionSection {
+                    VibrationOptions.forEachIndexed { index, pattern ->
                         SnoozeRadioRow(
-                            label = label,
+                            label = vibrationLabel(context, pattern),
                             selected = selectedPattern == pattern,
                             onClick = {
                                 onVibrationEnabledChange(true)
@@ -476,12 +435,13 @@ internal fun VibrationSettingsPane(
 }
 
 internal data class RandomPromptSettingsResult(
-    val voiceLanguage: String,
     val randomContext: String,
     val weatherCountry: String,
     val weatherCity: String,
     val fortuneGender: String,
     val fortuneBirthDate: String,
     val fortuneBirthTime: String,
+    // '직접 입력' 선택 시 다이얼로그에서 받은 문구.
+    val manualText: String = "",
 )
 

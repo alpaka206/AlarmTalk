@@ -56,8 +56,11 @@ import androidx.compose.ui.window.DialogProperties
 
 @Composable
 internal fun RandomPromptSettingsPane(
-    voiceLanguage: String,
     randomContext: String,
+    manualText: String,
+    // 직접 입력 옵션에 '(남은/총)' 을 붙여 이번 달 남은 만들기 횟수를 보여준다(유료·limit>0 일 때).
+    manualRemaining: Int? = null,
+    manualLimit: Int? = null,
     weatherCountry: String,
     weatherCity: String,
     savedWeatherCountry: String,
@@ -75,11 +78,11 @@ internal fun RandomPromptSettingsPane(
     onSaveSettings: (RandomPromptSettingsResult) -> Unit,
 ) {
     val context = LocalContext.current
-    var draftLanguage by remember(voiceLanguage) {
-        mutableStateOf(voiceLanguage.takeIf { language -> TtsLanguages.any { it.first == language } } ?: "ko")
-    }
     var draftContext by remember(randomContext) {
-        mutableStateOf(normalizedRandomPromptContext(randomContext))
+        mutableStateOf(
+            if (randomContext == ManualMessageContext) ManualMessageContext
+            else normalizedRandomPromptContext(randomContext),
+        )
     }
     var draftWeatherCountry by remember(weatherCountry, savedWeatherCountry) {
         mutableStateOf(weatherCountry.ifBlank { savedWeatherCountry })
@@ -98,7 +101,9 @@ internal fun RandomPromptSettingsPane(
     }
     var weatherDialogOpen by remember { mutableStateOf(false) }
     var fortuneDialogOpen by remember { mutableStateOf(false) }
-    val normalizedContext = normalizedRandomPromptContext(draftContext)
+    var manualDialogOpen by remember { mutableStateOf(false) }
+    val isManual = draftContext == ManualMessageContext
+    val normalizedContext = if (isManual) ManualMessageContext else normalizedRandomPromptContext(draftContext)
     fun hasWeatherInfo(): Boolean =
         draftWeatherCity.isNotBlank() || savedWeatherConfigured
     fun hasFortuneInfo(): Boolean =
@@ -111,7 +116,6 @@ internal fun RandomPromptSettingsPane(
     fun saveResolvedSettings() {
         onSaveSettings(
             RandomPromptSettingsResult(
-                voiceLanguage = draftLanguage,
                 randomContext = normalizedContext,
                 weatherCountry = draftWeatherCountry.trim(),
                 weatherCity = draftWeatherCity.trim(),
@@ -124,6 +128,8 @@ internal fun RandomPromptSettingsPane(
 
     fun requestRequiredInfoOrSave() {
         when {
+            // 직접 입력은 문구를 다이얼로그로만 받는다(빈 문구로 저장되지 않게).
+            isManual -> manualDialogOpen = true
             randomContextUsesWeather(normalizedContext) && !hasWeatherInfo() -> weatherDialogOpen = true
             normalizedContext == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
             else -> saveResolvedSettings()
@@ -132,8 +138,9 @@ internal fun RandomPromptSettingsPane(
 
     fun selectContext(context: String) {
         draftContext = context
-        // 날씨/운세가 들어가는 모드를 고르면 상세 입력을 놓치지 않도록 곧바로 다이얼로그를 띄운다.
+        // 상세 입력이 필요한 모드는 고르는 즉시 다이얼로그를 띄운다(날씨·운세·직접 입력).
         when {
+            context == ManualMessageContext -> manualDialogOpen = true
             randomContextUsesWeather(context) -> weatherDialogOpen = true
             context == "wake_fortune" -> fortuneDialogOpen = true
         }
@@ -173,31 +180,26 @@ internal fun RandomPromptSettingsPane(
                     .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-                ) {
-                    Text(
-                        text = stringResource(R.string.editorp_random_intro),
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-
-                SnoozeOptionSection(title = stringResource(R.string.editorp_random_context_section)) {
-                    RandomPromptContexts.forEachIndexed { index, (context, labelRes) ->
+                SnoozeOptionSection {
+                    EditorMessageContexts.forEachIndexed { index, (context, labelRes) ->
+                        val baseLabel = stringResource(labelRes)
+                        val label = if (
+                            context == ManualMessageContext &&
+                            manualLimit != null && manualLimit > 0 && manualRemaining != null
+                        ) {
+                            // 예: "직접 입력 (29/30)" — 이번 달 남은/총 만들기 횟수.
+                            "$baseLabel ($manualRemaining/$manualLimit)"
+                        } else {
+                            baseLabel
+                        }
                         SnoozeRadioRow(
-                            label = stringResource(labelRes),
+                            label = label,
                             selected = normalizedContext == context,
                             onClick = { selectContext(context) },
                         )
-                        if (index != RandomPromptContexts.lastIndex) SnoozeOptionDivider()
+                        if (index != EditorMessageContexts.lastIndex) SnoozeOptionDivider()
                     }
                 }
-
-                RandomPromptContextDescription(context = normalizedContext)
 
                 if (randomContextUsesWeather(normalizedContext)) {
                     RandomPromptDetailRow(
@@ -229,17 +231,6 @@ internal fun RandomPromptSettingsPane(
                         },
                     )
                 }
-
-                SnoozeOptionSection(title = stringResource(R.string.editorp_random_language_section)) {
-                    TtsLanguages.forEachIndexed { index, (language, labelRes) ->
-                        SnoozeRadioRow(
-                            label = stringResource(labelRes),
-                            selected = draftLanguage == language,
-                            onClick = { draftLanguage = language },
-                        )
-                        if (index != TtsLanguages.lastIndex) SnoozeOptionDivider()
-                    }
-                }
             }
 
             Surface(
@@ -254,8 +245,6 @@ internal fun RandomPromptSettingsPane(
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
-                        Icon(Icons.Outlined.Save, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.editorp_random_save_button))
                     }
                 }
@@ -292,35 +281,82 @@ internal fun RandomPromptSettingsPane(
             },
         )
     }
-}
 
-// 선택한 문구 종류가 어떤 톤·내용인지 한 줄로 안내한다(기상=날씨, 운세=가벼운 운세 등).
-@Composable
-private fun RandomPromptContextDescription(context: String) {
-    val descriptionRes = randomPromptContextDescriptionRes(context) ?: return
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-    ) {
-        Text(
-            text = stringResource(descriptionRes),
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    if (manualDialogOpen) {
+        ManualMessageDialog(
+            initialText = manualText,
+            // 취소는 pane 에 머문다(직접 입력 선택만 남고 저장은 안 됨).
+            onDismiss = { manualDialogOpen = false },
+            onConfirm = { text ->
+                manualDialogOpen = false
+                onSaveSettings(
+                    RandomPromptSettingsResult(
+                        randomContext = ManualMessageContext,
+                        weatherCountry = draftWeatherCountry.trim(),
+                        weatherCity = draftWeatherCity.trim(),
+                        fortuneGender = draftFortuneGender.trim(),
+                        fortuneBirthDate = draftFortuneBirthDate.trim(),
+                        fortuneBirthTime = draftFortuneBirthTime.trim(),
+                        manualText = text,
+                    ),
+                )
+            },
         )
     }
 }
 
-private fun randomPromptContextDescriptionRes(context: String): Int? = when (context) {
-    "preset" -> R.string.editorp_random_context_desc_preset
-    "wake_weather" -> R.string.editorp_random_context_desc_wake_weather
-    "wake_fortune" -> R.string.editorp_random_context_desc_wake_fortune
-    "meal" -> R.string.editorp_random_context_desc_meal
-    "sleep" -> R.string.editorp_random_context_desc_sleep
-    "exercise" -> R.string.editorp_random_context_desc_exercise
-    "love" -> R.string.editorp_random_context_desc_love
-    else -> null
+// '직접 입력' 선택 시 뜨는 문구 입력 다이얼로그(날씨·운세 다이얼로그와 같은 층위).
+@Composable
+private fun ManualMessageDialog(
+    initialText: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var draft by remember(initialText) { mutableStateOf(initialText) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 460.dp),
+            shape = WakerDialogShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                ModalDialogTitle(
+                    title = stringResource(R.string.editor_msg_mode_manual),
+                    onDismiss = onDismiss,
+                )
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it.take(200) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp),
+                    placeholder = { Text(stringResource(R.string.editor_manual_input_placeholder)) },
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
+                )
+                Button(
+                    onClick = { onConfirm(draft.trim()) },
+                    enabled = draft.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                ) {
+                    Text(stringResource(R.string.editorp_random_save_button))
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -357,47 +393,6 @@ internal fun WeatherLocationDialog(
     var draftCountry by remember(country) { mutableStateOf(country) }
     var draftCity by remember(city) { mutableStateOf(city) }
     var submitted by remember { mutableStateOf(false) }
-    var locationBusy by remember { mutableStateOf(false) }
-    var locationStatus by remember { mutableStateOf<String?>(null) }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    fun startLocationLookup() {
-        if (locationBusy) return
-        scope.launch {
-            locationBusy = true
-            locationStatus = context.getString(R.string.editorp_weather_location_loading)
-            val fix = withContext(Dispatchers.IO) {
-                runCatching {
-                    com.alarmtalk.app.location.WeatherLocationProvider.resolve(context)
-                }.getOrNull()
-            }
-            if (fix == null) {
-                locationStatus = context.getString(R.string.editorp_weather_location_failed)
-            } else {
-                draftCountry = fix.country.ifBlank { draftCountry }
-                // 도시가 비면 나라라도 채운다(도서 지역 등 지오코딩이 도시를 못 줄 때).
-                draftCity = fix.city.ifBlank { fix.country }.ifBlank { draftCity }
-                locationStatus = if (fix.country.isBlank() && fix.city.isBlank()) {
-                    context.getString(R.string.editorp_weather_location_no_address)
-                } else {
-                    context.getString(R.string.editorp_weather_location_filled)
-                }
-            }
-            locationBusy = false
-        }
-    }
-
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { results ->
-        val granted = results.values.any { it }
-        if (!granted) {
-            locationStatus = context.getString(R.string.editorp_weather_location_denied)
-            return@rememberLauncherForActivityResult
-        }
-        startLocationLookup()
-    }
     val cityError = submitted && draftCity.isBlank()
 
     Dialog(
@@ -445,56 +440,7 @@ internal fun WeatherLocationDialog(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        OutlinedButton(
-                            onClick = {
-                                if (com.alarmtalk.app.location.WeatherLocationProvider.hasPermission(context)) {
-                                    startLocationLookup()
-                                } else {
-                                    locationPermissionLauncher.launch(
-                                        arrayOf(
-                                            Manifest.permission.ACCESS_COARSE_LOCATION,
-                                            Manifest.permission.ACCESS_FINE_LOCATION,
-                                        ),
-                                    )
-                                }
-                            },
-                            enabled = !locationBusy,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = WakerButtonShape,
-                            border = wakerCardBorder(),
-                            colors = wakerOutlinedButtonColors(),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (locationBusy) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(stringResource(R.string.editorp_weather_location_getting))
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Outlined.MyLocation,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(stringResource(R.string.editorp_weather_use_current_location))
-                                }
-                            }
-                        }
                     }
-                }
-                locationStatus?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
                 WeatherCityPickerField(
                     city = draftCity,

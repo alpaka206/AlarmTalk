@@ -38,7 +38,6 @@
   --color-accent-fg: #06243c;
   --color-mint: #5e9b7d;
   --color-rose: #db7e63;
-  --color-indigo-deep: #d6e9ff;
 
   /* typography */
   --font-sans:
@@ -111,13 +110,6 @@
 }
 
 @layer utilities {
-  /* serif display utility for headline elements that aren't h1/h2 */
-  .font-display {
-    font-family: var(--font-serif);
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
-
   /* warm radial paper wash */
   .bg-aurora {
     background-color: var(--color-bg);
@@ -198,12 +190,6 @@
     border-color: var(--color-line);
   }
 
-  .btn-sm {
-    height: 40px;
-    padding: 0 1rem;
-    font-size: 13px;
-  }
-
   /* small uppercase eyebrow */
   .eyebrow {
     display: inline-flex;
@@ -236,12 +222,6 @@
   }
 }
 
-@keyframes wave {
-  0%,
-  100% { transform: scaleY(0.6); opacity: 0.55; }
-  50% { transform: scaleY(1); opacity: 1; }
-}
-
 @keyframes fadeup {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
@@ -249,29 +229,6 @@
 
 .animate-fadeup {
   animation: fadeup 0.6s var(--ease-paper) both;
-}
-
-/* lightweight ambient loops — cheaper than JS for purely decorative motion.
-   The reduced-motion media query below neutralizes all of these. */
-@keyframes bob {
-  0%, 100% { transform: translateY(0); opacity: 0.85; }
-  50% { transform: translateY(5px); opacity: 1; }
-}
-
-.animate-bob {
-  animation: bob 2.4s var(--ease-paper) infinite;
-}
-
-@keyframes drift {
-  0%, 100% { transform: translate(0, 0); }
-  50% { transform: translate(10px, -12px); }
-}
-
-.animate-drift {
-  animation: drift 12s ease-in-out infinite;
-}
-.animate-drift-slow {
-  animation: drift 16s ease-in-out infinite reverse;
 }
 
 /* Accessibility dual-safety-net: a global reduced-motion reset that pairs with the

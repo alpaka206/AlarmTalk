@@ -3,6 +3,7 @@ package com.alarmtalk.app
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.google.gson.Gson
+import com.alarmtalk.app.data.fortuneThemeIndex
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.FamilyGroupMember
 import java.time.LocalDateTime
@@ -121,6 +122,22 @@ class AlarmEditorScreenTest {
             "매주 월, 화, 수",
             repeatSummaryLabel(context, 7, 30, (1 shl 1) or (1 shl 2) or (1 shl 3), nowMillis, zoneId),
         )
+    }
+
+    @Test
+    fun fortuneThemeIndexIsDeterministicPerDayAndInRange() {
+        // 같은 사람·같은 날은 항상 같은 테마(결정적, 오프라인 재생 일관성).
+        val a = fortuneThemeIndex("female", "1995-05-19", "07:30", "2026-07-14", 5)
+        val b = fortuneThemeIndex("female", "1995-05-19", "07:30", "2026-07-14", 5)
+        assertEquals(a, b)
+        assertTrue(a in 0..4)
+        // 날짜가 바뀌면 테마가 갈릴 수 있다(매일 신선).
+        val overDays = (10..25).map {
+            fortuneThemeIndex("female", "1995-05-19", "07:30", "2026-07-$it", 5)
+        }
+        assertTrue(overDays.toSet().size > 1)
+        // count<=0 방어.
+        assertEquals(0, fortuneThemeIndex("x", "y", "z", "d", 0))
     }
 
     @Test

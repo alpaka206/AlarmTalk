@@ -6,12 +6,21 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -54,8 +63,8 @@ internal fun AlarmTalkApp(
     val message = viewModel.message
     val authSession = viewModel.authSession
     val authBusy = viewModel.authBusy
-    val syncBusy = viewModel.syncBusy
     val voiceProfiles = viewModel.voiceProfiles
+    val pendingVoiceDraft = viewModel.pendingVoiceDraft
     val voiceProfileBusy = viewModel.voiceProfileBusy
     val socialBusy = viewModel.socialBusy
     val familyGroup = viewModel.familyGroup
@@ -63,8 +72,6 @@ internal fun AlarmTalkApp(
     val billingBusy = viewModel.billingBusy
     val subscriptionResponse = viewModel.subscriptionResponse
     val vouchers = viewModel.vouchers
-    val noteBusy = viewModel.noteBusy
-    val receivedNotes = viewModel.receivedNotes
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentTab = navBackStackEntry?.destination?.route.toNativeTab()
@@ -102,10 +109,6 @@ internal fun AlarmTalkApp(
             alarm.origin == AlarmOrigins.RECEIVED_REMOTE &&
                 alarm.createdAtMillis > viewModel.receivedAlarmSeenAtMillis
         }
-    }
-    // 읽지 않은 메시지 수도 receivedNotes 가 바뀔 때만 계산(매 리컴포지션 재계산 방지).
-    val unreadMessageCount = remember(receivedNotes) {
-        receivedNotes.count { it.readAt.isNullOrBlank() }
     }
     val permissionState = rememberPermissionStatusState()
     val permissions = permissionState.snapshot
@@ -281,7 +284,6 @@ internal fun AlarmTalkApp(
             viewModel.loadStockClips()
             viewModel.preloadSocial()
             viewModel.preloadBilling()
-            viewModel.preloadNotes()
         }
     }
 
@@ -319,7 +321,8 @@ internal fun AlarmTalkApp(
         when (tab) {
             NativeTab.Voices -> {
                 viewModel.preloadVoiceProfiles()
-                viewModel.loadStockClips()
+                // 유료 클론 확정 후 cron 이 세션 중 새로 만든 사전렌더 클립을 반영하려면 강제 재조회.
+                viewModel.loadStockClips(forceReload = true)
                 viewModel.preloadSocial()
             }
             // 알람 홈: 히어로와 '누구를 깨울까요?' 시트가 구독/가족 데이터를 쓰므로 함께 갱신한다.
@@ -327,14 +330,13 @@ internal fun AlarmTalkApp(
                 viewModel.syncNow()
                 viewModel.refreshBilling()
                 viewModel.refreshSocial()
+                // 편집기가 이 탭에서 열리고, cron 이 세션 중 만든 클론 클립을 오프라인 버킷 판정
+                // (hasCompleteCloneBucket)에 반영하려면 매니페스트를 새로 받아야 한다.
+                viewModel.loadStockClips(forceReload = true)
             }
             NativeTab.People -> {
                 viewModel.refreshSocial()
                 viewModel.refreshBilling()
-            }
-            NativeTab.Messages -> {
-                viewModel.refreshSocial()
-                viewModel.refreshNotes()
             }
             NativeTab.Billing -> viewModel.refreshBilling()
             // 전체 탭: 공유 이용권/가족 여부에 따라 노출 항목이 달라지므로 함께 갱신.
@@ -404,19 +406,6 @@ internal fun AlarmTalkApp(
     }
 
     fun navigateToTab(tab: NativeTab) {
-        if (
-            tab == NativeTab.Messages &&
-            authSession != null &&
-            subscriptionResponse != null &&
-            familyGroup != null &&
-            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
-        ) {
-            planGateDialog = PlanGateDialogState(
-                title = context.getString(R.string.r3app_messages_plan_gate_title),
-                message = context.getString(R.string.r3app_messages_plan_gate),
-            )
-            return
-        }
         if (selectedTab == tab) return
         navController.navigateTopLevelTab(tab)
     }
@@ -427,15 +416,18 @@ internal fun AlarmTalkApp(
 
     // 알람 생성 진입 일원화 — 하단바 ➕와 히어로 카드가 모두 이 경로를 탄다.
     // 가족 알람 자격이 있으면 '누구를 깨울까요?' 시트에서 대상을 먼저 고른다.
+    val alarmTargetRecipients = familyAlarmRecipients(familyGroup, authSession)
     val canCreateFamilyAlarm = authSession != null &&
         hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
-        familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
+        alarmTargetRecipients.isNotEmpty()
     var alarmTargetSheetVisible by remember { mutableStateOf(false) }
-    fun startCreateAlarm(familyTargetMode: Boolean) {
+    fun startCreateAlarm(familyTargetMode: Boolean, targetUserId: String? = null) {
         if (!permissions.alarmReady) {
             requestFirstMissingAlarmPermission()
         } else {
-            navController.navigate(AppRoute.alarmCreate(familyTargetMode = familyTargetMode))
+            navController.navigate(
+                AppRoute.alarmCreate(familyTargetMode = familyTargetMode, targetUserId = targetUserId),
+            )
         }
     }
     fun requestCreateAlarm() {
@@ -518,44 +510,75 @@ internal fun AlarmTalkApp(
             title = stringResource(R.string.alarms_target_sheet_title),
             onDismiss = { alarmTargetSheetVisible = false },
         ) { dismiss ->
-            WakerSheetOptionRow(
-                title = stringResource(R.string.alarms_target_self_title),
-                description = stringResource(R.string.alarms_target_self_desc),
-                icon = Icons.Outlined.Alarm,
-                selected = false,
-                onClick = {
-                    dismiss()
-                    startCreateAlarm(familyTargetMode = false)
-                },
-            )
-            WakerSheetOptionRow(
-                title = stringResource(R.string.alarms_target_family_title),
-                description = stringResource(R.string.alarms_target_family_desc),
-                icon = Icons.Outlined.People,
-                selected = false,
-                onClick = {
-                    dismiss()
-                    startCreateAlarm(familyTargetMode = true)
-                },
-            )
+            WakerSheetOptionGroup {
+                // 아이콘 배지 없이 텍스트만 — 제목이 이미 대상을 다 말해주고, 같은 사람 아이콘이 행마다
+                // 반복되면 장식일 뿐이다(기본 아이콘 남용 금지). 다른 선택 시트(테마/국가/목소리)와 동일 문법.
+                WakerSheetOptionRow(
+                    title = stringResource(R.string.alarms_target_self_title),
+                    selected = false,
+                    onClick = {
+                        dismiss()
+                        startCreateAlarm(familyTargetMode = false)
+                    },
+                    divider = alarmTargetRecipients.isNotEmpty(),
+                )
+                // 가족 알람: 대상을 사람별로 바로 고른다. 각 행에 그 사람의 '받지 않는 시간'을 함께 보여줘
+                // 자동선택으로 엉뚱한 사람에게 알람이 가는 일을 막는다.
+                alarmTargetRecipients.forEachIndexed { index, recipient ->
+                    WakerSheetOptionRow(
+                        title = familyMemberLabel(context, recipient),
+                        description = stringResource(
+                            R.string.editor_quiet_hours_label,
+                            familyAlarmQuietScheduleLabel(context, recipient),
+                        ),
+                        selected = false,
+                        onClick = {
+                            dismiss()
+                            startCreateAlarm(familyTargetMode = true, targetUserId = recipient.userId)
+                        },
+                        divider = index != alarmTargetRecipients.lastIndex,
+                    )
+                }
+            }
         }
     }
 
+    // 하단바·FAB 등 앱 크롬 노출 조건(로그인·동의 완료, 업데이트 강제/삭제 대기 아님).
+    // 온보딩 목소리 고르기 중에는 하단 탭·알람 추가 FAB 를 감춘다 — 선택을 끝내기 전에
+    // 다른 화면으로 샐 수 있는 출구를 두지 않는다.
+    val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
+        !viewModel.updateRequired && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
+
     Scaffold(
         bottomBar = {
-            if (authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-                !viewModel.updateRequired &&
-                !viewModel.pendingDeletion && currentTab != null
-            ) {
+            if (showAppChrome) {
                 AlarmTalkBottomBar(
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
-                    unreadMessageCount = unreadMessageCount,
-                    // 메시지는 커플/가족 전용 — 무료·개인 플랜은 잠금 표시.
-                    messagesLocked = !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup),
                     onSelectTab = ::navigateToTab,
-                    onCreateAlarm = ::requestCreateAlarm,
                 )
+            }
+        },
+        floatingActionButton = {
+            // 빈 상태↔리스트 전환 때 하드컷 대신 스케일+페이드. scale 0 에서 시작하지 않고
+            // (무에서 튀어나오는 느낌 방지) 퇴장은 진입보다 빠르게 끊는다.
+            AnimatedVisibility(
+                visible = showAppChrome && selectedTab == NativeTab.Alarms && alarms.isNotEmpty(),
+                enter = scaleIn(initialScale = 0.85f) + fadeIn(),
+                exit = scaleOut(targetScale = 0.85f, animationSpec = tween(120)) +
+                    fadeOut(animationSpec = tween(120)),
+            ) {
+                FloatingActionButton(
+                    onClick = ::requestCreateAlarm,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = CircleShape,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Add,
+                        contentDescription = stringResource(R.string.r3app_bottom_create_alarm_desc),
+                    )
+                }
             }
         },
     ) { padding ->
@@ -672,9 +695,8 @@ internal fun AlarmTalkApp(
                           onSelectTab = ::navigateToTab,
                           alarms = alarms,
                           authSession = authSession,
-                          authBusy = authBusy,
-                          syncBusy = syncBusy,
                           voiceProfiles = voiceProfiles,
+                          pendingVoiceDraft = pendingVoiceDraft,
                           voiceProfileBusy = voiceProfileBusy,
                           socialBusy = socialBusy,
                           familyGroup = familyGroup,
@@ -682,22 +704,8 @@ internal fun AlarmTalkApp(
                           billingBusy = billingBusy,
                           subscriptionResponse = subscriptionResponse,
                           vouchers = vouchers,
-                          noteBusy = noteBusy,
-                          receivedNotes = receivedNotes,
-                          onLogin = viewModel::login,
-                          onRegister = viewModel::register,
-                          onGoogleSignIn = ::launchGoogleSignIn,
-                          onSyncNow = viewModel::syncNow,
-                          onLogout = ::logout,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,
-                          onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
-                          onCloneSpeakerDraft = viewModel::cloneSpeakerDraft,
-                          onPromoteDraftVoice = { profileId, draft ->
-                              viewModel.promoteDraftVoice(profileId, draft)
-                              viewModel.loadVoiceProfiles()
-                          },
-                          onDeleteDraftVoice = viewModel::deleteDraftVoice,
                           onGenerateTts = viewModel::generateTtsAudio,
                           stockClips = viewModel.stockClips,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
@@ -707,27 +715,34 @@ internal fun AlarmTalkApp(
                               viewModel.updateSharedVoiceViewerInfo(id, relationship, listener)
                           },
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
+                          onConfirmVoicePreviewPlayed = viewModel::confirmVoicePreviewPlayed,
+                          onUpdateVoicePreviewText = viewModel::updateVoicePreviewText,
+                          onPromoteVoiceDraft = viewModel::promoteVoiceDraft,
+                          onDeleteVoiceDraft = viewModel::deleteVoiceDraft,
                           defaultVoiceId = viewModel.defaultVoiceId,
                           onSetDefaultVoice = viewModel::setDefaultVoice,
+                          voicePrefetchProgress = viewModel.voicePrefetchProgress,
+                          onGetVoicePrerenderStatus = viewModel::fetchVoicePrerenderStatus,
+                          onRetryVoicePrerender = viewModel::retryVoicePrerender,
+                          onRetryVoiceSpeechStyle = viewModel::retryVoiceSpeechStyleAnalysis,
+                          onReloadStockClips = { viewModel.loadStockClips(forceReload = true) },
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,
                           onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
-                          onRefreshNotes = viewModel::refreshNotes,
-                          onSendNote = viewModel::sendNote,
-                          onSendTtsNote = viewModel::sendTtsNote,
-                          onDownloadNoteAudio = viewModel::downloadNoteAudio,
-                          onMarkNoteRead = viewModel::markNoteRead,
                           onCheckoutPlan = viewModel::checkoutPlan,
+                          planPrices = viewModel.billingPlanPrices,
                           onPurchasePlay = viewModel::startPlayPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,
+                          onDeleteVoiceDataNow = viewModel::deleteVoiceDataNow,
                           permissions = permissions,
                           onCreateAlarm = ::requestCreateAlarm,
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
                           onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
                           onOpenConsentHistory = { navController.navigate(AppRoute.ConsentHistory) },
+                          onOpenOssLicenses = { navController.navigate(AppRoute.OssLicenses) },
                           onDeleteAccount = viewModel::requestDeleteAccount,
                           themeMode = themeMode,
                           onChangeTheme = viewModel::setThemeMode,
@@ -747,9 +762,17 @@ internal fun AlarmTalkApp(
               }
               composable(
                   route = AppRoute.AlarmCreate,
-                  arguments = listOf(navArgument(AppRoute.FamilyTargetModeArg) { type = NavType.BoolType }),
+                  arguments = listOf(
+                      navArgument(AppRoute.FamilyTargetModeArg) { type = NavType.BoolType },
+                      navArgument(AppRoute.TargetUserIdArg) {
+                          type = NavType.StringType
+                          nullable = true
+                          defaultValue = null
+                      },
+                  ),
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
+                  val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
                   AlarmEditorScreen(
                       contentPadding = padding,
                       alarm = null,
@@ -757,6 +780,7 @@ internal fun AlarmTalkApp(
                       subscriptionResponse = subscriptionResponse,
                       familyGroup = familyGroup,
                       familyAlarmMode = familyTargetMode,
+                      initialFamilyRecipientId = targetUserId,
                       voiceProfiles = voiceProfiles,
                       familyVoices = familyVoices,
                       voiceProfileBusy = voiceProfileBusy,
@@ -766,11 +790,9 @@ internal fun AlarmTalkApp(
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                       onGenerateTts = viewModel::generateTtsAudio,
+                      onLoadManualQuota = viewModel::loadManualQuota,
                       onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
-                      onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
-                          viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)
-                      },
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
                               requestFirstMissingAlarmPermission()
@@ -807,11 +829,9 @@ internal fun AlarmTalkApp(
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                           onGenerateTts = viewModel::generateTtsAudio,
+                          onLoadManualQuota = viewModel::loadManualQuota,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                           onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
-                          onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
-                              viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)
-                          },
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
                                   requestFirstMissingAlarmPermission()
@@ -832,6 +852,12 @@ internal fun AlarmTalkApp(
                       onEditNickname = viewModel::requestEditNickname,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onLogout = ::logout,
+                  )
+              }
+              composable(AppRoute.OssLicenses) {
+                  OssLicensesScreen(
+                      contentPadding = padding,
+                      onBack = ::goBackInApp,
                   )
               }
               composable(AppRoute.ConsentHistory) {
@@ -895,6 +921,14 @@ internal fun AlarmTalkApp(
                   message = data.visuals.message,
                   actionLabel = data.visuals.actionLabel,
                   onAction = { data.performAction() },
+              )
+          }
+          // 서버가 Play 구독을 직접 해지하지 못한 경우(PLAY_CANCEL_FAILED 등) —
+          // 어느 화면에 있든 Google Play 구독 관리로 보내는 안내 다이얼로그를 띄운다.
+          viewModel.billingPlayManageUrl?.let { manageUrl ->
+              PlayStoreManageDialog(
+                  manageUrl = manageUrl,
+                  onDismiss = { viewModel.billingPlayManageUrl = null },
               )
           }
       }

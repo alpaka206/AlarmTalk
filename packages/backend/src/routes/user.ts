@@ -2,7 +2,10 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
-import { deletePaidVoiceDataForUser } from '../lib/paid-voice-cleanup';
+import {
+  deletePaidVoiceDataForUser,
+  deleteSensitiveVoiceDataForUser,
+} from '../lib/paid-voice-cleanup';
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
 import {
@@ -18,6 +21,7 @@ import {
 import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
+  SENSITIVE_REQUIRED_CONSENTS,
   CURRENT_POLICY_VERSION,
 } from '../lib/consent';
 
@@ -388,7 +392,10 @@ user.post('/consents', async (c) => {
     const item = raw as Record<string, unknown>;
     const type = typeof item.type === 'string' ? item.type.trim() : '';
     if (!ALLOWED_CONSENT_TYPES.has(type)) {
-      return c.json({ error: `Unknown consent type: ${type}`, error_code: 'INVALID_CONSENT_TYPE' }, 400);
+      return c.json(
+        { error: `Unknown consent type: ${type}`, error_code: 'INVALID_CONSENT_TYPE' },
+        400,
+      );
     }
     rows.push({
       type,
@@ -407,6 +414,13 @@ user.post('/consents', async (c) => {
                 VALUES (?, ?, ?, ?, ?)`,
           args: [crypto.randomUUID(), userPk, r.type, r.version, r.agreed ? 1 : 0],
         });
+      }
+      if (
+        rows.some(
+          (row) => !row.agreed && SENSITIVE_REQUIRED_CONSENTS.some((type) => type === row.type),
+        )
+      ) {
+        await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userId'));
       }
     });
     return c.json({ success: true, recorded: rows.length });
@@ -479,7 +493,10 @@ user.get('/consents/status', async (c) => {
     });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to load consent status', error_code: 'CONSENT_STATUS_FAILED' }, 500);
+    return c.json(
+      { error: 'Failed to load consent status', error_code: 'CONSENT_STATUS_FAILED' },
+      500,
+    );
   }
 });
 
@@ -511,7 +528,10 @@ user.post('/me/deletion', async (c) => {
     });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to request deletion', error_code: 'DELETION_REQUEST_FAILED' }, 500);
+    return c.json(
+      { error: 'Failed to request deletion', error_code: 'DELETION_REQUEST_FAILED' },
+      500,
+    );
   }
 });
 
@@ -534,7 +554,10 @@ user.delete('/me/deletion', async (c) => {
     return c.json({ success: true, status: 'active' });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to cancel deletion', error_code: 'DELETION_CANCEL_FAILED' }, 500);
+    return c.json(
+      { error: 'Failed to cancel deletion', error_code: 'DELETION_CANCEL_FAILED' },
+      500,
+    );
   }
 });
 

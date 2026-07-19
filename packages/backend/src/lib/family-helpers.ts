@@ -1,4 +1,5 @@
 import { getDB } from './db';
+import type { DbExecutor } from './transactions';
 
 export async function resolveUserPk(
   db: ReturnType<typeof getDB>,
@@ -12,7 +13,7 @@ export async function resolveUserPk(
 }
 
 export async function assertSameGroup(
-  db: ReturnType<typeof getDB>,
+  db: DbExecutor,
   senderPk: string,
   recipientPk: string,
 ): Promise<boolean> {

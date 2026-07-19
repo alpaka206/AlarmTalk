@@ -34,7 +34,6 @@ export const DRAFT_VOICE_TTL_HOURS = 1;
 
 const DRAIN_BATCH_SIZE = 10;
 const TTL_BATCH_SIZE = 10;
-const MAX_DELETE_ATTEMPTS = 10;
 
 export type ExternalDeletionKind = 'elevenlabs_voice' | 'r2_object';
 
@@ -56,12 +55,20 @@ export async function enqueueExternalDeletion(
 /**
  * 사용자의 음성 외부 자원(클론 voice + R2 오브젝트) 전부를 큐에 적재한다.
  * purgeUserAccount / deletePaidVoiceDataForUser 가 행을 지우기 전에 호출해야 한다.
+ *
+ * options.includeAlarmsTargetingUser (기본 true):
+ *  - true  = 계정 삭제(purgeUserAccount) 경로 — target_user_id 알람 행까지 함께 지우므로
+ *            그 raw 오디오도 회수한다(기존 동작 보존).
+ *  - false = 유료 음성 정리(deletePaidVoiceDataForUser) 경로 — 나를 target 으로 한
+ *            '타인(발신자) 소유' 알람은 살아남으므로 발신자의 raw 오디오를 파기하면 안 된다.
  */
 export async function enqueueUserVoiceArtifacts(
   tx: DbExecutor,
   ownerIds: string[],
+  options: { includeAlarmsTargetingUser?: boolean } = {},
 ): Promise<void> {
   if (ownerIds.length === 0) return;
+  const includeAlarmsTargetingUser = options.includeAlarmsTargetingUser !== false;
   const ph = ownerIds.map(() => '?').join(',');
 
   const voices = await tx.execute({
@@ -94,10 +101,14 @@ export async function enqueueUserVoiceArtifacts(
 
   // 알람에 직접 연결된 사용자 녹음 원본 (r2://<key>).
   const rawAlarms = await tx.execute({
-    sql: `SELECT raw_audio_url FROM alarms
-          WHERE raw_audio_url LIKE 'r2://%'
-            AND (user_id IN (${ph}) OR target_user_id IN (${ph}))`,
-    args: [...ownerIds, ...ownerIds],
+    sql: includeAlarmsTargetingUser
+      ? `SELECT raw_audio_url FROM alarms
+         WHERE raw_audio_url LIKE 'r2://%'
+           AND (user_id IN (${ph}) OR target_user_id IN (${ph}))`
+      : `SELECT raw_audio_url FROM alarms
+         WHERE raw_audio_url LIKE 'r2://%'
+           AND user_id IN (${ph})`,
+    args: includeAlarmsTargetingUser ? [...ownerIds, ...ownerIds] : ownerIds,
   });
   for (const row of rawAlarms.rows) {
     const url = String(row.raw_audio_url ?? '');
@@ -117,11 +128,25 @@ export async function enqueueUserVoiceArtifacts(
 /** 큐를 배치로 비운다 — cron 전용. 외부 API 호출이 있으므로 트랜잭션 밖에서 실행. */
 export async function drainExternalDeletions(db: Client, env: Env): Promise<void> {
   const pending = await db.execute({
-    sql: `SELECT id, kind, ref, attempts FROM pending_external_deletions
-          WHERE attempts < ?
-          ORDER BY created_at ASC
-          LIMIT ?`,
-    args: [MAX_DELETE_ATTEMPTS, DRAIN_BATCH_SIZE],
+    sql: `WITH
+            retry AS (
+              SELECT id, kind, ref, attempts, created_at
+              FROM pending_external_deletions
+              WHERE attempts > 0
+              ORDER BY attempts ASC, created_at ASC
+              LIMIT ?
+            ),
+            fresh AS (
+              SELECT id, kind, ref, attempts, created_at
+              FROM pending_external_deletions
+              WHERE attempts = 0
+              ORDER BY created_at ASC
+              LIMIT ?
+            )
+          SELECT id, kind, ref, attempts FROM retry
+          UNION ALL
+          SELECT id, kind, ref, attempts FROM fresh`,
+    args: [Math.floor(DRAIN_BATCH_SIZE / 2), Math.ceil(DRAIN_BATCH_SIZE / 2)],
   });
   if (pending.rows.length === 0) return;
 
@@ -204,11 +229,7 @@ export async function cleanupStaleDraftVoices(db: Client, now: Date): Promise<vo
       args: [String(row.id)],
     });
     if ((claimed.rowsAffected ?? 0) === 0) continue;
-    await enqueueExternalDeletion(
-      db,
-      'elevenlabs_voice',
-      row.elevenlabs_voice_id as string | null,
-    );
+    await enqueueExternalDeletion(db, 'elevenlabs_voice', row.elevenlabs_voice_id as string | null);
     expired += 1;
   }
   if (expired > 0) {
@@ -232,6 +253,9 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
   ).toISOString();
 
   // 1) 클론 학습용 업로드 원본 — 클론 완료 후 보관 불필요.
+  //    voice_profile_id 로 프로필에 연결된 행(clone 등록 원본, 말투 분석 재시도 소스)도
+  //    동일하게 7일 후 정리된다 — draft/목소리 삭제 시 별도 정리가 필요 없는 이유.
+  //    재시도는 소스가 사라지면 409 SOURCE_AUDIO_MISSING 으로 재등록을 안내한다.
   const uploads = await db.execute({
     sql: `SELECT id, object_key FROM voice_uploads
           WHERE created_at <= ?

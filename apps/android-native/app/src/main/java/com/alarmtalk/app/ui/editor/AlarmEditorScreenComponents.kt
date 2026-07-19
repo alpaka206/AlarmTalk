@@ -4,50 +4,12 @@ import android.content.Context
 import android.media.RingtoneManager
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerChipShape
-import com.alarmtalk.app.WakerPanelShape
-import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.DynamicPromptPreferences
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -58,140 +20,6 @@ import com.alarmtalk.app.network.VoiceProfile
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
-
-@Composable
-internal fun SharedVoiceInfoRequiredDialog(
-    profileName: String,
-    sharedFromLabel: String,
-    initialRelationship: String,
-    initialListenerTitle: String,
-    saving: Boolean,
-    previewing: Boolean,
-    onDismiss: () -> Unit,
-    onPreview: () -> Unit,
-    onConfirm: (String, String) -> Unit,
-) {
-    var draftRelationship by remember(initialRelationship) { mutableStateOf(initialRelationship) }
-    var draftListenerTitle by remember(initialListenerTitle) { mutableStateOf(initialListenerTitle) }
-    var submitted by remember { mutableStateOf(false) }
-    val relationshipError = submitted && draftRelationship.isBlank()
-    val listenerTitleError = submitted && draftListenerTitle.isBlank()
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .widthIn(max = 460.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 620.dp)
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.editor_voice_settings_title),
-                    onDismiss = onDismiss,
-                )
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                    border = wakerCardBorder(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = profileName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        Text(
-                            text = sharedFromLabel,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
-                        )
-                    }
-                }
-                OutlinedTextField(
-                    value = draftRelationship,
-                    onValueChange = { draftRelationship = it.take(30) },
-                    label = { Text(stringResource(R.string.editor_relationship_label)) },
-                    placeholder = { Text(stringResource(R.string.editor_relationship_placeholder)) },
-                    singleLine = true,
-                    isError = relationshipError,
-                    supportingText = {
-                        if (relationshipError) Text(stringResource(R.string.editor_field_required))
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = draftListenerTitle,
-                    onValueChange = { draftListenerTitle = it.take(30) },
-                    label = { Text(stringResource(R.string.editor_listener_title_label)) },
-                    placeholder = { Text(stringResource(R.string.editor_listener_title_placeholder)) },
-                    singleLine = true,
-                    isError = listenerTitleError,
-                    supportingText = {
-                        if (listenerTitleError) Text(stringResource(R.string.editor_field_required))
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedButton(
-                    onClick = onPreview,
-                    enabled = !saving && !previewing,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                    border = wakerCardBorder(),
-                    colors = wakerOutlinedButtonColors(),
-                ) {
-                    if (previewing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.editor_playing))
-                    } else {
-                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.editor_preview))
-                    }
-                }
-                Button(
-                    onClick = {
-                        submitted = true
-                        if (draftRelationship.isNotBlank() && draftListenerTitle.isNotBlank()) {
-                            onConfirm(draftRelationship.trim(), draftListenerTitle.trim())
-                        }
-                    },
-                    enabled = !saving,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Text(if (saving) stringResource(R.string.editor_saving) else stringResource(R.string.editor_save_and_select))
-                }
-            }
-        }
-    }
-}
 
 
 internal fun resolveListenerTitle(
@@ -214,242 +42,40 @@ internal fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferenc
         fortuneBirthTime = fortune.birthTime?.trim().orEmpty(),
     )
 
+// 편집기 섹션 헤더 단일 출처. 예전 titleMedium/Bold 는 카드 안 행 제목(titleMedium/SemiBold)과
+// 크기가 같아 섹션 경계가 안 읽혔다 — 그룹 리스트 헤더 관례대로 한 단계 조용하게
+// (titleSmall + onSurfaceVariant) 낮춰 행 제목과 위계를 분리한다.
 @Composable
-internal fun AlarmEditorTopBar(
-    isEditing: Boolean,
-    familyAlarmMode: Boolean,
-    onCancel: () -> Unit,
-    onShowGuide: (() -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 8.dp, top = 4.dp, end = 12.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onCancel) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                contentDescription = stringResource(R.string.editor_close),
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = when {
-                familyAlarmMode -> stringResource(R.string.editor_title_family_alarm)
-                isEditing -> stringResource(R.string.editor_title_edit_alarm)
-                else -> stringResource(R.string.editor_title_new_alarm)
-            },
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
-        )
-        if (onShowGuide != null) {
-            IconButton(onClick = onShowGuide) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                    contentDescription = stringResource(R.string.editor_usage_guide),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun EditorSectionTitle(title: String) {
+internal fun EditorSectionTitle(title: String, modifier: Modifier = Modifier) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.onBackground,
+        modifier = modifier,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
-@Composable
-internal fun FamilyAlarmTargetCard(
-    recipients: List<FamilyGroupMember>,
-    selectedRecipientId: String?,
+internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
+
+// 가족 알람은 수신자가 준비할 여유가 필요해 다음 울림까지 최소 30분 리드타임을 요구한다.
+// saveEditor()와 단위 테스트가 함께 쓰는 단일 판정 출처.
+internal fun isFamilyAlarmLeadTooSoon(
     hour: Int,
     minute: Int,
     repeatDaysMask: Int,
     holidayOff: Boolean,
-    onSelectRecipient: (String) -> Unit,
-) {
-    val context = LocalContext.current
-    var recipientDialogOpen by remember { mutableStateOf(false) }
-    val selectedRecipient = recipients.firstOrNull { it.userId == selectedRecipientId }
-        ?: recipients.firstOrNull()
-    val leadTooSoon = isFamilyAlarmLeadTooSoon(hour, minute, repeatDaysMask, holidayOff)
-    val quietUnavailable = selectedRecipient?.let {
-        isFamilyAlarmTimeUnavailable(it, hour, minute, repeatDaysMask)
-    } ?: false
-
-    if (recipientDialogOpen) {
-        WakerSelectionSheet(
-            title = stringResource(R.string.editor_select_recipient_title),
-            onDismiss = { recipientDialogOpen = false },
-        ) { dismiss ->
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                recipients.forEach { recipient ->
-                    WakerSheetOptionRow(
-                        title = familyMemberLabel(context, recipient),
-                        description = stringResource(
-                            R.string.editor_quiet_hours_label,
-                            familyAlarmQuietScheduleLabel(context, recipient),
-                        ),
-                        selected = recipient.userId == selectedRecipient?.userId,
-                        onClick = {
-                            onSelectRecipient(recipient.userId)
-                            dismiss()
-                        },
-                    )
-                }
-            }
-        }
-    }
-
-    Card(
-        shape = WakerPanelShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(stringResource(R.string.editor_recipient_header), fontWeight = FontWeight.SemiBold)
-                if (recipients.size > 1) {
-                    TextButton(onClick = { recipientDialogOpen = true }) {
-                        Text(stringResource(R.string.editor_change))
-                    }
-                }
-            }
-            if (recipients.isEmpty()) {
-                MutedText(stringResource(R.string.editor_recipient_empty))
-            } else {
-                RecipientSummaryRow(
-                    recipient = requireNotNull(selectedRecipient),
-                    clickable = recipients.size > 1,
-                    onClick = { recipientDialogOpen = true },
-                )
-
-                FamilyAlarmTargetStatus(
-                    leadTooSoon = leadTooSoon,
-                    quietUnavailable = quietUnavailable,
-                    quietLabel = familyAlarmQuietScheduleLabel(context, selectedRecipient),
-                )
-
-                if (recipients.size == 1) {
-                    MutedText(stringResource(R.string.editor_recipient_single_only))
-                }
-            }
-        }
-    }
+    nowMillis: Long = System.currentTimeMillis(),
+): Boolean {
+    val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+        hour = hour,
+        minute = minute,
+        repeatDaysMask = repeatDaysMask,
+        holidayOff = holidayOff,
+        nowMillis = nowMillis,
+    )
+    return fireAtMillis - nowMillis < FAMILY_ALARM_MIN_LEAD_MILLIS
 }
-
-@Composable
-internal fun RecipientSummaryRow(
-    recipient: FamilyGroupMember,
-    clickable: Boolean,
-    onClick: () -> Unit,
-) {
-    val context = LocalContext.current
-    val content: @Composable () -> Unit = {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = familyMemberLabel(context, recipient),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                recipient.email?.takeIf { it.isNotBlank() }?.let { email ->
-                    MutedText(email)
-                }
-            }
-            if (clickable) {
-                Spacer(Modifier.width(12.dp))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-        }
-    }
-
-    if (clickable) {
-        Surface(
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth(),
-            shape = WakerChipShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
-        ) {
-            content()
-        }
-    } else {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = WakerChipShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-internal fun FamilyAlarmTargetStatus(
-    leadTooSoon: Boolean,
-    quietUnavailable: Boolean,
-    quietLabel: String,
-) {
-    val blocked = leadTooSoon || quietUnavailable
-    val statusText = when {
-        leadTooSoon -> stringResource(R.string.editor_status_lead_too_soon)
-        quietUnavailable -> stringResource(R.string.editor_status_quiet_unavailable)
-        else -> stringResource(R.string.editor_status_available)
-    }
-    Surface(
-        shape = WakerPillShape,
-        color = if (blocked) {
-            MaterialTheme.colorScheme.errorContainer
-        } else {
-            MaterialTheme.colorScheme.primaryContainer
-        },
-        contentColor = if (blocked) {
-            MaterialTheme.colorScheme.onErrorContainer
-        } else {
-            MaterialTheme.colorScheme.onPrimaryContainer
-        },
-    ) {
-        Text(
-            text = statusText,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-        )
-    }
-    MutedText(stringResource(R.string.editor_quiet_hours_label, quietLabel))
-}
-
-internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
 
 internal fun ringtoneTitle(context: Context, uri: Uri): String =
     runCatching {
@@ -471,26 +97,12 @@ internal fun familyMemberLabel(context: Context, member: FamilyGroupMember): Str
 
 internal fun familyAlarmQuietScheduleLabel(context: Context, member: FamilyGroupMember): String {
     val windows = familyAlarmQuietWindows(member)
-    return windows.joinToString(" · ") { window ->
-        "${quietDaysLabelForFamily(context, window.days)} ${window.start}-${window.end}"
-    }
-}
-
-internal fun isFamilyAlarmLeadTooSoon(
-    hour: Int,
-    minute: Int,
-    repeatDaysMask: Int,
-    holidayOff: Boolean,
-    nowMillis: Long = System.currentTimeMillis(),
-): Boolean {
-    val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-        hour = hour,
-        minute = minute,
-        repeatDaysMask = repeatDaysMask,
-        holidayOff = holidayOff,
-        nowMillis = nowMillis,
-    )
-    return fireAtMillis - nowMillis < FAMILY_ALARM_MIN_LEAD_MILLIS
+    if (windows.isEmpty()) return ""
+    // '누구를 깨울까요' 시트·수신자 카드 행에 들어가므로 1개만 노출하고 나머지는 '외 N개'로 축약해
+    // 행 라벨이 길어지지 않게 한다(설정 화면 quietScheduleLabel과 동일 정책).
+    val first = windows.first().let { "${quietDaysLabelForFamily(context, it.days)} ${it.start}-${it.end}" }
+    val hidden = windows.size - 1
+    return if (hidden > 0) context.getString(R.string.misc2_quiet_more, first, hidden) else first
 }
 
 internal fun isFamilyAlarmTimeUnavailable(
@@ -508,19 +120,19 @@ internal fun isFamilyAlarmTimeUnavailable(
 
 internal fun familyAlarmQuietWindows(member: FamilyGroupMember): List<FamilyAlarmQuietWindow> {
     val fallback = FamilyAlarmQuietWindow(
-        days = safeQuietDays(runCatching { member.familyAlarmQuietDays }.getOrNull()),
-        start = safeQuietTime(runCatching { member.familyAlarmQuietStart }.getOrNull(), "09:00"),
-        end = safeQuietTime(runCatching { member.familyAlarmQuietEnd }.getOrNull(), "18:30"),
+        days = safeQuietDays(member.familyAlarmQuietDays),
+        start = safeQuietTime(member.familyAlarmQuietStart, "09:00"),
+        end = safeQuietTime(member.familyAlarmQuietEnd, "18:30"),
     )
-    return runCatching { member.familyAlarmQuietWindows }.getOrNull()
+    return member.familyAlarmQuietWindows
         ?.mapNotNull { window ->
-            val start = safeQuietTime(runCatching { window.start }.getOrNull(), "")
-            val end = safeQuietTime(runCatching { window.end }.getOrNull(), "")
+            val start = safeQuietTime(window.start, "")
+            val end = safeQuietTime(window.end, "")
             if (start.isBlank() || end.isBlank()) {
                 null
             } else {
                 FamilyAlarmQuietWindow(
-                    days = safeQuietDays(runCatching { window.days }.getOrNull()),
+                    days = safeQuietDays(window.days),
                     start = start,
                     end = end,
                 )

@@ -11,11 +11,9 @@ struct MainTabsView: View {
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
-    @EnvironmentObject private var subscriptions: SubscriptionManager
     @EnvironmentObject private var store: LocalAlarmStore
 
     @State private var selectedTab: NativeTab = .home
-    @State private var planGate: PlanGateState?
     @State private var receivedAlarmSeenAtMillis: Int64 = 0
 
     /// 탭 전환 시 매번 네트워크 요청이 나가면 살짝 버벅인다. 탭+토큰별 마지막
@@ -119,9 +117,6 @@ struct MainTabsView: View {
                     onCodeRegistered: handleCodeRegistrationDestination
                 )
             }
-            .planGate(item: $planGate) {
-                openBillingAfterPlanGate()
-            }
             .task(id: auth.session?.token) {
                 loadReceivedAlarmBadgeState()
                 await refreshAll()
@@ -156,63 +151,12 @@ struct MainTabsView: View {
             })
         case .alarms:
             AlarmsListView(openEditor: { editorTarget = $0 })
-        case .messages:
-            MessagesView(
-                selectTab: selectTab,
-                onCodeRegistered: handleCodeRegistrationDestination
-            )
         }
     }
 
     private func selectTab(_ tab: NativeTab) {
         guard selectedTab != tab else { return }
-        if let gate = planGateFor(tab) {
-            planGate = gate
-            return
-        }
         selectedTab = tab
-    }
-
-    private func planGateFor(_ tab: NativeTab) -> PlanGateState? {
-        switch tab {
-        case .messages:
-            guard auth.session != nil,
-                  socialFeatures.subscription != nil,
-                  socialFeatures.familyGroup != nil,
-                  !canUseMessages
-            else { return nil }
-            return PlanGateState(
-                // Android `r3app_messages_plan_gate_title` 와 동일한 메시지-전용 타이틀.
-                title: "함께 쓰는 기능이에요",
-                message: "메시지는 커플/가족 이용권에서 사용할 수 있어요.",
-                confirmLabel: "이용권 보기",
-                currentPlan: currentPlan,
-                requiredPlan: .couple
-            )
-        case .home, .alarms, .voices:
-            // Android parity: 목소리 탭은 로그인 사용자 모두 접근 가능(스톡 보이스 무료).
-            // 커스텀 음성 생성만 패널 내부에서 per-action 게이팅된다.
-            return nil
-        }
-    }
-
-    private var currentPlan: PlanTier {
-        PlanTier.bestKnown(
-            serverSubscription: socialFeatures.subscription,
-            storeTier: subscriptions.currentTier,
-            userPlan: auth.session?.user.plan
-        )
-    }
-
-    private var canUseMessages: Bool {
-        socialFeatures.familyGroup?.group != nil || currentPlan.meetsOrExceeds(.couple)
-    }
-
-    private func openBillingAfterPlanGate() {
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            auxiliaryScreen = .billing
-        }
     }
 
     private func handleCodeRegistrationDestination(_ destination: CodeRegistrationDestination) {
@@ -231,8 +175,6 @@ struct MainTabsView: View {
             return 0
         case .alarms:
             return selectedTab == .alarms ? 0 : unreadReceivedAlarmCount
-        case .messages:
-            return socialFeatures.unreadNoteCount
         }
     }
 
@@ -300,9 +242,6 @@ struct MainTabsView: View {
             // 들어왔을 수 있으니 동기화 후 한 번 더 갱신한다.
             await remoteSync.runFullSync()
             markReceivedAlarmsSeen()
-        case .messages:
-            await socialFeatures.refreshAll(session: auth.session)
-            await voiceStudio.refresh(session: auth.session)
         }
     }
 

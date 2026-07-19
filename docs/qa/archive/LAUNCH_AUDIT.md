@@ -1,3 +1,5 @@
+> ⚠️ 아카이브(2026-07-15): launch-tracking.ko.md 로 대체됨.
+
 # AlarmTalk 출시 전 감사 리포트
 
 생성: 멀티에이전트 감사(8개 차원, 적대적 검증) · 확정 54건, 기각 7건
@@ -163,6 +165,8 @@
 
 
 ### [android-correctness] Dynamic/random-prompt voice refresh worker is never scheduled (dead code) — repeating dynamic alarms replay stale audio
+
+> 2026-07-09 update: launch direction changed to preset-first. Android now intentionally disables dynamic voice refresh scheduling/execution (`DynamicVoiceRefreshEnabled = false`) so repeating alarms reuse saved local audio instead of triggering background Gemini/TTS regeneration. Revisit this audit item only if daily generated copy is re-enabled.
 
 - **파일**: `apps/android-native/app/src/main/java/com/alarmtalk/app/sync/DynamicVoiceRefreshScheduler.kt` :21-46
 - **설명**: DynamicVoiceRefreshScheduler.ensurePeriodic()/runOnce() enqueue DynamicVoiceRefreshWorker, which calls AlarmRepository.refreshDueDynamicAlarmTalks() to regenerate fresh TTS for repeating 'random prompt' voice alarms. However, grep shows ensurePeriodic/runOnce are never called from anywhere (not Application.onCreate, not MainViewModel.init, not BootCompletedReceiver). Only RemoteAlarmSyncScheduler is wired. As a result the worker is never enqueued, refreshDueDynamicAlarmTalks runs nowhere, and a repeating dynamic-voice alarm keeps replaying the audio prepared at creation time every day (shouldRefreshDynamicVoice would return true, but nothing invokes it). The advertised 'fresh daily message / weather / fortune' behavior silently does not happen in the background.
@@ -431,7 +435,7 @@
 ## ⏳ 남은 항목
 
 > 이 리포트는 6/22 감사 시점의 스냅샷이다. 그 뒤 코드와 다시 대조해 **미해결로 남은 것만**
-> [`docs/qa/launch-tracking.ko.md`](launch-tracking.ko.md) 한 곳에 모았다(읽기 편한 한국어 추적용).
+> [`docs/qa/launch-tracking.ko.md`](../launch-tracking.ko.md) 한 곳에 모았다(읽기 편한 한국어 추적용).
 > 출시 전 남은 작업은 그 문서를 단일 출처로 본다.
 
 대조 후 추가로 해결 확인:

@@ -2,63 +2,23 @@ package com.alarmtalk.app
 
 import android.app.Application
 import android.util.Log
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Message
-import androidx.compose.material3.Text
-import androidx.compose.runtime.mutableStateOf
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
-import com.alarmtalk.app.alarm.SocialNotificationTracker
-import com.alarmtalk.app.data.AlarmAppContainer
-import com.alarmtalk.app.data.AlarmDraft
-import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.network.apiError
 import com.alarmtalk.app.network.apiErrorCode
-import com.alarmtalk.app.network.AuthTokenResponse
-import com.alarmtalk.app.network.AuthSession
-import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CancelSubscriptionRequest
 import com.alarmtalk.app.network.ChangePlanRequest
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
-import com.alarmtalk.app.network.FamilyGroupCurrentResponse
-import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.GooglePlayConfirmRequest
-import com.alarmtalk.app.network.LoginRequest
-import com.alarmtalk.app.network.NoteAudioResponse
 import com.alarmtalk.app.network.PromoRedeemRequest
-import com.alarmtalk.app.network.ReceivedNote
-import com.alarmtalk.app.network.RegisterRequest
-import com.alarmtalk.app.network.SendNoteRequest
-import com.alarmtalk.app.network.TtsGenerateRequest
-import com.alarmtalk.app.network.TtsGenerateResponse
-import com.alarmtalk.app.network.TtsMessage
-import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.AlarmTalkApiClient
-import com.alarmtalk.app.network.VoiceProfile
-import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.VoucherItem
-import com.alarmtalk.app.network.trimmedOrNull
 import com.alarmtalk.app.R
-import java.time.Instant
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.refreshBilling() {
@@ -292,157 +252,6 @@ private suspend fun MainViewModel.redeemPromoCode(authorization: String, code: S
     }
 }
 
-internal fun MainViewModel.refreshNotes() {
-    refreshNotesData(showMessage = true)
-}
-
-internal fun MainViewModel.refreshNotesSilently() {
-    refreshNotesData(showMessage = false)
-}
-
-internal fun MainViewModel.preloadNotes() {
-    if (authSession == null || noteBusy) return
-    refreshNotesData(showMessage = false)
-}
-
-private fun MainViewModel.refreshNotesData(showMessage: Boolean) {
-    if (noteBusy) return
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_load_voice_messages)) ?: return
-    noteBusy = true
-    viewModelScope.launch {
-        try {
-            runCatching {
-                api.listReceivedNotes(authorization, limit = 20, offset = 0).notes
-            }.onSuccess { notes ->
-                SocialNotificationTracker.notifyNewNotes(
-                    context = getApplication(),
-                    notes = notes,
-                    allowInitialNotify = false,
-                )
-                receivedNotes = notes
-            }.onFailure { error ->
-                AlarmTalkLog.reportError("Failed to refresh notes", error)
-                if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_voice_messages_load_failed))
-            }
-        } finally {
-            noteBusy = false
-        }
-    }
-}
-
-internal fun MainViewModel.sendNote(receiverId: String, text: String) {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_send_message)) ?: return
-    val normalizedReceiverId = receiverId.trim()
-    val trimmedText = text.trim()
-    if (normalizedReceiverId.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_receiver_required)
-        return
-    }
-    if (trimmedText.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_message_input_required)
-        return
-    }
-    viewModelScope.launch {
-        noteBusy = true
-        runCatching {
-            api.sendNote(
-                authorization = authorization,
-                request = SendNoteRequest(receiverId = normalizedReceiverId, text = trimmedText),
-            )
-        }.onSuccess {
-            message = getApplication<android.app.Application>().getString(R.string.msg_gb_message_sent)
-            refreshNotes()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to send note", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_message_send_failed))
-        }
-        noteBusy = false
-    }
-}
-
-internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voiceProfileId: String) {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_send_message)) ?: return
-    val normalizedReceiverId = receiverId.trim()
-    val normalizedVoiceProfileId = voiceProfileId.trim()
-    val trimmedText = text.trim()
-    if (normalizedReceiverId.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_receiver_required)
-        return
-    }
-    if (trimmedText.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_message_input_required)
-        return
-    }
-    if (trimmedText.length > 200) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_message_max_length)
-        return
-    }
-    if (normalizedVoiceProfileId.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_required)
-        return
-    }
-    viewModelScope.launch {
-        noteBusy = true
-        runCatching {
-            val tts = withContext(Dispatchers.IO) {
-                api.generateTts(
-                    authorization = authorization,
-                    request = TtsGenerateRequest(
-                        voiceProfileId = normalizedVoiceProfileId,
-                        text = trimmedText,
-                        category = "custom",
-                        language = "ko",
-                    ),
-                )
-            }
-            val audioUrl = tts.audioUrl ?: tts.audioObjectKey?.let { "r2://$it" }
-                ?: error("Generated TTS audio was not stored.")
-            api.sendNote(
-                authorization = authorization,
-                request = SendNoteRequest(
-                    receiverId = normalizedReceiverId,
-                    text = trimmedText,
-                    audioUrl = audioUrl.trimmedOrNull(),
-                ),
-            )
-        }.onSuccess {
-            message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_message_sent)
-            refreshNotes()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to send TTS note", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_voice_message_send_failed))
-        }
-        noteBusy = false
-    }
-}
-
-internal suspend fun MainViewModel.downloadNoteAudio(noteId: String): NoteAudioResponse {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_play_voice_message))
-        ?: throw IllegalStateException("Login is required to play note audio.")
-    return withContext(Dispatchers.IO) {
-        api.getNoteAudio(authorization, noteId)
-    }
-}
-
-internal fun MainViewModel.markNoteRead(noteId: String) {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_mark_message_read)) ?: return
-    viewModelScope.launch {
-        runCatching {
-            api.markNoteRead(authorization, noteId)
-        }.onSuccess {
-            receivedNotes = receivedNotes.map { note ->
-                if (note.id == noteId && note.readAt == null) {
-                    note.copy(readAt = Instant.now().toString())
-                } else {
-                    note
-                }
-            }
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to mark note read id=$noteId", error)
-        }
-    }
-}
-
 internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_change_plan)) ?: return
     viewModelScope.launch {
@@ -502,7 +311,8 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
  * [MainViewModel.playBilling] 의 리스너로 비동기 전달되어 [confirmGooglePurchase] 로 이어진다.
  */
 internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, productId: String) {
-    if (authSession == null) {
+    val session = authSession
+    if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_purchase_plan)
         return
     }
@@ -510,7 +320,8 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
     viewModelScope.launch {
         billingBusy = true
         runCatching {
-            playBilling.launchPurchase(activity, productId)
+            // userId(=서버 users.id)는 구매-계정 바인딩용. 비어 있으면(비정상 세션) 바인딩만 생략.
+            playBilling.launchPurchase(activity, productId, userId = session.user.id.takeIf { it.isNotBlank() })
         }.onSuccess { launched ->
             if (!launched) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_google_play_start_failed)
@@ -551,6 +362,11 @@ internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productI
                 refreshBillingAfterMutation(authorization, "google play confirm")
                 refreshAppSession()
                 refreshSocial()
+                // 커플/가족을 구매하면 초대·구성원 관리로 보내 '내 알람 맞추기 허용'·방해금지 시간을
+                // 바로 확인·설정하게 한다. 코드 등록 경로는 이미 동일하게 이동한다. 개인/plus 구매는 기존대로 유지.
+                if (response.planKey in setOf("couple", "family")) {
+                    navigateSharedPassTick++
+                }
             } else {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)
             }
@@ -626,6 +442,14 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
 private fun com.alarmtalk.app.network.BillingPlan.isSharedPassPlan(): Boolean =
     key in setOf("couple", "family") || planType in setOf("couple", "family")
 
+// 서버가 스토어 구독을 직접 해지하지 못해 사용자를 스토어 구독 관리로 보내야 하는 에러 코드.
+// 502(PLAY_*) / 409(STORE_CANCEL_UNSUPPORTED) 모두 서버·앱 상태 무변경 → 안내 다이얼로그만 띄운다.
+private val STORE_MANAGE_REQUIRED_CODES = setOf(
+    "PLAY_CANCEL_FAILED",
+    "PLAY_REVOKE_FAILED",
+    "STORE_CANCEL_UNSUPPORTED",
+)
+
 internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
     val mode = if (atPeriodEnd) "at_period_end" else "immediate"
@@ -633,18 +457,52 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
         billingBusy = true
         runCatching {
             api.cancelSubscription(authorization, CancelSubscriptionRequest(mode = mode))
-        }.onSuccess {
-            message = if (atPeriodEnd) {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_at_period_end)
-            } else {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled)
+        }.onSuccess { response ->
+            val retentionDate = formatPass(response.voiceRetentionUntil, PassDateFormatter)
+            message = when {
+                atPeriodEnd -> getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_at_period_end)
+                retentionDate != null ->
+                    getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled_voice_retained, retentionDate)
+                else -> getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled)
             }
             refreshBillingAfterMutation(authorization, "subscription cancellation")
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to cancel subscription mode=$mode", error)
-            message = billingFailureMessage(getApplication<android.app.Application>(), apiErrorCode(error), userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_failed)))
+            // errorBody 는 한 번만 읽히므로 apiError 로 code·manage_url 을 함께 추출한다.
+            val apiFailure = apiError(error)
+            if (apiFailure.code in STORE_MANAGE_REQUIRED_CODES) {
+                // 서버·앱 상태 모두 무변경 — 스낵바 대신 Google Play 직접 관리 안내 다이얼로그.
+                billingPlayManageUrl = apiFailure.manageUrl
+                    ?: playSubscriptionManageUrl(subscriptionResponse?.plan?.key)
+            } else {
+                message = billingFailureMessage(getApplication<android.app.Application>(), apiFailure.code, userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_failed)))
+            }
+        }
+        billingBusy = false
+    }
+}
+
+/**
+ * 보관 중인 유료 음성 데이터 즉시 삭제(/billing/voice-data/delete-now).
+ * 활성 유료 구독이 있으면 서버가 409 SUBSCRIPTION_STILL_ACTIVE 로 거절한다.
+ */
+internal fun MainViewModel.deleteVoiceDataNow() {
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            api.deleteVoiceDataNow(authorization)
+        }.onSuccess {
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_data_deleted_now)
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to delete voice data now", error)
+            message = if (apiErrorCode(error) == "SUBSCRIPTION_STILL_ACTIVE") {
+                getApplication<android.app.Application>().getString(R.string.msg_gb_voice_data_delete_blocked_active)
+            } else {
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_voice_data_delete_failed))
+            }
         }
         billingBusy = false
     }
@@ -662,7 +520,6 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
             }
             if (familyVoices.isNotEmpty()) familyVoices = emptyList()
             if (ttsMessages.isNotEmpty()) ttsMessages = emptyList()
-            if (receivedNotes.isNotEmpty()) receivedNotes = emptyList()
             if (deletedAlarms > 0) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_free_plan_voice_alarms_deleted)
             }

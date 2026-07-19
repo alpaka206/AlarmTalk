@@ -7,6 +7,10 @@ node_modules/
 .env.production
 .dev.vars*
 !packages/backend/.dev.vars.example
+# Firebase 서비스계정(진짜 시크릿)은 .dev.vars* 로 커버됨. google-services_* 루스 원본은 커밋하지 않는다
+# (실사용본은 app/src/{dev,prod}/google-services.json — 저감도 클라 키라 커밋해 CI devDebug 빌드를 통과시킨다).
+apps/android-native/app/google-services_*.json
+firebase-adminsdk-*.json
 
 # Build outputs
 dist/

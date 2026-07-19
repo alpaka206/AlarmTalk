@@ -12,10 +12,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    // FCM: google-services.json(app/src/{dev,prod}/) 을 읽어 Firebase 초기화 리소스를 생성.
+    id("com.google.gms.google-services")
 }
-
-// oss-licenses-plugin 은 buildscript classpath(루트)로 올라와 있어 레거시 apply 로 적용한다.
-apply(plugin = "com.google.android.gms.oss-licenses-plugin")
 
 abstract class GenerateAlarmToneTask : DefaultTask() {
     @get:OutputDirectory
@@ -100,8 +99,8 @@ android {
         applicationId = "com.alarmtalk.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.1.2"
+        versionCode = 11
+        versionName = "0.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -251,8 +250,6 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.9.3")
-    // OssLicensesMenuActivity 가 AppCompatActivity 를 상속 → 오픈소스 라이선스 화면에만 필요.
-    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui")
@@ -261,6 +258,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    // 앱 프로세스 포그라운드 복귀 감지(ProcessLifecycleOwner) — 복귀 시 원격 알람 즉시 pull.
+    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+    // FCM(가족 알람 즉시 배달) — 앱이 백그라운드/종료여도 data push 로 즉시 pull. BoM 으로 버전 통일.
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.room:room-runtime:2.6.1")
@@ -273,8 +275,6 @@ dependencies {
     implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
-    // 오픈소스 라이선스 목록 화면(OssLicensesMenuActivity). 목록은 oss-licenses-plugin 이 생성.
-    implementation("com.google.android.gms:play-services-oss-licenses:17.1.0")
     implementation("io.sentry:sentry-android-core:8.43.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

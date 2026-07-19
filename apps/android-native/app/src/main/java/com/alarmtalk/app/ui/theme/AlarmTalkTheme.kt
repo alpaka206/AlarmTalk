@@ -9,7 +9,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -116,20 +118,48 @@ private val AlarmTalkShapes = Shapes(
     extraLarge = WakerDialogShape,
 )
 
+/** 시스템 바 오버라이드 값 — 고정 다크 씬(랜딩·인증)이 보이는 동안만 non-null. */
+private data class SystemBarsSpec(val status: Color, val nav: Color)
+
+private val systemBarsOverride = mutableStateOf<SystemBarsSpec?>(null)
+
+/**
+ * 고정 다크 씬(랜딩·인증 플로우)이 보이는 동안 시스템 바를 씬 색으로 덮어쓴다.
+ * 테마는 상태바를 theme background 로 칠하므로 라이트 모드에선 네이비 씬 위에
+ * 흰 상태바 띠가 생긴다 — 씬을 벗어나면 테마 기본으로 복원한다.
+ * 실제 창 조작은 항상 [AppSystemBars] 한 곳에서만 일어난다(오버라이드 상태를 읽어
+ * 재구성되므로, 테마 SideEffect 가 나중에 다시 칠해도 덮어쓰기 경쟁이 없다).
+ */
+@Composable
+internal fun SceneSystemBars(top: Color, bottom: Color) {
+    DisposableEffect(top, bottom) {
+        val spec = SystemBarsSpec(status = top, nav = bottom)
+        systemBarsOverride.value = spec
+        onDispose {
+            // 다른 씬이 이미 값을 바꿨다면(씬 간 전환) 그쪽 오버라이드를 존중한다.
+            if (systemBarsOverride.value == spec) systemBarsOverride.value = null
+        }
+    }
+}
+
 @Composable
 private fun AppSystemBars(isDark: Boolean) {
     val view = LocalView.current
     val backgroundColor = MaterialTheme.colorScheme.background.toArgb()
+    val override = systemBarsOverride.value
     SideEffect {
         val window = view.context.findActivity()?.window ?: return@SideEffect
-        window.statusBarColor = backgroundColor
-        window.navigationBarColor = backgroundColor
+        val status = override?.status?.toArgb() ?: backgroundColor
+        val nav = override?.nav?.toArgb() ?: backgroundColor
+        window.statusBarColor = status
+        window.navigationBarColor = nav
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.navigationBarDividerColor = backgroundColor
+            window.navigationBarDividerColor = nav
         }
         WindowCompat.getInsetsController(window, view).apply {
-            isAppearanceLightStatusBars = !isDark
-            isAppearanceLightNavigationBars = !isDark
+            // 씬 오버라이드는 항상 어두운 배경(밝은 아이콘), 아니면 테마 명암을 따른다.
+            isAppearanceLightStatusBars = if (override != null) false else !isDark
+            isAppearanceLightNavigationBars = if (override != null) false else !isDark
         }
     }
 }

@@ -11,8 +11,8 @@ import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
+import { timingSafeEqualStr } from './lib/timing-safe-equal';
 import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
-import { sendAlarmPush } from './lib/fcm';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
 import ttsRoutes from './routes/tts';
@@ -27,7 +27,7 @@ import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
 import familyRoutes from './routes/family';
 import codeRoutes from './routes/code';
-import notesRoutes from './routes/notes';
+import pushRoutes from './routes/push';
 import holidayRoutes from './routes/holiday';
 import adminRoutes from './routes/admin';
 
@@ -93,16 +93,6 @@ app.get('/health', async (c) => c.json(await healthPayload(c.env)));
 // init-db / seed 는 파괴적 DDL + 유료 합성을 수행하므로 모든 환경에서 INIT_DB_SECRET 헤더를
 // 요구한다. 시크릿이 설정돼 있지 않으면(=의도적으로 비활성) 무조건 거부한다(404).
 // 헤더 비교는 상수시간(timingSafeEqualStr)으로 수행해 타이밍 오라클을 차단한다.
-function timingSafeEqualStr(a: string, b: string): boolean {
-  const enc = new TextEncoder();
-  const ab = enc.encode(a);
-  const bb = enc.encode(b);
-  if (ab.length !== bb.length) return false;
-  let diff = 0;
-  for (let i = 0; i < ab.length; i++) diff |= ab[i]! ^ bb[i]!;
-  return diff === 0;
-}
-
 function canRunInitDb(c: { env: Env; req: { header: (name: string) => string | undefined } }) {
   const expected = c.env.INIT_DB_SECRET;
   if (!expected) return false;
@@ -241,7 +231,7 @@ api.route('/stats', statsRoutes);
 api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
 api.route('/code', codeRoutes);
-api.route('/notes', notesRoutes);
+api.route('/push', pushRoutes);
 
 // 관리자 콘솔(/admin) — 사용자 JWT 가 아니라 ADMIN_SECRET(HTTP Basic)로 보호한다
 // (admin.ts 내부 미들웨어). 프로모 쿠폰 발급/관리 등 SQL 수기 없이 웹 폼에서.
@@ -258,11 +248,7 @@ app.onError((err, c) => {
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
 // 주기를 바꾸면 lib/scheduler.ts 의 CRON_WINDOW_MINUTES 도 함께 바꿔야 한다.
-async function scheduled(
-  event: ScheduledEvent,
-  env: Env,
-  ctx: ExecutionContext,
-): Promise<void> {
+async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   const db = getDB(env);
   const now = new Date(event.scheduledTime);
 
@@ -270,7 +256,11 @@ async function scheduled(
   // 만든다(DSN 미설정 시 no-op). captureCron 은 구조화 로그 + Sentry 캡처를 함께 해
   // 정상 복구되지 않는 cron 오류를 관리자가 즉시 인지하게 한다.
   const sentry = env.SENTRY_DSN
-    ? new Toucan({ dsn: env.SENTRY_DSN, context: ctx, environment: env.ENVIRONMENT || 'production' })
+    ? new Toucan({
+        dsn: env.SENTRY_DSN,
+        context: ctx,
+        environment: env.ENVIRONMENT || 'production',
+      })
     : null;
   const captureCron = (at: string, err: unknown): void => {
     logStructured('error', { at, error: String(err) });
@@ -279,9 +269,8 @@ async function scheduled(
 
   // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
   try {
-    const { drainExternalDeletions, cleanupExpiredAudio, cleanupStaleDraftVoices } = await import(
-      './lib/audio-retention'
-    );
+    const { drainExternalDeletions, cleanupExpiredAudio, cleanupStaleDraftVoices } =
+      await import('./lib/audio-retention');
     await cleanupExpiredAudio(db, now);
     // 앱 강제종료 등으로 클라이언트 정리를 못 거친 고아 draft 보이스 회수
     // (draft 쿼터·ElevenLabs 슬롯 영구 점유 방지).
@@ -304,9 +293,10 @@ async function scheduled(
   }
 
   // 구독 만료 / 결제일 도달 정리. 알람 푸시보다 먼저 처리해 plan 다운그레이드를 반영.
+  // env 를 넘겨 만료 처리 전 Play 실상태 재조회(RTDN 유실 대비 reconciliation)를 켠다.
   try {
     const { processSubscriptionExpiry } = await import('./lib/billing-cancel');
-    await processSubscriptionExpiry(db, now);
+    await processSubscriptionExpiry(db, env, now);
   } catch (err) {
     captureCron('scheduled.subscription_expiry', err);
   }
@@ -314,9 +304,8 @@ async function scheduled(
   // 탈퇴 유예(30일) 경과 계정 영구파기 (개인정보보호법 제21조). 파기 전 결제·구독 기록은
   // 전자상거래법(5년) 보존을 위해 가명처리해 분리 테이블로 옮긴다.
   try {
-    const { purgeUserAccount, pseudonymizeBillingForRetention } = await import(
-      './lib/account-deletion'
-    );
+    const { purgeUserAccount, pseudonymizeBillingForRetention } =
+      await import('./lib/account-deletion');
     const { withWriteTransaction } = await import('./lib/transactions');
     const due = await db.execute({
       sql: `SELECT id, google_id FROM users
@@ -344,7 +333,14 @@ async function scheduled(
   const result = await db.execute(
     `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
             mode, voice_profile_id, speaker_id, timezone
-     FROM alarms WHERE is_active = 1`,
+     FROM alarms
+     WHERE is_active = 1
+       AND NOT EXISTS (
+         SELECT 1 FROM alarm_recipient_state ars
+         WHERE ars.alarm_id = alarms.id
+           AND ars.recipient_user_id = alarms.target_user_id
+           AND ars.declined = 1
+       )`,
   );
 
   const alarms: ScheduledAlarm[] = result.rows.map((r) => ({
@@ -377,17 +373,88 @@ async function scheduled(
     firing_ids: firing.map((a) => a.id),
   });
 
-  // 알람 푸시를 순차(await in loop)로 보내면 동시에 울릴 알람이 많을 때 지연이
-  // 선형으로 쌓인다(마지막 사용자는 늦게 울림). Workers 의 subrequest 상한을
-  // 고려해 청크 단위로 병렬 전송하고, 한 건 실패가 나머지를 막지 않도록 allSettled.
-  const PUSH_CONCURRENCY = 10;
-  for (let i = 0; i < firing.length; i += PUSH_CONCURRENCY) {
-    const chunk = firing.slice(i, i + PUSH_CONCURRENCY);
-    await Promise.allSettled(
-      chunk.map((alarm) =>
-        sendAlarmPush(db, env, alarm.target_user_id ?? alarm.user_id, alarm.id, alarm.time),
-      ),
-    );
+  // 발사 시각 서버 push 는 보내지 않는다: 알람은 각 기기가 로컬 AlarmManager 로 직접 울리고(수신 가족
+  // 알람도 pull→로컬 스케줄), 서버가 발사 때 type=alarm notification 을 또 보내면 로컬 링과 중복 알림이
+  // 된다(push_tokens 는 즉시 배달용 토큰이라 이 경로가 소비하면 안 됨). '새 가족 알람 도착' 즉시성은 생성
+  // 시점의 sendFamilyAlarmPush(data-only)로 처리하고, 발사 자체는 로컬에 맡긴다.
+
+  // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
+  // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
+  // 대상이라 전유저 스캔이 없고, 한 건 실패가 나머지를 막지 않도록 격리한다.
+  try {
+    const {
+      claimPendingPrerenderVoices,
+      listReadyCloneVoices,
+      findMissingStockTargets,
+      generateStockClip,
+      markPrerenderDone,
+      markPrerenderFailed,
+      releasePrerenderClaim,
+    } = await import('./lib/stock-clips');
+    const { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } = await import('./lib/consent');
+    // 틱(5분)당 생성 클립 상한. 클립 1개 = Gemini 문구 생성 + ElevenLabs 합성 + R2 업로드라 서브리퀘스트·
+    // 비용·rate 를 제한하되, 목소리 1개 풀셋(21클립)이 너무 늦지 않게 6으로 잡는다(≈4틱, keep 후 ~20분).
+    // 발사 시각 알람 푸시는 cron 에서 제거돼(중복 알림) 이 드레인이 틱의 시간민감 작업을 막을 일은 없다.
+    const MAX_CLIPS_PER_TICK = 6;
+    const claimed = await claimPendingPrerenderVoices(db, 5);
+    if (claimed.length > 0) {
+      const cloneVoices = await listReadyCloneVoices(db, claimed);
+      const claimByVoiceId = new Map(claimed.map((request) => [request.voiceProfileId, request]));
+      // 큐엔 있으나 ready 클론이 아닌 항목(삭제/실패/draft 등)은 실패 처리해 무한 pending 을 막는다.
+      const readyIds = new Set(cloneVoices.map((v) => v.id));
+      for (const req of claimed) {
+        if (!readyIds.has(req.voiceProfileId)) {
+          await markPrerenderFailed(db, req.voiceProfileId, req.claimToken);
+        }
+      }
+      let rendered = 0;
+      for (const voice of cloneVoices) {
+        const claim = claimByVoiceId.get(voice.id);
+        if (!claim) continue;
+        if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
+          await markPrerenderFailed(db, voice.id, claim.claimToken);
+          continue;
+        }
+        if (rendered >= MAX_CLIPS_PER_TICK) {
+          await releasePrerenderClaim(db, voice.id, claim.claimToken);
+          continue;
+        }
+        const targets = await findMissingStockTargets(db, [voice]);
+        if (targets.length === 0) {
+          await markPrerenderDone(db, voice.id, claim.claimToken);
+          continue;
+        }
+        let voiceRendered = 0;
+        let voiceError = false;
+        for (const target of targets) {
+          if (rendered >= MAX_CLIPS_PER_TICK) break;
+          rendered += 1;
+          try {
+            await generateStockClip(db, env, target);
+            voiceRendered += 1;
+          } catch (genErr) {
+            // 한 클립 실패가 이 보이스의 나머지 클립(예: love/medication)을 버리지 않도록, 그 클립만
+            // 건너뛰고 계속한다. 진전이 있으면 pending 유지(다음 틱 재시도), 진전 0+에러면 실패 처리.
+            captureCron('scheduled.stock_clips.generate', genErr);
+            voiceError = true;
+          }
+        }
+        // 재조회 없이 판정: 이번 틱에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.
+        if (voiceRendered === targets.length && !voiceError) {
+          await markPrerenderDone(db, voice.id, claim.claimToken);
+        } else if (voiceError && voiceRendered === 0) {
+          // 이 틱에 아무것도 못 만들고 에러만 → attempts 증가(영구 실패 클립의 무한 재시도 방지).
+          await markPrerenderFailed(db, voice.id, claim.claimToken);
+        } else {
+          await releasePrerenderClaim(db, voice.id, claim.claimToken);
+        }
+      }
+      if (rendered > 0) {
+        logStructured('info', { at: 'scheduled.stock_clips', rendered, claimed: claimed.length });
+      }
+    }
+  } catch (err) {
+    captureCron('scheduled.stock_clips', err);
   }
 }
 

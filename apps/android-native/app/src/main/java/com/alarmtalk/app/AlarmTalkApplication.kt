@@ -2,7 +2,11 @@ package com.alarmtalk.app
 
 import android.app.Application
 import android.util.Log
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.alarmtalk.app.alarm.NotificationChannels
+import com.alarmtalk.app.fcm.AlarmTalkMessagingService
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -30,11 +34,26 @@ class AlarmTalkApplication : Application() {
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
         runCatching { RemoteAlarmSyncScheduler.ensurePeriodic(this) }
             .onFailure { AlarmTalkLog.reportError("RemoteAlarmSyncScheduler.ensurePeriodic failed", it) }
+        // 앱이 포그라운드로 올라올 때마다(cold start 포함, 어느 화면/탭이든) 즉시 원격 알람을 pull 한다.
+        // 로그인 세션이 있을 때만, 60초 throttle 로 연속 복귀 중복을 막는다. 이전엔 cold start + '알람 탭
+        // 진입' 에서만 즉시 pull 이었던 것을 포그라운드 복귀 전체로 확장 — FCM 없이도 "앱을 열면 바로"
+        // 가족 알람 수신+로컬 알림이 촘촘해진다(백그라운드 초단위 즉시는 별도 push 필요).
         runCatching {
-            if (AuthSessionStore(this).read() != null) {
-                RemoteAlarmSyncScheduler.runOnce(this)
-            }
-        }.onFailure { AlarmTalkLog.reportError("RemoteAlarmSyncScheduler.runOnce failed", it) }
+            ProcessLifecycleOwner.get().lifecycle.addObserver(
+                object : DefaultLifecycleObserver {
+                    override fun onStart(owner: LifecycleOwner) {
+                        runCatching {
+                            if (AuthSessionStore(this@AlarmTalkApplication).read() != null) {
+                                RemoteAlarmSyncScheduler.runOnceThrottled(this@AlarmTalkApplication)
+                            }
+                        }.onFailure { AlarmTalkLog.reportError("Foreground alarm sync failed", it) }
+                    }
+                },
+            )
+        }.onFailure { AlarmTalkLog.reportError("ProcessLifecycle observer registration failed", it) }
+        // 로그인 세션이 있으면 현재 FCM 토큰을 서버에 등록(가족 알람 push 대상). 세션 없으면 내부에서 no-op.
+        runCatching { AlarmTalkMessagingService.registerCurrentToken(this) }
+            .onFailure { AlarmTalkLog.reportError("FCM token registration failed", it) }
         // 30일 이상 미참조 음성 캐시를 백그라운드에서 정리. 실패해도 앱 진입에 영향 없음.
         applicationScope.launch {
             runCatching { AlarmAppContainer.repository(this@AlarmTalkApplication).sweepStaleAudioCache() }

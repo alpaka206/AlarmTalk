@@ -17,6 +17,8 @@ import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 import com.android.billingclient.api.queryProductDetails
 import com.android.billingclient.api.queryPurchasesAsync
+import java.security.MessageDigest
+import java.util.Locale
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -157,22 +159,53 @@ class PlayBillingManager(
     }
 
     /**
+     * planKey 의 Play 실제 표시가격(ProductDetails.formattedPrice). 결제 국가/통화가 반영된
+     * 권위 가격이다. 미로딩/미조회면 null → UI 는 문자열 리소스로 폴백한다.
+     * (하드코딩 가격은 청구 통화·금액과 어긋나 Play 정책 위반 소지 → 실가격 표기 필수)
+     *
+     * 표시가는 '기본 구독가' = 무한 반복(INFINITE_RECURRING) 페이즈의 가격이다. 첫 페이즈를 쓰면
+     * Play Console 에 무료체험/인트로 오퍼를 추가하는 순간 표시가가 '₩0/인트로가'로 깨진다 —
+     * 어떤 오퍼든 페이즈 목록의 마지막은 기본 구독가로 끝나므로 무한 반복 페이즈(폴백: 마지막)를 쓴다.
+     */
+    fun formattedPriceForPlan(planKey: String): String? {
+        val productId = PlayBillingProducts.productIdFor(planKey) ?: return null
+        val phases = productDetailsCache[productId]
+            ?.subscriptionOfferDetails?.firstOrNull()
+            ?.pricingPhases?.pricingPhaseList
+            ?: return null
+        val basePhase = phases.lastOrNull {
+            it.recurrenceMode == ProductDetails.RecurrenceMode.INFINITE_RECURRING
+        } ?: phases.lastOrNull()
+        return basePhase?.formattedPrice
+    }
+
+    /**
      * 결제 시트를 띄운다. 결과(성공/보류/취소)는 [PurchasesUpdatedListener] 로 비동기 전달된다.
      *
+     * @param userId 로그인 세션 사용자 id(서버 users.id 와 동일한 값). 구매를 앱 계정에
+     *   바인딩하기 위해 SHA-256 hex 로 obfuscatedAccountId 에 실린다. null/공백이면 생략
+     *   (레거시 허용 — 서버도 부재 시 허용).
      * @return 결제 플로우 실행에 성공했으면 true. false 면 시트 자체가 뜨지 않은 것.
      */
-    suspend fun launchPurchase(activity: Activity, productId: String): Boolean {
+    suspend fun launchPurchase(activity: Activity, productId: String, userId: String? = null): Boolean {
         val productDetails = productDetailsCache[productId]
             ?: queryProductDetails(listOf(productId)).firstOrNull()
             ?: run {
                 Log.w(TAG, "Play product not found productId=$productId")
                 return false
             }
-        val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken ?: run {
+        // Play 는 이 사용자가 '자격 있는' 오퍼만 돌려준다. 여러 개면(기본가 + 무료체험/인트로 오퍼)
+        // 첫 페이즈 가격이 가장 싼 오퍼를 고른다 — 체험이 있으면 체험으로 시작하는 게 사용자에게 유리.
+        // firstOrNull 은 임의 선택이라 체험이 있어도 기본가부터 청구될 수 있다.
+        val offerToken = productDetails.subscriptionOfferDetails
+            ?.minByOrNull { offer ->
+                offer.pricingPhases.pricingPhaseList.firstOrNull()?.priceAmountMicros ?: Long.MAX_VALUE
+            }
+            ?.offerToken ?: run {
             Log.w(TAG, "Play subscription offer not found productId=$productId")
             return false
         }
-        val flowParams = BillingFlowParams.newBuilder()
+        val flowParamsBuilder = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(
                 listOf(
                     BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -181,14 +214,69 @@ class PlayBillingManager(
                         .build(),
                 ),
             )
-            .build()
-        val result = billingClient.launchBillingFlow(activity, flowParams)
+        // 구매-계정 바인딩(서버와 공유하는 계약: SHA-256 hex 소문자 64자, 입력은 로그인 사용자 id).
+        // 서버가 confirm/RTDN 검증 시 어느 계정의 구매인지 대조할 수 있게 한다.
+        val accountHash = userId?.takeIf { it.isNotBlank() }?.let { sha256Hex(it) }
+        if (accountHash != null) {
+            flowParamsBuilder.setObfuscatedAccountId(accountHash)
+        }
+        // 다른 상품으로의 '전환' 구매면 기존 활성 구독을 교체 모드로 잇는다 — 교체 없이 사면
+        // Play 구독이 나란히 2개 생겨 이중 결제가 된다. 같은 상품 재구매/기존 구매 없음이면 현행대로.
+        // accountHash 가 없으면(비로그인 등) 교체 대상 계정 대조가 불가능하므로 교체 없이 신규 구매.
+        findActiveSubscriptionToReplace(productId, accountHash)?.let { existing ->
+            flowParamsBuilder.setSubscriptionUpdateParams(
+                BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                    .setOldPurchaseToken(existing.purchaseToken)
+                    .setSubscriptionReplacementMode(
+                        BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.WITH_TIME_PRORATION,
+                    )
+                    .build(),
+            )
+        }
+        val result = billingClient.launchBillingFlow(activity, flowParamsBuilder.build())
         if (result.responseCode != BillingClient.BillingResponseCode.OK) {
             Log.w(TAG, "launchBillingFlow failed code=${result.responseCode} message=${result.debugMessage}")
             return false
         }
         return true
     }
+
+    /**
+     * [productId] 로 전환할 때 교체 대상이 되는 기존 활성(PURCHASED) 구독 구매.
+     * 같은 상품이거나 활성 구독이 없으면 null(교체 아님). 여러 개면(과거 이중 구독 잔재) 최신 구매.
+     * 조회 실패 시에도 null — 결제 자체를 막지 않고 현행(신규 구매) 플로우로 진행한다.
+     *
+     * [accountHash](sha256Hex(userId))가 일치하는 구매만 교체 후보로 삼는다. 같은 기기·같은
+     * Google 계정에 **다른 AlarmTalk 계정**으로 결제된 구독이 있을 수 있는데, 그것을 교체하면
+     * 남의 구독을 취소/비례정산시키게 된다. 구매에 식별자가 없거나(레거시) 불일치하면, 또는
+     * accountHash 가 null 이면(비로그인) 소유 확인이 불가능하므로 교체 없이 신규 구매로 진행한다.
+     */
+    private suspend fun findActiveSubscriptionToReplace(productId: String, accountHash: String?): Purchase? {
+        if (accountHash == null) return null
+        if (!ensureConnected()) return null
+        val result = billingClient.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build(),
+        )
+        if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            Log.w(TAG, "queryPurchasesAsync before purchase failed code=${result.billingResult.responseCode}")
+            return null
+        }
+        return result.purchasesList
+            .filter {
+                it.purchaseState == Purchase.PurchaseState.PURCHASED &&
+                    productId !in it.products &&
+                    it.accountIdentifiers?.obfuscatedAccountId == accountHash
+            }
+            .maxByOrNull { it.purchaseTime }
+    }
+
+    /** 계정 바인딩 계약(서버와 공유): SHA-256 hex 소문자 64자. */
+    private fun sha256Hex(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(Locale.ROOT, it) }
 
     /**
      * 앱 시작 시 호출: 결제는 됐지만 아직 서버 검증(acknowledge)이 끝나지 않은 구매를

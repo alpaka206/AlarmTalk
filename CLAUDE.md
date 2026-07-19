@@ -4,12 +4,12 @@
 - `packages/backend` — Cloudflare Workers + Hono + Turso(libSQL). 라우트 `src/routes`, 마이그레이션 `src/lib/migrations.ts`.
 - `packages/shared` — zod 스키마(`src/schemas`), 백엔드·클라 공용 계약.
 - `apps/android-native` — Kotlin/Compose. dev/prod product flavor.
-- `apps/ios-native` — SwiftUI(미운영, CI 제외). develop 머지 OK, 릴리스 전 Mac 빌드 검증.
+- `apps/ios-native` — SwiftUI(보류·미운영, CI는 workflow_dispatch 전용). develop 머지 OK, 릴리스 전 Mac 빌드 검증.
 - `apps/landing` — 웹 랜딩.
 
 ## 배포 / 환경
 - **dev 백엔드**: https://api-dev.alarm-talk.com — `develop` 푸시(=PR 머지) 시 자동 배포 + DB 마이그레이션(Deploy Backend 워크플로).
-- **prod 백엔드**: 출시 전까지 **배포하지 않음(dev only)**. 출시 전 prod DB 초기화 예정 → grandfather/back-compat 불필요(하드 브레이킹 OK).
+- **prod 백엔드**: https://api.alarm-talk.com — `main` 푸시 시 자동 배포 + DB 마이그레이션(같은 워크플로, 빌링 테스트용). prod DB는 출시 전 초기화 예정 → grandfather/back-compat 불필요(하드 브레이킹 OK). 단, main에 올라가는 브레이킹 마이그레이션은 주의.
 - **init-db 시크릿**: dev/prod 분리. GitHub `INIT_DB_SECRET_DEV`/`INIT_DB_SECRET_PROD`(**Repository** Actions secret)가 각 워커의 `INIT_DB_SECRET`(`.dev.vars.{dev,prod}` → `npm run secrets:sync:{dev,prod}`)과 일치해야 migrate 통과. 안 맞으면 404.
 
 ## Android dev 빌드 / 설치
@@ -41,7 +41,7 @@
   - **예외(토큰화 안 함)**: `CircleShape`(원형 아바타/FAB/점), `AlarmRow` 스와이프 비대칭 shape, 타임휠 전용 컨테이너(34dp).
 - **색**: `theme/AlarmTalkTheme.kt` 의 `colorScheme` 가 유일 출처. 항상 `MaterialTheme.colorScheme.*` 로 소비, **생 `Color(0x…)` 금지**.
   - 오버레이 스크림은 `WakerScrimColor`(WakerDesign.kt) 사용.
-  - 문서화된 예외: `RingingActivity`(잠금화면 전용 고정 팔레트), 알림 팩토리(Notification accent), 랜딩 브랜드 비주얼.
+  - 문서화된 예외: `RingingActivity`(잠금화면 전용 고정 팔레트), 알림 팩토리(Notification accent), 랜딩/로그인 브랜드 비주얼, 탭 배경 그라데이션(`AlarmListScreen`의 `HomeGradientDark/Light` — 로그인 딥네이비 감성을 알람/목소리/더보기 탭 전체에 재현, 라이트/다크 2종).
 
 ## 진행 중 작업 (세션 재개 시 먼저 읽을 것)
 현재 상태·폰 테스트 체크리스트·남은 follow-up: **[`docs/qa/dev-test-handoff.md`](docs/qa/dev-test-handoff.md)**.

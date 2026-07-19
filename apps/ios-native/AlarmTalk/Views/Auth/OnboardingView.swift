@@ -39,7 +39,7 @@ struct OnboardingView: View {
 
             TabView(selection: $page) {
                 ForEach(Array(OnboardingPage.all.enumerated()), id: \.offset) { index, item in
-                    OnboardingPageContent(page: item, pageIndex: index)
+                    OnboardingPageContent(page: item)
                         .tag(index)
                 }
             }
@@ -90,22 +90,17 @@ private struct OnboardingPage {
     let systemImage: String
     let title: String
     let description: String
-    /// 페이지별 컬러 강조. iOS 는 Compose 의 `secondaryContainer/tertiaryContainer`
-    /// 대신 palette 의 primaryContainer / tertiaryContainer 를 쓴다.
-    let useTertiary: Bool
 
     static let all: [OnboardingPage] = [
         OnboardingPage(
             systemImage: "mic.fill",
             title: "좋아하는 목소리로 깨어나요",
-            description: "녹음하거나 만든 목소리로 내 알람을 울릴 수 있어요.",
-            useTertiary: false
+            description: "녹음하거나 만든 목소리로 내 알람을 울릴 수 있어요."
         ),
         OnboardingPage(
             systemImage: "person.2.fill",
             title: "소중한 사람들과 함께",
-            description: "목소리와 메시지를 주고받고 서로의 아침을 챙길 수 있어요.",
-            useTertiary: false
+            description: "목소리와 메시지를 주고받고 서로의 아침을 챙길 수 있어요."
         ),
     ]
 }
@@ -113,7 +108,6 @@ private struct OnboardingPage {
 private struct OnboardingPageContent: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let page: OnboardingPage
-    let pageIndex: Int
 
     var body: some View {
         VStack(spacing: 0) {
@@ -121,10 +115,10 @@ private struct OnboardingPageContent: View {
 
             ZStack {
                 Circle()
-                    .fill(page.useTertiary ? theme.palette.tertiaryContainer : theme.palette.secondaryContainer)
+                    .fill(theme.palette.secondaryContainer)
                 Image(systemName: page.systemImage)
                     .font(.system(size: 56, weight: .semibold))
-                    .foregroundStyle(page.useTertiary ? theme.palette.onTertiaryContainer : theme.palette.onSecondaryContainer)
+                    .foregroundStyle(theme.palette.onSecondaryContainer)
             }
             .frame(width: 112, height: 112)
 

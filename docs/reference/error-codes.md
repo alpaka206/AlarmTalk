@@ -233,6 +233,7 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `AUDIO_AND_NAME_REQUIRED` | 클로닝: audio·name 필요 | 400 | `routes/voice-profile.ts` |
 | `INVALID_AUDIO_MIME_TYPE` | audio/* MIME 아님 | 400 | `routes/voice-profile.ts`, `voice-upload.ts` |
 | `VOICE_LIMIT_REACHED` | 음성 프로필 개수 상한 도달 | 409 | `routes/voice-profile.ts` |
+| `VOICE_MONTHLY_CHANGE_LIMIT_REACHED` | 이번 달 공식 목소리 변경 횟수 사용 완료 | 429 | `routes/voice-profile.ts` |
 | `VOICE_SLOT_EXHAUSTED` | 음성 제공자 슬롯 소진(일시적) | 503 | `routes/voice-profile.ts` |
 | `VOICE_CLONING_FAILED` | 음성 클로닝 실패 | 500 | `routes/voice-profile.ts` |
 | `VOICE_CLONE_AUDIO_TOO_SHORT` | 클로닝 오디오 너무 짧음 | 400 | `routes/voice-profile.ts` |

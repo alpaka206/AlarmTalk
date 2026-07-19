@@ -8,6 +8,21 @@ import org.junit.Test
 
 class AlarmEditorStateTest {
     @Test
+    fun cloneBucketsRequireEveryBackendVariant() {
+        assertEquals(9, expectedCloneBucketVariantCount("weather")) // 조건 8 + 미해결 안내 1
+        assertEquals(5, expectedCloneBucketVariantCount("fortune"))
+        assertEquals(3, expectedCloneBucketVariantCount("love"))
+        assertEquals(3, expectedCloneBucketVariantCount("medication"))
+        assertEquals(1, expectedCloneBucketVariantCount("greeting"))
+        assertNull(expectedCloneBucketVariantCount("unknown"))
+    }
+
+    @Test
+    fun defaultPresetContextUsesGreetingPrerenderBucket() {
+        assertEquals("greeting", clonePrerenderBucketCategoryFor("preset"))
+    }
+
+    @Test
     fun selectVoiceProfileClearsStaleListenerTitleWhenVoiceChanges() {
         val editor = AlarmEditorState.from(alarm = null)
         editor.voiceProfileId = "old-profile"
@@ -70,5 +85,21 @@ class AlarmEditorStateTest {
         )
 
         assertTrue(editor.hasFreshTtsAudio("profile-1", "wake up"))
+    }
+
+    @Test
+    fun activeVoiceLanguageFollowsSupportedAppLanguageWithoutTranslationToggle() {
+        val editor = AlarmEditorState.from(alarm = null)
+        editor.voiceRandomPrompt = false
+        editor.voiceTranslationEnabled = false
+
+        editor.voiceLanguage = "ja"
+
+        assertEquals("ja", editor.activeVoiceLanguage())
+        assertTrue(editor.shouldTranslateVoiceText())
+
+        editor.voiceLanguage = "fr"
+
+        assertEquals("ko", editor.activeVoiceLanguage())
     }
 }

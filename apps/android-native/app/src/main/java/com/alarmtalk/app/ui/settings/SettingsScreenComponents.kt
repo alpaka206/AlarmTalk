@@ -1,8 +1,6 @@
 package com.alarmtalk.app
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -28,6 +26,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -48,7 +47,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -84,7 +82,6 @@ internal fun SettingsCard(
 internal fun SettingsRow(
     label: String,
     value: String?,
-    labelColor: Color = MaterialTheme.colorScheme.onSurface,
     onClick: () -> Unit,
 ) {
     Row(
@@ -96,7 +93,7 @@ internal fun SettingsRow(
     ) {
         Text(
             text = label,
-            color = labelColor,
+            color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f),
         )
@@ -117,48 +114,12 @@ internal fun SettingsRow(
 }
 
 @Composable
-internal fun SettingsToggleRow(
-    label: String,
-    value: String?,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = label,
-                fontWeight = FontWeight.Medium,
-            )
-            if (!value.isNullOrBlank()) {
-                Text(
-                    text = value,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        AlarmTalkSwitch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-        )
-    }
-}
-
-@Composable
 internal fun WeatherLocationPreferenceDialog(
     country: String,
     city: String,
     onDismiss: () -> Unit,
     onConfirm: (String, String) -> Unit,
 ) {
-    val draftCountry = remember(country) { country }
     var draftCity by remember(city) { mutableStateOf(city) }
     var submitted by remember { mutableStateOf(false) }
     val cityError = submitted && draftCity.isBlank()
@@ -193,7 +154,7 @@ internal fun WeatherLocationPreferenceDialog(
                     onClick = {
                         submitted = true
                         if (draftCity.isNotBlank()) {
-                            onConfirm(draftCountry.trim(), draftCity.trim())
+                            onConfirm(country.trim(), draftCity.trim())
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -267,7 +228,7 @@ internal fun WeatherCityPickerField(
                 colors = wakerOutlinedTextFieldColors(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .menuAnchor(),
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
             )
             ExposedDropdownMenu(
                 expanded = expanded,
@@ -298,6 +259,18 @@ internal fun WeatherCityPickerField(
         }
     }
 }
+
+// 방해금지 요일 프리셋(평일/주말/매일) — 백엔드 family-alarm-settings.ts PRESET_QUIET_DAY_SETS와 동일.
+private data class QuietDayPreset(val days: Set<Int>, val labelRes: Int)
+
+private val QUIET_DAY_PRESETS = listOf(
+    QuietDayPreset(setOf(1, 2, 3, 4, 5), R.string.editor2_quiet_days_weekdays),
+    QuietDayPreset(setOf(0, 6), R.string.editor2_quiet_days_weekend),
+    QuietDayPreset(setOf(0, 1, 2, 3, 4, 5, 6), R.string.editor2_quiet_days_everyday),
+)
+
+// 방해금지 창 최대 개수. 백엔드 MAX_QUIET_WINDOWS(=2) 및 AuthSessionStore와 동일.
+private const val QUIET_WINDOW_MAX = 2
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -362,11 +335,8 @@ internal fun FamilyAlarmQuietTimeDialog(
                             index = draftIndex,
                             draft = draft,
                             removable = drafts.size > 1,
-                            onToggleDay = { dayIndex ->
-                                updateDraft(draftIndex) {
-                                    val days = if (dayIndex in it.days) it.days - dayIndex else it.days + dayIndex
-                                    it.copy(days = days)
-                                }
+                            onSelectDays = { presetDays ->
+                                updateDraft(draftIndex) { it.copy(days = presetDays) }
                             },
                             onPickStart = {
                                 timePickerTarget = QuietTimePickerTarget(draftIndex, isStart = true)
@@ -381,7 +351,7 @@ internal fun FamilyAlarmQuietTimeDialog(
                     }
                     OutlinedButton(
                         onClick = {
-                            if (drafts.size < 8) {
+                            if (drafts.size < QUIET_WINDOW_MAX) {
                                 drafts = drafts + FamilyAlarmQuietWindow(
                                     days = listOf(1, 2, 3, 4, 5),
                                     start = "22:00",
@@ -389,7 +359,7 @@ internal fun FamilyAlarmQuietTimeDialog(
                                 ).toDraft()
                             }
                         },
-                        enabled = drafts.size < 8,
+                        enabled = drafts.size < QUIET_WINDOW_MAX,
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                         border = wakerCardBorder(),
@@ -472,12 +442,11 @@ internal fun QuietWindowCard(
     index: Int,
     draft: QuietWindowDraft,
     removable: Boolean,
-    onToggleDay: (Int) -> Unit,
+    onSelectDays: (Set<Int>) -> Unit,
     onPickStart: () -> Unit,
     onPickEnd: () -> Unit,
     onRemove: () -> Unit,
 ) {
-    val context = LocalContext.current
     val chipColors = FilterChipDefaults.filterChipColors(
         selectedContainerColor = MaterialTheme.colorScheme.primary,
         selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
@@ -506,20 +475,22 @@ internal fun QuietWindowCard(
                     }
                 }
             }
+            // 요일은 평일/주말/매일 프리셋 3택(단일 선택). 세밀한 개별 요일 지정은 없앰 — 방해금지의
+            // 실사용은 근무/등교 시간대 정도라 프리셋으로 충분하고 시트 라벨도 짧게 유지된다.
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                dayLabels(context).forEachIndexed { dayIndex, label ->
+                QUIET_DAY_PRESETS.forEach { preset ->
                     FilterChip(
-                        selected = dayIndex in draft.days,
-                        onClick = { onToggleDay(dayIndex) },
+                        selected = draft.days == preset.days,
+                        onClick = { onSelectDays(preset.days) },
                         label = {
                             Box(
                                 modifier = Modifier.fillMaxWidth(),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(text = label, fontWeight = FontWeight.SemiBold)
+                                Text(text = stringResource(preset.labelRes), fontWeight = FontWeight.SemiBold)
                             }
                         },
                         colors = chipColors,
@@ -689,14 +660,6 @@ internal fun dayLabels(context: Context): List<String> = listOf(
     context.getString(R.string.misc2_day_fri),
     context.getString(R.string.misc2_day_sat),
 )
-
-internal fun Context.openExternalUrl(url: String) {
-    runCatching {
-        startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
-}
 
 internal fun isHourText(value: String): Boolean =
     value.toIntOrNull()?.let { it in 0..23 } == true

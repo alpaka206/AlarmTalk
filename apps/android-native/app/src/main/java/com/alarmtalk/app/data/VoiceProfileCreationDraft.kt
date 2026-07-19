@@ -6,17 +6,6 @@ data class VoiceProfileCreationDraft(
     val shared: Boolean,
     val relationshipLabel: String,
     val listenerTitle: String,
-    // 'male' | 'female' | 'neutral'
-    val voiceGender: String = "neutral",
-    // 'auto' | 'polite'
-    val speechFormality: String = "auto",
-)
-
-data class VoiceProfilePromotionDraft(
-    val name: String,
-    val shared: Boolean,
-    val relationshipLabel: String,
-    val listenerTitle: String,
-    val voiceGender: String = "neutral",
-    val speechFormality: String = "auto",
+    /** 미리듣기·사전렌더 문구 언어(ko/en/ja). null 이면 앱 로케일. */
+    val language: String? = null,
 )
