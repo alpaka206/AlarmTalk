@@ -52,9 +52,11 @@ export function normalizePromoCode(raw: string): string {
 }
 
 /**
- * 웰컴 그룹(redemption_group='welcome')으로 시드되는 코드 이름(마이그레이션 #72/#73과 동일).
- * 레거시 스키마 폴백 중 컬럼 없이 그룹 규칙을 세우기 위한 이름 기반 기준으로만 쓴다.
+ * 웰컴 그룹 이름과 그 그룹으로 시드되는 코드 이름(마이그레이션 #72/#73과 동일).
+ * 웰컴 판정은 항상 '그룹 컬럼 OR 이름' 결합으로 본다 — 컬럼이 없는 창(#72 이전)과
+ * 백필 전 갭(#72~#73)에서 사전 존재 동명 코드가 규칙을 우회하지 못하게 한다.
  */
+const WELCOME_GROUP_NAME = 'welcome';
 const WELCOME_GROUP_CODES: readonly string[] = [
   'WELCOME_PERSONAL',
   'WELCOME_COUPLE',
@@ -142,30 +144,33 @@ async function redeemPromoInTransaction(
   // 사용할 수 없다 — 개인/커플/가족 웰컴을 갈아타며 무한 연장하는 것을 막는다. 여기는
   // 사용자 친화 에러 목적의 사전 검사이고, 최종 판정은 아래 원자 claim 이 담당한다.
   //
-  // 레거시 스키마 폴백 중에는 redemption_group 컬럼을 참조할 수 없으므로, 웰컴 3종의
-  // '이름'을 그룹으로 간주하는 게이트로 대체한다 — 마이그레이션 전에 운영자가 발급해둔
-  // 동명 코드도 배포 창에서 웰컴 1회 규칙을 우회할 수 없다(#73 백필과 같은 기준).
-  const redemptionGroup = legacySchema
-    ? null
-    : ((promo.redemption_group as string | null) ?? null);
-  const welcomeNameGate =
-    legacySchema && WELCOME_GROUP_CODES.includes(String(promo.code).toUpperCase());
-  if (redemptionGroup || welcomeNameGate) {
-    const groupDupRes = redemptionGroup
-      ? await db.execute({
-          sql: `SELECT 1 FROM promo_code_redemptions r
-                JOIN promo_codes pg ON pg.id = r.promo_code_id
-                WHERE r.user_id = ? AND pg.redemption_group = ?
-                LIMIT 1`,
-          args: [params.userPk, redemptionGroup],
-        })
-      : await db.execute({
-          sql: `SELECT 1 FROM promo_code_redemptions r
-                JOIN promo_codes pg ON pg.id = r.promo_code_id
-                WHERE r.user_id = ? AND UPPER(pg.code) IN (?, ?, ?)
-                LIMIT 1`,
-          args: [params.userPk, ...WELCOME_GROUP_CODES],
-        });
+  // 웰컴 판정은 항상 '그룹 컬럼 OR 이름' 결합으로 본다 — 마이그레이션 수명주기의 세 구간
+  // (① #72 이전: 컬럼 없음 → 이름만, ② #72~#73 사이: 사전 존재 동명 코드의 group 이 아직
+  // NULL → 이름이 보완, ③ #73 이후: 컬럼이 정답, 이름은 동치) 모두에서 웰컴 1회 규칙이
+  // 끊기지 않는다(Codex #574~#575 배포 창 계열 지적의 최종 형태).
+  const redemptionGroup = (promo.redemption_group as string | null | undefined) ?? null;
+  const isWelcomeCode =
+    redemptionGroup === WELCOME_GROUP_NAME ||
+    WELCOME_GROUP_CODES.includes(String(promo.code).toUpperCase());
+  let groupCond: { sql: string; args: string[] } | null = null;
+  if (isWelcomeCode) {
+    groupCond = legacySchema
+      ? { sql: `UPPER(pg.code) IN (?, ?, ?)`, args: [...WELCOME_GROUP_CODES] }
+      : {
+          sql: `(pg.redemption_group = ? OR UPPER(pg.code) IN (?, ?, ?))`,
+          args: [WELCOME_GROUP_NAME, ...WELCOME_GROUP_CODES],
+        };
+  } else if (redemptionGroup) {
+    groupCond = { sql: `pg.redemption_group = ?`, args: [redemptionGroup] };
+  }
+  if (groupCond) {
+    const groupDupRes = await db.execute({
+      sql: `SELECT 1 FROM promo_code_redemptions r
+            JOIN promo_codes pg ON pg.id = r.promo_code_id
+            WHERE r.user_id = ? AND ${groupCond.sql}
+            LIMIT 1`,
+      args: [params.userPk, ...groupCond.args],
+    });
     if (groupDupRes.rows.length > 0) {
       throw new PromoRedemptionError(
         409,
@@ -205,22 +210,16 @@ async function redeemPromoInTransaction(
 
   // 원자 claim: 활성·유효창·총 상한·사용자당 1회·(그룹 코드면) 그룹당 1회 를 한 문장으로
   // gate 한다. SQLite/libSQL 단일 라이터에서 동시 사용 중 상한 초과가 발생하지 않는다.
-  // 그룹 절은 컬럼 기반(정상 스키마) 또는 이름 기반(레거시 폴백 + WELCOME_*)으로 붙는다 —
-  // 어느 쪽도 없는 일반 코드는 절 자체가 빠져 배포 창에서 컬럼을 참조하지 않는다.
+  // 그룹 절은 위 사전 검사와 동일한 groupCond(웰컴=컬럼 OR 이름 결합)를 그대로 쓴다 —
+  // 조건 없는 일반 코드는 절 자체가 빠져 배포 창에서 컬럼을 참조하지 않는다.
   const redemptionId = crypto.randomUUID();
-  const groupClause = redemptionGroup
+  const groupClause = groupCond
     ? `AND NOT EXISTS (
          SELECT 1 FROM promo_code_redemptions r
          JOIN promo_codes pg ON pg.id = r.promo_code_id
-         WHERE r.user_id = ? AND pg.redemption_group = ?
+         WHERE r.user_id = ? AND ${groupCond.sql}
        )`
-    : welcomeNameGate
-      ? `AND NOT EXISTS (
-           SELECT 1 FROM promo_code_redemptions r
-           JOIN promo_codes pg ON pg.id = r.promo_code_id
-           WHERE r.user_id = ? AND UPPER(pg.code) IN (?, ?, ?)
-         )`
-      : '';
+    : '';
   const claim = await db.execute({
     sql: `INSERT INTO promo_code_redemptions (id, promo_code_id, user_id, redeemed_at)
           SELECT ?, ?, ?, ?
@@ -247,11 +246,7 @@ async function redeemPromoInTransaction(
       promoId,
       promoId,
       params.userPk,
-      ...(redemptionGroup
-        ? [params.userPk, redemptionGroup]
-        : welcomeNameGate
-          ? [params.userPk, ...WELCOME_GROUP_CODES]
-          : []),
+      ...(groupCond ? [params.userPk, ...groupCond.args] : []),
     ],
   });
   if ((claim.rowsAffected ?? 0) === 0) {

@@ -125,6 +125,46 @@ describe('마이그레이션 #72 — 기존 동명 코드 충돌 수렴', () => 
   });
 });
 
+describe('#72~#73 갭 — 백필 전 사전 존재 동명 코드도 웰컴 규칙 유지', () => {
+  it('컬럼은 있지만 group 이 NULL 인 사전 존재 코드로 웰컴 2회를 우회할 수 없다', async () => {
+    const GAP_PATH = join(tmpdir(), 'alarmtalk-promo-gap-72-73.db');
+    rmSync(GAP_PATH, { force: true });
+    const gapDb = createClient({ url: `file:${GAP_PATH}` });
+    await runMigrationsRange(gapDb, 1, 71);
+    // 마이그레이션 전 운영자 발급 동명 코드(소문자·그룹 없음)
+    await gapDb.execute(
+      `INSERT INTO promo_codes (id, code, plan_id, duration_days, is_active)
+       SELECT 'gap-op', 'welcome_personal', id, 14, 1 FROM plans WHERE key = 'personal'`,
+    );
+    // #72 만 적용(#73 백필 전) — 컬럼은 생겼지만 gap-op 의 group 은 NULL
+    await runMigrationsRange(gapDb, 72, 72);
+    await gapDb.execute({
+      sql: 'INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)',
+      args: ['gap-u', 'gap-u', 'gap@test'],
+    });
+
+    // group NULL 인 사전 존재 코드 리딤 → 이름 결합 판정으로 웰컴 1회 소진
+    const first = await redeemPromoCode(gapDb, { userPk: 'gap-u', rawCode: 'welcome_personal' });
+    expect(first.plan.key).toBe('personal');
+    // 시드된(그룹 있는) 웰컴 코드가 이름 결합 조건으로 이전 리딤을 인식해 차단
+    await expectPromoError(
+      redeemPromoCode(gapDb, { userPk: 'gap-u', rawCode: 'WELCOME_COUPLE' }),
+      'CODE_GROUP_ALREADY_REDEEMED',
+    );
+    // 반대 방향: 시드 코드 먼저 → group NULL 코드도 차단
+    await gapDb.execute({
+      sql: 'INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)',
+      args: ['gap-v', 'gap-v', 'gapv@test'],
+    });
+    await redeemPromoCode(gapDb, { userPk: 'gap-v', rawCode: 'WELCOME_FAMILY' });
+    await expectPromoError(
+      redeemPromoCode(gapDb, { userPk: 'gap-v', rawCode: 'welcome_personal' }),
+      'CODE_GROUP_ALREADY_REDEEMED',
+    );
+    gapDb.close();
+  });
+});
+
 describe('배포→마이그레이션 창 호환 (#72 적용 전 스키마)', () => {
   // deploy-backend.yml 이 배포 후 마이그레이션을 돌리므로, 새 코드가 redemption_group 컬럼이
   // 없는 DB(#71까지만 적용)를 만나도 리딤이 500 나지 않고 레거시 규칙으로 동작해야 한다.
