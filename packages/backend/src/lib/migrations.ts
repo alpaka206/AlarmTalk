@@ -1499,6 +1499,28 @@ export const migrations: Migration[] = [
         WHERE id IN (${STALE_STOCK_PRESET_SUBQUERY_2026_07_19})`,
     ],
   },
+  {
+    // /push/register 의 'DELETE 타소유자 → UPSERT(user_id, token)' 2문장은 같은 기기의 빠른 계정
+    // 전환에서 두 세션의 등록이 인터리빙되면 한 token 에 소유자 2행이 남아 가족알람 push 가 두
+    // 계정 모두에게 가는 레이스가 있었다(Codex #567 P1). token 을 전역 UNIQUE 로 만들고 라우트를
+    // ON CONFLICT(token) 단일 UPSERT 로 교체한다. 기존 중복은 최신(updated_at) 행만 남긴다.
+    id: 71,
+    name: 'push-tokens-global-unique-token',
+    statements: [
+      `DELETE FROM push_tokens WHERE id NOT IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY token ORDER BY updated_at DESC, created_at DESC, id DESC
+          ) AS rn FROM push_tokens
+        ) WHERE rn = 1
+      )`,
+      // #63 의 비유니크 token 인덱스를 유니크로 교체(이름 유지). CREATE ... IF NOT EXISTS 는
+      // '이름' 존재만 보므로 반드시 DROP 후 CREATE — 안 그러면 비유니크 인덱스가 그대로 남아
+      // ON CONFLICT(token) 이 매칭할 유니크 제약이 없어 등록이 실패한다.
+      'DROP INDEX IF EXISTS idx_push_tokens_token',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)',
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
