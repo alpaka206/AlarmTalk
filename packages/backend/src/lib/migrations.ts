@@ -1507,10 +1507,13 @@ export const migrations: Migration[] = [
     id: 71,
     name: 'push-tokens-global-unique-token',
     statements: [
+      // 타이브레이커는 rowid(삽입 순서 근사) — 레이스로 남은 중복은 대부분 같은 초에 찍혀
+      // updated_at/created_at 이 동률인데, UUID(id) 비교는 삽입 순서와 무관해 이른 소유자가
+      // 남을 수 있다. rowid 가 크면 나중 INSERT = 마지막 등록이 승자.
       `DELETE FROM push_tokens WHERE id NOT IN (
         SELECT id FROM (
           SELECT id, ROW_NUMBER() OVER (
-            PARTITION BY token ORDER BY updated_at DESC, created_at DESC, id DESC
+            PARTITION BY token ORDER BY updated_at DESC, created_at DESC, rowid DESC
           ) AS rn FROM push_tokens
         ) WHERE rn = 1
       )`,
