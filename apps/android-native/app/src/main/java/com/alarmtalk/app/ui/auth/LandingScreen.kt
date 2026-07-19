@@ -12,7 +12,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -143,34 +147,50 @@ internal fun LandingScreen(
                     bottom = contentPadding.calculateBottomPadding() + 22.dp,
                 ),
         ) {
-            Text(
-                text = "AlarmTalk",
-                modifier = Modifier.padding(top = 18.dp),
-                style = MaterialTheme.typography.titleLarge,
-                color = TextOnScene.copy(alpha = 0.94f),
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = buildAnnotatedString {
-                    append(stringResource(R.string.auth_landing_headline_pre))
-                    withStyle(SpanStyle(color = BrandAccentOnScene, fontWeight = FontWeight.Bold)) {
-                        append(stringResource(R.string.auth_landing_headline_keyword))
+            // 접근성 글꼴 확대/좁은 멀티윈도우에서 히어로+미리듣기 카드가 화면보다 커져도
+            // '시작하기' CTA 는 아래에 고정으로 남도록, CTA 위 영역만 스크롤 가능하게 둔다.
+            // 공간이 충분한 일반 화면에서는 heightIn(min=뷰포트) + SpaceBetween 이 기존과 동일한
+            // '타이틀 상단·히어로 하단' 배치를 재현하고 스크롤도 생기지 않는다.
+            BoxWithConstraints(Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .heightIn(min = this.maxHeight),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "AlarmTalk",
+                        modifier = Modifier.padding(top = 18.dp),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = TextOnScene.copy(alpha = 0.94f),
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Column {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = buildAnnotatedString {
+                                append(stringResource(R.string.auth_landing_headline_pre))
+                                withStyle(SpanStyle(color = BrandAccentOnScene, fontWeight = FontWeight.Bold)) {
+                                    append(stringResource(R.string.auth_landing_headline_keyword))
+                                }
+                                append(stringResource(R.string.auth_landing_headline_post))
+                            },
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = TextOnScene,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = stringResource(R.string.auth_landing_subcopy),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextOnSceneDim,
+                        )
+                        Spacer(Modifier.height(20.dp))
+                        VoicePreviewCard(accent = BrandAccentOnScene)
                     }
-                    append(stringResource(R.string.auth_landing_headline_post))
-                },
-                style = MaterialTheme.typography.headlineLarge,
-                color = TextOnScene,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = stringResource(R.string.auth_landing_subcopy),
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextOnSceneDim,
-            )
-            Spacer(Modifier.height(20.dp))
-            VoicePreviewCard(accent = BrandAccentOnScene)
+                }
+            }
             Spacer(Modifier.height(18.dp))
             GradientCta(
                 text = stringResource(R.string.auth_landing_get_started),
@@ -506,7 +526,9 @@ private fun VoicePreviewCard(accent: Color) {
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = TextOnScene,
-                    maxLines = 2,
+                    // 자막 = 실제 미리듣기 음성 대사 3문장(인사·날씨·당부) 전문. 줄 수 제한 없음 —
+                    // 카드가 커지는 극단 케이스(접근성 확대 등)는 랜딩 콘텐츠 영역 스크롤이 흡수하고
+                    // '시작하기' CTA 는 스크롤 밖에 고정이라 항상 도달 가능하다.
                 )
                 MiniWaveform(progress = progress, accent = accent)
             }
