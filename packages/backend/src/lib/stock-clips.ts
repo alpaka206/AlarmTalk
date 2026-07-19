@@ -5,65 +5,110 @@ import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
 import { applyDeliveryTagPerSentence, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, type SpeechStyle } from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
+import { appendMp3TrailingSilence } from './mp3-silence';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
 
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
 
-/** 스톡 클립을 만들 수 있는 언어. 한국어 베이스 → 영어/일본어는 Vertex 로 번역. */
+/** 스톡 클립 언어. 세 언어 모두 STOCK_CLIP_PRESETS 에 확정 리터럴로 들어 있다(번역 없음). */
 export const STOCK_CLIP_LANGUAGES = ['ko', 'en', 'ja'] as const;
 
 /** 목소리 미리듣기(샘플 인사말) 카테고리 — 알람 클립과 구분해 앱에서 따로 쓴다. */
 export const STOCK_GREETING_CATEGORY = 'greeting';
 
 /**
- * 스톡 클립 프리셋. baseText 는 태그 없는 한국어 한 줄이며, 합성 직전에
- * Vertex 로 (번역 +) ElevenLabs v3 딜리버리 태그 1개를 자동 부여한다.
- * languages 로 프리셋별 생성 언어를 지정한다 (greeting 은 샘플이라 한국어만).
+ * 스톡 클립 프리셋 — 2026-07-19 확정 대사(voice-preview/대사.md)의 3개 언어 '리터럴'
+ * 텍스트다(딜리버리 태그 포함, 예보 전달어법 `~대요`). 합성 시 번역/자동태깅(Vertex)
+ * 없이 이 문구가 그대로 ElevenLabs 로 가므로, 재시드해도 항상 같은 문구가 나온다.
+ * dev/prod 에 시딩된 실데이터(messages is_preset=1)와 문구가 일치한다 — 문구를 바꾸면
+ * /api/admin/seed-stock-clips 로 재시드해야 실데이터에 반영된다.
  *
  * 카테고리를 늘리려면 여기에 추가하면 findMissingStockTargets 가 자동으로
- * (보이스 × 언어) 매트릭스를 채운다.
+ * (보이스 × 언어 × variant) 매트릭스를 채운다.
  */
 export const STOCK_CLIP_PRESETS = [
-  // 무료 플랜 알람 "버킷". 카테고리당 여러 variants(문구)를 시스템 보이스마다 한국어·
-  // 영어·일본어로 미리 합성해 둔다(en/ja 는 Vertex 번역). 앱은 한 버킷의 변형들을 전부
-  // 로컬 캐시한 뒤 완전 오프라인으로 재생한다.
+  // 무료 플랜 알람 "버킷". 카테고리당 여러 variants(문구)를 시스템 보이스마다 3개 언어로
+  // 미리 합성해 둔다. 앱은 한 버킷의 변형들을 전부 로컬 캐시한 뒤 완전 오프라인으로 재생한다.
   //  - 무료 버킷 = 날씨(weather) 9문구(조건 매칭) + 약(medication) 2문구(순차 회전).
   //    (보이스당 (9+2)×3언어 = 33클립)
-  //  - greeting 은 알람이 아니라 목소리 미리듣기용 1문구(한국어).
+  //  - greeting 은 알람이 아니라 목소리 미리듣기용 1문구(3언어) — 음색 비교를 위해
+  //    4보이스 공통 문구를 쓴다.
   //  - 버킷을 늘리려면 카테고리를 추가하고 재시드하면 된다(FREE_BUCKET_CATEGORIES 가 자동 반영).
   // 날씨 9문구 — variant 순서가 CLONE_WEATHER_CONDITIONS(0..7)와 반드시 일치해야 하고,
   // 마지막(8)은 '날씨 미확인' 폴백이다(클라 매칭 규약: 마지막 인덱스 = 폴백).
   // 무료도 저장한 도시 기준으로 전날 조건을 확인해(무료 API) 그날 클립을 매칭 재생한다.
   {
     category: 'weather',
-    languages: ['ko', 'en', 'ja'],
-    variants: [
-      '오늘 날씨 진짜 좋아요. 나갈 때 하늘 한 번 봐요, 기분이 달라질 거예요.',
-      '오늘 비 와요. 우산 꼭 챙기고요, 바닥 미끄러우니까 조심히 다녀요.',
-      '밖에 눈 와요. 따뜻하게 입고, 미끄러우니까 발밑 조심해요.',
-      '오늘 미세먼지가 심해요. 나갈 때 마스크 꼭 챙겨요.',
-      '오늘 하늘이 좀 흐려요. 그래도 기분까지 흐려질 건 없죠. 잘 다녀와요.',
-      '오늘 안개가 짙어요. 앞이 잘 안 보이니까 천천히, 조심해서 다녀요.',
-      '오늘 많이 더워요. 물 자주 마시고, 너무 무리하지 말아요.',
-      '오늘 진짜 추워요. 든든하게 챙겨 입어요. 감기 걸리면 안 되니까.',
-      '인터넷이 안 돼서 오늘 날씨를 미리 못 봤어요. 그래도 좋은 하루 보내요.',
-    ],
+    texts: {
+      ko: [
+        '[brightly] 오늘은 날씨가 맑대요. 나갈 때 하늘 한 번 올려다보는 거 어떨까요? 생각보다 기분이 좋아질 거예요.',
+        '[gently] 오늘은 비가 올 수도 있대요. 나갈 때 우산 챙겨 가고, 길이 미끄러울 수 있으니까 발밑도 조심해요.',
+        '[gently] 오늘은 눈이 올 수도 있대요. 옷 따뜻하게 입고, 길 미끄러울 수 있으니까 평소보다 조금만 천천히 걸어요.',
+        '[warmly] 오늘은 미세먼지가 심하대요. 나갈 때 마스크 꼭 챙기고요. 바깥 공기는 좀 답답하더라도, 기분 좋은 하루 보냈으면 좋겠어요.',
+        '[reassuringly] 오늘은 하늘이 흐리대요. 비가 올 수도 있으니 작은 우산 하나 챙기세요. 흐린 날씨에 너무 처지지 말고, 오늘도 기분 좋게 다녀와요.',
+        '[calmly] 오늘은 안개가 짙게 낀대요. 앞이 잘 안 보일 수 있으니까, 서두르지 말고 천천히 가요. 오늘은 안전이 제일이에요.',
+        '[caring] 오늘은 햇볕도 강하고 꽤 덥대요. 물 자주 마시고, 한낮에는 너무 무리하지 말아요.',
+        '[warmly] 오늘은 많이 춥대요. 외투 따뜻하게 챙겨 입고 나가요. 감기 걸리면 속상하니까요.',
+        '[lightly] 인터넷이 안 돼서 오늘 날씨는 미리 못 봤어요. 나가기 전에 창밖 한 번 살펴봐요. 그래도 오늘 하루, 잘 다녀와요.',
+      ],
+      en: [
+        "[brightly] They say it's going to be a beautiful clear day. How about looking up at the sky on your way out? It'll lift your mood more than you'd expect.",
+        '[gently] It might rain today. Take an umbrella with you, and watch your step — the ground could be slippery.',
+        '[gently] It might snow today. Dress warm, and walk a little slower than usual — the streets could be slippery.',
+        "[warmly] The air quality isn't great today. Don't forget your mask on the way out. It might feel a little stuffy, but I hope you have a lovely day anyway.",
+        "[reassuringly] It looks pretty cloudy today. Tuck a small umbrella in your bag, just in case. Don't let the gray skies get you down — have a good one.",
+        "[calmly] They say it's quite foggy this morning. Take it slow and watch where you're going. No need to rush — safety first today.",
+        "[caring] It's going to be a hot one today, with strong sun. Drink plenty of water, and don't push yourself too hard around midday.",
+        "[warmly] It's really cold out today. Bundle up in a warm coat before you head out — I'd hate for you to catch a cold.",
+        "[lightly] I couldn't check today's weather — no internet this morning. Take a peek out the window before you leave. Have a great day out there.",
+      ],
+      ja: [
+        '[brightly] 今日はよく晴れるそうですよ。出かけるとき、空をちょっと見上げてみませんか?思ったより気分が明るくなりますよ。',
+        '[gently] 今日は雨が降るかもしれないそうです。傘を持って出かけてくださいね。道がすべりやすいかもしれないので、足元にも気をつけて。',
+        '[gently] 今日は雪が降るかもしれません。あたたかくして、道がすべりやすいかもしれないから、いつもより少しゆっくり歩いてくださいね。',
+        '[warmly] 今日は空気があまりよくないみたいです。出かけるときはマスクを忘れずに。ちょっと息苦しくても、気分のいい一日になりますように。',
+        '[reassuringly] 今日は曇りみたいですよ。雨が降るかもしれないから、小さい傘をひとつ持っていってくださいね。曇り空に気分まで沈まないで、今日も元気にいってらっしゃい。',
+        '[calmly] 今日は霧が濃いそうです。急がずに、周りをよく見ながらゆっくり歩いてくださいね。今日は安全がいちばんですよ。',
+        '[caring] 今日は日差しも強くて、かなり暑くなるそうです。水分をこまめにとって、昼間は無理しすぎないでくださいね。',
+        '[warmly] 今日はとても寒いそうですよ。あたたかいコートを着て出かけてくださいね。風邪をひいたら大変ですから。',
+        '[lightly] インターネットがつながらなくて、今日の天気は確認できませんでした。出かける前に、窓の外をちょっと見てみてくださいね。今日もいい一日を。',
+      ],
+    },
   },
   {
     category: 'medication',
-    languages: ['ko', 'en', 'ja'],
-    variants: [
-      '약 먹을 시간이에요. 물 한 잔이랑 같이 지금 챙겨 드세요.',
-      '잠깐, 약부터 챙겨요. 드시고 나서 하던 일 마저 해요.',
-    ],
+    texts: {
+      ko: [
+        '[warmly] 약 먹을 시간이에요. 잊어버리기 전에, 물 한 잔이랑 같이 지금 챙겨 먹어요.',
+        '[gently] 밥은 챙겨 먹었어요? 이제 약 먹을 시간이에요. 바빠도 약부터 먹고, 하던 일은 그다음에 해요.',
+      ],
+      en: [
+        "[warmly] It's time for your medicine. Take it now with a glass of water, before it slips your mind.",
+        "[gently] Have you eaten? It's time for your medicine. Even if you're busy, take it first — everything else can wait a moment.",
+      ],
+      ja: [
+        '[warmly] お薬の時間ですよ。忘れないうちに、お水と一緒に今飲んでくださいね。',
+        '[gently] ごはんはちゃんと食べましたか?お薬の時間ですよ。忙しくても、まずお薬を飲んでから、続きをしましょうね。',
+      ],
+    },
   },
   {
+    // 목소리 창에서 "이 목소리는 이런 느낌" 을 들려주는 인사 샘플(미리듣기). 같은 문장을
+    // 4개 목소리로 들려줘야 음색 비교가 되므로 보이스별 개별 멘트 없이 공통 문구 하나다.
     category: STOCK_GREETING_CATEGORY,
-    // 목소리 창에서 "이 목소리는 이런 느낌" 을 들려주는 짧은 인사 샘플(미리듣기, 한국어).
-    languages: ['ko'],
-    variants: ['안녕하세요? 만나서 반가워요. 앞으로 기분 좋은 아침을 함께할게요.'],
+    texts: {
+      ko: [
+        '[brightly] 안녕하세요! 만나서 정말 반가워요. [warmly] 앞으로 매일 아침, 제 목소리로 기분 좋게 깨워 드릴게요. 우리 잘 지내봐요!',
+      ],
+      en: [
+        "[brightly] Hi there! It's so nice to meet you. [warmly] From now on, I'll be waking you up every morning with my voice. We're going to get along just fine!",
+      ],
+      ja: [
+        '[brightly] こんにちは!お会いできてうれしいです。[warmly] これから毎朝、私の声で気持ちよく起こしますね。よろしくお願いします!',
+      ],
+    },
   },
 ] as const;
 
@@ -184,21 +229,6 @@ export const CLONE_CLIP_SEEDS: {
     ],
   },
 ];
-
-/**
- * 보이스별 인사말(greeting 카테고리) 문구. 키는 elevenlabs_voice_id.
- * 없는 보이스는 STOCK_CLIP_PRESETS 의 기본 greeting 문구를 쓴다.
- * 미리듣기에서 각 목소리의 개성이 드러나도록 톤을 음성별로 맞췄다.
- */
-export const VOICE_GREETING_OVERRIDES: Record<string, string> = {
-  // 아담(Adam) — 릴스/숏폼에서 유행한 들뜬 자기소개 톤. [excited] 태그로 딜리버리 고정
-  // (Vertex autoTag 에 맡기지 않고 직접 박음. stripDeliveryTags 가 표시용에선 태그 제거).
-  pNInz6obpgDQGcFmaJgB: '[excited] 여러분! 저 됐어요! 알람톡 음성 됐어요! 반가워요!',
-  // 미나·하준·소은 — 목소리 특징이나 알람 기능을 드러내지 않는 담백한 첫인사.
-  aiUUgjHa4mpHf6UenZuf: '안녕하세요! 만나서 정말 반가워요. 앞으로 자주 봐요.',
-  LKOcTG4J4tYTPR9DnLeM: '안녕하세요. 반가워요. 우리 앞으로 잘 지내봐요.',
-  cgSgspJ2msm6clMCkdW9: '안녕하세요. 앞으로 저와 함께해요. 잘 부탁해요.',
-};
 
 export interface SystemVoiceRow {
   id: string;
@@ -392,41 +422,40 @@ export async function findMissingStockTargets(
 
   const targets: StockClipTarget[] = [];
   for (const voice of prerenderVoices) {
-    // 클론=CLONE_CLIP_SEEDS(관계/호칭 톤 적응), 시스템=STOCK_CLIP_PRESETS(리터럴 번역+태깅).
+    // 클론=CLONE_CLIP_SEEDS(의미 seed → 관계/호칭 톤 적응 생성, 언어는 확정 시점 앱 언어 1개),
+    // 시스템=STOCK_CLIP_PRESETS(언어별 확정 리터럴 — 번역/태깅 없이 그대로 합성).
     const sources = voice.isClone
       ? CLONE_CLIP_SEEDS.map((s) => ({
           category: s.category,
-          defaultTag: s.defaultTag,
-          languages: undefined as readonly string[] | undefined,
-          entries: s.seeds,
+          defaultTag: s.defaultTag as string | undefined,
+          perLanguage: [{ language: voice.languageOverride ?? 'ko', entries: s.seeds }],
         }))
-      : STOCK_CLIP_PRESETS.map((p) => ({
-          category: p.category,
-          defaultTag: undefined as string | undefined,
-          languages: p.languages as readonly string[],
-          entries: p.variants as readonly string[],
-        }));
+      : STOCK_CLIP_PRESETS.map((p) => {
+          const texts = p.texts as Record<string, readonly string[]>;
+          const languages = voice.languageOverride ? [voice.languageOverride] : Object.keys(texts);
+          return {
+            category: p.category,
+            defaultTag: undefined as string | undefined,
+            // languageOverride 언어의 리터럴이 없으면 빈 배열 → 해당 조합은 생성하지 않는다.
+            perLanguage: languages.map((language) => ({
+              language,
+              entries: texts[language] ?? [],
+            })),
+          };
+        });
     for (const source of sources) {
       if (!voice.categories.includes(source.category)) continue;
-      const languages = voice.languageOverride
-        ? [voice.languageOverride]
-        : (source.languages ?? ['ko']);
-      source.entries.forEach((entry, variantIndex) => {
-        for (const language of languages) {
-          const lang = normalizeSynthesisLanguage(language);
-          if (seen.has(`${voice.id}|${source.category}|${lang}|${variantIndex}`)) continue;
-          // 시스템 greeting 은 보이스별 개성 멘트가 있으면 그것을 리터럴로 쓴다.
-          const baseText =
-            !voice.isClone && source.category === STOCK_GREETING_CATEGORY
-              ? (VOICE_GREETING_OVERRIDES[voice.elevenlabsVoiceId] ?? entry)
-              : entry;
+      for (const { language, entries } of source.perLanguage) {
+        const lang = normalizeSynthesisLanguage(language);
+        entries.forEach((entry, variantIndex) => {
+          if (seen.has(`${voice.id}|${source.category}|${lang}|${variantIndex}`)) return;
           targets.push({
             voiceProfileId: voice.id,
             voiceName: voice.name,
             elevenlabsVoiceId: voice.elevenlabsVoiceId,
             ownerUserId: voice.ownerUserId,
             category: source.category,
-            baseText,
+            baseText: entry,
             language: lang,
             variantIndex,
             toneAdapt: Boolean(voice.isClone),
@@ -437,8 +466,8 @@ export async function findMissingStockTargets(
             speechStyle: voice.speechStyle ?? null,
             claimToken: voice.claimToken,
           });
-        }
-      });
+        });
+      }
     }
   }
   return targets;
@@ -689,11 +718,14 @@ export async function generateStockClip(
       : generated.text;
     deliveryTagsJson = JSON.stringify(generated.tag ? [generated.tag] : []);
   } else {
+    // 시스템 스톡: baseText 가 이미 확정된 언어별 리터럴(딜리버리 태그 포함)이다.
+    // translate/autoTag 를 끄면 Vertex 호출 없이 로컬 패스스루로 태그만 추출된다
+    // → 재시드해도 항상 STOCK_CLIP_PRESETS 문구 그대로 합성된다.
     const prepared = await prepareAlarmTextWithVertex(env, target.baseText, {
       targetLanguage: language,
-      sourceLanguage: 'ko',
-      translate: language !== 'ko',
-      autoTag: true,
+      sourceLanguage: language,
+      translate: false,
+      autoTag: false,
     });
     synthesisText = prepared.text;
     displayText = stripDeliveryTags(synthesisText) || stripDeliveryTags(target.baseText);
@@ -725,7 +757,9 @@ export async function generateStockClip(
   });
 
   const generated = await attempt.synthesize();
-  const bytes = generated.bytes;
+  // v3 급마감(마지막 음절 직후 뚝 끊김) 보완 — 끝에 0.366초 무음을 붙인다(시딩본과 동일).
+  // 형식이 mp3_44100_128(mono)이 아니면 안전하게 원본 그대로 저장된다.
+  const bytes = appendMp3TrailingSilence(generated.bytes);
   await assertCloneAuthorization();
 
   const storage = new R2VoiceStorage(env.VOICE_BUCKET);
