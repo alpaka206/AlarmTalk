@@ -10,6 +10,7 @@ import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
@@ -273,10 +274,18 @@ internal class AlarmEditorState(
     }
 
     fun selectVoiceProfile(profileId: String?) {
-        if (voiceProfileId != profileId) {
+        val changed = voiceProfileId != profileId
+        if (changed) {
             voiceListenerTitleOverride = ""
         }
         voiceProfileId = profileId
+        // 시스템(기본) 보이스는 날씨+약 버킷만 허용 → 이전에 고른 운세/사랑/직접입력 잔여 컨텍스트를
+        // 비워 무효 카테고리가 저장되지 않게 한다. 실제 버킷은 편집 화면 LaunchedEffect 가 재해석한다.
+        if (changed && isSystemVoiceId(profileId)) {
+            voiceRandomPrompt = false
+            voiceText = ""
+            clearBucketSelection()
+        }
         clearTtsMeta()
     }
 

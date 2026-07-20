@@ -137,6 +137,11 @@ internal fun AlarmEditorScreen(
     val freeVoiceTier = authSession != null && !hasPaidVoiceAccess(subscriptionResponse)
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
+    // 시스템(기본) 보이스가 선택되면 유료여도 문구를 무료 버킷과 동일하게 '날씨+약'으로 제한한다
+    // (운세·사랑·직접 입력 숨김). 무료 tier 와 하나의 게이트로 묶어 렌더·상태강제·저장검증에 동일 주입.
+    val isSystemVoiceSelected = isSystemVoiceId(editor.voiceProfileId) ||
+        voiceProfiles.any { it.id == editor.voiceProfileId && it.isSystem == true }
+    val restrictToWeatherMedication = freeVoiceTier || isSystemVoiceSelected
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val appVoiceLanguage = remember(configuration) {
@@ -826,8 +831,8 @@ internal fun AlarmEditorScreen(
 
     // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
     val isOnline by rememberIsOnline()
-    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage, isOnline) {
-        if (freeVoiceTier && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+    LaunchedEffect(restrictToWeatherMedication, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage, isOnline) {
+        if (restrictToWeatherMedication && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             if (editor.voiceSource != VoiceSources.TTS_PROFILE) {
                 editor.voiceSource = VoiceSources.TTS_PROFILE
                 editor.clearAudio()
@@ -906,7 +911,7 @@ internal fun AlarmEditorScreen(
                 editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
                     stringResource(R.string.editor_save_blocked_random_prompt_incomplete)
                 // 무료 날씨 버킷은 도시가 있어야 조건 매칭이 된다 — 없으면 저장을 막고 안내.
-                freeVoiceTier && editor.selectedBucket == "weather" &&
+                restrictToWeatherMedication && editor.selectedBucket == "weather" &&
                     editor.voiceWeatherCity.isBlank() ->
                     stringResource(R.string.editor_error_weather_location_required)
                 // 무료는 문구를 직접 입력하지 않는다(테마 클립 자동 회전) — 빈 문구는
@@ -914,7 +919,7 @@ internal fun AlarmEditorScreen(
                 // 오프라인이면 기다려도 안 되므로 연결 안내로 정직하게 분기한다.
                 !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
                     when {
-                        !freeVoiceTier -> stringResource(R.string.editor_save_blocked_enter_message_or_random)
+                        !restrictToWeatherMedication -> stringResource(R.string.editor_save_blocked_enter_message_or_random)
                         !isOnline -> stringResource(R.string.editor_save_blocked_free_clips_offline)
                         else -> stringResource(R.string.editor_save_blocked_free_clips_loading)
                     }
@@ -1138,7 +1143,7 @@ internal fun AlarmEditorScreen(
                                 voiceProfileBusy = voiceProfileBusy,
                                 stockClips = stockClips,
                                 defaultVoiceId = defaultVoiceId,
-                                freeVoiceTier = freeVoiceTier,
+                                restrictToWeatherMedication = restrictToWeatherMedication,
                                 onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,
                                 isRecording = isRecording,
