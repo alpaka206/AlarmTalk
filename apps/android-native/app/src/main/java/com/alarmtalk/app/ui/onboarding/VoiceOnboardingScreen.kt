@@ -30,12 +30,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.TtsMessageAudioResponse
@@ -67,12 +65,6 @@ internal fun VoiceOnboardingScreen(
         mutableStateOf(systemVoices.firstOrNull()?.id)
     }
     val voiceLoadFinished = voiceProfileLoadFinished && !voiceProfileBusy
-    // greeting 은 3개 언어가 있으므로 앱 언어로 골라야 한다(무필터 firstOrNull 이면 항상 en).
-    val appVoiceLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
-        LocalConfiguration.current.locales.takeIf { !it.isEmpty }?.get(0)?.language,
-    )
-    fun sampleText(profile: VoiceProfile): String? =
-        com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, appVoiceLanguage)?.text
 
     Column(
         modifier = Modifier
@@ -129,7 +121,6 @@ internal fun VoiceOnboardingScreen(
                     systemVoices.forEach { profile ->
                         VoiceChoiceRow(
                             name = profile.name,
-                            sample = sampleText(profile),
                             selected = profile.id == selectedId,
                             preparing = previewController.preparingVoiceId == profile.id,
                             // 별도 재생 버튼 없이, 카드를 누르면 선택과 동시에 샘플이 재생된다.
@@ -182,7 +173,6 @@ internal fun VoiceOnboardingScreen(
 @Composable
 private fun VoiceChoiceRow(
     name: String,
-    sample: String?,
     selected: Boolean,
     preparing: Boolean,
     onSelect: () -> Unit,
@@ -202,34 +192,17 @@ private fun VoiceChoiceRow(
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
+            Text(
+                text = name,
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
-                if (!sample.isNullOrBlank()) {
-                    Text(
-                        text = sample,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f)
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-            }
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
             Spacer(Modifier.width(8.dp))
             // 샘플 준비 중에만 자리 표시 — 평소엔 선택 점만 남겨 카드가 조용하다.
             if (preparing) {

@@ -674,13 +674,7 @@ internal fun AlarmTalkApp(
           )
           return@Scaffold
       }
-      // 목소리 선택 직후 실제 알람 에디터를 1회 자동으로 연다 — 별도 온보딩 화면 대신
-      // 진짜 설정 화면(+첫 방문 코치마크)에서 직접 첫 알람을 맞춰보게 한다.
-      LaunchedEffect(viewModel.navigateFirstAlarmEditorTick) {
-          if (viewModel.navigateFirstAlarmEditorTick > 0) {
-              navController.navigate(AppRoute.alarmCreate(familyTargetMode = false))
-          }
-      }
+      // 목소리 선택 후에는 홈(알람 탭)으로 바로 들어간다 — 첫 알람 에디터 자동 진입/코치마크 없앰.
       Box(modifier = Modifier.fillMaxSize()) {
           NavHost(
               navController = navController,
