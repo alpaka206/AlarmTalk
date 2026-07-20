@@ -252,13 +252,20 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
     now.getTime() - GENERATED_TTS_TTL_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
 
-  // 1) 클론 학습용 업로드 원본 — 클론 완료 후 보관 불필요.
-  //    voice_profile_id 로 프로필에 연결된 행(clone 등록 원본, 말투 분석 재시도 소스)도
-  //    동일하게 7일 후 정리된다 — draft/목소리 삭제 시 별도 정리가 필요 없는 이유.
-  //    재시도는 소스가 사라지면 409 SOURCE_AUDIO_MISSING 으로 재등록을 안내한다.
+  // 1) 클론 학습용 업로드 원본.
+  //    최종 확정(promote)된 목소리의 원본은 보관한다 — 나중에 프로바이더/API 키가 바뀌어도
+  //    이 원본으로 클론을 재생성할 수 있어야 하기 때문(voice_profile_id 로 연결·live·non-draft).
+  //    그 외(미승격 draft, 프로필과 무관한 raw 업로드, 삭제된 프로필의 잔여분)만 7일 후 정리한다.
+  //    확정 목소리를 명시적으로 삭제하면 DELETE /voice/:id 가 원본을 함께 cascade 삭제한다.
   const uploads = await db.execute({
     sql: `SELECT id, object_key FROM voice_uploads
           WHERE created_at <= ?
+            AND NOT EXISTS (
+              SELECT 1 FROM voice_profiles vp
+              WHERE vp.id = voice_uploads.voice_profile_id
+                AND vp.deleted_at IS NULL
+                AND COALESCE(vp.is_draft, 0) = 0
+            )
           ORDER BY created_at ASC
           LIMIT ?`,
     args: [uploadCutoff, TTL_BATCH_SIZE],

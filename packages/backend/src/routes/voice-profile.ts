@@ -1937,6 +1937,24 @@ voiceProfile.delete('/:id', async (c) => {
     for (const asset of assets.rows) {
       await enqueueExternalDeletion(tx, 'r2_object', asset.audio_object_key as string | null);
     }
+    // 확정 목소리의 원본 업로드(voice_uploads + voice_speakers + R2 오브젝트)도 함께 삭제한다.
+    // 확정분 원본은 TTL 스윕에서 제외돼 목소리 수명 동안 보관되므로(재생성용), 목소리를 지울 때
+    // 여기서 cascade 로 정리하지 않으면 영구히 남는다.
+    const sourceUploads = await tx.execute({
+      sql: 'SELECT id, object_key FROM voice_uploads WHERE voice_profile_id = ?',
+      args: [id],
+    });
+    for (const upload of sourceUploads.rows) {
+      await enqueueExternalDeletion(tx, 'r2_object', upload.object_key as string | null);
+      await tx.execute({
+        sql: 'DELETE FROM voice_speakers WHERE upload_id = ?',
+        args: [String(upload.id)],
+      });
+      await tx.execute({
+        sql: 'DELETE FROM voice_uploads WHERE id = ?',
+        args: [String(upload.id)],
+      });
+    }
     return {
       status: 'deleted' as const,
       profile: currentProfile,
