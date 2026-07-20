@@ -52,7 +52,7 @@
     <string name="auth_landing_login_with_email">이메일로 로그인</string>
     <string name="auth_landing_preview_pause">미리듣기 일시정지</string>
     <string name="auth_landing_preview_play">목소리 미리듣기</string>
-    <string name="auth_landing_sample_message">할아버지, 좋은 아침이에요\n오늘은 서울에 비가 예보되어 있어요\n나가실 때 우산 꼭 챙기세요</string>
+    <string name="auth_landing_sample_message">할아버지, 좋은 아침이에요\n오늘 비 온대요, 우산 꼭 챙기세요</string>
     <string name="auth_password_hide">비밀번호 숨기기</string>
     <string name="auth_password_mismatch">비밀번호가 일치하지 않아요.</string>
     <string name="auth_password_rule_alnum">영문·숫자 포함</string>
