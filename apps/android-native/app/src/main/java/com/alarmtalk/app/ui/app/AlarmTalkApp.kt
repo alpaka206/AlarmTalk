@@ -251,14 +251,10 @@ internal fun AlarmTalkApp(
         }
     }
 
-    LoginPermissionGate(
-        authSession = authSession,
-        enabled = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-            !viewModel.showVoiceSetup,
-        permissions = permissions,
-        onRequestPermission = ::requestPermission,
-        onRequestAllPermissions = ::requestAllMissingPermissions,
-    )
+    // 첫 로그인 시 메인에서 뜨던 일괄 권한 팝업(LoginPermissionGate)은 제거했다.
+    // 권한은 실제로 필요한 시점에만 요청한다: 알람 만들기(startCreateAlarm → 권한 없으면
+    // '필요' 안내+요청+생성 차단), 목소리 녹음(RECORD_AUDIO 온디맨드). 알람이 이미 있는데
+    // 권한이 없어 조용히 안 울리는 경우만 알람 홈에 경고 패널을 남긴다(AlarmListScreen).
 
     LaunchedEffect(sessionRouteKey) {
         if (sessionRouteKey != null) {

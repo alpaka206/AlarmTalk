@@ -203,7 +203,9 @@ internal fun AlarmListScreen(
                         EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
                     }
                 }
-                if (!permissions.alarmReady) {
+                // 권한 안내는 '이미 알람이 있는데 권한이 없어 조용히 안 울리는' 경우에만 남긴다.
+                // 새 유저(알람 없음)에겐 홈에서 권한을 미리 조르지 않는다 — 알람 만들기 시점에 요청.
+                if (hasAnyAlarm && !permissions.alarmReady) {
                     item {
                         PermissionPanel(
                             permissions = permissions,
