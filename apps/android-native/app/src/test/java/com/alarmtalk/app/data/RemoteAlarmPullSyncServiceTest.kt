@@ -46,6 +46,42 @@ class RemoteAlarmPullSyncServiceTest {
     }
 
     @Test
+    fun unlockedReceivedAlarmKeepsRebuiltRemoteVoiceMode() {
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+
+        val state = resolveReceivedLockState(AlarmPlayModes.ALARM_VOICE, existing)
+
+        assertEquals(AlarmPlayModes.ALARM_VOICE, state.playMode)
+        assertEquals(null, state.preLockPlayMode)
+    }
+
+    @Test
+    fun lockedReceivedAlarmStaysLockedAfterPullAndSnapshotsRebuiltVoiceMode() {
+        // 무료로 잠긴 받은 알람: pull 이 원격 목소리 모드(ALARM_VOICE)를 재구성해도 잠금을 유지하고,
+        // 그 최신 모드를 복원용으로 스냅샷한다(재유료 시 unlockPaidAlarmTalks 가 이 값으로 복원).
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(playMode = AlarmPlayModes.ALARM_ONLY, preLockPlayMode = AlarmPlayModes.VOICE_ONLY)
+
+        val state = resolveReceivedLockState(AlarmPlayModes.ALARM_VOICE, existing)
+
+        assertEquals(AlarmPlayModes.ALARM_ONLY, state.playMode)
+        assertEquals(AlarmPlayModes.ALARM_VOICE, state.preLockPlayMode)
+    }
+
+    @Test
+    fun lockedReceivedAlarmPreservesLockMarkerWhenAudioMissingThisPull() {
+        // 이번 pull 에서 오디오를 못 받아 사운드온리(computed==ALARM_ONLY)가 돼도 기존 잠금 마커를
+        // 잃지 않는다 — 잃으면 다음 성공 pull 이 무료인데도 목소리로 되살린다.
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(playMode = AlarmPlayModes.ALARM_ONLY, preLockPlayMode = AlarmPlayModes.ALARM_VOICE)
+
+        val state = resolveReceivedLockState(AlarmPlayModes.ALARM_ONLY, existing)
+
+        assertEquals(AlarmPlayModes.ALARM_ONLY, state.playMode)
+        assertEquals(AlarmPlayModes.ALARM_VOICE, state.preLockPlayMode)
+    }
+
+    @Test
     fun remoteAlarmDoesNotDownloadMessageAudioWhenAudioUrlWasCleared() {
         val remote = RemoteAlarm(id = "remote-id", messageId = "message-id")
 
