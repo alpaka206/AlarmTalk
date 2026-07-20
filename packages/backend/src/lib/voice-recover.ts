@@ -1,8 +1,9 @@
+import type { Client } from '@libsql/client';
 import type { Env } from '../types';
-import type { DbExecutor } from './transactions';
 import { R2VoiceStorage } from './r2-storage';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from './voice-provider';
+import { evictLruClonesIfOverCap } from './voice-slots';
 
 /**
  * F3: 슬롯 상한(F1)으로 evict된 클론 프로필을 보관된 원본 오디오로 자동 재클론해 복구한다.
@@ -22,7 +23,7 @@ import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from './voice
  */
 export async function recloneEvictedVoiceProfile(
   env: Env,
-  db: DbExecutor,
+  db: Client,
   profileId: string,
   name: string,
 ): Promise<string | null> {
@@ -46,6 +47,11 @@ export async function recloneEvictedVoiceProfile(
     stored.bytes.byteOffset,
     stored.bytes.byteOffset + stored.bytes.byteLength,
   ) as ArrayBuffer;
+
+  // F3 재클론도 새 provider 보이스를 만드므로, /clone 과 동일하게 enroll 직전 전역 슬롯 상한을
+  // 재적용한다(Codex #599). 이 프로필은 evict 상태라 elevenlabs_voice_id NULL → 카운트/후보에서
+  // 자동 제외되고, 이미 상한이면 다른 LRU 1건을 비운 뒤 이 프로필을 복원한다(상한 유지).
+  await evictLruClonesIfOverCap(db, profileId);
 
   const attempts = createEnrollmentAttempts({
     env,

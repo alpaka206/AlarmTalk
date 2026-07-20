@@ -32,6 +32,7 @@ import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import {
   CLONE_CLIP_SEEDS,
   CLONE_WEATHER_CONDITIONS,
+  FREE_BUCKET_CATEGORIES,
   STOCK_GREETING_CATEGORY,
 } from '../lib/stock-clips';
 import {
@@ -852,9 +853,12 @@ tts.post('/generate', async (c) => {
         403,
       );
     }
-    // F2: 기본 목소리(=무료 버킷)는 날씨·약만 — 사랑(love) 프리셋도 차단한다. 운세/날씨 동적은
-    // 위 randomContext!=='preset' 에서 이미 걸린다. 무료 버킷도 동일 구성(날씨+약)이라 함께 조인다.
-    if (category === 'love') {
+    // F2: 기본 목소리(=무료 버킷)는 날씨·약만 허용한다. love 만 막던 블랙리스트로는
+    // morning/health/exercise 등 다른 프리셋 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
+    // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES = weather, medication) 화이트리스트로 바꿔 그 외
+    // 카테고리를 전부 차단한다(날씨 동적은 위 randomContext!=='preset' 에서 이미 걸리므로, 실제
+    // 프리셋 경로로 통과하는 건 medication 뿐). 무료 플랜도 동일 버킷이라 함께 조인다.
+    if (!FREE_BUCKET_CATEGORIES.includes(category)) {
       return c.json(
         {
           error: 'This voice supports weather and medication phrases only.',

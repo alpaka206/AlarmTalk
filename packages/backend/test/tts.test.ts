@@ -852,23 +852,23 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('blocks system voice TTS when overseas_transfer consent is missing', async () => {
     mockDB.setConsentMissing(true);
-    // F2: 기본(시스템) 목소리는 직접 입력(커스텀 텍스트)이 차단되므로, 동의 강제를 검증하려면
-    // 게이트를 통과하는 프리셋 요청을 쓴다. 프리셋 텍스트는 한글로 둬 요청 기본 언어(ko)와
-    // 일치시켜(언어 불일치 게이트 회피) 합성 직전 overseas_transfer 동의 게이트에 도달하게 한다.
+    // F2: 기본(시스템) 목소리는 프리셋도 '날씨+약'만 허용되므로(화이트리스트), 동의 강제를
+    // 검증하려면 허용 카테고리(medication) 프리셋 요청을 쓴다. 프리셋 텍스트는 한글로 둬 요청
+    // 기본 언어(ko)와 일치시켜(언어 불일치 게이트 회피) 합성 직전 overseas_transfer 게이트에 도달.
     mockDB.pushResult([
-      { category: 'morning', label: '아침', emoji: 'sun', messages_json: JSON.stringify(['좋은 아침이에요']) },
+      { category: 'medication', label: '약', emoji: 'pill', messages_json: JSON.stringify(['약 드실 시간이에요']) },
     ]); // pickRandomPresetText
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([
       { id: V1, status: 'ready', is_system: 1, elevenlabs_voice_id: 'el-system-1' },
-    ]);
-    mockDB.pushResult([]); // user_consents (setConsentMissing → 큐 소비, 빈 결과 = 미동의)
+    ]); // user_consents (setConsentMissing → 큐 소비, 빈 결과 = 미동의)
+    mockDB.pushResult([]);
 
     const res = await reqWithEnv(
       buildApp(),
       jsonReq('POST', '/tts/generate', {
         voice_profile_id: V1,
-        category: 'morning',
+        category: 'medication',
         random: true,
         random_context: 'preset',
       }),
@@ -1201,9 +1201,9 @@ describe('POST /tts/generate — edge cases', () => {
   it('applies listener_title to preset TTS before synthesis', async () => {
     mockDB.pushResult([
       {
-        category: 'morning',
-        label: 'Morning',
-        emoji: 'sun',
+        category: 'medication',
+        label: 'Medication',
+        emoji: 'pill',
         messages_json: JSON.stringify(['wake now']),
       },
     ]);
@@ -1230,7 +1230,9 @@ describe('POST /tts/generate — edge cases', () => {
       app,
       jsonReq('POST', '/tts/generate', {
         voice_profile_id: V1,
-        category: 'morning',
+        // F2 화이트리스트: 시스템 보이스 프리셋은 날씨/약만 허용 → medication 으로 요청
+        // (preset 메시지·listener_title 적용 로직은 카테고리와 무관하게 동일).
+        category: 'medication',
         language: 'en',
         random: true,
         random_context: 'preset',
