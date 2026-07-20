@@ -454,47 +454,52 @@ class AlarmRepository(
      */
     suspend fun lockPaidAlarmTalks(): Int {
         val currentUser = currentUserIdProvider() ?: return 0
-        val targets = alarmDao.getAllAlarms().filter { alarm ->
+        val now = System.currentTimeMillis()
+        var lockedCount = 0
+        alarmDao.getAllAlarms().forEach { alarm ->
             val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
                 !alarm.localAudioUri.isNullOrBlank() ||
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
-            // 현재 세션이 소유한(ownerUserId 일치) 알람만 잠근다 — 같은 기기에 남아 있는 다른 계정의
-            // 알람을 잠가서 그 계정이 재유료해도 복원하지 못하게 되는 것을 막는다.
-            // 단 ownerUserId 가 null 인 레거시 행(소유자 추적 이전 릴리스에서 만든 알람)은
-            // 소유자를 알 수 없으므로 현재 세션이 잠글 수 있게 허용한다 — 안 그러면 무료 사용자가
-            // 옛 유료 목소리 알람을 계속 재생하는 우회가 생긴다. 복원 조건도 동일하게 null 을 허용해
-            // 가역성을 유지하고(백필하지 않음), 무료가 잠근 뒤 소유권이 고정돼 영구 잠기는 것을 막는다.
-            usesVoice && !alarm.usesFreeSystemVoiceAlarm() && alarm.preLockPlayMode == null &&
-                (alarm.ownerUserId == currentUser || alarm.ownerUserId == null)
-        }
-        targets.forEach { alarm ->
-            val locked = alarm.copy(
-                preLockPlayMode = alarm.playMode,
-                playMode = AlarmPlayModes.ALARM_ONLY,
-                updatedAtMillis = System.currentTimeMillis(),
+            if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) return@forEach
+            // 다른 계정이 소유한(ownerUserId 불일치) 알람은 건드리지 않는다. 소유자 미기록(레거시 null)
+            // 음성 알람은 현재 활성 계정으로 소유권을 backfill 한다 — 잠금 시점에 소유자를 확정해,
+            // 복원은 엄격히 ownerUserId 일치만 보고도 (1) 본인이 재유료 시 복원 가능(영구잠금 방지),
+            // (2) 같은 기기의 다른 계정이 남의 잠긴 알람을 복원·스케줄하지 못하게 한다. 이미 잠긴
+            // 레거시 행(구버전에서 소유자 없이 잠김)도 여기서 소유권만 backfill 해 복원 가능하게 만든다.
+            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) return@forEach
+            val needsLock = alarm.preLockPlayMode == null
+            val needsClaim = alarm.ownerUserId == null
+            if (!needsLock && !needsClaim) return@forEach
+            val updated = alarm.copy(
+                preLockPlayMode = if (needsLock) alarm.playMode else alarm.preLockPlayMode,
+                playMode = if (needsLock) AlarmPlayModes.ALARM_ONLY else alarm.playMode,
+                ownerUserId = currentUser,
+                updatedAtMillis = now,
             )
-            if (locked.enabled) alarmScheduler.schedule(locked)
-            alarmDao.upsertPreservingServerSyncFields(locked)
+            // 새로 잠근 경우에만 재스케줄(사운드온리로). 소유권만 backfill 한 경우는 재생모드 불변이라 불필요.
+            if (updated.enabled && needsLock) alarmScheduler.schedule(updated)
+            alarmDao.upsertPreservingServerSyncFields(updated)
+            if (needsLock) lockedCount++
         }
-        if (targets.isNotEmpty()) {
-            Log.i(TAG, "Locked paid voice alarms on free plan count=${targets.size}")
+        if (lockedCount > 0) {
+            Log.i(TAG, "Locked paid voice alarms on free plan count=$lockedCount")
         }
-        return targets.size
+        return lockedCount
     }
 
     /**
      * 다시 유료가 되면 잠근 알람의 원래 재생모드를 복원한다. 로컬 알람은 로그아웃 후에도 남으므로,
      * 현재 세션이 소유한(ownerUserId 일치) 잠긴 알람만 복원한다 — 다른 계정으로 로그인해 유료가 돼도
-     * 남의 잠긴 목소리 알람이 복원돼 울리지 않게 한다. 잠금 조건과 대칭으로 ownerUserId 가 null 인
-     * 레거시 잠금(소유자 미기록 행)도 복원 대상에 포함해 가역성을 맞춘다.
+     * 남의 잠긴 목소리 알람이 복원돼 울리지 않게 한다. 잠금 시점에 소유자를 backfill 하므로(위
+     * lockPaidAlarmTalks), 잠긴 행은 항상 소유자가 있어 여기서 null 을 허용할 필요가 없다 — 엄격히
+     * ownerUserId 일치만 본다(null 허용 시 다른 계정이 레거시 잠금을 복원·스케줄하는 크로스계정 창).
      */
     suspend fun unlockPaidAlarmTalks(): Int {
         val currentUser = currentUserIdProvider() ?: return 0
         val targets = alarmDao.getAllAlarms().filter {
-            !it.preLockPlayMode.isNullOrBlank() &&
-                (it.ownerUserId == currentUser || it.ownerUserId == null)
+            !it.preLockPlayMode.isNullOrBlank() && it.ownerUserId == currentUser
         }
         targets.forEach { alarm ->
             val restored = alarm.copy(
