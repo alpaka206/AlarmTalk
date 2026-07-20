@@ -272,9 +272,15 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
   });
   for (const row of uploads.rows) {
     const uploadId = String(row.id);
+    // FK 순서: 자식(voice_speakers.upload_id → voice_uploads.id)을 부모보다 먼저 지운다
+    // (foreign_keys 활성 시 부모 먼저 지우면 제약 위반으로 삭제가 실패한다).
+    await db.execute({
+      sql: 'DELETE FROM voice_speakers WHERE upload_id = ?',
+      args: [uploadId],
+    });
     // TOCTOU 하드닝: 위 SELECT 와 이 삭제 사이에 이 업로드의 draft 가 promote 되어 프로필이
     // live·non-draft(확정)가 됐다면 원본을 지우면 안 된다(재생성 소스 유실 방지). 삭제 조건을
-    // 다시 걸어, 실제로 지워졌을 때만 speaker 삭제·R2 삭제 큐잉을 진행한다.
+    // 다시 걸고, 실제로 지워졌을 때만 R2 삭제를 큐에 적재한다.
     const deletedUpload = await db.execute({
       sql: `DELETE FROM voice_uploads
             WHERE id = ?
@@ -286,11 +292,7 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
               )`,
       args: [uploadId],
     });
-    if ((deletedUpload.rowsAffected ?? 0) === 0) continue; // 그 사이 확정됨 → 보관
-    await db.execute({
-      sql: 'DELETE FROM voice_speakers WHERE upload_id = ?',
-      args: [uploadId],
-    });
+    if ((deletedUpload.rowsAffected ?? 0) === 0) continue; // 그 사이 확정됨 → 원본 보관
     await enqueueExternalDeletion(db, 'r2_object', row.object_key as string);
   }
 
