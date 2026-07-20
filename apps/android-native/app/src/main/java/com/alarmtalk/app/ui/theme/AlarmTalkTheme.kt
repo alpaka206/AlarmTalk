@@ -3,6 +3,7 @@ package com.alarmtalk.app
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.Build
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -121,6 +122,11 @@ private data class SystemBarsSpec(val status: Color, val nav: Color)
 
 private val systemBarsOverride = mutableStateOf<SystemBarsSpec?>(null)
 
+// enableEdgeToEdge 가 API 29 미만에서 내비게이션 바에 까는 기본 스크림과 동일한 값.
+// 그 구간(26–28)에서만 앱 테마에 맞춰 내비바 색을 갱신할 때 재사용한다.
+private val NavBarScrimLight: Int = 0xE6FFFFFF.toInt()
+private val NavBarScrimDark: Int = 0x801B1B1B.toInt()
+
 /**
  * 고정 다크 씬(랜딩·인증 플로우)이 보이는 동안 시스템 바를 씬 색으로 덮어쓴다.
  * 테마는 상태바를 theme background 로 칠하므로 라이트 모드에선 네이비 씬 위에
@@ -141,19 +147,27 @@ internal fun SceneSystemBars(top: Color, bottom: Color) {
 }
 
 @Composable
+@Suppress("DEPRECATION") // navigationBarColor 는 API 26–28 경로에서만 쓰고, 35+ 지원중단은 회피한다.
 private fun AppSystemBars(isDark: Boolean) {
     val view = LocalView.current
     val override = systemBarsOverride.value
+    // 씬 오버라이드는 항상 어두운 배경(밝은 아이콘·어두운 스크림), 아니면 테마 명암을 따른다.
+    val barsDark = override != null || isDark
     SideEffect {
         val window = view.context.findActivity()?.window ?: return@SideEffect
         // 시스템 바 배경색은 더 이상 window.statusBarColor/navigationBarColor 로 칠하지 않는다
         // (Android 15/SDK 35 에서 지원중단·엣지투엣지 강제). MainActivity 의 enableEdgeToEdge()
         // 로 바가 투명해지고, 그 뒤로 콘텐츠가 그려진다 — 일반 화면은 Scaffold 배경(=background)이,
-        // 씬 화면(랜딩/울림)은 풀블리드 씬이 바 영역까지 채운다. 여기서는 아이콘 명암만 제어한다.
+        // 씬 화면(랜딩/울림)은 풀블리드 씬이 바 영역까지 채운다. 여기서는 아이콘 명암을 제어한다.
         WindowCompat.getInsetsController(window, view).apply {
-            // 씬 오버라이드는 항상 어두운 배경(밝은 아이콘), 아니면 테마 명암을 따른다.
-            isAppearanceLightStatusBars = if (override != null) false else !isDark
-            isAppearanceLightNavigationBars = if (override != null) false else !isDark
+            isAppearanceLightStatusBars = !barsDark
+            isAppearanceLightNavigationBars = !barsDark
+        }
+        // API 26–28 은 enableEdgeToEdge 가 시스템 야간모드 기준 내비바 스크림을 onCreate 때 한 번만
+        // 깔아, 앱 테마가 시스템과 다르거나 런타임에 바뀌면 내비바 배경이 어긋난다. 이 구간에서만
+        // (29+ 는 바가 투명해 불필요, 35+ 지원중단도 피함) 내비바 색을 앱 테마에 맞춰 갱신한다.
+        if (Build.VERSION.SDK_INT in Build.VERSION_CODES.O..Build.VERSION_CODES.P) {
+            window.navigationBarColor = if (barsDark) NavBarScrimDark else NavBarScrimLight
         }
     }
 }
