@@ -9,9 +9,12 @@ import { enqueueExternalDeletion } from './audio-retention';
 export const MAX_PROVIDER_CLONE_VOICES = 50;
 
 /**
- * F1: 전역 클론 슬롯 상한을 지키기 위해, 새 provider 보이스를 만들기 직전에 상한을 초과하면
- * LRU(가장 오래 안 쓰인) official 클론을 제거해 슬롯을 비운다. 신규 클론 등록(/clone)과
- * evict된 보이스 재클론(F3, voice-recover) 양쪽이 enroll 직전에 이 함수를 호출해 상한을 지킨다.
+ * F1: 전역 클론 슬롯 상한을 지키기 위해, 새 provider 보이스가 이미 만들어져 DB 에 반영된 뒤
+ * 상한을 초과하면 LRU(가장 오래 안 쓰인) official 클론을 제거해 상한으로 맞춘다. 신규 클론
+ * 등록(/clone)과 evict된 보이스 재클론(F3, voice-recover) 양쪽이 enroll·row 반영이 성공한
+ * 직후에 이 함수를 호출한다. enroll '직전'이 아니라 '직후'에 제거하는 이유: enroll 이 실패하면
+ * (일시적 ElevenLabs 오류 등) 대체 보이스가 안 생겼는데 애먼 사용자의 보이스만 evict 되기
+ * 때문이다(Codex #599). ElevenLabs 는 상한을 강제하지 않아 잠깐 상한+1 이 돼도 안전하다.
  *  - 카운트 대상: deleted_at IS NULL AND is_system=0 AND elevenlabs_voice_id IS NOT NULL
  *    (커스텀 클론만, draft 포함 — draft 도 실제 공급자 슬롯을 점유하므로).
  *  - 제거 후보: 위 조건 + is_draft=0(official) + is_shared=0(가족 공유 제외) + 방금 만든 행 제외.
@@ -35,8 +38,8 @@ export async function evictLruClonesIfOverCap(
       })
     ).rows[0];
     const activeCount = Number(countRow?.n ?? 0);
-    // 새로 만들 보이스 1개가 들어갈 자리까지 확보 → 상한 - 1 이하로 낮춘다.
-    const toEvict = activeCount - MAX_PROVIDER_CLONE_VOICES + 1;
+    // 새 보이스가 이미 카운트에 포함된 상태로 호출되므로, 상한 초과분만 제거해 정확히 상한으로 맞춘다.
+    const toEvict = activeCount - MAX_PROVIDER_CLONE_VOICES;
     if (toEvict <= 0) return 0;
     const victims = await tx.execute({
       sql: `SELECT id, elevenlabs_voice_id FROM voice_profiles

@@ -1322,21 +1322,6 @@ voiceProfile.post('/clone', async (c) => {
     monthlyLedgerId = insertResult.ledgerId;
     insertedProfileId = profileId;
 
-    // F1: 새 provider 보이스를 만들기 전에 전역 슬롯 상한을 초과하면 LRU 클론을 제거한다.
-    // 방금 삽입한 processing 행(voice_id NULL)은 카운트에서 자동 제외된다.
-    try {
-      const evicted = await evictLruClonesIfOverCap(db, profileId);
-      if (evicted > 0) {
-        console.log(
-          `[voice] LRU-evicted ${evicted} clone(s) to stay under cap ${MAX_PROVIDER_CLONE_VOICES}`,
-        );
-      }
-    } catch (evictErr) {
-      // eviction 실패가 등록 자체를 막지는 않는다(ElevenLabs 는 상한 미강제라 슬롯이 잠깐
-      // 초과돼도 등록은 성공). 다음 등록/‑cron 백스톱에서 다시 정리된다. 로깅만 한다.
-      logRouteError(c, evictErr);
-    }
-
     const attempts = createEnrollmentAttempts({
       env: c.env,
       audioData: audioBuffer,
@@ -1387,6 +1372,21 @@ voiceProfile.post('/clone', async (c) => {
           ? 'Voice consent was withdrawn during cloning.'
           : 'Voice draft was removed during cloning.',
       );
+    }
+
+    // F1: 새 provider 보이스가 만들어져 ready 로 반영된 뒤(=이제 카운트에 포함됨) 전역 슬롯
+    // 상한을 초과하면 LRU 클론을 제거해 상한으로 맞춘다. enroll 성공 후에 제거하므로, enroll 이
+    // 실패했을 때 애먼 사용자의 보이스가 evict 되는 일이 없다(Codex #599). eviction 실패는
+    // 등록을 막지 않는다(상한 미강제 — 다음 등록/cron 에서 다시 정리, 로깅만).
+    try {
+      const evicted = await evictLruClonesIfOverCap(db, profileId);
+      if (evicted > 0) {
+        console.log(
+          `[voice] LRU-evicted ${evicted} clone(s) to stay under cap ${MAX_PROVIDER_CLONE_VOICES}`,
+        );
+      }
+    } catch (evictErr) {
+      logRouteError(c, evictErr);
     }
 
     // 등록 원본을 R2+voice_uploads 에 프로필 연결(voice_profile_id)로 남긴다 —

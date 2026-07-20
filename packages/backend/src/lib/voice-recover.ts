@@ -4,6 +4,7 @@ import { R2VoiceStorage } from './r2-storage';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from './voice-provider';
 import { evictLruClonesIfOverCap } from './voice-slots';
+import { enqueueExternalDeletion } from './audio-retention';
 
 /**
  * F3: 슬롯 상한(F1)으로 evict된 클론 프로필을 보관된 원본 오디오로 자동 재클론해 복구한다.
@@ -48,11 +49,6 @@ export async function recloneEvictedVoiceProfile(
     stored.bytes.byteOffset + stored.bytes.byteLength,
   ) as ArrayBuffer;
 
-  // F3 재클론도 새 provider 보이스를 만드므로, /clone 과 동일하게 enroll 직전 전역 슬롯 상한을
-  // 재적용한다(Codex #599). 이 프로필은 evict 상태라 elevenlabs_voice_id NULL → 카운트/후보에서
-  // 자동 제외되고, 이미 상한이면 다른 LRU 1건을 비운 뒤 이 프로필을 복원한다(상한 유지).
-  await evictLruClonesIfOverCap(db, profileId);
-
   const attempts = createEnrollmentAttempts({
     env,
     audioData: audioBuffer,
@@ -75,12 +71,32 @@ export async function recloneEvictedVoiceProfile(
   }
   if (!newVoiceId) throw lastError;
 
-  await db.execute({
+  // 동시성/삭제 가드(Codex #599): '살아있고 아직 evicted 인' 행일 때만 in-place 복원한다.
+  // 동시 재클론 레이스에서 진 쪽이거나 재클론 중 프로필이 삭제됐으면 rowsAffected=0 →
+  // 방금 만든 provider 보이스를 삭제 큐에 넣어 누수를 막고, 승자의 voice_id(있으면)를 되돌린다.
+  const restored = await db.execute({
     sql: `UPDATE voice_profiles
           SET elevenlabs_voice_id = ?, evicted_at = NULL, status = 'ready',
               last_used_at = datetime('now'), updated_at = datetime('now')
-          WHERE id = ?`,
+          WHERE id = ? AND deleted_at IS NULL AND elevenlabs_voice_id IS NULL`,
     args: [newVoiceId, profileId],
   });
+  if ((restored.rowsAffected ?? 0) === 0) {
+    await enqueueExternalDeletion(db, 'elevenlabs_voice', newVoiceId);
+    const current = await db.execute({
+      sql: `SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = ? AND deleted_at IS NULL`,
+      args: [profileId],
+    });
+    return (current.rows[0]?.elevenlabs_voice_id as string | null) ?? null;
+  }
+
+  // F1(Codex #599): 복원된 보이스가 이제 카운트에 포함된다 — enroll·복원 성공 후에 상한 초과분을
+  // 제거해 상한으로 맞춘다(성공 후 제거라 실패 시 애먼 보이스가 날아가지 않음). eviction 실패는
+  // 복구를 막지 않는다(상한 미강제 — 다음 등록/cron 에서 재정리).
+  try {
+    await evictLruClonesIfOverCap(db, profileId);
+  } catch {
+    // 로깅 컨텍스트(c)가 없는 lib 경로라 조용히 무시 — 상한은 다음 기회에 수렴한다.
+  }
   return newVoiceId;
 }
