@@ -46,6 +46,29 @@ class RemoteAlarmPullSyncServiceTest {
     }
 
     @Test
+    fun newReceivedAlarmRecordsCurrentRecipientAsOwner() {
+        // 새 받은 알람은 현재 수신자를 소유자로 기록한다 — 같은 기기에 다른 계정이 로그인해도
+        // 남의 받은 목소리 알람을 복원·스케줄하지 못하게 스코프한다.
+        assertEquals("recipient-1", resolveReceivedOwner(existing = null, currentUserId = "recipient-1"))
+    }
+
+    @Test
+    fun existingReceivedAlarmPreservesRecordedOwner() {
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(ownerUserId = "owner-a")
+
+        assertEquals("owner-a", resolveReceivedOwner(existing, currentUserId = "recipient-b"))
+    }
+
+    @Test
+    fun legacyReceivedAlarmWithoutOwnerHealsToCurrentRecipient() {
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(ownerUserId = null)
+
+        assertEquals("recipient-1", resolveReceivedOwner(existing, currentUserId = "recipient-1"))
+    }
+
+    @Test
     fun unlockedReceivedAlarmKeepsRebuiltRemoteVoiceMode() {
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
 

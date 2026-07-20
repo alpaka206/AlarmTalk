@@ -41,6 +41,8 @@ class AlarmRepository(
         alarmScheduler = alarmScheduler,
         alarmAudioStore = alarmAudioStore,
         context = context,
+        // 받은 알람에 수신자(현재 로그인 계정)를 소유자로 기록해 무료 잠금/복원을 스코프한다.
+        currentUserIdProvider = currentUserIdProvider,
     )
 
     fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
