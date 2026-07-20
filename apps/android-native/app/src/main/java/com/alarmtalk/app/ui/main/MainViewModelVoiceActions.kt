@@ -191,8 +191,14 @@ internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
             }
         }.onSuccess { profile ->
             val draft = pendingVoiceDraft
+            // 서버 PATCH 응답은 변경된 필드만 돌려준다 — 승격은 is_draft 만 보내므로 name 이 빠진다.
+            // Gson 은 누락 필드에 (기본값 "" 을 무시하고) null 을 주입할 수 있어, non-null 로 선언된
+            // profile.name 이 런타임에 null 이 되면 ifBlank 가 NPE 를 냈다(버튼 눌러도 앱이 죽음).
+            // nullable 로 넓혀 안전하게 판정하고, 서버가 안 준 이름은 draft 값으로 폴백한다.
+            val serverName: String? = profile.name
+            val resolvedName = if (serverName.isNullOrBlank()) draft?.name.orEmpty() else serverName
             val official = profile.copy(
-                name = profile.name.ifBlank { draft?.name.orEmpty() },
+                name = resolvedName,
                 isShared = profile.isShared ?: draft?.isShared,
                 isDraft = false,
                 relationshipLabel = profile.relationshipLabel ?: draft?.relationshipLabel,

@@ -684,9 +684,10 @@
     <string name="voices_confirm_new_body">声を聞いてみて、気に入らなければ削除できます。\n声の登録は月に1回できます。</string>
     <string name="voices_confirm_new_preview">もう一度聞く</string>
     <string name="voices_confirm_new_keep">この声にする</string>
+    <string name="voices_confirm_new_keep_saving">登録中…</string>
     <string name="voices_confirm_new_delete">削除</string>
     <string name="voices_creating_title">声を作成しています</string>
-    <string name="voices_creating_body">少々お待ちください。通常1分以内に完了します。
+    <string name="voices_creating_body">少々お待ちください。
 完成したらすぐお聞かせします。</string>
     <string name="voices_preview_text_loading">フレーズを準備しています…</string>
     <string name="voices_preview_text_retry_hint">フレーズをまだ準備できていません。試聴を押してもう一度お試しください。</string>

@@ -676,9 +676,10 @@
     <string name="voices_confirm_new_body">Listen to the voice first — if it\'s not right, you can delete it.\nYou can register a voice once a month.</string>
     <string name="voices_confirm_new_preview">Replay</string>
     <string name="voices_confirm_new_keep">Use this voice</string>
+    <string name="voices_confirm_new_keep_saving">Saving…</string>
     <string name="voices_confirm_new_delete">Delete</string>
     <string name="voices_creating_title">Creating your voice</string>
-    <string name="voices_creating_body">Hang tight — this usually takes under a minute.
+    <string name="voices_creating_body">Hang tight.
 We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_text_loading">Preparing the line…</string>
     <string name="voices_preview_text_retry_hint">The line isn\'t ready yet. Tap Preview to try again.</string>
