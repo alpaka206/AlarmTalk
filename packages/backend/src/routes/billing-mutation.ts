@@ -12,7 +12,6 @@ import {
 } from '../lib/billing-cancel';
 import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
 import { logStructured } from '../lib/logger';
-import { deletePaidVoiceDataForUser } from '../lib/paid-voice-cleanup';
 import {
   playCancelSubscription,
   playManageUrl,
@@ -831,43 +830,9 @@ billingMutation.post('/cancel', async (c) => {
   });
 });
 
-// MARK: - POST /billing/voice-data/delete-now
-//
-// 30일 보관 유예 중인 유료 음성 데이터를 사용자가 즉시 삭제한다.
-// 활성 유료 구독이 있으면 거부 — 구독 해지와 데이터 삭제는 별개 행위다.
-billingMutation.post('/voice-data/delete-now', async (c) => {
-  const userPk = await resolveUserPk(c);
-  if (!userPk) {
-    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-  }
-
-  const db = getDB(c.env);
-  // 로그인 id(google_id)는 JWT sub — voice_profiles.user_id 가 로그인 id 로 저장된
-  // 일반 케이스를 함께 지우기 위해 PK 와 둘 다 넘긴다(deletePaidVoiceDataForUser 규약).
-  const loginId = c.get('userId');
-  // 활성 구독 확인을 삭제와 같은 쓰기 트랜잭션 안에서 수행한다(TOCTOU 하드닝) —
-  // 확인과 삭제 사이에 재구독(confirm/RTDN/바우처)이 끼어들어 유료 사용자의 음성이
-  // 지워지는 창을 없앤다.
-  const blocked = await withWriteTransaction(db, async (tx) => {
-    const activeSubscriptions = await findActiveSubscriptionsByUserPk(tx, userPk);
-    if (activeSubscriptions.some((s) => PAID_PLAN_TYPES.has(s.planType))) {
-      return true;
-    }
-    await deletePaidVoiceDataForUser(tx, userPk, loginId);
-    await clearPaidVoiceRetention(tx, userPk);
-    return false;
-  });
-  if (blocked) {
-    return c.json(
-      {
-        error: 'Cancel the active subscription before deleting voice data',
-        error_code: 'SUBSCRIPTION_STILL_ACTIVE',
-      },
-      409,
-    );
-  }
-  return c.json({ success: true });
-});
+// 정책 변경: 무료 전환 시 유료 음성 데이터를 삭제하지 않고 보존·잠금하므로,
+// 사용자 즉시 삭제(POST /billing/voice-data/delete-now)는 제거했다. 데이터는 다시 유료가 되면
+// 그대로 복구된다. (명시적 개별 삭제는 DELETE /voice/:id, 계정 삭제는 회원 탈퇴 경로.)
 
 billingMutation.post('/change-plan', async (c) => {
   if (!isBillingStubEnabled(c.env)) {

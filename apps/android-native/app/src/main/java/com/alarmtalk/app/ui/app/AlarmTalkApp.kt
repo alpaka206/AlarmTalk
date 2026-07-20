@@ -726,7 +726,6 @@ internal fun AlarmTalkApp(
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,
-                          onDeleteVoiceDataNow = viewModel::deleteVoiceDataNow,
                           permissions = permissions,
                           onCreateAlarm = ::requestCreateAlarm,
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },

@@ -72,13 +72,11 @@ internal fun SubscriptionPanel(
     onChangePlan: (String, Boolean) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
-    onDeleteVoiceDataNow: () -> Unit,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
-    var showVoiceDataDeleteDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
     var shareBusy by remember { mutableStateOf(false) }
     val subscription = subscriptionResponse?.subscription
@@ -264,21 +262,8 @@ internal fun SubscriptionPanel(
                 )
             }
         }
-        // 즉시 해지 후 30일 보관 중인 유료 음성 데이터를 바로 지우는 파괴적 액션.
-        // 클라는 보관 데이터 존재 여부를 모르므로 상시 노출 — 활성 구독 중엔 서버가 409 로 거절한다.
-        if (subscriptionResponse != null && !isSharedMember) {
-            TextButton(
-                onClick = { showVoiceDataDeleteDialog = true },
-                enabled = !billingBusy,
-                modifier = Modifier.fillMaxWidth(),
-                shape = WakerButtonShape,
-            ) {
-                Text(
-                    text = stringResource(R.string.billing_voice_data_delete_now),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
+        // 정책 변경: 무료 전환 시 유료 음성 데이터를 삭제하지 않고 보존·잠금하므로
+        // '지금 삭제' 파괴적 액션은 제거했다(다시 이용권을 등록하면 그대로 복구된다).
     }
 
     purchaseTarget?.let { option ->
@@ -306,24 +291,6 @@ internal fun SubscriptionPanel(
                 onCancelSubscription(atPeriodEnd)
             },
         )
-    }
-
-    if (showVoiceDataDeleteDialog) {
-        BillingActionDialog(
-            title = stringResource(R.string.billing_voice_data_delete_title),
-            description = stringResource(R.string.billing_voice_data_delete_description),
-            onDismiss = { showVoiceDataDeleteDialog = false },
-        ) {
-            BillingDialogButton(
-                label = stringResource(R.string.billing_voice_data_delete_button),
-                primary = true,
-                destructive = true,
-                onClick = {
-                    showVoiceDataDeleteDialog = false
-                    onDeleteVoiceDataNow()
-                },
-            )
-        }
     }
 
     if (showLeaveDialog && sharedGroupId != null) {

@@ -71,7 +71,7 @@
     <string name="billing_cancel_description_no_date">해지 시점을 선택해 주세요. 종료일 해지는 이번 이용 기간까지 그대로 쓸 수 있어요. 지금 해지하면 남은 기간 요금은 비례 환불돼요.</string>
     <string name="billing_cancel_description_with_date">종료일 해지는 %1$s까지 그대로 쓰고 끝나요. 지금 해지하면 남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요.</string>
     <string name="billing_cancel_dialog_title">이용권을 해지할까요?</string>
-    <string name="billing_cancel_immediate_description">남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 만든 목소리 데이터는 30일간 보관된 뒤 완전히 삭제돼요.</string>
+    <string name="billing_cancel_immediate_description">남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 만든 목소리는 삭제되지 않고 잠기며, 다시 이용권을 등록하면 그대로 다시 쓸 수 있어요.</string>
     <string name="billing_cancel_immediate_title">지금 바로 해지할까요?</string>
     <string name="billing_cancel_now">지금 해지하기</string>
     <string name="billing_cancel_pass">이용권 해지</string>
@@ -476,6 +476,7 @@
     <string name="msg_gb_subscription_cancel_failed">해지에 실패했어요</string>
     <string name="msg_gb_subscription_canceled">이용권을 해지했어요. 남은 기간 요금은 비례 환불돼요</string>
     <string name="msg_gb_subscription_canceled_voice_retained">이용권을 해지했어요. 남은 기간 요금은 비례 환불되고, 목소리 데이터는 %1$s까지 보관돼요</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">이용권을 해지했어요. 만든 목소리는 삭제되지 않고 잠겨요 — 다시 이용권을 등록하면 그대로 다시 쓸 수 있어요</string>
     <string name="msg_gb_voice_data_delete_blocked_active">구독 이용 중에는 삭제할 수 없어요</string>
     <string name="msg_gb_voice_data_delete_failed">목소리 데이터를 삭제하지 못했어요</string>
     <string name="msg_gb_voice_data_deleted_now">목소리 데이터를 삭제했어요</string>

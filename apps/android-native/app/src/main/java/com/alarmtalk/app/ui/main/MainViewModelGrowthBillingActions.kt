@@ -461,13 +461,13 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
         billingBusy = true
         runCatching {
             api.cancelSubscription(authorization, CancelSubscriptionRequest(mode = mode))
-        }.onSuccess { response ->
-            val retentionDate = formatPass(response.voiceRetentionUntil, PassDateFormatter)
-            message = when {
-                atPeriodEnd -> getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_at_period_end)
-                retentionDate != null ->
-                    getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled_voice_retained, retentionDate)
-                else -> getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled)
+        }.onSuccess { _ ->
+            // 정책 변경: 해지해도 만든 목소리는 삭제하지 않고 잠근다 — 다시 이용권을 등록하면
+            // 그대로 다시 쓸 수 있다(보관 후 삭제 안내 문구 제거).
+            message = if (atPeriodEnd) {
+                getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_at_period_end)
+            } else {
+                getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled_voice_locked)
             }
             refreshBillingAfterMutation(authorization, "subscription cancellation")
             refreshAppSession()
@@ -488,49 +488,12 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     }
 }
 
-/**
- * 보관 중인 유료 음성 데이터 즉시 삭제(/billing/voice-data/delete-now).
- * 활성 유료 구독이 있으면 서버가 409 SUBSCRIPTION_STILL_ACTIVE 로 거절한다.
- */
-internal fun MainViewModel.deleteVoiceDataNow() {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
-    viewModelScope.launch {
-        billingBusy = true
-        runCatching {
-            api.deleteVoiceDataNow(authorization)
-        }.onSuccess {
-            message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_data_deleted_now)
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to delete voice data now", error)
-            message = if (apiErrorCode(error) == "SUBSCRIPTION_STILL_ACTIVE") {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_voice_data_delete_blocked_active)
-            } else {
-                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_voice_data_delete_failed))
-            }
-        }
-        billingBusy = false
-    }
-}
-
+// 정책 변경: 무료 전환 시 유료 목소리/알람 데이터를 삭제하지 않고 보존한다 — 다시 이용권을
+// 등록하면 그대로 다시 쓸 수 있어야 하기 때문. 새 목소리 알람 생성·TTS 합성은 유료 게이트가
+// 이미 막는다. (무료 동안 기존 알람의 목소리 사용을 사운드온리로 잠그고 재유료 시 되돌리는
+// 처리는 후속 작업 — Room 스키마 추가가 필요.)
 internal fun MainViewModel.applyFreePlanVoiceLock() {
-    viewModelScope.launch {
-        runCatching {
-            repository.deletePaidAlarmTalks()
-        }.onSuccess { deletedAlarms ->
-            // 시스템(스톡) 목소리는 무료에서도 쓰는 "기본 목소리"다. 유료 음성만 제거하고
-            // 시스템 음성은 남긴다 — 온보딩 "기본 목소리 고르기"가 빈 목록으로 멈추는 것 방지(Codex P2).
-            if (voiceProfiles.any { it.isSystem != true }) {
-                voiceProfiles = voiceProfiles.filter { it.isSystem == true }
-            }
-            if (familyVoices.isNotEmpty()) familyVoices = emptyList()
-            if (ttsMessages.isNotEmpty()) ttsMessages = emptyList()
-            if (deletedAlarms > 0) {
-                message = getApplication<android.app.Application>().getString(R.string.msg_gb_free_plan_voice_alarms_deleted)
-            }
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to apply free-plan voice lock", error)
-        }
-    }
+    // no-op: 유료 음성 데이터 보존(삭제하지 않음).
 }
 
 internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
