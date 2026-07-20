@@ -50,7 +50,7 @@
     <string name="auth_landing_login_with_email">Log in with email</string>
     <string name="auth_landing_preview_pause">Pause preview</string>
     <string name="auth_landing_preview_play">Preview voice</string>
-    <string name="auth_landing_sample_message">Good morning, Grandpa\nRain\'s on the way today, don\'t forget your umbrella</string>
+    <string name="auth_landing_sample_message">Good morning, Grandpa\nIt\'s going to rain today\nDon\'t forget your umbrella</string>
     <string name="auth_password_hide">Hide password</string>
     <string name="auth_password_mismatch">Passwords don\'t match.</string>
     <string name="auth_password_rule_alnum">Letters and numbers</string>
