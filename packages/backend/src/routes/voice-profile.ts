@@ -19,6 +19,11 @@ import { VoicePreviewTextUpdateSchema } from '@alarmtalk/shared';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
+// F1: 전역(전 사용자 합산) 커스텀 클론 provider 보이스 상한. per-user MAX_VOICE_PROFILES 와
+// 의미가 완전히 다르다 — 이건 공급자(ElevenLabs, 향후 벤더) 계정 전체에서 살아있는 커스텀
+// 클론 보이스의 최대 개수다. 이 숫자 하나만 바꾸면 전체에 적용된다(운영 50, 폰 테스트 시 2~3).
+// 시스템 기본 목소리(is_system)는 이 카운트에서 제외한다.
+const MAX_PROVIDER_CLONE_VOICES = 50;
 // draft(미승격) 보이스 상한. draft 도 생성 즉시 실제 ElevenLabs 보이스를 만들므로
 // (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
@@ -34,6 +39,63 @@ const CLONE_DURATION_TOLERANCE_MS = 5_000;
 const MAX_RELATIONSHIP_LABEL_LENGTH = 30;
 const MAX_LISTENER_TITLE_LENGTH = 30;
 const OFFICIAL_VOICE_CHANGE_TYPE = 'official_voice';
+
+/**
+ * F1: 전역 클론 슬롯 상한을 지키기 위해, 새 provider 보이스를 만들기 직전에 상한을 초과하면
+ * LRU(가장 오래 안 쓰인) official 클론을 제거해 슬롯을 비운다.
+ *  - 카운트 대상: deleted_at IS NULL AND is_system=0 AND elevenlabs_voice_id IS NOT NULL
+ *    (커스텀 클론만, draft 포함 — draft 도 실제 공급자 슬롯을 점유하므로).
+ *  - 제거 후보: 위 조건 + is_draft=0(official) + is_shared=0(가족 공유 제외) + 방금 만든 행 제외.
+ *    LRU = last_used_at 오래된 순(미사용 NULL 이 최우선). draft 와 공유 보이스는 보호한다.
+ *  - 제거 방식: elevenlabs_voice_id 를 NULL 로 비우고 evicted_at 을 찍되 deleted_at 은 NULL 유지 →
+ *    TTL 스윕이 R2 원본을 계속 보존하고, 재요청 시 원본으로 자동 재클론(F3)한다.
+ *  - 공급자 실삭제는 비동기 큐(pending_external_deletions)로 넘긴다. ElevenLabs 는 계정 보이스
+ *    상한을 강제하지 않아 비동기로 충분하다. 하드 상한 벤더로 이관 시엔 enroll 전에 동기 삭제로
+ *    바꿔야 그 벤더의 409(상한 초과)를 피한다.
+ */
+async function evictLruClonesIfOverCap(
+  db: ReturnType<typeof getDB>,
+  newProfileId: string,
+): Promise<number> {
+  return withWriteTransaction(db, async (tx) => {
+    const countRow = (
+      await tx.execute({
+        sql: `SELECT COUNT(*) AS n FROM voice_profiles
+              WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
+                AND elevenlabs_voice_id IS NOT NULL`,
+      })
+    ).rows[0];
+    const activeCount = Number(countRow?.n ?? 0);
+    // 새로 만들 보이스 1개가 들어갈 자리까지 확보 → 상한 - 1 이하로 낮춘다.
+    const toEvict = activeCount - MAX_PROVIDER_CLONE_VOICES + 1;
+    if (toEvict <= 0) return 0;
+    const victims = await tx.execute({
+      sql: `SELECT id, elevenlabs_voice_id FROM voice_profiles
+            WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
+              AND elevenlabs_voice_id IS NOT NULL
+              AND COALESCE(is_draft, 0) = 0
+              AND COALESCE(is_shared, 0) = 0
+              AND id != ?
+            ORDER BY (last_used_at IS NULL) DESC, last_used_at ASC, created_at ASC
+            LIMIT ?`,
+      args: [newProfileId, toEvict],
+    });
+    for (const victim of victims.rows) {
+      const victimId = victim.id as string;
+      const oldVoiceId = victim.elevenlabs_voice_id as string | null;
+      await tx.execute({
+        sql: `UPDATE voice_profiles
+              SET elevenlabs_voice_id = NULL, evicted_at = datetime('now'), updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [victimId],
+      });
+      if (oldVoiceId) {
+        await enqueueExternalDeletion(tx, 'elevenlabs_voice', oldVoiceId);
+      }
+    }
+    return victims.rows.length;
+  });
+}
 
 function monthlyVoiceChangeLimitResponse(c: Context<AppEnv>) {
   return c.json(
@@ -1320,6 +1382,21 @@ voiceProfile.post('/clone', async (c) => {
     }
     monthlyLedgerId = insertResult.ledgerId;
     insertedProfileId = profileId;
+
+    // F1: 새 provider 보이스를 만들기 전에 전역 슬롯 상한을 초과하면 LRU 클론을 제거한다.
+    // 방금 삽입한 processing 행(voice_id NULL)은 카운트에서 자동 제외된다.
+    try {
+      const evicted = await evictLruClonesIfOverCap(db, profileId);
+      if (evicted > 0) {
+        console.log(
+          `[voice] LRU-evicted ${evicted} clone(s) to stay under cap ${MAX_PROVIDER_CLONE_VOICES}`,
+        );
+      }
+    } catch (evictErr) {
+      // eviction 실패가 등록 자체를 막지는 않는다(ElevenLabs 는 상한 미강제라 슬롯이 잠깐
+      // 초과돼도 등록은 성공). 다음 등록/‑cron 백스톱에서 다시 정리된다. 로깅만 한다.
+      logRouteError(c, evictErr);
+    }
 
     const attempts = createEnrollmentAttempts({
       env: c.env,

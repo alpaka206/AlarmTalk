@@ -852,15 +852,26 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('blocks system voice TTS when overseas_transfer consent is missing', async () => {
     mockDB.setConsentMissing(true);
+    // F2: 기본(시스템) 목소리는 직접 입력(커스텀 텍스트)이 차단되므로, 동의 강제를 검증하려면
+    // 게이트를 통과하는 프리셋 요청을 쓴다. 프리셋 텍스트는 한글로 둬 요청 기본 언어(ko)와
+    // 일치시켜(언어 불일치 게이트 회피) 합성 직전 overseas_transfer 동의 게이트에 도달하게 한다.
+    mockDB.pushResult([
+      { category: 'morning', label: '아침', emoji: 'sun', messages_json: JSON.stringify(['좋은 아침이에요']) },
+    ]); // pickRandomPresetText
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([
       { id: V1, status: 'ready', is_system: 1, elevenlabs_voice_id: 'el-system-1' },
     ]);
-    mockDB.pushResult([]);
+    mockDB.pushResult([]); // user_consents (setConsentMissing → 큐 소비, 빈 결과 = 미동의)
 
     const res = await reqWithEnv(
       buildApp(),
-      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        category: 'morning',
+        random: true,
+        random_context: 'preset',
+      }),
     );
 
     expect(res.status).toBe(403);

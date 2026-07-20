@@ -78,6 +78,13 @@ export function createMockDB() {
           rowsAffected: 0,
         };
       }
+      // F1 전역 클론 슬롯 카운트 쿼리(evictLruClonesIfOverCap): 클론 등록 경로에 새로 추가된
+      // 부수 쿼리라 기존 테스트의 FIFO 결과 순서를 어긋나게 한다. user_consents 와 동일하게
+      // 큐를 소비하지 않고 기본 count=0(상한 미달 → eviction 없음)을 돌려준다. 실제 eviction
+      // 동작은 실기기 QA 로 검증한다(이 쿼리는 'AS n' 라벨이 유일 식별자).
+      if (/SELECT COUNT\(\*\) AS n FROM voice_profiles/i.test(query.sql)) {
+        return { rows: [{ n: 0 }], rowsAffected: 0 };
+      }
       calls.push({ sql: query.sql, args: query.args });
       return results.shift() ?? { rows: [], rowsAffected: 0 };
     },
