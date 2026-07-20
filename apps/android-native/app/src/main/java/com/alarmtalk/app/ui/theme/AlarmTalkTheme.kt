@@ -3,7 +3,6 @@ package com.alarmtalk.app
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.os.Build
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -14,7 +13,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
@@ -145,17 +143,13 @@ internal fun SceneSystemBars(top: Color, bottom: Color) {
 @Composable
 private fun AppSystemBars(isDark: Boolean) {
     val view = LocalView.current
-    val backgroundColor = MaterialTheme.colorScheme.background.toArgb()
     val override = systemBarsOverride.value
     SideEffect {
         val window = view.context.findActivity()?.window ?: return@SideEffect
-        val status = override?.status?.toArgb() ?: backgroundColor
-        val nav = override?.nav?.toArgb() ?: backgroundColor
-        window.statusBarColor = status
-        window.navigationBarColor = nav
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            window.navigationBarDividerColor = nav
-        }
+        // 시스템 바 배경색은 더 이상 window.statusBarColor/navigationBarColor 로 칠하지 않는다
+        // (Android 15/SDK 35 에서 지원중단·엣지투엣지 강제). MainActivity 의 enableEdgeToEdge()
+        // 로 바가 투명해지고, 그 뒤로 콘텐츠가 그려진다 — 일반 화면은 Scaffold 배경(=background)이,
+        // 씬 화면(랜딩/울림)은 풀블리드 씬이 바 영역까지 채운다. 여기서는 아이콘 명암만 제어한다.
         WindowCompat.getInsetsController(window, view).apply {
             // 씬 오버라이드는 항상 어두운 배경(밝은 아이콘), 아니면 테마 명암을 따른다.
             isAppearanceLightStatusBars = if (override != null) false else !isDark
