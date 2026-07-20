@@ -272,15 +272,26 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
   });
   for (const row of uploads.rows) {
     const uploadId = String(row.id);
-    await enqueueExternalDeletion(db, 'r2_object', row.object_key as string);
+    // TOCTOU 하드닝: 위 SELECT 와 이 삭제 사이에 이 업로드의 draft 가 promote 되어 프로필이
+    // live·non-draft(확정)가 됐다면 원본을 지우면 안 된다(재생성 소스 유실 방지). 삭제 조건을
+    // 다시 걸어, 실제로 지워졌을 때만 speaker 삭제·R2 삭제 큐잉을 진행한다.
+    const deletedUpload = await db.execute({
+      sql: `DELETE FROM voice_uploads
+            WHERE id = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM voice_profiles vp
+                WHERE vp.id = voice_uploads.voice_profile_id
+                  AND vp.deleted_at IS NULL
+                  AND COALESCE(vp.is_draft, 0) = 0
+              )`,
+      args: [uploadId],
+    });
+    if ((deletedUpload.rowsAffected ?? 0) === 0) continue; // 그 사이 확정됨 → 보관
     await db.execute({
       sql: 'DELETE FROM voice_speakers WHERE upload_id = ?',
       args: [uploadId],
     });
-    await db.execute({
-      sql: 'DELETE FROM voice_uploads WHERE id = ?',
-      args: [uploadId],
-    });
+    await enqueueExternalDeletion(db, 'r2_object', row.object_key as string);
   }
 
   // 2) TTS 캐시 — 알람이 참조 중인 오브젝트는 보존한다.
