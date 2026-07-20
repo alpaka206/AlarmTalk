@@ -32,6 +32,8 @@ class AlarmRepository(
     private val context: Context,
     // /holiday 는 인증이 필요 없어 토큰 없이 새 클라이언트를 생성한다(다른 워커와 동일).
     private val holidayApiProvider: () -> HolidayApi = { AlarmTalkApiClient.create() },
+    // 현재 로그인 계정 id(없으면 null). 알람 생성 시 소유자 기록·무료 잠금 스코프에 쓴다.
+    private val currentUserIdProvider: () -> String? = { null },
 ) {
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -93,6 +95,7 @@ class AlarmRepository(
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
+            ownerUserId = currentUserIdProvider(),
             alarmVolumePercent = 100,
             alarmSoundUri = null,
             alarmSoundLabel = null,
@@ -170,6 +173,7 @@ class AlarmRepository(
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
+            ownerUserId = currentUserIdProvider(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
             alarmSoundLabel = draft.alarmSoundLabel,
@@ -440,19 +444,22 @@ class AlarmRepository(
      * 기본 알람음을 재생하게 한다. 캐시 오디오·목소리 참조는 그대로 보존해 재유료 시 복원한다.
      * 로컬만 갱신(upsertPreservingServerSyncFields)해 서버의 원본 목소리 알람은 백스톱으로 남긴다.
      */
-    suspend fun lockPaidAlarmTalks(ownerId: String?): Int {
+    suspend fun lockPaidAlarmTalks(): Int {
+        val currentUser = currentUserIdProvider() ?: return 0
         val targets = alarmDao.getAllAlarms().filter { alarm ->
             val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
                 !alarm.localAudioUri.isNullOrBlank() ||
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
-            usesVoice && !alarm.usesFreeSystemVoiceAlarm() && alarm.preLockPlayMode == null
+            // 현재 세션이 소유한(ownerUserId 일치) 알람만 잠근다 — 같은 기기에 남아 있는 다른 계정의
+            // 알람을 잠가서 그 계정이 재유료해도 복원하지 못하게 되는 것을 막는다.
+            usesVoice && !alarm.usesFreeSystemVoiceAlarm() &&
+                alarm.preLockPlayMode == null && alarm.ownerUserId == currentUser
         }
         targets.forEach { alarm ->
             val locked = alarm.copy(
                 preLockPlayMode = alarm.playMode,
-                preLockOwnerId = ownerId,
                 playMode = AlarmPlayModes.ALARM_ONLY,
                 updatedAtMillis = System.currentTimeMillis(),
             )
@@ -467,18 +474,18 @@ class AlarmRepository(
 
     /**
      * 다시 유료가 되면 잠근 알람의 원래 재생모드를 복원한다. 로컬 알람은 로그아웃 후에도 남으므로,
-     * 잠금을 건 소유자(preLockOwnerId)가 현재 세션(ownerId)과 일치하는 것만 복원한다 — 다른 계정으로
-     * 로그인해 유료가 돼도 남의 잠긴 목소리 알람이 복원돼 울리지 않게 한다.
+     * 현재 세션이 소유한(ownerUserId 일치) 잠긴 알람만 복원한다 — 다른 계정으로 로그인해 유료가 돼도
+     * 남의 잠긴 목소리 알람이 복원돼 울리지 않게 한다.
      */
-    suspend fun unlockPaidAlarmTalks(ownerId: String?): Int {
+    suspend fun unlockPaidAlarmTalks(): Int {
+        val currentUser = currentUserIdProvider() ?: return 0
         val targets = alarmDao.getAllAlarms().filter {
-            !it.preLockPlayMode.isNullOrBlank() && it.preLockOwnerId == ownerId
+            !it.preLockPlayMode.isNullOrBlank() && it.ownerUserId == currentUser
         }
         targets.forEach { alarm ->
             val restored = alarm.copy(
                 playMode = alarm.preLockPlayMode ?: alarm.playMode,
                 preLockPlayMode = null,
-                preLockOwnerId = null,
                 updatedAtMillis = System.currentTimeMillis(),
             )
             if (restored.enabled) alarmScheduler.schedule(restored)
@@ -518,6 +525,7 @@ class AlarmRepository(
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
+            ownerUserId = currentUserIdProvider(),
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,

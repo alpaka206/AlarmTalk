@@ -210,12 +210,12 @@ abstract class AlarmDatabase : RoomDatabase() {
         }
 
         // 무료 전환 시 유료 목소리 알람을 삭제 대신 사운드온리로 '잠글' 때 원래 재생모드를 보관하고,
-        // 잠금을 건 세션 소유자를 함께 기록한다(다른 계정 로그인 시 남의 잠금을 복원하지 않도록).
-        // 재유료 시 소유자가 일치하는 잠금만 복원한다. null = 잠기지 않음.
+        // 알람을 만든 계정(ownerUserId)을 기록한다. 잠금/복원은 현재 세션이 소유자일 때만 수행해,
+        // 다른 계정 로그인 시 남의 알람을 잠그거나 복원하지 않게 한다. null = 잠기지 않음/소유자 미기록.
         private val MIGRATION_20_21 = object : Migration(20, 21) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN preLockPlayMode TEXT")
-                db.execSQL("ALTER TABLE alarms ADD COLUMN preLockOwnerId TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN ownerUserId TEXT")
             }
         }
 
