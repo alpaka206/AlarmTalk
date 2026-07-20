@@ -1791,7 +1791,20 @@ internal fun VoiceProfileManagementPanel(
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
-                                    Text(stringResource(R.string.voices_confirm_new_keep))
+                                    // 승격 API 가 나가는 동안(voiceProfileBusy) 버튼에 진행 표시를 남겨
+                                    // "눌러도 아무 반응 없다"는 인상을 없앤다. 성공하면 다이얼로그가 닫히고
+                                    // 스낵바로 완료를 알린다.
+                                    if (voiceProfileBusy) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.onPrimary,
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(stringResource(R.string.voices_confirm_new_keep_saving))
+                                    } else {
+                                        Text(stringResource(R.string.voices_confirm_new_keep))
+                                    }
                                 }
                             }
                         }
