@@ -583,81 +583,18 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /billing/voice-data/delete-now
+// 보관 만료 sweep — 정책 변경: 무료 전환 시 음성 데이터를 삭제하지 않는다.
+// 데이터는 보존하고 무료 동안 잠글 뿐이며 재구독 시 그대로 풀린다. 스윕은 만기 지난
+// 보관 행만 청소하는 청소부로만 남는다(하드삭제 없음). 즉시 삭제 라우트(delete-now)도 제거.
 // ---------------------------------------------------------------------------
-describe('POST /billing/voice-data/delete-now', () => {
-  it('활성 유료 구독이 있으면 409 SUBSCRIPTION_STILL_ACTIVE', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([SUB_ROW]);
+describe('sweepPaidVoiceRetention (삭제 안 함, 만료 보관 행만 청소)', () => {
+  it('만기 도래 보관 행만 제거하고, 유료 음성 데이터는 삭제하지 않는다', async () => {
+    await sweepPaidVoiceRetention(mockDB.client as never, new Date());
 
-    const res = await buildApp().request(
-      jsonReq('POST', '/billing/voice-data/delete-now'),
-      undefined,
-      PLAY_ENV,
-    );
-
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('SUBSCRIPTION_STILL_ACTIVE');
-    expect(mockDB.calls.some((c) => c.sql.includes('DELETE'))).toBe(false);
-  });
-
-  it('구독이 없으면 즉시 삭제 + 보관 행 제거', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([]); // 활성 구독 없음
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/billing/voice-data/delete-now'),
-      undefined,
-      PLAY_ENV,
-    );
-
-    expect(res.status).toBe(200);
-    expect((await res.json()).success).toBe(true);
-    expect(findCall('DELETE FROM voice_profiles')).toBeDefined();
     expect(findCall('DELETE FROM paid_voice_retention')).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 보관 만료 sweep
-// ---------------------------------------------------------------------------
-describe('sweepPaidVoiceRetention', () => {
-  it('delete_after 경과 행: 음성 삭제 + 보관 행 제거', async () => {
-    mockDB.pushResult([{ user_id: 'user-pk-9' }]); // 만기 도래 행
-    mockDB.pushResult([], 1); // 보관 행 선점 삭제(claim) 성공
-    mockDB.pushResult([]); // 활성 유료 구독 없음 (재구독 안전망)
-    mockDB.pushResult([{ google_id: 'google-9' }]); // resolveUserLoginId
-
-    await sweepPaidVoiceRetention(mockDB.client as never, new Date());
-
-    expect(findCall('DELETE FROM voice_profiles')).toBeDefined();
-    const retentionDelete = findCall('DELETE FROM paid_voice_retention');
-    expect(retentionDelete).toBeDefined();
-    expect(retentionDelete?.args[0]).toBe('user-pk-9');
-    expect(mockDB.transactions.commits).toBe(1);
-  });
-
-  it('재구독 안전망: 활성 유료 구독이 있으면 음성은 남기고 행만 거둔다', async () => {
-    mockDB.pushResult([{ user_id: 'user-pk-9' }]);
-    mockDB.pushResult([], 1); // claim 성공
-    mockDB.pushResult([{ id: 'sub-new' }]); // 활성 유료 구독 존재
-
-    await sweepPaidVoiceRetention(mockDB.client as never, new Date());
-
-    expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
-    expect(findCall('DELETE FROM paid_voice_retention')).toBeDefined();
-  });
-
-  it('C6 경합 하드닝: 목록 조회 후 유예가 연장됐으면(claim rowsAffected=0) 음성을 삭제하지 않는다', async () => {
-    mockDB.pushResult([{ user_id: 'user-pk-9' }]); // 목록 시점엔 만기 도래
-    mockDB.pushResult([], 0); // 그 사이 재해지/연장으로 delete_after 가 미래로 밀림 → claim 실패
-
-    await sweepPaidVoiceRetention(mockDB.client as never, new Date());
-
     expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
     expect(findCall('DELETE FROM messages')).toBeUndefined();
-    // 트랜잭션은 정상 커밋(스킵일 뿐 에러 아님) — 다음 run 에 재평가된다.
-    expect(mockDB.transactions.commits).toBe(1);
+    expect(findCall('DELETE FROM alarms')).toBeUndefined();
   });
 });
 

@@ -69,7 +69,7 @@
     <string name="billing_cancel_description_no_date">Choose when to cancel. Canceling on the end date keeps your pass until the current period ends. Canceling now gives you a prorated refund for the remaining time.</string>
     <string name="billing_cancel_description_with_date">Canceling on the end date keeps your pass until %1$s. Canceling now ends your pass immediately with a prorated refund for the remaining time.</string>
     <string name="billing_cancel_dialog_title">Cancel your pass?</string>
-    <string name="billing_cancel_immediate_description">The remaining time is refunded on a prorated basis and your pass ends immediately. Your voice data is kept for 30 days and then permanently deleted.</string>
+    <string name="billing_cancel_immediate_description">The remaining time is refunded on a prorated basis and your pass ends immediately. Your voices aren\'t deleted — they\'re locked while you\'re on the free plan and become usable again when you resubscribe.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
     <string name="billing_cancel_now">Cancel now</string>
     <string name="billing_cancel_pass">Cancel pass</string>
@@ -423,6 +423,7 @@
     <string name="msg_gb_promo_redeemed">Promo code applied</string>
     <string name="msg_gb_promo_redeem_failed">Couldn\'t apply the promo code.</string>
     <string name="msg_gb_free_plan_voice_alarms_deleted">You\'ve switched to the free plan, so your voice alarms were deleted.</string>
+    <string name="msg_gb_free_plan_voice_alarms_locked">You\'ve switched to the free plan, so your voice alarms are locked. They\'ll be restored when you resubscribe.</string>
     <string name="msg_gb_gift_failed">Couldn\'t send the gift.</string>
     <string name="msg_gb_google_play_start_failed">Couldn\'t start the Google Play payment. Please try again in a moment.</string>
     <string name="msg_gb_growth_info_load_failed">Couldn\'t load your growth info</string>
@@ -464,6 +465,7 @@
     <string name="msg_gb_subscription_cancel_failed">Couldn\'t cancel your plan.</string>
     <string name="msg_gb_subscription_canceled">Your plan has been canceled. The remaining time is refunded on a prorated basis.</string>
     <string name="msg_gb_subscription_canceled_voice_retained">Your plan has been canceled. The remaining time is refunded, and your voice data is kept until %1$s.</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">Your plan has been canceled. Your voices aren\'t deleted — they\'re locked and become usable again when you resubscribe.</string>
     <string name="msg_gb_voice_data_delete_blocked_active">You can\'t delete this while your subscription is active.</string>
     <string name="msg_gb_voice_data_delete_failed">Couldn\'t delete your voice data.</string>
     <string name="msg_gb_voice_data_deleted_now">Your voice data has been deleted.</string>

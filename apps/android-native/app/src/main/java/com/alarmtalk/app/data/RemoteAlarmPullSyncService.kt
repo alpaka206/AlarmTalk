@@ -24,6 +24,10 @@ internal class RemoteAlarmPullSyncService(
     private val alarmScheduler: AlarmScheduler,
     private val alarmAudioStore: AlarmAudioStore,
     private val context: android.content.Context,
+    // 현재 로그인 계정(=받은 알람의 수신자) id. 새로 임포트하는 받은 알람에 소유자로 기록해,
+    // 무료 잠금/복원이 그 수신자에게만 스코프되게 한다(같은 기기에 다른 계정이 로그인해도 남의
+    // 받은 알람을 복원·스케줄하지 못하게 함). 없으면(null) 레거시처럼 미기록으로 둔다.
+    private val currentUserIdProvider: () -> String? = { null },
 ) {
     // pull 이 동시에 두 번 돌면(FCM 수신 + 주기 sync 등) 둘 다 '기존 행 없음'으로 보고
     // 같은 받은 알람을 서로 다른 로컬 id 로 두 번 임포트한다(같은 시각 중복 울림).
@@ -230,11 +234,12 @@ internal class RemoteAlarmPullSyncService(
             holidayOff = false,
             nowMillis = now,
         )
-        val playMode = when {
+        val computedPlayMode = when {
             cachedAudio == null -> AlarmPlayModes.ALARM_ONLY
             remote.wakeMode == "voice_only" -> AlarmPlayModes.VOICE_ONLY
             else -> AlarmPlayModes.ALARM_VOICE
         }
+        val lockState = resolveReceivedLockState(computedPlayMode, existing)
         val label = receivedRemoteAlarmLabel(context, remote.senderName, remote.senderEmail)
 
         return AlarmEntity(
@@ -250,7 +255,7 @@ internal class RemoteAlarmPullSyncService(
             snoozeRepeatLimit = existing?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
             snoozeCount = 0,
             vibrationPattern = remote.vibrationPattern ?: VibrationPatterns.DEFAULT,
-            playMode = playMode,
+            playMode = lockState.playMode,
             defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
             localAudioUri = cachedAudio?.localAudioUri,
             audioCacheKey = cachedAudio?.cacheKey,
@@ -285,6 +290,10 @@ internal class RemoteAlarmPullSyncService(
             state = if (enabled) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
             createdAtMillis = existing?.createdAtMillis ?: now,
             updatedAtMillis = now,
+            // 무료 잠금 상태·소유자를 재구성 시에도 보존한다(resolveReceivedLockState 참조).
+            // 새 받은 알람은 현재 수신자를 소유자로 기록하고, 기존 행은 그 값을 보존한다.
+            preLockPlayMode = lockState.preLockPlayMode,
+            ownerUserId = resolveReceivedOwner(existing, currentUserIdProvider()),
         )
     }
 
@@ -299,6 +308,41 @@ internal class RemoteAlarmPullSyncService(
 
     private fun repeatDaysToMask(days: List<Int>): Int =
         days.filter { it in 0..6 }.fold(0) { mask, day -> mask or (1 shl day) }
+}
+
+/**
+ * 받은 알람의 소유자(무료 잠금 스코프용). 새 행(existing==null)은 현재 수신자(currentUserId)를 기록하고,
+ * 기존 행은 이미 기록된 소유자를 보존한다 — 없으면(레거시 null) 현재 수신자로 자가 치유한다. 이렇게
+ * 하면 같은 기기에 다른 계정이 로그인해도 남의 받은 목소리 알람을 복원·스케줄하지 못한다.
+ */
+internal fun resolveReceivedOwner(existing: AlarmEntity?, currentUserId: String?): String? =
+    existing?.ownerUserId ?: currentUserId
+
+internal data class ReceivedLockState(val playMode: String, val preLockPlayMode: String?)
+
+/**
+ * 받은 알람 재구성 시 무료 잠금 상태를 보존한다. 이전에 무료로 잠긴(existing.preLockPlayMode 설정)
+ * 받은 알람은 매 FCM/주기 pull 재구성 후에도 잠금(playMode=ALARM_ONLY)을 유지한다 — 안 그러면
+ * 동기화가 원격 목소리 모드로 되돌려 무료 사용자가 유료 목소리를 다시 듣게 된다. 잠금 설정/해제는
+ * 유료 여부(구독 응답)를 아는 앱 시작 로직(lock/unlockPaidAlarmTalks)이 관장하고, 동기화는
+ * 그 상태를 덮어쓰지 않는다. 잠기지 않았으면 재구성된 원격 모드를 그대로 쓴다.
+ *
+ * 잠긴 경우 복원용 preLockPlayMode 는: 이번 재구성으로 목소리 모드가 산출되면(computed != ALARM_ONLY)
+ * 그 최신 모드를 담아 재유료 시 정확히 복원되게 하고, 이번 pull 에서 오디오를 못 받아 사운드온리가
+ * 됐으면(computed == ALARM_ONLY) 기존 preLockPlayMode 를 보존해 잠금 마커 유실을 막는다.
+ */
+internal fun resolveReceivedLockState(
+    computedPlayMode: String,
+    existing: AlarmEntity?,
+): ReceivedLockState {
+    val wasLocked = !existing?.preLockPlayMode.isNullOrBlank()
+    if (!wasLocked) return ReceivedLockState(computedPlayMode, null)
+    val restoreMode = if (computedPlayMode != AlarmPlayModes.ALARM_ONLY) {
+        computedPlayMode
+    } else {
+        existing?.preLockPlayMode
+    }
+    return ReceivedLockState(AlarmPlayModes.ALARM_ONLY, restoreMode)
 }
 
 internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive: Boolean?): Boolean {

@@ -119,4 +119,58 @@ describe('paid voice access gates', () => {
     expect(res.status).toBe(403);
     expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
   });
+
+  // GET /tts/messages/:id/audio 의 무료 잠금: 다운그레이드로 유료 데이터를 지우지 않고 보존만 하므로,
+  // 오디오 서빙 경로가 보이스 소유자의 plan 을 강제하지 않으면 무료 사용자가 유료 합성 오디오를
+  // 직접 내려받는 우회가 생긴다(Codex #594 P1). 소유자 plan 기준으로 잠근다.
+  function audioRow(overrides: Record<string, unknown>) {
+    return {
+      id: ID.message,
+      user_id: 'user-pk-1',
+      voice_profile_id: ID.alarm,
+      text: 'hi',
+      synthesis_text: 'hi',
+      delivery_tags_json: null,
+      audio_url: 'r2://generated/x.mp3',
+      category: 'custom',
+      is_system: 0,
+      owner_plan: 'plus',
+      ...overrides,
+    };
+  }
+
+  it('locks retained paid-voice audio when the voice owner is on the free plan', async () => {
+    mockDB.pushResult([audioRow({ is_system: 0, owner_plan: 'free' })]);
+
+    const res = await buildApp().request(
+      new Request(`http://localhost/tts/messages/${ID.message}/audio`),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_LOCKED_FREE_PLAN');
+  });
+
+  it('serves paid-voice audio when the voice owner is still on a paid plan', async () => {
+    // audio_url=null 이면 잠금 게이트를 통과한 뒤 404(오디오 없음)로 떨어진다 — R2 목 없이
+    // '게이트를 통과했다'만 검증한다(403 이 아님).
+    mockDB.pushResult([audioRow({ is_system: 0, owner_plan: 'plus', audio_url: null })]);
+
+    const res = await buildApp().request(
+      new Request(`http://localhost/tts/messages/${ID.message}/audio`),
+    );
+
+    expect(res.status).not.toBe(403);
+    expect((await res.json()).error_code).toBe('MESSAGE_AUDIO_MISSING');
+  });
+
+  it('never locks system stock voice audio even for a free-plan owner', async () => {
+    mockDB.pushResult([audioRow({ is_system: 1, owner_plan: 'free', audio_url: null })]);
+
+    const res = await buildApp().request(
+      new Request(`http://localhost/tts/messages/${ID.message}/audio`),
+    );
+
+    expect(res.status).not.toBe(403);
+    expect((await res.json()).error_code).toBe('MESSAGE_AUDIO_MISSING');
+  });
 });
