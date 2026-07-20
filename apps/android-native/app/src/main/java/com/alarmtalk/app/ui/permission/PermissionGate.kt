@@ -55,9 +55,6 @@ internal data class PermissionSnapshot(
         else -> null
     }
 
-    fun firstMissingStartupTarget(): PermissionTarget? =
-        firstMissingAlarmTarget() ?: if (!recordAudio) PermissionTarget.RecordAudio else null
-
     companion object {
         fun read(context: Context): PermissionSnapshot {
             val alarmManager = requireNotNull(context.getSystemService<AlarmManager>())

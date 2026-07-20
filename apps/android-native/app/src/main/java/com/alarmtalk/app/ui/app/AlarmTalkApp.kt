@@ -251,14 +251,10 @@ internal fun AlarmTalkApp(
         }
     }
 
-    LoginPermissionGate(
-        authSession = authSession,
-        enabled = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-            !viewModel.showVoiceSetup,
-        permissions = permissions,
-        onRequestPermission = ::requestPermission,
-        onRequestAllPermissions = ::requestAllMissingPermissions,
-    )
+    // 첫 로그인 시 메인에서 뜨던 일괄 권한 팝업(LoginPermissionGate)은 제거했다.
+    // 권한은 실제로 필요한 시점에만 요청한다: 알람 만들기(startCreateAlarm → 권한 없으면
+    // '필요' 안내+요청+생성 차단), 목소리 녹음(RECORD_AUDIO 온디맨드). 알람이 이미 있는데
+    // 권한이 없어 조용히 안 울리는 경우만 알람 홈에 경고 패널을 남긴다(AlarmListScreen).
 
     LaunchedEffect(sessionRouteKey) {
         if (sessionRouteKey != null) {
@@ -674,13 +670,7 @@ internal fun AlarmTalkApp(
           )
           return@Scaffold
       }
-      // 목소리 선택 직후 실제 알람 에디터를 1회 자동으로 연다 — 별도 온보딩 화면 대신
-      // 진짜 설정 화면(+첫 방문 코치마크)에서 직접 첫 알람을 맞춰보게 한다.
-      LaunchedEffect(viewModel.navigateFirstAlarmEditorTick) {
-          if (viewModel.navigateFirstAlarmEditorTick > 0) {
-              navController.navigate(AppRoute.alarmCreate(familyTargetMode = false))
-          }
-      }
+      // 목소리 선택 후에는 홈(알람 탭)으로 바로 들어간다 — 첫 알람 에디터 자동 진입/코치마크 없앰.
       Box(modifier = Modifier.fillMaxSize()) {
           NavHost(
               navController = navController,

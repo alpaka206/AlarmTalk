@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 
 class MainActivity : ComponentActivity() {
@@ -16,6 +17,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // SDK 35 는 Android 15+ 에서 엣지투엣지가 기본 강제다. enableEdgeToEdge() 로 하위 버전
+        // (예: Android 13)에서도 동일하게 투명 시스템 바 + 콘텐츠 뒤 그리기를 적용해, 지원중단된
+        // window.statusBarColor/navigationBarColor 없이 일관된 화면을 만든다. 인셋은 앱 전역
+        // Scaffold(contentPadding)가 소비하고, 바 아이콘 명암은 AlarmTalkTheme 이 제어한다.
+        enableEdgeToEdge()
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         inAppUpdateManager = InAppUpdateManager(this, viewModel)
         // 민감정보 보호(보안 감사 대응): 이 액티비티는 이메일·운세 생년월일 등 PII 와

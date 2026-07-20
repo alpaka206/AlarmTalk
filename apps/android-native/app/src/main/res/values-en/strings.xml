@@ -50,7 +50,7 @@
     <string name="auth_landing_login_with_email">Log in with email</string>
     <string name="auth_landing_preview_pause">Pause preview</string>
     <string name="auth_landing_preview_play">Preview voice</string>
-    <string name="auth_landing_sample_message">Good morning, Grandpa\nRain is in the forecast for Seoul today\nTake your umbrella when you go out!</string>
+    <string name="auth_landing_sample_message">Good morning, Grandpa\nIt\'s going to rain today\nDon\'t forget your umbrella</string>
     <string name="auth_password_hide">Hide password</string>
     <string name="auth_password_mismatch">Passwords don\'t match.</string>
     <string name="auth_password_rule_alnum">Letters and numbers</string>
@@ -676,9 +676,10 @@
     <string name="voices_confirm_new_body">Listen to the voice first — if it\'s not right, you can delete it.\nYou can register a voice once a month.</string>
     <string name="voices_confirm_new_preview">Replay</string>
     <string name="voices_confirm_new_keep">Use this voice</string>
+    <string name="voices_confirm_new_keep_saving">Saving…</string>
     <string name="voices_confirm_new_delete">Delete</string>
     <string name="voices_creating_title">Creating your voice</string>
-    <string name="voices_creating_body">Hang tight — this usually takes under a minute.
+    <string name="voices_creating_body">Hang tight.
 We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_text_loading">Preparing the line…</string>
     <string name="voices_preview_text_retry_hint">The line isn\'t ready yet. Tap Preview to try again.</string>
