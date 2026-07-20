@@ -252,11 +252,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var showVoiceSetup by mutableStateOf(false)
         internal set
 
-    // 목소리 선택 직후 실제 알람 에디터를 1회 자동으로 열기 위한 one-shot 틱.
-    // (별도 온보딩 화면 대신, 진짜 설정 화면 + 첫 방문 코치마크로 첫 알람을 만들게 한다)
-    var navigateFirstAlarmEditorTick by mutableStateOf(0)
-        internal set
-
     // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
     var defaultVoiceId by mutableStateOf<String?>(null)
         internal set
@@ -364,13 +359,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** 온보딩 목소리 스텝에서 기본 목소리를 정했을 때. 기기 설정에 저장하고 스텝을 닫는다.
-     *  (호칭은 따로 받지 않는다 — 시스템 음성 TTS 는 계정 닉네임으로 부른다.) */
+     *  (호칭은 따로 받지 않는다 — 시스템 음성 TTS 는 계정 닉네임으로 부른다.)
+     *  선택 후에는 홈(알람 탭)으로 바로 진입한다 — 첫 알람 에디터 자동 진입/코치마크는 없앴다. */
     fun completeVoiceSetup(voiceId: String) {
         // setDefaultVoice 가 무료 버킷 클립 프리페치까지 함께 태운다(온보딩·목소리 탭 동일 경로).
         setDefaultVoice(voiceId)
         showVoiceSetup = false
-        // 목소리를 고른 흐름에서만 첫 알람 만들기(에디터 자동 진입)로 이어간다(건너뛰기 시엔 홈).
-        navigateFirstAlarmEditorTick++
     }
 
     /** 목소리 스텝을 건너뛸 때(저장 없이 닫기). 나중에 목소리 탭에서 고를 수 있다. */
