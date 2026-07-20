@@ -279,6 +279,12 @@ class AlarmRepository(
             bucketClipTextsJson = draft.bucketClipTextsJson,
             contextVariantIndex = weatherVariantState.index,
             contextResolvedAtMillis = weatherVariantState.resolvedAtMillis,
+            // 명시적 편집은 사용자의 최신 재생모드 의도를 확정하므로 무료 잠금 스냅샷을 비운다.
+            // 안 그러면 잠긴 알람을 사운드온리로 편집·저장해도 옛 목소리 모드가 preLockPlayMode 에
+            // 남아, 재구독 시 unlockPaidAlarmTalks 가 사용자의 편집을 덮어써 목소리로 되살린다.
+            // 무료 상태로 남아 편집 결과가 여전히 유료 목소리면, 다음 앱 시작의 재잠금이 실제
+            // playMode 기준으로 올바른 새 스냅샷을 다시 만든다.
+            preLockPlayMode = null,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
@@ -534,6 +540,10 @@ class AlarmRepository(
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
             ownerUserId = currentUserIdProvider(),
+            // 복사는 새 알람 생성이므로 원본의 무료 잠금 스냅샷을 물려받지 않는다(잠기지 않은 상태로
+            // 시작). 무료 사용자가 잠긴 알람을 복사하면 playMode 는 이미 ALARM_ONLY 라 사운드온리로
+            // 복사되고, 잠금이 필요하면 다음 앱 시작의 재잠금이 새 스냅샷을 만든다.
+            preLockPlayMode = null,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,
