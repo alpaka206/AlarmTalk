@@ -454,8 +454,12 @@ class AlarmRepository(
                 !alarm.ttsMessageId.isNullOrBlank()
             // 현재 세션이 소유한(ownerUserId 일치) 알람만 잠근다 — 같은 기기에 남아 있는 다른 계정의
             // 알람을 잠가서 그 계정이 재유료해도 복원하지 못하게 되는 것을 막는다.
-            usesVoice && !alarm.usesFreeSystemVoiceAlarm() &&
-                alarm.preLockPlayMode == null && alarm.ownerUserId == currentUser
+            // 단 ownerUserId 가 null 인 레거시 행(소유자 추적 이전 릴리스에서 만든 알람)은
+            // 소유자를 알 수 없으므로 현재 세션이 잠글 수 있게 허용한다 — 안 그러면 무료 사용자가
+            // 옛 유료 목소리 알람을 계속 재생하는 우회가 생긴다. 복원 조건도 동일하게 null 을 허용해
+            // 가역성을 유지하고(백필하지 않음), 무료가 잠근 뒤 소유권이 고정돼 영구 잠기는 것을 막는다.
+            usesVoice && !alarm.usesFreeSystemVoiceAlarm() && alarm.preLockPlayMode == null &&
+                (alarm.ownerUserId == currentUser || alarm.ownerUserId == null)
         }
         targets.forEach { alarm ->
             val locked = alarm.copy(
@@ -475,12 +479,14 @@ class AlarmRepository(
     /**
      * 다시 유료가 되면 잠근 알람의 원래 재생모드를 복원한다. 로컬 알람은 로그아웃 후에도 남으므로,
      * 현재 세션이 소유한(ownerUserId 일치) 잠긴 알람만 복원한다 — 다른 계정으로 로그인해 유료가 돼도
-     * 남의 잠긴 목소리 알람이 복원돼 울리지 않게 한다.
+     * 남의 잠긴 목소리 알람이 복원돼 울리지 않게 한다. 잠금 조건과 대칭으로 ownerUserId 가 null 인
+     * 레거시 잠금(소유자 미기록 행)도 복원 대상에 포함해 가역성을 맞춘다.
      */
     suspend fun unlockPaidAlarmTalks(): Int {
         val currentUser = currentUserIdProvider() ?: return 0
         val targets = alarmDao.getAllAlarms().filter {
-            !it.preLockPlayMode.isNullOrBlank() && it.ownerUserId == currentUser
+            !it.preLockPlayMode.isNullOrBlank() &&
+                (it.ownerUserId == currentUser || it.ownerUserId == null)
         }
         targets.forEach { alarm ->
             val restored = alarm.copy(
