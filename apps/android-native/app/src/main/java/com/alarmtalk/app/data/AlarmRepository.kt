@@ -440,7 +440,7 @@ class AlarmRepository(
      * 기본 알람음을 재생하게 한다. 캐시 오디오·목소리 참조는 그대로 보존해 재유료 시 복원한다.
      * 로컬만 갱신(upsertPreservingServerSyncFields)해 서버의 원본 목소리 알람은 백스톱으로 남긴다.
      */
-    suspend fun lockPaidAlarmTalks(): Int {
+    suspend fun lockPaidAlarmTalks(ownerId: String?): Int {
         val targets = alarmDao.getAllAlarms().filter { alarm ->
             val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
                 !alarm.localAudioUri.isNullOrBlank() ||
@@ -452,6 +452,7 @@ class AlarmRepository(
         targets.forEach { alarm ->
             val locked = alarm.copy(
                 preLockPlayMode = alarm.playMode,
+                preLockOwnerId = ownerId,
                 playMode = AlarmPlayModes.ALARM_ONLY,
                 updatedAtMillis = System.currentTimeMillis(),
             )
@@ -464,13 +465,20 @@ class AlarmRepository(
         return targets.size
     }
 
-    /** 다시 유료가 되면 잠근 알람(preLockPlayMode != null)의 원래 재생모드를 복원한다. */
-    suspend fun unlockPaidAlarmTalks(): Int {
-        val targets = alarmDao.getAllAlarms().filter { !it.preLockPlayMode.isNullOrBlank() }
+    /**
+     * 다시 유료가 되면 잠근 알람의 원래 재생모드를 복원한다. 로컬 알람은 로그아웃 후에도 남으므로,
+     * 잠금을 건 소유자(preLockOwnerId)가 현재 세션(ownerId)과 일치하는 것만 복원한다 — 다른 계정으로
+     * 로그인해 유료가 돼도 남의 잠긴 목소리 알람이 복원돼 울리지 않게 한다.
+     */
+    suspend fun unlockPaidAlarmTalks(ownerId: String?): Int {
+        val targets = alarmDao.getAllAlarms().filter {
+            !it.preLockPlayMode.isNullOrBlank() && it.preLockOwnerId == ownerId
+        }
         targets.forEach { alarm ->
             val restored = alarm.copy(
                 playMode = alarm.preLockPlayMode ?: alarm.playMode,
                 preLockPlayMode = null,
+                preLockOwnerId = null,
                 updatedAtMillis = System.currentTimeMillis(),
             )
             if (restored.enabled) alarmScheduler.schedule(restored)

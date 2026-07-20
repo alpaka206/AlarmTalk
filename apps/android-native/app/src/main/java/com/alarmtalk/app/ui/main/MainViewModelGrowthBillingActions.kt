@@ -492,9 +492,10 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
 // 사운드온리로 '잠근다'(preLockPlayMode 에 원래 모드 보관). 다시 유료가 되면 그대로 복원한다.
 // 새 목소리 알람 생성·TTS 합성은 유료 게이트가 이미 막는다.
 internal fun MainViewModel.applyFreePlanVoiceLock() {
+    val ownerId = authSession?.user?.id
     viewModelScope.launch {
         runCatching {
-            repository.lockPaidAlarmTalks()
+            repository.lockPaidAlarmTalks(ownerId)
         }.onSuccess { locked ->
             if (locked > 0) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_free_plan_voice_alarms_locked)
@@ -507,9 +508,10 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
 
 /** 다시 유료가 되면 무료 동안 사운드온리로 잠갔던 목소리 알람을 원래 모드로 복원한다. */
 internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
+    val ownerId = authSession?.user?.id
     viewModelScope.launch {
         runCatching {
-            repository.unlockPaidAlarmTalks()
+            repository.unlockPaidAlarmTalks(ownerId)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to restore locked paid voice alarms", error)
         }

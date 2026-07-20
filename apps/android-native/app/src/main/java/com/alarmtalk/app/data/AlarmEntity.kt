@@ -72,6 +72,9 @@ data class AlarmEntity(
     // 여기에 저장한다(playMode 는 ALARM_ONLY 로 내림). 다시 유료가 되면 이 값으로 복원하고 null 로 되돌린다.
     // null = 잠기지 않은 정상 알람.
     val preLockPlayMode: String? = null,
+    // 잠금을 건 세션 소유자(로그인 user id). 로컬 알람은 로그아웃 후에도 남으므로, 다른 계정으로
+    // 로그인해 유료가 돼도 그 계정이 남의 잠긴 목소리 알람을 복원하지 못하게 소유자를 일치시킨다.
+    val preLockOwnerId: String? = null,
 )
 
 data class AlarmDraft(
