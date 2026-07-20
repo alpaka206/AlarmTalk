@@ -68,6 +68,10 @@ data class AlarmEntity(
     val state: String,
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
+    // 무료 전환 시 유료 목소리 알람을 삭제하지 않고 사운드온리로 '잠글' 때, 원래 재생모드를
+    // 여기에 저장한다(playMode 는 ALARM_ONLY 로 내림). 다시 유료가 되면 이 값으로 복원하고 null 로 되돌린다.
+    // null = 잠기지 않은 정상 알람.
+    val preLockPlayMode: String? = null,
 )
 
 data class AlarmDraft(

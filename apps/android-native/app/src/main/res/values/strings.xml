@@ -435,6 +435,7 @@
     <string name="msg_gb_promo_redeemed">프로모 코드를 적용했어요</string>
     <string name="msg_gb_promo_redeem_failed">프로모 코드를 적용하지 못했어요</string>
     <string name="msg_gb_free_plan_voice_alarms_deleted">무료 이용권으로 전환되어 목소리 알람을 삭제했어요.</string>
+    <string name="msg_gb_free_plan_voice_alarms_locked">무료 이용권으로 전환되어 목소리 알람이 잠겼어요. 다시 이용권을 등록하면 복구돼요.</string>
     <string name="msg_gb_gift_failed">선물하기에 실패했어요</string>
     <string name="msg_gb_google_play_start_failed">Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_gb_growth_info_load_failed">성장 정보를 불러오지 못했어요</string>

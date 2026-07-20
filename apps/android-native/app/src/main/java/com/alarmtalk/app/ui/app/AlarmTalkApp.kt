@@ -290,8 +290,14 @@ internal fun AlarmTalkApp(
         subscriptionResponse?.plan?.key,
         subscriptionResponse?.plan?.planType,
     ) {
-        if (authSession != null && subscriptionResponse != null && !hasPaidVoiceAccess(subscriptionResponse)) {
-            viewModel.applyFreePlanVoiceLock()
+        if (authSession != null && subscriptionResponse != null) {
+            if (hasPaidVoiceAccess(subscriptionResponse)) {
+                // 다시 유료가 되면 무료 동안 잠근 목소리 알람을 복원한다.
+                viewModel.restorePaidVoiceAlarmsIfLocked()
+            } else {
+                // 무료면 유료 목소리 알람을 삭제 대신 사운드온리로 잠근다.
+                viewModel.applyFreePlanVoiceLock()
+            }
         }
     }
 

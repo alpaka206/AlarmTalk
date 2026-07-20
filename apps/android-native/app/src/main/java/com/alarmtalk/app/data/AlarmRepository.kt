@@ -434,23 +434,50 @@ class AlarmRepository(
         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
     }
 
-    suspend fun deletePaidAlarmTalks(): Int {
+    /**
+     * 무료 전환 시 유료 목소리 알람을 삭제하지 않고 사운드온리로 '잠근다'. 원래 재생모드를
+     * preLockPlayMode 에 보관하고 playMode 를 ALARM_ONLY 로 내려, RingingService 가 목소리 대신
+     * 기본 알람음을 재생하게 한다. 캐시 오디오·목소리 참조는 그대로 보존해 재유료 시 복원한다.
+     * 로컬만 갱신(upsertPreservingServerSyncFields)해 서버의 원본 목소리 알람은 백스톱으로 남긴다.
+     */
+    suspend fun lockPaidAlarmTalks(): Int {
         val targets = alarmDao.getAllAlarms().filter { alarm ->
             val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
                 !alarm.localAudioUri.isNullOrBlank() ||
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
-            usesVoice && !alarm.usesFreeSystemVoiceAlarm()
+            usesVoice && !alarm.usesFreeSystemVoiceAlarm() && alarm.preLockPlayMode == null
         }
         targets.forEach { alarm ->
-            alarmScheduler.cancel(alarm.id)
-            val cacheKey = alarm.audioCacheKey
-            alarmDao.delete(alarm)
-            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+            val locked = alarm.copy(
+                preLockPlayMode = alarm.playMode,
+                playMode = AlarmPlayModes.ALARM_ONLY,
+                updatedAtMillis = System.currentTimeMillis(),
+            )
+            if (locked.enabled) alarmScheduler.schedule(locked)
+            alarmDao.upsertPreservingServerSyncFields(locked)
         }
         if (targets.isNotEmpty()) {
-            Log.i(TAG, "Deleted paid voice alarms after free-plan downgrade count=${targets.size}")
+            Log.i(TAG, "Locked paid voice alarms on free plan count=${targets.size}")
+        }
+        return targets.size
+    }
+
+    /** 다시 유료가 되면 잠근 알람(preLockPlayMode != null)의 원래 재생모드를 복원한다. */
+    suspend fun unlockPaidAlarmTalks(): Int {
+        val targets = alarmDao.getAllAlarms().filter { !it.preLockPlayMode.isNullOrBlank() }
+        targets.forEach { alarm ->
+            val restored = alarm.copy(
+                playMode = alarm.preLockPlayMode ?: alarm.playMode,
+                preLockPlayMode = null,
+                updatedAtMillis = System.currentTimeMillis(),
+            )
+            if (restored.enabled) alarmScheduler.schedule(restored)
+            alarmDao.upsertPreservingServerSyncFields(restored)
+        }
+        if (targets.isNotEmpty()) {
+            Log.i(TAG, "Restored paid voice alarms after re-subscription count=${targets.size}")
         }
         return targets.size
     }

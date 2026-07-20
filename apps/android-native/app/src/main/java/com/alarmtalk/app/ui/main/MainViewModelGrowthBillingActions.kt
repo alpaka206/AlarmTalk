@@ -488,12 +488,32 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     }
 }
 
-// 정책 변경: 무료 전환 시 유료 목소리/알람 데이터를 삭제하지 않고 보존한다 — 다시 이용권을
-// 등록하면 그대로 다시 쓸 수 있어야 하기 때문. 새 목소리 알람 생성·TTS 합성은 유료 게이트가
-// 이미 막는다. (무료 동안 기존 알람의 목소리 사용을 사운드온리로 잠그고 재유료 시 되돌리는
-// 처리는 후속 작업 — Room 스키마 추가가 필요.)
+// 정책 변경: 무료 전환 시 유료 목소리/알람 데이터를 삭제하지 않고, 기존 유료 목소리 알람을
+// 사운드온리로 '잠근다'(preLockPlayMode 에 원래 모드 보관). 다시 유료가 되면 그대로 복원한다.
+// 새 목소리 알람 생성·TTS 합성은 유료 게이트가 이미 막는다.
 internal fun MainViewModel.applyFreePlanVoiceLock() {
-    // no-op: 유료 음성 데이터 보존(삭제하지 않음).
+    viewModelScope.launch {
+        runCatching {
+            repository.lockPaidAlarmTalks()
+        }.onSuccess { locked ->
+            if (locked > 0) {
+                message = getApplication<android.app.Application>().getString(R.string.msg_gb_free_plan_voice_alarms_locked)
+            }
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to lock paid voice alarms on free plan", error)
+        }
+    }
+}
+
+/** 다시 유료가 되면 무료 동안 사운드온리로 잠갔던 목소리 알람을 원래 모드로 복원한다. */
+internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
+    viewModelScope.launch {
+        runCatching {
+            repository.unlockPaidAlarmTalks()
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to restore locked paid voice alarms", error)
+        }
+    }
 }
 
 internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {

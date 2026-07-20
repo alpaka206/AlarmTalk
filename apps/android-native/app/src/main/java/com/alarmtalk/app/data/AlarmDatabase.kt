@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 20,
+    version = 21,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -46,6 +46,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_17_18,
                     MIGRATION_18_19,
                     MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                     // 캐릭터/성장 기능 제거에 따른 스키마 변경. 개발 중 미정의 마이그레이션은
                     // 파괴적 재생성으로 처리한다(출시 전이라 보존할 데이터 없음).
@@ -205,6 +206,14 @@ abstract class AlarmDatabase : RoomDatabase() {
         private val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN contextResolvedAtMillis INTEGER")
+            }
+        }
+
+        // 무료 전환 시 유료 목소리 알람을 삭제 대신 사운드온리로 '잠글' 때 원래 재생모드를 보관.
+        // 재유료 시 이 값으로 복원한다. null = 잠기지 않음.
+        private val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN preLockPlayMode TEXT")
             }
         }
 
