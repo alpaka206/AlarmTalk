@@ -1628,18 +1628,21 @@ tts.get('/messages/:id/audio', async (c) => {
   }
 
   const result = await db.execute({
-    sql: `SELECT id, user_id, voice_profile_id, text, synthesis_text,
-                 delivery_tags_json, audio_url, category
+    sql: `SELECT messages.id, messages.user_id, messages.voice_profile_id, messages.text,
+                 messages.synthesis_text, messages.delivery_tags_json, messages.audio_url,
+                 messages.category,
+                 COALESCE(vp.is_system, 0) AS is_system,
+                 owner.plan AS owner_plan
           FROM messages
-          WHERE id = ?
-            AND EXISTS (
-              SELECT 1 FROM voice_profiles visible_vp
-              WHERE visible_vp.id = messages.voice_profile_id
-                AND visible_vp.deleted_at IS NULL
-                AND COALESCE(visible_vp.is_draft, 0) = 0
-            )
+          JOIN voice_profiles vp
+            ON vp.id = messages.voice_profile_id
+           AND vp.deleted_at IS NULL
+           AND COALESCE(vp.is_draft, 0) = 0
+          LEFT JOIN users owner
+            ON owner.id = vp.user_id OR owner.google_id = vp.user_id
+          WHERE messages.id = ?
             AND (
-              user_id IN (?, ?)
+              messages.user_id IN (?, ?)
               OR EXISTS (
                 SELECT 1 FROM alarms a
                 WHERE a.message_id = messages.id
@@ -1647,11 +1650,7 @@ tts.get('/messages/:id/audio', async (c) => {
               )
               OR (
                 COALESCE(messages.is_preset, 0) = 1
-                AND EXISTS (
-                  SELECT 1 FROM voice_profiles vp
-                  WHERE vp.id = messages.voice_profile_id
-                    AND COALESCE(vp.is_system, 0) = 1
-                )
+                AND COALESCE(vp.is_system, 0) = 1
               )
             )`,
     args: [id, ...ownerIds, ...ownerIds],
@@ -1669,7 +1668,25 @@ tts.get('/messages/:id/audio', async (c) => {
     delivery_tags_json: string | null;
     audio_url: string | null;
     category: string | null;
+    is_system: number | null;
+    owner_plan: string | null;
   }>(result.rows[0]!);
+
+  // 무료 플랜 잠금 강제: 유료 클론(비시스템) 보이스의 오디오는 그 보이스 소유자가 유료일 때만
+  // 내려준다. 소유자가 무료로 내려가면(다운그레이드) 데이터는 보존하되 재생은 잠기며, 소유자
+  // 본인은 물론 공유받은 대상에게도 서버가 오디오를 주지 않는다(삭제된 것과 동일하게 사라짐).
+  // 재유료가 되면 users.plan 이 복구돼 그대로 다시 풀린다. 시스템 스톡 보이스는 항상 허용.
+  const isSystemVoice = Number(message.is_system ?? 0) === 1;
+  if (!isSystemVoice && !isPaidVoicePlan(message.owner_plan)) {
+    return c.json(
+      {
+        error: 'This voice is locked on the free plan.',
+        error_code: 'VOICE_LOCKED_FREE_PLAN',
+      },
+      403,
+    );
+  }
+
   const audioUrl = message.audio_url;
   if (!audioUrl) {
     return c.json(
