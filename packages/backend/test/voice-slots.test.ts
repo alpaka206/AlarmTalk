@@ -127,8 +127,8 @@ describe('evictLruClonesIfOverCap', () => {
     await fillToCap(db);
     // v000 이 last_used_at 최솟값(00:00) → LRU 1순위. 새 보이스로 상한+1.
     await insertClone(db, { id: 'newbie', lastUsedAt: '2026-07-20 00:00:00' });
-    const evicted = await evictLruClonesIfOverCap(db, 'newbie');
-    expect(evicted).toBe(1);
+    const result = await evictLruClonesIfOverCap(db, 'newbie');
+    expect(result).toEqual({ evicted: 1, shortfall: 0 });
     const victim = (
       await db.execute({
         sql: `SELECT elevenlabs_voice_id, evicted_at, deleted_at FROM voice_profiles WHERE id = 'v000'`,
@@ -166,10 +166,10 @@ describe('evictLruClonesIfOverCap', () => {
     const db = await setupDb();
     await fillToCap(db, { shared: true });
     await insertClone(db, { id: 'newbie' });
-    const evicted = await evictLruClonesIfOverCap(db, 'newbie');
-    // 후보가 전부 보호 대상 → shortfall(0건). 사전 체크(hasCloneSlotCapacity)가 이 상황의
-    // 신규 등록을 막는 게 계약이고, 여기서는 보호 대상을 건드리지 않는 것만 보장한다.
-    expect(evicted).toBe(0);
+    const result = await evictLruClonesIfOverCap(db, 'newbie');
+    // 후보가 전부 보호 대상 → evicted 0 + shortfall 보고. 호출자(등록 완료 tx/재클론 tx)는
+    // shortfall 을 보고 새 등록/복원을 되돌려 초과 상태로 커밋하지 않는 게 계약이다.
+    expect(result).toEqual({ evicted: 0, shortfall: 1 });
     const touched = (
       await db.execute({
         sql: `SELECT COUNT(*) AS n FROM voice_profiles WHERE evicted_at IS NOT NULL`,
@@ -181,6 +181,6 @@ describe('evictLruClonesIfOverCap', () => {
   it('does nothing at or under the cap', async () => {
     const db = await setupDb();
     await fillToCap(db);
-    expect(await evictLruClonesIfOverCap(db, 'v000')).toBe(0);
+    expect(await evictLruClonesIfOverCap(db, 'v000')).toEqual({ evicted: 0, shortfall: 0 });
   });
 });

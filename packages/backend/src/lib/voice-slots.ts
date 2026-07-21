@@ -55,54 +55,63 @@ export async function hasCloneSlotCapacity(exec: DbExecutor): Promise<boolean> {
  *  - 공급자 실삭제는 비동기 큐(pending_external_deletions)로 넘긴다. ElevenLabs 는 계정 보이스
  *    상한을 강제하지 않아 비동기로 충분하다. 하드 상한 벤더로 이관 시엔 enroll 전에 동기 삭제로
  *    바꿔야 그 벤더의 409(상한 초과)를 피한다.
+ *  - 반환 shortfall(부족분) > 0 이면 후보가 전부 보호 대상이라 상한을 못 맞춘 것 — 호출자는
+ *    새 등록/복원을 되돌려 초과 상태로 커밋하지 말아야 한다(Codex #599 4차: 동시 등록이
+ *    사전 체크를 함께 통과해도, 등록 완료 트랜잭션 안에서 이 함수를 불러 직렬화하면 늦은
+ *    쪽이 여기서 shortfall 을 보고 실패한다).
  */
+export async function evictLruClonesIfOverCapTx(
+  tx: DbExecutor,
+  newProfileId: string,
+): Promise<{ evicted: number; shortfall: number }> {
+  const countRow = (
+    await tx.execute({
+      sql: `SELECT COUNT(*) AS n FROM voice_profiles
+            WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
+              AND elevenlabs_voice_id IS NOT NULL`,
+    })
+  ).rows[0];
+  const activeCount = Number(countRow?.n ?? 0);
+  // 새 보이스가 이미 카운트에 포함된 상태로 호출되므로, 상한 초과분만 제거해 정확히 상한으로 맞춘다.
+  const toEvict = activeCount - MAX_PROVIDER_CLONE_VOICES;
+  if (toEvict <= 0) return { evicted: 0, shortfall: 0 };
+  const victims = await tx.execute({
+    sql: `SELECT id, elevenlabs_voice_id FROM voice_profiles
+          WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
+            AND elevenlabs_voice_id IS NOT NULL
+            AND COALESCE(is_draft, 0) = 0
+            AND COALESCE(is_shared, 0) = 0
+            AND id != ?
+          ORDER BY (last_used_at IS NULL) DESC, last_used_at ASC, created_at ASC
+          LIMIT ?`,
+    args: [newProfileId, toEvict],
+  });
+  const shortfall = toEvict - victims.rows.length;
+  if (shortfall > 0) {
+    console.warn(
+      `[voice] clone cap eviction shortfall: needed ${toEvict}, evictable ${victims.rows.length} (rest protected)`,
+    );
+  }
+  for (const victim of victims.rows) {
+    const victimId = victim.id as string;
+    const oldVoiceId = victim.elevenlabs_voice_id as string | null;
+    await tx.execute({
+      sql: `UPDATE voice_profiles
+            SET elevenlabs_voice_id = NULL, evicted_at = datetime('now'), updated_at = datetime('now')
+            WHERE id = ?`,
+      args: [victimId],
+    });
+    if (oldVoiceId) {
+      await enqueueExternalDeletion(tx, 'elevenlabs_voice', oldVoiceId);
+    }
+  }
+  return { evicted: victims.rows.length, shortfall };
+}
+
+/** 단독 트랜잭션 래퍼 — 이미 쓰기 트랜잭션 안이라면 evictLruClonesIfOverCapTx 를 직접 쓸 것. */
 export async function evictLruClonesIfOverCap(
   db: Client,
   newProfileId: string,
-): Promise<number> {
-  return withWriteTransaction(db, async (tx) => {
-    const countRow = (
-      await tx.execute({
-        sql: `SELECT COUNT(*) AS n FROM voice_profiles
-              WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
-                AND elevenlabs_voice_id IS NOT NULL`,
-      })
-    ).rows[0];
-    const activeCount = Number(countRow?.n ?? 0);
-    // 새 보이스가 이미 카운트에 포함된 상태로 호출되므로, 상한 초과분만 제거해 정확히 상한으로 맞춘다.
-    const toEvict = activeCount - MAX_PROVIDER_CLONE_VOICES;
-    if (toEvict <= 0) return 0;
-    const victims = await tx.execute({
-      sql: `SELECT id, elevenlabs_voice_id FROM voice_profiles
-            WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
-              AND elevenlabs_voice_id IS NOT NULL
-              AND COALESCE(is_draft, 0) = 0
-              AND COALESCE(is_shared, 0) = 0
-              AND id != ?
-            ORDER BY (last_used_at IS NULL) DESC, last_used_at ASC, created_at ASC
-            LIMIT ?`,
-      args: [newProfileId, toEvict],
-    });
-    if (victims.rows.length < toEvict) {
-      // 사전 체크(hasCloneSlotCapacity)가 막았어야 하는 상태 — 레이스로 보호 대상만 남은 경우.
-      // 상한 초과가 조용히 지속되지 않도록 흔적을 남긴다(다음 등록 시 사전 체크가 거부).
-      console.warn(
-        `[voice] clone cap eviction shortfall: needed ${toEvict}, evictable ${victims.rows.length} (rest protected)`,
-      );
-    }
-    for (const victim of victims.rows) {
-      const victimId = victim.id as string;
-      const oldVoiceId = victim.elevenlabs_voice_id as string | null;
-      await tx.execute({
-        sql: `UPDATE voice_profiles
-              SET elevenlabs_voice_id = NULL, evicted_at = datetime('now'), updated_at = datetime('now')
-              WHERE id = ?`,
-        args: [victimId],
-      });
-      if (oldVoiceId) {
-        await enqueueExternalDeletion(tx, 'elevenlabs_voice', oldVoiceId);
-      }
-    }
-    return victims.rows.length;
-  });
+): Promise<{ evicted: number; shortfall: number }> {
+  return withWriteTransaction(db, (tx) => evictLruClonesIfOverCapTx(tx, newProfileId));
 }

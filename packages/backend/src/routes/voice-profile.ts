@@ -15,7 +15,7 @@ import { enqueuePrerender, CLONE_CLIP_SEEDS } from '../lib/stock-clips';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
 import {
   MAX_PROVIDER_CLONE_VOICES,
-  evictLruClonesIfOverCap,
+  evictLruClonesIfOverCapTx,
   hasCloneSlotCapacity,
 } from '../lib/voice-slots';
 import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
@@ -1380,32 +1380,40 @@ voiceProfile.post('/clone', async (c) => {
       });
       if ((updated.rowsAffected ?? 0) === 0) {
         await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'failed');
-        return { status: 'draft_unavailable' as const };
+        return { status: 'draft_unavailable' as const, evicted: 0 };
+      }
+      // F1: 새 보이스가 ready 로 반영된 같은 쓰기 트랜잭션에서 상한 초과분을 LRU 제거한다.
+      // enroll 성공 후라 애먼 보이스가 억울하게 evict 되는 일이 없고(Codex #599 2차), 같은
+      // 트랜잭션이라 동시 등록이 직렬화된다 — 사전 체크를 함께 통과한 두 요청 중 늦은 쪽은
+      // 앞선 쪽이 유일한 후보를 소진했으면 shortfall 을 보고, 초과 상태로 커밋하는 대신
+      // 등록 자체를 실패로 되돌린다(Codex #599 4차).
+      const { evicted, shortfall } = await evictLruClonesIfOverCapTx(tx, profileId);
+      if (shortfall > 0) {
+        await tx.execute({
+          sql: `UPDATE voice_profiles SET elevenlabs_voice_id = NULL, status = 'failed', updated_at = datetime('now')
+                WHERE id = ?`,
+          args: [profileId],
+        });
+        await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'failed');
+        return { status: 'capacity_lost' as const, evicted };
       }
       await markMonthlyOfficialVoiceChange(tx, monthlyLedgerId, 'succeeded');
-      return { status: 'ok' as const };
+      return { status: 'ok' as const, evicted };
     });
     if (completion.status !== 'ok') {
+      // capacity_lost 의 provider 보이스 삭제는 아래 catch 의 createdProviderVoiceId 정리가 맡는다.
       throw new Error(
         completion.status === 'consent_withdrawn'
           ? 'Voice consent was withdrawn during cloning.'
-          : 'Voice draft was removed during cloning.',
+          : completion.status === 'capacity_lost'
+            ? 'VOICE_CAPACITY_EXHAUSTED'
+            : 'Voice draft was removed during cloning.',
       );
     }
-
-    // F1: 새 provider 보이스가 만들어져 ready 로 반영된 뒤(=이제 카운트에 포함됨) 전역 슬롯
-    // 상한을 초과하면 LRU 클론을 제거해 상한으로 맞춘다. enroll 성공 후에 제거하므로, enroll 이
-    // 실패했을 때 애먼 사용자의 보이스가 evict 되는 일이 없다(Codex #599). eviction 실패는
-    // 등록을 막지 않는다(상한 미강제 — 다음 등록/cron 에서 다시 정리, 로깅만).
-    try {
-      const evicted = await evictLruClonesIfOverCap(db, profileId);
-      if (evicted > 0) {
-        console.log(
-          `[voice] LRU-evicted ${evicted} clone(s) to stay under cap ${MAX_PROVIDER_CLONE_VOICES}`,
-        );
-      }
-    } catch (evictErr) {
-      logRouteError(c, evictErr);
+    if (completion.evicted > 0) {
+      console.log(
+        `[voice] LRU-evicted ${completion.evicted} clone(s) to stay under cap ${MAX_PROVIDER_CLONE_VOICES}`,
+      );
     }
 
     // 등록 원본을 R2+voice_uploads 에 프로필 연결(voice_profile_id)로 남긴다 —
@@ -1562,6 +1570,19 @@ voiceProfile.post('/clone', async (c) => {
       } catch (cleanupErr) {
         logRouteError(c, cleanupErr);
       }
+    }
+
+    // F1(Codex #599 4차): 완료 트랜잭션에서 eviction shortfall 로 등록을 되돌린 경우 —
+    // 사전 체크의 503 과 같은 코드로 응답한다(클라는 잠시 후 재시도 안내).
+    if (detail === 'VOICE_CAPACITY_EXHAUSTED') {
+      return c.json(
+        {
+          error: '지금은 목소리 등록이 몰려 있어요. 잠시 후 다시 시도해 주세요.',
+          error_code: 'VOICE_CAPACITY_EXHAUSTED',
+          detail: 'VOICE_CAPACITY_EXHAUSTED',
+        },
+        503,
+      );
     }
 
     // K1: detail 에 제공자(ElevenLabs) 응답 원문(err.message)을 반사하지 않는다. 원문은

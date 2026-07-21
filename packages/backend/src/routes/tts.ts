@@ -1164,9 +1164,15 @@ tts.post('/generate', async (c) => {
     // (비공유 클론=caller 본인)의 민감 동의를 이미 검증했다. 시스템 보이스는 evict 대상이 아니다.
     let providerVoiceId = vp.elevenlabs_voice_id as string | null | undefined;
     if (!providerVoiceId && vp.evicted_at) {
-      providerVoiceId =
-        (await recloneEvictedVoiceProfile(c.env, db, body.voice_profile_id, String(vp.name ?? ''))) ??
-        undefined;
+      try {
+        providerVoiceId =
+          (await recloneEvictedVoiceProfile(c.env, db, body.voice_profile_id, String(vp.name ?? ''))) ??
+          undefined;
+      } catch (recloneErr) {
+        // 재클론 실패(일시적 공급자 오류 등)가 합성 요청 전체를 500 으로 만들지 않게 —
+        // 미복구 시 아래 NO_VOICE_ID 경로가 클라에 재등록을 안내한다.
+        console.error('[tts/generate] evicted voice reclone failed', recloneErr);
+      }
     }
 
     const dynamicVoiceSettings =

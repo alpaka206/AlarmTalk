@@ -3,7 +3,8 @@ import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from './voice-provider';
-import { evictLruClonesIfOverCap, hasCloneSlotCapacity } from './voice-slots';
+import { evictLruClonesIfOverCapTx, hasCloneSlotCapacity } from './voice-slots';
+import { withWriteTransaction } from './transactions';
 import { enqueueExternalDeletion } from './audio-retention';
 
 /**
@@ -76,32 +77,43 @@ export async function recloneEvictedVoiceProfile(
   }
   if (!newVoiceId) throw lastError;
 
-  // 동시성/삭제 가드(Codex #599): '살아있고 아직 evicted 인' 행일 때만 in-place 복원한다.
-  // 동시 재클론 레이스에서 진 쪽이거나 재클론 중 프로필이 삭제됐으면 rowsAffected=0 →
-  // 방금 만든 provider 보이스를 삭제 큐에 넣어 누수를 막고, 승자의 voice_id(있으면)를 되돌린다.
-  const restored = await db.execute({
-    sql: `UPDATE voice_profiles
-          SET elevenlabs_voice_id = ?, evicted_at = NULL, status = 'ready',
-              last_used_at = datetime('now'), updated_at = datetime('now')
-          WHERE id = ? AND deleted_at IS NULL AND elevenlabs_voice_id IS NULL`,
-    args: [newVoiceId, profileId],
+  // 동시성/삭제 가드(Codex #599): '살아있고 아직 evicted 인' 행일 때만 in-place 복원하고,
+  // eviction 까지 같은 쓰기 트랜잭션에서 수행해 동시 등록/복원과 직렬화한다(4차).
+  //  - 레이스에서 진 쪽/삭제됨: rowsAffected=0 → 새 provider 보이스는 삭제 큐로, 승자 voice_id 반환.
+  //  - eviction shortfall(후보가 전부 보호 대상): 복원을 되돌리고(다시 evicted 상태) 새 보이스는
+  //    삭제 큐로 → null 반환(호출자는 NO_VOICE_ID 폴백). 초과 상태로 커밋하지 않는다.
+  const outcome = await withWriteTransaction(db, async (tx) => {
+    const restored = await tx.execute({
+      sql: `UPDATE voice_profiles
+            SET elevenlabs_voice_id = ?, evicted_at = NULL, status = 'ready',
+                last_used_at = datetime('now'), updated_at = datetime('now')
+            WHERE id = ? AND deleted_at IS NULL AND elevenlabs_voice_id IS NULL`,
+      args: [newVoiceId, profileId],
+    });
+    if ((restored.rowsAffected ?? 0) === 0) {
+      await enqueueExternalDeletion(tx, 'elevenlabs_voice', newVoiceId);
+      return 'lost_race' as const;
+    }
+    const { shortfall } = await evictLruClonesIfOverCapTx(tx, profileId);
+    if (shortfall > 0) {
+      await tx.execute({
+        sql: `UPDATE voice_profiles
+              SET elevenlabs_voice_id = NULL, evicted_at = datetime('now'), updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [profileId],
+      });
+      await enqueueExternalDeletion(tx, 'elevenlabs_voice', newVoiceId);
+      return 'no_capacity' as const;
+    }
+    return 'restored' as const;
   });
-  if ((restored.rowsAffected ?? 0) === 0) {
-    await enqueueExternalDeletion(db, 'elevenlabs_voice', newVoiceId);
+  if (outcome === 'no_capacity') return null;
+  if (outcome === 'lost_race') {
     const current = await db.execute({
       sql: `SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = ? AND deleted_at IS NULL`,
       args: [profileId],
     });
     return (current.rows[0]?.elevenlabs_voice_id as string | null) ?? null;
-  }
-
-  // F1(Codex #599): 복원된 보이스가 이제 카운트에 포함된다 — enroll·복원 성공 후에 상한 초과분을
-  // 제거해 상한으로 맞춘다(성공 후 제거라 실패 시 애먼 보이스가 날아가지 않음). eviction 실패는
-  // 복구를 막지 않는다(상한 미강제 — 다음 등록/cron 에서 재정리).
-  try {
-    await evictLruClonesIfOverCap(db, profileId);
-  } catch {
-    // 로깅 컨텍스트(c)가 없는 lib 경로라 조용히 무시 — 상한은 다음 기회에 수렴한다.
   }
   return newVoiceId;
 }

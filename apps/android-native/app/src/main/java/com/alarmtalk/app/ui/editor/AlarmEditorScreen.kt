@@ -845,14 +845,7 @@ internal fun AlarmEditorScreen(
             // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
             // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
             // 막기 위해, 허용 버킷으로 해석된 상태가 아니면 잔재를 먼저 비운다(Codex #599).
-            val validRestrictedBucket = editor.selectedBucket in FreeBucketOrder &&
-                editor.bucketResolvedForProfileId == editor.voiceProfileId
-            if (!validRestrictedBucket &&
-                (
-                    editor.voiceText.isNotBlank() || editor.generatedTtsKey != null ||
-                        !editor.localAudioUri.isNullOrBlank() || editor.selectedBucket != null
-                    )
-            ) {
+            if (editor.hasRestrictedVoiceRemnants(FreeBucketOrder)) {
                 editor.clearRestrictedVoiceRemnants()
             }
             // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
