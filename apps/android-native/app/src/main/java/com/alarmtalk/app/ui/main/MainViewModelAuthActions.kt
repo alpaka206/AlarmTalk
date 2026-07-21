@@ -770,14 +770,14 @@ internal fun MainViewModel.syncNow() {
         }.onFailure { error ->
             // syncNow 는 알람 탭 진입 시 자동 실행되고(사용자 조치가 아님) 다음 진입·주기 sync 가
             // 자동 재시도한다. 그래서 전체 실패는 겁주는 토스트 대신 로그만 남긴다 — 특히 첫
-            // 로그인 직후 동의 정착 전 GET /alarm 이 잠깐 403(CONSENT_REQUIRED)으로 막히는 게
+            // 로그인 직후 동의 정착 전 GET /alarm 이 잠깐 CONSENT_REQUIRED 로 막히는 게
             // 흔한데(면제 경로 아님), 이건 정상 재시도로 곧 풀린다. 사용자에게 뜨던
             // "알람 정보를 주고받지 못했어요" 토스트를 제거한다.
             if (error is kotlin.coroutines.cancellation.CancellationException) throw error
-            val httpCode = (error as? retrofit2.HttpException)?.code()
-            if (httpCode == 403) {
-                // 동의 게이트 미정착 — 예상된 상황이라 에러 리포트로 올리지 않는다.
-                Log.i(TAG, "Auto-sync deferred: consent gate not settled (403), will retry")
+            // 403 이라도 error_code 로 정확히 CONSENT_REQUIRED 만 강등한다 — CONSENT_STATE_UNAVAILABLE
+            // ·ACCOUNT_PENDING_DELETION 같은 실제 인증/동의 파손은 모니터링에 남겨야 한다.
+            if (com.alarmtalk.app.network.apiErrorCode(error) == "CONSENT_REQUIRED") {
+                Log.i(TAG, "Auto-sync deferred: consent not settled yet, will retry")
             } else {
                 AlarmTalkLog.reportError("Backend sync failed", error)
             }
