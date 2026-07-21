@@ -7,6 +7,7 @@ import { loggerMiddleware } from './middleware/logger';
 import {
   rateLimitMiddleware,
   ipRateLimitMiddleware,
+  ipRateLimitRefundMiddleware,
   authRateLimitMiddleware,
 } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
@@ -216,6 +217,9 @@ app.route('/api/billing/google', billingGoogleRtdn);
 // 인증이 필요한 라우트들
 const api = new Hono<AppEnv>();
 api.use('*', authMiddleware);
+// 인증 성공한 요청은 전역 IP 버킷 카운트를 환불 — 이후는 사용자 버킷(아래)만 소모한다.
+// 비인증/인증실패/공개 라우트는 환불이 없어 IP 버킷에 그대로 누적된다(rateLimit.ts 참고).
+api.use('*', ipRateLimitRefundMiddleware);
 // 서버측 동의 강제(B4) — authMiddleware 직후에 둬 userIdPK 를 사용한다. 데이터 수집
 // 라우트는 일반 필수 동의가 없으면 403. 면제 경로는 consentMiddleware 내부에서 통과.
 api.use('*', consentMiddleware);

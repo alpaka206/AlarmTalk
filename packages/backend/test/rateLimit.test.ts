@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
-import { rateLimitMiddleware, ipRateLimitMiddleware } from '../src/middleware/rateLimit';
+import {
+  rateLimitMiddleware,
+  ipRateLimitMiddleware,
+  ipRateLimitRefundMiddleware,
+} from '../src/middleware/rateLimit';
 
 function buildApp() {
   const app = new Hono();
@@ -135,54 +139,74 @@ describe('ipRateLimitMiddleware (인증 전 전역 IP 버킷 300req/분)', () =>
     expect(over.status).toBe(429);
   });
 
-  function buildIpOnlyApp() {
-    const app = new Hono();
-    app.use('*', ipRateLimitMiddleware);
-    app.all('*', (c) => c.json({ ok: true }));
-    return app;
-  }
-
-  function pathReq(path: string, ip: string, bearer = false) {
+  function pathReq(path: string, ip: string) {
     return new Request(`http://localhost${path}`, {
-      headers: {
-        'cf-connecting-ip': ip,
-        ...(bearer ? { authorization: 'Bearer some-token' } : {}),
-      },
+      headers: { 'cf-connecting-ip': ip },
     });
   }
 
-  it('Bearer 를 든 인증 대상 /api/* 요청은 IP 버킷을 소모하지 않는다', async () => {
+  it('인증 성공한 요청은 refund 로 IP 버킷을 소모하지 않는다', async () => {
     // NAT 뒤 여러 기기의 인증 트래픽이 300/분 IP 한도를 나눠 쓰다 집단 429 를 맞던 회귀 방지 —
-    // 이 요청들은 authMiddleware 뒤 사용자 버킷(120/분)이 담당한다.
-    const app = buildIpOnlyApp();
+    // 실제 index.ts 구성처럼 전역 IP 버킷 → (인증 성공) → refund → 사용자 버킷 순으로 겹친다.
+    const app = new Hono();
+    app.use('*', ipRateLimitMiddleware);
+    app.use('*', async (c, next) => {
+      // authMiddleware 대역: 항상 인증 성공. 사용자 키를 매번 바꿔 사용자 버킷엔 안 걸리게.
+      c.set('userId', `user-${Math.floor(performance.now())}-${Math.random()}`);
+      await next();
+    });
+    app.use('*', ipRateLimitRefundMiddleware);
+    app.use('*', rateLimitMiddleware);
+    app.all('*', (c) => c.json({ ok: true }));
+
     const ip = '10.0.9.11';
     for (let i = 0; i < 301; i++) {
-      const r = await app.request(pathReq('/api/alarm', ip, true));
+      const r = await app.request(pathReq('/api/alarm', ip));
       expect(r.status).toBe(200);
     }
-    // 같은 IP 의 비인증 표면은 여전히 신선한 300 한도에서 시작해야 한다(위에서 소모 0).
-    const fresh = await app.request(pathReq('/api/auth/login', ip));
+
+    // 환불이 쌓여 IP 버킷은 비어 있어야 한다 — refund 없는 앱(비인증 표면)에서 같은 IP 로
+    // 확인하면 신선한 300 한도에서 시작한다.
+    const ipOnly = new Hono();
+    ipOnly.use('*', ipRateLimitMiddleware);
+    ipOnly.all('*', (c) => c.json({ ok: true }));
+    const fresh = await ipOnly.request(pathReq('/api/auth/login', ip));
     expect(fresh.headers.get('X-RateLimit-Remaining')).toBe('299');
   });
 
-  it('Bearer 없는 /api/* 요청은 여전히 IP 버킷으로 제한된다', async () => {
-    const app = buildIpOnlyApp();
+  it('인증이 성공하지 못한 요청(위조 Bearer 포함)은 환불 없이 IP 버킷에 누적된다', async () => {
+    // authMiddleware 가 401 로 끊으면 refund 미들웨어까지 도달하지 못한다 — 위조 Bearer 로
+    // IP 한도를 우회할 수 없고, 공개 /api 라우트(presets/app-version 등)도 항상 IP 버킷 적용.
+    const app = new Hono();
+    app.use('*', ipRateLimitMiddleware);
+    app.use('*', async (c) => c.json({ error: 'Unauthorized' }, 401)); // authMiddleware 실패 대역
     const ip = '10.0.9.12';
     for (let i = 0; i < 300; i++) {
-      await app.request(pathReq('/api/alarm', ip));
+      const r = await app.request(
+        new Request('http://localhost/api/alarm', {
+          headers: { 'cf-connecting-ip': ip, authorization: 'Bearer junk' },
+        }),
+      );
+      expect(r.status).toBe(401);
     }
-    const over = await app.request(pathReq('/api/alarm', ip));
+    const over = await app.request(
+      new Request('http://localhost/api/alarm', {
+        headers: { 'cf-connecting-ip': ip, authorization: 'Bearer junk' },
+      }),
+    );
     expect(over.status).toBe(429);
   });
 
-  it('인증 전 표면(/api/auth 등)은 Bearer 가 있어도 IP 버킷으로 제한된다', async () => {
-    // 사용자 버킷의 보호를 받지 못하는 경로 — Bearer 만 붙여 무차별 대입 한도를 우회하지 못하게.
-    const app = buildIpOnlyApp();
+  it('refund 는 카운트를 0 아래로 내리지 않는다', async () => {
+    // 윈도 경계에서 카운트 전에 환불이 실행돼도(엔트리 없음/0) 음수로 내려가 한도가
+    // 부풀지 않아야 한다.
+    const app = new Hono();
+    app.use('*', ipRateLimitRefundMiddleware);
+    app.use('*', ipRateLimitMiddleware);
+    app.all('*', (c) => c.json({ ok: true }));
     const ip = '10.0.9.13';
-    for (let i = 0; i < 300; i++) {
-      await app.request(pathReq('/api/auth/login', ip, true));
-    }
-    const over = await app.request(pathReq('/api/auth/login', ip, true));
-    expect(over.status).toBe(429);
+    const r1 = await app.request(pathReq('/x', ip));
+    // 환불(무시됨) 후 카운트 1 → Remaining 299. 음수였다면 300 이상으로 표시된다.
+    expect(r1.headers.get('X-RateLimit-Remaining')).toBe('299');
   });
 });

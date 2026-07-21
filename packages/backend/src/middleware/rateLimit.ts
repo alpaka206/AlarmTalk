@@ -85,16 +85,6 @@ export function createRateLimitMiddleware(options?: {
   };
 }
 
-const ipBucket = createRateLimitMiddleware({
-  maxRequests: 300,
-  prefix: 'pre:',
-});
-
-// 인증 전 표면 중 IP 버킷을 유지해야 하는 /api 하위 prefix — authMiddleware 를 타지 않아
-// 사용자 버킷의 보호를 받지 못하는 경로들이다. /api 아래 새 공개(비인증) 라우트를 추가하면
-// 여기에도 등록할 것(누락 시 위조 Bearer 로 IP 한도를 우회할 수 있다).
-const PRE_AUTH_API_PREFIXES = ['/api/auth', '/api/holiday', '/api/billing/google'];
-
 /**
  * 전역(인증 전) 버킷 — authMiddleware 이전에 걸리므로 항상 IP 키로 카운트된다.
  * NAT/공유 와이파이 뒤에 여러 기기가 정상적으로 붙으므로(가족 플랜은 이게 기본 상황)
@@ -103,19 +93,29 @@ const PRE_AUTH_API_PREFIXES = ['/api/auth', '/api/holiday', '/api/billing/google
  * 전역(IP)·api(사용자) 두 리미터를 통과하며 각각 카운트돼, 같은 IP 의 두 기기가
  * 60req/분을 나눠 쓰다 로그인 burst(동기화+클립 다운로드)에서 429 가 났다.
  *
- * Bearer 를 든 인증 대상 /api/* 요청은 IP 버킷에서 아예 제외한다 — 그 요청들은 검증 후
+ * 인증에 실제로 성공한 요청은 아래 refund 미들웨어가 IP 카운트를 되돌린다 — 그 요청들은
  * 사용자 버킷(120/분)이 조이므로, IP 버킷까지 소모하면 같은 IP 의 여러 정상 기기가
- * 300/분을 나눠 쓰다 각자 사용자 한도 아래인데도 집단 429 를 맞는다. 위조 Bearer 는
- * authMiddleware 401 로 즉시 끊기고(HMAC 검증 저비용, 볼류메트릭은 CF 엣지 방어),
- * 비인증 표면(PRE_AUTH_API_PREFIXES·/api 밖 경로)과 Bearer 없는 요청은 그대로 IP 버킷.
+ * 300/분을 나눠 쓰다 각자 사용자 한도 아래인데도 집단 429 를 맞는다. 경로/헤더 기반
+ * 스킵은 쓰지 않는다 — 위조 Bearer 나 프리픽스 목록 누락(공개 /api 라우트)으로 우회되는
+ * 구멍이 생긴다(Codex P1). 인증 실패·비인증 요청은 환불되지 않아 그대로 IP 버킷에 남는다.
  */
-export const ipRateLimitMiddleware = async (c: Context, next: Next) => {
-  const path = c.req.path;
-  const authedApi =
-    path.startsWith('/api/') && !PRE_AUTH_API_PREFIXES.some((p) => path.startsWith(p));
-  const hasBearer = (c.req.header('authorization') ?? '').startsWith('Bearer ');
-  if (authedApi && hasBearer) return next();
-  return ipBucket(c, next);
+export const ipRateLimitMiddleware = createRateLimitMiddleware({
+  maxRequests: 300,
+  prefix: 'pre:',
+});
+
+/**
+ * 인증 성공 직후(api 체인, authMiddleware 다음)에 걸어 IP 버킷 카운트를 1 되돌린다.
+ * 결과: 인증된 트래픽은 사용자 버킷만 소모하고, IP 버킷에는 비인증·인증실패 요청만
+ * 누적된다(무차별 대입·공개 라우트 남용 방어는 유지). 윈도 경계에서 새 윈도를 1 깎는
+ * 오차는 무해하며, 동시 in-flight 인증 요청이 잠깐 슬롯을 점유하는 정도(수십)로는
+ * 300 한도에 닿지 않는다.
+ */
+export const ipRateLimitRefundMiddleware = async (c: Context, next: Next) => {
+  const ip = c.req.header('cf-connecting-ip') || 'unknown';
+  const entry = store.get(`pre:ip:${ip}`);
+  if (entry && entry.count > 0) entry.count--;
+  await next();
 };
 
 /**
