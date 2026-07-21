@@ -16,7 +16,6 @@ import { sentryMiddleware } from './middleware/sentry';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
 import { timingSafeEqualStr } from './lib/timing-safe-equal';
-import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
 import ttsRoutes from './routes/tts';
@@ -335,53 +334,12 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     captureCron('scheduled.account_purge', err);
   }
 
-  const result = await db.execute(
-    `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
-            mode, voice_profile_id, speaker_id, timezone
-     FROM alarms
-     WHERE is_active = 1
-       AND NOT EXISTS (
-         SELECT 1 FROM alarm_recipient_state ars
-         WHERE ars.alarm_id = alarms.id
-           AND ars.recipient_user_id = alarms.target_user_id
-           AND ars.declined = 1
-       )`,
-  );
-
-  const alarms: ScheduledAlarm[] = result.rows.map((r) => ({
-    id: String(r.id),
-    user_id: String(r.user_id),
-    target_user_id: (r.target_user_id as string | null) ?? null,
-    time: String(r.time),
-    repeat_days: (() => {
-      try {
-        const parsed: unknown = JSON.parse(String(r.repeat_days ?? '[]'));
-        return Array.isArray(parsed) ? parsed.filter((n): n is number => Number.isInteger(n)) : [];
-      } catch {
-        return [];
-      }
-    })(),
-    is_active: r.is_active === 1,
-    mode: r.mode === 'sound-only' ? 'sound-only' : 'tts',
-    voice_profile_id: (r.voice_profile_id as string | null) ?? null,
-    speaker_id: (r.speaker_id as string | null) ?? null,
-    timezone: (r.timezone as string | null) ?? null,
-  }));
-
-  const firing = selectFiringAlarms(alarms, now);
-
-  logStructured('info', {
-    at: 'scheduled',
-    now: now.toISOString(),
-    checked: alarms.length,
-    firing_count: firing.length,
-    firing_ids: firing.map((a) => a.id),
-  });
-
   // 발사 시각 서버 push 는 보내지 않는다: 알람은 각 기기가 로컬 AlarmManager 로 직접 울리고(수신 가족
   // 알람도 pull→로컬 스케줄), 서버가 발사 때 type=alarm notification 을 또 보내면 로컬 링과 중복 알림이
   // 된다(push_tokens 는 즉시 배달용 토큰이라 이 경로가 소비하면 안 됨). '새 가족 알람 도착' 즉시성은 생성
   // 시점의 sendFamilyAlarmPush(data-only)로 처리하고, 발사 자체는 로컬에 맡긴다.
+  // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
+  //  틱마다 Turso row-read 만 소모했다. 발사 예정 확인이 필요하면 GET /tick 으로 온디맨드 조회.)
 
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
