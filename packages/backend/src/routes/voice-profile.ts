@@ -967,18 +967,29 @@ voiceProfile.patch('/:id', async (c) => {
 
   // 공유 on/off 변경은 같은 그룹 멤버들에게 data-only push 로 즉시 알린다 — 받은 쪽이
   // 새로고침 없이 목소리 탭에서 바로 보이게(가족 알람 push 와 동일 패턴, 실패는 무시).
+  // waitUntil 등록 필수: 미등록 fire-and-forget 은 응답 직후 워커가 종료되면 FCM 호출이
+  // 실행되기 전에 끊길 수 있다. executionCtx 없는 컨텍스트(테스트)에선 접근이 던지므로
+  // try 로 생략 — 인자 평가 전에 던져서 멤버 조회도 안 돌아 mock FIFO 도 안 밀린다.
   if (hasShared) {
-    const { sendVoiceShareChangedPush } = await import('../lib/fcm');
-    const memberRes = await db.execute({
-      sql: `SELECT DISTINCT m2.user_id
-            FROM plan_group_members m1
-            JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
-            WHERE m1.user_id = ? AND m2.user_id != ?`,
-      args: [userPk, userPk],
-    });
-    const recipients = memberRes.rows.map((row) => String(row.user_id));
-    if (recipients.length > 0) {
-      sendVoiceShareChangedPush(db, c.env, recipients).catch(() => {});
+    try {
+      c.executionCtx.waitUntil(
+        (async () => {
+          const { sendVoiceShareChangedPush } = await import('../lib/fcm');
+          const memberRes = await db.execute({
+            sql: `SELECT DISTINCT m2.user_id
+                  FROM plan_group_members m1
+                  JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
+                  WHERE m1.user_id = ? AND m2.user_id != ?`,
+            args: [userPk, userPk],
+          });
+          const recipients = memberRes.rows.map((row) => String(row.user_id));
+          if (recipients.length > 0) {
+            await sendVoiceShareChangedPush(db, c.env, recipients);
+          }
+        })().catch(() => {}),
+      );
+    } catch {
+      // executionCtx 없음(비-fetch/테스트) → push 생략, 15분 주기 pull/재조회 폴백.
     }
   }
 

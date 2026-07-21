@@ -134,4 +134,55 @@ describe('ipRateLimitMiddleware (인증 전 전역 IP 버킷 300req/분)', () =>
     const over = await ipOnly.request(makeReq(ip2));
     expect(over.status).toBe(429);
   });
+
+  function buildIpOnlyApp() {
+    const app = new Hono();
+    app.use('*', ipRateLimitMiddleware);
+    app.all('*', (c) => c.json({ ok: true }));
+    return app;
+  }
+
+  function pathReq(path: string, ip: string, bearer = false) {
+    return new Request(`http://localhost${path}`, {
+      headers: {
+        'cf-connecting-ip': ip,
+        ...(bearer ? { authorization: 'Bearer some-token' } : {}),
+      },
+    });
+  }
+
+  it('Bearer 를 든 인증 대상 /api/* 요청은 IP 버킷을 소모하지 않는다', async () => {
+    // NAT 뒤 여러 기기의 인증 트래픽이 300/분 IP 한도를 나눠 쓰다 집단 429 를 맞던 회귀 방지 —
+    // 이 요청들은 authMiddleware 뒤 사용자 버킷(120/분)이 담당한다.
+    const app = buildIpOnlyApp();
+    const ip = '10.0.9.11';
+    for (let i = 0; i < 301; i++) {
+      const r = await app.request(pathReq('/api/alarm', ip, true));
+      expect(r.status).toBe(200);
+    }
+    // 같은 IP 의 비인증 표면은 여전히 신선한 300 한도에서 시작해야 한다(위에서 소모 0).
+    const fresh = await app.request(pathReq('/api/auth/login', ip));
+    expect(fresh.headers.get('X-RateLimit-Remaining')).toBe('299');
+  });
+
+  it('Bearer 없는 /api/* 요청은 여전히 IP 버킷으로 제한된다', async () => {
+    const app = buildIpOnlyApp();
+    const ip = '10.0.9.12';
+    for (let i = 0; i < 300; i++) {
+      await app.request(pathReq('/api/alarm', ip));
+    }
+    const over = await app.request(pathReq('/api/alarm', ip));
+    expect(over.status).toBe(429);
+  });
+
+  it('인증 전 표면(/api/auth 등)은 Bearer 가 있어도 IP 버킷으로 제한된다', async () => {
+    // 사용자 버킷의 보호를 받지 못하는 경로 — Bearer 만 붙여 무차별 대입 한도를 우회하지 못하게.
+    const app = buildIpOnlyApp();
+    const ip = '10.0.9.13';
+    for (let i = 0; i < 300; i++) {
+      await app.request(pathReq('/api/auth/login', ip, true));
+    }
+    const over = await app.request(pathReq('/api/auth/login', ip, true));
+    expect(over.status).toBe(429);
+  });
 });

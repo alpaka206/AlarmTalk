@@ -85,6 +85,16 @@ export function createRateLimitMiddleware(options?: {
   };
 }
 
+const ipBucket = createRateLimitMiddleware({
+  maxRequests: 300,
+  prefix: 'pre:',
+});
+
+// 인증 전 표면 중 IP 버킷을 유지해야 하는 /api 하위 prefix — authMiddleware 를 타지 않아
+// 사용자 버킷의 보호를 받지 못하는 경로들이다. /api 아래 새 공개(비인증) 라우트를 추가하면
+// 여기에도 등록할 것(누락 시 위조 Bearer 로 IP 한도를 우회할 수 있다).
+const PRE_AUTH_API_PREFIXES = ['/api/auth', '/api/holiday', '/api/billing/google'];
+
 /**
  * 전역(인증 전) 버킷 — authMiddleware 이전에 걸리므로 항상 IP 키로 카운트된다.
  * NAT/공유 와이파이 뒤에 여러 기기가 정상적으로 붙으므로(가족 플랜은 이게 기본 상황)
@@ -92,11 +102,21 @@ export function createRateLimitMiddleware(options?: {
  * prefix 로 버킷을 분리해 사용자 버킷과 이중 카운트되지 않게 한다 — 과거엔 같은 요청이
  * 전역(IP)·api(사용자) 두 리미터를 통과하며 각각 카운트돼, 같은 IP 의 두 기기가
  * 60req/분을 나눠 쓰다 로그인 burst(동기화+클립 다운로드)에서 429 가 났다.
+ *
+ * Bearer 를 든 인증 대상 /api/* 요청은 IP 버킷에서 아예 제외한다 — 그 요청들은 검증 후
+ * 사용자 버킷(120/분)이 조이므로, IP 버킷까지 소모하면 같은 IP 의 여러 정상 기기가
+ * 300/분을 나눠 쓰다 각자 사용자 한도 아래인데도 집단 429 를 맞는다. 위조 Bearer 는
+ * authMiddleware 401 로 즉시 끊기고(HMAC 검증 저비용, 볼류메트릭은 CF 엣지 방어),
+ * 비인증 표면(PRE_AUTH_API_PREFIXES·/api 밖 경로)과 Bearer 없는 요청은 그대로 IP 버킷.
  */
-export const ipRateLimitMiddleware = createRateLimitMiddleware({
-  maxRequests: 300,
-  prefix: 'pre:',
-});
+export const ipRateLimitMiddleware = async (c: Context, next: Next) => {
+  const path = c.req.path;
+  const authedApi =
+    path.startsWith('/api/') && !PRE_AUTH_API_PREFIXES.some((p) => path.startsWith(p));
+  const hasBearer = (c.req.header('authorization') ?? '').startsWith('Bearer ');
+  if (authedApi && hasBearer) return next();
+  return ipBucket(c, next);
+};
 
 /**
  * 인증 후 사용자 버킷. 로그인 직후 정상 burst(알람 동기화·목소리/구독/스톡 매니페스트
