@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -399,6 +400,9 @@ internal fun RandomPromptDetailRow(
     }
 }
 
+// 지역 선택 — 기본 목소리/테마와 같은 바텀시트 선택 패턴(WakerSelectionSheet). 도시 행을
+// 탭하면 그 자리에서 선택+저장+닫힘(별도 저장 버튼 없음). '직접 입력'을 고르면 시트 안에
+// 입력 필드가 열린다. 프리셋이 없는 로케일은 처음부터 입력 필드만 보여준다.
 @Composable
 internal fun WeatherLocationDialog(
     country: String,
@@ -406,48 +410,55 @@ internal fun WeatherLocationDialog(
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String) -> Unit,
 ) {
-    var draftCountry by remember(country) { mutableStateOf(country) }
+    val presetCities = androidx.compose.ui.res.stringArrayResource(R.array.hs_weather_preset_cities).toList()
     var draftCity by remember(city) { mutableStateOf(city) }
-    var submitted by remember { mutableStateOf(false) }
-    val cityError = submitted && draftCity.isBlank()
+    var customMode by remember(city) {
+        mutableStateOf(presetCities.isEmpty() || (city.isNotBlank() && city !in presetCities))
+    }
 
-    Dialog(
-        onDismissRequest = onDismissWithoutSave,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .widthIn(max = 460.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
+    WakerSelectionSheet(
+        title = stringResource(R.string.editorp_random_weather_region_title),
+        onDismiss = onDismissWithoutSave,
+    ) { _ ->
+        WakerSheetOptionGroup {
+            presetCities.forEach { preset ->
+                WakerSheetOptionRow(
+                    title = preset,
+                    selected = !customMode && city == preset,
+                    // 탭 = 선택+저장+닫힘(닫힘 전이는 onConfirm 쪽 상태가 담당).
+                    onClick = { onConfirm(country.trim(), preset) },
+                    divider = true,
+                )
+            }
+            if (presetCities.isNotEmpty()) {
+                WakerSheetOptionRow(
+                    title = stringResource(R.string.hs_weather_city_custom),
+                    selected = customMode,
+                    onClick = { customMode = !customMode },
+                )
+            }
+        }
+        if (customMode) {
             Column(
                 modifier = Modifier
-                    .padding(20.dp)
-                    .heightIn(max = 600.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .imePadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.editorp_random_weather_region_title),
-                    onDismiss = onDismissWithoutSave,
-                )
-                WeatherCityPickerField(
-                    city = draftCity,
-                    cityError = cityError,
-                    onCityChange = { draftCity = it },
+                OutlinedTextField(
+                    value = draftCity,
+                    onValueChange = { draftCity = it.take(30) },
+                    label = { Text(stringResource(R.string.hs_weather_city_label)) },
+                    placeholder = { Text(stringResource(R.string.hs_weather_city_placeholder)) },
+                    singleLine = true,
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Button(
-                    onClick = {
-                        submitted = true
-                        if (draftCity.isNotBlank()) {
-                            onConfirm(draftCountry.trim(), draftCity.trim())
-                        }
-                    },
+                    onClick = { onConfirm(country.trim(), draftCity.trim()) },
+                    enabled = draftCity.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {
