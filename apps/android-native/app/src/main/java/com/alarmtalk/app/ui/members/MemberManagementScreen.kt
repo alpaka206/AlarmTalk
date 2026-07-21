@@ -44,7 +44,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerButtonShape
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -169,7 +169,7 @@ internal fun MemberManagementScreen(
                         onClick = onEnsureFamilyShareCode,
                         enabled = !billingBusy && !isCapacityFull,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = WakerChipShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text(if (isCapacityFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_create_share_code))
                     }
@@ -179,7 +179,7 @@ internal fun MemberManagementScreen(
                     val isFull = isCapacityFull || shareVoucher.useCount >= shareVoucher.maxUses
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = WakerChipShape,
+                        shape = WakerPanelShape,
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
@@ -223,7 +223,7 @@ internal fun MemberManagementScreen(
                                     onClick = { shareCode(shareVoucher.code) },
                                     enabled = !billingBusy && !isFull,
                                     modifier = Modifier.weight(1f),
-                                    shape = WakerChipShape,
+                                    shape = WakerButtonShape,
                                 ) {
                                     Text(if (isFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
                                 }
@@ -231,7 +231,7 @@ internal fun MemberManagementScreen(
                                     onClick = { showRegenerateConfirm = true },
                                     enabled = !billingBusy,
                                     modifier = Modifier.weight(1f),
-                                    shape = WakerChipShape,
+                                    shape = WakerButtonShape,
                                 ) {
                                     Text(stringResource(R.string.social_regenerate_share_code))
                                 }
@@ -450,7 +450,7 @@ private fun MemberRow(
     onRemove: () -> Unit,
 ) {
     Card(
-        shape = WakerChipShape,
+        shape = WakerPanelShape,
         colors = CardDefaults.cardColors(
             containerColor = if (isMe) {
                 MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)

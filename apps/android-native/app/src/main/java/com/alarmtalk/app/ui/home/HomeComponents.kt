@@ -38,7 +38,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import com.alarmtalk.app.R
 import com.alarmtalk.app.network.AuthSession
-import com.alarmtalk.app.WakerCardShape
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.WakerPillShape
 import androidx.compose.ui.text.font.FontWeight

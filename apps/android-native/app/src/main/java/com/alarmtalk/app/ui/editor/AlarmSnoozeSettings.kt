@@ -304,7 +304,8 @@ internal fun SnoozeOptionSection(
             )
         }
         Surface(
-            shape = WakerChipShape,
+            // 다행 그룹 박스가 형제 단일 행 패널(18)보다 작은 14 를 쓰던 radius 역전 해소.
+            shape = WakerPanelShape,
             color = MaterialTheme.colorScheme.surface,
             border = wakerCardBorder(),
         ) {

@@ -197,7 +197,8 @@ private fun VoiceChoiceRow(
     Surface(
         onClick = onSelect,
         modifier = Modifier.fillMaxWidth(),
-        shape = WakerCardShape,
+        // 낮은 선택 행(≈52dp)에 22 는 near-pill — 표준 패널(18)로 낮춘다.
+        shape = WakerPanelShape,
         color = if (selected) BrandAccentOnScene.copy(alpha = 0.22f) else OnbCardGlass,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,

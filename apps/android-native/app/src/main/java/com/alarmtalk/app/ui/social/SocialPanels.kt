@@ -22,7 +22,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerButtonShape
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.VoucherItem
@@ -93,7 +93,7 @@ internal fun FamilyConnectionPanel(
                         onClick = { showLeaveDialog = true },
                         enabled = !socialBusy,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = WakerChipShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text(
                             text = stringResource(R.string.social_leave_and_register_new_code),
@@ -105,7 +105,7 @@ internal fun FamilyConnectionPanel(
                         onClick = { showCodeInputs = true },
                         enabled = !socialBusy,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = WakerChipShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text(stringResource(R.string.social_register_other_code))
                     }
