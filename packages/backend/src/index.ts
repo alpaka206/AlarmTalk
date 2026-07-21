@@ -408,7 +408,9 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         }
       }
       let rendered = 0;
+      let subrequestExhausted = false;
       for (const voice of cloneVoices) {
+        if (subrequestExhausted) break;
         const claim = claimByVoiceId.get(voice.id);
         if (!claim) continue;
         if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
@@ -437,6 +439,14 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
             // 건너뛰고 계속한다. 진전이 있으면 pending 유지(다음 틱 재시도), 진전 0+에러면 실패 처리.
             captureCron('scheduled.stock_clips.generate', genErr);
             voiceError = true;
+            // 이 틱의 서브리퀘스트 한도가 소진되면 남은 시도는 전부 같은 오류다 — 즉시 중단해
+            // 오류 반복을 줄인다. 뒤따르는 상태 갱신(DB 호출)도 실패할 수 있지만, 그 경우
+            // 15분 임대 만료가 회수해 다음 틱에 재시도된다. (7/11~ dev 실사례: 매 틱 실패하던
+            // account_purge 가 파기 시퀀스로 예산을 태워 프리렌더가 항상 이 오류로 죽었다.)
+            if (String(genErr).includes('Too many subrequests')) {
+              subrequestExhausted = true;
+              break;
+            }
           }
         }
         // 재조회 없이 판정: 이번 틱에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.

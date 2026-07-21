@@ -95,12 +95,12 @@
     <string name="billing_manage_on_google_play">Google Playで定期購入を管理</string>
     <string name="billing_monthly_subscription">Google Playで購読する</string>
     <string name="billing_plan_couple_feature_max_two">2人で一緒に利用</string>
-    <string name="billing_plan_couple_feature_message">相手のアラーム設定・音声メッセージ</string>
+    <string name="billing_plan_couple_feature_message">相手のアラーム設定</string>
     <string name="billing_plan_couple_feature_voice_share">お互いの声を共有</string>
     <string name="billing_plan_couple_name">カップル</string>
     <string name="billing_plan_couple_price">月額690円</string>
     <string name="billing_plan_family_feature_max_six">最大5人で一緒に利用</string>
-    <string name="billing_plan_family_feature_message">家族へのアラーム送信・音声メッセージ</string>
+    <string name="billing_plan_family_feature_message">家族へのアラーム送信</string>
     <string name="billing_plan_family_feature_voice_share">家族の声を共有</string>
     <string name="billing_plan_feature_includes_personal">パーソナルの全機能を含む</string>
     <string name="billing_plan_family_name">ファミリー</string>
@@ -112,7 +112,6 @@
     <string name="billing_plan_personal_feature_daily_prompt">天気・運勢など毎日新しいひとこと</string>
     <string name="billing_plan_personal_feature_gift">パーソナル利用券のプレゼント</string>
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
-    <string name="billing_plan_personal_feature_voice_message">音声メッセージ</string>
     <string name="billing_plan_personal_name">パーソナル</string>
     <string name="billing_plan_personal_price">月額390円</string>
     <string name="billing_play_manage_description">アプリで解約を完了できませんでした。Google Playの定期購入管理から直接解約できます。契約状態は変わっていません。</string>
@@ -201,7 +200,7 @@
     <string name="editor_error_audio_duration_unreadable">音声の長さを確認できないファイルは使用できません。</string>
     <string name="editor_error_crop_save_failed">選択した区間を保存できませんでした。</string>
     <string name="editor_error_deleted_voice_cannot_edit">削除された声のため、文を編集できません。別の声を選択してください。</string>
-    <string name="editor_error_enter_message_or_random">音声メッセージを入力するか、ランダム文を使用してください。</string>
+    <string name="editor_error_enter_message_or_random">アラーム文を入力するか、ランダム文を使用してください。</string>
     <string name="editor_error_family_alarm_lead_too_soon">相手のアラームは%1$s以降にしてください。相手が準備できるよう30分の余裕が必要です。</string>
     <string name="editor_error_family_alarm_time_unavailable">相手が受け取れない時間帯です。</string>
     <string name="editor_error_fortune_info_required">占いを含む文には、性別・生年月日・生まれた時間を入力してください。</string>
@@ -217,7 +216,7 @@
     <string name="editor_error_voice_alarm_login_required">音声アラームはログイン後にご利用いただけます。</string>
     <string name="editor_error_voice_generation_failed">音声の生成に失敗しました。</string>
     <string name="editor_error_manual_tts_quota">今月の手動メッセージ作成回数を使い切りました。来月また補充されます。</string>
-    <string name="editor_error_voice_message_login_required">音声メッセージはログイン後にご利用いただけます。</string>
+    <string name="editor_error_voice_message_login_required">音声アラームはログイン後にご利用いただけます。</string>
     <string name="editor_error_weather_location_required">天気を含む文には、都市を入力してください。</string>
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
     <string name="editor_expand">広げる</string>
@@ -316,7 +315,7 @@
     <string name="editorp_weather_save_button">保存</string>
     <string name="alarms_target_sheet_title">誰を起こしますか？</string>
     <string name="alarms_target_self_title">自分のアラームを設定</string>
-    <string name="hs_delete_account_body">本当に退会しますか？申請から30日が過ぎると、アラーム・音声・メッセージなどすべてのデータが完全に削除されます。それまでに再ログインして退会を取り消せば復元できます。</string>
+    <string name="hs_delete_account_body">本当に退会しますか？申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。それまでに再ログインして退会を取り消せば復元できます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
     <string name="hs_delete_account_title">退会</string>
     <string name="hs_greeting_each_other_bottom">朝を予約しましょう</string>
@@ -329,7 +328,7 @@
     <string name="hs_greeting_voice_top">お気に入りの声で</string>
     <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">ニックネームを編集</string>
-    <string name="hs_nickname_display_name_desc">アラーム、メッセージ、共有利用券の画面でこの名前を使います。</string>
+    <string name="hs_nickname_display_name_desc">アラーム、共有利用券の画面でこの名前を使います。</string>
     <string name="hs_nickname_display_name_title">アプリに表示される名前</string>
     <string name="hs_nickname_field_label">ニックネーム</string>
     <string name="hs_nickname_field_placeholder">例：りん</string>
@@ -432,7 +431,6 @@
     <string name="msg_gb_code_registered">コードを登録しました</string>
     <string name="msg_gb_promo_redeemed">プロモコードを適用しました</string>
     <string name="msg_gb_promo_redeem_failed">プロモコードを適用できませんでした。</string>
-    <string name="msg_gb_free_plan_voice_alarms_deleted">無料プランに切り替わったため、声のアラームを削除しました。</string>
     <string name="msg_gb_free_plan_voice_alarms_locked">無料プランに切り替わったため、声のアラームがロックされました。再び利用券を登録すると復元されます。</string>
     <string name="msg_gb_gift_failed">プレゼントの送信に失敗しました。</string>
     <string name="msg_gb_google_play_start_failed">Google Play決済を開始できませんでした。しばらくしてからもう一度お試しください。</string>
@@ -442,16 +440,11 @@
     <string name="msg_gb_login_required_create_share_code">共有コードを作成するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_generic">ログインするとご利用いただけます。</string>
     <string name="msg_gb_login_required_growth_info">成長情報を読み込むには、まずログインしてください</string>
-    <string name="msg_gb_login_required_load_voice_messages">音声メッセージを読み込むには、まずログインしてください。</string>
-    <string name="msg_gb_login_required_mark_message_read">メッセージを既読にするには、まずログインしてください。</string>
-    <string name="msg_gb_login_required_play_voice_message">音声メッセージを再生するには、まずログインしてください。</string>
+
     <string name="msg_gb_login_required_purchase_plan">プランを購入するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_register_code">コードを登録するには、まずログインしてください</string>
-    <string name="msg_gb_login_required_send_message">メッセージを送るには、まずログインしてください。</string>
     <string name="msg_gb_login_required_share_code_info">共有コード情報を読み込むには、まずログインしてください</string>
-    <string name="msg_gb_message_input_required">メッセージを入力してください。</string>
-    <string name="msg_gb_message_send_failed">メッセージの送信に失敗しました。</string>
-    <string name="msg_gb_message_sent">メッセージを送りました。</string>
+
     <string name="msg_gb_no_active_subscription_apply_new">現在適用中のプランがないため、新しいプランとして適用します。</string>
     <string name="msg_gb_payment_confirm_failed">決済の確認に失敗しました。</string>
     <string name="msg_gb_payment_confirm_failed_retry">決済の確認に失敗しました。しばらくしてからもう一度お試しください。</string>
@@ -465,7 +458,6 @@
     <string name="msg_gb_plan_label_couple">カップル</string>
     <string name="msg_gb_plan_label_family">ファミリー</string>
     <string name="msg_gb_plan_label_shared">共有</string>
-    <string name="msg_gb_receiver_required">受け取る人を選んでください。</string>
     <string name="msg_gb_same_plan_in_use">すでにご利用中のプランです。</string>
     <string name="msg_gb_share_code_info_load_failed">共有コード情報を読み込めませんでした</string>
     <string name="msg_gb_share_code_load_failed">%1$s共有コードを読み込めませんでした。</string>
@@ -473,17 +465,12 @@
     <string name="msg_gb_share_code_regenerated">%1$s共有コードを新しく発行しました。以前のコードは使えません。</string>
     <string name="msg_gb_subscription_cancel_at_period_end">今の利用期間まではそのまま使えます。次のお支払いはありません。</string>
     <string name="msg_gb_subscription_cancel_failed">解約に失敗しました。</string>
-    <string name="msg_gb_subscription_canceled">プランを解約しました。残り期間の料金は日割りで返金されます。</string>
-    <string name="msg_gb_subscription_canceled_voice_retained">プランを解約しました。残り期間の料金は日割りで返金され、声のデータは%1$sまで保管されます。</string>
+
     <string name="msg_gb_subscription_canceled_voice_locked">プランを解約しました。作成した声は削除されずロックされます。再び利用券を登録すると、そのまま使えます。</string>
-    <string name="msg_gb_voice_data_delete_blocked_active">定期購入のご利用中は削除できません。</string>
-    <string name="msg_gb_voice_data_delete_failed">声のデータを削除できませんでした。</string>
-    <string name="msg_gb_voice_data_deleted_now">声のデータを削除しました。</string>
-    <string name="msg_gb_voice_message_max_length">音声メッセージは200文字まで送れます。</string>
-    <string name="msg_gb_voice_message_send_failed">音声メッセージの送信に失敗しました。</string>
-    <string name="msg_gb_voice_message_sent">音声メッセージを送りました。</string>
-    <string name="msg_gb_voice_messages_load_failed">音声メッセージを読み込めませんでした。</string>
-    <string name="msg_gb_voice_required">声を選んでください。</string>
+
+
+
+
     <string name="msg_google_login_failed">Googleログインを完了できませんでした。もう一度お試しください。</string>
     <string name="msg_google_login_not_confirmed">Googleログインを確認できませんでした。もう一度お試しください。</string>
     <string name="msg_leave_group_failed">プランから退出できませんでした。</string>
@@ -586,38 +573,29 @@
     <string name="social_allow_partner_alarm_couple">パートナーが私のアラームを設定するのを許可</string>
     <string name="social_back_cd">戻る</string>
     <string name="social_capacity_full_no_share">定員に達したため、これ以上共有できません。</string>
-    <string name="social_compose_button">作成</string>
-    <string name="social_composer_message">メッセージ</string>
-    <string name="social_composer_recipient">宛先</string>
-    <string name="social_composer_send_method">送信方法</string>
+
+
     <string name="social_cancel_button">キャンセル</string>
-    <string name="social_composer_voice">送る声</string>
-    <string name="social_connect_button">連携する</string>
+
     <string name="social_create_share_code">共有コードを作成</string>
     <string name="social_edit_button">編集</string>
-    <string name="social_invite_code_label">招待コード</string>
-    <string name="social_join_button">参加</string>
+
     <string name="social_leave_and_register_button">退出して登録</string>
     <string name="social_leave_and_register_new_code">現在のプランから退出して新しいコードを登録</string>
     <string name="social_leave_dialog_message">現在のプランから退出して、新しいコードを登録しますか？</string>
     <string name="social_leave_dialog_title">現在のプランから退出して新しいコードを登録</string>
-    <string name="social_loading_voices">声を読み込み中です。</string>
     <string name="social_managing_shared_plan">共有プランを管理中です。</string>
     <string name="social_member_fallback">メンバー</string>
     <string name="social_members_section_title">メンバー</string>
-    <string name="social_message_placeholder">伝えたい言葉を入力してください</string>
-    <string name="social_message_requires_plan">メッセージは、カップル・家族プランでご利用いただけます。</string>
-    <string name="social_new_message_title">新しいメッセージ</string>
-    <string name="social_no_available_voices">利用できる声がありません。</string>
+
+
     <string name="social_no_share_code_yet">共有コードはまだありません。%1$sのメンバーを招待する招待コードを作成してください。</string>
     <string name="social_no_shared_plan">現在、一緒に使っているプランはありません。</string>
     <string name="social_plan_label_couple">カップル</string>
     <string name="social_plan_label_family">家族</string>
     <string name="social_plan_label_shared">共有</string>
-    <string name="social_play_cd">再生</string>
     <string name="social_quiet_time_label">アラームを受け取らない時間</string>
-    <string name="social_received_messages_title">受信メッセージ</string>
-    <string name="social_refresh_cd">更新</string>
+
     <string name="social_regenerate_share_code">再発行</string>
     <string name="social_regenerate_share_code_dialog_message">再発行すると現在のコードは使えなくなります。すでに共有した相手には新しいコードを送り直してください。</string>
     <string name="social_regenerate_share_code_dialog_title">共有コードの再発行</string>
@@ -632,19 +610,14 @@
     <string name="social_remove_member_dialog_title">メンバーを退出させる</string>
     <string name="social_role_me">自分</string>
     <string name="social_role_owner">管理者</string>
-    <string name="social_send_button">送信</string>
-    <string name="social_send_mode_text">テキスト</string>
-    <string name="social_send_mode_voice">音声メッセージ</string>
-    <string name="social_sender_fallback">送信者</string>
-    <string name="social_sending">送信中</string>
+
+
     <string name="social_share_button">共有する</string>
     <string name="social_share_code_chooser_title">コードを共有</string>
     <string name="social_share_code_section_title">共有コード</string>
     <string name="social_share_unavailable">共有できません</string>
     <string name="social_shared_plan_title">招待・メンバー管理</string>
-    <string name="social_stop_cd">停止</string>
-    <string name="social_view_plan_button">プランを見る</string>
-    <string name="social_voucher_code_label">プランコード</string>
+
     <string name="social_code_input_label">コード入力</string>
     <string name="social_code_input_hint">招待コード・利用券ギフトコード・プロモコードのすべてを登録できます。</string>
     <string name="social_voucher_usage">%1$d/%2$d人が使用中</string>
@@ -732,7 +705,7 @@
     <string name="voicesr_delete">削除</string>
     <string name="voicesr_delete_dialog_confirm">「%1$s」の声を削除しますか?</string>
     <string name="voicesr_delete_dialog_title">声を削除</string>
-    <string name="voicesr_delete_dialog_warning">この声を使うメッセージはテキストだけが残り、アラームは基本のアラーム音に変わります。保存された音源ファイルも一緒に削除されます。</string>
+    <string name="voicesr_delete_dialog_warning">この声を使うアラームは基本のアラーム音に変わります。保存された音源ファイルも一緒に削除されます。</string>
     <string name="voicesr_edit_info">情報を編集</string>
     <string name="voicesr_edit_my_info">自分の情報を編集</string>
     <string name="voicesr_listener_title_example_a">例:ミンジ、あなた</string>
@@ -960,7 +933,6 @@
     <string name="rd2_ringing_date">%1$d月%2$d日 %3$s</string>
     <string name="r3app_bottom_tab_voices">声</string>
     <string name="r3app_bottom_tab_alarms">アラーム</string>
-    <string name="r3app_bottom_tab_messages">メッセージ</string>
     <string name="r3app_bottom_tab_menu">その他</string>
     <string name="menu_profile_subtitle">マイ情報・アプリ設定</string>
     <string name="menu_language_label">アプリの言語</string>
@@ -989,7 +961,6 @@
     <string name="r3app_permission_gate_body">正確な時刻にアラームを鳴らし、ロック画面にもすぐ表示するには、以下の権限が必要です。</string>
     <string name="r3app_google_signin_failed">Googleログインに失敗しました</string>
     <string name="r3app_google_signin_no_info">Googleログイン情報を取得できませんでした。もう一度お試しください。</string>
-    <string name="r3app_messages_plan_gate">プランに加入すると、家族や恋人と声のメッセージをやり取りできます。</string>
     <string name="r3app_messages_plan_gate_title">カップル・ファミリープランが必要です</string>
     <string name="r3app_plan_gate_confirm">プランを見る</string>
     <string name="r3app_perm_required_notifications">アラーム画面と停止ボタンを表示するには、通知の権限が必要です。</string>
@@ -1035,8 +1006,7 @@
     <string name="r3misc_login_required_generic">ログイン後にご利用いただけます</string>
     <string name="r3misc_google_signin_unavailable">現在Googleログインはご利用いただけません。メールでログインしてください。</string>
     <string name="r3misc_google_signin_failed">Googleログインに失敗しました</string>
-    <string name="r3misc_notif_new_message_title">新着メッセージ</string>
-    <string name="r3misc_notif_new_message_body">新しいメッセージが届きました</string>
+
     <string name="r3misc_notif_received_alarm_time">%1$sに鳴ります</string>
     <string name="r3misc_notif_received_alarm_default">相手があなたのアラームを設定しました</string>
     <string name="r3misc_ringing_action_snooze">再通知</string>
