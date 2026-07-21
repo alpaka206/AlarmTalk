@@ -56,7 +56,6 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 internal fun RandomPromptSettingsPane(
     randomContext: String,
-    manualText: String,
     // 직접 입력 옵션에 '(남은/총)' 을 붙여 이번 달 남은 만들기 횟수를 보여준다(유료·limit>0 일 때).
     manualRemaining: Int? = null,
     manualLimit: Int? = null,
@@ -203,16 +202,6 @@ internal fun RandomPromptSettingsPane(
                             selected = normalizedContext == context,
                             onClick = { selectContext(context) },
                         )
-                        // 직접 입력 문구는 요약 행에 노출하지 않는 대신, 입력 완료본을
-                        // 여기(직접 입력 항목 바로 아래)에서 보여준다.
-                        if (context == ManualMessageContext && isManual && manualText.isNotBlank()) {
-                            Text(
-                                text = manualText,
-                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                         if (index != EditorMessageContexts.lastIndex) SnoozeOptionDivider()
                     }
                 }

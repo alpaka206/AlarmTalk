@@ -227,7 +227,6 @@ internal fun VoiceAudioCard(
                                 MessageModeSummaryRow(
                                     isManual = !editor.voiceRandomPrompt,
                                     randomContext = editor.voiceRandomContext,
-                                    manualText = editor.voiceText,
                                     onClick = onOpenRandomPromptSettings,
                                 )
                             }
@@ -583,12 +582,10 @@ internal fun FreeBucketSettingsPane(
 internal fun MessageModeSummaryRow(
     isManual: Boolean,
     randomContext: String,
-    manualText: String,
     onClick: () -> Unit,
 ) {
     val valueLabel = when {
-        // 직접 입력은 문구 내용을 요약 행에 노출하지 않는다 — 값은 '직접 입력'으로만 표기하고,
-        // 입력한 문구는 문구 설정 pane 안(직접 입력 항목 아래)에서 확인한다.
+        // 직접 입력은 문구 내용을 어디에도 노출하지 않는다 — 값은 '직접 입력'으로만 표기.
         isManual -> stringResource(R.string.editor_msg_mode_manual)
         // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
         normalizedRandomPromptContext(randomContext) == DefaultRandomPromptContext ->

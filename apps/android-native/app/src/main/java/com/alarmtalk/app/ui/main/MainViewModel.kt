@@ -42,6 +42,7 @@ import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -139,7 +140,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Room 첫 방출이 오기 전(콜드 스타트 첫 프레임)의 '빈 리스트'는 실제 빈 상태가 아니다 —
+    // 이 플래그가 false 인 동안 알람 탭은 빈 상태 히어로를 그리지 않아, 알람이 있는데도
+    // '알람이 없습니다'가 번쩍였다 바뀌는 문제를 막는다. 한 번 true 가 되면 유지.
+    var alarmsLoaded by mutableStateOf(false)
+        internal set
+
     val alarms: StateFlow<List<AlarmEntity>> = repository.observeAlarms()
+        .onEach { alarmsLoaded = true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     var authSession by mutableStateOf<AuthSession?>(initialAuthSession)

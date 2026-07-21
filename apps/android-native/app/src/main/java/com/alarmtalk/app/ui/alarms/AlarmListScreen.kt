@@ -43,6 +43,8 @@ internal fun AlarmListScreen(
     selectedTab: NativeTab,
     onSelectTab: (NativeTab) -> Unit,
     alarms: List<AlarmEntity>,
+    // Room 첫 방출 여부 — false 인 동안 알람 탭은 빈 상태를 그리지 않는다(콜드 스타트 번쩍임 방지).
+    alarmsLoaded: Boolean,
     authSession: AuthSession?,
     voiceProfiles: List<VoiceProfile>,
     pendingVoiceDraft: VoiceProfile?,
@@ -178,8 +180,12 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.Alarms -> {
-                item { HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm) }
-                if (!hasAnyAlarm) {
+                // Room 첫 방출 전(alarmsLoaded=false)에는 헤더/빈 상태를 그리지 않는다 —
+                // 알람이 있어도 콜드 스타트 첫 프레임에 '알람이 없습니다'가 번쩍이는 것 방지.
+                if (alarmsLoaded) {
+                    item { HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm) }
+                }
+                if (alarmsLoaded && !hasAnyAlarm) {
                     item {
                         EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
                     }

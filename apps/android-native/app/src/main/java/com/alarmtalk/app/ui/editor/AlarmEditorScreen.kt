@@ -1358,7 +1358,6 @@ internal fun AlarmEditorScreen(
             "random_prompt" -> RandomPromptSettingsPane(
                 // 직접 입력 모드면 pane 에서 '직접 입력'이 선택돼 보이도록 manual 을 넘긴다.
                 randomContext = if (editor.voiceRandomPrompt) editor.voiceRandomContext else ManualMessageContext,
-                manualText = editor.voiceText,
                 manualRemaining = manualQuota?.remaining,
                 manualLimit = manualQuota?.limit,
                 weatherCountry = editor.voiceWeatherCountry,

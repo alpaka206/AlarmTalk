@@ -734,6 +734,7 @@ internal fun AlarmTalkApp(
                           selectedTab = tab,
                           onSelectTab = ::navigateToTab,
                           alarms = alarms,
+                          alarmsLoaded = viewModel.alarmsLoaded,
                           authSession = authSession,
                           voiceProfiles = voiceProfiles,
                           pendingVoiceDraft = pendingVoiceDraft,
