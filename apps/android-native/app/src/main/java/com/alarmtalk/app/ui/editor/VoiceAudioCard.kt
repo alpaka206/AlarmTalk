@@ -143,7 +143,10 @@ internal fun VoiceAudioCard(
     ) {
             // 무료·시스템 보이스는 녹음·파일이 잠겨 있어 소스 토글이 사실상 페이월 미끼라 감춘다(항상 TTS).
             // 유료 + 내 클론일 때만 목소리/녹음·파일을 고를 수 있게 토글을 노출한다.
-            if (!restrictToWeatherMedication) {
+            // 공유받은 목소리도 TTS 전용 — 녹음·파일로 전환하면 공유 보이스 밑에 로컬 오디오
+            // 알람이 저장되는 계약 위반이 생기므로 토글을 감춘다(프리셋+직접 입력만).
+            val sharedVoiceSelected = readyFamilyVoices.any { it.id == editor.voiceProfileId }
+            if (!restrictToWeatherMedication && !sharedVoiceSelected) {
                 // 바로 위 '재생 방식'과 같은 세그먼트 트랙으로 통일(크기·선택색 일치).
                 EditorSegmentedSelector(
                     options = listOf(
