@@ -12,6 +12,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -564,7 +568,19 @@ internal fun AlarmTalkApp(
 
     Scaffold(
         bottomBar = {
-            if (showAppChrome) {
+            // 편집기 등 풀스크린 목적지로 갈 때 하단바가 '먼저 툭' 사라지는 하드컷 대신,
+            // 페이지 슬라이드와 같은 박자로 아래로 미끄러져 하나의 페이지 이동으로 읽히게 한다.
+            AnimatedVisibility(
+                visible = showAppChrome,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(220),
+                ) + fadeIn(animationSpec = tween(220)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(220),
+                ) + fadeOut(animationSpec = tween(220)),
+            ) {
                 AlarmTalkBottomBar(
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
@@ -783,6 +799,10 @@ internal fun AlarmTalkApp(
                           defaultValue = null
                       },
                   ),
+                  // 편집기는 우측에서 페이지가 밀고 들어오는 표준 push 전환 — 하단바 슬라이드(220ms)와
+                  // 같은 박자로 묶어 '크롬 사라짐 → 화면 전환' 두 박자가 아니라 한 번의 이동으로 보이게.
+                  enterTransition = { slideInHorizontally(animationSpec = tween(220)) { it } },
+                  popExitTransition = { slideOutHorizontally(animationSpec = tween(220)) { it } },
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
                   val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
@@ -819,6 +839,9 @@ internal fun AlarmTalkApp(
               composable(
                   route = AppRoute.AlarmEdit,
                   arguments = listOf(navArgument(AppRoute.AlarmIdArg) { type = NavType.StringType }),
+                  // AlarmCreate 와 동일한 push 전환(하단바 슬라이드와 동박자).
+                  enterTransition = { slideInHorizontally(animationSpec = tween(220)) { it } },
+                  popExitTransition = { slideOutHorizontally(animationSpec = tween(220)) { it } },
               ) { entry ->
                   val alarmId = entry.arguments?.getString(AppRoute.AlarmIdArg)
                   val currentAlarm = alarms.firstOrNull { it.id == alarmId }
