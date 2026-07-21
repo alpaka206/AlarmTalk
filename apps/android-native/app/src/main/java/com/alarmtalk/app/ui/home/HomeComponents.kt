@@ -459,9 +459,11 @@ internal fun DeleteAccountConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    // 별도 제목('회원 탈퇴') 없이 안내 문장을 제목 자리에 둔다 — 문장(./?) 단위로 줄바꿈된
+    // 본문이 제목 타이포(17sp SemiBold)로 보이는 형태. message 는 쓰지 않는다.
     IosAlertDialog(
-        title = stringResource(R.string.hs_delete_account_title),
-        message = stringResource(R.string.hs_delete_account_body),
+        title = stringResource(R.string.hs_delete_account_body),
+        message = null,
         onDismiss = { if (!busy) onDismiss() },
         actions = listOf(
             IosAlertAction(

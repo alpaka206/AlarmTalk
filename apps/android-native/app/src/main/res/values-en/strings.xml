@@ -312,9 +312,8 @@
     <string name="editorp_weather_save_button">Save</string>
     <string name="alarms_target_sheet_title">Who is this alarm for?</string>
     <string name="alarms_target_self_title">Set my alarm</string>
-    <string name="hs_delete_account_body">Are you sure you want to delete your account? 30 days after you request it, all your data—including alarms and voices—is permanently deleted. You can cancel and restore it by signing back in before then.</string>
+    <string name="hs_delete_account_body">Are you sure you want to delete your account?\n30 days after you request it, all your data—including alarms and voices—is permanently deleted.\nYou can cancel and restore it by signing back in before then.</string>
     <string name="hs_delete_account_confirm">Delete</string>
-    <string name="hs_delete_account_title">Delete account</string>
     <string name="hs_greeting_each_other_bottom">let\'s schedule mornings</string>
     <string name="hs_greeting_each_other_top">With each other\'s voices,</string>
     <string name="hs_greeting_morning_bottom">did you wake up well?</string>

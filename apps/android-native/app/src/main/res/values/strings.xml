@@ -314,9 +314,8 @@
     <string name="editorp_weather_save_button">저장</string>
     <string name="alarms_target_sheet_title">누구를 깨울까요?</string>
     <string name="alarms_target_self_title">내 알람 맞추기</string>
-    <string name="hs_delete_account_body">정말 탈퇴할까요? 신청 후 30일이 지나면 알람, 목소리 등 모든 데이터가 영구 삭제돼요. 그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요.</string>
+    <string name="hs_delete_account_body">정말 탈퇴할까요?\n신청 후 30일이 지나면 알람, 목소리 등 모든 데이터가 영구 삭제돼요.\n그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요.</string>
     <string name="hs_delete_account_confirm">탈퇴</string>
-    <string name="hs_delete_account_title">회원 탈퇴</string>
     <string name="hs_greeting_each_other_bottom">아침을 예약해요</string>
     <string name="hs_greeting_each_other_top">서로의 목소리로</string>
     <string name="hs_greeting_morning_bottom">잘 일어나셨나요?</string>

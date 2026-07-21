@@ -312,9 +312,8 @@
     <string name="editorp_weather_save_button">保存</string>
     <string name="alarms_target_sheet_title">誰を起こしますか？</string>
     <string name="alarms_target_self_title">自分のアラームを設定</string>
-    <string name="hs_delete_account_body">本当に退会しますか？申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。それまでに再ログインして退会を取り消せば復元できます。</string>
+    <string name="hs_delete_account_body">本当に退会しますか？\n申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。\nそれまでに再ログインして退会を取り消せば復元できます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
-    <string name="hs_delete_account_title">退会</string>
     <string name="hs_greeting_each_other_bottom">朝を予約しましょう</string>
     <string name="hs_greeting_each_other_top">お互いの声で</string>
     <string name="hs_greeting_morning_bottom">よく起きられましたか？</string>
