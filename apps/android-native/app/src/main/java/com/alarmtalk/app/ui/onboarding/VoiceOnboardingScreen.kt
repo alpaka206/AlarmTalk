@@ -66,6 +66,8 @@ internal fun VoiceOnboardingScreen(
 
     // 로그인(랜딩~인증)과 같은 고정 새벽 네이비 비주얼 — 라이트 테마에서 이 스텝만 흰 화면으로
     // 튀지 않게 온보딩 시퀀스의 톤을 그대로 잇는다(문서화된 예외 팔레트).
+    // 라이트 테마에서도 시스템 바 아이콘이 어두워지지 않게 씬 색으로 오버라이드(Codex #606).
+    SceneSystemBars(top = OnbSceneTop, bottom = OnbSceneBottom)
     Box(
         modifier = Modifier
             .fillMaxSize()
