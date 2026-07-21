@@ -67,6 +67,46 @@ private fun usesFreeSystemVoiceAlarm(
 const val STOCK_GREETING_CATEGORY = "greeting"
 
 /**
+ * 기본(시스템) 목소리 인사말 샘플은 앱에 내장한다(res/raw, 4보이스 × ko/en/ja) —
+ * 온보딩·기본 목소리 선택 미리듣기가 스톡 매니페스트 로딩/네트워크에 의존해
+ * '눌러도 아무 소리 안 남'이 되지 않도록 즉시·오프라인 재생한다. 내장본은 서버
+ * 스톡 greeting(2026-07-19 확정 대사)과 동일 발화. 새 시스템 보이스가 추가되면
+ * null 을 돌려 호출자가 기존 스톡 클립 다운로드 경로로 폴백한다.
+ */
+fun bundledSystemGreetingRes(voiceProfileId: String?, appLanguage: String): Int? {
+    val voice = when (voiceProfileId) {
+        SYSTEM_VOICE_ID_PREFIX + "000000000101" -> "adam"
+        SYSTEM_VOICE_ID_PREFIX + "000000000102" -> "mina"
+        SYSTEM_VOICE_ID_PREFIX + "000000000103" -> "hajun"
+        SYSTEM_VOICE_ID_PREFIX + "000000000104" -> "soeun"
+        else -> return null
+    }
+    val language = appVoiceLanguageOf(appLanguage)
+    return when (voice) {
+        "adam" -> when (language) {
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_adam_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_adam_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_adam_ko
+        }
+        "mina" -> when (language) {
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_mina_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_mina_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_mina_ko
+        }
+        "hajun" -> when (language) {
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_hajun_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_hajun_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_hajun_ko
+        }
+        else -> when (language) {
+            "en" -> com.alarmtalk.app.R.raw.voice_greeting_soeun_en
+            "ja" -> com.alarmtalk.app.R.raw.voice_greeting_soeun_ja
+            else -> com.alarmtalk.app.R.raw.voice_greeting_soeun_ko
+        }
+    }
+}
+
+/**
  * 미리듣기용 greeting 스톡 클립 선택의 단일 출처. greeting 은 보이스당 3개 언어(ko/en/ja)가
  * 있고 서버 /tts/stock-clips 는 language ASC 정렬이라, 언어 필터 없이 firstOrNull 을 쓰면
  * 항상 영어(en)가 잡힌다. 반드시 앱 언어(appVoiceLanguageOf)로 고르고,
