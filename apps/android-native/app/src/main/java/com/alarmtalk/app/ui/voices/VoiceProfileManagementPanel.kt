@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -873,10 +874,32 @@ internal fun VoiceProfileManagementPanel(
         allCached && cloneManifestComplete(profileId)
     }
 
+    // 매니페스트의 알람 버킷 클립이 전부 로컬 캐시에 있는지 — 다운로드 없이 캐시만 본다.
+    suspend fun cloneBucketsFullyCached(profileId: String): Boolean = withContext(Dispatchers.IO) {
+        cloneManifestComplete(profileId) && CloneAlarmBucketCategories.all { category ->
+            val clipLanguage = cloneClipLanguageFor(profileId, category)
+            stockClips
+                .filter {
+                    it.voiceProfileId == profileId && it.category == category &&
+                        (it.language ?: "ko") == clipLanguage
+                }
+                .all { audioStore.getCachedAudio("stock_${it.messageId}") != null }
+        }
+    }
+
     // 준비 상태 폴링 — 목소리 탭이 보이는 동안만 짧은 주기로(화면 이탈 시 이펙트가 취소된다).
     val cloneReadinessIds = ownVoices.filter { it.status == null || it.status == "ready" }.map { it.id }
     LaunchedEffect(cloneReadinessIds, stockClips, prerenderPollTick) {
         if (cloneReadinessIds.isEmpty()) return@LaunchedEffect
+        // 이미 전부 캐시된 목소리는 서버 상태 조회 전에 곧장 ready 처리 — 탭에 들어올 때마다
+        // '다운로드 중' 배지가 한 박자 떴다 사라지는 깜빡임을 없앤다.
+        cloneReadinessIds.forEach { voiceId ->
+            if (voiceId !in cloneLocalReadyIds &&
+                runCatching { cloneBucketsFullyCached(voiceId) }.getOrDefault(false)
+            ) {
+                cloneLocalReadyIds = cloneLocalReadyIds + voiceId
+            }
+        }
         var manifestReloadRequested = false
         while (true) {
             var anyPending = false
@@ -1627,7 +1650,6 @@ internal fun VoiceProfileManagementPanel(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(18.dp),
                                 ) {
-                                    CircularProgressIndicator()
                                     Text(
                                         text = if (prerenderDrive?.downloading == true) {
                                             stringResource(R.string.voices_prerender_downloading_title)
@@ -1637,20 +1659,32 @@ internal fun VoiceProfileManagementPanel(
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
-                                    Text(
-                                        text = if (prerenderDrive != null && prerenderDrive.total > 0) {
-                                            stringResource(
-                                                R.string.voices_prerender_progress,
-                                                prerenderDrive.generated,
-                                                prerenderDrive.total,
-                                            )
-                                        } else {
-                                            stringResource(R.string.voices_prerender_generating_body)
+                                    // 'n/21 준비' 카운트 텍스트 대신 진행 로딩바만 — 총량을 알면
+                                    // 확정 진행률, 아직 모르면(시작 직후) 인디터미넌트.
+                                    val drive = prerenderDrive
+                                    if (drive != null && drive.total > 0) {
+                                        LinearProgressIndicator(
+                                            progress = {
+                                                drive.generated.toFloat() / drive.total.toFloat()
+                                            },
+                                            modifier = Modifier.fillMaxWidth(0.72f),
+                                        )
+                                    } else {
+                                        LinearProgressIndicator(
+                                            modifier = Modifier.fillMaxWidth(0.72f),
+                                        )
+                                    }
+                                    // 하단 고정 대신 로딩 블록에서 조금 떨어져 바로 아래에 둔다 —
+                                    // 닫아도 드라이브는 ViewModel 에서 계속된다.
+                                    Spacer(Modifier.height(10.dp))
+                                    TextButton(
+                                        onClick = {
+                                            promotedForPrerenderId = null
+                                            closeCreateDialog()
                                         },
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textAlign = TextAlign.Center,
-                                    )
+                                    ) {
+                                        Text(stringResource(R.string.voices_prerender_continue_background_action))
+                                    }
                                 }
                             }
 
@@ -1891,18 +1925,9 @@ internal fun VoiceProfileManagementPanel(
                             // 만드는 중 — 결정할 것이 없어 하단 액션이 없다(닫기도 불가).
                             VoiceRegistrationStep.Creating -> Unit
 
-                            // 생성/다운로드 중 — 기다리지 않아도 된다: 닫으면 서버가 이어서 만든다.
-                            VoiceRegistrationStep.Prerendering -> {
-                                TextButton(
-                                    onClick = {
-                                        promotedForPrerenderId = null
-                                        closeCreateDialog()
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Text(stringResource(R.string.voices_prerender_continue_background_action))
-                                }
-                            }
+                            // 생성/다운로드 중 — '백그라운드에서 계속'은 하단 고정이 아니라
+                            // 로딩 블록 바로 아래(본문)에 있다. 하단 액션 없음.
+                            VoiceRegistrationStep.Prerendering -> Unit
 
                             VoiceRegistrationStep.Preview -> {
                                 TextButton(

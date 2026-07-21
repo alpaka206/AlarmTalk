@@ -326,16 +326,15 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         return
     }
 
-    viewModelScope.launch {
-        if (voiceProfileBusy) return@launch
-        voiceProfileBusy = true
-        // 낙관적 업데이트: 스위치는 즉시 뒤집고 서버 실패 시에만 원상복구한다 — 응답을
-        // 기다렸다 움직이면 토글이 버벅여 보인다. 성공 토스트도 띄우지 않는다(스위치
-        // 상태 자체가 결과이고, 켰어요/껐어요 안내는 소음).
-        val previousShared = voiceProfiles.firstOrNull { it.id == profileId }?.isShared
-        voiceProfiles = voiceProfiles.map {
-            if (it.id == profileId) it.copy(isShared = shared) else it
-        }
+    // 낙관적 업데이트 + 전역 busy 미사용: 스위치는 즉시 뒤집히고, 같은 목소리의 이전 요청은
+    // 취소해 마지막 값이 이긴다 — 연타해도 스위치가 잠기거나 나중에 튀지 않는다. 성공
+    // 토스트는 띄우지 않고(스위치 상태가 곧 결과), 서버 실패 시에만 원상복구+안내한다.
+    val previousShared = voiceProfiles.firstOrNull { it.id == profileId }?.isShared
+    voiceProfiles = voiceProfiles.map {
+        if (it.id == profileId) it.copy(isShared = shared) else it
+    }
+    shareToggleJobs.remove(profileId)?.cancel()
+    shareToggleJobs[profileId] = viewModelScope.launch {
         runCatching {
             withContext(Dispatchers.IO) {
                 api.updateVoiceProfile(
@@ -354,13 +353,14 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
                 familyVoices = profiles
             }
         }.onFailure { error ->
+            // 새 토글로 대체돼 취소된 요청은 되돌리지 않는다(뒤 요청이 최종 상태를 책임진다).
+            if (error is kotlin.coroutines.cancellation.CancellationException) throw error
             voiceProfiles = voiceProfiles.map {
                 if (it.id == profileId) it.copy(isShared = previousShared) else it
             }
             AlarmTalkLog.reportError("Failed to update voice profile sharing id=$profileId shared=$shared", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_share_setting_failed))
         }
-        voiceProfileBusy = false
     }
 }
 

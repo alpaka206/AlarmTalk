@@ -280,20 +280,12 @@ internal fun VoiceProfileRow(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = profile.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        if (canShareVoice && isShared && !isProcessing && !isDeleting) {
-                            VoiceSharedBadge()
-                        }
-                    }
+                    // '공유 중' 배지는 두지 않는다 — 바로 아래 공유 토글이 같은 상태를 이미 보여준다.
+                    Text(
+                        text = profile.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
                 when {
                     isProcessing -> VoiceProgressMessage(stringResource(R.string.voicesr_status_creating))
@@ -412,22 +404,6 @@ internal fun VoiceProfileRow(
                 }
             }
         }
-    }
-}
-
-@Composable
-internal fun VoiceSharedBadge() {
-    Surface(
-        shape = WakerPillShape,
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
-    ) {
-        Text(
-            text = stringResource(R.string.voicesr_sharing_badge),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-        )
     }
 }
 

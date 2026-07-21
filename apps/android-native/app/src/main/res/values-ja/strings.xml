@@ -634,9 +634,7 @@
     <string name="voices_my_voices_title">マイボイス</string>
     <string name="voices_name_label">声の名前</string>
     <string name="voices_prerender_generating_title">声を生成中</string>
-    <string name="voices_prerender_generating_body">この声でアラーム文を作成しています。しばらくお待ちください。</string>
     <string name="voices_prerender_downloading_title">端末に保存中</string>
-    <string name="voices_prerender_progress">アラーム文 %1$d/%2$d 準備完了</string>
     <string name="voices_prerender_continue_background_action">バックグラウンドで続行</string>
     <string name="voices_prerender_continue_background">残りの文はバックグラウンドで作成され続けます。</string>
     <string name="voices_language_label">フレーズの言語</string>
