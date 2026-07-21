@@ -540,10 +540,13 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String) {
         try {
             val language = deviceAppVoiceLanguage()
             val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+            // 무료 버킷에서 실제로 쓰이는 카테고리(날씨·약)만 받는다 — greeting 제외 전부를 받으면
+            // 무료 사용자의 클론처럼 운세/사랑 사전렌더가 섞인 보이스에서 제한 편집기가 노출하지
+            // 않는 유료 전용 클립까지 내려받아 저장 공간만 차지한다(Codex #607).
             val clips = stockClips.filter {
                 it.voiceProfileId == voiceProfileId &&
                     (it.language ?: "ko") == language &&
-                    it.category != com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
+                    it.category in FreeBucketOrder
             }
             if (clips.isEmpty()) return@launch
             // 이미 캐시된 클립도 진행 수에 포함해 n/전체가 실제 준비율을 보여주게 한다.

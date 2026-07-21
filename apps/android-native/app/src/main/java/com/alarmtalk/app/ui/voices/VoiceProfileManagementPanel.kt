@@ -1481,8 +1481,13 @@ internal fun VoiceProfileManagementPanel(
                                     placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
                                     singleLine = true,
                                     isError = nameRequiredError,
-                                    supportingText = {
-                                        if (nameRequiredError) Text(stringResource(R.string.voices_required_field))
+                                    // supportingText 람다를 항상 넘기면 에러가 없어도 그 자리(약 16dp)가
+                                    // 예약돼 이름↔관계 간격만 넓어진다 — 에러일 때만 붙여 3개 필드의
+                                    // 간격(부모 spacedBy 14dp)을 균일하게 유지한다.
+                                    supportingText = if (nameRequiredError) {
+                                        { Text(stringResource(R.string.voices_required_field)) }
+                                    } else {
+                                        null
                                     },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
