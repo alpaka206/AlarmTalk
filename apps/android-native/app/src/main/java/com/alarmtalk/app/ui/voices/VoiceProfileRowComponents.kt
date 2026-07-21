@@ -62,6 +62,10 @@ internal enum class VoiceRegistrationStep {
 
     /** 생성 완료 — 미리듣기 문구 확인·수정 후 유지/삭제를 결정하는 스텝. */
     Preview,
+
+    /** 승격 직후 — 알람 문구(사전렌더)를 사용자 주도로 즉시 생성·다운로드하는 스텝.
+     *  건너뛰어도 서버 cron 이 백그라운드에서 이어받으므로 언제든 닫을 수 있다. */
+    Prerendering,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

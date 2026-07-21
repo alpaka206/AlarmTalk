@@ -213,6 +213,10 @@ internal fun VoiceProfileManagementPanel(
     onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
     // 서버 사전렌더 완료를 감지했을 때 stockClips 매니페스트를 강제 재조회.
     onReloadStockClips: () -> Unit = {},
+    // promote 직후 사전렌더 드라이브(즉시 생성→기기 다운로드). 드라이브는 ViewModel 스코프라
+    // '생성 중' 화면을 닫아도 계속되고, 앱이 죽으면 서버 cron 이 이어받는다.
+    prerenderDrive: PrerenderDriveState? = null,
+    onStartPrerenderDrive: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -273,6 +277,9 @@ internal fun VoiceProfileManagementPanel(
     // 방금 등록한 목소리 확인(미리듣기·유지·삭제) 다이얼로그. 목소리는 한 달에 한 번만
     // 바꿀 수 있어, 등록 직후 어떤 목소리로 깨워줄지 들어보고 결정하게 한다.
     var confirmNewVoice by remember { mutableStateOf<VoiceProfile?>(null) }
+    // '이 목소리로 할게요'를 눌러 승격한 보이스 id — draft 소멸이 삭제가 아니라 승격에서
+    // 왔음을 구분해, 플로우를 닫는 대신 '목소리 생성 중' 스텝으로 잇는다.
+    var promotedForPrerenderId by remember { mutableStateOf<String?>(null) }
     var confirmPreviewBusy by remember { mutableStateOf(false) }
     var confirmPreviewPlaying by remember { mutableStateOf(false) }
     var confirmPreviewCompleted by remember { mutableStateOf(false) }
@@ -295,6 +302,9 @@ internal fun VoiceProfileManagementPanel(
     // (유지/삭제를 골라야만 끝난다). draft 가 생겨 isLimitReached 가 돼도 다이얼로그를 유지한다.
     val inDraftDecisionFlow = currentStep == VoiceRegistrationStep.Creating ||
         currentStep == VoiceRegistrationStep.Preview
+    // promote 직후 사전렌더 진행 화면 — 등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지해야
+    // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
+    val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
 
@@ -683,16 +693,39 @@ internal fun VoiceProfileManagementPanel(
                 if (showCreateForm) closeCreateDialog()
             }
 
-            // draft 소멸(삭제/승격) → 미리듣기 상태 정리 + 플로우 종료.
+            // draft 소멸(삭제/승격) → 미리듣기 상태 정리. 승격이면 플로우를 닫는 대신
+            // '목소리 생성 중' 스텝으로 이어 알람 문구 생성·다운로드까지 끝낸다.
             draft == null && confirmNewVoice?.isDraft == true -> {
+                val promotedId = promotedForPrerenderId
+                    ?.takeIf { requested -> requested == confirmNewVoice?.id }
+                    ?.takeIf { requested -> voiceProfiles.any { it.id == requested } }
                 confirmPreviewJob?.cancel()
                 confirmPreviewJob = null
                 stopMediaPreview(invalidateGreetingPreview = false)
                 confirmPreviewBusy = false
                 confirmPreviewPlaying = false
                 confirmNewVoice = null
-                if (showCreateForm) closeCreateDialog()
+                if (promotedId != null) {
+                    // 드라이브는 ViewModel 스코프에서 시작 — 화면은 진행 관찰만 한다.
+                    onStartPrerenderDrive(promotedId)
+                    currentStep = VoiceRegistrationStep.Prerendering
+                } else if (showCreateForm) {
+                    closeCreateDialog()
+                }
             }
+        }
+    }
+
+    // '목소리 생성 중' 화면은 ViewModel 드라이브의 진행을 관찰만 한다 — 드라이브가 끝나면
+    // (완료/실패 모두 prerenderDrive 가 null 로 걷힘) 목소리 리스트로 돌아간다. 화면을 먼저
+    // 닫아도 드라이브는 계속되고, 앱 종료 시엔 서버 cron 이 이어받는다.
+    LaunchedEffect(currentStep, prerenderDrive?.voiceId) {
+        if (currentStep != VoiceRegistrationStep.Prerendering) return@LaunchedEffect
+        val watchedId = promotedForPrerenderId
+        if (prerenderDrive == null || (watchedId != null && prerenderDrive.voiceId != watchedId)) {
+            promotedForPrerenderId = null
+            onReloadStockClips()
+            closeCreateDialog()
         }
     }
 
@@ -1163,6 +1196,21 @@ internal fun VoiceProfileManagementPanel(
             }
         }
 
+        if (canShareVoice && familyVoices.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.voices_shared_voices_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            familyVoices.forEach { profile ->
+                SharedVoiceProfileRow(
+                    profile = profile,
+                    onEdit = { sharedInfoTarget = profile },
+                )
+            }
+        }
+
+        // 기본 목소리는 맨 아래 — 내 목소리·공유받은 목소리(개인화된 것들)가 먼저 온다.
         if (systemVoices.isNotEmpty()) {
             Row(
                 // 토스식 [제목 … 값 + 셰브론] 행 — 탭하면 기본 목소리 선택 시트를 연다.
@@ -1214,20 +1262,6 @@ internal fun VoiceProfileManagementPanel(
             }
             // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다
             // (AlarmEditorScreen.resolvedVoiceListenerTitle). 관계·호칭은 내/공유 목소리에만 있다.
-        }
-
-        if (canShareVoice && familyVoices.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.voices_shared_voices_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            familyVoices.forEach { profile ->
-                SharedVoiceProfileRow(
-                    profile = profile,
-                    onEdit = { sharedInfoTarget = profile },
-                )
-            }
         }
     }
 
@@ -1290,8 +1324,8 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 만드는 중/미리듣기 스텝에선 draft 존재로 isLimitReached 가 돼도 다이얼로그를 유지한다.
-    if (showCreateForm && (inDraftDecisionFlow || (!isLimitReached && canCreateVoice))) {
+    // 만드는 중/미리듣기/사전렌더 스텝에선 draft·등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지한다.
+    if (showCreateForm && (inDraftDecisionFlow || inPrerenderingFlow || (!isLimitReached && canCreateVoice))) {
         val useManualSystemInsets = Build.VERSION.SDK_INT >= 35
         val actionBottomPadding = 10.dp + if (useManualSystemInsets) {
             androidNavigationBarHeightPadding() + AndroidEdgeToEdgeNavigationExtraPadding
@@ -1567,6 +1601,41 @@ internal fun VoiceProfileManagementPanel(
                                 }
                             }
 
+                            VoiceRegistrationStep.Prerendering -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 72.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                                ) {
+                                    CircularProgressIndicator()
+                                    Text(
+                                        text = if (prerenderDrive?.downloading == true) {
+                                            stringResource(R.string.voices_prerender_downloading_title)
+                                        } else {
+                                            stringResource(R.string.voices_prerender_generating_title)
+                                        },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        text = if (prerenderDrive != null && prerenderDrive.total > 0) {
+                                            stringResource(
+                                                R.string.voices_prerender_progress,
+                                                prerenderDrive.generated,
+                                                prerenderDrive.total,
+                                            )
+                                        } else {
+                                            stringResource(R.string.voices_prerender_generating_body)
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                }
+                            }
+
                             VoiceRegistrationStep.Preview -> {
                                 val previewVoice = confirmNewVoice
                                 if (previewVoice != null) {
@@ -1804,6 +1873,19 @@ internal fun VoiceProfileManagementPanel(
                             // 만드는 중 — 결정할 것이 없어 하단 액션이 없다(닫기도 불가).
                             VoiceRegistrationStep.Creating -> Unit
 
+                            // 생성/다운로드 중 — 기다리지 않아도 된다: 닫으면 서버가 이어서 만든다.
+                            VoiceRegistrationStep.Prerendering -> {
+                                TextButton(
+                                    onClick = {
+                                        promotedForPrerenderId = null
+                                        closeCreateDialog()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text(stringResource(R.string.voices_prerender_continue_background_action))
+                                }
+                            }
+
                             VoiceRegistrationStep.Preview -> {
                                 TextButton(
                                     onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
@@ -1815,7 +1897,12 @@ internal fun VoiceProfileManagementPanel(
                                     )
                                 }
                                 Button(
-                                    onClick = { confirmNewVoice?.let { onPromoteVoiceDraft(it.id) } },
+                                    onClick = {
+                                        confirmNewVoice?.let {
+                                            promotedForPrerenderId = it.id
+                                            onPromoteVoiceDraft(it.id)
+                                        }
+                                    },
                                     enabled = confirmPreviewCompleted && !voiceProfileBusy &&
                                         !confirmPreviewEditing && !confirmPreviewSaving,
                                     modifier = Modifier.weight(1f),

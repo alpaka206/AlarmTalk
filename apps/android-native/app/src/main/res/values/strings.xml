@@ -647,6 +647,12 @@
     <string name="voices_mic_permission_required">마이크 권한이 필요해요.</string>
     <string name="voices_my_voices_title">내 목소리</string>
     <string name="voices_name_label">목소리 이름</string>
+    <string name="voices_prerender_generating_title">목소리 생성 중</string>
+    <string name="voices_prerender_generating_body">이 목소리로 알람 문구를 만들고 있어요. 잠시만 기다려 주세요.</string>
+    <string name="voices_prerender_downloading_title">기기에 저장 중</string>
+    <string name="voices_prerender_progress">알람 문구 %1$d/%2$d 준비</string>
+    <string name="voices_prerender_continue_background_action">백그라운드에서 계속</string>
+    <string name="voices_prerender_continue_background">남은 문구는 백그라운드에서 계속 만들어져요.</string>
     <string name="voices_language_label">문구 언어</string>
     <string name="voices_lang_ko" translatable="false">한국어</string>
     <string name="voices_lang_en" translatable="false">English</string>

@@ -83,6 +83,13 @@ data class VoicePrerenderStatusResponse(
     val attempts: Int = 0,
 )
 
+/** POST voice/{id}/prerender/advance 응답 — 소유자 주도 사전렌더 전진(호출당 최대 3클립). */
+data class VoicePrerenderAdvanceResponse(
+    val done: Boolean = false,
+    val generated: Int = 0,
+    val total: Int = 0,
+)
+
 data class VoicePrerenderRetryResponse(
     val success: Boolean = false,
 )
@@ -212,6 +219,12 @@ interface VoiceProfileApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
     ): VoicePrerenderRetryResponse
+
+    @POST("voice/{id}/prerender/advance")
+    suspend fun advanceVoicePrerender(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): VoicePrerenderAdvanceResponse
 
     // 말투 분석 재시도 — 실패 502 { error_code: SPEECH_STYLE_ANALYSIS_FAILED }, 소스 없음 409.
     @POST("voice/{id}/speech-style/retry")

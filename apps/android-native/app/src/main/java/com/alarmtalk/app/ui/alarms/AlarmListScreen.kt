@@ -82,6 +82,9 @@ internal fun AlarmListScreen(
     onRetryVoicePrerender: suspend (String) -> Boolean = { false },
     onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
     onReloadStockClips: () -> Unit = {},
+    // promote 직후 사전렌더 드라이브(ViewModel 스코프) 진행/시작.
+    prerenderDrive: PrerenderDriveState? = null,
+    onStartPrerenderDrive: (String) -> Unit = {},
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
@@ -191,6 +194,8 @@ internal fun AlarmListScreen(
                         onRetryVoicePrerender = onRetryVoicePrerender,
                         onRetryVoiceSpeechStyle = onRetryVoiceSpeechStyle,
                         onReloadStockClips = onReloadStockClips,
+                        prerenderDrive = prerenderDrive,
+                        onStartPrerenderDrive = onStartPrerenderDrive,
                     )
                 }
             }

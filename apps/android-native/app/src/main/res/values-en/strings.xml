@@ -638,6 +638,12 @@
     <string name="voices_mic_permission_required">Microphone permission is required.</string>
     <string name="voices_my_voices_title">My Voices</string>
     <string name="voices_name_label">Voice name</string>
+    <string name="voices_prerender_generating_title">Creating your voice</string>
+    <string name="voices_prerender_generating_body">We\'re preparing alarm phrases with this voice. Hang tight.</string>
+    <string name="voices_prerender_downloading_title">Saving to your device</string>
+    <string name="voices_prerender_progress">Alarm phrases %1$d/%2$d ready</string>
+    <string name="voices_prerender_continue_background_action">Continue in background</string>
+    <string name="voices_prerender_continue_background">The remaining phrases will keep generating in the background.</string>
     <string name="voices_language_label">Message language</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>

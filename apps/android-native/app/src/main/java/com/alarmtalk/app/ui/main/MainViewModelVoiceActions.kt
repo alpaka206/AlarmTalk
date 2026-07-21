@@ -591,6 +591,93 @@ internal suspend fun MainViewModel.fetchVoicePrerenderStatus(
     }
 }
 
+/** 사전렌더 전진 1스텝(서버가 호출당 최대 3클립 생성). 드라이브 루프가 done 까지 반복
+ *  호출한다 — cron(5분 틱)을 기다리지 않고 즉시 채우기 위한 경로. */
+internal suspend fun MainViewModel.advanceVoicePrerender(
+    profileId: String,
+): com.alarmtalk.app.network.VoicePrerenderAdvanceResponse {
+    val session = authSession ?: error("Authentication required")
+    return withContext(Dispatchers.IO) {
+        api.advanceVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId)
+    }
+}
+
+/** promote 직후 사전렌더 드라이브 시작: 생성(advance 반복) → 클립 전체 기기 다운로드.
+ *  viewModelScope 에서 돌아 '목소리 생성 중' 화면을 닫아도 같은 속도로 계속된다.
+ *  실패/무진전 시엔 조용히 끝낸다 — 서버 cron 드레인이 폴백으로 이어받는다. */
+internal fun MainViewModel.startPrerenderDrive(voiceId: String) {
+    if (prerenderDrive?.voiceId == voiceId && prerenderDriveJob?.isActive == true) return
+    prerenderDriveJob?.cancel()
+    // 동기 세팅: '생성 중' 화면의 종료 감시가 launch 시작 전의 null 을 보고 바로 닫지 않게.
+    prerenderDrive = PrerenderDriveState(voiceId, 0, 0, downloading = false)
+    prerenderDriveJob = viewModelScope.launch {
+        try {
+            var stagnantRounds = 0
+            var lastGenerated = -1
+            while (true) {
+                val step = runCatching { advanceVoicePrerender(voiceId) }.getOrElse { error ->
+                    AlarmTalkLog.reportError("Voice prerender drive failed", error)
+                    return@launch
+                }
+                prerenderDrive = PrerenderDriveState(voiceId, step.generated, step.total, downloading = false)
+                if (step.done) break
+                stagnantRounds = if (step.generated == lastGenerated) stagnantRounds + 1 else 0
+                lastGenerated = step.generated
+                // 3회 연속 무진전이면 여기서 더 붙잡지 않는다 — cron 이 이어받는다.
+                if (stagnantRounds >= 3) return@launch
+            }
+            prerenderDrive = prerenderDrive?.copy(downloading = true)
+            runCatching {
+                downloadAllPresetClips(voiceId) { done, total ->
+                    prerenderDrive = PrerenderDriveState(voiceId, done, total, downloading = true)
+                }
+            }.onFailure { error ->
+                AlarmTalkLog.reportError("Voice preset clip download failed", error)
+            }
+        } finally {
+            // 종료(완료/실패/취소) 시 진행 표시를 걷는다 — 열려 있던 '생성 중' 화면은 닫힌다.
+            prerenderDrive = null
+        }
+    }
+}
+
+/** 방금 생성된 클론 preset 클립 전체를 기기에 내려받아 캐시한다(비행기모드 알람 대비).
+ *  스톡 매니페스트를 새로 받아 방금 생성분까지 포함하고, 이미 캐시된 클립은 건너뛴다. */
+internal suspend fun MainViewModel.downloadAllPresetClips(
+    voiceProfileId: String,
+    onProgress: (Int, Int) -> Unit,
+) {
+    val session = authSession ?: return
+    withContext(Dispatchers.IO) {
+        val manifest = api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
+        stockClips = manifest
+        val language = deviceAppVoiceLanguage()
+        val clips = manifest.filter {
+            it.voiceProfileId == voiceProfileId && (it.language ?: "ko") == language
+        }
+        if (clips.isEmpty()) return@withContext
+        val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+        var done = 0
+        onProgress(0, clips.size)
+        clips.forEach { clip ->
+            val cacheKey = "stock_${clip.messageId}"
+            if (audioStore.getCachedAudio(cacheKey) == null) {
+                val response = downloadTtsMessageAudio(clip.messageId)
+                audioStore.cacheGeneratedAudio(
+                    bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
+                    format = response.audioFormat,
+                    rawAudioUri = response.audioUrl,
+                    displayName = cacheKey,
+                    cacheKey = cacheKey,
+                    messageId = clip.messageId,
+                )
+            }
+            done += 1
+            onProgress(done, clips.size)
+        }
+    }
+}
+
 /** 사전렌더 실패 시 재생성 요청. true 면 재시작 수락 — 호출측이 폴링을 재개한다. */
 internal suspend fun MainViewModel.retryVoicePrerender(profileId: String): Boolean {
     val session = authSession ?: return false
