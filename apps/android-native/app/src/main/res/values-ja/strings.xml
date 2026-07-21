@@ -537,8 +537,6 @@
     <string name="msg_voice_share_login_required">声を共有するには、まずログインしてください。</string>
     <string name="msg_voice_share_setting_failed">声の共有設定に失敗しました。</string>
     <string name="msg_voice_shared_info_saved">共有された声の情報を保存しました。</string>
-    <string name="msg_voice_shared_off">声の共有をオフにしました。</string>
-    <string name="msg_voice_shared_on">声を共有しました。</string>
     <string name="msg_voice_slot_exhausted">現在、声の作成リクエストが集中しています。しばらくしてからもう一度お試しください。</string>
     <string name="msg_voice_tts_audio_load_login_required">保存した音声オーディオを読み込むには、まずログインしてください。</string>
     <string name="msg_voice_tts_generate_login_required">音声オーディオを作成するには、まずログインしてください。</string>

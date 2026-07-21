@@ -540,8 +540,6 @@
     <string name="msg_voice_share_login_required">목소리를 공유하려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_share_setting_failed">목소리 공유 설정에 실패했어요</string>
     <string name="msg_voice_shared_info_saved">공유받은 목소리 정보를 저장했어요</string>
-    <string name="msg_voice_shared_off">목소리 공유를 껐어요</string>
-    <string name="msg_voice_shared_on">목소리를 공유했어요</string>
     <string name="msg_voice_slot_exhausted">지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_voice_tts_audio_load_login_required">저장된 음성 오디오를 불러오려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_tts_generate_login_required">음성 오디오를 만들려면 먼저 로그인해 주세요</string>

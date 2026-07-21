@@ -529,8 +529,6 @@
     <string name="msg_voice_share_login_required">Please log in first to share the voice.</string>
     <string name="msg_voice_share_setting_failed">Couldn\'t update voice sharing settings.</string>
     <string name="msg_voice_shared_info_saved">The shared voice info has been saved.</string>
-    <string name="msg_voice_shared_off">Voice sharing is now off.</string>
-    <string name="msg_voice_shared_on">The voice is now shared.</string>
     <string name="msg_voice_slot_exhausted">There are a lot of voice creation requests right now. Please try again in a moment.</string>
     <string name="msg_voice_tts_audio_load_login_required">Please log in first to load saved voice audio.</string>
     <string name="msg_voice_tts_generate_login_required">Please log in first to create voice audio.</string>
