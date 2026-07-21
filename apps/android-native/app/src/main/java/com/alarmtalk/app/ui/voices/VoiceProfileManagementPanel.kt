@@ -302,6 +302,9 @@ internal fun VoiceProfileManagementPanel(
     // (유지/삭제를 골라야만 끝난다). draft 가 생겨 isLimitReached 가 돼도 다이얼로그를 유지한다.
     val inDraftDecisionFlow = currentStep == VoiceRegistrationStep.Creating ||
         currentStep == VoiceRegistrationStep.Preview
+    // promote 직후 사전렌더 진행 화면 — 등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지해야
+    // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
+    val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
 
@@ -1321,8 +1324,8 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 만드는 중/미리듣기 스텝에선 draft 존재로 isLimitReached 가 돼도 다이얼로그를 유지한다.
-    if (showCreateForm && (inDraftDecisionFlow || (!isLimitReached && canCreateVoice))) {
+    // 만드는 중/미리듣기/사전렌더 스텝에선 draft·등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지한다.
+    if (showCreateForm && (inDraftDecisionFlow || inPrerenderingFlow || (!isLimitReached && canCreateVoice))) {
         val useManualSystemInsets = Build.VERSION.SDK_INT >= 35
         val actionBottomPadding = 10.dp + if (useManualSystemInsets) {
             androidNavigationBarHeightPadding() + AndroidEdgeToEdgeNavigationExtraPadding
