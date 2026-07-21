@@ -726,9 +726,6 @@ internal fun AlarmTalkApp(
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                           onRenameVoiceProfile = viewModel::renameVoiceProfile,
                           onShareVoiceProfile = viewModel::setVoiceProfileShared,
-                          onUpdateSharedVoiceInfo = { id, relationship, listener ->
-                              viewModel.updateSharedVoiceViewerInfo(id, relationship, listener)
-                          },
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                           onConfirmVoicePreviewPlayed = viewModel::confirmVoicePreviewPlayed,
                           onUpdateVoicePreviewText = viewModel::updateVoicePreviewText,

@@ -16,7 +16,6 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
-import com.alarmtalk.app.network.VoiceProfileRelationshipUpdateRequest
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -311,62 +310,6 @@ internal fun MainViewModel.renameVoiceProfile(
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to rename voice profile id=$profileId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_info_update_failed))
-        }
-        voiceProfileBusy = false
-    }
-}
-
-internal fun MainViewModel.updateSharedVoiceViewerInfo(
-    profileId: String,
-    relationshipLabel: String,
-    listenerTitle: String,
-    onSuccess: () -> Unit = {},
-) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_shared_setup_login_required)
-        return
-    }
-    val trimmedRelationship = relationshipLabel.trim()
-    val trimmedListener = listenerTitle.trim()
-    if (trimmedRelationship.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_relationship_required)
-        return
-    }
-    if (trimmedListener.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_listener_title_required)
-        return
-    }
-
-    viewModelScope.launch {
-        if (voiceProfileBusy) return@launch
-        voiceProfileBusy = true
-        runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfileRelationship(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileRelationshipUpdateRequest(
-                        relationshipLabel = trimmedRelationship,
-                        listenerTitle = trimmedListener,
-                    ),
-                ).profile
-            }
-        }.onSuccess { profile ->
-            familyVoices = familyVoices.map {
-                if (it.id == profile.id) {
-                    it.copy(
-                        relationshipLabel = profile.relationshipLabel ?: trimmedRelationship,
-                        listenerTitle = profile.listenerTitle ?: trimmedListener,
-                    )
-                } else {
-                    it
-                }
-            }
-            onSuccess()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to update shared voice viewer info id=$profileId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_shared_info_save_failed))
         }
         voiceProfileBusy = false
     }

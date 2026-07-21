@@ -621,9 +621,7 @@ internal fun AlarmEditorScreen(
         val usableProfileIds = (
             voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
                 familyVoices.filter {
-                    (it.status == null || it.status == "ready") &&
-                        it.isShared != false &&
-                        !it.requiresViewerInfo()
+                    (it.status == null || it.status == "ready") && it.isShared != false
                 }.map { it.id }
             ).toSet()
         if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text, listenerTitleForSave)) {
@@ -888,9 +886,7 @@ internal fun AlarmEditorScreen(
     val usableTtsProfileIds = (
         voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
             familyVoices.filter {
-                (it.status == null || it.status == "ready") &&
-                    it.isShared != false &&
-                    !it.requiresViewerInfo()
+                (it.status == null || it.status == "ready") && it.isShared != false
             }.map { it.id }
         ).toSet()
 

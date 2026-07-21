@@ -107,9 +107,7 @@ internal fun VoiceAudioCard(
         (it.status == null || it.status == "ready") && it.isSystem == true
     }
     val readyFamilyVoices = familyVoices.filter {
-        (it.status == null || it.status == "ready") &&
-            it.isShared != false &&
-            !it.requiresViewerInfo()
+        (it.status == null || it.status == "ready") && it.isShared != false
     }
     val profileOptions = readyOwnProfiles.map {
         VoiceProfileOption(
@@ -814,6 +812,3 @@ private fun ownedVoiceDetail(context: android.content.Context, profile: VoicePro
     profile.isShared == true -> context.getString(R.string.editor2_voice_detail_mine_sharing)
     else -> context.getString(R.string.editor2_voice_detail_mine)
 }
-
-internal fun FamilyVoiceProfile.requiresViewerInfo(): Boolean =
-    needsViewerInfo == true || relationshipLabel.isNullOrBlank() || listenerTitle.isNullOrBlank()

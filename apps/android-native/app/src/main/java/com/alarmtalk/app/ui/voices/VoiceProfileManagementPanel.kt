@@ -194,7 +194,6 @@ internal fun VoiceProfileManagementPanel(
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
-    onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
@@ -262,7 +261,6 @@ internal fun VoiceProfileManagementPanel(
     var renameRelationship by remember { mutableStateOf("") }
     var renameListenerTitle by remember { mutableStateOf("") }
     var renameSubmitAttempted by remember { mutableStateOf(false) }
-    var sharedInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     var deleteTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var filePreviewPreparing by remember { mutableStateOf(false) }
@@ -954,44 +952,46 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 공유받은 음성에 viewer 라벨을 막 입력했을 때 그 음성을 한 번 들려준다.
-    // 같은 입력이면 백엔드 캐시 hit, 처음이면 새로 합성. 둘 다 MediaPlayer 로 재생.
-    suspend fun playSharedVoicePreview(profileId: String) {
-        runCatching {
-            val response = onGenerateTts(
-                TtsGenerateRequest(
-                    voiceProfileId = profileId,
-                    text = context.getString(R.string.r3data_voice_preview_prompt),
-                    category = "custom",
-                    language = "ko",
-                    random = false,
-                ),
-            )
-            val cached = withContext(Dispatchers.IO) {
-                // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                audioStore.cacheGeneratedAudio(
-                    bytes = bytes,
-                    format = response.audioFormat,
-                    rawAudioUri = null,
-                    displayName = "shared_voice_preview_${profileId}",
-                    cacheKey = "shared_preview_${profileId}",
-                    messageId = response.messageId,
-                )
-            }
+    // 공유받은 목소리 행의 ▶ — 소유자가 등록할 때 만들어진 인사말 사전렌더 클립을 들려준다
+    // (stock-clips 매니페스트가 같은 그룹에 공유 중인 클론 클립도 포함). 다시 누르면 정지.
+    fun playSharedGreeting(profile: FamilyVoiceProfile) {
+        if (playingGreetingVoiceId == profile.id) {
             stopMediaPreview()
-            val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
-                ?: return@runCatching
-            mediaPlayer = player.apply {
-                setOnCompletionListener {
-                    it.release()
-                    if (mediaPlayer === it) mediaPlayer = null
+            return
+        }
+        val clip = com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, previewLanguage)
+        if (clip == null) {
+            localMessage = context.getString(R.string.voices_greeting_preview_preparing)
+            return
+        }
+        val requestId = greetingPreviewRequestId + 1
+        greetingPreviewRequestId = requestId
+        scope.launch {
+            stopMediaPreview(invalidateGreetingPreview = false)
+            playingGreetingVoiceId = profile.id
+            runCatching {
+                val cached = ensureGreetingCached(clip)
+                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
+                    ?: error("Failed to create greeting preview player.")
+                if (greetingPreviewRequestId != requestId) {
+                    player.release()
+                    return@runCatching
                 }
-                start()
+                mediaPlayer = player.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                        if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
+                    }
+                    start()
+                }
+            }.onFailure { error ->
+                AlarmTalkLog.reportError("Failed to play shared greeting preview", error)
+                if (greetingPreviewRequestId == requestId) {
+                    if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
+                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
+                }
             }
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to preview shared voice", error)
-            localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
         }
     }
 
@@ -1205,7 +1205,8 @@ internal fun VoiceProfileManagementPanel(
             familyVoices.forEach { profile ->
                 SharedVoiceProfileRow(
                     profile = profile,
-                    onEdit = { sharedInfoTarget = profile },
+                    isPlaying = playingGreetingVoiceId == profile.id,
+                    onPlay = { playSharedGreeting(profile) },
                 )
             }
         }
@@ -2020,23 +2021,6 @@ internal fun VoiceProfileManagementPanel(
                     )
                     renameTarget = null
                 }
-            },
-        )
-    }
-
-    sharedInfoTarget?.let { profile ->
-        SharedVoiceViewerInfoDialog(
-            profileName = profile.name,
-            sharedFromLabel = profile.ownerName?.takeIf { it.isNotBlank() }
-                ?.let { stringResource(R.string.voices_shared_from_owner, it) }
-                ?: stringResource(R.string.voices_shared_from_unknown),
-            initialRelationship = profile.relationshipLabel.orEmpty(),
-            initialListenerTitle = profile.listenerTitle.orEmpty(),
-            onDismiss = { sharedInfoTarget = null },
-            onConfirm = { relationship, listener ->
-                onUpdateSharedVoiceInfo(profile.id, relationship, listener)
-                sharedInfoTarget = null
-                scope.launch { playSharedVoicePreview(profile.id) }
             },
         )
     }
