@@ -877,32 +877,37 @@ internal fun AlarmEditorScreen(
 
     // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
     val isOnline by rememberIsOnline()
-    LaunchedEffect(restrictToWeatherMedication, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage, isOnline) {
+    LaunchedEffect(restrictToWeatherMedication, freeVoiceTier, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline) {
         if (restrictToWeatherMedication && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
-            if (editor.voiceSource != VoiceSources.TTS_PROFILE) {
+            // 무료 플랜은 녹음이 유료 게이트라 TTS 로 강제한다. 유료 + 시스템(기본) 보이스는
+            // 직접 녹음을 허용 — LOCAL_AUDIO 로 있는 동안은 아래 TTS 쪽 제한(버킷/문구 강제)을
+            // 적용하지 않는다(녹음 알람에는 문구 개념이 없다).
+            if (freeVoiceTier && editor.voiceSource != VoiceSources.TTS_PROFILE) {
                 editor.voiceSource = VoiceSources.TTS_PROFILE
                 editor.clearAudio()
                 editor.clearTtsMeta()
                 editor.selectedBucket = null
             }
-            if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
-            if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
-            if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
-            // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
-            // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
-            // 막기 위해, 허용 버킷으로 해석된 상태가 아니면 잔재를 먼저 비운다(Codex #599).
-            if (editor.hasRestrictedVoiceRemnants(FreeBucketOrder)) {
-                editor.clearRestrictedVoiceRemnants()
-            }
-            // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
-            val profileId = editor.voiceProfileId
-            if (!profileId.isNullOrBlank()) {
-                val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage)
-                val target = editor.selectedBucket?.takeIf { it in buckets } ?: buckets.firstOrNull()
-                if (target != null &&
-                    (editor.selectedBucket != target || editor.bucketResolvedForProfileId != profileId)
-                ) {
-                    selectBucket(target)
+            if (editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
+                if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
+                if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
+                if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
+                // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
+                // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
+                // 막기 위해, 허용 버킷으로 해석된 상태가 아니면 잔재를 먼저 비운다(Codex #599).
+                if (editor.hasRestrictedVoiceRemnants(FreeBucketOrder)) {
+                    editor.clearRestrictedVoiceRemnants()
+                }
+                // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
+                val profileId = editor.voiceProfileId
+                if (!profileId.isNullOrBlank()) {
+                    val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage)
+                    val target = editor.selectedBucket?.takeIf { it in buckets } ?: buckets.firstOrNull()
+                    if (target != null &&
+                        (editor.selectedBucket != target || editor.bucketResolvedForProfileId != profileId)
+                    ) {
+                        selectBucket(target)
+                    }
                 }
             }
         }
@@ -1194,6 +1199,7 @@ internal fun AlarmEditorScreen(
                                 stockClips = stockClips,
                                 defaultVoiceId = defaultVoiceId,
                                 restrictToWeatherMedication = restrictToWeatherMedication,
+                                freeVoiceTier = freeVoiceTier,
                                 onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,
                                 isRecording = isRecording,

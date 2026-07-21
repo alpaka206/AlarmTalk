@@ -357,11 +357,19 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
                 voiceProfiles = voiceProfiles.map {
                     if (it.id == profile.id) it.copy(isShared = acked) else it
                 }
-                runCatching {
-                    api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
-                }.onSuccess { profiles ->
-                    familyVoices = profiles
+                // 공유 목록 갱신도 suspend(네트워크 왕복)라 이 동안 새 토글이 오면 desired 가
+                // 다시 채워진다(새 토글은 isActive 워커를 믿고 return). 갱신 실패는 치명적이지
+                // 않아 무시하되(공유 상태는 이미 확정, 상대 반영은 push 가 따로 담당),
+                // CancellationException 은 삼키지 말고 그대로 던진다.
+                try {
+                    familyVoices = api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
+                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
                 }
+                // 갱신 중 새 토글이 왔으면 종료하지 말고 그 값을 마저 전송한다 — 여기서 그냥
+                // break 하면 마지막 의도가 전송되지 않은 채 고아로 남는다.
+                if (shareToggleDesired.containsKey(profileId)) continue
                 break
             }
         } catch (error: kotlin.coroutines.cancellation.CancellationException) {

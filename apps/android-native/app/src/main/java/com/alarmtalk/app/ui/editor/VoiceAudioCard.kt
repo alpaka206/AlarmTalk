@@ -75,8 +75,11 @@ internal fun VoiceAudioCard(
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     defaultVoiceId: String? = null,
     // 날씨+약 문구로 제한하는 모드 — 무료 플랜이거나 시스템(기본) 보이스 선택 시 true.
-    // 녹음/파일·직접 입력·동적 문구를 감추고 무료 버킷 UI(날씨/약)를 재사용한다.
+    // TTS 문구를 무료 버킷 UI(날씨/약)로 제한한다.
     restrictToWeatherMedication: Boolean,
+    // 무료 플랜 여부 — 녹음(직접 녹음)은 유료 게이트라 무료에서만 소스 토글을 감춘다.
+    // 유료는 시스템(기본) 보이스를 골랐어도 직접 녹음으로 전환할 수 있다.
+    freeVoiceTier: Boolean,
     onLockedFeature: () -> Unit,
     audioMessage: String?,
     isRecording: Boolean,
@@ -98,14 +101,19 @@ internal fun VoiceAudioCard(
     } else {
         editor.voiceSource
     }
-    // 알람별로 목소리를 자유롭게 바꾼다 — 내 목소리·공유받은 목소리·기본(시스템) 목소리를
-    // 전부 시트에 노출한다(내 것 → 공유 → 기본 순).
+    // 알람별로 목소리를 자유롭게 바꾼다 — 내 목소리·공유받은 목소리·기본(시스템) 목소리 순.
+    // 기본(시스템) 목소리는 전부 나열하지 않고 '기본 목소리로 설정해 둔 것'만 노출한다
+    // (편집 중 알람이 다른 시스템 보이스로 저장돼 있으면 그것도 함께 — 열자마자 목소리가
+    // 바뀌는 사고 방지). 설정된 기본이 없으면 이전처럼 전부 보여준다.
     val readyOwnProfiles = voiceProfiles.filter {
         (it.status == null || it.status == "ready") && it.isSystem != true
     }
     val readySystemProfiles = voiceProfiles.filter {
         (it.status == null || it.status == "ready") && it.isSystem == true
     }
+    val visibleSystemProfiles = readySystemProfiles.filter {
+        it.id == defaultVoiceId || it.id == editor.voiceProfileId
+    }.ifEmpty { readySystemProfiles }
     val readyFamilyVoices = familyVoices.filter {
         (it.status == null || it.status == "ready") && it.isShared != false
     }
@@ -123,7 +131,7 @@ internal fun VoiceAudioCard(
                 detail = sharedVoiceDetail(context, profile),
             )
         } +
-        readySystemProfiles.map {
+        visibleSystemProfiles.map {
             VoiceProfileOption(
                 id = it.id,
                 name = it.name,
@@ -150,11 +158,11 @@ internal fun VoiceAudioCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-            // 무료·시스템 보이스는 녹음·파일이 잠겨 있어 소스 토글이 사실상 페이월 미끼라 감춘다(항상 TTS).
-            // 유료 + 내 클론일 때만 목소리/녹음·파일을 고를 수 있게 토글을 노출한다.
-            // 공유받은 목소리도 TTS 전용 — 녹음·파일로 전환하면 공유 보이스 밑에 로컬 오디오
+            // 무료 플랜은 녹음이 잠겨 있어 소스 토글이 사실상 페이월 미끼라 감춘다(항상 TTS).
+            // 유료는 시스템(기본) 보이스를 골랐어도 직접 녹음으로 전환할 수 있게 노출한다.
+            // 공유받은 목소리는 TTS 전용 — 녹음·파일로 전환하면 공유 보이스 밑에 로컬 오디오
             // 알람이 저장되는 계약 위반이 생기므로 토글을 감춘다(프리셋+직접 입력만).
-            if (!restrictToWeatherMedication && !sharedVoiceSelected) {
+            if (!freeVoiceTier && !sharedVoiceSelected) {
                 // 바로 위 '재생 방식'과 같은 세그먼트 트랙으로 통일(크기·선택색 일치).
                 EditorSegmentedSelector(
                     options = listOf(
@@ -183,9 +191,15 @@ internal fun VoiceAudioCard(
                     ) {
                         val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
                         if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
-                            // 온보딩에서 고른 기본 목소리를 우선 선택(없거나 목록에 없으면 첫 번째).
+                            // 기본 선택 우선순위: 내 목소리 → 공유받은 목소리 → 기본 목소리로
+                            // 설정해 둔 것 → 목록 첫 번째. 각 그룹 안에서는 기본 목소리로
+                            // 지정해 둔 프로필이 있으면 그것을 우선한다.
                             editor.selectVoiceProfile(
-                                profileOptions.firstOrNull { it.id == defaultVoiceId }?.id
+                                readyOwnProfiles.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: readyOwnProfiles.firstOrNull()?.id
+                                    ?: readyFamilyVoices.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: readyFamilyVoices.firstOrNull()?.id
+                                    ?: profileOptions.firstOrNull { it.id == defaultVoiceId }?.id
                                     ?: profileOptions.first().id,
                             )
                         }
