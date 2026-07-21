@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,11 @@ private val AuthFieldGlass = Color(0x14FFFFFF)
 internal val AuthLine = Color(0x3DFFFFFF)
 internal val AuthLineSoft = Color(0x29FFFFFF)
 internal val AuthTextMuted = Color(0x99FFFFFF)
+
+// 이 화면은 고정 다크 비주얼(문서화된 예외)이라 테마 error/primary 대신 밝은 고정색을 쓴다 —
+// 라이트 테마 기기에서도 남색 배경 위에서 안내가 보이도록.
+internal val AuthErrorText = Color(0xFFFFB4AB)
+internal val AuthNoticeText = Color(0xFFA8C8FF)
 private val AuthSceneTop = Color(0xFF1A2A52)
 private val AuthSceneBottom = Color(0xFF070C1D)
 
@@ -115,7 +121,11 @@ internal fun authFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedTrailingIconColor = AuthTextMuted,
     errorTextColor = TextOnScene,
     errorContainerColor = AuthFieldGlass,
-    errorCursorColor = MaterialTheme.colorScheme.error,
+    errorCursorColor = AuthErrorText,
+    errorBorderColor = AuthErrorText,
+    errorLabelColor = AuthErrorText,
+    errorSupportingTextColor = AuthErrorText,
+    errorTrailingIconColor = TextOnSceneDim,
 )
 
 @Composable
@@ -140,6 +150,12 @@ internal fun AuthScreen(
     busy: Boolean,
     emailVerificationSentTo: String?,
     emailVerified: String?,
+    // 로그인/회원가입 실패 인라인 안내 — 전역 스낵바는 열려 있는 키보드에 가려 안 보여서 화면 안에 띄운다.
+    loginError: String? = null,
+    registerError: String? = null,
+    // 회원가입 → 로그인 자동 전환(이미 가입된 이메일) 때 로그인 화면에 남는 이유 안내.
+    authNotice: String? = null,
+    onClearLoginError: () -> Unit = {},
     onBack: () -> Unit,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String, String) -> Unit,
@@ -169,6 +185,12 @@ internal fun AuthScreen(
     val passwordMatches = password.isNotBlank() && password == confirmPassword
     val isEmailVerified = mode == AuthMode.Login || emailVerified == normalizedEmail
     val codeSentForEmail = emailVerificationSentTo == normalizedEmail
+    // 로그인 실패 시 비밀번호만 비운다 — 오타 대부분이 비밀번호 쪽이고, 이메일까지 비우면
+    // 맞게 입력한 이메일을 다시 치는 마찰만 생긴다(문구가 이메일 확인도 함께 안내).
+    LaunchedEffect(loginError) {
+        if (loginError != null) password = ""
+    }
+
     val canSubmit = if (mode == AuthMode.Login) {
         email.isNotBlank() && password.isNotBlank()
     } else {
@@ -216,6 +238,16 @@ internal fun AuthScreen(
                 color = TextOnSceneDim,
             )
 
+            // 회원가입에서 이미 가입된 이메일로 인증을 시도해 로그인으로 전환된 경우 —
+            // 왜 화면이 바뀌었는지 여기서 설명한다(스낵바는 키보드에 가려 안 보인다).
+            if (mode == AuthMode.Login && authNotice != null) {
+                Text(
+                    text = authNotice,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = AuthNoticeText,
+                )
+            }
+
             if (mode == AuthMode.Register) {
                 OutlinedTextField(
                     value = name,
@@ -235,12 +267,16 @@ internal fun AuthScreen(
 
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it },
+                onValueChange = {
+                    email = it
+                    onClearLoginError()
+                },
                 label = { Text(stringResource(R.string.auth_label_email)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
                 colors = authFieldColors(),
+                isError = mode == AuthMode.Login && loginError != null,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Email,
                     imeAction = ImeAction.Next,
@@ -277,7 +313,10 @@ internal fun AuthScreen(
                     ) {
                         OutlinedTextField(
                             value = emailCode,
-                            onValueChange = { emailCode = it.filter(Char::isDigit).take(6) },
+                            onValueChange = {
+                                emailCode = it.filter(Char::isDigit).take(6)
+                                onClearLoginError()
+                            },
                             label = { Text(stringResource(R.string.auth_label_verification_code)) },
                             singleLine = true,
                             enabled = !busy,
@@ -314,16 +353,34 @@ internal fun AuthScreen(
                         pendingColor = AuthTextMuted,
                     )
                 }
+
+                // 인증 요청/코드 확인/가입 실패 안내 — 스낵바는 키보드에 가려 안 보인다.
+                if (registerError != null) {
+                    Text(
+                        text = registerError,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = AuthErrorText,
+                    )
+                }
             }
 
             OutlinedTextField(
                 value = password,
-                onValueChange = { password = it },
+                onValueChange = {
+                    password = it
+                    onClearLoginError()
+                },
                 label = { Text(stringResource(R.string.auth_label_password)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
                 colors = authFieldColors(),
+                isError = mode == AuthMode.Login && loginError != null,
+                supportingText = if (mode == AuthMode.Login && loginError != null) {
+                    { Text(loginError, color = AuthErrorText) }
+                } else {
+                    null
+                },
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -341,12 +398,7 @@ internal fun AuthScreen(
             )
 
             if (mode == AuthMode.Register) {
-                PasswordRules(
-                    passwordAtLeastMin = passwordAtLeastMin,
-                    passwordHasLetterAndDigit = passwordHasLetterAndDigit,
-                    passwordMatches = passwordMatches,
-                )
-
+                // 비밀번호·비밀번호 확인 입력창을 붙여 두고, 조건 안내는 확인 필드 아래에 모은다.
                 OutlinedTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
@@ -387,6 +439,12 @@ internal fun AuthScreen(
                         imeAction = ImeAction.Done,
                     ),
                     modifier = Modifier.fillMaxWidth(),
+                )
+
+                PasswordRules(
+                    passwordAtLeastMin = passwordAtLeastMin,
+                    passwordHasLetterAndDigit = passwordHasLetterAndDigit,
+                    passwordMatches = passwordMatches,
                 )
             }
 

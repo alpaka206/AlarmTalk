@@ -162,6 +162,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var authRedirectToLogin by mutableStateOf(false)
         internal set
 
+    // 이메일 로그인 실패 안내 — 전역 스낵바 대신 로그인 화면 안 인라인으로 보여준다.
+    // (스낵바는 하단이라 로그인 직후 열려 있는 키보드에 가려 아무 피드백도 없는 것처럼 보인다.)
+    var loginError by mutableStateOf<String?>(null)
+        internal set
+
+    // 회원가입 흐름(인증 요청·코드 확인·가입) 실패 안내 — 같은 이유로 회원가입 화면 인라인.
+    var registerError by mutableStateOf<String?>(null)
+        internal set
+
+    // 회원가입 → 로그인 자동 전환(AUTH_EMAIL_TAKEN) 때 로그인 화면에 남기는 이유 안내.
+    // 전환 '후' 화면에 보여야 하므로 화면 전환 시 정리되는 loginError/registerError 와 분리한다.
+    var authNotice by mutableStateOf<String?>(null)
+        internal set
+
     var syncBusy by mutableStateOf(false)
         internal set
 

@@ -55,6 +55,7 @@
     <string name="auth_landing_sample_message">할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요</string>
     <string name="auth_password_hide">비밀번호 숨기기</string>
     <string name="auth_password_mismatch">비밀번호가 일치하지 않아요.</string>
+    <string name="auth_error_invalid_credentials">이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.</string>
     <string name="auth_password_rule_alnum">영문·숫자 포함</string>
     <string name="auth_password_rule_match">비밀번호 확인 일치</string>
     <string name="auth_password_rule_max">128자 이하</string>
