@@ -242,26 +242,9 @@ internal fun SubscriptionPanel(
                 )
             }
         }
-        // 앱 내 해지가 막혀도 항상 열리는 대체 경로 — Google Play 구독 관리 바로가기.
-        // (클라는 결제 수단을 모르므로 활성 구독 소유자 전원에게 노출한다.)
-        if (hasActive && !isSharedMember) {
-            TextButton(
-                onClick = {
-                    runCatching {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(playSubscriptionManageUrl(currentPlan?.key))),
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = WakerButtonShape,
-            ) {
-                Text(
-                    text = stringResource(R.string.billing_manage_on_google_play),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        // 상시 'Google Play 구독 관리' 링크는 제거 — 쿠폰/서버 부여 이용권 사용자에겐 Play 구독이
+        // 없어 빈 화면만 열리는 혼란이 있었다. 스토어 해지가 필요한 경우(PLAY_CANCEL_FAILED 등)는
+        // 해지 실패 다이얼로그가 manage URL 로 안내하는 폴백 경로가 그대로 남아 있다.
         // 정책 변경: 무료 전환 시 유료 음성 데이터를 삭제하지 않고 보존·잠금하므로
         // '지금 삭제' 파괴적 액션은 제거했다(다시 이용권을 등록하면 그대로 복구된다).
     }

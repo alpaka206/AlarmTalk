@@ -1,7 +1,12 @@
 import type { Client } from '@libsql/client';
 import type { DbExecutor } from './transactions';
 import { withWriteTransaction } from './transactions';
-import { cancelActiveSubscriptionsForUser, createNewSubscriptionForPlan } from './billing-cancel';
+import {
+  cancelActiveSubscriptionsForUser,
+  createNewSubscriptionForPlan,
+  findActiveSubscriptionsByUserPk,
+} from './billing-cancel';
+import { PAID_PLAN_TYPES } from '../routes/billing-helpers';
 
 /**
  * 공용 프로모 쿠폰(관리자 발급) 사용 로직. 기존 개인 코드(invite/gift = voucher_codes,
@@ -205,6 +210,18 @@ async function redeemPromoInTransaction(
       409,
       'OWNS_ACTIVE_GROUP',
       'You own a family group with other members. Transfer ownership or remove members before redeeming a code.',
+    );
+  }
+
+  // 유료 이용 중 쿠폰 등록 금지: 활성 유료 구독(본인 결제·가족 멤버 구독 포함)이 있으면 거절한다.
+  // 쿠폰이 기존 구독을 취소·대체해 남은 유료 기간을 날리는 사고를 막고, 스토어 결제 구독의 경우
+  // 서버가 취소해도 Play 자동갱신이 살아 있어 다음 결제 때 RTDN 으로 되살아나는 이중 상태도 막는다.
+  const activeSubs = await findActiveSubscriptionsByUserPk(db, params.userPk);
+  if (activeSubs.some((s) => PAID_PLAN_TYPES.has(s.planType))) {
+    throw new PromoRedemptionError(
+      409,
+      'ACTIVE_SUBSCRIPTION_EXISTS',
+      'You already have an active subscription. Cancel it before redeeming a promo code.',
     );
   }
 

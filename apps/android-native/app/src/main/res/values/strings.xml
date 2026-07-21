@@ -94,7 +94,6 @@
     <string name="billing_leave_button">나가기</string>
     <string name="billing_leave_shared_pass">공유 이용권에서 나가기</string>
     <string name="billing_leave_shared_pass_description">나가면 무료 이용권으로 전환돼요. 다시 들어오려면 새 초대 코드가 필요해요.</string>
-    <string name="billing_manage_on_google_play">Google Play 구독 관리</string>
     <string name="billing_monthly_subscription">Google Play로 구독하기</string>
     <string name="billing_plan_couple_feature_max_two">2명이 함께 사용</string>
     <string name="billing_plan_couple_feature_message">상대 알람 맞춰주기</string>
@@ -910,6 +909,7 @@
     <string name="msg2_promo_fail_code_exhausted">사용 가능 횟수가 모두 소진된 프로모 코드예요</string>
     <string name="msg2_promo_fail_group_already_redeemed">이미 같은 계열의 프로모 코드를 사용했어요. 이 혜택은 계정당 한 번만 받을 수 있어요</string>
     <string name="msg2_promo_fail_owns_active_group">이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요</string>
+    <string name="msg2_promo_fail_active_subscription">이용 중인 이용권이 있어요. 해지 후 쿠폰을 등록할 수 있어요</string>
     <string name="msg2_promo_fail_generic">프로모 코드를 적용하지 못했어요. 잠시 후 다시 시도해 주세요</string>
     <string name="onb_voice_title">기본 목소리를 골라보세요</string>
     <string name="onb_voice_subtitle">나중에 언제든 바꿀 수 있어요.</string>

@@ -92,7 +92,6 @@
     <string name="billing_leave_button">抜ける</string>
     <string name="billing_leave_shared_pass">共有利用券から抜ける</string>
     <string name="billing_leave_shared_pass_description">抜けると無料利用券に切り替わります。再び参加するには新しい招待コードが必要です。</string>
-    <string name="billing_manage_on_google_play">Google Playで定期購入を管理</string>
     <string name="billing_monthly_subscription">Google Playで購読する</string>
     <string name="billing_plan_couple_feature_max_two">2人で一緒に利用</string>
     <string name="billing_plan_couple_feature_message">相手のアラーム設定</string>
@@ -890,6 +889,7 @@
     <string name="msg2_promo_fail_code_exhausted">利用回数の上限に達したプロモコードです</string>
     <string name="msg2_promo_fail_group_already_redeemed">同じキャンペーンのプロモコードをすでに使用しています。この特典はアカウントごとに1回のみです</string>
     <string name="msg2_promo_fail_owns_active_group">すでに利用中のグループプランがあるため、プロモコードを適用できません</string>
+    <string name="msg2_promo_fail_active_subscription">利用中のプランがあります。解約後にクーポンを登録できます</string>
     <string name="msg2_promo_fail_generic">プロモコードを適用できませんでした。しばらくしてからもう一度お試しください</string>
     <string name="onb_voice_title">基本の声を選んでください</string>
     <string name="onb_voice_subtitle">あとからいつでも変更できます。</string>

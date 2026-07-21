@@ -92,7 +92,6 @@
     <string name="billing_leave_button">Leave</string>
     <string name="billing_leave_shared_pass">Leave shared pass</string>
     <string name="billing_leave_shared_pass_description">If you leave, you\'ll switch to the free pass. You\'ll need a new invite code to rejoin.</string>
-    <string name="billing_manage_on_google_play">Manage subscription on Google Play</string>
     <string name="billing_monthly_subscription">Subscribe with Google Play</string>
     <string name="billing_plan_couple_feature_max_two">For 2 people together</string>
     <string name="billing_plan_couple_feature_message">Set your partner\'s alarm</string>
@@ -882,6 +881,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg2_promo_fail_code_exhausted">This promo code has reached its usage limit</string>
     <string name="msg2_promo_fail_group_already_redeemed">You\'ve already used a promo code from this promotion. This benefit is limited to once per account</string>
     <string name="msg2_promo_fail_owns_active_group">You already have an active group plan, so this promo code can\'t be applied</string>
+    <string name="msg2_promo_fail_active_subscription">You already have an active pass. Cancel it before redeeming a coupon</string>
     <string name="msg2_promo_fail_generic">Couldn\'t apply the promo code. Please try again in a moment</string>
     <string name="onb_voice_title">Pick your default voice</string>
     <string name="onb_voice_subtitle">You can change it anytime later.</string>
