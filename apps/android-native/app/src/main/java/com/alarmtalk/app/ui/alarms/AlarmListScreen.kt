@@ -150,9 +150,10 @@ internal fun AlarmListScreen(
             .fillMaxSize()
             .padding(contentPadding),
         contentPadding = PaddingValues(
-            start = if (selectedTab == NativeTab.Alarms) 20.dp else 24.dp,
+            // 좌우 여백은 모든 탭 20dp 로 통일 — 탭 전환 시 콘텐츠 폭이 미세하게 널뛰지 않게.
+            start = 20.dp,
             top = 24.dp,
-            end = if (selectedTab == NativeTab.Alarms) 20.dp else 24.dp,
+            end = 20.dp,
             // 알람 탭은 우하단 FAB(＋)가 마지막 알람 행을 가리지 않게 하단 여유를 더 준다.
             bottom = if (selectedTab == NativeTab.Alarms) 96.dp else 32.dp,
         ),
