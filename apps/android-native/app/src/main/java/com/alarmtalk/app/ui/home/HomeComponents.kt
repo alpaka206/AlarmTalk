@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
@@ -26,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -454,34 +452,29 @@ internal fun NicknameEditDialog(
     }
 }
 
+// 로그아웃 확인과 같은 iOS 알럿 스타일(IosAlertDialog)로 통일 — 확인형 모달은 전부 이 계열.
 @Composable
 internal fun DeleteAccountConfirmDialog(
     busy: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = {
-            ModalDialogTitle(
-                title = stringResource(R.string.hs_delete_account_title),
-                onDismiss = onDismiss,
-                dismissEnabled = !busy,
-            )
-        },
-        text = {
-            Text(
-                stringResource(R.string.hs_delete_account_body),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm, enabled = !busy) {
-                Text(
-                    text = stringResource(R.string.hs_delete_account_confirm),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        },
+    IosAlertDialog(
+        title = stringResource(R.string.hs_delete_account_title),
+        message = stringResource(R.string.hs_delete_account_body),
+        onDismiss = { if (!busy) onDismiss() },
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.social_cancel_button),
+                onClick = { if (!busy) onDismiss() },
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.hs_delete_account_confirm),
+                emphasized = true,
+                destructive = true,
+                onClick = { if (!busy) onConfirm() },
+            ),
+        ),
     )
 }
 

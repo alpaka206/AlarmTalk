@@ -654,19 +654,25 @@ private fun CancelSubscriptionDialog(
 ) {
     var confirmImmediate by remember { mutableStateOf(false) }
     val endDate = formatPass(subscription?.expiresAt, PassShortDateFormatter)
+    // 로그아웃 확인과 같은 iOS 알럿 스타일(IosAlertDialog)로 통일 — 확인형 모달은 전부 이 계열.
     if (confirmImmediate) {
-        BillingActionDialog(
+        IosAlertDialog(
             title = stringResource(R.string.billing_cancel_immediate_title),
-            description = stringResource(R.string.billing_cancel_immediate_description),
+            message = stringResource(R.string.billing_cancel_immediate_description),
             onDismiss = onDismiss,
-        ) {
-            BillingDialogButton(
-                label = stringResource(R.string.billing_cancel_now),
-                primary = true,
-                destructive = true,
-                onClick = { onConfirm(false) },
-            )
-        }
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.social_cancel_button),
+                    onClick = onDismiss,
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.billing_cancel_now),
+                    emphasized = true,
+                    destructive = true,
+                    onClick = { onConfirm(false) },
+                ),
+            ),
+        )
         return
     }
     val finalDescription = if (endDate != null) {
@@ -674,28 +680,27 @@ private fun CancelSubscriptionDialog(
     } else {
         stringResource(R.string.billing_cancel_description_no_date)
     }
-    BillingActionDialog(
+    IosAlertDialog(
         title = stringResource(R.string.billing_cancel_dialog_title),
-        description = finalDescription,
+        message = finalDescription,
         onDismiss = onDismiss,
-    ) {
-        BillingDialogButtonRow {
-            BillingDialogButton(
+        actions = listOf(
+            IosAlertAction(
                 label = endDate?.let { stringResource(R.string.billing_cancel_at_date, it) }
                     ?: stringResource(R.string.billing_cancel_at_end_date),
-                primary = false,
-                modifier = Modifier.weight(1f),
                 onClick = { onConfirm(true) },
-            )
-            BillingDialogButton(
+            ),
+            IosAlertAction(
                 label = stringResource(R.string.billing_cancel_now),
-                primary = true,
                 destructive = true,
-                modifier = Modifier.weight(1f),
                 onClick = { confirmImmediate = true },
-            )
-        }
-    }
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.social_cancel_button),
+                onClick = onDismiss,
+            ),
+        ),
+    )
 }
 
 /**
