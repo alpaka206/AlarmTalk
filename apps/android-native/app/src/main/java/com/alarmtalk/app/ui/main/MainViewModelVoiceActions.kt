@@ -16,7 +16,6 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
-import com.alarmtalk.app.network.VoiceProfileRelationshipUpdateRequest
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -316,62 +315,6 @@ internal fun MainViewModel.renameVoiceProfile(
     }
 }
 
-internal fun MainViewModel.updateSharedVoiceViewerInfo(
-    profileId: String,
-    relationshipLabel: String,
-    listenerTitle: String,
-    onSuccess: () -> Unit = {},
-) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_shared_setup_login_required)
-        return
-    }
-    val trimmedRelationship = relationshipLabel.trim()
-    val trimmedListener = listenerTitle.trim()
-    if (trimmedRelationship.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_relationship_required)
-        return
-    }
-    if (trimmedListener.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_listener_title_required)
-        return
-    }
-
-    viewModelScope.launch {
-        if (voiceProfileBusy) return@launch
-        voiceProfileBusy = true
-        runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfileRelationship(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileRelationshipUpdateRequest(
-                        relationshipLabel = trimmedRelationship,
-                        listenerTitle = trimmedListener,
-                    ),
-                ).profile
-            }
-        }.onSuccess { profile ->
-            familyVoices = familyVoices.map {
-                if (it.id == profile.id) {
-                    it.copy(
-                        relationshipLabel = profile.relationshipLabel ?: trimmedRelationship,
-                        listenerTitle = profile.listenerTitle ?: trimmedListener,
-                    )
-                } else {
-                    it
-                }
-            }
-            onSuccess()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to update shared voice viewer info id=$profileId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_shared_info_save_failed))
-        }
-        voiceProfileBusy = false
-    }
-}
-
 internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Boolean) {
     val session = authSession
     if (session == null) {
@@ -651,10 +594,9 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
     withContext(Dispatchers.IO) {
         val manifest = api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
         stockClips = manifest
-        val language = deviceAppVoiceLanguage()
-        val clips = manifest.filter {
-            it.voiceProfileId == voiceProfileId && (it.language ?: "ko") == language
-        }
+        // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
+        // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
+        val clips = manifest.filter { it.voiceProfileId == voiceProfileId }
         if (clips.isEmpty()) return@withContext
         val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
         var done = 0

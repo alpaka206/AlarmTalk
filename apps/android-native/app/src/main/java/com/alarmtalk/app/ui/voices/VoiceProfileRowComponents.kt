@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -30,7 +31,6 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -466,48 +466,39 @@ internal fun PlayingEqualizer() {
 @Composable
 internal fun SharedVoiceProfileRow(
     profile: FamilyVoiceProfile,
-    onEdit: () -> Unit,
+    isPlaying: Boolean,
+    onPlay: () -> Unit,
 ) {
-    val needsViewerInfo = profile.requiresViewerInfo()
     OutlinedCard(
         shape = WakerCardShape,
         border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Text(profile.name, fontWeight = FontWeight.SemiBold)
-                    val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
-                        ?.let { stringResource(R.string.voicesr_shared_from_owner, it) }
-                        ?: stringResource(R.string.voicesr_shared_voice)
-                    MutedText(ownerText)
-                }
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.voicesr_edit_my_info))
-                }
+                Text(profile.name, fontWeight = FontWeight.SemiBold)
+                val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
+                    ?.let { stringResource(R.string.voicesr_shared_from_owner, it) }
+                    ?: stringResource(R.string.voicesr_shared_voice)
+                MutedText(ownerText)
             }
-            if (needsViewerInfo) {
-                OutlinedButton(
-                    onClick = onEdit,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                    border = wakerCardBorder(),
-                    colors = wakerOutlinedButtonColors(),
-                ) {
-                    Text(stringResource(R.string.voicesr_set_how_voice_calls_me))
+            IconButton(onClick = onPlay) {
+                if (isPlaying) {
+                    PlayingEqualizer()
+                } else {
+                    Icon(
+                        Icons.Outlined.PlayArrow,
+                        contentDescription = stringResource(R.string.voicesr_play_shared_sample),
+                    )
                 }
             }
         }

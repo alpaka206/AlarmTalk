@@ -69,11 +69,6 @@ data class VoicePreviewTextUpdateResponse(
     @SerializedName("preview_text") val previewText: String,
 )
 
-data class VoiceProfileRelationshipUpdateRequest(
-    @SerializedName("relationship_label") val relationshipLabel: String,
-    @SerializedName("listener_title") val listenerTitle: String,
-)
-
 /** GET voice/{id}/prerender-status 응답 — 유료 클론 사전렌더(R2 21클립) 진행 상태. */
 data class VoicePrerenderStatusResponse(
     // "pending" | "done" | "failed" | "none"
@@ -187,13 +182,6 @@ interface VoiceProfileApi {
         @Path("id") id: String,
         @Body request: VoicePreviewTextUpdateRequest,
     ): VoicePreviewTextUpdateResponse
-
-    @PATCH("voice/{id}/relationship")
-    suspend fun updateVoiceProfileRelationship(
-        @Header("Authorization") authorization: String,
-        @Path("id") id: String,
-        @Body request: VoiceProfileRelationshipUpdateRequest,
-    ): VoiceProfileResponse
 
     @DELETE("voice/{id}")
     suspend fun deleteVoiceProfile(
