@@ -1989,17 +1989,39 @@ voiceProfile.post('/:id/prerender/advance', async (c) => {
   });
   await enqueuePrerender(db, id, userPk, String(profileRes.rows[0]!.preview_language ?? 'ko'));
 
-  // 소유자 주도라 cron 의 신선한 claim 도 즉시 인수한다 — 진행 중이던 cron 쪽 publish 는
-  // claim_token 불일치로 no-op 이 되고(멱등 INSERT), 이쪽이 이어서 채운다.
-  const claimToken = crypto.randomUUID();
+  // 클레임 규칙 (Codex #609 P1 — 동시 advance 가 서로의 claim 을 덮어써 유료 합성이 중복되는
+  // 것 방지):
+  //  - cron 클레임(uuid 토큰)은 즉시 인수한다 — 소유자 주도가 우선이고, 진행 중이던 cron 쪽
+  //    publish 는 claim_token 불일치로 no-op(멱등 INSERT), 이쪽이 이어서 채운다.
+  //  - 다른 advance 클레임('adv-' 접두사)이 살아 있으면(2분 리스) 인수하지 않고 현재 진행만
+  //    돌려준다. 정상 루프는 매 호출 끝에 release 로 토큰을 비우므로 순차 호출은 항상 통과하고,
+  //    죽은 호출의 클레임은 2분 뒤 회수된다.
+  const claimToken = `adv-${crypto.randomUUID()}`;
   const claimed = await db.execute({
     sql: `UPDATE voice_prerender_queue
           SET claimed_at = datetime('now'), claim_token = ?, updated_at = datetime('now')
           WHERE voice_profile_id = ? AND status = 'pending'
+            AND (
+              claim_token IS NULL
+              OR claim_token NOT LIKE 'adv-%'
+              OR claimed_at <= datetime('now', '-2 minutes')
+            )
           RETURNING language`,
     args: [claimToken, id],
   });
   if (claimed.rows.length === 0) {
+    const pendingRes = await db.execute({
+      sql: `SELECT 1 FROM voice_prerender_queue WHERE voice_profile_id = ? AND status = 'pending'`,
+      args: [id],
+    });
+    if (pendingRes.rows.length > 0) {
+      // 다른 advance 호출이 진행 중 — 합성 없이 현재 진행 상황만 돌려준다.
+      return c.json({
+        done: false,
+        generated: await countGenerated(),
+        total: CLONE_PRERENDER_TOTAL,
+      });
+    }
     // pending 이 아니면 이미 done — 현재 개수만 돌려준다.
     return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
   }
