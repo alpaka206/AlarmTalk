@@ -14,6 +14,7 @@ import {
   normalizeSynthesisLanguage,
   UnsupportedVoiceProviderError,
 } from '../lib/voice-provider';
+import { recloneEvictedVoiceProfile } from '../lib/voice-recover';
 import {
   DynamicAlarmTextGenerationInvalidError,
   AlarmTextPreparationInvalidError,
@@ -31,6 +32,7 @@ import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import {
   CLONE_CLIP_SEEDS,
   CLONE_WEATHER_CONDITIONS,
+  FREE_BUCKET_CATEGORIES,
   STOCK_GREETING_CATEGORY,
 } from '../lib/stock-clips';
 import {
@@ -824,38 +826,57 @@ tts.post('/generate', async (c) => {
     // 생성 실패(Vertex 미설정/모델 오류) 시의 폴백 문구가 된다.
     requestText = presetTextWithListenerTitle(requestText, listenerTitle);
   }
-  if (freePlanRestricted) {
-    if (!isSystemVoice) {
-      return c.json(
-        {
-          error: 'Voice features require a paid plan.',
-          error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
-        },
-        403,
-      );
-    }
-    // 커스텀 텍스트·동적(날씨/운세) 문구·번역은 매번 생성 비용이 들어 유료 전용.
+  // F2: 기본(시스템) 목소리는 요금제와 무관하게 무료처럼 '프리셋(날씨/약)'만 허용한다.
+  // 커스텀 텍스트·운세/날씨 동적 생성·번역은 유료 '커스텀 클론' 전용이므로, 기본 목소리를
+  // 고른 유료 사용자도 무료와 동일하게 제한한다(→ 그만큼 커스텀 클론 슬롯 공간을 아낀다).
+  const presetOnlyRestricted = freePlanRestricted || isSystemVoice;
+  // 무료 플랜은 시스템 스톡 보이스만 쓸 수 있다(커스텀 클론 불가). 시스템 보이스면 통과.
+  if (freePlanRestricted && !isSystemVoice) {
+    return c.json(
+      {
+        error: 'Voice features require a paid plan.',
+        error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+      },
+      403,
+    );
+  }
+  if (presetOnlyRestricted) {
+    // 무료는 기존 코드 유지, 기본 목소리(유료+시스템)는 별도 코드로 구분.
+    const presetOnlyCode = freePlanRestricted ? 'FREE_PLAN_PRESET_ONLY' : 'BASIC_VOICE_PRESET_ONLY';
+    // 커스텀 텍스트·동적(날씨/운세) 문구·번역은 매번 생성 비용이 들어 유료 커스텀 클론 전용.
     if (!randomRequested || randomContext !== 'preset' || body.translate === true) {
       return c.json(
         {
-          error: 'Free plan supports preset phrases with stock voices only.',
-          error_code: 'FREE_PLAN_PRESET_ONLY',
+          error: 'This voice supports preset phrases only.',
+          error_code: presetOnlyCode,
         },
         403,
       );
     }
-    // 암묵적 번역 우회 차단: 프리셋 문구는 여기서 이미 확정(604-606)되므로 source 언어를
-    // 산정할 수 있다. 요청 언어가 source 와 다르면 아래 shouldTranslate(773-775)의
-    // `randomRequested && requestedLanguage !== sourceLanguage` 분기가 켜져 유료 번역
-    // 경로(prepareAlarmTextWithVertex translate:true)로 새어 나간다. translate===true 와
-    // 동일하게 차단해 무료 프리셋 요청이 번역을 절대 호출하지 못하게 한다.
+    // F2: 기본 목소리(=무료 버킷)는 날씨·약만 허용한다. love 만 막던 블랙리스트로는
+    // morning/health/exercise 등 다른 프리셋 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
+    // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES = weather, medication) 화이트리스트로 바꿔 그 외
+    // 카테고리를 전부 차단한다(날씨 동적은 위 randomContext!=='preset' 에서 이미 걸리므로, 실제
+    // 프리셋 경로로 통과하는 건 medication 뿐). 무료 플랜도 동일 버킷이라 함께 조인다.
+    if (!FREE_BUCKET_CATEGORIES.includes(category)) {
+      return c.json(
+        {
+          error: 'This voice supports weather and medication phrases only.',
+          error_code: presetOnlyCode,
+        },
+        403,
+      );
+    }
+    // 암묵적 번역 우회 차단: 프리셋 문구는 여기서 이미 확정되므로 source 언어를 산정할 수 있다.
+    // 요청 언어가 source 와 다르면 아래 shouldTranslate 분기가 켜져 유료 번역 경로로 새어 나간다.
+    // translate===true 와 동일하게 차단해 프리셋 요청이 번역을 절대 호출하지 못하게 한다.
     const requestedLanguageForGate = normalizeSynthesisLanguage(body.language);
     const sourceLanguageForGate = inferSynthesisLanguage(requestText, 'ko');
     if (requestedLanguageForGate !== sourceLanguageForGate) {
       return c.json(
         {
-          error: 'Free plan supports preset phrases with stock voices only.',
-          error_code: 'FREE_PLAN_PRESET_ONLY',
+          error: 'This voice supports preset phrases only.',
+          error_code: presetOnlyCode,
         },
         403,
       );
@@ -1138,12 +1159,28 @@ tts.post('/generate', async (c) => {
     // 모드별 보이스 세팅: sleep은 저에너지를 위해 speed 0.95(그 외는 elevenlabs v3 디폴트
     // stability 0.5/similarity 0.8/style 0.4/speed 1.0/use_speaker_boost 적용). sleep만
     // 오버라이드하므로 캐시 키도 다른 모드와 자연히 분리된다.
+    // F3: 이 프로필이 슬롯 상한(F1)으로 evict돼 provider 보이스가 없으면(elevenlabs_voice_id NULL
+    // + evicted_at 세팅), 보관된 R2 원본으로 자동 재클론해 복구한 뒤 합성한다. 위 게이트에서 소유자
+    // (비공유 클론=caller 본인)의 민감 동의를 이미 검증했다. 시스템 보이스는 evict 대상이 아니다.
+    let providerVoiceId = vp.elevenlabs_voice_id as string | null | undefined;
+    if (!providerVoiceId && vp.evicted_at) {
+      try {
+        providerVoiceId =
+          (await recloneEvictedVoiceProfile(c.env, db, body.voice_profile_id, String(vp.name ?? ''))) ??
+          undefined;
+      } catch (recloneErr) {
+        // 재클론 실패(일시적 공급자 오류 등)가 합성 요청 전체를 500 으로 만들지 않게 —
+        // 미복구 시 아래 NO_VOICE_ID 경로가 클라에 재등록을 안내한다.
+        console.error('[tts/generate] evicted voice reclone failed', recloneErr);
+      }
+    }
+
     const dynamicVoiceSettings =
       randomRequested && randomContext === 'sleep' ? { speed: 0.95 } : undefined;
     const attempts = createSynthesisAttempts({
       env: c.env,
       profile: {
-        elevenlabs_voice_id: vp.elevenlabs_voice_id as string | null | undefined,
+        elevenlabs_voice_id: providerVoiceId,
       },
       text: synthesisText,
       language: synthesisLanguage,
@@ -1215,6 +1252,13 @@ tts.post('/generate', async (c) => {
         anyUser: isSystemVoice,
       });
       if (cached) {
+        // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
+        // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
+        await db.execute({
+          sql: `UPDATE voice_profiles SET last_used_at = datetime('now')
+                WHERE id = ? AND COALESCE(is_system, 0) = 0`,
+          args: [body.voice_profile_id],
+        });
         if (draftPreviewRequested && activePreviewClaimToken) {
           const marked = await db.execute({
             sql: `UPDATE voice_profiles SET preview_claimed_at = NULL,
@@ -1353,6 +1397,13 @@ tts.post('/generate', async (c) => {
                 category,
                 audioUrl,
               ],
+            });
+
+            // F1: 합성 성공을 '사용'으로 보고 LRU 신호를 갱신한다. 시스템 보이스는 no-op.
+            await tx.execute({
+              sql: `UPDATE voice_profiles SET last_used_at = datetime('now')
+                    WHERE id = ? AND COALESCE(is_system, 0) = 0`,
+              args: [body.voice_profile_id],
             });
 
             if (audioUrl) {

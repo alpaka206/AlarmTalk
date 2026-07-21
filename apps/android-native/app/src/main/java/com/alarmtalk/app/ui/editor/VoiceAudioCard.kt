@@ -74,8 +74,9 @@ internal fun VoiceAudioCard(
     voiceProfileBusy: Boolean,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     defaultVoiceId: String? = null,
-    // 무료 플랜 제한 모드 — 녹음/파일·직접 입력·동적 문구는 [onLockedFeature] 로 게이트.
-    freeVoiceTier: Boolean,
+    // 날씨+약 문구로 제한하는 모드 — 무료 플랜이거나 시스템(기본) 보이스 선택 시 true.
+    // 녹음/파일·직접 입력·동적 문구를 감추고 무료 버킷 UI(날씨/약)를 재사용한다.
+    restrictToWeatherMedication: Boolean,
     onLockedFeature: () -> Unit,
     audioMessage: String?,
     isRecording: Boolean,
@@ -142,9 +143,9 @@ internal fun VoiceAudioCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-            // 무료는 녹음·파일이 잠겨 있어 소스 토글이 사실상 페이월 미끼라 감춘다(항상 TTS).
-            // 유료만 목소리/녹음·파일을 고를 수 있게 토글을 노출한다.
-            if (!freeVoiceTier) {
+            // 무료·시스템 보이스는 녹음·파일이 잠겨 있어 소스 토글이 사실상 페이월 미끼라 감춘다(항상 TTS).
+            // 유료 + 내 클론일 때만 목소리/녹음·파일을 고를 수 있게 토글을 노출한다.
+            if (!restrictToWeatherMedication) {
                 // 바로 위 '재생 방식'과 같은 세그먼트 트랙으로 통일(크기·선택색 일치).
                 EditorSegmentedSelector(
                     options = listOf(
@@ -207,7 +208,7 @@ internal fun VoiceAudioCard(
                                 onSelect = { option -> editor.selectVoiceProfile(option.id) },
                             )
                             AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
-                            if (freeVoiceTier) {
+                            if (restrictToWeatherMedication) {
                                 FreeThemeSummaryRow(
                                     selectedBucket = editor.selectedBucket,
                                     weatherCity = editor.voiceWeatherCity,

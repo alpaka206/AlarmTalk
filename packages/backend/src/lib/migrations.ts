@@ -1585,6 +1585,25 @@ export const migrations: Migration[] = [
          AND valid_until IS NULL`,
     ],
   },
+  {
+    // 전역 클론 슬롯 상한(공급자 보이스 최대 개수) + LRU 제거를 위한 컬럼 2종.
+    //  - last_used_at: LRU 선정 기준인 '마지막 사용' 시각. updated_at 은 status 전환·프리뷰
+    //    클레임·공유 토글 등 사용과 무관한 쓰기마다 갱신돼 LRU 신호로 부적합 → 전용 컬럼.
+    //    TTS 합성 성공·캐시 히트·사전렌더 enqueue 시점에 갱신한다(voice-mutation/tts).
+    //  - evicted_at: 상한 초과로 공급자(ElevenLabs) 보이스만 회수하고 우리 DB row + R2 원본은
+    //    보존한 '슬롯 반납' 마커. 이 행은 elevenlabs_voice_id=NULL 이지만 deleted_at 은 NULL 을
+    //    유지한다 — 그래야 TTL 스윕(audio-retention)이 원본을 계속 보존하고, 재요청 시 원본으로
+    //    자동 재클론(F3)이 가능하다. 실제 삭제(deleted_at 세팅)와는 명확히 구분된다.
+    //  - idx_voice_profiles_lru: 상한 초과 시 LRU 1건 선정(ORDER BY last_used_at, created_at) 가속.
+    id: 75,
+    name: 'voice-profiles-lru-eviction',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN last_used_at TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN evicted_at TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_profiles_lru
+         ON voice_profiles (last_used_at, created_at)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
