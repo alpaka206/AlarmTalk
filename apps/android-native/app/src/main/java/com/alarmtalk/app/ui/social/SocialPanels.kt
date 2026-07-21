@@ -5,12 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -127,63 +125,54 @@ internal fun FamilyConnectionPanel(
         }
     }
 
+    // 확인형 모달은 로그아웃/탈퇴와 같은 iOS 알럿 + 제목-온리(문장이 곧 제목, 설명 없음).
     if (showLeaveDialog && currentGroup != null) {
-        AlertDialog(
-            onDismissRequest = { showLeaveDialog = false },
-            title = {
-                ModalDialogTitle(
-                    title = stringResource(R.string.social_leave_dialog_title),
-                    onDismiss = { showLeaveDialog = false },
-                )
-            },
-            text = {
-                MutedText(stringResource(R.string.social_leave_dialog_message))
-            },
-            confirmButton = {
-                TextButton(
+        IosAlertDialog(
+            title = stringResource(R.string.social_leave_dialog_message),
+            message = null,
+            onDismiss = { showLeaveDialog = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.social_cancel_button),
+                    onClick = { showLeaveDialog = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.social_leave_and_register_button),
+                    emphasized = true,
+                    destructive = true,
                     onClick = {
                         showLeaveDialog = false
                         showCodeInputs = true
                         onLeaveFamilyGroup(currentGroup.id)
                     },
-                ) {
-                    Text(
-                        text = stringResource(R.string.social_leave_and_register_button),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
+                ),
+            ),
         )
     }
 
     pendingRegisterCode?.let { code ->
-        AlertDialog(
-            onDismissRequest = { pendingRegisterCode = null },
-            title = {
-                ModalDialogTitle(
-                    title = stringResource(R.string.social_register_dialog_title),
-                    onDismiss = { pendingRegisterCode = null },
-                )
+        IosAlertDialog(
+            title = if (hasActivePlan) {
+                stringResource(R.string.social_register_dialog_message_active, activePlanName)
+            } else {
+                stringResource(R.string.social_register_dialog_message)
             },
-            text = {
-                MutedText(
-                    if (hasActivePlan) {
-                        stringResource(R.string.social_register_dialog_message_active, activePlanName)
-                    } else {
-                        stringResource(R.string.social_register_dialog_message)
-                    },
-                )
-            },
-            confirmButton = {
-                TextButton(
+            message = null,
+            onDismiss = { pendingRegisterCode = null },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.social_cancel_button),
+                    onClick = { pendingRegisterCode = null },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.social_register_button),
+                    emphasized = true,
                     onClick = {
                         onRegisterCode(code)
                         pendingRegisterCode = null
                     },
-                ) {
-                    Text(stringResource(R.string.social_register_button))
-                }
-            },
+                ),
+            ),
         )
     }
 

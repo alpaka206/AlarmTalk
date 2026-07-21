@@ -566,7 +566,6 @@
     <string name="social_leave_and_register_button">Leave &amp; register</string>
     <string name="social_leave_and_register_new_code">Leave current plan &amp; register a new code</string>
     <string name="social_leave_dialog_message">Leave your current plan and register a new code?</string>
-    <string name="social_leave_dialog_title">Leave current plan &amp; register new code</string>
     <string name="social_managing_shared_plan">You\'re managing a shared plan.</string>
     <string name="social_member_fallback">Member</string>
     <string name="social_members_section_title">Members</string>
@@ -584,8 +583,7 @@
     <string name="social_regenerate_share_code_dialog_title">Regenerate share code</string>
     <string name="social_register_button">Register</string>
     <string name="social_register_dialog_message">Register this code?</string>
-    <string name="social_register_dialog_message_active">If this code is valid, your current %1$s plan will end and switch to the new plan. Register?</string>
-    <string name="social_register_dialog_title">Register code</string>
+    <string name="social_register_dialog_message_active">If this code is valid, your current %1$s plan will end and switch to the new plan.\nRegister?</string>
     <string name="social_register_other_code">Register another code</string>
     <string name="social_register_will_change_plan">Registering will change your current %1$s plan.</string>
     <string name="social_remove_button">Remove</string>

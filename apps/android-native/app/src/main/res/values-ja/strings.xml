@@ -574,7 +574,6 @@
     <string name="social_leave_and_register_button">退出して登録</string>
     <string name="social_leave_and_register_new_code">現在のプランから退出して新しいコードを登録</string>
     <string name="social_leave_dialog_message">現在のプランから退出して、新しいコードを登録しますか？</string>
-    <string name="social_leave_dialog_title">現在のプランから退出して新しいコードを登録</string>
     <string name="social_managing_shared_plan">共有プランを管理中です。</string>
     <string name="social_member_fallback">メンバー</string>
     <string name="social_members_section_title">メンバー</string>
@@ -592,8 +591,7 @@
     <string name="social_regenerate_share_code_dialog_title">共有コードの再発行</string>
     <string name="social_register_button">登録</string>
     <string name="social_register_dialog_message">このコードを登録しますか？</string>
-    <string name="social_register_dialog_message_active">登録可能なコードの場合、現在の%1$sプランは終了し、新しいプランに切り替わります。登録しますか？</string>
-    <string name="social_register_dialog_title">コードを登録</string>
+    <string name="social_register_dialog_message_active">登録可能なコードの場合、現在の%1$sプランは終了し、新しいプランに切り替わります。\n登録しますか？</string>
     <string name="social_register_other_code">別のコードを登録</string>
     <string name="social_register_will_change_plan">登録すると、現在の%1$sプランが変更されます。</string>
     <string name="social_remove_button">退出させる</string>
