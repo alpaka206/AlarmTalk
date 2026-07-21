@@ -835,9 +835,11 @@ internal fun AlarmEditorScreen(
 
     // 제한 보이스 선택 시 버킷 클립 프리페치 — 편집 중 문구를 고르거나 저장할 때 11개를
     // 그 자리에서 받는 대신, 보이스를 고른 순간부터 백그라운드로 받아 둔다(캐시분 스킵).
-    LaunchedEffect(editor.voiceProfileId, restrictToWeatherMedication) {
+    // stockClips 를 키에 포함: 매니페스트가 아직 안 온 상태로 진입하면 프리페치가 빈손으로
+    // 끝나므로, 매니페스트 도착 시 재시도한다(Codex #607).
+    LaunchedEffect(editor.voiceProfileId, restrictToWeatherMedication, stockClips) {
         val profileId = editor.voiceProfileId
-        if (restrictToWeatherMedication && !profileId.isNullOrBlank()) {
+        if (restrictToWeatherMedication && !profileId.isNullOrBlank() && stockClips.isNotEmpty()) {
             onPrefetchRestrictedVoiceClips(profileId)
         }
     }
