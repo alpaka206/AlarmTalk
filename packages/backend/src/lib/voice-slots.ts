@@ -98,13 +98,26 @@ export async function evictLruClonesIfOverCapTx(
     // evicted_provider_voice_id: UPDATE 의 우변은 갱신 전 행 값으로 평가되므로(SQLite 의미론)
     // 같은 문장에서 기존 id 를 안전하게 보관한다 — evict 후에도 이 id 로 계산된 캐시 키의
     // 보관 오디오를 프로브해 재클론 없이 서빙할 수 있다(Codex #602).
-    await tx.execute({
-      sql: `UPDATE voice_profiles
-            SET evicted_provider_voice_id = elevenlabs_voice_id,
-                elevenlabs_voice_id = NULL, evicted_at = datetime('now'), updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [victimId],
-    });
+    try {
+      await tx.execute({
+        sql: `UPDATE voice_profiles
+              SET evicted_provider_voice_id = elevenlabs_voice_id,
+                  elevenlabs_voice_id = NULL, evicted_at = datetime('now'), updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [victimId],
+      });
+    } catch (err) {
+      // 배포 워크플로는 워커 배포 → 마이그레이션 순서라(마이그레이션이 새 워커의 /api/init-db 로
+      // 돌기 때문), 76 적용 전 짧은 창에서는 이 컬럼이 아직 없다. 그 창에서 상한 등록이 실패하지
+      // 않도록 구 스키마 폴백으로 evict 자체는 진행한다(캐시 프로브만 포기, Codex #603).
+      if (!/no such column/i.test(String(err))) throw err;
+      await tx.execute({
+        sql: `UPDATE voice_profiles
+              SET elevenlabs_voice_id = NULL, evicted_at = datetime('now'), updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [victimId],
+      });
+    }
     if (oldVoiceId) {
       await enqueueExternalDeletion(tx, 'elevenlabs_voice', oldVoiceId);
     }
