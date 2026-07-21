@@ -139,6 +139,14 @@ internal fun AlarmEditorScreen(
     val voicePlanLocked = authSession == null
     // 무료 플랜 제한 모드: 녹음/파일·직접 입력·동적(날씨/운세) 문구·번역은 유료 게이트.
     val freeVoiceTier = authSession != null && !hasPaidVoiceAccess(subscriptionResponse)
+    // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
+    // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능
+    // 목록이 모두 이 걸러진 목록을 참조한다.
+    val visibleVoiceProfiles = if (freeVoiceTier) {
+        voiceProfiles.filter { it.isSystem == true }
+    } else {
+        voiceProfiles
+    }
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
     // 시스템(기본) 보이스가 선택되면 유료여도 문구를 무료 버킷과 동일하게 '날씨+약'으로 제한한다
@@ -587,7 +595,7 @@ internal fun AlarmEditorScreen(
             return
         }
         val profileId = editor.voiceProfileId
-            ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
+            ?: visibleVoiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
         if (profileId.isNullOrBlank()) {
             audioMessage = context.getString(R.string.editor_error_select_voice)
             return
@@ -644,7 +652,7 @@ internal fun AlarmEditorScreen(
         }
         val listenerTitleForSave = resolvedVoiceListenerTitle()
         val usableProfileIds = (
-            voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
+            visibleVoiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
                 familyVoices.filter {
                     (it.status == null || it.status == "ready") && it.isShared != false
                 }.map { it.id }
@@ -909,7 +917,7 @@ internal fun AlarmEditorScreen(
     var freeWeatherDialogOpen by remember { mutableStateOf(false) }
 
     val usableTtsProfileIds = (
-        voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
+        visibleVoiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
             familyVoices.filter {
                 (it.status == null || it.status == "ready") && it.isShared != false
             }.map { it.id }
@@ -1180,7 +1188,7 @@ internal fun AlarmEditorScreen(
                         Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
                             VoiceAudioCard(
                                 editor = editor,
-                                voiceProfiles = voiceProfiles,
+                                voiceProfiles = visibleVoiceProfiles,
                                 familyVoices = familyVoices,
                                 voiceProfileBusy = voiceProfileBusy,
                                 stockClips = stockClips,

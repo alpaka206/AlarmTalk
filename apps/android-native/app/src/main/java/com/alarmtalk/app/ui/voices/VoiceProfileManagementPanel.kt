@@ -292,9 +292,13 @@ internal fun VoiceProfileManagementPanel(
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
-    val ownVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem != true } }
-    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
+    // 무료 강등 시 클론 데이터는 서버에 보존되지만(30일 유예·재유료 시 복구) UI 에는
+    // 노출하지 않는다 — 유료 요금제여야 사용 가능하므로 리스트에서 숨긴다.
+    val ownVoices = remember(voiceProfiles, canCreateVoice) {
+        if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
+    }
+    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     val canOpenCreateForm = canCreateVoice && !isLimitReached
     // 생성~결정(만드는 중/미리듣기) 구간 — 이 동안은 다이얼로그를 닫거나 밖으로 나갈 수 없다
     // (유지/삭제를 골라야만 끝난다). draft 가 생겨 isLimitReached 가 돼도 다이얼로그를 유지한다.

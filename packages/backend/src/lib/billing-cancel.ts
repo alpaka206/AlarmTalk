@@ -355,20 +355,24 @@ export async function cancelSubscriptionImmediate(
 
   // 방어 스윕: 소유자 구독에 plan_group_id 연결이 없던 상태(스크립트 부여/레거시)에서 해지하면
   // 위 그룹 처리 전체가 스킵돼, 지불 주체 없는 소유 그룹이 잔존하고 멤버들이 그룹 게이트
-  // (공유 목소리/가족 알람/클립 ACL)를 무기한 통과한다. 이 취소로 소유자의 활성 유료 구독이
-  // 하나도 안 남았으면 소유한 그룹을 전부 해체한다. (남은 유료 구독이 있으면 그 구독이
-  // 지불 주체이므로 그룹을 건드리지 않는다.)
+  // (공유 목소리/가족 알람/클립 ACL)를 무기한 통과한다. 소유 그룹은 '그룹을 뒷받침할 수 있는'
+  // 구독이 남아 있을 때만 유지한다 — personal 은 그룹을 만들 수 없으므로 유지 근거가 못 된다
+  // (Codex #611 P1). 유지 조건: 소유자의 남은 활성 구독이 그 그룹에 직접 연결돼 있거나,
+  // 그룹 연결이 빈(레거시) family 타입(커플 포함) 활성 구독이 남아 있는 경우.
   const remaining = await findActiveSubscriptionsByUserPk(db, subscription.userPk);
-  if (!remaining.some((s) => PAID_PLAN_TYPES.has(s.planType))) {
-    const ownedGroups = await db.execute({
-      sql: `SELECT id FROM plan_groups WHERE owner_user_id = ?`,
-      args: [subscription.userPk],
-    });
-    for (const row of ownedGroups.rows) {
-      const groupId = String(row.id);
-      if (groupId === subscription.planGroupId) continue;
-      await disbandOwnedPlanGroup(db, subscription.userPk, groupId, now);
-    }
+  const hasUnlinkedGroupCapablePlan = remaining.some(
+    (s) => s.planType === 'family' && !s.planGroupId,
+  );
+  const ownedGroups = await db.execute({
+    sql: `SELECT id FROM plan_groups WHERE owner_user_id = ?`,
+    args: [subscription.userPk],
+  });
+  for (const row of ownedGroups.rows) {
+    const groupId = String(row.id);
+    if (groupId === subscription.planGroupId) continue;
+    const backedByOwnerSub = remaining.some((s) => s.planGroupId === groupId);
+    if (backedByOwnerSub || hasUnlinkedGroupCapablePlan) continue;
+    await disbandOwnedPlanGroup(db, subscription.userPk, groupId, now);
   }
 }
 
