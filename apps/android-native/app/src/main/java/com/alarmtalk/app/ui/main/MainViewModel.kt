@@ -278,6 +278,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 진행 중인 프리페치 잡 — 목소리를 연달아 바꾸면 이전 잡을 취소하고 마지막 선택만 받는다.
     internal var voicePrefetchJob: kotlinx.coroutines.Job? = null
 
+    // promote 직후 사전렌더 드라이브(즉시 생성→기기 다운로드) 진행 상태. 화면(다이얼로그)이
+    // 아니라 viewModelScope 에서 돌아, '목소리 생성 중' 화면을 닫아도 같은 속도로 계속된다.
+    // 앱 프로세스가 죽으면 서버 cron 드레인이 이어받는다. null = 진행 중 아님.
+    var prerenderDrive by mutableStateOf<PrerenderDriveState?>(null)
+        internal set
+
+    internal var prerenderDriveJob: kotlinx.coroutines.Job? = null
+
     // setDefaultVoice 시점에 매니페스트(stockClips)가 아직 안 왔으면 프리페치가 빈손으로 끝난다.
     // 대상 목소리를 여기 담아 두고 loadStockClips 성공 시 1회 재시도한다(재시도 후 클리어).
     internal var pendingPrefetchVoiceId: String? = null
@@ -477,6 +485,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voicePrefetchJob = null
         voicePrefetchProgress = null
         pendingPrefetchVoiceId = null
+        prerenderDriveJob?.cancel()
+        prerenderDriveJob = null
+        prerenderDrive = null
         voiceProfiles = emptyList()
         pendingVoiceDraft = null
         voiceProfileLoadFinished = false
@@ -596,3 +607,11 @@ private fun loadInitialThemeMode(prefs: android.content.SharedPreferences): Them
     val raw = prefs.getString("mode", ThemeMode.System.name) ?: return ThemeMode.System
     return runCatching { ThemeMode.valueOf(raw) }.getOrDefault(ThemeMode.System)
 }
+
+/** promote 직후 사전렌더 드라이브 진행 상태 — 생성(downloading=false) → 기기 다운로드(true). */
+data class PrerenderDriveState(
+    val voiceId: String,
+    val generated: Int,
+    val total: Int,
+    val downloading: Boolean,
+)

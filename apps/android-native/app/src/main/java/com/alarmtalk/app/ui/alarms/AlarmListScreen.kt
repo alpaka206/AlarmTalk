@@ -82,10 +82,9 @@ internal fun AlarmListScreen(
     onRetryVoicePrerender: suspend (String) -> Boolean = { false },
     onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
     onReloadStockClips: () -> Unit = {},
-    // promote 직후 '목소리 생성 중' 스텝의 사전렌더 전진·클립 전체 다운로드.
-    onAdvanceVoicePrerender: suspend (String) -> com.alarmtalk.app.network.VoicePrerenderAdvanceResponse =
-        { com.alarmtalk.app.network.VoicePrerenderAdvanceResponse() },
-    onDownloadPresetClips: suspend (String, (Int, Int) -> Unit) -> Unit = { _, _ -> },
+    // promote 직후 사전렌더 드라이브(ViewModel 스코프) 진행/시작.
+    prerenderDrive: PrerenderDriveState? = null,
+    onStartPrerenderDrive: (String) -> Unit = {},
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
@@ -195,8 +194,8 @@ internal fun AlarmListScreen(
                         onRetryVoicePrerender = onRetryVoicePrerender,
                         onRetryVoiceSpeechStyle = onRetryVoiceSpeechStyle,
                         onReloadStockClips = onReloadStockClips,
-                        onAdvanceVoicePrerender = onAdvanceVoicePrerender,
-                        onDownloadPresetClips = onDownloadPresetClips,
+                        prerenderDrive = prerenderDrive,
+                        onStartPrerenderDrive = onStartPrerenderDrive,
                     )
                 }
             }

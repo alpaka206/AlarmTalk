@@ -213,11 +213,10 @@ internal fun VoiceProfileManagementPanel(
     onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
     // 서버 사전렌더 완료를 감지했을 때 stockClips 매니페스트를 강제 재조회.
     onReloadStockClips: () -> Unit = {},
-    // promote 직후 '목소리 생성 중' 스텝이 사용자 주도로 사전렌더를 전진(호출당 최대 3클립)·
-    // 완료 후 클립 전체를 기기에 내려받는다. 닫으면 서버 cron 이 백그라운드로 이어받는다.
-    onAdvanceVoicePrerender: suspend (String) -> com.alarmtalk.app.network.VoicePrerenderAdvanceResponse =
-        { com.alarmtalk.app.network.VoicePrerenderAdvanceResponse() },
-    onDownloadPresetClips: suspend (String, (Int, Int) -> Unit) -> Unit = { _, _ -> },
+    // promote 직후 사전렌더 드라이브(즉시 생성→기기 다운로드). 드라이브는 ViewModel 스코프라
+    // '생성 중' 화면을 닫아도 계속되고, 앱이 죽으면 서버 cron 이 이어받는다.
+    prerenderDrive: PrerenderDriveState? = null,
+    onStartPrerenderDrive: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -281,9 +280,6 @@ internal fun VoiceProfileManagementPanel(
     // '이 목소리로 할게요'를 눌러 승격한 보이스 id — draft 소멸이 삭제가 아니라 승격에서
     // 왔음을 구분해, 플로우를 닫는 대신 '목소리 생성 중' 스텝으로 잇는다.
     var promotedForPrerenderId by remember { mutableStateOf<String?>(null) }
-    // 생성/다운로드 진행 표시: phase = generating | downloading, 진행 (n, 전체).
-    var prerenderPhaseDownloading by remember { mutableStateOf(false) }
-    var prerenderProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var confirmPreviewBusy by remember { mutableStateOf(false) }
     var confirmPreviewPlaying by remember { mutableStateOf(false) }
     var confirmPreviewCompleted by remember { mutableStateOf(false) }
@@ -707,8 +703,8 @@ internal fun VoiceProfileManagementPanel(
                 confirmPreviewPlaying = false
                 confirmNewVoice = null
                 if (promotedId != null) {
-                    prerenderPhaseDownloading = false
-                    prerenderProgress = null
+                    // 드라이브는 ViewModel 스코프에서 시작 — 화면은 진행 관찰만 한다.
+                    onStartPrerenderDrive(promotedId)
                     currentStep = VoiceRegistrationStep.Prerendering
                 } else if (showCreateForm) {
                     closeCreateDialog()
@@ -717,35 +713,17 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // '목소리 생성 중' — 사전렌더를 done 까지 사용자 주도로 전진(호출당 최대 3클립)시키고,
-    // 끝나면 클립 전체를 기기에 내려받은 뒤 플로우를 닫는다. 이 스텝은 언제든 닫을 수 있고
-    // (백그라운드에서 계속), 화면 이탈/앱 종료 시엔 서버 cron 이 남은 생성을 이어받는다.
-    LaunchedEffect(currentStep, promotedForPrerenderId) {
+    // '목소리 생성 중' 화면은 ViewModel 드라이브의 진행을 관찰만 한다 — 드라이브가 끝나면
+    // (완료/실패 모두 prerenderDrive 가 null 로 걷힘) 목소리 리스트로 돌아간다. 화면을 먼저
+    // 닫아도 드라이브는 계속되고, 앱 종료 시엔 서버 cron 이 이어받는다.
+    LaunchedEffect(currentStep, prerenderDrive?.voiceId) {
         if (currentStep != VoiceRegistrationStep.Prerendering) return@LaunchedEffect
-        val voiceId = promotedForPrerenderId ?: run { closeCreateDialog(); return@LaunchedEffect }
-        runCatching {
-            // 생성 루프 — advance 1회 ≈ 3클립. 진행이 멈춰도(서버 오류) 최대 시도 후 빠져나간다.
-            var stagnantRounds = 0
-            var lastGenerated = -1
-            while (true) {
-                val step = onAdvanceVoicePrerender(voiceId)
-                prerenderProgress = step.generated to step.total
-                if (step.done) break
-                stagnantRounds = if (step.generated == lastGenerated) stagnantRounds + 1 else 0
-                lastGenerated = step.generated
-                // 3회 연속 무진전이면 이 자리에서 더 기다리지 않는다 — cron 이 이어받는다.
-                if (stagnantRounds >= 3) return@runCatching
-            }
-            // 다운로드 단계 — 방금 생성분 포함 전체 클립을 로컬 캐시로.
-            prerenderPhaseDownloading = true
-            onDownloadPresetClips(voiceId) { done, total -> prerenderProgress = done to total }
+        val watchedId = promotedForPrerenderId
+        if (prerenderDrive == null || (watchedId != null && prerenderDrive.voiceId != watchedId)) {
+            promotedForPrerenderId = null
             onReloadStockClips()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Voice prerender advance failed", error)
-            localMessage = context.getString(R.string.voices_prerender_continue_background)
+            closeCreateDialog()
         }
-        promotedForPrerenderId = null
-        closeCreateDialog()
     }
 
     // 미리듣기 스텝 진입 시 문구·오디오를 자동 준비(합성+재생) — 문구가 화면에 뜨고
@@ -1215,6 +1193,21 @@ internal fun VoiceProfileManagementPanel(
             }
         }
 
+        if (canShareVoice && familyVoices.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.voices_shared_voices_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            familyVoices.forEach { profile ->
+                SharedVoiceProfileRow(
+                    profile = profile,
+                    onEdit = { sharedInfoTarget = profile },
+                )
+            }
+        }
+
+        // 기본 목소리는 맨 아래 — 내 목소리·공유받은 목소리(개인화된 것들)가 먼저 온다.
         if (systemVoices.isNotEmpty()) {
             Row(
                 // 토스식 [제목 … 값 + 셰브론] 행 — 탭하면 기본 목소리 선택 시트를 연다.
@@ -1266,20 +1259,6 @@ internal fun VoiceProfileManagementPanel(
             }
             // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다
             // (AlarmEditorScreen.resolvedVoiceListenerTitle). 관계·호칭은 내/공유 목소리에만 있다.
-        }
-
-        if (canShareVoice && familyVoices.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.voices_shared_voices_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            familyVoices.forEach { profile ->
-                SharedVoiceProfileRow(
-                    profile = profile,
-                    onEdit = { sharedInfoTarget = profile },
-                )
-            }
         }
     }
 
@@ -1629,7 +1608,7 @@ internal fun VoiceProfileManagementPanel(
                                 ) {
                                     CircularProgressIndicator()
                                     Text(
-                                        text = if (prerenderPhaseDownloading) {
+                                        text = if (prerenderDrive?.downloading == true) {
                                             stringResource(R.string.voices_prerender_downloading_title)
                                         } else {
                                             stringResource(R.string.voices_prerender_generating_title)
@@ -1637,13 +1616,12 @@ internal fun VoiceProfileManagementPanel(
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
-                                    val progress = prerenderProgress
                                     Text(
-                                        text = if (progress != null && progress.second > 0) {
+                                        text = if (prerenderDrive != null && prerenderDrive.total > 0) {
                                             stringResource(
                                                 R.string.voices_prerender_progress,
-                                                progress.first,
-                                                progress.second,
+                                                prerenderDrive.generated,
+                                                prerenderDrive.total,
                                             )
                                         } else {
                                             stringResource(R.string.voices_prerender_generating_body)
