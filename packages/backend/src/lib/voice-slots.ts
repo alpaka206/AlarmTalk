@@ -95,9 +95,13 @@ export async function evictLruClonesIfOverCapTx(
   for (const victim of victims.rows) {
     const victimId = victim.id as string;
     const oldVoiceId = victim.elevenlabs_voice_id as string | null;
+    // evicted_provider_voice_id: UPDATE 의 우변은 갱신 전 행 값으로 평가되므로(SQLite 의미론)
+    // 같은 문장에서 기존 id 를 안전하게 보관한다 — evict 후에도 이 id 로 계산된 캐시 키의
+    // 보관 오디오를 프로브해 재클론 없이 서빙할 수 있다(Codex #602).
     await tx.execute({
       sql: `UPDATE voice_profiles
-            SET elevenlabs_voice_id = NULL, evicted_at = datetime('now'), updated_at = datetime('now')
+            SET evicted_provider_voice_id = elevenlabs_voice_id,
+                elevenlabs_voice_id = NULL, evicted_at = datetime('now'), updated_at = datetime('now')
             WHERE id = ?`,
       args: [victimId],
     });

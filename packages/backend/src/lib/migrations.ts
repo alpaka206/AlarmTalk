@@ -1604,6 +1604,14 @@ export const migrations: Migration[] = [
          ON voice_profiles (last_used_at, created_at)`,
     ],
   },
+  {
+    // F1/F3(Codex #602): evict 직전의 provider 보이스 id 를 보관한다 — TTS 캐시 키가 provider
+    // voice id 를 포함하므로, evict된 프로필도 이 값으로 기존 생성 오디오 캐시를 프로브해
+    // 히트 시 재클론 없이 서빙할 수 있다(불필요한 외부 등록·연쇄 eviction 방지).
+    id: 76,
+    name: 'voice-profiles-evicted-provider-voice-id',
+    statements: [`ALTER TABLE voice_profiles ADD COLUMN evicted_provider_voice_id TEXT`],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

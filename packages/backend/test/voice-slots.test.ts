@@ -25,6 +25,7 @@ async function setupDb() {
       user_id TEXT NOT NULL,
       name TEXT NOT NULL,
       elevenlabs_voice_id TEXT,
+      evicted_provider_voice_id TEXT,
       status TEXT DEFAULT 'processing',
       is_system INTEGER DEFAULT 0,
       is_shared INTEGER DEFAULT 0,
@@ -131,10 +132,13 @@ describe('evictLruClonesIfOverCap', () => {
     expect(result).toEqual({ evicted: 1, shortfall: 0 });
     const victim = (
       await db.execute({
-        sql: `SELECT elevenlabs_voice_id, evicted_at, deleted_at FROM voice_profiles WHERE id = 'v000'`,
+        sql: `SELECT elevenlabs_voice_id, evicted_provider_voice_id, evicted_at, deleted_at
+              FROM voice_profiles WHERE id = 'v000'`,
       })
     ).rows[0];
     expect(victim.elevenlabs_voice_id).toBeNull();
+    // evict 직전 id 보관 — TTS 가 이 id 로 기존 캐시를 프로브해 재클론 없이 서빙한다(Codex #602).
+    expect(victim.evicted_provider_voice_id).toBe('el-v000');
     expect(victim.evicted_at).not.toBeNull();
     // deleted_at 은 NULL 유지 — TTL 스윕이 R2 원본을 보존해야 F3 재클론이 가능하다.
     expect(victim.deleted_at).toBeNull();

@@ -1159,58 +1159,74 @@ tts.post('/generate', async (c) => {
     // 모드별 보이스 세팅: sleep은 저에너지를 위해 speed 0.95(그 외는 elevenlabs v3 디폴트
     // stability 0.5/similarity 0.8/style 0.4/speed 1.0/use_speaker_boost 적용). sleep만
     // 오버라이드하므로 캐시 키도 다른 모드와 자연히 분리된다.
-    // F3: 이 프로필이 슬롯 상한(F1)으로 evict돼 provider 보이스가 없으면(elevenlabs_voice_id NULL
-    // + evicted_at 세팅), 보관된 R2 원본으로 자동 재클론해 복구한 뒤 합성한다. 위 게이트에서 소유자
-    // (비공유 클론=caller 본인)의 민감 동의를 이미 검증했다. 시스템 보이스는 evict 대상이 아니다.
-    let providerVoiceId = vp.elevenlabs_voice_id as string | null | undefined;
-    if (!providerVoiceId && vp.evicted_at) {
-      try {
-        providerVoiceId =
-          (await recloneEvictedVoiceProfile(c.env, db, body.voice_profile_id, String(vp.name ?? ''))) ??
-          undefined;
-      } catch (recloneErr) {
-        // 재클론 실패(일시적 공급자 오류 등)가 합성 요청 전체를 500 으로 만들지 않게 —
-        // 미복구 시 아래 NO_VOICE_ID 경로가 클라에 재등록을 안내한다.
-        console.error('[tts/generate] evicted voice reclone failed', recloneErr);
-      }
-    }
-
     const dynamicVoiceSettings =
       randomRequested && randomContext === 'sleep' ? { speed: 0.95 } : undefined;
-    const attempts = createSynthesisAttempts({
-      env: c.env,
-      profile: {
-        elevenlabs_voice_id: providerVoiceId,
-      },
-      text: synthesisText,
-      language: synthesisLanguage,
-      category,
-      voiceSettings: dynamicVoiceSettings,
-    });
+    const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
+      const attempts = createSynthesisAttempts({
+        env: c.env,
+        profile: {
+          elevenlabs_voice_id: voiceIdForSynthesis,
+        },
+        text: synthesisText,
+        language: synthesisLanguage,
+        category,
+        voiceSettings: dynamicVoiceSettings,
+      });
+      return Promise.all(
+        attempts.map(async (attempt) => {
+          const cacheKey = await computeTtsCacheKey({
+            provider: attempt.provider,
+            providerVoiceId: attempt.providerVoiceId,
+            voiceProfileId: body.voice_profile_id,
+            modelId: attempt.modelId,
+            language: synthesisLanguage,
+            languageCode: synthesisLanguage,
+            text: synthesisText,
+            outputFormat: attempt.outputFormat,
+            voiceSettings: attempt.voiceSettings,
+          });
+          return { attempt, cacheKey };
+        }),
+      );
+    };
 
-    if (attempts.length === 0) {
+    // F3: 이 프로필이 슬롯 상한(F1)으로 evict돼 provider 보이스가 없으면(elevenlabs_voice_id NULL
+    // + evicted_at 세팅) 곧바로 재클론하지 않는다 — 캐시 키는 provider voice id 를 포함하므로,
+    // evict 직전 id(evicted_provider_voice_id)로 캐시를 먼저 프로브해 보관 오디오가 있으면 재클론
+    // 없이 그대로 서빙한다(불필요한 외부 등록·연쇄 eviction 방지, Codex #602). 캐시 미스가 확정된
+    // 뒤(아래, 합성 직전)에만 R2 원본으로 재클론한다. 위 게이트에서 소유자(비공유 클론=caller
+    // 본인)의 민감 동의를 이미 검증했고, 재클론 직전 소유자 동의 재검증도 lib 안에서 수행된다.
+    // 시스템 보이스는 evict 대상이 아니다.
+    const recloneIfEvicted = async (): Promise<string | undefined> => {
+      try {
+        return (
+          (await recloneEvictedVoiceProfile(c.env, db, body.voice_profile_id, String(vp.name ?? ''))) ??
+          undefined
+        );
+      } catch (recloneErr) {
+        // 재클론 실패(일시적 공급자 오류 등)가 합성 요청 전체를 500 으로 만들지 않게 —
+        // 미복구 시 NO_VOICE_ID 경로가 클라에 재등록을 안내한다.
+        console.error('[tts/generate] evicted voice reclone failed', recloneErr);
+        return undefined;
+      }
+    };
+    let providerVoiceId = vp.elevenlabs_voice_id as string | null | undefined;
+    const isEvictedWithoutVoice = !providerVoiceId && Boolean(vp.evicted_at);
+    const evictedProbeVoiceId = isEvictedWithoutVoice
+      ? ((vp.evicted_provider_voice_id as string | null | undefined) ?? null)
+      : null;
+    if (isEvictedWithoutVoice && !evictedProbeVoiceId) {
+      // 프로브할 옛 id 가 없는 evict 행(마이그레이션 76 이전 evict 분) — 기존처럼 즉시 재클론.
+      providerVoiceId = await recloneIfEvicted();
+    }
+
+    let preparedAttempts = await buildPreparedAttempts(providerVoiceId ?? evictedProbeVoiceId);
+    if (preparedAttempts.length === 0) {
       return c.json(
         { error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' },
         400,
       );
     }
-
-    const preparedAttempts = await Promise.all(
-      attempts.map(async (attempt) => {
-        const cacheKey = await computeTtsCacheKey({
-          provider: attempt.provider,
-          providerVoiceId: attempt.providerVoiceId,
-          voiceProfileId: body.voice_profile_id,
-          modelId: attempt.modelId,
-          language: synthesisLanguage,
-          languageCode: synthesisLanguage,
-          text: synthesisText,
-          outputFormat: attempt.outputFormat,
-          voiceSettings: attempt.voiceSettings,
-        });
-        return { attempt, cacheKey };
-      }),
-    );
 
     if (draftPreviewRequested && !vp.previewed_at) {
       const previewClaimToken = crypto.randomUUID();
@@ -1312,6 +1328,26 @@ tts.post('/generate', async (c) => {
             error_code: 'VOICE_PREVIEW_UNAVAILABLE',
           },
           409,
+        );
+      }
+    }
+
+    // F3(Codex #602): 캐시 미스 확정 — 프로브만 있고 실제 provider 보이스는 없는 상태라면
+    // 이제서야 R2 원본으로 재클론하고, 새 voice id 로 합성 attempt 를 다시 만든다.
+    // (쿼터 예약보다 앞: 재클론 실패 시 쿼터를 소모하지 않고 NO_VOICE_ID 로 재등록을 안내.)
+    if (!providerVoiceId && isEvictedWithoutVoice && evictedProbeVoiceId) {
+      providerVoiceId = await recloneIfEvicted();
+      if (!providerVoiceId) {
+        return c.json(
+          { error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' },
+          400,
+        );
+      }
+      preparedAttempts = await buildPreparedAttempts(providerVoiceId);
+      if (preparedAttempts.length === 0) {
+        return c.json(
+          { error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' },
+          400,
         );
       }
     }
@@ -1495,7 +1531,7 @@ tts.post('/generate', async (c) => {
       } catch (err) {
         lastError = err;
         if (err instanceof UnsupportedVoiceProviderError) continue;
-        if (attempt !== attempts[attempts.length - 1]) continue;
+        if (attempt !== preparedAttempts[preparedAttempts.length - 1]?.attempt) continue;
       }
     }
 
