@@ -180,7 +180,6 @@
     <string name="common_stepper_increase">%1$s 올리기</string>
     <string name="common_tab_billing">이용권</string>
     <string name="common_tab_code_register">코드 등록</string>
-    <string name="common_tab_voices">목소리</string>
     <string name="common_voice_capture_mode_file">파일</string>
     <string name="common_voice_capture_mode_record">녹음</string>
     <string name="common_voice_record_again_hint">마이크를 누르면 다시 녹음해요</string>

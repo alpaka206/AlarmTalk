@@ -178,7 +178,6 @@
     <string name="common_stepper_increase">%1$s を上げる</string>
     <string name="common_tab_billing">利用券</string>
     <string name="common_tab_code_register">コード登録</string>
-    <string name="common_tab_voices">声</string>
     <string name="common_voice_capture_mode_file">ファイル</string>
     <string name="common_voice_capture_mode_record">録音</string>
     <string name="common_voice_record_again_hint">マイクをタップすると録音し直せます</string>

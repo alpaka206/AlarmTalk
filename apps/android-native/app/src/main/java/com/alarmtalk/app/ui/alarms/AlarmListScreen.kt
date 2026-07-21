@@ -160,9 +160,8 @@ internal fun AlarmListScreen(
     ) {
         when (selectedTab) {
             NativeTab.Voices -> {
-                item {
-                    ScreenHeader(title = stringResource(R.string.common_tab_voices))
-                }
+                // 페이지 대제목('목소리')은 두지 않는다 — 하단 탭 라벨이 이미 위치를 말해주고,
+                // 첫 섹션 제목('내 목소리')이 곧바로 내용을 연다(알람 탭의 무제목과 일관).
                 item {
                     VoiceProfileManagementPanel(
                         voiceProfiles = voiceProfiles,
@@ -253,9 +252,7 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.Menu -> {
-                item {
-                    ScreenHeader(title = stringResource(R.string.r3app_bottom_tab_menu))
-                }
+                // '더보기' 대제목 생략 — 하단 탭 라벨과 중복. 프로필 카드가 바로 시작한다.
                 item {
                     MenuTabPanel(
                         authSession = authSession,

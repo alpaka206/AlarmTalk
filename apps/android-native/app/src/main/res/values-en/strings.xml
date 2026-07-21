@@ -178,7 +178,6 @@
     <string name="common_stepper_increase">Increase %1$s</string>
     <string name="common_tab_billing">Plan</string>
     <string name="common_tab_code_register">Register code</string>
-    <string name="common_tab_voices">Voices</string>
     <string name="common_voice_capture_mode_file">File</string>
     <string name="common_voice_capture_mode_record">Record</string>
     <string name="common_voice_record_again_hint">Tap the mic to record again</string>
