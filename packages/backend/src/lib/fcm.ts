@@ -204,6 +204,28 @@ export async function sendFamilyAlarmPush(
   return results;
 }
 
+/**
+ * 목소리 공유 on/off 시 같은 플랜 그룹 멤버들에게 보내는 data-only 신호. 클라가 받으면
+ * 공유 목소리 목록과 스톡 클립 매니페스트를 즉시 새로고침해, 상대가 토글을 켠 순간
+ * 받은 쪽 목소리 탭에 바로 나타난다. 놓쳐도 다음 refreshSocial(탭 진입/앱 시작)이 폴백.
+ */
+export async function sendVoiceShareChangedPush(
+  db: Client,
+  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  recipientUserIds: string[],
+): Promise<void> {
+  const messages: FcmMessage[] = [];
+  for (const userId of recipientUserIds) {
+    const tokens = await getTokensForUser(db, userId);
+    for (const token of tokens) {
+      messages.push({ token, title: '', body: '', data: { type: 'voice_share_changed' } });
+    }
+  }
+  if (messages.length === 0) return;
+  const results = await sendPushNotifications(messages, env);
+  await pruneStaleTokens(db, results);
+}
+
 export async function sendAlarmPush(
   db: Client,
   env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,

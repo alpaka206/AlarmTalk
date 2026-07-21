@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -70,8 +71,10 @@ internal fun ConsentHistoryScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
+            // 탭·설정과 같은 그라데이션 배경 + 좌우 20dp·간격 16dp 공통 규격.
+            .background(homeGradientBrush())
             .padding(contentPadding),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {

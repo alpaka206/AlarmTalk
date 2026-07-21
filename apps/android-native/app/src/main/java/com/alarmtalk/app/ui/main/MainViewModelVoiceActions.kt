@@ -326,33 +326,62 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         return
     }
 
-    viewModelScope.launch {
-        if (voiceProfileBusy) return@launch
-        voiceProfileBusy = true
-        runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileUpdateRequest(isShared = shared),
-                ).profile
+    // 낙관적 업데이트 + 전역 busy 미사용: 스위치는 즉시 뒤집히고, 서버 반영은 목소리별
+    // 단일 워커가 PATCH 를 직렬화한다 — 이미 서버로 나간 요청은 코루틴 cancel 로 회수할 수
+    // 없어 겹쳐 보내면 늦게 도착한 이전 요청이 최종 상태를 뒤집을 수 있다. 워커는 한 번에
+    // 하나만 보내고 desired 최신값으로 수렴하므로(중간 연타 값은 건너뜀) 그 경합이 없다.
+    // 성공 토스트는 띄우지 않고(스위치 상태가 곧 결과), 서버 실패 시에만 원상복구+안내한다.
+    val previousShared = voiceProfiles.firstOrNull { it.id == profileId }?.isShared
+    voiceProfiles = voiceProfiles.map {
+        if (it.id == profileId) it.copy(isShared = shared) else it
+    }
+    shareToggleDesired[profileId] = shared
+    if (shareToggleJobs[profileId]?.isActive == true) return
+    shareToggleJobs[profileId] = viewModelScope.launch {
+        // 이 워커 세션에서 서버가 확정해 준 마지막 값 — 실패 시 여기로 되돌린다.
+        var acked = previousShared
+        try {
+            while (true) {
+                val want = shareToggleDesired[profileId] ?: break
+                val profile = withContext(Dispatchers.IO) {
+                    api.updateVoiceProfile(
+                        authorization = AlarmTalkApiClient.bearer(session.token),
+                        id = profileId,
+                        request = VoiceProfileUpdateRequest(isShared = want),
+                    ).profile
+                }
+                acked = profile.isShared ?: want
+                // PATCH 중에 다시 토글됐으면 최신 desired 로 재전송(직렬이라 순서 역전 없음).
+                if (shareToggleDesired[profileId] != want) continue
+                shareToggleDesired.remove(profileId)
+                voiceProfiles = voiceProfiles.map {
+                    if (it.id == profile.id) it.copy(isShared = acked) else it
+                }
+                // 공유 목록 갱신도 suspend(네트워크 왕복)라 이 동안 새 토글이 오면 desired 가
+                // 다시 채워진다(새 토글은 isActive 워커를 믿고 return). 갱신 실패는 치명적이지
+                // 않아 무시하되(공유 상태는 이미 확정, 상대 반영은 push 가 따로 담당),
+                // CancellationException 은 삼키지 말고 그대로 던진다.
+                try {
+                    familyVoices = api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
+                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+                // 갱신 중 새 토글이 왔으면 종료하지 말고 그 값을 마저 전송한다 — 여기서 그냥
+                // break 하면 마지막 의도가 전송되지 않은 채 고아로 남는다.
+                if (shareToggleDesired.containsKey(profileId)) continue
+                break
             }
-        }.onSuccess { profile ->
+        } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            shareToggleDesired.remove(profileId)
             voiceProfiles = voiceProfiles.map {
-                if (it.id == profile.id) it.copy(isShared = profile.isShared ?: shared) else it
+                if (it.id == profileId) it.copy(isShared = acked) else it
             }
-            runCatching {
-                api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
-            }.onSuccess { profiles ->
-                familyVoices = profiles
-            }
-            val app = getApplication<android.app.Application>()
-            message = if (shared) app.getString(R.string.msg_voice_shared_on) else app.getString(R.string.msg_voice_shared_off)
-        }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update voice profile sharing id=$profileId shared=$shared", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_share_setting_failed))
         }
-        voiceProfileBusy = false
     }
 }
 

@@ -3,30 +3,24 @@ package com.alarmtalk.app
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -58,22 +52,29 @@ import androidx.compose.ui.window.DialogProperties
 import java.util.Locale
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 
+// 더보기(MenuTabPanel) 패널과 같은 시각 규격: 제목을 카드 '안'에 넣은 패널 카드 +
+// 텍스트/값/셰브론 행(높이 52·수평 12). 화면마다 카드/행 간격이 달라 보이던 문제의 단일 출처.
 @Composable
 internal fun SettingsCard(
     title: String?,
     content: @Composable () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (title != null) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp),
-            )
-        }
-        OutlinedCard {
-            Column { content() }
+    Surface(
+        shape = WakerPanelShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            if (title != null) {
+                Text(
+                    text = title,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            content()
         }
     }
 }
@@ -87,178 +88,41 @@ internal fun SettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 52.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f),
         )
         if (value != null) {
             Text(
                 text = value,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 4.dp),
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
             )
         }
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
+            modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
-@Composable
-internal fun WeatherLocationPreferenceDialog(
-    country: String,
-    city: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit,
-) {
-    var draftCity by remember(city) { mutableStateOf(city) }
-    var submitted by remember { mutableStateOf(false) }
-    val cityError = submitted && draftCity.isBlank()
+// 날씨 지역 다이얼로그는 편집기 문구 pane 의 WeatherLocationDialog(AlarmRandomPromptSettings.kt)
+// 를 공유한다 — 설정 전용 사본(저장 아이콘 포함)은 중복이라 제거했다.
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .widthIn(max = 430.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                ModalDialogTitle(stringResource(R.string.hs_weather_dialog_title), onDismiss = onDismiss)
-                WeatherCityPickerField(
-                    city = draftCity,
-                    cityError = cityError,
-                    onCityChange = { draftCity = it },
-                )
-                Spacer(Modifier.height(6.dp))
-                Button(
-                    onClick = {
-                        submitted = true
-                        if (draftCity.isNotBlank()) {
-                            onConfirm(country.trim(), draftCity.trim())
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Icon(Icons.Outlined.Save, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.hs_save))
-                }
-            }
-        }
-    }
-}
-
-// 도시 선택 필드 — 로케일별 프리셋을 드롭다운으로 고르고, 맨 위 '직접 입력'을 고르면
-// 자유 입력 필드가 열린다. 프리셋이 없는 로케일(예: 영어)은 자유 입력만 보여준다.
-// 나라 입력은 없다 — 도시명만으로 백엔드(Gemini)가 지역을 판별한다.
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun WeatherCityPickerField(
-    city: String,
-    cityError: Boolean,
-    onCityChange: (String) -> Unit,
-) {
-    val presetCities = stringArrayResource(R.array.hs_weather_preset_cities).toList()
-
-    @Composable
-    fun manualField(showError: Boolean) {
-        OutlinedTextField(
-            value = city,
-            onValueChange = { onCityChange(it.take(30)) },
-            label = { Text(stringResource(R.string.hs_weather_city_label)) },
-            placeholder = { Text(stringResource(R.string.hs_weather_city_placeholder)) },
-            singleLine = true,
-            isError = showError,
-            supportingText = {
-                if (showError) Text(stringResource(R.string.hs_weather_field_required))
-            },
-            shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-
-    if (presetCities.isEmpty()) {
-        manualField(showError = cityError)
-        return
-    }
-
-    val customLabel = stringResource(R.string.hs_weather_city_custom)
-    var customMode by remember { mutableStateOf(city.isNotBlank() && city !in presetCities) }
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = it },
-        ) {
-            OutlinedTextField(
-                value = if (customMode) customLabel else city,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text(stringResource(R.string.hs_weather_city_label)) },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                singleLine = true,
-                isError = cityError && !customMode,
-                supportingText = {
-                    if (cityError && !customMode) Text(stringResource(R.string.hs_weather_field_required))
-                },
-                shape = WakerInputShape,
-                colors = wakerOutlinedTextFieldColors(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-            )
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text(customLabel) },
-                    onClick = {
-                        customMode = true
-                        onCityChange("")
-                        expanded = false
-                    },
-                )
-                presetCities.forEach { preset ->
-                    DropdownMenuItem(
-                        text = { Text(preset) },
-                        onClick = {
-                            customMode = false
-                            onCityChange(preset)
-                            expanded = false
-                        },
-                    )
-                }
-            }
-        }
-        if (customMode) {
-            manualField(showError = cityError)
-        }
-    }
-}
+// 지역 선택 UI 는 WeatherLocationDialog(AlarmRandomPromptSettings.kt)의 바텀시트로 통합 —
+// 이전 칩 그리드/드롭다운 구현은 제거했다.
 
 // 방해금지 요일 프리셋(평일/주말/매일) — 백엔드 family-alarm-settings.ts PRESET_QUIET_DAY_SETS와 동일.
 private data class QuietDayPreset(val days: Set<Int>, val labelRes: Int)

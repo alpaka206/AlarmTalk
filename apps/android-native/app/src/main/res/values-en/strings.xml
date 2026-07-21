@@ -92,7 +92,6 @@
     <string name="billing_leave_button">Leave</string>
     <string name="billing_leave_shared_pass">Leave shared pass</string>
     <string name="billing_leave_shared_pass_description">If you leave, you\'ll switch to the free pass. You\'ll need a new invite code to rejoin.</string>
-    <string name="billing_manage_on_google_play">Manage subscription on Google Play</string>
     <string name="billing_monthly_subscription">Subscribe with Google Play</string>
     <string name="billing_plan_couple_feature_max_two">For 2 people together</string>
     <string name="billing_plan_couple_feature_message">Set your partner\'s alarm</string>
@@ -179,7 +178,6 @@
     <string name="common_stepper_increase">Increase %1$s</string>
     <string name="common_tab_billing">Plan</string>
     <string name="common_tab_code_register">Register code</string>
-    <string name="common_tab_voices">Voices</string>
     <string name="common_voice_capture_mode_file">File</string>
     <string name="common_voice_capture_mode_record">Record</string>
     <string name="common_voice_record_again_hint">Tap the mic to record again</string>
@@ -308,16 +306,14 @@
     <string name="editorp_random_title">Message</string>
     <string name="editorp_random_weather_region_required">To use weather-based messages, a city is required.</string>
     <string name="editorp_random_weather_region_saved">Using the weather region your partner saved.</string>
-    <string name="editorp_random_weather_region_title">Weather region</string>
+    <string name="editorp_random_weather_region_title">Preferred region</string>
     <string name="editorp_random_weather_region_value">Using the weather for %1$s.</string>
-    <string name="editorp_weather_dialog_section_desc">Enter your city name.\nIf you don\'t save, random messages turn off.</string>
-    <string name="editorp_weather_dialog_section_title">Region to use for weather messages</string>
     <string name="editorp_weather_save_button">Save</string>
     <string name="alarms_target_sheet_title">Who is this alarm for?</string>
     <string name="alarms_target_self_title">Set my alarm</string>
-    <string name="hs_delete_account_body">Are you sure you want to delete your account? 30 days after you request it, all your data—including alarms and voices—is permanently deleted. You can cancel and restore it by signing back in before then.</string>
+    <string name="hs_delete_account_title">Are you sure you want to delete your account?</string>
+    <string name="hs_delete_account_body">30 days after you request it, all your data—including alarms and voices—is permanently deleted.\nYou can cancel and restore it by signing back in before then.</string>
     <string name="hs_delete_account_confirm">Delete</string>
-    <string name="hs_delete_account_title">Delete account</string>
     <string name="hs_greeting_each_other_bottom">let\'s schedule mornings</string>
     <string name="hs_greeting_each_other_top">With each other\'s voices,</string>
     <string name="hs_greeting_morning_bottom">did you wake up well?</string>
@@ -381,7 +377,6 @@
     <string name="hs_theme_system_title">System</string>
     <string name="hs_weather_city_label">City</string>
     <string name="hs_weather_city_placeholder">e.g. Seoul</string>
-    <string name="hs_weather_dialog_title">Weather region</string>
     <string name="hs_weather_city_custom">Enter manually</string>
     <string-array name="hs_weather_preset_cities" />
     <string name="hs_weather_field_required">This field is required.</string>
@@ -395,12 +390,9 @@
     <string name="msg_alarm_copied_ten_minutes">Copied the alarm 10 minutes later. %1$s</string>
     <string name="msg_alarm_copy_failed">Couldn\'t copy your alarm.</string>
     <string name="msg_alarm_delete_failed">Couldn\'t delete your alarm.</string>
-    <string name="msg_alarm_deleted">Your alarm has been deleted.</string>
     <string name="msg_alarm_save_failed">Couldn\'t save your alarm.</string>
-    <string name="msg_alarm_saved">Your alarm has been saved. %1$s</string>
     <string name="msg_alarm_toggle_failed">Couldn\'t change the alarm status.</string>
     <string name="msg_alarm_update_failed">Couldn\'t update your alarm.</string>
-    <string name="msg_changes_saved">Your changes have been saved. %1$s</string>
     <string name="msg_consent_completed">Your consent has been recorded.</string>
     <string name="msg_consent_record_failed">Couldn\'t record your consent. Please try again.</string>
     <string name="msg_marketing_consent_on">You\'ve agreed to receive marketing messages.</string>
@@ -534,8 +526,6 @@
     <string name="msg_voice_share_login_required">Please log in first to share the voice.</string>
     <string name="msg_voice_share_setting_failed">Couldn\'t update voice sharing settings.</string>
     <string name="msg_voice_shared_info_saved">The shared voice info has been saved.</string>
-    <string name="msg_voice_shared_off">Voice sharing is now off.</string>
-    <string name="msg_voice_shared_on">The voice is now shared.</string>
     <string name="msg_voice_slot_exhausted">There are a lot of voice creation requests right now. Please try again in a moment.</string>
     <string name="msg_voice_tts_audio_load_login_required">Please log in first to load saved voice audio.</string>
     <string name="msg_voice_tts_generate_login_required">Please log in first to create voice audio.</string>
@@ -571,7 +561,6 @@
     <string name="social_leave_and_register_button">Leave &amp; register</string>
     <string name="social_leave_and_register_new_code">Leave current plan &amp; register a new code</string>
     <string name="social_leave_dialog_message">Leave your current plan and register a new code?</string>
-    <string name="social_leave_dialog_title">Leave current plan &amp; register new code</string>
     <string name="social_managing_shared_plan">You\'re managing a shared plan.</string>
     <string name="social_member_fallback">Member</string>
     <string name="social_members_section_title">Members</string>
@@ -589,8 +578,7 @@
     <string name="social_regenerate_share_code_dialog_title">Regenerate share code</string>
     <string name="social_register_button">Register</string>
     <string name="social_register_dialog_message">Register this code?</string>
-    <string name="social_register_dialog_message_active">If this code is valid, your current %1$s plan will end and switch to the new plan. Register?</string>
-    <string name="social_register_dialog_title">Register code</string>
+    <string name="social_register_dialog_message_active">If this code is valid, your current %1$s plan will end and switch to the new plan.</string>
     <string name="social_register_other_code">Register another code</string>
     <string name="social_register_will_change_plan">Registering will change your current %1$s plan.</string>
     <string name="social_remove_button">Remove</string>
@@ -635,9 +623,7 @@
     <string name="voices_my_voices_title">My Voices</string>
     <string name="voices_name_label">Voice name</string>
     <string name="voices_prerender_generating_title">Creating your voice</string>
-    <string name="voices_prerender_generating_body">We\'re preparing alarm phrases with this voice. Hang tight.</string>
     <string name="voices_prerender_downloading_title">Saving to your device</string>
-    <string name="voices_prerender_progress">Alarm phrases %1$d/%2$d ready</string>
     <string name="voices_prerender_continue_background_action">Continue in background</string>
     <string name="voices_prerender_continue_background">The remaining phrases will keep generating in the background.</string>
     <string name="voices_language_label">Message language</string>
@@ -882,6 +868,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg2_promo_fail_code_exhausted">This promo code has reached its usage limit</string>
     <string name="msg2_promo_fail_group_already_redeemed">You\'ve already used a promo code from this promotion. This benefit is limited to once per account</string>
     <string name="msg2_promo_fail_owns_active_group">You already have an active group plan, so this promo code can\'t be applied</string>
+    <string name="msg2_promo_fail_active_subscription">You already have an active pass. Cancel it before redeeming a coupon</string>
     <string name="msg2_promo_fail_generic">Couldn\'t apply the promo code. Please try again in a moment</string>
     <string name="onb_voice_title">Pick your default voice</string>
     <string name="onb_voice_subtitle">You can change it anytime later.</string>
@@ -993,6 +980,8 @@ for a smooth and secure experience.</string>
     <string name="r3misc_google_signin_unavailable">Google sign-in isn\'t available right now. Please sign in with your email.</string>
     <string name="r3misc_google_signin_failed">Google sign-in failed</string>
 
+    <string name="r3misc_notif_received_alarm_sent">%1$s sent you an alarm.</string>
+    <string name="r3misc_notif_received_alarm_sent_other">Someone sent you an alarm.</string>
     <string name="r3misc_notif_received_alarm_time">Rings at %1$s</string>
     <string name="r3misc_notif_received_alarm_default">Your friend set an alarm for you</string>
     <string name="r3misc_ringing_action_snooze">Snooze</string>

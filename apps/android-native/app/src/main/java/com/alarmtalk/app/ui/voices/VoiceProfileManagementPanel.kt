@@ -30,11 +30,12 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -292,9 +293,13 @@ internal fun VoiceProfileManagementPanel(
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
-    val ownVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem != true } }
-    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
+    // 무료 강등 시 클론 데이터는 서버에 보존되지만(30일 유예·재유료 시 복구) UI 에는
+    // 노출하지 않는다 — 유료 요금제여야 사용 가능하므로 리스트에서 숨긴다.
+    val ownVoices = remember(voiceProfiles, canCreateVoice) {
+        if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
+    }
+    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     val canOpenCreateForm = canCreateVoice && !isLimitReached
     // 생성~결정(만드는 중/미리듣기) 구간 — 이 동안은 다이얼로그를 닫거나 밖으로 나갈 수 없다
     // (유지/삭제를 골라야만 끝난다). draft 가 생겨 isLimitReached 가 돼도 다이얼로그를 유지한다.
@@ -809,14 +814,26 @@ internal fun VoiceProfileManagementPanel(
     // 실패 후 [다시 시도] 수락 시 증가 — 멈춘 폴링 루프를 재시작한다.
     var prerenderPollTick by remember { mutableIntStateOf(0) }
 
+    // 클론 클립 언어 선택: 앱 언어 클립이 있으면 앱 언어, 없으면 그 보이스가 가진 언어
+    // (=등록 때 고른 언어). 편집기 bucketClipLanguageFor 와 동일 규칙 — 일본어로 만든
+    // 클론이 한국어 기기에서 '다운로드 중'에 영원히 갇히지 않게 한다.
+    fun cloneClipLanguageFor(profileId: String, category: String): String {
+        val langs = stockClips.asSequence()
+            .filter { it.voiceProfileId == profileId && it.category == category }
+            .map { it.language ?: "ko" }
+            .toSet()
+        return if (previewLanguage in langs) previewLanguage else langs.firstOrNull() ?: previewLanguage
+    }
+
     // 알람 버킷 4종이 매니페스트에 풀셋으로 존재하는지 — AlarmEditorScreen.hasCompleteCloneBucket
     // 과 동일한 variant 절대 인덱스 판정. greeting 은 미리듣기 전용이라 게이트에서 제외한다.
     fun cloneManifestComplete(profileId: String): Boolean = CloneAlarmBucketCategories.all { category ->
         val fullCount = expectedCloneBucketVariantCount(category) ?: return@all false
+        val clipLanguage = cloneClipLanguageFor(profileId, category)
         val variants = stockClips
             .filter {
                 it.voiceProfileId == profileId && it.category == category &&
-                    (it.language ?: "ko") == previewLanguage
+                    (it.language ?: "ko") == clipLanguage
             }
             .map { it.variant }
             .toSet()
@@ -828,10 +845,11 @@ internal fun VoiceProfileManagementPanel(
     suspend fun downloadCloneBuckets(profileId: String): Boolean = withContext(Dispatchers.IO) {
         var allCached = true
         CloneAlarmBucketCategories.forEach { category ->
+            val clipLanguage = cloneClipLanguageFor(profileId, category)
             stockClips
                 .filter {
                     it.voiceProfileId == profileId && it.category == category &&
-                        (it.language ?: "ko") == previewLanguage
+                        (it.language ?: "ko") == clipLanguage
                 }
                 .forEach { clip ->
                     val cacheKey = "stock_${clip.messageId}"
@@ -856,10 +874,32 @@ internal fun VoiceProfileManagementPanel(
         allCached && cloneManifestComplete(profileId)
     }
 
+    // 매니페스트의 알람 버킷 클립이 전부 로컬 캐시에 있는지 — 다운로드 없이 캐시만 본다.
+    suspend fun cloneBucketsFullyCached(profileId: String): Boolean = withContext(Dispatchers.IO) {
+        cloneManifestComplete(profileId) && CloneAlarmBucketCategories.all { category ->
+            val clipLanguage = cloneClipLanguageFor(profileId, category)
+            stockClips
+                .filter {
+                    it.voiceProfileId == profileId && it.category == category &&
+                        (it.language ?: "ko") == clipLanguage
+                }
+                .all { audioStore.getCachedAudio("stock_${it.messageId}") != null }
+        }
+    }
+
     // 준비 상태 폴링 — 목소리 탭이 보이는 동안만 짧은 주기로(화면 이탈 시 이펙트가 취소된다).
     val cloneReadinessIds = ownVoices.filter { it.status == null || it.status == "ready" }.map { it.id }
     LaunchedEffect(cloneReadinessIds, stockClips, prerenderPollTick) {
         if (cloneReadinessIds.isEmpty()) return@LaunchedEffect
+        // 이미 전부 캐시된 목소리는 서버 상태 조회 전에 곧장 ready 처리 — 탭에 들어올 때마다
+        // '다운로드 중' 배지가 한 박자 떴다 사라지는 깜빡임을 없앤다.
+        cloneReadinessIds.forEach { voiceId ->
+            if (voiceId !in cloneLocalReadyIds &&
+                runCatching { cloneBucketsFullyCached(voiceId) }.getOrDefault(false)
+            ) {
+                cloneLocalReadyIds = cloneLocalReadyIds + voiceId
+            }
+        }
         var manifestReloadRequested = false
         while (true) {
             var anyPending = false
@@ -1610,7 +1650,6 @@ internal fun VoiceProfileManagementPanel(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(18.dp),
                                 ) {
-                                    CircularProgressIndicator()
                                     Text(
                                         text = if (prerenderDrive?.downloading == true) {
                                             stringResource(R.string.voices_prerender_downloading_title)
@@ -1620,20 +1659,32 @@ internal fun VoiceProfileManagementPanel(
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
-                                    Text(
-                                        text = if (prerenderDrive != null && prerenderDrive.total > 0) {
-                                            stringResource(
-                                                R.string.voices_prerender_progress,
-                                                prerenderDrive.generated,
-                                                prerenderDrive.total,
-                                            )
-                                        } else {
-                                            stringResource(R.string.voices_prerender_generating_body)
+                                    // 'n/21 준비' 카운트 텍스트 대신 진행 로딩바만 — 총량을 알면
+                                    // 확정 진행률, 아직 모르면(시작 직후) 인디터미넌트.
+                                    val drive = prerenderDrive
+                                    if (drive != null && drive.total > 0) {
+                                        LinearProgressIndicator(
+                                            progress = {
+                                                drive.generated.toFloat() / drive.total.toFloat()
+                                            },
+                                            modifier = Modifier.fillMaxWidth(0.72f),
+                                        )
+                                    } else {
+                                        LinearProgressIndicator(
+                                            modifier = Modifier.fillMaxWidth(0.72f),
+                                        )
+                                    }
+                                    // 하단 고정 대신 로딩 블록에서 조금 떨어져 바로 아래에 둔다 —
+                                    // 닫아도 드라이브는 ViewModel 에서 계속된다.
+                                    Spacer(Modifier.height(10.dp))
+                                    TextButton(
+                                        onClick = {
+                                            promotedForPrerenderId = null
+                                            closeCreateDialog()
                                         },
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textAlign = TextAlign.Center,
-                                    )
+                                    ) {
+                                        Text(stringResource(R.string.voices_prerender_continue_background_action))
+                                    }
                                 }
                             }
 
@@ -1755,9 +1806,9 @@ internal fun VoiceProfileManagementPanel(
                                                         } else {
                                                             Icon(
                                                                 imageVector = if (confirmPreviewPlaying) {
-                                                                    Icons.Outlined.Stop
+                                                                    Icons.Rounded.Stop
                                                                 } else {
-                                                                    Icons.Outlined.PlayArrow
+                                                                    Icons.Rounded.PlayArrow
                                                                 },
                                                                 contentDescription = stringResource(R.string.voices_confirm_new_preview),
                                                                 tint = MaterialTheme.colorScheme.primary,
@@ -1874,18 +1925,9 @@ internal fun VoiceProfileManagementPanel(
                             // 만드는 중 — 결정할 것이 없어 하단 액션이 없다(닫기도 불가).
                             VoiceRegistrationStep.Creating -> Unit
 
-                            // 생성/다운로드 중 — 기다리지 않아도 된다: 닫으면 서버가 이어서 만든다.
-                            VoiceRegistrationStep.Prerendering -> {
-                                TextButton(
-                                    onClick = {
-                                        promotedForPrerenderId = null
-                                        closeCreateDialog()
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                ) {
-                                    Text(stringResource(R.string.voices_prerender_continue_background_action))
-                                }
-                            }
+                            // 생성/다운로드 중 — '백그라운드에서 계속'은 하단 고정이 아니라
+                            // 로딩 블록 바로 아래(본문)에 있다. 하단 액션 없음.
+                            VoiceRegistrationStep.Prerendering -> Unit
 
                             VoiceRegistrationStep.Preview -> {
                                 TextButton(

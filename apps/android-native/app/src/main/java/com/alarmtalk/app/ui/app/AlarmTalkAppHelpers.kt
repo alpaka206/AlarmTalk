@@ -194,8 +194,9 @@ internal fun PrettySnackbar(
     Snackbar(
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .shadow(elevation = 12.dp, shape = WakerCardShape, clip = false),
-        shape = WakerCardShape,
+            // 단일 행 스낵바에 큰 카드(22)는 캡슐처럼 보여 과함 — 표준 패널(18)로.
+            .shadow(elevation = 12.dp, shape = WakerPanelShape, clip = false),
+        shape = WakerPanelShape,
         containerColor = containerColor,
         contentColor = contentColor,
     ) {

@@ -139,6 +139,14 @@ internal fun AlarmEditorScreen(
     val voicePlanLocked = authSession == null
     // 무료 플랜 제한 모드: 녹음/파일·직접 입력·동적(날씨/운세) 문구·번역은 유료 게이트.
     val freeVoiceTier = authSession != null && !hasPaidVoiceAccess(subscriptionResponse)
+    // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
+    // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능
+    // 목록이 모두 이 걸러진 목록을 참조한다.
+    val visibleVoiceProfiles = if (freeVoiceTier) {
+        voiceProfiles.filter { it.isSystem == true }
+    } else {
+        voiceProfiles
+    }
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
     // 시스템(기본) 보이스가 선택되면 유료여도 문구를 무료 버킷과 동일하게 '날씨+약'으로 제한한다
@@ -587,7 +595,7 @@ internal fun AlarmEditorScreen(
             return
         }
         val profileId = editor.voiceProfileId
-            ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
+            ?: visibleVoiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
         if (profileId.isNullOrBlank()) {
             audioMessage = context.getString(R.string.editor_error_select_voice)
             return
@@ -644,7 +652,7 @@ internal fun AlarmEditorScreen(
         }
         val listenerTitleForSave = resolvedVoiceListenerTitle()
         val usableProfileIds = (
-            voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
+            visibleVoiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
                 familyVoices.filter {
                     (it.status == null || it.status == "ready") && it.isShared != false
                 }.map { it.id }
@@ -869,32 +877,31 @@ internal fun AlarmEditorScreen(
 
     // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
     val isOnline by rememberIsOnline()
-    LaunchedEffect(restrictToWeatherMedication, editor.playMode, editor.voiceProfileId, stockClips, appVoiceLanguage, isOnline) {
+    LaunchedEffect(restrictToWeatherMedication, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline) {
         if (restrictToWeatherMedication && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
-            if (editor.voiceSource != VoiceSources.TTS_PROFILE) {
-                editor.voiceSource = VoiceSources.TTS_PROFILE
-                editor.clearAudio()
-                editor.clearTtsMeta()
-                editor.selectedBucket = null
-            }
-            if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
-            if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
-            if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
-            // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
-            // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
-            // 막기 위해, 허용 버킷으로 해석된 상태가 아니면 잔재를 먼저 비운다(Codex #599).
-            if (editor.hasRestrictedVoiceRemnants(FreeBucketOrder)) {
-                editor.clearRestrictedVoiceRemnants()
-            }
-            // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
-            val profileId = editor.voiceProfileId
-            if (!profileId.isNullOrBlank()) {
-                val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage)
-                val target = editor.selectedBucket?.takeIf { it in buckets } ?: buckets.firstOrNull()
-                if (target != null &&
-                    (editor.selectedBucket != target || editor.bucketResolvedForProfileId != profileId)
-                ) {
-                    selectBucket(target)
+            // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
+            // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
+            // 문구 개념이 없다.
+            if (editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
+                if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
+                if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
+                if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
+                // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
+                // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
+                // 막기 위해, 허용 버킷으로 해석된 상태가 아니면 잔재를 먼저 비운다(Codex #599).
+                if (editor.hasRestrictedVoiceRemnants(FreeBucketOrder)) {
+                    editor.clearRestrictedVoiceRemnants()
+                }
+                // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
+                val profileId = editor.voiceProfileId
+                if (!profileId.isNullOrBlank()) {
+                    val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage)
+                    val target = editor.selectedBucket?.takeIf { it in buckets } ?: buckets.firstOrNull()
+                    if (target != null &&
+                        (editor.selectedBucket != target || editor.bucketResolvedForProfileId != profileId)
+                    ) {
+                        selectBucket(target)
+                    }
                 }
             }
         }
@@ -909,7 +916,7 @@ internal fun AlarmEditorScreen(
     var freeWeatherDialogOpen by remember { mutableStateOf(false) }
 
     val usableTtsProfileIds = (
-        voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
+        visibleVoiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
             familyVoices.filter {
                 (it.status == null || it.status == "ready") && it.isShared != false
             }.map { it.id }
@@ -1180,13 +1187,12 @@ internal fun AlarmEditorScreen(
                         Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
                             VoiceAudioCard(
                                 editor = editor,
-                                voiceProfiles = voiceProfiles,
+                                voiceProfiles = visibleVoiceProfiles,
                                 familyVoices = familyVoices,
                                 voiceProfileBusy = voiceProfileBusy,
                                 stockClips = stockClips,
                                 defaultVoiceId = defaultVoiceId,
                                 restrictToWeatherMedication = restrictToWeatherMedication,
-                                onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,
                                 isRecording = isRecording,
                                 recordingElapsedMillis = recordingElapsedMillis,
@@ -1350,7 +1356,6 @@ internal fun AlarmEditorScreen(
             "random_prompt" -> RandomPromptSettingsPane(
                 // 직접 입력 모드면 pane 에서 '직접 입력'이 선택돼 보이도록 manual 을 넘긴다.
                 randomContext = if (editor.voiceRandomPrompt) editor.voiceRandomContext else ManualMessageContext,
-                manualText = editor.voiceText,
                 manualRemaining = manualQuota?.remaining,
                 manualLimit = manualQuota?.limit,
                 weatherCountry = editor.voiceWeatherCountry,

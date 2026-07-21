@@ -88,7 +88,14 @@ describe('웰컴 계열 계정당 1회 규칙', () => {
   it('그룹 없는 일반 코드는 웰컴 사용 여부와 무관하게 사용 가능(코드별 1회만 적용)', async () => {
     const result = await redeem('pw-c', 'WELCOME_COUPLE');
     expect(result.plan.key).toBe('couple');
-    // 웰컴을 쓴 계정도 일반 코드는 사용 가능
+    // 유료(웰컴 구독 활성) 중에는 다른 쿠폰 등록이 막힌다 — 기존 구독을 취소·대체해
+    // 남은 기간을 날리는 사고 방지.
+    await expectPromoError(redeem('pw-c', 'PLAIN_TEST_CODE'), 'ACTIVE_SUBSCRIPTION_EXISTS');
+    // 웰컴 구독이 끝난(해지된) 뒤에는, 웰컴을 쓴 계정도 일반 코드는 사용 가능.
+    await db.execute({
+      sql: `UPDATE subscriptions SET status = 'cancelled' WHERE user_id = ?`,
+      args: ['pw-c'],
+    });
     const plain = await redeem('pw-c', 'PLAIN_TEST_CODE');
     expect(plain.plan.key).toBe('personal');
     await expectPromoError(redeem('pw-c', 'PLAIN_TEST_CODE'), 'CODE_ALREADY_REDEEMED_BY_YOU');
@@ -215,7 +222,16 @@ describe('배포→마이그레이션 창 호환 (#72 적용 전 스키마)', ()
       redeemPromoCode(legacyDb, { userPk: 'legacy-w', rawCode: 'welcome_couple' }),
       'CODE_GROUP_ALREADY_REDEEMED',
     );
-    // 일반 코드는 이름 게이트와 무관하게 여전히 사용 가능
+    // 유료(웰컴 구독 활성) 중에는 일반 코드도 등록이 막힌다(레거시 스키마에서도 동일).
+    await expectPromoError(
+      redeemPromoCode(legacyDb, { userPk: 'legacy-w', rawCode: 'LEGACY_WINDOW_CODE' }),
+      'ACTIVE_SUBSCRIPTION_EXISTS',
+    );
+    // 구독이 끝난 뒤에는 일반 코드는 이름 게이트와 무관하게 여전히 사용 가능.
+    await legacyDb.execute({
+      sql: `UPDATE subscriptions SET status = 'cancelled' WHERE user_id = ?`,
+      args: ['legacy-w'],
+    });
     const stillPlain = await redeemPromoCode(legacyDb, {
       userPk: 'legacy-w',
       rawCode: 'LEGACY_WINDOW_CODE',

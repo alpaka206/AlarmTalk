@@ -43,6 +43,25 @@ internal val WakerPillShape = RoundedCornerShape(999.dp)   // 완전 캡슐(pill
 /** 오버레이/코치마크 스크림 — 테마 무관 고정 농도 rgba(5,8,14,.74). */
 internal val WakerScrimColor = Color(0xBD05080E)
 
+// 탭·하위 전체화면이 공유하는 새벽 네이비 그라데이션 배경(로그인 딥네이비 감성)의 단일 출처.
+// 탭(AlarmListScreen)과 설정/구성원 관리/약관 동의 등 하위 화면이 같은 브러시를 써서
+// 화면 전환 시 배경 톤이 튀지 않는다. 라이트/다크 2종.
+internal val HomeGradientDark = androidx.compose.ui.graphics.Brush.verticalGradient(
+    0f to Color(0xFF1A2A52),
+    0.55f to Color(0xFF0E1938),
+    1f to Color(0xFF070C1D),
+)
+internal val HomeGradientLight = androidx.compose.ui.graphics.Brush.verticalGradient(
+    0f to Color(0xFFF4F7FD),
+    0.5f to Color(0xFFDBE6F7),
+    1f to Color(0xFFBED2EF),
+)
+
+/** 현재 테마 명암에 맞는 홈 그라데이션 — 시스템 값이 아니라 앱이 실제 쓰는 컬러스킴 기준. */
+@Composable
+internal fun homeGradientBrush(): androidx.compose.ui.graphics.Brush =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) HomeGradientDark else HomeGradientLight
+
 
 @Composable
 internal fun wakerCardBorder(alpha: Float = 1f): BorderStroke {

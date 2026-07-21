@@ -92,7 +92,6 @@
     <string name="billing_leave_button">抜ける</string>
     <string name="billing_leave_shared_pass">共有利用券から抜ける</string>
     <string name="billing_leave_shared_pass_description">抜けると無料利用券に切り替わります。再び参加するには新しい招待コードが必要です。</string>
-    <string name="billing_manage_on_google_play">Google Playで定期購入を管理</string>
     <string name="billing_monthly_subscription">Google Playで購読する</string>
     <string name="billing_plan_couple_feature_max_two">2人で一緒に利用</string>
     <string name="billing_plan_couple_feature_message">相手のアラーム設定</string>
@@ -179,7 +178,6 @@
     <string name="common_stepper_increase">%1$s を上げる</string>
     <string name="common_tab_billing">利用券</string>
     <string name="common_tab_code_register">コード登録</string>
-    <string name="common_tab_voices">声</string>
     <string name="common_voice_capture_mode_file">ファイル</string>
     <string name="common_voice_capture_mode_record">録音</string>
     <string name="common_voice_record_again_hint">マイクをタップすると録音し直せます</string>
@@ -308,16 +306,14 @@
     <string name="editorp_random_title">文</string>
     <string name="editorp_random_weather_region_required">天気を使った文を作るには、都市が必要です。</string>
     <string name="editorp_random_weather_region_saved">相手が保存した天気の地域を使います。</string>
-    <string name="editorp_random_weather_region_title">天気の地域</string>
+    <string name="editorp_random_weather_region_title">希望する地域</string>
     <string name="editorp_random_weather_region_value">%1$sの天気を使います。</string>
-    <string name="editorp_weather_dialog_section_desc">都市名を入力してください。\n保存しないとランダムメッセージはオフになります。</string>
-    <string name="editorp_weather_dialog_section_title">天気の文に使う地域</string>
     <string name="editorp_weather_save_button">保存</string>
     <string name="alarms_target_sheet_title">誰を起こしますか？</string>
     <string name="alarms_target_self_title">自分のアラームを設定</string>
-    <string name="hs_delete_account_body">本当に退会しますか？申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。それまでに再ログインして退会を取り消せば復元できます。</string>
+    <string name="hs_delete_account_title">本当に退会しますか？</string>
+    <string name="hs_delete_account_body">申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。\nそれまでに再ログインして退会を取り消せば復元できます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
-    <string name="hs_delete_account_title">退会</string>
     <string name="hs_greeting_each_other_bottom">朝を予約しましょう</string>
     <string name="hs_greeting_each_other_top">お互いの声で</string>
     <string name="hs_greeting_morning_bottom">よく起きられましたか？</string>
@@ -381,7 +377,6 @@
     <string name="hs_theme_system_title">システム</string>
     <string name="hs_weather_city_label">都市</string>
     <string name="hs_weather_city_placeholder">例：東京</string>
-    <string name="hs_weather_dialog_title">天気の地域</string>
     <string name="hs_weather_city_custom">直接入力</string>
     <string-array name="hs_weather_preset_cities">
         <item>東京</item>
@@ -404,12 +399,9 @@
     <string name="msg_alarm_copied_ten_minutes">アラームを10分後にコピーしました。%1$s</string>
     <string name="msg_alarm_copy_failed">アラームのコピーに失敗しました。</string>
     <string name="msg_alarm_delete_failed">アラームの削除に失敗しました。</string>
-    <string name="msg_alarm_deleted">アラームを削除しました。</string>
     <string name="msg_alarm_save_failed">アラームの保存に失敗しました。</string>
-    <string name="msg_alarm_saved">アラームを保存しました。%1$s</string>
     <string name="msg_alarm_toggle_failed">アラームの状態変更に失敗しました。</string>
     <string name="msg_alarm_update_failed">アラームの編集に失敗しました。</string>
-    <string name="msg_changes_saved">変更を保存しました。%1$s</string>
     <string name="msg_consent_completed">同意が完了しました。</string>
     <string name="msg_consent_record_failed">同意の記録に失敗しました。もう一度お試しください。</string>
     <string name="msg_marketing_consent_on">広告性情報の受信に同意しました。</string>
@@ -542,8 +534,6 @@
     <string name="msg_voice_share_login_required">声を共有するには、まずログインしてください。</string>
     <string name="msg_voice_share_setting_failed">声の共有設定に失敗しました。</string>
     <string name="msg_voice_shared_info_saved">共有された声の情報を保存しました。</string>
-    <string name="msg_voice_shared_off">声の共有をオフにしました。</string>
-    <string name="msg_voice_shared_on">声を共有しました。</string>
     <string name="msg_voice_slot_exhausted">現在、声の作成リクエストが集中しています。しばらくしてからもう一度お試しください。</string>
     <string name="msg_voice_tts_audio_load_login_required">保存した音声オーディオを読み込むには、まずログインしてください。</string>
     <string name="msg_voice_tts_generate_login_required">音声オーディオを作成するには、まずログインしてください。</string>
@@ -579,7 +569,6 @@
     <string name="social_leave_and_register_button">退出して登録</string>
     <string name="social_leave_and_register_new_code">現在のプランから退出して新しいコードを登録</string>
     <string name="social_leave_dialog_message">現在のプランから退出して、新しいコードを登録しますか？</string>
-    <string name="social_leave_dialog_title">現在のプランから退出して新しいコードを登録</string>
     <string name="social_managing_shared_plan">共有プランを管理中です。</string>
     <string name="social_member_fallback">メンバー</string>
     <string name="social_members_section_title">メンバー</string>
@@ -597,8 +586,7 @@
     <string name="social_regenerate_share_code_dialog_title">共有コードの再発行</string>
     <string name="social_register_button">登録</string>
     <string name="social_register_dialog_message">このコードを登録しますか？</string>
-    <string name="social_register_dialog_message_active">登録可能なコードの場合、現在の%1$sプランは終了し、新しいプランに切り替わります。登録しますか？</string>
-    <string name="social_register_dialog_title">コードを登録</string>
+    <string name="social_register_dialog_message_active">登録可能なコードの場合、現在の%1$sプランは終了し、新しいプランに切り替わります。</string>
     <string name="social_register_other_code">別のコードを登録</string>
     <string name="social_register_will_change_plan">登録すると、現在の%1$sプランが変更されます。</string>
     <string name="social_remove_button">退出させる</string>
@@ -643,9 +631,7 @@
     <string name="voices_my_voices_title">マイボイス</string>
     <string name="voices_name_label">声の名前</string>
     <string name="voices_prerender_generating_title">声を生成中</string>
-    <string name="voices_prerender_generating_body">この声でアラーム文を作成しています。しばらくお待ちください。</string>
     <string name="voices_prerender_downloading_title">端末に保存中</string>
-    <string name="voices_prerender_progress">アラーム文 %1$d/%2$d 準備完了</string>
     <string name="voices_prerender_continue_background_action">バックグラウンドで続行</string>
     <string name="voices_prerender_continue_background">残りの文はバックグラウンドで作成され続けます。</string>
     <string name="voices_language_label">フレーズの言語</string>
@@ -890,6 +876,7 @@
     <string name="msg2_promo_fail_code_exhausted">利用回数の上限に達したプロモコードです</string>
     <string name="msg2_promo_fail_group_already_redeemed">同じキャンペーンのプロモコードをすでに使用しています。この特典はアカウントごとに1回のみです</string>
     <string name="msg2_promo_fail_owns_active_group">すでに利用中のグループプランがあるため、プロモコードを適用できません</string>
+    <string name="msg2_promo_fail_active_subscription">利用中のプランがあります。解約後にクーポンを登録できます</string>
     <string name="msg2_promo_fail_generic">プロモコードを適用できませんでした。しばらくしてからもう一度お試しください</string>
     <string name="onb_voice_title">基本の声を選んでください</string>
     <string name="onb_voice_subtitle">あとからいつでも変更できます。</string>
@@ -1001,6 +988,8 @@
     <string name="r3misc_google_signin_unavailable">現在Googleログインはご利用いただけません。メールでログインしてください。</string>
     <string name="r3misc_google_signin_failed">Googleログインに失敗しました</string>
 
+    <string name="r3misc_notif_received_alarm_sent">%1$sがアラームを送りました。</string>
+    <string name="r3misc_notif_received_alarm_sent_other">相手がアラームを送りました。</string>
     <string name="r3misc_notif_received_alarm_time">%1$sに鳴ります</string>
     <string name="r3misc_notif_received_alarm_default">相手があなたのアラームを設定しました</string>
     <string name="r3misc_ringing_action_snooze">再通知</string>

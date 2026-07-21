@@ -42,6 +42,7 @@ import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -139,7 +140,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Room 첫 방출이 오기 전(콜드 스타트 첫 프레임)의 '빈 리스트'는 실제 빈 상태가 아니다 —
+    // 이 플래그가 false 인 동안 알람 탭은 빈 상태 히어로를 그리지 않아, 알람이 있는데도
+    // '알람이 없습니다'가 번쩍였다 바뀌는 문제를 막는다. 한 번 true 가 되면 유지.
+    var alarmsLoaded by mutableStateOf(false)
+        internal set
+
     val alarms: StateFlow<List<AlarmEntity>> = repository.observeAlarms()
+        .onEach { alarmsLoaded = true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     var authSession by mutableStateOf<AuthSession?>(initialAuthSession)
@@ -285,6 +293,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     internal var prerenderDriveJob: kotlinx.coroutines.Job? = null
+
+    // 목소리 공유 토글의 프로필별 워커 — PATCH 를 목소리별로 직렬화해 항상 마지막 값으로
+    // 수렴시킨다(전역 voiceProfileBusy 로 스위치를 잠그지 않는다). desired 는 워커가 다음에
+    // 보내야 할 목표값(연타 시 중간값은 건너뛰고 최신값만 전송).
+    internal val shareToggleJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+    internal val shareToggleDesired = mutableMapOf<String, Boolean>()
 
     // setDefaultVoice 시점에 매니페스트(stockClips)가 아직 안 왔으면 프리페치가 빈손으로 끝난다.
     // 대상 목소리를 여기 담아 두고 loadStockClips 성공 시 1회 재시도한다(재시도 후 클리어).
@@ -487,6 +501,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pendingPrefetchVoiceId = null
         prerenderDriveJob?.cancel()
         prerenderDriveJob = null
+        shareToggleJobs.values.forEach { it.cancel() }
+        shareToggleJobs.clear()
+        shareToggleDesired.clear()
         prerenderDrive = null
         voiceProfiles = emptyList()
         pendingVoiceDraft = null

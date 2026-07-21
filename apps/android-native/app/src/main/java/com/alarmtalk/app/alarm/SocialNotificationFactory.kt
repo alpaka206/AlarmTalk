@@ -11,7 +11,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.alarmtalk.app.MainActivity
 import com.alarmtalk.app.R
-import com.alarmtalk.app.data.receivedRemoteAlarmLabel
 
 object SocialNotificationFactory {
     private const val ALARM_GROUP_ID = "voice_alarm_received_alarms"
@@ -22,10 +21,17 @@ object SocialNotificationFactory {
             .takeIf { it.isNotBlank() }
             ?.let { context.getString(R.string.r3misc_notif_received_alarm_time, it) }
             ?: context.getString(R.string.r3misc_notif_received_alarm_default)
+        // 알림 제목은 명사형 라벨('~님이 보낸 알람') 대신 문장형 — 리스트 라벨과 용도가 다르다.
+        val honoredSender = senderName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { if (it.endsWith("님")) it else context.getString(R.string.r3data_honorific_name, it) }
+        val title = honoredSender
+            ?.let { context.getString(R.string.r3misc_notif_received_alarm_sent, it) }
+            ?: context.getString(R.string.r3misc_notif_received_alarm_sent_other)
         notify(
             context = context,
             notificationId = BASE_ALARM_NOTIFICATION_ID + stableOffset(alarmId),
-            title = receivedRemoteAlarmLabel(context, senderName),
+            title = title,
             body = body,
             groupId = ALARM_GROUP_ID,
         )
@@ -52,6 +58,14 @@ object SocialNotificationFactory {
             notificationId,
             NotificationCompat.Builder(context, NotificationChannels.SOCIAL_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_alarm_24)
+                // 우측 큰 아이콘은 앱 로고 — 상태바 스몰 아이콘은 시스템 제약(단색 실루엣)상
+                // 알람 글리프를 유지하고, 펼친 알림에서 브랜드가 보이게 한다.
+                .setLargeIcon(
+                    android.graphics.BitmapFactory.decodeResource(
+                        context.resources,
+                        R.drawable.ic_brand_logo,
+                    ),
+                )
                 .setColor(0xFFE8B341.toInt())
                 .setContentTitle(title)
                 .setContentText(body)

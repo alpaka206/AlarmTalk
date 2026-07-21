@@ -25,8 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.CloudUpload
-import androidx.compose.material.icons.outlined.Pause
-import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -140,7 +140,7 @@ internal fun VoicePreviewButtonIcon(
         )
     } else {
         Icon(
-            imageVector = if (active) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+            imageVector = if (active) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
             contentDescription = voicePreviewContentDescription(context, active = active, preparing = false),
             modifier = modifier.size(22.dp),
         )
