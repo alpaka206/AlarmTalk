@@ -31,6 +31,7 @@ internal fun MainViewModel.login(email: String, password: String) {
     viewModelScope.launch {
         authBusy = true
         loginError = null
+        authNotice = null
         runCatching {
             api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
@@ -62,6 +63,7 @@ internal fun MainViewModel.requestEmailVerification(email: String) {
     }
     viewModelScope.launch {
         authBusy = true
+        registerError = null
         runCatching {
             api.requestEmailVerification(EmailVerificationRequest(email = normalizedEmail))
         }.onSuccess { response ->
@@ -73,8 +75,15 @@ internal fun MainViewModel.requestEmailVerification(email: String) {
                 ?: getApplication<android.app.Application>().getString(R.string.msg_verification_code_sent)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email verification request failed", error)
-            message = duplicateEmailMessage(error)
-                ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_send_failed))
+            // 스낵바는 키보드에 가려 '아무 반응 없음'처럼 보인다 — 화면 인라인으로 안내한다.
+            // AUTH_EMAIL_TAKEN 은 로그인 화면으로 전환되므로 안내를 authNotice 로 넘긴다.
+            val friendly = duplicateEmailMessage(error)
+            if (authRedirectToLogin) {
+                authNotice = friendly
+            } else {
+                registerError = friendly
+                    ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_send_failed))
+            }
         }
         authBusy = false
     }
@@ -102,11 +111,12 @@ private fun MainViewModel.duplicateEmailMessage(error: Throwable): String? {
 internal fun MainViewModel.confirmEmailVerification(email: String, code: String) {
     val normalizedEmail = email.trim().lowercase()
     if (normalizedEmail.isBlank() || code.trim().length != 6) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_verification_code_six_digits_required)
+        registerError = getApplication<android.app.Application>().getString(R.string.msg_verification_code_six_digits_required)
         return
     }
     viewModelScope.launch {
         authBusy = true
+        registerError = null
         runCatching {
             api.confirmEmailVerification(
                 EmailVerificationConfirmRequest(
@@ -119,7 +129,7 @@ internal fun MainViewModel.confirmEmailVerification(email: String, code: String)
             message = getApplication<android.app.Application>().getString(R.string.msg_email_verification_completed)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email verification confirm failed", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_mismatch))
+            registerError = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_mismatch))
         }
         authBusy = false
     }
@@ -135,15 +145,16 @@ internal fun MainViewModel.register(
     val trimmedName = name.trim()
     val trimmedCode = emailVerificationCode.trim()
     if (normalizedEmail.isBlank() || password.isBlank() || trimmedName.isBlank() || trimmedCode.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_register_all_fields_required)
+        registerError = getApplication<android.app.Application>().getString(R.string.msg_register_all_fields_required)
         return
     }
     if (registerEmailVerified != normalizedEmail) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_register_verify_email_first)
+        registerError = getApplication<android.app.Application>().getString(R.string.msg_register_verify_email_first)
         return
     }
     viewModelScope.launch {
         authBusy = true
+        registerError = null
         runCatching {
             api.register(
                 RegisterRequest(
@@ -164,8 +175,13 @@ internal fun MainViewModel.register(
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email registration failed", error)
-            message = duplicateEmailMessage(error)
-                ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_register_failed))
+            val friendly = duplicateEmailMessage(error)
+            if (authRedirectToLogin) {
+                authNotice = friendly
+            } else {
+                registerError = friendly
+                    ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_register_failed))
+            }
         }
         authBusy = false
     }
