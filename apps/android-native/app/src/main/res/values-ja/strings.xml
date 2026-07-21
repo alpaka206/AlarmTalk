@@ -307,10 +307,8 @@
     <string name="editorp_random_title">文</string>
     <string name="editorp_random_weather_region_required">天気を使った文を作るには、都市が必要です。</string>
     <string name="editorp_random_weather_region_saved">相手が保存した天気の地域を使います。</string>
-    <string name="editorp_random_weather_region_title">天気の地域</string>
+    <string name="editorp_random_weather_region_title">希望する地域</string>
     <string name="editorp_random_weather_region_value">%1$sの天気を使います。</string>
-    <string name="editorp_weather_dialog_section_desc">都市名を入力してください。\n保存しないとランダムメッセージはオフになります。</string>
-    <string name="editorp_weather_dialog_section_title">天気の文に使う地域</string>
     <string name="editorp_weather_save_button">保存</string>
     <string name="alarms_target_sheet_title">誰を起こしますか？</string>
     <string name="alarms_target_self_title">自分のアラームを設定</string>

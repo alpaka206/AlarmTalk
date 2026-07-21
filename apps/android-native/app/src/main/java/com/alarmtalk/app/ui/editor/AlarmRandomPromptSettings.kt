@@ -4,7 +4,6 @@ import android.Manifest
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
@@ -50,7 +49,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
-import com.alarmtalk.app.WakerPanelShape
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
@@ -80,8 +78,15 @@ internal fun RandomPromptSettingsPane(
     val context = LocalContext.current
     var draftContext by remember(randomContext) {
         mutableStateOf(
-            if (randomContext == ManualMessageContext) ManualMessageContext
-            else normalizedRandomPromptContext(randomContext),
+            when {
+                randomContext == ManualMessageContext -> ManualMessageContext
+                // 보이는 옵션(날씨/운세/사랑/약/직접 입력)이 아닌 값(새 알람의 보이지 않는
+                // preset 등)이면, 추가 설정이 필요 없는 '약'을 기본 선택으로 둔다.
+                EditorMessageContexts.none { (key, _) ->
+                    key == normalizedRandomPromptContext(randomContext)
+                } -> "medication"
+                else -> normalizedRandomPromptContext(randomContext)
+            },
         )
     }
     var draftWeatherCountry by remember(weatherCountry, savedWeatherCountry) {
@@ -420,28 +425,6 @@ internal fun WeatherLocationDialog(
                     title = stringResource(R.string.editorp_random_weather_region_title),
                     onDismiss = onDismissWithoutSave,
                 )
-                Surface(
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.editorp_weather_dialog_section_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Text(
-                            text = stringResource(R.string.editorp_weather_dialog_section_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
                 WeatherCityPickerField(
                     city = draftCity,
                     cityError = cityError,

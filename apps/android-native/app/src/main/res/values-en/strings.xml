@@ -307,10 +307,8 @@
     <string name="editorp_random_title">Message</string>
     <string name="editorp_random_weather_region_required">To use weather-based messages, a city is required.</string>
     <string name="editorp_random_weather_region_saved">Using the weather region your partner saved.</string>
-    <string name="editorp_random_weather_region_title">Weather region</string>
+    <string name="editorp_random_weather_region_title">Preferred region</string>
     <string name="editorp_random_weather_region_value">Using the weather for %1$s.</string>
-    <string name="editorp_weather_dialog_section_desc">Enter your city name.\nIf you don\'t save, random messages turn off.</string>
-    <string name="editorp_weather_dialog_section_title">Region to use for weather messages</string>
     <string name="editorp_weather_save_button">Save</string>
     <string name="alarms_target_sheet_title">Who is this alarm for?</string>
     <string name="alarms_target_self_title">Set my alarm</string>
