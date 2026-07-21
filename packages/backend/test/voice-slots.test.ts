@@ -25,6 +25,7 @@ async function setupDb() {
       user_id TEXT NOT NULL,
       name TEXT NOT NULL,
       elevenlabs_voice_id TEXT,
+      evicted_provider_voice_id TEXT,
       status TEXT DEFAULT 'processing',
       is_system INTEGER DEFAULT 0,
       is_shared INTEGER DEFAULT 0,
@@ -131,10 +132,13 @@ describe('evictLruClonesIfOverCap', () => {
     expect(result).toEqual({ evicted: 1, shortfall: 0 });
     const victim = (
       await db.execute({
-        sql: `SELECT elevenlabs_voice_id, evicted_at, deleted_at FROM voice_profiles WHERE id = 'v000'`,
+        sql: `SELECT elevenlabs_voice_id, evicted_provider_voice_id, evicted_at, deleted_at
+              FROM voice_profiles WHERE id = 'v000'`,
       })
     ).rows[0];
     expect(victim.elevenlabs_voice_id).toBeNull();
+    // evict 직전 id 보관 — TTS 가 이 id 로 기존 캐시를 프로브해 재클론 없이 서빙한다(Codex #602).
+    expect(victim.evicted_provider_voice_id).toBe('el-v000');
     expect(victim.evicted_at).not.toBeNull();
     // deleted_at 은 NULL 유지 — TTL 스윕이 R2 원본을 보존해야 F3 재클론이 가능하다.
     expect(victim.deleted_at).toBeNull();
@@ -186,5 +190,40 @@ describe('evictLruClonesIfOverCap', () => {
     const db = await setupDb();
     await fillToCap(db);
     expect(await evictLruClonesIfOverCap(db, 'v000')).toEqual({ evicted: 0, shortfall: 0 });
+  });
+
+  it('falls back to the pre-76 schema during the deploy→migration window', async () => {
+    // 배포 워크플로는 워커 배포 후 마이그레이션을 돌리므로, 76 적용 전 짧은 창에서는
+    // evicted_provider_voice_id 컬럼이 없다 — 그래도 eviction(등록)이 실패하면 안 된다(Codex #603).
+    const db = await setupDb();
+    await db.executeMultiple(`
+      DROP TABLE voice_profiles;
+      CREATE TABLE voice_profiles (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        elevenlabs_voice_id TEXT,
+        status TEXT DEFAULT 'processing',
+        is_system INTEGER DEFAULT 0,
+        is_shared INTEGER DEFAULT 0,
+        is_draft INTEGER DEFAULT 0,
+        last_used_at TEXT,
+        evicted_at TEXT,
+        deleted_at TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+    `);
+    await fillToCap(db);
+    await insertClone(db, { id: 'newbie' });
+    const result = await evictLruClonesIfOverCap(db, 'newbie');
+    expect(result).toEqual({ evicted: 1, shortfall: 0 });
+    const victim = (
+      await db.execute({
+        sql: `SELECT elevenlabs_voice_id, evicted_at FROM voice_profiles WHERE id = 'v000'`,
+      })
+    ).rows[0];
+    expect(victim.elevenlabs_voice_id).toBeNull();
+    expect(victim.evicted_at).not.toBeNull();
   });
 });
