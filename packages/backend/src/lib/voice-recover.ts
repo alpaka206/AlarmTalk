@@ -5,6 +5,7 @@ import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from './voice-provider';
 import { evictLruClonesIfOverCapTx, hasCloneSlotCapacity } from './voice-slots';
 import { withWriteTransaction } from './transactions';
+import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
 import { enqueueExternalDeletion } from './audio-retention';
 
 /**
@@ -19,9 +20,11 @@ import { enqueueExternalDeletion } from './audio-retention';
  *   클라에 재등록을 유도한다.
  * - 재클론은 '복구'이므로 월간 목소리변경/‑draft attempt 쿼터를 소모하지 않는다(별도 경로).
  *
- * 주의(호출자 계약): 이 함수는 원본을 외부 공급자(ElevenLabs)로 다시 보낸다. 호출부(tts.ts)는
- * 합성 진입 전 소유자(=비공유 클론이라 caller 본인)의 민감 동의(voice_biometric·overseas_transfer)를
- * 이미 검증한 뒤에 호출해야 한다(현재 게이트가 그렇게 동작).
+ * 동의(Codex #599 5차 P1): 이 함수는 원본을 외부 공급자(ElevenLabs)로 다시 보낸다. 호출부의
+ * 합성 동의 게이트는 '요청자(뷰어)' 기준이라, 공유된 evicted 프로필을 가족 뷰어가 재생하는
+ * 경우엔 소유자 동의를 보증하지 못한다. 또 게이트 통과 후 철회가 커밋되는 TOCTOU 도 있다.
+ * 그래서 enroll 직전에 '프로필 소유자'의 민감 동의(voice_biometric·overseas_transfer)를
+ * 여기서 직접 재검증하고, 철회 상태면 업로드 없이 null 을 반환한다.
  */
 export async function recloneEvictedVoiceProfile(
   env: Env,
@@ -48,6 +51,21 @@ export async function recloneEvictedVoiceProfile(
   // 지속된다 → enroll 전에 포기하고 null 반환(호출자는 NO_VOICE_ID 폴백). 이 프로필 자신은
   // voice_id 가 NULL(evicted)이라 활성 카운트에 안 들어가 있어 별도 제외가 필요 없다.
   if (!(await hasCloneSlotCapacity(db))) return null;
+
+  // 소유자 동의 재검증(Codex #599 5차 P1): enroll 직전에 '프로필 소유자'의 민감 동의를 확인한다.
+  // voice_profiles.user_id 는 로그인 id(google_id) 또는 users.id 로 저장돼 있어 둘 다로 PK 를
+  // 해석하고, 소유자 행이 없으면(탈퇴 경합 등) 업로드 없이 안전하게 포기한다.
+  const ownerRow = (
+    await db.execute({
+      sql: `SELECT u.id AS pk FROM voice_profiles vp
+            JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
+            WHERE vp.id = ? LIMIT 1`,
+      args: [profileId],
+    })
+  ).rows[0];
+  const ownerPk = (ownerRow?.pk as string | undefined) ?? null;
+  if (!ownerPk) return null;
+  if (await missingConsentType(db, ownerPk, SENSITIVE_REQUIRED_CONSENTS)) return null;
 
   // Uint8Array 뷰 → 정확한 구간만 ArrayBuffer 로 복사(오프셋 있는 버퍼 안전).
   const audioBuffer = stored.bytes.buffer.slice(

@@ -149,14 +149,18 @@ describe('evictLruClonesIfOverCap', () => {
   it('prefers never-used (last_used_at NULL) victims first', async () => {
     const db = await setupDb();
     await fillToCap(db);
+    // 상한값이 바뀌어도 동작하도록 '마지막으로 채운' 행을 미사용(NULL)으로 만든다.
+    const lastFilled = `v${String(MAX_PROVIDER_CLONE_VOICES - 1).padStart(3, '0')}`;
     await db.execute({
-      sql: `UPDATE voice_profiles SET last_used_at = NULL WHERE id = 'v049'`,
+      sql: `UPDATE voice_profiles SET last_used_at = NULL WHERE id = ?`,
+      args: [lastFilled],
     });
     await insertClone(db, { id: 'newbie' });
     await evictLruClonesIfOverCap(db, 'newbie');
     const victim = (
       await db.execute({
-        sql: `SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = 'v049'`,
+        sql: `SELECT elevenlabs_voice_id FROM voice_profiles WHERE id = ?`,
+        args: [lastFilled],
       })
     ).rows[0];
     expect(victim.elevenlabs_voice_id).toBeNull();
