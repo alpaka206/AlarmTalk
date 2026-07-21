@@ -32,6 +32,11 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
             runCatching { RemoteAlarmSyncScheduler.runOnce(applicationContext) }
                 .onFailure { AlarmTalkLog.reportError("FCM-triggered alarm pull failed", it) }
         }
+        // 상대가 목소리 공유를 켜거나/끄면 → 공유 목록·클립 매니페스트 즉시 새로고침 신호.
+        // UI 가 없으면 무시(다음 앱 시작의 초기 로드가 폴백).
+        if (message.data["type"] == "voice_share_changed") {
+            com.alarmtalk.app.core.AppSignals.emitVoiceShareChanged()
+        }
     }
 
     companion object {

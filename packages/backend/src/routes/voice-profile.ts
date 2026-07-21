@@ -965,6 +965,23 @@ voiceProfile.patch('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
+  // 공유 on/off 변경은 같은 그룹 멤버들에게 data-only push 로 즉시 알린다 — 받은 쪽이
+  // 새로고침 없이 목소리 탭에서 바로 보이게(가족 알람 push 와 동일 패턴, 실패는 무시).
+  if (hasShared) {
+    const { sendVoiceShareChangedPush } = await import('../lib/fcm');
+    const memberRes = await db.execute({
+      sql: `SELECT DISTINCT m2.user_id
+            FROM plan_group_members m1
+            JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
+            WHERE m1.user_id = ? AND m2.user_id != ?`,
+      args: [userPk, userPk],
+    });
+    const recipients = memberRes.rows.map((row) => String(row.user_id));
+    if (recipients.length > 0) {
+      sendVoiceShareChangedPush(db, c.env, recipients).catch(() => {});
+    }
+  }
+
   return c.json({
     profile: {
       id,

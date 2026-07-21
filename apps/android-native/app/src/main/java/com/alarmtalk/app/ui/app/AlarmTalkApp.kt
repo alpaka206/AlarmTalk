@@ -297,6 +297,15 @@ internal fun AlarmTalkApp(
             viewModel.preloadBilling()
         }
     }
+    // 상대가 목소리 공유를 켜면(voice_share_changed push) 공유 목록·클립 매니페스트를
+    // 즉시 새로고침한다 — 가족 알람 push→pull 과 같은 즉시성.
+    LaunchedEffect(authSession?.token) {
+        if (authSession == null) return@LaunchedEffect
+        com.alarmtalk.app.core.AppSignals.voiceShareChanged.collect {
+            viewModel.refreshSocial()
+            viewModel.loadStockClips(forceReload = true)
+        }
+    }
 
     LaunchedEffect(
         authSession?.user?.id,
