@@ -326,37 +326,50 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         return
     }
 
-    // 낙관적 업데이트 + 전역 busy 미사용: 스위치는 즉시 뒤집히고, 같은 목소리의 이전 요청은
-    // 취소해 마지막 값이 이긴다 — 연타해도 스위치가 잠기거나 나중에 튀지 않는다. 성공
-    // 토스트는 띄우지 않고(스위치 상태가 곧 결과), 서버 실패 시에만 원상복구+안내한다.
+    // 낙관적 업데이트 + 전역 busy 미사용: 스위치는 즉시 뒤집히고, 서버 반영은 목소리별
+    // 단일 워커가 PATCH 를 직렬화한다 — 이미 서버로 나간 요청은 코루틴 cancel 로 회수할 수
+    // 없어 겹쳐 보내면 늦게 도착한 이전 요청이 최종 상태를 뒤집을 수 있다. 워커는 한 번에
+    // 하나만 보내고 desired 최신값으로 수렴하므로(중간 연타 값은 건너뜀) 그 경합이 없다.
+    // 성공 토스트는 띄우지 않고(스위치 상태가 곧 결과), 서버 실패 시에만 원상복구+안내한다.
     val previousShared = voiceProfiles.firstOrNull { it.id == profileId }?.isShared
     voiceProfiles = voiceProfiles.map {
         if (it.id == profileId) it.copy(isShared = shared) else it
     }
-    shareToggleJobs.remove(profileId)?.cancel()
+    shareToggleDesired[profileId] = shared
+    if (shareToggleJobs[profileId]?.isActive == true) return
     shareToggleJobs[profileId] = viewModelScope.launch {
-        runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileUpdateRequest(isShared = shared),
-                ).profile
+        // 이 워커 세션에서 서버가 확정해 준 마지막 값 — 실패 시 여기로 되돌린다.
+        var acked = previousShared
+        try {
+            while (true) {
+                val want = shareToggleDesired[profileId] ?: break
+                val profile = withContext(Dispatchers.IO) {
+                    api.updateVoiceProfile(
+                        authorization = AlarmTalkApiClient.bearer(session.token),
+                        id = profileId,
+                        request = VoiceProfileUpdateRequest(isShared = want),
+                    ).profile
+                }
+                acked = profile.isShared ?: want
+                // PATCH 중에 다시 토글됐으면 최신 desired 로 재전송(직렬이라 순서 역전 없음).
+                if (shareToggleDesired[profileId] != want) continue
+                shareToggleDesired.remove(profileId)
+                voiceProfiles = voiceProfiles.map {
+                    if (it.id == profile.id) it.copy(isShared = acked) else it
+                }
+                runCatching {
+                    api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
+                }.onSuccess { profiles ->
+                    familyVoices = profiles
+                }
+                break
             }
-        }.onSuccess { profile ->
+        } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            shareToggleDesired.remove(profileId)
             voiceProfiles = voiceProfiles.map {
-                if (it.id == profile.id) it.copy(isShared = profile.isShared ?: shared) else it
-            }
-            runCatching {
-                api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
-            }.onSuccess { profiles ->
-                familyVoices = profiles
-            }
-        }.onFailure { error ->
-            // 새 토글로 대체돼 취소된 요청은 되돌리지 않는다(뒤 요청이 최종 상태를 책임진다).
-            if (error is kotlin.coroutines.cancellation.CancellationException) throw error
-            voiceProfiles = voiceProfiles.map {
-                if (it.id == profileId) it.copy(isShared = previousShared) else it
+                if (it.id == profileId) it.copy(isShared = acked) else it
             }
             AlarmTalkLog.reportError("Failed to update voice profile sharing id=$profileId shared=$shared", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_share_setting_failed))

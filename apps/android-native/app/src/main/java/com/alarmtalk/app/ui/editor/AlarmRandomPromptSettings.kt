@@ -400,7 +400,9 @@ internal fun WeatherLocationDialog(
     onConfirm: (String, String) -> Unit,
 ) {
     val presetCities = androidx.compose.ui.res.stringArrayResource(R.array.hs_weather_preset_cities).toList()
-    var draftCity by remember(city) { mutableStateOf(city) }
+    // 직접 입력 필드는 항상 빈칸으로 시작 — 이전 도시명을 프리필하지 않는다(기본값 없음 규칙).
+    // 현재 저장된 지역은 뒤 화면의 '원하는 지역' 행에 이미 보인다.
+    var draftCity by remember(city) { mutableStateOf("") }
     var customMode by remember(city) {
         mutableStateOf(presetCities.isEmpty() || (city.isNotBlank() && city !in presetCities))
     }

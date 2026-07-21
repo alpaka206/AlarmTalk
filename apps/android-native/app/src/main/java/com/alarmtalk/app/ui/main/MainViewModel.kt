@@ -294,9 +294,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     internal var prerenderDriveJob: kotlinx.coroutines.Job? = null
 
-    // 목소리 공유 토글의 프로필별 in-flight 요청 — 낙관적 토글에서 이전 요청을 취소해
-    // 마지막 값이 이기게 한다(전역 voiceProfileBusy 로 스위치를 잠그지 않는다).
+    // 목소리 공유 토글의 프로필별 워커 — PATCH 를 목소리별로 직렬화해 항상 마지막 값으로
+    // 수렴시킨다(전역 voiceProfileBusy 로 스위치를 잠그지 않는다). desired 는 워커가 다음에
+    // 보내야 할 목표값(연타 시 중간값은 건너뛰고 최신값만 전송).
     internal val shareToggleJobs = mutableMapOf<String, kotlinx.coroutines.Job>()
+    internal val shareToggleDesired = mutableMapOf<String, Boolean>()
 
     // setDefaultVoice 시점에 매니페스트(stockClips)가 아직 안 왔으면 프리페치가 빈손으로 끝난다.
     // 대상 목소리를 여기 담아 두고 loadStockClips 성공 시 1회 재시도한다(재시도 후 클리어).
@@ -501,6 +503,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prerenderDriveJob = null
         shareToggleJobs.values.forEach { it.cancel() }
         shareToggleJobs.clear()
+        shareToggleDesired.clear()
         prerenderDrive = null
         voiceProfiles = emptyList()
         pendingVoiceDraft = null
