@@ -77,10 +77,6 @@ internal fun VoiceAudioCard(
     // 날씨+약 문구로 제한하는 모드 — 무료 플랜이거나 시스템(기본) 보이스 선택 시 true.
     // TTS 문구를 무료 버킷 UI(날씨/약)로 제한한다.
     restrictToWeatherMedication: Boolean,
-    // 무료 플랜 여부 — 녹음(직접 녹음)은 유료 게이트라 무료에서만 소스 토글을 감춘다.
-    // 유료는 시스템(기본) 보이스를 골랐어도 직접 녹음으로 전환할 수 있다.
-    freeVoiceTier: Boolean,
-    onLockedFeature: () -> Unit,
     audioMessage: String?,
     isRecording: Boolean,
     recordingElapsedMillis: Long,
@@ -138,18 +134,9 @@ internal fun VoiceAudioCard(
                 detail = ownedVoiceDetail(context, it),
             )
         }
-    // 공유받은 목소리는 TTS 전용 — 토글 숨김과 함께, 예전 UI 로 '공유 목소리 + 녹음/파일'로
-    // 저장된 레거시 알람도 편집 진입 시 TTS 로 되돌리고 잔여 로컬 오디오를 비운다
-    // (숨기기만 하면 visibleVoiceSource 가 local 로 남아 녹음기가 그대로 보이고 저장도 됨).
-    val sharedVoiceSelected = readyFamilyVoices.any { it.id == editor.voiceProfileId }
-    LaunchedEffect(editor.voiceSource, sharedVoiceSelected) {
+    LaunchedEffect(editor.voiceSource) {
         if (editor.voiceSource == VoiceSources.SERVER_TTS) {
             editor.voiceSource = VoiceSources.TTS_PROFILE
-            editor.clearTtsMeta()
-        }
-        if (sharedVoiceSelected && editor.voiceSource == VoiceSources.LOCAL_AUDIO) {
-            editor.voiceSource = VoiceSources.TTS_PROFILE
-            editor.clearAudio()
             editor.clearTtsMeta()
         }
     }
@@ -158,29 +145,26 @@ internal fun VoiceAudioCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-            // 무료 플랜은 녹음이 잠겨 있어 소스 토글이 사실상 페이월 미끼라 감춘다(항상 TTS).
-            // 유료는 시스템(기본) 보이스를 골랐어도 직접 녹음으로 전환할 수 있게 노출한다.
-            // 공유받은 목소리는 TTS 전용 — 녹음·파일로 전환하면 공유 보이스 밑에 로컬 오디오
-            // 알람이 저장되는 계약 위반이 생기므로 토글을 감춘다(프리셋+직접 입력만).
-            if (!freeVoiceTier && !sharedVoiceSelected) {
-                // 바로 위 '재생 방식'과 같은 세그먼트 트랙으로 통일(크기·선택색 일치).
-                EditorSegmentedSelector(
-                    options = listOf(
-                        VoiceSources.TTS_PROFILE to stringResource(R.string.editor_voice_source_tts),
-                        VoiceSources.LOCAL_AUDIO to stringResource(R.string.editor_voice_source_local),
-                    ),
-                    selected = visibleVoiceSource,
-                    onSelect = {
-                        editor.voiceSource = it
-                        if (it == VoiceSources.TTS_PROFILE) {
-                            editor.clearAudio()
-                            editor.clearTtsMeta()
-                        } else {
-                            editor.clearTtsMeta()
-                        }
-                    },
-                )
-            }
+            // 직접 녹음은 녹음본을 그대로 재생할 뿐이라 플랜·목소리 종류와 무관하게 항상
+            // 노출한다(무료/유료·기본/내/공유 목소리 모두). TTS 쪽 제한(버킷/문구)은
+            // 소스가 TTS 일 때만 적용된다.
+            // 바로 위 '재생 방식'과 같은 세그먼트 트랙으로 통일(크기·선택색 일치).
+            EditorSegmentedSelector(
+                options = listOf(
+                    VoiceSources.TTS_PROFILE to stringResource(R.string.editor_voice_source_tts),
+                    VoiceSources.LOCAL_AUDIO to stringResource(R.string.editor_voice_source_local),
+                ),
+                selected = visibleVoiceSource,
+                onSelect = {
+                    editor.voiceSource = it
+                    if (it == VoiceSources.TTS_PROFILE) {
+                        editor.clearAudio()
+                        editor.clearTtsMeta()
+                    } else {
+                        editor.clearTtsMeta()
+                    }
+                },
+            )
 
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
                 LaunchedEffect(visibleVoiceSource, voiceProfileBusy, profileOptions, editor.voiceProfileId) {

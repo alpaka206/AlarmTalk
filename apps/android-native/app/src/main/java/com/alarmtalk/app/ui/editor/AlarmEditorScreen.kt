@@ -877,17 +877,11 @@ internal fun AlarmEditorScreen(
 
     // 연결 상태를 키에 포함해, 오프라인으로 버킷을 못 받았다가 연결이 복구되면 자동 재시도한다.
     val isOnline by rememberIsOnline()
-    LaunchedEffect(restrictToWeatherMedication, freeVoiceTier, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline) {
+    LaunchedEffect(restrictToWeatherMedication, editor.playMode, editor.voiceProfileId, editor.voiceSource, stockClips, appVoiceLanguage, isOnline) {
         if (restrictToWeatherMedication && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
-            // 무료 플랜은 녹음이 유료 게이트라 TTS 로 강제한다. 유료 + 시스템(기본) 보이스는
-            // 직접 녹음을 허용 — LOCAL_AUDIO 로 있는 동안은 아래 TTS 쪽 제한(버킷/문구 강제)을
-            // 적용하지 않는다(녹음 알람에는 문구 개념이 없다).
-            if (freeVoiceTier && editor.voiceSource != VoiceSources.TTS_PROFILE) {
-                editor.voiceSource = VoiceSources.TTS_PROFILE
-                editor.clearAudio()
-                editor.clearTtsMeta()
-                editor.selectedBucket = null
-            }
+            // 직접 녹음은 플랜·목소리 종류와 무관하게 허용된다(녹음본 로컬 재생일 뿐).
+            // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
+            // 문구 개념이 없다.
             if (editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
                 if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
@@ -1199,8 +1193,6 @@ internal fun AlarmEditorScreen(
                                 stockClips = stockClips,
                                 defaultVoiceId = defaultVoiceId,
                                 restrictToWeatherMedication = restrictToWeatherMedication,
-                                freeVoiceTier = freeVoiceTier,
-                                onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,
                                 isRecording = isRecording,
                                 recordingElapsedMillis = recordingElapsedMillis,
