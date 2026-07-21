@@ -54,6 +54,24 @@ internal class VoiceOnboardingPreviewController(
         val appLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
             (if (!locales.isEmpty) locales[0] else null)?.language,
         )
+        // 기본 목소리는 내장 인사말(res/raw)을 즉시 재생 — 스톡 매니페스트가 아직 안 왔거나
+        // 네트워크가 없어도 '눌렀는데 아무 소리 없음'이 되지 않는다.
+        val bundledRes = com.alarmtalk.app.data.bundledSystemGreetingRes(profile.id, appLanguage)
+        if (bundledRes != null) {
+            previewRequestId += 1
+            stopPreview(invalidateRequest = false)
+            val player = MediaPlayer.create(context, bundledRes) ?: return
+            playingVoiceId = profile.id
+            mediaPlayer = player.apply {
+                setOnCompletionListener {
+                    it.release()
+                    if (mediaPlayer === it) mediaPlayer = null
+                    if (playingVoiceId == profile.id) playingVoiceId = null
+                }
+                start()
+            }
+            return
+        }
         val clip = com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, appLanguage)
             ?: return
 

@@ -336,16 +336,41 @@ internal fun VoiceProfileManagementPanel(
     fun prefetchGreetingPreviews() {
         scope.launch {
             systemVoices.forEach { profile ->
+                // 내장 인사말이 있는 보이스는 다운로드가 필요 없다.
+                if (com.alarmtalk.app.data.bundledSystemGreetingRes(profile.id, previewLanguage) != null) {
+                    return@forEach
+                }
                 val clip = greetingClipFor(profile) ?: return@forEach
                 runCatching { ensureGreetingCached(clip) }
             }
         }
     }
 
-    // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플(greeting 스톡 클립)을 들려준다.
+    // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플을 들려준다 — 내장(res/raw) 우선,
+    // 내장이 없는 새 시스템 보이스만 greeting 스톡 클립 다운로드로 폴백.
     fun playGreeting(profile: VoiceProfile) {
         if (playingGreetingVoiceId == profile.id) {
             stopMediaPreview()
+            return
+        }
+        val bundledRes = com.alarmtalk.app.data.bundledSystemGreetingRes(profile.id, previewLanguage)
+        if (bundledRes != null) {
+            greetingPreviewRequestId += 1
+            stopMediaPreview(invalidateGreetingPreview = false)
+            val player = MediaPlayer.create(context, bundledRes)
+            if (player == null) {
+                localMessage = context.getString(R.string.voices_preview_play_failed)
+                return
+            }
+            playingGreetingVoiceId = profile.id
+            mediaPlayer = player.apply {
+                setOnCompletionListener {
+                    it.release()
+                    if (mediaPlayer === it) mediaPlayer = null
+                    if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
+                }
+                start()
+            }
             return
         }
         val clip = greetingClipFor(profile)
