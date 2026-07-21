@@ -97,12 +97,12 @@
     <string name="billing_manage_on_google_play">Google Play 구독 관리</string>
     <string name="billing_monthly_subscription">Google Play로 구독하기</string>
     <string name="billing_plan_couple_feature_max_two">2명이 함께 사용</string>
-    <string name="billing_plan_couple_feature_message">상대 알람 맞춰주기·음성 메시지</string>
+    <string name="billing_plan_couple_feature_message">상대 알람 맞춰주기</string>
     <string name="billing_plan_couple_feature_voice_share">서로의 목소리 공유</string>
     <string name="billing_plan_couple_name">커플</string>
     <string name="billing_plan_couple_price">월 6,900원</string>
     <string name="billing_plan_family_feature_max_six">최대 5명이 함께 사용</string>
-    <string name="billing_plan_family_feature_message">가족에게 알람 보내기·음성 메시지</string>
+    <string name="billing_plan_family_feature_message">가족에게 알람 보내기</string>
     <string name="billing_plan_family_feature_voice_share">가족 목소리 공유</string>
     <string name="billing_plan_feature_includes_personal">개인 이용권 기능 전부 포함</string>
     <string name="billing_plan_family_name">가족</string>
@@ -114,7 +114,6 @@
     <string name="billing_plan_personal_feature_daily_prompt">날씨·운세 등 매일 다른 문구</string>
     <string name="billing_plan_personal_feature_gift">개인 이용권 선물</string>
     <string name="billing_plan_personal_feature_voice">원하는 목소리 1개 등록</string>
-    <string name="billing_plan_personal_feature_voice_message">음성 메시지</string>
     <string name="billing_plan_personal_name">개인</string>
     <string name="billing_plan_personal_price">월 3,900원</string>
     <string name="billing_play_manage_description">앱에서 해지를 완료하지 못했어요. Google Play 구독 관리에서 직접 해지할 수 있어요. 구독 상태는 바뀌지 않았어요.</string>
@@ -203,7 +202,7 @@
     <string name="editor_error_audio_duration_unreadable">오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.</string>
     <string name="editor_error_crop_save_failed">선택한 구간을 저장하지 못했어요.</string>
     <string name="editor_error_deleted_voice_cannot_edit">삭제된 목소리라 문구를 수정할 수 없어요. 다른 목소리를 선택해 주세요.</string>
-    <string name="editor_error_enter_message_or_random">음성 메시지를 입력하거나 랜덤 문구를 사용해 주세요.</string>
+    <string name="editor_error_enter_message_or_random">알람 문구를 입력하거나 랜덤 문구를 사용해 주세요.</string>
     <string name="editor_error_family_alarm_lead_too_soon">상대 알람은 %1$s 이후로 맞춰 주세요. 상대가 준비할 수 있게 30분 여유가 필요해요.</string>
     <string name="editor_error_family_alarm_time_unavailable">상대가 받을 수 없는 시간이에요.</string>
     <string name="editor_error_fortune_info_required">운세가 들어간 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요.</string>
@@ -219,7 +218,7 @@
     <string name="editor_error_voice_alarm_login_required">음성 알람은 로그인 후 사용할 수 있어요.</string>
     <string name="editor_error_voice_generation_failed">음성 생성에 실패했어요.</string>
     <string name="editor_error_manual_tts_quota">이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요.</string>
-    <string name="editor_error_voice_message_login_required">음성 메시지는 로그인 후 사용할 수 있어요.</string>
+    <string name="editor_error_voice_message_login_required">음성 알람은 로그인 후 사용할 수 있어요.</string>
     <string name="editor_error_weather_location_required">날씨가 들어간 문구는 도시를 입력해 주세요.</string>
     <string name="editor_existing_voice_cache_used">기존 음성 캐시를 사용했어요.</string>
     <string name="editor_expand">펼치기</string>
@@ -318,7 +317,7 @@
     <string name="editorp_weather_save_button">저장</string>
     <string name="alarms_target_sheet_title">누구를 깨울까요?</string>
     <string name="alarms_target_self_title">내 알람 맞추기</string>
-    <string name="hs_delete_account_body">정말 탈퇴할까요? 신청 후 30일이 지나면 알람, 음성, 메시지 등 모든 데이터가 영구 삭제돼요. 그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요.</string>
+    <string name="hs_delete_account_body">정말 탈퇴할까요? 신청 후 30일이 지나면 알람, 목소리 등 모든 데이터가 영구 삭제돼요. 그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요.</string>
     <string name="hs_delete_account_confirm">탈퇴</string>
     <string name="hs_delete_account_title">회원 탈퇴</string>
     <string name="hs_greeting_each_other_bottom">아침을 예약해요</string>
@@ -331,7 +330,7 @@
     <string name="hs_greeting_voice_top">좋아하는 목소리로</string>
     <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">닉네임 수정</string>
-    <string name="hs_nickname_display_name_desc">알람, 메시지, 공유 이용권 화면에서 이 이름을 사용해요.</string>
+    <string name="hs_nickname_display_name_desc">알람, 공유 이용권 화면에서 이 이름을 사용해요.</string>
     <string name="hs_nickname_display_name_title">앱에서 보일 이름</string>
     <string name="hs_nickname_field_label">닉네임</string>
     <string name="hs_nickname_field_placeholder">예: 규원</string>
@@ -435,7 +434,6 @@
     <string name="msg_gb_code_registered">코드를 등록했어요</string>
     <string name="msg_gb_promo_redeemed">프로모 코드를 적용했어요</string>
     <string name="msg_gb_promo_redeem_failed">프로모 코드를 적용하지 못했어요</string>
-    <string name="msg_gb_free_plan_voice_alarms_deleted">무료 이용권으로 전환되어 목소리 알람을 삭제했어요.</string>
     <string name="msg_gb_free_plan_voice_alarms_locked">무료 이용권으로 전환되어 목소리 알람이 잠겼어요. 다시 이용권을 등록하면 복구돼요.</string>
     <string name="msg_gb_gift_failed">선물하기에 실패했어요</string>
     <string name="msg_gb_google_play_start_failed">Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
@@ -445,16 +443,11 @@
     <string name="msg_gb_login_required_create_share_code">공유 코드를 만들려면 먼저 로그인해 주세요</string>
     <string name="msg_gb_login_required_generic">로그인 후 사용할 수 있어요</string>
     <string name="msg_gb_login_required_growth_info">성장 정보를 불러오려면 먼저 로그인해 주세요</string>
-    <string name="msg_gb_login_required_load_voice_messages">음성 메시지를 불러오려면 먼저 로그인해 주세요</string>
-    <string name="msg_gb_login_required_mark_message_read">메시지를 읽음 처리하려면 먼저 로그인해 주세요</string>
-    <string name="msg_gb_login_required_play_voice_message">음성 메시지를 재생하려면 먼저 로그인해 주세요</string>
+
     <string name="msg_gb_login_required_purchase_plan">이용권을 구매하려면 먼저 로그인해 주세요</string>
     <string name="msg_gb_login_required_register_code">코드를 등록하려면 먼저 로그인해 주세요</string>
-    <string name="msg_gb_login_required_send_message">메시지를 보내려면 먼저 로그인해 주세요</string>
     <string name="msg_gb_login_required_share_code_info">공유 코드 정보를 불러오려면 먼저 로그인해 주세요</string>
-    <string name="msg_gb_message_input_required">메시지를 입력해 주세요</string>
-    <string name="msg_gb_message_send_failed">메시지 전송에 실패했어요</string>
-    <string name="msg_gb_message_sent">메시지를 보냈어요</string>
+
     <string name="msg_gb_no_active_subscription_apply_new">현재 적용된 이용권이 없어 새 이용권으로 적용할게요</string>
     <string name="msg_gb_payment_confirm_failed">결제 확인에 실패했어요</string>
     <string name="msg_gb_payment_confirm_failed_retry">결제 확인에 실패했어요. 잠시 후 다시 시도해 주세요.</string>
@@ -468,7 +461,6 @@
     <string name="msg_gb_plan_label_couple">커플</string>
     <string name="msg_gb_plan_label_family">가족</string>
     <string name="msg_gb_plan_label_shared">공유</string>
-    <string name="msg_gb_receiver_required">받는 사람을 선택해 주세요</string>
     <string name="msg_gb_same_plan_in_use">이미 사용 중인 이용권이에요</string>
     <string name="msg_gb_share_code_info_load_failed">공유 코드 정보를 불러오지 못했어요</string>
     <string name="msg_gb_share_code_load_failed">%1$s 공유 코드를 불러오지 못했어요</string>
@@ -476,17 +468,12 @@
     <string name="msg_gb_share_code_regenerated">%1$s 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요</string>
     <string name="msg_gb_subscription_cancel_at_period_end">이번 이용 기간까지 그대로 쓸 수 있어요. 다음 결제는 없어요</string>
     <string name="msg_gb_subscription_cancel_failed">해지에 실패했어요</string>
-    <string name="msg_gb_subscription_canceled">이용권을 해지했어요. 남은 기간 요금은 비례 환불돼요</string>
-    <string name="msg_gb_subscription_canceled_voice_retained">이용권을 해지했어요. 남은 기간 요금은 비례 환불되고, 목소리 데이터는 %1$s까지 보관돼요</string>
+
     <string name="msg_gb_subscription_canceled_voice_locked">이용권을 해지했어요. 만든 목소리는 삭제되지 않고 잠겨요 — 다시 이용권을 등록하면 그대로 다시 쓸 수 있어요</string>
-    <string name="msg_gb_voice_data_delete_blocked_active">구독 이용 중에는 삭제할 수 없어요</string>
-    <string name="msg_gb_voice_data_delete_failed">목소리 데이터를 삭제하지 못했어요</string>
-    <string name="msg_gb_voice_data_deleted_now">목소리 데이터를 삭제했어요</string>
-    <string name="msg_gb_voice_message_max_length">음성 메시지는 200자까지 보낼 수 있어요</string>
-    <string name="msg_gb_voice_message_send_failed">음성 메시지 전송에 실패했어요</string>
-    <string name="msg_gb_voice_message_sent">음성 메시지를 보냈어요</string>
-    <string name="msg_gb_voice_messages_load_failed">음성 메시지를 불러오지 못했어요</string>
-    <string name="msg_gb_voice_required">목소리를 선택해 주세요</string>
+
+
+
+
     <string name="msg_google_login_failed">Google 로그인을 완료하지 못했어요. 다시 시도해 주세요.</string>
     <string name="msg_google_login_not_confirmed">Google 로그인을 확인하지 못했어요. 다시 시도해 주세요.</string>
     <string name="msg_leave_group_failed">이용권에서 나가지 못했어요</string>
@@ -587,38 +574,29 @@
     <string name="social_allow_partner_alarm_couple">커플이 내 알람 맞추기 허용</string>
     <string name="social_back_cd">뒤로</string>
     <string name="social_capacity_full_no_share">정원이 가득 차서 더 이상 공유할 수 없어요.</string>
-    <string name="social_compose_button">작성</string>
-    <string name="social_composer_message">메시지</string>
-    <string name="social_composer_recipient">받는 사람</string>
-    <string name="social_composer_send_method">보내기 방식</string>
+
+
     <string name="social_cancel_button">취소</string>
-    <string name="social_composer_voice">보낼 목소리</string>
-    <string name="social_connect_button">연결하기</string>
+
     <string name="social_create_share_code">공유 코드 만들기</string>
     <string name="social_edit_button">수정</string>
-    <string name="social_invite_code_label">초대 코드</string>
-    <string name="social_join_button">참여</string>
+
     <string name="social_leave_and_register_button">나가고 등록하기</string>
     <string name="social_leave_and_register_new_code">현재 이용권 나가고 새 코드 등록하기</string>
     <string name="social_leave_dialog_message">현재 이용권에서 나가고 새 코드를 등록할까요?</string>
     <string name="social_leave_dialog_title">현재 이용권 나가고 새 코드 등록</string>
-    <string name="social_loading_voices">목소리를 불러오는 중이에요.</string>
     <string name="social_managing_shared_plan">공유 이용권을 관리 중이에요.</string>
     <string name="social_member_fallback">멤버</string>
     <string name="social_members_section_title">구성원</string>
-    <string name="social_message_placeholder">전하고 싶은 말을 입력하세요</string>
-    <string name="social_message_requires_plan">메시지는 커플/가족 이용권에서 사용할 수 있어요.</string>
-    <string name="social_new_message_title">새 메시지</string>
-    <string name="social_no_available_voices">사용 가능한 목소리가 없어요.</string>
+
+
     <string name="social_no_share_code_yet">공유 코드가 아직 없어요. %1$s 구성원을 초대할 초대 코드를 만들어 주세요.</string>
     <string name="social_no_shared_plan">현재 함께 쓰는 이용권이 없어요.</string>
     <string name="social_plan_label_couple">커플</string>
     <string name="social_plan_label_family">가족</string>
     <string name="social_plan_label_shared">공유</string>
-    <string name="social_play_cd">재생</string>
     <string name="social_quiet_time_label">알람 받지 않을 시간</string>
-    <string name="social_received_messages_title">받은 메시지</string>
-    <string name="social_refresh_cd">새로고침</string>
+
     <string name="social_regenerate_share_code">재발급</string>
     <string name="social_regenerate_share_code_dialog_message">재발급하면 지금 코드는 더 이상 쓸 수 없어요. 이미 코드를 보낸 사람에게는 새 코드를 다시 보내야 해요.</string>
     <string name="social_regenerate_share_code_dialog_title">공유 코드 재발급</string>
@@ -633,19 +611,14 @@
     <string name="social_remove_member_dialog_title">구성원 내보내기</string>
     <string name="social_role_me">나</string>
     <string name="social_role_owner">관리자</string>
-    <string name="social_send_button">보내기</string>
-    <string name="social_send_mode_text">텍스트</string>
-    <string name="social_send_mode_voice">음성 메시지</string>
-    <string name="social_sender_fallback">보낸 사람</string>
-    <string name="social_sending">보내는 중</string>
+
+
     <string name="social_share_button">공유하기</string>
     <string name="social_share_code_chooser_title">코드 공유</string>
     <string name="social_share_code_section_title">공유 코드</string>
     <string name="social_share_unavailable">공유 불가</string>
     <string name="social_shared_plan_title">초대 및 구성원 관리</string>
-    <string name="social_stop_cd">정지</string>
-    <string name="social_view_plan_button">이용권 보기</string>
-    <string name="social_voucher_code_label">이용권 코드</string>
+
     <string name="social_code_input_label">코드 입력</string>
     <string name="social_code_input_hint">초대 코드, 이용권 선물 코드, 프로모션 코드 모두 등록할 수 있어요.</string>
     <string name="social_voucher_usage">%1$d/%2$d명 사용</string>
@@ -736,7 +709,7 @@
     <string name="voicesr_delete">삭제</string>
     <string name="voicesr_delete_dialog_confirm">\'%1$s\' 목소리를 삭제할까요?</string>
     <string name="voicesr_delete_dialog_title">목소리 삭제</string>
-    <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 메시지는 텍스트만 남고, 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
+    <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
     <string name="voicesr_edit_info">정보 수정</string>
     <string name="voicesr_edit_my_info">내 정보 수정</string>
     <string name="voicesr_listener_title_example_a">예: 민지야, 여보</string>
@@ -980,7 +953,6 @@
     <string name="rd2_ringing_date">%1$d월 %2$d일 %3$s</string>
     <string name="r3app_bottom_tab_voices">목소리</string>
     <string name="r3app_bottom_tab_alarms">알람</string>
-    <string name="r3app_bottom_tab_messages">메시지</string>
     <string name="r3app_bottom_tab_menu">더보기</string>
     <string name="menu_profile_subtitle">내 정보 · 앱 설정</string>
     <string name="menu_language_label">앱 언어</string>
@@ -1009,7 +981,6 @@
     <string name="r3app_permission_gate_body">정확한 시간에 알람을 울리고 잠금 화면에서도 바로 보이려면 아래 권한이 필요해요.</string>
     <string name="r3app_google_signin_failed">Google 로그인에 실패했어요</string>
     <string name="r3app_google_signin_no_info">Google 로그인 정보를 받지 못했어요. 다시 시도해 주세요.</string>
-    <string name="r3app_messages_plan_gate">이용권을 연결하면 가족·연인과 목소리 메시지를 주고받을 수 있어요.</string>
     <string name="r3app_messages_plan_gate_title">커플/가족 이용권이 필요해요</string>
     <string name="r3app_plan_gate_confirm">이용권 보기</string>
     <string name="r3app_perm_required_notifications">알람 화면과 종료 버튼을 표시하려면 알림 권한이 필요해요.</string>
@@ -1055,8 +1026,7 @@
     <string name="r3misc_login_required_generic">로그인 후 사용할 수 있어요</string>
     <string name="r3misc_google_signin_unavailable">현재 Google 로그인을 사용할 수 없어요. 이메일로 로그인해 주세요.</string>
     <string name="r3misc_google_signin_failed">Google 로그인에 실패했어요</string>
-    <string name="r3misc_notif_new_message_title">새 메시지</string>
-    <string name="r3misc_notif_new_message_body">새 메시지가 도착했어요</string>
+
     <string name="r3misc_notif_received_alarm_time">%1$s에 울려요</string>
     <string name="r3misc_notif_received_alarm_default">상대가 내 알람을 설정했어요</string>
     <string name="r3misc_ringing_action_snooze">다시 울리기</string>
