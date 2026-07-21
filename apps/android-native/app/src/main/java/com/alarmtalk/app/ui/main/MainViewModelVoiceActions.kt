@@ -16,7 +16,6 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.ManualQuotaResponse
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
-import com.alarmtalk.app.network.VoiceProfileRelationshipUpdateRequest
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -316,62 +315,6 @@ internal fun MainViewModel.renameVoiceProfile(
     }
 }
 
-internal fun MainViewModel.updateSharedVoiceViewerInfo(
-    profileId: String,
-    relationshipLabel: String,
-    listenerTitle: String,
-    onSuccess: () -> Unit = {},
-) {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_shared_setup_login_required)
-        return
-    }
-    val trimmedRelationship = relationshipLabel.trim()
-    val trimmedListener = listenerTitle.trim()
-    if (trimmedRelationship.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_relationship_required)
-        return
-    }
-    if (trimmedListener.isBlank()) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_listener_title_required)
-        return
-    }
-
-    viewModelScope.launch {
-        if (voiceProfileBusy) return@launch
-        voiceProfileBusy = true
-        runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfileRelationship(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileRelationshipUpdateRequest(
-                        relationshipLabel = trimmedRelationship,
-                        listenerTitle = trimmedListener,
-                    ),
-                ).profile
-            }
-        }.onSuccess { profile ->
-            familyVoices = familyVoices.map {
-                if (it.id == profile.id) {
-                    it.copy(
-                        relationshipLabel = profile.relationshipLabel ?: trimmedRelationship,
-                        listenerTitle = profile.listenerTitle ?: trimmedListener,
-                    )
-                } else {
-                    it
-                }
-            }
-            onSuccess()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to update shared voice viewer info id=$profileId", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_shared_info_save_failed))
-        }
-        voiceProfileBusy = false
-    }
-}
-
 internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Boolean) {
     val session = authSession
     if (session == null) {
@@ -383,33 +326,62 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         return
     }
 
-    viewModelScope.launch {
-        if (voiceProfileBusy) return@launch
-        voiceProfileBusy = true
-        runCatching {
-            withContext(Dispatchers.IO) {
-                api.updateVoiceProfile(
-                    authorization = AlarmTalkApiClient.bearer(session.token),
-                    id = profileId,
-                    request = VoiceProfileUpdateRequest(isShared = shared),
-                ).profile
+    // 낙관적 업데이트 + 전역 busy 미사용: 스위치는 즉시 뒤집히고, 서버 반영은 목소리별
+    // 단일 워커가 PATCH 를 직렬화한다 — 이미 서버로 나간 요청은 코루틴 cancel 로 회수할 수
+    // 없어 겹쳐 보내면 늦게 도착한 이전 요청이 최종 상태를 뒤집을 수 있다. 워커는 한 번에
+    // 하나만 보내고 desired 최신값으로 수렴하므로(중간 연타 값은 건너뜀) 그 경합이 없다.
+    // 성공 토스트는 띄우지 않고(스위치 상태가 곧 결과), 서버 실패 시에만 원상복구+안내한다.
+    val previousShared = voiceProfiles.firstOrNull { it.id == profileId }?.isShared
+    voiceProfiles = voiceProfiles.map {
+        if (it.id == profileId) it.copy(isShared = shared) else it
+    }
+    shareToggleDesired[profileId] = shared
+    if (shareToggleJobs[profileId]?.isActive == true) return
+    shareToggleJobs[profileId] = viewModelScope.launch {
+        // 이 워커 세션에서 서버가 확정해 준 마지막 값 — 실패 시 여기로 되돌린다.
+        var acked = previousShared
+        try {
+            while (true) {
+                val want = shareToggleDesired[profileId] ?: break
+                val profile = withContext(Dispatchers.IO) {
+                    api.updateVoiceProfile(
+                        authorization = AlarmTalkApiClient.bearer(session.token),
+                        id = profileId,
+                        request = VoiceProfileUpdateRequest(isShared = want),
+                    ).profile
+                }
+                acked = profile.isShared ?: want
+                // PATCH 중에 다시 토글됐으면 최신 desired 로 재전송(직렬이라 순서 역전 없음).
+                if (shareToggleDesired[profileId] != want) continue
+                shareToggleDesired.remove(profileId)
+                voiceProfiles = voiceProfiles.map {
+                    if (it.id == profile.id) it.copy(isShared = acked) else it
+                }
+                // 공유 목록 갱신도 suspend(네트워크 왕복)라 이 동안 새 토글이 오면 desired 가
+                // 다시 채워진다(새 토글은 isActive 워커를 믿고 return). 갱신 실패는 치명적이지
+                // 않아 무시하되(공유 상태는 이미 확정, 상대 반영은 push 가 따로 담당),
+                // CancellationException 은 삼키지 말고 그대로 던진다.
+                try {
+                    familyVoices = api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
+                } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                }
+                // 갱신 중 새 토글이 왔으면 종료하지 말고 그 값을 마저 전송한다 — 여기서 그냥
+                // break 하면 마지막 의도가 전송되지 않은 채 고아로 남는다.
+                if (shareToggleDesired.containsKey(profileId)) continue
+                break
             }
-        }.onSuccess { profile ->
+        } catch (error: kotlin.coroutines.cancellation.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            shareToggleDesired.remove(profileId)
             voiceProfiles = voiceProfiles.map {
-                if (it.id == profile.id) it.copy(isShared = profile.isShared ?: shared) else it
+                if (it.id == profileId) it.copy(isShared = acked) else it
             }
-            runCatching {
-                api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
-            }.onSuccess { profiles ->
-                familyVoices = profiles
-            }
-            val app = getApplication<android.app.Application>()
-            message = if (shared) app.getString(R.string.msg_voice_shared_on) else app.getString(R.string.msg_voice_shared_off)
-        }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update voice profile sharing id=$profileId shared=$shared", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_share_setting_failed))
         }
-        voiceProfileBusy = false
     }
 }
 
@@ -540,10 +512,13 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String) {
         try {
             val language = deviceAppVoiceLanguage()
             val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+            // 무료 버킷에서 실제로 쓰이는 카테고리(날씨·약)만 받는다 — greeting 제외 전부를 받으면
+            // 무료 사용자의 클론처럼 운세/사랑 사전렌더가 섞인 보이스에서 제한 편집기가 노출하지
+            // 않는 유료 전용 클립까지 내려받아 저장 공간만 차지한다(Codex #607).
             val clips = stockClips.filter {
                 it.voiceProfileId == voiceProfileId &&
                     (it.language ?: "ko") == language &&
-                    it.category != com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
+                    it.category in FreeBucketOrder
             }
             if (clips.isEmpty()) return@launch
             // 이미 캐시된 클립도 진행 수에 포함해 n/전체가 실제 준비율을 보여주게 한다.
@@ -585,6 +560,92 @@ internal suspend fun MainViewModel.fetchVoicePrerenderStatus(
     val session = authSession ?: error("Authentication required")
     return withContext(Dispatchers.IO) {
         api.getVoicePrerenderStatus(AlarmTalkApiClient.bearer(session.token), profileId)
+    }
+}
+
+/** 사전렌더 전진 1스텝(서버가 호출당 최대 3클립 생성). 드라이브 루프가 done 까지 반복
+ *  호출한다 — cron(5분 틱)을 기다리지 않고 즉시 채우기 위한 경로. */
+internal suspend fun MainViewModel.advanceVoicePrerender(
+    profileId: String,
+): com.alarmtalk.app.network.VoicePrerenderAdvanceResponse {
+    val session = authSession ?: error("Authentication required")
+    return withContext(Dispatchers.IO) {
+        api.advanceVoicePrerender(AlarmTalkApiClient.bearer(session.token), profileId)
+    }
+}
+
+/** promote 직후 사전렌더 드라이브 시작: 생성(advance 반복) → 클립 전체 기기 다운로드.
+ *  viewModelScope 에서 돌아 '목소리 생성 중' 화면을 닫아도 같은 속도로 계속된다.
+ *  실패/무진전 시엔 조용히 끝낸다 — 서버 cron 드레인이 폴백으로 이어받는다. */
+internal fun MainViewModel.startPrerenderDrive(voiceId: String) {
+    if (prerenderDrive?.voiceId == voiceId && prerenderDriveJob?.isActive == true) return
+    prerenderDriveJob?.cancel()
+    // 동기 세팅: '생성 중' 화면의 종료 감시가 launch 시작 전의 null 을 보고 바로 닫지 않게.
+    prerenderDrive = PrerenderDriveState(voiceId, 0, 0, downloading = false)
+    prerenderDriveJob = viewModelScope.launch {
+        try {
+            var stagnantRounds = 0
+            var lastGenerated = -1
+            while (true) {
+                val step = runCatching { advanceVoicePrerender(voiceId) }.getOrElse { error ->
+                    AlarmTalkLog.reportError("Voice prerender drive failed", error)
+                    return@launch
+                }
+                prerenderDrive = PrerenderDriveState(voiceId, step.generated, step.total, downloading = false)
+                if (step.done) break
+                stagnantRounds = if (step.generated == lastGenerated) stagnantRounds + 1 else 0
+                lastGenerated = step.generated
+                // 3회 연속 무진전이면 여기서 더 붙잡지 않는다 — cron 이 이어받는다.
+                if (stagnantRounds >= 3) return@launch
+            }
+            prerenderDrive = prerenderDrive?.copy(downloading = true)
+            runCatching {
+                downloadAllPresetClips(voiceId) { done, total ->
+                    prerenderDrive = PrerenderDriveState(voiceId, done, total, downloading = true)
+                }
+            }.onFailure { error ->
+                AlarmTalkLog.reportError("Voice preset clip download failed", error)
+            }
+        } finally {
+            // 종료(완료/실패/취소) 시 진행 표시를 걷는다 — 열려 있던 '생성 중' 화면은 닫힌다.
+            prerenderDrive = null
+        }
+    }
+}
+
+/** 방금 생성된 클론 preset 클립 전체를 기기에 내려받아 캐시한다(비행기모드 알람 대비).
+ *  스톡 매니페스트를 새로 받아 방금 생성분까지 포함하고, 이미 캐시된 클립은 건너뛴다. */
+internal suspend fun MainViewModel.downloadAllPresetClips(
+    voiceProfileId: String,
+    onProgress: (Int, Int) -> Unit,
+) {
+    val session = authSession ?: return
+    withContext(Dispatchers.IO) {
+        val manifest = api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
+        stockClips = manifest
+        // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
+        // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
+        val clips = manifest.filter { it.voiceProfileId == voiceProfileId }
+        if (clips.isEmpty()) return@withContext
+        val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
+        var done = 0
+        onProgress(0, clips.size)
+        clips.forEach { clip ->
+            val cacheKey = "stock_${clip.messageId}"
+            if (audioStore.getCachedAudio(cacheKey) == null) {
+                val response = downloadTtsMessageAudio(clip.messageId)
+                audioStore.cacheGeneratedAudio(
+                    bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
+                    format = response.audioFormat,
+                    rawAudioUri = response.audioUrl,
+                    displayName = cacheKey,
+                    cacheKey = cacheKey,
+                    messageId = clip.messageId,
+                )
+            }
+            done += 1
+            onProgress(done, clips.size)
+        }
     }
 }
 

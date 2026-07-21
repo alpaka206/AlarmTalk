@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -30,7 +32,6 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -62,6 +63,10 @@ internal enum class VoiceRegistrationStep {
 
     /** 생성 완료 — 미리듣기 문구 확인·수정 후 유지/삭제를 결정하는 스텝. */
     Preview,
+
+    /** 승격 직후 — 알람 문구(사전렌더)를 사용자 주도로 즉시 생성·다운로드하는 스텝.
+     *  건너뛰어도 서버 cron 이 백그라운드에서 이어받으므로 언제든 닫을 수 있다. */
+    Prerendering,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -276,20 +281,12 @@ internal fun VoiceProfileRow(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = profile.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        if (canShareVoice && isShared && !isProcessing && !isDeleting) {
-                            VoiceSharedBadge()
-                        }
-                    }
+                    // '공유 중' 배지는 두지 않는다 — 바로 아래 공유 토글이 같은 상태를 이미 보여준다.
+                    Text(
+                        text = profile.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
                 when {
                     isProcessing -> VoiceProgressMessage(stringResource(R.string.voicesr_status_creating))
@@ -411,22 +408,6 @@ internal fun VoiceProfileRow(
     }
 }
 
-@Composable
-internal fun VoiceSharedBadge() {
-    Surface(
-        shape = WakerPillShape,
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
-    ) {
-        Text(
-            text = stringResource(R.string.voicesr_sharing_badge),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-        )
-    }
-}
-
 /**
  * 인사말 미리듣기 재생 중임을 나타내는 작은 이퀄라이저 애니메이션.
  * 기본 목소리 선택 시트(VoiceProfileManagementPanel)의 옵션 행 trailing 에 쓰인다.
@@ -462,48 +443,53 @@ internal fun PlayingEqualizer() {
 @Composable
 internal fun SharedVoiceProfileRow(
     profile: FamilyVoiceProfile,
-    onEdit: () -> Unit,
+    isPlaying: Boolean,
+    onPlay: () -> Unit,
 ) {
-    val needsViewerInfo = profile.requiresViewerInfo()
     OutlinedCard(
         shape = WakerCardShape,
         border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Text(profile.name, fontWeight = FontWeight.SemiBold)
-                    val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
-                        ?.let { stringResource(R.string.voicesr_shared_from_owner, it) }
-                        ?: stringResource(R.string.voicesr_shared_voice)
-                    MutedText(ownerText)
-                }
-                IconButton(onClick = onEdit) {
-                    Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.voicesr_edit_my_info))
-                }
+                Text(profile.name, fontWeight = FontWeight.SemiBold)
+                val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
+                    ?.let { stringResource(R.string.voicesr_shared_from_owner, it) }
+                    ?: stringResource(R.string.voicesr_shared_voice)
+                MutedText(ownerText)
             }
-            if (needsViewerInfo) {
-                OutlinedButton(
-                    onClick = onEdit,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                    border = wakerCardBorder(),
-                    colors = wakerOutlinedButtonColors(),
-                ) {
-                    Text(stringResource(R.string.voicesr_set_how_voice_calls_me))
+            IconButton(onClick = onPlay) {
+                if (isPlaying) {
+                    PlayingEqualizer()
+                } else {
+                    // 맨몸 벡터 대신 은은한 원형 배경 위 라운드 재생 아이콘 — 리스트에서 눌리는
+                    // 대상임이 분명해지고 기본 아이콘 티가 덜 난다.
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(
+                                MaterialTheme.colorScheme.secondaryContainer,
+                                androidx.compose.foundation.shape.CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Rounded.PlayArrow,
+                            contentDescription = stringResource(R.string.voicesr_play_shared_sample),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
             }
         }

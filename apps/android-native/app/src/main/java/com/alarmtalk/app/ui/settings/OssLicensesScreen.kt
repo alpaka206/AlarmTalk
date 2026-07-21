@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -79,6 +80,8 @@ internal fun OssLicensesScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // 탭·설정과 같은 그라데이션 배경 — 하위 전체화면 공통 규격.
+            .background(homeGradientBrush())
             .padding(contentPadding),
     ) {
         Row(

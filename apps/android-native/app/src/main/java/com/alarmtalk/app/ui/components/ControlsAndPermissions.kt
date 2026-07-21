@@ -74,12 +74,20 @@ internal fun AlarmTalkSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
     // 다크 팔레트는 onPrimary 가 진네이비라 켜짐 썸이 트랙보다 어두워져 꺼짐으로 오독될 수
     // 있다 — 다크에선 밝은 썸(onPrimaryContainer)으로 켜짐을 명확히 하고, 라이트는 흰 썸 유지.
-    val checkedThumbColor = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+    val checkedThumbColor = if (darkTheme) {
         MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onPrimary
+    }
+    // 꺼짐 썸도 다크에선 surface 가 트랙(surfaceVariant)과 동화돼 알맹이가 안 보인다 —
+    // 밝은 회색(onSurfaceVariant)으로 분리한다. 라이트는 기존 흰 썸 유지.
+    val uncheckedThumbColor = if (darkTheme) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.surface
     }
     Switch(
         checked = checked,
@@ -90,7 +98,7 @@ internal fun AlarmTalkSwitch(
             checkedThumbColor = checkedThumbColor,
             checkedTrackColor = MaterialTheme.colorScheme.primary,
             checkedBorderColor = Color.Transparent,
-            uncheckedThumbColor = MaterialTheme.colorScheme.surface,
+            uncheckedThumbColor = uncheckedThumbColor,
             uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
             uncheckedBorderColor = MaterialTheme.colorScheme.outline,
         ),

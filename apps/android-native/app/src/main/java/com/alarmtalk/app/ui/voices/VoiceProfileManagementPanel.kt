@@ -30,11 +30,12 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -194,7 +195,6 @@ internal fun VoiceProfileManagementPanel(
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
-    onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
@@ -213,6 +213,10 @@ internal fun VoiceProfileManagementPanel(
     onRetryVoiceSpeechStyle: suspend (String) -> Boolean = { false },
     // 서버 사전렌더 완료를 감지했을 때 stockClips 매니페스트를 강제 재조회.
     onReloadStockClips: () -> Unit = {},
+    // promote 직후 사전렌더 드라이브(즉시 생성→기기 다운로드). 드라이브는 ViewModel 스코프라
+    // '생성 중' 화면을 닫아도 계속되고, 앱이 죽으면 서버 cron 이 이어받는다.
+    prerenderDrive: PrerenderDriveState? = null,
+    onStartPrerenderDrive: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -258,7 +262,6 @@ internal fun VoiceProfileManagementPanel(
     var renameRelationship by remember { mutableStateOf("") }
     var renameListenerTitle by remember { mutableStateOf("") }
     var renameSubmitAttempted by remember { mutableStateOf(false) }
-    var sharedInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     var deleteTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var filePreviewPreparing by remember { mutableStateOf(false) }
@@ -273,6 +276,9 @@ internal fun VoiceProfileManagementPanel(
     // 방금 등록한 목소리 확인(미리듣기·유지·삭제) 다이얼로그. 목소리는 한 달에 한 번만
     // 바꿀 수 있어, 등록 직후 어떤 목소리로 깨워줄지 들어보고 결정하게 한다.
     var confirmNewVoice by remember { mutableStateOf<VoiceProfile?>(null) }
+    // '이 목소리로 할게요'를 눌러 승격한 보이스 id — draft 소멸이 삭제가 아니라 승격에서
+    // 왔음을 구분해, 플로우를 닫는 대신 '목소리 생성 중' 스텝으로 잇는다.
+    var promotedForPrerenderId by remember { mutableStateOf<String?>(null) }
     var confirmPreviewBusy by remember { mutableStateOf(false) }
     var confirmPreviewPlaying by remember { mutableStateOf(false) }
     var confirmPreviewCompleted by remember { mutableStateOf(false) }
@@ -287,14 +293,21 @@ internal fun VoiceProfileManagementPanel(
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
-    val ownVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem != true } }
-    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
+    // 무료 강등 시 클론 데이터는 서버에 보존되지만(30일 유예·재유료 시 복구) UI 에는
+    // 노출하지 않는다 — 유료 요금제여야 사용 가능하므로 리스트에서 숨긴다.
+    val ownVoices = remember(voiceProfiles, canCreateVoice) {
+        if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
+    }
+    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     val canOpenCreateForm = canCreateVoice && !isLimitReached
     // 생성~결정(만드는 중/미리듣기) 구간 — 이 동안은 다이얼로그를 닫거나 밖으로 나갈 수 없다
     // (유지/삭제를 골라야만 끝난다). draft 가 생겨 isLimitReached 가 돼도 다이얼로그를 유지한다.
     val inDraftDecisionFlow = currentStep == VoiceRegistrationStep.Creating ||
         currentStep == VoiceRegistrationStep.Preview
+    // promote 직후 사전렌더 진행 화면 — 등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지해야
+    // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
+    val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
 
@@ -336,16 +349,41 @@ internal fun VoiceProfileManagementPanel(
     fun prefetchGreetingPreviews() {
         scope.launch {
             systemVoices.forEach { profile ->
+                // 내장 인사말이 있는 보이스는 다운로드가 필요 없다.
+                if (com.alarmtalk.app.data.bundledSystemGreetingRes(profile.id, previewLanguage) != null) {
+                    return@forEach
+                }
                 val clip = greetingClipFor(profile) ?: return@forEach
                 runCatching { ensureGreetingCached(clip) }
             }
         }
     }
 
-    // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플(greeting 스톡 클립)을 들려준다.
+    // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플을 들려준다 — 내장(res/raw) 우선,
+    // 내장이 없는 새 시스템 보이스만 greeting 스톡 클립 다운로드로 폴백.
     fun playGreeting(profile: VoiceProfile) {
         if (playingGreetingVoiceId == profile.id) {
             stopMediaPreview()
+            return
+        }
+        val bundledRes = com.alarmtalk.app.data.bundledSystemGreetingRes(profile.id, previewLanguage)
+        if (bundledRes != null) {
+            greetingPreviewRequestId += 1
+            stopMediaPreview(invalidateGreetingPreview = false)
+            val player = MediaPlayer.create(context, bundledRes)
+            if (player == null) {
+                localMessage = context.getString(R.string.voices_preview_play_failed)
+                return
+            }
+            playingGreetingVoiceId = profile.id
+            mediaPlayer = player.apply {
+                setOnCompletionListener {
+                    it.release()
+                    if (mediaPlayer === it) mediaPlayer = null
+                    if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
+                }
+                start()
+            }
             return
         }
         val clip = greetingClipFor(profile)
@@ -658,16 +696,39 @@ internal fun VoiceProfileManagementPanel(
                 if (showCreateForm) closeCreateDialog()
             }
 
-            // draft 소멸(삭제/승격) → 미리듣기 상태 정리 + 플로우 종료.
+            // draft 소멸(삭제/승격) → 미리듣기 상태 정리. 승격이면 플로우를 닫는 대신
+            // '목소리 생성 중' 스텝으로 이어 알람 문구 생성·다운로드까지 끝낸다.
             draft == null && confirmNewVoice?.isDraft == true -> {
+                val promotedId = promotedForPrerenderId
+                    ?.takeIf { requested -> requested == confirmNewVoice?.id }
+                    ?.takeIf { requested -> voiceProfiles.any { it.id == requested } }
                 confirmPreviewJob?.cancel()
                 confirmPreviewJob = null
                 stopMediaPreview(invalidateGreetingPreview = false)
                 confirmPreviewBusy = false
                 confirmPreviewPlaying = false
                 confirmNewVoice = null
-                if (showCreateForm) closeCreateDialog()
+                if (promotedId != null) {
+                    // 드라이브는 ViewModel 스코프에서 시작 — 화면은 진행 관찰만 한다.
+                    onStartPrerenderDrive(promotedId)
+                    currentStep = VoiceRegistrationStep.Prerendering
+                } else if (showCreateForm) {
+                    closeCreateDialog()
+                }
             }
+        }
+    }
+
+    // '목소리 생성 중' 화면은 ViewModel 드라이브의 진행을 관찰만 한다 — 드라이브가 끝나면
+    // (완료/실패 모두 prerenderDrive 가 null 로 걷힘) 목소리 리스트로 돌아간다. 화면을 먼저
+    // 닫아도 드라이브는 계속되고, 앱 종료 시엔 서버 cron 이 이어받는다.
+    LaunchedEffect(currentStep, prerenderDrive?.voiceId) {
+        if (currentStep != VoiceRegistrationStep.Prerendering) return@LaunchedEffect
+        val watchedId = promotedForPrerenderId
+        if (prerenderDrive == null || (watchedId != null && prerenderDrive.voiceId != watchedId)) {
+            promotedForPrerenderId = null
+            onReloadStockClips()
+            closeCreateDialog()
         }
     }
 
@@ -753,14 +814,26 @@ internal fun VoiceProfileManagementPanel(
     // 실패 후 [다시 시도] 수락 시 증가 — 멈춘 폴링 루프를 재시작한다.
     var prerenderPollTick by remember { mutableIntStateOf(0) }
 
+    // 클론 클립 언어 선택: 앱 언어 클립이 있으면 앱 언어, 없으면 그 보이스가 가진 언어
+    // (=등록 때 고른 언어). 편집기 bucketClipLanguageFor 와 동일 규칙 — 일본어로 만든
+    // 클론이 한국어 기기에서 '다운로드 중'에 영원히 갇히지 않게 한다.
+    fun cloneClipLanguageFor(profileId: String, category: String): String {
+        val langs = stockClips.asSequence()
+            .filter { it.voiceProfileId == profileId && it.category == category }
+            .map { it.language ?: "ko" }
+            .toSet()
+        return if (previewLanguage in langs) previewLanguage else langs.firstOrNull() ?: previewLanguage
+    }
+
     // 알람 버킷 4종이 매니페스트에 풀셋으로 존재하는지 — AlarmEditorScreen.hasCompleteCloneBucket
     // 과 동일한 variant 절대 인덱스 판정. greeting 은 미리듣기 전용이라 게이트에서 제외한다.
     fun cloneManifestComplete(profileId: String): Boolean = CloneAlarmBucketCategories.all { category ->
         val fullCount = expectedCloneBucketVariantCount(category) ?: return@all false
+        val clipLanguage = cloneClipLanguageFor(profileId, category)
         val variants = stockClips
             .filter {
                 it.voiceProfileId == profileId && it.category == category &&
-                    (it.language ?: "ko") == previewLanguage
+                    (it.language ?: "ko") == clipLanguage
             }
             .map { it.variant }
             .toSet()
@@ -772,10 +845,11 @@ internal fun VoiceProfileManagementPanel(
     suspend fun downloadCloneBuckets(profileId: String): Boolean = withContext(Dispatchers.IO) {
         var allCached = true
         CloneAlarmBucketCategories.forEach { category ->
+            val clipLanguage = cloneClipLanguageFor(profileId, category)
             stockClips
                 .filter {
                     it.voiceProfileId == profileId && it.category == category &&
-                        (it.language ?: "ko") == previewLanguage
+                        (it.language ?: "ko") == clipLanguage
                 }
                 .forEach { clip ->
                     val cacheKey = "stock_${clip.messageId}"
@@ -800,10 +874,32 @@ internal fun VoiceProfileManagementPanel(
         allCached && cloneManifestComplete(profileId)
     }
 
+    // 매니페스트의 알람 버킷 클립이 전부 로컬 캐시에 있는지 — 다운로드 없이 캐시만 본다.
+    suspend fun cloneBucketsFullyCached(profileId: String): Boolean = withContext(Dispatchers.IO) {
+        cloneManifestComplete(profileId) && CloneAlarmBucketCategories.all { category ->
+            val clipLanguage = cloneClipLanguageFor(profileId, category)
+            stockClips
+                .filter {
+                    it.voiceProfileId == profileId && it.category == category &&
+                        (it.language ?: "ko") == clipLanguage
+                }
+                .all { audioStore.getCachedAudio("stock_${it.messageId}") != null }
+        }
+    }
+
     // 준비 상태 폴링 — 목소리 탭이 보이는 동안만 짧은 주기로(화면 이탈 시 이펙트가 취소된다).
     val cloneReadinessIds = ownVoices.filter { it.status == null || it.status == "ready" }.map { it.id }
     LaunchedEffect(cloneReadinessIds, stockClips, prerenderPollTick) {
         if (cloneReadinessIds.isEmpty()) return@LaunchedEffect
+        // 이미 전부 캐시된 목소리는 서버 상태 조회 전에 곧장 ready 처리 — 탭에 들어올 때마다
+        // '다운로드 중' 배지가 한 박자 떴다 사라지는 깜빡임을 없앤다.
+        cloneReadinessIds.forEach { voiceId ->
+            if (voiceId !in cloneLocalReadyIds &&
+                runCatching { cloneBucketsFullyCached(voiceId) }.getOrDefault(false)
+            ) {
+                cloneLocalReadyIds = cloneLocalReadyIds + voiceId
+            }
+        }
         var manifestReloadRequested = false
         while (true) {
             var anyPending = false
@@ -896,44 +992,46 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 공유받은 음성에 viewer 라벨을 막 입력했을 때 그 음성을 한 번 들려준다.
-    // 같은 입력이면 백엔드 캐시 hit, 처음이면 새로 합성. 둘 다 MediaPlayer 로 재생.
-    suspend fun playSharedVoicePreview(profileId: String) {
-        runCatching {
-            val response = onGenerateTts(
-                TtsGenerateRequest(
-                    voiceProfileId = profileId,
-                    text = context.getString(R.string.r3data_voice_preview_prompt),
-                    category = "custom",
-                    language = "ko",
-                    random = false,
-                ),
-            )
-            val cached = withContext(Dispatchers.IO) {
-                // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                audioStore.cacheGeneratedAudio(
-                    bytes = bytes,
-                    format = response.audioFormat,
-                    rawAudioUri = null,
-                    displayName = "shared_voice_preview_${profileId}",
-                    cacheKey = "shared_preview_${profileId}",
-                    messageId = response.messageId,
-                )
-            }
+    // 공유받은 목소리 행의 ▶ — 소유자가 등록할 때 만들어진 인사말 사전렌더 클립을 들려준다
+    // (stock-clips 매니페스트가 같은 그룹에 공유 중인 클론 클립도 포함). 다시 누르면 정지.
+    fun playSharedGreeting(profile: FamilyVoiceProfile) {
+        if (playingGreetingVoiceId == profile.id) {
             stopMediaPreview()
-            val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
-                ?: return@runCatching
-            mediaPlayer = player.apply {
-                setOnCompletionListener {
-                    it.release()
-                    if (mediaPlayer === it) mediaPlayer = null
+            return
+        }
+        val clip = com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, previewLanguage)
+        if (clip == null) {
+            localMessage = context.getString(R.string.voices_greeting_preview_preparing)
+            return
+        }
+        val requestId = greetingPreviewRequestId + 1
+        greetingPreviewRequestId = requestId
+        scope.launch {
+            stopMediaPreview(invalidateGreetingPreview = false)
+            playingGreetingVoiceId = profile.id
+            runCatching {
+                val cached = ensureGreetingCached(clip)
+                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
+                    ?: error("Failed to create greeting preview player.")
+                if (greetingPreviewRequestId != requestId) {
+                    player.release()
+                    return@runCatching
                 }
-                start()
+                mediaPlayer = player.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                        if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
+                    }
+                    start()
+                }
+            }.onFailure { error ->
+                AlarmTalkLog.reportError("Failed to play shared greeting preview", error)
+                if (greetingPreviewRequestId == requestId) {
+                    if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
+                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
+                }
             }
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to preview shared voice", error)
-            localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
         }
     }
 
@@ -1138,6 +1236,22 @@ internal fun VoiceProfileManagementPanel(
             }
         }
 
+        if (canShareVoice && familyVoices.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.voices_shared_voices_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            familyVoices.forEach { profile ->
+                SharedVoiceProfileRow(
+                    profile = profile,
+                    isPlaying = playingGreetingVoiceId == profile.id,
+                    onPlay = { playSharedGreeting(profile) },
+                )
+            }
+        }
+
+        // 기본 목소리는 맨 아래 — 내 목소리·공유받은 목소리(개인화된 것들)가 먼저 온다.
         if (systemVoices.isNotEmpty()) {
             Row(
                 // 토스식 [제목 … 값 + 셰브론] 행 — 탭하면 기본 목소리 선택 시트를 연다.
@@ -1189,20 +1303,6 @@ internal fun VoiceProfileManagementPanel(
             }
             // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다
             // (AlarmEditorScreen.resolvedVoiceListenerTitle). 관계·호칭은 내/공유 목소리에만 있다.
-        }
-
-        if (canShareVoice && familyVoices.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.voices_shared_voices_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            familyVoices.forEach { profile ->
-                SharedVoiceProfileRow(
-                    profile = profile,
-                    onEdit = { sharedInfoTarget = profile },
-                )
-            }
         }
     }
 
@@ -1265,8 +1365,8 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
-    // 만드는 중/미리듣기 스텝에선 draft 존재로 isLimitReached 가 돼도 다이얼로그를 유지한다.
-    if (showCreateForm && (inDraftDecisionFlow || (!isLimitReached && canCreateVoice))) {
+    // 만드는 중/미리듣기/사전렌더 스텝에선 draft·등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지한다.
+    if (showCreateForm && (inDraftDecisionFlow || inPrerenderingFlow || (!isLimitReached && canCreateVoice))) {
         val useManualSystemInsets = Build.VERSION.SDK_INT >= 35
         val actionBottomPadding = 10.dp + if (useManualSystemInsets) {
             androidNavigationBarHeightPadding() + AndroidEdgeToEdgeNavigationExtraPadding
@@ -1456,8 +1556,13 @@ internal fun VoiceProfileManagementPanel(
                                     placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
                                     singleLine = true,
                                     isError = nameRequiredError,
-                                    supportingText = {
-                                        if (nameRequiredError) Text(stringResource(R.string.voices_required_field))
+                                    // supportingText 람다를 항상 넘기면 에러가 없어도 그 자리(약 16dp)가
+                                    // 예약돼 이름↔관계 간격만 넓어진다 — 에러일 때만 붙여 3개 필드의
+                                    // 간격(부모 spacedBy 14dp)을 균일하게 유지한다.
+                                    supportingText = if (nameRequiredError) {
+                                        { Text(stringResource(R.string.voices_required_field)) }
+                                    } else {
+                                        null
                                     },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
@@ -1534,6 +1639,52 @@ internal fun VoiceProfileManagementPanel(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         textAlign = TextAlign.Center,
                                     )
+                                }
+                            }
+
+                            VoiceRegistrationStep.Prerendering -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 72.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                                ) {
+                                    Text(
+                                        text = if (prerenderDrive?.downloading == true) {
+                                            stringResource(R.string.voices_prerender_downloading_title)
+                                        } else {
+                                            stringResource(R.string.voices_prerender_generating_title)
+                                        },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    // 'n/21 준비' 카운트 텍스트 대신 진행 로딩바만 — 총량을 알면
+                                    // 확정 진행률, 아직 모르면(시작 직후) 인디터미넌트.
+                                    val drive = prerenderDrive
+                                    if (drive != null && drive.total > 0) {
+                                        LinearProgressIndicator(
+                                            progress = {
+                                                drive.generated.toFloat() / drive.total.toFloat()
+                                            },
+                                            modifier = Modifier.fillMaxWidth(0.72f),
+                                        )
+                                    } else {
+                                        LinearProgressIndicator(
+                                            modifier = Modifier.fillMaxWidth(0.72f),
+                                        )
+                                    }
+                                    // 하단 고정 대신 로딩 블록에서 조금 떨어져 바로 아래에 둔다 —
+                                    // 닫아도 드라이브는 ViewModel 에서 계속된다.
+                                    Spacer(Modifier.height(10.dp))
+                                    TextButton(
+                                        onClick = {
+                                            promotedForPrerenderId = null
+                                            closeCreateDialog()
+                                        },
+                                    ) {
+                                        Text(stringResource(R.string.voices_prerender_continue_background_action))
+                                    }
                                 }
                             }
 
@@ -1655,9 +1806,9 @@ internal fun VoiceProfileManagementPanel(
                                                         } else {
                                                             Icon(
                                                                 imageVector = if (confirmPreviewPlaying) {
-                                                                    Icons.Outlined.Stop
+                                                                    Icons.Rounded.Stop
                                                                 } else {
-                                                                    Icons.Outlined.PlayArrow
+                                                                    Icons.Rounded.PlayArrow
                                                                 },
                                                                 contentDescription = stringResource(R.string.voices_confirm_new_preview),
                                                                 tint = MaterialTheme.colorScheme.primary,
@@ -1774,6 +1925,10 @@ internal fun VoiceProfileManagementPanel(
                             // 만드는 중 — 결정할 것이 없어 하단 액션이 없다(닫기도 불가).
                             VoiceRegistrationStep.Creating -> Unit
 
+                            // 생성/다운로드 중 — '백그라운드에서 계속'은 하단 고정이 아니라
+                            // 로딩 블록 바로 아래(본문)에 있다. 하단 액션 없음.
+                            VoiceRegistrationStep.Prerendering -> Unit
+
                             VoiceRegistrationStep.Preview -> {
                                 TextButton(
                                     onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
@@ -1785,7 +1940,12 @@ internal fun VoiceProfileManagementPanel(
                                     )
                                 }
                                 Button(
-                                    onClick = { confirmNewVoice?.let { onPromoteVoiceDraft(it.id) } },
+                                    onClick = {
+                                        confirmNewVoice?.let {
+                                            promotedForPrerenderId = it.id
+                                            onPromoteVoiceDraft(it.id)
+                                        }
+                                    },
                                     enabled = confirmPreviewCompleted && !voiceProfileBusy &&
                                         !confirmPreviewEditing && !confirmPreviewSaving,
                                     modifier = Modifier.weight(1f),
@@ -1903,23 +2063,6 @@ internal fun VoiceProfileManagementPanel(
                     )
                     renameTarget = null
                 }
-            },
-        )
-    }
-
-    sharedInfoTarget?.let { profile ->
-        SharedVoiceViewerInfoDialog(
-            profileName = profile.name,
-            sharedFromLabel = profile.ownerName?.takeIf { it.isNotBlank() }
-                ?.let { stringResource(R.string.voices_shared_from_owner, it) }
-                ?: stringResource(R.string.voices_shared_from_unknown),
-            initialRelationship = profile.relationshipLabel.orEmpty(),
-            initialListenerTitle = profile.listenerTitle.orEmpty(),
-            onDismiss = { sharedInfoTarget = null },
-            onConfirm = { relationship, listener ->
-                onUpdateSharedVoiceInfo(profile.id, relationship, listener)
-                sharedInfoTarget = null
-                scope.launch { playSharedVoicePreview(profile.id) }
             },
         )
     }

@@ -1,15 +1,11 @@
 package com.alarmtalk.app
 
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
@@ -22,10 +18,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -120,142 +112,6 @@ internal fun VoiceProfileEditDialog(
             colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
-    }
-}
-
-@Composable
-internal fun SharedVoiceViewerInfoDialog(
-    profileName: String,
-    sharedFromLabel: String,
-    initialRelationship: String,
-    initialListenerTitle: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit,
-) {
-    var draftRelationship by remember(initialRelationship) { mutableStateOf(initialRelationship) }
-    var draftListener by remember(initialListenerTitle) { mutableStateOf(initialListenerTitle) }
-    var submitted by remember { mutableStateOf(false) }
-    val relationshipError = submitted && draftRelationship.isBlank()
-    val listenerError = submitted && draftListener.isBlank()
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .widthIn(max = 460.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 620.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.voicesr_shared_viewer_dialog_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = stringResource(R.string.voicesr_shared_viewer_dialog_description),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(42.dp),
-                    ) {
-                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voicesr_close))
-                    }
-                }
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
-                    border = wakerCardBorder(),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(
-                                text = profileName,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            )
-                            Text(
-                                text = sharedFromLabel,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.76f),
-                            )
-                        }
-                    }
-                }
-                OutlinedTextField(
-                    value = draftRelationship,
-                    onValueChange = { draftRelationship = it.take(30) },
-                    label = { Text(stringResource(R.string.voicesr_relationship_label)) },
-                    placeholder = { Text(stringResource(R.string.voicesr_relationship_example_b)) },
-                    singleLine = true,
-                    isError = relationshipError,
-                    supportingText = {
-                        if (relationshipError) Text(stringResource(R.string.voicesr_required_field))
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = draftListener,
-                    onValueChange = { draftListener = it.take(30) },
-                    label = { Text(stringResource(R.string.voicesr_listener_title_label)) },
-                    placeholder = { Text(stringResource(R.string.voicesr_listener_title_example_b)) },
-                    singleLine = true,
-                    isError = listenerError,
-                    supportingText = {
-                        if (listenerError) Text(stringResource(R.string.voicesr_required_field))
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(
-                    onClick = {
-                        submitted = true
-                        if (draftRelationship.isNotBlank() && draftListener.isNotBlank()) {
-                            onConfirm(draftRelationship.trim(), draftListener.trim())
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Text(stringResource(R.string.voicesr_save))
-                }
-            }
-        }
     }
 }
 

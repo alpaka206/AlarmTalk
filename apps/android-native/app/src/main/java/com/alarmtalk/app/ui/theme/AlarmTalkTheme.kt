@@ -37,14 +37,16 @@ internal val AlarmTalkDarkColorScheme = androidx.compose.material3.darkColorSche
     onTertiaryContainer = Color(0xFFE3F6EC),
     // 배경/표면 계열은 랜딩(일출 씬)의 딥 네이비 축과 같은 색조로 맞춘다 —
     // 무채색 회흑 대신 밤바다 톤이라 랜딩 → 앱 진입 시 톤이 이어진다.
+    // 카드(surface)는 탭 배경 그라데이션(#1A2A52→#070C1D)보다 어두우면 '검은 박스'로
+    // 꺼져 보이므로, 그라데이션 상단과 비슷한 밝기의 네이비로 한 단계 띄운다.
     background = Color(0xFF090D16),
     onBackground = Color(0xFFF7F8FC),
-    surface = Color(0xFF131825),
-    surfaceVariant = Color(0xFF1D2434),
+    surface = Color(0xFF1B2542),
+    surfaceVariant = Color(0xFF29345A),
     onSurface = Color(0xFFF7F8FC),
     onSurfaceVariant = Color(0xFFA7AFC0),
-    outline = Color(0xFF3A4257),
-    outlineVariant = Color(0xFF272F42),
+    outline = Color(0xFF4C587E),
+    outlineVariant = Color(0xFF3B4870),
     error = Color(0xFFFF9A8A),
     onError = Color(0xFF3D0703),
     errorContainer = Color(0xFF5B211B),

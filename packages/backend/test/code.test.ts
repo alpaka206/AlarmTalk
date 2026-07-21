@@ -262,6 +262,7 @@ describe('POST /code/register voucher redemption', () => {
     });
     mockDB.pushResult([]);
     pushFamilyPlan();
+    mockDB.pushResult([{ ok: 1 }]); // 발급자 구독 활성 확인(INV 무효화 가드)
     mockDB.pushResult([{ max_members: 6, member_count: 2 }]); // capacity precheck
     mockDB.pushResult([{ other_members: 0 }]); // owned-group guard
     mockDB.pushResult([], 1); // claim voucher use
@@ -295,6 +296,7 @@ describe('POST /code/register voucher redemption', () => {
     });
     mockDB.pushResult([]);
     pushFamilyPlan();
+    mockDB.pushResult([{ ok: 1 }]); // 발급자 구독 활성 확인(INV 무효화 가드)
     mockDB.pushResult([{ max_members: 6, member_count: 6 }]);
 
     const res = await buildApp().request(jsonReq('POST', '/code/register', { code: INV_CODE }));

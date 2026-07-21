@@ -69,11 +69,6 @@ data class VoicePreviewTextUpdateResponse(
     @SerializedName("preview_text") val previewText: String,
 )
 
-data class VoiceProfileRelationshipUpdateRequest(
-    @SerializedName("relationship_label") val relationshipLabel: String,
-    @SerializedName("listener_title") val listenerTitle: String,
-)
-
 /** GET voice/{id}/prerender-status 응답 — 유료 클론 사전렌더(R2 21클립) 진행 상태. */
 data class VoicePrerenderStatusResponse(
     // "pending" | "done" | "failed" | "none"
@@ -81,6 +76,13 @@ data class VoicePrerenderStatusResponse(
     val total: Int = 0,
     val generated: Int = 0,
     val attempts: Int = 0,
+)
+
+/** POST voice/{id}/prerender/advance 응답 — 소유자 주도 사전렌더 전진(호출당 최대 3클립). */
+data class VoicePrerenderAdvanceResponse(
+    val done: Boolean = false,
+    val generated: Int = 0,
+    val total: Int = 0,
 )
 
 data class VoicePrerenderRetryResponse(
@@ -181,13 +183,6 @@ interface VoiceProfileApi {
         @Body request: VoicePreviewTextUpdateRequest,
     ): VoicePreviewTextUpdateResponse
 
-    @PATCH("voice/{id}/relationship")
-    suspend fun updateVoiceProfileRelationship(
-        @Header("Authorization") authorization: String,
-        @Path("id") id: String,
-        @Body request: VoiceProfileRelationshipUpdateRequest,
-    ): VoiceProfileResponse
-
     @DELETE("voice/{id}")
     suspend fun deleteVoiceProfile(
         @Header("Authorization") authorization: String,
@@ -212,6 +207,12 @@ interface VoiceProfileApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
     ): VoicePrerenderRetryResponse
+
+    @POST("voice/{id}/prerender/advance")
+    suspend fun advanceVoicePrerender(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): VoicePrerenderAdvanceResponse
 
     // 말투 분석 재시도 — 실패 502 { error_code: SPEECH_STYLE_ANALYSIS_FAILED }, 소스 없음 409.
     @POST("voice/{id}/speech-style/retry")

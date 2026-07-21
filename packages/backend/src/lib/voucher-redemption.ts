@@ -226,6 +226,25 @@ async function redeemVoucherCodeInTransaction(
   }
 
   if (prefix === 'INV') {
+    // 발급 근거 구독이 살아 있어야 초대가 유효하다. 정상 해지/만료 경로는
+    // expireUnusedVouchersFor 가 코드를 만료시키지만, 그 경로를 우회한 데이터
+    // (dev 스크립트 교체·레거시)로 무료가 된 발급자의 코드가 남으면 새 계정이
+    // 그 코드로 가족 플랜 자리를 얻을 수 있다 — 여기서 최종 방어한다.
+    if (issuerSubscriptionId) {
+      const issuerSubRes = await db.execute({
+        sql: `SELECT 1 FROM subscriptions
+              WHERE id = ? AND status = 'active' AND datetime(expires_at) > datetime('now')
+              LIMIT 1`,
+        args: [issuerSubscriptionId],
+      });
+      if (issuerSubRes.rows.length === 0) {
+        await db.execute({
+          sql: `UPDATE voucher_codes SET status = 'expired' WHERE id = ?`,
+          args: [voucherId],
+        });
+        return { error: new VoucherRedemptionError(409, 'CODE_EXPIRED', 'Code is expired') };
+      }
+    }
     await assertIssuerGroupHasCapacity(db, {
       issuerSubscriptionId,
       issuerUserId,

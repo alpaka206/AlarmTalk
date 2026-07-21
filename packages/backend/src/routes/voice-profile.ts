@@ -11,8 +11,16 @@ import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
-import { enqueuePrerender, CLONE_CLIP_SEEDS } from '../lib/stock-clips';
-import { enqueueExternalDeletion } from '../lib/audio-retention';
+import {
+  enqueuePrerender,
+  CLONE_CLIP_SEEDS,
+  listReadyCloneVoices,
+  findMissingStockTargets,
+  generateStockClip,
+  markPrerenderDone,
+  releasePrerenderClaim,
+} from '../lib/stock-clips';
+import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import {
   MAX_PROVIDER_CLONE_VOICES,
   evictLruClonesIfOverCapTx,
@@ -691,7 +699,7 @@ voiceProfile.patch('/:id', async (c) => {
   } catch {
     return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
-  // draft→official 확정 시 사전렌더할 앱 언어(클라 전송, 미전송 시 ko).
+  // 사전렌더 언어 폴백(레거시 클라 전송값) — 실제 언어는 promote 시 preview_language 가 우선.
   const prerenderLanguage =
     typeof (body.language ?? body.app_language) === 'string'
       ? String(body.language ?? body.app_language)
@@ -893,7 +901,17 @@ voiceProfile.patch('/:id', async (c) => {
           return { status: 'not_found' as const, rowsAffected: 0 };
         }
         await markMonthlyOfficialVoiceChange(tx, ledgerId, 'succeeded');
-        await enqueuePrerender(tx, id, userPk, prerenderLanguage);
+        // 사전렌더 언어는 '등록 때 고른 언어'(preview_language)가 단일 출처 — 클라가 보낸
+        // 기기 언어(prerenderLanguage)로 큐잉하면 일본어로 만든 목소리가 한국어 기기에서
+        // promote 될 때 한국어 클립이 만들어진다(재시도/advance 경로와도 어긋남).
+        const langRes = await tx.execute({
+          sql: 'SELECT preview_language FROM voice_profiles WHERE id = ? LIMIT 1',
+          args: [id],
+        });
+        const promotedLanguage = String(
+          langRes.rows[0]?.preview_language ?? prerenderLanguage ?? 'ko',
+        );
+        await enqueuePrerender(tx, id, userPk, promotedLanguage);
         return { status: 'ok' as const, rowsAffected: promoted.rowsAffected ?? 0 };
       })
     : {
@@ -945,6 +963,34 @@ voiceProfile.patch('/:id', async (c) => {
       );
     }
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
+  // 공유 on/off 변경은 같은 그룹 멤버들에게 data-only push 로 즉시 알린다 — 받은 쪽이
+  // 새로고침 없이 목소리 탭에서 바로 보이게(가족 알람 push 와 동일 패턴, 실패는 무시).
+  // waitUntil 등록 필수: 미등록 fire-and-forget 은 응답 직후 워커가 종료되면 FCM 호출이
+  // 실행되기 전에 끊길 수 있다. executionCtx 없는 컨텍스트(테스트)에선 접근이 던지므로
+  // try 로 생략 — 인자 평가 전에 던져서 멤버 조회도 안 돌아 mock FIFO 도 안 밀린다.
+  if (hasShared) {
+    try {
+      c.executionCtx.waitUntil(
+        (async () => {
+          const { sendVoiceShareChangedPush } = await import('../lib/fcm');
+          const memberRes = await db.execute({
+            sql: `SELECT DISTINCT m2.user_id
+                  FROM plan_group_members m1
+                  JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
+                  WHERE m1.user_id = ? AND m2.user_id != ?`,
+            args: [userPk, userPk],
+          });
+          const recipients = memberRes.rows.map((row) => String(row.user_id));
+          if (recipients.length > 0) {
+            await sendVoiceShareChangedPush(db, c.env, recipients);
+          }
+        })().catch(() => {}),
+      );
+    } catch {
+      // executionCtx 없음(비-fetch/테스트) → push 생략, 15분 주기 pull/재조회 폴백.
+    }
   }
 
   return c.json({
@@ -1922,6 +1968,146 @@ voiceProfile.post('/:id/prerender-retry', async (c) => {
   return c.json({ success: true });
 });
 
+// 사전렌더 전진(owner-driven). promote 직후 앱이 done 까지 반복 호출해 cron(5분 틱,
+// 6클립) 을 기다리지 않고 클립을 즉시 채운다. 호출 1건 = Workers invocation 1건이라
+// 서브리퀘스트 예산이 매번 새로 시작된다 — 그래서 호출당 소량(3클립)만 만들고 클라가
+// 루프를 돈다. 앱이 중간에 죽거나 화면을 닫으면 남은 몫은 기존 cron 드레인이 이어받는다
+// (advance 의 claim 은 완료/부분 진행 시 즉시 release, 비정상 종료 시 15분 임대 만료로 회수).
+voiceProfile.post('/:id/prerender/advance', async (c) => {
+  const ids = ownerIds(c);
+  const userId = c.get('userId') as string;
+  const userPk = (c.get('userIdPK') as string | undefined) || userId;
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+
+  const ph = ids.map(() => '?').join(',');
+  const profileRes = await db.execute({
+    sql: `SELECT id, preview_language FROM voice_profiles
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_system, 0) = 0 AND COALESCE(is_draft, 0) = 0
+            AND status = 'ready'`,
+    args: [id, ...ids],
+  });
+  if (profileRes.rows.length === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  // 생성은 소유자 원본 음성 파생물(생체정보) 처리다 — cron 과 동일하게 민감 동의를 강제한다.
+  if (await missingConsentType(db, userPk, SENSITIVE_REQUIRED_CONSENTS)) {
+    return c.json(
+      { error: 'Voice consent is required.', error_code: 'CONSENT_REQUIRED' },
+      403,
+    );
+  }
+
+  const countGenerated = async () =>
+    Number(
+      (
+        await db.execute({
+          sql: `SELECT COUNT(*) AS count FROM messages
+                WHERE voice_profile_id = ? AND COALESCE(is_preset, 0) = 1 AND audio_url IS NOT NULL`,
+          args: [id],
+        })
+      ).rows[0]?.count ?? 0,
+    );
+
+  // failed 큐는 사용자 주도 재시도로 살리고, 행이 없으면 재적재한다(prerender-retry 와 동일 정책).
+  await db.execute({
+    sql: `UPDATE voice_prerender_queue
+          SET status = 'pending', attempts = 0, claimed_at = NULL, claim_token = NULL,
+              updated_at = datetime('now')
+          WHERE voice_profile_id = ? AND status = 'failed'`,
+    args: [id],
+  });
+  await enqueuePrerender(db, id, userPk, String(profileRes.rows[0]!.preview_language ?? 'ko'));
+
+  // 클레임 규칙 (Codex #609 P1 — 동시 advance 가 서로의 claim 을 덮어써 유료 합성이 중복되는
+  // 것 방지):
+  //  - cron 클레임(uuid 토큰)은 즉시 인수한다 — 소유자 주도가 우선이고, 진행 중이던 cron 쪽
+  //    publish 는 claim_token 불일치로 no-op(멱등 INSERT), 이쪽이 이어서 채운다.
+  //  - 다른 advance 클레임('adv-' 접두사)이 살아 있으면(2분 리스) 인수하지 않고 현재 진행만
+  //    돌려준다. 정상 루프는 매 호출 끝에 release 로 토큰을 비우므로 순차 호출은 항상 통과하고,
+  //    죽은 호출의 클레임은 2분 뒤 회수된다.
+  const claimToken = `adv-${crypto.randomUUID()}`;
+  const claimed = await db.execute({
+    sql: `UPDATE voice_prerender_queue
+          SET claimed_at = datetime('now'), claim_token = ?, updated_at = datetime('now')
+          WHERE voice_profile_id = ? AND status = 'pending'
+            AND (
+              claim_token IS NULL
+              OR claim_token NOT LIKE 'adv-%'
+              OR claimed_at <= datetime('now', '-2 minutes')
+            )
+          RETURNING language`,
+    args: [claimToken, id],
+  });
+  if (claimed.rows.length === 0) {
+    const pendingRes = await db.execute({
+      sql: `SELECT 1 FROM voice_prerender_queue WHERE voice_profile_id = ? AND status = 'pending'`,
+      args: [id],
+    });
+    if (pendingRes.rows.length > 0) {
+      // 다른 advance 호출이 진행 중 — 합성 없이 현재 진행 상황만 돌려준다.
+      return c.json({
+        done: false,
+        generated: await countGenerated(),
+        total: CLONE_PRERENDER_TOTAL,
+      });
+    }
+    // pending 이 아니면 이미 done — 현재 개수만 돌려준다.
+    return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
+  }
+  const language = String(claimed.rows[0]!.language ?? 'ko');
+
+  const voices = await listReadyCloneVoices(db, [
+    { voiceProfileId: id, ownerUserId: userPk, language, claimToken },
+  ]);
+  const voice = voices[0];
+  if (!voice) {
+    await releasePrerenderClaim(db, id, claimToken);
+    return c.json(
+      { error: 'Voice profile is not ready for prerender.', error_code: 'VOICE_NOT_READY' },
+      409,
+    );
+  }
+
+  const targets = await findMissingStockTargets(db, [voice]);
+  if (targets.length === 0) {
+    await markPrerenderDone(db, id, claimToken);
+    return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
+  }
+
+  // 호출당 3클립: 클립 1개 ≈ Vertex+합성+R2+DB 여러 서브리퀘스트라, 인증/조회분을 감안해
+  // 무료 플랜 한도(50) 안에 안전하게 들어가는 수로 잡는다. 남은 몫은 클라 재호출/cron.
+  const MAX_CLIPS_PER_CALL = 3;
+  let made = 0;
+  for (const target of targets.slice(0, MAX_CLIPS_PER_CALL)) {
+    try {
+      await generateStockClip(db, c.env, target);
+      made += 1;
+    } catch (genErr) {
+      logRouteError(c, genErr);
+      // 서브리퀘스트 소진이면 이 호출에서 더 만들 수 없다 — 즉시 반환하고 클라가 재호출.
+      if (String(genErr).includes('Too many subrequests')) break;
+    }
+  }
+
+  const done = made >= targets.length;
+  if (done) {
+    await markPrerenderDone(db, id, claimToken);
+  } else {
+    // 즉시 release 해 다음 advance 호출(또는 cron)이 바로 이어받게 한다.
+    await releasePrerenderClaim(db, id, claimToken);
+  }
+  return c.json({ done, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
+});
+
 voiceProfile.delete('/:id', async (c) => {
   const ids = ownerIds(c);
   const db = getDB(c.env);
@@ -1990,9 +2176,6 @@ voiceProfile.delete('/:id', async (c) => {
             WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
       args: [id],
     });
-    for (const asset of assets.rows) {
-      await enqueueExternalDeletion(tx, 'r2_object', asset.audio_object_key as string | null);
-    }
     // 확정 목소리의 원본 업로드(voice_uploads + voice_speakers + R2 오브젝트)도 함께 삭제한다.
     // 확정분 원본은 TTL 스윕에서 제외돼 목소리 수명 동안 보관되므로(재생성용), 목소리를 지울 때
     // 여기서 cascade 로 정리하지 않으면 영구히 남는다.
@@ -2000,17 +2183,22 @@ voiceProfile.delete('/:id', async (c) => {
       sql: 'SELECT id, object_key FROM voice_uploads WHERE voice_profile_id = ?',
       args: [id],
     });
-    for (const upload of sourceUploads.rows) {
-      await enqueueExternalDeletion(tx, 'r2_object', upload.object_key as string | null);
-      await tx.execute({
-        sql: 'DELETE FROM voice_speakers WHERE upload_id = ?',
-        args: [String(upload.id)],
-      });
-      await tx.execute({
-        sql: 'DELETE FROM voice_uploads WHERE id = ?',
-        args: [String(upload.id)],
-      });
-    }
+    // R2 오브젝트는 전부 큐로 일괄 적재 — 자산별 개별 INSERT/삭제는 자산이 많은 목소리
+    // (사전렌더 21클립×언어 재생성 이력)에서 서브리퀘스트 한도를 넘겨 DELETE 전체가 500 났다.
+    // 실제 R2 삭제는 cron 드레인(예산 가드 내)이 처리한다.
+    await enqueueExternalDeletionsBatch(tx, 'r2_object', [
+      ...assets.rows.map((asset) => asset.audio_object_key as string | null),
+      ...sourceUploads.rows.map((upload) => upload.object_key as string | null),
+    ]);
+    await tx.execute({
+      sql: `DELETE FROM voice_speakers
+            WHERE upload_id IN (SELECT id FROM voice_uploads WHERE voice_profile_id = ?)`,
+      args: [id],
+    });
+    await tx.execute({
+      sql: 'DELETE FROM voice_uploads WHERE voice_profile_id = ?',
+      args: [id],
+    });
     return {
       status: 'deleted' as const,
       profile: currentProfile,
@@ -2057,24 +2245,9 @@ voiceProfile.delete('/:id', async (c) => {
         .filter((url): url is string => Boolean(url)),
     ),
   );
-  const bucket = c.env?.VOICE_BUCKET;
-  if (bucket && assetsRes.rows.length > 0) {
-    const storage = new R2VoiceStorage(bucket);
-    for (const row of assetsRes.rows) {
-      const key = typedRow<{ audio_object_key: string | null }>(row).audio_object_key;
-      if (!key) continue;
-      try {
-        await storage.delete(key);
-        await db.execute({
-          sql: `DELETE FROM pending_external_deletions WHERE kind = 'r2_object' AND ref = ?`,
-          args: [key],
-        });
-      } catch (err) {
-        // R2 객체 삭제 실패해도 DB 정리는 진행
-        logRouteError(c, err);
-      }
-    }
-  }
+  // R2 오브젝트 인라인 삭제는 하지 않는다 — 자산이 많으면(43개 사례) 오브젝트당 R2 delete +
+  // 큐 정리 DELETE 가 서브리퀘스트 한도를 넘겨 요청 전체가 500 났다. 트랜잭션에서 일괄 적재한
+  // pending_external_deletions 큐를 cron 드레인이 예산 가드 안에서 정리한다.
 
   if (deletedAudioUrls.length > 0) {
     const placeholders = deletedAudioUrls.map(() => '?').join(',');

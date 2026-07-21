@@ -1612,6 +1612,19 @@ export const migrations: Migration[] = [
     name: 'voice-profiles-evicted-provider-voice-id',
     statements: [`ALTER TABLE voice_profiles ADD COLUMN evicted_provider_voice_id TEXT`],
   },
+  {
+    // 출시 전 제거된 캐릭터/성장 기능의 잔재 테이블 정리. characters.user_id 가
+    // users FK 로 남아 있어 계정 영구파기(account purge)가 FOREIGN KEY constraint 로
+    // 실패하고 있었다(파기 cron 이 매 틱 실패 반복). 자식(FK→characters)부터 지운다.
+    id: 77,
+    name: 'drop-removed-character-tables',
+    statements: [
+      `DROP TABLE IF EXISTS character_xp_logs`,
+      `DROP TABLE IF EXISTS character_stats`,
+      `DROP TABLE IF EXISTS streak_achievements`,
+      `DROP TABLE IF EXISTS characters`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

@@ -85,7 +85,46 @@ export function createRateLimitMiddleware(options?: {
   };
 }
 
-export const rateLimitMiddleware = createRateLimitMiddleware();
+/**
+ * 전역(인증 전) 버킷 — authMiddleware 이전에 걸리므로 항상 IP 키로 카운트된다.
+ * NAT/공유 와이파이 뒤에 여러 기기가 정상적으로 붙으므로(가족 플랜은 이게 기본 상황)
+ * 사용자 버킷보다 훨씬 느슨하게 두고, 실제 남용은 아래 사용자 버킷이 조인다.
+ * prefix 로 버킷을 분리해 사용자 버킷과 이중 카운트되지 않게 한다 — 과거엔 같은 요청이
+ * 전역(IP)·api(사용자) 두 리미터를 통과하며 각각 카운트돼, 같은 IP 의 두 기기가
+ * 60req/분을 나눠 쓰다 로그인 burst(동기화+클립 다운로드)에서 429 가 났다.
+ *
+ * 인증에 실제로 성공한 요청은 아래 refund 미들웨어가 IP 카운트를 되돌린다 — 그 요청들은
+ * 사용자 버킷(120/분)이 조이므로, IP 버킷까지 소모하면 같은 IP 의 여러 정상 기기가
+ * 300/분을 나눠 쓰다 각자 사용자 한도 아래인데도 집단 429 를 맞는다. 경로/헤더 기반
+ * 스킵은 쓰지 않는다 — 위조 Bearer 나 프리픽스 목록 누락(공개 /api 라우트)으로 우회되는
+ * 구멍이 생긴다(Codex P1). 인증 실패·비인증 요청은 환불되지 않아 그대로 IP 버킷에 남는다.
+ */
+export const ipRateLimitMiddleware = createRateLimitMiddleware({
+  maxRequests: 300,
+  prefix: 'pre:',
+});
+
+/**
+ * 인증 성공 직후(api 체인, authMiddleware 다음)에 걸어 IP 버킷 카운트를 1 되돌린다.
+ * 결과: 인증된 트래픽은 사용자 버킷만 소모하고, IP 버킷에는 비인증·인증실패 요청만
+ * 누적된다(무차별 대입·공개 라우트 남용 방어는 유지). 윈도 경계에서 새 윈도를 1 깎는
+ * 오차는 무해하며, 동시 in-flight 인증 요청이 잠깐 슬롯을 점유하는 정도(수십)로는
+ * 300 한도에 닿지 않는다.
+ */
+export const ipRateLimitRefundMiddleware = async (c: Context, next: Next) => {
+  const ip = c.req.header('cf-connecting-ip') || 'unknown';
+  const entry = store.get(`pre:ip:${ip}`);
+  if (entry && entry.count > 0) entry.count--;
+  await next();
+};
+
+/**
+ * 인증 후 사용자 버킷. 로그인 직후 정상 burst(알람 동기화·목소리/구독/스톡 매니페스트
+ * 로드·사전렌더 클립 다운로드 21개 등)가 수십 요청이라 60/분은 정상 사용에서도 걸렸다.
+ */
+export const rateLimitMiddleware = createRateLimitMiddleware({
+  maxRequests: 120,
+});
 
 /**
  * 인증 엔드포인트(로그인/회원가입/이메일코드/소셜) 전용 엄격 한도. 별도 prefix 버킷이라

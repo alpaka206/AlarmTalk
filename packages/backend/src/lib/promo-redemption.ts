@@ -208,6 +208,30 @@ async function redeemPromoInTransaction(
     );
   }
 
+  // 유료 이용 중 쿠폰 등록 금지: 활성 유료 구독(본인 결제·가족 멤버 구독 포함)이 있으면 거절한다.
+  // 쿠폰이 기존 구독을 취소·대체해 남은 유료 기간을 날리는 사고를 막고, 스토어 결제 구독의 경우
+  // 서버가 취소해도 Play 자동갱신이 살아 있어 다음 결제 때 RTDN 으로 되살아나는 이중 상태도 막는다.
+  // 판정은 /billing/subscription 과 동일하게 expires_at 미래까지 요구한다 — 기간이 지났지만
+  // 5분 만료 cron 이 아직 status 를 못 바꾼 행이 '활성'으로 잡혀, 무료로 보이는 사용자의 쿠폰이
+  // 거절되는 창을 없앤다(Codex #611 P2).
+  const activePaidRes = await db.execute({
+    sql: `SELECT 1 FROM subscriptions s
+          JOIN plans p ON p.id = s.plan_id
+          WHERE s.user_id = ?
+            AND s.status = 'active'
+            AND datetime(s.expires_at) > datetime('now')
+            AND p.plan_type IN ('personal', 'family')
+          LIMIT 1`,
+    args: [params.userPk],
+  });
+  if (activePaidRes.rows.length > 0) {
+    throw new PromoRedemptionError(
+      409,
+      'ACTIVE_SUBSCRIPTION_EXISTS',
+      'You already have an active subscription. Cancel it before redeeming a promo code.',
+    );
+  }
+
   // 원자 claim: 활성·유효창·총 상한·사용자당 1회·(그룹 코드면) 그룹당 1회 를 한 문장으로
   // gate 한다. SQLite/libSQL 단일 라이터에서 동시 사용 중 상한 초과가 발생하지 않는다.
   // 그룹 절은 위 사전 검사와 동일한 groupCond(웰컴=컬럼 OR 이름 결합)를 그대로 쓴다 —

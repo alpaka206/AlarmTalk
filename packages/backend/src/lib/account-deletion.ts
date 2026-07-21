@@ -213,6 +213,14 @@ export async function purgeUserAccount(
       sql: `DELETE FROM voice_profile_change_ledger WHERE owner_user_id IN (?, ?)`,
       args: userIds,
     });
+    // 관계/호칭 행은 voice_profiles FK 라 프로필 삭제 전에 지운다 — 내 행과,
+    // '내 프로필'을 참조하는 타인 행(공유 보이스 뷰어 호칭) 모두.
+    await tx.execute({
+      sql: `DELETE FROM voice_profile_relationships
+            WHERE user_id IN (?, ?)
+               OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (?, ?))`,
+      args: [...userIds, ...userIds],
+    });
     await tx.execute({
       sql: `DELETE FROM voice_profiles WHERE user_id IN (?, ?)`,
       args: userIds,
@@ -225,6 +233,29 @@ export async function purgeUserAccount(
     await tx.execute({
       sql: `DELETE FROM user_consents WHERE user_id IN (?, ?)`,
       args: userIds,
+    });
+    // FK 는 없지만 사용자 식별자가 남는 테이블들 — 개인정보 파기 범위에 포함한다.
+    await tx.execute({
+      sql: `DELETE FROM alarm_recipient_state WHERE recipient_user_id IN (?, ?)`,
+      args: userIds,
+    });
+    await tx.execute({
+      sql: `DELETE FROM dub_jobs WHERE user_id IN (?, ?)`,
+      args: userIds,
+    });
+    await tx.execute({
+      sql: `DELETE FROM promo_code_redemptions WHERE user_id IN (?, ?)`,
+      args: userIds,
+    });
+    await tx.execute({
+      sql: `DELETE FROM paid_voice_retention WHERE user_id IN (?, ?)`,
+      args: userIds,
+    });
+    // 인증 코드(이메일 키)는 users 행 삭제 전에 이메일을 역참조해 지운다.
+    await tx.execute({
+      sql: `DELETE FROM email_verification_codes
+            WHERE email IN (SELECT email FROM users WHERE id = ? OR google_id = ?)`,
+      args: [userPk, userId],
     });
   }
 

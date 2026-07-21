@@ -24,10 +24,10 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -75,9 +75,8 @@ internal fun VoiceAudioCard(
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     defaultVoiceId: String? = null,
     // 날씨+약 문구로 제한하는 모드 — 무료 플랜이거나 시스템(기본) 보이스 선택 시 true.
-    // 녹음/파일·직접 입력·동적 문구를 감추고 무료 버킷 UI(날씨/약)를 재사용한다.
+    // TTS 문구를 무료 버킷 UI(날씨/약)로 제한한다.
     restrictToWeatherMedication: Boolean,
-    onLockedFeature: () -> Unit,
     audioMessage: String?,
     isRecording: Boolean,
     recordingElapsedMillis: Long,
@@ -98,18 +97,21 @@ internal fun VoiceAudioCard(
     } else {
         editor.voiceSource
     }
-    // 알람별로 목소리를 자유롭게 바꾼다 — 내 목소리·공유받은 목소리·기본(시스템) 목소리를
-    // 전부 시트에 노출한다(내 것 → 공유 → 기본 순).
+    // 알람별로 목소리를 자유롭게 바꾼다 — 내 목소리·공유받은 목소리·기본(시스템) 목소리 순.
+    // 기본(시스템) 목소리는 전부 나열하지 않고 '기본 목소리로 설정해 둔 것'만 노출한다
+    // (편집 중 알람이 다른 시스템 보이스로 저장돼 있으면 그것도 함께 — 열자마자 목소리가
+    // 바뀌는 사고 방지). 설정된 기본이 없으면 이전처럼 전부 보여준다.
     val readyOwnProfiles = voiceProfiles.filter {
         (it.status == null || it.status == "ready") && it.isSystem != true
     }
     val readySystemProfiles = voiceProfiles.filter {
         (it.status == null || it.status == "ready") && it.isSystem == true
     }
+    val visibleSystemProfiles = readySystemProfiles.filter {
+        it.id == defaultVoiceId || it.id == editor.voiceProfileId
+    }.ifEmpty { readySystemProfiles }
     val readyFamilyVoices = familyVoices.filter {
-        (it.status == null || it.status == "ready") &&
-            it.isShared != false &&
-            !it.requiresViewerInfo()
+        (it.status == null || it.status == "ready") && it.isShared != false
     }
     val profileOptions = readyOwnProfiles.map {
         VoiceProfileOption(
@@ -125,7 +127,7 @@ internal fun VoiceAudioCard(
                 detail = sharedVoiceDetail(context, profile),
             )
         } +
-        readySystemProfiles.map {
+        visibleSystemProfiles.map {
             VoiceProfileOption(
                 id = it.id,
                 name = it.name,
@@ -143,27 +145,26 @@ internal fun VoiceAudioCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-            // 무료·시스템 보이스는 녹음·파일이 잠겨 있어 소스 토글이 사실상 페이월 미끼라 감춘다(항상 TTS).
-            // 유료 + 내 클론일 때만 목소리/녹음·파일을 고를 수 있게 토글을 노출한다.
-            if (!restrictToWeatherMedication) {
-                // 바로 위 '재생 방식'과 같은 세그먼트 트랙으로 통일(크기·선택색 일치).
-                EditorSegmentedSelector(
-                    options = listOf(
-                        VoiceSources.TTS_PROFILE to stringResource(R.string.editor_voice_source_tts),
-                        VoiceSources.LOCAL_AUDIO to stringResource(R.string.editor_voice_source_local),
-                    ),
-                    selected = visibleVoiceSource,
-                    onSelect = {
-                        editor.voiceSource = it
-                        if (it == VoiceSources.TTS_PROFILE) {
-                            editor.clearAudio()
-                            editor.clearTtsMeta()
-                        } else {
-                            editor.clearTtsMeta()
-                        }
-                    },
-                )
-            }
+            // 직접 녹음은 녹음본을 그대로 재생할 뿐이라 플랜·목소리 종류와 무관하게 항상
+            // 노출한다(무료/유료·기본/내/공유 목소리 모두). TTS 쪽 제한(버킷/문구)은
+            // 소스가 TTS 일 때만 적용된다.
+            // 바로 위 '재생 방식'과 같은 세그먼트 트랙으로 통일(크기·선택색 일치).
+            EditorSegmentedSelector(
+                options = listOf(
+                    VoiceSources.TTS_PROFILE to stringResource(R.string.editor_voice_source_tts),
+                    VoiceSources.LOCAL_AUDIO to stringResource(R.string.editor_voice_source_local),
+                ),
+                selected = visibleVoiceSource,
+                onSelect = {
+                    editor.voiceSource = it
+                    if (it == VoiceSources.TTS_PROFILE) {
+                        editor.clearAudio()
+                        editor.clearTtsMeta()
+                    } else {
+                        editor.clearTtsMeta()
+                    }
+                },
+            )
 
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
                 LaunchedEffect(visibleVoiceSource, voiceProfileBusy, profileOptions, editor.voiceProfileId) {
@@ -174,9 +175,15 @@ internal fun VoiceAudioCard(
                     ) {
                         val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
                         if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
-                            // 온보딩에서 고른 기본 목소리를 우선 선택(없거나 목록에 없으면 첫 번째).
+                            // 기본 선택 우선순위: 내 목소리 → 공유받은 목소리 → 기본 목소리로
+                            // 설정해 둔 것 → 목록 첫 번째. 각 그룹 안에서는 기본 목소리로
+                            // 지정해 둔 프로필이 있으면 그것을 우선한다.
                             editor.selectVoiceProfile(
-                                profileOptions.firstOrNull { it.id == defaultVoiceId }?.id
+                                readyOwnProfiles.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: readyOwnProfiles.firstOrNull()?.id
+                                    ?: readyFamilyVoices.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: readyFamilyVoices.firstOrNull()?.id
+                                    ?: profileOptions.firstOrNull { it.id == defaultVoiceId }?.id
                                     ?: profileOptions.first().id,
                             )
                         }
@@ -218,7 +225,6 @@ internal fun VoiceAudioCard(
                                 MessageModeSummaryRow(
                                     isManual = !editor.voiceRandomPrompt,
                                     randomContext = editor.voiceRandomContext,
-                                    manualText = editor.voiceText,
                                     onClick = onOpenRandomPromptSettings,
                                 )
                             }
@@ -574,12 +580,11 @@ internal fun FreeBucketSettingsPane(
 internal fun MessageModeSummaryRow(
     isManual: Boolean,
     randomContext: String,
-    manualText: String,
     onClick: () -> Unit,
 ) {
     val valueLabel = when {
-        // 직접 입력이면 입력한 문구를 그대로 보여준다(비었으면 '직접 입력').
-        isManual -> manualText.ifBlank { stringResource(R.string.editor_msg_mode_manual) }
+        // 직접 입력은 문구 내용을 어디에도 노출하지 않는다 — 값은 '직접 입력'으로만 표기.
+        isManual -> stringResource(R.string.editor_msg_mode_manual)
         // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
         normalizedRandomPromptContext(randomContext) == DefaultRandomPromptContext ->
             stringResource(R.string.editor_msg_mode_preset)
@@ -651,7 +656,7 @@ private fun RecordedPlaybackControls(
                 ),
             ) {
                 Icon(
-                    imageVector = if (isPreviewActive) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                    imageVector = if (isPreviewActive) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
                     contentDescription = stringResource(
                         if (isPreviewActive) R.string.editor_audio_preview_stop else R.string.editor_audio_preview_play,
                     ),
@@ -814,6 +819,3 @@ private fun ownedVoiceDetail(context: android.content.Context, profile: VoicePro
     profile.isShared == true -> context.getString(R.string.editor2_voice_detail_mine_sharing)
     else -> context.getString(R.string.editor2_voice_detail_mine)
 }
-
-internal fun FamilyVoiceProfile.requiresViewerInfo(): Boolean =
-    needsViewerInfo == true || relationshipLabel.isNullOrBlank() || listenerTitle.isNullOrBlank()

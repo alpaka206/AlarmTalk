@@ -156,6 +156,7 @@ private fun codeRegistrationFailureMessage(context: android.content.Context, err
         // 리딤 그룹(예: 웰컴 3종) — 같은 계열 코드를 이미 썼으면 다른 코드도 불가.
         "CODE_GROUP_ALREADY_REDEEMED" -> context.getString(R.string.msg2_promo_fail_group_already_redeemed)
         "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
+        "ACTIVE_SUBSCRIPTION_EXISTS" -> context.getString(R.string.msg2_promo_fail_active_subscription)
         else -> fallback
     }
 
@@ -170,6 +171,7 @@ private fun promoRedeemFailureMessage(context: android.content.Context, errorCod
         // 리딤 그룹(예: 웰컴 3종) — 같은 계열 코드를 이미 썼으면 다른 코드도 불가.
         "CODE_GROUP_ALREADY_REDEEMED" -> context.getString(R.string.msg2_promo_fail_group_already_redeemed)
         "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
+        "ACTIVE_SUBSCRIPTION_EXISTS" -> context.getString(R.string.msg2_promo_fail_active_subscription)
         "PROMO_REDEEM_FAILED" -> context.getString(R.string.msg2_promo_fail_generic)
         else -> fallback
     }

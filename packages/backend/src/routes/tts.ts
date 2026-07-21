@@ -1739,8 +1739,20 @@ tts.get('/messages/:id/audio', async (c) => {
                 COALESCE(messages.is_preset, 0) = 1
                 AND COALESCE(vp.is_system, 0) = 1
               )
+              OR (
+                COALESCE(messages.is_preset, 0) = 1
+                AND COALESCE(vp.is_shared, 0) = 1
+                AND EXISTS (
+                  SELECT 1
+                  FROM plan_group_members pgm_me
+                  JOIN plan_group_members pgm_owner
+                    ON pgm_owner.plan_group_id = pgm_me.plan_group_id
+                  WHERE pgm_me.user_id = ?
+                    AND pgm_owner.user_id = owner.id
+                )
+              )
             )`,
-    args: [id, ...ownerIds, ...ownerIds],
+    args: [id, ...ownerIds, ...ownerIds, userPk],
   });
 
   if (result.rows.length === 0) {
@@ -1909,7 +1921,8 @@ tts.get('/presets', async (c) => {
 // 무료 플랜용 스톡(미리 만든) 알람 클립 목록. 시스템 보이스로 서버에서 합성해 둔
 // 고정 클립을 보이스 × 언어 × 카테고리로 노출한다. 오디오는 message_id 로
 // 오디오 자체는 GET /tts/messages/:id/audio 에서 받는다. 시스템 스톡은 모든 사용자가 조회
-// 가능하고, 유료 클론 사전렌더 클립은 '소유자 본인'에게만 노출한다(is_system=0·실소유자 user_id).
+// 가능하고, 유료 클론 사전렌더 클립은 소유자 본인 + 같은 플랜 그룹에 '공유 중'(is_shared=1)인
+// 보이스에 한해 그룹 멤버에게도 노출한다(공유받은 사람이 프리셋 버킷·인사말 미리듣기를 소비).
 tts.get('/stock-clips', async (c) => {
   const db = getDB(c.env);
   const userId = c.get('userId');
@@ -1920,11 +1933,27 @@ tts.get('/stock-clips', async (c) => {
           FROM messages m
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1
-            AND (COALESCE(vp.is_system, 0) = 1 OR m.user_id IN (?, ?))
+            AND (
+              COALESCE(vp.is_system, 0) = 1
+              OR m.user_id IN (?, ?)
+              OR (
+                COALESCE(vp.is_shared, 0) = 1
+                AND COALESCE(vp.is_draft, 0) = 0
+                AND EXISTS (
+                  SELECT 1
+                  FROM plan_group_members pgm_me
+                  JOIN plan_group_members pgm_owner
+                    ON pgm_owner.plan_group_id = pgm_me.plan_group_id
+                  JOIN users owner_u ON owner_u.id = pgm_owner.user_id
+                  WHERE pgm_me.user_id = ?
+                    AND (owner_u.id = vp.user_id OR owner_u.google_id = vp.user_id)
+                )
+              )
+            )
             AND vp.deleted_at IS NULL
             AND m.audio_url IS NOT NULL
           ORDER BY vp.id ASC, m.category ASC, m.language ASC, m.variant ASC`,
-    args: [userPk, userId],
+    args: [userPk, userId, userPk],
   });
   return c.json({
     clips: result.rows.map((row) => ({

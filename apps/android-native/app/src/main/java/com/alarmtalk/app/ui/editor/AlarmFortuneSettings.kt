@@ -43,8 +43,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
-import com.alarmtalk.app.WakerHeroShape
-import com.alarmtalk.app.WakerPanelShape
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.text.SimpleDateFormat
@@ -335,6 +333,9 @@ internal fun formatBirthDateDisplay(context: android.content.Context, value: Str
     )
 }
 
+// 섹션별 테두리 상자는 제거 — 내부 컨트롤(성별 칩·날짜 선택 행·시간 드롭다운)에 이미
+// 테두리가 있어 이중 테두리 시각 소음이었다. 라벨+컨트롤만 남기고 오류는 라벨 색·필수
+// 문구로 표시한다.
 @Composable
 internal fun FortuneInputSection(
     title: String,
@@ -342,38 +343,26 @@ internal fun FortuneInputSection(
     subtitle: String? = null,
     content: @Composable () -> Unit,
 ) {
-    val borderColor = if (error) {
-        MaterialTheme.colorScheme.error
-    } else {
-        MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
-    }
-    Surface(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        shape = WakerPanelShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, borderColor),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = if (error) stringResource(R.string.editorp_fortune_required_suffix, title) else title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            )
+            if (!subtitle.isNullOrBlank()) {
                 Text(
-                    text = if (error) stringResource(R.string.editorp_fortune_required_suffix, title) else title,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (!subtitle.isNullOrBlank()) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
-            content()
         }
+        content()
     }
 }
 

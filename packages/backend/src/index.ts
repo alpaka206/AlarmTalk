@@ -4,7 +4,12 @@ import type { Env, AppEnv } from './types';
 import { authMiddleware } from './middleware/auth';
 import { consentMiddleware } from './middleware/consent';
 import { loggerMiddleware } from './middleware/logger';
-import { rateLimitMiddleware, authRateLimitMiddleware } from './middleware/rateLimit';
+import {
+  rateLimitMiddleware,
+  ipRateLimitMiddleware,
+  ipRateLimitRefundMiddleware,
+  authRateLimitMiddleware,
+} from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
@@ -12,7 +17,6 @@ import { sentryMiddleware } from './middleware/sentry';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
 import { timingSafeEqualStr } from './lib/timing-safe-equal';
-import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
 import ttsRoutes from './routes/tts';
@@ -42,8 +46,9 @@ app.use('*', sentryMiddleware);
 // Structured request logging
 app.use('*', loggerMiddleware);
 
-// Rate limiting (per-isolate sliding window, 60 req/min)
-app.use('*', rateLimitMiddleware);
+// Rate limiting — 인증 전 전역은 IP 버킷(느슨, NAT 공유 대비), 인증 후 api 는 사용자
+// 버킷(아래 api.use). prefix 분리로 같은 요청이 두 버킷에 이중 카운트되지 않는다.
+app.use('*', ipRateLimitMiddleware);
 
 // Body size limit (512 KB)
 app.use('*', bodyLimitMiddleware);
@@ -212,6 +217,9 @@ app.route('/api/billing/google', billingGoogleRtdn);
 // 인증이 필요한 라우트들
 const api = new Hono<AppEnv>();
 api.use('*', authMiddleware);
+// 인증 성공한 요청은 전역 IP 버킷 카운트를 환불 — 이후는 사용자 버킷(아래)만 소모한다.
+// 비인증/인증실패/공개 라우트는 환불이 없어 IP 버킷에 그대로 누적된다(rateLimit.ts 참고).
+api.use('*', ipRateLimitRefundMiddleware);
 // 서버측 동의 강제(B4) — authMiddleware 직후에 둬 userIdPK 를 사용한다. 데이터 수집
 // 라우트는 일반 필수 동의가 없으면 403. 면제 경로는 consentMiddleware 내부에서 통과.
 api.use('*', consentMiddleware);
@@ -330,53 +338,12 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     captureCron('scheduled.account_purge', err);
   }
 
-  const result = await db.execute(
-    `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
-            mode, voice_profile_id, speaker_id, timezone
-     FROM alarms
-     WHERE is_active = 1
-       AND NOT EXISTS (
-         SELECT 1 FROM alarm_recipient_state ars
-         WHERE ars.alarm_id = alarms.id
-           AND ars.recipient_user_id = alarms.target_user_id
-           AND ars.declined = 1
-       )`,
-  );
-
-  const alarms: ScheduledAlarm[] = result.rows.map((r) => ({
-    id: String(r.id),
-    user_id: String(r.user_id),
-    target_user_id: (r.target_user_id as string | null) ?? null,
-    time: String(r.time),
-    repeat_days: (() => {
-      try {
-        const parsed: unknown = JSON.parse(String(r.repeat_days ?? '[]'));
-        return Array.isArray(parsed) ? parsed.filter((n): n is number => Number.isInteger(n)) : [];
-      } catch {
-        return [];
-      }
-    })(),
-    is_active: r.is_active === 1,
-    mode: r.mode === 'sound-only' ? 'sound-only' : 'tts',
-    voice_profile_id: (r.voice_profile_id as string | null) ?? null,
-    speaker_id: (r.speaker_id as string | null) ?? null,
-    timezone: (r.timezone as string | null) ?? null,
-  }));
-
-  const firing = selectFiringAlarms(alarms, now);
-
-  logStructured('info', {
-    at: 'scheduled',
-    now: now.toISOString(),
-    checked: alarms.length,
-    firing_count: firing.length,
-    firing_ids: firing.map((a) => a.id),
-  });
-
   // 발사 시각 서버 push 는 보내지 않는다: 알람은 각 기기가 로컬 AlarmManager 로 직접 울리고(수신 가족
   // 알람도 pull→로컬 스케줄), 서버가 발사 때 type=alarm notification 을 또 보내면 로컬 링과 중복 알림이
   // 된다(push_tokens 는 즉시 배달용 토큰이라 이 경로가 소비하면 안 됨). '새 가족 알람 도착' 즉시성은 생성
   // 시점의 sendFamilyAlarmPush(data-only)로 처리하고, 발사 자체는 로컬에 맡긴다.
+  // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
+  //  틱마다 Turso row-read 만 소모했다. 발사 예정 확인이 필요하면 GET /tick 으로 온디맨드 조회.)
 
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만
@@ -408,7 +375,9 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
         }
       }
       let rendered = 0;
+      let subrequestExhausted = false;
       for (const voice of cloneVoices) {
+        if (subrequestExhausted) break;
         const claim = claimByVoiceId.get(voice.id);
         if (!claim) continue;
         if (await missingConsentType(db, claim.ownerUserId, SENSITIVE_REQUIRED_CONSENTS)) {
@@ -437,6 +406,14 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
             // 건너뛰고 계속한다. 진전이 있으면 pending 유지(다음 틱 재시도), 진전 0+에러면 실패 처리.
             captureCron('scheduled.stock_clips.generate', genErr);
             voiceError = true;
+            // 이 틱의 서브리퀘스트 한도가 소진되면 남은 시도는 전부 같은 오류다 — 즉시 중단해
+            // 오류 반복을 줄인다. 뒤따르는 상태 갱신(DB 호출)도 실패할 수 있지만, 그 경우
+            // 15분 임대 만료가 회수해 다음 틱에 재시도된다. (7/11~ dev 실사례: 매 틱 실패하던
+            // account_purge 가 파기 시퀀스로 예산을 태워 프리렌더가 항상 이 오류로 죽었다.)
+            if (String(genErr).includes('Too many subrequests')) {
+              subrequestExhausted = true;
+              break;
+            }
           }
         }
         // 재조회 없이 판정: 이번 틱에 이 보이스의 남은 대상을 전부(에러 없이) 만들었으면 완료.

@@ -47,8 +47,14 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
             }.onSuccess { snapshot ->
                 familyGroup = snapshot.familyGroup
                 saveFamilyGroupSnapshot(snapshot.familyGroup)
+                // 공유 목소리 목록이 실제로 바뀌면(새로 공유받음/회수) 스톡 매니페스트도 새로 받는다.
+                // 매니페스트는 세션 캐시라 안 갱신하면 새 공유 보이스의 미리듣기가 '준비 중'에 머물고
+                // 편집기의 오프라인 프리셋 버킷도 바인딩되지 않는다.
+                val sharedIdsChanged = snapshot.familyVoicesFresh &&
+                    snapshot.familyVoices.map { it.id }.toSet() != familyVoices.map { it.id }.toSet()
                 familyVoices = snapshot.familyVoices
                 familyVoicesLoadedFresh = snapshot.familyVoicesFresh
+                if (sharedIdsChanged) loadStockClips(forceReload = true)
                 // 접근권 잃은 목소리 알람 강등 — 내 음성·공유 목소리 두 로드 중 늦게 끝난 쪽에서
                 // 실행되도록 헬퍼로 위임한다(한쪽이 먼저 끝나 스킵돼도 재실행됨).
                 reconcileInaccessibleVoiceAlarms()

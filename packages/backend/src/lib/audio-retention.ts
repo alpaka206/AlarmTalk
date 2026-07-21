@@ -37,6 +37,30 @@ const TTL_BATCH_SIZE = 10;
 
 export type ExternalDeletionKind = 'elevenlabs_voice' | 'r2_object';
 
+/**
+ * 큐 일괄 적재 — ref 하나당 INSERT 를 날리면 자산이 많은 목소리 삭제(사전렌더 21클립×언어
+ * 재생성 이력 등)에서 Workers 서브리퀘스트 한도를 넘겨 요청 전체가 500 난다. 청크
+ * multi-VALUES 로 묶어 자산 수와 무관하게 상수 수준의 호출로 유지한다.
+ */
+export async function enqueueExternalDeletionsBatch(
+  tx: DbExecutor,
+  kind: ExternalDeletionKind,
+  refs: Array<string | null | undefined>,
+): Promise<void> {
+  const unique = Array.from(
+    new Set(refs.map((r) => r?.trim()).filter((r): r is string => Boolean(r))),
+  );
+  const CHUNK = 40;
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const chunk = unique.slice(i, i + CHUNK);
+    const values = chunk.map(() => '(?, ?, ?)').join(', ');
+    await tx.execute({
+      sql: `INSERT OR IGNORE INTO pending_external_deletions (id, kind, ref) VALUES ${values}`,
+      args: chunk.flatMap((ref) => [crypto.randomUUID(), kind, ref]),
+    });
+  }
+}
+
 /** 큐 적재 — 트랜잭션 내부에서 호출 가능. 동일 (kind, ref) 는 무시(idempotent). */
 export async function enqueueExternalDeletion(
   tx: DbExecutor,

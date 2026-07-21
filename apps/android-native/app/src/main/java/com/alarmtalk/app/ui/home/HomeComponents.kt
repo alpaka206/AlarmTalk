@@ -6,18 +6,14 @@ import android.icu.util.MeasureUnit
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
@@ -26,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,7 +38,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import com.alarmtalk.app.R
 import com.alarmtalk.app.network.AuthSession
-import com.alarmtalk.app.WakerCardShape
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.WakerPillShape
 import androidx.compose.ui.text.font.FontWeight
@@ -126,8 +120,6 @@ internal fun MenuTabPanel(
     onOpenBilling: () -> Unit,
     onOpenMemberManagement: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenConsentHistory: () -> Unit,
-    onOpenOssLicenses: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -147,22 +139,7 @@ internal fun MenuTabPanel(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ) {
-                    Box(
-                        modifier = Modifier.size(48.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Person,
-                            contentDescription = stringResource(R.string.hs_profile_content_desc),
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
+                // 원형 사람 아이콘 아바타는 제거 — 기본 아이콘 장식 없이 텍스트만 둔다.
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -258,35 +235,7 @@ internal fun MenuTabPanel(
                 }
             }
         }
-        // 법적 정보 — 문서·동의 이력은 '약관 및 개인정보 처리 동의' 화면 한 곳에서만 연다(중복 진입점 금지).
-        Surface(
-            shape = WakerPanelShape,
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                Text(
-                    text = stringResource(R.string.menu_section_legal),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                MenuTabRow(
-                    label = stringResource(R.string.consent_screen_title),
-                    onClick = onOpenConsentHistory,
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                )
-                // 오픈소스 라이선스 — 인앱 Compose 화면(OssLicensesScreen)으로 이동.
-                MenuTabRow(
-                    label = stringResource(R.string.menu_open_source_licenses),
-                    onClick = onOpenOssLicenses,
-                )
-            }
-        }
+        // 법적 정보(약관·오픈소스)는 설정 화면 하단으로 이동 — 더보기는 핵심 항목만 남긴다.
         // 탈퇴하기 — 토스처럼 독립 카드 행. 확인 다이얼로그는 앱 레벨에서 뜬다.
         if (authSession != null) {
             Surface(
@@ -454,34 +403,31 @@ internal fun NicknameEditDialog(
     }
 }
 
+// 로그아웃 확인과 같은 iOS 알럿 스타일(IosAlertDialog)로 통일 — 확인형 모달은 전부 이 계열.
 @Composable
 internal fun DeleteAccountConfirmDialog(
     busy: Boolean,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        title = {
-            ModalDialogTitle(
-                title = stringResource(R.string.hs_delete_account_title),
-                onDismiss = onDismiss,
-                dismissEnabled = !busy,
-            )
-        },
-        text = {
-            Text(
-                stringResource(R.string.hs_delete_account_body),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm, enabled = !busy) {
-                Text(
-                    text = stringResource(R.string.hs_delete_account_confirm),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        },
+    // iOS 표준 구성: 질문 한 문장만 제목(17sp), 나머지 안내는 작은 설명(13sp)으로 —
+    // 세 문장을 전부 제목 타이포로 키우면 알럿이 과해 보인다(문장별 줄바꿈은 설명에 유지).
+    IosAlertDialog(
+        title = stringResource(R.string.hs_delete_account_title),
+        message = stringResource(R.string.hs_delete_account_body),
+        onDismiss = { if (!busy) onDismiss() },
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.social_cancel_button),
+                onClick = { if (!busy) onDismiss() },
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.hs_delete_account_confirm),
+                emphasized = true,
+                destructive = true,
+                onClick = { if (!busy) onConfirm() },
+            ),
+        ),
     )
 }
 

@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -50,6 +51,8 @@ internal fun SettingsScreen(
     onBack: () -> Unit,
     onEditNickname: () -> Unit,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
+    onOpenConsentHistory: () -> Unit,
+    onOpenOssLicenses: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -66,9 +69,12 @@ internal fun SettingsScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
+            // 탭과 같은 그라데이션 배경 — 더보기 → 설정 진입 시 배경 톤이 튀지 않게.
+            .background(homeGradientBrush())
             .padding(contentPadding),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        // 좌우 20dp·카드 간 16dp — 전 화면 공통 규격.
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             Row(
@@ -143,8 +149,26 @@ internal fun SettingsScreen(
             }
         }
 
-        // 광고성 정보 수신(마케팅) 동의는 전체 탭 → 법적 정보 → '약관 및 개인정보 처리 동의' 화면으로 통합했다.
-        // 약관·개인정보 링크와 회원탈퇴도 전체 탭(법적 정보 섹션·탈퇴하기 카드)에 있다.
+        // 법적 정보 — 더보기 탭에서 이곳(설정 하단)으로 이동. 처리방침/약관 접근과 오픈소스
+        // 고지는 스토어·법적 요구라 앱 안에 유지해야 한다(완전 삭제 불가).
+        item {
+            SettingsCard(title = stringResource(R.string.menu_section_legal)) {
+                SettingsRow(
+                    label = stringResource(R.string.consent_screen_title),
+                    value = null,
+                    onClick = onOpenConsentHistory,
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                SettingsRow(
+                    label = stringResource(R.string.menu_open_source_licenses),
+                    value = null,
+                    onClick = onOpenOssLicenses,
+                )
+            }
+        }
     }
 
     if (showLogoutConfirm) {
@@ -170,10 +194,11 @@ internal fun SettingsScreen(
     }
 
     if (showWeatherLocationDialog) {
-        WeatherLocationPreferenceDialog(
+        // 편집기 문구 pane 과 같은 다이얼로그를 공유한다(제목·필드·저장 버튼 동일).
+        WeatherLocationDialog(
             country = promptPreferences.weatherCountry,
             city = promptPreferences.weatherCity,
-            onDismiss = { showWeatherLocationDialog = false },
+            onDismissWithoutSave = { showWeatherLocationDialog = false },
             onConfirm = { country, city ->
                 promptPreferenceStore.saveWeatherLocation(country, city)
                 promptPreferences = promptPreferenceStore.read()
