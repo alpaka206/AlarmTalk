@@ -813,14 +813,26 @@ internal fun VoiceProfileManagementPanel(
     // 실패 후 [다시 시도] 수락 시 증가 — 멈춘 폴링 루프를 재시작한다.
     var prerenderPollTick by remember { mutableIntStateOf(0) }
 
+    // 클론 클립 언어 선택: 앱 언어 클립이 있으면 앱 언어, 없으면 그 보이스가 가진 언어
+    // (=등록 때 고른 언어). 편집기 bucketClipLanguageFor 와 동일 규칙 — 일본어로 만든
+    // 클론이 한국어 기기에서 '다운로드 중'에 영원히 갇히지 않게 한다.
+    fun cloneClipLanguageFor(profileId: String, category: String): String {
+        val langs = stockClips.asSequence()
+            .filter { it.voiceProfileId == profileId && it.category == category }
+            .map { it.language ?: "ko" }
+            .toSet()
+        return if (previewLanguage in langs) previewLanguage else langs.firstOrNull() ?: previewLanguage
+    }
+
     // 알람 버킷 4종이 매니페스트에 풀셋으로 존재하는지 — AlarmEditorScreen.hasCompleteCloneBucket
     // 과 동일한 variant 절대 인덱스 판정. greeting 은 미리듣기 전용이라 게이트에서 제외한다.
     fun cloneManifestComplete(profileId: String): Boolean = CloneAlarmBucketCategories.all { category ->
         val fullCount = expectedCloneBucketVariantCount(category) ?: return@all false
+        val clipLanguage = cloneClipLanguageFor(profileId, category)
         val variants = stockClips
             .filter {
                 it.voiceProfileId == profileId && it.category == category &&
-                    (it.language ?: "ko") == previewLanguage
+                    (it.language ?: "ko") == clipLanguage
             }
             .map { it.variant }
             .toSet()
@@ -832,10 +844,11 @@ internal fun VoiceProfileManagementPanel(
     suspend fun downloadCloneBuckets(profileId: String): Boolean = withContext(Dispatchers.IO) {
         var allCached = true
         CloneAlarmBucketCategories.forEach { category ->
+            val clipLanguage = cloneClipLanguageFor(profileId, category)
             stockClips
                 .filter {
                     it.voiceProfileId == profileId && it.category == category &&
-                        (it.language ?: "ko") == previewLanguage
+                        (it.language ?: "ko") == clipLanguage
                 }
                 .forEach { clip ->
                     val cacheKey = "stock_${clip.messageId}"

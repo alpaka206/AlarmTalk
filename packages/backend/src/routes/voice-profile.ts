@@ -20,7 +20,7 @@ import {
   markPrerenderDone,
   releasePrerenderClaim,
 } from '../lib/stock-clips';
-import { enqueueExternalDeletion } from '../lib/audio-retention';
+import { enqueueExternalDeletion, enqueueExternalDeletionsBatch } from '../lib/audio-retention';
 import {
   MAX_PROVIDER_CLONE_VOICES,
   evictLruClonesIfOverCapTx,
@@ -2148,9 +2148,6 @@ voiceProfile.delete('/:id', async (c) => {
             WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
       args: [id],
     });
-    for (const asset of assets.rows) {
-      await enqueueExternalDeletion(tx, 'r2_object', asset.audio_object_key as string | null);
-    }
     // 확정 목소리의 원본 업로드(voice_uploads + voice_speakers + R2 오브젝트)도 함께 삭제한다.
     // 확정분 원본은 TTL 스윕에서 제외돼 목소리 수명 동안 보관되므로(재생성용), 목소리를 지울 때
     // 여기서 cascade 로 정리하지 않으면 영구히 남는다.
@@ -2158,17 +2155,22 @@ voiceProfile.delete('/:id', async (c) => {
       sql: 'SELECT id, object_key FROM voice_uploads WHERE voice_profile_id = ?',
       args: [id],
     });
-    for (const upload of sourceUploads.rows) {
-      await enqueueExternalDeletion(tx, 'r2_object', upload.object_key as string | null);
-      await tx.execute({
-        sql: 'DELETE FROM voice_speakers WHERE upload_id = ?',
-        args: [String(upload.id)],
-      });
-      await tx.execute({
-        sql: 'DELETE FROM voice_uploads WHERE id = ?',
-        args: [String(upload.id)],
-      });
-    }
+    // R2 오브젝트는 전부 큐로 일괄 적재 — 자산별 개별 INSERT/삭제는 자산이 많은 목소리
+    // (사전렌더 21클립×언어 재생성 이력)에서 서브리퀘스트 한도를 넘겨 DELETE 전체가 500 났다.
+    // 실제 R2 삭제는 cron 드레인(예산 가드 내)이 처리한다.
+    await enqueueExternalDeletionsBatch(tx, 'r2_object', [
+      ...assets.rows.map((asset) => asset.audio_object_key as string | null),
+      ...sourceUploads.rows.map((upload) => upload.object_key as string | null),
+    ]);
+    await tx.execute({
+      sql: `DELETE FROM voice_speakers
+            WHERE upload_id IN (SELECT id FROM voice_uploads WHERE voice_profile_id = ?)`,
+      args: [id],
+    });
+    await tx.execute({
+      sql: 'DELETE FROM voice_uploads WHERE voice_profile_id = ?',
+      args: [id],
+    });
     return {
       status: 'deleted' as const,
       profile: currentProfile,
@@ -2215,24 +2217,9 @@ voiceProfile.delete('/:id', async (c) => {
         .filter((url): url is string => Boolean(url)),
     ),
   );
-  const bucket = c.env?.VOICE_BUCKET;
-  if (bucket && assetsRes.rows.length > 0) {
-    const storage = new R2VoiceStorage(bucket);
-    for (const row of assetsRes.rows) {
-      const key = typedRow<{ audio_object_key: string | null }>(row).audio_object_key;
-      if (!key) continue;
-      try {
-        await storage.delete(key);
-        await db.execute({
-          sql: `DELETE FROM pending_external_deletions WHERE kind = 'r2_object' AND ref = ?`,
-          args: [key],
-        });
-      } catch (err) {
-        // R2 객체 삭제 실패해도 DB 정리는 진행
-        logRouteError(c, err);
-      }
-    }
-  }
+  // R2 오브젝트 인라인 삭제는 하지 않는다 — 자산이 많으면(43개 사례) 오브젝트당 R2 delete +
+  // 큐 정리 DELETE 가 서브리퀘스트 한도를 넘겨 요청 전체가 500 났다. 트랜잭션에서 일괄 적재한
+  // pending_external_deletions 큐를 cron 드레인이 예산 가드 안에서 정리한다.
 
   if (deletedAudioUrls.length > 0) {
     const placeholders = deletedAudioUrls.map(() => '?').join(',');
