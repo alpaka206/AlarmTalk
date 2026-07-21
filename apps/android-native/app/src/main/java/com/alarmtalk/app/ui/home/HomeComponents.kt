@@ -121,8 +121,6 @@ internal fun MenuTabPanel(
     onOpenBilling: () -> Unit,
     onOpenMemberManagement: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenConsentHistory: () -> Unit,
-    onOpenOssLicenses: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -238,35 +236,7 @@ internal fun MenuTabPanel(
                 }
             }
         }
-        // 법적 정보 — 문서·동의 이력은 '약관 및 개인정보 처리 동의' 화면 한 곳에서만 연다(중복 진입점 금지).
-        Surface(
-            shape = WakerPanelShape,
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                Text(
-                    text = stringResource(R.string.menu_section_legal),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                MenuTabRow(
-                    label = stringResource(R.string.consent_screen_title),
-                    onClick = onOpenConsentHistory,
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                )
-                // 오픈소스 라이선스 — 인앱 Compose 화면(OssLicensesScreen)으로 이동.
-                MenuTabRow(
-                    label = stringResource(R.string.menu_open_source_licenses),
-                    onClick = onOpenOssLicenses,
-                )
-            }
-        }
+        // 법적 정보(약관·오픈소스)는 설정 화면 하단으로 이동 — 더보기는 핵심 항목만 남긴다.
         // 탈퇴하기 — 토스처럼 독립 카드 행. 확인 다이얼로그는 앱 레벨에서 뜬다.
         if (authSession != null) {
             Surface(
@@ -441,11 +411,11 @@ internal fun DeleteAccountConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    // 별도 제목('회원 탈퇴') 없이 안내 문장을 제목 자리에 둔다 — 문장(./?) 단위로 줄바꿈된
-    // 본문이 제목 타이포(17sp SemiBold)로 보이는 형태. message 는 쓰지 않는다.
+    // iOS 표준 구성: 질문 한 문장만 제목(17sp), 나머지 안내는 작은 설명(13sp)으로 —
+    // 세 문장을 전부 제목 타이포로 키우면 알럿이 과해 보인다(문장별 줄바꿈은 설명에 유지).
     IosAlertDialog(
-        title = stringResource(R.string.hs_delete_account_body),
-        message = null,
+        title = stringResource(R.string.hs_delete_account_title),
+        message = stringResource(R.string.hs_delete_account_body),
         onDismiss = { if (!busy) onDismiss() },
         actions = listOf(
             IosAlertAction(

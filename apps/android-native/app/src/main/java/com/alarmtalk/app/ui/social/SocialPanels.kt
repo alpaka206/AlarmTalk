@@ -151,13 +151,14 @@ internal fun FamilyConnectionPanel(
     }
 
     pendingRegisterCode?.let { code ->
+        // 질문만 제목, 부가 설명(이용 중 교체 안내)은 작은 설명으로(탈퇴 알럿과 동일 구성).
         IosAlertDialog(
-            title = if (hasActivePlan) {
+            title = stringResource(R.string.social_register_dialog_message),
+            message = if (hasActivePlan) {
                 stringResource(R.string.social_register_dialog_message_active, activePlanName)
             } else {
-                stringResource(R.string.social_register_dialog_message)
+                null
             },
-            message = null,
             onDismiss = { pendingRegisterCode = null },
             actions = listOf(
                 IosAlertAction(

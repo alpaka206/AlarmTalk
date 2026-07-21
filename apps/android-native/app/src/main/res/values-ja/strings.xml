@@ -311,7 +311,8 @@
     <string name="editorp_weather_save_button">保存</string>
     <string name="alarms_target_sheet_title">誰を起こしますか？</string>
     <string name="alarms_target_self_title">自分のアラームを設定</string>
-    <string name="hs_delete_account_body">本当に退会しますか？\n申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。\nそれまでに再ログインして退会を取り消せば復元できます。</string>
+    <string name="hs_delete_account_title">本当に退会しますか？</string>
+    <string name="hs_delete_account_body">申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。\nそれまでに再ログインして退会を取り消せば復元できます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
     <string name="hs_greeting_each_other_bottom">朝を予約しましょう</string>
     <string name="hs_greeting_each_other_top">お互いの声で</string>
@@ -398,12 +399,9 @@
     <string name="msg_alarm_copied_ten_minutes">アラームを10分後にコピーしました。%1$s</string>
     <string name="msg_alarm_copy_failed">アラームのコピーに失敗しました。</string>
     <string name="msg_alarm_delete_failed">アラームの削除に失敗しました。</string>
-    <string name="msg_alarm_deleted">アラームを削除しました。</string>
     <string name="msg_alarm_save_failed">アラームの保存に失敗しました。</string>
-    <string name="msg_alarm_saved">アラームを保存しました。%1$s</string>
     <string name="msg_alarm_toggle_failed">アラームの状態変更に失敗しました。</string>
     <string name="msg_alarm_update_failed">アラームの編集に失敗しました。</string>
-    <string name="msg_changes_saved">変更を保存しました。%1$s</string>
     <string name="msg_consent_completed">同意が完了しました。</string>
     <string name="msg_consent_record_failed">同意の記録に失敗しました。もう一度お試しください。</string>
     <string name="msg_marketing_consent_on">広告性情報の受信に同意しました。</string>
@@ -588,7 +586,7 @@
     <string name="social_regenerate_share_code_dialog_title">共有コードの再発行</string>
     <string name="social_register_button">登録</string>
     <string name="social_register_dialog_message">このコードを登録しますか？</string>
-    <string name="social_register_dialog_message_active">登録可能なコードの場合、現在の%1$sプランは終了し、新しいプランに切り替わります。\n登録しますか？</string>
+    <string name="social_register_dialog_message_active">登録可能なコードの場合、現在の%1$sプランは終了し、新しいプランに切り替わります。</string>
     <string name="social_register_other_code">別のコードを登録</string>
     <string name="social_register_will_change_plan">登録すると、現在の%1$sプランが変更されます。</string>
     <string name="social_remove_button">退出させる</string>
@@ -990,6 +988,8 @@
     <string name="r3misc_google_signin_unavailable">現在Googleログインはご利用いただけません。メールでログインしてください。</string>
     <string name="r3misc_google_signin_failed">Googleログインに失敗しました</string>
 
+    <string name="r3misc_notif_received_alarm_sent">%1$sがアラームを送りました。</string>
+    <string name="r3misc_notif_received_alarm_sent_other">相手がアラームを送りました。</string>
     <string name="r3misc_notif_received_alarm_time">%1$sに鳴ります</string>
     <string name="r3misc_notif_received_alarm_default">相手があなたのアラームを設定しました</string>
     <string name="r3misc_ringing_action_snooze">再通知</string>

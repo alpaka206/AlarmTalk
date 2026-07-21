@@ -313,7 +313,8 @@
     <string name="editorp_weather_save_button">저장</string>
     <string name="alarms_target_sheet_title">누구를 깨울까요?</string>
     <string name="alarms_target_self_title">내 알람 맞추기</string>
-    <string name="hs_delete_account_body">정말 탈퇴할까요?\n신청 후 30일이 지나면 알람, 목소리 등 모든 데이터가 영구 삭제돼요.\n그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요.</string>
+    <string name="hs_delete_account_title">정말 탈퇴할까요?</string>
+    <string name="hs_delete_account_body">신청 후 30일이 지나면 알람, 목소리 등 모든 데이터가 영구 삭제돼요.\n그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요.</string>
     <string name="hs_delete_account_confirm">탈퇴</string>
     <string name="hs_greeting_each_other_bottom">아침을 예약해요</string>
     <string name="hs_greeting_each_other_top">서로의 목소리로</string>
@@ -401,12 +402,9 @@
     <string name="msg_alarm_copied_ten_minutes">알람을 10분 뒤로 복사했어요. %1$s</string>
     <string name="msg_alarm_copy_failed">알람 복사에 실패했어요</string>
     <string name="msg_alarm_delete_failed">알람 삭제에 실패했어요</string>
-    <string name="msg_alarm_deleted">알람을 삭제했어요</string>
     <string name="msg_alarm_save_failed">알람 저장에 실패했어요</string>
-    <string name="msg_alarm_saved">알람을 저장했어요. %1$s</string>
     <string name="msg_alarm_toggle_failed">알람 상태 변경에 실패했어요</string>
     <string name="msg_alarm_update_failed">알람 수정에 실패했어요</string>
-    <string name="msg_changes_saved">변경사항을 저장했어요. %1$s</string>
     <string name="msg_consent_completed">동의가 완료됐어요</string>
     <string name="msg_consent_record_failed">동의 기록에 실패했어요. 다시 시도해 주세요</string>
     <string name="msg_marketing_consent_on">광고성 정보 수신에 동의했어요</string>
@@ -589,7 +587,7 @@
     <string name="social_regenerate_share_code_dialog_title">공유 코드 재발급</string>
     <string name="social_register_button">등록</string>
     <string name="social_register_dialog_message">이 코드를 등록할까요?</string>
-    <string name="social_register_dialog_message_active">등록 가능한 코드라면 현재 %1$s 이용권은 종료되고 새 이용권으로 바뀌어요.\n등록할까요?</string>
+    <string name="social_register_dialog_message_active">등록 가능한 코드라면 현재 %1$s 이용권은 종료되고 새 이용권으로 바뀌어요.</string>
     <string name="social_register_other_code">다른 코드 등록하기</string>
     <string name="social_register_will_change_plan">등록하면 현재 %1$s 이용권이 변경돼요.</string>
     <string name="social_remove_button">내보내기</string>
@@ -1010,6 +1008,8 @@
     <string name="r3misc_google_signin_unavailable">현재 Google 로그인을 사용할 수 없어요. 이메일로 로그인해 주세요.</string>
     <string name="r3misc_google_signin_failed">Google 로그인에 실패했어요</string>
 
+    <string name="r3misc_notif_received_alarm_sent">%1$s이 알람을 보냈어요.</string>
+    <string name="r3misc_notif_received_alarm_sent_other">상대가 알람을 보냈어요.</string>
     <string name="r3misc_notif_received_alarm_time">%1$s에 울려요</string>
     <string name="r3misc_notif_received_alarm_default">상대가 내 알람을 설정했어요</string>
     <string name="r3misc_ringing_action_snooze">다시 울리기</string>

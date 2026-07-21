@@ -202,6 +202,16 @@ internal fun RandomPromptSettingsPane(
                             selected = normalizedContext == context,
                             onClick = { selectContext(context) },
                         )
+                        // 직접 입력 문구는 요약 행에 노출하지 않는 대신, 입력 완료본을
+                        // 여기(직접 입력 항목 바로 아래)에서 보여준다.
+                        if (context == ManualMessageContext && isManual && manualText.isNotBlank()) {
+                            Text(
+                                text = manualText,
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         if (index != EditorMessageContexts.lastIndex) SnoozeOptionDivider()
                     }
                 }
@@ -289,8 +299,9 @@ internal fun RandomPromptSettingsPane(
 
     if (manualDialogOpen) {
         ManualMessageDialog(
-            initialText = manualText,
-            // 취소는 pane 에 머문다(직접 입력 선택만 남고 저장은 안 됨).
+            // 항상 빈칸으로 시작 — 이전 문구를 프리필하지 않는다(기본값 없음 규칙).
+            // 저장(확인) 없이 닫으면 입력한 내용은 그대로 폐기된다.
+            initialText = "",
             onDismiss = { manualDialogOpen = false },
             onConfirm = { text ->
                 manualDialogOpen = false

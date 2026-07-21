@@ -72,8 +72,9 @@ internal fun MainViewModel.createAlarm(
         }
         runCatching {
             repository.createAlarm(draft, replaceExisting)
-        }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_alarm_saved, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
+        }.onSuccess {
+            // 성공 토스트는 띄우지 않는다 — 저장 즉시 리스트에 행이 생기고 홈 헤더가
+            // '몇 시간 후에 울려요'를 이미 말해준다(안내 중복 소음).
             onDone()
         }.onFailure { error ->
             if (error is DuplicateAlarmTimeException) {
@@ -201,8 +202,8 @@ internal fun MainViewModel.updateAlarm(
     viewModelScope.launch {
         runCatching {
             repository.updateAlarm(alarmId, draft, replaceExisting)
-        }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_changes_saved, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
+        }.onSuccess {
+            // 생성과 동일 — 성공 토스트 생략(리스트/헤더가 결과를 보여준다).
             onDone()
         }.onFailure { error ->
             if (error is DuplicateAlarmTimeException) {
@@ -278,7 +279,7 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
         runCatching {
             repository.deleteAlarm(alarmId)
         }.onSuccess {
-            message = getApplication<Application>().getString(R.string.msg_alarm_deleted)
+            // 성공 토스트 생략 — 행이 리스트에서 사라지는 것이 곧 결과다(실패 안내만 유지).
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to delete alarm id=$alarmId", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_delete_failed))

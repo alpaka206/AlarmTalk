@@ -15,12 +15,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -471,10 +472,24 @@ internal fun SharedVoiceProfileRow(
                 if (isPlaying) {
                     PlayingEqualizer()
                 } else {
-                    Icon(
-                        Icons.Outlined.PlayArrow,
-                        contentDescription = stringResource(R.string.voicesr_play_shared_sample),
-                    )
+                    // 맨몸 벡터 대신 은은한 원형 배경 위 라운드 재생 아이콘 — 리스트에서 눌리는
+                    // 대상임이 분명해지고 기본 아이콘 티가 덜 난다.
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .background(
+                                MaterialTheme.colorScheme.secondaryContainer,
+                                androidx.compose.foundation.shape.CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Rounded.PlayArrow,
+                            contentDescription = stringResource(R.string.voicesr_play_shared_sample),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
                 }
             }
         }

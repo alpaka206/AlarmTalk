@@ -311,7 +311,8 @@
     <string name="editorp_weather_save_button">Save</string>
     <string name="alarms_target_sheet_title">Who is this alarm for?</string>
     <string name="alarms_target_self_title">Set my alarm</string>
-    <string name="hs_delete_account_body">Are you sure you want to delete your account?\n30 days after you request it, all your data—including alarms and voices—is permanently deleted.\nYou can cancel and restore it by signing back in before then.</string>
+    <string name="hs_delete_account_title">Are you sure you want to delete your account?</string>
+    <string name="hs_delete_account_body">30 days after you request it, all your data—including alarms and voices—is permanently deleted.\nYou can cancel and restore it by signing back in before then.</string>
     <string name="hs_delete_account_confirm">Delete</string>
     <string name="hs_greeting_each_other_bottom">let\'s schedule mornings</string>
     <string name="hs_greeting_each_other_top">With each other\'s voices,</string>
@@ -389,12 +390,9 @@
     <string name="msg_alarm_copied_ten_minutes">Copied the alarm 10 minutes later. %1$s</string>
     <string name="msg_alarm_copy_failed">Couldn\'t copy your alarm.</string>
     <string name="msg_alarm_delete_failed">Couldn\'t delete your alarm.</string>
-    <string name="msg_alarm_deleted">Your alarm has been deleted.</string>
     <string name="msg_alarm_save_failed">Couldn\'t save your alarm.</string>
-    <string name="msg_alarm_saved">Your alarm has been saved. %1$s</string>
     <string name="msg_alarm_toggle_failed">Couldn\'t change the alarm status.</string>
     <string name="msg_alarm_update_failed">Couldn\'t update your alarm.</string>
-    <string name="msg_changes_saved">Your changes have been saved. %1$s</string>
     <string name="msg_consent_completed">Your consent has been recorded.</string>
     <string name="msg_consent_record_failed">Couldn\'t record your consent. Please try again.</string>
     <string name="msg_marketing_consent_on">You\'ve agreed to receive marketing messages.</string>
@@ -580,7 +578,7 @@
     <string name="social_regenerate_share_code_dialog_title">Regenerate share code</string>
     <string name="social_register_button">Register</string>
     <string name="social_register_dialog_message">Register this code?</string>
-    <string name="social_register_dialog_message_active">If this code is valid, your current %1$s plan will end and switch to the new plan.\nRegister?</string>
+    <string name="social_register_dialog_message_active">If this code is valid, your current %1$s plan will end and switch to the new plan.</string>
     <string name="social_register_other_code">Register another code</string>
     <string name="social_register_will_change_plan">Registering will change your current %1$s plan.</string>
     <string name="social_remove_button">Remove</string>
@@ -982,6 +980,8 @@ for a smooth and secure experience.</string>
     <string name="r3misc_google_signin_unavailable">Google sign-in isn\'t available right now. Please sign in with your email.</string>
     <string name="r3misc_google_signin_failed">Google sign-in failed</string>
 
+    <string name="r3misc_notif_received_alarm_sent">%1$s sent you an alarm.</string>
+    <string name="r3misc_notif_received_alarm_sent_other">Someone sent you an alarm.</string>
     <string name="r3misc_notif_received_alarm_time">Rings at %1$s</string>
     <string name="r3misc_notif_received_alarm_default">Your friend set an alarm for you</string>
     <string name="r3misc_ringing_action_snooze">Snooze</string>

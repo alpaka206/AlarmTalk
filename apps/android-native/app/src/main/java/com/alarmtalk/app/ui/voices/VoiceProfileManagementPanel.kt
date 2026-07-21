@@ -30,8 +30,8 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -1806,9 +1806,9 @@ internal fun VoiceProfileManagementPanel(
                                                         } else {
                                                             Icon(
                                                                 imageVector = if (confirmPreviewPlaying) {
-                                                                    Icons.Outlined.Stop
+                                                                    Icons.Rounded.Stop
                                                                 } else {
-                                                                    Icons.Outlined.PlayArrow
+                                                                    Icons.Rounded.PlayArrow
                                                                 },
                                                                 contentDescription = stringResource(R.string.voices_confirm_new_preview),
                                                                 tint = MaterialTheme.colorScheme.primary,

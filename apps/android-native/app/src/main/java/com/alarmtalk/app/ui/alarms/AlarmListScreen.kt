@@ -17,10 +17,6 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
@@ -37,20 +33,9 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoucherItem
 
-// 로그인 배경(AuthBackdrop)의 딥 네이비 감성을 탭 화면 전체에 가져온다 — 라이트/다크 두 버전.
-// 알람 홈에만 깔면 탭 전환(알람↔목소리↔더보기)마다 배경 분위기가 뚝 바뀌어 어색해서,
-// 같은 그라데이션을 모든 탭에 깔아 앱을 한 공간으로 묶는다.
-// 생 Color 리터럴은 로그인/랜딩과 같은 '브랜드 비주얼' 예외(CLAUDE.md 색 토큰 규약의 문서화된 예외).
-private val HomeGradientDark = Brush.verticalGradient(
-    0f to Color(0xFF1A2A52),
-    0.55f to Color(0xFF0E1938),
-    1f to Color(0xFF070C1D),
-)
-private val HomeGradientLight = Brush.verticalGradient(
-    0f to Color(0xFFF4F7FD),
-    0.5f to Color(0xFFDBE6F7),
-    1f to Color(0xFFBED2EF),
-)
+// 홈 그라데이션(로그인 딥 네이비 감성)의 단일 출처는 WakerDesign.kt 의
+// HomeGradientDark/Light·homeGradientBrush() — 모든 탭과 설정/구성원 관리/약관 동의 등
+// 하위 전체화면이 같은 브러시를 써서 화면 전환 시 배경 톤이 튀지 않는다.
 
 @Composable
 internal fun AlarmListScreen(
@@ -107,8 +92,6 @@ internal fun AlarmListScreen(
     onCreateAlarm: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenMemberManagement: () -> Unit,
-    onOpenConsentHistory: () -> Unit,
-    onOpenOssLicenses: () -> Unit,
     onDeleteAccount: () -> Unit,
     themeMode: ThemeMode,
     onChangeTheme: (ThemeMode) -> Unit,
@@ -132,12 +115,7 @@ internal fun AlarmListScreen(
 
     val listState = rememberLazyListState()
 
-    // 그라데이션 명암은 시스템 값이 아니라 앱이 실제 쓰는 테마(현재 컬러스킴)에 맞춘다.
-    val homeGradient = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
-        HomeGradientDark
-    } else {
-        HomeGradientLight
-    }
+    val homeGradient = homeGradientBrush()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -157,7 +135,8 @@ internal fun AlarmListScreen(
             // 알람 탭은 우하단 FAB(＋)가 마지막 알람 행을 가리지 않게 하단 여유를 더 준다.
             bottom = if (selectedTab == NativeTab.Alarms) 96.dp else 32.dp,
         ),
-        verticalArrangement = Arrangement.spacedBy(if (selectedTab == NativeTab.Alarms) 14.dp else 16.dp),
+        // 카드/행 간 간격도 전 화면 16dp 로 통일.
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         when (selectedTab) {
             NativeTab.Voices -> {
@@ -264,8 +243,6 @@ internal fun AlarmListScreen(
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         onOpenMemberManagement = onOpenMemberManagement,
                         onOpenSettings = onOpenSettings,
-                        onOpenConsentHistory = onOpenConsentHistory,
-                        onOpenOssLicenses = onOpenOssLicenses,
                         onDeleteAccount = onDeleteAccount,
                     )
                 }

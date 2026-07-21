@@ -3,7 +3,6 @@ package com.alarmtalk.app
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -14,17 +13,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -56,22 +52,29 @@ import androidx.compose.ui.window.DialogProperties
 import java.util.Locale
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 
+// 더보기(MenuTabPanel) 패널과 같은 시각 규격: 제목을 카드 '안'에 넣은 패널 카드 +
+// 텍스트/값/셰브론 행(높이 52·수평 12). 화면마다 카드/행 간격이 달라 보이던 문제의 단일 출처.
 @Composable
 internal fun SettingsCard(
     title: String?,
     content: @Composable () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (title != null) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp),
-            )
-        }
-        OutlinedCard {
-            Column { content() }
+    Surface(
+        shape = WakerPanelShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            if (title != null) {
+                Text(
+                    text = title,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            content()
         }
     }
 }
@@ -85,27 +88,31 @@ internal fun SettingsRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 52.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
             modifier = Modifier.weight(1f),
         )
         if (value != null) {
             Text(
                 text = value,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 4.dp),
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
             )
         }
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
+            modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -114,10 +121,10 @@ internal fun SettingsRow(
 // 날씨 지역 다이얼로그는 편집기 문구 pane 의 WeatherLocationDialog(AlarmRandomPromptSettings.kt)
 // 를 공유한다 — 설정 전용 사본(저장 아이콘 포함)은 중복이라 제거했다.
 
-// 도시 선택 필드 — 로케일별 프리셋을 드롭다운으로 고르고, 맨 위 '직접 입력'을 고르면
-// 자유 입력 필드가 열린다. 프리셋이 없는 로케일(예: 영어)은 자유 입력만 보여준다.
+// 도시 선택 — 드롭다운 대신 프리셋 도시 칩 그리드(+ '직접 입력' 칩). 한 번의 탭으로 끝나고
+// 선택 상태가 바로 보인다. 프리셋이 없는 로케일(예: 영어)은 자유 입력만 보여준다.
 // 나라 입력은 없다 — 도시명만으로 백엔드(Gemini)가 지역을 판별한다.
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun WeatherCityPickerField(
     city: String,
@@ -151,57 +158,75 @@ internal fun WeatherCityPickerField(
 
     val customLabel = stringResource(R.string.hs_weather_city_custom)
     var customMode by remember { mutableStateOf(city.isNotBlank() && city !in presetCities) }
-    var expanded by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = it },
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedTextField(
-                value = if (customMode) customLabel else city,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text(stringResource(R.string.hs_weather_city_label)) },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                singleLine = true,
-                isError = cityError && !customMode,
-                supportingText = {
-                    if (cityError && !customMode) Text(stringResource(R.string.hs_weather_field_required))
-                },
-                shape = WakerInputShape,
-                colors = wakerOutlinedTextFieldColors(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-            )
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-            ) {
-                DropdownMenuItem(
-                    text = { Text(customLabel) },
+            presetCities.forEach { preset ->
+                CityChoiceChip(
+                    label = preset,
+                    selected = !customMode && city == preset,
                     onClick = {
-                        customMode = true
-                        onCityChange("")
-                        expanded = false
+                        customMode = false
+                        onCityChange(preset)
                     },
                 )
-                presetCities.forEach { preset ->
-                    DropdownMenuItem(
-                        text = { Text(preset) },
-                        onClick = {
-                            customMode = false
-                            onCityChange(preset)
-                            expanded = false
-                        },
-                    )
-                }
             }
+            CityChoiceChip(
+                label = customLabel,
+                selected = customMode,
+                onClick = {
+                    customMode = true
+                    onCityChange("")
+                },
+            )
+        }
+        if (cityError && !customMode) {
+            Text(
+                text = stringResource(R.string.hs_weather_field_required),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
         if (customMode) {
             manualField(showError = cityError)
         }
+    }
+}
+
+// 도시 칩 — 운세 성별 칩(GenderChoice)과 같은 시각 언어(선택=primaryContainer, 굵은 보더).
+@Composable
+private fun CityChoiceChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = WakerChipShape,
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        ),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
     }
 }
 

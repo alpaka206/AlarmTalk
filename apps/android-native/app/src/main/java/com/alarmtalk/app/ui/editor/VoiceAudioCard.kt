@@ -24,10 +24,10 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -587,8 +587,9 @@ internal fun MessageModeSummaryRow(
     onClick: () -> Unit,
 ) {
     val valueLabel = when {
-        // 직접 입력이면 입력한 문구를 그대로 보여준다(비었으면 '직접 입력').
-        isManual -> manualText.ifBlank { stringResource(R.string.editor_msg_mode_manual) }
+        // 직접 입력은 문구 내용을 요약 행에 노출하지 않는다 — 값은 '직접 입력'으로만 표기하고,
+        // 입력한 문구는 문구 설정 pane 안(직접 입력 항목 아래)에서 확인한다.
+        isManual -> stringResource(R.string.editor_msg_mode_manual)
         // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
         normalizedRandomPromptContext(randomContext) == DefaultRandomPromptContext ->
             stringResource(R.string.editor_msg_mode_preset)
@@ -660,7 +661,7 @@ private fun RecordedPlaybackControls(
                 ),
             ) {
                 Icon(
-                    imageVector = if (isPreviewActive) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                    imageVector = if (isPreviewActive) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
                     contentDescription = stringResource(
                         if (isPreviewActive) R.string.editor_audio_preview_stop else R.string.editor_audio_preview_play,
                     ),
