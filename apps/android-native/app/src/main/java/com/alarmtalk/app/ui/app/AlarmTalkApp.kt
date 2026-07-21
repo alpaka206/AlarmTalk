@@ -806,6 +806,7 @@ internal fun AlarmTalkApp(
                       onGenerateTts = viewModel::generateTtsAudio,
                       onLoadManualQuota = viewModel::loadManualQuota,
                       onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
+                      onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
@@ -845,6 +846,7 @@ internal fun AlarmTalkApp(
                           onGenerateTts = viewModel::generateTtsAudio,
                           onLoadManualQuota = viewModel::loadManualQuota,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
+                          onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
                           onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                           onSave = { draft ->
                               if (!permissions.alarmReady) {

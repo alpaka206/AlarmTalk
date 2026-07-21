@@ -127,6 +127,10 @@ internal fun AlarmEditorScreen(
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     onLoadManualQuota: (suspend () -> ManualQuotaResponse?)? = null,
     onDownloadStockAudio: suspend (String) -> TtsMessageAudioResponse,
+    // 제한(날씨+약) 보이스를 편집기에서 고른 순간 그 보이스의 버킷 클립 전체를 백그라운드
+    // 프리페치한다 — 기본 목소리 변경 시 프리페치(setDefaultVoice)와 같은 경로. 이미 캐시된
+    // 클립은 건너뛰므로 반복 호출해도 재다운로드는 없다.
+    onPrefetchRestrictedVoiceClips: (String) -> Unit = {},
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onSave: (AlarmDraft) -> Unit,
 ) {
@@ -826,6 +830,15 @@ internal fun AlarmEditorScreen(
                 editor.voiceTranslationEnabled = automaticTranslation
                 if (!editor.voiceRandomPrompt) editor.clearTtsMeta()
             }
+        }
+    }
+
+    // 제한 보이스 선택 시 버킷 클립 프리페치 — 편집 중 문구를 고르거나 저장할 때 11개를
+    // 그 자리에서 받는 대신, 보이스를 고른 순간부터 백그라운드로 받아 둔다(캐시분 스킵).
+    LaunchedEffect(editor.voiceProfileId, restrictToWeatherMedication) {
+        val profileId = editor.voiceProfileId
+        if (restrictToWeatherMedication && !profileId.isNullOrBlank()) {
+            onPrefetchRestrictedVoiceClips(profileId)
         }
     }
 
