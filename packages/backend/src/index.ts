@@ -4,7 +4,11 @@ import type { Env, AppEnv } from './types';
 import { authMiddleware } from './middleware/auth';
 import { consentMiddleware } from './middleware/consent';
 import { loggerMiddleware } from './middleware/logger';
-import { rateLimitMiddleware, authRateLimitMiddleware } from './middleware/rateLimit';
+import {
+  rateLimitMiddleware,
+  ipRateLimitMiddleware,
+  authRateLimitMiddleware,
+} from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
@@ -42,8 +46,9 @@ app.use('*', sentryMiddleware);
 // Structured request logging
 app.use('*', loggerMiddleware);
 
-// Rate limiting (per-isolate sliding window, 60 req/min)
-app.use('*', rateLimitMiddleware);
+// Rate limiting — 인증 전 전역은 IP 버킷(느슨, NAT 공유 대비), 인증 후 api 는 사용자
+// 버킷(아래 api.use). prefix 분리로 같은 요청이 두 버킷에 이중 카운트되지 않는다.
+app.use('*', ipRateLimitMiddleware);
 
 // Body size limit (512 KB)
 app.use('*', bodyLimitMiddleware);
