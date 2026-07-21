@@ -170,10 +170,11 @@ internal fun SettingsScreen(
     }
 
     if (showWeatherLocationDialog) {
-        WeatherLocationPreferenceDialog(
+        // 편집기 문구 pane 과 같은 다이얼로그를 공유한다(제목·필드·저장 버튼 동일).
+        WeatherLocationDialog(
             country = promptPreferences.weatherCountry,
             city = promptPreferences.weatherCity,
-            onDismiss = { showWeatherLocationDialog = false },
+            onDismissWithoutSave = { showWeatherLocationDialog = false },
             onConfirm = { country, city ->
                 promptPreferenceStore.saveWeatherLocation(country, city)
                 promptPreferences = promptPreferenceStore.read()

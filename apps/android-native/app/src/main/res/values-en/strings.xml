@@ -378,7 +378,6 @@
     <string name="hs_theme_system_title">System</string>
     <string name="hs_weather_city_label">City</string>
     <string name="hs_weather_city_placeholder">e.g. Seoul</string>
-    <string name="hs_weather_dialog_title">Weather region</string>
     <string name="hs_weather_city_custom">Enter manually</string>
     <string-array name="hs_weather_preset_cities" />
     <string name="hs_weather_field_required">This field is required.</string>

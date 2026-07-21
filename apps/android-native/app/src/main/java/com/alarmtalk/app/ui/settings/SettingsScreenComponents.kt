@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -113,61 +111,8 @@ internal fun SettingsRow(
     }
 }
 
-@Composable
-internal fun WeatherLocationPreferenceDialog(
-    country: String,
-    city: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit,
-) {
-    var draftCity by remember(city) { mutableStateOf(city) }
-    var submitted by remember { mutableStateOf(false) }
-    val cityError = submitted && draftCity.isBlank()
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .widthIn(max = 430.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                ModalDialogTitle(stringResource(R.string.hs_weather_dialog_title), onDismiss = onDismiss)
-                WeatherCityPickerField(
-                    city = draftCity,
-                    cityError = cityError,
-                    onCityChange = { draftCity = it },
-                )
-                Spacer(Modifier.height(6.dp))
-                Button(
-                    onClick = {
-                        submitted = true
-                        if (draftCity.isNotBlank()) {
-                            onConfirm(country.trim(), draftCity.trim())
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Icon(Icons.Outlined.Save, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.hs_save))
-                }
-            }
-        }
-    }
-}
+// 날씨 지역 다이얼로그는 편집기 문구 pane 의 WeatherLocationDialog(AlarmRandomPromptSettings.kt)
+// 를 공유한다 — 설정 전용 사본(저장 아이콘 포함)은 중복이라 제거했다.
 
 // 도시 선택 필드 — 로케일별 프리셋을 드롭다운으로 고르고, 맨 위 '직접 입력'을 고르면
 // 자유 입력 필드가 열린다. 프리셋이 없는 로케일(예: 영어)은 자유 입력만 보여준다.

@@ -380,7 +380,6 @@
     <string name="hs_theme_system_title">시스템</string>
     <string name="hs_weather_city_label">도시</string>
     <string name="hs_weather_city_placeholder">예: 서울</string>
-    <string name="hs_weather_dialog_title">날씨 지역</string>
     <string name="hs_weather_field_required">꼭 입력해 주세요.</string>
     <string name="hs_weather_city_custom">직접 입력</string>
     <string-array name="hs_weather_preset_cities">

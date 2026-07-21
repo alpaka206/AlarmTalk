@@ -378,7 +378,6 @@
     <string name="hs_theme_system_title">システム</string>
     <string name="hs_weather_city_label">都市</string>
     <string name="hs_weather_city_placeholder">例：東京</string>
-    <string name="hs_weather_dialog_title">天気の地域</string>
     <string name="hs_weather_city_custom">直接入力</string>
     <string-array name="hs_weather_preset_cities">
         <item>東京</item>
