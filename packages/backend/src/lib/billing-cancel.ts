@@ -96,40 +96,17 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
 }
 
 /**
- * 보관 유예가 끝난(delete_after 경과) 사용자들의 유료 음성 데이터를 삭제한다.
- * cron(processSubscriptionExpiry 말미)에서 호출. 사용자별 트랜잭션으로 처리해
- * 한 명 실패가 나머지를 막지 않게 한다.
+ * 만료된(delete_after 경과) 유료 음성 보관 행을 거둔다.
+ * 정책 변경: 무료 전환 시 유료 음성 데이터를 더 이상 삭제하지 않는다 — 데이터는 그대로 보존하고
+ * 무료인 동안 사용을 잠글 뿐이며, 다시 유료가 되면 그대로 풀린다(잠금은 users.plan 에서 파생).
+ * 그래서 이 스윕은 하드삭제를 하지 않고, 유예가 지난 보관 행만 정리하는 청소부로 남는다.
+ * (계정 삭제 같은 명시 경로는 여전히 deletePaidVoiceDataForUser 로 직접 삭제한다.)
  */
 export async function sweepPaidVoiceRetention(db: Client, now: Date = new Date()): Promise<void> {
-  const dueRes = await db.execute({
-    sql: `SELECT user_id FROM paid_voice_retention WHERE delete_after <= ?`,
+  await db.execute({
+    sql: `DELETE FROM paid_voice_retention WHERE delete_after <= ?`,
     args: [now.toISOString()],
   });
-  for (const row of dueRes.rows) {
-    const userPk = String(row.user_id);
-    await withWriteTransaction(db, async (tx) => {
-      // 경합 하드닝: delete_after 조건을 다시 걸어 보관 행을 트랜잭션 안에서 선점 삭제한다.
-      // 위 목록 조회와 이 트랜잭션 사이에 재해지/연장으로 delete_after 가 미래로 밀렸다면
-      // rowsAffected=0 → 유예가 아직 남아 있으므로 음성 삭제를 스킵한다(다음 run 재평가).
-      const claimed = await tx.execute({
-        sql: `DELETE FROM paid_voice_retention WHERE user_id = ? AND delete_after <= ?`,
-        args: [userPk, now.toISOString()],
-      });
-      if (claimed.rowsAffected === 0) return;
-      // 재구독 안전망: 어떤 경로로든(스토어/바우처/프로모) 유료 구독이 되살아났는데
-      // 보관 행 해제가 누락됐다면, 음성은 삭제하지 않고 행만 거둔다.
-      const activeRes = await tx.execute({
-        sql: `SELECT s.id FROM subscriptions s JOIN plans p ON p.id = s.plan_id
-              WHERE s.user_id = ? AND s.status = 'active'
-                AND p.plan_type IN ('personal', 'family')
-              LIMIT 1`,
-        args: [userPk],
-      });
-      if (activeRes.rows.length === 0) {
-        await deletePaidVoiceDataForUser(tx, userPk, await resolveUserLoginId(tx, userPk));
-      }
-    });
-  }
 }
 
 export async function downgradeUserToFree(

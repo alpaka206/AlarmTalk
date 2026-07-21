@@ -32,6 +32,8 @@ class AlarmRepository(
     private val context: Context,
     // /holiday 는 인증이 필요 없어 토큰 없이 새 클라이언트를 생성한다(다른 워커와 동일).
     private val holidayApiProvider: () -> HolidayApi = { AlarmTalkApiClient.create() },
+    // 현재 로그인 계정 id(없으면 null). 알람 생성 시 소유자 기록·무료 잠금 스코프에 쓴다.
+    private val currentUserIdProvider: () -> String? = { null },
 ) {
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -39,6 +41,8 @@ class AlarmRepository(
         alarmScheduler = alarmScheduler,
         alarmAudioStore = alarmAudioStore,
         context = context,
+        // 받은 알람에 수신자(현재 로그인 계정)를 소유자로 기록해 무료 잠금/복원을 스코프한다.
+        currentUserIdProvider = currentUserIdProvider,
     )
 
     fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
@@ -93,6 +97,7 @@ class AlarmRepository(
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
+            ownerUserId = currentUserIdProvider(),
             alarmVolumePercent = 100,
             alarmSoundUri = null,
             alarmSoundLabel = null,
@@ -170,6 +175,7 @@ class AlarmRepository(
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
+            ownerUserId = currentUserIdProvider(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
             alarmSoundLabel = draft.alarmSoundLabel,
@@ -273,6 +279,12 @@ class AlarmRepository(
             bucketClipTextsJson = draft.bucketClipTextsJson,
             contextVariantIndex = weatherVariantState.index,
             contextResolvedAtMillis = weatherVariantState.resolvedAtMillis,
+            // 명시적 편집은 사용자의 최신 재생모드 의도를 확정하므로 무료 잠금 스냅샷을 비운다.
+            // 안 그러면 잠긴 알람을 사운드온리로 편집·저장해도 옛 목소리 모드가 preLockPlayMode 에
+            // 남아, 재구독 시 unlockPaidAlarmTalks 가 사용자의 편집을 덮어써 목소리로 되살린다.
+            // 무료 상태로 남아 편집 결과가 여전히 유료 목소리면, 다음 앱 시작의 재잠금이 실제
+            // playMode 기준으로 올바른 새 스냅샷을 다시 만든다.
+            preLockPlayMode = null,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
@@ -434,23 +446,72 @@ class AlarmRepository(
         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
     }
 
-    suspend fun deletePaidAlarmTalks(): Int {
-        val targets = alarmDao.getAllAlarms().filter { alarm ->
+    /**
+     * 무료 전환 시 유료 목소리 알람을 삭제하지 않고 사운드온리로 '잠근다'. 원래 재생모드를
+     * preLockPlayMode 에 보관하고 playMode 를 ALARM_ONLY 로 내려, RingingService 가 목소리 대신
+     * 기본 알람음을 재생하게 한다. 캐시 오디오·목소리 참조는 그대로 보존해 재유료 시 복원한다.
+     * 로컬만 갱신(upsertPreservingServerSyncFields)해 서버의 원본 목소리 알람은 백스톱으로 남긴다.
+     */
+    suspend fun lockPaidAlarmTalks(): Int {
+        val currentUser = currentUserIdProvider() ?: return 0
+        val now = System.currentTimeMillis()
+        var lockedCount = 0
+        alarmDao.getAllAlarms().forEach { alarm ->
             val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
                 !alarm.localAudioUri.isNullOrBlank() ||
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
-            usesVoice && !alarm.usesFreeSystemVoiceAlarm()
+            if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) return@forEach
+            // 다른 계정이 소유한(ownerUserId 불일치) 알람은 건드리지 않는다. 소유자 미기록(레거시 null)
+            // 음성 알람은 현재 활성 계정으로 소유권을 backfill 한다 — 잠금 시점에 소유자를 확정해,
+            // 복원은 엄격히 ownerUserId 일치만 보고도 (1) 본인이 재유료 시 복원 가능(영구잠금 방지),
+            // (2) 같은 기기의 다른 계정이 남의 잠긴 알람을 복원·스케줄하지 못하게 한다. 이미 잠긴
+            // 레거시 행(구버전에서 소유자 없이 잠김)도 여기서 소유권만 backfill 해 복원 가능하게 만든다.
+            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) return@forEach
+            val needsLock = alarm.preLockPlayMode == null
+            val needsClaim = alarm.ownerUserId == null
+            if (!needsLock && !needsClaim) return@forEach
+            val updated = alarm.copy(
+                preLockPlayMode = if (needsLock) alarm.playMode else alarm.preLockPlayMode,
+                playMode = if (needsLock) AlarmPlayModes.ALARM_ONLY else alarm.playMode,
+                ownerUserId = currentUser,
+                updatedAtMillis = now,
+            )
+            // 새로 잠근 경우에만 재스케줄(사운드온리로). 소유권만 backfill 한 경우는 재생모드 불변이라 불필요.
+            if (updated.enabled && needsLock) alarmScheduler.schedule(updated)
+            alarmDao.upsertPreservingServerSyncFields(updated)
+            if (needsLock) lockedCount++
+        }
+        if (lockedCount > 0) {
+            Log.i(TAG, "Locked paid voice alarms on free plan count=$lockedCount")
+        }
+        return lockedCount
+    }
+
+    /**
+     * 다시 유료가 되면 잠근 알람의 원래 재생모드를 복원한다. 로컬 알람은 로그아웃 후에도 남으므로,
+     * 현재 세션이 소유한(ownerUserId 일치) 잠긴 알람만 복원한다 — 다른 계정으로 로그인해 유료가 돼도
+     * 남의 잠긴 목소리 알람이 복원돼 울리지 않게 한다. 잠금 시점에 소유자를 backfill 하므로(위
+     * lockPaidAlarmTalks), 잠긴 행은 항상 소유자가 있어 여기서 null 을 허용할 필요가 없다 — 엄격히
+     * ownerUserId 일치만 본다(null 허용 시 다른 계정이 레거시 잠금을 복원·스케줄하는 크로스계정 창).
+     */
+    suspend fun unlockPaidAlarmTalks(): Int {
+        val currentUser = currentUserIdProvider() ?: return 0
+        val targets = alarmDao.getAllAlarms().filter {
+            !it.preLockPlayMode.isNullOrBlank() && it.ownerUserId == currentUser
         }
         targets.forEach { alarm ->
-            alarmScheduler.cancel(alarm.id)
-            val cacheKey = alarm.audioCacheKey
-            alarmDao.delete(alarm)
-            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+            val restored = alarm.copy(
+                playMode = alarm.preLockPlayMode ?: alarm.playMode,
+                preLockPlayMode = null,
+                updatedAtMillis = System.currentTimeMillis(),
+            )
+            if (restored.enabled) alarmScheduler.schedule(restored)
+            alarmDao.upsertPreservingServerSyncFields(restored)
         }
         if (targets.isNotEmpty()) {
-            Log.i(TAG, "Deleted paid voice alarms after free-plan downgrade count=${targets.size}")
+            Log.i(TAG, "Restored paid voice alarms after re-subscription count=${targets.size}")
         }
         return targets.size
     }
@@ -483,6 +544,11 @@ class AlarmRepository(
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
             origin = AlarmOrigins.LOCAL_OWNED,
+            ownerUserId = currentUserIdProvider(),
+            // 복사는 새 알람 생성이므로 원본의 무료 잠금 스냅샷을 물려받지 않는다(잠기지 않은 상태로
+            // 시작). 무료 사용자가 잠긴 알람을 복사하면 playMode 는 이미 ALARM_ONLY 라 사운드온리로
+            // 복사되고, 잠금이 필요하면 다음 앱 시작의 재잠금이 새 스냅샷을 만든다.
+            preLockPlayMode = null,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,

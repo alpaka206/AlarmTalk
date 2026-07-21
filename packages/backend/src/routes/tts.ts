@@ -14,6 +14,7 @@ import {
   normalizeSynthesisLanguage,
   UnsupportedVoiceProviderError,
 } from '../lib/voice-provider';
+import { recloneEvictedVoiceProfile } from '../lib/voice-recover';
 import {
   DynamicAlarmTextGenerationInvalidError,
   AlarmTextPreparationInvalidError,
@@ -31,6 +32,7 @@ import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import {
   CLONE_CLIP_SEEDS,
   CLONE_WEATHER_CONDITIONS,
+  FREE_BUCKET_CATEGORIES,
   STOCK_GREETING_CATEGORY,
 } from '../lib/stock-clips';
 import {
@@ -824,38 +826,57 @@ tts.post('/generate', async (c) => {
     // 생성 실패(Vertex 미설정/모델 오류) 시의 폴백 문구가 된다.
     requestText = presetTextWithListenerTitle(requestText, listenerTitle);
   }
-  if (freePlanRestricted) {
-    if (!isSystemVoice) {
-      return c.json(
-        {
-          error: 'Voice features require a paid plan.',
-          error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
-        },
-        403,
-      );
-    }
-    // 커스텀 텍스트·동적(날씨/운세) 문구·번역은 매번 생성 비용이 들어 유료 전용.
+  // F2: 기본(시스템) 목소리는 요금제와 무관하게 무료처럼 '프리셋(날씨/약)'만 허용한다.
+  // 커스텀 텍스트·운세/날씨 동적 생성·번역은 유료 '커스텀 클론' 전용이므로, 기본 목소리를
+  // 고른 유료 사용자도 무료와 동일하게 제한한다(→ 그만큼 커스텀 클론 슬롯 공간을 아낀다).
+  const presetOnlyRestricted = freePlanRestricted || isSystemVoice;
+  // 무료 플랜은 시스템 스톡 보이스만 쓸 수 있다(커스텀 클론 불가). 시스템 보이스면 통과.
+  if (freePlanRestricted && !isSystemVoice) {
+    return c.json(
+      {
+        error: 'Voice features require a paid plan.',
+        error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+      },
+      403,
+    );
+  }
+  if (presetOnlyRestricted) {
+    // 무료는 기존 코드 유지, 기본 목소리(유료+시스템)는 별도 코드로 구분.
+    const presetOnlyCode = freePlanRestricted ? 'FREE_PLAN_PRESET_ONLY' : 'BASIC_VOICE_PRESET_ONLY';
+    // 커스텀 텍스트·동적(날씨/운세) 문구·번역은 매번 생성 비용이 들어 유료 커스텀 클론 전용.
     if (!randomRequested || randomContext !== 'preset' || body.translate === true) {
       return c.json(
         {
-          error: 'Free plan supports preset phrases with stock voices only.',
-          error_code: 'FREE_PLAN_PRESET_ONLY',
+          error: 'This voice supports preset phrases only.',
+          error_code: presetOnlyCode,
         },
         403,
       );
     }
-    // 암묵적 번역 우회 차단: 프리셋 문구는 여기서 이미 확정(604-606)되므로 source 언어를
-    // 산정할 수 있다. 요청 언어가 source 와 다르면 아래 shouldTranslate(773-775)의
-    // `randomRequested && requestedLanguage !== sourceLanguage` 분기가 켜져 유료 번역
-    // 경로(prepareAlarmTextWithVertex translate:true)로 새어 나간다. translate===true 와
-    // 동일하게 차단해 무료 프리셋 요청이 번역을 절대 호출하지 못하게 한다.
+    // F2: 기본 목소리(=무료 버킷)는 날씨·약만 허용한다. love 만 막던 블랙리스트로는
+    // morning/health/exercise 등 다른 프리셋 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
+    // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES = weather, medication) 화이트리스트로 바꿔 그 외
+    // 카테고리를 전부 차단한다(날씨 동적은 위 randomContext!=='preset' 에서 이미 걸리므로, 실제
+    // 프리셋 경로로 통과하는 건 medication 뿐). 무료 플랜도 동일 버킷이라 함께 조인다.
+    if (!FREE_BUCKET_CATEGORIES.includes(category)) {
+      return c.json(
+        {
+          error: 'This voice supports weather and medication phrases only.',
+          error_code: presetOnlyCode,
+        },
+        403,
+      );
+    }
+    // 암묵적 번역 우회 차단: 프리셋 문구는 여기서 이미 확정되므로 source 언어를 산정할 수 있다.
+    // 요청 언어가 source 와 다르면 아래 shouldTranslate 분기가 켜져 유료 번역 경로로 새어 나간다.
+    // translate===true 와 동일하게 차단해 프리셋 요청이 번역을 절대 호출하지 못하게 한다.
     const requestedLanguageForGate = normalizeSynthesisLanguage(body.language);
     const sourceLanguageForGate = inferSynthesisLanguage(requestText, 'ko');
     if (requestedLanguageForGate !== sourceLanguageForGate) {
       return c.json(
         {
-          error: 'Free plan supports preset phrases with stock voices only.',
-          error_code: 'FREE_PLAN_PRESET_ONLY',
+          error: 'This voice supports preset phrases only.',
+          error_code: presetOnlyCode,
         },
         403,
       );
@@ -1140,40 +1161,72 @@ tts.post('/generate', async (c) => {
     // 오버라이드하므로 캐시 키도 다른 모드와 자연히 분리된다.
     const dynamicVoiceSettings =
       randomRequested && randomContext === 'sleep' ? { speed: 0.95 } : undefined;
-    const attempts = createSynthesisAttempts({
-      env: c.env,
-      profile: {
-        elevenlabs_voice_id: vp.elevenlabs_voice_id as string | null | undefined,
-      },
-      text: synthesisText,
-      language: synthesisLanguage,
-      category,
-      voiceSettings: dynamicVoiceSettings,
-    });
+    const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
+      const attempts = createSynthesisAttempts({
+        env: c.env,
+        profile: {
+          elevenlabs_voice_id: voiceIdForSynthesis,
+        },
+        text: synthesisText,
+        language: synthesisLanguage,
+        category,
+        voiceSettings: dynamicVoiceSettings,
+      });
+      return Promise.all(
+        attempts.map(async (attempt) => {
+          const cacheKey = await computeTtsCacheKey({
+            provider: attempt.provider,
+            providerVoiceId: attempt.providerVoiceId,
+            voiceProfileId: body.voice_profile_id,
+            modelId: attempt.modelId,
+            language: synthesisLanguage,
+            languageCode: synthesisLanguage,
+            text: synthesisText,
+            outputFormat: attempt.outputFormat,
+            voiceSettings: attempt.voiceSettings,
+          });
+          return { attempt, cacheKey };
+        }),
+      );
+    };
 
-    if (attempts.length === 0) {
+    // F3: 이 프로필이 슬롯 상한(F1)으로 evict돼 provider 보이스가 없으면(elevenlabs_voice_id NULL
+    // + evicted_at 세팅) 곧바로 재클론하지 않는다 — 캐시 키는 provider voice id 를 포함하므로,
+    // evict 직전 id(evicted_provider_voice_id)로 캐시를 먼저 프로브해 보관 오디오가 있으면 재클론
+    // 없이 그대로 서빙한다(불필요한 외부 등록·연쇄 eviction 방지, Codex #602). 캐시 미스가 확정된
+    // 뒤(아래, 합성 직전)에만 R2 원본으로 재클론한다. 위 게이트에서 소유자(비공유 클론=caller
+    // 본인)의 민감 동의를 이미 검증했고, 재클론 직전 소유자 동의 재검증도 lib 안에서 수행된다.
+    // 시스템 보이스는 evict 대상이 아니다.
+    const recloneIfEvicted = async (): Promise<string | undefined> => {
+      try {
+        return (
+          (await recloneEvictedVoiceProfile(c.env, db, body.voice_profile_id, String(vp.name ?? ''))) ??
+          undefined
+        );
+      } catch (recloneErr) {
+        // 재클론 실패(일시적 공급자 오류 등)가 합성 요청 전체를 500 으로 만들지 않게 —
+        // 미복구 시 NO_VOICE_ID 경로가 클라에 재등록을 안내한다.
+        console.error('[tts/generate] evicted voice reclone failed', recloneErr);
+        return undefined;
+      }
+    };
+    let providerVoiceId = vp.elevenlabs_voice_id as string | null | undefined;
+    const isEvictedWithoutVoice = !providerVoiceId && Boolean(vp.evicted_at);
+    const evictedProbeVoiceId = isEvictedWithoutVoice
+      ? ((vp.evicted_provider_voice_id as string | null | undefined) ?? null)
+      : null;
+    if (isEvictedWithoutVoice && !evictedProbeVoiceId) {
+      // 프로브할 옛 id 가 없는 evict 행(마이그레이션 76 이전 evict 분) — 기존처럼 즉시 재클론.
+      providerVoiceId = await recloneIfEvicted();
+    }
+
+    let preparedAttempts = await buildPreparedAttempts(providerVoiceId ?? evictedProbeVoiceId);
+    if (preparedAttempts.length === 0) {
       return c.json(
         { error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' },
         400,
       );
     }
-
-    const preparedAttempts = await Promise.all(
-      attempts.map(async (attempt) => {
-        const cacheKey = await computeTtsCacheKey({
-          provider: attempt.provider,
-          providerVoiceId: attempt.providerVoiceId,
-          voiceProfileId: body.voice_profile_id,
-          modelId: attempt.modelId,
-          language: synthesisLanguage,
-          languageCode: synthesisLanguage,
-          text: synthesisText,
-          outputFormat: attempt.outputFormat,
-          voiceSettings: attempt.voiceSettings,
-        });
-        return { attempt, cacheKey };
-      }),
-    );
 
     if (draftPreviewRequested && !vp.previewed_at) {
       const previewClaimToken = crypto.randomUUID();
@@ -1215,6 +1268,13 @@ tts.post('/generate', async (c) => {
         anyUser: isSystemVoice,
       });
       if (cached) {
+        // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주
+        // 쓰는 커스텀 클론이 오래 안 쓴 것으로 오판돼 evict되지 않게). 시스템 보이스는 no-op.
+        await db.execute({
+          sql: `UPDATE voice_profiles SET last_used_at = datetime('now')
+                WHERE id = ? AND COALESCE(is_system, 0) = 0`,
+          args: [body.voice_profile_id],
+        });
         if (draftPreviewRequested && activePreviewClaimToken) {
           const marked = await db.execute({
             sql: `UPDATE voice_profiles SET preview_claimed_at = NULL,
@@ -1268,6 +1328,26 @@ tts.post('/generate', async (c) => {
             error_code: 'VOICE_PREVIEW_UNAVAILABLE',
           },
           409,
+        );
+      }
+    }
+
+    // F3(Codex #602): 캐시 미스 확정 — 프로브만 있고 실제 provider 보이스는 없는 상태라면
+    // 이제서야 R2 원본으로 재클론하고, 새 voice id 로 합성 attempt 를 다시 만든다.
+    // (쿼터 예약보다 앞: 재클론 실패 시 쿼터를 소모하지 않고 NO_VOICE_ID 로 재등록을 안내.)
+    if (!providerVoiceId && isEvictedWithoutVoice && evictedProbeVoiceId) {
+      providerVoiceId = await recloneIfEvicted();
+      if (!providerVoiceId) {
+        return c.json(
+          { error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' },
+          400,
+        );
+      }
+      preparedAttempts = await buildPreparedAttempts(providerVoiceId);
+      if (preparedAttempts.length === 0) {
+        return c.json(
+          { error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' },
+          400,
         );
       }
     }
@@ -1353,6 +1433,13 @@ tts.post('/generate', async (c) => {
                 category,
                 audioUrl,
               ],
+            });
+
+            // F1: 합성 성공을 '사용'으로 보고 LRU 신호를 갱신한다. 시스템 보이스는 no-op.
+            await tx.execute({
+              sql: `UPDATE voice_profiles SET last_used_at = datetime('now')
+                    WHERE id = ? AND COALESCE(is_system, 0) = 0`,
+              args: [body.voice_profile_id],
             });
 
             if (audioUrl) {
@@ -1444,7 +1531,7 @@ tts.post('/generate', async (c) => {
       } catch (err) {
         lastError = err;
         if (err instanceof UnsupportedVoiceProviderError) continue;
-        if (attempt !== attempts[attempts.length - 1]) continue;
+        if (attempt !== preparedAttempts[preparedAttempts.length - 1]?.attempt) continue;
       }
     }
 
@@ -1628,18 +1715,21 @@ tts.get('/messages/:id/audio', async (c) => {
   }
 
   const result = await db.execute({
-    sql: `SELECT id, user_id, voice_profile_id, text, synthesis_text,
-                 delivery_tags_json, audio_url, category
+    sql: `SELECT messages.id, messages.user_id, messages.voice_profile_id, messages.text,
+                 messages.synthesis_text, messages.delivery_tags_json, messages.audio_url,
+                 messages.category,
+                 COALESCE(vp.is_system, 0) AS is_system,
+                 owner.plan AS owner_plan
           FROM messages
-          WHERE id = ?
-            AND EXISTS (
-              SELECT 1 FROM voice_profiles visible_vp
-              WHERE visible_vp.id = messages.voice_profile_id
-                AND visible_vp.deleted_at IS NULL
-                AND COALESCE(visible_vp.is_draft, 0) = 0
-            )
+          JOIN voice_profiles vp
+            ON vp.id = messages.voice_profile_id
+           AND vp.deleted_at IS NULL
+           AND COALESCE(vp.is_draft, 0) = 0
+          LEFT JOIN users owner
+            ON owner.id = vp.user_id OR owner.google_id = vp.user_id
+          WHERE messages.id = ?
             AND (
-              user_id IN (?, ?)
+              messages.user_id IN (?, ?)
               OR EXISTS (
                 SELECT 1 FROM alarms a
                 WHERE a.message_id = messages.id
@@ -1647,11 +1737,7 @@ tts.get('/messages/:id/audio', async (c) => {
               )
               OR (
                 COALESCE(messages.is_preset, 0) = 1
-                AND EXISTS (
-                  SELECT 1 FROM voice_profiles vp
-                  WHERE vp.id = messages.voice_profile_id
-                    AND COALESCE(vp.is_system, 0) = 1
-                )
+                AND COALESCE(vp.is_system, 0) = 1
               )
             )`,
     args: [id, ...ownerIds, ...ownerIds],
@@ -1669,7 +1755,25 @@ tts.get('/messages/:id/audio', async (c) => {
     delivery_tags_json: string | null;
     audio_url: string | null;
     category: string | null;
+    is_system: number | null;
+    owner_plan: string | null;
   }>(result.rows[0]!);
+
+  // 무료 플랜 잠금 강제: 유료 클론(비시스템) 보이스의 오디오는 그 보이스 소유자가 유료일 때만
+  // 내려준다. 소유자가 무료로 내려가면(다운그레이드) 데이터는 보존하되 재생은 잠기며, 소유자
+  // 본인은 물론 공유받은 대상에게도 서버가 오디오를 주지 않는다(삭제된 것과 동일하게 사라짐).
+  // 재유료가 되면 users.plan 이 복구돼 그대로 다시 풀린다. 시스템 스톡 보이스는 항상 허용.
+  const isSystemVoice = Number(message.is_system ?? 0) === 1;
+  if (!isSystemVoice && !isPaidVoicePlan(message.owner_plan)) {
+    return c.json(
+      {
+        error: 'This voice is locked on the free plan.',
+        error_code: 'VOICE_LOCKED_FREE_PLAN',
+      },
+      403,
+    );
+  }
+
   const audioUrl = message.audio_url;
   if (!audioUrl) {
     return c.json(

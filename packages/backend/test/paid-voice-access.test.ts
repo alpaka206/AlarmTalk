@@ -84,6 +84,37 @@ describe('paid voice access gates', () => {
     expect((await res.json()).error_code).toBe('FREE_PLAN_PRESET_ONLY');
   });
 
+  // F2: 유료 사용자가 '기본(시스템) 목소리'를 고르면 무료처럼 프리셋(날씨/약)만 허용한다 —
+  // 직접 입력(커스텀 텍스트)은 차단(BASIC_VOICE_PRESET_ONLY). 이렇게 커스텀 클론 슬롯 공간을 아낀다.
+  it('restricts a paid user to preset phrases when they pick a basic (system) voice', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]); // 유료 사용자
+    mockDB.pushResult([]); // findUsableVoiceProfile: 본인 소유 보이스 없음
+    // findUsableVoiceProfile: 시스템(기본) 보이스
+    mockDB.pushResult([{ id: ID.alarm, user_id: 'system-user', status: 'ready', is_system: 1 }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: ID.alarm, text: 'hello' }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('BASIC_VOICE_PRESET_ONLY');
+  });
+
+  // F2 대비군: 유료 사용자가 '자기 커스텀 클론'(is_system=0)을 고르면 직접 입력은 F2 프리셋
+  // 게이트에 걸리지 않는다(=BASIC_VOICE_PRESET_ONLY 아님). 커스텀 클론은 전체 기능 사용 가능.
+  it('does not apply the basic-voice preset gate to a paid user with their own custom clone', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]); // 유료 사용자
+    // findUsableVoiceProfile: 본인 소유 커스텀 클론(is_system=0)
+    mockDB.pushResult([{ id: ID.alarm, user_id: 'user-pk-1', status: 'ready', is_system: 0 }]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: ID.alarm, text: 'hello' }),
+    );
+
+    // F2 게이트를 통과했음만 검증한다(그 뒤 동의/합성 단계에서 다른 응답이 날 수 있음).
+    expect((await res.json()).error_code).not.toBe('BASIC_VOICE_PRESET_ONLY');
+  });
+
   it('blocks voice cloning for a resolved free-plan user', async () => {
     mockDB.setConsentMissing(true);
     mockDB.pushResult([{ plan: 'free' }]);
@@ -118,5 +149,59 @@ describe('paid voice access gates', () => {
 
     expect(res.status).toBe(403);
     expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+  });
+
+  // GET /tts/messages/:id/audio 의 무료 잠금: 다운그레이드로 유료 데이터를 지우지 않고 보존만 하므로,
+  // 오디오 서빙 경로가 보이스 소유자의 plan 을 강제하지 않으면 무료 사용자가 유료 합성 오디오를
+  // 직접 내려받는 우회가 생긴다(Codex #594 P1). 소유자 plan 기준으로 잠근다.
+  function audioRow(overrides: Record<string, unknown>) {
+    return {
+      id: ID.message,
+      user_id: 'user-pk-1',
+      voice_profile_id: ID.alarm,
+      text: 'hi',
+      synthesis_text: 'hi',
+      delivery_tags_json: null,
+      audio_url: 'r2://generated/x.mp3',
+      category: 'custom',
+      is_system: 0,
+      owner_plan: 'plus',
+      ...overrides,
+    };
+  }
+
+  it('locks retained paid-voice audio when the voice owner is on the free plan', async () => {
+    mockDB.pushResult([audioRow({ is_system: 0, owner_plan: 'free' })]);
+
+    const res = await buildApp().request(
+      new Request(`http://localhost/tts/messages/${ID.message}/audio`),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_LOCKED_FREE_PLAN');
+  });
+
+  it('serves paid-voice audio when the voice owner is still on a paid plan', async () => {
+    // audio_url=null 이면 잠금 게이트를 통과한 뒤 404(오디오 없음)로 떨어진다 — R2 목 없이
+    // '게이트를 통과했다'만 검증한다(403 이 아님).
+    mockDB.pushResult([audioRow({ is_system: 0, owner_plan: 'plus', audio_url: null })]);
+
+    const res = await buildApp().request(
+      new Request(`http://localhost/tts/messages/${ID.message}/audio`),
+    );
+
+    expect(res.status).not.toBe(403);
+    expect((await res.json()).error_code).toBe('MESSAGE_AUDIO_MISSING');
+  });
+
+  it('never locks system stock voice audio even for a free-plan owner', async () => {
+    mockDB.pushResult([audioRow({ is_system: 1, owner_plan: 'free', audio_url: null })]);
+
+    const res = await buildApp().request(
+      new Request(`http://localhost/tts/messages/${ID.message}/audio`),
+    );
+
+    expect(res.status).not.toBe(403);
+    expect((await res.json()).error_code).toBe('MESSAGE_AUDIO_MISSING');
   });
 });

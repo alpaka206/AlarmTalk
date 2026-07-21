@@ -10,6 +10,7 @@ import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
@@ -272,11 +273,44 @@ internal class AlarmEditorState(
         bucketResolvedForProfileId = null
     }
 
+    /**
+     * F2: 제한(날씨+약) 모드에서 허용되지 않는 잔재 — 직접 입력 문구, 생성 TTS 오디오,
+     * 운세/사랑 등 비허용 버킷 메타 — 가 남아 있는지. 허용 버킷으로 이 프로필에 해석된
+     * 상태면 정상이므로 false. generatedTtsKey 가 private 이라 판정도 state 안에서 한다.
+     */
+    fun hasRestrictedVoiceRemnants(allowedBuckets: List<String>): Boolean {
+        val validBucket = selectedBucket in allowedBuckets &&
+            bucketResolvedForProfileId == voiceProfileId
+        if (validBucket) return false
+        return voiceText.isNotBlank() || generatedTtsKey != null ||
+            !localAudioUri.isNullOrBlank() || selectedBucket != null
+    }
+
+    /**
+     * F2: 제한(날씨+약) 모드에서 허용되지 않는 잔재를 비운다. 기존 알람 편집처럼
+     * selectVoiceProfile 이 불리지 않는 경로에서 남겨두면, 신선한 오디오가 /tts
+     * 재호출 없이 그대로 저장돼 직접 입력 제한이 우회된다(Codex #599).
+     */
+    fun clearRestrictedVoiceRemnants() {
+        voiceText = ""
+        clearAudio()
+        clearTtsMeta()
+        clearBucketSelection()
+    }
+
     fun selectVoiceProfile(profileId: String?) {
-        if (voiceProfileId != profileId) {
+        val changed = voiceProfileId != profileId
+        if (changed) {
             voiceListenerTitleOverride = ""
         }
         voiceProfileId = profileId
+        // 시스템(기본) 보이스는 날씨+약 버킷만 허용 → 이전에 고른 운세/사랑/직접입력 잔여 컨텍스트를
+        // 비워 무효 카테고리가 저장되지 않게 한다. 실제 버킷은 편집 화면 LaunchedEffect 가 재해석한다.
+        if (changed && isSystemVoiceId(profileId)) {
+            voiceRandomPrompt = false
+            voiceText = ""
+            clearBucketSelection()
+        }
         clearTtsMeta()
     }
 
