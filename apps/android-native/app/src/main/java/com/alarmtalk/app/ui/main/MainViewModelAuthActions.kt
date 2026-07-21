@@ -30,6 +30,7 @@ internal fun MainViewModel.login(email: String, password: String) {
     }
     viewModelScope.launch {
         authBusy = true
+        loginError = null
         runCatching {
             api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
@@ -40,7 +41,14 @@ internal fun MainViewModel.login(email: String, password: String) {
             com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_login_failed))
+            val app = getApplication<android.app.Application>()
+            // 스낵바(전역 message) 대신 로그인 화면 인라인 에러로 — 키보드가 열려 있어도 보인다.
+            // 서버는 미가입/비밀번호 불일치를 구분하지 않고 AUTH_INVALID_CREDENTIALS 401 하나로
+            // 응답한다(계정 존재 여부 노출 방지) — 안내 문구도 이메일·비밀번호를 함께 확인하게 쓴다.
+            loginError = when (com.alarmtalk.app.network.apiError(error).code) {
+                "AUTH_INVALID_CREDENTIALS" -> app.getString(R.string.auth_error_invalid_credentials)
+                else -> userFacingError(error, app.getString(R.string.msg_login_failed))
+            }
         }
         authBusy = false
     }

@@ -53,6 +53,7 @@
     <string name="auth_landing_sample_message">Good morning, Grandpa\nIt\'s going to rain today\nDon\'t forget your umbrella</string>
     <string name="auth_password_hide">Hide password</string>
     <string name="auth_password_mismatch">Passwords don\'t match.</string>
+    <string name="auth_error_invalid_credentials">Email or password doesn\'t match. Please check and try again.</string>
     <string name="auth_password_rule_alnum">Letters and numbers</string>
     <string name="auth_password_rule_match">Passwords match</string>
     <string name="auth_password_rule_max">128 characters or fewer</string>

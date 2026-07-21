@@ -53,6 +53,7 @@
     <string name="auth_landing_sample_message">おじいちゃん、おはようございます\n今日は雨が降るそうです\n出かけるときは傘を忘れずに</string>
     <string name="auth_password_hide">パスワードを隠す</string>
     <string name="auth_password_mismatch">パスワードが一致しません。</string>
+    <string name="auth_error_invalid_credentials">メールアドレスまたはパスワードが正しくありません。ご確認のうえ、もう一度お試しください。</string>
     <string name="auth_password_rule_alnum">英字と数字を含む</string>
     <string name="auth_password_rule_match">パスワードが一致</string>
     <string name="auth_password_rule_max">128文字以下</string>

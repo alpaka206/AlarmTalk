@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -140,6 +141,9 @@ internal fun AuthScreen(
     busy: Boolean,
     emailVerificationSentTo: String?,
     emailVerified: String?,
+    // 로그인 실패 인라인 안내 — 전역 스낵바는 열려 있는 키보드에 가려 안 보여서 화면 안에 띄운다.
+    loginError: String? = null,
+    onClearLoginError: () -> Unit = {},
     onBack: () -> Unit,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String, String) -> Unit,
@@ -169,6 +173,12 @@ internal fun AuthScreen(
     val passwordMatches = password.isNotBlank() && password == confirmPassword
     val isEmailVerified = mode == AuthMode.Login || emailVerified == normalizedEmail
     val codeSentForEmail = emailVerificationSentTo == normalizedEmail
+    // 로그인 실패 시 비밀번호만 비운다 — 오타 대부분이 비밀번호 쪽이고, 이메일까지 비우면
+    // 맞게 입력한 이메일을 다시 치는 마찰만 생긴다(문구가 이메일 확인도 함께 안내).
+    LaunchedEffect(loginError) {
+        if (loginError != null) password = ""
+    }
+
     val canSubmit = if (mode == AuthMode.Login) {
         email.isNotBlank() && password.isNotBlank()
     } else {
@@ -235,12 +245,16 @@ internal fun AuthScreen(
 
             OutlinedTextField(
                 value = email,
-                onValueChange = { email = it },
+                onValueChange = {
+                    email = it
+                    if (loginError != null) onClearLoginError()
+                },
                 label = { Text(stringResource(R.string.auth_label_email)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
                 colors = authFieldColors(),
+                isError = mode == AuthMode.Login && loginError != null,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Email,
                     imeAction = ImeAction.Next,
@@ -318,12 +332,21 @@ internal fun AuthScreen(
 
             OutlinedTextField(
                 value = password,
-                onValueChange = { password = it },
+                onValueChange = {
+                    password = it
+                    if (loginError != null) onClearLoginError()
+                },
                 label = { Text(stringResource(R.string.auth_label_password)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
                 colors = authFieldColors(),
+                isError = mode == AuthMode.Login && loginError != null,
+                supportingText = if (mode == AuthMode.Login && loginError != null) {
+                    { Text(loginError, color = MaterialTheme.colorScheme.error) }
+                } else {
+                    null
+                },
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {

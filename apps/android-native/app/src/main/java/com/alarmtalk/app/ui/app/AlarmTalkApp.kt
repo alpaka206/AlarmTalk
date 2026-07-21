@@ -92,6 +92,10 @@ internal fun AlarmTalkApp(
     fun authResetToLanding() {
         authBackStack = listOf(AuthRoute.Landing)
     }
+    // 인증 화면 전환 시 이전 로그인 실패 안내가 새 화면까지 따라오지 않게 정리한다.
+    LaunchedEffect(authRoute) {
+        viewModel.loginError = null
+    }
     // 회원가입 시도 이메일이 이미 가입돼 있으면(AUTH_EMAIL_TAKEN) 로그인 화면으로 전환한다.
     // 입력한 이메일은 AuthScreen 의 remember 상태로 유지되므로 다시 입력할 필요가 없다.
     LaunchedEffect(viewModel.authRedirectToLogin) {
@@ -618,6 +622,8 @@ internal fun AlarmTalkApp(
                   busy = authBusy,
                   emailVerificationSentTo = viewModel.registerEmailVerificationSentTo,
                   emailVerified = viewModel.registerEmailVerified,
+                  loginError = viewModel.loginError,
+                  onClearLoginError = { viewModel.loginError = null },
                   onBack = { authBack() },
                   onLogin = viewModel::login,
                   onRegister = viewModel::register,
