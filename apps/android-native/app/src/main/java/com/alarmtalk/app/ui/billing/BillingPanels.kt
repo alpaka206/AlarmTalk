@@ -614,7 +614,9 @@ internal fun SubscriptionPlanCard(
                     )
                 }
             }
-            if (vouchers.isNotEmpty()) {
+            // 코드 공유는 '현재 이용권' 카드에서만 — 해지/강등 후 옛 코드가 남아 있어도
+            // (서버가 만료 처리하지만 우회 데이터 방어) 무료 사용자에게 공유 버튼이 뜨지 않게.
+            if (isCurrent && vouchers.isNotEmpty()) {
                 OutlinedButton(
                     onClick = onShareVouchers,
                     enabled = !busy,
