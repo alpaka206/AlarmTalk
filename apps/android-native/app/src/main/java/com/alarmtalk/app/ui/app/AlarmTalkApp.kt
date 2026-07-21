@@ -739,6 +739,8 @@ internal fun AlarmTalkApp(
                           voicePrefetchProgress = viewModel.voicePrefetchProgress,
                           onGetVoicePrerenderStatus = viewModel::fetchVoicePrerenderStatus,
                           onRetryVoicePrerender = viewModel::retryVoicePrerender,
+                          onAdvanceVoicePrerender = viewModel::advanceVoicePrerender,
+                          onDownloadPresetClips = viewModel::downloadAllPresetClips,
                           onRetryVoiceSpeechStyle = viewModel::retryVoiceSpeechStyleAnalysis,
                           onReloadStockClips = { viewModel.loadStockClips(forceReload = true) },
                           onRefreshSocial = viewModel::refreshSocial,

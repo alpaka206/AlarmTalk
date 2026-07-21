@@ -11,7 +11,15 @@ import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
-import { enqueuePrerender, CLONE_CLIP_SEEDS } from '../lib/stock-clips';
+import {
+  enqueuePrerender,
+  CLONE_CLIP_SEEDS,
+  listReadyCloneVoices,
+  findMissingStockTargets,
+  generateStockClip,
+  markPrerenderDone,
+  releasePrerenderClaim,
+} from '../lib/stock-clips';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
 import {
   MAX_PROVIDER_CLONE_VOICES,
@@ -1920,6 +1928,124 @@ voiceProfile.post('/:id/prerender-retry', async (c) => {
     await enqueuePrerender(db, id, userPk, String(profileRes.rows[0]!.preview_language ?? 'ko'));
   }
   return c.json({ success: true });
+});
+
+// 사전렌더 전진(owner-driven). promote 직후 앱이 done 까지 반복 호출해 cron(5분 틱,
+// 6클립) 을 기다리지 않고 클립을 즉시 채운다. 호출 1건 = Workers invocation 1건이라
+// 서브리퀘스트 예산이 매번 새로 시작된다 — 그래서 호출당 소량(3클립)만 만들고 클라가
+// 루프를 돈다. 앱이 중간에 죽거나 화면을 닫으면 남은 몫은 기존 cron 드레인이 이어받는다
+// (advance 의 claim 은 완료/부분 진행 시 즉시 release, 비정상 종료 시 15분 임대 만료로 회수).
+voiceProfile.post('/:id/prerender/advance', async (c) => {
+  const ids = ownerIds(c);
+  const userId = c.get('userId') as string;
+  const userPk = (c.get('userIdPK') as string | undefined) || userId;
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
+  }
+
+  const ph = ids.map(() => '?').join(',');
+  const profileRes = await db.execute({
+    sql: `SELECT id, preview_language FROM voice_profiles
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_system, 0) = 0 AND COALESCE(is_draft, 0) = 0
+            AND status = 'ready'`,
+    args: [id, ...ids],
+  });
+  if (profileRes.rows.length === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+  // 생성은 소유자 원본 음성 파생물(생체정보) 처리다 — cron 과 동일하게 민감 동의를 강제한다.
+  if (await missingConsentType(db, userPk, SENSITIVE_REQUIRED_CONSENTS)) {
+    return c.json(
+      { error: 'Voice consent is required.', error_code: 'CONSENT_REQUIRED' },
+      403,
+    );
+  }
+
+  const countGenerated = async () =>
+    Number(
+      (
+        await db.execute({
+          sql: `SELECT COUNT(*) AS count FROM messages
+                WHERE voice_profile_id = ? AND COALESCE(is_preset, 0) = 1 AND audio_url IS NOT NULL`,
+          args: [id],
+        })
+      ).rows[0]?.count ?? 0,
+    );
+
+  // failed 큐는 사용자 주도 재시도로 살리고, 행이 없으면 재적재한다(prerender-retry 와 동일 정책).
+  await db.execute({
+    sql: `UPDATE voice_prerender_queue
+          SET status = 'pending', attempts = 0, claimed_at = NULL, claim_token = NULL,
+              updated_at = datetime('now')
+          WHERE voice_profile_id = ? AND status = 'failed'`,
+    args: [id],
+  });
+  await enqueuePrerender(db, id, userPk, String(profileRes.rows[0]!.preview_language ?? 'ko'));
+
+  // 소유자 주도라 cron 의 신선한 claim 도 즉시 인수한다 — 진행 중이던 cron 쪽 publish 는
+  // claim_token 불일치로 no-op 이 되고(멱등 INSERT), 이쪽이 이어서 채운다.
+  const claimToken = crypto.randomUUID();
+  const claimed = await db.execute({
+    sql: `UPDATE voice_prerender_queue
+          SET claimed_at = datetime('now'), claim_token = ?, updated_at = datetime('now')
+          WHERE voice_profile_id = ? AND status = 'pending'
+          RETURNING language`,
+    args: [claimToken, id],
+  });
+  if (claimed.rows.length === 0) {
+    // pending 이 아니면 이미 done — 현재 개수만 돌려준다.
+    return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
+  }
+  const language = String(claimed.rows[0]!.language ?? 'ko');
+
+  const voices = await listReadyCloneVoices(db, [
+    { voiceProfileId: id, ownerUserId: userPk, language, claimToken },
+  ]);
+  const voice = voices[0];
+  if (!voice) {
+    await releasePrerenderClaim(db, id, claimToken);
+    return c.json(
+      { error: 'Voice profile is not ready for prerender.', error_code: 'VOICE_NOT_READY' },
+      409,
+    );
+  }
+
+  const targets = await findMissingStockTargets(db, [voice]);
+  if (targets.length === 0) {
+    await markPrerenderDone(db, id, claimToken);
+    return c.json({ done: true, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
+  }
+
+  // 호출당 3클립: 클립 1개 ≈ Vertex+합성+R2+DB 여러 서브리퀘스트라, 인증/조회분을 감안해
+  // 무료 플랜 한도(50) 안에 안전하게 들어가는 수로 잡는다. 남은 몫은 클라 재호출/cron.
+  const MAX_CLIPS_PER_CALL = 3;
+  let made = 0;
+  for (const target of targets.slice(0, MAX_CLIPS_PER_CALL)) {
+    try {
+      await generateStockClip(db, c.env, target);
+      made += 1;
+    } catch (genErr) {
+      logRouteError(c, genErr);
+      // 서브리퀘스트 소진이면 이 호출에서 더 만들 수 없다 — 즉시 반환하고 클라가 재호출.
+      if (String(genErr).includes('Too many subrequests')) break;
+    }
+  }
+
+  const done = made >= targets.length;
+  if (done) {
+    await markPrerenderDone(db, id, claimToken);
+  } else {
+    // 즉시 release 해 다음 advance 호출(또는 cron)이 바로 이어받게 한다.
+    await releasePrerenderClaim(db, id, claimToken);
+  }
+  return c.json({ done, generated: await countGenerated(), total: CLONE_PRERENDER_TOTAL });
 });
 
 voiceProfile.delete('/:id', async (c) => {
