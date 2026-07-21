@@ -1,5 +1,5 @@
 import type { Client } from '@libsql/client';
-import { withWriteTransaction } from './transactions';
+import { withWriteTransaction, type DbExecutor } from './transactions';
 import { enqueueExternalDeletion } from './audio-retention';
 
 // F1: 전역(전 사용자 합산) 커스텀 클론 provider 보이스 상한. per-user 상한(voice-profile.ts의
@@ -7,6 +7,37 @@ import { enqueueExternalDeletion } from './audio-retention';
 // 살아있는 커스텀 클론 보이스의 최대 개수다. 이 숫자 하나만 바꾸면 전체에 적용된다(운영 50,
 // 폰 테스트 시 2~3). 시스템 기본 목소리(is_system)는 이 카운트에서 제외한다.
 export const MAX_PROVIDER_CLONE_VOICES = 50;
+
+/**
+ * F1(Codex #599 3차): 새 클론 1개를 받아들일 여지가 있는지 사전 판정한다.
+ * 활성 커스텀 클론이 상한 미만이면 항상 true. 상한 이상이면 초과분(+새 보이스 1개)을 LRU 로
+ * 비울 수 있는 비보호 후보(draft·공유 제외)가 충분할 때만 true. 활성 보이스가 전부 보호
+ * 대상(예: 공유 official 50개)이면 false — 이때 신규 등록을 즉시 거부해, eviction 이 후보
+ * 부족으로 짧게 끝나 상한 초과가 조용히 지속되는 상황을 막는다. 카운트 조건은
+ * evictLruClonesIfOverCap 과 동일해야 한다.
+ */
+export async function hasCloneSlotCapacity(exec: DbExecutor): Promise<boolean> {
+  const activeRow = (
+    await exec.execute({
+      sql: `SELECT COUNT(*) AS n FROM voice_profiles
+            WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
+              AND elevenlabs_voice_id IS NOT NULL`,
+    })
+  ).rows[0];
+  const activeCount = Number(activeRow?.n ?? 0);
+  if (activeCount < MAX_PROVIDER_CLONE_VOICES) return true;
+  const evictableRow = (
+    await exec.execute({
+      sql: `SELECT COUNT(*) AS n FROM voice_profiles
+            WHERE deleted_at IS NULL AND COALESCE(is_system, 0) = 0
+              AND elevenlabs_voice_id IS NOT NULL
+              AND COALESCE(is_draft, 0) = 0
+              AND COALESCE(is_shared, 0) = 0`,
+    })
+  ).rows[0];
+  const evictableCount = Number(evictableRow?.n ?? 0);
+  return activeCount + 1 - MAX_PROVIDER_CLONE_VOICES <= evictableCount;
+}
 
 /**
  * F1: 전역 클론 슬롯 상한을 지키기 위해, 새 provider 보이스가 이미 만들어져 DB 에 반영된 뒤
@@ -52,6 +83,13 @@ export async function evictLruClonesIfOverCap(
             LIMIT ?`,
       args: [newProfileId, toEvict],
     });
+    if (victims.rows.length < toEvict) {
+      // 사전 체크(hasCloneSlotCapacity)가 막았어야 하는 상태 — 레이스로 보호 대상만 남은 경우.
+      // 상한 초과가 조용히 지속되지 않도록 흔적을 남긴다(다음 등록 시 사전 체크가 거부).
+      console.warn(
+        `[voice] clone cap eviction shortfall: needed ${toEvict}, evictable ${victims.rows.length} (rest protected)`,
+      );
+    }
     for (const victim of victims.rows) {
       const victimId = victim.id as string;
       const oldVoiceId = victim.elevenlabs_voice_id as string | null;

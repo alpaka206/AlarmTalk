@@ -13,7 +13,11 @@ import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent'
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueuePrerender, CLONE_CLIP_SEEDS } from '../lib/stock-clips';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
-import { MAX_PROVIDER_CLONE_VOICES, evictLruClonesIfOverCap } from '../lib/voice-slots';
+import {
+  MAX_PROVIDER_CLONE_VOICES,
+  evictLruClonesIfOverCap,
+  hasCloneSlotCapacity,
+} from '../lib/voice-slots';
 import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { VoicePreviewTextUpdateSchema } from '@alarmtalk/shared';
@@ -1280,6 +1284,12 @@ voiceProfile.post('/clone', async (c) => {
       ) {
         return { status: 'voice_limit' as const, ledgerId: null };
       }
+      // F1(Codex #599 3차): 전역 슬롯이 꽉 찼는데 evict 후보가 전부 보호 대상(공유·draft)이면
+      // 등록 후 eviction 이 후보 부족으로 짧게 끝나 상한 초과가 지속된다 → enroll·쿼터 소모 전에
+      // 조기 거부. draft attempt 예약 앞에 두어 쿼터도 아끼고, 같은 tx 스냅샷이라 TOCTOU 최소화.
+      if (!(await hasCloneSlotCapacity(tx))) {
+        return { status: 'clone_capacity' as const, ledgerId: null };
+      }
       draftAttemptMonth = await reserveMonthlyDraftAttempt(tx, userPk);
       if (!draftAttemptMonth) {
         return { status: 'draft_attempt_limit' as const, ledgerId: null };
@@ -1317,6 +1327,15 @@ voiceProfile.post('/clone', async (c) => {
           error_code: 'VOICE_DRAFT_ATTEMPT_LIMIT_REACHED',
         },
         429,
+      );
+    }
+    if (insertResult.status === 'clone_capacity') {
+      return c.json(
+        {
+          error: '지금은 목소리 등록이 몰려 있어요. 잠시 후 다시 시도해 주세요.',
+          error_code: 'VOICE_CAPACITY_EXHAUSTED',
+        },
+        503,
       );
     }
     monthlyLedgerId = insertResult.ledgerId;

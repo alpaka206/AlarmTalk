@@ -273,6 +273,19 @@ internal class AlarmEditorState(
         bucketResolvedForProfileId = null
     }
 
+    /**
+     * F2: 제한(날씨+약) 모드에서 허용되지 않는 잔재 — 직접 입력 문구, 생성 TTS 오디오,
+     * 운세/사랑 등 비허용 버킷 메타 — 를 비운다. 기존 알람 편집처럼 selectVoiceProfile 이
+     * 불리지 않는 경로에서 남겨두면, 신선한 오디오가 /tts 재호출 없이 그대로 저장돼
+     * 직접 입력 제한이 우회된다(Codex #599).
+     */
+    fun clearRestrictedVoiceRemnants() {
+        voiceText = ""
+        clearAudio()
+        clearTtsMeta()
+        clearBucketSelection()
+    }
+
     fun selectVoiceProfile(profileId: String?) {
         val changed = voiceProfileId != profileId
         if (changed) {

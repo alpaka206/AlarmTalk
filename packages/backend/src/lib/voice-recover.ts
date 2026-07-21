@@ -3,7 +3,7 @@ import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from './voice-provider';
-import { evictLruClonesIfOverCap } from './voice-slots';
+import { evictLruClonesIfOverCap, hasCloneSlotCapacity } from './voice-slots';
 import { enqueueExternalDeletion } from './audio-retention';
 
 /**
@@ -42,6 +42,11 @@ export async function recloneEvictedVoiceProfile(
     : getSharedInMemoryVoiceStorage();
   const stored = await storage.get(String(upload.object_key));
   if (!stored) return null;
+
+  // F1(Codex #599 3차): 슬롯이 꽉 찼는데 evict 후보가 전부 보호 대상이면 재클론해도 상한 초과가
+  // 지속된다 → enroll 전에 포기하고 null 반환(호출자는 NO_VOICE_ID 폴백). 이 프로필 자신은
+  // voice_id 가 NULL(evicted)이라 활성 카운트에 안 들어가 있어 별도 제외가 필요 없다.
+  if (!(await hasCloneSlotCapacity(db))) return null;
 
   // Uint8Array 뷰 → 정확한 구간만 ArrayBuffer 로 복사(오프셋 있는 버퍼 안전).
   const audioBuffer = stored.bytes.buffer.slice(
