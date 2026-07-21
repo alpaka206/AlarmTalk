@@ -385,14 +385,26 @@ internal fun AlarmEditorScreen(
         )
     }
 
+    // (보이스·버킷)의 클립 언어 선택: 앱 언어 클립이 있으면 앱 언어(시스템 스톡 3개국),
+    // 없으면 그 보이스가 가진 유일한 언어 = 클론을 만들 때 고른 언어를 그대로 쓴다.
+    // 일본어로 만든 클론은 한국어 기기(공유받은 쪽 포함)에서도 일본어 클립을 소비한다.
+    fun bucketClipLanguageFor(category: String, profileId: String): String {
+        val langs = stockClips.asSequence()
+            .filter { it.voiceProfileId == profileId && it.category == category }
+            .map { it.language ?: "ko" }
+            .toSet()
+        return if (appVoiceLanguage in langs) appVoiceLanguage else langs.firstOrNull() ?: appVoiceLanguage
+    }
+
     // 오프라인 클론 버킷이 '완전한지' 판정. 날씨/운세는 서버가 조건/테마 '절대 인덱스'로 클립을 고르므로
     // variant 0..N-1 이 전부 캐시돼 있어야 인덱스가 안 엉킨다(부분 세트면 엉뚱한 조건 재생 → 라이브 유지).
     fun hasCompleteCloneBucket(category: String, profileId: String): Boolean {
+        val clipLanguage = bucketClipLanguageFor(category, profileId)
         val variants = stockClips
             .filter {
                 it.voiceProfileId == profileId &&
                     it.category == category &&
-                    (it.language ?: "ko") == appVoiceLanguage
+                    (it.language ?: "ko") == clipLanguage
             }
             .map { it.variant }
             .toSet()
@@ -410,8 +422,9 @@ internal fun AlarmEditorScreen(
         profileId: String,
         contextVariantIndex: Int? = null,
     ): Boolean {
+        val clipLanguage = bucketClipLanguageFor(bucket, profileId)
         val clips = stockClips
-            .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appVoiceLanguage }
+            .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == clipLanguage }
             .sortedBy { it.variant }
             // variant 중복 제거: 매칭 버킷은 절대 인덱스로 keys[i] 를 고르므로, 중복 variant 가 있으면
             // 뒤 인덱스가 밀려 엉뚱한 조건 클립이 재생된다(같은 variant 는 첫 행만).
@@ -447,7 +460,7 @@ internal fun AlarmEditorScreen(
             profileId = profileId,
             messageId = first.messageId,
             text = first.text,
-            language = appVoiceLanguage,
+            language = clipLanguage,
             bucket = bucket,
             clipKeys = keys,
             clipTexts = texts,
@@ -578,6 +591,18 @@ internal fun AlarmEditorScreen(
         if (profileId.isNullOrBlank()) {
             audioMessage = context.getString(R.string.editor_error_select_voice)
             return
+        }
+        // 랜덤 문구를 클론(내/공유)으로 저장할 땐 '등록 때 고른 언어'로 생성·캐시한다 — 뷰어 앱
+        // 언어와 무관(일본어로 만든 목소리는 한국어 기기에서도 일본어). 그 언어는 사전렌더 클립
+        // 언어와 같으므로 매니페스트에서 읽는다(클립이 아직 없으면 기존 언어 유지).
+        if (
+            editor.voiceRandomPrompt &&
+            !isSystemVoiceId(profileId) &&
+            voiceProfiles.none { it.id == profileId && it.isSystem == true }
+        ) {
+            stockClips.firstOrNull { it.voiceProfileId == profileId }?.let {
+                editor.voiceLanguage = it.language ?: "ko"
+            }
         }
         val text = editor.ttsTextForSave()
         if (text.isBlank() && !editor.voiceRandomPrompt) {

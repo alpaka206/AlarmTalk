@@ -699,7 +699,7 @@ voiceProfile.patch('/:id', async (c) => {
   } catch {
     return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
-  // draft→official 확정 시 사전렌더할 앱 언어(클라 전송, 미전송 시 ko).
+  // 사전렌더 언어 폴백(레거시 클라 전송값) — 실제 언어는 promote 시 preview_language 가 우선.
   const prerenderLanguage =
     typeof (body.language ?? body.app_language) === 'string'
       ? String(body.language ?? body.app_language)
@@ -901,7 +901,17 @@ voiceProfile.patch('/:id', async (c) => {
           return { status: 'not_found' as const, rowsAffected: 0 };
         }
         await markMonthlyOfficialVoiceChange(tx, ledgerId, 'succeeded');
-        await enqueuePrerender(tx, id, userPk, prerenderLanguage);
+        // 사전렌더 언어는 '등록 때 고른 언어'(preview_language)가 단일 출처 — 클라가 보낸
+        // 기기 언어(prerenderLanguage)로 큐잉하면 일본어로 만든 목소리가 한국어 기기에서
+        // promote 될 때 한국어 클립이 만들어진다(재시도/advance 경로와도 어긋남).
+        const langRes = await tx.execute({
+          sql: 'SELECT preview_language FROM voice_profiles WHERE id = ? LIMIT 1',
+          args: [id],
+        });
+        const promotedLanguage = String(
+          langRes.rows[0]?.preview_language ?? prerenderLanguage ?? 'ko',
+        );
+        await enqueuePrerender(tx, id, userPk, promotedLanguage);
         return { status: 'ok' as const, rowsAffected: promoted.rowsAffected ?? 0 };
       })
     : {

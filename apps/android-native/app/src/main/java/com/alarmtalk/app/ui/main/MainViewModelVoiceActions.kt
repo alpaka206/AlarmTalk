@@ -594,10 +594,9 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
     withContext(Dispatchers.IO) {
         val manifest = api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
         stockClips = manifest
-        val language = deviceAppVoiceLanguage()
-        val clips = manifest.filter {
-            it.voiceProfileId == voiceProfileId && (it.language ?: "ko") == language
-        }
+        // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
+        // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
+        val clips = manifest.filter { it.voiceProfileId == voiceProfileId }
         if (clips.isEmpty()) return@withContext
         val audioStore = com.alarmtalk.app.data.AlarmAudioStore(getApplication<Application>())
         var done = 0
