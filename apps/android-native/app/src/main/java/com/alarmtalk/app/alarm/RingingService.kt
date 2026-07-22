@@ -2,6 +2,7 @@ package com.alarmtalk.app.alarm
 
 import android.app.KeyguardManager
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -499,12 +500,26 @@ class RingingService : Service() {
         return interactive && !locked
     }
 
+    /**
+     * 울림 알림이 실제로 헤드업 배너로 뜰 수 있는 상태인지. 앱 알림이 켜져 있고 울림 채널
+     * (RINGING_CHANNEL_ID) importance 가 HIGH 이상이어야 한다. 사용자가 채널을 음소거·강등하면
+     * areNotificationsEnabled() 는 여전히 true 여도 헤드업은 안 뜨므로 채널 importance 를 직접 본다.
+     */
+    private fun ringingChannelCanShowHeadsUp(): Boolean {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return false
+        val channel = getSystemService<NotificationManager>()
+            ?.getNotificationChannel(NotificationChannels.RINGING_CHANNEL_ID)
+        // 아직 채널 생성 전이면 곧 IMPORTANCE_HIGH 로 만들어지므로 헤드업 가능으로 본다.
+        return channel == null || channel.importance >= NotificationManager.IMPORTANCE_HIGH
+    }
+
     private fun openRingingActivity(alarmId: String) {
-        // 화면 켜짐 + 잠금 해제 상태면 전체화면을 띄우지 않고 헤드업 알림에 맡긴다.
-        // (알림은 IMPORTANCE_HIGH + PRIORITY_MAX + fullScreenIntent 라 사용 중일 때 헤드업으로 뜬다.)
-        // 전체화면 인텐트와 이 직접 실행이 함께 떠서 '헤드업 + 전체화면'이 동시 표시되던 것을 막는다.
-        if (isDeviceActivelyInUse()) {
-            Log.i(TAG, "Device in active use; relying on heads-up notification instead of full-screen ringing")
+        // 화면 켜짐 + 잠금 해제 상태이고 '울림 알림이 헤드업으로 뜰 수 있을 때'만 전체화면 직접 실행을
+        // 생략하고 헤드업에 맡긴다(헤드업 + 전체화면 동시 표시 방지). 화면이 꺼졌거나 잠겼거나,
+        // 사용자가 울림 채널을 음소거·강등해 헤드업이 안 뜨는 경우엔 소리만 나고 해제 UI가 사라지지
+        // 않도록 잠금화면 위 전체 울림 화면을 직접 띄운다.
+        if (isDeviceActivelyInUse() && ringingChannelCanShowHeadsUp()) {
+            Log.i(TAG, "Device in active use with heads-up-capable channel; relying on heads-up notification")
             return
         }
         val intent = Intent(this, RingingActivity::class.java).apply {
