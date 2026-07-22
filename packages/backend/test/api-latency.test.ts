@@ -18,8 +18,13 @@ import codeRoutes from '../src/routes/code';
 import userRoutes from '../src/routes/user';
 import giftRoutes from '../src/routes/gift';
 
-const LATENCY_THRESHOLD_MS = 75;
-const WRITE_LATENCY_THRESHOLD_MS = 80;
+// 이 스위트는 mock DB 로 라우트 핸들러의 **절대 벽시계 지연**을 assert 한다(회귀 감지용
+// 마이크로벤치). 로컬에선 엄격하게 유지하되, 공유 CI 러너는 부하로 6~10배 느려져 정상 코드도
+// 임계를 넘겨 플레이크가 된다(타임아웃 상향으로는 안 잡히는 별개 클래스). CI 에서만 배수를
+// 곱해 "치명적 회귀만 잡고 부하 노이즈는 흡수"하도록 한다. 로컬(CI 아님) 임계는 그대로.
+const CI_LATENCY_FACTOR = process.env.CI ? 8 : 1;
+const LATENCY_THRESHOLD_MS = 75 * CI_LATENCY_FACTOR;
+const WRITE_LATENCY_THRESHOLD_MS = 80 * CI_LATENCY_FACTOR;
 
 function buildApp(route: string, handler: Hono<AppEnv>, userId = 'user-1') {
   const app = new Hono<AppEnv>();
