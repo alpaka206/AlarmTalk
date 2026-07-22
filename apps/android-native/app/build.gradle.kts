@@ -93,13 +93,13 @@ val devDebugKeystoreProps = rootProject.file("dev-debug-keystore.properties")
 
 android {
     namespace = "com.alarmtalk.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.alarmtalk.app"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 14
+        targetSdk = 36
+        versionCode = 15
         versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -268,7 +268,7 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation("com.android.billingclient:billing-ktx:7.1.1")
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
     // Google Play In-App Updates(신 Play SDK). Play 설치본에서만 실제 트리거되고
     // debug/사이드로드에선 no-op(콜백에서 예외 방어). 구 com.google.android.play:core 미사용.
     implementation("com.google.android.play:app-update:2.1.0")
