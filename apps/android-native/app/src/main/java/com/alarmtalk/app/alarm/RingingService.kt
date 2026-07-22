@@ -501,16 +501,23 @@ class RingingService : Service() {
     }
 
     /**
-     * 울림 알림이 실제로 헤드업 배너로 뜰 수 있는 상태인지. 앱 알림이 켜져 있고 울림 채널
-     * (RINGING_CHANNEL_ID) importance 가 HIGH 이상이어야 한다. 사용자가 채널을 음소거·강등하면
-     * areNotificationsEnabled() 는 여전히 true 여도 헤드업은 안 뜨므로 채널 importance 를 직접 본다.
+     * 울림 알림이 실제로 헤드업 배너로 떠서 해제 UI 를 제공할 수 있는 상태인지 판정한다.
+     * 하나라도 어긋나면 헤드업이 보장되지 않으므로 false → 전체 울림 화면을 직접 띄운다.
+     *  1) 앱 알림이 켜져 있어야 한다.
+     *  2) 울림 채널(RINGING_CHANNEL_ID) importance 가 HIGH 이상이어야 한다. 사용자가 채널을
+     *     음소거·강등하면 areNotificationsEnabled() 는 true 여도 헤드업이 안 뜬다.
+     *  3) 방해금지(DND)가 시각 알림을 억제하지 않아야 한다. 알람 소리는 USAGE_ALARM 이라 DND 에서도
+     *     나지만, 이 채널은 DND 를 우회하지 않으므로 DND 중엔 HIGH 라도 헤드업이 안 뜬다. 시스템이
+     *     실제로 시각 방해가 가능할 때(DND 해제 = INTERRUPTION_FILTER_ALL, 또는 채널이 DND 우회)만 허용.
      */
     private fun ringingChannelCanShowHeadsUp(): Boolean {
         if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return false
-        val channel = getSystemService<NotificationManager>()
-            ?.getNotificationChannel(NotificationChannels.RINGING_CHANNEL_ID)
-        // 아직 채널 생성 전이면 곧 IMPORTANCE_HIGH 로 만들어지므로 헤드업 가능으로 본다.
-        return channel == null || channel.importance >= NotificationManager.IMPORTANCE_HIGH
+        val nm = getSystemService<NotificationManager>() ?: return false
+        val channel = nm.getNotificationChannel(NotificationChannels.RINGING_CHANNEL_ID)
+        // 아직 채널 생성 전이면 곧 IMPORTANCE_HIGH 로 만들어지므로 강등으로 보지 않는다.
+        if (channel != null && channel.importance < NotificationManager.IMPORTANCE_HIGH) return false
+        return nm.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL ||
+            channel?.canBypassDnd() == true
     }
 
     private fun openRingingActivity(alarmId: String) {
