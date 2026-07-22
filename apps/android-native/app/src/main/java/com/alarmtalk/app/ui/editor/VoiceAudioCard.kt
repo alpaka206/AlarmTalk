@@ -87,6 +87,8 @@ internal fun VoiceAudioCard(
     isPreviewPreparing: Boolean,
     onRecord: () -> Unit,
     onPreviewAudio: () -> Unit,
+    // '다시 녹음' — 재생 중인 미리듣기를 멈추고 기존 녹음을 비워 대기(멈춘) 상태로 되돌린다.
+    onDiscardRecording: () -> Unit,
     onCreateVoiceProfileClick: () -> Unit,
     onOpenRandomPromptSettings: () -> Unit,
     // 무료 문구 행 — 테마(버킷) 선택 pane 을 연다(유료의 문구 pane 과 같은 자리).
@@ -284,9 +286,9 @@ internal fun VoiceAudioCard(
                         isPreviewActive = isCachedAudioPreviewActive,
                         isPreparing = isPreviewPreparing,
                         onPlay = onPreviewAudio,
-                        // '다시 녹음'은 즉시 녹음을 시작하지 않고 기존 녹음을 비워 대기(멈춘) 상태로
-                        // 되돌린다 → VoiceRecordControls(마이크 대기)로 전환. 사용자가 마이크를 눌러 녹음 시작.
-                        onRedo = { editor.clearAudio() },
+                        // '다시 녹음'은 즉시 녹음을 시작하지 않고 재생 중인 미리듣기를 멈춘 뒤 기존 녹음을
+                        // 비워 대기(멈춘) 상태로 되돌린다 → VoiceRecordControls(마이크 대기)로 전환.
+                        onRedo = onDiscardRecording,
                     )
                 } else {
                     VoiceRecordControls(
