@@ -1,6 +1,8 @@
 package com.alarmtalk.app.alarm
 
+import android.app.KeyguardManager
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -23,6 +25,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_SNOOZE
@@ -486,7 +489,68 @@ class RingingService : Service() {
         vibrator?.vibrate(VibrationPatternLibrary.effect(patternName, repeat = true), alarmAttributes)
     }
 
+    /**
+     * 사용자가 기기를 능동적으로 쓰는 중(화면 켜짐 + 잠금 해제)인지. 이때는 전체화면 강탈
+     * 대신 알림의 full-screen intent 가 헤드업 배너로 뜨게 둔다. 화면이 꺼져 있거나 잠금
+     * 상태면(자는 중 등) false → 잠금화면 위 전체 울림 화면을 직접 띄운다.
+     */
+    private fun isDeviceActivelyInUse(): Boolean {
+        val interactive = getSystemService<PowerManager>()?.isInteractive == true
+        val locked = getSystemService<KeyguardManager>()?.isKeyguardLocked == true
+        return interactive && !locked
+    }
+
+    /**
+     * 울림 알림이 실제로 헤드업 배너로 떠서 해제 UI 를 제공할 수 있는 상태인지 판정한다.
+     * 하나라도 어긋나면 헤드업이 보장되지 않으므로 false → 전체 울림 화면을 직접 띄운다.
+     *  1) 앱 알림이 켜져 있어야 한다.
+     *  2) 울림 채널(RINGING_CHANNEL_ID) importance 가 HIGH 이상이어야 한다. 사용자가 채널을
+     *     음소거·강등하면 areNotificationsEnabled() 는 true 여도 헤드업이 안 뜬다.
+     *  3) 방해금지(DND)가 시각 알림을 억제하지 않아야 한다. 알람 소리는 USAGE_ALARM 이라 DND 에서도
+     *     나지만, 이 채널은 DND 를 우회하지 않으므로 DND 중엔 HIGH 라도 헤드업이 안 뜬다. 시스템이
+     *     실제로 시각 방해가 가능할 때(DND 해제 = INTERRUPTION_FILTER_ALL, 또는 채널이 DND 우회)만 허용.
+     */
+    private fun ringingChannelCanShowHeadsUp(): Boolean {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return false
+        val nm = getSystemService<NotificationManager>() ?: return false
+        val channel = nm.getNotificationChannel(NotificationChannels.RINGING_CHANNEL_ID)
+        // 아직 채널 생성 전이면 곧 IMPORTANCE_HIGH 로 만들어지므로 강등으로 보지 않는다.
+        if (channel != null && channel.importance < NotificationManager.IMPORTANCE_HIGH) return false
+        // 채널이 DND 를 우회하면 어떤 DND 에서도 헤드업 가능.
+        if (channel?.canBypassDnd() == true) return true
+        // 이 알림은 CATEGORY_ALARM 이라 '알람 허용' DND 모드에선 시각 방해가 허용된다.
+        //  - ALL(DND off), ALARMS(알람만 허용): 허용
+        //  - PRIORITY: 정책이 알람 카테고리를 허용할 때만
+        //  - NONE(완전 무음)·UNKNOWN: 억제로 본다
+        return when (nm.currentInterruptionFilter) {
+            NotificationManager.INTERRUPTION_FILTER_ALL,
+            NotificationManager.INTERRUPTION_FILTER_ALARMS -> true
+            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> priorityDndAllowsAlarms(nm)
+            else -> false
+        }
+    }
+
+    /**
+     * PRIORITY DND 정책이 알람 카테고리를 허용하는지. getNotificationPolicy 는 알림 정책 접근
+     * 권한이 있어야 하므로(미보유 시 SecurityException) 실패하면 보수적으로 false → 전체 울림
+     * 화면을 띄운다. PRIORITY_CATEGORY_ALARMS 는 API 28+ 라 하위에선 false.
+     */
+    private fun priorityDndAllowsAlarms(nm: NotificationManager): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+        return runCatching {
+            (nm.notificationPolicy.priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS) != 0
+        }.getOrDefault(false)
+    }
+
     private fun openRingingActivity(alarmId: String) {
+        // 화면 켜짐 + 잠금 해제 상태이고 '울림 알림이 헤드업으로 뜰 수 있을 때'만 전체화면 직접 실행을
+        // 생략하고 헤드업에 맡긴다(헤드업 + 전체화면 동시 표시 방지). 화면이 꺼졌거나 잠겼거나,
+        // 사용자가 울림 채널을 음소거·강등해 헤드업이 안 뜨는 경우엔 소리만 나고 해제 UI가 사라지지
+        // 않도록 잠금화면 위 전체 울림 화면을 직접 띄운다.
+        if (isDeviceActivelyInUse() && ringingChannelCanShowHeadsUp()) {
+            Log.i(TAG, "Device in active use with heads-up-capable channel; relying on heads-up notification")
+            return
+        }
         val intent = Intent(this, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or

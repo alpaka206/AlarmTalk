@@ -1,6 +1,8 @@
 package com.alarmtalk.app
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Row
@@ -35,6 +37,13 @@ import java.util.concurrent.CancellationException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
+
+/** Compose 의 LocalContext(대개 Activity 를 감싼 ContextWrapper)에서 호스트 Activity 를 찾는다. */
+internal tailrec fun Context.findHostActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findHostActivity()
+    else -> null
+}
 
 internal fun Context.openWebUrl(url: String) {
     runCatching {
@@ -89,13 +98,6 @@ internal val NativeTab.route: String
 
 internal fun String?.toNativeTab(): NativeTab? =
     NativeTab.values().firstOrNull { it.route == this }
-
-internal fun alarmPermissionRequiredMessage(context: Context, target: PermissionTarget): String = when (target) {
-    PermissionTarget.Notifications -> context.getString(R.string.r3app_perm_required_notifications)
-    PermissionTarget.ExactAlarms -> context.getString(R.string.r3app_perm_required_exact_alarms)
-    PermissionTarget.FullScreenIntent -> context.getString(R.string.r3app_perm_required_full_screen)
-    PermissionTarget.RecordAudio -> context.getString(R.string.r3app_perm_required_record_audio)
-}
 
 internal fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
     navigate(tab.route) {
