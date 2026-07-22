@@ -170,6 +170,37 @@ internal fun PermissionPanel(
     }
 }
 
+/**
+ * 알람 홈용 슬림 권한 경고 배너. 이미 알람이 있는데 알람 권한이 없어 '조용히 안 울릴' 수 있을 때만
+ * 노출한다(큰 PermissionPanel 카드 대신 한 줄). 탭하면 권한 게이트 모달이 열려 바로 요청/설정으로 잇는다.
+ */
+@Composable
+internal fun AlarmPermissionWarningBanner(onClick: () -> Unit) {
+    OutlinedCard(
+        onClick = onClick,
+        shape = WakerTileShape,
+        border = wakerCardBorder(),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(20.dp),
+            )
+            Text(
+                text = stringResource(R.string.r3app_perm_banner_alarm_wont_ring),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
 @Composable
 internal fun PermissionRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,

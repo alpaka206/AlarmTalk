@@ -100,8 +100,7 @@ internal fun AlarmListScreen(
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
-    onRequestPermissionGate: (PermissionTarget) -> Unit,
-    onRequestAllPermissions: () -> Unit,
+    onRequestAlarmPermissions: () -> Unit,
 ) {
     val sortedAlarms = remember(alarms) {
         alarms.sortedWith(
@@ -194,11 +193,7 @@ internal fun AlarmListScreen(
                 // 새 유저(알람 없음)에겐 홈에서 권한을 미리 조르지 않는다 — 알람 만들기 시점에 요청.
                 if (hasAnyAlarm && !permissions.alarmReady) {
                     item {
-                        PermissionPanel(
-                            permissions = permissions,
-                            onRequestPermission = onRequestPermissionGate,
-                            onRequestAllPermissions = onRequestAllPermissions,
-                        )
+                        AlarmPermissionWarningBanner(onClick = onRequestAlarmPermissions)
                     }
                 }
                 items(sortedAlarms, key = { it.id }) { alarm ->

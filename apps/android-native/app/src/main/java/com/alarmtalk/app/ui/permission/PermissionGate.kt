@@ -9,9 +9,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
@@ -146,32 +143,28 @@ internal fun PermissionGateDialog(
     onDismiss: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val action = stringResource(R.string.common_permission_gate_allow_action)
-    val (title, body) = when (target) {
-        PermissionTarget.Notifications -> Pair(
-            stringResource(R.string.common_permission_gate_notifications_title),
-            stringResource(R.string.common_permission_gate_notifications_body),
-        )
-        PermissionTarget.ExactAlarms -> Pair(
-            stringResource(R.string.common_permission_gate_exact_alarm_title),
-            stringResource(R.string.common_permission_gate_exact_alarm_body),
-        )
-        PermissionTarget.FullScreenIntent -> Pair(
-            stringResource(R.string.common_permission_gate_full_screen_title),
-            stringResource(R.string.common_permission_gate_full_screen_body),
-        )
-        PermissionTarget.RecordAudio -> Pair(
-            stringResource(R.string.common_permission_gate_mic_title),
-            stringResource(R.string.common_permission_gate_mic_body),
-        )
+    val title = when (target) {
+        PermissionTarget.Notifications -> stringResource(R.string.common_permission_gate_notifications_title)
+        PermissionTarget.ExactAlarms -> stringResource(R.string.common_permission_gate_exact_alarm_title)
+        PermissionTarget.FullScreenIntent -> stringResource(R.string.common_permission_gate_full_screen_title)
+        PermissionTarget.RecordAudio -> stringResource(R.string.common_permission_gate_mic_title)
     }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { ModalDialogTitle(title, onDismiss = onDismiss) },
-        text = { Text(body) },
-        confirmButton = {
-            TextButton(onClick = onOpenSettings) { Text(action) }
-        },
+    // 로그아웃·계정삭제 등 확인형 모달과 동일한 iOS 알럿 스타일(IosAlertDialog)로 통일한다.
+    // 설명(message)은 없애고 제목=결론만 노출. 취소 / 허용하기(강조) 2버튼.
+    IosAlertDialog(
+        title = title,
+        message = null,
+        onDismiss = onDismiss,
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.social_cancel_button),
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.common_permission_gate_allow_action),
+                emphasized = true,
+                onClick = onOpenSettings,
+            ),
+        ),
     )
 }

@@ -1,5 +1,6 @@
 package com.alarmtalk.app.alarm
 
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
@@ -23,6 +24,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_SNOOZE
@@ -486,7 +488,25 @@ class RingingService : Service() {
         vibrator?.vibrate(VibrationPatternLibrary.effect(patternName, repeat = true), alarmAttributes)
     }
 
+    /**
+     * 사용자가 기기를 능동적으로 쓰는 중(화면 켜짐 + 잠금 해제)인지. 이때는 전체화면 강탈
+     * 대신 알림의 full-screen intent 가 헤드업 배너로 뜨게 둔다. 화면이 꺼져 있거나 잠금
+     * 상태면(자는 중 등) false → 잠금화면 위 전체 울림 화면을 직접 띄운다.
+     */
+    private fun isDeviceActivelyInUse(): Boolean {
+        val interactive = getSystemService<PowerManager>()?.isInteractive == true
+        val locked = getSystemService<KeyguardManager>()?.isKeyguardLocked == true
+        return interactive && !locked
+    }
+
     private fun openRingingActivity(alarmId: String) {
+        // 화면 켜짐 + 잠금 해제 상태면 전체화면을 띄우지 않고 헤드업 알림에 맡긴다.
+        // (알림은 IMPORTANCE_HIGH + PRIORITY_MAX + fullScreenIntent 라 사용 중일 때 헤드업으로 뜬다.)
+        // 전체화면 인텐트와 이 직접 실행이 함께 떠서 '헤드업 + 전체화면'이 동시 표시되던 것을 막는다.
+        if (isDeviceActivelyInUse()) {
+            Log.i(TAG, "Device in active use; relying on heads-up notification instead of full-screen ringing")
+            return
+        }
         val intent = Intent(this, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or

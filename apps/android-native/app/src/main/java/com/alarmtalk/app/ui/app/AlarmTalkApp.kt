@@ -4,6 +4,7 @@ import androidx.compose.ui.res.stringResource
 import android.Manifest
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.core.app.ActivityCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -127,13 +128,33 @@ internal fun AlarmTalkApp(
     }
     val permissionState = rememberPermissionStatusState()
     val permissions = permissionState.snapshot
+    val initialPermissionPromptStore = remember(context) { InitialPermissionPromptStore(context) }
     var bulkPermissionFlowActive by remember { mutableStateOf(false) }
     var bulkRuntimeRequested by remember { mutableStateOf(false) }
     var bulkOpenedSettingsTargets by remember { mutableStateOf<Set<PermissionTarget>>(emptySet()) }
     val runtimePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
-    ) {
+    ) { results ->
         permissionState.refresh()
+        // 영구 거부(사용자가 이전에 거부해 시스템이 다이얼로그를 더 이상 띄우지 않는 상태) 감지.
+        // 이 경우 launch() 는 다이얼로그 없이 즉시 거부로 돌아온다 → 모달의 '허용하기' 만으론
+        // 권한을 켤 수 없으므로 앱 설정으로 유도한다. shouldShowRequestPermissionRationale 가
+        // false + 미허용이면(다이얼로그를 거친 콜백 시점 기준) 영구 거부로 판정한다.
+        // 일괄 권한 플로우는 자체 설정 라우팅(아래 LaunchedEffect)이 있으므로 단일 요청일 때만.
+        if (!bulkPermissionFlowActive) {
+            val activity = context.findHostActivity()
+            val permanentlyDeniedPerm = if (activity == null) {
+                null
+            } else {
+                results.entries.firstOrNull { (perm, granted) ->
+                    !granted && !ActivityCompat.shouldShowRequestPermissionRationale(activity, perm)
+                }?.key
+            }
+            when (permanentlyDeniedPerm) {
+                Manifest.permission.POST_NOTIFICATIONS -> context.openNotificationSettings()
+                Manifest.permission.RECORD_AUDIO -> context.openAppDetailsSettings()
+            }
+        }
     }
 
     fun missingRuntimePermissions(snapshot: PermissionSnapshot): List<String> = buildList {
@@ -190,9 +211,10 @@ internal fun AlarmTalkApp(
     }
 
     fun requestFirstMissingAlarmPermission() {
+        // 토스트 대신 권한 게이트 모달을 띄운다. 모달의 '허용하기'가 실제 권한 요청을 실행하고,
+        // 필요한 권한이 모두 채워질 때까지 모달이 유지돼 알람 생성을 막는다(권한 없으면 생성 차단).
         val target = PermissionSnapshot.read(context).firstMissingAlarmTarget() ?: return
-        viewModel.message = alarmPermissionRequiredMessage(context, target)
-        requestPermission(target)
+        viewModel.requestPermissionGate(target)
     }
 
     LaunchedEffect(permissionState.refreshTick, bulkPermissionFlowActive) {
@@ -219,6 +241,19 @@ internal fun AlarmTalkApp(
         bulkPermissionFlowActive = false
         bulkRuntimeRequested = false
         bulkOpenedSettingsTargets = emptySet()
+    }
+
+    // 권한 게이트 모달이 열린 동안 권한 상태를 추적한다: 현재 대상 권한이 채워지면 다음 미허용
+    // 알람 권한으로 넘기고, 알람에 필요한 권한이 모두 채워지면 모달을 자동으로 닫는다.
+    // (RecordAudio 는 알람 게이트가 아니라 목소리 녹음 온디맨드용이므로 여기서 관리하지 않는다.)
+    LaunchedEffect(permissions, viewModel.permissionGateRequest) {
+        val current = viewModel.permissionGateRequest ?: return@LaunchedEffect
+        if (current == PermissionTarget.RecordAudio) return@LaunchedEffect
+        when (val nextMissing = permissions.firstMissingAlarmTarget()) {
+            null -> viewModel.dismissPermissionGate()
+            current -> Unit // 아직 현재 권한 미충족 → 모달 유지
+            else -> viewModel.requestPermissionGate(nextMissing)
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -278,6 +313,19 @@ internal fun AlarmTalkApp(
         viewModel.loadReceivedAlarmBadgeState()
         planGateDialog = null
         authResetToLanding()
+    }
+
+    // 첫 진입 1회: 최초 로그인 직후 알림 등 알람 권한이 없으면 권한 게이트 모달을 자동으로 한 번
+    // 띄운다(알람 앱 핵심 권한이라 선제 요청). 기기 단위 플래그로 재노출을 막고, 이후 미허용 상태는
+    // 알람 만들기 모달·홈 슬림 배너가 처리한다. (정확알람·전체화면은 알람 앱이라 자동 부여되고
+    // 실제 시스템 다이얼로그가 뜨는 건 알림 권한뿐이다.)
+    LaunchedEffect(sessionRouteKey) {
+        if (sessionRouteKey == null) return@LaunchedEffect
+        if (initialPermissionPromptStore.hasPrompted()) return@LaunchedEffect
+        initialPermissionPromptStore.markPrompted()
+        if (!PermissionSnapshot.read(context).alarmReady) {
+            requestFirstMissingAlarmPermission()
+        }
     }
 
     LaunchedEffect(sessionRouteKey, alarms) {
@@ -504,8 +552,11 @@ internal fun AlarmTalkApp(
             target = target,
             onDismiss = viewModel::dismissPermissionGate,
             onOpenSettings = {
+                // '허용하기': 실제 권한 요청을 실행한다(런타임 권한이면 시스템 다이얼로그,
+                // 정확 알람·전체화면이면 설정 화면, 영구거부면 런처 콜백이 앱 설정으로 유도).
+                // 모달은 닫지 않는다 — 권한이 채워지면 아래 LaunchedEffect 가 다음 미허용 권한으로
+                // 넘기거나 모두 충족 시 자동으로 닫는다(권한 없으면 계속 막힘).
                 requestPermission(target)
-                viewModel.dismissPermissionGate()
             },
         )
     }
@@ -792,8 +843,7 @@ internal fun AlarmTalkApp(
                           },
                           onEditAlarm = { navController.navigate(AppRoute.alarmEdit(it.id)) },
                           onDeleteAlarm = viewModel::deleteAlarm,
-                          onRequestPermissionGate = ::requestPermission,
-                          onRequestAllPermissions = ::requestAllMissingPermissions,
+                          onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
                       )
                   }
               }
