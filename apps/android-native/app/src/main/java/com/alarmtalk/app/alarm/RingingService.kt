@@ -180,9 +180,12 @@ class RingingService : Service() {
         val playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY
         val alarmVolumePercent = alarm?.alarmVolumePercent ?: 100
         val voiceVolumePercent = alarm?.voiceVolumePercent ?: 100
-        if (playMode == AlarmPlayModes.ALARM_ONLY && alarmVolumePercent <= 0) {
+        // 알람음(기상 톤) 토글. off 면 톤을 재생하지 않는다(볼륨 0 과 동일 취급). 알람 자체는
+        // 화면·진동·음성(설정 시)으로 계속 울린다. 음성이 없는 폴백 경로는 무음 방지 안전망으로 유지.
+        val alarmToneAllowed = (alarm?.alarmSoundEnabled ?: true) && alarmVolumePercent > 0
+        if (playMode == AlarmPlayModes.ALARM_ONLY && !alarmToneAllowed) {
             stopMediaOnly()
-            Log.i(TAG, "Ringing alarm tone muted by per-alarm volume id=${alarm?.id}")
+            Log.i(TAG, "Alarm tone off (soundEnabled=${alarm?.alarmSoundEnabled}, volume=$alarmVolumePercent) id=${alarm?.id}")
             return
         }
         Log.i(
@@ -200,7 +203,7 @@ class RingingService : Service() {
             }
 
             playMode == AlarmPlayModes.ALARM_VOICE && voiceUri != null -> {
-                if (alarmVolumePercent > 0) {
+                if (alarmToneAllowed) {
                     startAlarmToneLoop(alarm)
                 } else if (voiceVolumePercent > 0) {
                     voiceAfterAlarmStarted = true

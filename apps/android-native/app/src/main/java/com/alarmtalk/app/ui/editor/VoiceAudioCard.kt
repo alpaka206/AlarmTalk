@@ -69,6 +69,8 @@ import com.alarmtalk.app.network.VoiceProfile
 @Composable
 internal fun VoiceAudioCard(
     editor: AlarmEditorState,
+    voiceEnabled: Boolean,
+    onVoiceEnabledChange: (Boolean) -> Unit,
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
@@ -145,27 +147,45 @@ internal fun VoiceAudioCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-            // 직접 녹음은 녹음본을 그대로 재생할 뿐이라 플랜·목소리 종류와 무관하게 항상
-            // 노출한다(무료/유료·기본/내/공유 목소리 모두). TTS 쪽 제한(버킷/문구)은
-            // 소스가 TTS 일 때만 적용된다.
-            // 바로 위 '재생 방식'과 같은 세그먼트 트랙으로 통일(크기·선택색 일치).
-            EditorSegmentedSelector(
-                options = listOf(
-                    VoiceSources.TTS_PROFILE to stringResource(R.string.editor_voice_source_tts),
-                    VoiceSources.LOCAL_AUDIO to stringResource(R.string.editor_voice_source_local),
-                ),
-                selected = visibleVoiceSource,
-                onSelect = {
-                    editor.voiceSource = it
-                    if (it == VoiceSources.TTS_PROFILE) {
-                        editor.clearAudio()
+        // 목소리 선택 행 — 내 목소리·공유받은·기본 + '직접 녹음'(시트 마지막)을 한 목록에서 고른다.
+        // on/off 토글이 이 행 안에 있고(알람음 행과 대칭), 목소리를 고르면 자동으로 켜진다.
+        val recordingOption = VoiceProfileOption(
+            id = VoiceSources.LOCAL_AUDIO,
+            name = stringResource(R.string.editor_voice_source_local),
+            detail = stringResource(R.string.editor_voice_local_detail),
+        )
+        val selectorSelectedId = if (visibleVoiceSource == VoiceSources.LOCAL_AUDIO) {
+            VoiceSources.LOCAL_AUDIO
+        } else {
+            editor.voiceProfileId ?: ""
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = wakerCardBorder(),
+        ) {
+            VoiceProfileSelector(
+                options = profileOptions + recordingOption,
+                selectedId = selectorSelectedId,
+                voiceEnabled = voiceEnabled,
+                onVoiceEnabledChange = onVoiceEnabledChange,
+                onSelect = { option ->
+                    // 목소리를 고르면 꺼져 있던 목소리를 자동으로 켠다(잠금 시엔 게이트로 유도).
+                    if (!voiceEnabled) onVoiceEnabledChange(true)
+                    if (option.id == VoiceSources.LOCAL_AUDIO) {
+                        editor.voiceSource = VoiceSources.LOCAL_AUDIO
                         editor.clearTtsMeta()
                     } else {
+                        editor.voiceSource = VoiceSources.TTS_PROFILE
+                        editor.clearAudio()
                         editor.clearTtsMeta()
+                        editor.selectVoiceProfile(option.id)
                     }
                 },
             )
-
+        }
+        if (voiceEnabled) {
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
                 LaunchedEffect(visibleVoiceSource, voiceProfileBusy, profileOptions, editor.voiceProfileId) {
                     if (
@@ -200,8 +220,7 @@ internal fun VoiceAudioCard(
                 } else if (profileOptions.isEmpty()) {
                     NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
                 } else {
-                    // 목소리(미나)와 문구를 개별 박스로 흩지 않고 하나의 카드+구분선으로 묶는다(삼성 설정식).
-                    // 모서리는 일정·세부설정 카드와 같은 WakerCardShape 로 통일한다.
+                    // 문구·목소리 크기를 하나의 카드+구분선으로 묶는다(목소리 선택은 위 카드로 분리).
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerCardShape,
@@ -209,12 +228,6 @@ internal fun VoiceAudioCard(
                         border = wakerCardBorder(),
                     ) {
                         Column {
-                            VoiceProfileSelector(
-                                options = profileOptions,
-                                selectedId = editor.voiceProfileId ?: "",
-                                onSelect = { option -> editor.selectVoiceProfile(option.id) },
-                            )
-                            AlarmSettingDivider(modifier = Modifier.padding(horizontal = 14.dp))
                             if (restrictToWeatherMedication) {
                                 FreeThemeSummaryRow(
                                     selectedBucket = editor.selectedBucket,
@@ -271,7 +284,9 @@ internal fun VoiceAudioCard(
                         isPreviewActive = isCachedAudioPreviewActive,
                         isPreparing = isPreviewPreparing,
                         onPlay = onPreviewAudio,
-                        onRedo = onRecord,
+                        // '다시 녹음'은 즉시 녹음을 시작하지 않고 기존 녹음을 비워 대기(멈춘) 상태로
+                        // 되돌린다 → VoiceRecordControls(마이크 대기)로 전환. 사용자가 마이크를 눌러 녹음 시작.
+                        onRedo = { editor.clearAudio() },
                     )
                 } else {
                     VoiceRecordControls(
@@ -308,6 +323,7 @@ internal fun VoiceAudioCard(
                     },
                 )
             }
+        }
         }
 }
 
@@ -409,6 +425,8 @@ private fun NoUsableVoiceProfileCallout(
 private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
     selectedId: String,
+    voiceEnabled: Boolean,
+    onVoiceEnabledChange: (Boolean) -> Unit,
     onSelect: (VoiceProfileOption) -> Unit,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
@@ -429,16 +447,23 @@ private fun VoiceProfileSelector(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
+                // 알람음 행과 대칭: 제목 '목소리' + 값(선택된 목소리 / 꺼짐).
                 Text(
-                    text = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
+                    text = stringResource(R.string.editor_voice_output_title),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (selectedOption != null) {
-                    MutedText(selectedOption.detail)
-                }
+                MutedText(
+                    if (voiceEnabled) {
+                        selectedOption?.name ?: stringResource(R.string.editor_voice_select)
+                    } else {
+                        stringResource(R.string.editor_off)
+                    },
+                )
             }
             Spacer(Modifier.width(12.dp))
+            AlarmTalkSwitch(checked = voiceEnabled, onCheckedChange = onVoiceEnabledChange)
+            Spacer(Modifier.width(6.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 contentDescription = null,

@@ -545,6 +545,26 @@ internal fun AlarmEditorScreen(
         voicePlanGateOpen = true
     }
 
+    // 알람음/목소리 두 토글 → 내부 저장(playMode + alarmSoundEnabled) 매핑.
+    //  둘 다 켬 = 알람+목소리 / 목소리만 = 목소리만 / 알람음만 = 알람만 / 둘 다 끔 = 알람만+무음(진동/화면만)
+    // 목소리를 켤 때 voiceSource 를 초기화하던 기존 PlayModeCard onSelect 동작을 보존한다.
+    fun applyAlarmOutput(voice: Boolean, sound: Boolean) {
+        val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
+        editor.playMode = when {
+            voice && sound -> AlarmPlayModes.ALARM_VOICE
+            voice && !sound -> AlarmPlayModes.VOICE_ONLY
+            else -> AlarmPlayModes.ALARM_ONLY
+        }
+        editor.alarmSoundEnabled = sound
+        if (voice && authSession == null) {
+            editor.voiceSource = VoiceSources.LOCAL_AUDIO
+            editor.clearTtsMeta()
+        } else if (voice && wasAlarmOnly) {
+            editor.voiceSource = VoiceSources.TTS_PROFILE
+            editor.clearTtsMeta()
+        }
+    }
+
     fun saveEditor() {
         if (isSaving) return
         if (voicePlanLocked && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
@@ -1055,8 +1075,10 @@ internal fun AlarmEditorScreen(
         settingsDetailPanel = null
     }
 
-    LaunchedEffect(editor.playMode, editor.voiceRandomPrompt) {
-        if (editor.playMode == AlarmPlayModes.VOICE_ONLY && settingsDetailPanel == "sound") {
+    LaunchedEffect(editor.playMode, editor.alarmSoundEnabled) {
+        // 알람음이 꺼지면(목소리만 이거나 알람음 토글 off) 알람음 상세(볼륨·벨소리) 패널을 닫는다.
+        val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
+        if (!alarmSoundOn && settingsDetailPanel == "sound") {
             settingsDetailPanel = null
         }
     }
@@ -1156,37 +1178,17 @@ internal fun AlarmEditorScreen(
                 // 이미 고르므로, 편집기에선 하단 저장 버튼 위에 '○○에게 설정돼요'로만 짧게 알린다.
 
                 item {
-                    Box(
-                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
-                    ) {
-                        PlayModeCard(
-                            selected = editor.playMode,
-                            voiceLocked = voicePlanLocked,
-                            onLockedVoiceClick = ::showVoicePlanGate,
-                            onSelect = { selectedMode ->
-                                if (voicePlanLocked && selectedMode != AlarmPlayModes.ALARM_ONLY) {
-                                    showVoicePlanGate()
-                                    return@PlayModeCard
-                                }
-                                val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
-                                editor.playMode = selectedMode
-                                if (selectedMode != AlarmPlayModes.ALARM_ONLY && authSession == null) {
-                                    editor.voiceSource = VoiceSources.LOCAL_AUDIO
-                                    editor.clearTtsMeta()
-                                } else if (selectedMode != AlarmPlayModes.ALARM_ONLY && wasAlarmOnly) {
-                                    editor.voiceSource = VoiceSources.TTS_PROFILE
-                                    editor.clearTtsMeta()
-                                }
+                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                        // 목소리 on/off 토글은 목소리 카드 안에 있다(별도 '재생 방식' 카드 없음).
+                        // 끄면 playMode=ALARM_ONLY(목소리 미재생), 켜면 알람음 상태에 따라 ALARM_VOICE/VOICE_ONLY.
+                        val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
+                        VoiceAudioCard(
+                            voiceEnabled = editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            onVoiceEnabledChange = { on ->
+                                if (voicePlanLocked) showVoicePlanGate()
+                                else applyAlarmOutput(voice = on, sound = alarmSoundOn)
                             },
-                        )
-                    }
-                }
-
-                if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
-                    item {
-                        Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                            VoiceAudioCard(
-                                editor = editor,
+                            editor = editor,
                                 voiceProfiles = visibleVoiceProfiles,
                                 familyVoices = familyVoices,
                                 voiceProfileBusy = voiceProfileBusy,
@@ -1218,10 +1220,11 @@ internal fun AlarmEditorScreen(
                             )
                         }
                     }
-                }
 
                 item {
                     Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                        val voiceOn = editor.playMode != AlarmPlayModes.ALARM_ONLY
+                        val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
                         AlarmSettingsCard(
                             snoozeEnabled = editor.snoozeEnabled,
                             snoozeMinutes = editor.snoozeMinutes,
@@ -1229,7 +1232,9 @@ internal fun AlarmEditorScreen(
                             vibrationPattern = editor.vibrationPattern,
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
-                            showAlarmSound = editor.playMode != AlarmPlayModes.VOICE_ONLY,
+                            // 알람음 on/off 토글은 이 행에 함께 둔다. 행은 항상 노출.
+                            alarmSoundEnabled = alarmSoundOn,
+                            showAlarmSound = true,
                             // 목소리 크기는 무료·유료 모두 목소리 카드 안의 행에서 연다(UI 통일) —
                             // 세부설정의 '목소리' 행은 더 이상 쓰지 않는다.
                             showVoiceOutput = false,
@@ -1244,6 +1249,7 @@ internal fun AlarmEditorScreen(
                             },
                             onVibrationSelect = { editor.vibrationPattern = it },
                             onAlarmVolumeChange = { editor.alarmVolumePercent = it },
+                            onAlarmSoundEnabledChange = { on -> applyAlarmOutput(voice = voiceOn, sound = on) },
                             onOpenSnoozeSettings = { settingsDetailPanel = "snooze" },
                             onOpenVibrationSettings = { settingsDetailPanel = "vibration" },
                             onOpenAlarmSoundSettings = { settingsDetailPanel = "sound" },
