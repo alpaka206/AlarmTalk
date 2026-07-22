@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 21,
+    version = 22,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -47,6 +47,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_18_19,
                     MIGRATION_19_20,
                     MIGRATION_20_21,
+                    MIGRATION_21_22,
                 )
                     // 캐릭터/성장 기능 제거에 따른 스키마 변경. 개발 중 미정의 마이그레이션은
                     // 파괴적 재생성으로 처리한다(출시 전이라 보존할 데이터 없음).
@@ -223,6 +224,13 @@ abstract class AlarmDatabase : RoomDatabase() {
         private val MIGRATION_18_19 = object : Migration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN bucketClipTextsJson TEXT")
+            }
+        }
+
+        // 알람음(기상 톤) on/off 토글. 기본 1(켬) = 기존 동작 유지. off 면 톤만 재생 안 함.
+        private val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN alarmSoundEnabled INTEGER NOT NULL DEFAULT 1")
             }
         }
     }

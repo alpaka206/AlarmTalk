@@ -243,6 +243,10 @@ internal fun AlarmTalkApp(
         bulkOpenedSettingsTargets = emptySet()
     }
 
+    // '알람 추가' 흐름에서 권한 게이트로 넘어온 요청. 권한을 모두 허용하면 이어서 알람 편집
+    // 페이지로 진입한다(familyTargetMode·targetUserId 보존). 사용자가 모달을 닫으면 취소로 보고 비운다.
+    var pendingCreateAlarmAfterPermission by remember { mutableStateOf<Pair<Boolean, String?>?>(null) }
+
     // 권한 게이트 모달이 열린 동안 권한 상태를 추적한다: 현재 대상 권한이 채워지면 다음 미허용
     // 알람 권한으로 넘기고, 알람에 필요한 권한이 모두 채워지면 모달을 자동으로 닫는다.
     // (RecordAudio 는 알람 게이트가 아니라 목소리 녹음 온디맨드용이므로 여기서 관리하지 않는다.)
@@ -253,6 +257,19 @@ internal fun AlarmTalkApp(
             null -> viewModel.dismissPermissionGate()
             current -> Unit // 아직 현재 권한 미충족 → 모달 유지
             else -> viewModel.requestPermissionGate(nextMissing)
+        }
+    }
+
+    // 알람 추가 흐름에서 필요한 권한을 모두 허용하면 이어서 알람 설정(편집) 페이지로 진입한다.
+    // 모달을 닫아 취소하면 pending 이 비워져 진입하지 않는다.
+    LaunchedEffect(permissions.alarmReady, pendingCreateAlarmAfterPermission) {
+        val pending = pendingCreateAlarmAfterPermission
+        if (pending != null && permissions.alarmReady) {
+            pendingCreateAlarmAfterPermission = null
+            viewModel.dismissPermissionGate()
+            navController.navigate(
+                AppRoute.alarmCreate(familyTargetMode = pending.first, targetUserId = pending.second),
+            )
         }
     }
 
@@ -497,6 +514,8 @@ internal fun AlarmTalkApp(
     var alarmTargetSheetVisible by remember { mutableStateOf(false) }
     fun startCreateAlarm(familyTargetMode: Boolean, targetUserId: String? = null) {
         if (!permissions.alarmReady) {
+            // 권한 게이트로 넘어가되, 허용 완료 후 이 알람 추가를 이어서 편집 페이지로 진입시킨다.
+            pendingCreateAlarmAfterPermission = familyTargetMode to targetUserId
             requestFirstMissingAlarmPermission()
         } else {
             navController.navigate(
@@ -550,7 +569,11 @@ internal fun AlarmTalkApp(
     viewModel.permissionGateRequest?.let { target ->
         PermissionGateDialog(
             target = target,
-            onDismiss = viewModel::dismissPermissionGate,
+            onDismiss = {
+                // 사용자가 모달을 닫으면 취소 — 대기 중인 알람 추가도 비워 편집 페이지로 넘어가지 않게 한다.
+                pendingCreateAlarmAfterPermission = null
+                viewModel.dismissPermissionGate()
+            },
             onOpenSettings = {
                 // '허용하기': 실제 권한 요청을 실행한다(런타임 권한이면 시스템 다이얼로그,
                 // 정확 알람·전체화면이면 설정 화면, 영구거부면 런처 콜백이 앱 설정으로 유도).

@@ -180,9 +180,12 @@ class RingingService : Service() {
         val playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY
         val alarmVolumePercent = alarm?.alarmVolumePercent ?: 100
         val voiceVolumePercent = alarm?.voiceVolumePercent ?: 100
-        if (playMode == AlarmPlayModes.ALARM_ONLY && alarmVolumePercent <= 0) {
+        // 알람음(기상 톤) 토글. off 면 톤을 재생하지 않는다(볼륨 0 과 동일 취급). 알람 자체는
+        // 화면·진동·음성(설정 시)으로 계속 울린다. 음성 실패/부재 폴백도 이 값으로 게이트한다.
+        val alarmToneAllowed = isAlarmToneAllowed(alarm)
+        if (playMode == AlarmPlayModes.ALARM_ONLY && !alarmToneAllowed) {
             stopMediaOnly()
-            Log.i(TAG, "Ringing alarm tone muted by per-alarm volume id=${alarm?.id}")
+            Log.i(TAG, "Alarm tone off (soundEnabled=${alarm?.alarmSoundEnabled}, volume=$alarmVolumePercent) id=${alarm?.id}")
             return
         }
         Log.i(
@@ -200,7 +203,7 @@ class RingingService : Service() {
             }
 
             playMode == AlarmPlayModes.ALARM_VOICE && voiceUri != null -> {
-                if (alarmVolumePercent > 0) {
+                if (alarmToneAllowed) {
                     startAlarmToneLoop(alarm)
                 } else if (voiceVolumePercent > 0) {
                     voiceAfterAlarmStarted = true
@@ -212,16 +215,33 @@ class RingingService : Service() {
             }
 
             playMode == AlarmPlayModes.VOICE_ONLY && voiceUri == null -> {
-                Log.w(TAG, "Voice-only alarm has no local voice audio; falling back to bundled alarm")
-                startAlarmToneLoop(alarm)
+                // 음성이 없어도 알람음을 끈 사용자에겐 톤을 강제하지 않는다(진동·화면은 계속 울린다).
+                startToneFallbackOrSilent(alarm, alarmToneAllowed, "Voice-only alarm has no local voice audio")
             }
 
             playMode == AlarmPlayModes.ALARM_VOICE && voiceUri == null -> {
-                Log.w(TAG, "Alarm+voice alarm has no local voice audio; falling back to bundled alarm")
-                startAlarmToneLoop(alarm)
+                startToneFallbackOrSilent(alarm, alarmToneAllowed, "Alarm+voice alarm has no local voice audio")
             }
 
-            else -> startAlarmToneLoop(alarm)
+            else -> startToneFallbackOrSilent(alarm, alarmToneAllowed, "Ringing audio fallback")
+        }
+    }
+
+    /** 알람음(기상 톤)을 재생해도 되는지 — 알람음 토글이 켜져 있고 볼륨 > 0. 톤 재생/폴백 단일 판정. */
+    private fun isAlarmToneAllowed(alarm: AlarmEntity?): Boolean =
+        (alarm?.alarmSoundEnabled ?: true) && (alarm?.alarmVolumePercent ?: 100) > 0
+
+    /**
+     * 음성이 없거나 재생 실패해 톤으로 폴백해야 하는 경로. 단 알람음이 켜져 있을 때만(alarmToneAllowed)
+     * 번들 톤을 재생하고, 꺼져 있으면 톤을 강제하지 않고 무음으로 둔다(진동·전체화면은 별도로 계속).
+     */
+    private fun startToneFallbackOrSilent(alarm: AlarmEntity?, alarmToneAllowed: Boolean, reason: String) {
+        if (alarmToneAllowed) {
+            Log.w(TAG, "$reason; falling back to bundled alarm tone")
+            startAlarmToneLoop(alarm)
+        } else {
+            stopMediaOnly()
+            Log.i(TAG, "$reason but alarm tone is off; staying silent (vibration/screen only) id=${alarm?.id}")
         }
     }
 
@@ -288,8 +308,9 @@ class RingingService : Service() {
             start()
         }
         if (mediaPlayer == null) {
-            AlarmTalkLog.reportError("Failed to create voice MediaPlayer; falling back to bundled alarm")
-            startAlarmToneLoop(alarm)
+            AlarmTalkLog.reportError("Failed to create voice MediaPlayer")
+            // 알람음을 끈 사용자에겐 실패 시에도 톤을 강제하지 않는다(무음, 진동·화면은 계속).
+            startToneFallbackOrSilent(alarm, isAlarmToneAllowed(alarm), "voice MediaPlayer creation failed")
         }
     }
 
@@ -367,8 +388,8 @@ class RingingService : Service() {
         }
 
         if (nextPlayer == null) {
-            AlarmTalkLog.reportError("Failed to create sequence MediaPlayer; falling back to bundled alarm")
-            startAlarmToneLoop(alarm)
+            AlarmTalkLog.reportError("Failed to create sequence MediaPlayer")
+            startToneFallbackOrSilent(alarm, isAlarmToneAllowed(alarm), "sequence MediaPlayer creation failed")
             return
         }
 
