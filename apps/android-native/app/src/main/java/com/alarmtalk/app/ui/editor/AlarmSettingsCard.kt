@@ -88,6 +88,7 @@ internal fun AlarmSettingsCard(
     vibrationPattern: String,
     alarmVolumePercent: Int,
     alarmSoundLabel: String?,
+    alarmSoundEnabled: Boolean,
     showAlarmSound: Boolean,
     showVoiceOutput: Boolean,
     voiceVolumePercent: Int,
@@ -99,6 +100,7 @@ internal fun AlarmSettingsCard(
     onVibrationEnabledChange: (Boolean) -> Unit,
     onVibrationSelect: (String) -> Unit,
     onAlarmVolumeChange: (Int) -> Unit,
+    onAlarmSoundEnabledChange: (Boolean) -> Unit,
     onOpenSnoozeSettings: () -> Unit,
     onOpenVibrationSettings: () -> Unit,
     onOpenAlarmSoundSettings: () -> Unit,
@@ -148,18 +150,26 @@ internal fun AlarmSettingsCard(
                 )
                 if (showAlarmSound) {
                     AlarmSettingDivider()
-                    // 알람음을 울릴지 말지는 '재생 방식' 세그먼트가 단일 출처다 — 여기 토글을 두면
-                    // '알람+목소리' + 알람음 꺼짐 = 사실상 '목소리만'이 되어 두 컨트롤이 모순된다.
-                    // 이 행은 어떤 소리·볼륨을 쓸지만 다룬다(무음은 pane 의 볼륨 0).
+                    // 알람음 on/off 토글을 이 행에 함께 둔다. 끄면 알람은 계속 울리되(화면·진동·음성)
+                    // 톤만 재생하지 않는다. 켜졌을 때만 볼륨·벨소리(부제 요약, 탭 시 상세)를 노출.
                     AlarmSettingRow(
                         title = stringResource(R.string.editor_alarm_sound_title),
-                        subtitle = alarmSoundSummary(
-                            context = context,
-                            alarmVolumePercent = alarmVolumePercent,
-                            alarmSoundLabel = resolvedAlarmSoundLabel,
-                        ),
+                        subtitle = if (alarmSoundEnabled) {
+                            alarmSoundSummary(
+                                context = context,
+                                alarmVolumePercent = alarmVolumePercent,
+                                alarmSoundLabel = resolvedAlarmSoundLabel,
+                            )
+                        } else {
+                            stringResource(R.string.editor_off)
+                        },
                         onClick = onOpenAlarmSoundSettings,
-                        trailing = {},
+                        trailing = {
+                            AlarmTalkSwitch(
+                                checked = alarmSoundEnabled,
+                                onCheckedChange = onAlarmSoundEnabledChange,
+                            )
+                        },
                     )
                 }
                 if (showVoiceOutput) {

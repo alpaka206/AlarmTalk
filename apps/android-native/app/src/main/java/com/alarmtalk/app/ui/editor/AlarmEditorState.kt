@@ -86,6 +86,7 @@ internal class AlarmEditorState(
     alarmVolumePercent: Int,
     alarmSoundUri: String?,
     alarmSoundLabel: String?,
+    alarmSoundEnabled: Boolean = true,
     bucketId: String? = null,
     bucketClipKeysJson: String? = null,
     bucketClipTextsJson: String? = null,
@@ -128,6 +129,8 @@ internal class AlarmEditorState(
     var alarmVolumePercent by mutableIntStateOf(alarmVolumePercent.coerceIn(0, 100))
     var alarmSoundUri by mutableStateOf(alarmSoundUri)
     var alarmSoundLabel by mutableStateOf(alarmSoundLabel)
+    // 알람음(기상 톤) on/off. off 면 알람은 울리되(화면·진동·음성) 톤만 재생 안 함.
+    var alarmSoundEnabled by mutableStateOf(alarmSoundEnabled)
     // 무료 버킷 회전: 선택한 버킷 카테고리, 미리 캐시한 N개 클립의 cacheKey JSON,
     // 그리고 그 클립이 어떤 보이스로 캐시됐는지(보이스 변경 시 재선택 판단용, 영속 안 함).
     var selectedBucket by mutableStateOf(bucketId)
@@ -225,6 +228,7 @@ internal class AlarmEditorState(
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
             alarmSoundUri = alarmSoundUri,
             alarmSoundLabel = alarmSoundLabel,
+            alarmSoundEnabled = alarmSoundEnabled,
         )
     }
 
@@ -465,6 +469,7 @@ internal class AlarmEditorState(
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
                 alarmSoundUri = alarm?.alarmSoundUri,
                 alarmSoundLabel = alarm?.alarmSoundLabel,
+                alarmSoundEnabled = alarm?.alarmSoundEnabled ?: true,
                 bucketId = alarm?.bucketId,
                 bucketClipKeysJson = alarm?.bucketClipKeysJson,
                 bucketClipTextsJson = alarm?.bucketClipTextsJson,
