@@ -278,6 +278,7 @@
     <string name="editor_voice_repeat_title">Repeat playback</string>
     <string name="editor_voice_select">Select voice</string>
     <string name="editor_voice_source_local">Record it</string>
+    <string name="editor_voice_local_detail">Your own recorded voice</string>
     <string name="editor_voice_source_tts">Choose voice</string>
     <string name="editor_voice_volume">Voice volume</string>
     <string name="editor_volume">Volume</string>

@@ -64,6 +64,8 @@ data class AlarmEntity(
     val alarmVolumePercent: Int,
     val alarmSoundUri: String?,
     val alarmSoundLabel: String?,
+    // 알람음(기상 톤) on/off. false 면 알람은 울리되(화면·진동·음성) 톤만 재생하지 않는다. 로컬 전용.
+    val alarmSoundEnabled: Boolean = true,
     val enabled: Boolean,
     val state: String,
     val createdAtMillis: Long,
@@ -119,6 +121,7 @@ data class AlarmDraft(
     val alarmVolumePercent: Int = 100,
     val alarmSoundUri: String? = null,
     val alarmSoundLabel: String? = null,
+    val alarmSoundEnabled: Boolean = true,
 )
 
 /** bucketClipKeysJson(JSON 문자열 배열) ↔ List<String> 변환 유틸. */

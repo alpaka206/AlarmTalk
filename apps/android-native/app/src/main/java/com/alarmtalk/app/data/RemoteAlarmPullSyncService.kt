@@ -286,6 +286,7 @@ internal class RemoteAlarmPullSyncService(
             alarmVolumePercent = existing?.alarmVolumePercent ?: 100,
             alarmSoundUri = existing?.alarmSoundUri,
             alarmSoundLabel = existing?.alarmSoundLabel,
+            alarmSoundEnabled = existing?.alarmSoundEnabled ?: true,
             enabled = enabled,
             state = if (enabled) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
             createdAtMillis = existing?.createdAtMillis ?: now,
