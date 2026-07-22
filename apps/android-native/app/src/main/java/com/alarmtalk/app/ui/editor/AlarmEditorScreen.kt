@@ -1213,6 +1213,11 @@ internal fun AlarmEditorScreen(
                                     }
                                 },
                                 onPreviewAudio = { playCachedAudio() },
+                                onDiscardRecording = {
+                                    // 미리듣기가 재생 중이면 먼저 멈춘 뒤 녹음을 비운다(소리 잔존 방지).
+                                    stopPreview()
+                                    editor.clearAudio()
+                                },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
                                 onOpenFreeBucketSettings = { settingsDetailPanel = "free_bucket" },
