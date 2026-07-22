@@ -215,16 +215,29 @@ class RingingService : Service() {
             }
 
             playMode == AlarmPlayModes.VOICE_ONLY && voiceUri == null -> {
-                Log.w(TAG, "Voice-only alarm has no local voice audio; falling back to bundled alarm")
-                startAlarmToneLoop(alarm)
+                // 음성이 없어도 알람음을 끈 사용자에겐 톤을 강제하지 않는다(진동·화면은 계속 울린다).
+                startToneFallbackOrSilent(alarm, alarmToneAllowed, "Voice-only alarm has no local voice audio")
             }
 
             playMode == AlarmPlayModes.ALARM_VOICE && voiceUri == null -> {
-                Log.w(TAG, "Alarm+voice alarm has no local voice audio; falling back to bundled alarm")
-                startAlarmToneLoop(alarm)
+                startToneFallbackOrSilent(alarm, alarmToneAllowed, "Alarm+voice alarm has no local voice audio")
             }
 
-            else -> startAlarmToneLoop(alarm)
+            else -> startToneFallbackOrSilent(alarm, alarmToneAllowed, "Ringing audio fallback")
+        }
+    }
+
+    /**
+     * 음성 URI 가 없어 톤으로 폴백해야 하는 경로. 단 알람음이 켜져 있을 때만(alarmToneAllowed)
+     * 번들 톤을 재생하고, 꺼져 있으면 톤을 강제하지 않고 무음으로 둔다(진동·전체화면은 별도로 계속).
+     */
+    private fun startToneFallbackOrSilent(alarm: AlarmEntity?, alarmToneAllowed: Boolean, reason: String) {
+        if (alarmToneAllowed) {
+            Log.w(TAG, "$reason; falling back to bundled alarm tone")
+            startAlarmToneLoop(alarm)
+        } else {
+            stopMediaOnly()
+            Log.i(TAG, "$reason but alarm tone is off; staying silent (vibration/screen only) id=${alarm?.id}")
         }
     }
 
