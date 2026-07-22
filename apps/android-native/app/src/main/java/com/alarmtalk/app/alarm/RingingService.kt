@@ -516,8 +516,30 @@ class RingingService : Service() {
         val channel = nm.getNotificationChannel(NotificationChannels.RINGING_CHANNEL_ID)
         // 아직 채널 생성 전이면 곧 IMPORTANCE_HIGH 로 만들어지므로 강등으로 보지 않는다.
         if (channel != null && channel.importance < NotificationManager.IMPORTANCE_HIGH) return false
-        return nm.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL ||
-            channel?.canBypassDnd() == true
+        // 채널이 DND 를 우회하면 어떤 DND 에서도 헤드업 가능.
+        if (channel?.canBypassDnd() == true) return true
+        // 이 알림은 CATEGORY_ALARM 이라 '알람 허용' DND 모드에선 시각 방해가 허용된다.
+        //  - ALL(DND off), ALARMS(알람만 허용): 허용
+        //  - PRIORITY: 정책이 알람 카테고리를 허용할 때만
+        //  - NONE(완전 무음)·UNKNOWN: 억제로 본다
+        return when (nm.currentInterruptionFilter) {
+            NotificationManager.INTERRUPTION_FILTER_ALL,
+            NotificationManager.INTERRUPTION_FILTER_ALARMS -> true
+            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> priorityDndAllowsAlarms(nm)
+            else -> false
+        }
+    }
+
+    /**
+     * PRIORITY DND 정책이 알람 카테고리를 허용하는지. getNotificationPolicy 는 알림 정책 접근
+     * 권한이 있어야 하므로(미보유 시 SecurityException) 실패하면 보수적으로 false → 전체 울림
+     * 화면을 띄운다. PRIORITY_CATEGORY_ALARMS 는 API 28+ 라 하위에선 false.
+     */
+    private fun priorityDndAllowsAlarms(nm: NotificationManager): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+        return runCatching {
+            (nm.notificationPolicy.priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS) != 0
+        }.getOrDefault(false)
     }
 
     private fun openRingingActivity(alarmId: String) {
