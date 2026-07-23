@@ -187,7 +187,7 @@ ${renderMsg(c)}
 <h2>새 코드 발급</h2>
 <form class="create" method="post" action="/admin/promo">
   <label>코드 문자열
-    <input name="code" placeholder="WELCOME_ALARMTALK" required maxlength="64" autocomplete="off">
+    <input name="code" placeholder="PROMO_EXAMPLE" required maxlength="64" autocomplete="off">
   </label>
   <label>플랜
     <select name="plan_key" required>${planOptions}</select>
