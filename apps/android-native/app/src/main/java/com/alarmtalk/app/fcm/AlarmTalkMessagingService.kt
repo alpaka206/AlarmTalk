@@ -39,9 +39,12 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
         }
         // 구독 만료 → 무료 강등 신호. 프로세스가 죽어도 살아남게 WorkManager 로 큐잉 → 백그라운드에서
         // 구독/플랜/가족 재조회 후 '진짜 무료'면 유료 목소리 알람을 기본 알람으로 변환(강등 시점 반영).
+        // 앱이 포그라운드로 살아 있으면 워커가 쓴 SharedPreferences 만으론 live UI(구독/플랜 state)가
+        // 안 바뀌므로, 신호도 함께 emit 해 MainViewModel 이 즉시 재조회하게 한다(구독자 없으면 버려짐).
         if (message.data["type"] == "plan_changed") {
             runCatching { com.alarmtalk.app.sync.PlanChangeSyncWorker.runOnce(applicationContext) }
                 .onFailure { AlarmTalkLog.reportError("plan_changed handling failed", it) }
+            com.alarmtalk.app.core.AppSignals.emitPlanChanged()
         }
     }
 

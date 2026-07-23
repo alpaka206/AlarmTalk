@@ -371,6 +371,17 @@ internal fun AlarmTalkApp(
             viewModel.loadStockClips(forceReload = true)
         }
     }
+    // 플랜 변경(plan_changed push) — 앱이 살아 있는 채로 구독이 만료·강등되면 워커는 SharedPreferences
+    // 만 갱신하므로 live state(구독/플랜/가족)는 그대로다. 즉시 재조회해, 아래 강등 이펙트가 새 state
+    // 로 재평가되어 UI 가 만료된 유료 플랜/유료 컨트롤을 계속 보여주지 않게 한다(서버 거부 액션 유도 방지).
+    LaunchedEffect(authSession?.token) {
+        if (authSession == null) return@LaunchedEffect
+        com.alarmtalk.app.core.AppSignals.planChanged.collect {
+            viewModel.preloadBilling()   // 구독 state
+            viewModel.preloadSocial()    // 가족 state(+ 접근 잃은 공유 목소리 알람 강등)
+            viewModel.refreshAppSession() // auth/me → users.plan
+        }
+    }
 
     LaunchedEffect(
         authSession?.user?.id,
