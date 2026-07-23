@@ -12,6 +12,12 @@ import {
   type SubscriptionV2Response,
 } from './play-subscriptions';
 import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
+import { sendPlanChangedPush } from './fcm';
+import type { Env } from '../types';
+
+// 만료 크론이 FCM(plan_changed) 을 쏘려면 Play env 외에 FIREBASE 설정도 필요하다. index.ts 의 scheduled
+// 핸들러가 워커 env(전체)를 넘기므로 런타임엔 존재하며, 타입만 넓혀 준다.
+type ExpiryEnv = PlayEnv & Partial<Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>>;
 
 export interface ActiveSubscription {
   subscriptionId: string;
@@ -612,9 +618,11 @@ async function reconcileGoogleBeforeExpiry(
 
 export async function processSubscriptionExpiry(
   db: Client,
-  env?: PlayEnv,
+  env?: ExpiryEnv,
   now: Date = new Date(),
 ): Promise<void> {
+  // 무료로 강등된 사용자 — 이후 FCM(plan_changed)으로 통지해 클라가 '강등 시점'에 알람을 변환하게 한다.
+  const notifyUserPks = new Set<string>();
   const dueRes = await db.execute({
     sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, s.next_plan_id,
                  s.expires_at, p.plan_type
@@ -651,6 +659,7 @@ export async function processSubscriptionExpiry(
       if (!nextPlanId) {
         // 예약취소 만료 — 음성은 즉시 삭제하지 않고 30일 보관 유예를 건다.
         await schedulePaidVoiceRetention(tx, active.userPk, now);
+        notifyUserPks.add(active.userPk);
         return;
       }
       const nextPlanRes = await tx.execute({
@@ -708,10 +717,25 @@ export async function processSubscriptionExpiry(
       // 일반 만료도 하드삭제 대신 30일 보관 유예.
       await schedulePaidVoiceRetention(tx, userPk, now);
     });
+    notifyUserPks.add(userPk);
   }
 
   // 보관 유예가 끝난 유료 음성 데이터 정리 (같은 cron 주기에서 처리).
   await sweepPaidVoiceRetention(db, now);
+
+  // 강등된 사용자에게 plan_changed 푸시 — 클라가 '강등 시점'에 유료 목소리 알람을 기본 알람으로
+  // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인. FCM 실패가 크론을 깨지 않게 격리.
+  if (env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON && notifyUserPks.size > 0) {
+    try {
+      await sendPlanChangedPush(
+        db,
+        { FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID, FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON },
+        Array.from(notifyUserPks),
+      );
+    } catch (err) {
+      logStructured('error', { at: 'billing.expiry', action: 'PLAN_CHANGED_PUSH_FAILED', error: String(err) });
+    }
+  }
 }
 
 export { planTypeToUserPlan };

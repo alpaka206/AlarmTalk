@@ -226,6 +226,28 @@ export async function sendVoiceShareChangedPush(
   await pruneStaleTokens(db, results);
 }
 
+/**
+ * 구독 만료로 무료 강등이 확정될 때 그 사용자에게 보내는 data-only 신호. 클라가 받으면(백그라운드여도)
+ * 구독/플랜을 재조회해 '진짜 무료'면 유료 목소리 알람을 기본 알람으로 변환한다. 과다발송해도 클라가
+ * 재조회로 확인(유료면 무시)하므로 안전. 놓쳐도 다음 앱 시작·울림 시점 게이트가 폴백.
+ */
+export async function sendPlanChangedPush(
+  db: Client,
+  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  userIds: string[],
+): Promise<void> {
+  const messages: FcmMessage[] = [];
+  for (const userId of Array.from(new Set(userIds))) {
+    const tokens = await getTokensForUser(db, userId);
+    for (const token of tokens) {
+      messages.push({ token, title: '', body: '', data: { type: 'plan_changed' } });
+    }
+  }
+  if (messages.length === 0) return;
+  const results = await sendPushNotifications(messages, env);
+  await pruneStaleTokens(db, results);
+}
+
 export async function sendAlarmPush(
   db: Client,
   env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
