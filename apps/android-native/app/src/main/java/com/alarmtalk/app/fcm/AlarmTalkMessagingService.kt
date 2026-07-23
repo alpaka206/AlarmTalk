@@ -37,6 +37,12 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
         if (message.data["type"] == "voice_share_changed") {
             com.alarmtalk.app.core.AppSignals.emitVoiceShareChanged()
         }
+        // 구독 만료 → 무료 강등 신호. 백그라운드여도 구독/플랜 재조회 후 '진짜 무료'면 유료 목소리
+        // 알람을 기본 알람으로 변환한다(강등 시점 반영). 유료/가족이면 변환 안 함(재조회로 확인).
+        if (message.data["type"] == "plan_changed") {
+            runCatching { PlanChangeConversion.runOnce(applicationContext) }
+                .onFailure { AlarmTalkLog.reportError("plan_changed handling failed", it) }
+        }
     }
 
     companion object {
