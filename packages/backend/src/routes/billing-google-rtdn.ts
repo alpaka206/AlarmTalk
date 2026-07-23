@@ -7,6 +7,7 @@ import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oau
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import {
   cancelSubscriptionImmediate,
+  notifyPlanChanged,
   resolvePlanAfterSuspend,
   schedulePaidVoiceRetention,
   type ActiveSubscription,
@@ -353,12 +354,16 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   // (cancelActiveSubscriptionsForUser)가 아니라 토큰에 매핑된 구독 한 건만 취소한다.
   // 음성 데이터는 즉시 삭제하지 않고 30일 보관 유예를 건다(재구독 시 entitle 경로가
   // 유예를 해제하고, sweep 도 삭제 전 활성 유료 구독을 재확인한다).
-  await withWriteTransaction(db, async (tx) => {
-    await cancelSubscriptionImmediate(tx, mappedSubscription, new Date(), {
+  const affected = await withWriteTransaction(db, async (tx) => {
+    const ids = await cancelSubscriptionImmediate(tx, mappedSubscription, new Date(), {
       deleteVoiceData: false,
     });
     await schedulePaidVoiceRetention(tx, userPk, new Date());
+    return ids;
   });
+  // 실시간 만료·취소(Play RTDN 주 경로)로 강등되는 당사자+해체 멤버에게 plan_changed 푸시 →
+  // 크론을 기다리지 않고 '강등 시점'에 클라가 유료 목소리 알람을 기본 알람으로 변환(백그라운드 여도).
+  await notifyPlanChanged(db, c.env, affected);
   logStructured('info', { at: 'billing.google.rtdn', action: 'deactivate', state, userPk });
   return c.json({ success: true, action: 'deactivated' });
 });

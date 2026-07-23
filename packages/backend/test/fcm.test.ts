@@ -8,6 +8,7 @@ import {
   getTokensForUser,
   sendPushNotifications,
   sendAlarmPush,
+  sendPlanChangedPush,
   pruneStaleTokens,
 } from '../src/lib/fcm';
 
@@ -58,6 +59,26 @@ describe('getTokensForUser', () => {
     mockDB.pushResult([{ token: 'single-token' }]);
     const tokens = await getTokensForUser(mockDB.client as never, 'user-3');
     expect(tokens).toEqual(['single-token']);
+  });
+});
+
+describe('sendPlanChangedPush', () => {
+  it('각 사용자 토큰을 조회해 plan_changed data 메시지를 만든다(중복 사용자 제거)', async () => {
+    // 사용자 2명(중복 1) → getTokensForUser 2회만 호출.
+    mockDB.pushResult([{ token: 'tok-a' }]); // user-1 토큰
+    mockDB.pushResult([{ token: 'tok-b' }]); // user-2 토큰
+    await sendPlanChangedPush(mockDB.client as never, RSA_TEST_ENV, ['user-1', 'user-2', 'user-1']);
+    const tokenQueries = mockDB.calls.filter((c) => c.sql.includes('push_tokens'));
+    expect(tokenQueries).toHaveLength(2); // user-1, user-2 (중복 제거)
+    expect(tokenQueries[0].args).toContain('user-1');
+    expect(tokenQueries[1].args).toContain('user-2');
+  });
+
+  it('토큰이 하나도 없으면 전송하지 않는다(조기 반환)', async () => {
+    mockDB.pushResult([]); // user-1 토큰 없음
+    await sendPlanChangedPush(mockDB.client as never, RSA_TEST_ENV, ['user-1']);
+    // push_tokens 조회만 하고, 전송/정리 쿼리는 없다.
+    expect(mockDB.calls.every((c) => c.sql.includes('push_tokens'))).toBe(true);
   });
 });
 
