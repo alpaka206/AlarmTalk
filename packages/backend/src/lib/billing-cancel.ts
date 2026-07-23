@@ -616,12 +616,24 @@ async function reconcileGoogleBeforeExpiry(
   return 'skip';
 }
 
+// 가족 소유자 만료로 그룹이 해체되면 멤버들도 강등되므로, plan_changed 통지 대상에 멤버 user_id 를
+// 함께 모은다. 해체 트랜잭션이 멤버 행을 지우므로 반드시 트랜잭션 '전에' 조회한다.
+async function planGroupMemberIds(db: Client, planGroupId: string | null): Promise<string[]> {
+  if (!planGroupId) return [];
+  const res = await db.execute({
+    sql: `SELECT user_id FROM plan_group_members WHERE plan_group_id = ?`,
+    args: [planGroupId],
+  });
+  return res.rows.map((r) => String(r.user_id));
+}
+
 export async function processSubscriptionExpiry(
   db: Client,
   env?: ExpiryEnv,
   now: Date = new Date(),
 ): Promise<void> {
-  // 무료로 강등된 사용자 — 이후 FCM(plan_changed)으로 통지해 클라가 '강등 시점'에 알람을 변환하게 한다.
+  // 무료로 강등된 사용자(소유자 + 가족 멤버) — 이후 FCM(plan_changed)으로 통지해 클라가 '강등 시점'에
+  // 알람을 변환하게 한다.
   const notifyUserPks = new Set<string>();
   const dueRes = await db.execute({
     sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, s.next_plan_id,
@@ -653,6 +665,9 @@ export async function processSubscriptionExpiry(
     });
     if (decision === 'skip') continue;
 
+    // 소유자가 무료로 떨어지는 경우(다음 플랜 없음)에만 그룹이 해체돼 멤버도 강등된다.
+    // 해체 전에 멤버를 미리 조회해 통지 대상에 포함한다.
+    const dueMemberIds = nextPlanId ? [] : await planGroupMemberIds(db, active.planGroupId);
     await withWriteTransaction(db, async (tx) => {
       await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
 
@@ -679,6 +694,7 @@ export async function processSubscriptionExpiry(
         now,
       });
     });
+    for (const m of dueMemberIds) notifyUserPks.add(m);
   }
 
   const expiredRes = await db.execute({
@@ -701,6 +717,8 @@ export async function processSubscriptionExpiry(
     });
     if (decision === 'skip') continue;
 
+    // 일반 만료도 소유자면 그룹 해체 → 멤버 강등. 해체 전에 멤버를 미리 조회한다.
+    const expiredMemberIds = await planGroupMemberIds(db, (r.plan_group_id as string | null) ?? null);
     await withWriteTransaction(db, async (tx) => {
       await cancelSubscriptionImmediate(
         tx,
@@ -718,6 +736,7 @@ export async function processSubscriptionExpiry(
       await schedulePaidVoiceRetention(tx, userPk, now);
     });
     notifyUserPks.add(userPk);
+    for (const m of expiredMemberIds) notifyUserPks.add(m);
   }
 
   // 보관 유예가 끝난 유료 음성 데이터 정리 (같은 cron 주기에서 처리).
