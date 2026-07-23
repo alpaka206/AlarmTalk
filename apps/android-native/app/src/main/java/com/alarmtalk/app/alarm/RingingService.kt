@@ -33,12 +33,17 @@ import com.alarmtalk.app.alarm.AlarmContract.ACTION_START_RINGING
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.AccessSnapshotStore
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmEntity
+import com.alarmtalk.app.data.AlarmOrigins
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.decodeBucketClipKeys
+import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
+import com.alarmtalk.app.isPaidVoiceEntitledNow
+import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -176,8 +181,23 @@ class RingingService : Service() {
                 voiceUriOverride != null,
             )
         }
-        val voiceUri = (voiceUriOverride ?: storedVoiceUri)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
-        val playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY
+        val rawVoiceUri = (voiceUriOverride ?: storedVoiceUri)?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        val rawPlayMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY
+        // 무료 전환/구독 만료가 아직 로컬 DB 잠금(preLockPlayMode)으로 반영되지 않았어도(앱 미실행·
+        // 오프라인이라 billing 재조회를 못 한 창), 울림 시점에 로컬 영속 구독으로 유료 권한을 재확인해
+        // 유료 목소리를 기본 톤으로 강등한다. 알람 자체는 그대로 울리고(톤/진동/화면). 본인 소유
+        // (LOCAL_OWNED) 알람만 대상 — 공유받은(RECEIVED_REMOTE) 알람은 소유자 구독으로 판단하지
+        // 않는다. 무료 시스템 보이스(버킷 등)는 강등 대상이 아니라 제외.
+        val downgradePaidVoice = alarm != null &&
+            alarm.origin == AlarmOrigins.LOCAL_OWNED &&
+            !alarm.usesFreeSystemVoiceAlarm() &&
+            alarmUsesPaidVoice(alarm) &&
+            !isPaidVoiceEntitledFromCache()
+        if (downgradePaidVoice) {
+            Log.i(TAG, "Free plan at ring time — downgrading paid voice to alarm tone id=${alarm?.id}")
+        }
+        val voiceUri = if (downgradePaidVoice) null else rawVoiceUri
+        val playMode = if (downgradePaidVoice) AlarmPlayModes.ALARM_ONLY else rawPlayMode
         val alarmVolumePercent = alarm?.alarmVolumePercent ?: 100
         val voiceVolumePercent = alarm?.voiceVolumePercent ?: 100
         // 알람음(기상 톤) 토글. off 면 톤을 재생하지 않는다(볼륨 0 과 동일 취급). 알람 자체는
@@ -230,6 +250,27 @@ class RingingService : Service() {
     /** 알람음(기상 톤)을 재생해도 되는지 — 알람음 토글이 켜져 있고 볼륨 > 0. 톤 재생/폴백 단일 판정. */
     private fun isAlarmToneAllowed(alarm: AlarmEntity?): Boolean =
         (alarm?.alarmSoundEnabled ?: true) && (alarm?.alarmVolumePercent ?: 100) > 0
+
+    /** 유료(무료 강등 대상) 목소리를 쓰는 알람인지 — lockPaidAlarmTalks 의 usesVoice 기준과 동일. */
+    private fun alarmUsesPaidVoice(alarm: AlarmEntity): Boolean =
+        alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
+            !alarm.localAudioUri.isNullOrBlank() ||
+            !alarm.rawAudioUri.isNullOrBlank() ||
+            !alarm.voiceProfileId.isNullOrBlank() ||
+            !alarm.ttsMessageId.isNullOrBlank()
+
+    /**
+     * 울림 시점에 로컬 영속 구독으로 유료 목소리 권한을 재확인한다(오프라인·앱 미실행 안전).
+     * 절대 예외를 던지지 않는다 — 암호화 저장소 읽기/복호화가 실패해도 true(강등 안 함)로 떨어뜨려
+     * 알람이 무음화되지 않게 한다(fail-open). 구독 정보가 없으면(미조회·가족 구성원·transient) 강등하지
+     * 않고, '마지막으로 활성이던 구독의 만료시각이 지났을 때'만 무권한으로 본다.
+     */
+    private fun isPaidVoiceEntitledFromCache(): Boolean = runCatching {
+        val userId = AuthSessionStore(applicationContext).read()?.user?.id ?: return@runCatching true
+        val sub = AccessSnapshotStore(applicationContext).read(userId).subscriptionResponse
+        if (sub?.subscription == null) return@runCatching true
+        isPaidVoiceEntitledNow(sub, System.currentTimeMillis())
+    }.getOrDefault(true)
 
     /**
      * 음성이 없거나 재생 실패해 톤으로 폴백해야 하는 경로. 단 알람음이 켜져 있을 때만(alarmToneAllowed)

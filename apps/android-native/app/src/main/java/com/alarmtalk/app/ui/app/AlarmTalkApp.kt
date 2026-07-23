@@ -374,19 +374,30 @@ internal fun AlarmTalkApp(
 
     LaunchedEffect(
         authSession?.user?.id,
+        // 서버 users.plan(만료 확정 시 cron 이 'free' 로 세팅)이 바뀌면 재평가하도록 키에 포함.
+        authSession?.user?.plan,
         subscriptionResponse?.subscription?.id,
         subscriptionResponse?.subscription?.status,
         subscriptionResponse?.plan?.key,
         subscriptionResponse?.plan?.planType,
     ) {
-        if (authSession != null && subscriptionResponse != null) {
-            if (hasPaidVoiceAccess(subscriptionResponse)) {
-                // 다시 유료가 되면 무료 동안 잠근 목소리 알람을 복원한다.
-                viewModel.restorePaidVoiceAlarmsIfLocked()
-            } else {
-                // 무료면 유료 목소리 알람을 삭제 대신 사운드온리로 잠근다.
-                viewModel.applyFreePlanVoiceLock()
-            }
+        // 유료 목소리 알람을 기본 알람(사운드온리)으로 '영구' 변환하는 건 서버가 무료로 '확정'한
+        // 신호에서만 한다(다시 유료가 돼도 되돌리지 않는 사용자 정책이라, 오변환이 곧 영구 피해다).
+        // 세 조건을 모두 만족해야 변환: (a) billing 에 유료 구독 없음, (b) 가족/커플 접근도 없음,
+        // (c) 서버 users.plan 이 무료. 이래야 갱신 지연·읽기리플리카 지연으로 subscription 이 잠깐
+        // null 인 유료 사용자가 영구 오변환되지 않는다. 만료~반영 전 창의 '울림'은 RingingService 게이트가 방어.
+        val plan = authSession?.user?.plan
+        val billingNotEntitled = authSession != null && subscriptionResponse != null &&
+            !hasPaidVoiceAccess(subscriptionResponse) &&
+            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+        val planIsFree = plan.isNullOrBlank() || plan == "free"
+        when {
+            billingNotEntitled && planIsFree -> viewModel.applyFreePlanVoiceLock()
+            // billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중 만료 시
+            // refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
+            // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
+            // 진짜 무료면 plan=free 로 바뀌어 변환되고, 일시적 stale 이면 plan=유료 그대로라 변환 안 함.
+            billingNotEntitled -> viewModel.refreshAppSession()
         }
     }
 
@@ -818,6 +829,7 @@ internal fun AlarmTalkApp(
                           familyVoices = familyVoices,
                           billingBusy = billingBusy,
                           subscriptionResponse = subscriptionResponse,
+                          voiceDraftQuotaExhausted = viewModel.voiceDraftQuota?.let { it.remaining <= 0 } == true,
                           vouchers = vouchers,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,

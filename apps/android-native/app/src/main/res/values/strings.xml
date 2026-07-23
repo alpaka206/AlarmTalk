@@ -149,6 +149,8 @@
     <string name="common_alarm_delete">삭제</string>
     <string name="common_alarm_warning_reschedule_failed">알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요.</string>
     <string name="common_alarm_warning_sync_failed">저장이 잠시 미뤄졌어요. 알람은 정상적으로 울리고, 자동으로 다시 저장해요.</string>
+    <string name="common_alarm_notice_free_downgraded">무료 요금제로 바뀌어 기본 알람으로 변환되었어요.</string>
+    <string name="common_alarm_notice_default_converted">목소리를 쓸 수 없어 기본 알람으로 변환되었어요.</string>
     <string name="common_day_fri">금</string>
     <string name="common_day_mon">월</string>
     <string name="common_day_sat">토</string>
@@ -628,10 +630,8 @@
     <string name="voices_mic_permission_required">마이크 권한이 필요해요.</string>
     <string name="voices_my_voices_title">내 목소리</string>
     <string name="voices_name_label">목소리 이름</string>
-    <string name="voices_prerender_generating_title">목소리 생성 중</string>
-    <string name="voices_prerender_downloading_title">기기에 저장 중</string>
-    <string name="voices_prerender_continue_background_action">백그라운드에서 계속</string>
-    <string name="voices_prerender_continue_background">남은 문구는 백그라운드에서 계속 만들어져요.</string>
+    <string name="voices_prerender_ready_title">알람 목소리를 준비하고 있어요</string>
+    <string name="voices_prerender_ready_body">조금만 기다리면 준비돼요.\n이 화면을 닫아도 백그라운드에서 계속돼요.</string>
     <string name="voices_language_label">문구 언어</string>
     <string name="voices_lang_ko" translatable="false">한국어</string>
     <string name="voices_lang_en" translatable="false">English</string>
@@ -690,6 +690,8 @@
     <string name="voices_upload_zone_subtitle">1분 이상의 오디오나 영상으로 준비해 주세요</string>
     <string name="voicesr_close">닫기</string>
     <string name="voicesr_delete">삭제</string>
+    <string name="voices_delete_quota_title">정말 삭제할까요?</string>
+    <string name="voices_delete_quota_message">이번 달 생성 횟수를 모두 사용해, 지금 삭제하면 이번 달엔 새 목소리를 만들 수 없어요.</string>
     <string name="voicesr_delete_dialog_confirm">\'%1$s\' 목소리를 삭제할까요?</string>
     <string name="voicesr_delete_dialog_title">목소리 삭제</string>
     <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
