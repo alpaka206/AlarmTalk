@@ -387,12 +387,17 @@ internal fun AlarmTalkApp(
         // (c) 서버 users.plan 이 무료. 이래야 갱신 지연·읽기리플리카 지연으로 subscription 이 잠깐
         // null 인 유료 사용자가 영구 오변환되지 않는다. 만료~반영 전 창의 '울림'은 RingingService 게이트가 방어.
         val plan = authSession?.user?.plan
-        val genuinelyFree = authSession != null && subscriptionResponse != null &&
+        val billingNotEntitled = authSession != null && subscriptionResponse != null &&
             !hasPaidVoiceAccess(subscriptionResponse) &&
-            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
-            (plan.isNullOrBlank() || plan == "free")
-        if (genuinelyFree) {
-            viewModel.applyFreePlanVoiceLock()
+            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+        val planIsFree = plan.isNullOrBlank() || plan == "free"
+        when {
+            billingNotEntitled && planIsFree -> viewModel.applyFreePlanVoiceLock()
+            // billing 은 무권한인데 user.plan 이 아직 유료 → stale 가능(앱 살아있는 중 만료 시
+            // refreshBilling 은 구독만 갱신하고 plan 은 안 갱신). auth/me 로 plan 을 갱신해 진짜
+            // 무료인지 확정한다 — 갱신되면 이 이펙트가 user.plan 키 변화로 재실행돼 변환을 재판정.
+            // 진짜 무료면 plan=free 로 바뀌어 변환되고, 일시적 stale 이면 plan=유료 그대로라 변환 안 함.
+            billingNotEntitled -> viewModel.refreshAppSession()
         }
     }
 
