@@ -42,6 +42,14 @@ class PlanChangeSyncWorker(
             val freshUser = runCatching { withContext(Dispatchers.IO) { api.me(auth).user } }.getOrNull()
             val familyGroup = runCatching { withContext(Dispatchers.IO) { api.getFamilyGroup(auth) } }.getOrNull()
 
+            // 네트워크 왕복 중 로그아웃/계정전환이 일어났을 수 있다 — 결과를 쓰기 전에 현재 세션이 아직
+            // 이 세션(같은 토큰)인지 재확인한다. 바뀌었으면 옛 세션을 부활시키거나 새 세션을 덮어쓰지
+            // 않도록 이 결과를 버린다(성공 처리, 재시도 불요). (FCM 토큰 등록 레이스 가드와 동일 패턴.)
+            val current = sessionStore.read()
+            if (current == null || current.token != session.token) {
+                return@runCatching Result.success()
+            }
+
             // 로컬 영속 반영 — 울림 시점 게이트·다음 앱 오픈 UI 가 최신 상태를 쓰게 한다.
             val userId = session.user.id
             val snapshotStore = AccessSnapshotStore(applicationContext)

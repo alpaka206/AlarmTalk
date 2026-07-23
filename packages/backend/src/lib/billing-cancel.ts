@@ -665,9 +665,10 @@ export async function processSubscriptionExpiry(
     });
     if (decision === 'skip') continue;
 
-    // 소유자가 무료로 떨어지는 경우(다음 플랜 없음)에만 그룹이 해체돼 멤버도 강등된다.
-    // 해체 전에 멤버를 미리 조회해 통지 대상에 포함한다.
-    const dueMemberIds = nextPlanId ? [] : await planGroupMemberIds(db, active.planGroupId);
+    // 소유자 구독이 만료/변경되면(무료 강등뿐 아니라 개인플랜 예약 전환 포함) 소유 그룹이 해체돼
+    // 멤버가 강등된다. nextPlan 유무와 무관하게 해체 트랜잭션 전에 멤버를 조회해 통지 대상에 넣는다
+    // (소유자 본인은 무료로 떨어질 때만 아래에서 추가; 과다통지는 클라가 재조회로 무시).
+    const dueMemberIds = await planGroupMemberIds(db, active.planGroupId);
     await withWriteTransaction(db, async (tx) => {
       await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
 
