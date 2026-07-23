@@ -296,6 +296,25 @@ alarmMutation.post('/', async (c) => {
       const target = targetRes.rows[0]!;
       const targetPk = String(target.id);
       const targetLoginId = (target.google_id as string | null) ?? targetPk;
+
+      // 상대 알람 권한(같은 커플/가족 그룹)을 '먼저' 확인한다. 아래 타이밍 가드는 수신자의
+      // 설정(allow_family_alarms·quiet 창)에 따라 서로 다른 error_code 를 돌려주므로, 권한
+      // 확인보다 앞서 실행하면 그룹 밖 호출자가 임의 target_user_id 의 계정 존재·quiet 설정을
+      // 응답 코드로 구분하는 오라클이 된다. 권한 없으면 타이밍 판정 전에 NOT_CONNECTED 로 끊는다.
+      const senderPk = await resolveUserPk(db, userId);
+      const allowed =
+        targetLoginId !== userId && !!senderPk && (await assertSameGroup(db, senderPk, targetPk));
+
+      if (!allowed) {
+        return c.json(
+          {
+            error: '같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.',
+            error_code: 'NOT_CONNECTED',
+          },
+          403,
+        );
+      }
+
       const targetSettings = familyAlarmSettingsFromRow(target as Record<string, unknown>);
       // 수신자 기준 시각 가드(허용 여부·30분 리드타임·quiet 요일). 발신자 body.timezone 은
       // 판정·저장 어디에도 쓰지 않고, 헬퍼가 산출한 효과 시간대(수신자 최근 알람 tz →
@@ -312,20 +331,6 @@ alarmMutation.post('/', async (c) => {
       }
       const effectiveTimezone = guard.effectiveTimezone;
 
-      // 상대 알람 권한: 같은 커플/가족 플랜 그룹 멤버만 허용.
-      const senderPk = await resolveUserPk(db, userId);
-      const allowed =
-        targetLoginId !== userId && !!senderPk && (await assertSameGroup(db, senderPk, targetPk));
-
-      if (!allowed) {
-        return c.json(
-          {
-            error: '같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.',
-            error_code: 'NOT_CONNECTED',
-          },
-          403,
-        );
-      }
       targetUserIdForAlarm = targetLoginId;
       targetIdsForReplace = [targetPk, targetLoginId];
       targetEffectiveTimezone = effectiveTimezone;

@@ -268,10 +268,11 @@ describe('POST /alarm — 알람 생성', () => {
         family_alarm_quiet_end: '18:30',
       },
     ]);
-    mockDB.pushResult([]); // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
+    // 권한(같은 그룹)이 타이밍 가드보다 먼저 실행된다.
     mockDB.pushResult([{ id: 'user-1-pk' }]); // resolveUserPk(sender)
     mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 발신자 그룹
     mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 수신자 그룹(동일)
+    mockDB.pushResult([]); // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
     mockDB.pushResult([{ plan: 'plus' }]); // target user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
     pushMessageBelongsToCaller(); // 트랜잭션 내 재검증

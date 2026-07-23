@@ -198,13 +198,12 @@ describe('POST /alarms', () => {
         family_alarm_quiet_end: '18:30',
       },
     ]);
-    // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
-    mockDB.pushResult([]);
-    // resolveUserPk(sender)
+    // 권한 확인이 타이밍 가드보다 먼저: resolveUserPk(sender) → assertSameGroup(양쪽 그룹)
     mockDB.pushResult([{ id: 'sender-pk-1' }]);
-    // assertSameGroup: 발신자 그룹 → 수신자 그룹(동일 그룹)
     mockDB.pushResult([{ plan_group_id: 'group-1' }]);
     mockDB.pushResult([{ plan_group_id: 'group-1' }]);
+    // 그 다음 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
+    mockDB.pushResult([]);
     // user plan for target
     mockDB.pushResult([{ plan: 'personal' }]);
     // message check
@@ -239,6 +238,10 @@ describe('POST /alarms', () => {
         family_alarm_quiet_windows: '[]',
       },
     ]);
+    // 권한(같은 그룹)이 타이밍 가드보다 먼저 통과해야 가드에 도달한다.
+    mockDB.pushResult([{ id: 'sender-pk-1' }]); // resolveUserPk(sender)
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 발신자 그룹
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 수신자 그룹(동일)
 
     const res = await buildApp().request(
       jsonReq('POST', '/alarms', {
@@ -266,6 +269,10 @@ describe('POST /alarms', () => {
         family_alarm_quiet_windows: '[{"days":[0,6],"start":"00:00","end":"08:00"}]',
       },
     ]);
+    // 권한(같은 그룹)이 타이밍 가드보다 먼저 통과해야 가드에 도달한다.
+    mockDB.pushResult([{ id: 'sender-pk-1' }]); // resolveUserPk(sender)
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 발신자 그룹
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 수신자 그룹(동일)
 
     const res = await buildApp().request(
       jsonReq('POST', '/alarms', {
