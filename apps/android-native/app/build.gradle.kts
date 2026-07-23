@@ -94,16 +94,31 @@ val devDebugKeystoreProps = rootProject.file("dev-debug-keystore.properties")
 // versionCode 를 git 커밋 수로 자동 생성한다 — 수동 bump/커밋 없이 커밋마다 단조 증가한다.
 // (Play 는 업로드마다 더 큰 versionCode 를 요구. 현재 커밋 수가 이미 1900+ 이라 과거 수동값보다
 //  충분히 크다.) 사용자 표기인 versionName 만 릴리스 때 손으로 바꾸면 된다.
-// git 이 없으면(예: .git 없는 소스 아카이브) 1 로 폴백 — Play 최소치보다 낮아 업로드가 거부되는
-// '안전 실패'이며, 실제 로컬 릴리스 빌드엔 항상 git 이 있어 이 폴백에 닿지 않는다.
-val autoVersionCode: Int = try {
-    providers.exec {
-        commandLine("git", "rev-list", "--count", "HEAD")
-        isIgnoreExitValue = true
-    }.standardOutput.asText.get().trim().toIntOrNull() ?: 1
-} catch (e: Exception) {
-    1
+fun gitOutput(vararg args: String): String? =
+    try {
+        providers.exec {
+            commandLine(listOf("git") + args)
+            isIgnoreExitValue = true
+        }.standardOutput.asText.get().trim().ifEmpty { null }
+    } catch (e: Exception) {
+        null
+    }
+
+val gitCommitCount: Int? = gitOutput("rev-list", "--count", "HEAD")?.toIntOrNull()
+// shallow 클론에서는 rev-list --count 가 1 을 돌려준다 — git 은 있으나 히스토리가 잘려
+// versionCode 가 과거 업로드분보다 낮아진다(Codex #633 P2). shallow 이거나 git 을 쓸 수 없을 때
+// '릴리스 번들/APK' 를 만들려 하면, 잘못된 AAB 가 나오기 전에 즉시 실패시킨다. devDebug 등
+// 릴리스가 아닌 빌드(예: CI 의 shallow 체크아웃)는 그대로 두되 versionCode 정확도는 요구하지 않는다.
+val isShallowRepo = gitOutput("rev-parse", "--is-shallow-repository") == "true"
+val buildingRelease = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+if (buildingRelease && (isShallowRepo || gitCommitCount == null)) {
+    throw GradleException(
+        "릴리스 versionCode 를 git 커밋 수로 산출하려는데 저장소가 shallow 이거나 git 을 쓸 수 없습니다. " +
+            "`git fetch --unshallow` 후 다시 빌드하세요(shallow 는 count=1 → Play 업로드 거부).",
+    )
 }
+// 릴리스가 아닌 빌드에서 git 을 못 읽으면 1 로 폴백(업로드되지 않는 debug 전용이라 무해).
+val autoVersionCode: Int = gitCommitCount ?: 1
 
 android {
     namespace = "com.alarmtalk.app"
