@@ -14,7 +14,7 @@ const codeRoutes = new Hono<AppEnv>();
  * 아래 순서로 판별·처리한다:
  *   1) INV-/GIFT- 4-4-4 → 이용권(voucher, 해시 조회)
  *   2) INV- 계열이 voucher 에 없으면 → 가족 그룹 초대(plan_group_invites, 평문·레거시 포맷 포함)
- *   3) 그 외 자유 문자열(예: WELCOME_ALARMTALK) 또는 위에서 못 찾은 코드 → 프로모 쿠폰(대소문자 무시)
+ *   3) 그 외 자유 문자열(예: PROMO_EXAMPLE) 또는 위에서 못 찾은 코드 → 프로모 쿠폰(대소문자 무시)
  * 응답 type: 'invite' | 'gift'(voucher) | 'group_invite' | 'promo'.
  */
 codeRoutes.post('/register', async (c) => {

@@ -44,14 +44,14 @@ const PLAN_FAMILY = {
   is_active: 1,
 };
 
-function buildApp(email = 'gyuwon05@gmail.com') {
+function buildApp(email = 'issuer@example.com') {
   const app = new Hono<AppEnv>();
   // 발급자 화이트리스트는 이제 하드코딩 폴백 없이 TEST_CODE_ISSUER_EMAILS 로만 지정되므로
   // 테스트도 env 를 명시 설정한다(미설정 시 fail-closed → 403).
   app.use('*', async (c, next) => {
     (c as unknown as { env: Record<string, unknown> }).env = {
       ...((c.env as Record<string, unknown>) ?? {}),
-      TEST_CODE_ISSUER_EMAILS: 'gyuwon05@gmail.com',
+      TEST_CODE_ISSUER_EMAILS: 'issuer@example.com',
     };
     await next();
   });
@@ -65,7 +65,7 @@ beforeEach(() => {
 });
 
 describe('POST /billing/test-codes', () => {
-  it('allows gyuwon05@gmail.com to issue a personal test code', async () => {
+  it('allows issuer@example.com to issue a personal test code', async () => {
     mockDB.pushResult([{ id: 'admin-pk' }]);
     mockDB.pushResult([PLAN_PERSONAL]);
     mockDB.pushResult([], 1);

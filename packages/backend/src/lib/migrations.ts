@@ -1625,6 +1625,24 @@ export const migrations: Migration[] = [
       `DROP TABLE IF EXISTS characters`,
     ],
   },
+  {
+    // 웰컴 프로모 시드 폐기 — 실운영 프로모 코드명은 공개 레포 소스에 두지 않는다.
+    // 코드 발급/관리는 /admin/promo 콘솔(운영 데이터)로만 한다(redemption_group 지정 가능).
+    // #72 시드는 이미 적용된 원장(불변)이라 본문을 고칠 수 없으므로, 새 DB 재구축 시
+    // #72 가 심는 구이름 3종을 여기서 걷어낸다. 운영 DB 처럼 이미 다른 이름으로 바꿔
+    // 운영 중인 행(구이름 불일치)은 건드리지 않는다.
+    id: 78,
+    name: 'promo-welcome-retire-seeded-codes',
+    statements: [
+      // 리딤 이력이 없는 시드 행은 제거(신규 DB 경로). 이력이 있으면 웰컴 1회 규칙이
+      // promo_code_id 조인으로 이어지므로 행을 지우지 않고 아래에서 비활성화만 한다.
+      `DELETE FROM promo_codes
+       WHERE code COLLATE NOCASE IN ('WELCOME_PERSONAL', 'WELCOME_COUPLE', 'WELCOME_FAMILY')
+         AND id NOT IN (SELECT promo_code_id FROM promo_code_redemptions)`,
+      `UPDATE promo_codes SET is_active = 0, updated_at = datetime('now')
+       WHERE code COLLATE NOCASE IN ('WELCOME_PERSONAL', 'WELCOME_COUPLE', 'WELCOME_FAMILY')`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
