@@ -37,9 +37,11 @@ class PlanChangeSyncWorker(
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
 
-            // 최신 구독·플랜·가족 재조회(강등 확정 확인).
+            // 최신 구독·플랜·가족 재조회(강등 확정 확인). 서버측 plan=free 는 /auth/me 로만 관찰
+            // 가능하므로 billing·me 는 필수 — 둘 중 하나라도 실패하면 확정할 수 없으니 throw 시켜
+            // outer runCatching 이 Result.retry() 로 처리한다(성공으로 조용히 끝내지 않는다). 가족은 보조.
             val billing = withContext(Dispatchers.IO) { api.getSubscription(auth) }
-            val freshUser = runCatching { withContext(Dispatchers.IO) { api.me(auth).user } }.getOrNull()
+            val freshUser = withContext(Dispatchers.IO) { api.me(auth).user }
             val familyGroup = runCatching { withContext(Dispatchers.IO) { api.getFamilyGroup(auth) } }.getOrNull()
 
             // 네트워크 왕복 중 로그아웃/계정전환이 일어났을 수 있다 — 결과를 쓰기 전에 현재 세션이 아직
@@ -55,17 +57,15 @@ class PlanChangeSyncWorker(
             val snapshotStore = AccessSnapshotStore(applicationContext)
             snapshotStore.updateSubscription(userId, billing)
             snapshotStore.updateFamilyGroup(userId, familyGroup)
-            if (freshUser != null) {
-                val response = AuthTokenResponse(token = session.token, user = freshUser)
-                if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
-                    sessionStore.saveGoogleSession(response)
-                } else {
-                    sessionStore.saveAppSession(response)
-                }
+            val response = AuthTokenResponse(token = session.token, user = freshUser)
+            if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
+                sessionStore.saveGoogleSession(response)
+            } else {
+                sessionStore.saveAppSession(response)
             }
 
             // '진짜 무료'만 변환: 유료 구독 없음 + 가족/커플 접근 없음 + user.plan 무료.
-            val plan = freshUser?.plan ?: session.user.plan
+            val plan = freshUser.plan
             val genuinelyFree = !hasPaidVoiceAccess(billing) &&
                 !hasCoupleOrFamilyAccess(billing, familyGroup) &&
                 (plan.isBlank() || plan == "free")
