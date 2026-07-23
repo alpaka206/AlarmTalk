@@ -18,6 +18,10 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+// 계정 삭제(가명보존)는 PASSWORD_PEPPER 가 필수(미설정 시 fail-closed 500) — 운영과 동일하게
+// pepper 를 세팅한 env 로 요청한다.
+const DELETE_ENV = { PASSWORD_PEPPER: 'test-pepper' } as unknown as AppEnv['Bindings'];
+
 const originalExecute = mockDB.client.execute;
 
 beforeEach(() => {
@@ -352,7 +356,7 @@ describe('DELETE /user/me', () => {
   it('모든 관련 데이터 삭제 후 성공', async () => {
     mockDB.pushResult([{ id: 'pk-1' }]);
     const app = buildApp();
-    const res = await app.request(jsonReq('DELETE', '/user/me'));
+    const res = await app.request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -371,7 +375,7 @@ describe('DELETE /user/me', () => {
   it('friendships/gifts는 양방향 삭제 (OR 조건)', async () => {
     mockDB.pushResult([{ id: 'pk-1' }]);
     const app = buildApp();
-    await app.request(jsonReq('DELETE', '/user/me'));
+    await app.request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
     const friendshipCall = mockDB.calls.find((c) => c.sql.includes('DELETE FROM friendships'));
     expect(friendshipCall?.args).toEqual(['pk-1', 'user-1', 'pk-1', 'user-1']);
     const giftCall = mockDB.calls.find((c) => c.sql.includes('DELETE FROM gifts'));
@@ -381,7 +385,7 @@ describe('DELETE /user/me', () => {
   it('userPk 조회에 apple_id 도 포함한다 (legacy Apple 계정 고아 방지)', async () => {
     mockDB.pushResult([{ id: 'pk-apple' }]);
     const app = buildApp();
-    const res = await app.request(jsonReq('DELETE', '/user/me'));
+    const res = await app.request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
     expect(res.status).toBe(200);
     const lookup = mockDB.calls.find(
       (c) => c.sql.includes('SELECT id FROM users') && c.sql.includes('apple_id'),
@@ -398,7 +402,7 @@ describe('DELETE /user/me', () => {
     // 2) purgeUserAccount 의 orphan guard SELECT → 사용자 행 존재
     mockDB.pushResult([{ id: 'ghost-pk' }]);
     const app = buildApp();
-    const res = await app.request(jsonReq('DELETE', '/user/me'));
+    const res = await app.request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
     expect(res.status).toBe(500);
     expect((await res.json()).error_code).toBe('DELETE_ACCOUNT_FAILED');
   });
@@ -408,7 +412,7 @@ describe('DELETE /user/me', () => {
     mockDB.client.execute = async () => {
       throw new Error('DB down');
     };
-    const res = await app.request(jsonReq('DELETE', '/user/me'));
+    const res = await app.request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
     expect(res.status).toBe(500);
     expect((await res.json()).error_code).toBe('DELETE_ACCOUNT_FAILED');
   });

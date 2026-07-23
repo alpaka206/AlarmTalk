@@ -2,8 +2,6 @@
 
 System architecture, database schema, and HTTP API for AlarmTalk.
 
-> 백엔드 correctness/보안 리뷰에서 나온 결정 필요·권장 항목은 [`backend-findings.ko.md`](backend-findings.ko.md) 참고.
-
 ## 1. System Architecture
 
 ### High-level
@@ -452,9 +450,9 @@ Errors: `INVALID_FORMAT` `EXPIRED` `ALREADY_USED` `NOT_FOUND` `SELF_INVITE` `GRO
 
 #### `POST /billing/test-codes`
 
-Internal closed-test helper. Authenticated issuer emails from
-`TEST_CODE_ISSUER_EMAILS` (defaults to `gyuwon05@gmail.com`) can issue free
-test access codes while real Google Play Billing is not connected.
+Internal closed-test helper. Only emails listed in the `TEST_CODE_ISSUER_EMAILS`
+env var can issue free test access codes while real Google Play Billing is not
+connected. Unset = no issuer (fail-closed); there is no hardcoded default.
 
 ```json
 Req: { "plan_key": "personal" | "couple" | "family", "count": 1, "days": 30 }
