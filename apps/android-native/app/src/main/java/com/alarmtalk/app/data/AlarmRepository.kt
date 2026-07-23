@@ -392,21 +392,36 @@ class AlarmRepository(
      * 호출부(refreshSocial 신선 성공)에서 가드한다. 버킷 회전·녹음(LOCAL_AUDIO)·수신 알람은 대상이 아니다.
      * 반환값은 강등된 알람 수.
      */
-    suspend fun degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds: Set<String>): Int {
-        val candidates = alarmDao.getAllAlarms().filter { alarm ->
-            alarm.origin == AlarmOrigins.LOCAL_OWNED &&
-                alarm.voiceSource == VoiceSources.TTS_PROFILE &&
-                !alarm.voiceProfileId.isNullOrBlank() &&
+    suspend fun degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds: Set<String>): Int =
+        degradeMatchingLocalOwnedVoiceAlarms { alarm ->
+            !alarm.voiceProfileId.isNullOrBlank() &&
                 // 시스템 스톡 버킷/보이스는 영구라 보존. 클론(비-system) 보이스는 단일클립·버킷 모두
                 // 접근권 상실(공유해제·제공자취소·삭제) 시 강등 대상.
                 !isSystemVoiceId(alarm.voiceProfileId) &&
                 alarm.voiceProfileId !in accessibleVoiceIds
+        }
+
+    // 방금 삭제한 특정 목소리를 쓰는 내 알람만 즉시 강등한다 — 소셜 목록 신선도(reconcile 가드)와
+    // 무관하게 삭제 확정 정보로 바로 기본 알람으로 변환한다.
+    suspend fun degradeAlarmsUsingVoiceProfile(voiceProfileId: String): Int =
+        degradeMatchingLocalOwnedVoiceAlarms { alarm ->
+            alarm.voiceProfileId == voiceProfileId && !isSystemVoiceId(alarm.voiceProfileId)
+        }
+
+    private suspend fun degradeMatchingLocalOwnedVoiceAlarms(match: (AlarmEntity) -> Boolean): Int {
+        val candidates = alarmDao.getAllAlarms().filter { alarm ->
+            alarm.origin == AlarmOrigins.LOCAL_OWNED &&
+                alarm.voiceSource == VoiceSources.TTS_PROFILE &&
+                match(alarm)
         }
         var degraded = 0
         for (current in candidates) {
             val cacheKey = current.audioCacheKey
             val updated = current.copy(
                 playMode = AlarmPlayModes.ALARM_ONLY,
+                // '기본 알람으로 변환됨' 마커 — 무료 강등과 동일하게 리스트 배지·목소리 숨김에 쓴다.
+                // 복원은 하지 않으므로(영구 변환) 순수 표시용 마커다.
+                preLockPlayMode = current.preLockPlayMode ?: current.playMode,
                 voiceSource = VoiceSources.LOCAL_AUDIO,
                 voiceProfileId = null,
                 localAudioUri = null,

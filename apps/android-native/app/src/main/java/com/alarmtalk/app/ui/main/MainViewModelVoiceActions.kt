@@ -61,6 +61,8 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 // 내 음성 목록이 늦게 로드된 경우에도 접근권 잃은 목소리 알람 강등이 재실행되게 한다
                 // (공유 목소리 목록이 먼저 신선 로드돼 스킵됐을 수 있음). 빈 목록도 유효한 로드다.
                 reconcileInaccessibleVoiceAlarms()
+                // 삭제 화면에서 '이번 달 재생성 가능 여부'를 판정하도록 월 생성 쿼터도 함께 갱신.
+                loadVoiceDraftQuota()
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to load voice profiles", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_failed))
@@ -148,6 +150,9 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
             }
         }.onSuccess { profiles ->
             pendingVoiceDraft = profiles.firstOrNull()
+            // 클론 생성이 이번 달 생성 시도(쿼터)를 소모했으므로 잔여 횟수를 재조회한다
+            // (삭제 화면의 '이번 달 재생성 불가' 경고가 최신 잔여로 판정되게).
+            loadVoiceDraftQuota()
             // 클론 성공 직후 로컬 녹음 샘플(음성 생체정보 평문 .m4a)을 즉시 정리한다.
             withContext(Dispatchers.IO) {
                 drafts.forEach { draft ->
@@ -412,10 +417,15 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
             message = getApplication<android.app.Application>().getString(R.string.msg_voice_deleted)
+            // 삭제된 목소리를 쓰던 내 알람을 즉시 기본 알람으로 변환한다(공유해제·무료강등과 동일 결과).
+            // 서버는 sound-only 로 바꾸지만 본인 LOCAL_OWNED 알람은 pull 로 안 돌아오므로 로컬에서 강등.
+            // 삭제된 id 만 대상으로 하는 타깃 강등이라 소셜 목록 신선도(reconcile 가드)에 막히지 않는다.
+            viewModelScope.launch { runCatching { repository.degradeAlarmsUsingVoiceProfile(profileId) } }
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
                 message = getApplication<android.app.Application>().getString(R.string.msg_voice_already_deleted)
+                viewModelScope.launch { runCatching { repository.degradeAlarmsUsingVoiceProfile(profileId) } }
             } else {
                 if (originalProfile != null) {
                     voiceProfiles = voiceProfiles.map {
@@ -472,6 +482,19 @@ internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): T
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
     return withContext(Dispatchers.IO) {
         api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
+    }
+}
+
+// 이번 달 목소리 초안 생성 쿼터 조회 → voiceDraftQuota 상태 갱신(삭제 전 재생성 가능 판정용).
+// 실패/미로그인은 조용히 무시(기존 값 유지). fire-and-forget.
+internal fun MainViewModel.loadVoiceDraftQuota() {
+    val session = authSession ?: return
+    viewModelScope.launch {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                api.getVoiceDraftQuota(AlarmTalkApiClient.bearer(session.token))
+            }
+        }.onSuccess { voiceDraftQuota = it }
     }
 }
 
@@ -598,7 +621,12 @@ internal fun MainViewModel.startPrerenderDrive(voiceId: String) {
                 // 3회 연속 무진전이면 여기서 더 붙잡지 않는다 — cron 이 이어받는다.
                 if (stagnantRounds >= 3) return@launch
             }
-            prerenderDrive = prerenderDrive?.copy(downloading = true)
+            // 다운로드 단계 진입: generated 를 0 으로 리셋한다(생성 완료값 total 을 이월하면 결합
+            // 진행바가 순간 100% 로 튀었다가 다운로드 0%(=50%)로 역행해 보인다). 리셋하면 생성 0~50%
+            // → 다운로드 50~100% 로 매끄럽게 이어진다.
+            prerenderDrive = prerenderDrive?.let {
+                PrerenderDriveState(it.voiceId, 0, it.total, downloading = true)
+            }
             runCatching {
                 downloadAllPresetClips(voiceId) { done, total ->
                     prerenderDrive = PrerenderDriveState(voiceId, done, total, downloading = true)

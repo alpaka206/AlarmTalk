@@ -26,6 +26,13 @@ data class VoiceProfileDraftResponse(
     val profile: VoiceProfile? = null,
 )
 
+// 이번 달(KST) 목소리 초안 생성 쿼터. 삭제 전 '이번 달 재생성 가능 여부' 판정에 쓴다.
+data class VoiceDraftQuotaResponse(
+    val limit: Int = 0,
+    val used: Int = 0,
+    val remaining: Int = 0,
+)
+
 data class VoiceUploadResponse(
     val upload: VoiceUpload,
 )
@@ -191,6 +198,11 @@ interface VoiceProfileApi {
         // draft 정리 전용 삭제 — 서버는 아직 is_draft=1 인 경우에만 실제 삭제한다(등록된 보이스 보호).
         @Query("draftOnly") draftOnly: Boolean? = null,
     )
+
+    @GET("voice/draft-quota")
+    suspend fun getVoiceDraftQuota(
+        @Header("Authorization") authorization: String,
+    ): VoiceDraftQuotaResponse
 
     @GET("voice/family")
     suspend fun listFamilyVoiceProfiles(@Header("Authorization") authorization: String): FamilyVoiceProfileListResponse

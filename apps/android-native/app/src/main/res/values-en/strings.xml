@@ -147,6 +147,8 @@
     <string name="common_alarm_delete">Delete</string>
     <string name="common_alarm_warning_reschedule_failed">We couldn\'t reschedule the alarm. Please check the time and save again.</string>
     <string name="common_alarm_warning_sync_failed">Saving is briefly delayed. Your alarm will still ring, and we\'ll retry automatically.</string>
+    <string name="common_alarm_notice_free_downgraded">Switched to the free plan, so this alarm now uses the default sound.</string>
+    <string name="common_alarm_notice_default_converted">The voice is no longer available, so this alarm now uses the default sound.</string>
     <string name="common_day_fri">Fri</string>
     <string name="common_day_mon">Mon</string>
     <string name="common_day_sat">Sat</string>
@@ -619,10 +621,8 @@
     <string name="voices_mic_permission_required">Microphone permission is required.</string>
     <string name="voices_my_voices_title">My Voices</string>
     <string name="voices_name_label">Voice name</string>
-    <string name="voices_prerender_generating_title">Creating your voice</string>
-    <string name="voices_prerender_downloading_title">Saving to your device</string>
-    <string name="voices_prerender_continue_background_action">Continue in background</string>
-    <string name="voices_prerender_continue_background">The remaining phrases will keep generating in the background.</string>
+    <string name="voices_prerender_ready_title">Getting your alarm voice ready</string>
+    <string name="voices_prerender_ready_body">This will be ready shortly.\nYou can close this — it keeps going in the background.</string>
     <string name="voices_language_label">Message language</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
@@ -678,6 +678,8 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_upload_zone_subtitle">Prepare an audio or video at least 1 minute long</string>
     <string name="voicesr_close">Close</string>
     <string name="voicesr_delete">Delete</string>
+    <string name="voices_delete_quota_title">Delete this voice?</string>
+    <string name="voices_delete_quota_message">You\'ve used all of this month\'s voice creations, so if you delete it now you can\'t make a new one until next month.</string>
     <string name="voicesr_delete_dialog_confirm">Delete the \'%1$s\' voice?</string>
     <string name="voicesr_delete_dialog_title">Delete voice</string>
     <string name="voicesr_delete_dialog_warning">Alarms using this voice will switch to the default alarm sound. The saved audio files will also be deleted.</string>

@@ -209,6 +209,24 @@ internal fun hasPaidVoiceAccess(subscriptionResponse: BillingSubscriptionRespons
         plan.planType in setOf("personal", "individual", "plus", "couple", "family")
 }
 
+/**
+ * 유료 목소리 권한을 '만료시각까지' 고려해 판정한다. hasPaidVoiceAccess 는 status=="active" 만
+ * 보므로, 로컬에 마지막으로 저장된(=stale 가능) 구독이 active 로 남아 있어도 expiresAt 이 지났으면
+ * 무권한으로 본다. 앱 미실행/오프라인이라 서버 재조회를 못 해도 만료된 유료 목소리가 계속
+ * 재생되지 않게 하는 근거(울림 시점 게이트·무료 잠금 트리거 공용). 만료시각을 못 읽으면
+ * status 만 신뢰(기존 동작 유지 — 과차단 방지).
+ */
+internal fun isPaidVoiceEntitledNow(
+    subscriptionResponse: BillingSubscriptionResponse?,
+    nowMillis: Long,
+): Boolean {
+    if (!hasPaidVoiceAccess(subscriptionResponse)) return false
+    val expiresAt = subscriptionResponse?.subscription?.expiresAt ?: return true
+    val expiryMillis = runCatching { java.time.Instant.parse(expiresAt).toEpochMilli() }.getOrNull()
+        ?: return true
+    return expiryMillis > nowMillis
+}
+
 internal fun familyAlarmRecipients(
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
