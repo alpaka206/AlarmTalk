@@ -42,6 +42,7 @@ import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.decodeBucketClipKeys
 import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
+import com.alarmtalk.app.hasCoupleOrFamilyAccess
 import com.alarmtalk.app.isPaidVoiceEntitledNow
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.ringing.RingingActivity
@@ -262,13 +263,20 @@ class RingingService : Service() {
     /**
      * 울림 시점에 로컬 영속 구독으로 유료 목소리 권한을 재확인한다(오프라인·앱 미실행 안전).
      * 절대 예외를 던지지 않는다 — 암호화 저장소 읽기/복호화가 실패해도 true(강등 안 함)로 떨어뜨려
-     * 알람이 무음화되지 않게 한다(fail-open). 구독 정보가 없으면(미조회·가족 구성원·transient) 강등하지
-     * 않고, '마지막으로 활성이던 구독의 만료시각이 지났을 때'만 무권한으로 본다.
+     * 알람이 무음화되지 않게 한다(fail-open). 캐시 응답 자체가 없으면(미조회·transient) 판단 불가로
+     * 강등하지 않는다. 캐시 응답이 '있는데' subscription 이 null 이면 서버가 '본인 구독 없음'이라고
+     * 답한 것 — 가족/커플 그룹 멤버(본인 구독 없이 그룹 접근)면 권한 유지, 아니면 무료로 보고
+     * 강등한다(만료 push 유실·오프라인 폴백, PlanChangeSyncWorker 의 genuinelyFree 판정과 동일 기준).
+     * 본인 구독이 있으면 기존대로 만료시각까지 검사한다(그룹 체크로 만료 게이트를 우회하지 않게
+     * subscription==null 분기에만 적용 — stale 캐시의 만료된 family 소유자 오통과 방지).
      */
     private fun isPaidVoiceEntitledFromCache(): Boolean = runCatching {
         val userId = AuthSessionStore(applicationContext).read()?.user?.id ?: return@runCatching true
-        val sub = AccessSnapshotStore(applicationContext).read(userId).subscriptionResponse
-        if (sub?.subscription == null) return@runCatching true
+        val snapshot = AccessSnapshotStore(applicationContext).read(userId)
+        val sub = snapshot.subscriptionResponse ?: return@runCatching true
+        if (sub.subscription == null) {
+            return@runCatching hasCoupleOrFamilyAccess(sub, snapshot.familyGroup)
+        }
         isPaidVoiceEntitledNow(sub, System.currentTimeMillis())
     }.getOrDefault(true)
 
