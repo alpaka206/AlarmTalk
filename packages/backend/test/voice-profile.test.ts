@@ -178,6 +178,32 @@ describe('GET /draft — 드래프트 조회 (voice-profile)', () => {
   });
 });
 
+describe('GET /draft-quota — 월 생성 쿼터 (voice-profile)', () => {
+  it('사용 기록 없으면 remaining=limit(3)', async () => {
+    mockDB.pushResult([]); // used_count 조회 → 없음
+    const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ limit: 3, used: 0, remaining: 3 });
+  });
+
+  it('이번 달을 다 썼으면 remaining=0', async () => {
+    mockDB.pushResult([{ used_count: 3 }]);
+    const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ limit: 3, used: 3, remaining: 0 });
+  });
+
+  it("'/:id' 보다 먼저 매칭돼 draft-quota 가 프로필 id 로 잡히지 않는다", async () => {
+    mockDB.pushResult([{ used_count: 1 }]);
+    const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
+    // 400(잘못된 UUID) 이 아니라 200 쿼터 응답이어야 한다.
+    expect(res.status).toBe(200);
+    expect((await res.json()).remaining).toBe(2);
+  });
+});
+
 describe('GET /:id — 프로필 상세 (voice-profile)', () => {
   it('잘못된 UUID → 400', async () => {
     const res = await req(buildApp(), new Request(`http://localhost/vp/${V_BAD}`));

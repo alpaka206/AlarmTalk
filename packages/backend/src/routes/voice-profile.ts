@@ -91,16 +91,39 @@ async function markMonthlyOfficialVoiceChange(
   });
 }
 
-async function reserveMonthlyDraftAttempt(
-  db: DbExecutor,
-  ownerUserId: string,
-): Promise<string | null> {
+// KST 기준 'YYYY-MM' — 월 생성(초안) 쿼터의 키. reserve/read 가 동일 월 문자열을 쓰도록 단일 출처.
+function currentKstAttemptMonth(): string {
   const monthParts = new Intl.DateTimeFormat('en', {
     timeZone: 'Asia/Seoul',
     year: 'numeric',
     month: '2-digit',
   }).formatToParts(new Date());
-  const attemptMonth = `${monthParts.find((part) => part.type === 'year')!.value}-${monthParts.find((part) => part.type === 'month')!.value}`;
+  return `${monthParts.find((part) => part.type === 'year')!.value}-${monthParts.find((part) => part.type === 'month')!.value}`;
+}
+
+// 이번 달(KST) 목소리 초안 생성 사용량 조회 — 클라가 삭제 전 '재생성 가능 여부'를 판정하는 데 쓴다.
+async function readMonthlyDraftAttemptUsage(
+  db: DbExecutor,
+  ownerUserId: string,
+): Promise<{ limit: number; used: number; remaining: number }> {
+  const res = await db.execute({
+    sql: `SELECT used_count FROM voice_draft_attempt_usage
+          WHERE owner_user_id = ? AND attempt_month = ?`,
+    args: [ownerUserId, currentKstAttemptMonth()],
+  });
+  const used = Number(res.rows[0]?.used_count ?? 0);
+  return {
+    limit: MAX_DRAFT_ATTEMPTS_PER_MONTH,
+    used,
+    remaining: Math.max(0, MAX_DRAFT_ATTEMPTS_PER_MONTH - used),
+  };
+}
+
+async function reserveMonthlyDraftAttempt(
+  db: DbExecutor,
+  ownerUserId: string,
+): Promise<string | null> {
+  const attemptMonth = currentKstAttemptMonth();
   const result = await db.execute({
     sql: `INSERT INTO voice_draft_attempt_usage
             (owner_user_id, attempt_month, used_count)
@@ -438,6 +461,16 @@ voiceProfile.get('/draft', async (c) => {
         }
       : null,
   });
+});
+
+// 이번 달(KST) 목소리 초안 생성 쿼터 — 클라가 삭제 전 '이번 달 재생성 가능 여부'를 판정한다.
+// '/:id' 보다 먼저 등록해야 draft-quota 가 id 로 잡히지 않는다.
+voiceProfile.get('/draft-quota', async (c) => {
+  const userId = c.get('userId');
+  const userPk = (c.get('userIdPK') as string | undefined) || userId;
+  const db = getDB(c.env);
+  const quota = await readMonthlyDraftAttemptUsage(db, userPk);
+  return c.json(quota);
 });
 
 voiceProfile.get('/family', async (c) => {
