@@ -8,7 +8,6 @@
  * 면제(EXEMPT) 경로 — 동의 없이도 통과해야 하는 라우트:
  *  - /auth/*                      (로그인/교환/로그아웃)
  *  - /api/health, '/'             (헬스체크)
- *  - GET /user/me                 (본인정보 조회)
  *  - /user/consents*              (동의 기록/조회/상태 — 동의 자체를 하러 오는 경로)
  *  - DELETE /user/me, /user/me/deletion (탈퇴/철회)
  *  - GET /app/version             (버전 정책)
@@ -35,8 +34,6 @@ function isExempt(path: string, method: string): boolean {
   if (p === '/holiday' || p.startsWith('/holiday/')) return true;
   // 동의 기록/조회/상태(동의 자체를 하러 오는 경로)
   if (p === '/user/consents' || p.startsWith('/user/consents/')) return true;
-  // 본인정보 조회(GET /user/me)
-  if (method === 'GET' && p === '/user/me') return true;
   // 탈퇴/철회: DELETE /user/me, POST·DELETE /user/me/deletion
   if (p === '/user/me/deletion') return true;
   if (method === 'DELETE' && p === '/user/me') return true;

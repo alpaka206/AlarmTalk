@@ -27,15 +27,6 @@ async function setupDb() {
       voice_profile_id TEXT,
       created_at TEXT NOT NULL
     );
-    CREATE TABLE voice_speakers (
-      id TEXT PRIMARY KEY,
-      upload_id TEXT NOT NULL,
-      label TEXT NOT NULL DEFAULT 'A',
-      start_ms INTEGER NOT NULL DEFAULT 0,
-      end_ms INTEGER NOT NULL DEFAULT 1,
-      confidence REAL NOT NULL DEFAULT 1,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
     CREATE TABLE pending_external_deletions (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL,
@@ -98,18 +89,11 @@ describe('cleanupExpiredAudio — 확정 목소리 원본 보관', () => {
     await insertUpload(db, 'up_draft', 'p_draft');
     await insertUpload(db, 'up_deleted', 'p_deleted');
     await insertUpload(db, 'up_orphan', null); // 프로필과 무관한 raw 업로드
-    await db.execute({
-      sql: `INSERT INTO voice_speakers (id, upload_id) VALUES ('sp_final', 'up_final')`,
-    });
 
     await cleanupExpiredAudio(db, new Date('2020-02-01T00:00:00Z'));
 
     const remaining = await db.execute('SELECT id FROM voice_uploads ORDER BY id');
     expect(remaining.rows.map((r) => String(r.id))).toEqual(['up_final']);
-
-    // 확정분에 딸린 speaker 도 보존
-    const speakers = await db.execute('SELECT id FROM voice_speakers');
-    expect(speakers.rows.map((r) => String(r.id))).toEqual(['sp_final']);
 
     // 정리된 3건만 R2 삭제 큐에 적재되고, 확정분 키는 큐에 없다
     const queued = await db.execute(

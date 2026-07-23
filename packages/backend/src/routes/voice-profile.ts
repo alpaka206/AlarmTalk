@@ -322,12 +322,6 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
 
   // 1) Tables that reference messages or voice_profiles (delete first).
   await tryDel(
-    'gifts',
-    `DELETE FROM gifts WHERE sender_id IN (${ph}) OR recipient_id IN (${ph})
-     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))`,
-    [...ids, ...ids, ...ids],
-  );
-  await tryDel(
     'message_library',
     `DELETE FROM message_library WHERE user_id IN (${ph})
      OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))`,
@@ -347,10 +341,6 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
     [...ids, ...ids],
   );
   await tryDel('dub_jobs', `DELETE FROM dub_jobs WHERE user_id IN (${ph})`, ids);
-  await tryDel('notes', `DELETE FROM notes WHERE sender_id IN (${ph}) OR receiver_id IN (${ph})`, [
-    ...ids,
-    ...ids,
-  ]);
   await tryDel(
     'alarms',
     `DELETE FROM alarms WHERE user_id IN (${ph}) OR target_user_id IN (${ph})
@@ -370,16 +360,6 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
 
   // 3) Per-user satellite tables.
   await tryDel('push_tokens', `DELETE FROM push_tokens WHERE user_id IN (${ph})`, ids);
-  await tryDel(
-    'friendships',
-    `DELETE FROM friendships WHERE user_a IN (${ph}) OR user_b IN (${ph})`,
-    [...ids, ...ids],
-  );
-  await tryDel(
-    'voice_speakers',
-    `DELETE FROM voice_speakers WHERE upload_id IN (SELECT id FROM voice_uploads WHERE user_id IN (${ph}))`,
-    ids,
-  );
   await tryDel('voice_uploads', `DELETE FROM voice_uploads WHERE user_id IN (${ph})`, ids);
 
   // 4) Finally the users row(s).
@@ -2163,7 +2143,7 @@ voiceProfile.delete('/:id', async (c) => {
       args: [id, ...ids],
     });
     if (current.rows.length === 0) {
-      return { status: 'not_found' as const, profile: null, tombstoned: null, assets: [] };
+      return { status: 'not_found' as const, profile: null, tombstoned: null };
     }
     const currentProfile = current.rows[0]!;
     if (draftOnly && Number(currentProfile.is_draft ?? 0) !== 1) {
@@ -2171,7 +2151,6 @@ voiceProfile.delete('/:id', async (c) => {
         status: 'not_a_draft' as const,
         profile: currentProfile,
         tombstoned: null,
-        assets: [],
       };
     }
     const tombstoned = await tx.execute({
@@ -2182,7 +2161,7 @@ voiceProfile.delete('/:id', async (c) => {
       args: [id],
     });
     if ((tombstoned.rowsAffected ?? 0) === 0) {
-      return { status: 'not_found' as const, profile: currentProfile, tombstoned, assets: [] };
+      return { status: 'not_found' as const, profile: currentProfile, tombstoned };
     }
     await tx.execute({
       sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?',
@@ -2209,7 +2188,7 @@ voiceProfile.delete('/:id', async (c) => {
             WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
       args: [id],
     });
-    // 확정 목소리의 원본 업로드(voice_uploads + voice_speakers + R2 오브젝트)도 함께 삭제한다.
+    // 확정 목소리의 원본 업로드(voice_uploads + R2 오브젝트)도 함께 삭제한다.
     // 확정분 원본은 TTL 스윕에서 제외돼 목소리 수명 동안 보관되므로(재생성용), 목소리를 지울 때
     // 여기서 cascade 로 정리하지 않으면 영구히 남는다.
     const sourceUploads = await tx.execute({
@@ -2224,11 +2203,6 @@ voiceProfile.delete('/:id', async (c) => {
       ...sourceUploads.rows.map((upload) => upload.object_key as string | null),
     ]);
     await tx.execute({
-      sql: `DELETE FROM voice_speakers
-            WHERE upload_id IN (SELECT id FROM voice_uploads WHERE voice_profile_id = ?)`,
-      args: [id],
-    });
-    await tx.execute({
       sql: 'DELETE FROM voice_uploads WHERE voice_profile_id = ?',
       args: [id],
     });
@@ -2236,7 +2210,6 @@ voiceProfile.delete('/:id', async (c) => {
       status: 'deleted' as const,
       profile: currentProfile,
       tombstoned,
-      assets: assets.rows,
     };
   });
   if (deletionState.status === 'not_a_draft') {
@@ -2259,35 +2232,6 @@ voiceProfile.delete('/:id', async (c) => {
     } catch (error) {
       logRouteError(c, error);
     }
-  }
-
-  const assetsRes = { rows: deletionState.assets };
-  const deletedAudioUrls = Array.from(
-    new Set(
-      assetsRes.rows
-        .flatMap((row) => {
-          const typed = typedRow<{ audio_url: string | null; audio_object_key: string | null }>(
-            row,
-          );
-          return [
-            typed.audio_url,
-            typed.audio_object_key,
-            typed.audio_object_key ? `r2://${typed.audio_object_key}` : null,
-          ];
-        })
-        .filter((url): url is string => Boolean(url)),
-    ),
-  );
-  // R2 오브젝트 인라인 삭제는 하지 않는다 — 자산이 많으면(43개 사례) 오브젝트당 R2 delete +
-  // 큐 정리 DELETE 가 서브리퀘스트 한도를 넘겨 요청 전체가 500 났다. 트랜잭션에서 일괄 적재한
-  // pending_external_deletions 큐를 cron 드레인이 예산 가드 안에서 정리한다.
-
-  if (deletedAudioUrls.length > 0) {
-    const placeholders = deletedAudioUrls.map(() => '?').join(',');
-    await db.execute({
-      sql: `UPDATE notes SET audio_url = NULL WHERE audio_url IN (${placeholders})`,
-      args: deletedAudioUrls,
-    });
   }
 
   await db.execute({

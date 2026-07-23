@@ -66,7 +66,7 @@ export async function purgeUserAccount(
   userId: string,
 ): Promise<void> {
   // userPk(users.id) 를 해석하지 못한 채 진행하면 PK 로 연결된 자식 PII(클론 음성·
-  // 결제·노트 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
+  // 결제 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
   // 해석 실패이므로 소리 없이 users 만 지우지 말고 throw 해 호출부에서 롤백되게 한다.
   if (!userPk) {
     const orphanGuard = await tx.execute({
@@ -140,16 +140,7 @@ export async function purgeUserAccount(
     });
 
     await tx.execute({
-      sql: `DELETE FROM notes WHERE sender_id = ? OR receiver_id = ?`,
-      args: [userPk, userPk],
-    });
-    await tx.execute({
       sql: `DELETE FROM push_tokens WHERE user_id = ?`,
-      args: [userPk],
-    });
-    await tx.execute({
-      sql: `DELETE FROM voice_speakers
-            WHERE upload_id IN (SELECT id FROM voice_uploads WHERE user_id = ?)`,
       args: [userPk],
     });
     await tx.execute({
@@ -189,15 +180,6 @@ export async function purgeUserAccount(
       args: [...userIds, ...userIds],
     });
     await tx.execute({
-      sql: `DELETE FROM gifts
-            WHERE sender_id IN (?, ?)
-               OR recipient_id IN (?, ?)
-               OR message_id IN (
-                 SELECT id FROM messages WHERE user_id IN (?, ?)
-               )`,
-      args: [...userIds, ...userIds, ...userIds],
-    });
-    await tx.execute({
       sql: `DELETE FROM messages WHERE user_id IN (?, ?)`,
       args: userIds,
     });
@@ -224,11 +206,6 @@ export async function purgeUserAccount(
     await tx.execute({
       sql: `DELETE FROM voice_profiles WHERE user_id IN (?, ?)`,
       args: userIds,
-    });
-    await tx.execute({
-      sql: `DELETE FROM friendships
-            WHERE user_a IN (?, ?) OR user_b IN (?, ?)`,
-      args: [...userIds, ...userIds],
     });
     await tx.execute({
       sql: `DELETE FROM user_consents WHERE user_id IN (?, ?)`,

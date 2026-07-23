@@ -627,7 +627,6 @@ describe('POST /auth/google', () => {
       'google-user-2',
       'linked@gmail.com',
       'Linked User',
-      null,
       'existing-user-id',
     ]);
   });

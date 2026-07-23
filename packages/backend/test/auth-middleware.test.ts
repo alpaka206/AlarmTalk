@@ -36,7 +36,6 @@ function buildApp() {
       userId: c.get('userId'),
       userEmail: c.get('userEmail'),
       userName: c.get('userName'),
-      userPicture: c.get('userPicture'),
     }),
   );
   return app;
@@ -149,7 +148,6 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     expect(body.userId).toBe('user-1');
     expect(body.userEmail).toBe('test@test.com');
     expect(body.userName).toBe('Test');
-    expect(body.userPicture).toBe('');
     expect(mockVerifyAppJwt).toHaveBeenCalledWith(token, ENV.JWT_SECRET);
   });
 

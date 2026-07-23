@@ -75,17 +75,17 @@ describe('POST /alarms', () => {
     expect((await res.json()).error_code).toBe('INVALID_RAW_AUDIO_URL');
   });
 
-  it('target_user_id 가 친구 아닌 경우 403 NOT_FRIENDS', async () => {
-    // friendship query → no rows
+  it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
+    // target user lookup → no rows
     mockDB.pushResult([]);
     const res = await buildApp().request(
       jsonReq('POST', '/alarms', { ...validBody, target_user_id: 'other-user' }),
     );
     expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('NOT_FRIENDS');
+    expect((await res.json()).error_code).toBe('NOT_CONNECTED');
   });
 
-  it('자기 자신에게는 friendship 검증 건너뜀', async () => {
+  it('자기 자신에게는 그룹 관계 검증 건너뜀', async () => {
     // user plan query → free user
     mockDB.pushResult([{ plan: 'personal' }]);
     // message existence check → found
@@ -186,7 +186,7 @@ describe('POST /alarms', () => {
     expect(body.alarm.vibration_pattern).toBe('strong');
   });
 
-  it('target_user_id 가 친구이면 생성 성공', async () => {
+  it('target_user_id 가 같은 커플/가족 그룹이면 생성 성공', async () => {
     // target user allows family alarms
     mockDB.pushResult([
       {
@@ -200,8 +200,11 @@ describe('POST /alarms', () => {
     ]);
     // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
     mockDB.pushResult([]);
-    // friendship check → found
-    mockDB.pushResult([{ id: ID.friendship }]);
+    // resolveUserPk(sender)
+    mockDB.pushResult([{ id: 'sender-pk-1' }]);
+    // assertSameGroup: 발신자 그룹 → 수신자 그룹(동일 그룹)
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]);
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]);
     // user plan for target
     mockDB.pushResult([{ plan: 'personal' }]);
     // message check

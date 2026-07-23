@@ -78,11 +78,9 @@ npm run typecheck # tsc --noEmit
 | `POST /api/auth/login` | 이메일+비밀번호 로그인 |
 | `POST /api/auth/apple` | Apple identity token 검증 후 앱 JWT 발급 |
 | `GET /api/auth/me` | 현재 사용자 정보 |
-| `/api/voice/*` | 음성 프로필 CRUD + 업로드 + 화자 분리 |
+| `/api/voice/*` | 음성 프로필 CRUD + 업로드 |
 | `/api/tts/*` | TTS 생성 + 메시지 관리 |
 | `/api/alarm/*` | 알람 CRUD + 스케줄러 |
-| `/api/friend/*` | 친구 요청/수락/삭제 |
-| `/api/gift/*` | 선물 전송/수신 |
 | `/api/billing/*` | 결제 스텁 + 이용권 코드 |
 | `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
 | `/api/user/*` | 사용자 프로필 + 설정 |

@@ -122,7 +122,6 @@ export function fakeAuthMiddleware(userId = 'user-1', email = 'user@test.com') {
     c.set('userId', userId);
     c.set('userEmail', email);
     c.set('userName', 'Test User');
-    c.set('userPicture', '');
     await next();
   };
 }
@@ -141,8 +140,4 @@ export const ID = {
   alarm404: '00000000-0000-4000-8000-0000000000ff',
   message: '10000000-0000-4000-8000-000000000001',
   messageBad: '10000000-0000-4000-8000-0000000000ff',
-  friendship: '20000000-0000-4000-8000-000000000001',
-  friendship404: '20000000-0000-4000-8000-0000000000ff',
-  gift: '30000000-0000-4000-8000-000000000001',
-  gift404: '30000000-0000-4000-8000-0000000000ff',
 };

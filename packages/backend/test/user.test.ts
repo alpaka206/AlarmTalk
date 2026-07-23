@@ -29,69 +29,6 @@ beforeEach(() => {
   mockDB.client.execute = originalExecute;
 });
 
-describe('GET /user/me', () => {
-  it('기존 사용자 반환', async () => {
-    mockDB.pushResult([
-      {
-        id: 'u-1',
-        google_id: 'user-1',
-        email: 'user@test.com',
-        name: 'Test',
-        plan: 'free',
-        allow_family_alarms: 0,
-        dynamic_prompt_settings_json: JSON.stringify({
-          weather: { country: 'KR', city: 'Seoul' },
-          fortune: { gender: '남성', birth_date: '1990-01-02', birth_time: '08:30' },
-        }),
-      },
-    ]);
-    mockDB.pushResult([{ count: 3 }]);
-    mockDB.pushResult([{ count: 2 }]);
-
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/user/me'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.user.google_id).toBe('user-1');
-    expect(body.user.allow_family_alarms).toBe(false);
-    expect(body.user.dynamic_prompt_settings).toEqual({
-      weather: { country: 'KR', city: 'Seoul' },
-      fortune: { gender: '남성', birth_date: '1990-01-02', birth_time: '08:30' },
-    });
-    expect(body.stats.voice_profiles).toBe(3);
-    expect(body.stats.alarms).toBe(2);
-  });
-
-  it('allow_family_alarms=1 을 true 로 직렬화', async () => {
-    mockDB.pushResult([
-      {
-        id: 'u-1',
-        google_id: 'user-1',
-        email: 'user@test.com',
-        name: 'Test',
-        plan: 'free',
-        allow_family_alarms: 1,
-      },
-    ]);
-    mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([{ count: 0 }]);
-
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/user/me'));
-    const body = await res.json();
-    expect(body.user.allow_family_alarms).toBe(true);
-  });
-
-  it('신규 사용자 미존재 시 USER_NOT_FOUND', async () => {
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/user/me'));
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error_code).toBe('USER_NOT_FOUND');
-  });
-});
-
 describe('PATCH /user/me', () => {
   it('allow_family_alarms=true 성공', async () => {
     mockDB.pushResult([], 1);
@@ -280,78 +217,6 @@ describe('PATCH /user/plan', () => {
   });
 });
 
-describe('GET /user/search', () => {
-  it('검색어 4자 미만이면 빈 배열 (PII 하베스팅 방지)', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/user/search?q=abc'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.users).toEqual([]);
-    // DB 를 건드리지 않는다.
-    expect(mockDB.calls).toHaveLength(0);
-  });
-
-  it('검색어 없으면 빈 배열', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/user/search'));
-    expect(res.status).toBe(200);
-    expect((await res.json()).users).toEqual([]);
-  });
-
-  it('검색 결과에서 email 은 노출하지 않는다 (null)', async () => {
-    mockDB.pushResult([
-      { google_id: 'u-2', name: 'Friend', picture: '' },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/user/search?q=friend'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.users).toHaveLength(1);
-    expect(body.users[0]).toMatchObject({ id: 'u-2', name: 'Friend', picture: '' });
-    // email 키는 존재하지만 항상 null (클라이언트 옵셔널 디코딩 호환).
-    expect(body.users[0].email).toBeNull();
-    // SELECT 에 email 컬럼이 포함되지 않는다.
-    expect(mockDB.calls[0].sql).not.toContain('email,');
-    expect(mockDB.calls[0].sql).toContain('SELECT google_id, name, picture');
-  });
-
-  it('접두(prefix) 매칭만 사용한다 (substring %q% 아님)', async () => {
-    mockDB.pushResult([]);
-    const app = buildApp();
-    await app.request(jsonReq('GET', '/user/search?q=friend'));
-    // LIKE 인자는 'friend%' 형태(접두). 앞에 % 가 붙지 않는다.
-    expect(mockDB.calls[0].args[1]).toBe('friend%');
-  });
-
-  it('LIKE 와일드카드(%,_) 는 이스케이프된다', async () => {
-    mockDB.pushResult([]);
-    const app = buildApp();
-    await app.request(jsonReq('GET', '/user/search?q=a%25b_c'));
-    // q = 'a%b_c' → 'a\%b\_c%' 로 이스케이프, ESCAPE 절 사용.
-    expect(mockDB.calls[0].args[1]).toBe('a\\%b\\_c%');
-    expect(mockDB.calls[0].sql).toContain("ESCAPE '\\'");
-  });
-
-  it('자기 자신은 제외', async () => {
-    mockDB.pushResult([
-      { google_id: 'u-2', name: 'Other', picture: '' },
-    ]);
-    const app = buildApp();
-    await app.request(jsonReq('GET', '/user/search?q=testuser'));
-    expect(mockDB.calls[0].args[0]).toBe('user-1');
-  });
-
-  it('DB 에러 → 500 SEARCH_FAILED', async () => {
-    const app = buildApp();
-    mockDB.client.execute = async () => {
-      throw new Error('DB down');
-    };
-    const res = await app.request(jsonReq('GET', '/user/search?q=friend'));
-    expect(res.status).toBe(500);
-    expect((await res.json()).error_code).toBe('SEARCH_FAILED');
-  });
-});
-
 describe('DELETE /user/me', () => {
   it('모든 관련 데이터 삭제 후 성공', async () => {
     mockDB.pushResult([{ id: 'pk-1' }]);
@@ -366,20 +231,9 @@ describe('DELETE /user/me', () => {
     expect(indexOf('DELETE FROM voucher_redemptions')).toBeLessThan(indexOf('DELETE FROM voucher_codes'));
     expect(indexOf('DELETE FROM voucher_codes')).toBeLessThan(indexOf('DELETE FROM subscriptions'));
     expect(indexOf('DELETE FROM plan_group_invites')).toBeLessThan(indexOf('DELETE FROM plan_groups'));
-    expect(indexOf('DELETE FROM gifts')).toBeLessThan(indexOf('DELETE FROM messages'));
     expect(indexOf('DELETE FROM message_library')).toBeLessThan(indexOf('DELETE FROM messages'));
     expect(indexOf('DELETE FROM messages')).toBeLessThan(indexOf('DELETE FROM voice_profiles'));
     expect(indexOf('DELETE FROM users')).toBeGreaterThan(indexOf('DELETE FROM voice_profiles'));
-  });
-
-  it('friendships/gifts는 양방향 삭제 (OR 조건)', async () => {
-    mockDB.pushResult([{ id: 'pk-1' }]);
-    const app = buildApp();
-    await app.request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
-    const friendshipCall = mockDB.calls.find((c) => c.sql.includes('DELETE FROM friendships'));
-    expect(friendshipCall?.args).toEqual(['pk-1', 'user-1', 'pk-1', 'user-1']);
-    const giftCall = mockDB.calls.find((c) => c.sql.includes('DELETE FROM gifts'));
-    expect(giftCall?.args).toEqual(['pk-1', 'user-1', 'pk-1', 'user-1', 'pk-1', 'user-1']);
   });
 
   it('userPk 조회에 apple_id 도 포함한다 (legacy Apple 계정 고아 방지)', async () => {
@@ -418,36 +272,3 @@ describe('DELETE /user/me', () => {
   });
 });
 
-describe('GET /user/me — edge cases', () => {
-  it('allow_family_alarms null → false 반환', async () => {
-    mockDB.pushResult([
-      {
-        id: 'u-1',
-        google_id: 'user-1',
-        email: 'user@test.com',
-        name: 'Test',
-        plan: 'free',
-        allow_family_alarms: null,
-      },
-    ]);
-    mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([{ count: 0 }]);
-
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/user/me'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.user.allow_family_alarms).toBe(false);
-  });
-
-  it('DB 에러 → 500 FETCH_USER_FAILED', async () => {
-    const app = buildApp();
-    mockDB.client.execute = async () => {
-      throw new Error('DB down');
-    };
-    const res = await app.request(jsonReq('GET', '/user/me'));
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error_code).toBe('FETCH_USER_FAILED');
-  });
-});

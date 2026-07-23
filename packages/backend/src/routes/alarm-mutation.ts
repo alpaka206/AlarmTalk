@@ -286,8 +286,8 @@ alarmMutation.post('/', async (c) => {
       if (targetRes.rows.length === 0) {
         return c.json(
           {
-            error: '친구 관계인 사용자에게만 알람을 설정할 수 있습니다.',
-            error_code: 'NOT_FRIENDS',
+            error: '같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.',
+            error_code: 'NOT_CONNECTED',
           },
           403,
         );
@@ -312,31 +312,21 @@ alarmMutation.post('/', async (c) => {
       }
       const effectiveTimezone = guard.effectiveTimezone;
 
-      const friendship = await db.execute({
-        sql: `SELECT id FROM friendships
-              WHERE ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
-                AND status = 'accepted'`,
-        args: [userId, targetLoginId, targetLoginId, userId],
-      });
+      // 상대 알람 권한: 같은 커플/가족 플랜 그룹 멤버만 허용.
+      const senderPk = await resolveUserPk(db, userId);
+      const allowed =
+        targetLoginId !== userId && !!senderPk && (await assertSameGroup(db, senderPk, targetPk));
 
-      if (friendship.rows.length > 0) {
-        targetUserIdForAlarm = targetLoginId;
-      } else {
-        const senderPk = await resolveUserPk(db, userId);
-        const allowed =
-          targetLoginId !== userId && !!senderPk && (await assertSameGroup(db, senderPk, targetPk));
-
-        if (!allowed) {
-          return c.json(
-            {
-              error: '친구 또는 같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.',
-              error_code: 'NOT_CONNECTED',
-            },
-            403,
-          );
-        }
-        targetUserIdForAlarm = targetLoginId;
+      if (!allowed) {
+        return c.json(
+          {
+            error: '같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.',
+            error_code: 'NOT_CONNECTED',
+          },
+          403,
+        );
       }
+      targetUserIdForAlarm = targetLoginId;
       targetIdsForReplace = [targetPk, targetLoginId];
       targetEffectiveTimezone = effectiveTimezone;
     }

@@ -1643,6 +1643,34 @@ export const migrations: Migration[] = [
        WHERE code COLLATE NOCASE IN ('WELCOME_PERSONAL', 'WELCOME_COUPLE', 'WELCOME_FAMILY')`,
     ],
   },
+  {
+    // 사장(死藏) 스키마 일괄 정리 (2026-07 감사).
+    //  - notes(#18)·voice_speakers(#4): 기능 제거 후 INSERT 경로가 사라져 영구 공백 —
+    //    friendships·gifts(#1): /friend·/gift 라우트가 클라 미호출 유령 기능이라 라우트째
+    //    삭제. 인덱스는 DROP TABLE 이 함께 지우지만 _kst 뷰(#46)는 아니므로 명시 DROP.
+    //  - users.picture: 구글 프로필 사진 URL 을 저장·서빙했지만 소비 UI 가 없다(미사용 PII).
+    //  - users.last_active_at: 유일한 갱신 지점이 죽은 GET /user/me 라 한 번도 기록된 적
+    //    없는 컬럼. 라우트와 함께 제거.
+    //  - users_kst 뷰가 last_active_at 를 명시 참조하므로 #50 전례대로 뷰를 떨군 뒤
+    //    DROP COLUMN 하고 해당 _kst 컬럼 없이 재생성한다. 재실행 시 'no such column'/
+    //    'no such view' 는 idempotent 로 무시된다.
+    id: 79,
+    name: 'drop-dead-social-tables-and-user-columns',
+    statements: [
+      `DROP VIEW IF EXISTS "notes_kst"`,
+      `DROP VIEW IF EXISTS "voice_speakers_kst"`,
+      `DROP VIEW IF EXISTS "friendships_kst"`,
+      `DROP VIEW IF EXISTS "gifts_kst"`,
+      `DROP TABLE IF EXISTS notes`,
+      `DROP TABLE IF EXISTS voice_speakers`,
+      `DROP TABLE IF EXISTS friendships`,
+      `DROP TABLE IF EXISTS gifts`,
+      `DROP VIEW IF EXISTS "users_kst"`,
+      `ALTER TABLE users DROP COLUMN picture`,
+      `ALTER TABLE users DROP COLUMN last_active_at`,
+      `CREATE VIEW IF NOT EXISTS "users_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("deletion_requested_at",'+9 hours') AS deletion_requested_at_kst, datetime("deletion_purge_at",'+9 hours') AS deletion_purge_at_kst FROM "users"`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

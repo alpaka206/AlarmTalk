@@ -9,15 +9,11 @@ import {
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
 import {
-  familyAlarmSettingsFromRow,
   validateQuietDays,
   validateQuietTime,
   validateQuietWindows,
 } from '../lib/family-alarm-settings';
-import {
-  dynamicPromptSettingsFromRow,
-  validateDynamicPromptSettings,
-} from '../lib/dynamic-prompt-settings';
+import { validateDynamicPromptSettings } from '../lib/dynamic-prompt-settings';
 import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
@@ -26,68 +22,6 @@ import {
 } from '../lib/consent';
 
 const user = new Hono<AppEnv>();
-
-user.get('/me', async (c) => {
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-
-  try {
-    // userId is the JWT sub (= users.google_id). Auth middleware guarantees
-    // the row exists. The legacy INSERT branch (referencing the long-gone
-    // firebase_uid column) is removed.
-    const result = await db.execute({
-      sql: 'SELECT * FROM users WHERE google_id = ?',
-      args: [userId],
-    });
-
-    if (result.rows.length === 0) {
-      return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-    }
-
-    const u = result.rows[0]!;
-    // 계정 연동으로 JWT sub(userId) 와 users.id(userPk) 가 다를 수 있으므로, 목록
-    // API(alarm-query viewerIds/voice-profile ownerIds)와 동일하게 두 식별자 집합으로
-    // 카운트한다. sub≠users.id 계정에서 통계가 0 으로 과소집계되는 문제를 막는다.
-    const userPk = c.get('userIdPK') || userId;
-    const idSet = Array.from(new Set([userPk, userId]));
-    const idPh = idSet.map(() => '?').join(',');
-    const [profileCount, alarmCount] = await Promise.all([
-      db.execute({
-        sql: `SELECT COUNT(*) as count FROM voice_profiles WHERE user_id IN (${idPh}) AND deleted_at IS NULL`,
-        args: idSet,
-      }),
-      db.execute({
-        sql: `SELECT COUNT(*) as count FROM alarms WHERE user_id IN (${idPh})`,
-        args: idSet,
-      }),
-      db.execute({
-        sql: "UPDATE users SET last_active_at = datetime('now') WHERE google_id = ?",
-        args: [userId],
-      }),
-    ]);
-
-    const familyAlarmSettings = familyAlarmSettingsFromRow(u as Record<string, unknown>);
-    const dynamicPromptSettings = dynamicPromptSettingsFromRow(u as Record<string, unknown>);
-    return c.json({
-      user: {
-        ...u,
-        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
-        family_alarm_quiet_days: familyAlarmSettings.quietDays,
-        family_alarm_quiet_start: familyAlarmSettings.quietStart,
-        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
-        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
-        dynamic_prompt_settings: dynamicPromptSettings,
-      },
-      stats: {
-        voice_profiles: Number(profileCount.rows[0]?.count ?? 0),
-        alarms: Number(alarmCount.rows[0]?.count ?? 0),
-      },
-    });
-  } catch (err) {
-    logRouteError(c, err);
-    return c.json({ error: 'Failed to fetch user info', error_code: 'FETCH_USER_FAILED' }, 500);
-  }
-});
 
 function toBoolFlag(raw: unknown): 0 | 1 | null {
   if (raw === true || raw === 1 || raw === '1' || raw === 'true') return 1;
@@ -563,43 +497,6 @@ user.delete('/me/deletion', async (c) => {
       { error: 'Failed to cancel deletion', error_code: 'DELETION_CANCEL_FAILED' },
       500,
     );
-  }
-});
-
-user.get('/search', async (c) => {
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-  const q = (c.req.query('q') || '').trim();
-
-  // PII 하베스팅 방지: 너무 짧은 질의로 광범위하게 긁지 못하도록 최소 4자를 요구한다.
-  if (q.length < 4) {
-    return c.json({ users: [] });
-  }
-
-  try {
-    // 부분 문자열('%q%') 대신 접두(prefix) 매칭만 허용해 무차별 수집을 줄인다.
-    // LIKE 와일드카드(%,_) 는 리터럴로 이스케이프한다.
-    const escaped = q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-    const result = await db.execute({
-      sql: `SELECT google_id, name, picture FROM users
-            WHERE google_id != ? AND email LIKE ? ESCAPE '\\'
-            LIMIT 10`,
-      args: [userId, `${escaped}%`],
-    });
-
-    return c.json({
-      // 다른 사용자의 email 은 절대 반환하지 않는다(PII). iOS/Android 의
-      // UserSearchResult.email 은 옵셔널이라 null 로 두어도 디코딩이 깨지지 않는다.
-      users: result.rows.map((r) => ({
-        id: r.google_id,
-        email: null,
-        name: r.name,
-        picture: r.picture,
-      })),
-    });
-  } catch (err) {
-    logRouteError(c, err);
-    return c.json({ error: 'Search failed', error_code: 'SEARCH_FAILED' }, 500);
   }
 });
 

@@ -35,7 +35,6 @@ function buildApp() {
   app.use('*', authMiddleware);
   app.get('/api/alarm', (c) => c.json({ ok: true }));
   app.delete('/api/user/me/deletion', (c) => c.json({ ok: 'cancelled' }));
-  app.get('/api/user/me', (c) => c.json({ ok: 'me' }));
   return app;
 }
 
@@ -91,10 +90,4 @@ describe('authMiddleware — pending_deletion 차단', () => {
     expect((await res.json()).ok).toBe('cancelled');
   });
 
-  it('pending_deletion 이어도 본인정보 조회(GET /user/me)는 허용', async () => {
-    deletionStatus = 'pending_deletion';
-    const res = await call(buildApp(), 'GET', '/api/user/me');
-    expect(res.status).toBe(200);
-    expect((await res.json()).ok).toBe('me');
-  });
 });

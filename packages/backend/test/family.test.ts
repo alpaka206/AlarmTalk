@@ -312,9 +312,7 @@ describe('GET /family/groups/current', () => {
         role: 'owner',
         joined_at: '2026-04-21T00:00:00.000Z',
         email: 'owner@x.com',
-        name: 'Owner',
-        picture: null,
-        allow_family_alarms: 1,
+        name: 'Owner',        allow_family_alarms: 1,
       },
       {
         id: 'm-mem',
@@ -322,9 +320,7 @@ describe('GET /family/groups/current', () => {
         role: 'member',
         joined_at: '2026-04-21T00:05:00.000Z',
         email: 'm@x.com',
-        name: 'Member',
-        picture: null,
-        allow_family_alarms: 0,
+        name: 'Member',        allow_family_alarms: 0,
       },
     ]);
 

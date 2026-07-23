@@ -76,7 +76,6 @@ export type AuthVariables = {
   userIdPK: string;
   userEmail: string;
   userName: string;
-  userPicture: string;
   sentry: SentryClient;
 };
 

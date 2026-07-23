@@ -649,17 +649,17 @@ auth.post('/google', async (c) => {
 
       await db.execute({
         sql: `UPDATE users
-              SET google_id = ?, email = ?, name = ?, picture = ?, updated_at = datetime('now')
+              SET google_id = ?, email = ?, name = ?, updated_at = datetime('now')
               WHERE id = ?`,
-        args: [googleId, email, name || row.name || null, google.picture || null, userId],
+        args: [googleId, email, name || row.name || null, userId],
       });
     } else {
       userId = googleId;
       plan = 'free';
       await db.execute({
-        sql: `INSERT INTO users (id, google_id, email, name, picture)
-              VALUES (?, ?, ?, ?, ?)`,
-        args: [userId, googleId, email, name || null, google.picture || null],
+        sql: `INSERT INTO users (id, google_id, email, name)
+              VALUES (?, ?, ?, ?)`,
+        args: [userId, googleId, email, name || null],
       });
     }
 

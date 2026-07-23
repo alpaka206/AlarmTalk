@@ -78,7 +78,8 @@ beforeAll(async () => {
   await runMigrations(db);
   // 이전 실행 잔재 정리(파일 DB 재사용). 시스템 시드 users 행은 건드리지 않는다.
   await db.execute('DELETE FROM alarms');
-  await db.execute('DELETE FROM friendships');
+  await db.execute("DELETE FROM plan_group_members WHERE plan_group_id = 'guard-group'");
+  await db.execute("DELETE FROM plan_groups WHERE id = 'guard-group'");
   await db.execute("DELETE FROM users WHERE id LIKE 'guard-%'");
 
   const insertUser = (u: { pk: string; login: string }, allow: number, quietWindows: string) =>
@@ -92,14 +93,23 @@ beforeAll(async () => {
   await insertUser(RECIPIENT, 1, '[]');
   await insertUser(RECIPIENT_QUIET, 1, '[{"days":[0,6],"start":"00:00","end":"08:00"}]');
 
-  const insertFriendship = (id: string, a: string, b: string) =>
+  // 타깃 알람 권한은 같은 커플/가족 플랜 그룹 멤버십(assertSameGroup)이다 —
+  // 발신자·수신자 전원을 한 가족 그룹에 넣는다(plan_id 는 마이그레이션 시드 가족 플랜).
+  await db.execute({
+    sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
+          VALUES ('guard-group', ?, '70000000-0000-4000-8000-000000000003', 6)`,
+    args: [SENDER_A.pk],
+  });
+  const insertMember = (id: string, u: { pk: string }, role: string) =>
     db.execute({
-      sql: `INSERT INTO friendships (id, user_a, user_b, status) VALUES (?, ?, ?, 'accepted')`,
-      args: [id, a, b],
+      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
+            VALUES (?, 'guard-group', ?, ?)`,
+      args: [id, u.pk, role],
     });
-  await insertFriendship('guard-f1', SENDER_A.login, RECIPIENT.login);
-  await insertFriendship('guard-f2', SENDER_B.login, RECIPIENT.login);
-  await insertFriendship('guard-f3', SENDER_A.login, RECIPIENT_QUIET.login);
+  await insertMember('guard-m1', SENDER_A, 'owner');
+  await insertMember('guard-m2', SENDER_B, 'member');
+  await insertMember('guard-m3', RECIPIENT, 'member');
+  await insertMember('guard-m4', RECIPIENT_QUIET, 'member');
 });
 
 beforeEach(async () => {

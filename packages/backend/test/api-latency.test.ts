@@ -12,11 +12,8 @@ vi.mock('../src/lib/db', () => ({
 
 import alarmRoutes from '../src/routes/alarm';
 import libraryRoutes from '../src/routes/library';
-import friendRoutes from '../src/routes/friend';
-import statsRoutes from '../src/routes/stats';
 import codeRoutes from '../src/routes/code';
 import userRoutes from '../src/routes/user';
-import giftRoutes from '../src/routes/gift';
 
 // 이 스위트는 mock DB 로 라우트 핸들러의 **절대 벽시계 지연**을 assert 한다(회귀 감지용
 // 마이크로벤치). 로컬에선 엄격하게 유지하되, 공유 CI 러너는 부하로 6~10배 느려져 정상 코드도
@@ -155,55 +152,6 @@ describe('API latency baselines', () => {
     });
   });
 
-  describe('GET /friend/list', () => {
-    it('responds within threshold', async () => {
-      mockDB.pushResult([
-        {
-          id: 'f-1',
-          user_id: 'user-1',
-          friend_id: 'user-2',
-          status: 'accepted',
-          email: 'friend@test.com',
-          name: 'Friend',
-          picture: '',
-          last_seen_at: null,
-          created_at: '2026-01-01T00:00:00Z',
-        },
-      ]);
-      const app = buildApp('/friend', friendRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/friend/list')));
-      expect(res.status).toBe(200);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
-    });
-  });
-
-  describe('POST /friend (send request)', () => {
-    it('responds within write threshold', async () => {
-      mockDB.pushResult([{ google_id: 'user-2', email: 'other@test.com', name: 'Other' }]); // target user lookup
-      mockDB.pushResult([]); // no existing friendship
-      mockDB.pushResult([], 1); // INSERT
-      const app = buildApp('/friend', friendRoutes);
-      const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('POST', '/friend', { email: 'other@test.com' })),
-      );
-      expect(res.status).toBe(201);
-      expect(ms).toBeLessThan(WRITE_LATENCY_THRESHOLD_MS);
-    });
-  });
-
-  describe('GET /stats', () => {
-    it('responds within threshold', async () => {
-      mockDB.pushResult([{ total: 5 }]); // alarms
-      mockDB.pushResult([{ total: 10 }]); // messages
-      mockDB.pushResult([{ total: 3 }]); // voices
-      mockDB.pushResult([{ total: 2 }]); // friends
-      const app = buildApp('/stats', statsRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/stats')));
-      expect(res.status).toBe(200);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
-    });
-  });
-
   describe('POST /code/register', () => {
     it('resolves an unknown code (invite/promo fallback) within threshold', async () => {
       mockDB.pushResult([{ id: 'pk-1' }]); // user lookup
@@ -217,36 +165,15 @@ describe('API latency baselines', () => {
     });
   });
 
-  describe('GET /user/me', () => {
-    it('responds within threshold', async () => {
-      mockDB.pushResult([
-        {
-          id: 'user-1',
-          email: 'user@test.com',
-          name: 'Test User',
-          picture: '',
-          plan: 'free',
-          plan_group_id: null,
-          plan_group_role: null,
-          tts_count: 0,
-          tts_limit: 10,
-          created_at: '2026-01-01T00:00:00Z',
-        },
-      ]);
+  describe('PATCH /user/me', () => {
+    it('responds within write threshold', async () => {
+      mockDB.pushResult([], 1);
       const app = buildApp('/user', userRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/user/me')));
+      const { res, ms } = await measureLatency(() =>
+        app.request(jsonReq('PATCH', '/user/me', { allow_family_alarms: true })),
+      );
       expect(res.status).toBe(200);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
-    });
-  });
-
-  describe('GET /gift/received', () => {
-    it('responds within threshold', async () => {
-      mockDB.pushResult([]); // no gifts
-      const app = buildApp('/gift', giftRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/gift/received')));
-      expect(res.status).toBe(200);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
+      expect(ms).toBeLessThan(WRITE_LATENCY_THRESHOLD_MS);
     });
   });
 
@@ -254,13 +181,6 @@ describe('API latency baselines', () => {
     it('POST /alarm rejects missing required fields within threshold', async () => {
       const app = buildApp('/alarm', alarmRoutes);
       const { res, ms } = await measureLatency(() => app.request(jsonReq('POST', '/alarm', {})));
-      expect(res.status).toBe(400);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
-    });
-
-    it('POST /friend rejects missing email within 10ms', async () => {
-      const app = buildApp('/friend', friendRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('POST', '/friend', {})));
       expect(res.status).toBe(400);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });

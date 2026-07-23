@@ -20,7 +20,6 @@ interface TokenPayload {
   sub: string;
   email?: string;
   name?: string;
-  picture?: string;
   iss: string;
   aud: string;
   exp: number;
@@ -56,7 +55,6 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       sub: app.sub,
       email: app.email,
       name: app.name,
-      picture: undefined,
       iss: app.iss,
       aud: app.aud,
       exp: app.exp,
@@ -68,7 +66,6 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     c.set('userId', verified.sub);
     c.set('userEmail', verified.email || '');
     c.set('userName', verified.name || '');
-    c.set('userPicture', verified.picture || '');
 
     // New convention: `userIdPK` is the actual users.id (UUID for legacy
     // accounts, sub for newly-created ones). Use this for any FOREIGN KEY
@@ -95,15 +92,14 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         // 둘 다 INSERT 를 시도해도 중복키 예외로 죽지 않도록 ON CONFLICT DO NOTHING
         // 으로 멱등화한다. 신규 계정은 id = sub 이므로 경쟁 상황에서도 pk 는 일관된다.
         await db.execute({
-          sql: `INSERT INTO users (id, google_id, email, name, picture)
-                VALUES (?, ?, ?, ?, ?)
+          sql: `INSERT INTO users (id, google_id, email, name)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT DO NOTHING`,
           args: [
             verified.sub,
             verified.sub,
             verified.email || `${verified.sub}@unknown`,
             verified.name || null,
-            verified.picture || null,
           ],
         });
         pk = verified.sub;
@@ -120,18 +116,17 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         );
       }
 
-      // 탈퇴 유예(pending_deletion) 계정은 본인정보 조회(GET /user/me)와 탈퇴 철회
-      // (DELETE /user/me/deletion) 외의 인증 API 사용을 차단한다(개인정보보호법 제21조,
-      // migrations #41 주석). 클라이언트는 이 코드를 받으면 복구 화면으로 유도한다.
+      // 탈퇴 유예(pending_deletion) 계정은 탈퇴 철회(DELETE /user/me/deletion) 외의
+      // 인증 API 사용을 차단한다(개인정보보호법 제21조, migrations #41 주석).
+      // 클라이언트는 이 코드를 받으면 복구 화면으로 유도한다.
       if (deletionStatus === 'pending_deletion') {
         const path = c.req.path;
         const method = c.req.method;
         const isCancelDeletion = method === 'DELETE' && path.endsWith('/user/me/deletion');
-        const isReadMe = method === 'GET' && path.endsWith('/user/me');
         // FCM 토큰 해제는 허용한다 — 클라가 삭제 신청 '성공 후'(=pending 전환 후) 이 기기 토큰을 제거해
         // 유예 기간 push 를 막는데, 이걸 차단하면 토큰이 영구파기까지 남아 push 가 계속 온다.
         const isPushUnregister = method === 'POST' && path.endsWith('/push/unregister');
-        if (!isCancelDeletion && !isReadMe && !isPushUnregister) {
+        if (!isCancelDeletion && !isPushUnregister) {
           return c.json(
             {
               error: 'Account is scheduled for deletion',

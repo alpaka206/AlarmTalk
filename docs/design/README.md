@@ -7,7 +7,7 @@ Information architecture, screens, UI/UX guide, and flow/sequence diagrams for A
 ### Design principles
 
 1. Alarm first. Opening the app reaches the alarm list within one second.
-2. Relationships are managed in one place. Friends, family, shared voices live under the `People` tab.
+2. Relationships are managed in one place. Family and shared voices live under the `People` tab.
 3. Server-dependent features are visually distinct. Sync state is a top-bar badge.
 4. Maximum 3 levels of depth. Beyond that, use modals.
 
@@ -28,8 +28,6 @@ AlarmTalk
 │    └─ Shared voices (family/partner, read-only)
 │
 ├─ 👥 People (Members tab)
-│    ├─ Friends
-│    ├─ Pending requests
 │    ├─ Family group (owner / member)
 │    ├─ Invite code create / accept
 │    └─ Ownership transfer / member removal
@@ -52,7 +50,7 @@ AlarmTalk
 |---|---|---|
 | ⏰ Alarms | `home` | Alarm list, create, edit |
 | 🎤 Voices | `voices` | My profiles, shared profiles |
-| 👥 People | `members` | Friends, family group, invite code |
+| 👥 People | `members` | Family group, invite code |
 | 👤 Account | `account` | Settings, sync, subscription, code register |
 
 ### Stack screens
@@ -152,7 +150,7 @@ When recording voice
 
 - **AuthScreen** — email/password + Google ID-token, with platform-aware buttons. Error messages avoid leaking which field was wrong.
 - **VoicesTab** — count badge `(N/2)` on my profiles, shared-voices section, mini-play preview.
-- **MembersScreen** — tabs for `Friends` and `Family group`, invite code generator with 10-minute countdown, copy/revoke buttons.
+- **MembersScreen** — `Family group` management, invite code generator with 10-minute countdown, copy/revoke buttons.
 - **AccountPanel** — single scrollable column with all settings and sync actions.
 - **RingingActivity** — single task, `showWhenLocked = true`, `turnScreenOn = true`, `excludeFromRecents = true`. Touch targets ≥ 88 dp.
 

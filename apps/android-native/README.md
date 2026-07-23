@@ -322,7 +322,7 @@ Social APIs are user-triggered only:
 
 Expected:
 
-- Friend/family errors from the backend are shown as app messages.
+- Family errors from the backend are shown as app messages.
 - Family invite actions use `/api/family/invites`.
 - Shared voices use `GET /api/voice/family`.
 - Shared-voice TTS generation is not called.

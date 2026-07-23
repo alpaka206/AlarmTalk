@@ -935,31 +935,6 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(ledgerDelete!.args).toContain(V1);
   });
 
-  it('삭제된 목소리로 만든 쪽지는 오디오 URL을 비움', async () => {
-    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1); // voice_profile_change_ledger 삭제 (같은 달 재등록 허용)
-    mockDB.pushResult([
-      {
-        audio_url: 'https://cdn.example.com/generated/voice-note.mp3',
-        audio_object_key: 'generated/voice-note.mp3',
-      },
-    ]);
-    const res = await req(
-      buildApp(),
-      new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }),
-    );
-
-    expect(res.status).toBe(200);
-    const notesUpdate = mockDB.calls.find((c) =>
-      c.sql.startsWith('UPDATE notes SET audio_url = NULL'),
-    );
-    expect(notesUpdate).toBeDefined();
-    expect(notesUpdate!.args).toContain('r2://generated/voice-note.mp3');
-    expect(notesUpdate!.args).toContain('https://cdn.example.com/generated/voice-note.mp3');
-  });
-
   it('force=true 여도 메시지와 알람 행은 삭제하지 않음', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);

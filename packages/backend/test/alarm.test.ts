@@ -206,8 +206,8 @@ describe('POST /alarm — 알람 생성', () => {
     expect(res.status).toBe(400);
   });
 
-  it('target_user_id 에 친구가 아닌 사용자면 403', async () => {
-    mockDB.pushResult([]); // friendship check
+  it('target_user_id 사용자가 없으면 403', async () => {
+    mockDB.pushResult([]); // target user lookup
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/alarm', {
@@ -256,7 +256,7 @@ describe('POST /alarm — 알람 생성', () => {
     expect(body.alarm.repeat_days).toEqual([1, 3, 5]);
   });
 
-  it('target_user_id 있고 친구이면 201', async () => {
+  it('target_user_id 있고 같은 그룹이면 201', async () => {
     // target user allows family alarms
     mockDB.pushResult([
       {
@@ -269,7 +269,9 @@ describe('POST /alarm — 알람 생성', () => {
       },
     ]);
     mockDB.pushResult([]); // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
-    mockDB.pushResult([{ id: ID.friendship }]); // friendship exists
+    mockDB.pushResult([{ id: 'user-1-pk' }]); // resolveUserPk(sender)
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 발신자 그룹
+    mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 수신자 그룹(동일)
     mockDB.pushResult([{ plan: 'plus' }]); // target user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists
     pushMessageBelongsToCaller(); // 트랜잭션 내 재검증

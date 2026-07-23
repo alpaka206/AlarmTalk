@@ -36,7 +36,6 @@ function authWithResolvedPk(userId = 'user-1', userPk = 'user-pk-1') {
     c.set('userIdPK', userPk);
     c.set('userEmail', 'user@test.com');
     c.set('userName', 'Test User');
-    c.set('userPicture', '');
     await next();
   };
 }

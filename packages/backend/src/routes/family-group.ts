@@ -74,7 +74,7 @@ familyGroup.get('/groups/current', async (c) => {
 
   const membersRes = await db.execute({
     sql: `SELECT m.id, m.user_id, m.role, m.joined_at,
-                 u.email, u.name, u.picture, u.allow_family_alarms,
+                 u.email, u.name, u.allow_family_alarms,
                  u.family_alarm_quiet_days, u.family_alarm_quiet_start, u.family_alarm_quiet_end,
                  u.family_alarm_quiet_windows, u.dynamic_prompt_settings_json
           FROM plan_group_members m
@@ -107,7 +107,6 @@ familyGroup.get('/groups/current', async (c) => {
         joined_at: String(r.joined_at),
         email: (r.email as string | null) ?? null,
         name: (r.name as string | null) ?? null,
-        picture: (r.picture as string | null) ?? null,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,

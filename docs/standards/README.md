@@ -231,7 +231,7 @@ The full external policy is in `SECURITY.md`. The internal rules are:
 - Security response headers on every response (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Strict-Transport-Security`, `Cross-Origin-Opener-Policy`, `Cache-Control: no-store` by default).
 - R2 bucket is private. Server returns base64 or short-lived signed URLs only.
 - Voice data is shared only inside a user's family/partner group. External download is blocked.
-- Account deletion cascades to voice, alarms, messages, friends, plan-group membership; R2 objects are queued for deletion.
+- Account deletion cascades to voice, alarms, messages, plan-group membership; R2 objects are queued for deletion.
 - Personal data is never logged. Email and similar identifiers are hashed before logging if they appear at all.
 - Secret rotation every 90 days. Rotation owner: release engineer + tech lead.
 

@@ -18,8 +18,8 @@ System architecture, database schema, and HTTP API for AlarmTalk.
 │ securityHeaders → sentry → logger → rateLimit → bodyLimit      │
 │              → cors → auth (for /api/*) → cache                │
 │                                                                 │
-│ Routes: /auth /user /voice /tts /alarm /friend /gift /family   │
-│         /code /billing /library /stats /push /holiday /admin   │
+│ Routes: /auth /user /voice /tts /alarm /family /code /billing  │
+│         /library /push /holiday /admin                          │
 │ Cron:   */5 * * * *  (subscription expiry, account purge, …)   │
 └──────────┬──────────────────┬─────────────────┬─────────────────┘
            │                  │                 │
@@ -27,7 +27,7 @@ System architecture, database schema, and HTTP API for AlarmTalk.
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
    │ domain tables│  │ voice + tts  │  │ ElevenLabs           │
-   │ 65 migrations│  │ objects      │  │ Google JWKS          │
+   │ 79 migrations│  │ objects      │  │ Google JWKS          │
    └──────────────┘  └──────────────┘  │ Apple JWKS           │
                                        │ Sentry               │
                                        └──────────────────────┘
@@ -172,24 +172,24 @@ Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrad
 
 - **DB**: Turso (libSQL / SQLite)
 - **Tables**: domain tables plus the `_migrations` ledger
-- **Migrations**: 65 (latest id `65` = 등록 미리듣기 preview_text 영속, PR #549; ids 11–13 unused), defined in `packages/backend/src/lib/migrations.ts`
+- **Migrations**: 79 (latest id `79` = 사장 스키마 정리 — notes·voice_speakers·friendships·gifts DROP + users.picture·last_active_at DROP; ids 11–13 unused), defined in `packages/backend/src/lib/migrations.ts`
 
 ### Entity overview
 
 ```
                                   users
                                     │
-             ┌────────────┬────────────────────────────────────┐
-             ▼            ▼                                    ▼
-      voice_profiles    alarms (target_user_id=user)       friendships
-             │            │                                    │
-             ├──── messages ── message_library              gifts
+             ┌────────────┬─────────────────────┐
+             ▼            ▼                     ▼
+      voice_profiles    alarms (target_user_id=user)
+             │            │
+             ├──── messages ── message_library
              │            │
              │            └── alarms.voice_profile_id
              │
-             └─ voice_uploads ── voice_speakers
+             └─ voice_uploads
 
-users ── push_tokens   notes (sender/receiver)
+users ── push_tokens
 users ── subscriptions ── plans ── voucher_codes
 users ── plan_group_members ── plan_groups ── plan_group_invites
 users ── dub_jobs
@@ -202,13 +202,10 @@ users ── dub_jobs
 | 1 | `users` | Account, plan, settings | many-to-many |
 | 2 | `voice_profiles` | Voice profile (official ≤ 1 per user; ≤ 1 active draft, creatable only while no official exists) | `users 1:0..1` |
 | 3 | `voice_uploads` | Raw uploaded audio | `users 1:N` |
-| 4 | `voice_speakers` | Speaker-diarization output | `voice_uploads 1:N` |
 | 5 | `messages` | TTS message | `voice_profiles 1:N` |
 | 6 | `message_library` | Inbox / saved messages | `users ⊣ messages` |
 | 7 | `generated_audio` | Deterministic TTS cache | `messages 1:1` |
 | 8 | `alarms` | Alarm metadata | `users ⊣ voice_profiles ⊣ messages` |
-| 9 | `friendships` | Friends | `users × users` |
-| 10 | `gifts` | Gift messages | `users × users × messages` |
 | 11 | `plans` | Plan master (free/personal/family) | seed |
 | 12 | `subscriptions` | Subscriptions | `users · plans · plan_groups` |
 | 13 | `voucher_codes` | Voucher codes | `plans · users(issuer)` |
@@ -216,7 +213,6 @@ users ── dub_jobs
 | 15 | `plan_group_members` | Group membership | `plan_groups · users` |
 | 16 | `plan_group_invites` | 6-digit invite codes | `plan_groups · users(issuer/redeemer)` |
 | 17 | `push_tokens` | FCM registration tokens — **active**. Written by `POST /api/push/register`, removed by `POST /api/push/unregister`; consumed by the creation-time data-only family-alarm push. Never used on the ring path. | `users · platform` |
-| 18 | `notes` | Text notes | `users × users` |
 
 `dub_jobs` also exists for dubbing workflow but is not surfaced in the native app.
 
@@ -236,12 +232,8 @@ CREATE TABLE users (
   email TEXT NOT NULL,
   password_hash TEXT,
   name TEXT,
-  picture TEXT,
   plan TEXT NOT NULL DEFAULT 'free',
-  daily_tts_count INTEGER DEFAULT 0,
-  daily_tts_reset_at TEXT,
   allow_family_alarms INTEGER DEFAULT 0,
-  last_active_at TEXT DEFAULT (datetime('now')),
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -261,7 +253,7 @@ CREATE TABLE alarms (
   mode TEXT NOT NULL DEFAULT 'tts',            -- 'sound-only' | 'tts'
   wake_mode TEXT NOT NULL DEFAULT 'sound_then_voice',
   voice_profile_id TEXT REFERENCES voice_profiles(id),
-  speaker_id TEXT REFERENCES voice_speakers(id),
+  speaker_id TEXT,
   vibration_pattern TEXT NOT NULL DEFAULT 'default',
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
@@ -312,6 +304,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | 18 | notes-table | `notes` |
 | 35 | apple-login-users | `users.apple_id` + unique nullable Apple ID index |
 | 63 | push-tokens-token-index | token-leading index for `/push/register`·`/unregister` lookups |
+| 79 | drop-dead-social-tables-and-user-columns | DROP `notes`·`voice_speakers`·`friendships`·`gifts`(+`_kst` views), DROP `users.picture`·`users.last_active_at` |
 | 64 | requeue-clone-prerender-for-weather-unknown-clip | requeue `done` prerender rows so the new weather fallback variant (index 8) gets rendered |
 
 ### Operations
@@ -352,16 +345,13 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 |---|---|
 | `/auth` | Sign up / sign in / me |
 | `/user` | Profile, plan, search, account delete |
-| `/voice` | Voice profile, upload, diarization |
+| `/voice` | Voice profile, upload |
 | `/tts` | TTS generation, presets |
 | `/alarm` | Alarm CRUD |
-| `/friend` | Friend |
 | `/family` | Family group, invites, family alarm |
 | `/billing` | Subscription, voucher; `/billing/google/rtdn` is a public RTDN webhook (query-token protected, no user auth) |
 | `/code` | Unified code register (VA-XXX / 6-digit) |
 | `/library` | Message library |
-| `/gift` | Gift |
-| `/stats` | Stats |
 | `/push` | FCM token register / unregister (`POST /push/register`, `POST /push/unregister`) |
 | `/holiday` | Public holiday lookup (no auth, public cache) |
 | `/admin` | Admin console — mounted at `/admin` (not `/api`), protected by HTTP Basic with `ADMIN_SECRET` |
@@ -408,7 +398,7 @@ The backend verifies the Apple token signature against Apple JWKS, checks issuer
 - Body: `audio` (file), `name` (string), `isDraft=true`, relationship/title fields, and app `language`.
 - Direct official creation is rejected. The client must create one private draft, request its deterministic preview, report the server-issued playback token to `POST /voice/:id/preview-played` only after local playback completion, and then promote it with `PATCH /voice/:id` and `is_draft=false`.
 - Draft provider enrollment is limited to three attempts per KST month and one active draft. Promotion is limited to one official registration per KST month; deleting an official voice does not refund that registration.
-- Provider: ElevenLabs. Drafts cannot be shared, attached to alarms/gifts, or used for general TTS.
+- Provider: ElevenLabs. Drafts cannot be shared, attached to alarms, or used for general TTS.
 
 #### `POST /tts/generate`
 

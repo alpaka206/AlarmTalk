@@ -34,12 +34,12 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
-| `USER_NOT_FOUND` | 인증 주체/대상 사용자를 DB 에서 찾을 수 없음 | 404 | 다수(`routes/user.ts`, `billing-*.ts`, `friend.ts`, `notes.ts`, `family-*.ts` 등) |
-| `FORBIDDEN` | 리소스 접근/소유권 없음(일반) | 403 | `routes/notes.ts`, `voice-upload.ts`, `billing-mutation.ts` |
+| `USER_NOT_FOUND` | 인증 주체/대상 사용자를 DB 에서 찾을 수 없음 | 404 | 다수(`routes/user.ts`, `billing-*.ts`, `family-*.ts` 등) |
+| `FORBIDDEN` | 리소스 접근/소유권 없음(일반) | 403 | `routes/voice-upload.ts`, `billing-mutation.ts` |
 | `INVALID_REQUEST` | 요청 바디 파싱/검증 실패(결제 계열) | 400 | `routes/billing-apple.ts`, `billing-google.ts` |
 | `INVALID_JSON` | JSON 본문 파싱 실패 | 400 | `routes/user.ts` |
 | `JSON_BODY_REQUIRED` | JSON 본문 필요 | 400 | `routes/voice-profile.ts`, `voice-upload.ts` |
-| `INVALID_ID_FORMAT` | 경로/식별자 형식 오류(일반) | 400 | `routes/friend.ts`, `gift.ts`, `voice-upload.ts` |
+| `INVALID_ID_FORMAT` | 경로/식별자 형식 오류(일반) | 400 | `routes/voice-upload.ts` |
 | `ADMIN_UNCONFIGURED` | 관리자 콘솔 미구성(`ADMIN_SECRET` 없음) | 503 | `routes/admin.ts` |
 
 ## 2. 인증 / 계정 (Auth / Account)
@@ -77,7 +77,6 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `AUTH_APPLE_CONFIG_MISSING` | Apple client ID 미설정 | 500 | `routes/auth.ts` |
 | `AUTH_APPLE_NONCE_MISMATCH` | Apple 로그인 nonce 불일치 | 401 | `routes/auth.ts` |
 | `AUTH_APPLE_FAILED` | Apple 로그인 검증 실패 | 5xx | `routes/auth.ts` |
-| `FETCH_USER_FAILED` | 내 정보 조회 실패 | 500 | `routes/user.ts` |
 | `INVALID_NAME` | name 이 문자열이 아님 | 400 | `routes/user.ts` |
 | `INVALID_NAME_LENGTH` | 닉네임 길이 규칙 위반(1~30자) | 400 | `routes/user.ts`, `voice-profile.ts` |
 | `INVALID_BOOLEAN` | boolean 필드 형식 오류(`allow_family_alarms`) | 400 | `routes/user.ts` |
@@ -98,7 +97,6 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `NO_PENDING_DELETION` | 취소할 탈퇴 예약 없음 | 404 | `routes/user.ts` |
 | `DELETION_CANCEL_FAILED` | 탈퇴 취소 처리 실패 | 500 | `routes/user.ts` |
 | `DELETE_ACCOUNT_FAILED` | 계정 삭제 처리 실패 | 500 | `routes/user.ts` |
-| `SEARCH_FAILED` | 사용자 검색 실패 | 500 | `routes/user.ts` |
 
 ## 3. 결제 / 구독 (Billing / Subscription)
 
@@ -173,15 +171,14 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `REQUIRED_FIELDS_MISSING` | 필수 필드(time 등) 누락 | 400 | `routes/alarm-mutation.ts` |
 | `NO_UPDATE_FIELDS` | 수정할 필드 없음 | 400 | `routes/alarm-mutation.ts` |
 | `INVALID_TARGET_USER` | target_user_id 형식 오류 | 400 | `routes/alarm-mutation.ts`, `alarm-helpers.ts` |
-| `NOT_FRIENDS` | 대상과 친구 아님(가족/친구 알람) | 403 | `routes/alarm-mutation.ts` |
-| `NOT_CONNECTED` | 대상과 연결(친구/가족) 관계 없음 | 403 | `routes/alarm-mutation.ts` |
+| `NOT_CONNECTED` | 대상과 같은 커플/가족 그룹 아님 | 403 | `routes/alarm-mutation.ts` |
 | `FAMILY_ALARM_DISABLED` | 수신자가 가족 알람 비허용 | 403 | `routes/alarm-mutation.ts`, `family-alarm.ts` |
 | `FAMILY_ALARM_QUIET_TIME` | 수신자 방해금지 시간대 | 403 | `routes/alarm-mutation.ts`, `family-alarm.ts` |
 | `VOICE_FEATURE_REQUIRES_PAID_PLAN` | 음성 기능은 유료 플랜 필요 | 403 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts`, `voice-upload.ts` |
 | `VOICE_PROFILE_REQUIRED` | 음성 프로필 지정 필요 | 400 | `routes/alarm-mutation.ts` |
 | `VOICE_PROFILE_NOT_FOUND` | 음성 프로필 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts` |
-| `MESSAGE_NOT_FOUND` | 메시지 미존재 | 404 | `routes/alarm-mutation.ts`, `gift.ts`, `tts.ts` |
-| `INVALID_MESSAGE_ID` | message_id 형식 오류 | 400 | `routes/alarm-helpers.ts`, `gift.ts`, `tts.ts` |
+| `MESSAGE_NOT_FOUND` | 메시지 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts` |
+| `INVALID_MESSAGE_ID` | message_id 형식 오류 | 400 | `routes/alarm-helpers.ts`, `tts.ts` |
 | `INVALID_BUCKET_ID` | bucket_id 형식 오류 | 400 | `routes/alarm-helpers.ts` |
 | `INVALID_RAW_AUDIO_URL` | raw_audio_url 이 r2:// 객체 아님 | 400 | `routes/alarm-helpers.ts` |
 | `INVALID_ALARM_MODE` | mode 값 허용 밖 | 400 | `routes/alarm-helpers.ts` |
@@ -244,9 +241,6 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `INVALID_UPLOAD_ID` | 업로드 ID 형식 오류 | 400 | `routes/voice-upload.ts` |
 | `VOICE_UPLOAD_NOT_FOUND` | 음성 업로드 미존재 | 404 | `routes/voice-upload.ts` |
 | `VOICE_UPLOAD_OBJECT_NOT_FOUND` | 업로드 오디오 객체 미존재(R2) | 404 | `routes/voice-upload.ts` |
-| `INVALID_LABEL_LENGTH` | 화자 라벨 길이 규칙 위반(1~50) | 400 | `routes/voice-upload.ts` |
-| `SPEAKER_NOT_FOUND` | 화자 미존재 | 404 | `routes/voice-upload.ts` |
-| `DIARIZATION_FAILED` | 화자 분리(diarization) 실패 | 5xx | `routes/voice-upload.ts` |
 
 ## 7. 가족 / 그룹 (Family / Group)
 
@@ -276,7 +270,7 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `MESSAGE_TEXT_REQUIRED` | message_text 비어있음 | 400 | `routes/family-alarm.ts` |
 | `MESSAGE_TEXT_TOO_LONG` | message_text 길이 초과 | 400 | `routes/family-alarm.ts` |
 | `SELF_ALARM` | 자기 자신에게 가족 알람 불가 | 400 | `routes/family-alarm.ts` |
-| `NOT_SAME_GROUP` | 같은 가족 그룹 멤버 아님 | 403 | `routes/family-alarm.ts`, `notes.ts` |
+| `NOT_SAME_GROUP` | 같은 가족 그룹 멤버 아님 | 403 | `routes/family-alarm.ts` |
 | `RECIPIENT_NOT_FOUND` | 수신자 미존재 | 404 | `routes/family-alarm.ts` |
 | `VOICE_NOT_OWNED` | 지정 voice_profile 이 수신자 소유 아님 | 403 | `routes/family-alarm.ts` |
 | `NO_VOICE_PROFILE` | 수신자 음성 프로필 없음 | 400 | `routes/family-alarm.ts` |
@@ -285,49 +279,6 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `INVALID_DUB_LANGUAGE` | 더빙 언어 값 허용 밖 | 400 | `routes/family-alarm.ts` |
 | `UPLOAD_NOT_FOUND` | 음성 업로드 미존재 | 400 | `routes/family-alarm.ts` |
 | `NOT_UPLOAD_OWNER` | 업로드 소유자 아님 | 400 | `routes/family-alarm.ts` |
-
-## 8. 친구 / 선물 (Friend / Gift)
-
-`routes/friend.ts`, `routes/gift.ts`.
-
-| 코드 | 의미 | HTTP | 위치 |
-|---|---|---|---|
-| `INVALID_EMAIL` | 이메일 형식 오류 | 400 | `routes/friend.ts`, `gift.ts` |
-| `SELF_REQUEST` | 자기 자신에게 친구 요청 불가 | 400 | `routes/friend.ts` |
-| `ALREADY_FRIENDS` | 이미 친구 | 409 | `routes/friend.ts` |
-| `ALREADY_PENDING` | 이미 친구 요청 대기 중 | 409 | `routes/friend.ts` |
-| `PENDING_NOT_FOUND` | 대기 중 친구 요청 미존재 | 404 | `routes/friend.ts` |
-| `FRIENDSHIP_NOT_FOUND` | 친구 관계 미존재 | 404 | `routes/friend.ts` |
-| `FRIEND_REQUEST_FAILED` | 친구 요청 처리 실패 | 500 | `routes/friend.ts` |
-| `FETCH_FRIENDS_FAILED` | 친구 목록 조회 실패 | 500 | `routes/friend.ts` |
-| `FETCH_PENDING_FAILED` | 대기 요청 조회 실패 | 500 | `routes/friend.ts` |
-| `ACCEPT_FAILED` | 친구 요청 수락 실패 | 500 | `routes/friend.ts` |
-| `DELETE_FAILED` | 친구 삭제 실패 | 500 | `routes/friend.ts` |
-| `NOTE_TOO_LONG` | 선물 메모 200자 초과 | 400 | `routes/gift.ts` |
-| `SELF_GIFT` | 자기 자신에게 선물 불가 | 400 | `routes/gift.ts` |
-| `NOT_FRIENDS` | 친구에게만 선물 가능 | 403 | `routes/gift.ts` |
-| `PENDING_GIFT_NOT_FOUND` | 대기 중 선물 미존재 | 404 | `routes/gift.ts` |
-| `SEND_GIFT_FAILED` | 선물 발송 실패 | 500 | `routes/gift.ts` |
-| `FETCH_RECEIVED_FAILED` | 받은 선물 조회 실패 | 500 | `routes/gift.ts` |
-| `FETCH_SENT_FAILED` | 보낸 선물 조회 실패 | 500 | `routes/gift.ts` |
-| `ACCEPT_GIFT_FAILED` | 선물 수락 실패 | 500 | `routes/gift.ts` |
-| `REJECT_GIFT_FAILED` | 선물 거절 실패 | 500 | `routes/gift.ts` |
-
-## 9. 쪽지 (Notes)
-
-`routes/notes.ts`.
-
-| 코드 | 의미 | HTTP | 위치 |
-|---|---|---|---|
-| `RECEIVER_REQUIRED` | receiver_id 필요 | 400 | `routes/notes.ts` |
-| `TEXT_REQUIRED` | text 필요 | 400 | `routes/notes.ts` |
-| `TEXT_TOO_LONG` | text 500자 초과 | 400 | `routes/notes.ts` |
-| `SELF_NOTE` | 자기 자신에게 쪽지 불가 | 400 | `routes/notes.ts` |
-| `INVALID_AUDIO_URL` | audio_url 이 r2:// 객체 아님 | 400 | `routes/notes.ts` |
-| `RECEIVER_NOT_FOUND` | 수신자 미존재 | 404 | `routes/notes.ts` |
-| `NOTE_NOT_FOUND` | 쪽지 미존재 | 404 | `routes/notes.ts` |
-| `NOTE_AUDIO_MISSING` | 쪽지에 저장 오디오 없음 | 404 | `routes/notes.ts` |
-| `NOTE_AUDIO_NOT_FOUND` | 저장 쪽지 오디오 객체 미존재 | 404 | `routes/notes.ts` |
 
 ## 10. 공휴일 (Holiday)
 
@@ -340,9 +291,9 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `INVALID_RANGE` | from > to | 400 | `routes/holiday.ts` |
 | `RANGE_TOO_LARGE` | 조회 범위 상한 초과 | 400 | `routes/holiday.ts` |
 
-## 11. 라이브러리 / 통계 (Library / Stats)
+## 11. 라이브러리 (Library)
 
-`routes/library.ts`, `routes/stats.ts`.
+`routes/library.ts`.
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
@@ -352,8 +303,6 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `FETCH_LIBRARY_FAILED` | 라이브러리 조회 실패 | 500 | `routes/library.ts` |
 | `TOGGLE_FAVORITE_FAILED` | 즐겨찾기 토글 실패 | 500 | `routes/library.ts` |
 | `DELETE_LIBRARY_ITEM_FAILED` | 라이브러리 항목 삭제 실패 | 500 | `routes/library.ts` |
-| `FETCH_STATS_FAILED` | 통계 조회 실패 | 500 | `routes/stats.ts` |
-| `FETCH_ACTIVITY_FAILED` | 활동 조회 실패 | 500 | `routes/stats.ts` |
 
 ---
 
