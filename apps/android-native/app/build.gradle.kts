@@ -91,6 +91,20 @@ val devDebugKeystoreProps = rootProject.file("dev-debug-keystore.properties")
     }
     ?.takeIf { rootProject.file(it.getProperty("storeFile") ?: "").exists() }
 
+// versionCode 를 git 커밋 수로 자동 생성한다 — 수동 bump/커밋 없이 커밋마다 단조 증가한다.
+// (Play 는 업로드마다 더 큰 versionCode 를 요구. 현재 커밋 수가 이미 1900+ 이라 과거 수동값보다
+//  충분히 크다.) 사용자 표기인 versionName 만 릴리스 때 손으로 바꾸면 된다.
+// git 이 없으면(예: .git 없는 소스 아카이브) 1 로 폴백 — Play 최소치보다 낮아 업로드가 거부되는
+// '안전 실패'이며, 실제 로컬 릴리스 빌드엔 항상 git 이 있어 이 폴백에 닿지 않는다.
+val autoVersionCode: Int = try {
+    providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().toIntOrNull() ?: 1
+} catch (e: Exception) {
+    1
+}
+
 android {
     namespace = "com.alarmtalk.app"
     compileSdk = 36
@@ -99,8 +113,8 @@ android {
         applicationId = "com.alarmtalk.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.1.1"
+        versionCode = autoVersionCode
+        versionName = "1.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
