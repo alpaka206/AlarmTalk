@@ -7,7 +7,7 @@ import { redeemPromoCode, PromoRedemptionError } from '../lib/promo-redemption';
 
 // MARK: - POST /billing/promo/redeem (공용 프로모 쿠폰 사용)
 //
-// 관리자가 발급한 프로모 코드(예: WELCOME_ALARMTALK)를 사용자가 등록하면 지정 플랜을
+// 관리자가 발급한 프로모 코드(예: PROMO_EXAMPLE — 실코드명은 소스에 두지 않는다)를 사용자가 등록하면 지정 플랜을
 // duration_days 만큼 부여한다. 코드 발급/관리는 /admin/promo (ADMIN_SECRET 보호).
 
 const billingPromo = new Hono<AppEnv>();

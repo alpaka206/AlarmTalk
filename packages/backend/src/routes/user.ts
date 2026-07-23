@@ -354,7 +354,12 @@ user.delete('/me', async (c) => {
     // 즉시 hard delete 경로에서도 전자상거래법(5년) 결제·구독 기록 가명보존을 먼저 수행한다.
     // (cron 유예 파기 경로와 동일하게 보존 후 파기 — 어느 경로든 보존 누락이 없도록)
     const now = new Date();
-    const pepper = c.env?.PASSWORD_PEPPER ?? '';
+    // PASSWORD_PEPPER 는 필수 시크릿. 빈 값으로 조용히 가명보존을 돌리면 진짜 pepper 로
+    // 해시된 기존 기록과 어긋나(약한 가명화·불일치) 되므로, 미설정이면 진행하지 않고 실패시킨다.
+    const pepper = c.env?.PASSWORD_PEPPER;
+    if (!pepper) {
+      throw new Error('PASSWORD_PEPPER is not configured');
+    }
     await withWriteTransaction(db, async (tx) => {
       if (userPk) {
         await pseudonymizeBillingForRetention(tx, userPk, pepper, now);

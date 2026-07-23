@@ -52,9 +52,10 @@ export function normalizePromoCode(raw: string): string {
 }
 
 /**
- * 웰컴 그룹 이름과 그 그룹으로 시드되는 코드 이름(마이그레이션 #72/#73과 동일).
- * 웰컴 판정은 항상 '그룹 컬럼 OR 이름' 결합으로 본다 — 컬럼이 없는 창(#72 이전)과
- * 백필 전 갭(#72~#73)에서 사전 존재 동명 코드가 규칙을 우회하지 못하게 한다.
+ * 웰컴 그룹 이름과 '이름 기반' 폴백에 쓰는 #72 시드 시절 구이름 목록. 현행 운영 코드는
+ * redemption_group 컬럼으로만 웰컴 판정한다 — 실코드명은 공개 레포 소스에 두지 않고
+ * /admin/promo 로 발급·관리한다(#78 에서 시드 폐기). 구이름은 레거시 창(컬럼 없음/
+ * 백필 전 갭)에서 사전 존재 동명 코드가 규칙을 우회하지 못하게 하는 용도로만 남긴다.
  */
 const WELCOME_GROUP_NAME = 'welcome';
 const WELCOME_GROUP_CODES: readonly string[] = [
@@ -62,6 +63,9 @@ const WELCOME_GROUP_CODES: readonly string[] = [
   'WELCOME_COUPLE',
   'WELCOME_FAMILY',
 ];
+// IN 절 플레이스홀더는 목록 길이에서 파생(개발자 고정 조각) — 개수 하드코딩이 목록 변경과
+// 어긋나 args 개수 불일치로 조용히 깨지는 사고를 막는다.
+const WELCOME_CODE_PLACEHOLDERS = WELCOME_GROUP_CODES.map(() => '?').join(', ');
 
 async function redeemPromoInTransaction(
   db: DbExecutor,
@@ -155,9 +159,9 @@ async function redeemPromoInTransaction(
   let groupCond: { sql: string; args: string[] } | null = null;
   if (isWelcomeCode) {
     groupCond = legacySchema
-      ? { sql: `UPPER(pg.code) IN (?, ?, ?)`, args: [...WELCOME_GROUP_CODES] }
+      ? { sql: `UPPER(pg.code) IN (${WELCOME_CODE_PLACEHOLDERS})`, args: [...WELCOME_GROUP_CODES] }
       : {
-          sql: `(pg.redemption_group = ? OR UPPER(pg.code) IN (?, ?, ?))`,
+          sql: `(pg.redemption_group = ? OR UPPER(pg.code) IN (${WELCOME_CODE_PLACEHOLDERS}))`,
           args: [WELCOME_GROUP_NAME, ...WELCOME_GROUP_CODES],
         };
   } else if (redemptionGroup) {
