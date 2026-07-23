@@ -567,8 +567,11 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
     mockDB.pushResult([{ id: 'sub-member' }]); // 멤버의 그룹 구독
     // 이후(멤버 취소·강등·보관 예약·그룹 삭제)는 기본 빈 결과로 진행.
 
-    await cancelSubscriptionImmediate(mockDB.client as never, OWNER_SUB, new Date());
+    const affected = await cancelSubscriptionImmediate(mockDB.client as never, OWNER_SUB, new Date());
 
+    // 반환값: 취소 당사자(소유자) + 해체로 강등되는 멤버 → 호출부의 plan_changed 통지 대상.
+    expect(affected).toContain('owner-pk');
+    expect(affected).toContain('member-pk');
     // 멤버 구독도 취소된다.
     const cancelCalls = mockDB.calls.filter((c) => c.sql.includes("status = 'cancelled'"));
     expect(cancelCalls.some((c) => c.args.includes('sub-member'))).toBe(true);

@@ -148,7 +148,20 @@ internal fun AlarmEditorScreen(
         voiceProfiles
     }
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
-    val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
+    // 새 알람은 마지막에 고른 문구 종류를 기본값으로 이어받는다(없으면 목록에 노출하지 않는
+    // '기본 인사말'=preset 으로 시작). '직접 입력'은 저장하지 않아 빈 직접입력으로 시작하지 않는다.
+    val messageDefaultsContext = LocalContext.current
+    val defaultRandomContext = remember(messageDefaultsContext) {
+        DynamicPromptPreferenceStore(messageDefaultsContext.applicationContext)
+            .readLastMessageContext() ?: DefaultRandomPromptContext
+    }
+    val editor = remember(alarm?.id) {
+        AlarmEditorState.from(
+            alarm,
+            defaultPlayMode = defaultPlayMode,
+            defaultRandomContext = defaultRandomContext,
+        )
+    }
     // 시스템(기본) 보이스가 선택되면 유료여도 문구를 무료 버킷과 동일하게 '날씨+약'으로 제한한다
     // (운세·사랑·직접 입력 숨김). 무료 tier 와 하나의 게이트로 묶어 렌더·상태강제·저장검증에 동일 주입.
     val isSystemVoiceSelected = isSystemVoiceId(editor.voiceProfileId) ||
@@ -1027,6 +1040,8 @@ internal fun AlarmEditorScreen(
         }
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
+        // 마지막에 고른 문구 종류를 기억 → 다음 새 알람의 기본값으로 이어받는다.
+        dynamicPromptPreferenceStore.saveLastMessageContext(editor.voiceRandomContext)
         editor.voiceLanguage = appVoiceLanguage
         editor.voiceText = ""
         editor.voiceWeatherCountry = result.weatherCountry

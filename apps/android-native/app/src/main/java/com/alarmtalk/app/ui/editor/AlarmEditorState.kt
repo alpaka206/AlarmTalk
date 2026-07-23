@@ -431,6 +431,9 @@ internal class AlarmEditorState(
         fun from(
             alarm: AlarmEntity?,
             defaultPlayMode: String = AlarmPlayModes.ALARM_ONLY,
+            // 새 알람의 기본 문구 종류. 호출측이 '마지막에 고른 문구'를 넘기고, 없으면
+            // '기본 인사말'(preset)로 폴백한다. 기존 알람은 자신의 voiceRandomContext 를 쓴다.
+            defaultRandomContext: String = DefaultRandomPromptContext,
         ): AlarmEditorState {
             val defaultTime = java.time.LocalTime.of(6, 0)
             return AlarmEditorState(
@@ -457,7 +460,13 @@ internal class AlarmEditorState(
                 voiceRandomPrompt = alarm?.voiceRandomPrompt ?: alarm?.let {
                     it.voiceSource == VoiceSources.TTS_PROFILE && it.voiceText.isNullOrBlank()
                 } ?: true,
-                voiceRandomContext = alarm?.voiceRandomContext ?: DefaultRandomPromptContext,
+                // 마지막 문구 기억은 '신규 알람'에만 적용. 기존 알람(수동/알람전용 등 context=null 포함)은
+                // 자기 값(없으면 기본 preset)을 그대로 써, 편집만 열어도 문구가 바뀌는 일이 없게 한다.
+                voiceRandomContext = if (alarm == null) {
+                    defaultRandomContext
+                } else {
+                    alarm.voiceRandomContext ?: DefaultRandomPromptContext
+                },
                 voiceWeatherCountry = alarm?.voiceWeatherCountry,
                 voiceWeatherCity = alarm?.voiceWeatherCity,
                 voiceFortuneGender = alarm?.voiceFortuneGender,

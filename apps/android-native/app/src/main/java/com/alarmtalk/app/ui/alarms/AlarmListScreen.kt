@@ -54,6 +54,7 @@ internal fun AlarmListScreen(
     familyVoices: List<FamilyVoiceProfile>,
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
+    voiceDraftQuotaExhausted: Boolean = false,
     vouchers: List<VoucherItem>,
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
@@ -150,6 +151,7 @@ internal fun AlarmListScreen(
                         familyVoices = familyVoices,
                         voiceProfileBusy = voiceProfileBusy,
                         subscriptionResponse = subscriptionResponse,
+                        voiceDraftQuotaExhausted = voiceDraftQuotaExhausted,
                         familyGroup = familyGroup,
                         authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
@@ -198,8 +200,10 @@ internal fun AlarmListScreen(
                 }
                 items(sortedAlarms, key = { it.id }) { alarm ->
                     // TTS 알람만 프로필 이름을 찾는다(녹음·파일 알람은 이름 없이 날짜만).
+                    // 무료 전환으로 사운드온리 잠금된 알람(preLockPlayMode≠null)은 더는 그 목소리로
+                    // 울리지 않으므로 목소리 이름을 숨긴다(대신 '기본 알람으로 변환' 배지가 뜬다).
                     val voiceName = alarm.voiceProfileId
-                        ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO }
+                        ?.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO && alarm.preLockPlayMode == null }
                         ?.let { profileId ->
                             voiceProfiles.firstOrNull { it.id == profileId }?.name
                                 ?: familyVoices.firstOrNull { it.id == profileId }?.name

@@ -147,6 +147,8 @@
     <string name="common_alarm_delete">削除</string>
     <string name="common_alarm_warning_reschedule_failed">アラームを再設定できませんでした。時間を確認して、もう一度保存してください。</string>
     <string name="common_alarm_warning_sync_failed">保存が少し遅れています。アラームはそのまま鳴り、自動で再保存します。</string>
+    <string name="common_alarm_notice_free_downgraded">無料プランに変わったため、基本アラーム音に変換されました。</string>
+    <string name="common_alarm_notice_default_converted">声が使えなくなったため、基本アラーム音に変換されました。</string>
     <string name="common_day_fri">金</string>
     <string name="common_day_mon">月</string>
     <string name="common_day_sat">土</string>
@@ -627,10 +629,8 @@
     <string name="voices_mic_permission_required">マイクの権限が必要です。</string>
     <string name="voices_my_voices_title">マイボイス</string>
     <string name="voices_name_label">声の名前</string>
-    <string name="voices_prerender_generating_title">声を生成中</string>
-    <string name="voices_prerender_downloading_title">端末に保存中</string>
-    <string name="voices_prerender_continue_background_action">バックグラウンドで続行</string>
-    <string name="voices_prerender_continue_background">残りの文はバックグラウンドで作成され続けます。</string>
+    <string name="voices_prerender_ready_title">アラーム音声を準備しています</string>
+    <string name="voices_prerender_ready_body">まもなく準備できます。\nこの画面を閉じてもバックグラウンドで続きます。</string>
     <string name="voices_language_label">フレーズの言語</string>
     <string name="voices_name_placeholder">例:お母さんの声</string>
     <string name="voices_next">次へ</string>
@@ -686,6 +686,8 @@
     <string name="voices_upload_zone_subtitle">1分以上の音声か動画をご用意ください</string>
     <string name="voicesr_close">閉じる</string>
     <string name="voicesr_delete">削除</string>
+    <string name="voices_delete_quota_title">削除しますか？</string>
+    <string name="voices_delete_quota_message">今月の作成回数をすべて使ったため、今削除すると今月は新しい声を作れません。</string>
     <string name="voicesr_delete_dialog_confirm">「%1$s」の声を削除しますか?</string>
     <string name="voicesr_delete_dialog_title">声を削除</string>
     <string name="voicesr_delete_dialog_warning">この声を使うアラームは基本のアラーム音に変わります。保存された音源ファイルも一緒に削除されます。</string>

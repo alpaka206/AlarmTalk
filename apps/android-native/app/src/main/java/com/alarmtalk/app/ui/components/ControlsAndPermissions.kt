@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Notifications
@@ -313,7 +314,8 @@ internal fun AlarmRow(
         dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = Spring.StiffnessMediumLow,
     )
-    val warningText = alarmRowWarningResId(alarm)?.let { stringResource(it) }
+    val rowNotice = alarmRowNotice(alarm)
+    val warningText = rowNotice?.let { stringResource(it.textResId) }
     // 스와이프 외에 접근성(TalkBack/지체장애) 대체 삭제 수단: 길게 눌러 메뉴 노출.
     var menuExpanded by remember(alarm.id) { mutableStateOf(false) }
     val deleteVisible = offsetX.value < -0.5f
@@ -479,12 +481,22 @@ internal fun AlarmRow(
                         onCheckedChange = onToggleEnabled,
                     )
                 }
-                if (warningText != null) {
+                if (rowNotice != null && warningText != null) {
+                    // 에러(재예약/동기화 실패)는 경고색, 강등 안내는 정보색으로 톤을 구분한다.
+                    val isError = rowNotice.isError
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerTileShape,
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        color = if (isError) {
+                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f)
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f)
+                        },
+                        contentColor = if (isError) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        },
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -492,7 +504,7 @@ internal fun AlarmRow(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.ErrorOutline,
+                                imageVector = if (isError) Icons.Outlined.ErrorOutline else Icons.Outlined.Info,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
                             )
@@ -529,9 +541,20 @@ internal fun AlarmRow(
     }
 }
 
-private fun alarmRowWarningResId(alarm: AlarmEntity): Int? = when {
-    alarm.state == AlarmStates.FAILED -> R.string.common_alarm_warning_reschedule_failed
-    alarm.syncState == AlarmSyncStates.FAILED -> R.string.common_alarm_warning_sync_failed
+private data class AlarmRowNotice(val textResId: Int, val isError: Boolean)
+
+private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
+    alarm.state == AlarmStates.FAILED ->
+        AlarmRowNotice(R.string.common_alarm_warning_reschedule_failed, isError = true)
+    alarm.syncState == AlarmSyncStates.FAILED ->
+        AlarmRowNotice(R.string.common_alarm_warning_sync_failed, isError = true)
+    // 유료 목소리를 못 써 기본 알람(사운드온리)으로 변환됨(preLockPlayMode 마커, 영구).
+    // 무료 강등은 목소리 참조를 남겨두므로(voiceProfileId 유지) '무료 요금제' 안내, 공유 목소리
+    // 해제는 참조를 비우므로(voiceProfileId=null) 원인 무관 중립 안내.
+    alarm.preLockPlayMode != null && !alarm.voiceProfileId.isNullOrBlank() ->
+        AlarmRowNotice(R.string.common_alarm_notice_free_downgraded, isError = false)
+    alarm.preLockPlayMode != null ->
+        AlarmRowNotice(R.string.common_alarm_notice_default_converted, isError = false)
     else -> null
 }
 

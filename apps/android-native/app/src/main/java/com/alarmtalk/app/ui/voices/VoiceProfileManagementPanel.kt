@@ -7,6 +7,9 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
@@ -60,6 +63,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -185,6 +189,8 @@ internal fun VoiceProfileManagementPanel(
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
+    // 이번 달 목소리 생성 횟수 소진 여부 — 삭제 시 '지금 지우면 이번 달엔 다시 못 만든다' 경고 게이트.
+    voiceDraftQuotaExhausted: Boolean = false,
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
@@ -1643,47 +1649,63 @@ internal fun VoiceProfileManagementPanel(
                             }
 
                             VoiceRegistrationStep.Prerendering -> {
+                                // 생성(서버)→다운로드(기기 저장)를 한 화면·한 진행률로 합친다.
+                                // 문구도 하나로 통일하고, 나가기=백그라운드는 부제로 안내한다(전용 버튼 없앰
+                                // — 이 스텝은 voiceProfileBusy=false 라 X/뒤로가기로 닫으면 드라이브는
+                                // viewModelScope 에서 그대로 계속된다).
+                                val drive = prerenderDrive
+                                // 생성 0~50%, 다운로드 50~100% 로 이어붙여 매끄러운 하나의 진행률.
+                                val target = if (drive != null && drive.total > 0) {
+                                    val frac = (drive.generated.toFloat() / drive.total.toFloat())
+                                        .coerceIn(0f, 1f)
+                                    if (drive.downloading) 0.5f + frac * 0.5f else frac * 0.5f
+                                } else {
+                                    null
+                                }
+                                val animatedProgress by animateFloatAsState(
+                                    targetValue = target ?: 0f,
+                                    animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
+                                    label = "prerenderProgress",
+                                )
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 72.dp),
+                                        .padding(vertical = 72.dp, horizontal = 24.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
                                 ) {
                                     Text(
-                                        text = if (prerenderDrive?.downloading == true) {
-                                            stringResource(R.string.voices_prerender_downloading_title)
-                                        } else {
-                                            stringResource(R.string.voices_prerender_generating_title)
-                                        },
+                                        text = stringResource(R.string.voices_prerender_ready_title),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
-                                    // 'n/21 준비' 카운트 텍스트 대신 진행 로딩바만 — 총량을 알면
-                                    // 확정 진행률, 아직 모르면(시작 직후) 인디터미넌트.
-                                    val drive = prerenderDrive
-                                    if (drive != null && drive.total > 0) {
+                                    Text(
+                                        text = stringResource(R.string.voices_prerender_ready_body),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center,
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    if (target != null) {
                                         LinearProgressIndicator(
-                                            progress = {
-                                                drive.generated.toFloat() / drive.total.toFloat()
-                                            },
-                                            modifier = Modifier.fillMaxWidth(0.72f),
+                                            progress = { animatedProgress },
+                                            modifier = Modifier
+                                                .fillMaxWidth(0.78f)
+                                                .height(8.dp),
+                                            strokeCap = StrokeCap.Round,
+                                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                            gapSize = 0.dp,
+                                            drawStopIndicator = {},
                                         )
                                     } else {
+                                        // 시작 직후(총량 미상): 흐르는 인디터미넌트 바.
                                         LinearProgressIndicator(
-                                            modifier = Modifier.fillMaxWidth(0.72f),
+                                            modifier = Modifier
+                                                .fillMaxWidth(0.78f)
+                                                .height(8.dp),
+                                            strokeCap = StrokeCap.Round,
+                                            trackColor = MaterialTheme.colorScheme.surfaceVariant,
                                         )
-                                    }
-                                    // 하단 고정 대신 로딩 블록에서 조금 떨어져 바로 아래에 둔다 —
-                                    // 닫아도 드라이브는 ViewModel 에서 계속된다.
-                                    Spacer(Modifier.height(10.dp))
-                                    TextButton(
-                                        onClick = {
-                                            promotedForPrerenderId = null
-                                            closeCreateDialog()
-                                        },
-                                    ) {
-                                        Text(stringResource(R.string.voices_prerender_continue_background_action))
                                     }
                                 }
                             }
@@ -2068,14 +2090,38 @@ internal fun VoiceProfileManagementPanel(
     }
 
     deleteTarget?.let { profile ->
-        VoiceProfileDeleteDialog(
-            profileName = profile.name,
-            onDismiss = { deleteTarget = null },
-            onDelete = {
-                onDeleteVoiceProfile(profile.id)
-                deleteTarget = null
-            },
-        )
+        if (voiceDraftQuotaExhausted) {
+            // 이번 달 생성 횟수를 다 썼으면 iOS 스타일 경고 모달 — 지워도 이번 달엔 다시 못 만든다는
+            // 안내. 그래도 본인 목소리이므로 삭제 자체는 허용한다(경고형).
+            IosAlertDialog(
+                title = stringResource(R.string.voices_delete_quota_title),
+                message = stringResource(R.string.voices_delete_quota_message),
+                actions = listOf(
+                    IosAlertAction(
+                        label = stringResource(R.string.editor_cancel),
+                        onClick = { deleteTarget = null },
+                    ),
+                    IosAlertAction(
+                        label = stringResource(R.string.voicesr_delete),
+                        destructive = true,
+                        onClick = {
+                            onDeleteVoiceProfile(profile.id)
+                            deleteTarget = null
+                        },
+                    ),
+                ),
+                onDismiss = { deleteTarget = null },
+            )
+        } else {
+            VoiceProfileDeleteDialog(
+                profileName = profile.name,
+                onDismiss = { deleteTarget = null },
+                onDelete = {
+                    onDeleteVoiceProfile(profile.id)
+                    deleteTarget = null
+                },
+            )
+        }
     }
 }
 

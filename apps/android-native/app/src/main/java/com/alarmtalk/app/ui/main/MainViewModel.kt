@@ -27,6 +27,7 @@ import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
+import com.alarmtalk.app.network.VoiceDraftQuotaResponse
 import com.alarmtalk.app.network.LoginRequest
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.TtsGenerateRequest
@@ -191,6 +192,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var pendingVoiceDraft by mutableStateOf<VoiceProfile?>(null)
+        internal set
+
+    // 이번 달 목소리 초안 생성 쿼터(삭제 전 '이번 달 재생성 가능 여부' 판정용). null=미조회.
+    var voiceDraftQuota by mutableStateOf<VoiceDraftQuotaResponse?>(null)
         internal set
 
     var voiceProfileBusy by mutableStateOf(false)
