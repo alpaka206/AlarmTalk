@@ -2,7 +2,6 @@
 // 올리고 실제 라우트(POST /family-alarm/alarms, /alarms/voice)를 호출해 확인한다:
 //  - 멱등 재전송 시 message 행이 누적되지 않고 교체된 이전 행이 정리되는지(항목 D)
 //  - 알람 행 timezone 이 '검증에 쓴 효과 시간대'로 저장되는지(항목 I)
-//  - dub_jobs 예약이 알람과 같은 트랜잭션으로 함께 커밋되는지(항목 J)
 //
 // libsql `:memory:` 는 연결마다 별도 DB 라 autocommit execute 와 transaction 이 스키마를
 // 공유하지 못한다(alarm-guard.test.ts 와 동일 이슈) → 임시 파일 DB 사용.
@@ -75,7 +74,6 @@ beforeAll(async () => {
   await runMigrations(db);
   // 이전 실행 잔재 정리(파일 DB 재사용). 시스템 시드 행은 건드리지 않는다.
   await db.execute('DELETE FROM alarms');
-  await db.execute('DELETE FROM dub_jobs');
   await db.execute({ sql: 'DELETE FROM messages WHERE user_id = ?', args: [RECIPIENT.pk] });
   await db.execute("DELETE FROM plan_group_members WHERE id LIKE 'famg-%'");
   await db.execute("DELETE FROM plan_groups WHERE id LIKE 'famg-%'");
@@ -120,7 +118,6 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await db.execute('DELETE FROM alarms');
-  await db.execute('DELETE FROM dub_jobs');
   await db.execute('DELETE FROM pending_external_deletions');
   await db.execute('DELETE FROM generated_audio_assets');
   await db.execute({ sql: 'DELETE FROM messages WHERE user_id = ?', args: [RECIPIENT.pk] });
@@ -223,31 +220,6 @@ describe('가족 알람 멱등 재전송 — message 행 누적 방지(항목 D)
     ).toBe(0);
   });
 
-  it('진행 중 dub 가 참조하는 이전 메시지는 보존한다(더빙 파이프라인 보호)', async () => {
-    const res1 = await postJson(
-      '/family-alarm/alarms/voice',
-      voiceBody({ dub_target_language: 'en' }),
-    );
-    expect(res1.status).toBe(201);
-    const body1 = (await res1.json()) as { message: { id: string } };
-
-    const res2 = await postJson(
-      '/family-alarm/alarms/voice',
-      voiceBody({ dub_target_language: 'en' }),
-    );
-    expect(res2.status).toBe(201);
-
-    // 첫 메시지는 dub_jobs.result_message_id 가 참조 중 → 삭제하지 않는다.
-    expect(
-      await countRows('SELECT COUNT(*) AS cnt FROM messages WHERE id = ?', [body1.message.id]),
-    ).toBe(1);
-    expect(
-      await countRows(
-        "SELECT COUNT(*) AS cnt FROM messages WHERE user_id = ? AND category = 'family-voice'",
-        [RECIPIENT.pk],
-      ),
-    ).toBe(2);
-  });
 });
 
 describe('가족 알람 timezone 저장 — 검증에 쓴 효과 시간대와 일치(항목 I)', () => {
@@ -291,32 +263,3 @@ describe('가족 알람 timezone 저장 — 검증에 쓴 효과 시간대와 �
   });
 });
 
-describe('가족 음성알람 dub 원자성(항목 J)', () => {
-  it('dub 예약이 알람·메시지와 함께 커밋된다(result_message_id 연결)', async () => {
-    const res = await postJson(
-      '/family-alarm/alarms/voice',
-      voiceBody({ dub_target_language: 'ja' }),
-    );
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as {
-      alarm: { id: string };
-      message: { id: string };
-      dub_job: { id: string; target_language: string; status: string };
-    };
-    expect(body.dub_job).not.toBeNull();
-
-    const dub = await db.execute({
-      sql: 'SELECT user_id, target_language, status, result_message_id FROM dub_jobs WHERE id = ?',
-      args: [body.dub_job.id],
-    });
-    expect(dub.rows.length).toBe(1);
-    expect(String(dub.rows[0]!.user_id)).toBe(SENDER.login);
-    expect(String(dub.rows[0]!.target_language)).toBe('ja');
-    expect(String(dub.rows[0]!.status)).toBe('processing');
-    expect(String(dub.rows[0]!.result_message_id)).toBe(body.message.id);
-    // 알람도 같은 커밋으로 존재한다.
-    expect(
-      await countRows('SELECT COUNT(*) AS cnt FROM alarms WHERE id = ?', [body.alarm.id]),
-    ).toBe(1);
-  });
-});

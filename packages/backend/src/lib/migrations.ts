@@ -1647,7 +1647,8 @@ export const migrations: Migration[] = [
     // 사장(死藏) 스키마 일괄 정리 (2026-07 감사).
     //  - notes(#18)·voice_speakers(#4): 기능 제거 후 INSERT 경로가 사라져 영구 공백 —
     //    friendships·gifts(#1): /friend·/gift 라우트가 클라 미호출 유령 기능이라 라우트째
-    //    삭제. 인덱스는 DROP TABLE 이 함께 지우지만 _kst 뷰(#46)는 아니므로 명시 DROP.
+    //    삭제. dub_jobs(#3): 더빙 파이프라인 미완성(처리기 전무·클라 미호출)이라 스텁 제거.
+    //    인덱스는 DROP TABLE 이 함께 지우지만 _kst 뷰(#46)는 아니므로 명시 DROP.
     //  - users.picture: 구글 프로필 사진 URL 을 저장·서빙했지만 소비 UI 가 없다(미사용 PII).
     //  - users.last_active_at: 유일한 갱신 지점이 죽은 GET /user/me 라 한 번도 기록된 적
     //    없는 컬럼. 라우트와 함께 제거.
@@ -1661,10 +1662,12 @@ export const migrations: Migration[] = [
       `DROP VIEW IF EXISTS "voice_speakers_kst"`,
       `DROP VIEW IF EXISTS "friendships_kst"`,
       `DROP VIEW IF EXISTS "gifts_kst"`,
+      `DROP VIEW IF EXISTS "dub_jobs_kst"`,
       `DROP TABLE IF EXISTS notes`,
       `DROP TABLE IF EXISTS voice_speakers`,
       `DROP TABLE IF EXISTS friendships`,
       `DROP TABLE IF EXISTS gifts`,
+      `DROP TABLE IF EXISTS dub_jobs`,
       `DROP VIEW IF EXISTS "users_kst"`,
       `ALTER TABLE users DROP COLUMN picture`,
       `ALTER TABLE users DROP COLUMN last_active_at`,

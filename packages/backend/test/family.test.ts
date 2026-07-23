@@ -756,7 +756,6 @@ describe('POST /family/alarms/voice', () => {
   function queueVoiceHappyPath(
     opts: {
       allowFamily?: number;
-      dub?: boolean;
       noVoiceProfile?: boolean;
       uploadOwner?: string;
       uploadMissing?: boolean;
@@ -793,10 +792,9 @@ describe('POST /family/alarms/voice', () => {
     mockDB.pushResult([]); // 멱등 슬롯 조회(기존 발신 알람 없음)
     mockDB.pushResult([], 1); // 교체 UPDATE(같은 시각 기존 발신 알람 비활성화)
     mockDB.pushResult([], 1); // alarms INSERT
-    if (opts.dub) mockDB.pushResult([], 1); // dub_jobs INSERT
   }
 
-  it('정상 — 더빙 없음, audio_url 에 object_key 채움', async () => {
+  it('정상 — audio_url 에 object_key 채움', async () => {
     queueVoiceHappyPath();
     const app = buildApp('google-sender');
     const res = await app.request(
@@ -810,7 +808,6 @@ describe('POST /family/alarms/voice', () => {
     expect(body.message.audio_url).toBe('uploads/alice/hi.m4a');
     expect(body.message.category).toBe('family-voice');
     expect(body.message.text).toBe('가족이 보낸 음성');
-    expect(body.dub_job).toBeNull();
 
     const msgInsert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     const alarmInsert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO alarms'));
@@ -830,33 +827,6 @@ describe('POST /family/alarms/voice', () => {
     expect(body.message.text).toBe('엄마의 아침 인사');
   });
 
-  it('정상 — dub_target_language 주면 dub_jobs INSERT + audio_url NULL', async () => {
-    queueVoiceHappyPath({ dub: true });
-    const app = buildApp('google-sender');
-    const res = await app.request(
-      jsonReq('POST', '/family/alarms/voice', voiceBody({ dub_target_language: 'en' })),
-    );
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.message.audio_url).toBeNull();
-    expect(body.dub_job).toMatchObject({ target_language: 'en', status: 'processing' });
-    expect(body.dub_job.id).toBeTruthy();
-
-    const dubInsert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO dub_jobs'));
-    expect(dubInsert).toBeDefined();
-    expect(dubInsert?.args[3]).toBe('en');
-    expect(dubInsert?.args[4]).toBe(body.message.id); // result_message_id
-  });
-
-  it('dub_target_language 가 허용 목록 밖 → 400', async () => {
-    const app = buildApp('google-sender');
-    const res = await app.request(
-      jsonReq('POST', '/family/alarms/voice', voiceBody({ dub_target_language: 'fr' })),
-    );
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toContain('dub_target_language');
-  });
 
   it('수신자 allow_family_alarms=0 → 403', async () => {
     queueVoiceHappyPath({ allowFamily: 0 });

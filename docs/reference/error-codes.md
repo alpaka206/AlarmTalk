@@ -276,7 +276,6 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `NO_VOICE_PROFILE` | 수신자 음성 프로필 없음 | 400 | `routes/family-alarm.ts` |
 | `VOICE_UPLOAD_REQUIRED` | voice_upload_id 필요 | 400 | `routes/family-alarm.ts` |
 | `LABEL_TOO_LONG` | label 길이 초과 | 400 | `routes/family-alarm.ts` |
-| `INVALID_DUB_LANGUAGE` | 더빙 언어 값 허용 밖 | 400 | `routes/family-alarm.ts` |
 | `UPLOAD_NOT_FOUND` | 음성 업로드 미존재 | 400 | `routes/family-alarm.ts` |
 | `NOT_UPLOAD_OWNER` | 업로드 소유자 아님 | 400 | `routes/family-alarm.ts` |
 

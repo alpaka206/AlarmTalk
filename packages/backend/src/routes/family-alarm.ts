@@ -40,8 +40,6 @@ function normalizeRepeatDays(raw: unknown): number[] {
  *
  * 안전 가드:
  *  - 다른 알람이 아직 참조 중이면 보존.
- *  - dub_jobs 가 결과 대상(result_message_id)으로 참조 중이면 보존 — 진행 중 더빙이
- *    이 메시지에 오디오를 써 넣으므로 지우면 더빙 파이프라인이 깨진다.
  *  - 이 경로가 만든 메시지(수신자 소유 + family/family-voice 카테고리)만 삭제한다.
  *    DELETE 가드가 0행이면 연결 에셋도 건드리지 않는다.
  *  - 연결 generated_audio_assets 의 R2 오브젝트는 트랜잭션 안에서 직접 지울 수 없으므로
@@ -57,13 +55,11 @@ async function cleanupReplacedFamilyMessage(
 ): Promise<void> {
   if (!previousMessageId || previousMessageId === newMessageId) return;
   const refs = await tx.execute({
-    sql: `SELECT
-            (SELECT COUNT(*) FROM alarms WHERE message_id = ?) AS alarm_refs,
-            (SELECT COUNT(*) FROM dub_jobs WHERE result_message_id = ?) AS dub_refs`,
-    args: [previousMessageId, previousMessageId],
+    sql: `SELECT (SELECT COUNT(*) FROM alarms WHERE message_id = ?) AS alarm_refs`,
+    args: [previousMessageId],
   });
   const refRow = refs.rows[0];
-  if (!refRow || Number(refRow.alarm_refs ?? 0) > 0 || Number(refRow.dub_refs ?? 0) > 0) return;
+  if (!refRow || Number(refRow.alarm_refs ?? 0) > 0) return;
   const deleted = await tx.execute({
     sql: `DELETE FROM messages
           WHERE id = ? AND user_id = ? AND category IN ('family', 'family-voice')`,
@@ -343,8 +339,6 @@ familyAlarm.post('/alarms', async (c) => {
   );
 });
 
-const DUB_LANGUAGES = ['ko', 'en', 'ja', 'zh'] as const;
-type DubLanguage = (typeof DUB_LANGUAGES)[number];
 const LABEL_MAX = 200;
 const DEFAULT_VOICE_LABEL = '가족이 보낸 음성';
 
@@ -357,7 +351,6 @@ familyAlarm.post('/alarms/voice', async (c) => {
     wake_at?: unknown;
     voice_upload_id?: unknown;
     label?: unknown;
-    dub_target_language?: unknown;
     repeat_days?: unknown;
     /** 발신 클라가 보내는 값이지만 서버는 검증·저장 어디에도 쓰지 않는다(무시) —
      *  발신자 기기 값이라 신뢰 불가. 효과 시간대는 수신자 최근 알람 tz → Asia/Seoul. */
@@ -397,21 +390,6 @@ familyAlarm.post('/alarms/voice', async (c) => {
     );
   }
   const label = rawLabel.length > 0 ? rawLabel : DEFAULT_VOICE_LABEL;
-
-  let dubTarget: DubLanguage | null = null;
-  if (body.dub_target_language !== undefined && body.dub_target_language !== null) {
-    const raw = typeof body.dub_target_language === 'string' ? body.dub_target_language : '';
-    if (!DUB_LANGUAGES.includes(raw as DubLanguage)) {
-      return c.json(
-        {
-          error: `dub_target_language 는 ${DUB_LANGUAGES.join('|')} 중 하나여야 합니다`,
-          error_code: 'INVALID_DUB_LANGUAGE',
-        },
-        400,
-      );
-    }
-    dubTarget = raw as DubLanguage;
-  }
 
   const senderPk = await resolveUserPk(db, userId);
   if (!senderPk)
@@ -509,14 +487,11 @@ familyAlarm.post('/alarms/voice', async (c) => {
 
   const messageId = crypto.randomUUID();
   const newAlarmId = crypto.randomUUID();
-  const audioUrl = dubTarget ? null : objectKey;
+  const audioUrl = objectKey;
 
   // TTS 경로와 동일한 원자 교체: 같은 발신자 재전송은 기존 행 UPDATE(멱등, id 유지) +
   // 교체된 이전 message 정리, 다른 발신자의 같은 시각 발신 알람은 비활성화. 수신자 본인
   // 알람은 건드리지 않는다. timezone 은 검증에 쓴 효과 시간대를 그대로 저장한다.
-  // dub_jobs 예약도 같은 트랜잭션에 묶는다 — 알람만 커밋되고 dub insert 가 실패해
-  // '더빙 없는 알람'이 수신자에게 노출되는 창을 제거한다.
-  let dubJob: { id: string; target_language: DubLanguage; status: 'processing' } | null = null;
   const alarmId = await withWriteTransaction(db, async (tx) => {
     await tx.execute({
       sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
@@ -555,15 +530,6 @@ familyAlarm.post('/alarms/voice', async (c) => {
         ],
       });
     }
-    if (dubTarget) {
-      const dubJobId = crypto.randomUUID();
-      await tx.execute({
-        sql: `INSERT INTO dub_jobs (id, user_id, source_language, target_language, status, result_message_id)
-              VALUES (?, ?, ?, ?, 'processing', ?)`,
-        args: [dubJobId, userId, 'auto', dubTarget, messageId],
-      });
-      dubJob = { id: dubJobId, target_language: dubTarget, status: 'processing' };
-    }
     return claimed.alarmId;
   });
 
@@ -587,7 +553,6 @@ familyAlarm.post('/alarms/voice', async (c) => {
         category: 'family-voice',
         audio_url: audioUrl,
       },
-      dub_job: dubJob,
     },
     201,
   );

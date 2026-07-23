@@ -192,7 +192,6 @@ Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrad
 users ── push_tokens
 users ── subscriptions ── plans ── voucher_codes
 users ── plan_group_members ── plan_groups ── plan_group_invites
-users ── dub_jobs
 ```
 
 ### Tables
@@ -213,8 +212,6 @@ users ── dub_jobs
 | 15 | `plan_group_members` | Group membership | `plan_groups · users` |
 | 16 | `plan_group_invites` | 6-digit invite codes | `plan_groups · users(issuer/redeemer)` |
 | 17 | `push_tokens` | FCM registration tokens — **active**. Written by `POST /api/push/register`, removed by `POST /api/push/unregister`; consumed by the creation-time data-only family-alarm push. Never used on the ring path. | `users · platform` |
-
-`dub_jobs` also exists for dubbing workflow but is not surfaced in the native app.
 
 ### Key constraints
 

@@ -381,17 +381,6 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     expect((await res.json()).error_code).toBe('LABEL_TOO_LONG');
   });
 
-  it('dub_target_language 잘못된 값 → 400 INVALID_DUB_LANGUAGE', async () => {
-    pushResolveUserPk(SENDER_PK);
-    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
-    pushRecipient();
-
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/family-alarm/alarms/voice', validVoiceBody({ dub_target_language: 'fr' })));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_DUB_LANGUAGE');
-  });
-
   // --- auth / permission ---
 
   it('발신자 미존재 → 404 USER_NOT_FOUND', async () => {
@@ -498,7 +487,7 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     pushInserts(); // messages + alarms
   }
 
-  it('정상 생성 — dub 없이', async () => {
+  it('정상 생성', async () => {
     pushVoiceHappyPath();
 
     const app = buildApp();
@@ -513,7 +502,6 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     expect(body.alarm.voice_upload_id).toBe(UPLOAD_ID);
     expect(body.message.category).toBe('family-voice');
     expect(body.message.audio_url).toBe('audio/family-voice.wav');
-    expect(body.dub_job).toBeNull();
   });
 
   it('label 미지정 → 기본 라벨 사용', async () => {
@@ -535,70 +523,6 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     expect((await res.json()).message.text).toBe('엄마의 응원');
   });
 
-  it('dub_target_language 지정 → dub_job 생성 + audio_url null', async () => {
-    pushResolveUserPk(SENDER_PK);
-    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
-    pushRecipient();
-    pushRecipientTimezone();
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: SENDER_PK, object_key: 'audio/voice.wav' }]);
-    pushLatestVoiceProfile(true);
-    pushInserts();
-    mockDB.pushResult([], 1); // INSERT dub_jobs
-
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/family-alarm/alarms/voice', validVoiceBody({
-      dub_target_language: 'en',
-    })));
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.message.audio_url).toBeNull();
-    expect(body.dub_job).not.toBeNull();
-    expect(body.dub_job.target_language).toBe('en');
-    expect(body.dub_job.status).toBe('processing');
-
-    const dubInsert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO dub_jobs'));
-    expect(dubInsert).toBeDefined();
-  });
-
-  it('dub_jobs INSERT 는 알람/메시지와 같은 트랜잭션 안(커밋 전)에서 실행된다', async () => {
-    // 커밋 후 별도 실행이면 dub insert 실패/워커 종료 시 '더빙 없는 알람'만 커밋된 채
-    // 수신자에게 노출되는 창이 생긴다 — 커밋 시점에 이미 실행됐는지 검증한다.
-    pushResolveUserPk(SENDER_PK);
-    pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
-    pushRecipient();
-    pushRecipientTimezone();
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: SENDER_PK, object_key: 'audio/voice.wav' }]);
-    pushLatestVoiceProfile(true);
-    pushInserts();
-    mockDB.pushResult([], 1); // INSERT dub_jobs (트랜잭션 내부)
-
-    const client = mockDB.client as unknown as {
-      transaction: () => Promise<{ commit: () => Promise<void> }>;
-    };
-    const origTransaction = client.transaction.bind(mockDB.client);
-    let dubInsertedBeforeCommit = false;
-    client.transaction = async () => {
-      const tx = await origTransaction();
-      const origCommit = tx.commit.bind(tx);
-      tx.commit = async () => {
-        dubInsertedBeforeCommit = mockDB.calls.some((c) => c.sql.includes('INSERT INTO dub_jobs'));
-        await origCommit();
-      };
-      return tx;
-    };
-    try {
-      const app = buildApp();
-      const res = await app.request(
-        jsonReq('POST', '/family-alarm/alarms/voice', validVoiceBody({ dub_target_language: 'en' })),
-      );
-      expect(res.status).toBe(201);
-      expect((await res.json()).dub_job).not.toBeNull();
-    } finally {
-      client.transaction = origTransaction;
-    }
-    expect(dubInsertedBeforeCommit).toBe(true);
-  });
-
   it('repeat_days 정규화 (voice 엔드포인트)', async () => {
     pushVoiceHappyPath();
 
@@ -608,39 +532,6 @@ describe('POST /family-alarm/alarms/voice — 음성 업로드 가족 알람', (
     })));
     expect(res.status).toBe(201);
     expect((await res.json()).alarm.repeat_days).toEqual([0, 3, 6]);
-  });
-
-  it('dub_target_language 유효값 ko/en/ja/zh 모두 허용', async () => {
-    for (const lang of ['ko', 'en', 'ja', 'zh']) {
-      mockDB.reset();
-      pushResolveUserPk(SENDER_PK);
-      pushAssertSameGroup([GROUP_ID], [GROUP_ID]);
-      pushRecipient();
-      pushRecipientTimezone();
-      mockDB.pushResult([{ id: UPLOAD_ID, user_id: SENDER_PK, object_key: 'audio/v.wav' }]);
-      pushLatestVoiceProfile(true);
-      pushInserts();
-      mockDB.pushResult([], 1); // dub_jobs
-
-      const app = buildApp();
-      const res = await app.request(jsonReq('POST', '/family-alarm/alarms/voice', validVoiceBody({
-        dub_target_language: lang,
-      })));
-      expect(res.status).toBe(201);
-      const body = await res.json();
-      expect(body.dub_job.target_language).toBe(lang);
-    }
-  });
-
-  it('dub_target_language null → dub 미생성', async () => {
-    pushVoiceHappyPath();
-
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/family-alarm/alarms/voice', validVoiceBody({
-      dub_target_language: null,
-    })));
-    expect(res.status).toBe(201);
-    expect((await res.json()).dub_job).toBeNull();
   });
 
   it('label 200자 정확히 → 통과 (경계값)', async () => {

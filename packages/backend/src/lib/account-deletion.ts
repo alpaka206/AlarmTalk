@@ -217,10 +217,6 @@ export async function purgeUserAccount(
       args: userIds,
     });
     await tx.execute({
-      sql: `DELETE FROM dub_jobs WHERE user_id IN (?, ?)`,
-      args: userIds,
-    });
-    await tx.execute({
       sql: `DELETE FROM promo_code_redemptions WHERE user_id IN (?, ?)`,
       args: userIds,
     });

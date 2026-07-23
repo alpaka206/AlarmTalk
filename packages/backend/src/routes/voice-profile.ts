@@ -340,7 +340,6 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
      OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
     [...ids, ...ids],
   );
-  await tryDel('dub_jobs', `DELETE FROM dub_jobs WHERE user_id IN (${ph})`, ids);
   await tryDel(
     'alarms',
     `DELETE FROM alarms WHERE user_id IN (${ph}) OR target_user_id IN (${ph})
