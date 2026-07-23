@@ -6,6 +6,7 @@ import {
   cancelSubscriptionImmediate,
   clearPaidVoiceRetention,
   findActiveSubscriptionsByUserPk,
+  notifyPlanChanged,
   scheduleCancelAtPeriodEnd,
   schedulePaidVoiceRetention,
   schedulePlanChangeAtPeriodEnd,
@@ -809,6 +810,7 @@ billingMutation.post('/cancel', async (c) => {
     }
   }
 
+  const cancelAffected = new Set<string>();
   const voiceRetentionUntil = await withWriteTransaction(db, async (tx) => {
     // 트랜잭션 안에서 '사용자 전체 활성 구독'을 다시 조회해 취소하지 않는다 — Play
     // 호출 동안 새 결제 confirm 으로 생긴 활성 구독은 위 revoke 대상이 아니었으므로
@@ -816,12 +818,15 @@ billingMutation.post('/cancel', async (c) => {
     // 스냅샷(activeSubscriptions)의 구독만 취소하고 새 구독은 건드리지 않는다.
     // (plan 재정렬은 cancelSubscriptionImmediate 내부에서 남은 활성 구독 기준으로 처리)
     for (const subscription of activeSubscriptions) {
-      await cancelSubscriptionImmediate(tx, subscription, now, { deleteVoiceData: false });
+      const ids = await cancelSubscriptionImmediate(tx, subscription, now, { deleteVoiceData: false });
+      for (const id of ids) cancelAffected.add(id);
     }
     // 즉시 해지여도 음성은 30일 보관 — '지금 삭제'는 /voice-data/delete-now 로 분리.
     // (그 사이 새 유료 구독이 생겼어도 sweep 이 삭제 전 활성 유료 구독을 재확인한다.)
     return schedulePaidVoiceRetention(tx, userPk, now);
   });
+  // 가족 소유자 즉시 해지 시 함께 강등되는 멤버에게 plan_changed 푸시(당사자 포함, 커밋 후).
+  await notifyPlanChanged(db, c.env, Array.from(cancelAffected));
   return c.json({
     success: true,
     mode,
@@ -910,11 +915,13 @@ billingMutation.post('/change-plan', async (c) => {
       throw new Error('No active subscription during immediate plan change');
     }
     if (freshActive.every((subscription) => subscription.planId === billablePlan.id)) {
-      return { subscription_id: freshActive[0]!.subscriptionId, plan_group: null, voucher: null };
+      return { subscription_id: freshActive[0]!.subscriptionId, plan_group: null, voucher: null, affected: [] as string[] };
     }
 
+    const affected = new Set<string>();
     for (const subscription of freshActive) {
-      await cancelSubscriptionImmediate(tx, subscription, startsAt, { deleteVoiceData: false });
+      const ids = await cancelSubscriptionImmediate(tx, subscription, startsAt, { deleteVoiceData: false });
+      for (const id of ids) affected.add(id);
     }
     const created = await createPaidSubscriptionArtifacts(tx, {
       userPk,
@@ -925,8 +932,11 @@ billingMutation.post('/change-plan', async (c) => {
       subscription_id: created.subscription.id,
       plan_group: created.plan_group,
       voucher: created.voucher,
+      affected: Array.from(affected),
     };
   });
+  // 가족 소유자가 개인/다른 플랜으로 즉시 전환하면 소유 그룹이 해체돼 멤버가 강등된다 → plan_changed 푸시.
+  await notifyPlanChanged(db, c.env, changeResult.affected);
 
   return c.json({
     success: true,

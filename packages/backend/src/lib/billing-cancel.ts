@@ -287,13 +287,15 @@ export async function resolvePlanAfterSuspend(
  * 소유 그룹 해체: 소유자를 제외한 멤버들의 그룹 연동 구독을 취소하고 plan 을 재정렬한 뒤
  * 멤버 행을 전부 지운다. cancelSubscriptionImmediate 의 소유자 경로와, 그룹 연결이 빠진
  * 구독(스크립트 부여/레거시)을 위한 방어 스윕이 공유한다.
+ * 반환: 강등된(소유자 제외) 멤버 user_id 목록 — 호출부가 plan_changed 통지 대상에 넣도록.
  */
 async function disbandOwnedPlanGroup(
   db: DbExecutor,
   ownerUserPk: string,
   planGroupId: string,
   now: Date,
-): Promise<void> {
+): Promise<string[]> {
+  const disbanded: string[] = [];
   const memberRes = await db.execute({
     sql: `SELECT user_id, role FROM plan_group_members WHERE plan_group_id = ?`,
     args: [planGroupId],
@@ -320,12 +322,14 @@ async function disbandOwnedPlanGroup(
     // 잔존한다. 멤버가 자기 결제로 재구독하면 entitle/redeem 경로가 유예를 해제하고,
     // sweep 도 삭제 직전에 활성 유료 구독을 재확인하므로 과삭제 위험은 없다.
     await schedulePaidVoiceRetention(db, memberUserId, now);
+    disbanded.push(memberUserId);
   }
 
   await db.execute({
     sql: `DELETE FROM plan_group_members WHERE plan_group_id = ?`,
     args: [planGroupId],
   });
+  return disbanded;
 }
 
 // 결제 해지/만료 흐름의 기본은 "음성 보존"이다. 하드 삭제는 보관 유예(sweep)나
@@ -335,7 +339,10 @@ export async function cancelSubscriptionImmediate(
   subscription: ActiveSubscription,
   now: Date = new Date(),
   options: CancelCleanupOptions = { deleteVoiceData: false },
-): Promise<void> {
+): Promise<string[]> {
+  // plan_changed 통지 대상: 취소 당사자 + 소유 그룹 해체로 함께 강등되는 멤버들.
+  // (호출자가 트랜잭션 커밋 '후' notifyPlanChanged 로 푸시 — FCM 은 tx 안에서 쏘지 않는다.)
+  const affected = new Set<string>([subscription.userPk]);
   await cancelOneSubscriptionRow(db, subscription.subscriptionId, now);
   await syncUserPlanAfterCancel(db, subscription.userPk, options);
 
@@ -353,10 +360,12 @@ export async function cancelSubscriptionImmediate(
         args: [subscription.planGroupId, subscription.userPk],
       });
       await releaseInviteUseForMember(db, subscription.userPk, subscription.planGroupId);
-      return;
+      return Array.from(affected);
     }
 
-    await disbandOwnedPlanGroup(db, subscription.userPk, subscription.planGroupId, now);
+    for (const m of await disbandOwnedPlanGroup(db, subscription.userPk, subscription.planGroupId, now)) {
+      affected.add(m);
+    }
   }
 
   // 방어 스윕: 소유자 구독에 plan_group_id 연결이 없던 상태(스크립트 부여/레거시)에서 해지하면
@@ -378,8 +387,11 @@ export async function cancelSubscriptionImmediate(
     if (groupId === subscription.planGroupId) continue;
     const backedByOwnerSub = remaining.some((s) => s.planGroupId === groupId);
     if (backedByOwnerSub || hasUnlinkedGroupCapablePlan) continue;
-    await disbandOwnedPlanGroup(db, subscription.userPk, groupId, now);
+    for (const m of await disbandOwnedPlanGroup(db, subscription.userPk, groupId, now)) {
+      affected.add(m);
+    }
   }
+  return Array.from(affected);
 }
 
 export async function cancelActiveSubscriptionsForUser(
@@ -616,15 +628,36 @@ async function reconcileGoogleBeforeExpiry(
   return 'skip';
 }
 
-// 가족 소유자 만료로 그룹이 해체되면 멤버들도 강등되므로, plan_changed 통지 대상에 멤버 user_id 를
-// 함께 모은다. 해체 트랜잭션이 멤버 행을 지우므로 반드시 트랜잭션 '전에' 조회한다.
-async function planGroupMemberIds(db: Client, planGroupId: string | null): Promise<string[]> {
-  if (!planGroupId) return [];
-  const res = await db.execute({
-    sql: `SELECT user_id FROM plan_group_members WHERE plan_group_id = ?`,
-    args: [planGroupId],
-  });
-  return res.rows.map((r) => String(r.user_id));
+/**
+ * 강등/플랜변경으로 영향받은 사용자들에게 plan_changed 푸시(즉시성 목적). FIREBASE 설정이
+ * 없거나(dev/테스트) 대상이 없으면 no-op. 실패해도 호출부 흐름을 깨지 않게 격리(로깅만).
+ * **반드시 DB 트랜잭션 커밋 '후'에** 호출한다 — FCM 은 네트워크 I/O 라 tx 안에서 쏘면 안 된다.
+ * (정확성은 클라 로컬 폴백[앱 시작 재조회 + 울림 시점 게이트]이 보장 — 푸시는 즉시성만.)
+ */
+export async function notifyPlanChanged(
+  db: Client,
+  env: Partial<Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>> | undefined,
+  userIds: string[],
+): Promise<void> {
+  if (!env?.FIREBASE_PROJECT_ID || !env?.FIREBASE_SERVICE_ACCOUNT_JSON || userIds.length === 0) {
+    return;
+  }
+  try {
+    await sendPlanChangedPush(
+      db,
+      {
+        FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
+        FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
+      },
+      userIds,
+    );
+  } catch (err) {
+    logStructured('error', {
+      at: 'billing.plan_changed_push',
+      action: 'PLAN_CHANGED_PUSH_FAILED',
+      error: String(err),
+    });
+  }
 }
 
 export async function processSubscriptionExpiry(
@@ -666,24 +699,22 @@ export async function processSubscriptionExpiry(
     if (decision === 'skip') continue;
 
     // 소유자 구독이 만료/변경되면(무료 강등뿐 아니라 개인플랜 예약 전환 포함) 소유 그룹이 해체돼
-    // 멤버가 강등된다. nextPlan 유무와 무관하게 해체 트랜잭션 전에 멤버를 조회해 통지 대상에 넣는다
-    // (소유자 본인은 무료로 떨어질 때만 아래에서 추가; 과다통지는 클라가 재조회로 무시).
-    const dueMemberIds = await planGroupMemberIds(db, active.planGroupId);
-    await withWriteTransaction(db, async (tx) => {
-      await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
+    // 멤버가 강등된다. cancelSubscriptionImmediate 가 취소 당사자+해체 멤버를 반환하므로 그대로
+    // 통지 대상에 넣는다(과다통지는 클라가 재조회로 무시).
+    const affected = await withWriteTransaction(db, async (tx) => {
+      const ids = await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
 
       if (!nextPlanId) {
         // 예약취소 만료 — 음성은 즉시 삭제하지 않고 30일 보관 유예를 건다.
         await schedulePaidVoiceRetention(tx, active.userPk, now);
-        notifyUserPks.add(active.userPk);
-        return;
+        return ids;
       }
       const nextPlanRes = await tx.execute({
         sql: `SELECT id, plan_type, period_days, max_members
               FROM plans WHERE id = ? AND is_active = 1`,
         args: [nextPlanId],
       });
-      if (nextPlanRes.rows.length === 0) return;
+      if (nextPlanRes.rows.length === 0) return ids;
 
       const nextPlan = nextPlanRes.rows[0]!;
       await createNewSubscriptionForPlan(tx, {
@@ -694,8 +725,9 @@ export async function processSubscriptionExpiry(
         maxMembers: Number(nextPlan.max_members) || 1,
         now,
       });
+      return ids;
     });
-    for (const m of dueMemberIds) notifyUserPks.add(m);
+    for (const id of affected) notifyUserPks.add(id);
   }
 
   const expiredRes = await db.execute({
@@ -718,10 +750,10 @@ export async function processSubscriptionExpiry(
     });
     if (decision === 'skip') continue;
 
-    // 일반 만료도 소유자면 그룹 해체 → 멤버 강등. 해체 전에 멤버를 미리 조회한다.
-    const expiredMemberIds = await planGroupMemberIds(db, (r.plan_group_id as string | null) ?? null);
-    await withWriteTransaction(db, async (tx) => {
-      await cancelSubscriptionImmediate(
+    // 일반 만료도 소유자면 그룹 해체 → 멤버 강등. cancelSubscriptionImmediate 반환값(당사자+해체
+    // 멤버)을 그대로 통지 대상에 넣는다.
+    const affected = await withWriteTransaction(db, async (tx) => {
+      const ids = await cancelSubscriptionImmediate(
         tx,
         {
           subscriptionId,
@@ -735,27 +767,17 @@ export async function processSubscriptionExpiry(
       );
       // 일반 만료도 하드삭제 대신 30일 보관 유예.
       await schedulePaidVoiceRetention(tx, userPk, now);
+      return ids;
     });
-    notifyUserPks.add(userPk);
-    for (const m of expiredMemberIds) notifyUserPks.add(m);
+    for (const id of affected) notifyUserPks.add(id);
   }
 
   // 보관 유예가 끝난 유료 음성 데이터 정리 (같은 cron 주기에서 처리).
   await sweepPaidVoiceRetention(db, now);
 
   // 강등된 사용자에게 plan_changed 푸시 — 클라가 '강등 시점'에 유료 목소리 알람을 기본 알람으로
-  // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인. FCM 실패가 크론을 깨지 않게 격리.
-  if (env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON && notifyUserPks.size > 0) {
-    try {
-      await sendPlanChangedPush(
-        db,
-        { FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID, FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON },
-        Array.from(notifyUserPks),
-      );
-    } catch (err) {
-      logStructured('error', { at: 'billing.expiry', action: 'PLAN_CHANGED_PUSH_FAILED', error: String(err) });
-    }
-  }
+  // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
+  await notifyPlanChanged(db, env, Array.from(notifyUserPks));
 }
 
 export { planTypeToUserPlan };
