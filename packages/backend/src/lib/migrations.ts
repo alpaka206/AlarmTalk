@@ -1655,9 +1655,17 @@ export const migrations: Migration[] = [
     //  - users_kst 뷰가 last_active_at 를 명시 참조하므로 #50 전례대로 뷰를 떨군 뒤
     //    DROP COLUMN 하고 해당 _kst 컬럼 없이 재생성한다. 재실행 시 'no such column'/
     //    'no such view' 는 idempotent 로 무시된다.
+    //  - 캐릭터 _kst 뷰 4종(character_stats_kst 등)도 함께 DROP: #77 이 캐릭터 테이블만
+    //    지우고 이 뷰들을 남겨 깨진(dangling) 뷰가 됐는데, libSQL(Turso)의 ALTER TABLE
+    //    DROP COLUMN 은 전체 스키마의 모든 뷰를 검증하다 이 깨진 뷰('no such table:
+    //    character_stats')에 걸려 실패한다(로컬 libsql 은 관대해 통과). ALTER 전에 정리.
     id: 79,
     name: 'drop-dead-social-tables-and-user-columns',
     statements: [
+      `DROP VIEW IF EXISTS "character_stats_kst"`,
+      `DROP VIEW IF EXISTS "character_xp_logs_kst"`,
+      `DROP VIEW IF EXISTS "characters_kst"`,
+      `DROP VIEW IF EXISTS "streak_achievements_kst"`,
       `DROP VIEW IF EXISTS "notes_kst"`,
       `DROP VIEW IF EXISTS "voice_speakers_kst"`,
       `DROP VIEW IF EXISTS "friendships_kst"`,
