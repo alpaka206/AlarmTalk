@@ -994,4 +994,11 @@
     <string name="editor_voice_switch_drops_text_message">基本の声は用意された文だけを話すので、直接入力した文はなくなります。</string>
     <string name="editor_voice_switch_drops_text_confirm">変える</string>
     <string name="alarms_selected_count">%1$d件選択</string>
+    <string name="onb_voice_download_progress">%1$d / %2$d 準備できました</string>
+    <string name="onb_voice_download_stay">終わるまで少しお待ちください。
+アプリを閉じても続きます。</string>
+    <string name="onb_voice_download_failed">声を取得できませんでした。
+接続を確認してもう一度お試しください。</string>
+    <string name="onb_voice_download_retry">再試行</string>
+    <string name="onb_voice_download_later">あとで受け取る</string>
 </resources>

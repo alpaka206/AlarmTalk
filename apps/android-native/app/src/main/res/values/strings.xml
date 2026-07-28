@@ -1014,4 +1014,11 @@
     <string name="editor_voice_switch_drops_text_message">기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>
     <string name="editor_voice_switch_drops_text_confirm">바꾸기</string>
     <string name="alarms_selected_count">%1$d개 선택</string>
+    <string name="onb_voice_download_progress">%1$d / %2$d 준비했어요</string>
+    <string name="onb_voice_download_stay">다 받을 때까지 잠시만 기다려 주세요.
+앱을 나가도 이어서 받아요.</string>
+    <string name="onb_voice_download_failed">목소리를 받지 못했어요.
+연결을 확인하고 다시 시도해 주세요.</string>
+    <string name="onb_voice_download_retry">다시 시도</string>
+    <string name="onb_voice_download_later">나중에 받기</string>
 </resources>

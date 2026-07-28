@@ -39,30 +39,24 @@ import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.VoiceProfile
 
 /**
- * 온보딩 "목소리 고르기" 스텝. 무료 사용자에게 4개 기본 목소리를 한꺼번에 펼쳐 보여주는
- * 대신, 미리듣기하며 **1개를 기본 목소리로 선택**하게 한다(나중에 변경 가능).
+ * 기본 목소리 준비(다운로드) 화면.
  *
- * - systemVoices: 시스템(스톡) 보이스 목록. 아직 로드 전이면 로딩/건너뛰기.
- * - 각 목소리의 인사말 샘플(greeting 스톡 클립)을 다운로드해 미리 들려준다.
- * - 선택 후 [onChoose] 로 기본 목소리 id 를 저장한다.
+ * 예전에는 여기서 기본 목소리 하나를 고르게 했다. 이제 4개를 모두 받아 두고 알람마다
+ * 고르므로 고르는 단계를 없앴다 — 아직 들어보지도 못한 목소리를 먼저 정하게 하는 것보다,
+ * 다 받아 두고 알람 만들 때 들어보며 고르는 편이 낫다.
+ *
+ * 다운로드는 WorkManager 가 하므로 앱을 나가도 계속된다. 그래도 여기서 기다리길 권하는 건
+ * 첫 알람을 만들 때 대기가 없게 하기 위해서다.
  */
 @Composable
 internal fun VoiceOnboardingScreen(
     contentPadding: PaddingValues,
-    systemVoices: List<VoiceProfile>,
-    voiceProfileBusy: Boolean,
-    voiceProfileLoadFinished: Boolean,
-    stockClips: List<StockClip>,
-    onDownloadStockAudio: suspend (String) -> TtsMessageAudioResponse,
-    onChoose: (String) -> Unit,
+    done: Int,
+    total: Int,
+    failed: Boolean,
+    onRetry: () -> Unit,
     onSkip: () -> Unit,
 ) {
-    val previewController = rememberVoiceOnboardingPreviewController(onDownloadStockAudio)
-
-    var selectedId by remember(systemVoices) {
-        mutableStateOf(systemVoices.firstOrNull()?.id)
-    }
-    val voiceLoadFinished = voiceProfileLoadFinished && !voiceProfileBusy
 
     // 로그인(랜딩~인증)과 같은 고정 새벽 네이비 비주얼 — 라이트 테마에서 이 스텝만 흰 화면으로
     // 튀지 않게 온보딩 시퀀스의 톤을 그대로 잇는다(문서화된 예외 팔레트).
@@ -84,69 +78,58 @@ internal fun VoiceOnboardingScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.height(16.dp))
                 Text(
                     text = stringResource(R.string.onb_voice_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = TextOnScene,
+                    textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = stringResource(R.string.onb_voice_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextOnSceneDim,
+                    textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(28.dp))
 
-                if (systemVoices.isEmpty() && !voiceLoadFinished) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 40.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            strokeWidth = 2.dp,
-                            color = BrandAccentOnScene,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            text = stringResource(R.string.onb_voice_loading),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextOnSceneDim,
-                        )
-                    }
-                } else if (systemVoices.isEmpty()) {
+                if (failed) {
                     Text(
-                        text = stringResource(R.string.msg_voice_fetch_failed),
+                        text = stringResource(R.string.onb_voice_download_failed),
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextOnSceneDim,
-                        modifier = Modifier.padding(vertical = 40.dp),
                         textAlign = TextAlign.Center,
                     )
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        systemVoices.forEach { profile ->
-                            VoiceChoiceRow(
-                                name = profile.name,
-                                selected = profile.id == selectedId,
-                                preparing = previewController.preparingVoiceId == profile.id,
-                                // 별도 재생 버튼 없이, 카드를 누르면 선택과 동시에 샘플이 재생된다.
-                                onSelect = {
-                                    selectedId = profile.id
-                                    previewController.previewVoice(profile, stockClips)
-                                },
-                            )
-                        }
-                    }
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(34.dp),
+                        strokeWidth = 3.dp,
+                        color = BrandAccentOnScene,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        text = if (total > 0) {
+                            stringResource(R.string.onb_voice_download_progress, done, total)
+                        } else {
+                            stringResource(R.string.onb_voice_loading)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextOnScene,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        // 워커가 받으므로 나가도 이어지지만, 여기서 기다리는 편이 가장 빠르다.
+                        text = stringResource(R.string.onb_voice_download_stay),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextOnSceneDim,
+                        textAlign = TextAlign.Center,
+                    )
                 }
-                Spacer(Modifier.height(16.dp))
             }
 
             Column(
@@ -155,27 +138,19 @@ internal fun VoiceOnboardingScreen(
                     .padding(horizontal = 24.dp, vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                GradientCta(
-                    text = stringResource(R.string.onb_voice_confirm),
-                    onClick = {
-                        val id = selectedId
-                        if (id != null) {
-                            previewController.stopPreview()
-                            // 온보딩(무료 기본 목소리)은 고정 문구 클립만 재생하므로 호칭을 받지 않는다.
-                            onChoose(id)
-                        }
-                    },
-                    enabled = selectedId != null,
-                )
-                // 강제 1탭 선택이라 정상 흐름엔 "건너뛰기" 없음(항상 1개가 선택돼 있음).
-                // 단, 목소리를 못 불러온 예외 상황에서만 사용자가 갇히지 않게 건너뛰기를 노출한다.
-                if (systemVoices.isEmpty() && voiceLoadFinished) {
-                    TextButton(onClick = { previewController.stopPreview(); onSkip() }) {
-                        Text(
-                            text = stringResource(R.string.onb_voice_skip),
-                            color = AuthTextMuted,
-                        )
-                    }
+                if (failed) {
+                    GradientCta(
+                        text = stringResource(R.string.onb_voice_download_retry),
+                        onClick = onRetry,
+                        enabled = true,
+                    )
+                }
+                // 나중에 받아도 되게 열어 둔다 — 여기서 갇히면 앱을 아예 못 쓴다.
+                TextButton(onClick = onSkip) {
+                    Text(
+                        text = stringResource(R.string.onb_voice_download_later),
+                        color = AuthTextMuted,
+                    )
                 }
             }
         }
@@ -186,74 +161,3 @@ internal fun VoiceOnboardingScreen(
 private val OnbSceneTop = Color(0xFF1A2A52)
 private val OnbSceneBottom = Color(0xFF070C1D)
 private val OnbCardGlass = Color(0x14FFFFFF)
-
-@Composable
-private fun VoiceChoiceRow(
-    name: String,
-    selected: Boolean,
-    preparing: Boolean,
-    onSelect: () -> Unit,
-) {
-    Surface(
-        onClick = onSelect,
-        modifier = Modifier.fillMaxWidth(),
-        // 낮은 선택 행(≈52dp)에 22 는 near-pill — 표준 패널(18)로 낮춘다.
-        shape = WakerPanelShape,
-        color = if (selected) BrandAccentOnScene.copy(alpha = 0.22f) else OnbCardGlass,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (selected) BrandAccentOnScene.copy(alpha = 0.85f) else AuthLine,
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = name,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = TextOnScene,
-            )
-            Spacer(Modifier.width(8.dp))
-            // 샘플 준비 중에만 자리 표시 — 평소엔 선택 점만 남겨 카드가 조용하다.
-            if (preparing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = BrandAccentOnScene,
-                )
-                Spacer(Modifier.width(8.dp))
-            }
-            VoiceChoiceDot(selected = selected)
-        }
-    }
-}
-
-@Composable
-private fun VoiceChoiceDot(selected: Boolean) {
-    Box(
-        modifier = Modifier
-            .size(22.dp)
-            .padding(2.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = if (selected) BrandAccentOnScene else Color.Transparent,
-            border = if (selected) null else androidx.compose.foundation.BorderStroke(2.dp, AuthLine),
-            modifier = Modifier.size(18.dp),
-        ) {
-            if (selected) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Surface(
-                        shape = CircleShape,
-                        color = OnbSceneBottom,
-                        modifier = Modifier.size(7.dp),
-                    ) {}
-                }
-            }
-        }
-    }
-}

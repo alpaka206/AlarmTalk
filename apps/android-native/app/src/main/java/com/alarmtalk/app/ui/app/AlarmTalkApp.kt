@@ -32,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
@@ -802,16 +803,28 @@ internal fun AlarmTalkApp(
       }
       // 첫 로그인 "목소리 고르기" — 기본 목소리 4개를 다 펼치는 대신 1개를 미리듣고 고른다.
       if (viewModel.showVoiceSetup) {
-          // 시스템 음성이 비어 있으면(무료 플랜 lock 등으로) 다시 받아와 빈 로딩 화면에 갇히지 않게 한다.
-          LaunchedEffect(Unit) { viewModel.preloadVoiceProfiles() }
+          // 다운로드는 WorkManager 가 하므로 화면은 진행 상황만 구독한다 — 나가도 이어진다.
+          val prefetchInfos by com.alarmtalk.app.sync.StockClipPrefetchWorker
+              .observe(context)
+              .collectAsState(initial = emptyList())
+          val prefetchInfo = prefetchInfos.firstOrNull()
+          val prefetchDone = prefetchInfo?.progress
+              ?.getInt(com.alarmtalk.app.sync.StockClipPrefetchWorker.KEY_DONE, 0) ?: 0
+          val prefetchTotal = prefetchInfo?.progress
+              ?.getInt(com.alarmtalk.app.sync.StockClipPrefetchWorker.KEY_TOTAL, 0) ?: 0
+          // 성공하면 화면을 닫는다. 실패(FAILED)만 재시도를 노출한다 — 재시도 대기(ENQUEUED)는
+          // 워커가 알아서 하므로 사용자에게 실패로 보이면 안 된다.
+          LaunchedEffect(prefetchInfo?.state) {
+              if (prefetchInfo?.state == androidx.work.WorkInfo.State.SUCCEEDED) {
+                  viewModel.skipVoiceSetup()
+              }
+          }
           VoiceOnboardingScreen(
               contentPadding = padding,
-              systemVoices = viewModel.voiceProfiles.filter { it.isSystem == true },
-              voiceProfileBusy = voiceProfileBusy,
-              voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
-              stockClips = viewModel.stockClips,
-              onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
-              onChoose = viewModel::completeVoiceSetup,
+              done = prefetchDone,
+              total = prefetchTotal,
+              failed = prefetchInfo?.state == androidx.work.WorkInfo.State.FAILED,
+              onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
               onSkip = viewModel::skipVoiceSetup,
           )
           return@Scaffold

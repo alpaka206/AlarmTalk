@@ -793,6 +793,21 @@ class AlarmAudioStore(
         return MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "m4a"
     }
 
+    /**
+     * 기기에 남아 있는 기본 목소리 클립 수.
+     *
+     * "다운로드를 마쳤는가"를 계정 플래그가 아니라 **파일 존재**로 판정하기 위한 것이다.
+     * 캐시는 계정이 아니라 기기에 종속되므로: 로그아웃 후 다시 로그인하면 파일이 남아 있어
+     * 다시 받지 않고, 다른 기기로 로그인하면 그 기기에는 파일이 없어 새로 받는다.
+     */
+    fun cachedStockClipCount(): Int =
+        audioDir.listFiles()?.count { file ->
+            file.isFile &&
+                file.extension != META_EXTENSION &&
+                file.extension != PARTIAL_EXTENSION &&
+                file.nameWithoutExtension.startsWith(STOCK_CACHE_KEY_PREFIX)
+        } ?: 0
+
     private fun findCachedFile(cacheKey: String): File? {
         val safeKey = safeCacheKey(cacheKey)
         return audioDir.listFiles()?.firstOrNull { file ->

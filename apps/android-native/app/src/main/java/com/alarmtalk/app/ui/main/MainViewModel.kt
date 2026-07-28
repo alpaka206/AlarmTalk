@@ -393,22 +393,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         duplicateAlarmPrompt = null
     }
 
+    /**
+     * 기본 목소리 준비 화면을 띄울지 판정한다.
+     *
+     * 예전에는 '온보딩에서 목소리를 골랐는가'(계정 플래그)로 봤다. 이제 목소리를 고르지 않고
+     * 4개를 모두 받으므로, **기기에 클립 파일이 있는가**로 본다. 캐시는 계정이 아니라 기기에
+     * 종속되므로 로그아웃 후 재로그인은 다시 받지 않고, 다른 기기로 로그인하면 그 기기가
+     * 새로 받는다. 일부만 받다 끊긴 경우엔 화면을 다시 띄우지 않고 워커가 조용히 마저 채운다.
+     */
     fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
         defaultVoiceId = defaultVoiceStore.read(userId)
-        showVoiceSetup = !defaultVoiceStore.hasCompletedSetup(userId)
+        val cachedStockClips = com.alarmtalk.app.data.AlarmAudioStore(getApplication())
+            .cachedStockClipCount()
+        showVoiceSetup = cachedStockClips == 0
+        // 화면을 띄우든 말든 부족분은 항상 채운다(언어 변경·중단 복구 포함).
+        com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(getApplication())
     }
 
-    /** 온보딩 목소리 스텝에서 기본 목소리를 정했을 때. 기기 설정에 저장하고 스텝을 닫는다.
-     *  (호칭은 따로 받지 않는다 — 시스템 음성 TTS 는 계정 닉네임으로 부른다.)
-     *  선택 후에는 홈(알람 탭)으로 바로 진입한다 — 첫 알람 에디터 자동 진입/코치마크는 없앴다. */
-    fun completeVoiceSetup(voiceId: String) {
-        // setDefaultVoice 가 무료 버킷 클립 프리페치까지 함께 태운다(온보딩·목소리 탭 동일 경로).
-        setDefaultVoice(voiceId)
-        showVoiceSetup = false
-    }
-
-    /** 목소리 스텝을 건너뛸 때(저장 없이 닫기). 나중에 목소리 탭에서 고를 수 있다. */
+    /** 준비 화면을 닫을 때(완료·나중에 받기 공용). 다운로드는 워커가 계속한다. */
     fun skipVoiceSetup() {
         defaultVoiceStore.markSkipped(authSession?.user?.id?.takeIf { it.isNotBlank() })
         showVoiceSetup = false
