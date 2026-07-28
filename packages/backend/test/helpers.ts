@@ -11,6 +11,9 @@ export interface MockExecuteResult {
   rowsAffected: number;
 }
 
+/** 결과 큐 항목 — 성공 결과이거나, 그 자리에서 던질 오류(pushError). */
+type MockQueueEntry = MockExecuteResult | { error: Error };
+
 export type ExecuteCall = { sql: string; args: (string | number | null)[] };
 
 /**
@@ -35,7 +38,7 @@ function assertBindingCount(query: { sql: string; args: unknown[] }) {
 
 export function createMockDB() {
   const calls: ExecuteCall[] = [];
-  const results: MockExecuteResult[] = [];
+  const results: MockQueueEntry[] = [];
   const transactions = {
     commits: 0,
     rollbacks: 0,
@@ -44,6 +47,23 @@ export function createMockDB() {
 
   function pushResult(rows: MockRow[] = [], rowsAffected = 0) {
     results.push({ rows, rowsAffected });
+  }
+
+  /**
+   * 다음 execute 를 성공 대신 이 오류로 실패시킨다 — 결과 큐와 같은 FIFO 자리를 차지한다.
+   * 구 스키마 폴백('no such column' 을 잡아 다른 SQL 로 재시도)처럼, 실패해야만 도달하는
+   * 분기를 검증하기 위한 것.
+   */
+  function pushError(error: Error) {
+    results.push({ error });
+  }
+
+  /** 큐에서 하나 꺼낸다 — 오류 항목이면 execute 가 실패한 것처럼 던진다. */
+  function takeNext(): MockExecuteResult {
+    const next = results.shift();
+    if (!next) return { rows: [], rowsAffected: 0 };
+    if ('error' in next) throw next.error;
+    return next;
   }
 
   function reset() {
@@ -88,7 +108,7 @@ export function createMockDB() {
       if (/FROM user_consents/i.test(query.sql)) {
         if (consentResultsAllowMissing) {
           calls.push({ sql: query.sql, args: query.args });
-          return results.shift() ?? { rows: [], rowsAffected: 0 };
+          return takeNext();
         }
         return {
           rows: CONSENT_TYPES_FOR_MOCK.map((t) => ({
@@ -107,7 +127,7 @@ export function createMockDB() {
         return { rows: [{ n: 0 }], rowsAffected: 0 };
       }
       calls.push({ sql: query.sql, args: query.args });
-      return results.shift() ?? { rows: [], rowsAffected: 0 };
+      return takeNext();
     },
     batch: async () => {},
     transaction: async () => {
@@ -135,7 +155,16 @@ export function createMockDB() {
     },
   };
 
-  return { client, calls, pushResult, reset, clearResults, transactions, setConsentMissing };
+  return {
+    client,
+    calls,
+    pushResult,
+    pushError,
+    reset,
+    clearResults,
+    transactions,
+    setConsentMissing,
+  };
 }
 
 /**
