@@ -68,13 +68,17 @@ async function resolveUserLoginId(db: DbExecutor, userPk: string): Promise<strin
 }
 
 /**
- * 해지/만료 후 유료 음성 데이터를 하드삭제 대신 보관하는 유예 기간(일).
+ * 해지/만료 후 유료 음성 데이터를 보관하는 유예 기간(일).
  *
- * 앱의 해지 안내가 "만든 목소리는 삭제되지 않고 잠기며, 다시 이용권을 등록하면 그대로
- * 다시 쓸 수 있어요"라고 약속한다. 이 값을 줄이면 5분 주기 정리 cron 이 그 약속보다 먼저
- * 지워, 재구독해도 되살릴 게 없어진다. 줄이려면 해지 다이얼로그 카피를 함께 바꿔야 한다.
+ * 주의 — 지금 이 값은 `paid_voice_retention.delete_after` 타임스탬프를 정할 뿐,
+ * **실제로 음성 데이터를 지우는 코드는 없다.** sweepPaidVoiceRetention 은 기한이 지난
+ * 보관 '장부 행'만 지우고 클론·원본·생성 오디오는 그대로 둔다(정책: 무료 전환 시 삭제하지
+ * 않고 잠그기만 한다). 그래서 이 상수를 줄여도 데이터가 더 빨리 사라지지는 않는다.
+ *
+ * '해지 즉시 클론 삭제 + 원본·생성 오디오만 N일 보관 + 그 안에 재생성 가능' 정책을 실제로
+ * 적용하려면 유예 만료 시 deleteSensitiveVoiceDataForUser 를 태우는 배관이 따로 필요하다.
  */
-export const PAID_VOICE_RETENTION_DAYS = 30;
+export const PAID_VOICE_RETENTION_DAYS = 3;
 
 /**
  * 유료 음성 보관 유예를 예약(upsert)한다. 반환값은 delete_after ISO 문자열
