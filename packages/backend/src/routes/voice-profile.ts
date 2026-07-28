@@ -326,7 +326,7 @@ async function runSpeechStyleAnalysis(
  * the periodic cleanup cron — only DB rows go away here.
  */
 voiceProfile.delete('/_dev/clear-mine', async (c) => {
-  const subId = c.get('userId') as string;
+  const subId = (c.get('userLoginId') || c.get('userId')) as string;
   // production 환경에서는 노출 자체를 막는다. 인증을 통과한 뒤에도 dev/test 가 아니면
   // 라우트가 존재하지 않는 것처럼 404 로 응답.
   if (c.env.ENVIRONMENT === 'production') {
@@ -1164,20 +1164,21 @@ voiceProfile.post('/clone', async (c) => {
         409,
       );
     }
-    if (resolvedUserPk) {
-      const userPlan = await db.execute({
-        sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
-        args: [userPk, userId],
-      });
-      if (userPlan.rows.length === 0 || !isPaidVoicePlan(userPlan.rows[0]!.plan)) {
-        return c.json(
-          {
-            error: 'Voice features require a paid plan.',
-            error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
-          },
-          403,
-        );
-      }
+    // 유료 플랜 확인은 조건 없이 수행한다. 예전에는 `if (resolvedUserPk)` 안에 들어
+    // 있어서, 식별자를 해석하지 못하면 플랜 확인 없이 클론이 진행됐다(fail-open).
+    // 같은 파일의 promote 경로는 무조건 확인하고 있어 두 경로의 강도도 어긋나 있었다.
+    const userPlan = await db.execute({
+      sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+      args: [userPk, userId],
+    });
+    if (userPlan.rows.length === 0 || !isPaidVoicePlan(userPlan.rows[0]!.plan)) {
+      return c.json(
+        {
+          error: 'Voice features require a paid plan.',
+          error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+        },
+        403,
+      );
     }
 
     const missingSensitiveConsent = await missingConsentType(

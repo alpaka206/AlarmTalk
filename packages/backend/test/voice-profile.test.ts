@@ -16,6 +16,17 @@ function consentRow(type: string) {
   return { consent_type: type, policy_version: CURRENT_POLICY_VERSION, agreed: 1 };
 }
 
+/**
+ * POST /clone 은 `c.get('userIdPK')` 가 있으면 유료 플랜 여부를 실제로 조회한다
+ * (SELECT plan FROM users ...). fakeAuthMiddleware 가 실제 authMiddleware 처럼
+ * userIdPK 를 채우게 되면서 이 쿼리가 결과 큐의 맨 앞을 소비하므로, 클론 테스트는
+ * 유료 플랜 행을 가장 먼저 넣어 줘야 이후 결과(한도 카운트·INSERT ...)가 한 칸씩
+ * 밀리지 않는다. 무료 플랜이면 403 VOICE_FEATURE_REQUIRES_PAID_PLAN 으로 떨어진다.
+ */
+function pushPaidPlan() {
+  mockDB.pushResult([{ plan: 'plus' }]);
+}
+
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
@@ -478,6 +489,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     // 생체정보(음성 클론) 별도 동의 미충족 시 클로닝을 차단한다. 동의 쿼리는
     // missing 모드로 두고 빈 결과(미동의)를 돌려준다.
     mockDB.setConsentMissing(true);
+    pushPaidPlan(); // userIdPK 가 채워지며 유료 플랜 조회가 실제로 실행된다 — 큐 맨 앞에 유료 플랜 행을 넣어 준다.
     mockDB.pushResult([]); // user_consents 조회 결과: 동의 없음
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '엄마 목소리'));
     expect(res.status).toBe(403);
@@ -490,6 +502,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
   it('overseas_transfer 동의 없으면 ElevenLabs 클론을 호출하지 않음', async () => {
     mockDB.setConsentMissing(true);
+    pushPaidPlan();
     mockDB.pushResult([consentRow('voice_biometric')]);
 
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '엄마 목소리'));
@@ -503,6 +516,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
   it('voice_biometric 동의가 있으면 클로닝 진행 (B4)', async () => {
     // 기본 모드(setConsentMissing 미설정): 헬퍼가 모든 동의를 합성 충족 → 통과.
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -515,6 +529,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('draft 슬롯이 차 있으면 403 VOICE_LIMIT_REACHED', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ draft_count: 1, official_count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트'));
     expect(res.status).toBe(403);
@@ -524,6 +539,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('official 슬롯이 차 있으면 403 (stranded draft 방지, attempt 미소모)', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ draft_count: 0, official_count: 1 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트2'));
     expect(res.status).toBe(403);
@@ -535,6 +551,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
   it('초안은 월 시도 횟수로 막지 않는다 — 정식 등록 전까진 무제한 생성·삭제', async () => {
     // 예전에는 여기서 429 VOICE_DRAFT_ATTEMPT_LIMIT_REACHED 로 막았다. 이제 사용량만 센다.
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -550,6 +567,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('프로필이 없으면 통과', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -561,6 +579,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('쿼터 카운트는 failed 잔여 행을 제외한다 (일시 실패가 한도를 영구 잠식하지 않도록)', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -580,6 +599,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('audio 누락 → 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const form = new FormData();
     form.append('name', 'test');
@@ -593,6 +613,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('name 누락 → 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const form = new FormData();
     form.append('audio', new Blob([new Uint8Array([1])], { type: 'audio/wav' }), 'a.wav');
@@ -606,6 +627,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('name 50자 초과 → 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'x'.repeat(51)));
     expect(res.status).toBe(400);
@@ -613,6 +635,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('durationMs 생략 시 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', ''));
     expect(res.status).toBe(400);
@@ -620,6 +643,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('초안 최소 12초 미만 durationMs 는 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '11999'));
     expect(res.status).toBe(400);
@@ -627,6 +651,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('2분에서 5초 이내 durationMs 오차는 허용', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -638,6 +663,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('2분 5초를 넘는 durationMs 는 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '125001'));
     expect(res.status).toBe(400);
@@ -645,6 +671,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('name 50자 정확히 → 통과', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -656,6 +683,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('성공 시 INSERT processing → UPDATE ready 순서', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -681,6 +709,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('ElevenLabs 실패 → 500 VOICE_CLONING_FAILED', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -704,6 +733,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('ElevenLabs 에 audioBuffer 전달 확인', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -727,6 +757,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('mp3 clone 업로드 MIME 과 파일명을 ElevenLabs 로 전달', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -753,6 +784,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('ElevenLabs 슬롯 부족 시 503 + VOICE_SLOT_EXHAUSTED', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -769,6 +801,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('J: 0바이트 오디오 → 400 AUDIO_FILE_EMPTY (arrayBuffer/클론 전 차단)', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]); // 한도 체크 SELECT
     const res = await req(buildApp(), cloneForm(new Uint8Array([]), 'name'));
     expect(res.status).toBe(400);
@@ -777,6 +810,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('J: 25 MiB 초과 오디오 → 413 AUDIO_FILE_TOO_LARGE', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]); // 한도 체크 SELECT
     const big = new Uint8Array(25 * 1024 * 1024 + 1);
     const res = await req(buildApp(), cloneForm(big, 'name'));
@@ -786,6 +820,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('C: 원본 R2 저장 성공 후 voice_uploads INSERT 실패 시 R2 삭제 큐 적재', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -1072,6 +1107,7 @@ describe('PATCH /:id — name edge cases (voice-profile)', () => {
 /* ------------------------------------------------------------------ */
 describe('POST /clone — edge cases (voice-profile)', () => {
   it('프로필 0개이면 정상 생성', async () => {
+    pushPaidPlan(); // userIdPK 가 채워지며 유료 플랜 조회가 실제로 실행된다 — 큐 맨 앞에 유료 플랜 행을 넣어 준다.
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -1084,6 +1120,7 @@ describe('POST /clone — edge cases (voice-profile)', () => {
   });
 
   it('non-Error throw 여도 detail 은 안정 코드(K1)', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);

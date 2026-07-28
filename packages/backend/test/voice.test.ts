@@ -193,7 +193,10 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
 
 describe('POST /voice/upload — 원본 오디오 업로드', () => {
   it('정상 업로드는 201 과 upload 메타를 돌려준다', async () => {
-    mockDB.pushResult([], 1);
+    // userIdPK 가 채워지며 hasPaidVoiceAccess 의 플랜 조회(SELECT plan FROM users)가 실제로
+    // 실행된다 — 유료 플랜 행을 큐 맨 앞에 넣어 준다(없으면 VOICE_FEATURE_REQUIRES_PAID_PLAN 403).
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([], 1); // INSERT INTO voice_uploads
     const app = buildApp();
     const res = await app.request(
       uploadRequest('/voice/upload', {
@@ -450,6 +453,9 @@ describe('POST /voice/clone — 음성 클론', () => {
   }
 
   it('프로필 1개 이상이면 403', async () => {
+    // userIdPK 가 채워지며 클론 라우트의 플랜 조회가 실제로 실행된다 — 한도 검사 앞에
+    // 유료 플랜 행을 넣어 준다(없으면 VOICE_FEATURE_REQUIRES_PAID_PLAN 으로 먼저 떨어짐).
+    mockDB.pushResult([{ plan: 'plus' }]);
     // 한도 검사는 draft/official 슬롯을 함께 센다(둘 중 하나라도 차면 차단).
     mockDB.pushResult([{ draft_count: 1, official_count: 1 }]);
     const app = buildApp();
@@ -460,7 +466,9 @@ describe('POST /voice/clone — 음성 클론', () => {
   });
 
   it('audio 파일 누락 시 400', async () => {
-    mockDB.pushResult([{ count: 0 }]);
+    // userIdPK 가 채워지며 플랜 조회가 실제로 실행된다 — 유료 플랜 행을 큐 앞에 넣어 준다.
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ count: 0 }]); // 프로필 한도 카운트
     const form = new FormData();
     form.append('name', '테스트');
     form.append('isDraft', 'true');
@@ -475,7 +483,9 @@ describe('POST /voice/clone — 음성 클론', () => {
   });
 
   it('name 누락 시 400', async () => {
-    mockDB.pushResult([{ count: 0 }]);
+    // userIdPK 가 채워지며 플랜 조회가 실제로 실행된다 — 유료 플랜 행을 큐 앞에 넣어 준다.
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ count: 0 }]); // 프로필 한도 카운트
     const form = new FormData();
     form.append('audio', new Blob([new Uint8Array([1])], { type: 'audio/wav' }), 'a.wav');
     form.append('isDraft', 'true');
@@ -490,7 +500,9 @@ describe('POST /voice/clone — 음성 클론', () => {
   });
 
   it('name 50자 초과 시 400', async () => {
-    mockDB.pushResult([{ count: 0 }]);
+    // userIdPK 가 채워지며 플랜 조회가 실제로 실행된다 — 유료 플랜 행을 큐 앞에 넣어 준다.
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ count: 0 }]); // 프로필 한도 카운트
     const longName = 'x'.repeat(51);
     const app = buildApp();
     const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2]), longName));
@@ -500,6 +512,10 @@ describe('POST /voice/clone — 음성 클론', () => {
   });
 
   it('성공 시 201 + 프로필 반환', async () => {
+    // userIdPK 가 채워지며 플랜 조회가 실제로 실행된다 — 유료 플랜 행을 큐 맨 앞에 넣어 준다.
+    // 이후 순서: 한도 카운트 → 트랜잭션 슬롯 카운트 → draft 시도 예약 INSERT →
+    // voice_profiles INSERT → status='ready' UPDATE(rowsAffected>0 이어야 201).
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -532,6 +548,8 @@ describe('POST /voice/clone — 음성 클론', () => {
     form.append('durationMs', '90000');
     form.append('relationshipLabel', '손녀');
     form.append('isDraft', 'true');
+    // userIdPK 가 채워지며 플랜 조회가 실제로 실행된다 — 유료 플랜 행을 큐 맨 앞에 넣어 준다.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -553,6 +571,9 @@ describe('POST /voice/clone — 음성 클론', () => {
   });
 
   it('ElevenLabs 실패 시 500', async () => {
+    // userIdPK 가 채워지며 플랜 조회가 실제로 실행된다 — 유료 플랜 행을 큐 맨 앞에 넣어 준다.
+    // (플랜 게이트를 통과해야 ElevenLabs 호출까지 도달해 500 을 검증할 수 있다.)
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);

@@ -21,6 +21,7 @@ import {
 } from './alarm-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
+import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
 import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
 
 const alarmMutation = new Hono<AppEnv>();
@@ -198,7 +199,8 @@ alarmMutation.post('/', async (c) => {
   const userId = c.get('userId');
   const resolvedUserPk = c.get('userIdPK');
   const userPk = resolvedUserPk || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // [users.id, 토큰 로그인 식별자] — 통일 이전에 만들어진 행까지 매칭한다.
+  const ownerIds = callerOwnerIds(c) as [string, string];
   const db = getDB(c.env);
 
   const body = await c.req.json<{
@@ -516,7 +518,6 @@ function parseStoredRepeatDays(raw: unknown): number[] {
 }
 
 alarmMutation.patch('/:id', async (c) => {
-  const userId = c.get('userId');
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -541,14 +542,17 @@ alarmMutation.patch('/:id', async (c) => {
   const fieldError = validateAlarmFields(body);
   if (fieldError) return c.json(fieldError, 400);
 
+  // 소유권 게이트는 두 식별자를 모두 본다 — 통일 이전에 만들어진 알람은 user_id 에
+  // 로그인 식별자가 들어 있어, users.id 하나로만 걸면 자기 알람을 수정할 수 없다.
+  const patchOwnerIds = callerOwnerIds(c);
   const existing = await db.execute({
     sql: `SELECT a.id, a.target_user_id, a.time, a.repeat_days, a.is_active,
                  a.message_id, a.mode, a.wake_mode, a.voice_profile_id,
                  a.bucket_id, u.plan AS user_plan
           FROM alarms a
           LEFT JOIN users u ON u.google_id = a.user_id OR u.id = a.user_id
-          WHERE a.id = ? AND a.user_id = ?`,
-    args: [id, userId],
+          WHERE a.id = ? AND a.user_id IN (${inPlaceholders(patchOwnerIds)})`,
+    args: [id, ...patchOwnerIds],
   });
   if (existing.rows.length === 0) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
@@ -594,7 +598,7 @@ alarmMutation.patch('/:id', async (c) => {
   // POST 생성 경로와 동일한 소유권/프리셋 검증을 다시 수행한다. 이 검증이
   // 없으면 호출자가 타인 소유 message_id(타인 음성 클립)나 voice_profile_id 를
   // 자기 알람에 끼워 넣어 cross-tenant 리소스를 참조/재생할 수 있다.
-  const ownerIds = [resolvedUserPk || userId, userId] as [string, string];
+  const ownerIds = callerOwnerIds(c) as [string, string];
   if (
     body.message_id !== undefined &&
     body.message_id !== null &&
@@ -892,9 +896,12 @@ alarmMutation.delete('/:id', async (c) => {
     return c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400);
   }
 
+  // 소유권 게이트는 두 식별자를 모두 본다 — 통일 이전에 만들어진 알람은 user_id 에
+  // 로그인 식별자가 들어 있어, users.id 하나로만 걸면 자기 알람을 못 지운다.
+  const deleteOwnerIds = callerOwnerIds(c);
   const targetRes = await db.execute({
-    sql: 'SELECT message_id FROM alarms WHERE id = ? AND user_id = ? LIMIT 1',
-    args: [id, userId],
+    sql: `SELECT message_id FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(deleteOwnerIds)}) LIMIT 1`,
+    args: [id, ...deleteOwnerIds],
   });
   const targetAlarm =
     targetRes.rows.length > 0

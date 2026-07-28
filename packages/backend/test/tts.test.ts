@@ -157,6 +157,17 @@ function consentRow(type: string) {
   return { consent_type: type, policy_version: CURRENT_POLICY_VERSION, agreed: 1 };
 }
 
+// fakeAuthMiddleware 가 실제 authMiddleware 처럼 userIdPK 를 채우면서 '직접 입력(manual) 월 쿼터'
+// 경로가 실제로 실행된다(isManualGeneration = !random && !draft_preview && Boolean(userIdPK)).
+// 캐시 미스가 확정된 뒤 합성 직전에 공유풀 조회 2건(plan_groups / subscriptions) + 예약 1건이
+// 나가므로, 그 세 결과를 순서대로 큐에 넣어 준다. 넣지 않으면 예약 쿼리가 빈 결과를 받아
+// MANUAL_TTS_QUOTA_EXCEEDED(429)로 떨어진다.
+function pushManualQuotaFlow() {
+  mockDB.pushResult([]); // 1) plan_group 공유 풀 조회 — 소속 그룹 없음
+  mockDB.pushResult([]); // 2) 개인 활성 구독 조회 — 없음 → users.plan 폴백(plus → personal, 30회)
+  mockDB.pushResult([{ used_count: 1, usage_month: '2026-07' }], 1); // 3) 원자적 +1 예약 성공
+}
+
 beforeEach(() => {
   mockDB.reset();
   mockTextToSpeech.mockReset();
@@ -684,15 +695,20 @@ describe('GET /tts/messages — 메시지 목록', () => {
 /*  Edge cases — POST /tts/generate                                    */
 /* ------------------------------------------------------------------ */
 describe('POST /tts/generate — edge cases', () => {
-  it('user 미존재 시 사용량 체크 건너뛰고 voice profile 조회로 진행', async () => {
+  // 기대값 변경: 예전엔 'user 미존재 → 사용량 체크 건너뛰고 404' 를 봤는데, 그 건너뛰기는
+  // userIdPK 가 비어 있을 때만 도는 분기다(tts.ts: `else if (resolvedUserPk) return 403`).
+  // 실제 authMiddleware 는 users 행을 못 찾으면 401 이라 라우트에 도달하는 요청은 항상
+  // userIdPK 를 갖는다 — 인증 이후 계정이 사라진 상태의 정답은 fail-closed 403 이다.
+  // fakeAuthMiddleware 가 userIdPK 를 심게 되면서 이제 그 실제 경로를 검증한다.
+  it('인증 후 users 행이 없으면 유료 게이트로 fail-closed 403', async () => {
     mockDB.pushResult([]); // users: empty
-    mockDB.pushResult([]); // voice_profiles: empty
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
-    expect(res.status).toBe(404);
-    expect((await res.json()).error_code).toBe('VOICE_PROFILE_NOT_FOUND');
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
   });
 
   it('elevenlabs_voice_id 없으면 NO_VOICE_ID 400', async () => {
@@ -778,6 +794,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]); // cache lookup (miss)
+    pushManualQuotaFlow(); // userIdPK 가 채워져 직접 입력 쿼터 예약이 실제로 실행된다
     mockTextToSpeech.mockRejectedValue(new Error('ElevenLabs quota exceeded'));
     const app = buildApp();
     const res = await reqWithEnv(
@@ -796,6 +813,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]); // cache lookup (miss)
+    pushManualQuotaFlow(); // userIdPK 가 채워져 직접 입력 쿼터 예약이 실제로 실행된다
     mockTextToSpeech.mockRejectedValue('raw string error');
     const app = buildApp();
     const res = await reqWithEnv(
@@ -810,6 +828,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
+    pushManualQuotaFlow(); // userIdPK 가 채워져 직접 입력 쿼터 예약이 실제로 실행된다
     mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
     pushPublicationVoice();
     mockDB.pushResult([], 1); // INSERT messages
@@ -835,6 +854,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]); // cache lookup (miss)
+    pushManualQuotaFlow(); // userIdPK 가 채워져 직접 입력 쿼터 예약이 실제로 실행된다
     mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
     pushPublicationVoice();
     mockDB.pushResult([], 1);
@@ -864,7 +884,10 @@ describe('POST /tts/generate — edge cases', () => {
   it('generated audio cache hit skips provider calls', async () => {
     const objectKey = 'generated-tts/user-1/cached.mp3';
     const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
-    mockDB.pushResult([{ plan: 'free' }]);
+    // userIdPK 가 채워지며 플랜 게이트가 실제로 동작한다 — free + 커스텀(비시스템) 보이스는
+    // 직접 입력 자체가 403 이라 캐시 히트까지 도달하지 못한다. 이 테스트의 관심사는 '캐시 히트가
+    // 제공자 호출을 건너뛰는가' 이므로 시나리오가 성립하는 유료 플랜 행으로 바꾼다.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([
       {
@@ -895,7 +918,8 @@ describe('POST /tts/generate — edge cases', () => {
   it('checks the provider cache key before synthesizing', async () => {
     const objectKey = 'generated-tts/user-1/eleven-cached.mp3';
     const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([69, 76]) });
-    mockDB.pushResult([{ plan: 'free' }]);
+    // 위와 동일 — free 플랜은 커스텀 보이스 직접 입력이 403 이라 캐시 키 검사 전에 막힌다.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([
       {
         id: V1,
@@ -930,9 +954,12 @@ describe('POST /tts/generate — edge cases', () => {
   });
 
   it('성공 시 category 명시하면 해당 category 저장', async () => {
-    mockDB.pushResult([{ plan: 'free' }]);
+    // 직접 입력(수동) 경로는 유료 전용 — userIdPK 가 채워지며 페이월이 실제로 판정되므로
+    // free 대신 유료 플랜 행을 넣는다(테스트 관심사는 category 저장값).
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
+    pushManualQuotaFlow(); // 캐시 미스 후 직접 입력 쿼터 예약이 실제로 실행된다
     mockTextToSpeech.mockResolvedValue(new Uint8Array([1]).buffer);
     pushPublicationVoice();
     mockDB.pushResult([], 1);
@@ -950,9 +977,11 @@ describe('POST /tts/generate — edge cases', () => {
     const text = '좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!';
     // 신 allowlist 로컬 태깅: '힘' 키워드 → [cheerfully] (구 [encouraging] 폐기).
     const taggedText = `[cheerfully] ${text}`;
-    mockDB.pushResult([{ plan: 'free' }]);
+    // 수동 입력은 유료 전용 경로 — free 로 두면 페이월(403)에 걸려 태깅까지 못 간다.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
+    pushManualQuotaFlow(); // 캐시 미스 후 직접 입력 쿼터 예약이 실제로 실행된다
     mockTextToSpeech.mockResolvedValue(new Uint8Array([2]).buffer);
     pushPublicationVoice();
     mockDB.pushResult([], 1);
@@ -991,9 +1020,11 @@ describe('POST /tts/generate — edge cases', () => {
     const text = 'Good morning! Wake up! I hope you have a great day!';
     // 신 allowlist 로컬 기본 태그(구 [warmly] 폐기).
     const taggedText = `[cheerfully] ${text}`;
-    mockDB.pushResult([{ plan: 'free' }]);
+    // 수동 입력은 유료 전용 경로 — free 로 두면 페이월(403)에 걸려 합성 언어 검증까지 못 간다.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
+    pushManualQuotaFlow(); // 캐시 미스 후 직접 입력 쿼터 예약이 실제로 실행된다
     mockTextToSpeech.mockResolvedValue(new Uint8Array([3]).buffer);
     pushPublicationVoice();
     mockDB.pushResult([], 1);
@@ -1025,7 +1056,9 @@ describe('POST /tts/generate — edge cases', () => {
   });
 
   it('번역 요청인데 번역 설정이 없으면 원문 언어로 잘못 합성하지 않고 실패한다', async () => {
-    mockDB.pushResult([{ plan: 'free' }]);
+    // free 는 번역 자체가 프리셋 전용 게이트(403)에 먼저 걸린다 — 검증하려는 건 번역 미설정
+    // 실패(503)이므로 게이트를 통과하는 유료 플랜 행으로 둔다.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     const app = buildApp();
     const res = await reqWithEnv(
@@ -1275,6 +1308,7 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
+    pushManualQuotaFlow(); // 캐시 미스 후 직접 입력 쿼터 예약이 실제로 실행된다
     mockTextToSpeech.mockResolvedValue(new Uint8Array([0]).buffer);
     pushPublicationVoice();
     mockDB.pushResult([], 1);

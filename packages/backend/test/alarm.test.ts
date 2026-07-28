@@ -195,8 +195,12 @@ describe('POST /alarm — 알람 생성', () => {
 
   it('���료 플랜 무료 플랜도 알람 개수 제한 없이 201', async () => {
     mockDB.pushResult([{ plan: 'free' }]); // user plan
-    mockDB.pushResult([{ id: ID.message }]); // message exists
-    pushMessageBelongsToCaller();
+    // userIdPK 가 채워지며 무료 플랜 게이트가 실제로 실행된다 — free + message_id 조합이라
+    // usesOnlySystemStockVoice(시스템 스톡 보이스 여부) 조회가 새로 돌아간다.
+    // 스톡 클립이면 무료도 허용이므로 행을 하나 돌려준다.
+    mockDB.pushResult([{ '1': 1 }]); // usesOnlySystemStockVoice → 시스템 스톡 메시지
+    mockDB.pushResult([{ id: ID.message }]); // message exists (트랜잭션 밖 messageBelongsToCaller)
+    pushMessageBelongsToCaller(); // 트랜잭션 내 재검증
     mockDB.pushResult([], 1); // insert alarm
     const app = buildApp();
     const res = await app.request(
@@ -248,6 +252,9 @@ describe('POST /alarm — 알람 생성', () => {
     mockDB.pushResult([{ plan_group_id: 'group-1' }]); // assertSameGroup: 수신자 그룹(동일)
     mockDB.pushResult([]); // 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
     mockDB.pushResult([{ plan: 'plus' }]); // target user plan
+    // userIdPK 가 채워지며 `resolvedUserPk && alarmOwner !== userId` 분기를 타게 되어
+    // 발신자(user-1) 플랜 조회가 추가로 실행된다 — 유료 플랜 행을 큐에 넣어 준다.
+    mockDB.pushResult([{ plan: 'plus' }]); // 발신자 플랜(google_id = ? OR id = ?)
     mockDB.pushResult([{ id: ID.message }]); // message exists
     pushMessageBelongsToCaller(); // 트랜잭션 내 재검증
     mockDB.pushResult([]); // 멱등 슬롯 조회(기존 발신 알람 없음)

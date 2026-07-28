@@ -79,7 +79,25 @@ beforeEach(() => {
 /*  POST /vu/upload — 오디오 업로드                                     */
 /* ------------------------------------------------------------------ */
 describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
+  it('계정 행을 못 찾으면 업로드를 막는다 — 유료 게이트는 fail-closed', async () => {
+    // 예전에는 hasPaidVoiceAccess 가 `if (!resolvedUserPk) return true` 로 식별자를
+    // 해석하지 못하면 게이트를 통째로 열었다. 지금은 플랜 조회가 0행이면 막는다.
+    mockDB.pushResult([]); // SELECT plan FROM users → 계정 행 없음
+    const res = await req(
+      buildApp(),
+      uploadForm({
+        audio: { bytes: new Uint8Array([1, 2, 3, 4]), type: 'audio/wav', name: 'my.wav' },
+        fields: { durationMs: '90000' },
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+  });
+
   it('정상 업로드 → 201 + 메타데이터', async () => {
+    // fakeAuthMiddleware 가 userIdPK 를 채우면서 hasPaidVoiceAccess 의 플랜 조회가
+    // 실제로 실행된다 — 유료 플랜 행을 INSERT 결과보다 먼저 큐에 넣어 준다.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([], 1);
     const res = await req(
       buildApp(),
@@ -99,6 +117,9 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
 
   it('blocks upload before storage when voice_biometric consent is missing', async () => {
     mockDB.setConsentMissing(true);
+    // 동의 조회에 도달하려면 먼저 플랜 게이트를 통과해야 한다(userIdPK 가 채워져
+    // 플랜 조회가 실행됨) — 유료 플랜 행 → 빈 동의 행 순서로 큐를 채운다.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([]);
 
     const res = await req(
@@ -172,6 +193,8 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
   });
 
   it('25 MiB 정확히 → 통과', async () => {
+    // 플랜 조회가 INSERT 앞에서 큐를 소비한다 — 유료 플랜 행 선행 push.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([], 1);
     const exact = new Uint8Array(25 * 1024 * 1024);
     exact[0] = 1;
@@ -243,6 +266,8 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
   });
 
   it('2분에서 5초 이내 durationMs 오차는 허용', async () => {
+    // 플랜 조회가 INSERT 앞에서 큐를 소비한다 — 유료 플랜 행 선행 push.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([], 1);
     const res = await req(
       buildApp(),
@@ -267,6 +292,8 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
   });
 
   it('originalName 200자 초과 시 잘림', async () => {
+    // 플랜 조회가 INSERT 앞에서 큐를 소비한다 — 유료 플랜 행 선행 push.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([], 1);
     const longName = 'a'.repeat(250);
     const res = await req(
@@ -282,6 +309,8 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
   });
 
   it('originalName 생략 시 파일명 사용', async () => {
+    // 플랜 조회가 INSERT 앞에서 큐를 소비한다 — 유료 플랜 행 선행 push.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([], 1);
     const res = await req(
       buildApp(),
@@ -296,6 +325,8 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
   });
 
   it('DB INSERT 에 올바른 값 전달', async () => {
+    // 플랜 조회가 INSERT 앞에서 큐를 소비한다 — 유료 플랜 행 선행 push.
+    mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([], 1);
     await req(
       buildApp('user-X'),
@@ -304,7 +335,9 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
         fields: { durationMs: '90000' },
       }),
     );
-    const insertCall = mockDB.calls[0]!;
+    // calls[0] 은 이제 플랜 조회(SELECT plan FROM users), INSERT 는 calls[1] 로 밀린다.
+    expect(mockDB.calls[0]!.sql).toContain('SELECT plan FROM users');
+    const insertCall = mockDB.calls[1]!;
     expect(insertCall.sql).toContain('INSERT INTO voice_uploads');
     expect(insertCall.args[1]).toBe('user-X');
     expect(insertCall.args[3]).toBe('audio/mpeg');

@@ -100,8 +100,16 @@ function cloneForm(name = '엄마'): Request {
   return new Request('http://localhost/vp/clone', { method: 'POST', body: form });
 }
 
-/** clone 성공 경로에 필요한 결과들(프로필수 → 슬롯수 → attempt 예약 → INSERT → UPDATE ready). */
+/**
+ * clone 성공 경로에 필요한 결과들
+ * (플랜 → 프로필수 → 슬롯수 → attempt 예약 → INSERT → UPDATE ready).
+ *
+ * fakeAuthMiddleware 가 userIdPK 까지 채우면서 라우트의 `if (resolvedUserPk)` 분기가
+ * 실제로 타진다 — 즉 `SELECT plan FROM users` 페이월 조회가 큐를 한 칸 소비한다.
+ * 유료 플랜 행을 맨 앞에 넣어 주지 않으면 빈 결과 → VOICE_FEATURE_REQUIRES_PAID_PLAN(403).
+ */
 function pushCloneSuccessResults() {
+  mockDB.pushResult([{ plan: 'personal' }]); // 유료 플랜 게이트 통과
   mockDB.pushResult([{ draft_count: 0, official_count: 0 }]);
   mockDB.pushResult([{ draft_count: 0, official_count: 0 }]);
   mockDB.pushResult([], 1);
@@ -250,6 +258,9 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
 
   it('클론 완료 직후 동의 철회 시 원본 보관을 스킵하고 외부 전사도 시작하지 않는다 (H)', async () => {
     mockDB.setConsentMissing(true);
+    // userIdPK 가 채워지며 페이월 조회(SELECT plan FROM users)가 실제로 실행된다 —
+    // 동의 확인보다 앞서 큐를 소비하므로 유료 플랜 행을 맨 앞에 넣어 준다.
+    mockDB.pushResult([{ plan: 'personal' }]); // 0) 유료 플랜 게이트
     mockDB.pushResult(sensitiveConsentRows()); // 1) 라우트 진입 동의 확인 — 동의됨
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 2) 프로필 수
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 3) 슬롯 수(tx)
@@ -277,6 +288,8 @@ describe('POST /clone — 말투 분석 상태 기록 (speech_style_status)', ()
 
   it('분석 왕복 중 동의 철회 시 말투 결과를 저장하지 않는다 (H — 저장 직전 재확인)', async () => {
     mockDB.setConsentMissing(true);
+    // userIdPK 가 채워지며 페이월 조회(SELECT plan FROM users)가 실제로 실행된다 — 유료 플랜 행 선두 추가.
+    mockDB.pushResult([{ plan: 'personal' }]); // 0) 유료 플랜 게이트
     mockDB.pushResult(sensitiveConsentRows()); // 1) 라우트 진입
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 2) 프로필 수
     mockDB.pushResult([{ draft_count: 0, official_count: 0 }]); // 3) 슬롯 수

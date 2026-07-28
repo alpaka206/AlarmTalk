@@ -759,10 +759,12 @@ tts.post('/generate', async (c) => {
 
     // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
     // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
-    if (resolvedUserPk && !isPaidVoicePlan(plan)) {
+    if (!isPaidVoicePlan(plan)) {
       freePlanRestricted = true;
     }
-  } else if (resolvedUserPk) {
+  } else {
+    // 계정 행을 못 찾으면 막는다. 예전에는 `else if (resolvedUserPk)` 라 식별자
+    // 미해결 시 사용량 체크를 건너뛰고 그대로 진행했다(fail-open).
     return c.json(
       {
         error: 'Voice features require a paid plan.',
@@ -772,7 +774,8 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  const vp = await findUsableVoiceProfile(db, userId, userPk, body.voice_profile_id);
+  // 두 번째 인자는 레거시 보조 매칭용 로그인 식별자다(userId 는 이미 users.id).
+  const vp = await findUsableVoiceProfile(db, c.get('userLoginId'), userPk, body.voice_profile_id);
   if (!vp) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }

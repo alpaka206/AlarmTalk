@@ -92,6 +92,10 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
   it('무료 플랜도 알람 개수 제한 없이 생성 허용', async () => {
     // user plan → free
     mockDB.pushResult([{ plan: 'free' }]);
+    // userIdPK 가 채워지며 무료 플랜 판정이 실제로 걸린다(예전엔 resolvedUserPk 가 비어
+    // creatorHasPaidVoice 가 무조건 true 였다). 무료 + message_id 조합은
+    // usesOnlySystemStockVoice 조회를 타므로 '시스템 스톡 보이스 메시지' 행을 넣어 준다.
+    mockDB.pushResult([{ '1': 1 }]);
     // message check → found
     mockDB.pushResult([{ id: ID.message }]);
     pushMessageBelongsToCaller();
@@ -194,6 +198,9 @@ it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     // 그 다음 효과 시간대: 수신자 최근 알람 timezone 조회(없음 → Asia/Seoul)
     mockDB.pushResult([]);
     // user plan for target
+    mockDB.pushResult([{ plan: 'personal' }]);
+    // userIdPK 가 채워지며 `resolvedUserPk && alarmOwner !== userId` 분기가 살아나
+    // 발신자(생성자) 플랜 조회가 실제로 실행된다 — 유료 플랜 행을 큐에 넣어 준다.
     mockDB.pushResult([{ plan: 'personal' }]);
     // message check
     mockDB.pushResult([{ id: ID.message }]);

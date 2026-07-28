@@ -226,10 +226,13 @@ billingGoogle.post('/google/confirm', async (c) => {
   const obfuscatedId =
     subscription.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim();
   if (obfuscatedId) {
-    const expectedHashes = await Promise.all([
-      sha256Hex(c.get('userId')),
-      sha256Hex(userPk),
-    ]);
+    // 클라는 구매 시점 세션의 로그인 id(JWT sub)를 해시해 넣는다. userId 는 이제
+    // users.id 로 정규화되므로, 구 토큰으로 결제한 사용자를 위해 원래 sub 도 함께 본다.
+    const expectedHashes = await Promise.all(
+      Array.from(new Set([c.get('userLoginId'), c.get('userId'), userPk].filter(Boolean))).map(
+        (id) => sha256Hex(id as string),
+      ),
+    );
     if (!expectedHashes.includes(obfuscatedId.toLowerCase())) {
       logStructured('warn', {
         at: 'billing.google.confirm',

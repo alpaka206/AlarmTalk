@@ -312,7 +312,7 @@ user.post('/consents', async (c) => {
           (row) => !row.agreed && SENSITIVE_REQUIRED_CONSENTS.some((type) => type === row.type),
         )
       ) {
-        await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userId'));
+        await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userLoginId'));
       }
     });
     return c.json({ success: true, recorded: rows.length });
