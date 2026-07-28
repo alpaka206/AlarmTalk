@@ -780,7 +780,8 @@ billingMutation.post('/cancel', async (c) => {
       const ids = await cancelSubscriptionImmediate(tx, subscription, now, { deleteVoiceData: false });
       for (const id of ids) cancelAffected.add(id);
     }
-    // 즉시 해지여도 음성은 30일 보관 — '지금 삭제'는 /voice-data/delete-now 로 분리.
+    // 즉시 해지여도 음성은 보관 유예(PAID_VOICE_RETENTION_DAYS) 동안 남는다 —
+    // '지금 삭제'는 /voice-data/delete-now 로 분리.
     // (그 사이 새 유료 구독이 생겼어도 sweep 이 삭제 전 활성 유료 구독을 재확인한다.)
     return schedulePaidVoiceRetention(tx, userPk, now);
   });

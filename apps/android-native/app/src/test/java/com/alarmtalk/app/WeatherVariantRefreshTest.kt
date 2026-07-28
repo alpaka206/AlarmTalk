@@ -9,7 +9,6 @@ import com.alarmtalk.app.data.DefaultAlarmSounds
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
-import com.alarmtalk.app.data.weatherVariantMissingOrStale
 import com.alarmtalk.app.data.weatherVariantNeedsRefresh
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -84,28 +83,31 @@ class WeatherVariantRefreshTest {
     )
 
     @Test
-    fun 임박한_알람은_방금_해결됐어도_다시_받는다() {
-        // 오늘 낮에 해결된 내일 아침 알람 — 12시간 게이트만 보면 22시 실행에서 건너뛴다.
-        assertTrue(weatherVariantNeedsRefresh(alarm(fireInMillis = 9 * hour), now))
-    }
-
-    @Test
-    fun 하루_넘게_남은_알람은_신선하면_건너뛴다() {
-        assertFalse(
+    fun 이_발사분_것이_아니면_다시_받는다() {
+        // 어제 받은 값으로 오늘 울리고 내일로 넘어간 반복 알람 — 발사 24시간 밖에서 받은 값.
+        assertTrue(
             weatherVariantNeedsRefresh(
-                alarm(fireInMillis = 30 * hour, resolvedAgoMillis = 2 * hour),
+                alarm(fireInMillis = 23 * hour, resolvedAgoMillis = 26 * hour),
                 now,
             ),
         )
     }
 
     @Test
-    fun 하루_넘게_남았어도_오래됐으면_다시_받는다() {
-        assertTrue(
+    fun 이_발사분_것이면_다시_받지_않는다() {
+        // 오늘 22시에 내일 아침 것을 받아 둔 상태 — 한 번 받았으면 끝이다.
+        assertFalse(
             weatherVariantNeedsRefresh(
-                alarm(fireInMillis = 30 * hour, resolvedAgoMillis = 13 * hour),
+                alarm(fireInMillis = 9 * hour, resolvedAgoMillis = 1_000L),
                 now,
             ),
+        )
+    }
+
+    @Test
+    fun 아직_여유가_있으면_받아둔_값을_그대로_둔다() {
+        assertFalse(
+            weatherVariantNeedsRefresh(alarm(fireInMillis = 30 * hour, resolvedAgoMillis = 2 * hour), now),
         )
     }
 
@@ -131,25 +133,9 @@ class WeatherVariantRefreshTest {
     }
 
     @Test
-    fun 방금_갱신에_성공한_임박_알람은_재시도_대상이_아니다() {
-        // 선택 술어는 임박 알람을 강제로 다시 받지만, 재시도 판정까지 그걸 쓰면
-        // 성공했는데도 알람이 울릴 때까지 매시간 재시도가 이어진다.
-        val justRefreshed = alarm(fireInMillis = 9 * hour, resolvedAgoMillis = 1_000L)
-        assertTrue(weatherVariantNeedsRefresh(justRefreshed, now))
-        assertFalse(weatherVariantMissingOrStale(justRefreshed, now))
-    }
-
-    @Test
-    fun 갱신에_실패해_아직_못_받았으면_재시도_대상이다() {
-        val stillMissing = alarm(fireInMillis = 9 * hour, index = null, resolvedAgoMillis = null)
-        assertTrue(weatherVariantMissingOrStale(stillMissing, now))
-    }
-
-    @Test
-    fun 값은_있지만_낡았으면_재시도_대상이다() {
-        // 오프라인으로 갱신이 실패해 어제 조건이 그대로 남은 경우.
-        assertTrue(
-            weatherVariantMissingOrStale(alarm(fireInMillis = 9 * hour, resolvedAgoMillis = 13 * hour), now),
-        )
+    fun 임박한_알람을_받아낸_뒤에는_재시도_대상이_아니다() {
+        // 재시도 판정도 같은 술어를 쓰므로, 성공하면 시간당 재시도가 이어지지 않는다.
+        val justResolved = alarm(fireInMillis = 2 * hour, resolvedAgoMillis = 1_000L)
+        assertFalse(weatherVariantNeedsRefresh(justResolved, now))
     }
 }

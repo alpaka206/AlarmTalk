@@ -2,7 +2,11 @@ import type { Client } from '@libsql/client';
 import { issueVoucherCode } from './voucher-issue';
 import type { DbExecutor } from './transactions';
 import { withWriteTransaction } from './transactions';
-import { deletePaidVoiceDataForUser } from './paid-voice-cleanup';
+import {
+  deletePaidVoiceDataForUser,
+  deleteSensitiveVoiceDataForUser,
+  releaseClonedVoicesForUser,
+} from './paid-voice-cleanup';
 import { logStructured } from './logger';
 import {
   ENTITLED_STATES,
@@ -83,7 +87,7 @@ export const PAID_VOICE_RETENTION_DAYS = 3;
 /**
  * 유료 음성 보관 유예를 예약(upsert)한다. 반환값은 delete_after ISO 문자열
  * (응답 voice_retention_until 로 그대로 내려줄 수 있게).
- * 재해지 시에는 마지막 해지 시점 기준 now+30일로 갱신한다(DO UPDATE) —
+ * 재해지 시에는 마지막 해지 시점 기준으로 유예를 다시 잡는다(DO UPDATE) —
  * 그 사이 재구독으로 유예가 해제됐다가 다시 해지된 경우가 자연스럽게 처리된다.
  */
 export async function schedulePaidVoiceRetention(
@@ -119,6 +123,16 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
  * (계정 삭제 같은 명시 경로는 여전히 deletePaidVoiceDataForUser 로 직접 삭제한다.)
  */
 export async function sweepPaidVoiceRetention(db: Client, now: Date = new Date()): Promise<void> {
+  // 유예가 끝난 사용자의 남은 음성 데이터(원본 업로드·생성 오디오)를 정리한다.
+  // 클론 자체는 해지 시점에 이미 반납했다(releaseClonedVoicesForUser).
+  const due = await db.execute({
+    sql: `SELECT user_id FROM paid_voice_retention WHERE delete_after <= ?`,
+    args: [now.toISOString()],
+  });
+  for (const row of due.rows) {
+    const userPk = String(row.user_id);
+    await deleteSensitiveVoiceDataForUser(db, userPk, await resolveUserLoginId(db, userPk));
+  }
   await db.execute({
     sql: `DELETE FROM paid_voice_retention WHERE delete_after <= ?`,
     args: [now.toISOString()],
@@ -142,6 +156,9 @@ export async function downgradeUserToFree(
   // 로그인 id 를 모두 매칭한다(deletePaidVoiceDataForUser 와 동일 — 한쪽만 쓰면 일반 케이스를
   // 놓쳐 un-share·강등이 누락되고 취소된 목소리가 좀비로 계속 울린다).
   const loginId = await resolveUserLoginId(db, userPk);
+  // 무료로 내려간 시점에 제공자 클론을 반납한다 — 유료 슬롯을 붙들고 있을 이유가 없다.
+  // 원본 업로드는 남으므로, 보관 유예 안에 재구독하면 재클론으로 그대로 돌아온다.
+  await releaseClonedVoicesForUser(db, userPk, loginId);
   const ownerIds = Array.from(new Set([userPk, loginId].filter((x): x is string => Boolean(x))));
   const ph = ownerIds.map(() => '?').join(',');
   await db.execute({
@@ -712,7 +729,7 @@ export async function processSubscriptionExpiry(
       const ids = await cancelSubscriptionImmediate(tx, active, now, { deleteVoiceData: false });
 
       if (!nextPlanId) {
-        // 예약취소 만료 — 음성은 즉시 삭제하지 않고 30일 보관 유예를 건다.
+        // 예약취소 만료 — 음성은 즉시 삭제하지 않고 보관 유예를 건다(PAID_VOICE_RETENTION_DAYS).
         await schedulePaidVoiceRetention(tx, active.userPk, now);
         return ids;
       }
@@ -772,7 +789,7 @@ export async function processSubscriptionExpiry(
         now,
         { deleteVoiceData: false },
       );
-      // 일반 만료도 하드삭제 대신 30일 보관 유예.
+      // 일반 만료도 하드삭제 대신 보관 유예(PAID_VOICE_RETENTION_DAYS).
       await schedulePaidVoiceRetention(tx, userPk, now);
       return ids;
     });

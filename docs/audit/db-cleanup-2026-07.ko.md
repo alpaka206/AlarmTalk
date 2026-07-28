@@ -259,11 +259,17 @@ EXPLAIN QUERY PLAN
 - **JWT `sub` 을 `users.id` 로 통일** (§3) — 강제 재로그인 불필요
 - 가족 알람 `target_user_id` 를 `users.id` 로 저장 — 식별자 통일 뒤 신규 구글 가입자에게
   가족 알람이 배달되지 않던 회귀를 봉합(회귀 테스트 포함)
-- 유료 음성 보관 유예 상수 30일 → **3일**. 단, **이 값은 아직 실제 삭제를 일으키지 않는다** —
-  `sweepPaidVoiceRetention` 은 기한이 지난 `paid_voice_retention` 장부 행만 지우고 클론·원본·
-  생성 오디오는 그대로 둔다(무료 전환 시 삭제하지 않고 잠그기만 하는 현행 정책).
-  '해지 즉시 클론 삭제 + 원본·생성 오디오만 3일 보관 + 그 안에 재생성 가능'을 실제로 적용하려면
-  유예 만료 시 `deleteSensitiveVoiceDataForUser` 를 태우는 배관이 별도로 필요하다(미구현).
+- 유료 음성 보관 정책을 **2단계**로 구현했다(유예 3일).
+  1. **해지(무료 강등) 즉시** 제공자 클론을 반납한다(`releaseClonedVoicesForUser`) —
+     ElevenLabs 보이스를 삭제 큐에 넣고 `voice_profiles.elevenlabs_voice_id` 를 비운다.
+     유료 슬롯을 붙들고 있을 이유가 없다.
+  2. **유예(3일)가 지나면** 남은 원본 업로드·생성 오디오를 정리한다
+     (`sweepPaidVoiceRetention` → `deleteSensitiveVoiceDataForUser`).
+     예전에는 이 스윕이 장부 행만 지우고 실제 데이터는 남겨 상수가 사실상 무효했다.
+  - 유예 안에 재구독하면 원본이 남아 있어 `recloneEvictedVoiceProfile`(tts 경로)이 클론을
+    다시 만들어 준다 — 사용자에겐 목소리가 그대로 돌아온 것처럼 보인다.
+  - 해지 안내 카피도 이 동작에 맞춰 3개 로케일 모두 고쳤다(예전엔 "삭제되지 않고 잠긴다"고
+    약속했는데, 이제 3일 뒤 영구 삭제를 명시한다).
 - 미사용 라우트 정리 (§9-A)
 
 **CHECK 제약은 손대지 않았다.** `push_tokens.platform` 의 `'ios'`,

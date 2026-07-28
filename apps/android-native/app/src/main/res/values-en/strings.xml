@@ -70,7 +70,7 @@
     <string name="billing_cancel_description_no_date">Choose when to cancel. Canceling on the end date keeps your pass until the current period ends. Canceling now gives you a prorated refund for the remaining time.</string>
     <string name="billing_cancel_description_with_date">Canceling on the end date keeps your pass until %1$s. Canceling now ends your pass immediately with a prorated refund for the remaining time.</string>
     <string name="billing_cancel_dialog_title">Cancel your pass?</string>
-    <string name="billing_cancel_immediate_description">The remaining time is refunded on a prorated basis and your pass ends immediately. Your voices aren\'t deleted — they\'re locked while you\'re on the free plan and become usable again when you resubscribe.</string>
+    <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days — resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
     <string name="billing_cancel_now">Cancel now</string>
     <string name="billing_cancel_pass">Cancel pass</string>
@@ -447,7 +447,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">You can keep using your pass until the end of this period. There\'s no next payment.</string>
     <string name="msg_gb_subscription_cancel_failed">Couldn\'t cancel your plan.</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">Your plan has been canceled. Your voices aren\'t deleted — they\'re locked and become usable again when you resubscribe.</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">Your plan is canceled. Your voice is kept for 3 days — resubscribe within that window and it comes back as it was</string>
 
 
 

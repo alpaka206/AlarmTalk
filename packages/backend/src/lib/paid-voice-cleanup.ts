@@ -107,6 +107,39 @@ export async function deletePaidVoiceDataForUser(
   });
 }
 
+/**
+ * 해지 즉시 '클론 목소리'만 반납한다 — 제공자(ElevenLabs) 보이스를 삭제 큐에 넣고
+ * voice_profiles.elevenlabs_voice_id 를 비운다.
+ *
+ * 원본 업로드(voice_uploads)와 이미 만들어 둔 음성(generated_audio_assets)은 남긴다.
+ * 유예 안에 다시 이용권을 등록하면 tts 경로의 recloneEvictedVoiceProfile 이 그 원본으로
+ * 클론을 다시 만들어 주므로, 사용자에겐 목소리가 그대로 돌아온 것처럼 보인다.
+ * 유예가 지나면 sweepPaidVoiceRetention 이 남은 원본·생성 음성까지 정리한다.
+ */
+export async function releaseClonedVoicesForUser(
+  db: DbExecutor,
+  userPk: string,
+  userLoginId?: string | null,
+): Promise<void> {
+  const ids = uniqueIds([userPk, userLoginId]);
+  if (ids.length === 0) return;
+  const ph = placeholders(ids);
+  const voices = await db.execute({
+    sql: `SELECT elevenlabs_voice_id FROM voice_profiles
+          WHERE user_id IN (${ph}) AND elevenlabs_voice_id IS NOT NULL`,
+    args: ids,
+  });
+  for (const row of voices.rows) {
+    await enqueueExternalDeletion(db, 'elevenlabs_voice', row.elevenlabs_voice_id as string);
+  }
+  // 비워 두면 다음 사용 시점에 재클론 경로가 자동으로 탄다(tts.ts 의 NO_VOICE_ID 폴백).
+  await db.execute({
+    sql: `UPDATE voice_profiles SET elevenlabs_voice_id = NULL, updated_at = datetime('now')
+          WHERE user_id IN (${ph}) AND elevenlabs_voice_id IS NOT NULL`,
+    args: ids,
+  });
+}
+
 export async function deleteSensitiveVoiceDataForUser(
   db: DbExecutor,
   userPk: string,

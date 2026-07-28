@@ -516,6 +516,9 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
     mockDB.pushResult([]); // 소유자 남은 활성 구독 없음 → free 강등
     mockDB.pushResult([], 1); // UPDATE users free (소유자)
     mockDB.pushResult([]); // resolveUserLoginId (소유자)
+    // 무료 강등 시 제공자 클론을 반납한다(원본은 남겨 유예 안에 재클론 가능).
+    mockDB.pushResult([]); // 클론 반납: elevenlabs_voice_id 조회 — 없음
+    mockDB.pushResult([], 1); // 클론 반납: UPDATE voice_profiles SET elevenlabs_voice_id = NULL
     mockDB.pushResult([], 1); // UPDATE voice_profiles (소유자)
     mockDB.pushResult([], 1); // UPDATE alarms (소유자)
     mockDB.pushResult([{ owner_user_id: 'owner-pk' }]); // plan_groups — 소유자 본인

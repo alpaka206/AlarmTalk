@@ -1446,7 +1446,7 @@ export const migrations: Migration[] = [
   },
   {
     // 구독 해지와 음성 삭제를 분리한다: 해지/만료 시 유료 음성을 즉시 하드삭제하지 않고
-    // 30일 보관 유예를 기록, cron 이 delete_after 경과분만 정리한다. 재구독 시 행을 지워
+    // 보관 유예를 기록, cron 이 delete_after 경과분을 정리한다. 재구독 시 행을 지워
     // 보존하고, '지금 삭제'는 이 유예와 무관하게 즉시 삭제한다.
     id: 67,
     name: 'paid-voice-retention',

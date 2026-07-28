@@ -976,15 +976,11 @@ class AlarmRepository(
      * 앱 시작 시 백그라운드에서 1회 호출되는 것을 전제로 한다.
      */
     /**
-     * 갱신을 시도했는데 아직 못 받은 날씨 알람이 남아 있는가 — 1시간 뒤 재시도 예약 판정.
-     *
-     * '인덱스가 null 인가'만 보면, 이미 값이 있는 알람의 갱신이 실패했을 때(오프라인 등)
-     * 재시도가 안 걸려 다음 22시까지 어제 조건이 남는다. 반대로 선택 술어를 그대로 쓰면
-     * 방금 성공한 임박 알람까지 '할 일 남음'으로 읽혀 시간당 폴링이 부활한다.
-     * 그래서 '없거나 낡았는가'만 본다 — 방금 갱신에 성공했으면 낡지 않았다.
+     * 아직 조건을 못 받은 날씨 알람이 남아 있는가 — 1시간 뒤 재시도를 걸지 정한다.
+     * 받아 낸 알람은 곧바로 대상에서 빠지므로, 성공한 뒤에는 재시도가 이어지지 않는다.
      */
     suspend fun hasFailedWeatherRefresh(nowMillis: Long = System.currentTimeMillis()): Boolean =
-        alarmDao.getEnabledWeatherBucketAlarms().any { weatherVariantMissingOrStale(it, nowMillis) }
+        alarmDao.getEnabledWeatherBucketAlarms().any { weatherVariantNeedsRefresh(it, nowMillis) }
 
     suspend fun sweepStaleAudioCache(): Int {
         val inUseFileNames = buildSet {
@@ -1194,34 +1190,33 @@ internal fun shouldResetWeatherVariant(
  *    알람이 어제 조건으로 울림'이 된다. 임박한 알람은 한 번 더 받는 편이 항상 옳다.
  *  - 그 밖: 미해결이거나 마지막 갱신이 12h 이전이면 대상(먼 알람의 과다 호출 방지).
  */
+/**
+ * 이 날씨 알람의 조건을 지금 받아야 하는가 — **한 발사분에 한 번만** 받는다.
+ *
+ *  - 준비창(48h) 밖이면 대상이 아니다. open-meteo 는 며칠 뒤 예보의 정확도가 떨어져,
+ *    지금 굳히면 엉뚱한 조건이 박힌다.
+ *  - 아직 못 받았으면 받는다.
+ *  - 이미 받았고 발사까지 24시간 넘게 남았으면 그대로 둔다.
+ *  - 임박(24h)했는데 그 값이 '이 발사분의 것'이 아니면 다시 받는다. 판정 기준은
+ *    "발사 24시간 이내에 받았는가" — 반복 알람이 한 번 울리고 다음 날로 넘어가면 옛 값은
+ *    자연히 이 조건에서 벗어나므로, 별도 상태 없이 발사분마다 정확히 한 번 갱신된다.
+ *
+ * 재시도 예약도 이 술어를 그대로 쓴다. 받아 낸 순간 조건을 벗어나므로, 성공한 알람에
+ * 시간당 재시도가 이어지지 않는다.
+ */
 internal fun weatherVariantNeedsRefresh(alarm: AlarmEntity, nowMillis: Long): Boolean {
     if (alarm.fireAtMillis > nowMillis + WEATHER_PREPARE_WINDOW_MILLIS) return false
-    if (alarm.fireAtMillis <= nowMillis + WEATHER_FORCE_REFRESH_WINDOW_MILLIS) return true
-    return weatherVariantMissingOrStale(alarm, nowMillis)
-}
-
-/**
- * 이 알람의 조건이 '아직 없거나 오래됐는가' — 재시도 예약 판정에 쓴다.
- *
- * [weatherVariantNeedsRefresh] 와 달리 임박(24h) 강제 갱신을 보지 않는다. 그걸 그대로
- * 재시도 판정에 쓰면, 방금 성공적으로 갱신한 알람도 '아직 할 일이 있다'로 읽혀 알람이
- * 울릴 때까지 1시간마다 재시도가 이어진다 — 없애려던 시간당 폴링이 그대로 돌아온다.
- * 재시도는 '실패해서 아직 못 받은 것'만 대상으로 한다.
- */
-internal fun weatherVariantMissingOrStale(alarm: AlarmEntity, nowMillis: Long): Boolean {
-    if (alarm.fireAtMillis > nowMillis + WEATHER_PREPARE_WINDOW_MILLIS) return false
-    return alarm.contextVariantIndex == null ||
-        (alarm.contextResolvedAtMillis ?: 0L) < nowMillis - WEATHER_FRESHNESS_MILLIS
+    if (alarm.contextVariantIndex == null) return true
+    if (alarm.fireAtMillis > nowMillis + WEATHER_RESOLVE_VALID_WINDOW_MILLIS) return false
+    return (alarm.contextResolvedAtMillis ?: 0L) <
+        alarm.fireAtMillis - WEATHER_RESOLVE_VALID_WINDOW_MILLIS
 }
 
 /** 준비창: 며칠 뒤 예보로 조건을 굳히면 엉뚱해지므로 곧 울릴 알람만 대상으로 삼는다. */
 private const val WEATHER_PREPARE_WINDOW_MILLIS = 48 * 60 * 60 * 1000L
 
-/** 임박 강제 갱신 창: 하루 한 번(22시) 갱신이라, 곧 울릴 알람은 신선도와 무관하게 다시 받는다. */
-private const val WEATHER_FORCE_REFRESH_WINDOW_MILLIS = 24 * 60 * 60 * 1000L
-
-/** 신선도 기준: 이보다 오래된 조건은 낡은 것으로 본다(먼 알람의 과다 호출 방지). */
-private const val WEATHER_FRESHNESS_MILLIS = 12 * 60 * 60 * 1000L
+/** 이 발사분의 조건으로 인정하는 범위 — 발사 24시간 이내에 받은 값. */
+private const val WEATHER_RESOLVE_VALID_WINDOW_MILLIS = 24 * 60 * 60 * 1000L
 
 internal data class WeatherVariantState(
     val index: Int?,
