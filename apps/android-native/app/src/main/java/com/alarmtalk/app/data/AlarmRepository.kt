@@ -22,6 +22,7 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
@@ -45,7 +46,16 @@ class AlarmRepository(
         currentUserIdProvider = currentUserIdProvider,
     )
 
-    fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
+    /**
+     * 이 계정에 보여줄 알람만 흘린다. 같은 기기에 다른 계정이 로그인하면 앞 계정 알람이
+     * 목록에 그대로 남던 문제를 막는다(RemoteAlarmPullSyncService 가 '받은 알람'에 쓰는
+     * 소유자 스코프와 같은 규칙). 소유자 미기록(레거시 null)은 현재 계정 것으로 본다 —
+     * 로그아웃 시 detachAlarmsOnSignOut 이 떠나는 계정을 새기므로 새로 생기지 않는다.
+     */
+    fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms().map { alarms ->
+        val currentUser = currentUserIdProvider()
+        alarms.filter { it.ownerUserId == null || it.ownerUserId == currentUser }
+    }
 
     suspend fun getAlarm(alarmId: String): AlarmEntity? = alarmDao.getById(alarmId)
 
@@ -386,6 +396,33 @@ class AlarmRepository(
     }
 
     /**
+     * 로그아웃 시 이 기기의 알람을 '떠나는 계정의 것'으로 못 박고 예약을 전부 내린다.
+     *
+     * 지우지는 않는다 — 알람의 원본은 기기(Room)이고 서버는 백업/가족알람 전달용이라,
+     * 내 알람을 서버에서 다시 받아오는 경로가 없다. 지우면 같은 계정으로 다시 로그인해도
+     * 되살아나지 않는다.
+     *
+     * 대신 (1) 소유자 미기록(레거시 null) 행에 떠나는 계정을 새겨 다음 로그인 계정이
+     * 자기 것으로 오인하지 않게 하고, (2) OS 예약을 전부 취소해 남의 알람이 울리지
+     * 않게 한다. 본인이 다시 로그인하면 [reschedulePendingAlarms] 가 되살린다.
+     * 목록 노출은 [observeAlarms] 의 소유자 필터가 막는다.
+     *
+     * 반환값은 예약을 내린 알람 수.
+     */
+    suspend fun detachAlarmsOnSignOut(signedOutUserId: String?): Int {
+        val all = alarmDao.getAllAlarms()
+        if (all.isEmpty()) return 0
+        all.forEach { alarm ->
+            alarmScheduler.cancel(alarm.id)
+            if (signedOutUserId != null && alarm.ownerUserId == null) {
+                alarmDao.upsert(alarm.copy(ownerUserId = signedOutUserId))
+            }
+        }
+        Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
+        return all.size
+    }
+
+    /**
      * 접근권을 잃은 음성 프로필(공유 해제·제공자 취소·본인 삭제)을 참조하는 '내 소유(LOCAL_OWNED)'
      * 음성 알람을 sound-only 로 강등한다. [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
      * 가족 공유 프로필 id 집합이어야 한다 — 부분/실패 로드로 호출하면 정상 알람을 오강등할 수 있으므로
@@ -723,7 +760,12 @@ class AlarmRepository(
         )
         var scheduled = 0
 
+        val currentUser = currentUserIdProvider()
         enabledAlarms.forEach { alarm ->
+            // 다른 계정이 소유한 알람은 재예약하지 않는다(로그아웃한 앞 계정의 알람이 부팅·
+            // 재로그인 때 되살아나 남의 폰에서 울리는 것 방지). 미기록(null)은 lockPaidAlarmTalks
+            // 와 같은 규칙으로 현재 계정 것으로 본다.
+            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) return@forEach
             runCatching {
                 // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
                 // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는

@@ -294,6 +294,12 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
                 Log.w(TAG, "Failed to sign out Google account", error)
             }
         }
+        // 알람은 기기(Room)가 원본인데 계정 소유물이라, 그냥 두면 다음 로그인 계정의 목록에
+        // 앞 계정 알람이 남고 켜져 있던 것은 그대로 울린다. 지우지는 않는다 — 내 알람을
+        // 서버에서 되받는 경로가 없어 지우면 본인이 다시 로그인해도 사라진 채다.
+        runCatching { repository.detachAlarmsOnSignOut(session?.user?.id) }
+            .onFailure { error -> Log.w(TAG, "Failed to detach device alarms on logout", error) }
+        clearCurrentDefaultVoicePreferences()
         authSessionStore.clear()
         clearUserScopedRemoteState() // 동의/탈퇴 게이트 상태(needsConsent·consentChecked·pendingDeletion)도 여기서 초기화된다
         authSession = null
