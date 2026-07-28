@@ -28,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS
+import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS_SILENT
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_SNOOZE
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_START_RINGING
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
@@ -109,6 +110,17 @@ class RingingService : Service() {
 
             ACTION_DISMISS -> {
                 if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId)
+                START_NOT_STICKY
+            }
+
+            // 알림 스와이프 제거. 끝맺음 목소리 없이 즉시 정지한다 — 플래그를 미리 세우면
+            // dismiss() 의 끝맺음 분기(voiceUri != null && !voiceAfterAlarmStarted)를 건너뛰고
+            // stopRingingOutputs() 로 직행한다.
+            ACTION_DISMISS_SILENT -> {
+                if (!alarmId.isNullOrBlank()) {
+                    voiceAfterAlarmStarted = true
+                    dismiss(alarmId, startId)
+                }
                 START_NOT_STICKY
             }
 
