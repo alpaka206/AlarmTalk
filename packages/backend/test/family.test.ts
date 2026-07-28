@@ -333,7 +333,9 @@ describe('POST /family/alarms (text mode)', () => {
     expect(msgInsert?.args[4]).toBe(body.message.synthesis_text);
     expect(msgInsert?.args[5]).toBe(JSON.stringify(body.message.tags));
     expect(alarmInsert?.args[1]).toBe('google-sender');
-    expect(alarmInsert?.args[2]).toBe('google-recipient');
+    // target_user_id 는 users.id(PK) 로 저장한다 — google_id 로 저장하면 JWT sub 이
+    // users.id 로 통일된 뒤 수신자가 자기 알람을 조회하지 못한다.
+    expect(alarmInsert?.args[2]).toBe('user-recipient');
   });
 
   it('정상 — voice_profile_id 명시하면 소유권 검증 후 사용', async () => {
@@ -524,7 +526,9 @@ describe('POST /family/alarms/voice', () => {
     const alarmInsert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO alarms'));
     expect(msgInsert?.args[4]).toBe('uploads/alice/hi.m4a'); // audio_url
     expect(alarmInsert?.args[1]).toBe('google-sender');
-    expect(alarmInsert?.args[2]).toBe('google-recipient');
+    // target_user_id 는 users.id(PK) 로 저장한다 — google_id 로 저장하면 JWT sub 이
+    // users.id 로 통일된 뒤 수신자가 자기 알람을 조회하지 못한다.
+    expect(alarmInsert?.args[2]).toBe('user-recipient');
   });
 
   it('정상 — 커스텀 label 허용', async () => {

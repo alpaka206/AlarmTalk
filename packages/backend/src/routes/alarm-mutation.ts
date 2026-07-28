@@ -290,7 +290,10 @@ alarmMutation.post('/', async (c) => {
 
       const target = targetRes.rows[0]!;
       const targetPk = String(target.id);
-      const targetLoginId = (target.google_id as string | null) ?? targetPk;
+      // 읽기(기존 행 매칭)용 보조 식별자. 이 통일 이전에 만들어진 알람은
+      // target_user_id 에 google_id 가 들어 있을 수 있어 조회 때 둘 다 본다.
+      // **쓰기에는 쓰지 않는다** — 저장은 항상 users.id(targetPk).
+      const targetLegacyId = (target.google_id as string | null) ?? targetPk;
 
       // 상대 알람 권한(같은 커플/가족 그룹)을 '먼저' 확인한다. 아래 타이밍 가드는 수신자의
       // 설정(allow_family_alarms·quiet 창)에 따라 서로 다른 error_code 를 돌려주므로, 권한
@@ -298,7 +301,7 @@ alarmMutation.post('/', async (c) => {
       // 응답 코드로 구분하는 오라클이 된다. 권한 없으면 타이밍 판정 전에 NOT_CONNECTED 로 끊는다.
       const senderPk = await resolveUserPk(db, userId);
       const allowed =
-        targetLoginId !== userId && !!senderPk && (await assertSameGroup(db, senderPk, targetPk));
+        !!senderPk && targetPk !== senderPk && (await assertSameGroup(db, senderPk, targetPk));
 
       if (!allowed) {
         return c.json(
@@ -316,7 +319,7 @@ alarmMutation.post('/', async (c) => {
       // Asia/Seoul)로 판정한다. PATCH 수정 경로와 동일 헬퍼를 공유한다(중복 구현 방지).
       const guard = await evaluateFamilyAlarmTimingGuard(
         db,
-        [targetPk, targetLoginId],
+        [targetPk, targetLegacyId],
         targetSettings,
         body.time,
         body.repeat_days ?? [],
@@ -326,8 +329,11 @@ alarmMutation.post('/', async (c) => {
       }
       const effectiveTimezone = guard.effectiveTimezone;
 
-      targetUserIdForAlarm = targetLoginId;
-      targetIdsForReplace = [targetPk, targetLoginId];
+      // 저장은 users.id 로 고정한다. 과거에는 google_id 를 넣었는데, JWT sub 이 users.id 로
+      // 통일된 뒤로는 수신자 세션의 식별자가 users.id 라 google_id 로 저장하면 수신자가
+      // 자기 알람을 조회하지 못한다(= 가족 알람이 배달되지 않는다).
+      targetUserIdForAlarm = targetPk;
+      targetIdsForReplace = [targetPk, targetLegacyId];
       targetEffectiveTimezone = effectiveTimezone;
     }
   }
@@ -530,7 +536,7 @@ alarmMutation.post('/', async (c) => {
 
   // 가족 알람(target_user_id 지정)이면 수신자에게 즉시 push — /family/alarms 뿐 아니라 이 일반 생성
   // 경로(stock/TTS/녹음 가족 알람, 클라 createAlarm)도 즉시 배달한다. getTokensForUser 가
-  // google_id/id 를 정규화하므로 targetLoginId 그대로 전달. 논블로킹(waitUntil), executionCtx
+  // fcm 이 id/google_id 를 모두 매칭하므로 users.id 그대로 전달. 논블로킹(waitUntil), executionCtx
   // 없는 컨텍스트(테스트)에선 c.executionCtx 접근이 던지므로 try 로 감싸 생략(그 경우 쿼리도 안 돌아 mock
   // FIFO 도 안 밀림), 15분 주기 pull 폴백.
   if (targetUserIdForAlarm) {
@@ -739,7 +745,8 @@ alarmMutation.patch('/:id', async (c) => {
     }
     const recipient = recipientRes.rows[0]!;
     const recipientPk = String(recipient.id);
-    const recipientLoginId = (recipient.google_id as string | null) ?? recipientPk;
+    // 읽기(기존 행 매칭)용 — 저장은 하지 않는다.
+    const recipientLegacyId = (recipient.google_id as string | null) ?? recipientPk;
     const recipientSettings = familyAlarmSettingsFromRow(recipient as Record<string, unknown>);
     // effective 값: PATCH 로 안 바꾼 필드는 기존 행 값을 쓴다(수정 결과 기준 판정).
     const effectiveTime = body.time !== undefined ? body.time : String(current.time ?? '');
@@ -749,7 +756,7 @@ alarmMutation.patch('/:id', async (c) => {
         : parseStoredRepeatDays(current.repeat_days);
     const guard = await evaluateFamilyAlarmTimingGuard(
       db,
-      [recipientPk, recipientLoginId],
+      [recipientPk, recipientLegacyId],
       recipientSettings,
       effectiveTime,
       effectiveRepeatDays,
@@ -760,7 +767,7 @@ alarmMutation.patch('/:id', async (c) => {
     familyGuardTimezone = guard.effectiveTimezone;
     // time 변경 또는 재활성화면 (수신자, 새 time) 슬롯을 원자 재점유해 이 알람만 활성으로 남긴다.
     if (body.time !== undefined || reactivating) {
-      familyReclaim = { ids: [recipientPk, recipientLoginId], time: effectiveTime };
+      familyReclaim = { ids: [recipientPk, recipientLegacyId], time: effectiveTime };
     }
   }
 

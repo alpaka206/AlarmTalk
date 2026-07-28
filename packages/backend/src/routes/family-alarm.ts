@@ -181,12 +181,14 @@ familyAlarm.post('/alarms', async (c) => {
       403,
     );
   }
-  const recipientLoginId = (recipient.google_id as string | null) ?? String(recipient.id);
+  // 읽기(기존 행 매칭)용 보조 식별자. 저장은 항상 users.id(recipientPk) 로 한다 —
+  // JWT sub 이 users.id 로 통일돼, google_id 로 저장하면 수신자가 자기 알람을 못 본다.
+  const recipientLegacyId = (recipient.google_id as string | null) ?? String(recipient.id);
   const repeatDays = normalizeRepeatDays(body.repeat_days);
   // 수신자 시간대 기준 서버 검증: 효과 시간대(수신자 최근 알람 tz → Asia/Seoul)로 다음
   // 발사 시각을 구해 30분 리드타임과 quiet 요일을 판정한다. 발신자 body.timezone 은
   // 판정·저장 어디에도 쓰지 않는다(우회 차단 — resolveEffectiveTimezone 주석 참고).
-  const effectiveTimezone = await resolveEffectiveTimezone(db, [recipientPk, recipientLoginId]);
+  const effectiveTimezone = await resolveEffectiveTimezone(db, [recipientPk, recipientLegacyId]);
   const nextFire = computeNextAlarmFire(wakeAt, repeatDays, effectiveTimezone);
   if (
     nextFire &&
@@ -281,7 +283,7 @@ familyAlarm.post('/alarms', async (c) => {
     const claimed = await claimTargetedAlarmSlot(
       tx,
       userId,
-      [recipientPk, recipientLoginId],
+      [recipientPk, recipientLegacyId],
       wakeAt,
       newAlarmId,
     );
@@ -302,7 +304,7 @@ familyAlarm.post('/alarms', async (c) => {
         args: [
           claimed.alarmId,
           userId,
-          recipientLoginId,
+          recipientPk,
           messageId,
           wakeAt,
           JSON.stringify(repeatDays),
@@ -422,11 +424,13 @@ familyAlarm.post('/alarms/voice', async (c) => {
       403,
     );
   }
-  const recipientLoginId = (recipient.google_id as string | null) ?? String(recipient.id);
+  // 읽기(기존 행 매칭)용 보조 식별자. 저장은 항상 users.id(recipientPk) 로 한다 —
+  // JWT sub 이 users.id 로 통일돼, google_id 로 저장하면 수신자가 자기 알람을 못 본다.
+  const recipientLegacyId = (recipient.google_id as string | null) ?? String(recipient.id);
   const repeatDays = normalizeRepeatDays(body.repeat_days);
   // 수신자 시간대 기준 서버 검증 — TTS 경로와 동일(30분 리드타임 + quiet 요일).
   // 발신자 body.timezone 은 판정·저장 어디에도 쓰지 않는다(우회 차단).
-  const effectiveTimezone = await resolveEffectiveTimezone(db, [recipientPk, recipientLoginId]);
+  const effectiveTimezone = await resolveEffectiveTimezone(db, [recipientPk, recipientLegacyId]);
   const nextFire = computeNextAlarmFire(wakeAt, repeatDays, effectiveTimezone);
   if (
     nextFire &&
@@ -499,7 +503,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
     const claimed = await claimTargetedAlarmSlot(
       tx,
       userId,
-      [recipientPk, recipientLoginId],
+      [recipientPk, recipientLegacyId],
       wakeAt,
       newAlarmId,
     );
@@ -520,7 +524,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
         args: [
           claimed.alarmId,
           userId,
-          recipientLoginId,
+          recipientPk,
           messageId,
           wakeAt,
           JSON.stringify(repeatDays),

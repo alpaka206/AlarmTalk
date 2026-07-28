@@ -430,3 +430,62 @@ describe('타인 발신 알람 — PATCH 가 POST 가드를 effective(수정 결
     expect(String((await alarmRow(id))!.time)).toBe('09:20');
   });
 });
+
+// 회귀 가드 — 가족 알람 배달 (2026-07 감사).
+//
+// alarms.target_user_id 에는 반드시 **users.id** 가 들어가야 한다. 과거에는
+// `google_id ?? id` 를 저장했는데, JWT sub 이 users.id 로 통일된 뒤로는 수신자 세션의
+// 식별자가 users.id 라서 google_id 로 저장하면
+//   1) GET /alarm 에서 수신자가 자기 알람을 못 보고,
+//   2) GET /tts/messages/:id/audio 의 소유권 판정(target_user_id IN (...))도 실패해
+//      받은 목소리를 재생조차 못 한다.
+// 기존 계정은 users.id == google_id 라 우연히 맞아떨어져 드러나지 않았고, 신규 구글
+// 가입자(users.id = UUID, google_id = 구글 sub)부터 조용히 깨졌다.
+describe('가족 알람 — target_user_id 는 users.id 로 저장한다', () => {
+  // 신규 구글 가입자를 재현한다: users.id(UUID) != google_id(구글 sub).
+  const SPLIT_RECIPIENT = { pk: 'guard-split-pk', google: 'guard-split-google-sub' };
+
+  beforeAll(async () => {
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, allow_family_alarms, family_alarm_quiet_windows)
+            VALUES (?, ?, ?, 1, '[]')`,
+      args: [SPLIT_RECIPIENT.pk, SPLIT_RECIPIENT.google, 'guard-split@guard.test'],
+    });
+    await db.execute({
+      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
+            VALUES ('guard-m5', 'guard-group', ?, 'member')`,
+      args: [SPLIT_RECIPIENT.pk],
+    });
+  });
+
+  it('users.id != google_id 인 수신자에게도 users.id 로 저장된다', async () => {
+    const res = await postAlarm(SENDER_A, {
+      time: '05:30',
+      target_user_id: SPLIT_RECIPIENT.pk, // 앱은 /family/groups/current 가 준 users.id 를 보낸다
+      timezone: 'Asia/Seoul',
+    });
+    expect(res.status).toBe(201);
+    const id = ((await res.json()) as { alarm: { id: string } }).alarm.id;
+
+    const row = await alarmRow(id);
+    expect(String(row!.target_user_id)).toBe(SPLIT_RECIPIENT.pk);
+    expect(String(row!.target_user_id)).not.toBe(SPLIT_RECIPIENT.google);
+  });
+
+  it('수신자 세션(userId=userIdPK=users.id)이 자기 알람을 조회할 수 있다', async () => {
+    const res = await postAlarm(SENDER_A, {
+      time: '05:40',
+      target_user_id: SPLIT_RECIPIENT.pk,
+      timezone: 'Asia/Seoul',
+    });
+    expect(res.status).toBe(201);
+
+    // 수신자 조회 경로가 쓰는 것과 동일한 술어(viewerIds = [users.id]).
+    const visible = await db.execute({
+      sql: `SELECT COUNT(*) AS cnt FROM alarms
+            WHERE target_user_id = ? AND time = '05:40' AND is_active = 1`,
+      args: [SPLIT_RECIPIENT.pk],
+    });
+    expect(Number(visible.rows[0]!.cnt)).toBe(1);
+  });
+});
