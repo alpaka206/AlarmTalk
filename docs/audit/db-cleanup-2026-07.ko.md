@@ -163,17 +163,22 @@ JWT `sub`을 **googleId**로 발급한다(`auth.ts:667`).
 **현재 실 데이터에 어긋난 계정은 0건**(dev/prod 모두). 잠재 버그이며, 코드가 이미
 이를 인지하고 `viewerIds()`·`ownerIds()`·방어적 `OR` 조인 10곳으로 우회하고 있다.
 
-### 권장 수정 (출시 전이라 하드 브레이킹 가능)
+### 적용한 수정 (커밋 `b05c6c19`)
 
-`auth.ts:667`의 `sub: googleId` → `sub: userId`(=`users.id`)로 통일하고,
-이메일 가입의 `google_id = id`(`auth.ts:460`)를 `NULL`로 바꾼다. 그러면:
+- JWT `sub` 을 모든 로그인 경로에서 `users.id` 로 통일
+- 신규 구글 가입도 서버 생성 UUID 를 PK 로 사용 (`users.id` 가 외부 provider 식별자에
+  종속되지 않게)
+- 이메일 가입은 `google_id` 를 NULL 로 (구글 계정 식별자 전용 공간 오염 제거)
+- 단일 `WHERE google_id = ?` 조회 8곳 → `WHERE id = ?`
+- 미들웨어의 사용자 자동 생성 → 401. 이 경로는 계정이 파기됐다는 뜻인데, 자동 생성이
+  남은 토큰으로 탈퇴 계정을 되살리고 `google_id = id` 인 행을 다시 만들어 규약을 깨뜨렸다
 
-- 미들웨어 삼중 OR 조회 → `WHERE id = ?` 단일
-- `userId`/`userIdPK` 이원화 제거 → 컨텍스트 키 1개
-- 방어적 `OR` 조인 10곳, `viewerIds`/`ownerIds` 이중 IN 절 제거
-- 기존 토큰은 `token_epoch` bump로 일괄 무효화(재로그인 유도)
+**강제 재로그인은 필요 없다.** 기존 구글 계정은 `users.id == google_id` 라 sub 값이
+바뀌지 않고, 기존 이메일 계정은 원래 `sub = users.id` 였다. 처음엔 `token_epoch` bump 가
+필요할 것으로 봤으나, 실 데이터 분포를 확인한 결과 불필요했다.
 
-**순감소 추정 100줄 이상 + 버그 클래스 하나 소멸.**
+미들웨어의 `OR google_id = ?` 는 갈라진 상태에서 발급된 토큰을 위한 한시적 폴백으로
+남겼다(토큰 만료 주기가 한 번 지나면 제거 — §9).
 
 ---
 
