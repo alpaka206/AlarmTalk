@@ -33,6 +33,8 @@ function buildApp() {
   app.get('/protected', (c) =>
     c.json({
       userId: c.get('userId'),
+      userIdPK: c.get('userIdPK'),
+      userLoginId: c.get('userLoginId'),
       userEmail: c.get('userEmail'),
       userName: c.get('userName'),
     }),
@@ -144,7 +146,13 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.userId).toBe('user-1');
+    // userId 는 토큰의 sub 이 아니라 DB 에서 해석한 users.id 다. 이 브랜치 배포 전에
+    // 발급돼 sub 이 google_id 인 구 토큰도 여기서 PK 로 맞춰야, users.id 로만 조회하는
+    // 하류 경로(구독·가족 그룹·코드 등록)에서 자기 데이터를 찾을 수 있다.
+    expect(body.userId).toBe('pk-1');
+    expect(body.userIdPK).toBe('pk-1');
+    // 토큰이 담고 있던 로그인 식별자는 레거시 행 보조 매칭용으로 따로 남는다.
+    expect(body.userLoginId).toBe('user-1');
     expect(body.userEmail).toBe('test@test.com');
     expect(body.userName).toBe('Test');
     expect(mockVerifyAppJwt).toHaveBeenCalledWith(token, ENV.JWT_SECRET);

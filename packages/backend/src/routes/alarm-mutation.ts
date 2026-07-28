@@ -843,7 +843,8 @@ async function resolveDeclineTarget(
 ): Promise<{ id: string; target: string } | { error: Response }> {
   const userId = c.get('userId');
   const userPk = c.get('userIdPK') || userId;
-  const viewer = Array.from(new Set([userPk, userId]));
+  // 레거시 행(user_id 에 로그인 식별자가 저장된 과거 알람)까지 매칭한다.
+  const viewer = Array.from(new Set([userPk, c.get('userLoginId')].filter(Boolean)));
   const db = getDB(c.env);
   const id = c.req.param('id');
   if (!id || !UUID_RE.test(id)) {

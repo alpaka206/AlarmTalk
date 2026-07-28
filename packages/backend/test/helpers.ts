@@ -138,6 +138,11 @@ export function createMockDB() {
   return { client, calls, pushResult, reset, clearResults, transactions, setConsentMissing };
 }
 
+// NOTE(후속): 실제 authMiddleware 는 userId·userIdPK·userLoginId 세 개를 심는데 여기선
+// userId 만 심는다. 그래서 라우트가 `c.get('userIdPK') || c.get('userId')` 폴백을 타며 늘
+// 한 값으로 붕괴하고, 이중 식별자 매칭이 깨져도 테스트가 초록으로 통과한다. 채워 넣으면
+// 라우트 분기가 바뀌어 목 결과 큐 순서에 의존하는 테스트 64개가 함께 깨지므로, 픽스처를
+// 정리하는 별도 작업으로 뺀다.
 export function fakeAuthMiddleware(userId = 'user-1', email = 'user@test.com') {
   return async (c: Context<AppEnv>, next: Next) => {
     c.set('userId', userId);

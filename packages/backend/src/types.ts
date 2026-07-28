@@ -57,10 +57,19 @@ export interface SentryClient {
 }
 
 export type AuthVariables = {
-  /** JWT sub (= users.google_id). Legacy convention used by most route SQL. */
+  /**
+   * users.id (PK). 미들웨어가 JWT sub 을 DB 에서 해석해 항상 이 값으로 정규화한다.
+   * 배포 전에 발급돼 sub 이 google_id 인 구(舊) 토큰도 여기서는 users.id 가 된다.
+   */
   userId: string;
-  /** users.id PK. UUID for accounts created before sub-as-id, sub for new ones. Use for FK refs. */
+  /** users.id PK. userId 와 같은 값 — FK 참조를 명시하고 싶은 곳에서 쓴다. */
   userIdPK: string;
+  /**
+   * 토큰이 실제로 담고 있던 로그인 식별자(raw JWT sub). 구 토큰이면 google_id 다.
+   * 과거에 user_id 컬럼에 로그인 식별자가 저장된 행(알람·목소리 등)을 함께 매칭해야 하는
+   * 곳에서만 쓴다. 소유권 판정의 기준은 userId(=users.id) 이고, 이 값은 보조 매칭용이다.
+   */
+  userLoginId: string;
   userEmail: string;
   userName: string;
   sentry: SentryClient;

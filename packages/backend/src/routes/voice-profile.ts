@@ -230,10 +230,13 @@ async function canUseSharedVoiceProfile(
  * (= userId)을 저장하고, 다른 라우트는 users.id (= userIdPK)를 저장하기 때문에
  * 둘 다 매칭해야 owner check 가 일관되게 동작한다.
  */
-function ownerIds(c: { get: (k: 'userId' | 'userIdPK') => string | undefined }): string[] {
-  const sub = c.get('userId') as string;
-  const pk = c.get('userIdPK') as string | undefined;
-  return Array.from(new Set([sub, pk].filter((v): v is string => Boolean(v))));
+function ownerIds(c: {
+  get: (k: 'userId' | 'userIdPK' | 'userLoginId') => string | undefined;
+}): string[] {
+  // 기준은 users.id, 보조로 토큰의 로그인 식별자(구 토큰이면 google_id)를 함께 매칭한다.
+  const pk = (c.get('userIdPK') ?? c.get('userId')) as string | undefined;
+  const loginId = c.get('userLoginId') as string | undefined;
+  return Array.from(new Set([pk, loginId].filter((v): v is string => Boolean(v))));
 }
 
 /**

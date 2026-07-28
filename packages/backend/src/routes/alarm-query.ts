@@ -5,8 +5,13 @@ import { normalizeAlarmRow, type AlarmRow } from './alarm-helpers';
 
 const alarmQuery = new Hono<AppEnv>();
 
-function viewerIds(c: { get: (key: 'userId' | 'userIdPK') => string }): string[] {
-  return Array.from(new Set([c.get('userIdPK') || c.get('userId'), c.get('userId')]));
+// 소유권 기준은 users.id(userId) 다. userLoginId 를 함께 넣는 이유는 식별자 통일 전에
+// user_id 컬럼에 로그인 식별자(google_id)가 저장된 과거 행까지 읽어 주기 위해서다
+// (userId 는 미들웨어가 PK 로 정규화하므로 이 값을 따로 넣지 않으면 레거시 행이 누락된다).
+function viewerIds(c: { get: (key: 'userId' | 'userIdPK' | 'userLoginId') => string }): string[] {
+  return Array.from(
+    new Set([c.get('userIdPK') || c.get('userId'), c.get('userLoginId')].filter(Boolean)),
+  );
 }
 
 function inPlaceholders(values: unknown[]): string {

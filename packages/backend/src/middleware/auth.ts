@@ -61,6 +61,9 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       epoch: app.epoch ?? 0,
     };
 
+    // 토큰이 담고 있던 로그인 식별자. 아래에서 users.id 로 해석한 뒤 userId 는 PK 로
+    // 덮어쓰므로, 레거시 행 보조 매칭이 필요한 곳은 이 값을 쓴다.
+    c.set('userLoginId', verified.sub);
     c.set('userId', verified.sub);
     c.set('userEmail', verified.email || '');
     c.set('userName', verified.name || '');
@@ -94,6 +97,11 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         return c.json({ error: 'User not found', error_code: 'AUTH_USER_NOT_FOUND' }, 401);
       }
       c.set('userIdPK', pk);
+      // sub 이 google_id 인 구 토큰(이 브랜치 배포 전 발급분)이면 여기서 users.id 로
+      // 맞춘다. 정규화하지 않으면 users.id 로만 조회하는 하류 경로에서 자기 데이터를
+      // 못 찾는다 — 유료 구독이 null 로 보여 무료로 취급되고(그 결과 음성 알람이
+      // sound-only 로 강등된다), 가족 그룹이 없다고 나오며, /code/register 가 404 다.
+      c.set('userId', pk);
 
       // 토큰 폐기 검사(B5): JWT epoch 가 현재 users.token_epoch 보다 낮으면, 로그아웃
       // (전 기기) 또는 비밀번호 재설정으로 무효화된 구(舊) 토큰이다. 만료 전이라도 거부.
