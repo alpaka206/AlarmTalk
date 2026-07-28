@@ -19,7 +19,7 @@ System architecture, database schema, and HTTP API for AlarmTalk.
 │              → cors → auth (for /api/*) → cache                │
 │                                                                 │
 │ Routes: /auth /user /voice /tts /alarm /family /code /billing  │
-│         /library /push /holiday /admin                          │
+│         /push /holiday /admin                                   │
 │ Cron:   */5 * * * *  (subscription expiry, account purge, …)   │
 └──────────┬──────────────────┬─────────────────┬─────────────────┘
            │                  │                 │
@@ -349,10 +349,12 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | `/family` | Family group, invites, family alarm |
 | `/billing` | Subscription, voucher; `/billing/google/rtdn` is a public RTDN webhook (query-token protected, no user auth) |
 | `/code` | Unified code register (VA-XXX / 6-digit) |
-| `/library` | Message library |
 | `/push` | FCM token register / unregister (`POST /push/register`, `POST /push/unregister`) |
 | `/holiday` | Public holiday lookup (no auth, public cache) |
 | `/admin` | Admin console — mounted at `/admin` (not `/api`), protected by HTTP Basic with `ADMIN_SECRET` |
+
+> `/library` 라우터와 `GET /api/tts/presets` 는 클라이언트가 호출하지 않아 제거됐다.
+> 메시지 보관함 테이블(`message_library`)은 남아 있지만 읽는 API 는 없다.
 
 ### Selected endpoints
 
@@ -443,7 +445,6 @@ the owner of the new shared plan group. These bootstrap codes are single-use.
 ### Public endpoints
 
 - `GET /` — health check (returns DB connectivity).
-- `GET /api/tts/presets` — public cache.
 - `POST /api/init-db` — migration runner (intended for internal use; gate with IP / secret in production).
 
 ### Cron
