@@ -14,8 +14,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.People
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -118,6 +131,19 @@ internal fun AlarmListScreen(
     val listState = rememberLazyListState()
 
     val homeGradient = homeGradientBrush()
+    // 다중 선택 삭제 — 롱프레스로 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
+    var selectedAlarmIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val selectionMode = selectedAlarmIds.isNotEmpty()
+    // 목록에서 사라진 알람(삭제·동기화)은 선택에서도 빼 준다 — 안 그러면 '3개 선택'인데
+    // 실제로는 2개만 지워진다.
+    val presentAlarmIds = sortedAlarms.map { it.id }.toSet()
+    if (selectionMode && !presentAlarmIds.containsAll(selectedAlarmIds)) {
+        selectedAlarmIds = selectedAlarmIds intersect presentAlarmIds
+    }
+    // 탭을 옮기면 선택을 유지할 이유가 없다(다른 탭엔 삭제 바가 없어 빠져나올 길이 없다).
+    if (selectedTab != NativeTab.Alarms && selectionMode) selectedAlarmIds = emptySet()
+    BackHandler(enabled = selectionMode) { selectedAlarmIds = emptySet() }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -184,7 +210,24 @@ internal fun AlarmListScreen(
                 // Room 첫 방출 전(alarmsLoaded=false)에는 헤더/빈 상태를 그리지 않는다 —
                 // 알람이 있어도 콜드 스타트 첫 프레임에 '알람이 없습니다'가 번쩍이는 것 방지.
                 if (alarmsLoaded) {
-                    item { HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm) }
+                    item {
+                        // 선택 모드에선 같은 자리를 [n개 선택 · 취소 · 삭제] 바가 대신한다.
+                        // 상단바(Scaffold topBar)를 새로 다는 대신 헤더를 바꿔 끼우는 이유:
+                        // 이 앱엔 TopAppBar 가 하나도 없고, topBar 를 달면 contentPadding 이
+                        // 5개 탭 전부에 흘러가 상단 여백·그라데이션 정렬이 전부 바뀐다.
+                        if (selectedAlarmIds.isNotEmpty()) {
+                            AlarmSelectionBar(
+                                count = selectedAlarmIds.size,
+                                onCancel = { selectedAlarmIds = emptySet() },
+                                onDelete = {
+                                    selectedAlarmIds.forEach(onDeleteAlarm)
+                                    selectedAlarmIds = emptySet()
+                                },
+                            )
+                        } else {
+                            HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm)
+                        }
+                    }
                 }
                 if (alarmsLoaded && !hasAnyAlarm) {
                     item {
@@ -214,6 +257,16 @@ internal fun AlarmListScreen(
                         onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
                         onEditAlarm = { onEditAlarm(alarm) },
                         onDeleteAlarm = { onDeleteAlarm(alarm.id) },
+                        selectionMode = selectionMode,
+                        selected = alarm.id in selectedAlarmIds,
+                        onToggleSelected = {
+                            selectedAlarmIds = if (alarm.id in selectedAlarmIds) {
+                                selectedAlarmIds - alarm.id
+                            } else {
+                                selectedAlarmIds + alarm.id
+                            }
+                        },
+                        onEnterSelection = { selectedAlarmIds = setOf(alarm.id) },
                     )
                 }
             }
@@ -275,5 +328,41 @@ internal fun AlarmListScreen(
             }
         }
     }
+    }
+}
+
+/**
+ * 선택 모드 헤더 — HomeHeader 자리를 그대로 차지한다.
+ * 왼쪽에 취소, 가운데에 선택 개수, 오른쪽에 삭제. 삭제는 되돌릴 수 없으므로 강조색으로 둔다.
+ */
+@Composable
+private fun AlarmSelectionBar(
+    count: Int,
+    onCancel: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(onClick = onCancel) {
+            Text(stringResource(R.string.editor_cancel))
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = stringResource(R.string.alarms_selected_count, count),
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        TextButton(onClick = onDelete) {
+            Text(
+                text = stringResource(R.string.common_alarm_delete),
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }

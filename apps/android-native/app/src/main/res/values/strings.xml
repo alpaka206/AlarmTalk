@@ -1013,4 +1013,5 @@
     <string name="editor_voice_switch_drops_text_title">기본 목소리로 바꿀까요?</string>
     <string name="editor_voice_switch_drops_text_message">기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>
     <string name="editor_voice_switch_drops_text_confirm">바꾸기</string>
+    <string name="alarms_selected_count">%1$d개 선택</string>
 </resources>

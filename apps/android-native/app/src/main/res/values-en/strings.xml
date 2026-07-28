@@ -985,4 +985,5 @@ for a smooth and secure experience.</string>
     <string name="editor_voice_switch_drops_text_title">Switch to a basic voice?</string>
     <string name="editor_voice_switch_drops_text_message">Basic voices only speak ready-made lines, so the message you typed will be removed.</string>
     <string name="editor_voice_switch_drops_text_confirm">Switch</string>
+    <string name="alarms_selected_count">%1$d selected</string>
 </resources>

@@ -993,4 +993,5 @@
     <string name="editor_voice_switch_drops_text_title">基本の声に変えますか?</string>
     <string name="editor_voice_switch_drops_text_message">基本の声は用意された文だけを話すので、直接入力した文はなくなります。</string>
     <string name="editor_voice_switch_drops_text_confirm">変える</string>
+    <string name="alarms_selected_count">%1$d件選択</string>
 </resources>
