@@ -20,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -110,6 +112,8 @@ internal fun AlarmListScreen(
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
     onRequestAlarmPermissions: () -> Unit,
+    // 선택 모드 진입/이탈을 알린다 — 상위 Scaffold 가 ＋ FAB 를 감추는 데 쓴다.
+    onAlarmSelectionModeChange: (Boolean) -> Unit = {},
 ) {
     val sortedAlarms = remember(alarms) {
         alarms.sortedWith(
@@ -138,6 +142,9 @@ internal fun AlarmListScreen(
     // 탭을 옮기면 선택을 유지할 이유가 없다(다른 탭엔 삭제 바가 없어 빠져나올 길이 없다).
     if (selectedTab != NativeTab.Alarms && selectionMode) selectedAlarmIds = emptySet()
     BackHandler(enabled = selectionMode) { selectedAlarmIds = emptySet() }
+    LaunchedEffect(selectionMode) { onAlarmSelectionModeChange(selectionMode) }
+    // 화면을 떠날 때(탭 이동·로그아웃) FAB 가 숨은 채로 남지 않게 되돌린다.
+    DisposableEffect(Unit) { onDispose { onAlarmSelectionModeChange(false) } }
 
     Box(
         modifier = Modifier

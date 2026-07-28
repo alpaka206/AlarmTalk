@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -367,7 +368,12 @@ internal fun AlarmRow(
                 // 평소: 클릭=수정/펼침 해제, 길게 누르기=선택 모드 진입.
                 // 선택 모드: 클릭=선택 토글(길게 누르기는 이미 모드 안이라 무의미).
                 // 길게 누르기가 스와이프와 별개의 접근성 친화 경로를 계속 제공한다.
+                // 리플(indication)은 끈다 — 카드 전체를 덮는 사각 하이라이트가 길게 누르는
+                // 내내 남아 카드 모서리와 어긋나 보인다. 선택 모드 진입은 행의 체크 표시와
+                // 상단 [취소][삭제] 바가 이미 분명하게 알려준다.
                 .combinedClickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
                     onClick = {
                         when {
                             selectionMode -> onToggleSelected()

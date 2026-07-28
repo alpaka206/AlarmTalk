@@ -669,6 +669,8 @@ internal fun AlarmTalkApp(
     // 하단바·FAB 등 앱 크롬 노출 조건(로그인·동의 완료, 업데이트 강제/삭제 대기 아님).
     // 온보딩 목소리 고르기 중에는 하단 탭·알람 추가 FAB 를 감춘다 — 선택을 끝내기 전에
     // 다른 화면으로 샐 수 있는 출구를 두지 않는다.
+    // 알람 다중 선택(길게 누르기) 중인지 — 이때는 ＋ FAB 를 감춘다.
+    var alarmSelectionActive by remember { mutableStateOf(false) }
     val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
         !viewModel.updateRequired && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
 
@@ -698,7 +700,10 @@ internal fun AlarmTalkApp(
             // 빈 상태↔리스트 전환 때 하드컷 대신 스케일+페이드. scale 0 에서 시작하지 않고
             // (무에서 튀어나오는 느낌 방지) 퇴장은 진입보다 빠르게 끊는다.
             AnimatedVisibility(
-                visible = showAppChrome && selectedTab == NativeTab.Alarms && alarms.isNotEmpty(),
+                // 선택 모드에선 숨긴다 — 지우려고 고르는 중에 '추가'가 같이 떠 있으면
+                // 오른쪽 아래에서 손가락이 노리는 게 뭔지 애매해진다.
+                visible = showAppChrome && selectedTab == NativeTab.Alarms &&
+                    alarms.isNotEmpty() && !alarmSelectionActive,
                 enter = scaleIn(initialScale = 0.85f) + fadeIn(),
                 exit = scaleOut(targetScale = 0.85f, animationSpec = tween(120)) +
                     fadeOut(animationSpec = tween(120)),
@@ -840,6 +845,7 @@ internal fun AlarmTalkApp(
                   composable(tab.route) {
                       AlarmListScreen(
                           contentPadding = padding,
+                          onAlarmSelectionModeChange = { alarmSelectionActive = it },
                           selectedTab = tab,
                           onSelectTab = ::navigateToTab,
                           alarms = alarms,
