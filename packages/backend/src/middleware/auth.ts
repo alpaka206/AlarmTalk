@@ -78,14 +78,16 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       // 만료되지 않은 토큰(sub = google_id)을 위한 한시적 폴백이며, 토큰 만료 주기가
       // 한 번 지나면 제거할 수 있다.
       const found = await db.execute({
-        sql: 'SELECT id, deletion_status, token_epoch FROM users WHERE google_id = ? OR id = ?',
+        sql: 'SELECT id, google_id, deletion_status, token_epoch FROM users WHERE google_id = ? OR id = ?',
         args: [verified.sub, verified.sub],
       });
       let pk: string;
+      let googleId: string | null = null;
       let deletionStatus = 'active';
       let tokenEpoch = 0;
       if (found.rows.length > 0) {
         pk = String(found.rows[0]!.id);
+        googleId = (found.rows[0]!.google_id as string | null) ?? null;
         deletionStatus = String(found.rows[0]!.deletion_status ?? 'active');
         tokenEpoch = Number(found.rows[0]!.token_epoch ?? 0);
       } else {
@@ -97,6 +99,11 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         return c.json({ error: 'User not found', error_code: 'AUTH_USER_NOT_FOUND' }, 401);
       }
       c.set('userIdPK', pk);
+      // 호환 식별자는 토큰의 sub 이 아니라 DB 의 google_id 다. sub 은 이제 항상 users.id 라,
+      // 구글 사용자가 한 번 재로그인하면 sub 만으로는 옛 google_id 를 알 수 없다 — 그러면
+      // user_id 에 google_id 가 저장된 과거 알람·메시지·목소리를 영영 못 찾고, 계정 삭제도
+      // 그 행들을 남긴다. 구글 계정이 아니면(google_id 없음) sub 을 그대로 쓴다.
+      if (googleId && googleId.trim() !== '') c.set('userLoginId', googleId);
       // sub 이 google_id 인 구 토큰(이 브랜치 배포 전 발급분)이면 여기서 users.id 로
       // 맞춘다. 정규화하지 않으면 users.id 로만 조회하는 하류 경로에서 자기 데이터를
       // 못 찾는다 — 유료 구독이 null 로 보여 무료로 취급되고(그 결과 음성 알람이

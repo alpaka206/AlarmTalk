@@ -22,9 +22,9 @@ vi.mock('../src/lib/db', () => ({
         userTokenEpoch += 1;
         return { rows: [], rowsAffected: 1 };
       }
-      if (/SELECT id, deletion_status, token_epoch FROM users/i.test(q.sql)) {
+      if (/SELECT id, google_id, deletion_status, token_epoch FROM users/i.test(q.sql)) {
         return {
-          rows: [{ id: 'pk-1', deletion_status: 'active', token_epoch: userTokenEpoch }],
+          rows: [{ id: 'pk-1', google_id: null, deletion_status: 'active', token_epoch: userTokenEpoch }],
           rowsAffected: 0,
         };
       }

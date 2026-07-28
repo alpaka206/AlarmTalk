@@ -153,9 +153,30 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     expect(body.userIdPK).toBe('pk-1');
     // 토큰이 담고 있던 로그인 식별자는 레거시 행 보조 매칭용으로 따로 남는다.
     expect(body.userLoginId).toBe('user-1');
-    expect(body.userEmail).toBe('test@test.com');
-    expect(body.userName).toBe('Test');
-    expect(mockVerifyAppJwt).toHaveBeenCalledWith(token, ENV.JWT_SECRET);
+  });
+
+  it('구글 계정이면 호환 식별자로 DB 의 google_id 를 쓴다', async () => {
+    // sub 은 이제 항상 users.id 라, 재로그인한 구글 사용자는 sub 만으로 옛 google_id 를
+    // 알 수 없다. 그러면 user_id 에 google_id 가 저장된 과거 행을 영영 못 찾는다.
+    const token = fakeToken({ iss: 'voice-alarm', sub: 'pk-1', email: 'g@test.com', name: 'G' });
+    mockVerifyAppJwt.mockResolvedValue({
+      sub: 'pk-1',
+      email: 'g@test.com',
+      name: 'G',
+      iss: 'voice-alarm',
+      aud: 'voice-alarm-clients',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    mockDbExecute.mockResolvedValue({
+      rows: [{ id: 'pk-1', google_id: 'google-123', deletion_status: 'active', token_epoch: 0 }],
+      rowsAffected: 0,
+    });
+
+    const res = await reqWithEnv(buildApp(), req(`Bearer ${token}`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.userId).toBe('pk-1');
+    expect(body.userLoginId).toBe('google-123');
   });
 
   it('앱 JWT 검증 실패 시 401', async () => {

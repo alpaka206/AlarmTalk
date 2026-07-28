@@ -169,4 +169,22 @@ class AlarmRepositoryWeatherVariantTest {
         assertTrue(state.index == 1)
         assertTrue((state.resolvedAtMillis ?: 0L) > 1234L)
     }
+
+    @Test
+    fun `context change keeps the index resolved for the new context`() {
+        // 날짜·지역·목소리를 바꾼 편집이야말로 reset 이 켜지는 경우다. 저장 전에 새 조건으로
+        // 받아 왔다면 그 값을 써야 한다 — 버리면 워커가 돌기 전까지 미해결이라
+        // 먼저 울리는 알람이 '못 받았어요' 클립을 낸다.
+        val state = nextWeatherVariantState(
+            nextBucketId = "weather",
+            resetWeatherVariant = true,
+            currentIndex = 4,
+            draftIndex = 7,
+            currentResolvedAtMillis = 1234L,
+            draftResolvedNow = true,
+        )
+
+        assertTrue(state.index == 7)
+        assertTrue((state.resolvedAtMillis ?: 0L) > 1234L)
+    }
 }

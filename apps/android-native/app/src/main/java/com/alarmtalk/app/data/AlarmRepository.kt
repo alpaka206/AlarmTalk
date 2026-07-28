@@ -1232,13 +1232,15 @@ internal fun nextWeatherVariantState(
     currentResolvedAtMillis: Long?,
     draftResolvedNow: Boolean = false,
 ): WeatherVariantState = when {
-    resetWeatherVariant -> WeatherVariantState(index = null, resolvedAtMillis = null)
-    // 이번 저장에서 새로 받아 온 값이면 그것을 쓴다(편집으로 날짜·지역이 바뀐 경우).
-    // 편집기에서 그대로 실려 온 옛 스냅샷은 쓰지 않는다 — 저장된 최신 값을 덮어쓰면 안 된다.
+    // 새로 받아 온 값이 reset 보다 먼저다. 날짜·지역·목소리를 바꾼 편집이야말로 reset 이
+    // 켜지는 경우인데, 그때 버려 버리면 저장 전에 받아 온 의미가 없어진다 — 워커가 돌기
+    // 전에 울리면 '못 받았어요' 클립이 나간다. 이 값은 이미 새 조건으로 받은 것이다.
     nextBucketId == "weather" && draftResolvedNow && draftIndex != null -> WeatherVariantState(
         index = draftIndex,
         resolvedAtMillis = System.currentTimeMillis(),
     )
+    resetWeatherVariant -> WeatherVariantState(index = null, resolvedAtMillis = null)
+    // 편집기에서 그대로 실려 온 옛 스냅샷은 쓰지 않는다 — 저장된 최신 값을 덮어쓰면 안 된다.
     nextBucketId == "weather" -> WeatherVariantState(
         index = currentIndex,
         resolvedAtMillis = currentResolvedAtMillis,
