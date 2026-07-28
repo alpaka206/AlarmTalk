@@ -20,11 +20,11 @@
   },
   "type": "module",
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260719.1",
+    "@cloudflare/workers-types": "^5.20260727.1",
     "@types/bcryptjs": "^3.0.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
-    "wrangler": "^4.112.0"
+    "wrangler": "^4.114.0"
   },
   "dependencies": {
     "@alarmtalk/shared": "*",
