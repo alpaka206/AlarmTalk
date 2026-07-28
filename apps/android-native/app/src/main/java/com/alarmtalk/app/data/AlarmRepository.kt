@@ -22,6 +22,8 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 class AlarmRepository(
@@ -35,6 +37,9 @@ class AlarmRepository(
     private val holidayApiProvider: () -> HolidayApi = { AlarmTalkApiClient.create() },
     // 현재 로그인 계정 id(없으면 null). 알람 생성 시 소유자 기록·무료 잠금 스코프에 쓴다.
     private val currentUserIdProvider: () -> String? = { null },
+    // 같은 값을 '흐름'으로도 받는다 — 목록 필터가 로그인/로그아웃 즉시 다시 계산돼야 한다.
+    // 기본값은 1회 방출이라, 이 인자를 주지 않는 호출부(테스트 등)는 예전과 동작이 같다.
+    private val currentUserIdFlow: Flow<String?> = flowOf(currentUserIdProvider()),
 ) {
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -51,11 +56,15 @@ class AlarmRepository(
      * 목록에 그대로 남던 문제를 막는다(RemoteAlarmPullSyncService 가 '받은 알람'에 쓰는
      * 소유자 스코프와 같은 규칙). 소유자 미기록(레거시 null)은 현재 계정 것으로 본다 —
      * 로그아웃 시 detachAlarmsOnSignOut 이 떠나는 계정을 새기므로 새로 생기지 않는다.
+     *
+     * DAO 흐름만 map 하면 안 된다: Room 은 테이블이 바뀔 때만 방출하는데, 로그아웃은
+     * 소유자가 이미 기록된 알람에 대해 아무것도 쓰지 않는다. 그러면 계정을 바꿔도
+     * 마지막에 계산된 목록(앞 계정 알람)이 그대로 남는다 — 그래서 계정 흐름과 결합한다.
      */
-    fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms().map { alarms ->
-        val currentUser = currentUserIdProvider()
-        alarms.filter { it.ownerUserId == null || it.ownerUserId == currentUser }
-    }
+    fun observeAlarms(): Flow<List<AlarmEntity>> =
+        combine(alarmDao.observeAlarms(), currentUserIdFlow) { alarms, currentUser ->
+            alarms.filter { it.ownerUserId == null || it.ownerUserId == currentUser }
+        }
 
     suspend fun getAlarm(alarmId: String): AlarmEntity? = alarmDao.getById(alarmId)
 

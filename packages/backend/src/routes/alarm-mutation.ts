@@ -886,9 +886,10 @@ alarmMutation.post('/:id/decline', async (c) => {
 });
 
 alarmMutation.delete('/:id', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // 조회·삭제·에셋 정리가 모두 같은 식별자 집합을 본다. 통일 이전에 만들어진 알람은
+  // user_id 에 로그인 식별자가 들어 있어, users.id 하나로만 걸면 소유권 조회는 통과해도
+  // 정작 DELETE 가 0행이라 ALARM_NOT_FOUND 로 끝난다.
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -896,12 +897,9 @@ alarmMutation.delete('/:id', async (c) => {
     return c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400);
   }
 
-  // 소유권 게이트는 두 식별자를 모두 본다 — 통일 이전에 만들어진 알람은 user_id 에
-  // 로그인 식별자가 들어 있어, users.id 하나로만 걸면 자기 알람을 못 지운다.
-  const deleteOwnerIds = callerOwnerIds(c);
   const targetRes = await db.execute({
-    sql: `SELECT message_id FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(deleteOwnerIds)}) LIMIT 1`,
-    args: [id, ...deleteOwnerIds],
+    sql: `SELECT message_id FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
+    args: [id, ...ownerIds],
   });
   const targetAlarm =
     targetRes.rows.length > 0
@@ -910,8 +908,8 @@ alarmMutation.delete('/:id', async (c) => {
   const messageId = targetAlarm?.message_id ?? null;
 
   const result = await db.execute({
-    sql: 'DELETE FROM alarms WHERE id = ? AND user_id = ?',
-    args: [id, userId],
+    sql: `DELETE FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)})`,
+    args: [id, ...ownerIds],
   });
 
   if (result.rowsAffected === 0) {
