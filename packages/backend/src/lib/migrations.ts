@@ -1823,6 +1823,16 @@ export const migrations: Migration[] = [
     statements: [
       `ALTER TABLE users DROP COLUMN picture`,
       `ALTER TABLE users DROP COLUMN last_active_at`,
+      // 같은 사고의 나머지 절반. dev DB 에만 #79 를 먼저 적용해 이 5개 테이블을 지웠는데,
+      // 배포돼 있던 develop 코드의 DELETE /voice/:id 캐스케이드가 아직 이들을 참조해
+      // 'no such table: notes' 로 500 이 났다(목소리 삭제 실패). dev DB 에 빈 테이블로
+      // 되살려 응급 복구했으므로, 이 브랜치가 배포될 때 다시 떨궈 최종 상태를 맞춘다.
+      // 이미 #79 로 정리된 DB(prod 포함)에서는 아무것도 하지 않는다.
+      `DROP TABLE IF EXISTS notes`,
+      `DROP TABLE IF EXISTS voice_speakers`,
+      `DROP TABLE IF EXISTS friendships`,
+      `DROP TABLE IF EXISTS gifts`,
+      `DROP TABLE IF EXISTS dub_jobs`,
     ],
   },
 ];
