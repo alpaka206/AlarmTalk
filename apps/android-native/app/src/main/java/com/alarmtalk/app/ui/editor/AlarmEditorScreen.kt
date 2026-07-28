@@ -212,6 +212,11 @@ internal fun AlarmEditorScreen(
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
+    // 목소리 선택 시트의 '들어보기' — 온보딩/목소리 탭과 같은 재생기를 그대로 쓴다
+    // (기본 목소리는 내장 인사말이라 네트워크 없이도 즉시 난다).
+    val voicePreview = rememberVoiceOnboardingPreviewController(
+        onDownloadStockAudio = onDownloadStockAudio,
+    )
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
         familyAlarmRecipients(familyGroup, authSession)
     }
@@ -1215,6 +1220,12 @@ internal fun AlarmEditorScreen(
                             editor = editor,
                                 voiceProfiles = visibleVoiceProfiles,
                                 familyVoices = familyVoices,
+                                onPreviewVoice = { voiceId ->
+                                    val profile = visibleVoiceProfiles.firstOrNull { it.id == voiceId }
+                                    if (profile != null) voicePreview.previewVoice(profile, stockClips)
+                                },
+                                previewPlayingVoiceId = voicePreview.playingVoiceId,
+                                previewPreparingVoiceId = voicePreview.preparingVoiceId,
                                 voiceProfileBusy = voiceProfileBusy,
                                 stockClips = stockClips,
                                 defaultVoiceId = defaultVoiceId,

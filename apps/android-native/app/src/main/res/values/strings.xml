@@ -1010,4 +1010,7 @@
     <string name="r3misc_ringing_action_dismiss">알람 끄기</string>
     <string name="r3misc_billing_already_owned">이미 구독 중인 상품이에요. 잠시 후 구독 상태를 새로고침해 주세요.</string>
     <string name="r3misc_billing_purchase_failed">Google Play 결제에 실패했어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="editor_voice_switch_drops_text_title">기본 목소리로 바꿀까요?</string>
+    <string name="editor_voice_switch_drops_text_message">기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>
+    <string name="editor_voice_switch_drops_text_confirm">바꾸기</string>
 </resources>

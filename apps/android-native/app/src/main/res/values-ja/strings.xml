@@ -990,4 +990,7 @@
     <string name="r3misc_ringing_action_dismiss">アラームを止める</string>
     <string name="r3misc_billing_already_owned">すでに購読中の商品です。しばらくしてから購読状態を更新してください。</string>
     <string name="r3misc_billing_purchase_failed">Google Playでのお支払いに失敗しました。しばらくしてからもう一度お試しください。</string>
+    <string name="editor_voice_switch_drops_text_title">基本の声に変えますか?</string>
+    <string name="editor_voice_switch_drops_text_message">基本の声は用意された文だけを話すので、直接入力した文はなくなります。</string>
+    <string name="editor_voice_switch_drops_text_confirm">変える</string>
 </resources>
