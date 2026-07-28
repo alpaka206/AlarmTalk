@@ -21,11 +21,11 @@ vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 
 const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
 
-// 발신자/수신자 식별자 — alarms.user_id/target_user_id 에는 로그인 id(google_id)가 저장된다.
-const SENDER_A = { pk: 'guard-a-pk', login: 'guard-ga' };
-const SENDER_B = { pk: 'guard-b-pk', login: 'guard-gb' };
-const RECIPIENT = { pk: 'guard-r-pk', login: 'guard-gr' }; // quiet 창 없음
-const RECIPIENT_QUIET = { pk: 'guard-q-pk', login: 'guard-gq' }; // 주말 00:00-08:00 quiet
+// 발신자/수신자 식별자 — JWT sub 은 항상 users.id 라 pk 와 login 이 같은 값이다.
+const SENDER_A = { pk: 'guard-a-pk', login: 'guard-a-pk' };
+const SENDER_B = { pk: 'guard-b-pk', login: 'guard-b-pk' };
+const RECIPIENT = { pk: 'guard-r-pk', login: 'guard-r-pk' }; // quiet 창 없음
+const RECIPIENT_QUIET = { pk: 'guard-q-pk', login: 'guard-q-pk' }; // 주말 00:00-08:00 quiet
 
 function appFor(user: { pk: string; login: string }) {
   const app = new Hono<AppEnv>();

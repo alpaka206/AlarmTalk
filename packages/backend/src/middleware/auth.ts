@@ -7,7 +7,7 @@
  * 이제 provider 토큰은 오직 /auth/google 교환 엔드포인트에서만 쓰이고,
  * 그 외 모든 보호 라우트는 자체 발급 앱 JWT(APP_JWT_ISSUER) 만 받는다.
  *
- * 검증 후 `users` 행을 해석(없으면 즉석 생성)해 `userIdPK`(FK 기준 식별자)를
+ * 검증 후 `users` 행을 해석해(없으면 401) `userIdPK`(FK 기준 식별자)를
  * 컨텍스트에 심고, (1) JWT epoch < users.token_epoch 이면 폐기된 토큰으로 보아
  * 401(TOKEN_REVOKED), (2) 탈퇴 유예(pending_deletion) 계정은 본인조회/철회 외
  * API 를 막는다.
@@ -61,21 +61,19 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       epoch: app.epoch ?? 0,
     };
 
-    // Legacy convention: most routes still query `WHERE google_id = ?`, so
-    // `userId` keeps that meaning (the JWT sub).
     c.set('userId', verified.sub);
     c.set('userEmail', verified.email || '');
     c.set('userName', verified.name || '');
 
-    // New convention: `userIdPK` is the actual users.id (UUID for legacy
-    // accounts, sub for newly-created ones). Use this for any FOREIGN KEY
-    // refs (voice_profiles.user_id, alarms.user_id, ...).
+    // `userId`(JWT sub)와 `userIdPK`(users.id)는 이제 같은 값이다 — sub 이 users.id 로
+    // 통일됐다(auth.ts). FK 참조(voice_profiles.user_id, alarms.user_id, ...)에는
+    // `userIdPK` 를 쓴다.
     try {
       const { getDB } = await import('../lib/db');
       const db = getDB(c.env);
-      // 앱 JWT 의 sub 은 발급 시점의 loginSub(google_id ?? id)이므로,
-      // 두 컬럼 모두에 대해 매칭한다. provider 사용자는 /auth 교환 단계에서 이미
-      // 행이 생성돼 있어 아래 fallback INSERT 는 사실상 이메일/레거시 경로의 안전망이다.
+      // sub 은 이제 항상 users.id 다. `OR google_id = ?` 는 이 변경 전에 발급돼 아직
+      // 만료되지 않은 토큰(sub = google_id)을 위한 한시적 폴백이며, 토큰 만료 주기가
+      // 한 번 지나면 제거할 수 있다.
       const found = await db.execute({
         sql: 'SELECT id, deletion_status, token_epoch FROM users WHERE google_id = ? OR id = ?',
         args: [verified.sub, verified.sub],
@@ -88,22 +86,12 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         deletionStatus = String(found.rows[0]!.deletion_status ?? 'active');
         tokenEpoch = Number(found.rows[0]!.token_epoch ?? 0);
       } else {
-        // 최초 인증 시 users 행을 즉석에서 생성한다. 동일 사용자의 동시 첫 요청이
-        // 둘 다 INSERT 를 시도해도 중복키 예외로 죽지 않도록 ON CONFLICT DO NOTHING
-        // 으로 멱등화한다. 신규 계정은 id = sub 이므로 경쟁 상황에서도 pk 는 일관된다.
-        await db.execute({
-          sql: `INSERT INTO users (id, google_id, email, name)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT DO NOTHING`,
-          args: [
-            verified.sub,
-            verified.sub,
-            verified.email || `${verified.sub}@unknown`,
-            verified.name || null,
-          ],
-        });
-        pk = verified.sub;
-        // 갓 만든 행의 token_epoch 는 DEFAULT 0. 토큰 epoch 도 0(또는 그 이상)이라 통과.
+        // 사용자 행이 없으면 401 이다. 과거에는 여기서 users 행을 즉석 생성했는데,
+        // 계정 행은 /auth/* 교환·가입 라우트가 이미 만들어 주므로 이 경로에 도달한다는 건
+        // (a) 계정이 파기됐거나 (b) 토큰이 우리 DB 와 무관하다는 뜻이다. 자동 생성은
+        // 탈퇴한 계정을 남은 토큰으로 되살리고, google_id = id = sub 인 행을 만들어
+        // 식별자 규약(google_id 는 구글 계정 식별자 전용)을 다시 깨뜨렸다.
+        return c.json({ error: 'User not found', error_code: 'AUTH_USER_NOT_FOUND' }, 401);
       }
       c.set('userIdPK', pk);
 

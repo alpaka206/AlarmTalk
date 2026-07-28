@@ -463,7 +463,7 @@ voiceProfile.get('/family', async (c) => {
           JOIN plan_group_members fm1 ON fm1.user_id = me.id
           JOIN plan_group_members fm2 ON fm1.plan_group_id = fm2.plan_group_id
           LEFT JOIN users u ON u.id = fm2.user_id
-          WHERE me.google_id = ? AND fm2.user_id != me.id AND fm2.user_id != ?`,
+          WHERE me.id = ? AND fm2.user_id != me.id AND fm2.user_id != ?`,
     args: [userId, userId],
   });
 

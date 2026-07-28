@@ -453,10 +453,13 @@ auth.post('/register', async (c) => {
     const id = crypto.randomUUID();
     const passwordHash = await hashPassword(password, c.env.PASSWORD_PEPPER);
 
+    // google_id 는 **구글 계정 식별자 전용**이다. 과거에는 이메일 가입자에게도
+    // google_id = users.id 를 박아 넣어(외부 식별자 공간 오염) 나중에 같은 이메일로
+    // 구글 로그인하면 그 값이 덮어써지며 식별자가 갈라졌다. 이제 NULL 로 둔다.
     await db.execute({
       sql: `INSERT INTO users (id, email, google_id, password_hash, name)
-            VALUES (?, ?, ?, ?, ?)`,
-      args: [id, normalizedEmail, id, passwordHash, name],
+            VALUES (?, ?, NULL, ?, ?)`,
+      args: [id, normalizedEmail, passwordHash, name],
     });
 
     await consumeEmailVerificationCode(db, verification.id);
@@ -651,7 +654,9 @@ auth.post('/google', async (c) => {
         args: [googleId, email, name || row.name || null, userId],
       });
     } else {
-      userId = googleId;
+      // 신규 구글 가입도 서버 생성 UUID 를 PK 로 쓴다. 과거에는 googleId 를 그대로 PK 로
+      // 삼아 users.id 가 외부 식별자였는데, 그러면 내부 관계 키가 provider 에 종속된다.
+      userId = crypto.randomUUID();
       plan = 'free';
       await db.execute({
         sql: `INSERT INTO users (id, google_id, email, name)
@@ -660,8 +665,13 @@ auth.post('/google', async (c) => {
       });
     }
 
+    // JWT sub 은 **항상 users.id** 다. 과거에는 googleId 를 sub 으로 발급했는데, 이메일로
+    // 먼저 가입한 계정이 나중에 같은 이메일로 구글 로그인하면(위 email 매칭 분기) google_id
+    // 만 덮어써지고 id 는 UUID 로 남아 sub != users.id 로 갈라졌다. 그 순간부터
+    // `WHERE google_id = ?` 로 조회하는 라우트와 users.id 로 조회하는 라우트가 서로 다른
+    // 사용자를 보게 되어(구독·가족그룹·코드등록이 조용히 0행) 데이터가 반으로 쪼개졌다.
     const token = await signAppJwt(
-      { sub: googleId, email, name: name || undefined, epoch: tokenEpoch },
+      { sub: userId, email, name: name || undefined, epoch: tokenEpoch },
       c.env.JWT_SECRET,
     );
 

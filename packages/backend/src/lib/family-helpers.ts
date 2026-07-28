@@ -6,7 +6,7 @@ export async function resolveUserPk(
   googleId: string,
 ): Promise<string | null> {
   const res = await db.execute({
-    sql: 'SELECT id FROM users WHERE google_id = ?',
+    sql: 'SELECT id FROM users WHERE id = ?',
     args: [googleId],
   });
   return res.rows.length === 0 ? null : String(res.rows[0]!.id);

@@ -525,17 +525,18 @@ describe('POST /auth/google', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.token).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
+    // users.id 는 서버 생성 UUID 다 — 더 이상 구글 sub 을 PK 로 쓰지 않는다.
     expect(body.user).toMatchObject({
-      id: 'google-user-1',
       email: 'user@gmail.com',
       name: 'Google User',
       plan: 'free',
     });
-    expect(mockDB.calls[1]?.args.slice(0, 3)).toEqual([
-      'google-user-1',
-      'google-user-1',
-      'user@gmail.com',
-    ]);
+    expect(body.user.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(body.user.id).not.toBe('google-user-1');
+    const insertArgs = mockDB.calls[1]?.args ?? [];
+    expect(insertArgs[0]).toBe(body.user.id); // id = 서버 생성 UUID
+    expect(insertArgs[1]).toBe('google-user-1'); // google_id = 외부 식별자
+    expect(insertArgs[2]).toBe('user@gmail.com');
   });
 
   it('같은 이메일의 기존 계정은 Google ID를 연결하고 기존 플랜을 유지한다', async () => {

@@ -208,7 +208,7 @@ user.patch('/me', async (c) => {
   args.push(userId);
   const result = await db.execute({
     sql: `UPDATE users SET ${updates.join(', ')}, updated_at = datetime('now')
-          WHERE google_id = ?`,
+          WHERE id = ?`,
     args,
   });
   if (result.rowsAffected === 0) {
@@ -252,13 +252,13 @@ user.patch('/plan', async (c) => {
 
     const result = await withWriteTransaction(db, async (tx) => {
       const update = await tx.execute({
-        sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE google_id = ?`,
+        sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
         args: [body.plan, userId],
       });
       if (update.rowsAffected === 0) return update;
       if (body.plan === 'free') {
         const userRes = await tx.execute({
-          sql: `SELECT id FROM users WHERE google_id = ? LIMIT 1`,
+          sql: `SELECT id FROM users WHERE id = ? LIMIT 1`,
           args: [userId],
         });
         const userPk = userRes.rows[0]?.id;

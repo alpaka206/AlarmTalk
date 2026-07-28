@@ -20,8 +20,8 @@ vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 
 const { default: familyAlarmRoutes } = await import('../src/routes/family-alarm');
 
-const SENDER = { pk: 'famg-s-pk', login: 'famg-gs' };
-const RECIPIENT = { pk: 'famg-r-pk', login: 'famg-gr' };
+const SENDER = { pk: 'famg-s-pk', login: 'famg-s-pk' };
+const RECIPIENT = { pk: 'famg-r-pk', login: 'famg-r-pk' };
 const GROUP_ID = 'famg-group-001';
 const FAMILY_PLAN_ID = '70000000-0000-4000-8000-000000000003'; // 마이그레이션 시드 '가족' 플랜
 const VP_ID = 'famg-vp-001'; // 수신자 클론 보이스

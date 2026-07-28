@@ -335,7 +335,7 @@ alarmMutation.post('/', async (c) => {
   const alarmOwner = targetUserIdForAlarm || userId;
 
   const user = await db.execute({
-    sql: 'SELECT plan FROM users WHERE google_id = ?',
+    sql: 'SELECT plan FROM users WHERE id = ?',
     args: [alarmOwner],
   });
   let creatorPlanValue =

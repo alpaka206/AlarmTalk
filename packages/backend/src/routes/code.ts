@@ -28,7 +28,7 @@ codeRoutes.post('/register', async (c) => {
   }
 
   const userRes = await db.execute({
-    sql: 'SELECT id FROM users WHERE google_id = ?',
+    sql: 'SELECT id FROM users WHERE id = ?',
     args: [userId],
   });
   if (userRes.rows.length === 0) {
