@@ -18,6 +18,8 @@ import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -522,12 +524,21 @@ private fun MainViewModel.deviceAppVoiceLanguage(): String {
 }
 
 /**
- * 기본 목소리를 정한 직후(온보딩·목소리 탭 공용), 그 목소리의 무료 버킷 클립(날씨·약)을
- * 백그라운드로 미리 내려받는다 — 첫 알람 만들기에서 대기 없이, 이후엔 오프라인에서도 바로 쓸 수 있게.
- * 진행 상태는 voicePrefetchProgress(다운로드 n/전체)로 노출한다(목소리 탭의 작은 진행 표시).
+ * 기본(시스템) 목소리 **전체**의 무료 버킷 클립(날씨·약)을 기기 언어로 미리 내려받는다.
+ *
+ * 예전에는 온보딩에서 고른 목소리 1개분만 받았다. 이제 목소리를 알람마다 자유롭게 고를 수
+ * 있으므로 4개를 모두 받아 둬야 고르는 즉시 오프라인으로 울릴 수 있다.
+ *  - 기기 언어 1개만 받는다. 3개 언어를 다 받으면 약 3배(≈30MB)가 되는데 앱은 한 번에 한
+ *    언어만 쓰고, 언어를 바꾸면 그때 이 함수가 다시 돌아 부족분을 채운다.
+ *  - 이미 캐시된 클립은 건너뛴다 -> 중간에 끊겨도 다시 부르면 빠진 것만 이어받는다.
+ *  - 카테고리를 무료 버킷(날씨·약)으로 한정한다. greeting 은 APK 에 내장돼 있고, 운세·사랑은
+ *    유료 클론 전용이라 받아도 쓰지 못한 채 저장 공간만 먹는다(Codex #607).
  * best-effort: 실패해도 알람 저장 시점의 기존 다운로드 경로가 다시 시도한다.
  */
-internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String) {
+/** 스톡 클립 동시 다운로드 수. 순차는 약전파에서 1분을 넘기고, 과하면 서버·기기가 힘들다. */
+private const val PREFETCH_PARALLELISM = 4
+
+internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String? = null) {
     // 목소리를 연달아 바꾸면 이전 프리페치는 취소하고 마지막 선택만 받는다.
     voicePrefetchJob?.cancel()
     var job: kotlinx.coroutines.Job? = null
@@ -538,30 +549,38 @@ internal fun MainViewModel.prefetchFreeBucketClips(voiceProfileId: String) {
             // 무료 버킷에서 실제로 쓰이는 카테고리(날씨·약)만 받는다 — greeting 제외 전부를 받으면
             // 무료 사용자의 클론처럼 운세/사랑 사전렌더가 섞인 보이스에서 제한 편집기가 노출하지
             // 않는 유료 전용 클립까지 내려받아 저장 공간만 차지한다(Codex #607).
+            // voiceProfileId 를 주면 그 목소리만(레거시 호출), 안 주면 시스템 목소리 전체.
             val clips = stockClips.filter {
-                it.voiceProfileId == voiceProfileId &&
+                (if (voiceProfileId != null) it.voiceProfileId == voiceProfileId else isSystemVoiceId(it.voiceProfileId)) &&
                     (it.language ?: "ko") == language &&
                     it.category in FreeBucketOrder
             }
             if (clips.isEmpty()) return@launch
             // 이미 캐시된 클립도 진행 수에 포함해 n/전체가 실제 준비율을 보여주게 한다.
             voicePrefetchProgress = 0 to clips.size
-            var done = 0
-            clips.forEach { clip ->
-                val cacheKey = "stock_${clip.messageId}"
-                if (audioStore.getCachedAudio(cacheKey) == null) {
-                    val response = downloadTtsMessageAudio(clip.messageId)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = cacheKey,
-                        cacheKey = cacheKey,
-                        messageId = clip.messageId,
-                    )
+            val done = java.util.concurrent.atomic.AtomicInteger(0)
+            // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
+            // 겹친다(서버·기기 부담을 감안해 4로 제한).
+            kotlinx.coroutines.coroutineScope {
+                clips.chunked(PREFETCH_PARALLELISM).forEach { batch ->
+                    batch.map { clip ->
+                        async {
+                            val cacheKey = "${com.alarmtalk.app.data.AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
+                            if (audioStore.getCachedAudio(cacheKey) == null) {
+                                val response = downloadTtsMessageAudio(clip.messageId)
+                                audioStore.cacheGeneratedAudio(
+                                    bytes = android.util.Base64.decode(response.audioBase64, android.util.Base64.DEFAULT),
+                                    format = response.audioFormat,
+                                    rawAudioUri = response.audioUrl,
+                                    displayName = cacheKey,
+                                    cacheKey = cacheKey,
+                                    messageId = clip.messageId,
+                                )
+                            }
+                            voicePrefetchProgress = done.incrementAndGet() to clips.size
+                        }
+                    }.awaitAll()
                 }
-                done += 1
-                voicePrefetchProgress = done to clips.size
             }
         } catch (error: kotlin.coroutines.cancellation.CancellationException) {
             throw error
