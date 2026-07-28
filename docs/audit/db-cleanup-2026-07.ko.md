@@ -248,6 +248,7 @@ EXPLAIN QUERY PLAN
 | **#81** | `_kst` 뷰 27종 전면 제거 — 런타임 read 0곳, 유지 비용만 컸다 |
 | **#82** | Apple 컬럼 4종 + 인덱스 3종 제거 (인덱스 선행 DROP 필수) |
 | **#83** | `alarms.speaker_id`, `users.family_alarm_quiet_days/_start/_end`, `voice_profiles.voice_gender/speech_formality/avatar_url`, `plan_group_invites` 테이블 제거 |
+| **#84** | `alarms.raw_audio_url/_duration_ms`, `raw_alarm_uploads` 테이블 제거 |
 
 코드:
 - Apple/iOS 로그인·결제 경로 전면 제거 (백엔드 16파일 + shared + Android + 환경변수 6종)
@@ -256,6 +257,11 @@ EXPLAIN QUERY PLAN
 - 앱 미호출 `/library` 라우트 제거 (테이블 `message_library` 는 유지 — §1-2)
 - `alarms.speaker_id` 배관 제거
 - **JWT `sub` 을 `users.id` 로 통일** (§3) — 강제 재로그인 불필요
+- 가족 알람 `target_user_id` 를 `users.id` 로 저장 — 식별자 통일 뒤 신규 구글 가입자에게
+  가족 알람이 배달되지 않던 회귀를 봉합(회귀 테스트 포함)
+- 유료 음성 보관 유예 30일 → **3일**. 해지·그룹 탈퇴·구독 만료 세 경로 모두 무료 강등 후
+  3일이 지나면 클론 voice·생성 오디오·클론 학습용 업로드 원본을 함께 정리한다
+- 미사용 라우트 정리 (§9-A)
 
 **CHECK 제약은 손대지 않았다.** `push_tokens.platform` 의 `'ios'`,
 `store_transactions.provider` 의 `'apple'`·`'portone'` 은 그대로 둔다 — 변경하려면
@@ -283,24 +289,43 @@ SCHEMA_DIFF_ENV_FILE=.dev.vars.prod npx vitest run test/schema-fresh.test.ts
 
 ---
 
-## 9. 남은 후보 (미적용)
-
-아래는 조사에서 "앱 미호출"로 확인됐지만 이번에 손대지 않았다.
+## 9. 남은 legacy (의도적으로 유지)
 
 | 대상 | 왜 남겼나 |
 |---|---|
-| `POST /alarm/source` + `raw_alarm_uploads` + `alarms.raw_audio_url/_duration_ms` | 배선은 완결돼 있고(업로드→추적→GC→탈퇴정리) 데이터만 0건이다. 제거하면 `audio-retention` 의 R2 삭제 로직을 함께 건드려야 해서 위험 대비 이득이 작다. 향후 기능 예정이면 그대로 두는 편이 낫다 |
-| `GET /alarm/tick`, `GET /alarm/:id`, `DELETE /alarm/:id/decline`, `GET /tts/presets`, `DELETE /tts/messages/:id`, `GET /voice/:id`, `GET /voice/:id/stats`, `PATCH /user/plan`, `POST /billing/redeem`, `POST /family/alarms` | 앱 Retrofit 전수에 없어 호출자가 없다. 라우트 제거는 DB 정리와 독립이라 별도로 처리하는 편이 리뷰하기 쉽다. 특히 `PATCH /user/plan` 은 유료 음성을 하드삭제해 "해지 후 30일 보관" 정책과 어긋나므로 우선 검토 대상 |
-| `voucher_codes.status/used_at/redeemed_by_user_id` | `voucher_redemptions` 와 중복이지만 `billing-query` 가 읽고 있어 응답 계약이 걸린다 |
-| `users.plan` | 페이월이 신뢰하는 출처이고 실측 불일치 0건 (§1-2) |
-| 미들웨어의 `OR google_id = ?` 폴백 | 통일 이전에 발급된 토큰용. 토큰 만료 주기가 한 번 지나면 제거 |
+| `voucher_codes.status` | 중복 캐시가 아니라 **게이트**다 — `voucher-redemption.ts:72` 가 등록 자격 조건으로 `AND v.status = 'issued'` 를 쓴다. 지우면 이용권 등록이 깨진다 |
+| `voucher_codes.redeemed_by_user_id` / `used_at` | 첫 사용자 스냅샷이라 `max_uses>1`(가족 4인)에선 의미가 불완전하지만, `GET /billing/vouchers` 응답 필드로 나가고 앱이 그 API 를 호출한다. `use_count` 는 이미 `voucher_redemptions` 서브쿼리로 계산해 원장이 출처로 쓰인다 |
+| `users.plan` | 페이월이 신뢰하는 요약본이고 실측 불일치 0건 (§1-2) |
+| `push_tokens.platform` 의 `'ios'`, `store_transactions.provider` 의 `'apple'`·`'portone'` | CHECK 리터럴. 변경하려면 테이블 재작성이 필요한데 쓰는 코드가 이미 없어 얻는 게 0 |
+| 미들웨어의 `OR google_id = ?` 폴백 | 식별자 통일 이전에 발급된 토큰용. 토큰 만료 주기가 한 번 지나면 제거 |
+| `POST /family/groups/:id/transfer-ownership` | 앱이 직접 호출하진 않지만, 오너가 그룹을 나가려 할 때 서버가 409 와 함께 안내하는 대상이다. 지우면 오너가 탈출 불가가 된다 |
+| `DELETE /voice/_dev/clear-mine`, `POST /billing/test-codes` | 개발/클로즈드테스트용. 각각 production 404 · 발급자 이메일 허용목록으로 이미 막혀 있다 |
+| 구독 상태 판정이 여러 곳에 흩어진 것 | 중복이 아니라 **의도된 의미 차이**다. 예로 `billing-cancel.ts:42` 의 헬퍼가 `expires_at` 을 안 보는 건 만료 cron 이 이미 만료된 행을 넘겨주기 때문이다. 통합하면 만료 처리가 깨진다 |
+
+---
+
+## 9-A. 확정 제거된 라우트
+
+Android Retrofit 전수 · 랜딩 · 관리자 콘솔 대조로 호출자 0을 확인하고 제거했다.
+
+`GET /library` 계열 3종 · `POST /alarm/source` · `GET /alarm/tick` · `GET /alarm/:id` ·
+`DELETE /alarm/:id/decline` · `GET /api/tts/presets`(공개·인증 2종) ·
+`DELETE /tts/messages/:id` · `GET /voice/:id` · `GET /voice/:id/stats` ·
+`POST /billing/redeem` · `POST /family/alarms`(텍스트) · `PATCH /user/plan` ·
+가족 초대권 3종 · Apple 로그인·결제 2종.
+
+**테이블은 남긴 것에 주의**: `message_library` 는 `/library` 라우트가 사라져도 유지된다 —
+앱이 호출하는 `GET /tts/messages` 가 이 테이블로 '저장한 문구'를 필터링한다.
 
 ---
 
 ## 10. 테스트 기준선
 
-작업 전: `83 files / 1448 passed / 63 skipped / 0 failed`
-작업 후: `79 files / 1318 passed / 64 skipped / 0 failed`
+| | 파일 | 통과 | 실패 |
+|---|---|---|---|
+| 작업 전 | 83 | 1448 | 0 |
+| 작업 후 | 78 | 1197 | 0 |
 
-파일·케이스가 준 것은 제거한 기능(Apple 로그인·결제, 가족 초대권, `/library`,
-`speaker_id`)의 테스트가 함께 사라졌기 때문이다. 남은 기능의 테스트는 전부 통과한다.
+케이스가 준 것은 제거한 기능의 테스트가 함께 사라졌기 때문이다. 살아있는 코드를 덮던
+테스트는 지우지 않고 옮겼다(§7). Android 는 `compileDevDebugKotlin` · `testDevDebugUnitTest`
+통과.
