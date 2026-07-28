@@ -1015,4 +1015,9 @@
     <string name="voicesr_preview_action">듣기</string>
     <string name="voices_add">추가</string>
     <string name="voices_monthly_quota">이번 달 %1$d/%2$d</string>
+    <string name="voices_limit_title">이번 달 목소리는 다 만들었어요</string>
+    <string name="voices_limit_message">목소리는 한 달에 1개 만들 수 있어요. 지금 목소리를 지우면 이번 달에 다시 만들 수 있어요.</string>
+    <string name="voices_my_voices_title">내 목소리</string>
+    <string name="voices_shared_voices_title">공유받은 목소리</string>
+    <string name="voices_system_voices_title">기본 목소리</string>
 </resources>

@@ -37,6 +37,9 @@ const MAX_VOICE_PROFILES = 1;
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
 const MAX_DRAFT_VOICE_PROFILES = 1;
 const MAX_DRAFT_ATTEMPTS_PER_MONTH = 3;
+// 정식 등록(= 사용자가 체감하는 '이번 달 만들 수 있는 목소리') 한도. 월 1개.
+// 위 초안 시도 3회는 이 1개를 만들기까지의 재시도 여유다(마음에 안 들면 지우고 다시).
+const MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH = 1;
 const MIN_CLONE_DURATION_MS = 60_000;
 // 프리뷰(draft) 클론은 짧은 클립이라 60초를 못 채우는 경우가 많다.
 // "5초 한마디"는 배제하되, 세그먼트를 이어붙일 때 프레임 경계로 몇백 ms
@@ -116,6 +119,28 @@ async function readMonthlyDraftAttemptUsage(
     limit: MAX_DRAFT_ATTEMPTS_PER_MONTH,
     used,
     remaining: Math.max(0, MAX_DRAFT_ATTEMPTS_PER_MONTH - used),
+  };
+}
+
+// 이번 달(KST) '정식 등록' 사용량 — 목소리는 한 달에 1개만 만들 수 있고(월 1회 교체),
+// 이게 사용자에게 보여줄 숫자다. MAX_DRAFT_ATTEMPTS_PER_MONTH 는 초안 재시도 여유라
+// (마음에 안 들면 지우고 다시) 내부 값이지 사용자가 셀 숫자가 아니다.
+async function readMonthlyRegistrationUsage(
+  db: DbExecutor,
+  ownerUserId: string,
+): Promise<{ limit: number; used: number; remaining: number }> {
+  const res = await db.execute({
+    sql: `SELECT COUNT(*) AS used FROM voice_profile_change_ledger
+          WHERE owner_user_id = ? AND change_type = ?
+            AND change_month = ${currentKstMonthSql()}
+            AND status != 'failed'`,
+    args: [ownerUserId, OFFICIAL_VOICE_CHANGE_TYPE],
+  });
+  const used = Number(res.rows[0]?.used ?? 0);
+  return {
+    limit: MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH,
+    used,
+    remaining: Math.max(0, MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH - used),
   };
 }
 
@@ -449,7 +474,14 @@ voiceProfile.get('/draft-quota', async (c) => {
   const userPk = (c.get('userIdPK') as string | undefined) || userId;
   const db = getDB(c.env);
   const quota = await readMonthlyDraftAttemptUsage(db, userPk);
-  return c.json(quota);
+  const registration = await readMonthlyRegistrationUsage(db, userPk);
+  return c.json({
+    ...quota,
+    // 클라가 '이번 달 n/1'로 보여주는 값. draft 시도 쿼터(limit 3)와 다르다.
+    registration_limit: registration.limit,
+    registration_used: registration.used,
+    registration_remaining: registration.remaining,
+  });
 });
 
 voiceProfile.get('/family', async (c) => {

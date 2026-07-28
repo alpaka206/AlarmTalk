@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -49,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -247,14 +250,98 @@ internal sealed interface CloneVoiceReadiness {
 }
 
 /**
- * 목소리 탭 목록의 공통 행. 내 목소리·공유받은 목소리·기본 목소리를 한 리스트에 같은
- * 모양으로 세운다 — 셋 다 "알람에 쓸 수 있는 목소리"라는 같은 종류인데 예전에는 섹션과
- * 시트로 흩어져 있어서, 무료 사용자에겐 정작 쓸 수 있는 기본 목소리 4개가 시트를 열기
- * 전까진 보이지 않았다.
+ * 목소리 목록의 섹션 머리 — [내 목소리][공유받은 목소리][기본 목소리]. 누르면 접었다 편다.
  *
- * 행 전체를 누르면 미리듣기(다시 누르면 정지) — 목소리 목록에서 하고 싶은 일은 결국
- * 들어보는 것이라 가장 큰 과녁을 거기에 준다. 내 목소리만 우측에 셰브론이 붙어 관리
- * 시트(이름 수정·공유·삭제)로 들어간다.
+ * 기본값은 '펼침'이다. 접힌 채로 시작하면 무료 사용자가 쓸 수 있는 기본 목소리 4개가
+ * 다시 한 번 가려지는데, 이 화면을 고친 이유가 바로 그거였다. 접기는 목소리가 많아졌을 때
+ * 스스로 접는 선택지로만 둔다.
+ *
+ * [trailing] 은 '내 목소리' 머리의 [이번 달 n/1][추가] 자리.
+ */
+@Composable
+internal fun VoiceCatalogSectionHeader(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 40.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onToggle,
+                )
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            // 펼침 ⌄ / 접힘 › — 회전으로 상태가 이어져 보이게 한다.
+            Icon(
+                imageVector = Icons.Outlined.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier.rotate(if (expanded) 0f else -90f),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        trailing?.invoke(this)
+    }
+}
+
+/**
+ * 목소리 목록 전체를 감싸는 그룹 카드. 목소리마다 카드를 하나씩 띄우면 같은 크기 상자가
+ * 대여섯 개 떠 있어 산만한데, 한 덩어리 안에서 헤어라인으로만 나누면 조용해진다
+ * (설정 화면·시트에서 이미 쓰는 문법).
+ */
+@Composable
+internal fun VoiceCatalogGroup(
+    rows: List<@Composable () -> Unit>,
+) {
+    if (rows.isEmpty()) return
+    OutlinedCard(
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
+        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            rows.forEachIndexed { index, row ->
+                row()
+                if (index != rows.lastIndex) {
+                    // 이름 시작선까지 들여쓴 헤어라인 — 시트 옵션 행과 같은 문법.
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 16.dp)
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 목소리 목록의 한 행. 내 목소리·공유받은 목소리·기본 목소리를 같은 모양으로 세운다 —
+ * 셋 다 "알람에 쓸 수 있는 목소리"라는 같은 종류인데 예전에는 섹션과 시트로 흩어져 있어서,
+ * 무료 사용자에겐 정작 쓸 수 있는 기본 목소리 4개가 시트를 열기 전까진 보이지 않았다.
+ *
+ * 행을 누르면: 내 목소리는 관리 시트(이름 수정·공유·삭제), 그 외에는 미리듣기.
+ * 내 목소리는 손댈 게 있는 유일한 행이라 행 전체를 그 입구로 준다 — 작은 ⋮ 만 과녁으로
+ * 두면 매번 조준해야 한다. 듣기는 어느 행에서든 '듣기' 글자로 따로 누른다.
  */
 @Composable
 internal fun VoiceCatalogRow(
@@ -266,46 +353,64 @@ internal fun VoiceCatalogRow(
     onOpenActions: (() -> Unit)? = null,
     belowContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
-    OutlinedCard(
-        shape = WakerCardShape,
-        border = wakerCardBorder(),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+    // 관리할 게 있는 행(내 목소리)은 행 전체가 그 입구, 나머지는 행 전체가 재생.
+    val rowAction = onOpenActions ?: onPreview
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            // 눌림 리플은 끈다 — 행 전체를 덮는 사각 하이라이트가 그룹 카드 모서리와 어긋난다.
+            .clickable(
+                enabled = enabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = rowAction,
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                // 눌림 리플은 끈다 — 카드 전체를 덮는 사각 하이라이트가 카드 모서리와 어긋난다.
-                // 재생 여부는 우측 '듣기 ↔ 이퀄라이저' 전환이 말해 준다.
-                .clickable(
+                // 부가설명이 있든 없든 행 높이를 같게 — 목록이 들쭉날쭉해지지 않는다.
+                .heightIn(min = VoiceCatalogRowContentHeight),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (!subtitle.isNullOrBlank()) MutedText(subtitle)
+            }
+            if (onOpenActions != null) {
+                IconButton(onClick = onOpenActions, enabled = enabled) {
+                    Icon(
+                        imageVector = Icons.Outlined.MoreVert,
+                        contentDescription = stringResource(R.string.voicesr_more),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                // ⋮ 가 없는 행도 같은 폭을 비워 둔다 — 안 그러면 '듣기'가 행마다
+                // 좌우로 어긋나 목록이 들쭉날쭉해 보인다.
+                Spacer(modifier = Modifier.width(VoiceCatalogRowContentHeight))
+            }
+            // 원형 재생 버튼 대신 글자 — 이 앱은 기본 아이콘을 장식으로 쓰지 않는다.
+            // 재생 중에는 이퀄라이저가 같은 자리를 대신해 '누르면 멈춘다'가 읽힌다.
+            Box(
+                modifier = Modifier.clickable(
                     enabled = enabled,
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = onPreview,
-                )
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 부가설명이 있든 없든 행 높이를 같게 — 목록이 들쭉날쭉해지지 않는다.
-                    .heightIn(min = VoiceCatalogRowContentHeight),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                ),
+                contentAlignment = Alignment.Center,
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
-                ) {
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (!subtitle.isNullOrBlank()) MutedText(subtitle)
-                }
-                // 원형 재생 버튼 대신 글자 — 이 앱은 기본 아이콘을 장식으로 쓰지 않는다.
-                // 재생 중에는 이퀄라이저가 같은 자리를 대신해 '누르면 멈춘다'가 읽힌다.
                 if (isPlaying) {
                     PlayingEqualizer()
                 } else {
@@ -316,24 +421,9 @@ internal fun VoiceCatalogRow(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                if (onOpenActions != null) {
-                    // 설정 화면들과 같은 셰브론 문법 — ⋮(Material 관용구)보다 이 앱 톤에 맞고,
-                    // '여기서 더 들어간다'가 분명하다.
-                    IconButton(onClick = onOpenActions, enabled = enabled) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                            contentDescription = stringResource(R.string.voicesr_more),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    // 셰브론이 없는 행도 같은 폭을 비워 둔다 — 안 그러면 '듣기'가 행마다
-                    // 좌우로 어긋나 목록이 들쭉날쭉해 보인다.
-                    Spacer(modifier = Modifier.width(VoiceCatalogRowContentHeight))
-                }
             }
-            belowContent?.invoke(this)
         }
+        belowContent?.invoke(this)
     }
 }
 
@@ -365,30 +455,25 @@ internal fun VoiceProfileRow(
 
     // 만드는 중/지우는 중에는 미리듣기도 기본 지정도 의미가 없어 진행 문구만 보여준다.
     if (isProcessing || isDeleting) {
-        OutlinedCard(
-            shape = WakerCardShape,
-            border = wakerCardBorder(),
-            colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .heightIn(min = VoiceCatalogRowContentHeight),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = profile.name,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                VoiceProgressMessage(
-                    stringResource(
-                        if (isProcessing) R.string.voicesr_status_creating else R.string.voicesr_status_deleting,
-                    ),
-                )
-            }
+            Text(
+                text = profile.name,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            VoiceProgressMessage(
+                stringResource(
+                    if (isProcessing) R.string.voicesr_status_creating else R.string.voicesr_status_deleting,
+                ),
+            )
         }
         return
     }

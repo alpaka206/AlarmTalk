@@ -263,6 +263,11 @@ internal fun VoiceProfileManagementPanel(
     }
     var profileVoiceLanguage by remember { mutableStateOf(defaultVoiceLanguage) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
+    var voiceLimitNoticeOpen by remember { mutableStateOf(false) }
+    // 섹션 접힘 상태 — 기본은 모두 펼침(접힌 채 시작하면 쓸 수 있는 목소리가 가려진다).
+    var ownSectionExpanded by remember { mutableStateOf(true) }
+    var sharedSectionExpanded by remember { mutableStateOf(true) }
+    var systemSectionExpanded by remember { mutableStateOf(true) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
     var renameSubmitAttempted by remember { mutableStateOf(false) }
@@ -1182,36 +1187,34 @@ internal fun VoiceProfileManagementPanel(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // 내 목소리·공유받은 목소리·기본 목소리를 한 리스트로. 셋 다 "알람에 쓸 수 있는
-        // 목소리"라 나누지 않는다 — 나눠 두면 무료 사용자에겐 정작 쓸 수 있는 기본 목소리
-        // 4개가 시트를 열기 전까진 안 보였다. 순서만 내 것 → 공유받은 것 → 기본 제공 순.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically,
+        // 세 묶음(내 목소리 · 공유받은 목소리 · 기본 목소리)을 접었다 펼 수 있는 섹션으로.
+        // 기본값은 모두 펼침 — 접힌 채로 시작하면 무료 사용자가 쓸 수 있는 기본 목소리가
+        // 다시 가려지는데, 이 화면을 고친 이유가 그거였다.
+        VoiceCatalogSectionHeader(
+            title = stringResource(R.string.voices_my_voices_title),
+            expanded = ownSectionExpanded,
+            onToggle = { ownSectionExpanded = !ownSectionExpanded },
         ) {
             // 이번 달 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
             // 유료 사용자에게만 의미가 있다(무료는 눌렀을 때 이용권 안내로 간다).
-            voiceDraftQuota?.takeIf { canCreateVoice && it.limit > 0 }?.let { quota ->
+            voiceDraftQuota?.takeIf { canCreateVoice && it.registrationLimit > 0 }?.let { quota ->
                 MutedText(
                     stringResource(
                         R.string.voices_monthly_quota,
-                        quota.remaining.coerceAtLeast(0),
-                        quota.limit,
+                        quota.registrationRemaining.coerceAtLeast(0),
+                        quota.registrationLimit,
                     ),
                 )
                 Spacer(modifier = Modifier.width(10.dp))
             }
             // 추가 버튼은 항상 누를 수 있다. 막힌 이유를 눌러 봐야 알 수 있게 두면 "왜 흐린지"
-            // 모르는 채로 끝나므로, 차단 사유를 두 갈래로 나눠 그 자리에서 알려준다.
-            //  - 무료 플랜        -> 이용권 안내 모달(PlanGateDialog)
-            //  - 유료인데 정원 초과 -> 개수 제한 안내 (이용권 안내를 띄우면 거짓말이 된다)
+            // 모르는 채로 끝나므로, 차단 사유를 두 갈래로 나눠 그 자리에서 모달로 알려준다.
             Button(
                 onClick = {
                     when {
                         canOpenCreateForm -> showCreateForm = true
                         !canCreateVoice -> voicePlanGateOpen = true
-                        else -> localMessage = maxProfilesReachedMessage
+                        else -> voiceLimitNoticeOpen = true
                     }
                 },
                 enabled = !voiceProfileBusy,
@@ -1224,59 +1227,91 @@ internal fun VoiceProfileManagementPanel(
             MutedText(localMessage.orEmpty())
         }
 
-        ownVoices.forEach { profile ->
-            // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬 다운로드 중
-            // "다운로드 중" → 둘 다 완료(준비 완료)면 표시 없음. 조회 전에도 표시하지 않는다.
-            val prerenderStatus = prerenderStatuses[profile.id]
-            val readiness = when {
-                profile.id in cloneLocalReadyIds -> null
-                prerenderStatus == null -> null
-                prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
-                prerenderStatus.status == "done" -> CloneVoiceReadiness.Downloading
-                prerenderStatus.status == "pending" && prerenderStatus.total > 0 ->
-                    CloneVoiceReadiness.Preparing(prerenderStatus.generated, prerenderStatus.total)
-                else -> null
-            }
-            VoiceProfileRow(
-                profile = profile,
-                enabled = !voiceProfileBusy,
-                canShareVoice = canShareVoice,
-                isPlaying = playingGreetingVoiceId == profile.id,
-                onPreview = { playGreeting(profile) },
-                onRename = {
-                    renameTarget = profile
-                    renameName = profile.name
-                    renameSubmitAttempted = false
+        if (ownSectionExpanded) {
+            VoiceCatalogGroup(
+                ownVoices.map { profile ->
+                    {
+                        // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬
+                        // 다운로드 중 "다운로드 중" → 둘 다 완료면 표시 없음.
+                        val prerenderStatus = prerenderStatuses[profile.id]
+                        val readiness = when {
+                            profile.id in cloneLocalReadyIds -> null
+                            prerenderStatus == null -> null
+                            prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
+                            prerenderStatus.status == "done" -> CloneVoiceReadiness.Downloading
+                            prerenderStatus.status == "pending" && prerenderStatus.total > 0 ->
+                                CloneVoiceReadiness.Preparing(prerenderStatus.generated, prerenderStatus.total)
+                            else -> null
+                        }
+                        VoiceProfileRow(
+                            profile = profile,
+                            enabled = !voiceProfileBusy,
+                            canShareVoice = canShareVoice,
+                            isPlaying = playingGreetingVoiceId == profile.id,
+                            onPreview = { playGreeting(profile) },
+                            onRename = {
+                                renameTarget = profile
+                                renameName = profile.name
+                                renameSubmitAttempted = false
+                            },
+                            onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
+                            onDelete = { deleteTarget = profile },
+                            readiness = readiness,
+                            onRetryPrerender = { retryPrerender(profile.id) },
+                            retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
+                            speechStyleFailed = profile.speechStyleStatus == "failed",
+                            onRetrySpeechStyle = { retrySpeechStyle(profile.id) },
+                            retrySpeechStyleBusy = profile.id in speechStyleRetryBusyIds,
+                        )
+                    }
                 },
-                onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
-                onDelete = { deleteTarget = profile },
-                readiness = readiness,
-                onRetryPrerender = { retryPrerender(profile.id) },
-                retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
-                speechStyleFailed = profile.speechStyleStatus == "failed",
-                onRetrySpeechStyle = { retrySpeechStyle(profile.id) },
-                retrySpeechStyleBusy = profile.id in speechStyleRetryBusyIds,
             )
         }
 
-        if (canShareVoice) {
-            familyVoices.forEach { profile ->
-                SharedVoiceProfileRow(
-                    profile = profile,
-                    isPlaying = playingGreetingVoiceId == profile.id,
-                    onPlay = { playSharedGreeting(profile) },
+        if (canShareVoice && familyVoices.isNotEmpty()) {
+            VoiceCatalogSectionHeader(
+                title = stringResource(R.string.voices_shared_voices_title),
+                expanded = sharedSectionExpanded,
+                onToggle = { sharedSectionExpanded = !sharedSectionExpanded },
+            )
+            if (sharedSectionExpanded) {
+                VoiceCatalogGroup(
+                    familyVoices.map { profile ->
+                        {
+                            SharedVoiceProfileRow(
+                                profile = profile,
+                                isPlaying = playingGreetingVoiceId == profile.id,
+                                onPlay = { playSharedGreeting(profile) },
+                            )
+                        }
+                    },
                 )
             }
         }
 
         // 기본 제공 목소리는 맨 아래 — 개인화된 목소리(내 것·공유받은 것)가 먼저 온다.
-        systemVoices.forEach { profile ->
-            VoiceCatalogRow(
-                name = profile.name,
-                subtitle = stringResource(R.string.voicesr_system_voice),
-                isPlaying = playingGreetingVoiceId == profile.id,
-                onPreview = { playGreeting(profile) },
+        // 내 목소리·공유받은 목소리가 하나도 없어도 이 섹션은 항상 나온다.
+        if (systemVoices.isNotEmpty()) {
+            VoiceCatalogSectionHeader(
+                title = stringResource(R.string.voices_system_voices_title),
+                expanded = systemSectionExpanded,
+                onToggle = { systemSectionExpanded = !systemSectionExpanded },
             )
+            if (systemSectionExpanded) {
+                VoiceCatalogGroup(
+                    systemVoices.map { profile ->
+                        {
+                            // 부가설명은 두지 않는다 — 섹션 이름이 이미 '기본 목소리'라고 말한다.
+                            VoiceCatalogRow(
+                                name = profile.name,
+                                subtitle = null,
+                                isPlaying = playingGreetingVoiceId == profile.id,
+                                onPreview = { playGreeting(profile) },
+                            )
+                        }
+                    },
+                )
+            }
         }
         // 기본 목소리 변경 직후 무료 버킷 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다
         // (실패해도 편집기 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
@@ -1285,6 +1320,20 @@ internal fun VoiceProfileManagementPanel(
                 stringResource(R.string.voices_default_voice_prefetching, done, total),
             )
         }
+    }
+
+    if (voiceLimitNoticeOpen) {
+        IosAlertDialog(
+            title = stringResource(R.string.voices_limit_title),
+            message = stringResource(R.string.voices_limit_message),
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.r3dlg_modal_dialog_close),
+                    onClick = { voiceLimitNoticeOpen = false },
+                ),
+            ),
+            onDismiss = { voiceLimitNoticeOpen = false },
+        )
     }
 
     if (voicePlanGateOpen) {

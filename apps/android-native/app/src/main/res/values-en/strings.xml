@@ -987,4 +987,9 @@ Check your connection and try again.</string>
     <string name="voicesr_preview_action">Play</string>
     <string name="voices_add">Add</string>
     <string name="voices_monthly_quota">%1$d/%2$d this month</string>
+    <string name="voices_limit_title">Monthly voice limit reached</string>
+    <string name="voices_limit_message">You can create one voice per month. Delete the current one to create another this month.</string>
+    <string name="voices_my_voices_title">My voices</string>
+    <string name="voices_shared_voices_title">Shared with me</string>
+    <string name="voices_system_voices_title">Built-in voices</string>
 </resources>

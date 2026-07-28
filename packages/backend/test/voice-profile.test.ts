@@ -179,24 +179,42 @@ describe('GET /draft — 드래프트 조회 (voice-profile)', () => {
 });
 
 describe('GET /draft-quota — 월 생성 쿼터 (voice-profile)', () => {
-  it('사용 기록 없으면 remaining=limit(3)', async () => {
-    mockDB.pushResult([]); // used_count 조회 → 없음
+  it('사용 기록 없으면 remaining=limit(3), 등록 쿼터는 1/1', async () => {
+    mockDB.pushResult([]); // 초안 시도 used_count 조회 → 없음
+    mockDB.pushResult([{ used: 0 }]); // 이번 달 정식 등록 사용량 → 0
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ limit: 3, used: 0, remaining: 3 });
+    // 초안 시도(3회)는 재시도 여유, registration_*(1회)이 사용자에게 보여줄 '이번 달 생성' 쿼터.
+    expect(body).toEqual({
+      limit: 3,
+      used: 0,
+      remaining: 3,
+      registration_limit: 1,
+      registration_used: 0,
+      registration_remaining: 1,
+    });
   });
 
   it('이번 달을 다 썼으면 remaining=0', async () => {
     mockDB.pushResult([{ used_count: 3 }]);
+    mockDB.pushResult([{ used: 1 }]); // 정식 등록도 이번 달 1건 소진
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ limit: 3, used: 3, remaining: 0 });
+    expect(body).toEqual({
+      limit: 3,
+      used: 3,
+      remaining: 0,
+      registration_limit: 1,
+      registration_used: 1,
+      registration_remaining: 0,
+    });
   });
 
   it("'/:id' 보다 먼저 매칭돼 draft-quota 가 프로필 id 로 잡히지 않는다", async () => {
     mockDB.pushResult([{ used_count: 1 }]);
+    mockDB.pushResult([{ used: 0 }]);
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     // 400(잘못된 UUID) 이 아니라 200 쿼터 응답이어야 한다.
     expect(res.status).toBe(200);
