@@ -66,10 +66,13 @@ private fun MainViewModel.voiceAlarmAllowed(draft: AlarmDraft): Boolean {
  * 운세는 이 경로가 필요 없다 — 사주+발사일자로 기기에서 결정적으로 계산한다(fortuneThemeIndex).
  */
 private suspend fun MainViewModel.withResolvedWeatherVariant(draft: AlarmDraft): AlarmDraft {
-    if (draft.bucketId != "weather" || draft.contextVariantIndex != null) return draft
+    // 이미 값이 들어 있어도 다시 받는다. 편집으로 날짜·지역·목소리가 바뀌면 그 값은 옛 조건
+    // 이고, 저장 경로가 어차피 그것을 버린다(resetWeatherVariant). 여기서 새로 받아 두지
+    // 않으면 워커가 돌기 전까지 미해결로 남아, 먼저 울리는 알람이 '못 받았어요' 클립을 낸다.
+    if (draft.bucketId != "weather") return draft
     val token = authSession?.token ?: return draft
     val resolved = repository.resolveWeatherVariantForDraft(api, token, draft) ?: return draft
-    return draft.copy(contextVariantIndex = resolved)
+    return draft.copy(contextVariantIndex = resolved, contextResolvedNow = true)
 }
 
 internal fun MainViewModel.createAlarm(

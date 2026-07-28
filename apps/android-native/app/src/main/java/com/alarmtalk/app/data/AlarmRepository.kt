@@ -256,6 +256,7 @@ class AlarmRepository(
             currentIndex = current.contextVariantIndex,
             draftIndex = draft.contextVariantIndex,
             currentResolvedAtMillis = current.contextResolvedAtMillis,
+            draftResolvedNow = draft.contextResolvedNow,
         )
         val updated = current.copy(
             label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
@@ -1229,8 +1230,15 @@ internal fun nextWeatherVariantState(
     currentIndex: Int?,
     draftIndex: Int?,
     currentResolvedAtMillis: Long?,
+    draftResolvedNow: Boolean = false,
 ): WeatherVariantState = when {
     resetWeatherVariant -> WeatherVariantState(index = null, resolvedAtMillis = null)
+    // 이번 저장에서 새로 받아 온 값이면 그것을 쓴다(편집으로 날짜·지역이 바뀐 경우).
+    // 편집기에서 그대로 실려 온 옛 스냅샷은 쓰지 않는다 — 저장된 최신 값을 덮어쓰면 안 된다.
+    nextBucketId == "weather" && draftResolvedNow && draftIndex != null -> WeatherVariantState(
+        index = draftIndex,
+        resolvedAtMillis = System.currentTimeMillis(),
+    )
     nextBucketId == "weather" -> WeatherVariantState(
         index = currentIndex,
         resolvedAtMillis = currentResolvedAtMillis,

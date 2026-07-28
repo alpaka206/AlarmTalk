@@ -552,14 +552,25 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
 // 데이터는 보존하고 무료 동안 잠글 뿐이며 재구독 시 그대로 풀린다. 스윕은 만기 지난
 // 보관 행만 청소하는 청소부로만 남는다(하드삭제 없음). 즉시 삭제 라우트(delete-now)도 제거.
 // ---------------------------------------------------------------------------
-describe('sweepPaidVoiceRetention (삭제 안 함, 만료 보관 행만 청소)', () => {
-  it('만기 도래 보관 행만 제거하고, 유료 음성 데이터는 삭제하지 않는다', async () => {
+describe('sweepPaidVoiceRetention (유예 만료 시 남은 음성 정리)', () => {
+  it('만기 도래 행이 없으면 아무것도 지우지 않는다', async () => {
+    mockDB.pushResult([]); // 만기 도래 보관 행 없음
     await sweepPaidVoiceRetention(mockDB.client as never, new Date());
 
+    expect(findCall('DELETE FROM voice_uploads')).toBeUndefined();
+    expect(findCall('DELETE FROM generated_audio_assets')).toBeUndefined();
+  });
+
+  it('만기가 됐어도 지금 유료면 지우지 않고 보관 행만 해제한다', async () => {
+    // 보관 행은 해지 시점에 깔리는데, 그 뒤 바우처·프로모로 다시 유료가 될 수 있다.
+    // 그대로 지우면 돈을 내고 있는 사용자의 목소리를 영구 삭제하게 된다.
+    mockDB.pushResult([{ user_id: 'user-pk-1' }]); // 만기 도래
+    mockDB.pushResult([{ active_subs: 1, plan: 'plus' }]); // 지금도 유료
+    await sweepPaidVoiceRetention(mockDB.client as never, new Date());
+
+    expect(findCall('DELETE FROM voice_uploads')).toBeUndefined();
+    expect(findCall('DELETE FROM generated_audio_assets')).toBeUndefined();
     expect(findCall('DELETE FROM paid_voice_retention')).toBeDefined();
-    expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
-    expect(findCall('DELETE FROM messages')).toBeUndefined();
-    expect(findCall('DELETE FROM alarms')).toBeUndefined();
   });
 });
 

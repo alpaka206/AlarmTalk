@@ -118,6 +118,9 @@ data class AlarmDraft(
     val bucketClipKeysJson: String? = null,
     val bucketClipTextsJson: String? = null,
     val contextVariantIndex: Int? = null,
+    // 이번 저장에서 서버로부터 새로 받아 온 조건인지. 편집기에서 그대로 실려 온 옛 스냅샷과
+    // 구분하려고 둔다 — 스냅샷이 저장된 최신 값을 덮어쓰면 안 된다.
+    val contextResolvedNow: Boolean = false,
     val alarmVolumePercent: Int = 100,
     val alarmSoundUri: String? = null,
     val alarmSoundLabel: String? = null,

@@ -108,6 +108,27 @@ export async function schedulePaidVoiceRetention(
 }
 
 /** 재구독(스토어 entitlement/스텁 결제) 시 예약된 유료 음성 삭제를 해제한다. */
+/**
+ * 지금 유료 권한이 살아 있는가 — 보관 만료 삭제 직전의 마지막 안전장치.
+ * 활성 구독(만료 전) 또는 users.plan 이 무료가 아니면 유료로 본다. 둘 중 하나만 봐도
+ * 대부분 맞지만, 어느 한쪽만 갱신하고 다른 쪽을 놓친 경로가 있어 둘 다 확인한다.
+ */
+async function hasActivePaidEntitlement(db: DbExecutor, userPk: string): Promise<boolean> {
+  const res = await db.execute({
+    sql: `SELECT
+            (SELECT COUNT(*) FROM subscriptions
+              WHERE user_id = ? AND status = 'active'
+                AND datetime(expires_at) > datetime('now')) AS active_subs,
+            (SELECT plan FROM users WHERE id = ?) AS plan`,
+    args: [userPk, userPk],
+  });
+  const row = res.rows[0];
+  if (!row) return false;
+  const activeSubs = Number(row.active_subs ?? 0);
+  const plan = (row.plan as string | null) ?? 'free';
+  return activeSubs > 0 || (plan !== 'free' && plan.trim() !== '');
+}
+
 export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): Promise<void> {
   await db.execute({
     sql: `DELETE FROM paid_voice_retention WHERE user_id = ?`,
@@ -131,12 +152,17 @@ export async function sweepPaidVoiceRetention(db: Client, now: Date = new Date()
   });
   for (const row of due.rows) {
     const userPk = String(row.user_id);
+    // 삭제 직전에 '지금도 무료인가'를 다시 본다. 보관 행은 해지 시점에 깔리는데, 그 뒤
+    // 바우처 리딤·프로모 구독처럼 보관 행을 지우지 않고 권한만 살리는 경로가 있고,
+    // 그룹 탈퇴는 다른 유료 구독이 남아 있어도 보관을 걸 수 있다. 그대로 지우면 지금
+    // 돈을 내고 있는 사용자의 목소리를 영구 삭제하게 된다.
+    if (await hasActivePaidEntitlement(db, userPk)) {
+      await clearPaidVoiceRetention(db, userPk);
+      continue;
+    }
     await deleteSensitiveVoiceDataForUser(db, userPk, await resolveUserLoginId(db, userPk));
+    await clearPaidVoiceRetention(db, userPk);
   }
-  await db.execute({
-    sql: `DELETE FROM paid_voice_retention WHERE delete_after <= ?`,
-    args: [now.toISOString()],
-  });
 }
 
 export async function downgradeUserToFree(
@@ -501,6 +527,10 @@ export async function createNewSubscriptionForPlan(
     now: Date;
   },
 ): Promise<string> {
+  // 새 구독이 생겼으면 남아 있던 보관 유예를 푼다 — 유예가 만기되어 유료 사용자의 음성이
+  // 지워지는 일이 없도록. (sweep 이 삭제 직전에 한 번 더 확인하지만, 원장을 정확히 두는 게
+  // 먼저다.)
+  await clearPaidVoiceRetention(db, params.userPk);
   const startsAt = params.now;
   const expiresAt = new Date(startsAt.getTime() + params.periodDays * 24 * 60 * 60 * 1000);
   const subscriptionId = crypto.randomUUID();
