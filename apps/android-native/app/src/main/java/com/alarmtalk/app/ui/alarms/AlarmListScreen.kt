@@ -3,21 +3,16 @@ package com.alarmtalk.app
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.People
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
@@ -87,7 +82,7 @@ internal fun AlarmListScreen(
     prerenderDrive: PrerenderDriveState? = null,
     onStartPrerenderDrive: (String) -> Unit = {},
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
-    onRenameVoiceProfile: (String, String, String, String) -> Unit,
+    onRenameVoiceProfile: (String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
@@ -150,15 +145,51 @@ internal fun AlarmListScreen(
             // 모든 탭에 같은 그라데이션 배경 — 탭 전환 시 배경 톤이 튀지 않게 한 공간으로.
             .background(homeGradient),
     ) {
+    Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
+        // 알람 탭 헤더는 리스트 밖에 고정한다. 스크롤해도 '다음 알람까지' 안내가 남고, 무엇보다
+        // 목록을 내린 상태에서 선택 모드에 들어가도 [취소·삭제]에 닿을 수 있다.
+        // stickyHeader 가 아니라 Column 인 이유: HomeHeader 는 배경 없는 Text 한 개라 리스트
+        // 안에 붙여두면 알람 카드가 글자 뒤로 그대로 지나간다. 헤더에 따로 배경을 깔면 화면
+        // 전체 높이 기준 그라데이션(homeGradient)과 색이 어긋나고, 여기선 배경 Box 위에 그냥
+        // 얹히므로 그 문제가 없다.
+        if (selectedTab == NativeTab.Alarms && alarmsLoaded) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 16.dp)
+                    // 헤더(≈32dp)와 선택 바(≈48dp)의 높이가 달라, 고정하지 않으면 선택 모드에
+                    // 드나들 때마다 목록 전체가 위아래로 튄다.
+                    .heightIn(min = 48.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                // 선택 모드에선 같은 자리를 [취소 · 삭제] 바가 대신한다.
+                // 상단바(Scaffold topBar)를 새로 다는 대신 헤더를 바꿔 끼우는 이유:
+                // 이 앱엔 TopAppBar 가 하나도 없고, topBar 를 달면 contentPadding 이
+                // 5개 탭 전부에 흘러가 상단 여백·그라데이션 정렬이 전부 바뀐다.
+                if (selectedAlarmIds.isNotEmpty()) {
+                    AlarmSelectionBar(
+                        count = selectedAlarmIds.size,
+                        onCancel = { selectedAlarmIds = emptySet() },
+                        onDelete = {
+                            selectedAlarmIds.forEach(onDeleteAlarm)
+                            selectedAlarmIds = emptySet()
+                        },
+                    )
+                } else {
+                    HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm)
+                }
+            }
+        }
     LazyColumn(
         state = listState,
         modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding),
+            .fillMaxWidth()
+            .weight(1f),
         contentPadding = PaddingValues(
             // 좌우 여백은 모든 탭 20dp 로 통일 — 탭 전환 시 콘텐츠 폭이 미세하게 널뛰지 않게.
             start = 20.dp,
-            top = 24.dp,
+            // 알람 탭은 위 고정 헤더가 상단 여백을 이미 냈다.
+            top = if (selectedTab == NativeTab.Alarms) 0.dp else 24.dp,
             end = 20.dp,
             // 알람 탭은 우하단 FAB(＋)가 마지막 알람 행을 가리지 않게 하단 여유를 더 준다.
             bottom = if (selectedTab == NativeTab.Alarms) 96.dp else 32.dp,
@@ -209,26 +240,6 @@ internal fun AlarmListScreen(
             NativeTab.Alarms -> {
                 // Room 첫 방출 전(alarmsLoaded=false)에는 헤더/빈 상태를 그리지 않는다 —
                 // 알람이 있어도 콜드 스타트 첫 프레임에 '알람이 없습니다'가 번쩍이는 것 방지.
-                if (alarmsLoaded) {
-                    item {
-                        // 선택 모드에선 같은 자리를 [n개 선택 · 취소 · 삭제] 바가 대신한다.
-                        // 상단바(Scaffold topBar)를 새로 다는 대신 헤더를 바꿔 끼우는 이유:
-                        // 이 앱엔 TopAppBar 가 하나도 없고, topBar 를 달면 contentPadding 이
-                        // 5개 탭 전부에 흘러가 상단 여백·그라데이션 정렬이 전부 바뀐다.
-                        if (selectedAlarmIds.isNotEmpty()) {
-                            AlarmSelectionBar(
-                                count = selectedAlarmIds.size,
-                                onCancel = { selectedAlarmIds = emptySet() },
-                                onDelete = {
-                                    selectedAlarmIds.forEach(onDeleteAlarm)
-                                    selectedAlarmIds = emptySet()
-                                },
-                            )
-                        } else {
-                            HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm)
-                        }
-                    }
-                }
                 if (alarmsLoaded && !hasAnyAlarm) {
                     item {
                         EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
@@ -329,11 +340,12 @@ internal fun AlarmListScreen(
         }
     }
     }
+    }
 }
 
 /**
  * 선택 모드 헤더 — HomeHeader 자리를 그대로 차지한다.
- * 왼쪽에 취소, 가운데에 선택 개수, 오른쪽에 삭제. 삭제는 되돌릴 수 없으므로 강조색으로 둔다.
+ * 오른쪽에 [취소][삭제] 둘만. 삭제는 되돌릴 수 없으므로 강조색으로 둔다.
  */
 @Composable
 private fun AlarmSelectionBar(
@@ -346,18 +358,14 @@ private fun AlarmSelectionBar(
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.End,
     ) {
+        // 선택 개수는 행마다 체크 표시로 이미 보이므로 숫자를 따로 쓰지 않는다.
+        // 취소·삭제를 오른쪽에 나란히 둬 엄지 이동을 줄인다(삭제가 바깥쪽).
         TextButton(onClick = onCancel) {
             Text(stringResource(R.string.editor_cancel))
         }
-        Spacer(Modifier.width(4.dp))
-        Text(
-            text = stringResource(R.string.alarms_selected_count, count),
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        TextButton(onClick = onDelete) {
+        TextButton(onClick = onDelete, enabled = count > 0) {
             Text(
                 text = stringResource(R.string.common_alarm_delete),
                 color = MaterialTheme.colorScheme.error,
