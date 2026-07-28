@@ -822,9 +822,11 @@ internal fun AlarmTalkApp(
               ?.getInt(com.alarmtalk.app.sync.StockClipPrefetchWorker.KEY_TOTAL, 0) ?: 0
           // 성공하면 화면을 닫는다. 실패(FAILED)만 재시도를 노출한다 — 재시도 대기(ENQUEUED)는
           // 워커가 알아서 하므로 사용자에게 실패로 보이면 안 된다.
+          // 단 '성공'만으로 닫지 않는다: 워커는 받을 게 없거나 세션이 없으면 한 개도 받지
+          // 않고 성공을 내므로, 실제로 파일이 생겼는지 다시 확인한다.
           LaunchedEffect(prefetchInfo?.state) {
               if (prefetchInfo?.state == androidx.work.WorkInfo.State.SUCCEEDED) {
-                  viewModel.skipVoiceSetup()
+                  viewModel.completeVoiceSetupIfDownloaded()
               }
           }
           VoiceOnboardingScreen(

@@ -401,21 +401,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 4개를 모두 받으므로, **기기에 클립 파일이 있는가**로 본다. 캐시는 계정이 아니라 기기에
      * 종속되므로 로그아웃 후 재로그인은 다시 받지 않고, 다른 기기로 로그인하면 그 기기가
      * 새로 받는다. 일부만 받다 끊긴 경우엔 화면을 다시 띄우지 않고 워커가 조용히 마저 채운다.
+     *
+     * 단, '나중에 받기'를 누른 기록이 있으면 파일이 0개라도 다시 막지 않는다. 오프라인에서
+     * 건너뛴 사용자는 클립이 하나도 없는 상태로 남는데, 파일 개수만 보면 켤 때마다 같은
+     * 차단 화면이 돌아와 사용자의 선택이 무시된다. 다운로드는 어차피 워커가 계속하고,
+     * 그래도 비어 있으면 알람 편집기가 쓰려는 순간 받아 온다.
+     *
+     * hasChosen(기본 목소리 저장)은 보지 않는다 — 이 브랜치에서 그 값의 뜻이 '마지막에 쓴
+     * 목소리'로 바뀌어 다운로드 완료 여부와 무관해졌다.
      */
     fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
         lastUsedVoiceId = defaultVoiceStore.read(userId)
         val cachedStockClips = com.alarmtalk.app.data.AlarmAudioStore(getApplication())
             .cachedStockClipCount()
-        showVoiceSetup = cachedStockClips == 0
+        showVoiceSetup = cachedStockClips == 0 && !defaultVoiceStore.hasSkipped(userId)
         // 화면을 띄우든 말든 부족분은 항상 채운다(언어 변경·중단 복구 포함).
         com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(getApplication())
     }
 
-    /** 준비 화면을 닫을 때(완료·나중에 받기 공용). 다운로드는 워커가 계속한다. */
+    /**
+     * 사용자가 '나중에 받기'를 눌렀을 때만. 이 선택을 기기에 남겨 다음 실행에 다시 막지 않는다.
+     * 다운로드는 워커가 계속하고, 그래도 비어 있으면 편집기가 쓰려는 순간 받아 온다.
+     */
     fun skipVoiceSetup() {
         defaultVoiceStore.markSkipped(authSession?.user?.id?.takeIf { it.isNotBlank() })
         showVoiceSetup = false
+    }
+
+    /**
+     * 다운로드가 끝나 화면을 닫을 때. '나중에 받기'로 기록하지 않는다 —
+     * 워커는 받을 게 없거나(매니페스트 비어 있음) 세션이 없으면 한 개도 받지 않고도
+     * 성공을 낸다. 그걸 사용자의 선택으로 기록하면, 클립이 0개인데 준비 화면이 영영
+     * 다시 뜨지 않게 된다. 그래서 '실제로 파일이 생겼는가'로만 닫는다.
+     */
+    fun completeVoiceSetupIfDownloaded() {
+        val cached = com.alarmtalk.app.data.AlarmAudioStore(getApplication()).cachedStockClipCount()
+        if (cached > 0) showVoiceSetup = false
     }
 
     /**
