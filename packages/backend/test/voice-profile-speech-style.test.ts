@@ -487,17 +487,19 @@ describe('POST /:id/speech-style/retry — 말투 분석 재시도', () => {
 /*  GET /:id — speech_style_status 직렬화                              */
 /* ------------------------------------------------------------------ */
 describe('GET — speech_style_status 직렬화', () => {
-  it('단건 조회에 speech_style_status 포함', async () => {
+  it('목록 조회에 speech_style_status 포함', async () => {
+    mockDB.pushResult([{ total: 1 }]); // count
     mockDB.pushResult([{ id: V1, name: '엄마', speech_style_status: 'failed' }]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}`));
+    const res = await req(buildApp(), new Request('http://localhost/vp'));
     expect(res.status).toBe(200);
-    expect((await res.json()).profile.speech_style_status).toBe('failed');
+    expect((await res.json()).profiles[0].speech_style_status).toBe('failed');
   });
 
   it('컬럼이 비어 있으면 null (분석 대상 아님)', async () => {
+    mockDB.pushResult([{ total: 1 }]);
     mockDB.pushResult([{ id: V1, name: '엄마' }]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}`));
-    expect((await res.json()).profile.speech_style_status).toBe(null);
+    const res = await req(buildApp(), new Request('http://localhost/vp'));
+    expect((await res.json()).profiles[0].speech_style_status).toBe(null);
   });
 
   it('목록 조회에도 포함', async () => {

@@ -56,21 +56,13 @@ describe('가족 알람 수신자 그만받기(decline)', () => {
     const body = (await res.json()) as { alarms: Array<{ id: string }> };
     return body.alarms.map((a) => a.id);
   }
-  async function tickChecked(userId: string): Promise<number> {
-    const res = await appFor(userId).request('/tick');
-    const body = (await res.json()) as { checked: number };
-    return body.checked;
-  }
-
-  it('decline 전에는 수신자 B 에게 알람이 보이고, decline 후에는 list·tick 에서 사라진다', async () => {
+  it('decline 전에는 수신자 B 에게 알람이 보이고, decline 후에는 목록에서 사라진다', async () => {
     expect(await listIds('B')).toContain(ALARM_ID);
-    expect(await tickChecked('B')).toBe(1);
 
     const dec = await appFor('B').request('/' + ALARM_ID + '/decline', { method: 'POST' });
     expect(dec.status).toBe(200);
 
     expect(await listIds('B')).not.toContain(ALARM_ID);
-    expect(await tickChecked('B')).toBe(0);
   });
 
   it('decline 은 비파괴적: 생성자 A 는 계속 보이고 알람 행/is_active 는 유지된다', async () => {
@@ -86,19 +78,9 @@ describe('가족 알람 수신자 그만받기(decline)', () => {
     await appFor('B').request('/' + ALARM_ID + '/decline', { method: 'POST' });
     // 여러 번 다시 조회해도 계속 제외
     expect(await listIds('B')).not.toContain(ALARM_ID);
-    expect(await tickChecked('B')).toBe(0);
   });
 
-  it('그만받기 취소(DELETE decline)하면 다시 보인다', async () => {
-    await appFor('B').request('/' + ALARM_ID + '/decline', { method: 'POST' });
-    expect(await listIds('B')).not.toContain(ALARM_ID);
-
-    const undo = await appFor('B').request('/' + ALARM_ID + '/decline', { method: 'DELETE' });
-    expect(undo.status).toBe(200);
-    expect(await listIds('B')).toContain(ALARM_ID);
-  });
-
-  it('대상이 아닌 사용자(생성자 A)는 decline 할 수 없다(404)', async () => {
+it('대상이 아닌 사용자(생성자 A)는 decline 할 수 없다(404)', async () => {
     const res = await appFor('A').request('/' + ALARM_ID + '/decline', { method: 'POST' });
     expect(res.status).toBe(404);
   });

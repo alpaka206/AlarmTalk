@@ -204,36 +204,6 @@ describe('GET /draft-quota — 월 생성 쿼터 (voice-profile)', () => {
   });
 });
 
-describe('GET /:id — 프로필 상세 (voice-profile)', () => {
-  it('잘못된 UUID → 400', async () => {
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V_BAD}`));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_VOICE_PROFILE_ID');
-  });
-
-  it('존재하지 않으면 404', async () => {
-    mockDB.pushResult([]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}`));
-    expect(res.status).toBe(404);
-    expect((await res.json()).error_code).toBe('VOICE_PROFILE_NOT_FOUND');
-  });
-
-  it('자신의 프로필이면 200 반환', async () => {
-    mockDB.pushResult([{ id: V1, name: '엄마', status: 'ready' }]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.profile.id).toBe(V1);
-    expect(body.profile.name).toBe('엄마');
-  });
-
-  it('쿼리에 user_id 포함 (소유권 검증)', async () => {
-    mockDB.pushResult([{ id: V1 }]);
-    await req(buildApp('user-A'), new Request(`http://localhost/vp/${V1}`));
-    expect(mockDB.calls[0]!.args).toContain('user-A');
-  });
-});
-
 /* ------------------------------------------------------------------ */
 /*  PATCH /vp/:id — 이름 변경                                         */
 /* ------------------------------------------------------------------ */
@@ -448,43 +418,6 @@ describe('PATCH /:id — 이름 변경 (voice-profile)', () => {
 /* ------------------------------------------------------------------ */
 /*  GET /vp/:id/stats — 통계                                          */
 /* ------------------------------------------------------------------ */
-describe('GET /:id/stats — 통계 (voice-profile)', () => {
-  it('잘못된 UUID → 400', async () => {
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V_BAD}/stats`));
-    expect(res.status).toBe(400);
-  });
-
-  it('프로필 없으면 404', async () => {
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([{ count: 0 }]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}/stats`));
-    expect(res.status).toBe(404);
-  });
-
-  it('통계 반환 (메시지 3개, 알람 2개)', async () => {
-    mockDB.pushResult([{ id: V1, name: '엄마' }]);
-    mockDB.pushResult([{ count: 3 }]);
-    mockDB.pushResult([{ count: 2 }]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}/stats`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.voice_profile_id).toBe(V1);
-    expect(body.messages).toBe(3);
-    expect(body.alarms).toBe(2);
-  });
-
-  it('alarms 쿼리에 target_user_id 포함 (수신 알람 포함)', async () => {
-    mockDB.pushResult([{ id: V1, name: 'x' }]);
-    mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([{ count: 0 }]);
-    await req(buildApp('user-X'), new Request(`http://localhost/vp/${V1}/stats`));
-    const alarmCall = mockDB.calls[2]!;
-    expect(alarmCall.sql).toContain('target_user_id');
-    expect(alarmCall.args).toContain('user-X');
-  });
-});
-
 /* ------------------------------------------------------------------ */
 /*  POST /vp/clone — 음성 클론                                         */
 /* ------------------------------------------------------------------ */

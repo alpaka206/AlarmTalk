@@ -2,10 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
-import {
-  deletePaidVoiceDataForUser,
-  deleteSensitiveVoiceDataForUser,
-} from '../lib/paid-voice-cleanup';
+import { deleteSensitiveVoiceDataForUser } from '../lib/paid-voice-cleanup';
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
 import {
@@ -225,58 +222,6 @@ user.patch('/me', async (c) => {
     family_alarm_quiet_windows: resolvedQuietWindows,
     dynamic_prompt_settings: resolvedDynamicPromptSettings,
   });
-});
-
-user.patch('/plan', async (c) => {
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-
-  try {
-    const body = await c.req.json<{ plan: 'free' | 'plus' | 'family' }>();
-
-    if (!['free', 'plus', 'family'].includes(body.plan)) {
-      return c.json({ error: 'Invalid plan', error_code: 'INVALID_PLAN' }, 400);
-    }
-    // 보안: 유료 승격(plus/family)은 반드시 결제 검증(store-billing) 또는 바우처
-    // 사용(voucher redemption) 경로로만 이뤄져야 한다. 이 self-service 엔드포인트는
-    // 본인 강등(free)만 허용하고, 무결제 플랜 승격(페이월 우회)을 차단한다.
-    if (body.plan !== 'free') {
-      return c.json(
-        {
-          error: 'Plan upgrades require a verified purchase or voucher',
-          error_code: 'PLAN_UPGRADE_NOT_ALLOWED',
-        },
-        403,
-      );
-    }
-
-    const result = await withWriteTransaction(db, async (tx) => {
-      const update = await tx.execute({
-        sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
-        args: [body.plan, userId],
-      });
-      if (update.rowsAffected === 0) return update;
-      if (body.plan === 'free') {
-        const userRes = await tx.execute({
-          sql: `SELECT id FROM users WHERE id = ? LIMIT 1`,
-          args: [userId],
-        });
-        const userPk = userRes.rows[0]?.id;
-        if (typeof userPk === 'string') {
-          await deletePaidVoiceDataForUser(tx, userPk, userId);
-        }
-      }
-      return update;
-    });
-    if (result.rowsAffected === 0) {
-      return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-    }
-
-    return c.json({ success: true, plan: body.plan });
-  } catch (err) {
-    logRouteError(c, err);
-    return c.json({ error: 'Failed to update plan', error_code: 'UPDATE_PLAN_FAILED' }, 500);
-  }
 });
 
 user.delete('/me', async (c) => {

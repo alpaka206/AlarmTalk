@@ -323,7 +323,7 @@ Social APIs are user-triggered only:
 Expected:
 
 - Family errors from the backend are shown as app messages.
-- Family invite actions use `/api/family/invites`.
+- Family sharing uses `/api/billing/vouchers/family-share` (발급) and `/api/code/register` (합류).
 - Shared voices use `GET /api/voice/family`.
 - Shared-voice TTS generation is not called.
 

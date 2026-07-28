@@ -178,12 +178,6 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
   }
 });
 
-// 공개 라우트 (인증 불필요)
-app.get('/api/tts/presets', noStore, async (c) => {
-  const { loadTtsPresets } = await import('./lib/tts-presets');
-  return c.json({ presets: await loadTtsPresets(c.env) });
-});
-
 // 앱 버전 정책 (인증 불필요) — 구버전 앱이 로그인 전에도 강제/권장 업데이트를 판단한다.
 app.get('/api/app/version', noStore, async (c) => {
   const { appVersionPolicy } = await import('./lib/app-version');

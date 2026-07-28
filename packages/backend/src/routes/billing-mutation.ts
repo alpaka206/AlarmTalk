@@ -20,7 +20,6 @@ import {
 } from '../lib/play-subscriptions';
 import type { DbExecutor } from '../lib/transactions';
 import { withWriteTransaction } from '../lib/transactions';
-import { redeemVoucherCode, VoucherRedemptionError } from '../lib/voucher-redemption';
 import {
   PAID_PLAN_TYPES,
   planTypeToUserPlan,
@@ -434,33 +433,6 @@ billingMutation.post('/test-codes', async (c) => {
     first_redeemer_becomes_owner: billablePlan.plan_type === 'family',
     codes,
   });
-});
-
-billingMutation.post('/redeem', async (c) => {
-  const db = getDB(c.env);
-
-  const body = await c.req.json<{ code?: unknown }>().catch(() => ({ code: undefined }));
-  const raw = typeof body.code === 'string' ? body.code.trim() : '';
-  if (!raw) {
-    return c.json({ error: 'code is required', error_code: 'CODE_REQUIRED' }, 400);
-  }
-
-  const userPk = await resolveUserPk(c);
-  if (!userPk) {
-    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-  }
-
-  try {
-    return c.json(await redeemVoucherCode(db, { userPk, rawCode: raw }));
-  } catch (error) {
-    if (error instanceof VoucherRedemptionError) {
-      return c.json(
-        { error: error.message, error_code: error.errorCode },
-        error.status as 400 | 404 | 409,
-      );
-    }
-    throw error;
-  }
 });
 
 interface FamilyOwnerContext {

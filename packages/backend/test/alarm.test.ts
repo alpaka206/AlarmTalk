@@ -127,27 +127,6 @@ describe('GET /alarm — 알람 목록', () => {
 });
 
 describe('GET /alarm/:id — 단일 조회 정규화', () => {
-  it('단일 조회 응답이 정규화된다', async () => {
-    mockDB.pushResult([
-      {
-        id: ID.alarm,
-        time: '09:00',
-        is_active: 1,
-        repeat_days: '[0,6]',
-        mode: 'tts',
-        voice_profile_id: null,
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', `/alarm/${ID.alarm}`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.alarm.repeat_days).toEqual([0, 6]);
-    expect(body.alarm.is_active).toBe(true);
-    expect(body.alarm.mode).toBe('tts');
-    expect(body.alarm.voice_profile_id).toBeNull();
-  });
-
   it('존재하지 않으면 404', async () => {
     mockDB.pushResult([]);
     const app = buildApp();
@@ -441,64 +420,6 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
   });
 });
 
-describe('GET /alarm/tick — 발화 대상 조회', () => {
-  it('활성 알람 중 현재 시각과 일치하는 것만 반환', async () => {
-    // 현재 UTC 분 기준 HH:mm
-    const now = new Date();
-    const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
-    const hhmm = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}`;
-
-    // 30분 뒤 — 발화 윈도우(직전 5분) 에 절대 들어오지 않는 시각.
-    const future = new Date(now.getTime() + 30 * 60 * 1000);
-    const futureHHmm = `${pad(future.getUTCHours())}:${pad(future.getUTCMinutes())}`;
-
-    // 픽스처 시각이 UTC 기준이므로 timezone 을 명시한다 (미지정 시 Asia/Seoul 판정).
-    mockDB.pushResult([
-      {
-        id: ID.alarm,
-        user_id: 'user-1',
-        target_user_id: null,
-        time: hhmm,
-        repeat_days: '[]',
-        is_active: 1,
-        mode: 'tts',
-        voice_profile_id: null,
-        timezone: 'UTC',
-      },
-      {
-        id: '00000000-0000-4000-8000-0000000000aa',
-        user_id: 'user-1',
-        target_user_id: null,
-        time: futureHHmm,
-        repeat_days: '[]',
-        is_active: 1,
-        mode: 'tts',
-        voice_profile_id: null,
-        timezone: 'UTC',
-      },
-    ]);
-
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/alarm/tick'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.checked).toBe(2);
-    // 첫 번째는 현재 시각 매칭 → 발화
-    expect(body.firing.length).toBeGreaterThanOrEqual(1);
-    expect(body.firing[0].id).toBe(ID.alarm);
-  });
-
-  it('알람이 하나도 없으면 firing=[]', async () => {
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/alarm/tick'));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.checked).toBe(0);
-    expect(body.firing).toEqual([]);
-  });
-});
-
 describe('DELETE /alarm/:id — 알람 삭제', () => {
   it('존재하지 않으면 404 + ALARM_NOT_FOUND', async () => {
     mockDB.pushResult([]);
@@ -577,13 +498,6 @@ describe('error_code 일관성 검증', () => {
     const res = await app.request(jsonReq('PATCH', `/alarm/${ID.alarm}`, {}));
     const body = await res.json();
     expect(body.error_code).toBe('NO_UPDATE_FIELDS');
-  });
-
-  it('GET /:id — 잘못된 ID 형식 시 INVALID_ALARM_ID', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/alarm/not-a-uuid'));
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_ALARM_ID');
   });
 
   it('DELETE — 잘못된 ID 형식 시 INVALID_ALARM_ID', async () => {

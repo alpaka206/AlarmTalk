@@ -111,35 +111,6 @@ describe('GET /voice — 음성 프로필 목록', () => {
   });
 });
 
-describe('GET /voice/:id — 음성 프로필 상세', () => {
-  it('잘못된 UUID 형식이면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/voice/bad-id'));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_VOICE_PROFILE_ID');
-  });
-
-  it('존재하지 않으면 404', async () => {
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', `/voice/${V404}`));
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
-  });
-
-  it('프로필 반환', async () => {
-    mockDB.pushResult([{ id: V1, name: 'Voice A', status: 'ready' }]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', `/voice/${V1}`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.profile.id).toBe(V1);
-    expect(body.profile.name).toBe('Voice A');
-  });
-});
-
 describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
   it('잘못된 UUID 형식이면 400', async () => {
     const app = buildApp();
@@ -217,40 +188,6 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
     expect(update).toBeDefined();
     expect(update!.sql).toContain('relationship_label = ?');
     expect(update!.args).toContain('손녀');
-  });
-});
-
-describe('GET /voice/:id/stats — 음성 프로필 통계', () => {
-  it('잘못된 UUID 형식이면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/voice/bad-id/stats'));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('INVALID_VOICE_PROFILE_ID');
-  });
-
-  it('존재하지 않으면 404', async () => {
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([{ count: 0 }]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', `/voice/${V404}/stats`));
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
-  });
-
-  it('통계 반환', async () => {
-    mockDB.pushResult([{ id: V1, name: 'Voice A' }]);
-    mockDB.pushResult([{ count: 5 }]);
-    mockDB.pushResult([{ count: 3 }]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('GET', `/voice/${V1}/stats`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.voice_profile_id).toBe(V1);
-    expect(body.messages).toBe(5);
-    expect(body.alarms).toBe(3);
   });
 });
 

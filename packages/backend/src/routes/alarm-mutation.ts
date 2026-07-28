@@ -880,17 +880,6 @@ alarmMutation.post('/:id/decline', async (c) => {
   return c.json({ success: true, declined: true });
 });
 
-alarmMutation.delete('/:id/decline', async (c) => {
-  const resolved = await resolveDeclineTarget(c);
-  if ('error' in resolved) return resolved.error;
-  const db = getDB(c.env);
-  await db.execute({
-    sql: 'DELETE FROM alarm_recipient_state WHERE alarm_id = ? AND recipient_user_id = ?',
-    args: [resolved.id, resolved.target],
-  });
-  return c.json({ success: true, declined: false });
-});
-
 alarmMutation.delete('/:id', async (c) => {
   const userId = c.get('userId');
   const userPk = c.get('userIdPK') || userId;

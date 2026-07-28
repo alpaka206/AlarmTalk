@@ -534,39 +534,6 @@ voiceProfile.get('/family', async (c) => {
   });
 });
 
-voiceProfile.get('/:id', async (c) => {
-  const ids = ownerIds(c);
-  const db = getDB(c.env);
-  const id = c.req.param('id');
-
-  if (!UUID_RE.test(id)) {
-    return c.json(
-      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
-      400,
-    );
-  }
-
-  const ph = ids.map(() => '?').join(',');
-  const result = await db.execute({
-    sql: `SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
-    args: [id, ...ids],
-  });
-
-  if (result.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
-  }
-
-  const row = result.rows[0]!;
-  return c.json({
-    profile: {
-      ...row,
-      is_shared: Boolean(Number(row.is_shared ?? 0)),
-      is_draft: Boolean(Number(row.is_draft ?? 0)),
-      speech_style_status: (row.speech_style_status as string | null) ?? null,
-    },
-  });
-});
-
 voiceProfile.post('/:id/preview-played', async (c) => {
   const ids = ownerIds(c);
   const db = getDB(c.env);
@@ -1728,52 +1695,6 @@ function validateCloneDuration(
   return null;
 }
 
-voiceProfile.get('/:id/stats', async (c) => {
-  const ids = ownerIds(c);
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-  const id = c.req.param('id');
-
-  if (!UUID_RE.test(id)) {
-    return c.json(
-      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
-      400,
-    );
-  }
-
-  const ph = ids.map(() => '?').join(',');
-  const [profileRes, msgRes, alarmRes] = await Promise.all([
-    db.execute({
-      sql: `SELECT id, name FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
-      args: [id, ...ids],
-    }),
-    db.execute({
-      sql: `SELECT COUNT(*) as count FROM messages WHERE voice_profile_id = ? AND user_id IN (${ph})`,
-      args: [id, ...ids],
-    }),
-    db.execute({
-      sql: `SELECT COUNT(*) as count FROM alarms a
-            JOIN messages m ON a.message_id = m.id
-            WHERE m.voice_profile_id = ? AND (a.user_id = ? OR a.target_user_id = ?)`,
-      args: [id, userId, userId],
-    }),
-  ]);
-
-  if (profileRes.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
-  }
-
-  return c.json({
-    voice_profile_id: id,
-    messages: Number(typedRow<{ count: number }>(msgRes.rows[0]!).count ?? 0),
-    alarms: Number(typedRow<{ count: number }>(alarmRes.rows[0]!).count ?? 0),
-  });
-});
-
-// 말투 분석 재시도 — 등록 시 waitUntil 분석이 실패(speech_style_status='failed')했을 때
-// 클라가 동기로 다시 돌린다. 전사 소스는 clone 등록 성공 시 이 프로필에 연결해 보관한
-// 원본 녹음(voice_uploads.voice_profile_id, TTL 7일)이며, TTL 정리로 사라졌거나 보관
-// 자체가 실패했으면 409 — 이때는 목소리를 다시 등록해야 말투를 분석할 수 있다.
 voiceProfile.post('/:id/speech-style/retry', async (c) => {
   const ids = ownerIds(c);
   const userPk = (c.get('userIdPK') as string | undefined) || (c.get('userId') as string);

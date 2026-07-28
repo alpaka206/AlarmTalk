@@ -1,5 +1,5 @@
 // 가족 알람 실동작 검증 — mock 결과 주입이 아니라 실제 libsql DB 에 전체 마이그레이션을
-// 올리고 실제 라우트(POST /family-alarm/alarms, /alarms/voice)를 호출해 확인한다:
+// 올리고 실제 라우트(POST /family-alarm/alarms/voice)를 호출해 확인한다:
 //  - 멱등 재전송 시 message 행이 누적되지 않고 교체된 이전 행이 정리되는지(항목 D)
 //  - 알람 행 timezone 이 '검증에 쓴 효과 시간대'로 저장되는지(항목 I)
 //
@@ -47,14 +47,6 @@ function postJson(path: string, body: Record<string, unknown>): Promise<Response
   );
 }
 
-function ttsBody(overrides: Record<string, unknown> = {}) {
-  return {
-    recipient_user_id: RECIPIENT.pk,
-    wake_at: '23:00',
-    message_text: '좋은 아침!',
-    ...overrides,
-  };
-}
 
 function voiceBody(overrides: Record<string, unknown> = {}) {
   return {
@@ -131,74 +123,6 @@ afterEach(() => {
 });
 
 describe('가족 알람 멱등 재전송 — message 행 누적 방지(항목 D)', () => {
-  it('TTS 재전송 2회: 알람 1행 유지 + 교체된 이전 message 행 삭제(messages 1행)', async () => {
-    const res1 = await postJson('/family-alarm/alarms', ttsBody({ message_text: '첫번째' }));
-    expect(res1.status).toBe(201);
-    const body1 = (await res1.json()) as { alarm: { id: string }; message: { id: string } };
-
-    const res2 = await postJson('/family-alarm/alarms', ttsBody({ message_text: '두번째' }));
-    expect(res2.status).toBe(201);
-    const body2 = (await res2.json()) as { alarm: { id: string }; message: { id: string } };
-
-    expect(body2.alarm.id).toBe(body1.alarm.id); // 알람 행 재사용(멱등)
-    expect(body2.message.id).not.toBe(body1.message.id); // 메시지는 새 내용으로 교체
-
-    // 알람 1행 + 최신 메시지 연결.
-    expect(
-      await countRows(
-        'SELECT COUNT(*) AS cnt FROM alarms WHERE user_id = ? AND target_user_id = ? AND time = ?',
-        [SENDER.login, RECIPIENT.login, '23:00'],
-      ),
-    ).toBe(1);
-    const alarm = await db.execute({
-      sql: 'SELECT message_id FROM alarms WHERE id = ?',
-      args: [body1.alarm.id],
-    });
-    expect(String(alarm.rows[0]!.message_id)).toBe(body2.message.id);
-
-    // 교체된 이전 메시지는 같은 트랜잭션에서 정리되어 누적되지 않는다.
-    expect(
-      await countRows(
-        "SELECT COUNT(*) AS cnt FROM messages WHERE user_id = ? AND category = 'family'",
-        [RECIPIENT.pk],
-      ),
-    ).toBe(1);
-    expect(
-      await countRows('SELECT COUNT(*) AS cnt FROM messages WHERE id = ?', [body1.message.id]),
-    ).toBe(0);
-  });
-
-  it('TTS 재전송: 이전 메시지의 generated_audio_assets 정리 + R2 키 삭제 큐 적재', async () => {
-    const res1 = await postJson('/family-alarm/alarms', ttsBody({ message_text: '첫번째' }));
-    const body1 = (await res1.json()) as { message: { id: string } };
-
-    // 수신자가 프리페치해 이전 메시지의 TTS 캐시가 생긴 상황을 재현.
-    const objectKey = 'generated-tts/famg-old.mp3';
-    await db.execute({
-      sql: `INSERT INTO generated_audio_assets
-            (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
-             model_id, language, request_hash, text, audio_object_key)
-            VALUES ('famg-asset-1', ?, ?, ?, 'elevenlabs', 'ev-1', 'm1', 'ko', ?, '첫번째', ?)`,
-      args: [RECIPIENT.pk, VP_ID, body1.message.id, crypto.randomUUID(), objectKey],
-    });
-
-    const res2 = await postJson('/family-alarm/alarms', ttsBody({ message_text: '두번째' }));
-    expect(res2.status).toBe(201);
-
-    expect(
-      await countRows('SELECT COUNT(*) AS cnt FROM generated_audio_assets WHERE message_id = ?', [
-        body1.message.id,
-      ]),
-    ).toBe(0);
-    // R2 오브젝트는 트랜잭션 안에서 직접 못 지우므로 삭제 큐에 적재된다.
-    expect(
-      await countRows(
-        "SELECT COUNT(*) AS cnt FROM pending_external_deletions WHERE kind = 'r2_object' AND ref = ?",
-        [objectKey],
-      ),
-    ).toBe(1);
-  });
-
   it('voice 재전송 2회: family-voice 메시지도 1행 유지', async () => {
     const res1 = await postJson('/family-alarm/alarms/voice', voiceBody({ label: '첫번째 응원' }));
     expect(res1.status).toBe(201);
@@ -228,8 +152,8 @@ describe('가족 알람 timezone 저장 — 검증에 쓴 효과 시간대와 �
     // NY 7/15 23:00(리드타임 통과)이지만, 저장 tz 까지 NY 가 되면 cron 이 발신자 주장
     // 시간대로 울린다 — 효과 시간대(Asia/Seoul)가 판정·저장 모두에 쓰여야 한다.
     const res = await postJson(
-      '/family-alarm/alarms',
-      ttsBody({ timezone: 'America/New_York' }),
+      '/family-alarm/alarms/voice',
+      voiceBody({ timezone: 'America/New_York' }),
     );
     expect(res.status).toBe(201);
     const { alarm } = (await res.json()) as { alarm: { id: string } };

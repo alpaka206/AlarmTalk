@@ -371,7 +371,7 @@ Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1. All pairs above pa
 ### SEQ-6. Family invite accept
 
 ```
-[Member]  [Android]  [/api/family/invites/:code/accept]  [DB]
+[Member]  [Android]  [/api/code/register]  [DB]
  enter code
             POST
                  → authMiddleware

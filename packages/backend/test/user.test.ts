@@ -172,51 +172,6 @@ describe('PATCH /user/me', () => {
   });
 });
 
-describe('PATCH /user/plan', () => {
-  it('유료 승격(plus)은 403 PLAN_UPGRADE_NOT_ALLOWED 로 차단', async () => {
-    // self-service 엔드포인트로는 무결제 유료 승격 불가(store-billing/voucher 경로로만).
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/plan', { plan: 'plus' }));
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('PLAN_UPGRADE_NOT_ALLOWED');
-  });
-
-  it('잘못된 플랜 → 400 INVALID_PLAN', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/plan', { plan: 'enterprise' }));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_PLAN');
-  });
-
-  it('존재하지 않는 사용자 → 404 USER_NOT_FOUND', async () => {
-    mockDB.pushResult([], 0);
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/plan', { plan: 'free' }));
-    expect(res.status).toBe(404);
-    expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
-  });
-
-  it('유료 승격(family)은 403 PLAN_UPGRADE_NOT_ALLOWED 로 차단', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('PATCH', '/user/plan', { plan: 'family' }));
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('PLAN_UPGRADE_NOT_ALLOWED');
-  });
-
-  it('잘못된 JSON → 500 UPDATE_PLAN_FAILED', async () => {
-    const app = buildApp();
-    const res = await app.request(
-      new Request('http://localhost/user/plan', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: 'bad json',
-      }),
-    );
-    expect(res.status).toBe(500);
-    expect((await res.json()).error_code).toBe('UPDATE_PLAN_FAILED');
-  });
-});
-
 describe('DELETE /user/me', () => {
   it('모든 관련 데이터 삭제 후 성공', async () => {
     mockDB.pushResult([{ id: 'pk-1' }]);

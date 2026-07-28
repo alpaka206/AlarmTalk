@@ -381,15 +381,6 @@ Res: { "success": true }
 Production delivery uses Resend. Configure `RESEND_API_KEY` and
 `AUTH_EMAIL_FROM` as Worker secrets after verifying the sending domain.
 
-#### `POST /auth/apple`
-
-```json
-Req:  { "id_token": "<apple identity token>", "email": "u@privaterelay.appleid.com", "name": "Sue" }
-Res:  { "token": "...", "user": { "id": "...", "email": "u@privaterelay.appleid.com", "name": "Sue", "plan": "free" } }
-```
-
-The backend verifies the Apple token signature against Apple JWKS, checks issuer, audience (`APPLE_CLIENT_ID`), and expiry, links `users.apple_id`, then returns the app JWT used by native clients.
-
 #### `POST /voice/clone` (multipart)
 
 - Body: `audio` (file), `name` (string), `isDraft=true`, relationship/title fields, and app `language`.
@@ -423,17 +414,15 @@ Res: {
 }
 ```
 
-#### `POST /family/invites/:code/accept`
-
-Validates pending status, expiry, capacity, and self-invite block; inserts into `plan_group_members`; marks the invite `used`. All inside a transaction.
-
 #### `POST /code/register`
 
 Auto-detects format:
-- `VA-XXXX-XXXX-XXXX` → voucher redemption → subscription insert + plan update.
-- 6-digit numeric → family invite accept.
+- `INV-`/`GIFT-XXXX-XXXX-XXXX` → voucher redemption → subscription insert + plan update.
+  A code carrying an issuer subscription joins that issuer's plan group as a member;
+  a standalone code makes the redeemer the owner of a new group (as if paid).
+- anything else → promo code (case-insensitive).
 
-Errors: `INVALID_FORMAT` `EXPIRED` `ALREADY_USED` `NOT_FOUND` `SELF_INVITE` `GROUP_FULL`.
+Errors: `CODE_REQUIRED` `CODE_NOT_FOUND` `CODE_EXPIRED` `CODE_ALREADY_USED` `GROUP_FULL`.
 
 #### `POST /billing/test-codes`
 

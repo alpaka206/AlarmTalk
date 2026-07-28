@@ -255,7 +255,7 @@ The full external policy is in `SECURITY.md`. The internal rules are:
 - **Rejected**: email invites, link-only invites.
 - **Why**: works without collecting email, can be passed verbally / via any chat app, brute-force resistant given short TTL and a rate limit.
 - **Schema**: see `plan_group_invites` in [tech/README.md](../tech/README.md) §2.
-- **API**: `POST /api/family/invites` (issue) / `POST /api/family/invites/:code/accept` / `POST /api/family/invites/:code/revoke`.
+- **API**: `POST /api/billing/vouchers/family-share` (발급) / `POST /api/billing/vouchers/family-share/regenerate` (재발급) / `POST /api/code/register` (합류).
 - **Mitigations**:
   - Brute force: 1,000,000 combinations × 10-minute TTL × pending uniqueness × rate limiting → practically infeasible.
   - Link leakage: single-use means at most one redemption; for many invitees the owner issues multiple codes.

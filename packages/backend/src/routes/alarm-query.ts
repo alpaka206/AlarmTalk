@@ -1,8 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { selectFiringAlarms, type ScheduledAlarm } from '../lib/scheduler';
-import { UUID_RE } from '../lib/validate';
 import { normalizeAlarmRow, type AlarmRow } from './alarm-helpers';
 
 const alarmQuery = new Hono<AppEnv>();
@@ -14,58 +12,6 @@ function viewerIds(c: { get: (key: 'userId' | 'userIdPK') => string }): string[]
 function inPlaceholders(values: unknown[]): string {
   return values.map(() => '?').join(', ');
 }
-
-alarmQuery.get('/tick', async (c) => {
-  const ids = viewerIds(c);
-  const idPlaceholders = inPlaceholders(ids);
-  const db = getDB(c.env);
-
-  const result = await db.execute({
-    sql: `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
-                 mode, voice_profile_id, timezone
-          FROM alarms
-          WHERE (user_id IN (${idPlaceholders}) OR target_user_id IN (${idPlaceholders})) AND is_active = 1
-            AND NOT (
-              target_user_id IN (${idPlaceholders})
-              AND user_id NOT IN (${idPlaceholders})
-              AND EXISTS (
-                SELECT 1 FROM alarm_recipient_state ars
-                WHERE ars.alarm_id = alarms.id
-                  AND ars.recipient_user_id IN (${idPlaceholders})
-                  AND ars.declined = 1
-              )
-            )`,
-    args: [...ids, ...ids, ...ids, ...ids, ...ids],
-  });
-
-  const alarms: ScheduledAlarm[] = (result.rows as AlarmRow[]).map((r) => {
-    const n = normalizeAlarmRow(r);
-    return {
-      id: String(r.id),
-      user_id: String(r.user_id),
-      target_user_id: (r.target_user_id as string | null) ?? null,
-      time: String(r.time),
-      repeat_days: n.repeat_days,
-      is_active: n.is_active,
-      mode: n.mode,
-      voice_profile_id: n.voice_profile_id,
-      timezone: ((r as Record<string, unknown>).timezone as string | null) ?? null,
-    };
-  });
-
-  const now = new Date();
-  const firing = selectFiringAlarms(alarms, now);
-  return c.json({
-    now: now.toISOString(),
-    checked: alarms.length,
-    firing: firing.map((a) => ({
-      id: a.id,
-      time: a.time,
-      mode: a.mode,
-      voice_profile_id: a.voice_profile_id,
-    })),
-  });
-});
 
 alarmQuery.get('/', async (c) => {
   const ids = viewerIds(c);
@@ -128,35 +74,6 @@ alarmQuery.get('/', async (c) => {
   const total = Number(countRes.rows[0]!.total);
   const alarms = (result.rows as AlarmRow[]).map((r) => normalizeAlarmRow(r, ids));
   return c.json({ alarms, total, limit, offset });
-});
-
-alarmQuery.get('/:id', async (c) => {
-  const ids = viewerIds(c);
-  const idPlaceholders = inPlaceholders(ids);
-  const db = getDB(c.env);
-  const id = c.req.param('id');
-
-  if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400);
-  }
-
-  const result = await db.execute({
-    sql: `SELECT a.*, m.text as message_text, m.category, vp.name as voice_name,
-            m.audio_url as message_audio_url,
-            creator.email as creator_email, creator.name as creator_name
-          FROM alarms a
-          LEFT JOIN messages m ON a.message_id = m.id
-          LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
-          LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id
-          WHERE a.id = ? AND (a.user_id IN (${idPlaceholders}) OR a.target_user_id IN (${idPlaceholders}))`,
-    args: [id, ...ids, ...ids],
-  });
-
-  if (result.rows.length === 0) {
-    return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
-  }
-
-  return c.json({ alarm: normalizeAlarmRow(result.rows[0] as AlarmRow, ids) });
 });
 
 export default alarmQuery;
