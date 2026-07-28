@@ -82,7 +82,10 @@ export async function purgeUserAccount(
     }
   }
   if (userPk) {
-    const userIds = Array.from(new Set([userPk, userLoginId]));
+    // 중복을 제거하지 않는다. 아래 DELETE 들이 `IN (?, ?)` 로 개수를 고정해 두고 있어서,
+    // 두 값이 같을 때(=정규화 이후의 일반적인 경우) 하나로 줄이면 바인딩 개수가 어긋나
+    // 트랜잭션이 통째로 롤백되고 DELETE /user/me 가 500 이 된다.
+    const userIds = [userPk, userLoginId];
     // 클론 voice/R2 오디오의 외부 삭제 참조를 행 삭제 *전에* 큐에 적재한다.
     // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
     await enqueueUserVoiceArtifacts(tx, userIds);

@@ -67,8 +67,14 @@ async function resolveUserLoginId(db: DbExecutor, userPk: string): Promise<strin
   return res.rows.length > 0 ? ((res.rows[0]!.google_id as string | null) ?? null) : null;
 }
 
-/** 해지/만료 후 유료 음성 데이터를 하드삭제 대신 보관하는 유예 기간(일). */
-export const PAID_VOICE_RETENTION_DAYS = 3;
+/**
+ * 해지/만료 후 유료 음성 데이터를 하드삭제 대신 보관하는 유예 기간(일).
+ *
+ * 앱의 해지 안내가 "만든 목소리는 삭제되지 않고 잠기며, 다시 이용권을 등록하면 그대로
+ * 다시 쓸 수 있어요"라고 약속한다. 이 값을 줄이면 5분 주기 정리 cron 이 그 약속보다 먼저
+ * 지워, 재구독해도 되살릴 게 없어진다. 줄이려면 해지 다이얼로그 카피를 함께 바꿔야 한다.
+ */
+export const PAID_VOICE_RETENTION_DAYS = 30;
 
 /**
  * 유료 음성 보관 유예를 예약(upsert)한다. 반환값은 delete_after ISO 문자열

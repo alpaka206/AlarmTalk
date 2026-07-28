@@ -864,7 +864,11 @@ internal fun AlarmTalkApp(
                           familyVoices = familyVoices,
                           billingBusy = billingBusy,
                           subscriptionResponse = subscriptionResponse,
-                          voiceDraftQuotaExhausted = viewModel.voiceDraftQuota?.let { it.remaining <= 0 } == true,
+                          // 삭제 경고('지금 지우면 이번 달엔 못 만들어요')는 초안 시도 쿼터가 아니라
+                          // 정식 등록 쿼터로 판정해야 한다. 초안 쿼터의 remaining 은 제한 해제 후
+                          // 호환용으로 0 고정이라, 그대로 쓰면 이번 달 등록이 남아 있어도 경고가 뜬다.
+                          voiceDraftQuotaExhausted =
+                              viewModel.voiceDraftQuota?.let { it.registrationRemaining <= 0 } == true,
                           voiceDraftQuota = viewModel.voiceDraftQuota,
                           vouchers = vouchers,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
