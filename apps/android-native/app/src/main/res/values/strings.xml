@@ -914,7 +914,7 @@
     <string name="misc2_pass_plan_family">가족</string>
     <string name="misc2_pass_plan_default">이용권</string>
     <string name="misc2_voice_preview_preparing">미리듣기 준비 중</string>
-    <string name="misc2_voice_preview_pause">미리듣기 일시정지</string>
+    <string name="misc2_voice_preview_pause">미리듣기 정지</string>
     <string name="misc2_voice_preview_play">미리듣기 재생</string>
     <string name="rd2_am">오전</string>
     <string name="rd2_pm">오후</string>
@@ -1023,4 +1023,5 @@
     <string name="plan_gate_redeem_action">쿠폰이 있어요</string>
     <string name="plan_gate_redeem_title">쿠폰 입력</string>
     <string name="plan_gate_redeem_desc">받으신 프로모션·선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요.</string>
+    <string name="voicesr_preview_stop">정지</string>
 </resources>

@@ -886,7 +886,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="misc2_pass_plan_family">Family</string>
     <string name="misc2_pass_plan_default">Pass</string>
     <string name="misc2_voice_preview_preparing">Preparing preview</string>
-    <string name="misc2_voice_preview_pause">Pause preview</string>
+    <string name="misc2_voice_preview_pause">Stop preview</string>
     <string name="misc2_voice_preview_play">Play preview</string>
     <string name="rd2_am">AM</string>
     <string name="rd2_pm">PM</string>
@@ -995,4 +995,5 @@ Check your connection and try again.</string>
     <string name="plan_gate_redeem_action">I have a code</string>
     <string name="plan_gate_redeem_title">Enter a code</string>
     <string name="plan_gate_redeem_desc">Enter a promo or gift code. Invite codes work here too.</string>
+    <string name="voicesr_preview_stop">Stop</string>
 </resources>

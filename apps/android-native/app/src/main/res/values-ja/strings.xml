@@ -894,7 +894,7 @@
     <string name="misc2_pass_plan_family">家族</string>
     <string name="misc2_pass_plan_default">利用券</string>
     <string name="misc2_voice_preview_preparing">プレビュー準備中</string>
-    <string name="misc2_voice_preview_pause">プレビュー一時停止</string>
+    <string name="misc2_voice_preview_pause">プレビューを停止</string>
     <string name="misc2_voice_preview_play">プレビュー再生</string>
     <string name="rd2_am">午前</string>
     <string name="rd2_pm">午後</string>
@@ -1003,4 +1003,5 @@
     <string name="plan_gate_redeem_action">クーポンがあります</string>
     <string name="plan_gate_redeem_title">コードを入力</string>
     <string name="plan_gate_redeem_desc">プロモーション・ギフトコードを入力してください。招待コードも使えます。</string>
+    <string name="voicesr_preview_stop">停止</string>
 </resources>

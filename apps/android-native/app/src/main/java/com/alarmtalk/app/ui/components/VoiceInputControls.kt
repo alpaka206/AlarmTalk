@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -139,8 +140,13 @@ internal fun VoicePreviewButtonIcon(
             strokeWidth = 2.dp,
         )
     } else {
+        // 목소리 탭 목록과 같은 전용 벡터(ic_voice_listen/stop_24) — 미리듣기 버튼이
+        // 화면마다 다른 아이콘을 쓰지 않게 한 벌로 통일한다. 이 토글은 실제로 '정지'다
+        // (다시 누르면 처음부터 재생) — 그래서 일시정지가 아니라 정지 모양을 쓴다.
         Icon(
-            imageVector = if (active) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+            painter = painterResource(
+                if (active) R.drawable.ic_voice_stop_24 else R.drawable.ic_voice_listen_24,
+            ),
             contentDescription = voicePreviewContentDescription(context, active = active, preparing = false),
             modifier = modifier.size(22.dp),
         )

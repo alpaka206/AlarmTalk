@@ -144,7 +144,8 @@ class AlarmEditorScreenTest {
     fun voicePreviewContentDescriptionShowsPlaybackState() {
         assertEquals("미리듣기 재생", voicePreviewContentDescription(context, active = false, preparing = false))
         assertEquals("미리듣기 준비 중", voicePreviewContentDescription(context, active = false, preparing = true))
-        assertEquals("미리듣기 일시정지", voicePreviewContentDescription(context, active = true, preparing = false))
+        // 이 토글은 일시정지가 아니라 정지다(다시 누르면 처음부터 재생) — 아이콘·문구를 그에 맞췄다.
+        assertEquals("미리듣기 정지", voicePreviewContentDescription(context, active = true, preparing = false))
     }
 
     private fun member(

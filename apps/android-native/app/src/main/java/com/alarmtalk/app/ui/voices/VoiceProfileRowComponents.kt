@@ -52,6 +52,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -400,27 +401,18 @@ internal fun VoiceCatalogRow(
                 // 좌우로 어긋나 목록이 들쭉날쭉해 보인다.
                 Spacer(modifier = Modifier.width(VoiceCatalogRowContentHeight))
             }
-            // 원형 재생 버튼 대신 글자 — 이 앱은 기본 아이콘을 장식으로 쓰지 않는다.
-            // 재생 중에는 이퀄라이저가 같은 자리를 대신해 '누르면 멈춘다'가 읽힌다.
-            Box(
-                modifier = Modifier.clickable(
-                    enabled = enabled,
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onPreview,
-                ),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (isPlaying) {
-                    PlayingEqualizer()
-                } else {
-                    Text(
-                        text = stringResource(R.string.voicesr_preview_action),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+            // 듣기 ↔ 정지. 하단 탭과 같은 24dp 그리드·같은 선 굵기로 그린 전용 벡터라
+            // Material 기본 아이콘을 끌어다 쓴 티가 나지 않는다(ic_voice_listen/stop_24).
+            IconButton(onClick = onPreview, enabled = enabled) {
+                Icon(
+                    painter = painterResource(
+                        if (isPlaying) R.drawable.ic_voice_stop_24 else R.drawable.ic_voice_listen_24,
+                    ),
+                    contentDescription = stringResource(
+                        if (isPlaying) R.string.voicesr_preview_stop else R.string.voicesr_preview_action,
+                    ),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
             }
         }
         belowContent?.invoke(this)
