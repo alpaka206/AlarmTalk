@@ -4,7 +4,7 @@
 - `packages/backend` — Cloudflare Workers + Hono + Turso(libSQL). 라우트 `src/routes`, 마이그레이션 `src/lib/migrations.ts`.
 - `packages/shared` — zod 스키마(`src/schemas`), 백엔드·클라 공용 계약.
 - `apps/android-native` — Kotlin/Compose. dev/prod product flavor.
-- `apps/ios-native` — SwiftUI(보류·미운영, CI는 workflow_dispatch 전용). develop 머지 OK, 릴리스 전 Mac 빌드 검증.
+- iOS 앱은 없다. SwiftUI 앱(`apps/ios-native`)과 iOS 빌드 워크플로는 미운영이라 제거했다 — 재개 시 앱과 워크플로를 함께 되살린다.
 - `apps/landing` — 웹 랜딩.
 
 ## 배포 / 환경

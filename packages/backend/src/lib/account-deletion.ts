@@ -71,7 +71,7 @@ export async function purgeUserAccount(
   if (!userPk) {
     const orphanGuard = await tx.execute({
       sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
-      args: [userId, userId, userId],
+      args: [userId, userId],
     });
     if (orphanGuard.rows.length > 0) {
       throw new Error(

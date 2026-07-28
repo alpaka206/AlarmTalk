@@ -72,7 +72,7 @@ export async function getTokensForUser(db: Client, userId: string): Promise<stri
     sql: `SELECT pt.token FROM push_tokens pt
           JOIN users u ON u.id = pt.user_id
           WHERE u.id = ? OR u.google_id = ?`,
-    args: [userId, userId, userId],
+    args: [userId, userId],
   });
   return result.rows.map((r) => String(r.token));
 }

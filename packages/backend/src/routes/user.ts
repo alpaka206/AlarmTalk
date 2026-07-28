@@ -234,7 +234,7 @@ user.delete('/me', async (c) => {
     // PII(생체 음성 등)가 고아로 남는다(auth.ts:94 의 조회 조건과 동일하게 맞춤).
     const userRes = await db.execute({
       sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
-      args: [userId, userId, userId],
+      args: [userId, userId],
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
 
