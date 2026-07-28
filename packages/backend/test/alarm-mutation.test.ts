@@ -286,7 +286,7 @@ describe('POST /alarms', () => {
     expect((await res.json()).error_code).toBe('FAMILY_ALARM_QUIET_TIME');
   });
 
-  it('voice_profile_id, speaker_id null 기본값', async () => {
+  it('voice_profile_id null 기본값', async () => {
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
     pushMessageBelongsToCaller();
@@ -295,7 +295,6 @@ describe('POST /alarms', () => {
     const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
     const body = await res.json();
     expect(body.alarm.voice_profile_id).toBeNull();
-    expect(body.alarm.speaker_id).toBeNull();
   });
 
   it('유효하지 않은 vibration_pattern → 400 INVALID_VIBRATION_PATTERN', async () => {
@@ -374,9 +373,8 @@ describe('POST /alarms', () => {
     expect(insertCall!.args).toContain('[1,3,5]');
   });
 
-  it('voice_profile_id + speaker_id 지정 시 INSERT 반영 + 응답 포함', async () => {
+  it('voice_profile_id 지정 시 INSERT 반영 + 응답 포함', async () => {
     const vpId = '50000000-0000-4000-8000-000000000001';
-    const spkId = '60000000-0000-4000-8000-000000000001';
     mockDB.pushResult([{ plan: 'personal' }]);
     mockDB.pushResult([{ id: ID.message }]);
     mockDB.pushResult([{ id: vpId }]);
@@ -385,16 +383,14 @@ describe('POST /alarms', () => {
     mockDB.pushResult([], 1);
 
     const res = await buildApp().request(
-      jsonReq('POST', '/alarms', { ...validBody, voice_profile_id: vpId, speaker_id: spkId }),
+      jsonReq('POST', '/alarms', { ...validBody, voice_profile_id: vpId }),
     );
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.alarm.voice_profile_id).toBe(vpId);
-    expect(body.alarm.speaker_id).toBe(spkId);
 
     const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT'));
     expect(insertCall!.args).toContain(vpId);
-    expect(insertCall!.args).toContain(spkId);
   });
 
   it('IDOR: foreign or draft voice_profile_id is rejected on create', async () => {
@@ -464,15 +460,7 @@ describe('POST /alarms', () => {
     expect((await res.json()).error_code).toBe('INVALID_VOICE_PROFILE_ID');
   });
 
-  it('speaker_id 잘못된 UUID 형식 → 400 INVALID_SPEAKER_ID', async () => {
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', { ...validBody, speaker_id: 'bad-speaker' }),
-    );
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_SPEAKER_ID');
-  });
-
-  it('repeat_days 배열이 아닌 값 → 400 INVALID_REPEAT_DAYS', async () => {
+it('repeat_days 배열이 아닌 값 → 400 INVALID_REPEAT_DAYS', async () => {
     const res = await buildApp().request(
       jsonReq('POST', '/alarms', { ...validBody, repeat_days: 'mon,wed' }),
     );
@@ -642,7 +630,6 @@ describe('greeting 버킷 정책 (POST/PATCH)', () => {
         mode: 'tts',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         raw_audio_url: null,
         bucket_id: null,
         user_plan: 'personal',
@@ -684,7 +671,6 @@ describe('greeting 버킷 정책 (POST/PATCH)', () => {
         vibration_pattern: 'default',
         wake_mode: 'sound_then_voice',
         voice_profile_id: vpId,
-        speaker_id: null,
         bucket_id: 'greeting',
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
@@ -769,7 +755,6 @@ describe('PATCH /alarms/:id', () => {
         vibration_pattern: 'default',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
       },
@@ -801,7 +786,6 @@ describe('PATCH /alarms/:id', () => {
         vibration_pattern: 'strong',
         wake_mode: 'voice_only',
         voice_profile_id: null,
-        speaker_id: null,
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
       },
@@ -839,7 +823,6 @@ describe('PATCH /alarms/:id', () => {
         vibration_pattern: 'default',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
       },
@@ -893,7 +876,6 @@ describe('PATCH /alarms/:id', () => {
         vibration_pattern: 'default',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
       },
@@ -908,39 +890,7 @@ describe('PATCH /alarms/:id', () => {
     expect((await res.json()).alarm.repeat_days).toEqual([0, 6]);
   });
 
-  it('speaker_id 수정 반영', async () => {
-    const spkId = '60000000-0000-4000-8000-000000000001';
-    mockDB.pushResult([{ id: ID.alarm }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([
-      {
-        id: ID.alarm,
-        user_id: 'user-1',
-        target_user_id: null,
-        message_id: ID.message,
-        time: '07:30',
-        repeat_days: '[]',
-        is_active: 1,
-        snooze_minutes: 5,
-        mode: 'tts',
-        vibration_pattern: 'default',
-        wake_mode: 'sound_then_voice',
-        voice_profile_id: null,
-        speaker_id: spkId,
-        created_at: '2026-01-01',
-        updated_at: '2026-01-02',
-      },
-    ]);
-
-    const res = await buildApp().request(
-      jsonReq('PATCH', `/alarms/${ID.alarm}`, { speaker_id: spkId }),
-    );
-    expect(res.status).toBe(200);
-    const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE'));
-    expect(updateCall!.args).toContain(spkId);
-  });
-
-  it('voice_profile_id 잘못된 UUID → 400 INVALID_VOICE_PROFILE_ID', async () => {
+it('voice_profile_id 잘못된 UUID → 400 INVALID_VOICE_PROFILE_ID', async () => {
     const res = await buildApp().request(
       jsonReq('PATCH', `/alarms/${ID.alarm}`, { voice_profile_id: 'bad-uuid' }),
     );
@@ -948,15 +898,7 @@ describe('PATCH /alarms/:id', () => {
     expect((await res.json()).error_code).toBe('INVALID_VOICE_PROFILE_ID');
   });
 
-  it('speaker_id 잘못된 UUID → 400 INVALID_SPEAKER_ID', async () => {
-    const res = await buildApp().request(
-      jsonReq('PATCH', `/alarms/${ID.alarm}`, { speaker_id: 'bad-speaker' }),
-    );
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_SPEAKER_ID');
-  });
-
-  it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
+it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
     const res = await buildApp().request(
       jsonReq('PATCH', `/alarms/${ID.alarm}`, { is_active: 'yes' }),
     );
@@ -995,7 +937,6 @@ describe('PATCH /alarms/:id', () => {
         vibration_pattern: 'default',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
       },
@@ -1023,7 +964,6 @@ describe('PATCH /alarms/:id', () => {
         vibration_pattern: 'default',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
       },
@@ -1048,7 +988,6 @@ describe('PATCH /alarms/:id', () => {
         mode: 'tts',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         raw_audio_url: null,
         user_plan: 'personal',
       },
@@ -1073,7 +1012,6 @@ describe('PATCH /alarms/:id', () => {
         mode: 'tts',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         raw_audio_url: null,
         user_plan: 'personal',
       },
@@ -1098,7 +1036,6 @@ describe('PATCH /alarms/:id', () => {
         vibration_pattern: 'default',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
       },
@@ -1120,7 +1057,6 @@ describe('PATCH /alarms/:id', () => {
         mode: 'tts',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         raw_audio_url: null,
         user_plan: 'personal',
       },
@@ -1153,7 +1089,6 @@ describe('PATCH /alarms/:id', () => {
         vibration_pattern: 'default',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        speaker_id: null,
         created_at: '2026-01-01',
         updated_at: '2026-01-02',
       },

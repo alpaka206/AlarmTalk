@@ -512,8 +512,7 @@ auth.post('/login', async (c) => {
   try {
     const result = await db.execute({
       sql: `SELECT id, google_id, email, password_hash, name, plan, token_epoch,
-                   allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE email = ?`,
       args: [normalizedEmail],
@@ -618,8 +617,7 @@ auth.post('/google', async (c) => {
 
     const existing = await db.execute({
       sql: `SELECT id, google_id, email, name, plan, token_epoch,
-                   allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users
             WHERE google_id = ? OR email = ?
@@ -668,8 +666,7 @@ auth.post('/google', async (c) => {
     );
 
     const fresh = await db.execute({
-      sql: `SELECT allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
+      sql: `SELECT allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [userId, googleId],
@@ -732,8 +729,7 @@ auth.get('/me', async (c) => {
     const db = getDB(c.env);
     const result = await db.execute({
       sql: `SELECT id, email, name, plan, token_epoch, deletion_status,
-                   allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [payload.sub, payload.sub],

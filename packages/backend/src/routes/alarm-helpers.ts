@@ -22,7 +22,6 @@ export type AlarmRow = Record<string, unknown> & {
   vibration_pattern?: unknown;
   wake_mode?: unknown;
   voice_profile_id?: unknown;
-  speaker_id?: unknown;
   user_id?: unknown;
   target_user_id?: unknown;
   creator_email?: unknown;
@@ -89,7 +88,6 @@ export function normalizeAlarmRow(row: AlarmRow, viewer?: string | string[] | nu
     vibration_pattern: vibrationPattern,
     wake_mode: wakeMode,
     voice_profile_id: (row.voice_profile_id ?? null) as string | null,
-    speaker_id: (row.speaker_id ?? null) as string | null,
     raw_audio_url: (row.raw_audio_url ?? null) as string | null,
     raw_audio_duration_ms:
       typeof row.raw_audio_duration_ms === 'number'
@@ -111,7 +109,6 @@ export function validateAlarmFields(body: {
   vibration_pattern?: string;
   wake_mode?: string;
   voice_profile_id?: string | null;
-  speaker_id?: string | null;
   time?: string;
   repeat_days?: number[];
   snooze_minutes?: number;
@@ -164,10 +161,6 @@ export function validateAlarmFields(body: {
 
   if (body.voice_profile_id !== undefined && body.voice_profile_id !== null && !UUID_RE.test(body.voice_profile_id)) {
     return { error: 'Invalid voice_profile_id format', error_code: 'INVALID_VOICE_PROFILE_ID' };
-  }
-
-  if (body.speaker_id !== undefined && body.speaker_id !== null && !UUID_RE.test(body.speaker_id)) {
-    return { error: 'Invalid speaker_id format', error_code: 'INVALID_SPEAKER_ID' };
   }
 
   if (body.time !== undefined) {

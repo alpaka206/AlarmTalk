@@ -16,7 +16,6 @@ function makeAlarm(partial: Partial<ScheduledAlarm> = {}): ScheduledAlarm {
     is_active: partial.is_active ?? true,
     mode: partial.mode ?? 'tts',
     voice_profile_id: partial.voice_profile_id ?? null,
-    speaker_id: partial.speaker_id ?? null,
     target_user_id: partial.target_user_id ?? null,
     // 기존 픽스처가 UTC 시각 기준이므로 명시. 기본값(Asia/Seoul) 동작은 별도 케이스에서 검증.
     timezone: partial.timezone !== undefined ? partial.timezone : 'UTC',

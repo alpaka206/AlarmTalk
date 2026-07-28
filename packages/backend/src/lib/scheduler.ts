@@ -30,7 +30,6 @@ export interface ScheduledAlarm {
   is_active: boolean;
   mode: AlarmMode;
   voice_profile_id?: string | null;
-  speaker_id?: string | null;
   /** IANA timezone (예: 'Asia/Seoul'). 없으면 DEFAULT_ALARM_TIMEZONE. */
   timezone?: string | null;
 }

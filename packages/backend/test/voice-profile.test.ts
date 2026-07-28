@@ -908,7 +908,6 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(alarmsCascade!.sql).toContain("wake_mode = 'sound_then_voice'");
     expect(alarmsCascade!.sql).toContain('message_id = NULL');
     expect(alarmsCascade!.sql).toContain('voice_profile_id = NULL');
-    expect(alarmsCascade!.sql).toContain('speaker_id = NULL');
     const messagesUpdate = mockDB.calls.find((c) =>
       c.sql.startsWith('UPDATE messages SET audio_url'),
     );

@@ -75,7 +75,6 @@ describe('GET /alarm — 알람 목록', () => {
         repeat_days: '[1,3,5]',
         mode: null,
         voice_profile_id: null,
-        speaker_id: null,
         message_text: 'hi',
       },
     ]);
@@ -86,10 +85,9 @@ describe('GET /alarm — 알람 목록', () => {
     expect(body.alarms[0].is_active).toBe(true);
     expect(body.alarms[0].mode).toBe('tts');
     expect(body.alarms[0].voice_profile_id).toBeNull();
-    expect(body.alarms[0].speaker_id).toBeNull();
   });
 
-  it('목록: mode=sound-only + voice_profile_id/speaker_id 를 그대로 노출', async () => {
+  it('목록: mode=sound-only + voice_profile_id 를 그대로 노출', async () => {
     const vp = '40000000-0000-4000-8000-000000000001';
     const sp = '50000000-0000-4000-8000-000000000001';
     mockDB.pushResult([{ total: 1 }]);
@@ -101,7 +99,6 @@ describe('GET /alarm — 알람 목록', () => {
         repeat_days: '[]',
         mode: 'sound-only',
         voice_profile_id: vp,
-        speaker_id: sp,
       },
     ]);
     const app = buildApp();
@@ -110,7 +107,6 @@ describe('GET /alarm — 알람 목록', () => {
     expect(body.alarms[0].mode).toBe('sound-only');
     expect(body.alarms[0].is_active).toBe(false);
     expect(body.alarms[0].voice_profile_id).toBe(vp);
-    expect(body.alarms[0].speaker_id).toBe(sp);
   });
 
   it('목록: repeat_days 가 잘못된 JSON 이어도 빈 배열로 fallback', async () => {
@@ -140,7 +136,6 @@ describe('GET /alarm/:id — 단일 조회 정규화', () => {
         repeat_days: '[0,6]',
         mode: 'tts',
         voice_profile_id: null,
-        speaker_id: null,
       },
     ]);
     const app = buildApp();
@@ -310,21 +305,8 @@ describe('POST /alarm — 알람 생성', () => {
     expect(res.status).toBe(400);
   });
 
-  it('speaker_id UUID 형식이 아니면 400', async () => {
-    const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/alarm', {
-        message_id: ID.message,
-        time: '07:00',
-        speaker_id: 'bad',
-      }),
-    );
-    expect(res.status).toBe(400);
-  });
-
-  it('mode + voice_profile_id + speaker_id 포함해 정상 생성', async () => {
+it('mode + voice_profile_id 포함해 정상 생성', async () => {
     const voiceProfileId = '40000000-0000-4000-8000-000000000001';
-    const speakerId = '50000000-0000-4000-8000-000000000001';
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: voiceProfileId }]);
     mockDB.pushResult([{ id: ID.message }]);
@@ -338,7 +320,6 @@ describe('POST /alarm — 알람 생성', () => {
         time: '07:00',
         mode: 'sound-only',
         voice_profile_id: voiceProfileId,
-        speaker_id: speakerId,
       }),
     );
     expect(res.status).toBe(201);
@@ -349,10 +330,8 @@ describe('POST /alarm — 알람 생성', () => {
     expect(insert).toBeDefined();
     expect(insert!.sql).toContain('mode');
     expect(insert!.sql).toContain('voice_profile_id');
-    expect(insert!.sql).toContain('speaker_id');
     expect(insert!.args).toContain('sound-only');
     expect(insert!.args).toContain(voiceProfileId);
-    expect(insert!.args).toContain(speakerId);
   });
 
   it('mode 미지정 시 기본값은 tts', async () => {
@@ -371,7 +350,7 @@ describe('POST /alarm — 알람 생성', () => {
     expect(insert!.args).toContain('tts');
   });
 
-  it('POST 응답에 voice_profile_id/speaker_id 가 null 로 명시된다', async () => {
+  it('POST 응답에 voice_profile_id 가 null 로 명시된다', async () => {
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: ID.message }]);
     pushMessageBelongsToCaller();
@@ -383,7 +362,6 @@ describe('POST /alarm — 알람 생성', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.alarm).toHaveProperty('voice_profile_id', null);
-    expect(body.alarm).toHaveProperty('speaker_id', null);
   });
 });
 
@@ -425,9 +403,8 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
     expect(body.success).toBe(true);
   });
 
-  it('mode/voice_profile_id/speaker_id 변경 반영', async () => {
+  it('mode/voice_profile_id 변경 반영', async () => {
     const voiceProfileId = '40000000-0000-4000-8000-0000000000aa';
-    const speakerId = '50000000-0000-4000-8000-0000000000bb';
     mockDB.pushResult([{ id: ID.alarm }]); // existing
     mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller → 소유 확인
     mockDB.pushResult([{ '1': 1 }]);
@@ -441,7 +418,6 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
         repeat_days: '[]',
         mode: 'sound-only',
         voice_profile_id: voiceProfileId,
-        speaker_id: speakerId,
       },
     ]);
     const app = buildApp();
@@ -449,23 +425,19 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
       jsonReq('PATCH', `/alarm/${ID.alarm}`, {
         mode: 'sound-only',
         voice_profile_id: voiceProfileId,
-        speaker_id: speakerId,
       }),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.alarm.mode).toBe('sound-only');
     expect(body.alarm.voice_profile_id).toBe(voiceProfileId);
-    expect(body.alarm.speaker_id).toBe(speakerId);
 
     const update = mockDB.calls.find((c) => c.sql.startsWith('UPDATE alarms SET'));
     expect(update).toBeDefined();
     expect(update!.sql).toContain('mode = ?');
     expect(update!.sql).toContain('voice_profile_id = ?');
-    expect(update!.sql).toContain('speaker_id = ?');
     expect(update!.args).toContain('sound-only');
     expect(update!.args).toContain(voiceProfileId);
-    expect(update!.args).toContain(speakerId);
   });
 });
 
@@ -491,7 +463,6 @@ describe('GET /alarm/tick — 발화 대상 조회', () => {
         is_active: 1,
         mode: 'tts',
         voice_profile_id: null,
-        speaker_id: null,
         timezone: 'UTC',
       },
       {
@@ -503,7 +474,6 @@ describe('GET /alarm/tick — 발화 대상 조회', () => {
         is_active: 1,
         mode: 'tts',
         voice_profile_id: null,
-        speaker_id: null,
         timezone: 'UTC',
       },
     ]);

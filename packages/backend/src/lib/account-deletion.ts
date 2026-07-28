@@ -106,15 +106,6 @@ export async function purgeUserAccount(
     });
 
     await tx.execute({
-      sql: `DELETE FROM plan_group_invites
-            WHERE inviter_user_id = ?
-               OR used_by_user_id = ?
-               OR plan_group_id IN (
-                 SELECT id FROM plan_groups WHERE owner_user_id = ?
-               )`,
-      args: [userPk, userPk, userPk],
-    });
-    await tx.execute({
       sql: `DELETE FROM plan_group_members WHERE user_id = ?`,
       args: [userPk],
     });

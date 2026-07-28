@@ -39,7 +39,6 @@ const sampleAlarmRow = {
   vibration_pattern: 'default',
   wake_mode: 'sound_then_voice',
   voice_profile_id: null,
-  speaker_id: null,
   created_at: '2026-01-01',
   updated_at: '2026-01-02',
   message_text: 'Good morning',
@@ -73,7 +72,6 @@ describe('GET /alarms/tick', () => {
       is_active: 1,
       mode: 'tts',
       voice_profile_id: null,
-      speaker_id: null,
     }]);
 
     const res = await buildApp().request(new Request('http://localhost/alarms/tick'));

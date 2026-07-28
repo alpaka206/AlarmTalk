@@ -8,10 +8,14 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { migrations, runMigrations } from '../src/lib/migrations';
+import { rmSync } from 'node:fs';
+import { migrations, runMigrationsRange } from '../src/lib/migrations';
 import { STOCK_CLIP_PRESETS } from '../src/lib/stock-clips';
 
 const DB_PATH = join(tmpdir(), 'alarmtalk-migration-stock-refresh.db');
+// 파일 DB 는 실행 간 남는다. 이전 실행이 더 뒤의 마이그레이션까지 적용해 뒀으면 원장
+// (_migrations) 때문에 아래 범위 지정이 무시되므로, 매번 새 파일에서 시작한다.
+for (const suffix of ['', '-shm', '-wal']) rmSync(`${DB_PATH}${suffix}`, { force: true });
 const db: Client = createClient({ url: `file:${DB_PATH}` });
 
 const SYSTEM_USER = '70000000-0000-4000-9000-000000000001';
@@ -40,7 +44,11 @@ async function insertPreset(id: string, synthesisText: string) {
 }
 
 beforeAll(async () => {
-  await runMigrations(db);
+  // #70 의 문장을 그대로 재실행해 검증하므로, 스키마를 **그 시점 상태**(#79까지)로 세운다.
+  // 전체 체인을 돌리면 이후 정리 마이그레이션(#83 의 alarms.speaker_id DROP)이 #70 의
+  // UPDATE 문을 'no such column' 으로 깨뜨린다. 적용된 마이그레이션 본문은 불변이어야 하므로
+  // (#1 을 수정해 perso_voice_id 드리프트를 만든 전례) 테스트 쪽에서 범위를 고정한다.
+  await runMigrationsRange(db, 1, 79);
   await db.execute('DELETE FROM alarms');
   await db.execute("DELETE FROM messages WHERE id LIKE 'm70-%'");
   await db.execute("DELETE FROM generated_audio_assets WHERE id LIKE 'ga-m70-%'");

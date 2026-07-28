@@ -1866,7 +1866,6 @@ tts.delete('/messages/:id', async (c) => {
                 wake_mode = 'sound_then_voice',
                 message_id = NULL,
                 voice_profile_id = NULL,
-                speaker_id = NULL,
                 raw_audio_url = NULL,
                 raw_audio_duration_ms = NULL
             WHERE message_id = ?

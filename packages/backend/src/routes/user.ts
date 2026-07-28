@@ -9,6 +9,7 @@ import {
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
 import {
+  normalizeQuietWindows,
   validateQuietDays,
   validateQuietTime,
   validateQuietWindows,
@@ -84,6 +85,9 @@ user.patch('/me', async (c) => {
     resolvedFlag = flag;
   }
 
+  // 저장은 family_alarm_quiet_windows(JSON) 하나로 일원화한다 — 과거의 단일 필드 3컬럼(#29)은
+  // windows[0] 을 그대로 베낀 미러였고 #83 에서 제거됐다. API 계약(입력·출력)은 그대로 유지해
+  // windows 없이 3필드만 보내는 클라이언트도 계속 동작하게 한다(그 경우 한 창으로 합성해 저장).
   const hasQuietWindows =
     'family_alarm_quiet_windows' in body && body.family_alarm_quiet_windows !== undefined;
   let resolvedQuietWindows: { days: number[]; start: string; end: string }[] | null = null;
@@ -105,76 +109,80 @@ user.patch('/me', async (c) => {
     const firstWindow = windows[0] ?? { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' };
     updates.push('family_alarm_quiet_windows = ?');
     args.push(JSON.stringify(windows));
-    updates.push('family_alarm_quiet_days = ?');
-    args.push(JSON.stringify(firstWindow.days));
-    updates.push('family_alarm_quiet_start = ?');
-    args.push(firstWindow.start);
-    updates.push('family_alarm_quiet_end = ?');
-    args.push(firstWindow.end);
     resolvedQuietWindows = windows;
     resolvedQuietDays = firstWindow.days;
     resolvedQuietStart = firstWindow.start;
     resolvedQuietEnd = firstWindow.end;
-  }
+  } else {
+    // 레거시 입력 경로: 온 필드만 검증한 뒤 현재 windows[0] 위에 덮어써 단일 창으로 합성한다
+    // (부분 업데이트가 나머지 값을 잃지 않게 한다).
+    const hasLegacyDays =
+      'family_alarm_quiet_days' in body && body.family_alarm_quiet_days !== undefined;
+    const hasLegacyStart =
+      'family_alarm_quiet_start' in body && body.family_alarm_quiet_start !== undefined;
+    const hasLegacyEnd =
+      'family_alarm_quiet_end' in body && body.family_alarm_quiet_end !== undefined;
 
-  if (
-    !hasQuietWindows &&
-    'family_alarm_quiet_days' in body &&
-    body.family_alarm_quiet_days !== undefined
-  ) {
-    const days = validateQuietDays(body.family_alarm_quiet_days);
-    if (days === null) {
-      return c.json(
-        {
-          error: 'family_alarm_quiet_days 는 0~6 숫자 배열이어야 합니다',
-          error_code: 'INVALID_QUIET_DAYS',
-        },
-        400,
-      );
+    if (hasLegacyDays) {
+      const days = validateQuietDays(body.family_alarm_quiet_days);
+      if (days === null) {
+        return c.json(
+          {
+            error: 'family_alarm_quiet_days 는 0~6 숫자 배열이어야 합니다',
+            error_code: 'INVALID_QUIET_DAYS',
+          },
+          400,
+        );
+      }
+      resolvedQuietDays = days;
     }
-    updates.push('family_alarm_quiet_days = ?');
-    args.push(JSON.stringify(days));
-    resolvedQuietDays = days;
-  }
+    if (hasLegacyStart) {
+      const time = validateQuietTime(body.family_alarm_quiet_start);
+      if (time === null) {
+        return c.json(
+          {
+            error: 'family_alarm_quiet_start 는 HH:mm 형식이어야 합니다',
+            error_code: 'INVALID_QUIET_TIME',
+          },
+          400,
+        );
+      }
+      resolvedQuietStart = time;
+    }
+    if (hasLegacyEnd) {
+      const time = validateQuietTime(body.family_alarm_quiet_end);
+      if (time === null) {
+        return c.json(
+          {
+            error: 'family_alarm_quiet_end 는 HH:mm 형식이어야 합니다',
+            error_code: 'INVALID_QUIET_TIME',
+          },
+          400,
+        );
+      }
+      resolvedQuietEnd = time;
+    }
 
-  if (
-    !hasQuietWindows &&
-    'family_alarm_quiet_start' in body &&
-    body.family_alarm_quiet_start !== undefined
-  ) {
-    const time = validateQuietTime(body.family_alarm_quiet_start);
-    if (time === null) {
-      return c.json(
-        {
-          error: 'family_alarm_quiet_start 는 HH:mm 형식이어야 합니다',
-          error_code: 'INVALID_QUIET_TIME',
-        },
-        400,
-      );
+    if (hasLegacyDays || hasLegacyStart || hasLegacyEnd) {
+      const currentRow = await db.execute({
+        sql: 'SELECT family_alarm_quiet_windows FROM users WHERE google_id = ? OR id = ? LIMIT 1',
+        args: [userId, userId],
+      });
+      const current = normalizeQuietWindows(currentRow.rows[0]?.family_alarm_quiet_windows);
+      const base = current[0] ?? { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' };
+      const merged = {
+        days: resolvedQuietDays ?? base.days,
+        start: resolvedQuietStart ?? base.start,
+        end: resolvedQuietEnd ?? base.end,
+      };
+      const windows = [merged, ...current.slice(1)];
+      updates.push('family_alarm_quiet_windows = ?');
+      args.push(JSON.stringify(windows));
+      resolvedQuietWindows = windows;
+      resolvedQuietDays = merged.days;
+      resolvedQuietStart = merged.start;
+      resolvedQuietEnd = merged.end;
     }
-    updates.push('family_alarm_quiet_start = ?');
-    args.push(time);
-    resolvedQuietStart = time;
-  }
-
-  if (
-    !hasQuietWindows &&
-    'family_alarm_quiet_end' in body &&
-    body.family_alarm_quiet_end !== undefined
-  ) {
-    const time = validateQuietTime(body.family_alarm_quiet_end);
-    if (time === null) {
-      return c.json(
-        {
-          error: 'family_alarm_quiet_end 는 HH:mm 형식이어야 합니다',
-          error_code: 'INVALID_QUIET_TIME',
-        },
-        400,
-      );
-    }
-    updates.push('family_alarm_quiet_end = ?');
-    args.push(time);
-    resolvedQuietEnd = time;
   }
 
   if ('dynamic_prompt_settings' in body && body.dynamic_prompt_settings !== undefined) {

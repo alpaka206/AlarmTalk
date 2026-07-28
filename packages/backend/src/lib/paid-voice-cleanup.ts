@@ -44,8 +44,8 @@ export async function deletePaidVoiceDataForUser(
           SET mode = 'sound-only',
               wake_mode = 'sound_then_voice',
               message_id = NULL,
-              voice_profile_id = NULL,
-              speaker_id = NULL
+              voice_profile_id = NULL
+
           WHERE user_id NOT IN (${ph})
             AND (
               voice_profile_id IN (
@@ -148,7 +148,7 @@ export async function deleteSensitiveVoiceDataForUser(
   await db.execute({
     sql: `UPDATE alarms
           SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-              message_id = NULL, voice_profile_id = NULL, speaker_id = NULL
+              message_id = NULL, voice_profile_id = NULL
           WHERE voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))
              OR message_id IN (
                SELECT id FROM messages

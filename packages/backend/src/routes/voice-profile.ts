@@ -2243,8 +2243,8 @@ voiceProfile.delete('/:id', async (c) => {
           SET mode = 'sound-only',
               wake_mode = 'sound_then_voice',
               message_id = NULL,
-              voice_profile_id = NULL,
-              speaker_id = NULL
+              voice_profile_id = NULL
+
           WHERE voice_profile_id = ?
              OR message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)`,
     args: [id, id],

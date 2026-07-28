@@ -166,7 +166,6 @@ familyAlarm.post('/alarms', async (c) => {
 
   const recipientRes = await db.execute({
     sql: `SELECT id, google_id, allow_family_alarms,
-                 family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
                  family_alarm_quiet_windows
           FROM users WHERE id = ?`,
     args: [recipientPk],
@@ -408,7 +407,6 @@ familyAlarm.post('/alarms/voice', async (c) => {
 
   const recipientRes = await db.execute({
     sql: `SELECT id, google_id, allow_family_alarms,
-                 family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
                  family_alarm_quiet_windows
           FROM users WHERE id = ?`,
     args: [recipientPk],

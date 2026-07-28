@@ -15,8 +15,11 @@
 //      DROP COLUMN 마이그레이션이 실패한다 (#79 주석 참조).
 //   5. DROP 된 테이블의 잔재(뷰/인덱스)가 남지 않는다
 //
-// 운영 DB 와의 드리프트 비교가 필요하면 자격증명을 주고 실행한다:
+// 운영 DB 와의 드리프트 비교 + 미적용 마이그레이션 리허설이 필요하면 자격증명을 주고 실행한다:
 //   SCHEMA_DIFF_ENV_FILE=.dev.vars.prod npx vitest run test/schema-fresh.test.ts
+// 리허설은 원격의 **스키마와 원장만** 로컬 임시 DB 로 복제해 미적용분을 거기서 돌린다 —
+// 원격에는 어떤 쓰기도 하지 않고, 개인정보도 내려받지 않는다(정리 마이그레이션의 실패
+// 모드는 거의 전부 스키마 의존이라 이것만으로 재현된다).
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createClient, type Client } from '@libsql/client';
 import { tmpdir } from 'node:os';
@@ -52,6 +55,24 @@ async function snapshot(client: Client): Promise<Snapshot> {
     }
   }
   return { columns, indexes, views };
+}
+
+/** .dev.vars.* 형식(KEY=VALUE, # 주석)을 읽는다. 원격 비교/리허설에서만 쓴다. */
+function loadEnvFile(file: string): Record<string, string> {
+  const path = join(process.cwd(), file);
+  if (!existsSync(path)) throw new Error(`env 파일 없음: ${path}`);
+  const out: Record<string, string> = {};
+  for (const raw of readFileSync(path, 'utf-8').split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#') || !line.includes('=')) continue;
+    const eq = line.indexOf('=');
+    let v = line.slice(eq + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1);
+    }
+    out[line.slice(0, eq).trim()] = v;
+  }
+  return out;
 }
 
 beforeAll(async () => {
@@ -124,19 +145,7 @@ describe('신규 DB 스키마 (migrations.ts 전체 적용)', () => {
 const DIFF_ENV_FILE = process.env.SCHEMA_DIFF_ENV_FILE;
 describe.skipIf(!DIFF_ENV_FILE)('원격 DB 스키마 드리프트', () => {
   it('신규 DB 와 원격 스키마가 일치한다', async () => {
-    const path = join(process.cwd(), DIFF_ENV_FILE!);
-    if (!existsSync(path)) throw new Error(`env 파일 없음: ${path}`);
-    const env: Record<string, string> = {};
-    for (const raw of readFileSync(path, 'utf-8').split(/\r?\n/)) {
-      const line = raw.trim();
-      if (!line || line.startsWith('#') || !line.includes('=')) continue;
-      const eq = line.indexOf('=');
-      let v = line.slice(eq + 1).trim();
-      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-        v = v.slice(1, -1);
-      }
-      env[line.slice(0, eq).trim()] = v;
-    }
+    const env = loadEnvFile(DIFF_ENV_FILE!);
     const remote = createClient({
       url: env.TURSO_DATABASE_URL!,
       authToken: env.TURSO_AUTH_TOKEN,
@@ -159,5 +168,61 @@ describe.skipIf(!DIFF_ENV_FILE)('원격 DB 스키마 드리프트', () => {
     cmp('뷰', fresh.views, live.views);
 
     expect(drift).toEqual([]);
+  });
+});
+
+// 원격 스키마 복제본에 미적용 마이그레이션을 돌려 본다 (원격은 읽기 전용).
+describe.skipIf(!DIFF_ENV_FILE)('원격 스키마 복제본 마이그레이션 리허설', () => {
+  it('미적용 마이그레이션이 원격 스키마 위에서 끝까지 적용된다', async () => {
+    const env = loadEnvFile(DIFF_ENV_FILE!);
+    const remote = createClient({ url: env.TURSO_DATABASE_URL!, authToken: env.TURSO_AUTH_TOKEN });
+
+    const master = await remote.execute(
+      `SELECT type, name, sql FROM sqlite_master
+        WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+        ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 ELSE 2 END`,
+    );
+    const ledger = await remote.execute('SELECT id, name FROM _migrations ORDER BY id');
+
+    const clonePath = join(tmpdir(), `alarmtalk-rehearsal-${process.pid}.db`);
+    for (const suffix of ['', '-shm', '-wal']) rmSync(`${clonePath}${suffix}`, { force: true });
+    const clone = createClient({ url: `file:${clonePath}` });
+
+    for (const row of master.rows) await clone.execute(String(row.sql));
+    await clone.execute(
+      `CREATE TABLE IF NOT EXISTS _migrations (
+        id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT DEFAULT (datetime('now')))`,
+    );
+    for (const r of ledger.rows) {
+      await clone.execute({
+        sql: 'INSERT OR IGNORE INTO _migrations (id, name) VALUES (?, ?)',
+        args: [Number(r.id), String(r.name)],
+      });
+    }
+
+    // 여기서 throw 되면 그대로 배포했을 때 원격 마이그레이션이 깨진다는 뜻이다.
+    const applied2 = await runMigrations(clone);
+    const appliedIds = new Set(ledger.rows.map((r) => Number(r.id)));
+    expect(applied2.length).toBe(migrations.filter((m) => !appliedIds.has(m.id)).length);
+
+    expect((await clone.execute('PRAGMA integrity_check')).rows.map((r) => String(r[0]))).toEqual([
+      'ok',
+    ]);
+    expect((await clone.execute('PRAGMA foreign_key_check')).rows).toEqual([]);
+    expect(await runMigrations(clone)).toEqual([]);
+
+    const views = await clone.execute(
+      `SELECT name FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%'`,
+    );
+    const dangling: string[] = [];
+    for (const v of views.rows) {
+      const name = String(v.name);
+      try {
+        await clone.execute(`SELECT * FROM "${name.replace(/"/g, '""')}" LIMIT 0`);
+      } catch {
+        dangling.push(name);
+      }
+    }
+    expect(dangling).toEqual([]);
   });
 });

@@ -52,7 +52,6 @@ function alarmRow(overrides: Record<string, unknown> = {}) {
     vibration_pattern: 'default',
     wake_mode: 'sound_then_voice',
     voice_profile_id: null,
-    speaker_id: null,
     snooze_minutes: 5,
     message_text: null,
     category: null,

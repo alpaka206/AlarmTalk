@@ -44,7 +44,6 @@ function alarmUsesPaidVoice(body: {
   wake_mode?: string | null;
   message_id?: string | null;
   voice_profile_id?: string | null;
-  speaker_id?: string | null;
   raw_audio_url?: string | null;
 }): boolean {
   return (
@@ -52,25 +51,23 @@ function alarmUsesPaidVoice(body: {
     body.wake_mode === 'voice_only' ||
     !!body.message_id ||
     !!body.voice_profile_id ||
-    !!body.speaker_id ||
     !!body.raw_audio_url
   );
 }
 
 /**
  * 무료 플랜도 시스템 스톡 보이스 기반 TTS 알람은 허용한다.
- * 녹음/파일(raw_audio_url, speaker_id) 알람은 여전히 유료 전용.
+ * 녹음/파일(raw_audio_url) 알람은 여전히 유료 전용.
  */
 async function usesOnlySystemStockVoice(
   db: ReturnType<typeof getDB>,
   body: {
     message_id?: string | null;
     voice_profile_id?: string | null;
-    speaker_id?: string | null;
     raw_audio_url?: string | null;
   },
 ): Promise<boolean> {
-  if (body.raw_audio_url || body.speaker_id) return false;
+  if (body.raw_audio_url) return false;
   if (body.voice_profile_id) {
     const res = await db.execute({
       sql: `SELECT 1 FROM voice_profiles
@@ -232,7 +229,6 @@ alarmMutation.post('/', async (c) => {
     vibration_pattern?: string;
     wake_mode?: string;
     voice_profile_id?: string;
-    speaker_id?: string;
     raw_audio_url?: string;
     raw_audio_duration_ms?: number;
     timezone?: string;
@@ -276,7 +272,6 @@ alarmMutation.post('/', async (c) => {
     if (rawTargetUserId !== userId) {
       const targetRes = await db.execute({
         sql: `SELECT id, google_id, allow_family_alarms,
-                     family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
                      family_alarm_quiet_windows
               FROM users
               WHERE google_id = ? OR id = ?
@@ -446,9 +441,9 @@ alarmMutation.post('/', async (c) => {
     executor.execute({
       sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
-             mode, vibration_pattern, wake_mode, voice_profile_id, speaker_id,
+             mode, vibration_pattern, wake_mode, voice_profile_id,
              raw_audio_url, raw_audio_duration_ms, timezone, bucket_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         alarmId,
         userId,
@@ -461,7 +456,6 @@ alarmMutation.post('/', async (c) => {
         vibPattern,
         wakeMode,
         body.voice_profile_id ?? null,
-        body.speaker_id ?? null,
         body.raw_audio_url ?? null,
         body.raw_audio_duration_ms ?? null,
         storedTimezone,
@@ -481,7 +475,7 @@ alarmMutation.post('/', async (c) => {
       await executor.execute({
         sql: `UPDATE alarms SET
                 message_id = ?, repeat_days = ?, snooze_minutes = ?, mode = ?,
-                vibration_pattern = ?, wake_mode = ?, voice_profile_id = ?, speaker_id = ?,
+                vibration_pattern = ?, wake_mode = ?, voice_profile_id = ?,
                 raw_audio_url = ?, raw_audio_duration_ms = ?, timezone = ?, bucket_id = ?,
                 is_active = 1, updated_at = datetime('now')
               WHERE id = ?`,
@@ -493,7 +487,6 @@ alarmMutation.post('/', async (c) => {
           vibPattern,
           wakeMode,
           body.voice_profile_id ?? null,
-          body.speaker_id ?? null,
           body.raw_audio_url ?? null,
           body.raw_audio_duration_ms ?? null,
           storedTimezone,
@@ -559,7 +552,6 @@ alarmMutation.post('/', async (c) => {
         mode,
         vibration_pattern: vibPattern,
         voice_profile_id: body.voice_profile_id ?? null,
-        speaker_id: body.speaker_id ?? null,
       },
     },
     201,
@@ -598,7 +590,6 @@ alarmMutation.patch('/:id', async (c) => {
     vibration_pattern?: string;
     wake_mode?: string;
     voice_profile_id?: string | null;
-    speaker_id?: string | null;
     raw_audio_url?: string | null;
     raw_audio_duration_ms?: number | null;
     timezone?: string | null;
@@ -611,7 +602,7 @@ alarmMutation.patch('/:id', async (c) => {
   const existing = await db.execute({
     sql: `SELECT a.id, a.target_user_id, a.time, a.repeat_days, a.is_active,
                  a.message_id, a.mode, a.wake_mode, a.voice_profile_id,
-                 a.speaker_id, a.raw_audio_url, a.bucket_id, u.plan AS user_plan
+                 a.raw_audio_url, a.bucket_id, u.plan AS user_plan
           FROM alarms a
           LEFT JOIN users u ON u.google_id = a.user_id OR u.id = a.user_id
           WHERE a.id = ? AND a.user_id = ?`,
@@ -630,7 +621,6 @@ alarmMutation.patch('/:id', async (c) => {
     mode: string | null;
     wake_mode: string | null;
     voice_profile_id: string | null;
-    speaker_id: string | null;
     raw_audio_url: string | null;
     bucket_id?: string | null;
     user_plan?: string | null;
@@ -644,7 +634,6 @@ alarmMutation.patch('/:id', async (c) => {
     message_id: body.message_id !== undefined ? body.message_id : current.message_id,
     voice_profile_id:
       body.voice_profile_id !== undefined ? body.voice_profile_id : current.voice_profile_id,
-    speaker_id: body.speaker_id !== undefined ? body.speaker_id : current.speaker_id,
     raw_audio_url: body.raw_audio_url !== undefined ? body.raw_audio_url : current.raw_audio_url,
   };
   if (
@@ -737,7 +726,6 @@ alarmMutation.patch('/:id', async (c) => {
     // 수신자 재조회(allowFamilyAlarms·quiet). target_user_id 는 로그인 id(google_id) 또는 pk.
     const recipientRes = await db.execute({
       sql: `SELECT id, google_id, allow_family_alarms,
-                   family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
                    family_alarm_quiet_windows
             FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
       args: [patchTargetUserId, patchTargetUserId],
@@ -814,10 +802,6 @@ alarmMutation.patch('/:id', async (c) => {
   if (body.voice_profile_id !== undefined) {
     updates.push('voice_profile_id = ?');
     args.push(body.voice_profile_id);
-  }
-  if (body.speaker_id !== undefined) {
-    updates.push('speaker_id = ?');
-    args.push(body.speaker_id);
   }
   if (body.raw_audio_url !== undefined) {
     updates.push('raw_audio_url = ?');
@@ -939,7 +923,7 @@ alarmMutation.patch('/:id', async (c) => {
   const updated = await db.execute({
     sql: `SELECT id, user_id, target_user_id, message_id, time, repeat_days,
                  is_active, snooze_minutes, mode, vibration_pattern, wake_mode,
-                 voice_profile_id, speaker_id, bucket_id, created_at, updated_at
+                 voice_profile_id, bucket_id, created_at, updated_at
           FROM alarms WHERE id = ?`,
     args: [id],
   });

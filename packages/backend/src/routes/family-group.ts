@@ -75,7 +75,6 @@ familyGroup.get('/groups/current', async (c) => {
   const membersRes = await db.execute({
     sql: `SELECT m.id, m.user_id, m.role, m.joined_at,
                  u.email, u.name, u.allow_family_alarms,
-                 u.family_alarm_quiet_days, u.family_alarm_quiet_start, u.family_alarm_quiet_end,
                  u.family_alarm_quiet_windows, u.dynamic_prompt_settings_json
           FROM plan_group_members m
           LEFT JOIN users u ON u.id = m.user_id

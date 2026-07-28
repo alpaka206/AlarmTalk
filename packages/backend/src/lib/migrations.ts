@@ -1682,6 +1682,117 @@ export const migrations: Migration[] = [
       `CREATE VIEW IF NOT EXISTS "users_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("deletion_requested_at",'+9 hours') AS deletion_requested_at_kst, datetime("deletion_purge_at",'+9 hours') AS deletion_purge_at_kst FROM "users"`,
     ],
   },
+  {
+    // alarms 인덱스 유실 복구 (성능 회귀).
+    //  - #1(:198-201)·#5(:290-291)·#19(:487-488)이 만든 alarms 인덱스 8종이 #22·#23 의
+    //    테이블 재작성(`DROP TABLE alarms` → RENAME)에 함께 소멸했고, 두 마이그레이션 모두
+    //    재생성 문장을 넣지 않았다. 이후 추가된 idx_alarms_bucket(#54)만 남아, dev·prod
+    //    실측 결과 alarms 의 인덱스는 (PK 자동인덱스, idx_alarms_bucket) 둘뿐이다.
+    //    → 앱이 가장 자주 부르는 GET /api/alarm 을 포함해 모든 알람 조회가 SCAN alarms.
+    //      (EXPLAIN QUERY PLAN 으로 dev·prod 양쪽 확인)
+    //  - 재생성은 실제 쿼리 술어에 맞춰 4개만 만든다. user_id/target_user_id 단독 인덱스는
+    //    복합 인덱스의 선행 컬럼으로 커버되므로 다시 만들지 않는다(쓰기 비용만 늘 뿐).
+    //      · (user_id, is_active)        : 내 알람 목록 (alarm-query)
+    //      · (target_user_id, is_active) : 나에게 온 가족 알람
+    //      · (message_id)                : 메시지/스톡클립 정리 시 참조 알람 강등
+    //      · (voice_profile_id)          : 목소리 삭제 시 참조 알람 강등
+    id: 80,
+    name: 'restore-alarms-indexes',
+    statements: [
+      'CREATE INDEX IF NOT EXISTS idx_alarms_user_active ON alarms(user_id, is_active)',
+      'CREATE INDEX IF NOT EXISTS idx_alarms_target_active ON alarms(target_user_id, is_active)',
+      'CREATE INDEX IF NOT EXISTS idx_alarms_message ON alarms(message_id)',
+      'CREATE INDEX IF NOT EXISTS idx_alarms_voice_profile ON alarms(voice_profile_id)',
+    ],
+  },
+  {
+    // 운영 편의용 KST 뷰(#46) 전면 제거.
+    //  - 런타임 코드가 `_kst` 뷰를 읽는 곳은 0곳이다(레포 전수 grep). 순수 조회 편의였다.
+    //  - 대신 유지 비용이 계속 발생했다: (1) 컬럼을 하나 지울 때마다 뷰를 떨궜다 다시
+    //    만들어야 하고(#50·#79), (2) libSQL 의 ALTER TABLE DROP COLUMN 은 스키마의 **모든
+    //    뷰를 검증**하므로 참조 테이블이 사라진 뷰가 하나만 있어도 이후 모든 DROP COLUMN 이
+    //    실패한다 — #77 이 캐릭터 테이블만 지우고 뷰를 남겨 #79 의 ALTER 가 실제로 깨졌다.
+    //  - 아래 #82·#83 의 DROP COLUMN 이 통과하려면 이 정리가 선행돼야 한다.
+    //  - KST 조회는 필요할 때 `datetime(col,'+9 hours')` 로 즉석 처리한다.
+    id: 81,
+    name: 'drop-kst-convenience-views',
+    statements: [
+      `DROP VIEW IF EXISTS "alarms_kst"`,
+      `DROP VIEW IF EXISTS "email_verification_codes_kst"`,
+      `DROP VIEW IF EXISTS "generated_audio_assets_kst"`,
+      `DROP VIEW IF EXISTS "message_library_kst"`,
+      `DROP VIEW IF EXISTS "messages_kst"`,
+      `DROP VIEW IF EXISTS "pending_external_deletions_kst"`,
+      `DROP VIEW IF EXISTS "plan_group_invites_kst"`,
+      `DROP VIEW IF EXISTS "plan_group_members_kst"`,
+      `DROP VIEW IF EXISTS "plan_groups_kst"`,
+      `DROP VIEW IF EXISTS "plans_kst"`,
+      `DROP VIEW IF EXISTS "push_tokens_kst"`,
+      `DROP VIEW IF EXISTS "retained_billing_records_kst"`,
+      `DROP VIEW IF EXISTS "store_transactions_kst"`,
+      `DROP VIEW IF EXISTS "subscriptions_kst"`,
+      `DROP VIEW IF EXISTS "tts_presets_kst"`,
+      `DROP VIEW IF EXISTS "user_consents_kst"`,
+      `DROP VIEW IF EXISTS "users_kst"`,
+      `DROP VIEW IF EXISTS "voice_profile_relationships_kst"`,
+      `DROP VIEW IF EXISTS "voice_profiles_kst"`,
+      `DROP VIEW IF EXISTS "voice_uploads_kst"`,
+      `DROP VIEW IF EXISTS "voucher_codes_kst"`,
+      `DROP VIEW IF EXISTS "voucher_redemptions_kst"`,
+      // #79 미적용 DB(prod)에서 먼저 만들어졌을 수 있는 폐기 테이블용 뷰까지 확실히 정리.
+      `DROP VIEW IF EXISTS "dub_jobs_kst"`,
+      `DROP VIEW IF EXISTS "friendships_kst"`,
+      `DROP VIEW IF EXISTS "gifts_kst"`,
+      `DROP VIEW IF EXISTS "notes_kst"`,
+      `DROP VIEW IF EXISTS "voice_speakers_kst"`,
+    ],
+  },
+  {
+    // Apple/iOS 미운영 확정에 따른 DB 정리. 코드 경로는 선행 배포에서 제거됐다.
+    //  - dev·prod 실측: users.apple_id, subscriptions.apple_* 전부 NULL(0건)이라 손실 없음.
+    //  - 인덱스를 먼저 떨궈야 한다 — SQLite/libSQL 의 DROP COLUMN 은 그 컬럼을 참조하는
+    //    인덱스가 남아 있으면 실패한다.
+    //  - push_tokens.platform 의 'ios' 와 store_transactions.provider 의 'apple'·'portone'
+    //    CHECK 리터럴은 **그대로 둔다**: CHECK 변경은 테이블 재작성이 필요한데, 쓰지 않는
+    //    값을 허용 목록에 남겨두는 비용은 0 이다(쓰는 코드가 이미 없다).
+    id: 82,
+    name: 'drop-apple-identity-and-billing-columns',
+    statements: [
+      `DROP INDEX IF EXISTS idx_users_apple_id`,
+      `DROP INDEX IF EXISTS idx_subscriptions_apple_transaction`,
+      `DROP INDEX IF EXISTS idx_subscriptions_apple_original`,
+      `ALTER TABLE users DROP COLUMN apple_id`,
+      `ALTER TABLE subscriptions DROP COLUMN apple_transaction_id`,
+      `ALTER TABLE subscriptions DROP COLUMN apple_original_transaction_id`,
+      `ALTER TABLE subscriptions DROP COLUMN apple_product_id`,
+    ],
+  },
+  {
+    // 사장 컬럼·테이블 정리 (2026-07 감사). 전부 선행 배포에서 코드 참조를 끊었다.
+    //  - alarms.speaker_id(#5): 참조 대상 voice_speakers 는 #79 에서 이미 DROP 됐고,
+    //    Android 는 이 필드를 보낸 적이 없다(Retrofit 전수 0). dev·prod 모두 전 행 NULL.
+    //    #5 가 만든 idx_alarms_speaker 는 #22·#23 의 테이블 재작성에 이미 소멸해 없다.
+    //  - users.family_alarm_quiet_days/_start/_end(#29): #30 의 quiet_windows JSON 으로
+    //    대체됐다. 남은 유일한 읽기는 windows 파싱 실패 시의 폴백이었고(그마저 상수 기본값과
+    //    동일), dev·prod 모두 커스텀 값 0건이다. API 응답 필드는 windows[0] 에서 계속 파생된다.
+    //  - voice_profiles.voice_gender/speech_formality(#53): speech_style(#66)로 대체돼
+    //    읽기·쓰기 코드가 0곳이다.
+    //  - voice_profiles.avatar_url(#1): 쓰기 경로가 없어 전 행 NULL, 읽기는 제거된 /library 뿐.
+    //  - plan_group_invites(#9): 초대권 생성 경로가 앱에서 사라져(가족 공유는 voucher 코드로
+    //    일원화) 생산자가 없다. dev·prod 0행.
+    id: 83,
+    name: 'drop-dead-alarm-user-and-voice-columns',
+    statements: [
+      `ALTER TABLE alarms DROP COLUMN speaker_id`,
+      `ALTER TABLE users DROP COLUMN family_alarm_quiet_days`,
+      `ALTER TABLE users DROP COLUMN family_alarm_quiet_start`,
+      `ALTER TABLE users DROP COLUMN family_alarm_quiet_end`,
+      `ALTER TABLE voice_profiles DROP COLUMN voice_gender`,
+      `ALTER TABLE voice_profiles DROP COLUMN speech_formality`,
+      `ALTER TABLE voice_profiles DROP COLUMN avatar_url`,
+      `DROP TABLE IF EXISTS plan_group_invites`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

@@ -727,7 +727,6 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
     expect(alarmUpdate!.sql).toContain("wake_mode = 'sound_then_voice'");
     expect(alarmUpdate!.sql).toContain('message_id = NULL');
     expect(alarmUpdate!.sql).toContain('voice_profile_id = NULL');
-    expect(alarmUpdate!.sql).toContain('speaker_id = NULL');
     expect(alarmUpdate!.sql).toContain('EXISTS');
     expect(alarmUpdate!.args).toEqual([M1, M1, 'user-1', 'user-1']);
   });
