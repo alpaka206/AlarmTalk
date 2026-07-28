@@ -93,8 +93,14 @@ describe('computeHolidays — KR 설날/추석 3일 윈도우 (#489 seed 다년)
       from: `${year}-01-01`,
       to: `${year}-12-31`,
     });
+    // 대체공휴일은 '윈도우 확장'이 아니라 별개 항목이므로 이 검증에서는 제외한다.
+    // (date-holidays 3.34.0 부터 KR 대체공휴일을 자체적으로 내보낸다 — 그 전까지는
+    //  KASI 오버레이만 채웠다.)
     const dates = (kw: string) =>
-      kr.filter((x) => x.name.includes(kw)).map((x) => x.date).sort();
+      kr
+        .filter((x) => x.name.includes(kw) && !x.substitute)
+        .map((x) => x.date)
+        .sort();
 
     it(`${year} 설날 윈도우 = ${seollal.join('/')} (당일 가운데)`, () => {
       expect(dates('설날')).toEqual([...seollal].sort());
@@ -109,8 +115,9 @@ describe('computeHolidays — KR 설날/추석 3일 윈도우 (#489 seed 다년)
 
     it(`${year} 부처님오신날(석가탄신일)=${buddha} 단일 1일 (확장하지 않음)`, () => {
       // 설날/추석만 3일로 펼치고 다른 1일짜리 공휴일은 건드리지 않는지 회귀 검증.
+      // 대체공휴일(주말 겹침 → 다음 평일)은 확장이 아니므로 여기서 세지 않는다.
       const buddhaDates = kr
-        .filter((x) => x.name.includes('석가') || x.name.includes('부처'))
+        .filter((x) => (x.name.includes('석가') || x.name.includes('부처')) && !x.substitute)
         .map((x) => x.date);
       expect(buddhaDates).toEqual([buddha]);
     });
@@ -320,4 +327,31 @@ describe('fetchKasiHolidays — soft-fail 보장', () => {
     const env = { KASI_SERVICE_KEY: 'decoded-key' } as Env;
     expect(await fetchKasiHolidays(env, 2026)).toBeNull();
   });
+});
+
+// 회귀 가드 — 대체공휴일을 3일로 펼치지 않는다 (2026-07-28).
+//
+// date-holidays 3.34.0 부터 KR 대체공휴일을 자체적으로 내보낸다(그 전엔 KASI 오버레이만 채웠다).
+// 이름에 '설날'/'추석'이 들어 있어 KR 3일 확장 로직이 그대로 집어삼키면, 하루짜리 대체공휴일이
+// 3일이 된다 — 예: 2027 설날 대체공휴일(02-09) -> 02-08/09/10. 그러면 평일이 공휴일로 잡혀
+// '공휴일엔 알람 끄기'가 엉뚱한 날 알람을 끈다.
+describe('computeHolidays — KR 대체공휴일은 확장하지 않는다', () => {
+  const cases = [
+    { year: 2027, keyword: '설날', substituteDate: '2027-02-09', window: ['2027-02-06', '2027-02-07', '2027-02-08'] },
+    { year: 2028, keyword: '추석', substituteDate: '2028-10-05', window: ['2028-10-02', '2028-10-03', '2028-10-04'] },
+  ];
+
+  for (const { year, keyword, substituteDate, window } of cases) {
+    it(`${year} ${keyword} 대체공휴일은 ${substituteDate} 하루뿐`, () => {
+      const kr = computeHolidays({ country: 'KR', from: `${year}-01-01`, to: `${year}-12-31` });
+      const named = kr.filter((x) => x.name.includes(keyword));
+      // 확장된 본 연휴는 3일 그대로.
+      expect(named.filter((x) => !x.substitute).map((x) => x.date).sort()).toEqual([...window].sort());
+      // 대체공휴일은 정확히 하루.
+      expect(named.filter((x) => x.substitute).map((x) => x.date)).toEqual([substituteDate]);
+      // 확장 잔재로 같은 날짜가 두 번 들어가지 않는다.
+      const dates = named.map((x) => x.date);
+      expect(new Set(dates).size).toBe(dates.length);
+    });
+  }
 });
