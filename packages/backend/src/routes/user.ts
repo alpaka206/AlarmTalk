@@ -229,12 +229,14 @@ user.delete('/me', async (c) => {
   const db = getDB(c.env);
 
   try {
-    // JWT sub 은 google_id(구글 로그인) 또는 users.id(이메일 가입)라 둘 다 매칭한다.
-    // 누락하면 userPk 가 null 이 되어 자식
-    // PII(생체 음성 등)가 고아로 남는다(auth.ts:94 의 조회 조건과 동일하게 맞춤).
+    // 토큰이 담고 있던 로그인 식별자. userId 는 미들웨어가 users.id 로 정규화하므로,
+    // 통일 이전에 user_id 컬럼에 로그인 식별자가 저장된 자식 데이터(알람·메시지·목소리·
+    // 생성 오디오·R2 삭제 큐)까지 지우려면 이 값을 함께 넘겨야 한다. 빠뜨리면 users 행만
+    // 지워지고 나머지 PII 가 고아로 남는다(유예 파기 cron 은 row.google_id 를 읽어 이걸 피한다).
+    const userLoginId = c.get('userLoginId') || userId;
     const userRes = await db.execute({
       sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
-      args: [userId, userId],
+      args: [userLoginId, userId],
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
 
@@ -251,7 +253,7 @@ user.delete('/me', async (c) => {
       if (userPk) {
         await pseudonymizeBillingForRetention(tx, userPk, pepper, now);
       }
-      await purgeUserAccount(tx, userPk, userId);
+      await purgeUserAccount(tx, userPk, userLoginId);
     });
 
     return c.json({ success: true });

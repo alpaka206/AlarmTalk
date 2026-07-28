@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { callerOwnerIds } from '../lib/caller-ids';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
@@ -291,13 +292,15 @@ function draftPreviewText(language: string): string {
 
 async function findUsableVoiceProfile(
   db: DbExecutor,
-  userId: string,
+  // 소유권 기준은 userPk(users.id). 이 값은 통일 이전에 user_id 에 저장된 로그인
+  // 식별자까지 매칭하기 위한 보조값이다.
+  userLoginId: string,
   userPk: string,
   voiceProfileId: string,
 ): Promise<Record<string, unknown> | null> {
   const owned = await db.execute({
     sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
-    args: [voiceProfileId, userPk, userId],
+    args: [voiceProfileId, userPk, userLoginId],
   });
   if (owned.rows.length > 0) return owned.rows[0] as Record<string, unknown>;
 
@@ -334,7 +337,8 @@ async function findUsableVoiceProfile(
 async function findViewerRelationshipField(
   db: ReturnType<typeof getDB>,
   userPk: string,
-  userId: string,
+  // 통일 이전에 저장된 로그인 식별자까지 매칭하기 위한 보조값.
+  userLoginId: string,
   voiceProfileId: string,
   column: 'relationship_label' | 'listener_title',
 ): Promise<string | null> {
@@ -344,7 +348,7 @@ async function findViewerRelationshipField(
           WHERE voice_profile_id = ? AND user_id IN (?, ?)
           ORDER BY updated_at DESC
           LIMIT 1`,
-    args: [voiceProfileId, userPk, userId],
+    args: [voiceProfileId, userPk, userLoginId],
   });
   return normalizeRelationshipLabel(result.rows[0]?.[column]);
 }
@@ -628,10 +632,12 @@ async function resolveWeatherLocation(args: {
 }
 
 tts.post('/generate', async (c) => {
-  const userId = c.get('userId');
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const userLoginId = c.get('userLoginId');
   const resolvedUserPk = c.get('userIdPK');
-  const userPk = resolvedUserPk || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  const userPk = resolvedUserPk || userLoginId;
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
 
   const body = await c.req.json<{
@@ -766,8 +772,7 @@ tts.post('/generate', async (c) => {
   // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
   const freePlanRestricted = !isPaidVoicePlan(callerUserPlan);
 
-  // 두 번째 인자는 레거시 보조 매칭용 로그인 식별자다(userId 는 이미 users.id).
-  const vp = await findUsableVoiceProfile(db, c.get('userLoginId'), userPk, body.voice_profile_id);
+  const vp = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
   if (!vp) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
@@ -813,7 +818,7 @@ tts.post('/generate', async (c) => {
         ? normalizeRelationshipLabel(vp.listener_title)
         : normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle)) ??
       (isSharedVoiceProfileForPreset
-        ? await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'listener_title')
+        ? await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'listener_title')
         : null) ??
       normalizeRelationshipLabel(vp.listener_title);
     if (draftPreviewRequested) draftPreviewListenerTitle = listenerTitle ?? null;
@@ -958,7 +963,7 @@ tts.post('/generate', async (c) => {
                 draftPreviewTag,
                 body.voice_profile_id,
                 userPk,
-                userId,
+                userLoginId,
                 String(vp.relationship_label ?? ''),
                 String(vp.listener_title ?? ''),
               ],
@@ -968,7 +973,7 @@ tts.post('/generate', async (c) => {
                 sql: `SELECT preview_text, preview_tag FROM voice_profiles
                       WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                       LIMIT 1`,
-                args: [body.voice_profile_id, userPk, userId],
+                args: [body.voice_profile_id, userPk, userLoginId],
               });
               const winnerRow = winner.rows[0];
               const winnerText =
@@ -1005,11 +1010,11 @@ tts.post('/generate', async (c) => {
         typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
       const relationshipLabel =
         normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
-        (await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'relationship_label')) ??
+        (await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'relationship_label')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.relationship_label));
       const listenerTitle =
         normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
-        (await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'listener_title')) ??
+        (await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'listener_title')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.listener_title));
       const weatherSignal = randomContextUsesWeather(randomContext)
         ? await loadWeatherSignal({
@@ -1238,7 +1243,7 @@ tts.post('/generate', async (c) => {
           previewClaimToken,
           body.voice_profile_id,
           userPk,
-          userId,
+          userLoginId,
           String(vp.relationship_label ?? ''),
           String(vp.listener_title ?? ''),
         ],
@@ -1277,7 +1282,7 @@ tts.post('/generate', async (c) => {
                   WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                     AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
                     AND preview_claim_token = ?`,
-            args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+            args: [body.voice_profile_id, userPk, userLoginId, activePreviewClaimToken],
           });
           if ((marked.rowsAffected ?? 0) === 0) {
             return c.json(
@@ -1395,7 +1400,7 @@ tts.post('/generate', async (c) => {
           await withWriteTransaction(db, async (tx) => {
             const publicationVoice = await findUsableVoiceProfile(
               tx,
-              userId,
+              userLoginId,
               userPk,
               body.voice_profile_id,
             );
@@ -1481,7 +1486,7 @@ tts.post('/generate', async (c) => {
                   WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                     AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
                     AND preview_claim_token = ?`,
-                args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+                args: [body.voice_profile_id, userPk, userLoginId, activePreviewClaimToken],
               });
               if ((marked.rowsAffected ?? 0) === 0) {
                 throw new Error('Voice draft is no longer available.');
@@ -1548,7 +1553,7 @@ tts.post('/generate', async (c) => {
                       updated_at = datetime('now')
                 WHERE id = ? AND user_id IN (?, ?) AND COALESCE(is_draft, 0) = 1
                   AND previewed_at IS NULL AND preview_claim_token = ?`,
-          args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+          args: [body.voice_profile_id, userPk, userLoginId, activePreviewClaimToken],
         });
       } catch (previewReleaseError) {
         console.error('[tts/generate] failed to release preview claim', previewReleaseError);
@@ -1612,9 +1617,11 @@ tts.post('/generate', async (c) => {
 
 // 이번 달 직접 입력 문구 만들기 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). 소비 없음.
 tts.get('/manual-quota', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const userLoginId = c.get('userLoginId');
+  const userPk = c.get('userIdPK') || userLoginId;
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
 
   const userRow = await db.execute({
@@ -1635,9 +1642,9 @@ tts.get('/manual-quota', async (c) => {
 });
 
 tts.get('/messages', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
   const category = c.req.query('category');
   const voiceProfileId = c.req.query('voice_profile_id');
@@ -1699,9 +1706,11 @@ tts.get('/messages', async (c) => {
 });
 
 tts.get('/messages/:id/audio', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const userLoginId = c.get('userLoginId');
+  const userPk = c.get('userIdPK') || userLoginId;
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -1812,8 +1821,10 @@ tts.get('/messages/:id/audio', async (c) => {
 
 tts.get('/stock-clips', async (c) => {
   const db = getDB(c.env);
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const userLoginId = c.get('userLoginId');
+  const userPk = c.get('userIdPK') || userLoginId;
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
                  m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name
@@ -1840,7 +1851,7 @@ tts.get('/stock-clips', async (c) => {
             AND vp.deleted_at IS NULL
             AND m.audio_url IS NOT NULL
           ORDER BY vp.id ASC, m.category ASC, m.language ASC, m.variant ASC`,
-    args: [userPk, userId, userPk],
+    args: [userPk, userLoginId, userPk],
   });
   return c.json({
     clips: result.rows.map((row) => ({

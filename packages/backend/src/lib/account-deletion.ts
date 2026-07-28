@@ -63,7 +63,9 @@ export async function pseudonymizeBillingForRetention(
 export async function purgeUserAccount(
   tx: DbExecutor,
   userPk: string | null,
-  userId: string,
+  // 토큰이 담고 있던 로그인 식별자. 통일 이전에 user_id 컬럼에 이 값이 저장된 자식
+  // 데이터까지 지우려면 users.id 와 함께 넘겨야 한다(같은 값이면 자연히 한 벌로 동작).
+  userLoginId: string,
 ): Promise<void> {
   // userPk(users.id) 를 해석하지 못한 채 진행하면 PK 로 연결된 자식 PII(클론 음성·
   // 결제 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
@@ -71,16 +73,16 @@ export async function purgeUserAccount(
   if (!userPk) {
     const orphanGuard = await tx.execute({
       sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
-      args: [userId, userId],
+      args: [userLoginId, userLoginId],
     });
     if (orphanGuard.rows.length > 0) {
       throw new Error(
-        `purgeUserAccount: userPk unresolved for existing user (userId=${userId}); aborting to avoid orphaning child PII`,
+        `purgeUserAccount: userPk unresolved for existing user (loginId=${userLoginId}); aborting to avoid orphaning child PII`,
       );
     }
   }
   if (userPk) {
-    const userIds = [userPk, userId];
+    const userIds = Array.from(new Set([userPk, userLoginId]));
     // 클론 voice/R2 오디오의 외부 삭제 참조를 행 삭제 *전에* 큐에 적재한다.
     // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
     await enqueueUserVoiceArtifacts(tx, userIds);
@@ -127,7 +129,7 @@ export async function purgeUserAccount(
     // (개인정보보호법 제21조). 보존이 필요한 거래 사실은 위 가명보존 레코드가 담는다.
     await tx.execute({
       sql: `DELETE FROM store_transactions WHERE user_id IN (?, ?)`,
-      args: [userPk, userId],
+      args: [userPk, userLoginId],
     });
 
     await tx.execute({
@@ -212,12 +214,12 @@ export async function purgeUserAccount(
     await tx.execute({
       sql: `DELETE FROM email_verification_codes
             WHERE email IN (SELECT email FROM users WHERE id = ? OR google_id = ?)`,
-      args: [userPk, userId],
+      args: [userPk, userLoginId],
     });
   }
 
   await tx.execute({
     sql: `DELETE FROM users WHERE id = ? OR google_id = ?`,
-    args: [userPk ?? userId, userId],
+    args: [userPk ?? userLoginId, userLoginId],
   });
 }

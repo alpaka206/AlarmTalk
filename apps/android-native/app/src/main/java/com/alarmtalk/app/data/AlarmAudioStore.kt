@@ -479,6 +479,33 @@ class AlarmAudioStore(
     ): CachedAlarmAudio {
         val extension = format.lowercase(Locale.US).substringBefore(';').takeIf { it.length in 2..5 } ?: "mp3"
         val resolvedCacheKey = cacheKey ?: audioCacheKeyForBytes(bytes)
+        // 같은 클립을 두 경로가 동시에 받을 수 있다(프리페치 워커 ↔ 편집기/수신 동기화).
+        // 키별 lock 이 없으면 한쪽이 staging 을 rename 하는 사이 다른 쪽이 같은 staging 을
+        // 건드려, 늦은 쪽이 target 이 이미 있는데도 IOException 으로 실패한다 —
+        // 편집기에서는 알람 저장 실패로, 동기화에서는 음성 없는 수신 알람으로 나타난다.
+        val lock = cacheKeyLock(resolvedCacheKey)
+        lock.lock()
+        return try {
+            cacheGeneratedAudioLocked(
+                bytes = bytes,
+                extension = extension,
+                resolvedCacheKey = resolvedCacheKey,
+                rawAudioUri = rawAudioUri,
+                messageId = messageId,
+            )
+        } finally {
+            lock.unlock()
+            releaseCacheKeyLockIfUnused(resolvedCacheKey, lock)
+        }
+    }
+
+    private fun cacheGeneratedAudioLocked(
+        bytes: ByteArray,
+        extension: String,
+        resolvedCacheKey: String,
+        rawAudioUri: String?,
+        messageId: String?,
+    ): CachedAlarmAudio {
         findCachedFile(resolvedCacheKey)?.let { cached ->
             val cachedUri = cached.toUri()
             val metadata = readMetadata(resolvedCacheKey)
@@ -496,10 +523,28 @@ class AlarmAudioStore(
         // '잘린 mp3'가 남고, findCachedFile 은 파일 존재만 보므로 이후 다운로드가 그 클립을
         // 영원히 건너뛴다 -> 그 알람은 무음이 된다. rename 은 같은 파일시스템에서 원자적이라
         // 완성된 파일만 target 이름을 갖는다.
-        val staging = File(audioDir, "${safeCacheKey(resolvedCacheKey)}.$extension.$PARTIAL_EXTENSION")
+        // staging 이름에 호출별 접미사를 붙인다. 키별 lock 이 이미 직렬화하지만, 다른
+        // 프로세스(워커는 별도 프로세스일 수 있다)까지 막지는 못하므로 파일 이름 자체를
+        // 겹치지 않게 둔다. 스윕은 확장자만 보고 지우므로 접미사가 붙어도 정리된다.
+        val staging = File(
+            audioDir,
+            "${safeCacheKey(resolvedCacheKey)}.$extension.${System.nanoTime()}.$PARTIAL_EXTENSION",
+        )
         staging.writeBytes(bytes)
         if (!staging.renameTo(target)) {
             staging.delete()
+            // 경합에서 진 쪽: 다른 호출이 먼저 완성해 두었으면 그 결과를 그대로 쓴다.
+            findCachedFile(resolvedCacheKey)?.let { winner ->
+                val metadata = readMetadata(resolvedCacheKey)
+                return CachedAlarmAudio(
+                    localAudioUri = winner.toUri().toString(),
+                    rawAudioUri = metadata.rawAudioUri ?: rawAudioUri,
+                    displayName = winner.name,
+                    durationMillis = readDurationMillis(winner.toUri()),
+                    cacheKey = resolvedCacheKey,
+                    messageId = metadata.messageId ?: messageId,
+                )
+            }
             throw java.io.IOException("Failed to finalize cached audio: ${target.name}")
         }
         writeMetadata(
