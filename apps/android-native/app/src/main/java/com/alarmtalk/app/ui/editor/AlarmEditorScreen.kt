@@ -1030,11 +1030,20 @@ internal fun AlarmEditorScreen(
     fun applyRandomPromptSettings(result: RandomPromptSettingsResult) {
         if (result.randomContext == ManualMessageContext) {
             // '직접 입력' 선택 → 랜덤 끄고, 다이얼로그에서 받은 문구를 그대로 쓴다.
+            val nextText = result.manualText.take(200)
+            // 문구를 실제로 바꾸지 않았으면 기존 오디오를 버리지 않는다. 프리필이 생기면서
+            // '들어갔다 확인만 누르는' 흐름이 흔해졌는데, 매번 재합성하면 직접 입력 월 한도
+            // (manual-tts-quota)가 아무 변경 없이 깎인다.
+            val unchanged = !editor.voiceRandomPrompt &&
+                !editor.isActiveBucketAlarm() &&
+                nextText.trim() == editor.voiceText.trim()
             editor.voiceRandomPrompt = false
-            editor.voiceText = result.manualText.take(200)
+            editor.voiceText = nextText
             editor.voiceLanguage = appVoiceLanguage
-            editor.clearAudio()
-            editor.clearTtsMeta()
+            if (!unchanged) {
+                editor.clearAudio()
+                editor.clearTtsMeta()
+            }
             settingsDetailPanel = null
             return
         }
@@ -1382,6 +1391,14 @@ internal fun AlarmEditorScreen(
             "random_prompt" -> RandomPromptSettingsPane(
                 // 직접 입력 모드면 pane 에서 '직접 입력'이 선택돼 보이도록 manual 을 넘긴다.
                 randomContext = if (editor.voiceRandomPrompt) editor.voiceRandomContext else ManualMessageContext,
+                // 직접 입력으로 저장된 알람만 기존 문구를 프리필한다. 버킷 알람도 저장 시
+                // voiceRandomPrompt=false + voiceText=클립문구가 되므로 버킷 여부를 함께 본다
+                // (안 그러면 사용자가 쓴 적 없는 클립 문구가 '내가 입력한 문구'처럼 나온다).
+                manualText = if (!editor.voiceRandomPrompt && !editor.isActiveBucketAlarm()) {
+                    editor.voiceText
+                } else {
+                    ""
+                },
                 manualRemaining = manualQuota?.remaining,
                 manualLimit = manualQuota?.limit,
                 weatherCountry = editor.voiceWeatherCountry,

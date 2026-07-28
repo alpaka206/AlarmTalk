@@ -238,7 +238,7 @@ internal fun VoiceAudioCard(
                                 )
                             } else {
                                 MessageModeSummaryRow(
-                                    isManual = !editor.voiceRandomPrompt,
+                                    isManual = !editor.voiceRandomPrompt && !editor.isActiveBucketAlarm(),
                                     randomContext = editor.voiceRandomContext,
                                     onClick = onOpenRandomPromptSettings,
                                 )
