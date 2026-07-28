@@ -55,6 +55,23 @@ private fun MainViewModel.voiceAlarmAllowed(draft: AlarmDraft): Boolean {
     return draft.usesFreeSystemVoiceAlarm()
 }
 
+/**
+ * 날씨 버킷 알람이면 저장 전에 그 알람이 울릴 날짜의 조건을 받아 드래프트에 담는다.
+ *
+ * 저장 후 워커로 해결하던 예전 방식은, 해결 전에 알람이 울리면 '오늘 날씨를 못 받았어요'
+ * 안내 클립이 나갔다. 정상(온라인) 상황에서는 고른 그 자리에서 맞는 오디오가 정해진다.
+ * 오프라인이면 조용히 미해결로 저장하고(알람 생성을 막지 않는다) 22시 갱신과 알람 전까지의
+ * 1시간 재시도가 채운다.
+ *
+ * 운세는 이 경로가 필요 없다 — 사주+발사일자로 기기에서 결정적으로 계산한다(fortuneThemeIndex).
+ */
+private suspend fun MainViewModel.withResolvedWeatherVariant(draft: AlarmDraft): AlarmDraft {
+    if (draft.bucketId != "weather" || draft.contextVariantIndex != null) return draft
+    val token = authSession?.token ?: return draft
+    val resolved = repository.resolveWeatherVariantForDraft(api, token, draft) ?: return draft
+    return draft.copy(contextVariantIndex = resolved)
+}
+
 internal fun MainViewModel.createAlarm(
     draft: AlarmDraft,
     replaceExisting: Boolean = false,
@@ -71,7 +88,7 @@ internal fun MainViewModel.createAlarm(
             return@launch
         }
         runCatching {
-            repository.createAlarm(draft, replaceExisting)
+            repository.createAlarm(withResolvedWeatherVariant(draft), replaceExisting)
         }.onSuccess {
             rememberVoiceUsed(draft.voiceProfileId)
             // 성공 토스트는 띄우지 않는다 — 저장 즉시 리스트에 행이 생기고 홈 헤더가
@@ -198,7 +215,7 @@ internal fun MainViewModel.updateAlarm(
     if (!requireAlarmPermissionsForMutation()) return
     viewModelScope.launch {
         runCatching {
-            repository.updateAlarm(alarmId, draft, replaceExisting)
+            repository.updateAlarm(alarmId, withResolvedWeatherVariant(draft), replaceExisting)
         }.onSuccess {
             rememberVoiceUsed(draft.voiceProfileId)
             // 생성과 동일 — 성공 토스트 생략(리스트/헤더가 결과를 보여준다).

@@ -839,6 +839,57 @@ class AlarmRepository(
      * 발사는 그 인덱스로 오프라인 lookup. 준비창 워커가 매일(반복 알람 전날) + 저장 직후(runOnce)
      * 호출한다. 항상 동작(오프라인 날씨 매칭 전용).
      */
+    /**
+     * 저장 전에 이 드래프트가 실제로 울릴 날짜의 날씨 variant 를 받아 온다.
+     *
+     * 예전에는 저장한 뒤 워커로 비동기 해결했는데, 그 사이에 알람이 울리면 조건이 미해결이라
+     * '오늘 날씨를 못 받았어요' 안내 클립이 나갔다. 정상(온라인) 상황에서는 고른 그 자리에서
+     * 해결해 알람이 처음부터 맞는 오디오를 갖게 한다.
+     *
+     * 오프라인 등으로 실패하면 null 을 돌려주고 저장은 그대로 진행한다 — 22시 갱신과
+     * 알람 전까지의 재시도가 채운다. 알람을 못 만들게 막지는 않는다.
+     */
+    suspend fun resolveWeatherVariantForDraft(
+        api: AlarmTalkApi,
+        token: String,
+        draft: AlarmDraft,
+    ): Int? {
+        if (draft.bucketId != "weather") return null
+        val now = System.currentTimeMillis()
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
+        // 저장 경로(createAlarm)와 같은 계산으로 발사 시각을 구해야, 해결한 날짜와 실제
+        // 울리는 날짜가 어긋나지 않는다.
+        val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+            hour = draft.hour,
+            minute = draft.minute,
+            repeatDaysMask = draft.repeatDaysMask,
+            holidayOff = draft.holidayOff,
+            nowMillis = now,
+            isHoliday = holidayPredicate,
+        )
+        val zone = java.time.ZoneId.systemDefault()
+        val targetDate = java.time.Instant.ofEpochMilli(fireAtMillis)
+            .atZone(zone)
+            .toLocalDate()
+            .toString()
+        return runCatching {
+            api.getPrerenderVariant(
+                authorization = AlarmTalkApiClient.bearer(token),
+                context = "wake_weather",
+                country = draft.voiceWeatherCountry?.trim()?.takeIf { it.isNotBlank() },
+                city = draft.voiceWeatherCity?.trim()?.takeIf { it.isNotBlank() },
+                targetDate = targetDate,
+                timezone = zone.id,
+            ).variantIndex
+        }.getOrElse { error ->
+            Log.w(TAG, "Pre-save weather variant resolve failed (will retry in background)", error)
+            null
+        }
+    }
+
     suspend fun resolveDueCloneBucketVariants(api: AlarmTalkApi, token: String): Int {
         val now = System.currentTimeMillis()
         // 준비창 게이트: open-meteo 는 하루 예보라 시간마다 갱신은 무의미하고 쿼터·배터리만 낭비한다.
@@ -909,6 +960,14 @@ class AlarmRepository(
      * 어떤 알람도 참조하지 않고 30일 넘게 손대지 않은 캐시 음성 파일을 정리한다.
      * 앱 시작 시 백그라운드에서 1회 호출되는 것을 전제로 한다.
      */
+    /**
+     * 아직 조건을 못 받은 날씨 알람이 '앞으로 울릴' 것 중에 남아 있는가.
+     * 남아 있으면 스케줄러가 알람 시각 전까지 1시간마다 다시 시도한다.
+     */
+    suspend fun hasUnresolvedWeatherAlarms(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        alarmDao.getEnabledWeatherBucketAlarms()
+            .any { it.contextVariantIndex == null && it.fireAtMillis > nowMillis }
+
     suspend fun sweepStaleAudioCache(): Int {
         val inUseFileNames = buildSet {
             alarmDao.getAllAlarms().forEach { alarm ->
