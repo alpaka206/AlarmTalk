@@ -339,11 +339,7 @@ alarmMutation.post('/', async (c) => {
     );
   }
 
-  // Raw-audio alarms have no real TTS message but the schema still requires
-  // message_id (NOT NULL). Insert a "raw" placeholder message that points at
-  // the same audio URL so the alarm row is satisfied. We attach it to the
-  // user's first voice profile because messages.voice_profile_id is NOT NULL.
-  let resolvedMessageId: string | null = body.message_id ?? null;
+  const resolvedMessageId: string | null = body.message_id ?? null;
   if (
     body.voice_profile_id &&
     !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
