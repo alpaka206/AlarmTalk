@@ -68,10 +68,10 @@ async function resolveUserLoginId(db: DbExecutor, userPk: string): Promise<strin
 }
 
 /** 해지/만료 후 유료 음성 데이터를 하드삭제 대신 보관하는 유예 기간(일). */
-export const PAID_VOICE_RETENTION_DAYS = 30;
+export const PAID_VOICE_RETENTION_DAYS = 3;
 
 /**
- * 유료 음성 30일 보관을 예약(upsert)한다. 반환값은 delete_after ISO 문자열
+ * 유료 음성 보관 유예를 예약(upsert)한다. 반환값은 delete_after ISO 문자열
  * (응답 voice_retention_until 로 그대로 내려줄 수 있게).
  * 재해지 시에는 마지막 해지 시점 기준 now+30일로 갱신한다(DO UPDATE) —
  * 그 사이 재구독으로 유예가 해제됐다가 다시 해지된 경우가 자연스럽게 처리된다.
@@ -145,9 +145,7 @@ export async function downgradeUserToFree(
           SET mode = 'sound-only',
               wake_mode = 'sound_then_voice',
               message_id = NULL,
-              voice_profile_id = NULL,
-              raw_audio_url = NULL,
-              raw_audio_duration_ms = NULL
+              voice_profile_id = NULL
           WHERE user_id NOT IN (${ph})
             AND (
               voice_profile_id IN (
@@ -316,7 +314,7 @@ async function disbandOwnedPlanGroup(
     // (RTDN deactivate 경로와 동일하게 deleteVoiceData:false). 하드 삭제는 취소를
     // 실제로 개시한 소유자 본인에게만 국한한다.
     await syncUserPlanAfterCancel(db, memberUserId, { deleteVoiceData: false });
-    // 소유자 해지로 유료 접근을 잃는 멤버도 소유자와 동일 정책으로 유료 음성 30일
+    // 소유자 해지로 유료 접근을 잃는 멤버도 소유자와 동일 정책으로 유료 음성 보관
     // 보관을 예약한다 — 예약이 없으면 멤버의 유료 음성이 sweep 대상에서 빠져 영구
     // 잔존한다. 멤버가 자기 결제로 재구독하면 entitle/redeem 경로가 유예를 해제하고,
     // sweep 도 삭제 직전에 활성 유료 구독을 재확인하므로 과삭제 위험은 없다.
@@ -434,7 +432,7 @@ export async function leavePlanGroupMember(
   // 그룹 구독 유무와 무관하게 남은 활성 구독 기준으로 plan 을 재정렬한다
   // (다른 유료 구독이 남아 있으면 유지, 없으면 free 강등 + 음성 접근 정리).
   await syncUserPlanAfterCancel(db, params.userPk, { deleteVoiceData: false });
-  // 그룹 이탈로 유료 접근을 잃어도 음성은 즉시 삭제하지 않고 30일 보관 유예를 건다.
+  // 그룹 이탈로 유료 접근을 잃어도 음성은 즉시 삭제하지 않고 보관 유예를 건다.
   await schedulePaidVoiceRetention(db, params.userPk, now);
 
   await releaseInviteUseForMember(db, params.userPk, params.planGroupId);

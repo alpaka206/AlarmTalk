@@ -1,5 +1,4 @@
 import { UUID_RE } from '../lib/validate';
-import { isStoredAudioUrl } from '../lib/audio-loader';
 import { FREE_BUCKET_CATEGORIES, CLONE_PRERENDER_CATEGORIES } from '../lib/stock-clips';
 import { DEFAULT_ALARM_TIMEZONE } from '../lib/scheduler';
 import {
@@ -27,8 +26,6 @@ export type AlarmRow = Record<string, unknown> & {
   creator_email?: unknown;
   creator_name?: unknown;
   category?: unknown;
-  raw_audio_url?: unknown;
-  raw_audio_duration_ms?: unknown;
 };
 
 export function normalizeAlarmRow(row: AlarmRow, viewer?: string | string[] | null) {
@@ -88,11 +85,6 @@ export function normalizeAlarmRow(row: AlarmRow, viewer?: string | string[] | nu
     vibration_pattern: vibrationPattern,
     wake_mode: wakeMode,
     voice_profile_id: (row.voice_profile_id ?? null) as string | null,
-    raw_audio_url: (row.raw_audio_url ?? null) as string | null,
-    raw_audio_duration_ms:
-      typeof row.raw_audio_duration_ms === 'number'
-        ? row.raw_audio_duration_ms
-        : null,
     sender_user_id: senderUserId,
     sender_name: senderName,
     sender_email: senderEmail,
@@ -115,7 +107,6 @@ export function validateAlarmFields(body: {
   message_id?: string | null;
   is_active?: boolean;
   target_user_id?: string;
-  raw_audio_url?: string | null;
   bucket_id?: string | null;
 }): FieldError | null {
   if (body.message_id != null && !UUID_RE.test(body.message_id)) {
@@ -139,12 +130,6 @@ export function validateAlarmFields(body: {
 
   if (body.target_user_id !== undefined && typeof body.target_user_id !== 'string') {
     return { error: 'Invalid target_user_id', error_code: 'INVALID_TARGET_USER' };
-  }
-
-  if (body.raw_audio_url !== undefined && body.raw_audio_url !== null) {
-    if (typeof body.raw_audio_url !== 'string' || !isStoredAudioUrl(body.raw_audio_url.trim())) {
-      return { error: 'raw_audio_url must be a stored r2:// object', error_code: 'INVALID_RAW_AUDIO_URL' };
-    }
   }
 
   if (body.mode !== undefined && !ALARM_MODES.includes(body.mode as AlarmMode)) {

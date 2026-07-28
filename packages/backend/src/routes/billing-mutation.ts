@@ -691,7 +691,7 @@ billingMutation.post('/vouchers/family-share/regenerate', async (c) => {
 // 스토어(Google Play) 결제 구독이면 **Play 성공을 확인하기 전에는 로컬 DB·음성
 // 데이터를 절대 변경하지 않는다** — Play 호출 실패 시 502 + manage_url 로 스토어
 // 직접 관리 화면을 안내한다.
-// 어느 경로든 즉시 해지 시 유료 음성은 하드삭제 대신 30일 보관 유예를 건다.
+// 어느 경로든 즉시 해지 시 유료 음성은 하드삭제 대신 보관 유예(PAID_VOICE_RETENTION_DAYS)를 건다.
 billingMutation.post('/cancel', async (c) => {
   const body = await c.req
     .json<{ mode?: unknown }>()

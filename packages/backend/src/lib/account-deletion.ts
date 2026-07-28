@@ -139,13 +139,6 @@ export async function purgeUserAccount(
       args: [userPk],
     });
 
-    // raw-alarms 업로드 추적 행 정리(R2 오브젝트는 위 enqueueUserVoiceArtifacts 가
-    // 이미 삭제 큐에 적재했다).
-    await tx.execute({
-      sql: `DELETE FROM raw_alarm_uploads WHERE user_id IN (?, ?)`,
-      args: [userPk, userId],
-    });
-
     await tx.execute({
       sql: `DELETE FROM generated_audio_assets
             WHERE user_id IN (?, ?)

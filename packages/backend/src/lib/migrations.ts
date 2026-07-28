@@ -1793,6 +1793,22 @@ export const migrations: Migration[] = [
       `DROP TABLE IF EXISTS plan_group_invites`,
     ],
   },
+  {
+    // 내 알람용 오디오를 R2 에 올려 두던 경로(POST /alarm/source) 제거에 따른 정리.
+    //  - 내 알람의 녹음/파일은 생성 후 폰에 남으므로 서버 보관이 필요 없고, 가족에게
+    //    보내는 음성은 voice_uploads → messages.audio_url 이라는 별도 배관을 쓴다.
+    //    이 제3의 경로는 어떤 클라이언트도 호출한 적이 없어 dev·prod 모두 0건이었다.
+    //  - R2 에 계속 보관해야 하는 것은 보이스클론/시스템 보이스로 미리 합성한 기본
+    //    알람음(messages.is_preset=1)뿐이고, 그건 audio-retention 의 preset 가드가 지킨다.
+    //  - alarms 의 두 컬럼은 인덱스가 없어 그대로 DROP COLUMN 이 통과한다.
+    id: 84,
+    name: 'drop-raw-alarm-audio-upload-path',
+    statements: [
+      `ALTER TABLE alarms DROP COLUMN raw_audio_url`,
+      `ALTER TABLE alarms DROP COLUMN raw_audio_duration_ms`,
+      `DROP TABLE IF EXISTS raw_alarm_uploads`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

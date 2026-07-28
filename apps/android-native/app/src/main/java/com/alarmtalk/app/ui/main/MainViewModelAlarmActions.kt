@@ -165,9 +165,7 @@ private fun AlarmDraft.toCachedLocalAudio(context: Context, audioStore: AlarmAud
 }
 
 private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
-    val rawAudioUrl = rawAudioUri?.takeIf(RemoteAlarmMapper::isRemoteAudioUrl)
-        ?.takeUnless { ttsMessageId != null }
-    val hasRemoteVoice = ttsMessageId != null || rawAudioUrl != null
+    val hasRemoteVoice = ttsMessageId != null
     return RemoteAlarmWriteRequest(
         time = String.format(java.util.Locale.US, "%02d:%02d", hour, minute),
         repeatDays = RemoteAlarmMapper.repeatMaskToDays(repeatDaysMask),
@@ -181,8 +179,6 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
         isActive = true,
         messageId = ttsMessageId.trimmedOrNull(),
         voiceProfileId = voiceProfileId.takeIf { voiceSource != VoiceSources.LOCAL_AUDIO }.trimmedOrNull(),
-        rawAudioUrl = rawAudioUrl,
-        rawAudioDurationMs = null,
         targetUserId = targetUserId.trimmedOrNull(),
         timezone = java.util.TimeZone.getDefault().id,
     )

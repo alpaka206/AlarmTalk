@@ -40,7 +40,7 @@ afterEach(() => {
 describe('POST /alarms', () => {
   const validBody = { message_id: ID.message, time: '07:30' };
 
-  it('message_id / raw_audio_url 둘 다 누락 시 alarm-only 모드로 201 (message_id NULL)', async () => {
+  it('message_id 누락 시 alarm-only 모드로 201 (message_id NULL)', async () => {
     // The "alarm-only" play mode plays just the device's default alarm sound
     // and stores neither a TTS message nor a raw-audio source. Schema migration
     // 22 made alarms.message_id nullable so the row stores NULL.
@@ -64,18 +64,7 @@ describe('POST /alarms', () => {
     expect((await res.json()).error_code).toBe('INVALID_ALARM_MODE');
   });
 
-  it('cleartext raw_audio_url이면 400', async () => {
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', {
-        time: '07:30',
-        raw_audio_url: 'http://cdn.example.com/alarm.m4a',
-      }),
-    );
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_RAW_AUDIO_URL');
-  });
-
-  it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
+it('target_user_id 사용자가 없으면 403 NOT_CONNECTED', async () => {
     // target user lookup → no rows
     mockDB.pushResult([]);
     const res = await buildApp().request(
@@ -630,7 +619,6 @@ describe('greeting 버킷 정책 (POST/PATCH)', () => {
         mode: 'tts',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        raw_audio_url: null,
         bucket_id: null,
         user_plan: 'personal',
         ...overrides,
@@ -988,7 +976,6 @@ it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
         mode: 'tts',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        raw_audio_url: null,
         user_plan: 'personal',
       },
     ]);
@@ -1012,7 +999,6 @@ it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
         mode: 'tts',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        raw_audio_url: null,
         user_plan: 'personal',
       },
     ]);
@@ -1057,7 +1043,6 @@ it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
         mode: 'tts',
         wake_mode: 'sound_then_voice',
         voice_profile_id: null,
-        raw_audio_url: null,
         user_plan: 'personal',
       },
     ]);
@@ -1178,88 +1163,3 @@ describe('DELETE /alarms/:id', () => {
 });
 
 // ---------------------------------------------------------------------------
-// B: raw_audio_url 소유권 검증 (audit-hardening-3)
-//   isStoredAudioUrl 은 r2:// 형식만 확인하므로, 타인 R2 키를 자기 알람 raw_audio_url 에
-//   심어 두면 이후 DELETE/PATCH 교체 시 참조 0 판정으로 타인 객체가 삭제 큐에 적재된다.
-//   POST/PATCH 저장 전에 키의 소유자 segment 를 호출자와 대조해 차단한다.
-// ---------------------------------------------------------------------------
-describe('B: raw_audio_url 소유권', () => {
-  it('POST: 타인 소유 raw_audio_url → 403, 알람·삭제큐 미적재', async () => {
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', {
-        time: '07:30',
-        raw_audio_url: 'r2://raw-alarms/victim-2/clip-abc',
-      }),
-    );
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('RAW_AUDIO_FORBIDDEN');
-    // 타인 객체가 알람이나 삭제 큐에 전혀 적재되지 않아야 한다.
-    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
-    expect(mockDB.calls.some((c) => c.sql.includes('pending_external_deletions'))).toBe(false);
-  });
-
-  it('POST: 본인 소유 raw_audio_url 은 통과(201) + 알람에 저장', async () => {
-    mockDB.pushResult([{ plan: 'personal' }]); // 생성자 plan
-    mockDB.pushResult([{ id: 'vp-1' }]); // firstVoice (raw 알람은 voice profile 필요)
-    mockDB.pushResult([], 1); // placeholder message INSERT
-    mockDB.pushResult([{ '1': 1 }]); // messageBelongsToCaller (placeholder)
-    mockDB.pushResult([], 1); // INSERT alarms
-    const ownKey = 'r2://raw-alarms/user-1/clip-mine';
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', { time: '07:30', raw_audio_url: ownKey }),
-    );
-    expect(res.status).toBe(201);
-    const insertAlarm = mockDB.calls.find((c) => c.sql.includes('INSERT INTO alarms'));
-    expect(insertAlarm).toBeDefined();
-    expect(insertAlarm!.args).toContain(ownKey);
-  });
-
-  it('POST: 잘못된 퍼센트 인코딩 raw_audio_url 은 500 이 아니라 403(Codex #563)', async () => {
-    const res = await buildApp().request(
-      jsonReq('POST', '/alarms', { time: '07:30', raw_audio_url: 'r2://raw-alarms/%/clip' }),
-    );
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('RAW_AUDIO_FORBIDDEN');
-    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO alarms'))).toBe(false);
-  });
-
-  it('PATCH: 타인 소유 raw_audio_url → 403, UPDATE·삭제큐 미적재', async () => {
-    mockDB.pushResult([{ id: ID.alarm }]); // 기존 알람 SELECT (소유 확인 통과)
-    const res = await buildApp().request(
-      jsonReq('PATCH', `/alarms/${ID.alarm}`, {
-        raw_audio_url: 'r2://raw-alarms/victim-2/clip-x',
-      }),
-    );
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('RAW_AUDIO_FORBIDDEN');
-    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE alarms SET'))).toBe(false);
-    expect(mockDB.calls.some((c) => c.sql.includes('pending_external_deletions'))).toBe(false);
-  });
-
-  // 정리 경로 회귀(Codex #563): 쓰기 게이트 이전에 생성된 레거시 알람이 타인 키를
-  // 참조하더라도, DELETE 시 그 타인 객체를 삭제 큐에 넣지 않는다(cross-tenant 삭제 차단).
-  it('DELETE: 레거시 알람의 타인 raw_audio_url 은 삭제 큐에 미적재', async () => {
-    mockDB.pushResult([{ message_id: null, raw_audio_url: 'r2://raw-alarms/victim-2/legacy-clip' }]);
-    mockDB.pushResult([], 1); // DELETE FROM alarms
-    const res = await buildApp().request(
-      new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
-    );
-    expect(res.status).toBe(200);
-    // 소유권 불일치라 참조 카운트 조회도, 삭제 큐 적재도 하지 않는다.
-    expect(mockDB.calls.some((c) => c.sql.includes('pending_external_deletions'))).toBe(false);
-    expect(
-      mockDB.calls.some((c) => c.sql.includes('COUNT(*)') && c.sql.includes('raw_audio_url')),
-    ).toBe(false);
-  });
-
-  it('DELETE: 본인 raw_audio_url 은 참조 0이면 삭제 큐 적재', async () => {
-    mockDB.pushResult([{ message_id: null, raw_audio_url: 'r2://raw-alarms/user-1/own-clip' }]);
-    mockDB.pushResult([], 1); // DELETE FROM alarms
-    mockDB.pushResult([{ cnt: 0 }]); // 참조 카운트
-    const res = await buildApp().request(
-      new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
-    );
-    expect(res.status).toBe(200);
-    expect(mockDB.calls.some((c) => c.sql.includes('pending_external_deletions'))).toBe(true);
-  });
-});

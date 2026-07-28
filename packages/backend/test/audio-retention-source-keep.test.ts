@@ -3,7 +3,7 @@ import { createClient } from '@libsql/client';
 import { cleanupExpiredAudio } from '../src/lib/audio-retention';
 
 // 확정(promote)된 목소리의 클론 원본 업로드는 API 키/프로바이더 교체 후 재생성용으로 보관해야 하므로
-// 7일 TTL 스윕에서 제외된다. 그 외(미승격 draft / 프로필과 무관한 raw 업로드 / 삭제된 프로필 잔여분)만
+// 7일 TTL 스윕에서 제외된다. 그 외(미승격 draft / 프로필과 무관한 업로드 / 삭제된 프로필 잔여분)만
 // 정리된다. 실제 인메모리 libSQL 로 스윕 쿼리를 검증한다.
 async function setupDb() {
   const db = createClient({ url: ':memory:' });
@@ -45,9 +45,8 @@ async function setupDb() {
       voice_profile_id TEXT,
       created_at TEXT NOT NULL
     );
-    CREATE TABLE alarms (id TEXT PRIMARY KEY, raw_audio_url TEXT, message_id TEXT);
+    CREATE TABLE alarms (id TEXT PRIMARY KEY, message_id TEXT);
     CREATE TABLE messages (id TEXT PRIMARY KEY, audio_url TEXT, is_preset INTEGER DEFAULT 0);
-    CREATE TABLE raw_alarm_uploads (id TEXT PRIMARY KEY, object_key TEXT NOT NULL, created_at TEXT NOT NULL);
   `);
   return db;
 }

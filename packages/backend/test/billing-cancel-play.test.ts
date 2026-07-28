@@ -23,6 +23,7 @@ vi.mock('../src/lib/google-oauth', () => ({
   getGoogleAccessToken: vi.fn().mockResolvedValue('play-access-token'),
 }));
 
+import { PAID_VOICE_RETENTION_DAYS } from '../src/lib/billing-cancel';
 import billingMutation from '../src/routes/billing-mutation';
 import billingGoogle from '../src/routes/billing-google';
 import {
@@ -139,7 +140,7 @@ describe('POST /billing/cancel (google 결제)', () => {
     expect(mockDB.transactions.commits).toBe(0);
   });
 
-  it('immediate: Play :revoke 성공 → 구독 cancelled·음성 보존·30일 보관 예약', async () => {
+  it('immediate: Play :revoke 성공 → 구독 cancelled·음성 보존·보관 유예 예약', async () => {
     const fetchMock = stubPlayFetch(200, {});
     mockDB.pushResult([{ id: 'user-pk-1' }]); // resolveUserPk
     mockDB.pushResult([SUB_ROW]); // 활성 구독 스냅샷 (라우트, 트랜잭션 안에서 재조회 없음)
@@ -155,9 +156,11 @@ describe('POST /billing/cancel (google 결제)', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.mode).toBe('immediate');
-    // 30일 보관 만료 시각이 응답에 내려온다.
+    // 보관 만료 시각이 응답에 내려온다 (PAID_VOICE_RETENTION_DAYS 기준).
     const retentionMs = new Date(body.voice_retention_until).getTime();
-    expect(retentionMs).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000);
+    const expectedMs = Date.now() + PAID_VOICE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    expect(retentionMs).toBeGreaterThan(expectedMs - 60_000);
+    expect(retentionMs).toBeLessThanOrEqual(expectedMs + 60_000);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain(':revoke');
@@ -167,7 +170,7 @@ describe('POST /billing/cancel (google 결제)', () => {
 
     expect(findCall("status = 'cancelled'")).toBeDefined();
     expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
-    // 음성 데이터 하드삭제는 없어야 한다 (30일 보관으로 대체).
+    // 음성 데이터 하드삭제는 없어야 한다 (보관 유예로 대체).
     expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
     expect(findCall('DELETE FROM messages')).toBeUndefined();
   });

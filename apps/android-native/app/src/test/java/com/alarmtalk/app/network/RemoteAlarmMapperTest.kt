@@ -30,34 +30,6 @@ class RemoteAlarmMapperTest {
 
         assertEquals("sound-only", request.mode)
         assertEquals("voice_only", request.wakeMode)
-        assertNull(request.rawAudioUrl)
-    }
-
-    @Test
-    fun remoteAudioUrlCanBeReferencedWhenAlreadyNetworkBacked() {
-        val alarm = alarm(
-            playMode = AlarmPlayModes.ALARM_VOICE,
-            rawAudioUri = "https://cdn.example.com/alarm.m4a",
-        )
-
-        val request = RemoteAlarmMapper.toWriteRequest(alarm)
-
-        assertEquals("tts", request.mode)
-        assertEquals("sound_then_voice", request.wakeMode)
-        assertEquals("https://cdn.example.com/alarm.m4a", request.rawAudioUrl)
-    }
-
-    @Test
-    fun cleartextRemoteAudioUrlIsNotReferenced() {
-        val alarm = alarm(
-            playMode = AlarmPlayModes.ALARM_VOICE,
-            rawAudioUri = "http://cdn.example.com/alarm.m4a",
-        )
-
-        val request = RemoteAlarmMapper.toWriteRequest(alarm)
-
-        assertEquals("sound-only", request.mode)
-        assertNull(request.rawAudioUrl)
     }
 
     @Test
@@ -75,7 +47,6 @@ class RemoteAlarmMapperTest {
         assertEquals("tts", request.mode)
         assertEquals("message-id", request.messageId)
         assertEquals("profile-id", request.voiceProfileId)
-        assertNull(request.rawAudioUrl)
     }
 
     private fun alarm(
