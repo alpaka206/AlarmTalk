@@ -1809,6 +1809,22 @@ export const migrations: Migration[] = [
       `DROP TABLE IF EXISTS raw_alarm_uploads`,
     ],
   },
+  {
+    // #79 되돌림 복구용. dev DB 에만 #79(users.picture/last_active_at DROP)를 먼저
+    // 적용해 놓고 이 브랜치를 아직 배포하지 않은 동안, 배포돼 있던 develop 코드가
+    // 아직 u.picture 를 SELECT 해서 GET /family/groups/current 가 500 을 냈다
+    // ("Failed to load shared plan data" 배너). 응급으로 dev DB 에 두 컬럼을
+    // 되살려 뒀으므로, 이 브랜치가 배포될 때 다시 떨궈 최종 상태를 맞춘다.
+    //
+    // 이미 #79 로 정리된 DB(prod 포함)에서는 'no such column' 이 나고
+    // isIdempotentDDLError 가 무시한다 — 어느 환경에서 실행돼도 결과는 같다.
+    id: 85,
+    name: 'redrop-users-picture-and-last-active-at',
+    statements: [
+      `ALTER TABLE users DROP COLUMN picture`,
+      `ALTER TABLE users DROP COLUMN last_active_at`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
