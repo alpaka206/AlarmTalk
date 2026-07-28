@@ -553,6 +553,8 @@ internal fun FreeBucketSettingsPane(
     selectedBucket: String?,
     onSelectBucket: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** 잠긴 '직접 입력'을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
+    onManualLocked: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -585,16 +587,20 @@ internal fun FreeBucketSettingsPane(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SnoozeOptionSection {
-                    buckets.forEachIndexed { index, bucket ->
+                    buckets.forEach { bucket ->
                         SnoozeRadioRow(
                             label = stringResource(freeBucketLabelRes(bucket)),
                             selected = selectedBucket == bucket,
                             onClick = { onSelectBucket(bucket) },
                         )
-                        if (index != buckets.lastIndex) {
-                            SnoozeOptionDivider()
-                        }
+                        SnoozeOptionDivider()
                     }
+                    // 무료에게도 '직접 입력'이 존재한다는 걸 보여준다. 목록에서 아예 빼면
+                    // 이런 기능이 있는지조차 모르고, 유료 전환 동기 중 가장 강한 것을 잃는다.
+                    SnoozeLockedRow(
+                        label = stringResource(R.string.editor_msg_mode_manual),
+                        onClick = onManualLocked,
+                    )
                 }
             }
         }

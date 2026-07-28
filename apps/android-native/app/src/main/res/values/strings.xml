@@ -269,7 +269,6 @@
     <string name="editor_save_blocked_free_clips_loading">알람 문구를 준비하고 있어요. 잠시만 기다려 주세요.</string>
     <string name="editor_free_bucket_offline">오프라인이라 문구를 불러오지 못했어요</string>
     <string name="editor_save_blocked_free_clips_offline">인터넷이 연결되어 있지 않아 알람 문구를 불러오지 못했어요. 연결되면 자동으로 다시 시도할게요.</string>
-    <string name="voices_clone_requires_paid_hint">내 목소리로 깨워주는 알람은 유료 플랜에서 만들 수 있어요.</string>
     <string name="editor_stop">정지</string>
     <string name="editor_vibration_title">진동</string>
     <string name="editor_voice_deleted_desc">이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.</string>

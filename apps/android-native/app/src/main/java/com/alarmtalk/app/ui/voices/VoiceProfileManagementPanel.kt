@@ -316,6 +316,8 @@ internal fun VoiceProfileManagementPanel(
     val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
+    val maxProfilesReachedMessage =
+        stringResource(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
 
     fun stopMediaPreview(invalidateGreetingPreview: Boolean = true) {
         if (invalidateGreetingPreview) greetingPreviewRequestId += 1
@@ -1186,11 +1188,19 @@ internal fun VoiceProfileManagementPanel(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+            // 추가 버튼은 항상 누를 수 있다. 막힌 이유를 눌러 봐야 알 수 있게 두면 "왜 흐린지"
+            // 모르는 채로 끝나므로, 차단 사유를 두 갈래로 나눠 그 자리에서 알려준다.
+            //  - 무료 플랜        -> 이용권 안내 모달(PlanGateDialog)
+            //  - 유료인데 정원 초과 -> 개수 제한 안내 (이용권 안내를 띄우면 거짓말이 된다)
             Button(
                 onClick = {
-                    if (canOpenCreateForm) showCreateForm = true
+                    when {
+                        canOpenCreateForm -> showCreateForm = true
+                        !canCreateVoice -> voicePlanGateOpen = true
+                        else -> localMessage = maxProfilesReachedMessage
+                    }
                 },
-                enabled = canOpenCreateForm,
+                enabled = !voiceProfileBusy,
             ) {
                 Text(stringResource(R.string.voices_add))
             }
@@ -1200,11 +1210,10 @@ internal fun VoiceProfileManagementPanel(
             MutedText(localMessage.orEmpty())
         }
 
-        if (ownVoices.isEmpty() && canCreateVoice) {
+        if (ownVoices.isEmpty() && authSession != null) {
+            // 유료·무료 공통 빈 상태. 무료에게 "유료 플랜에서 가능"이라고 미리 못박지 않는다 —
+            // 추가를 눌렀을 때 모달이 설명한다.
             MutedText(stringResource(R.string.voices_no_voices_yet))
-        } else if (ownVoices.isEmpty() && authSession != null) {
-            // 무료 플랜 — 빈 자리로 두지 않고, 내 목소리 클론이 유료 기능임을 조용히 알린다.
-            MutedText(stringResource(R.string.voices_clone_requires_paid_hint))
         } else if (ownVoices.isNotEmpty()) {
             ownVoices.forEach { profile ->
                 // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬 다운로드 중

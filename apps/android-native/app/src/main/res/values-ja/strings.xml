@@ -267,7 +267,6 @@
     <string name="editor_save_blocked_free_clips_loading">アラームのメッセージを準備しています。しばらくお待ちください。</string>
     <string name="editor_free_bucket_offline">オフラインのためフレーズを読み込めませんでした</string>
     <string name="editor_save_blocked_free_clips_offline">オフラインのためアラームのフレーズを読み込めませんでした。接続が戻ると自動で再試行します。</string>
-    <string name="voices_clone_requires_paid_hint">自分の声で起こすアラームは有料プランで作成できます。</string>
     <string name="editor_stop">停止</string>
     <string name="editor_vibration_title">バイブレーション</string>
     <string name="editor_voice_deleted_desc">このアラームに保存された声はそのまま鳴りますが、文を変えるには別の声を選択してください。</string>

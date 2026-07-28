@@ -1431,6 +1431,7 @@ internal fun AlarmEditorScreen(
                     }
                 },
                 onDismiss = { settingsDetailPanel = null },
+                onManualLocked = { voicePlanGateOpen = true },
             )
 
             "voice_output" -> VoiceOutputSettingsPane(
