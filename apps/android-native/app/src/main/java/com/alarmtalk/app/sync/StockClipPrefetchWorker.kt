@@ -22,6 +22,7 @@ import com.alarmtalk.app.network.StockClip
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -167,9 +168,29 @@ class StockClipPrefetchWorker(
             )
         }
 
-        /** 진행 상황 구독 — 다운로드 화면이 이 값으로 로딩을 그린다. */
-        fun observe(context: Context): Flow<List<WorkInfo>> =
+        /**
+         * 진행 상황 구독 — 다운로드 화면이 이 값으로 로딩을 그린다.
+         *
+         * 유니크 작업 '이력'이 오므로 실패 후 재시도를 걸면 끝난 예전 항목과 새 항목이
+         * 같이 들어온다. 목록을 그대로 넘기면 화면이 firstOrNull() 로 옛 FAILED 를 붙잡아
+         * 재시도가 도는 중에도 실패 화면에 머물 수 있어, 여기서 하나로 줄여 넘긴다.
+         */
+        fun observe(context: Context): Flow<WorkInfo?> =
             WorkManager.getInstance(context.applicationContext)
                 .getWorkInfosForUniqueWorkFlow(WORK_NAME)
+                .map { infos -> pickCurrent(infos) { it.state } }
+
+        /**
+         * 이력 중 '지금 화면이 봐야 할' 하나를 고른다.
+         *  1) 아직 안 끝난 것(RUNNING/ENQUEUED/BLOCKED) — 재시도가 돌고 있으면 그게 현재다.
+         *  2) 없으면 성공한 것 — 한 번이라도 받아냈으면 화면을 닫아야 한다.
+         *  3) 그것도 없으면 마지막 항목(=실패). 그때만 '다시 시도'를 보여준다.
+         *
+         * WorkInfo 는 유닛 테스트에서 만들기 어려워 상태 추출을 인자로 받는다.
+         */
+        internal fun <T> pickCurrent(items: List<T>, state: (T) -> WorkInfo.State): T? =
+            items.firstOrNull { !state(it).isFinished }
+                ?: items.lastOrNull { state(it) == WorkInfo.State.SUCCEEDED }
+                ?: items.lastOrNull()
     }
 }

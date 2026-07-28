@@ -811,10 +811,11 @@ internal fun AlarmTalkApp(
       // 첫 로그인 "목소리 고르기" — 기본 목소리 4개를 다 펼치는 대신 1개를 미리듣고 고른다.
       if (viewModel.showVoiceSetup) {
           // 다운로드는 WorkManager 가 하므로 화면은 진행 상황만 구독한다 — 나가도 이어진다.
-          val prefetchInfos by com.alarmtalk.app.sync.StockClipPrefetchWorker
+          // observe() 가 유니크 작업 이력에서 '지금 볼 것' 하나를 이미 골라 준다
+          // (재시도가 도는 동안 끝난 옛 FAILED 를 붙잡지 않도록).
+          val prefetchInfo by com.alarmtalk.app.sync.StockClipPrefetchWorker
               .observe(context)
-              .collectAsState(initial = emptyList())
-          val prefetchInfo = prefetchInfos.firstOrNull()
+              .collectAsState(initial = null)
           val prefetchDone = prefetchInfo?.progress
               ?.getInt(com.alarmtalk.app.sync.StockClipPrefetchWorker.KEY_DONE, 0) ?: 0
           val prefetchTotal = prefetchInfo?.progress
