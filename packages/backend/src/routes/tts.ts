@@ -744,25 +744,11 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  let freePlanRestricted = false;
-  // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
-  let callerUserPlan: string | null = null;
   const user = await db.execute({
     sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
   });
-
-  if (user.rows.length > 0) {
-    const u = user.rows[0]!;
-    const plan = u.plan as string;
-    callerUserPlan = plan ?? null;
-
-    // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
-    // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
-    if (!isPaidVoicePlan(plan)) {
-      freePlanRestricted = true;
-    }
-  } else {
+  if (user.rows.length === 0) {
     // 계정 행을 못 찾으면 막는다. 예전에는 `else if (resolvedUserPk)` 라 식별자
     // 미해결 시 사용량 체크를 건너뛰고 그대로 진행했다(fail-open).
     return c.json(
@@ -773,6 +759,12 @@ tts.post('/generate', async (c) => {
       403,
     );
   }
+
+  // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
+  const callerUserPlan = (user.rows[0]!.plan as string) ?? null;
+  // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
+  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
+  const freePlanRestricted = !isPaidVoicePlan(callerUserPlan);
 
   // 두 번째 인자는 레거시 보조 매칭용 로그인 식별자다(userId 는 이미 users.id).
   const vp = await findUsableVoiceProfile(db, c.get('userLoginId'), userPk, body.voice_profile_id);
