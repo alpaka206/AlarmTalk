@@ -603,7 +603,6 @@
     <string name="social_code_input_hint">招待コード・利用券ギフトコード・プロモコードのすべてを登録できます。</string>
     <string name="social_voucher_usage">%1$d/%2$d人が使用中</string>
     <string name="social_voucher_usage_full">%1$d/%2$d人が使用中 · 定員がいっぱいで共有できません</string>
-    <string name="voices_add">追加</string>
     <string name="voices_close">閉じる</string>
     <string name="voices_create_dialog_title">声を作成</string>
     <string name="voices_create_paid_title">マイボイスの作成は有料機能です</string>
@@ -625,14 +624,12 @@
     <string name="voices_login_required_body">ログインすると声を作成できます。</string>
     <string name="voices_login_required_title">ログインが必要です</string>
     <string name="voices_mic_permission_required">マイクの権限が必要です。</string>
-    <string name="voices_my_voices_title">マイボイス</string>
     <string name="voices_name_label">声の名前</string>
     <string name="voices_prerender_ready_title">アラーム音声を準備しています</string>
     <string name="voices_prerender_ready_body">まもなく準備できます。\nこの画面を閉じてもバックグラウンドで続きます。</string>
     <string name="voices_language_label">フレーズの言語</string>
     <string name="voices_name_placeholder">例:お母さんの声</string>
     <string name="voices_next">次へ</string>
-    <string name="voices_no_voices_yet">まだ作成した声はありません。</string>
     <string name="voices_paid_required">有料プランでご利用いただけます。</string>
     <string name="voices_prepare_recording_first">まず録音した音声をご用意ください。</string>
     <string name="voices_prepare_selected_failed">選択した音声を準備できませんでした。</string>
@@ -670,14 +667,11 @@
     <string name="voices_select_file_first">ファイルを選択してください。</string>
     <string name="voices_select_to_register_hint">声を選んだあと、名前・関係・呼び名を入力して登録してください。</string>
     <string name="voices_selected_audio_unusable">選択した音声は使用できません。</string>
-    <string name="voices_shared_voices_title">共有された声</string>
     <string name="voices_sharing_shared_desc_disabled">共有はカップル/ファミリープランでご利用いただけます。</string>
     <string name="voices_sharing_shared_desc_enabled">登録した声を家族・恋人も一緒に使えます。</string>
     <string name="voices_sharing_shared_title">家族・恋人への共有を許可</string>
     <string name="voices_step_sharing">共有設定</string>
-    <string name="voices_default_voice_choose">選ぶ</string>
     <string name="voices_default_voice_prefetching">アラーム音声を準備中 %1$d/%2$d</string>
-    <string name="voices_default_voice_row_title">基本の声</string>
     <string name="voices_upload_change_hint">タップして別のファイルを選べます。</string>
     <string name="voices_single_speaker_hint">一人の声だけが入った音声を入れてください。\n複数人が混ざると、声が正確に再現されません。</string>
     <string name="voices_upload_file_or_video">ファイルまたは動画をアップロード</string>
@@ -998,4 +992,8 @@
     <string name="onb_voice_download_later">あとで受け取る</string>
     <string name="voicesr_share_voice_desc">同じプランの家族がこの声でアラームを作れます。</string>
     <string name="voicesr_share_voice_locked">ファミリー・カップルプランで共有できます。</string>
+    <string name="voicesr_default_badge">既定</string>
+    <string name="voicesr_system_voice">標準の声</string>
+    <string name="voices_create_row_title">自分の声を作る</string>
+    <string name="voices_create_row_desc">好きな人の声でアラームを受け取ります。</string>
 </resources>

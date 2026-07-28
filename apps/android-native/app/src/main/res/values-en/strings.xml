@@ -595,7 +595,6 @@
     <string name="social_code_input_hint">Invite codes, gifted pass codes, and promo codes all work here.</string>
     <string name="social_voucher_usage">%1$d/%2$d in use</string>
     <string name="social_voucher_usage_full">%1$d/%2$d in use · Full, so you can\'t share</string>
-    <string name="voices_add">Add</string>
     <string name="voices_close">Close</string>
     <string name="voices_create_dialog_title">Create a voice</string>
     <string name="voices_create_paid_title">Creating your voice is a paid feature</string>
@@ -617,14 +616,12 @@
     <string name="voices_login_required_body">Sign in to create a voice.</string>
     <string name="voices_login_required_title">Sign-in required</string>
     <string name="voices_mic_permission_required">Microphone permission is required.</string>
-    <string name="voices_my_voices_title">My Voices</string>
     <string name="voices_name_label">Voice name</string>
     <string name="voices_prerender_ready_title">Getting your alarm voice ready</string>
     <string name="voices_prerender_ready_body">This will be ready shortly.\nYou can close this — it keeps going in the background.</string>
     <string name="voices_language_label">Message language</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
-    <string name="voices_no_voices_yet">You haven\'t created any voices yet.</string>
     <string name="voices_paid_required">Available with a paid plan.</string>
     <string name="voices_prepare_recording_first">Please prepare a recorded voice first.</string>
     <string name="voices_prepare_selected_failed">Couldn\'t prepare the selected audio.</string>
@@ -662,14 +659,11 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_select_file_first">Please select a file.</string>
     <string name="voices_select_to_register_hint">Choose a voice, then enter its name, relationship, and call name before registering.</string>
     <string name="voices_selected_audio_unusable">The selected audio can\'t be used.</string>
-    <string name="voices_shared_voices_title">Voices shared with you</string>
     <string name="voices_sharing_shared_desc_disabled">Sharing is available with a Couple or Family plan.</string>
     <string name="voices_sharing_shared_desc_enabled">Your family or partner can use the voice you register, too.</string>
     <string name="voices_sharing_shared_title">Allow sharing with family or partner</string>
     <string name="voices_step_sharing">Sharing settings</string>
-    <string name="voices_default_voice_choose">Choose</string>
     <string name="voices_default_voice_prefetching">Preparing alarm voice %1$d/%2$d</string>
-    <string name="voices_default_voice_row_title">Default voice</string>
     <string name="voices_upload_change_hint">Tap to choose a different file.</string>
     <string name="voices_single_speaker_hint">Use audio with only one person\'s voice.\nIf several voices are mixed, the cloned voice won\'t be accurate.</string>
     <string name="voices_upload_file_or_video">Upload a file or video</string>
@@ -990,4 +984,8 @@ Check your connection and try again.</string>
     <string name="onb_voice_download_later">Do this later</string>
     <string name="voicesr_share_voice_desc">Family on your plan can build alarms with this voice.</string>
     <string name="voicesr_share_voice_locked">Sharing is available on the family and couple plans.</string>
+    <string name="voicesr_default_badge">Default</string>
+    <string name="voicesr_system_voice">Built-in voice</string>
+    <string name="voices_create_row_title">Create my voice</string>
+    <string name="voices_create_row_desc">Wake up to someone you love.</string>
 </resources>

@@ -273,7 +273,6 @@ internal fun VoiceProfileManagementPanel(
     // 방금 녹음한 클립의 미리듣기 재생 상태 (녹음 완료 배지의 ▶ 버튼).
     var recordPreviewPlaying by remember { mutableStateOf(false) }
     // 기본 목소리 선택 시트 — 시트 안 탭 = 선택 + 인사말 미리듣기(닫기는 드래그/스크림).
-    var defaultVoiceSheetOpen by remember { mutableStateOf(false) }
     // 지금 인사말 샘플을 재생 중인 기본 목소리 id (재생 아이콘 토글용).
     var playingGreetingVoiceId by remember { mutableStateOf<String?>(null) }
     var greetingPreviewRequestId by remember { mutableIntStateOf(0) }
@@ -352,6 +351,8 @@ internal fun VoiceProfileManagementPanel(
 
     // 기본 목소리 시트를 여는 순간 인사말 클립을 미리 받아 둔다 — 행 탭 시 지연 없이 재생되게.
     // 실패는 조용히 넘긴다(탭 시 재시도 경로가 그대로 있음).
+    // 목록에 미리듣기 버튼이 상시 노출되므로 화면에 들어올 때 미리 받아 둔다
+    // (예전에는 기본 목소리 시트를 열 때만 받았다).
     fun prefetchGreetingPreviews() {
         scope.launch {
             systemVoices.forEach { profile ->
@@ -363,6 +364,11 @@ internal fun VoiceProfileManagementPanel(
                 runCatching { ensureGreetingCached(clip) }
             }
         }
+    }
+
+    // stockClips 가 채워지면(세션 첫 로드·재조회) 미리듣기 클립을 받아 둔다.
+    LaunchedEffect(stockClips.size, previewLanguage) {
+        if (stockClips.isNotEmpty()) prefetchGreetingPreviews()
     }
 
     // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플을 들려준다 — 내장(res/raw) 우선,
@@ -1176,12 +1182,12 @@ internal fun VoiceProfileManagementPanel(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        VoiceSectionHeader(title = stringResource(R.string.voices_my_voices_title)) {
-            // 추가 버튼은 항상 누를 수 있다. 막힌 이유를 눌러 봐야 알 수 있게 두면 "왜 흐린지"
-            // 모르는 채로 끝나므로, 차단 사유를 두 갈래로 나눠 그 자리에서 알려준다.
-            //  - 무료 플랜        -> 이용권 안내 모달(PlanGateDialog)
-            //  - 유료인데 정원 초과 -> 개수 제한 안내 (이용권 안내를 띄우면 거짓말이 된다)
-            Button(
+        // 내 목소리·공유받은 목소리·기본 목소리를 한 리스트로. 셋 다 "알람에 쓸 수 있는
+        // 목소리"라 나누지 않는다 — 나눠 두면 무료 사용자에겐 정작 쓸 수 있는 기본 목소리
+        // 4개가 시트를 열기 전까진 안 보였다. 행을 누르면 그 목소리가 기본이 된다.
+        if (!isLimitReached && authSession != null) {
+            VoiceCreateRow(
+                enabled = !voiceProfileBusy,
                 onClick = {
                     when {
                         canOpenCreateForm -> showCreateForm = true
@@ -1189,109 +1195,80 @@ internal fun VoiceProfileManagementPanel(
                         else -> localMessage = maxProfilesReachedMessage
                     }
                 },
-                enabled = !voiceProfileBusy,
-            ) {
-                Text(stringResource(R.string.voices_add))
-            }
+            )
         }
 
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
             MutedText(localMessage.orEmpty())
         }
 
-        if (ownVoices.isEmpty() && authSession != null) {
-            // 유료·무료 공통 빈 상태. 무료에게 "유료 플랜에서 가능"이라고 미리 못박지 않는다 —
-            // 추가를 눌렀을 때 모달이 설명한다.
-            MutedText(stringResource(R.string.voices_no_voices_yet))
-        } else if (ownVoices.isNotEmpty()) {
-            ownVoices.forEach { profile ->
-                // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬 다운로드 중
-                // "다운로드 중" → 둘 다 완료(준비 완료)면 표시 없음. 조회 전에도 표시하지 않는다.
-                val prerenderStatus = prerenderStatuses[profile.id]
-                val readiness = when {
-                    profile.id in cloneLocalReadyIds -> null
-                    prerenderStatus == null -> null
-                    prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
-                    prerenderStatus.status == "done" -> CloneVoiceReadiness.Downloading
-                    prerenderStatus.status == "pending" && prerenderStatus.total > 0 ->
-                        CloneVoiceReadiness.Preparing(prerenderStatus.generated, prerenderStatus.total)
-                    else -> null
-                }
-                VoiceProfileRow(
-                    profile = profile,
-                    enabled = !voiceProfileBusy,
-                    canShareVoice = canShareVoice,
-                    onRename = {
-                        renameTarget = profile
-                        renameName = profile.name
-                        renameSubmitAttempted = false
-                    },
-                    onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
-                    onDelete = { deleteTarget = profile },
-                    readiness = readiness,
-                    onRetryPrerender = { retryPrerender(profile.id) },
-                    retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
-                    speechStyleFailed = profile.speechStyleStatus == "failed",
-                    onRetrySpeechStyle = { retrySpeechStyle(profile.id) },
-                    retrySpeechStyleBusy = profile.id in speechStyleRetryBusyIds,
-                )
+        ownVoices.forEach { profile ->
+            // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬 다운로드 중
+            // "다운로드 중" → 둘 다 완료(준비 완료)면 표시 없음. 조회 전에도 표시하지 않는다.
+            val prerenderStatus = prerenderStatuses[profile.id]
+            val readiness = when {
+                profile.id in cloneLocalReadyIds -> null
+                prerenderStatus == null -> null
+                prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
+                prerenderStatus.status == "done" -> CloneVoiceReadiness.Downloading
+                prerenderStatus.status == "pending" && prerenderStatus.total > 0 ->
+                    CloneVoiceReadiness.Preparing(prerenderStatus.generated, prerenderStatus.total)
+                else -> null
             }
+            VoiceProfileRow(
+                profile = profile,
+                enabled = !voiceProfileBusy,
+                canShareVoice = canShareVoice,
+                isDefault = profile.id == defaultVoiceId,
+                isPlaying = playingGreetingVoiceId == profile.id,
+                onSelectDefault = { onSetDefaultVoice(profile.id) },
+                onPreview = { playGreeting(profile) },
+                onRename = {
+                    renameTarget = profile
+                    renameName = profile.name
+                    renameSubmitAttempted = false
+                },
+                onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
+                onDelete = { deleteTarget = profile },
+                readiness = readiness,
+                onRetryPrerender = { retryPrerender(profile.id) },
+                retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
+                speechStyleFailed = profile.speechStyleStatus == "failed",
+                onRetrySpeechStyle = { retrySpeechStyle(profile.id) },
+                retrySpeechStyleBusy = profile.id in speechStyleRetryBusyIds,
+            )
         }
 
-        if (canShareVoice && familyVoices.isNotEmpty()) {
-            VoiceSectionHeader(title = stringResource(R.string.voices_shared_voices_title))
+        if (canShareVoice) {
             familyVoices.forEach { profile ->
                 SharedVoiceProfileRow(
                     profile = profile,
+                    isDefault = profile.id == defaultVoiceId,
                     isPlaying = playingGreetingVoiceId == profile.id,
+                    onSelectDefault = { onSetDefaultVoice(profile.id) },
                     onPlay = { playSharedGreeting(profile) },
                 )
             }
         }
 
-        // 기본 목소리는 맨 아래 — 내 목소리·공유받은 목소리(개인화된 것들)가 먼저 온다.
-        if (systemVoices.isNotEmpty()) {
-            // 토스식 [제목 … 값 + 셰브론] 행 — 탭하면 기본 목소리 선택 시트를 연다.
-            // 눌림 리플(indication) 없이 조용히 동작.
-            VoiceSectionHeader(
-                title = stringResource(R.string.voices_default_voice_row_title),
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) {
-                    // 이전 화면 흐름의 안내가 시트 안에 엉뚱하게 보이지 않게 비우고 연다.
-                    localMessage = null
-                    prefetchGreetingPreviews()
-                    defaultVoiceSheetOpen = true
-                },
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        // 정해진 기본 목소리 이름이 값. 아직 없으면 '선택하기'로 행동을 유도한다.
-                        text = systemVoices.firstOrNull { it.id == defaultVoiceId }?.name
-                            ?: stringResource(R.string.voices_default_voice_choose),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            // 기본 목소리 변경 직후 무료 버킷 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다
-            // (실패해도 편집기 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
-            voicePrefetchProgress?.let { (done, total) ->
-                VoiceProgressMessage(
-                    stringResource(R.string.voices_default_voice_prefetching, done, total),
-                )
-            }
-            // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다
-            // (AlarmEditorScreen.resolvedVoiceListenerTitle). 관계·호칭은 내/공유 목소리에만 있다.
+        // 기본 제공 목소리는 맨 아래 — 개인화된 목소리(내 것·공유받은 것)가 먼저 온다.
+        systemVoices.forEach { profile ->
+            VoiceCatalogRow(
+                name = profile.name,
+                subtitle = stringResource(R.string.voicesr_system_voice),
+                isDefault = profile.id == defaultVoiceId,
+                isPlaying = playingGreetingVoiceId == profile.id,
+                onSelectDefault = { onSetDefaultVoice(profile.id) },
+                onPreview = { playGreeting(profile) },
+                previewContentDescription = stringResource(R.string.voicesr_play_shared_sample),
+            )
+        }
+        // 기본 목소리 변경 직후 무료 버킷 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다
+        // (실패해도 편집기 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
+        voicePrefetchProgress?.let { (done, total) ->
+            VoiceProgressMessage(
+                stringResource(R.string.voices_default_voice_prefetching, done, total),
+            )
         }
     }
 
@@ -1307,51 +1284,9 @@ internal fun VoiceProfileManagementPanel(
         )
     }
 
-    // 시트가 열린 채 시스템 보이스 목록이 비면(세션 초기화·재로딩) 재생을 멈추고 시트를 정리한다.
+    // 시스템 보이스 목록이 비면(세션 초기화·재로딩) 재생 중이던 미리듣기를 멈춘다.
     LaunchedEffect(systemVoices.isEmpty()) {
-        if (systemVoices.isEmpty() && defaultVoiceSheetOpen) {
-            stopMediaPreview()
-            defaultVoiceSheetOpen = false
-        }
-    }
-
-    if (defaultVoiceSheetOpen && systemVoices.isNotEmpty()) {
-        // 다른 선택 시트와 달리 탭해도 닫지 않는다 — 탭 = 선택 + 인사말 미리듣기(재탭 시 정지)라
-        // 여러 목소리를 이어 들어보며 고르는 흐름. 닫기는 드래그/스크림.
-        WakerSelectionSheet(
-            title = stringResource(R.string.voices_default_voice_row_title),
-            onDismiss = {
-                stopMediaPreview()
-                defaultVoiceSheetOpen = false
-            },
-        ) { _ ->
-            WakerSheetOptionGroup {
-                systemVoices.forEachIndexed { index, profile ->
-                    WakerSheetOptionRow(
-                        title = profile.name,
-                        selected = profile.id == defaultVoiceId,
-                        onClick = {
-                            onSetDefaultVoice(profile.id)
-                            playGreeting(profile)
-                        },
-                        trailing = if (playingGreetingVoiceId == profile.id) {
-                            { PlayingEqualizer() }
-                        } else {
-                            null
-                        },
-                        divider = index != systemVoices.lastIndex,
-                    )
-                }
-            }
-            // 미리듣기 준비중/실패 안내 — 패널 본문의 MutedText 는 시트 스크림에 가려지므로
-            // 시트가 열려 있는 동안엔 여기서 보여준다(열 때 localMessage 를 비워 회귀 방지).
-            // 시트 콘텐츠는 풀블리드(민짜 행)라 텍스트에는 좌우 패딩을 직접 준다.
-            if (localMessage != null) {
-                Box(modifier = Modifier.padding(horizontal = 20.dp)) {
-                    MutedText(localMessage.orEmpty())
-                }
-            }
-        }
+        if (systemVoices.isEmpty()) stopMediaPreview()
     }
 
     // 만드는 중/미리듣기/사전렌더 스텝에선 draft·등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지한다.
