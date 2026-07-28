@@ -149,10 +149,11 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 Backend secrets are managed as Cloudflare Worker secrets. The authoritative list is the `Env` interface in `packages/backend/src/types.ts`; main groups:
 
 - Core: `JWT_SECRET`, `PASSWORD_PEPPER`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `ELEVENLABS_API_KEY`
-- Auth / email: `GOOGLE_CLIENT_ID`, `APPLE_CLIENT_ID`, `RESEND_API_KEY`, `AUTH_EMAIL_FROM` (verification email via Resend)
+- Auth / email: `GOOGLE_CLIENT_ID`, `RESEND_API_KEY`, `AUTH_EMAIL_FROM` (verification email via Resend)
 - Push (FCM HTTP v1): `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON` (unset → push logs MOCK only)
 - Dynamic text (Vertex): `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL`
-- Billing: `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`, `ANDROID_PACKAGE_NAME`, `GOOGLE_RTDN_VERIFICATION_TOKEN`, `APPLE_SHARED_SECRET`, `APPLE_ISSUER_ID`, `APPLE_KEY_ID`, `APPLE_IAP_PRIVATE_KEY`, `APPLE_BUNDLE_ID`
+- Billing: `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`, `ANDROID_PACKAGE_NAME`, `GOOGLE_RTDN_VERIFICATION_TOKEN`
+  (Apple IAP 시크릿은 iOS 미운영으로 제거됨 — 재개 시 라우트와 함께 되살린다)
 - Ops: `INIT_DB_SECRET` (migration gate), `ADMIN_SECRET` (`/admin` HTTP Basic), `SENTRY_DSN`, `KASI_SERVICE_KEY` (KR holiday overlay), `TEST_CODE_ISSUER_EMAILS`
 
 R2 binding: `VOICE_BUCKET → voice-alarm-voices` in dev and `VOICE_BUCKET → voice-alarm-voices-prod` in production.

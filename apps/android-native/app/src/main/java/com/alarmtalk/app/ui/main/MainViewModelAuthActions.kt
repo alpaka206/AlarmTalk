@@ -273,6 +273,10 @@ private suspend fun MainViewModel.onSignedIn() {
     RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
     RemoteAlarmSyncScheduler.runOnce(getApplication())
     com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
+    // 자동 401 은 알람 예약을 그대로 두므로, 그 뒤 다른 계정으로 들어오면 앞 계정 예약이
+    // 살아 있다. 목록에서는 소유자 필터가 감춰 끌 수도 없으니 여기서 내린다.
+    runCatching { repository.cancelAlarmsNotOwnedBy(authSession?.user?.id) }
+        .onFailure { error -> Log.w(TAG, "Failed to cancel other account alarm reservations", error) }
     runCatching { repository.reschedulePendingAlarms() }
         .onSuccess { scheduled -> Log.i(TAG, "Rescheduled $scheduled alarms after sign-in") }
         .onFailure { error -> AlarmTalkLog.reportError("Failed to reschedule alarms after sign-in", error) }

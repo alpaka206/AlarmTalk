@@ -121,24 +121,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleUnauthorized() {
         viewModelScope.launch {
             if (authSession == null) return@launch
-            clearSignedInSession()
+            // 알람 예약은 건드리지 않는다. 토큰 만료나 우발적 401 은 '같은 사람이 다시
+            // 로그인하면 되는' 상황인데, 여기서 예약을 취소하면 사용자가 안내를 못 본 사이
+            // 알람이 조용히 안 울린다 — 알람 전달이 서버 인증 상태에 묶여선 안 된다.
+            // 다른 계정으로 갈아타는 경우는 로그인 시점에 onSignedIn 이 정리한다.
+            clearSessionKeepingAlarms()
             message = getApplication<android.app.Application>().getString(R.string.r3misc_session_expired)
         }
     }
 
     /**
-     * 세션을 끝낼 때 반드시 함께 해야 하는 일들. 로그아웃·탈퇴 신청·즉시 탈퇴·401 만료가
-     * 모두 이 경로를 탄다.
+     * 사용자가 명시적으로 계정을 끝낼 때(로그아웃·탈퇴 신청·즉시 탈퇴). 세션 정리에 더해
+     * 이 기기의 알람 예약을 내리고 소유자를 새긴다.
      *
-     * 알람 분리(detachAlarmsOnSignOut)가 여기 있는 이유: 세션이 끊기면 observeAlarms 의
-     * 소유자 필터가 그 계정 알람을 즉시 목록에서 감춘다. 그런데 OS 예약은 그대로 남아
-     * AlarmReceiver 가 Room 에서 바로 읽어 울린다 — 사용자에게는 '보이지도 않고 끌 수도
-     * 없는 알람이 울리는' 상태가 된다. 경로마다 손으로 부르면 하나가 빠지므로 여기로 모은다.
+     * 알람 분리가 필요한 이유: 세션이 끊기면 observeAlarms 의 소유자 필터가 그 계정 알람을
+     * 목록에서 감추는데, OS 예약은 그대로 남아 AlarmReceiver 가 Room 에서 바로 읽어 울린다.
+     * 사용자에게는 '보이지도 않고 끌 수도 없는 알람이 울리는' 상태가 된다.
      */
     internal suspend fun clearSignedInSession() {
         val signedOutUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
         runCatching { repository.detachAlarmsOnSignOut(signedOutUserId) }
             .onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
+        clearSessionKeepingAlarms()
+    }
+
+    /** 세션만 정리한다(알람 예약은 그대로). 자동 401 처럼 사용자의 의도가 아닌 종료에 쓴다. */
+    private fun clearSessionKeepingAlarms() {
         clearCurrentDefaultVoicePreferences()
         runCatching { authSessionStore.clear() }
         clearUserScopedRemoteState()

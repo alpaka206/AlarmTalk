@@ -432,6 +432,29 @@ class AlarmRepository(
     }
 
     /**
+     * 지금 로그인한 계정의 것이 아닌 알람의 OS 예약을 내린다.
+     *
+     * 자동 401(토큰 만료)은 알람을 그대로 두므로, 그 상태에서 다른 계정으로 로그인하면
+     * 앞 계정 알람의 예약이 살아 있게 된다. 목록에서는 소유자 필터가 감추므로 끌 수도 없다.
+     * 로그인 시점에 이 정리를 한 번 돌려 그 창을 닫는다. 행은 지우지 않는다 — 본인이 다시
+     * 로그인하면 reschedulePendingAlarms 가 되살린다.
+     *
+     * 반환값은 예약을 내린 알람 수.
+     */
+    suspend fun cancelAlarmsNotOwnedBy(currentUserId: String?): Int {
+        if (currentUserId.isNullOrBlank()) return 0
+        var cancelled = 0
+        alarmDao.getAllAlarms().forEach { alarm ->
+            val owner = alarm.ownerUserId ?: return@forEach
+            if (owner == currentUserId) return@forEach
+            alarmScheduler.cancel(alarm.id)
+            cancelled += 1
+        }
+        if (cancelled > 0) Log.i(TAG, "Cancelled $cancelled alarm reservations owned by another account")
+        return cancelled
+    }
+
+    /**
      * 접근권을 잃은 음성 프로필(공유 해제·제공자 취소·본인 삭제)을 참조하는 '내 소유(LOCAL_OWNED)'
      * 음성 알람을 sound-only 로 강등한다. [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
      * 가족 공유 프로필 id 집합이어야 한다 — 부분/실패 로드로 호출하면 정상 알람을 오강등할 수 있으므로
