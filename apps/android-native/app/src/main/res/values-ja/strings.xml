@@ -699,7 +699,6 @@
     <string name="voicesr_save">保存</string>
     <string name="voicesr_select">選択</string>
     <string name="voicesr_share_voice">声を共有</string>
-    <string name="voicesr_play_shared_sample">サンプルを再生</string>
     <string name="voicesr_shared_from_owner">%1$sさんから共有された声</string>
     <string name="voicesr_shared_voice">共有された声</string>
     <string name="voicesr_sharing_badge">共有中</string>
@@ -992,8 +991,8 @@
     <string name="onb_voice_download_later">あとで受け取る</string>
     <string name="voicesr_share_voice_desc">同じプランの家族がこの声でアラームを作れます。</string>
     <string name="voicesr_share_voice_locked">ファミリー・カップルプランで共有できます。</string>
-    <string name="voicesr_default_badge">既定</string>
     <string name="voicesr_system_voice">標準の声</string>
-    <string name="voices_create_row_title">自分の声を作る</string>
-    <string name="voices_create_row_desc">好きな人の声でアラームを受け取ります。</string>
+    <string name="voicesr_preview_action">再生</string>
+    <string name="voices_add">追加</string>
+    <string name="voices_monthly_quota">今月 %1$d/%2$d</string>
 </resources>

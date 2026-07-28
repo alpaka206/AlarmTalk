@@ -65,13 +65,15 @@ internal fun AlarmListScreen(
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     voiceDraftQuotaExhausted: Boolean = false,
+    // 이번 달 목소리 생성 쿼터(추가 버튼 옆 '남은/전체' 표시).
+    voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     vouchers: List<VoucherItem>,
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
-    defaultVoiceId: String? = null,
-    onSetDefaultVoice: (String) -> Unit = {},
+    // 알람에 마지막으로 쓴 목소리 — 편집기의 초기 선택에 쓴다.
+    lastUsedVoiceId: String? = null,
     // 기본 목소리 무료 버킷 프리페치 진행(다운로드 n to 전체). null = 진행 중 아님.
     voicePrefetchProgress: Pair<Int, Int>? = null,
     // 유료 클론 사전렌더 준비 상태 조회/재시도 + 매니페스트 강제 재조회(목소리 탭 준비 표시용).
@@ -231,8 +233,7 @@ internal fun AlarmListScreen(
                         onPromoteVoiceDraft = onPromoteVoiceDraft,
                         onDeleteVoiceDraft = onDeleteVoiceDraft,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
-                        defaultVoiceId = defaultVoiceId,
-                        onSetDefaultVoice = onSetDefaultVoice,
+                        voiceDraftQuota = voiceDraftQuota,
                         voicePrefetchProgress = voicePrefetchProgress,
                         onGetVoicePrerenderStatus = onGetVoicePrerenderStatus,
                         onRetryVoicePrerender = onRetryVoicePrerender,

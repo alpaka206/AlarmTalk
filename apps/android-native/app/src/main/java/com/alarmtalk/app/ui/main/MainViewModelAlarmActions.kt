@@ -73,6 +73,7 @@ internal fun MainViewModel.createAlarm(
         runCatching {
             repository.createAlarm(draft, replaceExisting)
         }.onSuccess {
+            rememberVoiceUsed(draft.voiceProfileId)
             // 성공 토스트는 띄우지 않는다 — 저장 즉시 리스트에 행이 생기고 홈 헤더가
             // '몇 시간 후에 울려요'를 이미 말해준다(안내 중복 소음).
             onDone()
@@ -199,6 +200,7 @@ internal fun MainViewModel.updateAlarm(
         runCatching {
             repository.updateAlarm(alarmId, draft, replaceExisting)
         }.onSuccess {
+            rememberVoiceUsed(draft.voiceProfileId)
             // 생성과 동일 — 성공 토스트 생략(리스트/헤더가 결과를 보여준다).
             onDone()
         }.onFailure { error ->

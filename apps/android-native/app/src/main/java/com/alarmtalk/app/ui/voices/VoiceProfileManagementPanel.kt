@@ -207,8 +207,8 @@ internal fun VoiceProfileManagementPanel(
     onPromoteVoiceDraft: (String) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
-    defaultVoiceId: String? = null,
-    onSetDefaultVoice: (String) -> Unit = {},
+    // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
+    voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     // 기본 목소리 무료 버킷 프리페치 진행(다운로드 n to 전체). null = 진행 중 아님.
     voicePrefetchProgress: Pair<Int, Int>? = null,
     // 유료 클론 사전렌더(R2 21클립) 상태 조회/재시도 — 목소리 탭 준비 표시가 폴링한다.
@@ -1184,10 +1184,29 @@ internal fun VoiceProfileManagementPanel(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // 내 목소리·공유받은 목소리·기본 목소리를 한 리스트로. 셋 다 "알람에 쓸 수 있는
         // 목소리"라 나누지 않는다 — 나눠 두면 무료 사용자에겐 정작 쓸 수 있는 기본 목소리
-        // 4개가 시트를 열기 전까진 안 보였다. 행을 누르면 그 목소리가 기본이 된다.
-        if (!isLimitReached && authSession != null) {
-            VoiceCreateRow(
-                enabled = !voiceProfileBusy,
+        // 4개가 시트를 열기 전까진 안 보였다. 순서만 내 것 → 공유받은 것 → 기본 제공 순.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // 이번 달 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
+            // 유료 사용자에게만 의미가 있다(무료는 눌렀을 때 이용권 안내로 간다).
+            voiceDraftQuota?.takeIf { canCreateVoice && it.limit > 0 }?.let { quota ->
+                MutedText(
+                    stringResource(
+                        R.string.voices_monthly_quota,
+                        quota.remaining.coerceAtLeast(0),
+                        quota.limit,
+                    ),
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            // 추가 버튼은 항상 누를 수 있다. 막힌 이유를 눌러 봐야 알 수 있게 두면 "왜 흐린지"
+            // 모르는 채로 끝나므로, 차단 사유를 두 갈래로 나눠 그 자리에서 알려준다.
+            //  - 무료 플랜        -> 이용권 안내 모달(PlanGateDialog)
+            //  - 유료인데 정원 초과 -> 개수 제한 안내 (이용권 안내를 띄우면 거짓말이 된다)
+            Button(
                 onClick = {
                     when {
                         canOpenCreateForm -> showCreateForm = true
@@ -1195,7 +1214,10 @@ internal fun VoiceProfileManagementPanel(
                         else -> localMessage = maxProfilesReachedMessage
                     }
                 },
-            )
+                enabled = !voiceProfileBusy,
+            ) {
+                Text(stringResource(R.string.voices_add))
+            }
         }
 
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
@@ -1219,9 +1241,7 @@ internal fun VoiceProfileManagementPanel(
                 profile = profile,
                 enabled = !voiceProfileBusy,
                 canShareVoice = canShareVoice,
-                isDefault = profile.id == defaultVoiceId,
                 isPlaying = playingGreetingVoiceId == profile.id,
-                onSelectDefault = { onSetDefaultVoice(profile.id) },
                 onPreview = { playGreeting(profile) },
                 onRename = {
                     renameTarget = profile
@@ -1243,9 +1263,7 @@ internal fun VoiceProfileManagementPanel(
             familyVoices.forEach { profile ->
                 SharedVoiceProfileRow(
                     profile = profile,
-                    isDefault = profile.id == defaultVoiceId,
                     isPlaying = playingGreetingVoiceId == profile.id,
-                    onSelectDefault = { onSetDefaultVoice(profile.id) },
                     onPlay = { playSharedGreeting(profile) },
                 )
             }
@@ -1256,11 +1274,8 @@ internal fun VoiceProfileManagementPanel(
             VoiceCatalogRow(
                 name = profile.name,
                 subtitle = stringResource(R.string.voicesr_system_voice),
-                isDefault = profile.id == defaultVoiceId,
                 isPlaying = playingGreetingVoiceId == profile.id,
-                onSelectDefault = { onSetDefaultVoice(profile.id) },
                 onPreview = { playGreeting(profile) },
-                previewContentDescription = stringResource(R.string.voicesr_play_shared_sample),
             )
         }
         // 기본 목소리 변경 직후 무료 버킷 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다

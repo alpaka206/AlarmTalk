@@ -280,7 +280,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
-    var defaultVoiceId by mutableStateOf<String?>(null)
+    // 알람에 마지막으로 쓴 목소리 — 편집기가 처음 고르는 값(목소리 탭엔 표시하지 않는다).
+    var lastUsedVoiceId by mutableStateOf<String?>(null)
         internal set
 
     // 기본 목소리 무료 버킷 프리페치 진행(다운로드 완료 수 to 전체). null = 진행 중 아님.
@@ -403,7 +404,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
-        defaultVoiceId = defaultVoiceStore.read(userId)
+        lastUsedVoiceId = defaultVoiceStore.read(userId)
         val cachedStockClips = com.alarmtalk.app.data.AlarmAudioStore(getApplication())
             .cachedStockClipCount()
         showVoiceSetup = cachedStockClips == 0
@@ -417,16 +418,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showVoiceSetup = false
     }
 
-    /** 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신하고,
-     *  그 목소리의 무료 버킷 클립을 미리 받는다(진행은 voicePrefetchProgress 로 노출). */
-    fun setDefaultVoice(voiceId: String) {
+    /**
+     * 알람에 마지막으로 쓴 목소리를 기억한다 — 알람 편집기가 처음 고르는 목소리가 된다.
+     *
+     * 예전에는 목소리 탭에서 '기본 목소리'를 직접 고르게 했다. 고를 게 하나 더 있는 것보다
+     * 마지막에 쓴 것이 그대로 다음 기본이 되는 편이 손이 덜 간다(대부분 같은 목소리를 계속 쓴다).
+     * 무료 버킷 클립도 함께 챙겨 둔다 — 그 목소리로 다음 알람을 만들 때 바로 쓰인다.
+     */
+    fun rememberVoiceUsed(voiceId: String?) {
+        val resolved = voiceId?.takeIf { it.isNotBlank() } ?: return
+        if (resolved == lastUsedVoiceId) return
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
-        defaultVoiceStore.set(userId, voiceId)
-        defaultVoiceId = voiceId
+        defaultVoiceStore.set(userId, resolved)
+        lastUsedVoiceId = resolved
         // 매니페스트가 아직 없으면 이번 프리페치는 빈손으로 끝난다 — 대상을 기억해 두고
-        // loadStockClips 성공 시 재시도한다(온보딩 중 목소리 선택이 매니페스트보다 빠른 경우).
-        if (stockClips.isEmpty()) pendingPrefetchVoiceId = voiceId
-        prefetchFreeBucketClips(voiceId)
+        // loadStockClips 성공 시 재시도한다.
+        if (stockClips.isEmpty()) pendingPrefetchVoiceId = resolved
+        prefetchFreeBucketClips(resolved)
     }
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
@@ -518,7 +526,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfileLoadFinished = false
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false
-        defaultVoiceId = null
+        lastUsedVoiceId = null
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()

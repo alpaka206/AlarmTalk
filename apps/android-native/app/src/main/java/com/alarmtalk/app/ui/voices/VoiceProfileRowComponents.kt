@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreVert
@@ -250,21 +252,18 @@ internal sealed interface CloneVoiceReadiness {
  * 시트로 흩어져 있어서, 무료 사용자에겐 정작 쓸 수 있는 기본 목소리 4개가 시트를 열기
  * 전까진 보이지 않았다.
  *
- * 행을 누르면 '기본 목소리'로 지정한다. 기본 목소리는 시스템 보이스 전용이 아니라
- * 새 알람이 처음 고르는 목소리이고(AlarmEditorScreen/VoiceAudioCard 의 선택 우선순위),
- * 내 목소리·공유받은 목소리도 그 대상이 된다.
+ * 행 전체를 누르면 미리듣기(다시 누르면 정지) — 목소리 목록에서 하고 싶은 일은 결국
+ * 들어보는 것이라 가장 큰 과녁을 거기에 준다. 내 목소리만 우측에 셰브론이 붙어 관리
+ * 시트(이름 수정·공유·삭제)로 들어간다.
  */
 @Composable
 internal fun VoiceCatalogRow(
     name: String,
     subtitle: String?,
-    isDefault: Boolean,
     isPlaying: Boolean,
-    onSelectDefault: () -> Unit,
     onPreview: () -> Unit,
-    previewContentDescription: String,
     enabled: Boolean = true,
-    trailingAction: (@Composable () -> Unit)? = null,
+    onOpenActions: (() -> Unit)? = null,
     belowContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     OutlinedCard(
@@ -276,18 +275,21 @@ internal fun VoiceCatalogRow(
             modifier = Modifier
                 .fillMaxWidth()
                 // 눌림 리플은 끈다 — 카드 전체를 덮는 사각 하이라이트가 카드 모서리와 어긋난다.
-                // 선택 결과는 이름 옆 '기본' 배지가 말해 준다.
+                // 재생 여부는 우측 '듣기 ↔ 이퀄라이저' 전환이 말해 준다.
                 .clickable(
                     enabled = enabled,
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = onSelectDefault,
+                    onClick = onPreview,
                 )
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 부가설명이 있든 없든 행 높이를 같게 — 목록이 들쭉날쭉해지지 않는다.
+                    .heightIn(min = VoiceCatalogRowContentHeight),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -295,116 +297,42 @@ internal fun VoiceCatalogRow(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        if (isDefault) DefaultVoiceBadge()
-                    }
+                    Text(
+                        text = name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                     if (!subtitle.isNullOrBlank()) MutedText(subtitle)
                 }
-                VoicePreviewCircleButton(
-                    isPlaying = isPlaying,
-                    onClick = onPreview,
-                    contentDescription = previewContentDescription,
-                )
-                trailingAction?.invoke()
+                // 원형 재생 버튼 대신 글자 — 이 앱은 기본 아이콘을 장식으로 쓰지 않는다.
+                // 재생 중에는 이퀄라이저가 같은 자리를 대신해 '누르면 멈춘다'가 읽힌다.
+                if (isPlaying) {
+                    PlayingEqualizer()
+                } else {
+                    Text(
+                        text = stringResource(R.string.voicesr_preview_action),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (onOpenActions != null) {
+                    // 설정 화면들과 같은 셰브론 문법 — ⋮(Material 관용구)보다 이 앱 톤에 맞고,
+                    // '여기서 더 들어간다'가 분명하다.
+                    IconButton(onClick = onOpenActions, enabled = enabled) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                            contentDescription = stringResource(R.string.voicesr_more),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    // 셰브론이 없는 행도 같은 폭을 비워 둔다 — 안 그러면 '듣기'가 행마다
+                    // 좌우로 어긋나 목록이 들쭉날쭉해 보인다.
+                    Spacer(modifier = Modifier.width(VoiceCatalogRowContentHeight))
+                }
             }
             belowContent?.invoke(this)
-        }
-    }
-}
-
-/** 이름 옆 '기본' 표시 — 체크 아이콘 대신 글자로. 어느 목소리가 기본인지 한 줄로 읽힌다. */
-@Composable
-private fun DefaultVoiceBadge() {
-    Surface(
-        shape = WakerPillShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-    ) {
-        Text(
-            text = stringResource(R.string.voicesr_default_badge),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.primary,
-        )
-    }
-}
-
-/** 미리듣기 버튼 — 재생 중이면 이퀄라이저로 바뀐다(다시 누르면 정지). */
-@Composable
-private fun VoicePreviewCircleButton(
-    isPlaying: Boolean,
-    onClick: () -> Unit,
-    contentDescription: String,
-) {
-    IconButton(onClick = onClick) {
-        if (isPlaying) {
-            PlayingEqualizer()
-        } else {
-            // 맨몸 벡터 대신 은은한 원형 배경 위 라운드 재생 아이콘 — 리스트에서 눌리는
-            // 대상임이 분명해지고 기본 아이콘 티가 덜 난다.
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .background(
-                        MaterialTheme.colorScheme.secondaryContainer,
-                        androidx.compose.foundation.shape.CircleShape,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Rounded.PlayArrow,
-                    contentDescription = contentDescription,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        }
-    }
-}
-
-/**
- * 목록 맨 위의 '내 목소리 만들기' 행. 섹션 머리와 [추가] 버튼을 없애고 목록 안으로 들여왔다.
- * 목소리는 계정당 1개라 이미 만들었으면(또는 만드는 중이면) 이 행은 나오지 않는다.
- */
-@Composable
-internal fun VoiceCreateRow(
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    OutlinedCard(
-        shape = WakerCardShape,
-        border = wakerCardBorder(),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = enabled, onClick = onClick)
-                .padding(16.dp)
-                // 다른 목소리 행과 같은 높이로 세운다(행마다 키가 다르면 목록이 들쭉날쭉해진다).
-                .heightIn(min = VoiceCatalogRowContentHeight),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.voices_create_row_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                MutedText(stringResource(R.string.voices_create_row_desc))
-            }
         }
     }
 }
@@ -417,9 +345,7 @@ internal fun VoiceProfileRow(
     profile: VoiceProfile,
     enabled: Boolean,
     canShareVoice: Boolean,
-    isDefault: Boolean,
     isPlaying: Boolean,
-    onSelectDefault: () -> Unit,
     onPreview: () -> Unit,
     onRename: () -> Unit,
     onShareChange: (Boolean) -> Unit,
@@ -471,28 +397,10 @@ internal fun VoiceProfileRow(
         name = profile.name,
         // 공유 상태는 '⋮ → 목소리 공유' 안으로 들어갔으므로, 켜져 있다는 사실은 여기서 알린다.
         subtitle = if (isShared) stringResource(R.string.voicesr_sharing_badge) else null,
-        isDefault = isDefault,
         isPlaying = isPlaying,
-        onSelectDefault = onSelectDefault,
         onPreview = onPreview,
-        previewContentDescription = stringResource(R.string.voicesr_play_shared_sample),
         enabled = rowEnabled,
-        trailingAction = {
-            IconButton(onClick = { menuExpanded = true }, enabled = rowEnabled) {
-                Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.voicesr_more))
-            }
-            if (menuExpanded) {
-                VoiceProfileMenuSheet(
-                    profileName = profile.name,
-                    isShared = isShared,
-                    canShare = rowEnabled && canShareVoice,
-                    onRename = onRename,
-                    onShareChange = onShareChange,
-                    onDelete = onDelete,
-                    onDismiss = { menuExpanded = false },
-                )
-            }
-        },
+        onOpenActions = { menuExpanded = true },
         belowContent = {
             // 알람 음성(사전렌더 클립) 준비 상태 — 서버·로컬 둘 다 끝났으면 아무것도 표시하지 않는다.
             when (readiness) {
@@ -526,6 +434,17 @@ internal fun VoiceProfileRow(
             }
         },
     )
+    if (menuExpanded) {
+        VoiceProfileMenuSheet(
+            profileName = profile.name,
+            isShared = isShared,
+            canShare = rowEnabled && canShareVoice,
+            onRename = onRename,
+            onShareChange = onShareChange,
+            onDelete = onDelete,
+            onDismiss = { menuExpanded = false },
+        )
+    }
 }
 
 /** 실패 안내 + [다시 시도] 한 줄. 사전렌더·말투 분석 두 곳이 같은 모양을 쓴다. */
@@ -638,9 +557,7 @@ internal fun PlayingEqualizer() {
 @Composable
 internal fun SharedVoiceProfileRow(
     profile: FamilyVoiceProfile,
-    isDefault: Boolean,
     isPlaying: Boolean,
-    onSelectDefault: () -> Unit,
     onPlay: () -> Unit,
 ) {
     val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
@@ -649,11 +566,8 @@ internal fun SharedVoiceProfileRow(
     VoiceCatalogRow(
         name = profile.name,
         subtitle = ownerText,
-        isDefault = isDefault,
         isPlaying = isPlaying,
-        onSelectDefault = onSelectDefault,
         onPreview = onPlay,
-        previewContentDescription = stringResource(R.string.voicesr_play_shared_sample),
     )
 }
 

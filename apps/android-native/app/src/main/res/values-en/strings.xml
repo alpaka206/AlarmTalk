@@ -691,7 +691,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voicesr_save">Save</string>
     <string name="voicesr_select">Select</string>
     <string name="voicesr_share_voice">Share voice</string>
-    <string name="voicesr_play_shared_sample">Play sample</string>
     <string name="voicesr_shared_from_owner">Voice shared by %1$s</string>
     <string name="voicesr_shared_voice">Voice shared with you</string>
     <string name="voicesr_sharing_badge">Sharing</string>
@@ -984,8 +983,8 @@ Check your connection and try again.</string>
     <string name="onb_voice_download_later">Do this later</string>
     <string name="voicesr_share_voice_desc">Family on your plan can build alarms with this voice.</string>
     <string name="voicesr_share_voice_locked">Sharing is available on the family and couple plans.</string>
-    <string name="voicesr_default_badge">Default</string>
     <string name="voicesr_system_voice">Built-in voice</string>
-    <string name="voices_create_row_title">Create my voice</string>
-    <string name="voices_create_row_desc">Wake up to someone you love.</string>
+    <string name="voicesr_preview_action">Play</string>
+    <string name="voices_add">Add</string>
+    <string name="voices_monthly_quota">%1$d/%2$d this month</string>
 </resources>

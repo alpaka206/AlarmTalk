@@ -703,7 +703,6 @@
     <string name="voicesr_save">저장</string>
     <string name="voicesr_select">선택</string>
     <string name="voicesr_share_voice">목소리 공유</string>
-    <string name="voicesr_play_shared_sample">미리 듣기</string>
     <string name="voicesr_shared_from_owner">%1$s님에게 공유받은 목소리</string>
     <string name="voicesr_shared_voice">공유받은 목소리</string>
     <string name="voicesr_sharing_badge">공유 중</string>
@@ -1012,8 +1011,8 @@
     <string name="onb_voice_download_later">나중에 받기</string>
     <string name="voicesr_share_voice_desc">같은 플랜 가족이 이 목소리로 알람을 만들 수 있어요.</string>
     <string name="voicesr_share_voice_locked">가족·커플 플랜에서 공유할 수 있어요.</string>
-    <string name="voicesr_default_badge">기본</string>
     <string name="voicesr_system_voice">기본 제공 목소리</string>
-    <string name="voices_create_row_title">내 목소리 만들기</string>
-    <string name="voices_create_row_desc">좋아하는 사람 목소리로 알람을 받아요.</string>
+    <string name="voicesr_preview_action">듣기</string>
+    <string name="voices_add">추가</string>
+    <string name="voices_monthly_quota">이번 달 %1$d/%2$d</string>
 </resources>

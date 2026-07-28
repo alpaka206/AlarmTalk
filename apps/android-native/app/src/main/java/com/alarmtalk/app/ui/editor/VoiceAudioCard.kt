@@ -75,7 +75,7 @@ internal fun VoiceAudioCard(
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
-    defaultVoiceId: String? = null,
+    lastUsedVoiceId: String? = null,
     /** 선택 시트에서 목소리를 들어볼 때 — 목소리 선택 화면과 같은 미리듣기를 쓴다. */
     onPreviewVoice: (String) -> Unit = {},
     previewPlayingVoiceId: String? = null,
@@ -217,15 +217,15 @@ internal fun VoiceAudioCard(
                     ) {
                         val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
                         if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
-                            // 기본 선택 우선순위: 내 목소리 → 공유받은 목소리 → 기본 목소리로
-                            // 설정해 둔 것 → 목록 첫 번째. 각 그룹 안에서는 기본 목소리로
-                            // 지정해 둔 프로필이 있으면 그것을 우선한다.
+                            // 처음 고르는 목소리: 마지막에 쓴 목소리를 그대로 이어 준다.
+                            // 그 목소리가 없으면 내 목소리 → 공유받은 목소리 → 기본 목소리
+                            // 순으로 내려간다(각 그룹 안에서도 마지막에 쓴 것을 우선).
                             editor.selectVoiceProfile(
-                                readyOwnProfiles.firstOrNull { it.id == defaultVoiceId }?.id
+                                readyOwnProfiles.firstOrNull { it.id == lastUsedVoiceId }?.id
                                     ?: readyOwnProfiles.firstOrNull()?.id
-                                    ?: readyFamilyVoices.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: readyFamilyVoices.firstOrNull { it.id == lastUsedVoiceId }?.id
                                     ?: readyFamilyVoices.firstOrNull()?.id
-                                    ?: profileOptions.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: profileOptions.firstOrNull { it.id == lastUsedVoiceId }?.id
                                     ?: profileOptions.first().id,
                             )
                         }
