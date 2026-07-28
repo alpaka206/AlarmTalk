@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -240,6 +241,39 @@ internal sealed interface CloneVoiceReadiness {
     /** 사전렌더 생성 실패 — [다시 시도] 버튼 노출. */
     object Failed : CloneVoiceReadiness
 }
+
+/**
+ * 목소리 탭 섹션 머리 행 — [내 목소리][공유받은 목소리][기본 목소리]가 같은 글자 크기,
+ * 같은 높이로 서게 하는 단일 출처.
+ *
+ * 높이를 못 박는 이유: '내 목소리'에만 [추가] 버튼(≈40dp)이 붙어 그 행만 키가 커지면,
+ * 세 섹션의 제목과 아래 카드 사이 간격이 눈에 띄게 달라진다. 버튼 유무와 무관하게
+ * 같은 높이를 준다.
+ */
+@Composable
+internal fun VoiceSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = VoiceSectionHeaderHeight),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        trailing?.invoke()
+    }
+}
+
+/** 섹션 머리 행 높이 — [추가] 버튼(Material3 최소 40dp)에 맞춘다. */
+private val VoiceSectionHeaderHeight = 40.dp
 
 @Composable
 internal fun VoiceProfileRow(
@@ -473,9 +507,11 @@ internal fun SharedVoiceProfileRow(
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Row(
+            // 패딩·글자 스타일은 내 목소리 카드(VoiceProfileRow)와 같은 값 — 두 카드가
+            // 나란히 놓이므로 높이와 글자 크기가 어긋나면 바로 보인다.
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -483,7 +519,11 @@ internal fun SharedVoiceProfileRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text(profile.name, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = profile.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
                     ?.let { stringResource(R.string.voicesr_shared_from_owner, it) }
                     ?: stringResource(R.string.voicesr_shared_voice)

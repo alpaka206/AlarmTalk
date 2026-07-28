@@ -1176,16 +1176,7 @@ internal fun VoiceProfileManagementPanel(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.voices_my_voices_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+        VoiceSectionHeader(title = stringResource(R.string.voices_my_voices_title)) {
             // 추가 버튼은 항상 누를 수 있다. 막힌 이유를 눌러 봐야 알 수 있게 두면 "왜 흐린지"
             // 모르는 채로 끝나므로, 차단 사유를 두 갈래로 나눠 그 자리에서 알려준다.
             //  - 무료 플랜        -> 이용권 안내 모달(PlanGateDialog)
@@ -1248,11 +1239,7 @@ internal fun VoiceProfileManagementPanel(
         }
 
         if (canShareVoice && familyVoices.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.voices_shared_voices_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
+            VoiceSectionHeader(title = stringResource(R.string.voices_shared_voices_title))
             familyVoices.forEach { profile ->
                 SharedVoiceProfileRow(
                     profile = profile,
@@ -1264,29 +1251,20 @@ internal fun VoiceProfileManagementPanel(
 
         // 기본 목소리는 맨 아래 — 내 목소리·공유받은 목소리(개인화된 것들)가 먼저 온다.
         if (systemVoices.isNotEmpty()) {
-            Row(
-                // 토스식 [제목 … 값 + 셰브론] 행 — 탭하면 기본 목소리 선택 시트를 연다.
-                // 눌림 리플(indication) 없이 조용히 동작.
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) {
-                        // 이전 화면 흐름의 안내가 시트 안에 엉뚱하게 보이지 않게 비우고 연다.
-                        localMessage = null
-                        prefetchGreetingPreviews()
-                        defaultVoiceSheetOpen = true
-                    }
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            // 토스식 [제목 … 값 + 셰브론] 행 — 탭하면 기본 목소리 선택 시트를 연다.
+            // 눌림 리플(indication) 없이 조용히 동작.
+            VoiceSectionHeader(
+                title = stringResource(R.string.voices_default_voice_row_title),
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) {
+                    // 이전 화면 흐름의 안내가 시트 안에 엉뚱하게 보이지 않게 비우고 연다.
+                    localMessage = null
+                    prefetchGreetingPreviews()
+                    defaultVoiceSheetOpen = true
+                },
             ) {
-                Text(
-                    text = stringResource(R.string.voices_default_voice_row_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
