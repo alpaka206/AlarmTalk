@@ -209,6 +209,8 @@ internal fun VoiceProfileManagementPanel(
     onOpenBilling: () -> Unit,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
+    // 유료 안내 모달의 '쿠폰이 있어요' 입력에 쓴다.
+    onRegisterCode: (String) -> Unit = {},
     // 기본 목소리 무료 버킷 프리페치 진행(다운로드 n to 전체). null = 진행 중 아님.
     voicePrefetchProgress: Pair<Int, Int>? = null,
     // 유료 클론 사전렌더(R2 21클립) 상태 조회/재시도 — 목소리 탭 준비 표시가 폴링한다.
@@ -1197,7 +1199,10 @@ internal fun VoiceProfileManagementPanel(
         ) {
             // 이번 달 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
             // 유료 사용자에게만 의미가 있다(무료는 눌렀을 때 이용권 안내로 간다).
-            voiceDraftQuota?.takeIf { canCreateVoice && it.registrationLimit > 0 }?.let { quota ->
+            // 유료만 숫자를 본다. 무료에게 '이번 달 0/1'은 마치 이용권만 있으면 이미 다 쓴
+            // 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고 눌렀을 때 안내한다.
+            val monthlyQuota = voiceDraftQuota?.takeIf { canCreateVoice && it.registrationLimit > 0 }
+            monthlyQuota?.let { quota ->
                 MutedText(
                     stringResource(
                         R.string.voices_monthly_quota,
@@ -1207,8 +1212,10 @@ internal fun VoiceProfileManagementPanel(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
             }
-            // 추가 버튼은 항상 누를 수 있다. 막힌 이유를 눌러 봐야 알 수 있게 두면 "왜 흐린지"
-            // 모르는 채로 끝나므로, 차단 사유를 두 갈래로 나눠 그 자리에서 모달로 알려준다.
+            // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 옆에 '이번 달 0/1'이 있어
+            // 왜 흐린지가 그 자리에서 읽힌다. 무료는 숫자가 없으니 끄지 않고(왜 흐린지 알 길이
+            // 없다) 항상 눌리게 두어 이용권 안내 모달로 보낸다.
+            val monthlyExhausted = monthlyQuota != null && monthlyQuota.registrationRemaining <= 0
             Button(
                 onClick = {
                     when {
@@ -1217,7 +1224,7 @@ internal fun VoiceProfileManagementPanel(
                         else -> voiceLimitNoticeOpen = true
                     }
                 },
-                enabled = !voiceProfileBusy,
+                enabled = !voiceProfileBusy && !monthlyExhausted,
             ) {
                 Text(stringResource(R.string.voices_add))
             }
@@ -1345,6 +1352,8 @@ internal fun VoiceProfileManagementPanel(
                 onOpenBilling()
             },
             onDismiss = { voicePlanGateOpen = false },
+            onRedeemCode = onRegisterCode,
+            redeemBusy = voiceProfileBusy,
         )
     }
 

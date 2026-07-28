@@ -234,6 +234,7 @@ internal fun AlarmListScreen(
                         onDeleteVoiceDraft = onDeleteVoiceDraft,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         voiceDraftQuota = voiceDraftQuota,
+                        onRegisterCode = onRegisterCode,
                         voicePrefetchProgress = voicePrefetchProgress,
                         onGetVoicePrerenderStatus = onGetVoicePrerenderStatus,
                         onRetryVoicePrerender = onRetryVoicePrerender,

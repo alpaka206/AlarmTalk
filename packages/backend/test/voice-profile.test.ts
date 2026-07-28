@@ -179,31 +179,31 @@ describe('GET /draft — 드래프트 조회 (voice-profile)', () => {
 });
 
 describe('GET /draft-quota — 월 생성 쿼터 (voice-profile)', () => {
-  it('사용 기록 없으면 remaining=limit(3), 등록 쿼터는 1/1', async () => {
+  it('사용 기록이 없으면 이번 달 등록 쿼터는 1/1', async () => {
     mockDB.pushResult([]); // 초안 시도 used_count 조회 → 없음
     mockDB.pushResult([{ used: 0 }]); // 이번 달 정식 등록 사용량 → 0
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    // 초안 시도(3회)는 재시도 여유, registration_*(1회)이 사용자에게 보여줄 '이번 달 생성' 쿼터.
+    // 초안 시도는 제한 없음(limit=0, 집계용). 사용자에게 보여줄 숫자는 registration_*.
     expect(body).toEqual({
-      limit: 3,
+      limit: 0,
       used: 0,
-      remaining: 3,
+      remaining: 0,
       registration_limit: 1,
       registration_used: 0,
       registration_remaining: 1,
     });
   });
 
-  it('이번 달을 다 썼으면 remaining=0', async () => {
+  it('이번 달 목소리를 이미 등록했으면 등록 쿼터는 0/1', async () => {
     mockDB.pushResult([{ used_count: 3 }]);
-    mockDB.pushResult([{ used: 1 }]); // 정식 등록도 이번 달 1건 소진
+    mockDB.pushResult([{ used: 1 }]); // 정식 등록 1건 소진
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({
-      limit: 3,
+      limit: 0,
       used: 3,
       remaining: 0,
       registration_limit: 1,
@@ -218,7 +218,7 @@ describe('GET /draft-quota — 월 생성 쿼터 (voice-profile)', () => {
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     // 400(잘못된 UUID) 이 아니라 200 쿼터 응답이어야 한다.
     expect(res.status).toBe(200);
-    expect((await res.json()).remaining).toBe(2);
+    expect((await res.json()).registration_remaining).toBe(1);
   });
 });
 
@@ -533,17 +533,20 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(mockDB.calls.some((call) => call.sql.includes('voice_draft_attempt_usage'))).toBe(false);
   });
 
-  it('이번 달 초안 제공자 시도를 모두 썼으면 429 VOICE_DRAFT_ATTEMPT_LIMIT_REACHED', async () => {
-    mockDB.pushResult([{ active_count: 0, monthly_count: 0 }]);
+  it('초안은 월 시도 횟수로 막지 않는다 — 정식 등록 전까진 무제한 생성·삭제', async () => {
+    // 예전에는 여기서 429 VOICE_DRAFT_ATTEMPT_LIMIT_REACHED 로 막았다. 이제 사용량만 센다.
     mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([], 0);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-draft' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '새 목소리'));
-    expect(res.status).toBe(429);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_DRAFT_ATTEMPT_LIMIT_REACHED');
-    expect(mockCreateInstantClone).not.toHaveBeenCalled();
-    const ledgerCall = mockDB.calls.find((call) => call.sql.includes('voice_draft_attempt_usage'));
-    expect(ledgerCall).toBeDefined();
+    expect(res.status).toBe(201);
+    const usageCall = mockDB.calls.find((call) => call.sql.includes('voice_draft_attempt_usage'));
+    expect(usageCall).toBeDefined();
+    // 집계는 계속하되 상한 비교(WHERE used_count < ?)는 사라졌다.
+    expect(usageCall!.sql).not.toContain('used_count <');
   });
 
   it('프로필이 없으면 통과', async () => {
@@ -868,7 +871,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(update?.sql).toContain('is_shared = 0');
   });
 
-  it('삭제 시 이번 달 목소리 변경 원장을 지워 같은 달 재등록 허용', async () => {
+  it('삭제해도 이번 달 목소리 변경 원장은 남는다 — 지웠다 만들기로 월 1회를 우회할 수 없다', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     const res = await req(
@@ -879,10 +882,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     const ledgerDelete = mockDB.calls.find((c) =>
       c.sql.startsWith('DELETE FROM voice_profile_change_ledger'),
     );
-    expect(ledgerDelete).toBeDefined();
-    expect(ledgerDelete!.sql).toContain('voice_profile_id = ?');
-    expect(ledgerDelete!.sql).toContain('change_month');
-    expect(ledgerDelete!.args).toContain(V1);
+    expect(ledgerDelete).toBeUndefined();
   });
 
   it('force=true 여도 메시지와 알람 행은 삭제하지 않음', async () => {

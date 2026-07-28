@@ -36,7 +36,9 @@ const MAX_VOICE_PROFILES = 1;
 // (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
 const MAX_DRAFT_VOICE_PROFILES = 1;
-const MAX_DRAFT_ATTEMPTS_PER_MONTH = 3;
+// 초안 시도는 더 이상 월 단위로 막지 않는다(정식 등록 전까진 무제한 생성·삭제).
+// 이 값은 사용량 집계에만 남는다 — /draft-quota 의 limit 필드 호환용.
+const MAX_DRAFT_ATTEMPTS_PER_MONTH = 0;
 // 정식 등록(= 사용자가 체감하는 '이번 달 만들 수 있는 목소리') 한도. 월 1개.
 // 위 초안 시도 3회는 이 1개를 만들기까지의 재시도 여유다(마음에 안 들면 지우고 다시).
 const MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH = 1;
@@ -115,11 +117,9 @@ async function readMonthlyDraftAttemptUsage(
     args: [ownerUserId, currentKstAttemptMonth()],
   });
   const used = Number(res.rows[0]?.used_count ?? 0);
-  return {
-    limit: MAX_DRAFT_ATTEMPTS_PER_MONTH,
-    used,
-    remaining: Math.max(0, MAX_DRAFT_ATTEMPTS_PER_MONTH - used),
-  };
+  // limit=0 은 '초안 시도 제한 없음'을 뜻한다. 사용자에게 보여줄 숫자는
+  // registration_*(월 1회 정식 등록)이고, 이건 운영 지표용 사용량이다.
+  return { limit: MAX_DRAFT_ATTEMPTS_PER_MONTH, used, remaining: 0 };
 }
 
 // 이번 달(KST) '정식 등록' 사용량 — 목소리는 한 달에 1개만 만들 수 있고(월 1회 교체),
@@ -155,11 +155,13 @@ async function reserveMonthlyDraftAttempt(
           VALUES (?, ?, 1)
           ON CONFLICT(owner_user_id, attempt_month) DO UPDATE SET
             used_count = used_count + 1,
-            updated_at = datetime('now')
-          WHERE used_count < ?`,
-    args: [ownerUserId, attemptMonth, MAX_DRAFT_ATTEMPTS_PER_MONTH],
+            updated_at = datetime('now')`,
+    args: [ownerUserId, attemptMonth],
   });
-  return (result.rowsAffected ?? 0) > 0 ? attemptMonth : null;
+  // 사용량은 계속 세지만 막지는 않는다 — 프리셋(정식 등록) 전 단계인 초안은 마음에 들
+  // 때까지 만들고 지울 수 있어야 한다. 월 1회 제한은 '최종 확정'에만 건다. 동시 보유
+  // 개수는 MAX_DRAFT_VOICE_PROFILES=1 이 여전히 막으므로 클론 슬롯이 쌓이지는 않는다.
+  return (result.rowsAffected ?? 0) > 0 ? attemptMonth : attemptMonth;
 }
 
 async function refundMonthlyDraftAttempt(
@@ -2119,17 +2121,10 @@ voiceProfile.delete('/:id', async (c) => {
       sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?',
       args: [id],
     });
-    // '마음에 안 들면 삭제'를 안내하므로, 삭제하면 같은 달에 다른 목소리를 다시 등록할 수 있어야
-    // 한다. voice_profile_id 로 스코프해, 이전 달에 만든 목소리를 지워도 이번 달 슬롯엔 영향 없음.
-    // (등록 확인창에서 promote 후 삭제 시 reserveMonthlyOfficialVoiceChange 의 월 예약이 남아
-    //  다음 등록이 VOICE_MONTHLY_CHANGE_LIMIT_REACHED 로 막히는 것을 방지.)
-    await tx.execute({
-      sql: `DELETE FROM voice_profile_change_ledger
-            WHERE voice_profile_id = ?
-              AND owner_user_id IN (${ph})
-              AND change_month = ${currentKstMonthSql()}`,
-      args: [id, ...ids],
-    });
+    // 초안(is_draft=1)을 지우는 건 이번 달 슬롯과 무관하다 — 초안은 애초에 원장을 쓰지 않는다.
+    // 정식 등록한 목소리를 지우면 이번 달은 그대로 소진된 채로 둔다. 한 달에 고를 수 있는
+    // 목소리는 하나이고, 지웠다 만들기를 반복하면 그 규칙이 사실상 없는 것과 같아진다.
+    // (예전에는 여기서 원장을 지워 같은 달 재등록을 허용했다.)
     await enqueueExternalDeletion(
       tx,
       'elevenlabs_voice',

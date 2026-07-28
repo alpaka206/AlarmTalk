@@ -637,7 +637,7 @@
     <string name="voices_preparing_audio">音声を準備しています。</string>
     <string name="voices_preview_play_failed">プレビューを再生できませんでした。</string>
     <string name="voices_confirm_new_title">「%1$s」の声を作成しました</string>
-    <string name="voices_confirm_new_body">声を聞いてみて、気に入らなければ削除できます。\n声の登録は月に1回できます。</string>
+    <string name="voices_confirm_new_body">この声で確定すると今月の登録を使います。確定前は何度でも作り直せますが、確定後は削除しても来月まで待つことになります。</string>
     <string name="voices_confirm_new_preview">もう一度聞く</string>
     <string name="voices_confirm_new_keep">この声にする</string>
     <string name="voices_confirm_new_keep_saving">登録中…</string>
@@ -679,7 +679,7 @@
     <string name="voicesr_close">閉じる</string>
     <string name="voicesr_delete">削除</string>
     <string name="voices_delete_quota_title">削除しますか？</string>
-    <string name="voices_delete_quota_message">今月の作成回数をすべて使ったため、今削除すると今月は新しい声を作れません。</string>
+    <string name="voices_delete_quota_message">今削除しても今月は新しい声を作れません。来月から作れます。</string>
     <string name="voicesr_delete_dialog_confirm">「%1$s」の声を削除しますか?</string>
     <string name="voicesr_delete_dialog_title">声を削除</string>
     <string name="voicesr_delete_dialog_warning">この声を使うアラームは基本のアラーム音に変わります。保存された音源ファイルも一緒に削除されます。</string>
@@ -996,8 +996,11 @@
     <string name="voices_add">追加</string>
     <string name="voices_monthly_quota">今月 %1$d/%2$d</string>
     <string name="voices_limit_title">今月の声はもう作りました</string>
-    <string name="voices_limit_message">声は月に1つ作れます。今の声を削除すると、今月もう一度作れます。</string>
+    <string name="voices_limit_message">声は月に1つ作れます。次は来月に作れます。今の声を削除しても今月は作れません。</string>
     <string name="voices_my_voices_title">自分の声</string>
     <string name="voices_shared_voices_title">共有された声</string>
     <string name="voices_system_voices_title">標準の声</string>
+    <string name="plan_gate_redeem_action">クーポンがあります</string>
+    <string name="plan_gate_redeem_title">コードを入力</string>
+    <string name="plan_gate_redeem_desc">プロモーション・ギフトコードを入力してください。招待コードも使えます。</string>
 </resources>

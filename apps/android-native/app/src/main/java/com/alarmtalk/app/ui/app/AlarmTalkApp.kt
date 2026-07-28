@@ -617,6 +617,8 @@ internal fun AlarmTalkApp(
                 navController.navigateTopLevelTab(NativeTab.Billing)
             },
             onDismiss = { planGateDialog = null },
+            onRedeemCode = viewModel::registerCode,
+            redeemBusy = viewModel.socialBusy,
         )
     }
 
@@ -931,6 +933,8 @@ internal fun AlarmTalkApp(
                   val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
                   AlarmEditorScreen(
                       contentPadding = padding,
+                      onRegisterCode = viewModel::registerCode,
+                      redeemBusy = viewModel.socialBusy,
                       alarm = null,
                       authSession = authSession,
                       subscriptionResponse = subscriptionResponse,
@@ -975,6 +979,8 @@ internal fun AlarmTalkApp(
                   } else {
                       AlarmEditorScreen(
                           contentPadding = padding,
+                          onRegisterCode = viewModel::registerCode,
+                          redeemBusy = viewModel.socialBusy,
                           alarm = currentAlarm,
                           authSession = authSession,
                           subscriptionResponse = subscriptionResponse,

@@ -641,7 +641,7 @@
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
     <string name="voices_preview_play_failed">미리듣기를 재생하지 못했어요.</string>
     <string name="voices_confirm_new_title">‘%1$s’ 목소리를 만들었어요</string>
-    <string name="voices_confirm_new_body">목소리를 들어보고 마음에 들지 않으면 삭제할 수 있어요.\n목소리 등록은 한 달에 한 번 가능해요.</string>
+    <string name="voices_confirm_new_body">이 목소리로 확정하면 이번 달 등록을 쓰게 돼요. 확정 전에는 얼마든지 다시 만들 수 있지만, 확정한 뒤에는 지워도 다음 달까지 기다려야 해요.</string>
     <string name="voices_confirm_new_preview">다시 듣기</string>
     <string name="voices_confirm_new_keep">이 목소리로 할게요</string>
     <string name="voices_confirm_new_keep_saving">등록 중…</string>
@@ -683,7 +683,7 @@
     <string name="voicesr_close">닫기</string>
     <string name="voicesr_delete">삭제</string>
     <string name="voices_delete_quota_title">정말 삭제할까요?</string>
-    <string name="voices_delete_quota_message">이번 달 생성 횟수를 모두 사용해, 지금 삭제하면 이번 달엔 새 목소리를 만들 수 없어요.</string>
+    <string name="voices_delete_quota_message">지금 지워도 이번 달에는 새 목소리를 만들 수 없어요. 다음 달부터 다시 만들 수 있어요.</string>
     <string name="voicesr_delete_dialog_confirm">\'%1$s\' 목소리를 삭제할까요?</string>
     <string name="voicesr_delete_dialog_title">목소리 삭제</string>
     <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
@@ -1016,8 +1016,11 @@
     <string name="voices_add">추가</string>
     <string name="voices_monthly_quota">이번 달 %1$d/%2$d</string>
     <string name="voices_limit_title">이번 달 목소리는 다 만들었어요</string>
-    <string name="voices_limit_message">목소리는 한 달에 1개 만들 수 있어요. 지금 목소리를 지우면 이번 달에 다시 만들 수 있어요.</string>
+    <string name="voices_limit_message">목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.</string>
     <string name="voices_my_voices_title">내 목소리</string>
     <string name="voices_shared_voices_title">공유받은 목소리</string>
     <string name="voices_system_voices_title">기본 목소리</string>
+    <string name="plan_gate_redeem_action">쿠폰이 있어요</string>
+    <string name="plan_gate_redeem_title">쿠폰 입력</string>
+    <string name="plan_gate_redeem_desc">받으신 프로모션·선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요.</string>
 </resources>

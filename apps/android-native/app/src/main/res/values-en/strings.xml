@@ -629,7 +629,7 @@
     <string name="voices_preparing_audio">Preparing your audio.</string>
     <string name="voices_preview_play_failed">Couldn\'t play the preview.</string>
     <string name="voices_confirm_new_title">‘%1$s’ voice is ready</string>
-    <string name="voices_confirm_new_body">Listen to the voice first — if it\'s not right, you can delete it.\nYou can register a voice once a month.</string>
+    <string name="voices_confirm_new_body">Confirming uses this month\'s voice. You can redo it as many times as you like before confirming, but afterwards you will have to wait until next month, even if you delete it.</string>
     <string name="voices_confirm_new_preview">Replay</string>
     <string name="voices_confirm_new_keep">Use this voice</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>
@@ -671,7 +671,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voicesr_close">Close</string>
     <string name="voicesr_delete">Delete</string>
     <string name="voices_delete_quota_title">Delete this voice?</string>
-    <string name="voices_delete_quota_message">You\'ve used all of this month\'s voice creations, so if you delete it now you can\'t make a new one until next month.</string>
+    <string name="voices_delete_quota_message">Deleting it now will not let you create another this month. You can create one again next month.</string>
     <string name="voicesr_delete_dialog_confirm">Delete the \'%1$s\' voice?</string>
     <string name="voicesr_delete_dialog_title">Delete voice</string>
     <string name="voicesr_delete_dialog_warning">Alarms using this voice will switch to the default alarm sound. The saved audio files will also be deleted.</string>
@@ -988,8 +988,11 @@ Check your connection and try again.</string>
     <string name="voices_add">Add</string>
     <string name="voices_monthly_quota">%1$d/%2$d this month</string>
     <string name="voices_limit_title">Monthly voice limit reached</string>
-    <string name="voices_limit_message">You can create one voice per month. Delete the current one to create another this month.</string>
+    <string name="voices_limit_message">You can create one voice per month. Your next one is available next month — deleting this voice will not give this month back.</string>
     <string name="voices_my_voices_title">My voices</string>
     <string name="voices_shared_voices_title">Shared with me</string>
     <string name="voices_system_voices_title">Built-in voices</string>
+    <string name="plan_gate_redeem_action">I have a code</string>
+    <string name="plan_gate_redeem_title">Enter a code</string>
+    <string name="plan_gate_redeem_desc">Enter a promo or gift code. Invite codes work here too.</string>
 </resources>

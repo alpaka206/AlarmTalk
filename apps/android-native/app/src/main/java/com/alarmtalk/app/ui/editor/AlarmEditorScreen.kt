@@ -121,6 +121,9 @@ internal fun AlarmEditorScreen(
     voiceProfileBusy: Boolean,
     stockClips: List<StockClip>,
     lastUsedVoiceId: String? = null,
+    // 유료 안내 모달에서 바로 프로모션/선물 코드를 넣을 수 있게 한다.
+    onRegisterCode: (String) -> Unit = {},
+    redeemBusy: Boolean = false,
     onCancel: () -> Unit,
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
@@ -1488,6 +1491,8 @@ internal fun AlarmEditorScreen(
                 onOpenBilling()
             },
             onDismiss = { voicePlanGateOpen = false },
+            onRedeemCode = onRegisterCode,
+            redeemBusy = redeemBusy,
         )
     }
 }
