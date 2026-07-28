@@ -5,7 +5,7 @@
 //  - minSupported: 이 버전 미만은 강제 업데이트(앱이 차단 화면 표시). 평소 1 로 두어
 //    아무도 막지 않다가, 필수 기능(예: 동의)을 강제해야 할 때만 올린다.
 //  - latest: 권장 업데이트 기준(앱이 비차단 배너 표시).
-//  versionCode(Android) / build number(iOS) 정수 기준.
+//  versionCode(Android) 정수 기준. (Android 전용 — iOS 는 운영하지 않는다.)
 
 export interface AppVersionPolicy {
   minSupported: number;
@@ -19,15 +19,8 @@ const ANDROID: AppVersionPolicy = {
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 
-const IOS: AppVersionPolicy = {
-  minSupported: 1,
-  latest: 1,
-  storeUrl: 'https://apps.apple.com/app/alarmtalk',
-};
-
-const POLICIES: Record<string, AppVersionPolicy> = { android: ANDROID, ios: IOS };
-
-export function appVersionPolicy(platform: string | undefined | null): AppVersionPolicy {
-  const key = (platform ?? '').trim().toLowerCase();
-  return POLICIES[key] ?? ANDROID;
+// platform 파라미터는 유지한다 — 앱이 이미 붙여 보내고 있고, 향후 플랫폼이 늘면
+// 여기서 분기한다. 지금은 어떤 값이 와도 Android 정책을 돌려준다.
+export function appVersionPolicy(_platform?: string | null): AppVersionPolicy {
+  return ANDROID;
 }

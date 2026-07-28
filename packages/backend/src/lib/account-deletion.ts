@@ -70,7 +70,7 @@ export async function purgeUserAccount(
   // 해석 실패이므로 소리 없이 users 만 지우지 말고 throw 해 호출부에서 롤백되게 한다.
   if (!userPk) {
     const orphanGuard = await tx.execute({
-      sql: `SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ? LIMIT 1`,
+      sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
       args: [userId, userId, userId],
     });
     if (orphanGuard.rows.length > 0) {

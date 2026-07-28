@@ -100,9 +100,9 @@ android {
         minSdk = 26
         targetSdk = 36
         // 릴리스마다 수동으로 versionCode +1, versionName 갱신. (Play 는 업로드마다 더 큰
-        // versionCode 를 요구 — 이전 업로드값보다 반드시 크게.) 1.1.2 = 17, 다음 릴리스는 18.
-        versionCode = 17
-        versionName = "1.1.2"
+        // versionCode 를 요구 — 이전 업로드값보다 반드시 크게.) 1.1.3 = 18.
+        versionCode = 18
+        versionName = "1.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

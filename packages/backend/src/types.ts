@@ -3,13 +3,6 @@ export interface Env {
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN: string;
   GOOGLE_CLIENT_ID: string;
-  APPLE_CLIENT_ID?: string;
-  /**
-   * App Store Connect 의 "Apple shared secret".
-   * 현재 /billing/apple/confirm 은 이 secret 이 있어도 fail-closed 로 동작하며,
-   * 후속 PR 에서 Apple App Store Server API v2 의 JWS 검증으로 entitlement 갱신을 열 예정.
-   */
-  APPLE_SHARED_SECRET?: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
   GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED?: string;
   GOOGLE_VERTEX_LOCATION?: string;
@@ -31,12 +24,6 @@ export interface Env {
    * 쿼리 token 이 이 값과 일치할 때만 처리한다. 미설정 시 RTDN 503.
    */
   GOOGLE_RTDN_VERIFICATION_TOKEN?: string;
-  /** App Store Server API 자격 (Apple IAP 검증). 셋 다 있어야 활성화. */
-  APPLE_ISSUER_ID?: string;
-  APPLE_KEY_ID?: string;
-  APPLE_IAP_PRIVATE_KEY?: string;
-  /** iOS 번들 ID — App Store 트랜잭션의 bundleId 검증에 사용. */
-  APPLE_BUNDLE_ID?: string;
   /** 관리자 콘솔(/admin) 보호용 시크릿(HTTP Basic 비밀번호). 미설정 시 /admin 은 503. */
   ADMIN_SECRET?: string;
   /**

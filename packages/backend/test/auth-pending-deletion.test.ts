@@ -24,7 +24,6 @@ const ENV: Env = {
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',
   GOOGLE_CLIENT_ID: 'g',
-  APPLE_CLIENT_ID: 'a',
   JWT_SECRET: 'test-secret-32-chars-or-longer!',
   PASSWORD_PEPPER: 'pepper',
   ENVIRONMENT: 'test',

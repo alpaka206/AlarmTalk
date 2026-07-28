@@ -9,12 +9,7 @@ describe('appVersionPolicy', () => {
     expect(p.storeUrl).toContain('play.google.com');
   });
 
-  it('ios 정책 반환', () => {
-    const p = appVersionPolicy('ios');
-    expect(p.storeUrl).toContain('apps.apple.com');
-  });
-
-  it('대소문자 무시', () => {
+it('대소문자 무시', () => {
     expect(appVersionPolicy('Android')).toEqual(appVersionPolicy('android'));
   });
 

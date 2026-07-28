@@ -276,11 +276,11 @@ user.delete('/me', async (c) => {
   const db = getDB(c.env);
 
   try {
-    // apple_id 도 함께 매칭한다. Apple 로그인 사용자의 JWT sub 는 google_id 가 아닌
-    // apple_id 컬럼에만 저장돼 있을 수 있어, 누락하면 userPk 가 null 이 되어 자식
+    // JWT sub 은 google_id(구글 로그인) 또는 users.id(이메일 가입)라 둘 다 매칭한다.
+    // 누락하면 userPk 가 null 이 되어 자식
     // PII(생체 음성 등)가 고아로 남는다(auth.ts:94 의 조회 조건과 동일하게 맞춤).
     const userRes = await db.execute({
-      sql: `SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ? LIMIT 1`,
+      sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
       args: [userId, userId, userId],
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;

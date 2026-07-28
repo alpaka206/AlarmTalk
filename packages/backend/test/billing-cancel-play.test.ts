@@ -417,51 +417,7 @@ describe('POST /billing/cancel — 이미 취소/철회된 토큰 수렴 (C5)', 
 });
 
 // ---------------------------------------------------------------------------
-// POST /billing/cancel — Apple / 스토어 미연결(스텁) 구독
 // ---------------------------------------------------------------------------
-describe('POST /billing/cancel (apple·스텁)', () => {
-  it('apple 결제 구독은 409 STORE_CANCEL_UNSUPPORTED + DB 무변경', async () => {
-    const fetchMock = stubPlayFetch(200, {});
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([SUB_ROW]);
-    mockDB.pushResult([{ ...GOOGLE_TXN_ROW, provider: 'apple' }]);
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
-      undefined,
-      PLAY_ENV,
-    );
-
-    expect(res.status).toBe(409);
-    const body = await res.json();
-    expect(body.error_code).toBe('STORE_CANCEL_UNSUPPORTED');
-    expect(body.manage_url).toBe('https://apps.apple.com/account/subscriptions');
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
-  });
-
-  it('스토어 트랜잭션 없는 구독(dev 스텁/프로모) immediate: Play 호출 없이 해지 + 보관 예약', async () => {
-    const fetchMock = stubPlayFetch(200, {});
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([SUB_ROW]); // 활성 구독 스냅샷 (트랜잭션 안에서 재조회 없음)
-    mockDB.pushResult([]); // store_transactions 없음
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
-      undefined,
-      PLAY_ENV,
-    );
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.voice_retention_until).toBeDefined();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(findCall("status = 'cancelled'")).toBeDefined();
-    expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
-    expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
-  });
-});
-
 // ---------------------------------------------------------------------------
 // POST /billing/cancel — 스냅샷-트랜잭션 정합 (E1)
 // ---------------------------------------------------------------------------

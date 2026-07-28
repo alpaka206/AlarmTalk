@@ -236,21 +236,7 @@ describe('DELETE /user/me', () => {
     expect(indexOf('DELETE FROM users')).toBeGreaterThan(indexOf('DELETE FROM voice_profiles'));
   });
 
-  it('userPk 조회에 apple_id 도 포함한다 (legacy Apple 계정 고아 방지)', async () => {
-    mockDB.pushResult([{ id: 'pk-apple' }]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('DELETE', '/user/me'), undefined, DELETE_ENV);
-    expect(res.status).toBe(200);
-    const lookup = mockDB.calls.find(
-      (c) => c.sql.includes('SELECT id FROM users') && c.sql.includes('apple_id'),
-    );
-    expect(lookup).toBeDefined();
-    // google_id / apple_id / id 세 컬럼 모두로 매칭한다.
-    expect(lookup?.sql).toContain('apple_id = ?');
-    expect(lookup?.args).toEqual(['user-1', 'user-1', 'user-1']);
-  });
-
-  it('userPk 미해석인데 사용자 행이 존재하면 throw → 500 (고아 PII 방지)', async () => {
+it('userPk 미해석인데 사용자 행이 존재하면 throw → 500 (고아 PII 방지)', async () => {
     // 1) SELECT id FROM users (DELETE 핸들러) → 미해석(null)
     mockDB.pushResult([]);
     // 2) purgeUserAccount 의 orphan guard SELECT → 사용자 행 존재

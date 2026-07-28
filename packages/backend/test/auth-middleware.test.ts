@@ -22,7 +22,6 @@ const ENV: Env = {
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',
   GOOGLE_CLIENT_ID: 'test-google-client-id',
-  APPLE_CLIENT_ID: 'com.voicealarm.nativeapp.ios',
   JWT_SECRET: 'test-secret-32-chars-or-longer!',
   PASSWORD_PEPPER: 'pepper',
   ENVIRONMENT: 'test',
@@ -232,9 +231,9 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
   });
 });
 
-// B5: provider(Google/Apple) ID 토큰을 Bearer 로 직접 들고 오는 경로는 제거됐다.
+// B5: provider(Google) ID 토큰을 Bearer 로 직접 들고 오는 경로는 제거됐다.
 // 이제 authMiddleware 는 자체 발급 앱 JWT 만 받으며, 모든 토큰은 verifyAppJwt 로만
-// 검증된다. provider 토큰 교환은 /auth/google·/auth/apple 에서만 이뤄진다.
+// 검증된다. provider 토큰 교환은 /auth/google 에서만 이뤄진다.
 describe('authMiddleware — provider ID 토큰 직접 수용 거부 (app-JWT-only)', () => {
   it('Google ID 토큰을 직접 들고 오면 verifyAppJwt 가 거부 → 401', async () => {
     const token = fakeToken({
@@ -257,25 +256,7 @@ describe('authMiddleware — provider ID 토큰 직접 수용 거부 (app-JWT-on
     expect(mockVerifyAppJwt).toHaveBeenCalledWith(token, ENV.JWT_SECRET);
   });
 
-  it('Apple ID 토큰을 직접 들고 오면 verifyAppJwt 가 거부 → 401', async () => {
-    const token = fakeToken({
-      sub: 'apple-user-001',
-      iss: 'https://appleid.apple.com',
-      aud: ENV.APPLE_CLIENT_ID,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    });
-    mockVerifyAppJwt.mockRejectedValue(new Error('Invalid issuer'));
-    const fetchSpy = vi.fn();
-    globalThis.fetch = fetchSpy as unknown as typeof fetch;
-
-    const app = buildApp();
-    const res = await reqWithEnv(app, req(`Bearer ${token}`));
-    expect(res.status).toBe(401);
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(mockVerifyAppJwt).toHaveBeenCalled();
-  });
-
-  it('알 수 없는 issuer 토큰도 앱 JWT 검증 실패로 401', async () => {
+it('알 수 없는 issuer 토큰도 앱 JWT 검증 실패로 401', async () => {
     const token = fakeToken({
       sub: 'user-unknown',
       iss: 'https://unknown-issuer.example.com',
@@ -357,7 +338,7 @@ describe('authMiddleware — 토큰 폐기(token_epoch) 검사 (B5)', () => {
 describe('authMiddleware — base64url 디코딩 엣지 케이스', () => {
   it('payload에 패딩 없는 base64url 인코딩도 정상 디코딩', async () => {
     const payload = {
-      sub: 'apple-user',
+      sub: 'legacy-user',
       iss: 'voice-alarm',
       aud: 'voice-alarm-clients',
       exp: Math.floor(Date.now() / 1000) + 3600,

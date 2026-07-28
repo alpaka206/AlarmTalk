@@ -1,11 +1,11 @@
 /**
  * 인증 미들웨어. 모든 보호 라우트(`/api/*`)는 이 미들웨어를 통과한다.
  *
- * **앱 JWT 전용(B5).** 과거에는 Google/Apple ID Token 을 Bearer 로 직접 받아
+ * **앱 JWT 전용(B5).** 과거에는 Google ID Token 을 Bearer 로 직접 받아
  * 검증했으나, provider ID 토큰을 그대로 통과시키면 (a) 폐기/로그아웃 불가
  * (token_epoch 가 없음) (b) audience/만료가 provider 정책에 종속되는 문제가 있다.
- * 이제 provider 토큰은 오직 /auth/google · /auth/apple 교환 엔드포인트에서만
- * 쓰이고, 그 외 모든 보호 라우트는 자체 발급 앱 JWT(APP_JWT_ISSUER) 만 받는다.
+ * 이제 provider 토큰은 오직 /auth/google 교환 엔드포인트에서만 쓰이고,
+ * 그 외 모든 보호 라우트는 자체 발급 앱 JWT(APP_JWT_ISSUER) 만 받는다.
  *
  * 검증 후 `users` 행을 해석(없으면 즉석 생성)해 `userIdPK`(FK 기준 식별자)를
  * 컨텍스트에 심고, (1) JWT epoch < users.token_epoch 이면 폐기된 토큰으로 보아
@@ -47,8 +47,8 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
   }
 
   try {
-    // 앱 JWT 만 수용한다. provider(Apple/Google) ID 토큰은 여기서 거부되고,
-    // /auth/google·/auth/apple 교환 라우트(authMiddleware 비적용)에서만 처리된다.
+    // 앱 JWT 만 수용한다. provider(Google) ID 토큰은 여기서 거부되고,
+    // /auth/google 교환 라우트(authMiddleware 비적용)에서만 처리된다.
     // verifyAppJwt 가 iss/aud/exp/서명을 모두 검증하며 실패 시 throw → 401.
     const app = await verifyAppJwt(token, c.env.JWT_SECRET);
     const verified: TokenPayload = {
@@ -73,12 +73,12 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     try {
       const { getDB } = await import('../lib/db');
       const db = getDB(c.env);
-      // 앱 JWT 의 sub 은 발급 시점의 loginSub(google_id ?? apple_id ?? id)이므로,
-      // 세 컬럼 모두에 대해 매칭한다. provider 사용자는 /auth 교환 단계에서 이미
+      // 앱 JWT 의 sub 은 발급 시점의 loginSub(google_id ?? id)이므로,
+      // 두 컬럼 모두에 대해 매칭한다. provider 사용자는 /auth 교환 단계에서 이미
       // 행이 생성돼 있어 아래 fallback INSERT 는 사실상 이메일/레거시 경로의 안전망이다.
       const found = await db.execute({
-        sql: 'SELECT id, deletion_status, token_epoch FROM users WHERE google_id = ? OR apple_id = ? OR id = ?',
-        args: [verified.sub, verified.sub, verified.sub],
+        sql: 'SELECT id, deletion_status, token_epoch FROM users WHERE google_id = ? OR id = ?',
+        args: [verified.sub, verified.sub],
       });
       let pk: string;
       let deletionStatus = 'active';

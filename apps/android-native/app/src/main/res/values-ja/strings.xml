@@ -483,7 +483,6 @@
     <string name="msg_register_all_fields_required">会員登録の情報をすべて入力してください。</string>
     <string name="msg_register_email_taken">既に登録済みのメールです。ログインしてください。</string>
     <string name="msg_register_email_social_google">Googleで登録済みのメールです。「Googleで続行」でログインしてください。</string>
-    <string name="msg_register_email_social_apple">Appleで登録済みのメールです。Appleでサインインを使用してください。</string>
     <string name="msg_register_failed">会員登録に失敗しました。</string>
     <string name="msg_register_success">%1$sアカウントを作成しました。</string>
     <string name="msg_register_verify_email_first">先にメールアドレスの認証を完了してください。</string>

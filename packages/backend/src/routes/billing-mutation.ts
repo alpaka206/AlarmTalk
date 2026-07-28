@@ -690,7 +690,7 @@ billingMutation.post('/vouchers/family-share/regenerate', async (c) => {
 // 구독 해지. mode=at_period_end(기간종료 해지) | immediate(즉시 해지·비례 환불).
 // 스토어(Google Play) 결제 구독이면 **Play 성공을 확인하기 전에는 로컬 DB·음성
 // 데이터를 절대 변경하지 않는다** — Play 호출 실패 시 502 + manage_url 로 스토어
-// 직접 관리 화면을 안내한다. Apple 은 서버 취소 API 가 없어 409 로 안내만 한다.
+// 직접 관리 화면을 안내한다.
 // 어느 경로든 즉시 해지 시 유료 음성은 하드삭제 대신 30일 보관 유예를 건다.
 billingMutation.post('/cancel', async (c) => {
   const body = await c.req
@@ -741,19 +741,6 @@ billingMutation.post('/cancel', async (c) => {
     purchaseToken: String(row.provider_transaction_id),
     productId: String(row.product_id),
   }));
-
-  // Apple 은 서버 측 취소 API 가 없다 — 하나라도 섞여 있으면 설정 앱/App Store 에서
-  // 직접 해지하도록 안내한다(부분 취소로 상태가 갈라지는 것 방지).
-  if (storeTxns.some((txn) => txn.provider === 'apple')) {
-    return c.json(
-      {
-        error: 'App Store subscriptions must be cancelled from the App Store',
-        error_code: 'STORE_CANCEL_UNSUPPORTED',
-        manage_url: 'https://apps.apple.com/account/subscriptions',
-      },
-      409,
-    );
-  }
 
   // 같은 토큰이 여러 구독 행에 걸쳐 있어도 Play 호출은 토큰당 한 번만 한다.
   const googleTxns = new Map<string, { purchaseToken: string; productId: string }>();

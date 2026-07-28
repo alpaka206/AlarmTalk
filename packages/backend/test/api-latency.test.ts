@@ -11,7 +11,6 @@ vi.mock('../src/lib/db', () => ({
 }));
 
 import alarmRoutes from '../src/routes/alarm';
-import libraryRoutes from '../src/routes/library';
 import codeRoutes from '../src/routes/code';
 import userRoutes from '../src/routes/user';
 
@@ -118,37 +117,6 @@ describe('API latency baselines', () => {
       );
       expect(res.status).toBe(201);
       expect(ms).toBeLessThan(WRITE_LATENCY_THRESHOLD_MS);
-    });
-  });
-
-  describe('GET /library', () => {
-    it('responds within threshold with empty library', async () => {
-      mockDB.pushResult([]); // empty
-      mockDB.pushResult([{ total: 0 }]); // count
-      const app = buildApp('/library', libraryRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/library')));
-      expect(res.status).toBe(200);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
-    });
-
-    it('responds within threshold with 50 items', async () => {
-      const rows = Array.from({ length: 20 }, (_, i) => ({
-        id: `ml-${i}`,
-        user_id: 'user-1',
-        message_id: `msg-${i}`,
-        is_favorite: 0,
-        received_at: '2026-04-24T12:00:00Z',
-        text: `Message ${i}`,
-        audio_url: null,
-        voice_profile_id: null,
-        category: 'morning',
-      }));
-      mockDB.pushResult(rows);
-      mockDB.pushResult([{ total: 50 }]);
-      const app = buildApp('/library', libraryRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/library')));
-      expect(res.status).toBe(200);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
   });
 

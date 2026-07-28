@@ -537,7 +537,7 @@ alarmMutation.post('/', async (c) => {
 
   // 가족 알람(target_user_id 지정)이면 수신자에게 즉시 push — /family/alarms 뿐 아니라 이 일반 생성
   // 경로(stock/TTS/녹음 가족 알람, 클라 createAlarm)도 즉시 배달한다. getTokensForUser 가
-  // google_id/apple_id/id 를 정규화하므로 targetLoginId 그대로 전달. 논블로킹(waitUntil), executionCtx
+  // google_id/id 를 정규화하므로 targetLoginId 그대로 전달. 논블로킹(waitUntil), executionCtx
   // 없는 컨텍스트(테스트)에선 c.executionCtx 접근이 던지므로 try 로 감싸 생략(그 경우 쿼리도 안 돌아 mock
   // FIFO 도 안 밀림), 15분 주기 pull 폴백.
   if (targetUserIdForAlarm) {

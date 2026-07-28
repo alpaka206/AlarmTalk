@@ -32,8 +32,7 @@ export type { SubscriptionV2Response };
 
 /**
  * Play Console 구독 상품 ID → plans.key 매핑.
- * iOS 의 applePlanKeyFromProductId 와 동일한 규칙 (단일 진실 공급원:
- * billing-helpers.ts 의 Apple 매핑 주석 참고).
+ * 월간 SKU 만 판매한다.
  */
 const GOOGLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'> = {
   personal_monthly: 'personal',

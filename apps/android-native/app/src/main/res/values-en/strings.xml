@@ -474,7 +474,6 @@
     <string name="msg_register_all_fields_required">Please fill in all the sign-up details.</string>
     <string name="msg_register_email_taken">This email is already registered. Please log in.</string>
     <string name="msg_register_email_social_google">This email is registered with Google. Please continue with Google.</string>
-    <string name="msg_register_email_social_apple">This email is registered with Apple. Please use Sign in with Apple.</string>
     <string name="msg_register_failed">Couldn\'t complete sign-up.</string>
     <string name="msg_register_success">Your %1$s account has been created.</string>
     <string name="msg_register_verify_email_first">Please verify your email first.</string>

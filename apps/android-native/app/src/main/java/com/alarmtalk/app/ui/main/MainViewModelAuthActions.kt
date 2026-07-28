@@ -100,10 +100,7 @@ private fun MainViewModel.duplicateEmailMessage(error: Throwable): String? {
             authRedirectToLogin = true
             app.getString(R.string.msg_register_email_taken)
         }
-        "AUTH_EMAIL_SOCIAL" -> when (parsed.provider) {
-            "apple" -> app.getString(R.string.msg_register_email_social_apple)
-            else -> app.getString(R.string.msg_register_email_social_google)
-        }
+        "AUTH_EMAIL_SOCIAL" -> app.getString(R.string.msg_register_email_social_google)
         else -> null
     }
 }

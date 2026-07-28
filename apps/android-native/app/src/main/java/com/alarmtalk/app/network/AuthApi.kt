@@ -41,7 +41,6 @@ data class AuthUser(
     val email: String,
     val name: String = "",
     val plan: String = "free",
-    @SerializedName("apple_user_id") val appleUserId: String? = null,
     @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean = false,
     @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int> = listOf(1, 2, 3, 4, 5),
     @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String = "09:00",
