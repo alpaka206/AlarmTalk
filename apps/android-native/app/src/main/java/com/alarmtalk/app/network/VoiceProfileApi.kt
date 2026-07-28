@@ -31,6 +31,10 @@ data class VoiceDraftQuotaResponse(
     val limit: Int = 0,
     val used: Int = 0,
     val remaining: Int = 0,
+    // 이번 달 '정식 등록' 쿼터 — 목소리는 한 달에 1개. 위 limit(초안 재시도 여유 3회)와 다르다.
+    @SerializedName("registration_limit") val registrationLimit: Int = 0,
+    @SerializedName("registration_used") val registrationUsed: Int = 0,
+    @SerializedName("registration_remaining") val registrationRemaining: Int = 0,
 )
 
 data class VoiceUploadResponse(

@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
 import type { VoiceStorage } from '@alarmtalk/voice';
 import { getDB } from '../lib/db';
+import { callerOwnerIds } from '../lib/caller-ids';
 import { getFormFile } from '../lib/db-types';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { R2VoiceStorage, MAX_VOICE_UPLOAD_BYTES } from '../lib/r2-storage';
@@ -19,15 +20,20 @@ const MIN_UPLOAD_DURATION_MS = 60_000;
 const MAX_UPLOAD_DURATION_MS = 120_000;
 const UPLOAD_DURATION_TOLERANCE_MS = 5_000;
 
+/**
+ * 유료 목소리 기능 접근 여부. 판정하지 못하면 '없음'으로 본다(fail-closed).
+ *
+ * 예전에는 `if (!resolvedUserPk) return true` 로 식별자를 해석하지 못하면 게이트를
+ * 통째로 열었다. 지금 authMiddleware 는 users 행을 못 찾으면 401 이라 도달할 수 없는
+ * 분기지만, 결제 게이트의 기본값이 '모르면 통과'인 건 위험하다 — 미들웨어가 한 번
+ * 바뀌면 유료 기능이 조용히 무료가 된다.
+ */
 async function hasPaidVoiceAccess(c: Context<AppEnv>): Promise<boolean> {
-  const userId = c.get('userId');
-  const resolvedUserPk = c.get('userIdPK');
-  if (!resolvedUserPk) return true;
-  const userPk = resolvedUserPk || userId;
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
   const result = await db.execute({
-    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
-    args: [userPk, userId],
+    sql: `SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+    args: ownerIds,
   });
   return result.rows.length > 0 && isPaidVoicePlan(result.rows[0]!.plan);
 }

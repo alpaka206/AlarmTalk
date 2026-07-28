@@ -72,7 +72,7 @@
     <string name="billing_cancel_description_no_date">해지 시점을 선택해 주세요. 종료일 해지는 이번 이용 기간까지 그대로 쓸 수 있어요. 지금 해지하면 남은 기간 요금은 비례 환불돼요.</string>
     <string name="billing_cancel_description_with_date">종료일 해지는 %1$s까지 그대로 쓰고 끝나요. 지금 해지하면 남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요.</string>
     <string name="billing_cancel_dialog_title">이용권을 해지할까요?</string>
-    <string name="billing_cancel_immediate_description">남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 만든 목소리는 삭제되지 않고 잠기며, 다시 이용권을 등록하면 그대로 다시 쓸 수 있어요.</string>
+    <string name="billing_cancel_immediate_description">남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요 — 그 안에 다시 이용권을 등록하면 그대로 다시 쓸 수 있고, 지나면 영구 삭제돼요.</string>
     <string name="billing_cancel_immediate_title">지금 바로 해지할까요?</string>
     <string name="billing_cancel_now">지금 해지하기</string>
     <string name="billing_cancel_pass">이용권 해지</string>
@@ -269,7 +269,6 @@
     <string name="editor_save_blocked_free_clips_loading">알람 문구를 준비하고 있어요. 잠시만 기다려 주세요.</string>
     <string name="editor_free_bucket_offline">오프라인이라 문구를 불러오지 못했어요</string>
     <string name="editor_save_blocked_free_clips_offline">인터넷이 연결되어 있지 않아 알람 문구를 불러오지 못했어요. 연결되면 자동으로 다시 시도할게요.</string>
-    <string name="voices_clone_requires_paid_hint">내 목소리로 깨워주는 알람은 유료 플랜에서 만들 수 있어요.</string>
     <string name="editor_stop">정지</string>
     <string name="editor_vibration_title">진동</string>
     <string name="editor_voice_deleted_desc">이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.</string>
@@ -460,7 +459,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">이번 이용 기간까지 그대로 쓸 수 있어요. 다음 결제는 없어요</string>
     <string name="msg_gb_subscription_cancel_failed">해지에 실패했어요</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">이용권을 해지했어요. 만든 목소리는 삭제되지 않고 잠겨요 — 다시 이용권을 등록하면 그대로 다시 쓸 수 있어요</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">이용권을 해지했어요. 목소리는 3일간 보관돼요 — 그 안에 다시 등록하면 그대로 다시 쓸 수 있어요</string>
 
 
 
@@ -486,7 +485,6 @@
     <string name="msg_register_all_fields_required">회원가입 정보를 모두 입력해 주세요.</string>
     <string name="msg_register_email_taken">이미 가입된 이메일이에요. 로그인해 주세요.</string>
     <string name="msg_register_email_social_google">구글로 가입된 이메일이에요. \'Google로 계속하기\'로 로그인해 주세요.</string>
-    <string name="msg_register_email_social_apple">애플로 가입된 이메일이에요. Apple 로그인을 사용해 주세요.</string>
     <string name="msg_register_failed">회원가입에 실패했어요</string>
     <string name="msg_register_success">%1$s 계정을 만들었어요</string>
     <string name="msg_register_verify_email_first">이메일 인증을 먼저 완료해 주세요</string>
@@ -606,7 +604,6 @@
     <string name="social_code_input_hint">초대 코드, 이용권 선물 코드, 프로모션 코드 모두 등록할 수 있어요.</string>
     <string name="social_voucher_usage">%1$d/%2$d명 사용</string>
     <string name="social_voucher_usage_full">%1$d/%2$d명 사용 · 정원이 가득 차서 공유할 수 없어요</string>
-    <string name="voices_add">추가</string>
     <string name="voices_close">닫기</string>
     <string name="voices_create_dialog_title">목소리 만들기</string>
     <string name="voices_create_paid_title">내 목소리 만들기는 유료 기능이에요</string>
@@ -617,8 +614,8 @@
     <string name="voices_draft_exit_leave">나가고 삭제</string>
     <string name="voices_draft_exit_stay">계속 만들기</string>
     <string name="voices_draft_exit_title">나가면 임시 목소리가 삭제돼요</string>
-    <string name="voices_edit_info_desc">알람에서 보일 이름과 이 목소리가 나를 부르는 방식을 정해요.</string>
-    <string name="voices_edit_info_title">정보 수정</string>
+    <string name="voices_edit_name_desc">알람 목록과 목소리 선택에서 보일 이름이에요.</string>
+    <string name="voices_edit_name_title">이름 수정</string>
     <string name="voices_file_duration_unknown">오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.</string>
     <string name="voices_file_selected">파일 선택됨</string>
     <string name="voices_greeting_preview_preparing">이 목소리의 미리듣기를 준비 중이에요.</string>
@@ -628,7 +625,6 @@
     <string name="voices_login_required_body">로그인 후 목소리를 만들 수 있어요.</string>
     <string name="voices_login_required_title">로그인이 필요해요</string>
     <string name="voices_mic_permission_required">마이크 권한이 필요해요.</string>
-    <string name="voices_my_voices_title">내 목소리</string>
     <string name="voices_name_label">목소리 이름</string>
     <string name="voices_prerender_ready_title">알람 목소리를 준비하고 있어요</string>
     <string name="voices_prerender_ready_body">조금만 기다리면 준비돼요.\n이 화면을 닫아도 백그라운드에서 계속돼요.</string>
@@ -638,7 +634,6 @@
     <string name="voices_lang_ja" translatable="false">日本語</string>
     <string name="voices_name_placeholder">예: 엄마 목소리</string>
     <string name="voices_next">다음</string>
-    <string name="voices_no_voices_yet">아직 만든 목소리가 없어요.</string>
     <string name="voices_paid_required">유료 이용권에서 사용할 수 있어요.</string>
     <string name="voices_prepare_recording_first">녹음한 음성을 먼저 준비해 주세요.</string>
     <string name="voices_prepare_selected_failed">선택한 음성을 준비하지 못했어요.</string>
@@ -646,7 +641,7 @@
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
     <string name="voices_preview_play_failed">미리듣기를 재생하지 못했어요.</string>
     <string name="voices_confirm_new_title">‘%1$s’ 목소리를 만들었어요</string>
-    <string name="voices_confirm_new_body">목소리를 들어보고 마음에 들지 않으면 삭제할 수 있어요.\n목소리 등록은 한 달에 한 번 가능해요.</string>
+    <string name="voices_confirm_new_body">이 목소리로 확정하면 이번 달 등록을 쓰게 돼요. 확정 전에는 얼마든지 다시 만들 수 있지만, 확정한 뒤에는 지워도 다음 달까지 기다려야 해요.</string>
     <string name="voices_confirm_new_preview">다시 듣기</string>
     <string name="voices_confirm_new_keep">이 목소리로 할게요</string>
     <string name="voices_confirm_new_keep_saving">등록 중…</string>
@@ -676,14 +671,11 @@
     <string name="voices_select_file_first">파일을 선택해 주세요.</string>
     <string name="voices_select_to_register_hint">목소리를 선택한 뒤 이름, 관계, 호칭을 입력해 등록해 주세요.</string>
     <string name="voices_selected_audio_unusable">선택한 오디오를 사용할 수 없어요.</string>
-    <string name="voices_shared_voices_title">공유받은 목소리</string>
     <string name="voices_sharing_shared_desc_disabled">공유는 커플/가족 이용권에서 사용할 수 있어요.</string>
     <string name="voices_sharing_shared_desc_enabled">등록한 목소리를 가족·연인도 함께 사용할 수 있어요.</string>
     <string name="voices_sharing_shared_title">가족·연인에게 공유 허용</string>
     <string name="voices_step_sharing">공유 설정</string>
-    <string name="voices_default_voice_choose">선택하기</string>
     <string name="voices_default_voice_prefetching">알람 음성 준비 중 %1$d/%2$d</string>
-    <string name="voices_default_voice_row_title">기본 목소리</string>
     <string name="voices_upload_change_hint">다른 파일을 선택하려면 탭하세요.</string>
     <string name="voices_single_speaker_hint">한 사람 목소리만 들어간 오디오를 넣어주세요.\n여러 명의 음성이 들어가 있으면 목소리가 달라질 수 있어요.</string>
     <string name="voices_upload_file_or_video">파일 또는 영상 업로드</string>
@@ -691,13 +683,11 @@
     <string name="voicesr_close">닫기</string>
     <string name="voicesr_delete">삭제</string>
     <string name="voices_delete_quota_title">정말 삭제할까요?</string>
-    <string name="voices_delete_quota_message">이번 달 생성 횟수를 모두 사용해, 지금 삭제하면 이번 달엔 새 목소리를 만들 수 없어요.</string>
+    <string name="voices_delete_quota_message">지금 지워도 이번 달에는 새 목소리를 만들 수 없어요. 다음 달부터 다시 만들 수 있어요.</string>
     <string name="voicesr_delete_dialog_confirm">\'%1$s\' 목소리를 삭제할까요?</string>
     <string name="voicesr_delete_dialog_title">목소리 삭제</string>
     <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
-    <string name="voicesr_edit_info">정보 수정</string>
-    <string name="voicesr_listener_title_example_a">예: 민지야, 여보</string>
-    <string name="voicesr_listener_title_label">이 목소리가 나를 부를 이름</string>
+    <string name="voicesr_edit_name">이름 수정</string>
     <string name="voicesr_more">더보기</string>
     <string name="voicesr_pause">일시정지</string>
     <string name="voicesr_prerender_downloading">알람 음성 다운로드 중</string>
@@ -707,15 +697,12 @@
     <string name="voicesr_preview">미리듣기</string>
     <string name="voicesr_relationship_custom_label">관계 직접 입력</string>
     <string name="voicesr_relationship_custom_placeholder">예: 손녀, 연인, 동료</string>
-    <string name="voicesr_relationship_example_a">예: 손녀, 엄마, 연인</string>
-    <string name="voicesr_relationship_label">나와의 관계</string>
     <string name="voicesr_relationship_label_required">나와의 관계 (선택)</string>
     <string name="voicesr_relationship_placeholder">관계를 선택해 주세요</string>
     <string name="voicesr_required_field">꼭 입력해 주세요.</string>
     <string name="voicesr_save">저장</string>
     <string name="voicesr_select">선택</string>
     <string name="voicesr_share_voice">목소리 공유</string>
-    <string name="voicesr_play_shared_sample">미리 듣기</string>
     <string name="voicesr_shared_from_owner">%1$s님에게 공유받은 목소리</string>
     <string name="voicesr_shared_voice">공유받은 목소리</string>
     <string name="voicesr_sharing_badge">공유 중</string>
@@ -927,7 +914,7 @@
     <string name="misc2_pass_plan_family">가족</string>
     <string name="misc2_pass_plan_default">이용권</string>
     <string name="misc2_voice_preview_preparing">미리듣기 준비 중</string>
-    <string name="misc2_voice_preview_pause">미리듣기 일시정지</string>
+    <string name="misc2_voice_preview_pause">미리듣기 정지</string>
     <string name="misc2_voice_preview_play">미리듣기 재생</string>
     <string name="rd2_am">오전</string>
     <string name="rd2_pm">오후</string>
@@ -1012,4 +999,29 @@
     <string name="r3misc_ringing_action_dismiss">알람 끄기</string>
     <string name="r3misc_billing_already_owned">이미 구독 중인 상품이에요. 잠시 후 구독 상태를 새로고침해 주세요.</string>
     <string name="r3misc_billing_purchase_failed">Google Play 결제에 실패했어요. 잠시 후 다시 시도해 주세요.</string>
+    <string name="editor_voice_switch_drops_text_title">기본 목소리로 바꿀까요?</string>
+    <string name="editor_voice_switch_drops_text_message">기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>
+    <string name="editor_voice_switch_drops_text_confirm">바꾸기</string>
+    <string name="onb_voice_download_progress">%1$d / %2$d 준비했어요</string>
+    <string name="onb_voice_download_stay">다 받을 때까지 잠시만 기다려 주세요.
+앱을 나가도 이어서 받아요.</string>
+    <string name="onb_voice_download_failed">목소리를 받지 못했어요.
+연결을 확인하고 다시 시도해 주세요.</string>
+    <string name="onb_voice_download_retry">다시 시도</string>
+    <string name="onb_voice_download_later">나중에 받기</string>
+    <string name="voicesr_share_voice_desc">같은 플랜 가족이 이 목소리로 알람을 만들 수 있어요.</string>
+    <string name="voicesr_share_voice_locked">가족·커플 플랜에서 공유할 수 있어요.</string>
+    <string name="voicesr_system_voice">기본 제공 목소리</string>
+    <string name="voicesr_preview_action">듣기</string>
+    <string name="voices_add">추가</string>
+    <string name="voices_monthly_quota">이번 달 %1$d/%2$d</string>
+    <string name="voices_limit_title">이번 달 목소리는 다 만들었어요</string>
+    <string name="voices_limit_message">목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.</string>
+    <string name="voices_my_voices_title">내 목소리</string>
+    <string name="voices_shared_voices_title">공유받은 목소리</string>
+    <string name="voices_system_voices_title">기본 목소리</string>
+    <string name="plan_gate_redeem_action">쿠폰이 있어요</string>
+    <string name="plan_gate_redeem_title">쿠폰 입력</string>
+    <string name="plan_gate_redeem_desc">받으신 프로모션·선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요.</string>
+    <string name="voicesr_preview_stop">정지</string>
 </resources>

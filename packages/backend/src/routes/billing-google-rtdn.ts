@@ -251,7 +251,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   //
   // 스테일 토큰 게이트: 재가입·플랜변경 직후에는 옛 purchaseToken 의 늦은 EXPIRED/CANCELED
   // 알림이 도착할 수 있다. 사용자 전체 구독에 작용하면 방금 결제한 신규 구독까지
-  // 취소(+가족그룹 파괴+30일 보관 예약)되므로, 이 토큰에 매핑된 구독이 "현재 이 사용자의
+  // 취소(+가족그룹 파괴+보관 예약)되므로, 이 토큰에 매핑된 구독이 "현재 이 사용자의
   // 활성 구독"일 때만 비활성화를 수행하고 아니면 로그만 남기고 정상 ack 한다.
   // (entitle 은 게이트를 타지 않는다 — 신규 구매/부활 알림은 매핑 구독이 비활성인 상태에서
   // 오는 것이 정상이고, applyStoreEntitlement 자체가 토큰 스코프로 동작한다.)
@@ -352,7 +352,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
 
   // deactivate — 즉시 권한 회수(가족 그룹/바우처 정리 포함). 사용자 전체
   // (cancelActiveSubscriptionsForUser)가 아니라 토큰에 매핑된 구독 한 건만 취소한다.
-  // 음성 데이터는 즉시 삭제하지 않고 30일 보관 유예를 건다(재구독 시 entitle 경로가
+  // 음성 데이터는 즉시 삭제하지 않고 보관 유예를 건다(PAID_VOICE_RETENTION_DAYS)(재구독 시 entitle 경로가
   // 유예를 해제하고, sweep 도 삭제 전 활성 유료 구독을 재확인한다).
   const affected = await withWriteTransaction(db, async (tx) => {
     const ids = await cancelSubscriptionImmediate(tx, mappedSubscription, new Date(), {

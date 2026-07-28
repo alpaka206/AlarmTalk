@@ -36,10 +36,7 @@ internal fun MainViewModel.login(email: String, password: String) {
             api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
-            restoreAccessSnapshotForCurrentUser()
-            RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
-            RemoteAlarmSyncScheduler.runOnce(getApplication())
-            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
+            onSignedIn()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email login failed", error)
             val app = getApplication<android.app.Application>()
@@ -100,10 +97,7 @@ private fun MainViewModel.duplicateEmailMessage(error: Throwable): String? {
             authRedirectToLogin = true
             app.getString(R.string.msg_register_email_taken)
         }
-        "AUTH_EMAIL_SOCIAL" -> when (parsed.provider) {
-            "apple" -> app.getString(R.string.msg_register_email_social_apple)
-            else -> app.getString(R.string.msg_register_email_social_google)
-        }
+        "AUTH_EMAIL_SOCIAL" -> app.getString(R.string.msg_register_email_social_google)
         else -> null
     }
 }
@@ -166,12 +160,9 @@ internal fun MainViewModel.register(
             )
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
-            restoreAccessSnapshotForCurrentUser()
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
-            RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
-            RemoteAlarmSyncScheduler.runOnce(getApplication())
-            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
+            onSignedIn()
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Email registration failed", error)
@@ -258,10 +249,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
             api.loginGoogle(GoogleLoginRequest(idToken = idToken))
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
-            restoreAccessSnapshotForCurrentUser()
-            RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
-            RemoteAlarmSyncScheduler.runOnce(getApplication())
-            com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
+            onSignedIn()
             message = null
         }.onFailure { error ->
             AlarmTalkLog.reportError("Google token exchange failed", error)
@@ -269,6 +257,29 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
         }
         authBusy = false
     }
+}
+
+/**
+ * 로그인 성공 직후 공통 처리. 세 경로(이메일 로그인·이메일 가입·구글)가 같은 일을 하므로
+ * 한 곳으로 모은다 — 경로마다 손으로 나열하면 새 로그인 방식이 생길 때 하나씩 빠진다.
+ *
+ * 알람 재예약이 여기 있는 이유: 로그아웃은 이 기기의 AlarmManager 예약을 전부 취소하지만
+ * Room 행은 켜진 채로 둔다(detachAlarmsOnSignOut). 앱을 다시 켜지 않고 그대로 다시
+ * 로그인하면 목록에는 알람이 돌아오는데 예약이 없어 하나도 울리지 않는다. 예전에는
+ * MainViewModel.init 의 시작 시 재예약에만 기대고 있었다.
+ */
+private suspend fun MainViewModel.onSignedIn() {
+    restoreAccessSnapshotForCurrentUser()
+    RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
+    RemoteAlarmSyncScheduler.runOnce(getApplication())
+    com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
+    // 자동 401 은 알람 예약을 그대로 두므로, 그 뒤 다른 계정으로 들어오면 앞 계정 예약이
+    // 살아 있다. 목록에서는 소유자 필터가 감춰 끌 수도 없으니 여기서 내린다.
+    runCatching { repository.cancelAlarmsNotOwnedBy(authSession?.user?.id) }
+        .onFailure { error -> Log.w(TAG, "Failed to cancel other account alarm reservations", error) }
+    runCatching { repository.reschedulePendingAlarms() }
+        .onSuccess { scheduled -> Log.i(TAG, "Rescheduled $scheduled alarms after sign-in") }
+        .onFailure { error -> AlarmTalkLog.reportError("Failed to reschedule alarms after sign-in", error) }
 }
 
 internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
@@ -297,9 +308,8 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
                 Log.w(TAG, "Failed to sign out Google account", error)
             }
         }
-        authSessionStore.clear()
-        clearUserScopedRemoteState() // 동의/탈퇴 게이트 상태(needsConsent·consentChecked·pendingDeletion)도 여기서 초기화된다
-        authSession = null
+        // 알람 분리·기본 목소리 초기화·세션 클리어는 모든 종료 경로 공용(clearSignedInSession).
+        clearSignedInSession()
         authBusy = false
     }
 }
@@ -327,10 +337,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             if (shouldSignOutGoogle) {
                 runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
             }
-            clearCurrentDefaultVoicePreferences()
-            authSessionStore.clear()
-            clearUserScopedRemoteState()
-            authSession = null
+            clearSignedInSession()
             pendingDeletion = false
             dismissDeleteAccount()
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
@@ -514,10 +521,7 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
                 Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
             }
             clearCurrentAccessSnapshot()
-            clearCurrentDefaultVoicePreferences()
-            authSessionStore.clear()
-            clearUserScopedRemoteState()
-            authSession = null
+            clearSignedInSession()
             dismissDeleteAccount()
             message = if (revokeError == null) {
                 getApplication<android.app.Application>().getString(R.string.msg_account_deleted)

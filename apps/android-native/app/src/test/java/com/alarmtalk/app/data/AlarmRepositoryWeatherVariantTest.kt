@@ -151,4 +151,40 @@ class AlarmRepositoryWeatherVariantTest {
             ),
         )
     }
+
+    @Test
+    fun `freshly resolved draft index wins so an edited alarm is saved already resolved`() {
+        // 저장 직전에 새 날짜·지역으로 받아 온 값은 저장된 옛 값보다 우선한다.
+        // 이게 없으면 편집한 알람이 미해결로 저장돼, 워커가 돌기 전에 울리면
+        // '오늘 날씨를 못 받았어요' 클립이 나간다.
+        val state = nextWeatherVariantState(
+            nextBucketId = "weather",
+            resetWeatherVariant = false,
+            currentIndex = 4,
+            draftIndex = 1,
+            currentResolvedAtMillis = 1234L,
+            draftResolvedNow = true,
+        )
+
+        assertTrue(state.index == 1)
+        assertTrue((state.resolvedAtMillis ?: 0L) > 1234L)
+    }
+
+    @Test
+    fun `context change keeps the index resolved for the new context`() {
+        // 날짜·지역·목소리를 바꾼 편집이야말로 reset 이 켜지는 경우다. 저장 전에 새 조건으로
+        // 받아 왔다면 그 값을 써야 한다 — 버리면 워커가 돌기 전까지 미해결이라
+        // 먼저 울리는 알람이 '못 받았어요' 클립을 낸다.
+        val state = nextWeatherVariantState(
+            nextBucketId = "weather",
+            resetWeatherVariant = true,
+            currentIndex = 4,
+            draftIndex = 7,
+            currentResolvedAtMillis = 1234L,
+            draftResolvedNow = true,
+        )
+
+        assertTrue(state.index == 7)
+        assertTrue((state.resolvedAtMillis ?: 0L) > 1234L)
+    }
 }

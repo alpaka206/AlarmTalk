@@ -1,12 +1,13 @@
 import { UUID_RE } from '../lib/validate';
-import { isStoredAudioUrl } from '../lib/audio-loader';
 import { FREE_BUCKET_CATEGORIES, CLONE_PRERENDER_CATEGORIES } from '../lib/stock-clips';
-import { DEFAULT_ALARM_TIMEZONE } from '../lib/scheduler';
 import {
   isBlockedByFamilyAlarmQuietTime,
   type FamilyAlarmSettings,
 } from '../lib/family-alarm-settings';
 import type { DbExecutor } from '../lib/transactions';
+
+/** 알람 시각 판정의 폴백 시간대. 클라가 IANA tz 를 안 보냈거나 값이 부정확할 때 쓴다. */
+export const DEFAULT_ALARM_TIMEZONE = 'Asia/Seoul';
 
 export const ALARM_MODES = ['sound-only', 'tts'] as const;
 export type AlarmMode = (typeof ALARM_MODES)[number];
@@ -22,14 +23,11 @@ export type AlarmRow = Record<string, unknown> & {
   vibration_pattern?: unknown;
   wake_mode?: unknown;
   voice_profile_id?: unknown;
-  speaker_id?: unknown;
   user_id?: unknown;
   target_user_id?: unknown;
   creator_email?: unknown;
   creator_name?: unknown;
   category?: unknown;
-  raw_audio_url?: unknown;
-  raw_audio_duration_ms?: unknown;
 };
 
 export function normalizeAlarmRow(row: AlarmRow, viewer?: string | string[] | null) {
@@ -89,12 +87,6 @@ export function normalizeAlarmRow(row: AlarmRow, viewer?: string | string[] | nu
     vibration_pattern: vibrationPattern,
     wake_mode: wakeMode,
     voice_profile_id: (row.voice_profile_id ?? null) as string | null,
-    speaker_id: (row.speaker_id ?? null) as string | null,
-    raw_audio_url: (row.raw_audio_url ?? null) as string | null,
-    raw_audio_duration_ms:
-      typeof row.raw_audio_duration_ms === 'number'
-        ? row.raw_audio_duration_ms
-        : null,
     sender_user_id: senderUserId,
     sender_name: senderName,
     sender_email: senderEmail,
@@ -111,14 +103,12 @@ export function validateAlarmFields(body: {
   vibration_pattern?: string;
   wake_mode?: string;
   voice_profile_id?: string | null;
-  speaker_id?: string | null;
   time?: string;
   repeat_days?: number[];
   snooze_minutes?: number;
   message_id?: string | null;
   is_active?: boolean;
   target_user_id?: string;
-  raw_audio_url?: string | null;
   bucket_id?: string | null;
 }): FieldError | null {
   if (body.message_id != null && !UUID_RE.test(body.message_id)) {
@@ -144,12 +134,6 @@ export function validateAlarmFields(body: {
     return { error: 'Invalid target_user_id', error_code: 'INVALID_TARGET_USER' };
   }
 
-  if (body.raw_audio_url !== undefined && body.raw_audio_url !== null) {
-    if (typeof body.raw_audio_url !== 'string' || !isStoredAudioUrl(body.raw_audio_url.trim())) {
-      return { error: 'raw_audio_url must be a stored r2:// object', error_code: 'INVALID_RAW_AUDIO_URL' };
-    }
-  }
-
   if (body.mode !== undefined && !ALARM_MODES.includes(body.mode as AlarmMode)) {
     return { error: `mode must be one of: ${ALARM_MODES.join(', ')}`, error_code: 'INVALID_ALARM_MODE' };
   }
@@ -164,10 +148,6 @@ export function validateAlarmFields(body: {
 
   if (body.voice_profile_id !== undefined && body.voice_profile_id !== null && !UUID_RE.test(body.voice_profile_id)) {
     return { error: 'Invalid voice_profile_id format', error_code: 'INVALID_VOICE_PROFILE_ID' };
-  }
-
-  if (body.speaker_id !== undefined && body.speaker_id !== null && !UUID_RE.test(body.speaker_id)) {
-    return { error: 'Invalid speaker_id format', error_code: 'INVALID_SPEAKER_ID' };
   }
 
   if (body.time !== undefined) {

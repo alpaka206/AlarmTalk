@@ -64,7 +64,7 @@
 - 동의하고 음성 만들기
 - 취소
 
-> 구현 메모: 원본 음성 업로드, 화자 분리, 음성 클론, TTS 생성 등 서버 음성 처리 경로는 필요한 민감 동의(`voice_biometric`, `overseas_transfer`)가 없으면 403(CONSENT_REQUIRED)으로 차단합니다. 국외 이전(`overseas_transfer`)은 음성 AI 처리(ElevenLabs) 및 동적 문구/번역(Google Vertex, 미국)이 데이터를 국외로 보내는 경로에서 요구되는 별도 동의입니다.
+> 구현 메모: 원본 음성 업로드, 음성 클론, TTS 생성 등 서버 음성 처리 경로는 필요한 민감 동의(`voice_biometric`, `overseas_transfer`)가 없으면 403(CONSENT_REQUIRED)으로 차단합니다. 국외 이전(`overseas_transfer`)은 음성 AI 처리(ElevenLabs) 및 동적 문구/번역(Google Vertex, 미국)이 데이터를 국외로 보내는 경로에서 요구되는 별도 동의입니다.
 
 ## 3. 마이크 권한 요청 전 설명
 

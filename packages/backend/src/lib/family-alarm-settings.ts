@@ -114,13 +114,14 @@ export function validateQuietWindows(raw: unknown): FamilyAlarmQuietWindow[] | n
 }
 
 export function familyAlarmSettingsFromRow(row: Record<string, unknown>): FamilyAlarmSettings {
-  const legacyWindow = {
-    days: normalizeQuietDays(row.family_alarm_quiet_days),
-    start: normalizeQuietTime(row.family_alarm_quiet_start, DEFAULT_QUIET_START),
-    end: normalizeQuietTime(row.family_alarm_quiet_end, DEFAULT_QUIET_END),
+  // 응답의 quietDays/Start/End 는 windows[0] 에서 파생한다 — 과거의 단일 필드 3컬럼(#29)은
+  // #83 에서 제거됐고, 파싱 불가 시 폴백은 normalizeQuietWindows 의 기본 상수가 담당한다.
+  const quietWindows = normalizeQuietWindows(row.family_alarm_quiet_windows);
+  const firstQuietWindow = quietWindows[0] ?? {
+    days: DEFAULT_QUIET_DAYS,
+    start: DEFAULT_QUIET_START,
+    end: DEFAULT_QUIET_END,
   };
-  const quietWindows = normalizeQuietWindows(row.family_alarm_quiet_windows, [legacyWindow]);
-  const firstQuietWindow = quietWindows[0] ?? legacyWindow;
   return {
     allowFamilyAlarms: Number(row.allow_family_alarms ?? 0) === 1,
     quietDays: firstQuietWindow.days,

@@ -343,6 +343,35 @@ internal fun SnoozeRadioRow(
     }
 }
 
+/**
+ * 잠긴 선택지 행 — 고를 수는 없지만 **목록에서 감추지도 않는다**. 무료 사용자에게 기능이
+ * 존재한다는 것 자체를 보여주고, 누르면 호출부가 이용권 안내를 띄운다.
+ * 선택 점 대신 자물쇠를 두어 "선택 안 됨"과 "잠김"을 눈으로 구분한다.
+ */
+@Composable
+internal fun SnoozeLockedRow(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .heightIn(min = 56.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FeatureLockBadge(size = 18.dp, iconSize = 11.dp)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 internal fun CompactSelectionDot(selected: Boolean) {
     Box(

@@ -1,5 +1,5 @@
 /**
- * 스토어 결제(Apple/Google) 공통 entitlement 적용.
+ * 스토어 결제(Google Play) entitlement 적용.
  *
  * 각 provider 라우트가 결제를 외부 API 로 검증한 뒤 이 모듈로 구독을 반영한다.
  *  - store_transactions (provider, provider_transaction_id) 유니크로 중복 처리 방지.
@@ -12,7 +12,7 @@ import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser, clearPaidVoiceRetention } from './billing-cancel';
 import { planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
 
-export type StoreProvider = 'apple' | 'google';
+export type StoreProvider = 'google';
 
 export interface StorePlan {
   id: string;
@@ -27,7 +27,7 @@ export interface StorePlan {
 export interface StoreEntitlementInput {
   userPk: string;
   provider: StoreProvider;
-  /** provider 별 고유 트랜잭션 식별자 (Apple originalTransactionId / Google purchaseToken). */
+  /** provider 별 고유 트랜잭션 식별자 (Google purchaseToken). */
   providerTransactionId: string;
   productId: string;
   plan: StorePlan;
@@ -103,7 +103,7 @@ export async function applyStoreEntitlement(
     // 같은 사용자의 재전송(갱신 포함) — 기존 구독 만료를 스토어 기준으로 갱신.
     const subscriptionId = (row.subscription_id as string | null) ?? null;
     // plan 이 동일한 재전송/갱신만 "갱신"으로 처리한다. plan 이 바뀐 동일 트랜잭션
-    // (예: Apple 동일 originalTransactionId 로 업/다운그레이드)은 아래 신규 구독 경로로
+    // (예: 동일 purchaseToken 으로 업/다운그레이드)은 아래 신규 구독 경로로
     // 폴백해 구독·plan_group·바우처를 새 plan 으로 교체한다(personal→family 시 그룹/초대 생성,
     // store_transactions 는 (provider, provider_transaction_id) UNIQUE 로 새 구독에 재연결).
     const currentPlanId = subscriptionId

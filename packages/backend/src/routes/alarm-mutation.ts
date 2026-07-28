@@ -21,56 +21,36 @@ import {
 } from './alarm-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
+import { callerOwnerIds, inPlaceholders } from '../lib/caller-ids';
 import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
-import { isR2KeyAuthorized } from '../lib/audio-loader';
 
 const alarmMutation = new Hono<AppEnv>();
-
-/**
- * raw_audio_url(사용자 녹음 원본, r2://raw-alarms/{userId}/...)의 소유권을 검증한다.
- * validateAlarmFields 의 isStoredAudioUrl 은 r2:// 형식만 확인하므로, 그것만으로는
- * 공격자가 타인 R2 키를 자기 알람 raw_audio_url 에 끼워 넣고 DELETE/PATCH 로 참조를
- * 0 으로 만들어(삭제 큐 적재) 타인 객체를 지우는 벡터가 열린다. 키에 박힌 소유자
- * segment 가 호출자(ownerIds)와 일치할 때만 허용한다(isR2KeyAuthorized owner 게이트 재사용).
- */
-function rawAudioUrlBelongsToCaller(rawAudioUrl: string, ownerIds: string[]): boolean {
-  const trimmed = rawAudioUrl.trim();
-  const key = trimmed.startsWith('r2://') ? trimmed.slice('r2://'.length) : trimmed;
-  return isR2KeyAuthorized(key, { kind: 'owner', ownerIds });
-}
 
 function alarmUsesPaidVoice(body: {
   mode?: string | null;
   wake_mode?: string | null;
   message_id?: string | null;
   voice_profile_id?: string | null;
-  speaker_id?: string | null;
-  raw_audio_url?: string | null;
 }): boolean {
   return (
     body.mode === 'tts' ||
     body.wake_mode === 'voice_only' ||
     !!body.message_id ||
-    !!body.voice_profile_id ||
-    !!body.speaker_id ||
-    !!body.raw_audio_url
+    !!body.voice_profile_id
   );
 }
 
 /**
  * 무료 플랜도 시스템 스톡 보이스 기반 TTS 알람은 허용한다.
- * 녹음/파일(raw_audio_url, speaker_id) 알람은 여전히 유료 전용.
+ * 그 외 사용자 목소리(클론) 기반 알람은 유료 전용.
  */
 async function usesOnlySystemStockVoice(
   db: ReturnType<typeof getDB>,
   body: {
     message_id?: string | null;
     voice_profile_id?: string | null;
-    speaker_id?: string | null;
-    raw_audio_url?: string | null;
   },
 ): Promise<boolean> {
-  if (body.raw_audio_url || body.speaker_id) return false;
   if (body.voice_profile_id) {
     const res = await db.execute({
       sql: `SELECT 1 FROM voice_profiles
@@ -219,7 +199,8 @@ alarmMutation.post('/', async (c) => {
   const userId = c.get('userId');
   const resolvedUserPk = c.get('userIdPK');
   const userPk = resolvedUserPk || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // [users.id, 토큰 로그인 식별자] — 통일 이전에 만들어진 행까지 매칭한다.
+  const ownerIds = callerOwnerIds(c) as [string, string];
   const db = getDB(c.env);
 
   const body = await c.req.json<{
@@ -232,9 +213,6 @@ alarmMutation.post('/', async (c) => {
     vibration_pattern?: string;
     wake_mode?: string;
     voice_profile_id?: string;
-    speaker_id?: string;
-    raw_audio_url?: string;
-    raw_audio_duration_ms?: number;
     timezone?: string;
     // 무료 버킷 회전 알람이 가리키는 버킷(예: 'morning'·'medication'). message_id 는
     // 대표(변형0) 스톡 클립을 그대로 유지하므로 회전 미지원 경로에선 폴백 단일 재생.
@@ -245,23 +223,13 @@ alarmMutation.post('/', async (c) => {
     return c.json({ error: 'time is required', error_code: 'REQUIRED_FIELDS_MISSING' }, 400);
   }
   const timezone = normalizeTimezone(body.timezone);
-  // Three valid sources for what the alarm plays:
-  //   1. message_id          → TTS / saved voice clip
-  //   2. raw_audio_url       → user-recorded raw audio
-  //   3. neither             → "alarm-only" mode: device default alarm sound
-  // No further check needed; the alarm row stores message_id NULL for case 3.
+  // Two valid sources for what the alarm plays:
+  //   1. message_id → TTS / 저장된 음성 클립 (가족 전송 포함)
+  //   2. neither    → "alarm-only" 모드: 기기 기본 알람음
+  // 내 알람용 로컬 녹음/파일은 폰에만 두고 서버로 올리지 않는다.
 
   const fieldError = validateAlarmFields(body);
   if (fieldError) return c.json(fieldError, 400);
-
-  // raw_audio_url 소유권 검증(B): 저장 전에 r2:// 키의 소유자 segment 가 호출자인지 확인한다.
-  // 타인 키를 넣어 두면 이후 DELETE/PATCH 교체 시 참조 0 판정으로 타인 R2 객체가 삭제 큐에 적재된다.
-  if (
-    body.raw_audio_url != null &&
-    !rawAudioUrlBelongsToCaller(body.raw_audio_url, ownerIds)
-  ) {
-    return c.json({ error: 'Raw audio not found', error_code: 'RAW_AUDIO_FORBIDDEN' }, 403);
-  }
 
   let targetUserIdForAlarm: string | null = null;
   // 타깃 경로에서 (수신자 PK, 수신자 로그인 id) — 슬롯 교체(claimTargetedAlarmSlot)에 쓴다.
@@ -276,7 +244,6 @@ alarmMutation.post('/', async (c) => {
     if (rawTargetUserId !== userId) {
       const targetRes = await db.execute({
         sql: `SELECT id, google_id, allow_family_alarms,
-                     family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
                      family_alarm_quiet_windows
               FROM users
               WHERE google_id = ? OR id = ?
@@ -286,8 +253,8 @@ alarmMutation.post('/', async (c) => {
       if (targetRes.rows.length === 0) {
         return c.json(
           {
-            error: '친구 관계인 사용자에게만 알람을 설정할 수 있습니다.',
-            error_code: 'NOT_FRIENDS',
+            error: '같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.',
+            error_code: 'NOT_CONNECTED',
           },
           403,
         );
@@ -295,14 +262,36 @@ alarmMutation.post('/', async (c) => {
 
       const target = targetRes.rows[0]!;
       const targetPk = String(target.id);
-      const targetLoginId = (target.google_id as string | null) ?? targetPk;
+      // 읽기(기존 행 매칭)용 보조 식별자. 이 통일 이전에 만들어진 알람은
+      // target_user_id 에 google_id 가 들어 있을 수 있어 조회 때 둘 다 본다.
+      // **쓰기에는 쓰지 않는다** — 저장은 항상 users.id(targetPk).
+      const targetLegacyId = (target.google_id as string | null) ?? targetPk;
+
+      // 상대 알람 권한(같은 커플/가족 그룹)을 '먼저' 확인한다. 아래 타이밍 가드는 수신자의
+      // 설정(allow_family_alarms·quiet 창)에 따라 서로 다른 error_code 를 돌려주므로, 권한
+      // 확인보다 앞서 실행하면 그룹 밖 호출자가 임의 target_user_id 의 계정 존재·quiet 설정을
+      // 응답 코드로 구분하는 오라클이 된다. 권한 없으면 타이밍 판정 전에 NOT_CONNECTED 로 끊는다.
+      const senderPk = await resolveUserPk(db, userId);
+      const allowed =
+        !!senderPk && targetPk !== senderPk && (await assertSameGroup(db, senderPk, targetPk));
+
+      if (!allowed) {
+        return c.json(
+          {
+            error: '같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.',
+            error_code: 'NOT_CONNECTED',
+          },
+          403,
+        );
+      }
+
       const targetSettings = familyAlarmSettingsFromRow(target as Record<string, unknown>);
       // 수신자 기준 시각 가드(허용 여부·30분 리드타임·quiet 요일). 발신자 body.timezone 은
       // 판정·저장 어디에도 쓰지 않고, 헬퍼가 산출한 효과 시간대(수신자 최근 알람 tz →
       // Asia/Seoul)로 판정한다. PATCH 수정 경로와 동일 헬퍼를 공유한다(중복 구현 방지).
       const guard = await evaluateFamilyAlarmTimingGuard(
         db,
-        [targetPk, targetLoginId],
+        [targetPk, targetLegacyId],
         targetSettings,
         body.time,
         body.repeat_days ?? [],
@@ -312,32 +301,11 @@ alarmMutation.post('/', async (c) => {
       }
       const effectiveTimezone = guard.effectiveTimezone;
 
-      const friendship = await db.execute({
-        sql: `SELECT id FROM friendships
-              WHERE ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
-                AND status = 'accepted'`,
-        args: [userId, targetLoginId, targetLoginId, userId],
-      });
-
-      if (friendship.rows.length > 0) {
-        targetUserIdForAlarm = targetLoginId;
-      } else {
-        const senderPk = await resolveUserPk(db, userId);
-        const allowed =
-          targetLoginId !== userId && !!senderPk && (await assertSameGroup(db, senderPk, targetPk));
-
-        if (!allowed) {
-          return c.json(
-            {
-              error: '친구 또는 같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.',
-              error_code: 'NOT_CONNECTED',
-            },
-            403,
-          );
-        }
-        targetUserIdForAlarm = targetLoginId;
-      }
-      targetIdsForReplace = [targetPk, targetLoginId];
+      // 저장은 users.id 로 고정한다. 과거에는 google_id 를 넣었는데, JWT sub 이 users.id 로
+      // 통일된 뒤로는 수신자 세션의 식별자가 users.id 라 google_id 로 저장하면 수신자가
+      // 자기 알람을 조회하지 못한다(= 가족 알람이 배달되지 않는다).
+      targetUserIdForAlarm = targetPk;
+      targetIdsForReplace = [targetPk, targetLegacyId];
       targetEffectiveTimezone = effectiveTimezone;
     }
   }
@@ -345,7 +313,7 @@ alarmMutation.post('/', async (c) => {
   const alarmOwner = targetUserIdForAlarm || userId;
 
   const user = await db.execute({
-    sql: 'SELECT plan FROM users WHERE google_id = ?',
+    sql: 'SELECT plan FROM users WHERE id = ?',
     args: [alarmOwner],
   });
   let creatorPlanValue =
@@ -373,11 +341,7 @@ alarmMutation.post('/', async (c) => {
     );
   }
 
-  // Raw-audio alarms have no real TTS message but the schema still requires
-  // message_id (NOT NULL). Insert a "raw" placeholder message that points at
-  // the same audio URL so the alarm row is satisfied. We attach it to the
-  // user's first voice profile because messages.voice_profile_id is NOT NULL.
-  let resolvedMessageId: string | null = body.message_id ?? null;
+  const resolvedMessageId: string | null = body.message_id ?? null;
   if (
     body.voice_profile_id &&
     !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
@@ -385,31 +349,7 @@ alarmMutation.post('/', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  if (!resolvedMessageId && body.raw_audio_url) {
-    const firstVoice = await db.execute({
-      sql: `SELECT id FROM voice_profiles
-            WHERE user_id IN (?, ?) AND deleted_at IS NULL
-              AND COALESCE(is_draft, 0) = 0
-            LIMIT 1`,
-      args: ownerIds,
-    });
-    if (firstVoice.rows.length === 0) {
-      return c.json(
-        {
-          error: 'A voice profile is required to create a raw-audio alarm.',
-          error_code: 'VOICE_PROFILE_REQUIRED',
-        },
-        400,
-      );
-    }
-    const placeholderMsgId = crypto.randomUUID();
-    await db.execute({
-      sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
-            VALUES (?, ?, ?, '', ?, 'raw')`,
-      args: [placeholderMsgId, userPk, firstVoice.rows[0]!.id as string, body.raw_audio_url],
-    });
-    resolvedMessageId = placeholderMsgId;
-  } else if (resolvedMessageId) {
+  if (resolvedMessageId) {
     // 본인 소유 메시지뿐 아니라 시스템 스톡 클립(is_preset=1 + 시스템 보이스)도
     // 허용한다. 무료 플랜은 스톡 클립으로 알람을 만들 수 있어야 하는데, 기존
     // 검증은 user_id 만 봐서 스톡 클립 알람을 404 로 막고 있었다
@@ -451,9 +391,9 @@ alarmMutation.post('/', async (c) => {
     executor.execute({
       sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
-             mode, vibration_pattern, wake_mode, voice_profile_id, speaker_id,
-             raw_audio_url, raw_audio_duration_ms, timezone, bucket_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             mode, vibration_pattern, wake_mode, voice_profile_id,
+             timezone, bucket_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         alarmId,
         userId,
@@ -466,9 +406,6 @@ alarmMutation.post('/', async (c) => {
         vibPattern,
         wakeMode,
         body.voice_profile_id ?? null,
-        body.speaker_id ?? null,
-        body.raw_audio_url ?? null,
-        body.raw_audio_duration_ms ?? null,
         storedTimezone,
         body.bucket_id ?? null,
       ],
@@ -486,8 +423,8 @@ alarmMutation.post('/', async (c) => {
       await executor.execute({
         sql: `UPDATE alarms SET
                 message_id = ?, repeat_days = ?, snooze_minutes = ?, mode = ?,
-                vibration_pattern = ?, wake_mode = ?, voice_profile_id = ?, speaker_id = ?,
-                raw_audio_url = ?, raw_audio_duration_ms = ?, timezone = ?, bucket_id = ?,
+                vibration_pattern = ?, wake_mode = ?, voice_profile_id = ?,
+                timezone = ?, bucket_id = ?,
                 is_active = 1, updated_at = datetime('now')
               WHERE id = ?`,
         args: [
@@ -498,9 +435,6 @@ alarmMutation.post('/', async (c) => {
           vibPattern,
           wakeMode,
           body.voice_profile_id ?? null,
-          body.speaker_id ?? null,
-          body.raw_audio_url ?? null,
-          body.raw_audio_duration_ms ?? null,
           storedTimezone,
           body.bucket_id ?? null,
           claimed.alarmId,
@@ -542,7 +476,7 @@ alarmMutation.post('/', async (c) => {
 
   // 가족 알람(target_user_id 지정)이면 수신자에게 즉시 push — /family/alarms 뿐 아니라 이 일반 생성
   // 경로(stock/TTS/녹음 가족 알람, 클라 createAlarm)도 즉시 배달한다. getTokensForUser 가
-  // google_id/apple_id/id 를 정규화하므로 targetLoginId 그대로 전달. 논블로킹(waitUntil), executionCtx
+  // fcm 이 id/google_id 를 모두 매칭하므로 users.id 그대로 전달. 논블로킹(waitUntil), executionCtx
   // 없는 컨텍스트(테스트)에선 c.executionCtx 접근이 던지므로 try 로 감싸 생략(그 경우 쿼리도 안 돌아 mock
   // FIFO 도 안 밀림), 15분 주기 pull 폴백.
   if (targetUserIdForAlarm) {
@@ -564,7 +498,6 @@ alarmMutation.post('/', async (c) => {
         mode,
         vibration_pattern: vibPattern,
         voice_profile_id: body.voice_profile_id ?? null,
-        speaker_id: body.speaker_id ?? null,
       },
     },
     201,
@@ -585,7 +518,6 @@ function parseStoredRepeatDays(raw: unknown): number[] {
 }
 
 alarmMutation.patch('/:id', async (c) => {
-  const userId = c.get('userId');
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -603,9 +535,6 @@ alarmMutation.patch('/:id', async (c) => {
     vibration_pattern?: string;
     wake_mode?: string;
     voice_profile_id?: string | null;
-    speaker_id?: string | null;
-    raw_audio_url?: string | null;
-    raw_audio_duration_ms?: number | null;
     timezone?: string | null;
     bucket_id?: string | null;
   }>();
@@ -613,14 +542,17 @@ alarmMutation.patch('/:id', async (c) => {
   const fieldError = validateAlarmFields(body);
   if (fieldError) return c.json(fieldError, 400);
 
+  // 소유권 게이트는 두 식별자를 모두 본다 — 통일 이전에 만들어진 알람은 user_id 에
+  // 로그인 식별자가 들어 있어, users.id 하나로만 걸면 자기 알람을 수정할 수 없다.
+  const patchOwnerIds = callerOwnerIds(c);
   const existing = await db.execute({
     sql: `SELECT a.id, a.target_user_id, a.time, a.repeat_days, a.is_active,
                  a.message_id, a.mode, a.wake_mode, a.voice_profile_id,
-                 a.speaker_id, a.raw_audio_url, a.bucket_id, u.plan AS user_plan
+                 a.bucket_id, u.plan AS user_plan
           FROM alarms a
           LEFT JOIN users u ON u.google_id = a.user_id OR u.id = a.user_id
-          WHERE a.id = ? AND a.user_id = ?`,
-    args: [id, userId],
+          WHERE a.id = ? AND a.user_id IN (${inPlaceholders(patchOwnerIds)})`,
+    args: [id, ...patchOwnerIds],
   });
   if (existing.rows.length === 0) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
@@ -635,8 +567,6 @@ alarmMutation.patch('/:id', async (c) => {
     mode: string | null;
     wake_mode: string | null;
     voice_profile_id: string | null;
-    speaker_id: string | null;
-    raw_audio_url: string | null;
     bucket_id?: string | null;
     user_plan?: string | null;
   }>(existing.rows[0]!);
@@ -649,8 +579,6 @@ alarmMutation.patch('/:id', async (c) => {
     message_id: body.message_id !== undefined ? body.message_id : current.message_id,
     voice_profile_id:
       body.voice_profile_id !== undefined ? body.voice_profile_id : current.voice_profile_id,
-    speaker_id: body.speaker_id !== undefined ? body.speaker_id : current.speaker_id,
-    raw_audio_url: body.raw_audio_url !== undefined ? body.raw_audio_url : current.raw_audio_url,
   };
   if (
     !creatorHasPaidVoice &&
@@ -670,7 +598,7 @@ alarmMutation.patch('/:id', async (c) => {
   // POST 생성 경로와 동일한 소유권/프리셋 검증을 다시 수행한다. 이 검증이
   // 없으면 호출자가 타인 소유 message_id(타인 음성 클립)나 voice_profile_id 를
   // 자기 알람에 끼워 넣어 cross-tenant 리소스를 참조/재생할 수 있다.
-  const ownerIds = [resolvedUserPk || userId, userId] as [string, string];
+  const ownerIds = callerOwnerIds(c) as [string, string];
   if (
     body.message_id !== undefined &&
     body.message_id !== null &&
@@ -686,14 +614,6 @@ alarmMutation.patch('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  // raw_audio_url 소유권 검증(B): 새 값으로 교체할 때 타인 R2 키를 기록해 이후 삭제
-  // 벡터를 열지 못하게 한다. null(클리어)은 소유권 검증이 필요 없어 통과.
-  if (
-    body.raw_audio_url != null &&
-    !rawAudioUrlBelongsToCaller(body.raw_audio_url, ownerIds)
-  ) {
-    return c.json({ error: 'Raw audio not found', error_code: 'RAW_AUDIO_FORBIDDEN' }, 403);
-  }
 
   // greeting 버킷 정책: PATCH 로 bucket/voice/message 를 바꿔 '시스템 보이스 + greeting'
   // 조합(무료 우회)을 만들 수 없게, 수정 결과(effective) 기준으로 클론 여부를 검증한다.
@@ -742,7 +662,6 @@ alarmMutation.patch('/:id', async (c) => {
     // 수신자 재조회(allowFamilyAlarms·quiet). target_user_id 는 로그인 id(google_id) 또는 pk.
     const recipientRes = await db.execute({
       sql: `SELECT id, google_id, allow_family_alarms,
-                   family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
                    family_alarm_quiet_windows
             FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
       args: [patchTargetUserId, patchTargetUserId],
@@ -756,7 +675,8 @@ alarmMutation.patch('/:id', async (c) => {
     }
     const recipient = recipientRes.rows[0]!;
     const recipientPk = String(recipient.id);
-    const recipientLoginId = (recipient.google_id as string | null) ?? recipientPk;
+    // 읽기(기존 행 매칭)용 — 저장은 하지 않는다.
+    const recipientLegacyId = (recipient.google_id as string | null) ?? recipientPk;
     const recipientSettings = familyAlarmSettingsFromRow(recipient as Record<string, unknown>);
     // effective 값: PATCH 로 안 바꾼 필드는 기존 행 값을 쓴다(수정 결과 기준 판정).
     const effectiveTime = body.time !== undefined ? body.time : String(current.time ?? '');
@@ -766,7 +686,7 @@ alarmMutation.patch('/:id', async (c) => {
         : parseStoredRepeatDays(current.repeat_days);
     const guard = await evaluateFamilyAlarmTimingGuard(
       db,
-      [recipientPk, recipientLoginId],
+      [recipientPk, recipientLegacyId],
       recipientSettings,
       effectiveTime,
       effectiveRepeatDays,
@@ -777,7 +697,7 @@ alarmMutation.patch('/:id', async (c) => {
     familyGuardTimezone = guard.effectiveTimezone;
     // time 변경 또는 재활성화면 (수신자, 새 time) 슬롯을 원자 재점유해 이 알람만 활성으로 남긴다.
     if (body.time !== undefined || reactivating) {
-      familyReclaim = { ids: [recipientPk, recipientLoginId], time: effectiveTime };
+      familyReclaim = { ids: [recipientPk, recipientLegacyId], time: effectiveTime };
     }
   }
 
@@ -819,18 +739,6 @@ alarmMutation.patch('/:id', async (c) => {
   if (body.voice_profile_id !== undefined) {
     updates.push('voice_profile_id = ?');
     args.push(body.voice_profile_id);
-  }
-  if (body.speaker_id !== undefined) {
-    updates.push('speaker_id = ?');
-    args.push(body.speaker_id);
-  }
-  if (body.raw_audio_url !== undefined) {
-    updates.push('raw_audio_url = ?');
-    args.push(body.raw_audio_url);
-  }
-  if (body.raw_audio_duration_ms !== undefined) {
-    updates.push('raw_audio_duration_ms = ?');
-    args.push(body.raw_audio_duration_ms);
   }
   if (body.timezone !== undefined) {
     updates.push('timezone = ?');
@@ -917,34 +825,10 @@ alarmMutation.patch('/:id', async (c) => {
     return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
   }
 
-  // raw_audio_url 을 새 값으로 교체하면 이전 R2 녹음이 어떤 알람에서도 참조되지
-  // 않을 수 있다. DELETE 핸들러와 동일하게, 더 이상 쓰이지 않는 이전 오브젝트를
-  // 삭제 큐에 적재해 영구 고아를 막는다(교체 경로에는 기존에 이 정리가 없었다).
-  // 단, 쓰기 게이트(rawAudioUrlBelongsToCaller) 이전에 생성된 레거시 알람은 타인
-  // 키를 참조할 수 있으므로, 삭제 큐 적재 전에도 소유권을 확인해 타인 오브젝트가
-  // 삭제되지 않게 한다(cross-tenant 삭제 차단).
-  if (body.raw_audio_url !== undefined) {
-    const previousRawUrl = current.raw_audio_url;
-    if (
-      previousRawUrl?.startsWith('r2://') &&
-      previousRawUrl !== body.raw_audio_url &&
-      rawAudioUrlBelongsToCaller(previousRawUrl, ownerIds)
-    ) {
-      const stillReferenced = await db.execute({
-        sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE raw_audio_url = ?',
-        args: [previousRawUrl],
-      });
-      if (Number(typedRow<{ cnt: number }>(stillReferenced.rows[0]!).cnt ?? 0) === 0) {
-        const { enqueueExternalDeletion } = await import('../lib/audio-retention');
-        await enqueueExternalDeletion(db, 'r2_object', previousRawUrl.replace(/^r2:\/\//, ''));
-      }
-    }
-  }
-
   const updated = await db.execute({
     sql: `SELECT id, user_id, target_user_id, message_id, time, repeat_days,
                  is_active, snooze_minutes, mode, vibration_pattern, wake_mode,
-                 voice_profile_id, speaker_id, bucket_id, created_at, updated_at
+                 voice_profile_id, bucket_id, created_at, updated_at
           FROM alarms WHERE id = ?`,
     args: [id],
   });
@@ -963,7 +847,8 @@ async function resolveDeclineTarget(
 ): Promise<{ id: string; target: string } | { error: Response }> {
   const userId = c.get('userId');
   const userPk = c.get('userIdPK') || userId;
-  const viewer = Array.from(new Set([userPk, userId]));
+  // 레거시 행(user_id 에 로그인 식별자가 저장된 과거 알람)까지 매칭한다.
+  const viewer = Array.from(new Set([userPk, c.get('userLoginId')].filter(Boolean)));
   const db = getDB(c.env);
   const id = c.req.param('id');
   if (!id || !UUID_RE.test(id)) {
@@ -1000,21 +885,11 @@ alarmMutation.post('/:id/decline', async (c) => {
   return c.json({ success: true, declined: true });
 });
 
-alarmMutation.delete('/:id/decline', async (c) => {
-  const resolved = await resolveDeclineTarget(c);
-  if ('error' in resolved) return resolved.error;
-  const db = getDB(c.env);
-  await db.execute({
-    sql: 'DELETE FROM alarm_recipient_state WHERE alarm_id = ? AND recipient_user_id = ?',
-    args: [resolved.id, resolved.target],
-  });
-  return c.json({ success: true, declined: false });
-});
-
 alarmMutation.delete('/:id', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // 조회·삭제·에셋 정리가 모두 같은 식별자 집합을 본다. 통일 이전에 만들어진 알람은
+  // user_id 에 로그인 식별자가 들어 있어, users.id 하나로만 걸면 소유권 조회는 통과해도
+  // 정작 DELETE 가 0행이라 ALARM_NOT_FOUND 로 끝난다.
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -1023,37 +898,22 @@ alarmMutation.delete('/:id', async (c) => {
   }
 
   const targetRes = await db.execute({
-    sql: 'SELECT message_id, raw_audio_url FROM alarms WHERE id = ? AND user_id = ? LIMIT 1',
-    args: [id, userId],
+    sql: `SELECT message_id FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
+    args: [id, ...ownerIds],
   });
   const targetAlarm =
     targetRes.rows.length > 0
-      ? typedRow<{ message_id: string | null; raw_audio_url: string | null }>(targetRes.rows[0]!)
+      ? typedRow<{ message_id: string | null }>(targetRes.rows[0]!)
       : null;
   const messageId = targetAlarm?.message_id ?? null;
-  const rawAudioUrl = targetAlarm?.raw_audio_url ?? null;
 
   const result = await db.execute({
-    sql: 'DELETE FROM alarms WHERE id = ? AND user_id = ?',
-    args: [id, userId],
+    sql: `DELETE FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)})`,
+    args: [id, ...ownerIds],
   });
 
   if (result.rowsAffected === 0) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
-  }
-
-  // 사용자 녹음 원본(r2://)이 더 이상 어떤 알람에도 쓰이지 않으면 R2 삭제 큐에 적재.
-  // 쓰기 게이트 이전의 레거시 알람이 타인 키를 참조할 수 있으므로, 삭제 큐 적재 전에
-  // 소유권을 확인해 타인 오브젝트가 삭제되지 않게 한다(cross-tenant 삭제 차단).
-  if (rawAudioUrl?.startsWith('r2://') && rawAudioUrlBelongsToCaller(rawAudioUrl, ownerIds)) {
-    const rawRefRes = await db.execute({
-      sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE raw_audio_url = ?',
-      args: [rawAudioUrl],
-    });
-    if (Number(typedRow<{ cnt: number }>(rawRefRes.rows[0]!).cnt ?? 0) === 0) {
-      const { enqueueExternalDeletion } = await import('../lib/audio-retention');
-      await enqueueExternalDeletion(db, 'r2_object', rawAudioUrl.replace(/^r2:\/\//, ''));
-    }
   }
 
   if (messageId) {

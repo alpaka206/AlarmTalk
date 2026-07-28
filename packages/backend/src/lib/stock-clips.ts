@@ -637,8 +637,7 @@ export async function deleteStockClips(
   await db.execute({
     sql: `UPDATE alarms
           SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-              message_id = NULL, voice_profile_id = NULL, speaker_id = NULL,
-              raw_audio_url = NULL, raw_audio_duration_ms = NULL
+              message_id = NULL, voice_profile_id = NULL
           WHERE message_id IN (${ph})`,
     args: ids,
   });

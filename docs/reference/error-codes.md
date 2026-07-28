@@ -34,12 +34,11 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
-| `USER_NOT_FOUND` | 인증 주체/대상 사용자를 DB 에서 찾을 수 없음 | 404 | 다수(`routes/user.ts`, `billing-*.ts`, `friend.ts`, `notes.ts`, `family-*.ts` 등) |
-| `FORBIDDEN` | 리소스 접근/소유권 없음(일반) | 403 | `routes/notes.ts`, `voice-upload.ts`, `billing-mutation.ts` |
-| `INVALID_REQUEST` | 요청 바디 파싱/검증 실패(결제 계열) | 400 | `routes/billing-apple.ts`, `billing-google.ts` |
+| `USER_NOT_FOUND` | 인증 주체/대상 사용자를 DB 에서 찾을 수 없음 | 404 | 다수(`routes/user.ts`, `billing-*.ts`, `family-*.ts` 등) |
+| `FORBIDDEN` | 리소스 접근/소유권 없음(일반) | 403 | `routes/voice-upload.ts`, `billing-mutation.ts` |
+| `INVALID_REQUEST` | 요청 바디 파싱/검증 실패(결제 계열) | 400 | `routes/billing-google.ts` |
 | `INVALID_JSON` | JSON 본문 파싱 실패 | 400 | `routes/user.ts` |
 | `JSON_BODY_REQUIRED` | JSON 본문 필요 | 400 | `routes/voice-profile.ts`, `voice-upload.ts` |
-| `INVALID_ID_FORMAT` | 경로/식별자 형식 오류(일반) | 400 | `routes/friend.ts`, `gift.ts`, `voice-upload.ts` |
 | `ADMIN_UNCONFIGURED` | 관리자 콘솔 미구성(`ADMIN_SECRET` 없음) | 503 | `routes/admin.ts` |
 
 ## 2. 인증 / 계정 (Auth / Account)
@@ -74,10 +73,6 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `AUTH_LOGOUT_FAILED` | 로그아웃 처리 실패 | 500 | `routes/auth.ts` |
 | `AUTH_GOOGLE_CONFIG_MISSING` | Google client ID 미설정 | 500 | `routes/auth.ts` |
 | `AUTH_GOOGLE_FAILED` | Google 로그인 검증 실패 | 5xx | `routes/auth.ts` |
-| `AUTH_APPLE_CONFIG_MISSING` | Apple client ID 미설정 | 500 | `routes/auth.ts` |
-| `AUTH_APPLE_NONCE_MISMATCH` | Apple 로그인 nonce 불일치 | 401 | `routes/auth.ts` |
-| `AUTH_APPLE_FAILED` | Apple 로그인 검증 실패 | 5xx | `routes/auth.ts` |
-| `FETCH_USER_FAILED` | 내 정보 조회 실패 | 500 | `routes/user.ts` |
 | `INVALID_NAME` | name 이 문자열이 아님 | 400 | `routes/user.ts` |
 | `INVALID_NAME_LENGTH` | 닉네임 길이 규칙 위반(1~30자) | 400 | `routes/user.ts`, `voice-profile.ts` |
 | `INVALID_BOOLEAN` | boolean 필드 형식 오류(`allow_family_alarms`) | 400 | `routes/user.ts` |
@@ -86,9 +81,6 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `INVALID_QUIET_TIME` | 방해금지 시각 형식 오류 | 400 | `routes/user.ts` |
 | `INVALID_DYNAMIC_PROMPT_SETTINGS` | 동적 프롬프트 설정 형식 오류 | 400 | `routes/user.ts` |
 | `NO_FIELDS_TO_UPDATE` | 변경할 필드 없음(프로필) | 400 | `routes/user.ts` |
-| `INVALID_PLAN` | 알 수 없는 plan 값 | 400 | `routes/user.ts` |
-| `PLAN_UPGRADE_NOT_ALLOWED` | 무결제 유료 승격 차단(free 강등만 허용) | 403 | `routes/user.ts` |
-| `UPDATE_PLAN_FAILED` | 플랜 변경 처리 실패 | 500 | `routes/user.ts` |
 | `INVALID_CONSENT_TYPE` | 알 수 없는 동의 type | 400 | `routes/user.ts` |
 | `CONSENTS_REQUIRED` | consents 필드 필요 | 400 | `routes/user.ts` |
 | `CONSENT_RECORD_FAILED` | 동의 기록 실패 | 500 | `routes/user.ts` |
@@ -98,31 +90,24 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `NO_PENDING_DELETION` | 취소할 탈퇴 예약 없음 | 404 | `routes/user.ts` |
 | `DELETION_CANCEL_FAILED` | 탈퇴 취소 처리 실패 | 500 | `routes/user.ts` |
 | `DELETE_ACCOUNT_FAILED` | 계정 삭제 처리 실패 | 500 | `routes/user.ts` |
-| `SEARCH_FAILED` | 사용자 검색 실패 | 500 | `routes/user.ts` |
 
 ## 3. 결제 / 구독 (Billing / Subscription)
 
-`routes/billing-apple.ts`, `billing-google.ts`, `billing-google-rtdn.ts`, `billing-mutation.ts`, `lib/store-billing.ts`.
+`routes/billing-google.ts`, `billing-google-rtdn.ts`, `billing-mutation.ts`, `lib/store-billing.ts`.
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
-| `APPLE_BILLING_UNCONFIGURED` | Apple 결제 서버 미구성 | 503 | `routes/billing-apple.ts` |
 | `GOOGLE_BILLING_UNCONFIGURED` | Google 결제 서버 미구성 | 503 | `routes/billing-google.ts` |
 | `RTDN_UNCONFIGURED` | RTDN(실시간 알림) 미구성 | 503 | `routes/billing-google-rtdn.ts` |
 | `RTDN_BAD_TOKEN` | RTDN 검증 토큰 불일치 | 403 | `routes/billing-google-rtdn.ts` |
-| `UNKNOWN_PRODUCT` | SKU 화이트리스트 밖 상품 id | 400 | `routes/billing-apple.ts`, `billing-google.ts` |
+| `UNKNOWN_PRODUCT` | SKU 화이트리스트 밖 상품 id | 400 | `routes/billing-google.ts` |
 | `PACKAGE_MISMATCH` | 패키지명 불일치 | 400 | `routes/billing-google.ts` |
-| `BUNDLE_MISMATCH` | 번들 id 불일치 | 400 | `routes/billing-apple.ts` |
-| `PRODUCT_MISMATCH` | 상품 id 불일치 | 400 | `routes/billing-apple.ts`, `billing-google.ts` |
-| `APPLE_VERIFICATION_FAILED` | Apple 트랜잭션 검증 실패(업스트림) | 502 | `routes/billing-apple.ts` |
-| `APPLE_TRANSACTION_NOT_FOUND` | Apple 트랜잭션 미존재 | 404 | `routes/billing-apple.ts` |
+| `PRODUCT_MISMATCH` | 상품 id 불일치 | 400 | `routes/billing-google.ts` |
 | `GOOGLE_VERIFICATION_FAILED` | Google 구매 검증 실패(업스트림) | 502 | `routes/billing-google.ts`, `billing-google-rtdn.ts` |
 | `GOOGLE_PURCHASE_NOT_FOUND` | Google 구매 미존재 | 404 | `routes/billing-google.ts` |
 | `SUBSCRIPTION_NOT_ACTIVE` | 구독 상태가 entitled 아님 | 400 | `routes/billing-google.ts` |
-| `TRANSACTION_REVOKED` | 트랜잭션이 취소(revoke)됨 | 400 | `routes/billing-apple.ts` |
-| `SUBSCRIPTION_EXPIRED` | 구독 만료 | 400 | `routes/billing-apple.ts`, `billing-google.ts` |
-| `SANDBOX_TRANSACTION` | 프로덕션에서 샌드박스 트랜잭션 | 400 | `routes/billing-apple.ts` |
-| `TRANSACTION_OWNED_BY_OTHER_USER` | 다른 계정에 귀속된 트랜잭션/구매 | 409 | `lib/store-billing.ts`(→ `billing-apple.ts`/`billing-google.ts`) |
+| `SUBSCRIPTION_EXPIRED` | 구독 만료 | 400 | `routes/billing-google.ts` |
+| `TRANSACTION_OWNED_BY_OTHER_USER` | 다른 계정에 귀속된 트랜잭션/구매 | 409 | `lib/store-billing.ts`(→ `billing-google.ts`) |
 | `CHECKOUT_DISABLED` | 테스트 빌드에서 체크아웃 비활성(코드 등록 유도) | 403 | `routes/billing-mutation.ts` |
 | `PLAN_KEY_REQUIRED` | plan_key 필요 | 400 | `routes/billing-mutation.ts` |
 | `PLAN_NOT_FOUND` | 플랜 미존재 | 400 | `routes/billing-*.ts`, `lib/*-redemption.ts` |
@@ -134,7 +119,7 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `NO_ACTIVE_SUBSCRIPTION` | 활성 구독 없음(취소/변경 대상 없음) | 400 | `routes/billing-mutation.ts` |
 | `SAME_PLAN` | 이미 해당 플랜 이용 중 | 400 | `routes/billing-mutation.ts` |
 | `NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION` | 활성 가족 플랜 소유권 없음(공유코드 발급 불가) | 404 | `routes/billing-mutation.ts` |
-| `GROUP_FULL` | 그룹 정원 초과 | 409 | `routes/billing-mutation.ts`, `family-invite.ts`, `lib/voucher-redemption.ts` |
+| `GROUP_FULL` | 그룹 정원 초과 | 409 | `routes/billing-mutation.ts`, `lib/voucher-redemption.ts` |
 
 ## 4. 프로모 / 바우처 코드 (Promo / Voucher)
 
@@ -149,8 +134,8 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `CODE_INACTIVE` | 프로모 코드 비활성 | 409 | `lib/promo-redemption.ts` |
 | `CODE_MISCONFIGURED` | 프로모 코드 설정 오류(duration ≤ 0) | 409 | `lib/promo-redemption.ts` |
 | `CODE_NOT_IN_WINDOW` | 등록 유효창(valid_from~until) 밖 | 409 | `lib/promo-redemption.ts` |
-| `CODE_EXPIRED` | 코드 만료 | 409 | `lib/voucher-redemption.ts`, `routes/family-invite.ts` |
-| `CODE_ALREADY_USED` | 이미 사용된 코드(상한 도달) | 409 | `lib/voucher-redemption.ts`, `routes/family-invite.ts` |
+| `CODE_EXPIRED` | 코드 만료 | 409 | `lib/voucher-redemption.ts` |
+| `CODE_ALREADY_USED` | 이미 사용된 코드(상한 도달) | 409 | `lib/voucher-redemption.ts` |
 | `CODE_ALREADY_REDEEMED_BY_YOU` | 본인이 이미 사용한 코드(중복) | 409 | `lib/voucher-redemption.ts`, `lib/promo-redemption.ts` |
 | `CODE_EXHAUSTED` | 총 사용 상한 소진(원자 claim 실패) | 409 | `lib/promo-redemption.ts` |
 | `SELF_ISSUED` | 본인이 발급한 바우처는 사용 불가 | 400 | `lib/voucher-redemption.ts` |
@@ -164,7 +149,7 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 
 ## 5. 알람 (Alarm)
 
-`routes/alarm-query.ts`, `alarm-mutation.ts`, `alarm-helpers.ts`(생성/수정 입력 검증), `alarm-source.ts`(원본 오디오 업로드).
+`routes/alarm-query.ts`, `alarm-mutation.ts`, `alarm-helpers.ts`(생성/수정 입력 검증).
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
@@ -173,35 +158,27 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `REQUIRED_FIELDS_MISSING` | 필수 필드(time 등) 누락 | 400 | `routes/alarm-mutation.ts` |
 | `NO_UPDATE_FIELDS` | 수정할 필드 없음 | 400 | `routes/alarm-mutation.ts` |
 | `INVALID_TARGET_USER` | target_user_id 형식 오류 | 400 | `routes/alarm-mutation.ts`, `alarm-helpers.ts` |
-| `NOT_FRIENDS` | 대상과 친구 아님(가족/친구 알람) | 403 | `routes/alarm-mutation.ts` |
-| `NOT_CONNECTED` | 대상과 연결(친구/가족) 관계 없음 | 403 | `routes/alarm-mutation.ts` |
+| `NOT_CONNECTED` | 대상과 같은 커플/가족 그룹 아님 | 403 | `routes/alarm-mutation.ts` |
 | `FAMILY_ALARM_DISABLED` | 수신자가 가족 알람 비허용 | 403 | `routes/alarm-mutation.ts`, `family-alarm.ts` |
 | `FAMILY_ALARM_QUIET_TIME` | 수신자 방해금지 시간대 | 403 | `routes/alarm-mutation.ts`, `family-alarm.ts` |
 | `VOICE_FEATURE_REQUIRES_PAID_PLAN` | 음성 기능은 유료 플랜 필요 | 403 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts`, `voice-upload.ts` |
-| `VOICE_PROFILE_REQUIRED` | 음성 프로필 지정 필요 | 400 | `routes/alarm-mutation.ts` |
 | `VOICE_PROFILE_NOT_FOUND` | 음성 프로필 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts`, `voice-profile.ts` |
-| `MESSAGE_NOT_FOUND` | 메시지 미존재 | 404 | `routes/alarm-mutation.ts`, `gift.ts`, `tts.ts` |
-| `INVALID_MESSAGE_ID` | message_id 형식 오류 | 400 | `routes/alarm-helpers.ts`, `gift.ts`, `tts.ts` |
+| `MESSAGE_NOT_FOUND` | 메시지 미존재 | 404 | `routes/alarm-mutation.ts`, `tts.ts` |
+| `INVALID_MESSAGE_ID` | message_id 형식 오류 | 400 | `routes/alarm-helpers.ts`, `tts.ts` |
 | `INVALID_BUCKET_ID` | bucket_id 형식 오류 | 400 | `routes/alarm-helpers.ts` |
-| `INVALID_RAW_AUDIO_URL` | raw_audio_url 이 r2:// 객체 아님 | 400 | `routes/alarm-helpers.ts` |
 | `INVALID_ALARM_MODE` | mode 값 허용 밖 | 400 | `routes/alarm-helpers.ts` |
 | `INVALID_VIBRATION_PATTERN` | vibration_pattern 값 허용 밖 | 400 | `routes/alarm-helpers.ts` |
 | `INVALID_WAKE_MODE` | wake_mode 값 허용 밖 | 400 | `routes/alarm-helpers.ts` |
-| `INVALID_VOICE_PROFILE_ID` | voice_profile_id 형식 오류 | 400 | `routes/alarm-helpers.ts`, `tts.ts`, `library.ts`, `voice-profile.ts` |
-| `INVALID_SPEAKER_ID` | speaker_id 형식 오류 | 400 | `routes/alarm-helpers.ts` |
+| `INVALID_VOICE_PROFILE_ID` | voice_profile_id 형식 오류 | 400 | `routes/alarm-helpers.ts`, `tts.ts`, `voice-profile.ts` |
 | `INVALID_TIME_FORMAT` | time 이 HH:mm 아님 | 400 | `routes/alarm-helpers.ts` |
 | `INVALID_TIME_VALUE` | time 값 범위 오류 | 400 | `routes/alarm-helpers.ts` |
 | `INVALID_REPEAT_DAYS` | repeat_days 형식 오류(0~6 배열) | 400 | `routes/alarm-helpers.ts` |
 | `INVALID_SNOOZE_MINUTES` | snooze_minutes 범위 오류(1~30) | 400 | `routes/alarm-helpers.ts` |
 | `INVALID_IS_ACTIVE` | is_active 가 boolean 아님 | 400 | `routes/alarm-helpers.ts` |
-| `STORAGE_UNAVAILABLE` | 음성 스토리지(R2) 미구성 | 503 | `routes/alarm-source.ts` |
-| `MULTIPART_BODY_REQUIRED` | multipart/form-data 본문 필요 | 400 | `routes/alarm-source.ts`, `voice-upload.ts` |
-| `AUDIO_FILE_REQUIRED` | audio 파일 필요 | 400 | `routes/alarm-source.ts`, `voice-upload.ts` |
-| `AUDIO_FILE_EMPTY` | audio 파일이 비어있음 | 400 | `routes/alarm-source.ts`, `voice-upload.ts` |
-| `INVALID_MIME_TYPE` | audio/* 또는 video/* MIME 아님 | 415 | `routes/alarm-source.ts` |
-| `INVALID_DURATION` | durationMs 가 양의 정수 아님 | 400 | `routes/alarm-source.ts`, `voice-upload.ts`, `voice-profile.ts` |
-| `CLIP_TOO_LONG` | 클립 길이 상한 초과 | 400 | `routes/alarm-source.ts` |
-| `CLIP_TOO_LARGE` | 클립 바이트 상한 초과 | 413 | `routes/alarm-source.ts` |
+| `MULTIPART_BODY_REQUIRED` | multipart/form-data 본문 필요 | 400 | `routes/voice-upload.ts` |
+| `AUDIO_FILE_REQUIRED` | audio 파일 필요 | 400 | `routes/voice-upload.ts` |
+| `AUDIO_FILE_EMPTY` | audio 파일이 비어있음 | 400 | `routes/voice-upload.ts` |
+| `INVALID_DURATION` | durationMs 가 양의 정수 아님 | 400 | `routes/voice-upload.ts`, `voice-profile.ts` |
 
 ## 6. 음성 / TTS (Voice / TTS)
 
@@ -222,12 +199,9 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `TTS_GENERATION_FAILED` | TTS 합성 실패(업스트림) | 500 | `routes/tts.ts` |
 | `MESSAGE_AUDIO_MISSING` | 메시지에 저장된 오디오 없음 | 404 | `routes/tts.ts` |
 | `MESSAGE_AUDIO_NOT_FOUND` | 저장 오디오 객체 미존재(R2) | 404 | `routes/tts.ts` |
-| `MESSAGE_IN_USE` | 메시지가 알람에 사용 중(삭제 시 `?force=true` 필요) | 409 | `routes/tts.ts` |
 | `DEV_ONLY_ROUTE` | dev 전용 라우트 | 404 | `routes/voice-profile.ts` |
 | `INVALID_NAME_LENGTH` | 이름 길이 규칙 위반 | 400 | `routes/voice-profile.ts` |
 | `NAME_TOO_LONG` | 이름 50자 초과 | 400 | `routes/voice-profile.ts` |
-| `INVALID_VOICE_GENDER` | voice_gender 값 허용 밖 | 400 | `routes/voice-profile.ts` |
-| `INVALID_SPEECH_FORMALITY` | speech_formality 값 허용 밖 | 400 | `routes/voice-profile.ts` |
 | `INVALID_RELATIONSHIP_LABEL` | relationship_label 형식 오류 | 400 | `routes/voice-profile.ts` |
 | `INVALID_LISTENER_TITLE` | listener_title 형식 오류 | 400 | `routes/voice-profile.ts` |
 | `AUDIO_AND_NAME_REQUIRED` | 클로닝: audio·name 필요 | 400 | `routes/voice-profile.ts` |
@@ -241,95 +215,34 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `AUDIO_FILE_TOO_LARGE` | 업로드 파일 바이트 상한 초과 | 413 | `routes/voice-upload.ts` |
 | `AUDIO_DURATION_TOO_SHORT` | 업로드 오디오 최소 길이 미만 | 400 | `routes/voice-upload.ts` |
 | `AUDIO_DURATION_TOO_LONG` | 업로드 오디오 최대 길이 초과 | 400 | `routes/voice-upload.ts` |
-| `INVALID_UPLOAD_ID` | 업로드 ID 형식 오류 | 400 | `routes/voice-upload.ts` |
-| `VOICE_UPLOAD_NOT_FOUND` | 음성 업로드 미존재 | 404 | `routes/voice-upload.ts` |
-| `VOICE_UPLOAD_OBJECT_NOT_FOUND` | 업로드 오디오 객체 미존재(R2) | 404 | `routes/voice-upload.ts` |
-| `INVALID_LABEL_LENGTH` | 화자 라벨 길이 규칙 위반(1~50) | 400 | `routes/voice-upload.ts` |
-| `SPEAKER_NOT_FOUND` | 화자 미존재 | 404 | `routes/voice-upload.ts` |
-| `DIARIZATION_FAILED` | 화자 분리(diarization) 실패 | 5xx | `routes/voice-upload.ts` |
 
 ## 7. 가족 / 그룹 (Family / Group)
 
-`routes/family-group.ts`(그룹 탈퇴/양도/제거), `routes/family-invite.ts`(초대 코드), `routes/family-alarm.ts`(가족 알람 발송).
+`routes/family-group.ts`(그룹 탈퇴/양도/제거), `routes/family-alarm.ts`(가족 알람 발송).
 
 | 코드 | 의미 | HTTP | 위치 |
 |---|---|---|---|
 | `NOT_MEMBER` | 해당 그룹 멤버 아님 | 403 | `routes/family-group.ts` |
-| `OWNER_ONLY` | 그룹 소유자만 가능(양도/제거/초대) | 403 | `routes/family-group.ts`, `family-invite.ts` |
+| `OWNER_ONLY` | 그룹 소유자만 가능(양도/제거/초대) | 403 | `routes/family-group.ts` |
 | `OWNER_CANNOT_LEAVE` | 소유자는 탈퇴 불가(양도 필요) | 400 | `routes/family-group.ts` |
 | `TARGET_REQUIRED` | target_user_id 필요 | 400 | `routes/family-group.ts` |
 | `SELF_TRANSFER` | 자기 자신에게 양도 불가 | 400 | `routes/family-group.ts` |
 | `SELF_REMOVE` | 자기 자신 제거 불가(탈퇴/양도 사용) | 400 | `routes/family-group.ts` |
 | `CANNOT_REMOVE_OWNER` | owner 는 제거 불가 | 400 | `routes/family-group.ts` |
 | `TARGET_NOT_MEMBER` | 대상이 그룹 멤버 아님 | 400 | `routes/family-group.ts` |
-| `GROUP_NOT_FOUND` | 그룹 미존재 | 404 | `routes/family-group.ts`, `family-invite.ts` |
-| `NO_OWNED_GROUP` | 소유한 가족 플랜 그룹 없음 | 404 | `routes/family-invite.ts` |
-| `INVALID_CODE_FORMAT` | 초대 코드 형식 오류 | 400 | `routes/family-invite.ts` |
-| `INVITE_NOT_FOUND` | 초대 코드 미존재 | 404 | `routes/family-invite.ts` |
-| `CODE_REVOKED` | 취소된 초대 코드 | 409 | `routes/family-invite.ts` |
-| `SELF_ACCEPT` | 본인 발급 초대는 수락 불가 | 400 | `routes/family-invite.ts` |
-| `ALREADY_MEMBER` | 이미 해당 그룹 멤버 | 409 | `routes/family-invite.ts` |
-| `NOT_INVITER` | 발급자만 취소 가능 | 403 | `routes/family-invite.ts` |
-| `NOT_PENDING` | pending 상태 초대만 취소 가능 | 409 | `routes/family-invite.ts` |
+| `GROUP_NOT_FOUND` | 그룹 미존재 | 404 | `routes/family-group.ts` |
 | `RECIPIENT_REQUIRED` | recipient_user_id 필요 | 400 | `routes/family-alarm.ts` |
 | `INVALID_WAKE_AT` | wake_at 이 HH:mm 아님 | 400 | `routes/family-alarm.ts` |
-| `MESSAGE_TEXT_REQUIRED` | message_text 비어있음 | 400 | `routes/family-alarm.ts` |
-| `MESSAGE_TEXT_TOO_LONG` | message_text 길이 초과 | 400 | `routes/family-alarm.ts` |
 | `SELF_ALARM` | 자기 자신에게 가족 알람 불가 | 400 | `routes/family-alarm.ts` |
-| `NOT_SAME_GROUP` | 같은 가족 그룹 멤버 아님 | 403 | `routes/family-alarm.ts`, `notes.ts` |
+| `NOT_SAME_GROUP` | 같은 가족 그룹 멤버 아님 | 403 | `routes/family-alarm.ts` |
 | `RECIPIENT_NOT_FOUND` | 수신자 미존재 | 404 | `routes/family-alarm.ts` |
-| `VOICE_NOT_OWNED` | 지정 voice_profile 이 수신자 소유 아님 | 403 | `routes/family-alarm.ts` |
 | `NO_VOICE_PROFILE` | 수신자 음성 프로필 없음 | 400 | `routes/family-alarm.ts` |
 | `VOICE_UPLOAD_REQUIRED` | voice_upload_id 필요 | 400 | `routes/family-alarm.ts` |
 | `LABEL_TOO_LONG` | label 길이 초과 | 400 | `routes/family-alarm.ts` |
-| `INVALID_DUB_LANGUAGE` | 더빙 언어 값 허용 밖 | 400 | `routes/family-alarm.ts` |
 | `UPLOAD_NOT_FOUND` | 음성 업로드 미존재 | 400 | `routes/family-alarm.ts` |
 | `NOT_UPLOAD_OWNER` | 업로드 소유자 아님 | 400 | `routes/family-alarm.ts` |
 
-## 8. 친구 / 선물 (Friend / Gift)
-
-`routes/friend.ts`, `routes/gift.ts`.
-
-| 코드 | 의미 | HTTP | 위치 |
-|---|---|---|---|
-| `INVALID_EMAIL` | 이메일 형식 오류 | 400 | `routes/friend.ts`, `gift.ts` |
-| `SELF_REQUEST` | 자기 자신에게 친구 요청 불가 | 400 | `routes/friend.ts` |
-| `ALREADY_FRIENDS` | 이미 친구 | 409 | `routes/friend.ts` |
-| `ALREADY_PENDING` | 이미 친구 요청 대기 중 | 409 | `routes/friend.ts` |
-| `PENDING_NOT_FOUND` | 대기 중 친구 요청 미존재 | 404 | `routes/friend.ts` |
-| `FRIENDSHIP_NOT_FOUND` | 친구 관계 미존재 | 404 | `routes/friend.ts` |
-| `FRIEND_REQUEST_FAILED` | 친구 요청 처리 실패 | 500 | `routes/friend.ts` |
-| `FETCH_FRIENDS_FAILED` | 친구 목록 조회 실패 | 500 | `routes/friend.ts` |
-| `FETCH_PENDING_FAILED` | 대기 요청 조회 실패 | 500 | `routes/friend.ts` |
-| `ACCEPT_FAILED` | 친구 요청 수락 실패 | 500 | `routes/friend.ts` |
-| `DELETE_FAILED` | 친구 삭제 실패 | 500 | `routes/friend.ts` |
-| `NOTE_TOO_LONG` | 선물 메모 200자 초과 | 400 | `routes/gift.ts` |
-| `SELF_GIFT` | 자기 자신에게 선물 불가 | 400 | `routes/gift.ts` |
-| `NOT_FRIENDS` | 친구에게만 선물 가능 | 403 | `routes/gift.ts` |
-| `PENDING_GIFT_NOT_FOUND` | 대기 중 선물 미존재 | 404 | `routes/gift.ts` |
-| `SEND_GIFT_FAILED` | 선물 발송 실패 | 500 | `routes/gift.ts` |
-| `FETCH_RECEIVED_FAILED` | 받은 선물 조회 실패 | 500 | `routes/gift.ts` |
-| `FETCH_SENT_FAILED` | 보낸 선물 조회 실패 | 500 | `routes/gift.ts` |
-| `ACCEPT_GIFT_FAILED` | 선물 수락 실패 | 500 | `routes/gift.ts` |
-| `REJECT_GIFT_FAILED` | 선물 거절 실패 | 500 | `routes/gift.ts` |
-
-## 9. 쪽지 (Notes)
-
-`routes/notes.ts`.
-
-| 코드 | 의미 | HTTP | 위치 |
-|---|---|---|---|
-| `RECEIVER_REQUIRED` | receiver_id 필요 | 400 | `routes/notes.ts` |
-| `TEXT_REQUIRED` | text 필요 | 400 | `routes/notes.ts` |
-| `TEXT_TOO_LONG` | text 500자 초과 | 400 | `routes/notes.ts` |
-| `SELF_NOTE` | 자기 자신에게 쪽지 불가 | 400 | `routes/notes.ts` |
-| `INVALID_AUDIO_URL` | audio_url 이 r2:// 객체 아님 | 400 | `routes/notes.ts` |
-| `RECEIVER_NOT_FOUND` | 수신자 미존재 | 404 | `routes/notes.ts` |
-| `NOTE_NOT_FOUND` | 쪽지 미존재 | 404 | `routes/notes.ts` |
-| `NOTE_AUDIO_MISSING` | 쪽지에 저장 오디오 없음 | 404 | `routes/notes.ts` |
-| `NOTE_AUDIO_NOT_FOUND` | 저장 쪽지 오디오 객체 미존재 | 404 | `routes/notes.ts` |
-
-## 10. 공휴일 (Holiday)
+## 8. 공휴일 (Holiday)
 
 `routes/holiday.ts`.
 
@@ -339,21 +252,6 @@ AlarmTalk 백엔드(`packages/backend`)가 4xx/5xx 응답 본문에 담아 내�
 | `INVALID_DATE` | from/to 가 YYYY-MM-DD 아님 | 400 | `routes/holiday.ts` |
 | `INVALID_RANGE` | from > to | 400 | `routes/holiday.ts` |
 | `RANGE_TOO_LARGE` | 조회 범위 상한 초과 | 400 | `routes/holiday.ts` |
-
-## 11. 라이브러리 / 통계 (Library / Stats)
-
-`routes/library.ts`, `routes/stats.ts`.
-
-| 코드 | 의미 | HTTP | 위치 |
-|---|---|---|---|
-| `INVALID_DATE_FORMAT` | 날짜 필터 형식 오류(YYYY-MM-DD) | 400 | `routes/library.ts` |
-| `INVALID_LIBRARY_ITEM_ID` | 라이브러리 항목 ID 형식 오류 | 400 | `routes/library.ts` |
-| `LIBRARY_ITEM_NOT_FOUND` | 라이브러리 항목 미존재 | 404 | `routes/library.ts` |
-| `FETCH_LIBRARY_FAILED` | 라이브러리 조회 실패 | 500 | `routes/library.ts` |
-| `TOGGLE_FAVORITE_FAILED` | 즐겨찾기 토글 실패 | 500 | `routes/library.ts` |
-| `DELETE_LIBRARY_ITEM_FAILED` | 라이브러리 항목 삭제 실패 | 500 | `routes/library.ts` |
-| `FETCH_STATS_FAILED` | 통계 조회 실패 | 500 | `routes/stats.ts` |
-| `FETCH_ACTIVITY_FAILED` | 활동 조회 실패 | 500 | `routes/stats.ts` |
 
 ---
 

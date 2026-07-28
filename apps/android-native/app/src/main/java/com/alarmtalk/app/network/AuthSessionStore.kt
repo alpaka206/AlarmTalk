@@ -7,6 +7,10 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.util.Base64
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.channels.awaitClose
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -16,12 +20,36 @@ data class AuthSession(
     val user: AuthUser,
 )
 
+/**
+ * 지금 로그인한 계정의 users.id 를 흘린다(비로그인 null).
+ *
+ * SharedPreferences 변경 리스너를 쓰는 이유: 로그인·로그아웃이 어느 코드 경로를 타든
+ * 결국 이 prefs 를 거치므로, 호출부가 "세션 바뀌었다"고 따로 알려 줄 필요가 없다.
+ * 알람 목록 필터처럼 계정이 바뀌는 즉시 다시 계산돼야 하는 곳에서 쓴다.
+ */
+fun AuthSessionStore.observeUserId(): Flow<String?> = callbackFlow {
+    trySend(read()?.user?.id)
+    val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        trySend(read()?.user?.id)
+    }
+    registerChangeListener(listener)
+    awaitClose { unregisterChangeListener(listener) }
+}.distinctUntilChanged()
+
 class AuthSessionStore(context: Context) {
     private val prefs: SharedPreferences = run {
         val appContext = context.applicationContext
         createEncryptedPrefs(appContext).also { secure ->
             migrateLegacyPlainPrefs(appContext, secure)
         }
+    }
+
+    internal fun registerChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    internal fun unregisterChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 
     /**

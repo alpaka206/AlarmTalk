@@ -70,7 +70,7 @@
     <string name="billing_cancel_description_no_date">Choose when to cancel. Canceling on the end date keeps your pass until the current period ends. Canceling now gives you a prorated refund for the remaining time.</string>
     <string name="billing_cancel_description_with_date">Canceling on the end date keeps your pass until %1$s. Canceling now ends your pass immediately with a prorated refund for the remaining time.</string>
     <string name="billing_cancel_dialog_title">Cancel your pass?</string>
-    <string name="billing_cancel_immediate_description">The remaining time is refunded on a prorated basis and your pass ends immediately. Your voices aren\'t deleted — they\'re locked while you\'re on the free plan and become usable again when you resubscribe.</string>
+    <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days — resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
     <string name="billing_cancel_now">Cancel now</string>
     <string name="billing_cancel_pass">Cancel pass</string>
@@ -267,7 +267,6 @@
     <string name="editor_save_blocked_free_clips_loading">Preparing your alarm messages. Please wait a moment.</string>
     <string name="editor_free_bucket_offline">Offline — couldn\'t load the lines</string>
     <string name="editor_save_blocked_free_clips_offline">You\'re offline, so the alarm lines couldn\'t be loaded. We\'ll retry automatically once you reconnect.</string>
-    <string name="voices_clone_requires_paid_hint">Alarms that wake you in your own voice are available on paid plans.</string>
     <string name="editor_stop">Stop</string>
     <string name="editor_vibration_title">Vibration</string>
     <string name="editor_voice_deleted_desc">The voice saved to this alarm will still play, but to change the phrase, please choose another voice.</string>
@@ -448,7 +447,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">You can keep using your pass until the end of this period. There\'s no next payment.</string>
     <string name="msg_gb_subscription_cancel_failed">Couldn\'t cancel your plan.</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">Your plan has been canceled. Your voices aren\'t deleted — they\'re locked and become usable again when you resubscribe.</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">Your plan is canceled. Your voice is kept for 3 days — resubscribe within that window and it comes back as it was</string>
 
 
 
@@ -474,7 +473,6 @@
     <string name="msg_register_all_fields_required">Please fill in all the sign-up details.</string>
     <string name="msg_register_email_taken">This email is already registered. Please log in.</string>
     <string name="msg_register_email_social_google">This email is registered with Google. Please continue with Google.</string>
-    <string name="msg_register_email_social_apple">This email is registered with Apple. Please use Sign in with Apple.</string>
     <string name="msg_register_failed">Couldn\'t complete sign-up.</string>
     <string name="msg_register_success">Your %1$s account has been created.</string>
     <string name="msg_register_verify_email_first">Please verify your email first.</string>
@@ -597,7 +595,6 @@
     <string name="social_code_input_hint">Invite codes, gifted pass codes, and promo codes all work here.</string>
     <string name="social_voucher_usage">%1$d/%2$d in use</string>
     <string name="social_voucher_usage_full">%1$d/%2$d in use · Full, so you can\'t share</string>
-    <string name="voices_add">Add</string>
     <string name="voices_close">Close</string>
     <string name="voices_create_dialog_title">Create a voice</string>
     <string name="voices_create_paid_title">Creating your voice is a paid feature</string>
@@ -608,8 +605,8 @@
     <string name="voices_draft_exit_leave">Leave and delete</string>
     <string name="voices_draft_exit_stay">Keep creating</string>
     <string name="voices_draft_exit_title">Leaving will delete this voice draft</string>
-    <string name="voices_edit_info_desc">Set the name shown in alarms and how this voice calls you.</string>
-    <string name="voices_edit_info_title">Edit info</string>
+    <string name="voices_edit_name_desc">The name shown in your alarm list and voice picker.</string>
+    <string name="voices_edit_name_title">Edit name</string>
     <string name="voices_file_duration_unknown">Files whose audio length can\'t be confirmed can\'t be used.</string>
     <string name="voices_file_selected">File selected</string>
     <string name="voices_greeting_preview_preparing">Preparing a preview of this voice.</string>
@@ -619,14 +616,12 @@
     <string name="voices_login_required_body">Sign in to create a voice.</string>
     <string name="voices_login_required_title">Sign-in required</string>
     <string name="voices_mic_permission_required">Microphone permission is required.</string>
-    <string name="voices_my_voices_title">My Voices</string>
     <string name="voices_name_label">Voice name</string>
     <string name="voices_prerender_ready_title">Getting your alarm voice ready</string>
     <string name="voices_prerender_ready_body">This will be ready shortly.\nYou can close this — it keeps going in the background.</string>
     <string name="voices_language_label">Message language</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
-    <string name="voices_no_voices_yet">You haven\'t created any voices yet.</string>
     <string name="voices_paid_required">Available with a paid plan.</string>
     <string name="voices_prepare_recording_first">Please prepare a recorded voice first.</string>
     <string name="voices_prepare_selected_failed">Couldn\'t prepare the selected audio.</string>
@@ -634,7 +629,7 @@
     <string name="voices_preparing_audio">Preparing your audio.</string>
     <string name="voices_preview_play_failed">Couldn\'t play the preview.</string>
     <string name="voices_confirm_new_title">‘%1$s’ voice is ready</string>
-    <string name="voices_confirm_new_body">Listen to the voice first — if it\'s not right, you can delete it.\nYou can register a voice once a month.</string>
+    <string name="voices_confirm_new_body">Confirming uses this month\'s voice. You can redo it as many times as you like before confirming, but afterwards you will have to wait until next month, even if you delete it.</string>
     <string name="voices_confirm_new_preview">Replay</string>
     <string name="voices_confirm_new_keep">Use this voice</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>
@@ -664,14 +659,11 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_select_file_first">Please select a file.</string>
     <string name="voices_select_to_register_hint">Choose a voice, then enter its name, relationship, and call name before registering.</string>
     <string name="voices_selected_audio_unusable">The selected audio can\'t be used.</string>
-    <string name="voices_shared_voices_title">Voices shared with you</string>
     <string name="voices_sharing_shared_desc_disabled">Sharing is available with a Couple or Family plan.</string>
     <string name="voices_sharing_shared_desc_enabled">Your family or partner can use the voice you register, too.</string>
     <string name="voices_sharing_shared_title">Allow sharing with family or partner</string>
     <string name="voices_step_sharing">Sharing settings</string>
-    <string name="voices_default_voice_choose">Choose</string>
     <string name="voices_default_voice_prefetching">Preparing alarm voice %1$d/%2$d</string>
-    <string name="voices_default_voice_row_title">Default voice</string>
     <string name="voices_upload_change_hint">Tap to choose a different file.</string>
     <string name="voices_single_speaker_hint">Use audio with only one person\'s voice.\nIf several voices are mixed, the cloned voice won\'t be accurate.</string>
     <string name="voices_upload_file_or_video">Upload a file or video</string>
@@ -679,13 +671,11 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voicesr_close">Close</string>
     <string name="voicesr_delete">Delete</string>
     <string name="voices_delete_quota_title">Delete this voice?</string>
-    <string name="voices_delete_quota_message">You\'ve used all of this month\'s voice creations, so if you delete it now you can\'t make a new one until next month.</string>
+    <string name="voices_delete_quota_message">Deleting it now will not let you create another this month. You can create one again next month.</string>
     <string name="voicesr_delete_dialog_confirm">Delete the \'%1$s\' voice?</string>
     <string name="voicesr_delete_dialog_title">Delete voice</string>
     <string name="voicesr_delete_dialog_warning">Alarms using this voice will switch to the default alarm sound. The saved audio files will also be deleted.</string>
-    <string name="voicesr_edit_info">Edit info</string>
-    <string name="voicesr_listener_title_example_a">e.g. Minji, honey</string>
-    <string name="voicesr_listener_title_label">What this voice will call you</string>
+    <string name="voicesr_edit_name">Edit name</string>
     <string name="voicesr_more">More</string>
     <string name="voicesr_pause">Pause</string>
     <string name="voicesr_prerender_downloading">Downloading alarm voice</string>
@@ -695,15 +685,12 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voicesr_preview">Preview</string>
     <string name="voicesr_relationship_custom_label">Enter relationship manually</string>
     <string name="voicesr_relationship_custom_placeholder">e.g. granddaughter, partner, coworker</string>
-    <string name="voicesr_relationship_example_a">e.g. granddaughter, mom, partner</string>
-    <string name="voicesr_relationship_label">Relationship to you</string>
     <string name="voicesr_relationship_label_required">Relationship to you (optional)</string>
     <string name="voicesr_relationship_placeholder">Please select a relationship</string>
     <string name="voicesr_required_field">This field is required.</string>
     <string name="voicesr_save">Save</string>
     <string name="voicesr_select">Select</string>
     <string name="voicesr_share_voice">Share voice</string>
-    <string name="voicesr_play_shared_sample">Play sample</string>
     <string name="voicesr_shared_from_owner">Voice shared by %1$s</string>
     <string name="voicesr_shared_voice">Voice shared with you</string>
     <string name="voicesr_sharing_badge">Sharing</string>
@@ -899,7 +886,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="misc2_pass_plan_family">Family</string>
     <string name="misc2_pass_plan_default">Pass</string>
     <string name="misc2_voice_preview_preparing">Preparing preview</string>
-    <string name="misc2_voice_preview_pause">Pause preview</string>
+    <string name="misc2_voice_preview_pause">Stop preview</string>
     <string name="misc2_voice_preview_play">Play preview</string>
     <string name="rd2_am">AM</string>
     <string name="rd2_pm">PM</string>
@@ -984,4 +971,29 @@ for a smooth and secure experience.</string>
     <string name="r3misc_ringing_action_dismiss">Dismiss</string>
     <string name="r3misc_billing_already_owned">You\'re already subscribed to this item. Please refresh your subscription status in a moment.</string>
     <string name="r3misc_billing_purchase_failed">Google Play payment failed. Please try again in a moment.</string>
+    <string name="editor_voice_switch_drops_text_title">Switch to a basic voice?</string>
+    <string name="editor_voice_switch_drops_text_message">Basic voices only speak ready-made lines, so the message you typed will be removed.</string>
+    <string name="editor_voice_switch_drops_text_confirm">Switch</string>
+    <string name="onb_voice_download_progress">%1$d of %2$d ready</string>
+    <string name="onb_voice_download_stay">Hang tight while we finish.
+This keeps going if you leave the app.</string>
+    <string name="onb_voice_download_failed">We could not download the voices.
+Check your connection and try again.</string>
+    <string name="onb_voice_download_retry">Try again</string>
+    <string name="onb_voice_download_later">Do this later</string>
+    <string name="voicesr_share_voice_desc">Family on your plan can build alarms with this voice.</string>
+    <string name="voicesr_share_voice_locked">Sharing is available on the family and couple plans.</string>
+    <string name="voicesr_system_voice">Built-in voice</string>
+    <string name="voicesr_preview_action">Play</string>
+    <string name="voices_add">Add</string>
+    <string name="voices_monthly_quota">%1$d/%2$d this month</string>
+    <string name="voices_limit_title">Monthly voice limit reached</string>
+    <string name="voices_limit_message">You can create one voice per month. Your next one is available next month — deleting this voice will not give this month back.</string>
+    <string name="voices_my_voices_title">My voices</string>
+    <string name="voices_shared_voices_title">Shared with me</string>
+    <string name="voices_system_voices_title">Built-in voices</string>
+    <string name="plan_gate_redeem_action">I have a code</string>
+    <string name="plan_gate_redeem_title">Enter a code</string>
+    <string name="plan_gate_redeem_desc">Enter a promo or gift code. Invite codes work here too.</string>
+    <string name="voicesr_preview_stop">Stop</string>
 </resources>

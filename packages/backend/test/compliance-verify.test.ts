@@ -29,7 +29,6 @@ function authAs(userId = SUB, userPk = PK) {
     c.set('userIdPK', userPk);
     c.set('userEmail', 'compliance@test.com');
     c.set('userName', 'Compliance Tester');
-    c.set('userPicture', '');
     await next();
   };
 }

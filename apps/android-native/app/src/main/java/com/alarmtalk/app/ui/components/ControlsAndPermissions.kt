@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -23,7 +24,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Fullscreen
@@ -293,6 +296,12 @@ internal fun AlarmRow(
     onToggleEnabled: (Boolean) -> Unit,
     onEditAlarm: () -> Unit,
     onDeleteAlarm: () -> Unit,
+    /** 선택 모드 — 켜지면 행 전체가 '고르기'가 된다(수정·스와이프·토글 없음). */
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
+    onToggleSelected: () -> Unit = {},
+    /** 길게 누르면 선택 모드로 들어간다(그 행을 첫 선택으로). */
+    onEnterSelection: () -> Unit = {},
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val deleteWidth = 92.dp
@@ -317,7 +326,6 @@ internal fun AlarmRow(
     val rowNotice = alarmRowNotice(alarm)
     val warningText = rowNotice?.let { stringResource(it.textResId) }
     // 스와이프 외에 접근성(TalkBack/지체장애) 대체 삭제 수단: 길게 눌러 메뉴 노출.
-    var menuExpanded by remember(alarm.id) { mutableStateOf(false) }
     val deleteVisible = offsetX.value < -0.5f
     // 우측 모서리는 드러난 정도에 비례해 22→0dp 로 연속 변형(불연속 형태 전환 방지).
     val revealFraction = (-offsetX.value / deleteWidthPx).coerceIn(0f, 1f)
@@ -357,21 +365,30 @@ internal fun AlarmRow(
         Card(
             modifier = Modifier
                 .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                // 클릭=수정/펼침 해제, 길게 누르기=삭제 메뉴. 길게 누르기로 스와이프와 별개의
-                // 접근성 친화 삭제 경로를 제공한다.
+                // 평소: 클릭=수정/펼침 해제, 길게 누르기=선택 모드 진입.
+                // 선택 모드: 클릭=선택 토글(길게 누르기는 이미 모드 안이라 무의미).
+                // 길게 누르기가 스와이프와 별개의 접근성 친화 경로를 계속 제공한다.
+                // 리플(indication)은 끈다 — 카드 전체를 덮는 사각 하이라이트가 길게 누르는
+                // 내내 남아 카드 모서리와 어긋나 보인다. 선택 모드 진입은 행의 체크 표시와
+                // 상단 [취소][삭제] 바가 이미 분명하게 알려준다.
                 .combinedClickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
                     onClick = {
-                        if (!deleteRevealed) {
-                            onEditAlarm()
-                        } else {
-                            deleteRevealed = false
-                            scope.launch { offsetX.animateTo(0f, settleSpec) }
+                        when {
+                            selectionMode -> onToggleSelected()
+                            deleteRevealed -> {
+                                deleteRevealed = false
+                                scope.launch { offsetX.animateTo(0f, settleSpec) }
+                            }
+                            else -> onEditAlarm()
                         }
                     },
-                    onLongClick = { menuExpanded = true },
+                    onLongClick = { if (!selectionMode) onEnterSelection() },
                 )
                 .draggable(
                     state = dragState,
+                    enabled = !selectionMode,
                     orientation = Orientation.Horizontal,
                     onDragStopped = { velocity ->
                         val open = when {
@@ -475,11 +492,30 @@ internal fun AlarmRow(
                         )
                     }
                     Spacer(Modifier.width(8.dp))
-                    // 켜짐/꺼짐 텍스트는 두지 않는다 — 스위치 위치·색이 곧 상태 표시.
-                    AlarmTalkSwitch(
-                        checked = alarm.enabled,
-                        onCheckedChange = onToggleEnabled,
-                    )
+                    if (selectionMode) {
+                        // 선택 모드에선 켜기/끄기 대신 선택 표시를 같은 자리에 둔다 —
+                        // 스위치가 남아 있으면 고르려다 알람을 꺼뜨린다.
+                        Icon(
+                            imageVector = if (selected) {
+                                Icons.Outlined.CheckCircle
+                            } else {
+                                Icons.Outlined.RadioButtonUnchecked
+                            },
+                            contentDescription = null,
+                            tint = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            },
+                            modifier = Modifier.size(24.dp),
+                        )
+                    } else {
+                        // 켜짐/꺼짐 텍스트는 두지 않는다 — 스위치 위치·색이 곧 상태 표시.
+                        AlarmTalkSwitch(
+                            checked = alarm.enabled,
+                            onCheckedChange = onToggleEnabled,
+                        )
+                    }
                 }
                 if (rowNotice != null && warningText != null) {
                     // 에러(재예약/동기화 실패)는 경고색, 강등 안내는 정보색으로 톤을 구분한다.
@@ -519,25 +555,6 @@ internal fun AlarmRow(
             }
         }
 
-        // 길게 누르기로 열리는 접근성 대체 삭제 메뉴(스와이프 삭제는 그대로 유지).
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-        ) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.common_alarm_delete)) },
-                onClick = {
-                    menuExpanded = false
-                    onDeleteAlarm()
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Outlined.Delete,
-                        contentDescription = null,
-                    )
-                },
-            )
-        }
     }
 }
 

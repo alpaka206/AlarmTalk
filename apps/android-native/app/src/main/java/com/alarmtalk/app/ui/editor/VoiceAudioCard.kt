@@ -75,7 +75,11 @@ internal fun VoiceAudioCard(
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
-    defaultVoiceId: String? = null,
+    lastUsedVoiceId: String? = null,
+    /** 선택 시트에서 목소리를 들어볼 때 — 목소리 선택 화면과 같은 미리듣기를 쓴다. */
+    onPreviewVoice: (String) -> Unit = {},
+    previewPlayingVoiceId: String? = null,
+    previewPreparingVoiceId: String? = null,
     // 날씨+약 문구로 제한하는 모드 — 무료 플랜이거나 시스템(기본) 보이스 선택 시 true.
     // TTS 문구를 무료 버킷 UI(날씨/약)로 제한한다.
     restrictToWeatherMedication: Boolean,
@@ -102,18 +106,31 @@ internal fun VoiceAudioCard(
         editor.voiceSource
     }
     // 알람별로 목소리를 자유롭게 바꾼다 — 내 목소리·공유받은 목소리·기본(시스템) 목소리 순.
-    // 기본(시스템) 목소리는 전부 나열하지 않고 '기본 목소리로 설정해 둔 것'만 노출한다
-    // (편집 중 알람이 다른 시스템 보이스로 저장돼 있으면 그것도 함께 — 열자마자 목소리가
-    // 바뀌는 사고 방지). 설정된 기본이 없으면 이전처럼 전부 보여준다.
+    // 기본 목소리로 바꾸면 직접 입력 문구를 잃는 경우, 확인받기 전까지 보류해 둔 선택.
+    var pendingVoiceSwitch by remember { mutableStateOf<VoiceProfileOption?>(null) }
+    val applyVoiceSelection: (VoiceProfileOption) -> Unit = { option ->
+        // 목소리를 고르면 꺼져 있던 목소리를 자동으로 켠다(잠금 시엔 게이트로 유도).
+        if (!voiceEnabled) onVoiceEnabledChange(true)
+        if (option.id == VoiceSources.LOCAL_AUDIO) {
+            editor.voiceSource = VoiceSources.LOCAL_AUDIO
+            editor.clearTtsMeta()
+        } else {
+            editor.voiceSource = VoiceSources.TTS_PROFILE
+            editor.clearAudio()
+            editor.clearTtsMeta()
+            editor.selectVoiceProfile(option.id)
+        }
+    }
     val readyOwnProfiles = voiceProfiles.filter {
         (it.status == null || it.status == "ready") && it.isSystem != true
     }
     val readySystemProfiles = voiceProfiles.filter {
         (it.status == null || it.status == "ready") && it.isSystem == true
     }
-    val visibleSystemProfiles = readySystemProfiles.filter {
-        it.id == defaultVoiceId || it.id == editor.voiceProfileId
-    }.ifEmpty { readySystemProfiles }
+    // 기본(시스템) 목소리는 전부 노출한다. 예전에는 '기본으로 설정해 둔 1개'만 보여줬는데,
+    // 이제 4개를 모두 미리 받아 두므로 알람마다 자유롭게 고를 수 있어야 한다.
+    // 목록이 길어져도 선택 시트가 내부 스크롤을 갖고 있다(WakerSelectionSheet).
+    val visibleSystemProfiles = readySystemProfiles
     val readyFamilyVoices = familyVoices.filter {
         (it.status == null || it.status == "ready") && it.isShared != false
     }
@@ -173,18 +190,21 @@ internal fun VoiceAudioCard(
                 voiceEnabled = voiceEnabled,
                 onVoiceEnabledChange = onVoiceEnabledChange,
                 onSelect = { option ->
-                    // 목소리를 고르면 꺼져 있던 목소리를 자동으로 켠다(잠금 시엔 게이트로 유도).
-                    if (!voiceEnabled) onVoiceEnabledChange(true)
-                    if (option.id == VoiceSources.LOCAL_AUDIO) {
-                        editor.voiceSource = VoiceSources.LOCAL_AUDIO
-                        editor.clearTtsMeta()
+                    // 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를
+                    // 비운다. 조용히 지우면 '문구가 사라졌다'가 되므로 한 번 확인받는다.
+                    val losesManualText = readySystemProfiles.any { it.id == option.id } &&
+                        editor.voiceText.isNotBlank() &&
+                        !editor.voiceRandomPrompt &&
+                        !editor.isActiveBucketAlarm()
+                    if (losesManualText) {
+                        pendingVoiceSwitch = option
                     } else {
-                        editor.voiceSource = VoiceSources.TTS_PROFILE
-                        editor.clearAudio()
-                        editor.clearTtsMeta()
-                        editor.selectVoiceProfile(option.id)
+                        applyVoiceSelection(option)
                     }
                 },
+                onPreview = { option -> onPreviewVoice(option.id) },
+                playingVoiceId = previewPlayingVoiceId,
+                preparingVoiceId = previewPreparingVoiceId,
             )
         }
         if (voiceEnabled) {
@@ -197,15 +217,15 @@ internal fun VoiceAudioCard(
                     ) {
                         val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
                         if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
-                            // 기본 선택 우선순위: 내 목소리 → 공유받은 목소리 → 기본 목소리로
-                            // 설정해 둔 것 → 목록 첫 번째. 각 그룹 안에서는 기본 목소리로
-                            // 지정해 둔 프로필이 있으면 그것을 우선한다.
+                            // 처음 고르는 목소리: 마지막에 쓴 목소리를 그대로 이어 준다.
+                            // 그 목소리가 없으면 내 목소리 → 공유받은 목소리 → 기본 목소리
+                            // 순으로 내려간다(각 그룹 안에서도 마지막에 쓴 것을 우선).
                             editor.selectVoiceProfile(
-                                readyOwnProfiles.firstOrNull { it.id == defaultVoiceId }?.id
+                                readyOwnProfiles.firstOrNull { it.id == lastUsedVoiceId }?.id
                                     ?: readyOwnProfiles.firstOrNull()?.id
-                                    ?: readyFamilyVoices.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: readyFamilyVoices.firstOrNull { it.id == lastUsedVoiceId }?.id
                                     ?: readyFamilyVoices.firstOrNull()?.id
-                                    ?: profileOptions.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: profileOptions.firstOrNull { it.id == lastUsedVoiceId }?.id
                                     ?: profileOptions.first().id,
                             )
                         }
@@ -238,7 +258,7 @@ internal fun VoiceAudioCard(
                                 )
                             } else {
                                 MessageModeSummaryRow(
-                                    isManual = !editor.voiceRandomPrompt,
+                                    isManual = !editor.voiceRandomPrompt && !editor.isActiveBucketAlarm(),
                                     randomContext = editor.voiceRandomContext,
                                     onClick = onOpenRandomPromptSettings,
                                 )
@@ -327,6 +347,27 @@ internal fun VoiceAudioCard(
             }
         }
         }
+    pendingVoiceSwitch?.let { pending ->
+        IosAlertDialog(
+            title = stringResource(R.string.editor_voice_switch_drops_text_title),
+            message = stringResource(R.string.editor_voice_switch_drops_text_message),
+            onDismiss = { pendingVoiceSwitch = null },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.r3dlg_modal_dialog_close),
+                    onClick = { pendingVoiceSwitch = null },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.editor_voice_switch_drops_text_confirm),
+                    emphasized = true,
+                    onClick = {
+                        applyVoiceSelection(pending)
+                        pendingVoiceSwitch = null
+                    },
+                ),
+            ),
+        )
+    }
 }
 
 // "세부 설정 > 음성 소리" 전체화면 모달. 목소리 크기·반복 재생을 여기로 모아
@@ -419,6 +460,7 @@ private fun NoUsableVoiceProfileCallout(
             }
         }
     }
+
 }
 
 // 목소리 행 — 탭하면 바텀시트가 올라와 내 목소리·공유받은 목소리·기본 목소리 전체에서
@@ -430,6 +472,10 @@ private fun VoiceProfileSelector(
     voiceEnabled: Boolean,
     onVoiceEnabledChange: (Boolean) -> Unit,
     onSelect: (VoiceProfileOption) -> Unit,
+    /** 행의 재생 버튼 — 고르기 전에 목소리를 들어볼 수 있게 한다(목소리 선택 화면과 동일). */
+    onPreview: (VoiceProfileOption) -> Unit,
+    playingVoiceId: String?,
+    preparingVoiceId: String?,
 ) {
     var sheetOpen by remember { mutableStateOf(false) }
     val selectedOption = options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
@@ -488,10 +534,29 @@ private fun VoiceProfileSelector(
                         onSelect(option)
                         dismiss()
                     },
+                    trailing = {
+                        VoicePreviewButton(
+                            playing = playingVoiceId == option.id,
+                            preparing = preparingVoiceId == option.id,
+                            onClick = { onPreview(option) },
+                        )
+                    },
                     divider = index != options.lastIndex,
                 )
             }
         }
+    }
+}
+
+/** 선택 시트 행의 재생 버튼. 행 자체를 누르면 '선택', 이 버튼은 '들어보기'로 나눈다. */
+@Composable
+private fun VoicePreviewButton(
+    playing: Boolean,
+    preparing: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick) {
+        VoicePreviewButtonIcon(active = playing, preparing = preparing)
     }
 }
 
@@ -553,6 +618,8 @@ internal fun FreeBucketSettingsPane(
     selectedBucket: String?,
     onSelectBucket: (String) -> Unit,
     onDismiss: () -> Unit,
+    /** 잠긴 '직접 입력'을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
+    onManualLocked: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -585,16 +652,20 @@ internal fun FreeBucketSettingsPane(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SnoozeOptionSection {
-                    buckets.forEachIndexed { index, bucket ->
+                    buckets.forEach { bucket ->
                         SnoozeRadioRow(
                             label = stringResource(freeBucketLabelRes(bucket)),
                             selected = selectedBucket == bucket,
                             onClick = { onSelectBucket(bucket) },
                         )
-                        if (index != buckets.lastIndex) {
-                            SnoozeOptionDivider()
-                        }
+                        SnoozeOptionDivider()
                     }
+                    // 무료에게도 '직접 입력'이 존재한다는 걸 보여준다. 목록에서 아예 빼면
+                    // 이런 기능이 있는지조차 모르고, 유료 전환 동기 중 가장 강한 것을 잃는다.
+                    SnoozeLockedRow(
+                        label = stringResource(R.string.editor_msg_mode_manual),
+                        onClick = onManualLocked,
+                    )
                 }
             }
         }

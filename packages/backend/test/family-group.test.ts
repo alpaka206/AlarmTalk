@@ -59,7 +59,6 @@ describe('GET /family/groups/current', () => {
         joined_at: '2026-01-01T00:00:00Z',
         email: 'owner@test.com',
         name: 'Owner',
-        picture: null,
         allow_family_alarms: 1,
       },
       {
@@ -69,7 +68,6 @@ describe('GET /family/groups/current', () => {
         joined_at: '2026-01-02T00:00:00Z',
         email: 'member@test.com',
         name: 'Member',
-        picture: 'https://pic.example.com/m.jpg',
         allow_family_alarms: 0,
         dynamic_prompt_settings_json: JSON.stringify({
           weather: { country: 'KR', city: 'Busan' },
@@ -95,7 +93,6 @@ describe('GET /family/groups/current', () => {
     expect(data.members[0].allow_family_alarms).toBe(true);
     expect(data.members[1].user_id).toBe(MEMBER_PK);
     expect(data.members[1].allow_family_alarms).toBe(false);
-    expect(data.members[1].picture).toBe('https://pic.example.com/m.jpg');
     expect(data.members[1].dynamic_prompt_settings).toEqual({
       weather: { country: null, city: null },
       fortune: { gender: null, birth_date: null, birth_time: null },
@@ -193,9 +190,7 @@ describe('GET /family/groups/current', () => {
         role: 'owner',
         joined_at: '2026-01-01T00:00:00Z',
         email: 'owner@test.com',
-        name: 'Owner',
-        picture: null,
-        allow_family_alarms: 1,
+        name: 'Owner',        allow_family_alarms: 1,
       },
       {
         id: MEMBER_ROW_ID_2,
@@ -203,9 +198,7 @@ describe('GET /family/groups/current', () => {
         role: 'member',
         joined_at: '2026-01-02T00:00:00Z',
         email: 'member@test.com',
-        name: 'Member',
-        picture: null,
-        allow_family_alarms: 0,
+        name: 'Member',        allow_family_alarms: 0,
       },
     ]);
 
@@ -223,7 +216,7 @@ describe('GET /family/groups/current', () => {
     expect(updateSubscription?.args).toEqual([GROUP_ID, 'sub-member']);
   });
 
-  it('maps null email/name/picture to null', async () => {
+  it('maps null email/name to null', async () => {
     pushResolveUserPk(OWNER_PK);
     mockDB.pushResult([
       {
@@ -242,18 +235,14 @@ describe('GET /family/groups/current', () => {
         role: 'member',
         joined_at: '2026-01-01T00:00:00Z',
         email: null,
-        name: null,
-        picture: null,
-        allow_family_alarms: null,
+        name: null,        allow_family_alarms: null,
       },
     ]);
 
     const res = await app.request('/family/groups/current');
     const data = await res.json();
     expect(data.members[0].email).toBeNull();
-    expect(data.members[0].name).toBeNull();
-    expect(data.members[0].picture).toBeNull();
-    expect(data.members[0].allow_family_alarms).toBe(false);
+    expect(data.members[0].name).toBeNull();    expect(data.members[0].allow_family_alarms).toBe(false);
   });
 });
 

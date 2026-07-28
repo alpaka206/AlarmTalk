@@ -199,7 +199,7 @@ internal fun VoiceProfileManagementPanel(
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
-    onRenameVoiceProfile: (String, String, String, String) -> Unit,
+    onRenameVoiceProfile: (String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
@@ -207,8 +207,10 @@ internal fun VoiceProfileManagementPanel(
     onPromoteVoiceDraft: (String) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
-    defaultVoiceId: String? = null,
-    onSetDefaultVoice: (String) -> Unit = {},
+    // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
+    voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
+    // 유료 안내 모달의 '쿠폰이 있어요' 입력에 쓴다.
+    onRegisterCode: (String) -> Unit = {},
     // 기본 목소리 무료 버킷 프리페치 진행(다운로드 n to 전체). null = 진행 중 아님.
     voicePrefetchProgress: Pair<Int, Int>? = null,
     // 유료 클론 사전렌더(R2 21클립) 상태 조회/재시도 — 목소리 탭 준비 표시가 폴링한다.
@@ -263,10 +265,13 @@ internal fun VoiceProfileManagementPanel(
     }
     var profileVoiceLanguage by remember { mutableStateOf(defaultVoiceLanguage) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
+    var voiceLimitNoticeOpen by remember { mutableStateOf(false) }
+    // 섹션 접힘 상태 — 기본은 모두 펼침(접힌 채 시작하면 쓸 수 있는 목소리가 가려진다).
+    var ownSectionExpanded by remember { mutableStateOf(true) }
+    var sharedSectionExpanded by remember { mutableStateOf(true) }
+    var systemSectionExpanded by remember { mutableStateOf(true) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
-    var renameRelationship by remember { mutableStateOf("") }
-    var renameListenerTitle by remember { mutableStateOf("") }
     var renameSubmitAttempted by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -275,7 +280,6 @@ internal fun VoiceProfileManagementPanel(
     // 방금 녹음한 클립의 미리듣기 재생 상태 (녹음 완료 배지의 ▶ 버튼).
     var recordPreviewPlaying by remember { mutableStateOf(false) }
     // 기본 목소리 선택 시트 — 시트 안 탭 = 선택 + 인사말 미리듣기(닫기는 드래그/스크림).
-    var defaultVoiceSheetOpen by remember { mutableStateOf(false) }
     // 지금 인사말 샘플을 재생 중인 기본 목소리 id (재생 아이콘 토글용).
     var playingGreetingVoiceId by remember { mutableStateOf<String?>(null) }
     var greetingPreviewRequestId by remember { mutableIntStateOf(0) }
@@ -316,6 +320,8 @@ internal fun VoiceProfileManagementPanel(
     val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
+    val maxProfilesReachedMessage =
+        stringResource(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
 
     fun stopMediaPreview(invalidateGreetingPreview: Boolean = true) {
         if (invalidateGreetingPreview) greetingPreviewRequestId += 1
@@ -352,6 +358,8 @@ internal fun VoiceProfileManagementPanel(
 
     // 기본 목소리 시트를 여는 순간 인사말 클립을 미리 받아 둔다 — 행 탭 시 지연 없이 재생되게.
     // 실패는 조용히 넘긴다(탭 시 재시도 경로가 그대로 있음).
+    // 목록에 미리듣기 버튼이 상시 노출되므로 화면에 들어올 때 미리 받아 둔다
+    // (예전에는 기본 목소리 시트를 열 때만 받았다).
     fun prefetchGreetingPreviews() {
         scope.launch {
             systemVoices.forEach { profile ->
@@ -363,6 +371,11 @@ internal fun VoiceProfileManagementPanel(
                 runCatching { ensureGreetingCached(clip) }
             }
         }
+    }
+
+    // stockClips 가 채워지면(세션 첫 로드·재조회) 미리듣기 클립을 받아 둔다.
+    LaunchedEffect(stockClips.size, previewLanguage) {
+        if (stockClips.isNotEmpty()) prefetchGreetingPreviews()
     }
 
     // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플을 들려준다 — 내장(res/raw) 우선,
@@ -1176,21 +1189,42 @@ internal fun VoiceProfileManagementPanel(
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        // 세 묶음(내 목소리 · 공유받은 목소리 · 기본 목소리)을 접었다 펼 수 있는 섹션으로.
+        // 기본값은 모두 펼침 — 접힌 채로 시작하면 무료 사용자가 쓸 수 있는 기본 목소리가
+        // 다시 가려지는데, 이 화면을 고친 이유가 그거였다.
+        VoiceCatalogSectionHeader(
+            title = stringResource(R.string.voices_my_voices_title),
+            expanded = ownSectionExpanded,
+            onToggle = { ownSectionExpanded = !ownSectionExpanded },
         ) {
-            Text(
-                text = stringResource(R.string.voices_my_voices_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            // 이번 달 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
+            // 유료 사용자에게만 의미가 있다(무료는 눌렀을 때 이용권 안내로 간다).
+            // 유료만 숫자를 본다. 무료에게 '이번 달 0/1'은 마치 이용권만 있으면 이미 다 쓴
+            // 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고 눌렀을 때 안내한다.
+            val monthlyQuota = voiceDraftQuota?.takeIf { canCreateVoice && it.registrationLimit > 0 }
+            monthlyQuota?.let { quota ->
+                MutedText(
+                    stringResource(
+                        R.string.voices_monthly_quota,
+                        quota.registrationRemaining.coerceAtLeast(0),
+                        quota.registrationLimit,
+                    ),
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 옆에 '이번 달 0/1'이 있어
+            // 왜 흐린지가 그 자리에서 읽힌다. 무료는 숫자가 없으니 끄지 않고(왜 흐린지 알 길이
+            // 없다) 항상 눌리게 두어 이용권 안내 모달로 보낸다.
+            val monthlyExhausted = monthlyQuota != null && monthlyQuota.registrationRemaining <= 0
             Button(
                 onClick = {
-                    if (canOpenCreateForm) showCreateForm = true
+                    when {
+                        canOpenCreateForm -> showCreateForm = true
+                        !canCreateVoice -> voicePlanGateOpen = true
+                        else -> voiceLimitNoticeOpen = true
+                    }
                 },
-                enabled = canOpenCreateForm,
+                enabled = !voiceProfileBusy && !monthlyExhausted,
             ) {
                 Text(stringResource(R.string.voices_add))
             }
@@ -1200,116 +1234,113 @@ internal fun VoiceProfileManagementPanel(
             MutedText(localMessage.orEmpty())
         }
 
-        if (ownVoices.isEmpty() && canCreateVoice) {
-            MutedText(stringResource(R.string.voices_no_voices_yet))
-        } else if (ownVoices.isEmpty() && authSession != null) {
-            // 무료 플랜 — 빈 자리로 두지 않고, 내 목소리 클론이 유료 기능임을 조용히 알린다.
-            MutedText(stringResource(R.string.voices_clone_requires_paid_hint))
-        } else if (ownVoices.isNotEmpty()) {
-            ownVoices.forEach { profile ->
-                // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬 다운로드 중
-                // "다운로드 중" → 둘 다 완료(준비 완료)면 표시 없음. 조회 전에도 표시하지 않는다.
-                val prerenderStatus = prerenderStatuses[profile.id]
-                val readiness = when {
-                    profile.id in cloneLocalReadyIds -> null
-                    prerenderStatus == null -> null
-                    prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
-                    prerenderStatus.status == "done" -> CloneVoiceReadiness.Downloading
-                    prerenderStatus.status == "pending" && prerenderStatus.total > 0 ->
-                        CloneVoiceReadiness.Preparing(prerenderStatus.generated, prerenderStatus.total)
-                    else -> null
-                }
-                VoiceProfileRow(
-                    profile = profile,
-                    enabled = !voiceProfileBusy,
-                    canShareVoice = canShareVoice,
-                    onRename = {
-                        renameTarget = profile
-                        renameName = profile.name
-                        renameRelationship = profile.relationshipLabel.orEmpty()
-                        renameListenerTitle = profile.listenerTitle.orEmpty()
-                        renameSubmitAttempted = false
-                    },
-                    onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
-                    onDelete = { deleteTarget = profile },
-                    readiness = readiness,
-                    onRetryPrerender = { retryPrerender(profile.id) },
-                    retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
-                    speechStyleFailed = profile.speechStyleStatus == "failed",
-                    onRetrySpeechStyle = { retrySpeechStyle(profile.id) },
-                    retrySpeechStyleBusy = profile.id in speechStyleRetryBusyIds,
-                )
-            }
+        if (ownSectionExpanded) {
+            VoiceCatalogGroup(
+                ownVoices.map { profile ->
+                    {
+                        // 준비 상태 표시: 서버 사전렌더 중 "준비 중 n/21" → 서버 완료 후 로컬
+                        // 다운로드 중 "다운로드 중" → 둘 다 완료면 표시 없음.
+                        val prerenderStatus = prerenderStatuses[profile.id]
+                        val readiness = when {
+                            profile.id in cloneLocalReadyIds -> null
+                            prerenderStatus == null -> null
+                            prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
+                            prerenderStatus.status == "done" -> CloneVoiceReadiness.Downloading
+                            prerenderStatus.status == "pending" && prerenderStatus.total > 0 ->
+                                CloneVoiceReadiness.Preparing(prerenderStatus.generated, prerenderStatus.total)
+                            else -> null
+                        }
+                        VoiceProfileRow(
+                            profile = profile,
+                            enabled = !voiceProfileBusy,
+                            canShareVoice = canShareVoice,
+                            isPlaying = playingGreetingVoiceId == profile.id,
+                            onPreview = { playGreeting(profile) },
+                            onRename = {
+                                renameTarget = profile
+                                renameName = profile.name
+                                renameSubmitAttempted = false
+                            },
+                            onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
+                            onDelete = { deleteTarget = profile },
+                            readiness = readiness,
+                            onRetryPrerender = { retryPrerender(profile.id) },
+                            retryPrerenderBusy = profile.id in prerenderRetryBusyIds,
+                            speechStyleFailed = profile.speechStyleStatus == "failed",
+                            onRetrySpeechStyle = { retrySpeechStyle(profile.id) },
+                            retrySpeechStyleBusy = profile.id in speechStyleRetryBusyIds,
+                        )
+                    }
+                },
+            )
         }
 
         if (canShareVoice && familyVoices.isNotEmpty()) {
-            Text(
-                text = stringResource(R.string.voices_shared_voices_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
+            VoiceCatalogSectionHeader(
+                title = stringResource(R.string.voices_shared_voices_title),
+                expanded = sharedSectionExpanded,
+                onToggle = { sharedSectionExpanded = !sharedSectionExpanded },
             )
-            familyVoices.forEach { profile ->
-                SharedVoiceProfileRow(
-                    profile = profile,
-                    isPlaying = playingGreetingVoiceId == profile.id,
-                    onPlay = { playSharedGreeting(profile) },
+            if (sharedSectionExpanded) {
+                VoiceCatalogGroup(
+                    familyVoices.map { profile ->
+                        {
+                            SharedVoiceProfileRow(
+                                profile = profile,
+                                isPlaying = playingGreetingVoiceId == profile.id,
+                                onPlay = { playSharedGreeting(profile) },
+                            )
+                        }
+                    },
                 )
             }
         }
 
-        // 기본 목소리는 맨 아래 — 내 목소리·공유받은 목소리(개인화된 것들)가 먼저 온다.
+        // 기본 제공 목소리는 맨 아래 — 개인화된 목소리(내 것·공유받은 것)가 먼저 온다.
+        // 내 목소리·공유받은 목소리가 하나도 없어도 이 섹션은 항상 나온다.
         if (systemVoices.isNotEmpty()) {
-            Row(
-                // 토스식 [제목 … 값 + 셰브론] 행 — 탭하면 기본 목소리 선택 시트를 연다.
-                // 눌림 리플(indication) 없이 조용히 동작.
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) {
-                        // 이전 화면 흐름의 안내가 시트 안에 엉뚱하게 보이지 않게 비우고 연다.
-                        localMessage = null
-                        prefetchGreetingPreviews()
-                        defaultVoiceSheetOpen = true
-                    }
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.voices_default_voice_row_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        // 정해진 기본 목소리 이름이 값. 아직 없으면 '선택하기'로 행동을 유도한다.
-                        text = systemVoices.firstOrNull { it.id == defaultVoiceId }?.name
-                            ?: stringResource(R.string.voices_default_voice_choose),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            // 기본 목소리 변경 직후 무료 버킷 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다
-            // (실패해도 편집기 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
-            voicePrefetchProgress?.let { (done, total) ->
-                VoiceProgressMessage(
-                    stringResource(R.string.voices_default_voice_prefetching, done, total),
+            VoiceCatalogSectionHeader(
+                title = stringResource(R.string.voices_system_voices_title),
+                expanded = systemSectionExpanded,
+                onToggle = { systemSectionExpanded = !systemSectionExpanded },
+            )
+            if (systemSectionExpanded) {
+                VoiceCatalogGroup(
+                    systemVoices.map { profile ->
+                        {
+                            // 부가설명은 두지 않는다 — 섹션 이름이 이미 '기본 목소리'라고 말한다.
+                            VoiceCatalogRow(
+                                name = profile.name,
+                                subtitle = null,
+                                isPlaying = playingGreetingVoiceId == profile.id,
+                                onPreview = { playGreeting(profile) },
+                            )
+                        }
+                    },
                 )
             }
-            // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다
-            // (AlarmEditorScreen.resolvedVoiceListenerTitle). 관계·호칭은 내/공유 목소리에만 있다.
         }
+        // 기본 목소리 변경 직후 무료 버킷 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다
+        // (실패해도 편집기 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
+        voicePrefetchProgress?.let { (done, total) ->
+            VoiceProgressMessage(
+                stringResource(R.string.voices_default_voice_prefetching, done, total),
+            )
+        }
+    }
+
+    if (voiceLimitNoticeOpen) {
+        IosAlertDialog(
+            title = stringResource(R.string.voices_limit_title),
+            message = stringResource(R.string.voices_limit_message),
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.r3dlg_modal_dialog_close),
+                    onClick = { voiceLimitNoticeOpen = false },
+                ),
+            ),
+            onDismiss = { voiceLimitNoticeOpen = false },
+        )
     }
 
     if (voicePlanGateOpen) {
@@ -1321,54 +1352,14 @@ internal fun VoiceProfileManagementPanel(
                 onOpenBilling()
             },
             onDismiss = { voicePlanGateOpen = false },
+            onRedeemCode = onRegisterCode,
+            redeemBusy = voiceProfileBusy,
         )
     }
 
-    // 시트가 열린 채 시스템 보이스 목록이 비면(세션 초기화·재로딩) 재생을 멈추고 시트를 정리한다.
+    // 시스템 보이스 목록이 비면(세션 초기화·재로딩) 재생 중이던 미리듣기를 멈춘다.
     LaunchedEffect(systemVoices.isEmpty()) {
-        if (systemVoices.isEmpty() && defaultVoiceSheetOpen) {
-            stopMediaPreview()
-            defaultVoiceSheetOpen = false
-        }
-    }
-
-    if (defaultVoiceSheetOpen && systemVoices.isNotEmpty()) {
-        // 다른 선택 시트와 달리 탭해도 닫지 않는다 — 탭 = 선택 + 인사말 미리듣기(재탭 시 정지)라
-        // 여러 목소리를 이어 들어보며 고르는 흐름. 닫기는 드래그/스크림.
-        WakerSelectionSheet(
-            title = stringResource(R.string.voices_default_voice_row_title),
-            onDismiss = {
-                stopMediaPreview()
-                defaultVoiceSheetOpen = false
-            },
-        ) { _ ->
-            WakerSheetOptionGroup {
-                systemVoices.forEachIndexed { index, profile ->
-                    WakerSheetOptionRow(
-                        title = profile.name,
-                        selected = profile.id == defaultVoiceId,
-                        onClick = {
-                            onSetDefaultVoice(profile.id)
-                            playGreeting(profile)
-                        },
-                        trailing = if (playingGreetingVoiceId == profile.id) {
-                            { PlayingEqualizer() }
-                        } else {
-                            null
-                        },
-                        divider = index != systemVoices.lastIndex,
-                    )
-                }
-            }
-            // 미리듣기 준비중/실패 안내 — 패널 본문의 MutedText 는 시트 스크림에 가려지므로
-            // 시트가 열려 있는 동안엔 여기서 보여준다(열 때 localMessage 를 비워 회귀 방지).
-            // 시트 콘텐츠는 풀블리드(민짜 행)라 텍스트에는 좌우 패딩을 직접 준다.
-            if (localMessage != null) {
-                Box(modifier = Modifier.padding(horizontal = 20.dp)) {
-                    MutedText(localMessage.orEmpty())
-                }
-            }
-        }
+        if (systemVoices.isEmpty()) stopMediaPreview()
     }
 
     // 만드는 중/미리듣기/사전렌더 스텝에선 draft·등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지한다.
@@ -2063,26 +2054,16 @@ internal fun VoiceProfileManagementPanel(
         val resolvedRenameName = renameName.trim()
         val renameNameError = renameSubmitAttempted && resolvedRenameName.isBlank()
         VoiceProfileEditDialog(
-            title = stringResource(R.string.voices_edit_info_title),
-            description = stringResource(R.string.voices_edit_info_desc),
+            title = stringResource(R.string.voices_edit_name_title),
+            description = stringResource(R.string.voices_edit_name_desc),
             name = renameName,
-            relationship = renameRelationship,
-            listenerTitle = renameListenerTitle,
             nameError = renameNameError,
             onNameChange = { renameName = it.take(50) },
-            onRelationshipChange = { renameRelationship = it.take(30) },
-            onListenerTitleChange = { renameListenerTitle = it.take(30) },
             onDismiss = { renameTarget = null },
             onConfirm = {
                 renameSubmitAttempted = true
-                // 관계·호칭은 선택 입력 — 이름만 채워지면 저장한다.
                 if (resolvedRenameName.isNotBlank()) {
-                    onRenameVoiceProfile(
-                        profile.id,
-                        resolvedRenameName,
-                        renameRelationship.trim(),
-                        renameListenerTitle.trim(),
-                    )
+                    onRenameVoiceProfile(profile.id, resolvedRenameName)
                     renameTarget = null
                 }
             },

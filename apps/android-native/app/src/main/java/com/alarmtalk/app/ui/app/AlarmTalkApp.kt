@@ -32,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
@@ -616,6 +617,8 @@ internal fun AlarmTalkApp(
                 navController.navigateTopLevelTab(NativeTab.Billing)
             },
             onDismiss = { planGateDialog = null },
+            onRedeemCode = viewModel::registerCode,
+            redeemBusy = viewModel.socialBusy,
         )
     }
 
@@ -668,6 +671,8 @@ internal fun AlarmTalkApp(
     // 하단바·FAB 등 앱 크롬 노출 조건(로그인·동의 완료, 업데이트 강제/삭제 대기 아님).
     // 온보딩 목소리 고르기 중에는 하단 탭·알람 추가 FAB 를 감춘다 — 선택을 끝내기 전에
     // 다른 화면으로 샐 수 있는 출구를 두지 않는다.
+    // 알람 다중 선택(길게 누르기) 중인지 — 이때는 ＋ FAB 를 감춘다.
+    var alarmSelectionActive by remember { mutableStateOf(false) }
     val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
         !viewModel.updateRequired && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
 
@@ -697,7 +702,10 @@ internal fun AlarmTalkApp(
             // 빈 상태↔리스트 전환 때 하드컷 대신 스케일+페이드. scale 0 에서 시작하지 않고
             // (무에서 튀어나오는 느낌 방지) 퇴장은 진입보다 빠르게 끊는다.
             AnimatedVisibility(
-                visible = showAppChrome && selectedTab == NativeTab.Alarms && alarms.isNotEmpty(),
+                // 선택 모드에선 숨긴다 — 지우려고 고르는 중에 '추가'가 같이 떠 있으면
+                // 오른쪽 아래에서 손가락이 노리는 게 뭔지 애매해진다.
+                visible = showAppChrome && selectedTab == NativeTab.Alarms &&
+                    alarms.isNotEmpty() && !alarmSelectionActive,
                 enter = scaleIn(initialScale = 0.85f) + fadeIn(),
                 exit = scaleOut(targetScale = 0.85f, animationSpec = tween(120)) +
                     fadeOut(animationSpec = tween(120)),
@@ -802,16 +810,31 @@ internal fun AlarmTalkApp(
       }
       // 첫 로그인 "목소리 고르기" — 기본 목소리 4개를 다 펼치는 대신 1개를 미리듣고 고른다.
       if (viewModel.showVoiceSetup) {
-          // 시스템 음성이 비어 있으면(무료 플랜 lock 등으로) 다시 받아와 빈 로딩 화면에 갇히지 않게 한다.
-          LaunchedEffect(Unit) { viewModel.preloadVoiceProfiles() }
+          // 다운로드는 WorkManager 가 하므로 화면은 진행 상황만 구독한다 — 나가도 이어진다.
+          // observe() 가 유니크 작업 이력에서 '지금 볼 것' 하나를 이미 골라 준다
+          // (재시도가 도는 동안 끝난 옛 FAILED 를 붙잡지 않도록).
+          val prefetchInfo by com.alarmtalk.app.sync.StockClipPrefetchWorker
+              .observe(context)
+              .collectAsState(initial = null)
+          val prefetchDone = prefetchInfo?.progress
+              ?.getInt(com.alarmtalk.app.sync.StockClipPrefetchWorker.KEY_DONE, 0) ?: 0
+          val prefetchTotal = prefetchInfo?.progress
+              ?.getInt(com.alarmtalk.app.sync.StockClipPrefetchWorker.KEY_TOTAL, 0) ?: 0
+          // 성공하면 화면을 닫는다. 실패(FAILED)만 재시도를 노출한다 — 재시도 대기(ENQUEUED)는
+          // 워커가 알아서 하므로 사용자에게 실패로 보이면 안 된다.
+          // 단 '성공'만으로 닫지 않는다: 워커는 받을 게 없거나 세션이 없으면 한 개도 받지
+          // 않고 성공을 내므로, 실제로 파일이 생겼는지 다시 확인한다.
+          LaunchedEffect(prefetchInfo?.state) {
+              if (prefetchInfo?.state == androidx.work.WorkInfo.State.SUCCEEDED) {
+                  viewModel.completeVoiceSetupIfDownloaded()
+              }
+          }
           VoiceOnboardingScreen(
               contentPadding = padding,
-              systemVoices = viewModel.voiceProfiles.filter { it.isSystem == true },
-              voiceProfileBusy = voiceProfileBusy,
-              voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
-              stockClips = viewModel.stockClips,
-              onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
-              onChoose = viewModel::completeVoiceSetup,
+              done = prefetchDone,
+              total = prefetchTotal,
+              failed = prefetchInfo?.state == androidx.work.WorkInfo.State.FAILED,
+              onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
               onSkip = viewModel::skipVoiceSetup,
           )
           return@Scaffold
@@ -827,6 +850,7 @@ internal fun AlarmTalkApp(
                   composable(tab.route) {
                       AlarmListScreen(
                           contentPadding = padding,
+                          onAlarmSelectionModeChange = { alarmSelectionActive = it },
                           selectedTab = tab,
                           onSelectTab = ::navigateToTab,
                           alarms = alarms,
@@ -840,7 +864,12 @@ internal fun AlarmTalkApp(
                           familyVoices = familyVoices,
                           billingBusy = billingBusy,
                           subscriptionResponse = subscriptionResponse,
-                          voiceDraftQuotaExhausted = viewModel.voiceDraftQuota?.let { it.remaining <= 0 } == true,
+                          // 삭제 경고('지금 지우면 이번 달엔 못 만들어요')는 초안 시도 쿼터가 아니라
+                          // 정식 등록 쿼터로 판정해야 한다. 초안 쿼터의 remaining 은 제한 해제 후
+                          // 호환용으로 0 고정이라, 그대로 쓰면 이번 달 등록이 남아 있어도 경고가 뜬다.
+                          voiceDraftQuotaExhausted =
+                              viewModel.voiceDraftQuota?.let { it.registrationRemaining <= 0 } == true,
+                          voiceDraftQuota = viewModel.voiceDraftQuota,
                           vouchers = vouchers,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,
@@ -854,8 +883,7 @@ internal fun AlarmTalkApp(
                           onUpdateVoicePreviewText = viewModel::updateVoicePreviewText,
                           onPromoteVoiceDraft = viewModel::promoteVoiceDraft,
                           onDeleteVoiceDraft = viewModel::deleteVoiceDraft,
-                          defaultVoiceId = viewModel.defaultVoiceId,
-                          onSetDefaultVoice = viewModel::setDefaultVoice,
+                          lastUsedVoiceId = viewModel.lastUsedVoiceId,
                           voicePrefetchProgress = viewModel.voicePrefetchProgress,
                           onGetVoicePrerenderStatus = viewModel::fetchVoicePrerenderStatus,
                           onRetryVoicePrerender = viewModel::retryVoicePrerender,
@@ -912,6 +940,8 @@ internal fun AlarmTalkApp(
                   val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
                   AlarmEditorScreen(
                       contentPadding = padding,
+                      onRegisterCode = viewModel::registerCode,
+                      redeemBusy = viewModel.socialBusy,
                       alarm = null,
                       authSession = authSession,
                       subscriptionResponse = subscriptionResponse,
@@ -922,7 +952,7 @@ internal fun AlarmTalkApp(
                       familyVoices = familyVoices,
                       voiceProfileBusy = voiceProfileBusy,
                       stockClips = viewModel.stockClips,
-                      defaultVoiceId = viewModel.defaultVoiceId,
+                      lastUsedVoiceId = viewModel.lastUsedVoiceId,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
@@ -956,6 +986,8 @@ internal fun AlarmTalkApp(
                   } else {
                       AlarmEditorScreen(
                           contentPadding = padding,
+                          onRegisterCode = viewModel::registerCode,
+                          redeemBusy = viewModel.socialBusy,
                           alarm = currentAlarm,
                           authSession = authSession,
                           subscriptionResponse = subscriptionResponse,
@@ -965,7 +997,7 @@ internal fun AlarmTalkApp(
                           familyVoices = familyVoices,
                           voiceProfileBusy = voiceProfileBusy,
                           stockClips = viewModel.stockClips,
-                          defaultVoiceId = viewModel.defaultVoiceId,
+                          lastUsedVoiceId = viewModel.lastUsedVoiceId,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },

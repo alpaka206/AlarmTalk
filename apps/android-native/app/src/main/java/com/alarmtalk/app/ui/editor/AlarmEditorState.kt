@@ -252,8 +252,14 @@ internal class AlarmEditorState(
         generatedTtsKey = null
     }
 
-    /** 현재 편집 상태가 실제 버킷 회전 알람인지 — 대표 클립이 버킷 클립 목록에 포함될 때만 true. */
-    private fun isActiveBucketAlarm(): Boolean {
+    /**
+     * 현재 편집 상태가 실제 버킷 회전 알람인지 — 대표 클립이 버킷 클립 목록에 포함될 때만 true.
+     *
+     * '직접 입력'과의 구분에도 쓰는 단일 출처다. 버킷 알람도 저장될 때 voiceRandomPrompt=false 에
+     * voiceText=클립문구가 되므로, `!voiceRandomPrompt` 만으로 판별하면 버킷 알람이 직접 입력으로
+     * 오분류된다(그 오분류 때문에 2026-07-21 에 문구 프리필이 통째로 제거됐었다).
+     */
+    fun isActiveBucketAlarm(): Boolean {
         if (playMode == AlarmPlayModes.ALARM_ONLY || voiceSource == VoiceSources.LOCAL_AUDIO) return false
         if (selectedBucket == null) return false
         val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)

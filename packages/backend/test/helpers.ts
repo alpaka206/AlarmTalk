@@ -13,6 +13,26 @@ export interface MockExecuteResult {
 
 export type ExecuteCall = { sql: string; args: (string | number | null)[] };
 
+/**
+ * `?` 개수와 args 길이가 어긋난 쿼리를 테스트에서 즉시 잡는다.
+ *
+ * libSQL 은 이런 문을 실행 전에 거절하므로, 라우트가 통째로 죽는다(500). 실제로
+ * Apple 로그인 조건을 걷어내면서 `WHERE google_id = ? OR id = ?` 로 줄인 뒤 args 의
+ * 세 번째 값을 안 지운 곳이 세 군데 있었고(fcm.getTokensForUser · DELETE /user/me ·
+ * purgeUserAccount 고아 가드), 타입 검사로는 걸리지 않았다.
+ *
+ * 실행 시점의 sql 은 IN 절 생성기까지 전개된 최종 문자열이라 `?` 를 그대로 세면 된다.
+ */
+function assertBindingCount(query: { sql: string; args: unknown[] }) {
+  if (!Array.isArray(query.args)) return;
+  const placeholders = (query.sql.match(/\?/g) ?? []).length;
+  if (placeholders !== query.args.length) {
+    throw new Error(
+      `SQL 바인딩 개수 불일치: placeholders=${placeholders} args=${query.args.length} — ${query.sql}`,
+    );
+  }
+}
+
 export function createMockDB() {
   const calls: ExecuteCall[] = [];
   const results: MockExecuteResult[] = [];
@@ -58,6 +78,7 @@ export function createMockDB() {
 
   const client = {
     execute: async (query: { sql: string; args: (string | number | null)[] }) => {
+      assertBindingCount(query);
       // user_consents 조회 처리:
       //  - 기본(consentResultsAllowMissing=false): 큐 소비/ calls 기록 없이 모든 필수
       //    동의를 '동의함'으로 합성해 돌려준다. 기존 라우트 테스트의 push 순서·calls[N]
@@ -117,12 +138,26 @@ export function createMockDB() {
   return { client, calls, pushResult, reset, clearResults, transactions, setConsentMissing };
 }
 
-export function fakeAuthMiddleware(userId = 'user-1', email = 'user@test.com') {
+/**
+ * 실제 authMiddleware 가 심는 세 식별자를 모두 채운다.
+ *
+ * userIdPK/userLoginId 를 비워 두면 라우트가 `c.get('userIdPK') || c.get('userId')` 폴백을
+ * 타면서 늘 한 값으로 붕괴해, 이중 식별자 매칭이 깨져도 테스트가 초록으로 통과한다.
+ *
+ * loginId 를 따로 주면 '구 토큰(sub=google_id)으로 들어온 사용자' 상황을 재현할 수 있다.
+ * 기본값은 셋 다 같은 값 — 실제로도 기존 계정은 users.id 와 google_id 가 같다.
+ */
+export function fakeAuthMiddleware(
+  userId = 'user-1',
+  email = 'user@test.com',
+  loginId = userId,
+) {
   return async (c: Context<AppEnv>, next: Next) => {
     c.set('userId', userId);
+    c.set('userIdPK', userId);
+    c.set('userLoginId', loginId);
     c.set('userEmail', email);
     c.set('userName', 'Test User');
-    c.set('userPicture', '');
     await next();
   };
 }
@@ -141,8 +176,4 @@ export const ID = {
   alarm404: '00000000-0000-4000-8000-0000000000ff',
   message: '10000000-0000-4000-8000-000000000001',
   messageBad: '10000000-0000-4000-8000-0000000000ff',
-  friendship: '20000000-0000-4000-8000-000000000001',
-  friendship404: '20000000-0000-4000-8000-0000000000ff',
-  gift: '30000000-0000-4000-8000-000000000001',
-  gift404: '30000000-0000-4000-8000-0000000000ff',
 };

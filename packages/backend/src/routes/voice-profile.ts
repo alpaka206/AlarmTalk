@@ -36,7 +36,12 @@ const MAX_VOICE_PROFILES = 1;
 // (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
 const MAX_DRAFT_VOICE_PROFILES = 1;
-const MAX_DRAFT_ATTEMPTS_PER_MONTH = 3;
+// 초안 시도는 더 이상 월 단위로 막지 않는다(정식 등록 전까진 무제한 생성·삭제).
+// 이 값은 사용량 집계에만 남는다 — /draft-quota 의 limit 필드 호환용.
+const MAX_DRAFT_ATTEMPTS_PER_MONTH = 0;
+// 정식 등록(= 사용자가 체감하는 '이번 달 만들 수 있는 목소리') 한도. 월 1개.
+// 위 초안 시도 3회는 이 1개를 만들기까지의 재시도 여유다(마음에 안 들면 지우고 다시).
+const MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH = 1;
 const MIN_CLONE_DURATION_MS = 60_000;
 // 프리뷰(draft) 클론은 짧은 클립이라 60초를 못 채우는 경우가 많다.
 // "5초 한마디"는 배제하되, 세그먼트를 이어붙일 때 프레임 경계로 몇백 ms
@@ -112,10 +117,30 @@ async function readMonthlyDraftAttemptUsage(
     args: [ownerUserId, currentKstAttemptMonth()],
   });
   const used = Number(res.rows[0]?.used_count ?? 0);
+  // limit=0 은 '초안 시도 제한 없음'을 뜻한다. 사용자에게 보여줄 숫자는
+  // registration_*(월 1회 정식 등록)이고, 이건 운영 지표용 사용량이다.
+  return { limit: MAX_DRAFT_ATTEMPTS_PER_MONTH, used, remaining: 0 };
+}
+
+// 이번 달(KST) '정식 등록' 사용량 — 목소리는 한 달에 1개만 만들 수 있고(월 1회 교체),
+// 이게 사용자에게 보여줄 숫자다. MAX_DRAFT_ATTEMPTS_PER_MONTH 는 초안 재시도 여유라
+// (마음에 안 들면 지우고 다시) 내부 값이지 사용자가 셀 숫자가 아니다.
+async function readMonthlyRegistrationUsage(
+  db: DbExecutor,
+  ownerUserId: string,
+): Promise<{ limit: number; used: number; remaining: number }> {
+  const res = await db.execute({
+    sql: `SELECT COUNT(*) AS used FROM voice_profile_change_ledger
+          WHERE owner_user_id = ? AND change_type = ?
+            AND change_month = ${currentKstMonthSql()}
+            AND status != 'failed'`,
+    args: [ownerUserId, OFFICIAL_VOICE_CHANGE_TYPE],
+  });
+  const used = Number(res.rows[0]?.used ?? 0);
   return {
-    limit: MAX_DRAFT_ATTEMPTS_PER_MONTH,
+    limit: MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH,
     used,
-    remaining: Math.max(0, MAX_DRAFT_ATTEMPTS_PER_MONTH - used),
+    remaining: Math.max(0, MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH - used),
   };
 }
 
@@ -130,11 +155,13 @@ async function reserveMonthlyDraftAttempt(
           VALUES (?, ?, 1)
           ON CONFLICT(owner_user_id, attempt_month) DO UPDATE SET
             used_count = used_count + 1,
-            updated_at = datetime('now')
-          WHERE used_count < ?`,
-    args: [ownerUserId, attemptMonth, MAX_DRAFT_ATTEMPTS_PER_MONTH],
+            updated_at = datetime('now')`,
+    args: [ownerUserId, attemptMonth],
   });
-  return (result.rowsAffected ?? 0) > 0 ? attemptMonth : null;
+  // 사용량은 계속 세지만 막지는 않는다 — 프리셋(정식 등록) 전 단계인 초안은 마음에 들
+  // 때까지 만들고 지울 수 있어야 한다. 월 1회 제한은 '최종 확정'에만 건다. 동시 보유
+  // 개수는 MAX_DRAFT_VOICE_PROFILES=1 이 여전히 막으므로 클론 슬롯이 쌓이지는 않는다.
+  return (result.rowsAffected ?? 0) > 0 ? attemptMonth : attemptMonth;
 }
 
 async function refundMonthlyDraftAttempt(
@@ -203,10 +230,13 @@ async function canUseSharedVoiceProfile(
  * (= userId)을 저장하고, 다른 라우트는 users.id (= userIdPK)를 저장하기 때문에
  * 둘 다 매칭해야 owner check 가 일관되게 동작한다.
  */
-function ownerIds(c: { get: (k: 'userId' | 'userIdPK') => string | undefined }): string[] {
-  const sub = c.get('userId') as string;
-  const pk = c.get('userIdPK') as string | undefined;
-  return Array.from(new Set([sub, pk].filter((v): v is string => Boolean(v))));
+function ownerIds(c: {
+  get: (k: 'userId' | 'userIdPK' | 'userLoginId') => string | undefined;
+}): string[] {
+  // 기준은 users.id, 보조로 토큰의 로그인 식별자(구 토큰이면 google_id)를 함께 매칭한다.
+  const pk = (c.get('userIdPK') ?? c.get('userId')) as string | undefined;
+  const loginId = c.get('userLoginId') as string | undefined;
+  return Array.from(new Set([pk, loginId].filter((v): v is string => Boolean(v))));
 }
 
 /**
@@ -296,7 +326,7 @@ async function runSpeechStyleAnalysis(
  * the periodic cleanup cron — only DB rows go away here.
  */
 voiceProfile.delete('/_dev/clear-mine', async (c) => {
-  const subId = c.get('userId') as string;
+  const subId = (c.get('userLoginId') || c.get('userId')) as string;
   // production 환경에서는 노출 자체를 막는다. 인증을 통과한 뒤에도 dev/test 가 아니면
   // 라우트가 존재하지 않는 것처럼 404 로 응답.
   if (c.env.ENVIRONMENT === 'production') {
@@ -322,12 +352,6 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
 
   // 1) Tables that reference messages or voice_profiles (delete first).
   await tryDel(
-    'gifts',
-    `DELETE FROM gifts WHERE sender_id IN (${ph}) OR recipient_id IN (${ph})
-     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))`,
-    [...ids, ...ids, ...ids],
-  );
-  await tryDel(
     'message_library',
     `DELETE FROM message_library WHERE user_id IN (${ph})
      OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))`,
@@ -346,11 +370,6 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
      OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
     [...ids, ...ids],
   );
-  await tryDel('dub_jobs', `DELETE FROM dub_jobs WHERE user_id IN (${ph})`, ids);
-  await tryDel('notes', `DELETE FROM notes WHERE sender_id IN (${ph}) OR receiver_id IN (${ph})`, [
-    ...ids,
-    ...ids,
-  ]);
   await tryDel(
     'alarms',
     `DELETE FROM alarms WHERE user_id IN (${ph}) OR target_user_id IN (${ph})
@@ -370,16 +389,6 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
 
   // 3) Per-user satellite tables.
   await tryDel('push_tokens', `DELETE FROM push_tokens WHERE user_id IN (${ph})`, ids);
-  await tryDel(
-    'friendships',
-    `DELETE FROM friendships WHERE user_a IN (${ph}) OR user_b IN (${ph})`,
-    [...ids, ...ids],
-  );
-  await tryDel(
-    'voice_speakers',
-    `DELETE FROM voice_speakers WHERE upload_id IN (SELECT id FROM voice_uploads WHERE user_id IN (${ph}))`,
-    ids,
-  );
   await tryDel('voice_uploads', `DELETE FROM voice_uploads WHERE user_id IN (${ph})`, ids);
 
   // 4) Finally the users row(s).
@@ -470,7 +479,14 @@ voiceProfile.get('/draft-quota', async (c) => {
   const userPk = (c.get('userIdPK') as string | undefined) || userId;
   const db = getDB(c.env);
   const quota = await readMonthlyDraftAttemptUsage(db, userPk);
-  return c.json(quota);
+  const registration = await readMonthlyRegistrationUsage(db, userPk);
+  return c.json({
+    ...quota,
+    // 클라가 '이번 달 n/1'로 보여주는 값. draft 시도 쿼터(limit 3)와 다르다.
+    registration_limit: registration.limit,
+    registration_used: registration.used,
+    registration_remaining: registration.remaining,
+  });
 });
 
 voiceProfile.get('/family', async (c) => {
@@ -484,7 +500,7 @@ voiceProfile.get('/family', async (c) => {
           JOIN plan_group_members fm1 ON fm1.user_id = me.id
           JOIN plan_group_members fm2 ON fm1.plan_group_id = fm2.plan_group_id
           LEFT JOIN users u ON u.id = fm2.user_id
-          WHERE me.google_id = ? AND fm2.user_id != me.id AND fm2.user_id != ?`,
+          WHERE me.id = ? AND fm2.user_id != me.id AND fm2.user_id != ?`,
     args: [userId, userId],
   });
 
@@ -552,39 +568,6 @@ voiceProfile.get('/family', async (c) => {
         needs_viewer_info: needsViewerInfo,
       };
     }),
-  });
-});
-
-voiceProfile.get('/:id', async (c) => {
-  const ids = ownerIds(c);
-  const db = getDB(c.env);
-  const id = c.req.param('id');
-
-  if (!UUID_RE.test(id)) {
-    return c.json(
-      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
-      400,
-    );
-  }
-
-  const ph = ids.map(() => '?').join(',');
-  const result = await db.execute({
-    sql: `SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
-    args: [id, ...ids],
-  });
-
-  if (result.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
-  }
-
-  const row = result.rows[0]!;
-  return c.json({
-    profile: {
-      ...row,
-      is_shared: Boolean(Number(row.is_shared ?? 0)),
-      is_draft: Boolean(Number(row.is_draft ?? 0)),
-      speech_style_status: (row.speech_style_status as string | null) ?? null,
-    },
   });
 });
 
@@ -1181,20 +1164,21 @@ voiceProfile.post('/clone', async (c) => {
         409,
       );
     }
-    if (resolvedUserPk) {
-      const userPlan = await db.execute({
-        sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
-        args: [userPk, userId],
-      });
-      if (userPlan.rows.length === 0 || !isPaidVoicePlan(userPlan.rows[0]!.plan)) {
-        return c.json(
-          {
-            error: 'Voice features require a paid plan.',
-            error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
-          },
-          403,
-        );
-      }
+    // 유료 플랜 확인은 조건 없이 수행한다. 예전에는 `if (resolvedUserPk)` 안에 들어
+    // 있어서, 식별자를 해석하지 못하면 플랜 확인 없이 클론이 진행됐다(fail-open).
+    // 같은 파일의 promote 경로는 무조건 확인하고 있어 두 경로의 강도도 어긋나 있었다.
+    const userPlan = await db.execute({
+      sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+      args: [userPk, userId],
+    });
+    if (userPlan.rows.length === 0 || !isPaidVoicePlan(userPlan.rows[0]!.plan)) {
+      return c.json(
+        {
+          error: 'Voice features require a paid plan.',
+          error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+        },
+        403,
+      );
     }
 
     const missingSensitiveConsent = await missingConsentType(
@@ -1749,52 +1733,6 @@ function validateCloneDuration(
   return null;
 }
 
-voiceProfile.get('/:id/stats', async (c) => {
-  const ids = ownerIds(c);
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-  const id = c.req.param('id');
-
-  if (!UUID_RE.test(id)) {
-    return c.json(
-      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
-      400,
-    );
-  }
-
-  const ph = ids.map(() => '?').join(',');
-  const [profileRes, msgRes, alarmRes] = await Promise.all([
-    db.execute({
-      sql: `SELECT id, name FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
-      args: [id, ...ids],
-    }),
-    db.execute({
-      sql: `SELECT COUNT(*) as count FROM messages WHERE voice_profile_id = ? AND user_id IN (${ph})`,
-      args: [id, ...ids],
-    }),
-    db.execute({
-      sql: `SELECT COUNT(*) as count FROM alarms a
-            JOIN messages m ON a.message_id = m.id
-            WHERE m.voice_profile_id = ? AND (a.user_id = ? OR a.target_user_id = ?)`,
-      args: [id, userId, userId],
-    }),
-  ]);
-
-  if (profileRes.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
-  }
-
-  return c.json({
-    voice_profile_id: id,
-    messages: Number(typedRow<{ count: number }>(msgRes.rows[0]!).count ?? 0),
-    alarms: Number(typedRow<{ count: number }>(alarmRes.rows[0]!).count ?? 0),
-  });
-});
-
-// 말투 분석 재시도 — 등록 시 waitUntil 분석이 실패(speech_style_status='failed')했을 때
-// 클라가 동기로 다시 돌린다. 전사 소스는 clone 등록 성공 시 이 프로필에 연결해 보관한
-// 원본 녹음(voice_uploads.voice_profile_id, TTL 7일)이며, TTL 정리로 사라졌거나 보관
-// 자체가 실패했으면 409 — 이때는 목소리를 다시 등록해야 말투를 분석할 수 있다.
 voiceProfile.post('/:id/speech-style/retry', async (c) => {
   const ids = ownerIds(c);
   const userPk = (c.get('userIdPK') as string | undefined) || (c.get('userId') as string);
@@ -2163,7 +2101,7 @@ voiceProfile.delete('/:id', async (c) => {
       args: [id, ...ids],
     });
     if (current.rows.length === 0) {
-      return { status: 'not_found' as const, profile: null, tombstoned: null, assets: [] };
+      return { status: 'not_found' as const, profile: null, tombstoned: null };
     }
     const currentProfile = current.rows[0]!;
     if (draftOnly && Number(currentProfile.is_draft ?? 0) !== 1) {
@@ -2171,7 +2109,6 @@ voiceProfile.delete('/:id', async (c) => {
         status: 'not_a_draft' as const,
         profile: currentProfile,
         tombstoned: null,
-        assets: [],
       };
     }
     const tombstoned = await tx.execute({
@@ -2182,23 +2119,16 @@ voiceProfile.delete('/:id', async (c) => {
       args: [id],
     });
     if ((tombstoned.rowsAffected ?? 0) === 0) {
-      return { status: 'not_found' as const, profile: currentProfile, tombstoned, assets: [] };
+      return { status: 'not_found' as const, profile: currentProfile, tombstoned };
     }
     await tx.execute({
       sql: 'DELETE FROM voice_prerender_queue WHERE voice_profile_id = ?',
       args: [id],
     });
-    // '마음에 안 들면 삭제'를 안내하므로, 삭제하면 같은 달에 다른 목소리를 다시 등록할 수 있어야
-    // 한다. voice_profile_id 로 스코프해, 이전 달에 만든 목소리를 지워도 이번 달 슬롯엔 영향 없음.
-    // (등록 확인창에서 promote 후 삭제 시 reserveMonthlyOfficialVoiceChange 의 월 예약이 남아
-    //  다음 등록이 VOICE_MONTHLY_CHANGE_LIMIT_REACHED 로 막히는 것을 방지.)
-    await tx.execute({
-      sql: `DELETE FROM voice_profile_change_ledger
-            WHERE voice_profile_id = ?
-              AND owner_user_id IN (${ph})
-              AND change_month = ${currentKstMonthSql()}`,
-      args: [id, ...ids],
-    });
+    // 초안(is_draft=1)을 지우는 건 이번 달 슬롯과 무관하다 — 초안은 애초에 원장을 쓰지 않는다.
+    // 정식 등록한 목소리를 지우면 이번 달은 그대로 소진된 채로 둔다. 한 달에 고를 수 있는
+    // 목소리는 하나이고, 지웠다 만들기를 반복하면 그 규칙이 사실상 없는 것과 같아진다.
+    // (예전에는 여기서 원장을 지워 같은 달 재등록을 허용했다.)
     await enqueueExternalDeletion(
       tx,
       'elevenlabs_voice',
@@ -2209,7 +2139,7 @@ voiceProfile.delete('/:id', async (c) => {
             WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
       args: [id],
     });
-    // 확정 목소리의 원본 업로드(voice_uploads + voice_speakers + R2 오브젝트)도 함께 삭제한다.
+    // 확정 목소리의 원본 업로드(voice_uploads + R2 오브젝트)도 함께 삭제한다.
     // 확정분 원본은 TTL 스윕에서 제외돼 목소리 수명 동안 보관되므로(재생성용), 목소리를 지울 때
     // 여기서 cascade 로 정리하지 않으면 영구히 남는다.
     const sourceUploads = await tx.execute({
@@ -2224,11 +2154,6 @@ voiceProfile.delete('/:id', async (c) => {
       ...sourceUploads.rows.map((upload) => upload.object_key as string | null),
     ]);
     await tx.execute({
-      sql: `DELETE FROM voice_speakers
-            WHERE upload_id IN (SELECT id FROM voice_uploads WHERE voice_profile_id = ?)`,
-      args: [id],
-    });
-    await tx.execute({
       sql: 'DELETE FROM voice_uploads WHERE voice_profile_id = ?',
       args: [id],
     });
@@ -2236,7 +2161,6 @@ voiceProfile.delete('/:id', async (c) => {
       status: 'deleted' as const,
       profile: currentProfile,
       tombstoned,
-      assets: assets.rows,
     };
   });
   if (deletionState.status === 'not_a_draft') {
@@ -2261,35 +2185,6 @@ voiceProfile.delete('/:id', async (c) => {
     }
   }
 
-  const assetsRes = { rows: deletionState.assets };
-  const deletedAudioUrls = Array.from(
-    new Set(
-      assetsRes.rows
-        .flatMap((row) => {
-          const typed = typedRow<{ audio_url: string | null; audio_object_key: string | null }>(
-            row,
-          );
-          return [
-            typed.audio_url,
-            typed.audio_object_key,
-            typed.audio_object_key ? `r2://${typed.audio_object_key}` : null,
-          ];
-        })
-        .filter((url): url is string => Boolean(url)),
-    ),
-  );
-  // R2 오브젝트 인라인 삭제는 하지 않는다 — 자산이 많으면(43개 사례) 오브젝트당 R2 delete +
-  // 큐 정리 DELETE 가 서브리퀘스트 한도를 넘겨 요청 전체가 500 났다. 트랜잭션에서 일괄 적재한
-  // pending_external_deletions 큐를 cron 드레인이 예산 가드 안에서 정리한다.
-
-  if (deletedAudioUrls.length > 0) {
-    const placeholders = deletedAudioUrls.map(() => '?').join(',');
-    await db.execute({
-      sql: `UPDATE notes SET audio_url = NULL WHERE audio_url IN (${placeholders})`,
-      args: deletedAudioUrls,
-    });
-  }
-
   await db.execute({
     sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
     args: [id],
@@ -2300,8 +2195,8 @@ voiceProfile.delete('/:id', async (c) => {
           SET mode = 'sound-only',
               wake_mode = 'sound_then_voice',
               message_id = NULL,
-              voice_profile_id = NULL,
-              speaker_id = NULL
+              voice_profile_id = NULL
+
           WHERE voice_profile_id = ?
              OR message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)`,
     args: [id, id],

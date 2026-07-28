@@ -22,6 +22,9 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
@@ -34,6 +37,9 @@ class AlarmRepository(
     private val holidayApiProvider: () -> HolidayApi = { AlarmTalkApiClient.create() },
     // 현재 로그인 계정 id(없으면 null). 알람 생성 시 소유자 기록·무료 잠금 스코프에 쓴다.
     private val currentUserIdProvider: () -> String? = { null },
+    // 같은 값을 '흐름'으로도 받는다 — 목록 필터가 로그인/로그아웃 즉시 다시 계산돼야 한다.
+    // 기본값은 1회 방출이라, 이 인자를 주지 않는 호출부(테스트 등)는 예전과 동작이 같다.
+    private val currentUserIdFlow: Flow<String?> = flowOf(currentUserIdProvider()),
 ) {
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -45,7 +51,20 @@ class AlarmRepository(
         currentUserIdProvider = currentUserIdProvider,
     )
 
-    fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
+    /**
+     * 이 계정에 보여줄 알람만 흘린다. 같은 기기에 다른 계정이 로그인하면 앞 계정 알람이
+     * 목록에 그대로 남던 문제를 막는다(RemoteAlarmPullSyncService 가 '받은 알람'에 쓰는
+     * 소유자 스코프와 같은 규칙). 소유자 미기록(레거시 null)은 현재 계정 것으로 본다 —
+     * 로그아웃 시 detachAlarmsOnSignOut 이 떠나는 계정을 새기므로 새로 생기지 않는다.
+     *
+     * DAO 흐름만 map 하면 안 된다: Room 은 테이블이 바뀔 때만 방출하는데, 로그아웃은
+     * 소유자가 이미 기록된 알람에 대해 아무것도 쓰지 않는다. 그러면 계정을 바꿔도
+     * 마지막에 계산된 목록(앞 계정 알람)이 그대로 남는다 — 그래서 계정 흐름과 결합한다.
+     */
+    fun observeAlarms(): Flow<List<AlarmEntity>> =
+        combine(alarmDao.observeAlarms(), currentUserIdFlow) { alarms, currentUser ->
+            alarms.filter { it.ownerUserId == null || it.ownerUserId == currentUser }
+        }
 
     suspend fun getAlarm(alarmId: String): AlarmEntity? = alarmDao.getById(alarmId)
 
@@ -237,6 +256,7 @@ class AlarmRepository(
             currentIndex = current.contextVariantIndex,
             draftIndex = draft.contextVariantIndex,
             currentResolvedAtMillis = current.contextResolvedAtMillis,
+            draftResolvedNow = draft.contextResolvedNow,
         )
         val updated = current.copy(
             label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
@@ -383,6 +403,56 @@ class AlarmRepository(
         alarmDao.delete(current)
         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         Log.i(TAG, "Deleted alarm id=$alarmId")
+    }
+
+    /**
+     * 로그아웃 시 이 기기의 알람을 '떠나는 계정의 것'으로 못 박고 예약을 전부 내린다.
+     *
+     * 지우지는 않는다 — 알람의 원본은 기기(Room)이고 서버는 백업/가족알람 전달용이라,
+     * 내 알람을 서버에서 다시 받아오는 경로가 없다. 지우면 같은 계정으로 다시 로그인해도
+     * 되살아나지 않는다.
+     *
+     * 대신 (1) 소유자 미기록(레거시 null) 행에 떠나는 계정을 새겨 다음 로그인 계정이
+     * 자기 것으로 오인하지 않게 하고, (2) OS 예약을 전부 취소해 남의 알람이 울리지
+     * 않게 한다. 본인이 다시 로그인하면 [reschedulePendingAlarms] 가 되살린다.
+     * 목록 노출은 [observeAlarms] 의 소유자 필터가 막는다.
+     *
+     * 반환값은 예약을 내린 알람 수.
+     */
+    suspend fun detachAlarmsOnSignOut(signedOutUserId: String?): Int {
+        val all = alarmDao.getAllAlarms()
+        if (all.isEmpty()) return 0
+        all.forEach { alarm ->
+            alarmScheduler.cancel(alarm.id)
+            if (signedOutUserId != null && alarm.ownerUserId == null) {
+                alarmDao.upsert(alarm.copy(ownerUserId = signedOutUserId))
+            }
+        }
+        Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
+        return all.size
+    }
+
+    /**
+     * 지금 로그인한 계정의 것이 아닌 알람의 OS 예약을 내린다.
+     *
+     * 자동 401(토큰 만료)은 알람을 그대로 두므로, 그 상태에서 다른 계정으로 로그인하면
+     * 앞 계정 알람의 예약이 살아 있게 된다. 목록에서는 소유자 필터가 감추므로 끌 수도 없다.
+     * 로그인 시점에 이 정리를 한 번 돌려 그 창을 닫는다. 행은 지우지 않는다 — 본인이 다시
+     * 로그인하면 reschedulePendingAlarms 가 되살린다.
+     *
+     * 반환값은 예약을 내린 알람 수.
+     */
+    suspend fun cancelAlarmsNotOwnedBy(currentUserId: String?): Int {
+        if (currentUserId.isNullOrBlank()) return 0
+        var cancelled = 0
+        alarmDao.getAllAlarms().forEach { alarm ->
+            val owner = alarm.ownerUserId ?: return@forEach
+            if (owner == currentUserId) return@forEach
+            alarmScheduler.cancel(alarm.id)
+            cancelled += 1
+        }
+        if (cancelled > 0) Log.i(TAG, "Cancelled $cancelled alarm reservations owned by another account")
+        return cancelled
     }
 
     /**
@@ -723,7 +793,12 @@ class AlarmRepository(
         )
         var scheduled = 0
 
+        val currentUser = currentUserIdProvider()
         enabledAlarms.forEach { alarm ->
+            // 다른 계정이 소유한 알람은 재예약하지 않는다(로그아웃한 앞 계정의 알람이 부팅·
+            // 재로그인 때 되살아나 남의 폰에서 울리는 것 방지). 미기록(null)은 lockPaidAlarmTalks
+            // 와 같은 규칙으로 현재 계정 것으로 본다.
+            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) return@forEach
             runCatching {
                 // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
                 // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는
@@ -788,18 +863,61 @@ class AlarmRepository(
      * 발사는 그 인덱스로 오프라인 lookup. 준비창 워커가 매일(반복 알람 전날) + 저장 직후(runOnce)
      * 호출한다. 항상 동작(오프라인 날씨 매칭 전용).
      */
+    /**
+     * 저장 전에 이 드래프트가 실제로 울릴 날짜의 날씨 variant 를 받아 온다.
+     *
+     * 예전에는 저장한 뒤 워커로 비동기 해결했는데, 그 사이에 알람이 울리면 조건이 미해결이라
+     * '오늘 날씨를 못 받았어요' 안내 클립이 나갔다. 정상(온라인) 상황에서는 고른 그 자리에서
+     * 해결해 알람이 처음부터 맞는 오디오를 갖게 한다.
+     *
+     * 오프라인 등으로 실패하면 null 을 돌려주고 저장은 그대로 진행한다 — 22시 갱신과
+     * 알람 전까지의 재시도가 채운다. 알람을 못 만들게 막지는 않는다.
+     */
+    suspend fun resolveWeatherVariantForDraft(
+        api: AlarmTalkApi,
+        token: String,
+        draft: AlarmDraft,
+    ): Int? {
+        if (draft.bucketId != "weather") return null
+        val now = System.currentTimeMillis()
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
+        // 저장 경로(createAlarm)와 같은 계산으로 발사 시각을 구해야, 해결한 날짜와 실제
+        // 울리는 날짜가 어긋나지 않는다.
+        val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+            hour = draft.hour,
+            minute = draft.minute,
+            repeatDaysMask = draft.repeatDaysMask,
+            holidayOff = draft.holidayOff,
+            nowMillis = now,
+            isHoliday = holidayPredicate,
+        )
+        val zone = java.time.ZoneId.systemDefault()
+        val targetDate = java.time.Instant.ofEpochMilli(fireAtMillis)
+            .atZone(zone)
+            .toLocalDate()
+            .toString()
+        return runCatching {
+            api.getPrerenderVariant(
+                authorization = AlarmTalkApiClient.bearer(token),
+                context = "wake_weather",
+                country = draft.voiceWeatherCountry?.trim()?.takeIf { it.isNotBlank() },
+                city = draft.voiceWeatherCity?.trim()?.takeIf { it.isNotBlank() },
+                targetDate = targetDate,
+                timezone = zone.id,
+            ).variantIndex
+        }.getOrElse { error ->
+            Log.w(TAG, "Pre-save weather variant resolve failed (will retry in background)", error)
+            null
+        }
+    }
+
     suspend fun resolveDueCloneBucketVariants(api: AlarmTalkApi, token: String): Int {
         val now = System.currentTimeMillis()
-        // 준비창 게이트: open-meteo 는 하루 예보라 시간마다 갱신은 무의미하고 쿼터·배터리만 낭비한다.
-        // 아직 미해결(null)이거나 마지막 갱신이 ~12h 이전인 알람만 대상으로 삼아 최대 하루 1~2회로 제한.
-        val staleBefore = now - 12 * 60 * 60 * 1000L
-        // 준비창: 곧(48h 내) 울릴 알람만 대상. open-meteo 는 '오늘' 예보라, 며칠 뒤 울릴 알람을 지금
-        // 오늘 날씨로 스냅샷하면 엉뚱한 조건이 굳는다. 반복 알람의 다음 발사(fireAtMillis)는 보통 창 안이고,
-        // 먼 일회성/주간 알람은 발사 48h 전에야 해결돼 더 신선한 날씨로 매칭된다.
-        val prepareWindow = now + 48 * 60 * 60 * 1000L
         val alarms = alarmDao.getEnabledWeatherBucketAlarms()
-            .filter { it.fireAtMillis <= prepareWindow }
-            .filter { it.contextVariantIndex == null || (it.contextResolvedAtMillis ?: 0L) < staleBefore }
+            .filter { weatherVariantNeedsRefresh(it, now) }
         if (alarms.isEmpty()) return 0
         // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
         val zone = java.time.ZoneId.systemDefault()
@@ -858,6 +976,13 @@ class AlarmRepository(
      * 어떤 알람도 참조하지 않고 30일 넘게 손대지 않은 캐시 음성 파일을 정리한다.
      * 앱 시작 시 백그라운드에서 1회 호출되는 것을 전제로 한다.
      */
+    /**
+     * 아직 조건을 못 받은 날씨 알람이 남아 있는가 — 1시간 뒤 재시도를 걸지 정한다.
+     * 받아 낸 알람은 곧바로 대상에서 빠지므로, 성공한 뒤에는 재시도가 이어지지 않는다.
+     */
+    suspend fun hasFailedWeatherRefresh(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        alarmDao.getEnabledWeatherBucketAlarms().any { weatherVariantNeedsRefresh(it, nowMillis) }
+
     suspend fun sweepStaleAudioCache(): Int {
         val inUseFileNames = buildSet {
             alarmDao.getAllAlarms().forEach { alarm ->
@@ -1057,6 +1182,43 @@ internal fun shouldResetWeatherVariant(
         fireDateChanged
 }
 
+/**
+ * 이 날씨 알람의 조건을 지금 다시 받아야 하는가.
+ *
+ *  - 준비창(48h): open-meteo 는 며칠 뒤 예보의 정확도가 떨어지므로 곧 울릴 알람만 대상.
+ *  - 임박(24h): 신선도 게이트를 무시하고 무조건 다시 받는다. 갱신이 하루 한 번(22시)이라,
+ *    12h 게이트를 그대로 두면 '오늘 낮에 해결됨 → 22시엔 신선하다고 건너뜀 → 내일 아침
+ *    알람이 어제 조건으로 울림'이 된다. 임박한 알람은 한 번 더 받는 편이 항상 옳다.
+ *  - 그 밖: 미해결이거나 마지막 갱신이 12h 이전이면 대상(먼 알람의 과다 호출 방지).
+ */
+/**
+ * 이 날씨 알람의 조건을 지금 받아야 하는가 — **한 발사분에 한 번만** 받는다.
+ *
+ *  - 준비창(48h) 밖이면 대상이 아니다. open-meteo 는 며칠 뒤 예보의 정확도가 떨어져,
+ *    지금 굳히면 엉뚱한 조건이 박힌다.
+ *  - 아직 못 받았으면 받는다.
+ *  - 이미 받았고 발사까지 24시간 넘게 남았으면 그대로 둔다.
+ *  - 임박(24h)했는데 그 값이 '이 발사분의 것'이 아니면 다시 받는다. 판정 기준은
+ *    "발사 24시간 이내에 받았는가" — 반복 알람이 한 번 울리고 다음 날로 넘어가면 옛 값은
+ *    자연히 이 조건에서 벗어나므로, 별도 상태 없이 발사분마다 정확히 한 번 갱신된다.
+ *
+ * 재시도 예약도 이 술어를 그대로 쓴다. 받아 낸 순간 조건을 벗어나므로, 성공한 알람에
+ * 시간당 재시도가 이어지지 않는다.
+ */
+internal fun weatherVariantNeedsRefresh(alarm: AlarmEntity, nowMillis: Long): Boolean {
+    if (alarm.fireAtMillis > nowMillis + WEATHER_PREPARE_WINDOW_MILLIS) return false
+    if (alarm.contextVariantIndex == null) return true
+    if (alarm.fireAtMillis > nowMillis + WEATHER_RESOLVE_VALID_WINDOW_MILLIS) return false
+    return (alarm.contextResolvedAtMillis ?: 0L) <
+        alarm.fireAtMillis - WEATHER_RESOLVE_VALID_WINDOW_MILLIS
+}
+
+/** 준비창: 며칠 뒤 예보로 조건을 굳히면 엉뚱해지므로 곧 울릴 알람만 대상으로 삼는다. */
+private const val WEATHER_PREPARE_WINDOW_MILLIS = 48 * 60 * 60 * 1000L
+
+/** 이 발사분의 조건으로 인정하는 범위 — 발사 24시간 이내에 받은 값. */
+private const val WEATHER_RESOLVE_VALID_WINDOW_MILLIS = 24 * 60 * 60 * 1000L
+
 internal data class WeatherVariantState(
     val index: Int?,
     val resolvedAtMillis: Long?,
@@ -1068,8 +1230,17 @@ internal fun nextWeatherVariantState(
     currentIndex: Int?,
     draftIndex: Int?,
     currentResolvedAtMillis: Long?,
+    draftResolvedNow: Boolean = false,
 ): WeatherVariantState = when {
+    // 새로 받아 온 값이 reset 보다 먼저다. 날짜·지역·목소리를 바꾼 편집이야말로 reset 이
+    // 켜지는 경우인데, 그때 버려 버리면 저장 전에 받아 온 의미가 없어진다 — 워커가 돌기
+    // 전에 울리면 '못 받았어요' 클립이 나간다. 이 값은 이미 새 조건으로 받은 것이다.
+    nextBucketId == "weather" && draftResolvedNow && draftIndex != null -> WeatherVariantState(
+        index = draftIndex,
+        resolvedAtMillis = System.currentTimeMillis(),
+    )
     resetWeatherVariant -> WeatherVariantState(index = null, resolvedAtMillis = null)
+    // 편집기에서 그대로 실려 온 옛 스냅샷은 쓰지 않는다 — 저장된 최신 값을 덮어쓰면 안 된다.
     nextBucketId == "weather" -> WeatherVariantState(
         index = currentIndex,
         resolvedAtMillis = currentResolvedAtMillis,

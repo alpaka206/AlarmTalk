@@ -73,10 +73,6 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
   it('deletePaidVoiceDataForUser(A): A 본인 알람은 삭제, B의 알람은 sound-only로 강등·보존', async () => {
     await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A'); // A 본인 → 삭제 대상
     await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-A'); // 타인 소유 → 강등·보존
-    await db.execute({
-      sql: `UPDATE alarms SET raw_audio_url = 'r2://independent-raw' WHERE id = 'al-B'`,
-      args: [],
-    });
 
     await deletePaidVoiceDataForUser(db, 'A');
 
@@ -90,7 +86,6 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     expect(alB!.voice_profile_id).toBeNull();
     expect(alB!.message_id).toBeNull();
     expect(alB!.wake_mode).toBe('sound_then_voice');
-    expect(alB!.raw_audio_url).toBe('r2://independent-raw');
   });
 
   it('deletePaidVoiceDataForUser(A): 메시지 경유로만 A 목소리를 참조하는 타인 알람도 강등·보존', async () => {
@@ -131,10 +126,6 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     await insertVoiceAlarm(db, 'al-A', 'A', 'msg-A', 'vp-A');
     await insertVoiceAlarm(db, 'al-B', 'B', 'msg-B', 'vp-A');
     await db.execute({
-      sql: `UPDATE alarms SET raw_audio_url = 'r2://raw-alarm' WHERE id IN ('al-A', 'al-B')`,
-      args: [],
-    });
-    await db.execute({
       sql: `UPDATE voice_profiles SET elevenlabs_voice_id = 'provider-A' WHERE id = 'vp-A'`,
       args: [],
     });
@@ -147,7 +138,6 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
       expect(alarm!.mode).toBe('sound-only');
       expect(alarm!.voice_profile_id).toBeNull();
       expect(alarm!.message_id).toBeNull();
-      expect(alarm!.raw_audio_url).toBe('r2://raw-alarm');
     }
     expect((await db.execute(`SELECT * FROM voice_profiles WHERE id = 'vp-A'`)).rows).toEqual([]);
     expect(
@@ -173,26 +163,23 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     return res.rows.map((r) => String(r.ref));
   }
 
-  it('deletePaidVoiceDataForUser(B): 발신자(A)가 B에게 보낸 알람 행·raw 오디오는 보존, B 본인 알람은 삭제', async () => {
-    // A → B 가족 알람(행 소유 A, target 만 B) — A 자신의 목소리/메시지/녹음 사용.
+  it('deletePaidVoiceDataForUser(B): 발신자(A)가 B에게 보낸 알람 행은 보존, B 본인 알람은 삭제', async () => {
+    // A → B 가족 알람(행 소유 A, target 만 B) — A 자신의 목소리/메시지 사용.
     await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, raw_audio_url)
-            VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts', 'r2://sender-raw')`,
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode)
+            VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts')`,
       args: [],
     });
     // B 본인 소유 알람(B의 정리 대상).
     await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time, mode, raw_audio_url)
-            VALUES ('al-B-own', 'B', 'msg-B', 'vp-A', '08:00', 'tts', 'r2://b-own-raw')`,
+      sql: `INSERT INTO alarms (id, user_id, message_id, voice_profile_id, time, mode)
+            VALUES ('al-B-own', 'B', 'msg-B', 'vp-A', '08:00', 'tts')`,
       args: [],
     });
 
     await deletePaidVoiceDataForUser(db, 'B');
 
-    // B 본인 알람은 삭제 + raw 오디오 외부 삭제 큐 적재.
     expect(await getAlarm(db, 'al-B-own')).toBeNull();
-    const refs = await enqueuedRefs(db);
-    expect(refs).toContain('b-own-raw');
 
     // 발신자 소유 알람 행은 무손상 생존(강등도 없음 — A의 목소리/메시지만 참조).
     const sent = await getAlarm(db, 'al-sent');
@@ -200,9 +187,6 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     expect(sent!.mode).toBe('tts');
     expect(sent!.voice_profile_id).toBe('vp-A');
     expect(sent!.message_id).toBe('msg-A');
-    expect(sent!.raw_audio_url).toBe('r2://sender-raw');
-    // 발신자 raw 오디오는 외부 삭제 큐에 올라가면 안 된다.
-    expect(refs).not.toContain('sender-raw');
   });
 
   it('deletePaidVoiceDataForUser(B): 나를 target 으로 한 타인 알람이 B의 목소리를 참조하면 삭제 대신 강등', async () => {
@@ -224,18 +208,17 @@ describe('paid voice cleanup — 공유 목소리 소멸 시 타인 알람 보�
     expect(sent2!.message_id).toBeNull();
   });
 
-  it('purgeUserAccount(B, 계정 삭제): target 알람 삭제 + 발신자 raw 오디오 회수(기존 동작 보존)', async () => {
+  it('purgeUserAccount(B, 계정 삭제): 나를 target 으로 한 알람 행도 함께 삭제한다', async () => {
     await db.execute({
-      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode, raw_audio_url)
-            VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts', 'r2://sender-raw')`,
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, voice_profile_id, time, mode)
+            VALUES ('al-sent', 'A', 'B', 'msg-A', 'vp-A', '07:00', 'tts')`,
       args: [],
     });
 
     await purgeUserAccount(db, 'B', 'google-B');
 
-    // 계정 삭제는 수신자 없는 알람을 남기지 않는다 — target 알람 행 삭제 + raw 오디오 회수.
+    // 계정 삭제는 수신자 없는 알람을 남기지 않는다.
     expect(await getAlarm(db, 'al-sent')).toBeNull();
-    expect(await enqueuedRefs(db)).toContain('sender-raw');
     expect((await db.execute(`SELECT id FROM users WHERE id = 'B'`)).rows).toEqual([]);
   });
 });

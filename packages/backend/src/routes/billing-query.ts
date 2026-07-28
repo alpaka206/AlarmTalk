@@ -59,7 +59,7 @@ billingQuery.get('/subscription', async (c) => {
           JOIN users u ON u.id = s.user_id
           JOIN plans p ON p.id = s.plan_id
           LEFT JOIN plans np ON np.id = s.next_plan_id
-          WHERE u.google_id = ?
+          WHERE u.id = ?
             AND s.status = 'active'
             AND s.expires_at > datetime('now')
           ORDER BY s.starts_at DESC

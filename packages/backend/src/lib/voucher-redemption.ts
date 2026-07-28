@@ -1,3 +1,4 @@
+import { clearPaidVoiceRetention } from './billing-cancel';
 import type { Client } from '@libsql/client';
 import { hashVoucherCode, isValidVoucherCodeFormat } from './vouchers';
 import type { DbExecutor } from './transactions';
@@ -343,6 +344,9 @@ async function redeemVoucherCodeInTransaction(
     sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
     args: [mirroredPlan, params.userPk],
   });
+  // 바우처로 다시 유료가 됐으면 해지 때 깔아 둔 음성 보관 유예를 푼다 — 안 그러면 유예가
+  // 만기될 때 지금 유료인 사용자의 원본·생성 음성이 지워질 수 있다.
+  await clearPaidVoiceRetention(db, params.userPk);
 
   return {
     success: true,
