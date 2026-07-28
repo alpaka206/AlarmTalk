@@ -85,8 +85,26 @@ class StockClipPrefetchWorker(
         }.getOrElse { error ->
             // 부분 성공은 그대로 남는다(이미 받은 파일은 캐시에 있다) — 재시도가 나머지만 받는다.
             AlarmTalkLog.reportError("Stock clip prefetch failed", error)
-            Result.retry()
+            // 영구 실패(스테일 매니페스트가 없는 메시지를 가리킴, 재시도 불가 4xx 등)까지
+            // retry 로 돌리면 유니크 작업이 큐에 영원히 남아 네트워크만 먹고, 다운로드 화면이
+            // 기다리는 FAILED 상태가 끝내 오지 않아 '다시 시도' 버튼도 뜨지 않는다.
+            when {
+                error.isPermanent() -> Result.failure()
+                runAttemptCount >= MAX_RUN_ATTEMPTS -> Result.failure()
+                else -> Result.retry()
+            }
         }
+    }
+
+    /**
+     * 다시 시도해도 결과가 같은 실패인지. 4xx 는 요청·상태 자체가 잘못된 것이라 재시도가
+     * 의미 없다(단 408 요청시간초과·429 요청과다는 시간이 지나면 풀리므로 제외).
+     * 파싱/디코딩 실패도 같은 응답을 다시 받아봐야 같은 결과다.
+     */
+    private fun Throwable.isPermanent(): Boolean = when (this) {
+        is retrofit2.HttpException -> code() in 400..499 && code() != 408 && code() != 429
+        is IllegalArgumentException -> true // Base64.decode 등 응답 형식 오류
+        else -> false
     }
 
     private fun deviceVoiceLanguage(): String {
@@ -109,6 +127,14 @@ class StockClipPrefetchWorker(
     companion object {
         private const val WORK_NAME = "stock_clip_prefetch"
         private const val PARALLELISM = 4
+
+        /**
+         * 일시적 실패로 보고 다시 시도할 최대 횟수. BackoffPolicy.LINEAR 30초 기준으로
+         * 30s → 60s → ... 대략 15분 안에 6번 시도하고 포기한다. 포기해도 잃는 것은 없다 —
+         * 앱을 다시 열거나 언어를 바꾸면 enqueue 가 다시 걸리고, 편집기의 온디맨드
+         * 다운로드가 폴백으로 남는다.
+         */
+        private const val MAX_RUN_ATTEMPTS = 6
 
         const val KEY_DONE = "done"
         const val KEY_TOTAL = "total"
