@@ -270,11 +270,10 @@ internal fun MainViewModel.deleteVoiceDraft(profileId: String) {
     }
 }
 
+/** 등록된 목소리의 표시 이름만 바꾼다(관계·호칭은 등록 시 확정 — VoiceProfileEditDialog 참고). */
 internal fun MainViewModel.renameVoiceProfile(
     profileId: String,
     name: String,
-    relationshipLabel: String,
-    listenerTitle: String,
 ) {
     val session = authSession
     if (session == null) {
@@ -286,8 +285,6 @@ internal fun MainViewModel.renameVoiceProfile(
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
         return
     }
-    // 관계·호칭은 선택 입력 — 비어 있어도 저장을 막지 않는다.
-
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true

@@ -614,8 +614,8 @@
     <string name="voices_draft_exit_leave">離れて削除</string>
     <string name="voices_draft_exit_stay">作り続ける</string>
     <string name="voices_draft_exit_title">離れると仮の声が削除されます</string>
-    <string name="voices_edit_info_desc">アラームで表示される名前と、この声があなたを呼ぶ呼び方を決めます。</string>
-    <string name="voices_edit_info_title">情報を編集</string>
+    <string name="voices_edit_name_desc">アラーム一覧と声の選択で表示される名前です。</string>
+    <string name="voices_edit_name_title">名前を編集</string>
     <string name="voices_file_duration_unknown">音声の長さを確認できないファイルは使用できません。</string>
     <string name="voices_file_selected">ファイル選択済み</string>
     <string name="voices_greeting_preview_preparing">この声のプレビューを準備しています。</string>
@@ -689,9 +689,7 @@
     <string name="voicesr_delete_dialog_confirm">「%1$s」の声を削除しますか?</string>
     <string name="voicesr_delete_dialog_title">声を削除</string>
     <string name="voicesr_delete_dialog_warning">この声を使うアラームは基本のアラーム音に変わります。保存された音源ファイルも一緒に削除されます。</string>
-    <string name="voicesr_edit_info">情報を編集</string>
-    <string name="voicesr_listener_title_example_a">例:ミンジ、あなた</string>
-    <string name="voicesr_listener_title_label">この声があなたを呼ぶ名前</string>
+    <string name="voicesr_edit_name">名前を編集</string>
     <string name="voicesr_more">もっと見る</string>
     <string name="voicesr_pause">一時停止</string>
     <string name="voicesr_prerender_downloading">アラーム音声をダウンロード中</string>
@@ -701,8 +699,6 @@
     <string name="voicesr_preview">試聴</string>
     <string name="voicesr_relationship_custom_label">関係を直接入力</string>
     <string name="voicesr_relationship_custom_placeholder">例:孫娘、恋人、同僚</string>
-    <string name="voicesr_relationship_example_a">例:孫娘、お母さん、恋人</string>
-    <string name="voicesr_relationship_label">あなたとの関係</string>
     <string name="voicesr_relationship_label_required">あなたとの関係（任意）</string>
     <string name="voicesr_relationship_placeholder">関係を選んでください</string>
     <string name="voicesr_required_field">必ず入力してください。</string>
@@ -993,7 +989,6 @@
     <string name="editor_voice_switch_drops_text_title">基本の声に変えますか?</string>
     <string name="editor_voice_switch_drops_text_message">基本の声は用意された文だけを話すので、直接入力した文はなくなります。</string>
     <string name="editor_voice_switch_drops_text_confirm">変える</string>
-    <string name="alarms_selected_count">%1$d件選択</string>
     <string name="onb_voice_download_progress">%1$d / %2$d 準備できました</string>
     <string name="onb_voice_download_stay">終わるまで少しお待ちください。
 アプリを閉じても続きます。</string>
@@ -1001,4 +996,6 @@
 接続を確認してもう一度お試しください。</string>
     <string name="onb_voice_download_retry">再試行</string>
     <string name="onb_voice_download_later">あとで受け取る</string>
+    <string name="voicesr_share_voice_desc">同じプランの家族がこの声でアラームを作れます。</string>
+    <string name="voicesr_share_voice_locked">ファミリー・カップルプランで共有できます。</string>
 </resources>

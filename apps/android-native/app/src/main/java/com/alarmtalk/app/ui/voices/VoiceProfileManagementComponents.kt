@@ -58,17 +58,21 @@ internal fun VoiceProgressMessage(text: String) {
     }
 }
 
+/**
+ * 등록이 끝난 목소리의 '이름 수정' 다이얼로그.
+ *
+ * 이름만 받는다. 관계·호칭 입력도 예전에는 여기 있었지만 실제로 저장된 적이 없다 — 클라가
+ * 요청에 싣지 않았고, 서버도 등록 완료 후엔 페르소나 변경을 409(VOICE_PERSONA_LOCKED)로
+ * 거부하며, 알람 클립은 등록 시점에 이미 전부 렌더돼 있다. 입력이 조용히 사라지는 필드였다.
+ * 등록 플로우의 관계·호칭 입력은 그대로다(그때는 실제로 반영된다).
+ */
 @Composable
 internal fun VoiceProfileEditDialog(
     title: String,
     description: String,
     name: String,
-    relationship: String,
-    listenerTitle: String,
     nameError: Boolean,
     onNameChange: (String) -> Unit,
-    onRelationshipChange: (String) -> Unit,
-    onListenerTitleChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -87,27 +91,6 @@ internal fun VoiceProfileEditDialog(
             supportingText = {
                 if (nameError) Text(stringResource(R.string.voicesr_required_field))
             },
-            shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        // 관계·호칭은 선택 입력 — 비워도 저장할 수 있다.
-        OutlinedTextField(
-            value = relationship,
-            onValueChange = onRelationshipChange,
-            label = { Text(stringResource(R.string.voicesr_relationship_label)) },
-            placeholder = { Text(stringResource(R.string.voicesr_relationship_example_a)) },
-            singleLine = true,
-            shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = listenerTitle,
-            onValueChange = onListenerTitleChange,
-            label = { Text(stringResource(R.string.voicesr_listener_title_label)) },
-            placeholder = { Text(stringResource(R.string.voicesr_listener_title_example_a)) },
-            singleLine = true,
             shape = WakerInputShape,
             colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.fillMaxWidth(),

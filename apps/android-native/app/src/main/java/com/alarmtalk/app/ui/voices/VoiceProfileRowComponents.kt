@@ -281,45 +281,37 @@ internal fun VoiceProfileRow(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    // '공유 중' 배지는 두지 않는다 — 바로 아래 공유 토글이 같은 상태를 이미 보여준다.
                     Text(
                         text = profile.name,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    // 공유 토글이 '⋮' 시트 안으로 들어가면서 카드에서 상태가 사라졌다 —
+                    // 공유는 남에게 내 목소리가 보이는 일이라 열어보지 않아도 알아야 한다.
+                    if (isShared) {
+                        MutedText(stringResource(R.string.voicesr_sharing_badge))
+                    }
                 }
                 when {
                     isProcessing -> VoiceProgressMessage(stringResource(R.string.voicesr_status_creating))
                     isDeleting -> VoiceProgressMessage(stringResource(R.string.voicesr_status_deleting))
                     else -> {
-                        Box {
-                            IconButton(
-                                onClick = { menuExpanded = true },
-                                enabled = rowEnabled,
-                            ) {
-                                Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.voicesr_more))
-                            }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.voicesr_edit_info)) },
-                                    leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onRename()
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.voicesr_delete)) },
-                                    leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        onDelete()
-                                    },
-                                )
-                            }
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            enabled = rowEnabled,
+                        ) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.voicesr_more))
+                        }
+                        if (menuExpanded) {
+                            VoiceProfileMenuSheet(
+                                profileName = profile.name,
+                                isShared = isShared,
+                                canShare = rowEnabled && canShareVoice,
+                                onRename = onRename,
+                                onShareChange = onShareChange,
+                                onDelete = onDelete,
+                                onDismiss = { menuExpanded = false },
+                            )
                         }
                     }
                 }
@@ -375,43 +367,72 @@ internal fun VoiceProfileRow(
                         }
                     }
                 }
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-                    border = wakerCardBorder(if (canShareVoice) 0.72f else 0.36f),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.voicesr_share_voice),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                        AlarmTalkSwitch(
-                            checked = isShared,
-                            onCheckedChange = onShareChange,
-                            enabled = rowEnabled && canShareVoice,
-                        )
-                    }
-                }
             }
         }
     }
 }
 
 /**
- * 인사말 미리듣기 재생 중임을 나타내는 작은 이퀄라이저 애니메이션.
- * 기본 목소리 선택 시트(VoiceProfileManagementPanel)의 옵션 행 trailing 에 쓰인다.
+ * 목소리 행의 '⋮' 메뉴. Material3 DropdownMenu(작은 흰 박스) 대신 앱 고유 바텀시트를 쓴다 —
+ * 이 앱의 다른 선택 UI(테마·목소리·수신자)가 전부 이 시트라서 톤이 맞고, 손가락이 닿는
+ * 화면 아래쪽에서 열려 한 손 조작이 쉽다.
+ *
+ * '정보 수정'이 아니라 '이름 수정'이다: 알람 클립은 등록 시점에 통째로 렌더되므로 나중에
+ * 관계·호칭을 바꿔도 이미 만들어진 클립이 부르는 말은 바뀌지 않는다(서버도 등록 완료 후엔
+ * 페르소나 변경을 거부한다). 이름은 클립에 들어가지 않고 목록·선택 시트 표시용이라 언제든
+ * 고칠 수 있어야 한다 — 목소리는 계정당 1개, 교체는 월 1회라 등록 때 낸 오타를 못 고치면
+ * 한 달을 그대로 산다.
  */
+@Composable
+private fun VoiceProfileMenuSheet(
+    profileName: String,
+    isShared: Boolean,
+    canShare: Boolean,
+    onRename: () -> Unit,
+    onShareChange: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    WakerSelectionSheet(title = profileName, onDismiss = onDismiss) { dismiss ->
+        WakerSheetOptionRow(
+            title = stringResource(R.string.voicesr_edit_name),
+            selected = false,
+            onClick = {
+                dismiss()
+                onRename()
+            },
+            divider = true,
+        )
+        WakerSheetOptionRow(
+            title = stringResource(R.string.voicesr_share_voice),
+            description = stringResource(
+                if (canShare) R.string.voicesr_share_voice_desc else R.string.voicesr_share_voice_locked,
+            ),
+            selected = false,
+            onClick = { if (canShare) onShareChange(!isShared) },
+            trailing = {
+                AlarmTalkSwitch(
+                    checked = isShared,
+                    onCheckedChange = onShareChange,
+                    enabled = canShare,
+                )
+            },
+            divider = true,
+        )
+        WakerSheetOptionRow(
+            title = stringResource(R.string.voicesr_delete),
+            selected = false,
+            onClick = {
+                dismiss()
+                onDelete()
+            },
+            // 파괴적 항목은 색으로만 구분한다 — 아이콘을 붙이면 나머지 두 행에도 장식용
+            // 아이콘을 달아야 균형이 맞고, 그때부터 시트가 아이콘 목록처럼 보인다.
+            destructive = true,
+        )
+    }
+}
+
 @Composable
 internal fun PlayingEqualizer() {
     val transition = rememberInfiniteTransition(label = "voicePlaying")

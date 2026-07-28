@@ -199,7 +199,7 @@ internal fun VoiceProfileManagementPanel(
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
-    onRenameVoiceProfile: (String, String, String, String) -> Unit,
+    onRenameVoiceProfile: (String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
@@ -265,8 +265,6 @@ internal fun VoiceProfileManagementPanel(
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
-    var renameRelationship by remember { mutableStateOf("") }
-    var renameListenerTitle by remember { mutableStateOf("") }
     var renameSubmitAttempted by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -1235,8 +1233,6 @@ internal fun VoiceProfileManagementPanel(
                     onRename = {
                         renameTarget = profile
                         renameName = profile.name
-                        renameRelationship = profile.relationshipLabel.orEmpty()
-                        renameListenerTitle = profile.listenerTitle.orEmpty()
                         renameSubmitAttempted = false
                     },
                     onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
@@ -2072,26 +2068,16 @@ internal fun VoiceProfileManagementPanel(
         val resolvedRenameName = renameName.trim()
         val renameNameError = renameSubmitAttempted && resolvedRenameName.isBlank()
         VoiceProfileEditDialog(
-            title = stringResource(R.string.voices_edit_info_title),
-            description = stringResource(R.string.voices_edit_info_desc),
+            title = stringResource(R.string.voices_edit_name_title),
+            description = stringResource(R.string.voices_edit_name_desc),
             name = renameName,
-            relationship = renameRelationship,
-            listenerTitle = renameListenerTitle,
             nameError = renameNameError,
             onNameChange = { renameName = it.take(50) },
-            onRelationshipChange = { renameRelationship = it.take(30) },
-            onListenerTitleChange = { renameListenerTitle = it.take(30) },
             onDismiss = { renameTarget = null },
             onConfirm = {
                 renameSubmitAttempted = true
-                // 관계·호칭은 선택 입력 — 이름만 채워지면 저장한다.
                 if (resolvedRenameName.isNotBlank()) {
-                    onRenameVoiceProfile(
-                        profile.id,
-                        resolvedRenameName,
-                        renameRelationship.trim(),
-                        renameListenerTitle.trim(),
-                    )
+                    onRenameVoiceProfile(profile.id, resolvedRenameName)
                     renameTarget = null
                 }
             },

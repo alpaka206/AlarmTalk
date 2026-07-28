@@ -615,8 +615,8 @@
     <string name="voices_draft_exit_leave">나가고 삭제</string>
     <string name="voices_draft_exit_stay">계속 만들기</string>
     <string name="voices_draft_exit_title">나가면 임시 목소리가 삭제돼요</string>
-    <string name="voices_edit_info_desc">알람에서 보일 이름과 이 목소리가 나를 부르는 방식을 정해요.</string>
-    <string name="voices_edit_info_title">정보 수정</string>
+    <string name="voices_edit_name_desc">알람 목록과 목소리 선택에서 보일 이름이에요.</string>
+    <string name="voices_edit_name_title">이름 수정</string>
     <string name="voices_file_duration_unknown">오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.</string>
     <string name="voices_file_selected">파일 선택됨</string>
     <string name="voices_greeting_preview_preparing">이 목소리의 미리듣기를 준비 중이에요.</string>
@@ -693,9 +693,7 @@
     <string name="voicesr_delete_dialog_confirm">\'%1$s\' 목소리를 삭제할까요?</string>
     <string name="voicesr_delete_dialog_title">목소리 삭제</string>
     <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
-    <string name="voicesr_edit_info">정보 수정</string>
-    <string name="voicesr_listener_title_example_a">예: 민지야, 여보</string>
-    <string name="voicesr_listener_title_label">이 목소리가 나를 부를 이름</string>
+    <string name="voicesr_edit_name">이름 수정</string>
     <string name="voicesr_more">더보기</string>
     <string name="voicesr_pause">일시정지</string>
     <string name="voicesr_prerender_downloading">알람 음성 다운로드 중</string>
@@ -705,8 +703,6 @@
     <string name="voicesr_preview">미리듣기</string>
     <string name="voicesr_relationship_custom_label">관계 직접 입력</string>
     <string name="voicesr_relationship_custom_placeholder">예: 손녀, 연인, 동료</string>
-    <string name="voicesr_relationship_example_a">예: 손녀, 엄마, 연인</string>
-    <string name="voicesr_relationship_label">나와의 관계</string>
     <string name="voicesr_relationship_label_required">나와의 관계 (선택)</string>
     <string name="voicesr_relationship_placeholder">관계를 선택해 주세요</string>
     <string name="voicesr_required_field">꼭 입력해 주세요.</string>
@@ -1013,7 +1009,6 @@
     <string name="editor_voice_switch_drops_text_title">기본 목소리로 바꿀까요?</string>
     <string name="editor_voice_switch_drops_text_message">기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>
     <string name="editor_voice_switch_drops_text_confirm">바꾸기</string>
-    <string name="alarms_selected_count">%1$d개 선택</string>
     <string name="onb_voice_download_progress">%1$d / %2$d 준비했어요</string>
     <string name="onb_voice_download_stay">다 받을 때까지 잠시만 기다려 주세요.
 앱을 나가도 이어서 받아요.</string>
@@ -1021,4 +1016,6 @@
 연결을 확인하고 다시 시도해 주세요.</string>
     <string name="onb_voice_download_retry">다시 시도</string>
     <string name="onb_voice_download_later">나중에 받기</string>
+    <string name="voicesr_share_voice_desc">같은 플랜 가족이 이 목소리로 알람을 만들 수 있어요.</string>
+    <string name="voicesr_share_voice_locked">가족·커플 플랜에서 공유할 수 있어요.</string>
 </resources>
