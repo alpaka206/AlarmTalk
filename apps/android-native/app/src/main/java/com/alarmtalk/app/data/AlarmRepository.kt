@@ -892,16 +892,8 @@ class AlarmRepository(
 
     suspend fun resolveDueCloneBucketVariants(api: AlarmTalkApi, token: String): Int {
         val now = System.currentTimeMillis()
-        // 준비창 게이트: open-meteo 는 하루 예보라 시간마다 갱신은 무의미하고 쿼터·배터리만 낭비한다.
-        // 아직 미해결(null)이거나 마지막 갱신이 ~12h 이전인 알람만 대상으로 삼아 최대 하루 1~2회로 제한.
-        val staleBefore = now - 12 * 60 * 60 * 1000L
-        // 준비창: 곧(48h 내) 울릴 알람만 대상. open-meteo 는 '오늘' 예보라, 며칠 뒤 울릴 알람을 지금
-        // 오늘 날씨로 스냅샷하면 엉뚱한 조건이 굳는다. 반복 알람의 다음 발사(fireAtMillis)는 보통 창 안이고,
-        // 먼 일회성/주간 알람은 발사 48h 전에야 해결돼 더 신선한 날씨로 매칭된다.
-        val prepareWindow = now + 48 * 60 * 60 * 1000L
         val alarms = alarmDao.getEnabledWeatherBucketAlarms()
-            .filter { it.fireAtMillis <= prepareWindow }
-            .filter { it.contextVariantIndex == null || (it.contextResolvedAtMillis ?: 0L) < staleBefore }
+            .filter { weatherVariantNeedsRefresh(it, now) }
         if (alarms.isEmpty()) return 0
         // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
         val zone = java.time.ZoneId.systemDefault()
@@ -961,12 +953,13 @@ class AlarmRepository(
      * 앱 시작 시 백그라운드에서 1회 호출되는 것을 전제로 한다.
      */
     /**
-     * 아직 조건을 못 받은 날씨 알람이 '앞으로 울릴' 것 중에 남아 있는가.
-     * 남아 있으면 스케줄러가 알람 시각 전까지 1시간마다 다시 시도한다.
+     * 아직 갱신이 필요한 날씨 알람이 남아 있는가 — 해결에 쓰는 것과 **같은 술어**를 본다.
+     *
+     * 예전에는 '인덱스가 null 인가'만 봤다. 그러면 이미 값이 있는 알람의 갱신이 실패했을 때
+     * (오프라인 등) 재시도가 걸리지 않아, 다음 22시까지 어제 날씨 클립이 그대로 남는다.
      */
-    suspend fun hasUnresolvedWeatherAlarms(nowMillis: Long = System.currentTimeMillis()): Boolean =
-        alarmDao.getEnabledWeatherBucketAlarms()
-            .any { it.contextVariantIndex == null && it.fireAtMillis > nowMillis }
+    suspend fun hasDueWeatherAlarms(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        alarmDao.getEnabledWeatherBucketAlarms().any { weatherVariantNeedsRefresh(it, nowMillis) }
 
     suspend fun sweepStaleAudioCache(): Int {
         val inUseFileNames = buildSet {
@@ -1165,6 +1158,22 @@ internal fun shouldResetWeatherVariant(
         currentCountry?.trim().orEmpty() != nextCountry?.trim().orEmpty() ||
         currentCity?.trim().orEmpty() != nextCity?.trim().orEmpty() ||
         fireDateChanged
+}
+
+/**
+ * 이 날씨 알람의 조건을 지금 다시 받아야 하는가.
+ *
+ *  - 준비창(48h): open-meteo 는 며칠 뒤 예보의 정확도가 떨어지므로 곧 울릴 알람만 대상.
+ *  - 임박(24h): 신선도 게이트를 무시하고 무조건 다시 받는다. 갱신이 하루 한 번(22시)이라,
+ *    12h 게이트를 그대로 두면 '오늘 낮에 해결됨 → 22시엔 신선하다고 건너뜀 → 내일 아침
+ *    알람이 어제 조건으로 울림'이 된다. 임박한 알람은 한 번 더 받는 편이 항상 옳다.
+ *  - 그 밖: 미해결이거나 마지막 갱신이 12h 이전이면 대상(먼 알람의 과다 호출 방지).
+ */
+internal fun weatherVariantNeedsRefresh(alarm: AlarmEntity, nowMillis: Long): Boolean {
+    if (alarm.fireAtMillis > nowMillis + 48 * 60 * 60 * 1000L) return false
+    if (alarm.fireAtMillis <= nowMillis + 24 * 60 * 60 * 1000L) return true
+    return alarm.contextVariantIndex == null ||
+        (alarm.contextResolvedAtMillis ?: 0L) < nowMillis - 12 * 60 * 60 * 1000L
 }
 
 internal data class WeatherVariantState(
