@@ -211,8 +211,91 @@ DROP COLUMN 마이그레이션이 실패한다 — 실제로 #77이 캐릭터 �
 
 ---
 
-## 6. 테스트 기준선
+## 6. 최대 발견: alarms 인덱스 유실 (성능 회귀)
+
+데드 스키마를 찾다가 더 급한 걸 찾았다. `alarms` 의 의도된 인덱스 8종
+(#1 `idx_alarms_user`/`_target`/`_message`/`_active`, #5 `_voice_profile`/`_speaker`,
+#19 `_user_active`/`_target_active`)이 **마이그레이션 #22·#23 의 테이블 재작성
+(`DROP TABLE alarms` → RENAME)에 함께 소멸**했고, 두 마이그레이션 모두 재생성 문장을
+넣지 않았다. 이후 추가된 `idx_alarms_bucket`(#54)만 남았다.
+
+dev·prod 실측:
+```
+alarms 인덱스: sqlite_autoindex_alarms_1, idx_alarms_bucket   (양쪽 동일)
+EXPLAIN QUERY PLAN
+  WHERE user_id = ? AND is_active = 1  →  SCAN alarms
+  WHERE target_user_id = ?             →  SCAN alarms
+```
+
+앱이 가장 자주 부르는 `GET /api/alarm` 을 포함해 **모든 알람 조회가 full scan** 이다.
+행이 12~18개인 지금은 안 보이지만 출시 규모에서는 그대로 문제가 된다.
+
+→ 마이그레이션 #80 에서 실제 쿼리 술어에 맞춰 4개만 복구했다. `user_id`/`target_user_id`
+단독 인덱스는 복합 인덱스의 선행 컬럼으로 커버되므로 다시 만들지 않는다(쓰기 비용만 는다).
+
+---
+
+## 7. 적용한 변경
+
+| 마이그레이션 | 내용 |
+|---|---|
+| **#80** | alarms 인덱스 4종 복구 (위 §6) |
+| **#81** | `_kst` 뷰 27종 전면 제거 — 런타임 read 0곳, 유지 비용만 컸다 |
+| **#82** | Apple 컬럼 4종 + 인덱스 3종 제거 (인덱스 선행 DROP 필수) |
+| **#83** | `alarms.speaker_id`, `users.family_alarm_quiet_days/_start/_end`, `voice_profiles.voice_gender/speech_formality/avatar_url`, `plan_group_invites` 테이블 제거 |
+
+코드:
+- Apple/iOS 로그인·결제 경로 전면 제거 (백엔드 16파일 + shared + Android + 환경변수 6종)
+- 가족 알람 조용시간 저장을 `quiet_windows` JSON 하나로 일원화 (API 계약은 유지)
+- 가족 초대권 서브시스템 제거 (가족 합류는 이용권 INV- 코드로 일원화)
+- 앱 미호출 `/library` 라우트 제거 (테이블 `message_library` 는 유지 — §1-2)
+- `alarms.speaker_id` 배관 제거
+- **JWT `sub` 을 `users.id` 로 통일** (§3) — 강제 재로그인 불필요
+
+**CHECK 제약은 손대지 않았다.** `push_tokens.platform` 의 `'ios'`,
+`store_transactions.provider` 의 `'apple'`·`'portone'` 은 그대로 둔다 — 변경하려면
+테이블 재작성이 필요한데, 쓰는 코드가 이미 없어 허용 목록에 남겨두는 비용이 0 이다.
+
+---
+
+## 8. 검증
+
+| 항목 | 결과 |
+|---|---|
+| `npm run typecheck` | PASS |
+| `npm test` | **79 files / 1318 passed / 64 skipped / 0 failed** |
+| `npx eslint packages/backend/src` | 0 errors (기존 warning 1건) |
+| 신규 DB 생성 (`test/schema-fresh.test.ts`) | PASS — 체인 적용·멱등·integrity·FK·깨진 뷰 없음 |
+| dev(#79) 스키마 복제본 리허설 | **PASS** — #80~#83 적용 성공 |
+| prod(#78) 스키마 복제본 리허설 | **PASS** — #79~#83 적용 성공 |
+
+리허설은 원격의 **스키마와 마이그레이션 원장만** 로컬 임시 DB 로 복제해 미적용분을
+거기서 돌린다. 원격에는 읽기만 하고 개인정보는 내려받지 않는다.
 
 ```
-npm test → 83 files / 1448 passed / 63 skipped / 0 failed  (2026-07-28)
+SCHEMA_DIFF_ENV_FILE=.dev.vars.prod npx vitest run test/schema-fresh.test.ts
 ```
+
+---
+
+## 9. 남은 후보 (미적용)
+
+아래는 조사에서 "앱 미호출"로 확인됐지만 이번에 손대지 않았다.
+
+| 대상 | 왜 남겼나 |
+|---|---|
+| `POST /alarm/source` + `raw_alarm_uploads` + `alarms.raw_audio_url/_duration_ms` | 배선은 완결돼 있고(업로드→추적→GC→탈퇴정리) 데이터만 0건이다. 제거하면 `audio-retention` 의 R2 삭제 로직을 함께 건드려야 해서 위험 대비 이득이 작다. 향후 기능 예정이면 그대로 두는 편이 낫다 |
+| `GET /alarm/tick`, `GET /alarm/:id`, `DELETE /alarm/:id/decline`, `GET /tts/presets`, `DELETE /tts/messages/:id`, `GET /voice/:id`, `GET /voice/:id/stats`, `PATCH /user/plan`, `POST /billing/redeem`, `POST /family/alarms` | 앱 Retrofit 전수에 없어 호출자가 없다. 라우트 제거는 DB 정리와 독립이라 별도로 처리하는 편이 리뷰하기 쉽다. 특히 `PATCH /user/plan` 은 유료 음성을 하드삭제해 "해지 후 30일 보관" 정책과 어긋나므로 우선 검토 대상 |
+| `voucher_codes.status/used_at/redeemed_by_user_id` | `voucher_redemptions` 와 중복이지만 `billing-query` 가 읽고 있어 응답 계약이 걸린다 |
+| `users.plan` | 페이월이 신뢰하는 출처이고 실측 불일치 0건 (§1-2) |
+| 미들웨어의 `OR google_id = ?` 폴백 | 통일 이전에 발급된 토큰용. 토큰 만료 주기가 한 번 지나면 제거 |
+
+---
+
+## 10. 테스트 기준선
+
+작업 전: `83 files / 1448 passed / 63 skipped / 0 failed`
+작업 후: `79 files / 1318 passed / 64 skipped / 0 failed`
+
+파일·케이스가 준 것은 제거한 기능(Apple 로그인·결제, 가족 초대권, `/library`,
+`speaker_id`)의 테스트가 함께 사라졌기 때문이다. 남은 기능의 테스트는 전부 통과한다.
