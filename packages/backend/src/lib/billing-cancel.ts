@@ -143,7 +143,12 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
  * 그래서 이 스윕은 하드삭제를 하지 않고, 유예가 지난 보관 행만 정리하는 청소부로 남는다.
  * (계정 삭제 같은 명시 경로는 여전히 deletePaidVoiceDataForUser 로 직접 삭제한다.)
  */
-export async function sweepPaidVoiceRetention(db: Client, now: Date = new Date()): Promise<void> {
+export async function sweepPaidVoiceRetention(
+  db: Client,
+  now: Date = new Date(),
+): Promise<string[]> {
+  // 이 정리로 알람이 강등된 사용자들 — 호출자가 plan_changed 푸시 대상에 넣는다.
+  const downgraded = new Set<string>();
   // 유예가 끝난 사용자의 남은 음성 데이터(원본 업로드·생성 오디오)를 정리한다.
   // 클론 자체는 해지 시점에 이미 반납했다(releaseClonedVoicesForUser).
   const due = await db.execute({
@@ -160,9 +165,15 @@ export async function sweepPaidVoiceRetention(db: Client, now: Date = new Date()
       await clearPaidVoiceRetention(db, userPk);
       continue;
     }
-    await deleteSensitiveVoiceDataForUser(db, userPk, await resolveUserLoginId(db, userPk));
+    const affected = await deleteSensitiveVoiceDataForUser(
+      db,
+      userPk,
+      await resolveUserLoginId(db, userPk),
+    );
+    for (const id of affected) downgraded.add(id);
     await clearPaidVoiceRetention(db, userPk);
   }
+  return Array.from(downgraded);
 }
 
 export async function downgradeUserToFree(
@@ -827,7 +838,11 @@ export async function processSubscriptionExpiry(
   }
 
   // 보관 유예가 끝난 유료 음성 데이터 정리 (같은 cron 주기에서 처리).
-  await sweepPaidVoiceRetention(db, now);
+  // 이 정리는 플랜 변경 3일 뒤에 도는데, 그때 강등되는 알람의 주인(공유 목소리·가족알람
+  // 수신자 포함)은 이번 주기의 만료 대상이 아니라 notifyUserPks 에 없다. 그대로 두면 이미
+  // 오디오를 캐시해 둔 백그라운드 수신자가 다음 앱 시작/주기 동기화까지 지워진 녹음으로
+  // 계속 울린다 — 그사이 알람이 먼저 울릴 수 있다. 반환된 대상을 푸시에 함께 태운다.
+  for (const id of await sweepPaidVoiceRetention(db, now)) notifyUserPks.add(id);
 
   // 강등된 사용자에게 plan_changed 푸시 — 클라가 '강등 시점'에 유료 목소리 알람을 기본 알람으로
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.

@@ -40,15 +40,22 @@ async function deleteRelationshipsForOwnedProfiles(db: DbExecutor, ids: string[]
  *
  * 오브젝트를 지우기 전에 알람을 sound-only 로 명시 강등하고 audio_url 을 비워, 서버 상태와
  * 클라 폴백이 같은 말을 하게 한다. 메시지 행 자체는 수신자 데이터라 지우지 않는다.
+ *
+ * @returns 강등된 알람의 주인들 — 호출자가 정리 커밋 후 plan_changed 푸시로 즉시 반영시킨다.
  */
 async function detachFamilyAlarmMessagesUsingOwnedUploads(
   db: DbExecutor,
   ids: string[],
   ph: string,
-) {
+): Promise<string[]> {
   const affectedMessages = `SELECT id FROM messages
      WHERE audio_url IS NOT NULL
        AND audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (${ph}))`;
+  // 강등 '전에' 주인을 모아 둔다 — UPDATE 가 message_id 를 끊고 나면 다시 찾을 수 없다.
+  const owners = await db.execute({
+    sql: `SELECT DISTINCT user_id FROM alarms WHERE message_id IN (${affectedMessages})`,
+    args: ids,
+  });
   await db.execute({
     sql: `UPDATE alarms
           SET mode = 'sound-only',
@@ -62,6 +69,7 @@ async function detachFamilyAlarmMessagesUsingOwnedUploads(
     sql: `UPDATE messages SET audio_url = NULL WHERE id IN (${affectedMessages})`,
     args: ids,
   });
+  return owners.rows.map((r) => String(r.user_id)).filter(Boolean);
 }
 
 export async function deletePaidVoiceDataForUser(
@@ -223,14 +231,21 @@ export async function releaseClonedVoicesForUser(
   }
 }
 
+/**
+ * @returns 이 정리로 알람이 sound-only 로 강등된 사용자들. 호출자가 커밋 후 plan_changed
+ *          data-only 푸시를 보내 즉시 반영시킨다 — 이 스윕은 플랜 변경 3일 뒤에 도는데,
+ *          그때까지 앱을 안 켠 수신자는 이미 캐시한 오디오로 계속 울린다. 다음 앱 시작/주기
+ *          동기화까지 기다리면 그사이 알람이 먼저 울릴 수 있다(AGENTS.md 의 FCM 상태 동기화).
+ */
 export async function deleteSensitiveVoiceDataForUser(
   db: DbExecutor,
   userPk: string,
   userLoginId?: string | null,
-): Promise<void> {
+): Promise<string[]> {
   const ids = uniqueIds([userPk, userLoginId]);
-  if (ids.length === 0) return;
+  if (ids.length === 0) return [];
   const ph = placeholders(ids);
+  const downgraded = new Set<string>();
 
   const providerVoices = await db.execute({
     sql: `SELECT elevenlabs_voice_id FROM voice_profiles
@@ -258,8 +273,25 @@ export async function deleteSensitiveVoiceDataForUser(
   for (const row of generatedObjects.rows) {
     await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
   }
-  await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph);
+  for (const id of await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph)) {
+    downgraded.add(id);
+  }
 
+  // 공유 목소리를 참조하던 알람도 같은 이유로 주인을 모아 둔다(강등 전에 골라야 한다).
+  const sharedVoiceAlarmOwners = await db.execute({
+    sql: `SELECT DISTINCT user_id FROM alarms
+          WHERE voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))
+             OR message_id IN (
+               SELECT id FROM messages
+               WHERE user_id IN (${ph}) OR voice_profile_id IN (
+                 SELECT id FROM voice_profiles WHERE user_id IN (${ph})
+               )
+             )`,
+    args: [...ids, ...ids, ...ids],
+  });
+  for (const row of sharedVoiceAlarmOwners.rows) {
+    if (row.user_id) downgraded.add(String(row.user_id));
+  }
   await db.execute({
     sql: `UPDATE alarms
           SET mode = 'sound-only', wake_mode = 'sound_then_voice',
@@ -303,4 +335,5 @@ export async function deleteSensitiveVoiceDataForUser(
   });
   await deleteRelationshipsForOwnedProfiles(db, ids, ph);
   await db.execute({ sql: `DELETE FROM voice_profiles WHERE user_id IN (${ph})`, args: ids });
+  return Array.from(downgraded);
 }

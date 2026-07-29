@@ -122,6 +122,33 @@ describe('보관 만료 정리 — 가족알람 음성 끊기', () => {
     expect(message).toBeDefined();
   });
 
+  /**
+   * 이 스윕은 플랜 변경 3일 뒤에 돈다. 그때 강등되는 수신자는 이번 주기의 만료 대상이 아니라
+   * 호출부의 푸시 목록에 없다 — 반환하지 않으면 이미 오디오를 캐시한 백그라운드 수신자가
+   * 다음 동기화까지 지워진 녹음으로 계속 울린다(그사이 알람이 먼저 울릴 수 있다).
+   */
+  it('강등된 알람 주인을 돌려줘 plan_changed 푸시 대상에 넣게 한다', async () => {
+    await db.execute(
+      `INSERT INTO voice_profiles (id, user_id, name, status) VALUES ('vp-r', 'recipient', '수신자 목소리', 'ready')`,
+    );
+    await db.execute(
+      `INSERT INTO voice_uploads (id, user_id, object_key, mime_type, size_bytes)
+       VALUES ('up-1', 'sender', 'voices/sender/clip.m4a', 'audio/mp4', 100)`,
+    );
+    await db.execute(
+      `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
+       VALUES ('msg-1', 'recipient', 'vp-r', '일어나', 'voices/sender/clip.m4a', 'family-voice')`,
+    );
+    await db.execute(
+      `INSERT INTO alarms (id, user_id, message_id, time, mode)
+       VALUES ('al-1', 'recipient', 'msg-1', '07:00', 'voice')`,
+    );
+
+    const downgraded = await deleteSensitiveVoiceDataForUser(db, 'sender', 'sender');
+
+    expect(downgraded).toContain('recipient');
+  });
+
   it('내 업로드와 무관한 수신자 메시지는 건드리지 않는다', async () => {
     await db.execute(
       `INSERT INTO voice_profiles (id, user_id, name, status) VALUES ('vp-r', 'recipient', '수신자 목소리', 'ready')`,
