@@ -169,14 +169,26 @@ export async function sweepPaidVoiceRetention(
       await clearPaidVoiceRetention(db, userPk);
       continue;
     }
-    const affected = await deleteSensitiveVoiceDataForUser(
-      db,
-      userPk,
-      await resolveUserLoginId(db, userPk),
-    );
-    for (const target of affected) downgraded.set(target.alarmId, target);
-    cleanedUserPks.push(userPk);
-    await clearPaidVoiceRetention(db, userPk);
+    // 한 사용자에서 실패해도 나머지를 버리지 않는다. 예외가 위로 새면 호출부가
+    // notifyDowngradedAlarms 까지 못 가서, 이미 정리·마커 삭제까지 끝난 앞 사용자들의
+    // 알림이 통째로 사라진다 — 마커가 없으니 다음 크론이 복구할 수도 없다.
+    // 실패한 사용자는 마커를 그대로 둬(아래 clear 를 건너뛴다) 다음 크론이 다시 시도한다.
+    try {
+      const affected = await deleteSensitiveVoiceDataForUser(
+        db,
+        userPk,
+        await resolveUserLoginId(db, userPk),
+      );
+      for (const target of affected) downgraded.set(target.alarmId, target);
+      cleanedUserPks.push(userPk);
+      await clearPaidVoiceRetention(db, userPk);
+    } catch (err) {
+      logStructured('error', {
+        at: 'billing.paid_voice_retention_sweep',
+        action: 'RETENTION_CLEANUP_FAILED',
+        error: String(err),
+      });
+    }
   }
   return { targets: Array.from(downgraded.values()), cleanedUserPks };
 }
