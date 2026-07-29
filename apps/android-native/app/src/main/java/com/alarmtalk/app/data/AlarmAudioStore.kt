@@ -609,8 +609,15 @@ class AlarmAudioStore(
         var deleted = 0
         audioDir.listFiles()?.forEach { file ->
             if (!file.isFile) return@forEach
-            // 쓰다 만 잔재는 나이와 무관하게 정리한다(다음 다운로드가 다시 받는다).
+            // 쓰다 만 잔재는 어떤 알람도 참조하지 않으니 TTL 을 기다리지 않고 정리한다
+            // (다음 다운로드가 다시 받는다). 단 '지금 쓰고 있는' staging 까지 지우면 그 쪽
+            // renameTo 가 실패해 프리페치나 알람 저장이 IOException("Failed to finalize
+            // cached audio")으로 죽는다 — 앱 시작 스윕은 StockClipPrefetchWorker·편집기
+            // 다운로드와 겹칠 수 있고, 워커는 별도 프로세스일 수 있어 키별 lock 으로도 못 막는다.
+            // 한 클립 쓰기는 순식간에 끝나므로 그보다 한참 긴 유예를 넘긴 것만 잔재로 본다.
             if (file.extension == PARTIAL_EXTENSION) {
+                val writtenAt = file.lastModified()
+                if (writtenAt <= 0L || writtenAt >= nowMillis - PARTIAL_STALE_AFTER_MILLIS) return@forEach
                 if (file.delete()) deleted += 1
                 return@forEach
             }
@@ -888,8 +895,15 @@ class AlarmAudioStore(
         private const val AUDIO_DIR = "alarm-audio"
         private const val META_EXTENSION = "meta"
 
-        /** 쓰기 도중 죽었을 때 남는 미완성 파일 확장자. sweep 이 나이와 무관하게 정리한다. */
+        /** 쓰기 도중 죽었을 때 남는 미완성 파일 확장자. sweep 이 [PARTIAL_STALE_AFTER_MILLIS] 뒤 정리한다. */
         private const val PARTIAL_EXTENSION = "part"
+
+        /**
+         * 이만큼 손대지 않은 .part 만 '쓰다 죽은 잔재'로 보고 스윕이 지운다.
+         * 정상 쓰기는 버퍼 한 번 flush 라 순식간에 끝나므로, 진행 중인 staging 을 지워
+         * renameTo 를 깨뜨리는 일이 없도록 넉넉히 잡은 값이다.
+         */
+        private const val PARTIAL_STALE_AFTER_MILLIS: Long = 60L * 60 * 1_000
 
         /**
          * 미리 내려받는 기본(시스템) 목소리 클립의 캐시 키 접두사.
