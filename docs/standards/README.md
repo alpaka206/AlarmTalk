@@ -128,7 +128,7 @@ Cloudflare Worker secrets:
 - `JWT_SECRET`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
 - `ELEVENLABS_API_KEY`
 - `SENTRY_DSN`
-- `GOOGLE_CLIENT_ID`, `APPLE_CLIENT_ID`
+- `GOOGLE_CLIENT_ID`
 
 Android Gradle properties (override via `local.properties` or `-P`):
 
@@ -231,7 +231,7 @@ The full external policy is in `SECURITY.md`. The internal rules are:
 - Security response headers on every response (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Strict-Transport-Security`, `Cross-Origin-Opener-Policy`, `Cache-Control: no-store` by default).
 - R2 bucket is private. Server returns base64 or short-lived signed URLs only.
 - Voice data is shared only inside a user's family/partner group. External download is blocked.
-- Account deletion cascades to voice, alarms, messages, friends, plan-group membership; R2 objects are queued for deletion.
+- Account deletion cascades to voice, alarms, messages, plan-group membership; R2 objects are queued for deletion.
 - Personal data is never logged. Email and similar identifiers are hashed before logging if they appear at all.
 - Secret rotation every 90 days. Rotation owner: release engineer + tech lead.
 
@@ -255,7 +255,7 @@ The full external policy is in `SECURITY.md`. The internal rules are:
 - **Rejected**: email invites, link-only invites.
 - **Why**: works without collecting email, can be passed verbally / via any chat app, brute-force resistant given short TTL and a rate limit.
 - **Schema**: see `plan_group_invites` in [tech/README.md](../tech/README.md) §2.
-- **API**: `POST /api/family/invites` (issue) / `POST /api/family/invites/:code/accept` / `POST /api/family/invites/:code/revoke`.
+- **API**: `POST /api/billing/vouchers/family-share` (발급) / `POST /api/billing/vouchers/family-share/regenerate` (재발급) / `POST /api/code/register` (합류).
 - **Mitigations**:
   - Brute force: 1,000,000 combinations × 10-minute TTL × pending uniqueness × rate limiting → practically infeasible.
   - Link leakage: single-use means at most one redemption; for many invitees the owner issues multiple codes.

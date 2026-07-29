@@ -16,6 +16,17 @@ function consentRow(type: string) {
   return { consent_type: type, policy_version: CURRENT_POLICY_VERSION, agreed: 1 };
 }
 
+/**
+ * POST /clone 은 `c.get('userIdPK')` 가 있으면 유료 플랜 여부를 실제로 조회한다
+ * (SELECT plan FROM users ...). fakeAuthMiddleware 가 실제 authMiddleware 처럼
+ * userIdPK 를 채우게 되면서 이 쿼리가 결과 큐의 맨 앞을 소비하므로, 클론 테스트는
+ * 유료 플랜 행을 가장 먼저 넣어 줘야 이후 결과(한도 카운트·INSERT ...)가 한 칸씩
+ * 밀리지 않는다. 무료 플랜이면 403 VOICE_FEATURE_REQUIRES_PAID_PLAN 으로 떨어진다.
+ */
+function pushPaidPlan() {
+  mockDB.pushResult([{ plan: 'plus' }]);
+}
+
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
@@ -179,58 +190,46 @@ describe('GET /draft — 드래프트 조회 (voice-profile)', () => {
 });
 
 describe('GET /draft-quota — 월 생성 쿼터 (voice-profile)', () => {
-  it('사용 기록 없으면 remaining=limit(3)', async () => {
-    mockDB.pushResult([]); // used_count 조회 → 없음
+  it('사용 기록이 없으면 이번 달 등록 쿼터는 1/1', async () => {
+    mockDB.pushResult([]); // 초안 시도 used_count 조회 → 없음
+    mockDB.pushResult([{ used: 0 }]); // 이번 달 정식 등록 사용량 → 0
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ limit: 3, used: 0, remaining: 3 });
+    // 초안 시도는 제한 없음(limit=0, 집계용). 사용자에게 보여줄 숫자는 registration_*.
+    expect(body).toEqual({
+      limit: 0,
+      used: 0,
+      remaining: 0,
+      registration_limit: 1,
+      registration_used: 0,
+      registration_remaining: 1,
+    });
   });
 
-  it('이번 달을 다 썼으면 remaining=0', async () => {
+  it('이번 달 목소리를 이미 등록했으면 등록 쿼터는 0/1', async () => {
     mockDB.pushResult([{ used_count: 3 }]);
+    mockDB.pushResult([{ used: 1 }]); // 정식 등록 1건 소진
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ limit: 3, used: 3, remaining: 0 });
+    expect(body).toEqual({
+      limit: 0,
+      used: 3,
+      remaining: 0,
+      registration_limit: 1,
+      registration_used: 1,
+      registration_remaining: 0,
+    });
   });
 
   it("'/:id' 보다 먼저 매칭돼 draft-quota 가 프로필 id 로 잡히지 않는다", async () => {
     mockDB.pushResult([{ used_count: 1 }]);
+    mockDB.pushResult([{ used: 0 }]);
     const res = await req(buildApp(), new Request('http://localhost/vp/draft-quota'));
     // 400(잘못된 UUID) 이 아니라 200 쿼터 응답이어야 한다.
     expect(res.status).toBe(200);
-    expect((await res.json()).remaining).toBe(2);
-  });
-});
-
-describe('GET /:id — 프로필 상세 (voice-profile)', () => {
-  it('잘못된 UUID → 400', async () => {
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V_BAD}`));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_VOICE_PROFILE_ID');
-  });
-
-  it('존재하지 않으면 404', async () => {
-    mockDB.pushResult([]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}`));
-    expect(res.status).toBe(404);
-    expect((await res.json()).error_code).toBe('VOICE_PROFILE_NOT_FOUND');
-  });
-
-  it('자신의 프로필이면 200 반환', async () => {
-    mockDB.pushResult([{ id: V1, name: '엄마', status: 'ready' }]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.profile.id).toBe(V1);
-    expect(body.profile.name).toBe('엄마');
-  });
-
-  it('쿼리에 user_id 포함 (소유권 검증)', async () => {
-    mockDB.pushResult([{ id: V1 }]);
-    await req(buildApp('user-A'), new Request(`http://localhost/vp/${V1}`));
-    expect(mockDB.calls[0]!.args).toContain('user-A');
+    expect((await res.json()).registration_remaining).toBe(1);
   });
 });
 
@@ -448,43 +447,6 @@ describe('PATCH /:id — 이름 변경 (voice-profile)', () => {
 /* ------------------------------------------------------------------ */
 /*  GET /vp/:id/stats — 통계                                          */
 /* ------------------------------------------------------------------ */
-describe('GET /:id/stats — 통계 (voice-profile)', () => {
-  it('잘못된 UUID → 400', async () => {
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V_BAD}/stats`));
-    expect(res.status).toBe(400);
-  });
-
-  it('프로필 없으면 404', async () => {
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([{ count: 0 }]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}/stats`));
-    expect(res.status).toBe(404);
-  });
-
-  it('통계 반환 (메시지 3개, 알람 2개)', async () => {
-    mockDB.pushResult([{ id: V1, name: '엄마' }]);
-    mockDB.pushResult([{ count: 3 }]);
-    mockDB.pushResult([{ count: 2 }]);
-    const res = await req(buildApp(), new Request(`http://localhost/vp/${V1}/stats`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.voice_profile_id).toBe(V1);
-    expect(body.messages).toBe(3);
-    expect(body.alarms).toBe(2);
-  });
-
-  it('alarms 쿼리에 target_user_id 포함 (수신 알람 포함)', async () => {
-    mockDB.pushResult([{ id: V1, name: 'x' }]);
-    mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([{ count: 0 }]);
-    await req(buildApp('user-X'), new Request(`http://localhost/vp/${V1}/stats`));
-    const alarmCall = mockDB.calls[2]!;
-    expect(alarmCall.sql).toContain('target_user_id');
-    expect(alarmCall.args).toContain('user-X');
-  });
-});
-
 /* ------------------------------------------------------------------ */
 /*  POST /vp/clone — 음성 클론                                         */
 /* ------------------------------------------------------------------ */
@@ -527,6 +489,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     // 생체정보(음성 클론) 별도 동의 미충족 시 클로닝을 차단한다. 동의 쿼리는
     // missing 모드로 두고 빈 결과(미동의)를 돌려준다.
     mockDB.setConsentMissing(true);
+    pushPaidPlan(); // userIdPK 가 채워지며 유료 플랜 조회가 실제로 실행된다 — 큐 맨 앞에 유료 플랜 행을 넣어 준다.
     mockDB.pushResult([]); // user_consents 조회 결과: 동의 없음
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '엄마 목소리'));
     expect(res.status).toBe(403);
@@ -539,6 +502,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
   it('overseas_transfer 동의 없으면 ElevenLabs 클론을 호출하지 않음', async () => {
     mockDB.setConsentMissing(true);
+    pushPaidPlan();
     mockDB.pushResult([consentRow('voice_biometric')]);
 
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '엄마 목소리'));
@@ -552,6 +516,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
 
   it('voice_biometric 동의가 있으면 클로닝 진행 (B4)', async () => {
     // 기본 모드(setConsentMissing 미설정): 헬퍼가 모든 동의를 합성 충족 → 통과.
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -564,6 +529,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('draft 슬롯이 차 있으면 403 VOICE_LIMIT_REACHED', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ draft_count: 1, official_count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트'));
     expect(res.status).toBe(403);
@@ -573,6 +539,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('official 슬롯이 차 있으면 403 (stranded draft 방지, attempt 미소모)', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ draft_count: 0, official_count: 1 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트2'));
     expect(res.status).toBe(403);
@@ -582,20 +549,25 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(mockDB.calls.some((call) => call.sql.includes('voice_draft_attempt_usage'))).toBe(false);
   });
 
-  it('이번 달 초안 제공자 시도를 모두 썼으면 429 VOICE_DRAFT_ATTEMPT_LIMIT_REACHED', async () => {
-    mockDB.pushResult([{ active_count: 0, monthly_count: 0 }]);
+  it('초안은 월 시도 횟수로 막지 않는다 — 정식 등록 전까진 무제한 생성·삭제', async () => {
+    // 예전에는 여기서 429 VOICE_DRAFT_ATTEMPT_LIMIT_REACHED 로 막았다. 이제 사용량만 센다.
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([], 0);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-draft' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '새 목소리'));
-    expect(res.status).toBe(429);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_DRAFT_ATTEMPT_LIMIT_REACHED');
-    expect(mockCreateInstantClone).not.toHaveBeenCalled();
-    const ledgerCall = mockDB.calls.find((call) => call.sql.includes('voice_draft_attempt_usage'));
-    expect(ledgerCall).toBeDefined();
+    expect(res.status).toBe(201);
+    const usageCall = mockDB.calls.find((call) => call.sql.includes('voice_draft_attempt_usage'));
+    expect(usageCall).toBeDefined();
+    // 집계는 계속하되 상한 비교(WHERE used_count < ?)는 사라졌다.
+    expect(usageCall!.sql).not.toContain('used_count <');
   });
 
   it('프로필이 없으면 통과', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -607,6 +579,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('쿼터 카운트는 failed 잔여 행을 제외한다 (일시 실패가 한도를 영구 잠식하지 않도록)', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -626,6 +599,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('audio 누락 → 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const form = new FormData();
     form.append('name', 'test');
@@ -639,6 +613,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('name 누락 → 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const form = new FormData();
     form.append('audio', new Blob([new Uint8Array([1])], { type: 'audio/wav' }), 'a.wav');
@@ -652,6 +627,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('name 50자 초과 → 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'x'.repeat(51)));
     expect(res.status).toBe(400);
@@ -659,6 +635,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('durationMs 생략 시 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', ''));
     expect(res.status).toBe(400);
@@ -666,6 +643,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('초안 최소 12초 미만 durationMs 는 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '11999'));
     expect(res.status).toBe(400);
@@ -673,6 +651,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('2분에서 5초 이내 durationMs 오차는 허용', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -684,6 +663,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('2분 5초를 넘는 durationMs 는 400', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '125001'));
     expect(res.status).toBe(400);
@@ -691,6 +671,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('name 50자 정확히 → 통과', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -702,6 +683,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('성공 시 INSERT processing → UPDATE ready 순서', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -727,6 +709,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('ElevenLabs 실패 → 500 VOICE_CLONING_FAILED', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -750,6 +733,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('ElevenLabs 에 audioBuffer 전달 확인', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -773,6 +757,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('mp3 clone 업로드 MIME 과 파일명을 ElevenLabs 로 전달', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -799,6 +784,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('ElevenLabs 슬롯 부족 시 503 + VOICE_SLOT_EXHAUSTED', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -815,6 +801,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('J: 0바이트 오디오 → 400 AUDIO_FILE_EMPTY (arrayBuffer/클론 전 차단)', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]); // 한도 체크 SELECT
     const res = await req(buildApp(), cloneForm(new Uint8Array([]), 'name'));
     expect(res.status).toBe(400);
@@ -823,6 +810,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('J: 25 MiB 초과 오디오 → 413 AUDIO_FILE_TOO_LARGE', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]); // 한도 체크 SELECT
     const big = new Uint8Array(25 * 1024 * 1024 + 1);
     const res = await req(buildApp(), cloneForm(big, 'name'));
@@ -832,6 +820,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   });
 
   it('C: 원본 R2 저장 성공 후 voice_uploads INSERT 실패 시 R2 삭제 큐 적재', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -908,7 +897,6 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(alarmsCascade!.sql).toContain("wake_mode = 'sound_then_voice'");
     expect(alarmsCascade!.sql).toContain('message_id = NULL');
     expect(alarmsCascade!.sql).toContain('voice_profile_id = NULL');
-    expect(alarmsCascade!.sql).toContain('speaker_id = NULL');
     const messagesUpdate = mockDB.calls.find((c) =>
       c.sql.startsWith('UPDATE messages SET audio_url'),
     );
@@ -918,7 +906,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(update?.sql).toContain('is_shared = 0');
   });
 
-  it('삭제 시 이번 달 목소리 변경 원장을 지워 같은 달 재등록 허용', async () => {
+  it('삭제해도 이번 달 목소리 변경 원장은 남는다 — 지웠다 만들기로 월 1회를 우회할 수 없다', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     const res = await req(
@@ -929,35 +917,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     const ledgerDelete = mockDB.calls.find((c) =>
       c.sql.startsWith('DELETE FROM voice_profile_change_ledger'),
     );
-    expect(ledgerDelete).toBeDefined();
-    expect(ledgerDelete!.sql).toContain('voice_profile_id = ?');
-    expect(ledgerDelete!.sql).toContain('change_month');
-    expect(ledgerDelete!.args).toContain(V1);
-  });
-
-  it('삭제된 목소리로 만든 쪽지는 오디오 URL을 비움', async () => {
-    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1); // voice_profile_change_ledger 삭제 (같은 달 재등록 허용)
-    mockDB.pushResult([
-      {
-        audio_url: 'https://cdn.example.com/generated/voice-note.mp3',
-        audio_object_key: 'generated/voice-note.mp3',
-      },
-    ]);
-    const res = await req(
-      buildApp(),
-      new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }),
-    );
-
-    expect(res.status).toBe(200);
-    const notesUpdate = mockDB.calls.find((c) =>
-      c.sql.startsWith('UPDATE notes SET audio_url = NULL'),
-    );
-    expect(notesUpdate).toBeDefined();
-    expect(notesUpdate!.args).toContain('r2://generated/voice-note.mp3');
-    expect(notesUpdate!.args).toContain('https://cdn.example.com/generated/voice-note.mp3');
+    expect(ledgerDelete).toBeUndefined();
   });
 
   it('force=true 여도 메시지와 알람 행은 삭제하지 않음', async () => {
@@ -1147,6 +1107,7 @@ describe('PATCH /:id — name edge cases (voice-profile)', () => {
 /* ------------------------------------------------------------------ */
 describe('POST /clone — edge cases (voice-profile)', () => {
   it('프로필 0개이면 정상 생성', async () => {
+    pushPaidPlan(); // userIdPK 가 채워지며 유료 플랜 조회가 실제로 실행된다 — 큐 맨 앞에 유료 플랜 행을 넣어 준다.
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -1159,6 +1120,7 @@ describe('POST /clone — edge cases (voice-profile)', () => {
   });
 
   it('non-Error throw 여도 detail 은 안정 코드(K1)', async () => {
+    pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);

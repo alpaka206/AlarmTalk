@@ -29,18 +29,6 @@ export function plannedMaxUses(planType: string, maxMembers: number): number {
  *
  * 알려지지 않은 productID 는 null. 호출자가 400 응답을 내야 함.
  */
-const APPLE_PRODUCT_PREFIX = 'com.voicealarm.nativeapp.ios.';
-
-const APPLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'> = {
-  [`${APPLE_PRODUCT_PREFIX}personal_monthly`]: 'personal',
-  [`${APPLE_PRODUCT_PREFIX}couple_monthly`]: 'couple',
-  [`${APPLE_PRODUCT_PREFIX}family_monthly`]: 'family',
-};
-
-export function applePlanKeyFromProductId(productId: string): 'personal' | 'couple' | 'family' | null {
-  return APPLE_PRODUCT_TO_PLAN_KEY[productId] ?? null;
-}
-
 export function isPaidVoicePlan(plan: unknown): boolean {
   return typeof plan === 'string' && PAID_USER_PLANS.has(plan);
 }
@@ -49,7 +37,7 @@ export async function resolveUserPk(c: Context<AppEnv>): Promise<string | null> 
   const userId = c.get('userId');
   const db = getDB(c.env);
   const res = await db.execute({
-    sql: 'SELECT id FROM users WHERE google_id = ?',
+    sql: 'SELECT id FROM users WHERE id = ?',
     args: [userId],
   });
   if (res.rows.length === 0) return null;

@@ -39,14 +39,17 @@ class DefaultVoicePreferenceStore(context: Context) {
     /** 사용자가 기본 목소리를 한 번이라도 골랐는지(온보딩 목소리 스텝 완료 판정). */
     fun hasChosen(userId: String?): Boolean = read(userId) != null
 
-    fun hasCompletedSetup(userId: String?): Boolean = hasChosen(userId) || hasSkipped(userId)
-
     fun markSkipped(userId: String?) {
         val key = skippedKeyFor(userId) ?: return
         prefs.edit().putBoolean(key, true).apply()
     }
 
-    private fun hasSkipped(userId: String?): Boolean {
+    /**
+     * 사용자가 '나중에 받기'를 눌렀는지. 준비 화면 노출 판정은 이 값만 본다 —
+     * hasChosen(기본 목소리 저장 여부)은 이제 '마지막에 쓴 목소리' 기록이라
+     * 다운로드 완료 여부와 무관하다.
+     */
+    fun hasSkipped(userId: String?): Boolean {
         val key = skippedKeyFor(userId) ?: return false
         return prefs.getBoolean(key, false)
     }

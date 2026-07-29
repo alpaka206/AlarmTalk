@@ -88,15 +88,24 @@ interface AlarmDao {
         fireDateEndMillis: Long,
     ): Int
 
+    /**
+     * "한 시각에는 알람 하나" 정책의 충돌 개수. 대상은 **이 계정에 보이는 알람**으로 한정한다
+     * ([AlarmRepository.observeAlarms] 와 같은 규칙).
+     *
+     * 로컬 알람은 로그아웃해도 남으므로, 소유자를 안 보면 앞 계정 A 의 07:00 알람 때문에 B 가
+     * 07:00 을 못 쓴다 — 목록에는 안 보이니 지울 수도 없다. 게다가 교체 흐름으로 넘어가면
+     * A 의 알람과 음성 캐시가 영구 삭제된다(내 알람은 서버에서 되받는 경로가 없다).
+     */
     @Query(
         """
         SELECT COUNT(*) FROM alarms
         WHERE hour = :hour
           AND minute = :minute
           AND (:excludeId IS NULL OR id != :excludeId)
+          AND (ownerUserId IS NULL OR ownerUserId = :callerUserId)
         """,
     )
-    suspend fun countAtTime(hour: Int, minute: Int, excludeId: String? = null): Int
+    suspend fun countAtTime(hour: Int, minute: Int, callerUserId: String?, excludeId: String? = null): Int
 
     /** 같은 시각(HH:mm)의 기존 알람 1건. 중복 시각 교체 흐름에서 충돌 대상을 찾는 데 쓴다. */
     @Query(
@@ -105,16 +114,40 @@ interface AlarmDao {
         WHERE hour = :hour
           AND minute = :minute
           AND (:excludeId IS NULL OR id != :excludeId)
+          AND (ownerUserId IS NULL OR ownerUserId = :callerUserId)
         LIMIT 1
         """,
     )
-    suspend fun findAtTime(hour: Int, minute: Int, excludeId: String? = null): AlarmEntity?
+    suspend fun findAtTime(hour: Int, minute: Int, callerUserId: String?, excludeId: String? = null): AlarmEntity?
 
     @Query("SELECT COUNT(*) FROM alarms WHERE audioCacheKey = :cacheKey")
     suspend fun countByAudioCacheKey(cacheKey: String): Int
 
     @Upsert
-    suspend fun upsert(alarm: AlarmEntity)
+    suspend fun upsertRow(alarm: AlarmEntity)
+
+    /**
+     * 전체행 저장. 소유자(ownerUserId)만은 DB 에 이미 박힌 값을 지킨다.
+     *
+     * 소유자는 세션이 끝날 때 한 번 새겨지는데([claimUnownedAlarms]), 하필 그 시점에
+     * 편집기·스누즈·반복 알람 해제가 '소유자 없음' 스냅샷을 들고 있다가 나중에 커밋하면
+     * 방금 새긴 소유자가 다시 null 로 돌아간다. 그러면 다음에 로그인한 다른 계정이 그
+     * 알람을 자기 것으로 삼아 예약·발사한다 — 소유자를 새기는 이유 자체가 무력해진다
+     * (Codex #650). 편집 커밋이 remoteAlarmId 를 stale null 로 되돌리던 문제
+     * ([upsertPreservingServerSyncFields])와 같은 모양이라 방어도 같게 둔다.
+     *
+     * 되돌리는 방향(값 있음 → null)만 막는다. 신규 행은 DB 에 값이 없어 그대로 저장되고,
+     * 소유자를 정하는 정상 경로(생성·claim)는 null 이 아닌 값을 들고 오므로 영향이 없다.
+     */
+    @Transaction
+    suspend fun upsert(alarm: AlarmEntity) {
+        if (alarm.ownerUserId != null) {
+            upsertRow(alarm)
+            return
+        }
+        val claimedOwner = getById(alarm.id)?.ownerUserId
+        upsertRow(if (claimedOwner == null) alarm else alarm.copy(ownerUserId = claimedOwner))
+    }
 
     /**
      * 사용자 편집 커밋용 전체행 upsert. 커밋 직전 같은 트랜잭션 안에서 DB 의 최신
@@ -170,6 +203,26 @@ interface AlarmDao {
 
     @Delete
     suspend fun delete(alarm: AlarmEntity)
+
+    /**
+     * 소유자 미기록 행에 계정을 새긴다. 반환값은 새긴 행 수.
+     *
+     * 읽고-고쳐-upsert 하면 안 된다: 세션 만료 처리 중에도 리시버(발사·스누즈)·동기화 워커·
+     * 사용자 편집이 같은 행을 쓰므로, 스냅샷 전체를 되쓰면 그 사이의 변경(fireAtMillis·
+     * enabled·state)이 옛 값으로 되돌아간다. 컬럼 하나만 원자적으로 바꾼다.
+     *
+     * updatedAtMillis 는 일부러 건드리지 않는다 — 소유자는 서버로 나가지 않는 로컬 전용
+     * 개념인데, 여기서 시각을 올리면 AlarmSyncService 의 expectedUpdatedAtMillis 낙관적
+     * 동시성이 '사용자 편집'으로 오인해 동기화 상태가 어긋난다.
+     */
+    @Query(
+        """
+        UPDATE alarms
+        SET ownerUserId = :userId
+        WHERE ownerUserId IS NULL
+        """,
+    )
+    suspend fun claimUnownedAlarms(userId: String): Int
 
     @Query(
         """

@@ -56,6 +56,14 @@ import androidx.compose.ui.window.DialogProperties
 @Composable
 internal fun RandomPromptSettingsPane(
     randomContext: String,
+    /**
+     * 이 알람이 **직접 입력으로 저장돼 있을 때**의 기존 문구. 수정하려고 다시 들어온 사용자가
+     * 처음부터 타이핑하지 않도록 입력 다이얼로그를 이 값으로 연다.
+     *
+     * 새로 만드는 알람이나 버킷/랜덤 알람이면 호출부가 빈 문자열을 넘긴다 — '기본값 없음' 규칙은
+     * 그대로 지킨다(내가 쓴 적 없는 문구가 미리 채워져 있으면 안 된다).
+     */
+    manualText: String = "",
     // 직접 입력 옵션에 '(남은/총)' 을 붙여 이번 달 남은 만들기 횟수를 보여준다(유료·limit>0 일 때).
     manualRemaining: Int? = null,
     manualLimit: Int? = null,
@@ -289,9 +297,9 @@ internal fun RandomPromptSettingsPane(
 
     if (manualDialogOpen) {
         ManualMessageDialog(
-            // 항상 빈칸으로 시작 — 이전 문구를 프리필하지 않는다(기본값 없음 규칙).
+            // 기존 직접 입력 문구가 있으면 그대로 열어 준다(수정 흐름). 없으면 빈칸.
             // 저장(확인) 없이 닫으면 입력한 내용은 그대로 폐기된다.
-            initialText = "",
+            initialText = manualText,
             onDismiss = { manualDialogOpen = false },
             onConfirm = { text ->
                 manualDialogOpen = false

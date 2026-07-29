@@ -41,6 +41,7 @@ import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.WakerPillShape
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.window.Dialog
@@ -83,6 +84,10 @@ internal fun HomeHeader(
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
+            // 이 헤더는 리스트 밖에 고정돼 있어 높이가 곧 목록에서 뺏는 화면이다.
+            // 좁은 폰 + 큰 글꼴에서 "13시간 40분 후에 울려요."가 3줄로 번지지 않게 상한을 둔다.
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

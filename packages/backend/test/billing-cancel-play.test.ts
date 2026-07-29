@@ -23,6 +23,7 @@ vi.mock('../src/lib/google-oauth', () => ({
   getGoogleAccessToken: vi.fn().mockResolvedValue('play-access-token'),
 }));
 
+import { PAID_VOICE_RETENTION_DAYS } from '../src/lib/billing-cancel';
 import billingMutation from '../src/routes/billing-mutation';
 import billingGoogle from '../src/routes/billing-google';
 import {
@@ -30,6 +31,7 @@ import {
   processSubscriptionExpiry,
   sweepPaidVoiceRetention,
 } from '../src/lib/billing-cancel';
+import { releaseClonedVoicesForUser } from '../src/lib/paid-voice-cleanup';
 import { applyStoreEntitlement } from '../src/lib/store-billing';
 
 const PLAY_ENV = {
@@ -139,7 +141,7 @@ describe('POST /billing/cancel (google 결제)', () => {
     expect(mockDB.transactions.commits).toBe(0);
   });
 
-  it('immediate: Play :revoke 성공 → 구독 cancelled·음성 보존·30일 보관 예약', async () => {
+  it('immediate: Play :revoke 성공 → 구독 cancelled·음성 보존·보관 유예 예약', async () => {
     const fetchMock = stubPlayFetch(200, {});
     mockDB.pushResult([{ id: 'user-pk-1' }]); // resolveUserPk
     mockDB.pushResult([SUB_ROW]); // 활성 구독 스냅샷 (라우트, 트랜잭션 안에서 재조회 없음)
@@ -155,9 +157,11 @@ describe('POST /billing/cancel (google 결제)', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.mode).toBe('immediate');
-    // 30일 보관 만료 시각이 응답에 내려온다.
+    // 보관 만료 시각이 응답에 내려온다 (PAID_VOICE_RETENTION_DAYS 기준).
     const retentionMs = new Date(body.voice_retention_until).getTime();
-    expect(retentionMs).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000);
+    const expectedMs = Date.now() + PAID_VOICE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    expect(retentionMs).toBeGreaterThan(expectedMs - 60_000);
+    expect(retentionMs).toBeLessThanOrEqual(expectedMs + 60_000);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain(':revoke');
@@ -167,7 +171,7 @@ describe('POST /billing/cancel (google 결제)', () => {
 
     expect(findCall("status = 'cancelled'")).toBeDefined();
     expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
-    // 음성 데이터 하드삭제는 없어야 한다 (30일 보관으로 대체).
+    // 음성 데이터 하드삭제는 없어야 한다 (보관 유예로 대체).
     expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
     expect(findCall('DELETE FROM messages')).toBeUndefined();
   });
@@ -417,51 +421,7 @@ describe('POST /billing/cancel — 이미 취소/철회된 토큰 수렴 (C5)', 
 });
 
 // ---------------------------------------------------------------------------
-// POST /billing/cancel — Apple / 스토어 미연결(스텁) 구독
 // ---------------------------------------------------------------------------
-describe('POST /billing/cancel (apple·스텁)', () => {
-  it('apple 결제 구독은 409 STORE_CANCEL_UNSUPPORTED + DB 무변경', async () => {
-    const fetchMock = stubPlayFetch(200, {});
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([SUB_ROW]);
-    mockDB.pushResult([{ ...GOOGLE_TXN_ROW, provider: 'apple' }]);
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
-      undefined,
-      PLAY_ENV,
-    );
-
-    expect(res.status).toBe(409);
-    const body = await res.json();
-    expect(body.error_code).toBe('STORE_CANCEL_UNSUPPORTED');
-    expect(body.manage_url).toBe('https://apps.apple.com/account/subscriptions');
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
-  });
-
-  it('스토어 트랜잭션 없는 구독(dev 스텁/프로모) immediate: Play 호출 없이 해지 + 보관 예약', async () => {
-    const fetchMock = stubPlayFetch(200, {});
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([SUB_ROW]); // 활성 구독 스냅샷 (트랜잭션 안에서 재조회 없음)
-    mockDB.pushResult([]); // store_transactions 없음
-
-    const res = await buildApp().request(
-      jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
-      undefined,
-      PLAY_ENV,
-    );
-
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.voice_retention_until).toBeDefined();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(findCall("status = 'cancelled'")).toBeDefined();
-    expect(findCall('INSERT INTO paid_voice_retention')).toBeDefined();
-    expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
-  });
-});
-
 // ---------------------------------------------------------------------------
 // POST /billing/cancel — 스냅샷-트랜잭션 정합 (E1)
 // ---------------------------------------------------------------------------
@@ -541,6 +501,48 @@ describe('cancelSubscriptionImmediate — plan 재정렬 (E2)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// releaseClonedVoicesForUser — 해지 즉시 클론만 반납하고, 복구 표식을 남긴다
+// ---------------------------------------------------------------------------
+describe('releaseClonedVoicesForUser (해지 시 클론 반납)', () => {
+  it('evicted_at 과 evicted_provider_voice_id 를 함께 남긴다 (재구독 복구 경로 조건)', async () => {
+    mockDB.pushResult([{ elevenlabs_voice_id: 'el-voice-1' }]); // 반납 대상 조회
+    mockDB.pushResult([], 1); // 제공자 보이스 삭제 큐 적재
+    mockDB.pushResult([], 1); // UPDATE voice_profiles
+
+    await releaseClonedVoicesForUser(mockDB.client as never, 'user-pk', 'login-id');
+
+    const update = findCall('UPDATE voice_profiles');
+    expect(update).toBeDefined();
+    // tts.ts 는 elevenlabs_voice_id IS NULL 이면서 evicted_at 이 있을 때만 재클론/캐시프로브
+    // 경로를 탄다. 셋 중 하나라도 빠지면 유예 안에 재구독해도 NO_VOICE_ID 로 떨어진다.
+    expect(update!.sql).toContain('elevenlabs_voice_id = NULL');
+    expect(update!.sql).toContain('evicted_at = ');
+    expect(update!.sql).toContain('evicted_provider_voice_id = elevenlabs_voice_id');
+    // 원본 업로드·생성 음성은 유예 동안 남는다(여기서 지우면 재클론할 원본이 사라진다).
+    expect(findCall('DELETE FROM voice_uploads')).toBeUndefined();
+    expect(findCall('DELETE FROM generated_audio_assets')).toBeUndefined();
+    // 제공자 보이스 자체는 즉시 반납한다.
+    const enqueued = findCall('INSERT OR IGNORE INTO pending_external_deletions');
+    expect(enqueued).toBeDefined();
+    expect(enqueued!.args).toContain('el-voice-1');
+  });
+
+  it('evicted_provider_voice_id 컬럼이 아직 없어도 evicted_at 은 찍고 반납을 마친다', async () => {
+    mockDB.pushResult([{ elevenlabs_voice_id: 'el-voice-1' }]); // 반납 대상 조회
+    mockDB.pushResult([], 1); // 제공자 보이스 삭제 큐 적재
+    mockDB.pushError(new Error('SQLITE_ERROR: no such column: evicted_provider_voice_id'));
+    mockDB.pushResult([], 1); // 구 스키마 폴백 UPDATE
+
+    await releaseClonedVoicesForUser(mockDB.client as never, 'user-pk', 'login-id');
+
+    const updates = mockDB.calls.filter((c) => c.sql.includes('UPDATE voice_profiles'));
+    const fallback = updates[updates.length - 1]!;
+    expect(fallback.sql).toContain('evicted_at = ');
+    expect(fallback.sql).not.toContain('evicted_provider_voice_id');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // cancelSubscriptionImmediate — 가족 소유자 즉시 해지 시 멤버 보관 예약 (B)
 // ---------------------------------------------------------------------------
 describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
@@ -557,6 +559,9 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
     mockDB.pushResult([]); // 소유자 남은 활성 구독 없음 → free 강등
     mockDB.pushResult([], 1); // UPDATE users free (소유자)
     mockDB.pushResult([]); // resolveUserLoginId (소유자)
+    // 무료 강등 시 제공자 클론을 반납한다(원본은 남겨 유예 안에 재클론 가능).
+    mockDB.pushResult([]); // 클론 반납: elevenlabs_voice_id 조회 — 없음
+    mockDB.pushResult([], 1); // 클론 반납: UPDATE voice_profiles SET elevenlabs_voice_id = NULL
     mockDB.pushResult([], 1); // UPDATE voice_profiles (소유자)
     mockDB.pushResult([], 1); // UPDATE alarms (소유자)
     mockDB.pushResult([{ owner_user_id: 'owner-pk' }]); // plan_groups — 소유자 본인
@@ -590,14 +595,25 @@ describe('cancelSubscriptionImmediate — 가족 소유자 해지 (B)', () => {
 // 데이터는 보존하고 무료 동안 잠글 뿐이며 재구독 시 그대로 풀린다. 스윕은 만기 지난
 // 보관 행만 청소하는 청소부로만 남는다(하드삭제 없음). 즉시 삭제 라우트(delete-now)도 제거.
 // ---------------------------------------------------------------------------
-describe('sweepPaidVoiceRetention (삭제 안 함, 만료 보관 행만 청소)', () => {
-  it('만기 도래 보관 행만 제거하고, 유료 음성 데이터는 삭제하지 않는다', async () => {
+describe('sweepPaidVoiceRetention (유예 만료 시 남은 음성 정리)', () => {
+  it('만기 도래 행이 없으면 아무것도 지우지 않는다', async () => {
+    mockDB.pushResult([]); // 만기 도래 보관 행 없음
     await sweepPaidVoiceRetention(mockDB.client as never, new Date());
 
+    expect(findCall('DELETE FROM voice_uploads')).toBeUndefined();
+    expect(findCall('DELETE FROM generated_audio_assets')).toBeUndefined();
+  });
+
+  it('만기가 됐어도 지금 유료면 지우지 않고 보관 행만 해제한다', async () => {
+    // 보관 행은 해지 시점에 깔리는데, 그 뒤 바우처·프로모로 다시 유료가 될 수 있다.
+    // 그대로 지우면 돈을 내고 있는 사용자의 목소리를 영구 삭제하게 된다.
+    mockDB.pushResult([{ user_id: 'user-pk-1' }]); // 만기 도래
+    mockDB.pushResult([{ active_subs: 1, plan: 'plus' }]); // 지금도 유료
+    await sweepPaidVoiceRetention(mockDB.client as never, new Date());
+
+    expect(findCall('DELETE FROM voice_uploads')).toBeUndefined();
+    expect(findCall('DELETE FROM generated_audio_assets')).toBeUndefined();
     expect(findCall('DELETE FROM paid_voice_retention')).toBeDefined();
-    expect(findCall('DELETE FROM voice_profiles')).toBeUndefined();
-    expect(findCall('DELETE FROM messages')).toBeUndefined();
-    expect(findCall('DELETE FROM alarms')).toBeUndefined();
   });
 });
 

@@ -32,7 +32,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-2.4 | Instant Voice Clone (ElevenLabs) | P0 | ✅ |
 | FR-2.5 | Voice-profile rename and delete | P0 | ✅ |
 | FR-2.6 | Read-only listing of family-group members' voice profiles | P1 | ✅ |
-| FR-2.7 | Speaker diarization on uploaded files | P2 | ✅ backend / 🚧 UI |
+| FR-2.7 | ~~Speaker diarization on uploaded files~~ — retired 2026-07 (feature removed, `voice_speakers` dropped) | — | ❌ removed |
 | FR-2.8 | Voice asset storage on Cloudflare R2 | P1 | ✅ |
 
 ### FR-3. Alarm
@@ -63,18 +63,18 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-4.7 | Free prerendered clip buckets — 10 preset phrases (morning 8 / medication 2) × ko/en/ja per system voice, local sequential rotation (advance on dismiss, hold on snooze) | P1 | ✅ |
 | FR-4.8 | Paid clone prerender — after keep(promote), cron renders 21 clips in the app language (greeting 1 / weather 9 incl. unresolved-fallback / fortune 5 / love 3 / medication 3); weather picked from a 48 h prep-window server index snapshot, fortune device-deterministic, playback fully offline | P1 | ✅ |
 
-### FR-5. Social (friend / family / code)
+### FR-5. Social (family / code)
 
 | ID | Requirement | P | Status |
 |---|---|---|---|
-| FR-5.1 | Friend request by email, accept/decline/delete | P1 | ✅ |
+| FR-5.1 | ~~Friend request by email, accept/decline/delete~~ — retired 2026-07 (feature removed, tables dropped) | — | ❌ removed |
 | FR-5.2 | Family / couple group creation, max 5 members | P0 | ✅ |
 | FR-5.3 | 6-digit invite code (10-minute TTL, single-use) | P0 | ✅ |
 | FR-5.4 | Code entry → group join / leave / forced removal | P0 | ✅ |
 | FR-5.5 | Ownership transfer (owner-only) | P1 | ✅ |
 | FR-5.6 | Voucher code `VA-XXXX-XXXX-XXXX` → subscription | P1 | ✅ |
 | FR-5.7 | Family alarm (schedule an alarm on another member's device) | P1 | ✅ backend + mobile UI, FCM data push for instant delivery (fire stays local) |
-| FR-5.8 | Family notes (500-character text, same group only) | P2 | ✅ |
+| FR-5.8 | ~~Family notes (500-character text, same group only)~~ — retired 2026-07 (feature removed, table dropped) | — | ❌ removed |
 
 ### FR-6. Billing & Plan
 
@@ -92,7 +92,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-7.1 | Structured logging (method, path, status, duration) | P1 | ✅ |
 | FR-7.2 | Sentry error tracking (no-op when DSN unset) | P1 | ✅ |
 | FR-7.3 | Migration batches (Workers free-plan subrequest limits) | P1 | ✅ |
-| FR-7.4 | `users.last_active_at` auto-update | P2 | ✅ |
+| FR-7.4 | ~~`users.last_active_at` auto-update~~ — retired 2026-07 (미사용 컬럼·라우트 제거) | — | ❌ removed |
 
 ## 2. Non-Functional Requirements
 

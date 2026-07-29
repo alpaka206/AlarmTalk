@@ -63,24 +63,29 @@ export async function pseudonymizeBillingForRetention(
 export async function purgeUserAccount(
   tx: DbExecutor,
   userPk: string | null,
-  userId: string,
+  // 토큰이 담고 있던 로그인 식별자. 통일 이전에 user_id 컬럼에 이 값이 저장된 자식
+  // 데이터까지 지우려면 users.id 와 함께 넘겨야 한다(같은 값이면 자연히 한 벌로 동작).
+  userLoginId: string,
 ): Promise<void> {
   // userPk(users.id) 를 해석하지 못한 채 진행하면 PK 로 연결된 자식 PII(클론 음성·
-  // 결제·노트 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
+  // 결제 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
   // 해석 실패이므로 소리 없이 users 만 지우지 말고 throw 해 호출부에서 롤백되게 한다.
   if (!userPk) {
     const orphanGuard = await tx.execute({
-      sql: `SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ? LIMIT 1`,
-      args: [userId, userId, userId],
+      sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
+      args: [userLoginId, userLoginId],
     });
     if (orphanGuard.rows.length > 0) {
       throw new Error(
-        `purgeUserAccount: userPk unresolved for existing user (userId=${userId}); aborting to avoid orphaning child PII`,
+        `purgeUserAccount: userPk unresolved for existing user (loginId=${userLoginId}); aborting to avoid orphaning child PII`,
       );
     }
   }
   if (userPk) {
-    const userIds = [userPk, userId];
+    // 중복을 제거하지 않는다. 아래 DELETE 들이 `IN (?, ?)` 로 개수를 고정해 두고 있어서,
+    // 두 값이 같을 때(=정규화 이후의 일반적인 경우) 하나로 줄이면 바인딩 개수가 어긋나
+    // 트랜잭션이 통째로 롤백되고 DELETE /user/me 가 500 이 된다.
+    const userIds = [userPk, userLoginId];
     // 클론 voice/R2 오디오의 외부 삭제 참조를 행 삭제 *전에* 큐에 적재한다.
     // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
     await enqueueUserVoiceArtifacts(tx, userIds);
@@ -106,15 +111,6 @@ export async function purgeUserAccount(
     });
 
     await tx.execute({
-      sql: `DELETE FROM plan_group_invites
-            WHERE inviter_user_id = ?
-               OR used_by_user_id = ?
-               OR plan_group_id IN (
-                 SELECT id FROM plan_groups WHERE owner_user_id = ?
-               )`,
-      args: [userPk, userPk, userPk],
-    });
-    await tx.execute({
       sql: `DELETE FROM plan_group_members WHERE user_id = ?`,
       args: [userPk],
     });
@@ -136,32 +132,16 @@ export async function purgeUserAccount(
     // (개인정보보호법 제21조). 보존이 필요한 거래 사실은 위 가명보존 레코드가 담는다.
     await tx.execute({
       sql: `DELETE FROM store_transactions WHERE user_id IN (?, ?)`,
-      args: [userPk, userId],
+      args: [userPk, userLoginId],
     });
 
-    await tx.execute({
-      sql: `DELETE FROM notes WHERE sender_id = ? OR receiver_id = ?`,
-      args: [userPk, userPk],
-    });
     await tx.execute({
       sql: `DELETE FROM push_tokens WHERE user_id = ?`,
       args: [userPk],
     });
     await tx.execute({
-      sql: `DELETE FROM voice_speakers
-            WHERE upload_id IN (SELECT id FROM voice_uploads WHERE user_id = ?)`,
-      args: [userPk],
-    });
-    await tx.execute({
       sql: `DELETE FROM voice_uploads WHERE user_id = ?`,
       args: [userPk],
-    });
-
-    // raw-alarms 업로드 추적 행 정리(R2 오브젝트는 위 enqueueUserVoiceArtifacts 가
-    // 이미 삭제 큐에 적재했다).
-    await tx.execute({
-      sql: `DELETE FROM raw_alarm_uploads WHERE user_id IN (?, ?)`,
-      args: [userPk, userId],
     });
 
     await tx.execute({
@@ -187,15 +167,6 @@ export async function purgeUserAccount(
                  SELECT id FROM messages WHERE user_id IN (?, ?)
                )`,
       args: [...userIds, ...userIds],
-    });
-    await tx.execute({
-      sql: `DELETE FROM gifts
-            WHERE sender_id IN (?, ?)
-               OR recipient_id IN (?, ?)
-               OR message_id IN (
-                 SELECT id FROM messages WHERE user_id IN (?, ?)
-               )`,
-      args: [...userIds, ...userIds, ...userIds],
     });
     await tx.execute({
       sql: `DELETE FROM messages WHERE user_id IN (?, ?)`,
@@ -226,21 +197,12 @@ export async function purgeUserAccount(
       args: userIds,
     });
     await tx.execute({
-      sql: `DELETE FROM friendships
-            WHERE user_a IN (?, ?) OR user_b IN (?, ?)`,
-      args: [...userIds, ...userIds],
-    });
-    await tx.execute({
       sql: `DELETE FROM user_consents WHERE user_id IN (?, ?)`,
       args: userIds,
     });
     // FK 는 없지만 사용자 식별자가 남는 테이블들 — 개인정보 파기 범위에 포함한다.
     await tx.execute({
       sql: `DELETE FROM alarm_recipient_state WHERE recipient_user_id IN (?, ?)`,
-      args: userIds,
-    });
-    await tx.execute({
-      sql: `DELETE FROM dub_jobs WHERE user_id IN (?, ?)`,
       args: userIds,
     });
     await tx.execute({
@@ -255,12 +217,12 @@ export async function purgeUserAccount(
     await tx.execute({
       sql: `DELETE FROM email_verification_codes
             WHERE email IN (SELECT email FROM users WHERE id = ? OR google_id = ?)`,
-      args: [userPk, userId],
+      args: [userPk, userLoginId],
     });
   }
 
   await tx.execute({
     sql: `DELETE FROM users WHERE id = ? OR google_id = ?`,
-    args: [userPk ?? userId, userId],
+    args: [userPk ?? userLoginId, userLoginId],
   });
 }

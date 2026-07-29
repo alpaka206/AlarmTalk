@@ -479,6 +479,33 @@ class AlarmAudioStore(
     ): CachedAlarmAudio {
         val extension = format.lowercase(Locale.US).substringBefore(';').takeIf { it.length in 2..5 } ?: "mp3"
         val resolvedCacheKey = cacheKey ?: audioCacheKeyForBytes(bytes)
+        // 같은 클립을 두 경로가 동시에 받을 수 있다(프리페치 워커 ↔ 편집기/수신 동기화).
+        // 키별 lock 이 없으면 한쪽이 staging 을 rename 하는 사이 다른 쪽이 같은 staging 을
+        // 건드려, 늦은 쪽이 target 이 이미 있는데도 IOException 으로 실패한다 —
+        // 편집기에서는 알람 저장 실패로, 동기화에서는 음성 없는 수신 알람으로 나타난다.
+        val lock = cacheKeyLock(resolvedCacheKey)
+        lock.lock()
+        return try {
+            cacheGeneratedAudioLocked(
+                bytes = bytes,
+                extension = extension,
+                resolvedCacheKey = resolvedCacheKey,
+                rawAudioUri = rawAudioUri,
+                messageId = messageId,
+            )
+        } finally {
+            lock.unlock()
+            releaseCacheKeyLockIfUnused(resolvedCacheKey, lock)
+        }
+    }
+
+    private fun cacheGeneratedAudioLocked(
+        bytes: ByteArray,
+        extension: String,
+        resolvedCacheKey: String,
+        rawAudioUri: String?,
+        messageId: String?,
+    ): CachedAlarmAudio {
         findCachedFile(resolvedCacheKey)?.let { cached ->
             val cachedUri = cached.toUri()
             val metadata = readMetadata(resolvedCacheKey)
@@ -492,7 +519,34 @@ class AlarmAudioStore(
             )
         }
         val target = File(audioDir, "${safeCacheKey(resolvedCacheKey)}.$extension")
-        target.writeBytes(bytes)
+        // 임시 파일에 쓴 뒤 rename 한다. 곧바로 target 에 쓰면 쓰기 도중 프로세스가 죽었을 때
+        // '잘린 mp3'가 남고, findCachedFile 은 파일 존재만 보므로 이후 다운로드가 그 클립을
+        // 영원히 건너뛴다 -> 그 알람은 무음이 된다. rename 은 같은 파일시스템에서 원자적이라
+        // 완성된 파일만 target 이름을 갖는다.
+        // staging 이름에 호출별 접미사를 붙인다. 키별 lock 이 이미 직렬화하지만, 다른
+        // 프로세스(워커는 별도 프로세스일 수 있다)까지 막지는 못하므로 파일 이름 자체를
+        // 겹치지 않게 둔다. 스윕은 확장자만 보고 지우므로 접미사가 붙어도 정리된다.
+        val staging = File(
+            audioDir,
+            "${safeCacheKey(resolvedCacheKey)}.$extension.${System.nanoTime()}.$PARTIAL_EXTENSION",
+        )
+        staging.writeBytes(bytes)
+        if (!staging.renameTo(target)) {
+            staging.delete()
+            // 경합에서 진 쪽: 다른 호출이 먼저 완성해 두었으면 그 결과를 그대로 쓴다.
+            findCachedFile(resolvedCacheKey)?.let { winner ->
+                val metadata = readMetadata(resolvedCacheKey)
+                return CachedAlarmAudio(
+                    localAudioUri = winner.toUri().toString(),
+                    rawAudioUri = metadata.rawAudioUri ?: rawAudioUri,
+                    displayName = winner.name,
+                    durationMillis = readDurationMillis(winner.toUri()),
+                    cacheKey = resolvedCacheKey,
+                    messageId = metadata.messageId ?: messageId,
+                )
+            }
+            throw java.io.IOException("Failed to finalize cached audio: ${target.name}")
+        }
         writeMetadata(
             cacheKey = resolvedCacheKey,
             rawAudioUri = rawAudioUri,
@@ -555,6 +609,21 @@ class AlarmAudioStore(
         var deleted = 0
         audioDir.listFiles()?.forEach { file ->
             if (!file.isFile) return@forEach
+            // 쓰다 만 잔재는 어떤 알람도 참조하지 않으니 TTL 을 기다리지 않고 정리한다
+            // (다음 다운로드가 다시 받는다). 단 '지금 쓰고 있는' staging 까지 지우면 그 쪽
+            // renameTo 가 실패해 프리페치나 알람 저장이 IOException("Failed to finalize
+            // cached audio")으로 죽는다 — 앱 시작 스윕은 StockClipPrefetchWorker·편집기
+            // 다운로드와 겹칠 수 있고, 워커는 별도 프로세스일 수 있어 키별 lock 으로도 못 막는다.
+            // 한 클립 쓰기는 순식간에 끝나므로 그보다 한참 긴 유예를 넘긴 것만 잔재로 본다.
+            if (file.extension == PARTIAL_EXTENSION) {
+                val writtenAt = file.lastModified()
+                if (writtenAt <= 0L || writtenAt >= nowMillis - PARTIAL_STALE_AFTER_MILLIS) return@forEach
+                if (file.delete()) deleted += 1
+                return@forEach
+            }
+            // 미리 받아둔 기본 목소리 클립은 어떤 알람도 참조하지 않으므로 in-use 집합에
+            // 안 들어간다. 그대로 두면 TTL 이 지나 전부 삭제되고 오프라인 재생이 깨진다.
+            if (file.nameWithoutExtension.startsWith(STOCK_CACHE_KEY_PREFIX)) return@forEach
             if (file.nameWithoutExtension in inUseFileNames) return@forEach
             val lastModified = file.lastModified()
             if (lastModified <= 0L || lastModified >= cutoffMillis) return@forEach
@@ -776,6 +845,21 @@ class AlarmAudioStore(
         return MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "m4a"
     }
 
+    /**
+     * 기기에 남아 있는 기본 목소리 클립 수.
+     *
+     * "다운로드를 마쳤는가"를 계정 플래그가 아니라 **파일 존재**로 판정하기 위한 것이다.
+     * 캐시는 계정이 아니라 기기에 종속되므로: 로그아웃 후 다시 로그인하면 파일이 남아 있어
+     * 다시 받지 않고, 다른 기기로 로그인하면 그 기기에는 파일이 없어 새로 받는다.
+     */
+    fun cachedStockClipCount(): Int =
+        audioDir.listFiles()?.count { file ->
+            file.isFile &&
+                file.extension != META_EXTENSION &&
+                file.extension != PARTIAL_EXTENSION &&
+                file.nameWithoutExtension.startsWith(STOCK_CACHE_KEY_PREFIX)
+        } ?: 0
+
     private fun findCachedFile(cacheKey: String): File? {
         val safeKey = safeCacheKey(cacheKey)
         return audioDir.listFiles()?.firstOrNull { file ->
@@ -810,6 +894,22 @@ class AlarmAudioStore(
     companion object {
         private const val AUDIO_DIR = "alarm-audio"
         private const val META_EXTENSION = "meta"
+
+        /** 쓰기 도중 죽었을 때 남는 미완성 파일 확장자. sweep 이 [PARTIAL_STALE_AFTER_MILLIS] 뒤 정리한다. */
+        private const val PARTIAL_EXTENSION = "part"
+
+        /**
+         * 이만큼 손대지 않은 .part 만 '쓰다 죽은 잔재'로 보고 스윕이 지운다.
+         * 정상 쓰기는 버퍼 한 번 flush 라 순식간에 끝나므로, 진행 중인 staging 을 지워
+         * renameTo 를 깨뜨리는 일이 없도록 넉넉히 잡은 값이다.
+         */
+        private const val PARTIAL_STALE_AFTER_MILLIS: Long = 60L * 60 * 1_000
+
+        /**
+         * 미리 내려받는 기본(시스템) 목소리 클립의 캐시 키 접두사.
+         * 이 파일들은 특정 알람에 묶이지 않아 in-use 집합에 안 들어가므로 sweep 에서 제외한다.
+         */
+        const val STOCK_CACHE_KEY_PREFIX = "stock_"
 
         // 백엔드 /voice/clone 은 audio/* 접두 MIME 만 받는다(아니면 INVALID_AUDIO_MIME_TYPE).
         // 이 확장자들은 업로드 시 대응 audio/* 로 매핑되고(voiceUploadPart), 목록 밖 컨테이너는

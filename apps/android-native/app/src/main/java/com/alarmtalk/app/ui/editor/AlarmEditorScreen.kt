@@ -120,7 +120,10 @@ internal fun AlarmEditorScreen(
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     stockClips: List<StockClip>,
-    defaultVoiceId: String? = null,
+    lastUsedVoiceId: String? = null,
+    // 유료 안내 모달에서 바로 프로모션/선물 코드를 넣을 수 있게 한다.
+    onRegisterCode: (String) -> Unit = {},
+    redeemBusy: Boolean = false,
     onCancel: () -> Unit,
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
@@ -212,6 +215,11 @@ internal fun AlarmEditorScreen(
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
+    // 목소리 선택 시트의 '들어보기' — 온보딩/목소리 탭과 같은 재생기를 그대로 쓴다
+    // (기본 목소리는 내장 인사말이라 네트워크 없이도 즉시 난다).
+    val voicePreview = rememberVoiceOnboardingPreviewController(
+        onDownloadStockAudio = onDownloadStockAudio,
+    )
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
         familyAlarmRecipients(familyGroup, authSession)
     }
@@ -1030,11 +1038,20 @@ internal fun AlarmEditorScreen(
     fun applyRandomPromptSettings(result: RandomPromptSettingsResult) {
         if (result.randomContext == ManualMessageContext) {
             // '직접 입력' 선택 → 랜덤 끄고, 다이얼로그에서 받은 문구를 그대로 쓴다.
+            val nextText = result.manualText.take(200)
+            // 문구를 실제로 바꾸지 않았으면 기존 오디오를 버리지 않는다. 프리필이 생기면서
+            // '들어갔다 확인만 누르는' 흐름이 흔해졌는데, 매번 재합성하면 직접 입력 월 한도
+            // (manual-tts-quota)가 아무 변경 없이 깎인다.
+            val unchanged = !editor.voiceRandomPrompt &&
+                !editor.isActiveBucketAlarm() &&
+                nextText.trim() == editor.voiceText.trim()
             editor.voiceRandomPrompt = false
-            editor.voiceText = result.manualText.take(200)
+            editor.voiceText = nextText
             editor.voiceLanguage = appVoiceLanguage
-            editor.clearAudio()
-            editor.clearTtsMeta()
+            if (!unchanged) {
+                editor.clearAudio()
+                editor.clearTtsMeta()
+            }
             settingsDetailPanel = null
             return
         }
@@ -1206,9 +1223,16 @@ internal fun AlarmEditorScreen(
                             editor = editor,
                                 voiceProfiles = visibleVoiceProfiles,
                                 familyVoices = familyVoices,
+                                // 선택 시트에는 내 목소리와 공유받은 목소리가 섞여 있는데, 공유분은
+                                // visibleVoiceProfiles 에 없고 familyVoices 에만 있다. 여기서 내 목록만
+                                // 뒤지면 공유 목소리 ▶ 가 조용히 아무것도 안 한다 — 미리듣기는 id 로
+                                // 인사말 클립을 찾으므로 id 를 그대로 넘겨 둘 다 같은 경로를 타게 한다.
+                                onPreviewVoice = { voiceId -> voicePreview.previewVoice(voiceId, stockClips) },
+                                previewPlayingVoiceId = voicePreview.playingVoiceId,
+                                previewPreparingVoiceId = voicePreview.preparingVoiceId,
                                 voiceProfileBusy = voiceProfileBusy,
                                 stockClips = stockClips,
-                                defaultVoiceId = defaultVoiceId,
+                                lastUsedVoiceId = lastUsedVoiceId,
                                 restrictToWeatherMedication = restrictToWeatherMedication,
                                 audioMessage = audioMessage,
                                 isRecording = isRecording,
@@ -1382,6 +1406,14 @@ internal fun AlarmEditorScreen(
             "random_prompt" -> RandomPromptSettingsPane(
                 // 직접 입력 모드면 pane 에서 '직접 입력'이 선택돼 보이도록 manual 을 넘긴다.
                 randomContext = if (editor.voiceRandomPrompt) editor.voiceRandomContext else ManualMessageContext,
+                // 직접 입력으로 저장된 알람만 기존 문구를 프리필한다. 버킷 알람도 저장 시
+                // voiceRandomPrompt=false + voiceText=클립문구가 되므로 버킷 여부를 함께 본다
+                // (안 그러면 사용자가 쓴 적 없는 클립 문구가 '내가 입력한 문구'처럼 나온다).
+                manualText = if (!editor.voiceRandomPrompt && !editor.isActiveBucketAlarm()) {
+                    editor.voiceText
+                } else {
+                    ""
+                },
                 manualRemaining = manualQuota?.remaining,
                 manualLimit = manualQuota?.limit,
                 weatherCountry = editor.voiceWeatherCountry,
@@ -1414,6 +1446,7 @@ internal fun AlarmEditorScreen(
                     }
                 },
                 onDismiss = { settingsDetailPanel = null },
+                onManualLocked = { voicePlanGateOpen = true },
             )
 
             "voice_output" -> VoiceOutputSettingsPane(
@@ -1459,6 +1492,8 @@ internal fun AlarmEditorScreen(
                 onOpenBilling()
             },
             onDismiss = { voicePlanGateOpen = false },
+            onRedeemCode = onRegisterCode,
+            redeemBusy = redeemBusy,
         )
     }
 }

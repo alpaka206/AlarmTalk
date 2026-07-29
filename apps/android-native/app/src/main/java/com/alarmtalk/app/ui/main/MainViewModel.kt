@@ -121,11 +121,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleUnauthorized() {
         viewModelScope.launch {
             if (authSession == null) return@launch
-            runCatching { authSessionStore.clear() }
-            clearUserScopedRemoteState()
-            authSession = null
+            // 알람 예약은 건드리지 않는다. 토큰 만료나 우발적 401 은 '같은 사람이 다시
+            // 로그인하면 되는' 상황인데, 여기서 예약을 취소하면 사용자가 안내를 못 본 사이
+            // 알람이 조용히 안 울린다 — 알람 전달이 서버 인증 상태에 묶여선 안 된다.
+            // 다른 계정으로 갈아타는 경우는 로그인 시점에 onSignedIn 이 정리한다.
+            //
+            // 다만 소유자 미기록(레거시 null) 행에는 떠나는 계정을 새겨 두고 비운다. 그러지
+            // 않으면 다음에 들어온 다른 계정이 null 을 자기 것으로 보고(reschedulePendingAlarms·
+            // observeAlarms 규칙) 앞 계정 알람을 되살려 울린다 — onSignedIn 의
+            // cancelAlarmsNotOwnedBy 는 소유자 없는 행을 건너뛰므로 그것만으론 못 막는다.
+            //
+            // 여기서 실패해도(디스크 가득참 등) 예약은 취소하지 않는다 — 취소해 봐야 다음
+            // 로그인의 reschedulePendingAlarms 가 그대로 되살리므로 아무것도 못 막고, 대신
+            // 본인이 다시 로그인할 때까지 알람만 조용히 안 울린다. 대신 다음 로그인에서
+            // 예약 경로가 authSessionStore.pendingOwnerUserId 로 이 계정을 알아내 마저 새긴다.
+            runCatching {
+                repository.claimUnownedAlarmsFor(authSession?.user?.id?.takeIf { it.isNotBlank() })
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to stamp ownerless alarms on session expiry", error)
+            }
+            clearSessionKeepingAlarms()
             message = getApplication<android.app.Application>().getString(R.string.r3misc_session_expired)
         }
+    }
+
+    /**
+     * 사용자가 명시적으로 계정을 끝낼 때(로그아웃·탈퇴 신청·즉시 탈퇴). 세션 정리에 더해
+     * 이 기기의 알람 예약을 내리고 소유자를 새긴다.
+     *
+     * 알람 분리가 필요한 이유: 세션이 끊기면 observeAlarms 의 소유자 필터가 그 계정 알람을
+     * 목록에서 감추는데, OS 예약은 그대로 남아 AlarmReceiver 가 Room 에서 바로 읽어 울린다.
+     * 사용자에게는 '보이지도 않고 끌 수도 없는 알람이 울리는' 상태가 된다.
+     */
+    internal suspend fun clearSignedInSession() {
+        val signedOutUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        runCatching { repository.detachAlarmsOnSignOut(signedOutUserId) }
+            .onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
+        // 기본 목소리 취향(마지막 쓴 목소리·'나중에 받기' 선택)은 계정을 명시적으로 끝낼 때만
+        // 지운다. 자동 401 은 같은 사람이 다시 로그인하는 경우가 대부분이라, 거기서 지우면
+        // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
+        // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
+        clearCurrentDefaultVoicePreferences()
+        clearSessionKeepingAlarms()
+    }
+
+    /**
+     * 세션만 정리한다(알람 예약·기기 취향은 그대로). 자동 401 처럼 사용자의 의도가 아닌
+     * 종료에 쓴다 — 여기서 지우는 것은 '이 계정으로서의 세션 상태'까지다.
+     */
+    private fun clearSessionKeepingAlarms() {
+        runCatching { authSessionStore.clear() }
+        clearUserScopedRemoteState()
+        authSession = null
     }
 
     /**
@@ -280,7 +327,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
-    var defaultVoiceId by mutableStateOf<String?>(null)
+    // 알람에 마지막으로 쓴 목소리 — 편집기가 처음 고르는 값(목소리 탭엔 표시하지 않는다).
+    var lastUsedVoiceId by mutableStateOf<String?>(null)
         internal set
 
     // 기본 목소리 무료 버킷 프리페치 진행(다운로드 완료 수 to 전체). null = 진행 중 아님.
@@ -393,37 +441,69 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         duplicateAlarmPrompt = null
     }
 
+    /**
+     * 기본 목소리 준비 화면을 띄울지 판정한다.
+     *
+     * 예전에는 '온보딩에서 목소리를 골랐는가'(계정 플래그)로 봤다. 이제 목소리를 고르지 않고
+     * 4개를 모두 받으므로, **기기에 클립 파일이 있는가**로 본다. 캐시는 계정이 아니라 기기에
+     * 종속되므로 로그아웃 후 재로그인은 다시 받지 않고, 다른 기기로 로그인하면 그 기기가
+     * 새로 받는다. 일부만 받다 끊긴 경우엔 화면을 다시 띄우지 않고 워커가 조용히 마저 채운다.
+     *
+     * 단, '나중에 받기'를 누른 기록이 있으면 파일이 0개라도 다시 막지 않는다. 오프라인에서
+     * 건너뛴 사용자는 클립이 하나도 없는 상태로 남는데, 파일 개수만 보면 켤 때마다 같은
+     * 차단 화면이 돌아와 사용자의 선택이 무시된다. 다운로드는 어차피 워커가 계속하고,
+     * 그래도 비어 있으면 알람 편집기가 쓰려는 순간 받아 온다.
+     *
+     * hasChosen(기본 목소리 저장)은 보지 않는다 — 이 브랜치에서 그 값의 뜻이 '마지막에 쓴
+     * 목소리'로 바뀌어 다운로드 완료 여부와 무관해졌다.
+     */
     fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
-        defaultVoiceId = defaultVoiceStore.read(userId)
-        showVoiceSetup = !defaultVoiceStore.hasCompletedSetup(userId)
+        lastUsedVoiceId = defaultVoiceStore.read(userId)
+        val cachedStockClips = com.alarmtalk.app.data.AlarmAudioStore(getApplication())
+            .cachedStockClipCount()
+        showVoiceSetup = cachedStockClips == 0 && !defaultVoiceStore.hasSkipped(userId)
+        // 화면을 띄우든 말든 부족분은 항상 채운다(언어 변경·중단 복구 포함).
+        com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(getApplication())
     }
 
-    /** 온보딩 목소리 스텝에서 기본 목소리를 정했을 때. 기기 설정에 저장하고 스텝을 닫는다.
-     *  (호칭은 따로 받지 않는다 — 시스템 음성 TTS 는 계정 닉네임으로 부른다.)
-     *  선택 후에는 홈(알람 탭)으로 바로 진입한다 — 첫 알람 에디터 자동 진입/코치마크는 없앴다. */
-    fun completeVoiceSetup(voiceId: String) {
-        // setDefaultVoice 가 무료 버킷 클립 프리페치까지 함께 태운다(온보딩·목소리 탭 동일 경로).
-        setDefaultVoice(voiceId)
-        showVoiceSetup = false
-    }
-
-    /** 목소리 스텝을 건너뛸 때(저장 없이 닫기). 나중에 목소리 탭에서 고를 수 있다. */
+    /**
+     * 사용자가 '나중에 받기'를 눌렀을 때만. 이 선택을 기기에 남겨 다음 실행에 다시 막지 않는다.
+     * 다운로드는 워커가 계속하고, 그래도 비어 있으면 편집기가 쓰려는 순간 받아 온다.
+     */
     fun skipVoiceSetup() {
         defaultVoiceStore.markSkipped(authSession?.user?.id?.takeIf { it.isNotBlank() })
         showVoiceSetup = false
     }
 
-    /** 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신하고,
-     *  그 목소리의 무료 버킷 클립을 미리 받는다(진행은 voicePrefetchProgress 로 노출). */
-    fun setDefaultVoice(voiceId: String) {
+    /**
+     * 다운로드가 끝나 화면을 닫을 때. '나중에 받기'로 기록하지 않는다 —
+     * 워커는 받을 게 없거나(매니페스트 비어 있음) 세션이 없으면 한 개도 받지 않고도
+     * 성공을 낸다. 그걸 사용자의 선택으로 기록하면, 클립이 0개인데 준비 화면이 영영
+     * 다시 뜨지 않게 된다. 그래서 '실제로 파일이 생겼는가'로만 닫는다.
+     */
+    fun completeVoiceSetupIfDownloaded() {
+        val cached = com.alarmtalk.app.data.AlarmAudioStore(getApplication()).cachedStockClipCount()
+        if (cached > 0) showVoiceSetup = false
+    }
+
+    /**
+     * 알람에 마지막으로 쓴 목소리를 기억한다 — 알람 편집기가 처음 고르는 목소리가 된다.
+     *
+     * 예전에는 목소리 탭에서 '기본 목소리'를 직접 고르게 했다. 고를 게 하나 더 있는 것보다
+     * 마지막에 쓴 것이 그대로 다음 기본이 되는 편이 손이 덜 간다(대부분 같은 목소리를 계속 쓴다).
+     * 무료 버킷 클립도 함께 챙겨 둔다 — 그 목소리로 다음 알람을 만들 때 바로 쓰인다.
+     */
+    fun rememberVoiceUsed(voiceId: String?) {
+        val resolved = voiceId?.takeIf { it.isNotBlank() } ?: return
+        if (resolved == lastUsedVoiceId) return
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
-        defaultVoiceStore.set(userId, voiceId)
-        defaultVoiceId = voiceId
+        defaultVoiceStore.set(userId, resolved)
+        lastUsedVoiceId = resolved
         // 매니페스트가 아직 없으면 이번 프리페치는 빈손으로 끝난다 — 대상을 기억해 두고
-        // loadStockClips 성공 시 재시도한다(온보딩 중 목소리 선택이 매니페스트보다 빠른 경우).
-        if (stockClips.isEmpty()) pendingPrefetchVoiceId = voiceId
-        prefetchFreeBucketClips(voiceId)
+        // loadStockClips 성공 시 재시도한다.
+        if (stockClips.isEmpty()) pendingPrefetchVoiceId = resolved
+        prefetchFreeBucketClips(resolved)
     }
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
@@ -515,7 +595,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfileLoadFinished = false
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false
-        defaultVoiceId = null
+        lastUsedVoiceId = null
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()

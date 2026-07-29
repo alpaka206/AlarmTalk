@@ -123,15 +123,15 @@ describe('GET /billing/vouchers (billingQuery)', () => {
 // GET /billing/subscription — split module direct import
 // ---------------------------------------------------------------------------
 describe('GET /billing/subscription (billingQuery)', () => {
-  it('subscription 쿼리는 c.get(userId) (google_id) 를 직접 사용 (resolveUserPk 미사용)', async () => {
+  it('subscription 쿼리는 c.get(userId)(= users.id) 를 직접 사용 (resolveUserPk 미사용)', async () => {
     mockDB.pushResult([]);
 
-    await buildApp('my-google-id').request(jsonReq('GET', '/billing/subscription'));
+    await buildApp('my-user-pk').request(jsonReq('GET', '/billing/subscription'));
 
     expect(mockDB.calls).toHaveLength(1);
     const sql = mockDB.calls[0]!.sql;
-    expect(sql).toContain('u.google_id = ?');
-    expect(mockDB.calls[0]!.args[0]).toBe('my-google-id');
+    expect(sql).toContain('u.id = ?');
+    expect(mockDB.calls[0]!.args[0]).toBe('my-user-pk');
   });
 
   it('활성 구독 없으면 { subscription: null, plan: null }', async () => {

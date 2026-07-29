@@ -3,13 +3,6 @@ export interface Env {
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN: string;
   GOOGLE_CLIENT_ID: string;
-  APPLE_CLIENT_ID?: string;
-  /**
-   * App Store Connect 의 "Apple shared secret".
-   * 현재 /billing/apple/confirm 은 이 secret 이 있어도 fail-closed 로 동작하며,
-   * 후속 PR 에서 Apple App Store Server API v2 의 JWS 검증으로 entitlement 갱신을 열 예정.
-   */
-  APPLE_SHARED_SECRET?: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
   GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED?: string;
   GOOGLE_VERTEX_LOCATION?: string;
@@ -31,12 +24,6 @@ export interface Env {
    * 쿼리 token 이 이 값과 일치할 때만 처리한다. 미설정 시 RTDN 503.
    */
   GOOGLE_RTDN_VERIFICATION_TOKEN?: string;
-  /** App Store Server API 자격 (Apple IAP 검증). 셋 다 있어야 활성화. */
-  APPLE_ISSUER_ID?: string;
-  APPLE_KEY_ID?: string;
-  APPLE_IAP_PRIVATE_KEY?: string;
-  /** iOS 번들 ID — App Store 트랜잭션의 bundleId 검증에 사용. */
-  APPLE_BUNDLE_ID?: string;
   /** 관리자 콘솔(/admin) 보호용 시크릿(HTTP Basic 비밀번호). 미설정 시 /admin 은 503. */
   ADMIN_SECRET?: string;
   /**
@@ -70,13 +57,21 @@ export interface SentryClient {
 }
 
 export type AuthVariables = {
-  /** JWT sub (= users.google_id). Legacy convention used by most route SQL. */
+  /**
+   * users.id (PK). 미들웨어가 JWT sub 을 DB 에서 해석해 항상 이 값으로 정규화한다.
+   * 배포 전에 발급돼 sub 이 google_id 인 구(舊) 토큰도 여기서는 users.id 가 된다.
+   */
   userId: string;
-  /** users.id PK. UUID for accounts created before sub-as-id, sub for new ones. Use for FK refs. */
+  /** users.id PK. userId 와 같은 값 — FK 참조를 명시하고 싶은 곳에서 쓴다. */
   userIdPK: string;
+  /**
+   * 토큰이 실제로 담고 있던 로그인 식별자(raw JWT sub). 구 토큰이면 google_id 다.
+   * 과거에 user_id 컬럼에 로그인 식별자가 저장된 행(알람·목소리 등)을 함께 매칭해야 하는
+   * 곳에서만 쓴다. 소유권 판정의 기준은 userId(=users.id) 이고, 이 값은 보조 매칭용이다.
+   */
+  userLoginId: string;
   userEmail: string;
   userName: string;
-  userPicture: string;
   sentry: SentryClient;
 };
 

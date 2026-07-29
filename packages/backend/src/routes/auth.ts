@@ -11,13 +11,12 @@ import {
   RegisterRequestSchema,
   LoginRequestSchema,
   GoogleLoginRequestSchema,
-  AppleLoginRequestSchema,
   EmailVerificationRequestSchema,
   EmailVerificationConfirmRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetConfirmRequestSchema,
 } from '@alarmtalk/shared';
-import { decodeJwtPayload, verifyAppleIdToken, verifyGoogleIdToken } from '../lib/oauth';
+import { verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
@@ -129,18 +128,18 @@ async function consumeEmailVerificationCode(db: Client, id: string): Promise<voi
   });
 }
 
-type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' | 'apple' };
+type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' };
 
 // 가입 시도 이메일이 이미 존재하면 그 가입 방식을 분류한다(중복 가입 차단·로그인 유도용).
 //   - password_hash 가 있으면 이메일/비밀번호 계정 → AUTH_EMAIL_TAKEN(로그인 유도)
-//   - 없으면 소셜 계정 → AUTH_EMAIL_SOCIAL(+provider; apple_id 있으면 apple, 아니면 google)
+//   - 없으면 소셜 계정 → AUTH_EMAIL_SOCIAL (Android 전용이라 provider 는 google 뿐)
 // 주의(의도된 트레이드오프): 이 분기는 "이 이메일이 가입돼 있는가"를 노출하므로 계정 열거
 // (account enumeration)가 가능해진다. 제품 요구(중복 이메일이면 회원가입을 막고 로그인으로
 // 안내)를 위해 의도적으로 노출하며, /api/auth/* 의 authRateLimitMiddleware 로 무차별 조회를
 // 제한한다. (로그인 라우트는 기존대로 generic 응답을 유지해 비밀번호 추측 표면은 넓히지 않는다.)
 async function classifyExistingAccount(db: Client, email: string): Promise<ExistingAccount | null> {
   const result = await db.execute({
-    sql: 'SELECT password_hash, apple_id FROM users WHERE email = ? LIMIT 1',
+    sql: 'SELECT password_hash FROM users WHERE email = ? LIMIT 1',
     args: [email],
   });
   if (result.rows.length === 0) return null;
@@ -149,7 +148,7 @@ async function classifyExistingAccount(db: Client, email: string): Promise<Exist
   if (passwordHash != null && String(passwordHash).length > 0) {
     return { kind: 'password' };
   }
-  return { kind: 'social', provider: row.apple_id != null ? 'apple' : 'google' };
+  return { kind: 'social', provider: 'google' };
 }
 
 function existingAccountConflict(account: ExistingAccount) {
@@ -454,10 +453,13 @@ auth.post('/register', async (c) => {
     const id = crypto.randomUUID();
     const passwordHash = await hashPassword(password, c.env.PASSWORD_PEPPER);
 
+    // google_id 는 **구글 계정 식별자 전용**이다. 과거에는 이메일 가입자에게도
+    // google_id = users.id 를 박아 넣어(외부 식별자 공간 오염) 나중에 같은 이메일로
+    // 구글 로그인하면 그 값이 덮어써지며 식별자가 갈라졌다. 이제 NULL 로 둔다.
     await db.execute({
       sql: `INSERT INTO users (id, email, google_id, password_hash, name)
-            VALUES (?, ?, ?, ?, ?)`,
-      args: [id, normalizedEmail, id, passwordHash, name],
+            VALUES (?, ?, NULL, ?, ?)`,
+      args: [id, normalizedEmail, passwordHash, name],
     });
 
     await consumeEmailVerificationCode(db, verification.id);
@@ -513,8 +515,7 @@ auth.post('/login', async (c) => {
   try {
     const result = await db.execute({
       sql: `SELECT id, google_id, email, password_hash, name, plan, token_epoch,
-                   allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE email = ?`,
       args: [normalizedEmail],
@@ -607,7 +608,7 @@ auth.post('/google', async (c) => {
   const db = getDB(c.env);
 
   try {
-    // /auth/apple 과 대칭인 구성 가드. GOOGLE_CLIENT_ID 미설정 시 aud 검증이 무력화되면
+    // 구성 가드. GOOGLE_CLIENT_ID 미설정 시 aud 검증이 무력화되면
     // 안 되므로(oauth.ts 는 fail-closed) 명시적으로 500 을 반환한다.
     if (!c.env.GOOGLE_CLIENT_ID) {
       return c.json(jsonError('AUTH_GOOGLE_CONFIG_MISSING', 'Google client ID is not configured'), 500);
@@ -619,8 +620,7 @@ auth.post('/google', async (c) => {
 
     const existing = await db.execute({
       sql: `SELECT id, google_id, email, name, plan, token_epoch,
-                   allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users
             WHERE google_id = ? OR email = ?
@@ -649,28 +649,34 @@ auth.post('/google', async (c) => {
 
       await db.execute({
         sql: `UPDATE users
-              SET google_id = ?, email = ?, name = ?, picture = ?, updated_at = datetime('now')
+              SET google_id = ?, email = ?, name = ?, updated_at = datetime('now')
               WHERE id = ?`,
-        args: [googleId, email, name || row.name || null, google.picture || null, userId],
+        args: [googleId, email, name || row.name || null, userId],
       });
     } else {
-      userId = googleId;
+      // 신규 구글 가입도 서버 생성 UUID 를 PK 로 쓴다. 과거에는 googleId 를 그대로 PK 로
+      // 삼아 users.id 가 외부 식별자였는데, 그러면 내부 관계 키가 provider 에 종속된다.
+      userId = crypto.randomUUID();
       plan = 'free';
       await db.execute({
-        sql: `INSERT INTO users (id, google_id, email, name, picture)
-              VALUES (?, ?, ?, ?, ?)`,
-        args: [userId, googleId, email, name || null, google.picture || null],
+        sql: `INSERT INTO users (id, google_id, email, name)
+              VALUES (?, ?, ?, ?)`,
+        args: [userId, googleId, email, name || null],
       });
     }
 
+    // JWT sub 은 **항상 users.id** 다. 과거에는 googleId 를 sub 으로 발급했는데, 이메일로
+    // 먼저 가입한 계정이 나중에 같은 이메일로 구글 로그인하면(위 email 매칭 분기) google_id
+    // 만 덮어써지고 id 는 UUID 로 남아 sub != users.id 로 갈라졌다. 그 순간부터
+    // `WHERE google_id = ?` 로 조회하는 라우트와 users.id 로 조회하는 라우트가 서로 다른
+    // 사용자를 보게 되어(구독·가족그룹·코드등록이 조용히 0행) 데이터가 반으로 쪼개졌다.
     const token = await signAppJwt(
-      { sub: googleId, email, name: name || undefined, epoch: tokenEpoch },
+      { sub: userId, email, name: name || undefined, epoch: tokenEpoch },
       c.env.JWT_SECRET,
     );
 
     const fresh = await db.execute({
-      sql: `SELECT allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
+      sql: `SELECT allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [userId, googleId],
@@ -722,199 +728,6 @@ auth.post('/google', async (c) => {
   }
 });
 
-auth.post('/apple', async (c) => {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
-  }
-
-  const parsed = AppleLoginRequestSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
-  }
-
-  const db = getDB(c.env);
-
-  try {
-    if (!c.env.APPLE_CLIENT_ID) {
-      return c.json(
-        jsonError('AUTH_APPLE_CONFIG_MISSING', 'Apple client ID is not configured'),
-        500,
-      );
-    }
-
-    // raw nonce 를 SHA-256 으로 hex 인코딩한 뒤 id_token.nonce 와 동일성 비교.
-    // 클라이언트가 nonce 를 보내지 않은 경우(legacy) verifyAppleIdToken 이
-    // 내부적으로 console.warn 만 남기고 통과시킨다. 다만 클라이언트가 nonce
-    // 를 빠뜨렸는데 토큰 자체엔 nonce 클레임이 있다면 점진 마이그레이션
-    // 정책상 replay 가능성이 있으므로 mismatch 로 거부한다.
-    let expectedNonceHash: string | undefined;
-    if (parsed.data.nonce) {
-      const digest = await crypto.subtle.digest(
-        'SHA-256',
-        new TextEncoder().encode(parsed.data.nonce),
-      );
-      expectedNonceHash = Array.from(new Uint8Array(digest))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-    } else {
-      const preview = decodeJwtPayload(parsed.data.id_token);
-      if (typeof preview.nonce === 'string' && preview.nonce.length > 0) {
-        throw new Error('Apple token nonce mismatch: client did not supply raw nonce');
-      }
-      console.warn('[auth] /auth/apple called without nonce; replay defense disabled for request');
-    }
-
-    const apple = await verifyAppleIdToken(
-      parsed.data.id_token,
-      c.env.APPLE_CLIENT_ID,
-      expectedNonceHash,
-    );
-    const appleId = apple.sub;
-    // 계정 연동에 쓰이는 email 은 *검증된 토큰*의 email 만 신뢰한다. 클라이언트가
-    // 보낸 parsed.data.email 을 fallback 으로 쓰면, Apple 토큰에 email 이 없는
-    // (재로그인) 경우 공격자가 피해자 이메일을 주입해 기존 계정에 연동·탈취할 수
-    // 있다. 토큰에 email 이 없으면 충돌하지 않는 placeholder 로 둔다.
-    const email = (apple.email || `${appleId}@apple.local`).toLowerCase().trim();
-    // 토큰에 실제 email 클레임이 있었는지 — 없으면(재로그인) 기존 검증 이메일을 보존한다.
-    const hasVerifiedEmail = Boolean(apple.email);
-    const name = parsed.data.name ?? apple.name ?? '';
-
-    const existing = await db.execute({
-      sql: `SELECT id, google_id, apple_id, email, name, plan, token_epoch,
-                   allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
-                   family_alarm_quiet_windows, dynamic_prompt_settings_json
-            FROM users
-            WHERE apple_id = ? OR google_id = ? OR email = ?
-            LIMIT 1`,
-      args: [appleId, appleId, email],
-    });
-
-    let userId: string;
-    let loginSub: string;
-    let plan: 'free' | 'plus' | 'family';
-    let resolvedName: string;
-    let tokenEpoch = 0;
-    // JWT/응답에 쓸 이메일. Apple 이 재로그인에서 email 을 생략하면 placeholder 대신
-    // 기존 행의 검증 이메일을 쓴다(아래 existing 분기에서 보정).
-    let profileEmail = email;
-
-    if (existing.rows.length > 0) {
-      const row = typedRow<
-        {
-          id: string;
-          google_id: string | null;
-          apple_id?: string | null;
-          email: string;
-          name: string | null;
-          plan: 'free' | 'plus' | 'family' | null;
-          token_epoch: number | string | null;
-        } & Record<string, unknown>
-      >(existing.rows[0]!);
-      userId = row.id;
-      loginSub = row.google_id ?? appleId;
-      plan = row.plan ?? 'free';
-      resolvedName = name || row.name || '';
-      tokenEpoch = Number(row.token_epoch ?? 0);
-      // 토큰에 검증 email 이 없으면 기존 행 이메일을 토큰/응답에 쓴다(placeholder 노출 방지).
-      profileEmail = hasVerifiedEmail ? email : row.email;
-
-      await db.execute({
-        sql: `UPDATE users
-              SET apple_id = ?,
-                  google_id = COALESCE(google_id, ?),
-                  email = COALESCE(NULLIF(?, ''), email),
-                  name = COALESCE(NULLIF(?, ''), name),
-                  updated_at = datetime('now')
-              WHERE id = ?`,
-        // Apple 재로그인 시 email 클레임이 없으면 placeholder 대신 기존 email 유지.
-        args: [appleId, appleId, hasVerifiedEmail ? email : '', name, userId],
-      });
-    } else {
-      userId = appleId;
-      loginSub = appleId;
-      plan = 'free';
-      resolvedName = name;
-      await db.execute({
-        sql: `INSERT INTO users (id, google_id, apple_id, email, name)
-              VALUES (?, ?, ?, ?, ?)`,
-        args: [userId, appleId, appleId, email, name || null],
-      });
-    }
-
-    const token = await signAppJwt(
-      { sub: loginSub, email: profileEmail, name: resolvedName || undefined, epoch: tokenEpoch },
-      c.env.JWT_SECRET,
-    );
-
-    const fresh = await db.execute({
-      sql: `SELECT allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
-                   family_alarm_quiet_windows, dynamic_prompt_settings_json
-            FROM users WHERE id = ? OR google_id = ? OR apple_id = ? LIMIT 1`,
-      args: [userId, loginSub, appleId],
-    });
-    const familyAlarmSettings =
-      fresh.rows.length > 0
-        ? familyAlarmSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
-        : {
-            allowFamilyAlarms: false,
-            quietDays: [1, 2, 3, 4, 5],
-            quietStart: '09:00',
-            quietEnd: '18:30',
-            quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
-          };
-    const dynamicPromptSettings =
-      fresh.rows.length > 0
-        ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
-        : EMPTY_DYNAMIC_PROMPT_SETTINGS;
-
-    return c.json({
-      token,
-      user: {
-        id: userId,
-        email: profileEmail,
-        name: resolvedName,
-        plan,
-        // Phase 4-D2: 클라이언트가 ASAuthorizationAppleIDProvider.credentialState
-        // 조회에 사용하는 stable Apple user identifier. iOS AuthViewModel 가
-        // 세션에 보관해 foreground 진입 시 revoke 여부를 확인한다.
-        apple_user_id: appleId,
-        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
-        family_alarm_quiet_days: familyAlarmSettings.quietDays,
-        family_alarm_quiet_start: familyAlarmSettings.quietStart,
-        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
-        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
-        dynamic_prompt_settings: dynamicPromptSettings,
-      },
-    });
-  } catch (err) {
-    // 검증 실패 상세(err.message)는 서버에만 로깅하고, 클라이언트에는 provider/검증
-    // 내부 정보를 반영하지 않는 안정적인 generic 메시지만 반환한다(정보 노출 방지).
-    logRouteError(c, err);
-    const detail = err instanceof Error ? err.message : String(err);
-    if (detail.includes('nonce mismatch')) {
-      return c.json(jsonError('AUTH_APPLE_NONCE_MISMATCH', 'Apple sign-in nonce mismatch'), 401);
-    }
-    const status =
-      detail.includes('Apple token') ||
-      detail.includes('Apple JWKS') ||
-      detail.includes('issuer') ||
-      detail.includes('audience') ||
-      detail.includes('expired') ||
-      detail.includes('signature') ||
-      detail.includes('algorithm') ||
-      detail.includes('key') ||
-      detail.includes('format')
-        ? 401
-        : 500;
-    return c.json(jsonError('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
-  }
-});
-
 auth.get('/me', async (c) => {
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
@@ -924,15 +737,12 @@ auth.get('/me', async (c) => {
   try {
     const payload = await verifyAppJwt(token, c.env.JWT_SECRET);
     const db = getDB(c.env);
-    // Phase 4-D2: apple_id 컬럼도 함께 조회·매칭한다. Apple 로그인 사용자의 JWT sub
-    // 는 google_id 칼럼이 아닌 apple_id 칼럼에만 저장돼 있을 수 있다.
     const result = await db.execute({
-      sql: `SELECT id, email, name, plan, apple_id, token_epoch, deletion_status,
-                   allow_family_alarms, family_alarm_quiet_days,
-                   family_alarm_quiet_start, family_alarm_quiet_end,
+      sql: `SELECT id, email, name, plan, token_epoch, deletion_status,
+                   allow_family_alarms,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
-            FROM users WHERE id = ? OR google_id = ? OR apple_id = ? LIMIT 1`,
-      args: [payload.sub, payload.sub, payload.sub],
+            FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+      args: [payload.sub, payload.sub],
     });
     if (result.rows.length === 0) {
       return c.json(jsonError('AUTH_USER_NOT_FOUND', 'User not found'), 404);
@@ -943,7 +753,6 @@ auth.get('/me', async (c) => {
         email: string;
         name: string | null;
         plan: 'free' | 'plus' | 'family' | null;
-        apple_id: string | null;
         token_epoch: number | string | null;
         deletion_status: string | null;
       } & Record<string, unknown>
@@ -962,11 +771,8 @@ auth.get('/me', async (c) => {
         email: row.email,
         name: row.name ?? '',
         plan: row.plan ?? 'free',
-        // 탈퇴 유예 상태 — iOS 가 복구 전용 화면 게이팅에 쓴다(누락 시 active 로 오인해 진입).
+        // 탈퇴 유예 상태 — 클라가 복구 전용 화면 게이팅에 쓴다(누락 시 active 로 오인해 진입).
         deletion_status: (row.deletion_status as string | null) ?? 'active',
-        // Phase 4-D2: iOS 클라이언트가 credentialState 조회에 사용. 비-Apple 사용자
-        // 는 null. iOS AuthUser.appleUserId 는 옵셔널이라 누락도 호환.
-        apple_user_id: row.apple_id ?? null,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
@@ -997,8 +803,8 @@ logout.post('/', async (c) => {
     await db.execute({
       sql: `UPDATE users
             SET token_epoch = token_epoch + 1, updated_at = datetime('now')
-            WHERE id = ? OR google_id = ? OR apple_id = ?`,
-      args: [userPk ?? userId, userId, userId],
+            WHERE id = ? OR google_id = ?`,
+      args: [userPk ?? userId, userId],
     });
     return c.json({ success: true });
   } catch (err) {

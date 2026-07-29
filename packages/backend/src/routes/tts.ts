@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { callerOwnerIds } from '../lib/caller-ids';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
@@ -291,13 +292,15 @@ function draftPreviewText(language: string): string {
 
 async function findUsableVoiceProfile(
   db: DbExecutor,
-  userId: string,
+  // 소유권 기준은 userPk(users.id). 이 값은 통일 이전에 user_id 에 저장된 로그인
+  // 식별자까지 매칭하기 위한 보조값이다.
+  userLoginId: string,
   userPk: string,
   voiceProfileId: string,
 ): Promise<Record<string, unknown> | null> {
   const owned = await db.execute({
     sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
-    args: [voiceProfileId, userPk, userId],
+    args: [voiceProfileId, userPk, userLoginId],
   });
   if (owned.rows.length > 0) return owned.rows[0] as Record<string, unknown>;
 
@@ -334,7 +337,8 @@ async function findUsableVoiceProfile(
 async function findViewerRelationshipField(
   db: ReturnType<typeof getDB>,
   userPk: string,
-  userId: string,
+  // 통일 이전에 저장된 로그인 식별자까지 매칭하기 위한 보조값.
+  userLoginId: string,
   voiceProfileId: string,
   column: 'relationship_label' | 'listener_title',
 ): Promise<string | null> {
@@ -344,7 +348,7 @@ async function findViewerRelationshipField(
           WHERE voice_profile_id = ? AND user_id IN (?, ?)
           ORDER BY updated_at DESC
           LIMIT 1`,
-    args: [voiceProfileId, userPk, userId],
+    args: [voiceProfileId, userPk, userLoginId],
   });
   return normalizeRelationshipLabel(result.rows[0]?.[column]);
 }
@@ -628,10 +632,12 @@ async function resolveWeatherLocation(args: {
 }
 
 tts.post('/generate', async (c) => {
-  const userId = c.get('userId');
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const userLoginId = c.get('userLoginId');
   const resolvedUserPk = c.get('userIdPK');
-  const userPk = resolvedUserPk || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  const userPk = resolvedUserPk || userLoginId;
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
 
   const body = await c.req.json<{
@@ -744,25 +750,13 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  let freePlanRestricted = false;
-  // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
-  let callerUserPlan: string | null = null;
   const user = await db.execute({
     sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
   });
-
-  if (user.rows.length > 0) {
-    const u = user.rows[0]!;
-    const plan = u.plan as string;
-    callerUserPlan = plan ?? null;
-
-    // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
-    // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
-    if (resolvedUserPk && !isPaidVoicePlan(plan)) {
-      freePlanRestricted = true;
-    }
-  } else if (resolvedUserPk) {
+  if (user.rows.length === 0) {
+    // 계정 행을 못 찾으면 막는다. 예전에는 `else if (resolvedUserPk)` 라 식별자
+    // 미해결 시 사용량 체크를 건너뛰고 그대로 진행했다(fail-open).
     return c.json(
       {
         error: 'Voice features require a paid plan.',
@@ -772,7 +766,13 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  const vp = await findUsableVoiceProfile(db, userId, userPk, body.voice_profile_id);
+  // 직접 입력 미터링 폴백용(구독/그룹을 못 찾을 때 페이월과 같은 출처인 users.plan 사용).
+  const callerUserPlan = (user.rows[0]!.plan as string) ?? null;
+  // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
+  // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
+  const freePlanRestricted = !isPaidVoicePlan(callerUserPlan);
+
+  const vp = await findUsableVoiceProfile(db, userLoginId, userPk, body.voice_profile_id);
   if (!vp) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
@@ -818,7 +818,7 @@ tts.post('/generate', async (c) => {
         ? normalizeRelationshipLabel(vp.listener_title)
         : normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle)) ??
       (isSharedVoiceProfileForPreset
-        ? await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'listener_title')
+        ? await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'listener_title')
         : null) ??
       normalizeRelationshipLabel(vp.listener_title);
     if (draftPreviewRequested) draftPreviewListenerTitle = listenerTitle ?? null;
@@ -963,7 +963,7 @@ tts.post('/generate', async (c) => {
                 draftPreviewTag,
                 body.voice_profile_id,
                 userPk,
-                userId,
+                userLoginId,
                 String(vp.relationship_label ?? ''),
                 String(vp.listener_title ?? ''),
               ],
@@ -973,7 +973,7 @@ tts.post('/generate', async (c) => {
                 sql: `SELECT preview_text, preview_tag FROM voice_profiles
                       WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                       LIMIT 1`,
-                args: [body.voice_profile_id, userPk, userId],
+                args: [body.voice_profile_id, userPk, userLoginId],
               });
               const winnerRow = winner.rows[0];
               const winnerText =
@@ -1010,11 +1010,11 @@ tts.post('/generate', async (c) => {
         typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
       const relationshipLabel =
         normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
-        (await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'relationship_label')) ??
+        (await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'relationship_label')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.relationship_label));
       const listenerTitle =
         normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
-        (await findViewerRelationshipField(db, userPk, userId, body.voice_profile_id, 'listener_title')) ??
+        (await findViewerRelationshipField(db, userPk, userLoginId, body.voice_profile_id, 'listener_title')) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.listener_title));
       const weatherSignal = randomContextUsesWeather(randomContext)
         ? await loadWeatherSignal({
@@ -1243,7 +1243,7 @@ tts.post('/generate', async (c) => {
           previewClaimToken,
           body.voice_profile_id,
           userPk,
-          userId,
+          userLoginId,
           String(vp.relationship_label ?? ''),
           String(vp.listener_title ?? ''),
         ],
@@ -1282,7 +1282,7 @@ tts.post('/generate', async (c) => {
                   WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                     AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
                     AND preview_claim_token = ?`,
-            args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+            args: [body.voice_profile_id, userPk, userLoginId, activePreviewClaimToken],
           });
           if ((marked.rowsAffected ?? 0) === 0) {
             return c.json(
@@ -1400,7 +1400,7 @@ tts.post('/generate', async (c) => {
           await withWriteTransaction(db, async (tx) => {
             const publicationVoice = await findUsableVoiceProfile(
               tx,
-              userId,
+              userLoginId,
               userPk,
               body.voice_profile_id,
             );
@@ -1486,7 +1486,7 @@ tts.post('/generate', async (c) => {
                   WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL
                     AND COALESCE(is_draft, 0) = 1 AND status = 'ready'
                     AND preview_claim_token = ?`,
-                args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+                args: [body.voice_profile_id, userPk, userLoginId, activePreviewClaimToken],
               });
               if ((marked.rowsAffected ?? 0) === 0) {
                 throw new Error('Voice draft is no longer available.');
@@ -1553,7 +1553,7 @@ tts.post('/generate', async (c) => {
                       updated_at = datetime('now')
                 WHERE id = ? AND user_id IN (?, ?) AND COALESCE(is_draft, 0) = 1
                   AND previewed_at IS NULL AND preview_claim_token = ?`,
-          args: [body.voice_profile_id, userPk, userId, activePreviewClaimToken],
+          args: [body.voice_profile_id, userPk, userLoginId, activePreviewClaimToken],
         });
       } catch (previewReleaseError) {
         console.error('[tts/generate] failed to release preview claim', previewReleaseError);
@@ -1617,9 +1617,11 @@ tts.post('/generate', async (c) => {
 
 // 이번 달 직접 입력 문구 만들기 사용 현황(선택기 '직접 입력 (남은/총)' 표시용). 소비 없음.
 tts.get('/manual-quota', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const userLoginId = c.get('userLoginId');
+  const userPk = c.get('userIdPK') || userLoginId;
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
 
   const userRow = await db.execute({
@@ -1640,9 +1642,9 @@ tts.get('/manual-quota', async (c) => {
 });
 
 tts.get('/messages', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
   const category = c.req.query('category');
   const voiceProfileId = c.req.query('voice_profile_id');
@@ -1704,9 +1706,11 @@ tts.get('/messages', async (c) => {
 });
 
 tts.get('/messages/:id/audio', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const userLoginId = c.get('userLoginId');
+  const userPk = c.get('userIdPK') || userLoginId;
+  const ownerIds = callerOwnerIds(c);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -1815,118 +1819,12 @@ tts.get('/messages/:id/audio', async (c) => {
   });
 });
 
-tts.delete('/messages/:id', async (c) => {
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
-  const ownerIds = [userPk, userId] as [string, string];
-  const db = getDB(c.env);
-  const id = c.req.param('id');
-
-  if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid message ID format', error_code: 'INVALID_MESSAGE_ID' }, 400);
-  }
-
-  // 내부 프리셋 버킷 클립은 삭제 금지 — 삭제하면 /tts/stock-clips 오프라인 버킷이 불완전해진다.
-  // R2/asset 삭제 부수효과가 아래에서 먼저 실행되므로, 반드시 그 전에 early-return 으로 막는다
-  // (messages DELETE 에만 is_preset 가드를 걸면 오디오가 이미 지워진 뒤 404 로 no-op 됨).
-  const presetCheck = await db.execute({
-    sql: `SELECT COALESCE(is_preset, 0) AS is_preset FROM messages
-          WHERE id = ? AND user_id IN (?, ?)`,
-    args: [id, ...ownerIds],
-  });
-  if (presetCheck.rows.length > 0 && Number(presetCheck.rows[0]!.is_preset) === 1) {
-    return c.json(
-      { error: 'Preset stock clips cannot be deleted.', error_code: 'MESSAGE_PRESET_LOCKED' },
-      403,
-    );
-  }
-
-  const alarmCheck = await db.execute({
-    sql: 'SELECT COUNT(*) as cnt FROM alarms WHERE message_id = ?',
-    args: [id],
-  });
-  const alarmCount = Number(typedRow<{ cnt: number }>(alarmCheck.rows[0]!).cnt ?? 0);
-
-  if (alarmCount > 0 && c.req.query('force') !== 'true') {
-    return c.json(
-      {
-        warning: true,
-        error_code: 'MESSAGE_IN_USE',
-        alarm_count: alarmCount,
-        message: `This message is used by ${alarmCount} alarm(s). Add ?force=true to delete anyway.`,
-      },
-      409,
-    );
-  }
-
-  if (alarmCount > 0) {
-    await db.execute({
-      sql: `UPDATE alarms
-            SET mode = 'sound-only',
-                wake_mode = 'sound_then_voice',
-                message_id = NULL,
-                voice_profile_id = NULL,
-                speaker_id = NULL,
-                raw_audio_url = NULL,
-                raw_audio_duration_ms = NULL
-            WHERE message_id = ?
-              AND EXISTS (
-                SELECT 1 FROM messages WHERE id = ? AND user_id IN (?, ?)
-              )`,
-      args: [id, id, ...ownerIds],
-    });
-  }
-
-  await db.execute({
-    sql: 'DELETE FROM message_library WHERE message_id = ? AND user_id IN (?, ?)',
-    args: [id, ...ownerIds],
-  });
-
-  // 메시지를 지우기 전에 백킹 R2 오브젝트를 삭제 큐에 적재한다. 큐에 넣지 않고
-  // generated_audio_assets 행만 지우면 object_key 가 어디에도 기록되지 않아
-  // R2 의 mp3 가 영구히 고아로 남는다(가장 흔한 사용자 동작인 메시지 삭제마다 누수).
-  const assetKeysRes = await db.execute({
-    sql: `SELECT audio_object_key FROM generated_audio_assets
-          WHERE message_id = ? AND user_id IN (?, ?) AND audio_object_key IS NOT NULL`,
-    args: [id, ...ownerIds],
-  });
-  if (assetKeysRes.rows.length > 0) {
-    const { enqueueExternalDeletion } = await import('../lib/audio-retention');
-    for (const row of assetKeysRes.rows) {
-      await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
-    }
-  }
-
-  await db.execute({
-    sql: 'DELETE FROM generated_audio_assets WHERE message_id = ? AND user_id IN (?, ?)',
-    args: [id, ...ownerIds],
-  });
-
-  const result = await db.execute({
-    sql: 'DELETE FROM messages WHERE id = ? AND user_id IN (?, ?)',
-    args: [id, ...ownerIds],
-  });
-
-  if (result.rowsAffected === 0) {
-    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
-  }
-
-  return c.json({ ok: true, alarms_affected: alarmCount });
-});
-
-tts.get('/presets', async (c) => {
-  return c.json({ presets: await loadTtsPresets(c.env) });
-});
-
-// 무료 플랜용 스톡(미리 만든) 알람 클립 목록. 시스템 보이스로 서버에서 합성해 둔
-// 고정 클립을 보이스 × 언어 × 카테고리로 노출한다. 오디오는 message_id 로
-// 오디오 자체는 GET /tts/messages/:id/audio 에서 받는다. 시스템 스톡은 모든 사용자가 조회
-// 가능하고, 유료 클론 사전렌더 클립은 소유자 본인 + 같은 플랜 그룹에 '공유 중'(is_shared=1)인
-// 보이스에 한해 그룹 멤버에게도 노출한다(공유받은 사람이 프리셋 버킷·인사말 미리듣기를 소비).
 tts.get('/stock-clips', async (c) => {
   const db = getDB(c.env);
-  const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
+  // 소유권 기준은 users.id(userPk). userLoginId 는 통일 이전에 user_id 컬럼에 저장된
+  // 로그인 식별자(구글 로그인이면 google_id)까지 매칭하기 위한 보조값이다.
+  const userLoginId = c.get('userLoginId');
+  const userPk = c.get('userIdPK') || userLoginId;
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
                  m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name
@@ -1953,7 +1851,7 @@ tts.get('/stock-clips', async (c) => {
             AND vp.deleted_at IS NULL
             AND m.audio_url IS NOT NULL
           ORDER BY vp.id ASC, m.category ASC, m.language ASC, m.variant ASC`,
-    args: [userPk, userId, userPk],
+    args: [userPk, userLoginId, userPk],
   });
   return c.json({
     clips: result.rows.map((row) => ({

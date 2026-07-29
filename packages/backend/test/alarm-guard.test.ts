@@ -21,11 +21,11 @@ vi.mock('../src/lib/db', () => ({ getDB: () => db }));
 
 const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
 
-// 발신자/수신자 식별자 — alarms.user_id/target_user_id 에는 로그인 id(google_id)가 저장된다.
-const SENDER_A = { pk: 'guard-a-pk', login: 'guard-ga' };
-const SENDER_B = { pk: 'guard-b-pk', login: 'guard-gb' };
-const RECIPIENT = { pk: 'guard-r-pk', login: 'guard-gr' }; // quiet 창 없음
-const RECIPIENT_QUIET = { pk: 'guard-q-pk', login: 'guard-gq' }; // 주말 00:00-08:00 quiet
+// 발신자/수신자 식별자 — JWT sub 은 항상 users.id 라 pk 와 login 이 같은 값이다.
+const SENDER_A = { pk: 'guard-a-pk', login: 'guard-a-pk' };
+const SENDER_B = { pk: 'guard-b-pk', login: 'guard-b-pk' };
+const RECIPIENT = { pk: 'guard-r-pk', login: 'guard-r-pk' }; // quiet 창 없음
+const RECIPIENT_QUIET = { pk: 'guard-q-pk', login: 'guard-q-pk' }; // 주말 00:00-08:00 quiet
 
 function appFor(user: { pk: string; login: string }) {
   const app = new Hono<AppEnv>();
@@ -78,7 +78,8 @@ beforeAll(async () => {
   await runMigrations(db);
   // 이전 실행 잔재 정리(파일 DB 재사용). 시스템 시드 users 행은 건드리지 않는다.
   await db.execute('DELETE FROM alarms');
-  await db.execute('DELETE FROM friendships');
+  await db.execute("DELETE FROM plan_group_members WHERE plan_group_id = 'guard-group'");
+  await db.execute("DELETE FROM plan_groups WHERE id = 'guard-group'");
   await db.execute("DELETE FROM users WHERE id LIKE 'guard-%'");
 
   const insertUser = (u: { pk: string; login: string }, allow: number, quietWindows: string) =>
@@ -92,14 +93,23 @@ beforeAll(async () => {
   await insertUser(RECIPIENT, 1, '[]');
   await insertUser(RECIPIENT_QUIET, 1, '[{"days":[0,6],"start":"00:00","end":"08:00"}]');
 
-  const insertFriendship = (id: string, a: string, b: string) =>
+  // 타깃 알람 권한은 같은 커플/가족 플랜 그룹 멤버십(assertSameGroup)이다 —
+  // 발신자·수신자 전원을 한 가족 그룹에 넣는다(plan_id 는 마이그레이션 시드 가족 플랜).
+  await db.execute({
+    sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
+          VALUES ('guard-group', ?, '70000000-0000-4000-8000-000000000003', 6)`,
+    args: [SENDER_A.pk],
+  });
+  const insertMember = (id: string, u: { pk: string }, role: string) =>
     db.execute({
-      sql: `INSERT INTO friendships (id, user_a, user_b, status) VALUES (?, ?, ?, 'accepted')`,
-      args: [id, a, b],
+      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
+            VALUES (?, 'guard-group', ?, ?)`,
+      args: [id, u.pk, role],
     });
-  await insertFriendship('guard-f1', SENDER_A.login, RECIPIENT.login);
-  await insertFriendship('guard-f2', SENDER_B.login, RECIPIENT.login);
-  await insertFriendship('guard-f3', SENDER_A.login, RECIPIENT_QUIET.login);
+  await insertMember('guard-m1', SENDER_A, 'owner');
+  await insertMember('guard-m2', SENDER_B, 'member');
+  await insertMember('guard-m3', RECIPIENT, 'member');
+  await insertMember('guard-m4', RECIPIENT_QUIET, 'member');
 });
 
 beforeEach(async () => {
@@ -418,5 +428,64 @@ describe('타인 발신 알람 — PATCH 가 POST 가드를 effective(수정 결
     const res = await patchAlarm(SENDER_A, id, { time: '09:20' });
     expect(res.status).toBe(200);
     expect(String((await alarmRow(id))!.time)).toBe('09:20');
+  });
+});
+
+// 회귀 가드 — 가족 알람 배달 (2026-07 감사).
+//
+// alarms.target_user_id 에는 반드시 **users.id** 가 들어가야 한다. 과거에는
+// `google_id ?? id` 를 저장했는데, JWT sub 이 users.id 로 통일된 뒤로는 수신자 세션의
+// 식별자가 users.id 라서 google_id 로 저장하면
+//   1) GET /alarm 에서 수신자가 자기 알람을 못 보고,
+//   2) GET /tts/messages/:id/audio 의 소유권 판정(target_user_id IN (...))도 실패해
+//      받은 목소리를 재생조차 못 한다.
+// 기존 계정은 users.id == google_id 라 우연히 맞아떨어져 드러나지 않았고, 신규 구글
+// 가입자(users.id = UUID, google_id = 구글 sub)부터 조용히 깨졌다.
+describe('가족 알람 — target_user_id 는 users.id 로 저장한다', () => {
+  // 신규 구글 가입자를 재현한다: users.id(UUID) != google_id(구글 sub).
+  const SPLIT_RECIPIENT = { pk: 'guard-split-pk', google: 'guard-split-google-sub' };
+
+  beforeAll(async () => {
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, allow_family_alarms, family_alarm_quiet_windows)
+            VALUES (?, ?, ?, 1, '[]')`,
+      args: [SPLIT_RECIPIENT.pk, SPLIT_RECIPIENT.google, 'guard-split@guard.test'],
+    });
+    await db.execute({
+      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
+            VALUES ('guard-m5', 'guard-group', ?, 'member')`,
+      args: [SPLIT_RECIPIENT.pk],
+    });
+  });
+
+  it('users.id != google_id 인 수신자에게도 users.id 로 저장된다', async () => {
+    const res = await postAlarm(SENDER_A, {
+      time: '05:30',
+      target_user_id: SPLIT_RECIPIENT.pk, // 앱은 /family/groups/current 가 준 users.id 를 보낸다
+      timezone: 'Asia/Seoul',
+    });
+    expect(res.status).toBe(201);
+    const id = ((await res.json()) as { alarm: { id: string } }).alarm.id;
+
+    const row = await alarmRow(id);
+    expect(String(row!.target_user_id)).toBe(SPLIT_RECIPIENT.pk);
+    expect(String(row!.target_user_id)).not.toBe(SPLIT_RECIPIENT.google);
+  });
+
+  it('수신자 세션(userId=userIdPK=users.id)이 자기 알람을 조회할 수 있다', async () => {
+    const res = await postAlarm(SENDER_A, {
+      time: '05:40',
+      target_user_id: SPLIT_RECIPIENT.pk,
+      timezone: 'Asia/Seoul',
+    });
+    expect(res.status).toBe(201);
+
+    // 수신자 조회 경로가 쓰는 것과 동일한 술어(viewerIds = [users.id]).
+    const visible = await db.execute({
+      sql: `SELECT COUNT(*) AS cnt FROM alarms
+            WHERE target_user_id = ? AND time = '05:40' AND is_active = 1`,
+      args: [SPLIT_RECIPIENT.pk],
+    });
+    expect(Number(visible.rows[0]!.cnt)).toBe(1);
   });
 });

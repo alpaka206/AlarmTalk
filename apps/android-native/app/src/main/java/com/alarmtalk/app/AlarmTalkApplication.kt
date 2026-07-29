@@ -34,6 +34,10 @@ class AlarmTalkApplication : Application() {
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
         runCatching { RemoteAlarmSyncScheduler.ensurePeriodic(this) }
             .onFailure { AlarmTalkLog.reportError("RemoteAlarmSyncScheduler.ensurePeriodic failed", it) }
+        // 목소리 접근권(동의 철회·보관 만료) 주기 재확인 — 푸시 유실·앱 미실행에도 정확성을
+        // 지키는 비-FCM 폴백. 하루 한 번.
+        runCatching { com.alarmtalk.app.sync.VoiceAccessSyncWorker.ensurePeriodic(this) }
+            .onFailure { AlarmTalkLog.reportError("VoiceAccessSyncWorker.ensurePeriodic failed", it) }
         // 앱이 포그라운드로 올라올 때마다(cold start 포함, 어느 화면/탭이든) 즉시 원격 알람을 pull 한다.
         // 로그인 세션이 있을 때만, 60초 throttle 로 연속 복귀 중복을 막는다. 이전엔 cold start + '알람 탭
         // 진입' 에서만 즉시 pull 이었던 것을 포그라운드 복귀 전체로 확장 — FCM 없이도 "앱을 열면 바로"

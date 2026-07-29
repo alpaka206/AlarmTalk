@@ -16,6 +16,7 @@ import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
 import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
+import { retryTransientTurso } from './lib/turso-retry';
 import { timingSafeEqualStr } from './lib/timing-safe-equal';
 import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
@@ -23,10 +24,6 @@ import ttsRoutes from './routes/tts';
 import alarmRoutes from './routes/alarm';
 import userRoutes from './routes/user';
 import authRoutes from './routes/auth';
-import libraryRoutes from './routes/library';
-import friendRoutes from './routes/friend';
-import giftRoutes from './routes/gift';
-import statsRoutes from './routes/stats';
 import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
 import familyRoutes from './routes/family';
@@ -181,12 +178,6 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
   }
 });
 
-// 공개 라우트 (인증 불필요)
-app.get('/api/tts/presets', noStore, async (c) => {
-  const { loadTtsPresets } = await import('./lib/tts-presets');
-  return c.json({ presets: await loadTtsPresets(c.env) });
-});
-
 // 앱 버전 정책 (인증 불필요) — 구버전 앱이 로그인 전에도 강제/권장 업데이트를 판단한다.
 app.get('/api/app/version', noStore, async (c) => {
   const { appVersionPolicy } = await import('./lib/app-version');
@@ -232,10 +223,6 @@ api.route('/voice', voiceRoutes);
 api.route('/tts', ttsRoutes);
 api.route('/alarm', alarmRoutes);
 api.route('/user', userRoutes);
-api.route('/library', libraryRoutes);
-api.route('/friend', friendRoutes);
-api.route('/gift', giftRoutes);
-api.route('/stats', statsRoutes);
 api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
 api.route('/code', codeRoutes);
@@ -257,7 +244,29 @@ app.onError((err, c) => {
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
 // 주기를 바꾸면 lib/scheduler.ts 의 CRON_WINDOW_MINUTES 도 함께 바꿔야 한다.
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-  const db = getDB(env);
+  const rawDb = getDB(env);
+  // 520 is a transient failure of Turso's HTTP gateway. Retry only read
+  // queries: retrying a write after an ambiguous HTTP failure can duplicate a
+  // side effect. Failed maintenance writes remain safe to resume next tick.
+  const db = new Proxy(rawDb, {
+    get(target, property) {
+      if (property === 'execute') {
+        return (...args: unknown[]) => {
+          const statement = args[0];
+          const sql =
+            typeof statement === 'string'
+              ? statement
+              : typeof statement === 'object' && statement !== null && 'sql' in statement
+                ? String(statement.sql)
+                : '';
+          const execute = () => Reflect.apply(target.execute, target, args);
+          return /^\s*(?:SELECT|EXPLAIN)\b/i.test(sql) ? retryTransientTurso(execute) : execute();
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
   const now = new Date(event.scheduledTime);
 
   // cron 은 HTTP 미들웨어(sentryMiddleware)를 타지 않으므로 Sentry 클라이언트를 직접

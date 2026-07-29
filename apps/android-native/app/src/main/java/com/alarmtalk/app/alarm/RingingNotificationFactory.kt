@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS
+import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS_SILENT
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_SNOOZE
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.ringing.RingingActivity
@@ -67,6 +68,16 @@ internal class RingingNotificationFactory(
         if (!fallback) {
             // 정상 경로: 소리는 RingingService 의 MediaPlayer 가 담당 → 알림은 무음(중복 소리 방지).
             builder.setSound(null).setVibrate(null)
+            // 화면이 켜져 있고 잠금이 풀려 있으면 RingingService 가 울림 화면을 띄우지 않으므로
+            // 이 알림이 유일한 해제 UI 다. 그런데 targetSdk 34+ 에서는 setOngoing(true) 로도
+            // 스와이프 제거를 막지 못한다(Android 13 FGS 스와이프 허용 + 14 의 ongoing 무력화).
+            // 삭제 인텐트가 없으면 배너만 사라지고 톤·목소리·진동이 무기한 계속된다 →
+            // 스와이프도 '해제'로 취급한다.
+            builder.setDeleteIntent(
+                servicePendingIntent(ACTION_DISMISS_SILENT, alarmId, DELETE_REQUEST_CODE),
+            )
+            // 폴백 경로에는 걸지 않는다: FGS 를 못 띄운 상황이라 getService 가 실패할 수 있고,
+            // 그 경로의 소리는 채널 사운드 1회성이라 '무한히 울림' 증상 대상이 아니다.
         }
         // 폴백 경로: 소리·진동은 폴백 채널(IMPORTANCE_HIGH, USAGE_ALARM 사운드)이 담당한다.
 
@@ -90,5 +101,6 @@ internal class RingingNotificationFactory(
         const val RINGING_ACTIVITY_REQUEST_CODE = 2001
         const val DISMISS_REQUEST_CODE = 2002
         const val SNOOZE_REQUEST_CODE = 2003
+        const val DELETE_REQUEST_CODE = 2004
     }
 }

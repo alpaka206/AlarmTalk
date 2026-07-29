@@ -69,6 +69,32 @@ class RemoteAlarmPullSyncServiceTest {
     }
 
     @Test
+    fun pullNeverTouchesAnotherAccountsRetainedAlarms() {
+        // 로컬 알람은 로그아웃해도 남는다. 서버 알람의 수신자는 한 명이라 앞 계정(A)이 받은/만든
+        // 알람이 B 의 스냅샷에 없는 건 당연한데, 그걸 '서버에 없다'로 읽으면 pull 이 A 의 알람을
+        // 끄거나(같은 시각 양보) 지운다(stale prune). 끄기는 특히 치명적이다 — 재예약은 enabled=1
+        // 만 훑으므로 A 가 다시 로그인해도 알람이 영영 안 울린다.
+        val leftBehind = alarm(enabled = true, origin = AlarmOrigins.LOCAL_OWNED)
+            .copy(ownerUserId = "account-a")
+
+        assertFalse(isOwnedByRecipient(leftBehind, currentUserId = "account-b"))
+        assertFalse("비로그인 세션도 남의 행을 건드리면 안 된다", isOwnedByRecipient(leftBehind, currentUserId = null))
+    }
+
+    @Test
+    fun pullStillManagesThisRecipientsOwnAndLegacyAlarms() {
+        // 회귀 방지: 같은 시각 양보·stale prune 은 내 알람에 대해서는 예전대로 동작해야 한다.
+        val mine = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(ownerUserId = "account-b")
+        val legacy = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(ownerUserId = null)
+
+        assertTrue(isOwnedByRecipient(mine, currentUserId = "account-b"))
+        assertTrue(isOwnedByRecipient(legacy, currentUserId = "account-b"))
+        assertTrue("소유자 미기록은 비로그인에서도 현재 계정 것으로 본다", isOwnedByRecipient(legacy, currentUserId = null))
+    }
+
+    @Test
     fun unlockedReceivedAlarmKeepsRebuiltRemoteVoiceMode() {
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
 

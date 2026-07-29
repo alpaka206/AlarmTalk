@@ -22,6 +22,9 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
@@ -34,6 +37,15 @@ class AlarmRepository(
     private val holidayApiProvider: () -> HolidayApi = { AlarmTalkApiClient.create() },
     // 현재 로그인 계정 id(없으면 null). 알람 생성 시 소유자 기록·무료 잠금 스코프에 쓴다.
     private val currentUserIdProvider: () -> String? = { null },
+    // 같은 값을 '흐름'으로도 받는다 — 목록 필터가 로그인/로그아웃 즉시 다시 계산돼야 한다.
+    // 기본값은 1회 방출이라, 이 인자를 주지 않는 호출부(테스트 등)는 예전과 동작이 같다.
+    private val currentUserIdFlow: Flow<String?> = flowOf(currentUserIdProvider()),
+    // 아직 소유자를 못 새긴 알람의 임자(없으면 null). 세션이 끝날 때 새기기가 실패하면
+    // 남고, 예약 직전에 [settlePendingAlarmOwnership] 이 이걸로 마저 새긴다.
+    private val pendingOwnerUserIdProvider: () -> String? = { null },
+    // 미정 행이 없어졌을 때만 임자 표시를 지운다. 실패하면 부르지 않아 표시가 남고,
+    // 다음 기회에 다시 시도한다.
+    private val onOwnershipSettled: () -> Unit = {},
 ) {
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -45,7 +57,21 @@ class AlarmRepository(
         currentUserIdProvider = currentUserIdProvider,
     )
 
-    fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
+    /**
+     * 이 계정에 보여줄 알람만 흘린다. 같은 기기에 다른 계정이 로그인하면 앞 계정 알람이
+     * 목록에 그대로 남던 문제를 막는다(RemoteAlarmPullSyncService 가 '받은 알람'에 쓰는
+     * 소유자 스코프와 같은 규칙). 소유자 미기록(레거시 null)은 현재 계정 것으로 본다 —
+     * 세션이 끝날 때 떠나는 계정을 새기므로(명시 로그아웃은 detachAlarmsOnSignOut, 자동
+     * 401 은 claimUnownedAlarmsFor) 다른 계정이 물려받을 null 이 새로 생기지 않는다.
+     *
+     * DAO 흐름만 map 하면 안 된다: Room 은 테이블이 바뀔 때만 방출하는데, 로그아웃은
+     * 소유자가 이미 기록된 알람에 대해 아무것도 쓰지 않는다. 그러면 계정을 바꿔도
+     * 마지막에 계산된 목록(앞 계정 알람)이 그대로 남는다 — 그래서 계정 흐름과 결합한다.
+     */
+    fun observeAlarms(): Flow<List<AlarmEntity>> =
+        combine(alarmDao.observeAlarms(), currentUserIdFlow) { alarms, currentUser ->
+            alarms.filter { it.ownerUserId == null || it.ownerUserId == currentUser }
+        }
 
     suspend fun getAlarm(alarmId: String): AlarmEntity? = alarmDao.getById(alarmId)
 
@@ -237,6 +263,7 @@ class AlarmRepository(
             currentIndex = current.contextVariantIndex,
             draftIndex = draft.contextVariantIndex,
             currentResolvedAtMillis = current.contextResolvedAtMillis,
+            draftResolvedNow = draft.contextResolvedNow,
         )
         val updated = current.copy(
             label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
@@ -386,10 +413,140 @@ class AlarmRepository(
     }
 
     /**
+     * 로그아웃 시 이 기기의 알람을 '떠나는 계정의 것'으로 못 박고 예약을 전부 내린다.
+     *
+     * 지우지는 않는다 — 알람의 원본은 기기(Room)이고 서버는 백업/가족알람 전달용이라,
+     * 내 알람을 서버에서 다시 받아오는 경로가 없다. 지우면 같은 계정으로 다시 로그인해도
+     * 되살아나지 않는다.
+     *
+     * 대신 (1) 소유자 미기록(레거시 null) 행에 떠나는 계정을 새겨 다음 로그인 계정이
+     * 자기 것으로 오인하지 않게 하고, (2) OS 예약을 전부 취소해 남의 알람이 울리지
+     * 않게 한다. 본인이 다시 로그인하면 [reschedulePendingAlarms] 가 되살린다.
+     * 목록 노출은 [observeAlarms] 의 소유자 필터가 막는다.
+     *
+     * 반환값은 예약을 내린 알람 수.
+     */
+    suspend fun detachAlarmsOnSignOut(signedOutUserId: String?): Int {
+        val all = alarmDao.getAllAlarms()
+        if (all.isEmpty()) return 0
+        // 예약 취소가 먼저다. 소유자 새기기가 실패해도(디스크 가득참 등) 떠나는 계정의 알람이
+        // 예약된 채 남으면 안 된다 — 로그아웃 뒤에는 목록에서 감춰져 사용자가 끌 수도 없는데
+        // AlarmReceiver 는 Room 에서 바로 읽어 울린다. 순서를 뒤집으면 쓰기 한 번 실패로
+        // 취소 루프 전체가 건너뛰어진다.
+        all.forEach { alarm -> alarmScheduler.cancel(alarm.id) }
+        // 앞 계정의 미해결 소유권을 먼저 확정한다. 그러지 않으면 아직 앞 계정(A) 것인 미기록
+        // 행을 지금 떠나는 계정(B) 것으로 잘못 새겨 A 가 그 알람을 영영 잃는다. 확정에
+        // 실패하면 미기록 행이 누구 것인지 여전히 모르므로 아무에게도 새기지 않고, 임자
+        // 표시를 남긴 채 다음 기회로 넘긴다.
+        if (settlePendingAlarmOwnership()) {
+            // 새기기가 실패해도 예약은 이미 내려갔다. 임자 표시가 남아 다음 기회에 다시 시도한다.
+            runCatching { claimUnownedAlarmsFor(signedOutUserId) }
+                .onFailure { error -> Log.w(TAG, "Failed to stamp ownerless alarms on sign-out", error) }
+        }
+        Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
+        return all.size
+    }
+
+    /**
+     * 소유자 미기록(레거시 null) 알람에 지금 세션의 계정을 새긴다. 예약은 건드리지 않는다.
+     *
+     * 자동 401 은 '같은 사람이 다시 로그인'이 대부분이라 예약을 일부러 살려 두는데, 그때
+     * 소유자가 null 로 남으면 다음에 들어온 **다른** 계정이 그 알람을 자기 것으로 삼는다 —
+     * [reschedulePendingAlarms]·[observeAlarms]·lockPaidAlarmTalks 는 모두 null 을 현재 계정
+     * 것으로 보기 때문이다. 로그인 시점의 [cancelAlarmsNotOwnedBy] 는 소유자가 없는 행을
+     * 건너뛰므로 그것만으론 못 막는다. 세션을 비우기 전에 떠나는 계정을 새겨 그 창을 닫는다.
+     *
+     * 본인이 다시 로그인하면 소유자가 일치해 [reschedulePendingAlarms] 가 그대로 되살린다.
+     *
+     * 반환값은 소유자를 새긴 알람 수.
+     */
+    suspend fun claimUnownedAlarmsFor(userId: String?): Int {
+        if (userId.isNullOrBlank()) return 0
+        // 행 전체를 되쓰지 않고 컬럼 하나만 바꾼다 — 이유는 AlarmDao.claimUnownedAlarms 참고.
+        val claimed = alarmDao.claimUnownedAlarms(userId)
+        if (claimed > 0) Log.i(TAG, "Claimed $claimed ownerless alarms for the leaving session")
+        return claimed
+    }
+
+    /**
+     * 세션이 끝날 때 소유자를 못 새겨 '임자 미정'으로 남은 알람을 여기서 마저 새긴다.
+     *
+     * 세션 종료 시점의 [claimUnownedAlarmsFor] 가 실패하거나(쓰기 오류), 로그인 뒤처리가 끝나기
+     * 전에 프로세스가 죽으면 소유자 미기록 행이 그대로 남는다. 그 상태로 예약하면 다음 계정이
+     * 앞 계정 알람을 자기 것으로 삼아 울린다. 그래서 [reschedulePendingAlarms] 가 예약 직전에
+     * 이 함수를 부른다 — 로그인 뒤처리뿐 아니라 앱 콜드스타트·부팅 복구도 전부 그 함수를
+     * 지나므로, 한 곳만 막으면 나머지 경로가 새는 것을 방지한다. 여러 번 불러도 안전하다.
+     *
+     * 기준은 '지금 계정'이 아니라 **임자 표시**다. 미정 임자가 지금 계정이면 그 행들은 원래
+     * 내 것이므로 새기지 않고 표시만 지운다(레거시 알람 채택 규칙 그대로). 다른 계정이면
+     * 그 계정으로 새긴다 — 지금 비로그인이어도 마찬가지다.
+     *
+     * @return 정리가 끝났는가. false 면 소유자 미기록 행을 이번 회차에 예약하면 안 되고
+     *         (누구 것인지 모르는 알람이다), 표시도 그대로 둬 다음 기회에 다시 시도한다.
+     */
+    suspend fun settlePendingAlarmOwnership(): Boolean {
+        // 미정 임자가 없으면 정리할 것도 없다.
+        val pendingOwner = pendingOwnerUserIdProvider()?.takeIf { it.isNotBlank() } ?: return true
+        val currentUser = currentUserIdProvider()?.takeIf { it.isNotBlank() }
+        if (pendingOwner == currentUser) {
+            onOwnershipSettled()
+            return true
+        }
+        return runCatching { claimUnownedAlarmsFor(pendingOwner) }
+            .onSuccess { claimed ->
+                if (claimed > 0) Log.i(TAG, "Settled $claimed ownerless alarms onto their owner")
+                onOwnershipSettled()
+            }
+            .onFailure { error -> Log.w(TAG, "Failed to settle pending alarm ownership", error) }
+            .isSuccess
+    }
+
+    /**
+     * 이 행을 '지금 계정 것'으로 다뤄도 되는가 — 파괴적/외부로 나가는 작업의 공통 게이트.
+     *
+     * 소유자 미기록(레거시 null)은 [observeAlarms]·[reschedulePendingAlarms]·lockPaidAlarmTalks 와
+     * 같은 규칙으로 현재 계정 것으로 본다. 단 [settlePendingAlarmOwnership] 이 실패한 회차에는
+     * 그 null 이 앞 계정 것일 수 있으므로 제외한다 — 표시가 남아 다음 기회에 다시 판정된다.
+     */
+    private fun ownedByCurrentSession(
+        alarm: AlarmEntity,
+        currentUserId: String,
+        ownershipSettled: Boolean,
+    ): Boolean = when (alarm.ownerUserId) {
+        null -> ownershipSettled
+        currentUserId -> true
+        else -> false
+    }
+
+    /**
+     * 지금 로그인한 계정의 것이 아닌 알람의 OS 예약을 내린다.
+     *
+     * 자동 401(토큰 만료)은 알람을 그대로 두므로, 그 상태에서 다른 계정으로 로그인하면
+     * 앞 계정 알람의 예약이 살아 있게 된다. 목록에서는 소유자 필터가 감추므로 끌 수도 없다.
+     * 로그인 시점에 이 정리를 한 번 돌려 그 창을 닫는다. 행은 지우지 않는다 — 본인이 다시
+     * 로그인하면 reschedulePendingAlarms 가 되살린다.
+     *
+     * 반환값은 예약을 내린 알람 수.
+     */
+    suspend fun cancelAlarmsNotOwnedBy(currentUserId: String?): Int {
+        if (currentUserId.isNullOrBlank()) return 0
+        var cancelled = 0
+        alarmDao.getAllAlarms().forEach { alarm ->
+            val owner = alarm.ownerUserId ?: return@forEach
+            if (owner == currentUserId) return@forEach
+            alarmScheduler.cancel(alarm.id)
+            cancelled += 1
+        }
+        if (cancelled > 0) Log.i(TAG, "Cancelled $cancelled alarm reservations owned by another account")
+        return cancelled
+    }
+
+    /**
      * 접근권을 잃은 음성 프로필(공유 해제·제공자 취소·본인 삭제)을 참조하는 '내 소유(LOCAL_OWNED)'
      * 음성 알람을 sound-only 로 강등한다. [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
      * 가족 공유 프로필 id 집합이어야 한다 — 부분/실패 로드로 호출하면 정상 알람을 오강등할 수 있으므로
      * 호출부(refreshSocial 신선 성공)에서 가드한다. 버킷 회전·녹음(LOCAL_AUDIO)·수신 알람은 대상이 아니다.
+     * 대상은 **지금 계정 소유** 알람으로 한정된다(같은 기기에 남아 있는 앞 계정 알람은 건드리지 않는다).
      * 반환값은 강등된 알람 수.
      */
     suspend fun degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds: Set<String>): Int =
@@ -409,9 +566,26 @@ class AlarmRepository(
         }
 
     private suspend fun degradeMatchingLocalOwnedVoiceAlarms(match: (AlarmEntity) -> Boolean): Int {
+        // 강등은 되돌릴 수 없다 — 목소리 참조를 지우고 캐시 오디오까지 정리한다. 그래서 '지금 계정
+        // 것'이라고 확신할 수 있는 행만 건드린다.
+        //
+        // 로컬 알람은 로그아웃해도 남으므로(원본이 기기다), 앞 계정 A 의 알람이 Room 에 그대로
+        // 있는 채로 계정 B 가 로그인한다. B 의 접근 가능 목소리 목록에 A 의 프로필이 없는 건
+        // 당연한데, 소유자를 안 보면 B 가 도는 refreshSocial·주기 워커가 그걸 '접근권 상실'로
+        // 읽어 A 의 알람에서 목소리를 영구히 벗긴다. VoiceAccessSyncWorker 의 토큰 재확인은
+        // 요청 중의 계정 전환만 잡지, 이미 앞 계정 것인 행은 못 지킨다(Codex #646 P1).
+        val ownershipSettled = settlePendingAlarmOwnership()
+        val currentUser = currentUserIdProvider()?.takeIf { it.isNotBlank() }
+        if (currentUser == null) {
+            // 비로그인 상태에서는 [accessibleVoiceIds] 가 누구의 목록인지 알 수 없다. 호출부가
+            // 모두 세션 안에서 도므로 정상 경로에서는 오지 않는 가지다.
+            Log.i(TAG, "Skipped voice degradation: no signed-in account")
+            return 0
+        }
         val candidates = alarmDao.getAllAlarms().filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
                 alarm.voiceSource == VoiceSources.TTS_PROFILE &&
+                ownedByCurrentSession(alarm, currentUser, ownershipSettled) &&
                 match(alarm)
         }
         var degraded = 0
@@ -472,6 +646,10 @@ class AlarmRepository(
      */
     suspend fun lockPaidAlarmTalks(): Int {
         val currentUser = currentUserIdProvider() ?: return 0
+        // 미기록 행에 소유자를 '영구히' 새기는 경로다. 새기기 전에 임자를 먼저 확정하지 않으면
+        // 앞 계정 A 의 미기록 알람이 B 것으로 박히고, 뒤늦은 확정(claimUnownedAlarms 는 null 만
+        // 대상)이 더는 손댈 수 없어 A 는 그 알람을 영영 잃는다. reschedulePendingAlarms 와 같은 규칙.
+        val ownershipSettled = settlePendingAlarmOwnership()
         val now = System.currentTimeMillis()
         var lockedCount = 0
         alarmDao.getAllAlarms().forEach { alarm ->
@@ -481,12 +659,12 @@ class AlarmRepository(
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
             if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) return@forEach
-            // 다른 계정이 소유한(ownerUserId 불일치) 알람은 건드리지 않는다. 소유자 미기록(레거시 null)
-            // 음성 알람은 현재 활성 계정으로 소유권을 backfill 한다 — 잠금 시점에 소유자를 확정해,
+            // 다른 계정이 소유한(ownerUserId 불일치) 알람은 건드리지 않는다. 임자가 확정된 미기록
+            // (레거시 null) 음성 알람은 현재 활성 계정으로 소유권을 backfill 한다 — 잠금 시점에 소유자를 확정해,
             // 복원은 엄격히 ownerUserId 일치만 보고도 (1) 본인이 재유료 시 복원 가능(영구잠금 방지),
             // (2) 같은 기기의 다른 계정이 남의 잠긴 알람을 복원·스케줄하지 못하게 한다. 이미 잠긴
             // 레거시 행(구버전에서 소유자 없이 잠김)도 여기서 소유권만 backfill 해 복원 가능하게 만든다.
-            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) return@forEach
+            if (!ownedByCurrentSession(alarm, currentUser, ownershipSettled)) return@forEach
             val needsLock = alarm.preLockPlayMode == null
             val needsClaim = alarm.ownerUserId == null
             if (!needsLock && !needsClaim) return@forEach
@@ -715,6 +893,9 @@ class AlarmRepository(
     }
 
     suspend fun reschedulePendingAlarms(recomputeFireTime: Boolean = false): Int {
+        // 예약 전에 소유자를 확정한다 — 이 함수는 로그인 뒤처리·앱 시작·부팅 복구가 모두
+        // 지나는 길목이라, 여기서 한 번 막으면 나머지 경로가 따로 새지 않는다.
+        val ownershipSettled = settlePendingAlarmOwnership()
         val now = System.currentTimeMillis()
         val enabledAlarms = alarmDao.getEnabledAlarms()
         val holidayPredicate = holidayCalendarStore.holidayPredicate(
@@ -723,7 +904,29 @@ class AlarmRepository(
         )
         var scheduled = 0
 
+        val currentUser = currentUserIdProvider()
         enabledAlarms.forEach { alarm ->
+            // 다른 계정이 소유한 알람은 재예약하지 않는다(로그아웃한 앞 계정의 알람이 부팅·
+            // 재로그인 때 되살아나 남의 폰에서 울리는 것 방지). 미기록(null)은 lockPaidAlarmTalks
+            // 와 같은 규칙으로 현재 계정 것으로 본다.
+            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) {
+                // 건너뛰는 데 그치면 앞 세션이 잡아 둔 OS 예약이 살아남아 이 계정 폰에서 울린다.
+                // 특히 소유자 확정이 이 함수 안에서야 성공한 경우, 앞서 돈 cancelAlarmsNotOwnedBy
+                // 는 아직 미기록이던 그 행을 건너뛴 뒤다 — 여기서 내려야 새는 곳이 없다.
+                //
+                // 단 비로그인(currentUser == null)일 때는 내리지 않는다. 자동 401 로 세션만
+                // 끊긴 상태에서도 본인 알람은 계속 울려야 한다 — 알람 전달이 서버 인증 상태에
+                // 묶이면 안 된다(AGENTS.md). 그 정리는 '다른 계정이 실제로 로그인한' 시점에 한다.
+                if (currentUser != null) alarmScheduler.cancel(alarm.id)
+                return@forEach
+            }
+            // 소유자 정리가 실패한 회차에는 미기록 행을 '현재 계정 것'으로 볼 근거가 없다.
+            // 예약을 내려 남의 알람이 울리는 것을 막되 행은 남긴다 — 마커가 보존돼 있어
+            // 다음 회차에 소유자를 새기고 나면 주인에게 다시 예약된다.
+            if (alarm.ownerUserId == null && !ownershipSettled) {
+                alarmScheduler.cancel(alarm.id)
+                return@forEach
+            }
             runCatching {
                 // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
                 // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는
@@ -773,8 +976,21 @@ class AlarmRepository(
         return scheduled
     }
 
-    suspend fun syncWithBackend(api: AlarmTalkApi, token: String): AlarmSyncResult =
-        alarmSyncService.syncWithBackend(api, token)
+    /**
+     * 아직 못 올린 내 알람을 서버에 올린다. **이 세션이 소유한 행만** 올린다 — 이유는
+     * [AlarmSyncService.syncWithBackend] 의 ownerUserId 설명 참고.
+     */
+    suspend fun syncWithBackend(api: AlarmTalkApi, token: String): AlarmSyncResult {
+        // 올리기 전에 임자 미정 행을 확정한다. 확정 전의 null 은 앞 계정 것일 수 있는데,
+        // 그걸 '내 것'으로 보고 올리면 이 계정 서버에 남의 알람이 생긴다.
+        val ownershipSettled = settlePendingAlarmOwnership()
+        return alarmSyncService.syncWithBackend(
+            api = api,
+            token = token,
+            ownerUserId = currentUserIdProvider()?.takeIf { it.isNotBlank() },
+            adoptOwnerlessAlarms = ownershipSettled,
+        )
+    }
 
     suspend fun pullReceivedAlarms(
         api: AlarmTalkApi,
@@ -788,18 +1004,61 @@ class AlarmRepository(
      * 발사는 그 인덱스로 오프라인 lookup. 준비창 워커가 매일(반복 알람 전날) + 저장 직후(runOnce)
      * 호출한다. 항상 동작(오프라인 날씨 매칭 전용).
      */
+    /**
+     * 저장 전에 이 드래프트가 실제로 울릴 날짜의 날씨 variant 를 받아 온다.
+     *
+     * 예전에는 저장한 뒤 워커로 비동기 해결했는데, 그 사이에 알람이 울리면 조건이 미해결이라
+     * '오늘 날씨를 못 받았어요' 안내 클립이 나갔다. 정상(온라인) 상황에서는 고른 그 자리에서
+     * 해결해 알람이 처음부터 맞는 오디오를 갖게 한다.
+     *
+     * 오프라인 등으로 실패하면 null 을 돌려주고 저장은 그대로 진행한다 — 22시 갱신과
+     * 알람 전까지의 재시도가 채운다. 알람을 못 만들게 막지는 않는다.
+     */
+    suspend fun resolveWeatherVariantForDraft(
+        api: AlarmTalkApi,
+        token: String,
+        draft: AlarmDraft,
+    ): Int? {
+        if (draft.bucketId != "weather") return null
+        val now = System.currentTimeMillis()
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
+        // 저장 경로(createAlarm)와 같은 계산으로 발사 시각을 구해야, 해결한 날짜와 실제
+        // 울리는 날짜가 어긋나지 않는다.
+        val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+            hour = draft.hour,
+            minute = draft.minute,
+            repeatDaysMask = draft.repeatDaysMask,
+            holidayOff = draft.holidayOff,
+            nowMillis = now,
+            isHoliday = holidayPredicate,
+        )
+        val zone = java.time.ZoneId.systemDefault()
+        val targetDate = java.time.Instant.ofEpochMilli(fireAtMillis)
+            .atZone(zone)
+            .toLocalDate()
+            .toString()
+        return runCatching {
+            api.getPrerenderVariant(
+                authorization = AlarmTalkApiClient.bearer(token),
+                context = "wake_weather",
+                country = draft.voiceWeatherCountry?.trim()?.takeIf { it.isNotBlank() },
+                city = draft.voiceWeatherCity?.trim()?.takeIf { it.isNotBlank() },
+                targetDate = targetDate,
+                timezone = zone.id,
+            ).variantIndex
+        }.getOrElse { error ->
+            Log.w(TAG, "Pre-save weather variant resolve failed (will retry in background)", error)
+            null
+        }
+    }
+
     suspend fun resolveDueCloneBucketVariants(api: AlarmTalkApi, token: String): Int {
         val now = System.currentTimeMillis()
-        // 준비창 게이트: open-meteo 는 하루 예보라 시간마다 갱신은 무의미하고 쿼터·배터리만 낭비한다.
-        // 아직 미해결(null)이거나 마지막 갱신이 ~12h 이전인 알람만 대상으로 삼아 최대 하루 1~2회로 제한.
-        val staleBefore = now - 12 * 60 * 60 * 1000L
-        // 준비창: 곧(48h 내) 울릴 알람만 대상. open-meteo 는 '오늘' 예보라, 며칠 뒤 울릴 알람을 지금
-        // 오늘 날씨로 스냅샷하면 엉뚱한 조건이 굳는다. 반복 알람의 다음 발사(fireAtMillis)는 보통 창 안이고,
-        // 먼 일회성/주간 알람은 발사 48h 전에야 해결돼 더 신선한 날씨로 매칭된다.
-        val prepareWindow = now + 48 * 60 * 60 * 1000L
         val alarms = alarmDao.getEnabledWeatherBucketAlarms()
-            .filter { it.fireAtMillis <= prepareWindow }
-            .filter { it.contextVariantIndex == null || (it.contextResolvedAtMillis ?: 0L) < staleBefore }
+            .filter { weatherVariantNeedsRefresh(it, now) }
         if (alarms.isEmpty()) return 0
         // 같은 (국가·도시)는 1회만 호출(open-meteo 중복 요청·배터리·쿼터 절약).
         val zone = java.time.ZoneId.systemDefault()
@@ -858,6 +1117,13 @@ class AlarmRepository(
      * 어떤 알람도 참조하지 않고 30일 넘게 손대지 않은 캐시 음성 파일을 정리한다.
      * 앱 시작 시 백그라운드에서 1회 호출되는 것을 전제로 한다.
      */
+    /**
+     * 아직 조건을 못 받은 날씨 알람이 남아 있는가 — 1시간 뒤 재시도를 걸지 정한다.
+     * 받아 낸 알람은 곧바로 대상에서 빠지므로, 성공한 뒤에는 재시도가 이어지지 않는다.
+     */
+    suspend fun hasFailedWeatherRefresh(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        alarmDao.getEnabledWeatherBucketAlarms().any { weatherVariantNeedsRefresh(it, nowMillis) }
+
     suspend fun sweepStaleAudioCache(): Int {
         val inUseFileNames = buildSet {
             alarmDao.getAllAlarms().forEach { alarm ->
@@ -895,7 +1161,15 @@ class AlarmRepository(
     }
 
     private suspend fun requireUniqueTime(hour: Int, minute: Int, excludeAlarmId: String? = null) {
-        require(alarmDao.countAtTime(hour, minute, excludeAlarmId) == 0) {
+        // 충돌 판정 대상은 '이 계정에 보이는 알람'이어야 한다 — 안 보이는 앞 계정 알람으로
+        // 시각을 막으면 사용자가 풀 방법이 없다(AlarmDao.countAtTime 주석 참고).
+        val conflicts = alarmDao.countAtTime(
+            hour = hour,
+            minute = minute,
+            callerUserId = currentUserIdProvider(),
+            excludeId = excludeAlarmId,
+        )
+        require(conflicts == 0) {
             context.getString(R.string.rd_duplicate_alarm_time_message)
         }
     }
@@ -915,7 +1189,14 @@ class AlarmRepository(
         excludeAlarmId: String?,
         replaceExisting: Boolean,
     ): AlarmEntity? {
-        val existing = alarmDao.findAtTime(hour, minute, excludeAlarmId) ?: return null
+        // 교체 대상도 '이 계정에 보이는 알람'만이다. 앞 계정 알람을 고르면 사용자가 본 적도
+        // 없는 알람과 그 음성 캐시를 지우게 되는데, 내 알람은 서버에서 되받는 경로가 없다.
+        val existing = alarmDao.findAtTime(
+            hour = hour,
+            minute = minute,
+            callerUserId = currentUserIdProvider(),
+            excludeId = excludeAlarmId,
+        ) ?: return null
         if (!replaceExisting) {
             throw DuplicateAlarmTimeException(
                 existingAlarmId = existing.id,
@@ -1057,6 +1338,48 @@ internal fun shouldResetWeatherVariant(
         fireDateChanged
 }
 
+/**
+ * 이 날씨 알람의 조건을 지금 다시 받아야 하는가.
+ *
+ *  - 준비창(48h): open-meteo 는 며칠 뒤 예보의 정확도가 떨어지므로 곧 울릴 알람만 대상.
+ *  - 임박(24h): 신선도 게이트를 무시하고 무조건 다시 받는다. 갱신이 하루 한 번(22시)이라,
+ *    12h 게이트를 그대로 두면 '오늘 낮에 해결됨 → 22시엔 신선하다고 건너뜀 → 내일 아침
+ *    알람이 어제 조건으로 울림'이 된다. 임박한 알람은 한 번 더 받는 편이 항상 옳다.
+ *  - 그 밖: 미해결이거나 마지막 갱신이 12h 이전이면 대상(먼 알람의 과다 호출 방지).
+ */
+/**
+ * 이 날씨 알람의 조건을 지금 받아야 하는가 — **한 발사분에 한 번만** 받는다.
+ *
+ *  - 준비창(48h) 밖이면 대상이 아니다. open-meteo 는 며칠 뒤 예보의 정확도가 떨어져,
+ *    지금 굳히면 엉뚱한 조건이 박힌다.
+ *  - 아직 못 받았으면 받는다.
+ *  - 이미 받았고 발사까지 24시간 넘게 남았으면 그대로 둔다.
+ *  - 임박(24h)했는데 그 값이 '이 발사분의 것'이 아니면 다시 받는다. 판정 기준은
+ *    "발사 24시간 이내에 받았는가" — 반복 알람이 한 번 울리고 다음 날로 넘어가면 옛 값은
+ *    자연히 이 조건에서 벗어나므로, 별도 상태 없이 발사분마다 정확히 한 번 갱신된다.
+ *
+ * 재시도 예약도 이 술어를 그대로 쓴다. 받아 낸 순간 조건을 벗어나므로, 성공한 알람에
+ * 시간당 재시도가 이어지지 않는다.
+ */
+internal fun weatherVariantNeedsRefresh(alarm: AlarmEntity, nowMillis: Long): Boolean {
+    if (alarm.fireAtMillis > nowMillis + WEATHER_PREPARE_WINDOW_MILLIS) return false
+    // 이미 지난 발사분은 준비할 게 없다. 울리는 중이거나 놓친 알람은 해제 전까지 enabled 로
+    // 남는데, 그 사이 조건 해결이 계속 실패하면 미해결 분기에 걸려 hasFailedWeatherRefresh 가
+    // 시간당 재시도를 무한정 다시 걸고 서버를 두드린다. 반복 알람은 재예약이 다음 발생으로
+    // 밀어 주고, 놓친 일회성은 재예약이 끄므로 여기서 걸러도 잃는 갱신이 없다.
+    if (alarm.fireAtMillis <= nowMillis) return false
+    if (alarm.contextVariantIndex == null) return true
+    if (alarm.fireAtMillis > nowMillis + WEATHER_RESOLVE_VALID_WINDOW_MILLIS) return false
+    return (alarm.contextResolvedAtMillis ?: 0L) <
+        alarm.fireAtMillis - WEATHER_RESOLVE_VALID_WINDOW_MILLIS
+}
+
+/** 준비창: 며칠 뒤 예보로 조건을 굳히면 엉뚱해지므로 곧 울릴 알람만 대상으로 삼는다. */
+private const val WEATHER_PREPARE_WINDOW_MILLIS = 48 * 60 * 60 * 1000L
+
+/** 이 발사분의 조건으로 인정하는 범위 — 발사 24시간 이내에 받은 값. */
+private const val WEATHER_RESOLVE_VALID_WINDOW_MILLIS = 24 * 60 * 60 * 1000L
+
 internal data class WeatherVariantState(
     val index: Int?,
     val resolvedAtMillis: Long?,
@@ -1068,8 +1391,17 @@ internal fun nextWeatherVariantState(
     currentIndex: Int?,
     draftIndex: Int?,
     currentResolvedAtMillis: Long?,
+    draftResolvedNow: Boolean = false,
 ): WeatherVariantState = when {
+    // 새로 받아 온 값이 reset 보다 먼저다. 날짜·지역·목소리를 바꾼 편집이야말로 reset 이
+    // 켜지는 경우인데, 그때 버려 버리면 저장 전에 받아 온 의미가 없어진다 — 워커가 돌기
+    // 전에 울리면 '못 받았어요' 클립이 나간다. 이 값은 이미 새 조건으로 받은 것이다.
+    nextBucketId == "weather" && draftResolvedNow && draftIndex != null -> WeatherVariantState(
+        index = draftIndex,
+        resolvedAtMillis = System.currentTimeMillis(),
+    )
     resetWeatherVariant -> WeatherVariantState(index = null, resolvedAtMillis = null)
+    // 편집기에서 그대로 실려 온 옛 스냅샷은 쓰지 않는다 — 저장된 최신 값을 덮어쓰면 안 된다.
     nextBucketId == "weather" -> WeatherVariantState(
         index = currentIndex,
         resolvedAtMillis = currentResolvedAtMillis,

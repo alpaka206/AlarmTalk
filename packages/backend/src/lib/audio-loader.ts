@@ -30,7 +30,7 @@ export type AudioAccess =
    */
   | { kind: 'trusted' }
   /**
-   * 클라이언트가 제공한 audio_url(예: notes.audio_url, alarm.raw_audio_url).
+   * 클라이언트가 제공한 audio_url(예: alarm.raw_audio_url).
    * r2:// 키의 소유자 segment 가 ownerIds 중 하나와 일치해야 한다.
    */
   | { kind: 'owner'; ownerIds: string[] };

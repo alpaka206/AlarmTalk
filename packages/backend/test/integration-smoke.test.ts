@@ -62,15 +62,6 @@ describe('Health & Public Routes', () => {
     expect(body.db).toBe('error');
   });
 
-  it('GET /api/tts/presets → 200 프리셋 목록 (인증 불필요)', async () => {
-    const res = await fetchApp('GET', '/api/tts/presets');
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.presets).toBeDefined();
-    expect(Array.isArray(body.presets)).toBe(true);
-    expect(body.presets.length).toBeGreaterThan(0);
-  });
-
   it('POST /api/init-db → 시크릿 미설정(비프로덕션)이면 404 (익명 차단)', async () => {
     // FIX 8: canRunInitDb 는 모든 환경에서 x-init-db-secret 를 요구한다.
     // INIT_DB_SECRET 가 설정돼 있지 않으면 비프로덕션이라도 거부한다.
@@ -136,12 +127,7 @@ describe('Protected Routes — 인증 없이 요청 시 401', () => {
     ['GET', '/api/voice'],
     ['GET', '/api/tts/generate'],
     ['GET', '/api/alarm'],
-    ['GET', '/api/user/me'],
     ['GET', '/api/library'],
-    ['GET', '/api/friend'],
-    ['GET', '/api/gift/received'],
-    ['GET', '/api/stats'],
-    ['GET', '/api/dub/languages'],
     ['GET', '/api/billing/vouchers'],
     ['GET', '/api/family/group'],
     ['POST', '/api/code/register'],

@@ -120,7 +120,6 @@ function buildApp() {
   app.use('*', consentMiddleware);
   app.get('/api/alarm', (c) => c.json({ ok: 'data-route' }));
   app.post('/api/voice/clone', (c) => c.json({ ok: 'clone' }));
-  app.get('/api/user/me', (c) => c.json({ ok: 'me' }));
   app.get('/api/user/consents/status', (c) => c.json({ ok: 'status' }));
   app.post('/api/user/consents', (c) => c.json({ ok: 'record' }));
   app.delete('/api/user/me/deletion', (c) => c.json({ ok: 'cancel-deletion' }));
@@ -161,7 +160,6 @@ describe('consentMiddleware — 데이터 라우트 게이트 (B4)', () => {
   });
 
   it.each([
-    ['GET', '/api/user/me'],
     ['GET', '/api/user/consents/status'],
     ['POST', '/api/user/consents'],
     ['DELETE', '/api/user/me/deletion'],

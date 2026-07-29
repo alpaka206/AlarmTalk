@@ -80,10 +80,9 @@ describe('normalizeAlarmRow', () => {
     expect(normalizeAlarmRow({ ...base, wake_mode: 'voice_only' }).wake_mode).toBe('voice_only');
   });
 
-  it('nullifies missing voice_profile_id and speaker_id', () => {
+  it('nullifies missing voice_profile_id', () => {
     const r = normalizeAlarmRow({ ...base });
     expect(r.voice_profile_id).toBeNull();
-    expect(r.speaker_id).toBeNull();
   });
 
   it('detects family alarm from category', () => {
@@ -170,10 +169,9 @@ describe('normalizeAlarmRow', () => {
     expect(normalizeAlarmRow({ ...base, is_active: undefined }).is_active).toBe(false);
   });
 
-  it('preserves valid voice_profile_id and speaker_id strings', () => {
-    const r = normalizeAlarmRow({ ...base, voice_profile_id: 'vp-1', speaker_id: 'sp-2' });
+  it('preserves valid voice_profile_id strings', () => {
+    const r = normalizeAlarmRow({ ...base, voice_profile_id: 'vp-1' });
     expect(r.voice_profile_id).toBe('vp-1');
-    expect(r.speaker_id).toBe('sp-2');
   });
 
   it('treats non-string category as non-family', () => {
@@ -260,12 +258,7 @@ describe('validateAlarmFields', () => {
     expect(validateAlarmFields({ voice_profile_id: null })).toBeNull();
   });
 
-  it('rejects invalid speaker_id but allows null', () => {
-    expect(validateAlarmFields({ speaker_id: 'bad' })?.error_code).toBe('INVALID_SPEAKER_ID');
-    expect(validateAlarmFields({ speaker_id: null })).toBeNull();
-  });
-
-  it('rejects malformed time', () => {
+it('rejects malformed time', () => {
     expect(validateAlarmFields({ time: '9:00' })?.error_code).toBe('INVALID_TIME_FORMAT');
     expect(validateAlarmFields({ time: '123:00' })?.error_code).toBe('INVALID_TIME_FORMAT');
   });
@@ -328,14 +321,12 @@ describe('validateAlarmFields', () => {
     expect(validateAlarmFields({ snooze_minutes: -Infinity })?.error_code).toBe('INVALID_SNOOZE_MINUTES');
   });
 
-  it('passes when voice_profile_id/speaker_id are undefined', () => {
+  it('passes when voice_profile_id are undefined', () => {
     expect(validateAlarmFields({ voice_profile_id: undefined })).toBeNull();
-    expect(validateAlarmFields({ speaker_id: undefined })).toBeNull();
   });
 
-  it('rejects empty string voice_profile_id and speaker_id', () => {
+  it('rejects empty string voice_profile_id', () => {
     expect(validateAlarmFields({ voice_profile_id: '' })?.error_code).toBe('INVALID_VOICE_PROFILE_ID');
-    expect(validateAlarmFields({ speaker_id: '' })?.error_code).toBe('INVALID_SPEAKER_ID');
   });
 
   it('returns first error when multiple fields invalid (validation priority)', () => {
@@ -355,7 +346,6 @@ describe('validateAlarmFields', () => {
       vibration_pattern: 'strong',
       wake_mode: 'voice_only',
       voice_profile_id: '12345678-1234-1234-1234-123456789012',
-      speaker_id: '12345678-1234-1234-1234-123456789012',
       time: '07:30',
       repeat_days: [0, 1, 2, 3, 4, 5, 6],
       snooze_minutes: 15,

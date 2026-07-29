@@ -7,9 +7,7 @@ import java.util.TimeZone
 
 object RemoteAlarmMapper {
     fun toWriteRequest(alarm: AlarmEntity): RemoteAlarmWriteRequest {
-        val rawAudioUrl = alarm.rawAudioUri?.takeIf(::isRemoteAudioUrl)
-            ?.takeUnless { alarm.ttsMessageId != null }
-        val hasRemoteVoice = alarm.ttsMessageId != null || rawAudioUrl != null
+        val hasRemoteVoice = alarm.ttsMessageId != null
         return RemoteAlarmWriteRequest(
             time = String.format(java.util.Locale.US, "%02d:%02d", alarm.hour, alarm.minute),
             repeatDays = repeatMaskToDays(alarm.repeatDaysMask),
@@ -25,8 +23,6 @@ object RemoteAlarmMapper {
             voiceProfileId = alarm.voiceProfileId
                 .takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO }
                 .trimmedOrNull(),
-            rawAudioUrl = rawAudioUrl,
-            rawAudioDurationMs = null,
             targetUserId = null,
             timezone = TimeZone.getDefault().id,
             bucketId = alarm.bucketId.trimmedOrNull(),

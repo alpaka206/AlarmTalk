@@ -146,6 +146,7 @@ internal fun WakerSheetOptionGroup(
  * 선택 표시는 '선택된 행에만' 체크(✓) — 미선택 행은 아무 표시 없음(iOS 정석). 선택 상태가 없는
  * 액션 시트(예: 누구를 깨울까요, selected=false 고정)는 자연히 표시가 없다.
  * trailing 은 선택 표시 바로 앞의 상태 슬롯 — 기본 목소리 시트의 재생 이퀄라이저 등.
+ * destructive=true 는 되돌릴 수 없는 액션(삭제)의 제목을 error 색으로 — IosAlertAction 과 같은 문법.
  * 반드시 [WakerSheetOptionGroup] 안에서 쓰고, 마지막 행이 아니면 divider=true 로 헤어라인을 잇는다.
  */
 @Composable
@@ -159,6 +160,7 @@ internal fun WakerSheetOptionRow(
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     divider: Boolean = false,
+    destructive: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
     val hasLeading = leading != null || icon != null
@@ -189,7 +191,7 @@ internal fun WakerSheetOptionRow(
                     text = title,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = scheme.onSurface,
+                    color = if (destructive) scheme.error else scheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

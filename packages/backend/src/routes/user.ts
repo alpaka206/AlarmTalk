@@ -3,21 +3,19 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import {
-  deletePaidVoiceDataForUser,
   deleteSensitiveVoiceDataForUser,
+  type DowngradedAlarm,
 } from '../lib/paid-voice-cleanup';
+import { notifyDowngradedAlarms } from '../lib/fcm';
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
 import {
-  familyAlarmSettingsFromRow,
+  normalizeQuietWindows,
   validateQuietDays,
   validateQuietTime,
   validateQuietWindows,
 } from '../lib/family-alarm-settings';
-import {
-  dynamicPromptSettingsFromRow,
-  validateDynamicPromptSettings,
-} from '../lib/dynamic-prompt-settings';
+import { validateDynamicPromptSettings } from '../lib/dynamic-prompt-settings';
 import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
@@ -26,68 +24,6 @@ import {
 } from '../lib/consent';
 
 const user = new Hono<AppEnv>();
-
-user.get('/me', async (c) => {
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-
-  try {
-    // userId is the JWT sub (= users.google_id). Auth middleware guarantees
-    // the row exists. The legacy INSERT branch (referencing the long-gone
-    // firebase_uid column) is removed.
-    const result = await db.execute({
-      sql: 'SELECT * FROM users WHERE google_id = ?',
-      args: [userId],
-    });
-
-    if (result.rows.length === 0) {
-      return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-    }
-
-    const u = result.rows[0]!;
-    // 계정 연동으로 JWT sub(userId) 와 users.id(userPk) 가 다를 수 있으므로, 목록
-    // API(alarm-query viewerIds/voice-profile ownerIds)와 동일하게 두 식별자 집합으로
-    // 카운트한다. sub≠users.id 계정에서 통계가 0 으로 과소집계되는 문제를 막는다.
-    const userPk = c.get('userIdPK') || userId;
-    const idSet = Array.from(new Set([userPk, userId]));
-    const idPh = idSet.map(() => '?').join(',');
-    const [profileCount, alarmCount] = await Promise.all([
-      db.execute({
-        sql: `SELECT COUNT(*) as count FROM voice_profiles WHERE user_id IN (${idPh}) AND deleted_at IS NULL`,
-        args: idSet,
-      }),
-      db.execute({
-        sql: `SELECT COUNT(*) as count FROM alarms WHERE user_id IN (${idPh})`,
-        args: idSet,
-      }),
-      db.execute({
-        sql: "UPDATE users SET last_active_at = datetime('now') WHERE google_id = ?",
-        args: [userId],
-      }),
-    ]);
-
-    const familyAlarmSettings = familyAlarmSettingsFromRow(u as Record<string, unknown>);
-    const dynamicPromptSettings = dynamicPromptSettingsFromRow(u as Record<string, unknown>);
-    return c.json({
-      user: {
-        ...u,
-        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
-        family_alarm_quiet_days: familyAlarmSettings.quietDays,
-        family_alarm_quiet_start: familyAlarmSettings.quietStart,
-        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
-        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
-        dynamic_prompt_settings: dynamicPromptSettings,
-      },
-      stats: {
-        voice_profiles: Number(profileCount.rows[0]?.count ?? 0),
-        alarms: Number(alarmCount.rows[0]?.count ?? 0),
-      },
-    });
-  } catch (err) {
-    logRouteError(c, err);
-    return c.json({ error: 'Failed to fetch user info', error_code: 'FETCH_USER_FAILED' }, 500);
-  }
-});
 
 function toBoolFlag(raw: unknown): 0 | 1 | null {
   if (raw === true || raw === 1 || raw === '1' || raw === 'true') return 1;
@@ -150,6 +86,9 @@ user.patch('/me', async (c) => {
     resolvedFlag = flag;
   }
 
+  // 저장은 family_alarm_quiet_windows(JSON) 하나로 일원화한다 — 과거의 단일 필드 3컬럼(#29)은
+  // windows[0] 을 그대로 베낀 미러였고 #83 에서 제거됐다. API 계약(입력·출력)은 그대로 유지해
+  // windows 없이 3필드만 보내는 클라이언트도 계속 동작하게 한다(그 경우 한 창으로 합성해 저장).
   const hasQuietWindows =
     'family_alarm_quiet_windows' in body && body.family_alarm_quiet_windows !== undefined;
   let resolvedQuietWindows: { days: number[]; start: string; end: string }[] | null = null;
@@ -171,76 +110,80 @@ user.patch('/me', async (c) => {
     const firstWindow = windows[0] ?? { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' };
     updates.push('family_alarm_quiet_windows = ?');
     args.push(JSON.stringify(windows));
-    updates.push('family_alarm_quiet_days = ?');
-    args.push(JSON.stringify(firstWindow.days));
-    updates.push('family_alarm_quiet_start = ?');
-    args.push(firstWindow.start);
-    updates.push('family_alarm_quiet_end = ?');
-    args.push(firstWindow.end);
     resolvedQuietWindows = windows;
     resolvedQuietDays = firstWindow.days;
     resolvedQuietStart = firstWindow.start;
     resolvedQuietEnd = firstWindow.end;
-  }
+  } else {
+    // 레거시 입력 경로: 온 필드만 검증한 뒤 현재 windows[0] 위에 덮어써 단일 창으로 합성한다
+    // (부분 업데이트가 나머지 값을 잃지 않게 한다).
+    const hasLegacyDays =
+      'family_alarm_quiet_days' in body && body.family_alarm_quiet_days !== undefined;
+    const hasLegacyStart =
+      'family_alarm_quiet_start' in body && body.family_alarm_quiet_start !== undefined;
+    const hasLegacyEnd =
+      'family_alarm_quiet_end' in body && body.family_alarm_quiet_end !== undefined;
 
-  if (
-    !hasQuietWindows &&
-    'family_alarm_quiet_days' in body &&
-    body.family_alarm_quiet_days !== undefined
-  ) {
-    const days = validateQuietDays(body.family_alarm_quiet_days);
-    if (days === null) {
-      return c.json(
-        {
-          error: 'family_alarm_quiet_days 는 0~6 숫자 배열이어야 합니다',
-          error_code: 'INVALID_QUIET_DAYS',
-        },
-        400,
-      );
+    if (hasLegacyDays) {
+      const days = validateQuietDays(body.family_alarm_quiet_days);
+      if (days === null) {
+        return c.json(
+          {
+            error: 'family_alarm_quiet_days 는 0~6 숫자 배열이어야 합니다',
+            error_code: 'INVALID_QUIET_DAYS',
+          },
+          400,
+        );
+      }
+      resolvedQuietDays = days;
     }
-    updates.push('family_alarm_quiet_days = ?');
-    args.push(JSON.stringify(days));
-    resolvedQuietDays = days;
-  }
+    if (hasLegacyStart) {
+      const time = validateQuietTime(body.family_alarm_quiet_start);
+      if (time === null) {
+        return c.json(
+          {
+            error: 'family_alarm_quiet_start 는 HH:mm 형식이어야 합니다',
+            error_code: 'INVALID_QUIET_TIME',
+          },
+          400,
+        );
+      }
+      resolvedQuietStart = time;
+    }
+    if (hasLegacyEnd) {
+      const time = validateQuietTime(body.family_alarm_quiet_end);
+      if (time === null) {
+        return c.json(
+          {
+            error: 'family_alarm_quiet_end 는 HH:mm 형식이어야 합니다',
+            error_code: 'INVALID_QUIET_TIME',
+          },
+          400,
+        );
+      }
+      resolvedQuietEnd = time;
+    }
 
-  if (
-    !hasQuietWindows &&
-    'family_alarm_quiet_start' in body &&
-    body.family_alarm_quiet_start !== undefined
-  ) {
-    const time = validateQuietTime(body.family_alarm_quiet_start);
-    if (time === null) {
-      return c.json(
-        {
-          error: 'family_alarm_quiet_start 는 HH:mm 형식이어야 합니다',
-          error_code: 'INVALID_QUIET_TIME',
-        },
-        400,
-      );
+    if (hasLegacyDays || hasLegacyStart || hasLegacyEnd) {
+      const currentRow = await db.execute({
+        sql: 'SELECT family_alarm_quiet_windows FROM users WHERE google_id = ? OR id = ? LIMIT 1',
+        args: [userId, userId],
+      });
+      const current = normalizeQuietWindows(currentRow.rows[0]?.family_alarm_quiet_windows);
+      const base = current[0] ?? { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' };
+      const merged = {
+        days: resolvedQuietDays ?? base.days,
+        start: resolvedQuietStart ?? base.start,
+        end: resolvedQuietEnd ?? base.end,
+      };
+      const windows = [merged, ...current.slice(1)];
+      updates.push('family_alarm_quiet_windows = ?');
+      args.push(JSON.stringify(windows));
+      resolvedQuietWindows = windows;
+      resolvedQuietDays = merged.days;
+      resolvedQuietStart = merged.start;
+      resolvedQuietEnd = merged.end;
     }
-    updates.push('family_alarm_quiet_start = ?');
-    args.push(time);
-    resolvedQuietStart = time;
-  }
-
-  if (
-    !hasQuietWindows &&
-    'family_alarm_quiet_end' in body &&
-    body.family_alarm_quiet_end !== undefined
-  ) {
-    const time = validateQuietTime(body.family_alarm_quiet_end);
-    if (time === null) {
-      return c.json(
-        {
-          error: 'family_alarm_quiet_end 는 HH:mm 형식이어야 합니다',
-          error_code: 'INVALID_QUIET_TIME',
-        },
-        400,
-      );
-    }
-    updates.push('family_alarm_quiet_end = ?');
-    args.push(time);
-    resolvedQuietEnd = time;
   }
 
   if ('dynamic_prompt_settings' in body && body.dynamic_prompt_settings !== undefined) {
@@ -266,7 +209,7 @@ user.patch('/me', async (c) => {
   args.push(userId);
   const result = await db.execute({
     sql: `UPDATE users SET ${updates.join(', ')}, updated_at = datetime('now')
-          WHERE google_id = ?`,
+          WHERE id = ?`,
     args,
   });
   if (result.rowsAffected === 0) {
@@ -285,69 +228,19 @@ user.patch('/me', async (c) => {
   });
 });
 
-user.patch('/plan', async (c) => {
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-
-  try {
-    const body = await c.req.json<{ plan: 'free' | 'plus' | 'family' }>();
-
-    if (!['free', 'plus', 'family'].includes(body.plan)) {
-      return c.json({ error: 'Invalid plan', error_code: 'INVALID_PLAN' }, 400);
-    }
-    // 보안: 유료 승격(plus/family)은 반드시 결제 검증(store-billing) 또는 바우처
-    // 사용(voucher redemption) 경로로만 이뤄져야 한다. 이 self-service 엔드포인트는
-    // 본인 강등(free)만 허용하고, 무결제 플랜 승격(페이월 우회)을 차단한다.
-    if (body.plan !== 'free') {
-      return c.json(
-        {
-          error: 'Plan upgrades require a verified purchase or voucher',
-          error_code: 'PLAN_UPGRADE_NOT_ALLOWED',
-        },
-        403,
-      );
-    }
-
-    const result = await withWriteTransaction(db, async (tx) => {
-      const update = await tx.execute({
-        sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE google_id = ?`,
-        args: [body.plan, userId],
-      });
-      if (update.rowsAffected === 0) return update;
-      if (body.plan === 'free') {
-        const userRes = await tx.execute({
-          sql: `SELECT id FROM users WHERE google_id = ? LIMIT 1`,
-          args: [userId],
-        });
-        const userPk = userRes.rows[0]?.id;
-        if (typeof userPk === 'string') {
-          await deletePaidVoiceDataForUser(tx, userPk, userId);
-        }
-      }
-      return update;
-    });
-    if (result.rowsAffected === 0) {
-      return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
-    }
-
-    return c.json({ success: true, plan: body.plan });
-  } catch (err) {
-    logRouteError(c, err);
-    return c.json({ error: 'Failed to update plan', error_code: 'UPDATE_PLAN_FAILED' }, 500);
-  }
-});
-
 user.delete('/me', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
 
   try {
-    // apple_id 도 함께 매칭한다. Apple 로그인 사용자의 JWT sub 는 google_id 가 아닌
-    // apple_id 컬럼에만 저장돼 있을 수 있어, 누락하면 userPk 가 null 이 되어 자식
-    // PII(생체 음성 등)가 고아로 남는다(auth.ts:94 의 조회 조건과 동일하게 맞춤).
+    // 토큰이 담고 있던 로그인 식별자. userId 는 미들웨어가 users.id 로 정규화하므로,
+    // 통일 이전에 user_id 컬럼에 로그인 식별자가 저장된 자식 데이터(알람·메시지·목소리·
+    // 생성 오디오·R2 삭제 큐)까지 지우려면 이 값을 함께 넘겨야 한다. 빠뜨리면 users 행만
+    // 지워지고 나머지 PII 가 고아로 남는다(유예 파기 cron 은 row.google_id 를 읽어 이걸 피한다).
+    const userLoginId = c.get('userLoginId') || userId;
     const userRes = await db.execute({
-      sql: `SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ? LIMIT 1`,
-      args: [userId, userId, userId],
+      sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
+      args: [userLoginId, userId],
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
 
@@ -364,7 +257,7 @@ user.delete('/me', async (c) => {
       if (userPk) {
         await pseudonymizeBillingForRetention(tx, userPk, pepper, now);
       }
-      await purgeUserAccount(tx, userPk, userId);
+      await purgeUserAccount(tx, userPk, userLoginId);
     });
 
     return c.json({ success: true });
@@ -412,6 +305,21 @@ user.post('/consents', async (c) => {
     });
   }
   try {
+    // 동의 철회로 강등된 알람들 — 커밋 후에 신호를 보내야 한다(롤백될 수 있는 변경을
+    // 미리 알리지 않는다). 보관 만료 스윕과 같은 이유로 알람 동기화 신호가 필요하다:
+    // 서버가 수신자의 가족알람을 sound-only 로 내리고 R2 오브젝트를 지워도, 신호가
+    // 없으면 수신자는 다음 폴백 pull 까지 캐시된 녹음으로 계속 울린다.
+    // 같은 유형이 여러 번 담겨 오면 **마지막 값이 유효 동의**다(GET /consents 가 삽입 순서
+    // 역순으로 최신을 고른다). 그러니 철회 판정도 마지막 값으로 해야 한다 — 'false 가 하나라도
+    // 있으면'으로 보면 [false, true] 처럼 결국 동의한 요청에도 민감 음성 데이터를 되돌릴 수 없게
+    // 지워 버린다.
+    const finalAgreedByType = new Map<string, boolean>();
+    for (const r of rows) finalAgreedByType.set(r.type, r.agreed);
+    const withdrewSensitiveConsent = SENSITIVE_REQUIRED_CONSENTS.some(
+      (type) => finalAgreedByType.get(type) === false,
+    );
+
+    let downgradedAlarms: DowngradedAlarm[] = [];
     await withWriteTransaction(db, async (tx) => {
       for (const r of rows) {
         await tx.execute({
@@ -420,14 +328,19 @@ user.post('/consents', async (c) => {
           args: [crypto.randomUUID(), userPk, r.type, r.version, r.agreed ? 1 : 0],
         });
       }
-      if (
-        rows.some(
-          (row) => !row.agreed && SENSITIVE_REQUIRED_CONSENTS.some((type) => type === row.type),
-        )
-      ) {
-        await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userId'));
+      if (withdrewSensitiveConsent) {
+        downgradedAlarms = await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userLoginId'));
       }
     });
+    // 철회했으면 알람 행을 못 찾았어도 이 계정에 목소리 접근권 상실을 알린다 — 서버에 아직
+    // 동기화되지 않은 로컬 알람은 여기서 안 잡히는데, 발사는 로컬이고 울림 시점 동의 게이트도
+    // 없어 그 기기는 지워진 녹음으로 계속 울린다.
+    await notifyDowngradedAlarms(
+      db,
+      c.env,
+      downgradedAlarms,
+      withdrewSensitiveConsent ? [userPk] : [],
+    );
     return c.json({ success: true, recorded: rows.length });
   } catch (err) {
     logRouteError(c, err);
@@ -563,43 +476,6 @@ user.delete('/me/deletion', async (c) => {
       { error: 'Failed to cancel deletion', error_code: 'DELETION_CANCEL_FAILED' },
       500,
     );
-  }
-});
-
-user.get('/search', async (c) => {
-  const userId = c.get('userId');
-  const db = getDB(c.env);
-  const q = (c.req.query('q') || '').trim();
-
-  // PII 하베스팅 방지: 너무 짧은 질의로 광범위하게 긁지 못하도록 최소 4자를 요구한다.
-  if (q.length < 4) {
-    return c.json({ users: [] });
-  }
-
-  try {
-    // 부분 문자열('%q%') 대신 접두(prefix) 매칭만 허용해 무차별 수집을 줄인다.
-    // LIKE 와일드카드(%,_) 는 리터럴로 이스케이프한다.
-    const escaped = q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-    const result = await db.execute({
-      sql: `SELECT google_id, name, picture FROM users
-            WHERE google_id != ? AND email LIKE ? ESCAPE '\\'
-            LIMIT 10`,
-      args: [userId, `${escaped}%`],
-    });
-
-    return c.json({
-      // 다른 사용자의 email 은 절대 반환하지 않는다(PII). iOS/Android 의
-      // UserSearchResult.email 은 옵셔널이라 null 로 두어도 디코딩이 깨지지 않는다.
-      users: result.rows.map((r) => ({
-        id: r.google_id,
-        email: null,
-        name: r.name,
-        picture: r.picture,
-      })),
-    });
-  } catch (err) {
-    logRouteError(c, err);
-    return c.json({ error: 'Search failed', error_code: 'SEARCH_FAILED' }, 500);
   }
 });
 

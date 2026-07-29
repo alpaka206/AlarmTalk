@@ -22,7 +22,6 @@ const ENV: Env = {
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',
   GOOGLE_CLIENT_ID: 'test-google-client-id',
-  APPLE_CLIENT_ID: 'com.voicealarm.nativeapp.ios',
   JWT_SECRET: 'test-secret-32-chars-or-longer!',
   PASSWORD_PEPPER: 'pepper',
   ENVIRONMENT: 'test',
@@ -34,9 +33,10 @@ function buildApp() {
   app.get('/protected', (c) =>
     c.json({
       userId: c.get('userId'),
+      userIdPK: c.get('userIdPK'),
+      userLoginId: c.get('userLoginId'),
       userEmail: c.get('userEmail'),
       userName: c.get('userName'),
-      userPicture: c.get('userPicture'),
     }),
   );
   return app;
@@ -146,11 +146,37 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.userId).toBe('user-1');
-    expect(body.userEmail).toBe('test@test.com');
-    expect(body.userName).toBe('Test');
-    expect(body.userPicture).toBe('');
-    expect(mockVerifyAppJwt).toHaveBeenCalledWith(token, ENV.JWT_SECRET);
+    // userId 는 토큰의 sub 이 아니라 DB 에서 해석한 users.id 다. 이 브랜치 배포 전에
+    // 발급돼 sub 이 google_id 인 구 토큰도 여기서 PK 로 맞춰야, users.id 로만 조회하는
+    // 하류 경로(구독·가족 그룹·코드 등록)에서 자기 데이터를 찾을 수 있다.
+    expect(body.userId).toBe('pk-1');
+    expect(body.userIdPK).toBe('pk-1');
+    // 토큰이 담고 있던 로그인 식별자는 레거시 행 보조 매칭용으로 따로 남는다.
+    expect(body.userLoginId).toBe('user-1');
+  });
+
+  it('구글 계정이면 호환 식별자로 DB 의 google_id 를 쓴다', async () => {
+    // sub 은 이제 항상 users.id 라, 재로그인한 구글 사용자는 sub 만으로 옛 google_id 를
+    // 알 수 없다. 그러면 user_id 에 google_id 가 저장된 과거 행을 영영 못 찾는다.
+    const token = fakeToken({ iss: 'voice-alarm', sub: 'pk-1', email: 'g@test.com', name: 'G' });
+    mockVerifyAppJwt.mockResolvedValue({
+      sub: 'pk-1',
+      email: 'g@test.com',
+      name: 'G',
+      iss: 'voice-alarm',
+      aud: 'voice-alarm-clients',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    mockDbExecute.mockResolvedValue({
+      rows: [{ id: 'pk-1', google_id: 'google-123', deletion_status: 'active', token_epoch: 0 }],
+      rowsAffected: 0,
+    });
+
+    const res = await reqWithEnv(buildApp(), req(`Bearer ${token}`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.userId).toBe('pk-1');
+    expect(body.userLoginId).toBe('google-123');
   });
 
   it('앱 JWT 검증 실패 시 401', async () => {
@@ -234,9 +260,9 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
   });
 });
 
-// B5: provider(Google/Apple) ID 토큰을 Bearer 로 직접 들고 오는 경로는 제거됐다.
+// B5: provider(Google) ID 토큰을 Bearer 로 직접 들고 오는 경로는 제거됐다.
 // 이제 authMiddleware 는 자체 발급 앱 JWT 만 받으며, 모든 토큰은 verifyAppJwt 로만
-// 검증된다. provider 토큰 교환은 /auth/google·/auth/apple 에서만 이뤄진다.
+// 검증된다. provider 토큰 교환은 /auth/google 에서만 이뤄진다.
 describe('authMiddleware — provider ID 토큰 직접 수용 거부 (app-JWT-only)', () => {
   it('Google ID 토큰을 직접 들고 오면 verifyAppJwt 가 거부 → 401', async () => {
     const token = fakeToken({
@@ -259,25 +285,7 @@ describe('authMiddleware — provider ID 토큰 직접 수용 거부 (app-JWT-on
     expect(mockVerifyAppJwt).toHaveBeenCalledWith(token, ENV.JWT_SECRET);
   });
 
-  it('Apple ID 토큰을 직접 들고 오면 verifyAppJwt 가 거부 → 401', async () => {
-    const token = fakeToken({
-      sub: 'apple-user-001',
-      iss: 'https://appleid.apple.com',
-      aud: ENV.APPLE_CLIENT_ID,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    });
-    mockVerifyAppJwt.mockRejectedValue(new Error('Invalid issuer'));
-    const fetchSpy = vi.fn();
-    globalThis.fetch = fetchSpy as unknown as typeof fetch;
-
-    const app = buildApp();
-    const res = await reqWithEnv(app, req(`Bearer ${token}`));
-    expect(res.status).toBe(401);
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(mockVerifyAppJwt).toHaveBeenCalled();
-  });
-
-  it('알 수 없는 issuer 토큰도 앱 JWT 검증 실패로 401', async () => {
+it('알 수 없는 issuer 토큰도 앱 JWT 검증 실패로 401', async () => {
     const token = fakeToken({
       sub: 'user-unknown',
       iss: 'https://unknown-issuer.example.com',
@@ -359,7 +367,7 @@ describe('authMiddleware — 토큰 폐기(token_epoch) 검사 (B5)', () => {
 describe('authMiddleware — base64url 디코딩 엣지 케이스', () => {
   it('payload에 패딩 없는 base64url 인코딩도 정상 디코딩', async () => {
     const payload = {
-      sub: 'apple-user',
+      sub: 'legacy-user',
       iss: 'voice-alarm',
       aud: 'voice-alarm-clients',
       exp: Math.floor(Date.now() / 1000) + 3600,

@@ -1446,7 +1446,7 @@ export const migrations: Migration[] = [
   },
   {
     // 구독 해지와 음성 삭제를 분리한다: 해지/만료 시 유료 음성을 즉시 하드삭제하지 않고
-    // 30일 보관 유예를 기록, cron 이 delete_after 경과분만 정리한다. 재구독 시 행을 지워
+    // 보관 유예를 기록, cron 이 delete_after 경과분을 정리한다. 재구독 시 행을 지워
     // 보존하고, '지금 삭제'는 이 유예와 무관하게 즉시 삭제한다.
     id: 67,
     name: 'paid-voice-retention',
@@ -1641,6 +1641,234 @@ export const migrations: Migration[] = [
          AND id NOT IN (SELECT promo_code_id FROM promo_code_redemptions)`,
       `UPDATE promo_codes SET is_active = 0, updated_at = datetime('now')
        WHERE code COLLATE NOCASE IN ('WELCOME_PERSONAL', 'WELCOME_COUPLE', 'WELCOME_FAMILY')`,
+    ],
+  },
+  {
+    // 사장(死藏) 스키마 일괄 정리 (2026-07 감사).
+    //  - notes(#18)·voice_speakers(#4): 기능 제거 후 INSERT 경로가 사라져 영구 공백 —
+    //    friendships·gifts(#1): /friend·/gift 라우트가 클라 미호출 유령 기능이라 라우트째
+    //    삭제. dub_jobs(#3): 더빙 파이프라인 미완성(처리기 전무·클라 미호출)이라 스텁 제거.
+    //    인덱스는 DROP TABLE 이 함께 지우지만 _kst 뷰(#46)는 아니므로 명시 DROP.
+    //  - users.picture: 구글 프로필 사진 URL 을 저장·서빙했지만 소비 UI 가 없다(미사용 PII).
+    //  - users.last_active_at: 유일한 갱신 지점이 죽은 GET /user/me 라 한 번도 기록된 적
+    //    없는 컬럼. 라우트와 함께 제거.
+    //  - users_kst 뷰가 last_active_at 를 명시 참조하므로 #50 전례대로 뷰를 떨군 뒤
+    //    DROP COLUMN 하고 해당 _kst 컬럼 없이 재생성한다. 재실행 시 'no such column'/
+    //    'no such view' 는 idempotent 로 무시된다.
+    //  - 캐릭터 _kst 뷰 4종(character_stats_kst 등)도 함께 DROP: #77 이 캐릭터 테이블만
+    //    지우고 이 뷰들을 남겨 깨진(dangling) 뷰가 됐는데, libSQL(Turso)의 ALTER TABLE
+    //    DROP COLUMN 은 전체 스키마의 모든 뷰를 검증하다 이 깨진 뷰('no such table:
+    //    character_stats')에 걸려 실패한다(로컬 libsql 은 관대해 통과). ALTER 전에 정리.
+    id: 79,
+    name: 'drop-dead-social-tables-and-user-columns',
+    statements: [
+      `DROP VIEW IF EXISTS "character_stats_kst"`,
+      `DROP VIEW IF EXISTS "character_xp_logs_kst"`,
+      `DROP VIEW IF EXISTS "characters_kst"`,
+      `DROP VIEW IF EXISTS "streak_achievements_kst"`,
+      `DROP VIEW IF EXISTS "notes_kst"`,
+      `DROP VIEW IF EXISTS "voice_speakers_kst"`,
+      `DROP VIEW IF EXISTS "friendships_kst"`,
+      `DROP VIEW IF EXISTS "gifts_kst"`,
+      `DROP VIEW IF EXISTS "dub_jobs_kst"`,
+      `DROP TABLE IF EXISTS notes`,
+      `DROP TABLE IF EXISTS voice_speakers`,
+      `DROP TABLE IF EXISTS friendships`,
+      `DROP TABLE IF EXISTS gifts`,
+      `DROP TABLE IF EXISTS dub_jobs`,
+      `DROP VIEW IF EXISTS "users_kst"`,
+      `ALTER TABLE users DROP COLUMN picture`,
+      `ALTER TABLE users DROP COLUMN last_active_at`,
+      `CREATE VIEW IF NOT EXISTS "users_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("deletion_requested_at",'+9 hours') AS deletion_requested_at_kst, datetime("deletion_purge_at",'+9 hours') AS deletion_purge_at_kst FROM "users"`,
+    ],
+  },
+  {
+    // alarms 인덱스 유실 복구 (성능 회귀).
+    //  - #1(:198-201)·#5(:290-291)·#19(:487-488)이 만든 alarms 인덱스 8종이 #22·#23 의
+    //    테이블 재작성(`DROP TABLE alarms` → RENAME)에 함께 소멸했고, 두 마이그레이션 모두
+    //    재생성 문장을 넣지 않았다. 이후 추가된 idx_alarms_bucket(#54)만 남아, dev·prod
+    //    실측 결과 alarms 의 인덱스는 (PK 자동인덱스, idx_alarms_bucket) 둘뿐이다.
+    //    → 앱이 가장 자주 부르는 GET /api/alarm 을 포함해 모든 알람 조회가 SCAN alarms.
+    //      (EXPLAIN QUERY PLAN 으로 dev·prod 양쪽 확인)
+    //  - 재생성은 실제 쿼리 술어에 맞춰 4개만 만든다. user_id/target_user_id 단독 인덱스는
+    //    복합 인덱스의 선행 컬럼으로 커버되므로 다시 만들지 않는다(쓰기 비용만 늘 뿐).
+    //      · (user_id, is_active)        : 내 알람 목록 (alarm-query)
+    //      · (target_user_id, is_active) : 나에게 온 가족 알람
+    //      · (message_id)                : 메시지/스톡클립 정리 시 참조 알람 강등
+    //      · (voice_profile_id)          : 목소리 삭제 시 참조 알람 강등
+    id: 80,
+    name: 'restore-alarms-indexes',
+    statements: [
+      'CREATE INDEX IF NOT EXISTS idx_alarms_user_active ON alarms(user_id, is_active)',
+      'CREATE INDEX IF NOT EXISTS idx_alarms_target_active ON alarms(target_user_id, is_active)',
+      'CREATE INDEX IF NOT EXISTS idx_alarms_message ON alarms(message_id)',
+      'CREATE INDEX IF NOT EXISTS idx_alarms_voice_profile ON alarms(voice_profile_id)',
+    ],
+  },
+  {
+    // 운영 편의용 KST 뷰(#46) 전면 제거.
+    //  - 런타임 코드가 `_kst` 뷰를 읽는 곳은 0곳이다(레포 전수 grep). 순수 조회 편의였다.
+    //  - 대신 유지 비용이 계속 발생했다: (1) 컬럼을 하나 지울 때마다 뷰를 떨궜다 다시
+    //    만들어야 하고(#50·#79), (2) libSQL 의 ALTER TABLE DROP COLUMN 은 스키마의 **모든
+    //    뷰를 검증**하므로 참조 테이블이 사라진 뷰가 하나만 있어도 이후 모든 DROP COLUMN 이
+    //    실패한다 — #77 이 캐릭터 테이블만 지우고 뷰를 남겨 #79 의 ALTER 가 실제로 깨졌다.
+    //  - 아래 #82·#83 의 DROP COLUMN 이 통과하려면 이 정리가 선행돼야 한다.
+    //  - KST 조회는 필요할 때 `datetime(col,'+9 hours')` 로 즉석 처리한다.
+    id: 81,
+    name: 'drop-kst-convenience-views',
+    statements: [
+      `DROP VIEW IF EXISTS "alarms_kst"`,
+      `DROP VIEW IF EXISTS "email_verification_codes_kst"`,
+      `DROP VIEW IF EXISTS "generated_audio_assets_kst"`,
+      `DROP VIEW IF EXISTS "message_library_kst"`,
+      `DROP VIEW IF EXISTS "messages_kst"`,
+      `DROP VIEW IF EXISTS "pending_external_deletions_kst"`,
+      `DROP VIEW IF EXISTS "plan_group_invites_kst"`,
+      `DROP VIEW IF EXISTS "plan_group_members_kst"`,
+      `DROP VIEW IF EXISTS "plan_groups_kst"`,
+      `DROP VIEW IF EXISTS "plans_kst"`,
+      `DROP VIEW IF EXISTS "push_tokens_kst"`,
+      `DROP VIEW IF EXISTS "retained_billing_records_kst"`,
+      `DROP VIEW IF EXISTS "store_transactions_kst"`,
+      `DROP VIEW IF EXISTS "subscriptions_kst"`,
+      `DROP VIEW IF EXISTS "tts_presets_kst"`,
+      `DROP VIEW IF EXISTS "user_consents_kst"`,
+      `DROP VIEW IF EXISTS "users_kst"`,
+      `DROP VIEW IF EXISTS "voice_profile_relationships_kst"`,
+      `DROP VIEW IF EXISTS "voice_profiles_kst"`,
+      `DROP VIEW IF EXISTS "voice_uploads_kst"`,
+      `DROP VIEW IF EXISTS "voucher_codes_kst"`,
+      `DROP VIEW IF EXISTS "voucher_redemptions_kst"`,
+      // #79 미적용 DB(prod)에서 먼저 만들어졌을 수 있는 폐기 테이블용 뷰까지 확실히 정리.
+      `DROP VIEW IF EXISTS "dub_jobs_kst"`,
+      `DROP VIEW IF EXISTS "friendships_kst"`,
+      `DROP VIEW IF EXISTS "gifts_kst"`,
+      `DROP VIEW IF EXISTS "notes_kst"`,
+      `DROP VIEW IF EXISTS "voice_speakers_kst"`,
+    ],
+  },
+  {
+    // Apple/iOS 미운영 확정에 따른 DB 정리. 코드 경로는 선행 배포에서 제거됐다.
+    //  - dev·prod 실측: users.apple_id, subscriptions.apple_* 전부 NULL(0건)이라 손실 없음.
+    //  - 인덱스를 먼저 떨궈야 한다 — SQLite/libSQL 의 DROP COLUMN 은 그 컬럼을 참조하는
+    //    인덱스가 남아 있으면 실패한다.
+    //  - push_tokens.platform 의 'ios' 와 store_transactions.provider 의 'apple'·'portone'
+    //    CHECK 리터럴은 **그대로 둔다**: CHECK 변경은 테이블 재작성이 필요한데, 쓰지 않는
+    //    값을 허용 목록에 남겨두는 비용은 0 이다(쓰는 코드가 이미 없다).
+    id: 82,
+    name: 'drop-apple-identity-and-billing-columns',
+    statements: [
+      `DROP INDEX IF EXISTS idx_users_apple_id`,
+      `DROP INDEX IF EXISTS idx_subscriptions_apple_transaction`,
+      `DROP INDEX IF EXISTS idx_subscriptions_apple_original`,
+      `ALTER TABLE users DROP COLUMN apple_id`,
+      `ALTER TABLE subscriptions DROP COLUMN apple_transaction_id`,
+      `ALTER TABLE subscriptions DROP COLUMN apple_original_transaction_id`,
+      `ALTER TABLE subscriptions DROP COLUMN apple_product_id`,
+    ],
+  },
+  {
+    // 사장 컬럼·테이블 정리 (2026-07 감사). 전부 선행 배포에서 코드 참조를 끊었다.
+    //  - alarms.speaker_id(#5): 참조 대상 voice_speakers 는 #79 에서 이미 DROP 됐고,
+    //    Android 는 이 필드를 보낸 적이 없다(Retrofit 전수 0). dev·prod 모두 전 행 NULL.
+    //    #5 가 만든 idx_alarms_speaker 는 #22·#23 의 테이블 재작성에 이미 소멸해 없다.
+    //  - users.family_alarm_quiet_days/_start/_end(#29): #30 의 quiet_windows JSON 으로
+    //    대체됐다. 남은 유일한 읽기는 windows 파싱 실패 시의 폴백이었고(그마저 상수 기본값과
+    //    동일), dev·prod 모두 커스텀 값 0건이다. API 응답 필드는 windows[0] 에서 계속 파생된다.
+    //  - voice_profiles.voice_gender/speech_formality(#53): speech_style(#66)로 대체돼
+    //    읽기·쓰기 코드가 0곳이다.
+    //  - voice_profiles.avatar_url(#1): 쓰기 경로가 없어 전 행 NULL, 읽기는 제거된 /library 뿐.
+    //  - plan_group_invites(#9): 초대권 생성 경로가 앱에서 사라져(가족 공유는 voucher 코드로
+    //    일원화) 생산자가 없다. dev·prod 0행.
+    id: 83,
+    name: 'drop-dead-alarm-user-and-voice-columns',
+    statements: [
+      `ALTER TABLE alarms DROP COLUMN speaker_id`,
+      `ALTER TABLE users DROP COLUMN family_alarm_quiet_days`,
+      `ALTER TABLE users DROP COLUMN family_alarm_quiet_start`,
+      `ALTER TABLE users DROP COLUMN family_alarm_quiet_end`,
+      `ALTER TABLE voice_profiles DROP COLUMN voice_gender`,
+      `ALTER TABLE voice_profiles DROP COLUMN speech_formality`,
+      `ALTER TABLE voice_profiles DROP COLUMN avatar_url`,
+      `DROP TABLE IF EXISTS plan_group_invites`,
+    ],
+  },
+  {
+    // 내 알람용 오디오를 R2 에 올려 두던 경로(POST /alarm/source) 제거에 따른 정리.
+    //  - 내 알람의 녹음/파일은 생성 후 폰에 남으므로 서버 보관이 필요 없고, 가족에게
+    //    보내는 음성은 voice_uploads → messages.audio_url 이라는 별도 배관을 쓴다.
+    //    이 제3의 경로는 어떤 클라이언트도 호출한 적이 없어 dev·prod 모두 0건이었다.
+    //  - R2 에 계속 보관해야 하는 것은 보이스클론/시스템 보이스로 미리 합성한 기본
+    //    알람음(messages.is_preset=1)뿐이고, 그건 audio-retention 의 preset 가드가 지킨다.
+    //  - alarms 의 두 컬럼은 인덱스가 없어 그대로 DROP COLUMN 이 통과한다.
+    id: 84,
+    name: 'drop-raw-alarm-audio-upload-path',
+    statements: [
+      `ALTER TABLE alarms DROP COLUMN raw_audio_url`,
+      `ALTER TABLE alarms DROP COLUMN raw_audio_duration_ms`,
+      `DROP TABLE IF EXISTS raw_alarm_uploads`,
+    ],
+  },
+  {
+    // #79 되돌림 복구용. dev DB 에만 #79(users.picture/last_active_at DROP)를 먼저
+    // 적용해 놓고 이 브랜치를 아직 배포하지 않은 동안, 배포돼 있던 develop 코드가
+    // 아직 u.picture 를 SELECT 해서 GET /family/groups/current 가 500 을 냈다
+    // ("Failed to load shared plan data" 배너). 응급으로 dev DB 에 두 컬럼을
+    // 되살려 뒀으므로, 이 브랜치가 배포될 때 다시 떨궈 최종 상태를 맞춘다.
+    //
+    // 이미 #79 로 정리된 DB(prod 포함)에서는 'no such column' 이 나고
+    // isIdempotentDDLError 가 무시한다 — 어느 환경에서 실행돼도 결과는 같다.
+    id: 85,
+    name: 'redrop-users-picture-and-last-active-at',
+    statements: [
+      `ALTER TABLE users DROP COLUMN picture`,
+      `ALTER TABLE users DROP COLUMN last_active_at`,
+      // 같은 사고의 나머지 절반. dev DB 에만 #79 를 먼저 적용해 이 5개 테이블을 지웠는데,
+      // 배포돼 있던 develop 코드의 DELETE /voice/:id 캐스케이드가 아직 이들을 참조해
+      // 'no such table: notes' 로 500 이 났다(목소리 삭제 실패). dev DB 에 빈 테이블로
+      // 되살려 응급 복구했으므로, 이 브랜치가 배포될 때 다시 떨궈 최종 상태를 맞춘다.
+      // 이미 #79 로 정리된 DB(prod 포함)에서는 아무것도 하지 않는다.
+      `DROP TABLE IF EXISTS notes`,
+      `DROP TABLE IF EXISTS voice_speakers`,
+      `DROP TABLE IF EXISTS friendships`,
+      `DROP TABLE IF EXISTS gifts`,
+      `DROP TABLE IF EXISTS dub_jobs`,
+    ],
+  },
+  {
+    // Codex #647 P2: 이 수정 이전에 '해지로 반납된' 클론 행 복구.
+    //
+    // 옛 releaseClonedVoicesForUser 는 elevenlabs_voice_id 만 NULL 로 비우고 evicted_at 을
+    // 안 찍었다. tts.ts 의 복구 게이트는 `provider voice id 없음 AND evicted_at 있음` 이라,
+    // 그 행들은 3일 보관 안에 다시 구독해도 재클론 경로를 못 타고 NO_VOICE_ID 로 떨어진다 —
+    // 재클론에 쓸 원본(voice_uploads)은 멀쩡히 남아 있는데도. main 은 자동 배포라 이미
+    // 그 상태인 행이 dev/prod 에 남아 있을 수 있어 한 번 훑어 표식을 채운다.
+    // 옛 provider id 는 남아 있지 않으므로, 표식만 채우면 tts.ts 의 '프로브할 옛 id 가 없는
+    // evict 행' 분기가 곧바로 재클론한다(마이그레이션 76 이전 evict 분과 같은 취급).
+    //
+    // 대상은 세 조건으로 좁힌다 — 클론이 있던 적 없는 행이 잘못 되살아나지 않게:
+    //  - EXISTS voice_uploads: 재클론에 쓸 원본이 실제로 남아 있는 행만.
+    //  - is_system = 0: 기본(시스템) 목소리는 애초에 evict/재클론 대상이 아니다. 지금은
+    //    원본 업로드가 없어 위 조건에도 안 걸리지만, 슬롯 카운트·LRU 후보 쿼리와 같은
+    //    가드를 함께 둬서 시드 방식이 바뀌어도 딸려오지 않게 한다(voice-slots.ts 와 동일).
+    //  - status = 'ready': voice id 는 ready 로 전환될 때만 채워지므로, ready 인데 지금
+    //    비어 있다 = 나중에 누가 비웠다는 뜻. 진행 중(processing)·실패(failed: 슬롯 부족
+    //    회수분 등)은 되살리면 안 되는 행이라 제외한다.
+    //  - deleted_at IS NULL: 이미 지운 행 제외.
+    // 값은 실제 반납 시각인 updated_at 을 쓴다(그 UPDATE 가 이 행의 마지막 쓰기였다).
+    id: 86,
+    name: 'backfill-evicted-at-for-released-clones',
+    statements: [
+      `UPDATE voice_profiles
+          SET evicted_at = COALESCE(updated_at, datetime('now'))
+        WHERE elevenlabs_voice_id IS NULL
+          AND evicted_at IS NULL
+          AND deleted_at IS NULL
+          AND status = 'ready'
+          AND COALESCE(is_system, 0) = 0
+          AND EXISTS (
+            SELECT 1 FROM voice_uploads vu WHERE vu.voice_profile_id = voice_profiles.id
+          )`,
     ],
   },
 ];
