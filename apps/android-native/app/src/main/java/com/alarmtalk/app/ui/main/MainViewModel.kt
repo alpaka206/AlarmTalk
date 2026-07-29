@@ -134,7 +134,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 여기서 실패해도(디스크 가득참 등) 예약은 취소하지 않는다 — 취소해 봐야 다음
             // 로그인의 reschedulePendingAlarms 가 그대로 되살리므로 아무것도 못 막고, 대신
             // 본인이 다시 로그인할 때까지 알람만 조용히 안 울린다. 대신 다음 로그인에서
-            // onSignedIn 이 authSessionStore.lastSessionUserId 로 이 계정을 알아내 마저 새긴다.
+            // 예약 경로가 authSessionStore.pendingOwnerUserId 로 이 계정을 알아내 마저 새긴다.
             runCatching {
                 repository.claimUnownedAlarmsFor(authSession?.user?.id?.takeIf { it.isNotBlank() })
             }.onFailure { error ->

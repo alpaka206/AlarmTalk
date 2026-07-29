@@ -32,8 +32,8 @@ class AlarmOwnershipOnSessionExpiryTest {
     private lateinit var dao: AlarmDao
     private var currentUser: String? = null
 
-    /** 마지막 로그인 계정 마커(실제로는 AuthSessionStore prefs). */
-    private var lastSessionUser: String? = null
+    /** 아직 소유자를 못 새긴 알람의 임자(실제로는 AuthSessionStore prefs). */
+    private var pendingOwner: String? = null
 
     private val repository by lazy { repositoryWith(dao) }
 
@@ -45,8 +45,8 @@ class AlarmOwnershipOnSessionExpiryTest {
         alarmAudioStore = AlarmAudioStore(context),
         context = context,
         currentUserIdProvider = { currentUser },
-        previousSessionUserIdProvider = { lastSessionUser },
-        onOwnershipSettled = { userId -> lastSessionUser = userId },
+        pendingOwnerUserIdProvider = { pendingOwner },
+        onOwnershipSettled = { pendingOwner = null },
     )
 
     private val shadowAlarmManager
@@ -195,6 +195,35 @@ class AlarmOwnershipOnSessionExpiryTest {
         )
     }
 
+    /**
+     * A 의 소유권이 미해결인 채로 B 가 들어와 쓰다 나가는 경우. 그 미기록 행들은 여전히
+     * A 것이므로, 로그아웃이 떠나는 계정(B) 것으로 새기면 A 가 알람을 영영 잃는다(Codex #650).
+     */
+    @Test
+    fun signOutDoesNotStealAlarmsPendingForAnotherAccount() = runBlocking {
+        seedLegacyAlarm()
+        pendingOwner = "account-A"
+        currentUser = "account-B"
+
+        repository.detachAlarmsOnSignOut("account-B")
+
+        assertEquals("미기록 행은 임자(A) 것으로 확정돼야 한다", "account-A", ownerOf("legacy-1"))
+        assertNull("정리가 끝났으니 임자 표시는 지워진다", pendingOwner)
+    }
+
+    /** 확정이 실패하면 떠나는 계정으로도 새기지 않고 표시를 남겨 다음 기회로 넘긴다. */
+    @Test
+    fun signOutKeepsPendingOwnerWhenSettlementFails() = runBlocking {
+        seedLegacyAlarm()
+        pendingOwner = "account-A"
+        currentUser = "account-B"
+
+        repositoryWith(ClaimFailingDao(dao)).detachAlarmsOnSignOut("account-B")
+
+        assertNull("누구 것인지 모르면 아무에게도 새기지 않는다", ownerOf("legacy-1"))
+        assertEquals("표시가 남아야 다음에 다시 시도할 수 있다", "account-A", pendingOwner)
+    }
+
     /** 명시 로그아웃 경로도 같은 함수를 쓰도록 정리했으므로 그쪽 동작도 함께 고정한다. */
     @Test
     fun explicitSignOutAlsoStampsOwnerlessAlarms() = runBlocking {
@@ -242,21 +271,21 @@ class AlarmOwnershipOnSessionExpiryTest {
     @Test
     fun coldStartRescheduleSettlesOwnershipBeforeScheduling() = runBlocking {
         seedLegacyAlarm()
-        lastSessionUser = "account-A"   // 앞 세션은 A 였고 소유자를 못 새긴 채 끝났다
+        pendingOwner = "account-A"   // 앞 세션은 A 였고 소유자를 못 새긴 채 끝났다
         currentUser = "account-B"       // 이번 콜드스타트는 B 세션으로 복원된다
 
         val scheduled = repository.reschedulePendingAlarms()
 
         assertEquals("B 세션에서 A 의 알람이 예약되면 안 된다", 0, scheduled)
         assertEquals("소유자는 앞 계정으로 확정된다", "account-A", ownerOf("legacy-1"))
-        assertEquals("정리가 끝났으니 마커는 현재 계정으로 옮겨간다", "account-B", lastSessionUser)
+        assertNull("정리가 끝났으니 임자 표시는 지워진다", pendingOwner)
     }
 
     /** 같은 계정이 다시 들어오면 레거시 알람은 그대로 자기 것이 된다(마커만 갱신). */
     @Test
     fun coldStartKeepsOwnerlessAlarmsForTheSameAccount() = runBlocking {
         seedLegacyAlarm()
-        lastSessionUser = "account-A"
+        pendingOwner = "account-A"
         currentUser = "account-A"
 
         val scheduled = repository.reschedulePendingAlarms()
@@ -277,6 +306,8 @@ class AlarmOwnershipOnSessionExpiryTest {
         repository.reschedulePendingAlarms()
         assertNotNull("전제: A 세션에서 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
 
+        // A 세션이 끝날 때 소유자 새기기가 실패해 임자 표시만 남은 상태.
+        pendingOwner = "account-A"
         // B 로그인 — 이 재예약 안에서 소유자가 A 로 확정된다.
         currentUser = "account-B"
         val scheduled = repository.reschedulePendingAlarms()
@@ -314,14 +345,14 @@ class AlarmOwnershipOnSessionExpiryTest {
     fun failedSettlementSkipsOwnerlessAlarmsAndKeepsTheMarker() = runBlocking {
         seedLegacyAlarm()
         seedLegacyAlarm(id = "mine", owner = "account-B")
-        lastSessionUser = "account-A"
+        pendingOwner = "account-A"
         currentUser = "account-B"
 
         val scheduled = repositoryWith(ClaimFailingDao(dao)).reschedulePendingAlarms()
 
         assertEquals("내 알람만 예약된다 — 주인 모를 알람은 제외", 1, scheduled)
         assertNull("소유자는 여전히 미기록", ownerOf("legacy-1"))
-        assertEquals("마커가 남아야 다음에 다시 시도할 수 있다", "account-A", lastSessionUser)
+        assertEquals("표시가 남아야 다음에 다시 시도할 수 있다", "account-A", pendingOwner)
     }
 
     @Test

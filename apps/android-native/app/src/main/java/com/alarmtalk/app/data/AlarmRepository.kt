@@ -40,12 +40,12 @@ class AlarmRepository(
     // 같은 값을 '흐름'으로도 받는다 — 목록 필터가 로그인/로그아웃 즉시 다시 계산돼야 한다.
     // 기본값은 1회 방출이라, 이 인자를 주지 않는 호출부(테스트 등)는 예전과 동작이 같다.
     private val currentUserIdFlow: Flow<String?> = flowOf(currentUserIdProvider()),
-    // 이 기기에서 마지막으로 로그인했던 계정 id. 세션이 끝날 때 소유자를 못 새겼으면
-    // 예약 직전에 [settleAlarmOwnershipFromPreviousSession] 이 이걸로 마저 새긴다.
-    private val previousSessionUserIdProvider: () -> String? = { null },
-    // 소유자 정리가 끝났을 때만 '마지막 로그인 계정'을 현재 계정으로 갱신한다.
-    // 실패하면 부르지 않아 마커가 남고, 다음 기회에 다시 시도한다.
-    private val onOwnershipSettled: (String) -> Unit = {},
+    // 아직 소유자를 못 새긴 알람의 임자(없으면 null). 세션이 끝날 때 새기기가 실패하면
+    // 남고, 예약 직전에 [settlePendingAlarmOwnership] 이 이걸로 마저 새긴다.
+    private val pendingOwnerUserIdProvider: () -> String? = { null },
+    // 미정 행이 없어졌을 때만 임자 표시를 지운다. 실패하면 부르지 않아 표시가 남고,
+    // 다음 기회에 다시 시도한다.
+    private val onOwnershipSettled: () -> Unit = {},
 ) {
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -434,10 +434,15 @@ class AlarmRepository(
         // AlarmReceiver 는 Room 에서 바로 읽어 울린다. 순서를 뒤집으면 쓰기 한 번 실패로
         // 취소 루프 전체가 건너뛰어진다.
         all.forEach { alarm -> alarmScheduler.cancel(alarm.id) }
-        // 새기기가 실패해도 예약은 이미 내려갔다. 마커(마지막 로그인 계정)가 남아 다음
-        // 로그인의 settleAlarmOwnershipFromPreviousSession 이 다시 시도한다.
-        runCatching { claimUnownedAlarmsFor(signedOutUserId) }
-            .onFailure { error -> Log.w(TAG, "Failed to stamp ownerless alarms on sign-out", error) }
+        // 앞 계정의 미해결 소유권을 먼저 확정한다. 그러지 않으면 아직 앞 계정(A) 것인 미기록
+        // 행을 지금 떠나는 계정(B) 것으로 잘못 새겨 A 가 그 알람을 영영 잃는다. 확정에
+        // 실패하면 미기록 행이 누구 것인지 여전히 모르므로 아무에게도 새기지 않고, 임자
+        // 표시를 남긴 채 다음 기회로 넘긴다.
+        if (settlePendingAlarmOwnership()) {
+            // 새기기가 실패해도 예약은 이미 내려갔다. 임자 표시가 남아 다음 기회에 다시 시도한다.
+            runCatching { claimUnownedAlarmsFor(signedOutUserId) }
+                .onFailure { error -> Log.w(TAG, "Failed to stamp ownerless alarms on sign-out", error) }
+        }
         Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
         return all.size
     }
@@ -464,7 +469,7 @@ class AlarmRepository(
     }
 
     /**
-     * 앞 세션이 '다른 계정'이었는데 그 세션이 끝날 때 소유자를 못 새겼으면 여기서 마저 새긴다.
+     * 세션이 끝날 때 소유자를 못 새겨 '임자 미정'으로 남은 알람을 여기서 마저 새긴다.
      *
      * 세션 종료 시점의 [claimUnownedAlarmsFor] 가 실패하거나(쓰기 오류), 로그인 뒤처리가 끝나기
      * 전에 프로세스가 죽으면 소유자 미기록 행이 그대로 남는다. 그 상태로 예약하면 다음 계정이
@@ -472,27 +477,27 @@ class AlarmRepository(
      * 이 함수를 부른다 — 로그인 뒤처리뿐 아니라 앱 콜드스타트·부팅 복구도 전부 그 함수를
      * 지나므로, 한 곳만 막으면 나머지 경로가 새는 것을 방지한다. 여러 번 불러도 안전하다.
      *
+     * 기준은 '지금 계정'이 아니라 **임자 표시**다. 미정 임자가 지금 계정이면 그 행들은 원래
+     * 내 것이므로 새기지 않고 표시만 지운다(레거시 알람 채택 규칙 그대로). 다른 계정이면
+     * 그 계정으로 새긴다 — 지금 비로그인이어도 마찬가지다.
+     *
      * @return 정리가 끝났는가. false 면 소유자 미기록 행을 이번 회차에 예약하면 안 되고
-     *         (누구 것인지 모르는 알람이다), 마커도 그대로 둬 다음 기회에 다시 시도한다.
+     *         (누구 것인지 모르는 알람이다), 표시도 그대로 둬 다음 기회에 다시 시도한다.
      */
-    suspend fun settleAlarmOwnershipFromPreviousSession(): Boolean {
-        // 비로그인 상태에서는 정리할 '앞 계정'이 없다 — 기기 알람은 그대로 둔다.
-        val currentUser = currentUserIdProvider()?.takeIf { it.isNotBlank() } ?: return true
-        val previousUser = previousSessionUserIdProvider()?.takeIf { it.isNotBlank() }
-        if (previousUser == null || previousUser == currentUser) {
-            onOwnershipSettled(currentUser)
+    suspend fun settlePendingAlarmOwnership(): Boolean {
+        // 미정 임자가 없으면 정리할 것도 없다.
+        val pendingOwner = pendingOwnerUserIdProvider()?.takeIf { it.isNotBlank() } ?: return true
+        val currentUser = currentUserIdProvider()?.takeIf { it.isNotBlank() }
+        if (pendingOwner == currentUser) {
+            onOwnershipSettled()
             return true
         }
-        return runCatching { claimUnownedAlarmsFor(previousUser) }
+        return runCatching { claimUnownedAlarmsFor(pendingOwner) }
             .onSuccess { claimed ->
-                if (claimed > 0) {
-                    Log.i(TAG, "Settled $claimed ownerless alarms onto the previous account")
-                }
-                onOwnershipSettled(currentUser)
+                if (claimed > 0) Log.i(TAG, "Settled $claimed ownerless alarms onto their owner")
+                onOwnershipSettled()
             }
-            .onFailure { error ->
-                Log.w(TAG, "Failed to settle alarm ownership from the previous session", error)
-            }
+            .onFailure { error -> Log.w(TAG, "Failed to settle pending alarm ownership", error) }
             .isSuccess
     }
 
@@ -851,7 +856,7 @@ class AlarmRepository(
     suspend fun reschedulePendingAlarms(recomputeFireTime: Boolean = false): Int {
         // 예약 전에 소유자를 확정한다 — 이 함수는 로그인 뒤처리·앱 시작·부팅 복구가 모두
         // 지나는 길목이라, 여기서 한 번 막으면 나머지 경로가 따로 새지 않는다.
-        val ownershipSettled = settleAlarmOwnershipFromPreviousSession()
+        val ownershipSettled = settlePendingAlarmOwnership()
         val now = System.currentTimeMillis()
         val enabledAlarms = alarmDao.getEnabledAlarms()
         val holidayPredicate = holidayCalendarStore.holidayPredicate(

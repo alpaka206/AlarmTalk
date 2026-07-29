@@ -55,19 +55,23 @@ fun AuthSessionStore.observeUserId(): Flow<String?> =
     prefsSnapshotFlow(::registerChangeListener, ::unregisterChangeListener) { read()?.user?.id }
 
 /**
- * 세션을 비울 때 '마지막 로그인 계정'으로 남길 값.
+ * 세션을 비울 때 '소유자 미정 알람의 임자'로 남길 값.
  *
- * 지금 세션의 사용자가 곧 떠나는 계정이므로 그 값을 우선한다. 이 빌드 이전에 로그인해 둔
- * 세션은 마커가 아직 없어서(새 로그인에서만 기록된다) 이 폴백이 유일한 근거다. 세션 사용자가
- * 비어 있으면(이미 비운 뒤 재호출) 기존 마커를 지운다 — 앞 계정 정보를 잃으면 소유자 없는
- * 알람을 다음 계정이 물려받아 울린다(Codex #650).
+ * 이 마커는 "마지막에 로그인했던 사람"이 아니라 **"아직 소유자를 못 새긴 알람의 주인"**이다.
+ * 세션이 끝날 때 소유자 새기기가 성공하면 미정 행이 없으므로 마커도 지워지고(clearPendingOwner),
+ * 실패했을 때만 남는다.
+ *
+ * 그래서 **기존 마커가 우선**이다. A 의 소유권이 미해결인 채로 B 가 들어와 쓰다 나가면, 그
+ * 미정 행들은 여전히 A 것이지 B 것이 아니다. 여기서 B 로 덮으면 A 의 알람이 B 것으로 새겨져
+ * A 가 영영 잃는다(Codex #650). 미정이 없을 때만(마커 비어 있음) 지금 떠나는 계정을 적는다 —
+ * 이 빌드 이전에 로그인해 둔 세션은 마커가 없으므로 이 경로로 커버된다.
  *
  * [AuthSessionStore] 는 EncryptedSharedPreferences(AndroidKeyStore)라 Robolectric 에서 세워지지
  * 않아, 판단 부분만 순수 함수로 떼어 테스트한다.
  */
-internal fun resolveLeavingUserId(currentUserId: String?, existingMarker: String?): String? =
-    currentUserId?.takeIf { it.isNotBlank() }
-        ?: existingMarker?.takeIf { it.isNotBlank() }
+internal fun resolvePendingOwnerUserId(leavingUserId: String?, existingPendingOwner: String?): String? =
+    existingPendingOwner?.takeIf { it.isNotBlank() }
+        ?: leavingUserId?.takeIf { it.isNotBlank() }
 
 class AuthSessionStore(context: Context) {
     private val prefs: SharedPreferences = run {
@@ -181,33 +185,30 @@ class AuthSessionStore(context: Context) {
         )
 
     fun clear() {
-        // 마지막 로그인 계정 id 만 남기고 토큰·프로필은 전부 지운다. 자동 401 처럼 세션만
-        // 비우는 경로에서 알람 소유자 새기기가 실패하면, 다음 로그인 때 이 값으로 앞 계정을
-        // 알아내 마저 새긴다(그러지 않으면 소유자 없는 알람을 새 계정이 물려받아 울린다).
+        // '소유자 미정 알람의 임자'만 남기고 토큰·프로필은 전부 지운다. 세션이 끝날 때
+        // 소유자 새기기가 실패하면 그 행들이 누구 것인지 알 길이 이 값뿐이다 — 없으면
+        // 다음에 로그인한 계정이 앞 계정 알람을 물려받아 울린다.
         //
-        // 값은 지금 지우려는 세션의 사용자(KEY_USER_ID)에서 먼저 가져온다 — 이 함수가 불리는
-        // 시점이 곧 그 계정의 세션이 끝나는 시점이다. 이 빌드 이전에 로그인해 둔 세션은
-        // 마커가 아직 없는데(rememberLastSessionUser 는 새 로그인에서만 돈다), 그 사용자도
-        // 이걸로 커버된다. [read] 가 무효한 구 구글 세션을 지우는 경로도 마찬가지.
-        // KEY_USER_ID 마저 없으면(이미 비운 뒤 재호출) 기존 마커를 그대로 지킨다.
-        val leavingUserId = resolveLeavingUserId(
-            currentUserId = prefs.getString(KEY_USER_ID, null),
-            existingMarker = prefs.getString(KEY_LAST_SESSION_USER_ID, null),
+        // 이미 미정 임자가 적혀 있으면 그대로 둔다: A 의 소유권이 미해결인 채 B 가 들어와
+        // 쓰다 나가도 그 행들은 여전히 A 것이다. 미정이 없을 때만 지금 떠나는 계정을 적는다.
+        // ([read] 가 무효한 구 구글 세션을 지우는 경로, 이 빌드 이전 세션도 이걸로 커버된다.)
+        val pendingOwner = resolvePendingOwnerUserId(
+            leavingUserId = prefs.getString(KEY_USER_ID, null),
+            existingPendingOwner = prefs.getString(KEY_PENDING_OWNER_USER_ID, null),
         )
-        prefs.edit().clear().putString(KEY_LAST_SESSION_USER_ID, leavingUserId).apply()
+        prefs.edit().clear().putString(KEY_PENDING_OWNER_USER_ID, pendingOwner).apply()
     }
 
-    /** 이 기기에서 마지막으로 로그인했던 계정 id. 세션을 비워도 남는다. */
-    fun lastSessionUserId(): String? =
-        prefs.getString(KEY_LAST_SESSION_USER_ID, null)?.takeIf { it.isNotBlank() }
+    /** 아직 소유자를 못 새긴 알람의 임자(없으면 null). 세션을 비워도 남는다. */
+    fun pendingOwnerUserId(): String? =
+        prefs.getString(KEY_PENDING_OWNER_USER_ID, null)?.takeIf { it.isNotBlank() }
 
     /**
-     * 로그인 뒤처리가 끝난 뒤에 호출한다 — 그전까지는 '앞 계정' 값을 읽어야 하므로
-     * 세션 저장([save]) 시점에 덮어쓰지 않는다.
+     * 소유자 새기기가 끝나 미정 행이 없어졌을 때 호출한다. 지워 두지 않으면 다음 세션 종료
+     * 때 [clear] 가 옛 임자를 그대로 지켜, 실제로는 지금 계정 것인 행을 남에게 넘긴다.
      */
-    fun rememberLastSessionUser(userId: String?) {
-        val normalized = userId?.takeIf { it.isNotBlank() } ?: return
-        prefs.edit().putString(KEY_LAST_SESSION_USER_ID, normalized).apply()
+    fun clearPendingOwner() {
+        prefs.edit().remove(KEY_PENDING_OWNER_USER_ID).apply()
     }
 
     fun save(session: AuthSession): AuthSession =
@@ -411,10 +412,11 @@ class AuthSessionStore(context: Context) {
         private const val KEY_PROVIDER = "provider"
         private const val KEY_USER_ID = "user_id"
 
-        // 세션이 끝나도 남는 유일한 값. 자동 401 로 세션이 끊길 때 알람 소유자 새기기가
-        // 실패했으면(디스크 가득참 등) 다음 로그인에서 마저 새겨야 하는데, 그러려면
-        // '앞 계정이 누구였는지'를 알아야 한다. [clear] 가 이 키만 남긴다.
-        private const val KEY_LAST_SESSION_USER_ID = "last_session_user_id"
+        // 세션이 끝나도 남는 유일한 값 — 아직 소유자를 못 새긴 알람의 임자. 세션 종료 시
+        // 새기기가 실패했을 때(디스크 가득참 등) 다음 기회에 누구 것으로 새길지의 유일한
+        // 근거다. [clear] 가 이 키만 남기고, 정리가 끝나면 [clearPendingOwner] 가 지운다.
+        // (저장 키 문자열은 옛 이름을 유지한다 — 이미 기록된 기기의 값을 잃지 않기 위해.)
+        private const val KEY_PENDING_OWNER_USER_ID = "last_session_user_id"
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"
         private const val KEY_PLAN = "plan"
