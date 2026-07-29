@@ -9,6 +9,61 @@ function placeholders(ids: string[]): string {
   return ids.map(() => '?').join(',');
 }
 
+/**
+ * 삭제될 voice_profiles 를 가리키는 호칭/관계 행을 먼저 지운다.
+ *
+ * voice_profile_relationships.voice_profile_id 는 voice_profiles FK 라(마이그레이션 #37),
+ * 프로필을 먼저 지우면 FK 가 켜져 있을 때 삭제가 던져 보관 정리가 통째로 중단되고
+ * (paid_voice_retention 행이 안 지워져 만료 처리가 매번 같은 자리에서 멈춘다), 꺼져 있으면
+ * 사라진 프로필을 가리키는 호칭 행이 남는다. account-deletion.ts 가 같은 이유로 이미
+ * 자식-우선으로 지운다.
+ *
+ * 다만 스코프는 계정 삭제보다 좁다 — '삭제되는 프로필을 참조하는' 행만 지운다. 이 사용자가
+ * 남의 공유 목소리에 붙여 둔 호칭은 계정이 살아 있으므로 그대로 둔다.
+ */
+async function deleteRelationshipsForOwnedProfiles(db: DbExecutor, ids: string[], ph: string) {
+  await db.execute({
+    sql: `DELETE FROM voice_profile_relationships
+          WHERE voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
+    args: ids,
+  });
+}
+
+/**
+ * 이 사용자의 업로드 오브젝트를 참조하는 '수신자 소유' 가족알람 메시지를 끊는다.
+ *
+ * POST /family/alarms/voice 는 발신자의 voice_uploads.object_key 를 **수신자 소유**
+ * messages.audio_url 에 담는다(family-alarm.ts). 소유자 기준 강등/삭제는 발신자 id·발신자
+ * 프로필로만 고르므로 그 메시지를 건드리지 못하는데, 아래 정리는 그 오브젝트를 R2 에서
+ * 지운다. 그대로 두면 서버는 '음성 있음'으로 광고하지만 /tts/messages/:id/audio 가 실패해,
+ * 수신자 앱이 조용히 기본음 알람으로 되돌아간다(사용자에겐 목소리가 사라진 것처럼 보인다).
+ *
+ * 오브젝트를 지우기 전에 알람을 sound-only 로 명시 강등하고 audio_url 을 비워, 서버 상태와
+ * 클라 폴백이 같은 말을 하게 한다. 메시지 행 자체는 수신자 데이터라 지우지 않는다.
+ */
+async function detachFamilyAlarmMessagesUsingOwnedUploads(
+  db: DbExecutor,
+  ids: string[],
+  ph: string,
+) {
+  const affectedMessages = `SELECT id FROM messages
+     WHERE audio_url IS NOT NULL
+       AND audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (${ph}))`;
+  await db.execute({
+    sql: `UPDATE alarms
+          SET mode = 'sound-only',
+              wake_mode = 'sound_then_voice',
+              message_id = NULL,
+              voice_profile_id = NULL
+          WHERE message_id IN (${affectedMessages})`,
+    args: ids,
+  });
+  await db.execute({
+    sql: `UPDATE messages SET audio_url = NULL WHERE id IN (${affectedMessages})`,
+    args: ids,
+  });
+}
+
 export async function deletePaidVoiceDataForUser(
   db: DbExecutor,
   userPk: string,
@@ -21,6 +76,7 @@ export async function deletePaidVoiceDataForUser(
   // ElevenLabs 클론/R2 오디오 외부 삭제 참조를 행 삭제 전에 큐에 적재 —
   // 다운그레이드로 유료 음성 데이터가 사라질 때 클로닝 본체도 함께 사라지게 한다.
   await enqueueUserVoiceArtifacts(db, ids);
+  await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph);
 
   await db.execute({
     sql: `DELETE FROM generated_audio_assets
@@ -101,6 +157,7 @@ export async function deletePaidVoiceDataForUser(
     args: ids,
   });
 
+  await deleteRelationshipsForOwnedProfiles(db, ids, ph);
   await db.execute({
     sql: `DELETE FROM voice_profiles WHERE user_id IN (${ph})`,
     args: ids,
@@ -201,6 +258,7 @@ export async function deleteSensitiveVoiceDataForUser(
   for (const row of generatedObjects.rows) {
     await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
   }
+  await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph);
 
   await db.execute({
     sql: `UPDATE alarms
@@ -243,5 +301,6 @@ export async function deleteSensitiveVoiceDataForUser(
     sql: `DELETE FROM voice_prerender_queue WHERE owner_user_id IN (${ph})`,
     args: ids,
   });
+  await deleteRelationshipsForOwnedProfiles(db, ids, ph);
   await db.execute({ sql: `DELETE FROM voice_profiles WHERE user_id IN (${ph})`, args: ids });
 }
