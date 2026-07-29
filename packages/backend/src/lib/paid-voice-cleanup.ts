@@ -9,6 +9,109 @@ function placeholders(ids: string[]): string {
   return ids.map(() => '?').join(',');
 }
 
+/** 이 정리로 sound-only 로 강등된 알람 하나. 호출자가 커밋 후 신호를 보낸다. */
+export interface DowngradedAlarm {
+  alarmId: string;
+  /**
+   * 이 알람이 실제로 울리는 기기의 주인.
+   *
+   * 가족알람(POST /family/alarms/voice)은 alarms.user_id 가 **발신자**, target_user_id 가
+   * **수신자**다(family-alarm.ts). 캐시해 둔 녹음으로 울리는 쪽은 수신자이므로 target 을
+   * 우선한다. 일반 알람은 target 이 없어 소유자로 떨어진다.
+   */
+  ownerUserId: string;
+  /**
+   * 수신자에게 배달된 가족알람인가(target_user_id 존재).
+   *
+   * 보내야 할 신호가 다르다. 받은 알람은 원격 pull 로 갱신되지만(family_alarm →
+   * RemoteAlarmPullSyncService), **본인 소유 알람은 그 pull 대상이 아니다** — 받은 알람만
+   * 훑기 때문이다. 본인 알람은 목소리 접근권을 다시 확인해 로컬에서 강등해야 한다.
+   */
+  isReceived: boolean;
+}
+
+/** 강등 대상 알람의 id 와 '울리는 기기의 주인'을 강등 전에 모은다. */
+async function collectDowngradeTargets(
+  db: DbExecutor,
+  sql: string,
+  args: string[],
+): Promise<DowngradedAlarm[]> {
+  const rows = await db.execute({ sql, args });
+  return rows.rows
+    .map((r) => ({
+      alarmId: String(r.id ?? ''),
+      ownerUserId: String(r.owner_user_id ?? ''),
+      isReceived: Number(r.is_received ?? 0) === 1,
+    }))
+    .filter((x) => x.alarmId && x.ownerUserId);
+}
+
+/**
+ * 삭제될 voice_profiles 를 가리키는 호칭/관계 행을 먼저 지운다.
+ *
+ * voice_profile_relationships.voice_profile_id 는 voice_profiles FK 라(마이그레이션 #37),
+ * 프로필을 먼저 지우면 FK 가 켜져 있을 때 삭제가 던져 보관 정리가 통째로 중단되고
+ * (paid_voice_retention 행이 안 지워져 만료 처리가 매번 같은 자리에서 멈춘다), 꺼져 있으면
+ * 사라진 프로필을 가리키는 호칭 행이 남는다. account-deletion.ts 가 같은 이유로 이미
+ * 자식-우선으로 지운다.
+ *
+ * 다만 스코프는 계정 삭제보다 좁다 — '삭제되는 프로필을 참조하는' 행만 지운다. 이 사용자가
+ * 남의 공유 목소리에 붙여 둔 호칭은 계정이 살아 있으므로 그대로 둔다.
+ */
+async function deleteRelationshipsForOwnedProfiles(db: DbExecutor, ids: string[], ph: string) {
+  await db.execute({
+    sql: `DELETE FROM voice_profile_relationships
+          WHERE voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
+    args: ids,
+  });
+}
+
+/**
+ * 이 사용자의 업로드 오브젝트를 참조하는 '수신자 소유' 가족알람 메시지를 끊는다.
+ *
+ * POST /family/alarms/voice 는 발신자의 voice_uploads.object_key 를 **수신자 소유**
+ * messages.audio_url 에 담는다(family-alarm.ts). 소유자 기준 강등/삭제는 발신자 id·발신자
+ * 프로필로만 고르므로 그 메시지를 건드리지 못하는데, 아래 정리는 그 오브젝트를 R2 에서
+ * 지운다. 그대로 두면 서버는 '음성 있음'으로 광고하지만 /tts/messages/:id/audio 가 실패해,
+ * 수신자 앱이 조용히 기본음 알람으로 되돌아간다(사용자에겐 목소리가 사라진 것처럼 보인다).
+ *
+ * 오브젝트를 지우기 전에 알람을 sound-only 로 명시 강등하고 audio_url 을 비워, 서버 상태와
+ * 클라 폴백이 같은 말을 하게 한다. 메시지 행 자체는 수신자 데이터라 지우지 않는다.
+ *
+ * @returns 강등된 알람들 — 호출자가 정리 커밋 후 신호를 보내 즉시 반영시킨다.
+ */
+async function detachFamilyAlarmMessagesUsingOwnedUploads(
+  db: DbExecutor,
+  ids: string[],
+  ph: string,
+): Promise<DowngradedAlarm[]> {
+  const affectedMessages = `SELECT id FROM messages
+     WHERE audio_url IS NOT NULL
+       AND audio_url IN (SELECT object_key FROM voice_uploads WHERE user_id IN (${ph}))`;
+  // 강등 '전에' 대상을 모아 둔다 — UPDATE 가 message_id 를 끊고 나면 다시 찾을 수 없다.
+  const owners = await collectDowngradeTargets(
+    db,
+    `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
+            target_user_id IS NOT NULL AS is_received
+       FROM alarms WHERE message_id IN (${affectedMessages})`,
+    ids,
+  );
+  await db.execute({
+    sql: `UPDATE alarms
+          SET mode = 'sound-only',
+              wake_mode = 'sound_then_voice',
+              message_id = NULL,
+              voice_profile_id = NULL
+          WHERE message_id IN (${affectedMessages})`,
+    args: ids,
+  });
+  await db.execute({
+    sql: `UPDATE messages SET audio_url = NULL WHERE id IN (${affectedMessages})`,
+    args: ids,
+  });
+  return owners;
+}
+
 export async function deletePaidVoiceDataForUser(
   db: DbExecutor,
   userPk: string,
@@ -21,6 +124,7 @@ export async function deletePaidVoiceDataForUser(
   // ElevenLabs 클론/R2 오디오 외부 삭제 참조를 행 삭제 전에 큐에 적재 —
   // 다운그레이드로 유료 음성 데이터가 사라질 때 클로닝 본체도 함께 사라지게 한다.
   await enqueueUserVoiceArtifacts(db, ids);
+  await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph);
 
   await db.execute({
     sql: `DELETE FROM generated_audio_assets
@@ -101,6 +205,7 @@ export async function deletePaidVoiceDataForUser(
     args: ids,
   });
 
+  await deleteRelationshipsForOwnedProfiles(db, ids, ph);
   await db.execute({
     sql: `DELETE FROM voice_profiles WHERE user_id IN (${ph})`,
     args: ids,
@@ -166,14 +271,21 @@ export async function releaseClonedVoicesForUser(
   }
 }
 
+/**
+ * @returns 이 정리로 sound-only 로 강등된 알람들. 호출자가 커밋 후 신호를 보내 즉시
+ *          반영시킨다 — 이 스윕은 플랜 변경 3일 뒤에 도는데, 그때까지 앱을 안 켠 수신자는
+ *          이미 캐시한 오디오로 계속 울린다. 다음 앱 시작/주기 동기화까지 기다리면 그사이
+ *          알람이 먼저 울릴 수 있다(AGENTS.md 의 FCM 상태 동기화).
+ */
 export async function deleteSensitiveVoiceDataForUser(
   db: DbExecutor,
   userPk: string,
   userLoginId?: string | null,
-): Promise<void> {
+): Promise<DowngradedAlarm[]> {
   const ids = uniqueIds([userPk, userLoginId]);
-  if (ids.length === 0) return;
+  if (ids.length === 0) return [];
   const ph = placeholders(ids);
+  const downgraded = new Map<string, DowngradedAlarm>();
 
   const providerVoices = await db.execute({
     sql: `SELECT elevenlabs_voice_id FROM voice_profiles
@@ -201,7 +313,26 @@ export async function deleteSensitiveVoiceDataForUser(
   for (const row of generatedObjects.rows) {
     await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
   }
+  for (const target of await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph)) {
+    downgraded.set(target.alarmId, target);
+  }
 
+  // 공유 목소리를 참조하던 알람도 같은 이유로 강등 전에 대상을 골라 둔다.
+  const sharedVoiceTargets = await collectDowngradeTargets(
+    db,
+    `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
+            target_user_id IS NOT NULL AS is_received
+       FROM alarms
+      WHERE voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))
+         OR message_id IN (
+           SELECT id FROM messages
+           WHERE user_id IN (${ph}) OR voice_profile_id IN (
+             SELECT id FROM voice_profiles WHERE user_id IN (${ph})
+           )
+         )`,
+    [...ids, ...ids, ...ids],
+  );
+  for (const target of sharedVoiceTargets) downgraded.set(target.alarmId, target);
   await db.execute({
     sql: `UPDATE alarms
           SET mode = 'sound-only', wake_mode = 'sound_then_voice',
@@ -243,5 +374,7 @@ export async function deleteSensitiveVoiceDataForUser(
     sql: `DELETE FROM voice_prerender_queue WHERE owner_user_id IN (${ph})`,
     args: ids,
   });
+  await deleteRelationshipsForOwnedProfiles(db, ids, ph);
   await db.execute({ sql: `DELETE FROM voice_profiles WHERE user_id IN (${ph})`, args: ids });
+  return Array.from(downgraded.values());
 }

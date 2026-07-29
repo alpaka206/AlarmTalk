@@ -6,6 +6,7 @@ import {
   deletePaidVoiceDataForUser,
   deleteSensitiveVoiceDataForUser,
   releaseClonedVoicesForUser,
+  type DowngradedAlarm,
 } from './paid-voice-cleanup';
 import { logStructured } from './logger';
 import {
@@ -16,7 +17,7 @@ import {
   type SubscriptionV2Response,
 } from './play-subscriptions';
 import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
-import { sendPlanChangedPush } from './fcm';
+import { notifyDowngradedAlarms, sendPlanChangedPush } from './fcm';
 import type { Env } from '../types';
 
 // 만료 크론이 FCM(plan_changed) 을 쏘려면 Play env 외에 FIREBASE 설정도 필요하다. index.ts 의 scheduled
@@ -143,7 +144,15 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
  * 그래서 이 스윕은 하드삭제를 하지 않고, 유예가 지난 보관 행만 정리하는 청소부로 남는다.
  * (계정 삭제 같은 명시 경로는 여전히 deletePaidVoiceDataForUser 로 직접 삭제한다.)
  */
-export async function sweepPaidVoiceRetention(db: Client, now: Date = new Date()): Promise<void> {
+export async function sweepPaidVoiceRetention(
+  db: Client,
+  now: Date = new Date(),
+): Promise<{ targets: DowngradedAlarm[]; cleanedUserPks: string[] }> {
+  // 이 정리로 강등된 알람들 — 호출자가 커밋 후 신호를 보낸다.
+  const downgraded = new Map<string, DowngradedAlarm>();
+  // 실제로 음성 데이터를 정리한 사용자들. 알람 행을 못 찾아도 이 계정에는 접근권 상실을
+  // 알려야 한다(서버에 아직 동기화되지 않은 로컬 알람이 있을 수 있다).
+  const cleanedUserPks: string[] = [];
   // 유예가 끝난 사용자의 남은 음성 데이터(원본 업로드·생성 오디오)를 정리한다.
   // 클론 자체는 해지 시점에 이미 반납했다(releaseClonedVoicesForUser).
   const due = await db.execute({
@@ -160,9 +169,28 @@ export async function sweepPaidVoiceRetention(db: Client, now: Date = new Date()
       await clearPaidVoiceRetention(db, userPk);
       continue;
     }
-    await deleteSensitiveVoiceDataForUser(db, userPk, await resolveUserLoginId(db, userPk));
-    await clearPaidVoiceRetention(db, userPk);
+    // 한 사용자에서 실패해도 나머지를 버리지 않는다. 예외가 위로 새면 호출부가
+    // notifyDowngradedAlarms 까지 못 가서, 이미 정리·마커 삭제까지 끝난 앞 사용자들의
+    // 알림이 통째로 사라진다 — 마커가 없으니 다음 크론이 복구할 수도 없다.
+    // 실패한 사용자는 마커를 그대로 둬(아래 clear 를 건너뛴다) 다음 크론이 다시 시도한다.
+    try {
+      const affected = await deleteSensitiveVoiceDataForUser(
+        db,
+        userPk,
+        await resolveUserLoginId(db, userPk),
+      );
+      for (const target of affected) downgraded.set(target.alarmId, target);
+      cleanedUserPks.push(userPk);
+      await clearPaidVoiceRetention(db, userPk);
+    } catch (err) {
+      logStructured('error', {
+        at: 'billing.paid_voice_retention_sweep',
+        action: 'RETENTION_CLEANUP_FAILED',
+        error: String(err),
+      });
+    }
   }
+  return { targets: Array.from(downgraded.values()), cleanedUserPks };
 }
 
 export async function downgradeUserToFree(
@@ -827,11 +855,15 @@ export async function processSubscriptionExpiry(
   }
 
   // 보관 유예가 끝난 유료 음성 데이터 정리 (같은 cron 주기에서 처리).
-  await sweepPaidVoiceRetention(db, now);
+  const sweptVoiceData = await sweepPaidVoiceRetention(db, now);
 
   // 강등된 사용자에게 plan_changed 푸시 — 클라가 '강등 시점'에 유료 목소리 알람을 기본 알람으로
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
   await notifyPlanChanged(db, env, Array.from(notifyUserPks));
+
+  // 보관 정리가 서버에서 바꾼 '알람 행'은 plan_changed 로는 안 따라온다 — 이유는
+  // notifyDowngradedAlarms 참고. 강등된 알람마다 알람 동기화 신호를 보낸다.
+  await notifyDowngradedAlarms(db, env, sweptVoiceData.targets, sweptVoiceData.cleanedUserPks);
 }
 
 export { planTypeToUserPlan };

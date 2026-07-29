@@ -231,6 +231,125 @@ export async function sendVoiceShareChangedPush(
  * 구독/플랜을 재조회해 '진짜 무료'면 유료 목소리 알람을 기본 알람으로 변환한다. 과다발송해도 클라가
  * 재조회로 확인(유료면 무시)하므로 안전. 놓쳐도 다음 앱 시작·울림 시점 게이트가 폴백.
  */
+/**
+ * 목소리 접근권이 서버에서 사라졌음을 알리는 data-only 신호.
+ *
+ * 받은 알람은 원격 pull 로 갱신되지만 **본인 소유 알람은 그 pull 대상이 아니다**
+ * (RemoteAlarmPullSyncService 는 받은 알람만 훑는다). 그래서 본인 알람은 목소리 목록을
+ * 다시 받아 접근권을 잃은 것을 로컬에서 강등해야 한다 — 클라의 VoiceAccessSyncWorker 가
+ * 그 일을 한다. 플랜 만료와 달리 동의 철회는 users.plan 이 그대로라 plan_changed 경로의
+ * '진짜 무료' 게이트에 걸리지 않으므로, 별도 신호가 필요하다.
+ */
+export async function sendVoiceAccessRevokedPush(
+  db: Client,
+  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  userId: string,
+): Promise<FcmSendResult[]> {
+  const tokens = await getTokensForUser(db, userId);
+  if (tokens.length === 0) return [];
+  const messages: FcmMessage[] = tokens.map((token) => ({
+    token,
+    title: '',
+    body: '',
+    data: { type: 'voice_access_revoked' },
+  }));
+  const results = await sendPushNotifications(messages, env);
+  await pruneStaleTokens(db, results);
+  return results;
+}
+
+/**
+ * 서버가 강등한 알람을 그 기기가 **즉시 다시 받아 가게** 하는 신호.
+ *
+ * plan_changed 로는 안 된다 — 클라의 PlanChangeSyncWorker 는 이용권을 다시 받아 '진짜 무료'일
+ * 때만 로컬 강등을 돌리고, 원격 알람 pull 은 하지 않는다. 그래서 아직 유료인 수신자는 서버가
+ * 알람을 바꿔도 주기/앱시작 폴백까지 캐시된 녹음으로 계속 울린다. 알람을 다시 받아오게 하는
+ * 신호는 family_alarm 이므로 그걸 보낸다(수신자 앱은 기존 행을 업데이트만 하고 알림은 띄우지
+ * 않는다 — notifyReceivedAlarm 은 신규 임포트 전용).
+ *
+ * 반드시 **쓰기 트랜잭션 커밋 후에** 부를 것. 롤백될 수 있는 변경을 미리 알리면 안 된다.
+ * 한 건 실패가 나머지를 막지 않도록 개별적으로 삼킨다(폴백 pull 이 정확성을 보장한다).
+ */
+/**
+ * 강등 알림 메시지를 만든다 — **수신자 단위로 접어서**.
+ *
+ * 받은 알람은 수신자당 한 번만 보낸다. 클라 핸들러(AlarmTalkMessagingService)는 payload 의
+ * alarmId 를 쓰지 않고 원격 알람을 '전부' 다시 받으므로, 알람마다 보내면 토큰 조회와 FCM
+ * 왕복만 알람 수만큼 늘어난다 — 한 스윕이 여러 알람을 강등하면 Workers 서브리퀘스트 상한에
+ * 걸릴 수 있다(AGENTS.md). alarmId 는 형식 유지용으로 대표 하나만 싣는다.
+ *
+ * 토큰 조회를 인자로 받아 순수하게 유지한다 — 팬아웃 규칙을 DB 없이 단언할 수 있게.
+ */
+export async function buildDowngradeNotifications(
+  getTokens: (userId: string) => Promise<string[]>,
+  targets: Array<{ alarmId: string; ownerUserId: string; isReceived: boolean }>,
+  voiceAccessRevokedUserIds: string[] = [],
+): Promise<FcmMessage[]> {
+  const receivedRepresentative = new Map<string, string>();
+  for (const target of targets) {
+    if (!target.isReceived) continue;
+    if (!receivedRepresentative.has(target.ownerUserId)) {
+      receivedRepresentative.set(target.ownerUserId, target.alarmId);
+    }
+  }
+  // 본인 소유 알람은 pull 대상이 아니라 목소리 접근권 재확인이 필요하다. 알람 행을 못 찾은
+  // 계정도 포함한다(서버에 아직 동기화되지 않은 로컬 알람 때문에).
+  const voiceAccessOwners = new Set([
+    ...targets.filter((t) => !t.isReceived).map((t) => t.ownerUserId),
+    ...voiceAccessRevokedUserIds.filter(Boolean),
+  ]);
+
+  const messages: FcmMessage[] = [];
+  for (const [userId, alarmId] of receivedRepresentative) {
+    for (const token of await getTokens(userId)) {
+      messages.push({ token, title: '', body: '', data: { type: 'family_alarm', alarmId } });
+    }
+  }
+  for (const userId of voiceAccessOwners) {
+    for (const token of await getTokens(userId)) {
+      messages.push({ token, title: '', body: '', data: { type: 'voice_access_revoked' } });
+    }
+  }
+  return messages;
+}
+
+export async function notifyDowngradedAlarms(
+  db: Client,
+  env: Partial<Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>> | undefined,
+  targets: Array<{ alarmId: string; ownerUserId: string; isReceived: boolean }>,
+  /**
+   * 목소리 접근권을 잃은 계정들 — 서버에서 찾은 알람 행과 **무관하게** 알려야 한다.
+   * 아직 서버로 동기화되지 않은 로컬 알람은 targets 에 안 잡히는데, 발사는 로컬이고
+   * 울림 시점 동의 게이트도 없어 그 기기는 지워진 녹음으로 계속 울린다.
+   */
+  voiceAccessRevokedUserIds: string[] = [],
+): Promise<void> {
+  if (!env?.FIREBASE_PROJECT_ID || !env?.FIREBASE_SERVICE_ACCOUNT_JSON) return;
+  if (targets.length === 0 && voiceAccessRevokedUserIds.length === 0) return;
+  // 메시지를 모아 **한 번에** 보낸다 — sendPushNotifications 는 호출마다 OAuth 토큰을 새로
+  // 받으므로, 대상마다 나눠 부르면 그만큼 왕복이 늘어난다.
+  const messages = await buildDowngradeNotifications(
+    (userId) => getTokensForUser(db, userId),
+    targets,
+    voiceAccessRevokedUserIds,
+  );
+  if (messages.length === 0) return;
+  try {
+    const results = await sendPushNotifications(messages, {
+      FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
+      FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    });
+    await pruneStaleTokens(db, results);
+  } catch (err) {
+    // 삼켜도 되는 이유: 즉시성만 잃는다. 정확성은 하루 주기 재확인과 앱 시작 재조회가 맡는다.
+    logStructured('error', {
+      at: 'fcm.downgraded_alarm_push',
+      action: 'DOWNGRADED_ALARM_PUSH_FAILED',
+      error: String(err),
+    });
+  }
+}
+
 export async function sendPlanChangedPush(
   db: Client,
   env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
