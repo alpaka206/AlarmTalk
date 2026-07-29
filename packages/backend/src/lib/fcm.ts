@@ -232,6 +232,33 @@ export async function sendVoiceShareChangedPush(
  * 재조회로 확인(유료면 무시)하므로 안전. 놓쳐도 다음 앱 시작·울림 시점 게이트가 폴백.
  */
 /**
+ * 목소리 접근권이 서버에서 사라졌음을 알리는 data-only 신호.
+ *
+ * 받은 알람은 원격 pull 로 갱신되지만 **본인 소유 알람은 그 pull 대상이 아니다**
+ * (RemoteAlarmPullSyncService 는 받은 알람만 훑는다). 그래서 본인 알람은 목소리 목록을
+ * 다시 받아 접근권을 잃은 것을 로컬에서 강등해야 한다 — 클라의 VoiceAccessSyncWorker 가
+ * 그 일을 한다. 플랜 만료와 달리 동의 철회는 users.plan 이 그대로라 plan_changed 경로의
+ * '진짜 무료' 게이트에 걸리지 않으므로, 별도 신호가 필요하다.
+ */
+export async function sendVoiceAccessRevokedPush(
+  db: Client,
+  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  userId: string,
+): Promise<FcmSendResult[]> {
+  const tokens = await getTokensForUser(db, userId);
+  if (tokens.length === 0) return [];
+  const messages: FcmMessage[] = tokens.map((token) => ({
+    token,
+    title: '',
+    body: '',
+    data: { type: 'voice_access_revoked' },
+  }));
+  const results = await sendPushNotifications(messages, env);
+  await pruneStaleTokens(db, results);
+  return results;
+}
+
+/**
  * 서버가 강등한 알람을 그 기기가 **즉시 다시 받아 가게** 하는 신호.
  *
  * plan_changed 로는 안 된다 — 클라의 PlanChangeSyncWorker 는 이용권을 다시 받아 '진짜 무료'일
@@ -246,7 +273,7 @@ export async function sendVoiceShareChangedPush(
 export async function notifyDowngradedAlarms(
   db: Client,
   env: Partial<Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>> | undefined,
-  targets: Array<{ alarmId: string; ownerUserId: string }>,
+  targets: Array<{ alarmId: string; ownerUserId: string; isReceived: boolean }>,
 ): Promise<void> {
   if (!env?.FIREBASE_PROJECT_ID || !env?.FIREBASE_SERVICE_ACCOUNT_JSON || targets.length === 0) {
     return;
@@ -255,16 +282,25 @@ export async function notifyDowngradedAlarms(
     FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
     FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
   };
-  for (const target of targets) {
+  const send = async (at: string, run: () => Promise<unknown>) => {
     try {
-      await sendFamilyAlarmPush(db, pushEnv, target.ownerUserId, target.alarmId);
+      await run();
     } catch (err) {
-      logStructured('error', {
-        at: 'fcm.downgraded_alarm_push',
-        action: 'DOWNGRADED_ALARM_PUSH_FAILED',
-        error: String(err),
-      });
+      logStructured('error', { at, action: 'DOWNGRADED_ALARM_PUSH_FAILED', error: String(err) });
     }
+  };
+  // 받은 알람: 원격 pull 이 그 행을 갱신한다(알람마다 보낸다 — 페이로드에 alarmId 가 들어간다).
+  for (const target of targets.filter((t) => t.isReceived)) {
+    await send('fcm.downgraded_alarm_push', () =>
+      sendFamilyAlarmPush(db, pushEnv, target.ownerUserId, target.alarmId),
+    );
+  }
+  // 본인 소유 알람: pull 대상이 아니라 목소리 접근권 재확인이 필요하다. 사용자당 한 번이면 된다.
+  const selfOwners = new Set(targets.filter((t) => !t.isReceived).map((t) => t.ownerUserId));
+  for (const userId of selfOwners) {
+    await send('fcm.voice_access_revoked_push', () =>
+      sendVoiceAccessRevokedPush(db, pushEnv, userId),
+    );
   }
 }
 

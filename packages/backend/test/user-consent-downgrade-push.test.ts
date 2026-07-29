@@ -38,7 +38,9 @@ beforeEach(() => {
 });
 
 /** 강등 대상 조회에만 행을 돌려주는 스텁 — FIFO 순서에 기대지 않는다. */
-function stubDowngradeTarget(row: { id: string; owner_user_id: string } | null) {
+function stubDowngradeTarget(
+  row: { id: string; owner_user_id: string; is_received: number } | null,
+) {
   const base = mockDB.client.execute;
   mockDB.client.execute = (async (q: { sql: string; args: (string | number | null)[] }) => {
     if (row && /COALESCE\(target_user_id, user_id\)/.test(q.sql) && /WHERE message_id IN/.test(q.sql)) {
@@ -50,7 +52,7 @@ function stubDowngradeTarget(row: { id: string; owner_user_id: string } | null) 
 
 describe('POST /user/consents — 민감 동의 철회', () => {
   it('강등된 알람의 주인에게 알람 동기화 신호를 보낸다', async () => {
-    stubDowngradeTarget({ id: 'al-1', owner_user_id: 'recipient' });
+    stubDowngradeTarget({ id: 'al-1', owner_user_id: 'recipient', is_received: 1 });
     const app = buildApp();
 
     const res = await app.request(
@@ -65,7 +67,7 @@ describe('POST /user/consents — 민감 동의 철회', () => {
     expect(notifyDowngradedAlarms).toHaveBeenCalledTimes(1);
     // 울리는 기기의 주인은 target_user_id(수신자)다.
     expect(notifyDowngradedAlarms.mock.calls[0]![2]).toEqual([
-      { alarmId: 'al-1', ownerUserId: 'recipient' },
+      { alarmId: 'al-1', ownerUserId: 'recipient', isReceived: true },
     ]);
   });
 

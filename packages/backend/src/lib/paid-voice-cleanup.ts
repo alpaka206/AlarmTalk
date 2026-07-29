@@ -20,6 +20,14 @@ export interface DowngradedAlarm {
    * 우선한다. 일반 알람은 target 이 없어 소유자로 떨어진다.
    */
   ownerUserId: string;
+  /**
+   * 수신자에게 배달된 가족알람인가(target_user_id 존재).
+   *
+   * 보내야 할 신호가 다르다. 받은 알람은 원격 pull 로 갱신되지만(family_alarm →
+   * RemoteAlarmPullSyncService), **본인 소유 알람은 그 pull 대상이 아니다** — 받은 알람만
+   * 훑기 때문이다. 본인 알람은 목소리 접근권을 다시 확인해 로컬에서 강등해야 한다.
+   */
+  isReceived: boolean;
 }
 
 /** 강등 대상 알람의 id 와 '울리는 기기의 주인'을 강등 전에 모은다. */
@@ -33,6 +41,7 @@ async function collectDowngradeTargets(
     .map((r) => ({
       alarmId: String(r.id ?? ''),
       ownerUserId: String(r.owner_user_id ?? ''),
+      isReceived: Number(r.is_received ?? 0) === 1,
     }))
     .filter((x) => x.alarmId && x.ownerUserId);
 }
@@ -82,8 +91,9 @@ async function detachFamilyAlarmMessagesUsingOwnedUploads(
   // 강등 '전에' 대상을 모아 둔다 — UPDATE 가 message_id 를 끊고 나면 다시 찾을 수 없다.
   const owners = await collectDowngradeTargets(
     db,
-    `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id FROM alarms
-      WHERE message_id IN (${affectedMessages})`,
+    `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
+            target_user_id IS NOT NULL AS is_received
+       FROM alarms WHERE message_id IN (${affectedMessages})`,
     ids,
   );
   await db.execute({
@@ -310,7 +320,9 @@ export async function deleteSensitiveVoiceDataForUser(
   // 공유 목소리를 참조하던 알람도 같은 이유로 강등 전에 대상을 골라 둔다.
   const sharedVoiceTargets = await collectDowngradeTargets(
     db,
-    `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id FROM alarms
+    `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
+            target_user_id IS NOT NULL AS is_received
+       FROM alarms
       WHERE voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))
          OR message_id IN (
            SELECT id FROM messages
