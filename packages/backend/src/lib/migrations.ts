@@ -1,5 +1,4 @@
 import type { Client } from '@libsql/client/web';
-import { PRESETS } from '../data/presets';
 
 export interface Migration {
   id: number;
@@ -9,45 +8,6 @@ export interface Migration {
 
 function sqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
-}
-
-const TTS_PRESET_SEED_STATEMENTS = PRESETS.map((preset, index) => {
-  const messagesJson = JSON.stringify(preset.messages);
-  return `INSERT OR IGNORE INTO tts_presets
-    (category, label, emoji, messages_json, sort_order, enabled)
-    VALUES (
-      ${sqlLiteral(preset.category)},
-      ${sqlLiteral(preset.label)},
-      ${sqlLiteral(preset.emoji)},
-      ${sqlLiteral(messagesJson)},
-      ${index},
-      1
-    )`;
-});
-
-// 이미 시드된 DB(INSERT OR IGNORE 라 갱신 안 됨)에 특정 카테고리의 멘트/라벨을 강제로
-// 덮어쓰거나 신규 카테고리를 추가할 때 쓰는 upsert. PRESETS 가 단일 진실 공급원.
-function ttsPresetUpsert(category: string): string {
-  const index = PRESETS.findIndex((p) => p.category === category);
-  const preset = PRESETS[index];
-  if (!preset) throw new Error(`ttsPresetUpsert: unknown preset category "${category}"`);
-  const messagesJson = JSON.stringify(preset.messages);
-  return `INSERT INTO tts_presets
-    (category, label, emoji, messages_json, sort_order, enabled)
-    VALUES (
-      ${sqlLiteral(preset.category)},
-      ${sqlLiteral(preset.label)},
-      ${sqlLiteral(preset.emoji)},
-      ${sqlLiteral(messagesJson)},
-      ${index},
-      1
-    )
-    ON CONFLICT(category) DO UPDATE SET
-      label = excluded.label,
-      emoji = excluded.emoji,
-      messages_json = excluded.messages_json,
-      enabled = excluded.enabled,
-      updated_at = datetime('now')`;
 }
 
 // 2026-07-19 확정 스톡 클립 대사(마이그레이션 #70 전용 '동결 사본').
@@ -732,23 +692,6 @@ export const migrations: Migration[] = [
     ],
   },
   {
-    id: 33,
-    name: 'tts-preset-remote-config',
-    statements: [
-      `CREATE TABLE IF NOT EXISTS tts_presets (
-        category TEXT PRIMARY KEY,
-        label TEXT NOT NULL,
-        emoji TEXT,
-        messages_json TEXT NOT NULL,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        updated_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE INDEX IF NOT EXISTS idx_tts_presets_order ON tts_presets(enabled, sort_order, category)',
-      ...TTS_PRESET_SEED_STATEMENTS,
-    ],
-  },
-  {
     id: 34,
     name: 'tts-prepared-text-fields',
     statements: [
@@ -1074,7 +1017,6 @@ export const migrations: Migration[] = [
       `CREATE VIEW IF NOT EXISTS "retained_billing_records_kst" AS SELECT *, datetime("starts_at",'+9 hours') AS starts_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "retained_billing_records"`,
       `CREATE VIEW IF NOT EXISTS "store_transactions_kst" AS SELECT *, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "store_transactions"`,
       `CREATE VIEW IF NOT EXISTS "subscriptions_kst" AS SELECT *, datetime("starts_at",'+9 hours') AS starts_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("canceled_at",'+9 hours') AS canceled_at_kst FROM "subscriptions"`,
-      `CREATE VIEW IF NOT EXISTS "tts_presets_kst" AS SELECT *, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "tts_presets"`,
       `CREATE VIEW IF NOT EXISTS "user_consents_kst" AS SELECT *, datetime("agreed_at",'+9 hours') AS agreed_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "user_consents"`,
       `CREATE VIEW IF NOT EXISTS "users_kst" AS SELECT *, datetime("daily_tts_reset_at",'+9 hours') AS daily_tts_reset_at_kst, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("last_active_at",'+9 hours') AS last_active_at_kst, datetime("deletion_requested_at",'+9 hours') AS deletion_requested_at_kst, datetime("deletion_purge_at",'+9 hours') AS deletion_purge_at_kst FROM "users"`,
       `CREATE VIEW IF NOT EXISTS "voice_profile_relationships_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "voice_profile_relationships"`,
@@ -1140,20 +1082,6 @@ export const migrations: Migration[] = [
         ON raw_alarm_uploads(created_at)`,
       `CREATE INDEX IF NOT EXISTS idx_raw_alarm_uploads_user
         ON raw_alarm_uploads(user_id)`,
-    ],
-  },
-  {
-    // 무료 프리셋 멘트 개편(#478 흡수) + 신규 카테고리(약·운동) 추가. tts_presets 초기 시드는
-    // INSERT OR IGNORE 라 기존 DB 에 반영되지 않으므로 여기서 upsert 로 강제 갱신/추가한다.
-    // 기상·밤 멘트 교체, 약 멘트는 건강에서 분리, 약·운동 신규. (PRESETS 가 단일 진실 공급원)
-    id: 49,
-    name: 'tts-preset-refresh-and-add-medication-exercise',
-    statements: [
-      ttsPresetUpsert('morning'),
-      ttsPresetUpsert('night'),
-      ttsPresetUpsert('health'),
-      ttsPresetUpsert('medication'),
-      ttsPresetUpsert('exercise'),
     ],
   },
   {
@@ -1869,6 +1797,19 @@ export const migrations: Migration[] = [
           AND EXISTS (
             SELECT 1 FROM voice_uploads vu WHERE vu.voice_profile_id = voice_profiles.id
           )`,
+    ],
+  },
+  {
+    // tts_presets 정리. '10테마 개별선택'(기상·점심·퇴근·밤·건강·공부·응원·사랑·약·운동) 시절의
+    // 원격 문구 테이블인데, 지금 제품의 문구는 기본값(greeting)·날씨·약(무료) / +운세·사랑(유료)
+    // 뿐이고 그 문구는 stock-clips.ts 가 단일 출처다. 남은 10행 중 실제로 읽히던 건
+    // medication 하나였고 그마저 확정 대사와 문구가 달라(반말 옛 버전) 버킷 미완성 폴백에서만
+    // 톤이 튀는 원인이었다. 코드 경로(lib/tts-presets.ts)와 함께 제거한다.
+    id: 87,
+    name: 'drop-tts-presets',
+    statements: [
+      `DROP INDEX IF EXISTS idx_tts_presets_order`,
+      `DROP TABLE IF EXISTS tts_presets`,
     ],
   },
 ];

@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
 import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
+import { STOCK_CLIP_PRESETS } from '../src/lib/stock-clips';
 
 const V1 = '40000000-0000-4000-8000-000000000001';
 const M1 = '10000000-0000-4000-8000-000000000001';
@@ -172,6 +173,15 @@ beforeEach(() => {
   mockDB.reset();
   mockTextToSpeech.mockReset();
 });
+
+// #87 이후 preset 문구의 단일 출처. 테스트가 문장을 복사해 두면 문구가 바뀔 때 조용히 갈리므로
+// 실제 상수에서 뽑아 쓴다.
+/** 표시용 문구는 [tag] 가 벗겨진 형태다(합성용 synthesis_text 에만 태그가 남는다). */
+const stripDeliveryTags = (text: string) =>
+  text.replace(/\s*\[[a-z][a-z -]*\]\s*/gi, ' ').replace(/\s+/g, ' ').trim();
+const GREETING_KO_RAW = STOCK_CLIP_PRESETS.find((p) => p.category === 'greeting')!.texts.ko[0]!;
+/** 약은 문구가 2개라 무작위로 하나가 뽑힌다 — 특정 인덱스를 단언하면 깨진다. */
+const MEDICATION_EN_RAW = STOCK_CLIP_PRESETS.find((p) => p.category === 'medication')!.texts.en!;
 
 describe('POST /tts/generate — TTS 생성', () => {
   it('draft 음성은 명시적인 미리듣기 요청 외 일반 TTS에 사용할 수 없다', async () => {
@@ -762,11 +772,8 @@ describe('POST /tts/generate — edge cases', () => {
   it('blocks system voice TTS when overseas_transfer consent is missing', async () => {
     mockDB.setConsentMissing(true);
     // F2: 기본(시스템) 목소리는 프리셋도 '날씨+약'만 허용되므로(화이트리스트), 동의 강제를
-    // 검증하려면 허용 카테고리(medication) 프리셋 요청을 쓴다. 프리셋 텍스트는 한글로 둬 요청
-    // 기본 언어(ko)와 일치시켜(언어 불일치 게이트 회피) 합성 직전 overseas_transfer 게이트에 도달.
-    mockDB.pushResult([
-      { category: 'medication', label: '약', emoji: 'pill', messages_json: JSON.stringify(['약 드실 시간이에요']) },
-    ]); // pickRandomPresetText
+    // 검증하려면 허용 카테고리(medication) 프리셋 요청을 쓴다. 문구는 STOCK_CLIP_PRESETS 의 ko
+    // 문장이라 요청 기본 언어(ko)와 일치해(언어 불일치 게이트 회피) 합성 직전 게이트에 도달한다.
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([
       { id: V1, status: 'ready', is_system: 1, elevenlabs_voice_id: 'el-system-1' },
@@ -1077,15 +1084,9 @@ describe('POST /tts/generate — edge cases', () => {
     expect(mockTextToSpeech).not.toHaveBeenCalled();
   });
 
-  it('random=true 면 서버 프리셋 문구를 골라 TTS를 생성한다', async () => {
-    mockDB.pushResult([
-      {
-        category: 'morning',
-        label: '아침',
-        emoji: 'sun',
-        messages_json: JSON.stringify(['서버가 고른 아침 문구']),
-      },
-    ]);
+  it('random=true 면 스톡 프리셋 문구를 골라 TTS를 생성한다', async () => {
+    // 문구 출처는 DB(tts_presets, #87 에서 삭제)가 아니라 stock-clips.ts 의 STOCK_CLIP_PRESETS 다.
+    // greeting 은 문구가 하나뿐이라 어떤 문장이 뽑혔는지 단언할 수 있다.
     mockDB.pushResult([{ plan: 'plus' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
@@ -1099,6 +1100,8 @@ describe('POST /tts/generate — edge cases', () => {
       app,
       jsonReq('POST', '/tts/generate', {
         voice_profile_id: V1,
+        // 기본값 문구 요청은 클라가 category='morning' 으로 보낸다(레거시 분류 이름).
+        // 서버가 stockPresetCategory 로 greeting 문구에 이어 붙인다.
         category: 'morning',
         random: true,
       }),
@@ -1106,12 +1109,12 @@ describe('POST /tts/generate — edge cases', () => {
 
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.original_text).toBe('서버가 고른 아침 문구');
+    expect(body.original_text).toBe(GREETING_KO_RAW);
     expect(body.text).toBe(body.original_text);
-    expect(
-      body.synthesis_text.replace(/\s*\[[a-z][a-z -]*\]\s*/gi, ' ').replace(/\s+/g, ' ').trim(),
-    ).toContain(body.original_text);
-    expect(body.tags).toContain('cheerfully');
+    // 스톡 문구는 [tag] 를 품고 있으므로 양쪽 다 벗겨서 비교한다.
+    expect(stripDeliveryTags(body.synthesis_text)).toContain(stripDeliveryTags(body.original_text));
+    // 태그는 문구에 박힌 [tag] 에서 뽑힌다 — 문구가 바뀌면 같이 따라가도록 원문에서 유도한다.
+    expect(body.tags).toEqual([...GREETING_KO_RAW.matchAll(/\[([a-z][a-z -]*)\]/gi)].map((m) => m[1]));
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
       body.synthesis_text,
@@ -1125,14 +1128,6 @@ describe('POST /tts/generate — edge cases', () => {
   });
 
   it('applies listener_title to preset TTS before synthesis', async () => {
-    mockDB.pushResult([
-      {
-        category: 'medication',
-        label: 'Medication',
-        emoji: 'pill',
-        messages_json: JSON.stringify(['wake now']),
-      },
-    ]);
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([
       {
@@ -1168,16 +1163,17 @@ describe('POST /tts/generate — edge cases', () => {
 
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.original_text).toBe('Buddy, wake now');
-    expect(body.text).toBe('Buddy, wake now');
-    expect(body.synthesis_text).toContain('Buddy, wake now');
+    const expectedTexts = MEDICATION_EN_RAW.map((t) => `Buddy, ${t}`);
+    expect(expectedTexts).toContain(body.original_text);
+    expect(body.text).toBe(body.original_text);
+    expect(stripDeliveryTags(body.synthesis_text)).toContain(stripDeliveryTags(body.original_text));
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-system-1',
-      expect.stringContaining('Buddy, wake now'),
+      expect.any(String),
       expect.any(Object),
     );
     const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
-    expect(inserted!.args[3]).toBe('Buddy, wake now');
+    expect(inserted!.args[3]).toBe(body.original_text);
   });
 
   it('random_context=wake_fortune creates a dynamic relationship-aware prompt', async () => {

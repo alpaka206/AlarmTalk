@@ -29,11 +29,11 @@ import {
   type WeatherSignal,
   type WeatherCondition,
 } from '../lib/vertex-translate';
-import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import {
   CLONE_CLIP_SEEDS,
   CLONE_WEATHER_CONDITIONS,
   FREE_BUCKET_CATEGORIES,
+  STOCK_CLIP_PRESETS,
   STOCK_GREETING_CATEGORY,
 } from '../lib/stock-clips';
 import {
@@ -265,13 +265,35 @@ function todayKoreaLabel(): string {
   }).format(new Date());
 }
 
-async function pickRandomPresetText(
-  env: AppEnv['Bindings'],
-  category: string,
-): Promise<string | null> {
-  const presets: TtsPreset[] = await loadTtsPresets(env);
-  const preset = presets.find((item) => item.category === category);
-  const messages = preset?.messages.map((message) => message.trim()).filter(Boolean) ?? [];
+/**
+ * 요청 카테고리(TTS_CATEGORIES) → 스톡 프리셋 카테고리. 클라의 분류체계는 '10테마' 시절 이름을
+ * 그대로 쓰는데(기본값 문구가 'morning' 으로 온다), 문구 출처인 STOCK_CLIP_PRESETS 는 지금 제품
+ * 구성(greeting·weather·medication)만 갖는다. 여기서만 이어 붙이고 클라는 건드리지 않는다.
+ *  - morning = 사용자가 문구를 안 바꿨을 때의 기본값 → greeting(목소리 미리듣기와 같은 인사말)
+ *  - medication = 그대로
+ * 나머지(점심·퇴근·건강·공부·응원·운동 …)는 편집기에 노출되지 않는 레거시라 문구가 없다 →
+ * null 이 돌아가고 호출부가 VOICE_AND_TEXT_REQUIRED 로 막는다.
+ */
+function stockPresetCategory(category: string): string {
+  return category === 'morning' ? STOCK_GREETING_CATEGORY : category;
+}
+
+/**
+ * random_context='preset' 의 문구를 고른다. 출처는 사전렌더와 **같은** STOCK_CLIP_PRESETS 다.
+ *
+ * 예전에는 tts_presets 테이블(원격 설정)에서 읽었는데, 그 테이블은 '10테마 개별선택' 시절의
+ * 잔재라 지금 제품에 없는 카테고리(점심·퇴근·건강·공부·응원·운동 …)로 차 있었고, 하나 살아
+ * 있던 medication 마저 확정 대사와 문구가 달랐다. 그래서 버킷이 아직 준비 안 돼 이 라이브
+ * 폴백으로 내려오면 같은 알람이 평소와 다른 톤(옛 반말 문구)으로 울렸다. 단일 출처로 합쳐
+ * 폴백도 사전렌더 클립과 같은 문장을 쓰게 한다.
+ */
+function pickRandomPresetText(category: string, language: string): string | null {
+  const preset = STOCK_CLIP_PRESETS.find((item) => item.category === stockPresetCategory(category));
+  if (!preset) return null;
+  const texts = preset.texts as Partial<Record<string, readonly string[]>>;
+  const messages = (texts[language] ?? texts.ko ?? [])
+    .map((message) => message.trim())
+    .filter(Boolean);
   if (messages.length === 0) return null;
   return messages[randomIndex(messages.length)]!;
 }
@@ -730,7 +752,7 @@ tts.post('/generate', async (c) => {
   let requestText = draftPreviewRequested
     ? draftPreviewText('ko')
     : randomRequested && randomContext === 'preset'
-      ? await pickRandomPresetText(c.env, category)
+      ? pickRandomPresetText(category, normalizeSynthesisLanguage(body.language))
       : (body.text ?? '').trim();
   if (!requestText) {
     if (randomRequested && randomContext !== 'preset') {

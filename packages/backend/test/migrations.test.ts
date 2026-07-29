@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createClient } from '@libsql/client';
 import { migrations, runMigrationsRange, type Migration } from '../src/lib/migrations';
-import { PRESETS } from '../src/data/presets';
 
 describe('migrations', () => {
   it('마이그레이션 ID가 순차적이고 고유하다', () => {
@@ -179,27 +178,23 @@ describe('migrations', () => {
     }
   });
 
-  it('migration #33 stores editable TTS preset categories in DB', () => {
-    const m = migrations.find((x) => x.id === 33);
-    expect(m).toBeDefined();
-    const all = m!.statements.join('\n');
-    expect(all).toContain('CREATE TABLE IF NOT EXISTS tts_presets');
-    expect(all).toContain('messages_json TEXT NOT NULL');
-    expect(all).toContain('idx_tts_presets_order');
-    expect(
-      m!.statements.filter((s) => s.includes('INSERT OR IGNORE INTO tts_presets')).length,
-    ).toBe(PRESETS.length);
-    expect(all).toContain("'morning'");
-    expect(all).toContain("'love'");
+  // tts_presets 는 #87 에서 삭제했다. 문구 단일 출처는 stock-clips.ts 이고, 옛 원격 문구
+  // 테이블을 만들던 #33 과 갱신하던 #49 는 새 DB 가 아예 안 만들도록 비워 뒀다.
+  it('migrations no longer create or seed tts_presets', () => {
+    const all = migrations.flatMap((m) => m.statements).join('\n');
+    expect(all).not.toContain('CREATE TABLE IF NOT EXISTS tts_presets');
+    expect(all).not.toContain('INSERT OR IGNORE INTO tts_presets');
+    // 그 테이블만 만들고 갱신하던 #33·#49 는 엔트리째 뺐다(빈 마이그레이션을 남기지 않는다).
+    expect(migrations.find((x) => x.id === 33)).toBeUndefined();
+    expect(migrations.find((x) => x.id === 49)).toBeUndefined();
   });
 
-  it('migration #49 upserts refreshed/new presets (약·운동 포함)', () => {
-    const m = migrations.find((x) => x.id === 49);
+  it('migration #87 drops the tts_presets table and its index', () => {
+    const m = migrations.find((x) => x.id === 87);
     expect(m).toBeDefined();
     const all = m!.statements.join('\n');
-    expect(all).toContain('ON CONFLICT(category) DO UPDATE');
-    expect(all).toContain("'medication'");
-    expect(all).toContain("'exercise'");
+    expect(all).toContain('DROP TABLE IF EXISTS tts_presets');
+    expect(all).toContain('DROP INDEX IF EXISTS idx_tts_presets_order');
   });
 
   it('migration #35 adds Apple login identity storage', () => {
