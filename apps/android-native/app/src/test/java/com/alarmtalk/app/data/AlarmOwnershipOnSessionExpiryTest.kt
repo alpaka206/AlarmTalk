@@ -31,16 +31,27 @@ class AlarmOwnershipOnSessionExpiryTest {
     private lateinit var dao: AlarmDao
     private var currentUser: String? = null
 
-    private val repository by lazy {
-        AlarmRepository(
-            alarmDao = dao,
-            holidayCalendarStore = HolidayCalendarStore(db.holidayDao()),
-            holidayCountryPreferenceStore = HolidayCountryPreferenceStore(context),
-            alarmScheduler = AlarmScheduler(context),
-            alarmAudioStore = AlarmAudioStore(context),
-            context = context,
-            currentUserIdProvider = { currentUser },
-        )
+    /** 마지막 로그인 계정 마커(실제로는 AuthSessionStore prefs). */
+    private var lastSessionUser: String? = null
+
+    private val repository by lazy { repositoryWith(dao) }
+
+    private fun repositoryWith(alarmDao: AlarmDao) = AlarmRepository(
+        alarmDao = alarmDao,
+        holidayCalendarStore = HolidayCalendarStore(db.holidayDao()),
+        holidayCountryPreferenceStore = HolidayCountryPreferenceStore(context),
+        alarmScheduler = AlarmScheduler(context),
+        alarmAudioStore = AlarmAudioStore(context),
+        context = context,
+        currentUserIdProvider = { currentUser },
+        previousSessionUserIdProvider = { lastSessionUser },
+        onOwnershipSettled = { userId -> lastSessionUser = userId },
+    )
+
+    /** claimUnownedAlarms 만 실패하는 DAO — 소유자 정리 실패 경로 재현용. */
+    private class ClaimFailingDao(real: AlarmDao) : AlarmDao by real {
+        override suspend fun claimUnownedAlarms(userId: String): Int =
+            throw android.database.sqlite.SQLiteException("disk full")
     }
 
     @Before
@@ -195,6 +206,55 @@ class AlarmOwnershipOnSessionExpiryTest {
         assertEquals("소유자가 null 로 되돌아가면 안 된다", "account-A", after?.ownerUserId)
         assertEquals("그 쓰기의 정상 변경은 그대로 반영된다", 999_000L, after?.fireAtMillis)
         assertEquals(AlarmStates.SNOOZED, after?.state)
+    }
+
+    /**
+     * 로그인 뒤처리가 끝나기 전에 프로세스가 죽으면 마커가 그대로 남는다. 다음 콜드스타트는
+     * 로그인 뒤처리를 타지 않고 곧장 재예약으로 가므로, 재예약 자체가 소유자를 먼저 확정해야
+     * 앞 계정 알람을 새 계정이 물려받지 않는다(Codex #650).
+     */
+    @Test
+    fun coldStartRescheduleSettlesOwnershipBeforeScheduling() = runBlocking {
+        seedLegacyAlarm()
+        lastSessionUser = "account-A"   // 앞 세션은 A 였고 소유자를 못 새긴 채 끝났다
+        currentUser = "account-B"       // 이번 콜드스타트는 B 세션으로 복원된다
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("B 세션에서 A 의 알람이 예약되면 안 된다", 0, scheduled)
+        assertEquals("소유자는 앞 계정으로 확정된다", "account-A", ownerOf("legacy-1"))
+        assertEquals("정리가 끝났으니 마커는 현재 계정으로 옮겨간다", "account-B", lastSessionUser)
+    }
+
+    /** 같은 계정이 다시 들어오면 레거시 알람은 그대로 자기 것이 된다(마커만 갱신). */
+    @Test
+    fun coldStartKeepsOwnerlessAlarmsForTheSameAccount() = runBlocking {
+        seedLegacyAlarm()
+        lastSessionUser = "account-A"
+        currentUser = "account-A"
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals(1, scheduled)
+        assertNull("같은 계정이면 소유자를 억지로 박지 않는다", ownerOf("legacy-1"))
+    }
+
+    /**
+     * 소유자 정리가 실패하면 (a) 미기록 행을 이번 회차에 예약하지 않고 (b) 마커를 그대로 둬
+     * 다음 기회에 다시 시도해야 한다. 마커를 잃으면 재시도 근거가 영영 사라진다(Codex #650).
+     */
+    @Test
+    fun failedSettlementSkipsOwnerlessAlarmsAndKeepsTheMarker() = runBlocking {
+        seedLegacyAlarm()
+        seedLegacyAlarm(id = "mine", owner = "account-B")
+        lastSessionUser = "account-A"
+        currentUser = "account-B"
+
+        val scheduled = repositoryWith(ClaimFailingDao(dao)).reschedulePendingAlarms()
+
+        assertEquals("내 알람만 예약된다 — 주인 모를 알람은 제외", 1, scheduled)
+        assertNull("소유자는 여전히 미기록", ownerOf("legacy-1"))
+        assertEquals("마커가 남아야 다음에 다시 시도할 수 있다", "account-A", lastSessionUser)
     }
 
     @Test

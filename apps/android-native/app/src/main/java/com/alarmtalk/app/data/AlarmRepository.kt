@@ -40,6 +40,12 @@ class AlarmRepository(
     // 같은 값을 '흐름'으로도 받는다 — 목록 필터가 로그인/로그아웃 즉시 다시 계산돼야 한다.
     // 기본값은 1회 방출이라, 이 인자를 주지 않는 호출부(테스트 등)는 예전과 동작이 같다.
     private val currentUserIdFlow: Flow<String?> = flowOf(currentUserIdProvider()),
+    // 이 기기에서 마지막으로 로그인했던 계정 id. 세션이 끝날 때 소유자를 못 새겼으면
+    // 예약 직전에 [settleAlarmOwnershipFromPreviousSession] 이 이걸로 마저 새긴다.
+    private val previousSessionUserIdProvider: () -> String? = { null },
+    // 소유자 정리가 끝났을 때만 '마지막 로그인 계정'을 현재 계정으로 갱신한다.
+    // 실패하면 부르지 않아 마커가 남고, 다음 기회에 다시 시도한다.
+    private val onOwnershipSettled: (String) -> Unit = {},
 ) {
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -451,6 +457,39 @@ class AlarmRepository(
     }
 
     /**
+     * 앞 세션이 '다른 계정'이었는데 그 세션이 끝날 때 소유자를 못 새겼으면 여기서 마저 새긴다.
+     *
+     * 세션 종료 시점의 [claimUnownedAlarmsFor] 가 실패하거나(쓰기 오류), 로그인 뒤처리가 끝나기
+     * 전에 프로세스가 죽으면 소유자 미기록 행이 그대로 남는다. 그 상태로 예약하면 다음 계정이
+     * 앞 계정 알람을 자기 것으로 삼아 울린다. 그래서 [reschedulePendingAlarms] 가 예약 직전에
+     * 이 함수를 부른다 — 로그인 뒤처리뿐 아니라 앱 콜드스타트·부팅 복구도 전부 그 함수를
+     * 지나므로, 한 곳만 막으면 나머지 경로가 새는 것을 방지한다. 여러 번 불러도 안전하다.
+     *
+     * @return 정리가 끝났는가. false 면 소유자 미기록 행을 이번 회차에 예약하면 안 되고
+     *         (누구 것인지 모르는 알람이다), 마커도 그대로 둬 다음 기회에 다시 시도한다.
+     */
+    suspend fun settleAlarmOwnershipFromPreviousSession(): Boolean {
+        // 비로그인 상태에서는 정리할 '앞 계정'이 없다 — 기기 알람은 그대로 둔다.
+        val currentUser = currentUserIdProvider()?.takeIf { it.isNotBlank() } ?: return true
+        val previousUser = previousSessionUserIdProvider()?.takeIf { it.isNotBlank() }
+        if (previousUser == null || previousUser == currentUser) {
+            onOwnershipSettled(currentUser)
+            return true
+        }
+        return runCatching { claimUnownedAlarmsFor(previousUser) }
+            .onSuccess { claimed ->
+                if (claimed > 0) {
+                    Log.i(TAG, "Settled $claimed ownerless alarms onto the previous account")
+                }
+                onOwnershipSettled(currentUser)
+            }
+            .onFailure { error ->
+                Log.w(TAG, "Failed to settle alarm ownership from the previous session", error)
+            }
+            .isSuccess
+    }
+
+    /**
      * 지금 로그인한 계정의 것이 아닌 알람의 OS 예약을 내린다.
      *
      * 자동 401(토큰 만료)은 알람을 그대로 두므로, 그 상태에서 다른 계정으로 로그인하면
@@ -803,6 +842,9 @@ class AlarmRepository(
     }
 
     suspend fun reschedulePendingAlarms(recomputeFireTime: Boolean = false): Int {
+        // 예약 전에 소유자를 확정한다 — 이 함수는 로그인 뒤처리·앱 시작·부팅 복구가 모두
+        // 지나는 길목이라, 여기서 한 번 막으면 나머지 경로가 따로 새지 않는다.
+        val ownershipSettled = settleAlarmOwnershipFromPreviousSession()
         val now = System.currentTimeMillis()
         val enabledAlarms = alarmDao.getEnabledAlarms()
         val holidayPredicate = holidayCalendarStore.holidayPredicate(
@@ -817,6 +859,13 @@ class AlarmRepository(
             // 재로그인 때 되살아나 남의 폰에서 울리는 것 방지). 미기록(null)은 lockPaidAlarmTalks
             // 와 같은 규칙으로 현재 계정 것으로 본다.
             if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) return@forEach
+            // 소유자 정리가 실패한 회차에는 미기록 행을 '현재 계정 것'으로 볼 근거가 없다.
+            // 예약을 내려 남의 알람이 울리는 것을 막되 행은 남긴다 — 마커가 보존돼 있어
+            // 다음 회차에 소유자를 새기고 나면 주인에게 다시 예약된다.
+            if (alarm.ownerUserId == null && !ownershipSettled) {
+                alarmScheduler.cancel(alarm.id)
+                return@forEach
+            }
             runCatching {
                 // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
                 // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는
