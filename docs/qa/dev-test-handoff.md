@@ -29,8 +29,17 @@ B 로 같은 06:00 알람 생성 → A 로 복귀 → A32(rel dev)에서 A 에�
 앞 32,768바이트만 DB 본체), 결국 `.db` 만 꺼낸 것과 똑같은 '마지막 체크포인트 시점' 스냅샷이 된다.
 열리기는 하니 잘못된 줄 모르고 지나가기 쉽다.
 
+그리고 **꺼내기 전에 앱을 멈춰야 한다.** 세 파일을 한 줄씩 복사하는 동안 앱이 살아 있으면, `.db` 를
+복사한 뒤 `-wal` 을 복사하기 전에 Room 이 체크포인트·WAL 리셋을 할 수 있다. 그러면 서로 다른 시점의
+파일 셋이 만들어져 최근 알람이 통째로 빠지거나 `no such table` 이 난다 — 게다가 **그때도 에러가 안 나서**
+잘못된 줄 모른다. force-stop 이 프로세스를 정리하며 WAL 을 접어 주므로, 그 뒤로는 파일 셋이 얼어 있다.
+
+관찰하려던 동작이 **끝난 뒤에** 멈춰야 한다(force-stop 자체는 알람 예약을 지우지 않는다 —
+AlarmManager 예약과 Room 행은 그대로다).
+
 ```powershell
 $dst = '<받을 폴더>'
+adb -s <serial> shell am force-stop com.alarmtalk.app.dev   # ← 반드시 먼저
 foreach ($f in 'voice-alarm.db','voice-alarm.db-wal','voice-alarm.db-shm') {
   adb -s <serial> shell "run-as com.alarmtalk.app.dev cat /data/data/com.alarmtalk.app.dev/databases/$f > /data/local/tmp/$f"
   adb -s <serial> pull "/data/local/tmp/$f" "$dst\$f"
