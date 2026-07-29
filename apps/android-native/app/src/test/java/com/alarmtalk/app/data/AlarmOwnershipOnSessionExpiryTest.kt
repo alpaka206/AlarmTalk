@@ -7,6 +7,7 @@ import com.alarmtalk.app.alarm.AlarmScheduler
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -47,6 +48,11 @@ class AlarmOwnershipOnSessionExpiryTest {
         previousSessionUserIdProvider = { lastSessionUser },
         onOwnershipSettled = { userId -> lastSessionUser = userId },
     )
+
+    private val shadowAlarmManager
+        get() = org.robolectric.Shadows.shadowOf(
+            context.getSystemService(android.app.AlarmManager::class.java),
+        )
 
     /** claimUnownedAlarms 만 실패하는 DAO — 소유자 정리 실패 경로 재현용. */
     private class ClaimFailingDao(real: AlarmDao) : AlarmDao by real {
@@ -167,6 +173,26 @@ class AlarmOwnershipOnSessionExpiryTest {
 
         assertEquals(0, cancelled)
         assertEquals("본인 재로그인 시에는 그대로 재예약된다", 1, scheduled)
+    }
+
+    /**
+     * 로그아웃의 안전 필수 단계는 '예약 취소'다. 소유자 새기기가 실패해도 취소는 반드시
+     * 돌아야 한다 — 로그아웃하면 목록에서 감춰져 사용자가 끌 수 없는데 AlarmReceiver 는
+     * Room 에서 바로 읽어 울린다(Codex #650).
+     */
+    @Test
+    fun signOutCancelsReservationsEvenWhenOwnerStampingFails() = runBlocking {
+        seedLegacyAlarm()
+        currentUser = "account-A"
+        repository.reschedulePendingAlarms()
+        assertNotNull("전제: 알람이 예약돼 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        repositoryWith(ClaimFailingDao(dao)).detachAlarmsOnSignOut("account-A")
+
+        assertNull(
+            "떠나는 계정의 예약이 남으면 안 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
     }
 
     /** 명시 로그아웃 경로도 같은 함수를 쓰도록 정리했으므로 그쪽 동작도 함께 고정한다. */

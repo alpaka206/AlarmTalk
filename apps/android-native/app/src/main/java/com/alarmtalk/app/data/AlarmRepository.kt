@@ -429,8 +429,15 @@ class AlarmRepository(
     suspend fun detachAlarmsOnSignOut(signedOutUserId: String?): Int {
         val all = alarmDao.getAllAlarms()
         if (all.isEmpty()) return 0
-        claimUnownedAlarmsFor(signedOutUserId)
+        // 예약 취소가 먼저다. 소유자 새기기가 실패해도(디스크 가득참 등) 떠나는 계정의 알람이
+        // 예약된 채 남으면 안 된다 — 로그아웃 뒤에는 목록에서 감춰져 사용자가 끌 수도 없는데
+        // AlarmReceiver 는 Room 에서 바로 읽어 울린다. 순서를 뒤집으면 쓰기 한 번 실패로
+        // 취소 루프 전체가 건너뛰어진다.
         all.forEach { alarm -> alarmScheduler.cancel(alarm.id) }
+        // 새기기가 실패해도 예약은 이미 내려갔다. 마커(마지막 로그인 계정)가 남아 다음
+        // 로그인의 settleAlarmOwnershipFromPreviousSession 이 다시 시도한다.
+        runCatching { claimUnownedAlarmsFor(signedOutUserId) }
+            .onFailure { error -> Log.w(TAG, "Failed to stamp ownerless alarms on sign-out", error) }
         Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
         return all.size
     }
