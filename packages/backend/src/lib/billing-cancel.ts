@@ -6,6 +6,7 @@ import {
   deletePaidVoiceDataForUser,
   deleteSensitiveVoiceDataForUser,
   releaseClonedVoicesForUser,
+  type DowngradedAlarm,
 } from './paid-voice-cleanup';
 import { logStructured } from './logger';
 import {
@@ -16,7 +17,7 @@ import {
   type SubscriptionV2Response,
 } from './play-subscriptions';
 import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
-import { sendPlanChangedPush } from './fcm';
+import { sendFamilyAlarmPush, sendPlanChangedPush } from './fcm';
 import type { Env } from '../types';
 
 // 만료 크론이 FCM(plan_changed) 을 쏘려면 Play env 외에 FIREBASE 설정도 필요하다. index.ts 의 scheduled
@@ -146,9 +147,9 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
 export async function sweepPaidVoiceRetention(
   db: Client,
   now: Date = new Date(),
-): Promise<string[]> {
-  // 이 정리로 알람이 강등된 사용자들 — 호출자가 plan_changed 푸시 대상에 넣는다.
-  const downgraded = new Set<string>();
+): Promise<DowngradedAlarm[]> {
+  // 이 정리로 강등된 알람들 — 호출자가 커밋 후 신호를 보낸다.
+  const downgraded = new Map<string, DowngradedAlarm>();
   // 유예가 끝난 사용자의 남은 음성 데이터(원본 업로드·생성 오디오)를 정리한다.
   // 클론 자체는 해지 시점에 이미 반납했다(releaseClonedVoicesForUser).
   const due = await db.execute({
@@ -170,10 +171,10 @@ export async function sweepPaidVoiceRetention(
       userPk,
       await resolveUserLoginId(db, userPk),
     );
-    for (const id of affected) downgraded.add(id);
+    for (const target of affected) downgraded.set(target.alarmId, target);
     await clearPaidVoiceRetention(db, userPk);
   }
-  return Array.from(downgraded);
+  return Array.from(downgraded.values());
 }
 
 export async function downgradeUserToFree(
@@ -838,15 +839,34 @@ export async function processSubscriptionExpiry(
   }
 
   // 보관 유예가 끝난 유료 음성 데이터 정리 (같은 cron 주기에서 처리).
-  // 이 정리는 플랜 변경 3일 뒤에 도는데, 그때 강등되는 알람의 주인(공유 목소리·가족알람
-  // 수신자 포함)은 이번 주기의 만료 대상이 아니라 notifyUserPks 에 없다. 그대로 두면 이미
-  // 오디오를 캐시해 둔 백그라운드 수신자가 다음 앱 시작/주기 동기화까지 지워진 녹음으로
-  // 계속 울린다 — 그사이 알람이 먼저 울릴 수 있다. 반환된 대상을 푸시에 함께 태운다.
-  for (const id of await sweepPaidVoiceRetention(db, now)) notifyUserPks.add(id);
+  const downgradedAlarms = await sweepPaidVoiceRetention(db, now);
 
   // 강등된 사용자에게 plan_changed 푸시 — 클라가 '강등 시점'에 유료 목소리 알람을 기본 알람으로
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
   await notifyPlanChanged(db, env, Array.from(notifyUserPks));
+
+  // 보관 정리가 서버에서 바꾼 '알람 행'은 plan_changed 로는 안 따라온다 — 클라의
+  // PlanChangeSyncWorker 는 이용권을 다시 받아 '진짜 무료'일 때만 로컬 강등을 돌리고, 원격
+  // 알람 pull 은 하지 않는다. 그래서 아직 유료인 수신자는 이미 캐시한 녹음으로 계속 울린다.
+  // 알람을 다시 받아오게 하는 신호는 family_alarm 이므로 그걸 보낸다(수신자 앱은 기존 행을
+  // 업데이트만 하고 알림은 띄우지 않는다 — notifyReceivedAlarm 은 신규 임포트 전용).
+  if (env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    const pushEnv = {
+      FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
+      FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    };
+    for (const target of downgradedAlarms) {
+      try {
+        await sendFamilyAlarmPush(db, pushEnv, target.ownerUserId, target.alarmId);
+      } catch (err) {
+        logStructured('error', {
+          at: 'billing.downgraded_alarm_push',
+          action: 'DOWNGRADED_ALARM_PUSH_FAILED',
+          error: String(err),
+        });
+      }
+    }
+  }
 }
 
 export { planTypeToUserPlan };

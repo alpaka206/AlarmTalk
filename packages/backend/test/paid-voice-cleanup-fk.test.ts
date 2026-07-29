@@ -104,9 +104,10 @@ describe('보관 만료 정리 — 가족알람 음성 끊기', () => {
       `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
        VALUES ('msg-1', 'recipient', 'vp-r', '일어나', 'voices/sender/clip.m4a', 'family-voice')`,
     );
+    // 실제 POST /family/alarms/voice 행 모양 — user_id 는 발신자, target_user_id 가 수신자다.
     await db.execute(
-      `INSERT INTO alarms (id, user_id, message_id, time, mode)
-       VALUES ('al-1', 'recipient', 'msg-1', '07:00', 'voice')`,
+      `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode)
+       VALUES ('al-1', 'sender', 'recipient', 'msg-1', '07:00', 'voice')`,
     );
 
     await deleteSensitiveVoiceDataForUser(db, 'sender', 'sender');
@@ -127,7 +128,7 @@ describe('보관 만료 정리 — 가족알람 음성 끊기', () => {
    * 호출부의 푸시 목록에 없다 — 반환하지 않으면 이미 오디오를 캐시한 백그라운드 수신자가
    * 다음 동기화까지 지워진 녹음으로 계속 울린다(그사이 알람이 먼저 울릴 수 있다).
    */
-  it('강등된 알람 주인을 돌려줘 plan_changed 푸시 대상에 넣게 한다', async () => {
+  it('강등된 알람과 울리는 기기의 주인을 돌려준다 (알람 동기화 신호용)', async () => {
     await db.execute(
       `INSERT INTO voice_profiles (id, user_id, name, status) VALUES ('vp-r', 'recipient', '수신자 목소리', 'ready')`,
     );
@@ -139,14 +140,17 @@ describe('보관 만료 정리 — 가족알람 음성 끊기', () => {
       `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
        VALUES ('msg-1', 'recipient', 'vp-r', '일어나', 'voices/sender/clip.m4a', 'family-voice')`,
     );
+    // 실제 POST /family/alarms/voice 행 모양 — user_id 는 발신자, target_user_id 가 수신자다.
     await db.execute(
-      `INSERT INTO alarms (id, user_id, message_id, time, mode)
-       VALUES ('al-1', 'recipient', 'msg-1', '07:00', 'voice')`,
+      `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode)
+       VALUES ('al-1', 'sender', 'recipient', 'msg-1', '07:00', 'voice')`,
     );
 
     const downgraded = await deleteSensitiveVoiceDataForUser(db, 'sender', 'sender');
 
-    expect(downgraded).toContain('recipient');
+    // 울리는 기기의 주인은 target_user_id(수신자)다 — user_id(발신자)를 보내면
+    // 정작 캐시된 녹음으로 울리는 기기는 신호를 못 받는다.
+    expect(downgraded).toEqual([{ alarmId: 'al-1', ownerUserId: 'recipient' }]);
   });
 
   it('내 업로드와 무관한 수신자 메시지는 건드리지 않는다', async () => {
@@ -158,8 +162,8 @@ describe('보관 만료 정리 — 가족알람 음성 끊기', () => {
        VALUES ('msg-keep', 'recipient', 'vp-r', '일어나', 'voices/someone-else/clip.m4a', 'family-voice')`,
     );
     await db.execute(
-      `INSERT INTO alarms (id, user_id, message_id, time, mode)
-       VALUES ('al-keep', 'recipient', 'msg-keep', '07:00', 'voice')`,
+      `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode)
+       VALUES ('al-keep', 'sender', 'recipient', 'msg-keep', '07:00', 'voice')`,
     );
 
     await deleteSensitiveVoiceDataForUser(db, 'sender', 'sender');
