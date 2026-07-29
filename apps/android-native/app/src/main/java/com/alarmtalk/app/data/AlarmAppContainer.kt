@@ -29,6 +29,10 @@ object AlarmAppContainer {
                 currentUserIdProvider = { authSessionStore(context).read()?.user?.id },
                 // 계정이 바뀌면 목록 필터가 즉시 다시 계산되도록 흐름으로도 넘긴다.
                 currentUserIdFlow = authSessionStore(context).observeUserId(),
+                // 세션이 끝날 때 소유자를 못 새겼으면 예약 직전에 이 임자로 마저 새긴다.
+                // 정리가 끝나야만 표시를 지워, 실패하면 다음 기회에 다시 시도한다.
+                pendingOwnerUserIdProvider = { authSessionStore(context).pendingOwnerUserId() },
+                onOwnershipSettled = { authSessionStore(context).clearPendingOwner() },
             ).also { repository = it }
         }
 

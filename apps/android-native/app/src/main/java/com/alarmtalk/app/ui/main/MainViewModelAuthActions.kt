@@ -273,9 +273,16 @@ private suspend fun MainViewModel.onSignedIn() {
     RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
     RemoteAlarmSyncScheduler.runOnce(getApplication())
     com.alarmtalk.app.fcm.AlarmTalkMessagingService.registerCurrentToken(getApplication())
+    val currentUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+    // 앞 세션이 '다른 계정'이었다면 그 계정이 끝날 때 소유자를 못 새겼을 수 있다(쓰기 실패,
+    // 뒤처리 전 프로세스 종료 등). 아래 cancelAlarmsNotOwnedBy 는 소유자가 기록된 행만 보므로,
+    // 그 전에 마저 새겨야 앞 계정의 살아 있는 예약이 내려간다. 이미 새겨졌으면 no-op 이고,
+    // 실패하면 마커가 남아 reschedulePendingAlarms 안에서 다시 시도한다.
+    runCatching { repository.settlePendingAlarmOwnership() }
+        .onFailure { error -> Log.w(TAG, "Failed to settle alarm ownership before sign-in cleanup", error) }
     // 자동 401 은 알람 예약을 그대로 두므로, 그 뒤 다른 계정으로 들어오면 앞 계정 예약이
     // 살아 있다. 목록에서는 소유자 필터가 감춰 끌 수도 없으니 여기서 내린다.
-    runCatching { repository.cancelAlarmsNotOwnedBy(authSession?.user?.id) }
+    runCatching { repository.cancelAlarmsNotOwnedBy(currentUserId) }
         .onFailure { error -> Log.w(TAG, "Failed to cancel other account alarm reservations", error) }
     runCatching { repository.reschedulePendingAlarms() }
         .onSuccess { scheduled -> Log.i(TAG, "Rescheduled $scheduled alarms after sign-in") }
