@@ -17,7 +17,7 @@ import {
   type SubscriptionV2Response,
 } from './play-subscriptions';
 import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
-import { sendFamilyAlarmPush, sendPlanChangedPush } from './fcm';
+import { notifyDowngradedAlarms, sendPlanChangedPush } from './fcm';
 import type { Env } from '../types';
 
 // 만료 크론이 FCM(plan_changed) 을 쏘려면 Play env 외에 FIREBASE 설정도 필요하다. index.ts 의 scheduled
@@ -845,28 +845,9 @@ export async function processSubscriptionExpiry(
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
   await notifyPlanChanged(db, env, Array.from(notifyUserPks));
 
-  // 보관 정리가 서버에서 바꾼 '알람 행'은 plan_changed 로는 안 따라온다 — 클라의
-  // PlanChangeSyncWorker 는 이용권을 다시 받아 '진짜 무료'일 때만 로컬 강등을 돌리고, 원격
-  // 알람 pull 은 하지 않는다. 그래서 아직 유료인 수신자는 이미 캐시한 녹음으로 계속 울린다.
-  // 알람을 다시 받아오게 하는 신호는 family_alarm 이므로 그걸 보낸다(수신자 앱은 기존 행을
-  // 업데이트만 하고 알림은 띄우지 않는다 — notifyReceivedAlarm 은 신규 임포트 전용).
-  if (env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    const pushEnv = {
-      FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
-      FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
-    };
-    for (const target of downgradedAlarms) {
-      try {
-        await sendFamilyAlarmPush(db, pushEnv, target.ownerUserId, target.alarmId);
-      } catch (err) {
-        logStructured('error', {
-          at: 'billing.downgraded_alarm_push',
-          action: 'DOWNGRADED_ALARM_PUSH_FAILED',
-          error: String(err),
-        });
-      }
-    }
-  }
+  // 보관 정리가 서버에서 바꾼 '알람 행'은 plan_changed 로는 안 따라온다 — 이유는
+  // notifyDowngradedAlarms 참고. 강등된 알람마다 알람 동기화 신호를 보낸다.
+  await notifyDowngradedAlarms(db, env, downgradedAlarms);
 }
 
 export { planTypeToUserPlan };

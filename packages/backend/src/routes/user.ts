@@ -3,6 +3,7 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import { deleteSensitiveVoiceDataForUser } from '../lib/paid-voice-cleanup';
+import { notifyDowngradedAlarms } from '../lib/fcm';
 import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
 import {
@@ -301,6 +302,11 @@ user.post('/consents', async (c) => {
     });
   }
   try {
+    // 동의 철회로 강등된 알람들 — 커밋 후에 신호를 보내야 한다(롤백될 수 있는 변경을
+    // 미리 알리지 않는다). 보관 만료 스윕과 같은 이유로 알람 동기화 신호가 필요하다:
+    // 서버가 수신자의 가족알람을 sound-only 로 내리고 R2 오브젝트를 지워도, 신호가
+    // 없으면 수신자는 다음 폴백 pull 까지 캐시된 녹음으로 계속 울린다.
+    let downgradedAlarms: Array<{ alarmId: string; ownerUserId: string }> = [];
     await withWriteTransaction(db, async (tx) => {
       for (const r of rows) {
         await tx.execute({
@@ -314,9 +320,10 @@ user.post('/consents', async (c) => {
           (row) => !row.agreed && SENSITIVE_REQUIRED_CONSENTS.some((type) => type === row.type),
         )
       ) {
-        await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userLoginId'));
+        downgradedAlarms = await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userLoginId'));
       }
     });
+    await notifyDowngradedAlarms(db, c.env, downgradedAlarms);
     return c.json({ success: true, recorded: rows.length });
   } catch (err) {
     logRouteError(c, err);

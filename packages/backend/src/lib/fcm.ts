@@ -231,6 +231,43 @@ export async function sendVoiceShareChangedPush(
  * 구독/플랜을 재조회해 '진짜 무료'면 유료 목소리 알람을 기본 알람으로 변환한다. 과다발송해도 클라가
  * 재조회로 확인(유료면 무시)하므로 안전. 놓쳐도 다음 앱 시작·울림 시점 게이트가 폴백.
  */
+/**
+ * 서버가 강등한 알람을 그 기기가 **즉시 다시 받아 가게** 하는 신호.
+ *
+ * plan_changed 로는 안 된다 — 클라의 PlanChangeSyncWorker 는 이용권을 다시 받아 '진짜 무료'일
+ * 때만 로컬 강등을 돌리고, 원격 알람 pull 은 하지 않는다. 그래서 아직 유료인 수신자는 서버가
+ * 알람을 바꿔도 주기/앱시작 폴백까지 캐시된 녹음으로 계속 울린다. 알람을 다시 받아오게 하는
+ * 신호는 family_alarm 이므로 그걸 보낸다(수신자 앱은 기존 행을 업데이트만 하고 알림은 띄우지
+ * 않는다 — notifyReceivedAlarm 은 신규 임포트 전용).
+ *
+ * 반드시 **쓰기 트랜잭션 커밋 후에** 부를 것. 롤백될 수 있는 변경을 미리 알리면 안 된다.
+ * 한 건 실패가 나머지를 막지 않도록 개별적으로 삼킨다(폴백 pull 이 정확성을 보장한다).
+ */
+export async function notifyDowngradedAlarms(
+  db: Client,
+  env: Partial<Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>> | undefined,
+  targets: Array<{ alarmId: string; ownerUserId: string }>,
+): Promise<void> {
+  if (!env?.FIREBASE_PROJECT_ID || !env?.FIREBASE_SERVICE_ACCOUNT_JSON || targets.length === 0) {
+    return;
+  }
+  const pushEnv = {
+    FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
+    FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
+  };
+  for (const target of targets) {
+    try {
+      await sendFamilyAlarmPush(db, pushEnv, target.ownerUserId, target.alarmId);
+    } catch (err) {
+      logStructured('error', {
+        at: 'fcm.downgraded_alarm_push',
+        action: 'DOWNGRADED_ALARM_PUSH_FAILED',
+        error: String(err),
+      });
+    }
+  }
+}
+
 export async function sendPlanChangedPush(
   db: Client,
   env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
