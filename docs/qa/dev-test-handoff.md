@@ -34,8 +34,22 @@ B 로 같은 06:00 알람 생성 → A 로 복귀 → A32(rel dev)에서 A 에�
 파일 셋이 만들어져 최근 알람이 통째로 빠지거나 `no such table` 이 난다 — 게다가 **그때도 에러가 안 나서**
 잘못된 줄 모른다. force-stop 이 프로세스를 정리하며 WAL 을 접어 주므로, 그 뒤로는 파일 셋이 얼어 있다.
 
-관찰하려던 동작이 **끝난 뒤에** 멈춰야 한다(force-stop 자체는 알람 예약을 지우지 않는다 —
-AlarmManager 예약과 Room 행은 그대로다).
+⚠ **force-stop 은 OS 알람 예약을 지운다.** Room 행은 남지만 AlarmManager 예약(PendingIntent)이
+날아가, 그대로 두면 그 알람은 **안 울린다**. Android 15 부터는 문서화된 동작이고
+([stopped state](https://developer.android.com/about/versions/15/behavior-changes-all#stopped-state):
+"the system also cancels all pending intents when the app enters the stopped state"), 실측해 보면
+**Android 13 에서도 이미 그렇다**.
+
+그래서 순서가 중요하다:
+
+1. 관찰하려던 동작을 **끝내고** (그 결과가 Room 에 써진 뒤에)
+2. force-stop → DB 3파일 추출
+3. **앱을 다시 실행해 예약을 되살린다.** 시작 시 복원 경로가 알아서 다시 건다 —
+   로그에 `Boot restore complete pending=N scheduled=N` 이 뜨는지, 그리고
+   `adb shell dumpsys alarm` 의 `Next alarm clock information` 에 시각이 돌아왔는지 확인할 것.
+
+2026-07-29 A32(Android 13) 실측: 07:00 알람 켬 → `Next alarm clock … 07:00` → force-stop →
+**해당 줄이 빔** → 앱 재실행 → `Boot restore complete pending=1 scheduled=1` 과 함께 07:00 복귀.
 
 ```powershell
 $dst = '<받을 폴더>'
@@ -44,6 +58,7 @@ foreach ($f in 'voice-alarm.db','voice-alarm.db-wal','voice-alarm.db-shm') {
   adb -s <serial> shell "run-as com.alarmtalk.app.dev cat /data/data/com.alarmtalk.app.dev/databases/$f > /data/local/tmp/$f"
   adb -s <serial> pull "/data/local/tmp/$f" "$dst\$f"
 }
+adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category.LAUNCHER 1  # ← 예약 복구
 ```
 
 `>` 는 반드시 **바깥 adb 셸**이 처리하게 둔다(위 형태). `run-as ... sh -c '... > /data/local/tmp/...'`
