@@ -23,6 +23,8 @@ android/
 
 # Native Android local/generated files
 apps/android-native/.gradle/
+# Kotlin 2.x 빌드 세션 스크래치(errors/, sessions/) — 빌드할 때마다 생겨 git status 를 더럽힌다.
+apps/android-native/.kotlin/
 apps/android-native/build/
 apps/android-native/**/build/
 apps/android-native/local.properties
