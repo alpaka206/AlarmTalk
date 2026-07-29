@@ -1,6 +1,28 @@
-# Dev 테스트 핸드오프 (갱신 2026-07-21)
+# Dev 테스트 핸드오프 (갱신 2026-07-29)
 
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
+
+## 0-1. 2026-07-29 — 계정 전환 소유권 스코프(#655) 실기기 검증 완료
+
+#646/#650/#654 에서 이어진 "같은 기기에 앞 계정 알람이 남는다" 계열 결함 6건(Codex P1 2 + 형제 4)을
+#655 로 고치고, **S23 + A32 두 대로 계정 전환 시나리오를 실측**했다. 전부 통과.
+
+계정: **A = gyuwon05(김규원)**, **B = alpaka206(알파카)**, **가족 발신자 = devrel.365(rel dev)**.
+시나리오: A 로 06:00 클론목소리(고죠) 알람 생성(미업로드 `local_only`) → 로그아웃 → B 로그인 →
+B 로 같은 06:00 알람 생성 → A 로 복귀 → A32(rel dev)에서 A 에게 06:00 가족알람 발송.
+
+| 검증 항목 | 관측 결과 |
+|---|---|
+| 아웃바운드 동기화 소유자 스코프 | B 세션에서 `Backend alarm sync complete total=0` — A 의 `local_only` 행이 **B 의 JWT 로 안 올라감**. A 복귀 시 `total=1 created=1` 로 **A 계정에 정상 업로드**(유실 아님, 지연) |
+| 목소리 강등 소유자 스코프 | B 의 refreshSocial·주기 워커가 돌아도 A 행의 `voiceProfileId`·`playMode=alarm_voice`·캐시 mp3 **전부 무손상** |
+| 같은 시각 충돌 판정 스코프 | B 가 A 와 **같은 06:00 에 중복 경고 없이 저장** 성공(예전엔 안 보이는 A 알람이 시각을 막음) |
+| 가족알람 같은 시각 양보 스코프 | `Disabled same-time alarm id=f0dd66ab…`(=A 본인 행, 의도된 양보)만 발생. **B 소유 행은 `enabled=1` 유지** — 예전엔 여기서 꺼져 B 가 재로그인해도 영영 안 울렸다 |
+| 로그인/로그아웃 정리 | `Cancelled 1 alarm reservations owned by another account`, `Rescheduled 1 alarms after sign-in` 정상 |
+
+검증법 메모: Room DB 는 **WAL 까지 같이** 꺼내야 한다(`voice-alarm.db` 만 pull 하면 테이블이 비어 보임).
+`run-as ... cat databases/voice-alarm.db{,-wal,-shm} > /data/local/tmp/...` 3개 pull 후 python sqlite3.
+
+**prod 마이그레이션**: #646 머지 후 main 배포에서 **79→86 전부 적용 확인**(무음 스킵 없음).
 
 ## 0. 2026-07-21 — #599 목소리 슬롯 상한(F1/F2/F3) 머지 + 검증 완료
 
