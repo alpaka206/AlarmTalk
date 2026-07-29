@@ -19,8 +19,28 @@ B 로 같은 06:00 알람 생성 → A 로 복귀 → A32(rel dev)에서 A 에�
 | 가족알람 같은 시각 양보 스코프 | `Disabled same-time alarm id=f0dd66ab…`(=A 본인 행, 의도된 양보)만 발생. **B 소유 행은 `enabled=1` 유지** — 예전엔 여기서 꺼져 B 가 재로그인해도 영영 안 울렸다 |
 | 로그인/로그아웃 정리 | `Cancelled 1 alarm reservations owned by another account`, `Rescheduled 1 alarms after sign-in` 정상 |
 
-검증법 메모: Room DB 는 **WAL 까지 같이** 꺼내야 한다(`voice-alarm.db` 만 pull 하면 테이블이 비어 보임).
-`run-as ... cat databases/voice-alarm.db{,-wal,-shm} > /data/local/tmp/...` 3개 pull 후 python sqlite3.
+검증법 메모: Room DB 는 **WAL 까지 같이**, 그리고 **파일별로 따로** 꺼내야 한다. 아직 체크포인트되지
+않은 변경은 전부 `-wal` 에 있어서, `voice-alarm.db` 만 pull 하면 방금 만든 알람이 안 보인다(이 세션에서
+실제로 한 번 걸렸다 — 행 0개로 보였다). sqlite 는 세 파일이 **같은 폴더에 같은 이름으로 나란히** 있어야
+`-wal` 을 반영한다.
+
+주의: `cat ...voice-alarm.db{,-wal,-shm} > 한파일` 로 묶으면 **에러 없이 조용히 틀린다**. 합친 파일은
+헤더의 페이지 수만큼만 읽히고 뒤에 붙은 `-wal`·`-shm` 바이트는 통째로 무시돼(실측: 481,688바이트 중
+앞 32,768바이트만 DB 본체), 결국 `.db` 만 꺼낸 것과 똑같은 '마지막 체크포인트 시점' 스냅샷이 된다.
+열리기는 하니 잘못된 줄 모르고 지나가기 쉽다.
+
+```powershell
+$dst = '<받을 폴더>'
+foreach ($f in 'voice-alarm.db','voice-alarm.db-wal','voice-alarm.db-shm') {
+  adb -s <serial> shell "run-as com.alarmtalk.app.dev cat /data/data/com.alarmtalk.app.dev/databases/$f > /data/local/tmp/$f"
+  adb -s <serial> pull "/data/local/tmp/$f" "$dst\$f"
+}
+```
+
+`>` 는 반드시 **바깥 adb 셸**이 처리하게 둔다(위 형태). `run-as ... sh -c '... > /data/local/tmp/...'`
+로 감싸면 앱 uid 로 쓰게 돼 `Permission denied` 다 — /data/local/tmp 는 shell uid 만 쓸 수 있다.
+
+그 뒤 `python -c "import sqlite3; ..."` 로 `$dst\voice-alarm.db` 를 열면 -wal 이 자동 반영된다.
 
 **prod 마이그레이션**: #646 머지 후 main 배포에서 **79→86 전부 적용 확인**(무음 스킵 없음).
 
@@ -58,7 +78,7 @@ develop 은 #549 머지로 마이그레이션 #65, cron `MAX_CLIPS_PER_TICK=6`.
 ### ③ 울림화면(RingingActivity) 실발사
 - [ ] 실제 알람 발사로 잠금화면 위에 뜨는지(문구 표시·노브 화살표 포함). `am start` 는 exported=false 라 차단 — 실발사 필요.
 - **규칙: 18시 이전엔 알람 울리게 하지 말 것.** 설정은 OK, 발사는 18시 이후.
-- 무음·무진동 발사법: A32 알람볼륨 0 + 진동패턴 OFF로 생성 → `adb shell am broadcast -a com.alarmtalk.app.action.ALARM_TRIGGER --es com.alarmtalk.app.extra.ALARM_ID <id> -n com.alarmtalk.app.dev/com.alarmtalk.app.alarm.AlarmReceiver`. 로컬 id는 `adb exec-out run-as ... cat databases/voice-alarm.db` 로 뽑아 python sqlite3.
+- 무음·무진동 발사법: A32 알람볼륨 0 + 진동패턴 OFF로 생성 → `adb shell am broadcast -a com.alarmtalk.app.action.ALARM_TRIGGER --es com.alarmtalk.app.extra.ALARM_ID <id> -n com.alarmtalk.app.dev/com.alarmtalk.app.alarm.AlarmReceiver`. 로컬 id는 §0-1 의 DB 추출 블록(`.db`·`-wal`·`-shm` 세 파일)으로 뽑아 python sqlite3 — `.db` 만 꺼내면 방금 만든 알람이 안 보인다.
 
 ### ④ #549 머지 후 — 등록 미리듣기
 - [ ] 미리듣기 문구가 관계·호칭에 톤 적응돼 생성되는지.
