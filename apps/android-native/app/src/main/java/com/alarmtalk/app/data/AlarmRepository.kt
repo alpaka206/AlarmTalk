@@ -1296,6 +1296,11 @@ internal fun shouldResetWeatherVariant(
  */
 internal fun weatherVariantNeedsRefresh(alarm: AlarmEntity, nowMillis: Long): Boolean {
     if (alarm.fireAtMillis > nowMillis + WEATHER_PREPARE_WINDOW_MILLIS) return false
+    // 이미 지난 발사분은 준비할 게 없다. 울리는 중이거나 놓친 알람은 해제 전까지 enabled 로
+    // 남는데, 그 사이 조건 해결이 계속 실패하면 미해결 분기에 걸려 hasFailedWeatherRefresh 가
+    // 시간당 재시도를 무한정 다시 걸고 서버를 두드린다. 반복 알람은 재예약이 다음 발생으로
+    // 밀어 주고, 놓친 일회성은 재예약이 끄므로 여기서 걸러도 잃는 갱신이 없다.
+    if (alarm.fireAtMillis <= nowMillis) return false
     if (alarm.contextVariantIndex == null) return true
     if (alarm.fireAtMillis > nowMillis + WEATHER_RESOLVE_VALID_WINDOW_MILLIS) return false
     return (alarm.contextResolvedAtMillis ?: 0L) <

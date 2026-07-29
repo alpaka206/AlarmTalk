@@ -157,12 +157,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val signedOutUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
         runCatching { repository.detachAlarmsOnSignOut(signedOutUserId) }
             .onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
+        // 기본 목소리 취향(마지막 쓴 목소리·'나중에 받기' 선택)은 계정을 명시적으로 끝낼 때만
+        // 지운다. 자동 401 은 같은 사람이 다시 로그인하는 경우가 대부분이라, 거기서 지우면
+        // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
+        // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
+        clearCurrentDefaultVoicePreferences()
         clearSessionKeepingAlarms()
     }
 
-    /** 세션만 정리한다(알람 예약은 그대로). 자동 401 처럼 사용자의 의도가 아닌 종료에 쓴다. */
+    /**
+     * 세션만 정리한다(알람 예약·기기 취향은 그대로). 자동 401 처럼 사용자의 의도가 아닌
+     * 종료에 쓴다 — 여기서 지우는 것은 '이 계정으로서의 세션 상태'까지다.
+     */
     private fun clearSessionKeepingAlarms() {
-        clearCurrentDefaultVoicePreferences()
         runCatching { authSessionStore.clear() }
         clearUserScopedRemoteState()
         authSession = null
