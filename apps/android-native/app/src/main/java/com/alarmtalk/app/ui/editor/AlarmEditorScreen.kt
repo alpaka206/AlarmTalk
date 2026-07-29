@@ -1223,10 +1223,11 @@ internal fun AlarmEditorScreen(
                             editor = editor,
                                 voiceProfiles = visibleVoiceProfiles,
                                 familyVoices = familyVoices,
-                                onPreviewVoice = { voiceId ->
-                                    val profile = visibleVoiceProfiles.firstOrNull { it.id == voiceId }
-                                    if (profile != null) voicePreview.previewVoice(profile, stockClips)
-                                },
+                                // 선택 시트에는 내 목소리와 공유받은 목소리가 섞여 있는데, 공유분은
+                                // visibleVoiceProfiles 에 없고 familyVoices 에만 있다. 여기서 내 목록만
+                                // 뒤지면 공유 목소리 ▶ 가 조용히 아무것도 안 한다 — 미리듣기는 id 로
+                                // 인사말 클립을 찾으므로 id 를 그대로 넘겨 둘 다 같은 경로를 타게 한다.
+                                onPreviewVoice = { voiceId -> voicePreview.previewVoice(voiceId, stockClips) },
                                 previewPlayingVoiceId = voicePreview.playingVoiceId,
                                 previewPreparingVoiceId = voicePreview.preparingVoiceId,
                                 voiceProfileBusy = voiceProfileBusy,

@@ -16,7 +16,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.VoiceProfile
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,8 +43,16 @@ internal class VoiceOnboardingPreviewController(
         preparingVoiceId = null
     }
 
-    fun previewVoice(profile: VoiceProfile, stockClips: List<StockClip>) {
-        if (playingVoiceId == profile.id) {
+    /**
+     * 인사말 미리듣기. 프로필 객체가 아니라 **id** 를 받는다 — 내 목소리(VoiceProfile)와
+     * 공유받은 목소리(FamilyVoiceProfile)는 타입이 다르고 각각 다른 목록에 들어 있는데,
+     * 여기서 필요한 건 id 뿐이라 id 로 받아야 둘 다 같은 경로를 탄다. 알람 편집기의 선택
+     * 시트는 두 종류를 한 목록에 섞어 보여 준다(Codex #646).
+     *
+     * 모르는 id 면 인사말 클립을 못 찾아 조용히 아무것도 하지 않는다.
+     */
+    fun previewVoice(voiceProfileId: String, stockClips: List<StockClip>) {
+        if (playingVoiceId == voiceProfileId) {
             stopPreview()
             return
         }
@@ -56,30 +63,30 @@ internal class VoiceOnboardingPreviewController(
         )
         // 기본 목소리는 내장 인사말(res/raw)을 즉시 재생 — 스톡 매니페스트가 아직 안 왔거나
         // 네트워크가 없어도 '눌렀는데 아무 소리 없음'이 되지 않는다.
-        val bundledRes = com.alarmtalk.app.data.bundledSystemGreetingRes(profile.id, appLanguage)
+        val bundledRes = com.alarmtalk.app.data.bundledSystemGreetingRes(voiceProfileId, appLanguage)
         if (bundledRes != null) {
             previewRequestId += 1
             stopPreview(invalidateRequest = false)
             val player = MediaPlayer.create(context, bundledRes) ?: return
-            playingVoiceId = profile.id
+            playingVoiceId = voiceProfileId
             mediaPlayer = player.apply {
                 setOnCompletionListener {
                     it.release()
                     if (mediaPlayer === it) mediaPlayer = null
-                    if (playingVoiceId == profile.id) playingVoiceId = null
+                    if (playingVoiceId == voiceProfileId) playingVoiceId = null
                 }
                 start()
             }
             return
         }
-        val clip = com.alarmtalk.app.data.greetingStockClipFor(stockClips, profile.id, appLanguage)
+        val clip = com.alarmtalk.app.data.greetingStockClipFor(stockClips, voiceProfileId, appLanguage)
             ?: return
 
         val requestId = previewRequestId + 1
         previewRequestId = requestId
         scope.launch {
             stopPreview(invalidateRequest = false)
-            preparingVoiceId = profile.id
+            preparingVoiceId = voiceProfileId
             runCatching {
                 val response = downloadStockAudio(clip.messageId)
                 val file = withContext(Dispatchers.IO) {
@@ -94,19 +101,19 @@ internal class VoiceOnboardingPreviewController(
                     return@runCatching
                 }
                 preparingVoiceId = null
-                playingVoiceId = profile.id
+                playingVoiceId = voiceProfileId
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
                         it.release()
                         if (mediaPlayer === it) mediaPlayer = null
-                        if (playingVoiceId == profile.id) playingVoiceId = null
+                        if (playingVoiceId == voiceProfileId) playingVoiceId = null
                     }
                     start()
                 }
             }.onFailure {
                 if (previewRequestId == requestId) {
                     preparingVoiceId = null
-                    if (playingVoiceId == profile.id) playingVoiceId = null
+                    if (playingVoiceId == voiceProfileId) playingVoiceId = null
                 }
             }
         }
