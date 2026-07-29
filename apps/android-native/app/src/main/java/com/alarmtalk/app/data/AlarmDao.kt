@@ -114,7 +114,30 @@ interface AlarmDao {
     suspend fun countByAudioCacheKey(cacheKey: String): Int
 
     @Upsert
-    suspend fun upsert(alarm: AlarmEntity)
+    suspend fun upsertRow(alarm: AlarmEntity)
+
+    /**
+     * 전체행 저장. 소유자(ownerUserId)만은 DB 에 이미 박힌 값을 지킨다.
+     *
+     * 소유자는 세션이 끝날 때 한 번 새겨지는데([claimUnownedAlarms]), 하필 그 시점에
+     * 편집기·스누즈·반복 알람 해제가 '소유자 없음' 스냅샷을 들고 있다가 나중에 커밋하면
+     * 방금 새긴 소유자가 다시 null 로 돌아간다. 그러면 다음에 로그인한 다른 계정이 그
+     * 알람을 자기 것으로 삼아 예약·발사한다 — 소유자를 새기는 이유 자체가 무력해진다
+     * (Codex #650). 편집 커밋이 remoteAlarmId 를 stale null 로 되돌리던 문제
+     * ([upsertPreservingServerSyncFields])와 같은 모양이라 방어도 같게 둔다.
+     *
+     * 되돌리는 방향(값 있음 → null)만 막는다. 신규 행은 DB 에 값이 없어 그대로 저장되고,
+     * 소유자를 정하는 정상 경로(생성·claim)는 null 이 아닌 값을 들고 오므로 영향이 없다.
+     */
+    @Transaction
+    suspend fun upsert(alarm: AlarmEntity) {
+        if (alarm.ownerUserId != null) {
+            upsertRow(alarm)
+            return
+        }
+        val claimedOwner = getById(alarm.id)?.ownerUserId
+        upsertRow(if (claimedOwner == null) alarm else alarm.copy(ownerUserId = claimedOwner))
+    }
 
     /**
      * 사용자 편집 커밋용 전체행 upsert. 커밋 직전 같은 트랜잭션 안에서 DB 의 최신

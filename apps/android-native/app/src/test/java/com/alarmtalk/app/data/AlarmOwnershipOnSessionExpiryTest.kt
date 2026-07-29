@@ -171,6 +171,32 @@ class AlarmOwnershipOnSessionExpiryTest {
         assertEquals("account-B", ownerOf("owned-by-b"))
     }
 
+    /**
+     * 401 이 알람 편집·스누즈·반복 알람 해제와 겹치면, 그쪽은 '소유자 없음' 스냅샷을 먼저
+     * 읽고 claim 뒤에 전체행을 커밋한다. 그때 소유자가 null 로 되돌아가면 다음 계정이 다시
+     * 물려받아 울린다 — 이 수정이 막으려던 그 경로 그대로다(Codex #650).
+     */
+    @Test
+    fun staleWholeRowWriteCannotUndoTheClaim() = runBlocking {
+        // 편집기/스누즈가 401 이전에 읽어 둔 스냅샷.
+        val staleSnapshot = seedLegacyAlarm()
+        repository.claimUnownedAlarmsFor("account-A")
+
+        // 그 뒤에 커밋되는 전체행 쓰기.
+        dao.upsert(
+            staleSnapshot.copy(
+                fireAtMillis = 999_000L,
+                state = AlarmStates.SNOOZED,
+                snoozeCount = 1,
+            ),
+        )
+
+        val after = dao.getById("legacy-1")
+        assertEquals("소유자가 null 로 되돌아가면 안 된다", "account-A", after?.ownerUserId)
+        assertEquals("그 쓰기의 정상 변경은 그대로 반영된다", 999_000L, after?.fireAtMillis)
+        assertEquals(AlarmStates.SNOOZED, after?.state)
+    }
+
     @Test
     fun claimIsNoOpWithoutASession() = runBlocking {
         seedLegacyAlarm()
