@@ -865,7 +865,17 @@ class AlarmRepository(
             // 다른 계정이 소유한 알람은 재예약하지 않는다(로그아웃한 앞 계정의 알람이 부팅·
             // 재로그인 때 되살아나 남의 폰에서 울리는 것 방지). 미기록(null)은 lockPaidAlarmTalks
             // 와 같은 규칙으로 현재 계정 것으로 본다.
-            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) return@forEach
+            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) {
+                // 건너뛰는 데 그치면 앞 세션이 잡아 둔 OS 예약이 살아남아 이 계정 폰에서 울린다.
+                // 특히 소유자 확정이 이 함수 안에서야 성공한 경우, 앞서 돈 cancelAlarmsNotOwnedBy
+                // 는 아직 미기록이던 그 행을 건너뛴 뒤다 — 여기서 내려야 새는 곳이 없다.
+                //
+                // 단 비로그인(currentUser == null)일 때는 내리지 않는다. 자동 401 로 세션만
+                // 끊긴 상태에서도 본인 알람은 계속 울려야 한다 — 알람 전달이 서버 인증 상태에
+                // 묶이면 안 된다(AGENTS.md). 그 정리는 '다른 계정이 실제로 로그인한' 시점에 한다.
+                if (currentUser != null) alarmScheduler.cancel(alarm.id)
+                return@forEach
+            }
             // 소유자 정리가 실패한 회차에는 미기록 행을 '현재 계정 것'으로 볼 근거가 없다.
             // 예약을 내려 남의 알람이 울리는 것을 막되 행은 남긴다 — 마커가 보존돼 있어
             // 다음 회차에 소유자를 새기고 나면 주인에게 다시 예약된다.

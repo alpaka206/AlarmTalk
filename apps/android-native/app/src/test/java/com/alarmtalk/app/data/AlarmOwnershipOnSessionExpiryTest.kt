@@ -266,6 +266,47 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /**
+     * 소유자 확정이 이 함수 안에서야 성공하는 경우가 있다(로그인 뒤처리의 첫 시도가 실패한 뒤
+     * 재시도가 성공). 그때 앞서 돈 cancelAlarmsNotOwnedBy 는 아직 미기록이던 행을 건너뛴 뒤라,
+     * 재예약이 '건너뛰기'만 하면 앞 계정의 OS 예약이 살아남아 이 계정 폰에서 울린다(Codex #650).
+     */
+    @Test
+    fun rescheduleCancelsReservationsOwnedByAnotherAccount() = runBlocking {
+        seedLegacyAlarm()
+        currentUser = "account-A"
+        repository.reschedulePendingAlarms()
+        assertNotNull("전제: A 세션에서 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        // B 로그인 — 이 재예약 안에서 소유자가 A 로 확정된다.
+        currentUser = "account-B"
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals(0, scheduled)
+        assertEquals("account-A", ownerOf("legacy-1"))
+        assertNull("남의 계정 예약은 내려가야 한다", shadowAlarmManager.peekNextScheduledAlarm())
+    }
+
+    /**
+     * 자동 401 은 예약을 일부러 살려 둔다 — 알람 전달이 서버 인증 상태에 묶이면 안 된다.
+     * 위 취소가 비로그인 상태까지 번지면 본인 알람이 조용히 안 울린다.
+     */
+    @Test
+    fun signedOutRescheduleKeepsExistingReservations() = runBlocking {
+        seedLegacyAlarm(id = "legacy-1", owner = "account-A")
+        currentUser = "account-A"
+        repository.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        currentUser = null   // 401 로 세션만 끊긴 상태
+        repository.reschedulePendingAlarms()
+
+        assertNotNull(
+            "비로그인 상태에서 본인 예약을 내리면 안 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
      * 소유자 정리가 실패하면 (a) 미기록 행을 이번 회차에 예약하지 않고 (b) 마커를 그대로 둬
      * 다음 기회에 다시 시도해야 한다. 마커를 잃으면 재시도 근거가 영영 사라진다(Codex #650).
      */
