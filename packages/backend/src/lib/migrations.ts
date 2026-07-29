@@ -1847,8 +1847,10 @@ export const migrations: Migration[] = [
     // evict 행' 분기가 곧바로 재클론한다(마이그레이션 76 이전 evict 분과 같은 취급).
     //
     // 대상은 세 조건으로 좁힌다 — 클론이 있던 적 없는 행이 잘못 되살아나지 않게:
-    //  - EXISTS voice_uploads: 재클론에 쓸 원본이 실제로 남아 있는 행만(원본 업로드가 없는
-    //    기본/시스템 목소리는 애초에 evict 대상이 아니다).
+    //  - EXISTS voice_uploads: 재클론에 쓸 원본이 실제로 남아 있는 행만.
+    //  - is_system = 0: 기본(시스템) 목소리는 애초에 evict/재클론 대상이 아니다. 지금은
+    //    원본 업로드가 없어 위 조건에도 안 걸리지만, 슬롯 카운트·LRU 후보 쿼리와 같은
+    //    가드를 함께 둬서 시드 방식이 바뀌어도 딸려오지 않게 한다(voice-slots.ts 와 동일).
     //  - status = 'ready': voice id 는 ready 로 전환될 때만 채워지므로, ready 인데 지금
     //    비어 있다 = 나중에 누가 비웠다는 뜻. 진행 중(processing)·실패(failed: 슬롯 부족
     //    회수분 등)은 되살리면 안 되는 행이라 제외한다.
@@ -1863,6 +1865,7 @@ export const migrations: Migration[] = [
           AND evicted_at IS NULL
           AND deleted_at IS NULL
           AND status = 'ready'
+          AND COALESCE(is_system, 0) = 0
           AND EXISTS (
             SELECT 1 FROM voice_uploads vu WHERE vu.voice_profile_id = voice_profiles.id
           )`,

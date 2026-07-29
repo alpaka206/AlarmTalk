@@ -24,12 +24,14 @@ async function seedProfile(opts: {
   voiceId: string | null;
   evictedAt?: string | null;
   deletedAt?: string | null;
+  isSystem?: boolean;
   withUpload: boolean;
 }) {
   await db.execute({
     sql: `INSERT INTO voice_profiles
-            (id, user_id, name, elevenlabs_voice_id, status, evicted_at, deleted_at, updated_at)
-          VALUES (?, 'u-1', ?, ?, ?, ?, ?, ?)`,
+            (id, user_id, name, elevenlabs_voice_id, status, evicted_at, deleted_at,
+             is_system, updated_at)
+          VALUES (?, 'u-1', ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       opts.id,
       opts.id,
@@ -37,6 +39,7 @@ async function seedProfile(opts: {
       opts.status,
       opts.evictedAt ?? null,
       opts.deletedAt ?? null,
+      opts.isSystem ? 1 : 0,
       RELEASED_AT,
     ],
   });
@@ -87,6 +90,14 @@ beforeAll(async () => {
     evictedAt: '2026-07-10 00:00:00',
     withUpload: true,
   });
+  // 다른 조건은 전부 통과하지만 기본(시스템) 목소리인 행 — is_system 가드만 남는 경우.
+  await seedProfile({
+    id: 'system',
+    status: 'ready',
+    voiceId: null,
+    isSystem: true,
+    withUpload: true,
+  });
 
   await runMigrationsRange(db, 86, 86);
 });
@@ -114,8 +125,12 @@ describe('#86 해지로 반납된 클론에 evicted_at 백필', () => {
     expect(await evictedAtOf('active')).toBeNull();
   });
 
-  it('재클론에 쓸 원본이 없으면 표식을 찍지 않는다 (기본/시스템 목소리 보호)', async () => {
+  it('재클론에 쓸 원본이 없으면 표식을 찍지 않는다', async () => {
     expect(await evictedAtOf('no-upload')).toBeNull();
+  });
+
+  it('기본(시스템) 목소리는 다른 조건을 다 만족해도 제외한다', async () => {
+    expect(await evictedAtOf('system')).toBeNull();
   });
 
   it('진행 중·실패 프로필은 되살리지 않는다', async () => {
