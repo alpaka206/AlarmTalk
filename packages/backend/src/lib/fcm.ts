@@ -270,6 +270,49 @@ export async function sendVoiceAccessRevokedPush(
  * 반드시 **쓰기 트랜잭션 커밋 후에** 부를 것. 롤백될 수 있는 변경을 미리 알리면 안 된다.
  * 한 건 실패가 나머지를 막지 않도록 개별적으로 삼킨다(폴백 pull 이 정확성을 보장한다).
  */
+/**
+ * 강등 알림 메시지를 만든다 — **수신자 단위로 접어서**.
+ *
+ * 받은 알람은 수신자당 한 번만 보낸다. 클라 핸들러(AlarmTalkMessagingService)는 payload 의
+ * alarmId 를 쓰지 않고 원격 알람을 '전부' 다시 받으므로, 알람마다 보내면 토큰 조회와 FCM
+ * 왕복만 알람 수만큼 늘어난다 — 한 스윕이 여러 알람을 강등하면 Workers 서브리퀘스트 상한에
+ * 걸릴 수 있다(AGENTS.md). alarmId 는 형식 유지용으로 대표 하나만 싣는다.
+ *
+ * 토큰 조회를 인자로 받아 순수하게 유지한다 — 팬아웃 규칙을 DB 없이 단언할 수 있게.
+ */
+export async function buildDowngradeNotifications(
+  getTokens: (userId: string) => Promise<string[]>,
+  targets: Array<{ alarmId: string; ownerUserId: string; isReceived: boolean }>,
+  voiceAccessRevokedUserIds: string[] = [],
+): Promise<FcmMessage[]> {
+  const receivedRepresentative = new Map<string, string>();
+  for (const target of targets) {
+    if (!target.isReceived) continue;
+    if (!receivedRepresentative.has(target.ownerUserId)) {
+      receivedRepresentative.set(target.ownerUserId, target.alarmId);
+    }
+  }
+  // 본인 소유 알람은 pull 대상이 아니라 목소리 접근권 재확인이 필요하다. 알람 행을 못 찾은
+  // 계정도 포함한다(서버에 아직 동기화되지 않은 로컬 알람 때문에).
+  const voiceAccessOwners = new Set([
+    ...targets.filter((t) => !t.isReceived).map((t) => t.ownerUserId),
+    ...voiceAccessRevokedUserIds.filter(Boolean),
+  ]);
+
+  const messages: FcmMessage[] = [];
+  for (const [userId, alarmId] of receivedRepresentative) {
+    for (const token of await getTokens(userId)) {
+      messages.push({ token, title: '', body: '', data: { type: 'family_alarm', alarmId } });
+    }
+  }
+  for (const userId of voiceAccessOwners) {
+    for (const token of await getTokens(userId)) {
+      messages.push({ token, title: '', body: '', data: { type: 'voice_access_revoked' } });
+    }
+  }
+  return messages;
+}
+
 export async function notifyDowngradedAlarms(
   db: Client,
   env: Partial<Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>> | undefined,
@@ -283,33 +326,27 @@ export async function notifyDowngradedAlarms(
 ): Promise<void> {
   if (!env?.FIREBASE_PROJECT_ID || !env?.FIREBASE_SERVICE_ACCOUNT_JSON) return;
   if (targets.length === 0 && voiceAccessRevokedUserIds.length === 0) return;
-  const pushEnv = {
-    FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
-    FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
-  };
-  const send = async (at: string, run: () => Promise<unknown>) => {
-    try {
-      await run();
-    } catch (err) {
-      logStructured('error', { at, action: 'DOWNGRADED_ALARM_PUSH_FAILED', error: String(err) });
-    }
-  };
-  // 받은 알람: 원격 pull 이 그 행을 갱신한다(알람마다 보낸다 — 페이로드에 alarmId 가 들어간다).
-  for (const target of targets.filter((t) => t.isReceived)) {
-    await send('fcm.downgraded_alarm_push', () =>
-      sendFamilyAlarmPush(db, pushEnv, target.ownerUserId, target.alarmId),
-    );
-  }
-  // 본인 소유 알람: pull 대상이 아니라 목소리 접근권 재확인이 필요하다. 사용자당 한 번이면 된다.
-  // 알람 행을 못 찾은 계정도 포함한다(미동기화 로컬 알람 때문에 — 위 인자 설명 참고).
-  const selfOwners = new Set([
-    ...targets.filter((t) => !t.isReceived).map((t) => t.ownerUserId),
-    ...voiceAccessRevokedUserIds.filter(Boolean),
-  ]);
-  for (const userId of selfOwners) {
-    await send('fcm.voice_access_revoked_push', () =>
-      sendVoiceAccessRevokedPush(db, pushEnv, userId),
-    );
+  // 메시지를 모아 **한 번에** 보낸다 — sendPushNotifications 는 호출마다 OAuth 토큰을 새로
+  // 받으므로, 대상마다 나눠 부르면 그만큼 왕복이 늘어난다.
+  const messages = await buildDowngradeNotifications(
+    (userId) => getTokensForUser(db, userId),
+    targets,
+    voiceAccessRevokedUserIds,
+  );
+  if (messages.length === 0) return;
+  try {
+    const results = await sendPushNotifications(messages, {
+      FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
+      FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
+    });
+    await pruneStaleTokens(db, results);
+  } catch (err) {
+    // 삼켜도 되는 이유: 즉시성만 잃는다. 정확성은 하루 주기 재확인과 앱 시작 재조회가 맡는다.
+    logStructured('error', {
+      at: 'fcm.downgraded_alarm_push',
+      action: 'DOWNGRADED_ALARM_PUSH_FAILED',
+      error: String(err),
+    });
   }
 }
 
