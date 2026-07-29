@@ -7,14 +7,20 @@ name: CI
 # 라벨 뒤에 커밋을 더 올리면 체크는 옛 커밋에 남아 PR 이 머지 불가 상태가 된다 — 의도된 동작이니
 # 라벨을 다시 붙여 새 커밋으로 통과시킨다.
 #
-# ⚠ typecheck·test 의 매트릭스를 없애지 말 것.
-# GitHub 에는 `on:` 단계의 라벨 이름 필터가 없어서, 아무 라벨이나 붙으면 이 워크플로가 일단 뜨고
-# 잡은 아래 `if` 로 스킵된다. 그런데 **스킵된 필수 체크는 통과로 계산**되므로, 필수 체크 이름이
-# 그대로 보고되면 라벨 하나로 CI 없이 머지가 열린다. 지금 막히는 이유는 필수 8개가
-# `typecheck (packages/backend)` 처럼 매트릭스 전개 이름이라 스킵 시엔 `typecheck` 로만 보고돼
-# **이름이 안 맞아 미보고로 남기** 때문이다(2026-07-29 실측: 전부 SKIPPED 인데 mergeStateStatus=BLOCKED).
-# 매트릭스를 단일 잡으로 합치면 그 방어가 사라진다 — 합치려면 브랜치 보호의 필수 체크 목록을
-# 함께 손보거나, 라벨 대신 workflow_dispatch 로 바꿔야 한다.
+# 왜 잡을 `if` 로 스킵하지 않고 첫 스텝에서 실패시키는가:
+# GitHub 에는 `on:` 단계의 라벨 이름 필터가 없다. 그래서 아무 라벨이나(bug·documentation·봇 라벨)
+# 붙는 순간 이 워크플로가 일단 뜬다. 그때 잡을 `if` 로 스킵하면 **스킵된 필수 체크는 '통과'로
+# 계산돼서**(GitHub 문서: "A job that is skipped will report its status as Success. It will not
+# prevent a pull request from merging, even if it is a required check") 라벨 하나로 CI 없이 머지가
+# 열리고, 이미 빨간 체크도 초록으로 덮인다.
+#
+# 그래서 `ci` 가 아닌 라벨로 뜬 실행은 각 잡의 첫 스텝에서 **실패**시킨다. 실패는 통과로 계산되지
+# 않으므로 머지가 정직하게 막힌다("이 커밋으로는 CI 를 안 돌렸다"는 뜻이라 의미도 맞다).
+# 라벨을 `ci` 로 다시 붙이면 정상 실행된다.
+#
+# (2026-07-29 실측: 스킵 방식일 때 잡은 전부 SKIPPED 인데 mergeStateStatus 는 BLOCKED 였다. 필수 8개가
+#  `typecheck (packages/backend)` 같은 매트릭스 전개 이름이라 스킵 시엔 `typecheck` 로만 보고돼 이름이
+#  안 맞았을 뿐이고, 이름이 그대로인 `lint` 는 실제로 초록이 됐다 — 매트릭스에 기댄 우연한 방어였다.)
 on:
   push:
     branches: [develop, main]
@@ -39,10 +45,15 @@ concurrency:
 
 jobs:
   lint:
-    # 라벨 트리거일 때만 실행(위 on: 주석 참고). push·workflow_dispatch 는 그대로 돈다.
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
     runs-on: ubuntu-latest
     steps:
+      # `ci` 가 아닌 라벨로 뜬 실행은 스킵이 아니라 **실패**시킨다(이유는 위 on: 주석).
+      - name: Require the `ci` label
+        if: github.event_name == 'pull_request' && github.event.label.name != 'ci'
+        run: |
+          echo "::error::'ci' 라벨이 아니라 CI 를 돌리지 않았다. 'ci' 라벨을 붙여 다시 돌릴 것."
+          exit 1
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
@@ -58,13 +69,18 @@ jobs:
         run: npm run lint
 
   typecheck:
-    # 라벨 트리거일 때만 실행(위 on: 주석 참고). push·workflow_dispatch 는 그대로 돈다.
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
     runs-on: ubuntu-latest
     strategy:
       matrix:
         package: [packages/backend, packages/shared, packages/ui, packages/voice]
     steps:
+      # `ci` 가 아닌 라벨로 뜬 실행은 스킵이 아니라 **실패**시킨다(이유는 위 on: 주석).
+      - name: Require the `ci` label
+        if: github.event_name == 'pull_request' && github.event.label.name != 'ci'
+        run: |
+          echo "::error::'ci' 라벨이 아니라 CI 를 돌리지 않았다. 'ci' 라벨을 붙여 다시 돌릴 것."
+          exit 1
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
@@ -81,8 +97,6 @@ jobs:
         run: npm run typecheck
 
   test:
-    # 라벨 트리거일 때만 실행(위 on: 주석 참고). push·workflow_dispatch 는 그대로 돈다.
-    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -96,6 +110,13 @@ jobs:
           - package: packages/voice
             command: npm test
     steps:
+      # `ci` 가 아닌 라벨로 뜬 실행은 스킵이 아니라 **실패**시킨다(이유는 위 on: 주석).
+      - name: Require the `ci` label
+        if: github.event_name == 'pull_request' && github.event.label.name != 'ci'
+        run: |
+          echo "::error::'ci' 라벨이 아니라 CI 를 돌리지 않았다. 'ci' 라벨을 붙여 다시 돌릴 것."
+          exit 1
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
