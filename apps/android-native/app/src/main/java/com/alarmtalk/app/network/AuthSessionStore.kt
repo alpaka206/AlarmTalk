@@ -148,7 +148,24 @@ class AuthSessionStore(context: Context) {
         )
 
     fun clear() {
-        prefs.edit().clear().apply()
+        // 마지막 로그인 계정 id 만 남기고 토큰·프로필은 전부 지운다. 자동 401 처럼 세션만
+        // 비우는 경로에서 알람 소유자 새기기가 실패하면, 다음 로그인 때 이 값으로 앞 계정을
+        // 알아내 마저 새긴다(그러지 않으면 소유자 없는 알람을 새 계정이 물려받아 울린다).
+        val lastSessionUserId = prefs.getString(KEY_LAST_SESSION_USER_ID, null)
+        prefs.edit().clear().putString(KEY_LAST_SESSION_USER_ID, lastSessionUserId).apply()
+    }
+
+    /** 이 기기에서 마지막으로 로그인했던 계정 id. 세션을 비워도 남는다. */
+    fun lastSessionUserId(): String? =
+        prefs.getString(KEY_LAST_SESSION_USER_ID, null)?.takeIf { it.isNotBlank() }
+
+    /**
+     * 로그인 뒤처리가 끝난 뒤에 호출한다 — 그전까지는 '앞 계정' 값을 읽어야 하므로
+     * 세션 저장([save]) 시점에 덮어쓰지 않는다.
+     */
+    fun rememberLastSessionUser(userId: String?) {
+        val normalized = userId?.takeIf { it.isNotBlank() } ?: return
+        prefs.edit().putString(KEY_LAST_SESSION_USER_ID, normalized).apply()
     }
 
     fun save(session: AuthSession): AuthSession =
@@ -351,6 +368,11 @@ class AuthSessionStore(context: Context) {
         private const val KEY_TOKEN = "token"
         private const val KEY_PROVIDER = "provider"
         private const val KEY_USER_ID = "user_id"
+
+        // 세션이 끝나도 남는 유일한 값. 자동 401 로 세션이 끊길 때 알람 소유자 새기기가
+        // 실패했으면(디스크 가득참 등) 다음 로그인에서 마저 새겨야 하는데, 그러려면
+        // '앞 계정이 누구였는지'를 알아야 한다. [clear] 가 이 키만 남긴다.
+        private const val KEY_LAST_SESSION_USER_ID = "last_session_user_id"
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"
         private const val KEY_PLAN = "plan"

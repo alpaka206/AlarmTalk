@@ -130,6 +130,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 않으면 다음에 들어온 다른 계정이 null 을 자기 것으로 보고(reschedulePendingAlarms·
             // observeAlarms 규칙) 앞 계정 알람을 되살려 울린다 — onSignedIn 의
             // cancelAlarmsNotOwnedBy 는 소유자 없는 행을 건너뛰므로 그것만으론 못 막는다.
+            //
+            // 여기서 실패해도(디스크 가득참 등) 예약은 취소하지 않는다 — 취소해 봐야 다음
+            // 로그인의 reschedulePendingAlarms 가 그대로 되살리므로 아무것도 못 막고, 대신
+            // 본인이 다시 로그인할 때까지 알람만 조용히 안 울린다. 대신 다음 로그인에서
+            // onSignedIn 이 authSessionStore.lastSessionUserId 로 이 계정을 알아내 마저 새긴다.
             runCatching {
                 repository.claimUnownedAlarmsFor(authSession?.user?.id?.takeIf { it.isNotBlank() })
             }.onFailure { error ->
