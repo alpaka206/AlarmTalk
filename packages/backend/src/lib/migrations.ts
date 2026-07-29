@@ -1835,6 +1835,39 @@ export const migrations: Migration[] = [
       `DROP TABLE IF EXISTS dub_jobs`,
     ],
   },
+  {
+    // Codex #647 P2: 이 수정 이전에 '해지로 반납된' 클론 행 복구.
+    //
+    // 옛 releaseClonedVoicesForUser 는 elevenlabs_voice_id 만 NULL 로 비우고 evicted_at 을
+    // 안 찍었다. tts.ts 의 복구 게이트는 `provider voice id 없음 AND evicted_at 있음` 이라,
+    // 그 행들은 3일 보관 안에 다시 구독해도 재클론 경로를 못 타고 NO_VOICE_ID 로 떨어진다 —
+    // 재클론에 쓸 원본(voice_uploads)은 멀쩡히 남아 있는데도. main 은 자동 배포라 이미
+    // 그 상태인 행이 dev/prod 에 남아 있을 수 있어 한 번 훑어 표식을 채운다.
+    // 옛 provider id 는 남아 있지 않으므로, 표식만 채우면 tts.ts 의 '프로브할 옛 id 가 없는
+    // evict 행' 분기가 곧바로 재클론한다(마이그레이션 76 이전 evict 분과 같은 취급).
+    //
+    // 대상은 세 조건으로 좁힌다 — 클론이 있던 적 없는 행이 잘못 되살아나지 않게:
+    //  - EXISTS voice_uploads: 재클론에 쓸 원본이 실제로 남아 있는 행만(원본 업로드가 없는
+    //    기본/시스템 목소리는 애초에 evict 대상이 아니다).
+    //  - status = 'ready': voice id 는 ready 로 전환될 때만 채워지므로, ready 인데 지금
+    //    비어 있다 = 나중에 누가 비웠다는 뜻. 진행 중(processing)·실패(failed: 슬롯 부족
+    //    회수분 등)은 되살리면 안 되는 행이라 제외한다.
+    //  - deleted_at IS NULL: 이미 지운 행 제외.
+    // 값은 실제 반납 시각인 updated_at 을 쓴다(그 UPDATE 가 이 행의 마지막 쓰기였다).
+    id: 86,
+    name: 'backfill-evicted-at-for-released-clones',
+    statements: [
+      `UPDATE voice_profiles
+          SET evicted_at = COALESCE(updated_at, datetime('now'))
+        WHERE elevenlabs_voice_id IS NULL
+          AND evicted_at IS NULL
+          AND deleted_at IS NULL
+          AND status = 'ready'
+          AND EXISTS (
+            SELECT 1 FROM voice_uploads vu WHERE vu.voice_profile_id = voice_profiles.id
+          )`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
