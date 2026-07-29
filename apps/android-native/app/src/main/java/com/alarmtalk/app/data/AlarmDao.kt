@@ -88,15 +88,24 @@ interface AlarmDao {
         fireDateEndMillis: Long,
     ): Int
 
+    /**
+     * "한 시각에는 알람 하나" 정책의 충돌 개수. 대상은 **이 계정에 보이는 알람**으로 한정한다
+     * ([AlarmRepository.observeAlarms] 와 같은 규칙).
+     *
+     * 로컬 알람은 로그아웃해도 남으므로, 소유자를 안 보면 앞 계정 A 의 07:00 알람 때문에 B 가
+     * 07:00 을 못 쓴다 — 목록에는 안 보이니 지울 수도 없다. 게다가 교체 흐름으로 넘어가면
+     * A 의 알람과 음성 캐시가 영구 삭제된다(내 알람은 서버에서 되받는 경로가 없다).
+     */
     @Query(
         """
         SELECT COUNT(*) FROM alarms
         WHERE hour = :hour
           AND minute = :minute
           AND (:excludeId IS NULL OR id != :excludeId)
+          AND (ownerUserId IS NULL OR ownerUserId = :callerUserId)
         """,
     )
-    suspend fun countAtTime(hour: Int, minute: Int, excludeId: String? = null): Int
+    suspend fun countAtTime(hour: Int, minute: Int, callerUserId: String?, excludeId: String? = null): Int
 
     /** 같은 시각(HH:mm)의 기존 알람 1건. 중복 시각 교체 흐름에서 충돌 대상을 찾는 데 쓴다. */
     @Query(
@@ -105,10 +114,11 @@ interface AlarmDao {
         WHERE hour = :hour
           AND minute = :minute
           AND (:excludeId IS NULL OR id != :excludeId)
+          AND (ownerUserId IS NULL OR ownerUserId = :callerUserId)
         LIMIT 1
         """,
     )
-    suspend fun findAtTime(hour: Int, minute: Int, excludeId: String? = null): AlarmEntity?
+    suspend fun findAtTime(hour: Int, minute: Int, callerUserId: String?, excludeId: String? = null): AlarmEntity?
 
     @Query("SELECT COUNT(*) FROM alarms WHERE audioCacheKey = :cacheKey")
     suspend fun countByAudioCacheKey(cacheKey: String): Int

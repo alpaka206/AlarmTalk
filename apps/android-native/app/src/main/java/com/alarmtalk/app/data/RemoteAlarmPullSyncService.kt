@@ -34,6 +34,9 @@ internal class RemoteAlarmPullSyncService(
     // 직렬화로 레이스를 제거한다.
     private val pullMutex = kotlinx.coroutines.sync.Mutex()
 
+    private fun ownedByRecipient(alarm: AlarmEntity): Boolean =
+        isOwnedByRecipient(alarm, currentUserIdProvider())
+
     suspend fun pullReceivedAlarms(
         api: AlarmTalkApi,
         token: String,
@@ -115,6 +118,10 @@ internal class RemoteAlarmPullSyncService(
                 if (local.enabled) {
                     alarmDao.getEnabledAtTime(local.hour, local.minute, excludeId = local.id)
                         .filter { it.remoteAlarmId != remote.id }
+                        // 끄는 대상은 '이 수신자의' 알람만이다. 같은 기기에 남은 앞 계정 알람을
+                        // 끄면 그 계정은 영영 모른 채 알람이 안 울린다 — 재예약은 enabled=1 만
+                        // 훑으므로(getEnabledAlarms) 다시 로그인해도 되살아나지 않는다.
+                        .filter { ownedByRecipient(it) }
                         .forEach { conflicting ->
                             alarmScheduler.cancel(conflicting.id)
                             alarmDao.upsert(
@@ -171,6 +178,10 @@ internal class RemoteAlarmPullSyncService(
             alarmDao.getAllAlarms()
                 .filter {
                     it.origin == AlarmOrigins.RECEIVED_REMOTE &&
+                        // 서버 알람의 수신자는 한 명이라, 앞 계정이 받은 알람은 이 스냅샷에
+                        // 없는 게 당연하다. 소유자를 안 보면 B 의 첫 완전 pull 이 A 가 받은
+                        // 알람과 그 음성 캐시를 통째로 지운다.
+                        ownedByRecipient(it) &&
                         !it.remoteAlarmId.isNullOrBlank() &&
                         it.remoteAlarmId !in servedRemoteIds
                 }
@@ -318,6 +329,20 @@ internal class RemoteAlarmPullSyncService(
  */
 internal fun resolveReceivedOwner(existing: AlarmEntity?, currentUserId: String?): String? =
     existing?.ownerUserId ?: currentUserId
+
+/**
+ * 이 pull 이 건드려도 되는 행인가 — 지금 수신자 소유이거나 소유자 미기록(레거시)일 때만.
+ *
+ * pull 은 이 세션이 서버에서 받은 목록만 보고 로컬을 정리한다. 그런데 로컬 알람은 로그아웃해도
+ * 남으므로(원본이 기기다), 같은 기기에 앞 계정의 행이 함께 있다. 서버 알람의 수신자는 한 명이라
+ * 앞 계정이 받은 알람이 이 스냅샷에 없는 건 당연한데, 소유자를 안 보면 '서버에 없다 → 끄기/지우기'로
+ * 오판해 남의 알람을 죽인다. 특히 끄기는 치명적이다 — 재예약은 enabled=1 만 훑으므로(getEnabledAlarms)
+ * 주인이 다시 로그인해도 되살아나지 않는다. 판정 규칙은 AlarmRepository.observeAlarms 와 같다.
+ */
+internal fun isOwnedByRecipient(alarm: AlarmEntity, currentUserId: String?): Boolean {
+    val currentUser = currentUserId?.takeIf { it.isNotBlank() }
+    return alarm.ownerUserId == null || alarm.ownerUserId == currentUser
+}
 
 internal data class ReceivedLockState(val playMode: String, val preLockPlayMode: String?)
 

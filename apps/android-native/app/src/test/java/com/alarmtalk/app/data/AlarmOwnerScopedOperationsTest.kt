@@ -302,6 +302,70 @@ class AlarmOwnerScopedOperationsTest {
         assertFalse(isOutboundSyncCandidate(received, "user-b", adoptOwnerlessAlarms = true))
     }
 
+    // ------------------------------------------------- 같은 시각(HH:mm) 충돌 판정
+
+    @Test
+    fun anotherAccountsAlarmDoesNotBlockThisAccountsTimeSlot() = runBlocking {
+        // A 의 07:30 알람은 B 에게 보이지 않는다(observeAlarms). 그런데 충돌 판정이 그걸
+        // 세면 B 는 07:30 을 쓸 수 없고, 목록에 없으니 지울 수도 없다.
+        seedVoiceAlarm(id = "a-1", owner = "user-a")
+        currentUser = "user-b"
+
+        assertEquals(0, dao.countAtTime(hour = 7, minute = 30, callerUserId = "user-b"))
+        assertNull(dao.findAtTime(hour = 7, minute = 30, callerUserId = "user-b"))
+    }
+
+    @Test
+    fun sameAccountAndLegacyAlarmsStillBlockTheTimeSlot() = runBlocking {
+        // 회귀 방지: "한 시각에 알람 하나" 정책 자체는 그대로여야 한다.
+        seedVoiceAlarm(id = "b-1", owner = "user-b")
+        dao.upsert(voiceAlarm(id = "legacy-1", owner = null).copy(hour = 8))
+
+        assertEquals(1, dao.countAtTime(hour = 7, minute = 30, callerUserId = "user-b"))
+        assertEquals("b-1", dao.findAtTime(hour = 7, minute = 30, callerUserId = "user-b")?.id)
+        // 소유자 미기록(레거시) 행도 현재 계정 것으로 본다 — 목록 노출 규칙과 같다.
+        assertEquals(1, dao.countAtTime(hour = 8, minute = 30, callerUserId = "user-b"))
+        assertEquals("legacy-1", dao.findAtTime(hour = 8, minute = 30, callerUserId = "user-b")?.id)
+    }
+
+    @Test
+    fun excludingTheEditedAlarmStillWorksWithTheOwnerScope() = runBlocking {
+        // 편집 시 자기 자신은 충돌 대상에서 빠져야 한다(기존 동작).
+        seedVoiceAlarm(id = "b-1", owner = "user-b")
+
+        assertEquals(
+            0,
+            dao.countAtTime(hour = 7, minute = 30, callerUserId = "user-b", excludeId = "b-1"),
+        )
+    }
+
+    // -------------------------------------------- 무료 강등 잠금의 소유자 backfill
+
+    @Test
+    fun lockingDoesNotClaimAlarmsPendingForAnotherAccount() = runBlocking {
+        // 잠금은 미기록 행에 소유자를 '영구히' 새긴다. 임자가 A 인데 B 로 새겨 버리면
+        // 뒤늦은 확정(null 행만 대상)이 못 고쳐 A 가 알람을 영영 잃는다.
+        seedVoiceAlarm(id = "legacy-1", owner = null, voiceProfileId = "clone-a")
+        currentUser = "user-b"
+        pendingOwner = "user-a"
+
+        assertEquals(0, repository.lockPaidAlarmTalks())
+        assertEquals("user-a", dao.getById("legacy-1")?.ownerUserId)
+        assertNull(dao.getById("legacy-1")?.preLockPlayMode)
+    }
+
+    @Test
+    fun lockingStillClaimsGenuinelyOwnerlessAlarms() = runBlocking {
+        // 회귀 방지: 임자 표시가 없는 진짜 레거시 행은 예전대로 현재 계정으로 잠기고 새겨진다.
+        seedVoiceAlarm(id = "legacy-1", owner = null, voiceProfileId = "clone-a")
+        currentUser = "user-b"
+        pendingOwner = null
+
+        assertEquals(1, repository.lockPaidAlarmTalks())
+        assertEquals("user-b", dao.getById("legacy-1")?.ownerUserId)
+        assertEquals(AlarmPlayModes.ALARM_ONLY, dao.getById("legacy-1")?.playMode)
+    }
+
     @Test
     fun ownerlessRowsStayPendingInsteadOfBeingClaimedByTheSyncPath() = runBlocking {
         // syncWithBackend 는 올리기 전에 임자를 확정한다. 확정에 성공하면 그 행은 주인 것이 되고,
