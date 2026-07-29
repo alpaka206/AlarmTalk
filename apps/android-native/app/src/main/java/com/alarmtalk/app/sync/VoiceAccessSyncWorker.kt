@@ -39,7 +39,8 @@ class VoiceAccessSyncWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        val session = AuthSessionStore(applicationContext).read() ?: return Result.success()
+        val sessionStore = AuthSessionStore(applicationContext)
+        val session = sessionStore.read() ?: return Result.success()
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -47,6 +48,15 @@ class VoiceAccessSyncWorker(
             val myVoices = withContext(Dispatchers.IO) { api.listVoiceProfiles(auth).profiles }
             val sharedVoices =
                 withContext(Dispatchers.IO) { api.listFamilyVoiceProfiles(auth).profiles }
+
+            // 네트워크 왕복 중 로그아웃/계정전환이 일어났을 수 있다. 쓰기 직전에 현재 세션이
+            // 아직 이 세션(같은 토큰)인지 재확인한다 — degradeAlarmsWithInaccessibleVoice 는
+            // 소유자 필터 없이 LOCAL_OWNED 전체를 훑으므로, 옛 계정의 목록을 그대로 적용하면
+            // 새 계정 알람의 목소리를 영구히 벗긴다. (PlanChangeSyncWorker 와 같은 가드.)
+            val current = sessionStore.read()
+            if (current == null || current.token != session.token) {
+                return@runCatching Result.success()
+            }
 
             val accessibleVoiceIds = (myVoices.map { it.id } + sharedVoices.map { it.id }).toSet()
             val degraded = AlarmAppContainer.repository(applicationContext)
