@@ -138,4 +138,35 @@ class WeatherVariantRefreshTest {
         val justResolved = alarm(fireInMillis = 2 * hour, resolvedAgoMillis = 1_000L)
         assertFalse(weatherVariantNeedsRefresh(justResolved, now))
     }
+
+    /**
+     * 울리는 중이거나 놓친 알람은 해제 전까지 enabled 로 남는다. 그 사이 조건 해결이 계속
+     * 실패하면 미해결 분기에 걸려 시간당 재시도가 영원히 이어지고 서버를 두드린다
+     * (이미 지난 발사분이라 준비할 것도 없는데도) — Codex #646.
+     */
+    @Test
+    fun 이미_지난_발사분은_재시도_대상이_아니다() {
+        assertFalse(
+            "미해결이어도 지난 발사분은 준비할 게 없다",
+            weatherVariantNeedsRefresh(
+                alarm(fireInMillis = -2 * hour, index = null, resolvedAgoMillis = null),
+                now,
+            ),
+        )
+        assertFalse(
+            "해결해 둔 지난 발사분도 마찬가지",
+            weatherVariantNeedsRefresh(alarm(fireInMillis = -2 * hour), now),
+        )
+    }
+
+    /** 경계: 아직 오지 않은 발사분은 코앞이어도 그대로 대상이다. */
+    @Test
+    fun 발사_직전_미해결_알람은_여전히_받는다() {
+        assertTrue(
+            weatherVariantNeedsRefresh(
+                alarm(fireInMillis = 5 * 60 * 1000L, index = null, resolvedAgoMillis = null),
+                now,
+            ),
+        )
+    }
 }
