@@ -56,9 +56,13 @@ class VoiceAccessSyncWorker(
                 withContext(Dispatchers.IO) { api.listFamilyVoiceProfiles(auth).profiles }
 
             // 네트워크 왕복 중 로그아웃/계정전환이 일어났을 수 있다. 쓰기 직전에 현재 세션이
-            // 아직 이 세션(같은 토큰)인지 재확인한다 — degradeAlarmsWithInaccessibleVoice 는
-            // 소유자 필터 없이 LOCAL_OWNED 전체를 훑으므로, 옛 계정의 목록을 그대로 적용하면
-            // 새 계정 알람의 목소리를 영구히 벗긴다. (PlanChangeSyncWorker 와 같은 가드.)
+            // 아직 이 세션(같은 토큰)인지 재확인한다 — 재확인이 없으면 방금 받은 '옛 계정의'
+            // 접근 가능 목록을 새 계정 기준으로 적용해, 새 계정 알람의 목소리를 영구히 벗긴다.
+            // (PlanChangeSyncWorker 와 같은 가드.)
+            //
+            // 반대 방향(같은 기기에 남아 있는 앞 계정 알람을 이 계정 목록으로 벗기는 것)은
+            // degradeAlarmsWithInaccessibleVoice 안의 소유자 게이트가 막는다 — 이 재확인은
+            // 요청 중의 계정 전환만 잡으므로 둘 다 필요하다(Codex #646 P1).
             val current = sessionStore.read()
             if (current == null || current.token != session.token) {
                 return@runCatching Result.success()

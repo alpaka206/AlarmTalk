@@ -18,20 +18,55 @@ data class AlarmSyncResult(
     val failed: Int,
 )
 
+/** 아직 서버에 반영되지 않은 상태들 — 이 상태의 행만 올릴 거리가 있다. */
+private val OUTBOUND_SYNC_STATES = setOf(
+    AlarmSyncStates.LOCAL_ONLY,
+    AlarmSyncStates.DIRTY,
+    AlarmSyncStates.FAILED,
+)
+
+/**
+ * 이 세션의 토큰으로 올려도 되는 행인가. 판정 규칙만 떼어 내 API 없이 검증한다.
+ * 인자 의미는 [AlarmSyncService.syncWithBackend] 참고.
+ */
+internal fun isOutboundSyncCandidate(
+    alarm: AlarmEntity,
+    ownerUserId: String?,
+    adoptOwnerlessAlarms: Boolean,
+): Boolean =
+    alarm.origin == AlarmOrigins.LOCAL_OWNED &&
+        alarm.syncState in OUTBOUND_SYNC_STATES &&
+        when (alarm.ownerUserId) {
+            // 소유자 미기록(레거시 null)은 임자 확정에 성공한 회차에만 내 것으로 본다.
+            null -> adoptOwnerlessAlarms
+            // 비로그인(ownerUserId == null)이면 이 가지에 걸리지 않아 남의 행은 그대로 제외된다.
+            ownerUserId -> true
+            else -> false
+        }
+
 internal class AlarmSyncService(
     private val alarmDao: AlarmDao,
 ) {
-    suspend fun syncWithBackend(api: AlarmTalkApi, token: String): AlarmSyncResult {
+    /**
+     * 아직 서버에 못 올린 '내 소유' 알람을 올린다.
+     *
+     * @param ownerUserId 이 세션의 계정. 로컬 알람은 로그아웃해도 Room 에 남으므로(원본이 기기다),
+     *   앞 계정 A 가 오프라인에서 만들거나 고친 행이 LOCAL_ONLY/DIRTY 인 채로 남는다. 소유자를 안
+     *   보면 다음 계정 B 가 알람 탭에 들어오는 순간 그 행이 **B 의 JWT** 로 올라가, B 계정에 A 의
+     *   알람이 생기거나 404 재생성 폴백이 A 의 remoteAlarmId 를 갈아치운다(Codex #646 P1).
+     *   다른 계정 소유 행은 DIRTY 인 채로 남겨 둔다 — 주인이 다시 로그인하면 그때 올라간다.
+     * @param adoptOwnerlessAlarms 소유자 미기록(레거시 null) 행을 이 세션 것으로 봐도 되는가.
+     *   AlarmRepository.settlePendingAlarmOwnership 이 성공한 회차에만 true 다.
+     */
+    suspend fun syncWithBackend(
+        api: AlarmTalkApi,
+        token: String,
+        ownerUserId: String?,
+        adoptOwnerlessAlarms: Boolean,
+    ): AlarmSyncResult {
         val authorization = AlarmTalkApiClient.bearer(token)
         val localAlarms = alarmDao.getAllAlarms()
-            .filter { alarm ->
-                alarm.origin == AlarmOrigins.LOCAL_OWNED &&
-                    alarm.syncState in setOf(
-                        AlarmSyncStates.LOCAL_ONLY,
-                        AlarmSyncStates.DIRTY,
-                        AlarmSyncStates.FAILED,
-                    )
-            }
+            .filter { alarm -> isOutboundSyncCandidate(alarm, ownerUserId, adoptOwnerlessAlarms) }
         var created = 0
         var updated = 0
         var failed = 0

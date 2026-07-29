@@ -502,6 +502,23 @@ class AlarmRepository(
     }
 
     /**
+     * 이 행을 '지금 계정 것'으로 다뤄도 되는가 — 파괴적/외부로 나가는 작업의 공통 게이트.
+     *
+     * 소유자 미기록(레거시 null)은 [observeAlarms]·[reschedulePendingAlarms]·lockPaidAlarmTalks 와
+     * 같은 규칙으로 현재 계정 것으로 본다. 단 [settlePendingAlarmOwnership] 이 실패한 회차에는
+     * 그 null 이 앞 계정 것일 수 있으므로 제외한다 — 표시가 남아 다음 기회에 다시 판정된다.
+     */
+    private fun ownedByCurrentSession(
+        alarm: AlarmEntity,
+        currentUserId: String,
+        ownershipSettled: Boolean,
+    ): Boolean = when (alarm.ownerUserId) {
+        null -> ownershipSettled
+        currentUserId -> true
+        else -> false
+    }
+
+    /**
      * 지금 로그인한 계정의 것이 아닌 알람의 OS 예약을 내린다.
      *
      * 자동 401(토큰 만료)은 알람을 그대로 두므로, 그 상태에서 다른 계정으로 로그인하면
@@ -529,6 +546,7 @@ class AlarmRepository(
      * 음성 알람을 sound-only 로 강등한다. [accessibleVoiceIds] 는 방금 '신선하게' 로드한 내 프로필 +
      * 가족 공유 프로필 id 집합이어야 한다 — 부분/실패 로드로 호출하면 정상 알람을 오강등할 수 있으므로
      * 호출부(refreshSocial 신선 성공)에서 가드한다. 버킷 회전·녹음(LOCAL_AUDIO)·수신 알람은 대상이 아니다.
+     * 대상은 **지금 계정 소유** 알람으로 한정된다(같은 기기에 남아 있는 앞 계정 알람은 건드리지 않는다).
      * 반환값은 강등된 알람 수.
      */
     suspend fun degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds: Set<String>): Int =
@@ -548,9 +566,26 @@ class AlarmRepository(
         }
 
     private suspend fun degradeMatchingLocalOwnedVoiceAlarms(match: (AlarmEntity) -> Boolean): Int {
+        // 강등은 되돌릴 수 없다 — 목소리 참조를 지우고 캐시 오디오까지 정리한다. 그래서 '지금 계정
+        // 것'이라고 확신할 수 있는 행만 건드린다.
+        //
+        // 로컬 알람은 로그아웃해도 남으므로(원본이 기기다), 앞 계정 A 의 알람이 Room 에 그대로
+        // 있는 채로 계정 B 가 로그인한다. B 의 접근 가능 목소리 목록에 A 의 프로필이 없는 건
+        // 당연한데, 소유자를 안 보면 B 가 도는 refreshSocial·주기 워커가 그걸 '접근권 상실'로
+        // 읽어 A 의 알람에서 목소리를 영구히 벗긴다. VoiceAccessSyncWorker 의 토큰 재확인은
+        // 요청 중의 계정 전환만 잡지, 이미 앞 계정 것인 행은 못 지킨다(Codex #646 P1).
+        val ownershipSettled = settlePendingAlarmOwnership()
+        val currentUser = currentUserIdProvider()?.takeIf { it.isNotBlank() }
+        if (currentUser == null) {
+            // 비로그인 상태에서는 [accessibleVoiceIds] 가 누구의 목록인지 알 수 없다. 호출부가
+            // 모두 세션 안에서 도므로 정상 경로에서는 오지 않는 가지다.
+            Log.i(TAG, "Skipped voice degradation: no signed-in account")
+            return 0
+        }
         val candidates = alarmDao.getAllAlarms().filter { alarm ->
             alarm.origin == AlarmOrigins.LOCAL_OWNED &&
                 alarm.voiceSource == VoiceSources.TTS_PROFILE &&
+                ownedByCurrentSession(alarm, currentUser, ownershipSettled) &&
                 match(alarm)
         }
         var degraded = 0
@@ -611,6 +646,10 @@ class AlarmRepository(
      */
     suspend fun lockPaidAlarmTalks(): Int {
         val currentUser = currentUserIdProvider() ?: return 0
+        // 미기록 행에 소유자를 '영구히' 새기는 경로다. 새기기 전에 임자를 먼저 확정하지 않으면
+        // 앞 계정 A 의 미기록 알람이 B 것으로 박히고, 뒤늦은 확정(claimUnownedAlarms 는 null 만
+        // 대상)이 더는 손댈 수 없어 A 는 그 알람을 영영 잃는다. reschedulePendingAlarms 와 같은 규칙.
+        val ownershipSettled = settlePendingAlarmOwnership()
         val now = System.currentTimeMillis()
         var lockedCount = 0
         alarmDao.getAllAlarms().forEach { alarm ->
@@ -620,12 +659,12 @@ class AlarmRepository(
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
             if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) return@forEach
-            // 다른 계정이 소유한(ownerUserId 불일치) 알람은 건드리지 않는다. 소유자 미기록(레거시 null)
-            // 음성 알람은 현재 활성 계정으로 소유권을 backfill 한다 — 잠금 시점에 소유자를 확정해,
+            // 다른 계정이 소유한(ownerUserId 불일치) 알람은 건드리지 않는다. 임자가 확정된 미기록
+            // (레거시 null) 음성 알람은 현재 활성 계정으로 소유권을 backfill 한다 — 잠금 시점에 소유자를 확정해,
             // 복원은 엄격히 ownerUserId 일치만 보고도 (1) 본인이 재유료 시 복원 가능(영구잠금 방지),
             // (2) 같은 기기의 다른 계정이 남의 잠긴 알람을 복원·스케줄하지 못하게 한다. 이미 잠긴
             // 레거시 행(구버전에서 소유자 없이 잠김)도 여기서 소유권만 backfill 해 복원 가능하게 만든다.
-            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) return@forEach
+            if (!ownedByCurrentSession(alarm, currentUser, ownershipSettled)) return@forEach
             val needsLock = alarm.preLockPlayMode == null
             val needsClaim = alarm.ownerUserId == null
             if (!needsLock && !needsClaim) return@forEach
@@ -937,8 +976,21 @@ class AlarmRepository(
         return scheduled
     }
 
-    suspend fun syncWithBackend(api: AlarmTalkApi, token: String): AlarmSyncResult =
-        alarmSyncService.syncWithBackend(api, token)
+    /**
+     * 아직 못 올린 내 알람을 서버에 올린다. **이 세션이 소유한 행만** 올린다 — 이유는
+     * [AlarmSyncService.syncWithBackend] 의 ownerUserId 설명 참고.
+     */
+    suspend fun syncWithBackend(api: AlarmTalkApi, token: String): AlarmSyncResult {
+        // 올리기 전에 임자 미정 행을 확정한다. 확정 전의 null 은 앞 계정 것일 수 있는데,
+        // 그걸 '내 것'으로 보고 올리면 이 계정 서버에 남의 알람이 생긴다.
+        val ownershipSettled = settlePendingAlarmOwnership()
+        return alarmSyncService.syncWithBackend(
+            api = api,
+            token = token,
+            ownerUserId = currentUserIdProvider()?.takeIf { it.isNotBlank() },
+            adoptOwnerlessAlarms = ownershipSettled,
+        )
+    }
 
     suspend fun pullReceivedAlarms(
         api: AlarmTalkApi,
@@ -1109,7 +1161,15 @@ class AlarmRepository(
     }
 
     private suspend fun requireUniqueTime(hour: Int, minute: Int, excludeAlarmId: String? = null) {
-        require(alarmDao.countAtTime(hour, minute, excludeAlarmId) == 0) {
+        // 충돌 판정 대상은 '이 계정에 보이는 알람'이어야 한다 — 안 보이는 앞 계정 알람으로
+        // 시각을 막으면 사용자가 풀 방법이 없다(AlarmDao.countAtTime 주석 참고).
+        val conflicts = alarmDao.countAtTime(
+            hour = hour,
+            minute = minute,
+            callerUserId = currentUserIdProvider(),
+            excludeId = excludeAlarmId,
+        )
+        require(conflicts == 0) {
             context.getString(R.string.rd_duplicate_alarm_time_message)
         }
     }
@@ -1129,7 +1189,14 @@ class AlarmRepository(
         excludeAlarmId: String?,
         replaceExisting: Boolean,
     ): AlarmEntity? {
-        val existing = alarmDao.findAtTime(hour, minute, excludeAlarmId) ?: return null
+        // 교체 대상도 '이 계정에 보이는 알람'만이다. 앞 계정 알람을 고르면 사용자가 본 적도
+        // 없는 알람과 그 음성 캐시를 지우게 되는데, 내 알람은 서버에서 되받는 경로가 없다.
+        val existing = alarmDao.findAtTime(
+            hour = hour,
+            minute = minute,
+            callerUserId = currentUserIdProvider(),
+            excludeId = excludeAlarmId,
+        ) ?: return null
         if (!replaceExisting) {
             throw DuplicateAlarmTimeException(
                 existingAlarmId = existing.id,
