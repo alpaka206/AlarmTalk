@@ -36,6 +36,21 @@ fun AuthSessionStore.observeUserId(): Flow<String?> = callbackFlow {
     awaitClose { unregisterChangeListener(listener) }
 }.distinctUntilChanged()
 
+/**
+ * 세션을 비울 때 '마지막 로그인 계정'으로 남길 값.
+ *
+ * 지금 세션의 사용자가 곧 떠나는 계정이므로 그 값을 우선한다. 이 빌드 이전에 로그인해 둔
+ * 세션은 마커가 아직 없어서(새 로그인에서만 기록된다) 이 폴백이 유일한 근거다. 세션 사용자가
+ * 비어 있으면(이미 비운 뒤 재호출) 기존 마커를 지운다 — 앞 계정 정보를 잃으면 소유자 없는
+ * 알람을 다음 계정이 물려받아 울린다(Codex #650).
+ *
+ * [AuthSessionStore] 는 EncryptedSharedPreferences(AndroidKeyStore)라 Robolectric 에서 세워지지
+ * 않아, 판단 부분만 순수 함수로 떼어 테스트한다.
+ */
+internal fun resolveLeavingUserId(currentUserId: String?, existingMarker: String?): String? =
+    currentUserId?.takeIf { it.isNotBlank() }
+        ?: existingMarker?.takeIf { it.isNotBlank() }
+
 class AuthSessionStore(context: Context) {
     private val prefs: SharedPreferences = run {
         val appContext = context.applicationContext
@@ -151,8 +166,17 @@ class AuthSessionStore(context: Context) {
         // 마지막 로그인 계정 id 만 남기고 토큰·프로필은 전부 지운다. 자동 401 처럼 세션만
         // 비우는 경로에서 알람 소유자 새기기가 실패하면, 다음 로그인 때 이 값으로 앞 계정을
         // 알아내 마저 새긴다(그러지 않으면 소유자 없는 알람을 새 계정이 물려받아 울린다).
-        val lastSessionUserId = prefs.getString(KEY_LAST_SESSION_USER_ID, null)
-        prefs.edit().clear().putString(KEY_LAST_SESSION_USER_ID, lastSessionUserId).apply()
+        //
+        // 값은 지금 지우려는 세션의 사용자(KEY_USER_ID)에서 먼저 가져온다 — 이 함수가 불리는
+        // 시점이 곧 그 계정의 세션이 끝나는 시점이다. 이 빌드 이전에 로그인해 둔 세션은
+        // 마커가 아직 없는데(rememberLastSessionUser 는 새 로그인에서만 돈다), 그 사용자도
+        // 이걸로 커버된다. [read] 가 무효한 구 구글 세션을 지우는 경로도 마찬가지.
+        // KEY_USER_ID 마저 없으면(이미 비운 뒤 재호출) 기존 마커를 그대로 지킨다.
+        val leavingUserId = resolveLeavingUserId(
+            currentUserId = prefs.getString(KEY_USER_ID, null),
+            existingMarker = prefs.getString(KEY_LAST_SESSION_USER_ID, null),
+        )
+        prefs.edit().clear().putString(KEY_LAST_SESSION_USER_ID, leavingUserId).apply()
     }
 
     /** 이 기기에서 마지막으로 로그인했던 계정 id. 세션을 비워도 남는다. */
