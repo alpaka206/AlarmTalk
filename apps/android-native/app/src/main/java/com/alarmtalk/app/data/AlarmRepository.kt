@@ -55,7 +55,8 @@ class AlarmRepository(
      * 이 계정에 보여줄 알람만 흘린다. 같은 기기에 다른 계정이 로그인하면 앞 계정 알람이
      * 목록에 그대로 남던 문제를 막는다(RemoteAlarmPullSyncService 가 '받은 알람'에 쓰는
      * 소유자 스코프와 같은 규칙). 소유자 미기록(레거시 null)은 현재 계정 것으로 본다 —
-     * 로그아웃 시 detachAlarmsOnSignOut 이 떠나는 계정을 새기므로 새로 생기지 않는다.
+     * 세션이 끝날 때 떠나는 계정을 새기므로(명시 로그아웃은 detachAlarmsOnSignOut, 자동
+     * 401 은 claimUnownedAlarmsFor) 다른 계정이 물려받을 null 이 새로 생기지 않는다.
      *
      * DAO 흐름만 map 하면 안 된다: Room 은 테이블이 바뀔 때만 방출하는데, 로그아웃은
      * 소유자가 이미 기록된 알람에 대해 아무것도 쓰지 않는다. 그러면 계정을 바꿔도
@@ -422,14 +423,35 @@ class AlarmRepository(
     suspend fun detachAlarmsOnSignOut(signedOutUserId: String?): Int {
         val all = alarmDao.getAllAlarms()
         if (all.isEmpty()) return 0
-        all.forEach { alarm ->
-            alarmScheduler.cancel(alarm.id)
-            if (signedOutUserId != null && alarm.ownerUserId == null) {
-                alarmDao.upsert(alarm.copy(ownerUserId = signedOutUserId))
-            }
-        }
+        claimUnownedAlarmsFor(signedOutUserId)
+        all.forEach { alarm -> alarmScheduler.cancel(alarm.id) }
         Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
         return all.size
+    }
+
+    /**
+     * 소유자 미기록(레거시 null) 알람에 지금 세션의 계정을 새긴다. 예약은 건드리지 않는다.
+     *
+     * 자동 401 은 '같은 사람이 다시 로그인'이 대부분이라 예약을 일부러 살려 두는데, 그때
+     * 소유자가 null 로 남으면 다음에 들어온 **다른** 계정이 그 알람을 자기 것으로 삼는다 —
+     * [reschedulePendingAlarms]·[observeAlarms]·lockPaidAlarmTalks 는 모두 null 을 현재 계정
+     * 것으로 보기 때문이다. 로그인 시점의 [cancelAlarmsNotOwnedBy] 는 소유자가 없는 행을
+     * 건너뛰므로 그것만으론 못 막는다. 세션을 비우기 전에 떠나는 계정을 새겨 그 창을 닫는다.
+     *
+     * 본인이 다시 로그인하면 소유자가 일치해 [reschedulePendingAlarms] 가 그대로 되살린다.
+     *
+     * 반환값은 소유자를 새긴 알람 수.
+     */
+    suspend fun claimUnownedAlarmsFor(userId: String?): Int {
+        if (userId.isNullOrBlank()) return 0
+        var claimed = 0
+        alarmDao.getAllAlarms().forEach { alarm ->
+            if (alarm.ownerUserId != null) return@forEach
+            alarmDao.upsert(alarm.copy(ownerUserId = userId))
+            claimed += 1
+        }
+        if (claimed > 0) Log.i(TAG, "Claimed $claimed ownerless alarms for the leaving session")
+        return claimed
     }
 
     /**
