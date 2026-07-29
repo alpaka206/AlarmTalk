@@ -444,12 +444,8 @@ class AlarmRepository(
      */
     suspend fun claimUnownedAlarmsFor(userId: String?): Int {
         if (userId.isNullOrBlank()) return 0
-        var claimed = 0
-        alarmDao.getAllAlarms().forEach { alarm ->
-            if (alarm.ownerUserId != null) return@forEach
-            alarmDao.upsert(alarm.copy(ownerUserId = userId))
-            claimed += 1
-        }
+        // 행 전체를 되쓰지 않고 컬럼 하나만 바꾼다 — 이유는 AlarmDao.claimUnownedAlarms 참고.
+        val claimed = alarmDao.claimUnownedAlarms(userId)
         if (claimed > 0) Log.i(TAG, "Claimed $claimed ownerless alarms for the leaving session")
         return claimed
     }

@@ -56,8 +56,11 @@ class AlarmOwnershipOnSessionExpiryTest {
         db.close()
     }
 
-    /** ownerUserId 컬럼이 생기기 전에 만들어진 '소유자 미기록' 알람. */
-    private suspend fun seedLegacyAlarm(id: String = "legacy-1"): AlarmEntity {
+    /** 기본값은 ownerUserId 컬럼이 생기기 전에 만들어진 '소유자 미기록' 알람. */
+    private suspend fun seedLegacyAlarm(
+        id: String = "legacy-1",
+        owner: String? = null,
+    ): AlarmEntity {
         val alarm = AlarmEntity(
             id = id,
             label = "legacy alarm",
@@ -106,7 +109,7 @@ class AlarmOwnershipOnSessionExpiryTest {
             createdAtMillis = 1_000L,
             updatedAtMillis = 1_000L,
             // 레거시 행의 핵심 조건.
-            ownerUserId = null,
+            ownerUserId = owner,
         )
         dao.upsert(alarm)
         return alarm
@@ -155,6 +158,19 @@ class AlarmOwnershipOnSessionExpiryTest {
         assertEquals("본인 재로그인 시에는 그대로 재예약된다", 1, scheduled)
     }
 
+    /** 명시 로그아웃 경로도 같은 함수를 쓰도록 정리했으므로 그쪽 동작도 함께 고정한다. */
+    @Test
+    fun explicitSignOutAlsoStampsOwnerlessAlarms() = runBlocking {
+        seedLegacyAlarm(id = "legacy-1")
+        seedLegacyAlarm(id = "owned-by-b", owner = "account-B")
+
+        val detached = repository.detachAlarmsOnSignOut("account-A")
+
+        assertEquals("예약은 전부 내린다", 2, detached)
+        assertEquals("account-A", ownerOf("legacy-1"))
+        assertEquals("account-B", ownerOf("owned-by-b"))
+    }
+
     @Test
     fun claimIsNoOpWithoutASession() = runBlocking {
         seedLegacyAlarm()
@@ -165,11 +181,30 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     @Test
-    fun claimDoesNotOverwriteAnExistingOwner() = runBlocking {
-        val alarm = seedLegacyAlarm()
-        dao.upsert(alarm.copy(ownerUserId = "account-A"))
+    fun claimTargetsOnlyOwnerlessRows() = runBlocking {
+        seedLegacyAlarm(id = "legacy-1")
+        seedLegacyAlarm(id = "legacy-2")
+        seedLegacyAlarm(id = "owned-by-b", owner = "account-B")
 
-        assertEquals(0, repository.claimUnownedAlarmsFor("account-B"))
+        assertEquals(2, repository.claimUnownedAlarmsFor("account-A"))
         assertEquals("account-A", ownerOf("legacy-1"))
+        assertEquals("account-A", ownerOf("legacy-2"))
+        assertEquals("이미 소유자가 있는 행은 덮어쓰지 않는다", "account-B", ownerOf("owned-by-b"))
+    }
+
+    /**
+     * 세션 만료 처리 중에도 리시버(발사·스누즈)·동기화 워커·사용자 편집이 같은 행을 쓴다.
+     * 행 전체를 되쓰는 방식이면 그 사이 변경(fireAtMillis·enabled·state)이 옛 값으로
+     * 되돌아가므로, 소유자 컬럼 하나만 바뀌는지 고정한다. updatedAtMillis 도 그대로여야
+     * 한다 — 올리면 AlarmSyncService 의 낙관적 동시성이 '사용자 편집'으로 오인한다.
+     */
+    @Test
+    fun claimOnlyTouchesTheOwnerColumn() = runBlocking {
+        val before = seedLegacyAlarm()
+
+        repository.claimUnownedAlarmsFor("account-A")
+
+        val after = dao.getById(before.id)
+        assertEquals(before.copy(ownerUserId = "account-A"), after)
     }
 }

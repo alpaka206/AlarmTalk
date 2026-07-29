@@ -171,6 +171,26 @@ interface AlarmDao {
     @Delete
     suspend fun delete(alarm: AlarmEntity)
 
+    /**
+     * 소유자 미기록 행에 계정을 새긴다. 반환값은 새긴 행 수.
+     *
+     * 읽고-고쳐-upsert 하면 안 된다: 세션 만료 처리 중에도 리시버(발사·스누즈)·동기화 워커·
+     * 사용자 편집이 같은 행을 쓰므로, 스냅샷 전체를 되쓰면 그 사이의 변경(fireAtMillis·
+     * enabled·state)이 옛 값으로 되돌아간다. 컬럼 하나만 원자적으로 바꾼다.
+     *
+     * updatedAtMillis 는 일부러 건드리지 않는다 — 소유자는 서버로 나가지 않는 로컬 전용
+     * 개념인데, 여기서 시각을 올리면 AlarmSyncService 의 expectedUpdatedAtMillis 낙관적
+     * 동시성이 '사용자 편집'으로 오인해 동기화 상태가 어긋난다.
+     */
+    @Query(
+        """
+        UPDATE alarms
+        SET ownerUserId = :userId
+        WHERE ownerUserId IS NULL
+        """,
+    )
+    suspend fun claimUnownedAlarms(userId: String): Int
+
     @Query(
         """
         UPDATE alarms
