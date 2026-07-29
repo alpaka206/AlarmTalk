@@ -71,6 +71,55 @@ describe('POST /user/consents — 민감 동의 철회', () => {
     ]);
   });
 
+  /**
+   * 서버에 아직 동기화되지 않은 로컬 알람은 정리 대상 조회에 안 잡힌다. 발사는 로컬이고
+   * 울림 시점 동의 게이트도 없으니, 알람 행을 못 찾아도 그 계정에는 접근권 상실을 알려야
+   * 한다 — 아니면 그 기기는 지워진 녹음으로 계속 울린다(Codex #654).
+   */
+  it('강등할 알람 행이 없어도 철회한 계정에는 접근권 상실을 알린다', async () => {
+    const app = buildApp();
+
+    const res = await app.request(
+      jsonReq('POST', '/user/consents', {
+        consents: [{ type: 'voice_biometric', agreed: false }],
+      }),
+      undefined,
+      {} as AppEnv['Bindings'],
+    );
+
+    expect(res.status).toBe(200);
+    expect(notifyDowngradedAlarms.mock.calls[0]![2]).toEqual([]);
+    expect(notifyDowngradedAlarms.mock.calls[0]![3]).toEqual(['user-1']);
+  });
+
+  /**
+   * 같은 유형이 여러 번 오면 마지막 값이 유효 동의다(GET /consents 규칙). 'false 가 하나라도
+   * 있으면'으로 보면 [false, true] 처럼 결국 동의한 요청에도 민감 음성 데이터를 되돌릴 수
+   * 없게 지워 버린다(Codex #654).
+   */
+  it('같은 유형이 중복되면 마지막 값으로 철회를 판정한다', async () => {
+    const app = buildApp();
+
+    const res = await app.request(
+      jsonReq('POST', '/user/consents', {
+        consents: [
+          { type: 'voice_biometric', agreed: false },
+          { type: 'voice_biometric', agreed: true },
+        ],
+      }),
+      undefined,
+      {} as AppEnv['Bindings'],
+    );
+
+    expect(res.status).toBe(200);
+    // 최종값이 동의이므로 삭제도 신호도 없어야 한다.
+    expect(notifyDowngradedAlarms.mock.calls[0]![3]).toEqual([]);
+    const deletedProfiles = mockDB.calls.some((call) =>
+      /DELETE FROM voice_profiles/.test(call.sql),
+    );
+    expect(deletedProfiles).toBe(false);
+  });
+
   it('철회가 아니면 정리도 신호도 없다', async () => {
     const app = buildApp();
 
@@ -83,6 +132,11 @@ describe('POST /user/consents — 민감 동의 철회', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(notifyDowngradedAlarms).toHaveBeenCalledWith(expect.anything(), expect.anything(), []);
+    expect(notifyDowngradedAlarms).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      [],
+      [],
+    );
   });
 });

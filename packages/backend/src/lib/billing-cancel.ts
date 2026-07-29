@@ -147,9 +147,12 @@ export async function clearPaidVoiceRetention(db: DbExecutor, userPk: string): P
 export async function sweepPaidVoiceRetention(
   db: Client,
   now: Date = new Date(),
-): Promise<DowngradedAlarm[]> {
+): Promise<{ targets: DowngradedAlarm[]; cleanedUserPks: string[] }> {
   // 이 정리로 강등된 알람들 — 호출자가 커밋 후 신호를 보낸다.
   const downgraded = new Map<string, DowngradedAlarm>();
+  // 실제로 음성 데이터를 정리한 사용자들. 알람 행을 못 찾아도 이 계정에는 접근권 상실을
+  // 알려야 한다(서버에 아직 동기화되지 않은 로컬 알람이 있을 수 있다).
+  const cleanedUserPks: string[] = [];
   // 유예가 끝난 사용자의 남은 음성 데이터(원본 업로드·생성 오디오)를 정리한다.
   // 클론 자체는 해지 시점에 이미 반납했다(releaseClonedVoicesForUser).
   const due = await db.execute({
@@ -172,9 +175,10 @@ export async function sweepPaidVoiceRetention(
       await resolveUserLoginId(db, userPk),
     );
     for (const target of affected) downgraded.set(target.alarmId, target);
+    cleanedUserPks.push(userPk);
     await clearPaidVoiceRetention(db, userPk);
   }
-  return Array.from(downgraded.values());
+  return { targets: Array.from(downgraded.values()), cleanedUserPks };
 }
 
 export async function downgradeUserToFree(
@@ -839,7 +843,7 @@ export async function processSubscriptionExpiry(
   }
 
   // 보관 유예가 끝난 유료 음성 데이터 정리 (같은 cron 주기에서 처리).
-  const downgradedAlarms = await sweepPaidVoiceRetention(db, now);
+  const sweptVoiceData = await sweepPaidVoiceRetention(db, now);
 
   // 강등된 사용자에게 plan_changed 푸시 — 클라가 '강등 시점'에 유료 목소리 알람을 기본 알람으로
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
@@ -847,7 +851,7 @@ export async function processSubscriptionExpiry(
 
   // 보관 정리가 서버에서 바꾼 '알람 행'은 plan_changed 로는 안 따라온다 — 이유는
   // notifyDowngradedAlarms 참고. 강등된 알람마다 알람 동기화 신호를 보낸다.
-  await notifyDowngradedAlarms(db, env, downgradedAlarms);
+  await notifyDowngradedAlarms(db, env, sweptVoiceData.targets, sweptVoiceData.cleanedUserPks);
 }
 
 export { planTypeToUserPlan };

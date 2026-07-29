@@ -274,10 +274,15 @@ export async function notifyDowngradedAlarms(
   db: Client,
   env: Partial<Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>> | undefined,
   targets: Array<{ alarmId: string; ownerUserId: string; isReceived: boolean }>,
+  /**
+   * 목소리 접근권을 잃은 계정들 — 서버에서 찾은 알람 행과 **무관하게** 알려야 한다.
+   * 아직 서버로 동기화되지 않은 로컬 알람은 targets 에 안 잡히는데, 발사는 로컬이고
+   * 울림 시점 동의 게이트도 없어 그 기기는 지워진 녹음으로 계속 울린다.
+   */
+  voiceAccessRevokedUserIds: string[] = [],
 ): Promise<void> {
-  if (!env?.FIREBASE_PROJECT_ID || !env?.FIREBASE_SERVICE_ACCOUNT_JSON || targets.length === 0) {
-    return;
-  }
+  if (!env?.FIREBASE_PROJECT_ID || !env?.FIREBASE_SERVICE_ACCOUNT_JSON) return;
+  if (targets.length === 0 && voiceAccessRevokedUserIds.length === 0) return;
   const pushEnv = {
     FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
     FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
@@ -296,7 +301,11 @@ export async function notifyDowngradedAlarms(
     );
   }
   // 본인 소유 알람: pull 대상이 아니라 목소리 접근권 재확인이 필요하다. 사용자당 한 번이면 된다.
-  const selfOwners = new Set(targets.filter((t) => !t.isReceived).map((t) => t.ownerUserId));
+  // 알람 행을 못 찾은 계정도 포함한다(미동기화 로컬 알람 때문에 — 위 인자 설명 참고).
+  const selfOwners = new Set([
+    ...targets.filter((t) => !t.isReceived).map((t) => t.ownerUserId),
+    ...voiceAccessRevokedUserIds.filter(Boolean),
+  ]);
   for (const userId of selfOwners) {
     await send('fcm.voice_access_revoked_push', () =>
       sendVoiceAccessRevokedPush(db, pushEnv, userId),

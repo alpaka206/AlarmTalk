@@ -309,6 +309,16 @@ user.post('/consents', async (c) => {
     // 미리 알리지 않는다). 보관 만료 스윕과 같은 이유로 알람 동기화 신호가 필요하다:
     // 서버가 수신자의 가족알람을 sound-only 로 내리고 R2 오브젝트를 지워도, 신호가
     // 없으면 수신자는 다음 폴백 pull 까지 캐시된 녹음으로 계속 울린다.
+    // 같은 유형이 여러 번 담겨 오면 **마지막 값이 유효 동의**다(GET /consents 가 삽입 순서
+    // 역순으로 최신을 고른다). 그러니 철회 판정도 마지막 값으로 해야 한다 — 'false 가 하나라도
+    // 있으면'으로 보면 [false, true] 처럼 결국 동의한 요청에도 민감 음성 데이터를 되돌릴 수 없게
+    // 지워 버린다.
+    const finalAgreedByType = new Map<string, boolean>();
+    for (const r of rows) finalAgreedByType.set(r.type, r.agreed);
+    const withdrewSensitiveConsent = SENSITIVE_REQUIRED_CONSENTS.some(
+      (type) => finalAgreedByType.get(type) === false,
+    );
+
     let downgradedAlarms: DowngradedAlarm[] = [];
     await withWriteTransaction(db, async (tx) => {
       for (const r of rows) {
@@ -318,15 +328,19 @@ user.post('/consents', async (c) => {
           args: [crypto.randomUUID(), userPk, r.type, r.version, r.agreed ? 1 : 0],
         });
       }
-      if (
-        rows.some(
-          (row) => !row.agreed && SENSITIVE_REQUIRED_CONSENTS.some((type) => type === row.type),
-        )
-      ) {
+      if (withdrewSensitiveConsent) {
         downgradedAlarms = await deleteSensitiveVoiceDataForUser(tx, userPk, c.get('userLoginId'));
       }
     });
-    await notifyDowngradedAlarms(db, c.env, downgradedAlarms);
+    // 철회했으면 알람 행을 못 찾았어도 이 계정에 목소리 접근권 상실을 알린다 — 서버에 아직
+    // 동기화되지 않은 로컬 알람은 여기서 안 잡히는데, 발사는 로컬이고 울림 시점 동의 게이트도
+    // 없어 그 기기는 지워진 녹음으로 계속 울린다.
+    await notifyDowngradedAlarms(
+      db,
+      c.env,
+      downgradedAlarms,
+      withdrewSensitiveConsent ? [userPk] : [],
+    );
     return c.json({ success: true, recorded: rows.length });
   } catch (err) {
     logRouteError(c, err);
