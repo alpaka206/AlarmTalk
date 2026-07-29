@@ -7,7 +7,6 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.util.Base64
-import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.Flow
@@ -22,27 +21,38 @@ data class AuthSession(
 )
 
 /**
+ * prefs 변경을 흘리는 공통 뼈대 — 리스너를 **먼저** 걸고 그다음에 스냅샷을 읽는다.
+ *
+ * 순서가 핵심이다. 스냅샷을 먼저 읽으면 `read()` 와 `register()` 사이에 커밋된 변경을
+ * 아무도 못 본다: 리스너가 아직 없어 콜백이 안 오고, 이미 읽은 스냅샷은 옛 값이다. 로그인
+ * 직후 목록이 수집을 새로 시작하는 순간과 겹치면 계정 id 가 로그아웃 시점 값(null)에 머물러
+ * '로그인은 됐는데 내 알람이 하나도 안 보이는' 상태가 된다(앱을 껐다 켜야 돌아온다).
+ * 먼저 걸어 두면 그 구간의 변경도 콜백으로 잡히고, 스냅샷과 겹쳐 중복 방출되더라도
+ * [distinctUntilChanged] 가 접는다.
+ *
+ * 등록 자체를 놓치는 것과 달리 채널 용량은 문제가 아니다 — callbackFlow 의 기본 용량은
+ * 랑데뷰가 아니라 BUFFERED(64) 라, 이 정도 변경 수로는 trySend 가 실패하지 않는다.
+ */
+internal fun <T> prefsSnapshotFlow(
+    register: (SharedPreferences.OnSharedPreferenceChangeListener) -> Unit,
+    unregister: (SharedPreferences.OnSharedPreferenceChangeListener) -> Unit,
+    read: () -> T,
+): Flow<T> = callbackFlow {
+    val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(read()) }
+    register(listener)
+    trySend(read())
+    awaitClose { unregister(listener) }
+}.distinctUntilChanged()
+
+/**
  * 지금 로그인한 계정의 users.id 를 흘린다(비로그인 null).
  *
  * SharedPreferences 변경 리스너를 쓰는 이유: 로그인·로그아웃이 어느 코드 경로를 타든
  * 결국 이 prefs 를 거치므로, 호출부가 "세션 바뀌었다"고 따로 알려 줄 필요가 없다.
  * 알람 목록 필터처럼 계정이 바뀌는 즉시 다시 계산돼야 하는 곳에서 쓴다.
- *
- * conflate 가 필요한 이유: callbackFlow 의 기본 채널은 랑데뷰(용량 0)라 수집자가 그 순간
- * 받을 준비가 안 돼 있으면 trySend 가 **조용히 실패**한다. 로그인은 prefs 키를 한 번에
- * 여러 개 쓰므로 리스너가 연달아 불리는데, 그 사이 수집자(알람 목록 combine)가 바쁘면
- * 새 계정 id 가 전부 버려진다. 그러면 목록 필터가 로그아웃 시점 값(null)에 머물러
- * '로그인했는데 내 알람이 하나도 안 보이는' 상태가 되고, 앱을 껐다 켜야 돌아온다
- * (실기기에서 401 → 재로그인 중 재현). 최신값만 있으면 되는 흐름이라 conflate 로 충분하다.
  */
-fun AuthSessionStore.observeUserId(): Flow<String?> = callbackFlow {
-    trySend(read()?.user?.id)
-    val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        trySend(read()?.user?.id)
-    }
-    registerChangeListener(listener)
-    awaitClose { unregisterChangeListener(listener) }
-}.conflate().distinctUntilChanged()
+fun AuthSessionStore.observeUserId(): Flow<String?> =
+    prefsSnapshotFlow(::registerChangeListener, ::unregisterChangeListener) { read()?.user?.id }
 
 class AuthSessionStore(context: Context) {
     private val prefs: SharedPreferences = run {
