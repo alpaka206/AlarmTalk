@@ -1149,7 +1149,7 @@ export const migrations: Migration[] = [
     //  - messages.variant: 같은 (보이스·카테고리·언어) 안에서 문구를 구분/정렬하는 인덱스.
     //    idx_messages_stock 은 애초에 UNIQUE 가 아니므로(일반 인덱스) variant 를 더해
     //    카테고리당 N행 조회·정렬만 빠르게 한다. 기존 프리셋 행은 variant=0 으로 백필된다.
-    //  - alarms.bucket_id: 무료 알람이 가리키는 버킷(예: 'morning'·'medication'). message_id 는
+    //  - alarms.bucket_id: 무료 알람이 가리키는 버킷(예: 'weather'·'medication'). message_id 는
     //    대표(변형0) 클립을 그대로 유지해, 회전을 모르는 경로/구버전에선 단일 재생 폴백이 된다.
     id: 54,
     name: 'stock-clip-variants-and-alarm-bucket',

@@ -53,41 +53,18 @@ import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
 
 const tts = new Hono<AppEnv>();
-const TTS_CATEGORIES = [
-  'morning',
-  'lunch',
-  'evening',
-  'night',
-  'health',
-  'medication',
-  'study',
-  'cheer',
-  'love',
-  'exercise',
-  'custom',
-] as const;
+// 클라가 보내는 카테고리(= messages.category 저장값). '10테마 개별선택' 시절엔 10종이었는데
+// 지금 제품이 실제로 만드는 건 셋뿐이다.
+//  - morning: 기본값·날씨·운세가 공통으로 쓰는 라벨(문구는 preset/동적 경로가 따로 정한다)
+//  - medication / love: 그 문구를 고른 알람
+//  - custom: 직접 입력
+const TTS_CATEGORIES = ['morning', 'medication', 'love', 'custom'] as const;
 
-const LEGACY_TTS_CATEGORY_ALIASES: Record<string, (typeof TTS_CATEGORIES)[number]> = {
-  afternoon: 'cheer',
-  sleep: 'night',
-  medicine: 'medication',
-};
-const RANDOM_CONTEXTS = [
-  'preset',
-  'wake_weather',
-  'wake_fortune',
-  'meal',
-  'sleep',
-  'exercise',
-  'love',
-] as const;
+// 편집기가 실제로 고를 수 있는 문구 종류. medication 은 일부러 빠져 있다 — 아래
+// normalizeRandomContext 의 폴백으로 'preset' 에 접혀 고정 문구 경로를 탄다.
+const RANDOM_CONTEXTS = ['preset', 'wake_weather', 'wake_fortune', 'love'] as const;
 type RandomContext = (typeof RANDOM_CONTEXTS)[number];
 
-const LEGACY_RANDOM_CONTEXT_ALIASES: Record<string, RandomContext> = {
-  daily: 'wake_weather',
-  weather: 'wake_weather',
-  fortune: 'wake_fortune',
-};
 
 function consentRequired(c: Context<AppEnv>, consent: string) {
   const error =
@@ -144,7 +121,7 @@ function normalizeTtsCategory(category: string): (typeof TTS_CATEGORIES)[number]
   if ((TTS_CATEGORIES as readonly string[]).includes(raw)) {
     return raw as (typeof TTS_CATEGORIES)[number];
   }
-  return LEGACY_TTS_CATEGORY_ALIASES[raw] ?? null;
+  return null;
 }
 
 function randomIndex(length: number): number {
@@ -157,11 +134,6 @@ function randomIndex(length: number): number {
 function normalizeRandomContext(value: unknown): RandomContext {
   const raw = typeof value === 'string' ? value.trim() : '';
   return (RANDOM_CONTEXTS as readonly string[]).includes(raw) ? (raw as RandomContext) : 'preset';
-}
-
-function normalizeRandomContextWithAliases(value: unknown): RandomContext {
-  const raw = typeof value === 'string' ? value.trim() : '';
-  return LEGACY_RANDOM_CONTEXT_ALIASES[raw] ?? normalizeRandomContext(raw);
 }
 
 function normalizeRelationshipLabel(value: unknown): string | null {
@@ -197,14 +169,6 @@ function firstNonBlankText(...values: unknown[]): string | null {
   return null;
 }
 
-function mealLabelForHour(hour: number | null): string {
-  if (hour == null) return '식사';
-  if (hour >= 5 && hour < 10) return '아침';
-  if (hour >= 10 && hour < 15) return '점심';
-  if (hour >= 15 && hour < 22) return '저녁';
-  return '가벼운 식사';
-}
-
 function alarmTimeLabel(hour: number | null, minute: number | null): string | null {
   if (hour == null || minute == null) return null;
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
@@ -227,7 +191,7 @@ function fortuneProfile(args: {
 }
 
 function randomContextUsesWeather(context: RandomContext): boolean {
-  return context === 'wake_weather' || context === 'meal' || context === 'exercise';
+  return context === 'wake_weather';
 }
 
 async function loadTargetDynamicPromptSettings(
@@ -735,7 +699,7 @@ tts.post('/generate', async (c) => {
   }
   const randomRequested = !draftPreviewRequested && body.random === true;
   const randomContext = randomRequested
-    ? normalizeRandomContextWithAliases(
+    ? normalizeRandomContext(
         body.random_context ?? body.randomContext ?? body.random_mode ?? body.randomMode,
       )
     : 'preset';
@@ -1086,7 +1050,6 @@ tts.post('/generate', async (c) => {
                 ),
               })
             : null,
-        mealLabel: randomContext === 'meal' ? mealLabelForHour(alarmHour) : null,
         alarmTimeLabel: alarmTimeLabel(alarmHour, alarmMinute),
       });
       requestText = generated.text;
@@ -1178,11 +1141,9 @@ tts.post('/generate', async (c) => {
       );
     }
 
-    // 모드별 보이스 세팅: sleep은 저에너지를 위해 speed 0.95(그 외는 elevenlabs v3 디폴트
-    // stability 0.5/similarity 0.8/style 0.4/speed 1.0/use_speaker_boost 적용). sleep만
-    // 오버라이드하므로 캐시 키도 다른 모드와 자연히 분리된다.
-    const dynamicVoiceSettings =
-      randomRequested && randomContext === 'sleep' ? { speed: 0.95 } : undefined;
+    // 남은 동적 모드(날씨·운세·사랑)는 모두 elevenlabs v3 디폴트를 쓴다. 유일한 오버라이드였던
+    // 취침(sleep) speed 0.95 는 그 모드가 사라지면서 같이 없앴다.
+    const dynamicVoiceSettings = undefined;
     const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
       const attempts = createSynthesisAttempts({
         env: c.env,

@@ -214,7 +214,7 @@ alarmMutation.post('/', async (c) => {
     wake_mode?: string;
     voice_profile_id?: string;
     timezone?: string;
-    // 무료 버킷 회전 알람이 가리키는 버킷(예: 'morning'·'medication'). message_id 는
+    // 무료 버킷 회전 알람이 가리키는 버킷(예: 'weather'·'medication'). message_id 는
     // 대표(변형0) 스톡 클립을 그대로 유지하므로 회전 미지원 경로에선 폴백 단일 재생.
     bucket_id?: string | null;
   }>();

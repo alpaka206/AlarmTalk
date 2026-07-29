@@ -30,13 +30,9 @@ export type AlarmTextPreparation = {
   provider: 'vertex' | 'local';
 };
 
-export type DynamicAlarmTextMode =
-  | 'wake_weather'
-  | 'wake_fortune'
-  | 'meal'
-  | 'sleep'
-  | 'exercise'
-  | 'love';
+// 편집기가 고를 수 있는 동적 생성 모드. 식사(meal)·취침(sleep)·운동(exercise)은 '10테마
+// 개별선택' 시절 모드로, 편집기에서 사라졌고 서버도 더는 받지 않아 함께 걷어냈다.
+export type DynamicAlarmTextMode = 'wake_weather' | 'wake_fortune' | 'love';
 
 // 구조화 날씨 시그널(설계 #7). 한국어 문자열 대신 언어무관 토큰으로 전달해, 동적 프롬프트가
 // 타깃 언어로 네이티브 재표현하고 폴백도 언어별 표면을 만든다(한국어 누출 0).
@@ -117,12 +113,6 @@ function modeDefaultTag(mode: DynamicAlarmTextMode): string {
       return 'cheerfully';
     case 'wake_fortune':
       return 'playfully';
-    case 'meal':
-      return 'cheerfully';
-    case 'sleep':
-      return 'calm';
-    case 'exercise':
-      return 'cheerfully';
     case 'love':
       return 'happy';
     default:
@@ -130,12 +120,15 @@ function modeDefaultTag(mode: DynamicAlarmTextMode): string {
   }
 }
 
-// 동적 생성의 tag 필드를 정제한다: 큐레이트 세트 검증 → 저각성 sleep 전용 가드.
+// 동적 생성의 tag 필드를 정제한다: 큐레이트 세트 검증 → 저각성 태그 차단.
 // 부적합하면 빈 문자열(무태그)로 강등(reject 아님 = SOFT).
-function sanitizeDeliveryTag(tag: string, mode: DynamicAlarmTextMode): string {
+//
+// 저각성 태그는 유일하게 취침(sleep) 모드에서만 허용했는데 그 모드가 사라졌다. 남은 셋은
+// 전부 '깨우는' 알람이라 저각성으로 읽히면 안 되므로 무조건 막는다.
+function sanitizeDeliveryTag(tag: string): string {
   const approved = normalizeApprovedTag(tag);
   if (!approved) return '';
-  if (LOW_AROUSAL_TAGS.includes(approved) && mode !== 'sleep') return '';
+  if (LOW_AROUSAL_TAGS.includes(approved)) return '';
   return approved;
 }
 
@@ -282,7 +275,7 @@ export async function generateDynamicAlarmTextWithVertex(
       continue; // HARD → 1회 재롤
     }
 
-    const tag = sanitizeDeliveryTag(parsed.tag, context.mode);
+    const tag = sanitizeDeliveryTag(parsed.tag);
     return {
       text,
       translated: false,
@@ -528,12 +521,6 @@ function isGrandchildRelationship(relationshipLabel: string | null | undefined):
   return GRANDCHILD_RELATIONSHIPS.some((keyword) => label.includes(keyword));
 }
 
-function isSiblingRelationship(relationshipLabel: string | null | undefined): boolean {
-  const label = relationshipLabel?.trim();
-  if (!label) return false;
-  return SIBLING_RELATIONSHIPS.some((keyword) => label.includes(keyword));
-}
-
 // 고정 철학·출력계약·태그규칙·NEVER 목록(§4.2 전문). 프롬프트 캐시 친화를 위해
 // 가변 데이터(user prompt)와 분리해 systemInstruction으로 전달한다.
 const DYNAMIC_SYSTEM_INSTRUCTION = `You are the voice of a personal voice-alarm app. You write ONE short spoken line — usually one
@@ -741,17 +728,6 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     }
     if (context.mode === 'wake_fortune') {
       return `Create a wake-up message with a light, entertainment-only daily fortune. If fortune input is available, infer only a gentle mood from gender, birth date, and birth time. Fortune input is internal only: ${context.fortuneProfile || 'fortune profile is unavailable'}. Never mention the listener's birth date, birthday, birth time, zodiac details, "born on", "birth date", "생년월일", "태어난 시간", "몇 월 며칠생", or any specific month/day/year/time from the input. Do not sound like a real prediction or guarantee. For Korean, make the fortune feel like a soft, playful reading rather than something the speaker personally knows for certain; endings like "~래", "~라네요", "~것 같아", or "~면 좋겠다" are good when they sound natural. If the speaker is a romantic partner or spouse, do not mention new relationships, romantic opportunities, attraction from others, flirting, jealousy, or dating luck; keep the fortune about mood, small luck, confidence, health, work, study, or daily energy.`;
-    }
-    if (context.mode === 'meal') {
-      return `Create a ${context.mealLabel || 'meal'} reminder. Ask naturally whether they have eaten and recommend one menu idea. The weather is given as language-neutral signals; if helpful, re-express them naturally in ${targetName} (no numbers, no literal token reading) without forcing a source lead-in. Weather signals: ${weatherSignalPromptHint(context.weatherSignal)}.`;
-    }
-    if (context.mode === 'sleep') {
-      return isSiblingRelationship(context.relationshipLabel)
-        ? 'Create a sibling-style bedtime message in natural 반말. Make it sound like a real brother or sister, not a polite notification. Good Korean example: "누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자." Avoid 해요체 like "잘 시간이에요", "쉬어요", or "주무세요" for sibling cases.'
-        : 'Create a bedtime message that helps the listener wind down, put the phone away, and rest without sounding like a generic notification.';
-    }
-    if (context.mode === 'exercise') {
-      return `Create an exercise reminder. Make it energetic but not childish. The weather is given as language-neutral signals; if it suggests it, choose indoor strength training or outdoor cardio naturally, and re-express any weather in ${targetName} (no numbers, no literal token reading) without forcing a source phrase. Weather signals: ${weatherSignalPromptHint(context.weatherSignal)}.`;
     }
     return isRomanticRelationship(context.relationshipLabel)
       ? 'Create a romantic partner wake-up line that feels private, affectionate, and gently exciting to hear, while still short enough for a practical alarm. Avoid generic "좋은 하루 보내" unless paired with a more personal caring phrase.'
@@ -1090,17 +1066,14 @@ function pickFallbackRotation(
 
 // 비한국어 타깃의 폴백. 한국어를 절대 쓰지 않고(누출 방지), 타깃 언어의 간단한 제네릭 네이티브
 // 문구를 낸다(숫자/날짜 금지, ≤200자). 날씨는 구조화 시그널 → 타깃 언어 표면으로 붙인다.
-// 저각성은 sleep에만. 모드 기본 태그는 dynamicAlarmTextPreparationFallback의 modeDefaultTag가 붙인다.
+// 모드 기본 태그는 dynamicAlarmTextPreparationFallback의 modeDefaultTag가 붙인다.
 function nonKoreanReadableFallback(context: DynamicAlarmTextContext): string {
-  const sleep = context.mode === 'sleep';
   const showWeather = context.mode === 'wake_weather' && weatherConditions(context.weatherSignal).length > 0;
   if (context.targetLanguage === 'ja') {
-    if (sleep) return 'そろそろ休もっか。今日もおつかれさま、ゆっくりおやすみ。';
     const weather = showWeather ? ` ${jaWeatherSurface(context.weatherSignal)}。` : '';
     return `おはよう。今日も無理せずいこうね。${weather}`.slice(0, 200).trim();
   }
   // en 및 기타 비한국어(fr/it 등)는 한국어 누출을 피하기 위해 영어 제네릭으로 폴백한다.
-  if (sleep) return 'Time to wind down. Put the phone down and get some rest, okay?';
   const weather = showWeather ? ` ${enWeatherSurface(context.weatherSignal)}.` : '';
   return `Morning. Take it easy and have a good one.${weather}`.slice(0, 200).trim();
 }
@@ -1159,58 +1132,6 @@ function dynamicAlarmTextReadableFallback(context: DynamicAlarmTextContext): str
     );
     return `${wakeOpener} ${body}`.slice(0, 200).trim();
   }
-  if (context.mode === 'meal') {
-    const hasWeather = weatherConditions(context.weatherSignal).length > 0;
-    if (romantic) {
-      const weatherTip = hasWeather ? ` ${koWeatherSurface(context.weatherSignal, true)}.` : '';
-      const body = pickFallbackRotation(
-        ['바빠도 한 끼는 제대로 챙기자.', '바쁘더라도 끼니는 거르지 말자.', '잠깐이라도 앉아서 챙겨 먹자.'],
-        context,
-      );
-      return `${romanticOpener}${context.mealLabel || '밥'} 먹었어? ${body}${weatherTip}`
-        .slice(0, 200)
-        .trim();
-    }
-    const weatherTip = hasWeather ? ` ${koWeatherSurface(context.weatherSignal, false)}.` : '';
-    const closing = pickFallbackRotation(
-      [' 오늘도 화이팅!', ' 든든하게 챙겨요.', ' 거르지 말고 챙겨요.'],
-      context,
-    );
-    return `${opener}${context.mealLabel || '식사'} 챙길 시간이에요.${weatherTip}${closing}`
-      .slice(0, 200)
-      .trim();
-  }
-  if (context.mode === 'sleep') {
-    if (romantic) {
-      const body = pickFallbackRotation(
-        ['이제 쉬자. 오늘도 고생 많았어. 좋은 꿈 꿔.', '이제 그만 쉬자. 오늘도 수고했어. 푹 자.'],
-        context,
-      );
-      return `${romanticOpener}${body}`.slice(0, 200).trim();
-    }
-    const body = pickFallbackRotation(
-      [
-        '이제 쉬어갈 시간이에요. 화면은 잠시 내려놓고 편하게 쉬어요.',
-        '이제 하루를 마무리할 시간이에요. 휴대폰은 내려놓고 편히 쉬어요.',
-      ],
-      context,
-    );
-    return `${opener}${body}`.slice(0, 200).trim();
-  }
-  if (context.mode === 'exercise') {
-    if (romantic) {
-      const body = pickFallbackRotation(
-        ['운동할 시간이야. 무리하지 말고 딱 기분 좋아질 만큼만 하자.', '몸 좀 움직여볼까? 무리하지 말고 가볍게 같이 하자.'],
-        context,
-      );
-      return `${romanticOpener}${body}`.slice(0, 200).trim();
-    }
-    const body = pickFallbackRotation(
-      ['운동할 시간이에요. 무리하지 말고 가볍게 시작해요. 오늘도 화이팅!', '가볍게 몸 풀 시간이에요. 무리하지 말고 천천히 시작해요.'],
-      context,
-    );
-    return `${opener}${body}`.slice(0, 200).trim();
-  }
   if (context.mode === 'love') {
     if (romantic) {
       const body = pickFallbackRotation(
@@ -1244,13 +1165,6 @@ function polishDynamicAlarmText(text: string, context: DynamicAlarmTextContext):
       new RegExp(`(${titlePattern}),\\s*일어날\\s+시간(?:이에요|예요)`, 'g'),
       '$1, 일어나실 시간이에요',
     );
-  }
-
-  if (context.mode === 'sleep' && isSiblingRelationship(context.relationshipLabel)) {
-    const listener = context.listenerTitle?.trim();
-    if (listener && /(잘\s+시간(?:이에요|예요)|쉬어요|주무세요)/.test(polished)) {
-      return `${listener}, 잘 시간이야. 휴대폰 내려놓고 얼른 자.`;
-    }
   }
 
   if (context.mode !== 'wake_weather') return polished;

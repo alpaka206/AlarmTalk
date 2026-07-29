@@ -361,29 +361,6 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(prompt).toContain('never write casual elder-address phrases like "할머니, 일어날 시간이에요"');
   });
 
-  it('keeps sibling bedtime messages in natural banmal', async () => {
-    queueContent(
-      geminiText('{"text":"누나, 벌써 잘 시간이에요. 휴대폰은 내려놓고 편안하게 쉬어요."}'),
-    );
-
-    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
-      mode: 'sleep',
-      category: 'sleep',
-      targetLanguage: 'ko',
-      dateLabel: '5월 20일 수요일',
-      alarmTimeLabel: '23:00',
-      relationshipLabel: '형제·자매',
-      listenerTitle: '누나',
-    });
-
-    const requestBody = contentRequestBody();
-    const prompt = requestBody.contents[0].parts[0].text;
-    expect(generated.provider).toBe('vertex');
-    expect(generated.text).toBe('누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자.');
-    expect(prompt).toContain('Create a sibling-style bedtime message in natural 반말');
-    expect(prompt).toContain('누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자.');
-  });
-
   it('prompts romantic partner cases with warm tone and flexible weather relay wording', async () => {
     queueContent(
       geminiText('{"text":"자기야, 일어나자. 비 온대. 나가기 전에 우산 챙겨."}'),
@@ -507,8 +484,8 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     );
 
     const generated = await generateDynamicAlarmTextWithVertex(ENV, {
-      mode: 'exercise',
-      category: 'exercise',
+      mode: 'wake_weather',
+      category: 'morning',
       targetLanguage: 'ko',
       dateLabel: '5월 20일 수요일',
       relationshipLabel: '엄마',
@@ -565,8 +542,8 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     );
 
     const generated = await generateDynamicAlarmTextWithVertex(ENV, {
-      mode: 'exercise',
-      category: 'exercise',
+      mode: 'wake_weather',
+      category: 'morning',
       targetLanguage: 'ko',
       dateLabel: '5월 20일 수요일',
       alarmTimeLabel: '17:30',

@@ -674,7 +674,7 @@ describe('GET /tts/messages — 메시지 목록', () => {
     mockDB.pushResult([{ total: 2 }]);
     mockDB.pushResult([
       { id: M1, text: 'hello', category: 'morning' },
-      { id: M404, text: 'bye', category: 'evening' },
+      { id: M404, text: 'bye', category: 'custom' },
     ]);
     const app = buildApp();
     const res = await app.request(jsonReq('GET', '/tts/messages'));
