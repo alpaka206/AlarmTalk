@@ -13,9 +13,11 @@ on:
     types: [labeled]
   workflow_dispatch:
 
+# 그룹 설계 이유는 ci.yml 의 같은 블록 주석 참고 — 무관한 라벨이 진행 중인 ci 실행을 죽이는 것과,
+# 연속 푸시 때 가운데 커밋의 대기 실행이 밀려나는 것 둘 다 막는다.
 concurrency:
-  group: android-build-${{ github.ref }}
-  cancel-in-progress: true
+  group: android-build-${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.event.pull_request.number, github.event.label.name) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.label.name == 'ci' }}
 
 jobs:
   android-build:

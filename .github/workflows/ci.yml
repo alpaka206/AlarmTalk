@@ -6,6 +6,15 @@ name: CI
 # 돌리는 법: PR 에 `ci` 라벨 부착. 다시 돌리려면 뗐다가 다시 붙인다(또는 Actions 탭에서 Run workflow).
 # 라벨 뒤에 커밋을 더 올리면 체크는 옛 커밋에 남아 PR 이 머지 불가 상태가 된다 — 의도된 동작이니
 # 라벨을 다시 붙여 새 커밋으로 통과시킨다.
+#
+# ⚠ typecheck·test 의 매트릭스를 없애지 말 것.
+# GitHub 에는 `on:` 단계의 라벨 이름 필터가 없어서, 아무 라벨이나 붙으면 이 워크플로가 일단 뜨고
+# 잡은 아래 `if` 로 스킵된다. 그런데 **스킵된 필수 체크는 통과로 계산**되므로, 필수 체크 이름이
+# 그대로 보고되면 라벨 하나로 CI 없이 머지가 열린다. 지금 막히는 이유는 필수 8개가
+# `typecheck (packages/backend)` 처럼 매트릭스 전개 이름이라 스킵 시엔 `typecheck` 로만 보고돼
+# **이름이 안 맞아 미보고로 남기** 때문이다(2026-07-29 실측: 전부 SKIPPED 인데 mergeStateStatus=BLOCKED).
+# 매트릭스를 단일 잡으로 합치면 그 방어가 사라진다 — 합치려면 브랜치 보호의 필수 체크 목록을
+# 함께 손보거나, 라벨 대신 workflow_dispatch 로 바꿔야 한다.
 on:
   push:
     branches: [develop, main]
@@ -14,11 +23,19 @@ on:
     types: [labeled]
   workflow_dispatch:
 
-# 라벨을 연달아 붙였을 때 이전 실행만 정리한다. develop·main 푸시는 취소하지 않는다 —
-# 커밋별 실행 기록이 하나씩 남아야 "이 커밋에서 깨졌다"를 나중에 짚을 수 있다.
+# concurrency 는 잡의 `if` 보다 **먼저** 평가된다. 그래서 그룹을 ref 로만 잡으면, 라벨을 아무거나
+# (예: bug) 하나 더 붙이는 순간 그 이벤트가 같은 그룹에 들어와 **돌고 있던 진짜 ci 실행을 죽이고**
+# 자기 잡은 라벨 조건에 걸려 스킵된다 — 필수 체크가 사라진 채로 남는다(Codex #658).
+# 그래서 PR 그룹에 라벨 이름까지 넣어 `ci` 라벨끼리만 경쟁하게 한다.
+#
+# push·workflow_dispatch 는 실행마다 고유 그룹을 준다. 같은 그룹에 새 실행이 들어오면 취소를 끄더라도
+# **대기 중이던** 실행은 밀려나므로(3연속 푸시 시 가운데 커밋의 기록이 사라진다), 아예 경쟁을 없앤다.
+#
+# 표현식은 한 줄로 둔다. YAML 폴드 블록(`>-`)은 더 깊게 들여쓴 줄의 개행을 접지 않아
+# `${{ }}` 안에 줄바꿈이 남는다 — 굳이 시험할 이유가 없다.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}-{1}', github.event.pull_request.number, github.event.label.name) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.label.name == 'ci' }}
 
 jobs:
   lint:
