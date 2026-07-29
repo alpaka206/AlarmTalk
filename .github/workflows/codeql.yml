@@ -1,16 +1,21 @@
 name: "CodeQL"
 
+# PR 에서는 `ci` 라벨을 붙였을 때만 돈다(ci.yml 과 같은 규칙 — 이유는 그쪽 주석 참고).
+# 주간 스케줄과 develop·main 푸시 스캔은 그대로 두어, 라벨을 안 붙인 PR 이 있어도 보안 스캔
+# 자체가 끊기지는 않는다.
 on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [develop, main]
+    types: [labeled]
   schedule:
     - cron: '0 6 * * 1'
 
 jobs:
   analyze:
     name: Analyze
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:

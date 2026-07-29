@@ -1,14 +1,29 @@
 name: CI
 
+# PR 에서는 **`ci` 라벨을 붙였을 때만** 돈다. 리뷰 지적을 고치며 푸시할 때마다 12개 잡이 통째로
+# 다시 도는 게 낭비라서, "이제 됐다" 시점을 사람이 정한다(보통 Codex 가 이슈 없다고 한 뒤).
+#
+# 돌리는 법: PR 에 `ci` 라벨 부착. 다시 돌리려면 뗐다가 다시 붙인다(또는 Actions 탭에서 Run workflow).
+# 라벨 뒤에 커밋을 더 올리면 체크는 옛 커밋에 남아 PR 이 머지 불가 상태가 된다 — 의도된 동작이니
+# 라벨을 다시 붙여 새 커밋으로 통과시킨다.
 on:
   push:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+    types: [labeled]
   workflow_dispatch:
+
+# 라벨을 연달아 붙였을 때 이전 실행만 정리한다. develop·main 푸시는 취소하지 않는다 —
+# 커밋별 실행 기록이 하나씩 남아야 "이 커밋에서 깨졌다"를 나중에 짚을 수 있다.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
+    # 라벨 트리거일 때만 실행(위 on: 주석 참고). push·workflow_dispatch 는 그대로 돈다.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -26,6 +41,8 @@ jobs:
         run: npm run lint
 
   typecheck:
+    # 라벨 트리거일 때만 실행(위 on: 주석 참고). push·workflow_dispatch 는 그대로 돈다.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -47,6 +64,8 @@ jobs:
         run: npm run typecheck
 
   test:
+    # 라벨 트리거일 때만 실행(위 on: 주석 참고). push·workflow_dispatch 는 그대로 돈다.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'ci'
     runs-on: ubuntu-latest
     strategy:
       matrix:
