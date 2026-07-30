@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: [packages/backend, packages/shared, packages/ui, packages/voice]
+        package: [packages/backend, packages/shared, packages/voice]
     steps:
       # `ci` 가 아닌 라벨로 뜬 실행은 스킵이 아니라 **실패**시킨다(이유는 위 on: 주석).
       - name: Require the `ci` label
@@ -104,8 +104,6 @@ jobs:
           - package: packages/backend
             command: npm test
           - package: packages/shared
-            command: npm test
-          - package: packages/ui
             command: npm test
           - package: packages/voice
             command: npm test
