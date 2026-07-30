@@ -384,11 +384,19 @@ internal fun AlarmTalkApp(
             viewModel.checkVoiceSetupFor(authSession.user.id)
             viewModel.checkAccountStatus()
             viewModel.checkConsentStatus()
-            viewModel.preloadVoiceProfiles()
-            viewModel.loadStockClips()
-            viewModel.preloadSocial()
-            viewModel.preloadBilling()
         }
+    }
+    // 데이터 라우트는 **동의가 정착한 뒤에** 부른다. 동의 전에는 서버가 전부
+    // CONSENT_REQUIRED(403) 로 막으므로, 로그인 직후 한꺼번에 쏘면 실패만 쌓인다.
+    // 특히 목소리 프리페치 워커는 그 403 을 보고 포기해 버려서, 동의를 마치고 목소리 준비
+    // 화면에 도착한 사용자에게 '목소리를 받지 못했어요' 만 남는다 — 네트워크는 멀쩡한데도.
+    LaunchedEffect(authSession?.token, viewModel.consentChecked, viewModel.showConsentScreen) {
+        if (authSession == null) return@LaunchedEffect
+        if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        viewModel.preloadVoiceProfiles()
+        viewModel.loadStockClips()
+        viewModel.preloadSocial()
+        viewModel.preloadBilling()
     }
     // 상대가 목소리 공유를 켜면(voice_share_changed push) 공유 목록·클립 매니페스트를
     // 즉시 새로고침한다 — 가족 알람 push→pull 과 같은 즉시성.

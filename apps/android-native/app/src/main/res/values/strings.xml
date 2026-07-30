@@ -871,14 +871,9 @@
     <string name="msg2_promo_fail_owns_active_group">이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요</string>
     <string name="msg2_promo_fail_active_subscription">이용 중인 이용권이 있어요. 해지 후 쿠폰을 등록할 수 있어요</string>
     <string name="msg2_promo_fail_generic">프로모 코드를 적용하지 못했어요. 잠시 후 다시 시도해 주세요</string>
-    <string name="onb_voice_title">기본 목소리를 골라보세요</string>
-    <string name="onb_voice_subtitle">나중에 언제든 바꿀 수 있어요.</string>
-    <string name="onb_voice_loading">목소리를 불러오는 중이에요…</string>
-    <string name="onb_voice_confirm">이 목소리로 시작하기</string>
-    <string name="onb_voice_skip">나중에 고르기</string>
-    <string name="onb_voice_nickname_label">이 목소리가 나를 뭐라고 부를까요?</string>
-    <string name="onb_voice_nickname_placeholder">예: 지호, 자기, 대표님</string>
-    <string name="onb_voice_nickname_hint">비워두면 이름 없이 깨워드려요. 나중에 목소리 탭에서 바꿀 수 있어요.</string>
+    <string name="onb_voice_title">기본 목소리를 준비하고 있어요</string>
+    <string name="onb_voice_subtitle">알람이 오프라인에서도 울리도록 기기에 미리 받아 둬요.</string>
+    <string name="onb_voice_loading">목소리를 받는 중이에요…</string>
     <string name="misc2_theme_mode_system">시스템 설정과 같이</string>
     <string name="misc2_theme_mode_light">밝은 모드</string>
     <string name="misc2_theme_mode_dark">어두운 모드</string>
@@ -992,8 +987,8 @@
     <string name="onb_voice_download_progress">%1$d / %2$d 준비했어요</string>
     <string name="onb_voice_download_stay">다 받을 때까지 잠시만 기다려 주세요.
 앱을 나가도 이어서 받아요.</string>
-    <string name="onb_voice_download_failed">목소리를 받지 못했어요.
-연결을 확인하고 다시 시도해 주세요.</string>
+    <string name="onb_voice_download_failed">목소리를 다 받지 못했어요.
+잠시 뒤 다시 시도해 주세요.</string>
     <string name="onb_voice_download_retry">다시 시도</string>
     <string name="onb_voice_download_later">나중에 받기</string>
     <string name="voicesr_share_voice_desc">같은 플랜 가족이 이 목소리로 알람을 만들 수 있어요.</string>
