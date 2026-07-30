@@ -183,7 +183,6 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                 "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
                 "INVALID_AUDIO_MIME_TYPE" -> app.getString(R.string.msg_voice_invalid_audio_format)
                 "VOICE_SLOT_EXHAUSTED" -> app.getString(R.string.msg_voice_slot_exhausted)
-                "VOICE_DRAFT_ATTEMPT_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_limit_reached)
                 "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.msg_voice_paid_plan_required)
                 else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }

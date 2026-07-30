@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="msg_voice_monthly_limit_reached">You have used all voice draft attempts for this month.</string>
     <string name="app_name">AlarmTalk</string>
     <string name="auth_back">Back</string>
     <string name="auth_confirm">Confirm</string>
@@ -628,7 +627,7 @@ They become available as they finish.</string>
     <string name="voices_preparing_audio">Preparing your audio.</string>
     <string name="voices_preview_play_failed">Couldn\'t play the preview.</string>
     <string name="voices_confirm_new_title">Keep “%1$s” as it is?</string>
-    <string name="voices_confirm_new_body">Keeping it uses one registration for this month, and deleting it later will not free that up until next month. If you are not happy with it, make another one before you decide — as long as you have generations left this month.</string>
+    <string name="voices_confirm_new_body">Keeping it uses one registration for this month, and deleting it later will not free that up until next month. If you are not happy with it, make another one as many times as you like before you decide.</string>
     <string name="voices_confirm_new_preview">Replay</string>
     <string name="voices_confirm_new_keep">Use this voice</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="msg_voice_monthly_limit_reached">이번 달 음성 초안 생성 횟수를 모두 사용했어요</string>
     <string name="app_name">AlarmTalk</string>
     <string name="ringing_notification_title">알람이 울려요</string>
     <string name="ringing_notification_text">일어날 시간이에요</string>
@@ -640,7 +639,7 @@
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
     <string name="voices_preview_play_failed">미리듣기를 재생하지 못했어요.</string>
     <string name="voices_confirm_new_title">‘%1$s’, 이대로 확정할까요?</string>
-    <string name="voices_confirm_new_body">확정하면 이번 달 등록을 한 번 쓰고, 나중에 지워도 다음 달까지 새로 만들 수 없어요. 마음에 들지 않으면 확정하기 전에 다시 만들어 보세요 — 이번 달 생성 횟수가 남아 있다면 가능해요.</string>
+    <string name="voices_confirm_new_body">확정하면 이번 달 등록을 한 번 쓰고, 나중에 지워도 다음 달까지 새로 만들 수 없어요. 마음에 들지 않으면 확정하기 전에 얼마든지 다시 만들어 보세요.</string>
     <string name="voices_confirm_new_preview">다시 듣기</string>
     <string name="voices_confirm_new_keep">이 목소리로 할게요</string>
     <string name="voices_confirm_new_keep_saving">등록 중…</string>

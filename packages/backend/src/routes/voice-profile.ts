@@ -36,9 +36,6 @@ const MAX_VOICE_PROFILES = 1;
 // (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
 const MAX_DRAFT_VOICE_PROFILES = 1;
-// 초안 시도는 더 이상 월 단위로 막지 않는다(정식 등록 전까진 무제한 생성·삭제).
-// 이 값은 사용량 집계에만 남는다 — /draft-quota 의 limit 필드 호환용.
-const MAX_DRAFT_ATTEMPTS_PER_MONTH = 0;
 // 정식 등록(= 사용자가 체감하는 '이번 달 만들 수 있는 목소리') 한도. 월 1개.
 // 위 초안 시도 3회는 이 1개를 만들기까지의 재시도 여유다(마음에 안 들면 지우고 다시).
 const MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH = 1;
@@ -117,13 +114,14 @@ async function readMonthlyDraftAttemptUsage(
     args: [ownerUserId, currentKstAttemptMonth()],
   });
   const used = Number(res.rows[0]?.used_count ?? 0);
-  // limit=0 은 '초안 시도 제한 없음'을 뜻한다. 사용자에게 보여줄 숫자는
-  // registration_*(월 1회 정식 등록)이고, 이건 운영 지표용 사용량이다.
-  return { limit: MAX_DRAFT_ATTEMPTS_PER_MONTH, used, remaining: 0 };
+  // 초안 시도에는 제한이 없다 — 확정 전까지는 마음에 들 때까지 만들고 지울 수 있다.
+  // 여기서 세는 건 운영 지표일 뿐이고, 사용자에게 보여줄 숫자는 registration_*(월 1회
+  // 정식 등록)이다. limit=0 은 '제한 없음'을 뜻하며 응답 필드 호환을 위해 남긴다.
+  return { limit: 0, used, remaining: 0 };
 }
 
 // 이번 달(KST) '정식 등록' 사용량 — 목소리는 한 달에 1개만 만들 수 있고(월 1회 교체),
-// 이게 사용자에게 보여줄 숫자다. MAX_DRAFT_ATTEMPTS_PER_MONTH 는 초안 재시도 여유라
+// 이게 사용자에게 보여줄 숫자다. 초안 시도는 제한이 없어
 // (마음에 안 들면 지우고 다시) 내부 값이지 사용자가 셀 숫자가 아니다.
 async function readMonthlyRegistrationUsage(
   db: DbExecutor,
@@ -158,10 +156,11 @@ async function reserveMonthlyDraftAttempt(
             updated_at = datetime('now')`,
     args: [ownerUserId, attemptMonth],
   });
-  // 사용량은 계속 세지만 막지는 않는다 — 프리셋(정식 등록) 전 단계인 초안은 마음에 들
-  // 때까지 만들고 지울 수 있어야 한다. 월 1회 제한은 '최종 확정'에만 건다. 동시 보유
-  // 개수는 MAX_DRAFT_VOICE_PROFILES=1 이 여전히 막으므로 클론 슬롯이 쌓이지는 않는다.
-  return (result.rowsAffected ?? 0) > 0 ? attemptMonth : attemptMonth;
+  // 사용량은 세지만 막지 않는다 — 초안은 확정 전 단계라 마음에 들 때까지 만들고 지울 수
+  // 있어야 한다. 월 1회 제한은 '최종 확정'에만 건다. 동시 보유 개수는
+  // MAX_DRAFT_VOICE_PROFILES=1 이 여전히 막으므로 클론 슬롯이 쌓이지는 않는다.
+  void result;
+  return attemptMonth;
 }
 
 async function refundMonthlyDraftAttempt(
@@ -1353,10 +1352,8 @@ voiceProfile.post('/clone', async (c) => {
       if (!(await hasCloneSlotCapacity(tx))) {
         return { status: 'clone_capacity' as const, ledgerId: null };
       }
+      // 사용량만 센다 — 막지 않는다(위 readMonthlyDraftAttemptUsage 주석 참고).
       draftAttemptMonth = await reserveMonthlyDraftAttempt(tx, userPk);
-      if (!draftAttemptMonth) {
-        return { status: 'draft_attempt_limit' as const, ledgerId: null };
-      }
       await tx.execute({
         sql: `INSERT INTO voice_profiles
               (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, preview_language)
@@ -1381,15 +1378,6 @@ voiceProfile.post('/clone', async (c) => {
           error_code: 'VOICE_LIMIT_REACHED',
         },
         403,
-      );
-    }
-    if (insertResult.status === 'draft_attempt_limit') {
-      return c.json(
-        {
-          error: '이번 달 음성 초안 생성 횟수를 모두 사용했습니다.',
-          error_code: 'VOICE_DRAFT_ATTEMPT_LIMIT_REACHED',
-        },
-        429,
       );
     }
     if (insertResult.status === 'clone_capacity') {

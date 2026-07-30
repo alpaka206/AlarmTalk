@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="msg_voice_monthly_limit_reached">今月の音声ドラフト作成回数をすべて使用しました。</string>
     <string name="app_name">AlarmTalk</string>
     <string name="auth_back">戻る</string>
     <string name="auth_confirm">確認</string>
@@ -636,7 +635,7 @@
     <string name="voices_preparing_audio">音声を準備しています。</string>
     <string name="voices_preview_play_failed">プレビューを再生できませんでした。</string>
     <string name="voices_confirm_new_title">「%1$s」、このまま確定しますか?</string>
-    <string name="voices_confirm_new_body">確定すると今月の登録を1回使い、あとで削除しても翌月まで新しく作れません。気に入らなければ確定する前にもう一度作ってみてください — 今月の作成回数が残っていれば可能です。</string>
+    <string name="voices_confirm_new_body">確定すると今月の登録を1回使い、あとで削除しても翌月まで新しく作れません。気に入らなければ確定する前に何度でも作り直せます。</string>
     <string name="voices_confirm_new_preview">もう一度聞く</string>
     <string name="voices_confirm_new_keep">この声にする</string>
     <string name="voices_confirm_new_keep_saving">登録中…</string>

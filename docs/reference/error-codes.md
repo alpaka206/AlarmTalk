@@ -269,7 +269,6 @@
 | `SPEECH_STYLE_ANALYSIS_FAILED` | 말투 분석 실패(업스트림) | 502 | `routes/voice-profile.ts` |
 | `VOICE_LIMIT_REACHED` | 음성 프로필 개수 상한 도달 | 409 | `routes/voice-profile.ts` |
 | `VOICE_MONTHLY_CHANGE_LIMIT_REACHED` | 이번 달 공식 목소리 변경 횟수 소진 | 429 | `routes/voice-profile.ts` |
-| `VOICE_DRAFT_ATTEMPT_LIMIT_REACHED` | 이번 달 음성 초안 생성 횟수 소진 | 429 | `routes/voice-profile.ts` |
 | `VOICE_SLOT_EXHAUSTED` | 음성 제공자 슬롯 소진(일시적) | 503 | `routes/voice-profile.ts` |
 | `VOICE_CAPACITY_EXHAUSTED` | 등록 요청이 몰려 수용 불가(일시적) | 503 | `routes/voice-profile.ts` |
 | `VOICE_CLONING_FAILED` | 음성 클로닝 실패 | 500 | `routes/voice-profile.ts` |
