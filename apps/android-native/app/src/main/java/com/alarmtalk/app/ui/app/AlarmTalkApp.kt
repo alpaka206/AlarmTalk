@@ -58,17 +58,18 @@ import com.google.android.gms.common.api.ApiException
 
 
 /**
- * 동의 게이트에서 뒤로가기를 삼킨다.
+ * 게이트 화면에서 뒤로가기를 삼킨다.
  *
  * 이 화면들 뒤에는 돌아갈 곳이 없다 — 기존 BackHandler 는 currentTab 이 있을 때만 켜지는데
  * 게이트에서는 NavHost 가 아직 없어 currentTab 이 null 이다. 그대로 두면 시스템 기본 동작이
  * 액티비티를 닫아 **앱이 그냥 종료된다.** 사용자는 무엇이 잘못됐는지 모른 채 튕겨 나가고,
  * 다시 열면 같은 화면이 다시 뜬다.
  *
- * 동의를 거부하고 싶으면 앱을 닫으면 된다(홈·최근앱). 여기서 막는 건 실수로 나가는 것뿐이다.
+ * 나가는 길을 없애는 것이 아니다 — 홈·최근앱으로 앱을 닫으면 된다. 막는 건 실수로 나가는
+ * 것뿐이다. 화면에 정식 탈출구(로그아웃·나중에 받기 등)가 있으면 그쪽을 쓰면 된다.
  */
 @Composable
-private fun ConsentGateBackGuard() {
+private fun GateBackGuard() {
     BackHandler(enabled = true) {}
 }
 
@@ -411,6 +412,7 @@ internal fun AlarmTalkApp(
         if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
         viewModel.preloadVoiceProfiles()
         viewModel.loadStockClips()
+        viewModel.prefetchStockClips()
         viewModel.preloadSocial()
         viewModel.preloadBilling()
     }
@@ -805,6 +807,7 @@ internal fun AlarmTalkApp(
         },
     ) { padding ->
       if (viewModel.updateRequired) {
+          GateBackGuard()
           UpdateRequiredScreen(
               contentPadding = padding,
               onUpdate = {
@@ -862,6 +865,9 @@ internal fun AlarmTalkApp(
           return@Scaffold
       }
       if (viewModel.pendingDeletion) {
+          // 화면에 '복구'·'로그아웃' 이라는 정식 선택지가 있다. 뒤로가기로 앱이 닫히면
+          // 그 선택지를 보지 못한 채 나가게 된다.
+          GateBackGuard()
           AccountPendingDeletionScreen(
               contentPadding = padding,
               busy = authBusy,
@@ -873,12 +879,12 @@ internal fun AlarmTalkApp(
       // 동의 확인이 끝나기 전엔 온보딩·홈을 띄우지 않고 로딩으로 잡아둬, 동의가 필요한
       // 사용자에게 다른 화면이 먼저 깜빡였다가 동의 화면이 끼어드는 일을 막는다.
       if (!viewModel.consentChecked) {
-          ConsentGateBackGuard()
+          GateBackGuard()
           ConsentCheckLoadingScreen(contentPadding = padding)
           return@Scaffold
       }
       if (viewModel.showConsentScreen) {
-          ConsentGateBackGuard()
+          GateBackGuard()
           ConsentScreen(
               contentPadding = padding,
               busy = authBusy,

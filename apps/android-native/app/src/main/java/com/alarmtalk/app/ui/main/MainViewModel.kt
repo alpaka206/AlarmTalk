@@ -575,7 +575,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val cachedStockClips = com.alarmtalk.app.data.AlarmAudioStore(getApplication())
             .cachedStockClipCount()
         showVoiceSetup = cachedStockClips == 0 && !defaultVoiceStore.hasSkipped(userId)
-        // 화면을 띄우든 말든 부족분은 항상 채운다(언어 변경·중단 복구 포함).
+    }
+
+    /**
+     * 부족한 기본 목소리 클립을 채운다. 화면을 띄우든 말든 항상 부른다
+     * (언어 변경·중단 복구 포함) — 목소리 탭에 들르지 않아도 채워져야 한다.
+     *
+     * **동의가 끝난 뒤에** 불러야 한다. 동의 전에는 서버가 403 으로 막는데, 워커의
+     * enqueue 정책이 KEEP 이라 그때 한 번 걸린 작업이 재시도 백오프(30초→60초…)에 들어가
+     * 앉아 버린다. 그 뒤에 다시 enqueue 해도 무시되므로, 사용자는 동의를 마치고도 백오프가
+     * 끝날 때까지 준비 화면에 붙잡힌다.
+     */
+    fun prefetchStockClips() {
         com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(getApplication())
     }
 

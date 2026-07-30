@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,6 +68,11 @@ internal fun VoiceOnboardingScreen(
     // 로그인(랜딩~인증)과 같은 고정 새벽 네이비 비주얼 — 라이트 테마에서 이 스텝만 흰 화면으로
     // 튀지 않게 온보딩 시퀀스의 톤을 그대로 잇는다(문서화된 예외 팔레트).
     // 라이트 테마에서도 시스템 바 아이콘이 어두워지지 않게 씬 색으로 오버라이드(Codex #606).
+    // 뒤로가기: 탈출구가 보일 때는 그 동작(나중에 받기)에 잇고, 정상적으로 받는 중에는
+    // 삼킨다. 그대로 두면 시스템 기본 동작이 앱을 닫아 버려, 몇 초 기다리면 될 일에
+    // 사용자가 튕겨 나간다.
+    BackHandler(enabled = true) { if (failed || stalled) onSkip() }
+
     SceneSystemBars(top = OnbSceneTop, bottom = OnbSceneBottom)
     Box(
         modifier = Modifier
