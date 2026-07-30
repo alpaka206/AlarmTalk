@@ -14,10 +14,8 @@
     <string name="auth_consent_overseas_transfer_desc">音声AI、翻訳、動的文言処理のため、音声・アラーム文言・占い入力値がElevenLabsやGoogle Vertexなど国外の処理者へ送信される場合があります。</string>
     <string name="auth_consent_privacy">［必須］プライバシーポリシーに同意</string>
     <string name="auth_consent_processing">処理中…</string>
-    <string name="auth_consent_subtitle">以下の項目を確認するだけ。すぐ終わります。</string>
     <string name="auth_consent_terms">［必須］利用規約に同意</string>
     <string name="auth_consent_title">サービスをご利用いただくために\n規約に同意してください</string>
-    <string name="auth_consent_view">表示</string>
     <string name="auth_consent_voice_biometric">［必須］音声生体情報の処理に同意</string>
     <string name="auth_consent_voice_biometric_desc">録音またはアップロードした声を音声プロフィール作成・音声クローン・TTS生成に使用し、個人を識別または再現し得る生体情報として処理します。</string>
     <string name="auth_already_have_account">すでにアカウントをお持ちですか？</string>
@@ -1002,4 +1000,24 @@
     <string name="voice_consent_agree">同意して声を作る</string>
     <string name="voice_consent_cancel">キャンセル</string>
     <string name="msg_voice_consent_required">声を登録するには音声処理への同意が必要です。</string>
+    <string name="auth_consent_expand">項目を開く</string>
+    <string name="auth_consent_collapse">項目を閉じる</string>
+    <string name="auth_consent_full_text">全文を見る</string>
+    <string name="auth_consent_terms_detail">AlarmTalkを使ううえでの基本ルールです。提供する機能(アラーム、声の登録、家族・恋人との共有、プラン)、アカウント管理と解約、有料プランの決済・返金(Google Play アプリ内課金)、他人の声を無断で登録しない責任、サービスの変更・終了時の取り扱いを定めています。</string>
+    <string name="auth_consent_privacy_detail">どの情報を、なぜ受け取り、どれくらい保管するかです。アカウント情報(メール・ニックネーム)、アラーム設定、登録した声と生成音声、決済記録を処理し、目的を終えたら削除します。アラームが鳴る瞬間は端末内のデータだけを使います。委託・国外移転の対象(Cloudflare、Turso、ElevenLabs、Googleなど)や、開示・削除の請求方法も記載しています。</string>
+    <string name="auth_consent_marketing_detail">新機能、イベント、特典のお知らせをアプリ通知やメールでお送りします。同意しなくても登録・利用に制限はなく、いつでも「その他」からオフにできます。広告は午前8時~午後9時のみ送信し、ご自身で設定したアラームは広告ではないため設定した時刻にそのまま鳴ります。</string>
+    <string name="share_code_invite_body">AlarmTalkで私の声のアラームを一緒に使おう!
+
+招待コード: %1$s
+
+1. AlarmTalkをインストール https://play.google.com/store/apps/details?id=com.alarmtalk.app
+2. 登録してログイン
+3. 「その他」→「コードを登録」に上のコードを入力</string>
+    <string name="share_code_gift_body">AlarmTalkのプランを贈りました。
+
+コード: %1$s
+
+1. AlarmTalkをインストール https://play.google.com/store/apps/details?id=com.alarmtalk.app
+2. 登録してログイン
+3. 「その他」→「コードを登録」に上のコードを入力</string>
 </resources>

@@ -138,13 +138,13 @@ internal fun SubscriptionPanel(
     )
     fun shareVoucher(voucher: VoucherItem) {
         clipboard.setText(AnnotatedString(voucher.code))
-        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, voucher.code)
+        // INV- 는 가족·커플 합류, GIFT- 는 개인 이용권 선물 — 받는 사람이 할 일이 다르다.
+        val kind = if (voucher.code.startsWith("GIFT-", ignoreCase = true)) {
+            RedeemCodeKind.Gift
+        } else {
+            RedeemCodeKind.Invite
         }
-        context.startActivity(
-            Intent.createChooser(sendIntent, context.getString(R.string.billing_voucher_share_chooser_title)),
-        )
+        context.shareRedeemCode(voucher.code, kind)
     }
     fun openVoucherShare(vouchersForPlan: List<VoucherItem>) {
         if (vouchersForPlan.isNotEmpty()) {

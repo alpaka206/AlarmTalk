@@ -1,4 +1,4 @@
-package com.alarmtalk.app.ui.components
+package com.alarmtalk.app
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,8 +25,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerDialogShape
 
 /**
  * 목소리를 등록하려는 순간에 받는 음성 처리 동의.

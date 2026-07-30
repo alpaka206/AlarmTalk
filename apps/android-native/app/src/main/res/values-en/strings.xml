@@ -14,10 +14,8 @@
     <string name="auth_consent_overseas_transfer_desc">Voice, alarm text, and fortune inputs may be sent to overseas processors such as ElevenLabs and Google Vertex for voice AI, translation, and dynamic prompt processing.</string>
     <string name="auth_consent_privacy">[Required] Agree to Privacy Policy</string>
     <string name="auth_consent_processing">Processing…</string>
-    <string name="auth_consent_subtitle">Just check the items below — it only takes a moment.</string>
     <string name="auth_consent_terms">[Required] Agree to Terms of Service</string>
     <string name="auth_consent_title">Please agree to the terms\nto use the service</string>
-    <string name="auth_consent_view">View</string>
     <string name="auth_consent_voice_biometric">[Required] Agree to voice biometric processing</string>
     <string name="auth_consent_voice_biometric_desc">Recorded or uploaded voices are used to create voice profiles, clone voices, and generate TTS, and are processed as biometric information that can identify or reproduce a person.</string>
     <string name="auth_already_have_account">Already have an account?</string>
@@ -994,4 +992,24 @@ Check your connection and try again.</string>
     <string name="voice_consent_agree">Agree and create voice</string>
     <string name="voice_consent_cancel">Cancel</string>
     <string name="msg_voice_consent_required">Registering a voice requires your consent to voice processing.</string>
+    <string name="auth_consent_expand">Expand item</string>
+    <string name="auth_consent_collapse">Collapse item</string>
+    <string name="auth_consent_full_text">Read the full text</string>
+    <string name="auth_consent_terms_detail">The ground rules for using AlarmTalk: what the service provides (alarms, voice registration, family and partner sharing, plans), how accounts and cancellation work, payment and refunds for paid passes through Google Play billing, your responsibility not to register another person\&apos;s voice without permission, and what happens if the service changes or stops.</string>
+    <string name="auth_consent_privacy_detail">What we collect, why, and how long we keep it. We process account details (email, nickname), alarm settings, registered and generated voices, and payment records, and delete them once their purpose is served. When an alarm actually rings, only on-device data is used. It also lists our processors and overseas transfers (Cloudflare, Turso, ElevenLabs, Google) and how to request access or deletion.</string>
+    <string name="auth_consent_marketing_detail">News about new features, events, and offers, sent by push or email. Declining changes nothing about signing up or using the app, and you can turn it off any time from the More tab. Promotional messages are only sent between 8am and 9pm; alarms you set yourself are not promotions and ring exactly when you scheduled them.</string>
+    <string name="share_code_invite_body">Come use my voice alarms on AlarmTalk!
+
+Invite code: %1$s
+
+1. Install AlarmTalk https://play.google.com/store/apps/details?id=com.alarmtalk.app
+2. Sign up and log in
+3. Enter the code under More → Register code</string>
+    <string name="share_code_gift_body">I sent you an AlarmTalk pass.
+
+Pass code: %1$s
+
+1. Install AlarmTalk https://play.google.com/store/apps/details?id=com.alarmtalk.app
+2. Sign up and log in
+3. Enter the code under More → Register code</string>
 </resources>

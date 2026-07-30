@@ -609,7 +609,7 @@ internal fun AlarmTalkApp(
 
     // 목소리 등록을 누른 순간에만 뜨는 음성 처리 동의. 가입 게이트에는 이 항목이 없다.
     if (viewModel.showVoiceConsentSheet) {
-        com.alarmtalk.app.ui.components.VoiceConsentSheet(
+        VoiceConsentSheet(
             busy = authBusy,
             onAgree = viewModel::submitVoiceConsents,
             onDismiss = { viewModel.pendingVoiceConsentDrafts = null },
