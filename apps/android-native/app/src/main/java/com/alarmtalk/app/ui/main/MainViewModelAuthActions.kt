@@ -594,7 +594,13 @@ internal fun MainViewModel.checkConsentStatus() {
             sensitiveConsentMissing = status.sensitiveMissing
             consentIsReconsent = status.hasPriorConsent
             consentNeedsCollection = status.needsCollection
-            rememberConsentDone(userId, !status.needsConsent, status.policyVersion)
+            // 받을 게 남아 있으면(선택 동의 재수집 포함) '완료' 로 캐시하지 않는다.
+            // 캐시가 완료로 남으면 다음 실행에서 서버 응답 전에 consentChecked=true 가 되어
+            // 권한·웰컴 오버레이가 먼저 소진되고, 상태 조회가 실패하면 그 실행에서는
+            // 수집 화면이 아예 안 뜬다. 완료 표시는 제출 성공 시에만 한다.
+            val nothingLeftToCollect =
+                !status.needsConsent && !status.needsCollection && status.collect.isEmpty()
+            rememberConsentDone(userId, nothingLeftToCollect, status.policyVersion)
         }.onFailure { error ->
             if (authSession?.user?.id != userId) return@launch
             Log.w(TAG, "Failed to check consent status", error)

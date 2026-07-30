@@ -1013,4 +1013,6 @@ Pass code: %1$s
     <string name="auth_consent_subtitle_updated">Only the items that changed are listed below. Everything you already agreed to stays as it is.</string>
     <string name="tts_consent_title">Creating a spoken alarm needs your consent</string>
     <string name="tts_consent_body">When an alarm line is turned into speech, the text and voice are processed by our voice AI provider (ElevenLabs) and by text generation (Google, United States). That means the data is sent overseas. You can keep using alarms without agreeing, but you will not be able to create spoken alarms.</string>
+    <string name="auth_consent_continue">Continue</string>
+    <string name="voice_consent_agree_continue">Agree and continue</string>
 </resources>

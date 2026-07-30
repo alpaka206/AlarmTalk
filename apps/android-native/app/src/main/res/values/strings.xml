@@ -1041,4 +1041,6 @@
     <string name="auth_consent_subtitle_updated">내용이 바뀐 항목만 아래에 모았어요. 이미 동의하신 나머지는 그대로 유지돼요.</string>
     <string name="tts_consent_title">알람 문구를 만들려면 동의가 필요해요</string>
     <string name="tts_consent_body">알람 문구를 목소리로 만들 때, 문구와 목소리가 음성 AI 제공자(ElevenLabs)와 문구 생성(Google, 미국)을 거쳐 처리돼요. 이 과정에서 데이터가 국외로 전송됩니다. 동의하지 않아도 알람 자체는 쓸 수 있지만, 목소리로 읽어주는 알람은 만들 수 없어요.</string>
+    <string name="auth_consent_continue">계속하기</string>
+    <string name="voice_consent_agree_continue">동의하고 계속하기</string>
 </resources>

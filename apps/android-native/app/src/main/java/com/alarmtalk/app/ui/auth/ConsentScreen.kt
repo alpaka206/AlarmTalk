@@ -174,10 +174,16 @@ internal fun ConsentScreen(
 
             Box(Modifier.padding(vertical = 16.dp)) {
                 GradientCta(
+                    // 받을 게 선택 동의뿐이면 '동의하고 시작하기' 라고 하면 안 된다 —
+                    // 체크를 안 한 채 눌러도 눌리는데(선택이라 통과 조건이 아니다), 그때
+                    // 기록되는 값은 '거절' 이다. 화면은 동의한다고 말하고 기록은 거절이라고
+                    // 남는 어긋남이 생긴다. 필수가 하나도 없으면 중립 문구를 쓴다.
                     text = if (busy) {
                         stringResource(R.string.auth_consent_processing)
-                    } else {
+                    } else if (showAge14 || showTerms || showPrivacy) {
                         stringResource(R.string.auth_consent_agree_and_start)
+                    } else {
+                        stringResource(R.string.auth_consent_continue)
                     },
                     onClick = { onAgree(marketing) },
                     // 그릴 항목이 하나도 없으면 동의할 대상도 없다 — 빈 화면에서 버튼이

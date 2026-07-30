@@ -122,7 +122,16 @@ internal fun VoiceConsentSheet(
                     }
                     TextButton(onClick = onAgree, enabled = allChecked && !busy) {
                         Text(
-                            text = stringResource(R.string.voice_consent_agree),
+                            // 국외 이전만 받는 자리에서는 목소리를 만들지 않는다 — 동의만
+                            // 기록하고 끝나므로 '목소리 만들기' 라고 하면 안 한 일을 했다고
+                            // 말하는 셈이다.
+                            text = stringResource(
+                                if (asksBiometric) {
+                                    R.string.voice_consent_agree
+                                } else {
+                                    R.string.voice_consent_agree_continue
+                                },
+                            ),
                             fontWeight = FontWeight.SemiBold,
                         )
                     }
