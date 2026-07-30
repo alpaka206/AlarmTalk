@@ -53,7 +53,7 @@ describe('POST /push/register — FCM 토큰 등록', () => {
 
   it('공백 token → 400', async () => {
     const res = await buildApp().request(
-      jsonReq('POST', '/push/register', { token: '   ', platform: 'ios' }),
+      jsonReq('POST', '/push/register', { token: '   ', platform: 'android' }),
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('INVALID_PUSH_TOKEN');

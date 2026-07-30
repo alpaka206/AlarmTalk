@@ -13,7 +13,7 @@ import org.junit.runner.RunWith
  * 실제 framework ICU([android.icu.util.ChineseCalendar]) 기반 음→양 변환(KST 보정 포함)을
  * 에뮬레이터/기기에서 검증한다. desktop OpenJDK 에는 해당 클래스가 없어 JVM 단위 테스트로는 못 돌린다.
  *
- * ground truth = KASI(한국천문연구원) 공식 민간력(= Android 시드 = iOS 시드와 동일).
+ * ground truth = KASI(한국천문연구원) 공식 민간력(= Android 시드와 동일).
  * ICU 버전 드리프트가 한 해라도 어긋나면 여기서 큰 소리로 실패하도록 2024~2031 하드코딩 표를 단언한다(risk #1).
  *
  * zone 독립성: JVM 기본 TimeZone 을 UTC / Asia/Seoul / America/Los_Angeles 로 바꿔도 동일 결과여야 한다

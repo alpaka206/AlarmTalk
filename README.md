@@ -10,26 +10,26 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 
 ## Status
 
-- **Version**: `v0.1.2` (closed beta preparation)
-- **Android** — primary platform; core alarm engine verified on physical devices:
+- **Version**: `v1.2.0` (closed beta preparation)
+- **Android** — the only client; core alarm engine verified on physical devices:
   - Free tier: system voices with pre-rendered alarm preset clips, rotated locally on each dismiss (bucket rotation)
   - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time — offline (flight-mode) ring pending device QA
   - Family alarms delivered to members instantly via FCM data push (the ring itself stays local — see rule #1) — background delivery pending device QA
   - Google Play Billing: code-complete, awaiting Play Console configuration
-- **iOS**: on hold — not operated; CI builds disabled (manual `workflow_dispatch` only)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
+
+There is no iOS app. The SwiftUI client and its build workflow were removed from the repository.
 
 ## Stack
 
 | Layer | Stack |
 |---|---|
 | Android | Kotlin 2.0 · Jetpack Compose · Material 3 · Room · DataStore · Retrofit · WorkManager · `AlarmManager.setAlarmClock` |
-| iOS (on hold) | Swift · SwiftUI · AlarmKit · ActivityKit (Live Activity) |
-| Backend | TypeScript 6 · Hono 4 · Cloudflare Workers · Zod · Vitest |
+| Backend | TypeScript 7 · Hono 4 · Cloudflare Workers · Zod · Vitest |
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (deterministic TTS cache) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, 7d) · Google ID token · Apple ID token |
+| Auth | JWT (HS256, 7d) · email code · Google ID token |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## Repository Layout
@@ -38,12 +38,10 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 .
 ├── apps/
 │   ├── android-native/   Kotlin + Jetpack Compose Android app
-│   ├── ios-native/       SwiftUI + AlarmKit app (on hold)
 │   └── landing/          Next.js landing page (static export)
 ├── packages/
 │   ├── backend/          Cloudflare Workers + Hono API
 │   ├── shared/           Shared types and Zod schemas
-│   ├── ui/               Design tokens
 │   └── voice/            Voice-provider abstraction
 └── docs/                 Project documentation
 ```
@@ -60,7 +58,7 @@ npm test           # vitest
 npm run deploy     # wrangler deploy --env production (CI deploys automatically on push)
 ```
 
-Set up local secrets in ignored files: `packages/backend/.dev.vars.dev` and `packages/backend/.dev.vars.prod`. See [`docs/tech/`](docs/tech/README.md) for the full list.
+Set up local secrets in ignored files: `packages/backend/.dev.vars.dev` and `packages/backend/.dev.vars.prod`. The authoritative list is the `Env` interface in `packages/backend/src/types.ts`; see [`docs/ops/environments.md`](docs/ops/environments.md) for how they differ per environment.
 
 ### Android
 
@@ -74,15 +72,6 @@ cd apps/android-native
 ```
 
 If the Android SDK is not auto-detected, create an ignored `apps/android-native/local.properties` with `sdk.dir=...`.
-
-### iOS (macOS only)
-
-```bash
-cd apps/ios-native
-brew install xcodegen
-xcodegen generate
-open AlarmTalkNative.xcodeproj
-```
 
 ## Non-negotiable Rules
 

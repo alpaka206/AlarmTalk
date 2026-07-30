@@ -17,7 +17,6 @@ import {
 } from '../lib/voice-provider';
 import { recloneEvictedVoiceProfile } from '../lib/voice-recover';
 import {
-  DynamicAlarmTextGenerationInvalidError,
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
   applyDeliveryTagPerSentence,
@@ -29,11 +28,11 @@ import {
   type WeatherSignal,
   type WeatherCondition,
 } from '../lib/vertex-translate';
-import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import {
   CLONE_CLIP_SEEDS,
   CLONE_WEATHER_CONDITIONS,
   FREE_BUCKET_CATEGORIES,
+  STOCK_CLIP_PRESETS,
   STOCK_GREETING_CATEGORY,
 } from '../lib/stock-clips';
 import {
@@ -53,41 +52,17 @@ import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
 
 const tts = new Hono<AppEnv>();
-const TTS_CATEGORIES = [
-  'morning',
-  'lunch',
-  'evening',
-  'night',
-  'health',
-  'medication',
-  'study',
-  'cheer',
-  'love',
-  'exercise',
-  'custom',
-] as const;
+// 클라가 보내는 카테고리(= messages.category 저장값). 넷이 전부다.
+//  - morning: 기본값·날씨·운세가 공통으로 쓰는 라벨(문구는 preset/동적 경로가 따로 정한다)
+//  - medication / love: 그 문구를 고른 알람
+//  - custom: 직접 입력
+const TTS_CATEGORIES = ['morning', 'medication', 'love', 'custom'] as const;
 
-const LEGACY_TTS_CATEGORY_ALIASES: Record<string, (typeof TTS_CATEGORIES)[number]> = {
-  afternoon: 'cheer',
-  sleep: 'night',
-  medicine: 'medication',
-};
-const RANDOM_CONTEXTS = [
-  'preset',
-  'wake_weather',
-  'wake_fortune',
-  'meal',
-  'sleep',
-  'exercise',
-  'love',
-] as const;
+// 편집기가 실제로 고를 수 있는 문구 종류. medication 은 일부러 빠져 있다 — 아래
+// normalizeRandomContext 의 폴백으로 'preset' 에 접혀 고정 문구 경로를 탄다.
+const RANDOM_CONTEXTS = ['preset', 'wake_weather', 'wake_fortune', 'love'] as const;
 type RandomContext = (typeof RANDOM_CONTEXTS)[number];
 
-const LEGACY_RANDOM_CONTEXT_ALIASES: Record<string, RandomContext> = {
-  daily: 'wake_weather',
-  weather: 'wake_weather',
-  fortune: 'wake_fortune',
-};
 
 function consentRequired(c: Context<AppEnv>, consent: string) {
   const error =
@@ -144,7 +119,7 @@ function normalizeTtsCategory(category: string): (typeof TTS_CATEGORIES)[number]
   if ((TTS_CATEGORIES as readonly string[]).includes(raw)) {
     return raw as (typeof TTS_CATEGORIES)[number];
   }
-  return LEGACY_TTS_CATEGORY_ALIASES[raw] ?? null;
+  return null;
 }
 
 function randomIndex(length: number): number {
@@ -157,11 +132,6 @@ function randomIndex(length: number): number {
 function normalizeRandomContext(value: unknown): RandomContext {
   const raw = typeof value === 'string' ? value.trim() : '';
   return (RANDOM_CONTEXTS as readonly string[]).includes(raw) ? (raw as RandomContext) : 'preset';
-}
-
-function normalizeRandomContextWithAliases(value: unknown): RandomContext {
-  const raw = typeof value === 'string' ? value.trim() : '';
-  return LEGACY_RANDOM_CONTEXT_ALIASES[raw] ?? normalizeRandomContext(raw);
 }
 
 function normalizeRelationshipLabel(value: unknown): string | null {
@@ -197,14 +167,6 @@ function firstNonBlankText(...values: unknown[]): string | null {
   return null;
 }
 
-function mealLabelForHour(hour: number | null): string {
-  if (hour == null) return '식사';
-  if (hour >= 5 && hour < 10) return '아침';
-  if (hour >= 10 && hour < 15) return '점심';
-  if (hour >= 15 && hour < 22) return '저녁';
-  return '가벼운 식사';
-}
-
 function alarmTimeLabel(hour: number | null, minute: number | null): string | null {
   if (hour == null || minute == null) return null;
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
@@ -227,7 +189,7 @@ function fortuneProfile(args: {
 }
 
 function randomContextUsesWeather(context: RandomContext): boolean {
-  return context === 'wake_weather' || context === 'meal' || context === 'exercise';
+  return context === 'wake_weather';
 }
 
 async function loadTargetDynamicPromptSettings(
@@ -265,22 +227,45 @@ function todayKoreaLabel(): string {
   }).format(new Date());
 }
 
-async function pickRandomPresetText(
-  env: AppEnv['Bindings'],
-  category: string,
-): Promise<string | null> {
-  const presets: TtsPreset[] = await loadTtsPresets(env);
-  const preset = presets.find((item) => item.category === category);
-  const messages = preset?.messages.map((message) => message.trim()).filter(Boolean) ?? [];
+/**
+ * 요청 카테고리(TTS_CATEGORIES) → 스톡 프리셋 카테고리. 클라는 기본값 문구를 'morning' 으로
+ * 보내는데, 문구 출처인 STOCK_CLIP_PRESETS 는 greeting·weather·medication 만 갖는다.
+ * 여기서만 이어 붙이고 클라는 건드리지 않는다.
+ *  - morning = 사용자가 문구를 안 바꿨을 때의 기본값 → greeting(목소리 미리듣기와 같은 인사말)
+ *  - medication = 그대로
+ *  - love 는 스톡 프리셋에 대응 문구가 없다(동적 생성 전용) → null 이 돌아가고
+ *    호출부가 VOICE_AND_TEXT_REQUIRED 로 막는다.
+ */
+function stockPresetCategory(category: string): string {
+  return category === 'morning' ? STOCK_GREETING_CATEGORY : category;
+}
+
+/**
+ * random_context='preset' 의 문구를 고른다. 출처는 사전렌더와 **같은** STOCK_CLIP_PRESETS 다.
+ * 버킷이 아직 준비 안 돼 이 라이브 폴백으로 내려와도 사전렌더 클립과 같은 문장이 나온다.
+ */
+function pickRandomPresetText(category: string, language: string): string | null {
+  const preset = STOCK_CLIP_PRESETS.find((item) => item.category === stockPresetCategory(category));
+  if (!preset) return null;
+  const texts = preset.texts as Partial<Record<string, readonly string[]>>;
+  const messages = (texts[language] ?? texts.ko ?? [])
+    .map((message) => message.trim())
+    .filter(Boolean);
   if (messages.length === 0) return null;
   return messages[randomIndex(messages.length)]!;
 }
 
+// 프리셋 문구 앞에 호칭을 붙인다. 프리셋은 '[brightly] 오늘은…' 처럼 delivery 태그로 시작하는데,
+// 호칭을 그 **앞**에 붙이면 태그가 문장 중간으로 밀려 호칭만 톤 지시 없이 읽힌다.
+// 그래서 선두 태그는 그대로 두고 그 뒤에 끼워 넣는다.
 function presetTextWithListenerTitle(text: string, listenerTitle: string | null): string {
   const title = listenerTitle?.trim();
   const base = text.trim();
-  if (!title || !base || base.startsWith(title)) return base;
-  const withTitle = `${title}, ${base}`;
+  if (!title || !base) return base;
+  const lead = base.match(/^\[[a-z][a-z -]{1,32}\]\s*/i)?.[0] ?? '';
+  const spoken = base.slice(lead.length);
+  if (!spoken || spoken.startsWith(title)) return base;
+  const withTitle = `${lead}${title}, ${spoken}`;
   return withTitle.length <= 200 ? withTitle : base;
 }
 
@@ -713,7 +698,7 @@ tts.post('/generate', async (c) => {
   }
   const randomRequested = !draftPreviewRequested && body.random === true;
   const randomContext = randomRequested
-    ? normalizeRandomContextWithAliases(
+    ? normalizeRandomContext(
         body.random_context ?? body.randomContext ?? body.random_mode ?? body.randomMode,
       )
     : 'preset';
@@ -727,10 +712,13 @@ tts.post('/generate', async (c) => {
     );
   }
 
+  // 프리셋 문구는 STOCK_CLIP_PRESETS 에서 오고 '[brightly]' 같은 delivery 태그를 달고 온다.
+  // 사용자가 친 대괄호가 아니라 우리 마크업이므로 표시 문구에서는 벗겨야 한다(아래 messageText).
+  const presetTextUsed = !draftPreviewRequested && randomRequested && randomContext === 'preset';
   let requestText = draftPreviewRequested
     ? draftPreviewText('ko')
-    : randomRequested && randomContext === 'preset'
-      ? await pickRandomPresetText(c.env, category)
+    : presetTextUsed
+      ? pickRandomPresetText(category, normalizeSynthesisLanguage(body.language))
       : (body.text ?? '').trim();
   if (!requestText) {
     if (randomRequested && randomContext !== 'preset') {
@@ -854,7 +842,7 @@ tts.post('/generate', async (c) => {
       );
     }
     // F2: 기본 목소리(=무료 버킷)는 날씨·약만 허용한다. love 만 막던 블랙리스트로는
-    // morning/health/exercise 등 다른 프리셋 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
+    // morning/love 등 다른 요청 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
     // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES = weather, medication) 화이트리스트로 바꿔 그 외
     // 카테고리를 전부 차단한다(날씨 동적은 위 randomContext!=='preset' 에서 이미 걸리므로, 실제
     // 프리셋 경로로 통과하는 건 medication 뿐). 무료 플랜도 동일 버킷이라 함께 조인다.
@@ -1064,7 +1052,6 @@ tts.post('/generate', async (c) => {
                 ),
               })
             : null,
-        mealLabel: randomContext === 'meal' ? mealLabelForHour(alarmHour) : null,
         alarmTimeLabel: alarmTimeLabel(alarmHour, alarmMinute),
       });
       requestText = generated.text;
@@ -1128,9 +1115,13 @@ tts.post('/generate', async (c) => {
     // 있으면 자동 태그가 아니므로 원문 보존, 없으면 맨 앞 태그 1개만 제거한다(deriveAlarmDisplayText).
     // → (1) 번역 경로에서도 화면 문구가 음성 언어와 일치하고, (2) '[after lunch]'·'[calm]'만 입력 등
     //   사용자 대괄호가 안 지워지며, (3) 모델이 붙인 비승인 태그도 화면엔 새지 않는다.
+    //
+    // 프리셋 경로는 사용자가 친 문구가 없다(우리 스톡 문구 + 그 안의 delivery 태그). 원문을
+    // 그대로 넘기면 태그를 '사용자 대괄호'로 보고 보존해 화면에 '[brightly] …' 가 샌다.
+    // 빈 원문을 넘겨 태그를 벗긴다 — 사전렌더 경로(stock-clips.ts stripDeliveryTags)와 같은 결과.
     const messageText = dynamicGenerated
       ? dynamicGenerated.text
-      : deriveAlarmDisplayText(synthesisText, requestText);
+      : deriveAlarmDisplayText(synthesisText, presetTextUsed ? '' : requestText);
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.
@@ -1156,11 +1147,6 @@ tts.post('/generate', async (c) => {
       );
     }
 
-    // 모드별 보이스 세팅: sleep은 저에너지를 위해 speed 0.95(그 외는 elevenlabs v3 디폴트
-    // stability 0.5/similarity 0.8/style 0.4/speed 1.0/use_speaker_boost 적용). sleep만
-    // 오버라이드하므로 캐시 키도 다른 모드와 자연히 분리된다.
-    const dynamicVoiceSettings =
-      randomRequested && randomContext === 'sleep' ? { speed: 0.95 } : undefined;
     const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
       const attempts = createSynthesisAttempts({
         env: c.env,
@@ -1169,8 +1155,6 @@ tts.post('/generate', async (c) => {
         },
         text: synthesisText,
         language: synthesisLanguage,
-        category,
-        voiceSettings: dynamicVoiceSettings,
       });
       return Promise.all(
         attempts.map(async (attempt) => {
@@ -1183,7 +1167,6 @@ tts.post('/generate', async (c) => {
             languageCode: synthesisLanguage,
             text: synthesisText,
             outputFormat: attempt.outputFormat,
-            voiceSettings: attempt.voiceSettings,
           });
           return { attempt, cacheKey };
         }),
@@ -1589,15 +1572,6 @@ tts.post('/generate', async (c) => {
         {
           error: 'Alarm text preparation returned invalid content.',
           error_code: 'TEXT_PREPARATION_FAILED',
-        },
-        502,
-      );
-    }
-    if (err instanceof DynamicAlarmTextGenerationInvalidError) {
-      return c.json(
-        {
-          error: 'Dynamic alarm text generation returned invalid content.',
-          error_code: 'DYNAMIC_TEXT_GENERATION_FAILED',
         },
         502,
       );

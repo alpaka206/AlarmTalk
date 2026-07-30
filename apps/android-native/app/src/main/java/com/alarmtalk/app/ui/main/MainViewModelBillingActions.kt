@@ -72,7 +72,7 @@ internal fun MainViewModel.preloadBilling() {
 // 직후 구매 버튼이 네트워크 호출이 끝날 때까지 비활성화되는 문제가 있었다.
 private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
     if (billingRefreshing || billingBusy) return
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_growth_info)) ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_billing_info)) ?: return
     billingRefreshing = true
     viewModelScope.launch {
         try {
@@ -82,7 +82,7 @@ private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
                 applyBillingSnapshot(snapshot)
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to load billing", error)
-                if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_growth_info_load_failed))
+                if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_billing_info_load_failed))
             }
         } finally {
             billingRefreshing = false

@@ -503,15 +503,8 @@ internal fun buildTtsKey(
 ): String =
     listOf(profileId, text.trim(), category, language, listenerTitle?.trim().orEmpty()).joinToString("|")
 
-internal fun normalizedTtsCategory(category: String): String {
-    val legacy = mapOf(
-        "afternoon" to "cheer",
-        "sleep" to "night",
-        "medicine" to "medication",
-    )
-    val resolved = legacy[category] ?: category
-    return if (TtsCategories.any { (key, _) -> key == resolved }) resolved else DefaultRandomTtsCategory
-}
+internal fun normalizedTtsCategory(category: String): String =
+    if (TtsCategories.any { (key, _) -> key == category }) category else DefaultRandomTtsCategory
 
 internal fun normalizedRandomPromptContext(context: String): String =
     when (context) {
@@ -522,17 +515,17 @@ internal fun normalizedRandomPromptContext(context: String): String =
 
 internal fun ttsCategoryForRandomContext(context: String?): String =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
-        "meal" -> "lunch"
-        "sleep" -> "night"
-        "exercise" -> "exercise"
         "love" -> "love"
         "medication" -> "medication"
+        // 기본값(preset)·날씨·운세는 모두 'morning' 으로 보낸다. 서버가 preset 경로에서
+        // greeting 문구로 이어 붙이고(stockPresetCategory), 날씨·운세는 동적 생성이라
+        // 카테고리는 저장 라벨로만 쓰인다.
         else -> "morning"
     }
 
 internal fun randomContextUsesWeather(context: String?): Boolean =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
-        "wake_weather", "meal", "exercise" -> true
+        "wake_weather" -> true
         else -> false
     }
 

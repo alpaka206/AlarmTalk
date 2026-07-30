@@ -1,121 +1,76 @@
-# Standards
+# 규약
 
-Coding conventions, git workflow, security policy, and key architecture decisions.
+코딩 컨벤션, git 워크플로, 보안 정책, 주요 아키텍처 결정.
 
-## 1. Principles
+## 1. 원칙
 
-1. **The code in this repository is the source of truth.** When this document disagrees with the code, the code wins. Either fix the code or fix this document — in the same PR.
-2. **Identifiers in English, prose in the writer's language.** Variable, function, class, and file names are English. Comments, commit messages, and PR descriptions can be in any language; team default is English.
-3. **Small code, smaller tests.** If something needs proof, prove it with a test, not a paragraph of comments.
+1. **레포의 코드가 진실이다.** 이 문서와 코드가 어긋나면 코드가 이긴다. 코드를 고치든 문서를 고치든 **같은 PR 에서** 처리한다.
+2. **식별자는 영어, 산문은 한국어.** 변수·함수·클래스·파일명은 영어. 주석·커밋 메시지·PR 설명·문서는 한국어.
+3. **코드는 작게, 테스트는 더 작게.** 증명이 필요하면 주석 한 문단이 아니라 테스트로 증명한다.
+4. **버전 번호를 문서에 베끼지 않는다.** 툴체인 버전의 유일 출처는 `package.json` 과 `apps/android-native/**/build.gradle.kts` 다.
 
-## 2. Languages and tooling
+## 2. 바꾸면 안 되는 플랫폼 제약
 
-| Area | Tool / version |
-|---|---|
-| Backend | TypeScript 6.x · Hono 4.x · Cloudflare Workers (`compatibility_date` ≥ 2024-09-23) |
-| Android | Kotlin 2.0.21 · AGP 8.7.3 · JDK 17 · Compose BOM 2024.12.01 · `minSdk = 26` · `targetSdk = 35` |
-| iOS | Swift 5.10 · Xcode 16 · AlarmKit (iOS 18+ PoC, iOS 26+ production target) |
-| Workspace | npm workspaces · Node 22+ |
-| Lint | ESLint 10 + Prettier 3 (TypeScript) · `./gradlew :app:lintDebug` (Android) |
+버전이 아니라 결정이라 여기 남긴다.
 
-## 3. Folder layout
-
-```
-.
-├── README.md           # English root README (+ README.ko.md / README.ja.md)
-├── AGENTS.md           # AI agent entrypoint
-├── SECURITY.md
-├── docs/
-│   ├── README.md
-│   ├── assets/
-│   ├── product/
-│   ├── spec/
-│   ├── design/
-│   ├── tech/
-│   ├── standards/      # this file
-│   ├── qa/
-│   ├── manual/
-│   ├── legal/
-│   └── ops/
-├── apps/
-│   ├── android-native/
-│   ├── ios-native/
-│   └── landing/
-└── packages/
-    ├── backend/
-    ├── shared/
-    ├── ui/
-    └── voice/
-```
-
-## 4. TypeScript conventions
-
-- `strict: true` is non-negotiable. No `any`; widen to `unknown` and narrow with a type guard.
-- Identifiers: `camelCase` for values and functions, `PascalCase` for types and classes, `SCREAMING_SNAKE_CASE` for constants.
-- One domain per Hono router file. `packages/backend/src/routes/<domain>.ts`.
-- External calls go through `packages/backend/src/lib/<provider>.ts`. Route handlers never call `fetch` directly.
-- Validate input with Zod at the route boundary. Schema lives at the top of the route file or in `packages/shared`.
-- Use ISO 8601 strings for times. Store in UTC, render in user-local time.
-
-```ts
-import { z } from 'zod';
-
-const Body = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-});
-
-app.post('/auth/login', async (c) => {
-  const body = Body.parse(await c.req.json());
-  // ...
-});
-```
-
-## 5. Kotlin / Android conventions
-
-- Naming: `camelCase` functions, `PascalCase` classes and composables, `IconName` for icon constants.
-- Compose files split into `XxxScreen.kt`, `XxxState.kt`, `XxxComponents.kt` for any non-trivial screen.
-- ViewModels expose `StateFlow`. One-shot events go through `Channel`.
-- Room DAOs are `suspend` or `Flow`. No `runBlocking`.
-- All `AlarmManager` access goes through `alarm/AlarmScheduler.kt`.
-- Log via `AlarmTalkLog.TAG`. No direct `Log.d / Log.w` calls.
-- Long-running work uses WorkManager or an explicit Foreground Service.
-
-## 6. Swift / iOS conventions (PoC level)
-
-- SwiftUI first. Wrap UIKit interop in dedicated files.
-- All AlarmKit calls live in `AlarmKitViewModel`. Views consume `@Published` state only.
-- Shared symbols (e.g. `AlarmSummary`) live in `apps/ios-native/Shared/`.
-
-## 7. Comments, naming, logging
-
-- Comments explain **why**, never what — clear identifiers handle the what.
-- `TODO` / `FIXME` must reference an issue id.
-- User-facing strings are localized. Backend logs are English and structured (`logStructured('info', { at: 'route.path', ... })`).
-
-## 8. Testing
-
-| Layer | Tool | Command |
+| 항목 | 값 | 이유 |
 |---|---|---|
-| Backend | Vitest + in-memory libSQL | `npm run test --workspace=backend` |
-| Android unit | JUnit | `./gradlew :app:testDebugUnitTest` |
-| Android UI | Compose UI Test (planned) | `./gradlew :app:connectedAndroidTest` |
-| Lint (Android) | AGP Lint | `./gradlew :app:lintDebug` |
+| Android `minSdk` | 26 | 정확 알람·포그라운드 서비스 동작의 하한선 |
+| Android `targetSdk` | 36 | Play 정책 최신 요구치 추종 |
+| JDK / `jvmTarget` | 17 | AGP·Compose 툴체인 정합 |
+| Node | 22+ | Workers 로컬 런타임과 npm workspaces |
+| TypeScript `strict` | `true` | 협상 대상 아님 |
 
-Physical-device verification: a real Android phone with the Physical Device Checklist in `apps/android-native/README.md`.
+## 3. TypeScript 규약
 
-External providers (ElevenLabs, FCM) must be stubbed in tests. Automated tests must not consume paid credits.
+- `strict: true`. `any` 금지 — `unknown` 으로 넓히고 타입 가드로 좁힌다.
+- 식별자: 값·함수 `camelCase`, 타입·클래스 `PascalCase`, 상수 `SCREAMING_SNAKE_CASE`.
+- Hono 라우터 파일 하나에 도메인 하나. `packages/backend/src/routes/<domain>.ts`.
+- 외부 호출은 `packages/backend/src/lib/<provider>.ts` 를 거친다. 라우트 핸들러가 직접 `fetch` 하지 않는다.
+- 입력은 라우트 경계에서 zod 로 검증한다. 스키마는 라우트 파일 상단이나 `packages/shared` 에 둔다.
+- 시각은 ISO 8601 문자열. UTC 로 저장하고 사용자 로컬로 렌더한다.
+- SQL 인젝션·IDOR 방어 패턴은 루트 `CLAUDE.md` 의 "입력/SQL 보안 규약" 을 따른다. 신규 라우트 리뷰 필수 체크.
+- 모든 에러 응답에 `error_code` 를 붙인다. 규약과 전수 목록은 [reference/error-codes.md](../reference/error-codes.md).
 
-## 9. Tone and accessibility
+## 4. Kotlin / Android 규약
 
-- Korean copy uses friendly polite ("…해 주세요"). English / Japanese mirror the same register.
-- Action labels are verbs. Prefer concrete nouns over abstractions ("Set time" beats "Configure").
-- Toasts stay within one line.
-- See [design/README.md](../design/README.md) §3 for the full UI guide.
+- 네이밍: 함수 `camelCase`, 클래스·컴포저블 `PascalCase`.
+- 비자명한 화면은 `XxxScreen.kt` / `XxxState.kt` / `XxxComponents.kt` 로 쪼갠다.
+- ViewModel 은 `StateFlow` 를 노출한다. 일회성 이벤트는 `Channel`.
+- Room DAO 는 `suspend` 또는 `Flow`. `runBlocking` 금지.
+- 모든 `AlarmManager` 접근은 `alarm/AlarmScheduler.kt` 를 통한다.
+- 로그는 `AlarmTalkLog.TAG`. `Log.d` / `Log.w` 직접 호출 금지.
+- 장시간 작업은 WorkManager 또는 명시적 포그라운드 서비스.
+- 모서리 반경·색은 생 리터럴 대신 디자인 토큰을 쓴다(`WakerDesign.kt`, `AlarmTalkTheme.kt`). 예외 목록은 루트 `CLAUDE.md`.
 
-## 10. Environment variables and secrets
+## 5. 주석, 로깅
 
-Never commit:
+- 주석은 **왜**를 설명한다. **무엇**은 식별자가 설명한다.
+- `TODO` / `FIXME` 는 이슈 id 를 달고 쓴다.
+- 사용자 노출 문자열은 로컬라이즈한다. 백엔드 로그는 영어 구조화 로그(`logStructured('info', { at: 'route.path', ... })`).
+
+## 6. 테스트
+
+| 레이어 | 도구 | 명령 |
+|---|---|---|
+| 백엔드 | Vitest + in-memory libSQL | `npm run test --workspace=backend` |
+| Android 유닛 | JUnit | `./gradlew :app:testDebugUnitTest` |
+| Android 계측 | Compose UI Test | `./gradlew :app:connectedAndroidTest` |
+| Android 린트 | AGP Lint | `./gradlew :app:lintDebug` |
+
+- 실기기 검증은 `apps/android-native/README.md` 의 Physical Device Checklist 로 한다.
+- 외부 프로바이더(ElevenLabs, FCM, Vertex)는 테스트에서 스텁한다. **자동 테스트가 유료 크레딧을 쓰면 안 된다.**
+
+## 7. 카피 톤
+
+- 한국어 카피는 친근한 존대("…해 주세요"). 영어·일본어도 같은 격을 맞춘다.
+- 액션 레이블은 동사. 추상어보다 구체명사("시간 설정" > "구성").
+- 토스트는 한 줄을 넘기지 않는다.
+- 모달 계층·알럿 카피·호칭 노출 같은 화면 규칙은 루트 `CLAUDE.md` 의 디자인 토큰 절과 Android 코드가 기준이다.
+
+## 8. 시크릿
+
+절대 커밋 금지:
 
 - `.env`, `.env.*`
 - `packages/backend/.dev.vars*`
@@ -123,64 +78,42 @@ Never commit:
 - `service-account*.json`
 - `*.keystore`, `*.jks`, `*.p8`
 
-Cloudflare Worker secrets:
+Worker 시크릿과 Gradle property 의 목록·설정 위치는 [ops/environments.md](../ops/environments.md) 와 `packages/backend/src/types.ts` 의 `Env` 인터페이스가 유일 출처다. 이 문서에 복사하지 않는다.
 
-- `JWT_SECRET`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
-- `ELEVENLABS_API_KEY`
-- `SENTRY_DSN`
-- `GOOGLE_CLIENT_ID`
+## 9. Git 워크플로
 
-Android Gradle properties (override via `local.properties` or `-P`):
+### 브랜치
 
-- `voiceAlarmDevApiBaseUrl` / `voiceAlarmProdApiBaseUrl`
-- `voiceAlarmDevGoogleWebClientId` / `voiceAlarmProdGoogleWebClientId`
-- `voiceAlarmDevSentryDsn` / `voiceAlarmProdSentryDsn` (blank disables client reporting)
-
-iOS uses Xcode Build Settings (`INFOPLIST_KEY_*`) for environment-specific values.
-
-## 11. Git workflow
-
-### Branches
-
-```
-main      ▣▣▣▣▣▣▣▣   release baseline (develop → main at release time)
-develop   ▣▣▣▣▣▣▣▣   integration
-feat/*    ▣▣▣○        → develop
-fix/*           ▣▣▣○  → develop (or main for hotfix)
-chore/*               → develop
-docs/*                → develop
-refactor/*            → develop
-```
-
-| Branch | Purpose | Merges into |
+| 브랜치 | 용도 | 머지 대상 |
 |---|---|---|
-| `main` | Production baseline | — (only develop → main at release) |
-| `develop` | Daily integration | — |
-| `feat/<#issue>-<slug>` | New feature | `develop` |
-| `fix/<#issue>-<slug>` | Bug fix | `develop` (or `main` for hotfix) |
-| `chore/<slug>` | Tooling, deps | `develop` |
-| `docs/<slug>` | Documentation | `develop` |
-| `refactor/<slug>` | No behavior change | `develop` |
+| `main` | 프로덕션 기준선 (푸시 시 prod 자동 배포+마이그레이션) | — (릴리스 때 develop → main) |
+| `develop` | 일상 통합 (푸시 시 dev 자동 배포+마이그레이션) | — |
+| `feat/<#issue>-<slug>` | 신규 기능 | `develop` |
+| `fix/<#issue>-<slug>` | 버그 수정 | `develop` (핫픽스는 `main`) |
+| `chore/<slug>` | 툴링, 의존성 | `develop` |
+| `docs/<slug>` | 문서 | `develop` |
+| `refactor/<slug>` | 동작 변경 없음 | `develop` |
 
-### Commit messages
+`develop` 은 보호 브랜치(필수 체크 있음)라 직접 푸시할 수 없다. **반드시 PR.** `main` 도 직접 푸시 금지 — 핫픽스도 `fix/...` → main PR → 머지 → main 을 develop 으로 되머지.
 
-- Format: `<type>: <short description>`
-- Types: `feat` `fix` `chore` `docs` `refactor` `test` `style`
-- ≤ 50 characters when possible. Sentence-style.
-- No AI markers, no emojis.
+### 커밋 메시지
 
-Good:
+- 형식: `<type>: <한국어 설명>`
+- 타입: `feat` `fix` `chore` `docs` `refactor` `test` `style`
+- 가능하면 50자 이내.
+- AI 마커 금지 — `Co-Authored-By: Claude`, "Generated with Claude Code" 를 붙이지 않는다. 이모지도 쓰지 않는다.
+
 ```
-feat: restore alarms after reboot
-fix: snooze schedules next alarm at exact minute
-docs: rewrite TTS deterministic cache section
-chore(deps): bump hono in the production-dependencies group
+feat: 재부팅 후 알람을 복구한다
+fix: 스누즈가 정확히 다음 분에 예약되게 한다
+docs: TTS 결정적 캐시 절을 다시 쓴다
+chore(deps): production-dependencies 그룹의 hono 를 올린다
 ```
 
-### Pull requests
+### 풀 리퀘스트
 
-- Title follows the commit convention; ≤ 70 characters.
-- Body uses:
+- 제목은 커밋 컨벤션을 따르고 70자 이내.
+- 본문:
   ```
   ## Summary
   - ...
@@ -188,80 +121,70 @@ chore(deps): bump hono in the production-dependencies group
   ## Test plan
   - [ ] ...
   ```
-- Keep one PR to one purpose. Split if > 800 lines diff.
-- Require at least one approval.
-- Merge style: **merge commits** (no squash). Preserves implementation history.
-- Reviewer checklist:
-  1. Does the code match the title?
-  2. Any network call added to the alarm-ring path?
-  3. Tests sufficient?
-  4. Permissions / secrets / docs updated together?
-  5. Android / iOS / backend contracts in sync?
+- PR 하나에 목적 하나. 800줄 넘어가면 쪼갠다.
+- 최소 1 승인. 머지 방식은 **머지 커밋**(스쿼시 금지) — 구현 이력을 남긴다.
+- 리뷰 체크:
+  1. 코드가 제목과 일치하는가?
+  2. **알람 울림 경로에 네트워크 호출이 추가되지 않았는가?**
+  3. 테스트가 충분한가?
+  4. 권한·시크릿·문서를 같이 갱신했는가?
+  5. Android ↔ 백엔드 계약이 맞물리는가?
 
-### Hotfix
+### 태그·릴리스
 
-- Never push directly to `main`. Always `fix/...` → main PR → merge → merge main back into develop.
+- 시맨틱 버저닝 `vMAJOR.MINOR.PATCH`. 알파 트랙은 `v0.x.y`.
+- Android `versionName = X.Y.Z`, `versionCode` 는 빌드마다 증가.
+- 릴리스 노트는 GitHub Releases 에(기능 / 수정 / 알려진 이슈).
 
-### Tags & releases
+### 의존성·대용량 파일
 
-- Semantic versioning `vMAJOR.MINOR.PATCH`. Alpha track is `v0.x.y`.
-- Android `versionName = X.Y.Z`, `versionCode` increments on every build.
-- Release notes go to GitHub Releases (features / fixes / known issues).
+- Dependabot 이 주간 그룹 PR 을 연다. 테스트 통과 + minor/patch 면 머지, major 는 사람이 본다.
+- 5MB 넘는 파일은 git 에 두지 않는다. R2 나 GitHub Release 에셋을 쓴다.
 
-### Dependencies
+## 10. 보안 정책 (요약)
 
-- Dependabot opens weekly grouped PRs for dev and production.
-- Merge if tests pass and the change is minor/patch. Majors get a human review.
-- Review Cloudflare Workers compatibility flags once per quarter.
+외부 공개 정책은 `SECURITY.md`. 내부 규칙은 다음과 같다.
 
-### Large files
+- HTTPS 전용. Android 는 `usesCleartextTraffic=false`.
+- 비밀번호는 pepper 적용 후 SHA-256 프리해시 → bcrypt(cost 10). 프리해시는 bcrypt 의 72바이트 절단 문제를 막기 위한 것이다.
+- JWT HS256, TTL 7일. `JWT_SECRET` 은 32바이트 이상 랜덤.
+- 입력은 전부 zod 검증. SQL 은 예외 없이 `?` 바인딩.
+- 레이트 리밋은 IP 선차단 + 유저 단위 + 인증 라우트 강화, 3단으로 건다. 실제 수치의 출처는 `src/middleware/rateLimit.ts` 다.
+- 바디 상한은 `src/middleware/bodyLimit.ts` (음성 업로드를 지원해야 해서 넉넉하다). 상한을 문서에 베끼지 말 것.
+- 보안 응답 헤더는 모든 응답에 붙인다(`src/middleware/securityHeaders.ts`).
+- R2 버킷은 비공개. 서버는 base64 또는 짧은 수명의 서명 URL 만 내려준다.
+- 보이스 데이터는 가족/파트너 그룹 내부에서만 공유한다. 외부 다운로드는 막는다.
+- 계정 삭제는 보이스·알람·메시지·플랜 그룹 멤버십까지 연쇄 삭제하고, R2 오브젝트는 삭제 큐에 넣는다.
+- 개인정보는 로그에 남기지 않는다. 이메일 같은 식별자는 남겨야 한다면 해시한다.
+- 레포가 **PUBLIC** 이다. 실제 프로모션 코드명, 계정 값, 토큰을 소스·문서·PR 에 적지 않는다.
+- 시크릿은 90일마다 교체. 담당은 릴리스 엔지니어 + 테크 리드.
 
-- Anything over 5 MB does not belong in git. Use R2 or GitHub Release assets.
-- Android build logs, APKs, keystores are already in `.gitignore`.
+## 11. 아키텍처 결정
 
-## 12. Security policy (summary)
+### A1. OS 네이티브 알람 스케줄링, 푸시 없음
 
-The full external policy is in `SECURITY.md`. The internal rules are:
+- **선택**: Android `AlarmManager.setAlarmClock`.
+- **버린 것**: 푸시 알림, 서버 cron 발사.
+- **이유**: 알람 신뢰성이 곧 제품이다. 푸시는 비행기 모드·약한 네트워크·Doze·제조사 백그라운드 제한에서 못 믿는다.
+- 서버 푸시는 **동기화 트리거로만** 쓴다(가족 알람 생성 시 data-only 1회). 자세한 내용은 [tech/README.md](../tech/README.md) §3.
 
-- HTTPS-only. Mobile clients set `usesCleartextTraffic=false`.
-- Passwords bcrypt-hashed (cost ≥ 10).
-- JWT HS256, 7-day TTL. `JWT_SECRET` ≥ 32 bytes random.
-- All input validated with Zod. Parameterized SQL only.
-- Rate limit 60 req/min/IP. Body limit 512 KB.
-- Security response headers on every response (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Strict-Transport-Security`, `Cross-Origin-Opener-Policy`, `Cache-Control: no-store` by default).
-- R2 bucket is private. Server returns base64 or short-lived signed URLs only.
-- Voice data is shared only inside a user's family/partner group. External download is blocked.
-- Account deletion cascades to voice, alarms, messages, plan-group membership; R2 objects are queued for deletion.
-- Personal data is never logged. Email and similar identifiers are hashed before logging if they appear at all.
-- Secret rotation every 90 days. Rotation owner: release engineer + tech lead.
+### A2. 결정적 TTS 캐싱
 
-## 13. Architecture decisions (selected)
+- **키**: `sha256(voice_profile_id | text | language | provider)`.
+- **버린 것**: 요청마다 랜덤 UUID.
+- **이유**: 같은 입력 → 같은 출력 → 같은 R2 오브젝트 재사용 → 프로바이더 비용 중복 지출 제거.
 
-### A1. OS-native alarm scheduling, no push
+### A3. 가족 초대: 앱에 붙여넣는 이용권 코드
 
-- **Choice**: `AlarmManager.setAlarmClock` on Android, AlarmKit on iOS.
-- **Rejected**: push notifications, server cron.
-- **Why**: alarm reliability is the product. Push is unreliable on flight mode, weak networks, Doze, OEM background restrictions.
+- **선택**: `INV-XXXX-XXXX-XXXX` 형식의 이용권 코드 하나. 앱의 코드 입력란에 붙여넣어 합류한다.
+- **버린 것**: 이메일 초대, 링크 전용 초대, 커스텀 스킴 딥링크와 웹 초대 페이지.
+- **이유**: 이메일을 수집하지 않아도 되고, 말로 불러주거나 아무 메신저로나 전달할 수 있다. 링크가 없으니 딥링크 인입 경로를 앱·랜딩 양쪽에 유지할 필요도, 링크 프리뷰로 코드가 새는 경로도 없다.
+- **코드 공간**: 혼동 문자(0/O/1/I/L)를 뺀 31자 알파벳 × 12자리 ≈ 7.9×10¹⁷ 조합. 서버는 평문 대신 SHA-256 해시로 조회하고 등록 라우트에 레이트리밋이 걸려 있어 무차별 대입은 성립하지 않는다. 형식·알파벳의 유일 출처는 `src/lib/vouchers.ts`.
+- **유효기간**: 별도 TTL 을 두지 않고 발급자 구독의 `expires_at` 을 상속한다 — 구독이 끝나면 코드도 끝난다. 만료 반영은 5분 주기 cron 의 구독 만료 정리와 등록 시점 lazy 판정 두 곳에서 일어난다.
+- **사용 횟수**: 가족 플랜은 `max_members - 1` 회, 그 외는 1회(`plannedMaxUses`). 코드 하나로 정원까지 채운다. 코드가 샜다고 판단되면 재발급이 같은 구독의 기존 코드를 전부 `expired` 로 끊는다.
+- **API**: `POST /api/billing/vouchers/family-share`(발급) / `.../regenerate`(재발급) / `POST /api/code/register`(합류).
 
-### A2. Deterministic TTS caching
+### A4. R2 를 보이스/TTS 정본 저장소로
 
-- **Key**: `sha256(voice_profile_id | text | language | provider)`.
-- **Rejected**: random UUID per request.
-- **Why**: same input → same output → reuse the same R2 object → no duplicate provider spend.
-
-### A3. Family invite: 6-digit code + deep link
-
-- **Choice**: numeric 6-digit code, 10-minute TTL, single-use. Optional deep link `voicealarm://invite/{code}` + web fallback `https://alarm-talk.com/invite/{code}`.
-- **Rejected**: email invites, link-only invites.
-- **Why**: works without collecting email, can be passed verbally / via any chat app, brute-force resistant given short TTL and a rate limit.
-- **Schema**: see `plan_group_invites` in [tech/README.md](../tech/README.md) §2.
-- **API**: `POST /api/billing/vouchers/family-share` (발급) / `POST /api/billing/vouchers/family-share/regenerate` (재발급) / `POST /api/code/register` (합류).
-- **Mitigations**:
-  - Brute force: 1,000,000 combinations × 10-minute TTL × pending uniqueness × rate limiting → practically infeasible.
-  - Link leakage: single-use means at most one redemption; for many invitees the owner issues multiple codes.
-  - Lazy expiry on read avoids a batch job.
-
-### A4. R2 as the canonical voice/TTS store
-
-- **Choice**: Cloudflare R2 with the Workers binding `VOICE_BUCKET`.
-- **Why**: free egress, native binding, no external service dependency, fits inside the Workers compute boundary.
+- **선택**: Workers 바인딩 `VOICE_BUCKET` 으로 Cloudflare R2.
+- **이유**: egress 무료, 네이티브 바인딩, 외부 서비스 의존 없음, Workers 컴퓨트 경계 안에 들어온다.

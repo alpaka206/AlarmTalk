@@ -133,12 +133,12 @@ export function PhonePreview() {
 
           {/* bottom tab bar */}
           <div className="absolute inset-x-0 bottom-0 px-5 pb-4 pt-2 backdrop-blur" style={{ borderTop: `1px solid ${SCREEN_LINE}`, background: "rgba(12,10,8,0.8)" }}>
-            <div className="flex items-center justify-between">
+            {/* 실제 앱 하단 탭과 동일한 3개(알람·목소리·더보기) */}
+            <div className="flex items-center justify-around">
               {[
-                { label: t("tabHome"), active: true },
+                { label: t("tabAlarms"), active: true },
                 { label: t("tabVoice"), active: false },
-                { label: t("tabAlarms"), active: false },
-                { label: t("tabMessages"), active: false },
+                { label: t("tabMore"), active: false },
               ].map((tab) => (
                 <div
                   key={tab.label}

@@ -19,9 +19,8 @@ import java.time.LocalDate
  *   변환 방향이 음→양(주어진 양력 연도 안에서 음력 월/일을 양력으로)이라 윤달·연 경계 모호성은
  *   "결과 양력 연도 != 요청 연도면 폐기"로 결정적으로 걸러진다. 남는 위험은 위 신월 경계의 ±1일뿐이다.
  *
- *   보정 전략(iOS 엔진과 동일한 일반 해법): iOS 는 .chinese / .gregorian 캘린더를 모두
- *   TimeZone(Asia/Seoul) 로 고정해 "민간일(civil day) 버킷팅"을 KST 자정 경계에서 수행한다.
- *   Android 도 이를 그대로 미러한다 — [ChineseCalendar] 의 timeZone 을 Asia/Seoul(UTC+9)로 두고,
+ *   보정 전략: 음력·양력 캘린더를 모두 TimeZone(Asia/Seoul) 로 고정해 "민간일(civil day)
+ *   버킷팅"을 KST 자정 경계에서 수행한다 — [ChineseCalendar] 의 timeZone 을 Asia/Seoul(UTC+9)로 두고,
  *   getTimeInMillis()(그 음력일 00:00 KST 의 UTC epoch)를 KST 자정 기준으로 [LocalDate] 로 환산한다.
  *   이러면 신월 경계가 KST 자정으로 잡혀 2027/2028 같은 경계 연도도 KASI 와 일치하며, 시드 밖
  *   미래 연도까지 같은 원리로 정확하다. (ICU 의 천문 자오선 자체는 여전히 CST 고정이지만, 우리가 읽는
@@ -57,8 +56,8 @@ object IcuLunarConverter : LunarConverter {
     private val KST_CORRECTION_DAYS: Map<Pair<Int, Int>, Int> = emptyMap()
 
     /** 민간일(civil day) 버킷팅 기준 zone = 한국표준시(KST, UTC+9).
-     *  iOS 엔진이 .chinese/.gregorian 을 Asia/Seoul 로 고정한 것을 미러한다. [ChineseCalendar] 의
-     *  timeZone 을 이것으로 두면 신월 경계가 KST 자정에서 잡혀 China-meridian off-by-one 이 사라진다.
+     *  [ChineseCalendar] 의 timeZone 을 이것으로 두면 신월 경계가 KST 자정에서 잡혀
+     *  China-meridian off-by-one 이 사라진다.
      *  lazy 로 둬서 단순히 [IcuLunarConverter] 를 참조(예: 기본 변환기 할당)하는 것만으로는
      *  `android.icu` 클래스를 로드하지 않게 한다 — JVM 단위 테스트가 fake 변환기를 주입할 여지를 준다. */
     private val KST: IcuTimeZone by lazy { IcuTimeZone.getTimeZone("Asia/Seoul") }

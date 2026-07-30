@@ -443,17 +443,13 @@ internal fun PlayModeChip(
     }
 }
 
+// TTS 카테고리(서버 전송값)의 정식 집합. 화면에 칩으로 그리지는 않고,
+// normalizedTtsCategory 의 화이트리스트와 버킷 칩 라벨 조회에만 쓴다.
+// morning = 문구를 안 바꿨을 때의 기본값(서버가 greeting 문구로 이어 붙인다).
 internal val TtsCategories: List<Pair<String, Int>> = listOf(
     "morning" to R.string.editor2_cat_morning,
-    "lunch" to R.string.editor2_cat_lunch,
-    "evening" to R.string.editor2_cat_evening,
-    "night" to R.string.editor2_cat_night,
-    "health" to R.string.editor2_cat_health,
     "medication" to R.string.editor2_cat_medication,
-    "study" to R.string.editor2_cat_study,
-    "cheer" to R.string.editor2_cat_cheer,
     "love" to R.string.editor2_cat_love,
-    "exercise" to R.string.editor2_cat_exercise,
 )
 
 /**
@@ -487,17 +483,15 @@ internal fun freeBucketsFor(
     return FreeBucketOrder.filter { it in available }
 }
 
-// 문구 컨텍스트의 정규화·기본값용 정식 집합(back-compat/normalize 유지). preset 은 새 알람의
-// 보이지 않는 기본값이자 시스템 목소리 사전 렌더 트리거라 여기 남는다. 편집기 선택 목록은
-// 아래 EditorMessageContexts 를 따로 쓴다.
+// 문구 컨텍스트의 정규화·기본값용 정식 집합. preset 은 새 알람의 보이지 않는 기본값이자 시스템
+// 목소리 사전 렌더 트리거라 여기 남는다. 편집기 선택 목록은 아래 EditorMessageContexts 를 따로 쓴다.
+// 목록 밖의 값은 normalizedRandomPromptContext 가 preset 으로 접는다.
 internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값(사전 렌더). 무료 플랜도 이것만.
-    "preset" to R.string.editor2_ctx_preset,
+    // 화면에 그려지는 라벨은 VoiceAudioCard 가 쓰는 editor_msg_mode_preset 하나로 통일한다.
+    "preset" to R.string.editor_msg_mode_preset,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
-    "meal" to R.string.editor2_ctx_meal,
-    "sleep" to R.string.editor2_ctx_sleep,
-    "exercise" to R.string.editor2_ctx_exercise,
     "love" to R.string.editor2_ctx_love,
     // 약(medication): 동적 생성 모드가 아니라 고정 프리셋. randomContext='medication' 는
     // 백엔드에서 'preset' 으로 정규화되고 category='medication' 프리셋 문구를 뽑는다.
@@ -508,7 +502,7 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
 internal const val ManualMessageContext = "manual"
 
 // 편집기 '문구' 선택기(유료) 노출 옵션 — 날씨·운세·사랑(동적) + 약(고정 프리셋) + 직접 입력.
-// 운동은 약으로 대체. 기본문구(preset)·식사·취침은 목록에서 제외(preset 은 보이지 않는 기본값).
+// 기본문구(preset)는 목록에서 제외한다(보이지 않는 기본값).
 internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,

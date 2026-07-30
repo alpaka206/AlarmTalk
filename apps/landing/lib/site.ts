@@ -54,8 +54,8 @@ export function languageAlternates(page = ""): Record<string, string> {
   };
 }
 
+// iOS 앱은 없다 → 스토어 링크는 Google Play 하나뿐이다.
 export const STORE_LINKS = {
-  appStore: process.env.NEXT_PUBLIC_APP_STORE_URL ?? "#",
   googlePlay: process.env.NEXT_PUBLIC_GOOGLE_PLAY_URL ?? "#",
 } as const;
 

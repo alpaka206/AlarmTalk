@@ -736,7 +736,6 @@ export async function generateStockClip(
     profile: { elevenlabs_voice_id: target.elevenlabsVoiceId },
     text: synthesisText,
     language,
-    category: target.category,
   });
   if (attempts.length === 0) {
     throw new Error('No synthesis provider available (ELEVENLABS_API_KEY missing?)');
@@ -752,7 +751,6 @@ export async function generateStockClip(
     languageCode: language,
     text: synthesisText,
     outputFormat: attempt.outputFormat,
-    voiceSettings: attempt.voiceSettings,
   });
 
   const generated = await attempt.synthesize();

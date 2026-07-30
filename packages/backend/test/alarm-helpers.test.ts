@@ -388,7 +388,9 @@ describe('validateAlarmFields — bucket_id', () => {
   });
 
   it('rejects unknown / non-bucket values', () => {
-    expect(validateAlarmFields({ bucket_id: 'sleep' })?.error_code).toBe('INVALID_BUCKET_ID');
+    expect(validateAlarmFields({ bucket_id: 'nope' })?.error_code).toBe('INVALID_BUCKET_ID');
+    // TTS 카테고리이지만 버킷 카테고리는 아니다 — 둘이 섞이면 여기서 잡힌다.
+    expect(validateAlarmFields({ bucket_id: 'morning' })?.error_code).toBe('INVALID_BUCKET_ID');
     expect(validateAlarmFields({ bucket_id: '' })?.error_code).toBe('INVALID_BUCKET_ID');
     expect(
       validateAlarmFields({ bucket_id: 123 as unknown as string })?.error_code,

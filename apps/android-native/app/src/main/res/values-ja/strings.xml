@@ -424,12 +424,12 @@
     <string name="msg_gb_free_plan_voice_alarms_locked">無料プランに切り替わったため、声のアラームがロックされました。再び利用券を登録すると復元されます。</string>
     <string name="msg_gb_gift_failed">プレゼントの送信に失敗しました。</string>
     <string name="msg_gb_google_play_start_failed">Google Play決済を開始できませんでした。しばらくしてからもう一度お試しください。</string>
-    <string name="msg_gb_growth_info_load_failed">成長情報を読み込めませんでした</string>
+    <string name="msg_gb_billing_info_load_failed">プラン情報を読み込めませんでした</string>
     <string name="msg_gb_login_required_apply_plan">プランを適用するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_change_plan">プランを変更するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_create_share_code">共有コードを作成するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_generic">ログインするとご利用いただけます。</string>
-    <string name="msg_gb_login_required_growth_info">成長情報を読み込むには、まずログインしてください</string>
+    <string name="msg_gb_login_required_billing_info">プラン情報を読み込むには、まずログインしてください</string>
 
     <string name="msg_gb_login_required_purchase_plan">プランを購入するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_register_code">コードを登録するには、まずログインしてください</string>
@@ -767,21 +767,10 @@
     <string name="label_sync_state_failed">サーバーに保存できませんでした</string>
     <string name="label_sync_state_device_only">端末のみに保存</string>
     <string name="editor2_cat_morning">起床</string>
-    <string name="editor2_cat_lunch">昼食</string>
-    <string name="editor2_cat_evening">退勤</string>
-    <string name="editor2_cat_night">夜</string>
-    <string name="editor2_cat_health">健康</string>
-    <string name="editor2_cat_study">勉強</string>
-    <string name="editor2_cat_cheer">応援</string>
     <string name="editor2_cat_love">愛</string>
     <string name="editor2_cat_medication">服薬</string>
-    <string name="editor2_cat_exercise">運動</string>
-    <string name="editor2_ctx_preset">基本メッセージ</string>
     <string name="editor2_ctx_wake_weather">天気</string>
     <string name="editor2_ctx_wake_fortune">運勢</string>
-    <string name="editor2_ctx_meal">食事</string>
-    <string name="editor2_ctx_sleep">就寝</string>
-    <string name="editor2_ctx_exercise">運動</string>
     <string name="editor2_ctx_love">愛</string>
     <string name="editor2_ctx_medication">薬</string>
     <string name="editor2_repeat_every_day">毎日</string>

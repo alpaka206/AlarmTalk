@@ -1,331 +1,157 @@
 # QA
 
-Test plan, test cases, test scenarios, bug-report template, and QA report shape for AlarmTalk.
+목표는 하나다. **"알람이 안 울렸다"를 0으로.** 나머지는 전부 부차적이다.
 
-## 1. Goal
+- 릴리스 전 실기기 회귀: `apps/android-native/README.md` 의 Physical Device Checklist
+- 지금 진행 중인 검증 항목: [`dev-test-handoff.md`](dev-test-handoff.md)
+- 자동 테스트: 백엔드 Vitest(+ in-memory libSQL), Android JUnit — CI 에서 돈다
 
-Drive the "alarm did not ring" rate to zero on real devices. Everything else is secondary.
+## 테스트 케이스
 
-## 2. Scope
+ID 규칙 `TC-<영역>-<번호>`. **P0 은 릴리스 차단**, P1 은 다음 릴리스 차단, P2 는 여유 있을 때.
 
-| Layer | Tool | Owner |
-|---|---|---|
-| Backend unit / contract | Vitest + in-memory libSQL | Developer |
-| Android unit | JUnit | Developer |
-| Android instrumented | Compose UI Test (planned) | Developer |
-| Manual physical-device QA | `apps/android-native/README.md` checklist | QA |
-| Performance / load | k6 (planned) | Ops |
-| Security | OWASP ZAP active scan + manual review | Ops |
-| Acceptance | Closed Beta interviews | Product |
+### 알람 (ALM)
 
-Out of scope this round: iOS production verification (PoC level only).
-
-## 3. Entry / exit criteria
-
-### Entry
-
-- `develop` branch passes typecheck, lint, and tests.
-- All Closed Beta P0 features merged.
-- Staging API deployed; staging Turso DB seeded.
-- At least two physical test devices available.
-
-### Exit (Closed Beta)
-
-- 0 open P0.
-- ≤ 3 open P1, each with a documented workaround.
-- 100 alarm trials on the verified physical device → 100 rings, 0 misses.
-- API p95 < 500 ms on staging.
-
-## 4. Test schedule (per release)
-
-| D-day | Action |
-|---|---|
-| D-14 | Test data prep, scenario freeze |
-| D-10 | Add new test cases, seed staging |
-| D-7 | Start QA — checklist on physical devices |
-| D-5 | Internal bug bash |
-| D-3 | UAT closes, remaining P0/P1 reviewed |
-| D-1 | Release candidate frozen; verify secrets / API keys |
-| D-day | Release |
-
-## 5. Test cases
-
-ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / priority.
-
-### Alarm (ALM)
-
-| ID | Title | Steps | Expected | P |
+| ID | 제목 | 절차 | 기대 | P |
 |---|---|---|---|---|
-| TC-ALM-001 | Alarm 1 minute from now | "+" → time = now+1 min → save | Rings at the exact minute; RingingActivity shown | P0 |
-| TC-ALM-002 | Weekday repeat | Select Mon–Fri → save | Next fire time is computed for the next weekday | P0 |
-| TC-ALM-003 | Rings on lock screen | Lock device before fire time | Screen wakes; RingingActivity appears over lock screen | P0 |
-| TC-ALM-004 | Flight mode | Enable airplane mode → wait | Plays from local cache; no network calls in logcat | P0 |
-| TC-ALM-005 | Doze / idle | `adb shell dumpsys deviceidle force-idle` | Rings on time | P0 |
-| TC-ALM-006 | Snooze (5 min) | Tap snooze | Next alarm registered exactly 5 minutes later | P0 |
-| TC-ALM-007 | Dismiss | Tap dismiss | Service stops; one-shot → inactive; repeat → next day registered | P0 |
-| TC-ALM-008 | Boot restore | Schedule alarm → reboot | All active alarms reappear in `dumpsys alarm` | P0 |
-| TC-ALM-009 | Holiday off | Toggle holiday-off → schedule alarm on a holiday | Alarm skips the holiday | P2 |
-| TC-ALM-010 | Copy alarm | Swipe → copy | Reuses cached local audio; no provider call | P2 |
-| TC-ALM-011 | Swipe delete | Swipe left → confirm | Removed from list, Room, and AlarmManager | P1 |
-| TC-ALM-012 | Toggle ON/OFF | Tap card switch | OFF cancels OS alarm; ON re-registers | P0 |
-| TC-ALM-013 | Bucket rotation playback | Free preset alarm fires → dismiss → let it fire again; separately snooze once | Dismiss advances to the next clip in the bucket (+1); snooze replays the same clip | P1 |
-| TC-ALM-014 | Clone prerender flight-mode fire | Paid clone voice alarm with prerendered clips → airplane mode → wait for fire | Rings from local prerendered clip, no network; spoken phrase matches the expected clip text for that category/variant | P0 |
+| TC-ALM-001 | 1분 뒤 알람 | "+" → 지금+1분 → 저장 | 정확히 그 분에 울리고 RingingActivity 표시 | P0 |
+| TC-ALM-002 | 요일 반복 | 월~금 선택 → 저장 | 다음 평일로 발사 시각 계산 | P0 |
+| TC-ALM-003 | 잠금화면 울림 | 발사 전 화면 잠금 | 화면 깨어나며 잠금화면 위에 RingingActivity | P0 |
+| TC-ALM-004 | 비행기모드 | 비행기모드 켜고 대기 | 로컬 캐시로 재생, logcat 에 네트워크 호출 없음 | P0 |
+| TC-ALM-005 | Doze | `adb shell dumpsys deviceidle force-idle` | 제시각에 울림 | P0 |
+| TC-ALM-006 | 스누즈(5분) | 스누즈 탭 | 정확히 5분 뒤 알람 재등록 | P0 |
+| TC-ALM-007 | 해제 | 해제 탭 | 서비스 종료, 1회성=비활성 / 반복=다음날 등록 | P0 |
+| TC-ALM-008 | 부팅 복원 | 알람 예약 → 재부팅 | `dumpsys alarm` 에 활성 알람 전부 복귀 | P0 |
+| TC-ALM-009 | 공휴일 끄기 | 공휴일 끄기 켠 뒤 공휴일에 알람 | 그날은 건너뜀 | P2 |
+| TC-ALM-010 | 알람 복사 | 스와이프 → 복사 | 캐시된 로컬 오디오 재사용, provider 호출 없음 | P2 |
+| TC-ALM-011 | 스와이프 삭제 | 왼쪽 스와이프 → 확인 | 목록·Room·AlarmManager 에서 모두 제거 | P1 |
+| TC-ALM-012 | ON/OFF 토글 | 카드 스위치 탭 | OFF=OS 예약 취소, ON=재등록 | P0 |
+| TC-ALM-013 | 버킷 회전 재생 | 무료 버킷 알람 발사 → 해제 후 재발사, 별도로 스누즈 1회 | 해제하면 버킷의 다음 클립(+1), 스누즈는 같은 클립 재생 | P1 |
+| TC-ALM-014 | 사전렌더 비행기모드 발사 | 유료 클론 목소리(사전렌더 완료) → 비행기모드 → 발사 대기 | 로컬 사전렌더 클립으로 울리고 네트워크 없음, 들리는 문구가 해당 카테고리·변형의 예상 문구와 일치 | P0 |
 
-### Voice profile (VOC)
+### 목소리 (VOC)
 
-| ID | Title | Steps | Expected | P |
+| ID | 제목 | 절차 | 기대 | P |
 |---|---|---|---|---|
-| TC-VOC-001 | 30-second record | Record → stop within 30 s | Profile transitions to `ready` | P0 |
-| TC-VOC-002 | File upload over 30 s | Upload 1-minute file | Auto-trimmed to first 30 s; succeeds | P0 |
-| TC-VOC-003 | 1-profile limit | Try to create a 2nd official profile | `VOICE_LIMIT_REACHED` shown; recording is blocked | P1 |
-| TC-VOC-004 | Family share | Owner creates profile | Member sees it in shared voices (read-only) | P1 |
-| TC-VOC-005 | Mic denied | Deny mic permission → tap record | Permission guide + system settings deep link | P0 |
-| TC-VOC-006 | Rename | Edit name → save | List refreshes; PATCH 200 | P1 |
+| TC-VOC-001 | 30초 녹음 | 30초 안에 녹음 → 정지 | 프로필이 `ready` 로 전환 | P0 |
+| TC-VOC-002 | 30초 초과 업로드 | 1분짜리 파일 업로드 | 앞 30초로 자동 트림 후 성공 | P0 |
+| TC-VOC-003 | 슬롯 상한 | 상한을 넘겨 클론 생성 시도 | `VOICE_LIMIT_REACHED` 안내, 녹음 차단 | P1 |
+| TC-VOC-004 | 가족 공유 | 오너가 프로필 생성 | 멤버의 공유 목소리 탭에 읽기전용으로 노출 | P1 |
+| TC-VOC-005 | 마이크 거부 | 권한 거부 후 녹음 탭 | 권한 안내 + 시스템 설정 딥링크 | P0 |
+| TC-VOC-006 | 이름 변경 | 이름 수정 → 저장 | PATCH 200, 목록 갱신 | P1 |
 
-### TTS / content (TTS)
+### 문구/TTS (TTS)
 
-| ID | Title | Steps | Expected | P |
+| ID | 제목 | 절차 | 기대 | P |
 |---|---|---|---|---|
-| TC-TTS-001 | Same input → cache hit | Save the same (profile, text, lang) twice | First saves with provider; second only reads R2 | P0 |
-| TC-TTS-002 | Preset message | Pick category + language | Fields auto-fill; save succeeds | P1 |
-| TC-TTS-003 | Monthly manual-text quota | Exhaust the monthly manual-input quota (personal 30 / couple 50 / family 100, KST month, group shared pool) → save one more | 429 `MANUAL_TTS_QUOTA_EXCEEDED` with `manual_quota` remaining=0; UI shows quota guidance | P1 |
-| TC-TTS-004 | Voice-only ring | Let voice-only alarm fire | Local file plays; no fetch | P0 |
-| TC-TTS-005 | Very long text | Try near upper limit | Server returns 400 with reason | P2 |
-| TC-TTS-006 | Weather-unresolved fallback clip | Clone weather alarm; keep device offline through the 48 h prep window so no weather index snapshot arrives → fire | Plays the dedicated "couldn't check the weather" guidance clip (last weather variant), not silence and not a wrong sunny clip | P1 |
+| TC-TTS-001 | 같은 입력 = 캐시 히트 | 같은 (프로필, 문구, 언어)로 두 번 저장 | 첫 번째만 provider 합성, 두 번째는 R2 읽기만 | P0 |
+| TC-TTS-002 | 기본 문구 | 문구 선택기에서 '직접 입력' 대신 기본/고정 문구 컨텍스트 선택 | 편집기에 문구 입력란이 뜨지 않고 그대로 저장 성공, 발사 때 서버 스톡 클립 문구가 재생 | P1 |
+| TC-TTS-003 | 직접입력 월 쿼터 | 월 한도(개인 30 / 커플 50 / 가족 100, KST 월 경계, 그룹 공유 풀) 소진 후 1회 더 저장 | 429 `MANUAL_TTS_QUOTA_EXCEEDED`, `manual_quota.remaining=0`, UI 에 쿼터 안내 | P1 |
+| TC-TTS-004 | 목소리 전용 울림 | 목소리 전용 알람 발사 | 로컬 파일 재생, fetch 없음 | P0 |
+| TC-TTS-005 | 초장문 | 상한 근처 길이로 시도 | 서버가 사유와 함께 400 | P2 |
+| TC-TTS-006 | 날씨 미해결 폴백 | 클론 날씨 알람에서 48시간 준비창 내내 오프라인 → 발사 | 무음·오답('맑음') 대신 마지막 안내 클립("날씨를 못 확인했어요") 재생 | P1 |
 
-### Auth (AUTH)
+### 인증 (AUTH)
 
-| ID | Title | Steps | Expected | P |
+| ID | 제목 | 절차 | 기대 | P |
 |---|---|---|---|---|
-| TC-AUTH-001 | Email login success | Valid credentials | 200, JWT stored in SessionStore | P0 |
-| TC-AUTH-002 | Wrong password | Invalid credentials | 401, generic message (no field leak) | P0 |
-| TC-AUTH-003 | Google sign-in | Provide Google ID token | Account created/linked, signed in | P0 |
-| TC-AUTH-004 | JWT expired | Token > 7 days old | 401; app prompts re-sign-in | P1 |
-| TC-AUTH-005 | Account delete | DELETE /api/user/me | Cascading delete; R2 voice objects queued | P1 |
+| TC-AUTH-001 | 이메일 로그인 | 정상 자격증명 | 200, SessionStore 에 JWT 저장 | P0 |
+| TC-AUTH-002 | 잘못된 비밀번호 | 틀린 자격증명 | 401, 어느 필드가 틀렸는지 새지 않는 일반 메시지 | P0 |
+| TC-AUTH-003 | 구글 로그인 | Google ID 토큰 전달 | 계정 생성/연결 후 로그인 | P0 |
+| TC-AUTH-004 | JWT 만료 | 7일 지난 토큰 | 401, 앱이 재로그인 유도 | P1 |
+| TC-AUTH-005 | 회원 탈퇴 | DELETE /api/user/me | 연쇄 삭제, R2 목소리 오브젝트 삭제 큐 적재 | P1 |
 
-### Family / code (FAM)
+### 가족/코드 (FAM)
 
-| ID | Title | Steps | Expected | P |
+| ID | 제목 | 절차 | 기대 | P |
 |---|---|---|---|---|
-| TC-FAM-001 | Invite accept | Owner issues code → member redeems | Member inserted; status `used`; shared voices appear | P0 |
-| TC-FAM-002 | Expired code | Redeem after 10 minutes | `EXPIRED` error | P1 |
-| TC-FAM-003 | Group full | 7th member tries to join | `GROUP_FULL` error | P1 |
-| TC-FAM-004 | Self invite | Owner redeems own code | `SELF_INVITE` error | P2 |
-| TC-FAM-005 | Group leave | Member leaves | Shared voices revoked instantly | P1 |
-| TC-FAM-006 | Ownership transfer | Owner transfers to member | Plan / subscription follows | P1 |
-| TC-FAM-007 | FCM instant delivery | Recipient app in background → sender creates a family alarm for them | Recipient device receives data-only FCM within seconds; alarm is pulled and scheduled locally without opening the app | P1 |
-| TC-FAM-008 | Recipient delete = persistent decline | Recipient deletes a received family alarm → re-sync / app restart | Decline persisted server-side (`alarm_recipient_state`); alarm never reappears for the recipient; sender's alarm unaffected | P1 |
+| TC-FAM-001 | 초대 수락 | 오너가 코드 발급 → 멤버 등록 | 멤버 추가, 코드 `used`, 공유 목소리 노출 | P0 |
+| TC-FAM-002 | 만료 코드 | TTL 지난 뒤 등록 | `EXPIRED` | P1 |
+| TC-FAM-003 | 정원 초과 | 정원을 넘겨 참여 시도 | `GROUP_FULL` | P1 |
+| TC-FAM-004 | 셀프 초대 | 오너가 자기 코드 등록 | `SELF_INVITE` | P2 |
+| TC-FAM-005 | 그룹 탈퇴 | 멤버 탈퇴 | 공유 목소리 즉시 회수 | P1 |
+| TC-FAM-006 | 오너 이전 | 오너가 멤버에게 이전 | 플랜/구독이 따라감 | P1 |
+| TC-FAM-007 | FCM 즉시배달 | 수신자 앱 백그라운드 → 발신자가 가족 알람 생성 | 수 초 내 data-only FCM 수신, 앱을 열지 않아도 pull·로컬 예약 | P1 |
+| TC-FAM-008 | 수신자 삭제 = 영구 거절 | 수신자가 받은 가족 알람 삭제 → 재동기화/앱 재시작 | `alarm_recipient_state` 에 거절 영속, 다시 안 나타남, 발신자 알람은 무영향 | P1 |
 
-### Billing (BILL)
+### 결제 (BILL)
 
-| ID | Title | Steps | Expected | P |
+| ID | 제목 | 절차 | 기대 | P |
 |---|---|---|---|---|
-| TC-BILL-001 | Voucher redemption | Enter `VA-XXXX-XXXX-XXXX` | Subscription created; plan upgraded | P1 |
-| TC-BILL-002 | Expiry tick | Force expiry → cron tick | Status `expired`; plan = free | P1 |
-| TC-BILL-003 | Invalid format | Mix letters and digits | `INVALID_FORMAT` error | P2 |
+| TC-BILL-001 | 바우처 등록 | 정상 형식 코드 입력 | 구독 생성, 플랜 상향 | P1 |
+| TC-BILL-002 | 만료 처리 | 만료 강제 → cron 틱 | 상태 `expired`, 플랜 free | P1 |
+| TC-BILL-003 | 형식 오류 | 형식에 맞지 않는 코드 | `INVALID_FORMAT` | P2 |
 
-### Sync (SYNC)
+### 동기화 (SYNC)
 
-| ID | Title | Steps | Expected | P |
+| ID | 제목 | 절차 | 기대 | P |
 |---|---|---|---|---|
-| TC-SYNC-001 | Sync now | Edit 3 local alarms → sync | 3 rows synced; matches on server | P1 |
-| TC-SYNC-002 | Cross-device reflect | Device A edit → Device B sync | Room on device B reflects changes | P1 |
-| TC-SYNC-003 | Ring during outage | Disable network during ring | Local alarm rings; queued sync resumes later | P0 |
+| TC-SYNC-001 | 알람 탭 진입 동기화 | 로컬 알람 3개 수정 → 다른 탭으로 이동 → 60초 지난 뒤 알람 탭 재진입(진입 시 자동 실행, 60초 스로틀) | 3행 반영, 서버와 일치 | P1 |
+| TC-SYNC-002 | 기기 간 반영 | A 기기 수정 → B 기기 동기화 | B 의 Room 에 반영 | P1 |
+| TC-SYNC-003 | 통신 장애 중 울림 | 울리는 동안 네트워크 차단 | 로컬 알람 정상 울림, 큐잉된 동기화는 복구 후 재개 | P0 |
 
-### Security (SEC)
+### 보안 (SEC)
 
-| ID | Title | Steps | Expected | P |
+| ID | 제목 | 절차 | 기대 | P |
 |---|---|---|---|---|
-| TC-SEC-001 | Rate limit | 80 requests in 1 minute | 429, `RATE_LIMITED` | P1 |
-| TC-SEC-002 | Body too large | 600 KB body | 413 | P1 |
-| TC-SEC-003 | Key in client | `grep` client builds for keys | No API key strings present | P0 |
-| TC-SEC-004 | HTTPS only | Attempt http:// | Redirected to https:// | P0 |
+| TC-SEC-001 | 레이트 리밋 | 1분에 80요청 | 429 `RATE_LIMITED` | P1 |
+| TC-SEC-002 | 과대 바디 | 600KB 바디 | 413 | P1 |
+| TC-SEC-003 | 클라 내 키 노출 | 빌드 산출물 grep | API 키 문자열 없음 | P0 |
+| TC-SEC-004 | HTTPS 전용 | http:// 접근 | https:// 로 리다이렉트 | P0 |
 
-### Accessibility (A11Y)
+### 접근성·다국어 (A11Y / I18N)
 
-| ID | Title | Expected | P |
+| ID | 제목 | 기대 | P |
 |---|---|---|---|
-| TC-A11Y-001 | TalkBack | Every card/button has spoken label | P1 |
-| TC-A11Y-002 | Font scale 200% | Layout does not break | P2 |
-| TC-A11Y-003 | Dark mode | Contrast ≥ 4.5:1; tokens consistent | P1 |
+| TC-A11Y-001 | TalkBack | 모든 카드/버튼에 읽히는 라벨 | P1 |
+| TC-A11Y-002 | 글꼴 200% | 레이아웃 안 깨짐 | P2 |
+| TC-A11Y-003 | 다크 모드 | 대비 4.5:1 이상, 토큰 일관 | P1 |
+| TC-I18N-001 | 영어 전환 | 모든 화면 번역, 레이아웃 유지 | P1 |
+| TC-I18N-002 | 언어별 폰트 | Pretendard / Noto 폴백 정상 | P2 |
 
-### Internationalization (I18N)
+## E2E 시나리오 (수동)
 
-| ID | Title | Expected | P |
-|---|---|---|---|
-| TC-I18N-001 | Switch to English | Every screen translated; layout stable | P1 |
-| TC-I18N-002 | Per-language fonts | Pretendard / Noto fallbacks render | P2 |
+**TS-1. 신규 가입 → 첫 울림** (유료 계정 전제)
+가입(8자 이상 비밀번호) → 알림·정확한 알람·전체화면 권한 허용 → **코드 등록이나 결제로 유료 플랜을 먼저 붙인다**(무료는 개인 목소리 녹음·업로드와 그 목소리 알람이 `VOICE_FEATURE_REQUIRES_PAID_PLAN` 로 막힌다) → 목소리 탭에서 15초 녹음 → 알람 탭에서 지금+2분·목소리+기본 문구로 저장 → 화면 잠금 후 대기.
+기대: 전체화면으로 울리고, 해제하면 소리·진동 정지.
 
-## 6. Test scenarios (end-to-end manual)
+**TS-2. 가족 공유 + 상대 목소리 알람**
+오너(가족/커플 플랜, 목소리 1개) → 초대 코드 발급 → 멤버(B 기기)가 코드 등록 → B 가 공유 목소리로 알람 생성.
+기대: 오너 목소리로 B 기기에서 발사, 재생은 로컬 캐시만 사용.
 
-### TS-1. New user onboarding to first ring
+**TS-3. 서버 장애 내성**
+알람 3개 예약된 상태에서 백엔드를 내림 → 앱 시작 시 목록 로드 실패 배너 → 발사 시각 도달.
+기대: 정상 울림·해제 가능. 백엔드 복구 후 알람 탭에 다시 들어가면(진입 시 동기화가 자동 실행된다) 큐가 플러시되고 배너가 사라진다.
 
-1. Fresh install → email sign-up (8+ char password).
-2. Grant notification, exact alarm, full-screen permissions.
-3. Voice tab → "+ New voice" → record 15 s, name it.
-4. Alarm tab → "+ New alarm" → time = now+2 min, voice profile + a preset message, save.
-5. Lock the device, wait.
-6. Expected: alarm rings full-screen; dismiss stops sound and vibration.
+**TS-4. 탈퇴**
+더보기 탭 → 회원 탈퇴 → 확인.
+기대: 200, 연쇄 삭제 완료, R2 목소리 삭제 큐 적재. 같은 이메일 재가입 시 빈 상태로 시작.
 
-### TS-2. Family share and partner alarm
+**TS-5. 부팅 복원 (기기별)**
+지금+10분 1회성 알람 예약 → 재부팅 → `adb shell dumpsys alarm | grep com.alarmtalk.app`.
+기대: 재등록됨. 로그에 `Restore receiver invoked`, `Boot restore complete`.
 
-1. Owner has a `family` or `couple` plan and one voice profile.
-2. Owner: People → Family → "Make invite code". Six digits, 10-minute TTL.
-3. Member (Device B) signs in → Account → "Register code" → enters 6 digits.
-4. Member: New alarm → mode = voice → audio source = voice profile → shared voices tab → pick owner profile → save.
-5. Expected: alarm fires from owner's voice on Member's device using local cache only.
+**TS-6. 초대 코드 무차별 대입**
+1분 안에 무효 코드 100회 시도.
+기대: 한도 초과 시 429, 로그에 `RATE_LIMITED`.
 
-### TS-3. Server outage resilience
+## 버그 우선순위
 
-1. Pre-condition: user has 3 alarms scheduled.
-2. Take staging Workers offline.
-3. App start → list load fails (banner shown).
-4. Alarm fires at scheduled time. Expected: rings normally; user can dismiss.
-5. Bring Workers back. Tap "Sync now". Expected: queues flush; banner clears.
-
-### TS-4. Subscription cycle
-
-1. Redeem a voucher → Personal plan active.
-2. Manipulate next payment date to past (staging tool).
-3. Wait for the 1-minute cron tick.
-4. Expected: plan drops to free.
-5. Redeem another voucher → Personal active again.
-
-### TS-5. Account deletion
-
-1. Account → Account deletion → confirm.
-2. Expected: API returns 200; cascading delete completes; R2 voice queued for deletion.
-3. Re-register the same email → succeeds with a clean slate.
-
-### TS-6. Boot restore (per device)
-
-1. Schedule a one-shot alarm at now+10 min.
-2. Reboot the device.
-3. `adb shell dumpsys alarm | grep voicealarm`.
-4. Expected: the alarm is re-registered. Logs show `Restore receiver invoked`, `Boot restore complete`.
-
-### TS-7. Brute-force invite code
-
-1. Script 100 invalid 6-digit attempts in under a minute against the staging endpoint.
-2. Expected: rate-limited after 60; logs show `RATE_LIMITED` entries.
-
-### TS-8. Bulk delete / unselect
-
-1. Create 10 alarms, edit / delete them in sequence.
-2. Expected: no leaks; OS alarm count matches the active subset.
-
-### TS-9. International UAT
-
-1. Switch UI to English; set device timezone JST.
-2. Create alarm; observe local-time rendering.
-3. Expected: layout intact; times rendered in the user-local timezone.
-
-## 7. Bug report template
-
-```markdown
-## Summary
-<one line>
-
-## Environment
-- App version: vX.Y.Z (build N)
-- Device: <manufacturer / model / OS version>
-- Server: production / staging
-- Network: Wi-Fi / cellular / airplane mode
-- Account: <test account email>
-- Time: <ISO 8601 + timezone>
-
-## Steps to reproduce
-1. ...
-2. ...
-
-## Actual result
-<screenshot / log snippet>
-
-## Expected result
-<...>
-
-## Logs / artifacts
-```
-adb logcat | grep AlarmTalk
-...
-```
-
-## Impact
-- Affected users:
-- Workaround:
-
-## Attachments
-- screenshots / screen recording
-- HAR / access logs / query results
-
-## Meta
-- Labels: `area:android`, `type:bug`, `priority:p?`
-- Assignee:
-```
-
-### Priority
-
-| P | Trigger | Action |
+| P | 기준 | 대응 |
 |---|---|---|
-| P0 | Alarm miss, data loss, security issue | Hotfix immediately, hold release |
-| P1 | Core flow broken (sign-in, sync) | Next release blocker |
-| P2 | UX defects, recoverable issues | Within a few releases |
-| P3 | Suggestions, polish | Backlog |
+| P0 | 알람 미발사, 데이터 유실, 보안 문제 | 즉시 핫픽스, 릴리스 보류 |
+| P1 | 핵심 플로우 파손(로그인, 동기화) | 다음 릴리스 차단 |
+| P2 | UX 결함, 복구 가능한 문제 | 몇 릴리스 안에 |
+| P3 | 제안, 다듬기 | 백로그 |
 
-### Suggested labels
-
-- `area:android`, `area:ios`, `area:backend`, `area:landing`
-- `type:bug`, `type:flaky`, `type:regression`
-- `priority:p0` … `priority:p3`
-- `status:investigating`, `status:fixed`, `status:waiting-info`
-- `device:<short-name>`
-
-### Artifact collection commands (Android)
+## 로그·산출물 수집 (Android)
 
 ```bash
 adb logcat -c
 adb logcat | grep AlarmTalk > logcat.txt
-adb shell dumpsys alarm | grep voicealarm > alarms_dump.txt
+adb shell dumpsys alarm | grep com.alarmtalk.app > alarms_dump.txt
 adb bugreport bugreport_$(date +%Y%m%d_%H%M%S).zip
 ```
 
-## 8. QA report shape (per release)
-
-A QA report records what was tested, what passed, and what is left.
-
-```markdown
-## QA Report — <release name / date>
-
-### Coverage
-- Manual test cases run: N / N
-- Automated tests:
-  - Backend (vitest): <count> files
-  - Android unit: <count> files
-  - Android instrumented: <count> files
-
-### Verified facts
-- Alarm rings on device <X> / Android <Y>: <100/100>
-- API p95 (staging): <ms>
-- TTS deterministic cache hit rate: <%>
-
-### Open issues
-- P0: <count>
-- P1: <count>
-- P2: <count>
-
-### Notes
-- ...
-
-### Decision
-- Ship / hold / partial
-```
-
-### Sources of verified test counts in this repo
-
-```bash
-find packages/backend/test -name "*.test.ts" | wc -l
-find apps/android-native -path "*/test/*" -name "*.kt" | wc -l
-find apps/android-native -path "*/androidTest/*" -name "*.kt" | wc -l
-```
-
-Any concrete number in a QA report should be reproducible by running these commands or by repeating the Physical Device Checklist in `apps/android-native/README.md`.
+Room DB 를 직접 까야 할 땐 `.db`·`-wal`·`-shm` 세 파일을 **force-stop 후에** 같이 꺼낸다 —
+방법과 함정은 [`dev-test-handoff.md`](dev-test-handoff.md) 참고.

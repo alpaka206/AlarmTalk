@@ -415,12 +415,12 @@
     <string name="msg_gb_free_plan_voice_alarms_locked">You\'ve switched to the free plan, so your voice alarms are locked. They\'ll be restored when you resubscribe.</string>
     <string name="msg_gb_gift_failed">Couldn\'t send the gift.</string>
     <string name="msg_gb_google_play_start_failed">Couldn\'t start the Google Play payment. Please try again in a moment.</string>
-    <string name="msg_gb_growth_info_load_failed">Couldn\'t load your growth info</string>
+    <string name="msg_gb_billing_info_load_failed">Couldn\'t load your plan info</string>
     <string name="msg_gb_login_required_apply_plan">Please log in first to apply a plan.</string>
     <string name="msg_gb_login_required_change_plan">Please log in first to change your plan.</string>
     <string name="msg_gb_login_required_create_share_code">Please log in first to create a share code.</string>
     <string name="msg_gb_login_required_generic">Please log in to use this.</string>
-    <string name="msg_gb_login_required_growth_info">Please log in first to load your growth info</string>
+    <string name="msg_gb_login_required_billing_info">Please log in first to load your plan info</string>
 
     <string name="msg_gb_login_required_purchase_plan">Please log in first to purchase a plan.</string>
     <string name="msg_gb_login_required_register_code">Please log in first to register a code</string>
@@ -759,21 +759,10 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="label_sync_state_failed">Couldn\'t save to the server</string>
     <string name="label_sync_state_device_only">Saved on device only</string>
     <string name="editor2_cat_morning">Wake up</string>
-    <string name="editor2_cat_lunch">Lunch</string>
-    <string name="editor2_cat_evening">Off work</string>
-    <string name="editor2_cat_night">Night</string>
-    <string name="editor2_cat_health">Health</string>
-    <string name="editor2_cat_study">Study</string>
-    <string name="editor2_cat_cheer">Cheer up</string>
     <string name="editor2_cat_love">Love</string>
     <string name="editor2_cat_medication">Medication</string>
-    <string name="editor2_cat_exercise">Exercise</string>
-    <string name="editor2_ctx_preset">Default message</string>
     <string name="editor2_ctx_wake_weather">Weather</string>
     <string name="editor2_ctx_wake_fortune">Fortune</string>
-    <string name="editor2_ctx_meal">Meal</string>
-    <string name="editor2_ctx_sleep">Bedtime</string>
-    <string name="editor2_ctx_exercise">Exercise</string>
     <string name="editor2_ctx_love">Love</string>
     <string name="editor2_ctx_medication">Meds</string>
     <string name="editor2_repeat_every_day">Every day</string>
