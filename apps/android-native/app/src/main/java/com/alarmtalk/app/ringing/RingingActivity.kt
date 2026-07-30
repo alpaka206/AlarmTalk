@@ -66,6 +66,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.graphics.graphicsLayer
 import com.alarmtalk.app.AlarmTalkDarkColorScheme
 import com.alarmtalk.app.R
+import com.alarmtalk.app.stripDeliveryTags
 import com.alarmtalk.app.WakerDialogShape
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.alarm.RingingService
@@ -515,12 +516,6 @@ private fun defaultRingingUiState(context: android.content.Context): RingingUiSt
     )
 }
 
-// elevenlabs delivery 태그(대괄호 안 지시문) 형태. 서버 normalizeAlarmTextWithoutTags 와 동일 규격.
-private val RINGING_DELIVERY_TAG_RE = Regex("""\[[a-z][a-z -]{1,32}]""", RegexOption.IGNORE_CASE)
-
-private fun String.stripDeliveryTags(): String =
-    replace(RINGING_DELIVERY_TAG_RE, " ").replace(Regex("""\s+"""), " ").trim()
-
 private fun AlarmEntity.toRingingUiState(
     context: android.content.Context,
     playbackVariantIndex: Int?,
@@ -529,7 +524,9 @@ private fun AlarmEntity.toRingingUiState(
         .takeIf { it.isNotBlank() && it != context.getString(R.string.rd_default_alarm_label) }
     // 표시 텍스트: 버킷 알람이면 발사 시 고른 variant 의 문구를 쓴다(오디오와 같은 bucketVariantIndex).
     // 그래야 날씨/운세 매칭 버킷에서 음성('비 와요')과 잠금화면 문구가 어긋나지 않는다. 버킷이 아니면
-    // 기존 voiceText. 서버가 delivery 태그를 이미 제거하지만 과거분/회귀 대비 랜덤 문구는 한 번 더 벗긴다.
+    // 기존 voiceText. 서버가 delivery 태그를 이미 제거하지만 과거분/회귀 대비 한 번 더 벗긴다 —
+    // 직접 입력 문구도 예외가 아니다. 태그가 섞여 저장된 옛 문구를 편집기에서 한 번 고치면
+    // '사용자가 친 대괄호'가 되어 계속 남는데, 사용자는 그걸 쓴 적이 없다.
     // 빈/공백 문구는 null 로 취급해 대표 voiceText 로 폴백한다(Elvis 는 null 에만 걸려, "" 면 잠금화면
     // 문구가 통째로 사라진다). 한 variant 의 text 가 비어도 대표 문구는 보인다.
     val bucketText = if (bucketId != null && playbackVariantIndex != null) {
@@ -539,7 +536,7 @@ private fun AlarmEntity.toRingingUiState(
     }
     val displayedVoiceText = bucketText ?: voiceText
     val voiceMessage = displayedVoiceText
-        ?.let { raw -> if (voiceRandomPrompt) raw.stripDeliveryTags() else raw.trim() }
+        ?.let { raw -> raw.stripDeliveryTags() }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
     val snoozeAvailable = snoozeEnabled &&
         (

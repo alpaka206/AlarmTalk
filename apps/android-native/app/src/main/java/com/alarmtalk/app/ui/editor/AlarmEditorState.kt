@@ -110,7 +110,10 @@ internal class AlarmEditorState(
     // 알람별 호칭 덮어쓰기. 비어 있으면 선택한 목소리 프로필의 호칭(listener_title)을 그대로 쓴다.
     // (DB 저장 없이 편집 세션 동안만 유지 — TTS 생성 요청의 listenerTitle 로만 전달)
     var voiceListenerTitleOverride by mutableStateOf(voiceListenerTitle ?: "")
-    var voiceText by mutableStateOf(voiceText ?: "")
+    // 표시·편집 문구에는 delivery 태그가 남으면 안 된다. 옛 행에 섞여 있던 태그를 그대로
+    // 실으면 사용자가 그걸 자기 문구로 알고 고치게 되고, 그 순간 서버는 '사용자가 친 대괄호'로
+    // 보아 영구 보존한다. 실을 때 한 번 벗겨 그 고리를 끊는다.
+    var voiceText by mutableStateOf(voiceText?.stripDeliveryTags() ?: "")
     var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
     var voiceLanguage by mutableStateOf(supportedAppVoiceLanguage(voiceLanguage))
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
