@@ -1705,7 +1705,7 @@ internal fun VoiceProfileManagementPanel(
                                 val previewVoice = confirmNewVoice
                                 if (previewVoice != null) {
                                     Text(
-                                        text = stringResource(R.string.voices_confirm_new_title, previewVoice.name),
+                                        text = stringResource(R.string.voices_confirm_new_title),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )

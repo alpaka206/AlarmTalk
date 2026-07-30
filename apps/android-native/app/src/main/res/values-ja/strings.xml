@@ -634,11 +634,11 @@
     <string name="voices_preparing">準備中</string>
     <string name="voices_preparing_audio">音声を準備しています。</string>
     <string name="voices_preview_play_failed">プレビューを再生できませんでした。</string>
-    <string name="voices_confirm_new_title">「%1$s」、このまま確定しますか?</string>
-    <string name="voices_confirm_new_body">確定すると今月の登録を1回使い、あとで削除しても翌月まで新しく作れません。気に入らなければ確定する前に何度でも作り直せます。</string>
+    <string name="voices_confirm_new_title">この声で保存しますか?</string>
+    <string name="voices_confirm_new_body">保存すると今月作れる声を使い切ります。削除しても翌月までは新しく作れないので、気に入らなければ保存する前に作り直してください。</string>
     <string name="voices_confirm_new_preview">もう一度聞く</string>
-    <string name="voices_confirm_new_keep">この声にする</string>
-    <string name="voices_confirm_new_keep_saving">登録中…</string>
+    <string name="voices_confirm_new_keep">保存する</string>
+    <string name="voices_confirm_new_keep_saving">保存中…</string>
     <string name="voices_confirm_new_delete">作り直す</string>
     <string name="voices_creating_title">声を作成しています</string>
     <string name="voices_creating_body">少々お待ちください。

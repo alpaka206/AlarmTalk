@@ -626,10 +626,10 @@ They become available as they finish.</string>
     <string name="voices_preparing">Preparing</string>
     <string name="voices_preparing_audio">Preparing your audio.</string>
     <string name="voices_preview_play_failed">Couldn\'t play the preview.</string>
-    <string name="voices_confirm_new_title">Keep “%1$s” as it is?</string>
-    <string name="voices_confirm_new_body">Keeping it uses one registration for this month, and deleting it later will not free that up until next month. If you are not happy with it, make another one as many times as you like before you decide.</string>
+    <string name="voices_confirm_new_title">Save this voice?</string>
+    <string name="voices_confirm_new_body">Saving uses up the voice you can create this month. Deleting it later will not free that up until next month, so if you are not happy with it, make another one before you save.</string>
     <string name="voices_confirm_new_preview">Replay</string>
-    <string name="voices_confirm_new_keep">Use this voice</string>
+    <string name="voices_confirm_new_keep">Save</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>
     <string name="voices_confirm_new_delete">Make another</string>
     <string name="voices_creating_title">Creating your voice</string>
