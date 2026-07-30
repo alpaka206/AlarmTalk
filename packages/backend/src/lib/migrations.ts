@@ -834,7 +834,7 @@ export const migrations: Migration[] = [
     //    큐에서 제거한다 (탈퇴·다운그레이드 시 클로닝/오디오 잔존 방지).
     //  - alarms.timezone: 클라이언트 IANA 시간대 (예: 'Asia/Seoul'). 푸시 스케줄러가
     //    알람 HH:mm 을 이 시간대 기준으로 판정한다. NULL 이면 Asia/Seoul 폴백.
-    //  - store_transactions: Apple/Google/PortOne 결제 검증 기록 (중복 처리 방지 +
+    //  - store_transactions: 스토어 결제 검증 기록 (중복 처리 방지 +
     //    전자상거래법 보존 원본). provider_transaction_id 는 provider 별 고유.
     id: 42,
     name: 'voice-lifecycle-and-store-billing',
@@ -1680,9 +1680,7 @@ export const migrations: Migration[] = [
     //  - dev·prod 실측: users.apple_id, subscriptions.apple_* 전부 NULL(0건)이라 손실 없음.
     //  - 인덱스를 먼저 떨궈야 한다 — SQLite/libSQL 의 DROP COLUMN 은 그 컬럼을 참조하는
     //    인덱스가 남아 있으면 실패한다.
-    //  - push_tokens.platform 의 'ios' 와 store_transactions.provider 의 'apple'·'portone'
-    //    CHECK 리터럴은 **그대로 둔다**: CHECK 변경은 테이블 재작성이 필요한데, 쓰지 않는
-    //    값을 허용 목록에 남겨두는 비용은 0 이다(쓰는 코드가 이미 없다).
+    //  - platform/provider 의 CHECK 리터럴은 이때 남겼다가 #88 에서 좁혔다.
     id: 82,
     name: 'drop-apple-identity-and-billing-columns',
     statements: [
@@ -1810,6 +1808,66 @@ export const migrations: Migration[] = [
     statements: [
       `DROP INDEX IF EXISTS idx_tts_presets_order`,
       `DROP TABLE IF EXISTS tts_presets`,
+    ],
+  },
+  {
+    // 허용값을 실제 운영 범위로 좁힌다. Apple(iOS 앱·StoreKit)과 국내 PG(PortOne)는 도입하지
+    // 않기로 확정했고 결제는 Google Play 인앱결제 단일 경로다.
+    //   - push_tokens.platform: 'ios' 제거 (등록할 iOS 클라이언트가 없다)
+    //   - store_transactions.provider: 'apple'·'portone' 제거
+    // #82 는 이 CHECK 리터럴을 "쓰지 않는 값을 남겨두는 비용은 0" 이라며 남겼는데, 비용이
+    // 0 이 아니었다 — 스키마를 읽고 미지원 결제 경로가 있다고 적은 문서가 여러 곳 나왔다.
+    // SQLite 는 CHECK 를 ALTER 할 수 없어 두 테이블을 재작성한다(#22 와 같은 방식).
+    // 실측(#82 시점 dev·prod): platform='ios' 0건, provider IN ('apple','portone') 0건.
+    // 재작성 시 그 값을 가진 행은 새 CHECK 를 통과하지 못하므로 SELECT 에서 걸러낸다.
+    id: 88,
+    name: 'narrow-push-platform-and-store-provider-checks',
+    statements: [
+      `PRAGMA foreign_keys=off`,
+      `DROP TABLE IF EXISTS push_tokens_v2`,
+      `CREATE TABLE push_tokens_v2 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        token TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('android','web')),
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO push_tokens_v2 (id, user_id, token, platform, created_at, updated_at)
+        SELECT id, user_id, token, platform, created_at, updated_at
+        FROM push_tokens WHERE platform IN ('android','web')`,
+      `DROP TABLE push_tokens`,
+      `ALTER TABLE push_tokens_v2 RENAME TO push_tokens`,
+      `CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_unique ON push_tokens(user_id, token)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)`,
+      `DROP TABLE IF EXISTS store_transactions_v2`,
+      `CREATE TABLE store_transactions_v2 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK(provider = 'google'),
+        provider_transaction_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        subscription_id TEXT,
+        expires_at TEXT,
+        raw_payload TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO store_transactions_v2 (
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      ) SELECT
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      FROM store_transactions WHERE provider = 'google'`,
+      `DROP TABLE store_transactions`,
+      `ALTER TABLE store_transactions_v2 RENAME TO store_transactions`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_store_transactions_provider_tx
+        ON store_transactions(provider, provider_transaction_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_user
+        ON store_transactions(user_id, created_at DESC)`,
+      `PRAGMA foreign_keys=on`,
     ],
   },
 ];

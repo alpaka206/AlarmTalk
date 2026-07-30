@@ -57,13 +57,13 @@ describe('push_tokens 전역 단일 소유 (마이그레이션 #71 + 원자 UPSE
   it('같은 토큰을 다른 계정이 등록하면 소유자가 교체된다 — 항상 1행', async () => {
     await registerLike('pt-a', 'tok-shared');
     expect(await ownersOf('tok-shared')).toEqual(['pt-a']);
-    await registerLike('pt-b', 'tok-shared', 'ios');
+    await registerLike('pt-b', 'tok-shared', 'web');
     expect(await ownersOf('tok-shared')).toEqual(['pt-b']);
     const row = await db.execute({
       sql: 'SELECT platform FROM push_tokens WHERE token = ?',
       args: ['tok-shared'],
     });
-    expect(row.rows[0]!.platform).toBe('ios');
+    expect(row.rows[0]!.platform).toBe('web');
   });
 
   it('토큰 UNIQUE 제약이 소유자 2행 삽입을 DB 수준에서 차단한다', async () => {

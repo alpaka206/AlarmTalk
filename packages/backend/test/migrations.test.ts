@@ -312,4 +312,79 @@ describe('migrations', () => {
     const columns = await db.execute('PRAGMA table_info(voice_prerender_queue)');
     expect(columns.rows.map((row) => String(row.name))).toContain('claim_token');
   });
+
+  // #88 은 테이블 재작성이라 "값이 좁아졌는가" 만큼 "기존 행이 살아남았는가" 가 중요하다.
+  describe('migration #88 narrows push/store allow-lists', () => {
+    async function migratedDb() {
+      const db = createClient({ url: ':memory:' });
+      await runMigrationsRange(db, 1, 87);
+      // push_tokens.user_id 의 FK 는 실제로 강제된다(PRAGMA foreign_keys=1).
+      await db.execute(`INSERT INTO users (id, email) VALUES ('u-1', 'u1@example.com')`);
+      await db.execute(
+        `INSERT INTO push_tokens (id, user_id, token, platform)
+           VALUES ('pt-keep', 'u-1', 'tok-keep', 'android')`,
+      );
+      await db.execute(
+        `INSERT INTO store_transactions
+           (id, user_id, provider, provider_transaction_id, product_id, plan_key)
+           VALUES ('st-keep', 'u-1', 'google', 'gtx-1', 'sku.personal', 'personal')`,
+      );
+      await runMigrationsRange(db, 88, 88);
+      return db;
+    }
+
+    it('keeps rows that are still allowed', async () => {
+      const db = await migratedDb();
+      const push = await db.execute(`SELECT token, platform FROM push_tokens WHERE id = 'pt-keep'`);
+      expect(push.rows).toHaveLength(1);
+      expect(String(push.rows[0]!.token)).toBe('tok-keep');
+      expect(String(push.rows[0]!.platform)).toBe('android');
+
+      const store = await db.execute(
+        `SELECT provider, plan_key FROM store_transactions WHERE id = 'st-keep'`,
+      );
+      expect(store.rows).toHaveLength(1);
+      expect(String(store.rows[0]!.provider)).toBe('google');
+      expect(String(store.rows[0]!.plan_key)).toBe('personal');
+    });
+
+    it('rejects the retired platform / provider values', async () => {
+      const db = await migratedDb();
+      await expect(
+        db.execute(
+          `INSERT INTO push_tokens (id, user_id, token, platform)
+             VALUES ('pt-ios', 'u-1', 'tok-ios', 'ios')`,
+        ),
+      ).rejects.toThrow();
+
+      for (const provider of ['apple', 'portone']) {
+        await expect(
+          db.execute({
+            sql: `INSERT INTO store_transactions
+                    (id, user_id, provider, provider_transaction_id, product_id, plan_key)
+                    VALUES (?, 'u-1', ?, ?, 'sku.personal', 'personal')`,
+            args: [`st-${provider}`, provider, `tx-${provider}`],
+          }),
+        ).rejects.toThrow();
+      }
+    });
+
+    it('rebuilds the indexes it dropped with the old tables', async () => {
+      const db = await migratedDb();
+      const indexes = await db.execute(
+        `SELECT name FROM sqlite_master
+          WHERE type = 'index' AND tbl_name IN ('push_tokens', 'store_transactions')`,
+      );
+      const names = indexes.rows.map((row) => String(row.name));
+      expect(names).toEqual(
+        expect.arrayContaining([
+          'idx_push_tokens_user',
+          'idx_push_tokens_unique',
+          'idx_push_tokens_token',
+          'idx_store_transactions_provider_tx',
+          'idx_store_transactions_user',
+        ]),
+      );
+    });
+  });
 });

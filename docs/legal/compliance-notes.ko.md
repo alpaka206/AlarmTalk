@@ -167,8 +167,8 @@
 - **삭제 완전성**: `lib/account-deletion.ts`는 행 삭제 전 외부 삭제(클론 음성·R2)를 큐에 적재하고,
   `userPk` 미해석 시 자식 PII 고아화를 막기 위해 throw 한다. 결제 거래기록은 가명처리 분리보관(제3절).
 - **수탁 항목**: Firebase Cloud Messaging(푸시 토큰), Google Cloud Vertex AI(문구 생성/번역)를
-  처리방침 §5 위탁/국외이전 표에 기재. 결제는 Google Play 인앱결제 단일 경로이며, 국내 PG(PortOne)
-  연동 코드는 존재하지 않으므로 고지 대상이 아니다.
+  처리방침 §5 위탁/국외이전 표에 기재. 결제는 Google Play 인앱결제 단일 경로이며, 별도 PG 는
+  쓰지 않는다.
 
 ## 출처
 - ElevenLabs 개인정보처리방침: https://elevenlabs.io/privacy

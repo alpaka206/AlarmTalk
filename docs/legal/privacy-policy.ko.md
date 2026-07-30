@@ -233,5 +233,5 @@ AlarmTalk(이하 "알람톡")은 베일런(Vailen, 이하 "회사")이 운영하
 
 개정 이력:
 - 버전 3 (2026년 6월 29일 개정): 운영 음성 AI 제공자를 ElevenLabs 기준으로 정정.
-- 버전 2 (2026년 6월 22일): 운세 입력값(성별·생년월일·출생 시각)의 Google Cloud Vertex AI(미국) 처리 명시, 음성(목소리)을 민감정보·생체정보로 분류하고 음성 생체정보 별도 동의(`voice_biometric`) 및 국외 이전 별도 동의(`overseas_transfer`) 서버 강제, Firebase Cloud Messaging·PortOne(아임포트) 수탁 항목 추가.
+- 버전 2 (2026년 6월 22일): 운세 입력값(성별·생년월일·출생 시각)의 Google Cloud Vertex AI(미국) 처리 명시, 음성(목소리)을 민감정보·생체정보로 분류하고 음성 생체정보 별도 동의(`voice_biometric`) 및 국외 이전 별도 동의(`overseas_transfer`) 서버 강제, Firebase Cloud Messaging 수탁 항목 추가.
 - 버전 1 (2026년 5월 31일 시행, 2026년 6월 19일 개정): 최초 시행.

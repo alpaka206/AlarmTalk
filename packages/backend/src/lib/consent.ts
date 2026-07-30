@@ -44,7 +44,7 @@ export const REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENTS;
 /** 처리방침/약관 버전. 정책 개정 시 이 값을 올려 기존 가입자 재동의를 유도한다.
  *  '3' (2026-06-29 개정): 운영 음성 AI 제공자를 ElevenLabs 기준으로 정정하고,
  *  음성=민감정보/생체정보 분류, voice_biometric·overseas_transfer 별도 동의 서버 강제,
- *  Firebase/FCM·PortOne 수탁 고지를 포함한 처리방침/약관 개정과 동기화한다.
+ *  Firebase/FCM 수탁 고지를 포함한 처리방침/약관 개정과 동기화한다.
  *  (docs/legal/*.ko.md 의 "최종 개정일"·"정책 버전"과 일치) */
 export const CURRENT_POLICY_VERSION = '3';
 

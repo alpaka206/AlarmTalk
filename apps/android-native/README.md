@@ -48,7 +48,6 @@ Current deployed auth support:
 - Email/password: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`.
 - Google: protected routes accept a Google ID token as a bearer token, matching the legacy app behavior.
 - Email-code login: live — `POST /api/auth/email-code` issues a 6-digit code and `POST /api/auth/email-code/verify` exchanges it for a token (delivery via Resend on both dev and prod).
-- Apple: not supported. There is no iOS app and the backend has no Apple auth route; the `users.apple_id` column was dropped by migration `drop-apple-identity-and-billing-columns`.
 
 Provider-costing endpoints are only called from explicit user actions such as saving a new voice-profile TTS alarm or cloning a voice profile. Automated QA should not tap those paths unless provider credit spend is intended.
 

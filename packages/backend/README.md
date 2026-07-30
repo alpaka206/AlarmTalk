@@ -63,7 +63,5 @@ npm run typecheck # tsc --noEmit
 | `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
 | `/api/user/*` | 사용자 프로필 + 설정 |
 
-> iOS 앱과 Apple 로그인·IAP 라우트(`/api/auth/apple`, `/api/billing/apple/confirm`)는 미운영이라
-> 제거됐다. 관련 환경변수(`APPLE_CLIENT_ID`, `APPLE_SHARED_SECRET`)와 `users.apple_id` 컬럼도 없다.
 > iOS 를 재개하면 라우트·시크릿·컬럼을 함께 되살려야 한다.
 
