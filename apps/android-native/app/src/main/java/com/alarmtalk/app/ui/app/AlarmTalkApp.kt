@@ -359,8 +359,23 @@ internal fun AlarmTalkApp(
     // 오버레이라, 조건을 걸지 않으면 약관 동의 화면 위에 겹쳐 뜬다 — 아직 약관에 동의하지도
     // 않은 사람에게 알림 권한부터 묻는 꼴이고, 그 순간 '이미 물어봤음' 플래그까지 태워
     // 정작 홈에 도착한 뒤에는 다시 묻지 못한다.
-    LaunchedEffect(sessionRouteKey, viewModel.consentChecked, viewModel.showConsentScreen, viewModel.showVoiceSetup) {
+    // 앱 버전 확인도 같은 이유로 함께 본다. 동의가 캐시로 통과된 계정은 consentChecked 가
+    // 즉시 true 인데 버전 응답은 아직 안 와서 updateRequired 는 기본값 false 다. 그 틈에
+    // '이미 물어봤음' 플래그가 찍히고, 뒤늦게 응답이 와 차단 화면이 깔리면 모달은 가려진다.
+    // 플래그는 기기에 남아 업데이트 후에도 살아남아, 첫 진입 권한 안내를 영영 못 받는다.
+    LaunchedEffect(
+        sessionRouteKey,
+        viewModel.consentChecked,
+        viewModel.showConsentScreen,
+        viewModel.showVoiceSetup,
+        viewModel.versionChecked,
+        viewModel.updateRequired,
+        viewModel.consentUnsupported,
+    ) {
         if (sessionRouteKey == null) return@LaunchedEffect
+        if (!viewModel.versionChecked) return@LaunchedEffect
+        if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
+        if (viewModel.pendingDeletion) return@LaunchedEffect
         if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
         if (initialPermissionPromptStore.hasPrompted()) return@LaunchedEffect

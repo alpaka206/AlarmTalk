@@ -593,23 +593,29 @@ internal fun MainViewModel.checkConsentStatus() {
             needsConsent = status.needsConsent
             // 화면이 무엇을 그리고 무엇을 제출할지는 서버가 정한다. 구버전 서버(collect 없음)와
             // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
-            consentCollect = status.collect.ifEmpty { status.missing }
+            val collected = status.collect.ifEmpty { status.missing }
             consentOptional = status.optional
             // 서버가 이 앱 버전이 모르는 **필수** 동의를 요구하면 화면을 띄우지 않고 업데이트로
-            // 보낸다. 선택 유형은 못 그려도 그냥 지나간다 — 그것 때문에 앱을 막을 이유는 없다.
-            // (보통은 min_supported_version 을 함께 올려 여기까지 오지 않는다. 안전망이다.)
-            consentUnsupported = consentCollect.any {
+            // 보낸다. (보통은 min_supported_version 을 함께 올려 여기까지 오지 않는다. 안전망이다.)
+            consentUnsupported = collected.any {
                 it !in KNOWN_CONSENT_TYPES && it !in status.optional
             }
+            // 모르는 **선택** 유형은 조용히 버린다. 그것 때문에 앱을 막을 이유는 없지만,
+            // 남겨 두면 더 나쁘다 — showConsentScreen 이 열리는데 화면은 그릴 항목이 하나도
+            // 없어 CTA 까지 비활성인 죽은 화면이 된다(Codex #660).
+            consentCollect = collected.filter { it in KNOWN_CONSENT_TYPES }
             sensitiveConsentMissing = status.sensitiveMissing
             consentIsReconsent = status.hasPriorConsent
-            consentNeedsCollection = status.needsCollection
+            // 서버는 '물어볼 게 있다' 고 하는데 그게 전부 못 그리는 선택 유형이면 띄우지 않는다.
+            consentNeedsCollection = status.needsCollection && consentCollect.isNotEmpty()
             // 받을 게 남아 있으면(선택 동의 재수집 포함) '완료' 로 캐시하지 않는다.
             // 캐시가 완료로 남으면 다음 실행에서 서버 응답 전에 consentChecked=true 가 되어
             // 권한·웰컴 오버레이가 먼저 소진되고, 상태 조회가 실패하면 그 실행에서는
             // 수집 화면이 아예 안 뜬다. 완료 표시는 제출 성공 시에만 한다.
+            // 판정은 **그릴 수 있는 것** 기준이다. 서버 원본으로 보면 못 그리는 선택 유형이
+            // 영원히 남아 '완료' 캐시가 영영 안 만들어진다.
             val nothingLeftToCollect =
-                !status.needsConsent && !status.needsCollection && status.collect.isEmpty()
+                !status.needsConsent && !consentNeedsCollection && consentCollect.isEmpty()
             rememberConsentDone(userId, nothingLeftToCollect, status.policyVersion)
         }.onFailure { error ->
             if (authSession?.user?.id != userId) return@launch
