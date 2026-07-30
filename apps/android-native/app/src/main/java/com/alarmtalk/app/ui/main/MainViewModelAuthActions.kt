@@ -627,7 +627,7 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
     // 계속 재동의를 요구받고 로컬 캐시(새 버전 만족)와 어긋난다.
     val policyVersion = cachedPolicyVersion()
     // collect 가 비어 있는 건 status 응답을 못 받은 경우다 — 이때만 필수 3종으로 폴백한다.
-    val collect = consentCollect.ifEmpty { listOf("terms", "privacy", "age14") }
+    val collect = consentCollect.ifEmpty { GENERAL_REQUIRED_CONSENT_TYPES }
     val consents = collect.map { type ->
         com.alarmtalk.app.network.ConsentItemRequest(
             type = type,
@@ -676,6 +676,11 @@ internal fun MainViewModel.submitVoiceConsents() {
     val request = pendingSensitiveConsent ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
+    // 이 요청을 시작한 계정. 코루틴이 request 를 지역 변수로 붙들고 있어, 응답이 오는 사이
+    // 401 로 세션이 끊기고 다른 계정이 로그인해도 이 continuation 은 그대로 살아 있다.
+    // 세션 정리에서 pendingSensitiveConsent 를 비우는 것만으로는 못 막는다 — 그때 이어서
+    // 등록하면 앞 계정이 녹음한 음성이 뒤 계정으로 올라간다(Codex #660).
+    val ownerUserId = session.user.id
     viewModelScope.launch {
         authBusy = true
         runCatching {
@@ -694,16 +699,20 @@ internal fun MainViewModel.submitVoiceConsents() {
                 ),
             )
         }.onSuccess {
+            authBusy = false
+            // 응답이 오는 사이 세션이 바뀌었으면 아무것도 이어가지 않는다. 동의 기록 자체는
+            // 앞 계정의 토큰으로 나갔으니 그 계정에 정상적으로 남는다.
+            if (authSession?.user?.id != ownerUserId) return@onSuccess
             sensitiveConsentMissing = sensitiveConsentMissing - request.types.toSet()
             pendingSensitiveConsent = null
-            authBusy = false
             // 목소리 등록에서 온 경우에만 이어서 만든다. 시스템 목소리 TTS 처럼 붙들어 둔
             // 요청이 없으면 동의만 기록하고 끝낸다(사용자가 다시 시도하면 이제 통과한다).
             request.resumeVoiceDrafts?.let { createVoiceProfiles(it) }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record voice consents", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
             authBusy = false
+            if (authSession?.user?.id != ownerUserId) return@onFailure
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         }
     }
 }

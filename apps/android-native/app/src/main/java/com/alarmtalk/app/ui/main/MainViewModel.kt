@@ -60,6 +60,12 @@ import androidx.compose.runtime.setValue
  */
 internal val SENSITIVE_CONSENT_TYPES = listOf("voice_biometric", "overseas_transfer")
 
+/**
+ * 서버의 일반 동의 게이트가 요구하는 필수 동의(백엔드 `GENERAL_REQUIRED_CONSENTS`).
+ * 상태 조회 결과가 아직 없을 때의 폴백 목록이기도 하다.
+ */
+internal val GENERAL_REQUIRED_CONSENT_TYPES = listOf("terms", "privacy", "age14")
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
     internal val authSessionStore = AuthSessionStore(application)
@@ -207,6 +213,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             needsConsent = true
+            // 무엇을 받아야 하는지 모르는 채로 게이트를 열면 안 된다. 상태 조회가 늦거나
+            // 실패한 상태에서 이 403(일반 게이트, consent 필드 없음)이 먼저 오면 collect 가
+            // 비어 화면에 항목이 하나도 안 그려지는데, 그 화면은 '필수 다 체크됨'으로 판정돼
+            // 버튼이 활성화된다 → 사용자가 보지도 않은 동의가 기록된다(Codex #660).
+            // 이 403 이 요구하는 건 일반 필수 3종이므로 그걸로 채워 둔다.
+            if (consentCollect.isEmpty()) consentCollect = GENERAL_REQUIRED_CONSENT_TYPES
             consentChecked = true
             message = getApplication<android.app.Application>().getString(R.string.r3misc_consent_required)
         }

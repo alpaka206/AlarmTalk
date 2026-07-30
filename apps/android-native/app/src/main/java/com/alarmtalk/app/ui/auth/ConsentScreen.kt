@@ -180,7 +180,9 @@ internal fun ConsentScreen(
                         stringResource(R.string.auth_consent_agree_and_start)
                     },
                     onClick = { onAgree(marketing) },
-                    enabled = allRequiredChecked && !busy,
+                    // 그릴 항목이 하나도 없으면 동의할 대상도 없다 — 빈 화면에서 버튼이
+                    // 눌려 사용자가 못 본 동의가 기록되는 일이 없게 막는다.
+                    enabled = shownCount > 0 && allRequiredChecked && !busy,
                 )
             }
         }
