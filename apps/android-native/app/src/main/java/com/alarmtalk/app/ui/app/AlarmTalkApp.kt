@@ -756,7 +756,7 @@ internal fun AlarmTalkApp(
     // 알람 다중 선택(길게 누르기) 중인지 — 이때는 ＋ FAB 를 감춘다.
     var alarmSelectionActive by remember { mutableStateOf(false) }
     val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-        !viewModel.updateRequired && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
+        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
 
     Scaffold(
         bottomBar = {
@@ -806,7 +806,9 @@ internal fun AlarmTalkApp(
             }
         },
     ) { padding ->
-      if (viewModel.updateRequired) {
+      // 최소지원버전 미달과, 서버가 모르는 필수 동의를 요구하는 경우. 둘 다 사용자가 할 수
+      // 있는 일이 업데이트뿐이라 같은 화면으로 보낸다.
+      if (viewModel.updateRequired || viewModel.consentUnsupported) {
           GateBackGuard()
           UpdateRequiredScreen(
               contentPadding = padding,

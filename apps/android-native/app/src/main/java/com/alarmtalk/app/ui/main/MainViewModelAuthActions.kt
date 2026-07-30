@@ -592,6 +592,12 @@ internal fun MainViewModel.checkConsentStatus() {
             // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
             consentCollect = status.collect.ifEmpty { status.missing }
             consentOptional = status.optional
+            // 서버가 이 앱 버전이 모르는 **필수** 동의를 요구하면 화면을 띄우지 않고 업데이트로
+            // 보낸다. 선택 유형은 못 그려도 그냥 지나간다 — 그것 때문에 앱을 막을 이유는 없다.
+            // (보통은 min_supported_version 을 함께 올려 여기까지 오지 않는다. 안전망이다.)
+            consentUnsupported = consentCollect.any {
+                it !in KNOWN_CONSENT_TYPES && it !in status.optional
+            }
             sensitiveConsentMissing = status.sensitiveMissing
             consentIsReconsent = status.hasPriorConsent
             consentNeedsCollection = status.needsCollection

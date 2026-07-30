@@ -1024,6 +1024,5 @@
     <string name="voices_register_attest">自分の声、または許可を得た人の声であり、無断登録の責任は自分にあることを確認します。</string>
     <string name="voices_register_biometric_consent">音声生体情報の処理に同意します</string>
     <string name="voices_register_biometric_desc">声は音声プロフィール作成・クローン・読み上げに使われ、個人を識別または再現し得る生体情報として扱われます。声を削除すると一緒に消え、「その他」からいつでも同意を撤回できます。</string>
-    <string name="auth_consent_update_required">新しく追加された同意項目があります。ストアでアプリを更新してから進めてください。</string>
     <string name="msg_consent_update_required">同意を進めるにはアプリの更新が必要です。</string>
 </resources>

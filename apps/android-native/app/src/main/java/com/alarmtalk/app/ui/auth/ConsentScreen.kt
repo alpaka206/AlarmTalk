@@ -98,10 +98,10 @@ internal fun ConsentScreen(
     val shownRequired = requiredShown.isNotEmpty()
 
     // 그리지 않은 필수 항목은 이미 동의된 것이므로 통과 조건에서 뺀다.
-    // 이 앱 버전이 그리지 못하는 **필수** 유형(서버가 새 유형을 먼저 추가한 구간).
-    // 선택 유형이면 안 그리고 지나가도 되지만, 필수는 다르다 — 통과시키면 사용자가 본 적
-    // 없는 동의가 '체크됨' 으로 기록된다. 앱 업데이트를 안내하고 막는다(Codex #660).
-    val unrenderableRequired = requiredShown.filter { it !in KNOWN_CONSENT_TYPES }
+    // 모르는 유형(서버가 새 유형을 먼저 추가한 구간)은 else -> false 로 통과를 막는다.
+    // 그런 상태는 checkConsentStatus 가 consentUnsupported 로 잡아 이 화면 대신 업데이트
+    // 차단 화면을 띄우므로 여기까지 오지 않는다 — 통과시키면 사용자가 본 적 없는 동의가
+    // '체크됨' 으로 기록되기에 남겨 두는 이중 방어다(Codex #660).
     val allRequiredChecked = requiredShown.all { type ->
         when (type) {
             "age14" -> age14
@@ -231,17 +231,6 @@ internal fun ConsentScreen(
                         detail = AnnotatedString(stringResource(R.string.auth_consent_marketing_detail)),
                     )
                 }
-            }
-
-            // 그릴 수 없는 필수 항목이 있으면 왜 버튼이 안 눌리는지 말해 준다. 이유 없이
-            // 비활성인 CTA 는 '앱이 고장났다' 로 읽힌다.
-            if (unrenderableRequired.isNotEmpty()) {
-                Text(
-                    text = stringResource(R.string.auth_consent_update_required),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextOnSceneDim,
-                    modifier = Modifier.padding(top = 12.dp),
-                )
             }
 
             Box(Modifier.padding(vertical = 16.dp)) {

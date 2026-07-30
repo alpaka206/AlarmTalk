@@ -1016,6 +1016,5 @@ Pass code: %1$s
     <string name="voices_register_attest">This is my voice, or one I have permission to use, and I take responsibility for registering it.</string>
     <string name="voices_register_biometric_consent">I agree to voice biometric processing</string>
     <string name="voices_register_biometric_desc">Your voice is used to build a voice profile, clone it, and read alarms aloud, and is handled as biometric information that can identify or reproduce a person. Deleting the voice deletes it too, and you can withdraw consent any time from the More tab.</string>
-    <string name="auth_consent_update_required">There are new consent items. Please update the app from the store and continue.</string>
     <string name="msg_consent_update_required">Update the app to continue with consent.</string>
 </resources>

@@ -528,6 +528,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // (In-App Update IMMEDIATE 트리거 조건이자, 그 취소/미가용 시의 최종 폴백 게이트)
     var updateRequired by mutableStateOf(false)
         internal set
+
+    /**
+     * 서버가 **이 앱 버전이 그릴 줄 모르는 필수 동의**를 요구하면 true → 업데이트 차단 화면.
+     *
+     * 그 상태에서 할 수 있는 일이 업데이트뿐이다. 동의 화면을 반쯤 그려 놓고 CTA 만 막으면
+     * 사용자는 왜 못 넘어가는지 모른 채 갇히고, 통과시키면 본 적 없는 동의가 기록된다.
+     * updateRequired 와 따로 두는 이유: checkAppVersion 이 onResume 마다 그 값을 덮어써서
+     * (최소지원버전은 충족하므로 false) 차단이 풀려 버린다.
+     */
+    var consentUnsupported by mutableStateOf(false)
+        internal set
     // 설치 버전이 백엔드 최신버전 미만이면 true → 권장(FLEXIBLE) In-App Update 대상.
     // 강제(updateRequired)와 달리 앱 사용은 막지 않는다.
     var updateRecommended by mutableStateOf(false)
@@ -759,6 +770,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         consentChecked = false
         consentCollect = emptyList()
         consentOptional = emptyList()
+        consentUnsupported = false
         consentNeedsCollection = false
         consentIsReconsent = false
         // 민감 동의 상태와 대기 중인 목소리 등록 요청은 **반드시** 함께 비운다.
