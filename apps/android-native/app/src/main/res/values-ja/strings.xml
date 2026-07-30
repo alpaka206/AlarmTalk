@@ -1020,4 +1020,9 @@
 1. AlarmTalkをインストール https://play.google.com/store/apps/details?id=com.alarmtalk.app
 2. 登録してログイン
 3. 「その他」→「コードを登録」に上のコードを入力</string>
+    <string name="welcome_promo_title">コードをお持ちなら今すぐ登録</string>
+    <string name="welcome_promo_body">コードがなくてもアラームと基本の声はそのまま無料で使えます。受け取ったコードがあればここに入力してください。あとから「その他」→「コードを登録」でも登録できます。</string>
+    <string name="welcome_promo_where">コードがありません</string>
+    <string name="welcome_promo_skip">スキップ</string>
+    <string name="welcome_promo_instagram_hint">Instagram @alarmtalk までご連絡いただければご案内します。</string>
 </resources>

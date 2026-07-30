@@ -346,6 +346,16 @@ internal fun AlarmTalkApp(
         }
     }
 
+    // 웰컴 코드 안내(계정 1회, 무료 플랜 한정). 권한 게이트와 같은 레이어에 쌓이면 하나가
+    // 다른 하나를 가리므로 **권한 모달이 없을 때만** 띄운다. 권한 모달이 닫히면 이 효과가
+    // 다시 돌아 그때 뜬다. 동의·목소리 준비 화면을 다 지난 뒤라야 홈 위에서 보인다.
+    LaunchedEffect(sessionRouteKey, viewModel.permissionGateRequest, viewModel.showVoiceSetup, viewModel.needsConsent) {
+        if (sessionRouteKey == null) return@LaunchedEffect
+        if (viewModel.permissionGateRequest != null) return@LaunchedEffect
+        if (viewModel.showVoiceSetup || viewModel.needsConsent) return@LaunchedEffect
+        viewModel.maybeShowWelcomePromo()
+    }
+
     LaunchedEffect(sessionRouteKey, alarms) {
         if (sessionRouteKey != null) {
             viewModel.ensureReceivedAlarmBadgeBaseline(alarms)
@@ -603,6 +613,23 @@ internal fun AlarmTalkApp(
                 // 모달은 닫지 않는다 — 권한이 채워지면 아래 LaunchedEffect 가 다음 미허용 권한으로
                 // 넘기거나 모두 충족 시 자동으로 닫는다(권한 없으면 계속 막힘).
                 requestPermission(target)
+            },
+        )
+    }
+
+    if (viewModel.showWelcomePromo) {
+        WelcomePromoDialog(
+            busy = billingBusy,
+            onSubmitCode = { code ->
+                viewModel.registerCode(code)
+                viewModel.dismissWelcomePromo()
+            },
+            onDismiss = viewModel::dismissWelcomePromo,
+            onOpenInstagram = {
+                // 코드를 어디서 받는지 알려주는 자리. 앱 안에 코드를 박아 두지 않는다
+                // (레포가 공개라 실코드가 소스에 들어가면 안 된다).
+                viewModel.message = context.getString(R.string.welcome_promo_instagram_hint)
+                context.openWebUrl("https://instagram.com/alarmtalk")
             },
         )
     }

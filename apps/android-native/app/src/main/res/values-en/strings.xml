@@ -1012,4 +1012,9 @@ Pass code: %1$s
 1. Install AlarmTalk https://play.google.com/store/apps/details?id=com.alarmtalk.app
 2. Sign up and log in
 3. Enter the code under More → Register code</string>
+    <string name="welcome_promo_title">Have a code? Enter it now</string>
+    <string name="welcome_promo_body">Alarms and our built-in voices stay free even without a code. If you were given one, enter it here — you can also register it later from More → Register code.</string>
+    <string name="welcome_promo_where">No code yet</string>
+    <string name="welcome_promo_skip">Skip</string>
+    <string name="welcome_promo_instagram_hint">Message us on Instagram @alarmtalk and we will help.</string>
 </resources>

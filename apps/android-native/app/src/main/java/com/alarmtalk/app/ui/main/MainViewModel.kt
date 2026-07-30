@@ -403,6 +403,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val showVoiceConsentSheet: Boolean get() = pendingVoiceConsentDrafts != null
 
+    // 첫 진입 웰컴 코드 안내가 떠 있는지. 계정당 1회, 무료 플랜에게만.
+    var showWelcomePromo by mutableStateOf(false)
+        internal set
+
+    internal val promoPromptStore = PromoPromptStore(application)
+
+    /**
+     * 웰컴 코드 안내를 띄울지 판정한다. 조건이 하나라도 어긋나면 조용히 넘어간다.
+     *  - 무료 플랜일 것(이미 유료면 보여줄 이유가 없다)
+     *  - 이 계정에 아직 안 띄웠을 것
+     * 노출과 동시에 '봤음'을 기록한다 — 닫든 등록하든 다시 뜨지 않는다.
+     */
+    internal fun maybeShowWelcomePromo() {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        if (showWelcomePromo) return
+        if (authSession?.user?.plan?.lowercase() != "free") return
+        if (promoPromptStore.hasPrompted(userId)) return
+        promoPromptStore.markPrompted(userId)
+        showWelcomePromo = true
+    }
+
+    internal fun dismissWelcomePromo() {
+        showWelcomePromo = false
+    }
+
     // 설정의 '광고성 정보 수신' 토글 상태. null = 아직 서버에서 못 읽음(로딩 전).
     var marketingConsentAgreed by mutableStateOf<Boolean?>(null)
         internal set
