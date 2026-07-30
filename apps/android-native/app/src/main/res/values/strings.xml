@@ -1044,4 +1044,6 @@
     <string name="voices_register_attest">본인이거나 동의를 받은 사람의 목소리이고, 무단 등록에 대한 책임이 저에게 있다는 걸 확인해요.</string>
     <string name="voices_register_biometric_consent">음성 생체정보 처리에 동의해요</string>
     <string name="voices_register_biometric_desc">목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요. 목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요.</string>
+    <string name="auth_consent_update_required">새로 추가된 동의 항목이 있어요. 스토어에서 앱을 업데이트한 뒤 이어서 진행해 주세요.</string>
+    <string name="msg_consent_update_required">앱을 업데이트해야 동의를 진행할 수 있어요.</string>
 </resources>

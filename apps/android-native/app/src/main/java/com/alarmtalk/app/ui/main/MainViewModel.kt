@@ -66,6 +66,18 @@ internal val SENSITIVE_CONSENT_TYPES = listOf("voice_biometric", "overseas_trans
  */
 internal val GENERAL_REQUIRED_CONSENT_TYPES = listOf("terms", "privacy", "age14")
 
+/**
+ * **이 앱 버전이 화면에 그릴 수 있는** 동의 유형 전부.
+ *
+ * 서버가 새 유형을 먼저 추가하고 구버전 앱이 아직 살아 있는 구간이 존재한다. 그때 화면이
+ * 그리지 못한 유형을 '체크됨'으로 취급하면, 사용자가 본 적 없는 동의가 기록된다 — 동의
+ * 기록의 신뢰성이 통째로 무너지는 종류의 버그다. 그래서 모르는 유형은
+ *  - 필수면 **통과를 막고** 앱 업데이트를 안내하고(ConsentScreen),
+ *  - 어느 쪽이든 **제출 목록에서 뺀다**(submitConsents).
+ */
+internal val KNOWN_CONSENT_TYPES =
+    listOf("terms", "privacy", "age14", "marketing", "voice_biometric", "overseas_transfer")
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
     internal val authSessionStore = AuthSessionStore(application)

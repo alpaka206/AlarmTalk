@@ -639,7 +639,19 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
     // 계속 재동의를 요구받고 로컬 캐시(새 버전 만족)와 어긋난다.
     val policyVersion = cachedPolicyVersion()
     // collect 가 비어 있는 건 status 응답을 못 받은 경우다 — 이때만 필수 3종으로 폴백한다.
+    // 화면이 그리지 못하는 유형은 제출에서 뺀다. 서버가 새 유형을 먼저 추가한 구간에서
+    // 구버전 앱이 '보여주지 않은 동의' 를 기록해 버리는 것을 막는다(Codex #660).
+    // 그런 유형이 필수라면 ConsentScreen 이 CTA 를 막아 여기까지 오지도 않는다.
     val collect = consentCollect.ifEmpty { GENERAL_REQUIRED_CONSENT_TYPES }
+        .filter { it in KNOWN_CONSENT_TYPES }
+    if (collect.isEmpty()) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_consent_update_required)
+        return
+    }
+    // 이 요청을 시작한 계정. 응답이 오는 사이 401 로 세션이 끊기고 다른 계정이 로그인해도
+    // 이 continuation 은 살아 있다 — 앞 계정의 성공으로 뒤 계정의 동의 상태를 비우면
+    // 뒤 계정이 받아야 할 재수집·민감 동의를 건너뛴다(Codex #660).
+    val ownerUserId = session.user.id
     // 구버전 서버(optional 없음) 폴백은 화면과 같은 기준을 써야 한다 — 여기만 다르면
     // 화면에서 선택으로 그린 항목이 제출에서 필수로 둔갑해 동의로 기록된다.
     val optionalTypes = consentOptional.ifEmpty { listOf("marketing") }.toSet()
@@ -659,6 +671,10 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
                 com.alarmtalk.app.network.RecordConsentsRequest(consents = consents),
             )
         }.onSuccess {
+            // 동의 기록 자체는 앞 계정의 토큰으로 나갔으니 그 계정 캐시에는 정상 반영한다.
+            // 화면 상태(아래)는 현재 세션이 그대로일 때만 건드린다.
+            policyVersion?.let { rememberConsentDone(ownerUserId, true, it) }
+            if (authSession?.user?.id != ownerUserId) return@onSuccess
             needsConsent = false
             // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
             // 화면이 닫히지 않는다.
@@ -671,11 +687,9 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
             val agreedNow = consents.filter { it.agreed }.map { it.type }.toSet()
             sensitiveConsentMissing = sensitiveConsentMissing - agreedNow
             consentChecked = true
-            // 방금 서버에 보낸 그 버전으로 로컬 캐시도 기록해 서버·클라 상태를 일치시킨다.
-            // 모르면(직전 status 실패) 다음 콜드스타트에서 서버로 재확인하므로 캐시하지 않는다.
-            policyVersion?.let { rememberConsentDone(session.user.id, true, it) }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
+            if (authSession?.user?.id != ownerUserId) return@onFailure
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         }
         authBusy = false
