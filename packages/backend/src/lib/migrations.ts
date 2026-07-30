@@ -4,6 +4,19 @@ export interface Migration {
   id: number;
   name: string;
   statements: string[];
+  /**
+   * 한 트랜잭션으로 묶어 실행한다. **부분 적용이 곧 데이터 손실인** 마이그레이션에 붙인다
+   * (테이블 재작성: 임시 테이블에 복사 → 원본 DROP → RENAME).
+   *
+   * 기본 실행기는 문장을 하나씩 autocommit 하고 `_migrations` 는 전부 성공한 뒤에야
+   * 기록한다. 그래서 원본 DROP 과 RENAME 사이에서 끊기면, 재시도가 데이터를 들고 있는
+   * 임시 테이블을 지우고 원본도 없어 복구가 불가능해진다.
+   *
+   * atomic 이면 실패 시 통째로 롤백되므로 재시도가 항상 처음 상태에서 다시 돈다.
+   * 대신 idempotent DDL 에러 관용을 적용하지 않는다 — 부분 적용 상태가 없으므로
+   * "이미 적용됨" 을 삼킬 이유가 없고, 삼키면 롤백 보장이 깨진다.
+   */
+  atomic?: boolean;
 }
 
 function sqlLiteral(value: string): string {
@@ -1818,13 +1831,20 @@ export const migrations: Migration[] = [
     // #82 는 이 CHECK 리터럴을 "쓰지 않는 값을 남겨두는 비용은 0" 이라며 남겼는데, 비용이
     // 0 이 아니었다 — 스키마를 읽고 미지원 결제 경로가 있다고 적은 문서가 여러 곳 나왔다.
     // SQLite 는 CHECK 를 ALTER 할 수 없어 두 테이블을 재작성한다(#22 와 같은 방식).
-    // 실측(#82 시점 dev·prod): platform='ios' 0건, provider IN ('apple','portone') 0건.
-    // 재작성 시 그 값을 가진 행은 새 CHECK 를 통과하지 못하므로 SELECT 에서 걸러낸다.
+    // 실측(2026-07-30 dev·prod): platform='ios' 0건, provider IN ('apple','portone') 0건,
+    // push_tokens 의 users FK 고아 0건(FK 를 켠 채 복사해도 안전). 재작성 시 폐기값 행은
+    // 새 CHECK 를 통과하지 못하므로 SELECT 에서 걸러낸다.
+    //
+    // **atomic 필수**: 임시 테이블 복사 → 원본 DROP → RENAME 은 중간에 끊기면 데이터가
+    // 임시 테이블에만 남는다. 문장별 autocommit 으로 돌리면 재시도가 그 임시 테이블을
+    // 지워 push_tokens(FCM 토큰 전량)·store_transactions(전자상거래법 5년 보존 원본)이
+    // 복구 불가로 사라진다(Codex #659). 한 트랜잭션으로 묶어 실패 시 통째로 롤백한다.
+    // PRAGMA foreign_keys 는 트랜잭션 안에서 무시되므로 쓰지 않는다 — 위 고아 0건 실측대로
+    // FK 를 켠 채 복사해도 통과하고, 혹 위반이 생기면 롤백돼 데이터가 남는다.
     id: 88,
     name: 'narrow-push-platform-and-store-provider-checks',
+    atomic: true,
     statements: [
-      `PRAGMA foreign_keys=off`,
-      `DROP TABLE IF EXISTS push_tokens_v2`,
       `CREATE TABLE push_tokens_v2 (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id),
@@ -1841,7 +1861,6 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id)`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_unique ON push_tokens(user_id, token)`,
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)`,
-      `DROP TABLE IF EXISTS store_transactions_v2`,
       `CREATE TABLE store_transactions_v2 (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -1867,7 +1886,6 @@ export const migrations: Migration[] = [
         ON store_transactions(provider, provider_transaction_id)`,
       `CREATE INDEX IF NOT EXISTS idx_store_transactions_user
         ON store_transactions(user_id, created_at DESC)`,
-      `PRAGMA foreign_keys=on`,
     ],
   },
 ];
@@ -1885,6 +1903,28 @@ function isIdempotentDDLError(message: string): boolean {
     lower.includes('no such column') ||
     lower.includes('no such view')
   );
+}
+
+/**
+ * 한 마이그레이션의 문장들을 적용한다. 두 진입점(runMigrations·runMigrationsRange)이
+ * 같은 규칙으로 돌도록 여기 한 곳에 모은다.
+ *  - `atomic`: 한 트랜잭션(batch)으로 묶어 실패 시 통째로 롤백한다.
+ *  - 그 외: 문장별 autocommit + idempotent DDL 에러 관용(#5·#17 처럼 같은 컬럼을 중복
+ *    ALTER 하는 과거 마이그레이션이 있다).
+ */
+async function applyMigrationStatements(db: Client, migration: Migration): Promise<void> {
+  if (migration.atomic) {
+    await db.batch(migration.statements, 'write');
+    return;
+  }
+  for (const stmt of migration.statements) {
+    try {
+      await db.execute(stmt);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!isIdempotentDDLError(msg)) throw err;
+    }
+  }
 }
 
 /**
@@ -1910,14 +1950,7 @@ export async function runMigrationsRange(
   for (const migration of migrations) {
     if (migration.id < fromId || migration.id > toId) continue;
     if (appliedIds.has(migration.id)) continue;
-    for (const stmt of migration.statements) {
-      try {
-        await db.execute(stmt);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!isIdempotentDDLError(msg)) throw err;
-      }
-    }
+    await applyMigrationStatements(db, migration);
     await db.execute({
       sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)',
       args: [migration.id, migration.name],
@@ -1944,17 +1977,7 @@ export async function runMigrations(db: Client): Promise<string[]> {
   for (const migration of migrations) {
     if (appliedIds.has(migration.id)) continue;
 
-    // 마이그레이션 #5 와 #17 처럼 동일 컬럼(alarms.voice_profile_id)을
-    // 중복 ALTER 하는 케이스가 있으므로, idempotent DDL 에러는 무시한다.
-    // runMigrationsRange 와 동일한 정책을 적용해 두 진입점이 동일하게 동작.
-    for (const stmt of migration.statements) {
-      try {
-        await db.execute(stmt);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!isIdempotentDDLError(msg)) throw err;
-      }
-    }
+    await applyMigrationStatements(db, migration);
 
     await db.execute({
       sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)',

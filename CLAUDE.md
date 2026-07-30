@@ -20,7 +20,7 @@
 
 ## 컨벤션
 - 커밋 메시지 **한국어**. Co-Authored-By: Claude / "Generated with Claude Code" **금지**.
-- `develop`은 보호 브랜치(9개 필수 체크) → 직접 푸시 불가, **PR 필요**.
+- `develop`은 보호 브랜치(7개 필수 체크 — lint + backend·shared·voice 의 typecheck·test) → 직접 푸시 불가, **PR 필요**.
 
 ### 입력/SQL 보안 규약 (백엔드)
 2026-07-01 입력·SQL 인젝션 전면 감사 결과 현행 코드는 이미 안전. 아래 패턴을 **회귀 방지 규약**으로 고정한다(신규 라우트 추가 시 코드리뷰 체크):

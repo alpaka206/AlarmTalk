@@ -369,6 +369,59 @@ describe('migrations', () => {
       }
     });
 
+    // Codex #659(P1): 문장별 autocommit 으로 돌리면 '원본 DROP ~ RENAME' 사이에서 끊겼을 때
+    // 재시도가 데이터를 들고 있는 임시 테이블을 지워 복구가 불가능해진다. 그래서 atomic 이다.
+    it('is marked atomic and never drops the temp table unconditionally', () => {
+      const m = migrations.find((x) => x.id === 88)!;
+      expect(m.atomic).toBe(true);
+      const all = m.statements.join('\n');
+      // 재시도 시 유일한 사본을 지우는 선두 DROP 이 있으면 안 된다.
+      expect(all).not.toContain('DROP TABLE IF EXISTS push_tokens_v2');
+      expect(all).not.toContain('DROP TABLE IF EXISTS store_transactions_v2');
+      // PRAGMA 는 트랜잭션 안에서 무시되므로 남겨두면 오해만 부른다.
+      expect(all).not.toContain('PRAGMA foreign_keys');
+    });
+
+    it('rolls the whole rebuild back when a statement fails mid-way', async () => {
+      const db = createClient({ url: ':memory:' });
+      await runMigrationsRange(db, 1, 87);
+      await db.execute(`INSERT INTO users (id, email) VALUES ('u-1', 'u1@example.com')`);
+      await db.execute(
+        `INSERT INTO push_tokens (id, user_id, token, platform)
+           VALUES ('pt-1', 'u-1', 'tok-1', 'android')`,
+      );
+
+      // #88 과 똑같은 재작성 문장 뒤에, 새 CHECK 를 위반해 **런타임에** 실패하는 문장을 붙인다.
+      const m88 = migrations.find((x) => x.id === 88)!;
+      await expect(
+        db.batch(
+          [
+            ...m88.statements,
+            `INSERT INTO push_tokens (id, user_id, token, platform)
+               VALUES ('pt-x', 'u-1', 'tok-x', 'ios')`,
+          ],
+          'write',
+        ),
+      ).rejects.toThrow();
+
+      // 원본 행이 살아 있어야 한다 — 이게 이 마이그레이션의 진짜 위험이다.
+      const rows = await db.execute('SELECT token, platform FROM push_tokens');
+      expect(rows.rows).toHaveLength(1);
+      expect(String(rows.rows[0]!.token)).toBe('tok-1');
+      // 임시 테이블도 남지 않는다.
+      const leftovers = await db.execute(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%\\_v2' ESCAPE '\\'`,
+      );
+      expect(leftovers.rows).toHaveLength(0);
+      // 옛 CHECK 가 그대로면(='ios' 가 통과하면) 롤백이 확실하다.
+      await expect(
+        db.execute(
+          `INSERT INTO push_tokens (id, user_id, token, platform)
+             VALUES ('pt-2', 'u-1', 'tok-2', 'ios')`,
+        ),
+      ).resolves.toBeTruthy();
+    });
+
     it('rebuilds the indexes it dropped with the old tables', async () => {
       const db = await migratedDb();
       const indexes = await db.execute(
