@@ -189,6 +189,8 @@ data class ConsentStatusResponse(
      * 조건으로 강제하지 않는다).
      */
     @SerializedName("sensitive_missing") val sensitiveMissing: List<String> = emptyList(),
+    /** 이 계정에 동의 기록이 하나라도 있으면 개정에 따른 재동의다 — 화면 문구가 달라진다. */
+    @SerializedName("has_prior_consent") val hasPriorConsent: Boolean = false,
     @SerializedName("policy_version") val policyVersion: String = "1",
 )
 

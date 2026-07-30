@@ -1013,8 +1013,10 @@ Pass code: %1$s
 2. Sign up and log in
 3. Enter the code under More → Register code</string>
     <string name="welcome_promo_title">Have a code? Enter it now</string>
-    <string name="welcome_promo_body">Alarms and our built-in voices stay free even without a code. If you were given one, enter it here — you can also register it later from More → Register code.</string>
-    <string name="welcome_promo_where">No code yet</string>
+    <string name="welcome_promo_body">Core features stay free even without a code. You can register one later from More → Register code at any time.</string>
+    <string name="welcome_promo_where">Get a code</string>
     <string name="welcome_promo_skip">Skip</string>
-    <string name="welcome_promo_instagram_hint">Message us on Instagram @alarmtalk and we will help.</string>
+    <string name="welcome_promo_instagram_hint">Message us on Instagram @alarmtalk.app and we will help.</string>
+    <string name="auth_consent_title_updated">We have updated our terms</string>
+    <string name="auth_consent_subtitle_updated">Only the items that changed are listed below. Everything you already agreed to stays as it is.</string>
 </resources>

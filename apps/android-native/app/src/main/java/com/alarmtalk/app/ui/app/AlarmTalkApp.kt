@@ -337,8 +337,15 @@ internal fun AlarmTalkApp(
     // 띄운다(알람 앱 핵심 권한이라 선제 요청). 기기 단위 플래그로 재노출을 막고, 이후 미허용 상태는
     // 알람 만들기 모달·홈 슬림 배너가 처리한다. (정확알람·전체화면은 알람 앱이라 자동 부여되고
     // 실제 시스템 다이얼로그가 뜨는 건 알림 권한뿐이다.)
-    LaunchedEffect(sessionRouteKey) {
+    //
+    // 동의·목소리 준비를 **다 지난 뒤에** 띄운다. 이 모달은 게이트 체인이 아니라 Scaffold 밖
+    // 오버레이라, 조건을 걸지 않으면 약관 동의 화면 위에 겹쳐 뜬다 — 아직 약관에 동의하지도
+    // 않은 사람에게 알림 권한부터 묻는 꼴이고, 그 순간 '이미 물어봤음' 플래그까지 태워
+    // 정작 홈에 도착한 뒤에는 다시 묻지 못한다.
+    LaunchedEffect(sessionRouteKey, viewModel.consentChecked, viewModel.needsConsent, viewModel.showVoiceSetup) {
         if (sessionRouteKey == null) return@LaunchedEffect
+        if (!viewModel.consentChecked || viewModel.needsConsent) return@LaunchedEffect
+        if (viewModel.showVoiceSetup) return@LaunchedEffect
         if (initialPermissionPromptStore.hasPrompted()) return@LaunchedEffect
         initialPermissionPromptStore.markPrompted()
         if (!PermissionSnapshot.read(context).alarmReady) {
@@ -599,7 +606,9 @@ internal fun AlarmTalkApp(
         )
     }
 
-    viewModel.permissionGateRequest?.let { target ->
+    // 동의 화면이 떠 있는 동안에는 그리지 않는다 — 위 트리거가 막지만, 다른 경로로 요청이
+    // 세워졌을 때도 약관 화면 위에 권한 모달이 겹치는 일은 없어야 한다.
+    viewModel.permissionGateRequest?.takeIf { viewModel.consentChecked && !viewModel.needsConsent }?.let { target ->
         PermissionGateDialog(
             target = target,
             onDismiss = {
@@ -629,7 +638,7 @@ internal fun AlarmTalkApp(
                 // 코드를 어디서 받는지 알려주는 자리. 앱 안에 코드를 박아 두지 않는다
                 // (레포가 공개라 실코드가 소스에 들어가면 안 된다).
                 viewModel.message = context.getString(R.string.welcome_promo_instagram_hint)
-                context.openWebUrl("https://instagram.com/alarmtalk")
+                context.openWebUrl("https://instagram.com/alarmtalk.app")
             },
         )
     }
@@ -837,6 +846,7 @@ internal fun AlarmTalkApp(
               contentPadding = padding,
               busy = authBusy,
               collect = viewModel.consentCollect,
+              isReconsent = viewModel.consentIsReconsent,
               onAgree = { marketingAgreed -> viewModel.submitConsents(marketingAgreed) },
               onOpenTerms = { context.openWebUrl("https://alarm-talk.com/ko/terms") },
               onOpenPrivacy = { context.openWebUrl("https://alarm-talk.com/ko/privacy") },

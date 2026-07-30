@@ -1041,8 +1041,10 @@
 2. 가입하고 로그인
 3. 더보기 → 코드 등록에 위 코드 입력</string>
     <string name="welcome_promo_title">받은 코드가 있다면 지금 등록해요</string>
-    <string name="welcome_promo_body">코드가 없어도 알람과 기본 목소리는 그대로 무료로 쓸 수 있어요. 받은 코드가 있으면 여기에 넣고, 나중에 등록하려면 더보기 → 코드 등록에서 언제든 가능해요.</string>
-    <string name="welcome_promo_where">코드가 없어요</string>
+    <string name="welcome_promo_body">코드가 없어도 기본 기능은 무료로 사용할 수 있어요. 나중에 등록하려면 더보기 → 코드 등록에서 언제든 가능해요.</string>
+    <string name="welcome_promo_where">코드 받으러 가기</string>
     <string name="welcome_promo_skip">건너뛰기</string>
-    <string name="welcome_promo_instagram_hint">인스타그램 @alarmtalk 으로 문의 주시면 안내해 드려요.</string>
+    <string name="welcome_promo_instagram_hint">인스타그램 @alarmtalk.app 으로 문의 주시면 안내해 드려요.</string>
+    <string name="auth_consent_title_updated">약관이 업데이트되었어요</string>
+    <string name="auth_consent_subtitle_updated">내용이 바뀐 항목만 아래에 모았어요. 이미 동의하신 나머지는 그대로 유지돼요.</string>
 </resources>

@@ -1021,8 +1021,10 @@
 2. 登録してログイン
 3. 「その他」→「コードを登録」に上のコードを入力</string>
     <string name="welcome_promo_title">コードをお持ちなら今すぐ登録</string>
-    <string name="welcome_promo_body">コードがなくてもアラームと基本の声はそのまま無料で使えます。受け取ったコードがあればここに入力してください。あとから「その他」→「コードを登録」でも登録できます。</string>
-    <string name="welcome_promo_where">コードがありません</string>
+    <string name="welcome_promo_body">コードがなくても基本機能は無料で使えます。あとから「その他」→「コードを登録」でいつでも登録できます。</string>
+    <string name="welcome_promo_where">コードをもらう</string>
     <string name="welcome_promo_skip">スキップ</string>
-    <string name="welcome_promo_instagram_hint">Instagram @alarmtalk までご連絡いただければご案内します。</string>
+    <string name="welcome_promo_instagram_hint">Instagram @alarmtalk.app までご連絡いただければご案内します。</string>
+    <string name="auth_consent_title_updated">規約が更新されました</string>
+    <string name="auth_consent_subtitle_updated">変更があった項目だけをまとめました。すでに同意済みの項目はそのまま維持されます。</string>
 </resources>

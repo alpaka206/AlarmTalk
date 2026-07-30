@@ -408,6 +408,10 @@ user.get('/consents/status', async (c) => {
       collect,
       // 민감 동의는 가입 게이트가 아니라 목소리 등록 시점에 받는다(클라가 별도 시트로 처리).
       sensitive_missing: missingConsentTypesFrom(latest, SENSITIVE_REQUIRED_CONSENTS),
+      // 이 계정에 동의 기록이 하나라도 있으면 '개정에 따른 재동의' 다. 처음 가입한 사람과
+      // 문구가 달라야 한다 — 이미 동의했던 사람에게 '서비스 이용을 위해 동의해 주세요' 는
+      // 왜 또 묻는지 설명하지 못한다.
+      has_prior_consent: latest.size > 0,
       policy_version: CURRENT_POLICY_VERSION,
     });
   } catch (err) {

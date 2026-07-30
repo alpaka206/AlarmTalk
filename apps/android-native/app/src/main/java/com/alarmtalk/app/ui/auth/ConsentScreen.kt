@@ -57,6 +57,7 @@ internal fun ConsentScreen(
     contentPadding: PaddingValues,
     busy: Boolean,
     collect: List<String>,
+    isReconsent: Boolean,
     onAgree: (marketingAgreed: Boolean) -> Unit,
     onOpenTerms: () -> Unit,
     onOpenPrivacy: () -> Unit,
@@ -93,11 +94,23 @@ internal fun ConsentScreen(
         ) {
             Spacer(Modifier.height(24.dp))
             Text(
-                text = stringResource(R.string.auth_consent_title),
+                text = stringResource(
+                    if (isReconsent) R.string.auth_consent_title_updated else R.string.auth_consent_title,
+                ),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = TextOnScene,
             )
+            // 이미 동의했던 사람에게는 '왜 또 묻는지' 를 먼저 말해 준다. 신규 가입자에게는
+            // 제목만으로 충분해 덧붙이지 않는다.
+            if (isReconsent) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.auth_consent_subtitle_updated),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextOnSceneDim,
+                )
+            }
             // '약관 전체 동의' 는 스크롤 밖에 고정한다 — 항목을 펼쳐 읽다가도 한 번에 동의할 수
             // 있어야 한다(항목이 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지 않는다).
             if (shownCount > 1) {

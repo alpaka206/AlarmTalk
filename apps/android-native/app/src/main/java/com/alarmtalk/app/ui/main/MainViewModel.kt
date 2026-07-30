@@ -397,6 +397,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var sensitiveConsentMissing by mutableStateOf<List<String>>(emptyList())
         internal set
 
+    // 개정에 따른 재동의인지(=이 계정에 이미 동의 기록이 있는지). 동의 화면 문구가 갈린다.
+    var consentIsReconsent by mutableStateOf(false)
+        internal set
+
     // 민감 동의 시트가 떠 있는 동안 붙들어 두는 목소리 등록 요청. 동의를 마치면 그대로 이어서
     // 만든다(시트 CTA 가 '동의하고 음성 만들기' 라 사용자는 한 번만 누르면 된다).
     internal var pendingVoiceConsentDrafts by mutableStateOf<List<VoiceProfileCreationDraft>?>(null)

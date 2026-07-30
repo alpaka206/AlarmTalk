@@ -592,6 +592,7 @@ internal fun MainViewModel.checkConsentStatus() {
             // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
             consentCollect = status.collect.ifEmpty { status.missing }
             sensitiveConsentMissing = status.sensitiveMissing
+            consentIsReconsent = status.hasPriorConsent
             rememberConsentDone(userId, !status.needsConsent, status.policyVersion)
         }.onFailure { error ->
             if (authSession?.user?.id != userId) return@launch
