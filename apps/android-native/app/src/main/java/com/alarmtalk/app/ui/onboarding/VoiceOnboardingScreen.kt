@@ -120,8 +120,10 @@ internal fun VoiceOnboardingScreen(
                     )
                     Spacer(Modifier.height(16.dp))
                     Text(
+                        // 44 분의 몇 인지는 사용자에게 의미 없는 숫자다(무료 버킷 문구 수 ×
+                        // 언어 수). 얼마나 남았는지만 알면 되므로 퍼센트로 환산해 보여준다.
                         text = if (total > 0) {
-                            stringResource(R.string.onb_voice_download_progress, done, total)
+                            stringResource(R.string.onb_voice_download_progress, done * 100 / total)
                         } else {
                             stringResource(R.string.onb_voice_loading)
                         },

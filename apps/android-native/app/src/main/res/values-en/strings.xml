@@ -843,7 +843,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg2_promo_fail_owns_active_group">You already have an active group plan, so this promo code can\'t be applied</string>
     <string name="msg2_promo_fail_active_subscription">You already have an active pass. Cancel it before redeeming a coupon</string>
     <string name="msg2_promo_fail_generic">Couldn\'t apply the promo code. Please try again in a moment</string>
-    <string name="onb_voice_title">Getting your default voices ready</string>
+    <string name="onb_voice_title">Getting the voices your alarms will use</string>
     <string name="onb_voice_loading">Downloading voices…</string>
     <string name="misc2_theme_mode_system">Match system</string>
     <string name="misc2_theme_mode_light">Light mode</string>
@@ -955,8 +955,8 @@ for a smooth and secure experience.</string>
     <string name="editor_voice_switch_drops_text_title">Switch to a basic voice?</string>
     <string name="editor_voice_switch_drops_text_message">Basic voices only speak ready-made lines, so the message you typed will be removed.</string>
     <string name="editor_voice_switch_drops_text_confirm">Switch</string>
-    <string name="onb_voice_download_progress">%1$d / %2$d</string>
-    <string name="onb_voice_download_stay">This will only take a moment.</string>
+    <string name="onb_voice_download_progress">%1$d%%</string>
+    <string name="onb_voice_download_stay">This only happens once.</string>
     <string name="onb_voice_download_failed">Please try again in a moment.</string>
     <string name="onb_voice_download_retry">Try again</string>
     <string name="onb_voice_download_later">Do this later</string>
@@ -1012,5 +1012,5 @@ Pass code: %1$s
     <string name="tts_consent_body">When an alarm line is turned into speech, the text and voice are processed by our voice AI provider (ElevenLabs) and by text generation (Google, United States). That means the data is sent overseas. You can keep using alarms without agreeing, but you will not be able to create spoken alarms.</string>
     <string name="auth_consent_continue">Continue</string>
     <string name="voice_consent_agree_continue">Agree and continue</string>
-    <string name="onb_voice_title_failed">We could not get your default voices</string>
+    <string name="onb_voice_title_failed">We could not get the voices</string>
 </resources>
