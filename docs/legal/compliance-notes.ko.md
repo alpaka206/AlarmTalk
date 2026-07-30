@@ -65,8 +65,8 @@
   (이메일 인증코드 해시도 동일하게 일방향 SHA-256 + pepper ✅)
 - **고유식별정보**(주민등록번호·여권번호·운전면허번호·외국인등록번호): 저장 시 암호화.
   → **본 서비스는 고유식별정보를 수집하지 않는다**(수집 금지 방침). 해당 위험 회피.
-- **계좌·카드번호·바이오정보**: 저장 시 암호화. → 결제는 스토어 인앱결제(Apple/Google) 및
-  PG를 통하며 카드원번호를 직접 저장하지 않는다.
+- **계좌·카드번호·바이오정보**: 저장 시 암호화. → 결제는 Google Play 인앱결제를 통하며
+  카드원번호를 직접 저장하지 않는다.
 - 전송 구간: HTTPS(TLS) 사용 ✅.
 
 ### "복호화하면 안 되는 정보"
@@ -75,7 +75,7 @@
 
 ### 결제 거래 기록 DB 암호화 의무 검토 (인앱결제 IAP 구조)
 
-질문: 카드번호(PAN)·CVC·계좌번호는 **전혀 저장하지 않고**, Google Play/Apple 인앱결제(IAP)의
+질문: 카드번호(PAN)·CVC·계좌번호는 **전혀 저장하지 않고**, Google Play 인앱결제(IAP)의
 구독 거래 검증 기록만 저장하는 `store_transactions` 테이블(컬럼: `user_id`, `provider`,
 `provider_transaction_id`(구매토큰/주문ID), `product_id`, `plan_key`, `expires_at`,
 `raw_payload`(Google: `latestOrderId` + `subscriptionState`만))을 **법적으로 암호화해야 하는가?**
@@ -83,11 +83,11 @@
 **결론: 법적 암호화 의무 없음.** 프레임워크별 근거는 다음과 같다.
 
 - **PCI-DSS** — PAN/CVC를 전자적으로 저장·처리·전송하지 않고 카드 처리를 PCI-DSS 준수
-  제3자(Google/Apple)에 전적으로 위탁하는 구조는 최소 범위인 **SAQ A** 조건을 충족하며,
+  제3자(Google)에 전적으로 위탁하는 구조는 최소 범위인 **SAQ A** 조건을 충족하며,
   카드데이터 취급에 관한 PCI scope에서 사실상 제외된다. SAQ A 원문 요건: *"The merchant does
   not electronically store, process, or transmit any account data on merchant systems or
   premises, but relies entirely on a TPSP(s) to handle all these functions."* IAP는 카드
-  가맹점(merchant of record)이 Google/Apple이므로 일반 SAQ A 가맹점보다도 범위 밖일 수 있다.
+  가맹점(merchant of record)이 Google이므로 일반 SAQ A 가맹점보다도 범위 밖일 수 있다.
 - **개인정보의 안전성 확보조치 기준 제7조** — 저장 시 의무 암호화 대상은 고유식별정보·비밀번호·
   바이오정보·**신용카드번호·계좌번호**다. `provider_transaction_id`(구매토큰/주문ID)·`product_id`·
   `plan_key`·만료시각·`raw_payload`(주문ID+구독상태)는 **제7조 열거 어디에도 해당하지 않아**
@@ -123,9 +123,9 @@
   개인정보(설정/취향)로, PIPA 처리방침 명시 + 일반 동의로 충분하며 위치정보법 의무가 없다.
 
 ### 본 서비스 결정
-- **GPS 자동수집 기능 제거**(Android `WeatherLocationProvider`, 위치 권한 등) → 위치정보법
-  미해당. 별도 위치 동의·신고 불필요.
-- 날씨 동적문구는 **국가→도시 수동 선택**(대한민국·미국·일본)으로 대체. 선택값은 일반
+- **GPS 자동수집 기능 제거**(Android 위치 권한·위치 제공자 등) → 위치정보법 미해당.
+  별도 위치 동의·신고 불필요.
+- 날씨 동적문구는 **사용자가 국가·도시를 직접 선택/입력**하는 방식으로 대체. 입력값은 일반
   개인정보로 처리방침에 기재.
 
 ## 6. 앱 내 고지/열람
@@ -140,36 +140,35 @@
 - 실서비스 음성 클론·TTS 제공자는 **ElevenLabs**다. 처리방침·약관·동의·스토어 고지는 런타임에서 실제로 호출하는 ElevenLabs 기준과 일치해야 한다.
 - **핵심 원칙**: 베일런은 음성을 자사가 직접 운영하는 별도 범용 AI 모델 학습에 사용하지 않는다고 고지한다. ElevenLabs 측 처리, 보관, 품질 개선, 학습 관련 조건은 실제 적용 계약·DPA·보관 설정·하위 처리자 목록에 맞춰 고지한다.
 
-### 본 서비스 결정 (2026-06-29)
-- **ElevenLabs 운영 제공자 기준으로 고지** 채택. 처리방침·약관·동의문구·스토어 고지를 다음과 같이 정정함(반영 완료):
-  - 베일런(처리자 본인)은 음성을 **자사가 직접 운영하는 별도 범용 AI 학습**에 사용하지 않는다(유지).
-  - 음성 수탁사 **ElevenLabs**의 처리 조건은 실제 적용 계약과 정책에 따른다고 고지.
-  - 국외 이전(미국, 유럽연합 등)·하위 처리자는 ElevenLabs 최종 계약/정책 기준으로 출시 전 확인.
-- **정책 버전 상향(반영 완료)**: 정책 버전 상수는 `packages/backend/src/lib/consent.ts`의
-  `CURRENT_POLICY_VERSION`으로 이전되었으며, 본 개정(운영 음성 AI 제공자 정정·수탁사·국외이전·생체정보 분류 등 중요한 변경)에 맞춰
-  `'2' → '3'`으로 상향(2026-06-29)했다. 처리방침·약관의 "정책 버전 3 / 최종 개정일 2026-06-29"와 동기화되어
-  기존 가입자 재동의를 유도한다(동의 게이트 연동).
+### 본 서비스 결정
+- **ElevenLabs 운영 제공자 기준으로 고지**: 베일런(처리자 본인)은 음성을 자사가 직접 운영하는
+  별도 범용 AI 학습에 사용하지 않고, 음성 수탁사 ElevenLabs의 처리 조건은 실제 적용 계약과
+  정책에 따른다고 고지한다. 국외 이전(미국, 유럽연합 등)·하위 처리자는 ElevenLabs 최종 계약/정책 기준.
+- **정책 버전**: 정책 버전 상수는 `packages/backend/src/lib/consent.ts`의 `CURRENT_POLICY_VERSION`이
+  단일 출처다. 처리방침·약관의 "정책 버전 / 최종 개정일"은 이 상수와 동기화하며, 중요한 개정 시
+  상수를 올려 기존 가입자 재동의를 유도한다(동의 게이트 연동).
 - **출시 전 확정**: ElevenLabs 실제 적용 약관, DPA, retention/zero-retention 설정, 하위 처리자 목록, 삭제 API 보장을 확인한다.
 
-## 8. W2/W3: 서버측 동의 강제 · 생체정보 분류 · 삭제 완전성
+## 8. 서버측 동의 강제 · 생체정보 분류 · 삭제 완전성
 
 근거: 개인정보보호법 제15조·제22조(동의), 제23조(민감정보), 제21조(파기), 제28조의8(국외 이전).
 
-- **동의 유형 단일화·서버 강제(W2)**: `packages/backend/src/lib/consent.ts`가 동의 유형의 단일 진실
+- **동의 유형 단일화·서버 강제**: `packages/backend/src/lib/consent.ts`가 동의 유형의 단일 진실
   공급원이다. 일반 필수(`GENERAL_REQUIRED_CONSENTS` = `age14`/`terms`/`privacy`)와 민감/추가
   (`SENSITIVE_REQUIRED_CONSENTS` = `voice_biometric`/`overseas_transfer`)를 구분한다. 동의는
   (유형, 정책 버전, 동의 여부, 시각)으로 `user_consents`에 누적 기록되고, `needsConsent()`는 유형별
   최신 1건 + 현재 정책 버전 일치까지 검사한다(버전 불일치 시 재동의 요구).
-- **음성 생체정보 게이트(W2)**: 음성 클론(`POST /voice-profile/clone`)은 `voice_biometric` 미동의 시
-  403(CONSENT_REQUIRED)로 차단된다 → 처리방침/약관/동의문구를 음성=민감정보·생체정보(제23조) 기준으로 정정(W3).
-- **운세 입력·동적 문구 국외 이전(W3)**: 운세 문구는 성별·생년월일·출생 시각을 수집하며
+- **음성 생체정보 게이트**: 음성 클론(`POST /voice-profile/clone`)은 `voice_biometric` 미동의 시
+  403(CONSENT_REQUIRED)로 차단된다. 처리방침/약관/동의문구도 음성=민감정보·생체정보(제23조) 기준이다.
+- **운세 입력·동적 문구 국외 이전**: 운세 문구는 성별·생년월일·출생 시각을 수집하며
   (`lib/dynamic-prompt-settings.ts`), 동적 문구/번역 시 알람 문구와 함께 Google Cloud Vertex AI(미국)로
   전송된다(`routes/tts.ts`, `lib/vertex-translate.ts`). → 처리방침 §1.4·§5에 명시, `overseas_transfer`
   별도 동의로 고지.
-- **삭제 완전성(W3 확인)**: `lib/account-deletion.ts`는 행 삭제 전 외부 삭제(클론 음성·R2)를 큐에 적재하고,
+- **삭제 완전성**: `lib/account-deletion.ts`는 행 삭제 전 외부 삭제(클론 음성·R2)를 큐에 적재하고,
   `userPk` 미해석 시 자식 PII 고아화를 막기 위해 throw 한다. 결제 거래기록은 가명처리 분리보관(제3절).
-- **수탁 항목 추가(W3)**: Firebase Cloud Messaging(푸시 토큰), PortOne(아임포트, 국내 PG 결제 검증),
-  Google Cloud Vertex AI(문구 생성/번역)를 처리방침 §5 위탁/국외이전 표에 추가.
+- **수탁 항목**: Firebase Cloud Messaging(푸시 토큰), Google Cloud Vertex AI(문구 생성/번역)를
+  처리방침 §5 위탁/국외이전 표에 기재. 결제는 Google Play 인앱결제 단일 경로이며, 국내 PG(PortOne)
+  연동 코드는 존재하지 않으므로 고지 대상이 아니다.
 
 ## 출처
 - ElevenLabs 개인정보처리방침: https://elevenlabs.io/privacy

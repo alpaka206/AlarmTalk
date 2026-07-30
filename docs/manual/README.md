@@ -27,7 +27,8 @@ AlarmTalk rings an alarm at a scheduled time using a voice you picked — your o
    - Three permission cards appear: notification, exact alarm, full-screen. Allow each one.
    - All three are required so the alarm rings even on the lock screen.
 
-3. **Create your first voice**
+3. **Create your first voice** (paid plans)
+   - Voice profiles are a paid-plan feature. On the free plan, skip to step 4 and use the built-in voices.
    - Voices tab → "+ New voice".
    - Allow microphone access → tap Record.
    - Record up to 30 seconds (e.g., "Good morning, time to wake up").
@@ -51,22 +52,22 @@ AlarmTalk rings an alarm at a scheduled time using a voice you picked — your o
 - **Full-screen alerts**: On Android 14+ there is a dedicated menu — Settings → Apps → AlarmTalk → "Full-screen notification access".
 - **Battery optimization**: Some manufacturers (Samsung One UI, Xiaomi MIUI) require AlarmTalk to be excluded from battery optimization for reliable rings.
 
-The Account tab shows the current permission state and links straight to the system settings.
+The More tab shows the current permission state and links straight to the system settings.
 
 ## 5. Connecting family or a partner
 
 ### Inviting (Owner)
 
 1. Subscribe to the family or couple plan.
-2. People tab → Family group → "Make invite code".
-3. A 6-digit code appears. It expires in 10 minutes.
-4. Share it through any messenger, SMS, or read it aloud, or use the deep link.
+2. More tab → family / couple group → "Make invite code".
+3. An invite code in the form `INV-XXXX-XXXX-XXXX` appears. It stays valid while your plan does.
+4. Share it through any messenger, SMS, or read it aloud.
 
 ### Joining (Member)
 
 1. Install AlarmTalk and sign in.
-2. Account → Subscription / Vouchers → "Register code".
-3. Enter the 6 digits and confirm.
+2. More tab → "Register code".
+3. Enter the code you were given and confirm.
 4. Once joined, shared voices are available for any alarm.
 
 ### Using a shared voice for an alarm
@@ -85,24 +86,27 @@ The Account tab shows the current permission state and links straight to the sys
 
 ### Plans
 
-- **Free**: 1 voice profile, 5 TTS / day.
-- **Personal**: 2 voice profiles, 30 TTS / day.
-- **Couple / Family**: voice sharing for 2–5 members.
+- **Free**: built-in voices with preset alarm lines. Personal voice profiles and typing your own line are locked.
+- **Personal**: your own voice profile plus custom alarm lines, within a monthly quota.
+- **Couple / Family**: everything in Personal, plus voice sharing across 2–5 members.
+
+Current prices and quotas are shown in the app under More → subscription.
 
 ### Codes
 
-- `VA-XXXX-XXXX-XXXX` → voucher: activates a paid plan for a period without payment.
-- 6-digit numeric → family group join.
+- `INV-XXXX-XXXX-XXXX` → join a family or couple group.
+- `GIFT-XXXX-XXXX-XXXX` → activate a personal plan someone gifted you.
+- Any other promotional code → type it exactly as you received it.
 
 ### Pause / cancel
 
-- Payments renew monthly. Account → Subscription → "Pause".
+- Payments renew monthly. More → subscription → "Pause".
 - Your subscription stays active until the next billing date, then drops to Free automatically.
 
 ## 8. FAQ
 
 ### Q. My alarm did not ring once.
-- 99% of the time it is a permission issue. Account → permission state.
+- 99% of the time it is a permission issue. More tab → permission state.
 - If permissions are fine, exclude AlarmTalk from battery optimization and turn off "auto-close unused apps" in your manufacturer's settings.
 - If it still does not ring, contact support.
 
@@ -118,20 +122,19 @@ The Account tab shows the current permission state and links straight to the sys
 - You can remove your voice profile from the group. If you need help, Settings → Support.
 
 ### Q. Are there more built-in alarm tones?
-- In v1.0 the default tone is a single short pattern. More built-in tones come in a later update.
+- The default tone is currently a single short pattern. More built-in tones come in a later update.
 
 ## 9. Switching to a new device
 
 1. Install AlarmTalk on the new device → sign in with the same account.
-2. Account → "Sync now".
-3. Alarm list, voice profiles, and subscription are restored.
-4. Voice clips that were recorded locally on the old device are not transferred automatically. Re-record on the new device if needed. Shared voices are already available.
+2. Alarm list, voice profiles, and subscription are restored on sign-in.
+3. Voice clips that were recorded locally on the old device are not transferred automatically. Re-record on the new device if needed. Shared voices are already available.
 
 ## 10. Support
 
 - Email: see `SECURITY.md` for security-only contact. For product support, use the support link inside the app.
 - When reporting an issue, please include:
-  - App version (Account → App info)
+  - App version (More tab, bottom of the list)
   - Device manufacturer / model / Android version
   - When the issue happened
   - Steps to reproduce, if possible
@@ -145,5 +148,5 @@ The Account tab shows the current permission state and links straight to the sys
 | Shared voice | A voice profile created by another member of your family / partner group. |
 | Alarm mode | "Alarm only", "Voice only", or "Alarm + Voice". |
 | Snooze | Postpones the alarm for a few minutes. |
-| Invite code | 6-digit numeric code for joining a family group. 10-minute TTL, single use. |
-| Voucher code | `VA-XXXX-XXXX-XXXX` from a promotion or partner. |
+| Invite code | `INV-XXXX-XXXX-XXXX`, for joining a family or couple group. |
+| Gift code | `GIFT-XXXX-XXXX-XXXX`, for a gifted personal plan. |

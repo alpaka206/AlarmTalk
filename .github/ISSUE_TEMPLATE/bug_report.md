@@ -24,6 +24,6 @@ assignees: ""
 해당되는 경우 스크린샷 첨부
 
 ## 환경
-- 플랫폼: [예: Android 14, iOS 17, Web Chrome 120]
+- 플랫폼: [예: Android 14]
 - 앱 버전: [예: 1.0.0]
-- 디바이스: [예: Pixel 8, iPhone 15]
+- 디바이스: [예: Galaxy S23 Ultra]

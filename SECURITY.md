@@ -56,4 +56,4 @@ Responsible reporters are credited in release notes unless they request anonymit
 - Follow the OWASP Top 10 guidance.
 - Every PR requires a review before merging to `main`.
 
-For the internal threat model, response headers, rate limits, and rotation policy, see `docs/standards/README.md` §12.
+For the internal threat model, response headers, rate limits, and rotation policy, see the security policy section of [`docs/standards/README.md`](docs/standards/README.md).

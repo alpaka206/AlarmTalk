@@ -1,6 +1,6 @@
-# Voice Alarm Android Native PoC
+# AlarmTalk Android
 
-Phase 1-6 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, user-triggered backend sync, and social sharing:
+Phase 1-6 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, backend sync outside the ring path, and social sharing:
 
 - Kotlin + Jetpack Compose + Material 3
 - Room-backed local alarms
@@ -11,11 +11,10 @@ Phase 1-6 Android native alarm PoC. This project is intentionally scoped to loca
 - reusable local audio cache keys for generated TTS, recordings, and selected files
 - copy alarm action that reuses the cached local audio file
 - `alarm_only`, `voice_only`, and `alarm_voice` playback modes
-- app theme using the unified blue (azure) Material 3 tokens (light primary `#175FB0`, dark primary `#A6D2FF`); see `docs/design/README.md`
+- app theme using the unified blue (azure) Material 3 tokens (light primary `#175FB0`, dark primary `#A6D2FF`); the single source of truth is `app/src/main/java/com/alarmtalk/app/ui/theme/AlarmTalkTheme.kt` (corner-radius tokens live in `ui/components/WakerDesign.kt`)
 - email/password auth against the deployed AlarmTalk API
 - Google ID-token auth support
-- manual alarm metadata sync to the deployed AlarmTalk API
-- friend list, pending friend requests, and friend request creation
+- alarm metadata sync to the deployed AlarmTalk API on Alarms-tab entry
 - family group, invite code creation/accept/revoke, and shared voice profile lookup
 - subscription, voucher, and unified code status surfaces
 - `AlarmManager.setAlarmClock`
@@ -48,8 +47,8 @@ Current deployed auth support:
 
 - Email/password: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`.
 - Google: protected routes accept a Google ID token as a bearer token, matching the legacy app behavior.
-- Email-code login: intentionally skipped for the MVP because it needs backend code issuance, email delivery, expiration, throttling, and token exchange.
-- Apple: iOS should add Sign in with Apple later. The current backend accepts Apple ID-token payloads on protected routes, but production-grade Apple JWKS signature verification still needs backend hardening before treating it as final.
+- Email-code login: live — `POST /api/auth/email-code` issues a 6-digit code and `POST /api/auth/email-code/verify` exchanges it for a token (delivery via Resend on both dev and prod).
+- Apple: not supported. There is no iOS app and the backend has no Apple auth route; the `users.apple_id` column was dropped by migration `drop-apple-identity-and-billing-columns`.
 
 Provider-costing endpoints are only called from explicit user actions such as saving a new voice-profile TTS alarm or cloning a voice profile. Automated QA should not tap those paths unless provider credit spend is intended.
 
@@ -285,14 +284,14 @@ Cache reuse QA without provider spend:
 
 Expected: steps 2-4 reuse the app-private cached file. Android should not call `/api/tts/generate`; the backend should not call ElevenLabs.
 
-### Backend Auth / Manual Sync
+### Backend Auth / Alarm Sync
 
-Network is only used when the user signs in or taps Sync now.
+There is no Sync now button. Alarm metadata sync runs automatically when the Alarms tab is opened, throttled to once per 60 seconds per tab.
 
 1. Open the app.
 2. Sign in with email/password, or configure Google sign-in and continue with Google.
 3. Create or edit local alarms.
-4. Tap Sync now from the Account panel.
+4. Move to another tab, wait out the 60 second throttle, then reopen the Alarms tab.
 5. Watch logs:
 
 ```powershell
@@ -306,19 +305,17 @@ Expected:
 - Alarm rows show `synced`, `changed`, `sync failed`, or `local only`.
 - Local voice files are not uploaded automatically. If an alarm uses a device-local file, sync writes alarm metadata only and keeps the audio on-device.
 
-To verify the ring path is still offline, sync once, enable airplane mode, then let a local alarm fire. Ringing should still use Room state and local audio only.
+To verify the ring path is still offline, let one sync complete, enable airplane mode, then let a local alarm fire. Ringing should still use Room state and local audio only.
 
 ### Social / Sharing
 
-Social APIs are user-triggered only:
+Social surfaces refresh when the tab that owns them is opened:
 
 1. Sign in.
-2. Tap Refresh in People.
-3. Send a friend request by email.
-4. Accept any pending friend request.
-5. Create a family invite as a family owner.
-6. Join a family invite with a six digit code.
-7. Confirm shared family voices are listed.
+2. Open the 더보기 (Menu) tab; opening it refreshes billing and social state.
+3. Create a family invite as a family owner.
+4. Join a family invite by pasting an `INV-XXXX-XXXX-XXXX` code into the code field.
+5. Confirm shared family voices are listed.
 
 Expected:
 
@@ -329,7 +326,7 @@ Expected:
 
 ### Billing
 
-Subscription and code surfaces load only on user-triggered refresh:
+Subscription and code surfaces load when a tab that owns them is opened:
 
 1. Sign in.
 2. Open the billing/subscription surface.

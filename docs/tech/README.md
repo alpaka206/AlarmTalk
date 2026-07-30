@@ -1,77 +1,82 @@
-# Technical Reference
+# 기술 참조
 
-System architecture, database schema, and HTTP API for AlarmTalk.
+AlarmTalk의 시스템 구조와 API 개요.
 
-## 1. System Architecture
+**스키마·엔드포인트 시그니처의 유일한 출처는 코드다.** 이 문서는 코드를 열기 전에 알아야 할 구조와, 코드만 봐서는 안 보이는 정책만 담는다. 표를 늘리지 말고 코드를 가리켜라.
 
-### High-level
+| 알고 싶은 것 | 볼 곳 |
+|---|---|
+| 테이블·컬럼·마이그레이션 | `packages/backend/src/lib/migrations.ts` |
+| 엔드포인트 요청/응답 | `packages/backend/src/routes/` + `packages/backend/test/` |
+| 공용 요청 스키마 | `packages/shared/src/schemas/` |
+| 에러 코드 | [reference/error-codes.md](../reference/error-codes.md) |
+| 환경·시크릿·배포 절차 | [ops/environments.md](../ops/environments.md) |
+| Worker 시크릿 전체 목록 | `packages/backend/src/types.ts` 의 `Env` 인터페이스 |
+
+## 1. 시스템 구조
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                           CLIENTS                                │
-│  Android (Kotlin/Compose)   iOS PoC (SwiftUI/AlarmKit)  Landing │
-└─────────────┬───────────────────────┬──────────────────────┬────┘
-              │ HTTPS                  │                      │
-              ▼                        ▼                      ▼
-┌────────────────────────────────────────────────────────────────┐
-│              Cloudflare Workers — voice-alarm-api                │
-│ securityHeaders → sentry → logger → rateLimit → bodyLimit      │
-│              → cors → auth (for /api/*) → cache                │
-│                                                                 │
-│ Routes: /auth /user /voice /tts /alarm /family /code /billing  │
-│         /push /holiday /admin                                   │
-│ Cron:   */5 * * * *  (subscription expiry, account purge, …)   │
-└──────────┬──────────────────┬─────────────────┬─────────────────┘
-           │                  │                 │
-           ▼                  ▼                 ▼
-   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
-   │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
-   │ domain tables│  │ voice + tts  │  │ ElevenLabs           │
-   │ 79 migrations│  │ objects      │  │ Google JWKS          │
-   └──────────────┘  └──────────────┘  │ Apple JWKS           │
-                                       │ Sentry               │
-                                       └──────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                        CLIENTS                          │
+│      Android (Kotlin/Compose)          Landing (web)    │
+└─────────────┬──────────────────────────────┬────────────┘
+              │ HTTPS                        │
+              ▼                              ▼
+┌─────────────────────────────────────────────────────────┐
+│           Cloudflare Workers — voice-alarm-api          │
+│  securityHeaders → sentry → logger → ipRateLimit →      │
+│  bodyLimit → cors → (/api/*: auth → consent →           │
+│  rateLimit → cache)                                     │
+│                                                         │
+│  Routes: /auth /user /voice /tts /alarm /family /code   │
+│          /billing /push /holiday /admin                 │
+│  Cron:   */5 * * * *                                    │
+└──────────┬─────────────────┬────────────────┬───────────┘
+           ▼                 ▼                ▼
+   ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐
+   │ Turso libSQL │  │ Cloudflare R2│  │ 외부 API         │
+   │ 도메인 테이블 │  │ voice + tts  │  │ ElevenLabs       │
+   └──────────────┘  └──────────────┘  │ Google JWKS      │
+                                       │ Vertex / Resend  │
+                                       │ FCM / Sentry     │
+                                       └──────────────────┘
 ```
 
-### Layer boundaries (Android — `apps/android-native`)
+### 레이어 경계 — Android (`apps/android-native`)
 
-| Layer | Package | Responsibility |
+| 레이어 | 패키지 | 책임 |
 |---|---|---|
-| UI | `ui/*` | Compose screens, components, theme |
-| Domain (alarm) | `alarm/*`, `ringing/*` | AlarmReceiver, Scheduler, RingingService, RingingActivity |
-| Data | `data/*` | Room, DAOs, repositories, audio store, sync services |
-| Network | `network/*` | Retrofit API clients, session store |
-| Sync | `sync/*` | WorkManager workers |
-| Core | `core/*` | Logging, environment |
+| UI | `ui/*` | Compose 화면·컴포넌트·테마 |
+| 도메인(알람) | `alarm/*`, `ringing/*` | AlarmReceiver, Scheduler, RingingService, RingingActivity |
+| 데이터 | `data/*` | Room, DAO, 리포지토리, 오디오 스토어, 동기화 서비스 |
+| 네트워크 | `network/*` | Retrofit API 클라이언트, 세션 스토어 |
+| 동기화 | `sync/*` | WorkManager 워커 |
+| 코어 | `core/*` | 로깅, 환경 |
 
-### Layer boundaries (Backend — `packages/backend`)
+### 레이어 경계 — 백엔드 (`packages/backend`)
 
-| Layer | Package | Responsibility |
+| 레이어 | 경로 | 책임 |
 |---|---|---|
-| Entry | `src/index.ts` | Hono app, middleware chain, cron |
-| Routes | `src/routes/*` | HTTP endpoints |
-| Middleware | `src/middleware/*` | Auth, rate limit, logging, security headers |
-| Lib (domain) | `src/lib/*` | Pure functions, DB adapters, external providers |
-| Data | `src/data/*` | Seed data (presets) |
+| 진입 | `src/index.ts` | Hono 앱, 미들웨어 체인, cron |
+| 라우트 | `src/routes/*` | HTTP 엔드포인트 |
+| 미들웨어 | `src/middleware/*` | 인증, 레이트리밋, 로깅, 보안 헤더, 동의 게이트 |
+| 라이브러리 | `src/lib/*` | 순수 함수, DB 어댑터, 외부 프로바이더 |
 
-### Workspace packages
+### 워크스페이스 패키지
 
-- `packages/shared` — shared types and Zod schemas
-- `packages/ui` — color / type / spacing design tokens
-- `packages/voice` — voice-provider interface and adapters
+- `packages/shared` — 백엔드·클라 공용 타입과 zod 스키마
+- `packages/voice` — 보이스 프로바이더·스토리지 인터페이스와 어댑터
 
-### Alarm-ring path (offline by design)
+### 알람 울림 경로 (오프라인 설계)
 
 ```
-Save alarm
+알람 저장
   └─ AlarmRepository.save() → Room
   └─ AlarmScheduler.schedule() → AlarmManager.setAlarmClock(...)
 
-At fire time
-  └─ OS calls AlarmReceiver.onReceive()
-
-AlarmReceiver
-  └─ startForegroundService(RingingService)
+발사 시각
+  └─ OS 가 AlarmReceiver.onReceive() 호출
+       └─ startForegroundService(RingingService)
 
 RingingService
   ├─ AlarmAudioStore.loadCachedAudio(alarmId)
@@ -81,388 +86,126 @@ RingingService
 
 RingingActivity
   ├─ showWhenLocked / turnScreenOn
-  ├─ Dismiss → service stop, enqueue "alarm_completed"
-  └─ Snooze → schedule(now + Δ), enqueue "alarm_snoozed"
+  ├─ 해제 → 서비스 종료, "alarm_completed" 큐잉
+  └─ 스누즈 → schedule(now + Δ), "alarm_snoozed" 큐잉
 ```
 
-No network call happens on this path. Pre-launch QA verifies this with `adb shell cmd connectivity airplane-mode enable`.
+**이 경로에는 네트워크 호출이 하나도 없다.** 출시 전 QA 는 `adb shell cmd connectivity airplane-mode enable` 로 이를 검증한다. 이 원칙을 깨는 변경은 리뷰에서 반려한다.
 
-### Manual server sync (when the user taps "Sync now")
+### 수동 서버 동기화 ("지금 동기화" 탭)
 
 ```
-[Android UI Sync]
-  └─ WorkManager.enqueueOneTimeWork(RemoteAlarmSyncWorker)
-        └─ AlarmSyncService.pushDirty()
-              ├─ POST /api/alarm
-              ├─ PATCH /api/alarm/:id
-              └─ DELETE /api/alarm/:id
-        └─ RemoteAlarmPullSyncService.pull()
-              ├─ GET /api/alarm
-              └─ reconcile(remote, local) → Room
-        └─ Result.success → snackbar
+WorkManager.enqueueOneTimeWork(RemoteAlarmSyncWorker)
+  └─ AlarmSyncService.pushDirty()          → POST/PATCH/DELETE /api/alarm
+  └─ RemoteAlarmPullSyncService.pull()     → GET /api/alarm → reconcile → Room
 ```
 
-### External services
+### 외부 서비스
 
-| Service | Role | Coupling |
+| 서비스 | 역할 | 결합 방식 |
 |---|---|---|
 | Cloudflare Workers | API + cron | HTTP, ScheduledEvent |
-| Turso libSQL | Primary DB | libSQL HTTP client |
-| Cloudflare R2 | Object store (voice / TTS) | Workers binding `VOICE_BUCKET` |
-| ElevenLabs | Voice clone + TTS | HTTPS REST |
-| Firebase FCM (HTTP v1) | Data-only sync-trigger push (family alarm creation) | HTTPS REST, service-account OAuth |
-| Resend | Email verification code delivery | HTTPS REST |
-| Google JWKS | ID token verification | HTTPS |
-| Apple JWKS | Sign in with Apple ID token signature verification | HTTPS |
-| Sentry | Error capture | toucan-js (server) + Android client SDK (DSN-gated) |
+| Turso libSQL | 주 DB | libSQL HTTP 클라이언트 |
+| Cloudflare R2 | 오브젝트 스토어(voice / TTS) | Workers 바인딩 `VOICE_BUCKET` |
+| ElevenLabs | 보이스 클론 + TTS | HTTPS REST |
+| Google Vertex (Gemini) | 동적 문구 생성·번역 | HTTPS REST, 서비스 계정 |
+| Firebase FCM (HTTP v1) | data-only 동기화 트리거 푸시(가족 알람 생성 시) | HTTPS REST, 서비스 계정 OAuth |
+| Resend | 이메일 인증 코드 발송 | HTTPS REST |
+| Google JWKS | ID 토큰 검증 | HTTPS |
+| Sentry | 에러 수집 | toucan-js(서버) + Android SDK(DSN 있을 때만) |
 
-### Failure domains
+### 장애 도메인
 
-| Failure | Alarm ring impact | Other impact |
+| 장애 | 알람 울림 영향 | 그 외 영향 |
 |---|---|---|
-| Cloudflare Workers down | None | Sign-in, sync, TTS generation paused |
-| Turso down | None | API 500, sync paused |
-| R2 down | None (mostly cache-hit locally) | TTS generation fails on miss |
-| Voice provider down | None | New TTS generation fails |
-| Device-side Room corruption | Possible partial loss | Recoverable through server sync |
+| Workers 다운 | 없음 | 로그인·동기화·TTS 생성 중단 |
+| Turso 다운 | 없음 | API 500, 동기화 중단 |
+| R2 다운 | 없음(대부분 로컬 캐시 히트) | 캐시 미스 시 TTS 생성 실패 |
+| 보이스 프로바이더 다운 | 없음 | 신규 TTS 생성 실패 |
+| 단말 Room 손상 | 부분 유실 가능 | 서버 동기화로 복구 |
 
-### Architecture Decision Records (ADR — summarized)
+### 배포·환경 (요약)
 
-| Date | Decision | Why |
-|---|---|---|
-| 2025-12 | Rewrite from React Native/Expo to native | Alarm reliability could not be guaranteed under push/Expo notifications. |
-| 2026-02 | Android first | Only Android physical-device testing was available at that time. |
-| 2026-03 | ElevenLabs as the active voice provider | Use one proven Instant Voice Clone + TTS provider while keeping deterministic caching to control spend. |
-| 2026-04 | 6-digit family invite code + deep-link hybrid | Works without collecting email; can be shared offline by voice; 10-minute TTL mitigates brute force. |
-| 2026-05 | Deterministic TTS caching | Same profile + text + language always maps to the same R2 object, eliminating duplicate cost. |
+절차 전체는 [ops/environments.md](../ops/environments.md) 를 본다. 여기엔 코드에 박힌 결합만 적는다.
 
-### Deployment
+- R2 바인딩: dev `VOICE_BUCKET → voice-alarm-voices`, prod `VOICE_BUCKET → voice-alarm-voices-prod`.
+- Turso 는 환경별로 분리한다. dev 워커 `voice-alarm-api-dev`, prod 워커 `voice-alarm-api` 가 각각 다른 `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` 을 쓴다.
+- 로컬 값은 ignore 되는 `packages/backend/.dev.vars.{dev,prod}` 에 두고 `npm run secrets:sync:{dev,prod} --workspace=backend` 로 반영한다.
+- CI 가 `develop` → dev, `main` → prod 로 배포하고 마이그레이션까지 돌린다.
+- Cron 은 dev/prod 모두 `*/5 * * * *`.
 
-| Target | Command / tool |
-|---|---|
-| Backend dev | `npm run deploy:dev --workspace=backend` (wrangler) |
-| Backend production | `npm run deploy:prod --workspace=backend` (wrangler) |
-| Android | `./gradlew :app:bundleRelease` → Play Console internal track |
-| iOS | Xcode → TestFlight (macOS workstation) |
-| Landing | Static deploy (Cloudflare Pages or any static host) |
+## 2. 데이터베이스
 
-Backend secrets are managed as Cloudflare Worker secrets. The authoritative list is the `Env` interface in `packages/backend/src/types.ts`; main groups:
+Turso(libSQL / SQLite). 스키마는 `packages/backend/src/lib/migrations.ts` 의 순서 배열이 유일 출처이고, 적용 여부는 `_migrations` 원장이 관리한다. **테이블 목록·DDL 을 이 문서에 복사하지 마라** — 과거에 그렇게 했다가 통째로 썩었다.
 
-- Core: `JWT_SECRET`, `PASSWORD_PEPPER`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `ELEVENLABS_API_KEY`
-- Auth / email: `GOOGLE_CLIENT_ID`, `RESEND_API_KEY`, `AUTH_EMAIL_FROM` (verification email via Resend)
-- Push (FCM HTTP v1): `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON` (unset → push logs MOCK only)
-- Dynamic text (Vertex): `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL`
-- Billing: `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`, `ANDROID_PACKAGE_NAME`, `GOOGLE_RTDN_VERIFICATION_TOKEN`
-  (Apple IAP 시크릿은 iOS 미운영으로 제거됨 — 재개 시 라우트와 함께 되살린다)
-- Ops: `INIT_DB_SECRET` (migration gate), `ADMIN_SECRET` (`/admin` HTTP Basic), `SENTRY_DSN`, `KASI_SERVICE_KEY` (KR holiday overlay), `TEST_CODE_ISSUER_EMAILS`
-
-R2 binding: `VOICE_BUCKET → voice-alarm-voices` in dev and `VOICE_BUCKET → voice-alarm-voices-prod` in production.
-
-Turso must also be split by environment:
-
-- dev Worker `voice-alarm-api-dev` uses a dev-only `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`.
-- production Worker `voice-alarm-api` uses a production-only `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`.
-- Store local values in ignored files: `packages/backend/.dev.vars.dev` and `packages/backend/.dev.vars.prod`.
-- Sync secrets with `npm run secrets:sync:dev --workspace=backend` and `npm run secrets:sync:prod --workspace=backend`.
-- After creating a fresh DB, run migrations with `POST /api/init-db`. In production, include `x-init-db-secret`.
-- CI deploys and migrates dev from `develop`, and deploys and migrates production from `main`.
-
-Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrade.
-
-## 2. Database
-
-- **DB**: Turso (libSQL / SQLite)
-- **Tables**: domain tables plus the `_migrations` ledger
-- **Migrations**: 79 (latest id `79` = 사장 스키마 정리 — notes·voice_speakers·friendships·gifts DROP + users.picture·last_active_at DROP; ids 11–13 unused), defined in `packages/backend/src/lib/migrations.ts`
-
-### Entity overview
-
-```
-                                  users
-                                    │
-             ┌────────────┬─────────────────────┐
-             ▼            ▼                     ▼
-      voice_profiles    alarms (target_user_id=user)
-             │            │
-             ├──── messages ── message_library
-             │            │
-             │            └── alarms.voice_profile_id
-             │
-             └─ voice_uploads
-
-users ── push_tokens
-users ── subscriptions ── plans ── voucher_codes
-users ── plan_group_members ── plan_groups ── plan_group_invites
-```
-
-### Tables
-
-| # | Table | Purpose | Key relationships |
-|---|---|---|---|
-| 1 | `users` | Account, plan, settings | many-to-many |
-| 2 | `voice_profiles` | Voice profile (official ≤ 1 per user; ≤ 1 active draft, creatable only while no official exists) | `users 1:0..1` |
-| 3 | `voice_uploads` | Raw uploaded audio | `users 1:N` |
-| 5 | `messages` | TTS message | `voice_profiles 1:N` |
-| 6 | `message_library` | Inbox / saved messages | `users ⊣ messages` |
-| 7 | `generated_audio` | Deterministic TTS cache | `messages 1:1` |
-| 8 | `alarms` | Alarm metadata | `users ⊣ voice_profiles ⊣ messages` |
-| 11 | `plans` | Plan master (free/personal/family) | seed |
-| 12 | `subscriptions` | Subscriptions | `users · plans · plan_groups` |
-| 13 | `voucher_codes` | Voucher codes | `plans · users(issuer)` |
-| 14 | `plan_groups` | Family/couple group | `users(owner)` |
-| 15 | `plan_group_members` | Group membership | `plan_groups · users` |
-| 16 | `plan_group_invites` | 6-digit invite codes | `plan_groups · users(issuer/redeemer)` |
-| 17 | `push_tokens` | FCM registration tokens — **active**. Written by `POST /api/push/register`, removed by `POST /api/push/unregister`; consumed by the creation-time data-only family-alarm push. Never used on the ring path. | `users · platform` |
-
-### Key constraints
-
-- `voice_profiles` at most 1 official per user (`MAX_VOICE_PROFILES = 1` in `routes/voice-profile.ts`) and at most 1 active draft — enforced at the route layer with COUNT. Draft creation is also rejected while an official voice exists (the official slot must be free, since promotion would exceed it); replacing a voice requires deleting the official first.
-- `plan_group_invites.code` UNIQUE, 10-minute TTL, lazy `expired` transition on read.
-- Risk-of-rollback flows (subscription, voucher redemption, ownership transfer) use BEGIN/COMMIT through `lib/transactions.ts`.
-
-### Selected DDL
-
-```sql
-CREATE TABLE users (
-  id TEXT PRIMARY KEY,
-  google_id TEXT,
-  apple_id TEXT,
-  email TEXT NOT NULL,
-  password_hash TEXT,
-  name TEXT,
-  plan TEXT NOT NULL DEFAULT 'free',
-  allow_family_alarms INTEGER DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
-CREATE UNIQUE INDEX idx_users_email ON users(email);
-CREATE UNIQUE INDEX idx_users_google_id
-  ON users(google_id) WHERE google_id IS NOT NULL;
-
-CREATE TABLE alarms (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id),
-  target_user_id TEXT REFERENCES users(id),
-  message_id TEXT REFERENCES messages(id),
-  time TEXT NOT NULL,                          -- 'HH:mm'
-  repeat_days TEXT NOT NULL DEFAULT '[]',      -- '[0,1,2,...]'
-  is_active INTEGER NOT NULL DEFAULT 1,
-  snooze_minutes INTEGER NOT NULL DEFAULT 5,
-  mode TEXT NOT NULL DEFAULT 'tts',            -- 'sound-only' | 'tts'
-  wake_mode TEXT NOT NULL DEFAULT 'sound_then_voice',
-  voice_profile_id TEXT REFERENCES voice_profiles(id),
-  speaker_id TEXT,
-  vibration_pattern TEXT NOT NULL DEFAULT 'default',
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE plan_group_invites (
-  id TEXT PRIMARY KEY,
-  plan_group_id TEXT NOT NULL REFERENCES plan_groups(id),
-  inviter_user_id TEXT NOT NULL REFERENCES users(id),
-  code TEXT NOT NULL UNIQUE,                   -- 6 digits
-  status TEXT NOT NULL DEFAULT 'pending'
-    CHECK(status IN ('pending','used','revoked','expired')),
-  created_at TEXT DEFAULT (datetime('now')),
-  expires_at TEXT NOT NULL,
-  used_by_user_id TEXT REFERENCES users(id),
-  used_at TEXT
-);
-```
-
-### Migrations
-
-Migrations live in `packages/backend/src/lib/migrations.ts` as an ordered array. They are applied via:
+적용:
 
 ```bash
-# Apply all
-curl -X POST https://<host>/api/init-db
+# 전체 적용
+curl -X POST https://<host>/api/init-db -H "x-init-db-secret: <secret>"
 
-# Apply a range (to stay under Workers free-plan subrequest limits)
-curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
+# 범위 적용 (Workers 무료 플랜 subrequest 한도 회피)
+curl -X POST "https://<host>/api/init-db?fromId=1&toId=10" -H "x-init-db-secret: <secret>"
 ```
 
-| # | Name | Change |
-|---|---|---|
-| 1 | initial-schema | Core 8 tables |
-| 2 | email-password-auth | `users.password_hash`, nullable `google_id` |
-| 3 | voice-uploads | `voice_uploads` |
-| 4 | voice-speakers | `voice_speakers` |
-| 5 | alarm-mode-voice-speaker | `alarms.mode`, `voice_profile_id`, `speaker_id` |
-| 6 | plans-and-subscriptions | `plans`, `subscriptions` + seed |
-| 7 | voucher-codes | `voucher_codes` |
-| 8 | plan-groups | `plan_groups`, `plan_group_members` |
-| 9 | plan-group-invites | `plan_group_invites` |
-| 10 | user-allow-family-alarms | `users.allow_family_alarms` |
-| 14 | push-tokens | `push_tokens` |
-| 15 | alarm-vibration-pattern | `alarms.vibration_pattern` |
-| 16 | user-last-active | `users.last_active_at` |
-| 17 | alarm-wake-mode | `alarms.wake_mode` |
-| 18 | notes-table | `notes` |
-| 35 | apple-login-users | `users.apple_id` + unique nullable Apple ID index |
-| 63 | push-tokens-token-index | token-leading index for `/push/register`·`/unregister` lookups |
-| 79 | drop-dead-social-tables-and-user-columns | DROP `notes`·`voice_speakers`·`friendships`·`gifts`(+`_kst` views), DROP `users.picture`·`users.last_active_at` |
-| 64 | requeue-clone-prerender-for-weather-unknown-clip | requeue `done` prerender rows so the new weather fallback variant (index 8) gets rendered |
+`init-db` 는 파괴적 DDL 과 유료 합성을 수행하므로 **모든 환경에서** `x-init-db-secret` 헤더를 요구한다. 워커에 `INIT_DB_SECRET` 이 없으면 무조건 404 로 거부한다(비교는 상수시간). dev/prod 시크릿이 GitHub `INIT_DB_SECRET_DEV`/`INIT_DB_SECRET_PROD` 와 어긋나면 CI 마이그레이션이 404 로 실패한다.
 
-### Operations
+### 코드를 훑어서는 안 보이는 제약
 
-- DEV / STAGING / PROD point to different Turso databases with different secrets.
-- `npm run reset:test-data` cleans test accounts.
-- Direct production edits require a PR, merge, and a window not overlapping with `wrangler scheduled` runs.
+- `voice_profiles`: 유저당 공식(official) 보이스 최대 1개(`MAX_VOICE_PROFILES`, `routes/voice-profile.ts`), 활성 초안(draft) 최대 1개. 라우트 레이어에서 COUNT 로 강제한다. 공식 보이스가 있으면 초안 생성 자체를 거부한다(승격 시 슬롯이 넘치므로). 보이스를 교체하려면 공식 보이스를 먼저 지워야 한다.
+- `plan_group_invites.code`: UNIQUE, TTL 10분. 만료는 배치가 아니라 읽을 때 lazy 로 `expired` 전이시킨다.
+- 롤백 위험 흐름(구독, 바우처 사용, 소유권 이전)은 `lib/transactions.ts` 의 BEGIN/COMMIT 을 쓴다.
+- DEV / PROD 는 서로 다른 Turso DB 와 시크릿을 본다. prod 직접 수정은 PR·머지를 거치고 `wrangler scheduled` 실행 시각과 겹치지 않게 한다.
 
 ## 3. HTTP API
 
-- **Base URL** (production): `https://api.alarm-talk.com/api`
-- **Auth**: `Authorization: Bearer <JWT | google_id_token | apple_id_token>`
-- **Response shape**:
-  ```
-  200/201: { ...payload }
-  4xx/5xx: { error: "CODE", message: "..." }
-  ```
+- Base URL(prod): `https://api.alarm-talk.com/api`
+- 인증: `Authorization: Bearer <JWT | google_id_token>`
+- 에러 코드와 응답 형태: [reference/error-codes.md](../reference/error-codes.md)
 
-### Common error codes
+### 라우트 그룹
 
-| HTTP | Code | Condition |
-|---|---|---|
-| 400 | `VALIDATION_ERROR` | Zod validation failed |
-| 401 | `UNAUTHORIZED` | Missing / expired / invalid JWT |
-| 403 | `FORBIDDEN` | Permission insufficient |
-| 404 | `NOT_FOUND` | Resource missing |
-| 413 | `BODY_TOO_LARGE` | > 512 KB |
-| 429 | `RATE_LIMITED` | > 60 req/min |
-| 500 | `INTERNAL_ERROR` | Unhandled server error |
-
-### Middleware chain
-
-`securityHeaders → sentry → logger → rateLimit → bodyLimit → cors → (for /api/*: auth + cache)`
-
-### Route groups
-
-| Prefix | Responsibility |
+| 프리픽스 | 책임 |
 |---|---|
-| `/auth` | Sign up / sign in / me |
-| `/user` | Profile, plan, search, account delete |
-| `/voice` | Voice profile, upload |
-| `/tts` | TTS generation, presets |
-| `/alarm` | Alarm CRUD |
-| `/family` | Family group, invites, family alarm |
-| `/billing` | Subscription, voucher; `/billing/google/rtdn` is a public RTDN webhook (query-token protected, no user auth) |
-| `/code` | Unified code register (VA-XXX / 6-digit) |
-| `/push` | FCM token register / unregister (`POST /push/register`, `POST /push/unregister`) |
-| `/holiday` | Public holiday lookup (no auth, public cache) |
-| `/admin` | Admin console — mounted at `/admin` (not `/api`), protected by HTTP Basic with `ADMIN_SECRET` |
+| `/auth` | 가입 / 로그인 / me / 이메일 인증 코드 |
+| `/user` | 프로필, 플랜, 검색, 계정 삭제 |
+| `/voice` | 보이스 프로필, 업로드, 사전렌더 |
+| `/tts` | TTS 생성 |
+| `/alarm` | 알람 CRUD |
+| `/family` | 가족 그룹, 초대, 가족 알람 |
+| `/billing` | 구독·바우처. `/billing/google/rtdn` 은 유저 인증 없는 공개 RTDN 웹훅(쿼리 토큰으로 보호) |
+| `/code` | 통합 코드 등록(`INV-`/`GIFT-` 이용권 / 프로모 자동 판별) |
+| `/push` | FCM 토큰 등록·해제 |
+| `/holiday` | 공휴일 조회(인증 없음, 공개 캐시) |
+| `/admin` | 관리 콘솔 — `/api` 가 아니라 `/admin` 에 마운트, `ADMIN_SECRET` HTTP Basic |
 
-> `/library` 라우터와 `GET /api/tts/presets` 는 클라이언트가 호출하지 않아 제거됐다.
-> 메시지 보관함 테이블(`message_library`)은 남아 있지만 읽는 API 는 없다.
+인증 없이 열려 있는 것은 `GET /`·`GET /health`(DB 연결 확인)와 `POST /api/init-db`(시크릿 헤더 게이트), 그리고 `/api/auth/*`·`/api/holiday`·RTDN 웹훅뿐이다. 나머지 `/api/*` 는 전부 `authMiddleware` 뒤에 있다.
 
-### Selected endpoints
+> `/library` 라우터와 `GET /api/tts/presets` 는 클라이언트가 호출하지 않아 제거됐다. 보관함 테이블(`message_library`)은 남아 있지만 읽는 API 는 없다.
 
-#### `POST /auth/register`
+### 시그니처가 아니라 정책인 것들
 
-```json
-Req:  { "email": "u@x.com", "password": "********", "name": "Sue", "email_verification_code": "123456" }
-Res:  { "token": "...", "user": { "id": "...", "email": "u@x.com", "name": "Sue", "plan": "free" } }
-```
+라우트 파일을 읽어도 "왜 이렇게 막혀 있는지"는 안 보이므로 여기 적는다.
 
-Registration requires a current 6-digit email verification code. The code is requested with:
+**`POST /voice/clone` (multipart)** — 공식 보이스를 바로 만들 수 없다. 클라는 ① 비공개 초안 1개 생성 → ② 결정적 프리뷰 요청 → ③ 로컬 재생을 끝낸 뒤에만 서버가 발급한 재생 토큰을 `POST /voice/:id/preview-played` 로 보고 → ④ `PATCH /voice/:id` + `is_draft=false` 로 승격, 순서를 지켜야 한다. 초안의 프로바이더 등록은 KST 월 3회·활성 초안 1개로 제한되고, 승격은 KST 월 1회다. 공식 보이스를 지워도 그 달 승격 횟수는 환불되지 않는다. 초안은 공유·알람 연결·일반 TTS 에 쓸 수 없다.
 
-```json
-POST /auth/email-code
-Req: { "email": "u@x.com" }
-Res: { "success": true, "expires_in_seconds": 600 }
-```
+**`POST /code/register`** — 형식으로 자동 판별한다. `INV-`/`GIFT-XXXX-XXXX-XXXX` 는 바우처 사용(구독 insert + 플랜 갱신)이고, 발급자 구독이 딸린 코드는 그 발급자의 플랜 그룹에 멤버로 합류시키며, 단독 코드는 사용자를 새 그룹의 소유자로 만든다(결제한 것과 동일). 그 외 문자열은 프로모 코드(대소문자 무시)로 본다.
 
-The client may pre-check the code before submitting the full registration form:
+**`POST /billing/test-codes`** — Google Play 결제가 연결되기 전까지 쓰는 내부 클로즈드 테스트용. `TEST_CODE_ISSUER_EMAILS` 에 적힌 이메일만 발급할 수 있고, 미설정이면 아무도 못 한다(fail-closed, 하드코딩 기본값 없음). `personal` 은 `GIFT-`, `couple`/`family` 는 `INV-` 형식이며 모두 1회용이고, 공유 그룹 코드는 처음 등록한 사람이 소유자가 된다.
 
-```json
-POST /auth/email-code/verify
-Req: { "email": "u@x.com", "code": "123456" }
-Res: { "success": true }
-```
+### 크론
 
-Production delivery uses Resend. Configure `RESEND_API_KEY` and
-`AUTH_EMAIL_FROM` as Worker secrets after verifying the sending domain.
+`*/5 * * * *` 의 `scheduled` 핸들러는 외부 오디오 삭제 정합, 만료된 이메일 코드 정리, 구독 만료·다운그레이드, 계정 파기(30일 유예), 그리고 명시적으로 승인된 보이스 사전렌더 작업을 돌린다.
 
-#### `POST /voice/clone` (multipart)
+프리뷰를 마친 비공개 초안을 keep 하면 소유자 스코프의 사전렌더 잡이 1개 생긴다. 매니페스트는 앱 언어 1개에 대해 `greeting` 1 + `weather` 9 + `fortune` 5 + `love` 3 + `medication` 3 = **21클립**으로 고정이다(`CLONE_CLIP_SEEDS`, `lib/stock-clips.ts`). `weather` 9개 중 앞 8개는 `CLONE_WEATHER_CONDITIONS`(인덱스 0–7)이고, 마지막 1개는 **항상** "날씨 미해결" 폴백이다 — 준비창에서 날씨를 못 받아온 클라가 무음이나 엉뚱한 조건 대신 이걸 튼다(클라 규약: 마지막 클립 = `size - 1`). `resolvePrerenderWeatherIndex` 는 0–7 만 반환하므로 인덱스 8 은 폴백 전용이다. 워커는 정확한 claim 토큰으로만 이 유한 매니페스트를 이어받고, 합성 전과 게시 전에 보이스 소유권·상태·민감 동의를 다시 확인한다. 스스로 유저를 찾아 나서거나 매니페스트 밖 카테고리를 추가하지 않는다.
 
-- Body: `audio` (file), `name` (string), `isDraft=true`, relationship/title fields, and app `language`.
-- Direct official creation is rejected. The client must create one private draft, request its deterministic preview, report the server-issued playback token to `POST /voice/:id/preview-played` only after local playback completion, and then promote it with `PATCH /voice/:id` and `is_draft=false`.
-- Draft provider enrollment is limited to three attempts per KST month and one active draft. Promotion is limited to one official registration per KST month; deleting an official voice does not refund that registration.
-- Provider: ElevenLabs. Drafts cannot be shared, attached to alarms, or used for general TTS.
+> **원칙**: 알람 **울림은 온디바이스**(`AlarmManager`)이며 네트워크에 의존하지 않는다. **서버 푸시는 동기화 트리거 전용** — 가족 알람 *생성* 시 수신자에게 data-only FCM 신호(`sendFamilyAlarmPush`)를 1회 보내 앱이 즉시 pull → 로컬 스케줄하게 할 뿐, 발사 시각에는 어떤 푸시도 보내지 않는다(로컬 링과 중복 알림 방지 — `src/index.ts` scheduled 주석 참고).
 
-#### `POST /tts/generate`
+### 엔드포인트를 고칠 때
 
-```json
-Req: { "voice_profile_id": "...", "text": "Wake up", "language": "ko" }
-Res: {
-  "message": { "id": "...", "text": "...", "audio_url": "https://r2/...mp3", "voice_profile_id": "..." },
-  "cache_key": "sha256...",
-  "r2_key": "tts/sha256....mp3",
-  "audio_base64": "..."
-}
-```
+1. `packages/backend/src/routes/` 의 라우트를 고친다.
+2. `packages/backend/test/` 의 Vitest 계약 테스트를 추가·갱신한다.
+3. `apps/android-native/app/.../network/` 의 대응 `*Api.kt` 를 맞춘다.
+4. 정책이 바뀌었다면(시그니처가 아니라 규칙) 이 문서의 해당 문단만 고친다.
 
-#### `POST /alarm`
-
-```json
-{
-  "time": "07:30",
-  "repeat_days": "1,2,3,4,5",
-  "mode": "tts",
-  "wake_mode": "voice_only",
-  "voice_profile_id": "...",
-  "vibration_pattern": "default",
-  "message": "Good morning"
-}
-```
-
-#### `POST /code/register`
-
-Auto-detects format:
-- `INV-`/`GIFT-XXXX-XXXX-XXXX` → voucher redemption → subscription insert + plan update.
-  A code carrying an issuer subscription joins that issuer's plan group as a member;
-  a standalone code makes the redeemer the owner of a new group (as if paid).
-- anything else → promo code (case-insensitive).
-
-Errors: `CODE_REQUIRED` `CODE_NOT_FOUND` `CODE_EXPIRED` `CODE_ALREADY_USED` `GROUP_FULL`.
-
-#### `POST /billing/test-codes`
-
-Internal closed-test helper. Only emails listed in the `TEST_CODE_ISSUER_EMAILS`
-env var can issue free test access codes while real Google Play Billing is not
-connected. Unset = no issuer (fail-closed); there is no hardcoded default.
-
-```json
-Req: { "plan_key": "personal" | "couple" | "family", "count": 1, "days": 30 }
-Res: { "success": true, "first_redeemer_becomes_owner": true, "codes": [...] }
-```
-
-For `personal`, codes use `GIFT-XXXX-XXXX-XXXX`. For `couple` and `family`,
-codes use `INV-XXXX-XXXX-XXXX`; the first user who registers the code becomes
-the owner of the new shared plan group. These bootstrap codes are single-use.
-
-### Public endpoints
-
-- `GET /` — health check (returns DB connectivity).
-- `POST /api/init-db` — migration runner (intended for internal use; gate with IP / secret in production).
-
-### Cron
-
-`*/5 * * * *` — the `scheduled` handler runs external audio deletion reconciliation, expired email-code pruning, subscription expiry/downgrade, account purge (30-day grace), and explicitly authorized voice-prerender jobs. It sends **no fire-time alarm push** — firing alarms are computed for logging only.
-
-Keeping a previewed private draft creates one durable, owner-scoped prerender job. Its fixed manifest is exactly one app language with `greeting` 1, `weather` 9, `fortune` 5, `love` 3, and `medication` 3 clips (21 total). The nine `weather` variants are the eight conditions of `CLONE_WEATHER_CONDITIONS` (indexes 0–7) plus — always last — one "weather unresolved" fallback clip: when the client could not resolve weather during the preparation window, it plays this clip instead of silence or a wrong condition (client convention: last clip = `size - 1`; `resolvePrerenderWeatherIndex` only returns 0–7, so index 8 is fallback-only). Workers may only resume that bounded manifest with its exact claim token; they recheck voice ownership/state and sensitive consents before synthesis and before publication. They never discover users autonomously or add categories beyond this manifest.
-
-> **원칙**: 실제 알람 **울림은 온디바이스**(`AlarmManager`/`AlarmKit`)이며 네트워크에 의존하지 않는다. **서버 push 는 동기화 트리거 전용** — 가족 알람 *생성* 시 수신자에게 data-only FCM 신호(`sendFamilyAlarmPush`)를 1회 보내 앱이 즉시 pull→로컬 스케줄하게 할 뿐, 발사 시각에는 어떤 push 도 보내지 않는다(로컬 링과의 중복 알림 방지 — `src/index.ts` scheduled 주석 참고).
-
-### Change management
-
-When you modify an endpoint:
-
-1. Update the route under `packages/backend/src/routes/`.
-2. Update this file's relevant section.
-3. Update the corresponding `*Api.kt` under `apps/android-native/app/.../network/`.
-4. Add or update Vitest contract tests under `packages/backend/test/`.
-5. If iOS uses the endpoint, update `apps/ios-native/` as well.
-
-Breaking changes co-exist with at least one prior minor version.
+출시 전이라 prod DB 는 초기화 예정이고, 하위호환 유지 의무는 없다. 브레이킹 변경은 클라와 같은 PR 에서 맞춰 넣으면 된다.

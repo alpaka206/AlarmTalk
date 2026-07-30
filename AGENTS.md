@@ -13,7 +13,6 @@ AlarmTalk은 OS 네이티브 **목소리 알람 앱**이다. 네이티브 리라
 - `packages/backend` — Cloudflare Workers + Hono + Turso(libSQL). 라우트 `src/routes`, 마이그레이션 `src/lib/migrations.ts`.
 - `packages/shared` — zod 스키마. 백엔드·클라이언트 공용 계약.
 - `packages/voice` — 보이스 프로바이더 어댑터 계층(백엔드에서 사용).
-- `packages/ui` — 공용 디자인 토큰.
 - `apps/android-native` — Kotlin/Compose. **운영 중인 메인 클라이언트**, dev/prod flavor.
 - iOS 앱은 없다. SwiftUI 앱(`apps/ios-native`)과 그 빌드 워크플로는 미운영이라 제거했다 — iOS 재개 시 앱과 워크플로를 함께 되살린다.
 - `apps/landing` — 웹 랜딩.

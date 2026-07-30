@@ -9,7 +9,7 @@ AlarmTalk는 `dev`와 `prod` 두 환경으로 운영한다. 이 문서는 실제
 | `dev` | 개발, 통합 테스트, 내부 확인 | `develop` | `com.alarmtalk.app.dev` |
 | `prod` | Play 내부테스트, 실제 배포 | `main` | `com.alarmtalk.app` |
 
-별도 staging은 두지 않는다. 베타 검증은 Play 내부테스트와 TestFlight 같은 스토어 트랙으로 처리한다.
+별도 staging은 두지 않는다. 베타 검증은 Play 내부테스트 트랙으로 처리한다.
 
 ## 공개 문서 원칙
 
@@ -20,7 +20,6 @@ AlarmTalk는 `dev`와 `prod` 두 환경으로 운영한다. 이 문서는 실제
 - Cloudflare API token, account ID
 - Turso URL/token
 - JWT secret, password pepper, init secret
-- Apple shared secret
 - keystore 경로, alias, 비밀번호
 - Play Console 또는 Google Cloud Console의 인증서 지문 값
 
@@ -31,13 +30,14 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 ### Android
 
 - 환경별 API base URL과 Google Web OAuth client ID는 Gradle property로 주입한다.
-- 기본 property 이름:
-  - `voiceAlarmDevApiBaseUrl`
-  - `voiceAlarmProdApiBaseUrl`
-  - `voiceAlarmDevGoogleWebClientId`
-  - `voiceAlarmProdGoogleWebClientId`
-  - `voiceAlarmDevSentryDsn`
-  - `voiceAlarmProdSentryDsn`
+- property 이름(유일 출처는 `apps/android-native/app/build.gradle.kts`):
+  - `alarmTalkDevApiBaseUrl`
+  - `alarmTalkProdApiBaseUrl`
+  - `alarmTalkDevGoogleWebClientId`
+  - `alarmTalkProdGoogleWebClientId`
+  - `alarmTalkDevSentryDsn`
+  - `alarmTalkProdSentryDsn`
+- 이름이 틀리면 Gradle 이 조용히 무시하고 빈 문자열로 폴백한다. 빌드는 성공하지만 API base URL·Google 로그인이 죽으므로, 값을 넘긴 뒤 실제로 로그인이 되는지 확인한다.
 - release AAB는 업로드 키로 서명해 Play Console에 올린다.
 
 ### Backend
@@ -46,19 +46,19 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 - 로컬 개발 값은 ignored 파일인 `packages/backend/.dev.vars.dev`, `packages/backend/.dev.vars.prod`에 둔다.
 - GitHub Actions 배포에 필요한 값은 GitHub Secrets에 둔다.
 
-#### Vertex / Gemini dynamic text
+#### Vertex / Gemini 동적 문구
 
-- `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL` are optional and are used for translation plus the legacy dynamic text path.
-- `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED` must be omitted by default. Set it to `true` only when product intentionally re-enables Gemini-generated alarm copy after preset review and QA.
-- Launch policy is preset-first: dynamic alarm contexts use local/preset fallback unless `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`.
+- `GOOGLE_VERTEX_CREDENTIALS_JSON`, `GOOGLE_VERTEX_LOCATION`, `GOOGLE_VERTEX_MODEL`은 선택 값이다. 번역과 동적 문구 생성 경로가 쓴다.
+- `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED`는 기본적으로 설정하지 않는다. Gemini 생성 알람 문구를 의도적으로 켤 때만 `true`로 둔다.
+- 기본 정책은 프리셋 우선이다. `GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED=true`가 아니면 동적 문구 컨텍스트는 로컬 폴백 문구를 쓴다(`lib/vertex-translate.ts`의 `generateDynamicAlarmTextWithVertex`).
 
-### Email verification
+### 이메일 인증
 
-Production email verification delivery requires a verified sender domain and these Worker secrets:
+이메일 인증코드 실발송에는 인증된 발신 도메인과 다음 Worker secret이 필요하다.
 
 - `RESEND_API_KEY`
-- `AUTH_EMAIL_FROM` (for example `AlarmTalk <no-reply@alarm-talk.com>`)
-- `AUTH_EMAIL_REPLY_TO` (optional)
+- `AUTH_EMAIL_FROM` (예: `AlarmTalk <no-reply@alarm-talk.com>`)
+- `AUTH_EMAIL_REPLY_TO` (선택)
 
 ### Landing
 
@@ -67,7 +67,7 @@ Production email verification delivery requires a verified sender domain and the
 
 ## Google 로그인
 
-Firebase Auth를 쓰지 않는다. 앱은 Google Sign-In에서 ID token을 받고, 백엔드가 Google/Apple ID token을 직접 검증한다.
+Firebase Auth를 쓰지 않는다. 앱은 Google Sign-In에서 ID token을 받고, 백엔드가 그 Google ID token을 직접 검증한다. (Firebase는 푸시 발송(FCM)에만 쓴다.)
 
 Android 앱 코드가 런타임에 읽는 값은 Web OAuth client ID다. `requestIdToken()`의 audience와 백엔드 `GOOGLE_CLIENT_ID`가 같은 Web client ID여야 한다.
 
@@ -91,7 +91,6 @@ Android OAuth client ID는 Google Cloud Console에 등록만 한다. 앱 코드�
 
 - Android Sentry DSN은 release 빌드 시 Gradle property로 주입한다.
 - Backend Sentry DSN은 Worker secret으로만 설정한다.
-- Sentry DSN은 앱에 포함될 수 있지만, README와 운영 문서에는 실제 값을 적지 않는다.
 
 ## 알람 동작 원칙
 

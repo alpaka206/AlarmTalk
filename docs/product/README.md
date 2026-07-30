@@ -51,17 +51,13 @@ Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost b
 - **Phase 1**: Android alarm engine (`AlarmManager.setAlarmClock`, full-screen ringing activity, boot restore)
 - **Phase 2**: Android local alarm app (Room storage, repeat days, snooze, vibration, modes)
 - **Phase 3**: Android audio & voice (in-app recording, TTS caching, airplane-mode playback)
-- **Phase 4**: Backend integration (email/Google/Apple auth, manual alarm metadata sync, deterministic TTS cache)
-- **Phase 5**: Social & sharing (friends, family group with 6-digit invite code, shared voice profiles)
+- **Phase 4**: Backend integration (email/Google auth, manual alarm metadata sync, deterministic TTS cache)
+- **Phase 5**: Social & sharing (family/couple group joined by an `INV-` voucher code, shared voice profiles)
 - **Phase 6**: Billing (plan tiers, subscription, voucher codes, expiry/downgrade cron)
-- **Free bucket rotation**: 4 system voices, 10 preset phrases (wake 8 + medication 2) × ko/en/ja pre-rendered as stock clips; the client rotates locally through the bucket (advance on dismiss, hold on snooze)
+- **Free bucket rotation**: 4 system voices, 11 preset phrases (weather 9 + medication 2) × ko/en/ja pre-rendered as stock clips; the client picks the weather clip by condition and rotates the medication bucket locally (advance on dismiss, hold on snooze)
 - **Paid clone pre-render**: after a kept (promoted) clone, cron pre-renders 21 clips in the app language — greeting 1 / weather 9 (8 conditions + 1 "weather unresolved" notice) / fortune 5 / love 3 / medication 3. Weather snapshots a server index during the 48h prep window and fires offline; fortune is device-deterministic; love/medication rotate
 - **FCM instant delivery for family alarms**: data-only push on alarm creation plus pull-on-app-resume; used for delivery only — ringing stays 100% local (`AlarmManager`)
 - **Google Play Billing**: subscription purchase code complete (confirm + RTDN); Toss Payments dropped
-
-### On hold
-
-- **iOS native** (SwiftUI + AlarmKit): not operated, excluded from CI (manual dispatch only). Merging unbuilt iOS code to develop is OK; build-verify on a Mac before any release.
 
 ### Before public launch
 
@@ -74,9 +70,12 @@ Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost b
 | Risk | Mitigation |
 |---|---|
 | Per-manufacturer Android background restrictions (Samsung One UI, Xiaomi MIUI, etc.) | In-app permission guide screens; deep links to OS settings; battery-optimization exemption flow |
-| iOS AlarmKit may not fully support custom sounds in all scenarios | PoC verification on physical iOS 26+ devices before iOS 1.0; fallback as pre/post in-app voice playback if needed |
 | Voice-provider pricing volatility | Deterministic TTS caching (same input → same output → same R2 object); monthly direct-input TTS quota per plan (personal 30 / couple 50 / family 100, KST, shared group pool); bounded clone pre-render manifest (21 clips per clone); ElevenLabs spend monitoring |
 | Voice rights disputes | Sharing only inside a user's family/partner group; in-app legal notice during voice registration; account deletion cascades remove voice data |
+
+## 관련 문서
+
+- [`voice-prompt-design.ko.md`](voice-prompt-design.ko.md) — 알람 문구 생성(Gemini → ElevenLabs v3) 설계 근거. 백엔드 코드 주석이 `§4.x` 로 이 문서를 참조한다.
 
 ## Non-negotiable Rules
 
