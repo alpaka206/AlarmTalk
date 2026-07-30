@@ -24,10 +24,9 @@
       "quickStart": "Quick start",
       "quickVoice": "Voice profiles",
       "quickAlarm": "New alarm",
-      "tabHome": "Home",
-      "tabVoice": "Voice",
       "tabAlarms": "Alarms",
-      "tabMessages": "Inbox"
+      "tabVoice": "Voices",
+      "tabMore": "More"
     }
   },
   "trust": {
@@ -71,8 +70,8 @@
     "headline2": "Let it write itself.",
     "description": "Don't feel like writing a line every time? Pick a context like weather or fortune, and a fresh greeting is generated daily in that voice. It's an optional mode you turn on when you want it.",
     "bullet1": "Today's weather and temperature, in that voice",
-    "bullet2": "Weekly fortune, meals, sleep, exercise, love",
-    "bullet3": "Language practice in Korean, English, Japanese and 5 more"
+    "bullet2": "Today's fortune, a medication reminder, or a loving line",
+    "bullet3": "Read out in Korean, English, or Japanese — whichever the app is set to"
   },
   "scenarios": {
     "headline": "Opposite people. Same single insight.",
@@ -121,11 +120,11 @@
       },
       {
         "q": "Is it free?",
-        "a": "Basic voice alarms with a single voice profile are free. Family/partner sharing, multiple voice profiles, and auto-generated contexts (weather, fortune, etc.) are part of paid plans."
+        "a": "Alarms and our built-in voices are free, along with the default greeting, weather, and medication lines. Registering a voice of your own, writing your own lines, and picking the fortune or love contexts start with a paid plan. Sharing voices with family or a partner — and setting their alarms for them — comes with the couple and family plans."
       },
       {
         "q": "Which devices are supported?",
-        "a": "Android native first. iOS follows once we've validated AlarmKit separately."
+        "a": "Android only for now. There is no iOS app yet, and no release date we can share."
       }
     ]
   },

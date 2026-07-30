@@ -86,7 +86,7 @@ components/
   html-lang-sync.tsx      클라이언트에서 <html lang> 동기화
   brand-mark.tsx          로고 SVG
   phone-preview.tsx       Hero 폰 목업 (앱 LandingScreen 톤 재현)
-  store-badges.tsx        App Store / Google Play 배지
+  store-badges.tsx        Google Play 배지
   legal-markdown.tsx      법무 마크다운 → HTML 렌더러
   sections/
     hero.tsx              히어로
@@ -109,5 +109,5 @@ messages/                 ko/en/ja 카피
 
 - 대기자 폼을 실제 엔드포인트(Cloudflare Workers)와 연결 (현재 mock 제출)
 - 실제 도메인 연결 후 OG·sitemap의 `SITE_URL`(`NEXT_PUBLIC_SITE_URL`) 갱신
-- 스토어 링크 환경변수(`NEXT_PUBLIC_APP_STORE_URL`, `NEXT_PUBLIC_GOOGLE_PLAY_URL`) 설정
+- 스토어 링크 환경변수(`NEXT_PUBLIC_GOOGLE_PLAY_URL`) 설정
 - 정책 문구의 운영자/수탁사/시행일 정보를 출시 전 최종 확정
