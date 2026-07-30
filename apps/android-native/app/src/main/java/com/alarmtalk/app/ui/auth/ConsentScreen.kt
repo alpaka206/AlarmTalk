@@ -36,38 +36,47 @@ import androidx.compose.ui.unit.dp
  * 로그인 후 필수 약관/개인정보 동의를 받는 게이트 화면.
  * 신규 가입자뿐 아니라 기존 가입자도 미동의 시 이 화면을 통과해야 앱을 쓸 수 있다.
  *
- * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침 / 음성 생체정보 / 국외 이전
+ * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침
  * 선택: 광고성 정보 수신(마케팅)
+ *
+ * **[collect] 에 든 유형만 그린다.** 서버가 유형별 최소 정책 버전으로 계산해 내려주며,
+ * 이미 유효한 동의는 목록에 없다 — 개정 때 필요한 것만 다시 묻고, 묻지 않은 항목의 기존
+ * 선택(특히 마케팅 수신)은 그대로 유지된다.
+ *
+ * 음성 생체정보·국외 이전은 여기서 받지 않는다. 목소리를 실제로 등록할 때
+ * [com.alarmtalk.app.ui.components.VoiceConsentSheet] 로 받는다 — 목소리를 등록하지 않을
+ * 사용자에게까지 생체정보 처리 동의를 요구하면 별도 동의를 이용 조건으로 강제하는 셈이다.
  */
 @Composable
 internal fun ConsentScreen(
     contentPadding: PaddingValues,
     busy: Boolean,
-    onAgree: (
-        marketingAgreed: Boolean,
-        voiceBiometricAgreed: Boolean,
-        overseasTransferAgreed: Boolean,
-    ) -> Unit,
+    collect: List<String>,
+    onAgree: (marketingAgreed: Boolean) -> Unit,
     onOpenTerms: () -> Unit,
     onOpenPrivacy: () -> Unit,
 ) {
     var age14 by remember { mutableStateOf(false) }
     var terms by remember { mutableStateOf(false) }
     var privacy by remember { mutableStateOf(false) }
-    var voiceBiometric by remember { mutableStateOf(false) }
-    var overseasTransfer by remember { mutableStateOf(false) }
     var marketing by remember { mutableStateOf(false) }
 
-    val allRequiredChecked = age14 && terms && privacy && voiceBiometric && overseasTransfer
-    val allChecked = allRequiredChecked && marketing
+    val showAge14 = "age14" in collect
+    val showTerms = "terms" in collect
+    val showPrivacy = "privacy" in collect
+    val showMarketing = "marketing" in collect
+    val shownCount = listOf(showAge14, showTerms, showPrivacy, showMarketing).count { it }
+
+    // 그리지 않은 필수 항목은 이미 동의된 것이므로 통과 조건에서 뺀다.
+    val allRequiredChecked =
+        (!showAge14 || age14) && (!showTerms || terms) && (!showPrivacy || privacy)
+    val allChecked = allRequiredChecked && (!showMarketing || marketing)
 
     fun setAll(value: Boolean) {
-        age14 = value
-        terms = value
-        privacy = value
-        voiceBiometric = value
-        overseasTransfer = value
-        marketing = value
+        if (showAge14) age14 = value
+        if (showTerms) terms = value
+        if (showPrivacy) privacy = value
+        if (showMarketing) marketing = value
     }
 
     AuthBackdrop {
@@ -97,49 +106,48 @@ internal fun ConsentScreen(
                     .verticalScroll(rememberScrollState()),
             ) {
                 Spacer(Modifier.height(24.dp))
-                ConsentRow(
-                    checked = allChecked,
-                    onCheckedChange = ::setAll,
-                    label = stringResource(R.string.auth_consent_agree_all),
-                    emphasized = true,
-                )
-                Spacer(Modifier.height(4.dp))
-                HorizontalDivider(color = AuthLineSoft)
-                Spacer(Modifier.height(4.dp))
-                ConsentRow(
-                    checked = age14,
-                    onCheckedChange = { age14 = it },
-                    label = stringResource(R.string.auth_consent_age14),
-                )
-                ConsentRow(
-                    checked = terms,
-                    onCheckedChange = { terms = it },
-                    label = stringResource(R.string.auth_consent_terms),
-                    onOpenDetail = onOpenTerms,
-                )
-                ConsentRow(
-                    checked = privacy,
-                    onCheckedChange = { privacy = it },
-                    label = stringResource(R.string.auth_consent_privacy),
-                    onOpenDetail = onOpenPrivacy,
-                )
-                ConsentRow(
-                    checked = voiceBiometric,
-                    onCheckedChange = { voiceBiometric = it },
-                    label = stringResource(R.string.auth_consent_voice_biometric),
-                    description = stringResource(R.string.auth_consent_voice_biometric_desc),
-                )
-                ConsentRow(
-                    checked = overseasTransfer,
-                    onCheckedChange = { overseasTransfer = it },
-                    label = stringResource(R.string.auth_consent_overseas_transfer),
-                    description = stringResource(R.string.auth_consent_overseas_transfer_desc),
-                )
-                ConsentRow(
-                    checked = marketing,
-                    onCheckedChange = { marketing = it },
-                    label = stringResource(R.string.auth_consent_marketing),
-                )
+                // 항목이 하나뿐이면 '전체 동의' 는 같은 말을 두 번 시키는 것이라 그리지 않는다.
+                if (shownCount > 1) {
+                    ConsentRow(
+                        checked = allChecked,
+                        onCheckedChange = ::setAll,
+                        label = stringResource(R.string.auth_consent_agree_all),
+                        emphasized = true,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider(color = AuthLineSoft)
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (showAge14) {
+                    ConsentRow(
+                        checked = age14,
+                        onCheckedChange = { age14 = it },
+                        label = stringResource(R.string.auth_consent_age14),
+                    )
+                }
+                if (showTerms) {
+                    ConsentRow(
+                        checked = terms,
+                        onCheckedChange = { terms = it },
+                        label = stringResource(R.string.auth_consent_terms),
+                        onOpenDetail = onOpenTerms,
+                    )
+                }
+                if (showPrivacy) {
+                    ConsentRow(
+                        checked = privacy,
+                        onCheckedChange = { privacy = it },
+                        label = stringResource(R.string.auth_consent_privacy),
+                        onOpenDetail = onOpenPrivacy,
+                    )
+                }
+                if (showMarketing) {
+                    ConsentRow(
+                        checked = marketing,
+                        onCheckedChange = { marketing = it },
+                        label = stringResource(R.string.auth_consent_marketing),
+                    )
+                }
             }
 
             Box(Modifier.padding(vertical = 16.dp)) {
@@ -149,7 +157,7 @@ internal fun ConsentScreen(
                     } else {
                         stringResource(R.string.auth_consent_agree_and_start)
                     },
-                    onClick = { onAgree(marketing, voiceBiometric, overseasTransfer) },
+                    onClick = { onAgree(marketing) },
                     enabled = allRequiredChecked && !busy,
                 )
             }

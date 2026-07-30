@@ -128,6 +128,14 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
     }
     if (voiceProfileBusy) return false
 
+    // 음성 생체정보·국외 이전 동의는 가입 게이트가 아니라 여기서 받는다. 서버도 같은 지점에서
+    // 403 CONSENT_REQUIRED 로 막지만, 요청을 보내 튕기기 전에 무엇에 동의하는지부터 보여준다.
+    // 시트에서 동의하면 submitVoiceConsents 가 이 drafts 로 등록을 이어서 실행한다.
+    if (sensitiveConsentMissing.isNotEmpty()) {
+        pendingVoiceConsentDrafts = drafts
+        return false
+    }
+
     // busy 는 launch 안이 아니라 여기서 세운다 — true 를 반환하는 순간 이미 busy 인 것이
     // 보장돼야 호출측 '만드는 중' 스텝의 종료 감지(!busy && draft 없음)가 어긋나지 않는다.
     voiceProfileBusy = true

@@ -985,4 +985,13 @@ Check your connection and try again.</string>
     <string name="plan_gate_redeem_title">Enter a code</string>
     <string name="plan_gate_redeem_desc">Enter a promo or gift code. Invite codes work here too.</string>
     <string name="voicesr_preview_stop">Stop</string>
+    <string name="voice_consent_title">Registering a voice needs a separate consent</string>
+    <string name="voice_consent_body">A registered voice is used to create a voice profile, read alarm lines aloud, play alarms, and cache audio on this device. Voice cloning and text-to-speech run through our voice AI provider ElevenLabs, and your voice and text are sent overseas as part of that. AlarmTalk does not use your voice for public search, advertising, or data sales, and does not train its own general-purpose AI models on it. You can delete a voice profile at any time.</string>
+    <string name="voice_consent_check_ownership">I will only register my own voice, or a voice I have permission and consent to use.</string>
+    <string name="voice_consent_check_liability">I understand that responsibility for unauthorised registration, copyright or personality-rights infringement, and impersonation lies with the person who registers the voice.</string>
+    <string name="voice_consent_check_biometric">I consent to my voice (biometric information) being used to create a voice profile, clone the voice, and generate speech.</string>
+    <string name="voice_consent_check_overseas">I consent to my voice and text being transferred and processed overseas (including the United States) for voice AI processing.</string>
+    <string name="voice_consent_agree">Agree and create voice</string>
+    <string name="voice_consent_cancel">Cancel</string>
+    <string name="msg_voice_consent_required">Registering a voice requires your consent to voice processing.</string>
 </resources>

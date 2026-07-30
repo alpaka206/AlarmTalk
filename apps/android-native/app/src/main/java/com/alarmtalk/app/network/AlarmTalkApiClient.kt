@@ -23,8 +23,12 @@ object AlarmTalkApiClient {
         /**
          * 데이터 라우트가 403 `CONSENT_REQUIRED` 를 반환했을 때 호출된다(서버 강제 동의 미들웨어).
          * 동의 플로우로 유도하기 위해 호출하며, 기본 구현은 동작 없음(기존 호출부 호환).
+         *
+         * @param consent 서버가 지목한 미충족 동의 유형(응답의 `consent` 필드). 민감 동의
+         *   (voice_biometric·overseas_transfer)는 가입 게이트에 체크박스가 없으므로, 이 값 없이
+         *   가입 게이트만 다시 열면 사용자가 통과할 방법이 없어 무한 루프가 된다.
          */
-        fun onConsentRequired() {}
+        fun onConsentRequired(consent: String?) {}
     }
 
     fun create(
@@ -54,14 +58,14 @@ object AlarmTalkApiClient {
             val response = chain.proceed(chain.request())
             if (unauthorizedHandler != null && response.code == 403) {
                 // peekBody 로 본문을 소비하지 않고 복제해 검사한다(이후 호출부가 본문을 정상 수신).
-                val errorCode = runCatching {
+                val parsed = runCatching {
                     val body = response.peekBody(MAX_ERROR_BODY_BYTES).string()
-                    body.takeIf { it.isNotBlank() }
-                        ?.let { org.json.JSONObject(it).optString("error_code") }
-                        ?.takeIf { it.isNotBlank() }
+                    body.takeIf { it.isNotBlank() }?.let { org.json.JSONObject(it) }
                 }.getOrNull()
+                val errorCode = parsed?.optString("error_code")?.takeIf { it.isNotBlank() }
                 if (errorCode == "CONSENT_REQUIRED") {
-                    runCatching { unauthorizedHandler.onConsentRequired() }
+                    val consent = parsed?.optString("consent")?.takeIf { it.isNotBlank() }
+                    runCatching { unauthorizedHandler.onConsentRequired(consent) }
                 }
             }
             response

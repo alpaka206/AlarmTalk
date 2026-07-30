@@ -993,4 +993,13 @@
     <string name="plan_gate_redeem_title">コードを入力</string>
     <string name="plan_gate_redeem_desc">プロモーション・ギフトコードを入力してください。招待コードも使えます。</string>
     <string name="voicesr_preview_stop">停止</string>
+    <string name="voice_consent_title">声の登録には別途同意が必要です</string>
+    <string name="voice_consent_body">登録した声は、音声プロフィールの作成、アラーム文言の読み上げ、アラーム再生と端末へのキャッシュに使われます。音声クローンと読み上げは音声AIプロバイダのElevenLabsを通じて処理され、その過程で声と文言が国外へ送信されます。AlarmTalkは声を公開検索・広告・データ販売に使わず、自社の汎用AIモデルの学習にも使いません。音声プロフィールはいつでも削除できます。</string>
+    <string name="voice_consent_check_ownership">本人、または権限と同意を得た人の声のみを登録します。</string>
+    <string name="voice_consent_check_liability">無断登録、著作権・人格権の侵害、なりすましによる責任は登録した本人にあることを確認します。</string>
+    <string name="voice_consent_check_biometric">自分の声(生体情報)を音声プロフィール作成・クローン・TTS生成に使用することに同意します。</string>
+    <string name="voice_consent_check_overseas">音声AI処理のため、声と文言が国外(米国など)へ移転・処理されることに同意します。</string>
+    <string name="voice_consent_agree">同意して声を作る</string>
+    <string name="voice_consent_cancel">キャンセル</string>
+    <string name="msg_voice_consent_required">声を登録するには音声処理への同意が必要です。</string>
 </resources>

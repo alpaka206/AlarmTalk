@@ -607,6 +607,15 @@ internal fun AlarmTalkApp(
         )
     }
 
+    // 목소리 등록을 누른 순간에만 뜨는 음성 처리 동의. 가입 게이트에는 이 항목이 없다.
+    if (viewModel.showVoiceConsentSheet) {
+        com.alarmtalk.app.ui.components.VoiceConsentSheet(
+            busy = authBusy,
+            onAgree = viewModel::submitVoiceConsents,
+            onDismiss = { viewModel.pendingVoiceConsentDrafts = null },
+        )
+    }
+
     planGateDialog?.let { gate ->
         PlanGateDialog(
             title = gate.title ?: stringResource(R.string.r3dlg_plan_gate_title),
@@ -800,9 +809,8 @@ internal fun AlarmTalkApp(
           ConsentScreen(
               contentPadding = padding,
               busy = authBusy,
-              onAgree = { marketingAgreed, voiceBiometricAgreed, overseasTransferAgreed ->
-                  viewModel.submitConsents(marketingAgreed, voiceBiometricAgreed, overseasTransferAgreed)
-              },
+              collect = viewModel.consentCollect,
+              onAgree = { marketingAgreed -> viewModel.submitConsents(marketingAgreed) },
               onOpenTerms = { context.openWebUrl("https://alarm-talk.com/ko/terms") },
               onOpenPrivacy = { context.openWebUrl("https://alarm-talk.com/ko/privacy") },
           )

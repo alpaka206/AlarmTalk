@@ -49,8 +49,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+
+/**
+ * 서버가 '기능 사용 시점'에만 요구하는 민감 동의(백엔드 `SENSITIVE_REQUIRED_CONSENTS`).
+ * 가입 게이트에서는 받지 않는다 — 목소리를 등록하지 않을 사용자에게까지 생체정보 처리
+ * 동의를 요구하면 별도 동의를 서비스 이용 조건으로 강제하는 셈이 된다.
+ */
+internal val SENSITIVE_CONSENT_TYPES = listOf("voice_biometric", "overseas_transfer")
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
@@ -81,9 +89,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 handleUnauthorized()
             }
 
-            override fun onConsentRequired() {
+            override fun onConsentRequired(consent: String?) {
                 // 데이터 라우트가 403 CONSENT_REQUIRED 를 반환 → 동의 플로우로 유도한다.
-                handleConsentRequired()
+                handleConsentRequired(consent)
             }
         },
         appVersionCode = appVersionCode,
@@ -177,11 +185,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * 데이터 라우트의 403 CONSENT_REQUIRED 처리. okhttp 인터셉터(non-main)에서 호출될 수 있어
-     * UI 스레드로 옮긴 뒤 동의 게이트를 다시 열어, 동의 화면이 뜨도록 한다.
+     * UI 스레드로 옮긴 뒤 동의 플로우를 연다.
+     *
+     * 민감 동의(voice_biometric·overseas_transfer)는 **가입 게이트에 체크박스가 없다** — 목소리
+     * 등록 시점에 전용 시트로 받는다. 그러니 여기서 가입 게이트를 열면 사용자가 통과할 방법이
+     * 없어 갇힌다. 서버가 지목한 유형이 민감 동의면 상태만 갱신하고 게이트는 열지 않는다.
      */
-    private fun handleConsentRequired() {
+    private fun handleConsentRequired(consent: String?) {
         viewModelScope.launch {
             if (authSession == null) return@launch
+            if (consent != null && consent in SENSITIVE_CONSENT_TYPES) {
+                if (consent !in sensitiveConsentMissing) {
+                    sensitiveConsentMissing = sensitiveConsentMissing + consent
+                }
+                message = getApplication<android.app.Application>().getString(R.string.msg_voice_consent_required)
+                return@launch
+            }
             needsConsent = true
             consentChecked = true
             message = getApplication<android.app.Application>().getString(R.string.r3misc_consent_required)
@@ -367,6 +386,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 동의 화면이 다른 화면보다 항상 먼저 뜨도록 한다.
     var consentChecked by mutableStateOf(false)
         internal set
+
+    // 이번 동의 화면에서 받아야 하는 유형(서버 계산). 화면은 이것만 그리고 이것만 제출한다.
+    // 비어 있으면 화면이 열리기 전이거나 받을 게 없는 상태다.
+    var consentCollect by mutableStateOf<List<String>>(emptyList())
+        internal set
+
+    // 아직 없는 민감 동의(voice_biometric·overseas_transfer). 목소리 등록을 누른 시점에
+    // 이게 비어 있지 않으면 전용 동의 시트를 먼저 띄운다.
+    var sensitiveConsentMissing by mutableStateOf<List<String>>(emptyList())
+        internal set
+
+    // 민감 동의 시트가 떠 있는 동안 붙들어 두는 목소리 등록 요청. 동의를 마치면 그대로 이어서
+    // 만든다(시트 CTA 가 '동의하고 음성 만들기' 라 사용자는 한 번만 누르면 된다).
+    internal var pendingVoiceConsentDrafts by mutableStateOf<List<VoiceProfileCreationDraft>?>(null)
+
+    val showVoiceConsentSheet: Boolean get() = pendingVoiceConsentDrafts != null
 
     // 설정의 '광고성 정보 수신' 토글 상태. null = 아직 서버에서 못 읽음(로딩 전).
     var marketingConsentAgreed by mutableStateOf<Boolean?>(null)

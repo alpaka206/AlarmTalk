@@ -177,6 +177,18 @@ data class ConsentStatusResponse(
     @SerializedName("needs_consent") val needsConsent: Boolean = false,
     val required: List<String> = emptyList(),
     val missing: List<String> = emptyList(),
+    /**
+     * 이번 동의 화면에서 **실제로 받아야 하는** 유형. 서버가 유형별 최소 정책 버전으로 계산한다.
+     * 화면은 이 목록만 그리고 이 목록만 제출한다 — 이미 유효한 동의는 건드리지 않아야
+     * 정책 개정 때 마케팅 수신 설정 같은 기존 선택이 조용히 초기화되지 않는다.
+     */
+    val collect: List<String> = emptyList(),
+    /**
+     * 민감 동의(음성 생체정보·국외 이전) 중 아직 없는 것. 가입 게이트에서는 받지 않고
+     * 목소리를 실제로 등록할 때 받는다(개인정보보호법 제22조 — 별도 동의를 서비스 이용
+     * 조건으로 강제하지 않는다).
+     */
+    @SerializedName("sensitive_missing") val sensitiveMissing: List<String> = emptyList(),
     @SerializedName("policy_version") val policyVersion: String = "1",
 )
 

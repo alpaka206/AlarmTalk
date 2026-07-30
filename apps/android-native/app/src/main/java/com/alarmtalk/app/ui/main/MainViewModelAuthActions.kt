@@ -588,6 +588,10 @@ internal fun MainViewModel.checkConsentStatus() {
             // 현재(또는 빈) 세션의 동의 상태를 덮어쓰지 않는다.
             if (authSession?.user?.id != userId) return@launch
             needsConsent = status.needsConsent
+            // 화면이 무엇을 그리고 무엇을 제출할지는 서버가 정한다. 구버전 서버(collect 없음)와
+            // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
+            consentCollect = status.collect.ifEmpty { status.missing }
+            sensitiveConsentMissing = status.sensitiveMissing
             rememberConsentDone(userId, !status.needsConsent, status.policyVersion)
         }.onFailure { error ->
             if (authSession?.user?.id != userId) return@launch
@@ -599,13 +603,17 @@ internal fun MainViewModel.checkConsentStatus() {
     }
 }
 
-// 동의 화면 제출. 필수 항목은 화면의 체크값으로, marketing(광고성 정보 수신)은
-// 사용자 선택값으로 기록한다. 성공 시 동의 화면을 닫는다.
-internal fun MainViewModel.submitConsents(
-    marketingAgreed: Boolean,
-    voiceBiometricAgreed: Boolean,
-    overseasTransferAgreed: Boolean,
-) {
+/**
+ * 동의 화면 제출.
+ *
+ * **화면에 실제로 띄운 유형만 보낸다**(consentCollect). 안 띄운 유형은 이미 유효한 동의가
+ * 있다는 뜻이므로 건드리지 않는다 — 전부 덮어쓰면 정책 개정 때마다 사용자가 켜뒀던
+ * 마케팅 수신 설정이 체크 안 된 상태로 재기록돼 조용히 꺼진다.
+ *
+ * 민감 동의(voice_biometric·overseas_transfer)는 여기서 보내지 않는다. 목소리 등록 시점의
+ * 전용 시트가 [submitVoiceConsents] 로 따로 기록한다.
+ */
+internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
     val session = authSession
     if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
@@ -616,21 +624,22 @@ internal fun MainViewModel.submitConsents(
     // version 을 비우면 백엔드가 "1" 로 기록해, 정책이 개정된 뒤엔 옛 버전으로 저장되어
     // 계속 재동의를 요구받고 로컬 캐시(새 버전 만족)와 어긋난다.
     val policyVersion = cachedPolicyVersion()
+    // collect 가 비어 있는 건 status 응답을 못 받은 경우다 — 이때만 필수 3종으로 폴백한다.
+    val collect = consentCollect.ifEmpty { listOf("terms", "privacy", "age14") }
+    val consents = collect.map { type ->
+        com.alarmtalk.app.network.ConsentItemRequest(
+            type = type,
+            // 필수 유형은 화면을 통과한 시점에 이미 체크됐다. marketing 만 사용자 선택값.
+            agreed = if (type == "marketing") marketingAgreed else true,
+            version = policyVersion,
+        )
+    }
     viewModelScope.launch {
         authBusy = true
         runCatching {
             api.recordConsents(
                 authorization,
-                com.alarmtalk.app.network.RecordConsentsRequest(
-                    consents = listOf(
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "voice_biometric", agreed = voiceBiometricAgreed, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "overseas_transfer", agreed = overseasTransferAgreed, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed, version = policyVersion),
-                    ),
-                ),
+                com.alarmtalk.app.network.RecordConsentsRequest(consents = consents),
             )
         }.onSuccess {
             needsConsent = false
@@ -643,6 +652,49 @@ internal fun MainViewModel.submitConsents(
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         }
         authBusy = false
+    }
+}
+
+/**
+ * 목소리 등록 시점의 민감 동의 기록. 시트에서 '동의하고 음성 만들기' 를 누르면 호출된다.
+ *
+ * 성공하면 붙들어 뒀던 등록 요청을 그대로 이어서 실행한다 — 사용자가 동의 후 등록 버튼을
+ * 다시 찾아 누르게 만들지 않는다. 실패하면 시트를 닫지 않아 재시도할 수 있게 둔다.
+ */
+internal fun MainViewModel.submitVoiceConsents() {
+    val session = authSession
+    if (session == null) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
+        return
+    }
+    val drafts = pendingVoiceConsentDrafts ?: return
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    val policyVersion = cachedPolicyVersion()
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.recordConsents(
+                authorization,
+                com.alarmtalk.app.network.RecordConsentsRequest(
+                    consents = SENSITIVE_CONSENT_TYPES.map { type ->
+                        com.alarmtalk.app.network.ConsentItemRequest(
+                            type = type,
+                            agreed = true,
+                            version = policyVersion,
+                        )
+                    },
+                ),
+            )
+        }.onSuccess {
+            sensitiveConsentMissing = emptyList()
+            pendingVoiceConsentDrafts = null
+            authBusy = false
+            createVoiceProfiles(drafts)
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to record voice consents", error)
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
+            authBusy = false
+        }
     }
 }
 

@@ -1013,4 +1013,13 @@
     <string name="plan_gate_redeem_title">쿠폰 입력</string>
     <string name="plan_gate_redeem_desc">받으신 프로모션·선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요.</string>
     <string name="voicesr_preview_stop">정지</string>
+    <string name="voice_consent_title">목소리 등록에는 별도 동의가 필요해요</string>
+    <string name="voice_consent_body">등록한 목소리는 음성 프로필 생성, 알람 문구 읽어주기, 알람 재생과 기기 캐싱에 쓰여요. 음성 클론과 읽어주기는 음성 AI 제공자 ElevenLabs를 통해 처리되고, 이 과정에서 목소리와 문구가 국외로 전송돼요. 알람톡은 목소리를 공개 검색·광고·데이터 판매에 쓰지 않고, 자체 범용 AI 모델 학습에도 쓰지 않아요. 음성 프로필은 언제든 삭제할 수 있어요.</string>
+    <string name="voice_consent_check_ownership">본인 또는 권한과 동의를 받은 사람의 목소리만 등록합니다.</string>
+    <string name="voice_consent_check_liability">무단 등록, 저작권·인격권 침해, 사칭으로 생기는 책임이 등록한 사람에게 있음을 확인합니다.</string>
+    <string name="voice_consent_check_biometric">내 목소리(생체정보)를 음성 프로필 생성·클론·TTS 생성에 사용하는 것에 동의합니다.</string>
+    <string name="voice_consent_check_overseas">음성 AI 처리를 위해 목소리와 문구가 국외(미국 등)로 이전·처리되는 것에 동의합니다.</string>
+    <string name="voice_consent_agree">동의하고 목소리 만들기</string>
+    <string name="voice_consent_cancel">취소</string>
+    <string name="msg_voice_consent_required">목소리를 등록하려면 음성 처리 동의가 필요해요.</string>
 </resources>

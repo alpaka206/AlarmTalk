@@ -20,7 +20,11 @@ import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
   SENSITIVE_REQUIRED_CONSENTS,
+  OPTIONAL_CONSENT_TYPES,
   CURRENT_POLICY_VERSION,
+  consentAnswerIsCurrent,
+  loadLatestConsents,
+  missingConsentTypesFrom,
 } from '../lib/consent';
 
 const user = new Hono<AppEnv>();
@@ -381,32 +385,29 @@ user.get('/consents', async (c) => {
 });
 
 // 동의 상태 조회. 기존 가입자/신규 가입자 모두 로그인 후 이 결과로 재동의 화면을 띄운다.
-// needs_consent = 필수 동의 중 하나라도 (미기록 | 미동의 | 현재 정책버전과 불일치) 이면 true.
+// 판정은 게이트 미들웨어와 같은 lib/consent 헬퍼로 하고(한 번 읽어 세 목록을 뽑는다),
+// 클라이언트는 collect 에 담긴 유형만 화면에 띄우고 그 유형만 제출한다.
 user.get('/consents/status', async (c) => {
   const userPk = c.get('userIdPK');
   const db = getDB(c.env);
   try {
-    // 미충족 유형 목록(missing)은 응답에 그대로 노출하므로 직접 계산하되, needs_consent
-    // 종합 판정은 게이트 미들웨어와 동일한 needsConsent 헬퍼로 일관성을 보장한다.
-    const res = await db.execute({
-      sql: `SELECT consent_type, policy_version, agreed
-            FROM user_consents WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`,
-      args: [userPk],
-    });
-    const latest = new Map<string, { agreed: boolean; version: string }>();
-    for (const row of res.rows) {
-      const type = String(row.consent_type);
-      if (latest.has(type)) continue; // 유형별 최신 1건만
-      latest.set(type, { agreed: Number(row.agreed) === 1, version: String(row.policy_version) });
-    }
-    const missing = REQUIRED_CONSENT_TYPES.filter((type) => {
-      const cur = latest.get(type);
-      return !cur || !cur.agreed || cur.version !== CURRENT_POLICY_VERSION;
-    });
+    const latest = await loadLatestConsents(db, userPk);
+    // needs_consent 는 필수 유형 기준 — 선택/민감 동의 때문에 가입 게이트가 뜨면 안 된다.
+    const missing = missingConsentTypesFrom(latest, REQUIRED_CONSENT_TYPES);
+    // 이번 동의 화면에서 받아야 하는 유형. 이미 유효한 기록이 있는 유형은 넣지 않는다 —
+    // 클라가 안 띄운 유형을 제출하지 않아야 기존 marketing 동의가 살아남는다.
+    // 선택 동의는 '거절'도 유효한 응답이라 agreed 가 아니라 버전만 본다.
+    const collect = [
+      ...missing,
+      ...OPTIONAL_CONSENT_TYPES.filter((type) => !consentAnswerIsCurrent(latest, type)),
+    ];
     return c.json({
       needs_consent: missing.length > 0,
       required: REQUIRED_CONSENT_TYPES,
       missing,
+      collect,
+      // 민감 동의는 가입 게이트가 아니라 목소리 등록 시점에 받는다(클라가 별도 시트로 처리).
+      sensitive_missing: missingConsentTypesFrom(latest, SENSITIVE_REQUIRED_CONSENTS),
       policy_version: CURRENT_POLICY_VERSION,
     });
   } catch (err) {
