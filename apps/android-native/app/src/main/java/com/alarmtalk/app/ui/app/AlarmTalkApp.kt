@@ -955,10 +955,9 @@ internal fun AlarmTalkApp(
               done = prefetchDone,
               total = prefetchTotal,
               failed = prefetchInfo?.state == androidx.work.WorkInfo.State.FAILED,
-              // 한 번 이상 실패해 재시도 대기 중이면 화면은 '받는 중' 처럼 보이지만 실제로는
-              // 멈춰 있다. 그때도 빠져나갈 수 있게 알려준다.
-              stalled = prefetchInfo?.state == androidx.work.WorkInfo.State.ENQUEUED &&
-                  (prefetchInfo?.runAttemptCount ?: 0) > 0,
+              // 판정 규칙은 stockPrefetchStalled 에 있다(회귀 테스트로 고정 — 갇히는 조합을
+              // 두 번 놓쳤다).
+              stalled = stockPrefetchStalled(prefetchInfo?.state, prefetchInfo?.runAttemptCount ?: 0),
               onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
               onSkip = viewModel::skipVoiceSetup,
           )
