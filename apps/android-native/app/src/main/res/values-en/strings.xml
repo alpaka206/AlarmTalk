@@ -615,9 +615,10 @@
     <string name="voices_login_required_title">Sign-in required</string>
     <string name="voices_mic_permission_required">Microphone permission is required.</string>
     <string name="voices_name_label">Voice name</string>
-    <string name="voices_prerender_ready_title">Getting your alarm voice ready</string>
-    <string name="voices_prerender_ready_body">This will be ready shortly.\nYou can close this — it keeps going in the background.</string>
-    <string name="voices_language_label">Message language</string>
+    <string name="voices_prerender_ready_title">Creating alarm lines in this voice</string>
+    <string name="voices_prerender_ready_body">You can close this — it keeps going.
+They become available as they finish.</string>
+    <string name="voices_language_label">Language for alarm lines</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
     <string name="voices_paid_required">Available with a paid plan.</string>
@@ -626,12 +627,12 @@
     <string name="voices_preparing">Preparing</string>
     <string name="voices_preparing_audio">Preparing your audio.</string>
     <string name="voices_preview_play_failed">Couldn\'t play the preview.</string>
-    <string name="voices_confirm_new_title">‘%1$s’ voice is ready</string>
-    <string name="voices_confirm_new_body">Confirming uses this month\'s voice. You can redo it as many times as you like before confirming, but afterwards you will have to wait until next month, even if you delete it.</string>
+    <string name="voices_confirm_new_title">Keep “%1$s” as it is?</string>
+    <string name="voices_confirm_new_body">Keeping it uses one registration for this month, and deleting it later will not free that up until next month. If you are not happy with it, make another one before you decide — as long as you have generations left this month.</string>
     <string name="voices_confirm_new_preview">Replay</string>
     <string name="voices_confirm_new_keep">Use this voice</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>
-    <string name="voices_confirm_new_delete">Delete</string>
+    <string name="voices_confirm_new_delete">Discard this voice</string>
     <string name="voices_creating_title">Creating your voice</string>
     <string name="voices_creating_body">Hang tight.
 We\'ll play it for you as soon as it\'s ready.</string>

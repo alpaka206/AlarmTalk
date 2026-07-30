@@ -623,9 +623,10 @@
     <string name="voices_login_required_title">ログインが必要です</string>
     <string name="voices_mic_permission_required">マイクの権限が必要です。</string>
     <string name="voices_name_label">声の名前</string>
-    <string name="voices_prerender_ready_title">アラーム音声を準備しています</string>
-    <string name="voices_prerender_ready_body">まもなく準備できます。\nこの画面を閉じてもバックグラウンドで続きます。</string>
-    <string name="voices_language_label">フレーズの言語</string>
+    <string name="voices_prerender_ready_title">この声でアラーム文言を作っています</string>
+    <string name="voices_prerender_ready_body">閉じても作成は続きます。
+でき次第アラームで使えます。</string>
+    <string name="voices_language_label">アラームを読み上げる言語</string>
     <string name="voices_name_placeholder">例:お母さんの声</string>
     <string name="voices_next">次へ</string>
     <string name="voices_paid_required">有料プランでご利用いただけます。</string>
@@ -634,12 +635,12 @@
     <string name="voices_preparing">準備中</string>
     <string name="voices_preparing_audio">音声を準備しています。</string>
     <string name="voices_preview_play_failed">プレビューを再生できませんでした。</string>
-    <string name="voices_confirm_new_title">「%1$s」の声を作成しました</string>
-    <string name="voices_confirm_new_body">この声で確定すると今月の登録を使います。確定前は何度でも作り直せますが、確定後は削除しても来月まで待つことになります。</string>
+    <string name="voices_confirm_new_title">「%1$s」、このまま確定しますか?</string>
+    <string name="voices_confirm_new_body">確定すると今月の登録を1回使い、あとで削除しても翌月まで新しく作れません。気に入らなければ確定する前にもう一度作ってみてください — 今月の作成回数が残っていれば可能です。</string>
     <string name="voices_confirm_new_preview">もう一度聞く</string>
     <string name="voices_confirm_new_keep">この声にする</string>
     <string name="voices_confirm_new_keep_saving">登録中…</string>
-    <string name="voices_confirm_new_delete">削除</string>
+    <string name="voices_confirm_new_delete">この声を破棄</string>
     <string name="voices_creating_title">声を作成しています</string>
     <string name="voices_creating_body">少々お待ちください。
 完成したらすぐお聞かせします。</string>

@@ -624,9 +624,10 @@
     <string name="voices_login_required_title">로그인이 필요해요</string>
     <string name="voices_mic_permission_required">마이크 권한이 필요해요.</string>
     <string name="voices_name_label">목소리 이름</string>
-    <string name="voices_prerender_ready_title">알람 목소리를 준비하고 있어요</string>
-    <string name="voices_prerender_ready_body">조금만 기다리면 준비돼요.\n이 화면을 닫아도 백그라운드에서 계속돼요.</string>
-    <string name="voices_language_label">문구 언어</string>
+    <string name="voices_prerender_ready_title">이 목소리로 알람 문구를 만들고 있어요</string>
+    <string name="voices_prerender_ready_body">지금 닫아도 계속 만들어져요.
+준비되는 대로 알람에서 쓸 수 있어요.</string>
+    <string name="voices_language_label">알람을 읽어줄 언어</string>
     <string name="voices_lang_ko" translatable="false">한국어</string>
     <string name="voices_lang_en" translatable="false">English</string>
     <string name="voices_lang_ja" translatable="false">日本語</string>
@@ -638,12 +639,12 @@
     <string name="voices_preparing">준비 중</string>
     <string name="voices_preparing_audio">음성을 준비하고 있어요.</string>
     <string name="voices_preview_play_failed">미리듣기를 재생하지 못했어요.</string>
-    <string name="voices_confirm_new_title">‘%1$s’ 목소리를 만들었어요</string>
-    <string name="voices_confirm_new_body">이 목소리로 확정하면 이번 달 등록을 쓰게 돼요. 확정 전에는 얼마든지 다시 만들 수 있지만, 확정한 뒤에는 지워도 다음 달까지 기다려야 해요.</string>
+    <string name="voices_confirm_new_title">‘%1$s’, 이대로 확정할까요?</string>
+    <string name="voices_confirm_new_body">확정하면 이번 달 등록을 한 번 쓰고, 나중에 지워도 다음 달까지 새로 만들 수 없어요. 마음에 들지 않으면 확정하기 전에 다시 만들어 보세요 — 이번 달 생성 횟수가 남아 있다면 가능해요.</string>
     <string name="voices_confirm_new_preview">다시 듣기</string>
     <string name="voices_confirm_new_keep">이 목소리로 할게요</string>
     <string name="voices_confirm_new_keep_saving">등록 중…</string>
-    <string name="voices_confirm_new_delete">삭제</string>
+    <string name="voices_confirm_new_delete">이 목소리 버리기</string>
     <string name="voices_creating_title">목소리를 만드는 중이에요</string>
     <string name="voices_creating_body">잠시만 기다려 주세요.
 완성되면 바로 들려드릴게요.</string>
