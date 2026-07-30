@@ -15,8 +15,8 @@
     <string name="auth_consent_processing">Processing…</string>
     <string name="auth_consent_terms">[Required] Agree to Terms of Service</string>
     <string name="auth_consent_title">Please agree to the terms\nto use the service</string>
-    <string name="auth_consent_voice_biometric">[Required] Agree to voice biometric processing</string>
-    <string name="auth_consent_voice_biometric_desc">Recorded or uploaded voices are used to create voice profiles, clone voices, and generate TTS, and are processed as biometric information that can identify or reproduce a person.</string>
+    <string name="auth_consent_voice_biometric">[Optional] Agree to voice biometric processing</string>
+    <string name="auth_consent_voice_biometric_desc">Only needed if you want to use your own voice for alarms. Recorded or uploaded voices are used to create voice profiles, clone voices, and generate TTS, and are processed as biometric information that can identify or reproduce a person. Declining keeps the built-in voices working, and we will ask again when you register a voice.</string>
     <string name="auth_already_have_account">Already have an account?</string>
     <string name="auth_create_account">Sign up</string>
     <string name="auth_email_verify">Verify email</string>
@@ -1013,4 +1013,7 @@ Pass code: %1$s
     <string name="auth_consent_continue">Continue</string>
     <string name="voice_consent_agree_continue">Agree and continue</string>
     <string name="onb_voice_title_failed">We could not get the voices</string>
+    <string name="voices_register_attest">This is my voice, or one I have permission to use, and I take responsibility for registering it.</string>
+    <string name="voices_register_biometric_consent">I agree to voice biometric processing</string>
+    <string name="voices_register_biometric_desc">Your voice is used to build a voice profile, clone it, and read alarms aloud, and is handled as biometric information that can identify or reproduce a person. Deleting the voice deletes it too, and you can withdraw consent any time from the More tab.</string>
 </resources>

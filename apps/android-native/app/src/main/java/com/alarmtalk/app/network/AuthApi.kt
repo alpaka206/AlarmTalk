@@ -184,9 +184,16 @@ data class ConsentStatusResponse(
      */
     val collect: List<String> = emptyList(),
     /**
-     * 민감 동의(음성 생체정보·국외 이전) 중 아직 없는 것. 가입 게이트에서는 받지 않고
-     * 목소리를 실제로 등록할 때 받는다(개인정보보호법 제22조 — 별도 동의를 서비스 이용
-     * 조건으로 강제하지 않는다).
+     * [collect] 중 **체크하지 않아도 통과시켜야 하는** 유형(기능 동의 + 선택 동의).
+     * 화면은 이 목록에 든 항목만 '선택' 으로 그리고, 나머지는 필수로 강제한다.
+     */
+    val optional: List<String> = emptyList(),
+    /**
+     * 음성 라우트가 요구하는 민감 동의 중 아직 없는 것.
+     *
+     * `overseas_transfer` 는 가입 필수라 보통 비어 있고, 가입 화면에서 `voice_biometric`
+     * (선택)을 거절한 사람만 여기에 남는다. 목소리 등록 화면이 이 값으로 인라인 동의 항목을
+     * 띄운다 — 한 번 동의하면 비게 되어 다시 묻지 않는다.
      */
     @SerializedName("sensitive_missing") val sensitiveMissing: List<String> = emptyList(),
     /**

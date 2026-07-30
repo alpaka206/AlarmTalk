@@ -20,6 +20,7 @@ import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
   SENSITIVE_REQUIRED_CONSENTS,
+  FEATURE_CONSENT_TYPES,
   OPTIONAL_CONSENT_TYPES,
   CURRENT_POLICY_VERSION,
   consentAnswerIsCurrent,
@@ -399,9 +400,14 @@ user.get('/consents/status', async (c) => {
     // 이번 동의 화면에서 받아야 하는 유형. 이미 유효한 기록이 있는 유형은 넣지 않는다 —
     // 클라가 안 띄운 유형을 제출하지 않아야 기존 marketing 동의가 살아남는다.
     // 선택 동의는 '거절'도 유효한 응답이라 agreed 가 아니라 버전만 본다.
+    // 기능 동의(voice_biometric)·선택 동의(marketing)는 '거절' 도 유효한 응답이라 agreed 가
+    // 아니라 버전만 본다 — 한 번 답한 사람에게 다시 묻지 않는다. 거절한 사람은 그 기능을
+    // 실제로 쓰려는 순간(목소리 등록 화면)에만 다시 만난다.
     const collect = [
       ...missing,
-      ...OPTIONAL_CONSENT_TYPES.filter((type) => !consentAnswerIsCurrent(latest, type)),
+      ...[...FEATURE_CONSENT_TYPES, ...OPTIONAL_CONSENT_TYPES].filter(
+        (type) => !consentAnswerIsCurrent(latest, type),
+      ),
     ];
     return c.json({
       // needs_consent 와 needs_collection 은 의미가 다르다. 섞어 쓰면 안 된다.
@@ -417,7 +423,12 @@ user.get('/consents/status', async (c) => {
       required: REQUIRED_CONSENT_TYPES,
       missing,
       collect,
-      // 민감 동의는 가입 게이트가 아니라 목소리 등록 시점에 받는다(클라가 별도 시트로 처리).
+      // 가입 화면에 '선택' 으로 함께 띄우는 유형. 클라가 이 목록을 보고 필수와 다르게
+      // 그린다(체크 안 해도 CTA 통과).
+      optional: [...FEATURE_CONSENT_TYPES, ...OPTIONAL_CONSENT_TYPES],
+      // 음성 라우트가 요구하는 민감 동의 중 아직 없는 것. overseas_transfer 는 가입 필수라
+      // 보통 비어 있고, 가입 때 voice_biometric 을 거절한 사람만 여기에 남는다 — 클라는
+      // 목소리 등록 화면에서 이 값으로 인라인 동의 항목을 띄운다.
       sensitive_missing: missingConsentTypesFrom(latest, SENSITIVE_REQUIRED_CONSENTS),
       // 이 계정에 동의 기록이 하나라도 있으면 '개정에 따른 재동의' 다. 처음 가입한 사람과
       // 문구가 달라야 한다 — 이미 동의했던 사람에게 '서비스 이용을 위해 동의해 주세요' 는

@@ -17,8 +17,8 @@
     <string name="auth_consent_processing">처리 중…</string>
     <string name="auth_consent_terms">[필수] 이용약관 동의</string>
     <string name="auth_consent_title">서비스 이용을 위해\n약관에 동의해 주세요</string>
-    <string name="auth_consent_voice_biometric">[필수] 음성 생체정보 처리 동의</string>
-    <string name="auth_consent_voice_biometric_desc">녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다.</string>
+    <string name="auth_consent_voice_biometric">[선택] 음성 생체정보 처리 동의</string>
+    <string name="auth_consent_voice_biometric_desc">내 목소리를 알람에 쓰고 싶을 때만 필요해요. 녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다. 지금 동의하지 않아도 기본 목소리 알람은 그대로 쓸 수 있고, 나중에 목소리를 등록할 때 다시 여쭤봐요.</string>
     <string name="auth_already_have_account">이미 계정이 있나요?</string>
     <string name="auth_create_account">회원가입</string>
     <string name="auth_email_verify">이메일 인증</string>
@@ -1041,4 +1041,7 @@
     <string name="auth_consent_continue">계속하기</string>
     <string name="voice_consent_agree_continue">동의하고 계속하기</string>
     <string name="onb_voice_title_failed">목소리를 받지 못했어요</string>
+    <string name="voices_register_attest">본인이거나 동의를 받은 사람의 목소리이고, 무단 등록에 대한 책임이 저에게 있다는 걸 확인해요.</string>
+    <string name="voices_register_biometric_consent">음성 생체정보 처리에 동의해요</string>
+    <string name="voices_register_biometric_desc">목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요. 목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요.</string>
 </resources>

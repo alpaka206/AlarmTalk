@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -243,3 +245,85 @@ internal fun VoiceProfileDeleteDialog(
     }
 }
 
+
+
+/**
+ * 목소리 등록 직전 확인·동의 블록. '세부 정보' 단계 맨 아래, **등록 버튼 바로 위**에 둔다.
+ *
+ * 왜 여기인가: 다음 버튼(등록)이 draft 를 만들고, draft 생성이 곧 실제 ElevenLabs 클론
+ * 생성이다. 마지막 '저장하기'(승격) 앞에 두면 이미 목소리를 만들어 놓고 사후 동의를 받는
+ * 꼴이라 동의의 의미가 없다.
+ *
+ * 두 항목의 성격이 다르다:
+ *  - [attested] 는 **이 녹음**에 대한 이용자 확인이라 등록할 때마다 받는다(서버 동의 기록 아님).
+ *  - [showBiometricConsent] 는 가입 화면에서 음성 생체정보(선택)를 거절한 사람에게만 뜨는
+ *    법정 동의다. 한 번 체크하면 서버에 기록돼 다음 등록부터는 아예 그리지 않는다.
+ */
+@Composable
+internal fun VoiceRegistrationAttestation(
+    attested: Boolean,
+    onAttestedChange: (Boolean) -> Unit,
+    showBiometricConsent: Boolean,
+    biometricAgreed: Boolean,
+    onBiometricAgreedChange: (Boolean) -> Unit,
+) {
+    Surface(
+        shape = WakerPanelShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            VoiceRegistrationCheck(
+                checked = attested,
+                onCheckedChange = onAttestedChange,
+                label = stringResource(R.string.voices_register_attest),
+            )
+            if (showBiometricConsent) {
+                VoiceRegistrationCheck(
+                    checked = biometricAgreed,
+                    onCheckedChange = onBiometricAgreedChange,
+                    label = stringResource(R.string.voices_register_biometric_consent),
+                    description = stringResource(R.string.voices_register_biometric_desc),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceRegistrationCheck(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    label: String,
+    description: String? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) },
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Column(modifier = Modifier.padding(top = 12.dp)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (description != null) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+    }
+}

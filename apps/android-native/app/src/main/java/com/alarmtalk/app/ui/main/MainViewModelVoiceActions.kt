@@ -83,6 +83,7 @@ internal fun MainViewModel.createVoiceProfile(
     relationshipLabel: String,
     listenerTitle: String,
     language: String,
+    consentAgreedInline: Boolean,
 ): Boolean =
     createVoiceProfiles(
         listOf(
@@ -95,11 +96,23 @@ internal fun MainViewModel.createVoiceProfile(
                 language = language,
             ),
         ),
+        consentAgreedInline = consentAgreedInline,
     )
 
-// 반환값: 클론 생성 요청을 실제로 시작했는지. false 면 검증 실패로 아무 요청도 나가지
-// 않은 것 — 호출측(등록 패널)은 이때 '만드는 중' 스텝에 진입하면 안 된다(갇힘 방지).
-internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationDraft>): Boolean {
+/**
+ * 반환값: 클론 생성 요청을 실제로 시작했는지. false 면 검증 실패로 아무 요청도 나가지
+ * 않은 것 — 호출측(등록 패널)은 이때 '만드는 중' 스텝에 진입하면 안 된다(갇힘 방지).
+ *
+ * [consentAgreedInline] 은 등록 화면의 인라인 동의 항목을 사용자가 체크했다는 뜻이다.
+ * true 면 모달을 띄우지 않고 **같은 코루틴에서 동의를 먼저 기록한 뒤** 업로드한다 —
+ * 순서가 중요하다. draft 도 생성 즉시 실제 ElevenLabs 보이스를 만들기 때문에, 녹음이
+ * 올라간 뒤에 동의를 받으면 이미 처리한 생체정보에 사후 동의를 받는 꼴이 된다.
+ * 기록이 실패하면 업로드도 안 나가고 기존 실패 경로(메시지 + busy 해제)를 그대로 탄다.
+ */
+internal fun MainViewModel.createVoiceProfiles(
+    items: List<VoiceProfileCreationDraft>,
+    consentAgreedInline: Boolean = false,
+): Boolean {
     val session = authSession
     if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_create_login_required)
@@ -128,12 +141,13 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
     }
     if (voiceProfileBusy) return false
 
-    // 음성 생체정보·국외 이전 동의는 가입 게이트가 아니라 여기서 받는다. 서버도 같은 지점에서
-    // 403 CONSENT_REQUIRED 로 막지만, 요청을 보내 튕기기 전에 무엇에 동의하는지부터 보여준다.
-    // 시트에서 동의하면 submitVoiceConsents 가 이 drafts 로 등록을 이어서 실행한다.
-    if (sensitiveConsentMissing.isNotEmpty()) {
+    // 아직 없는 민감 동의. 등록 화면이 인라인 항목으로 이미 물어봤으면(consentAgreedInline)
+    // 모달 없이 아래 코루틴에서 먼저 기록하고, 물어보지 못한 경로(예: 화면 밖에서 호출)
+    // 에서만 전용 시트를 띄운다.
+    val consentsToRecord = sensitiveConsentMissing
+    if (consentsToRecord.isNotEmpty() && !consentAgreedInline) {
         pendingSensitiveConsent = MainViewModel.SensitiveConsentRequest(
-            types = sensitiveConsentMissing,
+            types = consentsToRecord,
             resumeVoiceDrafts = drafts,
         )
         return false
@@ -142,8 +156,27 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
     // busy 는 launch 안이 아니라 여기서 세운다 — true 를 반환하는 순간 이미 busy 인 것이
     // 보장돼야 호출측 '만드는 중' 스텝의 종료 감지(!busy && draft 없음)가 어긋나지 않는다.
     voiceProfileBusy = true
+    // 동의 기록에 실려 보낼 정책 버전. 코루틴 밖에서 읽어 둔다.
+    val policyVersion = cachedPolicyVersion()
     viewModelScope.launch {
         runCatching {
+            // 순서 고정: 동의 기록 → 업로드. 같은 runCatching 안에 두어 기록이 실패하면
+            // 녹음이 절대 나가지 않고, 실패 처리도 업로드 실패와 같은 경로를 탄다.
+            if (consentsToRecord.isNotEmpty()) {
+                api.recordConsents(
+                    AlarmTalkApiClient.bearer(session.token),
+                    com.alarmtalk.app.network.RecordConsentsRequest(
+                        consents = consentsToRecord.map { type ->
+                            com.alarmtalk.app.network.ConsentItemRequest(
+                                type = type,
+                                agreed = true,
+                                version = policyVersion,
+                            )
+                        },
+                    ),
+                )
+                sensitiveConsentMissing = sensitiveConsentMissing - consentsToRecord.toSet()
+            }
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
                     api.createVoiceClone(

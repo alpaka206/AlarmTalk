@@ -591,6 +591,7 @@ internal fun MainViewModel.checkConsentStatus() {
             // 화면이 무엇을 그리고 무엇을 제출할지는 서버가 정한다. 구버전 서버(collect 없음)와
             // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
             consentCollect = status.collect.ifEmpty { status.missing }
+            consentOptional = status.optional
             sensitiveConsentMissing = status.sensitiveMissing
             consentIsReconsent = status.hasPriorConsent
             consentNeedsCollection = status.needsCollection
@@ -618,10 +619,15 @@ internal fun MainViewModel.checkConsentStatus() {
  * 있다는 뜻이므로 건드리지 않는다 — 전부 덮어쓰면 정책 개정 때마다 사용자가 켜뒀던
  * 마케팅 수신 설정이 체크 안 된 상태로 재기록돼 조용히 꺼진다.
  *
- * 민감 동의(voice_biometric·overseas_transfer)는 여기서 보내지 않는다. 목소리 등록 시점의
- * 전용 시트가 [submitVoiceConsents] 로 따로 기록한다.
+ * [agreedOptional] 은 화면에서 사용자가 실제로 체크한 '선택' 유형(마케팅·음성 생체정보)이다.
+ * 여기 없는 선택 유형은 **거절로 기록한다** — 거절도 유효한 응답이라 다음 로그인에서 다시
+ * 묻지 않아야 하고, 동의로 슬쩍 기록하면 묻지도 않은 동의를 받아 버린다.
+ *
+ * overseas_transfer 는 가입 필수라 이 화면에서 함께 받는다. voice_biometric 은 선택이라
+ * 거절하고 통과할 수 있고, 그 사람은 목소리 등록 화면에서 인라인으로 다시 만난다
+ * ([submitVoiceConsents]).
  */
-internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
+internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
     val session = authSession
     if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
@@ -634,11 +640,14 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
     val policyVersion = cachedPolicyVersion()
     // collect 가 비어 있는 건 status 응답을 못 받은 경우다 — 이때만 필수 3종으로 폴백한다.
     val collect = consentCollect.ifEmpty { GENERAL_REQUIRED_CONSENT_TYPES }
+    // 구버전 서버(optional 없음) 폴백은 화면과 같은 기준을 써야 한다 — 여기만 다르면
+    // 화면에서 선택으로 그린 항목이 제출에서 필수로 둔갑해 동의로 기록된다.
+    val optionalTypes = consentOptional.ifEmpty { listOf("marketing") }.toSet()
     val consents = collect.map { type ->
         com.alarmtalk.app.network.ConsentItemRequest(
             type = type,
-            // 필수 유형은 화면을 통과한 시점에 이미 체크됐다. marketing 만 사용자 선택값.
-            agreed = if (type == "marketing") marketingAgreed else true,
+            // 필수 유형은 화면을 통과한 시점에 이미 체크됐다. 선택 유형만 사용자 선택값.
+            agreed = type !in optionalTypes || type in agreedOptional,
             version = policyVersion,
         )
     }
@@ -654,7 +663,13 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
             // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
             // 화면이 닫히지 않는다.
             consentCollect = emptyList()
+            consentOptional = emptyList()
             consentNeedsCollection = false
+            // 방금 화면에서 **동의로** 기록한 유형은 서버 상태와 맞춘다 — 이걸 안 지우면
+            // 목소리 등록 화면이 이미 받은 동의를 또 묻는다. 거절한 유형은 그대로 남아
+            // 등록 화면에서 다시 만난다(그게 이 설계의 핵심이다).
+            val agreedNow = consents.filter { it.agreed }.map { it.type }.toSet()
+            sensitiveConsentMissing = sensitiveConsentMissing - agreedNow
             consentChecked = true
             // 방금 서버에 보낸 그 버전으로 로컬 캐시도 기록해 서버·클라 상태를 일치시킨다.
             // 모르면(직전 status 실패) 다음 콜드스타트에서 서버로 재확인하므로 캐시하지 않는다.

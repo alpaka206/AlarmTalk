@@ -409,8 +409,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var consentCollect by mutableStateOf<List<String>>(emptyList())
         internal set
 
-    // 아직 없는 민감 동의(voice_biometric·overseas_transfer). 목소리 등록을 누른 시점에
-    // 이게 비어 있지 않으면 전용 동의 시트를 먼저 띄운다.
+    // consentCollect 중 '선택'(체크 없이 통과) 인 유형. 서버가 내려준다 — 화면이 목록을 따로
+    // 들고 있으면 서버가 필수/선택을 바꿀 때 조용히 어긋난다.
+    var consentOptional by mutableStateOf<List<String>>(emptyList())
+        internal set
+
+    // 아직 없는 민감 동의(voice_biometric·overseas_transfer).
+    //
+    // overseas_transfer 는 가입 필수라 보통 비어 있고, 가입 화면에서 voice_biometric(선택)을
+    // 거절한 사람만 남는다. 목소리 등록 화면이 이 값으로 인라인 동의 항목을 그린다 — 한 번
+    // 동의하면 비게 되어 다시 묻지 않는다. 시스템 목소리 TTS 처럼 등록 화면이 없는 경로에서
+    // 403 이 오면 여전히 전용 시트로 받는다.
     var sensitiveConsentMissing by mutableStateOf<List<String>>(emptyList())
         internal set
 
@@ -737,6 +746,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         needsConsent = false
         consentChecked = false
         consentCollect = emptyList()
+        consentOptional = emptyList()
         consentNeedsCollection = false
         consentIsReconsent = false
         // 민감 동의 상태와 대기 중인 목소리 등록 요청은 **반드시** 함께 비운다.

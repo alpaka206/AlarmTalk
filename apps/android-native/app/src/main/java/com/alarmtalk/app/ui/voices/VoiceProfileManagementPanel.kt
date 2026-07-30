@@ -194,7 +194,8 @@ internal fun VoiceProfileManagementPanel(
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
     // 반환값: 클론 생성 요청을 실제로 시작했는지 — false 면 '만드는 중' 스텝에 진입하지 않는다.
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String) -> Boolean,
+    // 마지막 인자는 인라인 동의 체크 여부(아래 sensitiveConsentMissing 참고).
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, Boolean) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
@@ -225,6 +226,10 @@ internal fun VoiceProfileManagementPanel(
     // '생성 중' 화면을 닫아도 계속되고, 앱이 죽으면 서버 cron 이 이어받는다.
     prerenderDrive: PrerenderDriveState? = null,
     onStartPrerenderDrive: (String) -> Unit = {},
+    // 아직 없는 민감 동의. 가입 화면에서 음성 생체정보(선택)를 거절한 사람만 비어 있지 않다 —
+    // 그 사람에게만 '세부 정보' 단계 아래에 인라인 동의 항목을 그리고, 체크해야 등록이 눌린다.
+    // 한 번 동의하면 서버 기록이 남아 이 목록이 비고 다음 등록부터는 보이지 않는다.
+    sensitiveConsentMissing: List<String> = emptyList(),
 ) {
     val context = LocalContext.current
     val previewLanguage = com.alarmtalk.app.data.appVoiceLanguageOf(
@@ -238,7 +243,18 @@ internal fun VoiceProfileManagementPanel(
     var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
     var shareVoice by remember { mutableStateOf(false) }
+    // 인라인 동의 체크. 등록 요청이 나가기 전 단계에서만 의미가 있으므로 다이얼로그를 닫을 때
+    // 함께 초기화한다(closeCreateDialog).
+    var voiceBiometricAgreed by remember { mutableStateOf(false) }
+    var recordingAttested by remember { mutableStateOf(false) }
     var currentStep by remember { mutableStateOf(VoiceRegistrationStep.Source) }
+    // 가입 화면에서 음성 생체정보(선택)를 거절한 사람에게만 인라인 동의 항목을 그린다.
+    // 한 번 동의하면 서버 기록이 남아 sensitiveConsentMissing 이 비고 다시 뜨지 않는다.
+    val needsBiometricConsent = "voice_biometric" in sensitiveConsentMissing
+    // 등록(=draft 생성=실제 클론 생성)을 눌러도 되는지. 이 녹음에 대한 확인은 매번 받고,
+    // 법정 동의는 아직 없을 때만 받는다.
+    val registrationConsentSatisfied =
+        recordingAttested && (!needsBiometricConsent || voiceBiometricAgreed)
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
@@ -651,6 +667,8 @@ internal fun VoiceProfileManagementPanel(
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
         shareVoice = false
+        voiceBiometricAgreed = false
+        recordingAttested = false
         currentStep = VoiceRegistrationStep.Source
         selectedAudio = null
         mediaPlayer?.release()
@@ -1139,6 +1157,9 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         if (createPreparing) return
+        // 버튼이 이미 비활성이지만, 파일 경로의 비동기 크롭을 거쳐 다시 들어올 수 있어
+        // 여기서도 막는다 — 확인·동의 없이 녹음이 나가는 경로가 하나도 없어야 한다.
+        if (!registrationConsentSatisfied) return
         if (inputMode == VoiceCaptureMode.Record) {
             val audio = selectedAudio ?: run {
                 localMessage = context.getString(R.string.voices_prepare_recording_first)
@@ -1156,6 +1177,7 @@ internal fun VoiceProfileManagementPanel(
                 trimmedRelationship,
                 trimmedListener,
                 profileVoiceLanguage,
+                voiceBiometricAgreed,
             )
             if (accepted) enterCreatingStep()
             return
@@ -1177,6 +1199,7 @@ internal fun VoiceProfileManagementPanel(
                         trimmedRelationship,
                         trimmedListener,
                         profileVoiceLanguage,
+                        voiceBiometricAgreed,
                     )
                     if (accepted) enterCreatingStep()
                 }
@@ -1614,6 +1637,19 @@ internal fun VoiceProfileManagementPanel(
                                     },
                                     onCheckedChange = { shareVoice = it },
                                 )
+                                // 등록 직전 확인 — 이 단계에 두는 이유는 다음 버튼('등록')이
+                                // draft 를 만들고, draft 생성이 곧 실제 ElevenLabs 클론 생성이기
+                                // 때문이다. 마지막 '저장하기'(승격) 앞에 두면 이미 목소리를
+                                // 만들어 놓고 사후 동의를 받는 꼴이 된다.
+                                VoiceRegistrationAttestation(
+                                    attested = recordingAttested,
+                                    onAttestedChange = { recordingAttested = it },
+                                    // 가입 화면에서 이미 동의했으면 그리지 않는다 — 한 번 받은
+                                    // 동의를 등록할 때마다 다시 묻지 않는다.
+                                    showBiometricConsent = needsBiometricConsent,
+                                    biometricAgreed = voiceBiometricAgreed,
+                                    onBiometricAgreedChange = { voiceBiometricAgreed = it },
+                                )
                             }
 
                             VoiceRegistrationStep.Creating -> {
@@ -1920,8 +1956,12 @@ internal fun VoiceProfileManagementPanel(
                                             submitCreateProfile(resolvedProfileName)
                                         }
                                     },
+                                    // 확인·동의를 체크해야 등록이 눌린다. 서버도 같은 지점에서
+                                    // 403 으로 막지만, 요청을 보내 튕기기 전에 무엇에 동의하는지
+                                    // 부터 보여준다.
                                     enabled = !voiceProfileBusy && !isRecording && !createPreparing &&
-                                        (canSubmitRecord || canSubmitSingleFile),
+                                        (canSubmitRecord || canSubmitSingleFile) &&
+                                        registrationConsentSatisfied,
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {

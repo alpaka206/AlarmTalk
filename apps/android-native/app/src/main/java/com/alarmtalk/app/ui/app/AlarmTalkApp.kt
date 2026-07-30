@@ -890,7 +890,8 @@ internal fun AlarmTalkApp(
               busy = authBusy,
               collect = viewModel.consentCollect,
               isReconsent = viewModel.consentIsReconsent,
-              onAgree = { marketingAgreed -> viewModel.submitConsents(marketingAgreed) },
+              optional = viewModel.consentOptional,
+              onAgree = { agreedOptional -> viewModel.submitConsents(agreedOptional) },
           )
           return@Scaffold
       }
@@ -963,6 +964,7 @@ internal fun AlarmTalkApp(
                           vouchers = vouchers,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,
+                          sensitiveConsentMissing = viewModel.sensitiveConsentMissing,
                           onGenerateTts = viewModel::generateTtsAudio,
                           stockClips = viewModel.stockClips,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },

@@ -13,6 +13,7 @@ import { runMigrations } from '../src/lib/migrations';
 import {
   GENERAL_REQUIRED_CONSENTS,
   REQUIRED_CONSENT_TYPES,
+  FEATURE_CONSENT_TYPES,
   needsConsent,
 } from '../src/lib/consent';
 
@@ -55,8 +56,16 @@ function req(method: string, path: string, body?: unknown) {
  * 가입 동의 화면이 제출하는 페이로드 — 필수 유형은 소스의 REQUIRED_CONSENT_TYPES 에서
  * 만들어(목록이 바뀌어도 따라온다), overrides 로 특정 유형만 거절 상태로 비튼다.
  */
+/**
+ * 가입 동의 화면이 실제로 제출하는 payload — 필수뿐 아니라 화면에 함께 뜨는 기능 동의
+ * (voice_biometric)도 포함한다. 필수만 넣으면 '거절' 시나리오의 override 가 조용히
+ * 무시되어(보내지 않은 유형 = 미응답) 테스트가 다른 상태를 검증하게 된다.
+ */
 function consentPayload(overrides: Record<string, boolean> = {}) {
-  return REQUIRED_CONSENT_TYPES.map((type) => ({ type, agreed: overrides[type] ?? true }));
+  return [...REQUIRED_CONSENT_TYPES, ...FEATURE_CONSENT_TYPES].map((type) => ({
+    type,
+    agreed: overrides[type] ?? true,
+  }));
 }
 
 beforeAll(async () => {
@@ -139,7 +148,7 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
   const NEW_SUB = 'no-consent-sub';
   const NEW_PK = 'no-consent-pk';
 
-  it('동의 기록이 없는 사용자는 needs_consent=true, 가입 필수 5종 모두 missing', async () => {
+  it('동의 기록이 없는 사용자는 needs_consent=true, 가입 필수 4종 모두 missing', async () => {
     await db.execute({
       sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
       args: [NEW_PK, NEW_SUB, 'noconsent@test.com', 'No Consent'],
@@ -153,7 +162,7 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
     expect(body.missing.sort()).toEqual([...REQUIRED_CONSENT_TYPES].sort());
   });
 
-  it('가입 필수 5종 동의 기록 후 needs_consent=false (marketing 미동의여도 무관)', async () => {
+  it('가입 필수 4종 동의 기록 후 needs_consent=false (marketing 미동의여도 무관)', async () => {
     const app = buildApp(NEW_SUB, NEW_PK);
     await app.request(
       req('POST', '/user/consents', {
@@ -185,9 +194,11 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
     expect(body.missing).toEqual(['privacy']);
   });
 
-  // 민감 동의만 빠진 사용자: 가입 동의 화면 기준으로는 재동의 대상이지만, 미들웨어의
-  // 하드 게이트는 GENERAL 3종만 보므로 앱 전체가 잠기지는 않는다.
-  it('민감 동의만 빠지면 missing/sensitive_missing 에 뜨되 일반 3종은 충족 상태다', async () => {
+  // 민감 동의만 빠진 사용자. 국외 이전은 가입 필수라 missing 에 뜨지만, 음성 생체정보는
+  // 선택이라 거절해도 missing 에 들어가지 않는다 — 목소리 등록 화면에서 다시 받는 몫이라
+  // sensitive_missing 에만 남는다. 미들웨어의 하드 게이트는 GENERAL 3종만 보므로
+  // 어느 쪽이든 앱 전체가 잠기지는 않는다.
+  it('민감 동의만 빠지면 국외 이전만 missing 이고 둘 다 sensitive_missing 에 뜬다', async () => {
     const SUB4 = 'sensitive-sub';
     const PK4 = 'sensitive-pk';
     await db.execute({
@@ -203,9 +214,12 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
     const res = await app.request(req('GET', '/user/consents/status'));
     const body = await res.json();
     console.log('[GET /consents/status — 민감 미동의]', JSON.stringify(body));
-    expect(body.missing).toEqual(['voice_biometric', 'overseas_transfer']);
+    expect(body.missing).toEqual(['overseas_transfer']);
     expect(body.sensitive_missing).toEqual(['voice_biometric', 'overseas_transfer']);
     expect(body.needs_consent).toBe(true);
+    // 거절한 생체정보는 다시 묻지 않는다(답은 이미 받았다). 목소리 등록 화면의 몫이다.
+    // marketing 은 이 픽스처가 한 번도 안 물어봐서 남는다.
+    expect(body.collect).toEqual(['overseas_transfer', 'marketing']);
     // 게이트가 보는 일반 3종은 그대로 충족 — 앱 전체가 잠기면 안 된다.
     expect(await needsConsent(db, PK4, GENERAL_REQUIRED_CONSENTS)).toBe(false);
   });

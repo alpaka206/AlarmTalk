@@ -42,11 +42,14 @@ export const SENSITIVE_REQUIRED_CONSENTS = ['voice_biometric', 'overseas_transfe
 export const OPTIONAL_CONSENT_TYPES = ['marketing'] as const;
 
 /**
- * 가입 동의 화면에서 받는 필수 동의 **전체**.
+ * 가입 동의 화면을 **통과하려면 반드시 체크해야 하는** 유형.
  *
- * 앱의 핵심이 목소리 알람이라 음성 처리 동의(국외 이전·생체정보)까지 가입 시 함께 받는다.
- * 기능을 쓰려는 순간마다 동의 모달을 띄우면 그때가 가장 거부감이 큰 자리다 — 목소리를
- * 등록하려고 마음먹은 사람 앞에 체크박스를 내미는 것보다, 처음 한 번에 끝내는 편이 낫다.
+ * `overseas_transfer` 가 여기 있는 이유: 무료 플랜의 기본 목소리 알람도 문구 생성(Vertex)과
+ * 읽어주기(ElevenLabs)를 거쳐 데이터가 국외로 나간다. 거부하면 알람에 목소리를 못 붙이니
+ * 사실상 서비스가 성립하지 않는다 — '선택 동의를 거부했다고 서비스를 거부' 하는 게 아니라
+ * 계약 이행에 필요한 동의라서 가입 필수로 두는 것이다.
+ *
+ * `voice_biometric` 은 여기 **없다** — 아래 FEATURE_CONSENT_TYPES 를 볼 것.
  *
  * 미들웨어의 하드 게이트는 여전히 GENERAL_REQUIRED_CONSENTS 3종만 본다. 앱 자체를 막는
  * 범위는 최소로 두고, 음성 라우트는 SENSITIVE_REQUIRED_CONSENTS 를 따로 확인한다 —
@@ -54,8 +57,22 @@ export const OPTIONAL_CONSENT_TYPES = ['marketing'] as const;
  */
 export const REQUIRED_CONSENT_TYPES = [
   ...GENERAL_REQUIRED_CONSENTS,
-  ...SENSITIVE_REQUIRED_CONSENTS,
+  'overseas_transfer',
 ] as const;
+
+/**
+ * 그 기능을 쓸 때만 필요한 동의. **가입 화면에 '선택'으로 함께 노출하되, 거절해도 가입은
+ * 통과시킨다.**
+ *
+ * `voice_biometric`(내 목소리 클론)이 여기 속한다. 내 목소리를 등록하지 않아도 기본 목소리
+ * 알람으로 앱을 온전히 쓸 수 있으므로, 이 동의를 가입 조건으로 요구하면 개인정보보호법
+ * 제22조제5항(선택 동의 거부를 이유로 한 서비스 제공 거부 금지)에 정면으로 걸린다.
+ * 민감정보라 제23조의 '별도 동의' 요건도 있어 다른 필수 동의와 한 덩어리로 묶으면 안 된다.
+ *
+ * 대신 **가입 화면 안에** 선택 항목으로 둔다. 대부분은 거기서 한 번 체크하고 다시 볼 일이
+ * 없어 등록 도중 모달이 뜨지 않는다. 거절한 사람에게만 목소리 등록 화면에서 다시 묻는다.
+ */
+export const FEATURE_CONSENT_TYPES = ['voice_biometric'] as const;
 
 /** 처리방침/약관 문서 버전. **새로 기록하는** 동의는 예외 없이 이 값으로 저장한다 —
  *  POST /user/consents 는 요청 바디의 version 을 받기만 하고 무시한다(클라가 보낸 버전을

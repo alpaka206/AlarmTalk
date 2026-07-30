@@ -44,11 +44,17 @@ import androidx.compose.ui.unit.dp
  * 로그인 후 필수 약관/개인정보 동의를 받는 게이트 화면.
  * 신규 가입자뿐 아니라 기존 가입자도 미동의 시 이 화면을 통과해야 앱을 쓸 수 있다.
  *
- * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침 / 음성 생체정보 / 국외 이전
- * 선택: 광고성 정보 수신(마케팅)
+ * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침 / 국외 이전
+ * 선택: 음성 생체정보(내 목소리 등록) / 광고성 정보 수신(마케팅)
  *
- * 음성 처리 동의를 여기서 함께 받는 이유: 앱의 핵심이 목소리 알람이라 기능을 쓰려는
- * 순간마다 모달을 띄우면 그때가 가장 거부감이 큰 자리다. 처음 한 번에 끝낸다.
+ * 음성 생체정보를 **선택으로 여기서 함께** 묻는 이유: 내 목소리를 등록하지 않아도 기본
+ * 목소리 알람으로 앱을 온전히 쓸 수 있으므로 가입 조건으로 강제하면 개인정보보호법
+ * 제22조제5항에 걸린다. 그렇다고 등록하려는 순간에만 모달로 띄우면 그때가 가장 거부감이
+ * 큰 자리다. 그래서 가입 화면 안에 선택 항목으로 두어 대부분은 한 번에 끝내고, 여기서
+ * 거절한 사람만 목소리 등록 화면에서 인라인으로 다시 만난다.
+ *
+ * 어떤 항목이 선택인지는 서버가 [optional] 로 내려준다 — 화면이 목록을 따로 들고 있으면
+ * 서버가 필수/선택을 바꿀 때 조용히 어긋난다.
  *
  * **[collect] 에 든 유형만 그린다.** 서버가 유형별 최소 정책 버전으로 계산해 내려주며,
  * 이미 유효한 동의는 목록에 없다 — 개정 때 필요한 것만 다시 묻고, 묻지 않은 항목의 기존
@@ -60,8 +66,9 @@ internal fun ConsentScreen(
     contentPadding: PaddingValues,
     busy: Boolean,
     collect: List<String>,
+    optional: List<String>,
     isReconsent: Boolean,
-    onAgree: (marketingAgreed: Boolean) -> Unit,
+    onAgree: (agreedOptional: Set<String>) -> Unit,
 ) {
     var age14 by remember { mutableStateOf(false) }
     var terms by remember { mutableStateOf(false) }
@@ -84,13 +91,34 @@ internal fun ConsentScreen(
     val shownCount = listOf(
         showAge14, showTerms, showPrivacy, showVoiceBiometric, showOverseas, showMarketing,
     ).count { it }
-    val shownRequired = showAge14 || showTerms || showPrivacy || showVoiceBiometric || showOverseas
+    // 구버전 서버(optional 없음)와 섞여 돌 수 있다. 비어 있으면 마케팅만 선택으로 본다 —
+    // 그쪽이 안전한 폴백이다(선택을 필수로 잘못 그리면 사용자가 화면을 못 벗어난다).
+    val optionalTypes = optional.ifEmpty { listOf("marketing") }.toSet()
+    val requiredShown = collect.filter { it !in optionalTypes }
+    val shownRequired = requiredShown.isNotEmpty()
 
     // 그리지 않은 필수 항목은 이미 동의된 것이므로 통과 조건에서 뺀다.
-    val allRequiredChecked =
-        (!showAge14 || age14) && (!showTerms || terms) && (!showPrivacy || privacy) &&
-            (!showVoiceBiometric || voiceBiometric) && (!showOverseas || overseasTransfer)
-    val allChecked = allRequiredChecked && (!showMarketing || marketing)
+    val allRequiredChecked = requiredShown.all { type ->
+        when (type) {
+            "age14" -> age14
+            "terms" -> terms
+            "privacy" -> privacy
+            "voice_biometric" -> voiceBiometric
+            "overseas_transfer" -> overseasTransfer
+            "marketing" -> marketing
+            // 모르는 유형(서버가 먼저 늘어난 경우)은 통과를 막지 않는다 — 그릴 줄 모르는
+            // 체크박스 때문에 영영 못 넘어가는 화면이 되면 안 된다. 제출에서도 빠진다.
+            else -> true
+        }
+    }
+    val allChecked = allRequiredChecked &&
+        (!showVoiceBiometric || voiceBiometric) && (!showMarketing || marketing)
+
+    // 화면에서 사용자가 실제로 체크한 '선택' 유형 — 제출은 이 값으로 agreed 를 정한다.
+    val agreedOptional = buildSet {
+        if (showVoiceBiometric && voiceBiometric) add("voice_biometric")
+        if (showMarketing && marketing) add("marketing")
+    }
 
     fun setAll(value: Boolean) {
         if (showAge14) age14 = value
@@ -177,6 +205,7 @@ internal fun ConsentScreen(
                         checked = voiceBiometric,
                         onCheckedChange = { voiceBiometric = it },
                         label = stringResource(R.string.auth_consent_voice_biometric),
+                        // 필수로 보이면 안 된다 — 체크하지 않아도 CTA 는 눌린다.
                         detail = AnnotatedString(
                             stringResource(R.string.auth_consent_voice_biometric_desc),
                         ),
@@ -215,7 +244,7 @@ internal fun ConsentScreen(
                     } else {
                         stringResource(R.string.auth_consent_continue)
                     },
-                    onClick = { onAgree(marketing) },
+                    onClick = { onAgree(agreedOptional) },
                     // 그릴 항목이 하나도 없으면 동의할 대상도 없다 — 빈 화면에서 버튼이
                     // 눌려 사용자가 못 본 동의가 기록되는 일이 없게 막는다.
                     enabled = shownCount > 0 && allRequiredChecked && !busy,
