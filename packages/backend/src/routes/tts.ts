@@ -255,11 +255,17 @@ function pickRandomPresetText(category: string, language: string): string | null
   return messages[randomIndex(messages.length)]!;
 }
 
+// 프리셋 문구 앞에 호칭을 붙인다. 프리셋은 '[brightly] 오늘은…' 처럼 delivery 태그로 시작하는데,
+// 호칭을 그 **앞**에 붙이면 태그가 문장 중간으로 밀려 호칭만 톤 지시 없이 읽힌다.
+// 그래서 선두 태그는 그대로 두고 그 뒤에 끼워 넣는다.
 function presetTextWithListenerTitle(text: string, listenerTitle: string | null): string {
   const title = listenerTitle?.trim();
   const base = text.trim();
-  if (!title || !base || base.startsWith(title)) return base;
-  const withTitle = `${title}, ${base}`;
+  if (!title || !base) return base;
+  const lead = base.match(/^\[[a-z][a-z -]{1,32}\]\s*/i)?.[0] ?? '';
+  const spoken = base.slice(lead.length);
+  if (!spoken || spoken.startsWith(title)) return base;
+  const withTitle = `${lead}${title}, ${spoken}`;
   return withTitle.length <= 200 ? withTitle : base;
 }
 
@@ -706,9 +712,12 @@ tts.post('/generate', async (c) => {
     );
   }
 
+  // 프리셋 문구는 STOCK_CLIP_PRESETS 에서 오고 '[brightly]' 같은 delivery 태그를 달고 온다.
+  // 사용자가 친 대괄호가 아니라 우리 마크업이므로 표시 문구에서는 벗겨야 한다(아래 messageText).
+  const presetTextUsed = !draftPreviewRequested && randomRequested && randomContext === 'preset';
   let requestText = draftPreviewRequested
     ? draftPreviewText('ko')
-    : randomRequested && randomContext === 'preset'
+    : presetTextUsed
       ? pickRandomPresetText(category, normalizeSynthesisLanguage(body.language))
       : (body.text ?? '').trim();
   if (!requestText) {
@@ -1106,9 +1115,13 @@ tts.post('/generate', async (c) => {
     // 있으면 자동 태그가 아니므로 원문 보존, 없으면 맨 앞 태그 1개만 제거한다(deriveAlarmDisplayText).
     // → (1) 번역 경로에서도 화면 문구가 음성 언어와 일치하고, (2) '[after lunch]'·'[calm]'만 입력 등
     //   사용자 대괄호가 안 지워지며, (3) 모델이 붙인 비승인 태그도 화면엔 새지 않는다.
+    //
+    // 프리셋 경로는 사용자가 친 문구가 없다(우리 스톡 문구 + 그 안의 delivery 태그). 원문을
+    // 그대로 넘기면 태그를 '사용자 대괄호'로 보고 보존해 화면에 '[brightly] …' 가 샌다.
+    // 빈 원문을 넘겨 태그를 벗긴다 — 사전렌더 경로(stock-clips.ts stripDeliveryTags)와 같은 결과.
     const messageText = dynamicGenerated
       ? dynamicGenerated.text
-      : deriveAlarmDisplayText(synthesisText, requestText);
+      : deriveAlarmDisplayText(synthesisText, presetTextUsed ? '' : requestText);
     const deliveryTagsJson = JSON.stringify(prepared.tags);
     // synthesisLanguage 결정 시 요청 언어 의도를 보존한다.
     // - 번역 경로(translated): requestedLanguage 로 번역했으므로 그대로 사용.

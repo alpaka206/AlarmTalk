@@ -1109,10 +1109,13 @@ describe('POST /tts/generate — edge cases', () => {
 
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.original_text).toBe(GREETING_KO_RAW);
+    // 표시 문구에는 delivery 태그가 남으면 안 된다 — 사전렌더 클립(stripDeliveryTags)과 같은 결과다.
+    expect(body.original_text).toBe(stripDeliveryTags(GREETING_KO_RAW));
+    expect(body.original_text).not.toMatch(/\[[a-z][a-z -]*\]/i);
     expect(body.text).toBe(body.original_text);
-    // 스톡 문구는 [tag] 를 품고 있으므로 양쪽 다 벗겨서 비교한다.
-    expect(stripDeliveryTags(body.synthesis_text)).toContain(stripDeliveryTags(body.original_text));
+    // 합성 문구에는 태그가 그대로 남는다(태그는 음성 연출용이라 벗기면 안 된다).
+    expect(body.synthesis_text).toMatch(/\[[a-z][a-z -]*\]/i);
+    expect(stripDeliveryTags(body.synthesis_text)).toContain(body.original_text);
     // 태그는 문구에 박힌 [tag] 에서 뽑힌다 — 문구가 바뀌면 같이 따라가도록 원문에서 유도한다.
     expect(body.tags).toEqual([...GREETING_KO_RAW.matchAll(/\[([a-z][a-z -]*)\]/gi)].map((m) => m[1]));
     expect(mockTextToSpeech).toHaveBeenCalledWith(
@@ -1163,10 +1166,14 @@ describe('POST /tts/generate — edge cases', () => {
 
     expect(res.status).toBe(201);
     const body = await res.json();
-    const expectedTexts = MEDICATION_EN_RAW.map((t) => `Buddy, ${t}`);
+    const expectedTexts = MEDICATION_EN_RAW.map((t) => `Buddy, ${stripDeliveryTags(t)}`);
     expect(expectedTexts).toContain(body.original_text);
+    expect(body.original_text).not.toMatch(/\[[a-z][a-z -]*\]/i);
     expect(body.text).toBe(body.original_text);
-    expect(stripDeliveryTags(body.synthesis_text)).toContain(stripDeliveryTags(body.original_text));
+    // 호칭은 선두 delivery 태그 **뒤**에 들어간다 — 앞에 붙이면 태그가 문장 중간으로 밀려
+    // 호칭만 톤 지시 없이 읽힌다.
+    expect(body.synthesis_text).toMatch(/^\[[a-z][a-z -]*\]\s*Buddy, /i);
+    expect(stripDeliveryTags(body.synthesis_text)).toContain(body.original_text);
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-system-1',
       expect.any(String),
