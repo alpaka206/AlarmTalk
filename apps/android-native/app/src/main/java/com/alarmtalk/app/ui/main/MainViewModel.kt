@@ -677,6 +677,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 온보딩·홈·하단바가 먼저 뜰 수 있어 반드시 false 로 되돌린다.
         needsConsent = false
         consentChecked = false
+        consentCollect = emptyList()
+        consentIsReconsent = false
+        // 민감 동의 상태와 대기 중인 목소리 등록 요청은 **반드시** 함께 비운다.
+        // pendingVoiceConsentDrafts 에는 직전 사용자가 녹음한 오디오가 들어 있다 — 남겨 두면
+        // 401 로 세션이 끊긴 뒤에도 동의 시트가 로그아웃 화면 위에 계속 떠 있고, 다른 계정이
+        // 로그인해 '동의' 를 누르는 순간 앞 사용자의 녹음이 그 계정으로 업로드된다(Codex #660).
+        sensitiveConsentMissing = emptyList()
+        pendingVoiceConsentDrafts = null
+        // 웰컴 코드 안내도 계정별 상태다. 계정이 바뀌면 새 계정 기준으로 다시 판정한다.
+        showWelcomePromo = false
         pendingDeletion = false
         // 마케팅 수신 토글도 user-scoped — 옛 사용자의 동의값이 다음 사용자 화면에 잔존하지 않게
         // 비우고, 진행 중이던 로드는 generation 증가로 무효화한다.

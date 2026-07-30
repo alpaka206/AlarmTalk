@@ -356,10 +356,20 @@ internal fun AlarmTalkApp(
     // 웰컴 코드 안내(계정 1회, 무료 플랜 한정). 권한 게이트와 같은 레이어에 쌓이면 하나가
     // 다른 하나를 가리므로 **권한 모달이 없을 때만** 띄운다. 권한 모달이 닫히면 이 효과가
     // 다시 돌아 그때 뜬다. 동의·목소리 준비 화면을 다 지난 뒤라야 홈 위에서 보인다.
-    LaunchedEffect(sessionRouteKey, viewModel.permissionGateRequest, viewModel.showVoiceSetup, viewModel.needsConsent) {
+    // `consentChecked` 를 반드시 함께 본다. 첫 로그인 순간엔 needsConsent 가 아직 기본값
+    // false 라, 동의 확인 응답이 오기 전에 이 효과가 먼저 돌면 프로모가 뜨면서 1회 플래그까지
+    // 태운다 — 그 뒤 응답이 와서 동의 화면이 열리면 프로모가 그 위를 덮는다(Codex #660).
+    LaunchedEffect(
+        sessionRouteKey,
+        viewModel.permissionGateRequest,
+        viewModel.showVoiceSetup,
+        viewModel.needsConsent,
+        viewModel.consentChecked,
+    ) {
         if (sessionRouteKey == null) return@LaunchedEffect
+        if (!viewModel.consentChecked || viewModel.needsConsent) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
-        if (viewModel.showVoiceSetup || viewModel.needsConsent) return@LaunchedEffect
+        if (viewModel.showVoiceSetup) return@LaunchedEffect
         viewModel.maybeShowWelcomePromo()
     }
 
