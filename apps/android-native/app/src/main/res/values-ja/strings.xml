@@ -424,12 +424,12 @@
     <string name="msg_gb_free_plan_voice_alarms_locked">無料プランに切り替わったため、声のアラームがロックされました。再び利用券を登録すると復元されます。</string>
     <string name="msg_gb_gift_failed">プレゼントの送信に失敗しました。</string>
     <string name="msg_gb_google_play_start_failed">Google Play決済を開始できませんでした。しばらくしてからもう一度お試しください。</string>
-    <string name="msg_gb_growth_info_load_failed">成長情報を読み込めませんでした</string>
+    <string name="msg_gb_billing_info_load_failed">プラン情報を読み込めませんでした</string>
     <string name="msg_gb_login_required_apply_plan">プランを適用するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_change_plan">プランを変更するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_create_share_code">共有コードを作成するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_generic">ログインするとご利用いただけます。</string>
-    <string name="msg_gb_login_required_growth_info">成長情報を読み込むには、まずログインしてください</string>
+    <string name="msg_gb_login_required_billing_info">プラン情報を読み込むには、まずログインしてください</string>
 
     <string name="msg_gb_login_required_purchase_plan">プランを購入するには、まずログインしてください。</string>
     <string name="msg_gb_login_required_register_code">コードを登録するには、まずログインしてください</string>

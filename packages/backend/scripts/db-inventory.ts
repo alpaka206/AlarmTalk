@@ -155,7 +155,6 @@ async function main() {
   // "제거해도 되는가"는 코드 사용처로 정하지만, 실데이터 유무가 위험도를 가른다.
   const probes: Record<string, number | string> = {
     'users.total': await tryNum(db, 'SELECT COUNT(*) FROM users'),
-    'users.apple_id NOT NULL': await tryNum(db, 'SELECT COUNT(*) FROM users WHERE apple_id IS NOT NULL'),
     'users.google_id NOT NULL': await tryNum(db, 'SELECT COUNT(*) FROM users WHERE google_id IS NOT NULL'),
     'users.password_hash NOT NULL': await tryNum(
       db,
@@ -166,33 +165,13 @@ async function main() {
       db,
       "SELECT COUNT(*) FROM users WHERE deletion_status = 'pending_deletion'",
     ),
-    'subscriptions.apple_transaction_id NOT NULL': await tryNum(
-      db,
-      'SELECT COUNT(*) FROM subscriptions WHERE apple_transaction_id IS NOT NULL',
-    ),
-    'subscriptions.apple_product_id NOT NULL': await tryNum(
-      db,
-      'SELECT COUNT(*) FROM subscriptions WHERE apple_product_id IS NOT NULL',
-    ),
     "subscriptions active": await tryNum(
       db,
       "SELECT COUNT(*) FROM subscriptions WHERE status = 'active'",
     ),
-    "push_tokens platform='ios'": await tryNum(
-      db,
-      "SELECT COUNT(*) FROM push_tokens WHERE platform = 'ios'",
-    ),
     "push_tokens platform='android'": await tryNum(
       db,
       "SELECT COUNT(*) FROM push_tokens WHERE platform = 'android'",
-    ),
-    "store_transactions provider='apple'": await tryNum(
-      db,
-      "SELECT COUNT(*) FROM store_transactions WHERE provider = 'apple'",
-    ),
-    "store_transactions provider='portone'": await tryNum(
-      db,
-      "SELECT COUNT(*) FROM store_transactions WHERE provider = 'portone'",
     ),
     "store_transactions provider='google'": await tryNum(
       db,

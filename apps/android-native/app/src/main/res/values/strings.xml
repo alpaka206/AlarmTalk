@@ -427,12 +427,12 @@
     <string name="msg_gb_free_plan_voice_alarms_locked">무료 이용권으로 전환되어 목소리 알람이 잠겼어요. 다시 이용권을 등록하면 복구돼요.</string>
     <string name="msg_gb_gift_failed">선물하기에 실패했어요</string>
     <string name="msg_gb_google_play_start_failed">Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
-    <string name="msg_gb_growth_info_load_failed">성장 정보를 불러오지 못했어요</string>
+    <string name="msg_gb_billing_info_load_failed">이용권 정보를 불러오지 못했어요</string>
     <string name="msg_gb_login_required_apply_plan">이용권을 적용하려면 먼저 로그인해 주세요</string>
     <string name="msg_gb_login_required_change_plan">이용권을 변경하려면 먼저 로그인해 주세요</string>
     <string name="msg_gb_login_required_create_share_code">공유 코드를 만들려면 먼저 로그인해 주세요</string>
     <string name="msg_gb_login_required_generic">로그인 후 사용할 수 있어요</string>
-    <string name="msg_gb_login_required_growth_info">성장 정보를 불러오려면 먼저 로그인해 주세요</string>
+    <string name="msg_gb_login_required_billing_info">이용권 정보를 불러오려면 먼저 로그인해 주세요</string>
 
     <string name="msg_gb_login_required_purchase_plan">이용권을 구매하려면 먼저 로그인해 주세요</string>
     <string name="msg_gb_login_required_register_code">코드를 등록하려면 먼저 로그인해 주세요</string>

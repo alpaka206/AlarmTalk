@@ -443,8 +443,8 @@ internal fun PlayModeChip(
     }
 }
 
-// TTS 카테고리(서버 전송값)의 정식 집합. '10테마 개별선택' 시절엔 이걸로 칩을 그렸지만 지금은
-// 화면에 안 쓰고, normalizedTtsCategory 의 화이트리스트와 버킷 칩 라벨 조회에만 남았다.
+// TTS 카테고리(서버 전송값)의 정식 집합. 화면에 칩으로 그리지는 않고,
+// normalizedTtsCategory 의 화이트리스트와 버킷 칩 라벨 조회에만 쓴다.
 // morning = 문구를 안 바꿨을 때의 기본값(서버가 greeting 문구로 이어 붙인다).
 internal val TtsCategories: List<Pair<String, Int>> = listOf(
     "morning" to R.string.editor2_cat_morning,
@@ -485,8 +485,7 @@ internal fun freeBucketsFor(
 
 // 문구 컨텍스트의 정규화·기본값용 정식 집합. preset 은 새 알람의 보이지 않는 기본값이자 시스템
 // 목소리 사전 렌더 트리거라 여기 남는다. 편집기 선택 목록은 아래 EditorMessageContexts 를 따로 쓴다.
-// 식사(meal)·취침(sleep)·운동(exercise)은 편집기에서 사라진 지 오래고 서버도 안 받으므로 뺐다 —
-// 옛 로컬 행이 그 값을 들고 있어도 normalizedRandomPromptContext 가 preset 으로 접는다.
+// 목록 밖의 값은 normalizedRandomPromptContext 가 preset 으로 접는다.
 internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값(사전 렌더). 무료 플랜도 이것만.
     // 화면에 그려지는 라벨은 VoiceAudioCard 가 쓰는 editor_msg_mode_preset 하나로 통일한다.

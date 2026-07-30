@@ -21,8 +21,6 @@ GOOGLE_VERTEX_CREDENTIALS_JSON=
 GOOGLE_VERTEX_LOCATION=global
 GOOGLE_VERTEX_MODEL=gemini-2.5-flash
 
-# === Optional: Apple Sign-In ===
-
 # === Optional: transactional email (Resend) ===
 RESEND_API_KEY=
 AUTH_EMAIL_FROM=AlarmTalk <no-reply@alarm-talk.com>

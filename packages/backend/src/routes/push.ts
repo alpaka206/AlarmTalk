@@ -5,7 +5,7 @@ import { withWriteTransaction } from '../lib/transactions';
 
 const push = new Hono<AppEnv>();
 
-const PUSH_PLATFORMS = ['ios', 'android', 'web'] as const;
+const PUSH_PLATFORMS = ['android', 'web'] as const;
 type PushPlatform = (typeof PUSH_PLATFORMS)[number];
 const TOKEN_MAX = 4096;
 

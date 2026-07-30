@@ -30,8 +30,7 @@ export type AlarmTextPreparation = {
   provider: 'vertex' | 'local';
 };
 
-// 편집기가 고를 수 있는 동적 생성 모드. 식사(meal)·취침(sleep)·운동(exercise)은 '10테마
-// 개별선택' 시절 모드로, 편집기에서 사라졌고 서버도 더는 받지 않아 함께 걷어냈다.
+// 편집기가 고를 수 있는 동적 생성 모드.
 export type DynamicAlarmTextMode = 'wake_weather' | 'wake_fortune' | 'love';
 
 // 구조화 날씨 시그널(설계 #7). 한국어 문자열 대신 언어무관 토큰으로 전달해, 동적 프롬프트가
@@ -50,7 +49,6 @@ export type DynamicAlarmTextContext = {
   listenerTitle?: string | null;
   weatherSignal?: WeatherSignal | null;
   fortuneProfile?: string | null;
-  mealLabel?: string | null;
   alarmTimeLabel?: string | null;
 };
 
@@ -68,13 +66,6 @@ export class AlarmTextPreparationInvalidError extends Error {
   }
 }
 
-export class DynamicAlarmTextGenerationInvalidError extends Error {
-  constructor() {
-    super('Dynamic alarm text generation returned invalid content.');
-    this.name = 'DynamicAlarmTextGenerationInvalidError';
-  }
-}
-
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const DEFAULT_VERTEX_LOCATION = 'global';
@@ -83,7 +74,7 @@ const TAG_RE = /\[[a-z][a-z -]{1,32}\]/i;
 // ElevenLabs v3 태그는 고정 enum이 아니라 대괄호 안 자연어 지시이며, 실제 효과는 보이스·문맥·
 // stability에 따라 달라진다(2026-06-28 사용자/공식문서 검증). 아래는 우리가 예측가능성·
 // 알람적합성·태그 낭독 방지를 위해 쓰는 큐레이트 세트(공식 문서/예시 실증분). 저각성 태그는
-// 기상 목표와 충돌하므로 sleep 전용으로 가드한다.
+// 사용자가 직접 쓴 문구(prepareAlarmTextWithVertex)의 밤/마무리 뉘앙스에만 남겨 둔다.
 const APPROVED_TAGS = [
   'happy',
   'cheerfully',
@@ -96,8 +87,11 @@ const APPROVED_TAGS = [
   'whispers',
   'quietly',
 ];
-// Bruck/McFarlane: 저각성 신호는 기상을 방해 → sleep 모드에서만 허용.
+// Bruck/McFarlane: 저각성 신호는 기상을 방해한다. 깨우는 경로(동적 생성·사전렌더)는 서버가
+// 이 태그들을 무조건 드롭하므로 프롬프트 allowlist 에도 노출하지 않는다.
 const LOW_AROUSAL_TAGS = ['calm', 'tired', 'whispers', 'quietly'];
+// 깨우는 경로 전용 allowlist. 드롭될 태그를 모델에게 제시해 무태그로 끝나는 낭비를 막는다.
+const WAKE_TAGS = APPROVED_TAGS.filter((tag) => !LOW_AROUSAL_TAGS.includes(tag));
 
 // 정규화 후 큐레이트 세트에 있으면 그대로, 아니면 무태그(''). 출시 전 단계라 옛 태그
 // back-compat 매핑은 두지 않는다 — 세트 밖 태그는 SOFT로 무태그 강등.
@@ -115,16 +109,11 @@ function modeDefaultTag(mode: DynamicAlarmTextMode): string {
       return 'playfully';
     case 'love':
       return 'happy';
-    default:
-      return 'cheerfully';
   }
 }
 
-// 동적 생성의 tag 필드를 정제한다: 큐레이트 세트 검증 → 저각성 태그 차단.
-// 부적합하면 빈 문자열(무태그)로 강등(reject 아님 = SOFT).
-//
-// 저각성 태그는 유일하게 취침(sleep) 모드에서만 허용했는데 그 모드가 사라졌다. 남은 셋은
-// 전부 '깨우는' 알람이라 저각성으로 읽히면 안 되므로 무조건 막는다.
+// 동적 생성의 tag 필드를 정제한다: 큐레이트 세트 검증 → 저각성 태그 차단(남은 모드는 전부
+// '깨우는' 알람이다). 부적합하면 빈 문자열(무태그)로 강등(reject 아님 = SOFT).
 function sanitizeDeliveryTag(tag: string): string {
   const approved = normalizeApprovedTag(tag);
   if (!approved) return '';
@@ -268,7 +257,7 @@ export async function generateDynamicAlarmTextWithVertex(
     }
 
     const parsed = parseDynamicAlarmTextResult(raw);
-    // SOFT 자동수리: 조사/띄어쓰기·손주 존대·형제 취침 어체 슬립을 reject가 아니라 수리한다.
+    // SOFT 자동수리: 손주 존대 어체·날씨 문장의 조사/띄어쓰기 슬립을 reject가 아니라 수리한다.
     const text = polishDynamicAlarmText(parsed.text.trim(), context);
 
     if (dynamicTextHardFailure(text, context)) {
@@ -496,7 +485,7 @@ function koreanRegisterGuidance(relationshipLabel: string | null | undefined): s
     return ' Speaker is a romantic partner or spouse: write in intimate 반말 that feels warm and a little heart-fluttering when heard from a boyfriend, girlfriend, wife, or husband. Use soft caring phrases like "자기야", "내 생각도 조금 해", "감기 걸리면 안 돼", or "오늘도 네 편이야" only when they fit. Avoid stiff 해요체/합니다체, childish baby talk, melodrama, or generic slogans as the main emotion.';
   }
   if (peerOrIntimate.some((k) => label.includes(k))) {
-    return ' Speaker and listener are peers/intimate: write in natural 반말 (e.g. "일어났어?", "오늘 뭐 입을까?"). For sibling labels such as 형제·자매, 누나, 언니, 오빠, 형, or 동생, avoid 존댓말/해요체 and sound like a real sibling; for bedtime, prefer a line like "누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자." Never use 합니다체.';
+    return ' Speaker and listener are peers/intimate: write in natural 반말 (e.g. "일어났어?", "오늘 뭐 입을까?"). For sibling labels such as 형제·자매, 누나, 언니, 오빠, 형, or 동생, avoid 존댓말/해요체 and sound like a real sibling. Never use 합니다체.';
   }
   return ' Use a warm conversational tone — prefer 해요체 over 합니다체. Sound like a real person, not an announcement.';
 }
@@ -601,8 +590,7 @@ relationship and hold it the whole line. NEVER 합니다체(~합니다/~하십�
   familiar 해요체 WITH honorific verb stems(존대 동사). '할머니, 일어나실 시간이에요.' '나가실 때
   우산 꼭 챙기세요.' Never clipped lower-sounding forms to an elder ('일어날 시간이에요').
 - Elder→younger (부모→자식 등): caring 반말 or 반말/해요체 mix. '우리 딸, 잘 잤어?' '오늘도 화이팅이야.'
-- Sibling/friend (형제/자매/누나/언니/오빠/형/동생/친구): natural 반말. '일어났어?' Bedtime: '누나,
-  잘 시간이야. 휴대폰 내려놓고 얼른 자.' Never 존댓말/해요체.
+- Sibling/friend (형제/자매/누나/언니/오빠/형/동생/친구): natural 반말. '일어났어?' Never 존댓말/해요체.
 - Romantic/spouse (연인/자기/여보/아내/남편): intimate 반말, warm and lightly heart-fluttering;
   never 해요체/합니다체 even for 아내/남편. '자기야, 비 온대. 나가기 전에 우산 챙겨, 감기 걸리면 안 돼.'
   No baby talk, no melodrama, no possessiveness; never new-romance/dating-luck/jealousy.
@@ -677,21 +665,16 @@ const DYNAMIC_FEW_SHOT: Record<string, Array<{ context: string; text: string; ta
   ko: [
     { context: 'wake_weather, 손녀→할아버지, rain', text: '할아버지, 좋은 아침이에요. 오늘은 비가 올 수 있대요. 나가실 때 우산 꼭 챙기세요.', tag: 'cheerfully' },
     { context: 'wake_weather, 연인, dust', text: '자기야, 일어나자. 오늘 미세먼지 많대. 나갈 때 마스크 꼭 챙겨, 알았지?', tag: 'cheerfully' },
-    { context: 'sleep, 형제(누나)', text: '누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자.', tag: 'calm' },
     { context: 'wake_fortune, 중립', text: '좋은 아침이에요. 오늘은 작은 선택에 좋은 기운이 따른대요. 가벼운 마음으로 시작해요.', tag: 'playfully' },
-    { context: 'meal(점심), 부모→자식', text: '우리 딸, 점심 챙겼어? 바빠도 따뜻한 국밥 한 그릇은 먹자.', tag: 'cheerfully' },
   ],
   ja: [
     { context: 'wake_weather, 孫→祖母(タメ口), rain', text: 'おばあちゃん、おはよう。今日は雨が降るみたい、出かけるとき傘忘れないでね。', tag: 'cheerfully' },
     { context: 'wake_weather, 距離/불명(です・ます), cold', text: 'おはようございます。今日は冷えるみたいなので、一枚羽織ってくださいね。', tag: 'cheerfully' },
-    { context: 'sleep, 恋人(タメ口)', text: 'そろそろ寝よっか。スマホは置いて、ゆっくり休んでね。', tag: 'calm' },
-    { context: 'exercise, 友達(タメ口), nice', text: 'そろそろ体動かそっか。今日は天気もいいし、軽く外を歩いてこよ。', tag: 'cheerfully' },
     { context: 'wake_fortune, 중립/casual', text: 'おはよう。今日はちょっといいことがありそうだよ。気楽にいこうね。', tag: 'playfully' },
   ],
   en: [
     { context: 'wake_weather, neutral, rain', text: 'Morning… time to get up. Looks like rain later, grab your umbrella before you head out.', tag: 'cheerfully' },
     { context: 'love, romantic, babe', text: "Morning, babe. Take your time getting up — I've got you today, okay?", tag: 'happy' },
-    { context: 'sleep, friend', text: "Hey, it's getting late. Put the phone down and let's get some rest.", tag: 'calm' },
   ],
 };
 
@@ -735,15 +718,13 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   })();
 
   const languageBlock = activeLanguageBlock(context.targetLanguage);
-  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${APPROVED_TAGS.map(
+  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${WAKE_TAGS.map(
     (tag) => `[${tag}]`,
   ).join(
     ' ',
   )}. Return it in the separate "tag" field WITHOUT brackets, or "" for none. A fitting default for this ${context.mode} mode is "${modeDefaultTag(
     context.mode,
-  )}". The low-arousal tags ${LOW_AROUSAL_TAGS.map((tag) => `[${tag}]`).join(
-    ' ',
-  )} are for SLEEP mode only — never use them on wake/meal/exercise modes. One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
+  )}". One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
 
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
@@ -804,15 +785,11 @@ function prerenderClipPrompt(params: {
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
       ? '연인/배우자 톤: 실제 남자친구·여자친구·아내·남편이 사적으로 건네는 말투로. 친밀한 반말을 쓰고 해요체/합니다체를 쓰지 말 것(아내·남편도). 따뜻하고 살짝 설레게, 하지만 짧게. 새 인연·연애운·질투·다른 사람에게 끌림 언급 금지.'
       : '';
-  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${APPROVED_TAGS.map(
+  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${WAKE_TAGS.map(
     (tag) => `[${tag}]`,
   ).join(
     ' ',
-  )}. Return it in the separate "tag" field WITHOUT brackets, or "" for none. A fitting default here is "${params.defaultTag ?? 'cheerfully'}". The low-arousal tags ${LOW_AROUSAL_TAGS.map(
-    (tag) => `[${tag}]`,
-  ).join(
-    ' ',
-  )} are for calm/bedtime intents only. One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
+  )}. Return it in the separate "tag" field WITHOUT brackets, or "" for none. A fitting default here is "${params.defaultTag ?? 'cheerfully'}". One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
     ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
@@ -901,9 +878,9 @@ export async function generatePrerenderClipText(
   ) {
     throw new AlarmTextPreparationInvalidError();
   }
-  // 사전렌더 클립은 전부 기상/알림용(sleep 카테고리 없음). 저각성 태그(calm/tired/whispers/quietly)는
-  // 기상을 방해하므로 동적 경로 sanitizeDeliveryTag(mode≠sleep) 와 동일하게 여기서도 드롭한다. 안 그러면
-  // 모델이 medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
+  // 사전렌더 클립은 전부 기상/알림용이다. 저각성 태그(calm/tired/whispers/quietly)는 기상을
+  // 방해하므로 동적 경로 sanitizeDeliveryTag 와 동일하게 여기서도 드롭한다. 안 그러면 모델이
+  // medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
   const sanitizePrerenderTag = (raw: string): string => {
     const approved = normalizeApprovedTag(raw);
     return approved && !LOW_AROUSAL_TAGS.includes(approved) ? approved : '';
@@ -1294,7 +1271,7 @@ function dynamicAlarmTextPreparationFallback(
   context: DynamicAlarmTextContext,
 ): AlarmTextPreparation {
   const text = dynamicAlarmTextReadableFallback(context);
-  // 폴백은 일반적 문구이므로 모드 기본 태그를 붙인다(sleep만 저각성 calm 허용).
+  // 폴백은 일반적 문구이므로 모드 기본 태그를 붙인다(modeDefaultTag — 전부 고각성).
   return {
     text,
     translated: false,
@@ -1636,7 +1613,7 @@ export function applyDeliveryTagPerSentence(tag: string, text: string, maxLength
   return single.length <= maxLength ? single : trimmed;
 }
 
-export function normalizeAlarmTextWithoutTags(text: string): string {
+function normalizeAlarmTextWithoutTags(text: string): string {
   return text
     .replace(/\s*\[[a-z][a-z -]{1,32}\]\s*/gi, ' ')
     .replace(/\s+/g, ' ')

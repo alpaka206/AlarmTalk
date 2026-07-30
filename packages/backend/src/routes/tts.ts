@@ -17,7 +17,6 @@ import {
 } from '../lib/voice-provider';
 import { recloneEvictedVoiceProfile } from '../lib/voice-recover';
 import {
-  DynamicAlarmTextGenerationInvalidError,
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
   applyDeliveryTagPerSentence,
@@ -53,8 +52,7 @@ import { withWriteTransaction, type DbExecutor } from '../lib/transactions';
 import { enqueueExternalDeletion } from '../lib/audio-retention';
 
 const tts = new Hono<AppEnv>();
-// 클라가 보내는 카테고리(= messages.category 저장값). '10테마 개별선택' 시절엔 10종이었는데
-// 지금 제품이 실제로 만드는 건 셋뿐이다.
+// 클라가 보내는 카테고리(= messages.category 저장값). 넷이 전부다.
 //  - morning: 기본값·날씨·운세가 공통으로 쓰는 라벨(문구는 preset/동적 경로가 따로 정한다)
 //  - medication / love: 그 문구를 고른 알람
 //  - custom: 직접 입력
@@ -230,13 +228,13 @@ function todayKoreaLabel(): string {
 }
 
 /**
- * 요청 카테고리(TTS_CATEGORIES) → 스톡 프리셋 카테고리. 클라의 분류체계는 '10테마' 시절 이름을
- * 그대로 쓰는데(기본값 문구가 'morning' 으로 온다), 문구 출처인 STOCK_CLIP_PRESETS 는 지금 제품
- * 구성(greeting·weather·medication)만 갖는다. 여기서만 이어 붙이고 클라는 건드리지 않는다.
+ * 요청 카테고리(TTS_CATEGORIES) → 스톡 프리셋 카테고리. 클라는 기본값 문구를 'morning' 으로
+ * 보내는데, 문구 출처인 STOCK_CLIP_PRESETS 는 greeting·weather·medication 만 갖는다.
+ * 여기서만 이어 붙이고 클라는 건드리지 않는다.
  *  - morning = 사용자가 문구를 안 바꿨을 때의 기본값 → greeting(목소리 미리듣기와 같은 인사말)
  *  - medication = 그대로
- * 나머지(점심·퇴근·건강·공부·응원·운동 …)는 편집기에 노출되지 않는 레거시라 문구가 없다 →
- * null 이 돌아가고 호출부가 VOICE_AND_TEXT_REQUIRED 로 막는다.
+ *  - love 는 스톡 프리셋에 대응 문구가 없다(동적 생성 전용) → null 이 돌아가고
+ *    호출부가 VOICE_AND_TEXT_REQUIRED 로 막는다.
  */
 function stockPresetCategory(category: string): string {
   return category === 'morning' ? STOCK_GREETING_CATEGORY : category;
@@ -244,12 +242,7 @@ function stockPresetCategory(category: string): string {
 
 /**
  * random_context='preset' 의 문구를 고른다. 출처는 사전렌더와 **같은** STOCK_CLIP_PRESETS 다.
- *
- * 예전에는 tts_presets 테이블(원격 설정)에서 읽었는데, 그 테이블은 '10테마 개별선택' 시절의
- * 잔재라 지금 제품에 없는 카테고리(점심·퇴근·건강·공부·응원·운동 …)로 차 있었고, 하나 살아
- * 있던 medication 마저 확정 대사와 문구가 달랐다. 그래서 버킷이 아직 준비 안 돼 이 라이브
- * 폴백으로 내려오면 같은 알람이 평소와 다른 톤(옛 반말 문구)으로 울렸다. 단일 출처로 합쳐
- * 폴백도 사전렌더 클립과 같은 문장을 쓰게 한다.
+ * 버킷이 아직 준비 안 돼 이 라이브 폴백으로 내려와도 사전렌더 클립과 같은 문장이 나온다.
  */
 function pickRandomPresetText(category: string, language: string): string | null {
   const preset = STOCK_CLIP_PRESETS.find((item) => item.category === stockPresetCategory(category));
@@ -840,7 +833,7 @@ tts.post('/generate', async (c) => {
       );
     }
     // F2: 기본 목소리(=무료 버킷)는 날씨·약만 허용한다. love 만 막던 블랙리스트로는
-    // morning/health/exercise 등 다른 프리셋 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
+    // morning/love 등 다른 요청 카테고리가 새어 시스템 보이스로 합성됐다(Codex #599).
     // 무료 버킷 카테고리(FREE_BUCKET_CATEGORIES = weather, medication) 화이트리스트로 바꿔 그 외
     // 카테고리를 전부 차단한다(날씨 동적은 위 randomContext!=='preset' 에서 이미 걸리므로, 실제
     // 프리셋 경로로 통과하는 건 medication 뿐). 무료 플랜도 동일 버킷이라 함께 조인다.
@@ -1141,9 +1134,6 @@ tts.post('/generate', async (c) => {
       );
     }
 
-    // 남은 동적 모드(날씨·운세·사랑)는 모두 elevenlabs v3 디폴트를 쓴다. 유일한 오버라이드였던
-    // 취침(sleep) speed 0.95 는 그 모드가 사라지면서 같이 없앴다.
-    const dynamicVoiceSettings = undefined;
     const buildPreparedAttempts = async (voiceIdForSynthesis: string | null | undefined) => {
       const attempts = createSynthesisAttempts({
         env: c.env,
@@ -1152,8 +1142,6 @@ tts.post('/generate', async (c) => {
         },
         text: synthesisText,
         language: synthesisLanguage,
-        category,
-        voiceSettings: dynamicVoiceSettings,
       });
       return Promise.all(
         attempts.map(async (attempt) => {
@@ -1166,7 +1154,6 @@ tts.post('/generate', async (c) => {
             languageCode: synthesisLanguage,
             text: synthesisText,
             outputFormat: attempt.outputFormat,
-            voiceSettings: attempt.voiceSettings,
           });
           return { attempt, cacheKey };
         }),
@@ -1572,15 +1559,6 @@ tts.post('/generate', async (c) => {
         {
           error: 'Alarm text preparation returned invalid content.',
           error_code: 'TEXT_PREPARATION_FAILED',
-        },
-        502,
-      );
-    }
-    if (err instanceof DynamicAlarmTextGenerationInvalidError) {
-      return c.json(
-        {
-          error: 'Dynamic alarm text generation returned invalid content.',
-          error_code: 'DYNAMIC_TEXT_GENERATION_FAILED',
         },
         502,
       );

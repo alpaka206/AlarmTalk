@@ -2,8 +2,7 @@ package com.alarmtalk.app.data
 
 import java.time.LocalDate
 
-// AlarmEntity 에서 분리한 알람 상수/룩업 모음 (iOS AlarmEnums.swift 와 동일 역할).
-// 동작 변경 없음 — 같은 패키지라 참조처는 수정 불필요.
+// AlarmEntity 에서 분리한 알람 상수/룩업 모음.
 
 object AlarmStates {
     const val SCHEDULED = "scheduled"

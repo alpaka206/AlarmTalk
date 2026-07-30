@@ -16,19 +16,6 @@ export function plannedMaxUses(planType: string, maxMembers: number): number {
   return 1;
 }
 
-/**
- * iOS StoreKit2 productID → 백엔드 plans.key 매핑.
- *
- * App Store Connect 등록 SKU (`apps/ios-native/.../SubscriptionProduct.swift`) 와
- * 백엔드 plans 시드 (`migrations.ts` id=6,26) 를 잇는 단일 진실 공급원.
- *
- * 매핑 규칙 (월간만 판매 — 연간 SKU 는 제거됨):
- *   - `*_personal_monthly` → plans.key='personal'  (개인)
- *   - `*_couple_monthly`   → plans.key='couple'    (커플 — family plan_type, max_members=2)
- *   - `*_family_monthly`   → plans.key='family'    (가족 — family plan_type, max_members=5)
- *
- * 알려지지 않은 productID 는 null. 호출자가 400 응답을 내야 함.
- */
 export function isPaidVoicePlan(plan: unknown): boolean {
   return typeof plan === 'string' && PAID_USER_PLANS.has(plan);
 }

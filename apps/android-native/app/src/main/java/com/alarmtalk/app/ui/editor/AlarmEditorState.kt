@@ -503,13 +503,8 @@ internal fun buildTtsKey(
 ): String =
     listOf(profileId, text.trim(), category, language, listenerTitle?.trim().orEmpty()).joinToString("|")
 
-internal fun normalizedTtsCategory(category: String): String {
-    // afternoon→cheer, sleep→night 별칭은 대상 카테고리 자체가 사라져 함께 뺐다(어차피
-    // 화이트리스트에 없어 DefaultRandomTtsCategory 로 떨어진다).
-    val legacy = mapOf("medicine" to "medication")
-    val resolved = legacy[category] ?: category
-    return if (TtsCategories.any { (key, _) -> key == resolved }) resolved else DefaultRandomTtsCategory
-}
+internal fun normalizedTtsCategory(category: String): String =
+    if (TtsCategories.any { (key, _) -> key == category }) category else DefaultRandomTtsCategory
 
 internal fun normalizedRandomPromptContext(context: String): String =
     when (context) {

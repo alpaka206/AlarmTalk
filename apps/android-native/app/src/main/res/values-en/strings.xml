@@ -415,12 +415,12 @@
     <string name="msg_gb_free_plan_voice_alarms_locked">You\'ve switched to the free plan, so your voice alarms are locked. They\'ll be restored when you resubscribe.</string>
     <string name="msg_gb_gift_failed">Couldn\'t send the gift.</string>
     <string name="msg_gb_google_play_start_failed">Couldn\'t start the Google Play payment. Please try again in a moment.</string>
-    <string name="msg_gb_growth_info_load_failed">Couldn\'t load your growth info</string>
+    <string name="msg_gb_billing_info_load_failed">Couldn\'t load your plan info</string>
     <string name="msg_gb_login_required_apply_plan">Please log in first to apply a plan.</string>
     <string name="msg_gb_login_required_change_plan">Please log in first to change your plan.</string>
     <string name="msg_gb_login_required_create_share_code">Please log in first to create a share code.</string>
     <string name="msg_gb_login_required_generic">Please log in to use this.</string>
-    <string name="msg_gb_login_required_growth_info">Please log in first to load your growth info</string>
+    <string name="msg_gb_login_required_billing_info">Please log in first to load your plan info</string>
 
     <string name="msg_gb_login_required_purchase_plan">Please log in first to purchase a plan.</string>
     <string name="msg_gb_login_required_register_code">Please log in first to register a code</string>
