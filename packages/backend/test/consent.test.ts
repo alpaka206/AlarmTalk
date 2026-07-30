@@ -8,6 +8,7 @@ import {
   missingConsentTypes,
   GENERAL_REQUIRED_CONSENTS,
   SENSITIVE_REQUIRED_CONSENTS,
+  REQUIRED_CONSENT_TYPES,
   ALLOWED_CONSENT_TYPES,
   CONSENT_MIN_POLICY_VERSION,
   CURRENT_POLICY_VERSION,
@@ -72,6 +73,20 @@ function consentRow(type: string, agreed = 1, version = CURRENT_POLICY_VERSION) 
   return { consent_type: type, policy_version: version, agreed };
 }
 
+/**
+ * '가입 필수 동의를 다 갖춘 사용자' 의 행 목록. 목록을 손으로 나열하지 않고 소스의
+ * REQUIRED_CONSENT_TYPES 에서 만들어, 필수 목록이 또 바뀌어도 픽스처가 따라오게 한다.
+ * overrides 로 특정 유형만 미동의/다른 버전으로 비틀어 시나리오를 만든다.
+ */
+function requiredRows(
+  overrides: Record<string, { agreed?: number; version?: string }> = {},
+  version = '3',
+) {
+  return REQUIRED_CONSENT_TYPES.map((type) =>
+    consentRow(type, overrides[type]?.agreed ?? 1, overrides[type]?.version ?? version),
+  );
+}
+
 describe('lib/consent — config', () => {
   it('새 민감 동의 유형(voice_biometric/overseas_transfer)이 ALLOWED 에 포함', () => {
     expect(ALLOWED_CONSENT_TYPES.has('voice_biometric')).toBe(true);
@@ -80,6 +95,15 @@ describe('lib/consent — config', () => {
   it('일반/민감 필수 목록이 분리돼 있다', () => {
     expect([...GENERAL_REQUIRED_CONSENTS]).toEqual(['terms', 'privacy', 'age14']);
     expect([...SENSITIVE_REQUIRED_CONSENTS]).toEqual(['voice_biometric', 'overseas_transfer']);
+  });
+  it('가입 동의 화면이 받는 필수는 일반 3종 + 민감 2종 = 5종이다', () => {
+    // 목소리 알람이 앱의 핵심이라 음성 처리 동의(생체정보·국외 이전)까지 가입 시 한 번에
+    // 받는다. 이 목록은 /consents/status 의 missing·collect 계산 전용이며, 미들웨어의
+    // 하드 게이트는 아래 'needsConsent' 테스트대로 여전히 GENERAL 3종만 본다.
+    expect([...REQUIRED_CONSENT_TYPES]).toEqual([
+      ...GENERAL_REQUIRED_CONSENTS,
+      ...SENSITIVE_REQUIRED_CONSENTS,
+    ]);
   });
   it('문서 버전은 4 이지만 유형별 최소 버전은 전부 3 (v4 는 축소 개정 → 재동의 사유 아님)', () => {
     expect(CURRENT_POLICY_VERSION).toBe('4');
@@ -140,6 +164,30 @@ describe('lib/consent — needsConsent', () => {
 
   it('빈 requiredTypes 는 항상 false (쿼리 없이)', async () => {
     expect(await needsConsent(mockDB.client as never, 'pk-1', [])).toBe(false);
+  });
+
+  // 하드 게이트 범위 고정. 이게 깨지면 '음성 동의를 철회한 사용자가 앱 전체에서 잠긴다' 는
+  // 회귀가 조용히 들어온다 — 가입 화면이 5종을 받는 것과 게이트가 3종만 보는 것은 별개다.
+  it('민감 동의가 없어도 GENERAL 3종 기준이면 false (가입 화면 기준으로는 민감 2종이 missing)', async () => {
+    const generalOnly = [consentRow('terms'), consentRow('privacy'), consentRow('age14')];
+    mockDB.pushResult(generalOnly);
+    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
+      false,
+    );
+    // 같은 기록을 가입 필수 5종 기준으로 보면 민감 2종이 빠져 있다.
+    mockDB.pushResult(generalOnly);
+    expect(
+      await missingConsentTypes(mockDB.client as never, 'pk-1', REQUIRED_CONSENT_TYPES),
+    ).toEqual(['voice_biometric', 'overseas_transfer']);
+  });
+
+  it('민감 동의를 철회(agreed=0)해도 GENERAL 3종 기준이면 false', async () => {
+    mockDB.pushResult([
+      ...requiredRows({ voice_biometric: { agreed: 0 }, overseas_transfer: { agreed: 0 } }),
+    ]);
+    expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
+      false,
+    );
   });
 });
 
@@ -254,7 +302,7 @@ describe('consentMiddleware — 데이터 라우트 게이트 (B4)', () => {
     expect((await res.json()).error_code).toBe('CONSENT_REQUIRED');
   });
 
-  it('필수 동의 기록 후 데이터 라우트 통과', async () => {
+  it('일반 필수 3종만 기록해도 데이터 라우트 통과 (게이트는 민감 동의를 보지 않는다)', async () => {
     mockConsentRows = [
       consentRow('terms'),
       consentRow('privacy'),
@@ -263,6 +311,20 @@ describe('consentMiddleware — 데이터 라우트 게이트 (B4)', () => {
     const res = await call('GET', '/api/alarm');
     expect(res.status).toBe(200);
     expect((await res.json()).ok).toBe('data-route');
+  });
+
+  // 가입 시 5종을 다 받더라도, 설정에서 음성 동의를 철회한 사용자는 그 기능만 막혀야 한다.
+  // 여기서 403 이 나면 앱 전체가 잠기는 회귀다.
+  it('민감 동의를 철회해도 데이터 라우트는 통과한다', async () => {
+    mockConsentRows = [
+      consentRow('terms'),
+      consentRow('privacy'),
+      consentRow('age14'),
+      consentRow('voice_biometric', 0),
+      consentRow('overseas_transfer', 0),
+    ];
+    const res = await call('GET', '/api/alarm');
+    expect(res.status).toBe(200);
   });
 
   it.each([
@@ -372,12 +434,7 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   });
 
   it('v3 로 다 답해 뒀으면 재동의도 재수집도 없다', async () => {
-    mockConsentRows = [
-      consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
-      consentRow('marketing', 1, '3'),
-    ];
+    mockConsentRows = [...requiredRows(), consentRow('marketing', 1, '3')];
     const body = await consentStatus();
     expect(body.needs_consent).toBe(false);
     expect(body.needs_collection).toBe(false);
@@ -387,63 +444,51 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   });
 
   it('마케팅을 켜 둔 사용자는 collect 에 marketing 이 없다 (덮어쓰기로 인한 소실 방지)', async () => {
-    mockConsentRows = [
-      consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
-      consentRow('marketing', 1, '3'),
-    ];
+    mockConsentRows = [...requiredRows(), consentRow('marketing', 1, '3')];
     expect((await consentStatus()).collect).not.toContain('marketing');
   });
 
   it('마케팅 거절 기록도 유효한 응답이라 다시 묻지 않는다', async () => {
-    mockConsentRows = [
-      consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
-      consentRow('marketing', 0, '3'),
-    ];
+    mockConsentRows = [...requiredRows(), consentRow('marketing', 0, '3')];
     expect((await consentStatus()).collect).toEqual([]);
   });
 
   it('마케팅을 한 번도 안 물었으면 collect 에만 들어가고 needs_consent 는 false', async () => {
-    mockConsentRows = [
-      consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
-    ];
+    mockConsentRows = requiredRows();
     const body = await consentStatus();
     expect(body.needs_consent).toBe(false);
     expect(body.missing).toEqual([]);
     expect(body.collect).toEqual(['marketing']);
   });
 
-  it('동의 기록이 없으면 필수 3종 + marketing 을 모두 받는다', async () => {
+  it('동의 기록이 없으면 가입 필수 5종 + marketing 을 모두 받는다', async () => {
     const body = await consentStatus();
     expect(body.needs_consent).toBe(true);
-    expect(body.missing).toEqual(['terms', 'privacy', 'age14']);
-    expect(body.collect).toEqual(['terms', 'privacy', 'age14', 'marketing']);
+    expect(body.missing).toEqual([...REQUIRED_CONSENT_TYPES]);
+    expect(body.collect).toEqual([...REQUIRED_CONSENT_TYPES, 'marketing']);
   });
 
   it('한 유형의 최소 버전만 올리면 그 유형만 missing/collect 에 뜬다', async () => {
     CONSENT_MIN_POLICY_VERSION.privacy = 4;
-    mockConsentRows = [
-      consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
-      consentRow('marketing', 1, '3'),
-    ];
+    mockConsentRows = [...requiredRows(), consentRow('marketing', 1, '3')];
     const body = await consentStatus();
     expect(body.needs_consent).toBe(true);
     expect(body.missing).toEqual(['privacy']);
     expect(body.collect).toEqual(['privacy']);
   });
 
+  it('민감 유형의 최소 버전만 올려도 그 유형만 missing/collect 에 뜬다', async () => {
+    CONSENT_MIN_POLICY_VERSION.voice_biometric = 4;
+    mockConsentRows = [...requiredRows(), consentRow('marketing', 1, '3')];
+    const body = await consentStatus();
+    expect(body.needs_consent).toBe(true);
+    expect(body.missing).toEqual(['voice_biometric']);
+    expect(body.collect).toEqual(['voice_biometric']);
+  });
+
   it('정책 버전이 이상한 기록은 재동의 대상이 된다', async () => {
     mockConsentRows = [
-      consentRow('terms', 1, ''),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
+      ...requiredRows({ terms: { version: '' } }),
       consentRow('marketing', 1, 'nope'),
     ];
     const body = await consentStatus();
@@ -451,29 +496,26 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
     expect(body.collect).toEqual(['terms', 'marketing']);
   });
 
-  it('sensitive_missing 은 민감 동의 상태만 반영하고 needs_consent 를 올리지 않는다', async () => {
+  // 민감 동의도 가입 필수라 게이트 신호를 올린다. sensitive_missing 은 음성 라우트가
+  // 따로 보는 목록으로 그대로 남아, 같은 상태를 두 관점에서 보여준다.
+  it('민감 동의가 빠지면 sensitive_missing 에 뜨고 needs_consent 도 true 다', async () => {
     mockConsentRows = [
-      consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
+      ...requiredRows({ overseas_transfer: { agreed: 0 } }),
       consentRow('marketing', 1, '3'),
-      consentRow('voice_biometric', 1, '3'),
     ];
     const body = await consentStatus();
     expect(body.sensitive_missing).toEqual(['overseas_transfer']);
-    expect(body.needs_consent).toBe(false);
-    expect(body.collect).toEqual([]); // 민감 동의는 가입 게이트가 아니라 목소리 등록 화면에서 받는다
-    expect(body.needs_collection).toBe(false); // 그래서 동의 화면도 띄우지 않는다
+    // 가입 동의 화면이 5종을 받으므로 민감 동의가 빠지면 게이트도 화면도 올라간다.
+    expect(body.needs_consent).toBe(true);
+    expect(body.missing).toEqual(['overseas_transfer']);
+    expect(body.collect).toEqual(['overseas_transfer']);
+    expect(body.needs_collection).toBe(true);
   });
 
   it('민감 동의를 철회(agreed=0)하면 sensitive_missing 에 다시 뜬다', async () => {
     mockConsentRows = [
-      consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
+      ...requiredRows({ voice_biometric: { agreed: 0 } }),
       consentRow('marketing', 1, '3'),
-      consentRow('voice_biometric', 0, '3'),
-      consentRow('overseas_transfer', 1, '3'),
     ];
     expect((await consentStatus()).sensitive_missing).toEqual(['voice_biometric']);
   });
@@ -482,12 +524,7 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   // 다시 받아야 하는 개정에서 화면이 안 뜨던 회귀를 막는다.
   it('marketing 최소 버전만 올리면 needs_consent=false 인데 needs_collection=true 다', async () => {
     CONSENT_MIN_POLICY_VERSION.marketing = 4;
-    mockConsentRows = [
-      consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
-      consentRow('marketing', 1, '3'),
-    ];
+    mockConsentRows = [...requiredRows(), consentRow('marketing', 1, '3')];
     const body = await consentStatus();
     expect(body.needs_consent).toBe(false); // 필수는 다 충족 — 앱을 잠그면 안 된다
     expect(body.missing).toEqual([]);
@@ -499,18 +536,11 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
     const body = await consentStatus();
     expect(body.needs_consent).toBe(true);
     expect(body.needs_collection).toBe(true);
-    expect(body.collect).toEqual(['terms', 'privacy', 'age14', 'marketing']);
+    expect(body.collect).toEqual([...REQUIRED_CONSENT_TYPES, 'marketing']);
   });
 
   it('민감 동의가 모두 유효하면 sensitive_missing 은 빈 배열', async () => {
-    mockConsentRows = [
-      consentRow('terms', 1, '3'),
-      consentRow('privacy', 1, '3'),
-      consentRow('age14', 1, '3'),
-      consentRow('marketing', 1, '3'),
-      consentRow('voice_biometric', 1, '3'),
-      consentRow('overseas_transfer', 1, '3'),
-    ];
+    mockConsentRows = [...requiredRows(), consentRow('marketing', 1, '3')];
     expect((await consentStatus()).sensitive_missing).toEqual([]);
   });
 });

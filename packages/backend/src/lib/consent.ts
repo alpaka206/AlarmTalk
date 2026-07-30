@@ -41,8 +41,21 @@ export const SENSITIVE_REQUIRED_CONSENTS = ['voice_biometric', 'overseas_transfe
 /** 거절해도 서비스 이용에 지장이 없는 선택 동의. */
 export const OPTIONAL_CONSENT_TYPES = ['marketing'] as const;
 
-/** 동의 상태 조회/충족 판정에 쓰는 일반 필수 동의 목록(GET /consents/status 호환). */
-export const REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENTS;
+/**
+ * 가입 동의 화면에서 받는 필수 동의 **전체**.
+ *
+ * 앱의 핵심이 목소리 알람이라 음성 처리 동의(국외 이전·생체정보)까지 가입 시 함께 받는다.
+ * 기능을 쓰려는 순간마다 동의 모달을 띄우면 그때가 가장 거부감이 큰 자리다 — 목소리를
+ * 등록하려고 마음먹은 사람 앞에 체크박스를 내미는 것보다, 처음 한 번에 끝내는 편이 낫다.
+ *
+ * 미들웨어의 하드 게이트는 여전히 GENERAL_REQUIRED_CONSENTS 3종만 본다. 앱 자체를 막는
+ * 범위는 최소로 두고, 음성 라우트는 SENSITIVE_REQUIRED_CONSENTS 를 따로 확인한다 —
+ * 설정에서 동의를 철회한 경우에도 그 기능만 막히고 앱 전체가 잠기지는 않는다.
+ */
+export const REQUIRED_CONSENT_TYPES = [
+  ...GENERAL_REQUIRED_CONSENTS,
+  ...SENSITIVE_REQUIRED_CONSENTS,
+] as const;
 
 /** 처리방침/약관 문서 버전. **새로 기록하는** 동의는 예외 없이 이 값으로 저장한다 —
  *  POST /user/consents 는 요청 바디의 version 을 받기만 하고 무시한다(클라가 보낸 버전을

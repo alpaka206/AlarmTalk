@@ -44,16 +44,16 @@ import androidx.compose.ui.unit.dp
  * 로그인 후 필수 약관/개인정보 동의를 받는 게이트 화면.
  * 신규 가입자뿐 아니라 기존 가입자도 미동의 시 이 화면을 통과해야 앱을 쓸 수 있다.
  *
- * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침
+ * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침 / 음성 생체정보 / 국외 이전
  * 선택: 광고성 정보 수신(마케팅)
+ *
+ * 음성 처리 동의를 여기서 함께 받는 이유: 앱의 핵심이 목소리 알람이라 기능을 쓰려는
+ * 순간마다 모달을 띄우면 그때가 가장 거부감이 큰 자리다. 처음 한 번에 끝낸다.
  *
  * **[collect] 에 든 유형만 그린다.** 서버가 유형별 최소 정책 버전으로 계산해 내려주며,
  * 이미 유효한 동의는 목록에 없다 — 개정 때 필요한 것만 다시 묻고, 묻지 않은 항목의 기존
  * 선택(특히 마케팅 수신)은 그대로 유지된다.
- *
- * 음성 생체정보·국외 이전은 여기서 받지 않는다. 목소리를 실제로 등록할 때
- * [com.alarmtalk.app.ui.components.VoiceConsentSheet] 로 받는다 — 목소리를 등록하지 않을
- * 사용자에게까지 생체정보 처리 동의를 요구하면 별도 동의를 이용 조건으로 강제하는 셈이다.
+
  */
 @Composable
 internal fun ConsentScreen(
@@ -66,6 +66,8 @@ internal fun ConsentScreen(
     var age14 by remember { mutableStateOf(false) }
     var terms by remember { mutableStateOf(false) }
     var privacy by remember { mutableStateOf(false) }
+    var voiceBiometric by remember { mutableStateOf(false) }
+    var overseasTransfer by remember { mutableStateOf(false) }
     var marketing by remember { mutableStateOf(false) }
 
     // 전문은 앱에 실려 있어 네트워크가 없어도 읽힌다. 문서가 바뀌지 않으니 한 번만 파싱한다.
@@ -76,18 +78,26 @@ internal fun ConsentScreen(
     val showAge14 = "age14" in collect
     val showTerms = "terms" in collect
     val showPrivacy = "privacy" in collect
+    val showVoiceBiometric = "voice_biometric" in collect
+    val showOverseas = "overseas_transfer" in collect
     val showMarketing = "marketing" in collect
-    val shownCount = listOf(showAge14, showTerms, showPrivacy, showMarketing).count { it }
+    val shownCount = listOf(
+        showAge14, showTerms, showPrivacy, showVoiceBiometric, showOverseas, showMarketing,
+    ).count { it }
+    val shownRequired = showAge14 || showTerms || showPrivacy || showVoiceBiometric || showOverseas
 
     // 그리지 않은 필수 항목은 이미 동의된 것이므로 통과 조건에서 뺀다.
     val allRequiredChecked =
-        (!showAge14 || age14) && (!showTerms || terms) && (!showPrivacy || privacy)
+        (!showAge14 || age14) && (!showTerms || terms) && (!showPrivacy || privacy) &&
+            (!showVoiceBiometric || voiceBiometric) && (!showOverseas || overseasTransfer)
     val allChecked = allRequiredChecked && (!showMarketing || marketing)
 
     fun setAll(value: Boolean) {
         if (showAge14) age14 = value
         if (showTerms) terms = value
         if (showPrivacy) privacy = value
+        if (showVoiceBiometric) voiceBiometric = value
+        if (showOverseas) overseasTransfer = value
         if (showMarketing) marketing = value
     }
 
@@ -162,6 +172,26 @@ internal fun ConsentScreen(
                         scrollableDetail = true,
                     )
                 }
+                if (showVoiceBiometric) {
+                    ConsentRow(
+                        checked = voiceBiometric,
+                        onCheckedChange = { voiceBiometric = it },
+                        label = stringResource(R.string.auth_consent_voice_biometric),
+                        detail = AnnotatedString(
+                            stringResource(R.string.auth_consent_voice_biometric_desc),
+                        ),
+                    )
+                }
+                if (showOverseas) {
+                    ConsentRow(
+                        checked = overseasTransfer,
+                        onCheckedChange = { overseasTransfer = it },
+                        label = stringResource(R.string.auth_consent_overseas_transfer),
+                        detail = AnnotatedString(
+                            stringResource(R.string.auth_consent_overseas_transfer_desc),
+                        ),
+                    )
+                }
                 if (showMarketing) {
                     ConsentRow(
                         checked = marketing,
@@ -180,7 +210,7 @@ internal fun ConsentScreen(
                     // 남는 어긋남이 생긴다. 필수가 하나도 없으면 중립 문구를 쓴다.
                     text = if (busy) {
                         stringResource(R.string.auth_consent_processing)
-                    } else if (showAge14 || showTerms || showPrivacy) {
+                    } else if (shownRequired) {
                         stringResource(R.string.auth_consent_agree_and_start)
                     } else {
                         stringResource(R.string.auth_consent_continue)

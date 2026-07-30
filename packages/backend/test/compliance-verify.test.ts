@@ -10,6 +10,11 @@ import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 import type { AppEnv } from '../src/types';
 import { runMigrations } from '../src/lib/migrations';
+import {
+  GENERAL_REQUIRED_CONSENTS,
+  REQUIRED_CONSENT_TYPES,
+  needsConsent,
+} from '../src/lib/consent';
 
 // libsql `:memory:` 는 연결마다 별도 DB라 autocommit execute 와 transaction 이 스키마를
 // 공유하지 못한다. 모든 연결이 같은 스키마를 보도록 임시 파일 DB 를 사용한다.
@@ -44,6 +49,14 @@ function req(method: string, path: string, body?: unknown) {
   const init: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
   if (body !== undefined) init.body = JSON.stringify(body);
   return new Request(`http://localhost${path}`, init);
+}
+
+/**
+ * 가입 동의 화면이 제출하는 페이로드 — 필수 유형은 소스의 REQUIRED_CONSENT_TYPES 에서
+ * 만들어(목록이 바뀌어도 따라온다), overrides 로 특정 유형만 거절 상태로 비튼다.
+ */
+function consentPayload(overrides: Record<string, boolean> = {}) {
+  return REQUIRED_CONSENT_TYPES.map((type) => ({ type, agreed: overrides[type] ?? true }));
 }
 
 beforeAll(async () => {
@@ -126,7 +139,7 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
   const NEW_SUB = 'no-consent-sub';
   const NEW_PK = 'no-consent-pk';
 
-  it('동의 기록이 없는 사용자는 needs_consent=true, 필수 3종 모두 missing', async () => {
+  it('동의 기록이 없는 사용자는 needs_consent=true, 가입 필수 5종 모두 missing', async () => {
     await db.execute({
       sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
       args: [NEW_PK, NEW_SUB, 'noconsent@test.com', 'No Consent'],
@@ -137,19 +150,14 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
     const body = await res.json();
     console.log('[GET /consents/status — 미동의]', JSON.stringify(body));
     expect(body.needs_consent).toBe(true);
-    expect(body.missing.sort()).toEqual(['age14', 'privacy', 'terms']);
+    expect(body.missing.sort()).toEqual([...REQUIRED_CONSENT_TYPES].sort());
   });
 
-  it('필수 3종 동의 기록 후 needs_consent=false (marketing 미동의여도 무관)', async () => {
+  it('가입 필수 5종 동의 기록 후 needs_consent=false (marketing 미동의여도 무관)', async () => {
     const app = buildApp(NEW_SUB, NEW_PK);
     await app.request(
       req('POST', '/user/consents', {
-        consents: [
-          { type: 'terms', agreed: true },
-          { type: 'privacy', agreed: true },
-          { type: 'age14', agreed: true },
-          { type: 'marketing', agreed: false },
-        ],
+        consents: [...consentPayload(), { type: 'marketing', agreed: false }],
       }),
     );
     const res = await app.request(req('GET', '/user/consents/status'));
@@ -168,19 +176,38 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
     });
     const app = buildApp(SUB2, PK2);
     await app.request(
-      req('POST', '/user/consents', {
-        consents: [
-          { type: 'terms', agreed: true },
-          { type: 'privacy', agreed: false },
-          { type: 'age14', agreed: true },
-        ],
-      }),
+      req('POST', '/user/consents', { consents: consentPayload({ privacy: false }) }),
     );
     const res = await app.request(req('GET', '/user/consents/status'));
     const body = await res.json();
     console.log('[GET /consents/status — 부분동의]', JSON.stringify(body));
     expect(body.needs_consent).toBe(true);
     expect(body.missing).toEqual(['privacy']);
+  });
+
+  // 민감 동의만 빠진 사용자: 가입 동의 화면 기준으로는 재동의 대상이지만, 미들웨어의
+  // 하드 게이트는 GENERAL 3종만 보므로 앱 전체가 잠기지는 않는다.
+  it('민감 동의만 빠지면 missing/sensitive_missing 에 뜨되 일반 3종은 충족 상태다', async () => {
+    const SUB4 = 'sensitive-sub';
+    const PK4 = 'sensitive-pk';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK4, SUB4, 'sensitive@test.com', 'Sensitive'],
+    });
+    const app = buildApp(SUB4, PK4);
+    await app.request(
+      req('POST', '/user/consents', {
+        consents: consentPayload({ voice_biometric: false, overseas_transfer: false }),
+      }),
+    );
+    const res = await app.request(req('GET', '/user/consents/status'));
+    const body = await res.json();
+    console.log('[GET /consents/status — 민감 미동의]', JSON.stringify(body));
+    expect(body.missing).toEqual(['voice_biometric', 'overseas_transfer']);
+    expect(body.sensitive_missing).toEqual(['voice_biometric', 'overseas_transfer']);
+    expect(body.needs_consent).toBe(true);
+    // 게이트가 보는 일반 3종은 그대로 충족 — 앱 전체가 잠기면 안 된다.
+    expect(await needsConsent(db, PK4, GENERAL_REQUIRED_CONSENTS)).toBe(false);
   });
 });
 
