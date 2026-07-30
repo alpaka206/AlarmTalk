@@ -15,6 +15,8 @@ data class ApiError(
     val provider: String?,
     // 스토어 직접 해지 안내(PLAY_CANCEL_FAILED 등)에서 내려오는 구독 관리 URL.
     val manageUrl: String? = null,
+    // POLICY_VERSION_MISMATCH 에서 내려오는 **서버가 게시 중인** 정책 버전.
+    val current: String? = null,
 )
 
 fun apiError(error: Throwable): ApiError {
@@ -30,6 +32,7 @@ fun apiError(error: Throwable): ApiError {
             code = json.optString("error_code").takeIf { it.isNotBlank() },
             provider = json.optString("provider").takeIf { it.isNotBlank() },
             manageUrl = json.optString("manage_url").takeIf { it.isNotBlank() },
+            current = json.optString("current").takeIf { it.isNotBlank() },
         )
     }.getOrElse { ApiError(null, null) }
 }

@@ -529,6 +529,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var updateRequired by mutableStateOf(false)
         internal set
 
+    // 앱 버전 정책 조회가 끝났는지(성공·실패 무관). 이게 false 인 동안 updateRequired 는
+    // '아직 모른다' 는 뜻의 기본값 false 라, 이 값을 안 보면 강제 업데이트 대상 계정에서도
+    // 1회성 오버레이가 먼저 떠 버리고 플래그까지 태운다.
+    var versionChecked by mutableStateOf(false)
+        internal set
+
     /**
      * 서버가 **이 앱 버전이 그릴 줄 모르는 필수 동의**를 요구하면 true → 업데이트 차단 화면.
      *
@@ -539,6 +545,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     var consentUnsupported by mutableStateOf(false)
         internal set
+
+    /**
+     * APK 에 실린 법무 문서의 정책 버전. 동의를 기록할 때 '내가 실제로 보여준 문서' 로 함께
+     * 보낸다. 서버 버전과 다르면 서버가 거부하고, 그때 [consentUnsupported] 로 넘어간다.
+     *
+     * 값은 빌드 시 docs/legal 원문에서 뽑는다(build.gradle.kts). 런타임에 파싱하지 않는
+     * 이유: 파싱이 어긋나면 모든 동의 기록이 거부돼 신규 가입이 통째로 막힌다 — 그런 실패는
+     * 빌드에서 나야 한다.
+     */
+    internal val bundledPolicyVersion: String get() = BuildConfig.LEGAL_POLICY_VERSION
     // 설치 버전이 백엔드 최신버전 미만이면 true → 권장(FLEXIBLE) In-App Update 대상.
     // 강제(updateRequired)와 달리 앱 사용은 막지 않는다.
     var updateRecommended by mutableStateOf(false)

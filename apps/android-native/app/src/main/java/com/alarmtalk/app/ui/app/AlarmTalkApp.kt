@@ -376,14 +376,23 @@ internal fun AlarmTalkApp(
     // `consentChecked` 를 반드시 함께 본다. 첫 로그인 순간엔 needsConsent 가 아직 기본값
     // false 라, 동의 확인 응답이 오기 전에 이 효과가 먼저 돌면 프로모가 뜨면서 1회 플래그까지
     // 태운다 — 그 뒤 응답이 와서 동의 화면이 열리면 프로모가 그 위를 덮는다(Codex #660).
+    // 앱 버전 확인도 같은 이유로 함께 본다. 동의가 캐시로 통과된 계정은 consentChecked 가
+    // 즉시 true 가 되는데, 버전 응답은 아직 오지 않아 updateRequired 는 기본값 false 다.
+    // 그 틈에 프로모가 떠 1회 플래그를 태우고, 뒤늦게 응답이 와 업데이트 차단 화면이 깔리면
+    // 그 위에 다이얼로그만 남는다 — 업데이트하고 돌아와도 프로모는 이미 소진된 뒤다.
     LaunchedEffect(
         sessionRouteKey,
         viewModel.permissionGateRequest,
         viewModel.showVoiceSetup,
         viewModel.showConsentScreen,
         viewModel.consentChecked,
+        viewModel.versionChecked,
+        viewModel.updateRequired,
+        viewModel.consentUnsupported,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
+        if (!viewModel.versionChecked) return@LaunchedEffect
+        if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
         if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
@@ -642,9 +651,17 @@ internal fun AlarmTalkApp(
         )
     }
 
+    // 화면을 통째로 차지하는 차단 게이트. 이 게이트들은 Scaffold **본문만** 대체하므로,
+    // 아래 다이얼로그들은 막지 않으면 그 위에 그대로 겹쳐 뜬다 — 업데이트 말고는 할 수 있는
+    // 게 없다고 말해 놓고 그 위에 다른 걸 요구하는 화면이 된다.
+    val blockingGateActive =
+        viewModel.updateRequired || viewModel.consentUnsupported || viewModel.pendingDeletion
+
     // 동의 화면이 떠 있는 동안에는 그리지 않는다 — 위 트리거가 막지만, 다른 경로로 요청이
     // 세워졌을 때도 약관 화면 위에 권한 모달이 겹치는 일은 없어야 한다.
-    viewModel.permissionGateRequest?.takeIf { viewModel.consentChecked && !viewModel.showConsentScreen }?.let { target ->
+    viewModel.permissionGateRequest?.takeIf {
+        !blockingGateActive && viewModel.consentChecked && !viewModel.showConsentScreen
+    }?.let { target ->
         PermissionGateDialog(
             target = target,
             onDismiss = {
@@ -662,7 +679,7 @@ internal fun AlarmTalkApp(
         )
     }
 
-    if (viewModel.showWelcomePromo) {
+    if (viewModel.showWelcomePromo && !blockingGateActive) {
         WelcomePromoDialog(
             busy = billingBusy,
             onSubmitCode = { code ->
@@ -680,7 +697,7 @@ internal fun AlarmTalkApp(
     }
 
     // 목소리 등록을 누른 순간에만 뜨는 음성 처리 동의. 가입 게이트에는 이 항목이 없다.
-    viewModel.pendingSensitiveConsent?.let { request ->
+    viewModel.pendingSensitiveConsent?.takeIf { !blockingGateActive }?.let { request ->
         VoiceConsentSheet(
             busy = authBusy,
             types = request.types,

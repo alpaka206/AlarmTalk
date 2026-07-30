@@ -562,6 +562,9 @@ internal fun MainViewModel.checkAppVersion() {
             updateRequired = false
             updateRecommended = false
         }
+        // 성공·실패 모두 '확인은 끝났다'. 네트워크 실패로 영영 false 면 1회성 오버레이가
+        // 영영 안 뜬다 — 버전을 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다.
+        versionChecked = true
     }
 }
 
@@ -633,6 +636,26 @@ internal fun MainViewModel.checkConsentStatus() {
  * 거절하고 통과할 수 있고, 그 사람은 목소리 등록 화면에서 인라인으로 다시 만난다
  * ([submitVoiceConsents]).
  */
+/**
+ * 동의 기록이 '문서 버전 불일치' 로 거부됐을 때의 처리. 처리했으면 true.
+ *
+ * 서버가 앞서가면(문서가 개정됐는데 이 앱이 옛 본문을 싣고 있으면) 사용자가 할 수 있는 일은
+ * 업데이트뿐이다 — 모르는 필수 동의와 같은 게이트로 보낸다. 반대로 이 앱이 앞서가는
+ * 경우(서버 배포가 아직 안 끝난 구간)는 업데이트해도 안 풀리므로 그렇게 말하면 안 된다.
+ */
+private fun MainViewModel.handleConsentVersionMismatch(error: Throwable): Boolean {
+    val api = com.alarmtalk.app.network.apiError(error)
+    if (api.code != "POLICY_VERSION_MISMATCH" && api.code != "DOCUMENT_VERSION_REQUIRED") return false
+    val serverVersion = api.current?.toIntOrNull()
+    val bundled = bundledPolicyVersion?.toIntOrNull()
+    if (serverVersion != null && bundled != null && serverVersion <= bundled) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed)
+        return true
+    }
+    consentUnsupported = true
+    return true
+}
+
 internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
     val session = authSession
     if (session == null) {
@@ -674,7 +697,10 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
         runCatching {
             api.recordConsents(
                 authorization,
-                com.alarmtalk.app.network.RecordConsentsRequest(consents = consents),
+                com.alarmtalk.app.network.RecordConsentsRequest(
+                    consents = consents,
+                    documentVersion = bundledPolicyVersion,
+                ),
             )
         }.onSuccess {
             // 동의 기록 자체는 앞 계정의 토큰으로 나갔으니 그 계정 캐시에는 정상 반영한다.
@@ -696,6 +722,7 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
             if (authSession?.user?.id != ownerUserId) return@onFailure
+            if (handleConsentVersionMismatch(error)) return@onFailure
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         }
         authBusy = false
@@ -737,6 +764,7 @@ internal fun MainViewModel.submitVoiceConsents() {
                             version = policyVersion,
                         )
                     },
+                    documentVersion = bundledPolicyVersion,
                 ),
             )
         }.onSuccess {
@@ -753,6 +781,7 @@ internal fun MainViewModel.submitVoiceConsents() {
             AlarmTalkLog.reportError("Failed to record voice consents", error)
             authBusy = false
             if (authSession?.user?.id != ownerUserId) return@onFailure
+            if (handleConsentVersionMismatch(error)) return@onFailure
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         }
     }
@@ -836,6 +865,7 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
                             version = policyVersion,
                         ),
                     ),
+                    documentVersion = bundledPolicyVersion,
                 ),
             )
         }

@@ -155,6 +155,12 @@ data class ConsentItemRequest(
 
 data class RecordConsentsRequest(
     val consents: List<ConsentItemRequest>,
+    /**
+     * **이 앱이 실제로 띄운 법무 문서의 정책 버전**(APK 에 실린 docs/legal 원문에서 읽는다).
+     * 서버는 이 값이 지금 게시된 버전과 다르면 409(POLICY_VERSION_MISMATCH)로 기록을
+     * 거부한다 — 구버전 앱이 옛 본문을 보여주면서 새 버전 동의 기록을 만드는 것을 막는다.
+     */
+    @SerializedName("document_version") val documentVersion: String?,
 )
 
 data class RecordConsentsResponse(

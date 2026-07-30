@@ -289,12 +289,42 @@ user.post('/consents', async (c) => {
   if (!Array.isArray(list) || list.length === 0) {
     return c.json({ error: 'consents required', error_code: 'CONSENTS_REQUIRED' }, 400);
   }
-  // 기록되는 정책 버전은 **서버가 정한다**. 요청의 `version` 필드는 구버전 앱 호환을 위해
-  // 계속 받기는 하되(400 으로 깨지 않는다) 값은 쓰지 않고 버린다 — 이용자가 동의하는 대상은
-  // 언제나 '지금 게시된 문서'(CURRENT_POLICY_VERSION)이고, 클라가 그 버전을 다르게 주장할
-  // 정당한 이유가 없다. 클라 값을 그대로 저장하면 조작되거나 버그 있는 앱이 보낸 '999' 같은
-  // 기록이, 재동의 판정이 `>=` 인 탓에 이후 어떤 개정으로 CONSENT_MIN_POLICY_VERSION 을
-  // 올려도 그 유형의 재동의를 영구히 무력화한다.
+  // 기록되는 정책 버전은 **서버가 정한다**. 항목별 `version` 필드는 받기만 하고 버린다 —
+  // 클라 값을 그대로 저장하면 조작되거나 버그 있는 앱이 보낸 '999' 같은 기록이, 재동의
+  // 판정이 `>=` 인 탓에 이후 어떤 개정으로 CONSENT_MIN_POLICY_VERSION 을 올려도 그 유형의
+  // 재동의를 영구히 무력화한다.
+  //
+  // 다만 서버가 무조건 도장을 찍으면 반대쪽 구멍이 생긴다. 법무 문서 전문은 **APK 에 실려**
+  // 있어(빌드 시 docs/legal 복사) 화면에 뜨는 내용은 설치된 앱 버전에 고정된다. 문서가
+  // 개정돼 서버가 v5 가 됐는데 구버전 앱이 살아 있으면, 그 앱은 v4 본문을 보여주면서 v5
+  // 동의 기록을 만든다 — 이용자가 본 적 없는 문서에 동의한 것으로 남고, 진짜 v5 재동의는
+  // 이미 충족된 것으로 판정돼 영영 안 뜬다.
+  //
+  // 그래서 클라는 **자기가 실제로 띄운 문서의 버전**(document_version)을 함께 보내야 하고,
+  // 그것이 지금 게시된 버전과 다르면 기록하지 않는다. 기록되는 값은 여전히 서버 상수다 —
+  // document_version 은 저장용이 아니라 '같은 문서를 보고 있는가' 를 확인하는 값이다.
+  const documentVersion = (body as { document_version?: unknown }).document_version;
+  if (typeof documentVersion !== 'string' || documentVersion.trim() === '') {
+    return c.json(
+      {
+        error: 'document_version required',
+        error_code: 'DOCUMENT_VERSION_REQUIRED',
+        current: CURRENT_POLICY_VERSION,
+      },
+      400,
+    );
+  }
+  if (documentVersion.trim() !== CURRENT_POLICY_VERSION) {
+    return c.json(
+      {
+        error: 'Consent document is out of date',
+        error_code: 'POLICY_VERSION_MISMATCH',
+        current: CURRENT_POLICY_VERSION,
+        submitted: documentVersion.trim(),
+      },
+      409,
+    );
+  }
   const rows: Array<{ type: string; agreed: boolean }> = [];
   for (const raw of list) {
     if (!raw || typeof raw !== 'object') continue;

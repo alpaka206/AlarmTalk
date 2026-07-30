@@ -173,6 +173,7 @@ internal fun MainViewModel.createVoiceProfiles(
                                 version = policyVersion,
                             )
                         },
+                        documentVersion = bundledPolicyVersion,
                     ),
                 )
                 // 응답이 오는 사이 계정이 바뀌었으면 뒤 계정의 미동의 목록을 앞 계정의

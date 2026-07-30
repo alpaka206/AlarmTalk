@@ -393,12 +393,19 @@ async function consentStatus(): Promise<StatusBody> {
   return (await res.json()) as StatusBody;
 }
 
-function postConsents(consents: unknown[]) {
+/**
+ * [documentVersion] 은 **클라가 실제로 띄운 법무 문서의 버전**이다(APK 에 실린 원문에서
+ * 읽는다). 서버가 게시 중인 버전과 다르면 기록을 거부한다 — 저장되는 값은 여전히 서버
+ * 상수이고, 이 필드는 '같은 문서를 보고 있는가' 를 확인하는 용도다.
+ */
+function postConsents(consents: unknown[], documentVersion: unknown = CURRENT_POLICY_VERSION) {
+  const body: Record<string, unknown> = { consents };
+  if (documentVersion !== undefined) body.document_version = documentVersion;
   return buildUserApp().request(
     new Request('http://localhost/user/consents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ consents }),
+      body: JSON.stringify(body),
     }),
     undefined,
     ENV,
