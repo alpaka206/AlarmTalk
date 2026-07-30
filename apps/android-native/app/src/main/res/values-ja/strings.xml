@@ -852,7 +852,6 @@
     <string name="msg2_promo_fail_active_subscription">利用中のプランがあります。解約後にクーポンを登録できます</string>
     <string name="msg2_promo_fail_generic">プロモコードを適用できませんでした。しばらくしてからもう一度お試しください</string>
     <string name="onb_voice_title">基本の声を準備しています</string>
-    <string name="onb_voice_subtitle">オフラインでもアラームが鳴るよう端末に保存します。</string>
     <string name="onb_voice_loading">声をダウンロード中です…</string>
     <string name="misc2_theme_mode_system">システム設定に合わせる</string>
     <string name="misc2_theme_mode_light">ライトモード</string>
@@ -964,11 +963,9 @@
     <string name="editor_voice_switch_drops_text_title">基本の声に変えますか?</string>
     <string name="editor_voice_switch_drops_text_message">基本の声は用意された文だけを話すので、直接入力した文はなくなります。</string>
     <string name="editor_voice_switch_drops_text_confirm">変える</string>
-    <string name="onb_voice_download_progress">%1$d / %2$d 準備できました</string>
-    <string name="onb_voice_download_stay">終わるまで少しお待ちください。
-アプリを閉じても続きます。</string>
-    <string name="onb_voice_download_failed">ダウンロードを完了できませんでした。
-少し経ってからもう一度お試しください。</string>
+    <string name="onb_voice_download_progress">%1$d / %2$d</string>
+    <string name="onb_voice_download_stay">少しだけお待ちください。</string>
+    <string name="onb_voice_download_failed">少し経ってからもう一度お試しください。</string>
     <string name="onb_voice_download_retry">再試行</string>
     <string name="onb_voice_download_later">あとで受け取る</string>
     <string name="voicesr_share_voice_desc">同じプランの家族がこの声でアラームを作れます。</string>
@@ -1023,4 +1020,5 @@
     <string name="tts_consent_body">アラーム文言を音声にする際、文言と声は音声AIプロバイダ(ElevenLabs)と文言生成(Google、米国)を通じて処理されます。この過程でデータが国外へ送信されます。同意しなくてもアラーム自体は使えますが、読み上げアラームは作成できません。</string>
     <string name="auth_consent_continue">続ける</string>
     <string name="voice_consent_agree_continue">同意して続ける</string>
+    <string name="onb_voice_title_failed">基本の声を取得できませんでした</string>
 </resources>

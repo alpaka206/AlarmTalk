@@ -54,6 +54,12 @@ internal fun VoiceOnboardingScreen(
     done: Int,
     total: Int,
     failed: Boolean,
+    /**
+     * 워커가 실패 후 재시도를 기다리는 중인가. 화면상 '받는 중' 과 구분되지 않지만 실제로는
+     * 막혀 있는 상태라, 여기서도 빠져나갈 길을 열어 준다 — 아니면 사용자는 영문도 모르고
+     * 진행 표시만 보며 갇힌다.
+     */
+    stalled: Boolean = false,
     onRetry: () -> Unit,
     onSkip: () -> Unit,
 ) {
@@ -83,17 +89,12 @@ internal fun VoiceOnboardingScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = stringResource(R.string.onb_voice_title),
+                    text = stringResource(
+                        if (failed) R.string.onb_voice_title_failed else R.string.onb_voice_title,
+                    ),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = TextOnScene,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = stringResource(R.string.onb_voice_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextOnSceneDim,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(28.dp))
@@ -145,12 +146,16 @@ internal fun VoiceOnboardingScreen(
                         enabled = true,
                     )
                 }
-                // 나중에 받아도 되게 열어 둔다 — 여기서 갇히면 앱을 아예 못 쓴다.
-                TextButton(onClick = onSkip) {
-                    Text(
-                        text = stringResource(R.string.onb_voice_download_later),
-                        color = AuthTextMuted,
-                    )
+                // 정상적으로 받는 중에는 숨긴다 — 몇 초면 끝나는 일에 선택지를 내밀 필요가 없다.
+                // 대신 실패했거나 재시도 대기로 멈춰 있으면 반드시 보여준다. 여기서 갇히면
+                // 앱을 아예 못 쓴다.
+                if (failed || stalled) {
+                    TextButton(onClick = onSkip) {
+                        Text(
+                            text = stringResource(R.string.onb_voice_download_later),
+                            color = AuthTextMuted,
+                        )
+                    }
                 }
             }
         }
