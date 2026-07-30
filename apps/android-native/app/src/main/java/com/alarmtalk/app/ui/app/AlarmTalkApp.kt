@@ -859,8 +859,6 @@ internal fun AlarmTalkApp(
               collect = viewModel.consentCollect,
               isReconsent = viewModel.consentIsReconsent,
               onAgree = { marketingAgreed -> viewModel.submitConsents(marketingAgreed) },
-              onOpenTerms = { context.openWebUrl("https://alarm-talk.com/ko/terms") },
-              onOpenPrivacy = { context.openWebUrl("https://alarm-talk.com/ko/privacy") },
           )
           return@Scaffold
       }

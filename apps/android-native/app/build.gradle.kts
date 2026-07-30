@@ -72,6 +72,21 @@ val generateAlarmTone = tasks.register<GenerateAlarmToneTask>("generateAlarmTone
     outputDir.set(layout.buildDirectory.dir("generated/res/alarmTone"))
 }
 
+// 개인정보 처리방침·이용약관 전문을 앱에 싣는다.
+//
+// 동의 화면에서 항목을 펼치면 앱 안에서 전문을 그대로 읽을 수 있어야 한다 — 브라우저로
+// 내보내면 동의 흐름이 끊기고, 네트워크가 없으면 아예 못 읽는다.
+//
+// **사본을 만들지 않는다.** 랜딩(apps/landing/lib/legal-docs.ts)이 빌드 시 읽는 것과 같은
+// docs/legal/*.md 를 그대로 복사하므로 단일 출처가 유지된다. 문서를 고치면 다음 빌드에
+// 자동 반영되고, 앱만 옛 문안을 들고 있는 상태가 생기지 않는다.
+val copyLegalDocs = tasks.register<Copy>("copyLegalDocs") {
+    from(rootProject.file("../../docs/legal")) {
+        include("privacy-policy.ko.md", "terms-of-service.ko.md")
+    }
+    into(layout.buildDirectory.dir("generated/assets/legal/legal"))
+}
+
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -112,6 +127,7 @@ android {
     }
 
     sourceSets["main"].res.srcDir(layout.buildDirectory.dir("generated/res/alarmTone"))
+    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/assets/legal"))
 
     buildFeatures {
         compose = true
@@ -243,6 +259,7 @@ android {
 
 tasks.named("preBuild").configure {
     dependsOn(generateAlarmTone)
+    dependsOn(copyLegalDocs)
 }
 
 dependencies {

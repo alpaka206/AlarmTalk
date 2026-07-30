@@ -1002,9 +1002,6 @@
     <string name="msg_voice_consent_required">声を登録するには音声処理への同意が必要です。</string>
     <string name="auth_consent_expand">項目を開く</string>
     <string name="auth_consent_collapse">項目を閉じる</string>
-    <string name="auth_consent_full_text">全文を見る</string>
-    <string name="auth_consent_terms_detail">AlarmTalkを使ううえでの基本ルールです。提供する機能(アラーム、声の登録、家族・恋人との共有、プラン)、アカウント管理と解約、有料プランの決済・返金(Google Play アプリ内課金)、他人の声を無断で登録しない責任、サービスの変更・終了時の取り扱いを定めています。</string>
-    <string name="auth_consent_privacy_detail">どの情報を、なぜ受け取り、どれくらい保管するかです。アカウント情報(メール・ニックネーム)、アラーム設定、登録した声と生成音声、決済記録を処理し、目的を終えたら削除します。アラームが鳴る瞬間は端末内のデータだけを使います。委託・国外移転の対象(Cloudflare、Turso、ElevenLabs、Googleなど)や、開示・削除の請求方法も記載しています。</string>
     <string name="auth_consent_marketing_detail">新機能、イベント、特典のお知らせをアプリ通知やメールでお送りします。同意しなくても登録・利用に制限はなく、いつでも「その他」からオフにできます。広告は午前8時~午後9時のみ送信し、ご自身で設定したアラームは広告ではないため設定した時刻にそのまま鳴ります。</string>
     <string name="share_code_invite_body">AlarmTalkで私の声のアラームを一緒に使おう!
 

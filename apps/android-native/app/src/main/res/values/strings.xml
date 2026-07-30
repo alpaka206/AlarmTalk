@@ -1022,9 +1022,6 @@
     <string name="msg_voice_consent_required">목소리를 등록하려면 음성 처리 동의가 필요해요.</string>
     <string name="auth_consent_expand">항목 펼치기</string>
     <string name="auth_consent_collapse">항목 접기</string>
-    <string name="auth_consent_full_text">전문 보기</string>
-    <string name="auth_consent_terms_detail">알람톡 이용에 관한 기본 규칙이에요. 제공하는 기능(알람, 목소리 등록, 가족·연인 공유, 요금제), 계정 관리와 해지, 유료 이용권 결제·환불(Google Play 인앱결제 기준), 타인의 목소리를 무단으로 등록하지 않을 책임, 서비스 중단·변경 시의 처리 기준을 담고 있어요.</string>
-    <string name="auth_consent_privacy_detail">어떤 정보를 왜 받아 얼마나 보관하는지예요. 계정 정보(이메일·닉네임), 알람 설정, 등록한 목소리와 생성 음성, 결제 기록을 처리하고, 목적을 다하면 지워요. 알람이 울리는 순간에는 기기 안의 데이터만 써요. 처리 위탁·국외 이전 대상(Cloudflare, Turso, ElevenLabs, Google 등)과 열람·삭제 요청 방법도 적혀 있어요.</string>
     <string name="auth_consent_marketing_detail">새 기능, 이벤트, 혜택 소식을 앱 푸시나 이메일로 보내드려요. 동의하지 않아도 가입과 이용에 아무 제한이 없고, 언제든 더보기에서 끌 수 있어요. 광고는 오전 8시~오후 9시에만 보내고, 직접 맞춘 알람은 광고가 아니라서 설정한 시각에 그대로 울려요.</string>
     <string name="share_code_invite_body">알람톡에서 내 목소리 알람을 같이 쓰자!
 

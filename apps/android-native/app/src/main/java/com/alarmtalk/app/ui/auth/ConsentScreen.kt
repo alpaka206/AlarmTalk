@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -33,7 +34,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -59,13 +62,16 @@ internal fun ConsentScreen(
     collect: List<String>,
     isReconsent: Boolean,
     onAgree: (marketingAgreed: Boolean) -> Unit,
-    onOpenTerms: () -> Unit,
-    onOpenPrivacy: () -> Unit,
 ) {
     var age14 by remember { mutableStateOf(false) }
     var terms by remember { mutableStateOf(false) }
     var privacy by remember { mutableStateOf(false) }
     var marketing by remember { mutableStateOf(false) }
+
+    // 전문은 앱에 실려 있어 네트워크가 없어도 읽힌다. 문서가 바뀌지 않으니 한 번만 파싱한다.
+    val context = LocalContext.current
+    val termsText = remember(context) { context.readLegalDocument(LegalDocument.Terms) }
+    val privacyText = remember(context) { context.readLegalDocument(LegalDocument.Privacy) }
 
     val showAge14 = "age14" in collect
     val showTerms = "terms" in collect
@@ -143,8 +149,8 @@ internal fun ConsentScreen(
                         checked = terms,
                         onCheckedChange = { terms = it },
                         label = stringResource(R.string.auth_consent_terms),
-                        detail = stringResource(R.string.auth_consent_terms_detail),
-                        onOpenFullText = onOpenTerms,
+                        detail = termsText,
+                        scrollableDetail = true,
                     )
                 }
                 if (showPrivacy) {
@@ -152,8 +158,8 @@ internal fun ConsentScreen(
                         checked = privacy,
                         onCheckedChange = { privacy = it },
                         label = stringResource(R.string.auth_consent_privacy),
-                        detail = stringResource(R.string.auth_consent_privacy_detail),
-                        onOpenFullText = onOpenPrivacy,
+                        detail = privacyText,
+                        scrollableDetail = true,
                     )
                 }
                 if (showMarketing) {
@@ -161,7 +167,7 @@ internal fun ConsentScreen(
                         checked = marketing,
                         onCheckedChange = { marketing = it },
                         label = stringResource(R.string.auth_consent_marketing),
-                        detail = stringResource(R.string.auth_consent_marketing_detail),
+                        detail = AnnotatedString(stringResource(R.string.auth_consent_marketing_detail)),
                     )
                 }
             }
@@ -204,8 +210,11 @@ internal fun ConsentCheckLoadingScreen(contentPadding: PaddingValues) {
  * 동의 항목 한 줄.
  *
  * [detail] 이 있으면 오른쪽에 펼침 화살표가 붙고, 누르면 **이 자리 바로 아래에서** 내용을
- * 읽는다. 앱 밖 브라우저로 내보내면 동의 흐름이 끊기고 돌아오지 않는 사람이 생긴다.
- * 전문(全文)까지 필요한 사람을 위해 펼친 영역 끝에 [onOpenFullText] 링크를 남긴다.
+ * 읽는다. 앱 밖 브라우저로 내보내면 동의 흐름이 끊기고 돌아오지 않는 사람이 생기며,
+ * 네트워크가 없으면 동의 화면에서 전문을 아예 못 읽는다.
+ *
+ * 약관·처리방침은 요약이 아니라 **전문**이 들어온다(빌드 시 docs/legal 에서 실어 온 원문).
+ * 길이가 길어 자체 스크롤 영역에 담고, 바깥 목록 스크롤과 섞이지 않게 높이를 제한한다.
  */
 @Composable
 private fun ConsentRow(
@@ -214,8 +223,8 @@ private fun ConsentRow(
     label: String,
     description: String? = null,
     emphasized: Boolean = false,
-    detail: String? = null,
-    onOpenFullText: (() -> Unit)? = null,
+    detail: AnnotatedString? = null,
+    scrollableDetail: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth()) {
@@ -271,22 +280,23 @@ private fun ConsentRow(
         }
         if (detail != null && expanded) {
             Column(
-                modifier = Modifier.padding(start = 48.dp, end = 8.dp, bottom = 12.dp),
+                modifier = Modifier
+                    .padding(start = 48.dp, end = 8.dp, bottom = 12.dp)
+                    .then(
+                        if (scrollableDetail) {
+                            Modifier
+                                .heightIn(max = 260.dp)
+                                .verticalScroll(rememberScrollState())
+                        } else {
+                            Modifier
+                        },
+                    ),
             ) {
                 Text(
                     text = detail,
                     style = MaterialTheme.typography.bodySmall,
                     color = AuthTextMuted,
                 )
-                if (onOpenFullText != null) {
-                    TextButton(
-                        onClick = onOpenFullText,
-                        colors = authTextButtonColors(),
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-                    ) {
-                        Text(stringResource(R.string.auth_consent_full_text))
-                    }
-                }
             }
         }
     }
