@@ -593,6 +593,7 @@ internal fun MainViewModel.checkConsentStatus() {
             consentCollect = status.collect.ifEmpty { status.missing }
             sensitiveConsentMissing = status.sensitiveMissing
             consentIsReconsent = status.hasPriorConsent
+            consentNeedsCollection = status.needsCollection
             rememberConsentDone(userId, !status.needsConsent, status.policyVersion)
         }.onFailure { error ->
             if (authSession?.user?.id != userId) return@launch
@@ -644,6 +645,10 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
             )
         }.onSuccess {
             needsConsent = false
+            // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
+            // 화면이 닫히지 않는다.
+            consentCollect = emptyList()
+            consentNeedsCollection = false
             consentChecked = true
             // 방금 서버에 보낸 그 버전으로 로컬 캐시도 기록해 서버·클라 상태를 일치시킨다.
             // 모르면(직전 status 실패) 다음 콜드스타트에서 서버로 재확인하므로 캐시하지 않는다.
@@ -668,7 +673,7 @@ internal fun MainViewModel.submitVoiceConsents() {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
-    val drafts = pendingVoiceConsentDrafts ?: return
+    val request = pendingSensitiveConsent ?: return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
     viewModelScope.launch {
@@ -677,7 +682,9 @@ internal fun MainViewModel.submitVoiceConsents() {
             api.recordConsents(
                 authorization,
                 com.alarmtalk.app.network.RecordConsentsRequest(
-                    consents = SENSITIVE_CONSENT_TYPES.map { type ->
+                    // 시트가 실제로 물어본 유형만 기록한다 — 국외 이전만 요구된 자리에서
+                    // 음성 생체정보까지 함께 넣으면 묻지도 않은 동의를 받아 버린다.
+                    consents = request.types.map { type ->
                         com.alarmtalk.app.network.ConsentItemRequest(
                             type = type,
                             agreed = true,
@@ -687,10 +694,12 @@ internal fun MainViewModel.submitVoiceConsents() {
                 ),
             )
         }.onSuccess {
-            sensitiveConsentMissing = emptyList()
-            pendingVoiceConsentDrafts = null
+            sensitiveConsentMissing = sensitiveConsentMissing - request.types.toSet()
+            pendingSensitiveConsent = null
             authBusy = false
-            createVoiceProfiles(drafts)
+            // 목소리 등록에서 온 경우에만 이어서 만든다. 시스템 목소리 TTS 처럼 붙들어 둔
+            // 요청이 없으면 동의만 기록하고 끝낸다(사용자가 다시 시도하면 이제 통과한다).
+            request.resumeVoiceDrafts?.let { createVoiceProfiles(it) }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record voice consents", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))

@@ -198,7 +198,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (consent !in sensitiveConsentMissing) {
                     sensitiveConsentMissing = sensitiveConsentMissing + consent
                 }
-                message = getApplication<android.app.Application>().getString(R.string.msg_voice_consent_required)
+                // 서버가 지목한 그 동의만 받는 시트를 연다. 여기서 그냥 안내만 하고 끝내면
+                // 목소리를 등록하지 않는 사용자(무료 = 시스템 목소리 전용)는 동의할 방법이
+                // 없어 같은 403 을 무한 반복한다.
+                if (pendingSensitiveConsent == null) {
+                    pendingSensitiveConsent = SensitiveConsentRequest(types = listOf(consent))
+                }
                 return@launch
             }
             needsConsent = true
@@ -401,11 +406,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var consentIsReconsent by mutableStateOf(false)
         internal set
 
-    // 민감 동의 시트가 떠 있는 동안 붙들어 두는 목소리 등록 요청. 동의를 마치면 그대로 이어서
-    // 만든다(시트 CTA 가 '동의하고 음성 만들기' 라 사용자는 한 번만 누르면 된다).
-    internal var pendingVoiceConsentDrafts by mutableStateOf<List<VoiceProfileCreationDraft>?>(null)
+    /**
+     * 동의 화면을 띄워야 하는가.
+     *
+     * `needsConsent`(필수 미충족)만 보면, 개정이 **선택 동의(마케팅)의 최소 버전만** 올린 경우
+     * collect 에는 marketing 이 들어가는데 화면은 뜨지 않아 약속한 재수집이 영영 일어나지
+     * 않는다(Codex #660). 받을 게 하나라도 있으면 띄우되, 선택 항목은 체크 없이 통과할 수 있다.
+     *
+     * 오버레이(권한·프로모)도 이 값을 봐야 한다 — needsConsent 만 보면 마케팅만 묻는 화면 위에
+     * 권한 모달이 겹친다.
+     */
+    val showConsentScreen: Boolean
+        get() = needsConsent || consentNeedsCollection || consentCollect.isNotEmpty()
 
-    val showVoiceConsentSheet: Boolean get() = pendingVoiceConsentDrafts != null
+    // 서버가 계산해 준 '받을 게 있는가'. 필드가 없는 구버전 서버에서는 위의 collect 항이 받는다.
+    var consentNeedsCollection by mutableStateOf(false)
+        internal set
+
+    /**
+     * 지금 받아야 하는 민감 동의 요청.
+     *
+     * 두 갈래로 열린다:
+     *  - **목소리 등록**: [types] 는 음성 생체정보+국외 이전, [resumeVoiceDrafts] 에 등록 요청을
+     *    붙들어 둔다. 동의를 마치면 그대로 이어서 만든다(사용자는 한 번만 누르면 된다).
+     *  - **국외 이전만**: 시스템(기본) 목소리로 TTS 를 만들 때 서버가 요구하는 건 국외 이전
+     *    하나뿐이다(tts.ts 의 isSystemVoice 분기). 무료 사용자는 목소리를 등록할 수 없어
+     *    등록 경로로는 이 동의를 받을 방법이 아예 없다 — 이 갈래가 없으면 무료 사용자의
+     *    기본 알람 생성이 영구 403 이 된다(Codex #660).
+     */
+    internal data class SensitiveConsentRequest(
+        val types: List<String>,
+        val resumeVoiceDrafts: List<VoiceProfileCreationDraft>? = null,
+    )
+
+    internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
+
+    val showVoiceConsentSheet: Boolean get() = pendingSensitiveConsent != null
 
     // 첫 진입 웰컴 코드 안내가 떠 있는지. 계정당 1회, 무료 플랜에게만.
     var showWelcomePromo by mutableStateOf(false)
@@ -678,13 +714,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         needsConsent = false
         consentChecked = false
         consentCollect = emptyList()
+        consentNeedsCollection = false
         consentIsReconsent = false
         // 민감 동의 상태와 대기 중인 목소리 등록 요청은 **반드시** 함께 비운다.
         // pendingVoiceConsentDrafts 에는 직전 사용자가 녹음한 오디오가 들어 있다 — 남겨 두면
         // 401 로 세션이 끊긴 뒤에도 동의 시트가 로그아웃 화면 위에 계속 떠 있고, 다른 계정이
         // 로그인해 '동의' 를 누르는 순간 앞 사용자의 녹음이 그 계정으로 업로드된다(Codex #660).
         sensitiveConsentMissing = emptyList()
-        pendingVoiceConsentDrafts = null
+        pendingSensitiveConsent = null
         // 웰컴 코드 안내도 계정별 상태다. 계정이 바뀌면 새 계정 기준으로 다시 판정한다.
         showWelcomePromo = false
         pendingDeletion = false

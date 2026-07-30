@@ -44,7 +44,9 @@ export const OPTIONAL_CONSENT_TYPES = ['marketing'] as const;
 /** 동의 상태 조회/충족 판정에 쓰는 일반 필수 동의 목록(GET /consents/status 호환). */
 export const REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENTS;
 
-/** 처리방침/약관 문서 버전. **새로 기록하는** 동의는 이 값으로 저장한다.
+/** 처리방침/약관 문서 버전. **새로 기록하는** 동의는 예외 없이 이 값으로 저장한다 —
+ *  POST /user/consents 는 요청 바디의 version 을 받기만 하고 무시한다(클라가 보낸 버전을
+ *  그대로 쓰면 위조된 높은 값이 이후의 재동의 요구를 영구히 무력화한다).
  *  재동의가 필요한지는 이 값이 아니라 CONSENT_MIN_POLICY_VERSION 이 결정한다.
  *  '4' (2026-07-30 개정): 제공하지 않는 기능·경로를 고지에서 걷어냈다 — Apple 로그인,
  *  캐릭터 성장/연속 기상 기록, Apple·PortOne 수탁. 결제는 Google Play 인앱결제 단일

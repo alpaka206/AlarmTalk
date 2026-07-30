@@ -288,7 +288,13 @@ user.post('/consents', async (c) => {
   if (!Array.isArray(list) || list.length === 0) {
     return c.json({ error: 'consents required', error_code: 'CONSENTS_REQUIRED' }, 400);
   }
-  const rows: Array<{ type: string; version: string; agreed: boolean }> = [];
+  // 기록되는 정책 버전은 **서버가 정한다**. 요청의 `version` 필드는 구버전 앱 호환을 위해
+  // 계속 받기는 하되(400 으로 깨지 않는다) 값은 쓰지 않고 버린다 — 이용자가 동의하는 대상은
+  // 언제나 '지금 게시된 문서'(CURRENT_POLICY_VERSION)이고, 클라가 그 버전을 다르게 주장할
+  // 정당한 이유가 없다. 클라 값을 그대로 저장하면 조작되거나 버그 있는 앱이 보낸 '999' 같은
+  // 기록이, 재동의 판정이 `>=` 인 탓에 이후 어떤 개정으로 CONSENT_MIN_POLICY_VERSION 을
+  // 올려도 그 유형의 재동의를 영구히 무력화한다.
+  const rows: Array<{ type: string; agreed: boolean }> = [];
   for (const raw of list) {
     if (!raw || typeof raw !== 'object') continue;
     const item = raw as Record<string, unknown>;
@@ -301,10 +307,6 @@ user.post('/consents', async (c) => {
     }
     rows.push({
       type,
-      version:
-        typeof item.version === 'string' && item.version.trim()
-          ? item.version.trim().slice(0, 40)
-          : CURRENT_POLICY_VERSION,
       agreed: item.agreed === true || item.agreed === 1 || item.agreed === '1',
     });
   }
@@ -329,7 +331,7 @@ user.post('/consents', async (c) => {
         await tx.execute({
           sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
                 VALUES (?, ?, ?, ?, ?)`,
-          args: [crypto.randomUUID(), userPk, r.type, r.version, r.agreed ? 1 : 0],
+          args: [crypto.randomUUID(), userPk, r.type, CURRENT_POLICY_VERSION, r.agreed ? 1 : 0],
         });
       }
       if (withdrewSensitiveConsent) {
@@ -402,7 +404,16 @@ user.get('/consents/status', async (c) => {
       ...OPTIONAL_CONSENT_TYPES.filter((type) => !consentAnswerIsCurrent(latest, type)),
     ];
     return c.json({
+      // needs_consent 와 needs_collection 은 의미가 다르다. 섞어 쓰면 안 된다.
+      //  - needs_consent: **앱을 못 쓰게 막는 게이트** 신호(필수 유형 기준). 선택 동의
+      //    때문에 앱이 잠기면 안 되므로 여기에는 marketing 이 절대 들어가지 않는다.
+      //  - needs_collection: **동의 화면을 한 번 띄워 물어봐야 한다**는 신호(= collect 비어
+      //    있지 않음). 선택 유형만 재수집 대상일 때도 true 다. 클라는 이걸로 화면을 띄우되
+      //    선택 항목은 체크 없이 통과시킨다. 이게 없으면 앞으로 개정이
+      //    CONSENT_MIN_POLICY_VERSION.marketing 만 올렸을 때 collect 에는 marketing 이
+      //    담기는데 needs_consent 는 false 라 화면이 영영 안 떠 재수집이 일어나지 않는다.
       needs_consent: missing.length > 0,
+      needs_collection: collect.length > 0,
       required: REQUIRED_CONSENT_TYPES,
       missing,
       collect,

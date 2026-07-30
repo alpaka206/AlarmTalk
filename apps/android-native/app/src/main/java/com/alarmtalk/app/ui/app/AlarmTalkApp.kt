@@ -342,9 +342,9 @@ internal fun AlarmTalkApp(
     // 오버레이라, 조건을 걸지 않으면 약관 동의 화면 위에 겹쳐 뜬다 — 아직 약관에 동의하지도
     // 않은 사람에게 알림 권한부터 묻는 꼴이고, 그 순간 '이미 물어봤음' 플래그까지 태워
     // 정작 홈에 도착한 뒤에는 다시 묻지 못한다.
-    LaunchedEffect(sessionRouteKey, viewModel.consentChecked, viewModel.needsConsent, viewModel.showVoiceSetup) {
+    LaunchedEffect(sessionRouteKey, viewModel.consentChecked, viewModel.showConsentScreen, viewModel.showVoiceSetup) {
         if (sessionRouteKey == null) return@LaunchedEffect
-        if (!viewModel.consentChecked || viewModel.needsConsent) return@LaunchedEffect
+        if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
         if (initialPermissionPromptStore.hasPrompted()) return@LaunchedEffect
         initialPermissionPromptStore.markPrompted()
@@ -363,11 +363,11 @@ internal fun AlarmTalkApp(
         sessionRouteKey,
         viewModel.permissionGateRequest,
         viewModel.showVoiceSetup,
-        viewModel.needsConsent,
+        viewModel.showConsentScreen,
         viewModel.consentChecked,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
-        if (!viewModel.consentChecked || viewModel.needsConsent) return@LaunchedEffect
+        if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
         viewModel.maybeShowWelcomePromo()
@@ -618,7 +618,7 @@ internal fun AlarmTalkApp(
 
     // 동의 화면이 떠 있는 동안에는 그리지 않는다 — 위 트리거가 막지만, 다른 경로로 요청이
     // 세워졌을 때도 약관 화면 위에 권한 모달이 겹치는 일은 없어야 한다.
-    viewModel.permissionGateRequest?.takeIf { viewModel.consentChecked && !viewModel.needsConsent }?.let { target ->
+    viewModel.permissionGateRequest?.takeIf { viewModel.consentChecked && !viewModel.showConsentScreen }?.let { target ->
         PermissionGateDialog(
             target = target,
             onDismiss = {
@@ -654,11 +654,12 @@ internal fun AlarmTalkApp(
     }
 
     // 목소리 등록을 누른 순간에만 뜨는 음성 처리 동의. 가입 게이트에는 이 항목이 없다.
-    if (viewModel.showVoiceConsentSheet) {
+    viewModel.pendingSensitiveConsent?.let { request ->
         VoiceConsentSheet(
             busy = authBusy,
+            types = request.types,
             onAgree = viewModel::submitVoiceConsents,
-            onDismiss = { viewModel.pendingVoiceConsentDrafts = null },
+            onDismiss = { viewModel.pendingSensitiveConsent = null },
         )
     }
 
@@ -851,7 +852,7 @@ internal fun AlarmTalkApp(
           ConsentCheckLoadingScreen(contentPadding = padding)
           return@Scaffold
       }
-      if (viewModel.needsConsent) {
+      if (viewModel.showConsentScreen) {
           ConsentScreen(
               contentPadding = padding,
               busy = authBusy,

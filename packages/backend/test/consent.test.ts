@@ -17,16 +17,46 @@ import {
 // 제어하기 위해 mock 한다. vi.mock 은 파일 상단으로 호이스트되며 factory 는 'mock' 으로
 // 시작하는 변수만 참조할 수 있어 mockConsentRows 로 명명한다.
 let mockConsentRows: Array<{ consent_type: string; policy_version: string; agreed: number }> = [];
-vi.mock('../src/lib/db', () => ({
-  getDB: () => ({
-    execute: async (q: { sql: string }) => {
-      if (/FROM user_consents/i.test(q.sql)) {
-        return { rows: mockConsentRows, rowsAffected: 0 };
-      }
-      return { rows: [], rowsAffected: 0 };
-    },
-  }),
-}));
+// POST /user/consents 가 실제로 INSERT 한 값 — 저장되는 정책 버전을 직접 들여다보기 위해
+// 기록해 둔다(요청 바디의 version 이 아니라 서버 값이 들어가야 한다).
+let mockConsentInserts: Array<{ type: string; version: string; agreed: number }> = [];
+vi.mock('../src/lib/db', () => {
+  const execute = async (q: { sql: string; args?: unknown[] }) => {
+    if (/INSERT INTO user_consents/i.test(q.sql)) {
+      const args = (q.args ?? []) as unknown[];
+      // (id, user_id, consent_type, policy_version, agreed)
+      mockConsentInserts.push({
+        type: String(args[2]),
+        version: String(args[3]),
+        agreed: Number(args[4]),
+      });
+      return { rows: [], rowsAffected: 1 };
+    }
+    if (/FROM user_consents/i.test(q.sql)) {
+      return { rows: mockConsentRows, rowsAffected: 0 };
+    }
+    return { rows: [], rowsAffected: 0 };
+  };
+  const transaction = async () => {
+    const tx = {
+      closed: false,
+      execute,
+      batch: async () => {},
+      executeMultiple: async () => {},
+      commit: async () => {
+        tx.closed = true;
+      },
+      rollback: async () => {
+        tx.closed = true;
+      },
+      close: () => {
+        tx.closed = true;
+      },
+    };
+    return tx;
+  };
+  return { getDB: () => ({ execute, transaction }) };
+});
 
 const ENV: Env = {
   ELEVENLABS_API_KEY: 'x',
@@ -253,6 +283,7 @@ import userRoutes from '../src/routes/user';
 
 interface StatusBody {
   needs_consent: boolean;
+  needs_collection: boolean;
   required: string[];
   missing: string[];
   collect: string[];
@@ -260,7 +291,7 @@ interface StatusBody {
   policy_version: string;
 }
 
-async function consentStatus(): Promise<StatusBody> {
+function buildUserApp() {
   const app = new Hono<AppEnv>();
   app.use('*', async (c, next) => {
     c.set('userId', 'user-1');
@@ -269,7 +300,11 @@ async function consentStatus(): Promise<StatusBody> {
     await next();
   });
   app.route('/user', userRoutes);
-  const res = await app.request(
+  return app;
+}
+
+async function consentStatus(): Promise<StatusBody> {
+  const res = await buildUserApp().request(
     new Request('http://localhost/user/consents/status'),
     undefined,
     ENV,
@@ -277,6 +312,55 @@ async function consentStatus(): Promise<StatusBody> {
   expect(res.status).toBe(200);
   return (await res.json()) as StatusBody;
 }
+
+function postConsents(consents: unknown[]) {
+  return buildUserApp().request(
+    new Request('http://localhost/user/consents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ consents }),
+    }),
+    undefined,
+    ENV,
+  );
+}
+
+// ---- POST /user/consents — 정책 버전은 서버가 정한다 (클라 값 위조 방지) ----
+describe('POST /user/consents — 저장되는 정책 버전', () => {
+  beforeEach(() => {
+    mockConsentRows = [];
+    mockConsentInserts = [];
+  });
+
+  it("클라가 version:'999' 를 보내도 저장은 현재 문서 버전으로 한다", async () => {
+    const res = await postConsents([{ type: 'terms', agreed: true, version: '999' }]);
+    expect(res.status).toBe(200);
+    expect(mockConsentInserts).toEqual([
+      { type: 'terms', version: CURRENT_POLICY_VERSION, agreed: 1 },
+    ]);
+  });
+
+  it("클라가 아주 낮은 version:'1' 을 보내도 저장은 현재 문서 버전으로 한다", async () => {
+    const res = await postConsents([{ type: 'privacy', agreed: true, version: '1' }]);
+    expect(res.status).toBe(200);
+    expect(mockConsentInserts).toEqual([
+      { type: 'privacy', version: CURRENT_POLICY_VERSION, agreed: 1 },
+    ]);
+  });
+
+  it('version 필드는 호환을 위해 받기만 하고 무시한다 — 400 으로 깨지 않는다', async () => {
+    const res = await postConsents([
+      { type: 'terms', agreed: true, version: 'v-nonsense' },
+      { type: 'marketing', agreed: false },
+    ]);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, recorded: 2 });
+    expect(mockConsentInserts.map((r) => r.version)).toEqual([
+      CURRENT_POLICY_VERSION,
+      CURRENT_POLICY_VERSION,
+    ]);
+  });
+});
 
 describe('GET /user/consents/status — collect / sensitive_missing', () => {
   const originalMin = { ...CONSENT_MIN_POLICY_VERSION };
@@ -296,6 +380,7 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
     ];
     const body = await consentStatus();
     expect(body.needs_consent).toBe(false);
+    expect(body.needs_collection).toBe(false);
     expect(body.missing).toEqual([]);
     expect(body.collect).toEqual([]);
     expect(body.policy_version).toBe(CURRENT_POLICY_VERSION);
@@ -378,6 +463,7 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
     expect(body.sensitive_missing).toEqual(['overseas_transfer']);
     expect(body.needs_consent).toBe(false);
     expect(body.collect).toEqual([]); // 민감 동의는 가입 게이트가 아니라 목소리 등록 화면에서 받는다
+    expect(body.needs_collection).toBe(false); // 그래서 동의 화면도 띄우지 않는다
   });
 
   it('민감 동의를 철회(agreed=0)하면 sensitive_missing 에 다시 뜬다', async () => {
@@ -390,6 +476,30 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
       consentRow('overseas_transfer', 1, '3'),
     ];
     expect((await consentStatus()).sensitive_missing).toEqual(['voice_biometric']);
+  });
+
+  // needs_consent(게이트) 와 needs_collection(화면 노출) 의 의미 분리 — 선택 동의만
+  // 다시 받아야 하는 개정에서 화면이 안 뜨던 회귀를 막는다.
+  it('marketing 최소 버전만 올리면 needs_consent=false 인데 needs_collection=true 다', async () => {
+    CONSENT_MIN_POLICY_VERSION.marketing = 4;
+    mockConsentRows = [
+      consentRow('terms', 1, '3'),
+      consentRow('privacy', 1, '3'),
+      consentRow('age14', 1, '3'),
+      consentRow('marketing', 1, '3'),
+    ];
+    const body = await consentStatus();
+    expect(body.needs_consent).toBe(false); // 필수는 다 충족 — 앱을 잠그면 안 된다
+    expect(body.missing).toEqual([]);
+    expect(body.needs_collection).toBe(true); // 그래도 화면은 한 번 띄워야 한다
+    expect(body.collect).toEqual(['marketing']);
+  });
+
+  it('필수가 빠져 있으면 needs_consent 와 needs_collection 이 모두 true', async () => {
+    const body = await consentStatus();
+    expect(body.needs_consent).toBe(true);
+    expect(body.needs_collection).toBe(true);
+    expect(body.collect).toEqual(['terms', 'privacy', 'age14', 'marketing']);
   });
 
   it('민감 동의가 모두 유효하면 sensitive_missing 은 빈 배열', async () => {

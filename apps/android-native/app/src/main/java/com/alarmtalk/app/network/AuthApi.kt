@@ -189,6 +189,11 @@ data class ConsentStatusResponse(
      * 조건으로 강제하지 않는다).
      */
     @SerializedName("sensitive_missing") val sensitiveMissing: List<String> = emptyList(),
+    /**
+     * 화면을 띄워 물어봐야 하는가(= collect 가 비어 있지 않은가). `needsConsent` 와 의미가 다르다 —
+     * 그쪽은 '앱을 막는 게이트' 신호라 필수 유형만 보고, 이쪽은 선택 동의 재수집까지 포함한다.
+     */
+    @SerializedName("needs_collection") val needsCollection: Boolean = false,
     /** 이 계정에 동의 기록이 하나라도 있으면 개정에 따른 재동의다 — 화면 문구가 달라진다. */
     @SerializedName("has_prior_consent") val hasPriorConsent: Boolean = false,
     @SerializedName("policy_version") val policyVersion: String = "1",

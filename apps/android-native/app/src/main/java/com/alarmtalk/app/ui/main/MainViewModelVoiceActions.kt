@@ -132,7 +132,10 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
     // 403 CONSENT_REQUIRED 로 막지만, 요청을 보내 튕기기 전에 무엇에 동의하는지부터 보여준다.
     // 시트에서 동의하면 submitVoiceConsents 가 이 drafts 로 등록을 이어서 실행한다.
     if (sensitiveConsentMissing.isNotEmpty()) {
-        pendingVoiceConsentDrafts = drafts
+        pendingSensitiveConsent = MainViewModel.SensitiveConsentRequest(
+            types = sensitiveConsentMissing,
+            resumeVoiceDrafts = drafts,
+        )
         return false
     }
 

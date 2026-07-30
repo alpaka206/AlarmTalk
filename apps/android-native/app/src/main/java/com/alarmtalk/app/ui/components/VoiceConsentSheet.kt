@@ -40,14 +40,22 @@ import androidx.compose.ui.window.Dialog
 @Composable
 internal fun VoiceConsentSheet(
     busy: Boolean,
+    types: List<String>,
     onAgree: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // 음성 생체정보를 묻는 자리에서만 '목소리 등록' 문맥이다. 국외 이전만 요구되는 자리
+    // (기본 목소리로 TTS 생성)에서는 목소리 등록 이야기를 꺼내면 안 된다 — 등록하지도
+    // 않는 사용자에게 등록 책임 확인을 받는 꼴이 된다.
+    val asksBiometric = "voice_biometric" in types
+    val asksOverseas = "overseas_transfer" in types
+
     var ownership by remember { mutableStateOf(false) }
     var liability by remember { mutableStateOf(false) }
     var biometric by remember { mutableStateOf(false) }
     var overseas by remember { mutableStateOf(false) }
-    val allChecked = ownership && liability && biometric && overseas
+    val allChecked = (!asksBiometric || (ownership && liability && biometric)) &&
+        (!asksOverseas || overseas)
 
     Dialog(onDismissRequest = { if (!busy) onDismiss() }) {
         Surface(
@@ -60,7 +68,9 @@ internal fun VoiceConsentSheet(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.voice_consent_title),
+                    text = stringResource(
+                        if (asksBiometric) R.string.voice_consent_title else R.string.tts_consent_title,
+                    ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -72,30 +82,36 @@ internal fun VoiceConsentSheet(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.voice_consent_body),
+                        text = stringResource(
+                            if (asksBiometric) R.string.voice_consent_body else R.string.tts_consent_body,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    VoiceConsentCheck(
-                        checked = ownership,
-                        onCheckedChange = { ownership = it },
-                        label = stringResource(R.string.voice_consent_check_ownership),
-                    )
-                    VoiceConsentCheck(
-                        checked = liability,
-                        onCheckedChange = { liability = it },
-                        label = stringResource(R.string.voice_consent_check_liability),
-                    )
-                    VoiceConsentCheck(
-                        checked = biometric,
-                        onCheckedChange = { biometric = it },
-                        label = stringResource(R.string.voice_consent_check_biometric),
-                    )
-                    VoiceConsentCheck(
-                        checked = overseas,
-                        onCheckedChange = { overseas = it },
-                        label = stringResource(R.string.voice_consent_check_overseas),
-                    )
+                    if (asksBiometric) {
+                        VoiceConsentCheck(
+                            checked = ownership,
+                            onCheckedChange = { ownership = it },
+                            label = stringResource(R.string.voice_consent_check_ownership),
+                        )
+                        VoiceConsentCheck(
+                            checked = liability,
+                            onCheckedChange = { liability = it },
+                            label = stringResource(R.string.voice_consent_check_liability),
+                        )
+                        VoiceConsentCheck(
+                            checked = biometric,
+                            onCheckedChange = { biometric = it },
+                            label = stringResource(R.string.voice_consent_check_biometric),
+                        )
+                    }
+                    if (asksOverseas) {
+                        VoiceConsentCheck(
+                            checked = overseas,
+                            onCheckedChange = { overseas = it },
+                            label = stringResource(R.string.voice_consent_check_overseas),
+                        )
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

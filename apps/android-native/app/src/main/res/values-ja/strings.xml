@@ -1027,4 +1027,6 @@
     <string name="welcome_promo_instagram_hint">Instagram @alarmtalk.app までご連絡いただければご案内します。</string>
     <string name="auth_consent_title_updated">規約が更新されました</string>
     <string name="auth_consent_subtitle_updated">変更があった項目だけをまとめました。すでに同意済みの項目はそのまま維持されます。</string>
+    <string name="tts_consent_title">アラーム文言の作成には同意が必要です</string>
+    <string name="tts_consent_body">アラーム文言を音声にする際、文言と声は音声AIプロバイダ(ElevenLabs)と文言生成(Google、米国)を通じて処理されます。この過程でデータが国外へ送信されます。同意しなくてもアラーム自体は使えますが、読み上げアラームは作成できません。</string>
 </resources>
