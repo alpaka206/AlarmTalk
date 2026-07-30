@@ -639,7 +639,7 @@
     <string name="voices_confirm_new_preview">もう一度聞く</string>
     <string name="voices_confirm_new_keep">この声にする</string>
     <string name="voices_confirm_new_keep_saving">登録中…</string>
-    <string name="voices_confirm_new_delete">この声を破棄</string>
+    <string name="voices_confirm_new_delete">作り直す</string>
     <string name="voices_creating_title">声を作成しています</string>
     <string name="voices_creating_body">少々お待ちください。
 完成したらすぐお聞かせします。</string>
@@ -677,7 +677,7 @@
     <string name="voicesr_close">閉じる</string>
     <string name="voicesr_delete">削除</string>
     <string name="voices_delete_quota_title">削除しますか？</string>
-    <string name="voices_delete_quota_message">今削除しても今月は新しい声を作れません。来月から作れます。</string>
+    <string name="voices_delete_quota_message">この声で作ったアラームは基本のアラーム音に戻り、保存された音声も一緒に削除されます。元に戻せません。今月は新しい声を作れず、来月から作成できます。</string>
     <string name="voicesr_delete_dialog_confirm">「%1$s」の声を削除しますか?</string>
     <string name="voicesr_delete_dialog_title">声を削除</string>
     <string name="voicesr_delete_dialog_warning">この声を使うアラームは基本のアラーム音に変わります。保存された音源ファイルも一緒に削除されます。</string>

@@ -631,7 +631,7 @@ They become available as they finish.</string>
     <string name="voices_confirm_new_preview">Replay</string>
     <string name="voices_confirm_new_keep">Use this voice</string>
     <string name="voices_confirm_new_keep_saving">Saving…</string>
-    <string name="voices_confirm_new_delete">Discard this voice</string>
+    <string name="voices_confirm_new_delete">Make another</string>
     <string name="voices_creating_title">Creating your voice</string>
     <string name="voices_creating_body">Hang tight.
 We\'ll play it for you as soon as it\'s ready.</string>
@@ -669,7 +669,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voicesr_close">Close</string>
     <string name="voicesr_delete">Delete</string>
     <string name="voices_delete_quota_title">Delete this voice?</string>
-    <string name="voices_delete_quota_message">Deleting it now will not let you create another this month. You can create one again next month.</string>
+    <string name="voices_delete_quota_message">Alarms using this voice go back to the default alarm sound, and the saved audio is deleted too. This cannot be undone. You will not be able to create a new voice until next month.</string>
     <string name="voicesr_delete_dialog_confirm">Delete the \'%1$s\' voice?</string>
     <string name="voicesr_delete_dialog_title">Delete voice</string>
     <string name="voicesr_delete_dialog_warning">Alarms using this voice will switch to the default alarm sound. The saved audio files will also be deleted.</string>

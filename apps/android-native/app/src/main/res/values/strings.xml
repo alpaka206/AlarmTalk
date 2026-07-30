@@ -643,7 +643,7 @@
     <string name="voices_confirm_new_preview">다시 듣기</string>
     <string name="voices_confirm_new_keep">이 목소리로 할게요</string>
     <string name="voices_confirm_new_keep_saving">등록 중…</string>
-    <string name="voices_confirm_new_delete">이 목소리 버리기</string>
+    <string name="voices_confirm_new_delete">다시 만들기</string>
     <string name="voices_creating_title">목소리를 만드는 중이에요</string>
     <string name="voices_creating_body">잠시만 기다려 주세요.
 완성되면 바로 들려드릴게요.</string>
@@ -681,7 +681,7 @@
     <string name="voicesr_close">닫기</string>
     <string name="voicesr_delete">삭제</string>
     <string name="voices_delete_quota_title">정말 삭제할까요?</string>
-    <string name="voices_delete_quota_message">지금 지워도 이번 달에는 새 목소리를 만들 수 없어요. 다음 달부터 다시 만들 수 있어요.</string>
+    <string name="voices_delete_quota_message">이 목소리로 만든 알람은 기본 알람음으로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.</string>
     <string name="voicesr_delete_dialog_confirm">\'%1$s\' 목소리를 삭제할까요?</string>
     <string name="voicesr_delete_dialog_title">목소리 삭제</string>
     <string name="voicesr_delete_dialog_warning">이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.</string>
