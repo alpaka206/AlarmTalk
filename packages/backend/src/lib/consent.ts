@@ -42,11 +42,14 @@ export const SENSITIVE_REQUIRED_CONSENTS = ['voice_biometric', 'overseas_transfe
 export const REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENTS;
 
 /** 처리방침/약관 버전. 정책 개정 시 이 값을 올려 기존 가입자 재동의를 유도한다.
+ *  '4' (2026-07-30 개정): 제공하지 않는 기능·경로를 고지에서 걷어냈다 — Apple 로그인,
+ *  캐릭터 성장/연속 기상 기록, Apple·PortOne 수탁. 결제는 Google Play 인앱결제 단일
+ *  경로임을 명시. 마케팅 야간 수신 별도 동의는 발송 시간대 제한(08:00~21:00)으로 대체.
  *  '3' (2026-06-29 개정): 운영 음성 AI 제공자를 ElevenLabs 기준으로 정정하고,
  *  음성=민감정보/생체정보 분류, voice_biometric·overseas_transfer 별도 동의 서버 강제,
  *  Firebase/FCM 수탁 고지를 포함한 처리방침/약관 개정과 동기화한다.
  *  (docs/legal/*.ko.md 의 "최종 개정일"·"정책 버전"과 일치) */
-export const CURRENT_POLICY_VERSION = '3';
+export const CURRENT_POLICY_VERSION = '4';
 
 /**
  * requiredTypes 중 하나라도 (미기록 | 미동의 | 현재 정책버전과 불일치) 이면 true.
