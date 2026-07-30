@@ -14,8 +14,17 @@ export interface AppVersionPolicy {
 }
 
 const ANDROID: AppVersionPolicy = {
-  minSupported: 1,
-  latest: 7,
+  // 20 = 1.2.0. 동의 기록에 document_version(앱이 실제로 띄운 법무 문서의 버전)을 요구하기
+  // 시작한 첫 빌드다. 그 이전 빌드는 이 필드를 보내지 못해 POST /user/consents 가 400 으로
+  // 거부하는데, 자기가 어떤 문서를 띄웠는지 증명할 방법이 없으니 받아 줄 수도 없다.
+  // 막지 않으면 첫 동의·재동의가 필요한 사용자가 동의 게이트에서 빠져나오지 못한다.
+  //
+  // ⚠️ 배포 순서: 이 값이 올라간 백엔드가 나가면 20 미만 설치본은 즉시 차단 화면을 본다.
+  // **1.2.0(versionCode 20)을 스토어에 먼저 올린 뒤** 이 변경을 main 에 머지할 것.
+  minSupported: 20,
+  // 권장 업데이트 기준. minSupported 보다 낮으면 "필수 버전이 최신 버전보다 높다" 는
+  // 모순이라 함께 올린다.
+  latest: 20,
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 

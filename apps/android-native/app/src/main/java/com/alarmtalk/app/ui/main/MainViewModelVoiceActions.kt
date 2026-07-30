@@ -76,6 +76,9 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
     }
 }
 
+/** 계정 전환으로 등록을 중단했다는 내부 신호. 사용자에게 보일 실패가 아니다. */
+private class VoiceCreateAbortedException : Exception("voice creation aborted: session changed")
+
 internal fun MainViewModel.createVoiceProfile(
     name: String,
     audio: CachedAlarmAudio,
@@ -158,6 +161,11 @@ internal fun MainViewModel.createVoiceProfiles(
     voiceProfileBusy = true
     // 동의 기록에 실려 보낼 정책 버전. 코루틴 밖에서 읽어 둔다.
     val policyVersion = cachedPolicyVersion()
+    // 이 등록을 시작한 계정. 인라인 동의 경로는 동의 기록 왕복이 먼저 끼어 업로드까지의
+    // 창이 길다 — 그 사이 401/계정전환이 나면 앞 계정 토큰으로 뒤 계정에 목소리를 올리고,
+    // 완료 콜백이 뒤 계정 상태(pendingVoiceDraft·쿼터·busy)를 앞 계정 결과로 덮는다.
+    val ownerUserId = session.user.id
+    fun sessionChanged() = authSession?.user?.id != ownerUserId
     viewModelScope.launch {
         runCatching {
             // 순서 고정: 동의 기록 → 업로드. 같은 runCatching 안에 두어 기록이 실패하면
@@ -176,11 +184,11 @@ internal fun MainViewModel.createVoiceProfiles(
                         documentVersion = bundledPolicyVersion,
                     ),
                 )
-                // 응답이 오는 사이 계정이 바뀌었으면 뒤 계정의 미동의 목록을 앞 계정의
-                // 유형으로 깎지 않는다 — 뒤 계정이 받아야 할 동의를 건너뛴다.
-                if (authSession?.user?.id == session.user.id) {
-                    sensitiveConsentMissing = sensitiveConsentMissing - consentsToRecord.toSet()
-                }
+                // 동의 기록 자체는 앞 계정의 토큰으로 나갔으니 그 계정에 정상적으로 남는다.
+                // 하지만 계정이 바뀌었으면 여기서 끊는다 — 녹음을 올리면 앞 계정이 녹음한
+                // 음성이 뒤 계정 화면에 목소리로 뜬다.
+                if (sessionChanged()) throw VoiceCreateAbortedException()
+                sensitiveConsentMissing = sensitiveConsentMissing - consentsToRecord.toSet()
             }
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
@@ -200,6 +208,7 @@ internal fun MainViewModel.createVoiceProfiles(
                 }
             }
         }.onSuccess { profiles ->
+            if (sessionChanged()) return@onSuccess
             pendingVoiceDraft = profiles.firstOrNull()
             // 클론 생성이 이번 달 생성 시도(쿼터)를 소모했으므로 잔여 횟수를 재조회한다
             // (삭제 화면의 '이번 달 재생성 불가' 경고가 최신 잔여로 판정되게).
@@ -213,6 +222,8 @@ internal fun MainViewModel.createVoiceProfiles(
             }
             message = null
         }.onFailure { error ->
+            // 계정 전환으로 우리가 끊은 것이면 에러가 아니다 — 보고도 메시지도 남기지 않는다.
+            if (error is VoiceCreateAbortedException || sessionChanged()) return@onFailure
             AlarmTalkLog.reportError("Failed to create voice profile", error)
             val app = getApplication<android.app.Application>()
             message = when (apiErrorCode(error)) {
@@ -225,6 +236,8 @@ internal fun MainViewModel.createVoiceProfiles(
                 else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
         }
+        // busy 는 세션과 무관하게 반드시 내린다 — 가드로 일찍 빠져나온 경우에도 남겨 두면
+        // 등록 화면이 '만드는 중' 에서 못 빠져나온다.
         voiceProfileBusy = false
     }
     return true
