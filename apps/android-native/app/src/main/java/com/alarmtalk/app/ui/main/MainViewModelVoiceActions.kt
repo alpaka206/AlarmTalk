@@ -167,6 +167,16 @@ internal fun MainViewModel.createVoiceProfiles(
     val ownerUserId = session.user.id
     fun sessionChanged() = authSession?.user?.id != ownerUserId
     viewModelScope.launch {
+        // 로컬 녹음 샘플은 음성 생체정보 **평문** 이라, 이 등록이 끝나는 어느 갈래에서든
+        // 공용 캐시에 남겨 두면 안 된다(안 지우면 30일 스윕까지 그대로다, Codex #660).
+        suspend fun purgeSourceRecordings() {
+            withContext(Dispatchers.IO) {
+                drafts.forEach { draft ->
+                    runCatching { repository.deleteVoiceCloneSourceRecording(draft.audio.cacheKey) }
+                        .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
+                }
+            }
+        }
         runCatching {
             // 순서 고정: 동의 기록 → 업로드. 같은 runCatching 안에 두어 기록이 실패하면
             // 녹음이 절대 나가지 않고, 실패 처리도 업로드 실패와 같은 경로를 탄다.
@@ -208,16 +218,10 @@ internal fun MainViewModel.createVoiceProfiles(
                 }
             }
         }.onSuccess { profiles ->
-            // 로컬 녹음 샘플(음성 생체정보 **평문** .m4a) 정리는 세션 가드보다 **먼저** 한다.
-            // 계정이 바뀌었다고 여기서 그냥 돌아가면 앞 계정의 평문 생체정보가 공용 캐시에
-            // 남아 30일 스윕까지 그대로다(Codex #660). 지우는 것은 앞 계정 자신의 녹음이라
-            // 새 세션에 아무것도 적용하지 않고도 안전하게 할 수 있다.
-            withContext(Dispatchers.IO) {
-                drafts.forEach { draft ->
-                    runCatching { repository.deleteVoiceCloneSourceRecording(draft.audio.cacheKey) }
-                        .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
-                }
-            }
+            // 정리는 세션 가드보다 **먼저** 한다. 계정이 바뀌었다고 그냥 돌아가면 앞 계정의
+            // 평문 생체정보가 남는다. 지우는 것은 앞 계정 자신의 녹음이라 새 세션에 아무것도
+            // 적용하지 않고도 안전하다.
+            purgeSourceRecordings()
             if (sessionChanged()) return@onSuccess
             pendingVoiceDraft = profiles.firstOrNull()
             // 클론 생성이 이번 달 생성 시도(쿼터)를 소모했으므로 잔여 횟수를 재조회한다
@@ -226,7 +230,15 @@ internal fun MainViewModel.createVoiceProfiles(
             message = null
         }.onFailure { error ->
             // 계정 전환으로 우리가 끊은 것이면 에러가 아니다 — 보고도 메시지도 남기지 않는다.
-            if (error is VoiceCreateAbortedException || sessionChanged()) return@onFailure
+            // 다만 **떠나기 전에 평문 녹음은 지운다.** 그 계정은 이 기기에서 이어서 등록할 수
+            // 없으므로(세션이 이미 바뀌었다) 남겨 둘 이유가 없고, 남기면 성공 갈래에서 막아 둔
+            // 것과 같은 구멍이 실패 갈래로 열린다(Codex #660).
+            // 반대로 **같은 계정의 일반 실패**(네트워크 등)에서는 지우지 않는다 — 사용자가
+            // 그대로 다시 시도할 수 있어야 한다.
+            if (error is VoiceCreateAbortedException || sessionChanged()) {
+                purgeSourceRecordings()
+                return@onFailure
+            }
             AlarmTalkLog.reportError("Failed to create voice profile", error)
             val app = getApplication<android.app.Application>()
             message = when (apiErrorCode(error)) {

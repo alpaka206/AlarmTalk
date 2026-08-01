@@ -810,7 +810,11 @@ internal fun AlarmTalkApp(
     // 다른 화면으로 샐 수 있는 출구를 두지 않는다.
     // 알람 다중 선택(길게 누르기) 중인지 — 이때는 ＋ FAB 를 감춘다.
     var alarmSelectionActive by remember { mutableStateOf(false) }
-    val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
+    // needsConsent 가 아니라 **showConsentScreen** 을 본다. 선택 동의만 재수집하는 경우
+    // (collect=[marketing]) needsConsent 는 false 인데 동의 화면은 떠 있어서, 하단바와 ＋ FAB 가
+    // 그 화면 아래에 그대로 남아 눌린다 — 수집이 끝나기 전에 탭을 바꾸거나 편집기 라우트를
+    // 밀어 넣을 수 있다(Codex #660). 이 파일의 다른 게이트는 모두 이미 showConsentScreen 을 본다.
+    val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.showConsentScreen &&
         !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
 
     Scaffold(
