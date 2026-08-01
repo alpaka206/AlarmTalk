@@ -41,20 +41,28 @@ import androidx.compose.ui.window.Dialog
 internal fun VoiceConsentSheet(
     busy: Boolean,
     types: List<String>,
+    registeringVoice: Boolean,
     onAgree: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // 음성 생체정보를 묻는 자리에서만 '목소리 등록' 문맥이다. 국외 이전만 요구되는 자리
-    // (기본 목소리로 TTS 생성)에서는 목소리 등록 이야기를 꺼내면 안 된다 — 등록하지도
-    // 않는 사용자에게 등록 책임 확인을 받는 꼴이 된다.
     val asksBiometric = "voice_biometric" in types
     val asksOverseas = "overseas_transfer" in types
+    // '목소리 등록' 문맥인지는 **무엇을 묻는가**가 아니라 **동의 직후 무엇을 하는가**로 정한다.
+    // 생체정보 동의는 이미 유효하고 국외 이전만 빠진 상태(그 동의의 최소 정책 버전만 올라간
+    // 경우)에서도 등록은 그대로 이어진다 — 묻는 항목으로 문맥을 파생하면 그 자리에서 TTS 카피가
+    // 떠서, 사용자는 '문구 생성 동의'인 줄 알고 눌렀는데 실제로는 녹음이 올라가고 클론이
+    // 만들어진다(Codex #660). 반대로 국외 이전만 받는 TTS 자리에서는 등록 이야기를 꺼내면
+    // 안 된다 — 등록하지도 않는 사용자에게 등록 책임 확인을 받는 꼴이 된다.
+    val registrationContext = asksBiometric || registeringVoice
 
     var ownership by remember { mutableStateOf(false) }
     var liability by remember { mutableStateOf(false) }
     var biometric by remember { mutableStateOf(false) }
     var overseas by remember { mutableStateOf(false) }
-    val allChecked = (!asksBiometric || (ownership && liability && biometric)) &&
+    // 소유·책임 확인은 등록 문맥이면 받는다. 생체정보 동의 체크는 그 동의를 실제로 요구할
+    // 때만 — 이미 유효한 동의를 다시 묻지 않는다.
+    val allChecked = (!registrationContext || (ownership && liability)) &&
+        (!asksBiometric || biometric) &&
         (!asksOverseas || overseas)
 
     Dialog(onDismissRequest = { if (!busy) onDismiss() }) {
@@ -69,7 +77,7 @@ internal fun VoiceConsentSheet(
             ) {
                 Text(
                     text = stringResource(
-                        if (asksBiometric) R.string.voice_consent_title else R.string.tts_consent_title,
+                        if (registrationContext) R.string.voice_consent_title else R.string.tts_consent_title,
                     ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -83,12 +91,12 @@ internal fun VoiceConsentSheet(
                 ) {
                     Text(
                         text = stringResource(
-                            if (asksBiometric) R.string.voice_consent_body else R.string.tts_consent_body,
+                            if (registrationContext) R.string.voice_consent_body else R.string.tts_consent_body,
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (asksBiometric) {
+                    if (registrationContext) {
                         VoiceConsentCheck(
                             checked = ownership,
                             onCheckedChange = { ownership = it },
@@ -99,6 +107,8 @@ internal fun VoiceConsentSheet(
                             onCheckedChange = { liability = it },
                             label = stringResource(R.string.voice_consent_check_liability),
                         )
+                    }
+                    if (asksBiometric) {
                         VoiceConsentCheck(
                             checked = biometric,
                             onCheckedChange = { biometric = it },
@@ -122,11 +132,11 @@ internal fun VoiceConsentSheet(
                     }
                     TextButton(onClick = onAgree, enabled = allChecked && !busy) {
                         Text(
-                            // 국외 이전만 받는 자리에서는 목소리를 만들지 않는다 — 동의만
-                            // 기록하고 끝나므로 '목소리 만들기' 라고 하면 안 한 일을 했다고
-                            // 말하는 셈이다.
+                            // 동의 뒤에 이어서 만들 등록 요청이 없으면 '목소리 만들기' 라고
+                            // 하면 안 한 일을 했다고 말하는 셈이다. 반대로 등록이 이어지면
+                            // 반드시 그렇게 말해야 한다.
                             text = stringResource(
-                                if (asksBiometric) {
+                                if (registrationContext) {
                                     R.string.voice_consent_agree
                                 } else {
                                     R.string.voice_consent_agree_continue
