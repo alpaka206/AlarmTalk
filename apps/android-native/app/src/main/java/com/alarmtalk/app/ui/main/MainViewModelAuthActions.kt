@@ -908,8 +908,14 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
  *
  * 그래서 마케팅 선례와 두 가지가 다르다:
  *  - **낙관적 즉시 반영을 하지 않는다.** 서버가 200 을 준 뒤에만 화면을 바꾼다.
- *  - 성공하면 목소리 목록을 다시 읽고 접근권 동기화를 즉시 돌린다. 서버 푸시만 믿으면
- *    정작 철회를 누른 그 기기의 알람이 늦게 바뀐다.
+ *  - 서버가 지웠다고 확인해 준 순간, **로컬 알람 강등을 그 자리에서 끝낸다.** 알람 발사는
+ *    전부 로컬이라(AGENTS.md 알람 불변 규칙) 서버가 클론을 지워도 Room 의 캐시 오디오는
+ *    그대로 남고, 울릴 때 생체정보 동의를 확인하는 게이트가 없다. 여기서 안 끊으면
+ *    **철회한 목소리가 계속 울린다.**
+ *    목록 재조회(loadVoiceProfiles)와 접근권 워커는 네트워크가 필요해 폴백이 못 된다 —
+ *    워커는 NetworkType.CONNECTED 제약이 걸려 있고 목소리 목록을 두 번 부른 뒤에야
+ *    판단한다. 연결이 끊기거나 프로세스가 죽으면 다음 동기화까지 그대로다(Codex #660).
+ *    그래서 **네트워크가 필요 없는 타깃 강등을 먼저** 하고, 그 둘은 폴백으로만 둔다.
  *
  * 재동의는 이 화면이 아니라 목소리를 다시 등록할 때 받는다(sensitive_missing → 동의 시트).
  * 그래서 토글이 아니라 단방향 '철회' 액션이다.
@@ -921,6 +927,13 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
     }
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 철회로 사라질 목소리 id 를 **미리** 잡아 둔다. 성공 뒤에는 서버에서 이미 지워져 목록을
+    // 다시 물어볼 수 없고, 물어보려면 네트워크가 필요해 오프라인에서 아무것도 못 하게 된다.
+    // 시스템(기본) 목소리는 철회와 무관하므로 제외한다.
+    val revokedVoiceIds = voiceProfiles
+        .filter { it.isSystem != true }
+        .map { it.id }
+        .filter { it.isNotBlank() }
     val result = runCatching {
         api.recordConsents(
             authorization,
@@ -944,6 +957,16 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
             if ("voice_biometric" !in sensitiveConsentMissing) {
                 sensitiveConsentMissing = sensitiveConsentMissing + "voice_biometric"
             }
+            // 1) 네트워크 없이 끝나는 것부터. 서버가 지웠다고 확인해 준 id 만 대상으로 하는
+            //    타깃 강등이라 소셜 목록 신선도 가드에 막히지 않는다(목소리 삭제 경로와 같다).
+            for (voiceId in revokedVoiceIds) {
+                runCatching { repository.degradeAlarmsUsingVoiceProfile(voiceId) }
+                    .onFailure { error ->
+                        AlarmTalkLog.reportError("Failed to degrade alarms after consent withdrawal", error)
+                    }
+            }
+            voiceProfiles = voiceProfiles.filter { it.isSystem == true }
+            // 2) 여기부터는 폴백이다 — 실패해도 위에서 이미 발사 경로는 끊겼다.
             loadVoiceProfiles()
             com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(app)
             message = app.getString(R.string.msg_voice_consent_withdrawn)
