@@ -258,14 +258,16 @@ private suspend fun MainViewModel.redeemPromoCode(authorization: String, code: S
     }
 }
 
-internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) {
+// 이용권 '선물' 결제는 UI 가 없다(선물은 GIFT- 코드 등록/공유 경로로만 쓴다). 남아 있던
+// gift 인자와 그 분기를 걷었다 — 두 호출부 모두 기본값(false)으로만 불렀다.
+internal fun MainViewModel.checkoutPlan(planKey: String) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_change_plan)) ?: return
     viewModelScope.launch {
         billingBusy = true
         runCatching {
-            api.checkoutPlan(authorization, CheckoutRequest(planKey = planKey, gift = gift))
+            api.checkoutPlan(authorization, CheckoutRequest(planKey = planKey))
         }.onSuccess { response ->
-            if (!gift) response.subscription?.let { subscription ->
+            response.subscription?.let { subscription ->
                 val updatedSubscription = BillingSubscriptionResponse(
                     subscription = subscription,
                     plan = response.plan,
@@ -288,24 +290,19 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
                     ),
                 ) + vouchers
             }
-            message = if (gift) {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_gift_available, response.plan.name)
-            } else {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied_named, response.plan.name)
-            }
+            message = getApplication<android.app.Application>()
+                .getString(R.string.msg_gb_plan_applied_named, response.plan.name)
             refreshBillingAfterMutation(authorization, "checkout")
-            if (!gift) {
-                refreshAppSession()
-                refreshSocial()
-                if (response.plan.isSharedPassPlan()) {
-                    navigateSharedPassTick++
-                } else {
-                    navigateHomeTick++
-                }
+            refreshAppSession()
+            refreshSocial()
+            if (response.plan.isSharedPassPlan()) {
+                navigateSharedPassTick++
+            } else {
+                navigateHomeTick++
             }
         }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to checkout plan key=$planKey gift=$gift", error)
-            val fallback = if (gift) getApplication<android.app.Application>().getString(R.string.msg_gb_gift_failed) else getApplication<android.app.Application>().getString(R.string.msg_gb_plan_apply_failed)
+            AlarmTalkLog.reportError("Failed to checkout plan key=$planKey", error)
+            val fallback = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_apply_failed)
             message = billingFailureMessage(getApplication<android.app.Application>(), apiErrorCode(error), userFacingError(error, fallback))
         }
         billingBusy = false

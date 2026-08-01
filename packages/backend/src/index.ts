@@ -242,7 +242,6 @@ app.onError((err, c) => {
 });
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
-// 주기를 바꾸면 lib/scheduler.ts 의 CRON_WINDOW_MINUTES 도 함께 바꿔야 한다.
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   const rawDb = getDB(env);
   // 520 is a transient failure of Turso's HTTP gateway. Retry only read
@@ -352,7 +351,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 된다(push_tokens 는 즉시 배달용 토큰이라 이 경로가 소비하면 안 됨). '새 가족 알람 도착' 즉시성은 생성
   // 시점의 sendFamilyAlarmPush(data-only)로 처리하고, 발사 자체는 로컬에 맡긴다.
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
-  //  틱마다 Turso row-read 만 소모했다. 발사 예정 확인이 필요하면 GET /tick 으로 온디맨드 조회.)
+  //  틱마다 Turso row-read 만 소모했다.)
 
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만

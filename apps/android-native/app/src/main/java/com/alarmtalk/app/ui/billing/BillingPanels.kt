@@ -66,7 +66,6 @@ internal fun SubscriptionPanel(
     vouchers: List<VoucherItem>,
     // planKey → Play 실제 표시가격(formattedPrice). 비어 있으면 문자열 리소스로 폴백.
     planPrices: Map<String, String>,
-    onCheckoutPlan: (String, Boolean) -> Unit,
     onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
