@@ -525,8 +525,9 @@ private fun AlarmEntity.toRingingUiState(
     // 표시 텍스트: 버킷 알람이면 발사 시 고른 variant 의 문구를 쓴다(오디오와 같은 bucketVariantIndex).
     // 그래야 날씨/운세 매칭 버킷에서 음성('비 와요')과 잠금화면 문구가 어긋나지 않는다. 버킷이 아니면
     // 기존 voiceText. 서버가 delivery 태그를 이미 제거하지만 과거분/회귀 대비 한 번 더 벗긴다 —
-    // 직접 입력 문구도 예외가 아니다. 태그가 섞여 저장된 옛 문구를 편집기에서 한 번 고치면
-    // '사용자가 친 대괄호'가 되어 계속 남는데, 사용자는 그걸 쓴 적이 없다.
+    // 단 **기계가 만든 문구일 때만**이다. 버킷 클립은 우리가 만든 스톡 문구라 항상 대상이고,
+    // 그 외에는 랜덤/프리셋일 때만 벗긴다. 직접 입력 문구의 대괄호는 사용자 것이라 손대지
+    // 않는다 — 태그와 같은 단어를 사용자가 쓸 수 있다(`[calm] 약 먹기`, Codex #660).
     // 빈/공백 문구는 null 로 취급해 대표 voiceText 로 폴백한다(Elvis 는 null 에만 걸려, "" 면 잠금화면
     // 문구가 통째로 사라진다). 한 variant 의 text 가 비어도 대표 문구는 보인다.
     val bucketText = if (bucketId != null && playbackVariantIndex != null) {
@@ -536,7 +537,7 @@ private fun AlarmEntity.toRingingUiState(
     }
     val displayedVoiceText = bucketText ?: voiceText
     val voiceMessage = displayedVoiceText
-        ?.let { raw -> raw.stripDeliveryTags() }
+        ?.let { raw -> raw.stripDeliveryTags(generated = bucketText != null || voiceRandomPrompt) }
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
     val snoozeAvailable = snoozeEnabled &&
         (

@@ -40,20 +40,26 @@ private val BRACKETED_RE = Regex("""\[([a-z][a-z -]{1,32})]""", RegexOption.IGNO
 private val WHITESPACE_RE = Regex("""\s+""")
 
 /**
- * 화면에 보여줄 문구에서 delivery 태그를 벗긴다.
+ * **기계가 만든 문구**에서 delivery 태그를 벗긴다.
  *
- * 태그는 음성 연출용이라 **어떤 경로의 문구든 사용자에게 보이면 안 된다.** 서버가 이미 벗겨서
- * 내려주지만, 과거에 태그가 섞여 저장된 행이 남아 있고(19ffac80 제보: dev 268행 중 10행
- * `김규원, [brightly] 아침이 밝았어…`) 그 문구를 편집기에서 한 번 고치면 '사용자가 친 대괄호'로
- * 취급돼 계속 살아남는다. 그래서 표시 직전에 한 번 더 벗긴다.
+ * 태그는 음성 연출용이라 사용자에게 보이면 안 된다. 서버가 이미 벗겨서 내려주지만, 과거에
+ * 태그가 섞여 저장된 행이 남아 있어(19ffac80 제보: dev 268행 중 10행
+ * `김규원, [brightly] 아침이 밝았어…`) 표시 직전에 한 번 더 벗긴다.
  *
- * **대괄호를 가리지 않고 벗기면 안 된다.** 서버는 사용자가 친 대괄호를 의도적으로 보존하는데
- * (`deriveAlarmDisplayText`) 앱만 지우면, 편집기에서 한 번 열었다 저장하는 순간 그 부분이 영구히
- * 사라진다. `[calm]` 하나만 입력한 알람은 문구가 통째로 비어 저장조차 막혔다(Codex #660).
- * 그래서 [DELIVERY_TAGS] 에 있는 것만 벗기고, 벗길 게 없으면 원문을 **그대로** 돌려준다
- * (공백 정리조차 하지 않는다 — 이 값이 그대로 다시 저장되는 경로가 있다).
+ * **판정 기준은 태그 철자가 아니라 출처다.** 사용자가 직접 친 문구에는 손대지 않는다.
+ * 서버는 사용자가 친 대괄호를 의도적으로 보존하는데(`deriveAlarmDisplayText`) 앱만 지우면,
+ * 편집기에서 한 번 열었다 저장하는 순간 그 부분이 영구히 사라진다. 철자만 보고 거르면
+ * `[calm] 약 먹기` 처럼 **태그와 같은 단어를 사용자가 쓴 경우**를 구분할 수 없다(Codex #660).
+ * 그래서 호출부가 '이 문구가 생성물인가'를 [generated] 로 알려 준다.
+ *
+ * 생성물이어도 [DELIVERY_TAGS] 에 있는 것만 벗기고(우리가 내보낸 적 없는 대괄호는 보존),
+ * 벗길 게 없으면 원문을 **그대로** 돌려준다 — 공백 정리조차 하지 않는다. 이 값이 그대로 다시
+ * 저장되는 경로가 있다.
+ *
+ * @param generated 서버·프리셋이 만든 문구면 true, 사용자가 직접 입력한 문구면 false.
  */
-internal fun String.stripDeliveryTags(): String {
+internal fun String.stripDeliveryTags(generated: Boolean): String {
+    if (!generated) return this
     var removed = false
     val stripped = BRACKETED_RE.replace(this) { match ->
         if (match.groupValues[1].lowercase() in DELIVERY_TAGS) {

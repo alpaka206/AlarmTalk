@@ -18,13 +18,13 @@ class DeliveryTagStripTest {
         // 19ffac80 제보 원본 형태(dev messages 268행 중 10행).
         assertEquals(
             "김규원, 아침이 밝았어. 이불 속 오 분만 더.",
-            "[morning] 김규원, [brightly] 아침이 밝았어. 이불 속 오 분만 더.".stripDeliveryTags(),
+            "[morning] 김규원, [brightly] 아침이 밝았어. 이불 속 오 분만 더.".stripDeliveryTags(generated = true),
         )
     }
 
     @Test
     fun `대문자 태그도 벗긴다`() {
-        assertEquals("잘 잤어?", "[Cheerfully] 잘 잤어?".stripDeliveryTags())
+        assertEquals("잘 잤어?", "[Cheerfully] 잘 잤어?".stripDeliveryTags(generated = true))
     }
 
     @Test
@@ -32,7 +32,7 @@ class DeliveryTagStripTest {
         // 태그 목록에 없는 대괄호 = 사용자 문구. 지우면 저장 시 영구 소실된다.
         assertEquals(
             "[after lunch] take medicine",
-            "[after lunch] take medicine".stripDeliveryTags(),
+            "[after lunch] take medicine".stripDeliveryTags(generated = true),
         )
     }
 
@@ -40,25 +40,39 @@ class DeliveryTagStripTest {
     fun `벗길 게 없으면 원문을 손대지 않는다`() {
         // 공백 정리조차 하지 않는다 — 이 값이 그대로 다시 저장되는 경로가 있다.
         val original = "  일어나  규원아  "
-        assertEquals(original, original.stripDeliveryTags())
+        assertEquals(original, original.stripDeliveryTags(generated = true))
     }
 
     @Test
     fun `태그와 사용자 대괄호가 섞이면 태그만 벗긴다`() {
         assertEquals(
             "[after lunch] 약 먹자",
-            "[warmly] [after lunch] 약 먹자".stripDeliveryTags(),
+            "[warmly] [after lunch] 약 먹자".stripDeliveryTags(generated = true),
         )
     }
 
     @Test
     fun `태그만 있는 문구는 비우지 않는다`() {
         // 비우면 편집기가 저장을 막아 그 알람을 고치지도 지우지도 못하게 된다.
-        assertEquals("[calm]", "[calm]".stripDeliveryTags())
+        assertEquals("[calm]", "[calm]".stripDeliveryTags(generated = true))
     }
 
     @Test
     fun `한글 대괄호는 태그가 아니다`() {
-        assertEquals("[점심 후] 약 먹기", "[점심 후] 약 먹기".stripDeliveryTags())
+        assertEquals("[점심 후] 약 먹기", "[점심 후] 약 먹기".stripDeliveryTags(generated = true))
+    }
+
+    @Test
+    fun `사용자가 직접 입력한 문구는 태그 철자여도 손대지 않는다`() {
+        // 철자만 보고 거르면 `[calm] 약 먹기` 처럼 태그와 같은 단어를 사용자가 쓴 경우를
+        // 구분할 수 없다. 저장 시 그 부분이 영구히 사라진다.
+        assertEquals(
+            "[calm] 약 먹기",
+            "[calm] 약 먹기".stripDeliveryTags(generated = false),
+        )
+        assertEquals(
+            "[morning] 김규원, [brightly] 아침이 밝았어.",
+            "[morning] 김규원, [brightly] 아침이 밝았어.".stripDeliveryTags(generated = false),
+        )
     }
 }

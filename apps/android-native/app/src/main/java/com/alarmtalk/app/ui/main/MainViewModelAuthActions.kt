@@ -19,7 +19,9 @@ import com.alarmtalk.app.network.PasswordResetRequest
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -927,10 +929,29 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
     }
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
-    // 철회로 사라질 목소리 id 를 **미리** 잡아 둔다. 성공 뒤에는 서버에서 이미 지워져 목록을
-    // 다시 물어볼 수 없고, 물어보려면 네트워크가 필요해 오프라인에서 아무것도 못 하게 된다.
-    // 시스템(기본) 목소리는 철회와 무관하므로 제외한다.
-    val revokedVoiceIds = voiceProfiles
+    // 철회로 사라질 목소리 id 를 **POST 전에 서버에서 확정**한다.
+    //
+    // 화면 상태(voiceProfiles)만 믿으면 안 된다 — 프리로드가 아직 안 끝났거나 실패했으면 비어
+    // 있고, 그대로 진행하면 강등 대상이 0개가 되어 철회한 목소리가 계속 울린다(Codex #660).
+    // Room 은 alarm.voiceProfileId 만 갖고 있어 '내 클론'과 '공유받은 클론'을 구분하지 못하므로
+    // 로컬만으로는 대상을 정할 수 없다.
+    //
+    // 확정하지 못하면 **철회를 시작하지 않는다.** 아직 아무것도 지우지 않은 상태라 재시도가
+    // 안전하다 — 반대로 지운 뒤에 실패하면 되돌릴 방법이 없다. POST 를 보낼 수 있는 상황이면
+    // 이 조회도 되므로 실사용에서 막히지 않는다.
+    val revokedVoiceIds = runCatching {
+        withContext(Dispatchers.IO) {
+            api.listVoiceProfiles(authorization).profiles
+        }
+    }.getOrElse { error ->
+        AlarmTalkLog.reportError("Failed to resolve owned voices before consent withdrawal", error)
+        message = userFacingError(
+            error,
+            getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
+        )
+        return false
+    }
+        // 시스템(기본) 목소리는 내 생체정보가 아니라 철회와 무관하다.
         .filter { it.isSystem != true }
         .map { it.id }
         .filter { it.isNotBlank() }

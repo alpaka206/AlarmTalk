@@ -118,6 +118,20 @@ function parsePolicyVersion(raw: string): number {
   return /^\d+$/.test(trimmed) ? Number(trimmed) : 0;
 }
 
+/**
+ * 저장된 기록의 버전을 읽을 때 쓰는 정규화.
+ *
+ * 현재 문서 버전보다 **큰** 값은 우리가 발급한 적이 없다 — 서버가 버전을 고정하기 전에는
+ * 클라가 보낸 값을 그대로 저장했기 때문에, 위조·버그로 들어온 `999` 같은 행이 이미 남아 있을
+ * 수 있다. 유효성 판정이 한쪽(최소 버전 이상)만 보기 때문에 그런 행은 **이후 모든 재동의를
+ * 영구히 무력화한다.** 쓰기를 고정한 것만으로는 닫히지 않는 경로라(과거 행은 그대로다)
+ * 읽는 쪽에서 0 으로 떨어뜨려 '답한 적 없음'으로 되돌린다 — 모르면 다시 묻는 쪽이 안전하다.
+ */
+function sanitizeStoredPolicyVersion(raw: string): number {
+  const parsed = parsePolicyVersion(raw);
+  return parsed > parsePolicyVersion(CURRENT_POLICY_VERSION) ? 0 : parsed;
+}
+
 /** 알 수 없는 유형은 현재 문서 버전을 요구한다(fail-safe). */
 function minPolicyVersionOf(type: string): number {
   return (
@@ -143,7 +157,7 @@ export async function loadLatestConsents(
     if (latest.has(type)) continue; // 유형별 최신 1건만
     latest.set(type, {
       agreed: Number(row.agreed) === 1,
-      version: parsePolicyVersion(String(row.policy_version)),
+      version: sanitizeStoredPolicyVersion(String(row.policy_version)),
     });
   }
   return latest;

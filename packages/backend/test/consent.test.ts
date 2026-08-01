@@ -13,7 +13,12 @@ import {
   ALLOWED_CONSENT_TYPES,
   CONSENT_MIN_POLICY_VERSION,
   CURRENT_POLICY_VERSION,
+  loadLatestConsents,
+  consentAnswerIsCurrent,
+  missingConsentTypesFrom,
 } from '../src/lib/consent';
+import { createClient } from '@libsql/client';
+import { runMigrations } from '../src/lib/migrations';
 
 // consentMiddleware 가 getDB 로 user_consents 를 조회한다. 게이트 테스트에서 동의 상태를
 // 제어하기 위해 mock 한다. vi.mock 은 파일 상단으로 호이스트되며 factory 는 'mock' 으로
@@ -233,11 +238,14 @@ describe('lib/consent — CONSENT_MIN_POLICY_VERSION', () => {
     );
   });
 
-  it('기록 버전이 최소 버전보다 높아도 유효하다', async () => {
+  // 최소 버전과 현재 문서 버전 **사이**의 기록은 유효하다. 예전엔 '9' 처럼 현재 문서 버전보다
+  // 큰 값도 유효하다고 단언했는데, 그건 우리가 발급한 적 없는 값이라 이후 재동의를 영구히
+  // 무력화한다 — 그 동작은 아래 '저장된 미래 버전' 블록이 무효로 고정한다.
+  it('기록 버전이 최소 버전보다 높아도(현재 문서 버전 이하면) 유효하다', async () => {
     mockDB.pushResult([
-      consentRow('terms', 1, '9'),
-      consentRow('privacy', 1, '9'),
-      consentRow('age14', 1, '9'),
+      consentRow('terms', 1, CURRENT_POLICY_VERSION),
+      consentRow('privacy', 1, CURRENT_POLICY_VERSION),
+      consentRow('age14', 1, CURRENT_POLICY_VERSION),
     ]);
     expect(await needsConsent(mockDB.client as never, 'pk-1', GENERAL_REQUIRED_CONSENTS)).toBe(
       false,
@@ -595,5 +603,51 @@ describe('GET /user/consents/status — collect / sensitive_missing', () => {
   it('민감 동의가 모두 유효하면 sensitive_missing 은 빈 배열', async () => {
     mockConsentRows = [...answeredRows(), consentRow('marketing', 1, '3')];
     expect((await consentStatus()).sensitive_missing).toEqual([]);
+  });
+});
+
+// 서버가 버전을 고정하기 전에는 클라가 보낸 값을 그대로 저장했다. 그래서 위조·버그로 들어온
+// '999' 같은 행이 이미 남아 있을 수 있는데, 유효성 판정이 '최소 버전 이상' 한쪽만 보기 때문에
+// 그 행 하나가 이후 모든 재동의를 영구히 무력화한다. 쓰기 고정만으로는 과거 행이 안 닫힌다.
+describe('저장된 미래 버전 기록은 읽을 때 무효로 떨어뜨린다', () => {
+  it('현재 문서 버전보다 큰 기록은 답한 적 없는 것으로 본다', async () => {
+    const db = createClient({ url: ':memory:' });
+    await runMigrations(db);
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: ['u-future', 'g-future', 'future@example.com'],
+    });
+    for (const type of ['terms', 'privacy', 'age14', 'overseas_transfer']) {
+      await db.execute({
+        sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
+              VALUES (?, ?, ?, '999', 1)`,
+        args: [`c-${type}`, 'u-future', type],
+      });
+    }
+
+    const latest = await loadLatestConsents(db, 'u-future');
+    // 999 는 우리가 발급한 적 없는 값이라 0(미응답)으로 떨어진다.
+    expect(latest.get('terms')?.version).toBe(0);
+    expect(consentAnswerIsCurrent(latest, 'terms')).toBe(false);
+    // 그래서 필수 동의가 다시 '누락'으로 잡혀 재동의를 받게 된다.
+    expect(missingConsentTypesFrom(latest, REQUIRED_CONSENT_TYPES)).toEqual(
+      expect.arrayContaining(['terms', 'privacy', 'age14']),
+    );
+  });
+
+  it('정상 버전 기록은 그대로 유효하다', async () => {
+    const db = createClient({ url: ':memory:' });
+    await runMigrations(db);
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: ['u-ok', 'g-ok', 'ok@example.com'],
+    });
+    await db.execute({
+      sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
+            VALUES ('c-ok', 'u-ok', 'terms', ?, 1)`,
+      args: [CURRENT_POLICY_VERSION],
+    });
+    const latest = await loadLatestConsents(db, 'u-ok');
+    expect(consentAnswerIsCurrent(latest, 'terms')).toBe(true);
   });
 });
