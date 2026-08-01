@@ -217,15 +217,15 @@ internal fun VoiceAudioCard(
                     ) {
                         val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
                         if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
-                            // 처음 고르는 목소리: 마지막에 쓴 목소리를 그대로 이어 준다.
-                            // 그 목소리가 없으면 내 목소리 → 공유받은 목소리 → 기본 목소리
-                            // 순으로 내려간다(각 그룹 안에서도 마지막에 쓴 것을 우선).
+                            // 처음 고르는 목소리: 마지막에 쓴 목소리가 **어느 그룹이든 최우선**이다.
+                            // 그룹을 먼저 보면(내 클론 우선) 클론을 가진 사람이 마지막에 기본
+                            // 목소리나 공유받은 목소리를 썼을 때 그 선택이 매번 무시된다 —
+                            // 사용자에겐 '고른 게 유지되지 않는' 리셋으로 보인다.
+                            // 마지막에 쓴 게 없을 때만 내 목소리 → 공유받은 목소리 → 목록 첫째.
                             editor.selectVoiceProfile(
-                                readyOwnProfiles.firstOrNull { it.id == lastUsedVoiceId }?.id
+                                profileOptions.firstOrNull { it.id == lastUsedVoiceId }?.id
                                     ?: readyOwnProfiles.firstOrNull()?.id
-                                    ?: readyFamilyVoices.firstOrNull { it.id == lastUsedVoiceId }?.id
                                     ?: readyFamilyVoices.firstOrNull()?.id
-                                    ?: profileOptions.firstOrNull { it.id == lastUsedVoiceId }?.id
                                     ?: profileOptions.first().id,
                             )
                         }

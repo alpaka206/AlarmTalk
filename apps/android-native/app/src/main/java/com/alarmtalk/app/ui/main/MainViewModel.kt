@@ -369,13 +369,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
+    private val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
 
     // 첫 로그인 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
     var showVoiceSetup by mutableStateOf(false)
         internal set
 
-    // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
-    // 알람에 마지막으로 쓴 목소리 — 편집기가 처음 고르는 값(목소리 탭엔 표시하지 않는다).
+    // 알람에 마지막으로 쓴 목소리 — 새 알람 편집기가 처음 고르는 값(목소리 탭엔 표시하지 않는다).
+    // 어느 그룹(내 클론·공유받은·기본)이든 이 값이 최우선이다: 그룹을 먼저 보면 클론을 가진
+    // 사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아가 '유지가 안 된다'가 된다.
     var lastUsedVoiceId by mutableStateOf<String?>(null)
         internal set
 
@@ -677,6 +679,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefetchFreeBucketClips(resolved)
     }
 
+    /**
+     * 알람에 마지막으로 쓴 **문구 선택**을 기억한다 — 다음 새 알람의 기본값이 된다.
+     * 목소리(rememberVoiceUsed)와 한 쌍이라 기록 시점도 같다: **알람 저장 성공 시.**
+     *
+     * 편집기에서 문구를 눌러만 보고 취소한 것까지 기억하면, 만들지도 않은 알람의 선택이 다음
+     * 알람에 남는다. 직접 입력은 기억하지 않는다 — 그 문구는 그 알람의 것이고(사용자 확정),
+     * 빈 직접입력으로 시작하면 저장이 막힌다. 이어받는 것은 '종류' 하나뿐이고 회전 인덱스·
+     * 클립 키 같은 알람별 상태는 절대 따라가지 않는다.
+     */
+    internal fun rememberMessageChoiceUsed(draft: AlarmDraft) {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        if (draft.playMode == com.alarmtalk.app.data.AlarmPlayModes.ALARM_ONLY) return
+        val bucket = draft.bucketId?.takeIf { it.isNotBlank() }
+        if (bucket != null) {
+            dynamicPromptStore.saveLastFreeBucket(userId, bucket)
+            return
+        }
+        if (!draft.voiceRandomPrompt) return
+        draft.voiceRandomContext
+            ?.takeIf { it.isNotBlank() }
+            ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
+    }
+
+    /** 편집기가 새 알람의 기본값으로 쓸 '마지막 선택'. 로그인 전이면 둘 다 null 이다. */
+    internal fun lastMessageContext(): String? =
+        dynamicPromptStore.readLastMessageContext(authSession?.user?.id)
+
+    internal fun lastFreeBucket(): String? =
+        dynamicPromptStore.readLastFreeBucket(authSession?.user?.id)
+
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
     // 재로그인/콜드스타트 시 서버 응답을 기다리는 로딩 없이 바로 통과시키되, 백그라운드
     // 서버 재확인은 그대로 진행한다. 정책 버전이 올라가면(개정) 옛 버전 동의 캐시는 폐기해,
@@ -745,6 +777,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal fun clearCurrentDefaultVoicePreferences() {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
         defaultVoiceStore.clear(userId)
+        // 마지막에 고른 문구 종류·무료 테마도 같은 성격의 취향이라 함께 정리한다.
+        // (이 함수는 명시적 로그아웃·탈퇴에서만 불린다 — 자동 401 경로는 부르지 않는다.)
+        dynamicPromptStore.clearLastSelections(userId)
     }
 
     internal fun clearUserScopedRemoteState() {

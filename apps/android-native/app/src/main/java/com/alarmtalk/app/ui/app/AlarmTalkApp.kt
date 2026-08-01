@@ -1066,6 +1066,11 @@ internal fun AlarmTalkApp(
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
                   val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
+                  // 직전 선택은 **새 알람 경로에만** 넘긴다. 기존 알람 편집(아래 라우트)에는
+                  // 넘기지 않는다 — 열기만 해도 문구·테마가 바뀌면 안 되기 때문이다.
+                  // 계정이 바뀌면 다시 읽는다(저장소가 계정별 키라 값도 계정별이다).
+                  val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
+                  val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
                   AlarmEditorScreen(
                       contentPadding = padding,
                       onRegisterCode = viewModel::registerCode,
@@ -1081,6 +1086,8 @@ internal fun AlarmTalkApp(
                       voiceProfileBusy = voiceProfileBusy,
                       stockClips = viewModel.stockClips,
                       lastUsedVoiceId = viewModel.lastUsedVoiceId,
+                      lastMessageContext = lastMessageContext,
+                      lastFreeBucket = lastFreeBucket,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
