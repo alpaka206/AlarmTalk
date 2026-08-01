@@ -86,14 +86,13 @@ internal fun RandomPromptSettingsPane(
     val context = LocalContext.current
     var draftContext by remember(randomContext) {
         mutableStateOf(
-            when {
-                randomContext == ManualMessageContext -> ManualMessageContext
-                // 보이는 옵션(날씨/운세/사랑/약/직접 입력)이 아닌 값(새 알람의 보이지 않는
-                // preset 등)이면, 추가 설정이 필요 없는 '약'을 기본 선택으로 둔다.
-                EditorMessageContexts.none { (key, _) ->
-                    key == normalizedRandomPromptContext(randomContext)
-                } -> "medication"
-                else -> normalizedRandomPromptContext(randomContext)
+            // 지금 값을 그대로 고른 상태로 연다. 예전에는 목록에 없는 값(preset)이면 '약'을
+            // 대신 체크했는데, 요약 행은 '기본 인사말'인데 열면 '약'이라 선택이 리셋된 것처럼
+            // 보였다. preset 이 목록에 있으니(EditorMessageContexts) 그럴 필요가 없다.
+            if (randomContext == ManualMessageContext) {
+                ManualMessageContext
+            } else {
+                normalizedRandomPromptContext(randomContext)
             },
         )
     }

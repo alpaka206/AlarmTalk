@@ -20,7 +20,12 @@ import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
   SENSITIVE_REQUIRED_CONSENTS,
+  FEATURE_CONSENT_TYPES,
+  OPTIONAL_CONSENT_TYPES,
   CURRENT_POLICY_VERSION,
+  consentAnswerIsCurrent,
+  loadLatestConsents,
+  missingConsentTypesFrom,
 } from '../lib/consent';
 
 const user = new Hono<AppEnv>();
@@ -284,7 +289,43 @@ user.post('/consents', async (c) => {
   if (!Array.isArray(list) || list.length === 0) {
     return c.json({ error: 'consents required', error_code: 'CONSENTS_REQUIRED' }, 400);
   }
-  const rows: Array<{ type: string; version: string; agreed: boolean }> = [];
+  // 기록되는 정책 버전은 **서버가 정한다**. 항목별 `version` 필드는 받기만 하고 버린다 —
+  // 클라 값을 그대로 저장하면 조작되거나 버그 있는 앱이 보낸 '999' 같은 기록이, 재동의
+  // 판정이 `>=` 인 탓에 이후 어떤 개정으로 CONSENT_MIN_POLICY_VERSION 을 올려도 그 유형의
+  // 재동의를 영구히 무력화한다.
+  //
+  // 다만 서버가 무조건 도장을 찍으면 반대쪽 구멍이 생긴다. 법무 문서 전문은 **APK 에 실려**
+  // 있어(빌드 시 docs/legal 복사) 화면에 뜨는 내용은 설치된 앱 버전에 고정된다. 문서가
+  // 개정돼 서버가 v5 가 됐는데 구버전 앱이 살아 있으면, 그 앱은 v4 본문을 보여주면서 v5
+  // 동의 기록을 만든다 — 이용자가 본 적 없는 문서에 동의한 것으로 남고, 진짜 v5 재동의는
+  // 이미 충족된 것으로 판정돼 영영 안 뜬다.
+  //
+  // 그래서 클라는 **자기가 실제로 띄운 문서의 버전**(document_version)을 함께 보내야 하고,
+  // 그것이 지금 게시된 버전과 다르면 기록하지 않는다. 기록되는 값은 여전히 서버 상수다 —
+  // document_version 은 저장용이 아니라 '같은 문서를 보고 있는가' 를 확인하는 값이다.
+  const documentVersion = (body as { document_version?: unknown }).document_version;
+  if (typeof documentVersion !== 'string' || documentVersion.trim() === '') {
+    return c.json(
+      {
+        error: 'document_version required',
+        error_code: 'DOCUMENT_VERSION_REQUIRED',
+        current: CURRENT_POLICY_VERSION,
+      },
+      400,
+    );
+  }
+  if (documentVersion.trim() !== CURRENT_POLICY_VERSION) {
+    return c.json(
+      {
+        error: 'Consent document is out of date',
+        error_code: 'POLICY_VERSION_MISMATCH',
+        current: CURRENT_POLICY_VERSION,
+        submitted: documentVersion.trim(),
+      },
+      409,
+    );
+  }
+  const rows: Array<{ type: string; agreed: boolean }> = [];
   for (const raw of list) {
     if (!raw || typeof raw !== 'object') continue;
     const item = raw as Record<string, unknown>;
@@ -297,10 +338,6 @@ user.post('/consents', async (c) => {
     }
     rows.push({
       type,
-      version:
-        typeof item.version === 'string' && item.version.trim()
-          ? item.version.trim().slice(0, 40)
-          : CURRENT_POLICY_VERSION,
       agreed: item.agreed === true || item.agreed === 1 || item.agreed === '1',
     });
   }
@@ -325,7 +362,7 @@ user.post('/consents', async (c) => {
         await tx.execute({
           sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
                 VALUES (?, ?, ?, ?, ?)`,
-          args: [crypto.randomUUID(), userPk, r.type, r.version, r.agreed ? 1 : 0],
+          args: [crypto.randomUUID(), userPk, r.type, CURRENT_POLICY_VERSION, r.agreed ? 1 : 0],
         });
       }
       if (withdrewSensitiveConsent) {
@@ -381,32 +418,52 @@ user.get('/consents', async (c) => {
 });
 
 // 동의 상태 조회. 기존 가입자/신규 가입자 모두 로그인 후 이 결과로 재동의 화면을 띄운다.
-// needs_consent = 필수 동의 중 하나라도 (미기록 | 미동의 | 현재 정책버전과 불일치) 이면 true.
+// 판정은 게이트 미들웨어와 같은 lib/consent 헬퍼로 하고(한 번 읽어 세 목록을 뽑는다),
+// 클라이언트는 collect 에 담긴 유형만 화면에 띄우고 그 유형만 제출한다.
 user.get('/consents/status', async (c) => {
   const userPk = c.get('userIdPK');
   const db = getDB(c.env);
   try {
-    // 미충족 유형 목록(missing)은 응답에 그대로 노출하므로 직접 계산하되, needs_consent
-    // 종합 판정은 게이트 미들웨어와 동일한 needsConsent 헬퍼로 일관성을 보장한다.
-    const res = await db.execute({
-      sql: `SELECT consent_type, policy_version, agreed
-            FROM user_consents WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`,
-      args: [userPk],
-    });
-    const latest = new Map<string, { agreed: boolean; version: string }>();
-    for (const row of res.rows) {
-      const type = String(row.consent_type);
-      if (latest.has(type)) continue; // 유형별 최신 1건만
-      latest.set(type, { agreed: Number(row.agreed) === 1, version: String(row.policy_version) });
-    }
-    const missing = REQUIRED_CONSENT_TYPES.filter((type) => {
-      const cur = latest.get(type);
-      return !cur || !cur.agreed || cur.version !== CURRENT_POLICY_VERSION;
-    });
+    const latest = await loadLatestConsents(db, userPk);
+    // needs_consent 는 필수 유형 기준 — 선택/민감 동의 때문에 가입 게이트가 뜨면 안 된다.
+    const missing = missingConsentTypesFrom(latest, REQUIRED_CONSENT_TYPES);
+    // 이번 동의 화면에서 받아야 하는 유형. 이미 유효한 기록이 있는 유형은 넣지 않는다 —
+    // 클라가 안 띄운 유형을 제출하지 않아야 기존 marketing 동의가 살아남는다.
+    // 선택 동의는 '거절'도 유효한 응답이라 agreed 가 아니라 버전만 본다.
+    // 기능 동의(voice_biometric)·선택 동의(marketing)는 '거절' 도 유효한 응답이라 agreed 가
+    // 아니라 버전만 본다 — 한 번 답한 사람에게 다시 묻지 않는다. 거절한 사람은 그 기능을
+    // 실제로 쓰려는 순간(목소리 등록 화면)에만 다시 만난다.
+    const collect = [
+      ...missing,
+      ...[...FEATURE_CONSENT_TYPES, ...OPTIONAL_CONSENT_TYPES].filter(
+        (type) => !consentAnswerIsCurrent(latest, type),
+      ),
+    ];
     return c.json({
+      // needs_consent 와 needs_collection 은 의미가 다르다. 섞어 쓰면 안 된다.
+      //  - needs_consent: **앱을 못 쓰게 막는 게이트** 신호(필수 유형 기준). 선택 동의
+      //    때문에 앱이 잠기면 안 되므로 여기에는 marketing 이 절대 들어가지 않는다.
+      //  - needs_collection: **동의 화면을 한 번 띄워 물어봐야 한다**는 신호(= collect 비어
+      //    있지 않음). 선택 유형만 재수집 대상일 때도 true 다. 클라는 이걸로 화면을 띄우되
+      //    선택 항목은 체크 없이 통과시킨다. 이게 없으면 앞으로 개정이
+      //    CONSENT_MIN_POLICY_VERSION.marketing 만 올렸을 때 collect 에는 marketing 이
+      //    담기는데 needs_consent 는 false 라 화면이 영영 안 떠 재수집이 일어나지 않는다.
       needs_consent: missing.length > 0,
+      needs_collection: collect.length > 0,
       required: REQUIRED_CONSENT_TYPES,
       missing,
+      collect,
+      // 가입 화면에 '선택' 으로 함께 띄우는 유형. 클라가 이 목록을 보고 필수와 다르게
+      // 그린다(체크 안 해도 CTA 통과).
+      optional: [...FEATURE_CONSENT_TYPES, ...OPTIONAL_CONSENT_TYPES],
+      // 음성 라우트가 요구하는 민감 동의 중 아직 없는 것. overseas_transfer 는 가입 필수라
+      // 보통 비어 있고, 가입 때 voice_biometric 을 거절한 사람만 여기에 남는다 — 클라는
+      // 목소리 등록 화면에서 이 값으로 인라인 동의 항목을 띄운다.
+      sensitive_missing: missingConsentTypesFrom(latest, SENSITIVE_REQUIRED_CONSENTS),
+      // 이 계정에 동의 기록이 하나라도 있으면 '개정에 따른 재동의' 다. 처음 가입한 사람과
+      // 문구가 달라야 한다 — 이미 동의했던 사람에게 '서비스 이용을 위해 동의해 주세요' 는
+      // 왜 또 묻는지 설명하지 못한다.
+      has_prior_consent: latest.size > 0,
       policy_version: CURRENT_POLICY_VERSION,
     });
   } catch (err) {

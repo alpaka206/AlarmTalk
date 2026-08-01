@@ -9,10 +9,6 @@ vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
 
-vi.mock('../src/lib/scheduler', () => ({
-  selectFiringAlarms: (alarms: unknown[]) => alarms.slice(0, 1),
-}));
-
 import alarmQuery from '../src/routes/alarm-query';
 
 function buildApp(userId = 'user-1') {

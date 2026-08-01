@@ -27,11 +27,19 @@ object AlarmAudioLimits {
 }
 
 object VoiceProfileAudioLimits {
-    const val MIN_DURATION_MILLIS = 60_000L
-    const val RECOMMENDED_DURATION_MILLIS = 90_000L
+    // 백엔드 voice-profile.ts 의 MIN/MAX_CLONE_DURATION_MS 와 같은 값을 유지한다.
+    // 최소 12초: 예전에는 1분을 요구했는데 채우기가 부담이라는 제보가 많았다. 길수록 클론이
+    // 더 비슷해지는 건 맞지만 그건 안내로 유도할 일이지 등록을 막을 일이 아니다.
+    const val MIN_DURATION_MILLIS = 12_000L
     const val MAX_DURATION_MILLIS = 120_000L
     const val MAX_DURATION_TOLERANCE_MILLIS = 5_000L
 }
+
+/** [AlarmAudioStore.resolveTtsInput] 결과 — 재사용할 오디오 키와 그 오디오의 표시 문구. */
+data class TtsInputAlias(
+    val cacheKey: String,
+    val displayText: String,
+)
 
 data class CachedAlarmAudio(
     val localAudioUri: String,
@@ -579,6 +587,58 @@ class AlarmAudioStore(
         )
     }
 
+    /**
+     * "이 문구로 만든 음성이 이미 있다" 는 별칭을 남긴다.
+     *
+     * 오디오 파일 이름은 **서버가 준 cache_key** 다. 서버는 문구에 delivery 태그를 붙인 뒤
+     * 그 결과로 키를 만들기 때문에, 앱은 요청을 보내기 전에는 그 키를 알 수 없다. 그래서
+     * 사용자가 입력한 값으로 만든 [ttsInputKey] 에서 서버 키로 가는 화살표를 한 번 적어 둔다.
+     * 다음에 똑같은 문구를 넣으면 서버를 부르지 않고 그 파일을 그대로 쓴다.
+     *
+     * [displayText] 도 함께 적는다 — **서버가 돌려준 표시 문구**다. 번역이 켜지면 이 값이
+     * 입력 원문과 달라지는데(앱 언어 ≠ 입력 언어), 재사용 때 원문을 표시 문구로 쓰면
+     * **잠금화면 문구와 실제 음성이 어긋난다**(Codex #660). 그래서 오디오와 짝이 되는 문구를
+     * 같이 보관했다가 그대로 복원한다.
+     *
+     * 별칭은 오디오와 같은 `.meta` 사이드카를 쓴다(새 파일 형식을 만들지 않는다). 스윕이
+     * 별칭을 지웠거나 오디오가 먼저 사라졌으면 조회가 null 이 되어 기존 서버 경로로 폴백한다 —
+     * 최악의 경우가 '지금과 똑같음' 이다.
+     */
+    fun linkTtsInput(inputKey: String, serverCacheKey: String, displayText: String) {
+        if (inputKey.isBlank() || serverCacheKey.isBlank() || inputKey == serverCacheKey) return
+        if (displayText.isBlank()) return
+        val props = Properties()
+        props.setProperty(META_ALIAS_OF, serverCacheKey)
+        props.setProperty(META_ALIAS_TEXT, displayText)
+        runCatching {
+            metadataFile(inputKey).outputStream().use { props.store(it, null) }
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to link tts input key=$inputKey", error)
+        }
+    }
+
+    /**
+     * [linkTtsInput] 로 남긴 별칭. 없으면 null(= 서버에 새로 요청).
+     *
+     * 표시 문구가 없는 별칭은 **없는 것으로 취급한다.** 그 값 없이 재사용하면 번역된 오디오에
+     * 원문을 붙이게 되므로, 한 번 더 생성하는 편이 낫다.
+     */
+    fun resolveTtsInput(inputKey: String): TtsInputAlias? {
+        if (inputKey.isBlank()) return null
+        val file = metadataFile(inputKey)
+        if (!file.exists()) return null
+        val props = Properties()
+        return runCatching {
+            file.inputStream().use { props.load(it) }
+            val cacheKey = props.getProperty(META_ALIAS_OF)?.takeIf { it.isNotBlank() } ?: return null
+            val displayText = props.getProperty(META_ALIAS_TEXT)?.takeIf { it.isNotBlank() } ?: return null
+            TtsInputAlias(cacheKey = cacheKey, displayText = displayText)
+        }.getOrNull()?.also {
+            // 스윕 TTL 이 '최초 생성'이 아니라 '마지막 사용' 기준이 되게 만져 둔다.
+            runCatching { file.setLastModified(System.currentTimeMillis()) }
+        }
+    }
+
     fun deleteCachedAudio(cacheKey: String) {
         val safeKey = safeCacheKey(cacheKey)
         audioDir.listFiles()?.forEach { file ->
@@ -672,8 +732,11 @@ class AlarmAudioStore(
         }
     }
 
+    // 목소리 등록(2분 상한)만 프레임 경계 오차 5초를 허용한다. 알람용 짧은 오디오는
+    // 메타데이터 오차만 본다. (상한으로 두 경로를 가른다 — 최소 길이로 가르면 최소값을
+    // 낮추는 순간 알람 오디오까지 등록용 오차를 쓰게 된다.)
     private fun toleranceForLimit(maxDurationMillis: Long): Long =
-        if (maxDurationMillis >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
+        if (maxDurationMillis >= VoiceProfileAudioLimits.MAX_DURATION_MILLIS) {
             VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS
         } else {
             DURATION_METADATA_TOLERANCE_MILLIS
@@ -895,6 +958,12 @@ class AlarmAudioStore(
         private const val AUDIO_DIR = "alarm-audio"
         private const val META_EXTENSION = "meta"
 
+        /** 입력키 → 서버 cache_key 별칭(`.meta` 안의 속성). [linkTtsInput] 참고. */
+        private const val META_ALIAS_OF = "aliasOf"
+
+        /** 그 오디오와 짝이 되는 **서버 표시 문구**. 번역이 켜지면 입력 원문과 달라진다. */
+        private const val META_ALIAS_TEXT = "aliasText"
+
         /** 쓰기 도중 죽었을 때 남는 미완성 파일 확장자. sweep 이 [PARTIAL_STALE_AFTER_MILLIS] 뒤 정리한다. */
         private const val PARTIAL_EXTENSION = "part"
 
@@ -965,6 +1034,37 @@ class AlarmAudioStore(
         ): String =
             serverCacheKey?.takeIf { it.isNotBlank() }
                 ?: sha256(listOf("tts-v2", profileId, text.trim().replace(Regex("\\s+"), " "), category, language).joinToString("|"))
+
+        /**
+         * "사용자가 무엇을 입력했는가" 로 만드는 키. 파일 이름이 아니라 [linkTtsInput] 별칭의
+         * 왼쪽에만 쓴다.
+         *
+         * 키에 반드시 들어가야 하는 것:
+         *  - `userId` — 캐시는 기기에 남고 로그아웃해도 안 지워진다. 빼면 다른 계정이 앞 계정의
+         *    message_id 를 물려받아 알람 동기화가 서버에서 거부된다.
+         *  - `listenerTitle`(호칭) — 서버가 호칭을 문구 **안에** 병합하고, 공유 목소리는 보는
+         *    사람마다 호칭이 다르다. 빼면 '엄마 목소리로 아빠 호칭' 이 나온다.
+         *  - `language` — 번역 여부가 이 값으로 결정된다.
+         */
+        fun ttsInputKey(
+            userId: String,
+            profileId: String,
+            text: String,
+            category: String,
+            language: String,
+            listenerTitle: String?,
+        ): String =
+            sha256(
+                listOf(
+                    "tts-input-v1",
+                    userId,
+                    profileId,
+                    text.trim().replace(Regex("\\s+"), " "),
+                    category,
+                    language,
+                    listenerTitle?.trim().orEmpty(),
+                ).joinToString("|"),
+            )
 
         fun audioCacheKeyForSource(
             sourceUri: String,

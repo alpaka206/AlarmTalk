@@ -36,17 +36,14 @@ const MAX_VOICE_PROFILES = 1;
 // (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
 // 사용자당 개수를 제한해 전역 DoS 를 막는다.
 const MAX_DRAFT_VOICE_PROFILES = 1;
-// 초안 시도는 더 이상 월 단위로 막지 않는다(정식 등록 전까진 무제한 생성·삭제).
-// 이 값은 사용량 집계에만 남는다 — /draft-quota 의 limit 필드 호환용.
-const MAX_DRAFT_ATTEMPTS_PER_MONTH = 0;
 // 정식 등록(= 사용자가 체감하는 '이번 달 만들 수 있는 목소리') 한도. 월 1개.
 // 위 초안 시도 3회는 이 1개를 만들기까지의 재시도 여유다(마음에 안 들면 지우고 다시).
 const MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH = 1;
-const MIN_CLONE_DURATION_MS = 60_000;
-// 프리뷰(draft) 클론은 짧은 클립이라 60초를 못 채우는 경우가 많다.
-// "5초 한마디"는 배제하되, 세그먼트를 이어붙일 때 프레임 경계로 몇백 ms
-// 짧아져도 의미 있는 길이면 프리뷰가 거부되지 않도록 여유를 둔다.
-const MIN_DRAFT_CLONE_DURATION_MS = 12_000;
+// 최소 길이는 초안·정식 등록이 같다. 예전에는 정식 등록만 60초를 요구했는데, 실제로 1분을
+// 채우는 게 부담이라는 제보가 많았다 — 길수록 클론 품질이 좋아지는 건 맞지만 그건 안내로
+// 유도할 일이지 등록을 막을 일이 아니다. "5초 한마디"만 배제하고, 세그먼트를 이어붙일 때
+// 프레임 경계로 몇백 ms 짧아져도 거부되지 않을 만큼의 여유를 둔다.
+const MIN_CLONE_DURATION_MS = 12_000;
 const MAX_CLONE_DURATION_MS = 120_000;
 const CLONE_DURATION_TOLERANCE_MS = 5_000;
 const MAX_RELATIONSHIP_LABEL_LENGTH = 30;
@@ -67,17 +64,18 @@ function currentKstMonthSql(): string {
   return "strftime('%Y-%m', 'now', '+9 hours')";
 }
 
+// 원장은 '이 달에 정식 목소리를 몇 번 바꿨나' 만 센다(월 1회 한도). 어느 프로필인지는
+// 판정에 쓰이지 않아 #90 에서 컬럼째 걷었다 — 인자도 함께 없앤다.
 async function reserveMonthlyOfficialVoiceChange(
   db: DbExecutor,
   ownerUserId: string,
-  profileId: string,
 ): Promise<string | null> {
   const ledgerId = crypto.randomUUID();
   const reserved = await db.execute({
     sql: `INSERT OR IGNORE INTO voice_profile_change_ledger
-            (id, owner_user_id, voice_profile_id, change_month, change_type, status)
-          VALUES (?, ?, ?, ${currentKstMonthSql()}, ?, 'reserved')`,
-    args: [ledgerId, ownerUserId, profileId, OFFICIAL_VOICE_CHANGE_TYPE],
+            (id, owner_user_id, change_month, change_type, status)
+          VALUES (?, ?, ${currentKstMonthSql()}, ?, 'reserved')`,
+    args: [ledgerId, ownerUserId, OFFICIAL_VOICE_CHANGE_TYPE],
   });
   return (reserved.rowsAffected ?? 0) > 0 ? ledgerId : null;
 }
@@ -117,13 +115,14 @@ async function readMonthlyDraftAttemptUsage(
     args: [ownerUserId, currentKstAttemptMonth()],
   });
   const used = Number(res.rows[0]?.used_count ?? 0);
-  // limit=0 은 '초안 시도 제한 없음'을 뜻한다. 사용자에게 보여줄 숫자는
-  // registration_*(월 1회 정식 등록)이고, 이건 운영 지표용 사용량이다.
-  return { limit: MAX_DRAFT_ATTEMPTS_PER_MONTH, used, remaining: 0 };
+  // 초안 시도에는 제한이 없다 — 확정 전까지는 마음에 들 때까지 만들고 지울 수 있다.
+  // 여기서 세는 건 운영 지표일 뿐이고, 사용자에게 보여줄 숫자는 registration_*(월 1회
+  // 정식 등록)이다. limit=0 은 '제한 없음'을 뜻하며 응답 필드 호환을 위해 남긴다.
+  return { limit: 0, used, remaining: 0 };
 }
 
 // 이번 달(KST) '정식 등록' 사용량 — 목소리는 한 달에 1개만 만들 수 있고(월 1회 교체),
-// 이게 사용자에게 보여줄 숫자다. MAX_DRAFT_ATTEMPTS_PER_MONTH 는 초안 재시도 여유라
+// 이게 사용자에게 보여줄 숫자다. 초안 시도는 제한이 없어
 // (마음에 안 들면 지우고 다시) 내부 값이지 사용자가 셀 숫자가 아니다.
 async function readMonthlyRegistrationUsage(
   db: DbExecutor,
@@ -158,10 +157,11 @@ async function reserveMonthlyDraftAttempt(
             updated_at = datetime('now')`,
     args: [ownerUserId, attemptMonth],
   });
-  // 사용량은 계속 세지만 막지는 않는다 — 프리셋(정식 등록) 전 단계인 초안은 마음에 들
-  // 때까지 만들고 지울 수 있어야 한다. 월 1회 제한은 '최종 확정'에만 건다. 동시 보유
-  // 개수는 MAX_DRAFT_VOICE_PROFILES=1 이 여전히 막으므로 클론 슬롯이 쌓이지는 않는다.
-  return (result.rowsAffected ?? 0) > 0 ? attemptMonth : attemptMonth;
+  // 사용량은 세지만 막지 않는다 — 초안은 확정 전 단계라 마음에 들 때까지 만들고 지울 수
+  // 있어야 한다. 월 1회 제한은 '최종 확정'에만 건다. 동시 보유 개수는
+  // MAX_DRAFT_VOICE_PROFILES=1 이 여전히 막으므로 클론 슬롯이 쌓이지는 않는다.
+  void result;
+  return attemptMonth;
 }
 
 async function refundMonthlyDraftAttempt(
@@ -318,87 +318,6 @@ async function runSpeechStyleAnalysis(
     return { ok: false, error };
   }
 }
-
-/**
- * Dev/cleanup helper: delete every voice profile (and its dependent
- * messages + alarms) belonging to the calling user. Useful for wiping
- * failed clones that piled up during testing. R2 objects are left for
- * the periodic cleanup cron — only DB rows go away here.
- */
-voiceProfile.delete('/_dev/clear-mine', async (c) => {
-  const subId = (c.get('userLoginId') || c.get('userId')) as string;
-  // production 환경에서는 노출 자체를 막는다. 인증을 통과한 뒤에도 dev/test 가 아니면
-  // 라우트가 존재하지 않는 것처럼 404 로 응답.
-  if (c.env.ENVIRONMENT === 'production') {
-    return c.json({ error: 'dev-only', error_code: 'DEV_ONLY_ROUTE' }, 404);
-  }
-  const pkId = (c.get('userIdPK') as string | undefined) ?? subId;
-  const db = getDB(c.env);
-  const ids = Array.from(new Set([subId, pkId].filter(Boolean)));
-  const ph = ids.map(() => '?').join(',');
-  const counts: Record<string, number> = {};
-  const tryDel = async (label: string, sql: string, args: (string | number)[] = []) => {
-    try {
-      const r = await db.execute({ sql, args });
-      counts[label] = r.rowsAffected ?? 0;
-    } catch (err) {
-      // Best-effort cleanup. Tables may not exist in every environment.
-      // Log and continue.
-      // eslint-disable-next-line no-console
-      console.log('[clear-mine skip]', label, err instanceof Error ? err.message : String(err));
-      counts[label] = -1;
-    }
-  };
-
-  // 1) Tables that reference messages or voice_profiles (delete first).
-  await tryDel(
-    'message_library',
-    `DELETE FROM message_library WHERE user_id IN (${ph})
-     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))`,
-    [...ids, ...ids],
-  );
-  await tryDel(
-    'generated_audio_assets',
-    `DELETE FROM generated_audio_assets WHERE user_id IN (${ph})
-     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))
-     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
-    [...ids, ...ids, ...ids],
-  );
-  await tryDel(
-    'voice_profile_relationships',
-    `DELETE FROM voice_profile_relationships WHERE user_id IN (${ph})
-     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
-    [...ids, ...ids],
-  );
-  await tryDel(
-    'alarms',
-    `DELETE FROM alarms WHERE user_id IN (${ph}) OR target_user_id IN (${ph})
-     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))
-     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
-    [...ids, ...ids, ...ids, ...ids],
-  );
-
-  // 2) Now safe to drop messages + voice_profiles.
-  await tryDel(
-    'messages',
-    `DELETE FROM messages WHERE user_id IN (${ph})
-     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
-    [...ids, ...ids],
-  );
-  await tryDel('voice_profiles', `DELETE FROM voice_profiles WHERE user_id IN (${ph})`, ids);
-
-  // 3) Per-user satellite tables.
-  await tryDel('push_tokens', `DELETE FROM push_tokens WHERE user_id IN (${ph})`, ids);
-  await tryDel('voice_uploads', `DELETE FROM voice_uploads WHERE user_id IN (${ph})`, ids);
-
-  // 4) Finally the users row(s).
-  await tryDel('users', `DELETE FROM users WHERE google_id = ? OR id IN (${ph})`, [subId, ...ids]);
-
-  return c.json({
-    deleted: counts,
-    note: '다음 요청 시 auth middleware가 users 행을 새로 만듭니다 (id=google_id).',
-  });
-});
 
 voiceProfile.get('/', async (c) => {
   const ids = ownerIds(c);
@@ -904,7 +823,7 @@ voiceProfile.patch('/:id', async (c) => {
         if (existingCount >= MAX_VOICE_PROFILES) {
           return { status: 'voice_limit' as const, rowsAffected: 0 };
         }
-        const ledgerId = await reserveMonthlyOfficialVoiceChange(tx, userPk, id);
+        const ledgerId = await reserveMonthlyOfficialVoiceChange(tx, userPk);
         if (!ledgerId) {
           return { status: 'monthly_limit' as const, rowsAffected: 0 };
         }
@@ -1291,7 +1210,7 @@ voiceProfile.post('/clone', async (c) => {
       );
     }
 
-    const durationCheck = validateCloneDuration(formData.get('durationMs'), isDraft);
+    const durationCheck = validateCloneDuration(formData.get('durationMs'));
     if (durationCheck) return c.json(durationCheck.body, durationCheck.status);
     // 검증 통과 후의 durationMs — 아래 voice_uploads 보관(재시도용 원본)에 기록한다.
     const cloneDurationMs = Number.parseInt(String(formData.get('durationMs')), 10);
@@ -1353,10 +1272,8 @@ voiceProfile.post('/clone', async (c) => {
       if (!(await hasCloneSlotCapacity(tx))) {
         return { status: 'clone_capacity' as const, ledgerId: null };
       }
+      // 사용량만 센다 — 막지 않는다(위 readMonthlyDraftAttemptUsage 주석 참고).
       draftAttemptMonth = await reserveMonthlyDraftAttempt(tx, userPk);
-      if (!draftAttemptMonth) {
-        return { status: 'draft_attempt_limit' as const, ledgerId: null };
-      }
       await tx.execute({
         sql: `INSERT INTO voice_profiles
               (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, preview_language)
@@ -1381,15 +1298,6 @@ voiceProfile.post('/clone', async (c) => {
           error_code: 'VOICE_LIMIT_REACHED',
         },
         403,
-      );
-    }
-    if (insertResult.status === 'draft_attempt_limit') {
-      return c.json(
-        {
-          error: '이번 달 음성 초안 생성 횟수를 모두 사용했습니다.',
-          error_code: 'VOICE_DRAFT_ATTEMPT_LIMIT_REACHED',
-        },
-        429,
       );
     }
     if (insertResult.status === 'clone_capacity') {
@@ -1684,10 +1592,7 @@ function isVoiceSlotExhaustedError(detail: string): boolean {
   );
 }
 
-function validateCloneDuration(
-  value: unknown,
-  isDraft = false,
-): {
+function validateCloneDuration(value: unknown): {
   status: 400;
   body: { error: string; error_code: string };
 } | null {
@@ -1710,13 +1615,11 @@ function validateCloneDuration(
       body: { error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' },
     };
   }
-  // 분리 프리뷰(draft) 는 격리 발화만 담은 짧은 클립을 허용한다.
-  const minDurationMs = isDraft ? MIN_DRAFT_CLONE_DURATION_MS : MIN_CLONE_DURATION_MS;
-  if (durationMs < minDurationMs) {
+  if (durationMs < MIN_CLONE_DURATION_MS) {
     return {
       status: 400,
       body: {
-        error: `voice clone audio must be at least ${minDurationMs / 1000} seconds`,
+        error: `voice clone audio must be at least ${MIN_CLONE_DURATION_MS / 1000} seconds`,
         error_code: 'VOICE_CLONE_AUDIO_TOO_SHORT',
       },
     };

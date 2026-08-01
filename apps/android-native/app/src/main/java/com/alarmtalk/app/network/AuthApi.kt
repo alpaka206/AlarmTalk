@@ -155,6 +155,12 @@ data class ConsentItemRequest(
 
 data class RecordConsentsRequest(
     val consents: List<ConsentItemRequest>,
+    /**
+     * **이 앱이 실제로 띄운 법무 문서의 정책 버전**(APK 에 실린 docs/legal 원문에서 읽는다).
+     * 서버는 이 값이 지금 게시된 버전과 다르면 409(POLICY_VERSION_MISMATCH)로 기록을
+     * 거부한다 — 구버전 앱이 옛 본문을 보여주면서 새 버전 동의 기록을 만드는 것을 막는다.
+     */
+    @SerializedName("document_version") val documentVersion: String?,
 )
 
 data class RecordConsentsResponse(
@@ -177,6 +183,32 @@ data class ConsentStatusResponse(
     @SerializedName("needs_consent") val needsConsent: Boolean = false,
     val required: List<String> = emptyList(),
     val missing: List<String> = emptyList(),
+    /**
+     * 이번 동의 화면에서 **실제로 받아야 하는** 유형. 서버가 유형별 최소 정책 버전으로 계산한다.
+     * 화면은 이 목록만 그리고 이 목록만 제출한다 — 이미 유효한 동의는 건드리지 않아야
+     * 정책 개정 때 마케팅 수신 설정 같은 기존 선택이 조용히 초기화되지 않는다.
+     */
+    val collect: List<String> = emptyList(),
+    /**
+     * [collect] 중 **체크하지 않아도 통과시켜야 하는** 유형(기능 동의 + 선택 동의).
+     * 화면은 이 목록에 든 항목만 '선택' 으로 그리고, 나머지는 필수로 강제한다.
+     */
+    val optional: List<String> = emptyList(),
+    /**
+     * 음성 라우트가 요구하는 민감 동의 중 아직 없는 것.
+     *
+     * `overseas_transfer` 는 가입 필수라 보통 비어 있고, 가입 화면에서 `voice_biometric`
+     * (선택)을 거절한 사람만 여기에 남는다. 목소리 등록 화면이 이 값으로 인라인 동의 항목을
+     * 띄운다 — 한 번 동의하면 비게 되어 다시 묻지 않는다.
+     */
+    @SerializedName("sensitive_missing") val sensitiveMissing: List<String> = emptyList(),
+    /**
+     * 화면을 띄워 물어봐야 하는가(= collect 가 비어 있지 않은가). `needsConsent` 와 의미가 다르다 —
+     * 그쪽은 '앱을 막는 게이트' 신호라 필수 유형만 보고, 이쪽은 선택 동의 재수집까지 포함한다.
+     */
+    @SerializedName("needs_collection") val needsCollection: Boolean = false,
+    /** 이 계정에 동의 기록이 하나라도 있으면 개정에 따른 재동의다 — 화면 문구가 달라진다. */
+    @SerializedName("has_prior_consent") val hasPriorConsent: Boolean = false,
     @SerializedName("policy_version") val policyVersion: String = "1",
 )
 

@@ -260,7 +260,7 @@ function wallClockAt(at: Date, timezone: string): WallClock {
     if (part.type === 'year') clock.year = Number(part.value);
     else if (part.type === 'month') clock.month = Number(part.value);
     else if (part.type === 'day') clock.day = Number(part.value);
-    // hour12:false 는 환경에 따라 자정을 '24' 로 줄 수 있다(scheduler.ts 와 동일 보정).
+    // hour12:false 는 환경에 따라 자정을 '24' 로 줄 수 있다.
     else if (part.type === 'hour') clock.hour = Number(part.value) % 24;
     else if (part.type === 'minute') clock.minute = Number(part.value);
     else if (part.type === 'weekday') clock.dayOfWeek = WEEKDAY_TO_INDEX[part.value] ?? 0;

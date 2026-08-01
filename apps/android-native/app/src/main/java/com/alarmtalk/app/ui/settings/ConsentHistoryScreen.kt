@@ -34,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.network.ConsentRecord
@@ -51,10 +53,16 @@ internal fun ConsentHistoryScreen(
     marketingConsentLoadFailed: Boolean,
     onLoadMarketingConsent: () -> Unit,
     onChangeMarketingConsent: (Boolean) -> Unit,
+    onWithdrawVoiceBiometric: suspend () -> Boolean,
 ) {
     var records by remember { mutableStateOf<Map<String, ConsentRecord>>(emptyMap()) }
     var loadFailed by remember { mutableStateOf(false) }
     var retryTick by remember { mutableIntStateOf(0) }
+    // 철회는 되돌릴 수 없어 한 번 확인받는다. 중복 탭은 busy 로 막는다(서버는 마지막 값만 보므로
+    // 반복 요청이 그때마다 삭제를 다시 돌린다).
+    var withdrawConfirmOpen by remember { mutableStateOf(false) }
+    var withdrawBusy by remember { mutableStateOf(false) }
+    val withdrawScope = rememberCoroutineScope()
 
     LaunchedEffect(retryTick) {
         runCatching { onLoadConsents() }
@@ -130,12 +138,9 @@ internal fun ConsentHistoryScreen(
                     onOpen = null,
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                ConsentRow(
-                    label = stringResource(R.string.consent_type_voice_biometric),
-                    record = records["voice_biometric"],
-                    onOpen = onOpenPrivacy,
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                // 국외 이전은 서비스 이용에 필수라 철회 액션을 두지 않는다. 철회하면 등록 데이터가
+                // 지워지는 데다 다음 실행에 동의 게이트로 앱이 잠긴다 — 30일 유예로 되돌릴 수 있는
+                // 회원 탈퇴가 더 안전하고 정직한 경로라 그쪽으로 안내한다.
                 ConsentRow(
                     label = stringResource(R.string.consent_type_overseas),
                     record = records["overseas_transfer"],
@@ -145,7 +150,27 @@ internal fun ConsentHistoryScreen(
         }
 
         item {
+            Text(
+                text = stringResource(R.string.consent_overseas_withdraw_notice),
+                modifier = Modifier.padding(horizontal = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        item {
             ConsentSectionCard(title = stringResource(R.string.consent_section_optional)) {
+                // 음성 생체정보는 백엔드에서도 '선택'(FEATURE_CONSENT_TYPES)이다. 필수 섹션에 두면
+                // 가입 화면의 '[선택]' 표기와 어긋나고, 이 동의를 이용 조건처럼 보이게 한다.
+                ConsentRow(
+                    label = stringResource(R.string.consent_type_voice_biometric),
+                    record = records["voice_biometric"],
+                    onOpen = onOpenPrivacy,
+                    // 재동의는 이 화면이 아니라 목소리를 다시 등록할 때 받는다 — 그래서 토글이
+                    // 아니라 단방향 '철회' 액션이다(켜지지 않는 스위치는 버그로 보인다).
+                    onWithdraw = { withdrawConfirmOpen = true }.takeIf { !withdrawBusy },
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 // 읽기전용 이력이 아니라 실제 켜고 끄는 토글 — 설정에 있던 마케팅 카드를 이 법적 정보 화면으로 통합했다.
                 ConsentToggleRow(
                     label = stringResource(R.string.consent_type_marketing),
@@ -157,6 +182,35 @@ internal fun ConsentHistoryScreen(
                 )
             }
         }
+    }
+
+    if (withdrawConfirmOpen) {
+        IosAlertDialog(
+            title = stringResource(R.string.consent_withdraw_voice_title),
+            message = stringResource(R.string.consent_withdraw_voice_body),
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.voice_consent_cancel),
+                    emphasized = true,
+                    onClick = { withdrawConfirmOpen = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.consent_withdraw_voice_confirm),
+                    destructive = true,
+                    onClick = {
+                        withdrawConfirmOpen = false
+                        withdrawBusy = true
+                        withdrawScope.launch {
+                            val ok = onWithdrawVoiceBiometric()
+                            withdrawBusy = false
+                            // 성공했으면 기록을 다시 읽어 '미동의'로 바뀐 것을 그 자리에서 보여준다.
+                            if (ok) retryTick++
+                        }
+                    },
+                ),
+            ),
+            onDismiss = { withdrawConfirmOpen = false },
+        )
     }
 }
 
@@ -232,12 +286,15 @@ private fun ConsentRow(
     label: String,
     record: ConsentRecord?,
     onOpen: (() -> Unit)?,
+    onWithdraw: (() -> Unit)? = null,
 ) {
     val statusText = when {
         record == null -> "—"
         !record.agreed -> stringResource(R.string.consent_not_agreed)
         else -> formatConsentDate(record.agreedAt) ?: "—"
     }
+    // 철회는 동의한 상태에서만 뜻이 있다.
+    val withdrawAction = onWithdraw?.takeIf { record?.agreed == true }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -259,6 +316,17 @@ private fun ConsentRow(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (withdrawAction != null) {
+            Text(
+                text = stringResource(R.string.consent_withdraw_action),
+                modifier = Modifier
+                    .clickable(onClick = withdrawAction)
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         if (onOpen != null) {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,

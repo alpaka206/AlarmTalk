@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { createClient } from '@libsql/client';
-import { migrations, runMigrationsRange, type Migration } from '../src/lib/migrations';
+import {
+  migrations,
+  runMigrationsRange,
+  __isIdempotentDDLErrorForTest,
+  type Migration,
+} from '../src/lib/migrations';
 
 describe('migrations', () => {
   it('마이그레이션 ID가 순차적이고 고유하다', () => {
@@ -439,5 +444,28 @@ describe('migrations', () => {
         ]),
       );
     });
+  });
+});
+
+// DROP COLUMN 실패를 "이미 적용됨" 으로 오인해 삼키면, 컬럼은 그대로인데 _migrations 에는
+// 성공으로 찍혀 다시는 재시도되지 않는다. 배포는 초록불이라 dev/prod 스키마가 조용히 갈라진다.
+// 두 메시지가 모두 'no such column' 을 포함해서 구분이 한 조각('after drop column')에 달려 있다.
+describe('마이그레이션 러너 — DROP COLUMN 실패는 삼키지 않는다', () => {
+  it('인덱스가 참조해 실패한 DROP COLUMN 은 관용 대상이 아니다', () => {
+    expect(
+      __isIdempotentDDLErrorForTest('error in index ix after drop column: no such column: prof'),
+    ).toBe(false);
+  });
+
+  it('이미 지워진 컬럼을 다시 DROP 하는 것은 관용한다', () => {
+    expect(__isIdempotentDDLErrorForTest('no such column: "other"')).toBe(true);
+  });
+
+  it('기존 관용 규칙은 그대로다', () => {
+    expect(__isIdempotentDDLErrorForTest('duplicate column name: foo')).toBe(true);
+    expect(__isIdempotentDDLErrorForTest('table t already exists')).toBe(true);
+    expect(__isIdempotentDDLErrorForTest('no such index: ix')).toBe(true);
+    expect(__isIdempotentDDLErrorForTest('no such view: v')).toBe(true);
+    expect(__isIdempotentDDLErrorForTest('syntax error near ")"')).toBe(false);
   });
 });

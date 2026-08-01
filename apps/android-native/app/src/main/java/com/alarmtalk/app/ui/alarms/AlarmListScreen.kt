@@ -68,8 +68,10 @@ internal fun AlarmListScreen(
     // 이번 달 목소리 생성 쿼터(추가 버튼 옆 '남은/전체' 표시).
     voiceDraftQuota: com.alarmtalk.app.network.VoiceDraftQuotaResponse? = null,
     vouchers: List<VoucherItem>,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String) -> Boolean,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, Boolean) -> Boolean,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
+    // 목소리 등록 화면의 인라인 동의 항목에 그대로 넘긴다.
+    sensitiveConsentMissing: List<String> = emptyList(),
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     // 알람에 마지막으로 쓴 목소리 — 편집기의 초기 선택에 쓴다.
@@ -97,7 +99,6 @@ internal fun AlarmListScreen(
     onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
-    onCheckoutPlan: (String, Boolean) -> Unit,
     planPrices: Map<String, String>,
     onPurchasePlay: (android.app.Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
@@ -222,6 +223,7 @@ internal fun AlarmListScreen(
                         authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
                         onCreateVoiceProfiles = onCreateVoiceProfiles,
+                        sensitiveConsentMissing = sensitiveConsentMissing,
                         onGenerateTts = onGenerateTts,
                         stockClips = stockClips,
                         onDownloadStockAudio = onDownloadStockAudio,
@@ -337,7 +339,6 @@ internal fun AlarmListScreen(
                         familyGroup = familyGroup,
                         vouchers = vouchers,
                         planPrices = planPrices,
-                        onCheckoutPlan = onCheckoutPlan,
                         onPurchasePlay = onPurchasePlay,
                         onCancelSubscription = onCancelSubscription,
                         onChangePlan = onChangePlan,

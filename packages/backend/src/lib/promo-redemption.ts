@@ -293,10 +293,6 @@ async function redeemPromoInTransaction(
   });
 
   await db.execute({
-    sql: `UPDATE promo_code_redemptions SET subscription_id = ? WHERE id = ?`,
-    args: [subscriptionId, redemptionId],
-  });
-  await db.execute({
     sql: `UPDATE promo_codes SET updated_at = datetime('now') WHERE id = ?`,
     args: [promoId],
   });

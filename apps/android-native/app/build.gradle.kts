@@ -1,4 +1,5 @@
 import java.io.DataOutputStream
+import java.io.File
 import java.util.Properties
 import kotlin.math.PI
 import kotlin.math.sin
@@ -72,6 +73,44 @@ val generateAlarmTone = tasks.register<GenerateAlarmToneTask>("generateAlarmTone
     outputDir.set(layout.buildDirectory.dir("generated/res/alarmTone"))
 }
 
+// 개인정보 처리방침·이용약관 전문을 앱에 싣는다.
+//
+// 동의 화면에서 항목을 펼치면 앱 안에서 전문을 그대로 읽을 수 있어야 한다 — 브라우저로
+// 내보내면 동의 흐름이 끊기고, 네트워크가 없으면 아예 못 읽는다.
+//
+// **사본을 만들지 않는다.** 랜딩(apps/landing/lib/legal-docs.ts)이 빌드 시 읽는 것과 같은
+// docs/legal/*.md 를 그대로 복사하므로 단일 출처가 유지된다. 문서를 고치면 다음 빌드에
+// 자동 반영되고, 앱만 옛 문안을 들고 있는 상태가 생기지 않는다.
+val legalDocsDir = rootProject.file("../../docs/legal")
+
+val copyLegalDocs = tasks.register<Copy>("copyLegalDocs") {
+    from(legalDocsDir) {
+        include("privacy-policy.ko.md", "terms-of-service.ko.md")
+    }
+    into(layout.buildDirectory.dir("generated/assets/legal/legal"))
+}
+
+/**
+ * 앱에 실리는 법무 문서의 정책 버전. 동의를 기록할 때 '내가 실제로 보여준 문서' 로 함께
+ * 보내고, 서버가 게시 중인 버전과 다르면 기록이 거부된다.
+ *
+ * 런타임에 마크다운을 파싱하지 않고 여기서 뽑는 이유: 파싱이 어긋나면 값이 null 이 되고,
+ * 그러면 **모든 동의 기록이 거부돼 신규 가입이 통째로 막힌다.** 빌드가 실패하는 편이
+ * 비교할 수 없이 낫다. 두 문서의 버전이 다른 것도 여기서 잡는다.
+ */
+val legalPolicyVersion: String = run {
+    val re = Regex("""^정책 버전:\s*(\d+)\s*$""", RegexOption.MULTILINE)
+    val versions = listOf("privacy-policy.ko.md", "terms-of-service.ko.md").associateWith { name ->
+        val file = File(legalDocsDir, name)
+        require(file.isFile) { "법무 문서를 찾을 수 없다: ${'$'}{file.absolutePath}" }
+        re.find(file.readText(Charsets.UTF_8))?.groupValues?.get(1)
+            ?: error("${'$'}name 에서 '정책 버전: N' 줄을 찾지 못했다. 문서 머리말을 확인할 것.")
+    }
+    val distinct = versions.values.distinct()
+    require(distinct.size == 1) { "법무 문서 정책 버전이 서로 다르다: ${'$'}versions" }
+    distinct.single()
+}
+
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -112,10 +151,15 @@ android {
     }
 
     sourceSets["main"].res.srcDir(layout.buildDirectory.dir("generated/res/alarmTone"))
+    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/assets/legal"))
 
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    defaultConfig {
+        buildConfigField("String", "LEGAL_POLICY_VERSION", legalPolicyVersion.asBuildConfigString())
     }
 
     val alarmTalkDevApiBaseUrl = providers.gradleProperty("alarmTalkDevApiBaseUrl")
@@ -243,6 +287,7 @@ android {
 
 tasks.named("preBuild").configure {
     dependsOn(generateAlarmTone)
+    dependsOn(copyLegalDocs)
 }
 
 dependencies {

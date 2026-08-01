@@ -56,6 +56,23 @@ import com.alarmtalk.app.data.AlarmOrigins
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 
+
+/**
+ * 게이트 화면에서 뒤로가기를 삼킨다.
+ *
+ * 이 화면들 뒤에는 돌아갈 곳이 없다 — 기존 BackHandler 는 currentTab 이 있을 때만 켜지는데
+ * 게이트에서는 NavHost 가 아직 없어 currentTab 이 null 이다. 그대로 두면 시스템 기본 동작이
+ * 액티비티를 닫아 **앱이 그냥 종료된다.** 사용자는 무엇이 잘못됐는지 모른 채 튕겨 나가고,
+ * 다시 열면 같은 화면이 다시 뜬다.
+ *
+ * 나가는 길을 없애는 것이 아니다 — 홈·최근앱으로 앱을 닫으면 된다. 막는 건 실수로 나가는
+ * 것뿐이다. 화면에 정식 탈출구(로그아웃·나중에 받기 등)가 있으면 그쪽을 쓰면 된다.
+ */
+@Composable
+private fun GateBackGuard() {
+    BackHandler(enabled = true) {}
+}
+
 @Composable
 internal fun AlarmTalkApp(
     viewModel: MainViewModel = viewModel(),
@@ -337,13 +354,82 @@ internal fun AlarmTalkApp(
     // 띄운다(알람 앱 핵심 권한이라 선제 요청). 기기 단위 플래그로 재노출을 막고, 이후 미허용 상태는
     // 알람 만들기 모달·홈 슬림 배너가 처리한다. (정확알람·전체화면은 알람 앱이라 자동 부여되고
     // 실제 시스템 다이얼로그가 뜨는 건 알림 권한뿐이다.)
-    LaunchedEffect(sessionRouteKey) {
+    //
+    // 동의·목소리 준비를 **다 지난 뒤에** 띄운다. 이 모달은 게이트 체인이 아니라 Scaffold 밖
+    // 오버레이라, 조건을 걸지 않으면 약관 동의 화면 위에 겹쳐 뜬다 — 아직 약관에 동의하지도
+    // 않은 사람에게 알림 권한부터 묻는 꼴이고, 그 순간 '이미 물어봤음' 플래그까지 태워
+    // 정작 홈에 도착한 뒤에는 다시 묻지 못한다.
+    // 앱 버전 확인도 같은 이유로 함께 본다. 동의가 캐시로 통과된 계정은 consentChecked 가
+    // 즉시 true 인데 버전 응답은 아직 안 와서 updateRequired 는 기본값 false 다. 그 틈에
+    // '이미 물어봤음' 플래그가 찍히고, 뒤늦게 응답이 와 차단 화면이 깔리면 모달은 가려진다.
+    // 플래그는 기기에 남아 업데이트 후에도 살아남아, 첫 진입 권한 안내를 영영 못 받는다.
+    LaunchedEffect(
+        sessionRouteKey,
+        viewModel.consentChecked,
+        viewModel.consentStatusChecked,
+        viewModel.showConsentScreen,
+        viewModel.showVoiceSetup,
+        viewModel.versionChecked,
+        viewModel.updateRequired,
+        viewModel.consentUnsupported,
+        viewModel.accountStatusChecked,
+        viewModel.pendingDeletion,
+    ) {
         if (sessionRouteKey == null) return@LaunchedEffect
+        if (!viewModel.versionChecked) return@LaunchedEffect
+        if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
+        // pendingDeletion 만 보면 안 된다 — 조회 응답 전에는 기본값 false 라 '유예 아님' 과
+        // 구분되지 않는다. 확인이 끝난 뒤에 판단한다(Codex #660).
+        if (!viewModel.accountStatusChecked) return@LaunchedEffect
+        if (viewModel.pendingDeletion) return@LaunchedEffect
+        // 캐시로 켜지는 consentChecked 가 아니라 **응답이 온** consentStatusChecked 를 본다 —
+        // 정책 개정 직후에는 캐시가 옛 버전 기준이라 재동의가 필요한데도 통과한다(Codex #660).
+        if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        if (viewModel.showVoiceSetup) return@LaunchedEffect
         if (initialPermissionPromptStore.hasPrompted()) return@LaunchedEffect
         initialPermissionPromptStore.markPrompted()
         if (!PermissionSnapshot.read(context).alarmReady) {
             requestFirstMissingAlarmPermission()
         }
+    }
+
+    // 웰컴 코드 안내(계정 1회, 무료 플랜 한정). 권한 게이트와 같은 레이어에 쌓이면 하나가
+    // 다른 하나를 가리므로 **권한 모달이 없을 때만** 띄운다. 권한 모달이 닫히면 이 효과가
+    // 다시 돌아 그때 뜬다. 동의·목소리 준비 화면을 다 지난 뒤라야 홈 위에서 보인다.
+    // `consentChecked` 를 반드시 함께 본다. 첫 로그인 순간엔 needsConsent 가 아직 기본값
+    // false 라, 동의 확인 응답이 오기 전에 이 효과가 먼저 돌면 프로모가 뜨면서 1회 플래그까지
+    // 태운다 — 그 뒤 응답이 와서 동의 화면이 열리면 프로모가 그 위를 덮는다(Codex #660).
+    // 앱 버전 확인도 같은 이유로 함께 본다. 동의가 캐시로 통과된 계정은 consentChecked 가
+    // 즉시 true 가 되는데, 버전 응답은 아직 오지 않아 updateRequired 는 기본값 false 다.
+    // 그 틈에 프로모가 떠 1회 플래그를 태우고, 뒤늦게 응답이 와 업데이트 차단 화면이 깔리면
+    // 그 위에 다이얼로그만 남는다 — 업데이트하고 돌아와도 프로모는 이미 소진된 뒤다.
+    // 탈퇴 유예 계정도 같은 종류의 레이스다. checkAccountStatus 응답 전에는 pendingDeletion 이
+    // 기본값 false 라, 그 틈에 프로모가 떠 1회 플래그를 태우고 뒤늦게 복구 화면이 깔리면
+    // 가려진다 — 거기서 로그아웃하거나 프로세스가 죽으면 본 적도 없이 소진된다(Codex #660).
+    LaunchedEffect(
+        sessionRouteKey,
+        viewModel.permissionGateRequest,
+        viewModel.showVoiceSetup,
+        viewModel.showConsentScreen,
+        viewModel.consentChecked,
+        viewModel.consentStatusChecked,
+        viewModel.versionChecked,
+        viewModel.updateRequired,
+        viewModel.consentUnsupported,
+        viewModel.accountStatusChecked,
+        viewModel.pendingDeletion,
+    ) {
+        if (sessionRouteKey == null) return@LaunchedEffect
+        if (!viewModel.versionChecked) return@LaunchedEffect
+        if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
+        if (!viewModel.accountStatusChecked) return@LaunchedEffect
+        if (viewModel.pendingDeletion) return@LaunchedEffect
+        // 캐시로 켜지는 consentChecked 가 아니라 **응답이 온** consentStatusChecked 를 본다 —
+        // 정책 개정 직후에는 캐시가 옛 버전 기준이라 재동의가 필요한데도 통과한다(Codex #660).
+        if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        if (viewModel.permissionGateRequest != null) return@LaunchedEffect
+        if (viewModel.showVoiceSetup) return@LaunchedEffect
+        viewModel.maybeShowWelcomePromo()
     }
 
     LaunchedEffect(sessionRouteKey, alarms) {
@@ -357,11 +443,22 @@ internal fun AlarmTalkApp(
             viewModel.checkVoiceSetupFor(authSession.user.id)
             viewModel.checkAccountStatus()
             viewModel.checkConsentStatus()
-            viewModel.preloadVoiceProfiles()
-            viewModel.loadStockClips()
-            viewModel.preloadSocial()
-            viewModel.preloadBilling()
         }
+    }
+    // 데이터 라우트는 **동의가 정착한 뒤에** 부른다. 동의 전에는 서버가 전부
+    // CONSENT_REQUIRED(403) 로 막으므로, 로그인 직후 한꺼번에 쏘면 실패만 쌓인다.
+    // 특히 목소리 프리페치 워커는 그 403 을 보고 포기해 버려서, 동의를 마치고 목소리 준비
+    // 화면에 도착한 사용자에게 '목소리를 받지 못했어요' 만 남는다 — 네트워크는 멀쩡한데도.
+    // 여기는 **소진되는 플래그가 아니다** — 데이터를 좀 일찍 부르는 것뿐이라 캐시 통과의
+    // 이득(재로그인 시 즉시 로드)을 그대로 둔다. consentStatusChecked 를 기다릴 이유가 없다.
+    LaunchedEffect(authSession?.token, viewModel.consentChecked, viewModel.showConsentScreen) {
+        if (authSession == null) return@LaunchedEffect
+        if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        viewModel.preloadVoiceProfiles()
+        viewModel.loadStockClips()
+        viewModel.prefetchStockClips()
+        viewModel.preloadSocial()
+        viewModel.preloadBilling()
     }
     // 상대가 목소리 공유를 켜면(voice_share_changed push) 공유 목록·클립 매니페스트를
     // 즉시 새로고침한다 — 가족 알람 push→pull 과 같은 즉시성.
@@ -589,7 +686,17 @@ internal fun AlarmTalkApp(
         )
     }
 
-    viewModel.permissionGateRequest?.let { target ->
+    // 화면을 통째로 차지하는 차단 게이트. 이 게이트들은 Scaffold **본문만** 대체하므로,
+    // 아래 다이얼로그들은 막지 않으면 그 위에 그대로 겹쳐 뜬다 — 업데이트 말고는 할 수 있는
+    // 게 없다고 말해 놓고 그 위에 다른 걸 요구하는 화면이 된다.
+    val blockingGateActive =
+        viewModel.updateRequired || viewModel.consentUnsupported || viewModel.pendingDeletion
+
+    // 동의 화면이 떠 있는 동안에는 그리지 않는다 — 위 트리거가 막지만, 다른 경로로 요청이
+    // 세워졌을 때도 약관 화면 위에 권한 모달이 겹치는 일은 없어야 한다.
+    viewModel.permissionGateRequest?.takeIf {
+        !blockingGateActive && viewModel.consentChecked && !viewModel.showConsentScreen
+    }?.let { target ->
         PermissionGateDialog(
             target = target,
             onDismiss = {
@@ -607,6 +714,44 @@ internal fun AlarmTalkApp(
         )
     }
 
+    if (viewModel.showWelcomePromo && !blockingGateActive) {
+        // 다이얼로그가 닫히면 함께 사라지는 로컬 상태다 — 뷰모델에 실패 전용 상태를 만들 이유가 없다.
+        var promoError by remember { mutableStateOf<String?>(null) }
+        WelcomePromoDialog(
+            busy = billingBusy,
+            // **성공했을 때만 닫는다.** 예전에는 결과를 기다리지 않고 즉시 닫았는데, 이 안내는
+            // 계정당 1회라 오타·만료·네트워크 실패면 스낵바 한 줄만 보고 다시 열 방법이
+            // 없었다(Codex #660). 실패는 다이얼로그 안에 인라인으로 보여 주고 열어 둔다.
+            errorText = promoError,
+            onSubmitCode = { code ->
+                promoError = null
+                viewModel.registerCode(code) { error ->
+                    if (error == null) viewModel.dismissWelcomePromo() else promoError = error
+                }
+            },
+            onDismiss = viewModel::dismissWelcomePromo,
+            onOpenInstagram = {
+                // 코드를 어디서 받는지 알려주는 자리. 앱 안에 코드를 박아 두지 않는다
+                // (레포가 공개라 실코드가 소스에 들어가면 안 된다).
+                viewModel.message = context.getString(R.string.welcome_promo_instagram_hint)
+                context.openWebUrl("https://instagram.com/alarmtalk.app")
+            },
+        )
+    }
+
+    // 목소리 등록을 누른 순간에만 뜨는 음성 처리 동의. 가입 게이트에는 이 항목이 없다.
+    viewModel.pendingSensitiveConsent?.takeIf { !blockingGateActive }?.let { request ->
+        VoiceConsentSheet(
+            busy = authBusy,
+            types = request.types,
+            // 동의 직후 실제로 목소리를 만드는지로 문맥을 정한다 — 묻는 항목으로 파생하면
+            // 국외 이전만 빠진 등록에서 TTS 카피가 떠 사용자를 속인다(Codex #660).
+            registeringVoice = request.resumeVoiceDrafts != null,
+            onAgree = viewModel::submitVoiceConsents,
+            onDismiss = { viewModel.pendingSensitiveConsent = null },
+        )
+    }
+
     planGateDialog?.let { gate ->
         PlanGateDialog(
             title = gate.title ?: stringResource(R.string.r3dlg_plan_gate_title),
@@ -618,7 +763,7 @@ internal fun AlarmTalkApp(
             },
             onDismiss = { planGateDialog = null },
             onRedeemCode = viewModel::registerCode,
-            redeemBusy = viewModel.socialBusy,
+            redeemBusy = viewModel.billingBusy,
         )
     }
 
@@ -673,8 +818,12 @@ internal fun AlarmTalkApp(
     // 다른 화면으로 샐 수 있는 출구를 두지 않는다.
     // 알람 다중 선택(길게 누르기) 중인지 — 이때는 ＋ FAB 를 감춘다.
     var alarmSelectionActive by remember { mutableStateOf(false) }
-    val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-        !viewModel.updateRequired && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
+    // needsConsent 가 아니라 **showConsentScreen** 을 본다. 선택 동의만 재수집하는 경우
+    // (collect=[marketing]) needsConsent 는 false 인데 동의 화면은 떠 있어서, 하단바와 ＋ FAB 가
+    // 그 화면 아래에 그대로 남아 눌린다 — 수집이 끝나기 전에 탭을 바꾸거나 편집기 라우트를
+    // 밀어 넣을 수 있다(Codex #660). 이 파일의 다른 게이트는 모두 이미 showConsentScreen 을 본다.
+    val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.showConsentScreen &&
+        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
 
     Scaffold(
         bottomBar = {
@@ -724,7 +873,10 @@ internal fun AlarmTalkApp(
             }
         },
     ) { padding ->
-      if (viewModel.updateRequired) {
+      // 최소지원버전 미달과, 서버가 모르는 필수 동의를 요구하는 경우. 둘 다 사용자가 할 수
+      // 있는 일이 업데이트뿐이라 같은 화면으로 보낸다.
+      if (viewModel.updateRequired || viewModel.consentUnsupported) {
+          GateBackGuard()
           UpdateRequiredScreen(
               contentPadding = padding,
               onUpdate = {
@@ -782,6 +934,9 @@ internal fun AlarmTalkApp(
           return@Scaffold
       }
       if (viewModel.pendingDeletion) {
+          // 화면에 '복구'·'로그아웃' 이라는 정식 선택지가 있다. 뒤로가기로 앱이 닫히면
+          // 그 선택지를 보지 못한 채 나가게 된다.
+          GateBackGuard()
           AccountPendingDeletionScreen(
               contentPadding = padding,
               busy = authBusy,
@@ -793,18 +948,19 @@ internal fun AlarmTalkApp(
       // 동의 확인이 끝나기 전엔 온보딩·홈을 띄우지 않고 로딩으로 잡아둬, 동의가 필요한
       // 사용자에게 다른 화면이 먼저 깜빡였다가 동의 화면이 끼어드는 일을 막는다.
       if (!viewModel.consentChecked) {
+          GateBackGuard()
           ConsentCheckLoadingScreen(contentPadding = padding)
           return@Scaffold
       }
-      if (viewModel.needsConsent) {
+      if (viewModel.showConsentScreen) {
+          GateBackGuard()
           ConsentScreen(
               contentPadding = padding,
               busy = authBusy,
-              onAgree = { marketingAgreed, voiceBiometricAgreed, overseasTransferAgreed ->
-                  viewModel.submitConsents(marketingAgreed, voiceBiometricAgreed, overseasTransferAgreed)
-              },
-              onOpenTerms = { context.openWebUrl("https://alarm-talk.com/ko/terms") },
-              onOpenPrivacy = { context.openWebUrl("https://alarm-talk.com/ko/privacy") },
+              collect = viewModel.consentCollect,
+              isReconsent = viewModel.consentIsReconsent,
+              optional = viewModel.consentOptional,
+              onAgree = { agreedOptional -> viewModel.submitConsents(agreedOptional) },
           )
           return@Scaffold
       }
@@ -834,6 +990,9 @@ internal fun AlarmTalkApp(
               done = prefetchDone,
               total = prefetchTotal,
               failed = prefetchInfo?.state == androidx.work.WorkInfo.State.FAILED,
+              // 판정 규칙은 stockPrefetchStalled 에 있다(회귀 테스트로 고정 — 갇히는 조합을
+              // 두 번 놓쳤다).
+              stalled = stockPrefetchStalled(prefetchInfo?.state, prefetchInfo?.runAttemptCount ?: 0),
               onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
               onSkip = viewModel::skipVoiceSetup,
           )
@@ -873,6 +1032,7 @@ internal fun AlarmTalkApp(
                           vouchers = vouchers,
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,
+                          sensitiveConsentMissing = viewModel.sensitiveConsentMissing,
                           onGenerateTts = viewModel::generateTtsAudio,
                           stockClips = viewModel.stockClips,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
@@ -895,7 +1055,6 @@ internal fun AlarmTalkApp(
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,
                           onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
-                          onCheckoutPlan = viewModel::checkoutPlan,
                           planPrices = viewModel.billingPlanPrices,
                           onPurchasePlay = viewModel::startPlayPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
@@ -938,10 +1097,15 @@ internal fun AlarmTalkApp(
               ) { entry ->
                   val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
                   val targetUserId = entry.arguments?.getString(AppRoute.TargetUserIdArg)
+                  // 직전 선택은 **새 알람 경로에만** 넘긴다. 기존 알람 편집(아래 라우트)에는
+                  // 넘기지 않는다 — 열기만 해도 문구·테마가 바뀌면 안 되기 때문이다.
+                  // 계정이 바뀌면 다시 읽는다(저장소가 계정별 키라 값도 계정별이다).
+                  val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
+                  val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
                   AlarmEditorScreen(
                       contentPadding = padding,
                       onRegisterCode = viewModel::registerCode,
-                      redeemBusy = viewModel.socialBusy,
+                      redeemBusy = viewModel.billingBusy,
                       alarm = null,
                       authSession = authSession,
                       subscriptionResponse = subscriptionResponse,
@@ -953,6 +1117,8 @@ internal fun AlarmTalkApp(
                       voiceProfileBusy = voiceProfileBusy,
                       stockClips = viewModel.stockClips,
                       lastUsedVoiceId = viewModel.lastUsedVoiceId,
+                      lastMessageContext = lastMessageContext,
+                      lastFreeBucket = lastFreeBucket,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
@@ -987,7 +1153,7 @@ internal fun AlarmTalkApp(
                       AlarmEditorScreen(
                           contentPadding = padding,
                           onRegisterCode = viewModel::registerCode,
-                          redeemBusy = viewModel.socialBusy,
+                          redeemBusy = viewModel.billingBusy,
                           alarm = currentAlarm,
                           authSession = authSession,
                           subscriptionResponse = subscriptionResponse,
@@ -1048,6 +1214,7 @@ internal fun AlarmTalkApp(
                       marketingConsentLoadFailed = viewModel.marketingConsentLoadFailed,
                       onLoadMarketingConsent = viewModel::loadMarketingConsent,
                       onChangeMarketingConsent = viewModel::updateMarketingConsent,
+                      onWithdrawVoiceBiometric = viewModel::withdrawVoiceBiometricConsent,
                   )
               }
               composable(AppRoute.LegalDoc) { entry ->

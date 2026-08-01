@@ -87,6 +87,10 @@ internal fun MainViewModel.createAlarm(
     if (!requireAlarmPermissionsForMutation()) return
     viewModelScope.launch {
         if (!draft.targetUserId.isNullOrBlank()) {
+            // 가족(수신자) 알람은 여기서 끝난다 — '직전 선택' 을 **일부러 기억하지 않는다.**
+            // 이 화면의 목소리·문구는 수신자를 위해 고른 것이고, 문구 설정도 수신자의
+            // dynamic prompt(날씨 도시·사주)를 기준으로 만들어진다. 그걸 내 다음 알람의
+            // 기본값으로 삼으면 남의 기준이 내 알람에 새는 셈이다.
             createFamilyTargetAlarm(draft, onDone)
             return@launch
         }
@@ -94,6 +98,7 @@ internal fun MainViewModel.createAlarm(
             repository.createAlarm(withResolvedWeatherVariant(draft), replaceExisting)
         }.onSuccess {
             rememberVoiceUsed(draft.voiceProfileId)
+            rememberMessageChoiceUsed(draft)
             // 성공 토스트는 띄우지 않는다 — 저장 즉시 리스트에 행이 생기고 홈 헤더가
             // '몇 시간 후에 울려요'를 이미 말해준다(안내 중복 소음).
             onDone()
@@ -221,6 +226,7 @@ internal fun MainViewModel.updateAlarm(
             repository.updateAlarm(alarmId, withResolvedWeatherVariant(draft), replaceExisting)
         }.onSuccess {
             rememberVoiceUsed(draft.voiceProfileId)
+            rememberMessageChoiceUsed(draft)
             // 생성과 동일 — 성공 토스트 생략(리스트/헤더가 결과를 보여준다).
             onDone()
         }.onFailure { error ->

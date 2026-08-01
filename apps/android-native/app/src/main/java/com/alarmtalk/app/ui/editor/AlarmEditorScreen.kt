@@ -120,7 +120,12 @@ internal fun AlarmEditorScreen(
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     stockClips: List<StockClip>,
+    // 새 알람이 이어받을 '직전 선택' 세 축. 셋 다 계정별로 저장되고, 저장에 성공한 알람에서만
+    // 기록된다(MainViewModel.rememberVoiceUsed / rememberMessageChoiceUsed).
+    // 기존 알람을 열 때는 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
     lastUsedVoiceId: String? = null,
+    lastMessageContext: String? = null,
+    lastFreeBucket: String? = null,
     // 유료 안내 모달에서 바로 프로모션/선물 코드를 넣을 수 있게 한다.
     onRegisterCode: (String) -> Unit = {},
     redeemBusy: Boolean = false,
@@ -151,13 +156,10 @@ internal fun AlarmEditorScreen(
         voiceProfiles
     }
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
-    // 새 알람은 마지막에 고른 문구 종류를 기본값으로 이어받는다(없으면 목록에 노출하지 않는
-    // '기본 인사말'=preset 으로 시작). '직접 입력'은 저장하지 않아 빈 직접입력으로 시작하지 않는다.
-    val messageDefaultsContext = LocalContext.current
-    val defaultRandomContext = remember(messageDefaultsContext) {
-        DynamicPromptPreferenceStore(messageDefaultsContext.applicationContext)
-            .readLastMessageContext() ?: DefaultRandomPromptContext
-    }
+    // 새 알람은 마지막에 고른 문구 종류를 기본값으로 이어받는다(한 번도 고른 적 없으면 목록에
+    // 노출하지 않는 '기본 인사말'=preset 으로 시작). '직접 입력'은 기억하지 않아 빈 직접입력으로
+    // 시작하지 않는다.
+    val defaultRandomContext = lastMessageContext ?: DefaultRandomPromptContext
     val editor = remember(alarm?.id) {
         AlarmEditorState.from(
             alarm,
@@ -707,27 +709,44 @@ internal fun AlarmEditorScreen(
             submitDraft(editor.toDraft())
             return
         }
-        val localTtsCacheKey = AlarmAudioStore.ttsCacheKey(
-            profileId = profileId,
-            text = text,
-            category = editor.activeVoiceCategory(),
-            language = editor.activeVoiceLanguage(),
-        )
-        if (!editor.voiceRandomPrompt && listenerTitleForSave.isNullOrBlank()) {
-            audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
+        // 문구가 글자까지 똑같으면 서버를 부르지 않고 전에 만든 오디오를 그대로 쓴다.
+        // (대기 없음 + 직접 입력 월 한도 안 깎임 + 오프라인에서도 저장됨.)
+        //
+        // 랜덤 문구는 매번 문장이 달라지는 게 기능이라 제외한다. 가족 알람도 제외 — 서버가
+        // 수신자별로 만들어야 하고, 내 로컬 캐시는 수신자가 갖고 있지 않아 무음이 된다.
+        val reuseUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        val ttsInputKey = if (!familyAlarmMode && !editor.voiceRandomPrompt && reuseUserId != null) {
+            AlarmAudioStore.ttsInputKey(
+                userId = reuseUserId,
+                profileId = profileId,
+                text = text,
+                category = editor.activeVoiceCategory(),
+                language = editor.activeVoiceLanguage(),
+                listenerTitle = listenerTitleForSave,
+            )
+        } else {
+            null
+        }
+        ttsInputKey
+            ?.let { audioStore.resolveTtsInput(it) }
+            ?.let { alias -> audioStore.getCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri)?.to(alias) }
+            ?.let { (cached, alias) ->
                 editor.setGeneratedTtsAudio(
                     audio = cached,
                     profileId = profileId,
-                    text = text,
+                    // 입력 원문이 아니라 **그 오디오와 짝이 되는 서버 표시 문구**를 쓴다.
+                    // 번역이 켜지면 둘이 달라지는데, 원문을 쓰면 잠금화면 문구와 실제 음성이
+                    // 어긋난다(Codex #660).
+                    text = alias.displayText,
                     messageId = cached.messageId ?: editor.ttsMessageId ?: "",
                     rawAudioUri = cached.rawAudioUri,
+                    listenerTitle = listenerTitleForSave,
                 )
                 audioMessage = context.getString(R.string.editor_existing_voice_cache_used)
                 editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
                 submitDraft(editor.toDraft())
                 return
             }
-        }
 
         // 이전에 진행 중이던 generation 이 남아 있다면 취소.
         generationJob?.cancel()
@@ -826,6 +845,9 @@ internal fun AlarmEditorScreen(
                         messageId = response.messageId,
                     )
                 }
+                // 다음에 같은 문구를 넣으면 이 파일을 바로 찾을 수 있게 화살표를 남긴다.
+                // 서버 표시 문구(response.text)도 함께 — 번역이 켜지면 입력 원문과 다르다.
+                ttsInputKey?.let { audioStore.linkTtsInput(it, cacheKey, response.text) }
                 editor.setGeneratedTtsAudio(
                     audio = cachedAudio,
                     profileId = profileId,
@@ -937,7 +959,17 @@ internal fun AlarmEditorScreen(
                 val profileId = editor.voiceProfileId
                 if (!profileId.isNullOrBlank()) {
                     val buckets = freeBucketsFor(stockClips, profileId, appVoiceLanguage)
-                    val target = editor.selectedBucket?.takeIf { it in buckets } ?: buckets.firstOrNull()
+                    // 새 알람은 마지막에 고른 테마를 이어받는다 — 이게 없으면 매번 FreeBucketOrder
+                    // 첫 값(약)으로 돌아가, 날씨로 바꿔 저장해도 다음 알람이 다시 약이 된다.
+                    // 기존 알람은 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). 날씨는 도시가
+                    // 있어야 조건 매칭이 되고 없으면 저장이 막히므로, 저장된 도시가 없으면 안 잇는다.
+                    val remembered = lastFreeBucket?.takeIf {
+                        alarm == null && it in buckets &&
+                            (it != "weather" || savedWeatherConfigured || editor.voiceWeatherCity.isNotBlank())
+                    }
+                    val target = editor.selectedBucket?.takeIf { it in buckets }
+                        ?: remembered
+                        ?: buckets.firstOrNull()
                     if (target != null &&
                         (editor.selectedBucket != target || editor.bucketResolvedForProfileId != profileId)
                     ) {
@@ -1057,8 +1089,8 @@ internal fun AlarmEditorScreen(
         }
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
-        // 마지막에 고른 문구 종류를 기억 → 다음 새 알람의 기본값으로 이어받는다.
-        dynamicPromptPreferenceStore.saveLastMessageContext(editor.voiceRandomContext)
+        // 여기서는 기억하지 않는다 — 문구를 눌러만 보고 알람을 저장하지 않은 것까지 다음 알람의
+        // 기본값이 되면 안 된다. 기록은 저장 성공 시(rememberMessageChoiceUsed) 한 곳에서만 한다.
         editor.voiceLanguage = appVoiceLanguage
         editor.voiceText = ""
         editor.voiceWeatherCountry = result.weatherCountry

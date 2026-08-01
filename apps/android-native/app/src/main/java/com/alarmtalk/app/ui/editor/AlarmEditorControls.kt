@@ -456,8 +456,9 @@ internal val TtsCategories: List<Pair<String, Int>> = listOf(
  * 무료 플랜이 알람 "버킷"으로 고를 수 있는 카테고리(노출 순서). 실제 노출은 stockClips
  * manifest 와 교차한다 → 서버에 버킷을 추가/재시드하면 여기에만 추가하면 칩이 늘어난다.
  * 백엔드 확정 무료 버킷(stock-clips.ts FREE_BUCKET_CATEGORIES)과 동일: 약 + 날씨.
- * 순서: 추가 설정이 필요 없는 '약'이 먼저(=미선택 시 자동 선택 기본값). 날씨는 지역
- * 입력이 필요해 기본값으로 두지 않는다.
+ * 순서: 추가 설정이 필요 없는 '약'이 먼저. 다만 이건 **직전에 고른 테마가 없을 때만** 쓰는
+ * 최후 폴백이다 — 마지막에 고른 테마가 있으면 그쪽이 우선한다(AlarmEditorScreen 의 lastFreeBucket).
+ * 이 순서를 '항상 적용되는 기본값'으로 되돌리면 날씨로 저장해도 새 알람이 매번 약으로 돌아간다.
  */
 internal val FreeBucketOrder: List<String> = listOf("medication", "weather")
 
@@ -501,9 +502,12 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
 // '직접 입력'(랜덤 끄고 사용자가 문구를 직접 타이핑) 을 나타내는 특수 선택값.
 internal const val ManualMessageContext = "manual"
 
-// 편집기 '문구' 선택기(유료) 노출 옵션 — 날씨·운세·사랑(동적) + 약(고정 프리셋) + 직접 입력.
-// 기본문구(preset)는 목록에서 제외한다(보이지 않는 기본값).
+// 편집기 '문구' 선택기(유료) 노출 옵션 — 기본 인사말 + 날씨·운세·사랑(동적) + 약(고정 프리셋)
+// + 직접 입력. preset 을 목록에 노출하는 이유: 새 알람의 기본값이자 '마지막에 고른 문구 종류'로
+// 기억될 수 있는 값이라, 목록에 없으면 요약 행은 '기본 인사말'인데 선택기를 열면 아무것도(또는
+// 엉뚱한 항목이) 체크돼 보인다. 사용자에겐 선택이 리셋된 것으로 읽힌다. 되돌아올 길도 필요하다.
 internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
+    "preset" to R.string.editor_msg_mode_preset,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
     "love" to R.string.editor2_ctx_love,
