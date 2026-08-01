@@ -581,6 +581,44 @@ class AlarmAudioStore(
         )
     }
 
+    /**
+     * "이 문구로 만든 음성이 이미 있다" 는 별칭을 남긴다.
+     *
+     * 오디오 파일 이름은 **서버가 준 cache_key** 다. 서버는 문구에 delivery 태그를 붙인 뒤
+     * 그 결과로 키를 만들기 때문에, 앱은 요청을 보내기 전에는 그 키를 알 수 없다. 그래서
+     * 사용자가 입력한 값으로 만든 [ttsInputKey] 에서 서버 키로 가는 화살표를 한 번 적어 둔다.
+     * 다음에 똑같은 문구를 넣으면 서버를 부르지 않고 그 파일을 그대로 쓴다.
+     *
+     * 별칭은 오디오와 같은 `.meta` 사이드카를 쓴다(새 파일 형식을 만들지 않는다). 스윕이
+     * 별칭을 지웠거나 오디오가 먼저 사라졌으면 조회가 null 이 되어 기존 서버 경로로 폴백한다 —
+     * 최악의 경우가 '지금과 똑같음' 이다.
+     */
+    fun linkTtsInput(inputKey: String, serverCacheKey: String) {
+        if (inputKey.isBlank() || serverCacheKey.isBlank() || inputKey == serverCacheKey) return
+        val props = Properties()
+        props.setProperty(META_ALIAS_OF, serverCacheKey)
+        runCatching {
+            metadataFile(inputKey).outputStream().use { props.store(it, null) }
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to link tts input key=$inputKey", error)
+        }
+    }
+
+    /** [linkTtsInput] 로 남긴 서버 cache_key. 없으면 null(= 서버에 새로 요청). */
+    fun resolveTtsInput(inputKey: String): String? {
+        if (inputKey.isBlank()) return null
+        val file = metadataFile(inputKey)
+        if (!file.exists()) return null
+        val props = Properties()
+        return runCatching {
+            file.inputStream().use { props.load(it) }
+            props.getProperty(META_ALIAS_OF)?.takeIf { it.isNotBlank() }
+        }.getOrNull()?.also {
+            // 스윕 TTL 이 '최초 생성'이 아니라 '마지막 사용' 기준이 되게 만져 둔다.
+            runCatching { file.setLastModified(System.currentTimeMillis()) }
+        }
+    }
+
     fun deleteCachedAudio(cacheKey: String) {
         val safeKey = safeCacheKey(cacheKey)
         audioDir.listFiles()?.forEach { file ->
@@ -900,6 +938,9 @@ class AlarmAudioStore(
         private const val AUDIO_DIR = "alarm-audio"
         private const val META_EXTENSION = "meta"
 
+        /** 입력키 → 서버 cache_key 별칭(`.meta` 안의 속성). [linkTtsInput] 참고. */
+        private const val META_ALIAS_OF = "aliasOf"
+
         /** 쓰기 도중 죽었을 때 남는 미완성 파일 확장자. sweep 이 [PARTIAL_STALE_AFTER_MILLIS] 뒤 정리한다. */
         private const val PARTIAL_EXTENSION = "part"
 
@@ -970,6 +1011,37 @@ class AlarmAudioStore(
         ): String =
             serverCacheKey?.takeIf { it.isNotBlank() }
                 ?: sha256(listOf("tts-v2", profileId, text.trim().replace(Regex("\\s+"), " "), category, language).joinToString("|"))
+
+        /**
+         * "사용자가 무엇을 입력했는가" 로 만드는 키. 파일 이름이 아니라 [linkTtsInput] 별칭의
+         * 왼쪽에만 쓴다.
+         *
+         * 키에 반드시 들어가야 하는 것:
+         *  - `userId` — 캐시는 기기에 남고 로그아웃해도 안 지워진다. 빼면 다른 계정이 앞 계정의
+         *    message_id 를 물려받아 알람 동기화가 서버에서 거부된다.
+         *  - `listenerTitle`(호칭) — 서버가 호칭을 문구 **안에** 병합하고, 공유 목소리는 보는
+         *    사람마다 호칭이 다르다. 빼면 '엄마 목소리로 아빠 호칭' 이 나온다.
+         *  - `language` — 번역 여부가 이 값으로 결정된다.
+         */
+        fun ttsInputKey(
+            userId: String,
+            profileId: String,
+            text: String,
+            category: String,
+            language: String,
+            listenerTitle: String?,
+        ): String =
+            sha256(
+                listOf(
+                    "tts-input-v1",
+                    userId,
+                    profileId,
+                    text.trim().replace(Regex("\\s+"), " "),
+                    category,
+                    language,
+                    listenerTitle?.trim().orEmpty(),
+                ).joinToString("|"),
+            )
 
         fun audioCacheKeyForSource(
             sourceUri: String,

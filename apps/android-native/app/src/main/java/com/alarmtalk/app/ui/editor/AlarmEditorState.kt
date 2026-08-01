@@ -332,15 +332,17 @@ internal class AlarmEditorState(
     fun hasFreshTtsAudio(profileId: String, text: String, listenerTitle: String? = null): Boolean {
         val listenerTitleForKey = listenerTitle?.trim()?.takeIf { it.isNotBlank() }
             ?: voiceListenerTitleOverride.trim().takeIf { it.isNotBlank() }
-        return !localAudioUri.isNullOrBlank() && (
+        // audioCacheKey 와 비교하는 분기가 있었는데 성립할 수 없었다 — 파일 이름은 항상 서버가
+        // 준 cache_key 이고 비교 대상은 앱이 만든 해시라 절대 같아지지 않는다. '재사용되고
+        // 있다'는 착시만 줬다. 다른 알람이 만든 오디오의 재사용은 AlarmAudioStore 의
+        // linkTtsInput/resolveTtsInput 별칭이 맡는다.
+        return !localAudioUri.isNullOrBlank() &&
             generatedTtsKey == buildTtsKey(
                 profileId = profileId,
                 text = text,
                 category = activeVoiceCategory(),
                 language = activeVoiceLanguage(),
                 listenerTitle = listenerTitleForKey,
-            ) ||
-                (listenerTitleForKey.isNullOrBlank() && audioCacheKey == AlarmAudioStore.ttsCacheKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage()))
             )
     }
 

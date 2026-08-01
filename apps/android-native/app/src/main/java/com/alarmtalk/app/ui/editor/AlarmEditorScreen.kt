@@ -709,27 +709,41 @@ internal fun AlarmEditorScreen(
             submitDraft(editor.toDraft())
             return
         }
-        val localTtsCacheKey = AlarmAudioStore.ttsCacheKey(
-            profileId = profileId,
-            text = text,
-            category = editor.activeVoiceCategory(),
-            language = editor.activeVoiceLanguage(),
-        )
-        if (!editor.voiceRandomPrompt && listenerTitleForSave.isNullOrBlank()) {
-            audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
+        // 문구가 글자까지 똑같으면 서버를 부르지 않고 전에 만든 오디오를 그대로 쓴다.
+        // (대기 없음 + 직접 입력 월 한도 안 깎임 + 오프라인에서도 저장됨.)
+        //
+        // 랜덤 문구는 매번 문장이 달라지는 게 기능이라 제외한다. 가족 알람도 제외 — 서버가
+        // 수신자별로 만들어야 하고, 내 로컬 캐시는 수신자가 갖고 있지 않아 무음이 된다.
+        val reuseUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        val ttsInputKey = if (!familyAlarmMode && !editor.voiceRandomPrompt && reuseUserId != null) {
+            AlarmAudioStore.ttsInputKey(
+                userId = reuseUserId,
+                profileId = profileId,
+                text = text,
+                category = editor.activeVoiceCategory(),
+                language = editor.activeVoiceLanguage(),
+                listenerTitle = listenerTitleForSave,
+            )
+        } else {
+            null
+        }
+        ttsInputKey
+            ?.let { audioStore.resolveTtsInput(it) }
+            ?.let { audioStore.getCachedAudio(it, rawAudioUri = editor.rawAudioUri) }
+            ?.let { cached ->
                 editor.setGeneratedTtsAudio(
                     audio = cached,
                     profileId = profileId,
                     text = text,
                     messageId = cached.messageId ?: editor.ttsMessageId ?: "",
                     rawAudioUri = cached.rawAudioUri,
+                    listenerTitle = listenerTitleForSave,
                 )
                 audioMessage = context.getString(R.string.editor_existing_voice_cache_used)
                 editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
                 submitDraft(editor.toDraft())
                 return
             }
-        }
 
         // 이전에 진행 중이던 generation 이 남아 있다면 취소.
         generationJob?.cancel()
@@ -828,6 +842,8 @@ internal fun AlarmEditorScreen(
                         messageId = response.messageId,
                     )
                 }
+                // 다음에 같은 문구를 넣으면 이 파일을 바로 찾을 수 있게 화살표를 남긴다.
+                ttsInputKey?.let { audioStore.linkTtsInput(it, cacheKey) }
                 editor.setGeneratedTtsAudio(
                     audio = cachedAudio,
                     profileId = profileId,
