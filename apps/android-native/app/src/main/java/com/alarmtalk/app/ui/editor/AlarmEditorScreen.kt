@@ -729,12 +729,15 @@ internal fun AlarmEditorScreen(
         }
         ttsInputKey
             ?.let { audioStore.resolveTtsInput(it) }
-            ?.let { audioStore.getCachedAudio(it, rawAudioUri = editor.rawAudioUri) }
-            ?.let { cached ->
+            ?.let { alias -> audioStore.getCachedAudio(alias.cacheKey, rawAudioUri = editor.rawAudioUri)?.to(alias) }
+            ?.let { (cached, alias) ->
                 editor.setGeneratedTtsAudio(
                     audio = cached,
                     profileId = profileId,
-                    text = text,
+                    // 입력 원문이 아니라 **그 오디오와 짝이 되는 서버 표시 문구**를 쓴다.
+                    // 번역이 켜지면 둘이 달라지는데, 원문을 쓰면 잠금화면 문구와 실제 음성이
+                    // 어긋난다(Codex #660).
+                    text = alias.displayText,
                     messageId = cached.messageId ?: editor.ttsMessageId ?: "",
                     rawAudioUri = cached.rawAudioUri,
                     listenerTitle = listenerTitleForSave,
@@ -843,7 +846,8 @@ internal fun AlarmEditorScreen(
                     )
                 }
                 // 다음에 같은 문구를 넣으면 이 파일을 바로 찾을 수 있게 화살표를 남긴다.
-                ttsInputKey?.let { audioStore.linkTtsInput(it, cacheKey) }
+                // 서버 표시 문구(response.text)도 함께 — 번역이 켜지면 입력 원문과 다르다.
+                ttsInputKey?.let { audioStore.linkTtsInput(it, cacheKey, response.text) }
                 editor.setGeneratedTtsAudio(
                     audio = cachedAudio,
                     profileId = profileId,

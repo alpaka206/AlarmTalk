@@ -67,14 +67,29 @@ class TtsInputReuseTest {
     fun `별칭을 남기면 그대로 되찾는다`() {
         val input = key()
         assertNull(store.resolveTtsInput(input))
-        store.linkTtsInput(input, "server-cache-key-1")
-        assertEquals("server-cache-key-1", store.resolveTtsInput(input))
+        store.linkTtsInput(input, "server-cache-key-1", "일어나 규원아")
+        val alias = store.resolveTtsInput(input)
+        assertEquals("server-cache-key-1", alias?.cacheKey)
+        assertEquals("일어나 규원아", alias?.displayText)
+    }
+
+    @Test
+    fun `번역된 표시 문구를 그대로 복원한다`() {
+        // 앱 언어와 입력 언어가 다르면 서버가 번역한 문구를 돌려준다. 재사용 때 입력 원문을
+        // 쓰면 잠금화면 문구와 실제 음성이 어긋난다.
+        val input = key(text = "일어나 규원아", language = "en")
+        store.linkTtsInput(input, "server-cache-key-en", "Wake up, Gyuwon")
+        assertEquals("Wake up, Gyuwon", store.resolveTtsInput(input)?.displayText)
     }
 
     @Test
     fun `빈 값으로는 별칭을 남기지 않는다`() {
-        store.linkTtsInput("", "server-cache-key-1")
-        store.linkTtsInput(key(text = "다른 문구"), "")
+        store.linkTtsInput("", "server-cache-key-1", "text")
+        store.linkTtsInput(key(text = "다른 문구"), "", "text")
         assertNull(store.resolveTtsInput(key(text = "다른 문구")))
+        // 표시 문구가 없으면 별칭 자체를 남기지 않는다 — 그 값 없이 재사용하면
+        // 번역된 오디오에 원문을 붙이게 된다.
+        store.linkTtsInput(key(text = "또 다른 문구"), "server-cache-key-2", "")
+        assertNull(store.resolveTtsInput(key(text = "또 다른 문구")))
     }
 }

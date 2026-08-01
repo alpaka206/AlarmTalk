@@ -35,6 +35,12 @@ object VoiceProfileAudioLimits {
     const val MAX_DURATION_TOLERANCE_MILLIS = 5_000L
 }
 
+/** [AlarmAudioStore.resolveTtsInput] 결과 — 재사용할 오디오 키와 그 오디오의 표시 문구. */
+data class TtsInputAlias(
+    val cacheKey: String,
+    val displayText: String,
+)
+
 data class CachedAlarmAudio(
     val localAudioUri: String,
     val rawAudioUri: String?,
@@ -589,14 +595,21 @@ class AlarmAudioStore(
      * 사용자가 입력한 값으로 만든 [ttsInputKey] 에서 서버 키로 가는 화살표를 한 번 적어 둔다.
      * 다음에 똑같은 문구를 넣으면 서버를 부르지 않고 그 파일을 그대로 쓴다.
      *
+     * [displayText] 도 함께 적는다 — **서버가 돌려준 표시 문구**다. 번역이 켜지면 이 값이
+     * 입력 원문과 달라지는데(앱 언어 ≠ 입력 언어), 재사용 때 원문을 표시 문구로 쓰면
+     * **잠금화면 문구와 실제 음성이 어긋난다**(Codex #660). 그래서 오디오와 짝이 되는 문구를
+     * 같이 보관했다가 그대로 복원한다.
+     *
      * 별칭은 오디오와 같은 `.meta` 사이드카를 쓴다(새 파일 형식을 만들지 않는다). 스윕이
      * 별칭을 지웠거나 오디오가 먼저 사라졌으면 조회가 null 이 되어 기존 서버 경로로 폴백한다 —
      * 최악의 경우가 '지금과 똑같음' 이다.
      */
-    fun linkTtsInput(inputKey: String, serverCacheKey: String) {
+    fun linkTtsInput(inputKey: String, serverCacheKey: String, displayText: String) {
         if (inputKey.isBlank() || serverCacheKey.isBlank() || inputKey == serverCacheKey) return
+        if (displayText.isBlank()) return
         val props = Properties()
         props.setProperty(META_ALIAS_OF, serverCacheKey)
+        props.setProperty(META_ALIAS_TEXT, displayText)
         runCatching {
             metadataFile(inputKey).outputStream().use { props.store(it, null) }
         }.onFailure { error ->
@@ -604,15 +617,22 @@ class AlarmAudioStore(
         }
     }
 
-    /** [linkTtsInput] 로 남긴 서버 cache_key. 없으면 null(= 서버에 새로 요청). */
-    fun resolveTtsInput(inputKey: String): String? {
+    /**
+     * [linkTtsInput] 로 남긴 별칭. 없으면 null(= 서버에 새로 요청).
+     *
+     * 표시 문구가 없는 별칭은 **없는 것으로 취급한다.** 그 값 없이 재사용하면 번역된 오디오에
+     * 원문을 붙이게 되므로, 한 번 더 생성하는 편이 낫다.
+     */
+    fun resolveTtsInput(inputKey: String): TtsInputAlias? {
         if (inputKey.isBlank()) return null
         val file = metadataFile(inputKey)
         if (!file.exists()) return null
         val props = Properties()
         return runCatching {
             file.inputStream().use { props.load(it) }
-            props.getProperty(META_ALIAS_OF)?.takeIf { it.isNotBlank() }
+            val cacheKey = props.getProperty(META_ALIAS_OF)?.takeIf { it.isNotBlank() } ?: return null
+            val displayText = props.getProperty(META_ALIAS_TEXT)?.takeIf { it.isNotBlank() } ?: return null
+            TtsInputAlias(cacheKey = cacheKey, displayText = displayText)
         }.getOrNull()?.also {
             // 스윕 TTL 이 '최초 생성'이 아니라 '마지막 사용' 기준이 되게 만져 둔다.
             runCatching { file.setLastModified(System.currentTimeMillis()) }
@@ -940,6 +960,9 @@ class AlarmAudioStore(
 
         /** 입력키 → 서버 cache_key 별칭(`.meta` 안의 속성). [linkTtsInput] 참고. */
         private const val META_ALIAS_OF = "aliasOf"
+
+        /** 그 오디오와 짝이 되는 **서버 표시 문구**. 번역이 켜지면 입력 원문과 달라진다. */
+        private const val META_ALIAS_TEXT = "aliasText"
 
         /** 쓰기 도중 죽었을 때 남는 미완성 파일 확장자. sweep 이 [PARTIAL_STALE_AFTER_MILLIS] 뒤 정리한다. */
         private const val PARTIAL_EXTENSION = "part"
