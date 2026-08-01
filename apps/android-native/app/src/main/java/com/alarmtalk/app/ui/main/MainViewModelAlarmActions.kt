@@ -87,6 +87,10 @@ internal fun MainViewModel.createAlarm(
     if (!requireAlarmPermissionsForMutation()) return
     viewModelScope.launch {
         if (!draft.targetUserId.isNullOrBlank()) {
+            // 가족(수신자) 알람은 여기서 끝난다 — '직전 선택' 을 **일부러 기억하지 않는다.**
+            // 이 화면의 목소리·문구는 수신자를 위해 고른 것이고, 문구 설정도 수신자의
+            // dynamic prompt(날씨 도시·사주)를 기준으로 만들어진다. 그걸 내 다음 알람의
+            // 기본값으로 삼으면 남의 기준이 내 알람에 새는 셈이다.
             createFamilyTargetAlarm(draft, onDone)
             return@launch
         }

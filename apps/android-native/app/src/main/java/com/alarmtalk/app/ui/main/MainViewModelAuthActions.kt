@@ -679,7 +679,7 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
     // 화면이 그리지 못하는 유형은 제출에서 뺀다. 서버가 새 유형을 먼저 추가한 구간에서
     // 구버전 앱이 '보여주지 않은 동의' 를 기록해 버리는 것을 막는다(Codex #660).
     // 그런 유형이 필수라면 ConsentScreen 이 CTA 를 막아 여기까지 오지도 않는다.
-    val collect = consentCollect.ifEmpty { GENERAL_REQUIRED_CONSENT_TYPES }
+    val collect = consentCollect.ifEmpty { SIGNUP_REQUIRED_CONSENT_TYPES }
         .filter { it in KNOWN_CONSENT_TYPES }
     if (collect.isEmpty()) {
         message = getApplication<android.app.Application>().getString(R.string.msg_consent_update_required)

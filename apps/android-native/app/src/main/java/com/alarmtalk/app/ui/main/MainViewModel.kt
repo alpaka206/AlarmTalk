@@ -67,6 +67,16 @@ internal val SENSITIVE_CONSENT_TYPES = listOf("voice_biometric", "overseas_trans
 internal val GENERAL_REQUIRED_CONSENT_TYPES = listOf("terms", "privacy", "age14")
 
 /**
+ * 가입 게이트가 실제로 요구하는 필수 동의 — 서버 `REQUIRED_CONSENT_TYPES` 와 같은 목록이다.
+ *
+ * 일반 데이터 라우트의 하드 게이트는 3종만 보지만(`GENERAL_REQUIRED_CONSENT_TYPES`),
+ * `needs_consent` 판정에는 `overseas_transfer` 가 들어간다. 서버 목록을 못 받았을 때 3종으로만
+ * 채우면 그 화면을 통과해도 국외 이전이 안 기록돼, 게이트만 닫히고 사용자는 나중에 TTS 를
+ * 쓰려다 다른 시트를 또 만난다(Codex #660). 이 화면은 overseas 체크박스를 그릴 수 있다.
+ */
+internal val SIGNUP_REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENT_TYPES + "overseas_transfer"
+
+/**
  * **이 앱 버전이 화면에 그릴 수 있는** 동의 유형 전부.
  *
  * 서버가 새 유형을 먼저 추가하고 구버전 앱이 아직 살아 있는 구간이 존재한다. 그때 화면이
@@ -205,9 +215,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 데이터 라우트의 403 CONSENT_REQUIRED 처리. okhttp 인터셉터(non-main)에서 호출될 수 있어
      * UI 스레드로 옮긴 뒤 동의 플로우를 연다.
      *
-     * 민감 동의(voice_biometric·overseas_transfer)는 **가입 게이트에 체크박스가 없다** — 목소리
-     * 등록 시점에 전용 시트로 받는다. 그러니 여기서 가입 게이트를 열면 사용자가 통과할 방법이
-     * 없어 갇힌다. 서버가 지목한 유형이 민감 동의면 상태만 갱신하고 게이트는 열지 않는다.
+     * 서버가 유형을 **지목한** 민감 동의 403(voice_biometric·overseas_transfer)은 기능 시점에
+     * 온 것이라 가입 게이트를 열면 안 된다 — 그 자리에서 받아야 할 것만 전용 시트로 받는다.
+     * (가입 게이트 자체는 overseas 체크박스를 그릴 수 있다. 아래 폴백이 그 경로다.)
      */
     private fun handleConsentRequired(consent: String?) {
         viewModelScope.launch {
@@ -229,8 +239,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 실패한 상태에서 이 403(일반 게이트, consent 필드 없음)이 먼저 오면 collect 가
             // 비어 화면에 항목이 하나도 안 그려지는데, 그 화면은 '필수 다 체크됨'으로 판정돼
             // 버튼이 활성화된다 → 사용자가 보지도 않은 동의가 기록된다(Codex #660).
-            // 이 403 이 요구하는 건 일반 필수 3종이므로 그걸로 채워 둔다.
-            if (consentCollect.isEmpty()) consentCollect = GENERAL_REQUIRED_CONSENT_TYPES
+            // 채울 목록은 **가입 게이트가 요구하는 전부**여야 한다. 이 403 을 낸 미들웨어는
+            // 일반 3종만 보지만, 3종만 받고 닫으면 국외 이전이 안 기록된 채 통과된다.
+            if (consentCollect.isEmpty()) consentCollect = SIGNUP_REQUIRED_CONSENT_TYPES
             consentChecked = true
             message = getApplication<android.app.Application>().getString(R.string.r3misc_consent_required)
         }
@@ -690,6 +701,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     internal fun rememberMessageChoiceUsed(draft: AlarmDraft) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        // 가족(수신자) 알람의 선택은 기억하지 않는다 — 수신자를 위해 고른 값이고, 문구는
+        // 수신자의 dynamic prompt 기준으로 만들어진다. 생성 경로는 이미 앞에서 갈라지지만,
+        // 어느 호출부로 들어와도 같은 규칙이 되도록 여기서도 막는다.
+        if (!draft.targetUserId.isNullOrBlank()) return
         if (draft.playMode == com.alarmtalk.app.data.AlarmPlayModes.ALARM_ONLY) return
         val bucket = draft.bucketId?.takeIf { it.isNotBlank() }
         if (bucket != null) {
