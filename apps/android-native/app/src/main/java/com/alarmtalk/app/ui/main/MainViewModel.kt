@@ -537,6 +537,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var pendingDeletion by mutableStateOf(false)
         internal set
 
+    // 계정 상태 조회가 끝났는지(성공·실패 무관). versionChecked 와 같은 이유로 필요하다 —
+    // 이게 false 인 동안 pendingDeletion 은 '아직 모른다' 는 뜻의 기본값 false 라, 이 값을
+    // 안 보면 탈퇴 유예 계정에서도 1회성 오버레이가 먼저 떠 플래그를 태운다(Codex #660).
+    var accountStatusChecked by mutableStateOf(false)
+        internal set
+
     // 설치 버전이 백엔드 최소지원버전 미만이면 true → 로그인 전부터 업데이트 차단 화면을 띄운다.
     // (In-App Update IMMEDIATE 트리거 조건이자, 그 취소/미가용 시의 최종 폴백 게이트)
     var updateRequired by mutableStateOf(false)
@@ -848,6 +854,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 웰컴 코드 안내도 계정별 상태다. 계정이 바뀌면 새 계정 기준으로 다시 판정한다.
         showWelcomePromo = false
         pendingDeletion = false
+        accountStatusChecked = false
         // 마케팅 수신 토글도 user-scoped — 옛 사용자의 동의값이 다음 사용자 화면에 잔존하지 않게
         // 비우고, 진행 중이던 로드는 generation 증가로 무효화한다.
         marketingConsentAgreed = null

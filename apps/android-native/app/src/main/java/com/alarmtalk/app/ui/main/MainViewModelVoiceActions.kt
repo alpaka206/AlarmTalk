@@ -208,18 +208,21 @@ internal fun MainViewModel.createVoiceProfiles(
                 }
             }
         }.onSuccess { profiles ->
-            if (sessionChanged()) return@onSuccess
-            pendingVoiceDraft = profiles.firstOrNull()
-            // 클론 생성이 이번 달 생성 시도(쿼터)를 소모했으므로 잔여 횟수를 재조회한다
-            // (삭제 화면의 '이번 달 재생성 불가' 경고가 최신 잔여로 판정되게).
-            loadVoiceDraftQuota()
-            // 클론 성공 직후 로컬 녹음 샘플(음성 생체정보 평문 .m4a)을 즉시 정리한다.
+            // 로컬 녹음 샘플(음성 생체정보 **평문** .m4a) 정리는 세션 가드보다 **먼저** 한다.
+            // 계정이 바뀌었다고 여기서 그냥 돌아가면 앞 계정의 평문 생체정보가 공용 캐시에
+            // 남아 30일 스윕까지 그대로다(Codex #660). 지우는 것은 앞 계정 자신의 녹음이라
+            // 새 세션에 아무것도 적용하지 않고도 안전하게 할 수 있다.
             withContext(Dispatchers.IO) {
                 drafts.forEach { draft ->
                     runCatching { repository.deleteVoiceCloneSourceRecording(draft.audio.cacheKey) }
                         .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
                 }
             }
+            if (sessionChanged()) return@onSuccess
+            pendingVoiceDraft = profiles.firstOrNull()
+            // 클론 생성이 이번 달 생성 시도(쿼터)를 소모했으므로 잔여 횟수를 재조회한다
+            // (삭제 화면의 '이번 달 재생성 불가' 경고가 최신 잔여로 판정되게).
+            loadVoiceDraftQuota()
             message = null
         }.onFailure { error ->
             // 계정 전환으로 우리가 끊은 것이면 에러가 아니다 — 보고도 메시지도 남기지 않는다.

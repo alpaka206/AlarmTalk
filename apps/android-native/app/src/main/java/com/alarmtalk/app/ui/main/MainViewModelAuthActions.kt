@@ -372,6 +372,10 @@ internal fun MainViewModel.checkAccountStatus() {
         }.onFailure { error ->
             Log.w(TAG, "Failed to check account status", error)
         }
+        // 성공·실패 모두 '확인은 끝났다'. 네트워크 실패로 영영 false 면 1회성 오버레이가
+        // 영영 안 뜬다 — 계정 상태를 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다.
+        // (versionChecked 와 같은 규약.)
+        accountStatusChecked = true
     }
 }
 

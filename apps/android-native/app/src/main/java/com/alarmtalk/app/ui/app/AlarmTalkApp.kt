@@ -371,10 +371,15 @@ internal fun AlarmTalkApp(
         viewModel.versionChecked,
         viewModel.updateRequired,
         viewModel.consentUnsupported,
+        viewModel.accountStatusChecked,
+        viewModel.pendingDeletion,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
         if (!viewModel.versionChecked) return@LaunchedEffect
         if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
+        // pendingDeletion 만 보면 안 된다 — 조회 응답 전에는 기본값 false 라 '유예 아님' 과
+        // 구분되지 않는다. 확인이 끝난 뒤에 판단한다(Codex #660).
+        if (!viewModel.accountStatusChecked) return@LaunchedEffect
         if (viewModel.pendingDeletion) return@LaunchedEffect
         if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
@@ -395,6 +400,9 @@ internal fun AlarmTalkApp(
     // 즉시 true 가 되는데, 버전 응답은 아직 오지 않아 updateRequired 는 기본값 false 다.
     // 그 틈에 프로모가 떠 1회 플래그를 태우고, 뒤늦게 응답이 와 업데이트 차단 화면이 깔리면
     // 그 위에 다이얼로그만 남는다 — 업데이트하고 돌아와도 프로모는 이미 소진된 뒤다.
+    // 탈퇴 유예 계정도 같은 종류의 레이스다. checkAccountStatus 응답 전에는 pendingDeletion 이
+    // 기본값 false 라, 그 틈에 프로모가 떠 1회 플래그를 태우고 뒤늦게 복구 화면이 깔리면
+    // 가려진다 — 거기서 로그아웃하거나 프로세스가 죽으면 본 적도 없이 소진된다(Codex #660).
     LaunchedEffect(
         sessionRouteKey,
         viewModel.permissionGateRequest,
@@ -404,10 +412,14 @@ internal fun AlarmTalkApp(
         viewModel.versionChecked,
         viewModel.updateRequired,
         viewModel.consentUnsupported,
+        viewModel.accountStatusChecked,
+        viewModel.pendingDeletion,
     ) {
         if (sessionRouteKey == null) return@LaunchedEffect
         if (!viewModel.versionChecked) return@LaunchedEffect
         if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
+        if (!viewModel.accountStatusChecked) return@LaunchedEffect
+        if (viewModel.pendingDeletion) return@LaunchedEffect
         if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
