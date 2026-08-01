@@ -31,7 +31,7 @@ AlarmTalk rings an alarm at a scheduled time using a voice you picked — your o
    - Voice profiles are a paid-plan feature. On the free plan, skip to step 4 and use the built-in voices.
    - Voices tab → "+ New voice".
    - Allow microphone access → tap Record.
-   - Record up to 30 seconds (e.g., "Good morning, time to wake up").
+   - Record **at least 1 minute** (keep talking naturally, e.g. "Good morning, time to wake up"). Anything over 12 seconds creates a preview draft, but **a full registration needs a full minute**.
    - Give it a name (e.g., "Mom's voice") and save.
 
 4. **Create your first alarm**
