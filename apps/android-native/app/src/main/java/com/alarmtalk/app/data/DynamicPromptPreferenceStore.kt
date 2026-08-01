@@ -62,7 +62,24 @@ class DynamicPromptPreferenceStore(context: Context) {
      * 않는다(마지막에 쓴 목소리와 같은 규칙).
      */
     fun readLastMessageContext(userId: String?): String? =
-        readScoped(KEY_LAST_MESSAGE_CONTEXT, userId)
+        readScoped(KEY_LAST_MESSAGE_CONTEXT, userId) ?: claimLegacyLastMessageContext(userId)
+
+    /**
+     * 계정별 키를 도입하기 전, 이 값은 기기 전역 키 하나에 저장됐다. 그 값을 그대로 두면
+     * **업데이트한 기존 사용자가 마지막 선택을 잃고** 새 알람이 '기본 인사말' 로 돌아간다 —
+     * CLAUDE.md 의 「직전 선택 유지」 규약이 회귀라고 못 박은 바로 그 동작이다.
+     *
+     * 그래서 스코프된 값이 없을 때 한 번만 지금 계정 것으로 넘겨받고, 옛 키는 지운다.
+     * 지우지 않으면 이 기기에 로그인하는 **다음 계정도** 같은 값을 물려받아, 계정별로 나눈
+     * 의미가 사라진다(옛 키는 원래 누구 것인지 모르는 값이다).
+     */
+    private fun claimLegacyLastMessageContext(userId: String?): String? {
+        val scoped = scopedKey(KEY_LAST_MESSAGE_CONTEXT, userId) ?: return null
+        val legacy = prefs.getString(KEY_LAST_MESSAGE_CONTEXT, null)?.trim()?.ifEmpty { null }
+            ?: return null
+        prefs.edit().putString(scoped, legacy).remove(KEY_LAST_MESSAGE_CONTEXT).apply()
+        return legacy
+    }
 
     fun saveLastMessageContext(userId: String?, context: String) {
         saveScoped(KEY_LAST_MESSAGE_CONTEXT, userId, context)
@@ -83,7 +100,9 @@ class DynamicPromptPreferenceStore(context: Context) {
     fun clearLastSelections(userId: String?) {
         val message = scopedKey(KEY_LAST_MESSAGE_CONTEXT, userId) ?: return
         val bucket = scopedKey(KEY_LAST_FREE_BUCKET, userId) ?: return
-        prefs.edit().remove(message).remove(bucket).apply()
+        // 옛 전역 키도 함께 지운다 — 아직 아무도 넘겨받지 않은 채 남아 있으면, 로그아웃 뒤
+        // 로그인하는 다음 계정이 그걸 물려받는다.
+        prefs.edit().remove(message).remove(bucket).remove(KEY_LAST_MESSAGE_CONTEXT).apply()
     }
 
     private fun readScoped(key: String, userId: String?): String? {
