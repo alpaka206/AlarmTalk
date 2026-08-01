@@ -712,15 +712,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 어느 호출부로 들어와도 같은 규칙이 되도록 여기서도 막는다.
         if (!draft.targetUserId.isNullOrBlank()) return
         if (draft.playMode == com.alarmtalk.app.data.AlarmPlayModes.ALARM_ONLY) return
-        val bucket = draft.bucketId?.takeIf { it.isNotBlank() }
-        if (bucket != null) {
-            dynamicPromptStore.saveLastFreeBucket(userId, bucket)
-            return
+        val rememberContext = {
+            draft.voiceRandomContext
+                ?.takeIf { it.isNotBlank() }
+                ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
+            Unit
         }
-        if (!draft.voiceRandomPrompt) return
-        draft.voiceRandomContext
-            ?.takeIf { it.isNotBlank() }
-            ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
+        val bucket = draft.bucketId?.takeIf { it.isNotBlank() }
+        when {
+            // 무료·기본 목소리 경로: 사용자가 고른 것이 '테마(버킷)' 그 자체다.
+            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) ->
+                dynamicPromptStore.saveLastFreeBucket(userId, bucket)
+            // 유료 클론의 사전렌더 버킷. 여기서도 bucketId 가 차고 voiceRandomPrompt 는 꺼지지만
+            // (setBucketAudio), 사용자가 고른 것은 **문구 종류**이고 버킷은 그 결과다
+            // (love→love, wake_fortune→fortune, preset→greeting …).
+            // 이걸 테마로 저장하면 두 가지가 깨진다(Codex #660):
+            //  - greeting·love·fortune 은 FreeBucketOrder 밖이라 읽을 때 걸러지는데, 그 전에
+            //    이미 저장돼 있던 유효한 테마(weather)를 덮어써 다음 기본 목소리 알람이 '약' 으로 되돌아간다.
+            //  - 정작 문구 종류는 기록되지 않아 다음 클론 알람이 옛 문구로 열린다.
+            bucket != null -> rememberContext()
+            draft.voiceRandomPrompt -> rememberContext()
+            // 직접 입력은 기억하지 않는다 — 그 문구는 그 알람의 것이다.
+            else -> Unit
+        }
     }
 
     /** 편집기가 새 알람의 기본값으로 쓸 '마지막 선택'. 로그인 전이면 둘 다 null 이다. */
