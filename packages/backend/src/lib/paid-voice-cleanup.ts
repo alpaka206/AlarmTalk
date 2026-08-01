@@ -287,6 +287,27 @@ export async function deleteSensitiveVoiceDataForUser(
   const ph = placeholders(ids);
   const downgraded = new Map<string, DowngradedAlarm>();
 
+  // 지우는 축은 **'내가 등록한 클론 프로필'** 하나다.
+  //
+  // 예전에는 `user_id IN (...)` 브랜치가 함께 걸려 있어서, 생체정보와 무관한 것까지 지웠다 —
+  // 시스템(기본) 목소리로 만든 생성 음성·문구·라이브러리 행, 그리고 그걸 쓰던 알람까지.
+  // 클론이 하나도 없는 무료 사용자가 동의를 철회하면 **지울 생체정보가 없는데도** 자기 알람
+  // 문구가 통째로 사라졌다. 게다가 시스템 목소리 생성 캐시는 전 사용자 공유라(tts.ts 의
+  // anyUser 재사용) 한 사람의 철회가 남의 알람까지 무음으로 만들 수 있었다.
+  //
+  // is_system 이 시스템/클론을 가르는 유일한 컬럼이다 — messages·generated_audio_assets 의
+  // voice_profile_id 는 둘 다 NOT NULL 이라 널 검사로는 못 가른다.
+  // id 를 미리 배열로 떠 두면 뒤 문장들이 서브쿼리에 기대지 않아, voice_profiles 를 지운 뒤에도
+  // 범위가 흔들리지 않는다.
+  const cloneProfiles = await db.execute({
+    sql: `SELECT id FROM voice_profiles
+          WHERE user_id IN (${ph}) AND COALESCE(is_system, 0) = 0`,
+    args: ids,
+  });
+  const cloneIds = cloneProfiles.rows.map((row) => String(row.id));
+  const cph = placeholders(cloneIds);
+  const hasClones = cloneIds.length > 0;
+
   const providerVoices = await db.execute({
     sql: `SELECT elevenlabs_voice_id FROM voice_profiles
           WHERE user_id IN (${ph}) AND elevenlabs_voice_id IS NOT NULL`,
@@ -302,73 +323,58 @@ export async function deleteSensitiveVoiceDataForUser(
   for (const row of uploadObjects.rows) {
     await enqueueExternalDeletion(db, 'r2_object', row.object_key as string);
   }
-  const generatedObjects = await db.execute({
-    sql: `SELECT audio_object_key FROM generated_audio_assets
-          WHERE audio_object_key IS NOT NULL
-            AND (user_id IN (${ph}) OR voice_profile_id IN (
-              SELECT id FROM voice_profiles WHERE user_id IN (${ph})
-            ))`,
-    args: [...ids, ...ids],
-  });
-  for (const row of generatedObjects.rows) {
-    await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
+  if (hasClones) {
+    // 시스템 보이스 캐시 오브젝트를 여기 넣으면 **다른 사용자의 알람까지** 깨진다
+    // (그 캐시는 전 사용자가 공유한다).
+    const generatedObjects = await db.execute({
+      sql: `SELECT audio_object_key FROM generated_audio_assets
+            WHERE audio_object_key IS NOT NULL
+              AND voice_profile_id IN (${cph})`,
+      args: cloneIds,
+    });
+    for (const row of generatedObjects.rows) {
+      await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
+    }
   }
   for (const target of await detachFamilyAlarmMessagesUsingOwnedUploads(db, ids, ph)) {
     downgraded.set(target.alarmId, target);
   }
 
   // 공유 목소리를 참조하던 알람도 같은 이유로 강등 전에 대상을 골라 둔다.
-  const sharedVoiceTargets = await collectDowngradeTargets(
-    db,
-    `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
-            target_user_id IS NOT NULL AS is_received
-       FROM alarms
-      WHERE voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))
-         OR message_id IN (
-           SELECT id FROM messages
-           WHERE user_id IN (${ph}) OR voice_profile_id IN (
-             SELECT id FROM voice_profiles WHERE user_id IN (${ph})
-           )
-         )`,
-    [...ids, ...ids, ...ids],
-  );
-  for (const target of sharedVoiceTargets) downgraded.set(target.alarmId, target);
-  await db.execute({
-    sql: `UPDATE alarms
-          SET mode = 'sound-only', wake_mode = 'sound_then_voice',
-              message_id = NULL, voice_profile_id = NULL
-          WHERE voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))
-             OR message_id IN (
-               SELECT id FROM messages
-               WHERE user_id IN (${ph}) OR voice_profile_id IN (
-                 SELECT id FROM voice_profiles WHERE user_id IN (${ph})
-               )
-             )`,
-    args: [...ids, ...ids, ...ids],
-  });
-  await db.execute({
-    sql: `DELETE FROM generated_audio_assets
-          WHERE user_id IN (${ph}) OR voice_profile_id IN (
-            SELECT id FROM voice_profiles WHERE user_id IN (${ph})
-          )`,
-    args: [...ids, ...ids],
-  });
-  await db.execute({
-    sql: `DELETE FROM message_library WHERE message_id IN (
-            SELECT id FROM messages
-            WHERE user_id IN (${ph}) OR voice_profile_id IN (
-              SELECT id FROM voice_profiles WHERE user_id IN (${ph})
-            )
-          )`,
-    args: [...ids, ...ids],
-  });
-  await db.execute({
-    sql: `DELETE FROM messages
-          WHERE user_id IN (${ph}) OR voice_profile_id IN (
-            SELECT id FROM voice_profiles WHERE user_id IN (${ph})
-          )`,
-    args: [...ids, ...ids],
-  });
+  if (hasClones) {
+    const alarmScope = `voice_profile_id IN (${cph})
+         OR message_id IN (SELECT id FROM messages WHERE voice_profile_id IN (${cph}))`;
+    const sharedVoiceTargets = await collectDowngradeTargets(
+      db,
+      `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
+              target_user_id IS NOT NULL AS is_received
+         FROM alarms
+        WHERE ${alarmScope}`,
+      [...cloneIds, ...cloneIds],
+    );
+    for (const target of sharedVoiceTargets) downgraded.set(target.alarmId, target);
+    await db.execute({
+      sql: `UPDATE alarms
+            SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+                message_id = NULL, voice_profile_id = NULL
+            WHERE ${alarmScope}`,
+      args: [...cloneIds, ...cloneIds],
+    });
+    await db.execute({
+      sql: `DELETE FROM generated_audio_assets WHERE voice_profile_id IN (${cph})`,
+      args: cloneIds,
+    });
+    await db.execute({
+      sql: `DELETE FROM message_library WHERE message_id IN (
+              SELECT id FROM messages WHERE voice_profile_id IN (${cph})
+            )`,
+      args: cloneIds,
+    });
+    await db.execute({
+      sql: `DELETE FROM messages WHERE voice_profile_id IN (${cph})`,
+      args: cloneIds,
+    });
+  }
   await db.execute({ sql: `DELETE FROM voice_uploads WHERE user_id IN (${ph})`, args: ids });
   await db.execute({
     sql: `DELETE FROM voice_prerender_queue WHERE owner_user_id IN (${ph})`,
