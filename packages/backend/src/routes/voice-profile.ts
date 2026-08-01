@@ -39,11 +39,11 @@ const MAX_DRAFT_VOICE_PROFILES = 1;
 // 정식 등록(= 사용자가 체감하는 '이번 달 만들 수 있는 목소리') 한도. 월 1개.
 // 위 초안 시도 3회는 이 1개를 만들기까지의 재시도 여유다(마음에 안 들면 지우고 다시).
 const MAX_OFFICIAL_VOICE_CHANGES_PER_MONTH = 1;
-const MIN_CLONE_DURATION_MS = 60_000;
-// 프리뷰(draft) 클론은 짧은 클립이라 60초를 못 채우는 경우가 많다.
-// "5초 한마디"는 배제하되, 세그먼트를 이어붙일 때 프레임 경계로 몇백 ms
-// 짧아져도 의미 있는 길이면 프리뷰가 거부되지 않도록 여유를 둔다.
-const MIN_DRAFT_CLONE_DURATION_MS = 12_000;
+// 최소 길이는 초안·정식 등록이 같다. 예전에는 정식 등록만 60초를 요구했는데, 실제로 1분을
+// 채우는 게 부담이라는 제보가 많았다 — 길수록 클론 품질이 좋아지는 건 맞지만 그건 안내로
+// 유도할 일이지 등록을 막을 일이 아니다. "5초 한마디"만 배제하고, 세그먼트를 이어붙일 때
+// 프레임 경계로 몇백 ms 짧아져도 거부되지 않을 만큼의 여유를 둔다.
+const MIN_CLONE_DURATION_MS = 12_000;
 const MAX_CLONE_DURATION_MS = 120_000;
 const CLONE_DURATION_TOLERANCE_MS = 5_000;
 const MAX_RELATIONSHIP_LABEL_LENGTH = 30;
@@ -1290,7 +1290,7 @@ voiceProfile.post('/clone', async (c) => {
       );
     }
 
-    const durationCheck = validateCloneDuration(formData.get('durationMs'), isDraft);
+    const durationCheck = validateCloneDuration(formData.get('durationMs'));
     if (durationCheck) return c.json(durationCheck.body, durationCheck.status);
     // 검증 통과 후의 durationMs — 아래 voice_uploads 보관(재시도용 원본)에 기록한다.
     const cloneDurationMs = Number.parseInt(String(formData.get('durationMs')), 10);
@@ -1672,10 +1672,7 @@ function isVoiceSlotExhaustedError(detail: string): boolean {
   );
 }
 
-function validateCloneDuration(
-  value: unknown,
-  isDraft = false,
-): {
+function validateCloneDuration(value: unknown): {
   status: 400;
   body: { error: string; error_code: string };
 } | null {
@@ -1698,13 +1695,11 @@ function validateCloneDuration(
       body: { error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' },
     };
   }
-  // 분리 프리뷰(draft) 는 격리 발화만 담은 짧은 클립을 허용한다.
-  const minDurationMs = isDraft ? MIN_DRAFT_CLONE_DURATION_MS : MIN_CLONE_DURATION_MS;
-  if (durationMs < minDurationMs) {
+  if (durationMs < MIN_CLONE_DURATION_MS) {
     return {
       status: 400,
       body: {
-        error: `voice clone audio must be at least ${minDurationMs / 1000} seconds`,
+        error: `voice clone audio must be at least ${MIN_CLONE_DURATION_MS / 1000} seconds`,
         error_code: 'VOICE_CLONE_AUDIO_TOO_SHORT',
       },
     };

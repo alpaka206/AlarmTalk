@@ -605,7 +605,7 @@
     <string name="voices_create_dialog_title">목소리 만들기</string>
     <string name="voices_create_paid_title">내 목소리 만들기는 유료 기능이에요</string>
     <string name="voices_create_paid_notice">기본 목소리는 계속 무료로 쓸 수 있어요.</string>
-    <string name="voices_crop_duration_notice">1분 이상 2분 이하 구간을 선택해 주세요.</string>
+    <string name="voices_crop_duration_notice">12초 이상 2분 이하 구간을 선택해 주세요.</string>
     <string name="voices_crop_section_title">구간 자르기</string>
     <string name="voices_draft_exit_body">지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요.</string>
     <string name="voices_draft_exit_leave">나가고 삭제</string>
@@ -658,8 +658,9 @@
     <string name="voices_preview_edit_failed">문구를 수정하지 못했어요.</string>
     <string name="voices_previous">이전</string>
     <string name="voices_record_done_duration">녹음 완료 · %1$s</string>
+    <string name="voices_record_video_tip">원하는 목소리의 파일이 없다면, 그 사람이 나오는 영상을 틀어 놓고 녹음해도 돼요.</string>
     <string name="voices_record_script_title">아래 대사를 따라 읽어 주세요</string>
-    <string name="voices_record_status_min_duration">1분 이상 녹음해 주세요</string>
+    <string name="voices_record_status_hint">길게 말할수록 더 비슷해져요 · 최대 2분</string>
     <string name="voices_recording_start_failed">녹음을 시작할 수 없어요.</string>
     <string name="voices_recording_stop_failed">녹음에 실패했어요.</string>
     <string name="voices_register">등록</string>
@@ -677,7 +678,7 @@
     <string name="voices_upload_change_hint">다른 파일을 선택하려면 탭하세요.</string>
     <string name="voices_single_speaker_hint">한 사람 목소리만 들어간 오디오를 넣어주세요.\n여러 명의 음성이 들어가 있으면 목소리가 달라질 수 있어요.</string>
     <string name="voices_upload_file_or_video">파일 또는 영상 업로드</string>
-    <string name="voices_upload_zone_subtitle">1분 이상의 오디오나 영상으로 준비해 주세요</string>
+    <string name="voices_upload_zone_subtitle">12초 이상 2분 이하 오디오나 영상이면 돼요</string>
     <string name="voicesr_close">닫기</string>
     <string name="voicesr_delete">삭제</string>
     <string name="voices_delete_quota_title">정말 삭제할까요?</string>
@@ -823,9 +824,9 @@
     <string name="editor2_fortune_info_prompt">성별, 생년월일, 태어난 시간을 입력해 주세요.</string>
     <string name="voices2_default_profile_name">목소리</string>
     <string name="voices2_audio_duration_unknown">오디오 길이를 확인할 수 없어요.</string>
-    <string name="voices2_record_at_least_one_minute">1분 이상 녹음해 주세요.</string>
+    <string name="voices2_record_min_duration">12초 이상 녹음해 주세요.</string>
     <string name="voices2_register_under_two_minutes">2분 이하 음성으로 등록할 수 있어요.</string>
-    <string name="voices2_select_file_at_least_one_minute">1분 이상 파일을 선택해 주세요.</string>
+    <string name="voices2_select_file_min_duration">12초 이상인 파일을 선택해 주세요.</string>
     <string name="voices2_record_script">안녕하세요, 지금부터 알람톡에서 쓸 목소리를 함께 만들어 볼게요.\n매일 아침 이 목소리가 좋아하는 사람을 깨워 준다니, 설레지 않나요?\n\n오늘은 하늘도 맑고 바람도 부드러운, 걷기 좋은 날이에요.\n이런 날엔 따뜻한 커피 한 잔을 들고 동네를 한 바퀴 돌고 싶어지는 것 같아요.\n\n이번에는 숫자도 읽어 볼까요?\n하나, 둘, 셋, 넷, 다섯, 여섯, 일곱, 여덟, 아홉, 열.\n\n기쁜 날에는 마음껏 웃고, 지친 날에는 \"오늘도 수고했어\" 하고 말해 주세요.\n아침에 창문을 활짝 열고 시원한 공기를 들이마시면, 하루가 한결 가볍게 시작되거든요.\n\n벌써 마지막 문장이에요. 여기까지 또렷하게 읽어 주셔서 고마워요.\n내일 아침에는 이 목소리가 가장 다정한 알람이 되어 줄 거예요.</string>
     <string name="voices2_relationship_mom">엄마</string>
     <string name="voices2_relationship_dad">아빠</string>

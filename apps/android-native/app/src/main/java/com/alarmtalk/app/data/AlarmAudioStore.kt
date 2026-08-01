@@ -27,8 +27,10 @@ object AlarmAudioLimits {
 }
 
 object VoiceProfileAudioLimits {
-    const val MIN_DURATION_MILLIS = 60_000L
-    const val RECOMMENDED_DURATION_MILLIS = 90_000L
+    // 백엔드 voice-profile.ts 의 MIN/MAX_CLONE_DURATION_MS 와 같은 값을 유지한다.
+    // 최소 12초: 예전에는 1분을 요구했는데 채우기가 부담이라는 제보가 많았다. 길수록 클론이
+    // 더 비슷해지는 건 맞지만 그건 안내로 유도할 일이지 등록을 막을 일이 아니다.
+    const val MIN_DURATION_MILLIS = 12_000L
     const val MAX_DURATION_MILLIS = 120_000L
     const val MAX_DURATION_TOLERANCE_MILLIS = 5_000L
 }
@@ -672,8 +674,11 @@ class AlarmAudioStore(
         }
     }
 
+    // 목소리 등록(2분 상한)만 프레임 경계 오차 5초를 허용한다. 알람용 짧은 오디오는
+    // 메타데이터 오차만 본다. (상한으로 두 경로를 가른다 — 최소 길이로 가르면 최소값을
+    // 낮추는 순간 알람 오디오까지 등록용 오차를 쓰게 된다.)
     private fun toleranceForLimit(maxDurationMillis: Long): Long =
-        if (maxDurationMillis >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
+        if (maxDurationMillis >= VoiceProfileAudioLimits.MAX_DURATION_MILLIS) {
             VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS
         } else {
             DURATION_METADATA_TOLERANCE_MILLIS

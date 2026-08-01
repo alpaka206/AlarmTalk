@@ -596,7 +596,7 @@
     <string name="voices_create_dialog_title">Create a voice</string>
     <string name="voices_create_paid_title">Creating your voice is a paid feature</string>
     <string name="voices_create_paid_notice">Default voices stay free to use.</string>
-    <string name="voices_crop_duration_notice">Please select a segment between 1 and 2 minutes.</string>
+    <string name="voices_crop_duration_notice">Please select a segment between 12 seconds and 2 minutes.</string>
     <string name="voices_crop_section_title">Trim segment</string>
     <string name="voices_draft_exit_body">If you leave now, the voice you were creating (draft) will be deleted and you\'ll have to start over.</string>
     <string name="voices_draft_exit_leave">Leave and delete</string>
@@ -646,8 +646,9 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_edit_failed">Couldn\'t update the line.</string>
     <string name="voices_previous">Back</string>
     <string name="voices_record_done_duration">Recorded · %1$s</string>
+    <string name="voices_record_video_tip">No audio file of the voice you want? Play a video of them and record that.</string>
     <string name="voices_record_script_title">Read this script aloud</string>
-    <string name="voices_record_status_min_duration">Record for at least 1 minute</string>
+    <string name="voices_record_status_hint">The longer you talk, the closer it sounds · up to 2 min</string>
     <string name="voices_recording_start_failed">Couldn\'t start recording.</string>
     <string name="voices_recording_stop_failed">Recording failed.</string>
     <string name="voices_register">Register</string>
@@ -665,7 +666,7 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_upload_change_hint">Tap to choose a different file.</string>
     <string name="voices_single_speaker_hint">Use audio with only one person\'s voice.\nIf several voices are mixed, the cloned voice won\'t be accurate.</string>
     <string name="voices_upload_file_or_video">Upload a file or video</string>
-    <string name="voices_upload_zone_subtitle">Prepare an audio or video at least 1 minute long</string>
+    <string name="voices_upload_zone_subtitle">Any audio or video from 12 seconds to 2 minutes works</string>
     <string name="voicesr_close">Close</string>
     <string name="voicesr_delete">Delete</string>
     <string name="voices_delete_quota_title">Delete this voice?</string>
@@ -795,9 +796,9 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="editor2_fortune_info_prompt">Please enter your gender, date of birth, and time of birth.</string>
     <string name="voices2_default_profile_name">Voice</string>
     <string name="voices2_audio_duration_unknown">We couldn\'t check the audio length.</string>
-    <string name="voices2_record_at_least_one_minute">Please record for at least 1 minute.</string>
+    <string name="voices2_record_min_duration">Please record for at least 12 seconds.</string>
     <string name="voices2_register_under_two_minutes">You can register voice that is 2 minutes or less.</string>
-    <string name="voices2_select_file_at_least_one_minute">Please choose a file that is at least 1 minute long.</string>
+    <string name="voices2_select_file_min_duration">Please choose a file that is at least 12 seconds long.</string>
     <string name="voices2_record_script">Hello! Let\'s create your voice for AlarmTalk together.\nEvery morning, this voice will wake someone you love — doesn\'t that sound exciting?\n\nThe sky is clear and the breeze is soft today. A perfect day for a walk, isn\'t it?\nOn days like this, don\'t you feel like wandering around with a warm cup of coffee?\n\nNow, shall we read some numbers together?\nOne, two, three, four, five, six, seven, eight, nine, ten.\n\nOn happy days, laugh as much as you want. On tiring days, tell yourself, \"You did well today.\"\nAnd in the morning, open the window and take a deep breath — the day feels so much lighter.\n\nThis is the last part already. Thank you for reading clearly all the way.\nTomorrow morning, this voice will be the warmest alarm of all.</string>
     <string name="voices2_relationship_mom">Mom</string>
     <string name="voices2_relationship_dad">Dad</string>

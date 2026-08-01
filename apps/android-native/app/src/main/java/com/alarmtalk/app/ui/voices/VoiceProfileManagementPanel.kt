@@ -110,7 +110,7 @@ private fun androidNavigationBarHeightPadding(): Dp {
 private fun voiceProfileDurationError(context: android.content.Context, durationMillis: Long?): String? = when {
     durationMillis == null -> context.getString(R.string.voices2_audio_duration_unknown)
     durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS ->
-        context.getString(R.string.voices2_record_at_least_one_minute)
+        context.getString(R.string.voices2_record_min_duration)
     durationMillis > VoiceProfileAudioLimits.MAX_DURATION_MILLIS +
         VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS ->
         context.getString(R.string.voices2_register_under_two_minutes)
@@ -120,7 +120,7 @@ private fun voiceProfileDurationError(context: android.content.Context, duration
 private fun voiceProfileFileDurationError(context: android.content.Context, durationMillis: Long?): String? = when {
     durationMillis == null -> context.getString(R.string.voices2_audio_duration_unknown)
     durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS ->
-        context.getString(R.string.voices2_select_file_at_least_one_minute)
+        context.getString(R.string.voices2_select_file_min_duration)
     else -> null
 }
 
@@ -1507,8 +1507,10 @@ internal fun VoiceProfileManagementPanel(
                                         level = recordingLevel,
                                         enabled = !voiceProfileBusy && !createPreparing,
                                         // 마이크 버튼이 행동을 설명하므로 "눌러서 녹음 시작" 대신
-                                        // 이 흐름의 핵심 제약(최소 1분)을 대기 상태 문구로 쓴다.
-                                        idleStatusText = stringResource(R.string.voices_record_status_min_duration),
+                                        // 길이 안내를 대기 상태 문구로 쓴다. 최소 길이(12초)는
+                                        // 대부분 자연히 넘기므로 못 박지 않고, 길수록 좋다는
+                                        // 쪽으로 유도한다 — 1분을 요구하던 문구가 부담이었다.
+                                        idleStatusText = stringResource(R.string.voices_record_status_hint),
                                         onRecordClick = {
                                             if (isRecording) {
                                                 stopRecording()
@@ -1524,6 +1526,9 @@ internal fun VoiceProfileManagementPanel(
                                         isRecordedPreviewActive = recordPreviewPlaying,
                                         onPreviewRecording = ::playRecordedPreview,
                                     )
+                                    // 곁에 없는 사람의 목소리를 등록하려는 경우가 흔하다.
+                                    // 업로드할 파일이 없어도 방법이 있다는 걸 알려 준다.
+                                    MutedText(stringResource(R.string.voices_record_video_tip))
                                     // 남은 화면 높이를 대사 카드가 채운다(내용이 짧으면 그만큼만).
                                     // 짧은 창 폴백에선 페이지가 스크롤되므로 weight 대신 높이 캡.
                                     VoiceRecordScriptCard(

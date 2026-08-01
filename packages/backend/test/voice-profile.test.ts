@@ -650,6 +650,20 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect((await res.json()).error_code).toBe('VOICE_CLONE_AUDIO_TOO_SHORT');
   });
 
+  // 예전에는 정식 등록만 60초를 요구했다. 1분을 채우는 게 부담이라는 제보가 많아 하한을
+  // 초안과 같은 12초로 내렸다 — 이 테스트가 그 하한이 다시 올라가는 것을 막는다.
+  it('정식 등록도 12초만 넘으면 통과한다 (1분 하한 없음)', async () => {
+    pushPaidPlan();
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-short' });
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '12000'));
+    expect(res.status).toBe(201);
+  });
+
   it('2분에서 5초 이내 durationMs 오차는 허용', async () => {
     pushPaidPlan();
     mockDB.pushResult([{ count: 0 }]);

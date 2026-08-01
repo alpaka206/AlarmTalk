@@ -604,7 +604,7 @@
     <string name="voices_create_dialog_title">声を作成</string>
     <string name="voices_create_paid_title">マイボイスの作成は有料機能です</string>
     <string name="voices_create_paid_notice">基本の声は引き続き無料で使えます。</string>
-    <string name="voices_crop_duration_notice">1分以上2分以内の区間を選んでください。</string>
+    <string name="voices_crop_duration_notice">12秒以上2分以内の区間を選んでください。</string>
     <string name="voices_crop_section_title">区間の切り取り</string>
     <string name="voices_draft_exit_body">今離れると、作成中の声（下書き）が削除され、最初からやり直しになります。</string>
     <string name="voices_draft_exit_leave">離れて削除</string>
@@ -654,8 +654,9 @@
     <string name="voices_preview_edit_failed">フレーズを更新できませんでした。</string>
     <string name="voices_previous">戻る</string>
     <string name="voices_record_done_duration">録音完了 · %1$s</string>
+    <string name="voices_record_video_tip">ほしい声のファイルがなければ、その人が映っている動画を再生して録音してもかまいません。</string>
     <string name="voices_record_script_title">この台本を読み上げてください</string>
-    <string name="voices_record_status_min_duration">1分以上録音してください</string>
+    <string name="voices_record_status_hint">長く話すほど似ます · 最大2分</string>
     <string name="voices_recording_start_failed">録音を開始できませんでした。</string>
     <string name="voices_recording_stop_failed">録音に失敗しました。</string>
     <string name="voices_register">登録</string>
@@ -673,7 +674,7 @@
     <string name="voices_upload_change_hint">タップして別のファイルを選べます。</string>
     <string name="voices_single_speaker_hint">一人の声だけが入った音声を入れてください。\n複数人が混ざると、声が正確に再現されません。</string>
     <string name="voices_upload_file_or_video">ファイルまたは動画をアップロード</string>
-    <string name="voices_upload_zone_subtitle">1分以上の音声か動画をご用意ください</string>
+    <string name="voices_upload_zone_subtitle">12秒以上2分以内の音声か動画であれば大丈夫です</string>
     <string name="voicesr_close">閉じる</string>
     <string name="voicesr_delete">削除</string>
     <string name="voices_delete_quota_title">削除しますか？</string>
@@ -803,9 +804,9 @@
     <string name="editor2_fortune_info_prompt">性別、生年月日、生まれた時間を入力してください。</string>
     <string name="voices2_default_profile_name">声</string>
     <string name="voices2_audio_duration_unknown">音声の長さを確認できませんでした。</string>
-    <string name="voices2_record_at_least_one_minute">1分以上録音してください。</string>
+    <string name="voices2_record_min_duration">12秒以上録音してください。</string>
     <string name="voices2_register_under_two_minutes">2分以下の音声で登録できます。</string>
-    <string name="voices2_select_file_at_least_one_minute">1分以上のファイルを選択してください。</string>
+    <string name="voices2_select_file_min_duration">12秒以上のファイルを選択してください。</string>
     <string name="voices2_record_script">こんにちは。これからAlarmTalkで使う声を、いっしょに作っていきましょう。\n毎朝この声が大切な人を起こしてくれるなんて、わくわくしませんか？\n\n今日は空も晴れて、風もやわらかい、散歩にぴったりの日です。\nこんな日は温かいコーヒーを片手に、近所をひと回りしたくなりますよね。\n\nつぎは、数字も読んでみましょうか？\nいち、に、さん、し、ご、ろく、なな、はち、きゅう、じゅう。\n\nうれしい日は思いきり笑って、疲れた日は「今日もお疲れさま」と声をかけてあげてください。\n朝、窓を大きく開けて深呼吸すると、一日がぐっと軽やかに始まりますよ。\n\nもう最後の文章です。ここまではっきり読んでくださって、ありがとうございます。\n明日の朝は、この声がいちばんやさしいアラームになってくれるはずです。</string>
     <string name="voices2_relationship_mom">お母さん</string>
     <string name="voices2_relationship_dad">お父さん</string>
