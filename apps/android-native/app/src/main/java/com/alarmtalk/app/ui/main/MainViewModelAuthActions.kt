@@ -629,7 +629,11 @@ internal fun MainViewModel.checkConsentStatus() {
             // 캐시로 이미 통과시킨 게 아니면 네트워크 실패가 앱 진입을 막지 않게 한다.
             if (!isConsentCachedDone(userId)) needsConsent = false
         }
-        if (authSession?.user?.id == userId) consentChecked = true
+        if (authSession?.user?.id == userId) {
+            consentChecked = true
+            // 응답이 실제로 왔다는 신호. 1회성 오버레이는 캐시가 아니라 이 값을 봐야 한다.
+            consentStatusChecked = true
+        }
     }
 }
 
@@ -797,7 +801,12 @@ internal fun MainViewModel.submitVoiceConsents() {
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record voice consents", error)
             authBusy = false
-            if (authSession?.user?.id != ownerUserId) return@onFailure
+            // 성공 갈래와 같은 이유다 — 계정이 바뀌면 이어서 만들 수 없게 된 평문 녹음을
+            // 남기지 않는다. 세션 정리가 이미 요청을 버렸으므로 여기서 안 지우면 스윕까지 남는다.
+            if (authSession?.user?.id != ownerUserId) {
+                request.resumeVoiceDrafts?.let { purgeVoiceCloneSourceRecordings(it) }
+                return@onFailure
+            }
             if (handleConsentVersionMismatch(error)) return@onFailure
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         }

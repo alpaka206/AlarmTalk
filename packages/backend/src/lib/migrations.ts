@@ -1950,6 +1950,30 @@ export const migrations: Migration[] = [
       `ALTER TABLE promo_code_redemptions DROP COLUMN subscription_id`,
     ],
   },
+  {
+    /**
+     * 우리가 발급한 적 없는 정책 버전으로 저장된 동의 기록을 **영구 격리**한다.
+     *
+     * 서버가 버전을 고정하기 전에는 클라가 보낸 값을 그대로 저장했다. 그래서 `999` 같은 행이
+     * 남아 있을 수 있는데, 읽는 쪽 정규화(`sanitizeStoredPolicyVersion`)는 **그때그때의**
+     * CURRENT_POLICY_VERSION 과 비교한다 — 지금은 무효지만 나중에 정책이 그 버전까지 올라가면
+     * 그 행이 **다시 유효해져** 사용자가 본 적 없는 문서의 동의를 충족시킨다(Codex #660).
+     *
+     * 그래서 조건부 무효화에 기대지 않고 여기서 값을 지운다. 현재 문서 버전은 '4' 이고 서버는
+     * 그보다 큰 값을 발급한 적이 없으므로, 4 를 넘는 행은 정의상 전부 위조·버그다.
+     * 행 자체(누가·언제·동의했는지)는 남기고 **버전만 '0'(=모름)** 으로 바꾼다 — 어느 문서를
+     * 보고 동의했는지 알 수 없다는 게 사실이고, 0 은 어떤 최소 버전도 만족하지 못해 재동의를
+     * 받게 된다. 숫자가 아닌 값은 이미 0 으로 읽히므로 건드리지 않는다.
+     */
+    id: 91,
+    name: 'quarantine-future-policy-version-consents',
+    statements: [
+      `UPDATE user_consents
+          SET policy_version = '0'
+        WHERE policy_version GLOB '[0-9]*'
+          AND CAST(policy_version AS INTEGER) > 4`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

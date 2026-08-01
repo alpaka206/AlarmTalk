@@ -366,6 +366,7 @@ internal fun AlarmTalkApp(
     LaunchedEffect(
         sessionRouteKey,
         viewModel.consentChecked,
+        viewModel.consentStatusChecked,
         viewModel.showConsentScreen,
         viewModel.showVoiceSetup,
         viewModel.versionChecked,
@@ -381,7 +382,9 @@ internal fun AlarmTalkApp(
         // 구분되지 않는다. 확인이 끝난 뒤에 판단한다(Codex #660).
         if (!viewModel.accountStatusChecked) return@LaunchedEffect
         if (viewModel.pendingDeletion) return@LaunchedEffect
-        if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        // 캐시로 켜지는 consentChecked 가 아니라 **응답이 온** consentStatusChecked 를 본다 —
+        // 정책 개정 직후에는 캐시가 옛 버전 기준이라 재동의가 필요한데도 통과한다(Codex #660).
+        if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
         if (initialPermissionPromptStore.hasPrompted()) return@LaunchedEffect
         initialPermissionPromptStore.markPrompted()
@@ -409,6 +412,7 @@ internal fun AlarmTalkApp(
         viewModel.showVoiceSetup,
         viewModel.showConsentScreen,
         viewModel.consentChecked,
+        viewModel.consentStatusChecked,
         viewModel.versionChecked,
         viewModel.updateRequired,
         viewModel.consentUnsupported,
@@ -420,7 +424,9 @@ internal fun AlarmTalkApp(
         if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
         if (!viewModel.accountStatusChecked) return@LaunchedEffect
         if (viewModel.pendingDeletion) return@LaunchedEffect
-        if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        // 캐시로 켜지는 consentChecked 가 아니라 **응답이 온** consentStatusChecked 를 본다 —
+        // 정책 개정 직후에는 캐시가 옛 버전 기준이라 재동의가 필요한데도 통과한다(Codex #660).
+        if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
         if (viewModel.permissionGateRequest != null) return@LaunchedEffect
         if (viewModel.showVoiceSetup) return@LaunchedEffect
         viewModel.maybeShowWelcomePromo()
@@ -443,6 +449,8 @@ internal fun AlarmTalkApp(
     // CONSENT_REQUIRED(403) 로 막으므로, 로그인 직후 한꺼번에 쏘면 실패만 쌓인다.
     // 특히 목소리 프리페치 워커는 그 403 을 보고 포기해 버려서, 동의를 마치고 목소리 준비
     // 화면에 도착한 사용자에게 '목소리를 받지 못했어요' 만 남는다 — 네트워크는 멀쩡한데도.
+    // 여기는 **소진되는 플래그가 아니다** — 데이터를 좀 일찍 부르는 것뿐이라 캐시 통과의
+    // 이득(재로그인 시 즉시 로드)을 그대로 둔다. consentStatusChecked 를 기다릴 이유가 없다.
     LaunchedEffect(authSession?.token, viewModel.consentChecked, viewModel.showConsentScreen) {
         if (authSession == null) return@LaunchedEffect
         if (!viewModel.consentChecked || viewModel.showConsentScreen) return@LaunchedEffect

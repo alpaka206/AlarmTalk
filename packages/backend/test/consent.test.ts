@@ -651,3 +651,38 @@ describe('저장된 미래 버전 기록은 읽을 때 무효로 떨어뜨린다
     expect(consentAnswerIsCurrent(latest, 'terms')).toBe(true);
   });
 });
+
+// 읽는 쪽 정규화는 '그때그때의' CURRENT_POLICY_VERSION 과 비교하므로, 정책이 나중에 그 버전까지
+// 올라가면 미리 찍혀 있던 행이 **다시 유효해진다.** 마이그레이션 #91 이 그 전에 값을 지운다.
+describe('#91 — 미래 버전으로 저장된 동의 기록은 영구 격리된다', () => {
+  it('현재 문서 버전을 넘는 기록은 버전이 0 으로 지워진다', async () => {
+    const db = createClient({ url: ':memory:' });
+    await runMigrations(db);
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email) VALUES (?, ?, ?)`,
+      args: ['u-q', 'g-q', 'q@example.com'],
+    });
+    // 마이그레이션이 이미 돈 뒤라 직접 넣고 같은 UPDATE 를 재실행해 효과를 확인한다.
+    await db.execute({
+      sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
+            VALUES ('c-q1', 'u-q', 'terms', '999', 1),
+                   ('c-q2', 'u-q', 'privacy', '4', 1),
+                   ('c-q3', 'u-q', 'age14', 'v-nonsense', 1)`,
+      args: [],
+    });
+    await db.execute(
+      `UPDATE user_consents SET policy_version = '0'
+        WHERE policy_version GLOB '[0-9]*' AND CAST(policy_version AS INTEGER) > 4`,
+    );
+    const rows = await db.execute({
+      sql: `SELECT consent_type, policy_version FROM user_consents WHERE user_id = ? ORDER BY id`,
+      args: ['u-q'],
+    });
+    const byType = new Map(rows.rows.map((r) => [String(r.consent_type), String(r.policy_version)]));
+    // 위조된 미래 버전만 지워진다.
+    expect(byType.get('terms')).toBe('0');
+    // 정상 버전과 숫자가 아닌 값(이미 0 으로 읽힌다)은 건드리지 않는다.
+    expect(byType.get('privacy')).toBe('4');
+    expect(byType.get('age14')).toBe('v-nonsense');
+  });
+});

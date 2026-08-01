@@ -537,6 +537,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var pendingDeletion by mutableStateOf(false)
         internal set
 
+    /**
+     * `/consents/status` **응답이 실제로 도착했는지**(성공·실패 무관).
+     *
+     * `consentChecked` 로는 대신할 수 없다 — 그 값은 이 기기의 '동의 완료' 캐시로도 켜진다.
+     * 정책이 개정된 뒤 처음 켠 경우 캐시는 아직 옛 버전 기준이라 `consentChecked` 가 즉시
+     * true 가 되는데, 서버는 재동의를 요구한다. 그 틈에 1회성 오버레이가 소진되고 뒤늦게
+     * 동의 화면이 깔린다(Codex #660). 소진되는 플래그는 **캐시가 아니라 응답**을 기다려야
+     * 한다(CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」).
+     */
+    var consentStatusChecked by mutableStateOf(false)
+        internal set
+
     // 계정 상태 조회가 끝났는지(성공·실패 무관). versionChecked 와 같은 이유로 필요하다 —
     // 이게 false 인 동안 pendingDeletion 은 '아직 모른다' 는 뜻의 기본값 false 라, 이 값을
     // 안 보면 탈퇴 유예 계정에서도 1회성 오버레이가 먼저 떠 플래그를 태운다(Codex #660).
@@ -869,6 +881,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showWelcomePromo = false
         pendingDeletion = false
         accountStatusChecked = false
+        consentStatusChecked = false
         // 마케팅 수신 토글도 user-scoped — 옛 사용자의 동의값이 다음 사용자 화면에 잔존하지 않게
         // 비우고, 진행 중이던 로드는 generation 증가로 무효화한다.
         marketingConsentAgreed = null
