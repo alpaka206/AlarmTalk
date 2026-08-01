@@ -167,16 +167,7 @@ internal fun MainViewModel.createVoiceProfiles(
     val ownerUserId = session.user.id
     fun sessionChanged() = authSession?.user?.id != ownerUserId
     viewModelScope.launch {
-        // 로컬 녹음 샘플은 음성 생체정보 **평문** 이라, 이 등록이 끝나는 어느 갈래에서든
-        // 공용 캐시에 남겨 두면 안 된다(안 지우면 30일 스윕까지 그대로다, Codex #660).
-        suspend fun purgeSourceRecordings() {
-            withContext(Dispatchers.IO) {
-                drafts.forEach { draft ->
-                    runCatching { repository.deleteVoiceCloneSourceRecording(draft.audio.cacheKey) }
-                        .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
-                }
-            }
-        }
+        suspend fun purgeSourceRecordings() = purgeVoiceCloneSourceRecordings(drafts)
         runCatching {
             // 순서 고정: 동의 기록 → 업로드. 같은 runCatching 안에 두어 기록이 실패하면
             // 녹음이 절대 나가지 않고, 실패 처리도 업로드 실패와 같은 경로를 탄다.
@@ -831,6 +822,28 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to load stock clips", error)
+        }
+    }
+}
+
+
+/**
+ * 클론 등록에 쓴 로컬 녹음 원본(음성 생체정보 **평문** .m4a)을 지운다.
+ *
+ * 등록이 끝나는 **어느 갈래에서든** 불려야 한다 — 성공·실패·계정 전환 모두. 공용 캐시에
+ * 남겨 두면 30일 스윕까지 그대로 남고, 계정이 바뀐 뒤에는 앞 사람의 평문 생체정보가 다른
+ * 사람 기기 상태에 얹혀 있는 셈이 된다(Codex #660).
+ *
+ * 예외는 하나뿐이다: **같은 계정의 일반 실패**(네트워크 등). 사용자가 그대로 다시 시도할 수
+ * 있어야 하므로 그때는 지우지 않는다.
+ */
+internal suspend fun MainViewModel.purgeVoiceCloneSourceRecordings(
+    drafts: List<VoiceProfileCreationDraft>,
+) {
+    withContext(Dispatchers.IO) {
+        drafts.forEach { draft ->
+            runCatching { repository.deleteVoiceCloneSourceRecording(draft.audio.cacheKey) }
+                .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
         }
     }
 }
