@@ -64,17 +64,18 @@ function currentKstMonthSql(): string {
   return "strftime('%Y-%m', 'now', '+9 hours')";
 }
 
+// 원장은 '이 달에 정식 목소리를 몇 번 바꿨나' 만 센다(월 1회 한도). 어느 프로필인지는
+// 판정에 쓰이지 않아 #90 에서 컬럼째 걷었다 — 인자도 함께 없앤다.
 async function reserveMonthlyOfficialVoiceChange(
   db: DbExecutor,
   ownerUserId: string,
-  profileId: string,
 ): Promise<string | null> {
   const ledgerId = crypto.randomUUID();
   const reserved = await db.execute({
     sql: `INSERT OR IGNORE INTO voice_profile_change_ledger
-            (id, owner_user_id, voice_profile_id, change_month, change_type, status)
-          VALUES (?, ?, ?, ${currentKstMonthSql()}, ?, 'reserved')`,
-    args: [ledgerId, ownerUserId, profileId, OFFICIAL_VOICE_CHANGE_TYPE],
+            (id, owner_user_id, change_month, change_type, status)
+          VALUES (?, ?, ${currentKstMonthSql()}, ?, 'reserved')`,
+    args: [ledgerId, ownerUserId, OFFICIAL_VOICE_CHANGE_TYPE],
   });
   return (reserved.rowsAffected ?? 0) > 0 ? ledgerId : null;
 }
@@ -822,7 +823,7 @@ voiceProfile.patch('/:id', async (c) => {
         if (existingCount >= MAX_VOICE_PROFILES) {
           return { status: 'voice_limit' as const, rowsAffected: 0 };
         }
-        const ledgerId = await reserveMonthlyOfficialVoiceChange(tx, userPk, id);
+        const ledgerId = await reserveMonthlyOfficialVoiceChange(tx, userPk);
         if (!ledgerId) {
           return { status: 'monthly_limit' as const, rowsAffected: 0 };
         }

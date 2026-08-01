@@ -11,8 +11,13 @@
 > **2026-08-01 1차 처리분** — PR #660 에서 아래를 해소했다: 미사용 문자열 119키, 선물 결제 UI 체인,
 > dead route(`_dev/clear-mine`), scheduler 죽은 주석·모킹, 매뉴얼 녹음 길이, `ci` 라벨 문서화,
 > 음성 생체정보 철회 UI + 철회 시 삭제 사실 고지(처리방침·약관·동의 카피).
-> **남은 것 중 착수 전 결정이 필요한 것**: Open-Meteo 국외이전 표 행(운영 주체·이전 국가 확정 필요),
-> 정책 버전 5 상향(스토어 출시 → 백엔드 머지 순서 강제), #89 스키마 정리 마이그레이션.
+> **Open-Meteo 는 고지 대상 아님으로 종결**(식별자 없이 도시명·좌표만, 서버에서 호출 — ③ 버킷 참조).
+> 그에 따라 **정책 버전 5 상향도 불필요**하다.
+> **#89(인덱스 12종 정리 + 누락 인덱스 1개 추가)·#90(사장 컬럼 8개 DROP) 적용 완료** — DB 초기화 없이 제자리 마이그레이션.
+> NOT NULL·무기본값이라 배포 창에서 500 이 나는 컬럼(generated_audio_assets.provider_voice_id/model_id/language,
+> voice_uploads.size_bytes)과 진단·증빙용(push_tokens.platform, pending_external_deletions.last_error,
+> store_transactions.raw_payload, retained_billing_records)은 **의도적으로 남겼다**.
+> 동의 철회 **과삭제도 해소**했다(클론 파생만 삭제 — ③ 참조).
 
 ## 총평
 
@@ -66,31 +71,31 @@
   - 조치: SELECT 목록에서 `, ga.mime_type` 제거. 그러면 generated_audio_assets.mime_type 도 완전 INSERT 전용이 되어 아래 컬럼 DROP 후보로 승격(audio_format 으로 MIME 재구성 가능)
   - 확신도: high
 
-- [ ] **[#89 마이그레이션 A] 읽기 0건인 사장 컬럼 13개 DROP**
+- [x] **[#89 마이그레이션 A] 읽기 0건인 사장 컬럼 13개 DROP**
   - 위치: `packages/backend/src/lib/migrations.ts:136-137(message_library.is_favorite/received_at), :586,587,588,591,596,713,714(generated_audio_assets 7컬럼), :228-229(voice_uploads.size_bytes/duration_ms), :1205(promo_code_redemptions.subscription_id), :1240(voice_profile_change_ledger.voice_profile_id)`
   - 조치: 현재 최신 #88(migrations.ts:1844) 다음 #89 에 DROP COLUMN 추가. 동반 수정 필수 — scripts/db-inventory.ts:196-199 프로브 제거, INSERT 축소: routes/tts.ts:1430-1433, lib/stock-clips.ts:854-857, routes/voice-upload.ts:171-180, routes/voice-profile.ts:1504-1516, lib/promo-redemption.ts:296. idx_voice_profile_change_ledger_profile(migrations.ts:1251-1252) DROP 을 컬럼 DROP 앞에 배치
   - 위험: 마이그레이션 DROP 은 되돌리기 어렵다(테이블 재작성 없이 컬럼 복구 불가). voice_uploads.size_bytes 와 store 계열 NOT NULL 컬럼은 INSERT 를 같이 안 줄이면 배포 즉시 500. '어떤 모델/보이스로 만든 오디오인가' 사후 추적은 영구 상실(현재도 코드로는 안 본다). messages.delivery_tags_json 은 routes/tts.ts:1697·1804 에서 실제로 읽히는 별개 컬럼이니 혼동 금지
   - 확신도: high
 
-- [ ] **[#89 마이그레이션 B] UNIQUE 자동 인덱스 또는 상위 복합 인덱스와 완전 중복인 인덱스 9종**
+- [x] **[#89 마이그레이션 B] UNIQUE 자동 인덱스 또는 상위 복합 인덱스와 완전 중복인 인덱스 9종**
   - 위치: `packages/backend/src/lib/migrations.ts:215, :295, :327, :761-762, :1210-1211, :356, :650-651, :168, :1861`
   - 조치: #89 에 DROP INDEX IF EXISTS 9줄 (idx_users_email / idx_plans_key / idx_voucher_codes_hash / idx_voice_profile_relationships_user / idx_promo_redemptions_code / idx_plan_group_members_group / idx_voucher_redemptions_voucher / idx_voice_profiles_user / idx_push_tokens_user)
   - 위험: idx_push_tokens_user 를 지우면 packages/backend/test/migrations.test.ts:425-441 이 sqlite_master 실재 여부를 arrayContaining 으로 단언하므로 CI 실패 — 테스트 동반 수정 필수. migrations.test.ts:101·118·133 은 SQL 문자열 toContain 이라 그대로 통과
   - 확신도: high
 
-- [ ] **[#89 마이그레이션 C] 쿼리 계획에 절대 들어가지 않는 인덱스 3종 — 선행 컬럼이 COALESCE 로 감싸이거나 술어가 아예 없음**
+- [x] **[#89 마이그레이션 C] 쿼리 계획에 절대 들어가지 않는 인덱스 3종 — 선행 컬럼이 COALESCE 로 감싸이거나 술어가 아예 없음**
   - 위치: `packages/backend/src/lib/migrations.ts:1172-1173(idx_messages_stock), :784(idx_voice_profiles_is_draft), :1175(idx_alarms_bucket)`
   - 조치: 최소안은 3개 모두 DROP INDEX IF EXISTS(현재 대비 성능 손해 0). 근본안을 택하면 messages.is_preset 을 NOT NULL DEFAULT 0 으로 정규화(테이블 재작성 atomic:true)하고 COALESCE 11곳(lib/stock-clips.ts:412,597,803,838, lib/audio-retention.ts:302, routes/tts.ts:1637,1717,1721,1807, routes/alarm-mutation.ts:97, routes/voice-profile.ts:1864,1973)을 `is_preset = 1/0` 으로 교체 후 인덱스 유지. bucket_id 컬럼 자체는 응답에 실리므로 유지
   - 위험: idx_messages_stock 을 (voice_profile_id, category, language, variant) 로 재정의하는 중간안을 택하면 idx_messages_voice(migrations.ts:170)와 프리픽스가 겹쳐 그것도 함께 DROP 해야 중복이 안 남는다
   - 확신도: high
 
-- [ ] **[#89 마이그레이션 D] store_transactions.subscription_id 인덱스 부재 — 해지 경로가 풀스캔**
+- [x] **[#89 마이그레이션 D] store_transactions.subscription_id 인덱스 부재 — 해지 경로가 풀스캔**
   - 위치: `인덱스 정의 packages/backend/src/lib/migrations.ts:1885-1888 / 술어 lib/billing-cancel.ts:631-634, routes/billing-mutation.ts:706-709`
   - 조치: #89 에 `CREATE INDEX IF NOT EXISTS idx_store_transactions_subscription ON store_transactions(subscription_id)` 추가(#80 과 동일 성격의 유실 보정)
   - 위험: 없음(순수 추가). 해지 실패는 계속 과금 경로라 조용히 느려지면 위험하므로 출시 전 반영 권장
   - 확신도: high
 
-- [ ] **idx_voice_profiles_lru 가 ORDER BY 선행항 표현식 때문에 안 걸린다(#75 도입 목적 미달성)**
+- [x] **idx_voice_profiles_lru 가 ORDER BY 선행항 표현식 때문에 안 걸린다(#75 도입 목적 미달성)**
   - 위치: `packages/backend/src/lib/voice-slots.ts:85 / 인덱스 packages/backend/src/lib/migrations.ts:1544-1545`
   - 조치: `(last_used_at IS NULL) DESC,` 를 제거해 `ORDER BY last_used_at ASC, created_at ASC` 로 변경(SQLite ASC = NULLS FIRST 라 의미 동일 + 인덱스 적중). 이 수정을 안 할 거면 인덱스를 DROP
   - 위험: NULL 정렬 순서를 SQLite 기본 동작에 의존하게 된다 — 명시성을 원하면 `ORDER BY last_used_at ASC NULLS FIRST`(인덱스 여전히 적중)
@@ -198,7 +203,13 @@
   - 위험: 개인정보보호법 제26조·제28조의8 제2항 요건 — 법무 검토 후 확정할 것
   - 확신도: high
 
-- [ ] **위탁·국외이전 표에 Open-Meteo(날씨·대기질·지오코딩)가 빠져 있다 — 이용자가 입력한 도시명이 그대로 외부로 나간다**
+- [x] ~~**위탁·국외이전 표에 Open-Meteo(날씨·대기질·지오코딩)가 빠져 있다**~~ → **고지 대상 아님으로 종결(2026-08-01)**
+  - 판정 근거: Open-Meteo 로 나가는 것은 **도시명 / 도시 중심 좌표 / 날짜 / 타임존뿐이고 이용자 식별자가 없다**(`tts.ts:366-392` forecast, `:523` air-quality, `:586-590` geocoding — `name=<도시>` 만 실린다). 호출은 전부 **서버(Cloudflare Worker)에서** 나가므로 수신 측은 이용자 단말 IP 도 보지 못한다(안드로이드에서 open-meteo 를 직접 부르는 코드 0건).
+  - 따라서 수신자가 개인을 알아볼 수 없어 **개인정보의 국외 이전(개인정보보호법 §28-8)·처리위탁(§26)에 해당하지 않는다.** 표에 행을 추가할 의무가 없고, 이 사유로 정책 버전을 올릴 필요도 없다.
+  - 앱은 위치 권한을 요청하지 않고(AndroidManifest 에 LOCATION 없음) 좌표를 직접 보내지도 않는다 — 좌표는 도시명을 지오코딩한 **도시 중심값**이다. 처리방침 §1.4:53-57 이 이미 '사용자가 직접 선택·입력한 국가·도시' 를 수집 항목으로 고지하고 개인위치정보가 아님을 밝히고 있어 정합하다.
+  - **다시 고지 대상이 되는 조건**(바뀌면 이 결론을 재검토): ① 단말 GPS·정밀 좌표를 쓰기 시작, ② 요청에 계정/기기 식별자를 함께 실음, ③ 앱이 Open-Meteo 를 직접 호출(이용자 IP 노출), ④ 응답을 개인 단위로 축적 저장.
+
+- [ ] ~~(원 지적 원문 보존)~~ 위탁·국외이전 표에 Open-Meteo 추가 검토
   - 위치: `docs/legal/privacy-policy.ko.md:129-138 / 호출 routes/tts.ts:366, :523, :586-590(url.searchParams.set('name', city))`
   - 조치: §5 표에 Open-Meteo 행 추가(처리 항목: 이용자가 선택한 국가·도시명 또는 좌표 / 목적: 날씨·대기질 기반 알람 문구). 또는 도시명→좌표를 서버에서 캐싱해 외부 지오코딩 질의를 없앤다
   - 위험: 이전 국가를 '독일'로 특정한 원 주장은 코드로 확인 불가 — 표에 적기 전 Open-Meteo 운영 주체·서버 소재를 사업자 공시로 확인할 것

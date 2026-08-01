@@ -1888,6 +1888,68 @@ export const migrations: Migration[] = [
         ON store_transactions(user_id, created_at DESC)`,
     ],
   },
+  {
+    // 정리 감사(docs/qa/cleanup-audit-2026-08-01.md) ① — 쿼리 플래너가 쓸 수 없거나
+    // 상위 인덱스에 완전히 포함되는 인덱스를 걷는다. **인덱스만** 손대는 마이그레이션이라
+    // 되돌리기가 CREATE INDEX 한 줄이고 데이터 손실이 0이다 — 그래서 컬럼 DROP(#90)과
+    // 일부러 분리했다(롤백 단위를 다르게 두려는 것).
+    //
+    // 지우는 근거 두 갈래:
+    //  (a) 중복 — UNIQUE 자동 인덱스나 상위 복합 인덱스의 선행 컬럼과 같아 선택지가 안 는다.
+    //  (b) 무용 — 술어가 COALESCE(...) 로 감싸여 선행 컬럼이 표현식이 되거나(is_preset·
+    //      is_draft), 그 컬럼을 술어로 쓰는 쿼리가 아예 없다(alarms.bucket_id).
+    // 전 문장이 IF EXISTS/IF NOT EXISTS 라 SQL 자체가 멱등이다(atomic 불필요).
+    id: 89,
+    name: 'drop-redundant-indexes',
+    statements: [
+      // (a) 중복
+      `DROP INDEX IF EXISTS idx_users_email`,
+      `DROP INDEX IF EXISTS idx_plans_key`,
+      `DROP INDEX IF EXISTS idx_voucher_codes_hash`,
+      `DROP INDEX IF EXISTS idx_plan_group_members_group`,
+      `DROP INDEX IF EXISTS idx_promo_redemptions_code`,
+      `DROP INDEX IF EXISTS idx_voucher_redemptions_voucher`,
+      `DROP INDEX IF EXISTS idx_voice_profiles_user`,
+      `DROP INDEX IF EXISTS idx_voice_profile_relationships_user`,
+      `DROP INDEX IF EXISTS idx_push_tokens_user`,
+      // (b) 무용
+      `DROP INDEX IF EXISTS idx_messages_stock`,
+      `DROP INDEX IF EXISTS idx_voice_profiles_is_draft`,
+      `DROP INDEX IF EXISTS idx_alarms_bucket`,
+      // 반대로 없어서 풀스캔이던 것 하나를 채운다 — 구독 해지 경로가 subscription_id 로
+      // store_transactions 를 훑는다(billing-cancel·billing-mutation).
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_subscription
+        ON store_transactions(subscription_id)`,
+    ],
+  },
+  {
+    // 정리 감사 ① — 쓰기만 하고 아무도 읽지 않는 컬럼을 걷는다.
+    //
+    // **되돌릴 수 없다**(컬럼 값이 사라진다). 그래서 넣은 것은 전부 다음 조건을 만족한다:
+    //  1. src 전수 검색으로 SELECT/WHERE/ORDER BY 에 등장하지 않는다.
+    //  2. nullable 이거나 DEFAULT 가 있다 — CI 가 워커(코드) 배포 → 마이그레이션 순으로
+    //     돌아서 그 사이 '새 코드 + 옛 스키마' 창이 반드시 생기는데, 그때도 INSERT 가
+    //     성공해야 한다. NOT NULL·무기본값 컬럼(generated_audio_assets 의 provider_voice_id·
+    //     model_id·language, voice_uploads.size_bytes)은 이 창에서 500 이 나므로 뺐다.
+    //  3. 인덱스가 참조하면 그 인덱스를 **먼저** 떨군다(아래 ledger 가 그 경우다).
+    //     libSQL 은 인덱싱된 컬럼 DROP 을 거부한다.
+    // atomic 은 붙이지 않는다 — 재실행 시 '이미 없는 컬럼' 관용이 살아 있어야 원장이
+    // 어긋난 DB 도 복구된다(러너의 after-drop-column 가드가 진짜 실패는 따로 잡는다).
+    id: 90,
+    name: 'drop-dead-columns',
+    statements: [
+      `DROP INDEX IF EXISTS idx_voice_profile_change_ledger_profile`,
+      `ALTER TABLE voice_profile_change_ledger DROP COLUMN voice_profile_id`,
+      `ALTER TABLE message_library DROP COLUMN is_favorite`,
+      `ALTER TABLE message_library DROP COLUMN received_at`,
+      `ALTER TABLE generated_audio_assets DROP COLUMN category`,
+      `ALTER TABLE generated_audio_assets DROP COLUMN size_bytes`,
+      `ALTER TABLE generated_audio_assets DROP COLUMN original_text`,
+      // ⚠ messages.delivery_tags_json 은 실제로 읽는 별개 컬럼이다. 같이 지우지 말 것.
+      `ALTER TABLE generated_audio_assets DROP COLUMN delivery_tags_json`,
+      `ALTER TABLE promo_code_redemptions DROP COLUMN subscription_id`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
@@ -1895,6 +1957,14 @@ export const migrations: Migration[] = [
 // reality (e.g. partial historical migration runs before the ledger existed).
 function isIdempotentDDLError(message: string): boolean {
   const lower = message.toLowerCase();
+  // ⚠ 'no such column' 관용보다 **먼저** 걸러야 하는 진짜 실패가 하나 있다.
+  // 인덱스가 참조하는 컬럼을 DROP 하면 libSQL 이
+  //   `error in index ix after drop column: no such column: prof`
+  // 를 던지는데, 이건 "이미 적용됨"이 아니라 "DROP 이 실패했다"는 뜻이다. 아래 관용에
+  // 삼켜지면 컬럼은 그대로인데 _migrations 에는 성공으로 찍혀 **다시는 재시도되지 않고**
+  // 배포는 초록불이라 dev/prod 스키마가 조용히 갈라진다. 실패 메시지에만 이 조각이
+  // 들어가므로 한 줄로 두 경우를 정확히 가른다.
+  if (lower.includes('after drop column')) return false;
   return (
     lower.includes('duplicate column name') ||
     lower.includes('already exists') ||
@@ -1904,6 +1974,9 @@ function isIdempotentDDLError(message: string): boolean {
     lower.includes('no such view')
   );
 }
+
+/** 테스트가 러너의 관용 판정을 직접 고정할 수 있게 노출한다(프로덕션 호출부 없음). */
+export const __isIdempotentDDLErrorForTest = isIdempotentDDLError;
 
 /**
  * 한 마이그레이션의 문장들을 적용한다. 두 진입점(runMigrations·runMigrationsRange)이
