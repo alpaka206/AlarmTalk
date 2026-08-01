@@ -927,4 +927,11 @@
     <string name="voices_register_biometric_consent">음성 생체정보 처리에 동의해요</string>
     <string name="voices_register_biometric_desc">목소리는 음성 프로필 생성·클론·읽어주기에 쓰이고, 개인을 식별·재현할 수 있는 생체정보로 처리돼요. 목소리를 지우면 함께 삭제되고, 더보기에서 언제든 동의를 철회할 수 있어요.</string>
     <string name="msg_consent_update_required">앱을 업데이트해야 동의를 진행할 수 있어요.</string>
+    <string name="consent_withdraw_action">동의 철회</string>
+    <string name="consent_withdraw_voice_title">철회하면 등록한 목소리가 모두 삭제돼요</string>
+    <string name="consent_withdraw_voice_body">지금까지 만든 목소리와 녹음 원본, 생성된 음성 파일, 저장한 알람 문구가 즉시 삭제되고 되돌릴 수 없어요. 이 목소리로 울리던 알람은 가족에게 공유한 알람까지 기본 알람음으로 바뀌어요. 다시 쓰려면 처음부터 새로 녹음해야 해요.</string>
+    <string name="consent_withdraw_voice_confirm">철회하고 삭제</string>
+    <string name="consent_overseas_withdraw_notice">국외 이전 동의는 서비스 이용에 반드시 필요해요. 철회하려면 더보기에서 회원 탈퇴를 진행해 주세요.</string>
+    <string name="msg_voice_consent_withdrawn">음성 생체정보 동의를 철회했어요. 등록한 목소리가 삭제됐어요.</string>
+    <string name="msg_voice_consent_withdraw_failed">동의 철회에 실패했어요. 다시 시도해 주세요.</string>
 </resources>

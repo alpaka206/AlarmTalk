@@ -1182,6 +1182,7 @@ internal fun AlarmTalkApp(
                       marketingConsentLoadFailed = viewModel.marketingConsentLoadFailed,
                       onLoadMarketingConsent = viewModel::loadMarketingConsent,
                       onChangeMarketingConsent = viewModel::updateMarketingConsent,
+                      onWithdrawVoiceBiometric = viewModel::withdrawVoiceBiometricConsent,
                   )
               }
               composable(AppRoute.LegalDoc) { entry ->

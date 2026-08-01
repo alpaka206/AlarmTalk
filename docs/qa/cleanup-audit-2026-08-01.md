@@ -7,31 +7,38 @@
 진행 표기: 각 항목 앞 `- [ ]` 를 처리하면서 채운다. 버킷별로 PR 을 나누는 것을 전제로 한다
 (①=코드/스키마 삭제, ②=문서, ③=법무, ④=결정 대기).
 
+
+> **2026-08-01 1차 처리분** — PR #660 에서 아래를 해소했다: 미사용 문자열 119키, 선물 결제 UI 체인,
+> dead route(`_dev/clear-mine`), scheduler 죽은 주석·모킹, 매뉴얼 녹음 길이, `ci` 라벨 문서화,
+> 음성 생체정보 철회 UI + 철회 시 삭제 사실 고지(처리방침·약관·동의 카피).
+> **남은 것 중 착수 전 결정이 필요한 것**: Open-Meteo 국외이전 표 행(운영 주체·이전 국가 확정 필요),
+> 정책 버전 5 상향(스토어 출시 → 백엔드 머지 순서 강제), #89 스키마 정리 마이그레이션.
+
 ## 총평
 
 6개 레인의 확증 결과를 중복 제거해 4버킷 49건으로 통합했다. ①은 코드/스키마에서 즉시 제거 가능한 죽은 것들(문자열 111키·gift 체인·dead route·미사용 응답 필드·#89 마이그레이션 묶음)이고, ②는 코드와 어긋난 문서/문구 13건(CI 라벨 미문서화, 30초→1분 녹음, 존재하지 않는 Gradle 태스크·탭·파일 경로)이다. ③은 법적 리스크 13건으로, 특히 "언제든 철회 가능"이라 고지하고도 민감 동의 철회 UI가 없다는 점, 철회 시 목소리가 영구 파기되는데 미고지인 점, 국외이전 거부 시 실제로는 가입 자체가 불가한데 "일부 기능 제한"이라 적은 점, 처리방침 국외이전 표에 Open-Meteo 누락·수탁사 익명 표기가 가장 시급하다. ④는 제품/법무 판단이 선행돼야 하는 10건(공유 목소리 호칭 기능 존폐, 그룹 소유권 양도 UI, alarm-talk.com 메일함 생존, en/ja 법무문서, raw_payload 보존)이다. 반박으로 확정된 두 가지는 반드시 지킬 것: family_alarm_quiet_days/start/end 3필드는 클라 폴백+테스트가 살아 있어 삭제 금지이고, checkoutPlan() 함수와 CheckoutVoucher 는 여전히 사용 중이라 죽은 건 UI 파라미터 체인과 gift 인자뿐이다.
 
 ## ① 지금 바로 지워도 되는 죽은 코드/스키마 (14건)
 
-- [ ] **미사용 문자열 111키(원 119키 중 gift 8키는 아래 별도 항목) — 에디터 9, 구세대 테마 다이얼로그 8, 홈 인사말 8, label_* enum 43, 권한 게이트 2, 스톡 클립 언어 3, 동의 토스트 2, 제거된 음성메시지 2, voice-data 즉시삭제 4 등**
+- [x] **미사용 문자열 111키(원 119키 중 gift 8키는 아래 별도 항목) — 에디터 9, 구세대 테마 다이얼로그 8, 홈 인사말 8, label_* enum 43, 권한 게이트 2, 스톡 클립 언어 3, 동의 토스트 2, 제거된 음성메시지 2, voice-data 즉시삭제 4 등**
   - 위치: `apps/android-native/app/src/main/res/values/strings.xml:44,49,58,66,76,77,120-122,135,139-142,192,195,196,206,209,217,254,269,282,314-321,324,325,367-374,377,403,472,473,476,490,512,524,533,617,621-623,666,670,677,702,726,745-786,824,922,929,930,934,962-964,993,1014 (+ values-en, values-ja 대응 키)`
   - 조치: 키 이름 기준으로 ko/en/ja 3로케일에서 함께 삭제. r3ed_stock_clip_lang_* 는 translatable 미지정이라 en:934-936 / ja:942-944 번역본도 같이 제거. label_sync_state_*·label_alarm_state_* 는 디버그 화면 재도입 시 재생성 가능하다는 근거를 커밋 메시지에 남길 것
   - 위험: strings.xml:379 hs_weather_preset_cities 는 <string-array> 이고 AlarmRandomPromptSettings.kt:410 에서 R.array 로 실사용 중이다(377행 바로 아래) — 라인 범위 삭제 금지, 반드시 키 이름 매칭으로 지울 것
   - 확신도: high
 
-- [ ] **이용권 '선물(gift)' 결제 UI 문구 8키 + 호출되지 않는 onCheckoutPlan 파라미터 체인**
+- [x] **이용권 '선물(gift)' 결제 UI 문구 8키 + 호출되지 않는 onCheckoutPlan 파라미터 체인**
   - 위치: `strings.xml:83,84,85,86,89,90,111,143; ui/billing/BillingPanels.kt:69; ui/alarms/AlarmListScreen.kt:102,343; ui/app/AlarmTalkApp.kt:1026; ui/main/MainViewModelBillingActions.kt:261,266,269`
   - 조치: 문자열 8키(3로케일) 삭제 + onCheckoutPlan 파라미터를 AlarmTalkApp→AlarmListScreen→BillingPanels 3단계에서 제거, checkoutPlan 의 gift 인자·CheckoutRequest(gift=…)·if(!gift) 분기 정리
   - 위험: checkoutPlan() 함수 자체는 삭제 금지 — MainViewModelBillingActions.kt:532(changePlan requiresCheckout)·549(NO_ACTIVE_SUBSCRIPTION 폴백)가 여전히 호출한다. GIFT- 코드 등록/공유 경로(BillingPanels.kt:143 RedeemCodeKind.Gift, ShareCode.kt:20, MainViewModelBillingActions.kt:292)는 살아 있으므로 유지
   - 확신도: high
 
-- [ ] **DELETE /api/voice/_dev/clear-mine — 호출자 0건인 74줄짜리 다중 테이블 원시 DELETE dead route**
+- [x] **DELETE /api/voice/_dev/clear-mine — 호출자 0건인 74줄짜리 다중 테이블 원시 DELETE dead route**
   - 위치: `packages/backend/src/routes/voice-profile.ts:321-400`
   - 조치: JSDoc(321-326) 포함 통째로 제거
   - 위험: 대체수단으로 scripts/reset-test-data.ts 를 안내하지 말 것 — PROTECTED_TABLES 가 litestream 2개뿐(reset-test-data.ts:38-41)이라 수동 시딩한 dev 스톡 클립 144개까지 전부 지운다
   - 확신도: high
 
-- [ ] **존재하지 않는 lib/scheduler.ts 와 GET /tick 을 가리키는 죽은 주석·모킹**
+- [x] **존재하지 않는 lib/scheduler.ts 와 GET /tick 을 가리키는 죽은 주석·모킹**
   - 위치: `packages/backend/src/index.ts:245,355; routes/alarm-helpers.ts:263; routes/alarm-mutation.ts:844; lib/migrations.ts:1217; test/alarm-query.test.ts:12-14,51-53`
   - 조치: scheduler.ts 언급 문장·GET /tick 안내 문장·'list/tick/cron' 주석·vi.mock('../src/lib/scheduler') 블록·빈 섹션 헤더 제거. cron 주기 상수 설명은 index.ts 로 일원화
   - 위험: vi.mock 제거 후 alarm-query 테스트 1회 실행 확인
@@ -97,13 +104,13 @@
 
 ## ② 문구·문서 수정 (서비스 현황 불일치) (13건)
 
-- [ ] **PR 에서 CI 를 돌리려면 `ci` 라벨이 필수인데 어느 문서에도 없다 — 라벨 없으면 필수 체크가 exit 1 로 실패해 머지 불가**
+- [x] **PR 에서 CI 를 돌리려면 `ci` 라벨이 필수인데 어느 문서에도 없다 — 라벨 없으면 필수 체크가 exit 1 로 실패해 머지 불가**
   - 위치: `CLAUDE.md:23, AGENTS.md:36, docs/standards/README.md:97 (근거 .github/workflows/ci.yml:24-29,51-55,78-82,112-116)`
   - 조치: 세 문서 컨벤션 줄 뒤에 "PR 에 `ci` 라벨을 붙여야 CI 가 돈다. 라벨 뒤에 커밋을 더 올리면 라벨을 뗐다 다시 붙인다" 추가. ci.yml:21 의 '필수 8개' 괄호주석은 현재 잡 전개(lint1+typecheck3+test3=7)에 맞춰 정정하거나 '(2026-07-29 당시 8개)'로 시점 표기
   - 위험: 필수 체크 개수 7 은 잡 전개 기준 추론 — GitHub 브랜치 보호 설정 실물 확인 후 확정
   - 확신도: high
 
-- [ ] **매뉴얼 3개 언어가 '목소리 등록 = 30초 녹음'이라 안내하지만 정식 등록은 60초 이상 필수 (사용자가 실제로 등록 실패를 겪는다)**
+- [x] **매뉴얼 3개 언어가 '목소리 등록 = 30초 녹음'이라 안내하지만 정식 등록은 60초 이상 필수 (사용자가 실제로 등록 실패를 겪는다)**
   - 위치: `docs/manual/README.ko.md:34, README.md:34, README.ja.md:34, docs/qa/README.md:36-37 (근거 voice-profile.ts:42 MIN=60_000, :47 MAX=120_000, :46 draft 만 12_000)`
   - 조치: 매뉴얼 3종 :34 를 "1분 이상 2분 이하로 녹음(또는 그 길이의 오디오·영상 파일 선택)"으로 교체. QA TC-VOC-001/002 는 목소리 프로필(정식 60~120초, 프리뷰 12초 이상)과 알람 로컬 오디오(30초 트림)를 분리해 재작성
   - 위험: 30초는 AlarmAudioStore.kt:26 의 로컬 알람 오디오 상한이지 목소리 프로필과 무관 — 같은 파일 32행에 120_000L 도 있어 '30초=로컬 상한' 서술은 한쪽만 맞다
@@ -167,13 +174,13 @@
 
 ## ③ 법적·정책 리스크 (15건)
 
-- [ ] **문서·앱이 '언제든 동의 철회 가능'이라 고지하지만 앱에 음성 생체정보·국외이전 철회 UI가 없다(서버는 agreed=false 를 받아 처리한다)**
+- [x] **문서·앱이 '언제든 동의 철회 가능'이라 고지하지만 앱에 음성 생체정보·국외이전 철회 UI가 없다(서버는 agreed=false 를 받아 처리한다)**
   - 위치: `ui/settings/ConsentHistoryScreen.kt:133-143,150-157 / strings.xml:1046(values-en:1018, values-ja:1026) / docs/legal/privacy-policy.ko.md:45,186, terms-of-service.ko.md:146, consent-and-permission-copy.ko.md:82 / 서버 routes/user.ts:353-371`
   - 조치: ConsentHistoryScreen 의 voice_biometric 행을 marketing 과 같은 ConsentToggleRow 로 교체(백엔드 변경 불필요 — 앱의 recordConsents 4곳 중 agreed 가 변수인 곳은 marketing 토글 하나뿐). 붙일 수 없으면 strings.xml:1046·consent-and-permission-copy:82 에서 '더보기에서 언제든 철회'를 빼고 이메일 창구만 남긴다(3로케일 동시)
   - 위험: 카피만 지우면 민감정보 동의의 철회 수단 미제공이 그대로 남아 법무 관점에선 미해결이다. 반대로 토글을 붙이면 한 번의 탭으로 deleteSensitiveVoiceDataForUser 가 돌아 등록 목소리·생성 음성이 복구 불가하게 삭제되므로 확인 다이얼로그가 선행 필수이며, 철회 시 기존 프로필 처리(즉시 잠금 vs 삭제) 정책 결정이 선행돼야 한다
   - 확신도: high
 
-- [ ] **민감 동의를 철회하면 서버의 목소리·원본·생성 음성이 영구 파기되고 알람이 sound-only 로 강등되는데, 처리방침·약관·앱 어디에도 고지가 없다**
+- [x] **민감 동의를 철회하면 서버의 목소리·원본·생성 음성이 영구 파기되고 알람이 sound-only 로 강등되는데, 처리방침·약관·앱 어디에도 고지가 없다**
   - 위치: `packages/backend/src/routes/user.ts:353-380, lib/paid-voice-cleanup.ts:280-330 / docs/legal/privacy-policy.ko.md:45,105, terms-of-service.ko.md:146, strings.xml:1046`
   - 조치: 처리방침 §1.3(:45)·§3 보유기간표(:105)·약관 제14조(:146)에 '동의 철회 시 서버의 음성 프로필·원본·생성 음성이 즉시 파기되며 복구할 수 없다'를 명시. strings.xml:1046 은 인과가 반대로 적혀 있으니 함께 수정, 철회 확인 다이얼로그에도 같은 문장
   - 위험: 법무 문서 수정은 되돌리기 어렵다(스토어 제출본·앱 에셋 동기화 필요) — 실제 동작을 그대로 적는 방향이라 내용 리스크는 없음

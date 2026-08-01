@@ -899,4 +899,11 @@ Pass code: %1$s
     <string name="voices_register_biometric_consent">I agree to voice biometric processing</string>
     <string name="voices_register_biometric_desc">Your voice is used to build a voice profile, clone it, and read alarms aloud, and is handled as biometric information that can identify or reproduce a person. Deleting the voice deletes it too, and you can withdraw consent any time from the More tab.</string>
     <string name="msg_consent_update_required">Update the app to continue with consent.</string>
+    <string name="consent_withdraw_action">Withdraw consent</string>
+    <string name="consent_withdraw_voice_title">Withdrawing deletes every voice you made</string>
+    <string name="consent_withdraw_voice_body">Your voices, original recordings, generated audio, and saved alarm messages are deleted right away and can’t be restored. Alarms that used this voice — including ones you shared with family — switch to the default alarm sound. To use it again you’ll have to record from scratch.</string>
+    <string name="consent_withdraw_voice_confirm">Withdraw and delete</string>
+    <string name="consent_overseas_withdraw_notice">Consent to overseas transfer is required to use AlarmTalk. To withdraw it, delete your account from More.</string>
+    <string name="msg_voice_consent_withdrawn">Voice biometric consent withdrawn. Your registered voices were deleted.</string>
+    <string name="msg_voice_consent_withdraw_failed">Couldn’t withdraw consent. Please try again.</string>
 </resources>

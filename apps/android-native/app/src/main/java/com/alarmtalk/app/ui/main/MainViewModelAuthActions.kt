@@ -899,6 +899,67 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
     }
 }
 
+/**
+ * 음성 생체정보(`voice_biometric`) 동의를 철회한다.
+ *
+ * 마케팅 토글과 달리 **파괴적**이다. 서버는 이 값을 false 로 받는 즉시 등록한 목소리 프로필·
+ * 업로드 원본·생성된 음성·저장한 문구를 삭제하고, 그 목소리로 울리던 알람을 기본 알람음으로
+ * 강등한다(가족에게 공유한 알람 포함). 되돌리는 경로는 없다.
+ *
+ * 그래서 마케팅 선례와 두 가지가 다르다:
+ *  - **낙관적 즉시 반영을 하지 않는다.** 서버가 200 을 준 뒤에만 화면을 바꾼다.
+ *  - 성공하면 목소리 목록을 다시 읽고 접근권 동기화를 즉시 돌린다. 서버 푸시만 믿으면
+ *    정작 철회를 누른 그 기기의 알람이 늦게 바뀐다.
+ *
+ * 재동의는 이 화면이 아니라 목소리를 다시 등록할 때 받는다(sensitive_missing → 동의 시트).
+ * 그래서 토글이 아니라 단방향 '철회' 액션이다.
+ */
+internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
+    val session = authSession ?: run {
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
+        return false
+    }
+    val userId = session.user.id
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    val result = runCatching {
+        api.recordConsents(
+            authorization,
+            com.alarmtalk.app.network.RecordConsentsRequest(
+                consents = listOf(
+                    com.alarmtalk.app.network.ConsentItemRequest(
+                        type = "voice_biometric",
+                        agreed = false,
+                        version = cachedPolicyVersion(),
+                    ),
+                ),
+                documentVersion = bundledPolicyVersion,
+            ),
+        )
+    }
+    // 응답이 늦게 온 사이 계정이 바뀌었으면 그 계정 화면을 건드리지 않는다.
+    if (authSession?.user?.id != userId) return false
+    return result.fold(
+        onSuccess = {
+            val app = getApplication<android.app.Application>()
+            if ("voice_biometric" !in sensitiveConsentMissing) {
+                sensitiveConsentMissing = sensitiveConsentMissing + "voice_biometric"
+            }
+            loadVoiceProfiles()
+            com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(app)
+            message = app.getString(R.string.msg_voice_consent_withdrawn)
+            true
+        },
+        onFailure = { error ->
+            AlarmTalkLog.reportError("Failed to withdraw voice biometric consent", error)
+            message = userFacingError(
+                error,
+                getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
+            )
+            false
+        },
+    )
+}
+
 internal fun MainViewModel.syncNow() {
     val session = authSession
     if (session == null) {

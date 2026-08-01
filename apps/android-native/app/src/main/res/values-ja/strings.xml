@@ -907,4 +907,11 @@
     <string name="voices_register_biometric_consent">音声生体情報の処理に同意します</string>
     <string name="voices_register_biometric_desc">声は音声プロフィール作成・クローン・読み上げに使われ、個人を識別または再現し得る生体情報として扱われます。声を削除すると一緒に消え、「その他」からいつでも同意を撤回できます。</string>
     <string name="msg_consent_update_required">同意を進めるにはアプリの更新が必要です。</string>
+    <string name="consent_withdraw_action">同意を撤回</string>
+    <string name="consent_withdraw_voice_title">撤回すると登録した声がすべて削除されます</string>
+    <string name="consent_withdraw_voice_body">これまでに作成した声と録音した元の音声、生成された音声ファイル、保存したアラーム文がすぐに削除され、元に戻せません。この声で鳴っていたアラームは、家族に共有したものも含めて標準のアラーム音に変わります。もう一度使うには、最初から録音し直す必要があります。</string>
+    <string name="consent_withdraw_voice_confirm">撤回して削除</string>
+    <string name="consent_overseas_withdraw_notice">国外移転への同意はサービスの利用に必須です。撤回するには「もっと見る」から退会してください。</string>
+    <string name="msg_voice_consent_withdrawn">音声生体情報の同意を撤回しました。登録した声は削除されました。</string>
+    <string name="msg_voice_consent_withdraw_failed">同意の撤回に失敗しました。もう一度お試しください。</string>
 </resources>
