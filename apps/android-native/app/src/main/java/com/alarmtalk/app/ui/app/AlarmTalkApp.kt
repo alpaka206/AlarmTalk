@@ -707,11 +707,19 @@ internal fun AlarmTalkApp(
     }
 
     if (viewModel.showWelcomePromo && !blockingGateActive) {
+        // 다이얼로그가 닫히면 함께 사라지는 로컬 상태다 — 뷰모델에 실패 전용 상태를 만들 이유가 없다.
+        var promoError by remember { mutableStateOf<String?>(null) }
         WelcomePromoDialog(
             busy = billingBusy,
+            // **성공했을 때만 닫는다.** 예전에는 결과를 기다리지 않고 즉시 닫았는데, 이 안내는
+            // 계정당 1회라 오타·만료·네트워크 실패면 스낵바 한 줄만 보고 다시 열 방법이
+            // 없었다(Codex #660). 실패는 다이얼로그 안에 인라인으로 보여 주고 열어 둔다.
+            errorText = promoError,
             onSubmitCode = { code ->
-                viewModel.registerCode(code)
-                viewModel.dismissWelcomePromo()
+                promoError = null
+                viewModel.registerCode(code) { error ->
+                    if (error == null) viewModel.dismissWelcomePromo() else promoError = error
+                }
             },
             onDismiss = viewModel::dismissWelcomePromo,
             onOpenInstagram = {
@@ -747,7 +755,7 @@ internal fun AlarmTalkApp(
             },
             onDismiss = { planGateDialog = null },
             onRedeemCode = viewModel::registerCode,
-            redeemBusy = viewModel.socialBusy,
+            redeemBusy = viewModel.billingBusy,
         )
     }
 
@@ -1085,7 +1093,7 @@ internal fun AlarmTalkApp(
                   AlarmEditorScreen(
                       contentPadding = padding,
                       onRegisterCode = viewModel::registerCode,
-                      redeemBusy = viewModel.socialBusy,
+                      redeemBusy = viewModel.billingBusy,
                       alarm = null,
                       authSession = authSession,
                       subscriptionResponse = subscriptionResponse,
@@ -1133,7 +1141,7 @@ internal fun AlarmTalkApp(
                       AlarmEditorScreen(
                           contentPadding = padding,
                           onRegisterCode = viewModel::registerCode,
-                          redeemBusy = viewModel.socialBusy,
+                          redeemBusy = viewModel.billingBusy,
                           alarm = currentAlarm,
                           authSession = authSession,
                           subscriptionResponse = subscriptionResponse,

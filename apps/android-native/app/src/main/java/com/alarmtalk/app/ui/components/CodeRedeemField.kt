@@ -3,7 +3,9 @@ package com.alarmtalk.app
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -59,16 +61,23 @@ internal fun CodeRedeemField(
         )
         Button(
             onClick = {
-                val trimmed = code.trim()
-                if (trimmed.isNotBlank()) {
-                    onSubmit(trimmed)
-                    code = ""
-                }
+                // 제출했다고 입력을 비우지 않는다 — 실패했을 때 길게 친 코드가 사라지면
+                // 처음부터 다시 타이핑해야 한다. 성공하면 화면 자체가 닫히거나 홈으로
+                // 이동해 이 필드가 컴포지션에서 빠지므로 남은 텍스트는 문제되지 않는다.
+                code.trim().takeIf { it.isNotBlank() }?.let(onSubmit)
             },
             enabled = code.isNotBlank() && !busy,
             shape = WakerButtonShape,
         ) {
-            Text(stringResource(R.string.code_redeem_submit))
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            } else {
+                Text(stringResource(R.string.code_redeem_submit))
+            }
         }
     }
 }

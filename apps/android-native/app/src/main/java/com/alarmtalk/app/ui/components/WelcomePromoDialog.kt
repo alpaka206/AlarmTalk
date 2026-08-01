@@ -33,6 +33,9 @@ internal fun WelcomePromoDialog(
     onSubmitCode: (String) -> Unit,
     onDismiss: () -> Unit,
     onOpenInstagram: () -> Unit,
+    // 등록 실패를 **이 안에서** 보여 준다. 스낵바는 Scaffold 안에 있어 다이얼로그 뒤로 가리고,
+    // 이 안내는 계정당 1회라 실패했다고 닫아 버리면 고쳐 넣을 기회가 사라진다(Codex #660).
+    errorText: String? = null,
 ) {
     Dialog(onDismissRequest = { if (!busy) onDismiss() }) {
         Surface(
@@ -56,6 +59,13 @@ internal fun WelcomePromoDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 CodeRedeemField(busy = busy, onSubmit = onSubmitCode)
+                errorText?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

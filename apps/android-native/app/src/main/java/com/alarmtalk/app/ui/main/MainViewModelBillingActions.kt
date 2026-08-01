@@ -179,18 +179,36 @@ private fun promoRedeemFailureMessage(context: android.content.Context, errorCod
 private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Boolean =
     this != null && (key in setOf("couple", "family") || planType in setOf("couple", "family"))
 
-internal fun MainViewModel.registerCode(code: String) {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code)) ?: return
+/**
+ * 코드(바우처·초대·프로모) 등록.
+ *
+ * [onResult] 는 **결과를 기다려야 하는 호출부**만 넘긴다 — null 이면 성공, 문자열이면 실패 사유다.
+ * 웰컴 프로모처럼 '계정당 1회' 로 소진되는 자리는 실패했는데 화면이 먼저 닫히면 사용자가 코드를
+ * 고쳐 넣을 방법이 영영 없어진다(Codex #660). 그래서 실패 문구를 스낵바 대신 호출부로 돌려주고,
+ * 호출부가 화면을 열어 둔 채 인라인으로 보여 준다(다이얼로그가 떠 있으면 스낵바는 그 뒤로 가린다).
+ * 넘기지 않으면 지금처럼 스낵바로만 알린다.
+ */
+internal fun MainViewModel.registerCode(code: String, onResult: ((String?) -> Unit)? = null) {
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code))
+        ?: run {
+            // 조기 반환도 결과를 알린다 — 안 그러면 호출부는 로딩도 에러도 없이 멈춘 것처럼 보인다.
+            onResult?.invoke(message)
+            return
+        }
     val trimmedCode = code.trim()
     if (trimmedCode.isBlank()) {
         message = getApplication<android.app.Application>().getString(R.string.msg_gb_code_input_required_period)
+        onResult?.invoke(message)
         return
     }
+    // 응답이 늦게 온 사이 계정이 바뀌면 그 계정 화면을 건드리지 않는다(이 PR 의 반복 지점).
+    val ownerUserId = authSession?.user?.id
     viewModelScope.launch {
         billingBusy = true
         runCatching {
             api.registerCode(authorization, CodeRegisterRequest(trimmedCode))
         }.onSuccess { response ->
+            if (authSession?.user?.id != ownerUserId) return@onSuccess
             message = if (response.type == "promo") {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeemed)
             } else {
@@ -208,7 +226,9 @@ internal fun MainViewModel.registerCode(code: String) {
             } else {
                 navigateHomeTick++
             }
+            onResult?.invoke(null)
         }.onFailure { error ->
+            if (authSession?.user?.id != ownerUserId) return@onFailure
             // errorBody 는 한 번만 읽히므로 error_code 를 먼저 한 번만 추출해 재사용한다.
             val errorCode = apiErrorCode(error)
             if (errorCode == "CODE_NOT_FOUND" || errorCode == "INVALID_FORMAT") {
@@ -216,14 +236,19 @@ internal fun MainViewModel.registerCode(code: String) {
                 // '전에' 형식(INV-/GIFT-...)을 먼저 검사하므로, 자유 문자열 프로모
                 // 코드는 CODE_NOT_FOUND 가 아니라 INVALID_FORMAT 으로 떨어진다(둘 다 폴백 대상).
                 // 그 외 에러(이미 사용 등)는 그대로 노출하고 폴백하지 않는다.
-                redeemPromoCode(authorization, trimmedCode)
+                redeemPromoCode(authorization, trimmedCode, ownerUserId, onResult)
             } else {
                 AlarmTalkLog.reportError("Failed to register code", error)
-                message = codeRegistrationFailureMessage(
+                val failure = codeRegistrationFailureMessage(
                     getApplication<android.app.Application>(),
                     errorCode,
                     userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
                 )
+                if (onResult != null) {
+                    onResult(failure)
+                } else {
+                    message = failure
+                }
             }
         }
         billingBusy = false
@@ -235,10 +260,16 @@ internal fun MainViewModel.registerCode(code: String) {
  * 폴백 호출된다(같은 코루틴·billingBusy 유지). 성공 시 바우처 성공과 동일하게 서버 기준으로
  * 구독/플랜을 재조회하고 홈(또는 공유패스)으로 이동한다.
  */
-private suspend fun MainViewModel.redeemPromoCode(authorization: String, code: String) {
+private suspend fun MainViewModel.redeemPromoCode(
+    authorization: String,
+    code: String,
+    ownerUserId: String?,
+    onResult: ((String?) -> Unit)?,
+) {
     runCatching {
         api.redeemPromoCode(authorization, PromoRedeemRequest(code))
     }.onSuccess { response ->
+        if (authSession?.user?.id != ownerUserId) return@onSuccess
         message = getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeemed)
         refreshBillingAfterMutation(authorization, "promo redeem")
         refreshSocial()
@@ -248,13 +279,20 @@ private suspend fun MainViewModel.redeemPromoCode(authorization: String, code: S
         } else {
             navigateHomeTick++
         }
+        onResult?.invoke(null)
     }.onFailure { error ->
+        if (authSession?.user?.id != ownerUserId) return@onFailure
         AlarmTalkLog.reportError("Failed to redeem promo code", error)
-        message = promoRedeemFailureMessage(
+        val failure = promoRedeemFailureMessage(
             getApplication<android.app.Application>(),
             apiErrorCode(error),
             userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeem_failed)),
         )
+        if (onResult != null) {
+            onResult(failure)
+        } else {
+            message = failure
+        }
     }
 }
 
