@@ -621,10 +621,13 @@ internal fun VoiceProfileManagementPanel(
                     // 저장된 것처럼 보인다.
                     selectedAudio = null
                     recordingElapsedMillis = 0L
-                    // 하한 미달 안내는 마이크 카드의 대기 문구("12초 이상 녹음해 주세요")와
-                    // 중복이라 대사 밑에 또 띄우지 않는다. 길이 확인 실패 등 다른 원인만 알린다.
-                    val tooShort = duration != null && duration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS
-                    localMessage = if (tooShort) null else error
+                    // 짧아서 버려졌으면 그렇다고 말한다. 예전에는 마이크 카드 대기 문구가
+                    // "1분 이상 녹음해 주세요" 라서 여기서 또 띄우면 중복이었지만, 하한을 12초로
+                    // 내리면서 그 문구는 "길게 말할수록 더 비슷해져요 · 최대 2분"(최소 길이를
+                    // 일부러 말하지 않는다)으로 바뀌었다. 억제만 남으니 하한 미달 녹음이 안내도
+                    // 없이 사라졌다 — 위에서 오디오와 타이머를 되돌리므로 화면에는 아무 일도
+                    // 일어나지 않은 것처럼 보인다.
+                    localMessage = error
                 }
             }.onFailure { error ->
                 isRecording = false

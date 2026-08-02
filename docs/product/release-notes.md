@@ -21,8 +21,13 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ## 1.2.1 (versionCode 21)
 
-`versionCode 20` 은 결번이다 — 이유는 `packages/backend/src/lib/app-version.ts` 주석 참고.
-직전 스토어 출시본은 1.1.3(versionCode 18)이라, 아래 노트는 1.1.3 → 1.2.1 기준으로 썼다.
+`versionCode 20` 은 **건너뛴 번호**다 — 7/29 에 20 을 찍은 빌드가 Play 에 올라가 있어 재사용할
+수 없고, 그 빌드는 `document_version` 을 보내기 전(7/30 이전)이라 강제 업데이트 하한으로도 쓸 수
+없다. 자세한 이유는 `packages/backend/src/lib/app-version.ts` 주석 참고.
+
+노트는 **1.1.3(versionCode 18) → 1.2.1** 기준으로 썼다. 20 번 빌드가 프로덕션 트랙까지 나갔는지
+내부 테스트에 머물렀는지는 확인하지 않았다 — 프로덕션까지 나갔다면 그 사용자에게는 여기 적힌
+항목 중 일부가 이미 있는 것이다.
 
 ### ko-KR
 
@@ -66,7 +71,7 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 | 직전 선택 유지 | `AlarmEditorScreen.kt` `lastMessageContext`, `VoiceAudioCard.kt` `lastUsedVoiceId` (새 알람 한정) |
 | 음성 재사용 | `AlarmEditorScreen.kt` `hasFreshTtsAudio` / `AlarmAudioStore.resolveTtsInput`. 랜덤 문구·가족 알람은 제외라 "문구를 바꾸지 않았다면" 으로 한정해 적었다 |
 | 공유 알람 음성 캐시 | `RemoteAlarmPullSyncService.kt` `getCachedAudio("remote-message-…")` |
-| 녹음 하한 12초 | `AlarmAudioStore.MIN_DURATION_MILLIS = 12_000`, 서버 `MIN_CLONE_DURATION_MS = 12_000` |
+| 녹음 하한 12초 | `VoiceProfileAudioLimits.MIN_DURATION_MILLIS = 12_000`(`AlarmAudioStore.kt`), 서버는 `POST /voice/clone` 의 `MIN_CLONE_DURATION_MS = 12_000`(`voice-profile.ts`). 같은 파일의 `AlarmAudioLimits`(30초)는 **알람 오디오용 별개 객체**이고, `voice-upload.ts` 의 `MIN_UPLOAD_DURATION_MS`(60초)는 가족 알람 업로드 전용이라 둘 다 이 항목과 무관하다 |
 | 전문 열람 | `ConsentScreen.kt` 가 `assets` 의 `LegalDocument` 를 펼친다. **가입 화면 한정** — 설정의 문서 보기는 웹뷰라 "가입할 때" 로 못 박았다 |
 | 동의 철회 | `ConsentHistoryScreen.kt` (더보기 → 설정 → 약관 및 개인정보 처리 동의). **철회할 수 있는 건 두 가지뿐** — 음성 생체정보는 단방향 "동의 철회" 액션, 광고성 정보 수신은 토글. 약관·개인정보·만14세·국외이전 같은 **필수 동의는 철회 액션이 없다**(국외이전은 `:141` 에 의도라고 적혀 있다). 그래서 "동의 철회 언제든 가능" 이라고 뭉뚱그리지 않고 두 항목을 이름으로 적는다 |
 | 준비 화면 탈출 | `VoiceOnboardingScreen.kt` `ESCAPE_GRACE_MILLIS = 12_000` |
