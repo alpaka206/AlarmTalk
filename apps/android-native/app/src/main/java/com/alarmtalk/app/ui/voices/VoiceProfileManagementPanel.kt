@@ -1403,7 +1403,10 @@ internal fun VoiceProfileManagementPanel(
         val resolvedProfileName = profileName.trim()
         val nameRequiredError = createSubmitAttempted && resolvedProfileName.isBlank()
         // 하한(12초) 미만이면 "다음" 으로 넘어가지 못하게 막는다. 녹음은 selectedAudio 길이,
-        // 파일은 실제 업로드되는 crop 구간 길이로 판정(백엔드 MIN_UPLOAD_DURATION_MS 와 동일 기준).
+        // 파일은 실제 업로드되는 crop 구간 길이로 판정한다. 짝이 되는 서버 게이트는 이 화면이
+        // 부르는 POST /voice/clone 의 **MIN_CLONE_DURATION_MS**(voice-profile.ts, 12초)다.
+        // voice-upload.ts 의 MIN_UPLOAD_DURATION_MS(60초)와 헷갈리지 말 것 — 그쪽은 가족 알람
+        // 음성 메시지를 올리는 POST /voice/upload 전용이고 값도 다르다.
         val canSubmitRecord = inputMode == VoiceCaptureMode.Record &&
             (selectedAudio?.durationMillis ?: 0L) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
