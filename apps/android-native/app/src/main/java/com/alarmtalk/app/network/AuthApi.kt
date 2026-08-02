@@ -59,6 +59,14 @@ data class AuthTokenResponse(
 
 data class AuthMeResponse(
     val user: AuthUser,
+    /**
+     * 서버가 굴려 준 새 토큰(rolling refresh). 앱을 열 때마다 만료가 뒤로 밀린다.
+     *
+     * nullable 인 이유는 두 가지다: 이 필드를 내려주기 전 배포된 서버와, 재발급에 실패해도
+     * 200 을 유지하는 서버. 둘 다 "쓰던 토큰을 그대로 쓰고 다음 기회에 다시" 가 맞는 동작이라
+     * 없으면 조용히 넘어간다.
+     */
+    val token: String? = null,
 )
 
 data class LoginRequest(

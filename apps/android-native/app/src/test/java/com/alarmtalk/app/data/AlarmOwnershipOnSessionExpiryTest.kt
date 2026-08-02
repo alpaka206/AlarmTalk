@@ -161,6 +161,44 @@ class AlarmOwnershipOnSessionExpiryTest {
         assertEquals("소유자는 A 그대로", "account-A", ownerOf("legacy-1"))
     }
 
+    /**
+     * 회귀 방지: **스토어 업데이트 뒤 세션이 끊겨 있어도 본인 알람은 다시 예약돼야 한다.**
+     *
+     * 업데이트는 OS 의 AlarmManager 등록을 전부 지우고 MY_PACKAGE_REPLACED 로 이 함수를
+     * 부른다. 예전에는 비로그인일 때 취소만 건너뛰고 재예약까지 함께 건너뛰어서, 등록이
+     * 이미 지워진 업데이트 직후에는 알람이 영영 울리지 않았다. 목록도 로그인 화면에 가려
+     * 사용자가 되살릴 수단이 없었다.
+     */
+    @Test
+    fun updateReschedulesOwnedAlarmsEvenWithoutSession() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        // 세션 만료(401) — 로그인은 끊겼지만 이 기기의 알람은 그대로다.
+        currentUser = null
+        // 업데이트 직후를 그대로 재현한다 — DB 에 행만 있고 OS 예약은 하나도 없는 상태.
+        assertNull("전제: OS 예약이 비어 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("비로그인이어도 이 기기 알람은 재예약돼야 한다", 1, scheduled)
+        assertEquals("소유자를 함부로 바꾸지 않는다", "account-A", ownerOf("legacy-1"))
+    }
+
+    /**
+     * 위 완화가 '남의 알람이 남의 폰에서 울린다' 를 되살리지 않는지 함께 못 박는다.
+     * 정리는 **다른 계정이 실제로 로그인한** 시점에 한다.
+     */
+    @Test
+    fun anotherAccountSigningInStillLosesForeignAlarms() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = null
+        assertEquals("비로그인 구간에서는 살아 있다", 1, repository.reschedulePendingAlarms())
+
+        currentUser = "account-B"
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("B 가 로그인하면 A 의 알람은 재예약되지 않는다", 0, scheduled)
+    }
+
     @Test
     fun sameAccountKeepsItsAlarmsAfterSigningBackIn() = runBlocking {
         seedLegacyAlarm()

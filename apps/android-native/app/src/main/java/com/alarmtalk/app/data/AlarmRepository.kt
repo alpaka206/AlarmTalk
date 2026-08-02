@@ -909,15 +909,22 @@ class AlarmRepository(
             // 다른 계정이 소유한 알람은 재예약하지 않는다(로그아웃한 앞 계정의 알람이 부팅·
             // 재로그인 때 되살아나 남의 폰에서 울리는 것 방지). 미기록(null)은 lockPaidAlarmTalks
             // 와 같은 규칙으로 현재 계정 것으로 본다.
-            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) {
+            //
+            // **비로그인(currentUser == null)이면 이 게이트를 아예 적용하지 않는다.** 누가
+            // 로그인해 있지 않은 동안에는 '다른 계정 것'이라고 판정할 기준 자체가 없다. 예전에는
+            // 취소만 건너뛰고 `return@forEach` 로 재예약도 함께 건너뛰었는데, 그게 실제 피해를
+            // 냈다: **스토어 업데이트는 OS 의 AlarmManager 등록을 전부 지운다.** 지워진 뒤라
+            // "취소하지 않는다"는 아무 의미가 없고, 재예약을 건너뛰는 순간 그 알람은 영영 울리지
+            // 않는다. 목록 쪽도 같은 소유자 규칙이라 사용자에겐 보이지도 않아 되살릴 수단이 없다.
+            // (토큰이 7일마다 죽고 갱신 경로가 없어서 이 조합이 흔했다 — jwt.ts 참고.)
+            //
+            // 알람 전달이 서버 인증 상태에 묶여선 안 된다(AGENTS.md). 남의 알람 정리는 '다른
+            // 계정이 실제로 로그인한' 시점에 onSignedIn 의 cancelAlarmsNotOwnedBy 가 한다.
+            if (currentUser != null && alarm.ownerUserId != null && alarm.ownerUserId != currentUser) {
                 // 건너뛰는 데 그치면 앞 세션이 잡아 둔 OS 예약이 살아남아 이 계정 폰에서 울린다.
                 // 특히 소유자 확정이 이 함수 안에서야 성공한 경우, 앞서 돈 cancelAlarmsNotOwnedBy
                 // 는 아직 미기록이던 그 행을 건너뛴 뒤다 — 여기서 내려야 새는 곳이 없다.
-                //
-                // 단 비로그인(currentUser == null)일 때는 내리지 않는다. 자동 401 로 세션만
-                // 끊긴 상태에서도 본인 알람은 계속 울려야 한다 — 알람 전달이 서버 인증 상태에
-                // 묶이면 안 된다(AGENTS.md). 그 정리는 '다른 계정이 실제로 로그인한' 시점에 한다.
-                if (currentUser != null) alarmScheduler.cancel(alarm.id)
+                alarmScheduler.cancel(alarm.id)
                 return@forEach
             }
             // 소유자 정리가 실패한 회차에는 미기록 행을 '현재 계정 것'으로 볼 근거가 없다.

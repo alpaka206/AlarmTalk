@@ -765,7 +765,28 @@ auth.get('/me', async (c) => {
     }
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);
+    // 세션을 굴린다(rolling refresh). 여기까지 온 토큰은 서명·만료·폐기 검사를 모두
+    // 통과했으므로, 같은 수명의 새 토큰을 발급해 앱이 갈아 끼우게 한다. 앱을 열 때마다
+    // 만료가 뒤로 밀려 "업데이트했더니 로그아웃돼 있다"가 사라진다.
+    //
+    // sub 은 payload.sub 이 아니라 **row.id** 다. sub 이 google_id 인 구 토큰을 들고 온
+    // 경우 여기서 users.id 로 갈아 끼워진다 — 발급 경로가 이미 users.id 로 통일돼 있어
+    // (b05c6c19) 새 토큰만 그 규약을 따르면 된다.
+    //
+    // 재발급이 실패해도 200 은 유지한다. /auth/me 는 본래 사용자 정보를 주는 자리라,
+    // 토큰을 못 갱신했다고 로그인 자체를 깨뜨릴 이유가 없다 — 클라는 token 이 없으면
+    // 쓰던 토큰을 그대로 쓰고 다음 기회에 다시 시도한다.
+    const rolledToken = await signAppJwt(
+      {
+        sub: String(row.id),
+        email: row.email,
+        name: row.name ?? undefined,
+        epoch: Number(row.token_epoch ?? 0),
+      },
+      c.env.JWT_SECRET,
+    ).catch(() => null);
     return c.json({
+      ...(rolledToken ? { token: rolledToken } : {}),
       user: {
         id: row.id,
         email: row.email,

@@ -648,6 +648,85 @@ describe('GET /auth/me', () => {
     expect(meBody.user.email).toBe('kim@test.com');
   });
 
+  // 세션을 굴려 준다(rolling refresh). 앱을 열 때마다 만료가 뒤로 밀려야, 오래 안 열었다가
+  // 연 사용자가 조용히 로그아웃돼 있는 일이 없다 — 그 로그아웃이 알람 재예약 소유자
+  // 게이트에 걸리면 알람이 아예 안 울린다(AlarmRepository.reschedulePendingAlarms).
+  it('/auth/me 는 만료가 더 뒤인 새 토큰을 함께 내려준다', async () => {
+    await pushValidEmailVerification('roll@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('roll@test.com')),
+      undefined,
+      ENV,
+    );
+    const reg = await regRes.json();
+    const token = reg.token as string;
+
+    mockDB.pushResult([
+      { id: reg.user.id, email: 'roll@test.com', name: '김규원', plan: 'free', token_epoch: 0 },
+    ]);
+
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(200);
+    const meBody = await meRes.json();
+
+    expect(typeof meBody.token).toBe('string');
+    expect(meBody.token).not.toBe('');
+
+    const decodeExp = (jwt: string) =>
+      JSON.parse(Buffer.from(jwt.split('.')[1]!, 'base64url').toString()).exp as number;
+    // 같은 초에 발급되면 exp 가 같을 수 있으므로 '뒤로 밀리지 않았다'만 요구한다.
+    expect(decodeExp(meBody.token)).toBeGreaterThanOrEqual(decodeExp(token));
+
+    // sub 은 users.id 다 — sub 이 google_id 인 구 토큰을 들고 와도 여기서 정규화된다.
+    const decodeSub = (jwt: string) =>
+      JSON.parse(Buffer.from(jwt.split('.')[1]!, 'base64url').toString()).sub as string;
+    expect(decodeSub(meBody.token)).toBe(reg.user.id);
+  });
+
+  // 폐기된 토큰(전 기기 로그아웃·비밀번호 재설정)은 갱신 대상이 아니다. 여기서 새 토큰을
+  // 내주면 token_epoch 로 끊는 수단이 무력화된다.
+  it('폐기된 토큰은 새 토큰을 받지 못한다(401)', async () => {
+    await pushValidEmailVerification('revoked@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('revoked@test.com')),
+      undefined,
+      ENV,
+    );
+    const reg = await regRes.json();
+    const token = reg.token as string;
+
+    // 발급 토큰의 epoch 는 0 인데 서버 쪽은 1 로 올라가 있다(= 전 기기 로그아웃 이후).
+    mockDB.pushResult([
+      { id: reg.user.id, email: 'revoked@test.com', name: '김규원', plan: 'free', token_epoch: 1 },
+    ]);
+
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(401);
+    expect((await meRes.json()).error_code).toBe('TOKEN_REVOKED');
+  });
+
   it('잘못된 토큰 → 401', async () => {
     const app = buildApp();
     const res = await app.request(

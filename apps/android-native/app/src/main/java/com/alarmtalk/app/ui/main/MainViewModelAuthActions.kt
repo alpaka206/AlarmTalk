@@ -1100,11 +1100,14 @@ internal fun MainViewModel.refreshAppSession() {
     val session = authSession ?: return
     viewModelScope.launch {
         runCatching {
-            api.me(AlarmTalkApiClient.bearer(session.token)).user
-        }.onSuccess { user ->
+            api.me(AlarmTalkApiClient.bearer(session.token))
+        }.onSuccess { me ->
+            // 서버가 새 토큰을 주면 갈아 끼운다(rolling refresh) — 앱을 열 때마다 만료가
+            // 뒤로 밀려, 오래 안 열었다가 열었을 때 조용히 로그아웃돼 있는 일이 없어진다.
+            // 안 주면(구버전 서버·재발급 실패) 쓰던 토큰을 그대로 둔다.
             val response = AuthTokenResponse(
-                token = session.token,
-                user = user,
+                token = me.token?.takeIf { it.isNotBlank() } ?: session.token,
+                user = me.user,
             )
             authSession = if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
                 authSessionStore.saveGoogleSession(response)
