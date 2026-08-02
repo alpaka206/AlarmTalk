@@ -1999,6 +1999,17 @@ function isIdempotentDDLError(message: string): boolean {
   );
 }
 
+/**
+ * 이 번들이 아는 마이그레이션 최대 id.
+ *
+ * 배포 전파 확인용이다 — 워커가 아직 옛 번들이면 새 id 를 '모르는 id' 로 건너뛰고 빈 결과를
+ * 돌려주는데, 호출자는 그걸 '이미 적용됨' 과 구분할 수 없다. 이 값을 함께 내려 주면 호출자가
+ * "내가 올리려는 마이그레이션을 저쪽이 아는가" 를 먼저 물어볼 수 있다.
+ */
+export function migrationMaxId(): number {
+  return migrations.reduce((max, migration) => Math.max(max, migration.id), 0);
+}
+
 /** 테스트가 러너의 관용 판정을 직접 고정할 수 있게 노출한다(프로덕션 호출부 없음). */
 export const __isIdempotentDDLErrorForTest = isIdempotentDDLError;
 

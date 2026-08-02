@@ -47,7 +47,9 @@ function parseNumberArg(name: string, fallback: number): number {
   return value;
 }
 
-async function postMigration(url: string, headers: Record<string, string>): Promise<{ ran?: string[] }> {
+type MigrationResponse = { ran?: string[]; maxId?: number };
+
+async function postMigration(url: string, headers: Record<string, string>): Promise<MigrationResponse> {
   let lastError = '';
   // 마이그레이션이 레이트리밋 창(60req/분/IP)보다 많아지면 429 가 정상적으로 발생한다
   // (migration 65개 시점에 실제 배포 실패 발생). retryAfter 만큼 기다렸다 재시도해
@@ -56,7 +58,7 @@ async function postMigration(url: string, headers: Record<string, string>): Prom
     const res = await fetch(url, { method: 'POST', headers });
     const text = await res.text();
     if (res.ok) {
-      return text ? (JSON.parse(text) as { ran?: string[] }) : {};
+      return text ? (JSON.parse(text) as MigrationResponse) : {};
     }
     lastError = `${res.status} ${text}`;
     if (res.status === 429 && attempt < 8) {
@@ -77,6 +79,43 @@ async function postMigration(url: string, headers: Record<string, string>): Prom
     await new Promise((resolveRetry) => setTimeout(resolveRetry, 1000 * attempt));
   }
   throw new Error(`Migration request failed: ${lastError}`);
+}
+
+/**
+ * 배포한 워커가 **우리가 올리려는 마이그레이션을 아는지** 먼저 확인한다.
+ *
+ * wrangler 배포 직후에는 잠시 옛 번들이 응답할 수 있다. 그 워커는 새 id 를 '모르는 id' 로
+ * 조용히 건너뛰고 빈 결과를 돌려주는데, 스크립트는 그걸 '이미 적용됨' 으로 찍는다 — 배포는
+ * 초록불인데 스키마만 옛날에 고착된다(2026-08-01 dev 에서 실제로 발생: 89~91 이 통째로 누락).
+ *
+ * `fromId=0&toId=0` 은 실행할 마이그레이션이 없는 무해한 프로브다. 응답의 maxId 로 전파를
+ * 기다렸다가 본 작업을 시작한다.
+ */
+async function awaitWorkerKnowsMigrations(
+  baseUrl: string,
+  headers: Record<string, string>,
+  expectedMaxId: number,
+): Promise<void> {
+  const probeUrl = `${baseUrl}/api/init-db?fromId=0&toId=0`;
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    const result = await postMigration(probeUrl, headers);
+    const maxId = result.maxId;
+    if (typeof maxId !== 'number') {
+      // maxId 를 안 내려주는 구버전 워커. 이 스크립트와 짝이 맞는 워커가 아직 안 떴다는 뜻이다.
+      console.log(`worker does not report maxId yet (attempt ${attempt}/12); waiting...`);
+    } else if (maxId >= expectedMaxId) {
+      if (attempt > 1) console.log(`worker is up to date (maxId=${maxId}).`);
+      return;
+    } else {
+      console.log(`worker still on older bundle (maxId=${maxId} < ${expectedMaxId}); waiting...`);
+    }
+    await new Promise((resolveRetry) => setTimeout(resolveRetry, 5000));
+  }
+  throw new Error(
+    `Deployed worker never reported knowing migration ${expectedMaxId}. ` +
+      'The deploy has not propagated (or the wrong worker is serving this URL) — ' +
+      'migrations were NOT run. Re-run this step after the deploy settles.',
+  );
 }
 
 async function assertHealth(baseUrl: string): Promise<void> {
@@ -107,6 +146,10 @@ async function main(): Promise<void> {
     throw new Error(`INIT_DB_SECRET is required for ${envName} migrations.`);
   }
   const headers: Record<string, string> = { 'x-init-db-secret': secret };
+
+  // 본 작업 전에 전파를 확인한다. 이게 없으면 '모르는 id 를 건너뛴 것' 이 '이미 적용됨' 으로
+  // 보여서, 스키마가 안 바뀐 채 배포가 성공으로 끝난다.
+  await awaitWorkerKnowsMigrations(baseUrl, headers, to);
 
   for (let id = from; id <= to; id += 1) {
     const url = `${baseUrl}/api/init-db?fromId=${id}&toId=${id}`;

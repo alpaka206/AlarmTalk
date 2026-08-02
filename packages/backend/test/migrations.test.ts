@@ -3,6 +3,7 @@ import { createClient } from '@libsql/client';
 import {
   migrations,
   runMigrationsRange,
+  migrationMaxId,
   __isIdempotentDDLErrorForTest,
   type Migration,
 } from '../src/lib/migrations';
@@ -467,5 +468,23 @@ describe('마이그레이션 러너 — DROP COLUMN 실패는 삼키지 않는�
     expect(__isIdempotentDDLErrorForTest('no such index: ix')).toBe(true);
     expect(__isIdempotentDDLErrorForTest('no such view: v')).toBe(true);
     expect(__isIdempotentDDLErrorForTest('syntax error near ")"')).toBe(false);
+  });
+});
+
+// 배포 직후 옛 번들이 응답하면 새 마이그레이션 id 를 '모르는 id' 로 건너뛰고 빈 결과를 준다.
+// 호출자는 그걸 '이미 적용됨' 과 구분할 수 없어, 스키마가 안 바뀐 채 배포가 성공으로 끝난다
+// (2026-08-01 dev 에서 89~91 이 통째로 누락됐다). maxId 는 그 전파를 확인하는 유일한 신호다.
+describe('migrationMaxId — 배포 전파 확인 신호', () => {
+  it('번들이 아는 마이그레이션 최대 id 를 돌려준다', () => {
+    const expected = migrations.reduce((max, m) => Math.max(max, m.id), 0);
+    expect(migrationMaxId()).toBe(expected);
+    // 마이그레이션이 추가되면 이 값도 따라 올라가야 한다(상수로 박아 두면 의미가 없다).
+    expect(migrationMaxId()).toBeGreaterThanOrEqual(91);
+  });
+
+  it('모르는 id 범위는 아무것도 실행하지 않는다 — 이 경우가 빈 결과의 두 번째 원인이다', async () => {
+    const db = createClient({ url: ':memory:' });
+    const ran = await runMigrationsRange(db, migrationMaxId() + 100, migrationMaxId() + 200);
+    expect(ran).toEqual([]);
   });
 });
