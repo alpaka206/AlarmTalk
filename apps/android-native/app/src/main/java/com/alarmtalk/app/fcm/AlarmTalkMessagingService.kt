@@ -79,8 +79,12 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
                 val current = AuthSessionStore(context).read()
                 if (current == null || current.user.id != session.user.id) return@launch
                 runCatching {
+                    // **지금 유효한 토큰**으로 보낸다. 시작 시점에 잡아 둔 session.token 은 그
+                    // 사이 rolling refresh 로 대체됐을 수 있고, 옛 토큰이 만료돼 있으면 등록이
+                    // 401 로 실패한 뒤 다음 앱 시작·로그인·FCM 토큰 회전까지 재시도되지 않는다
+                    // — 그동안 가족/플랜/목소리 즉시 푸시를 못 받는다(Codex #665 P2).
                     AlarmTalkApiClient.create().registerPushToken(
-                        AlarmTalkApiClient.bearer(session.token),
+                        AlarmTalkApiClient.bearer(current.token),
                         PushTokenRegisterRequest(token = token),
                     )
                 }.onFailure { AlarmTalkLog.reportError("Push token register failed", it) }
