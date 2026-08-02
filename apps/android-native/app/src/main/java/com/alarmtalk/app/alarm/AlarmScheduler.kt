@@ -56,18 +56,6 @@ class AlarmScheduler(
         }
     }
 
-    /**
-     * 이 알람의 OS 예약이 아직 살아 있는가.
-     *
-     * 정확 알람 권한이 없거나 회수된 기기(Android 12+)에서는 [schedule] 이
-     * `setAndAllowWhileIdle` 로 떨어지는데, 그건 지정 시각보다 **늦게** 전달될 수 있다. 예약
-     * 정합성 워커가 그 사이에 돌면 "시각이 지났는데 안 울렸다" 로 보고 다음 발생으로 앞당겨
-     * 같은 PendingIntent 를 덮어쓴다 — 아직 배달 대기 중이던 오늘 알람이 사라진다.
-     * 그래서 앞당기기 전에 "예약이 아직 있는가" 를 물어본다(Codex #666 P1).
-     */
-    fun hasReservation(alarmId: String): Boolean =
-        pendingIntentFor(alarmId, PendingIntent.FLAG_NO_CREATE) != null
-
     fun cancel(alarmId: String) {
         val pendingIntent = pendingIntentFor(alarmId, PendingIntent.FLAG_NO_CREATE) ?: return
         alarmManager.cancel(pendingIntent)

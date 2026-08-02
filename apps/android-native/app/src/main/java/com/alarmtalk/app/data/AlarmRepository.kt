@@ -76,6 +76,13 @@ class AlarmRepository(
      */
     private val restoreMutex = Mutex()
 
+    /**
+     * 비정확 알람(setAndAllowWhileIdle)의 지연 전달을 기다려 주는 창. 이 시간이 지나도록 안
+     * 울렸으면 정말 놓친 것으로 보고 다음 발생으로 넘긴다 — 무한정 기다리면 복구가 막힌다.
+     * 주기 워커 간격(15분)과 같은 크기로 둬, 한 회차는 반드시 기다려 준다.
+     */
+    private val INEXACT_DELIVERY_GRACE_MS = 15 * 60 * 1000L
+
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
         alarmDao = alarmDao,
@@ -1066,18 +1073,25 @@ class AlarmRepository(
                 // 재계산에서 제외한다 — 그러지 않으면 tz/시각 변경 시 스누즈가 다음 정규 발생으로 밀린다.
                 //
                 val isSnoozed = alarm.state == AlarmStates.SNOOZED
-                // **아직 배달 대기 중인 예약을 앞당겨 없애지 않는다.** 정확 알람 권한이 없거나
-                // 회수된 기기(Android 12+)에서는 setAndAllowWhileIdle 로 떨어져 지정 시각보다
-                // 늦게 전달될 수 있다. 15분 주기 워커가 그 사이에 돌면 "지났는데 안 울렸다" 로
-                // 보고 다음 발생으로 앞당겨 같은 PendingIntent 를 덮어써, 오늘 알람이 사라진다
-                // (Codex #666 P1). 예약이 아직 살아 있으면 그대로 둔다.
+                // **비정확 알람의 지연 전달을 앞당겨 없애지 않는다.** 정확 알람을 못 쓰는
+                // 기기(Android 12+에서 권한 회수 등)에서는 setAndAllowWhileIdle 로 떨어져 지정
+                // 시각보다 늦게 전달될 수 있다. 15분 주기 워커가 그 사이에 돌면 "지났는데 안
+                // 울렸다" 로 보고 다음 발생으로 앞당겨 같은 PendingIntent 를 덮어써, 아직 배달
+                // 대기 중이던 오늘 알람이 사라진다.
                 //
-                // 시간대·시각 변경(recomputeFireTime=true)은 예외다 — 그때는 살아 있는 예약이
-                // 곧 '틀린 시각' 이라 반드시 다시 계산해야 한다.
-                val reservationPending = !recomputeFireTime &&
+                // 판정에 PendingIntent 존재(FLAG_NO_CREATE)를 쓰면 안 된다 — 그건 AlarmManager
+                // 큐가 아니라 **토큰**이 있는지만 본다. 전달이 끝난 뒤에도 토큰은 남으므로,
+                // 서비스가 죽어 굳어 버린 행이 영영 '예약 있음' 으로 읽혀 복구가 막힌다
+                // (Codex #666 P1). 대신 **짧은 유예 창**으로만 판정한다: 창을 벗어나면 정상적으로
+                // 재계산해 자가치유가 유지된다.
+                //
+                // 시간대·시각 변경(recomputeFireTime=true)은 예외다 — 그때는 대기 중인 전달도
+                // '틀린 시각' 이라 반드시 다시 계산해야 한다.
+                val awaitingInexactDelivery = !recomputeFireTime &&
+                    !alarmScheduler.canScheduleExactAlarms() &&
                     alarm.fireAtMillis <= now &&
-                    alarmScheduler.hasReservation(alarm.id)
-                if (reservationPending) return@forEach
+                    now - alarm.fireAtMillis < INEXACT_DELIVERY_GRACE_MS
+                if (awaitingInexactDelivery) return@forEach
                 val needsRecompute = !isSnoozed && (recomputeFireTime || alarm.fireAtMillis <= now)
                 val alarmToSchedule = when {
                     !needsRecompute -> alarm
