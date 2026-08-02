@@ -1066,12 +1066,24 @@ class AlarmRepository(
                 // 스누즈 알람은 enabled=true 이고 fireAtMillis 가 "스누즈 마감(절대시각)"이라
                 // 재계산에서 제외한다 — 그러지 않으면 tz/시각 변경 시 스누즈가 다음 정규 발생으로 밀린다.
                 //
-                // 비정확 알람(setAndAllowWhileIdle)의 지연 전달은 여기서 다루지 않는다.
-                // 이 앱은 USE_EXACT_ALARM 을 선언하고(AndroidManifest), 그 권한은 자동 부여·
-                // 사용자 회수 불가라 canScheduleExactAlarms() 가 항상 true 다 — 비정확 경로는
-                // 방어적 폴백일 뿐 실제로 타지 않는다. 짐작한 유예 창으로 지난 알람을 건너뛰면
-                // 굳어 버린 행의 자가치유만 막는다(그 시도가 Codex #666 P1 로 되돌아왔다).
-                // 폴백이 정말 필요해지면 창을 추측할 게 아니라 전달 경로를 따로 설계해야 한다.
+                // ⚠️ **비정확 알람(setAndAllowWhileIdle)의 지연 전달은 여기서 다루지 않는다 —
+                // 해결된 게 아니라 알려진 한계다.**
+                //
+                // 두 번 막아 보려다 둘 다 더 나쁜 것을 만들어 되돌렸다:
+                //  - PendingIntent 존재(FLAG_NO_CREATE) → 그건 AlarmManager 큐가 아니라 토큰만
+                //    본다. 전달 후에도 남으므로 굳어 버린 행이 영영 복구되지 않는다.
+                //  - 고정 유예 창(15분) → 플랫폼 전달 상한을 알 수 없어 짐작한 값이고, 그보다
+                //    늦으면 여전히 덮어쓴다. 늘리면 그만큼 복구가 늦어진다.
+                //
+                // 되돌릴 때 "USE_EXACT_ALARM 이 있으니 비정확 경로는 안 탄다" 고 적었는데 **틀렸다.**
+                // USE_EXACT_ALARM 은 API 33 권한이고 minSdk 는 26 이다. API 31·32 에서는
+                // SCHEDULE_EXACT_ALARM 만 적용되고 그건 사용자가 회수할 수 있어,
+                // canScheduleExactAlarms() 가 false 가 되며 폴백을 실제로 탄다.
+                //
+                // 즉 **API 31/32 에서 권한을 회수한 사용자**에게는 15분 워커가 배달 대기 중인
+                // 등록을 다음 발생으로 덮을 수 있다. 제대로 고치려면 창을 추측할 게 아니라 전달
+                // 여부를 따로 추적해야 한다(별도 과제). 짐작한 창을 다시 넣지 말 것 — 굳은 행의
+                // 자가치유를 막는 대가가 더 크다.
                 val isSnoozed = alarm.state == AlarmStates.SNOOZED
                 val needsRecompute = !isSnoozed && (recomputeFireTime || alarm.fireAtMillis <= now)
                 val alarmToSchedule = when {
