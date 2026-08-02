@@ -82,39 +82,59 @@ async function postMigration(url: string, headers: Record<string, string>): Prom
 }
 
 /**
- * 배포한 워커가 **우리가 올리려는 마이그레이션을 아는지** 먼저 확인한다.
+ * 응답을 **현재 번들의 워커에서 받을 때까지** 재시도한다.
  *
- * wrangler 배포 직후에는 잠시 옛 번들이 응답할 수 있다. 그 워커는 새 id 를 '모르는 id' 로
- * 조용히 건너뛰고 빈 결과를 돌려주는데, 스크립트는 그걸 '이미 적용됨' 으로 찍는다 — 배포는
- * 초록불인데 스키마만 옛날에 고착된다(2026-08-01 dev 에서 실제로 발생: 89~91 이 통째로 누락).
+ * wrangler 배포 직후에는 잠시 옛 번들이 응답할 수 있다. 그 워커는 자기가 모르는 id 를 조용히
+ * 건너뛰고 빈 `ran` 을 돌려주는데, 그건 '이미 적용됨' 과 구분되지 않는다 — 배포는 초록불인데
+ * 스키마만 옛날에 고착된다(2026-08-01 dev 에서 실제로 발생: 89~91 이 통째로 누락).
  *
- * `fromId=0&toId=0` 은 실행할 마이그레이션이 없는 무해한 프로브다. 응답의 maxId 로 전파를
- * 기다렸다가 본 작업을 시작한다.
+ * **요청마다 확인해야 한다.** 전파 창은 요청 단위라, 프로브 한 번만 통과시키면 그 뒤 요청이
+ * 다시 옛 워커로 갈 수 있다(로드밸런싱은 요청마다 독립이다). 그러면 같은 사고가 그대로
+ * 재현되므로, 여기서 받은 응답은 전부 `maxId` 로 출처를 확인한다.
  */
-async function awaitWorkerKnowsMigrations(
-  baseUrl: string,
+async function postMigrationFromCurrentBundle(
+  url: string,
   headers: Record<string, string>,
   expectedMaxId: number,
-): Promise<void> {
-  const probeUrl = `${baseUrl}/api/init-db?fromId=0&toId=0`;
+  failureContext: string,
+): Promise<MigrationResponse> {
   for (let attempt = 1; attempt <= 12; attempt += 1) {
-    const result = await postMigration(probeUrl, headers);
+    const result = await postMigration(url, headers);
     const maxId = result.maxId;
+    if (typeof maxId === 'number' && maxId >= expectedMaxId) {
+      if (attempt > 1) console.log(`worker is up to date (maxId=${maxId}).`);
+      return result;
+    }
     if (typeof maxId !== 'number') {
       // maxId 를 안 내려주는 구버전 워커. 이 스크립트와 짝이 맞는 워커가 아직 안 떴다는 뜻이다.
       console.log(`worker does not report maxId yet (attempt ${attempt}/12); waiting...`);
-    } else if (maxId >= expectedMaxId) {
-      if (attempt > 1) console.log(`worker is up to date (maxId=${maxId}).`);
-      return;
     } else {
       console.log(`worker still on older bundle (maxId=${maxId} < ${expectedMaxId}); waiting...`);
     }
     await new Promise((resolveRetry) => setTimeout(resolveRetry, 5000));
   }
   throw new Error(
-    `Deployed worker never reported knowing migration ${expectedMaxId}. ` +
+    `Deployed worker never reported knowing migration ${expectedMaxId} (${failureContext}). ` +
       'The deploy has not propagated (or the wrong worker is serving this URL) — ' +
-      'migrations were NOT run. Re-run this step after the deploy settles.',
+      'the schema may be incomplete. Re-run this step after the deploy settles.',
+  );
+}
+
+/**
+ * 본 작업 **전에** 전파를 확인한다. `fromId=0&toId=0` 은 실행할 마이그레이션이 없는 무해한
+ * 프로브라, 아직 안 뜬 배포를 상대로 마이그레이션을 하나도 돌리지 않은 채 시끄럽게 실패할 수
+ * 있다(반쯤 돌다 실패하는 것보다 낫다). 루프 안의 요청별 확인을 대신하지는 않는다.
+ */
+async function awaitWorkerKnowsMigrations(
+  baseUrl: string,
+  headers: Record<string, string>,
+  expectedMaxId: number,
+): Promise<void> {
+  await postMigrationFromCurrentBundle(
+    `${baseUrl}/api/init-db?fromId=0&toId=0`,
+    headers,
+    expectedMaxId,
+    'pre-flight probe; migrations were NOT run',
   );
 }
 
@@ -153,7 +173,14 @@ async function main(): Promise<void> {
 
   for (let id = from; id <= to; id += 1) {
     const url = `${baseUrl}/api/init-db?fromId=${id}&toId=${id}`;
-    const result = await postMigration(url, headers);
+    // 응답마다 출처를 확인한다 — 프로브가 통과했어도 이 요청이 옛 워커로 갈 수 있고, 그
+    // 워커의 빈 ran 은 '이미 적용됨' 이 아니라 '모르는 id 를 건너뜀' 이다.
+    const result = await postMigrationFromCurrentBundle(
+      url,
+      headers,
+      to,
+      `while running migration ${id}`,
+    );
     const ran = result.ran?.join(', ') || 'already applied';
     console.log(`${envName} migration ${id}/${to}: ${ran}`);
   }
