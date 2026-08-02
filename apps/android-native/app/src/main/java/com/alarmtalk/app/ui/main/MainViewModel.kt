@@ -178,7 +178,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             //
             // 토큰을 못 읽은 경우(null)는 예전처럼 처리한다 — 판단할 근거가 없으면 안전하게
             // 세션을 정리하는 쪽이 맞다(진짜 폐기를 놓치면 안 된다).
-            if (failedToken != null && failedToken != session.token) {
+            // 메모리(authSession)만 보면 안 된다. 백그라운드 워커가 저장소에 새 토큰을 심어도
+            // 이 ViewModel 은 그걸 관찰하지 않아 옛 토큰을 들고 있다. 그 옛 토큰이 만료돼 401 이
+            // 오면 '지금 세션의 토큰' 으로 보여 가드를 통과하고, **저장소의 멀쩡한 새 토큰까지
+            // 지운다**(Codex #665 P2). 저장소 값도 함께 본다.
+            val storedToken = runCatching { authSessionStore.read()?.token }.getOrNull()
+            val isCurrentToken = failedToken == null ||
+                failedToken == session.token ||
+                failedToken == storedToken
+            val supersededByStore = failedToken != null &&
+                storedToken != null &&
+                failedToken != storedToken
+            if (!isCurrentToken || supersededByStore) {
                 Log.i(TAG, "Ignoring 401 from a superseded token")
                 return@launch
             }
