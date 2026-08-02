@@ -7,7 +7,6 @@ export interface TtsCacheInput {
   languageCode?: string;
   text: string;
   outputFormat: string;
-  voiceSettings?: Record<string, string | number | boolean | null | undefined>;
 }
 
 export function normalizeTtsText(text: string): string {
@@ -24,7 +23,6 @@ export async function computeTtsCacheKey(input: TtsCacheInput): Promise<string> 
     languageCode: input.languageCode ?? input.language,
     text: normalizeTtsText(input.text),
     outputFormat: input.outputFormat,
-    voiceSettings: stableObject(input.voiceSettings ?? {}),
   };
   return sha256Hex(JSON.stringify(normalized));
 }
@@ -40,14 +38,4 @@ export async function sha256Hex(input: string | Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
-}
-
-function stableObject(input: Record<string, string | number | boolean | null | undefined>) {
-  return Object.keys(input)
-    .sort()
-    .reduce<Record<string, string | number | boolean | null>>((acc, key) => {
-      const value = input[key];
-      if (value !== undefined) acc[key] = value;
-      return acc;
-    }, {});
 }

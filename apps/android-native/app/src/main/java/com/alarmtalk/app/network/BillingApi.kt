@@ -60,7 +60,6 @@ data class VoucherItem(
 
 data class CheckoutRequest(
     @SerializedName("plan_key") val planKey: String,
-    val gift: Boolean = false,
 )
 
 data class CheckoutResponse(

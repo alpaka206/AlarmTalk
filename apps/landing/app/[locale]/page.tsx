@@ -33,16 +33,12 @@ export default async function HomePage({
     name: SITE_NAME,
     description: tMeta("description"),
     applicationCategory: "LifestyleApplication",
-    operatingSystem: "Android, iOS",
+    operatingSystem: "Android",
     url: localeUrl(locale),
     inLanguage: locale,
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    ...(STORE_LINKS.googlePlay !== "#" || STORE_LINKS.appStore !== "#"
-      ? {
-          downloadUrl: [STORE_LINKS.googlePlay, STORE_LINKS.appStore].filter(
-            (u) => u !== "#",
-          ),
-        }
+    ...(STORE_LINKS.googlePlay !== "#"
+      ? { downloadUrl: [STORE_LINKS.googlePlay] }
       : {}),
   };
 

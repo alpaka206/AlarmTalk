@@ -37,8 +37,8 @@ const FCM_SCOPE = 'https://www.googleapis.com/auth/firebase.messaging';
 /**
  * FCM v1 메시지 본문 구성. title/body 가 모두 비면 data-only 로 보낸다(가족 알람 신호처럼 클라가
  * 직접 pull 후 알림을 그릴 때). data-only 는 notification 블록을 빼(시스템 트레이 중복 알림 방지),
- * onMessageReceived 가 백그라운드에서도 호출돼 즉시 pull→로컬 스케줄이 되게 한다. iOS 는
- * content-available 로 백그라운드 깨움만 요청. title/body 가 있으면 기존 notification 방식 그대로.
+ * onMessageReceived 가 백그라운드에서도 호출돼 즉시 pull→로컬 스케줄이 되게 한다.
+ * title/body 가 있으면 기존 notification 방식 그대로.
  */
 function buildFcmMessage(msg: FcmMessage): Record<string, unknown> {
   const hasNotification = Boolean(msg.title || msg.body);
@@ -48,10 +48,6 @@ function buildFcmMessage(msg: FcmMessage): Record<string, unknown> {
     android: {
       priority: 'HIGH',
       ...(hasNotification ? { notification: { channel_id: msg.data?.channelId ?? 'alarms' } } : {}),
-    },
-    apns: {
-      headers: { 'apns-priority': hasNotification ? '10' : '5' },
-      payload: hasNotification ? { aps: { sound: 'default' } } : { aps: { 'content-available': 1 } },
     },
   };
   if (hasNotification) {

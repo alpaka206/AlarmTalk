@@ -21,6 +21,7 @@ vi.mock('../src/lib/fcm', () => ({
 }));
 
 import userRoutes from '../src/routes/user';
+import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
 
 function buildApp() {
   const app = new Hono<AppEnv>();
@@ -57,6 +58,7 @@ describe('POST /user/consents — 민감 동의 철회', () => {
 
     const res = await app.request(
       jsonReq('POST', '/user/consents', {
+        document_version: CURRENT_POLICY_VERSION,
         consents: [{ type: 'voice_biometric', agreed: false }],
       }),
       undefined,
@@ -81,6 +83,7 @@ describe('POST /user/consents — 민감 동의 철회', () => {
 
     const res = await app.request(
       jsonReq('POST', '/user/consents', {
+        document_version: CURRENT_POLICY_VERSION,
         consents: [{ type: 'voice_biometric', agreed: false }],
       }),
       undefined,
@@ -102,6 +105,7 @@ describe('POST /user/consents — 민감 동의 철회', () => {
 
     const res = await app.request(
       jsonReq('POST', '/user/consents', {
+        document_version: CURRENT_POLICY_VERSION,
         consents: [
           { type: 'voice_biometric', agreed: false },
           { type: 'voice_biometric', agreed: true },
@@ -125,6 +129,7 @@ describe('POST /user/consents — 민감 동의 철회', () => {
 
     const res = await app.request(
       jsonReq('POST', '/user/consents', {
+        document_version: CURRENT_POLICY_VERSION,
         consents: [{ type: 'voice_biometric', agreed: true }],
       }),
       undefined,

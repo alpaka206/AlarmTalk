@@ -10,6 +10,13 @@ import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 import type { AppEnv } from '../src/types';
 import { runMigrations } from '../src/lib/migrations';
+import {
+  GENERAL_REQUIRED_CONSENTS,
+  REQUIRED_CONSENT_TYPES,
+  CURRENT_POLICY_VERSION,
+  FEATURE_CONSENT_TYPES,
+  needsConsent,
+} from '../src/lib/consent';
 
 // libsql `:memory:` 는 연결마다 별도 DB라 autocommit execute 와 transaction 이 스키마를
 // 공유하지 못한다. 모든 연결이 같은 스키마를 보도록 임시 파일 DB 를 사용한다.
@@ -46,6 +53,26 @@ function req(method: string, path: string, body?: unknown) {
   return new Request(`http://localhost${path}`, init);
 }
 
+/**
+ * 가입 동의 화면이 실제로 제출하는 payload — 필수뿐 아니라 화면에 함께 뜨는 기능 동의
+ * (voice_biometric)도 포함한다. 필수만 넣으면 '거절' 시나리오의 override 가 조용히
+ * 무시되어(보내지 않은 유형 = 미응답) 테스트가 다른 상태를 검증하게 된다.
+ */
+function consentPayload(overrides: Record<string, boolean> = {}) {
+  return [...REQUIRED_CONSENT_TYPES, ...FEATURE_CONSENT_TYPES].map((type) => ({
+    type,
+    agreed: overrides[type] ?? true,
+  }));
+}
+
+/**
+ * POST /user/consents 바디. 서버는 **클라가 실제로 띄운 문서의 버전**을 함께 요구한다 —
+ * 구버전 앱이 옛 본문을 보여주면서 새 버전 동의 기록을 만드는 것을 막기 위해서다.
+ */
+function consentBody(consents: unknown) {
+  return { consents, document_version: CURRENT_POLICY_VERSION };
+}
+
 beforeAll(async () => {
   await runMigrations(db);
   // 이전 실행에서 파일이 남아있을 수 있어(클라이언트가 파일을 잡고 있으면 rmSync 불가)
@@ -77,14 +104,14 @@ describe('동의 기록 — 마케팅(광고성 정보 수신) 포함', () => {
   it('terms/privacy/marketing/age14 4종을 한 번에 기록한다', async () => {
     const app = buildApp();
     const res = await app.request(
-      req('POST', '/user/consents', {
-        consents: [
+      req('POST', '/user/consents', consentBody(
+        [
           { type: 'terms', agreed: true },
           { type: 'privacy', agreed: true },
           { type: 'marketing', agreed: false }, // 광고성 정보 수신: 선택 → 미동의로 기록
           { type: 'age14', agreed: true },
         ],
-      }),
+      )),
     );
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -106,7 +133,7 @@ describe('동의 기록 — 마케팅(광고성 정보 수신) 포함', () => {
 
   it('마케팅 동의를 true 로 재기록하면 최신값이 동의(true)로 바뀐다', async () => {
     const app = buildApp();
-    await app.request(req('POST', '/user/consents', { consents: [{ type: 'marketing', agreed: true }] }));
+    await app.request(req('POST', '/user/consents', consentBody([{ type: 'marketing', agreed: true }])));
     const res = await app.request(req('GET', '/user/consents'));
     const body = await res.json();
     const marketing = body.consents.find((c: { consent_type: string }) => c.consent_type === 'marketing');
@@ -116,9 +143,40 @@ describe('동의 기록 — 마케팅(광고성 정보 수신) 포함', () => {
 
   it('허용되지 않은 동의 유형은 400 INVALID_CONSENT_TYPE', async () => {
     const app = buildApp();
-    const res = await app.request(req('POST', '/user/consents', { consents: [{ type: 'sell_my_data', agreed: true }] }));
+    const res = await app.request(req('POST', '/user/consents', consentBody([{ type: 'sell_my_data', agreed: true }])));
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('INVALID_CONSENT_TYPE');
+  });
+
+  // 법무 문서 전문은 APK 에 실려 있어 화면에 뜨는 내용이 설치된 앱 버전에 고정된다.
+  // 서버가 무조건 현재 버전으로 도장을 찍으면, 구버전 앱이 옛 본문을 보여주면서 새 버전
+  // 동의 기록을 만들고 진짜 재동의는 이미 충족된 것으로 판정돼 영영 안 뜬다.
+  it('띄운 문서 버전이 서버와 다르면 409 로 거부한다', async () => {
+    const app = buildApp(SUB, PK);
+    const res = await app.request(
+      new Request('http://localhost/user/consents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          consents: [{ type: 'terms', agreed: true }],
+          document_version: '3',
+        }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('POLICY_VERSION_MISMATCH');
+    // 클라가 '업데이트하면 풀리는가' 를 판단하려면 서버 버전을 알아야 한다.
+    expect(body.current).toBe(CURRENT_POLICY_VERSION);
+  });
+
+  it('띄운 문서 버전을 아예 안 보내면 400 으로 거부한다', async () => {
+    const app = buildApp(SUB, PK);
+    const res = await app.request(
+      req('POST', '/user/consents', { consents: [{ type: 'terms', agreed: true }] }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('DOCUMENT_VERSION_REQUIRED');
   });
 });
 
@@ -126,7 +184,7 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
   const NEW_SUB = 'no-consent-sub';
   const NEW_PK = 'no-consent-pk';
 
-  it('동의 기록이 없는 사용자는 needs_consent=true, 필수 3종 모두 missing', async () => {
+  it('동의 기록이 없는 사용자는 needs_consent=true, 가입 필수 4종 모두 missing', async () => {
     await db.execute({
       sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
       args: [NEW_PK, NEW_SUB, 'noconsent@test.com', 'No Consent'],
@@ -137,20 +195,13 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
     const body = await res.json();
     console.log('[GET /consents/status — 미동의]', JSON.stringify(body));
     expect(body.needs_consent).toBe(true);
-    expect(body.missing.sort()).toEqual(['age14', 'privacy', 'terms']);
+    expect(body.missing.sort()).toEqual([...REQUIRED_CONSENT_TYPES].sort());
   });
 
-  it('필수 3종 동의 기록 후 needs_consent=false (marketing 미동의여도 무관)', async () => {
+  it('가입 필수 4종 동의 기록 후 needs_consent=false (marketing 미동의여도 무관)', async () => {
     const app = buildApp(NEW_SUB, NEW_PK);
     await app.request(
-      req('POST', '/user/consents', {
-        consents: [
-          { type: 'terms', agreed: true },
-          { type: 'privacy', agreed: true },
-          { type: 'age14', agreed: true },
-          { type: 'marketing', agreed: false },
-        ],
-      }),
+      req('POST', '/user/consents', consentBody([...consentPayload(), { type: 'marketing', agreed: false }])),
     );
     const res = await app.request(req('GET', '/user/consents/status'));
     const body = await res.json();
@@ -168,19 +219,45 @@ describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
     });
     const app = buildApp(SUB2, PK2);
     await app.request(
-      req('POST', '/user/consents', {
-        consents: [
-          { type: 'terms', agreed: true },
-          { type: 'privacy', agreed: false },
-          { type: 'age14', agreed: true },
-        ],
-      }),
+      req('POST', '/user/consents', consentBody(consentPayload({ privacy: false }))),
     );
     const res = await app.request(req('GET', '/user/consents/status'));
     const body = await res.json();
     console.log('[GET /consents/status — 부분동의]', JSON.stringify(body));
     expect(body.needs_consent).toBe(true);
     expect(body.missing).toEqual(['privacy']);
+  });
+
+  // 민감 동의만 빠진 사용자. 국외 이전은 가입 필수라 missing 에 뜨지만, 음성 생체정보는
+  // 선택이라 거절해도 missing 에 들어가지 않는다 — 목소리 등록 화면에서 다시 받는 몫이라
+  // sensitive_missing 에만 남는다. 미들웨어의 하드 게이트는 GENERAL 3종만 보므로
+  // 어느 쪽이든 앱 전체가 잠기지는 않는다.
+  it('민감 동의만 빠지면 국외 이전만 missing 이고 둘 다 sensitive_missing 에 뜬다', async () => {
+    const SUB4 = 'sensitive-sub';
+    const PK4 = 'sensitive-pk';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK4, SUB4, 'sensitive@test.com', 'Sensitive'],
+    });
+    const app = buildApp(SUB4, PK4);
+    await app.request(
+      req(
+        'POST',
+        '/user/consents',
+        consentBody(consentPayload({ voice_biometric: false, overseas_transfer: false })),
+      ),
+    );
+    const res = await app.request(req('GET', '/user/consents/status'));
+    const body = await res.json();
+    console.log('[GET /consents/status — 민감 미동의]', JSON.stringify(body));
+    expect(body.missing).toEqual(['overseas_transfer']);
+    expect(body.sensitive_missing).toEqual(['voice_biometric', 'overseas_transfer']);
+    expect(body.needs_consent).toBe(true);
+    // 거절한 생체정보는 다시 묻지 않는다(답은 이미 받았다). 목소리 등록 화면의 몫이다.
+    // marketing 은 이 픽스처가 한 번도 안 물어봐서 남는다.
+    expect(body.collect).toEqual(['overseas_transfer', 'marketing']);
+    // 게이트가 보는 일반 3종은 그대로 충족 — 앱 전체가 잠기면 안 된다.
+    expect(await needsConsent(db, PK4, GENERAL_REQUIRED_CONSENTS)).toBe(false);
   });
 });
 

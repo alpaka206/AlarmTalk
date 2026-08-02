@@ -38,26 +38,112 @@ export const GENERAL_REQUIRED_CONSENTS = ['terms', 'privacy', 'age14'] as const;
 /** 특정 민감 기능(생체 음성, 국외 이전)에서만 추가로 요구되는 동의. */
 export const SENSITIVE_REQUIRED_CONSENTS = ['voice_biometric', 'overseas_transfer'] as const;
 
-/** 동의 상태 조회/충족 판정에 쓰는 일반 필수 동의 목록(GET /consents/status 호환). */
-export const REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENTS;
-
-/** 처리방침/약관 버전. 정책 개정 시 이 값을 올려 기존 가입자 재동의를 유도한다.
- *  '3' (2026-06-29 개정): 운영 음성 AI 제공자를 ElevenLabs 기준으로 정정하고,
- *  음성=민감정보/생체정보 분류, voice_biometric·overseas_transfer 별도 동의 서버 강제,
- *  Firebase/FCM·PortOne 수탁 고지를 포함한 처리방침/약관 개정과 동기화한다.
- *  (docs/legal/*.ko.md 의 "최종 개정일"·"정책 버전"과 일치) */
-export const CURRENT_POLICY_VERSION = '3';
+/** 거절해도 서비스 이용에 지장이 없는 선택 동의. */
+export const OPTIONAL_CONSENT_TYPES = ['marketing'] as const;
 
 /**
- * requiredTypes 중 하나라도 (미기록 | 미동의 | 현재 정책버전과 불일치) 이면 true.
- * user_consents 의 유형별 최신 1건만 보고 판정한다 (created_at DESC, rowid DESC).
+ * 가입 동의 화면을 **통과하려면 반드시 체크해야 하는** 유형.
+ *
+ * `overseas_transfer` 가 여기 있는 이유: 무료 플랜의 기본 목소리 알람도 문구 생성(Vertex)과
+ * 읽어주기(ElevenLabs)를 거쳐 데이터가 국외로 나간다. 거부하면 알람에 목소리를 못 붙이니
+ * 사실상 서비스가 성립하지 않는다 — '선택 동의를 거부했다고 서비스를 거부' 하는 게 아니라
+ * 계약 이행에 필요한 동의라서 가입 필수로 두는 것이다.
+ *
+ * `voice_biometric` 은 여기 **없다** — 아래 FEATURE_CONSENT_TYPES 를 볼 것.
+ *
+ * 미들웨어의 하드 게이트는 여전히 GENERAL_REQUIRED_CONSENTS 3종만 본다. 앱 자체를 막는
+ * 범위는 최소로 두고, 음성 라우트는 SENSITIVE_REQUIRED_CONSENTS 를 따로 확인한다 —
+ * 설정에서 동의를 철회한 경우에도 그 기능만 막히고 앱 전체가 잠기지는 않는다.
  */
-export async function missingConsentType(
+export const REQUIRED_CONSENT_TYPES = [
+  ...GENERAL_REQUIRED_CONSENTS,
+  'overseas_transfer',
+] as const;
+
+/**
+ * 그 기능을 쓸 때만 필요한 동의. **가입 화면에 '선택'으로 함께 노출하되, 거절해도 가입은
+ * 통과시킨다.**
+ *
+ * `voice_biometric`(내 목소리 클론)이 여기 속한다. 내 목소리를 등록하지 않아도 기본 목소리
+ * 알람으로 앱을 온전히 쓸 수 있으므로, 이 동의를 가입 조건으로 요구하면 개인정보보호법
+ * 제22조제5항(선택 동의 거부를 이유로 한 서비스 제공 거부 금지)에 정면으로 걸린다.
+ * 민감정보라 제23조의 '별도 동의' 요건도 있어 다른 필수 동의와 한 덩어리로 묶으면 안 된다.
+ *
+ * 대신 **가입 화면 안에** 선택 항목으로 둔다. 대부분은 거기서 한 번 체크하고 다시 볼 일이
+ * 없어 등록 도중 모달이 뜨지 않는다. 거절한 사람에게만 목소리 등록 화면에서 다시 묻는다.
+ */
+export const FEATURE_CONSENT_TYPES = ['voice_biometric'] as const;
+
+/** 처리방침/약관 문서 버전. **새로 기록하는** 동의는 예외 없이 이 값으로 저장한다 —
+ *  POST /user/consents 는 요청 바디의 version 을 받기만 하고 무시한다(클라가 보낸 버전을
+ *  그대로 쓰면 위조된 높은 값이 이후의 재동의 요구를 영구히 무력화한다).
+ *  재동의가 필요한지는 이 값이 아니라 CONSENT_MIN_POLICY_VERSION 이 결정한다.
+ *  '4' (2026-07-30 개정): 제공하지 않는 기능·경로를 고지에서 걷어냈다 — Apple 로그인,
+ *  캐릭터 성장/연속 기상 기록, Apple·PortOne 수탁. 결제는 Google Play 인앱결제 단일
+ *  경로임을 명시. 마케팅 야간 수신 별도 동의는 발송 시간대 제한(08:00~21:00)으로 대체.
+ *  '3' (2026-06-29 개정): 운영 음성 AI 제공자를 ElevenLabs 기준으로 정정하고,
+ *  음성=민감정보/생체정보 분류, voice_biometric·overseas_transfer 별도 동의 서버 강제,
+ *  Firebase/FCM 수탁 고지를 포함한 처리방침/약관 개정과 동기화한다.
+ *  (docs/legal/*.ko.md 의 "최종 개정일"·"정책 버전"과 일치) */
+export const CURRENT_POLICY_VERSION = '4';
+
+/**
+ * 유형별 **최소 정책 버전** — 기록된 동의가 이 버전 이상이어야 유효하다.
+ *
+ * 전부 3 인 이유: 버전 4(2026-07-30)는 수집 항목·수탁사·제공 범위를 **줄이기만 한 축소
+ * 개정**이라 어느 유형의 동의 내용도 바뀌지 않았다. 축소된 범위는 이미 받아 둔 동의 안에
+ * 들어오므로 재동의 사유가 아니다. 현재 사용자 기록은 모두 3 이라 전원 그대로 유효하다.
+ *
+ * 올리는 기준: **그 유형의 동의 내용이 실제로 바뀔 때만** 해당 유형만 올린다 —
+ * 수집 항목·이용 목적·보유 기간 확대, 새 제3자 제공/국외 이전, 처리 방식 변경 등.
+ * 문서 버전(CURRENT_POLICY_VERSION)이 올랐다는 이유만으로 올리지 말 것. 여기서 올린
+ * 유형만 재동의 화면에 뜨고, 나머지 유형의 기존 동의(특히 marketing)는 보존된다.
+ */
+export const CONSENT_MIN_POLICY_VERSION: Record<ConsentType, number> = {
+  terms: 3,
+  privacy: 3,
+  age14: 3,
+  marketing: 3,
+  voice_biometric: 3,
+  overseas_transfer: 3,
+};
+
+/** 유형별 최신 동의 1건의 상태. version 은 파싱된 정수(파싱 실패 시 0). */
+export type LatestConsent = { agreed: boolean; version: number };
+export type LatestConsentMap = ReadonlyMap<string, LatestConsent>;
+
+/** 정책 버전 문자열('1'…'4') → 정수. 파싱 불가/빈 값은 0 으로 떨어뜨려 재동의를 요구한다. */
+function parsePolicyVersion(raw: string): number {
+  const trimmed = raw.trim();
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : 0;
+}
+
+/**
+ * 저장된 기록의 버전을 읽을 때 쓰는 정규화.
+ *
+ * 현재 문서 버전보다 **큰** 값은 우리가 발급한 적이 없다 — 서버가 버전을 고정하기 전에는
+ * 클라가 보낸 값을 그대로 저장했기 때문에, 위조·버그로 들어온 `999` 같은 행이 이미 남아 있을
+ * 수 있다. 유효성 판정이 한쪽(최소 버전 이상)만 보기 때문에 그런 행은 **이후 모든 재동의를
+ * 영구히 무력화한다.** 쓰기를 고정한 것만으로는 닫히지 않는 경로라(과거 행은 그대로다)
+ * 읽는 쪽에서 0 으로 떨어뜨려 '답한 적 없음'으로 되돌린다 — 모르면 다시 묻는 쪽이 안전하다.
+ */
+function sanitizeStoredPolicyVersion(raw: string): number {
+  const parsed = parsePolicyVersion(raw);
+  return parsed > parsePolicyVersion(CURRENT_POLICY_VERSION) ? 0 : parsed;
+}
+
+/** 알 수 없는 유형은 현재 문서 버전을 요구한다(fail-safe). */
+function minPolicyVersionOf(type: string): number {
+  return (
+    CONSENT_MIN_POLICY_VERSION[type as ConsentType] ?? parsePolicyVersion(CURRENT_POLICY_VERSION)
+  );
+}
+
+/** user_consents 에서 유형별 최신 1건을 읽어 온다 (created_at DESC, rowid DESC). */
+export async function loadLatestConsents(
   db: DbExecutor,
   userIdPK: string,
-  requiredTypes: readonly string[],
-): Promise<string | null> {
-  if (requiredTypes.length === 0) return null;
+): Promise<LatestConsentMap> {
   const res = await db.execute({
     // created_at 은 초 단위라 같은 초에 토글하면 동점이 된다. rowid(삽입 순서)를
     // 보조 정렬로 두어 같은 초여도 항상 마지막 삽입을 최신으로 선택한다.
@@ -65,20 +151,55 @@ export async function missingConsentType(
           FROM user_consents WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`,
     args: [userIdPK],
   });
-  const latest = new Map<string, { agreed: boolean; version: string }>();
+  const latest = new Map<string, LatestConsent>();
   for (const row of res.rows) {
     const type = String(row.consent_type);
     if (latest.has(type)) continue; // 유형별 최신 1건만
     latest.set(type, {
       agreed: Number(row.agreed) === 1,
-      version: String(row.policy_version),
+      version: sanitizeStoredPolicyVersion(String(row.policy_version)),
     });
   }
-  for (const type of requiredTypes) {
+  return latest;
+}
+
+/**
+ * 그 유형에 대해 **최소 버전 이상으로 답한 기록이 있는가**(동의/거절 무관).
+ * 선택 동의(marketing)는 거절도 유효한 응답이라 다시 물으면 안 되므로 agreed 를 보지 않는다.
+ */
+export function consentAnswerIsCurrent(latest: LatestConsentMap, type: string): boolean {
+  const cur = latest.get(type);
+  return !!cur && cur.version >= minPolicyVersionOf(type);
+}
+
+/** types 중 (미기록 | 미동의 | 최소 버전 미달) 인 것 — 필수 동의 충족 판정의 단일 구현. */
+export function missingConsentTypesFrom(
+  latest: LatestConsentMap,
+  types: readonly string[],
+): string[] {
+  return types.filter((type) => {
     const cur = latest.get(type);
-    if (!cur || !cur.agreed || cur.version !== CURRENT_POLICY_VERSION) return type;
-  }
-  return null;
+    return !cur || !cur.agreed || cur.version < minPolicyVersionOf(type);
+  });
+}
+
+/** requiredTypes 중 충족되지 않은 유형 전부. */
+export async function missingConsentTypes(
+  db: DbExecutor,
+  userIdPK: string,
+  requiredTypes: readonly string[],
+): Promise<string[]> {
+  if (requiredTypes.length === 0) return [];
+  return missingConsentTypesFrom(await loadLatestConsents(db, userIdPK), requiredTypes);
+}
+
+/** 충족되지 않은 첫 유형(없으면 null). 403 응답에 어떤 동의가 빠졌는지 싣는 용도. */
+export async function missingConsentType(
+  db: DbExecutor,
+  userIdPK: string,
+  requiredTypes: readonly string[],
+): Promise<string | null> {
+  return (await missingConsentTypes(db, userIdPK, requiredTypes))[0] ?? null;
 }
 
 export async function needsConsent(
@@ -86,5 +207,5 @@ export async function needsConsent(
   userIdPK: string,
   requiredTypes: readonly string[],
 ): Promise<boolean> {
-  return (await missingConsentType(db, userIdPK, requiredTypes)) !== null;
+  return (await missingConsentTypes(db, userIdPK, requiredTypes)).length > 0;
 }

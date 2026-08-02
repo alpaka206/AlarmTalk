@@ -10,26 +10,26 @@
 
 ## 현재 상태
 
-- **버전**: `v0.1.2` (Closed Beta 준비)
-- **Android** — 주력 플랫폼, 코어 알람 엔진은 실기기 검증 완료:
+- **버전**: `v1.2.1` (Closed Beta 준비)
+- **Android** — 유일한 클라이언트, 코어 알람 엔진은 실기기 검증 완료:
   - 무료: 시스템 목소리 + 사전 렌더된 알람 프리셋 클립, 해제할 때마다 로컬 순차 회전(버킷 회전)
   - 유료: AI 클론 목소리 프리셋을 "유지" 확정 후 서버에서 사전 렌더, 울림 시점엔 완전 오프라인 재생 — 오프라인(비행기 모드) 울림은 실기기 QA 대기
   - 가족 알람은 FCM 데이터 푸시로 멤버에게 즉시 전달(울림 자체는 로컬 — 규칙 #1) — 백그라운드 전달은 실기기 QA 대기
   - Google Play 결제: 코드 완성, Play Console 설정 대기
-- **iOS**: 보류 — 미운영, CI 빌드 비활성(수동 `workflow_dispatch` 만)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI 자동 배포 + DB 마이그레이션(`develop` → dev, `main` → prod)
+
+iOS 앱은 없습니다. SwiftUI 클라이언트와 그 빌드 워크플로는 저장소에서 제거됐습니다.
 
 ## 기술 스택
 
 | 영역 | 스택 |
 |---|---|
 | Android | Kotlin 2.0 · Jetpack Compose · Material 3 · Room · DataStore · Retrofit · WorkManager · `AlarmManager.setAlarmClock` |
-| iOS (보류) | Swift · SwiftUI · AlarmKit · ActivityKit (Live Activity) |
-| Backend | TypeScript 6 · Hono 4 · Cloudflare Workers · Zod · Vitest |
+| Backend | TypeScript 7 · Hono 4 · Cloudflare Workers · Zod · Vitest |
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (결정적 TTS 캐시) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, 7일) · Google ID 토큰 · Apple ID 토큰 |
+| Auth | JWT (HS256, 7일) · 이메일 인증 코드 · Google ID 토큰 |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## 저장소 구조
@@ -38,12 +38,10 @@
 .
 ├── apps/
 │   ├── android-native/   Kotlin + Jetpack Compose Android 앱
-│   ├── ios-native/       SwiftUI + AlarmKit PoC
-│   └── landing/          정적 랜딩 페이지
+│   └── landing/          Next.js 랜딩 페이지 (정적 export)
 ├── packages/
 │   ├── backend/          Cloudflare Workers + Hono API
 │   ├── shared/           공용 타입 · Zod 스키마
-│   ├── ui/               디자인 토큰
 │   └── voice/            음성 프로바이더 추상화
 └── docs/                 프로젝트 문서
 ```
@@ -55,32 +53,25 @@
 ```bash
 cd packages/backend
 npm install
-npm run dev        # wrangler dev --env dev
+npm run dev        # wrangler dev --env dev --env-file .dev.vars.dev
 npm test           # vitest
-npm run deploy     # wrangler deploy --env production
+npm run deploy     # wrangler deploy --env production (푸시하면 CI가 자동 배포)
 ```
 
-시크릿은 `packages/backend/.dev.vars.dev`와 `packages/backend/.dev.vars.prod`에 로컬로만 두세요(커밋 금지). 전체 목록은 [`docs/tech/`](docs/tech/README.md) 참조.
+시크릿은 `packages/backend/.dev.vars.dev`와 `packages/backend/.dev.vars.prod`에 로컬로만 두세요(커밋 금지). 전체 목록은 `packages/backend/src/types.ts` 의 `Env` 인터페이스가 단일 출처이며, 환경별 운영은 [`docs/ops/environments.md`](docs/ops/environments.md) 참조.
 
 ### Android
 
+`dev` / `prod` product flavor가 있고, `dev` 플레이버(`com.alarmtalk.app.dev`)가 dev 백엔드를 바라봅니다.
+
 ```bash
 cd apps/android-native
-./gradlew :app:assembleDebug
-./gradlew :app:testDebugUnitTest
-./gradlew :app:installDebug
+./gradlew :app:assembleDevDebug
+./gradlew :app:testDevDebugUnitTest
+./gradlew :app:installDevDebug
 ```
 
 Android SDK가 자동 감지되지 않으면 `apps/android-native/local.properties`를 만들어 `sdk.dir=...`를 추가합니다(gitignore됨).
-
-### iOS (macOS 전용)
-
-```bash
-cd apps/ios-native
-brew install xcodegen
-xcodegen generate
-open AlarmTalkNative.xcodeproj
-```
 
 ## 절대 원칙
 

@@ -443,25 +443,22 @@ internal fun PlayModeChip(
     }
 }
 
+// TTS 카테고리(서버 전송값)의 정식 집합. 화면에 칩으로 그리지는 않고,
+// normalizedTtsCategory 의 화이트리스트와 버킷 칩 라벨 조회에만 쓴다.
+// morning = 문구를 안 바꿨을 때의 기본값(서버가 greeting 문구로 이어 붙인다).
 internal val TtsCategories: List<Pair<String, Int>> = listOf(
     "morning" to R.string.editor2_cat_morning,
-    "lunch" to R.string.editor2_cat_lunch,
-    "evening" to R.string.editor2_cat_evening,
-    "night" to R.string.editor2_cat_night,
-    "health" to R.string.editor2_cat_health,
     "medication" to R.string.editor2_cat_medication,
-    "study" to R.string.editor2_cat_study,
-    "cheer" to R.string.editor2_cat_cheer,
     "love" to R.string.editor2_cat_love,
-    "exercise" to R.string.editor2_cat_exercise,
 )
 
 /**
  * 무료 플랜이 알람 "버킷"으로 고를 수 있는 카테고리(노출 순서). 실제 노출은 stockClips
  * manifest 와 교차한다 → 서버에 버킷을 추가/재시드하면 여기에만 추가하면 칩이 늘어난다.
  * 백엔드 확정 무료 버킷(stock-clips.ts FREE_BUCKET_CATEGORIES)과 동일: 약 + 날씨.
- * 순서: 추가 설정이 필요 없는 '약'이 먼저(=미선택 시 자동 선택 기본값). 날씨는 지역
- * 입력이 필요해 기본값으로 두지 않는다.
+ * 순서: 추가 설정이 필요 없는 '약'이 먼저. 다만 이건 **직전에 고른 테마가 없을 때만** 쓰는
+ * 최후 폴백이다 — 마지막에 고른 테마가 있으면 그쪽이 우선한다(AlarmEditorScreen 의 lastFreeBucket).
+ * 이 순서를 '항상 적용되는 기본값'으로 되돌리면 날씨로 저장해도 새 알람이 매번 약으로 돌아간다.
  */
 internal val FreeBucketOrder: List<String> = listOf("medication", "weather")
 
@@ -487,17 +484,15 @@ internal fun freeBucketsFor(
     return FreeBucketOrder.filter { it in available }
 }
 
-// 문구 컨텍스트의 정규화·기본값용 정식 집합(back-compat/normalize 유지). preset 은 새 알람의
-// 보이지 않는 기본값이자 시스템 목소리 사전 렌더 트리거라 여기 남는다. 편집기 선택 목록은
-// 아래 EditorMessageContexts 를 따로 쓴다.
+// 문구 컨텍스트의 정규화·기본값용 정식 집합. preset 은 새 알람의 보이지 않는 기본값이자 시스템
+// 목소리 사전 렌더 트리거라 여기 남는다. 편집기 선택 목록은 아래 EditorMessageContexts 를 따로 쓴다.
+// 목록 밖의 값은 normalizedRandomPromptContext 가 preset 으로 접는다.
 internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값(사전 렌더). 무료 플랜도 이것만.
-    "preset" to R.string.editor2_ctx_preset,
+    // 화면에 그려지는 라벨은 VoiceAudioCard 가 쓰는 editor_msg_mode_preset 하나로 통일한다.
+    "preset" to R.string.editor_msg_mode_preset,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
-    "meal" to R.string.editor2_ctx_meal,
-    "sleep" to R.string.editor2_ctx_sleep,
-    "exercise" to R.string.editor2_ctx_exercise,
     "love" to R.string.editor2_ctx_love,
     // 약(medication): 동적 생성 모드가 아니라 고정 프리셋. randomContext='medication' 는
     // 백엔드에서 'preset' 으로 정규화되고 category='medication' 프리셋 문구를 뽑는다.
@@ -507,9 +502,12 @@ internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
 // '직접 입력'(랜덤 끄고 사용자가 문구를 직접 타이핑) 을 나타내는 특수 선택값.
 internal const val ManualMessageContext = "manual"
 
-// 편집기 '문구' 선택기(유료) 노출 옵션 — 날씨·운세·사랑(동적) + 약(고정 프리셋) + 직접 입력.
-// 운동은 약으로 대체. 기본문구(preset)·식사·취침은 목록에서 제외(preset 은 보이지 않는 기본값).
+// 편집기 '문구' 선택기(유료) 노출 옵션 — 기본 인사말 + 날씨·운세·사랑(동적) + 약(고정 프리셋)
+// + 직접 입력. preset 을 목록에 노출하는 이유: 새 알람의 기본값이자 '마지막에 고른 문구 종류'로
+// 기억될 수 있는 값이라, 목록에 없으면 요약 행은 '기본 인사말'인데 선택기를 열면 아무것도(또는
+// 엉뚱한 항목이) 체크돼 보인다. 사용자에겐 선택이 리셋된 것으로 읽힌다. 되돌아올 길도 필요하다.
 internal val EditorMessageContexts: List<Pair<String, Int>> = listOf(
+    "preset" to R.string.editor_msg_mode_preset,
     "wake_weather" to R.string.editor2_ctx_wake_weather,
     "wake_fortune" to R.string.editor2_ctx_wake_fortune,
     "love" to R.string.editor2_ctx_love,

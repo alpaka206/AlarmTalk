@@ -1,28 +1,12 @@
-# Dev 테스트 핸드오프 (갱신 2026-07-21)
+# Dev 테스트 핸드오프 (갱신 2026-07-30)
 
 > 세션 재개용 라이브 문서. 상태가 바뀌면 이 파일을 갱신/정리한다. (다른 컴퓨터에서도 `git pull` 후 이 문서만 읽으면 이어서 진행 가능.)
+> 끝난 검증은 여기 남기지 않는다 — 남은 것과 다음에 또 쓸 방법만 둔다.
 
-## 0. 2026-07-21 — #599 목소리 슬롯 상한(F1/F2/F3) 머지 + 검증 완료
-
-- **#599 머지됨**(Codex 6차 클린 + CI 그린): 전역 클론 슬롯 상한(`MAX_PROVIDER_CLONE_VOICES=50`, voice-slots.ts 숫자 하나로 조정) + LRU eviction(공유/draft 보호) + 기본 목소리 선택 시 유료도 날씨+약만(F2) + evict된 보이스 TTS 요청 시 R2 원본 자동 재클론(F3). 마이그레이션 #75(last_used_at/evicted_at).
-- **실기기 검증 완료(S23, dev cap=2 임시 하향으로 실측)**: 클론 등록(홍길동)→promote→SQL evict→가짜 활성 2개로 상한 채움→알람 저장 시 `/tts/generate`가 자동 재클론(새 provider id 발급·in-place 복원)→LRU(가장 오래된 것)만 evict·최신 보존→삭제 큐 적재→cron 실삭제까지 엔드투엔드 확인. F2 UI(기본 목소리=날씨+약만/내 클론=5종 전체), #594 무료 잠금(알람만 강제·데이터 보존)→플랜 복원 시 원복도 확인.
-- **남은 것**: 프로드 릴리스(develop→main, versionCode 14, AAB) — 아래 §2 체크리스트 중 A32 필요 항목(FCM 즉시배달 등)과 실발사(18시 이후)는 미완. A32는 이번 세션에 adb 미인식(재연결 필요).
-
-## 1. PR 지도
-
-| PR | 내용 | 상태 |
-|---|---|---|
-| #541 | 유료 클론 사전렌더 전체(백엔드 + 클라 오프라인 소비) | ✅ 머지 |
-| #548 | 가족 알람 FCM 즉시배달 + 앱 복귀 즉시 pull + 날씨 미해결 안내 클립(weather 9클립=조건8+안내1), 발사시각 cron 알람푸시 제거, 마이그레이션 #63(token 인덱스)·#64(done requeue) | ✅ 머지 + dev 배포됨 |
-| #549 | 등록 미리듣기 관계·호칭 톤 적응 + `preview_text` 영속(마이그레이션 #65), cron 틱당 클립 3→6 | ✅ 머지(2026-07-15, dev 배포) |
-| #550 | 선택 시트 민짜 행+구분선 통일, 진동 라벨 한글화 | ✅ 머지(2026-07-15) |
-
-develop 은 #549 머지로 마이그레이션 #65, cron `MAX_CLIPS_PER_TICK=6`.
-
-## 2. 남은 것 = 실기기 검증 체크리스트
+## 1. 남은 것 = 실기기 검증 체크리스트
 
 ### ① 사전렌더 라이브 (dev 배포됨, 유료 계정 필요)
-- [ ] 클론 목소리 등록(keep/promote) → cron(`*/5`)이 **21클립** 렌더: greeting 1 / weather 9(조건 8 + 미해결 안내 1) / fortune 5 / love 3 / medication 3, 앱 언어 1개. 틱당 6클립(#549)이라 완성까지 ~20분.
+- [ ] 클론 목소리 등록(keep/promote) → cron(`*/5`)이 **21클립** 렌더: greeting 1 / weather 9(조건 8 + 미해결 안내 1) / fortune 5 / love 3 / medication 3, 앱 언어 1개. 틱당 6클립이라 완성까지 ~20분.
 - [ ] 편집기에서 날씨/운세/사랑/약 각각 선택·저장 → 클론 버킷 부착(`hasCompleteCloneBucket`, weather 9개 풀셋 요구).
 - [ ] **비행기모드 발사**: 그 목소리 클립 재생 + 잠금화면 문구가 재생 오디오와 같은 인덱스로 일치.
 - [ ] 날씨 미해결(준비창에 인터넷 없음) 시 '맑음' 오재생 대신 **마지막 안내 클립**("인터넷이 안 돼서 날씨를 미리 확인 못 했어요" 톤) 재생.
@@ -36,16 +20,67 @@ develop 은 #549 머지로 마이그레이션 #65, cron `MAX_CLIPS_PER_TICK=6`.
 ### ③ 울림화면(RingingActivity) 실발사
 - [ ] 실제 알람 발사로 잠금화면 위에 뜨는지(문구 표시·노브 화살표 포함). `am start` 는 exported=false 라 차단 — 실발사 필요.
 - **규칙: 18시 이전엔 알람 울리게 하지 말 것.** 설정은 OK, 발사는 18시 이후.
-- 무음·무진동 발사법: A32 알람볼륨 0 + 진동패턴 OFF로 생성 → `adb shell am broadcast -a com.alarmtalk.app.action.ALARM_TRIGGER --es com.alarmtalk.app.extra.ALARM_ID <id> -n com.alarmtalk.app.dev/com.alarmtalk.app.alarm.AlarmReceiver`. 로컬 id는 `adb exec-out run-as ... cat databases/voice-alarm.db` 로 뽑아 python sqlite3.
+- 무음·무진동 발사법: A32 알람볼륨 0 + 진동패턴 OFF로 생성 → `adb shell am broadcast -a com.alarmtalk.app.action.ALARM_TRIGGER --es com.alarmtalk.app.extra.ALARM_ID <id> -n com.alarmtalk.app.dev/com.alarmtalk.app.alarm.AlarmReceiver`. 로컬 id 는 아래 §3 으로 뽑는다.
 
-### ④ #549 머지 후 — 등록 미리듣기
+### ④ 등록 미리듣기
 - [ ] 미리듣기 문구가 관계·호칭에 톤 적응돼 생성되는지.
 - [ ] 재생 결정성: 같은 draft 재생 시 저장된 `preview_text` 재사용(재생성 없음), 동시 첫-미리듣기 레이스에서도 문구 1개로 수렴.
 
-## 3. 예정 기능 (미구현)
+### ⑤ 직전 선택 유지 (새 알람 기본값)
+규약: [`CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」](../../CLAUDE.md). **기억은 알람 저장 성공 시에만**, 적용은 **새 알람에만**.
+- [ ] 클론이 있는 계정에서 **기본(시스템) 목소리**로 알람 저장 → 새 알람이 그 시스템 목소리로 열린다(내 클론으로 되돌아가지 않는다).
+- [ ] 유료 클론에서 문구 '사랑' 저장 → 새 알람이 '사랑'으로 열리고, **문구 pane 을 열어도 '사랑'이 체크**돼 있다(예전엔 '약'으로 보였다).
+- [ ] 무료/기본 목소리에서 테마를 '날씨'로 저장 → 새 알람이 '날씨'로 열린다(매번 '약'으로 돌아가지 않는다). 저장된 도시가 없으면 '약'으로 폴백하는 게 정상.
+- [ ] 문구 pane 에서 종류만 바꾸고 **저장하지 않고 나가면** 다음 새 알람에 반영되지 않는다.
+- [ ] **기존 알람을 열었다 닫아도** 목소리·문구·테마가 변하지 않는다.
+- [ ] 직접 입력 문구가 있는 기존 알람을 열어 **시각만 바꿔 저장** → 문구가 그대로 남는다(대괄호 포함 문구도 안 잘린다).
+- [ ] 로그아웃 → 다른 계정 로그인 → 새 알람이 기본 인사말/약으로 시작(앞 계정 선택이 새지 않는다). 자동 401 후 같은 계정 재로그인은 **유지**되는 게 정상.
 
+### ⑥ 음성 생체정보 동의 철회 (되돌릴 수 없음 — 유료 계정 필요)
+- [ ] 더보기 → 약관 및 동의 → 선택 동의의 '동의 철회' → **확인 모달에서 취소** 시 아무 일도 일어나지 않는다.
+- [ ] 철회 확정 → 목소리 목록이 비고, 그 목소리로 울리던 알람이 기본 알람음으로 바뀐다. 화면의 동의 상태가 '미동의'로 갱신된다.
+- [ ] **공유받은 가족 기기**에서도 강등이 반영된다(FCM `voice_access_revoked`, 미수신 시 앱 재실행으로 폴백).
+- [ ] 철회 후 목소리를 다시 등록하면 동의 시트가 떠서 재동의가 정상 동작한다.
+- [ ] 국외 이전 행에는 철회 액션이 없고, 아래 안내가 회원 탈퇴로 유도한다.
+
+### ⑦ 녹음 길이 (하한 12초)
+- [ ] 12초를 갓 넘긴 녹음으로 **정식 등록이 통과**한다(예전 1분 하한이 남아 있지 않다).
+- [ ] 2분을 넘기면 여전히 막힌다. 파일/영상 업로드도 같은 기준.
+
+### ⑧ 같은 문구 재사용
+- [ ] 직접 입력 문구로 알람 A 저장 → 새 알람 B 에 **글자까지 같은 문구** 입력 → 저장이 즉시 끝나고(생성 대기 없음) 월 한도가 안 깎인다.
+- [ ] **비행기모드**에서도 같은 문구면 저장된다.
+- [ ] 문구를 한 글자라도 바꾸면 정상적으로 새로 생성된다.
+
+## 2. 예정 기능 (미구현)
+
+0. **정리 감사 백로그**: 안 쓰는 코드·스키마와 현황과 어긋나는 문구/문서 49건 → [`cleanup-audit-2026-08-01.md`](cleanup-audit-2026-08-01.md). 버킷별로 PR 을 나눠 처리한다.
 1. **미리듣기 문구 표시 + 수정**: 등록 미리듣기에서 생성된 문구를 화면에 보여주고 수정 가능하게. 수정한 문구는 이후 프리셋 생성 스타일 참고로 사용.
 2. **프리셋 준비중 게이트**: 사전렌더가 아직 안 끝난 목소리는 문구 선택기에서 해당 항목 비활성 + "준비 중" 안내. 직접 입력은 항상 가능.
+
+## 3. 기기 Room DB 들여다보기 (실측 메모)
+
+로컬 알람 id·상태를 확인할 때 쓴다. 실패 방식이 전부 **조용해서** 순서를 지켜야 한다.
+
+- **세 파일을 같이, 따로 꺼낸다.** 아직 체크포인트 안 된 변경은 전부 `-wal` 에 있어서 `voice-alarm.db` 만 pull 하면 방금 만든 알람이 안 보인다(행 0개로 보인 적 있음). sqlite 는 세 파일이 **같은 폴더에 같은 이름으로 나란히** 있어야 `-wal` 을 반영한다.
+- **`cat ...db{,-wal,-shm} > 한파일` 로 묶지 말 것.** 에러 없이 조용히 틀린다 — 합친 파일은 헤더의 페이지 수만큼만 읽히고 뒤 바이트는 통째로 무시된다(실측: 481,688바이트 중 앞 32,768바이트만 DB 본체). 결국 `.db` 만 꺼낸 것과 같은 '마지막 체크포인트' 스냅샷이 된다.
+- **꺼내기 전에 앱을 멈춘다.** 복사 도중 Room 이 체크포인트·WAL 리셋을 하면 서로 다른 시점의 파일 셋이 만들어져 최근 알람이 빠지거나 `no such table` 이 난다. force-stop 이 WAL 을 접어 주므로 그 뒤로는 파일 셋이 얼어 있다.
+- ⚠ **force-stop 은 OS 알람 예약을 지운다.** Room 행은 남지만 AlarmManager 예약(PendingIntent)이 날아가 그대로 두면 **안 울린다**. Android 15 부터 문서화된 동작이고([stopped state](https://developer.android.com/about/versions/15/behavior-changes-all#stopped-state)), 실측하면 **Android 13 에서도 이미 그렇다**(A32: 07:00 알람 켬 → `Next alarm clock … 07:00` → force-stop → 해당 줄이 빔 → 앱 재실행 → `Boot restore complete pending=1 scheduled=1` 과 함께 복귀).
+
+순서: ① 관찰하려던 동작을 **끝내고**(결과가 Room 에 써진 뒤) → ② force-stop + 3파일 추출 → ③ **앱 재실행해 예약 복구**(로그 `Boot restore complete pending=N scheduled=N`, `adb shell dumpsys alarm` 의 `Next alarm clock information` 확인).
+
+```powershell
+$dst = '<받을 폴더>'
+adb -s <serial> shell am force-stop com.alarmtalk.app.dev   # ← 반드시 먼저
+foreach ($f in 'voice-alarm.db','voice-alarm.db-wal','voice-alarm.db-shm') {
+  adb -s <serial> shell "run-as com.alarmtalk.app.dev cat /data/data/com.alarmtalk.app.dev/databases/$f > /data/local/tmp/$f"
+  adb -s <serial> pull "/data/local/tmp/$f" "$dst\$f"
+}
+adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category.LAUNCHER 1  # ← 예약 복구
+```
+
+`>` 는 반드시 **바깥 adb 셸**이 처리하게 둔다(위 형태). `run-as ... sh -c '... > /data/local/tmp/...'` 로 감싸면 앱 uid 로 쓰게 돼 `Permission denied` 다 — /data/local/tmp 는 shell uid 만 쓸 수 있다.
+그 뒤 `python -c "import sqlite3; ..."` 로 `$dst\voice-alarm.db` 를 열면 `-wal` 이 자동 반영된다.
 
 ## 4. 환경 주의 (이 PC)
 

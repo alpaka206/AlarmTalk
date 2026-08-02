@@ -26,7 +26,6 @@ export interface VoiceProviderAttempt {
   providerVoiceId: string;
   modelId: string;
   outputFormat: string;
-  voiceSettings?: Record<string, string | number | boolean | null | undefined>;
   synthesize(): Promise<VoiceProviderSynthesizeResult>;
 }
 
@@ -87,10 +86,6 @@ export function createSynthesisAttempts(params: {
   profile: VoiceProviderProfile;
   text: string;
   language: string;
-  category?: string;
-  // 모드별 보이스 세팅 오버라이드(예: sleep 모드 speed 0.95). 미지정 시 elevenlabs.ts의
-  // v3 디폴트(stability 0.5, similarity 0.8, style 0.4, speed 1.0, use_speaker_boost)를 따른다.
-  voiceSettings?: { stability?: number; similarity_boost?: number; style?: number; speed?: number; use_speaker_boost?: boolean };
 }): VoiceProviderAttempt[] {
   const attempts: VoiceProviderAttempt[] = [];
 
@@ -102,7 +97,6 @@ export function createSynthesisAttempts(params: {
       // 파일 확장자/캐시키용 coarse 라벨. 실제 제공자 출력은 elevenlabs.ts 의
       // ELEVENLABS_TTS_OUTPUT_FORMAT(mp3_44100_128) 로 고정되며 그 형식은 mp3(audio/mpeg)라 일치한다.
       outputFormat: 'mp3',
-      voiceSettings: params.voiceSettings,
       synthesize: async () => {
         const client = new ElevenLabsClient(params.env.ELEVENLABS_API_KEY);
         const audioBuffer = await client.textToSpeech(
@@ -111,7 +105,6 @@ export function createSynthesisAttempts(params: {
           {
             model_id: ELEVENLABS_V3_MODEL_ID,
             language_code: normalizeSynthesisLanguage(params.language),
-            ...params.voiceSettings,
           },
         );
         return {

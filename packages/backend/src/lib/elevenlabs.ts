@@ -117,7 +117,7 @@ export class ElevenLabsClient {
     // v3(eleven_v3)는 우리의 유일한 운영 모델이다. 과거에는 `modelId !== DEFAULT_TTS_MODEL_ID`
     // 라는 역조건 때문에 v3에는 voice_settings를 아예 보내지 않아 서버 디폴트가 적용됐고,
     // 그 결과 delivery 태그가 약하게 실현됐다(검증된 버그). 이제 모델과 무관하게 항상 전송한다.
-    // 기본값: stability 0.5(Natural), similarity_boost 0.8, style 0.4, speed 1.0(sleep 0.95),
+    // 기본값: stability 0.5(Natural), similarity_boost 0.8, style 0.4, speed 1.0,
     // use_speaker_boost true. Robust(0.7+) 안정도는 태그를 억제하므로 쓰지 않는다.
     const voiceSettings: Record<string, number | boolean> = {
       stability: options?.stability ?? 0.5,

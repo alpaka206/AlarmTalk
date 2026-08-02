@@ -1,53 +1,26 @@
 import type { Client } from '@libsql/client/web';
-import { PRESETS } from '../data/presets';
 
 export interface Migration {
   id: number;
   name: string;
   statements: string[];
+  /**
+   * 한 트랜잭션으로 묶어 실행한다. **부분 적용이 곧 데이터 손실인** 마이그레이션에 붙인다
+   * (테이블 재작성: 임시 테이블에 복사 → 원본 DROP → RENAME).
+   *
+   * 기본 실행기는 문장을 하나씩 autocommit 하고 `_migrations` 는 전부 성공한 뒤에야
+   * 기록한다. 그래서 원본 DROP 과 RENAME 사이에서 끊기면, 재시도가 데이터를 들고 있는
+   * 임시 테이블을 지우고 원본도 없어 복구가 불가능해진다.
+   *
+   * atomic 이면 실패 시 통째로 롤백되므로 재시도가 항상 처음 상태에서 다시 돈다.
+   * 대신 idempotent DDL 에러 관용을 적용하지 않는다 — 부분 적용 상태가 없으므로
+   * "이미 적용됨" 을 삼킬 이유가 없고, 삼키면 롤백 보장이 깨진다.
+   */
+  atomic?: boolean;
 }
 
 function sqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
-}
-
-const TTS_PRESET_SEED_STATEMENTS = PRESETS.map((preset, index) => {
-  const messagesJson = JSON.stringify(preset.messages);
-  return `INSERT OR IGNORE INTO tts_presets
-    (category, label, emoji, messages_json, sort_order, enabled)
-    VALUES (
-      ${sqlLiteral(preset.category)},
-      ${sqlLiteral(preset.label)},
-      ${sqlLiteral(preset.emoji)},
-      ${sqlLiteral(messagesJson)},
-      ${index},
-      1
-    )`;
-});
-
-// 이미 시드된 DB(INSERT OR IGNORE 라 갱신 안 됨)에 특정 카테고리의 멘트/라벨을 강제로
-// 덮어쓰거나 신규 카테고리를 추가할 때 쓰는 upsert. PRESETS 가 단일 진실 공급원.
-function ttsPresetUpsert(category: string): string {
-  const index = PRESETS.findIndex((p) => p.category === category);
-  const preset = PRESETS[index];
-  if (!preset) throw new Error(`ttsPresetUpsert: unknown preset category "${category}"`);
-  const messagesJson = JSON.stringify(preset.messages);
-  return `INSERT INTO tts_presets
-    (category, label, emoji, messages_json, sort_order, enabled)
-    VALUES (
-      ${sqlLiteral(preset.category)},
-      ${sqlLiteral(preset.label)},
-      ${sqlLiteral(preset.emoji)},
-      ${sqlLiteral(messagesJson)},
-      ${index},
-      1
-    )
-    ON CONFLICT(category) DO UPDATE SET
-      label = excluded.label,
-      emoji = excluded.emoji,
-      messages_json = excluded.messages_json,
-      enabled = excluded.enabled,
-      updated_at = datetime('now')`;
 }
 
 // 2026-07-19 확정 스톡 클립 대사(마이그레이션 #70 전용 '동결 사본').
@@ -732,23 +705,6 @@ export const migrations: Migration[] = [
     ],
   },
   {
-    id: 33,
-    name: 'tts-preset-remote-config',
-    statements: [
-      `CREATE TABLE IF NOT EXISTS tts_presets (
-        category TEXT PRIMARY KEY,
-        label TEXT NOT NULL,
-        emoji TEXT,
-        messages_json TEXT NOT NULL,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        updated_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE INDEX IF NOT EXISTS idx_tts_presets_order ON tts_presets(enabled, sort_order, category)',
-      ...TTS_PRESET_SEED_STATEMENTS,
-    ],
-  },
-  {
     id: 34,
     name: 'tts-prepared-text-fields',
     statements: [
@@ -891,7 +847,7 @@ export const migrations: Migration[] = [
     //    큐에서 제거한다 (탈퇴·다운그레이드 시 클로닝/오디오 잔존 방지).
     //  - alarms.timezone: 클라이언트 IANA 시간대 (예: 'Asia/Seoul'). 푸시 스케줄러가
     //    알람 HH:mm 을 이 시간대 기준으로 판정한다. NULL 이면 Asia/Seoul 폴백.
-    //  - store_transactions: Apple/Google/PortOne 결제 검증 기록 (중복 처리 방지 +
+    //  - store_transactions: 스토어 결제 검증 기록 (중복 처리 방지 +
     //    전자상거래법 보존 원본). provider_transaction_id 는 provider 별 고유.
     id: 42,
     name: 'voice-lifecycle-and-store-billing',
@@ -1074,7 +1030,6 @@ export const migrations: Migration[] = [
       `CREATE VIEW IF NOT EXISTS "retained_billing_records_kst" AS SELECT *, datetime("starts_at",'+9 hours') AS starts_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "retained_billing_records"`,
       `CREATE VIEW IF NOT EXISTS "store_transactions_kst" AS SELECT *, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "store_transactions"`,
       `CREATE VIEW IF NOT EXISTS "subscriptions_kst" AS SELECT *, datetime("starts_at",'+9 hours') AS starts_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("canceled_at",'+9 hours') AS canceled_at_kst FROM "subscriptions"`,
-      `CREATE VIEW IF NOT EXISTS "tts_presets_kst" AS SELECT *, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "tts_presets"`,
       `CREATE VIEW IF NOT EXISTS "user_consents_kst" AS SELECT *, datetime("agreed_at",'+9 hours') AS agreed_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "user_consents"`,
       `CREATE VIEW IF NOT EXISTS "users_kst" AS SELECT *, datetime("daily_tts_reset_at",'+9 hours') AS daily_tts_reset_at_kst, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("last_active_at",'+9 hours') AS last_active_at_kst, datetime("deletion_requested_at",'+9 hours') AS deletion_requested_at_kst, datetime("deletion_purge_at",'+9 hours') AS deletion_purge_at_kst FROM "users"`,
       `CREATE VIEW IF NOT EXISTS "voice_profile_relationships_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "voice_profile_relationships"`,
@@ -1143,20 +1098,6 @@ export const migrations: Migration[] = [
     ],
   },
   {
-    // 무료 프리셋 멘트 개편(#478 흡수) + 신규 카테고리(약·운동) 추가. tts_presets 초기 시드는
-    // INSERT OR IGNORE 라 기존 DB 에 반영되지 않으므로 여기서 upsert 로 강제 갱신/추가한다.
-    // 기상·밤 멘트 교체, 약 멘트는 건강에서 분리, 약·운동 신규. (PRESETS 가 단일 진실 공급원)
-    id: 49,
-    name: 'tts-preset-refresh-and-add-medication-exercise',
-    statements: [
-      ttsPresetUpsert('morning'),
-      ttsPresetUpsert('night'),
-      ttsPresetUpsert('health'),
-      ttsPresetUpsert('medication'),
-      ttsPresetUpsert('exercise'),
-    ],
-  },
-  {
     // 일일 TTS 생성 횟수 제한(하루 N회) 폐지. daily_tts_count / daily_tts_reset_at
     // 컬럼을 더 이상 읽거나 쓰지 않으므로 물리적으로 제거한다. 무료 플랜의 보이스/
     // 프리셋 게이팅(VOICE_FEATURE_REQUIRES_PAID_PLAN / FREE_PLAN_PRESET_ONLY)은
@@ -1221,7 +1162,7 @@ export const migrations: Migration[] = [
     //  - messages.variant: 같은 (보이스·카테고리·언어) 안에서 문구를 구분/정렬하는 인덱스.
     //    idx_messages_stock 은 애초에 UNIQUE 가 아니므로(일반 인덱스) variant 를 더해
     //    카테고리당 N행 조회·정렬만 빠르게 한다. 기존 프리셋 행은 variant=0 으로 백필된다.
-    //  - alarms.bucket_id: 무료 알람이 가리키는 버킷(예: 'morning'·'medication'). message_id 는
+    //  - alarms.bucket_id: 무료 알람이 가리키는 버킷(예: 'weather'·'medication'). message_id 는
     //    대표(변형0) 클립을 그대로 유지해, 회전을 모르는 경로/구버전에선 단일 재생 폴백이 된다.
     id: 54,
     name: 'stock-clip-variants-and-alarm-bucket',
@@ -1752,9 +1693,7 @@ export const migrations: Migration[] = [
     //  - dev·prod 실측: users.apple_id, subscriptions.apple_* 전부 NULL(0건)이라 손실 없음.
     //  - 인덱스를 먼저 떨궈야 한다 — SQLite/libSQL 의 DROP COLUMN 은 그 컬럼을 참조하는
     //    인덱스가 남아 있으면 실패한다.
-    //  - push_tokens.platform 의 'ios' 와 store_transactions.provider 의 'apple'·'portone'
-    //    CHECK 리터럴은 **그대로 둔다**: CHECK 변경은 테이블 재작성이 필요한데, 쓰지 않는
-    //    값을 허용 목록에 남겨두는 비용은 0 이다(쓰는 코드가 이미 없다).
+    //  - platform/provider 의 CHECK 리터럴은 이때 남겼다가 #88 에서 좁혔다.
     id: 82,
     name: 'drop-apple-identity-and-billing-columns',
     statements: [
@@ -1871,6 +1810,170 @@ export const migrations: Migration[] = [
           )`,
     ],
   },
+  {
+    // tts_presets 정리. '10테마 개별선택'(기상·점심·퇴근·밤·건강·공부·응원·사랑·약·운동) 시절의
+    // 원격 문구 테이블인데, 지금 제품의 문구는 기본값(greeting)·날씨·약(무료) / +운세·사랑(유료)
+    // 뿐이고 그 문구는 stock-clips.ts 가 단일 출처다. 남은 10행 중 실제로 읽히던 건
+    // medication 하나였고 그마저 확정 대사와 문구가 달라(반말 옛 버전) 버킷 미완성 폴백에서만
+    // 톤이 튀는 원인이었다. 코드 경로(lib/tts-presets.ts)와 함께 제거한다.
+    id: 87,
+    name: 'drop-tts-presets',
+    statements: [
+      `DROP INDEX IF EXISTS idx_tts_presets_order`,
+      `DROP TABLE IF EXISTS tts_presets`,
+    ],
+  },
+  {
+    // 허용값을 실제 운영 범위로 좁힌다. Apple(iOS 앱·StoreKit)과 국내 PG(PortOne)는 도입하지
+    // 않기로 확정했고 결제는 Google Play 인앱결제 단일 경로다.
+    //   - push_tokens.platform: 'ios' 제거 (등록할 iOS 클라이언트가 없다)
+    //   - store_transactions.provider: 'apple'·'portone' 제거
+    // #82 는 이 CHECK 리터럴을 "쓰지 않는 값을 남겨두는 비용은 0" 이라며 남겼는데, 비용이
+    // 0 이 아니었다 — 스키마를 읽고 미지원 결제 경로가 있다고 적은 문서가 여러 곳 나왔다.
+    // SQLite 는 CHECK 를 ALTER 할 수 없어 두 테이블을 재작성한다(#22 와 같은 방식).
+    // 실측(2026-07-30 dev·prod): platform='ios' 0건, provider IN ('apple','portone') 0건,
+    // push_tokens 의 users FK 고아 0건(FK 를 켠 채 복사해도 안전). 재작성 시 폐기값 행은
+    // 새 CHECK 를 통과하지 못하므로 SELECT 에서 걸러낸다.
+    //
+    // **atomic 필수**: 임시 테이블 복사 → 원본 DROP → RENAME 은 중간에 끊기면 데이터가
+    // 임시 테이블에만 남는다. 문장별 autocommit 으로 돌리면 재시도가 그 임시 테이블을
+    // 지워 push_tokens(FCM 토큰 전량)·store_transactions(전자상거래법 5년 보존 원본)이
+    // 복구 불가로 사라진다(Codex #659). 한 트랜잭션으로 묶어 실패 시 통째로 롤백한다.
+    // PRAGMA foreign_keys 는 트랜잭션 안에서 무시되므로 쓰지 않는다 — 위 고아 0건 실측대로
+    // FK 를 켠 채 복사해도 통과하고, 혹 위반이 생기면 롤백돼 데이터가 남는다.
+    id: 88,
+    name: 'narrow-push-platform-and-store-provider-checks',
+    atomic: true,
+    statements: [
+      `CREATE TABLE push_tokens_v2 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        token TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('android','web')),
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO push_tokens_v2 (id, user_id, token, platform, created_at, updated_at)
+        SELECT id, user_id, token, platform, created_at, updated_at
+        FROM push_tokens WHERE platform IN ('android','web')`,
+      `DROP TABLE push_tokens`,
+      `ALTER TABLE push_tokens_v2 RENAME TO push_tokens`,
+      `CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_unique ON push_tokens(user_id, token)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)`,
+      `CREATE TABLE store_transactions_v2 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK(provider = 'google'),
+        provider_transaction_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        subscription_id TEXT,
+        expires_at TEXT,
+        raw_payload TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO store_transactions_v2 (
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      ) SELECT
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      FROM store_transactions WHERE provider = 'google'`,
+      `DROP TABLE store_transactions`,
+      `ALTER TABLE store_transactions_v2 RENAME TO store_transactions`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_store_transactions_provider_tx
+        ON store_transactions(provider, provider_transaction_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_user
+        ON store_transactions(user_id, created_at DESC)`,
+    ],
+  },
+  {
+    // 정리 감사(docs/qa/cleanup-audit-2026-08-01.md) ① — 쿼리 플래너가 쓸 수 없거나
+    // 상위 인덱스에 완전히 포함되는 인덱스를 걷는다. **인덱스만** 손대는 마이그레이션이라
+    // 되돌리기가 CREATE INDEX 한 줄이고 데이터 손실이 0이다 — 그래서 컬럼 DROP(#90)과
+    // 일부러 분리했다(롤백 단위를 다르게 두려는 것).
+    //
+    // 지우는 근거 두 갈래:
+    //  (a) 중복 — UNIQUE 자동 인덱스나 상위 복합 인덱스의 선행 컬럼과 같아 선택지가 안 는다.
+    //  (b) 무용 — 술어가 COALESCE(...) 로 감싸여 선행 컬럼이 표현식이 되거나(is_preset·
+    //      is_draft), 그 컬럼을 술어로 쓰는 쿼리가 아예 없다(alarms.bucket_id).
+    // 전 문장이 IF EXISTS/IF NOT EXISTS 라 SQL 자체가 멱등이다(atomic 불필요).
+    id: 89,
+    name: 'drop-redundant-indexes',
+    statements: [
+      // (a) 중복
+      `DROP INDEX IF EXISTS idx_users_email`,
+      `DROP INDEX IF EXISTS idx_plans_key`,
+      `DROP INDEX IF EXISTS idx_voucher_codes_hash`,
+      `DROP INDEX IF EXISTS idx_plan_group_members_group`,
+      `DROP INDEX IF EXISTS idx_promo_redemptions_code`,
+      `DROP INDEX IF EXISTS idx_voucher_redemptions_voucher`,
+      `DROP INDEX IF EXISTS idx_voice_profiles_user`,
+      `DROP INDEX IF EXISTS idx_voice_profile_relationships_user`,
+      `DROP INDEX IF EXISTS idx_push_tokens_user`,
+      // (b) 무용
+      `DROP INDEX IF EXISTS idx_messages_stock`,
+      `DROP INDEX IF EXISTS idx_voice_profiles_is_draft`,
+      `DROP INDEX IF EXISTS idx_alarms_bucket`,
+      // 반대로 없어서 풀스캔이던 것 하나를 채운다 — 구독 해지 경로가 subscription_id 로
+      // store_transactions 를 훑는다(billing-cancel·billing-mutation).
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_subscription
+        ON store_transactions(subscription_id)`,
+    ],
+  },
+  {
+    // 정리 감사 ① — 쓰기만 하고 아무도 읽지 않는 컬럼을 걷는다.
+    //
+    // **되돌릴 수 없다**(컬럼 값이 사라진다). 그래서 넣은 것은 전부 다음 조건을 만족한다:
+    //  1. src 전수 검색으로 SELECT/WHERE/ORDER BY 에 등장하지 않는다.
+    //  2. nullable 이거나 DEFAULT 가 있다 — CI 가 워커(코드) 배포 → 마이그레이션 순으로
+    //     돌아서 그 사이 '새 코드 + 옛 스키마' 창이 반드시 생기는데, 그때도 INSERT 가
+    //     성공해야 한다. NOT NULL·무기본값 컬럼(generated_audio_assets 의 provider_voice_id·
+    //     model_id·language, voice_uploads.size_bytes)은 이 창에서 500 이 나므로 뺐다.
+    //  3. 인덱스가 참조하면 그 인덱스를 **먼저** 떨군다(아래 ledger 가 그 경우다).
+    //     libSQL 은 인덱싱된 컬럼 DROP 을 거부한다.
+    // atomic 은 붙이지 않는다 — 재실행 시 '이미 없는 컬럼' 관용이 살아 있어야 원장이
+    // 어긋난 DB 도 복구된다(러너의 after-drop-column 가드가 진짜 실패는 따로 잡는다).
+    id: 90,
+    name: 'drop-dead-columns',
+    statements: [
+      `DROP INDEX IF EXISTS idx_voice_profile_change_ledger_profile`,
+      `ALTER TABLE voice_profile_change_ledger DROP COLUMN voice_profile_id`,
+      `ALTER TABLE message_library DROP COLUMN is_favorite`,
+      `ALTER TABLE message_library DROP COLUMN received_at`,
+      `ALTER TABLE generated_audio_assets DROP COLUMN category`,
+      `ALTER TABLE generated_audio_assets DROP COLUMN size_bytes`,
+      `ALTER TABLE generated_audio_assets DROP COLUMN original_text`,
+      // ⚠ messages.delivery_tags_json 은 실제로 읽는 별개 컬럼이다. 같이 지우지 말 것.
+      `ALTER TABLE generated_audio_assets DROP COLUMN delivery_tags_json`,
+      `ALTER TABLE promo_code_redemptions DROP COLUMN subscription_id`,
+    ],
+  },
+  {
+    /**
+     * 우리가 발급한 적 없는 정책 버전으로 저장된 동의 기록을 **영구 격리**한다.
+     *
+     * 서버가 버전을 고정하기 전에는 클라가 보낸 값을 그대로 저장했다. 그래서 `999` 같은 행이
+     * 남아 있을 수 있는데, 읽는 쪽 정규화(`sanitizeStoredPolicyVersion`)는 **그때그때의**
+     * CURRENT_POLICY_VERSION 과 비교한다 — 지금은 무효지만 나중에 정책이 그 버전까지 올라가면
+     * 그 행이 **다시 유효해져** 사용자가 본 적 없는 문서의 동의를 충족시킨다(Codex #660).
+     *
+     * 그래서 조건부 무효화에 기대지 않고 여기서 값을 지운다. 현재 문서 버전은 '4' 이고 서버는
+     * 그보다 큰 값을 발급한 적이 없으므로, 4 를 넘는 행은 정의상 전부 위조·버그다.
+     * 행 자체(누가·언제·동의했는지)는 남기고 **버전만 '0'(=모름)** 으로 바꾼다 — 어느 문서를
+     * 보고 동의했는지 알 수 없다는 게 사실이고, 0 은 어떤 최소 버전도 만족하지 못해 재동의를
+     * 받게 된다. 숫자가 아닌 값은 이미 0 으로 읽히므로 건드리지 않는다.
+     */
+    id: 91,
+    name: 'quarantine-future-policy-version-consents',
+    statements: [
+      `UPDATE user_consents
+          SET policy_version = '0'
+        WHERE policy_version GLOB '[0-9]*'
+          AND CAST(policy_version AS INTEGER) > 4`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
@@ -1878,6 +1981,14 @@ export const migrations: Migration[] = [
 // reality (e.g. partial historical migration runs before the ledger existed).
 function isIdempotentDDLError(message: string): boolean {
   const lower = message.toLowerCase();
+  // ⚠ 'no such column' 관용보다 **먼저** 걸러야 하는 진짜 실패가 하나 있다.
+  // 인덱스가 참조하는 컬럼을 DROP 하면 libSQL 이
+  //   `error in index ix after drop column: no such column: prof`
+  // 를 던지는데, 이건 "이미 적용됨"이 아니라 "DROP 이 실패했다"는 뜻이다. 아래 관용에
+  // 삼켜지면 컬럼은 그대로인데 _migrations 에는 성공으로 찍혀 **다시는 재시도되지 않고**
+  // 배포는 초록불이라 dev/prod 스키마가 조용히 갈라진다. 실패 메시지에만 이 조각이
+  // 들어가므로 한 줄로 두 경우를 정확히 가른다.
+  if (lower.includes('after drop column')) return false;
   return (
     lower.includes('duplicate column name') ||
     lower.includes('already exists') ||
@@ -1886,6 +1997,42 @@ function isIdempotentDDLError(message: string): boolean {
     lower.includes('no such column') ||
     lower.includes('no such view')
   );
+}
+
+/**
+ * 이 번들이 아는 마이그레이션 최대 id.
+ *
+ * 배포 전파 확인용이다 — 워커가 아직 옛 번들이면 새 id 를 '모르는 id' 로 건너뛰고 빈 결과를
+ * 돌려주는데, 호출자는 그걸 '이미 적용됨' 과 구분할 수 없다. 이 값을 함께 내려 주면 호출자가
+ * "내가 올리려는 마이그레이션을 저쪽이 아는가" 를 먼저 물어볼 수 있다.
+ */
+export function migrationMaxId(): number {
+  return migrations.reduce((max, migration) => Math.max(max, migration.id), 0);
+}
+
+/** 테스트가 러너의 관용 판정을 직접 고정할 수 있게 노출한다(프로덕션 호출부 없음). */
+export const __isIdempotentDDLErrorForTest = isIdempotentDDLError;
+
+/**
+ * 한 마이그레이션의 문장들을 적용한다. 두 진입점(runMigrations·runMigrationsRange)이
+ * 같은 규칙으로 돌도록 여기 한 곳에 모은다.
+ *  - `atomic`: 한 트랜잭션(batch)으로 묶어 실패 시 통째로 롤백한다.
+ *  - 그 외: 문장별 autocommit + idempotent DDL 에러 관용(#5·#17 처럼 같은 컬럼을 중복
+ *    ALTER 하는 과거 마이그레이션이 있다).
+ */
+async function applyMigrationStatements(db: Client, migration: Migration): Promise<void> {
+  if (migration.atomic) {
+    await db.batch(migration.statements, 'write');
+    return;
+  }
+  for (const stmt of migration.statements) {
+    try {
+      await db.execute(stmt);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!isIdempotentDDLError(msg)) throw err;
+    }
+  }
 }
 
 /**
@@ -1911,14 +2058,7 @@ export async function runMigrationsRange(
   for (const migration of migrations) {
     if (migration.id < fromId || migration.id > toId) continue;
     if (appliedIds.has(migration.id)) continue;
-    for (const stmt of migration.statements) {
-      try {
-        await db.execute(stmt);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!isIdempotentDDLError(msg)) throw err;
-      }
-    }
+    await applyMigrationStatements(db, migration);
     await db.execute({
       sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)',
       args: [migration.id, migration.name],
@@ -1945,17 +2085,7 @@ export async function runMigrations(db: Client): Promise<string[]> {
   for (const migration of migrations) {
     if (appliedIds.has(migration.id)) continue;
 
-    // 마이그레이션 #5 와 #17 처럼 동일 컬럼(alarms.voice_profile_id)을
-    // 중복 ALTER 하는 케이스가 있으므로, idempotent DDL 에러는 무시한다.
-    // runMigrationsRange 와 동일한 정책을 적용해 두 진입점이 동일하게 동작.
-    for (const stmt of migration.statements) {
-      try {
-        await db.execute(stmt);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!isIdempotentDDLError(msg)) throw err;
-      }
-    }
+    await applyMigrationStatements(db, migration);
 
     await db.execute({
       sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)',

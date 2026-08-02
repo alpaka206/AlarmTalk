@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,6 +18,11 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,7 +34,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -36,20 +44,31 @@ import androidx.compose.ui.unit.dp
  * 로그인 후 필수 약관/개인정보 동의를 받는 게이트 화면.
  * 신규 가입자뿐 아니라 기존 가입자도 미동의 시 이 화면을 통과해야 앱을 쓸 수 있다.
  *
- * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침 / 음성 생체정보 / 국외 이전
- * 선택: 광고성 정보 수신(마케팅)
+ * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침 / 국외 이전
+ * 선택: 음성 생체정보(내 목소리 등록) / 광고성 정보 수신(마케팅)
+ *
+ * 음성 생체정보를 **선택으로 여기서 함께** 묻는 이유: 내 목소리를 등록하지 않아도 기본
+ * 목소리 알람으로 앱을 온전히 쓸 수 있으므로 가입 조건으로 강제하면 개인정보보호법
+ * 제22조제5항에 걸린다. 그렇다고 등록하려는 순간에만 모달로 띄우면 그때가 가장 거부감이
+ * 큰 자리다. 그래서 가입 화면 안에 선택 항목으로 두어 대부분은 한 번에 끝내고, 여기서
+ * 거절한 사람만 목소리 등록 화면에서 인라인으로 다시 만난다.
+ *
+ * 어떤 항목이 선택인지는 서버가 [optional] 로 내려준다 — 화면이 목록을 따로 들고 있으면
+ * 서버가 필수/선택을 바꿀 때 조용히 어긋난다.
+ *
+ * **[collect] 에 든 유형만 그린다.** 서버가 유형별 최소 정책 버전으로 계산해 내려주며,
+ * 이미 유효한 동의는 목록에 없다 — 개정 때 필요한 것만 다시 묻고, 묻지 않은 항목의 기존
+ * 선택(특히 마케팅 수신)은 그대로 유지된다.
+
  */
 @Composable
 internal fun ConsentScreen(
     contentPadding: PaddingValues,
     busy: Boolean,
-    onAgree: (
-        marketingAgreed: Boolean,
-        voiceBiometricAgreed: Boolean,
-        overseasTransferAgreed: Boolean,
-    ) -> Unit,
-    onOpenTerms: () -> Unit,
-    onOpenPrivacy: () -> Unit,
+    collect: List<String>,
+    optional: List<String>,
+    isReconsent: Boolean,
+    onAgree: (agreedOptional: Set<String>) -> Unit,
 ) {
     var age14 by remember { mutableStateOf(false) }
     var terms by remember { mutableStateOf(false) }
@@ -58,16 +77,58 @@ internal fun ConsentScreen(
     var overseasTransfer by remember { mutableStateOf(false) }
     var marketing by remember { mutableStateOf(false) }
 
-    val allRequiredChecked = age14 && terms && privacy && voiceBiometric && overseasTransfer
-    val allChecked = allRequiredChecked && marketing
+    // 전문은 앱에 실려 있어 네트워크가 없어도 읽힌다. 문서가 바뀌지 않으니 한 번만 파싱한다.
+    val context = LocalContext.current
+    val termsText = remember(context) { context.readLegalDocument(LegalDocument.Terms) }
+    val privacyText = remember(context) { context.readLegalDocument(LegalDocument.Privacy) }
+
+    val showAge14 = "age14" in collect
+    val showTerms = "terms" in collect
+    val showPrivacy = "privacy" in collect
+    val showVoiceBiometric = "voice_biometric" in collect
+    val showOverseas = "overseas_transfer" in collect
+    val showMarketing = "marketing" in collect
+    val shownCount = listOf(
+        showAge14, showTerms, showPrivacy, showVoiceBiometric, showOverseas, showMarketing,
+    ).count { it }
+    // 구버전 서버(optional 없음)와 섞여 돌 수 있다. 비어 있으면 마케팅만 선택으로 본다 —
+    // 그쪽이 안전한 폴백이다(선택을 필수로 잘못 그리면 사용자가 화면을 못 벗어난다).
+    val optionalTypes = optional.ifEmpty { listOf("marketing") }.toSet()
+    val requiredShown = collect.filter { it !in optionalTypes }
+    val shownRequired = requiredShown.isNotEmpty()
+
+    // 그리지 않은 필수 항목은 이미 동의된 것이므로 통과 조건에서 뺀다.
+    // 모르는 유형(서버가 새 유형을 먼저 추가한 구간)은 else -> false 로 통과를 막는다.
+    // 그런 상태는 checkConsentStatus 가 consentUnsupported 로 잡아 이 화면 대신 업데이트
+    // 차단 화면을 띄우므로 여기까지 오지 않는다 — 통과시키면 사용자가 본 적 없는 동의가
+    // '체크됨' 으로 기록되기에 남겨 두는 이중 방어다(Codex #660).
+    val allRequiredChecked = requiredShown.all { type ->
+        when (type) {
+            "age14" -> age14
+            "terms" -> terms
+            "privacy" -> privacy
+            "voice_biometric" -> voiceBiometric
+            "overseas_transfer" -> overseasTransfer
+            "marketing" -> marketing
+            else -> false
+        }
+    }
+    val allChecked = allRequiredChecked &&
+        (!showVoiceBiometric || voiceBiometric) && (!showMarketing || marketing)
+
+    // 화면에서 사용자가 실제로 체크한 '선택' 유형 — 제출은 이 값으로 agreed 를 정한다.
+    val agreedOptional = buildSet {
+        if (showVoiceBiometric && voiceBiometric) add("voice_biometric")
+        if (showMarketing && marketing) add("marketing")
+    }
 
     fun setAll(value: Boolean) {
-        age14 = value
-        terms = value
-        privacy = value
-        voiceBiometric = value
-        overseasTransfer = value
-        marketing = value
+        if (showAge14) age14 = value
+        if (showTerms) terms = value
+        if (showPrivacy) privacy = value
+        if (showVoiceBiometric) voiceBiometric = value
+        if (showOverseas) overseasTransfer = value
+        if (showMarketing) marketing = value
     }
 
     AuthBackdrop {
@@ -79,23 +140,26 @@ internal fun ConsentScreen(
         ) {
             Spacer(Modifier.height(24.dp))
             Text(
-                text = stringResource(R.string.auth_consent_title),
+                text = stringResource(
+                    if (isReconsent) R.string.auth_consent_title_updated else R.string.auth_consent_title,
+                ),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = TextOnScene,
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.auth_consent_subtitle),
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextOnSceneDim,
-            )
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .verticalScroll(rememberScrollState()),
-            ) {
+            // 이미 동의했던 사람에게는 '왜 또 묻는지' 를 먼저 말해 준다. 신규 가입자에게는
+            // 제목만으로 충분해 덧붙이지 않는다.
+            if (isReconsent) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.auth_consent_subtitle_updated),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextOnSceneDim,
+                )
+            }
+            // '약관 전체 동의' 는 스크롤 밖에 고정한다 — 항목을 펼쳐 읽다가도 한 번에 동의할 수
+            // 있어야 한다(항목이 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지 않는다).
+            if (shownCount > 1) {
                 Spacer(Modifier.height(24.dp))
                 ConsentRow(
                     checked = allChecked,
@@ -105,52 +169,87 @@ internal fun ConsentScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 HorizontalDivider(color = AuthLineSoft)
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+            ) {
                 Spacer(Modifier.height(4.dp))
-                ConsentRow(
-                    checked = age14,
-                    onCheckedChange = { age14 = it },
-                    label = stringResource(R.string.auth_consent_age14),
-                )
-                ConsentRow(
-                    checked = terms,
-                    onCheckedChange = { terms = it },
-                    label = stringResource(R.string.auth_consent_terms),
-                    onOpenDetail = onOpenTerms,
-                )
-                ConsentRow(
-                    checked = privacy,
-                    onCheckedChange = { privacy = it },
-                    label = stringResource(R.string.auth_consent_privacy),
-                    onOpenDetail = onOpenPrivacy,
-                )
-                ConsentRow(
-                    checked = voiceBiometric,
-                    onCheckedChange = { voiceBiometric = it },
-                    label = stringResource(R.string.auth_consent_voice_biometric),
-                    description = stringResource(R.string.auth_consent_voice_biometric_desc),
-                )
-                ConsentRow(
-                    checked = overseasTransfer,
-                    onCheckedChange = { overseasTransfer = it },
-                    label = stringResource(R.string.auth_consent_overseas_transfer),
-                    description = stringResource(R.string.auth_consent_overseas_transfer_desc),
-                )
-                ConsentRow(
-                    checked = marketing,
-                    onCheckedChange = { marketing = it },
-                    label = stringResource(R.string.auth_consent_marketing),
-                )
+                if (showAge14) {
+                    ConsentRow(
+                        checked = age14,
+                        onCheckedChange = { age14 = it },
+                        label = stringResource(R.string.auth_consent_age14),
+                    )
+                }
+                if (showTerms) {
+                    ConsentRow(
+                        checked = terms,
+                        onCheckedChange = { terms = it },
+                        label = stringResource(R.string.auth_consent_terms),
+                        detail = termsText,
+                        scrollableDetail = true,
+                    )
+                }
+                if (showPrivacy) {
+                    ConsentRow(
+                        checked = privacy,
+                        onCheckedChange = { privacy = it },
+                        label = stringResource(R.string.auth_consent_privacy),
+                        detail = privacyText,
+                        scrollableDetail = true,
+                    )
+                }
+                if (showVoiceBiometric) {
+                    ConsentRow(
+                        checked = voiceBiometric,
+                        onCheckedChange = { voiceBiometric = it },
+                        label = stringResource(R.string.auth_consent_voice_biometric),
+                        // 필수로 보이면 안 된다 — 체크하지 않아도 CTA 는 눌린다.
+                        detail = AnnotatedString(
+                            stringResource(R.string.auth_consent_voice_biometric_desc),
+                        ),
+                    )
+                }
+                if (showOverseas) {
+                    ConsentRow(
+                        checked = overseasTransfer,
+                        onCheckedChange = { overseasTransfer = it },
+                        label = stringResource(R.string.auth_consent_overseas_transfer),
+                        detail = AnnotatedString(
+                            stringResource(R.string.auth_consent_overseas_transfer_desc),
+                        ),
+                    )
+                }
+                if (showMarketing) {
+                    ConsentRow(
+                        checked = marketing,
+                        onCheckedChange = { marketing = it },
+                        label = stringResource(R.string.auth_consent_marketing),
+                        detail = AnnotatedString(stringResource(R.string.auth_consent_marketing_detail)),
+                    )
+                }
             }
 
             Box(Modifier.padding(vertical = 16.dp)) {
                 GradientCta(
+                    // 받을 게 선택 동의뿐이면 '동의하고 시작하기' 라고 하면 안 된다 —
+                    // 체크를 안 한 채 눌러도 눌리는데(선택이라 통과 조건이 아니다), 그때
+                    // 기록되는 값은 '거절' 이다. 화면은 동의한다고 말하고 기록은 거절이라고
+                    // 남는 어긋남이 생긴다. 필수가 하나도 없으면 중립 문구를 쓴다.
                     text = if (busy) {
                         stringResource(R.string.auth_consent_processing)
-                    } else {
+                    } else if (shownRequired) {
                         stringResource(R.string.auth_consent_agree_and_start)
+                    } else {
+                        stringResource(R.string.auth_consent_continue)
                     },
-                    onClick = { onAgree(marketing, voiceBiometric, overseasTransfer) },
-                    enabled = allRequiredChecked && !busy,
+                    onClick = { onAgree(agreedOptional) },
+                    // 그릴 항목이 하나도 없으면 동의할 대상도 없다 — 빈 화면에서 버튼이
+                    // 눌려 사용자가 못 본 동의가 기록되는 일이 없게 막는다.
+                    enabled = shownCount > 0 && allRequiredChecked && !busy,
                 )
             }
         }
@@ -176,6 +275,16 @@ internal fun ConsentCheckLoadingScreen(contentPadding: PaddingValues) {
     }
 }
 
+/**
+ * 동의 항목 한 줄.
+ *
+ * [detail] 이 있으면 오른쪽에 펼침 화살표가 붙고, 누르면 **이 자리 바로 아래에서** 내용을
+ * 읽는다. 앱 밖 브라우저로 내보내면 동의 흐름이 끊기고 돌아오지 않는 사람이 생기며,
+ * 네트워크가 없으면 동의 화면에서 전문을 아예 못 읽는다.
+ *
+ * 약관·처리방침은 요약이 아니라 **전문**이 들어온다(빌드 시 docs/legal 에서 실어 온 원문).
+ * 길이가 길어 자체 스크롤 영역에 담고, 바깥 목록 스크롤과 섞이지 않게 높이를 제한한다.
+ */
 @Composable
 private fun ConsentRow(
     checked: Boolean,
@@ -183,46 +292,80 @@ private fun ConsentRow(
     label: String,
     description: String? = null,
     emphasized: Boolean = false,
-    onOpenDetail: (() -> Unit)? = null,
+    detail: AnnotatedString? = null,
+    scrollableDetail: Boolean = false,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Checkbox(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = CheckboxDefaults.colors(
-                checkedColor = BrandAccentOnScene,
-                checkmarkColor = Color(0xFF0A1428),
-                uncheckedColor = AuthLine,
-            ),
-        )
-        Spacer(Modifier.height(0.dp))
-        Column(
-            modifier = Modifier.weight(1f),
+    var expanded by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!checked) }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = label,
-                style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-                fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal,
-                color = TextOnScene,
+            Checkbox(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = CheckboxDefaults.colors(
+                    checkedColor = BrandAccentOnScene,
+                    checkmarkColor = Color(0xFF0A1428),
+                    uncheckedColor = AuthLine,
+                ),
             )
-            if (description != null) {
-                Spacer(Modifier.height(2.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+            ) {
                 Text(
-                    text = description,
+                    text = label,
+                    style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal,
+                    color = TextOnScene,
+                )
+                if (description != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AuthTextMuted,
+                    )
+                }
+            }
+            if (detail != null) {
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Outlined.KeyboardArrowUp
+                        } else {
+                            Icons.Outlined.KeyboardArrowDown
+                        },
+                        contentDescription = stringResource(
+                            if (expanded) R.string.auth_consent_collapse else R.string.auth_consent_expand,
+                        ),
+                        tint = AuthTextMuted,
+                    )
+                }
+            }
+        }
+        if (detail != null && expanded) {
+            Column(
+                modifier = Modifier
+                    .padding(start = 48.dp, end = 8.dp, bottom = 12.dp)
+                    .then(
+                        if (scrollableDetail) {
+                            Modifier
+                                .heightIn(max = 260.dp)
+                                .verticalScroll(rememberScrollState())
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                Text(
+                    text = detail,
                     style = MaterialTheme.typography.bodySmall,
                     color = AuthTextMuted,
                 )
-            }
-        }
-        if (onOpenDetail != null) {
-            TextButton(onClick = onOpenDetail, colors = authTextButtonColors()) {
-                Text(stringResource(R.string.auth_consent_view))
             }
         }
     }

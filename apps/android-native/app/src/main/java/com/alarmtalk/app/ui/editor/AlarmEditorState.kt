@@ -110,7 +110,11 @@ internal class AlarmEditorState(
     // 알람별 호칭 덮어쓰기. 비어 있으면 선택한 목소리 프로필의 호칭(listener_title)을 그대로 쓴다.
     // (DB 저장 없이 편집 세션 동안만 유지 — TTS 생성 요청의 listenerTitle 로만 전달)
     var voiceListenerTitleOverride by mutableStateOf(voiceListenerTitle ?: "")
-    var voiceText by mutableStateOf(voiceText ?: "")
+    // 옛 행에 섞여 있던 delivery 태그를 그대로 실으면 사용자가 그걸 자기 문구로 알고 고치게
+    // 되고, 그 순간 서버는 '사용자가 친 대괄호'로 보아 영구 보존한다. 실을 때 한 번 벗겨 그
+    // 고리를 끊되, **생성 문구일 때만** 벗긴다 — 직접 입력한 문구의 대괄호는 사용자 것이라
+    // 건드리면 저장 시 영구히 사라진다(Codex #660).
+    var voiceText by mutableStateOf(voiceText?.stripDeliveryTags(generated = voiceRandomPrompt) ?: "")
     var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
     var voiceLanguage by mutableStateOf(supportedAppVoiceLanguage(voiceLanguage))
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
@@ -329,15 +333,17 @@ internal class AlarmEditorState(
     fun hasFreshTtsAudio(profileId: String, text: String, listenerTitle: String? = null): Boolean {
         val listenerTitleForKey = listenerTitle?.trim()?.takeIf { it.isNotBlank() }
             ?: voiceListenerTitleOverride.trim().takeIf { it.isNotBlank() }
-        return !localAudioUri.isNullOrBlank() && (
+        // audioCacheKey 와 비교하는 분기가 있었는데 성립할 수 없었다 — 파일 이름은 항상 서버가
+        // 준 cache_key 이고 비교 대상은 앱이 만든 해시라 절대 같아지지 않는다. '재사용되고
+        // 있다'는 착시만 줬다. 다른 알람이 만든 오디오의 재사용은 AlarmAudioStore 의
+        // linkTtsInput/resolveTtsInput 별칭이 맡는다.
+        return !localAudioUri.isNullOrBlank() &&
             generatedTtsKey == buildTtsKey(
                 profileId = profileId,
                 text = text,
                 category = activeVoiceCategory(),
                 language = activeVoiceLanguage(),
                 listenerTitle = listenerTitleForKey,
-            ) ||
-                (listenerTitleForKey.isNullOrBlank() && audioCacheKey == AlarmAudioStore.ttsCacheKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage()))
             )
     }
 
@@ -503,15 +509,8 @@ internal fun buildTtsKey(
 ): String =
     listOf(profileId, text.trim(), category, language, listenerTitle?.trim().orEmpty()).joinToString("|")
 
-internal fun normalizedTtsCategory(category: String): String {
-    val legacy = mapOf(
-        "afternoon" to "cheer",
-        "sleep" to "night",
-        "medicine" to "medication",
-    )
-    val resolved = legacy[category] ?: category
-    return if (TtsCategories.any { (key, _) -> key == resolved }) resolved else DefaultRandomTtsCategory
-}
+internal fun normalizedTtsCategory(category: String): String =
+    if (TtsCategories.any { (key, _) -> key == category }) category else DefaultRandomTtsCategory
 
 internal fun normalizedRandomPromptContext(context: String): String =
     when (context) {
@@ -522,17 +521,17 @@ internal fun normalizedRandomPromptContext(context: String): String =
 
 internal fun ttsCategoryForRandomContext(context: String?): String =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
-        "meal" -> "lunch"
-        "sleep" -> "night"
-        "exercise" -> "exercise"
         "love" -> "love"
         "medication" -> "medication"
+        // 기본값(preset)·날씨·운세는 모두 'morning' 으로 보낸다. 서버가 preset 경로에서
+        // greeting 문구로 이어 붙이고(stockPresetCategory), 날씨·운세는 동적 생성이라
+        // 카테고리는 저장 라벨로만 쓰인다.
         else -> "morning"
     }
 
 internal fun randomContextUsesWeather(context: String?): Boolean =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
-        "wake_weather", "meal", "exercise" -> true
+        "wake_weather" -> true
         else -> false
     }
 

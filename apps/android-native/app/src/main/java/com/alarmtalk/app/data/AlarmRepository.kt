@@ -1238,7 +1238,7 @@ class AlarmRepository(
             if (existing.isNotEmpty()) return
             val from = today
             val to = today.plusYears(1)
-            // iOS 와 동일하게 기기 UI 언어(ISO-639-1)를 보내 비-KR 공휴일 이름을 같은 로케일로 받는다.
+            // 기기 UI 언어(ISO-639-1)를 보내 비-KR 공휴일 이름을 같은 로케일로 받는다.
             val lang = Locale.getDefault().language.lowercase().ifBlank { null }
             val response = holidayApiProvider().getHolidays(
                 country = normalized,

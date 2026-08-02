@@ -19,7 +19,9 @@ import com.alarmtalk.app.network.PasswordResetRequest
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -370,6 +372,10 @@ internal fun MainViewModel.checkAccountStatus() {
         }.onFailure { error ->
             Log.w(TAG, "Failed to check account status", error)
         }
+        // 성공·실패 모두 '확인은 끝났다'. 네트워크 실패로 영영 false 면 1회성 오버레이가
+        // 영영 안 뜬다 — 계정 상태를 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다.
+        // (versionChecked 와 같은 규약.)
+        accountStatusChecked = true
     }
 }
 
@@ -562,6 +568,9 @@ internal fun MainViewModel.checkAppVersion() {
             updateRequired = false
             updateRecommended = false
         }
+        // 성공·실패 모두 '확인은 끝났다'. 네트워크 실패로 영영 false 면 1회성 오버레이가
+        // 영영 안 뜬다 — 버전을 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다.
+        versionChecked = true
     }
 }
 
@@ -588,24 +597,82 @@ internal fun MainViewModel.checkConsentStatus() {
             // 현재(또는 빈) 세션의 동의 상태를 덮어쓰지 않는다.
             if (authSession?.user?.id != userId) return@launch
             needsConsent = status.needsConsent
-            rememberConsentDone(userId, !status.needsConsent, status.policyVersion)
+            // 화면이 무엇을 그리고 무엇을 제출할지는 서버가 정한다. 구버전 서버(collect 없음)와
+            // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
+            val collected = status.collect.ifEmpty { status.missing }
+            consentOptional = status.optional
+            // 서버가 이 앱 버전이 모르는 **필수** 동의를 요구하면 화면을 띄우지 않고 업데이트로
+            // 보낸다. (보통은 min_supported_version 을 함께 올려 여기까지 오지 않는다. 안전망이다.)
+            consentUnsupported = collected.any {
+                it !in KNOWN_CONSENT_TYPES && it !in status.optional
+            }
+            // 모르는 **선택** 유형은 조용히 버린다. 그것 때문에 앱을 막을 이유는 없지만,
+            // 남겨 두면 더 나쁘다 — showConsentScreen 이 열리는데 화면은 그릴 항목이 하나도
+            // 없어 CTA 까지 비활성인 죽은 화면이 된다(Codex #660).
+            consentCollect = collected.filter { it in KNOWN_CONSENT_TYPES }
+            sensitiveConsentMissing = status.sensitiveMissing
+            consentIsReconsent = status.hasPriorConsent
+            // 서버는 '물어볼 게 있다' 고 하는데 그게 전부 못 그리는 선택 유형이면 띄우지 않는다.
+            consentNeedsCollection = status.needsCollection && consentCollect.isNotEmpty()
+            // 받을 게 남아 있으면(선택 동의 재수집 포함) '완료' 로 캐시하지 않는다.
+            // 캐시가 완료로 남으면 다음 실행에서 서버 응답 전에 consentChecked=true 가 되어
+            // 권한·웰컴 오버레이가 먼저 소진되고, 상태 조회가 실패하면 그 실행에서는
+            // 수집 화면이 아예 안 뜬다. 완료 표시는 제출 성공 시에만 한다.
+            // 판정은 **그릴 수 있는 것** 기준이다. 서버 원본으로 보면 못 그리는 선택 유형이
+            // 영원히 남아 '완료' 캐시가 영영 안 만들어진다.
+            val nothingLeftToCollect =
+                !status.needsConsent && !consentNeedsCollection && consentCollect.isEmpty()
+            rememberConsentDone(userId, nothingLeftToCollect, status.policyVersion)
         }.onFailure { error ->
             if (authSession?.user?.id != userId) return@launch
             Log.w(TAG, "Failed to check consent status", error)
             // 캐시로 이미 통과시킨 게 아니면 네트워크 실패가 앱 진입을 막지 않게 한다.
             if (!isConsentCachedDone(userId)) needsConsent = false
         }
-        if (authSession?.user?.id == userId) consentChecked = true
+        if (authSession?.user?.id == userId) {
+            consentChecked = true
+            // 응답이 실제로 왔다는 신호. 1회성 오버레이는 캐시가 아니라 이 값을 봐야 한다.
+            consentStatusChecked = true
+        }
     }
 }
 
-// 동의 화면 제출. 필수 항목은 화면의 체크값으로, marketing(광고성 정보 수신)은
-// 사용자 선택값으로 기록한다. 성공 시 동의 화면을 닫는다.
-internal fun MainViewModel.submitConsents(
-    marketingAgreed: Boolean,
-    voiceBiometricAgreed: Boolean,
-    overseasTransferAgreed: Boolean,
-) {
+/**
+ * 동의 화면 제출.
+ *
+ * **화면에 실제로 띄운 유형만 보낸다**(consentCollect). 안 띄운 유형은 이미 유효한 동의가
+ * 있다는 뜻이므로 건드리지 않는다 — 전부 덮어쓰면 정책 개정 때마다 사용자가 켜뒀던
+ * 마케팅 수신 설정이 체크 안 된 상태로 재기록돼 조용히 꺼진다.
+ *
+ * [agreedOptional] 은 화면에서 사용자가 실제로 체크한 '선택' 유형(마케팅·음성 생체정보)이다.
+ * 여기 없는 선택 유형은 **거절로 기록한다** — 거절도 유효한 응답이라 다음 로그인에서 다시
+ * 묻지 않아야 하고, 동의로 슬쩍 기록하면 묻지도 않은 동의를 받아 버린다.
+ *
+ * overseas_transfer 는 가입 필수라 이 화면에서 함께 받는다. voice_biometric 은 선택이라
+ * 거절하고 통과할 수 있고, 그 사람은 목소리 등록 화면에서 인라인으로 다시 만난다
+ * ([submitVoiceConsents]).
+ */
+/**
+ * 동의 기록이 '문서 버전 불일치' 로 거부됐을 때의 처리. 처리했으면 true.
+ *
+ * 서버가 앞서가면(문서가 개정됐는데 이 앱이 옛 본문을 싣고 있으면) 사용자가 할 수 있는 일은
+ * 업데이트뿐이다 — 모르는 필수 동의와 같은 게이트로 보낸다. 반대로 이 앱이 앞서가는
+ * 경우(서버 배포가 아직 안 끝난 구간)는 업데이트해도 안 풀리므로 그렇게 말하면 안 된다.
+ */
+private fun MainViewModel.handleConsentVersionMismatch(error: Throwable): Boolean {
+    val api = com.alarmtalk.app.network.apiError(error)
+    if (api.code != "POLICY_VERSION_MISMATCH" && api.code != "DOCUMENT_VERSION_REQUIRED") return false
+    val serverVersion = api.current?.toIntOrNull()
+    val bundled = bundledPolicyVersion?.toIntOrNull()
+    if (serverVersion != null && bundled != null && serverVersion <= bundled) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed)
+        return true
+    }
+    consentUnsupported = true
+    return true
+}
+
+internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
     val session = authSession
     if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
@@ -616,33 +683,133 @@ internal fun MainViewModel.submitConsents(
     // version 을 비우면 백엔드가 "1" 로 기록해, 정책이 개정된 뒤엔 옛 버전으로 저장되어
     // 계속 재동의를 요구받고 로컬 캐시(새 버전 만족)와 어긋난다.
     val policyVersion = cachedPolicyVersion()
+    // collect 가 비어 있는 건 status 응답을 못 받은 경우다 — 이때만 필수 3종으로 폴백한다.
+    // 화면이 그리지 못하는 유형은 제출에서 뺀다. 서버가 새 유형을 먼저 추가한 구간에서
+    // 구버전 앱이 '보여주지 않은 동의' 를 기록해 버리는 것을 막는다(Codex #660).
+    // 그런 유형이 필수라면 ConsentScreen 이 CTA 를 막아 여기까지 오지도 않는다.
+    val collect = consentCollect.ifEmpty { SIGNUP_REQUIRED_CONSENT_TYPES }
+        .filter { it in KNOWN_CONSENT_TYPES }
+    if (collect.isEmpty()) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_consent_update_required)
+        return
+    }
+    // 이 요청을 시작한 계정. 응답이 오는 사이 401 로 세션이 끊기고 다른 계정이 로그인해도
+    // 이 continuation 은 살아 있다 — 앞 계정의 성공으로 뒤 계정의 동의 상태를 비우면
+    // 뒤 계정이 받아야 할 재수집·민감 동의를 건너뛴다(Codex #660).
+    val ownerUserId = session.user.id
+    // 구버전 서버(optional 없음) 폴백은 화면과 같은 기준을 써야 한다 — 여기만 다르면
+    // 화면에서 선택으로 그린 항목이 제출에서 필수로 둔갑해 동의로 기록된다.
+    val optionalTypes = consentOptional.ifEmpty { listOf("marketing") }.toSet()
+    val consents = collect.map { type ->
+        com.alarmtalk.app.network.ConsentItemRequest(
+            type = type,
+            // 필수 유형은 화면을 통과한 시점에 이미 체크됐다. 선택 유형만 사용자 선택값.
+            agreed = type !in optionalTypes || type in agreedOptional,
+            version = policyVersion,
+        )
+    }
     viewModelScope.launch {
         authBusy = true
         runCatching {
             api.recordConsents(
                 authorization,
                 com.alarmtalk.app.network.RecordConsentsRequest(
-                    consents = listOf(
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "voice_biometric", agreed = voiceBiometricAgreed, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "overseas_transfer", agreed = overseasTransferAgreed, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed, version = policyVersion),
-                    ),
+                    consents = consents,
+                    documentVersion = bundledPolicyVersion,
                 ),
             )
         }.onSuccess {
+            // 동의 기록 자체는 앞 계정의 토큰으로 나갔으니 그 계정 캐시에는 정상 반영한다.
+            // 화면 상태(아래)는 현재 세션이 그대로일 때만 건드린다.
+            policyVersion?.let { rememberConsentDone(ownerUserId, true, it) }
+            if (authSession?.user?.id != ownerUserId) return@onSuccess
             needsConsent = false
+            // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
+            // 화면이 닫히지 않는다.
+            consentCollect = emptyList()
+            consentOptional = emptyList()
+            consentNeedsCollection = false
+            // 방금 화면에서 **동의로** 기록한 유형은 서버 상태와 맞춘다 — 이걸 안 지우면
+            // 목소리 등록 화면이 이미 받은 동의를 또 묻는다. 거절한 유형은 그대로 남아
+            // 등록 화면에서 다시 만난다(그게 이 설계의 핵심이다).
+            val agreedNow = consents.filter { it.agreed }.map { it.type }.toSet()
+            sensitiveConsentMissing = sensitiveConsentMissing - agreedNow
             consentChecked = true
-            // 방금 서버에 보낸 그 버전으로 로컬 캐시도 기록해 서버·클라 상태를 일치시킨다.
-            // 모르면(직전 status 실패) 다음 콜드스타트에서 서버로 재확인하므로 캐시하지 않는다.
-            policyVersion?.let { rememberConsentDone(session.user.id, true, it) }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)
+            if (authSession?.user?.id != ownerUserId) return@onFailure
+            if (handleConsentVersionMismatch(error)) return@onFailure
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         }
         authBusy = false
+    }
+}
+
+/**
+ * 목소리 등록 시점의 민감 동의 기록. 시트에서 '동의하고 음성 만들기' 를 누르면 호출된다.
+ *
+ * 성공하면 붙들어 뒀던 등록 요청을 그대로 이어서 실행한다 — 사용자가 동의 후 등록 버튼을
+ * 다시 찾아 누르게 만들지 않는다. 실패하면 시트를 닫지 않아 재시도할 수 있게 둔다.
+ */
+internal fun MainViewModel.submitVoiceConsents() {
+    val session = authSession
+    if (session == null) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
+        return
+    }
+    val request = pendingSensitiveConsent ?: return
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    val policyVersion = cachedPolicyVersion()
+    // 이 요청을 시작한 계정. 코루틴이 request 를 지역 변수로 붙들고 있어, 응답이 오는 사이
+    // 401 로 세션이 끊기고 다른 계정이 로그인해도 이 continuation 은 그대로 살아 있다.
+    // 세션 정리에서 pendingSensitiveConsent 를 비우는 것만으로는 못 막는다 — 그때 이어서
+    // 등록하면 앞 계정이 녹음한 음성이 뒤 계정으로 올라간다(Codex #660).
+    val ownerUserId = session.user.id
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.recordConsents(
+                authorization,
+                com.alarmtalk.app.network.RecordConsentsRequest(
+                    // 시트가 실제로 물어본 유형만 기록한다 — 국외 이전만 요구된 자리에서
+                    // 음성 생체정보까지 함께 넣으면 묻지도 않은 동의를 받아 버린다.
+                    consents = request.types.map { type ->
+                        com.alarmtalk.app.network.ConsentItemRequest(
+                            type = type,
+                            agreed = true,
+                            version = policyVersion,
+                        )
+                    },
+                    documentVersion = bundledPolicyVersion,
+                ),
+            )
+        }.onSuccess {
+            authBusy = false
+            // 응답이 오는 사이 세션이 바뀌었으면 아무것도 이어가지 않는다. 동의 기록 자체는
+            // 앞 계정의 토큰으로 나갔으니 그 계정에 정상적으로 남는다.
+            // 다만 **붙들고 있던 녹음은 지우고 나간다** — 이어서 만들 수 없게 된 평문
+            // 생체정보를 공용 캐시에 남기면 30일 스윕까지 그대로다(Codex #660).
+            if (authSession?.user?.id != ownerUserId) {
+                request.resumeVoiceDrafts?.let { purgeVoiceCloneSourceRecordings(it) }
+                return@onSuccess
+            }
+            sensitiveConsentMissing = sensitiveConsentMissing - request.types.toSet()
+            pendingSensitiveConsent = null
+            // 목소리 등록에서 온 경우에만 이어서 만든다. 시스템 목소리 TTS 처럼 붙들어 둔
+            // 요청이 없으면 동의만 기록하고 끝낸다(사용자가 다시 시도하면 이제 통과한다).
+            request.resumeVoiceDrafts?.let { createVoiceProfiles(it) }
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to record voice consents", error)
+            authBusy = false
+            // 성공 갈래와 같은 이유다 — 계정이 바뀌면 이어서 만들 수 없게 된 평문 녹음을
+            // 남기지 않는다. 세션 정리가 이미 요청을 버렸으므로 여기서 안 지우면 스윕까지 남는다.
+            if (authSession?.user?.id != ownerUserId) {
+                request.resumeVoiceDrafts?.let { purgeVoiceCloneSourceRecordings(it) }
+                return@onFailure
+            }
+            if (handleConsentVersionMismatch(error)) return@onFailure
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
+        }
     }
 }
 
@@ -724,6 +891,7 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
                             version = policyVersion,
                         ),
                     ),
+                    documentVersion = bundledPolicyVersion,
                 ),
             )
         }
@@ -749,6 +917,115 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         // 성공·실패와 무관하게(단, 이 쓰기가 여전히 최신일 때만) 쓰기 잠금 해제 → 다음 토글 허용.
         marketingConsentWriteInFlight = false
     }
+}
+
+/**
+ * 음성 생체정보(`voice_biometric`) 동의를 철회한다.
+ *
+ * 마케팅 토글과 달리 **파괴적**이다. 서버는 이 값을 false 로 받는 즉시 등록한 목소리 프로필·
+ * 업로드 원본·생성된 음성·저장한 문구를 삭제하고, 그 목소리로 울리던 알람을 기본 알람음으로
+ * 강등한다(가족에게 공유한 알람 포함). 되돌리는 경로는 없다.
+ *
+ * 그래서 마케팅 선례와 두 가지가 다르다:
+ *  - **낙관적 즉시 반영을 하지 않는다.** 서버가 200 을 준 뒤에만 화면을 바꾼다.
+ *  - 서버가 지웠다고 확인해 준 순간, **로컬 알람 강등을 그 자리에서 끝낸다.** 알람 발사는
+ *    전부 로컬이라(AGENTS.md 알람 불변 규칙) 서버가 클론을 지워도 Room 의 캐시 오디오는
+ *    그대로 남고, 울릴 때 생체정보 동의를 확인하는 게이트가 없다. 여기서 안 끊으면
+ *    **철회한 목소리가 계속 울린다.**
+ *    목록 재조회(loadVoiceProfiles)와 접근권 워커는 네트워크가 필요해 폴백이 못 된다 —
+ *    워커는 NetworkType.CONNECTED 제약이 걸려 있고 목소리 목록을 두 번 부른 뒤에야
+ *    판단한다. 연결이 끊기거나 프로세스가 죽으면 다음 동기화까지 그대로다(Codex #660).
+ *    그래서 **네트워크가 필요 없는 타깃 강등을 먼저** 하고, 그 둘은 폴백으로만 둔다.
+ *
+ * 재동의는 이 화면이 아니라 목소리를 다시 등록할 때 받는다(sensitive_missing → 동의 시트).
+ * 그래서 토글이 아니라 단방향 '철회' 액션이다.
+ */
+internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
+    val session = authSession ?: run {
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
+        return false
+    }
+    val userId = session.user.id
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 철회로 사라질 목소리 id 를 **POST 전에 서버에서 확정**한다.
+    //
+    // 화면 상태(voiceProfiles)만 믿으면 안 된다 — 프리로드가 아직 안 끝났거나 실패했으면 비어
+    // 있고, 그대로 진행하면 강등 대상이 0개가 되어 철회한 목소리가 계속 울린다(Codex #660).
+    // Room 은 alarm.voiceProfileId 만 갖고 있어 '내 클론'과 '공유받은 클론'을 구분하지 못하므로
+    // 로컬만으로는 대상을 정할 수 없다.
+    //
+    // 확정하지 못하면 **철회를 시작하지 않는다.** 아직 아무것도 지우지 않은 상태라 재시도가
+    // 안전하다 — 반대로 지운 뒤에 실패하면 되돌릴 방법이 없다. POST 를 보낼 수 있는 상황이면
+    // 이 조회도 되므로 실사용에서 막히지 않는다.
+    val revokedVoiceIds = runCatching {
+        withContext(Dispatchers.IO) {
+            api.listVoiceProfiles(authorization).profiles
+        }
+    }.getOrElse { error ->
+        AlarmTalkLog.reportError("Failed to resolve owned voices before consent withdrawal", error)
+        message = userFacingError(
+            error,
+            getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
+        )
+        return false
+    }
+        // 시스템(기본) 목소리는 내 생체정보가 아니라 철회와 무관하다.
+        .filter { it.isSystem != true }
+        .map { it.id }
+        .filter { it.isNotBlank() }
+    val result = runCatching {
+        api.recordConsents(
+            authorization,
+            com.alarmtalk.app.network.RecordConsentsRequest(
+                consents = listOf(
+                    com.alarmtalk.app.network.ConsentItemRequest(
+                        type = "voice_biometric",
+                        agreed = false,
+                        version = cachedPolicyVersion(),
+                    ),
+                ),
+                documentVersion = bundledPolicyVersion,
+            ),
+        )
+    }
+    return result.fold(
+        onSuccess = {
+            val app = getApplication<android.app.Application>()
+            // 1) 서버가 지웠다고 확인해 준 것부터 **세션 가드보다 먼저** 로컬에서 끊는다.
+            //    응답이 오는 사이 자동 401 이 세션을 비웠을 수 있는데, 그 경로는 로컬 알람
+            //    예약을 일부러 그대로 둔다(알람 전달이 인증 상태에 묶이면 안 되므로).
+            //    여기서 안 끊으면 서버에선 이미 지워진 목소리가 그 기기에서 계속 울린다
+            //    (Codex #660). 대상은 이 계정 자신의 목소리라 새 세션에 아무 영향이 없다.
+            //    타깃 강등이라 소셜 목록 신선도 가드에도 막히지 않는다.
+            for (voiceId in revokedVoiceIds) {
+                runCatching { repository.degradeAlarmsUsingVoiceProfile(voiceId) }
+                    .onFailure { error ->
+                        AlarmTalkLog.reportError("Failed to degrade alarms after consent withdrawal", error)
+                    }
+            }
+            // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
+            if (authSession?.user?.id != userId) return@fold true
+            if ("voice_biometric" !in sensitiveConsentMissing) {
+                sensitiveConsentMissing = sensitiveConsentMissing + "voice_biometric"
+            }
+            voiceProfiles = voiceProfiles.filter { it.isSystem == true }
+            // 3) 폴백 — 실패해도 위에서 이미 발사 경로는 끊겼다.
+            loadVoiceProfiles()
+            com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(app)
+            message = app.getString(R.string.msg_voice_consent_withdrawn)
+            true
+        },
+        onFailure = { error ->
+            AlarmTalkLog.reportError("Failed to withdraw voice biometric consent", error)
+            // 실패는 알릴 대상이 이 계정 화면뿐이라, 세션이 바뀌었으면 조용히 끝낸다.
+            if (authSession?.user?.id != userId) return@fold false
+            message = userFacingError(
+                error,
+                getApplication<android.app.Application>().getString(R.string.msg_voice_consent_withdraw_failed),
+            )
+            false
+        },
+    )
 }
 
 internal fun MainViewModel.syncNow() {

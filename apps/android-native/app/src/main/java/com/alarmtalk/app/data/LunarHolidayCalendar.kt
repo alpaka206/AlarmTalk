@@ -15,9 +15,6 @@ import java.time.LocalDate
  * 이 엔진은 법정 "기준일"(설날 음 1/1, 추석 음 8/15, 부처님오신날 음 4/8)과 대체공휴일만 계산한다.
  * 연휴(연속) 날짜는 의도적으로 시드/서버가 담당한다.
  *
- * iOS [HolidayStore.swift] 의 `LocalHolidayCalendar` 가 날짜 단위로 동일하게 재현해야 하는 모델이다
- * (iOS 는 추후 NSCalendar(.chinese) + 동일 KST 보정으로 이 날짜들을 맞춘다).
- *
  * 구조 결정(테스트 가능성): 순수 [LocalDate] 만 다루는 대체공휴일 규칙([KoreanHolidaySubstituteRules])과
  * 프레임워크 ICU 에 의존하는 음→양 변환([LunarConverter])을 분리한다. 전자는 JVM 단위 테스트로,
  * 후자는 instrumented 테스트(에뮬레이터/기기, 실제 framework ICU)로 검증한다.

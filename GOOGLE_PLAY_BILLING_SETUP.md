@@ -15,7 +15,7 @@
 | Billing 라이브러리 | ✅ 의존성 추가됨 (`billing-ktx:7.1.1`) | `apps/android-native/app/build.gradle.kts:264` |
 | `com.android.vending.BILLING` 권한 | ✅ 라이브러리 매니페스트가 **자동 병합** (수동 추가 불필요) | (Billing Library 7.x 내장) |
 | 구매 플로우 (연결·조회·구매·재전송) | ✅ 구현 | `…/billing/PlayBillingManager.kt` |
-| 구매 → 서버 검증 호출 | ✅ 구현 | `…/ui/main/MainViewModelGrowthBillingActions.kt` (`startPlayPurchase`→`confirmGooglePurchase`) |
+| 구매 → 서버 검증 호출 | ✅ 구현 | `…/ui/main/MainViewModelBillingActions.kt` (`startPlayPurchase`→`confirmGooglePurchase`) |
 | 서버 검증·acknowledge | ✅ 구현 (`POST /api/billing/google/confirm`) | `packages/backend/src/routes/billing-google.ts` |
 | RTDN 웹훅 (갱신·취소·환불 동기화) | ✅ 구현 (`POST /api/billing/google/rtdn`) | `packages/backend/src/routes/billing-google-rtdn.ts` |
 | 요금제(plan) 시드 | ✅ DB 시드 존재 | `packages/backend/src/lib/migrations.ts` (id=6, id=26) |
@@ -42,13 +42,11 @@
 
 이 매핑이 정의된 곳 (변경 시 **3곳을 같이** 맞춰야 한다 — 의도된 다중 진실 공급원, 서로 주석으로 교차참조됨):
 
-1. **Android** — `…/billing/PlayBillingManager.kt:26` `PlayBillingProducts` (+ `productIdFor()`)
-2. **백엔드(Google)** — `…/routes/billing-google.ts:29` `GOOGLE_PRODUCT_TO_PLAN_KEY`
-3. **백엔드(Apple, 참고)** — `…/routes/billing-helpers.ts:29` `APPLE_PRODUCT_TO_PLAN_KEY`
-   - iOS는 prefix가 붙는다: `com.voicealarm.nativeapp.ios.personal_monthly` 등
-4. **DB plans 시드** — `…/lib/migrations.ts` (planKey·price_krw·max_members)
+1. **Android** — `…/billing/PlayBillingManager.kt` `PlayBillingProducts` (+ `productIdFor()`)
+2. **백엔드(Google)** — `…/routes/billing-google.ts` `GOOGLE_PRODUCT_TO_PLAN_KEY`
+3. **DB plans 시드** — `…/lib/migrations.ts` (planKey·price_krw·max_members)
 
-> 새 플랜을 추가하려면: ① 위 1~4에 planKey 추가 → ② Play Console에 `{planKey}_monthly` 상품 생성.
+> 새 플랜을 추가하려면: ① 위 1~3에 planKey 추가 → ② Play Console에 `{planKey}_monthly` 상품 생성.
 > **기존 3개 플랜은 추가 코드 변경이 전혀 필요 없다.** Play Console에서 상품만 만들면 끝.
 
 ---
@@ -138,4 +136,3 @@ wrangler secret put GOOGLE_RTDN_VERIFICATION_TOKEN --env production
 - [ ] RTDN Pub/Sub 토픽 + push 구독(URL에 token) 연결, test notification 200 확인
 - [ ] DB `price_krw`를 Play 가격과 일치(마이그레이션 추가)
 - [ ] 라이선스 테스터로 구매→confirm→active 스모크
-- [ ] (선택) iOS도 출시한다면 App Store Connect에 `…ios.{plan}_monthly` 상품 동일 생성

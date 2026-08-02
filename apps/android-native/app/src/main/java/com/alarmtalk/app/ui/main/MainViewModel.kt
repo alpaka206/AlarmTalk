@@ -49,8 +49,44 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+
+/**
+ * 서버가 '기능 사용 시점'에만 요구하는 민감 동의(백엔드 `SENSITIVE_REQUIRED_CONSENTS`).
+ * 가입 게이트에서는 받지 않는다 — 목소리를 등록하지 않을 사용자에게까지 생체정보 처리
+ * 동의를 요구하면 별도 동의를 서비스 이용 조건으로 강제하는 셈이 된다.
+ */
+internal val SENSITIVE_CONSENT_TYPES = listOf("voice_biometric", "overseas_transfer")
+
+/**
+ * 서버의 일반 동의 게이트가 요구하는 필수 동의(백엔드 `GENERAL_REQUIRED_CONSENTS`).
+ * 상태 조회 결과가 아직 없을 때의 폴백 목록이기도 하다.
+ */
+internal val GENERAL_REQUIRED_CONSENT_TYPES = listOf("terms", "privacy", "age14")
+
+/**
+ * 가입 게이트가 실제로 요구하는 필수 동의 — 서버 `REQUIRED_CONSENT_TYPES` 와 같은 목록이다.
+ *
+ * 일반 데이터 라우트의 하드 게이트는 3종만 보지만(`GENERAL_REQUIRED_CONSENT_TYPES`),
+ * `needs_consent` 판정에는 `overseas_transfer` 가 들어간다. 서버 목록을 못 받았을 때 3종으로만
+ * 채우면 그 화면을 통과해도 국외 이전이 안 기록돼, 게이트만 닫히고 사용자는 나중에 TTS 를
+ * 쓰려다 다른 시트를 또 만난다(Codex #660). 이 화면은 overseas 체크박스를 그릴 수 있다.
+ */
+internal val SIGNUP_REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENT_TYPES + "overseas_transfer"
+
+/**
+ * **이 앱 버전이 화면에 그릴 수 있는** 동의 유형 전부.
+ *
+ * 서버가 새 유형을 먼저 추가하고 구버전 앱이 아직 살아 있는 구간이 존재한다. 그때 화면이
+ * 그리지 못한 유형을 '체크됨'으로 취급하면, 사용자가 본 적 없는 동의가 기록된다 — 동의
+ * 기록의 신뢰성이 통째로 무너지는 종류의 버그다. 그래서 모르는 유형은
+ *  - 필수면 **통과를 막고** 앱 업데이트를 안내하고(ConsentScreen),
+ *  - 어느 쪽이든 **제출 목록에서 뺀다**(submitConsents).
+ */
+internal val KNOWN_CONSENT_TYPES =
+    listOf("terms", "privacy", "age14", "marketing", "voice_biometric", "overseas_transfer")
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
@@ -81,9 +117,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 handleUnauthorized()
             }
 
-            override fun onConsentRequired() {
+            override fun onConsentRequired(consent: String?) {
                 // 데이터 라우트가 403 CONSENT_REQUIRED 를 반환 → 동의 플로우로 유도한다.
-                handleConsentRequired()
+                handleConsentRequired(consent)
             }
         },
         appVersionCode = appVersionCode,
@@ -177,12 +213,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * 데이터 라우트의 403 CONSENT_REQUIRED 처리. okhttp 인터셉터(non-main)에서 호출될 수 있어
-     * UI 스레드로 옮긴 뒤 동의 게이트를 다시 열어, 동의 화면이 뜨도록 한다.
+     * UI 스레드로 옮긴 뒤 동의 플로우를 연다.
+     *
+     * 서버가 유형을 **지목한** 민감 동의 403(voice_biometric·overseas_transfer)은 기능 시점에
+     * 온 것이라 가입 게이트를 열면 안 된다 — 그 자리에서 받아야 할 것만 전용 시트로 받는다.
+     * (가입 게이트 자체는 overseas 체크박스를 그릴 수 있다. 아래 폴백이 그 경로다.)
      */
-    private fun handleConsentRequired() {
+    private fun handleConsentRequired(consent: String?) {
         viewModelScope.launch {
             if (authSession == null) return@launch
+            if (consent != null && consent in SENSITIVE_CONSENT_TYPES) {
+                if (consent !in sensitiveConsentMissing) {
+                    sensitiveConsentMissing = sensitiveConsentMissing + consent
+                }
+                // 서버가 지목한 그 동의만 받는 시트를 연다. 여기서 그냥 안내만 하고 끝내면
+                // 목소리를 등록하지 않는 사용자(무료 = 시스템 목소리 전용)는 동의할 방법이
+                // 없어 같은 403 을 무한 반복한다.
+                if (pendingSensitiveConsent == null) {
+                    pendingSensitiveConsent = SensitiveConsentRequest(types = listOf(consent))
+                }
+                return@launch
+            }
             needsConsent = true
+            // 무엇을 받아야 하는지 모르는 채로 게이트를 열면 안 된다. 상태 조회가 늦거나
+            // 실패한 상태에서 이 403(일반 게이트, consent 필드 없음)이 먼저 오면 collect 가
+            // 비어 화면에 항목이 하나도 안 그려지는데, 그 화면은 '필수 다 체크됨'으로 판정돼
+            // 버튼이 활성화된다 → 사용자가 보지도 않은 동의가 기록된다(Codex #660).
+            // 채울 목록은 **가입 게이트가 요구하는 전부**여야 한다. 이 403 을 낸 미들웨어는
+            // 일반 3종만 보지만, 3종만 받고 닫으면 국외 이전이 안 기록된 채 통과된다.
+            if (consentCollect.isEmpty()) consentCollect = SIGNUP_REQUIRED_CONSENT_TYPES
             consentChecked = true
             message = getApplication<android.app.Application>().getString(R.string.r3misc_consent_required)
         }
@@ -321,13 +380,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
+    private val dynamicPromptStore = com.alarmtalk.app.data.DynamicPromptPreferenceStore(application)
 
     // 첫 로그인 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
     var showVoiceSetup by mutableStateOf(false)
         internal set
 
-    // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
-    // 알람에 마지막으로 쓴 목소리 — 편집기가 처음 고르는 값(목소리 탭엔 표시하지 않는다).
+    // 알람에 마지막으로 쓴 목소리 — 새 알람 편집기가 처음 고르는 값(목소리 탭엔 표시하지 않는다).
+    // 어느 그룹(내 클론·공유받은·기본)이든 이 값이 최우선이다: 그룹을 먼저 보면 클론을 가진
+    // 사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아가 '유지가 안 된다'가 된다.
     var lastUsedVoiceId by mutableStateOf<String?>(null)
         internal set
 
@@ -368,6 +429,91 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var consentChecked by mutableStateOf(false)
         internal set
 
+    // 이번 동의 화면에서 받아야 하는 유형(서버 계산). 화면은 이것만 그리고 이것만 제출한다.
+    // 비어 있으면 화면이 열리기 전이거나 받을 게 없는 상태다.
+    var consentCollect by mutableStateOf<List<String>>(emptyList())
+        internal set
+
+    // consentCollect 중 '선택'(체크 없이 통과) 인 유형. 서버가 내려준다 — 화면이 목록을 따로
+    // 들고 있으면 서버가 필수/선택을 바꿀 때 조용히 어긋난다.
+    var consentOptional by mutableStateOf<List<String>>(emptyList())
+        internal set
+
+    // 아직 없는 민감 동의(voice_biometric·overseas_transfer).
+    //
+    // overseas_transfer 는 가입 필수라 보통 비어 있고, 가입 화면에서 voice_biometric(선택)을
+    // 거절한 사람만 남는다. 목소리 등록 화면이 이 값으로 인라인 동의 항목을 그린다 — 한 번
+    // 동의하면 비게 되어 다시 묻지 않는다. 시스템 목소리 TTS 처럼 등록 화면이 없는 경로에서
+    // 403 이 오면 여전히 전용 시트로 받는다.
+    var sensitiveConsentMissing by mutableStateOf<List<String>>(emptyList())
+        internal set
+
+    // 개정에 따른 재동의인지(=이 계정에 이미 동의 기록이 있는지). 동의 화면 문구가 갈린다.
+    var consentIsReconsent by mutableStateOf(false)
+        internal set
+
+    /**
+     * 동의 화면을 띄워야 하는가.
+     *
+     * `needsConsent`(필수 미충족)만 보면, 개정이 **선택 동의(마케팅)의 최소 버전만** 올린 경우
+     * collect 에는 marketing 이 들어가는데 화면은 뜨지 않아 약속한 재수집이 영영 일어나지
+     * 않는다(Codex #660). 받을 게 하나라도 있으면 띄우되, 선택 항목은 체크 없이 통과할 수 있다.
+     *
+     * 오버레이(권한·프로모)도 이 값을 봐야 한다 — needsConsent 만 보면 마케팅만 묻는 화면 위에
+     * 권한 모달이 겹친다.
+     */
+    val showConsentScreen: Boolean
+        get() = needsConsent || consentNeedsCollection || consentCollect.isNotEmpty()
+
+    // 서버가 계산해 준 '받을 게 있는가'. 필드가 없는 구버전 서버에서는 위의 collect 항이 받는다.
+    var consentNeedsCollection by mutableStateOf(false)
+        internal set
+
+    /**
+     * 지금 받아야 하는 민감 동의 요청.
+     *
+     * 두 갈래로 열린다:
+     *  - **목소리 등록**: [types] 는 음성 생체정보+국외 이전, [resumeVoiceDrafts] 에 등록 요청을
+     *    붙들어 둔다. 동의를 마치면 그대로 이어서 만든다(사용자는 한 번만 누르면 된다).
+     *  - **국외 이전만**: 시스템(기본) 목소리로 TTS 를 만들 때 서버가 요구하는 건 국외 이전
+     *    하나뿐이다(tts.ts 의 isSystemVoice 분기). 무료 사용자는 목소리를 등록할 수 없어
+     *    등록 경로로는 이 동의를 받을 방법이 아예 없다 — 이 갈래가 없으면 무료 사용자의
+     *    기본 알람 생성이 영구 403 이 된다(Codex #660).
+     */
+    internal data class SensitiveConsentRequest(
+        val types: List<String>,
+        val resumeVoiceDrafts: List<VoiceProfileCreationDraft>? = null,
+    )
+
+    internal var pendingSensitiveConsent by mutableStateOf<SensitiveConsentRequest?>(null)
+
+    val showVoiceConsentSheet: Boolean get() = pendingSensitiveConsent != null
+
+    // 첫 진입 웰컴 코드 안내가 떠 있는지. 계정당 1회, 무료 플랜에게만.
+    var showWelcomePromo by mutableStateOf(false)
+        internal set
+
+    internal val promoPromptStore = PromoPromptStore(application)
+
+    /**
+     * 웰컴 코드 안내를 띄울지 판정한다. 조건이 하나라도 어긋나면 조용히 넘어간다.
+     *  - 무료 플랜일 것(이미 유료면 보여줄 이유가 없다)
+     *  - 이 계정에 아직 안 띄웠을 것
+     * 노출과 동시에 '봤음'을 기록한다 — 닫든 등록하든 다시 뜨지 않는다.
+     */
+    internal fun maybeShowWelcomePromo() {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        if (showWelcomePromo) return
+        if (authSession?.user?.plan?.lowercase() != "free") return
+        if (promoPromptStore.hasPrompted(userId)) return
+        promoPromptStore.markPrompted(userId)
+        showWelcomePromo = true
+    }
+
+    internal fun dismissWelcomePromo() {
+        showWelcomePromo = false
+    }
+
     // 설정의 '광고성 정보 수신' 토글 상태. null = 아직 서버에서 못 읽음(로딩 전).
     var marketingConsentAgreed by mutableStateOf<Boolean?>(null)
         internal set
@@ -391,10 +537,55 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var pendingDeletion by mutableStateOf(false)
         internal set
 
+    /**
+     * `/consents/status` **응답이 실제로 도착했는지**(성공·실패 무관).
+     *
+     * `consentChecked` 로는 대신할 수 없다 — 그 값은 이 기기의 '동의 완료' 캐시로도 켜진다.
+     * 정책이 개정된 뒤 처음 켠 경우 캐시는 아직 옛 버전 기준이라 `consentChecked` 가 즉시
+     * true 가 되는데, 서버는 재동의를 요구한다. 그 틈에 1회성 오버레이가 소진되고 뒤늦게
+     * 동의 화면이 깔린다(Codex #660). 소진되는 플래그는 **캐시가 아니라 응답**을 기다려야
+     * 한다(CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」).
+     */
+    var consentStatusChecked by mutableStateOf(false)
+        internal set
+
+    // 계정 상태 조회가 끝났는지(성공·실패 무관). versionChecked 와 같은 이유로 필요하다 —
+    // 이게 false 인 동안 pendingDeletion 은 '아직 모른다' 는 뜻의 기본값 false 라, 이 값을
+    // 안 보면 탈퇴 유예 계정에서도 1회성 오버레이가 먼저 떠 플래그를 태운다(Codex #660).
+    var accountStatusChecked by mutableStateOf(false)
+        internal set
+
     // 설치 버전이 백엔드 최소지원버전 미만이면 true → 로그인 전부터 업데이트 차단 화면을 띄운다.
     // (In-App Update IMMEDIATE 트리거 조건이자, 그 취소/미가용 시의 최종 폴백 게이트)
     var updateRequired by mutableStateOf(false)
         internal set
+
+    // 앱 버전 정책 조회가 끝났는지(성공·실패 무관). 이게 false 인 동안 updateRequired 는
+    // '아직 모른다' 는 뜻의 기본값 false 라, 이 값을 안 보면 강제 업데이트 대상 계정에서도
+    // 1회성 오버레이가 먼저 떠 버리고 플래그까지 태운다.
+    var versionChecked by mutableStateOf(false)
+        internal set
+
+    /**
+     * 서버가 **이 앱 버전이 그릴 줄 모르는 필수 동의**를 요구하면 true → 업데이트 차단 화면.
+     *
+     * 그 상태에서 할 수 있는 일이 업데이트뿐이다. 동의 화면을 반쯤 그려 놓고 CTA 만 막으면
+     * 사용자는 왜 못 넘어가는지 모른 채 갇히고, 통과시키면 본 적 없는 동의가 기록된다.
+     * updateRequired 와 따로 두는 이유: checkAppVersion 이 onResume 마다 그 값을 덮어써서
+     * (최소지원버전은 충족하므로 false) 차단이 풀려 버린다.
+     */
+    var consentUnsupported by mutableStateOf(false)
+        internal set
+
+    /**
+     * APK 에 실린 법무 문서의 정책 버전. 동의를 기록할 때 '내가 실제로 보여준 문서' 로 함께
+     * 보낸다. 서버 버전과 다르면 서버가 거부하고, 그때 [consentUnsupported] 로 넘어간다.
+     *
+     * 값은 빌드 시 docs/legal 원문에서 뽑는다(build.gradle.kts). 런타임에 파싱하지 않는
+     * 이유: 파싱이 어긋나면 모든 동의 기록이 거부돼 신규 가입이 통째로 막힌다 — 그런 실패는
+     * 빌드에서 나야 한다.
+     */
+    internal val bundledPolicyVersion: String get() = BuildConfig.LEGAL_POLICY_VERSION
     // 설치 버전이 백엔드 최신버전 미만이면 true → 권장(FLEXIBLE) In-App Update 대상.
     // 강제(updateRequired)와 달리 앱 사용은 막지 않는다.
     var updateRecommended by mutableStateOf(false)
@@ -463,7 +654,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val cachedStockClips = com.alarmtalk.app.data.AlarmAudioStore(getApplication())
             .cachedStockClipCount()
         showVoiceSetup = cachedStockClips == 0 && !defaultVoiceStore.hasSkipped(userId)
-        // 화면을 띄우든 말든 부족분은 항상 채운다(언어 변경·중단 복구 포함).
+    }
+
+    /**
+     * 부족한 기본 목소리 클립을 채운다. 화면을 띄우든 말든 항상 부른다
+     * (언어 변경·중단 복구 포함) — 목소리 탭에 들르지 않아도 채워져야 한다.
+     *
+     * **동의가 끝난 뒤에** 불러야 한다. 동의 전에는 서버가 403 으로 막는데, 워커의
+     * enqueue 정책이 KEEP 이라 그때 한 번 걸린 작업이 재시도 백오프(30초→60초…)에 들어가
+     * 앉아 버린다. 그 뒤에 다시 enqueue 해도 무시되므로, 사용자는 동의를 마치고도 백오프가
+     * 끝날 때까지 준비 화면에 붙잡힌다.
+     */
+    fun prefetchStockClips() {
         com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(getApplication())
     }
 
@@ -505,6 +707,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (stockClips.isEmpty()) pendingPrefetchVoiceId = resolved
         prefetchFreeBucketClips(resolved)
     }
+
+    /**
+     * 알람에 마지막으로 쓴 **문구 선택**을 기억한다 — 다음 새 알람의 기본값이 된다.
+     * 목소리(rememberVoiceUsed)와 한 쌍이라 기록 시점도 같다: **알람 저장 성공 시.**
+     *
+     * 편집기에서 문구를 눌러만 보고 취소한 것까지 기억하면, 만들지도 않은 알람의 선택이 다음
+     * 알람에 남는다. 직접 입력은 기억하지 않는다 — 그 문구는 그 알람의 것이고(사용자 확정),
+     * 빈 직접입력으로 시작하면 저장이 막힌다. 이어받는 것은 '종류' 하나뿐이고 회전 인덱스·
+     * 클립 키 같은 알람별 상태는 절대 따라가지 않는다.
+     */
+    internal fun rememberMessageChoiceUsed(draft: AlarmDraft) {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        // 가족(수신자) 알람의 선택은 기억하지 않는다 — 수신자를 위해 고른 값이고, 문구는
+        // 수신자의 dynamic prompt 기준으로 만들어진다. 생성 경로는 이미 앞에서 갈라지지만,
+        // 어느 호출부로 들어와도 같은 규칙이 되도록 여기서도 막는다.
+        if (!draft.targetUserId.isNullOrBlank()) return
+        if (draft.playMode == com.alarmtalk.app.data.AlarmPlayModes.ALARM_ONLY) return
+        val rememberContext = {
+            draft.voiceRandomContext
+                ?.takeIf { it.isNotBlank() }
+                ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
+            Unit
+        }
+        val bucket = draft.bucketId?.takeIf { it.isNotBlank() }
+        when {
+            // 무료·기본 목소리 경로: 사용자가 고른 것이 '테마(버킷)' 그 자체다.
+            bucket != null && com.alarmtalk.app.data.isSystemVoiceId(draft.voiceProfileId) ->
+                dynamicPromptStore.saveLastFreeBucket(userId, bucket)
+            // 유료 클론의 사전렌더 버킷. 여기서도 bucketId 가 차고 voiceRandomPrompt 는 꺼지지만
+            // (setBucketAudio), 사용자가 고른 것은 **문구 종류**이고 버킷은 그 결과다
+            // (love→love, wake_fortune→fortune, preset→greeting …).
+            // 이걸 테마로 저장하면 두 가지가 깨진다(Codex #660):
+            //  - greeting·love·fortune 은 FreeBucketOrder 밖이라 읽을 때 걸러지는데, 그 전에
+            //    이미 저장돼 있던 유효한 테마(weather)를 덮어써 다음 기본 목소리 알람이 '약' 으로 되돌아간다.
+            //  - 정작 문구 종류는 기록되지 않아 다음 클론 알람이 옛 문구로 열린다.
+            bucket != null -> rememberContext()
+            draft.voiceRandomPrompt -> rememberContext()
+            // 직접 입력은 기억하지 않는다 — 그 문구는 그 알람의 것이다.
+            else -> Unit
+        }
+    }
+
+    /** 편집기가 새 알람의 기본값으로 쓸 '마지막 선택'. 로그인 전이면 둘 다 null 이다. */
+    internal fun lastMessageContext(): String? =
+        dynamicPromptStore.readLastMessageContext(authSession?.user?.id)
+
+    internal fun lastFreeBucket(): String? =
+        dynamicPromptStore.readLastFreeBucket(authSession?.user?.id)
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
     // 재로그인/콜드스타트 시 서버 응답을 기다리는 로딩 없이 바로 통과시키되, 백그라운드
@@ -574,6 +824,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal fun clearCurrentDefaultVoicePreferences() {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
         defaultVoiceStore.clear(userId)
+        // 마지막에 고른 문구 종류·무료 테마도 같은 성격의 취향이라 함께 정리한다.
+        // (이 함수는 명시적 로그아웃·탈퇴에서만 불린다 — 자동 401 경로는 부르지 않는다.)
+        dynamicPromptStore.clearLastSelections(userId)
     }
 
     internal fun clearUserScopedRemoteState() {
@@ -613,7 +866,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 온보딩·홈·하단바가 먼저 뜰 수 있어 반드시 false 로 되돌린다.
         needsConsent = false
         consentChecked = false
+        consentCollect = emptyList()
+        consentOptional = emptyList()
+        consentUnsupported = false
+        consentNeedsCollection = false
+        consentIsReconsent = false
+        // 민감 동의 상태와 대기 중인 목소리 등록 요청은 **반드시** 함께 비운다.
+        // pendingVoiceConsentDrafts 에는 직전 사용자가 녹음한 오디오가 들어 있다 — 남겨 두면
+        // 401 로 세션이 끊긴 뒤에도 동의 시트가 로그아웃 화면 위에 계속 떠 있고, 다른 계정이
+        // 로그인해 '동의' 를 누르는 순간 앞 사용자의 녹음이 그 계정으로 업로드된다(Codex #660).
+        sensitiveConsentMissing = emptyList()
+        pendingSensitiveConsent = null
+        // 웰컴 코드 안내도 계정별 상태다. 계정이 바뀌면 새 계정 기준으로 다시 판정한다.
+        showWelcomePromo = false
         pendingDeletion = false
+        accountStatusChecked = false
+        consentStatusChecked = false
         // 마케팅 수신 토글도 user-scoped — 옛 사용자의 동의값이 다음 사용자 화면에 잔존하지 않게
         // 비우고, 진행 중이던 로드는 generation 증가로 무효화한다.
         marketingConsentAgreed = null

@@ -67,11 +67,7 @@ internal fun FamilyConnectionPanel(
 
     fun shareCode(code: String) {
         clipboard.setText(AnnotatedString(code))
-        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, code)
-        }
-        context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.social_share_code_chooser_title)))
+        context.shareRedeemCode(code, RedeemCodeKind.Invite)
     }
 
     OutlinedCard {

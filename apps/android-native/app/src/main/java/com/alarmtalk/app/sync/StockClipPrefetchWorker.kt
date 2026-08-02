@@ -102,8 +102,17 @@ class StockClipPrefetchWorker(
      * 의미 없다(단 408 요청시간초과·429 요청과다는 시간이 지나면 풀리므로 제외).
      * 파싱/디코딩 실패도 같은 응답을 다시 받아봐야 같은 결과다.
      */
+    /**
+     * 재시도해도 소용없는 실패인가.
+     *
+     * 403 은 예외다. 로그인 직후에는 아직 동의 전이라 서버가 모든 데이터 라우트를
+     * CONSENT_REQUIRED(403) 로 막는데, 이건 사용자가 동의를 마치면 곧 풀리는 **일시적**
+     * 상태다. 영구 실패로 보면 워커가 즉시 포기해, 동의를 마치고 목소리 준비 화면에
+     * 도착한 사용자에게 '목소리를 받지 못했어요' 만 남는다(네트워크는 멀쩡한데도).
+     */
     private fun Throwable.isPermanent(): Boolean = when (this) {
-        is retrofit2.HttpException -> code() in 400..499 && code() != 408 && code() != 429
+        is retrofit2.HttpException ->
+            code() in 400..499 && code() != 403 && code() != 408 && code() != 429
         is IllegalArgumentException -> true // Base64.decode 등 응답 형식 오류
         else -> false
     }

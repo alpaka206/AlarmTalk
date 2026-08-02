@@ -1,27 +1,22 @@
-# Documentation
+# 문서
 
-Project documentation for **AlarmTalk**, an OS-native voice alarm app.
+목소리 알람 앱 **AlarmTalk** 의 저장소 문서. 기여자·개발자용이며, 외부 문서 시스템 없이 이 폴더만으로 완결된다.
 
-This documentation is intended for contributors and developers reading the source. It is self-contained — no external doc system is required.
+## 목차
 
-## Index
-
-| Folder | Topic |
+| 위치 | 내용 |
 |---|---|
-| [product/](product/README.md) | Product vision, target users, roadmap |
-| [spec/](spec/README.md) | Requirements, user stories, use cases, feature spec |
-| [design/](design/README.md) | Information architecture, screens, UX, flow & sequence diagrams |
-| [tech/](tech/README.md) | System architecture, database schema, API reference |
-| [standards/](standards/README.md) | Coding conventions, git workflow, invite design |
-| [qa/](qa/README.md) | Test plan, cases, scenarios, bug report template, QA report |
-| [manual/](manual/README.md) | End-user manual |
-| [legal/](legal/README.md) | Privacy policy, terms, consent copy, store disclosure checklist |
-| [ops/](ops/environments.md) | Environment separation, deploy configuration, release operations |
+| [product/](product/README.md) | 제품 방향, 대상 사용자, 음성 프롬프트 설계 |
+| [tech/](tech/README.md) | 시스템 구조, DB 운영 규약, API 개요 |
+| [standards/](standards/README.md) | 코딩 컨벤션, git 워크플로, 아키텍처 결정 |
+| [qa/](qa/README.md) | 테스트 전략과 진행 중인 실기기 검증 |
+| [manual/](manual/README.md) | 사용자 매뉴얼 (en · ko · ja) |
+| [legal/](legal/README.md) | 개인정보처리방침, 이용약관, 동의 문구, 스토어 고지 |
+| [ops/environments.md](ops/environments.md) | 환경 분리, 배포 설정, 릴리스 운영 |
+| [reference/error-codes.md](reference/error-codes.md) | 백엔드 `error_code` 레퍼런스 |
 
-## Conventions
+## 규약
 
-- Each folder has a single `README.md` covering its topic.
-- For localized versions, add `README.ko.md`, `README.ja.md`, etc. next to `README.md`.
-- Deep links use `#section` anchors within each README.
-- The alarm-ring path must never depend on push notifications, server cron, or network fetch at ring time. Any change that contradicts this is rejected at review.
-- External AI calls (voice cloning, TTS) only happen on explicit user actions. Automated tests must not trigger them.
+- 폴더마다 `README.md` 하나로 그 주제를 다룬다.
+- 문서는 한국어로 쓴다. 번역본이 필요하면 같은 위치에 `README.ko.md` · `README.ja.md` 를 둔다.
+- 코드와 어긋나면 코드가 이긴다. 코드에서 바로 읽히는 내용을 문서로 옮겨 적지 말고 코드를 가리켜라.

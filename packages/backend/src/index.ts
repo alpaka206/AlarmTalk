@@ -115,13 +115,16 @@ app.post('/api/init-db', async (c) => {
     const fromId = c.req.query('fromId');
     const toId = c.req.query('toId');
     if (fromId && toId) {
-      const { runMigrationsRange } = await import('./lib/migrations');
+      const { runMigrationsRange, migrationMaxId } = await import('./lib/migrations');
       const ran = await runMigrationsRange(
         (await import('./lib/db')).getDB(c.env),
         Number(fromId),
         Number(toId),
       );
-      return c.json({ success: true, ran, range: { fromId, toId } });
+      // **이 워커가 아는 마이그레이션 최대 id.** 호출자는 이 값으로 배포 전파를 확인한다 —
+      // 배포 직후 옛 번들이 응답하면 새 마이그레이션 id 를 '모르는 id' 로 조용히 건너뛰고
+      // 빈 ran 을 돌려주는데, 그게 '이미 적용됨' 과 구분되지 않는다(#660 이후 dev 실사고).
+      return c.json({ success: true, ran, range: { fromId, toId }, maxId: migrationMaxId() });
     }
     await initDB(c.env);
     return c.json({ success: true, message: 'Database initialized' });
@@ -242,7 +245,6 @@ app.onError((err, c) => {
 });
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
-// 주기를 바꾸면 lib/scheduler.ts 의 CRON_WINDOW_MINUTES 도 함께 바꿔야 한다.
 async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
   const rawDb = getDB(env);
   // 520 is a transient failure of Turso's HTTP gateway. Retry only read
@@ -352,7 +354,7 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
   // 된다(push_tokens 는 즉시 배달용 토큰이라 이 경로가 소비하면 안 됨). '새 가족 알람 도착' 즉시성은 생성
   // 시점의 sendFamilyAlarmPush(data-only)로 처리하고, 발사 자체는 로컬에 맡긴다.
   // (push 제거 후 남아 있던 '발사 대상 스캔+로그' 블록도 정리 — 소비자 없는 알람 테이블 풀스캔이
-  //  틱마다 Turso row-read 만 소모했다. 발사 예정 확인이 필요하면 GET /tick 으로 온디맨드 조회.)
+  //  틱마다 Turso row-read 만 소모했다.)
 
   // 유료 클론 목소리 preset 사전렌더 드레인. 시간민감 알람 푸시 '뒤'에서, 틱당 소량만 생성해
   // Workers 서브리퀘스트 상한·ElevenLabs 비용/rate·푸시 지연을 막는다. 큐가 지목한 클론만

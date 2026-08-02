@@ -76,6 +76,9 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
     }
 }
 
+/** 계정 전환으로 등록을 중단했다는 내부 신호. 사용자에게 보일 실패가 아니다. */
+private class VoiceCreateAbortedException : Exception("voice creation aborted: session changed")
+
 internal fun MainViewModel.createVoiceProfile(
     name: String,
     audio: CachedAlarmAudio,
@@ -83,6 +86,7 @@ internal fun MainViewModel.createVoiceProfile(
     relationshipLabel: String,
     listenerTitle: String,
     language: String,
+    consentAgreedInline: Boolean,
 ): Boolean =
     createVoiceProfiles(
         listOf(
@@ -95,11 +99,23 @@ internal fun MainViewModel.createVoiceProfile(
                 language = language,
             ),
         ),
+        consentAgreedInline = consentAgreedInline,
     )
 
-// 반환값: 클론 생성 요청을 실제로 시작했는지. false 면 검증 실패로 아무 요청도 나가지
-// 않은 것 — 호출측(등록 패널)은 이때 '만드는 중' 스텝에 진입하면 안 된다(갇힘 방지).
-internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationDraft>): Boolean {
+/**
+ * 반환값: 클론 생성 요청을 실제로 시작했는지. false 면 검증 실패로 아무 요청도 나가지
+ * 않은 것 — 호출측(등록 패널)은 이때 '만드는 중' 스텝에 진입하면 안 된다(갇힘 방지).
+ *
+ * [consentAgreedInline] 은 등록 화면의 인라인 동의 항목을 사용자가 체크했다는 뜻이다.
+ * true 면 모달을 띄우지 않고 **같은 코루틴에서 동의를 먼저 기록한 뒤** 업로드한다 —
+ * 순서가 중요하다. draft 도 생성 즉시 실제 ElevenLabs 보이스를 만들기 때문에, 녹음이
+ * 올라간 뒤에 동의를 받으면 이미 처리한 생체정보에 사후 동의를 받는 꼴이 된다.
+ * 기록이 실패하면 업로드도 안 나가고 기존 실패 경로(메시지 + busy 해제)를 그대로 탄다.
+ */
+internal fun MainViewModel.createVoiceProfiles(
+    items: List<VoiceProfileCreationDraft>,
+    consentAgreedInline: Boolean = false,
+): Boolean {
     val session = authSession
     if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_create_login_required)
@@ -128,11 +144,53 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
     }
     if (voiceProfileBusy) return false
 
+    // 아직 없는 민감 동의. 등록 화면이 인라인 항목으로 이미 물어봤으면(consentAgreedInline)
+    // 모달 없이 아래 코루틴에서 먼저 기록하고, 물어보지 못한 경로(예: 화면 밖에서 호출)
+    // 에서만 전용 시트를 띄운다.
+    val consentsToRecord = sensitiveConsentMissing
+    if (consentsToRecord.isNotEmpty() && !consentAgreedInline) {
+        pendingSensitiveConsent = MainViewModel.SensitiveConsentRequest(
+            types = consentsToRecord,
+            resumeVoiceDrafts = drafts,
+        )
+        return false
+    }
+
     // busy 는 launch 안이 아니라 여기서 세운다 — true 를 반환하는 순간 이미 busy 인 것이
     // 보장돼야 호출측 '만드는 중' 스텝의 종료 감지(!busy && draft 없음)가 어긋나지 않는다.
     voiceProfileBusy = true
+    // 동의 기록에 실려 보낼 정책 버전. 코루틴 밖에서 읽어 둔다.
+    val policyVersion = cachedPolicyVersion()
+    // 이 등록을 시작한 계정. 인라인 동의 경로는 동의 기록 왕복이 먼저 끼어 업로드까지의
+    // 창이 길다 — 그 사이 401/계정전환이 나면 앞 계정 토큰으로 뒤 계정에 목소리를 올리고,
+    // 완료 콜백이 뒤 계정 상태(pendingVoiceDraft·쿼터·busy)를 앞 계정 결과로 덮는다.
+    val ownerUserId = session.user.id
+    fun sessionChanged() = authSession?.user?.id != ownerUserId
     viewModelScope.launch {
+        suspend fun purgeSourceRecordings() = purgeVoiceCloneSourceRecordings(drafts)
         runCatching {
+            // 순서 고정: 동의 기록 → 업로드. 같은 runCatching 안에 두어 기록이 실패하면
+            // 녹음이 절대 나가지 않고, 실패 처리도 업로드 실패와 같은 경로를 탄다.
+            if (consentsToRecord.isNotEmpty()) {
+                api.recordConsents(
+                    AlarmTalkApiClient.bearer(session.token),
+                    com.alarmtalk.app.network.RecordConsentsRequest(
+                        consents = consentsToRecord.map { type ->
+                            com.alarmtalk.app.network.ConsentItemRequest(
+                                type = type,
+                                agreed = true,
+                                version = policyVersion,
+                            )
+                        },
+                        documentVersion = bundledPolicyVersion,
+                    ),
+                )
+                // 동의 기록 자체는 앞 계정의 토큰으로 나갔으니 그 계정에 정상적으로 남는다.
+                // 하지만 계정이 바뀌었으면 여기서 끊는다 — 녹음을 올리면 앞 계정이 녹음한
+                // 음성이 뒤 계정 화면에 목소리로 뜬다.
+                if (sessionChanged()) throw VoiceCreateAbortedException()
+                sensitiveConsentMissing = sensitiveConsentMissing - consentsToRecord.toSet()
+            }
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
                     api.createVoiceClone(
@@ -151,19 +209,27 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                 }
             }
         }.onSuccess { profiles ->
+            // 정리는 세션 가드보다 **먼저** 한다. 계정이 바뀌었다고 그냥 돌아가면 앞 계정의
+            // 평문 생체정보가 남는다. 지우는 것은 앞 계정 자신의 녹음이라 새 세션에 아무것도
+            // 적용하지 않고도 안전하다.
+            purgeSourceRecordings()
+            if (sessionChanged()) return@onSuccess
             pendingVoiceDraft = profiles.firstOrNull()
             // 클론 생성이 이번 달 생성 시도(쿼터)를 소모했으므로 잔여 횟수를 재조회한다
             // (삭제 화면의 '이번 달 재생성 불가' 경고가 최신 잔여로 판정되게).
             loadVoiceDraftQuota()
-            // 클론 성공 직후 로컬 녹음 샘플(음성 생체정보 평문 .m4a)을 즉시 정리한다.
-            withContext(Dispatchers.IO) {
-                drafts.forEach { draft ->
-                    runCatching { repository.deleteVoiceCloneSourceRecording(draft.audio.cacheKey) }
-                        .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
-                }
-            }
             message = null
         }.onFailure { error ->
+            // 계정 전환으로 우리가 끊은 것이면 에러가 아니다 — 보고도 메시지도 남기지 않는다.
+            // 다만 **떠나기 전에 평문 녹음은 지운다.** 그 계정은 이 기기에서 이어서 등록할 수
+            // 없으므로(세션이 이미 바뀌었다) 남겨 둘 이유가 없고, 남기면 성공 갈래에서 막아 둔
+            // 것과 같은 구멍이 실패 갈래로 열린다(Codex #660).
+            // 반대로 **같은 계정의 일반 실패**(네트워크 등)에서는 지우지 않는다 — 사용자가
+            // 그대로 다시 시도할 수 있어야 한다.
+            if (error is VoiceCreateAbortedException || sessionChanged()) {
+                purgeSourceRecordings()
+                return@onFailure
+            }
             AlarmTalkLog.reportError("Failed to create voice profile", error)
             val app = getApplication<android.app.Application>()
             message = when (apiErrorCode(error)) {
@@ -172,11 +238,12 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                 "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
                 "INVALID_AUDIO_MIME_TYPE" -> app.getString(R.string.msg_voice_invalid_audio_format)
                 "VOICE_SLOT_EXHAUSTED" -> app.getString(R.string.msg_voice_slot_exhausted)
-                "VOICE_DRAFT_ATTEMPT_LIMIT_REACHED" -> app.getString(R.string.msg_voice_monthly_limit_reached)
                 "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.msg_voice_paid_plan_required)
                 else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
         }
+        // busy 는 세션과 무관하게 반드시 내린다 — 가드로 일찍 빠져나온 경우에도 남겨 두면
+        // 등록 화면이 '만드는 중' 에서 못 빠져나온다.
         voiceProfileBusy = false
     }
     return true
@@ -755,6 +822,28 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to load stock clips", error)
+        }
+    }
+}
+
+
+/**
+ * 클론 등록에 쓴 로컬 녹음 원본(음성 생체정보 **평문** .m4a)을 지운다.
+ *
+ * 등록이 끝나는 **어느 갈래에서든** 불려야 한다 — 성공·실패·계정 전환 모두. 공용 캐시에
+ * 남겨 두면 30일 스윕까지 그대로 남고, 계정이 바뀐 뒤에는 앞 사람의 평문 생체정보가 다른
+ * 사람 기기 상태에 얹혀 있는 셈이 된다(Codex #660).
+ *
+ * 예외는 하나뿐이다: **같은 계정의 일반 실패**(네트워크 등). 사용자가 그대로 다시 시도할 수
+ * 있어야 하므로 그때는 지우지 않는다.
+ */
+internal suspend fun MainViewModel.purgeVoiceCloneSourceRecordings(
+    drafts: List<VoiceProfileCreationDraft>,
+) {
+    withContext(Dispatchers.IO) {
+        drafts.forEach { draft ->
+            runCatching { repository.deleteVoiceCloneSourceRecording(draft.audio.cacheKey) }
+                .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
         }
     }
 }

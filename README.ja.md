@@ -10,26 +10,26 @@
 
 ## 現状
 
-- **バージョン**: `v0.1.2` (Closed Beta 準備中)
-- **Android** — 主力プラットフォーム。コアアラームエンジンは実機検証済み:
+- **バージョン**: `v1.2.1` (Closed Beta 準備中)
+- **Android** — 唯一のクライアント。コアアラームエンジンは実機検証済み:
   - 無料: システムボイス + 事前レンダリングされたアラームプリセットクリップ、解除ごとにローカルでローテーション(バケットローテーション)
   - 有料: AI クローンボイスのプリセットを「キープ」確定後にサーバー側で事前レンダリング、鳴動時は完全オフライン再生 — オフライン(機内モード)鳴動は実機 QA 待ち
   - 家族アラームは FCM データプッシュでメンバーに即時配信(鳴動自体はローカル — ルール #1) — バックグラウンド配信は実機 QA 待ち
   - Google Play Billing: コード完成、Play Console 設定待ち
-- **iOS**: 保留中 — 未運営、CI ビルド無効(手動 `workflow_dispatch` のみ)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI で自動デプロイ + DB マイグレーション(`develop` → dev、`main` → prod)
+
+iOS アプリはありません。SwiftUI クライアントとそのビルドワークフローはリポジトリから削除されました。
 
 ## 技術スタック
 
 | レイヤー | スタック |
 |---|---|
 | Android | Kotlin 2.0 · Jetpack Compose · Material 3 · Room · DataStore · Retrofit · WorkManager · `AlarmManager.setAlarmClock` |
-| iOS (保留) | Swift · SwiftUI · AlarmKit · ActivityKit (Live Activity) |
-| Backend | TypeScript 6 · Hono 4 · Cloudflare Workers · Zod · Vitest |
+| Backend | TypeScript 7 · Hono 4 · Cloudflare Workers · Zod · Vitest |
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (決定論的 TTS キャッシュ) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, 7日) · Google ID トークン · Apple ID トークン |
+| Auth | JWT (HS256, 7日) · メール認証コード · Google ID トークン |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## リポジトリ構成
@@ -38,12 +38,10 @@
 .
 ├── apps/
 │   ├── android-native/   Kotlin + Jetpack Compose Android アプリ
-│   ├── ios-native/       SwiftUI + AlarmKit PoC
-│   └── landing/          静的ランディングページ
+│   └── landing/          Next.js ランディングページ (静的 export)
 ├── packages/
 │   ├── backend/          Cloudflare Workers + Hono API
 │   ├── shared/           共通の型と Zod スキーマ
-│   ├── ui/               デザイントークン
 │   └── voice/            音声プロバイダー抽象化
 └── docs/                 プロジェクトドキュメント
 ```
@@ -55,12 +53,12 @@
 ```bash
 cd packages/backend
 npm install
-npm run dev        # wrangler dev --env dev
+npm run dev        # wrangler dev --env dev --env-file .dev.vars.dev
 npm test           # vitest
-npm run deploy     # wrangler deploy --env production
+npm run deploy     # wrangler deploy --env production (push すると CI が自動デプロイ)
 ```
 
-シークレットはローカルの `packages/backend/.dev.vars.dev` と `packages/backend/.dev.vars.prod` にのみ置きます(コミット禁止)。詳細は [`docs/tech/`](docs/tech/README.md) を参照。
+シークレットはローカルの `packages/backend/.dev.vars.dev` と `packages/backend/.dev.vars.prod` にのみ置きます(コミット禁止)。完全な一覧は `packages/backend/src/types.ts` の `Env` インターフェースが唯一の情報源で、環境ごとの運用は [`docs/ops/environments.md`](docs/ops/environments.md) を参照。
 
 ### Android
 
@@ -74,15 +72,6 @@ cd apps/android-native
 `dev` / `prod` の product flavor があります。日常開発では dev バックエンドを向く `dev` フレーバー(パッケージ `com.alarmtalk.app.dev`)を使います。
 
 Android SDK が自動検出されない場合は `apps/android-native/local.properties` を作成し `sdk.dir=...` を追加します(gitignore 済み)。
-
-### iOS (macOS のみ)
-
-```bash
-cd apps/ios-native
-brew install xcodegen
-xcodegen generate
-open AlarmTalkNative.xcodeproj
-```
 
 ## 譲れないルール
 

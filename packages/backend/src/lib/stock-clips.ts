@@ -736,7 +736,6 @@ export async function generateStockClip(
     profile: { elevenlabs_voice_id: target.elevenlabsVoiceId },
     text: synthesisText,
     language,
-    category: target.category,
   });
   if (attempts.length === 0) {
     throw new Error('No synthesis provider available (ELEVENLABS_API_KEY missing?)');
@@ -752,7 +751,6 @@ export async function generateStockClip(
     languageCode: language,
     text: synthesisText,
     outputFormat: attempt.outputFormat,
-    voiceSettings: attempt.voiceSettings,
   });
 
   const generated = await attempt.synthesize();
@@ -855,9 +853,9 @@ export async function generateStockClip(
     await tx.execute({
       sql: `INSERT OR IGNORE INTO generated_audio_assets
             (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
-             model_id, language, request_hash, text, original_text, delivery_tags_json,
-             category, audio_url, audio_object_key, audio_format, mime_type, size_bytes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             model_id, language, request_hash, text,
+             audio_url, audio_object_key, audio_format, mime_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         crypto.randomUUID(),
         target.ownerUserId,
@@ -869,14 +867,10 @@ export async function generateStockClip(
         language,
         cacheKey,
         synthesisText,
-        displayText,
-        deliveryTagsJson,
-        target.category,
         audioUrl,
         audioObjectKey,
         generated.outputFormat,
         generated.mimeType,
-        bytes.byteLength,
       ],
     });
     return { inserted: true as const, messageId, text: displayText, audioUrl };
