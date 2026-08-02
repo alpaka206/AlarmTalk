@@ -111,10 +111,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     internal val api = AlarmTalkApiClient.create(
         unauthorizedHandler = object : AlarmTalkApiClient.UnauthorizedHandler {
-            override fun onUnauthorized() {
-                // 백엔드에 refresh 엔드포인트가 없어 같은 토큰으로 재시도해도 의미가 없다.
+            override fun onUnauthorized(failedToken: String?) {
+                // 같은 토큰으로 재시도해도 의미가 없다(그 토큰이 거부된 것이다).
                 // 401(TOKEN_REVOKED 포함) 이면 세션을 비우고 화면에 재로그인을 안내한다.
-                handleUnauthorized()
+                handleUnauthorized(failedToken)
             }
 
             override fun onConsentRequired(consent: String?) {
@@ -154,9 +154,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * okhttp Authenticator 에서 호출되는 401 처리.
      * 다른 스레드(non-main) 에서 호출될 수 있어 UI 스레드로 옮긴 뒤 세션을 클리어한다.
      */
-    private fun handleUnauthorized() {
+    private fun handleUnauthorized(failedToken: String?) {
         viewModelScope.launch {
-            if (authSession == null) return@launch
+            val session = authSession ?: return@launch
+            // **옛 토큰의 뒤늦은 401 은 무시한다.** GET /auth/me 가 세션을 굴린 직후
+            // (rolling refresh), 그 전에 옛 토큰으로 이미 날아간 요청이 만료돼 401 로 돌아올 수
+            // 있다. 어느 토큰이 거부됐는지 안 보고 지우면 **방금 갱신한 세션을 스스로 날린다**
+            // — 사용자는 갱신됐는데도 로그아웃된다(Codex #665 P2).
+            //
+            // 토큰을 못 읽은 경우(null)는 예전처럼 처리한다 — 판단할 근거가 없으면 안전하게
+            // 세션을 정리하는 쪽이 맞다(진짜 폐기를 놓치면 안 된다).
+            if (failedToken != null && failedToken != session.token) {
+                Log.i(TAG, "Ignoring 401 from a superseded token")
+                return@launch
+            }
             // 알람 예약은 건드리지 않는다. 토큰 만료나 우발적 401 은 '같은 사람이 다시
             // 로그인하면 되는' 상황인데, 여기서 예약을 취소하면 사용자가 안내를 못 본 사이
             // 알람이 조용히 안 울린다 — 알람 전달이 서버 인증 상태에 묶여선 안 된다.
