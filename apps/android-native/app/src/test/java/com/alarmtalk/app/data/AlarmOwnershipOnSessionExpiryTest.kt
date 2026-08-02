@@ -81,15 +81,17 @@ class AlarmOwnershipOnSessionExpiryTest {
     private suspend fun seedLegacyAlarm(
         id: String = "legacy-1",
         owner: String? = null,
+        repeatDaysMask: Int = 0x7f,
+        state: String = AlarmStates.SCHEDULED,
     ): AlarmEntity {
         val alarm = AlarmEntity(
             id = id,
             label = "legacy alarm",
             hour = 7,
             minute = 30,
-            // 반복 알람이라 과거 시각이어도 다음 발생으로 재계산돼 예약된다.
+            // 기본값은 반복 알람이라 과거 시각이어도 다음 발생으로 재계산돼 예약된다.
             fireAtMillis = 1_000L,
-            repeatDaysMask = 0x7f,
+            repeatDaysMask = repeatDaysMask,
             holidayOff = false,
             snoozeEnabled = true,
             snoozeMinutes = 5,
@@ -126,7 +128,7 @@ class AlarmOwnershipOnSessionExpiryTest {
             alarmSoundUri = null,
             alarmSoundLabel = null,
             enabled = true,
-            state = AlarmStates.SCHEDULED,
+            state = state,
             createdAtMillis = 1_000L,
             updatedAtMillis = 1_000L,
             // 레거시 행의 핵심 조건.
@@ -272,6 +274,49 @@ class AlarmOwnershipOnSessionExpiryTest {
         currentUser = "account-A"
 
         assertEquals("본인이 다시 로그인하면 그대로 되살아난다", 1, repository.reschedulePendingAlarms())
+    }
+
+    /**
+     * 회귀 방지: 소유자 각인 쓰기가 실패해도, **비로그인이면** 재예약을 막지 않는다.
+     *
+     * 이 가지는 "미기록 행을 지금 계정 것으로 볼 근거가 없다" 를 막으려는 것인데, 지금 계정이
+     * 없으면 잘못 넘겨줄 상대도 없다. 업데이트 직후에 여기 걸리면 지울 예약도 이미 없는 채로
+     * 재예약만 통째로 건너뛰어 알람이 안 울린다.
+     */
+    @Test
+    fun ownershipWriteFailureDoesNotBlockRescheduleWhileSignedOut() = runBlocking {
+        seedLegacyAlarm() // 소유자 미기록
+        pendingOwner = "account-A" // 각인 대상이 있으나
+        currentUser = null // 지금 로그인한 계정은 없다
+
+        // claimUnownedAlarms 가 실패하는 DAO — ownershipSettled = false 가 된다.
+        val failing = repositoryWith(ClaimFailingDao(dao))
+        val scheduled = failing.reschedulePendingAlarms()
+
+        assertEquals("각인 실패와 무관하게 이 기기 알람은 예약돼야 한다", 1, scheduled)
+    }
+
+    /**
+     * 회귀 방지: **지금 울리는 중인 알람을 꺼 버리지 않는다.**
+     *
+     * RINGING 은 enabled=true 이고 fireAtMillis 가 이미 과거라, 반복 없는 알람이면 '놓친 알람'
+     * 가지로 떨어져 enabled=false·FAILED 가 된다. 예약 정합성 워커가 주기적으로 이 함수를
+     * 부르면서 사용자가 듣고 있는 알람과 겹칠 수 있다.
+     */
+    @Test
+    fun ringingOneShotAlarmIsNotDisabledByReschedule() = runBlocking {
+        seedLegacyAlarm(
+            owner = "account-A",
+            repeatDaysMask = 0, // 반복 없음 — 과거 시각이면 원래 꺼지는 조건
+            state = AlarmStates.RINGING,
+        )
+        currentUser = "account-A"
+
+        repository.reschedulePendingAlarms()
+
+        val after = dao.getById("legacy-1")
+        assertEquals("울리는 중인 알람은 그대로 켜져 있어야 한다", true, after?.enabled)
+        assertEquals("상태도 RINGING 그대로", AlarmStates.RINGING, after?.state)
     }
 
     @Test

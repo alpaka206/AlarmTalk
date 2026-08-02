@@ -977,8 +977,14 @@ class AlarmRepository(
                 // 미래 알람은 그대로 두고 과거(놓친) 알람만 재계산/정리한다.
                 // 스누즈 알람은 enabled=true 이고 fireAtMillis 가 "스누즈 마감(절대시각)"이라
                 // 재계산에서 제외한다 — 그러지 않으면 tz/시각 변경 시 스누즈가 다음 정규 발생으로 밀린다.
-                val isSnoozed = alarm.state == AlarmStates.SNOOZED
-                val needsRecompute = !isSnoozed && (recomputeFireTime || alarm.fireAtMillis <= now)
+                //
+                // **지금 울리는 중인 알람도 같이 제외한다.** RINGING 은 enabled=true 이고
+                // fireAtMillis 가 이미 과거라, 반복 없는 알람이면 아래 else 가지로 떨어져
+                // enabled=false·FAILED 로 꺼 버린다 — 사용자가 듣고 있는 알람을 끄는 셈이다.
+                // 예전에는 이 함수가 콜드스타트·부팅에서만 돌아 겹칠 일이 드물었지만, 예약
+                // 정합성 워커(AlarmScheduleIntegrityWorker)가 주기적으로 부르면서 흔해진다.
+                val isInFlight = alarm.state == AlarmStates.SNOOZED || alarm.state == AlarmStates.RINGING
+                val needsRecompute = !isInFlight && (recomputeFireTime || alarm.fireAtMillis <= now)
                 val alarmToSchedule = when {
                     !needsRecompute -> alarm
                     alarm.repeatDaysMask != 0 || recomputeFireTime -> alarm.copy(
