@@ -782,6 +782,35 @@ describe('GET /auth/me', () => {
     expect(JSON.stringify(body)).not.toContain('SQLITE_BUSY');
   });
 
+  // 문자열 휴리스틱으로 가르면 스키마 스큐(`no such column: token_epoch`)처럼 token/expired 가
+  // 들어간 인프라 오류가 401 로 나가고, 클라가 멀쩡한 세션을 지운다.
+  it('token/expired 가 들어간 인프라 오류도 401 이 아니라 503 이다', async () => {
+    await pushValidEmailVerification('skew@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('skew@test.com')),
+      undefined,
+      ENV,
+    );
+    const token = (await regRes.json()).token as string;
+
+    mockDB.pushError(new Error('SQLITE_ERROR: no such column: token_epoch (expired schema)'));
+
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(503);
+    expect((await meRes.json()).error_code).toBe('ACCOUNT_STATUS_UNVERIFIED');
+  });
+
   it('폐기된 토큰은 새 토큰을 받지 못한다(401)', async () => {
     await pushValidEmailVerification('revoked@test.com');
     mockDB.pushResult([]);

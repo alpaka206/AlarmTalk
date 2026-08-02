@@ -734,8 +734,19 @@ auth.get('/me', async (c) => {
     return c.json(jsonError('AUTH_MISSING', 'Authorization header required'), 401);
   }
   const token = authHeader.slice(7);
+  // **검증 실패와 그 뒤의 장애를 구조로 가른다.** 하나의 try 로 묶으면 DB 오류까지 401 로
+  // 나가고, 클라는 그걸 '세션 만료' 로 읽어 로그아웃시킨다 — /auth/me 는 rolling refresh 때문에
+  // 앱을 열 때마다 도는 자리라 피해가 크다. 메시지 문자열로 가르는 것도 틀렸다:
+  // `no such column: token_epoch` 같은 스키마 스큐 오류에 token 이 들어간다(Codex #665 P1).
+  // authMiddleware 가 이미 같은 구조를 쓴다.
+  let payload: Awaited<ReturnType<typeof verifyAppJwt>>;
   try {
-    const payload = await verifyAppJwt(token, c.env.JWT_SECRET);
+    payload = await verifyAppJwt(token, c.env.JWT_SECRET);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
+  }
+  try {
     const db = getDB(c.env);
     const result = await db.execute({
       sql: `SELECT id, email, name, plan, token_epoch, deletion_status,
@@ -803,31 +814,16 @@ auth.get('/me', async (c) => {
       },
     });
   } catch (err) {
-    // **토큰 문제와 인프라 장애를 가른다.** 예전에는 전부 401 이라, DB 가 잠깐 흔들리면
-    // 클라가 그걸 '세션 만료' 로 읽고 로그아웃시켰다. /auth/me 는 rolling refresh 때문에
-    // 앱을 열 때마다 도는 자리라, 이 PR 이 없애려던 강제 로그아웃을 스스로 만드는 셈이다.
-    //
-    // verifyAppJwt 가 던지는 것만 401 이다(서명·iss·aud·만료·형식). 그 밖(DB 등)은 503 —
-    // 클라의 401 처리기가 세션을 지우지 않고, 다음 기회에 다시 시도한다.
+    // 토큰 검증은 위에서 이미 통과했다 — 여기 오는 건 DB 등 인프라 장애뿐이다. 503 으로 돌려
+    // 클라가 세션을 지우지 않고 다음 기회에 다시 시도하게 한다. 내부 예외 메시지는 반사하지
+    // 않고 서버 로그에만 남긴다.
     const detail = err instanceof Error ? err.message : String(err);
-    const isTokenError =
-      detail.includes('token') ||
-      detail.includes('Token') ||
-      detail.includes('Signature') ||
-      detail.includes('issuer') ||
-      detail.includes('audience') ||
-      detail.includes('algorithm') ||
-      detail.includes('expired');
-    if (!isTokenError) {
-      // 내부 예외 메시지를 클라로 반사하지 않는다 — 서버 로그에만 남긴다.
-      const { logStructured } = await import('../lib/logger');
-      logStructured('error', { at: 'auth.me', error: detail });
-      return c.json(
-        jsonError('ACCOUNT_STATUS_UNVERIFIED', 'Unable to verify account status'),
-        503,
-      );
-    }
-    return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
+    const { logStructured } = await import('../lib/logger');
+    logStructured('error', { at: 'auth.me', error: detail });
+    return c.json(
+      jsonError('ACCOUNT_STATUS_UNVERIFIED', 'Unable to verify account status'),
+      503,
+    );
   }
 });
 
