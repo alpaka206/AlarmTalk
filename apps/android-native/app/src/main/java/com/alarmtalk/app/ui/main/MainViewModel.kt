@@ -191,6 +191,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     internal suspend fun clearSignedInSession() {
         val signedOutUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        // 표시를 **먼저** 남긴다. 떼어내기가 중간에 실패하거나 프로세스가 죽어도 "명시적
+        // 로그아웃이었다" 는 사실은 남아야, 다음 재예약이 이 계정 알람을 되살리지 않는다.
+        // (다시 로그인하면 AuthSessionStore.save 가 지운다.)
+        runCatching { authSessionStore.markAlarmsDetachedOnSignOut() }
+            .onFailure { error -> Log.w(TAG, "Failed to mark alarms detached on sign-out", error) }
         runCatching { repository.detachAlarmsOnSignOut(signedOutUserId) }
             .onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
         // 기본 목소리 취향(마지막 쓴 목소리·'나중에 받기' 선택)은 계정을 명시적으로 끝낼 때만

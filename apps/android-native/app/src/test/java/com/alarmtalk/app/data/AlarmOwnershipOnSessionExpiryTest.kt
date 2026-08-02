@@ -35,6 +35,9 @@ class AlarmOwnershipOnSessionExpiryTest {
     /** 아직 소유자를 못 새긴 알람의 임자(실제로는 AuthSessionStore prefs). */
     private var pendingOwner: String? = null
 
+    /** 명시적 로그아웃으로 알람을 떼어냈는가(실제로는 AuthSessionStore prefs). */
+    private var alarmsDetached: Boolean = false
+
     private val repository by lazy { repositoryWith(dao) }
 
     private fun repositoryWith(alarmDao: AlarmDao) = AlarmRepository(
@@ -47,6 +50,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         currentUserIdProvider = { currentUser },
         pendingOwnerUserIdProvider = { pendingOwner },
         onOwnershipSettled = { pendingOwner = null },
+        alarmsDetachedOnSignOutProvider = { alarmsDetached },
     )
 
     private val shadowAlarmManager
@@ -197,6 +201,40 @@ class AlarmOwnershipOnSessionExpiryTest {
         val scheduled = repository.reschedulePendingAlarms()
 
         assertEquals("B 가 로그인하면 A 의 알람은 재예약되지 않는다", 0, scheduled)
+    }
+
+    /**
+     * 회귀 방지: **명시적 로그아웃으로 떼어낸 알람은 재로그인 전까지 되살리지 않는다.**
+     *
+     * detachAlarmsOnSignOut 은 예약만 취소하고 행은 enabled=1 로 남긴다(재로그인하면 그대로
+     * 되살리려고). 그걸 '비로그인이니 이 기기 것' 으로 다루면 콜드스타트·부팅·업데이트마다
+     * 되살아나, 로그인 화면 뒤에서 끌 수도 없이 울린다(Codex #665 P1).
+     */
+    @Test
+    fun explicitlyDetachedAlarmsStayUnscheduledWhileSignedOut() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = null
+        alarmsDetached = true // 명시적 로그아웃을 거쳤다
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("로그아웃으로 떼어낸 알람은 되살아나면 안 된다", 0, scheduled)
+        assertEquals("행 자체는 남는다 — 재로그인하면 되살아나야 한다", "account-A", ownerOf("legacy-1"))
+    }
+
+    /** 그리고 그 사람이 다시 로그인하면 원래대로 되살아난다. */
+    @Test
+    fun detachedAlarmsComeBackAfterSigningInAgain() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        alarmsDetached = true
+        currentUser = null
+        assertEquals("전제: 로그아웃 상태에서는 안 살아난다", 0, repository.reschedulePendingAlarms())
+
+        // 다시 로그인 — AuthSessionStore.save 가 표시를 지운다.
+        alarmsDetached = false
+        currentUser = "account-A"
+
+        assertEquals("본인이 다시 로그인하면 그대로 되살아난다", 1, repository.reschedulePendingAlarms())
     }
 
     @Test

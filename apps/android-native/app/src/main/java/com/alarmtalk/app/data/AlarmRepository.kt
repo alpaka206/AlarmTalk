@@ -46,6 +46,10 @@ class AlarmRepository(
     // 미정 행이 없어졌을 때만 임자 표시를 지운다. 실패하면 부르지 않아 표시가 남고,
     // 다음 기회에 다시 시도한다.
     private val onOwnershipSettled: () -> Unit = {},
+    // 명시적 로그아웃으로 이 기기의 알람을 떼어낸 상태인가. 자동 401(세션 만료)과 구분하려고
+    // 받는다 — 둘 다 로그인 계정이 null 이지만, 전자는 되살리면 안 되고 후자는 되살려야 한다.
+    // 자세한 이유는 AuthSessionStore.markAlarmsDetachedOnSignOut 주석 참고.
+    private val alarmsDetachedOnSignOutProvider: () -> Boolean = { false },
 ) {
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -920,7 +924,14 @@ class AlarmRepository(
             //
             // 알람 전달이 서버 인증 상태에 묶여선 안 된다(AGENTS.md). 남의 알람 정리는 '다른
             // 계정이 실제로 로그인한' 시점에 onSignedIn 의 cancelAlarmsNotOwnedBy 가 한다.
-            if (currentUser != null && alarm.ownerUserId != null && alarm.ownerUserId != currentUser) {
+            //
+            // **예외 — 명시적 로그아웃.** detachAlarmsOnSignOut 은 예약만 취소하고 행은
+            // enabled=1 로 남긴다(재로그인하면 그대로 되살리려고). 그 상태까지 '비로그인이니
+            // 되살린다'로 다루면, 사용자가 끝낸 계정의 알람이 콜드스타트·부팅·업데이트마다
+            // 되살아나 **로그인 화면 뒤에서 끌 수도 없이 울린다.** 그래서 그때만은 게이트를
+            // 그대로 적용한다(Codex #665 P1).
+            val ownerGateApplies = currentUser != null || alarmsDetachedOnSignOutProvider()
+            if (ownerGateApplies && alarm.ownerUserId != null && alarm.ownerUserId != currentUser) {
                 // 건너뛰는 데 그치면 앞 세션이 잡아 둔 OS 예약이 살아남아 이 계정 폰에서 울린다.
                 // 특히 소유자 확정이 이 함수 안에서야 성공한 경우, 앞서 돈 cancelAlarmsNotOwnedBy
                 // 는 아직 미기록이던 그 행을 건너뛴 뒤다 — 여기서 내려야 새는 곳이 없다.

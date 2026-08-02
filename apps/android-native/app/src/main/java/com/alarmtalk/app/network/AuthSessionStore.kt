@@ -196,8 +196,32 @@ class AuthSessionStore(context: Context) {
             leavingUserId = prefs.getString(KEY_USER_ID, null),
             existingPendingOwner = prefs.getString(KEY_PENDING_OWNER_USER_ID, null),
         )
-        prefs.edit().clear().putString(KEY_PENDING_OWNER_USER_ID, pendingOwner).apply()
+        // '명시적 로그아웃으로 알람을 떼어냈다' 표시도 같이 지켜야 한다. 이 값이 clear 에
+        // 쓸려 나가면 재예약이 로그아웃한 계정의 알람을 되살린다([alarmsDetachedOnSignOut]).
+        val detached = prefs.getBoolean(KEY_ALARMS_DETACHED, false)
+        prefs.edit()
+            .clear()
+            .putString(KEY_PENDING_OWNER_USER_ID, pendingOwner)
+            .putBoolean(KEY_ALARMS_DETACHED, detached)
+            .apply()
     }
+
+    /**
+     * 명시적 로그아웃(로그아웃·탈퇴)에서 이 기기의 알람 예약을 떼어냈다는 표시.
+     *
+     * 자동 401 과 구분하기 위해서만 존재한다. 둘 다 세션이 비어 `currentUserIdProvider()` 가
+     * null 이지만 알람에 대한 기대가 정반대다:
+     *  - 자동 401(토큰 만료): 본인이 그대로 쓰던 기기다. 알람은 계속 울려야 하고, 업데이트로
+     *    OS 예약이 지워졌으면 다시 새겨야 한다.
+     *  - 명시적 로그아웃: 사용자가 끝낸 것이다. `detachAlarmsOnSignOut` 이 예약을 이미
+     *    취소했고, **다시 로그인하기 전까지 되살리면 안 된다** — 로그아웃 뒤에는 목록이
+     *    로그인 화면에 가려 사용자가 끌 수도 없는데 울리게 된다.
+     */
+    fun markAlarmsDetachedOnSignOut() {
+        prefs.edit().putBoolean(KEY_ALARMS_DETACHED, true).apply()
+    }
+
+    fun alarmsDetachedOnSignOut(): Boolean = prefs.getBoolean(KEY_ALARMS_DETACHED, false)
 
     /** 아직 소유자를 못 새긴 알람의 임자(없으면 null). 세션을 비워도 남는다. */
     fun pendingOwnerUserId(): String? =
@@ -216,6 +240,10 @@ class AuthSessionStore(context: Context) {
 
     private fun save(token: String, provider: String, user: AuthUser): AuthSession {
         val normalizedUser = normalizeUser(user)
+        // 로그인에 성공했으면 '떼어냄' 표시는 소임을 다했다. 이 계정 알람은 이제 소유자가
+        // 일치해 정상 경로로 되살아난다 — 표시를 남겨 두면 다음 세션 만료 때 자동 401 을
+        // 명시적 로그아웃으로 오인해 알람을 되살리지 않는다.
+        val clearDetached = prefs.getBoolean(KEY_ALARMS_DETACHED, false)
         val firstQuietWindow = normalizedUser.familyAlarmQuietWindows.firstOrNull()
             ?: FamilyAlarmQuietWindow(days = normalizedUser.familyAlarmQuietDays)
         prefs.edit()
@@ -231,6 +259,7 @@ class AuthSessionStore(context: Context) {
             .putString(KEY_FAMILY_ALARM_QUIET_END, firstQuietWindow.end)
             .putString(KEY_FAMILY_ALARM_QUIET_WINDOWS, encodeQuietWindows(normalizedUser.familyAlarmQuietWindows))
             .putString(KEY_DYNAMIC_PROMPT_SETTINGS, encodeDynamicPromptSettings(normalizedUser.dynamicPromptSettings))
+            .also { if (clearDetached) it.remove(KEY_ALARMS_DETACHED) }
             .apply()
         return AuthSession(token = token, provider = provider, user = normalizedUser)
     }
@@ -417,6 +446,7 @@ class AuthSessionStore(context: Context) {
         // 근거다. [clear] 가 이 키만 남기고, 정리가 끝나면 [clearPendingOwner] 가 지운다.
         // (저장 키 문자열은 옛 이름을 유지한다 — 이미 기록된 기기의 값을 잃지 않기 위해.)
         private const val KEY_PENDING_OWNER_USER_ID = "last_session_user_id"
+        private const val KEY_ALARMS_DETACHED = "alarms_detached_on_sign_out"
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"
         private const val KEY_PLAN = "plan"
