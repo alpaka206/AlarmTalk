@@ -115,13 +115,16 @@ app.post('/api/init-db', async (c) => {
     const fromId = c.req.query('fromId');
     const toId = c.req.query('toId');
     if (fromId && toId) {
-      const { runMigrationsRange } = await import('./lib/migrations');
+      const { runMigrationsRange, migrationMaxId } = await import('./lib/migrations');
       const ran = await runMigrationsRange(
         (await import('./lib/db')).getDB(c.env),
         Number(fromId),
         Number(toId),
       );
-      return c.json({ success: true, ran, range: { fromId, toId } });
+      // **이 워커가 아는 마이그레이션 최대 id.** 호출자는 이 값으로 배포 전파를 확인한다 —
+      // 배포 직후 옛 번들이 응답하면 새 마이그레이션 id 를 '모르는 id' 로 조용히 건너뛰고
+      // 빈 ran 을 돌려주는데, 그게 '이미 적용됨' 과 구분되지 않는다(#660 이후 dev 실사고).
+      return c.json({ success: true, ran, range: { fromId, toId }, maxId: migrationMaxId() });
     }
     await initDB(c.env);
     return c.json({ success: true, message: 'Database initialized' });
