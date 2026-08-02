@@ -7,8 +7,10 @@ Play Console 의 "이 출시의 새로운 기능" 에 그대로 붙여 넣는 �
 (영어는 한 줄이 길어 금방 490자를 넘긴다):
 
 ```bash
-node -e "const b=require('fs').readFileSync('docs/product/release-notes.md','utf8').matchAll(/### (ko-KR|en-US|ja-JP)\n\n\`\`\`\n([\s\S]*?)\n\`\`\`/g); for(const[,l,t]of b)console.log(l,[...t].length)"
+node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf8').replace(/\r\n/g,'\n'); for(const[,l,t]of m.matchAll(/### (ko-KR|en-US|ja-JP)\n\n\`\`\`\n([\s\S]*?)\n\`\`\`/g)){const n=[...t].length; console.log(l,n,'(CRLF',n+t.split('\n').length-1+')')}"
 ```
+
+`.replace(/\r\n/g,'\n')` 를 빼면 이 레포에서는 **조용히 0건**이 나온다(체크아웃이 CRLF).
 
 쓰는 규칙:
 - **사용자가 눈으로 확인할 수 있는 변화만** 적는다. 백엔드 리팩터·CI·마이그레이션은 안 적는다.
@@ -29,7 +31,8 @@ node -e "const b=require('fs').readFileSync('docs/product/release-notes.md','utf
 • 문구를 바꾸지 않았다면 이미 만든 음성을 다시 씁니다. 저장이 빨라졌어요.
 • 공유받은 알람의 음성을 매번 다시 내려받지 않습니다.
 • 목소리 만들기: 녹음 하한을 1분에서 12초로 낮췄습니다.
-• 가입할 때 약관과 개인정보 처리방침 전문을 그 자리에서 펼쳐 읽을 수 있습니다. 동의 철회는 더보기 → 설정에서 언제든 가능합니다.
+• 가입할 때 약관과 개인정보 처리방침 전문을 그 자리에서 펼쳐 읽을 수 있습니다.
+• 음성 생체정보 처리 동의와 광고성 정보 수신 동의는 더보기 → 설정에서 철회할 수 있습니다.
 • 목소리 준비 화면에서 멈추던 문제, 계정을 바꿔도 이전 계정 정보가 남던 문제를 고쳤습니다.
 ```
 
@@ -37,11 +40,11 @@ node -e "const b=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ```
 • New alarms keep the voice and message type you chose last time.
-• Unchanged message? We reuse the audio you already made — saving is faster.
+• Unchanged message? We reuse the audio already made — saving is faster.
 • Voices for shared alarms are no longer re-downloaded each time.
-• Creating a voice: the recording minimum is now 12 seconds, not 1 minute.
-• Read the full terms and privacy policy on the sign-up screen. Withdraw consent anytime from More → Settings.
-• Fixed a hang on the voice preparation screen and stale data after switching accounts.
+• Creating a voice: the recording minimum is 12 seconds, not 1 minute.
+• Read the full terms and privacy policy on the sign-up screen. Voice biometric and marketing consents can be withdrawn from More → Settings.
+• Fixed a voice preparation screen hang and stale cross-account data.
 ```
 
 ### ja-JP
@@ -51,7 +54,8 @@ node -e "const b=require('fs').readFileSync('docs/product/release-notes.md','utf
 • 文面を変えていなければ、以前つくった音声をそのまま使います。保存が速くなりました。
 • 共有されたアラームの音声を毎回ダウンロードしなくなりました。
 • 声の作成：録音の下限を1分から12秒に下げました。
-• 登録画面で利用規約とプライバシーポリシーの全文をその場で開いて読めます。同意の撤回は「その他」→「設定」からいつでもできます。
+• 登録画面で利用規約とプライバシーポリシーの全文をその場で開いて読めます。
+• 音声生体情報の処理同意と広告情報の受信同意は「その他」→「設定」から撤回できます。
 • 声の準備画面で止まる問題、アカウントを切り替えても前のデータが残る問題を修正しました。
 ```
 
@@ -64,6 +68,6 @@ node -e "const b=require('fs').readFileSync('docs/product/release-notes.md','utf
 | 공유 알람 음성 캐시 | `RemoteAlarmPullSyncService.kt` `getCachedAudio("remote-message-…")` |
 | 녹음 하한 12초 | `AlarmAudioStore.MIN_DURATION_MILLIS = 12_000`, 서버 `MIN_CLONE_DURATION_MS = 12_000` |
 | 전문 열람 | `ConsentScreen.kt` 가 `assets` 의 `LegalDocument` 를 펼친다. **가입 화면 한정** — 설정의 문서 보기는 웹뷰라 "가입할 때" 로 못 박았다 |
-| 동의 철회 | `ConsentHistoryScreen.kt` "동의 철회" (더보기 → 설정 → 약관 및 개인정보 처리 동의) |
+| 동의 철회 | `ConsentHistoryScreen.kt` (더보기 → 설정 → 약관 및 개인정보 처리 동의). **철회할 수 있는 건 두 가지뿐** — 음성 생체정보는 단방향 "동의 철회" 액션, 광고성 정보 수신은 토글. 약관·개인정보·만14세·국외이전 같은 **필수 동의는 철회 액션이 없다**(국외이전은 `:141` 에 의도라고 적혀 있다). 그래서 "동의 철회 언제든 가능" 이라고 뭉뚱그리지 않고 두 항목을 이름으로 적는다 |
 | 준비 화면 탈출 | `VoiceOnboardingScreen.kt` `ESCAPE_GRACE_MILLIS = 12_000` |
 | 계정 전환 잔존 데이터 | `fix(android): 같은 계열의 남은 크로스계정 누수 네 곳을 막는다` 외 |
