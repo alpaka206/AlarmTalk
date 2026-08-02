@@ -5,6 +5,7 @@ import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmScheduler
+import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler
@@ -52,6 +53,9 @@ class AlarmRepository(
     // 명시적 로그아웃은 이 값을 지우므로 그 계정 알람은 되살아나지 않는다.
     // 자세한 이유는 AuthSessionStore.sessionExpiredOwnerUserId 주석 참고.
     private val sessionExpiredOwnerUserIdProvider: () -> String? = { null },
+    // 지금 실제로 울리는 중인 알람 id(없으면 null). 영속 상태(state=RINGING)가 아니라 이걸로
+    // 판정해야, 서비스가 죽어 굳어 버린 RINGING 행이 복구에서 영구 배제되지 않는다.
+    private val ringingAlarmIdProvider: () -> String? = { RingingService.activeRingingAlarmId },
 ) {
     /**
      * 예약 복원과 예약 해제를 **서로 겹치지 않게** 한다.
@@ -1031,7 +1035,17 @@ class AlarmRepository(
             //
             // 예전에는 이 함수가 콜드스타트·부팅에서만 돌아 겹칠 일이 드물었지만, 예약 정합성
             // 워커(AlarmScheduleIntegrityWorker)가 주기적으로 부르면서 흔해진다.
-            if (alarm.state == AlarmStates.RINGING) return@forEach
+            //
+            // ⚠️ 판정은 **지금 실제로 울리는 중인가** 로 한다. `state == RINGING` 만 보면 굳어
+            // 버린 행이 모든 복구 경로에서 영구 배제된다: RINGING 을 벗어나게 하는 쓰기는
+            // dismiss/snooze/토글/편집뿐인데, (a) 알림의 스누즈를 한도 초과 상태에서 누르면
+            // AlarmRepository.snooze 가 DB 를 안 쓰고 null 을 돌려주고, (b) 울리는 도중 FGS 가
+            // 죽거나(제조사 절전) 재부팅되면 onDestroy 가 상태를 되돌리지 않는다. 그러면
+            // enabled=1 · state=RINGING · fireAtMillis=과거 로 남고, 이 함수가 유일한 복구
+            // 길목이라 **다시는 안 울린다**(목록에는 켜져 보인다). develop 은 그 행을 다음
+            // 발생으로 재계산해 스스로 나았다 — 스킵이 그 자가치유를 없애면 안 된다.
+            val ringingNow = ringingAlarmIdProvider() == alarm.id
+            if (ringingNow) return@forEach
 
             // 목록을 읽은 뒤 사용자가 그 알람을 끄거나 지웠을 수 있다. 스냅샷 그대로 진행하면
             // 방금 끈 알람이 되살아난다 — 아래 재계산이 enabled=true 인 옛 값을 그대로 upsert 하고,
@@ -1041,7 +1055,7 @@ class AlarmRepository(
             // 콜드스타트·부팅에서만 돌 때는 사용자 조작과 겹칠 일이 드물었지만, 주기 워커가
             // 부르면서 흔해진다. 쓰기 직전에 한 번 더 읽어 그 창을 좁힌다.
             val fresh = alarmDao.getById(alarm.id)
-            if (fresh == null || !fresh.enabled || fresh.state == AlarmStates.RINGING) return@forEach
+            if (fresh == null || !fresh.enabled || ringingAlarmIdProvider() == fresh.id) return@forEach
             val alarm = fresh
 
             runCatching {

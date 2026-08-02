@@ -730,7 +730,17 @@ class RingingService : Service() {
         stopRingingOutputs()
         serviceScope.launch {
             runCatching {
-                AlarmAppContainer.repository(applicationContext).snooze(alarmId)
+                val repository = AlarmAppContainer.repository(applicationContext)
+                // 스누즈가 꺼져 있거나 한도를 넘겼으면 repository.snooze 는 **DB 를 한 글자도
+                // 쓰지 않고** null 을 돌려준다. 그런데 소리는 위에서 이미 껐다 — 그대로 두면
+                // enabled=1 · state=RINGING · fireAtMillis=과거 로 굳어, 다음 재예약이 이 행을
+                // '지금 울리는 중' 으로 오해하거나 과거 시각으로 되살린다. 알림의 스누즈 버튼은
+                // 한도를 보지 않고 항상 붙으므로(RingingNotificationFactory) 정상 조작으로도
+                // 닿는 경로다. 스누즈가 안 되면 **해제로 마무리**해 상태를 정상으로 되돌린다.
+                if (repository.snooze(alarmId) == null) {
+                    Log.i(TAG, "Snooze not applicable id=$alarmId; dismissing instead")
+                    repository.dismiss(alarmId)
+                }
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to snooze alarm id=$alarmId", error)
             }

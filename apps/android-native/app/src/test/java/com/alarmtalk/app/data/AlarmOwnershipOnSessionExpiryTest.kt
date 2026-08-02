@@ -38,6 +38,9 @@ class AlarmOwnershipOnSessionExpiryTest {
     /** 자동으로 세션이 끊긴 계정(실제로는 AuthSessionStore prefs). 비로그인 복원 대상. */
     private var sessionExpiredOwner: String? = null
 
+    /** 지금 실제로 울리는 중인 알람(실제로는 RingingService.activeRingingAlarmId). */
+    private var ringingAlarmId: String? = null
+
     private val repository by lazy { repositoryWith(dao) }
 
     private fun repositoryWith(alarmDao: AlarmDao) = AlarmRepository(
@@ -51,6 +54,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         pendingOwnerUserIdProvider = { pendingOwner },
         onOwnershipSettled = { pendingOwner = null },
         sessionExpiredOwnerUserIdProvider = { sessionExpiredOwner },
+        ringingAlarmIdProvider = { ringingAlarmId },
     )
 
     private val shadowAlarmManager
@@ -300,6 +304,27 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /**
+     * 회귀 방지: **굳어 버린 RINGING 행이 영구히 배제되면 안 된다.**
+     *
+     * RINGING 을 벗어나게 하는 쓰기는 dismiss/snooze/토글/편집뿐인데, 울리는 도중 FGS 가
+     * 죽거나 재부팅되면 그 쓰기가 일어나지 않는다. `state == RINGING` 만 보고 건너뛰면
+     * 이 함수가 유일한 복구 길목이라 그 알람은 다시는 안 울린다 — 목록에는 켜져 보인다.
+     * 실제로 울리는 중인지로 판정해야 자가치유가 유지된다.
+     */
+    @Test
+    fun staleRingingRowStillGetsRescheduled() = runBlocking {
+        seedLegacyAlarm(owner = "account-A", state = AlarmStates.RINGING)
+        currentUser = "account-A"
+
+        // 지금 울리는 알람은 없다(서비스가 죽은 뒤 남은 상태).
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("굳어 버린 RINGING 행도 다시 예약돼야 한다", 1, scheduled)
+        val after = dao.getById("legacy-1")
+        assertEquals("다음 발생으로 재계산돼 정상 상태로 돌아온다", AlarmStates.SCHEDULED, after?.state)
+    }
+
+    /**
      * 회귀 방지: **복원과 로그아웃이 서로 겹치지 않는다**(Codex #666 P1).
      *
      * 로그아웃은 예약만 취소하고 행은 enabled 로 남기므로, 워커가 그 뒤에 다시 예약하면
@@ -376,6 +401,7 @@ class AlarmOwnershipOnSessionExpiryTest {
             state = AlarmStates.RINGING,
         )
         currentUser = "account-A"
+        ringingAlarmId = "legacy-1" // 지금 실제로 울리는 중
 
         val scheduled = repository.reschedulePendingAlarms()
 
