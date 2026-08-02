@@ -21,6 +21,8 @@ import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.combine
@@ -51,6 +53,25 @@ class AlarmRepository(
     // 자세한 이유는 AuthSessionStore.sessionExpiredOwnerUserId 주석 참고.
     private val sessionExpiredOwnerUserIdProvider: () -> String? = { null },
 ) {
+    /**
+     * 예약 복원과 예약 해제를 **서로 겹치지 않게** 한다.
+     *
+     * [reschedulePendingAlarms] 는 부팅 리시버·패키지 교체 리시버·15분 주기 워커·앱 시작·로그인
+     * 뒤처리가 모두 부르고, [detachAlarmsOnSignOut] 은 사용자가 로그아웃할 때 부른다. 락이
+     * 없으면 다음이 실제로 일어난다:
+     *  - 워커가 목록을 뜨고 복원 대상을 읽은 직후 사용자가 로그아웃 → detach 가 예약을
+     *    취소하지만 행은 enabled 로 남긴다 → 워커가 그 뒤에 다시 예약한다. 로그인 화면 뒤에서
+     *    끌 수 없는 알람이 울린다(Codex #666 P1). 행이 꺼지지 않으므로 '쓰기 직전 재조회'
+     *    로는 못 잡는다.
+     *  - 시간대·시각 변경 리시버가 recomputeFireTime=true 로 도는 사이 주기 워커가 false 로
+     *    돌면, 워커가 읽어 둔 옛 절대시각을 나중에 등록해 **DB 는 새 시각인데 OS 예약만 옛
+     *    시각**이 된다(Codex #666 P2).
+     *
+     * 둘 다 "읽고 → 쓰는" 구간이 겹쳐서 생기므로, 그 구간 전체를 직렬화한다. 안에서 하는 일은
+     * 로컬 DB 접근과 AlarmManager 호출뿐이라 오래 잡고 있지 않는다.
+     */
+    private val restoreMutex = Mutex()
+
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
         alarmDao = alarmDao,
@@ -430,7 +451,11 @@ class AlarmRepository(
      *
      * 반환값은 예약을 내린 알람 수.
      */
-    suspend fun detachAlarmsOnSignOut(signedOutUserId: String?): Int {
+    suspend fun detachAlarmsOnSignOut(signedOutUserId: String?): Int =
+        // 복원과 직렬화한다 — 이유는 [restoreMutex] 주석 참고.
+        restoreMutex.withLock { detachAlarmsOnSignOutLocked(signedOutUserId) }
+
+    private suspend fun detachAlarmsOnSignOutLocked(signedOutUserId: String?): Int {
         val all = alarmDao.getAllAlarms()
         if (all.isEmpty()) return 0
         // 예약 취소가 먼저다. 소유자 새기기가 실패해도(디스크 가득참 등) 떠나는 계정의 알람이
@@ -913,7 +938,11 @@ class AlarmRepository(
         return (alarm.bucketRotationIndex + 1) % size
     }
 
-    suspend fun reschedulePendingAlarms(recomputeFireTime: Boolean = false): Int {
+    suspend fun reschedulePendingAlarms(recomputeFireTime: Boolean = false): Int =
+        // 로그아웃·다른 복원과 직렬화한다 — 이유는 [restoreMutex] 주석 참고.
+        restoreMutex.withLock { reschedulePendingAlarmsLocked(recomputeFireTime) }
+
+    private suspend fun reschedulePendingAlarmsLocked(recomputeFireTime: Boolean): Int {
         // 예약 전에 소유자를 확정한다 — 이 함수는 로그인 뒤처리·앱 시작·부팅 복구가 모두
         // 지나는 길목이라, 여기서 한 번 막으면 나머지 경로가 따로 새지 않는다.
         val ownershipSettled = settlePendingAlarmOwnership()

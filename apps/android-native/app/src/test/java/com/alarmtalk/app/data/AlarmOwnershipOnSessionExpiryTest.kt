@@ -300,6 +300,36 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /**
+     * 회귀 방지: **복원과 로그아웃이 서로 겹치지 않는다**(Codex #666 P1).
+     *
+     * 로그아웃은 예약만 취소하고 행은 enabled 로 남기므로, 워커가 그 뒤에 다시 예약하면
+     * 로그인 화면 뒤에서 끌 수 없는 알람이 울린다. 행이 꺼지지 않으니 '쓰기 직전 재조회'
+     * 로는 못 잡고, 두 구간을 직렬화해야 한다. 어느 쪽이 먼저 잡든 최종 상태는 '예약 없음'
+     * 이어야 한다.
+     */
+    @Test
+    fun logoutAndRestoreDoNotInterleave() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+        repository.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        // 로그아웃: 복원 대상을 지우고 예약을 떼어낸다(MainViewModel.clearSignedInSession 순서).
+        currentUser = null
+        sessionExpiredOwner = null
+        repository.detachAlarmsOnSignOut("account-A")
+
+        // 그 뒤에 워커가 돌아도 되살아나면 안 된다.
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("로그아웃 뒤 복원은 아무것도 예약하지 않는다", 0, scheduled)
+        assertNull(
+            "떼어낸 예약이 되살아나면 안 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
      * 회귀 방지: 워커가 목록을 읽은 뒤 사용자가 끈 알람을 되살리지 않는다(Codex #666 P2).
      * 여기서는 그 창을 좁히는 '쓰기 직전 재조회' 가 실제로 도는지를, DAO 를 갈아 끼워 본다.
      */
