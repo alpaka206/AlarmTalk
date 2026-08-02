@@ -283,6 +283,41 @@ class AlarmOwnershipOnSessionExpiryTest {
      * 없으면 잘못 넘겨줄 상대도 없다. 업데이트 직후에 여기 걸리면 지울 예약도 이미 없는 채로
      * 재예약만 통째로 건너뛰어 알람이 안 울린다.
      */
+    /**
+     * 단, 명시적 로그아웃에서 각인까지 실패한 행은 임자가 미정인 채 떼어진 상태다. 그걸
+     * '비로그인이니 이 기기 것' 으로 보면 워커가 다음 회차에 로그인 화면 뒤에서 되살린다
+     * (Codex #666 P1).
+     */
+    @Test
+    fun ownershipWriteFailureStaysUnscheduledAfterExplicitLogout() = runBlocking {
+        seedLegacyAlarm() // 소유자 미기록
+        pendingOwner = "account-A"
+        currentUser = null
+        alarmsDetached = true // 명시적 로그아웃을 거쳤다
+
+        val failing = repositoryWith(ClaimFailingDao(dao))
+
+        assertEquals("로그아웃 뒤 각인 실패 행은 되살리면 안 된다", 0, failing.reschedulePendingAlarms())
+    }
+
+    /**
+     * 회귀 방지: 워커가 목록을 읽은 뒤 사용자가 끈 알람을 되살리지 않는다(Codex #666 P2).
+     * 여기서는 그 창을 좁히는 '쓰기 직전 재조회' 가 실제로 도는지를, DAO 를 갈아 끼워 본다.
+     */
+    @Test
+    fun alarmDisabledAfterSnapshotIsNotRescheduled() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+
+        // getEnabledAlarms 는 켜진 스냅샷을 주지만, 그 뒤 getById 는 '방금 꺼진' 행을 준다.
+        val racing = object : AlarmDao by dao {
+            override suspend fun getById(id: String): AlarmEntity? =
+                dao.getById(id)?.copy(enabled = false)
+        }
+
+        assertEquals("스냅샷 뒤 꺼진 알람은 예약하지 않는다", 0, repositoryWith(racing).reschedulePendingAlarms())
+    }
+
     @Test
     fun ownershipWriteFailureDoesNotBlockRescheduleWhileSignedOut() = runBlocking {
         seedLegacyAlarm() // 소유자 미기록

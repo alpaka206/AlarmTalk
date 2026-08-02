@@ -967,8 +967,16 @@ class AlarmRepository(
             // 소유자 정리가 실패한 회차에는 미기록 행을 '현재 계정 것'으로 볼 근거가 없다.
             // 예약을 내려 남의 알람이 울리는 것을 막되 행은 남긴다 — 마커가 보존돼 있어
             // 다음 회차에 소유자를 새기고 나면 주인에게 다시 예약된다.
-            // 취소 범위는 위와 같은 이유로 로그인 상태로 한정한다.
-            if (alarm.ownerUserId == null && !ownershipSettled) {
+            //
+            // 각인이 실패했어도 **그 미정 임자가 곧 복원 대상이면** 이 행은 우리 것이다 — 자동
+            // 401 로 끊긴 계정이 그 임자인 경우가 그렇고, 업데이트 직후 이 가지에 걸려 재예약을
+            // 통째로 건너뛰면 알람이 안 울린다(지울 예약도 이미 없다). 반대로 명시적 로그아웃
+            // 뒤에는 복원 대상이 없어 임자와 어긋나므로 그대로 떼어 둔다(Codex #666 P1).
+            //
+            // 취소는 다른 계정이 실제로 로그인해 있을 때만 한다(위 게이트와 같은 이유).
+            if (alarm.ownerUserId == null && !ownershipSettled &&
+                pendingOwnerUserIdProvider() != restorableOwner
+            ) {
                 if (currentUser != null) alarmScheduler.cancel(alarm.id)
                 return@forEach
             }
@@ -981,6 +989,17 @@ class AlarmRepository(
             // 예전에는 이 함수가 콜드스타트·부팅에서만 돌아 겹칠 일이 드물었지만, 예약 정합성
             // 워커(AlarmScheduleIntegrityWorker)가 주기적으로 부르면서 흔해진다.
             if (alarm.state == AlarmStates.RINGING) return@forEach
+
+            // 목록을 읽은 뒤 사용자가 그 알람을 끄거나 지웠을 수 있다. 스냅샷 그대로 진행하면
+            // 방금 끈 알람이 되살아난다 — 아래 재계산이 enabled=true 인 옛 값을 그대로 upsert 하고,
+            // OS 예약도 다시 걸린다. 그러면 AlarmReceiver 가 Room 검증 전에 RingingService 를 띄우고
+            // markRinging 이 행을 다시 켜서, 사용자가 끈 알람이 울린다(Codex #666 P2).
+            //
+            // 콜드스타트·부팅에서만 돌 때는 사용자 조작과 겹칠 일이 드물었지만, 6시간 주기 워커가
+            // 부르면서 흔해진다. 쓰기 직전에 한 번 더 읽어 그 창을 좁힌다.
+            val fresh = alarmDao.getById(alarm.id)
+            if (fresh == null || !fresh.enabled || fresh.state == AlarmStates.RINGING) return@forEach
+            val alarm = fresh
 
             runCatching {
                 // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
