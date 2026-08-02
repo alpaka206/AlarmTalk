@@ -1066,6 +1066,18 @@ class AlarmRepository(
                 // 재계산에서 제외한다 — 그러지 않으면 tz/시각 변경 시 스누즈가 다음 정규 발생으로 밀린다.
                 //
                 val isSnoozed = alarm.state == AlarmStates.SNOOZED
+                // **아직 배달 대기 중인 예약을 앞당겨 없애지 않는다.** 정확 알람 권한이 없거나
+                // 회수된 기기(Android 12+)에서는 setAndAllowWhileIdle 로 떨어져 지정 시각보다
+                // 늦게 전달될 수 있다. 15분 주기 워커가 그 사이에 돌면 "지났는데 안 울렸다" 로
+                // 보고 다음 발생으로 앞당겨 같은 PendingIntent 를 덮어써, 오늘 알람이 사라진다
+                // (Codex #666 P1). 예약이 아직 살아 있으면 그대로 둔다.
+                //
+                // 시간대·시각 변경(recomputeFireTime=true)은 예외다 — 그때는 살아 있는 예약이
+                // 곧 '틀린 시각' 이라 반드시 다시 계산해야 한다.
+                val reservationPending = !recomputeFireTime &&
+                    alarm.fireAtMillis <= now &&
+                    alarmScheduler.hasReservation(alarm.id)
+                if (reservationPending) return@forEach
                 val needsRecompute = !isSnoozed && (recomputeFireTime || alarm.fireAtMillis <= now)
                 val alarmToSchedule = when {
                     !needsRecompute -> alarm
