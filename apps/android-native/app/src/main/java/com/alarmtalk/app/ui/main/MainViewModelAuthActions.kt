@@ -432,7 +432,7 @@ internal fun MainViewModel.updateNickname(name: String) {
             api.updateProfile(authorization, com.alarmtalk.app.network.UpdateProfileRequest(name = trimmed))
         }.onSuccess {
             val updated = session.copy(user = session.user.copy(name = trimmed))
-            authSession = authSessionStore.save(updated)
+            authSession = saveSessionPreservingCurrentToken(updated)
             dismissEditNickname()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update nickname", error)
@@ -485,7 +485,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                     familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
-            authSession = authSessionStore.save(updated)
+            authSession = saveSessionPreservingCurrentToken(updated)
             refreshSocial()
             message = getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_saved)
         }.onFailure { error ->
@@ -510,7 +510,7 @@ internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSe
         }.onSuccess { response ->
             val updatedSettings = response.dynamicPromptSettings ?: settings
             val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
-            authSession = authSessionStore.save(updated)
+            authSession = saveSessionPreservingCurrentToken(updated)
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
@@ -1102,6 +1102,26 @@ internal fun MainViewModel.showGoogleSignInFailed(reason: String? = null) {
 
 internal fun MainViewModel.clearMessage() {
     message = null
+}
+
+/**
+ * 프로필 일부만 바꿔 세션을 다시 저장할 때 쓴다.
+ *
+ * **토큰은 잡아 둔 것이 아니라 지금 저장소에 있는 것**을 쓴다. 요청이 도는 사이 `GET /auth/me`
+ * 의 rolling refresh 가 토큰을 굴렸을 수 있는데, 그때 옛 토큰을 그대로 다시 저장하면 새 토큰이
+ * 사라진다 — 하필 옛 토큰의 만료가 임박한 상황(=갱신이 필요했던 바로 그 상황)이면 다음 요청이
+ * 401 로 사용자를 로그아웃시킨다(Codex #665 P2).
+ */
+internal fun MainViewModel.saveSessionPreservingCurrentToken(
+    updated: com.alarmtalk.app.network.AuthSession,
+): com.alarmtalk.app.network.AuthSession {
+    val currentToken = authSessionStore.read()?.token?.takeIf { it.isNotBlank() }
+    val merged = if (currentToken != null && currentToken != updated.token) {
+        updated.copy(token = currentToken)
+    } else {
+        updated
+    }
+    return authSessionStore.save(merged)
 }
 
 internal fun MainViewModel.refreshAppSession() {

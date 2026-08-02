@@ -43,7 +43,11 @@ class PlanChangeSyncWorker(
             // 가능하므로 billing·me 는 필수 — 둘 중 하나라도 실패하면 확정할 수 없으니 throw 시켜
             // outer runCatching 이 Result.retry() 로 처리한다(성공으로 조용히 끝내지 않는다). 가족은 보조.
             val billing = withContext(Dispatchers.IO) { api.getSubscription(auth) }
-            val freshUser = withContext(Dispatchers.IO) { api.me(auth).user }
+            // 응답 전체를 들고 있는다 — /auth/me 는 새 토큰도 함께 준다(rolling refresh).
+            // user 만 꺼내 버리면 이 워커가 만료 직전 유일한 호출자일 때 갱신된 토큰이 버려지고,
+            // 세션이 그대로 만료돼 재로그인을 강요한다(Codex #665 P2).
+            val me = withContext(Dispatchers.IO) { api.me(auth) }
+            val freshUser = me.user
             val familyGroup = runCatching { withContext(Dispatchers.IO) { api.getFamilyGroup(auth) } }.getOrNull()
 
             // 네트워크 왕복 중 로그아웃/계정전환이 일어났을 수 있다 — 결과를 쓰기 전에 현재 세션이 아직
@@ -66,9 +70,12 @@ class PlanChangeSyncWorker(
             val snapshotStore = AccessSnapshotStore(applicationContext)
             snapshotStore.updateSubscription(userId, billing)
             snapshotStore.updateFamilyGroup(userId, familyGroup)
-            // **지금 유효한 토큰**을 쓴다. 시작 시점에 잡아 둔 session.token 을 그대로 다시
-            // 저장하면, 그 사이 rolling refresh 가 굴려 놓은 새 토큰을 옛 토큰으로 되돌린다.
-            val response = AuthTokenResponse(token = current.token, user = freshUser)
+            // 토큰 우선순위: **이 요청이 방금 받은 새 토큰 → 지금 저장소의 토큰**. 시작 시점에
+            // 잡아 둔 session.token 은 쓰지 않는다 — 그 사이 굴러간 토큰을 옛 것으로 되돌린다.
+            val response = AuthTokenResponse(
+                token = me.token?.takeIf { it.isNotBlank() } ?: current.token,
+                user = freshUser,
+            )
             if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
                 sessionStore.saveGoogleSession(response)
             } else {
