@@ -79,7 +79,7 @@ class VoiceAccessSyncWorker(
 
             val accessibleVoiceIds = (myVoices.map { it.id } + sharedVoices.map { it.id }).toSet()
             val degraded = AlarmAppContainer.repository(applicationContext)
-                .degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds)
+                .degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, session.user.id)
             if (degraded > 0) {
                 Log.i(TAG, "Degraded $degraded alarm(s) after voice access was revoked")
             }

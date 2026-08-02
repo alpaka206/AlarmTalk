@@ -72,6 +72,12 @@ class PlanChangeSyncWorker(
             snapshotStore.updateFamilyGroup(userId, familyGroup)
             // 토큰 우선순위: **이 요청이 방금 받은 새 토큰 → 지금 저장소의 토큰**. 시작 시점에
             // 잡아 둔 session.token 은 쓰지 않는다 — 그 사이 굴러간 토큰을 옛 것으로 되돌린다.
+            // 위 확인 이후에도 로그아웃이 끼어들 수 있다 — 쓰기 **직전에** 한 번 더 본다.
+            // 비운 저장소에 이 세션을 다시 쓰면 로그아웃이 통째로 되돌아가고, 이어지는
+            // 무료 강등이 떼어낸 알람을 로그인 화면 뒤에서 다시 예약한다(Codex #665 P1).
+            if (sessionStore.sessionGeneration() != startGeneration || sessionStore.read() == null) {
+                return@runCatching Result.success()
+            }
             val response = AuthTokenResponse(
                 token = me.token?.takeIf { it.isNotBlank() } ?: current.token,
                 user = freshUser,

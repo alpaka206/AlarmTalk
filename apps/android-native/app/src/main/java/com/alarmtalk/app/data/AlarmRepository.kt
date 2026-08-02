@@ -553,8 +553,17 @@ class AlarmRepository(
      * 대상은 **지금 계정 소유** 알람으로 한정된다(같은 기기에 남아 있는 앞 계정 알람은 건드리지 않는다).
      * 반환값은 강등된 알람 수.
      */
-    suspend fun degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds: Set<String>): Int =
-        degradeMatchingLocalOwnedVoiceAlarms { alarm ->
+    /**
+     * @param expectedOwnerUserId 이 목록을 **가져온 계정**. 소유자를 고르는 시점에 계정이
+     *   그대로인지 확인한다 — 목록은 A 로 받아 놓고 그 사이 B 로 바뀌면, B 의 알람에서 A 기준
+     *   접근권으로 목소리를 **영구히** 벗긴다(되돌릴 수 없다, Codex #665 P1). 호출부의 사전
+     *   확인만으로는 이 창을 못 닫는다.
+     */
+    suspend fun degradeAlarmsWithInaccessibleVoice(
+        accessibleVoiceIds: Set<String>,
+        expectedOwnerUserId: String?,
+    ): Int =
+        degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
             !alarm.voiceProfileId.isNullOrBlank() &&
                 // 시스템 스톡 버킷/보이스는 영구라 보존. 클론(비-system) 보이스는 단일클립·버킷 모두
                 // 접근권 상실(공유해제·제공자취소·삭제) 시 강등 대상.
@@ -565,11 +574,14 @@ class AlarmRepository(
     // 방금 삭제한 특정 목소리를 쓰는 내 알람만 즉시 강등한다 — 소셜 목록 신선도(reconcile 가드)와
     // 무관하게 삭제 확정 정보로 바로 기본 알람으로 변환한다.
     suspend fun degradeAlarmsUsingVoiceProfile(voiceProfileId: String): Int =
-        degradeMatchingLocalOwnedVoiceAlarms { alarm ->
+        degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId = null) { alarm ->
             alarm.voiceProfileId == voiceProfileId && !isSystemVoiceId(alarm.voiceProfileId)
         }
 
-    private suspend fun degradeMatchingLocalOwnedVoiceAlarms(match: (AlarmEntity) -> Boolean): Int {
+    private suspend fun degradeMatchingLocalOwnedVoiceAlarms(
+        expectedOwnerUserId: String?,
+        match: (AlarmEntity) -> Boolean,
+    ): Int {
         // 강등은 되돌릴 수 없다 — 목소리 참조를 지우고 캐시 오디오까지 정리한다. 그래서 '지금 계정
         // 것'이라고 확신할 수 있는 행만 건드린다.
         //
@@ -580,6 +592,11 @@ class AlarmRepository(
         // 요청 중의 계정 전환만 잡지, 이미 앞 계정 것인 행은 못 지킨다(Codex #646 P1).
         val ownershipSettled = settlePendingAlarmOwnership()
         val currentUser = currentUserIdProvider()?.takeIf { it.isNotBlank() }
+        // 파괴적 변경이라 되돌릴 수 없다 — 목록을 가져온 계정과 지금 계정이 다르면 그만둔다.
+        if (expectedOwnerUserId != null && currentUser != expectedOwnerUserId) {
+            Log.i(TAG, "Skipped voice degradation: account changed since the list was fetched")
+            return 0
+        }
         if (currentUser == null) {
             // 비로그인 상태에서는 [accessibleVoiceIds] 가 누구의 목록인지 알 수 없다. 호출부가
             // 모두 세션 안에서 도므로 정상 경로에서는 오지 않는 가지다.
