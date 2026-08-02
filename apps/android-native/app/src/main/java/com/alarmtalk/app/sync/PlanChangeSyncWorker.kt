@@ -33,6 +33,8 @@ class PlanChangeSyncWorker(
     override suspend fun doWork(): Result {
         val sessionStore = AuthSessionStore(applicationContext)
         val session = sessionStore.read() ?: return Result.success()
+        // 시작 시점의 세션 세대 — 결과를 쓰기 전에 같은 세션인지 대조한다.
+        val startGeneration = sessionStore.sessionGeneration()
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -48,10 +50,14 @@ class PlanChangeSyncWorker(
             // **같은 계정**인지 재확인한다. 바뀌었으면 옛 세션을 부활시키거나 새 세션을 덮어쓰지
             // 않도록 이 결과를 버린다(성공 처리, 재시도 불요). (FCM 토큰 등록 레이스 가드와 동일 패턴.)
             //
-            // 토큰이 아니라 계정 id 로 본다 — GET /auth/me 의 rolling refresh 가 토큰만 갈아 끼우는데,
-            // 토큰으로 비교하면 그것도 '계정 전환' 으로 오판해 결과를 버린다(Codex #665 P1).
+            // 판정 기준은 **세션 세대**다. 토큰으로 보면 rolling refresh 도 '전환' 으로 오판하고,
+            // 계정 id 로 보면 로그아웃 후 같은 계정 재로그인을 통과시켜 폐기된 옛 토큰을
+            // 되살려 쓴다(Codex #665 P1·P2). 세대는 세션이 끝날 때만 바뀐다.
             val current = sessionStore.read()
-            if (current == null || current.user.id != session.user.id) {
+            if (current == null ||
+                current.user.id != session.user.id ||
+                sessionStore.sessionGeneration() != startGeneration
+            ) {
                 return@runCatching Result.success()
             }
 
@@ -60,7 +66,9 @@ class PlanChangeSyncWorker(
             val snapshotStore = AccessSnapshotStore(applicationContext)
             snapshotStore.updateSubscription(userId, billing)
             snapshotStore.updateFamilyGroup(userId, familyGroup)
-            val response = AuthTokenResponse(token = session.token, user = freshUser)
+            // **지금 유효한 토큰**을 쓴다. 시작 시점에 잡아 둔 session.token 을 그대로 다시
+            // 저장하면, 그 사이 rolling refresh 가 굴려 놓은 새 토큰을 옛 토큰으로 되돌린다.
+            val response = AuthTokenResponse(token = current.token, user = freshUser)
             if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
                 sessionStore.saveGoogleSession(response)
             } else {

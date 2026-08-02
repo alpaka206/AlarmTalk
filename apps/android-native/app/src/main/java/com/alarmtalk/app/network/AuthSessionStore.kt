@@ -199,9 +199,13 @@ class AuthSessionStore(context: Context) {
         // '자동 만료로 끊긴 계정' 도 같이 지켜야 한다. 이 값이 clear 에 쓸려 나가면 업데이트
         // 후 재예약이 복원 대상을 잃는다([sessionExpiredOwnerUserId]).
         val expiredOwner = prefs.getString(KEY_SESSION_EXPIRED_OWNER, null)
+        // 세션 세대를 올린다 — 이 값이 바뀌면 "그 사이 세션이 끝났다" 는 뜻이다.
+        // 자세한 계약은 [sessionGeneration] 주석 참고.
+        val nextGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L) + 1L
         prefs.edit()
             .clear()
             .putString(KEY_PENDING_OWNER_USER_ID, pendingOwner)
+            .putLong(KEY_SESSION_GENERATION, nextGeneration)
             .also { if (expiredOwner != null) it.putString(KEY_SESSION_EXPIRED_OWNER, expiredOwner) }
             .apply()
     }
@@ -228,6 +232,18 @@ class AuthSessionStore(context: Context) {
      */
     fun sessionExpiredOwnerUserId(): String? =
         prefs.getString(KEY_SESSION_EXPIRED_OWNER, null)?.takeIf { it.isNotBlank() }
+
+    /**
+     * 세션 세대. **세션이 끝날 때만** 올라간다([clear] — 로그아웃·탈퇴·자동 401).
+     *
+     * 오래 걸리는 작업이 "내가 시작할 때의 그 세션이 아직 살아 있나" 를 판정하는 기준이다.
+     * 토큰으로 비교하면 안 된다 — `GET /auth/me` 의 rolling refresh 가 같은 세션 안에서도
+     * 토큰을 갈아 끼운다. 계정 id 로 비교해도 부족하다 — 로그아웃 후 **같은 계정**으로 다시
+     * 로그인하면 id 가 같아 통과하고, 그 작업이 폐기된 옛 토큰을 되살려 쓴다(Codex #665 P2).
+     *
+     * 이 값은 세션이 끝날 때만 바뀌므로 두 경우를 모두 가른다.
+     */
+    fun sessionGeneration(): Long = prefs.getLong(KEY_SESSION_GENERATION, 0L)
 
     /** 자동 401 처리에서 세션을 비우기 **전에** 부른다. */
     fun markSessionExpired(userId: String?) {
@@ -464,6 +480,7 @@ class AuthSessionStore(context: Context) {
         // (저장 키 문자열은 옛 이름을 유지한다 — 이미 기록된 기기의 값을 잃지 않기 위해.)
         private const val KEY_PENDING_OWNER_USER_ID = "last_session_user_id"
         private const val KEY_SESSION_EXPIRED_OWNER = "session_expired_owner_user_id"
+        private const val KEY_SESSION_GENERATION = "session_generation"
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"
         private const val KEY_PLAN = "plan"
