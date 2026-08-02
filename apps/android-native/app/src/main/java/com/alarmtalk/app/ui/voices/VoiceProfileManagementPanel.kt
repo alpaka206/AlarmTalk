@@ -621,7 +621,7 @@ internal fun VoiceProfileManagementPanel(
                     // 저장된 것처럼 보인다.
                     selectedAudio = null
                     recordingElapsedMillis = 0L
-                    // 1분 미만 안내는 마이크 카드의 대기 문구("1분 이상 녹음해 주세요")와
+                    // 하한 미달 안내는 마이크 카드의 대기 문구("12초 이상 녹음해 주세요")와
                     // 중복이라 대사 밑에 또 띄우지 않는다. 길이 확인 실패 등 다른 원인만 알린다.
                     val tooShort = duration != null && duration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS
                     localMessage = if (tooShort) null else error
@@ -1402,7 +1402,7 @@ internal fun VoiceProfileManagementPanel(
         }
         val resolvedProfileName = profileName.trim()
         val nameRequiredError = createSubmitAttempted && resolvedProfileName.isBlank()
-        // 1분 미만이면 "다음" 으로 넘어가지 못하게 막는다. 녹음은 selectedAudio 길이,
+        // 하한(12초) 미만이면 "다음" 으로 넘어가지 못하게 막는다. 녹음은 selectedAudio 길이,
         // 파일은 실제 업로드되는 crop 구간 길이로 판정(백엔드 MIN_UPLOAD_DURATION_MS 와 동일 기준).
         val canSubmitRecord = inputMode == VoiceCaptureMode.Record &&
             (selectedAudio?.durationMillis ?: 0L) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
