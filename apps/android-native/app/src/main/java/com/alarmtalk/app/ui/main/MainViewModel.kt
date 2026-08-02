@@ -176,6 +176,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }.onFailure { error ->
                 Log.w(TAG, "Failed to stamp ownerless alarms on session expiry", error)
             }
+            // **자동으로** 끊긴 계정을 남긴다 — 비로그인 상태에서 되살려도 되는 알람의 주인이다.
+            // 세션을 비우기 전에 해야 id 를 알 수 있다. 명시적 로그아웃은 이 값을 지우므로,
+            // 여러 계정이 오간 기기에서도 방금 만료된 계정의 알람만 되살아난다(Codex #665 P1).
+            runCatching { authSessionStore.markSessionExpired(authSession?.user?.id) }
+                .onFailure { error -> Log.w(TAG, "Failed to mark session expired owner", error) }
             clearSessionKeepingAlarms()
             message = getApplication<android.app.Application>().getString(R.string.r3misc_session_expired)
         }
@@ -191,11 +196,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     internal suspend fun clearSignedInSession() {
         val signedOutUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
-        // 표시를 **먼저** 남긴다. 떼어내기가 중간에 실패하거나 프로세스가 죽어도 "명시적
-        // 로그아웃이었다" 는 사실은 남아야, 다음 재예약이 이 계정 알람을 되살리지 않는다.
-        // (다시 로그인하면 AuthSessionStore.save 가 지운다.)
-        runCatching { authSessionStore.markAlarmsDetachedOnSignOut() }
-            .onFailure { error -> Log.w(TAG, "Failed to mark alarms detached on sign-out", error) }
+        // 표시를 **먼저** 지운다. 떼어내기가 중간에 실패하거나 프로세스가 죽어도 "명시적
+        // 로그아웃이었다" 는 사실이 남아야, 다음 재예약이 이 계정 알람을 되살리지 않는다.
+        // (앞서 자동 만료로 남아 있던 값이 있으면 그게 이 계정을 되살려 버린다.)
+        runCatching { authSessionStore.clearSessionExpiredOwner() }
+            .onFailure { error -> Log.w(TAG, "Failed to clear expired-session owner on sign-out", error) }
         runCatching { repository.detachAlarmsOnSignOut(signedOutUserId) }
             .onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
         // 기본 목소리 취향(마지막 쓴 목소리·'나중에 받기' 선택)은 계정을 명시적으로 끝낼 때만

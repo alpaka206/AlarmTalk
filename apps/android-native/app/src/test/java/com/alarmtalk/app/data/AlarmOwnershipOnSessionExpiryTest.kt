@@ -35,8 +35,8 @@ class AlarmOwnershipOnSessionExpiryTest {
     /** 아직 소유자를 못 새긴 알람의 임자(실제로는 AuthSessionStore prefs). */
     private var pendingOwner: String? = null
 
-    /** 명시적 로그아웃으로 알람을 떼어냈는가(실제로는 AuthSessionStore prefs). */
-    private var alarmsDetached: Boolean = false
+    /** 자동으로 세션이 끊긴 계정(실제로는 AuthSessionStore prefs). 비로그인 복원 대상. */
+    private var sessionExpiredOwner: String? = null
 
     private val repository by lazy { repositoryWith(dao) }
 
@@ -50,7 +50,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         currentUserIdProvider = { currentUser },
         pendingOwnerUserIdProvider = { pendingOwner },
         onOwnershipSettled = { pendingOwner = null },
-        alarmsDetachedOnSignOutProvider = { alarmsDetached },
+        sessionExpiredOwnerUserIdProvider = { sessionExpiredOwner },
     )
 
     private val shadowAlarmManager
@@ -178,6 +178,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         seedLegacyAlarm(owner = "account-A")
         // 세션 만료(401) — 로그인은 끊겼지만 이 기기의 알람은 그대로다.
         currentUser = null
+        sessionExpiredOwner = "account-A"
         // 업데이트 직후를 그대로 재현한다 — DB 에 행만 있고 OS 예약은 하나도 없는 상태.
         assertNull("전제: OS 예약이 비어 있다", shadowAlarmManager.peekNextScheduledAlarm())
 
@@ -195,6 +196,7 @@ class AlarmOwnershipOnSessionExpiryTest {
     fun anotherAccountSigningInStillLosesForeignAlarms() = runBlocking {
         seedLegacyAlarm(owner = "account-A")
         currentUser = null
+        sessionExpiredOwner = "account-A"
         assertEquals("비로그인 구간에서는 살아 있다", 1, repository.reschedulePendingAlarms())
 
         currentUser = "account-B"
@@ -214,7 +216,7 @@ class AlarmOwnershipOnSessionExpiryTest {
     fun explicitlyDetachedAlarmsStayUnscheduledWhileSignedOut() = runBlocking {
         seedLegacyAlarm(owner = "account-A")
         currentUser = null
-        alarmsDetached = true // 명시적 로그아웃을 거쳤다
+        sessionExpiredOwner = null // 명시적 로그아웃은 복원 대상을 지운다
 
         val scheduled = repository.reschedulePendingAlarms()
 
@@ -232,21 +234,41 @@ class AlarmOwnershipOnSessionExpiryTest {
     fun legacySignedOutDeviceIsTreatedAsDetached() = runBlocking {
         seedLegacyAlarm(owner = "account-A")
         currentUser = null
-        alarmsDetached = true // 세션이 없던 기기 → 저장소가 '떼어냄' 으로 정한 값
+        sessionExpiredOwner = null // 표시가 없던 기기 → 복원 대상 없음
 
         assertEquals("표시가 없던 기기도 되살리면 안 된다", 0, repository.reschedulePendingAlarms())
+    }
+
+    /**
+     * 회귀 방지: 한 기기에 여러 계정이 오갔을 때, 되살아나는 건 **방금 만료된 계정** 것뿐이다.
+     *
+     * A 가 명시적으로 로그아웃 → B 가 로그인 → B 의 세션만 자동 만료. 복원 대상을 불리언으로
+     * 두면 이 순간 A 의 알람까지 로그인 화면 뒤에서 함께 살아난다(Codex #665 P1).
+     */
+    @Test
+    fun onlyTheExpiredAccountsAlarmsComeBackOnMultiAccountDevice() = runBlocking {
+        seedLegacyAlarm(id = "a-1", owner = "account-A") // A 가 로그아웃하며 두고 간 행
+        seedLegacyAlarm(id = "b-1", owner = "account-B") // B 가 쓰던 행
+
+        // B 의 세션이 자동 만료됐다.
+        currentUser = null
+        sessionExpiredOwner = "account-B"
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("B 것 하나만 되살아나야 한다", 1, scheduled)
+        assertEquals("A 의 행은 그대로 남는다", "account-A", ownerOf("a-1"))
     }
 
     /** 그리고 그 사람이 다시 로그인하면 원래대로 되살아난다. */
     @Test
     fun detachedAlarmsComeBackAfterSigningInAgain() = runBlocking {
         seedLegacyAlarm(owner = "account-A")
-        alarmsDetached = true
+        sessionExpiredOwner = null
         currentUser = null
         assertEquals("전제: 로그아웃 상태에서는 안 살아난다", 0, repository.reschedulePendingAlarms())
 
-        // 다시 로그인 — AuthSessionStore.save 가 표시를 지운다.
-        alarmsDetached = false
+        // 다시 로그인 — onSignedIn 이 표시를 지우고 소유자가 일치한다.
         currentUser = "account-A"
 
         assertEquals("본인이 다시 로그인하면 그대로 되살아난다", 1, repository.reschedulePendingAlarms())
@@ -420,6 +442,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
 
         currentUser = null   // 401 로 세션만 끊긴 상태
+        sessionExpiredOwner = "account-A"
         repository.reschedulePendingAlarms()
 
         assertNotNull(

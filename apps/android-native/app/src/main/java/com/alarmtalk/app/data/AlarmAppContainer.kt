@@ -33,9 +33,9 @@ object AlarmAppContainer {
                 // 정리가 끝나야만 표시를 지워, 실패하면 다음 기회에 다시 시도한다.
                 pendingOwnerUserIdProvider = { authSessionStore(context).pendingOwnerUserId() },
                 onOwnershipSettled = { authSessionStore(context).clearPendingOwner() },
-                // 명시적 로그아웃으로 떼어낸 알람은 재로그인 전까지 되살리지 않는다.
-                // 자동 401(세션 만료)과 구분하는 유일한 신호다.
-                alarmsDetachedOnSignOutProvider = { authSessionStore(context).alarmsDetachedOnSignOut() },
+                // 비로그인 상태에서 되살려도 되는 알람의 주인. 자동 401 로 끊긴 계정만 담기고,
+                // 명시적 로그아웃은 이 값을 지워 그 계정 알람이 되살아나지 않게 한다.
+                sessionExpiredOwnerUserIdProvider = { authSessionStore(context).sessionExpiredOwnerUserId() },
             ).also { repository = it }
         }
 

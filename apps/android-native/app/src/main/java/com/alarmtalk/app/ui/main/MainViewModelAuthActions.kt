@@ -271,12 +271,12 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
  * MainViewModel.init 의 시작 시 재예약에만 기대고 있었다.
  */
 private suspend fun MainViewModel.onSignedIn() {
-    // 로그인이 확정된 지금만 '떼어냄' 표시를 지운다. 이 계정 알람은 소유자가 일치해 아래
-    // reschedulePendingAlarms 가 정상적으로 되살린다. AuthSessionStore.save 에서 지우면
+    // 로그인이 확정된 지금만 '자동 만료 계정' 표시를 지운다. 이 계정 알람은 소유자가 일치해
+    // 아래 reschedulePendingAlarms 가 정상적으로 되살린다. AuthSessionStore.save 에서 지우면
     // 프로필 수정·refreshAppSession 같은 다른 호출까지 표시를 지워, 로그아웃 직후 늦게 온
     // 응답 하나가 떼어낸 알람을 되살린다(Codex #665 P1).
-    runCatching { authSessionStore.clearAlarmsDetachedOnSignOut() }
-        .onFailure { error -> Log.w(TAG, "Failed to clear alarm detach marker on sign-in", error) }
+    runCatching { authSessionStore.clearSessionExpiredOwner() }
+        .onFailure { error -> Log.w(TAG, "Failed to clear expired-session owner on sign-in", error) }
     restoreAccessSnapshotForCurrentUser()
     RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
     RemoteAlarmSyncScheduler.runOnce(getApplication())

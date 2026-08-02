@@ -29,7 +29,7 @@ There is no iOS app. The SwiftUI client and its build workflow were removed from
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (deterministic TTS cache) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, 7d) · email code · Google ID token |
+| Auth | JWT (HS256, 90d · rolls on each launch) · email code · Google ID token |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## Repository Layout

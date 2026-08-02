@@ -69,19 +69,6 @@ fun AuthSessionStore.observeUserId(): Flow<String?> =
  * [AuthSessionStore] 는 EncryptedSharedPreferences(AndroidKeyStore)라 Robolectric 에서 세워지지
  * 않아, 판단 부분만 순수 함수로 떼어 테스트한다.
  */
-/**
- * 표시가 없는 기기(=이 빌드 이전 상태)의 초기값. 세션이 없으면 '떼어냄' 으로 본다.
- *
- * 명시적 로그아웃과 자동 401 을 구분할 신호가 그때는 없었으므로, 둘을 가를 수 없다면 **안전한
- * 쪽**을 고른다. 되살렸는데 명시적 로그아웃이었다면 사용자가 끌 수 없는 알람이 울린다. 안
- * 되살렸는데 자동 401 이었다면 로그인 한 번으로 돌아온다 — 게다가 만료 토큰은 갱신할 수 없어
- * 어차피 다시 로그인해야 한다.
- *
- * [AuthSessionStore] 는 EncryptedSharedPreferences(AndroidKeyStore)라 Robolectric 에서 세워지지
- * 않아, 판단 부분만 순수 함수로 떼어 테스트한다([resolvePendingOwnerUserId] 와 같은 이유).
- */
-internal fun resolveInitialAlarmsDetached(hasStoredToken: Boolean): Boolean = !hasStoredToken
-
 internal fun resolvePendingOwnerUserId(leavingUserId: String?, existingPendingOwner: String?): String? =
     existingPendingOwner?.takeIf { it.isNotBlank() }
         ?: leavingUserId?.takeIf { it.isNotBlank() }
@@ -209,62 +196,53 @@ class AuthSessionStore(context: Context) {
             leavingUserId = prefs.getString(KEY_USER_ID, null),
             existingPendingOwner = prefs.getString(KEY_PENDING_OWNER_USER_ID, null),
         )
-        // '명시적 로그아웃으로 알람을 떼어냈다' 표시도 같이 지켜야 한다. 이 값이 clear 에
-        // 쓸려 나가면 재예약이 로그아웃한 계정의 알람을 되살린다([alarmsDetachedOnSignOut]).
-        val detached = prefs.getBoolean(KEY_ALARMS_DETACHED, false)
+        // '자동 만료로 끊긴 계정' 도 같이 지켜야 한다. 이 값이 clear 에 쓸려 나가면 업데이트
+        // 후 재예약이 복원 대상을 잃는다([sessionExpiredOwnerUserId]).
+        val expiredOwner = prefs.getString(KEY_SESSION_EXPIRED_OWNER, null)
         prefs.edit()
             .clear()
             .putString(KEY_PENDING_OWNER_USER_ID, pendingOwner)
-            .putBoolean(KEY_ALARMS_DETACHED, detached)
+            .also { if (expiredOwner != null) it.putString(KEY_SESSION_EXPIRED_OWNER, expiredOwner) }
             .apply()
     }
 
     /**
-     * 명시적 로그아웃(로그아웃·탈퇴)에서 이 기기의 알람 예약을 떼어냈다는 표시.
+     * **자동으로 세션이 끊긴(토큰 만료·폐기) 계정.** 없으면 null.
      *
-     * 자동 401 과 구분하기 위해서만 존재한다. 둘 다 세션이 비어 `currentUserIdProvider()` 가
-     * null 이지만 알람에 대한 기대가 정반대다:
+     * 비로그인 상태에서 어떤 알람을 되살려도 되는지 가르는 값이다. 자동 401 과 명시적
+     * 로그아웃은 둘 다 세션이 비어 `currentUserIdProvider()` 가 null 이지만 알람에 대한 기대가
+     * 정반대다:
      *  - 자동 401(토큰 만료): 본인이 그대로 쓰던 기기다. 알람은 계속 울려야 하고, 업데이트로
      *    OS 예약이 지워졌으면 다시 새겨야 한다.
      *  - 명시적 로그아웃: 사용자가 끝낸 것이다. `detachAlarmsOnSignOut` 이 예약을 이미
      *    취소했고, **다시 로그인하기 전까지 되살리면 안 된다** — 로그아웃 뒤에는 목록이
      *    로그인 화면에 가려 사용자가 끌 수도 없는데 울리게 된다.
-     */
-    fun markAlarmsDetachedOnSignOut() {
-        prefs.edit().putBoolean(KEY_ALARMS_DETACHED, true).apply()
-    }
-
-    /**
-     * 로그인이 확정된 시점에만 부른다([MainViewModel] 의 onSignedIn). [save] 에서 지우면 안 된다 —
-     * save 는 프로필 수정·`refreshAppSession` 도 부르므로, 로그아웃 직후 늦게 도착한 응답 하나가
-     * 표시를 지우고 세션까지 되살려 떼어낸 알람이 로그인 화면 뒤에서 되살아난다.
-     */
-    fun clearAlarmsDetachedOnSignOut() {
-        prefs.edit().remove(KEY_ALARMS_DETACHED).apply()
-    }
-
-    /**
-     * 표시가 아직 한 번도 안 쓰인 기기(=이 빌드 이전에 로그아웃/만료된 기기)는 **세션 유무로
-     * 한 번 정해 준다.** 이 키는 새로 생긴 것이라 기본값 false 로 두면, 예전 버전에서 명시적
-     * 로그아웃을 한 기기가 이 빌드를 받는 순간 소유자 있는 알람을 전부 되살린다 — 로그인 화면
-     * 뒤라 끌 수도 없다(Codex #665 P1).
      *
-     * 세션이 없으면 '떼어냄' 으로 본다. 자동 401 로 끊긴 기기까지 함께 묶이지만, 그쪽은 어차피
-     * 만료 토큰을 갱신할 수 없어 한 번은 다시 로그인해야 하고(jwt.ts 참고) 지금도 알람이 안
-     * 울리는 상태다. **되살려서 못 끄게 만드는 쪽보다 안 되살려서 로그인 한 번 시키는 쪽이
-     * 안전하다.** 로그인 이후부터는 이 표시가 정확히 두 경우를 가른다.
+     * 불리언이 아니라 **계정 id** 를 담는 이유는 한 기기에 여러 계정이 오갔을 때다. A 가
+     * 명시적으로 로그아웃하고 B 가 로그인한 뒤 B 의 세션만 자동 만료되면, 되살려야 하는 건
+     * B 의 알람뿐이다. 불리언이면 A 의 알람까지 로그인 화면 뒤에서 함께 살아난다(Codex #665 P1).
+     *
+     * 값이 없는 기기(이 빌드 이전 상태 포함)는 **아무것도 되살리지 않는다** — 못 가릴 때는
+     * 되살려서 못 끄게 만드는 쪽보다 로그인 한 번 시키는 쪽이 안전하다. 그래서 별도 마이그레이션이
+     * 필요 없다.
      */
-    fun alarmsDetachedOnSignOut(): Boolean {
-        if (prefs.contains(KEY_ALARMS_DETACHED)) {
-            return prefs.getBoolean(KEY_ALARMS_DETACHED, false)
-        }
-        // read() 를 쓰지 않는다 — read() 는 무효한 구 구글 세션에서 clear() 를 부르고,
-        // clear() 가 다시 이 키를 읽어 순서가 꼬인다. 토큰 유무만 직접 본다.
-        val detached = resolveInitialAlarmsDetached(
-            hasStoredToken = !prefs.getString(KEY_TOKEN, null).isNullOrBlank(),
-        )
-        prefs.edit().putBoolean(KEY_ALARMS_DETACHED, detached).apply()
-        return detached
+    fun sessionExpiredOwnerUserId(): String? =
+        prefs.getString(KEY_SESSION_EXPIRED_OWNER, null)?.takeIf { it.isNotBlank() }
+
+    /** 자동 401 처리에서 세션을 비우기 **전에** 부른다. */
+    fun markSessionExpired(userId: String?) {
+        val resolved = userId?.takeIf { it.isNotBlank() } ?: return
+        prefs.edit().putString(KEY_SESSION_EXPIRED_OWNER, resolved).apply()
+    }
+
+    /**
+     * 명시적 로그아웃과 로그인 확정([MainViewModel] 의 onSignedIn) 양쪽에서 부른다.
+     *
+     * [save] 에서 지우면 안 된다 — save 는 프로필 수정·`refreshAppSession` 도 부르므로,
+     * 로그아웃 직후 늦게 도착한 응답 하나가 표시를 지워 떼어낸 알람이 되살아난다.
+     */
+    fun clearSessionExpiredOwner() {
+        prefs.edit().remove(KEY_SESSION_EXPIRED_OWNER).apply()
     }
 
     /** 아직 소유자를 못 새긴 알람의 임자(없으면 null). 세션을 비워도 남는다. */
@@ -485,7 +463,7 @@ class AuthSessionStore(context: Context) {
         // 근거다. [clear] 가 이 키만 남기고, 정리가 끝나면 [clearPendingOwner] 가 지운다.
         // (저장 키 문자열은 옛 이름을 유지한다 — 이미 기록된 기기의 값을 잃지 않기 위해.)
         private const val KEY_PENDING_OWNER_USER_ID = "last_session_user_id"
-        private const val KEY_ALARMS_DETACHED = "alarms_detached_on_sign_out"
+        private const val KEY_SESSION_EXPIRED_OWNER = "session_expired_owner_user_id"
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"
         private const val KEY_PLAN = "plan"
