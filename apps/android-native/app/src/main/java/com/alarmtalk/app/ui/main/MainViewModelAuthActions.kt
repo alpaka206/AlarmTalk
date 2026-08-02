@@ -425,6 +425,8 @@ internal fun MainViewModel.updateNickname(name: String) {
         message = getApplication<android.app.Application>().getString(R.string.msg_nickname_length_invalid)
         return
     }
+    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
+    val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
@@ -432,7 +434,7 @@ internal fun MainViewModel.updateNickname(name: String) {
             api.updateProfile(authorization, com.alarmtalk.app.network.UpdateProfileRequest(name = trimmed))
         }.onSuccess {
             val updated = session.copy(user = session.user.copy(name = trimmed))
-            authSession = saveSessionPreservingCurrentToken(updated)
+            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
             dismissEditNickname()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update nickname", error)
@@ -461,6 +463,8 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
     }
     val firstWindow = normalizedWindows.firstOrNull()
         ?: FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")
+    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
+    val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
@@ -485,7 +489,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                     familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
-            authSession = saveSessionPreservingCurrentToken(updated)
+            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
             refreshSocial()
             message = getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_saved)
         }.onFailure { error ->
@@ -498,6 +502,8 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
 
 internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSettings) {
     val session = authSession ?: return
+    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
+    val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         runCatching {
@@ -510,7 +516,7 @@ internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSe
         }.onSuccess { response ->
             val updatedSettings = response.dynamicPromptSettings ?: settings
             val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
-            authSession = saveSessionPreservingCurrentToken(updated)
+            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
@@ -1114,8 +1120,21 @@ internal fun MainViewModel.clearMessage() {
  */
 internal fun MainViewModel.saveSessionPreservingCurrentToken(
     updated: com.alarmtalk.app.network.AuthSession,
-): com.alarmtalk.app.network.AuthSession {
-    val currentToken = authSessionStore.read()?.token?.takeIf { it.isNotBlank() }
+    expectedGeneration: Long,
+): com.alarmtalk.app.network.AuthSession? {
+    // **세션이 그 사이 끝났거나 다른 계정이 되었으면 버린다.** 토큰만 지금 것으로 갈아 끼우면
+    // A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 저장된다 — 목록은 A 로 걸러지는데 서버
+    // 호출은 B 로 나가고, 이어지는 재예약이 A 의 알람을 되살리고 B 의 것을 취소한다
+    // (Codex #665 P1). refreshAppSession 과 같은 기준으로 본다.
+    val current = authSessionStore.read()
+    if (current == null ||
+        current.user.id != updated.user.id ||
+        authSessionStore.sessionGeneration() != expectedGeneration
+    ) {
+        Log.i(TAG, "Dropping stale profile save: session ended or switched")
+        return null
+    }
+    val currentToken = current.token.takeIf { it.isNotBlank() }
     val merged = if (currentToken != null && currentToken != updated.token) {
         updated.copy(token = currentToken)
     } else {
