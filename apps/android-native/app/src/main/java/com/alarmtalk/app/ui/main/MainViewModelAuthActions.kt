@@ -1110,6 +1110,16 @@ internal fun MainViewModel.refreshAppSession() {
         runCatching {
             api.me(AlarmTalkApiClient.bearer(session.token))
         }.onSuccess { me ->
+            // **응답이 오는 동안 세션이 끝났을 수 있다.** 로그아웃/탈퇴/401 뒤에 늦게 도착한
+            // 200 을 그대로 저장하면 끝낸 세션이 되살아난다 — 토큰까지 새로 굴려 주므로
+            // 오래 살아나기까지 한다. 떼어낸 알람도 그 세션 기준으로 다시 복원 대상이 된다.
+            // (rolling refresh 를 넣기 전에도 있던 구멍이지만, 앱을 열 때마다 도는 자리가
+            //  되면서 실제로 겹칠 확률이 커졌다.)
+            val stillSameAccount = authSession?.user?.id == session.user.id
+            if (signingOut || !stillSameAccount) {
+                Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
+                return@onSuccess
+            }
             // 서버가 새 토큰을 주면 갈아 끼운다(rolling refresh) — 앱을 열 때마다 만료가
             // 뒤로 밀려, 오래 안 열었다가 열었을 때 조용히 로그아웃돼 있는 일이 없어진다.
             // 안 주면(구버전 서버·재발급 실패) 쓰던 토큰을 그대로 둔다.
