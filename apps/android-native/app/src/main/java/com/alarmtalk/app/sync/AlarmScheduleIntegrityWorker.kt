@@ -51,13 +51,20 @@ object AlarmScheduleIntegrityScheduler {
     private const val ONE_TIME_WORK_NAME = "alarm_schedule_integrity_now"
 
     /**
-     * 6시간마다. 짧게 잡을 이유가 없다 — 알람은 보통 하루 단위이고, 이 워커는 브로드캐스트를
-     * 놓쳤을 때만 의미가 있는 안전망이다. 밤 사이 업데이트가 돼도 아침 알람 전에 한 번은 돈다.
+     * WorkManager 주기 작업의 **최소 간격인 15분**으로 잡는다.
+     *
+     * 처음에는 6시간으로 뒀는데 틀렸다. `KEEP` 은 이미 등록된 주기의 리듬을 그대로 두므로,
+     * 06:30 에 브로드캐스트를 놓친 기기에서 다음 점검이 몇 시간 뒤일 수 있다 — 07:00 알람은
+     * 이미 지난 뒤다. "밤 사이 업데이트돼도 아침 전에 한 번은 돈다" 는 보장이 성립하지 않는다.
+     * 알람 앱에서 복구가 늦는 건 복구가 없는 것과 크게 다르지 않다(Codex #666 P1).
+     *
+     * 15분은 기존 [RemoteAlarmSyncScheduler] 와 같은 리듬이라 새로운 부담이 아니고, 하는 일도
+     * 로컬 DB 읽기 + 이미 걸린 예약 갱신뿐이라 가볍다(멱등).
      *
      * **제약을 걸지 않는다.** 네트워크·충전·유휴 어느 것도 알람이 울리는 조건이 아니다.
      */
     fun ensurePeriodic(context: Context) {
-        val request = PeriodicWorkRequestBuilder<AlarmScheduleIntegrityWorker>(6, TimeUnit.HOURS)
+        val request = PeriodicWorkRequestBuilder<AlarmScheduleIntegrityWorker>(15, TimeUnit.MINUTES)
             .build()
         WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(
             PERIODIC_WORK_NAME,

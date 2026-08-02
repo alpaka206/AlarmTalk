@@ -995,7 +995,7 @@ class AlarmRepository(
             // OS 예약도 다시 걸린다. 그러면 AlarmReceiver 가 Room 검증 전에 RingingService 를 띄우고
             // markRinging 이 행을 다시 켜서, 사용자가 끈 알람이 울린다(Codex #666 P2).
             //
-            // 콜드스타트·부팅에서만 돌 때는 사용자 조작과 겹칠 일이 드물었지만, 6시간 주기 워커가
+            // 콜드스타트·부팅에서만 돌 때는 사용자 조작과 겹칠 일이 드물었지만, 주기 워커가
             // 부르면서 흔해진다. 쓰기 직전에 한 번 더 읽어 그 창을 좁힌다.
             val fresh = alarmDao.getById(alarm.id)
             if (fresh == null || !fresh.enabled || fresh.state == AlarmStates.RINGING) return@forEach

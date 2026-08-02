@@ -282,8 +282,7 @@ class AlarmOwnershipOnSessionExpiryTest {
      * 이 가지는 "미기록 행을 지금 계정 것으로 볼 근거가 없다" 를 막으려는 것인데, 지금 계정이
      * 없으면 잘못 넘겨줄 상대도 없다. 업데이트 직후에 여기 걸리면 지울 예약도 이미 없는 채로
      * 재예약만 통째로 건너뛰어 알람이 안 울린다.
-     */
-    /**
+     *
      * 단, 명시적 로그아웃에서 각인까지 실패한 행은 임자가 미정인 채 떼어진 상태다. 그걸
      * '비로그인이니 이 기기 것' 으로 보면 워커가 다음 회차에 로그인 화면 뒤에서 되살린다
      * (Codex #666 P1).
@@ -293,7 +292,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         seedLegacyAlarm() // 소유자 미기록
         pendingOwner = "account-A"
         currentUser = null
-        alarmsDetached = true // 명시적 로그아웃을 거쳤다
+        sessionExpiredOwner = null // 명시적 로그아웃 — 복원 대상이 없다
 
         val failing = repositoryWith(ClaimFailingDao(dao))
 
@@ -323,6 +322,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         seedLegacyAlarm() // 소유자 미기록
         pendingOwner = "account-A" // 각인 대상이 있으나
         currentUser = null // 지금 로그인한 계정은 없다
+        sessionExpiredOwner = "account-A" // 자동 401 — 그 임자가 곧 복원 대상이다
 
         // claimUnownedAlarms 가 실패하는 DAO — ownershipSettled = false 가 된다.
         val failing = repositoryWith(ClaimFailingDao(dao))
