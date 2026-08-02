@@ -931,12 +931,13 @@ class AlarmRepository(
             // 재로그인 때 되살아나 남의 폰에서 울리는 것 방지). 미기록(null)은 lockPaidAlarmTalks
             // 와 같은 규칙으로 현재 계정 것으로 본다.
             //
-            // **비로그인(currentUser == null)이면 이 게이트를 아예 적용하지 않는다.** 누가
-            // 로그인해 있지 않은 동안에는 '다른 계정 것'이라고 판정할 기준 자체가 없다. 예전에는
-            // 취소만 건너뛰고 `return@forEach` 로 재예약도 함께 건너뛰었는데, 그게 실제 피해를
-            // 냈다: **스토어 업데이트는 OS 의 AlarmManager 등록을 전부 지운다.** 지워진 뒤라
-            // "취소하지 않는다"는 아무 의미가 없고, 재예약을 건너뛰는 순간 그 알람은 영영 울리지
-            // 않는다. 목록 쪽도 같은 소유자 규칙이라 사용자에겐 보이지도 않아 되살릴 수단이 없다.
+            // **비로그인(currentUser == null)이면 이 게이트를 적용하지 않는다** — 단 아래
+            // '명시적 로그아웃' 예외가 있다. 누가 로그인해 있지 않은 동안에는 '다른 계정 것'
+            // 이라고 판정할 기준 자체가 없다. 예전에는 취소만 건너뛰고 `return@forEach` 로
+            // 재예약도 함께 건너뛰었는데, 그게 실제 피해를 냈다: **스토어 업데이트는 OS 의
+            // AlarmManager 등록을 전부 지운다.** 지워진 뒤라 "취소하지 않는다"는 아무 의미가
+            // 없고, 재예약을 건너뛰는 순간 그 알람은 영영 울리지 않는다. 목록 쪽도 같은 소유자
+            // 규칙이라 사용자에겐 보이지도 않아 되살릴 수단이 없다.
             // (토큰이 7일마다 죽고 갱신 경로가 없어서 이 조합이 흔했다 — jwt.ts 참고.)
             //
             // 알람 전달이 서버 인증 상태에 묶여선 안 된다(AGENTS.md). 남의 알람 정리는 '다른
@@ -971,6 +972,16 @@ class AlarmRepository(
                 if (currentUser != null) alarmScheduler.cancel(alarm.id)
                 return@forEach
             }
+            // **지금 울리는 중인 알람은 아예 건드리지 않는다.** RINGING 은 enabled=true 이고
+            // fireAtMillis 가 이미 과거다. 재계산에 넣으면 반복 없는 알람이 enabled=false·FAILED 로
+            // 꺼지고(듣고 있는 알람을 끄는 셈), 재계산에서 빼면 과거 시각 그대로 다시 예약돼
+            // 즉시 재발화한다 — 사용자가 그 사이 껐다면 껐던 알람이 되살아난다(Codex #666 P2).
+            // 이미 울리는 중이라 OS 예약이 더 필요하지도 않다. 다음 예약은 dismiss/snooze 가 잡는다.
+            //
+            // 예전에는 이 함수가 콜드스타트·부팅에서만 돌아 겹칠 일이 드물었지만, 예약 정합성
+            // 워커(AlarmScheduleIntegrityWorker)가 주기적으로 부르면서 흔해진다.
+            if (alarm.state == AlarmStates.RINGING) return@forEach
+
             runCatching {
                 // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
                 // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는
@@ -978,13 +989,8 @@ class AlarmRepository(
                 // 스누즈 알람은 enabled=true 이고 fireAtMillis 가 "스누즈 마감(절대시각)"이라
                 // 재계산에서 제외한다 — 그러지 않으면 tz/시각 변경 시 스누즈가 다음 정규 발생으로 밀린다.
                 //
-                // **지금 울리는 중인 알람도 같이 제외한다.** RINGING 은 enabled=true 이고
-                // fireAtMillis 가 이미 과거라, 반복 없는 알람이면 아래 else 가지로 떨어져
-                // enabled=false·FAILED 로 꺼 버린다 — 사용자가 듣고 있는 알람을 끄는 셈이다.
-                // 예전에는 이 함수가 콜드스타트·부팅에서만 돌아 겹칠 일이 드물었지만, 예약
-                // 정합성 워커(AlarmScheduleIntegrityWorker)가 주기적으로 부르면서 흔해진다.
-                val isInFlight = alarm.state == AlarmStates.SNOOZED || alarm.state == AlarmStates.RINGING
-                val needsRecompute = !isInFlight && (recomputeFireTime || alarm.fireAtMillis <= now)
+                val isSnoozed = alarm.state == AlarmStates.SNOOZED
+                val needsRecompute = !isSnoozed && (recomputeFireTime || alarm.fireAtMillis <= now)
                 val alarmToSchedule = when {
                     !needsRecompute -> alarm
                     alarm.repeatDaysMask != 0 || recomputeFireTime -> alarm.copy(

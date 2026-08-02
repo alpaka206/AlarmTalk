@@ -34,6 +34,11 @@ class AlarmTalkApplication : Application() {
             .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
         runCatching { RemoteAlarmSyncScheduler.ensurePeriodic(this) }
             .onFailure { AlarmTalkLog.reportError("RemoteAlarmSyncScheduler.ensurePeriodic failed", it) }
+        // OS 알람 예약 정합성 주기 점검. **여기서 거는 게 핵심이다** — 이 안전망이 막으려는
+        // 실패(MY_PACKAGE_REPLACED 유실)에서는 리시버가 아예 안 도니, 리시버에서만 등록하면
+        // 정작 필요한 기기에 등록되지 않는다. 앱을 한 번이라도 열면 그때부터 걸린다.
+        runCatching { com.alarmtalk.app.sync.AlarmScheduleIntegrityScheduler.ensurePeriodic(this) }
+            .onFailure { AlarmTalkLog.reportError("AlarmScheduleIntegrityScheduler.ensurePeriodic failed", it) }
         // 목소리 접근권(동의 철회·보관 만료) 주기 재확인 — 푸시 유실·앱 미실행에도 정확성을
         // 지키는 비-FCM 폴백. 하루 한 번.
         runCatching { com.alarmtalk.app.sync.VoiceAccessSyncWorker.ensurePeriodic(this) }

@@ -312,11 +312,13 @@ class AlarmOwnershipOnSessionExpiryTest {
         )
         currentUser = "account-A"
 
-        repository.reschedulePendingAlarms()
+        val scheduled = repository.reschedulePendingAlarms()
 
         val after = dao.getById("legacy-1")
         assertEquals("울리는 중인 알람은 그대로 켜져 있어야 한다", true, after?.enabled)
         assertEquals("상태도 RINGING 그대로", AlarmStates.RINGING, after?.state)
+        // 과거 시각 그대로 다시 예약하면 즉시 재발화한다 — 사용자가 그 사이 껐다면 되살아난다.
+        assertEquals("울리는 중인 알람은 예약 대상이 아니다", 0, scheduled)
     }
 
     @Test
