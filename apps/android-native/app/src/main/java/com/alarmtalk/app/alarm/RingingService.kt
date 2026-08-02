@@ -165,6 +165,7 @@ class RingingService : Service() {
         }
         ringingAlarmId = alarmId
         activeRingingAlarmId = alarmId
+        handoffAlarmId = null
 
         serviceScope.launch {
             val repository = AlarmAppContainer.repository(applicationContext)
@@ -756,6 +757,7 @@ class RingingService : Service() {
         }
         ringingAlarmId = null
         activeRingingAlarmId = null
+        handoffAlarmId = null
         currentAlarm = null
         voiceAfterAlarmStarted = false
         voiceHasPlayedThisRing = false
@@ -828,6 +830,42 @@ class RingingService : Service() {
         @Volatile
         var activeRingingAlarmId: String? = null
             private set
+
+        /**
+         * 리시버가 알람을 받아 **서비스가 뜨기 전까지**의 인계 구간 표시(+ 받은 시각).
+         *
+         * [activeRingingAlarmId] 는 서비스가 실제로 울리기 시작해야 채워진다. 그 사이 예약
+         * 정합성 워커가 끼어들면 그 알람을 '안 울리는 중' 으로 보고, 스누즈 마감처럼 이미
+         * 지난 시각을 그대로 다시 등록해 **한 번 더 울린다**(사용자가 첫 번째를 끈 뒤일 수도
+         * 있다). 받은 즉시 표시해 그 창을 닫는다(Codex #666 P2).
+         *
+         * 서비스가 뜨지 못하고 끝나는 경우(FGS 차단 등)에 표시가 영영 남지 않도록 짧은 TTL 을
+         * 둔다 — 굳어 버린 상태가 복구를 영구히 막는 문제를 다시 만들면 안 된다.
+         */
+        @Volatile
+        private var handoffAlarmId: String? = null
+
+        @Volatile
+        private var handoffAtElapsedMs: Long = 0L
+
+        private const val HANDOFF_TTL_MS = 60_000L
+
+        fun markAlarmHandoff(alarmId: String) {
+            handoffAlarmId = alarmId
+            handoffAtElapsedMs = android.os.SystemClock.elapsedRealtime()
+        }
+
+        /** 지금 울리는 중이거나, 방금 받아 서비스가 뜨는 중인 알람 id. */
+        fun ringingOrHandingOffAlarmId(): String? {
+            activeRingingAlarmId?.let { return it }
+            val pending = handoffAlarmId ?: return null
+            val fresh = android.os.SystemClock.elapsedRealtime() - handoffAtElapsedMs < HANDOFF_TTL_MS
+            if (!fresh) {
+                handoffAlarmId = null
+                return null
+            }
+            return pending
+        }
 
         private const val RINGING_NOTIFICATION_ID = 1001
         private const val VOICE_REPEAT_GAP_MS = 900L

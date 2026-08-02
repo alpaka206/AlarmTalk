@@ -55,7 +55,7 @@ class AlarmRepository(
     private val sessionExpiredOwnerUserIdProvider: () -> String? = { null },
     // 지금 실제로 울리는 중인 알람 id(없으면 null). 영속 상태(state=RINGING)가 아니라 이걸로
     // 판정해야, 서비스가 죽어 굳어 버린 RINGING 행이 복구에서 영구 배제되지 않는다.
-    private val ringingAlarmIdProvider: () -> String? = { RingingService.activeRingingAlarmId },
+    private val ringingAlarmIdProvider: () -> String? = { RingingService.ringingOrHandingOffAlarmId() },
 ) {
     /**
      * 예약 복원과 예약 해제를 **서로 겹치지 않게** 한다.
