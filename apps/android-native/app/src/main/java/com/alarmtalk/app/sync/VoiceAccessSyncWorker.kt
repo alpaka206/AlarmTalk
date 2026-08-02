@@ -63,8 +63,11 @@ class VoiceAccessSyncWorker(
             // 반대 방향(같은 기기에 남아 있는 앞 계정 알람을 이 계정 목록으로 벗기는 것)은
             // degradeAlarmsWithInaccessibleVoice 안의 소유자 게이트가 막는다 — 이 재확인은
             // 요청 중의 계정 전환만 잡으므로 둘 다 필요하다(Codex #646 P1).
+            // 판정 기준은 **계정 id** 다. 토큰으로 비교하면 GET /auth/me 의 rolling refresh 가
+            // 토큰만 갈아 끼운 것도 '계정이 바뀌었다' 로 오판해, 가져온 결과를 통째로 버린다 —
+            // 콜드스타트마다 갱신이 도는 구조라 흔하게 터진다(Codex #665 P1).
             val current = sessionStore.read()
-            if (current == null || current.token != session.token) {
+            if (current == null || current.user.id != session.user.id) {
                 return@runCatching Result.success()
             }
 

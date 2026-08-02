@@ -45,10 +45,13 @@ class PlanChangeSyncWorker(
             val familyGroup = runCatching { withContext(Dispatchers.IO) { api.getFamilyGroup(auth) } }.getOrNull()
 
             // 네트워크 왕복 중 로그아웃/계정전환이 일어났을 수 있다 — 결과를 쓰기 전에 현재 세션이 아직
-            // 이 세션(같은 토큰)인지 재확인한다. 바뀌었으면 옛 세션을 부활시키거나 새 세션을 덮어쓰지
+            // **같은 계정**인지 재확인한다. 바뀌었으면 옛 세션을 부활시키거나 새 세션을 덮어쓰지
             // 않도록 이 결과를 버린다(성공 처리, 재시도 불요). (FCM 토큰 등록 레이스 가드와 동일 패턴.)
+            //
+            // 토큰이 아니라 계정 id 로 본다 — GET /auth/me 의 rolling refresh 가 토큰만 갈아 끼우는데,
+            // 토큰으로 비교하면 그것도 '계정 전환' 으로 오판해 결과를 버린다(Codex #665 P1).
             val current = sessionStore.read()
-            if (current == null || current.token != session.token) {
+            if (current == null || current.user.id != session.user.id) {
                 return@runCatching Result.success()
             }
 

@@ -803,7 +803,30 @@ auth.get('/me', async (c) => {
       },
     });
   } catch (err) {
+    // **토큰 문제와 인프라 장애를 가른다.** 예전에는 전부 401 이라, DB 가 잠깐 흔들리면
+    // 클라가 그걸 '세션 만료' 로 읽고 로그아웃시켰다. /auth/me 는 rolling refresh 때문에
+    // 앱을 열 때마다 도는 자리라, 이 PR 이 없애려던 강제 로그아웃을 스스로 만드는 셈이다.
+    //
+    // verifyAppJwt 가 던지는 것만 401 이다(서명·iss·aud·만료·형식). 그 밖(DB 등)은 503 —
+    // 클라의 401 처리기가 세션을 지우지 않고, 다음 기회에 다시 시도한다.
     const detail = err instanceof Error ? err.message : String(err);
+    const isTokenError =
+      detail.includes('token') ||
+      detail.includes('Token') ||
+      detail.includes('Signature') ||
+      detail.includes('issuer') ||
+      detail.includes('audience') ||
+      detail.includes('algorithm') ||
+      detail.includes('expired');
+    if (!isTokenError) {
+      // 내부 예외 메시지를 클라로 반사하지 않는다 — 서버 로그에만 남긴다.
+      const { logStructured } = await import('../lib/logger');
+      logStructured('error', { at: 'auth.me', error: detail });
+      return c.json(
+        jsonError('ACCOUNT_STATUS_UNVERIFIED', 'Unable to verify account status'),
+        503,
+      );
+    }
     return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
   }
 });

@@ -154,9 +154,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * okhttp Authenticator 에서 호출되는 401 처리.
      * 다른 스레드(non-main) 에서 호출될 수 있어 UI 스레드로 옮긴 뒤 세션을 클리어한다.
      */
+    /**
+     * 명시적 로그아웃·탈퇴가 진행 중인가.
+     *
+     * 로그아웃은 서버 `token_epoch` 를 올리므로 **그 순간 진행 중이던 다른 요청이 401 로
+     * 돌아오는 게 정상 경로다.** 그 401 을 '자동 만료' 로 처리하면 방금 지운 복원 표시를 다시
+     * 켜서, 떼어낸 알람이 다음 주기(15분)에 전부 되살아난다 — 로그인 화면 뒤라 끌 수 없다.
+     */
+    @Volatile
+    internal var signingOut = false
+
     private fun handleUnauthorized(failedToken: String?) {
         viewModelScope.launch {
             val session = authSession ?: return@launch
+            if (signingOut) {
+                Log.i(TAG, "Ignoring 401 during explicit sign-out")
+                return@launch
+            }
             // **옛 토큰의 뒤늦은 401 은 무시한다.** GET /auth/me 가 세션을 굴린 직후
             // (rolling refresh), 그 전에 옛 토큰으로 이미 날아간 요청이 만료돼 401 로 돌아올 수
             // 있다. 어느 토큰이 거부됐는지 안 보고 지우면 **방금 갱신한 세션을 스스로 날린다**
@@ -183,14 +197,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 본인이 다시 로그인할 때까지 알람만 조용히 안 울린다. 대신 다음 로그인에서
             // 예약 경로가 authSessionStore.pendingOwnerUserId 로 이 계정을 알아내 마저 새긴다.
             runCatching {
-                repository.claimUnownedAlarmsFor(authSession?.user?.id?.takeIf { it.isNotBlank() })
+                repository.claimUnownedAlarmsFor(session.user.id.takeIf { it.isNotBlank() })
             }.onFailure { error ->
                 Log.w(TAG, "Failed to stamp ownerless alarms on session expiry", error)
+            }
+            // **suspend 지점을 지난 뒤 다시 확인한다.** 위 Room 쓰기 동안 세션이 바뀔 수 있다:
+            //  - GET /auth/me 가 새 토큰을 심었다(rolling refresh) → 지금 살아 있는 세션을
+            //    이 옛 401 로 지우면 안 된다(Codex #665 P2).
+            //  - 사용자가 로그아웃을 눌렀다 → 그건 '자동 만료' 가 아니다. 여기서 만료 표시를
+            //    남기면 방금 떼어낸 알람이 15분 뒤 워커에 의해 전부 되살아난다.
+            //    (로그아웃은 서버 token_epoch 를 올리므로, 진행 중이던 다른 요청이 401 로
+            //     돌아와 이 경로를 타는 게 예외가 아니라 정상 경로다.)
+            val stillSame = authSession?.token == session.token
+            if (!stillSame || signingOut) {
+                Log.i(TAG, "Skipping session-expiry bookkeeping: session changed or signing out")
+                return@launch
             }
             // **자동으로** 끊긴 계정을 남긴다 — 비로그인 상태에서 되살려도 되는 알람의 주인이다.
             // 세션을 비우기 전에 해야 id 를 알 수 있다. 명시적 로그아웃은 이 값을 지우므로,
             // 여러 계정이 오간 기기에서도 방금 만료된 계정의 알람만 되살아난다(Codex #665 P1).
-            runCatching { authSessionStore.markSessionExpired(authSession?.user?.id) }
+            runCatching { authSessionStore.markSessionExpired(session.user.id) }
                 .onFailure { error -> Log.w(TAG, "Failed to mark session expired owner", error) }
             clearSessionKeepingAlarms()
             message = getApplication<android.app.Application>().getString(R.string.r3misc_session_expired)
@@ -206,6 +232,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 사용자에게는 '보이지도 않고 끌 수도 없는 알람이 울리는' 상태가 된다.
      */
     internal suspend fun clearSignedInSession() {
+        // 로그아웃이 끝날 때까지 401 처리기를 잠근다 — 이유는 [signingOut] 주석 참고.
+        signingOut = true
         val signedOutUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
         // 표시를 **먼저** 지운다. 떼어내기가 중간에 실패하거나 프로세스가 죽어도 "명시적
         // 로그아웃이었다" 는 사실이 남아야, 다음 재예약이 이 계정 알람을 되살리지 않는다.

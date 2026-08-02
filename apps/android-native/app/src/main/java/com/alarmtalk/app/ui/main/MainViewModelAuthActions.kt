@@ -271,6 +271,8 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
  * MainViewModel.init 의 시작 시 재예약에만 기대고 있었다.
  */
 private suspend fun MainViewModel.onSignedIn() {
+    // 로그아웃 잠금을 푼다 — 다시 로그인했으니 이후의 401 은 정상적으로 처리해야 한다.
+    signingOut = false
     // 로그인이 확정된 지금만 '자동 만료 계정' 표시를 지운다. 이 계정 알람은 소유자가 일치해
     // 아래 reschedulePendingAlarms 가 정상적으로 되살린다. AuthSessionStore.save 에서 지우면
     // 프로필 수정·refreshAppSession 같은 다른 호출까지 표시를 지워, 로그아웃 직후 늦게 온

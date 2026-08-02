@@ -696,6 +696,92 @@ describe('GET /auth/me', () => {
 
   // 폐기된 토큰(전 기기 로그아웃·비밀번호 재설정)은 갱신 대상이 아니다. 여기서 새 토큰을
   // 내주면 token_epoch 로 끊는 수단이 무력화된다.
+  // 정규화가 **실제로 일어나는** 경우: 구 토큰의 sub 이 google_id 라 users.id 와 다르다.
+  // 기존 테스트는 둘이 같은 계정만 써서, 구현을 payload.sub 로 되돌려도 통과했다.
+  it('sub 이 google_id 인 구 토큰을 굴리면 users.id 로 정규화된다', async () => {
+    const { signAppJwt } = await import('../src/lib/jwt');
+    const legacyToken = await signAppJwt(
+      { sub: 'google-oauth-id-999', email: 'legacy@test.com', epoch: 0 },
+      ENV.JWT_SECRET,
+    );
+
+    // users 행은 id 와 google_id 가 다르다(계정 연동으로 갈라진 계정).
+    mockDB.pushResult([
+      {
+        id: 'users-uuid-111',
+        email: 'legacy@test.com',
+        name: '김규원',
+        plan: 'free',
+        token_epoch: 0,
+      },
+    ]);
+
+    const app = buildApp();
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${legacyToken}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(200);
+    const rolled = (await meRes.json()).token as string;
+    const sub = JSON.parse(Buffer.from(rolled.split('.')[1]!, 'base64url').toString()).sub;
+    expect(sub).toBe('users-uuid-111');
+    expect(sub).not.toBe('google-oauth-id-999');
+  });
+
+  // TTL 은 이 PR 의 본체다 — 상수를 되돌리면 이 테스트가 잡는다.
+  it('발급 토큰의 수명은 90일이다', async () => {
+    await pushValidEmailVerification('ttl@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('ttl@test.com')),
+      undefined,
+      ENV,
+    );
+    const token = (await regRes.json()).token as string;
+    const payload = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString());
+    const NINETY_DAYS = 60 * 60 * 24 * 90;
+    expect(payload.exp - payload.iat).toBe(NINETY_DAYS);
+  });
+
+  // DB 장애를 401 로 뭉개면 클라가 그걸 '세션 만료' 로 읽고 로그아웃시킨다. /auth/me 는
+  // rolling refresh 때문에 앱을 열 때마다 도는 자리라 그 피해가 크다.
+  it('DB 장애는 401 이 아니라 503 이다(세션을 지우지 않게)', async () => {
+    await pushValidEmailVerification('infra@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('infra@test.com')),
+      undefined,
+      ENV,
+    );
+    const token = (await regRes.json()).token as string;
+
+    mockDB.pushError(new Error('SQLITE_BUSY: database is locked'));
+
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(503);
+    const body = await meRes.json();
+    expect(body.error_code).toBe('ACCOUNT_STATUS_UNVERIFIED');
+    // 내부 예외 메시지를 반사하지 않는다.
+    expect(JSON.stringify(body)).not.toContain('SQLITE_BUSY');
+  });
+
   it('폐기된 토큰은 새 토큰을 받지 못한다(401)', async () => {
     await pushValidEmailVerification('revoked@test.com');
     mockDB.pushResult([]);

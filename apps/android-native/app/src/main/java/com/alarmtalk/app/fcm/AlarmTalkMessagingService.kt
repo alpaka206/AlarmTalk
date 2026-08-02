@@ -74,8 +74,10 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
                 // 등록 API 를 쏘기 직전에 세션이 아직 이 세션 그대로인지 재확인한다. 로그인/앱 시작 시 시작된
                 // 등록(fire-and-forget)이 로그아웃/계정전환 뒤에 늦게 완료돼 옛 세션으로 토큰을 되살리는
                 // 레이스를 막는다(서버 로그아웃은 JWT 만 무효화하고 push_tokens 를 지우지 않으므로).
+                // 계정 id 로 본다 — rolling refresh 가 토큰만 바꾸는데 토큰으로 비교하면
+                // 콜드스타트마다 등록이 조용히 취소된다(Codex #665 P1).
                 val current = AuthSessionStore(context).read()
-                if (current == null || current.token != session.token) return@launch
+                if (current == null || current.user.id != session.user.id) return@launch
                 runCatching {
                     AlarmTalkApiClient.create().registerPushToken(
                         AlarmTalkApiClient.bearer(session.token),
