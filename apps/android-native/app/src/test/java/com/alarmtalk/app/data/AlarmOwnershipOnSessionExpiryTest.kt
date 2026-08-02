@@ -222,6 +222,21 @@ class AlarmOwnershipOnSessionExpiryTest {
         assertEquals("행 자체는 남는다 — 재로그인하면 되살아나야 한다", "account-A", ownerOf("legacy-1"))
     }
 
+    /**
+     * 이 빌드 이전에 로그아웃한 기기 — 표시가 없다. 그 상태를 '떼어냄' 으로 보지 않으면
+     * 업데이트하는 순간 소유자 있는 알람이 로그인 화면 뒤에서 되살아난다(Codex #665 P1).
+     * 표시 자체의 기본값은 AuthSessionStore 가 세션 유무로 정해 주고, 여기서는 그 값이
+     * 게이트에 그대로 먹히는지만 본다.
+     */
+    @Test
+    fun legacySignedOutDeviceIsTreatedAsDetached() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = null
+        alarmsDetached = true // 세션이 없던 기기 → 저장소가 '떼어냄' 으로 정한 값
+
+        assertEquals("표시가 없던 기기도 되살리면 안 된다", 0, repository.reschedulePendingAlarms())
+    }
+
     /** 그리고 그 사람이 다시 로그인하면 원래대로 되살아난다. */
     @Test
     fun detachedAlarmsComeBackAfterSigningInAgain() = runBlocking {

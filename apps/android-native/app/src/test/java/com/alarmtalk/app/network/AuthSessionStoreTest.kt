@@ -5,6 +5,22 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AuthSessionStoreTest {
+    /**
+     * 이 표시는 새로 생긴 키라, 예전 버전에서 로그아웃한 기기에는 값이 없다. 그때 '안 떼어냄'
+     * 으로 보면 업데이트하는 순간 소유자 있는 알람이 로그인 화면 뒤에서 되살아난다 —
+     * 사용자가 끌 수 없다(Codex #665 P1). 세션이 없으면 '떼어냄' 쪽으로 기운다.
+     */
+    @Test
+    fun signedOutDeviceWithoutMarkerIsTreatedAsDetached() {
+        assertEquals(true, resolveInitialAlarmsDetached(hasStoredToken = false))
+    }
+
+    /** 반대로 세션이 살아 있으면 떼어낸 적이 없다 — 정상 경로로 재예약돼야 한다. */
+    @Test
+    fun signedInDeviceWithoutMarkerIsNotDetached() {
+        assertEquals(false, resolveInitialAlarmsDetached(hasStoredToken = true))
+    }
+
     @Test
     fun normalizeDynamicPromptSettingsAllowsBackendNullBeforeUserCopy() {
         val user = Gson().fromJson(
