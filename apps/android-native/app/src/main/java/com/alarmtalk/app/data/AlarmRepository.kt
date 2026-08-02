@@ -451,9 +451,23 @@ class AlarmRepository(
      *
      * 반환값은 예약을 내린 알람 수.
      */
-    suspend fun detachAlarmsOnSignOut(signedOutUserId: String?): Int =
+    /**
+     * @param clearSessionInsideLock 세션 저장소를 비우는 동작. **락을 놓기 전에** 실행한다 —
+     *   락을 기다리던 복원이 깨어났을 때 prefs 가 아직 '로그인됨' 이면, 방금 취소한 예약을
+     *   그 계정 것으로 보고 전부 되살린다. 로그인 화면 뒤에서 끌 수 없는 알람이 울린다
+     *   (Codex #666 P1). 취소와 세션 전환은 한 임계구역 안에서 끝나야 한다.
+     */
+    suspend fun detachAlarmsOnSignOut(
+        signedOutUserId: String?,
+        clearSessionInsideLock: suspend () -> Unit = {},
+    ): Int =
         // 복원과 직렬화한다 — 이유는 [restoreMutex] 주석 참고.
-        restoreMutex.withLock { detachAlarmsOnSignOutLocked(signedOutUserId) }
+        restoreMutex.withLock {
+            val detached = detachAlarmsOnSignOutLocked(signedOutUserId)
+            runCatching { clearSessionInsideLock() }
+                .onFailure { error -> Log.w(TAG, "Failed to clear session inside restore lock", error) }
+            detached
+        }
 
     private suspend fun detachAlarmsOnSignOutLocked(signedOutUserId: String?): Int {
         val all = alarmDao.getAllAlarms()
