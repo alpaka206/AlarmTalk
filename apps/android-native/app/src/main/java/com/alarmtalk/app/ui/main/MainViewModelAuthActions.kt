@@ -1106,6 +1106,8 @@ internal fun MainViewModel.clearMessage() {
 
 internal fun MainViewModel.refreshAppSession() {
     val session = authSession ?: return
+    // 시작 시점의 세션 세대 — 응답을 쓰기 전에 대조한다. 세대는 세션이 끝날 때만 바뀐다.
+    val startGeneration = authSessionStore.sessionGeneration()
     viewModelScope.launch {
         runCatching {
             api.me(AlarmTalkApiClient.bearer(session.token))
@@ -1115,8 +1117,13 @@ internal fun MainViewModel.refreshAppSession() {
             // 오래 살아나기까지 한다. 떼어낸 알람도 그 세션 기준으로 다시 복원 대상이 된다.
             // (rolling refresh 를 넣기 전에도 있던 구멍이지만, 앱을 열 때마다 도는 자리가
             //  되면서 실제로 겹칠 확률이 커졌다.)
+            // 계정 id 만 보면 **로그아웃 후 같은 계정 재로그인**을 통과시킨다 — 그러면 이 응답이
+            // 새 세션을 옛 세대의 토큰·프로필로 덮어쓰고, 로그아웃이 올려 둔 token_epoch 때문에
+            // 그 토큰은 이미 폐기돼 다음 요청이 또 로그아웃시킨다. 세션 세대로 함께 본다
+            // (두 워커 가드와 같은 기준, Codex #665 P2).
             val stillSameAccount = authSession?.user?.id == session.user.id
-            if (signingOut || !stillSameAccount) {
+            val stillSameGeneration = authSessionStore.sessionGeneration() == startGeneration
+            if (signingOut || !stillSameAccount || !stillSameGeneration) {
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
                 return@onSuccess
             }
