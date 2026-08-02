@@ -139,9 +139,14 @@ android {
         minSdk = 26
         targetSdk = 36
         // 릴리스마다 수동으로 versionCode +1, versionName 갱신. (Play 는 업로드마다 더 큰
-        // versionCode 를 요구 — 이전 업로드값보다 반드시 크게.) 1.1.3 = 18, 1.2.0 = 20.
-        versionCode = 20
-        versionName = "1.2.0"
+        // versionCode 를 요구 — 이전 업로드값보다 반드시 크게.) 1.1.3 = 18, 1.2.1 = 21.
+        //
+        // 20 은 건너뛴다. 7/29 에 20 을 찍은 빌드가 이미 Play 에 올라가 있는데, 클라가
+        // document_version 을 보내기 시작한 건 그 다음날(7/30)이다. 즉 "versionCode 20" 이
+        // 두 가지 앱을 가리켜서 강제 업데이트 하한으로 쓸 수 없다 — app-version.ts 의
+        // minSupported 도 21 로 맞춰 두었다.
+        versionCode = 21
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
