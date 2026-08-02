@@ -3,6 +3,13 @@
 Play Console 의 "이 출시의 새로운 기능" 에 그대로 붙여 넣는 원문. 언어당 **500자 제한**이라
 길이를 넘기지 말 것. 지원 언어는 앱의 `resourceConfigurations`(ko/en/ja)와 같다.
 
+길이는 눈대중하지 말고 재고, **줄바꿈이 CRLF 로 세어질 여지까지 감안해 여유를 남긴다**
+(영어는 한 줄이 길어 금방 490자를 넘긴다):
+
+```bash
+node -e "const b=require('fs').readFileSync('docs/product/release-notes.md','utf8').matchAll(/### (ko-KR|en-US|ja-JP)\n\n\`\`\`\n([\s\S]*?)\n\`\`\`/g); for(const[,l,t]of b)console.log(l,[...t].length)"
+```
+
 쓰는 규칙:
 - **사용자가 눈으로 확인할 수 있는 변화만** 적는다. 백엔드 리팩터·CI·마이그레이션은 안 적는다.
 - 적기 전에 **코드에서 사실을 확인**한다. 여기 적힌 수치·화면 이름은 실제 문자열 리소스와
@@ -30,11 +37,11 @@ Play Console 의 "이 출시의 새로운 기능" 에 그대로 붙여 넣는 �
 
 ```
 • New alarms keep the voice and message type you chose last time.
-• Unchanged message? We reuse the audio you already made, so saving is faster.
-• Voices for shared alarms are no longer re-downloaded every time.
-• Creating a voice: the recording minimum is now 12 seconds, down from 1 minute.
-• Read the full terms and privacy policy on the sign-up screen, and withdraw consent anytime from More → Settings.
-• Fixed a hang on the voice preparation screen and leftover data after switching accounts.
+• Unchanged message? We reuse the audio you already made — saving is faster.
+• Voices for shared alarms are no longer re-downloaded each time.
+• Creating a voice: the recording minimum is now 12 seconds, not 1 minute.
+• Read the full terms and privacy policy on the sign-up screen. Withdraw consent anytime from More → Settings.
+• Fixed a hang on the voice preparation screen and stale data after switching accounts.
 ```
 
 ### ja-JP
