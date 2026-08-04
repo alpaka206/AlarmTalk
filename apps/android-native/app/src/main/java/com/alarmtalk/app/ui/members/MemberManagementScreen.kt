@@ -294,8 +294,11 @@ internal fun MemberManagementScreen(
                 IosAlertAction(
                     label = stringResource(R.string.social_remove_button),
                     destructive = true,
+                    // 모달이 열린 채 배경 동기화가 돌면(socialBusy) 눌러도 아무 일이 없다.
+                    // 멀쩡해 보이는 버튼이 반응만 안 하면 고장과 구분되지 않는다(Codex #671 P2).
+                    enabled = !socialBusy && groupId != null,
                     onClick = {
-                        if (!socialBusy && groupId != null) {
+                        if (groupId != null) {
                             onRemoveFamilyMember(groupId, member.userId)
                             pendingRemoveMember = null
                         }
