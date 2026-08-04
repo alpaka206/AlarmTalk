@@ -191,8 +191,6 @@ internal fun AlarmListScreen(
                     HomeHeader(
                         nextAlarm = nextAlarm,
                         hasAnyAlarm = hasAnyAlarm,
-                        alarmRingingBlocked = permissions.ringingBlocked,
-                        alarmRingingDegraded = permissions.ringingDegraded,
                     )
                 }
             }
@@ -276,10 +274,8 @@ internal fun AlarmListScreen(
                             // **어떤 권한인지** 말한다. '권한' 이라고만 하면 어디를 켜야 하는지
                             // 모른 채 설정 화면에서 헤맨다. 결과도 권한마다 다르다.
                             //
-                            // 단 알림 권한은 헤드라인이 이미 "울리지 않아요" 라고 결론을
-                            // 말했으므로, 여기서 같은 문장을 반복하지 않고 **할 일**만 둔다.
                             textResId = when (missing) {
-                                PermissionTarget.Notifications -> R.string.hs_perm_banner_notifications_action
+                                PermissionTarget.Notifications -> R.string.hs_perm_banner_notifications
                                 PermissionTarget.ExactAlarms -> R.string.hs_perm_banner_exact_alarm
                                 else -> R.string.hs_perm_banner_full_screen
                             },
@@ -315,7 +311,6 @@ internal fun AlarmListScreen(
                             }
                         },
                         onEnterSelection = { selectedAlarmIds = setOf(alarm.id) },
-                        alarmRingingBlocked = permissions.ringingBlocked,
                     )
                 }
             }

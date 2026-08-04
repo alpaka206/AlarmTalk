@@ -191,6 +191,8 @@ internal fun AuthScreen(
         if (loginError != null) password = ""
     }
 
+    // 상한을 넘겨 치려 했는지. 값 자체는 30자에서 잘리므로 값만으로는 알 수 없다.
+    var nameTooLong by remember { mutableStateOf(false) }
     val canSubmit = if (mode == AuthMode.Login) {
         email.isNotBlank() && password.isNotBlank()
     } else {
@@ -251,8 +253,31 @@ internal fun AuthScreen(
             if (mode == AuthMode.Register) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it.take(30) },
+                    // 서버(`DisplayNameSchema`)와 같은 규칙을 앱에서 먼저 태운다 — 제로폭·
+                    // 양방향 문자가 남으면 isNotBlank() 는 통과하는데 서버에서 정리하면 빈 값이
+                    // 되어 **이메일 인증까지 마친 뒤에야** 400 이 난다.
+                    //
+                    // 30자에서 막되, **말없이 막지 않는다.** 넘겨 치면 그 순간 아래에
+                    // 이유가 뜨고(글자는 들어가지 않는다), 지워서 여유가 생기면 사라진다.
+                    // 항상 켜진 카운터(7/30)는 넘기 전까진 알려 줄 게 없어 두지 않는다.
+                    onValueChange = { raw ->
+                        val cleaned = sanitizeDisplayName(raw)
+                        // 30자 **정확히** 일 때는 플래그를 건드리지 않는다 — 잘라서 돌려준
+                        // 값을 IME 가 되돌려 보내면 방금 켠 경고가 곧바로 꺼진다.
+                        if (cleaned.length > DisplayNameMaxLength) {
+                            nameTooLong = true
+                        } else if (cleaned.length < DisplayNameMaxLength) {
+                            nameTooLong = false
+                        }
+                        name = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
+                    },
                     label = { Text(stringResource(R.string.auth_label_name)) },
+                    isError = nameTooLong,
+                    supportingText = if (nameTooLong) {
+                        { Text(stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength)) }
+                    } else {
+                        null
+                    },
                     singleLine = true,
                     enabled = !busy,
                     shape = WakerInputShape,

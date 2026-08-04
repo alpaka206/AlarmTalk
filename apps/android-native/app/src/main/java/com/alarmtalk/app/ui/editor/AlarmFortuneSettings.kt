@@ -207,7 +207,10 @@ private fun FortuneBirthDatePickers(
             onChange("")
             return
         }
-        onChange("%04d-%02d-%02d".format(y, m, clamped))
+        // **로케일 불변으로 만든다.** 기본 로케일 format 은 페르시아어·벵골어 기기에서
+        // 현지 숫자(۲۰۲۶-۰۸-۰۴)를 내보내는데, 서버는 ASCII `^\d{4}-\d{2}-\d{2}$` 만 받아
+        // 로컬에는 저장된 뒤 저장 요청만 400 으로 떨어진다(Codex #671 P2).
+        onChange(String.format(Locale.US, "%04d-%02d-%02d", y, m, clamped))
     }
 
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

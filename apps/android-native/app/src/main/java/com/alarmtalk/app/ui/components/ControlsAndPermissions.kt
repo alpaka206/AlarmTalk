@@ -313,19 +313,6 @@ internal fun AlarmRow(
     onToggleSelected: () -> Unit = {},
     /** 길게 누르면 선택 모드로 들어간다(그 행을 첫 선택으로). */
     onEnterSelection: () -> Unit = {},
-    /**
-     * 권한이 없어 **아예 못 울리는** 상태인지. 그러면 이 알람은 켜져 있어도 울리지
-     * 않으므로 행도 꺼진 것으로 보인다(스위치·시각 색). 왜 그런지는 화면 맨 위
-     * 헤드라인이 한 번만 말한다 — 행마다 반복하지 않는다.
-     *
-     * 늦게라도 울리는 상태(정확 알람 권한만 없음)는 여기 해당하지 않는다. 울릴 알람을
-     * 꺼진 것으로 그리면 사용자가 알람이 없다고 착각한다.
-     *
-     * 저장된 `alarm.enabled` 는 **건드리지 않는다.** 표시만 바꾼다 — 권한을 되돌리면
-     * 켜 뒀던 알람이 그대로 살아나야 한다. 여기서 진짜로 꺼 버리면 사용자는 권한을
-     * 복구하고도 알람이 꺼진 걸 모른 채 늦잠 잔다.
-     */
-    alarmRingingBlocked: Boolean = false,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val deleteWidth = 92.dp
@@ -348,8 +335,6 @@ internal fun AlarmRow(
         stiffness = Spring.StiffnessMediumLow,
     )
     val rowNotice = alarmRowNotice(alarm)
-    // '지금 실제로 울릴 알람인가'. 행의 모든 표시는 이 값을 따른다.
-    val ringable = alarm.enabled && !alarmRingingBlocked
     val warningText = rowNotice?.let { stringResource(it.textResId) }
     // 스와이프 외에 접근성(TalkBack/지체장애) 대체 삭제 수단: 길게 눌러 메뉴 노출.
     val deleteVisible = offsetX.value < -0.5f
@@ -449,7 +434,7 @@ internal fun AlarmRow(
                     // weight(1f) 로 스위치 공간을 남기고 라벨이 가질 폭을 확정해야
                     // 긴 알람 이름이 ellipsis(말줄임)로 잘려 행 레이아웃이 깨지지 않는다.
                     Column(modifier = Modifier.weight(1f)) {
-                        val timeColor = if (ringable) {
+                        val timeColor = if (alarm.enabled) {
                             MaterialTheme.colorScheme.onSurface
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -485,7 +470,7 @@ internal fun AlarmRow(
                         }
                         // 라벨 대신 '다음 울릴 날짜'를 안내(기본 시계 라벨보다 실용적). 꺼진 알람도 미리 보이도록,
                         // 켜진 건 실제 예약값(fireAtMillis), 꺼진 건 스케줄로 다음 울림을 계산해 표시한다.
-                        val nextFireMillis = if (ringable) {
+                        val nextFireMillis = if (alarm.enabled) {
                             alarm.fireAtMillis
                         } else {
                             remember(alarm.hour, alarm.minute, alarm.repeatDaysMask, alarm.holidayOff) {
@@ -538,7 +523,10 @@ internal fun AlarmRow(
                     } else {
                         // 켜짐/꺼짐 텍스트는 두지 않는다 — 스위치 위치·색이 곧 상태 표시.
                         AlarmTalkSwitch(
-                            checked = ringable,
+                            // **저장된 값 그대로.** 권한이 모자라다고 꺼진 것처럼 그리면,
+                            // 탭할 때 '켜기' 가 되어 게이트가 뜨고 **끌 수가 없다**.
+                            // 게다가 권한이 돌아오면 꺼진 줄 알았던 알람이 울린다(Codex #671 P1).
+                            checked = alarm.enabled,
                             onCheckedChange = onToggleEnabled,
                         )
                     }

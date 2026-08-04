@@ -35,6 +35,7 @@
     <string name="msg_password_reset_done">パスワードを変更しました。新しいパスワードでログインしてください。</string>
     <string name="msg_password_reset_failed">パスワードの再設定に失敗しました。</string>
     <string name="auth_label_name">ニックネーム</string>
+    <string name="auth_error_name_too_long">ニックネームは%1$d文字以内で入力してください</string>
     <string name="auth_label_password">パスワード</string>
     <string name="auth_label_verification_code">認証コード</string>
     <string name="auth_landing_first_time">はじめてのご利用ですか？</string>
@@ -283,7 +284,6 @@
     <string name="hs_delete_account_title">本当に退会しますか？</string>
     <string name="hs_delete_account_body">申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。\nそれまでに再ログインして退会を取り消せば復元できます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
-    <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">ニックネームを編集</string>
     <string name="hs_nickname_field_placeholder">例：りん</string>
     <string name="hs_nickname_save">保存</string>
@@ -324,8 +324,7 @@
     <string name="hs_status_no_alarm">アラームがありません。</string>
     <string name="hs_status_ring_soon">まもなく鳴ります。</string>
     <string name="hs_status_ring_in">%1$s後に鳴ります。</string>
-    <string name="hs_status_permission_off">権限がオフのため、アラームは鳴りません</string>
-    <string name="hs_perm_banner_notifications_action">通知の権限を許可する</string>
+    <string name="hs_perm_banner_notifications">通知の権限を許可しないと、アラームの通知が表示されません</string>
     <string name="hs_perm_banner_exact_alarm">正確なアラームの権限を許可しないと、時間どおりに鳴らないことがあります</string>
     <string name="hs_perm_banner_full_screen">ロック画面の権限を許可しないと、ロック画面に表示されません</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$sの声</string>

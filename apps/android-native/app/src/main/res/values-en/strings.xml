@@ -35,6 +35,7 @@
     <string name="msg_password_reset_done">Password changed. Sign in with your new password.</string>
     <string name="msg_password_reset_failed">Couldn\'t reset your password.</string>
     <string name="auth_label_name">Nickname</string>
+    <string name="auth_error_name_too_long">Please keep the nickname within %1$d characters</string>
     <string name="auth_label_password">Password</string>
     <string name="auth_label_verification_code">Verification code</string>
     <string name="auth_landing_first_time">First time here?</string>
@@ -283,7 +284,6 @@
     <string name="hs_delete_account_title">Are you sure you want to delete your account?</string>
     <string name="hs_delete_account_body">30 days after you request it, all your data—including alarms and voices—is permanently deleted.\nYou can cancel and restore it by signing back in before then.</string>
     <string name="hs_delete_account_confirm">Delete</string>
-    <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">Edit nickname</string>
     <string name="hs_nickname_field_placeholder">e.g. Gyuwon</string>
     <string name="hs_nickname_save">Save</string>
@@ -324,8 +324,7 @@
     <string name="hs_status_no_alarm">No alarms yet.</string>
     <string name="hs_status_ring_soon">Ringing soon.</string>
     <string name="hs_status_ring_in">Rings in %1$s.</string>
-    <string name="hs_status_permission_off">Permissions are off, so alarms will not ring</string>
-    <string name="hs_perm_banner_notifications_action">Allow notification permission</string>
+    <string name="hs_perm_banner_notifications">Without notification permission, alarm notifications will not appear</string>
     <string name="hs_perm_banner_exact_alarm">Without exact alarm permission, alarms may not ring on time</string>
     <string name="hs_perm_banner_full_screen">Without lock screen permission, alarms will not appear on the lock screen</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s</string>

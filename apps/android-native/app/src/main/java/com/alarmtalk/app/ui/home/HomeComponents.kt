@@ -54,15 +54,6 @@ import com.alarmtalk.app.data.AlarmEntity
 internal fun HomeHeader(
     nextAlarm: AlarmEntity?,
     hasAnyAlarm: Boolean,
-    /**
-     * 권한이 없어 **아예 못 울리는** 상태(= 알림 권한 없음). 이때 "13시간 후에 울려요" 는
-     * 거짓말이라 헤드라인이 그 자리에서 사실을 말한다 — 여기가 이 화면에서 사용자가
-     * 유일하게 확실히 읽는 줄이다. 권한은 알람 하나가 아니라 전부에 걸리는 문제라
-     * 행마다 붙이지 않고 여기 한 번만 말한다.
-     */
-    alarmRingingBlocked: Boolean = false,
-    /** 울리기는 하지만 늦거나 잠금화면을 못 덮는 상태(정확 알람·전체화면 권한 없음). */
-    alarmRingingDegraded: Boolean = false,
 ) {
     // 절대 시각은 바로 아래 카드에 이미 있으니 헤더는 '남은 시간'을 말한다.
     // 분이 바뀌는 경계마다 갱신해 화면을 켜둔 채로도 어긋나지 않게 한다.
@@ -74,13 +65,9 @@ internal fun HomeHeader(
             now = System.currentTimeMillis()
         }
     }
-    // 알람이 하나도 없을 때는 조르지 않는다 — 만들 때 어차피 권한을 묻는다.
-    val permissionBlocked = hasAnyAlarm && alarmRingingBlocked
-    val permissionDegraded = hasAnyAlarm && !alarmRingingBlocked && alarmRingingDegraded
+    // 권한이 모자라도 알람은 울린다(늦거나, 알림이 안 뜨거나, 잠금 화면을 못 덮을 뿐).
+    // 그래서 헤드라인은 **언제나 남은 시간**이고, 무엇이 모자란지는 아래 배너가 말한다.
     val statusText: String? = when {
-        // 못 울리면 남은 시간을 말하지 않는다. 늦게라도 울리는 경우엔 남은 시간이 여전히
-        // 유효하므로 그대로 두고, 아래 줄에 '늦을 수 있다' 만 덧붙인다.
-        permissionBlocked -> stringResource(R.string.hs_status_permission_off)
         nextAlarm != null -> {
             val remainingMillis = nextAlarm.fireAtMillis - now
             if (remainingMillis < 60_000L) {
@@ -99,11 +86,7 @@ internal fun HomeHeader(
             text = statusText,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
-            color = if (permissionBlocked) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onBackground
-            },
+            color = MaterialTheme.colorScheme.onBackground,
             // 이 헤더는 리스트 밖에 고정돼 있어 높이가 곧 목록에서 뺏는 화면이다.
             // 좁은 폰 + 큰 글꼴에서 "13시간 40분 후에 울려요."가 3줄로 번지지 않게 상한을 둔다.
             maxLines = 2,
@@ -368,6 +351,8 @@ internal fun NicknameEditDialog(
 ) {
     var value by remember { mutableStateOf(initial) }
     val trimmedValue = value.trim()
+    // 상한을 넘겨 치려 했는지 — 값은 30자에서 잘리므로 값만 봐서는 알 수 없다.
+    var tooLong by remember { mutableStateOf(false) }
     val canSave = !busy && trimmedValue.isNotEmpty() && trimmedValue != initial
 
     // 공용 알럿을 그대로 쓴다 — 입력이 있다고 별도 모달을 두지 않는다([IosAlertDialog]).
@@ -399,19 +384,33 @@ internal fun NicknameEditDialog(
         // 비었을 때 무엇을 넣는 자리인지는 placeholder 가 알려 준다.
         IosAlertField(
             value = value,
-            onValueChange = { value = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
+            onValueChange = { raw ->
+                val cleaned = sanitizeDisplayName(raw)
+                // 30자 **정확히** 일 때는 플래그를 건드리지 않는다. 잘라서 돌려준 값을
+                // IME 가 그대로 되돌려 보내면(길이 30) 방금 켠 경고가 곧바로 꺼진다.
+                // 넘겨 치면 켜고, 지워서 여유가 생기면 끈다.
+                if (cleaned.length > DisplayNameMaxLength) {
+                    tooLong = true
+                } else if (cleaned.length < DisplayNameMaxLength) {
+                    tooLong = false
+                }
+                value = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
+            },
             placeholder = stringResource(R.string.hs_nickname_field_placeholder),
             enabled = !busy,
         )
-        Text(
-            text = stringResource(R.string.hs_nickname_char_counter, value.length),
-            style = IosAlertType.Message,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 6.dp),
-            textAlign = TextAlign.End,
-        )
+        // 항상 켜져 있는 카운터(7/30)는 상한을 넘기 전까진 알려 줄 게 없다.
+        // 넘었을 때만, 무엇을 하면 되는지 말한다.
+        if (tooLong) {
+            Text(
+                text = stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength),
+                style = IosAlertType.Message,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+            )
+        }
     }
 }
 

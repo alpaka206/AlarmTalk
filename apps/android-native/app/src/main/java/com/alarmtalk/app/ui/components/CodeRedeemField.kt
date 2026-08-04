@@ -88,8 +88,14 @@ internal fun String.takeWithoutSplittingPairs(maxLength: Int): String {
     return if (cut.last().isHighSurrogate()) cut.dropLast(1) else cut
 }
 
-/** 한 줄 표시 이름(닉네임·목소리 이름). 줄바꿈을 막고 앞뒤 공백을 정리한다. */
-internal fun sanitizeDisplayName(raw: String, maxLength: Int): String =
+/**
+ * 한 줄 표시 이름(닉네임·목소리 이름). 줄바꿈을 막고 앞뒤 공백을 정리한다.
+ *
+ * `maxLength` 를 주지 않으면 **자르지 않는다.** 말없이 잘리면 사용자는 왜 글자가 안
+ * 들어가는지 모른 채 지웠다 다시 치는데, 그럴 바엔 넘치게 두고 밑에 이유를 적어 주는
+ * 편이 낫다(위험 문자 제거는 상한과 무관하게 언제나 한다).
+ */
+internal fun sanitizeDisplayName(raw: String, maxLength: Int = Int.MAX_VALUE): String =
     sanitizeUserText(raw, allowNewlines = false)
         // 연속 공백을 하나로 — 공백만으로 이름을 다르게 보이게 하는 것도 막는다.
         .replace(Regex("\\s+"), " ")
