@@ -46,6 +46,10 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
         if (showMessage) message = getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_login_required)
         return
     }
+    // **이 조회를 시작한 계정과 세대** — 늦게 도착한 응답을 지금 계정의 목록으로 삼지 않기
+    // 위해서다. 자세한 이유는 [responseStillBelongsToRequester] 참고(Codex #665 P1).
+    val requestOwner = session.user.id
+    val startGeneration = authSessionStore.sessionGeneration()
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileLoadFinished = false
@@ -57,12 +61,17 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
                 val draft = api.getVoiceDraft(authorization).profile
                 profiles to draft
             }.onSuccess { (profiles, draft) ->
+                if (!responseStillBelongsToRequester(requestOwner, startGeneration)) {
+                    Log.i(TAG, "Dropping stale voice profile list: session ended or switched")
+                    return@onSuccess
+                }
                 voiceProfiles = profiles
                 pendingVoiceDraft = draft
                 voiceProfilesLoadedFresh = true
                 // 내 음성 목록이 늦게 로드된 경우에도 접근권 잃은 목소리 알람 강등이 재실행되게 한다
                 // (공유 목소리 목록이 먼저 신선 로드돼 스킵됐을 수 있음). 빈 목록도 유효한 로드다.
-                reconcileInaccessibleVoiceAlarms()
+                // **목록을 가져온 계정을 그대로 넘긴다** — '지금 계정' 이 아니다.
+                reconcileInaccessibleVoiceAlarms(requestOwner)
                 // 삭제 화면에서 '이번 달 재생성 가능 여부'를 판정하도록 월 생성 쿼터도 함께 갱신.
                 loadVoiceDraftQuota()
             }.onFailure { error ->

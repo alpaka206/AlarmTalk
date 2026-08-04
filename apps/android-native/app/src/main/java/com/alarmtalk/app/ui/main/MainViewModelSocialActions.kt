@@ -21,6 +21,11 @@ internal fun MainViewModel.preloadSocial() {
 private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
     if (socialBusy) return
     val authorization = bearerOrMessage("Login is required to load shared plan data.") ?: return
+    // **이 조회를 시작한 계정과 세대.** 응답이 늦게 도착하는 사이 로그아웃·계정 전환이 있었으면
+    // 그 응답은 지금 계정의 것이 아니다 — 반영하면 A 의 목록이 B 의 상태로 자리 잡고, 이어지는
+    // 강등이 A 의 목록으로 B 의 알람을 훑어 목소리를 영구히 벗긴다(Codex #665 P1).
+    val requestOwner = authSession?.user?.id
+    val startGeneration = authSessionStore.sessionGeneration()
     socialBusy = true
     // 새 소셜 로드 시작 — 신선-로드 플래그를 내려, 로드 완료 전 fetchVoiceProfiles 가 옛 상태로
     // 강등 판단하지 않게 한다(성공 시 snapshot.familyVoicesFresh 로 다시 설정).
@@ -45,6 +50,10 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
                     )
                 }
             }.onSuccess { snapshot ->
+                if (!responseStillBelongsToRequester(requestOwner, startGeneration)) {
+                    Log.i(TAG, "Dropping stale social snapshot: session ended or switched")
+                    return@onSuccess
+                }
                 familyGroup = snapshot.familyGroup
                 saveFamilyGroupSnapshot(snapshot.familyGroup)
                 // 공유 목소리 목록이 실제로 바뀌면(새로 공유받음/회수) 스톡 매니페스트도 새로 받는다.
@@ -57,7 +66,8 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
                 if (sharedIdsChanged) loadStockClips(forceReload = true)
                 // 접근권 잃은 목소리 알람 강등 — 내 음성·공유 목소리 두 로드 중 늦게 끝난 쪽에서
                 // 실행되도록 헬퍼로 위임한다(한쪽이 먼저 끝나 스킵돼도 재실행됨).
-                reconcileInaccessibleVoiceAlarms()
+                // **목록을 가져온 계정을 그대로 넘긴다** — '지금 계정' 이 아니다.
+                reconcileInaccessibleVoiceAlarms(requestOwner)
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to refresh social data", error)
                 if (showMessage) {
@@ -74,14 +84,15 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
 // 내 음성 목록(voiceProfiles)·공유 목소리 목록(familyVoices)이 둘 다 신선하게 확보됐을 때만 판단한다.
 // 두 로드가 비동기라 늦게 끝난 쪽(refreshSocial·fetchVoiceProfiles 성공)에서 이 함수를 호출해, 한쪽이
 // 먼저 끝나 스킵돼도 재실행되게 한다. 로드 실패 시 옛 목록을 유지하므로 신선 로드만 신뢰해 오강등을 막는다.
-internal fun MainViewModel.reconcileInaccessibleVoiceAlarms() {
+/**
+ * @param listOwner 이 목록들을 **가져온 계정**. 호출부가 조회를 시작한 시점의 값을 그대로
+ *   넘긴다 — 여기서 `authSession` 을 읽으면 '지금 계정' 이 되어, 늦게 도착한 A 의 목록이
+ *   B 의 이름표를 달게 된다. 그러면 저장소 가드(expectedOwnerUserId)가 통과해 **B 의 목소리
+ *   참조와 캐시 오디오를 영구히 벗긴다**(Codex #665 P1). 되돌릴 수 없는 변경이다.
+ */
+internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) {
     if (!familyVoicesLoadedFresh || !voiceProfilesLoadedFresh) return
     val accessibleVoiceIds = (voiceProfiles.map { it.id } + familyVoices.map { it.id }).toSet()
-    // 목록을 가져온 계정을 함께 넘긴다 — 강등은 되돌릴 수 없어, 그 사이 계정이 바뀌었으면
-    // 저장소가 그만둔다. **목록과 같은 자리에서** 잡는다: 코루틴 안에서 읽으면 넘기는 값이
-    // '목록을 가져온 계정' 이 아니라 '지금 계정' 이 되어, 둘이 갈리는 순간 저장소 가드가
-    // 무력해진다(가드의 전제가 깨진다).
-    val listOwner = authSession?.user?.id
     viewModelScope.launch {
         runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner) }
             .onSuccess { count ->
