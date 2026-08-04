@@ -159,6 +159,10 @@ internal class RemoteAlarmPullSyncService(
                     // 지운 알람이 다시 생겨 울린다(Codex #675 P1).
                     if (existing != null && current == null) {
                         skipped += 1
+                        // 방금 받아 둔 음성은 **주인이 없어졌다.** 삭제 쪽 정리는 파일이 생기기
+                        // 전에 이미 지나갔고, 그만받기 기록 때문에 다음 pull 에도 안 잡혀
+                        // 영영 남는다. 여기서 참조 없는 캐시로 정리한다(Codex #675 P2).
+                        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cachedAudio?.cacheKey)
                         Log.i(TAG, "Skipped pull apply; row deleted during download remoteId=${remote.id}")
                         return@withLock
                     }

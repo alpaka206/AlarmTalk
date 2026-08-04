@@ -199,7 +199,12 @@ class AlarmRepository(
         return alarm
     }
 
-    suspend fun createAlarm(draft: AlarmDraft, replaceExisting: Boolean = false): AlarmEntity {
+    /**
+     * 복원·정합성 워커, 그리고 **받은 알람 pull** 과 직렬화한다([restoreMutex]).
+     * pull 은 '행 다시 읽기 → 재구성 → upsert + OS 재예약' 을 한 덩어리로 도는데, 저장이 그
+     * 사이에 끼면 pull 이 방금 저장한 값을 옛 스냅샷으로 덮어쓴다(Codex #675 P1).
+     */
+    suspend fun createAlarm(draft: AlarmDraft, replaceExisting: Boolean = false): AlarmEntity = restoreMutex.withLock {
         validateDraft(draft)
         val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = null, replaceExisting = replaceExisting)
 
@@ -276,18 +281,19 @@ class AlarmRepository(
         alarmDao.upsert(alarm)
         // 새 알람을 저장한 뒤에 충돌 알람을 삭제해야, 둘이 같은 audioCacheKey 를
         // 공유할 때 캐시 음성이 보존된다(deleteAlarm 의 참조 카운트가 새 알람을 포함).
-        conflict?.let { deleteAlarm(it.id) }
+        conflict?.let { deleteAlarmLocked(it.id) }
         // 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
         ensureDynamicVoiceRefreshScheduled(alarm)
         Log.i(TAG, "Created local alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
-        return alarm
+        alarm
     }
 
+    /** 저장 경로를 pull·복원과 직렬화한다 — 이유는 [createAlarm] 주석과 같다(Codex #675 P1). */
     suspend fun updateAlarm(
         alarmId: String,
         draft: AlarmDraft,
         replaceExisting: Boolean = false,
-    ): AlarmEntity {
+    ): AlarmEntity = restoreMutex.withLock {
         validateDraft(draft)
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = alarmId, replaceExisting = replaceExisting)
@@ -390,11 +396,11 @@ class AlarmRepository(
         // sync 가 방금 커밋한 remoteAlarmId 를 stale null 로 덮어 → 다음 sync 가 중복 create 로 재진입.
         alarmDao.upsertPreservingServerSyncFields(updated)
         // 갱신본 저장 후 충돌 알람 삭제 — 공유 audioCacheKey 음성 보존.
-        conflict?.let { deleteAlarm(it.id) }
+        conflict?.let { deleteAlarmLocked(it.id) }
         // 수정으로 반복 랜덤 문구 알람이 됐을 수 있으니 동적 음성 갱신 워커를 재예약한다.
         ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
-        return updated
+        updated
     }
 
     /**
@@ -467,10 +473,18 @@ class AlarmRepository(
 
     /** 복원·정합성 워커와 직렬화한다 — 이유는 [setEnabled] 주석과 같다(Codex #672 P1). */
     suspend fun deleteAlarm(alarmId: String): Unit = restoreMutex.withLock {
+        deleteAlarmLocked(alarmId)
+    }
+
+    /**
+     * [restoreMutex] 를 **이미 쥔 채** 부르는 삭제. `Mutex` 는 재진입이 안 되므로, 같은 락
+     * 안에서 충돌 알람을 지우는 [createAlarm]·[updateAlarm] 은 이 쪽을 쓴다.
+     */
+    private suspend fun deleteAlarmLocked(alarmId: String) {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
             Log.w(TAG, "Delete requested for missing alarm id=$alarmId")
-            return@withLock
+            return
         }
         alarmScheduler.cancel(alarmId)
         val cacheKey = current.audioCacheKey
