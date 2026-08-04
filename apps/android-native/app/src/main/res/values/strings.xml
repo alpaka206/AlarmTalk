@@ -631,9 +631,8 @@
     <string name="voicesr_edit_name">이름 수정</string>
     <string name="voicesr_more">더보기</string>
     <string name="voicesr_pause">일시정지</string>
-    <string name="voicesr_prerender_downloading">알람 음성 다운로드 중</string>
+    <string name="voicesr_prerender_progress">알람 음성 준비 중 %1$d%%</string>
     <string name="voicesr_prerender_failed">생성에 실패했어요</string>
-    <string name="voicesr_prerender_preparing">알람 음성 준비 중 %1$d/%2$d</string>
     <string name="voicesr_prerender_retry">다시 시도</string>
     <string name="voicesr_preview">미리듣기</string>
     <string name="voicesr_relationship_custom_label">관계 직접 입력</string>
@@ -877,6 +876,7 @@
     <string name="onb_voice_download_failed">잠시 뒤 다시 시도해 주세요.</string>
     <string name="onb_voice_download_retry">다시 시도</string>
     <string name="onb_voice_download_later">나중에 받기</string>
+    <string name="onb_voice_download_background">백그라운드에서 계속 받기</string>
     <string name="voicesr_share_voice_desc">같은 플랜 가족이 이 목소리로 알람을 만들 수 있어요.</string>
     <string name="voicesr_share_voice_locked">가족·커플 플랜에서 공유할 수 있어요.</string>
     <string name="voicesr_preview_action">듣기</string>

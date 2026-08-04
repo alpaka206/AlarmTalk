@@ -619,9 +619,8 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voicesr_edit_name">Edit name</string>
     <string name="voicesr_more">More</string>
     <string name="voicesr_pause">Pause</string>
-    <string name="voicesr_prerender_downloading">Downloading alarm voice</string>
+    <string name="voicesr_prerender_progress">Preparing alarm voice %1$d%%</string>
     <string name="voicesr_prerender_failed">Generation failed</string>
-    <string name="voicesr_prerender_preparing">Preparing alarm voice %1$d/%2$d</string>
     <string name="voicesr_prerender_retry">Retry</string>
     <string name="voicesr_preview">Preview</string>
     <string name="voicesr_relationship_custom_label">Enter relationship manually</string>
@@ -848,7 +847,8 @@ for a smooth and secure experience.</string>
     <string name="onb_voice_download_progress">%1$d%%</string>
     <string name="onb_voice_download_failed">Please try again in a moment.</string>
     <string name="onb_voice_download_retry">Try again</string>
-    <string name="onb_voice_download_later">Do this later</string>
+    <string name="onb_voice_download_later">Download later</string>
+    <string name="onb_voice_download_background">Keep downloading in the background</string>
     <string name="voicesr_share_voice_desc">Family on your plan can build alarms with this voice.</string>
     <string name="voicesr_share_voice_locked">Sharing is available on the family and couple plans.</string>
     <string name="voicesr_preview_action">Play</string>

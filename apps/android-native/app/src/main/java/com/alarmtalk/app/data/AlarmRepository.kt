@@ -397,7 +397,14 @@ class AlarmRepository(
         return updated
     }
 
-    suspend fun setEnabled(alarmId: String, enabled: Boolean): AlarmEntity {
+    /**
+     * 복원·정합성 워커와 직렬화한다([restoreMutex]). 락이 없으면 워커가 "행 읽기 → 재계산 →
+     * OS 재예약" 을 도는 사이에 이 함수가 끼어들어, 워커가 **방금 끈 알람의 옛 스냅샷**을
+     * 그대로 다시 등록한다. 그러면 AlarmReceiver 가 Room 검증 전에 RingingService 를 띄우고
+     * markRinging 이 행을 도로 켜서, 사용자가 끈 알람이 울린다(Codex #672 P1).
+     * 워커 쪽 재조회(`fresh`)는 그 창을 좁힐 뿐 닫지 못한다 — 닫는 건 이 락이다.
+     */
+    suspend fun setEnabled(alarmId: String, enabled: Boolean): AlarmEntity = restoreMutex.withLock {
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()
         alarmScheduler.cancel(alarmId)
@@ -455,14 +462,15 @@ class AlarmRepository(
         // 활성화된 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
         if (enabled) ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Alarm enabled changed id=$alarmId enabled=$enabled fireAt=${updated.fireAtMillis}")
-        return updated
+        updated
     }
 
-    suspend fun deleteAlarm(alarmId: String) {
+    /** 복원·정합성 워커와 직렬화한다 — 이유는 [setEnabled] 주석과 같다(Codex #672 P1). */
+    suspend fun deleteAlarm(alarmId: String): Unit = restoreMutex.withLock {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
             Log.w(TAG, "Delete requested for missing alarm id=$alarmId")
-            return
+            return@withLock
         }
         alarmScheduler.cancel(alarmId)
         val cacheKey = current.audioCacheKey

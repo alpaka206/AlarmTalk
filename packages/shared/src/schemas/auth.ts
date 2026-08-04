@@ -50,7 +50,9 @@ export type PasswordResetConfirmRequest = z.infer<typeof PasswordResetConfirmReq
  * 실질 규칙이 된다.
  *
  * 걸러내는 문자는 앱의 `sanitizeDisplayName` 과 같은 이유다 — 제어문자는 로그를 깨고,
- * 제로폭·양방향 문자는 눈에 안 보이는 채로 다른 이름을 만들어 사칭에 쓰인다. 이름은 다른
+ * 제로폭·양방향 문자는 눈에 안 보이는 채로 다른 이름을 만들어 사칭에 쓰인다.
+ * 양방향은 **방향 표식(U+061C ALM · U+200E LRM · U+200F RLM)까지** 포함한다 —
+ * 삽입/오버라이드(U+202A~)·격리(U+2066~)만 막으면 표식으로 같은 일을 할 수 있다(Codex #672 P2). 이름은 다른
  * 사용자에게 노출된다(가족 멤버 목록·알람 보낸사람·공유 목소리 소유자).
  * 따옴표·하이픈 같은 정당한 문장부호는 남긴다 — SQL 은 `?`-바인딩이 막는다.
  */
@@ -65,7 +67,7 @@ export const DISPLAY_NAME_MAX_LENGTH = 30;
 export const VOICE_NAME_MAX_LENGTH = 50;
 
 // eslint-disable-next-line no-control-regex -- 제어문자를 **일부러** 매칭한다. 걸러내는 게 목적이다.
-const INVISIBLE_RE = /[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/g;
+const INVISIBLE_RE = /[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\uFEFF\u202A-\u202E\u2066-\u2069]/g;
 
 export function normalizeDisplayName(raw: string): string {
   return (

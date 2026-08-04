@@ -240,11 +240,14 @@ internal fun parseRelationshipLabel(raw: String?): RelationshipSelection {
 
 /** 유료 클론 목소리의 알람 음성 준비 상태(서버 사전렌더 + 로컬 다운로드) 표시용. */
 internal sealed interface CloneVoiceReadiness {
-    /** 서버 사전렌더 진행 중 — "준비 중 n/전체". */
-    data class Preparing(val generated: Int, val total: Int) : CloneVoiceReadiness
-
-    /** 서버 사전렌더 완료, 로컬 클립 다운로드 중. */
-    object Downloading : CloneVoiceReadiness
+    /**
+     * 알람 음성이 준비되는 **하나의 진행률**(0~100).
+     *
+     * 서버 생성과 로컬 다운로드는 사용자에게 두 가지 일이 아니라 "알람 음성이 준비되는 중"
+     * 하나다. 단계별로 n/21 을 따로 세면 생성이 끝나는 순간 100% 에서 0% 로 되돌아가
+     * 진행이 후퇴한 것처럼 보인다. 그래서 생성 0~50%, 다운로드 50~100% 로 이어 붙인다.
+     */
+    data class Progress(val percent: Int) : CloneVoiceReadiness
 
     /** 사전렌더 생성 실패 — [다시 시도] 버튼 노출. */
     object Failed : CloneVoiceReadiness
@@ -481,16 +484,9 @@ internal fun VoiceProfileRow(
         belowContent = {
             // 알람 음성(사전렌더 클립) 준비 상태 — 서버·로컬 둘 다 끝났으면 아무것도 표시하지 않는다.
             when (readiness) {
-                is CloneVoiceReadiness.Preparing -> VoiceProgressMessage(
-                    stringResource(
-                        R.string.voicesr_prerender_preparing,
-                        readiness.generated,
-                        readiness.total,
-                    ),
+                is CloneVoiceReadiness.Progress -> VoiceProgressMessage(
+                    stringResource(R.string.voicesr_prerender_progress, readiness.percent),
                 )
-
-                CloneVoiceReadiness.Downloading ->
-                    VoiceProgressMessage(stringResource(R.string.voicesr_prerender_downloading))
 
                 CloneVoiceReadiness.Failed -> VoiceRetryRow(
                     message = stringResource(R.string.voicesr_prerender_failed),

@@ -35,8 +35,9 @@ import androidx.compose.ui.unit.dp
  *  - **제어문자(C0/C1)**: 로그·CSV·헤더를 깨고, 알람 문구로 들어가면 TTS 가 이상하게 읽는다.
  *  - **제로폭 문자**(U+200B~200D, U+FEFF): 눈에 안 보이는데 길이·중복 검사만 통과시킨다.
  *    "홍길동" 과 "홍<ZWSP>길동" 이 다른 이름이 되어 사칭에 쓰인다.
- *  - **양방향 제어문자**(U+202A~202E, U+2066~2069): 화면에 보이는 글자 순서를 뒤집는다.
- *    파일명·이름 스푸핑의 고전 수법이다.
+ *  - **양방향 문자**(U+202A~202E 삽입/오버라이드, U+2066~2069 격리, 그리고 방향 **표식**인
+ *    U+061C ALM · U+200E LRM · U+200F RLM): 화면에 보이는 글자 순서를 뒤집는다. 파일명·이름
+ *    스푸핑의 고전 수법이고, 표식만으로도 같은 일이 된다(Codex #672 P2).
  *
  * 따옴표·세미콜론·`--` 같은 SQL 문법 문자는 **일부러 남긴다.** "O'Brien" 은 정당한 이름이고,
  * 그걸 막는 건 주입 방어가 아니라 이름을 못 쓰게 하는 것이다. 주입은 바인딩이 막는다.
@@ -57,8 +58,8 @@ internal fun sanitizeUserText(raw: String, allowNewlines: Boolean = false): Stri
         when {
             ch == '\n' -> true // 위에서 허용된 경우만 남아 있다
             ch.isISOControl() -> false
-            ch in '​'..'‍' || ch == '﻿' -> false
-            ch in '‪'..'‮' || ch in '⁦'..'⁩' -> false
+            ch in '\u200B'..'\u200F' || ch == '\uFEFF' || ch == '\u061C' -> false
+            ch in '\u202A'..'\u202E' || ch in '\u2066'..'\u2069' -> false
             else -> true
         }
     }
