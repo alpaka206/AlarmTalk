@@ -1189,6 +1189,24 @@ internal fun MainViewModel.refreshAppSession() {
     }
 }
 
+/**
+ * 오래 걸린 조회의 응답이 **그 조회를 시작한 세션의 것인지** 판정한다.
+ *
+ * 늦게 도착한 응답을 그대로 상태에 반영하면, 로그아웃·계정 전환 뒤에 앞 계정의 목록이
+ * 지금 계정의 것으로 자리 잡는다. 특히 목소리 목록이 그렇다 — A 의 목록으로 B 의 알람을
+ * 훑으면 접근권이 없다고 보고 **B 의 목소리 참조와 캐시 오디오를 영구히 벗긴다**
+ * (Codex #665 P1). 되돌릴 수 없으므로, 반영 자체를 막는다.
+ *
+ * 계정 id 만으로는 부족하다 — 로그아웃 후 **같은 계정** 재로그인을 통과시킨다. 그 사이
+ * 세션은 끝났으므로 세대도 함께 본다([AuthSessionStore.sessionGeneration]).
+ */
+internal fun MainViewModel.responseStillBelongsToRequester(
+    requestOwner: String?,
+    startGeneration: Long,
+): Boolean = !signingOut &&
+    authSession?.user?.id == requestOwner &&
+    authSessionStore.sessionGeneration() == startGeneration
+
 internal fun MainViewModel.bearerOrMessage(fallbackMessage: String): String? {
     val session = authSession
     if (session == null) {
