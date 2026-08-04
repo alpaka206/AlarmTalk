@@ -98,6 +98,21 @@ class RingingService : Service() {
     private var voiceAfterAlarmStarted = false
     private var voiceHasPlayedThisRing = false
 
+    /**
+     * 울림 시작(`startRinging`)과 정리(`stopRingingOutputs`)를 서로 겹치지 않게 한다.
+     *
+     * 둘은 **다른 스레드에서 온다** — 시작은 `onStartCommand`(메인), 정리는 끝맺음 목소리를
+     * 기다리다 도는 `finishDismiss`([serviceScope] = IO)다. 락이 없으면 이렇게 샌다: A 의
+     * 정리가 '내가 아직 주인인가' 를 통과한 직후 B 가 시작해 자기 플레이어와 표시를 걸고,
+     * 이어서 A 가 `stopMediaAndVibration()` 을 돌며 **B 를 침묵시키고** `ringingAlarmId` 를
+     * 비운다. 그런데 `activeRingingAlarmId` 는 B 로 남아 정합성 복원이 B 를 영영 건너뛴다
+     * (Codex #666 P2). 소유 확인과 실제 정리가 한 덩어리여야 한다.
+     *
+     * 안에서 하는 일은 플레이어 정지·잡 취소·바인더 호출뿐이고 기다리는 곳이 없어(`cancel()`
+     * 은 join 하지 않는다) 오래 잡히지 않는다.
+     */
+    private val ringingStateLock = Any()
+
     override fun onCreate() {
         super.onCreate()
         NotificationChannels.ensure(this)
@@ -169,20 +184,27 @@ class RingingService : Service() {
             startForeground(RINGING_NOTIFICATION_ID, notification)
         }
 
-        if (ringingAlarmId == alarmId) {
+        // 시작과 정리를 **같은 락**으로 묶는다 — 이유는 [ringingStateLock] 참고.
+        val alreadyRinging = synchronized(ringingStateLock) {
+            if (ringingAlarmId == alarmId) {
+                true
+            } else {
+                if (ringingAlarmId != null) {
+                    stopMediaAndVibration()
+                }
+                ringingAlarmId = alarmId
+                activeRingingAlarmId = alarmId
+                // 이 알람의 인계는 끝났다 — 표시를 거둔다. 다른 알람이 인계 중이면 그 표시는
+                // 그대로 남는다(맵이라 서로를 덮지 않는다, [handoffAtElapsedMs] 참고).
+                handoffAtElapsedMs.remove(alarmId)
+                false
+            }
+        }
+        if (alreadyRinging) {
             openRingingActivity(alarmId)
             Log.i(TAG, "Ringing already active id=$alarmId; ignoring duplicate start")
             return
         }
-
-        if (ringingAlarmId != null) {
-            stopMediaAndVibration()
-        }
-        ringingAlarmId = alarmId
-        activeRingingAlarmId = alarmId
-        // 이 알람의 인계는 끝났다 — 표시를 거둔다. 다른 알람이 인계 중이면 그 표시는
-        // 그대로 남는다(맵이라 서로를 덮지 않는다, [handoffAtElapsedMs] 참고).
-        handoffAtElapsedMs.remove(alarmId)
 
         serviceScope.launch {
             val repository = AlarmAppContainer.repository(applicationContext)
@@ -772,7 +794,7 @@ class RingingService : Service() {
      *   그 틈에 정합성 워커가 B(지난 스누즈 시각)를 다시 등록해 한 번 더 울린다(Codex #666 P2).
      *   모르면(null) 예전처럼 전부 거둔다 — 이유는 [releaseRingingMarkers] 참고.
      */
-    private fun stopRingingOutputs(completedAlarmId: String? = ringingAlarmId) {
+    private fun stopRingingOutputs(completedAlarmId: String? = ringingAlarmId) = synchronized(ringingStateLock) {
         // **이 서비스가 이미 다른 알람으로 넘어갔으면 정리에서 빠진다.**
         //
         // A 의 끝맺음 목소리가 끝나고 마무리가 도는 사이 B 가 시작될 수 있다. 그때 아래를
