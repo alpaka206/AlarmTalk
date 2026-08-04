@@ -114,9 +114,7 @@ internal class RemoteAlarmPullSyncService(
                 // 울리는 중이면 헛일이므로 먼저 걸러 낸다. 다만 **이건 1차 거르기일 뿐이다** —
                 // 아래 buildLocalAlarm 이 음성 다운로드로 대기하는 사이에 울리기 시작할 수
                 // 있어, 진짜 판단은 반영 직전에 한 번 더 한다(Codex #675 P1).
-                if (alarmDao.getAllByRemoteAlarmId(remote.id)
-                        .any { it.id in ringingAlarmIds() }
-                ) {
+                if (alarmDao.getAllByRemoteAlarmId(remote.id).any { isInFlight(it) }) {
                     skipped += 1
                     return@runCatching
                 }
@@ -168,7 +166,7 @@ internal class RemoteAlarmPullSyncService(
                     }
                     // 대기 중에 **울리기 시작했으면 건드리지 않는다.** 과거 fireAtMillis 를 살려
                     // 재예약하면 즉시 다시 울린다.
-                    if (current != null && current.id in ringingAlarmIds()) {
+                    if (current != null && isInFlight(current)) {
                         skipped += 1
                         return@withLock
                     }
@@ -337,6 +335,23 @@ internal class RemoteAlarmPullSyncService(
             failed = failed,
         )
     }
+
+    /**
+     * 지금 이 행을 건드리면 안 되는가 — **울리는 중이거나, 방금까지 울렸는가.**
+     *
+     * 런타임 표시([ringingAlarmIds])만으로는 모자란다. 해제·스누즈는 표시를 먼저 거두고
+     * (`RingingService.stopRingingOutputs`) 그 다음에 `repository.dismiss`/`snooze` 가 이 락을
+     * 잡는데, 그 틈에 pull 이 락을 먼저 쥐면 표시는 없고 행만 RINGING 으로 남아 있다. 그대로
+     * 재구성하면 과거 fireAtMillis 를 가진 채 SCHEDULED 가 되어 **즉시 다시 울린다**
+     * (Codex #675 P1).
+     *
+     * ⚠️ 이 판정을 정합성 복원(`AlarmRepository.reschedulePendingAlarmsLocked`)에 그대로
+     * 옮기지 말 것. 거기서 `state == RINGING` 을 배제 조건으로 쓰면 프로세스가 죽어 굳어 버린
+     * 행이 **유일한 복구 경로**에서 영구 제외된다. 여기서 상태를 봐도 되는 이유는 그 반대다 —
+     * 굳은 행은 복원이 풀어 주고, 풀리면 다음 pull 이 정상적으로 반영한다.
+     */
+    private fun isInFlight(alarm: AlarmEntity): Boolean =
+        alarm.id in ringingAlarmIds() || alarm.state == AlarmStates.RINGING
 
     /**
      * 받은 알람의 음성을 **미리** 확보한다 — 유일한 네트워크 구간이라 락 밖에서 돈다.
