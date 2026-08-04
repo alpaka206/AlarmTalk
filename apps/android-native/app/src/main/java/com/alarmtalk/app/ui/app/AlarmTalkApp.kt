@@ -1074,7 +1074,7 @@ internal fun AlarmTalkApp(
                                   viewModel.setAlarmEnabled(id, enabled)
                               }
                           },
-                          // 권한이 없으면 편집기에 들어가지도 않는다 — 들어가 봐야 저장이 막힌다.
+                          // 권한이 하나라도 빠지면 편집기에 들어가지 않는다 — 들어가 봐야 저장이 막힌다.
                           onEditAlarm = {
                               if (permissions.alarmReady) {
                                   navController.navigate(AppRoute.alarmEdit(it.id))
@@ -1084,6 +1084,7 @@ internal fun AlarmTalkApp(
                           },
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
+                          onRequestAlarmPermission = ::requestPermission,
                       )
                   }
               }

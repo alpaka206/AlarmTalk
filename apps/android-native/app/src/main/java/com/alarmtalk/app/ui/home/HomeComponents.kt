@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -23,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,7 +63,6 @@ internal fun HomeHeader(
     alarmRingingBlocked: Boolean = false,
     /** 울리기는 하지만 늦거나 잠금화면을 못 덮는 상태(정확 알람·전체화면 권한 없음). */
     alarmRingingDegraded: Boolean = false,
-    onRequestAlarmPermissions: () -> Unit = {},
 ) {
     // 절대 시각은 바로 아래 카드에 이미 있으니 헤더는 '남은 시간'을 말한다.
     // 분이 바뀌는 경계마다 갱신해 화면을 켜둔 채로도 어긋나지 않게 한다.
@@ -98,9 +95,6 @@ internal fun HomeHeader(
     // '알람' 라벨을 따로 두지 않고, 상태 문구(다음 울림/모두 꺼짐/알람 없음)를 그대로 헤드라인으로 승격한다.
     // 디자인 언어(제목=결론)에 맞춰 지금 상태가 곧 화면의 첫 줄이 되게 한다.
     if (!statusText.isNullOrBlank()) {
-      // 부모가 Box(겹침)라 두 줄을 그대로 내보내면 서로 위에 포개진다. 한 줄만 그릴 때와
-      // 같은 자리에 놓이도록 Column 으로 묶는다.
-      Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
             text = statusText,
             style = MaterialTheme.typography.headlineSmall,
@@ -115,27 +109,6 @@ internal fun HomeHeader(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        if (permissionDegraded) {
-            Text(
-                text = stringResource(R.string.hs_status_permission_degraded),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        // 사실만 말하고 끝내면 고칠 길이 없다. 경고를 반복하지 않고 **할 일**만 하나 둔다.
-        if (permissionBlocked || permissionDegraded) {
-            TextButton(
-                onClick = onRequestAlarmPermissions,
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.hs_status_permission_action),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
-      }
     }
 }
 

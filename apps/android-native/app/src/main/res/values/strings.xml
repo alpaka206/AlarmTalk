@@ -140,10 +140,10 @@
     <string name="common_permission_exact_alarm_label">정확한 알람</string>
     <string name="common_permission_full_screen_label">전체 화면 알람</string>
     <string name="common_permission_gate_allow_action">허용하기</string>
-    <string name="common_permission_gate_exact_alarm_title">정확한 시간에 울리려면 권한이 필요해요</string>
-    <string name="common_permission_gate_full_screen_title">잠금 화면 알람 권한이 필요해요</string>
+    <string name="common_permission_gate_exact_alarm_title">정확한 알람 권한을 허용해야 알람을 설정할 수 있어요</string>
+    <string name="common_permission_gate_full_screen_title">잠금 화면 알람 권한을 허용해야 알람을 설정할 수 있어요</string>
     <string name="common_permission_gate_mic_title">마이크 권한이 필요해요</string>
-    <string name="common_permission_gate_notifications_title">알람 권한이 필요해요</string>
+    <string name="common_permission_gate_notifications_title">알림 권한을 허용해야 알람을 설정할 수 있어요</string>
     <string name="common_permission_granted">허용됨</string>
     <string name="common_permission_mic_label">마이크</string>
     <string name="common_permission_notifications_label">알림</string>
@@ -327,8 +327,9 @@
     <string name="hs_status_ring_soon">곧 울려요.</string>
     <string name="hs_status_ring_in">%1$s 후에 울려요.</string>
     <string name="hs_status_permission_off">권한이 꺼져 있어 알람이 울리지 않아요</string>
-    <string name="hs_status_permission_degraded">정확한 시간에 울리지 않거나 잠금 화면에 안 뜰 수 있어요</string>
-    <string name="hs_status_permission_action">권한 허용하기</string>
+    <string name="hs_perm_banner_notifications_action">알림 권한 허용하기</string>
+    <string name="hs_perm_banner_exact_alarm">정확한 알람 권한을 허용하지 않으면 제때 울리지 않을 수 있어요</string>
+    <string name="hs_perm_banner_full_screen">잠금 화면 알람 권한을 허용하지 않으면 잠금 화면에 뜨지 않아요</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s 목소리</string>
     <string name="hs_weather_city_label">도시</string>
     <string name="hs_weather_city_placeholder">예: 서울</string>

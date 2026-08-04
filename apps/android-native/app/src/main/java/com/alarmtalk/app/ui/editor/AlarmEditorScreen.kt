@@ -597,7 +597,8 @@ internal fun AlarmEditorScreen(
     fun saveEditor() {
         if (isSaving) return
         // **권한이 가장 먼저다.** 아래 어느 갈래든 결국 알람을 만들거나 고치는데, 음성 생성은
-        // 그 전에 일어나는 유료 호출이다. 권한이 없어 결국 못 만들 거면 생성부터 하지 않는다.
+        // 그 전에 일어나는 유료 호출이다. 결국 못 만들 거면 생성부터 하지 않는다.
+        // 알람 권한 셋은 전부 필수다(CLAUDE.md 「알람 권한 3종은 필수」).
         if (!PermissionSnapshot.read(context).alarmReady) {
             onMissingAlarmPermission()
             return
