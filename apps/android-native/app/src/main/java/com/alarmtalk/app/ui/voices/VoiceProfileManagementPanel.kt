@@ -849,6 +849,9 @@ internal fun VoiceProfileManagementPanel(
         mutableStateOf<Map<String, com.alarmtalk.app.network.VoicePrerenderStatusResponse>>(emptyMap())
     }
     var cloneLocalReadyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // 다운로드 진행(받은 수 to 전체). 클립을 하나 받을 때마다 갱신해 "n/전체" 로 보여준다 —
+    // 21개를 1분 넘게 받는 동안 '다운로드 중' 만 떠 있으면 멈춘 것과 구분되지 않는다.
+    var cloneDownloadProgress by remember { mutableStateOf<Map<String, Pair<Int, Int>>>(emptyMap()) }
     var prerenderRetryBusyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var speechStyleRetryBusyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     // 실패 후 [다시 시도] 수락 시 증가 — 멈춘 폴링 루프를 재시작한다.
@@ -884,6 +887,17 @@ internal fun VoiceProfileManagementPanel(
     // true = 로컬 완전 다운로드 완료.
     suspend fun downloadCloneBuckets(profileId: String): Boolean = withContext(Dispatchers.IO) {
         var allCached = true
+        // 전체 개수를 먼저 세어 두고, 받을 때마다 캐시된 수를 올린다.
+        val allClips = CloneAlarmBucketCategories.flatMap { category ->
+            val clipLanguage = cloneClipLanguageFor(profileId, category)
+            stockClips.filter {
+                it.voiceProfileId == profileId && it.category == category &&
+                    (it.language ?: "ko") == clipLanguage
+            }
+        }
+        val total = allClips.size
+        var done = allClips.count { audioStore.getCachedAudio("stock_${it.messageId}") != null }
+        if (total > 0) cloneDownloadProgress = cloneDownloadProgress + (profileId to (done to total))
         CloneAlarmBucketCategories.forEach { category ->
             val clipLanguage = cloneClipLanguageFor(profileId, category)
             stockClips
@@ -904,6 +918,14 @@ internal fun VoiceProfileManagementPanel(
                                 cacheKey = cacheKey,
                                 messageId = clip.messageId,
                             )
+                        }.onSuccess {
+                            // 한 개 받을 때마다 알린다 — 21개를 1분 넘게 받는 동안 진행이
+                            // 안 보이면 사용자는 멈춘 것으로 읽는다.
+                            done += 1
+                            if (total > 0) {
+                                cloneDownloadProgress =
+                                    cloneDownloadProgress + (profileId to (done to total))
+                            }
                         }.onFailure { error ->
                             if (error is kotlin.coroutines.cancellation.CancellationException) throw error
                             allCached = false
@@ -1271,10 +1293,29 @@ internal fun VoiceProfileManagementPanel(
                             profile.id in cloneLocalReadyIds -> null
                             prerenderStatus == null -> null
                             prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
-                            prerenderStatus.status == "done" -> CloneVoiceReadiness.Downloading
-                            prerenderStatus.status == "pending" && prerenderStatus.total > 0 ->
-                                CloneVoiceReadiness.Preparing(prerenderStatus.generated, prerenderStatus.total)
-                            else -> null
+                            else -> {
+                                // 생성과 다운로드를 **하나의 진행률**로 잇는다(0~50 생성,
+                                // 50~100 다운로드). 단계마다 n/21 을 따로 세면 생성이 끝나는
+                                // 순간 100% 에서 0% 로 되돌아가 후퇴한 것처럼 보인다.
+                                val serverDone = prerenderStatus.status == "done"
+                                val total = prerenderStatus.total
+                                val generatedPart = when {
+                                    serverDone -> 50
+                                    total > 0 ->
+                                        (prerenderStatus.generated.coerceIn(0, total) * 50) / total
+                                    else -> 0
+                                }
+                                val (downloaded, downloadTotal) =
+                                    cloneDownloadProgress[profile.id] ?: (0 to 0)
+                                val downloadPart = if (serverDone && downloadTotal > 0) {
+                                    (downloaded.coerceIn(0, downloadTotal) * 50) / downloadTotal
+                                } else {
+                                    0
+                                }
+                                CloneVoiceReadiness.Progress(
+                                    (generatedPart + downloadPart).coerceIn(0, 100),
+                                )
+                            }
                         }
                         VoiceProfileRow(
                             profile = profile,
@@ -1346,13 +1387,22 @@ internal fun VoiceProfileManagementPanel(
                 )
             }
         }
-        // 기본 목소리 변경 직후 무료 버킷 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다
-        // (실패해도 편집기 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
-        voicePrefetchProgress?.let { (done, total) ->
-            VoiceProgressMessage(
-                stringResource(R.string.voices_default_voice_prefetching, done, total),
-            )
-        }
+        // 기본 목소리 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다(실패해도 편집기
+        // 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
+        //
+        // 온보딩의 '백그라운드에서 계속 받기' 로 화면을 닫아도 워커는 계속 도는데, 그때
+        // 진행을 볼 곳이 여기뿐이다. 클론 목소리와 **같은 퍼센트 문구**를 쓴다 — 사용자에겐
+        // 둘 다 "알람 음성이 준비되는 중" 한 가지다.
+        voicePrefetchProgress
+            ?.takeIf { (done, total) -> total > 0 && done < total }
+            ?.let { (done, total) ->
+                VoiceProgressMessage(
+                    stringResource(
+                        R.string.voicesr_prerender_progress,
+                        (done.coerceIn(0, total) * 100) / total,
+                    ),
+                )
+            }
     }
 
     if (voiceLimitNoticeOpen) {

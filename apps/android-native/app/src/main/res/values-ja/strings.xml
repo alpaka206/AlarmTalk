@@ -627,9 +627,8 @@
     <string name="voicesr_edit_name">名前を編集</string>
     <string name="voicesr_more">もっと見る</string>
     <string name="voicesr_pause">一時停止</string>
-    <string name="voicesr_prerender_downloading">アラーム音声をダウンロード中</string>
+    <string name="voicesr_prerender_progress">アラーム音声を準備中 %1$d%%</string>
     <string name="voicesr_prerender_failed">生成に失敗しました</string>
-    <string name="voicesr_prerender_preparing">アラーム音声を準備中 %1$d/%2$d</string>
     <string name="voicesr_prerender_retry">再試行</string>
     <string name="voicesr_preview">試聴</string>
     <string name="voicesr_relationship_custom_label">関係を直接入力</string>
@@ -856,7 +855,7 @@
     <string name="onb_voice_download_progress">%1$d%%</string>
     <string name="onb_voice_download_failed">少し経ってからもう一度お試しください。</string>
     <string name="onb_voice_download_retry">再試行</string>
-    <string name="onb_voice_download_later">あとで受け取る</string>
+    <string name="onb_voice_download_later">バックグラウンドで受信を続ける</string>
     <string name="voicesr_share_voice_desc">同じプランの家族がこの声でアラームを作れます。</string>
     <string name="voicesr_share_voice_locked">ファミリー・カップルプランで共有できます。</string>
     <string name="voicesr_preview_action">再生</string>
