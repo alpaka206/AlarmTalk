@@ -55,6 +55,21 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * 울림 정리(`stopRingingOutputs`)가 **지금 이 서비스가 울리는 알람의 것인가.**
+ *
+ * 소리·진동·알림·오디오 포커스는 서비스가 하나씩만 들고 있는 공유 자원이다. 늦게 도는
+ * 마무리가 이미 다른 알람으로 넘어간 서비스의 그것들을 끄면, 새 알람이 소리 없이 살아 있고
+ * 울림 표시만 굳어 정합성 복원이 그 알람을 영영 건너뛴다(Codex #666 P1).
+ *
+ * `completedAlarmId` 가 null 이면(onDestroy 등 어떤 알람인지 모를 때) 정리한다 — 굳은 표시를
+ * 남기는 쪽이 더 나쁘다. `currentAlarmId` 가 null 이면 이미 정리된 상태라 그대로 진행한다.
+ */
+internal fun ringingTeardownBelongsToCurrentAlarm(
+    currentAlarmId: String?,
+    completedAlarmId: String?,
+): Boolean = completedAlarmId == null || currentAlarmId == null || currentAlarmId == completedAlarmId
+
 internal fun storedVoiceFallbackUri(
     localAudioUri: String?,
     bucketId: String?,
@@ -82,6 +97,21 @@ class RingingService : Service() {
     private var ringingAlarmId: String? = null
     private var voiceAfterAlarmStarted = false
     private var voiceHasPlayedThisRing = false
+
+    /**
+     * 울림 시작(`startRinging`)과 정리(`stopRingingOutputs`)를 서로 겹치지 않게 한다.
+     *
+     * 둘은 **다른 스레드에서 온다** — 시작은 `onStartCommand`(메인), 정리는 끝맺음 목소리를
+     * 기다리다 도는 `finishDismiss`([serviceScope] = IO)다. 락이 없으면 이렇게 샌다: A 의
+     * 정리가 '내가 아직 주인인가' 를 통과한 직후 B 가 시작해 자기 플레이어와 표시를 걸고,
+     * 이어서 A 가 `stopMediaAndVibration()` 을 돌며 **B 를 침묵시키고** `ringingAlarmId` 를
+     * 비운다. 그런데 `activeRingingAlarmId` 는 B 로 남아 정합성 복원이 B 를 영영 건너뛴다
+     * (Codex #666 P2). 소유 확인과 실제 정리가 한 덩어리여야 한다.
+     *
+     * 안에서 하는 일은 플레이어 정지·잡 취소·바인더 호출뿐이고 기다리는 곳이 없어(`cancel()`
+     * 은 join 하지 않는다) 오래 잡히지 않는다.
+     */
+    private val ringingStateLock = Any()
 
     override fun onCreate() {
         super.onCreate()
@@ -154,17 +184,27 @@ class RingingService : Service() {
             startForeground(RINGING_NOTIFICATION_ID, notification)
         }
 
-        if (ringingAlarmId == alarmId) {
+        // 시작과 정리를 **같은 락**으로 묶는다 — 이유는 [ringingStateLock] 참고.
+        val alreadyRinging = synchronized(ringingStateLock) {
+            if (ringingAlarmId == alarmId) {
+                true
+            } else {
+                if (ringingAlarmId != null) {
+                    stopMediaAndVibration()
+                }
+                ringingAlarmId = alarmId
+                activeRingingAlarmId = alarmId
+                // 이 알람의 인계는 끝났다 — 표시를 거둔다. 다른 알람이 인계 중이면 그 표시는
+                // 그대로 남는다(맵이라 서로를 덮지 않는다, [handoffAtElapsedMs] 참고).
+                handoffAtElapsedMs.remove(alarmId)
+                false
+            }
+        }
+        if (alreadyRinging) {
             openRingingActivity(alarmId)
             Log.i(TAG, "Ringing already active id=$alarmId; ignoring duplicate start")
             return
         }
-
-        if (ringingAlarmId != null) {
-            stopMediaAndVibration()
-        }
-        ringingAlarmId = alarmId
-        activeRingingAlarmId = alarmId
 
         serviceScope.launch {
             val repository = AlarmAppContainer.repository(applicationContext)
@@ -666,7 +706,7 @@ class RingingService : Service() {
                 startDismissVoiceThenFinish(alarmId, startId, voiceUri, alarm)
                 return@launch
             }
-            stopRingingOutputs()
+            stopRingingOutputs(alarmId)
             runCatching {
                 AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
             }.onFailure { error ->
@@ -717,7 +757,7 @@ class RingingService : Service() {
     }
 
     private suspend fun finishDismiss(alarmId: String, startId: Int) {
-        stopRingingOutputs()
+        stopRingingOutputs(alarmId)
         runCatching {
             AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
         }.onFailure { error ->
@@ -727,10 +767,20 @@ class RingingService : Service() {
     }
 
     private fun snooze(alarmId: String, startId: Int) {
-        stopRingingOutputs()
+        stopRingingOutputs(alarmId)
         serviceScope.launch {
             runCatching {
-                AlarmAppContainer.repository(applicationContext).snooze(alarmId)
+                val repository = AlarmAppContainer.repository(applicationContext)
+                // 스누즈가 꺼져 있거나 한도를 넘겼으면 repository.snooze 는 **DB 를 한 글자도
+                // 쓰지 않고** null 을 돌려준다. 그런데 소리는 위에서 이미 껐다 — 그대로 두면
+                // enabled=1 · state=RINGING · fireAtMillis=과거 로 굳어, 다음 재예약이 이 행을
+                // '지금 울리는 중' 으로 오해하거나 과거 시각으로 되살린다. 알림의 스누즈 버튼은
+                // 한도를 보지 않고 항상 붙으므로(RingingNotificationFactory) 정상 조작으로도
+                // 닿는 경로다. 스누즈가 안 되면 **해제로 마무리**해 상태를 정상으로 되돌린다.
+                if (repository.snooze(alarmId) == null) {
+                    Log.i(TAG, "Snooze not applicable id=$alarmId; dismissing instead")
+                    repository.dismiss(alarmId)
+                }
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to snooze alarm id=$alarmId", error)
             }
@@ -738,14 +788,35 @@ class RingingService : Service() {
         }
     }
 
-    private fun stopRingingOutputs() {
+    /**
+     * @param completedAlarmId 방금 끝난 알람. **이 알람의 표시만 거둔다** — 다른 알람이 인계
+     *   중이거나 울리는 중이면 그 표시는 남겨야 한다. A 를 끄는 순간 B 의 인계 표시까지 지우면,
+     *   그 틈에 정합성 워커가 B(지난 스누즈 시각)를 다시 등록해 한 번 더 울린다(Codex #666 P2).
+     *   모르면(null) 예전처럼 전부 거둔다 — 이유는 [releaseRingingMarkers] 참고.
+     */
+    private fun stopRingingOutputs(completedAlarmId: String? = ringingAlarmId) = synchronized(ringingStateLock) {
+        // **이 서비스가 이미 다른 알람으로 넘어갔으면 정리에서 빠진다.**
+        //
+        // A 의 끝맺음 목소리가 끝나고 마무리가 도는 사이 B 가 시작될 수 있다. 그때 아래를
+        // 그대로 실행하면 A 의 마무리가 **B 의** 소리·진동·알림을 끄고 `ringingAlarmId` 까지
+        // 비운다. 그런데 `stopSelf(A의 startId)` 는 B 의 더 새 시작 때문에 서비스를 끝내지
+        // 않으므로, B 는 소리 없이 살아 있고 `activeRingingAlarmId` 는 B 에 **굳는다** —
+        // 정합성 복원이 B 를 영원히 건너뛰어 다음 발생으로 넘어가지도, 다시 울리지도 않는다
+        // (Codex #666 P1). 표시를 '내 것만 거두게' 바꾸면서 생긴 구멍이다.
+        //
+        // 자기 인계 표시만 거두고 빠진다 — 공유 출력은 지금 주인인 B 의 것이다.
+        if (!ringingTeardownBelongsToCurrentAlarm(ringingAlarmId, completedAlarmId)) {
+            releaseRingingMarkers(completedAlarmId)
+            Log.i(TAG, "Skipped ringing teardown: alarm $completedAlarmId was replaced by $ringingAlarmId")
+            return
+        }
         stopMediaAndVibration()
         NotificationManagerCompat.from(this).cancel(RINGING_NOTIFICATION_ID)
         runCatching {
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
         ringingAlarmId = null
-        activeRingingAlarmId = null
+        releaseRingingMarkers(completedAlarmId)
         currentAlarm = null
         voiceAfterAlarmStarted = false
         voiceHasPlayedThisRing = false
@@ -818,6 +889,71 @@ class RingingService : Service() {
         @Volatile
         var activeRingingAlarmId: String? = null
             private set
+
+        /**
+         * 리시버가 알람을 받아 **서비스가 뜨기 전까지**의 인계 구간 표시(알람 id → 받은 시각).
+         *
+         * [activeRingingAlarmId] 는 서비스가 실제로 울리기 시작해야 채워진다. 그 사이 예약
+         * 정합성 워커가 끼어들면 그 알람을 '안 울리는 중' 으로 보고, 스누즈 마감처럼 이미
+         * 지난 시각을 그대로 다시 등록해 **한 번 더 울린다**(사용자가 첫 번째를 끈 뒤일 수도
+         * 있다). 받은 즉시 표시해 그 창을 닫는다(Codex #666 P2).
+         *
+         * **슬롯 하나가 아니라 맵인 이유**: 인계 중인 알람이 동시에 여럿일 수 있다. 지연·스누즈
+         * 마감이 겹쳐 B·C 가 연달아 배달되면 서비스가 뜨기 전에 브로드캐스트가 두 번 온다.
+         * 값 하나면 C 가 B 를 덮어써 **B 가 무방비**가 되고, 워커가 B 의 지난 시각을 다시
+         * 등록한다 — 값 하나를 집합으로 바꾼 것만으로는 이 창이 닫히지 않았다.
+         *
+         * 서비스가 뜨지 못하고 끝나는 경우(FGS 차단 등)에 표시가 영영 남지 않도록 짧은 TTL 을
+         * 둔다 — 굳어 버린 상태가 복구를 영구히 막는 문제를 다시 만들면 안 된다. 만료된 항목은
+         * 읽을 때 함께 걷어내므로 맵이 무한정 자라지 않는다.
+         */
+        private val handoffAtElapsedMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+        private const val HANDOFF_TTL_MS = 60_000L
+
+        fun markAlarmHandoff(alarmId: String) {
+            handoffAtElapsedMs[alarmId] = android.os.SystemClock.elapsedRealtime()
+        }
+
+        /**
+         * 끝난 알람의 표시만 거둔다 — **남의 것은 그대로 둔다.**
+         *
+         * 두 표시는 서로 다른 알람을 가리킬 수 있다(A 를 끄기 전에 B 가 배달되는 경우).
+         * 무조건 비우면 A 를 끄는 순간 B 가 무방비가 되고, 그 틈에 정합성 워커가 B 의 지난
+         * 시각을 다시 등록해 한 번 더 울린다(Codex #666 P2).
+         *
+         * 다만 **어떤 알람을 끝낸 것인지 모르면 예전처럼 전부 거둔다.** 굳어 버린 표시가
+         * 남아 그 알람이 모든 복구 경로에서 영구 배제되는 쪽이 더 나쁘다 — 인계 표시에는
+         * TTL 이 있지만 울림 표시에는 없다.
+         */
+        private fun releaseRingingMarkers(completedAlarmId: String?) {
+            if (completedAlarmId == null) {
+                activeRingingAlarmId = null
+                handoffAtElapsedMs.clear()
+                return
+            }
+            if (activeRingingAlarmId == completedAlarmId) activeRingingAlarmId = null
+            handoffAtElapsedMs.remove(completedAlarmId)
+        }
+
+        /**
+         * 지금 울리는 중이거나, 방금 받아 서비스가 뜨는 중인 알람 id들.
+         *
+         * **하나가 아니라 집합인 이유.** 두 표시는 서로 다른 알람을 가리킬 수 있다 — A 가
+         * 울리는 동안 B 의 스누즈가 마감되면 [activeRingingAlarmId] 는 A, [handoffAtElapsedMs] 는
+         * B 다. 예전처럼 하나만 돌려주면 A 에 가려 **B 가 무방비**가 되고, 그 순간 정합성
+         * 워커가 B(state=SNOOZED · fireAtMillis 과거)를 보고 지난 시각을 그대로 다시 등록해
+         * 한 번 더 울린다(Codex #666 P2). 두 값을 독립적으로 내보내야 한다.
+         */
+        fun ringingOrHandingOffAlarmIds(): Set<String> {
+            val now = android.os.SystemClock.elapsedRealtime()
+            // 서비스가 뜨지 못하고 끝난 경우(FGS 차단 등) 표시가 영영 남지 않게 여기서 만료시킨다.
+            handoffAtElapsedMs.entries.removeAll { now - it.value >= HANDOFF_TTL_MS }
+            val ids = LinkedHashSet<String>(handoffAtElapsedMs.size + 1)
+            activeRingingAlarmId?.let { ids += it }
+            ids += handoffAtElapsedMs.keys
+            return ids
+        }
 
         private const val RINGING_NOTIFICATION_ID = 1001
         private const val VOICE_REPEAT_GAP_MS = 900L

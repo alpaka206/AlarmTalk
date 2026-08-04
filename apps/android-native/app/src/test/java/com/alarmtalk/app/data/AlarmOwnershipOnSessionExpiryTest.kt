@@ -4,7 +4,11 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.alarm.AlarmScheduler
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -38,6 +42,14 @@ class AlarmOwnershipOnSessionExpiryTest {
     /** 자동으로 세션이 끊긴 계정(실제로는 AuthSessionStore prefs). 비로그인 복원 대상. */
     private var sessionExpiredOwner: String? = null
 
+    /**
+     * 지금 울리는 중이거나 리시버→서비스 인계 중인 알람들
+     * (실제로는 `RingingService.ringingOrHandingOffAlarmIds()`).
+     *
+     * **집합인 이유**: 울리는 알람(A)과 방금 받아 인계 중인 알람(B)이 서로 다를 수 있다.
+     */
+    private var ringingAlarmIds: Set<String> = emptySet()
+
     private val repository by lazy { repositoryWith(dao) }
 
     private fun repositoryWith(alarmDao: AlarmDao) = AlarmRepository(
@@ -51,6 +63,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         pendingOwnerUserIdProvider = { pendingOwner },
         onOwnershipSettled = { pendingOwner = null },
         sessionExpiredOwnerUserIdProvider = { sessionExpiredOwner },
+        ringingAlarmIdsProvider = { ringingAlarmIds },
     )
 
     private val shadowAlarmManager
@@ -81,15 +94,17 @@ class AlarmOwnershipOnSessionExpiryTest {
     private suspend fun seedLegacyAlarm(
         id: String = "legacy-1",
         owner: String? = null,
+        repeatDaysMask: Int = 0x7f,
+        state: String = AlarmStates.SCHEDULED,
     ): AlarmEntity {
         val alarm = AlarmEntity(
             id = id,
             label = "legacy alarm",
             hour = 7,
             minute = 30,
-            // 반복 알람이라 과거 시각이어도 다음 발생으로 재계산돼 예약된다.
+            // 기본값은 반복 알람이라 과거 시각이어도 다음 발생으로 재계산돼 예약된다.
             fireAtMillis = 1_000L,
-            repeatDaysMask = 0x7f,
+            repeatDaysMask = repeatDaysMask,
             holidayOff = false,
             snoozeEnabled = true,
             snoozeMinutes = 5,
@@ -126,7 +141,7 @@ class AlarmOwnershipOnSessionExpiryTest {
             alarmSoundUri = null,
             alarmSoundLabel = null,
             enabled = true,
-            state = AlarmStates.SCHEDULED,
+            state = state,
             createdAtMillis = 1_000L,
             updatedAtMillis = 1_000L,
             // 레거시 행의 핵심 조건.
@@ -272,6 +287,445 @@ class AlarmOwnershipOnSessionExpiryTest {
         currentUser = "account-A"
 
         assertEquals("본인이 다시 로그인하면 그대로 되살아난다", 1, repository.reschedulePendingAlarms())
+    }
+
+    /**
+     * 회귀 방지: 소유자 각인 쓰기가 실패해도, **비로그인이면** 재예약을 막지 않는다.
+     *
+     * 이 가지는 "미기록 행을 지금 계정 것으로 볼 근거가 없다" 를 막으려는 것인데, 지금 계정이
+     * 없으면 잘못 넘겨줄 상대도 없다. 업데이트 직후에 여기 걸리면 지울 예약도 이미 없는 채로
+     * 재예약만 통째로 건너뛰어 알람이 안 울린다.
+     *
+     * 단, 명시적 로그아웃에서 각인까지 실패한 행은 임자가 미정인 채 떼어진 상태다. 그걸
+     * '비로그인이니 이 기기 것' 으로 보면 워커가 다음 회차에 로그인 화면 뒤에서 되살린다
+     * (Codex #666 P1).
+     */
+    @Test
+    fun ownershipWriteFailureStaysUnscheduledAfterExplicitLogout() = runBlocking {
+        seedLegacyAlarm() // 소유자 미기록
+        pendingOwner = "account-A"
+        currentUser = null
+        sessionExpiredOwner = null // 명시적 로그아웃 — 복원 대상이 없다
+
+        val failing = repositoryWith(ClaimFailingDao(dao))
+
+        assertEquals("로그아웃 뒤 각인 실패 행은 되살리면 안 된다", 0, failing.reschedulePendingAlarms())
+    }
+
+    /**
+     * 회귀 방지: **굳어 버린 RINGING 행이 영구히 배제되면 안 된다.**
+     *
+     * RINGING 을 벗어나게 하는 쓰기는 dismiss/snooze/토글/편집뿐인데, 울리는 도중 FGS 가
+     * 죽거나 재부팅되면 그 쓰기가 일어나지 않는다. `state == RINGING` 만 보고 건너뛰면
+     * 이 함수가 유일한 복구 길목이라 그 알람은 다시는 안 울린다 — 목록에는 켜져 보인다.
+     * 실제로 울리는 중인지로 판정해야 자가치유가 유지된다.
+     */
+    @Test
+    fun staleRingingRowStillGetsRescheduled() = runBlocking {
+        seedLegacyAlarm(owner = "account-A", state = AlarmStates.RINGING)
+        currentUser = "account-A"
+
+        // 지금 울리는 알람은 없다(서비스가 죽은 뒤 남은 상태).
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("굳어 버린 RINGING 행도 다시 예약돼야 한다", 1, scheduled)
+        val after = dao.getById("legacy-1")
+        assertEquals("다음 발생으로 재계산돼 정상 상태로 돌아온다", AlarmStates.SCHEDULED, after?.state)
+    }
+
+    /**
+     * 로그아웃 **뒤에** 복원이 돌면 아무것도 되살리지 않는다(순차 경로).
+     *
+     * 로그아웃은 예약만 취소하고 행은 enabled 로 남기므로, 워커가 그 뒤에 다시 예약하면
+     * 로그인 화면 뒤에서 끌 수 없는 알람이 울린다.
+     *
+     * 이 테스트는 **겹침을 검증하지 않는다** — 두 호출이 순차라서 락이 없어도 통과한다.
+     * 이름이 `logoutAndRestoreDoNotInterleave` 였을 때는 그걸 검증하는 것처럼 읽혀,
+     * `restoreMutex` 를 통째로 지워도 초록인데 아무도 몰랐다. 진짜 직렬화 검증은
+     * [restoreParkedMidwayCannotResurrectWhatSignOutJustCancelled] 다.
+     */
+    @Test
+    fun sequentialLogoutThenRestoreSchedulesNothing() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+        repository.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        // 로그아웃: 복원 대상을 지우고 예약을 떼어낸다(MainViewModel.clearSignedInSession 순서).
+        currentUser = null
+        sessionExpiredOwner = null
+        repository.detachAlarmsOnSignOut("account-A")
+
+        // 그 뒤에 워커가 돌아도 되살아나면 안 된다.
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("로그아웃 뒤 복원은 아무것도 예약하지 않는다", 0, scheduled)
+        assertNull(
+            "떼어낸 예약이 되살아나면 안 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
+     * 회귀 방지: **복원이 한창일 때 로그아웃이 끼어들지 못한다**(Codex #666 P1).
+     *
+     * 이 겹침이 실제 버그의 모양이다 — 워커가 '내 알람이다' 까지 판정한 뒤 사용자가 로그아웃하면,
+     * detach 가 예약을 취소해도 워커가 이어서 다시 예약한다. 행은 enabled 로 남으므로 '쓰기 직전
+     * 재조회' 로는 못 잡고 직렬화만이 답이다.
+     *
+     * 복원을 소유자 판정 **이후**(`getById`) 에 세워 두는 이유: `getEnabledAlarms` 에 세우면
+     * 아직 `currentUser` 를 읽기 전이라 락이 없어도 통과해 버려, 테스트가 또 착시가 된다.
+     *
+     * `restoreMutex` 를 지우면 첫 단언(로그아웃이 못 끝난다)이 먼저 깨지고, 그걸 통과시켜도
+     * 복원이 재개돼 예약을 다시 걸므로 두 번째 단언이 깨진다.
+     */
+    @Test
+    fun restoreParkedMidwayCannotResurrectWhatSignOutJustCancelled() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+
+        val insideRestore = CompletableDeferred<Unit>()
+        val releaseRestore = CompletableDeferred<Unit>()
+        val gated = object : AlarmDao by dao {
+            override suspend fun getById(id: String): AlarmEntity? {
+                val row = dao.getById(id)
+                // 첫 호출만 세운다(complete 는 최초 1회만 true).
+                if (insideRestore.complete(Unit)) releaseRestore.await()
+                return row
+            }
+        }
+        // ★ 두 호출이 **같은 인스턴스**여야 한다 — Mutex 는 인스턴스별이다.
+        val repo = repositoryWith(gated)
+
+        val restore = launch(Dispatchers.Default) { repo.reschedulePendingAlarms() }
+        insideRestore.await()
+
+        // 복원이 소유자 판정을 끝내고 멈춰 있는 지금, 사용자가 로그아웃한다.
+        val signOut = launch(Dispatchers.Default) {
+            repo.detachAlarmsOnSignOut("account-A") {
+                currentUser = null
+                sessionExpiredOwner = null
+            }
+        }
+        assertNull(
+            "락이 있으면 로그아웃은 복원이 끝나기 전엔 시작조차 못 한다",
+            withTimeoutOrNull(300) { signOut.join() },
+        )
+
+        releaseRestore.complete(Unit)
+        restore.join()
+        signOut.join()
+
+        assertNull(
+            "떼어낸 예약이 되살아나면 안 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
+     * 회귀 방지: **로그아웃은 세션 정리까지 락 안에서 끝낸다**(Codex #666).
+     *
+     * 세션 비우기를 락 밖(호출 반환 뒤)으로 빼면, 락을 기다리던 복원이 깨어났을 때 prefs 를
+     * 아직 '로그인됨' 으로 읽어 방금 떼어낸 알람을 전부 되살린다. 예약 취소와 세션 전환이
+     * 한 임계구역이어야 하는 이유다.
+     *
+     * 이 테스트는 세션 전환을 **오직 `clearSessionInsideLock` 람다 안에서만** 한다. 본문에서
+     * `currentUser` 를 손으로 먼저 바꾸면 그 순간 이 불변식은 검증 불가능해진다 — 락이
+     * 세션 전환을 덮든 말든 결과가 같아지기 때문이다.
+     *
+     * 세우는 자리는 **예약 취소가 끝난 뒤**(`claimUnownedAlarms`)여야 한다. 취소 전에 세우면
+     * 락이 없어도 최종 상태가 '예약 없음' 이 된다 — 워커가 먼저 예약해도 그 뒤에 취소 루프가
+     * 지나가기 때문이다. 실제로 취소 전(`getAllAlarms`)에 세워 봤더니 뮤텍스를 지워도 통과했다.
+     * (`claimUnownedAlarms` 는 detach 경로에서만 불린다 — 복원 쪽은 임자 표시가 없으면
+     *  `settlePendingAlarmOwnership` 이 DAO 를 타지 않고 바로 true 를 준다.)
+     */
+    @Test
+    fun signOutClearsTheSessionBeforeReleasingTheRestoreLock() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+
+        val insideDetach = CompletableDeferred<Unit>()
+        val releaseDetach = CompletableDeferred<Unit>()
+        val gated = object : AlarmDao by dao {
+            override suspend fun claimUnownedAlarms(userId: String): Int {
+                val claimed = dao.claimUnownedAlarms(userId)
+                if (insideDetach.complete(Unit)) releaseDetach.await()
+                return claimed
+            }
+        }
+        val repo = repositoryWith(gated)
+
+        repo.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        val signOut = launch(Dispatchers.Default) {
+            repo.detachAlarmsOnSignOut("account-A") {
+                // 세션 전환은 여기서만 일어난다 — 락 안이다.
+                currentUser = null
+                sessionExpiredOwner = null
+            }
+        }
+        insideDetach.await()
+
+        // 정합성 워커에 해당하는 복원. 락이 있으면 여기서 멈춰 있어야 한다.
+        val worker = launch(Dispatchers.Default) { repo.reschedulePendingAlarms() }
+        assertNull(
+            "락이 있으면 복원은 로그아웃이 끝나기 전엔 끝날 수 없다",
+            withTimeoutOrNull(300) { worker.join() },
+        )
+
+        releaseDetach.complete(Unit)
+        signOut.join()
+        worker.join()
+
+        assertNull(
+            "락을 이어받은 복원은 이미 비로그인 상태를 봐야 한다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
+     * 회귀 방지: **세션 정리가 실패해도 뒤이은 복원이 떼어낸 알람을 되살리지 않는다**
+     * (Codex #666 P2).
+     *
+     * 정리가 실패하면 저장소는 아직 '로그인됨' 이라 소유자 게이트를 그대로 통과한다. 락을
+     * 놓는 순간 대기하던 정합성 워커가 방금 취소한 예약을 전부 되살리는데, 화면은 이미 로그인
+     * 화면이라 **목록에서 끌 수도 없는 알람이 울린다.**
+     *
+     * 여기서는 세션이 안 지워진 상태(`currentUser` 를 그대로 둔다)를 그대로 재현한다 —
+     * 게이트가 없으면 아래 복원이 1을 돌려주고 예약이 살아나 테스트가 깨진다.
+     */
+    @Test
+    fun failedSessionClearStillBlocksTheFollowingRestore() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+        repository.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        // 세션 정리가 실패한다 — currentUser 는 'account-A' 로 남는다(저장소가 안 비워졌다).
+        repository.detachAlarmsOnSignOut("account-A") {
+            throw IllegalStateException("encrypted prefs write failed")
+        }
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("세션이 안 지워졌어도 떼어낸 알람을 되살리면 안 된다", 0, scheduled)
+        assertNull(
+            "로그인 화면 뒤에서 끌 수 없는 알람이 울리게 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+
+        // 같은 계정이 다시 로그인하면 게이트를 내려 정상 복원된다 — 굳으면 영영 안 울린다.
+        repository.clearSignOutWithoutSessionClearGate("account-A")
+        assertEquals("재로그인하면 되살아나야 한다", 1, repository.reschedulePendingAlarms())
+    }
+
+    /**
+     * 회귀 방지: **소유자 각인까지 실패한 로그아웃도 되살아나지 않는다**(Codex #666 P2).
+     *
+     * 로그아웃은 '예약 취소 → 소유자 각인 → 세션 정리' 순인데, 원인이 쓰기 오류면 뒤의 둘이
+     * 함께 실패한다. 그러면 그 행은 `ownerUserId = null` 로 남고 저장소는 아직 '로그인됨'
+     * 이라, 소유자만 보는 게이트는 그냥 지나치고 **레거시 규칙이 '지금 계정 것' 으로 보아
+     * 되살린다** — 막으려던 바로 그 상태다.
+     */
+    @Test
+    fun failedLogoutAlsoBlocksOwnerlessRowsFromComingBack() = runBlocking {
+        seedLegacyAlarm() // 소유자 미기록
+        currentUser = "account-A"
+        // claimUnownedAlarms 가 실패하는 DAO — 소유자 각인이 안 된다.
+        val repo = repositoryWith(ClaimFailingDao(dao))
+        repo.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        // 각인도 세션 정리도 실패한 로그아웃(currentUser 는 그대로 남는다).
+        repo.detachAlarmsOnSignOut("account-A") {
+            throw IllegalStateException("encrypted prefs write failed")
+        }
+        assertNull("전제: 소유자는 여전히 미기록이다", ownerOf("legacy-1"))
+
+        val scheduled = repo.reschedulePendingAlarms()
+
+        assertEquals("주인 없는 행도 되살리면 안 된다", 0, scheduled)
+        assertNull(
+            "로그인 화면 뒤에서 끌 수 없는 알람이 울리게 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
+     * 회귀 방지: 세션 정리 람다가 던져도 로그아웃의 예약 해제는 그대로 유효하다.
+     *
+     * 저장소 쓰기 실패(디스크 가득참 등)로 예약이 살아남으면, 사용자는 로그인 화면 뒤에서
+     * 끌 수 없는 알람을 맞는다 — 세션 정리 실패가 알람 해제까지 되돌려선 안 된다.
+     */
+    @Test
+    fun sessionClearFailureStillLeavesAlarmsDetached() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+        repository.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        val detached = repository.detachAlarmsOnSignOut("account-A") {
+            currentUser = null
+            sessionExpiredOwner = null
+            throw IllegalStateException("session store write failed")
+        }
+
+        assertEquals("떼어낸 알람 수는 그대로 보고된다", 1, detached)
+        assertNull(
+            "세션 정리가 실패해도 예약은 내려가 있어야 한다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
+     * 회귀 방지: 워커가 목록을 읽은 뒤 사용자가 끈 알람을 되살리지 않는다(Codex #666 P2).
+     * 여기서는 그 창을 좁히는 '쓰기 직전 재조회' 가 실제로 도는지를, DAO 를 갈아 끼워 본다.
+     */
+    @Test
+    fun alarmDisabledAfterSnapshotIsNotRescheduled() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+
+        // getEnabledAlarms 는 켜진 스냅샷을 주지만, 그 뒤 getById 는 '방금 꺼진' 행을 준다.
+        val racing = object : AlarmDao by dao {
+            override suspend fun getById(id: String): AlarmEntity? =
+                dao.getById(id)?.copy(enabled = false)
+        }
+
+        assertEquals("스냅샷 뒤 꺼진 알람은 예약하지 않는다", 0, repositoryWith(racing).reschedulePendingAlarms())
+    }
+
+    @Test
+    fun ownershipWriteFailureDoesNotBlockRescheduleWhileSignedOut() = runBlocking {
+        seedLegacyAlarm() // 소유자 미기록
+        pendingOwner = "account-A" // 각인 대상이 있으나
+        currentUser = null // 지금 로그인한 계정은 없다
+        sessionExpiredOwner = "account-A" // 자동 401 — 그 임자가 곧 복원 대상이다
+
+        // claimUnownedAlarms 가 실패하는 DAO — ownershipSettled = false 가 된다.
+        val failing = repositoryWith(ClaimFailingDao(dao))
+        val scheduled = failing.reschedulePendingAlarms()
+
+        assertEquals("각인 실패와 무관하게 이 기기 알람은 예약돼야 한다", 1, scheduled)
+    }
+
+    /**
+     * 회귀 방지: **지금 울리는 중인 알람을 꺼 버리지 않는다.**
+     *
+     * RINGING 은 enabled=true 이고 fireAtMillis 가 이미 과거라, 반복 없는 알람이면 '놓친 알람'
+     * 가지로 떨어져 enabled=false·FAILED 가 된다. 예약 정합성 워커가 주기적으로 이 함수를
+     * 부르면서 사용자가 듣고 있는 알람과 겹칠 수 있다.
+     */
+    @Test
+    fun ringingOneShotAlarmIsNotDisabledByReschedule() = runBlocking {
+        seedLegacyAlarm(
+            owner = "account-A",
+            repeatDaysMask = 0, // 반복 없음 — 과거 시각이면 원래 꺼지는 조건
+            state = AlarmStates.RINGING,
+        )
+        currentUser = "account-A"
+        ringingAlarmIds = setOf("legacy-1") // 지금 실제로 울리는 중
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        val after = dao.getById("legacy-1")
+        assertEquals("울리는 중인 알람은 그대로 켜져 있어야 한다", true, after?.enabled)
+        assertEquals("상태도 RINGING 그대로", AlarmStates.RINGING, after?.state)
+        // 과거 시각 그대로 다시 예약하면 즉시 재발화한다 — 사용자가 그 사이 껐다면 되살아난다.
+        assertEquals("울리는 중인 알람은 예약 대상이 아니다", 0, scheduled)
+    }
+
+    /**
+     * 회귀 방지: **배달이 시작된 스누즈 알람의 지난 시각을 다시 등록하지 않는다**(Codex #666 P2).
+     *
+     * 스누즈 행은 재계산에서 빠진다(fireAtMillis 가 '스누즈 마감' 이라 다음 정규 발생으로 밀면
+     * 안 된다). 그래서 그대로 등록하면 **이미 지난 시각**이 걸려 즉시 한 번 더 울린다. 반복
+     * 없는 알람이라 재계산 경로였다면 꺼졌을 텐데, 스누즈라 그 가지로도 안 간다 —
+     * 배달 표시만이 유일한 방어다.
+     */
+    @Test
+    fun snoozedAlarmBeingDeliveredIsNotRescheduledWithItsPastTime() = runBlocking {
+        seedLegacyAlarm(
+            owner = "account-A",
+            repeatDaysMask = 0,
+            state = AlarmStates.SNOOZED, // 지난 스누즈 마감 — 재계산에서 빠진다
+        )
+        currentUser = "account-A"
+        // 리시버가 막 받아 서비스가 뜨는 중(인계 구간).
+        ringingAlarmIds = setOf("legacy-1")
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("배달 중인 알람은 등록 대상이 아니다", 0, scheduled)
+        assertNull(
+            "지난 스누즈 시각이 다시 걸리면 즉시 한 번 더 울린다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+        val after = dao.getById("legacy-1")
+        assertEquals("상태도 SNOOZED 그대로", AlarmStates.SNOOZED, after?.state)
+        assertEquals("반복 없는 알람이지만 꺼지면 안 된다", true, after?.enabled)
+    }
+
+    /**
+     * 회귀 방지: **인계 중인 알람이 둘이어도 둘 다 지켜져야 한다**(Codex #666 P2).
+     *
+     * 지연·스누즈 마감이 겹치면 서비스가 뜨기 전에 브로드캐스트가 연달아 온다. 인계 표시가
+     * 값 하나면 나중 것이 앞엣것을 덮어써 앞 알람이 무방비가 되고, 그 순간 이 함수가 그
+     * 알람의 지난 시각을 다시 등록해 한 번 더 울린다. 표시를 집합으로 바꾼 것만으로는
+     * 닫히지 않는 창이라 따로 못 박는다.
+     */
+    @Test
+    fun twoAlarmsHandingOffAtOnceAreBothProtected() = runBlocking {
+        seedLegacyAlarm(id = "handoff-B", owner = "account-A", repeatDaysMask = 0, state = AlarmStates.SNOOZED)
+        seedLegacyAlarm(id = "handoff-C", owner = "account-A", repeatDaysMask = 0, state = AlarmStates.SNOOZED)
+        currentUser = "account-A"
+        // 서비스는 아직 하나도 안 떴다 — 둘 다 인계 구간이다.
+        ringingAlarmIds = setOf("handoff-B", "handoff-C")
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("인계 중인 알람은 둘 다 등록 대상이 아니다", 0, scheduled)
+        assertNull("지난 시각이 다시 걸리면 안 된다", shadowAlarmManager.peekNextScheduledAlarm())
+        assertEquals("B 가 꺼지면 안 된다", true, dao.getById("handoff-B")?.enabled)
+        assertEquals("C 가 꺼지면 안 된다", true, dao.getById("handoff-C")?.enabled)
+    }
+
+    /**
+     * 회귀 방지: **A 가 울리는 동안 인계된 B 도 함께 지켜져야 한다**(Codex #666 P2).
+     *
+     * A 를 끄기 전에 B 의 스누즈가 마감되면 '울리는 중' 은 A, '인계 중' 은 B 다. 표시를
+     * 하나만 내보내면 A 에 가려 **B 가 무방비**가 되고, 그 순간 정합성 워커가 B(SNOOZED ·
+     * 지난 시각)를 보고 그 지난 시각을 그대로 다시 등록해 한 번 더 울린다.
+     *
+     * 판정을 집합이 아니라 단일 값으로 되돌리면(`ringingAlarmIds.first() == alarm.id` 류)
+     * 이 테스트가 깨진다.
+     */
+    @Test
+    fun handedOffAlarmIsProtectedWhileAnotherAlarmIsRinging() = runBlocking {
+        seedLegacyAlarm(
+            id = "ringing-A",
+            owner = "account-A",
+            repeatDaysMask = 0,
+            state = AlarmStates.RINGING,
+        )
+        seedLegacyAlarm(
+            id = "handoff-B",
+            owner = "account-A",
+            repeatDaysMask = 0, // 반복 없음 — 지켜지지 않으면 '놓친 알람' 으로 꺼진다
+            state = AlarmStates.SNOOZED,
+        )
+        currentUser = "account-A"
+        // A 는 서비스가 울리는 중, B 는 방금 리시버가 받아 서비스가 뜨는 중.
+        ringingAlarmIds = setOf("ringing-A", "handoff-B")
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("둘 다 예약 대상이 아니다", 0, scheduled)
+        val b = dao.getById("handoff-B")
+        assertEquals("인계 중인 B 도 켜져 있어야 한다", true, b?.enabled)
+        assertEquals("B 의 상태도 그대로", AlarmStates.SNOOZED, b?.state)
+        assertEquals("B 의 발화 시각을 다시 계산해 덮으면 안 된다", 1_000L, b?.fireAtMillis)
     }
 
     @Test

@@ -28,6 +28,9 @@ class AlarmReceiver : BroadcastReceiver() {
         }
 
         Log.i(TAG, "Alarm received id=$alarmId")
+        // 서비스가 뜨기 전까지의 인계 구간을 표시한다 — 그 사이 예약 정합성 워커가 이 알람을
+        // '안 울리는 중' 으로 보고 지난 시각을 다시 등록해 한 번 더 울리는 것을 막는다.
+        RingingService.markAlarmHandoff(alarmId)
         startRingingOrFallback(context, alarmId)
 
         val pendingResult = goAsync()

@@ -298,13 +298,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // (앞서 자동 만료로 남아 있던 값이 있으면 그게 이 계정을 되살려 버린다.)
         runCatching { authSessionStore.clearSessionExpiredOwner() }
             .onFailure { error -> Log.w(TAG, "Failed to clear expired-session owner on sign-out", error) }
-        runCatching { repository.detachAlarmsOnSignOut(signedOutUserId) }
-            .onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
+        // 세션 저장소 비우기를 **떼어내기와 같은 임계구역 안에서** 끝낸다. 락을 놓은 뒤에
+        // 비우면, 그 틈에 락을 잡은 복원(주기 워커 등)이 prefs 를 아직 '로그인됨' 으로 읽어
+        // 방금 취소한 예약을 전부 되살린다(Codex #666 P1).
+        runCatching {
+            repository.detachAlarmsOnSignOut(signedOutUserId) {
+                authSessionStore.clear()
+            }
+        }.onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
         // 기본 목소리 취향(마지막 쓴 목소리·'나중에 받기' 선택)은 계정을 명시적으로 끝낼 때만
         // 지운다. 자동 401 은 같은 사람이 다시 로그인하는 경우가 대부분이라, 거기서 지우면
         // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
         // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
         clearCurrentDefaultVoicePreferences()
+        // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
+        // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
         clearSessionKeepingAlarms()
     }
 

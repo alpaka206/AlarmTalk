@@ -279,6 +279,10 @@ private suspend fun MainViewModel.onSignedIn() {
     // 응답 하나가 떼어낸 알람을 되살린다(Codex #665 P1).
     runCatching { authSessionStore.clearSessionExpiredOwner() }
         .onFailure { error -> Log.w(TAG, "Failed to clear expired-session owner on sign-in", error) }
+    // 세션 정리가 실패한 채 끝난 로그아웃이 세워 둔 게이트도 여기서 내린다. 안 내리면 그
+    // 계정은 다시 로그인해도 알람이 안 울린다 — 굳은 게이트는 되살아나는 것만큼 나쁘다.
+    runCatching { repository.clearSignOutWithoutSessionClearGate(authSession?.user?.id) }
+        .onFailure { error -> Log.w(TAG, "Failed to clear sign-out restore gate", error) }
     restoreAccessSnapshotForCurrentUser()
     RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
     RemoteAlarmSyncScheduler.runOnce(getApplication())
