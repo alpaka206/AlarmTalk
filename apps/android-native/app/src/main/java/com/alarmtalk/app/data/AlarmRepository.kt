@@ -90,10 +90,16 @@ class AlarmRepository(
      * (내일)으로 재계산해 덮는다.** 5분 뒤 울려야 할 알람이 사라지고, 화면상으로는 내일로
      * 정상 예약돼 있어 사용자는 알 방법이 없다.
      *
+     * 이 락은 이 클래스 밖으로도 나간다 — [RemoteAlarmPullSyncService] 가 받아서 자기
+     * **로컬 변경 구간만** 잡는다. 서버 pull 은 알람을 끄고 지우고 시각을 옮기므로, 따로 놀면
+     * 복원이 방금 취소된 알람의 옛 예약을 되심는다(Codex #666 P1). 그쪽은 네트워크(목록 조회·
+     * 음성 다운로드)를 락 밖에 두므로 이 락이 오래 잡히지 않는다.
+     *
      * Kotlin [Mutex] 는 재진입이 안 된다 — 위 함수들끼리 서로를 부르지 않는지 확인하고
      * 추가할 것. (지금은 [degradeAlarmsWithInaccessibleVoice]·[degradeAlarmsUsingVoiceProfile]
      * 이 공통 private 인 [degradeMatchingLocalOwnedVoiceAlarms] 한 곳으로만 들어가므로
-     * 이중 획득이 없다.)
+     * 이중 획득이 없다. [pullReceivedAlarms] 도 이 락을 잡은 채로 불리지 않는다 — 잠금 순서는
+     * 항상 pullMutex → restoreMutex 한 방향이라 순환이 없다.)
      */
     private val restoreMutex = Mutex()
 
@@ -105,6 +111,9 @@ class AlarmRepository(
         context = context,
         // 받은 알람에 수신자(현재 로그인 계정)를 소유자로 기록해 무료 잠금/복원을 스코프한다.
         currentUserIdProvider = currentUserIdProvider,
+        // pull 의 로컬 변경 구간도 같은 락으로 묶는다 — 서버가 취소한 알람을 정합성 복원이
+        // 되심는 것을 막는다([restoreMutex], Codex #666 P1).
+        alarmMutationLock = restoreMutex,
     )
 
     /**

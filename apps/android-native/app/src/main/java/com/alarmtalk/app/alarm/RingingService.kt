@@ -165,7 +165,9 @@ class RingingService : Service() {
         }
         ringingAlarmId = alarmId
         activeRingingAlarmId = alarmId
-        handoffAlarmId = null
+        // 인계가 끝났으니 표시를 거둔다 — 단 **이 알람의 것일 때만**. 다른 알람이 인계 중이면
+        // 그 표시는 남겨야 한다(같은 이유는 [releaseRingingMarkers] 참고).
+        if (handoffAlarmId == alarmId) handoffAlarmId = null
 
         serviceScope.launch {
             val repository = AlarmAppContainer.repository(applicationContext)
@@ -667,7 +669,7 @@ class RingingService : Service() {
                 startDismissVoiceThenFinish(alarmId, startId, voiceUri, alarm)
                 return@launch
             }
-            stopRingingOutputs()
+            stopRingingOutputs(alarmId)
             runCatching {
                 AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
             }.onFailure { error ->
@@ -718,7 +720,7 @@ class RingingService : Service() {
     }
 
     private suspend fun finishDismiss(alarmId: String, startId: Int) {
-        stopRingingOutputs()
+        stopRingingOutputs(alarmId)
         runCatching {
             AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
         }.onFailure { error ->
@@ -728,7 +730,7 @@ class RingingService : Service() {
     }
 
     private fun snooze(alarmId: String, startId: Int) {
-        stopRingingOutputs()
+        stopRingingOutputs(alarmId)
         serviceScope.launch {
             runCatching {
                 val repository = AlarmAppContainer.repository(applicationContext)
@@ -749,15 +751,20 @@ class RingingService : Service() {
         }
     }
 
-    private fun stopRingingOutputs() {
+    /**
+     * @param completedAlarmId 방금 끝난 알람. **이 알람의 표시만 거둔다** — 다른 알람이 인계
+     *   중이거나 울리는 중이면 그 표시는 남겨야 한다. A 를 끄는 순간 B 의 인계 표시까지 지우면,
+     *   그 틈에 정합성 워커가 B(지난 스누즈 시각)를 다시 등록해 한 번 더 울린다(Codex #666 P2).
+     *   모르면(null) 예전처럼 전부 거둔다 — 이유는 [releaseRingingMarkers] 참고.
+     */
+    private fun stopRingingOutputs(completedAlarmId: String? = ringingAlarmId) {
         stopMediaAndVibration()
         NotificationManagerCompat.from(this).cancel(RINGING_NOTIFICATION_ID)
         runCatching {
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
         ringingAlarmId = null
-        activeRingingAlarmId = null
-        handoffAlarmId = null
+        releaseRingingMarkers(completedAlarmId)
         currentAlarm = null
         voiceAfterAlarmStarted = false
         voiceHasPlayedThisRing = false
@@ -853,6 +860,27 @@ class RingingService : Service() {
         fun markAlarmHandoff(alarmId: String) {
             handoffAlarmId = alarmId
             handoffAtElapsedMs = android.os.SystemClock.elapsedRealtime()
+        }
+
+        /**
+         * 끝난 알람의 표시만 거둔다 — **남의 것은 그대로 둔다.**
+         *
+         * 두 표시는 서로 다른 알람을 가리킬 수 있다(A 를 끄기 전에 B 가 배달되는 경우).
+         * 무조건 비우면 A 를 끄는 순간 B 가 무방비가 되고, 그 틈에 정합성 워커가 B 의 지난
+         * 시각을 다시 등록해 한 번 더 울린다(Codex #666 P2).
+         *
+         * 다만 **어떤 알람을 끝낸 것인지 모르면 예전처럼 전부 거둔다.** 굳어 버린 표시가
+         * 남아 그 알람이 모든 복구 경로에서 영구 배제되는 쪽이 더 나쁘다 — 인계 표시에는
+         * TTL 이 있지만 울림 표시에는 없다.
+         */
+        private fun releaseRingingMarkers(completedAlarmId: String?) {
+            if (completedAlarmId == null) {
+                activeRingingAlarmId = null
+                handoffAlarmId = null
+                return
+            }
+            if (activeRingingAlarmId == completedAlarmId) activeRingingAlarmId = null
+            if (handoffAlarmId == completedAlarmId) handoffAlarmId = null
         }
 
         /**
