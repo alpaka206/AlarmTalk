@@ -1178,6 +1178,22 @@ class AlarmRepository(
                     }
                 }
 
+                // **등록 직전에 한 번 더 본다.** 위 확인 뒤로 재계산 분기가 Room upsert 로
+                // suspend 하므로, 그 사이에 알람이 배달돼 인계가 시작될 수 있다. 스누즈 행은
+                // 재계산에서 빠져 **지난 시각 그대로** 다시 등록되므로, 놓치면 즉시 한 번 더
+                // 울린다(Codex #666 P2).
+                //
+                // **이걸로 경합이 없어지는 건 아니다.** 확인과 등록 사이는 여전히 원자적이지
+                // 않다 — 가장 늦은 지점으로 옮겨 창을 줄일 뿐이다. 남는 찰나는 두 겹이 받는다:
+                //  - `RingingService.startRinging` 이 `ringingAlarmId == alarmId` 로 중복 시작을
+                //    무시한다(정확 알람은 지난 시각을 즉시 발화하므로 대개 여기서 흡수된다).
+                //  - 이 복원은 락을 쥔 채 돌아, 그 사이 dismiss/snooze 가 끼어들지 못한다.
+                //  - 남는 것은 배달이 늦는 경우인데, 그건 위에 적은 **비정확 알람의 알려진 한계**다.
+                //
+                // 리시버가 이 락을 잡게 하는 방법은 **쓰지 않는다.** 브로드캐스트 리시버는 제한
+                // 시간이 짧고 알람 배달은 즉시여야 하는데, 알람 N개를 도는 복원 임계구역 뒤에
+                // 배달을 세우면 울려야 할 알람을 아예 놓친다 — 중복보다 나쁘다.
+                if (alarmToSchedule.id in ringingAlarmIdsProvider()) return@forEach
                 alarmScheduler.schedule(alarmToSchedule)
                 scheduled += 1
             }.onFailure { error ->

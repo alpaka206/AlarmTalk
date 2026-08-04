@@ -569,6 +569,37 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /**
+     * 회귀 방지: **배달이 시작된 스누즈 알람의 지난 시각을 다시 등록하지 않는다**(Codex #666 P2).
+     *
+     * 스누즈 행은 재계산에서 빠진다(fireAtMillis 가 '스누즈 마감' 이라 다음 정규 발생으로 밀면
+     * 안 된다). 그래서 그대로 등록하면 **이미 지난 시각**이 걸려 즉시 한 번 더 울린다. 반복
+     * 없는 알람이라 재계산 경로였다면 꺼졌을 텐데, 스누즈라 그 가지로도 안 간다 —
+     * 배달 표시만이 유일한 방어다.
+     */
+    @Test
+    fun snoozedAlarmBeingDeliveredIsNotRescheduledWithItsPastTime() = runBlocking {
+        seedLegacyAlarm(
+            owner = "account-A",
+            repeatDaysMask = 0,
+            state = AlarmStates.SNOOZED, // 지난 스누즈 마감 — 재계산에서 빠진다
+        )
+        currentUser = "account-A"
+        // 리시버가 막 받아 서비스가 뜨는 중(인계 구간).
+        ringingAlarmIds = setOf("legacy-1")
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("배달 중인 알람은 등록 대상이 아니다", 0, scheduled)
+        assertNull(
+            "지난 스누즈 시각이 다시 걸리면 즉시 한 번 더 울린다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+        val after = dao.getById("legacy-1")
+        assertEquals("상태도 SNOOZED 그대로", AlarmStates.SNOOZED, after?.state)
+        assertEquals("반복 없는 알람이지만 꺼지면 안 된다", true, after?.enabled)
+    }
+
+    /**
      * 회귀 방지: **A 가 울리는 동안 인계된 B 도 함께 지켜져야 한다**(Codex #666 P2).
      *
      * A 를 끄기 전에 B 의 스누즈가 마감되면 '울리는 중' 은 A, '인계 중' 은 B 다. 표시를
