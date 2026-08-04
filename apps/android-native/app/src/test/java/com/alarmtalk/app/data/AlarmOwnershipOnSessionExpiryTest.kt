@@ -521,6 +521,38 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /**
+     * 회귀 방지: **소유자 각인까지 실패한 로그아웃도 되살아나지 않는다**(Codex #666 P2).
+     *
+     * 로그아웃은 '예약 취소 → 소유자 각인 → 세션 정리' 순인데, 원인이 쓰기 오류면 뒤의 둘이
+     * 함께 실패한다. 그러면 그 행은 `ownerUserId = null` 로 남고 저장소는 아직 '로그인됨'
+     * 이라, 소유자만 보는 게이트는 그냥 지나치고 **레거시 규칙이 '지금 계정 것' 으로 보아
+     * 되살린다** — 막으려던 바로 그 상태다.
+     */
+    @Test
+    fun failedLogoutAlsoBlocksOwnerlessRowsFromComingBack() = runBlocking {
+        seedLegacyAlarm() // 소유자 미기록
+        currentUser = "account-A"
+        // claimUnownedAlarms 가 실패하는 DAO — 소유자 각인이 안 된다.
+        val repo = repositoryWith(ClaimFailingDao(dao))
+        repo.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        // 각인도 세션 정리도 실패한 로그아웃(currentUser 는 그대로 남는다).
+        repo.detachAlarmsOnSignOut("account-A") {
+            throw IllegalStateException("encrypted prefs write failed")
+        }
+        assertNull("전제: 소유자는 여전히 미기록이다", ownerOf("legacy-1"))
+
+        val scheduled = repo.reschedulePendingAlarms()
+
+        assertEquals("주인 없는 행도 되살리면 안 된다", 0, scheduled)
+        assertNull(
+            "로그인 화면 뒤에서 끌 수 없는 알람이 울리게 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
      * 회귀 방지: 세션 정리 람다가 던져도 로그아웃의 예약 해제는 그대로 유효하다.
      *
      * 저장소 쓰기 실패(디스크 가득참 등)로 예약이 살아남으면, 사용자는 로그인 화면 뒤에서

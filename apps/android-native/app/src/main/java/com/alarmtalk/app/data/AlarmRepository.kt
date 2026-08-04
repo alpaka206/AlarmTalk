@@ -1095,7 +1095,14 @@ class AlarmRepository(
             // 세션 정리가 실패한 채 끝난 로그아웃의 계정은 되살리지 않는다. 저장소는 아직
             // '로그인됨' 이라 아래 소유자 게이트를 통과해 버리기 때문이다 — 그러면 로그인
             // 화면 뒤에서 끌 수 없는 알람이 울린다([detachAlarmsOnSignOut], Codex #666 P2).
-            if (alarm.ownerUserId != null && alarm.ownerUserId == signOutWithoutSessionClearOwner) {
+            //
+            // **소유자 미기록(null) 행도 함께 막는다.** 로그아웃은 예약 취소 → 소유자 각인
+            // 순서인데 그 각인도 같이 실패할 수 있다(쓰기 오류가 원인이면 대개 함께 실패한다).
+            // 소유자만 보고 걸러내면 그 행은 null 이라 게이트를 그냥 빠져나가고, 아래 레거시
+            // 규칙이 '지금 계정 것' 으로 보아 되살린다 — 막으려던 바로 그 상태다.
+            // 실패한 로그아웃 중에 주인 없는 행이 남았다면 그건 떠나는 계정의 것이다.
+            val blockedOwner = signOutWithoutSessionClearOwner
+            if (blockedOwner != null && (alarm.ownerUserId == null || alarm.ownerUserId == blockedOwner)) {
                 alarmScheduler.cancel(alarm.id)
                 return@forEach
             }
