@@ -94,4 +94,23 @@ interface RemoteAlarmApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
     )
+
+    /**
+     * 이 계정이 '그만받기' 한 알람 id 목록.
+     *
+     * 받은 알람이 서버 목록에서 사라지는 이유는 두 가지인데(수신자 그만받기 / 발신자 삭제)
+     * 목록만으로는 구분이 안 된다. 그만받기는 다른 기기에서도 지워야 하고, 발신자 삭제는
+     * 받은 사람 알람을 건드리면 안 된다 — 그 구분을 위해 따로 묻는다.
+     */
+    @GET("alarm/declined")
+    suspend fun getDeclinedAlarmIds(
+        @Header("Authorization") authorization: String,
+        @Query("limit") limit: Int = 100,
+        @Query("offset") offset: Int = 0,
+    ): DeclinedAlarmIdsResponse
 }
+
+data class DeclinedAlarmIdsResponse(
+    @SerializedName("alarm_ids") val alarmIds: List<String> = emptyList(),
+    @SerializedName("has_more") val hasMore: Boolean = false,
+)

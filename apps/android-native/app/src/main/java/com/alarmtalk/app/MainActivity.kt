@@ -2,7 +2,6 @@ package com.alarmtalk.app
 
 import android.content.pm.ActivityInfo
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,16 +23,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         inAppUpdateManager = InAppUpdateManager(this, viewModel)
-        // 민감정보 보호(보안 감사 대응): 이 액티비티는 이메일·운세 생년월일 등 PII 와
-        // 보이스 클론 녹음 UI 를 호스팅한다. FLAG_SECURE 로 스크린샷·화면 녹화·최근 앱
-        // 썸네일에 내용이 노출되지 않게 한다.
-        // 단, dev flavor 에서는 QA·디버깅 중 화면 캡처가 필요하므로 풀어둔다(prod 는 유지).
-        if (BuildConfig.FLAVOR != "dev") {
-            window.setFlags(
-                WindowManager.LayoutParams.FLAG_SECURE,
-                WindowManager.LayoutParams.FLAG_SECURE,
-            )
-        }
+        // 화면 캡처는 막지 않는다.
+        //
+        // 예전에는 FLAG_SECURE 로 prod 만 막았다(2026-06-22 사전 감사의 'Android FLAG_SECURE
+        // 없음' 항목). 그런데 그건 일반 하드닝 체크리스트지 이 앱 데이터가 그만큼 민감하다는
+        // 판단은 아니었다 — 이 화면에 있는 건 이메일·생년월일 정도고 은행 수준이 아니다.
+        //
+        // 반면 잃는 것이 분명했다: **본인이 본인 화면을 찍는 것**까지 막혀, 알람을 자랑하거나
+        // "안 울렸어요" 문의에 화면을 붙일 수가 없었다. 화면 녹화·최근 앱 썸네일까지 함께
+        // 막히는 것도 그 대가다. 그래서 걷어낸다(2026-08-04 확정).
         setContent {
             AlarmTalkTheme(themeMode = viewModel.themeMode) {
                 AlarmTalkApp(

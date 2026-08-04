@@ -81,4 +81,33 @@ alarmQuery.get('/', async (c) => {
   return c.json({ alarms, total, limit, offset });
 });
 
+/**
+ * 이 사용자가 '그만받기' 한 알람 id 목록.
+ *
+ * 목록(`GET /alarm`)은 그만받기 한 알람을 아예 빼서 내려주므로, 클라는 "목록에서 사라짐" 의
+ * 이유를 구분할 수 없다 — **수신자가 그만받기** 했는지, **발신자가 지웠**는지. 그 둘은 결과가
+ * 정반대여야 한다: 그만받기는 이 계정의 다른 기기에서도 지워야 하고, 발신자 삭제는 이미
+ * 받은 사람의 알람을 건드리면 안 된다(받은 뒤부터는 받는 사람 것이다).
+ */
+alarmQuery.get('/declined', async (c) => {
+  const db = getDB(c.env);
+  const ids = viewerIds(c);
+  if (ids.length === 0) return c.json({ alarm_ids: [] });
+  const placeholders = inPlaceholders(ids);
+  // 상한 없이 전부 돌려주면 그만받기 기록이 쌓일수록 매 pull 이 무거워진다(CLAUDE.md 의
+  // 신규 리스트 엔드포인트 페이지네이션 규약). 클라가 다음 페이지를 이어 받는다.
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '100', 10) || 100, 1), 100);
+  const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
+  const result = await db.execute({
+    sql: `SELECT alarm_id FROM alarm_recipient_state
+          WHERE recipient_user_id IN (${placeholders}) AND declined = 1
+          ORDER BY alarm_id
+          LIMIT ? OFFSET ?`,
+    args: [...ids, limit, offset],
+  });
+  const alarmIds = result.rows.map((r) => String(r.alarm_id));
+  // has_more 로 다음 페이지 여부를 알린다 — 총계를 따로 세지 않아 쿼리가 하나로 끝난다.
+  return c.json({ alarm_ids: alarmIds, has_more: alarmIds.length === limit });
+});
+
 export default alarmQuery;

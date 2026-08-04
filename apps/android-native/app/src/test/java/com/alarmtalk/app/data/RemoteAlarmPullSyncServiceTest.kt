@@ -175,6 +175,147 @@ class RemoteAlarmPullSyncServiceTest {
         assertEquals("sender@example.com님이 보낸 알람", receivedRemoteAlarmLabel(context, " ", "sender@example.com"))
     }
 
+    @Test
+    fun receivedAlarmKeepsLocallyEditedSchedule() {
+        // 받은 뒤부터는 받는 사람 것이다 — 서버 값(6:00)이 로컬 수정(7:30)을 덮으면 안 된다.
+        // 예전엔 로컬에 저장된 뒤 1초 만에 조용히 되돌아갔다(사용자는 못 일어난다).
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+        val resolved = resolveReceivedSchedule(
+            existing = existing,
+            remoteHour = 6,
+            remoteMinute = 0,
+            remoteRepeatDaysMask = 0b0111110,
+            remoteSnoozeMinutes = 10,
+        )
+        assertEquals(7, resolved.hour)
+        assertEquals(30, resolved.minute)
+        assertEquals(existing.repeatDaysMask, resolved.repeatDaysMask)
+        assertEquals(existing.snoozeMinutes, resolved.snoozeMinutes)
+        // 이미 잡아 둔 발사 시각도 그대로 — 다시 계산하면 로컬 수정이 사라진다.
+        assertEquals(existing.fireAtMillis, resolved.keptFireAtMillis)
+    }
+
+    @Test
+    fun firstTimeReceivedAlarmUsesRemoteSchedule() {
+        // 처음 받을 때는 서버 값이 씨앗이다. fireAt 은 계산해야 하므로 null 을 돌려준다.
+        val resolved = resolveReceivedSchedule(
+            existing = null,
+            remoteHour = 6,
+            remoteMinute = 15,
+            remoteRepeatDaysMask = 0b0111110,
+            remoteSnoozeMinutes = 10,
+        )
+        assertEquals(6, resolved.hour)
+        assertEquals(15, resolved.minute)
+        assertEquals(0b0111110, resolved.repeatDaysMask)
+        assertEquals(10, resolved.snoozeMinutes)
+        assertEquals(null, resolved.keptFireAtMillis)
+    }
+
+    @Test
+    fun myOwnAlarmIsNotTreatedAsReceived() {
+        // 내가 만든 알람은 이 규칙 밖이다(애초에 pull 이 건드리지 않는다).
+        val mine = alarm(enabled = true, origin = AlarmOrigins.LOCAL_OWNED)
+        val resolved = resolveReceivedSchedule(mine, 6, 0, 0, 10)
+        assertEquals(6, resolved.hour)
+        assertEquals(null, resolved.keptFireAtMillis)
+    }
+
+    @Test
+    fun ringingReceivedAlarmKeepsPastFireTimeSoPullMustSkipIt() {
+        // 울리는 중인 행은 enabled=true 인데 fireAtMillis 가 이미 과거다. 그 값을 살려
+        // 다시 SCHEDULED 로 세우고 예약하면 즉시 재발화한다(Codex #675 P1).
+        // 그래서 pull 은 이 행을 아예 건너뛴다 — 아래는 '살리면 과거가 그대로 남는다' 는
+        // 사실을 고정해, 건너뛰기를 지우면 무엇이 깨지는지 남긴다.
+        val ringing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+        val resolved = resolveReceivedSchedule(ringing, 6, 0, 0, 5)
+        assertEquals(ringing.fireAtMillis, resolved.keptFireAtMillis)
+        assertTrue("울리는 행의 fireAt 은 과거다", ringing.fireAtMillis < 2_000L)
+    }
+
+    @Test
+    fun receivedAlarmKeepsSnoozeAndHolidayToggles() {
+        // 값(분)만 지키고 토글을 놓치면 다음 pull 이 스누즈를 다시 켜고 공휴일에도 울린다.
+        val edited = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(snoozeEnabled = false, holidayOff = true)
+        val resolved = resolveReceivedSchedule(edited, 6, 0, 0, 5)
+        assertFalse("수신자가 끈 스누즈는 켜지지 않는다", resolved.snoozeEnabled)
+        assertTrue("수신자가 켠 공휴일 건너뛰기는 유지된다", resolved.holidayOff)
+    }
+
+    @Test
+    fun pullKeepsEverythingTheRecipientCanEdit() {
+        // pull 이 음성을 받는 사이 수신자가 알람을 고칠 수 있다. 그래서 행은 **반영 직전에
+        // 다시 읽은 값**으로 만든다 — 예전에는 다운로드 전 스냅샷으로 미리 만들고 달라진
+        // 필드만 골라 덮었는데, 그 목록에서 빠진 값이 네 번 나왔다(시각 → 끄기 → 스누즈 →
+        // 볼륨·알람음). 여기서 한 번에 못 박는다(Codex #675 P1).
+        val edited = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
+            hour = 5,
+            minute = 45,
+            repeatDaysMask = 0b0111110,
+            snoozeEnabled = false,
+            snoozeMinutes = 9,
+            snoozeRepeatLimit = SnoozeRepeatLimits.FIVE,
+            holidayOff = true,
+            alarmVolumePercent = 30,
+            alarmSoundEnabled = false,
+            voiceVolumePercent = 40,
+            voiceRepeat = false,
+        )
+        val rebuilt = requireNotNull(
+            buildReceivedAlarmRow(
+                context = context,
+                remote = remote(),
+                existing = edited,
+                cachedAudio = null,
+                currentUserId = "user-1",
+            ),
+        )
+        assertEquals("고친 시각", 5, rebuilt.hour)
+        assertEquals(45, rebuilt.minute)
+        assertEquals(0b0111110, rebuilt.repeatDaysMask)
+        assertFalse("끈 스누즈", rebuilt.snoozeEnabled)
+        assertEquals(9, rebuilt.snoozeMinutes)
+        assertEquals(SnoozeRepeatLimits.FIVE, rebuilt.snoozeRepeatLimit)
+        assertTrue("공휴일 건너뛰기", rebuilt.holidayOff)
+        assertEquals("낮춘 알람음 볼륨", 30, rebuilt.alarmVolumePercent)
+        assertFalse("끈 알람음", rebuilt.alarmSoundEnabled)
+        assertEquals(40, rebuilt.voiceVolumePercent)
+        assertFalse(rebuilt.voiceRepeat)
+        assertEquals("같은 행을 갱신한다", edited.id, rebuilt.id)
+    }
+
+    @Test
+    fun pullKeepsTheWholeSnoozeEpisode() {
+        // 마감·상태·누른 횟수는 한 묶음이다. 상태만 SCHEDULED 로 되돌리면 정합성 복원이
+        // 다음 정규 발생으로 밀어 스누즈가 사라지고, 횟수만 0 으로 되돌리면 같은 회차에서
+        // 스누즈 제한이 초기화된다(Codex #675 P1·P2).
+        val snoozed = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(state = AlarmStates.SNOOZED, snoozeCount = 2, fireAtMillis = 9_999L)
+        val rebuilt = requireNotNull(
+            buildReceivedAlarmRow(
+                context = context,
+                remote = remote(),
+                existing = snoozed,
+                cachedAudio = null,
+                currentUserId = "user-1",
+            ),
+        )
+        assertEquals(AlarmStates.SNOOZED, rebuilt.state)
+        assertEquals("이미 누른 횟수", 2, rebuilt.snoozeCount)
+        assertEquals("스누즈 마감", 9_999L, rebuilt.fireAtMillis)
+    }
+
+    private fun remote(): RemoteAlarm = RemoteAlarm(
+        id = "remote-id",
+        time = "07:30",
+        repeatDays = emptyList(),
+        isActive = true,
+        snoozeMinutes = 5,
+        senderName = "보낸 사람",
+        isReceived = true,
+    )
+
     private fun alarm(
         enabled: Boolean,
         origin: String,
