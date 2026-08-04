@@ -112,5 +112,10 @@ interface RemoteAlarmApi {
 
 data class DeclinedAlarmIdsResponse(
     @SerializedName("alarm_ids") val alarmIds: List<String> = emptyList(),
+    /**
+     * 발신자가 **탈퇴**해 목소리가 철회된 알람. 그만받기(alarmIds)와 처리가 다르다 —
+     * 알람은 남기고 목소리만 걷어낸다.
+     */
+    @SerializedName("revoked_alarm_ids") val revokedAlarmIds: List<String> = emptyList(),
     @SerializedName("has_more") val hasMore: Boolean = false,
 )

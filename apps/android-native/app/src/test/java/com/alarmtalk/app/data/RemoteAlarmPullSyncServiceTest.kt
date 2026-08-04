@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.network.RemoteAlarm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -304,6 +305,38 @@ class RemoteAlarmPullSyncServiceTest {
         assertEquals(AlarmStates.SNOOZED, rebuilt.state)
         assertEquals("이미 누른 횟수", 2, rebuilt.snoozeCount)
         assertEquals("스누즈 마감", 9_999L, rebuilt.fireAtMillis)
+    }
+
+    @Test
+    fun revokedVoiceLeavesTheAlarmRingingWithoutTheVoice() {
+        // 발신자가 탈퇴하면 그 사람의 복제 목소리는 파기 대상이다. 하지만 시각은 수신자가
+        // 기대고 자는 자기 정보라, 알람까지 지우면 그날 못 일어난다(Codex #676 P1).
+        val received = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
+            label = "김규원 님이 보낸 알람",
+            playMode = AlarmPlayModes.ALARM_VOICE,
+            preLockPlayMode = AlarmPlayModes.ALARM_VOICE,
+            localAudioUri = "file:///cache/remote-message-m1.m4a",
+            audioCacheKey = "remote-message-m1",
+            voiceProfileId = "vp-A",
+            voiceText = "일어나",
+            ttsMessageId = "m1",
+        )
+        assertTrue("철회 대상 판정", hasVoice(received))
+
+        val stripped = withVoiceRevoked(received, context)
+
+        assertEquals("시각은 그대로", received.hour, stripped.hour)
+        assertEquals(received.repeatDaysMask, stripped.repeatDaysMask)
+        assertTrue("알람은 계속 울린다", stripped.enabled)
+        assertEquals(AlarmPlayModes.ALARM_ONLY, stripped.playMode)
+        assertNull("잠금 복원 스냅샷도 비운다", stripped.preLockPlayMode)
+        assertNull(stripped.localAudioUri)
+        assertNull(stripped.audioCacheKey)
+        assertNull(stripped.voiceProfileId)
+        assertNull(stripped.voiceText)
+        assertNull(stripped.ttsMessageId)
+        assertFalse("보낸 사람 이름도 지운다", stripped.label.contains("김규원"))
+        assertFalse("한 번 걷어낸 뒤에는 다시 걷어내지 않는다", hasVoice(stripped))
     }
 
     private fun remote(): RemoteAlarm = RemoteAlarm(

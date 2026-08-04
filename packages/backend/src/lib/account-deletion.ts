@@ -155,6 +155,22 @@ export async function purgeUserAccount(
                )`,
       args: [...userIds, ...userIds, ...userIds],
     });
+    // 이 사람이 **남에게 보낸** 알람은 지우기 전에 수신자 쪽에 철회 기록을 남긴다.
+    // 안 남기면 수신자 기기는 '보낸 사람이 알람 하나를 지웠다'(=내 알람은 남긴다)와
+    // 구분하지 못해, 탈퇴한 사람의 복제 목소리가 그 기기에서 계속 울린다.
+    // 기록을 보면 수신자 앱이 목소리만 걷어내고 알람은 남긴다(RemoteAlarmPullSyncService).
+    await tx.execute({
+      sql: `INSERT INTO alarm_recipient_state
+              (alarm_id, recipient_user_id, declined, revoked, created_at, updated_at)
+            SELECT a.id, a.target_user_id, 0, 1, datetime('now'), datetime('now')
+              FROM alarms a
+             WHERE a.user_id IN (?, ?)
+               AND a.target_user_id IS NOT NULL
+               AND a.target_user_id NOT IN (?, ?)
+            ON CONFLICT(alarm_id, recipient_user_id)
+              DO UPDATE SET revoked = 1, updated_at = datetime('now')`,
+      args: [...userIds, ...userIds],
+    });
     await tx.execute({
       sql: `DELETE FROM alarms
             WHERE user_id IN (?, ?) OR target_user_id IN (?, ?)`,

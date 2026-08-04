@@ -12,6 +12,7 @@ vi.mock('../src/lib/db', () => ({ getDB: () => testDb }));
 
 const { default: alarmMutation } = await import('../src/routes/alarm-mutation');
 const { default: alarmQuery } = await import('../src/routes/alarm-query');
+const { purgeUserAccount } = await import('../src/lib/account-deletion');
 
 function appFor(userId: string) {
   const app = new Hono();
@@ -83,5 +84,59 @@ describe('가족 알람 수신자 그만받기(decline)', () => {
 it('대상이 아닌 사용자(생성자 A)는 decline 할 수 없다(404)', async () => {
     const res = await appFor('A').request('/' + ALARM_ID + '/decline', { method: 'POST' });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
+  beforeEach(async () => {
+    testDb = await seed();
+  });
+
+  async function recipientState(userId: string) {
+    const res = await appFor(userId).request('/declined');
+    return (await res.json()) as { alarm_ids: string[]; revoked_alarm_ids: string[]; has_more?: boolean };
+  }
+
+  it('A 가 탈퇴하면 수신자 B 에게 revoked 로 기록된다 — 그만받기(declined)와 섞이지 않는다', async () => {
+    // 탈퇴 전에는 아무 기록도 없다.
+    const before = await recipientState('B');
+    expect(before.alarm_ids).toEqual([]);
+    expect(before.revoked_alarm_ids).toEqual([]);
+
+    await purgeUserAccount(testDb, 'A', 'gA');
+
+    const after = await recipientState('B');
+    // 알람 행 자체는 사라졌지만, 수신자 기기가 목소리를 걷어낼 수 있게 기록은 남는다.
+    // 이게 없으면 탈퇴한 사람의 복제 목소리가 B 의 기기에서 계속 울린다.
+    expect(after.revoked_alarm_ids).toContain(ALARM_ID);
+    expect(after.alarm_ids).not.toContain(ALARM_ID);
+    const gone = await testDb.execute({ sql: `SELECT id FROM alarms WHERE id = ?`, args: [ALARM_ID] });
+    expect(gone.rows.length).toBe(0);
+  });
+
+  it('B 가 이미 그만받기 한 알람은 탈퇴 뒤에도 declined 로 남는다(지우는 쪽이 우선)', async () => {
+    await appFor('B').request('/' + ALARM_ID + '/decline', { method: 'POST' });
+    await purgeUserAccount(testDb, 'A', 'gA');
+
+    const state = await recipientState('B');
+    // 수신자가 직접 뺀 알람은 '목소리만 걷어내기' 가 아니라 그대로 지워져야 한다.
+    expect(state.alarm_ids).toContain(ALARM_ID);
+    expect(state.revoked_alarm_ids).not.toContain(ALARM_ID);
+  });
+
+  it('탈퇴한 본인이 받은 알람 기록은 남기지 않는다(자기 PII 는 파기 대상)', async () => {
+    // B 가 A 에게 보낸 알람을 하나 더 만든다 — A 가 탈퇴하면 이 행은 A 가 '받은' 것이다.
+    await testDb.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode, is_active)
+            VALUES ('22222222-2222-2222-2222-222222222222', 'B', 'A', 'm1', '08:00', 'tts', 1)`,
+      args: [],
+    });
+    await purgeUserAccount(testDb, 'A', 'gA');
+
+    const rows = await testDb.execute({
+      sql: `SELECT alarm_id FROM alarm_recipient_state WHERE recipient_user_id IN ('A','gA')`,
+      args: [],
+    });
+    expect(rows.rows.length).toBe(0);
   });
 });
