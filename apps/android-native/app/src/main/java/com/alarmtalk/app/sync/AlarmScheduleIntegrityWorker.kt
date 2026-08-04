@@ -30,7 +30,13 @@ import java.util.concurrent.TimeUnit
  * 비행기 모드로 자는 사람의 알람이 안 울리면 안 되므로 제약 없이 따로 돈다.
  *
  * 하는 일은 [com.alarmtalk.app.data.AlarmRepository.reschedulePendingAlarms] 호출 하나다.
- * 이미 예약된 알람에 다시 걸어도 같은 PendingIntent 를 갱신할 뿐이라 무해하다(멱등).
+ * 이미 예약된 알람에 다시 걸면 같은 PendingIntent 를 갱신할 뿐이다.
+ *
+ * **다만 멱등이 아니다** — 발화 시각이 이미 지난 행은 다음 발생으로 재계산돼 새 시각으로
+ * 등록된다. 정확 알람을 못 쓰는 기기(API 31·32 + SCHEDULE_EXACT_ALARM 회수)에서는 배달이
+ * 늦어질 수 있고, 그 사이 이 워커가 돌면 **아직 배달을 기다리던 등록을 덮는다.** 자세한
+ * 내용과 두 번의 실패한 시도는 `AlarmRepository.reschedulePendingAlarms` 의 '알려진 한계'
+ * 주석에 있다. 이 파일만 읽고 "재예약은 무해하다" 고 결론 내리지 말 것.
  */
 class AlarmScheduleIntegrityWorker(
     appContext: Context,
@@ -59,7 +65,8 @@ object AlarmScheduleIntegrityScheduler {
      * 알람 앱에서 복구가 늦는 건 복구가 없는 것과 크게 다르지 않다(Codex #666 P1).
      *
      * 15분은 기존 [RemoteAlarmSyncScheduler] 와 같은 리듬이라 새로운 부담이 아니고, 하는 일도
-     * 로컬 DB 읽기 + 이미 걸린 예약 갱신뿐이라 가볍다(멱등).
+     * 로컬 DB 읽기 + 이미 걸린 예약 갱신뿐이라 가볍다(비용 얘기다 — 위 KDoc 의 '멱등이 아니다'
+     * 참고).
      *
      * **제약을 걸지 않는다.** 네트워크·충전·유휴 어느 것도 알람이 울리는 조건이 아니다.
      */

@@ -73,9 +73,26 @@ class AlarmRepository(
      *
      * 둘 다 "읽고 → 쓰는" 구간이 겹쳐서 생기므로, 그 구간 전체를 직렬화한다. 안에서 하는 일은
      * 로컬 DB 접근과 AlarmManager 호출뿐이라 오래 잡고 있지 않는다.
+     *
+     * **이 락은 '복원 대 로그아웃' 전용이 아니다.** 잡아야 하는 기준은 하나다 —
+     * **행을 읽어 고치고 `alarmScheduler` 로 OS 예약까지 바꾸는 구간**이면 잡는다. 그런
+     * 구간끼리 겹치면 나중에 쓰는 쪽이 상대의 결과를 통째로 덮는데, 덮인 쪽은 아무 흔적도
+     * 남기지 않는다. 현재 대상: [reschedulePendingAlarms]·[detachAlarmsOnSignOut]·
+     * [snooze]·[dismiss]·[lockPaidAlarmTalks]·[unlockPaidAlarmTalks]·
+     * [degradeMatchingLocalOwnedVoiceAlarms].
+     *
+     * 특히 [snooze] 가 빠져 있으면 이렇게 샌다: 사용자가 스누즈를 누르면 소리는 즉시 멎고
+     * '울리는 중' 표시도 즉시 풀리는데 DB 쓰기는 코루틴으로 뒤에 온다. 그 틈에 15분 주기
+     * 정합성 워커가 그 행을 보면 '발화 시각이 지났는데 안 울리는 중' 이라 **다음 정규 발생
+     * (내일)으로 재계산해 덮는다.** 5분 뒤 울려야 할 알람이 사라지고, 화면상으로는 내일로
+     * 정상 예약돼 있어 사용자는 알 방법이 없다.
+     *
+     * Kotlin [Mutex] 는 재진입이 안 된다 — 위 함수들끼리 서로를 부르지 않는지 확인하고
+     * 추가할 것. (지금은 [degradeAlarmsWithInaccessibleVoice]·[degradeAlarmsUsingVoiceProfile]
+     * 이 공통 private 인 [degradeMatchingLocalOwnedVoiceAlarms] 한 곳으로만 들어가므로
+     * 이중 획득이 없다.)
      */
     private val restoreMutex = Mutex()
-
 
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -622,10 +639,13 @@ class AlarmRepository(
             alarm.voiceProfileId == voiceProfileId && !isSystemVoiceId(alarm.voiceProfileId)
         }
 
+    // 복원·로그아웃과 직렬화한다 — 행을 고치고 OS 예약까지 다시 거는 구간이다([restoreMutex]).
+    // 두 공개 진입점([degradeAlarmsWithInaccessibleVoice]·[degradeAlarmsUsingVoiceProfile])이
+    // 모두 여기로만 들어오므로 락은 이 한 곳에서만 잡는다(Mutex 는 재진입 불가).
     private suspend fun degradeMatchingLocalOwnedVoiceAlarms(
         expectedOwnerUserId: String?,
         match: (AlarmEntity) -> Boolean,
-    ): Int {
+    ): Int = restoreMutex.withLock {
         // 강등은 되돌릴 수 없다 — 목소리 참조를 지우고 캐시 오디오까지 정리한다. 그래서 '지금 계정
         // 것'이라고 확신할 수 있는 행만 건드린다.
         //
@@ -709,7 +729,11 @@ class AlarmRepository(
      * 기본 알람음을 재생하게 한다. 캐시 오디오·목소리 참조는 그대로 보존해 재유료 시 복원한다.
      * 로컬만 갱신(upsertPreservingServerSyncFields)해 서버의 원본 목소리 알람은 백스톱으로 남긴다.
      */
-    suspend fun lockPaidAlarmTalks(): Int {
+    // 복원·로그아웃과 직렬화한다([restoreMutex]). 락이 없으면 로그아웃이 예약을 다 취소한 뒤
+    // (행은 enabled 로 남는다) 이 함수가 그 행들을 sound-only 로 **다시 예약**한다 — 목록은
+    // 소유자 필터에 가려 안 보이는데 리시버는 Room 을 직접 읽어 울리는, 끌 수 없는 알람이 된다
+    // (Codex #665 P1). 아래 currentUserIdProvider() 를 락 안에서 읽는 것도 같은 이유다.
+    suspend fun lockPaidAlarmTalks(): Int = restoreMutex.withLock {
         val currentUser = currentUserIdProvider() ?: return 0
         // 미기록 행에 소유자를 '영구히' 새기는 경로다. 새기기 전에 임자를 먼저 확정하지 않으면
         // 앞 계정 A 의 미기록 알람이 B 것으로 박히고, 뒤늦은 확정(claimUnownedAlarms 는 null 만
@@ -757,7 +781,8 @@ class AlarmRepository(
      * lockPaidAlarmTalks), 잠긴 행은 항상 소유자가 있어 여기서 null 을 허용할 필요가 없다 — 엄격히
      * ownerUserId 일치만 본다(null 허용 시 다른 계정이 레거시 잠금을 복원·스케줄하는 크로스계정 창).
      */
-    suspend fun unlockPaidAlarmTalks(): Int {
+    // [lockPaidAlarmTalks] 와 같은 이유로 직렬화한다 — 여기도 행을 고치고 OS 예약을 다시 건다.
+    suspend fun unlockPaidAlarmTalks(): Int = restoreMutex.withLock {
         val currentUser = currentUserIdProvider() ?: return 0
         val targets = alarmDao.getAllAlarms().filter {
             !it.preLockPlayMode.isNullOrBlank() && it.ownerUserId == currentUser
@@ -831,7 +856,11 @@ class AlarmRepository(
         Log.i(TAG, "Alarm marked ringing id=$alarmId")
     }
 
-    suspend fun dismiss(alarmId: String) {
+    // 복원·로그아웃과 직렬화한다([restoreMutex]). 울림을 끝내는 쓰기는 정합성 워커의 재계산과
+    // 같은 행을 두고 경쟁하는데, 서비스는 '울리는 중' 표시를 DB 쓰기 **전에** 풀기 때문에
+    // 그 틈의 워커에게는 '시각이 지났는데 안 울리는 알람' 으로 보인다. 나중에 쓰는 쪽이 이기므로
+    // 락 없이는 dismiss 결과(회전 인덱스 전진·스누즈 카운트 리셋)가 조용히 덮인다.
+    suspend fun dismiss(alarmId: String): Unit = restoreMutex.withLock {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
             alarmScheduler.cancel(alarmId)
@@ -896,7 +925,18 @@ class AlarmRepository(
         Log.i(TAG, "Alarm dismissed id=$alarmId")
     }
 
-    suspend fun snooze(alarmId: String): AlarmEntity? {
+    /**
+     * 복원·로그아웃과 직렬화한다([restoreMutex]) — **이게 없으면 스누즈가 통째로 사라진다.**
+     *
+     * 사용자가 스누즈를 누르면 소리는 즉시 멎고 '울리는 중' 표시도 즉시 풀리는데, DB 쓰기는
+     * 코루틴으로 뒤에 온다. 그 틈에 15분 주기 정합성 워커가 그 행을 보면 '발화 시각이 지났는데
+     * 안 울리는 중' 이라 다음 정규 발생(내일)으로 재계산해 덮는다. 5분 뒤 울려야 할 알람이
+     * 없어지고, 화면상으로는 내일로 정상 예약돼 있어 사용자는 알 방법이 없다 — 알람 앱에서
+     * 가장 나쁜 결과다.
+     *
+     * 워커가 락을 먼저 잡아도 결과는 맞다: 스누즈가 나중에 최종 승자가 된다.
+     */
+    suspend fun snooze(alarmId: String): AlarmEntity? = restoreMutex.withLock {
         val current = alarmDao.getById(alarmId)
         if (current == null) {
             Log.w(TAG, "Snooze requested for missing alarm id=$alarmId")

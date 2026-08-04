@@ -4,7 +4,11 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.alarm.AlarmScheduler
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -325,15 +329,18 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /**
-     * 회귀 방지: **복원과 로그아웃이 서로 겹치지 않는다**(Codex #666 P1).
+     * 로그아웃 **뒤에** 복원이 돌면 아무것도 되살리지 않는다(순차 경로).
      *
      * 로그아웃은 예약만 취소하고 행은 enabled 로 남기므로, 워커가 그 뒤에 다시 예약하면
-     * 로그인 화면 뒤에서 끌 수 없는 알람이 울린다. 행이 꺼지지 않으니 '쓰기 직전 재조회'
-     * 로는 못 잡고, 두 구간을 직렬화해야 한다. 어느 쪽이 먼저 잡든 최종 상태는 '예약 없음'
-     * 이어야 한다.
+     * 로그인 화면 뒤에서 끌 수 없는 알람이 울린다.
+     *
+     * 이 테스트는 **겹침을 검증하지 않는다** — 두 호출이 순차라서 락이 없어도 통과한다.
+     * 이름이 `logoutAndRestoreDoNotInterleave` 였을 때는 그걸 검증하는 것처럼 읽혀,
+     * `restoreMutex` 를 통째로 지워도 초록인데 아무도 몰랐다. 진짜 직렬화 검증은
+     * [restoreParkedMidwayCannotResurrectWhatSignOutJustCancelled] 다.
      */
     @Test
-    fun logoutAndRestoreDoNotInterleave() = runBlocking {
+    fun sequentialLogoutThenRestoreSchedulesNothing() = runBlocking {
         seedLegacyAlarm(owner = "account-A")
         currentUser = "account-A"
         repository.reschedulePendingAlarms()
@@ -350,6 +357,139 @@ class AlarmOwnershipOnSessionExpiryTest {
         assertEquals("로그아웃 뒤 복원은 아무것도 예약하지 않는다", 0, scheduled)
         assertNull(
             "떼어낸 예약이 되살아나면 안 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
+     * 회귀 방지: **복원이 한창일 때 로그아웃이 끼어들지 못한다**(Codex #666 P1).
+     *
+     * 이 겹침이 실제 버그의 모양이다 — 워커가 '내 알람이다' 까지 판정한 뒤 사용자가 로그아웃하면,
+     * detach 가 예약을 취소해도 워커가 이어서 다시 예약한다. 행은 enabled 로 남으므로 '쓰기 직전
+     * 재조회' 로는 못 잡고 직렬화만이 답이다.
+     *
+     * 복원을 소유자 판정 **이후**(`getById`) 에 세워 두는 이유: `getEnabledAlarms` 에 세우면
+     * 아직 `currentUser` 를 읽기 전이라 락이 없어도 통과해 버려, 테스트가 또 착시가 된다.
+     *
+     * `restoreMutex` 를 지우면 첫 단언(로그아웃이 못 끝난다)이 먼저 깨지고, 그걸 통과시켜도
+     * 복원이 재개돼 예약을 다시 걸므로 두 번째 단언이 깨진다.
+     */
+    @Test
+    fun restoreParkedMidwayCannotResurrectWhatSignOutJustCancelled() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+
+        val insideRestore = CompletableDeferred<Unit>()
+        val releaseRestore = CompletableDeferred<Unit>()
+        val gated = object : AlarmDao by dao {
+            override suspend fun getById(id: String): AlarmEntity? {
+                val row = dao.getById(id)
+                // 첫 호출만 세운다(complete 는 최초 1회만 true).
+                if (insideRestore.complete(Unit)) releaseRestore.await()
+                return row
+            }
+        }
+        // ★ 두 호출이 **같은 인스턴스**여야 한다 — Mutex 는 인스턴스별이다.
+        val repo = repositoryWith(gated)
+
+        val restore = launch(Dispatchers.Default) { repo.reschedulePendingAlarms() }
+        insideRestore.await()
+
+        // 복원이 소유자 판정을 끝내고 멈춰 있는 지금, 사용자가 로그아웃한다.
+        val signOut = launch(Dispatchers.Default) {
+            repo.detachAlarmsOnSignOut("account-A") {
+                currentUser = null
+                sessionExpiredOwner = null
+            }
+        }
+        assertNull(
+            "락이 있으면 로그아웃은 복원이 끝나기 전엔 시작조차 못 한다",
+            withTimeoutOrNull(300) { signOut.join() },
+        )
+
+        releaseRestore.complete(Unit)
+        restore.join()
+        signOut.join()
+
+        assertNull(
+            "떼어낸 예약이 되살아나면 안 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
+     * 회귀 방지: **로그아웃은 세션 정리까지 락 안에서 끝낸다**(Codex #666).
+     *
+     * 세션 비우기를 락 밖(호출 반환 뒤)으로 빼면, 락을 기다리던 복원이 깨어났을 때 prefs 를
+     * 아직 '로그인됨' 으로 읽어 방금 떼어낸 알람을 전부 되살린다. 예약 취소와 세션 전환이
+     * 한 임계구역이어야 하는 이유다.
+     *
+     * 이 테스트는 세션 전환을 **오직 `clearSessionInsideLock` 람다 안에서만** 한다. 본문에서
+     * `currentUser` 를 손으로 먼저 바꾸면 그 순간 이 불변식은 검증 불가능해진다 — 락이
+     * 세션 전환을 덮든 말든 결과가 같아지기 때문이다.
+     */
+    @Test
+    fun signOutClearsTheSessionBeforeReleasingTheRestoreLock() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+
+        val insideDetach = CompletableDeferred<Unit>()
+        val releaseDetach = CompletableDeferred<Unit>()
+        val gated = object : AlarmDao by dao {
+            override suspend fun getAllAlarms(): List<AlarmEntity> {
+                val rows = dao.getAllAlarms()
+                if (insideDetach.complete(Unit)) releaseDetach.await()
+                return rows
+            }
+        }
+        val repo = repositoryWith(gated)
+
+        repo.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        val signOut = launch(Dispatchers.Default) {
+            repo.detachAlarmsOnSignOut("account-A") {
+                // 세션 전환은 여기서만 일어난다 — 락 안이다.
+                currentUser = null
+                sessionExpiredOwner = null
+            }
+        }
+        insideDetach.await()
+
+        // 락을 기다리는 복원(정합성 워커에 해당).
+        val worker = launch(Dispatchers.Default) { repo.reschedulePendingAlarms() }
+        releaseDetach.complete(Unit)
+        signOut.join()
+        worker.join()
+
+        assertNull(
+            "락을 이어받은 복원은 이미 비로그인 상태를 봐야 한다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+    }
+
+    /**
+     * 회귀 방지: 세션 정리 람다가 던져도 로그아웃의 예약 해제는 그대로 유효하다.
+     *
+     * 저장소 쓰기 실패(디스크 가득참 등)로 예약이 살아남으면, 사용자는 로그인 화면 뒤에서
+     * 끌 수 없는 알람을 맞는다 — 세션 정리 실패가 알람 해제까지 되돌려선 안 된다.
+     */
+    @Test
+    fun sessionClearFailureStillLeavesAlarmsDetached() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+        repository.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        val detached = repository.detachAlarmsOnSignOut("account-A") {
+            currentUser = null
+            sessionExpiredOwner = null
+            throw IllegalStateException("session store write failed")
+        }
+
+        assertEquals("떼어낸 알람 수는 그대로 보고된다", 1, detached)
+        assertNull(
+            "세션 정리가 실패해도 예약은 내려가 있어야 한다",
             shadowAlarmManager.peekNextScheduledAlarm(),
         )
     }
