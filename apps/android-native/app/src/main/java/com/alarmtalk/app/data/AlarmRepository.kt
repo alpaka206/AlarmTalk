@@ -665,8 +665,19 @@ class AlarmRepository(
      * 기본 알람음을 재생하게 한다. 캐시 오디오·목소리 참조는 그대로 보존해 재유료 시 복원한다.
      * 로컬만 갱신(upsertPreservingServerSyncFields)해 서버의 원본 목소리 알람은 백스톱으로 남긴다.
      */
-    suspend fun lockPaidAlarmTalks(): Int {
+    /**
+     * @param expectedOwnerUserId 이 강등을 **확정한 계정**. 소유자를 고르는 시점에 계정이 그대로인지
+     *   확인한다 — 워커가 A 로 '진짜 무료' 를 확정한 뒤 로그아웃·B 로그인이 끼면, 그 판정이 B 의
+     *   **유료** 알람에 적용돼 sound-only 로 바뀌고 다시 예약된다. 호출부의 사전 확인만으로는 이
+     *   창을 못 닫는다(Codex #665 P1). `degradeAlarmsWithInaccessibleVoice` 와 같은 규약이다.
+     *   null 이면 검사하지 않는다 — 방금 읽은 세션으로 곧바로 부르는 전경 경로용이다.
+     */
+    suspend fun lockPaidAlarmTalks(expectedOwnerUserId: String? = null): Int {
         val currentUser = currentUserIdProvider() ?: return 0
+        if (expectedOwnerUserId != null && currentUser != expectedOwnerUserId) {
+            Log.i(TAG, "Skipped paid-alarm lock: account changed since the plan was confirmed")
+            return 0
+        }
         // 미기록 행에 소유자를 '영구히' 새기는 경로다. 새기기 전에 임자를 먼저 확정하지 않으면
         // 앞 계정 A 의 미기록 알람이 B 것으로 박히고, 뒤늦은 확정(claimUnownedAlarms 는 null 만
         // 대상)이 더는 손댈 수 없어 A 는 그 알람을 영영 잃는다. reschedulePendingAlarms 와 같은 규칙.
