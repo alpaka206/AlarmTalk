@@ -2,9 +2,11 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -12,9 +14,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 /**
  * 첫 로그인 + 무료 플랜에게 한 번만 뜨는 웰컴 코드 안내.
@@ -26,6 +28,11 @@ import androidx.compose.ui.window.Dialog
  *
  * 닫기가 1급 선택지다 — 코드가 없어도 앱은 그대로 쓸 수 있고, 그 사실이 문구에서 먼저
  * 읽혀야 한다. 강제로 통과시키는 게이트가 아니라 지나칠 수 있는 안내다.
+ *
+ * **껍데기는 앱의 표준 모달 그대로다**(닉네임 변경·운세 설정·스누즈 설정과 같은 형태):
+ * 화면 폭을 채우고 좌우 20dp 를 띄운 뒤 큰 화면에서는 430dp 로 묶고, 테두리·그림자로
+ * 띄운다. 예전에는 이 다이얼로그만 `usePlatformDefaultWidth` 기본값에 폭을 맡겨
+ * **내용 크기대로 쪼그라들었고**, 좌우 여백도 다른 모달과 달랐다.
  */
 @Composable
 internal fun WelcomePromoDialog(
@@ -37,47 +44,79 @@ internal fun WelcomePromoDialog(
     // 이 안내는 계정당 1회라 실패했다고 닫아 버리면 고쳐 넣을 기회가 사라진다(Codex #660).
     errorText: String? = null,
 ) {
-    Dialog(onDismissRequest = { if (!busy) onDismiss() }) {
+    Dialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
         Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .widthIn(max = 430.dp),
             shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 2.dp,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.welcome_promo_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                // 제목 + 우상단 닫기(X) — 다른 모달과 같은 헤더. 닫기가 1급 선택지라는 성격이
+                // 앱 어디서나 같은 자리에서 보이는 편이 낫다.
+                ModalDialogTitle(
+                    title = stringResource(R.string.welcome_promo_title),
+                    onDismiss = onDismiss,
+                    dismissEnabled = !busy,
+                    // 다른 모달 제목은 "닉네임 수정" 같은 짧은 구절이라 1줄로 충분하지만,
+                    // 이건 문장이라 1줄로 두면 "받은 코드가 있다면 지금 등…" 으로 잘린다.
+                    titleMaxLines = 2,
                 )
-                Text(
-                    text = stringResource(R.string.welcome_promo_body),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                CodeRedeemField(busy = busy, onSubmit = onSubmitCode)
-                errorText?.let {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = it,
+                        text = stringResource(R.string.welcome_promo_body),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    CodeRedeemField(busy = busy, onSubmit = onSubmitCode)
+                    // 오류는 입력란 **바로 아래**에 붙인다 — 무엇을 고쳐야 하는지가 붙어 읽힌다.
+                    errorText?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    TextButton(onClick = onOpenInstagram, enabled = !busy) {
+                    // 가로 컨텐트 패딩을 0 으로 둬서 라벨이 위 제목·본문과 **같은 세로선**에서
+                    // 시작하게 한다. TextButton 기본값(12dp)을 그대로 두면 이 손수 짠 컬럼
+                    // 안에서 두 줄만 안쪽으로 밀려 들쭉날쭉해 보인다.
+                    TextButton(
+                        onClick = onOpenInstagram,
+                        enabled = !busy,
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
+                    ) {
                         Text(
                             text = stringResource(R.string.welcome_promo_where),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
-                    TextButton(onClick = onDismiss, enabled = !busy) {
-                        Text(stringResource(R.string.welcome_promo_skip))
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !busy,
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.welcome_promo_skip),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
             }
