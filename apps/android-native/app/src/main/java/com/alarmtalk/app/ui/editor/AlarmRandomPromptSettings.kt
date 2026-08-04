@@ -326,49 +326,34 @@ private fun ManualMessageDialog(
     onConfirm: (String) -> Unit,
 ) {
     var draft by remember(initialText) { mutableStateOf(initialText) }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    // 공용 알럿으로 통일한다. 다만 **이 입력만 여러 줄**이다 — 알람에서 들려줄 문구를 최대
+    // 200자까지 받으므로, 한 줄짜리 필드로 두면 쓰면서 앞이 안 보인다. 껍데기는 알럿이되
+    // 필드 높이만 남긴다.
+    IosAlertDialog(
+        title = stringResource(R.string.editor_msg_mode_manual),
+        message = null,
+        onDismiss = onDismiss,
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.r3dlg_modal_dialog_close),
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.editorp_random_save_button),
+                emphasized = true,
+                // 빈 문구로는 저장할 수 없다 — 눌러도 아무 일 없는 버튼 대신 흐리게 둔다.
+                enabled = draft.isNotBlank(),
+                onClick = { draft.trim().takeIf { it.isNotBlank() }?.let(onConfirm) },
+            ),
+        ),
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .widthIn(max = 460.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.editor_msg_mode_manual),
-                    onDismiss = onDismiss,
-                )
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it.take(200) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp),
-                    placeholder = { Text(stringResource(R.string.editor_manual_input_placeholder)) },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                )
-                Button(
-                    onClick = { onConfirm(draft.trim()) },
-                    enabled = draft.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Text(stringResource(R.string.editorp_random_save_button))
-                }
-            }
-        }
+        IosAlertField(
+            value = draft,
+            onValueChange = { draft = sanitizeUserText(it, allowNewlines = true).takeWithoutSplittingPairs(200) },
+            placeholder = stringResource(R.string.editor_manual_input_placeholder),
+            singleLine = false,
+            minHeight = 108.dp,
+        )
     }
 }
 
@@ -446,7 +431,8 @@ internal fun WeatherLocationDialog(
             ) {
                 OutlinedTextField(
                     value = draftCity,
-                    onValueChange = { draftCity = it.take(30) },
+                    // 도시명은 사람 이름이 아니지만 '한 줄·보이지 않는 문자 없음' 규칙은 같다.
+                    onValueChange = { draftCity = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
                     label = { Text(stringResource(R.string.hs_weather_city_label)) },
                     placeholder = { Text(stringResource(R.string.hs_weather_city_placeholder)) },
                     singleLine = true,

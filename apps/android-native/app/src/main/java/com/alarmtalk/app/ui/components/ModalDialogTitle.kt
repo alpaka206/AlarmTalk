@@ -18,12 +18,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+/**
+ * @param titleMaxLines 제목 줄 수. 기본은 1줄 — 앱의 모달 제목은 "닉네임 수정" 처럼 짧은
+ *   구절이라 한 줄로 충분하고, 넘치면 ellipsis 로 자른다.
+ *   **문장형 제목**(웰컴 프로모의 "받은 코드가 있다면 지금 등록해요")만 2를 넘긴다 —
+ *   1줄로 두면 제목이 통째로 잘려 무슨 말인지 읽히지 않는다. 잘릴 바에는 줄을 내린다.
+ */
 @Composable
 internal fun ModalDialogTitle(
     title: String,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     dismissEnabled: Boolean = true,
+    titleMaxLines: Int = 1,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -31,13 +38,12 @@ internal fun ModalDialogTitle(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 앱 전체와 동일한 고정 타입스케일(Material titleLarge)을 사용한다. 화면 폭이 아니라
-        // 사용자 시스템 글꼴 설정에만 반응하는 표준 방식이며, 길이가 넘치면 줄바꿈 대신
-        // ellipsis 로 한 줄을 유지한다.
+        // 사용자 시스템 글꼴 설정에만 반응하는 표준 방식이다.
         Text(
             text = title,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            maxLines = 1,
+            maxLines = titleMaxLines,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )

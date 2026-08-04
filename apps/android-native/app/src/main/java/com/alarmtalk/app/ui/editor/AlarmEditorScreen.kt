@@ -140,6 +140,12 @@ internal fun AlarmEditorScreen(
     // 클립은 건너뛰므로 반복 호출해도 재다운로드는 없다.
     onPrefetchRestrictedVoiceClips: (String) -> Unit = {},
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
+    /**
+     * 알람 권한이 빠져 있으면 저장을 시작하기 전에 이걸 부르고 멈춘다.
+     * **음성 생성보다 먼저** 확인해야 한다 — 생성은 서버 호출이고 월 한도를 깎는데,
+     * 그러고 나서 권한 때문에 알람이 안 만들어지면 사용자는 쿼터만 잃는다.
+     */
+    onMissingAlarmPermission: () -> Unit = {},
     onSave: (AlarmDraft) -> Unit,
 ) {
     // 시스템 스톡 보이스 도입으로 무료 플랜도 음성 모드를 쓸 수 있다 (스톡 보이스 + 프리셋 문구).
@@ -590,6 +596,13 @@ internal fun AlarmEditorScreen(
 
     fun saveEditor() {
         if (isSaving) return
+        // **권한이 가장 먼저다.** 아래 어느 갈래든 결국 알람을 만들거나 고치는데, 음성 생성은
+        // 그 전에 일어나는 유료 호출이다. 결국 못 만들 거면 생성부터 하지 않는다.
+        // 알람 권한 셋은 전부 필수다(CLAUDE.md 「알람 권한 3종은 필수」).
+        if (!PermissionSnapshot.read(context).alarmReady) {
+            onMissingAlarmPermission()
+            return
+        }
         if (voicePlanLocked && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             showVoicePlanGate()
             return
@@ -857,7 +870,6 @@ internal fun AlarmEditorScreen(
                     listenerTitle = listenerTitleForSave,
                 )
                 editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
-                audioMessage = context.getString(R.string.editor_generated_voice_saved_local)
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
                 AlarmTalkLog.reportError("Failed to generate TTS alarm audio", error)

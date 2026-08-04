@@ -35,6 +35,7 @@
     <string name="msg_password_reset_done">パスワードを変更しました。新しいパスワードでログインしてください。</string>
     <string name="msg_password_reset_failed">パスワードの再設定に失敗しました。</string>
     <string name="auth_label_name">ニックネーム</string>
+    <string name="auth_error_name_too_long">ニックネームは%1$d文字以内で入力してください</string>
     <string name="auth_label_password">パスワード</string>
     <string name="auth_label_verification_code">認証コード</string>
     <string name="auth_landing_first_time">はじめてのご利用ですか？</string>
@@ -138,10 +139,10 @@
     <string name="common_permission_exact_alarm_label">正確なアラーム</string>
     <string name="common_permission_full_screen_label">全画面アラーム</string>
     <string name="common_permission_gate_allow_action">許可する</string>
-    <string name="common_permission_gate_exact_alarm_title">正確な時間に鳴らすには権限が必要です</string>
-    <string name="common_permission_gate_full_screen_title">ロック画面アラームの権限が必要です</string>
+    <string name="common_permission_gate_exact_alarm_title">正確なアラームの権限を許可するとアラームを設定できます</string>
+    <string name="common_permission_gate_full_screen_title">ロック画面の権限を許可するとアラームを設定できます</string>
     <string name="common_permission_gate_mic_title">マイクの権限が必要です</string>
-    <string name="common_permission_gate_notifications_title">通知の権限が必要です</string>
+    <string name="common_permission_gate_notifications_title">通知の権限を許可するとアラームを設定できます</string>
     <string name="common_permission_granted">許可済み</string>
     <string name="common_permission_mic_label">マイク</string>
     <string name="common_permission_notifications_label">通知</string>
@@ -186,7 +187,6 @@
     <string name="editor_error_weather_location_required">天気を含む文には、都市を入力してください。</string>
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
     <string name="editor_family_alarm_set">相手のアラームを設定しました。</string>
-    <string name="editor_generated_voice_saved_local">生成した音声をローカルに保存しました。</string>
     <string name="editor_holiday_off_subtitle">振替休日・臨時祝日を含む</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
     <string name="editor_holiday_country_label">祝日カレンダー: %1$s</string>
@@ -223,6 +223,7 @@
     <string name="editor_selected_ringtone">選択したアラーム</string>
     <string name="editor_snooze_custom">カスタム設定</string>
     <string name="editor_snooze_custom_dialog_title">間隔をカスタム設定</string>
+    <string name="editor_snooze_custom_range_error">1分から60分の間で指定してください。</string>
     <string name="editor_snooze_custom_value">カスタム設定 · %1$d分</string>
     <string name="editor_snooze_interval">間隔</string>
     <string name="editor_snooze_repeat">繰り返し</string>
@@ -251,8 +252,13 @@
     <string name="editor_volume">音量</string>
     <string name="editorp_fortune_birthdate_placeholder">タップして生年月日を選択</string>
     <string name="editorp_fortune_birthdate_section">生年月日</string>
+    <string name="editorp_fortune_birthdate_year">年</string>
+    <string name="editorp_fortune_birthdate_month">月</string>
+    <string name="editorp_fortune_birthdate_day">日</string>
+    <string name="editorp_fortune_unit_year">年</string>
+    <string name="editorp_fortune_unit_month">月</string>
+    <string name="editorp_fortune_unit_day">日</string>
     <string name="editorp_fortune_birthtime_section">生まれた時間</string>
-    <string name="editorp_fortune_birthtime_subtitle">正確にわからない場合は、近い時間帯を選んでも大丈夫です。</string>
     <string name="editorp_fortune_birthtime_placeholder">選択</string>
     <string name="editorp_fortune_date_confirm">確定</string>
     <string name="editorp_fortune_date_title">生年月日</string>
@@ -278,9 +284,7 @@
     <string name="hs_delete_account_title">本当に退会しますか？</string>
     <string name="hs_delete_account_body">申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。\nそれまでに再ログインして退会を取り消せば復元できます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
-    <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">ニックネームを編集</string>
-    <string name="hs_nickname_field_label">ニックネーム</string>
     <string name="hs_nickname_field_placeholder">例：りん</string>
     <string name="hs_nickname_save">保存</string>
     <string name="hs_nickname_saving">保存中</string>
@@ -320,6 +324,9 @@
     <string name="hs_status_no_alarm">アラームがありません。</string>
     <string name="hs_status_ring_soon">まもなく鳴ります。</string>
     <string name="hs_status_ring_in">%1$s後に鳴ります。</string>
+    <string name="hs_perm_banner_notifications">通知の権限を許可しないと、アラームの通知が表示されません</string>
+    <string name="hs_perm_banner_exact_alarm">正確なアラームの権限を許可しないと、時間どおりに鳴らないことがあります</string>
+    <string name="hs_perm_banner_full_screen">ロック画面の権限を許可しないと、ロック画面に表示されません</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$sの声</string>
     <string name="hs_weather_city_label">都市</string>
     <string name="hs_weather_city_placeholder">例：東京</string>
@@ -796,7 +803,6 @@
     <string name="r3app_update_required_button">アップデートする</string>
     <string name="r3app_update_downloaded">アップデートをダウンロードしました。アプリを再起動して適用してください。</string>
     <string name="r3app_update_restart">再起動</string>
-    <string name="r3app_perm_banner_alarm_wont_ring">権限がオフのため、アラームが鳴らない可能性があります</string>
     <string name="r3app_google_signin_failed">Googleログインに失敗しました</string>
     <string name="r3app_google_signin_no_info">Googleログイン情報を取得できませんでした。もう一度お試しください。</string>
     <string name="r3app_plan_gate_confirm">プランを見る</string>
@@ -848,7 +854,6 @@
     <string name="editor_voice_switch_drops_text_message">基本の声は用意された文だけを話すので、直接入力した文はなくなります。</string>
     <string name="editor_voice_switch_drops_text_confirm">変える</string>
     <string name="onb_voice_download_progress">%1$d%%</string>
-    <string name="onb_voice_download_stay">最初の一度だけです。</string>
     <string name="onb_voice_download_failed">少し経ってからもう一度お試しください。</string>
     <string name="onb_voice_download_retry">再試行</string>
     <string name="onb_voice_download_later">あとで受け取る</string>
@@ -891,10 +896,12 @@
 1. AlarmTalkをインストール https://play.google.com/store/apps/details?id=com.alarmtalk.app
 2. 登録してログイン
 3. 「その他」→「コードを登録」に上のコードを入力</string>
-    <string name="welcome_promo_title">コードをお持ちなら今すぐ登録</string>
-    <string name="welcome_promo_body">コードがなくても基本機能は無料で使えます。あとから「その他」→「コードを登録」でいつでも登録できます。</string>
+    <string name="welcome_promo_title">コードをお持ちですか？</string>
+    <string name="welcome_promo_body_free">コードがなくても基本機能は無料で使えます。</string>
+    <string name="welcome_promo_body_later">あとから「その他」の「コードを登録」でいつでも入力できます。</string>
+    <string name="welcome_promo_highlight_free">無料</string>
+    <string name="welcome_promo_highlight_where">「その他」の「コードを登録」</string>
     <string name="welcome_promo_where">コードをもらう</string>
-    <string name="welcome_promo_skip">スキップ</string>
     <string name="welcome_promo_instagram_hint">Instagram @alarmtalk.app までご連絡いただければご案内します。</string>
     <string name="auth_consent_title_updated">規約が更新されました</string>
     <string name="auth_consent_subtitle_updated">変更があった項目だけをまとめました。すでに同意済みの項目はそのまま維持されます。</string>

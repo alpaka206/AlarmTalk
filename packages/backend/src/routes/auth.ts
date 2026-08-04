@@ -15,6 +15,7 @@ import {
   EmailVerificationConfirmRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetConfirmRequestSchema,
+  clampDisplayName,
 } from '@alarmtalk/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
@@ -616,7 +617,9 @@ auth.post('/google', async (c) => {
     const google = await verifyGoogleIdToken(parsed.data.id_token, c.env.GOOGLE_CLIENT_ID);
     const googleId = google.sub;
     const email = (google.email || `${googleId}@google.local`).toLowerCase().trim();
-    const name = google.name ?? '';
+    // 구글이 준 이름도 **외부 입력**이다. 우리 규칙을 통과시키고 상한으로 자른다 —
+    // 검증 없이 받으면 앱·PATCH 경로에만 있는 30자·보이지 않는 문자 규칙이 이 문으로 새 나간다.
+    const name = clampDisplayName(google.name ?? '');
 
     const existing = await db.execute({
       sql: `SELECT id, google_id, email, name, plan, token_epoch,
@@ -631,6 +634,9 @@ auth.post('/google', async (c) => {
     let userId: string;
     let plan: 'free' | 'plus' | 'family';
     let tokenEpoch = 0;
+    // DB 에 쓰는 이름과 응답·JWT 에 담는 이름은 **같은 값이어야 한다.** 갈라지면 로그인
+    // 직후엔 구글 이름이 보이다가 새로고침하면 저장된 닉네임으로 바뀐다.
+    let effectiveName = name;
 
     if (existing.rows.length > 0) {
       const row = typedRow<
@@ -646,12 +652,23 @@ auth.post('/google', async (c) => {
       userId = row.id;
       plan = row.plan ?? 'free';
       tokenEpoch = Number(row.token_epoch ?? 0);
+      // 이미 이름이 있으면 그게 사용자가 고른 닉네임이다. 구글 이름은 빈 칸만 채운다.
+      //
+      // 단 **저장된 값도 규칙을 통과시킨다.** 옛 스키마(가입 max(64)·trim 없음)로 만들어진
+      // 행에는 공백뿐인 이름, 보이지 않는 문자, 64자짜리가 남아 있을 수 있다. 그대로
+      // 이기게 두면 이 문으로 다시 DB·JWT·응답에 실려 나가, 규칙을 한 곳으로 모은 의미가
+      // 없어진다. 정리해서 남는 게 없으면 구글 이름으로 고쳐 준다(Codex #671 P2).
+      const storedName = clampDisplayName(row.name ?? '');
+      effectiveName = storedName || name;
 
       await db.execute({
         sql: `UPDATE users
               SET google_id = ?, email = ?, name = ?, updated_at = datetime('now')
               WHERE id = ?`,
-        args: [googleId, email, name || row.name || null, userId],
+        // **저장된 이름이 이긴다.** 반대였다 — 재로그인할 때마다 구글 프로필 이름이
+        // 사용자가 앱에서 고친 닉네임을 덮어써서, 닉네임 수정이 다음 로그인에 되돌아갔다.
+        // 구글 이름은 아직 이름이 없을 때만 채운다.
+        args: [googleId, email, effectiveName || null, userId],
       });
     } else {
       // 신규 구글 가입도 서버 생성 UUID 를 PK 로 쓴다. 과거에는 googleId 를 그대로 PK 로
@@ -671,7 +688,7 @@ auth.post('/google', async (c) => {
     // `WHERE google_id = ?` 로 조회하는 라우트와 users.id 로 조회하는 라우트가 서로 다른
     // 사용자를 보게 되어(구독·가족그룹·코드등록이 조용히 0행) 데이터가 반으로 쪼개졌다.
     const token = await signAppJwt(
-      { sub: userId, email, name: name || undefined, epoch: tokenEpoch },
+      { sub: userId, email, name: effectiveName || undefined, epoch: tokenEpoch },
       c.env.JWT_SECRET,
     );
 
@@ -701,7 +718,7 @@ auth.post('/google', async (c) => {
       user: {
         id: userId,
         email,
-        name,
+        name: effectiveName,
         plan,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,

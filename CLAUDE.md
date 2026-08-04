@@ -37,16 +37,112 @@
 - **요청 입력 검증**: 바디는 `@alarmtalk/shared` zod 스키마로 `safeParse`, 경로/쿼리 파라미터도 검증·바운드.
 - **IDOR 방어**: 클라 제공 id/code는 조회·수정·삭제 전 소유권 확인(`WHERE ... AND user_id = ?` 게이트, cross-tenant 참조는 `*BelongsToCaller` 헬퍼). 예: `alarm-mutation.ts`의 `voiceProfileBelongsToCaller`/`messageBelongsToCaller`.
 - **R2 object key**: 사용자 파생 세그먼트는 `encodeURIComponent`+새니타이즈 또는 JWT `sub`+`crypto.randomUUID()`로 생성(경로 조작 차단).
+- **길이 상한은 서버에도 둔다.** 클라의 `take(n)` 은 앱을 거칠 때만 유효하다 — 직접 호출하면
+  거대한 문자열이 조회·쓰기 트랜잭션까지 그대로 흘러간다(`POST /code/register` 가 실제로 그랬다).
+
+### 입력 규칙은 한 곳에서만 (앱 1차 · 서버 2차)
+같은 값에 규칙이 여러 개면 **가장 느슨한 경로가 실질 규칙**이 된다. 실제로 표시 이름이
+가입 64자·trim 없음 / `PATCH /user/me` 30자 / 구글 로그인 무검증 으로 갈라져 있었다.
+
+- **표시 이름**: `@alarmtalk/shared` 의 `DisplayNameSchema`·`normalizeDisplayName` 이 **글자
+  규칙의** 유일 출처. 새 경로가 이름을 받으면 자체 `trim()`/`max()` 를 쓰지 말고 이걸 가져다
+  쓴다. **외부 신원공급자(구글)가 준 이름도 외부 입력**이다.
+- **길이는 필드마다 다르고, 그 값도 shared 에만 둔다**: 계정 닉네임 `DISPLAY_NAME_MAX_LENGTH`
+  (30) / 목소리 프로필 이름 `VOICE_NAME_MAX_LENGTH`(50). 목소리 쪽이 긴 건 의도다 — 사람
+  이름이 아니라 라벨("엄마 목소리(2024년 녹음)")이라 여유를 둔다. **글자 규칙은 둘이 같다.**
+  앱에도 같은 값의 `DisplayNameMaxLength`·`VoiceNameMaxLength` 를 두고 리터럴을 쓰지 않는다 —
+  앱이 더 느슨하면 서버에서 거절당하고, 더 빡빡하면 서버가 허용하는 이름을 못 쓴다.
+- **앱 1차 방어선**: `ui/components/CodeRedeemField.kt` 의 `sanitizeUserText` /
+  `sanitizeDisplayName` / `sanitizeRedeemCode`. 새 입력창은 `onValueChange` 에서 이걸 통과시킨다.
+- **거르는 것**: 제어문자(로그·CSV 를 깨고 TTS 낭독을 망친다), 제로폭(U+200B~, U+FEFF —
+  눈에 같아 보이는데 다른 값이라 사칭에 쓰인다), 양방향 제어문자(U+202A~, U+2066~ — 보이는
+  글자 순서를 뒤집는다). 줄바꿈·탭은 **지우지 않고 공백으로** 바꾼다(지우면 `김`+개행+`규원`
+  이 "김규원" 으로 붙어 없던 한 단어가 된다). 길이는 **정리한 뒤** 센다.
+- **남기는 것**: 따옴표·세미콜론·하이픈 등 문장부호. "O'Brien" 은 정당한 이름이고, 막는 건
+  주입 방어가 아니라 이름을 못 쓰게 하는 것이다 — 주입은 `?`-바인딩이 막는다.
+- **자를 때 서러게이트 쌍을 가르지 말 것.** JS `slice`·코틀린 `take` 는 UTF-16 코드 유닛
+  단위라, 29자 뒤에 이모지가 오면 상한 30에서 앞쪽 절반만 남아 깨진 문자가 그대로 DB·JWT 에
+  실린다. 서버는 `clampDisplayName`(shared), 앱은 `takeWithoutSplittingPairs` 를 쓴다.
+- **거부와 다듬기를 구분한다.** 사용자가 직접 친 값은 스키마로 거부해 알려 주고
+  (`DisplayNameSchema`), 외부에서 받은 값(구글 이름·옛 스키마로 저장된 행)은 거부해 봐야
+  알려 줄 사람이 없으니 다듬어 쓴다(`clampDisplayName`).
+- **말없이 자르지 말 것.** 상한에서 입력은 막되(`takeWithoutSplittingPairs`), 넘겨 치는
+  순간 입력창 아래에 이유를 띄운다(`auth_error_name_too_long`). 항상 켜진 카운터(7/30)는
+  넘기 전까진 알려 줄 게 없어 두지 않는다. 주의: 잘라서 돌려준 값을 IME 가 그대로 되돌려
+  보내므로, 경고 플래그는 **상한과 정확히 같을 때 건드리지 않아야** 곧바로 꺼지지 않는다.
+- 회귀 방지 테스트: `apps/android-native/.../InputSanitizerTest.kt`, `packages/shared/test/schemas.test.ts`.
 
 ### 디자인 토큰 (Android Compose)
 새 화면/컴포넌트는 **생 리터럴 대신 토큰**을 가져다 쓴다. 단일 출처 두 곳:
 - **모서리 반경**: `ui/components/WakerDesign.kt` 의 `Waker*Shape` 토큰이 유일 출처.
   - `WakerTileShape`(12, 작은 타일·아이콘박스·인라인배너) / `WakerChipShape`(14, 칩·세그먼트·작은카드/행) / `WakerInputShape`·`WakerButtonShape`·`WakerPanelShape`(18, 입력·버튼·표준 카드/패널) / `WakerCardShape`(22, 큰 카드·다이얼로그 컨테이너) / `WakerHeroShape`(24, 히어로 카드) / `WakerDialogShape`(28, 대형 다이얼로그) / `WakerPillShape`(999, 캡슐).
   - `RoundedCornerShape(n.dp)` 를 새로 박지 말 것. `MaterialTheme.shapes` 도 이 토큰에서 파생됨.
-  - **예외(토큰화 안 함)**: `CircleShape`(원형 아바타/FAB/점), `AlarmRow` 스와이프 비대칭 shape, 타임휠 전용 컨테이너(34dp), `RingingActivity` 잠금화면 슬라이더/스누즈(26/21dp — 고정 팔레트 화면 전용 스케일), `IosAlertDialog` 컨테이너(14dp — iOS UIAlertController 복제 스펙).
+  - **예외(토큰화 안 함)**: `CircleShape`(원형 아바타/FAB/점), `AlarmRow` 스와이프 비대칭 shape, 타임휠 전용 컨테이너(34dp), `RingingActivity` 잠금화면 슬라이더/스누즈(26/21dp — 고정 팔레트 화면 전용 스케일), `IosAlertDialog` 컨테이너(14dp — iOS UIAlertController 복제 스펙, 아래 「모달」 절 참조).
 - **색**: `theme/AlarmTalkTheme.kt` 의 `colorScheme` 가 유일 출처. 항상 `MaterialTheme.colorScheme.*` 로 소비, **생 `Color(0x…)` 금지**.
   - 오버레이 스크림은 `WakerScrimColor`(WakerDesign.kt) 사용.
+  - **`surfaceContainer*` 5종을 비워 두지 말 것**(Lowest/Low/기본/High/Highest, 라이트·다크 양쪽). 우리가 직접 그리는 화면은 `surface` 를 쓰니 티가 안 나지만, **프레임워크가 그리는 팝업**(드롭다운 메뉴 등)은 이 역할을 읽는다 — 비워 두면 M3 기본 무채색 회흑이 네이비 화면 위에 회색 상자로 얹힌다(2026-08-04 실제 발생).
   - 문서화된 예외: `RingingActivity`(잠금화면 전용 고정 팔레트), 알림 팩토리(Notification accent), 랜딩/로그인 브랜드 비주얼, 탭 배경 그라데이션(`AlarmListScreen`의 `HomeGradientDark/Light` — 로그인 딥네이비 감성을 알람/목소리/더보기 탭 전체에 재현, 라이트/다크 2종).
+
+### 모달 = `IosAlertDialog` 하나 (Android)
+
+알럿 껍데기는 **하나뿐**이다: `ui/components/IosAlertDialog.kt`. 새 모달을 만들 때 M3
+`AlertDialog` 를 직접 쓰거나 전용 껍데기를 새로 만들지 말 것 — 2026-08-04 정리 전에는
+껍데기가 셋이었고(`IosAlertDialog` / `VoiceFormDialog` / 화면별 M3 `AlertDialog`), 폭·모서리·
+버튼 높이·글자 크기가 조금씩 달라 화면을 옮길 때마다 다른 앱처럼 보였다.
+
+- **입력이 있는 알럿도 이걸 쓴다.** `content` 슬롯(메시지와 버튼 사이)에 `IosAlertField` 를 넣는다.
+  적용된 곳: 프로모 코드 등록·닉네임 수정·스누즈 직접 입력·직접 문구·목소리 이름 변경.
+- **`IosAlertField` 를 M3 `OutlinedTextField` 로 바꾸지 말 것.** 시도했다가 되돌렸다 — M3 는
+  최소 높이 56dp 라 알럿 안에서 비율이 깨진다(`IosAlertField` 는 48dp).
+- **버튼 2개는 가로, 3개 이상은 세로.** iOS UIAlertController 규칙 그대로.
+- **닫기(X)를 버튼과 같이 두지 말 것.** '건너뛰기'/'닫기' 와 같은 일을 하는 버튼이 둘이면
+  어느 쪽이 취소인지 매번 읽어야 한다. 취소 동작은 액션 하나로만 낸다.
+- **취소와 같은 일을 하는 버튼을 두 개 두지 않는다.** `PermissionGate` 는 '허용하기' 하나만
+  둔다 — 바깥 탭·뒤로가기가 이미 취소라, 버튼을 또 그리면 눌러야 할 액션과 무게가 같아진다.
+  (주의: 이 게이트는 **닫힌다.** `IosAlertDialog` 은 기본 `DialogProperties` 라 바깥 탭·
+  뒤로가기가 `onDismiss` 를 부른다. '못 닫는 게이트' 로 만들려면 그 속성을 꺼야 하고,
+  그러면 안드로이드의 표준 탈출구가 사라진다 — 지금은 일부러 열어 둔 쪽이다.)
+- **글자 크기는 `IosAlertType` 한 곳에서만** 정한다(Title/Message/Field/Action). 개별 모달에서
+  `fontSize` 를 새로 박지 말 것.
+- **액션 높이 52dp** — 44dp 는 iOS 기준이고 안드로이드 최소 터치 타깃은 48dp 다.
+- **폼(입력 여러 개 + 저장)은 알럿이 아니다.** 운세 정보·목소리 등록처럼 필드가 여러 개인
+  것은 지금대로 폼 모달로 둔다 — 알럿으로 욱여넣지 말 것.
+
+### 알람 권한 3종은 **필수** — 단 막는 건 알람 기능뿐 (Android)
+
+`POST_NOTIFICATIONS` · `USE_EXACT_ALARM`(구형 기기는 `SCHEDULE_EXACT_ALARM`) ·
+`USE_FULL_SCREEN_INTENT` 셋이 다 있어야 알람을 만들고·고치고·켤 수 있다
+(`PermissionSnapshot.alarmReady`). 하나라도 빠지면 게이트가 뜨고, **우회 액션을 두지 않는다.**
+
+- **막는 범위는 알람 기능뿐이다.** 목소리 등록·이용권 등록·설정은 권한과 무관하게 쓸 수
+  있어야 한다. 앱 전체를 벽으로 막으면 설정에 다녀오는 왕복 중에 이탈한다.
+- **게이트는 한 번에 하나씩**, 채워지면 다음 미허용 권한으로 자동으로 넘어가고 셋 다
+  채워지면 스스로 닫힌다(`AlarmTalkApp` 의 `permissionGateRequest` LaunchedEffect).
+- 실무상 팝업이 뜨는 건 알림 권한뿐이다 — 나머지 둘은 정식 알람 앱이라 시스템이 자동
+  부여한다(`USE_EXACT_ALARM` 은 사용자가 회수도 못 한다). 그래도 코드에서 빼지 말 것:
+  회수 가능한 구형 기기와 사용자가 설정에서 끈 경우가 남는다.
+
+**정책과 문구를 섞지 말 것.** '필수로 요구한다' 는 우리 규칙이고, '없으면 어떻게 되는가'
+는 안드로이드의 사실이다. 둘은 다르다:
+
+| 빠진 권한 | 실제 결과 | 어떻게 말하나 |
+| --- | --- | --- |
+| 알림 | **울린다.** 알림·헤드업이 안 뜰 뿐이다 — `RingingService` 는 알림 권한을 보지 않고 소리·진동을 시작하며, 헤드업이 불가능하면(`ringingChannelCanShowHeadsUp()` false) 울림 화면을 직접 띄운다 | "알람 알림이 뜨지 않아요" |
+| 정확한 알람 | `setAndAllowWhileIdle` 폴백으로 **울리되 수 분 늦을 수 있다** | "제때 울리지 않을 수 있어요" |
+| 잠금 화면 | 소리는 나되 **잠금 화면을 못 덮는다** | "잠금 화면에 뜨지 않아요" |
+
+**어떤 경우에도 "울리지 않아요" 라고 쓰지 말 것.** 셋 중 무엇이 빠져도 알람은 울린다.
+안 울린다고 하면 사용자가 멀쩡히 울릴 알람을 없는 것으로 믿고 다른 알람을 또 맞춘다
+(2026-08-04 에 "알림 권한 없으면 안 울린다" 로 잘못 적었다가 `RingingService` 코드로
+반증됨 — Codex #671 P1). 그래서 **헤드라인은 언제나 남은 시간**이고, 무엇이 모자란지는
+배너가 권한 이름과 함께 말한다.
+
+**알람 행의 스위치는 저장된 `enabled` 에만 묶는다.** 권한이 모자라다고 꺼진 것처럼 그리면
+탭이 '켜기' 가 되어 게이트가 뜨고 **끌 수가 없다**. 권한이 돌아오면 꺼진 줄 알았던 알람이
+울리기도 한다(같은 리뷰 P1).
+
+게이트 제목은 정책을 말하므로 권한별로 "…권한을 허용해야 알람을 설정할 수 있어요" 로
+통일하고, 홈 화면은 위 표대로 **사실**을 말한다.
 
 ### 1회성 오버레이는 **확인이 끝난 뒤에만** 판단한다 (Android)
 

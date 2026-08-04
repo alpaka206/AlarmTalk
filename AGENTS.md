@@ -8,6 +8,12 @@ AlarmTalk은 OS 네이티브 **목소리 알람 앱**이다. 네이티브 리라
 - `docs/README.md` — 문서 인덱스 (`docs/standards/README.md`에 코딩·git 컨벤션)
 - `docs/qa/dev-test-handoff.md` — 진행 중 작업·테스트 체크리스트 (세션 재개 시 먼저)
 
+## UI·입력 규약 (자주 되돌아가는 것)
+
+- **알럿 모달 껍데기는 `ui/components/IosAlertDialog.kt` 하나뿐**이다. 입력이 있는 알럿도 `content` 슬롯 + `IosAlertField` 로 이걸 재사용한다. M3 `AlertDialog` 를 화면에서 직접 쓰거나 전용 껍데기를 새로 만들면 폭·버튼 높이·글자 크기가 갈라진다(2026-08-04 에 껍데기 셋을 하나로 합쳤다). 버튼 2개는 가로, 3개 이상은 세로, 닫기(X)는 두지 않는다. 전문은 `CLAUDE.md` 「모달 = IosAlertDialog 하나」.
+- **사용자 입력은 앱에서 1차, 서버에서 2차로 거른다.** 표시 이름 규칙은 `@alarmtalk/shared` 의 `DisplayNameSchema` 가 유일 출처 — 새 경로가 자체 `trim()`/`max()` 를 만들면 가장 느슨한 경로가 실질 규칙이 된다. 전문은 `CLAUDE.md` 「입력 규칙은 한 곳에서만」.
+- **`colorScheme` 의 `surfaceContainer*` 를 비워 두지 말 것.** 프레임워크가 그리는 팝업(드롭다운 등)이 이 역할을 읽어서, 비면 네이비 화면 위에 회색 상자가 뜬다.
+
 ## 모노레포 구조
 
 - `packages/backend` — Cloudflare Workers + Hono + Turso(libSQL). 라우트 `src/routes`, 마이그레이션 `src/lib/migrations.ts`.

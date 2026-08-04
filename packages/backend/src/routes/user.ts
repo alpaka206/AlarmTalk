@@ -16,6 +16,7 @@ import {
   validateQuietWindows,
 } from '../lib/family-alarm-settings';
 import { validateDynamicPromptSettings } from '../lib/dynamic-prompt-settings';
+import { DISPLAY_NAME_MAX_LENGTH, normalizeDisplayName } from '@alarmtalk/shared';
 import {
   ALLOWED_CONSENT_TYPES,
   REQUIRED_CONSENT_TYPES,
@@ -65,8 +66,10 @@ user.patch('/me', async (c) => {
     if (typeof body.name !== 'string') {
       return c.json({ error: 'name 은 문자열이어야 합니다', error_code: 'INVALID_NAME' }, 400);
     }
-    const trimmed = body.name.trim();
-    if (trimmed.length === 0 || trimmed.length > 30) {
+    // trim 만으로는 부족하다 — 제로폭·양방향 문자는 공백이 아니라서 살아남고, 그대로
+    // 가족 멤버 목록·알람 보낸사람에 노출된다. 규칙은 shared 한 곳에서만 정의한다.
+    const trimmed = normalizeDisplayName(body.name);
+    if (trimmed.length === 0 || trimmed.length > DISPLAY_NAME_MAX_LENGTH) {
       return c.json(
         { error: '닉네임은 1~30자여야 합니다', error_code: 'INVALID_NAME_LENGTH' },
         400,

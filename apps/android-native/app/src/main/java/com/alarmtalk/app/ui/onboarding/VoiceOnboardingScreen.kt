@@ -152,14 +152,6 @@ internal fun VoiceOnboardingScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextOnScene,
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        // 워커가 받으므로 나가도 이어지지만, 여기서 기다리는 편이 가장 빠르다.
-                        text = stringResource(R.string.onb_voice_download_stay),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextOnSceneDim,
-                        textAlign = TextAlign.Center,
-                    )
                 }
             }
 

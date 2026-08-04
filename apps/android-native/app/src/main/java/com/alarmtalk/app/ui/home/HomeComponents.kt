@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
 import com.alarmtalk.app.R
 import com.alarmtalk.app.network.AuthSession
@@ -64,6 +65,8 @@ internal fun HomeHeader(
             now = System.currentTimeMillis()
         }
     }
+    // 권한이 모자라도 알람은 울린다(늦거나, 알림이 안 뜨거나, 잠금 화면을 못 덮을 뿐).
+    // 그래서 헤드라인은 **언제나 남은 시간**이고, 무엇이 모자란지는 아래 배너가 말한다.
     val statusText: String? = when {
         nextAlarm != null -> {
             val remainingMillis = nextAlarm.fireAtMillis - now
@@ -348,62 +351,65 @@ internal fun NicknameEditDialog(
 ) {
     var value by remember { mutableStateOf(initial) }
     val trimmedValue = value.trim()
+    // 상한을 넘겨 치려 했는지 — 값은 30자에서 잘리므로 값만 봐서는 알 수 없다.
+    var tooLong by remember { mutableStateOf(false) }
     val canSave = !busy && trimmedValue.isNotEmpty() && trimmedValue != initial
 
-    Dialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    // 공용 알럿을 그대로 쓴다 — 입력이 있다고 별도 모달을 두지 않는다([IosAlertDialog]).
+    // 액션이 둘이라 가로로 놓이고(로그아웃 알럿과 같은 모양), 닫기가 액션으로 들어가므로
+    // 제목줄의 X 는 없앤다.
+    IosAlertDialog(
+        title = stringResource(R.string.hs_nickname_dialog_title),
+        message = null,
+        onDismiss = { if (!busy) onDismiss() },
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.r3dlg_modal_dialog_close),
+                enabled = !busy,
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = if (busy) {
+                    stringResource(R.string.hs_nickname_saving)
+                } else {
+                    stringResource(R.string.hs_nickname_save)
+                },
+                emphasized = true,
+                enabled = canSave,
+                onClick = { onConfirm(value) },
+            ),
+        ),
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .widthIn(max = 430.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
+        // 라벨을 두지 않는다 — 제목이 이미 "닉네임 수정" 이라 같은 말을 두 번 하는 셈이다.
+        // 비었을 때 무엇을 넣는 자리인지는 placeholder 가 알려 준다.
+        IosAlertField(
+            value = value,
+            onValueChange = { raw ->
+                val cleaned = sanitizeDisplayName(raw)
+                // 30자 **정확히** 일 때는 플래그를 건드리지 않는다. 잘라서 돌려준 값을
+                // IME 가 그대로 되돌려 보내면(길이 30) 방금 켠 경고가 곧바로 꺼진다.
+                // 넘겨 치면 켜고, 지워서 여유가 생기면 끈다.
+                if (cleaned.length > DisplayNameMaxLength) {
+                    tooLong = true
+                } else if (cleaned.length < DisplayNameMaxLength) {
+                    tooLong = false
+                }
+                value = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
+            },
+            placeholder = stringResource(R.string.hs_nickname_field_placeholder),
+            enabled = !busy,
+        )
+        // 항상 켜져 있는 카운터(7/30)는 상한을 넘기 전까진 알려 줄 게 없다.
+        // 넘었을 때만, 무엇을 하면 되는지 말한다.
+        if (tooLong) {
+            Text(
+                text = stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength),
+                style = IosAlertType.Message,
+                color = MaterialTheme.colorScheme.error,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.hs_nickname_dialog_title),
-                    onDismiss = onDismiss,
-                    dismissEnabled = !busy,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(
-                        value = value,
-                        onValueChange = { value = it.take(30) },
-                        label = { Text(stringResource(R.string.hs_nickname_field_label)) },
-                        placeholder = { Text(stringResource(R.string.hs_nickname_field_placeholder)) },
-                        singleLine = true,
-                        enabled = !busy,
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        text = stringResource(R.string.hs_nickname_char_counter, value.length),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.End),
-                    )
-                }
-                Button(
-                    onClick = { onConfirm(value) },
-                    enabled = canSave,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Text(if (busy) stringResource(R.string.hs_nickname_saving) else stringResource(R.string.hs_nickname_save))
-                }
-            }
+                    .padding(top = 6.dp),
+            )
         }
     }
 }
@@ -424,13 +430,15 @@ internal fun DeleteAccountConfirmDialog(
         actions = listOf(
             IosAlertAction(
                 label = stringResource(R.string.social_cancel_button),
-                onClick = { if (!busy) onDismiss() },
+                enabled = !busy,
+                onClick = onDismiss,
             ),
             IosAlertAction(
                 label = stringResource(R.string.hs_delete_account_confirm),
                 emphasized = true,
                 destructive = true,
-                onClick = { if (!busy) onConfirm() },
+                enabled = !busy,
+                onClick = onConfirm,
             ),
         ),
     )

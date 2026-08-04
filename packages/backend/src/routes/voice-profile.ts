@@ -28,7 +28,11 @@ import {
 } from '../lib/voice-slots';
 import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
-import { VoicePreviewTextUpdateSchema } from '@alarmtalk/shared';
+import {
+  VoicePreviewTextUpdateSchema,
+  VOICE_NAME_MAX_LENGTH,
+  normalizeDisplayName,
+} from '@alarmtalk/shared';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
@@ -641,7 +645,9 @@ voiceProfile.patch('/:id', async (c) => {
       : 'ko';
 
   const hasName = body.name !== undefined;
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  // trim 만으로는 부족하다 — 제어문자·제로폭·양방향 문자는 공백이 아니라 살아남고,
+  // 목소리 이름은 가족에게 공유될 때 그대로 노출된다. 글자 규칙은 표시 이름과 같다.
+  const name = typeof body.name === 'string' ? normalizeDisplayName(body.name) : '';
   const sharedValue = body.is_shared ?? body.isShared;
   const isSharedUpdate = typeof sharedValue === 'boolean' ? sharedValue : undefined;
   const hasShared = isSharedUpdate !== undefined;
@@ -657,13 +663,13 @@ voiceProfile.patch('/:id', async (c) => {
   const listenerTitle = normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle);
   if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
     return c.json(
-      { error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' },
+      { error: `name must be 1-${VOICE_NAME_MAX_LENGTH} characters`, error_code: 'INVALID_NAME_LENGTH' },
       400,
     );
   }
-  if (hasName && (name.length === 0 || name.length > 50)) {
+  if (hasName && (name.length === 0 || name.length > VOICE_NAME_MAX_LENGTH)) {
     return c.json(
-      { error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' },
+      { error: `name must be 1-${VOICE_NAME_MAX_LENGTH} characters`, error_code: 'INVALID_NAME_LENGTH' },
       400,
     );
   }
@@ -1121,7 +1127,8 @@ voiceProfile.post('/clone', async (c) => {
 
     const audioFile = getFormFile(formData, 'audio');
     const rawName = formData.get('name');
-    const name = typeof rawName === 'string' ? rawName.trim() : '';
+    // 등록 경로도 같은 규칙을 태운다(PATCH 만 막으면 여기로 그냥 들어온다).
+    const name = typeof rawName === 'string' ? normalizeDisplayName(rawName) : '';
     const isShared = ['true', '1', 'yes'].includes(
       String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'),
     );
@@ -1215,9 +1222,9 @@ voiceProfile.post('/clone', async (c) => {
     // 검증 통과 후의 durationMs — 아래 voice_uploads 보관(재시도용 원본)에 기록한다.
     const cloneDurationMs = Number.parseInt(String(formData.get('durationMs')), 10);
 
-    if (name.length > 50) {
+    if (name.length > VOICE_NAME_MAX_LENGTH) {
       return c.json(
-        { error: 'Name must be 50 characters or less', error_code: 'NAME_TOO_LONG' },
+        { error: `Name must be ${VOICE_NAME_MAX_LENGTH} characters or less`, error_code: 'NAME_TOO_LONG' },
         400,
       );
     }
