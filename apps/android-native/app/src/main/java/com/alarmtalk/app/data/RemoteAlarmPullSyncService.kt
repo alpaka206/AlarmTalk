@@ -191,14 +191,26 @@ internal class RemoteAlarmPullSyncService(
             }
         }
 
-        // 서버가 더 이상 '받은 알람'으로 내려주지 않는(수신자 그만받기·발신자 삭제) 로컬 받은 알람을 제거한다.
-        // decline 게이트가 서버 목록에서 빼므로, 이미 임포트한 기기가 계속 울리지 않도록 prune 한다.
+        // 서버 목록에서 빠진 받은 알람을 정리한다 — **수신자가 '그만받기' 한 경우만이다.**
+        //
+        // 발신자가 지웠다고 수신자 알람까지 지우지 않는다. 받은 뒤부터는 받는 사람 것이고
+        // (시각도 수신자가 고칠 수 있다), 내가 기대고 자는 알람이 남의 조작으로 사라지면
+        // 그날 못 일어난다. 그래서 decline 기록이 있는 것만 지운다.
+        //
+        // decline 게이트가 서버 목록에서 빼므로, 그만받기 한 알람은 이미 임포트한 기기에서도
+        // 울리지 않도록 prune 한다.
         // 비교 기준은 전체(allRemote)가 아니라 '받은 것'(is_received) 하위집합의 id 다 — 구 네임스페이스
         // 버그로 '보낸 알람'을 RECEIVED_REMOTE 로 잘못 임포트한 기기에서, 그 행의 remoteAlarmId 는 여전히
         // allRemote(내 보낸 알람)에 있어 안 지워진다. 받은 집합 기준으로 비교해야 그 잔재까지 정리된다.
         // 단, 목록이 페이지네이션으로 잘렸으면(size < total) 오삭제 위험이 있어 건너뛴다(완전 스냅샷일 때만).
         var pruned = 0
-        if (snapshotComplete) {
+        // 그만받기 한 알람만 지우기 위해 서버에 따로 묻는다. 실패하면(네트워크 등) **아무것도
+        // 지우지 않는다** — 못 물어봤다고 남의 알람을 지우는 쪽으로 기울면 안 된다.
+        val declinedRemoteIds = runCatching { api.getDeclinedAlarmIds(authorization).alarmIds }
+            .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+            .getOrNull()
+            ?.toSet()
+        if (snapshotComplete && declinedRemoteIds != null) {
             val servedRemoteIds = remoteAlarms.map { it.id }.toSet()
             // 서버가 취소한 알람을 지우고 예약을 내리는 구간 — 정합성 복원과 겹치면 복원이
             // 방금 지운 알람의 옛 예약을 되심어 **서버가 취소한 알람이 그대로 울린다**
@@ -212,7 +224,11 @@ internal class RemoteAlarmPullSyncService(
                             // 알람과 그 음성 캐시를 통째로 지운다.
                             ownedByRecipient(it) &&
                             !it.remoteAlarmId.isNullOrBlank() &&
-                            it.remoteAlarmId !in servedRemoteIds
+                            it.remoteAlarmId !in servedRemoteIds &&
+                            // **그만받기 한 것만 지운다.** 서버 목록에서 빠지는 이유는 두
+                            // 가지인데(수신자 그만받기 / 발신자 삭제) 응답만으로는 구분이 안
+                            // 된다. 그만받기는 이 기기가 직접 한 일이라 로컬에 기록이 남는다.
+                            declinedRemoteIds.contains(it.remoteAlarmId)
                     }
                     .forEach { stale ->
                         alarmScheduler.cancel(stale.id)
@@ -273,10 +289,17 @@ internal class RemoteAlarmPullSyncService(
         }
         val hasVoiceAudio = cachedAudio != null
 
-        val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-            hour = time.first,
-            minute = time.second,
-            repeatDaysMask = repeatMask,
+        val schedule = resolveReceivedSchedule(
+            existing = existing,
+            remoteHour = time.first,
+            remoteMinute = time.second,
+            remoteRepeatDaysMask = repeatMask,
+            remoteSnoozeMinutes = remote.snoozeMinutes ?: 5,
+        )
+        val fireAtMillis = schedule.keptFireAtMillis ?: AlarmTimeCalculator.nextFireAtMillis(
+            hour = schedule.hour,
+            minute = schedule.minute,
+            repeatDaysMask = schedule.repeatDaysMask,
             holidayOff = false,
             nowMillis = now,
         )
@@ -291,13 +314,13 @@ internal class RemoteAlarmPullSyncService(
         return AlarmEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
             label = label,
-            hour = time.first,
-            minute = time.second,
+            hour = schedule.hour,
+            minute = schedule.minute,
             fireAtMillis = fireAtMillis,
-            repeatDaysMask = repeatMask,
+            repeatDaysMask = schedule.repeatDaysMask,
             holidayOff = false,
             snoozeEnabled = true,
-            snoozeMinutes = remote.snoozeMinutes ?: 5,
+            snoozeMinutes = schedule.snoozeMinutes,
             snoozeRepeatLimit = existing?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
             snoozeCount = 0,
             vibrationPattern = remote.vibrationPattern ?: VibrationPatterns.DEFAULT,
@@ -404,6 +427,50 @@ internal fun resolveReceivedLockState(
         existing?.preLockPlayMode
     }
     return ReceivedLockState(AlarmPlayModes.ALARM_ONLY, restoreMode)
+}
+
+/** 받은 알람의 스케줄 — 시각·요일·스누즈. [resolveReceivedSchedule] 결과. */
+internal data class ReceivedSchedule(
+    val hour: Int,
+    val minute: Int,
+    val repeatDaysMask: Int,
+    val snoozeMinutes: Int,
+    /** null = 새로 받은 것이라 다시 계산해야 함. */
+    val keptFireAtMillis: Long?,
+)
+
+/**
+ * **받은 뒤부터는 받는 사람 것이다.**
+ *
+ * 보낸 알람은 한 번 보내면 못 바꾼다(발신자 수정 기능이 없다). 그래서 서버 값은 **처음 받을
+ * 때의 씨앗**일 뿐이고, 그 뒤로는 수신자가 고친 시각·요일·스누즈가 이긴다.
+ *
+ * 예전에는 매 pull 이 서버 값으로 덮어써서, 수신자가 시각을 고치면 로컬에 저장된 뒤 1초 만에
+ * 조용히 되돌아갔다 — 사용자는 고쳐 뒀다고 믿고 그 시각에 못 일어난다. 켜짐/꺼짐은 이미
+ * 로컬을 존중하고 있었다([resolveReceivedRemoteEnabled]) — 같은 규칙을 스케줄에도 넓힌다.
+ */
+internal fun resolveReceivedSchedule(
+    existing: AlarmEntity?,
+    remoteHour: Int,
+    remoteMinute: Int,
+    remoteRepeatDaysMask: Int,
+    remoteSnoozeMinutes: Int,
+): ReceivedSchedule = if (existing?.origin == AlarmOrigins.RECEIVED_REMOTE) {
+    ReceivedSchedule(
+        hour = existing.hour,
+        minute = existing.minute,
+        repeatDaysMask = existing.repeatDaysMask,
+        snoozeMinutes = existing.snoozeMinutes,
+        keptFireAtMillis = existing.fireAtMillis,
+    )
+} else {
+    ReceivedSchedule(
+        hour = remoteHour,
+        minute = remoteMinute,
+        repeatDaysMask = remoteRepeatDaysMask,
+        snoozeMinutes = remoteSnoozeMinutes,
+        keptFireAtMillis = null,
+    )
 }
 
 internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive: Boolean?): Boolean {

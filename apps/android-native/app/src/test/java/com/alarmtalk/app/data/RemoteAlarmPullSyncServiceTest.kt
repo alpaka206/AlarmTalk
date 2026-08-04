@@ -175,6 +175,52 @@ class RemoteAlarmPullSyncServiceTest {
         assertEquals("sender@example.com님이 보낸 알람", receivedRemoteAlarmLabel(context, " ", "sender@example.com"))
     }
 
+    @Test
+    fun receivedAlarmKeepsLocallyEditedSchedule() {
+        // 받은 뒤부터는 받는 사람 것이다 — 서버 값(6:00)이 로컬 수정(7:30)을 덮으면 안 된다.
+        // 예전엔 로컬에 저장된 뒤 1초 만에 조용히 되돌아갔다(사용자는 못 일어난다).
+        val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+        val resolved = resolveReceivedSchedule(
+            existing = existing,
+            remoteHour = 6,
+            remoteMinute = 0,
+            remoteRepeatDaysMask = 0b0111110,
+            remoteSnoozeMinutes = 10,
+        )
+        assertEquals(7, resolved.hour)
+        assertEquals(30, resolved.minute)
+        assertEquals(existing.repeatDaysMask, resolved.repeatDaysMask)
+        assertEquals(existing.snoozeMinutes, resolved.snoozeMinutes)
+        // 이미 잡아 둔 발사 시각도 그대로 — 다시 계산하면 로컬 수정이 사라진다.
+        assertEquals(existing.fireAtMillis, resolved.keptFireAtMillis)
+    }
+
+    @Test
+    fun firstTimeReceivedAlarmUsesRemoteSchedule() {
+        // 처음 받을 때는 서버 값이 씨앗이다. fireAt 은 계산해야 하므로 null 을 돌려준다.
+        val resolved = resolveReceivedSchedule(
+            existing = null,
+            remoteHour = 6,
+            remoteMinute = 15,
+            remoteRepeatDaysMask = 0b0111110,
+            remoteSnoozeMinutes = 10,
+        )
+        assertEquals(6, resolved.hour)
+        assertEquals(15, resolved.minute)
+        assertEquals(0b0111110, resolved.repeatDaysMask)
+        assertEquals(10, resolved.snoozeMinutes)
+        assertEquals(null, resolved.keptFireAtMillis)
+    }
+
+    @Test
+    fun myOwnAlarmIsNotTreatedAsReceived() {
+        // 내가 만든 알람은 이 규칙 밖이다(애초에 pull 이 건드리지 않는다).
+        val mine = alarm(enabled = true, origin = AlarmOrigins.LOCAL_OWNED)
+        val resolved = resolveReceivedSchedule(mine, 6, 0, 0, 10)
+        assertEquals(6, resolved.hour)
+        assertEquals(null, resolved.keptFireAtMillis)
+    }
+
     private fun alarm(
         enabled: Boolean,
         origin: String,
