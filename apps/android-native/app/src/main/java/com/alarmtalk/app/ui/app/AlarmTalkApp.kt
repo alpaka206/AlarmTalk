@@ -993,6 +993,9 @@ internal fun AlarmTalkApp(
               // 판정 규칙은 stockPrefetchStalled 에 있다(회귀 테스트로 고정 — 갇히는 조합을
               // 두 번 놓쳤다).
               stalled = stockPrefetchStalled(prefetchInfo?.state, prefetchInfo?.runAttemptCount ?: 0),
+              // 아직 끝나지 않은 워커일 때만 '백그라운드에서 계속 받기' 라고 말한다.
+              // 상태를 모르면(null) 계속된다고 단정하지 않는다 — 모르면 약속하지 않는다.
+              downloadContinuing = prefetchInfo?.state?.isFinished == false,
               onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
               onSkip = viewModel::skipVoiceSetup,
           )

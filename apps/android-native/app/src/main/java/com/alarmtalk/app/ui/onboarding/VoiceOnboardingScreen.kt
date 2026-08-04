@@ -65,6 +65,15 @@ internal fun VoiceOnboardingScreen(
      * 다만 **갇히지 않는다는 보장을 이 값에 걸지 않는다** — 아래 유예 타이머를 볼 것.
      */
     stalled: Boolean = false,
+    /**
+     * 프리페치 워커가 **아직 살아 있는가**(ENQUEUED/RUNNING/BLOCKED). 탈출구 문구를 이걸로
+     * 가른다 — 살아 있을 때만 '백그라운드에서 계속 받기' 다.
+     *
+     * `failed` 로만 가르면 부족했다: 워커가 **아무것도 못 받고 성공**해도(빈 성공) 종료
+     * 상태라 더는 돌지 않는데 `failed` 는 false 라, 돌지 않는 다운로드를 돈다고 말하게
+     * 된다(Codex #673 P2). 종료했으면 무슨 이유든 '나중에 받기' 다.
+     */
+    downloadContinuing: Boolean = false,
     onRetry: () -> Unit,
     onSkip: () -> Unit,
 ) {
@@ -175,17 +184,18 @@ internal fun VoiceOnboardingScreen(
                 // 이 버튼은 워커를 취소하지 않으므로(skipVoiceSetup 은 화면만 닫는다) 실제로
                 // 계속 받는다. 미루는 것처럼 말하면 사용자는 알람 음성이 없는 줄 알고 기다린다.
                 //
-                // 반대로 **실패했으면 아무것도 돌고 있지 않다** — WorkManager 의 FAILED 는
-                // 종료 상태라 그대로 나가면 재시도가 없다. 그때까지 '계속 받기' 라고 하면
-                // 돌지 않는 다운로드를 돈다고 말하는 셈이다(Codex #673 P2). 그 경우엔
-                // '나중에 받기' 로 사실대로 말한다(받으려면 위의 [다시 시도]).
+                // 반대로 **워커가 끝났으면 아무것도 돌고 있지 않다.** 실패(FAILED)든 아무것도
+                // 못 받은 성공(빈 성공)이든 종료 상태라 그대로 나가면 재시도가 없고,
+                // onSkip 은 워커를 새로 넣지 않는다. 그때 '계속 받기' 라고 하면 돌지 않는
+                // 다운로드를 돈다고 말하는 셈이다(Codex #673 P2). 그래서 실패 여부가 아니라
+                // **워커가 살아 있는지**(downloadContinuing)로 가른다.
                 if (showEscape) {
                     TextButton(onClick = onSkip) {
                         Text(
-                            text = if (failed) {
-                                stringResource(R.string.onb_voice_download_later)
-                            } else {
+                            text = if (downloadContinuing) {
                                 stringResource(R.string.onb_voice_download_background)
+                            } else {
+                                stringResource(R.string.onb_voice_download_later)
                             },
                             color = AuthTextMuted,
                         )
