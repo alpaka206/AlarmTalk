@@ -2051,13 +2051,12 @@ internal fun VoiceProfileManagementPanel(
                 IosAlertAction(
                     label = stringResource(R.string.voices_draft_exit_leave),
                     destructive = true,
+                    enabled = !voiceProfileBusy,
                     onClick = {
-                        if (!voiceProfileBusy) {
-                            draftExitWarningOpen = false
-                            // 명시적 '삭제' 버튼과 동일한 draft 삭제 경로를 태운 뒤 플로우를 닫는다.
-                            exitDraftId?.let(onDeleteVoiceDraft)
-                            closeCreateDialog()
-                        }
+                        draftExitWarningOpen = false
+                        // 명시적 '삭제' 버튼과 동일한 draft 삭제 경로를 태운 뒤 플로우를 닫는다.
+                        exitDraftId?.let(onDeleteVoiceDraft)
+                        closeCreateDialog()
                     },
                 ),
                 IosAlertAction(

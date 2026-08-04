@@ -361,7 +361,8 @@ internal fun NicknameEditDialog(
         actions = listOf(
             IosAlertAction(
                 label = stringResource(R.string.r3dlg_modal_dialog_close),
-                onClick = { if (!busy) onDismiss() },
+                enabled = !busy,
+                onClick = onDismiss,
             ),
             IosAlertAction(
                 label = if (busy) {
@@ -370,7 +371,8 @@ internal fun NicknameEditDialog(
                     stringResource(R.string.hs_nickname_save)
                 },
                 emphasized = true,
-                onClick = { if (canSave) onConfirm(value) },
+                enabled = canSave,
+                onClick = { onConfirm(value) },
             ),
         ),
     ) {
@@ -410,13 +412,15 @@ internal fun DeleteAccountConfirmDialog(
         actions = listOf(
             IosAlertAction(
                 label = stringResource(R.string.social_cancel_button),
-                onClick = { if (!busy) onDismiss() },
+                enabled = !busy,
+                onClick = onDismiss,
             ),
             IosAlertAction(
                 label = stringResource(R.string.hs_delete_account_confirm),
                 emphasized = true,
                 destructive = true,
-                onClick = { if (!busy) onConfirm() },
+                enabled = !busy,
+                onClick = onConfirm,
             ),
         ),
     )

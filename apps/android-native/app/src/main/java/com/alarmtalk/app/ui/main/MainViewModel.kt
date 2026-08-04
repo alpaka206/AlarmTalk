@@ -619,7 +619,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal fun maybeShowWelcomePromo() {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
         if (showWelcomePromo) return
-        // TEMP-VIEW-ONLY
+        if (authSession?.user?.plan?.lowercase() != "free") return
         if (promoPromptStore.hasPrompted(userId)) return
         promoPromptStore.markPrompted(userId)
         showWelcomePromo = true

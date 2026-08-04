@@ -72,6 +72,12 @@ internal data class IosAlertAction(
     val label: String,
     val emphasized: Boolean = false,
     val destructive: Boolean = false,
+    /**
+     * 처리 중일 때 액션을 잠근다. **바깥 탭·뒤로가기만 막는 것으로는 부족하다** —
+     * 버튼은 그대로 눌려서 같은 요청을 두 번 보내거나, 응답이 오기 전에 모달을 닫아
+     * 결과(특히 실패 안내)를 받을 화면 자체를 없앤다(Codex #671 P2).
+     */
+    val enabled: Boolean = true,
     val onClick: () -> Unit,
 )
 
@@ -274,12 +280,13 @@ private fun IosAlertButton(
 ) {
     val color = if (action.destructive) scheme.error else scheme.primary
     Box(
-        modifier = modifier.clickable(onClick = action.onClick),
+        modifier = modifier.clickable(enabled = action.enabled, onClick = action.onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = action.label,
-            color = color,
+            // 잠긴 동안에도 글자는 남기고 흐리게만 — 사라지면 버튼 위치가 밀려 오조작이 된다.
+            color = if (action.enabled) color else color.copy(alpha = 0.38f),
             style = IosAlertType.Action,
             fontWeight = if (action.emphasized) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,

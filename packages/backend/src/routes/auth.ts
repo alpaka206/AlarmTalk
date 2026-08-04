@@ -654,7 +654,13 @@ auth.post('/google', async (c) => {
       plan = row.plan ?? 'free';
       tokenEpoch = Number(row.token_epoch ?? 0);
       // 이미 이름이 있으면 그게 사용자가 고른 닉네임이다. 구글 이름은 빈 칸만 채운다.
-      effectiveName = row.name || name;
+      //
+      // 단 **저장된 값도 규칙을 통과시킨다.** 옛 스키마(가입 max(64)·trim 없음)로 만들어진
+      // 행에는 공백뿐인 이름, 보이지 않는 문자, 64자짜리가 남아 있을 수 있다. 그대로
+      // 이기게 두면 이 문으로 다시 DB·JWT·응답에 실려 나가, 규칙을 한 곳으로 모은 의미가
+      // 없어진다. 정리해서 남는 게 없으면 구글 이름으로 고쳐 준다(Codex #671 P2).
+      const storedName = normalizeDisplayName(row.name ?? '').slice(0, DISPLAY_NAME_MAX_LENGTH);
+      effectiveName = storedName || name;
 
       await db.execute({
         sql: `UPDATE users

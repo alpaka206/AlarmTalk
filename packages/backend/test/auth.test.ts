@@ -633,6 +633,87 @@ describe('POST /auth/google', () => {
     expect(mockDB.calls[1]?.args?.[2]).toBe('Google Name');
   });
 
+  it('옛 스키마로 저장된 이름도 규칙을 통과시킨다', async () => {
+    // 가입이 max(64)·trim 없음이던 시절 행에는 공백뿐인 이름·보이지 않는 문자·64자가
+    // 남아 있다. '저장된 이름이 이긴다' 를 그대로 적용하면 이 문으로 다시 실려 나간다.
+    const googlePayload = {
+      sub: 'google-user-5',
+      email: 'legacy@gmail.com',
+      name: 'Google Name',
+      aud: ENV.GOOGLE_CLIENT_ID,
+      iss: 'accounts.google.com',
+      email_verified: true,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => googlePayload,
+    }) as unknown as typeof fetch;
+    mockDB.pushResult([
+      {
+        id: 'legacy-user-id',
+        google_id: 'google-user-5',
+        email: 'legacy@gmail.com',
+        // 공백뿐 + 제로폭 → 정리하면 아무것도 안 남는다.
+        name: '  ​ ',
+        plan: 'free',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // 남는 게 없으면 구글 이름으로 고쳐 준다.
+    expect(body.user.name).toBe('Google Name');
+    expect(mockDB.calls[1]?.args?.[2]).toBe('Google Name');
+  });
+
+  it('저장된 이름이 규칙을 넘기면 다듬어서 쓴다', async () => {
+    const googlePayload = {
+      sub: 'google-user-6',
+      email: 'long@gmail.com',
+      name: 'Google Name',
+      aud: ENV.GOOGLE_CLIENT_ID,
+      iss: 'accounts.google.com',
+      email_verified: true,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => googlePayload,
+    }) as unknown as typeof fetch;
+    mockDB.pushResult([
+      {
+        id: 'long-user-id',
+        google_id: 'google-user-6',
+        email: 'long@gmail.com',
+        name: `  ${'가'.repeat(40)}  `,
+        plan: 'free',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // 사용자가 고른 이름이라 유지하되, 30자로 잘라 규칙 안으로 들인다.
+    expect(body.user.name).toBe('가'.repeat(30));
+    expect(mockDB.calls[1]?.args?.[2]).toBe('가'.repeat(30));
+  });
+
   it('구글이 준 이름도 우리 규칙(길이·보이지 않는 문자)을 통과시킨다', async () => {
     // 외부에서 온 값이라고 검증을 건너뛰면, 앱·PATCH 경로에만 있는 규칙이 이 문으로 샌다.
     const googlePayload = {

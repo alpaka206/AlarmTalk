@@ -79,18 +79,23 @@ internal fun WelcomePromoDialog(
         message = null,
         onDismiss = { if (!busy) onDismiss() },
         actions = listOf(
+            // 등록 중에는 셋 다 잠근다. 특히 '닫기' — 이 안내는 계정당 1회라 응답 전에
+            // 닫아 버리면 실패 안내를 받을 화면이 사라지고 다시 뜨지도 않는다.
             IosAlertAction(
                 label = stringResource(R.string.code_redeem_submit),
                 emphasized = true,
+                enabled = !busy && code.isNotBlank(),
                 onClick = { code.trim().takeIf { it.isNotBlank() }?.let(onSubmitCode) },
             ),
             IosAlertAction(
                 label = stringResource(R.string.welcome_promo_where),
+                enabled = !busy,
                 onClick = onOpenInstagram,
             ),
             // iOS 는 세로 스택에서 닫기를 맨 아래에 둔다.
             IosAlertAction(
                 label = stringResource(R.string.r3dlg_modal_dialog_close),
+                enabled = !busy,
                 onClick = onDismiss,
             ),
         ),

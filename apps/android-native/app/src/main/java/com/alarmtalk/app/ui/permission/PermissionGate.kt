@@ -155,8 +155,11 @@ internal fun PermissionGateDialog(
         title = title,
         message = null,
         onDismiss = onDismiss,
-        // 취소 액션을 두지 않는다 — 바깥을 눌러도 뒤로 가도 닫히지 않는 게이트라, 취소가
-        // 실제로는 아무 일도 하지 않으면서 '빠져나갈 수 있다' 고 잘못 알린다.
+        // 취소 액션은 두지 않는다. 대신 **바깥 탭·뒤로가기로는 닫힌다**(실기기 확인).
+        // 즉 이건 못 빠져나가는 차단 게이트가 아니라 '허용해 달라' 는 요청이고, 안드로이드의
+        // 표준 탈출구(뒤로가기)를 그대로 남겨 둔 것이다. 화면 안에 취소를 또 그리면 버튼 두
+        // 개가 같은 일을 하게 되고, 정작 눌러야 할 '허용하기' 와 무게가 같아진다.
+        // (닫으면 호출부가 대기 중이던 알람 추가도 함께 비운다 — AlarmTalkApp 의 onDismiss.)
         actions = listOf(
             IosAlertAction(
                 label = stringResource(R.string.common_permission_gate_allow_action),

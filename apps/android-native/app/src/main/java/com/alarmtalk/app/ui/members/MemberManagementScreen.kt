@@ -318,11 +318,10 @@ internal fun MemberManagementScreen(
                 IosAlertAction(
                     label = stringResource(R.string.social_regenerate_share_code),
                     destructive = true,
+                    enabled = !billingBusy,
                     onClick = {
-                        if (!billingBusy) {
-                            showRegenerateConfirm = false
-                            onRegenerateFamilyShareCode()
-                        }
+                        showRegenerateConfirm = false
+                        onRegenerateFamilyShareCode()
                     },
                 ),
             ),
