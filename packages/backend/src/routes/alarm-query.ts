@@ -94,12 +94,20 @@ alarmQuery.get('/declined', async (c) => {
   const ids = viewerIds(c);
   if (ids.length === 0) return c.json({ alarm_ids: [] });
   const placeholders = inPlaceholders(ids);
+  // 상한 없이 전부 돌려주면 그만받기 기록이 쌓일수록 매 pull 이 무거워진다(CLAUDE.md 의
+  // 신규 리스트 엔드포인트 페이지네이션 규약). 클라가 다음 페이지를 이어 받는다.
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '100', 10) || 100, 1), 100);
+  const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
   const result = await db.execute({
     sql: `SELECT alarm_id FROM alarm_recipient_state
-          WHERE recipient_user_id IN (${placeholders}) AND declined = 1`,
-    args: ids,
+          WHERE recipient_user_id IN (${placeholders}) AND declined = 1
+          ORDER BY alarm_id
+          LIMIT ? OFFSET ?`,
+    args: [...ids, limit, offset],
   });
-  return c.json({ alarm_ids: result.rows.map((r) => String(r.alarm_id)) });
+  const alarmIds = result.rows.map((r) => String(r.alarm_id));
+  // has_more 로 다음 페이지 여부를 알린다 — 총계를 따로 세지 않아 쿼리가 하나로 끝난다.
+  return c.json({ alarm_ids: alarmIds, has_more: alarmIds.length === limit });
 });
 
 export default alarmQuery;

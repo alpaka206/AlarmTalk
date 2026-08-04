@@ -105,9 +105,12 @@ interface RemoteAlarmApi {
     @GET("alarm/declined")
     suspend fun getDeclinedAlarmIds(
         @Header("Authorization") authorization: String,
+        @Query("limit") limit: Int = 100,
+        @Query("offset") offset: Int = 0,
     ): DeclinedAlarmIdsResponse
 }
 
 data class DeclinedAlarmIdsResponse(
     @SerializedName("alarm_ids") val alarmIds: List<String> = emptyList(),
+    @SerializedName("has_more") val hasMore: Boolean = false,
 )

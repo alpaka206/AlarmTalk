@@ -154,22 +154,36 @@ internal class RemoteAlarmPullSyncService(
                     // 둘 다 사용자가 못 일어나거나 고친 게 없어지는 결과라, 반영 직전의 행을
                     // 기준으로 다시 판단한다(Codex #675 P1).
                     val current = alarmDao.getAllByRemoteAlarmId(remote.id).firstOrNull()
+
+                    // 대기 중에 **지워졌으면 되살리지 않는다.** 그대로 upsert 하면 사용자가
+                    // 지운 알람이 다시 생겨 울린다(Codex #675 P1).
+                    if (existing != null && current == null) {
+                        skipped += 1
+                        Log.i(TAG, "Skipped pull apply; row deleted during download remoteId=${remote.id}")
+                        return@withLock
+                    }
+                    // 대기 중에 **울리기 시작했으면 건드리지 않는다.** 과거 fireAtMillis 를 살려
+                    // 재예약하면 즉시 다시 울린다.
                     if (current != null && current.id in ringingAlarmIds()) {
                         skipped += 1
                         return@withLock
                     }
-                    val local = if (current != null && current.id != existing?.id ||
-                        current != null && !sameReceivedSchedule(current, existing)
-                    ) {
+
+                    // 최신 행이 있으면 **조건 없이** 그 행을 기준으로 다시 만든다. 예전에는
+                    // 스케줄이 달라졌을 때만 다시 만들었는데, 그러면 대기 중에 사용자가 알람을
+                    // **끄기만** 한 경우(스케줄은 그대로)를 놓쳐 옛 enabled=true 로 되살렸다.
+                    // 무엇이 바뀌었는지 하나씩 세지 말고, 바뀔 수 있는 것을 전부 최신 행에서 가져온다.
+                    val local = current?.let { row ->
                         val fresh = resolveReceivedSchedule(
-                            existing = current,
+                            existing = row,
                             remoteHour = local.hour,
                             remoteMinute = local.minute,
                             remoteRepeatDaysMask = local.repeatDaysMask,
                             remoteSnoozeMinutes = local.snoozeMinutes,
                         )
+                        val enabledNow = resolveReceivedRemoteEnabled(row, remote.isActive)
                         local.copy(
-                            id = current.id,
+                            id = row.id,
                             hour = fresh.hour,
                             minute = fresh.minute,
                             repeatDaysMask = fresh.repeatDaysMask,
@@ -177,10 +191,11 @@ internal class RemoteAlarmPullSyncService(
                             snoozeEnabled = fresh.snoozeEnabled,
                             holidayOff = fresh.holidayOff,
                             fireAtMillis = fresh.keptFireAtMillis ?: local.fireAtMillis,
+                            enabled = enabledNow,
+                            state = if (enabledNow) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
                         )
-                    } else {
-                        local
-                    }
+                    } ?: local
+
                     if (existing != null) {
                         alarmScheduler.cancel(existing.id)
                     }
@@ -257,10 +272,21 @@ internal class RemoteAlarmPullSyncService(
         var pruned = 0
         // 그만받기 한 알람만 지우기 위해 서버에 따로 묻는다. 실패하면(네트워크 등) **아무것도
         // 지우지 않는다** — 못 물어봤다고 남의 알람을 지우는 쪽으로 기울면 안 된다.
-        val declinedRemoteIds = runCatching { api.getDeclinedAlarmIds(authorization).alarmIds }
+        val declinedRemoteIds = runCatching {
+            // 페이지를 끝까지 받는다 — 한 페이지만 보고 지우면 뒤 페이지에 있는 그만받기
+            // 알람이 계속 울린다. 페이지 상한은 서버가 100 으로 클램프한다.
+            val collected = mutableSetOf<String>()
+            var offset = 0
+            while (true) {
+                val page = api.getDeclinedAlarmIds(authorization, limit = 100, offset = offset)
+                collected.addAll(page.alarmIds)
+                if (!page.hasMore || page.alarmIds.isEmpty()) break
+                offset += page.alarmIds.size
+            }
+            collected.toSet()
+        }
             .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
             .getOrNull()
-            ?.toSet()
         if (snapshotComplete && declinedRemoteIds != null) {
             val servedRemoteIds = remoteAlarms.map { it.id }.toSet()
             val allRemoteIds = allRemote.map { it.id }.toSet()
