@@ -1293,6 +1293,13 @@ internal fun VoiceProfileManagementPanel(
                             profile.id in cloneLocalReadyIds -> null
                             prerenderStatus == null -> null
                             prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
+                            // **진행 중인 상태에서만** 진행률을 만든다. 서버는 `none`(큐 행이
+                            // 아직 없거나 지워짐)도 돌려주는데, 폴링 루프는 그걸 pending 으로
+                            // 치지 않아 곧바로 멈춘다 — catch-all 로 받으면 "준비 중 0%" 가
+                            // 영영 남는다(Codex #673 P2). 모르는 값은 표시하지 않는다.
+                            prerenderStatus.status != "pending" && prerenderStatus.status != "done" -> null
+                            // 아직 전체 개수를 모르는 pending 은 표시할 게 없다.
+                            prerenderStatus.status == "pending" && prerenderStatus.total <= 0 -> null
                             else -> {
                                 // 생성과 다운로드를 **하나의 진행률**로 잇는다(0~50 생성,
                                 // 50~100 다운로드). 단계마다 n/21 을 따로 세면 생성이 끝나는
