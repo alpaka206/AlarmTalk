@@ -85,7 +85,7 @@
       {
         "tag": "Seniors",
         "title": "Parents waking to a grandchild's voice",
-        "body": "Sixty seconds from a far-away grandchild is enough to register their voice and set up a morning greeting alarm."
+        "body": "Twelve seconds from a far-away grandchild is enough to register their voice and set up a morning greeting alarm."
       },
       {
         "tag": "Couple",
@@ -103,7 +103,7 @@
     "headline": "Frequently asked",
     "items": [
       {
-        "q": "What can I do with one minute of audio?",
+        "q": "What can I do with 12 seconds of audio?",
         "a": "It builds a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like. You can also use a raw recording as-is, or optionally auto-generate a fresh line daily from contexts like weather or fortune."
       },
       {
@@ -256,7 +256,7 @@
       "alarmtalk": {
         "tag": "AlarmTalk",
         "title": "A voice alarm app",
-        "body": "Around a minute of audio creates a voice profile, then any sentence you write is read aloud in that voice across your alarms. Family, partner, and friend groups exchange voices privately.",
+        "body": "Twelve seconds of audio creates a voice profile, then any sentence you write is read aloud in that voice across your alarms. Family, partner, and friend groups exchange voices privately.",
         "cta": "Back to home"
       }
     },
