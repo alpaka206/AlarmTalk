@@ -182,6 +182,9 @@ internal class RemoteAlarmPullSyncService(
                             remoteSnoozeMinutes = local.snoozeMinutes,
                         )
                         val enabledNow = resolveReceivedRemoteEnabled(row, remote.isActive)
+                        // 스누즈 '한 회차' 를 통째로 이어받을지. 마감(fireAtMillis)·상태·이미 누른
+                        // 횟수는 한 묶음이라 따로 놀면 안 된다.
+                        val keepSnoozeEpisode = enabledNow && row.state == AlarmStates.SNOOZED
                         local.copy(
                             id = row.id,
                             hour = fresh.hour,
@@ -198,9 +201,14 @@ internal class RemoteAlarmPullSyncService(
                             // 5분 뒤 울리기로 한 스누즈가 사라진다(Codex #675 P1).
                             state = when {
                                 !enabledNow -> AlarmStates.DISABLED
-                                row.state == AlarmStates.SNOOZED -> AlarmStates.SNOOZED
+                                keepSnoozeEpisode -> AlarmStates.SNOOZED
                                 else -> AlarmStates.SCHEDULED
                             },
+                            // 이어받은 회차라면 **누른 횟수도 같이** 가져온다. 새로 만든 엔티티는
+                            // snoozeCount = 0 이라, 이것만 빠지면 스누즈 제한(snoozeRepeatLimit)이
+                            // 초기화돼 같은 회차에서 스누즈를 처음부터 다시 쓸 수 있게 된다
+                            // (Codex #675 P2).
+                            snoozeCount = if (keepSnoozeEpisode) row.snoozeCount else local.snoozeCount,
                         )
                     } ?: local
 

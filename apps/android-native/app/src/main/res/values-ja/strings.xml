@@ -703,7 +703,7 @@
     <string name="voices2_audio_duration_unknown">音声の長さを確認できませんでした。</string>
     <string name="voices2_record_min_duration">12秒以上録音してください。</string>
     <string name="voices2_register_under_two_minutes">2分以下の音声で登録できます。</string>
-    <string name="voices2_select_file_min_duration">12秒以上のファイルを選択してください。</string>
+    <string name="voices2_select_file_min_duration">12秒以上のファイルを選んでください</string>
     <string name="voices2_record_script">こんにちは。これからAlarmTalkで使う声を、いっしょに作っていきましょう。\n毎朝この声が大切な人を起こしてくれるなんて、わくわくしませんか？\n\n今日は空も晴れて、風もやわらかい、散歩にぴったりの日です。\nこんな日は温かいコーヒーを片手に、近所をひと回りしたくなりますよね。\n\nつぎは、数字も読んでみましょうか？\nいち、に、さん、し、ご、ろく、なな、はち、きゅう、じゅう。\n\nうれしい日は思いきり笑って、疲れた日は「今日もお疲れさま」と声をかけてあげてください。\n朝、窓を大きく開けて深呼吸すると、一日がぐっと軽やかに始まりますよ。\n\nもう最後の文章です。ここまではっきり読んでくださって、ありがとうございます。\n明日の朝は、この声がいちばんやさしいアラームになってくれるはずです。</string>
     <string name="voices2_relationship_mom">お母さん</string>
     <string name="voices2_relationship_dad">お父さん</string>
