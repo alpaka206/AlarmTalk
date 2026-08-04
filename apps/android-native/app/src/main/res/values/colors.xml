@@ -2,5 +2,7 @@
 <resources>
     <color name="voice_alarm_app_background">#171A1D</color>
     <color name="voice_alarm_status_bar">#111827</color>
-    <color name="ic_launcher_background">#1A1248</color>
+    <!-- 적응형 아이콘 배경. 로고가 full-bleed 파랑이라 foreground 가 캔버스를 다 덮지만,
+         기기가 아이콘을 확대·시차 이동시킬 때 가장자리가 드러나므로 로고 파랑과 맞춰 둔다. -->
+    <color name="ic_launcher_background">#0448E6</color>
 </resources>
