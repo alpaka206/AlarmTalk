@@ -147,7 +147,11 @@ chore(deps): production-dependencies 그룹의 hono 를 올린다
 
 - HTTPS 전용. Android 는 `usesCleartextTraffic=false`.
 - 비밀번호는 pepper 적용 후 SHA-256 프리해시 → bcrypt(cost 10). 프리해시는 bcrypt 의 72바이트 절단 문제를 막기 위한 것이다.
-- JWT HS256, TTL 7일. `JWT_SECRET` 은 32바이트 이상 랜덤.
+- JWT HS256, TTL **90일**. `JWT_SECRET` 은 32바이트 이상 랜덤.
+  - 길게 잡은 이유: 알람은 기기가 울리므로 앱을 몇 주씩 안 여는 게 정상인데, 그 사이 토큰이
+    죽으면 다음에 열었을 때 조용히 로그아웃돼 있다. 폐기는 만료가 아니라 `users.token_epoch`
+    가 맡는다(전 기기 로그아웃·비밀번호 재설정에서 +1, 미들웨어가 매 요청 비교).
+  - `GET /auth/me` 가 열 때마다 새 토큰을 내려 만료를 뒤로 민다(rolling refresh).
 - 입력은 전부 zod 검증. SQL 은 예외 없이 `?` 바인딩.
 - 레이트 리밋은 IP 선차단 + 유저 단위 + 인증 라우트 강화, 3단으로 건다. 실제 수치의 출처는 `src/middleware/rateLimit.ts` 다.
 - 바디 상한은 `src/middleware/bodyLimit.ts` (음성 업로드를 지원해야 해서 넉넉하다). 상한을 문서에 베끼지 말 것.

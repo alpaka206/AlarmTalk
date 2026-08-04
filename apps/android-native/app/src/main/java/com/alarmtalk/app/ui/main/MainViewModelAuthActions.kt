@@ -271,6 +271,14 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
  * MainViewModel.init 의 시작 시 재예약에만 기대고 있었다.
  */
 private suspend fun MainViewModel.onSignedIn() {
+    // 로그아웃 잠금을 푼다 — 다시 로그인했으니 이후의 401 은 정상적으로 처리해야 한다.
+    signingOut = false
+    // 로그인이 확정된 지금만 '자동 만료 계정' 표시를 지운다. 이 계정 알람은 소유자가 일치해
+    // 아래 reschedulePendingAlarms 가 정상적으로 되살린다. AuthSessionStore.save 에서 지우면
+    // 프로필 수정·refreshAppSession 같은 다른 호출까지 표시를 지워, 로그아웃 직후 늦게 온
+    // 응답 하나가 떼어낸 알람을 되살린다(Codex #665 P1).
+    runCatching { authSessionStore.clearSessionExpiredOwner() }
+        .onFailure { error -> Log.w(TAG, "Failed to clear expired-session owner on sign-in", error) }
     restoreAccessSnapshotForCurrentUser()
     RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
     RemoteAlarmSyncScheduler.runOnce(getApplication())
@@ -417,6 +425,8 @@ internal fun MainViewModel.updateNickname(name: String) {
         message = getApplication<android.app.Application>().getString(R.string.msg_nickname_length_invalid)
         return
     }
+    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
+    val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
@@ -424,7 +434,7 @@ internal fun MainViewModel.updateNickname(name: String) {
             api.updateProfile(authorization, com.alarmtalk.app.network.UpdateProfileRequest(name = trimmed))
         }.onSuccess {
             val updated = session.copy(user = session.user.copy(name = trimmed))
-            authSession = authSessionStore.save(updated)
+            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
             dismissEditNickname()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update nickname", error)
@@ -453,6 +463,8 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
     }
     val firstWindow = normalizedWindows.firstOrNull()
         ?: FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")
+    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
+    val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
@@ -477,7 +489,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                     familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
-            authSession = authSessionStore.save(updated)
+            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
             refreshSocial()
             message = getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_saved)
         }.onFailure { error ->
@@ -490,6 +502,8 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
 
 internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSettings) {
     val session = authSession ?: return
+    // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
+    val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         runCatching {
@@ -502,7 +516,7 @@ internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSe
         }.onSuccess { response ->
             val updatedSettings = response.dynamicPromptSettings ?: settings
             val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
-            authSession = authSessionStore.save(updated)
+            saveSessionPreservingCurrentToken(updated, startGeneration)?.let { authSession = it }
             refreshSocial()
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
@@ -1096,26 +1110,102 @@ internal fun MainViewModel.clearMessage() {
     message = null
 }
 
+/**
+ * 프로필 일부만 바꿔 세션을 다시 저장할 때 쓴다.
+ *
+ * **토큰은 잡아 둔 것이 아니라 지금 저장소에 있는 것**을 쓴다. 요청이 도는 사이 `GET /auth/me`
+ * 의 rolling refresh 가 토큰을 굴렸을 수 있는데, 그때 옛 토큰을 그대로 다시 저장하면 새 토큰이
+ * 사라진다 — 하필 옛 토큰의 만료가 임박한 상황(=갱신이 필요했던 바로 그 상황)이면 다음 요청이
+ * 401 로 사용자를 로그아웃시킨다(Codex #665 P2).
+ */
+internal fun MainViewModel.saveSessionPreservingCurrentToken(
+    updated: com.alarmtalk.app.network.AuthSession,
+    expectedGeneration: Long,
+): com.alarmtalk.app.network.AuthSession? {
+    // **세션이 그 사이 끝났거나 다른 계정이 되었으면 버린다.** 토큰만 지금 것으로 갈아 끼우면
+    // A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 저장된다 — 목록은 A 로 걸러지는데 서버
+    // 호출은 B 로 나가고, 이어지는 재예약이 A 의 알람을 되살리고 B 의 것을 취소한다
+    // (Codex #665 P1). refreshAppSession 과 같은 기준으로 본다.
+    //
+    // 그 판정과 저장을 **저장소가 한 덩어리로** 한다. 여기서 읽고·병합하고·쓰면 그 사이에
+    // 워커가 굴러간 토큰을 저장할 수 있고, 그러면 이 저장이 옛 토큰을 되써서 **방금 갱신된
+    // 토큰을 버린다**(Codex #665 P2).
+    val saved = authSessionStore.saveSessionIfAlive(
+        expectedGeneration = expectedGeneration,
+        user = updated.user,
+        provider = updated.provider,
+        // 프로필 갱신은 토큰을 건드리지 않는다 — 저장소의 현재 토큰을 그대로 지킨다.
+        rolledToken = null,
+    )
+    if (saved == null) {
+        Log.i(TAG, "Dropping stale profile save: session ended or switched")
+    }
+    return saved
+}
+
 internal fun MainViewModel.refreshAppSession() {
     val session = authSession ?: return
+    // 시작 시점의 세션 세대 — 응답을 쓰기 전에 대조한다. 세대는 세션이 끝날 때만 바뀐다.
+    val startGeneration = authSessionStore.sessionGeneration()
     viewModelScope.launch {
         runCatching {
-            api.me(AlarmTalkApiClient.bearer(session.token)).user
-        }.onSuccess { user ->
-            val response = AuthTokenResponse(
-                token = session.token,
-                user = user,
-            )
-            authSession = if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
-                authSessionStore.saveGoogleSession(response)
-            } else {
-                authSessionStore.saveAppSession(response)
+            api.me(AlarmTalkApiClient.bearer(session.token))
+        }.onSuccess { me ->
+            // **응답이 오는 동안 세션이 끝났을 수 있다.** 로그아웃/탈퇴/401 뒤에 늦게 도착한
+            // 200 을 그대로 저장하면 끝낸 세션이 되살아난다 — 토큰까지 새로 굴려 주므로
+            // 오래 살아나기까지 한다. 떼어낸 알람도 그 세션 기준으로 다시 복원 대상이 된다.
+            // (rolling refresh 를 넣기 전에도 있던 구멍이지만, 앱을 열 때마다 도는 자리가
+            //  되면서 실제로 겹칠 확률이 커졌다.)
+            // 계정 id 만 보면 **로그아웃 후 같은 계정 재로그인**을 통과시킨다 — 그러면 이 응답이
+            // 새 세션을 옛 세대의 토큰·프로필로 덮어쓰고, 로그아웃이 올려 둔 token_epoch 때문에
+            // 그 토큰은 이미 폐기돼 다음 요청이 또 로그아웃시킨다. 세션 세대로 함께 본다
+            // (두 워커 가드와 같은 기준, Codex #665 P2).
+            val stillSameAccount = authSession?.user?.id == session.user.id
+            if (signingOut || !stillSameAccount) {
+                Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
+                return@onSuccess
             }
+            // 서버가 새 토큰을 주면 갈아 끼운다(rolling refresh) — 앱을 열 때마다 만료가
+            // 뒤로 밀려, 오래 안 열었다가 열었을 때 조용히 로그아웃돼 있는 일이 없어진다.
+            // **안 주면(구버전 서버·재발급 실패) 저장소의 현재 토큰을 지킨다** — 시작할 때
+            // 잡아 둔 session.token 으로 되돌리면 그 사이 워커가 굴린 토큰을 옛 것으로 덮는다.
+            //
+            // 세대 확인도 저장소가 쓰기와 같은 락 안에서 한다. 여기서 따로 보면 확인 뒤
+            // 로그아웃이 끼어들어 비운 저장소에 끝난 세션을 되쓴다(Codex #665 P1/P2).
+            val saved = authSessionStore.saveSessionIfAlive(
+                expectedGeneration = startGeneration,
+                user = me.user,
+                provider = session.provider,
+                rolledToken = me.token,
+            )
+            if (saved == null) {
+                Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
+                return@onSuccess
+            }
+            authSession = saved
         }.onFailure { error ->
             Log.w(TAG, "Auth refresh failed", error)
         }
     }
 }
+
+/**
+ * 오래 걸린 조회의 응답이 **그 조회를 시작한 세션의 것인지** 판정한다.
+ *
+ * 늦게 도착한 응답을 그대로 상태에 반영하면, 로그아웃·계정 전환 뒤에 앞 계정의 목록이
+ * 지금 계정의 것으로 자리 잡는다. 특히 목소리 목록이 그렇다 — A 의 목록으로 B 의 알람을
+ * 훑으면 접근권이 없다고 보고 **B 의 목소리 참조와 캐시 오디오를 영구히 벗긴다**
+ * (Codex #665 P1). 되돌릴 수 없으므로, 반영 자체를 막는다.
+ *
+ * 계정 id 만으로는 부족하다 — 로그아웃 후 **같은 계정** 재로그인을 통과시킨다. 그 사이
+ * 세션은 끝났으므로 세대도 함께 본다([AuthSessionStore.sessionGeneration]).
+ */
+internal fun MainViewModel.responseStillBelongsToRequester(
+    requestOwner: String?,
+    startGeneration: Long,
+): Boolean = !signingOut &&
+    authSession?.user?.id == requestOwner &&
+    authSessionStore.sessionGeneration() == startGeneration
 
 internal fun MainViewModel.bearerOrMessage(fallbackMessage: String): String? {
     val session = authSession

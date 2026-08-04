@@ -529,9 +529,13 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
 // 사운드온리로 '잠근다'(preLockPlayMode 에 원래 모드 보관). 다시 유료가 되면 그대로 복원한다.
 // 새 목소리 알람 생성·TTS 합성은 유료 게이트가 이미 막는다.
 internal fun MainViewModel.applyFreePlanVoiceLock() {
+    // 이 강등을 확정한 계정을 코루틴 **밖에서** 잡아 함께 넘긴다 — 그 사이 계정이 바뀌면
+    // 저장소가 그만둔다(Codex #665 P1). 안에서 읽으면 넘기는 값이 '확정한 계정' 이 아니라
+    // '지금 계정' 이 되어 가드의 전제가 깨진다.
+    val lockOwner = authSession?.user?.id
     viewModelScope.launch {
         runCatching {
-            repository.lockPaidAlarmTalks()
+            repository.lockPaidAlarmTalks(expectedOwnerUserId = lockOwner)
         }.onSuccess { locked ->
             if (locked > 0) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_free_plan_voice_alarms_locked)

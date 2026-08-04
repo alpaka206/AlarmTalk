@@ -150,7 +150,7 @@ class AlarmOwnerScopedOperationsTest {
         currentUser = "user-b"
 
         // B 의 접근 가능 목록에는 당연히 clone-a 가 없다.
-        val degraded = repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"))
+        val degraded = repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"), expectedOwnerUserId = null)
 
         assertEquals(0, degraded)
         assertEquals("clone-a", voiceOf("a-1"))
@@ -162,7 +162,7 @@ class AlarmOwnerScopedOperationsTest {
         seedVoiceAlarm(id = "b-1", owner = "user-b", voiceProfileId = "clone-gone")
         currentUser = "user-b"
 
-        val degraded = repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"))
+        val degraded = repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"), expectedOwnerUserId = null)
 
         assertEquals("B 의 접근 불가 목소리만 강등된다", 1, degraded)
         assertNull(voiceOf("b-1"))
@@ -180,7 +180,7 @@ class AlarmOwnerScopedOperationsTest {
         currentUser = "user-b"
         pendingOwner = null
 
-        assertEquals(1, repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b")))
+        assertEquals(1, repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"), expectedOwnerUserId = null))
         assertNull(voiceOf("legacy-1"))
     }
 
@@ -192,7 +192,7 @@ class AlarmOwnerScopedOperationsTest {
         currentUser = "user-b"
         pendingOwner = "user-a"
 
-        val degraded = repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"))
+        val degraded = repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"), expectedOwnerUserId = null)
 
         assertEquals(0, degraded)
         assertEquals("user-a", dao.getById("legacy-1")?.ownerUserId)
@@ -208,7 +208,7 @@ class AlarmOwnerScopedOperationsTest {
         pendingOwner = "user-a"
 
         val degraded = repositoryWith(ClaimFailingDao(dao))
-            .degradeAlarmsWithInaccessibleVoice(setOf("clone-b"))
+            .degradeAlarmsWithInaccessibleVoice(setOf("clone-b"), expectedOwnerUserId = null)
 
         assertEquals(0, degraded)
         assertEquals("clone-a", voiceOf("legacy-1"))
@@ -221,7 +221,7 @@ class AlarmOwnerScopedOperationsTest {
         seedVoiceAlarm(id = "a-1", owner = "user-a", voiceProfileId = "clone-a")
         currentUser = null
 
-        assertEquals(0, repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b")))
+        assertEquals(0, repository.degradeAlarmsWithInaccessibleVoice(setOf("clone-b"), expectedOwnerUserId = null))
         assertEquals("clone-a", voiceOf("a-1"))
     }
 
@@ -245,7 +245,7 @@ class AlarmOwnerScopedOperationsTest {
         seedVoiceAlarm(id = "b-1", owner = "user-b", voiceProfileId = systemVoiceId)
         currentUser = "user-b"
 
-        assertEquals(0, repository.degradeAlarmsWithInaccessibleVoice(emptySet()))
+        assertEquals(0, repository.degradeAlarmsWithInaccessibleVoice(emptySet(), expectedOwnerUserId = null))
         assertEquals(systemVoiceId, voiceOf("b-1"))
     }
 

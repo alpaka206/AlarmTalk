@@ -15,7 +15,16 @@ export interface AppJwtPayload {
 const ISSUER = 'voice-alarm';
 const AUDIENCE = 'voice-alarm-clients';
 const ALG = 'HS256';
-const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 7;
+// 90일. 예전에는 7일이었는데, 알람 앱은 **앱을 안 열어도 잘 돌아가는** 게 정상이라
+// (알람은 기기의 AlarmManager 가 울린다) 몇 주씩 안 여는 사용자가 흔하다. 그 사이 토큰이
+// 죽으면 다음에 열었을 때 조용히 로그아웃돼 있고, 1.2.1 부터는 그게 알람 목록·재예약의
+// 소유자 게이트에 걸려 **알람이 사라지고 울리지도 않는** 상태가 된다.
+//
+// 길게 잡아도 폐기 수단은 그대로다 — users.token_epoch 가 로그아웃(전 기기)·비밀번호
+// 재설정에서 +1 되고 authMiddleware 가 매 요청 비교하므로, 만료를 기다리지 않고 즉시 끊을
+// 수 있다. 그리고 GET /auth/me 가 열 때마다 새 토큰을 내려 주므로(rolling), 90일 안에 한
+// 번이라도 앱을 연 사용자는 사실상 만료를 만나지 않는다.
+const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 90;
 
 function base64UrlEncode(bytes: ArrayBuffer | Uint8Array): string {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);

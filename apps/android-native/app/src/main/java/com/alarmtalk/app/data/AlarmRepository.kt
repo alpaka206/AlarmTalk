@@ -46,6 +46,10 @@ class AlarmRepository(
     // 미정 행이 없어졌을 때만 임자 표시를 지운다. 실패하면 부르지 않아 표시가 남고,
     // 다음 기회에 다시 시도한다.
     private val onOwnershipSettled: () -> Unit = {},
+    // 자동으로 세션이 끊긴(토큰 만료·폐기) 계정. 비로그인 상태에서 **이 계정 알람만** 되살린다.
+    // 명시적 로그아웃은 이 값을 지우므로 그 계정 알람은 되살아나지 않는다.
+    // 자세한 이유는 AuthSessionStore.sessionExpiredOwnerUserId 주석 참고.
+    private val sessionExpiredOwnerUserIdProvider: () -> String? = { null },
 ) {
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
@@ -549,8 +553,17 @@ class AlarmRepository(
      * 대상은 **지금 계정 소유** 알람으로 한정된다(같은 기기에 남아 있는 앞 계정 알람은 건드리지 않는다).
      * 반환값은 강등된 알람 수.
      */
-    suspend fun degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds: Set<String>): Int =
-        degradeMatchingLocalOwnedVoiceAlarms { alarm ->
+    /**
+     * @param expectedOwnerUserId 이 목록을 **가져온 계정**. 소유자를 고르는 시점에 계정이
+     *   그대로인지 확인한다 — 목록은 A 로 받아 놓고 그 사이 B 로 바뀌면, B 의 알람에서 A 기준
+     *   접근권으로 목소리를 **영구히** 벗긴다(되돌릴 수 없다, Codex #665 P1). 호출부의 사전
+     *   확인만으로는 이 창을 못 닫는다.
+     */
+    suspend fun degradeAlarmsWithInaccessibleVoice(
+        accessibleVoiceIds: Set<String>,
+        expectedOwnerUserId: String?,
+    ): Int =
+        degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId) { alarm ->
             !alarm.voiceProfileId.isNullOrBlank() &&
                 // 시스템 스톡 버킷/보이스는 영구라 보존. 클론(비-system) 보이스는 단일클립·버킷 모두
                 // 접근권 상실(공유해제·제공자취소·삭제) 시 강등 대상.
@@ -561,11 +574,14 @@ class AlarmRepository(
     // 방금 삭제한 특정 목소리를 쓰는 내 알람만 즉시 강등한다 — 소셜 목록 신선도(reconcile 가드)와
     // 무관하게 삭제 확정 정보로 바로 기본 알람으로 변환한다.
     suspend fun degradeAlarmsUsingVoiceProfile(voiceProfileId: String): Int =
-        degradeMatchingLocalOwnedVoiceAlarms { alarm ->
+        degradeMatchingLocalOwnedVoiceAlarms(expectedOwnerUserId = null) { alarm ->
             alarm.voiceProfileId == voiceProfileId && !isSystemVoiceId(alarm.voiceProfileId)
         }
 
-    private suspend fun degradeMatchingLocalOwnedVoiceAlarms(match: (AlarmEntity) -> Boolean): Int {
+    private suspend fun degradeMatchingLocalOwnedVoiceAlarms(
+        expectedOwnerUserId: String?,
+        match: (AlarmEntity) -> Boolean,
+    ): Int {
         // 강등은 되돌릴 수 없다 — 목소리 참조를 지우고 캐시 오디오까지 정리한다. 그래서 '지금 계정
         // 것'이라고 확신할 수 있는 행만 건드린다.
         //
@@ -576,6 +592,11 @@ class AlarmRepository(
         // 요청 중의 계정 전환만 잡지, 이미 앞 계정 것인 행은 못 지킨다(Codex #646 P1).
         val ownershipSettled = settlePendingAlarmOwnership()
         val currentUser = currentUserIdProvider()?.takeIf { it.isNotBlank() }
+        // 파괴적 변경이라 되돌릴 수 없다 — 목록을 가져온 계정과 지금 계정이 다르면 그만둔다.
+        if (expectedOwnerUserId != null && currentUser != expectedOwnerUserId) {
+            Log.i(TAG, "Skipped voice degradation: account changed since the list was fetched")
+            return 0
+        }
         if (currentUser == null) {
             // 비로그인 상태에서는 [accessibleVoiceIds] 가 누구의 목록인지 알 수 없다. 호출부가
             // 모두 세션 안에서 도므로 정상 경로에서는 오지 않는 가지다.
@@ -644,8 +665,19 @@ class AlarmRepository(
      * 기본 알람음을 재생하게 한다. 캐시 오디오·목소리 참조는 그대로 보존해 재유료 시 복원한다.
      * 로컬만 갱신(upsertPreservingServerSyncFields)해 서버의 원본 목소리 알람은 백스톱으로 남긴다.
      */
-    suspend fun lockPaidAlarmTalks(): Int {
+    /**
+     * @param expectedOwnerUserId 이 강등을 **확정한 계정**. 소유자를 고르는 시점에 계정이 그대로인지
+     *   확인한다 — 워커가 A 로 '진짜 무료' 를 확정한 뒤 로그아웃·B 로그인이 끼면, 그 판정이 B 의
+     *   **유료** 알람에 적용돼 sound-only 로 바뀌고 다시 예약된다. 호출부의 사전 확인만으로는 이
+     *   창을 못 닫는다(Codex #665 P1). `degradeAlarmsWithInaccessibleVoice` 와 같은 규약이다.
+     *   null 이면 검사하지 않는다 — 방금 읽은 세션으로 곧바로 부르는 전경 경로용이다.
+     */
+    suspend fun lockPaidAlarmTalks(expectedOwnerUserId: String? = null): Int {
         val currentUser = currentUserIdProvider() ?: return 0
+        if (expectedOwnerUserId != null && currentUser != expectedOwnerUserId) {
+            Log.i(TAG, "Skipped paid-alarm lock: account changed since the plan was confirmed")
+            return 0
+        }
         // 미기록 행에 소유자를 '영구히' 새기는 경로다. 새기기 전에 임자를 먼저 확정하지 않으면
         // 앞 계정 A 의 미기록 알람이 B 것으로 박히고, 뒤늦은 확정(claimUnownedAlarms 는 null 만
         // 대상)이 더는 손댈 수 없어 A 는 그 알람을 영영 잃는다. reschedulePendingAlarms 와 같은 규칙.
@@ -909,22 +941,45 @@ class AlarmRepository(
             // 다른 계정이 소유한 알람은 재예약하지 않는다(로그아웃한 앞 계정의 알람이 부팅·
             // 재로그인 때 되살아나 남의 폰에서 울리는 것 방지). 미기록(null)은 lockPaidAlarmTalks
             // 와 같은 규칙으로 현재 계정 것으로 본다.
-            if (alarm.ownerUserId != null && alarm.ownerUserId != currentUser) {
+            //
+            // **비로그인(currentUser == null)이면 이 게이트를 아예 적용하지 않는다.** 누가
+            // 로그인해 있지 않은 동안에는 '다른 계정 것'이라고 판정할 기준 자체가 없다. 예전에는
+            // 취소만 건너뛰고 `return@forEach` 로 재예약도 함께 건너뛰었는데, 그게 실제 피해를
+            // 냈다: **스토어 업데이트는 OS 의 AlarmManager 등록을 전부 지운다.** 지워진 뒤라
+            // "취소하지 않는다"는 아무 의미가 없고, 재예약을 건너뛰는 순간 그 알람은 영영 울리지
+            // 않는다. 목록 쪽도 같은 소유자 규칙이라 사용자에겐 보이지도 않아 되살릴 수단이 없다.
+            // (토큰이 7일마다 죽고 갱신 경로가 없어서 이 조합이 흔했다 — jwt.ts 참고.)
+            //
+            // 알람 전달이 서버 인증 상태에 묶여선 안 된다(AGENTS.md). 남의 알람 정리는 '다른
+            // 계정이 실제로 로그인한' 시점에 onSignedIn 의 cancelAlarmsNotOwnedBy 가 한다.
+            //
+            // **비로그인일 때 되살릴 수 있는 건 '자동으로 끊긴 그 계정' 의 알람뿐이다.**
+            // detachAlarmsOnSignOut 은 예약만 취소하고 행은 enabled=1 로 남기므로(재로그인하면
+            // 되살리려고), 비로그인을 전부 '이 기기 것' 으로 다루면 사용자가 끝낸 계정의 알람이
+            // 콜드스타트·부팅·업데이트마다 되살아나 **로그인 화면 뒤에서 끌 수도 없이 울린다.**
+            // 한 기기에 여러 계정이 오갔다면 그 계정들 알람이 한꺼번에 살아난다(Codex #665 P1).
+            //
+            // 복원 대상이 없으면(명시적 로그아웃·이 빌드 이전 상태) 소유자 있는 행은 건드리지
+            // 않는다 — 못 가릴 때는 로그인 한 번 시키는 쪽이 안전하다.
+            val restorableOwner = currentUser ?: sessionExpiredOwnerUserIdProvider()
+            if (alarm.ownerUserId != null && alarm.ownerUserId != restorableOwner) {
                 // 건너뛰는 데 그치면 앞 세션이 잡아 둔 OS 예약이 살아남아 이 계정 폰에서 울린다.
                 // 특히 소유자 확정이 이 함수 안에서야 성공한 경우, 앞서 돈 cancelAlarmsNotOwnedBy
                 // 는 아직 미기록이던 그 행을 건너뛴 뒤다 — 여기서 내려야 새는 곳이 없다.
                 //
-                // 단 비로그인(currentUser == null)일 때는 내리지 않는다. 자동 401 로 세션만
-                // 끊긴 상태에서도 본인 알람은 계속 울려야 한다 — 알람 전달이 서버 인증 상태에
-                // 묶이면 안 된다(AGENTS.md). 그 정리는 '다른 계정이 실제로 로그인한' 시점에 한다.
+                // **취소는 다른 계정이 실제로 로그인해 있을 때만** 한다. 비로그인일 때 내리면
+                // 자동 401 로 세션만 끊긴 사이 본인 알람이 조용히 안 울린다 — 알람 전달이 서버
+                // 인증 상태에 묶여선 안 된다(AGENTS.md). 그때는 새로 걸지 않을 뿐, 이미 걸린
+                // 예약은 건드리지 않는다.
                 if (currentUser != null) alarmScheduler.cancel(alarm.id)
                 return@forEach
             }
             // 소유자 정리가 실패한 회차에는 미기록 행을 '현재 계정 것'으로 볼 근거가 없다.
             // 예약을 내려 남의 알람이 울리는 것을 막되 행은 남긴다 — 마커가 보존돼 있어
             // 다음 회차에 소유자를 새기고 나면 주인에게 다시 예약된다.
+            // 취소 범위는 위와 같은 이유로 로그인 상태로 한정한다.
             if (alarm.ownerUserId == null && !ownershipSettled) {
-                alarmScheduler.cancel(alarm.id)
+                if (currentUser != null) alarmScheduler.cancel(alarm.id)
                 return@forEach
             }
             runCatching {

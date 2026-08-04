@@ -15,7 +15,6 @@ import com.alarmtalk.app.hasCoupleOrFamilyAccess
 import com.alarmtalk.app.hasPaidVoiceAccess
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.AuthSessionStore
-import com.alarmtalk.app.network.AuthTokenResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -33,6 +32,8 @@ class PlanChangeSyncWorker(
     override suspend fun doWork(): Result {
         val sessionStore = AuthSessionStore(applicationContext)
         val session = sessionStore.read() ?: return Result.success()
+        // 시작 시점의 세션 세대 — 결과를 쓰기 전에 같은 세션인지 대조한다.
+        val startGeneration = sessionStore.sessionGeneration()
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -41,14 +42,25 @@ class PlanChangeSyncWorker(
             // 가능하므로 billing·me 는 필수 — 둘 중 하나라도 실패하면 확정할 수 없으니 throw 시켜
             // outer runCatching 이 Result.retry() 로 처리한다(성공으로 조용히 끝내지 않는다). 가족은 보조.
             val billing = withContext(Dispatchers.IO) { api.getSubscription(auth) }
-            val freshUser = withContext(Dispatchers.IO) { api.me(auth).user }
+            // 응답 전체를 들고 있는다 — /auth/me 는 새 토큰도 함께 준다(rolling refresh).
+            // user 만 꺼내 버리면 이 워커가 만료 직전 유일한 호출자일 때 갱신된 토큰이 버려지고,
+            // 세션이 그대로 만료돼 재로그인을 강요한다(Codex #665 P2).
+            val me = withContext(Dispatchers.IO) { api.me(auth) }
+            val freshUser = me.user
             val familyGroup = runCatching { withContext(Dispatchers.IO) { api.getFamilyGroup(auth) } }.getOrNull()
 
             // 네트워크 왕복 중 로그아웃/계정전환이 일어났을 수 있다 — 결과를 쓰기 전에 현재 세션이 아직
-            // 이 세션(같은 토큰)인지 재확인한다. 바뀌었으면 옛 세션을 부활시키거나 새 세션을 덮어쓰지
+            // **같은 계정**인지 재확인한다. 바뀌었으면 옛 세션을 부활시키거나 새 세션을 덮어쓰지
             // 않도록 이 결과를 버린다(성공 처리, 재시도 불요). (FCM 토큰 등록 레이스 가드와 동일 패턴.)
+            //
+            // 판정 기준은 **세션 세대**다. 토큰으로 보면 rolling refresh 도 '전환' 으로 오판하고,
+            // 계정 id 로 보면 로그아웃 후 같은 계정 재로그인을 통과시켜 폐기된 옛 토큰을
+            // 되살려 쓴다(Codex #665 P1·P2). 세대는 세션이 끝날 때만 바뀐다.
             val current = sessionStore.read()
-            if (current == null || current.token != session.token) {
+            if (current == null ||
+                current.user.id != session.user.id ||
+                sessionStore.sessionGeneration() != startGeneration
+            ) {
                 return@runCatching Result.success()
             }
 
@@ -57,11 +69,23 @@ class PlanChangeSyncWorker(
             val snapshotStore = AccessSnapshotStore(applicationContext)
             snapshotStore.updateSubscription(userId, billing)
             snapshotStore.updateFamilyGroup(userId, familyGroup)
-            val response = AuthTokenResponse(token = session.token, user = freshUser)
-            if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
-                sessionStore.saveGoogleSession(response)
-            } else {
-                sessionStore.saveAppSession(response)
+            // 토큰 우선순위: **이 요청이 방금 받은 새 토큰 → 지금 저장소의 토큰**. 시작 시점에
+            // 잡아 둔 session.token 은 쓰지 않는다 — 그 사이 굴러간 토큰을 옛 것으로 되돌린다.
+            //
+            // **토큰만 쓴다.** 프로필까지 쓰면, `/auth/me` 를 받은 뒤 남은 요청을 도는 사이
+            // 전경에서 바뀐 닉네임·설정을 자기 옛 스냅샷으로 되돌린다 — 화면은 저장소를 따라
+            // 오므로 사용자가 방금 바꾼 이름이 눈앞에서 옛 이름으로 돌아간다(Codex #665 P2).
+            // 이 워커에 필요한 건 굴러간 토큰 하나뿐이고, 플랜 판정은 아래에서 `freshUser` 로
+            // 직접 하며 권한 스냅샷은 위 `AccessSnapshotStore` 가 따로 들고 있다.
+            //
+            // 위 확인 이후에도 로그아웃이 끼어들 수 있다. 그래서 '검사 후 저장' 이 아니라
+            // **검사와 저장을 한 덩어리로** 하는 [AuthSessionStore.saveTokenIfGeneration] 을
+            // 쓴다. 따로 하면 그 사이가 창이라, 비운 저장소에 이 세션을 되쓰면 로그아웃이 통째로
+            // 되돌아가고 이어지는 무료 강등이 떼어낸 알람을 로그인 화면 뒤에서 다시 예약한다
+            // (Codex #665 P1).
+            val rolledToken = me.token?.takeIf { it.isNotBlank() } ?: current.token
+            if (sessionStore.saveTokenIfGeneration(startGeneration, rolledToken) == null) {
+                return@runCatching Result.success()
             }
 
             // '진짜 무료'만 변환: 유료 구독 없음 + 가족/커플 접근 없음 + user.plan 무료.
@@ -70,7 +94,20 @@ class PlanChangeSyncWorker(
                 !hasCoupleOrFamilyAccess(billing, familyGroup) &&
                 (plan.isBlank() || plan == "free")
             if (genuinelyFree) {
-                AlarmAppContainer.repository(applicationContext).lockPaidAlarmTalks()
+                // **강등도 세션이 살아 있을 때만 한다.** 세션 쓰기 앞에서 한 번 봤다고 끝이
+                // 아니다 — `lockPaidAlarmTalks` 는 알람 행을 고치고 OS 예약을 **새로 거는**
+                // 파괴적 쓰기라, 그 사이 로그아웃이 끼면 방금 취소된 예약을 되살린다.
+                // 목록은 소유자 필터에 가려 안 보이는데 리시버는 Room 을 직접 읽어 울린다 —
+                // 로그인 화면 뒤에서 끌 수 없는 알람이 된다(Codex #665 P1).
+                if (sessionStore.sessionGeneration() != startGeneration || sessionStore.read() == null) {
+                    return@runCatching Result.success()
+                }
+                // 그리고 **판정을 확정한 계정을 함께 넘긴다.** 여기까지 통과한 뒤에도 저장소가
+                // 소유자를 다시 읽기 전에 로그아웃→B 로그인이 끼면, A 로 확정한 '진짜 무료' 가
+                // B 의 **유료** 알람에 적용돼 sound-only 로 바뀌고 다시 예약된다. 검사와 파괴적
+                // 쓰기가 다른 시점이면 이 창은 호출부에서 못 닫는다(Codex #665 P1).
+                AlarmAppContainer.repository(applicationContext)
+                    .lockPaidAlarmTalks(expectedOwnerUserId = userId)
             }
             Result.success()
         }.getOrElse { error ->

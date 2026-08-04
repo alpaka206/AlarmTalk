@@ -47,6 +47,8 @@ class VoiceAccessSyncWorker(
     override suspend fun doWork(): Result {
         val sessionStore = AuthSessionStore(applicationContext)
         val session = sessionStore.read() ?: return Result.success()
+        // 시작 시점의 세션 세대 — 결과를 쓰기 전에 같은 세션인지 대조한다.
+        val startGeneration = sessionStore.sessionGeneration()
         return runCatching {
             val api = AlarmTalkApiClient.create()
             val auth = AlarmTalkApiClient.bearer(session.token)
@@ -63,14 +65,21 @@ class VoiceAccessSyncWorker(
             // 반대 방향(같은 기기에 남아 있는 앞 계정 알람을 이 계정 목록으로 벗기는 것)은
             // degradeAlarmsWithInaccessibleVoice 안의 소유자 게이트가 막는다 — 이 재확인은
             // 요청 중의 계정 전환만 잡으므로 둘 다 필요하다(Codex #646 P1).
+            // 판정 기준은 **세션 세대**다. 토큰으로 비교하면 GET /auth/me 의 rolling refresh 가
+            // 토큰만 갈아 끼운 것도 '계정이 바뀌었다' 로 오판해 결과를 버리고(콜드스타트마다
+            // 갱신이 돌아 흔하다), 계정 id 로만 보면 로그아웃 후 같은 계정 재로그인을 통과시킨다
+            // (Codex #665 P1·P2). 세대는 세션이 끝날 때만 바뀐다.
             val current = sessionStore.read()
-            if (current == null || current.token != session.token) {
+            if (current == null ||
+                current.user.id != session.user.id ||
+                sessionStore.sessionGeneration() != startGeneration
+            ) {
                 return@runCatching Result.success()
             }
 
             val accessibleVoiceIds = (myVoices.map { it.id } + sharedVoices.map { it.id }).toSet()
             val degraded = AlarmAppContainer.repository(applicationContext)
-                .degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds)
+                .degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, session.user.id)
             if (degraded > 0) {
                 Log.i(TAG, "Degraded $degraded alarm(s) after voice access was revoked")
             }

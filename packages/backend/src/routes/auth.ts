@@ -734,8 +734,19 @@ auth.get('/me', async (c) => {
     return c.json(jsonError('AUTH_MISSING', 'Authorization header required'), 401);
   }
   const token = authHeader.slice(7);
+  // **검증 실패와 그 뒤의 장애를 구조로 가른다.** 하나의 try 로 묶으면 DB 오류까지 401 로
+  // 나가고, 클라는 그걸 '세션 만료' 로 읽어 로그아웃시킨다 — /auth/me 는 rolling refresh 때문에
+  // 앱을 열 때마다 도는 자리라 피해가 크다. 메시지 문자열로 가르는 것도 틀렸다:
+  // `no such column: token_epoch` 같은 스키마 스큐 오류에 token 이 들어간다(Codex #665 P1).
+  // authMiddleware 가 이미 같은 구조를 쓴다.
+  let payload: Awaited<ReturnType<typeof verifyAppJwt>>;
   try {
-    const payload = await verifyAppJwt(token, c.env.JWT_SECRET);
+    payload = await verifyAppJwt(token, c.env.JWT_SECRET);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
+  }
+  try {
     const db = getDB(c.env);
     const result = await db.execute({
       sql: `SELECT id, email, name, plan, token_epoch, deletion_status,
@@ -765,7 +776,28 @@ auth.get('/me', async (c) => {
     }
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);
+    // 세션을 굴린다(rolling refresh). 여기까지 온 토큰은 서명·만료·폐기 검사를 모두
+    // 통과했으므로, 같은 수명의 새 토큰을 발급해 앱이 갈아 끼우게 한다. 앱을 열 때마다
+    // 만료가 뒤로 밀려 "업데이트했더니 로그아웃돼 있다"가 사라진다.
+    //
+    // sub 은 payload.sub 이 아니라 **row.id** 다. sub 이 google_id 인 구 토큰을 들고 온
+    // 경우 여기서 users.id 로 갈아 끼워진다 — 발급 경로가 이미 users.id 로 통일돼 있어
+    // (b05c6c19) 새 토큰만 그 규약을 따르면 된다.
+    //
+    // 재발급이 실패해도 200 은 유지한다. /auth/me 는 본래 사용자 정보를 주는 자리라,
+    // 토큰을 못 갱신했다고 로그인 자체를 깨뜨릴 이유가 없다 — 클라는 token 이 없으면
+    // 쓰던 토큰을 그대로 쓰고 다음 기회에 다시 시도한다.
+    const rolledToken = await signAppJwt(
+      {
+        sub: String(row.id),
+        email: row.email,
+        name: row.name ?? undefined,
+        epoch: Number(row.token_epoch ?? 0),
+      },
+      c.env.JWT_SECRET,
+    ).catch(() => null);
     return c.json({
+      ...(rolledToken ? { token: rolledToken } : {}),
       user: {
         id: row.id,
         email: row.email,
@@ -782,8 +814,16 @@ auth.get('/me', async (c) => {
       },
     });
   } catch (err) {
+    // 토큰 검증은 위에서 이미 통과했다 — 여기 오는 건 DB 등 인프라 장애뿐이다. 503 으로 돌려
+    // 클라가 세션을 지우지 않고 다음 기회에 다시 시도하게 한다. 내부 예외 메시지는 반사하지
+    // 않고 서버 로그에만 남긴다.
     const detail = err instanceof Error ? err.message : String(err);
-    return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
+    const { logStructured } = await import('../lib/logger');
+    logStructured('error', { at: 'auth.me', error: detail });
+    return c.json(
+      jsonError('ACCOUNT_STATUS_UNVERIFIED', 'Unable to verify account status'),
+      503,
+    );
   }
 });
 
