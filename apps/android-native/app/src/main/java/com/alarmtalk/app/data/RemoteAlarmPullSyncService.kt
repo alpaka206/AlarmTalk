@@ -110,11 +110,9 @@ internal class RemoteAlarmPullSyncService(
                 // 과거 동시 pull 레이스로 같은 서버 알람이 여러 로컬 행으로 임포트됐다면
                 // 가장 오래된 행만 남기고 나머지를 정리한다(같은 시각 중복 울림 자가 치유).
                 // 행 삭제 + 예약 취소라 [alarmMutationLock] 안에서 한다.
-                // **지금 울리는 중인 알람은 건드리지 않는다.** RINGING 은 enabled=true 이고
-                // fireAtMillis 가 이미 과거인데, 아래에서 그 값을 그대로 살려 SCHEDULED 로
-                // 다시 세우고 예약까지 걸면 **즉시 다시 울린다**(Codex #675 P1). 정합성
-                // 경로도 같은 이유로 울리는 행을 건너뛴다(AlarmRepository 의 ringingNow).
-                // 다음 예약은 dismiss/snooze 가 잡으므로 여기서 손댈 이유가 없다.
+                // 울리는 중이면 헛일이므로 먼저 걸러 낸다. 다만 **이건 1차 거르기일 뿐이다** —
+                // 아래 buildLocalAlarm 이 음성 다운로드로 대기하는 사이에 울리기 시작할 수
+                // 있어, 진짜 판단은 반영 직전에 한 번 더 한다(Codex #675 P1).
                 if (alarmDao.getAllByRemoteAlarmId(remote.id)
                         .any { it.id in ringingAlarmIds() }
                 ) {
@@ -148,6 +146,41 @@ internal class RemoteAlarmPullSyncService(
                 // 여기부터 반영 구간 — 전부 로컬 행 쓰기 + OS 예약이다. 정합성 복원이 이 사이에
                 // 끼면 자기가 읽어 둔 옛 값으로 예약을 되심는다(Codex #666 P1).
                 alarmMutationLock.withLock {
+                    // **여기서 다시 읽는다.** 위 스냅샷(existing)은 음성 다운로드 **전** 값이라,
+                    // 그 사이에 두 가지가 일어날 수 있다:
+                    //  (a) 알람이 울리기 시작 → 과거 fireAtMillis 를 살려 재예약하면 즉시 재발화
+                    //  (b) 수신자가 시각을 고쳐 저장(updateAlarm 은 이 락을 쓰지 않는다)
+                    //      → 옛 값으로 덮어써서 방금 한 수정이 조용히 사라진다
+                    // 둘 다 사용자가 못 일어나거나 고친 게 없어지는 결과라, 반영 직전의 행을
+                    // 기준으로 다시 판단한다(Codex #675 P1).
+                    val current = alarmDao.getAllByRemoteAlarmId(remote.id).firstOrNull()
+                    if (current != null && current.id in ringingAlarmIds()) {
+                        skipped += 1
+                        return@withLock
+                    }
+                    val local = if (current != null && current.id != existing?.id ||
+                        current != null && !sameReceivedSchedule(current, existing)
+                    ) {
+                        val fresh = resolveReceivedSchedule(
+                            existing = current,
+                            remoteHour = local.hour,
+                            remoteMinute = local.minute,
+                            remoteRepeatDaysMask = local.repeatDaysMask,
+                            remoteSnoozeMinutes = local.snoozeMinutes,
+                        )
+                        local.copy(
+                            id = current.id,
+                            hour = fresh.hour,
+                            minute = fresh.minute,
+                            repeatDaysMask = fresh.repeatDaysMask,
+                            snoozeMinutes = fresh.snoozeMinutes,
+                            snoozeEnabled = fresh.snoozeEnabled,
+                            holidayOff = fresh.holidayOff,
+                            fireAtMillis = fresh.keptFireAtMillis ?: local.fireAtMillis,
+                        )
+                    } else {
+                        local
+                    }
                     if (existing != null) {
                         alarmScheduler.cancel(existing.id)
                     }
@@ -329,7 +362,7 @@ internal class RemoteAlarmPullSyncService(
             hour = schedule.hour,
             minute = schedule.minute,
             repeatDaysMask = schedule.repeatDaysMask,
-            holidayOff = false,
+            holidayOff = schedule.holidayOff,
             nowMillis = now,
         )
         val computedPlayMode = when {
@@ -347,8 +380,10 @@ internal class RemoteAlarmPullSyncService(
             minute = schedule.minute,
             fireAtMillis = fireAtMillis,
             repeatDaysMask = schedule.repeatDaysMask,
-            holidayOff = false,
-            snoozeEnabled = true,
+            // 수신자가 끈 스누즈·켜 둔 공휴일 건너뛰기도 지킨다 — 값만 지키고 토글을 놓치면
+            // 다음 pull 이 스누즈를 다시 켜고 공휴일에도 울린다(Codex #675 P2).
+            holidayOff = schedule.holidayOff,
+            snoozeEnabled = schedule.snoozeEnabled,
             snoozeMinutes = schedule.snoozeMinutes,
             snoozeRepeatLimit = existing?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
             snoozeCount = 0,
@@ -464,6 +499,10 @@ internal data class ReceivedSchedule(
     val minute: Int,
     val repeatDaysMask: Int,
     val snoozeMinutes: Int,
+    /** 스누즈를 껐는지. 값(분)만 지키고 이 토글을 놓치면 다음 pull 이 다시 켠다. */
+    val snoozeEnabled: Boolean,
+    /** 공휴일에 건너뛸지. 마찬가지로 다음 pull 이 조용히 되돌리면 공휴일에 울린다. */
+    val holidayOff: Boolean,
     /** null = 새로 받은 것이라 다시 계산해야 함. */
     val keptFireAtMillis: Long?,
 )
@@ -490,6 +529,8 @@ internal fun resolveReceivedSchedule(
         minute = existing.minute,
         repeatDaysMask = existing.repeatDaysMask,
         snoozeMinutes = existing.snoozeMinutes,
+        snoozeEnabled = existing.snoozeEnabled,
+        holidayOff = existing.holidayOff,
         keptFireAtMillis = existing.fireAtMillis,
     )
 } else {
@@ -498,9 +539,23 @@ internal fun resolveReceivedSchedule(
         minute = remoteMinute,
         repeatDaysMask = remoteRepeatDaysMask,
         snoozeMinutes = remoteSnoozeMinutes,
+        // 처음 받는 알람의 기본값 — 보낸 사람이 정하는 값이 아니라 앱 기본이다.
+        snoozeEnabled = true,
+        holidayOff = false,
         keptFireAtMillis = null,
     )
 }
+
+/** 두 행의 '수신자가 고칠 수 있는 스케줄' 이 같은지 — 다르면 반영 직전에 다시 계산한다. */
+internal fun sameReceivedSchedule(a: AlarmEntity, b: AlarmEntity?): Boolean =
+    b != null &&
+        a.hour == b.hour &&
+        a.minute == b.minute &&
+        a.repeatDaysMask == b.repeatDaysMask &&
+        a.snoozeMinutes == b.snoozeMinutes &&
+        a.snoozeEnabled == b.snoozeEnabled &&
+        a.holidayOff == b.holidayOff &&
+        a.fireAtMillis == b.fireAtMillis
 
 internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive: Boolean?): Boolean {
     val remoteEnabled = remoteIsActive != false

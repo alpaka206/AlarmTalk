@@ -233,6 +233,28 @@ class RemoteAlarmPullSyncServiceTest {
         assertTrue("울리는 행의 fireAt 은 과거다", ringing.fireAtMillis < 2_000L)
     }
 
+    @Test
+    fun receivedAlarmKeepsSnoozeAndHolidayToggles() {
+        // 값(분)만 지키고 토글을 놓치면 다음 pull 이 스누즈를 다시 켜고 공휴일에도 울린다.
+        val edited = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(snoozeEnabled = false, holidayOff = true)
+        val resolved = resolveReceivedSchedule(edited, 6, 0, 0, 5)
+        assertFalse("수신자가 끈 스누즈는 켜지지 않는다", resolved.snoozeEnabled)
+        assertTrue("수신자가 켠 공휴일 건너뛰기는 유지된다", resolved.holidayOff)
+    }
+
+    @Test
+    fun scheduleComparisonDetectsAnEditMadeDuringPull()  {
+        // pull 이 음성을 받는 사이 수신자가 시각을 고치면, 반영 직전 비교가 그걸 알아채야
+        // 옛 스냅샷으로 덮어쓰지 않는다(Codex #675 P1).
+        val before = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+        assertTrue(sameReceivedSchedule(before, before))
+        assertFalse(sameReceivedSchedule(before.copy(hour = 5), before))
+        assertFalse(sameReceivedSchedule(before.copy(snoozeEnabled = false), before))
+        assertFalse(sameReceivedSchedule(before.copy(holidayOff = true), before))
+        assertFalse("비교 대상이 없으면 같다고 볼 수 없다", sameReceivedSchedule(before, null))
+    }
+
     private fun alarm(
         enabled: Boolean,
         origin: String,
