@@ -498,10 +498,39 @@ class AlarmRepository(
         // 복원과 직렬화한다 — 이유는 [restoreMutex] 주석 참고.
         restoreMutex.withLock {
             val detached = detachAlarmsOnSignOutLocked(signedOutUserId)
-            runCatching { clearSessionInsideLock() }
-                .onFailure { error -> Log.w(TAG, "Failed to clear session inside restore lock", error) }
+            val cleared = runCatching { clearSessionInsideLock() }
+                .onFailure { error -> AlarmTalkLog.reportError("Failed to clear session inside restore lock", error) }
+                .isSuccess
+            // 세션 정리가 실패하면 저장소는 아직 '로그인됨' 이다. 락을 그대로 놓으면 대기하던
+            // 정합성 워커가 소유자 일치를 보고 **방금 취소한 예약을 전부 되살린다** — 화면은
+            // 로그인 화면인데 알람은 울리는, 끌 수 없는 상태가 된다(Codex #666 P2).
+            //
+            // 그래서 게이트를 **락 안에서** 세운다. prefs 에 남기지 않고 메모리에 두는 것이
+            // 핵심이다: 지금 실패하고 있는 것이 바로 그 prefs 쓰기라 거기에 기대면 같이 실패하고,
+            // 무엇보다 프로세스가 죽으면 저장소는 여전히 '로그인됨' 이므로 다음 실행에서는
+            // 알람이 되살아나는 게 **맞다**(사용자는 실제로 로그아웃되지 않았다). 이 게이트가
+            // 막아야 하는 건 딱 그 프로세스 안에서 락을 기다리던 작업뿐이다.
+            signOutWithoutSessionClearOwner = signedOutUserId.takeIf { !cleared }
             detached
         }
+
+    /**
+     * 세션 정리가 실패한 채 로그아웃이 끝난 계정(없으면 null). **프로세스 수명**이다 —
+     * 이유는 [detachAlarmsOnSignOut] 참고.
+     *
+     * 다시 로그인하면 [clearSignOutWithoutSessionClearGate] 로 내린다. 안 내리면 그 계정은
+     * 다시 로그인해도 알람이 안 울린다 — 굳은 게이트는 되살아나는 것만큼 나쁘다.
+     */
+    @Volatile
+    private var signOutWithoutSessionClearOwner: String? = null
+
+    /** 로그인 확정 시 호출. 그 계정에 걸려 있던 게이트를 내린다. */
+    fun clearSignOutWithoutSessionClearGate(signedInUserId: String?) {
+        val gated = signOutWithoutSessionClearOwner ?: return
+        if (signedInUserId.isNullOrBlank() || signedInUserId == gated) {
+            signOutWithoutSessionClearOwner = null
+        }
+    }
 
     private suspend fun detachAlarmsOnSignOutLocked(signedOutUserId: String?): Int {
         val all = alarmDao.getAllAlarms()
@@ -1063,6 +1092,13 @@ class AlarmRepository(
             //
             // 복원 대상이 없으면(명시적 로그아웃·이 빌드 이전 상태) 소유자 있는 행은 건드리지
             // 않는다 — 못 가릴 때는 로그인 한 번 시키는 쪽이 안전하다.
+            // 세션 정리가 실패한 채 끝난 로그아웃의 계정은 되살리지 않는다. 저장소는 아직
+            // '로그인됨' 이라 아래 소유자 게이트를 통과해 버리기 때문이다 — 그러면 로그인
+            // 화면 뒤에서 끌 수 없는 알람이 울린다([detachAlarmsOnSignOut], Codex #666 P2).
+            if (alarm.ownerUserId != null && alarm.ownerUserId == signOutWithoutSessionClearOwner) {
+                alarmScheduler.cancel(alarm.id)
+                return@forEach
+            }
             val restorableOwner = currentUser ?: sessionExpiredOwnerUserIdProvider()
             if (alarm.ownerUserId != null && alarm.ownerUserId != restorableOwner) {
                 // 건너뛰는 데 그치면 앞 세션이 잡아 둔 OS 예약이 살아남아 이 계정 폰에서 울린다.

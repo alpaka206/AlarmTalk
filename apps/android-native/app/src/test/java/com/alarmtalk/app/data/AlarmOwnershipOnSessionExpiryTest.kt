@@ -485,6 +485,42 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /**
+     * 회귀 방지: **세션 정리가 실패해도 뒤이은 복원이 떼어낸 알람을 되살리지 않는다**
+     * (Codex #666 P2).
+     *
+     * 정리가 실패하면 저장소는 아직 '로그인됨' 이라 소유자 게이트를 그대로 통과한다. 락을
+     * 놓는 순간 대기하던 정합성 워커가 방금 취소한 예약을 전부 되살리는데, 화면은 이미 로그인
+     * 화면이라 **목록에서 끌 수도 없는 알람이 울린다.**
+     *
+     * 여기서는 세션이 안 지워진 상태(`currentUser` 를 그대로 둔다)를 그대로 재현한다 —
+     * 게이트가 없으면 아래 복원이 1을 돌려주고 예약이 살아나 테스트가 깨진다.
+     */
+    @Test
+    fun failedSessionClearStillBlocksTheFollowingRestore() = runBlocking {
+        seedLegacyAlarm(owner = "account-A")
+        currentUser = "account-A"
+        repository.reschedulePendingAlarms()
+        assertNotNull("전제: 예약이 잡혀 있다", shadowAlarmManager.peekNextScheduledAlarm())
+
+        // 세션 정리가 실패한다 — currentUser 는 'account-A' 로 남는다(저장소가 안 비워졌다).
+        repository.detachAlarmsOnSignOut("account-A") {
+            throw IllegalStateException("encrypted prefs write failed")
+        }
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("세션이 안 지워졌어도 떼어낸 알람을 되살리면 안 된다", 0, scheduled)
+        assertNull(
+            "로그인 화면 뒤에서 끌 수 없는 알람이 울리게 된다",
+            shadowAlarmManager.peekNextScheduledAlarm(),
+        )
+
+        // 같은 계정이 다시 로그인하면 게이트를 내려 정상 복원된다 — 굳으면 영영 안 울린다.
+        repository.clearSignOutWithoutSessionClearGate("account-A")
+        assertEquals("재로그인하면 되살아나야 한다", 1, repository.reschedulePendingAlarms())
+    }
+
+    /**
      * 회귀 방지: 세션 정리 람다가 던져도 로그아웃의 예약 해제는 그대로 유효하다.
      *
      * 저장소 쓰기 실패(디스크 가득참 등)로 예약이 살아남으면, 사용자는 로그인 화면 뒤에서
