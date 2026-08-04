@@ -155,11 +155,9 @@ internal fun PermissionGateDialog(
         title = title,
         message = null,
         onDismiss = onDismiss,
+        // 취소 액션을 두지 않는다 — 바깥을 눌러도 뒤로 가도 닫히지 않는 게이트라, 취소가
+        // 실제로는 아무 일도 하지 않으면서 '빠져나갈 수 있다' 고 잘못 알린다.
         actions = listOf(
-            IosAlertAction(
-                label = stringResource(R.string.social_cancel_button),
-                onClick = onDismiss,
-            ),
             IosAlertAction(
                 label = stringResource(R.string.common_permission_gate_allow_action),
                 emphasized = true,
