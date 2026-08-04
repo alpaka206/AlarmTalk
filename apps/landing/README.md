@@ -69,11 +69,14 @@ app/
   globals.css             Tailwind v4 + 디자인 토큰(@theme)
   robots.ts               /robots.txt
   sitemap.ts              /sitemap.xml (로케일별 URL)
-  icon.png                파비콘
+  icon.png                파비콘(512, docs/brand/app-icon-master.png 에서 생성)
+  opengraph-image.png     OG 이미지(1200x630). 로케일별로 다르지 않아 로케일 밖에 둔다 —
+                          [locale]/ 아래의 동적 생성 라우트는 output: export 와 맞지
+                          않아(generateStaticParams 요구) 정적 파일로 바꿨다.
+  opengraph-image.alt.txt OG 이미지 대체 텍스트
   [locale]/
     layout.tsx            메타데이터·viewport·폰트·html lang
     page.tsx              홈: 섹션 조립 + JSON-LD(SoftwareApplication, FAQPage)
-    opengraph-image.tsx   OG 이미지 빌드 시 정적 생성
     privacy/page.tsx      개인정보처리방침 (docs/legal 마크다운 렌더)
     terms/page.tsx        이용약관 (docs/legal 마크다운 렌더)
     company/page.tsx      회사 소개

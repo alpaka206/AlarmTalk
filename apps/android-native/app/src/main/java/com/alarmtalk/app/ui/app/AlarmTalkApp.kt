@@ -993,6 +993,9 @@ internal fun AlarmTalkApp(
               // 판정 규칙은 stockPrefetchStalled 에 있다(회귀 테스트로 고정 — 갇히는 조합을
               // 두 번 놓쳤다).
               stalled = stockPrefetchStalled(prefetchInfo?.state, prefetchInfo?.runAttemptCount ?: 0),
+              // 아직 끝나지 않은 워커일 때만 '백그라운드에서 계속 받기' 라고 말한다.
+              // 상태를 모르면(null) 계속된다고 단정하지 않는다 — 모르면 약속하지 않는다.
+              downloadContinuing = prefetchInfo?.state?.isFinished == false,
               onRetry = { com.alarmtalk.app.sync.StockClipPrefetchWorker.enqueue(context) },
               onSkip = viewModel::skipVoiceSetup,
           )
@@ -1074,9 +1077,17 @@ internal fun AlarmTalkApp(
                                   viewModel.setAlarmEnabled(id, enabled)
                               }
                           },
-                          onEditAlarm = { navController.navigate(AppRoute.alarmEdit(it.id)) },
+                          // 권한이 하나라도 빠지면 편집기에 들어가지 않는다 — 들어가 봐야 저장이 막힌다.
+                          onEditAlarm = {
+                              if (permissions.alarmReady) {
+                                  navController.navigate(AppRoute.alarmEdit(it.id))
+                              } else {
+                                  requestFirstMissingAlarmPermission()
+                              }
+                          },
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
+                          onRequestAlarmPermission = ::requestPermission,
                       )
                   }
               }
@@ -1127,6 +1138,7 @@ internal fun AlarmTalkApp(
                       onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                       onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                      onMissingAlarmPermission = ::requestFirstMissingAlarmPermission,
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
                               requestFirstMissingAlarmPermission()
@@ -1172,6 +1184,7 @@ internal fun AlarmTalkApp(
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                           onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
                           onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                          onMissingAlarmPermission = ::requestFirstMissingAlarmPermission,
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
                                   requestFirstMissingAlarmPermission()

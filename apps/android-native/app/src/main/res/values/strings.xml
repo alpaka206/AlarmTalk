@@ -37,6 +37,7 @@
     <string name="msg_password_reset_done">비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요.</string>
     <string name="msg_password_reset_failed">비밀번호 재설정에 실패했어요.</string>
     <string name="auth_label_name">닉네임</string>
+    <string name="auth_error_name_too_long">닉네임은 %1$d자 이내로 써 주세요</string>
     <string name="auth_label_password">비밀번호</string>
     <string name="auth_label_verification_code">인증 코드</string>
     <string name="auth_landing_first_time">처음 사용하시나요?</string>
@@ -140,10 +141,10 @@
     <string name="common_permission_exact_alarm_label">정확한 알람</string>
     <string name="common_permission_full_screen_label">전체 화면 알람</string>
     <string name="common_permission_gate_allow_action">허용하기</string>
-    <string name="common_permission_gate_exact_alarm_title">정확한 시간에 울리려면 권한이 필요해요</string>
-    <string name="common_permission_gate_full_screen_title">잠금 화면 알람 권한이 필요해요</string>
+    <string name="common_permission_gate_exact_alarm_title">정확한 알람 권한을 허용해야 알람을 설정할 수 있어요</string>
+    <string name="common_permission_gate_full_screen_title">잠금 화면 알람 권한을 허용해야 알람을 설정할 수 있어요</string>
     <string name="common_permission_gate_mic_title">마이크 권한이 필요해요</string>
-    <string name="common_permission_gate_notifications_title">알림 권한이 필요해요</string>
+    <string name="common_permission_gate_notifications_title">알림 권한을 허용해야 알람을 설정할 수 있어요</string>
     <string name="common_permission_granted">허용됨</string>
     <string name="common_permission_mic_label">마이크</string>
     <string name="common_permission_notifications_label">알림</string>
@@ -188,7 +189,6 @@
     <string name="editor_error_weather_location_required">날씨가 들어간 문구는 도시를 입력해 주세요.</string>
     <string name="editor_existing_voice_cache_used">기존 음성 캐시를 사용했어요.</string>
     <string name="editor_family_alarm_set">상대 알람을 설정했어요.</string>
-    <string name="editor_generated_voice_saved_local">생성한 음성을 로컬에 저장했어요.</string>
     <string name="editor_holiday_off_subtitle">대체 공휴일 및 임시 공휴일 포함</string>
     <string name="editor_holiday_off_title">공휴일에는 끄기</string>
     <string name="editor_holiday_country_label">공휴일 달력: %1$s</string>
@@ -225,6 +225,7 @@
     <string name="editor_selected_ringtone">선택한 알람</string>
     <string name="editor_snooze_custom">직접 설정</string>
     <string name="editor_snooze_custom_dialog_title">간격 직접 설정</string>
+    <string name="editor_snooze_custom_range_error">1분에서 60분 사이로 정해 주세요.</string>
     <string name="editor_snooze_custom_value">직접 설정 · %1$d분</string>
     <string name="editor_snooze_interval">간격</string>
     <string name="editor_snooze_repeat">반복</string>
@@ -253,8 +254,13 @@
     <string name="editor_volume">볼륨</string>
     <string name="editorp_fortune_birthdate_placeholder">탭하여 생년월일 선택</string>
     <string name="editorp_fortune_birthdate_section">생년월일</string>
+    <string name="editorp_fortune_birthdate_year">연도</string>
+    <string name="editorp_fortune_birthdate_month">월</string>
+    <string name="editorp_fortune_birthdate_day">일</string>
+    <string name="editorp_fortune_unit_year">년</string>
+    <string name="editorp_fortune_unit_month">월</string>
+    <string name="editorp_fortune_unit_day">일</string>
     <string name="editorp_fortune_birthtime_section">태어난 시간</string>
-    <string name="editorp_fortune_birthtime_subtitle">정확히 모르면 가까운 시간대를 골라도 돼요.</string>
     <string name="editorp_fortune_birthtime_placeholder">선택</string>
     <string name="editorp_fortune_date_confirm">확인</string>
     <string name="editorp_fortune_date_title">생년월일</string>
@@ -280,9 +286,7 @@
     <string name="hs_delete_account_title">정말 탈퇴할까요?</string>
     <string name="hs_delete_account_body">신청 후 30일이 지나면 알람, 목소리 등 모든 데이터가 영구 삭제돼요.\n그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요.</string>
     <string name="hs_delete_account_confirm">탈퇴</string>
-    <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">닉네임 수정</string>
-    <string name="hs_nickname_field_label">닉네임</string>
     <string name="hs_nickname_field_placeholder">예: 규원</string>
     <string name="hs_nickname_save">저장</string>
     <string name="hs_nickname_saving">저장 중</string>
@@ -322,6 +326,9 @@
     <string name="hs_status_no_alarm">알람이 없습니다.</string>
     <string name="hs_status_ring_soon">곧 울려요.</string>
     <string name="hs_status_ring_in">%1$s 후에 울려요.</string>
+    <string name="hs_perm_banner_notifications">알림 권한을 허용하지 않으면 알람 알림이 뜨지 않아요</string>
+    <string name="hs_perm_banner_exact_alarm">정확한 알람 권한을 허용하지 않으면 제때 울리지 않을 수 있어요</string>
+    <string name="hs_perm_banner_full_screen">잠금 화면 알람 권한을 허용하지 않으면 잠금 화면에 뜨지 않아요</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s 목소리</string>
     <string name="hs_weather_city_label">도시</string>
     <string name="hs_weather_city_placeholder">예: 서울</string>
@@ -451,7 +458,7 @@
     <string name="msg_verification_code_six_digits_required">6자리 인증 코드를 입력해 주세요</string>
     <string name="msg_voice_already_deleted">이미 삭제된 목소리예요</string>
     <string name="msg_voice_clone_audio_too_long">목소리를 만들 음성은 2분 이하로 준비해 주세요.</string>
-    <string name="msg_voice_clone_audio_too_short">목소리를 만들 음성은 1분 이상이어야 해요.</string>
+    <string name="msg_voice_clone_audio_too_short">목소리를 만들 음성은 12초 이상이어야 해요.</string>
     <string name="msg_voice_create_failed">목소리를 만들지 못했어요</string>
     <string name="msg_voice_create_login_required">목소리를 만들려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_created_single">\'%1$s\' 목소리를 만들었어요</string>
@@ -624,9 +631,8 @@
     <string name="voicesr_edit_name">이름 수정</string>
     <string name="voicesr_more">더보기</string>
     <string name="voicesr_pause">일시정지</string>
-    <string name="voicesr_prerender_downloading">알람 음성 다운로드 중</string>
+    <string name="voicesr_prerender_progress">알람 음성 준비 중 %1$d%%</string>
     <string name="voicesr_prerender_failed">생성에 실패했어요</string>
-    <string name="voicesr_prerender_preparing">알람 음성 준비 중 %1$d/%2$d</string>
     <string name="voicesr_prerender_retry">다시 시도</string>
     <string name="voicesr_preview">미리듣기</string>
     <string name="voicesr_relationship_custom_label">관계 직접 입력</string>
@@ -816,7 +822,6 @@
     <string name="r3app_update_required_button">업데이트하기</string>
     <string name="r3app_update_downloaded">업데이트가 다운로드되었어요. 앱을 재시작해 적용하세요.</string>
     <string name="r3app_update_restart">재시작</string>
-    <string name="r3app_perm_banner_alarm_wont_ring">권한이 꺼져 있어 알람이 울리지 않을 수 있어요</string>
     <string name="r3app_google_signin_failed">Google 로그인에 실패했어요</string>
     <string name="r3app_google_signin_no_info">Google 로그인 정보를 받지 못했어요. 다시 시도해 주세요.</string>
     <string name="r3app_plan_gate_confirm">이용권 보기</string>
@@ -868,10 +873,10 @@
     <string name="editor_voice_switch_drops_text_message">기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>
     <string name="editor_voice_switch_drops_text_confirm">바꾸기</string>
     <string name="onb_voice_download_progress">%1$d%%</string>
-    <string name="onb_voice_download_stay">처음 한 번만 하면 돼요.</string>
     <string name="onb_voice_download_failed">잠시 뒤 다시 시도해 주세요.</string>
     <string name="onb_voice_download_retry">다시 시도</string>
     <string name="onb_voice_download_later">나중에 받기</string>
+    <string name="onb_voice_download_background">백그라운드에서 계속 받기</string>
     <string name="voicesr_share_voice_desc">같은 플랜 가족이 이 목소리로 알람을 만들 수 있어요.</string>
     <string name="voicesr_share_voice_locked">가족·커플 플랜에서 공유할 수 있어요.</string>
     <string name="voicesr_preview_action">듣기</string>
@@ -911,10 +916,12 @@
 1. 알람톡 설치 https://play.google.com/store/apps/details?id=com.alarmtalk.app
 2. 가입하고 로그인
 3. 더보기 → 코드 등록에 위 코드 입력</string>
-    <string name="welcome_promo_title">받은 코드가 있다면 지금 등록해요</string>
-    <string name="welcome_promo_body">코드가 없어도 기본 기능은 무료로 사용할 수 있어요. 나중에 등록하려면 더보기 → 코드 등록에서 언제든 가능해요.</string>
+    <string name="welcome_promo_title">코드가 있으신가요?</string>
+    <string name="welcome_promo_body_free">코드가 없어도 기본 기능은 무료로 쓸 수 있어요.</string>
+    <string name="welcome_promo_body_later">나중에 더보기의 코드 등록에서 언제든 넣을 수 있어요.</string>
+    <string name="welcome_promo_highlight_free">무료</string>
+    <string name="welcome_promo_highlight_where">더보기의 코드 등록</string>
     <string name="welcome_promo_where">코드 받으러 가기</string>
-    <string name="welcome_promo_skip">건너뛰기</string>
     <string name="welcome_promo_instagram_hint">인스타그램 @alarmtalk.app 으로 문의 주시면 안내해 드려요.</string>
     <string name="auth_consent_title_updated">약관이 업데이트되었어요</string>
     <string name="auth_consent_subtitle_updated">내용이 바뀐 항목만 아래에 모았어요. 이미 동의하신 나머지는 그대로 유지돼요.</string>

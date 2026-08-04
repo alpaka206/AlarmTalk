@@ -621,10 +621,13 @@ internal fun VoiceProfileManagementPanel(
                     // 저장된 것처럼 보인다.
                     selectedAudio = null
                     recordingElapsedMillis = 0L
-                    // 1분 미만 안내는 마이크 카드의 대기 문구("1분 이상 녹음해 주세요")와
-                    // 중복이라 대사 밑에 또 띄우지 않는다. 길이 확인 실패 등 다른 원인만 알린다.
-                    val tooShort = duration != null && duration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS
-                    localMessage = if (tooShort) null else error
+                    // 짧아서 버려졌으면 그렇다고 말한다. 예전에는 마이크 카드 대기 문구가
+                    // "1분 이상 녹음해 주세요" 라서 여기서 또 띄우면 중복이었지만, 하한을 12초로
+                    // 내리면서 그 문구는 "길게 말할수록 더 비슷해져요 · 최대 2분"(최소 길이를
+                    // 일부러 말하지 않는다)으로 바뀌었다. 억제만 남으니 하한 미달 녹음이 안내도
+                    // 없이 사라졌다 — 위에서 오디오와 타이머를 되돌리므로 화면에는 아무 일도
+                    // 일어나지 않은 것처럼 보인다.
+                    localMessage = error
                 }
             }.onFailure { error ->
                 isRecording = false
@@ -846,6 +849,9 @@ internal fun VoiceProfileManagementPanel(
         mutableStateOf<Map<String, com.alarmtalk.app.network.VoicePrerenderStatusResponse>>(emptyMap())
     }
     var cloneLocalReadyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    // 다운로드 진행(받은 수 to 전체). 클립을 하나 받을 때마다 갱신해 "n/전체" 로 보여준다 —
+    // 21개를 1분 넘게 받는 동안 '다운로드 중' 만 떠 있으면 멈춘 것과 구분되지 않는다.
+    var cloneDownloadProgress by remember { mutableStateOf<Map<String, Pair<Int, Int>>>(emptyMap()) }
     var prerenderRetryBusyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var speechStyleRetryBusyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     // 실패 후 [다시 시도] 수락 시 증가 — 멈춘 폴링 루프를 재시작한다.
@@ -881,6 +887,17 @@ internal fun VoiceProfileManagementPanel(
     // true = 로컬 완전 다운로드 완료.
     suspend fun downloadCloneBuckets(profileId: String): Boolean = withContext(Dispatchers.IO) {
         var allCached = true
+        // 전체 개수를 먼저 세어 두고, 받을 때마다 캐시된 수를 올린다.
+        val allClips = CloneAlarmBucketCategories.flatMap { category ->
+            val clipLanguage = cloneClipLanguageFor(profileId, category)
+            stockClips.filter {
+                it.voiceProfileId == profileId && it.category == category &&
+                    (it.language ?: "ko") == clipLanguage
+            }
+        }
+        val total = allClips.size
+        var done = allClips.count { audioStore.getCachedAudio("stock_${it.messageId}") != null }
+        if (total > 0) cloneDownloadProgress = cloneDownloadProgress + (profileId to (done to total))
         CloneAlarmBucketCategories.forEach { category ->
             val clipLanguage = cloneClipLanguageFor(profileId, category)
             stockClips
@@ -901,6 +918,14 @@ internal fun VoiceProfileManagementPanel(
                                 cacheKey = cacheKey,
                                 messageId = clip.messageId,
                             )
+                        }.onSuccess {
+                            // 한 개 받을 때마다 알린다 — 21개를 1분 넘게 받는 동안 진행이
+                            // 안 보이면 사용자는 멈춘 것으로 읽는다.
+                            done += 1
+                            if (total > 0) {
+                                cloneDownloadProgress =
+                                    cloneDownloadProgress + (profileId to (done to total))
+                            }
                         }.onFailure { error ->
                             if (error is kotlin.coroutines.cancellation.CancellationException) throw error
                             allCached = false
@@ -1268,10 +1293,36 @@ internal fun VoiceProfileManagementPanel(
                             profile.id in cloneLocalReadyIds -> null
                             prerenderStatus == null -> null
                             prerenderStatus.status == "failed" -> CloneVoiceReadiness.Failed
-                            prerenderStatus.status == "done" -> CloneVoiceReadiness.Downloading
-                            prerenderStatus.status == "pending" && prerenderStatus.total > 0 ->
-                                CloneVoiceReadiness.Preparing(prerenderStatus.generated, prerenderStatus.total)
-                            else -> null
+                            // **진행 중인 상태에서만** 진행률을 만든다. 서버는 `none`(큐 행이
+                            // 아직 없거나 지워짐)도 돌려주는데, 폴링 루프는 그걸 pending 으로
+                            // 치지 않아 곧바로 멈춘다 — catch-all 로 받으면 "준비 중 0%" 가
+                            // 영영 남는다(Codex #673 P2). 모르는 값은 표시하지 않는다.
+                            prerenderStatus.status != "pending" && prerenderStatus.status != "done" -> null
+                            // 아직 전체 개수를 모르는 pending 은 표시할 게 없다.
+                            prerenderStatus.status == "pending" && prerenderStatus.total <= 0 -> null
+                            else -> {
+                                // 생성과 다운로드를 **하나의 진행률**로 잇는다(0~50 생성,
+                                // 50~100 다운로드). 단계마다 n/21 을 따로 세면 생성이 끝나는
+                                // 순간 100% 에서 0% 로 되돌아가 후퇴한 것처럼 보인다.
+                                val serverDone = prerenderStatus.status == "done"
+                                val total = prerenderStatus.total
+                                val generatedPart = when {
+                                    serverDone -> 50
+                                    total > 0 ->
+                                        (prerenderStatus.generated.coerceIn(0, total) * 50) / total
+                                    else -> 0
+                                }
+                                val (downloaded, downloadTotal) =
+                                    cloneDownloadProgress[profile.id] ?: (0 to 0)
+                                val downloadPart = if (serverDone && downloadTotal > 0) {
+                                    (downloaded.coerceIn(0, downloadTotal) * 50) / downloadTotal
+                                } else {
+                                    0
+                                }
+                                CloneVoiceReadiness.Progress(
+                                    (generatedPart + downloadPart).coerceIn(0, 100),
+                                )
+                            }
                         }
                         VoiceProfileRow(
                             profile = profile,
@@ -1343,13 +1394,22 @@ internal fun VoiceProfileManagementPanel(
                 )
             }
         }
-        // 기본 목소리 변경 직후 무료 버킷 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다
-        // (실패해도 편집기 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
-        voicePrefetchProgress?.let { (done, total) ->
-            VoiceProgressMessage(
-                stringResource(R.string.voices_default_voice_prefetching, done, total),
-            )
-        }
+        // 기본 목소리 클립 프리페치 진행 — 완료/실패 시 자동으로 사라진다(실패해도 편집기
+        // 온디맨드 다운로드가 폴백하므로 별도 안내는 하지 않는다).
+        //
+        // 온보딩의 '백그라운드에서 계속 받기' 로 화면을 닫아도 워커는 계속 도는데, 그때
+        // 진행을 볼 곳이 여기뿐이다. 클론 목소리와 **같은 퍼센트 문구**를 쓴다 — 사용자에겐
+        // 둘 다 "알람 음성이 준비되는 중" 한 가지다.
+        voicePrefetchProgress
+            ?.takeIf { (done, total) -> total > 0 && done < total }
+            ?.let { (done, total) ->
+                VoiceProgressMessage(
+                    stringResource(
+                        R.string.voicesr_prerender_progress,
+                        (done.coerceIn(0, total) * 100) / total,
+                    ),
+                )
+            }
     }
 
     if (voiceLimitNoticeOpen) {
@@ -1402,8 +1462,11 @@ internal fun VoiceProfileManagementPanel(
         }
         val resolvedProfileName = profileName.trim()
         val nameRequiredError = createSubmitAttempted && resolvedProfileName.isBlank()
-        // 1분 미만이면 "다음" 으로 넘어가지 못하게 막는다. 녹음은 selectedAudio 길이,
-        // 파일은 실제 업로드되는 crop 구간 길이로 판정(백엔드 MIN_UPLOAD_DURATION_MS 와 동일 기준).
+        // 하한(12초) 미만이면 "다음" 으로 넘어가지 못하게 막는다. 녹음은 selectedAudio 길이,
+        // 파일은 실제 업로드되는 crop 구간 길이로 판정한다. 짝이 되는 서버 게이트는 이 화면이
+        // 부르는 POST /voice/clone 의 **MIN_CLONE_DURATION_MS**(voice-profile.ts, 12초)다.
+        // voice-upload.ts 의 MIN_UPLOAD_DURATION_MS(60초)와 헷갈리지 말 것 — 그쪽은 가족 알람
+        // 음성 메시지를 올리는 POST /voice/upload 전용이고 값도 다르다.
         val canSubmitRecord = inputMode == VoiceCaptureMode.Record &&
             (selectedAudio?.durationMillis ?: 0L) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
@@ -2035,64 +2098,31 @@ internal fun VoiceProfileManagementPanel(
     // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 — 나가면 임시 목소리(초안)가 삭제됨을 경고.
     if (draftExitWarningOpen) {
         val exitDraftId = (confirmNewVoice ?: pendingVoiceDraft)?.id
-        Dialog(
-            onDismissRequest = { draftExitWarningOpen = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = WakerDialogShape,
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp,
-                shadowElevation = 18.dp,
-                border = wakerCardBorder(),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = stringResource(R.string.voices_draft_exit_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        MutedText(stringResource(R.string.voices_draft_exit_body))
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TextButton(
-                            onClick = {
-                                draftExitWarningOpen = false
-                                // 명시적 '삭제' 버튼과 동일한 draft 삭제 경로를 태운 뒤 플로우를 닫는다.
-                                exitDraftId?.let(onDeleteVoiceDraft)
-                                closeCreateDialog()
-                            },
-                            enabled = !voiceProfileBusy,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.voices_draft_exit_leave),
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                        Button(
-                            onClick = { draftExitWarningOpen = false },
-                            modifier = Modifier.weight(1f),
-                            shape = WakerButtonShape,
-                        ) {
-                            Text(stringResource(R.string.voices_draft_exit_stay))
-                        }
-                    }
-                }
-            }
-        }
+        // 확인형 모달은 전부 공용 알럿으로. 나가면 초안이 지워지므로 '나가기' 는 destructive,
+        // 머무르기가 기본(강조)이다 — 되돌릴 수 없는 쪽이 기본이 되면 안 된다.
+        IosAlertDialog(
+            title = stringResource(R.string.voices_draft_exit_title),
+            message = stringResource(R.string.voices_draft_exit_body),
+            onDismiss = { draftExitWarningOpen = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.voices_draft_exit_leave),
+                    destructive = true,
+                    enabled = !voiceProfileBusy,
+                    onClick = {
+                        draftExitWarningOpen = false
+                        // 명시적 '삭제' 버튼과 동일한 draft 삭제 경로를 태운 뒤 플로우를 닫는다.
+                        exitDraftId?.let(onDeleteVoiceDraft)
+                        closeCreateDialog()
+                    },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.voices_draft_exit_stay),
+                    emphasized = true,
+                    onClick = { draftExitWarningOpen = false },
+                ),
+            ),
+        )
     }
 
     renameTarget?.let { profile ->
@@ -2103,7 +2133,7 @@ internal fun VoiceProfileManagementPanel(
             description = stringResource(R.string.voices_edit_name_desc),
             name = renameName,
             nameError = renameNameError,
-            onNameChange = { renameName = it.take(50) },
+            onNameChange = { renameName = sanitizeDisplayName(it, maxLength = VoiceNameMaxLength) },
             onDismiss = { renameTarget = null },
             onConfirm = {
                 renameSubmitAttempted = true

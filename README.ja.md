@@ -29,7 +29,7 @@ iOS アプリはありません。SwiftUI クライアントとそのビルド�
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (決定論的 TTS キャッシュ) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, 7日) · メール認証コード · Google ID トークン |
+| Auth | JWT (HS256, 90日・起動ごとに更新) · メール認証コード · Google ID トークン |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## リポジトリ構成

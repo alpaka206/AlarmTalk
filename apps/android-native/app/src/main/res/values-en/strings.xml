@@ -35,6 +35,7 @@
     <string name="msg_password_reset_done">Password changed. Sign in with your new password.</string>
     <string name="msg_password_reset_failed">Couldn\'t reset your password.</string>
     <string name="auth_label_name">Nickname</string>
+    <string name="auth_error_name_too_long">Please keep the nickname within %1$d characters</string>
     <string name="auth_label_password">Password</string>
     <string name="auth_label_verification_code">Verification code</string>
     <string name="auth_landing_first_time">First time here?</string>
@@ -138,10 +139,10 @@
     <string name="common_permission_exact_alarm_label">Exact alarms</string>
     <string name="common_permission_full_screen_label">Full-screen alarms</string>
     <string name="common_permission_gate_allow_action">Allow</string>
-    <string name="common_permission_gate_exact_alarm_title">Permission needed to ring on time</string>
-    <string name="common_permission_gate_full_screen_title">Lock screen alarm permission needed</string>
+    <string name="common_permission_gate_exact_alarm_title">Allow exact alarm permission to set alarms</string>
+    <string name="common_permission_gate_full_screen_title">Allow lock screen permission to set alarms</string>
     <string name="common_permission_gate_mic_title">Microphone permission needed</string>
-    <string name="common_permission_gate_notifications_title">Notification permission needed</string>
+    <string name="common_permission_gate_notifications_title">Allow notification permission to set alarms</string>
     <string name="common_permission_granted">Granted</string>
     <string name="common_permission_mic_label">Microphone</string>
     <string name="common_permission_notifications_label">Notifications</string>
@@ -186,7 +187,6 @@
     <string name="editor_error_weather_location_required">For phrases with weather, please enter a city.</string>
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>
     <string name="editor_family_alarm_set">The alarm for the other person is set.</string>
-    <string name="editor_generated_voice_saved_local">The generated voice was saved locally.</string>
     <string name="editor_holiday_off_subtitle">Includes substitute and temporary holidays</string>
     <string name="editor_holiday_off_title">Turn off on holidays</string>
     <string name="editor_holiday_country_label">Holiday calendar: %1$s</string>
@@ -223,6 +223,7 @@
     <string name="editor_selected_ringtone">Selected alarm</string>
     <string name="editor_snooze_custom">Custom</string>
     <string name="editor_snooze_custom_dialog_title">Set custom interval</string>
+    <string name="editor_snooze_custom_range_error">Choose between 1 and 60 minutes.</string>
     <string name="editor_snooze_custom_value">Custom · %1$d min</string>
     <string name="editor_snooze_interval">Interval</string>
     <string name="editor_snooze_repeat">Repeat</string>
@@ -251,8 +252,13 @@
     <string name="editor_volume">Volume</string>
     <string name="editorp_fortune_birthdate_placeholder">Tap to pick your date of birth</string>
     <string name="editorp_fortune_birthdate_section">Date of birth</string>
+    <string name="editorp_fortune_birthdate_year">Year</string>
+    <string name="editorp_fortune_birthdate_month">Month</string>
+    <string name="editorp_fortune_birthdate_day">Day</string>
+    <string name="editorp_fortune_unit_year"></string>
+    <string name="editorp_fortune_unit_month"></string>
+    <string name="editorp_fortune_unit_day"></string>
     <string name="editorp_fortune_birthtime_section">Time of birth</string>
-    <string name="editorp_fortune_birthtime_subtitle">If you\'re not sure, just pick the closest time.</string>
     <string name="editorp_fortune_birthtime_placeholder">Select</string>
     <string name="editorp_fortune_date_confirm">OK</string>
     <string name="editorp_fortune_date_title">Date of birth</string>
@@ -278,9 +284,7 @@
     <string name="hs_delete_account_title">Are you sure you want to delete your account?</string>
     <string name="hs_delete_account_body">30 days after you request it, all your data—including alarms and voices—is permanently deleted.\nYou can cancel and restore it by signing back in before then.</string>
     <string name="hs_delete_account_confirm">Delete</string>
-    <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">Edit nickname</string>
-    <string name="hs_nickname_field_label">Nickname</string>
     <string name="hs_nickname_field_placeholder">e.g. Gyuwon</string>
     <string name="hs_nickname_save">Save</string>
     <string name="hs_nickname_saving">Saving</string>
@@ -320,6 +324,9 @@
     <string name="hs_status_no_alarm">No alarms yet.</string>
     <string name="hs_status_ring_soon">Ringing soon.</string>
     <string name="hs_status_ring_in">Rings in %1$s.</string>
+    <string name="hs_perm_banner_notifications">Without notification permission, alarm notifications will not appear</string>
+    <string name="hs_perm_banner_exact_alarm">Without exact alarm permission, alarms may not ring on time</string>
+    <string name="hs_perm_banner_full_screen">Without lock screen permission, alarms will not appear on the lock screen</string>
     <string name="hs_alarm_row_date_voice">%1$s · %2$s</string>
     <string name="hs_weather_city_label">City</string>
     <string name="hs_weather_city_placeholder">e.g. Seoul</string>
@@ -440,7 +447,7 @@
     <string name="msg_verification_code_six_digits_required">Please enter the 6-digit verification code.</string>
     <string name="msg_voice_already_deleted">This voice has already been deleted.</string>
     <string name="msg_voice_clone_audio_too_long">Please keep the audio for creating a voice to 2 min or less.</string>
-    <string name="msg_voice_clone_audio_too_short">The audio for creating a voice needs to be at least 1 min long.</string>
+    <string name="msg_voice_clone_audio_too_short">The audio for creating a voice needs to be at least 12 seconds long.</string>
     <string name="msg_voice_create_failed">Couldn\'t create the voice.</string>
     <string name="msg_voice_create_login_required">Please log in first to create a voice.</string>
     <string name="msg_voice_created_single">The \'%1$s\' voice has been created.</string>
@@ -612,9 +619,8 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voicesr_edit_name">Edit name</string>
     <string name="voicesr_more">More</string>
     <string name="voicesr_pause">Pause</string>
-    <string name="voicesr_prerender_downloading">Downloading alarm voice</string>
+    <string name="voicesr_prerender_progress">Preparing alarm voice %1$d%%</string>
     <string name="voicesr_prerender_failed">Generation failed</string>
-    <string name="voicesr_prerender_preparing">Preparing alarm voice %1$d/%2$d</string>
     <string name="voicesr_prerender_retry">Retry</string>
     <string name="voicesr_preview">Preview</string>
     <string name="voicesr_relationship_custom_label">Enter relationship manually</string>
@@ -788,7 +794,6 @@ for a smooth and secure experience.</string>
     <string name="r3app_update_required_button">Update</string>
     <string name="r3app_update_downloaded">An update has been downloaded. Restart the app to apply it.</string>
     <string name="r3app_update_restart">Restart</string>
-    <string name="r3app_perm_banner_alarm_wont_ring">Alarms may not ring — some permissions are off</string>
     <string name="r3app_google_signin_failed">Google sign-in failed</string>
     <string name="r3app_google_signin_no_info">We couldn\'t get your Google sign-in info. Please try again.</string>
     <string name="r3app_plan_gate_confirm">View plans</string>
@@ -840,10 +845,10 @@ for a smooth and secure experience.</string>
     <string name="editor_voice_switch_drops_text_message">Basic voices only speak ready-made lines, so the message you typed will be removed.</string>
     <string name="editor_voice_switch_drops_text_confirm">Switch</string>
     <string name="onb_voice_download_progress">%1$d%%</string>
-    <string name="onb_voice_download_stay">This only happens once.</string>
     <string name="onb_voice_download_failed">Please try again in a moment.</string>
     <string name="onb_voice_download_retry">Try again</string>
-    <string name="onb_voice_download_later">Do this later</string>
+    <string name="onb_voice_download_later">Download later</string>
+    <string name="onb_voice_download_background">Keep downloading in the background</string>
     <string name="voicesr_share_voice_desc">Family on your plan can build alarms with this voice.</string>
     <string name="voicesr_share_voice_locked">Sharing is available on the family and couple plans.</string>
     <string name="voicesr_preview_action">Play</string>
@@ -883,10 +888,12 @@ Pass code: %1$s
 1. Install AlarmTalk https://play.google.com/store/apps/details?id=com.alarmtalk.app
 2. Sign up and log in
 3. Enter the code under More → Register code</string>
-    <string name="welcome_promo_title">Have a code? Enter it now</string>
-    <string name="welcome_promo_body">Core features stay free even without a code. You can register one later from More → Register code at any time.</string>
+    <string name="welcome_promo_title">Have a code?</string>
+    <string name="welcome_promo_body_free">Core features stay free even without a code.</string>
+    <string name="welcome_promo_body_later">You can enter one later from Register code in More.</string>
+    <string name="welcome_promo_highlight_free">free</string>
+    <string name="welcome_promo_highlight_where">Register code in More</string>
     <string name="welcome_promo_where">Get a code</string>
-    <string name="welcome_promo_skip">Skip</string>
     <string name="welcome_promo_instagram_hint">Message us on Instagram @alarmtalk.app and we will help.</string>
     <string name="auth_consent_title_updated">We have updated our terms</string>
     <string name="auth_consent_subtitle_updated">Only the items that changed are listed below. Everything you already agreed to stays as it is.</string>

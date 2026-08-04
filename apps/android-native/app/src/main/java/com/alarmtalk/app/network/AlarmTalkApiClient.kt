@@ -15,10 +15,14 @@ import retrofit2.converter.gson.GsonConverterFactory
 object AlarmTalkApiClient {
     /**
      * 인증이 만료(401)되었을 때 호출되는 콜백.
-     * 현재는 백엔드 refresh 엔드포인트가 없어 세션을 클리어하고 재로그인을 유도한다.
+     *
+     * [failedToken] 은 그 401 을 받은 요청이 **실제로 보낸** 토큰이다. 호출부는 지금 세션의
+     * 토큰과 다르면 무시해야 한다 — `GET /auth/me` 가 세션을 굴린 직후(rolling refresh),
+     * 옛 토큰으로 이미 날아간 요청이 뒤늦게 401 로 돌아와 **방금 갱신한 세션을 지워 버리는**
+     * 경합이 생긴다(Codex #665 P2).
      */
     interface UnauthorizedHandler {
-        fun onUnauthorized()
+        fun onUnauthorized(failedToken: String?)
 
         /**
          * 데이터 라우트가 403 `CONSENT_REQUIRED` 를 반환했을 때 호출된다(서버 강제 동의 미들웨어).
@@ -116,7 +120,13 @@ object AlarmTalkApiClient {
             if (responseRetryCount(response) >= 1) {
                 return null
             }
-            runCatching { handler.onUnauthorized() }
+            // 401 을 받은 요청이 실제로 보낸 토큰을 함께 넘긴다 — 호출부가 '지금 세션의
+            // 토큰인가' 를 보고 옛 토큰의 뒤늦은 401 을 무시할 수 있게.
+            val failedToken = response.request.header("Authorization")
+                ?.removePrefix("Bearer ")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+            runCatching { handler.onUnauthorized(failedToken) }
             // 새 토큰을 발급할 방법이 없으므로 retry 하지 않는다.
             return null
         }

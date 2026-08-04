@@ -178,13 +178,24 @@ internal fun PermissionPanel(
  * 알람 홈용 슬림 권한 경고 배너. 이미 알람이 있는데 알람 권한이 없어 '조용히 안 울릴' 수 있을 때만
  * 노출한다(큰 PermissionPanel 카드 대신 한 줄). 탭하면 권한 게이트 모달이 열려 바로 요청/설정으로 잇는다.
  */
+
+/**
+ * 알람 홈용 슬림 권한 경고 배너. 탭하면 권한 게이트가 열려 바로 요청/설정으로 잇는다.
+ *
+ * 문구를 밖에서 받는다 — 권한이 없을 때 결과가 두 가지라서다(아예 안 울림 / 늦게 울림).
+ * 껍데기는 하나로 두고 말만 바꾼다.
+ */
 @Composable
-internal fun AlarmPermissionWarningBanner(onClick: () -> Unit) {
+internal fun AlarmPermissionWarningBanner(
+    textResId: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     OutlinedCard(
         onClick = onClick,
         shape = WakerTileShape,
         border = wakerCardBorder(),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -198,7 +209,7 @@ internal fun AlarmPermissionWarningBanner(onClick: () -> Unit) {
                 modifier = Modifier.size(20.dp),
             )
             Text(
-                text = stringResource(R.string.r3app_perm_banner_alarm_wont_ring),
+                text = stringResource(textResId),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
@@ -512,6 +523,9 @@ internal fun AlarmRow(
                     } else {
                         // 켜짐/꺼짐 텍스트는 두지 않는다 — 스위치 위치·색이 곧 상태 표시.
                         AlarmTalkSwitch(
+                            // **저장된 값 그대로.** 권한이 모자라다고 꺼진 것처럼 그리면,
+                            // 탭할 때 '켜기' 가 되어 게이트가 뜨고 **끌 수가 없다**.
+                            // 게다가 권한이 돌아오면 꺼진 줄 알았던 알람이 울린다(Codex #671 P1).
                             checked = alarm.enabled,
                             onCheckedChange = onToggleEnabled,
                         )

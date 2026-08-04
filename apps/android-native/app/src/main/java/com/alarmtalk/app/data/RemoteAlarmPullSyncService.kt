@@ -10,6 +10,8 @@ import com.alarmtalk.app.network.RemoteAlarm
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
 import java.util.UUID
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class RemoteAlarmPullResult(
     val total: Int,
@@ -28,11 +30,25 @@ internal class RemoteAlarmPullSyncService(
     // 무료 잠금/복원이 그 수신자에게만 스코프되게 한다(같은 기기에 다른 계정이 로그인해도 남의
     // 받은 알람을 복원·스케줄하지 못하게 함). 없으면(null) 레거시처럼 미기록으로 둔다.
     private val currentUserIdProvider: () -> String? = { null },
+    /**
+     * 알람 행 + OS 예약을 바꾸는 구간을 **저장소의 다른 경로들과** 직렬화하는 락
+     * (`AlarmRepository.restoreMutex` 를 그대로 받는다).
+     *
+     * [pullMutex] 는 pull 끼리만 막는다. 그런데 15분 주기 정합성 복원이 같은 행을 두고 이
+     * pull 과 겹친다 — 복원이 행을 읽은 뒤 이 pull 이 그 알람을 끄거나 지우거나 시각을 옮기면,
+     * 복원은 자기가 읽어 둔 옛 값으로 예약을 되심는다. 서버가 취소한 알람이 그대로 울린다
+     * (Codex #666 P1).
+     *
+     * **네트워크는 이 락 밖에서 한다.** 목록 조회와 음성 다운로드까지 잡고 있으면 그동안
+     * 스누즈·해제가 통째로 막힌다 — 알람 앱에서 그건 받아들일 수 없다. 그래서 이 파일은
+     * '읽고 고치는 로컬 구간' 만 세 곳(중복 정리 / 반영 / prune) 따로 잡는다.
+     */
+    private val alarmMutationLock: Mutex = Mutex(),
 ) {
     // pull 이 동시에 두 번 돌면(FCM 수신 + 주기 sync 등) 둘 다 '기존 행 없음'으로 보고
     // 같은 받은 알람을 서로 다른 로컬 id 로 두 번 임포트한다(같은 시각 중복 울림).
     // 직렬화로 레이스를 제거한다.
-    private val pullMutex = kotlinx.coroutines.sync.Mutex()
+    private val pullMutex = Mutex()
 
     private fun ownedByRecipient(alarm: AlarmEntity): Boolean =
         isOwnedByRecipient(alarm, currentUserIdProvider())
@@ -87,15 +103,20 @@ internal class RemoteAlarmPullSyncService(
             runCatching {
                 // 과거 동시 pull 레이스로 같은 서버 알람이 여러 로컬 행으로 임포트됐다면
                 // 가장 오래된 행만 남기고 나머지를 정리한다(같은 시각 중복 울림 자가 치유).
-                val existingRows = alarmDao.getAllByRemoteAlarmId(remote.id)
-                existingRows.drop(1).forEach { duplicate ->
-                    alarmScheduler.cancel(duplicate.id)
-                    val duplicateCacheKey = duplicate.audioCacheKey
-                    alarmDao.delete(duplicate)
-                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, duplicateCacheKey)
-                    Log.i(TAG, "Removed duplicate received alarm row remoteId=${remote.id} localId=${duplicate.id}")
+                // 행 삭제 + 예약 취소라 [alarmMutationLock] 안에서 한다.
+                val existing = alarmMutationLock.withLock {
+                    val existingRows = alarmDao.getAllByRemoteAlarmId(remote.id)
+                    existingRows.drop(1).forEach { duplicate ->
+                        alarmScheduler.cancel(duplicate.id)
+                        val duplicateCacheKey = duplicate.audioCacheKey
+                        alarmDao.delete(duplicate)
+                        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, duplicateCacheKey)
+                        Log.i(TAG, "Removed duplicate received alarm row remoteId=${remote.id} localId=${duplicate.id}")
+                    }
+                    existingRows.firstOrNull()
                 }
-                val existing = existingRows.firstOrNull()
+                // **락 밖에서 만든다** — 음성 다운로드가 들어 있어, 잡고 있으면 그동안 스누즈·
+                // 해제가 막힌다.
                 val local = buildLocalAlarm(
                     api = api,
                     authorization = authorization,
@@ -106,46 +127,50 @@ internal class RemoteAlarmPullSyncService(
                     return@runCatching
                 }
 
-                if (existing != null) {
-                    alarmScheduler.cancel(existing.id)
-                }
-                // upsert 를 먼저. schedule 이 권한 부족 등으로 throw 해도 알람은
-                // 로컬 DB 에 남아 리스트에 표시되고, 권한 받은 뒤 reschedule 가능.
-                alarmDao.upsert(local)
-                // 받은 알람과 같은 시각에 내가 켜 둔 알람이 있으면 보낸 사람의 알람이 우선한다 —
-                // 같은 시각 두 알람이 서로의 울림을 끊는 것을 막고, 내 알람은 삭제 대신 끄기만
-                // 해서(리스트에 남음) 언제든 다시 켤 수 있게 한다.
-                if (local.enabled) {
-                    alarmDao.getEnabledAtTime(local.hour, local.minute, excludeId = local.id)
-                        .filter { it.remoteAlarmId != remote.id }
-                        // 끄는 대상은 '이 수신자의' 알람만이다. 같은 기기에 남은 앞 계정 알람을
-                        // 끄면 그 계정은 영영 모른 채 알람이 안 울린다 — 재예약은 enabled=1 만
-                        // 훑으므로(getEnabledAlarms) 다시 로그인해도 되살아나지 않는다.
-                        .filter { ownedByRecipient(it) }
-                        .forEach { conflicting ->
-                            alarmScheduler.cancel(conflicting.id)
-                            alarmDao.upsert(
-                                conflicting.copy(
-                                    enabled = false,
-                                    updatedAtMillis = System.currentTimeMillis(),
-                                ),
-                            )
-                            Log.i(
-                                TAG,
-                                "Disabled same-time alarm id=${conflicting.id} in favor of received remoteId=${remote.id}",
-                            )
-                        }
-                }
-                // 받은 알람의 메시지(음성)가 새 캐시로 교체됐으면 이전 캐시는 미참조일 때만 정리.
-                val previousCacheKey = existing?.audioCacheKey
-                if (!previousCacheKey.isNullOrBlank() && previousCacheKey != local.audioCacheKey) {
-                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, previousCacheKey)
-                }
-                if (local.enabled) {
-                    runCatching { alarmScheduler.schedule(local) }
-                        .onFailure { error ->
-                            Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
-                        }
+                // 여기부터 반영 구간 — 전부 로컬 행 쓰기 + OS 예약이다. 정합성 복원이 이 사이에
+                // 끼면 자기가 읽어 둔 옛 값으로 예약을 되심는다(Codex #666 P1).
+                alarmMutationLock.withLock {
+                    if (existing != null) {
+                        alarmScheduler.cancel(existing.id)
+                    }
+                    // upsert 를 먼저. schedule 이 권한 부족 등으로 throw 해도 알람은
+                    // 로컬 DB 에 남아 리스트에 표시되고, 권한 받은 뒤 reschedule 가능.
+                    alarmDao.upsert(local)
+                    // 받은 알람과 같은 시각에 내가 켜 둔 알람이 있으면 보낸 사람의 알람이 우선한다 —
+                    // 같은 시각 두 알람이 서로의 울림을 끊는 것을 막고, 내 알람은 삭제 대신 끄기만
+                    // 해서(리스트에 남음) 언제든 다시 켤 수 있게 한다.
+                    if (local.enabled) {
+                        alarmDao.getEnabledAtTime(local.hour, local.minute, excludeId = local.id)
+                            .filter { it.remoteAlarmId != remote.id }
+                            // 끄는 대상은 '이 수신자의' 알람만이다. 같은 기기에 남은 앞 계정 알람을
+                            // 끄면 그 계정은 영영 모른 채 알람이 안 울린다 — 재예약은 enabled=1 만
+                            // 훑으므로(getEnabledAlarms) 다시 로그인해도 되살아나지 않는다.
+                            .filter { ownedByRecipient(it) }
+                            .forEach { conflicting ->
+                                alarmScheduler.cancel(conflicting.id)
+                                alarmDao.upsert(
+                                    conflicting.copy(
+                                        enabled = false,
+                                        updatedAtMillis = System.currentTimeMillis(),
+                                    ),
+                                )
+                                Log.i(
+                                    TAG,
+                                    "Disabled same-time alarm id=${conflicting.id} in favor of received remoteId=${remote.id}",
+                                )
+                            }
+                    }
+                    // 받은 알람의 메시지(음성)가 새 캐시로 교체됐으면 이전 캐시는 미참조일 때만 정리.
+                    val previousCacheKey = existing?.audioCacheKey
+                    if (!previousCacheKey.isNullOrBlank() && previousCacheKey != local.audioCacheKey) {
+                        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, previousCacheKey)
+                    }
+                    if (local.enabled) {
+                        runCatching { alarmScheduler.schedule(local) }
+                            .onFailure { error ->
+                                Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
+                            }
+                    }
                 }
                 if (existing == null) {
                     SocialNotificationFactory.notifyReceivedAlarm(
@@ -175,24 +200,29 @@ internal class RemoteAlarmPullSyncService(
         var pruned = 0
         if (snapshotComplete) {
             val servedRemoteIds = remoteAlarms.map { it.id }.toSet()
-            alarmDao.getAllAlarms()
-                .filter {
-                    it.origin == AlarmOrigins.RECEIVED_REMOTE &&
-                        // 서버 알람의 수신자는 한 명이라, 앞 계정이 받은 알람은 이 스냅샷에
-                        // 없는 게 당연하다. 소유자를 안 보면 B 의 첫 완전 pull 이 A 가 받은
-                        // 알람과 그 음성 캐시를 통째로 지운다.
-                        ownedByRecipient(it) &&
-                        !it.remoteAlarmId.isNullOrBlank() &&
-                        it.remoteAlarmId !in servedRemoteIds
-                }
-                .forEach { stale ->
-                    alarmScheduler.cancel(stale.id)
-                    val cacheKey = stale.audioCacheKey
-                    alarmDao.delete(stale)
-                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
-                    pruned += 1
-                    Log.i(TAG, "Pruned received alarm no longer served by server remoteId=${stale.remoteAlarmId}")
-                }
+            // 서버가 취소한 알람을 지우고 예약을 내리는 구간 — 정합성 복원과 겹치면 복원이
+            // 방금 지운 알람의 옛 예약을 되심어 **서버가 취소한 알람이 그대로 울린다**
+            // (Codex #666 P1). 네트워크 없이 로컬만 만지므로 통째로 잡아도 짧다.
+            alarmMutationLock.withLock {
+                alarmDao.getAllAlarms()
+                    .filter {
+                        it.origin == AlarmOrigins.RECEIVED_REMOTE &&
+                            // 서버 알람의 수신자는 한 명이라, 앞 계정이 받은 알람은 이 스냅샷에
+                            // 없는 게 당연하다. 소유자를 안 보면 B 의 첫 완전 pull 이 A 가 받은
+                            // 알람과 그 음성 캐시를 통째로 지운다.
+                            ownedByRecipient(it) &&
+                            !it.remoteAlarmId.isNullOrBlank() &&
+                            it.remoteAlarmId !in servedRemoteIds
+                    }
+                    .forEach { stale ->
+                        alarmScheduler.cancel(stale.id)
+                        val cacheKey = stale.audioCacheKey
+                        alarmDao.delete(stale)
+                        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+                        pruned += 1
+                        Log.i(TAG, "Pruned received alarm no longer served by server remoteId=${stale.remoteAlarmId}")
+                    }
+            }
         }
 
         Log.i(

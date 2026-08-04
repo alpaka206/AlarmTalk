@@ -576,18 +576,174 @@ describe('POST /auth/google', () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
+    expect(res.status).toBe(200);
+    // **저장된 닉네임이 이긴다.** 예전엔 구글 프로필 이름이 덮어써서, 앱에서 고친 닉네임이
+    // 다음 로그인마다 되돌아갔다. 응답·JWT·DB 가 같은 값을 쓰는지도 함께 본다 —
+    // 갈라지면 로그인 직후에만 구글 이름이 보이다가 새로고침하면 바뀐다.
     expect(body.user).toMatchObject({
       id: 'existing-user-id',
       email: 'linked@gmail.com',
-      name: 'Linked User',
+      name: 'Old Name',
       plan: 'family',
     });
     expect(mockDB.calls[1]?.args).toEqual([
       'google-user-2',
       'linked@gmail.com',
-      'Linked User',
+      'Old Name',
       'existing-user-id',
     ]);
+  });
+
+  it('저장된 이름이 없으면 구글 이름으로 채운다', async () => {
+    const googlePayload = {
+      sub: 'google-user-3',
+      email: 'noname@gmail.com',
+      name: 'Google Name',
+      aud: ENV.GOOGLE_CLIENT_ID,
+      iss: 'accounts.google.com',
+      email_verified: true,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => googlePayload,
+    }) as unknown as typeof fetch;
+    mockDB.pushResult([
+      {
+        id: 'noname-user-id',
+        google_id: 'google-user-3',
+        email: 'noname@gmail.com',
+        name: null,
+        plan: 'free',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.user.name).toBe('Google Name');
+    expect(mockDB.calls[1]?.args?.[2]).toBe('Google Name');
+  });
+
+  it('옛 스키마로 저장된 이름도 규칙을 통과시킨다', async () => {
+    // 가입이 max(64)·trim 없음이던 시절 행에는 공백뿐인 이름·보이지 않는 문자·64자가
+    // 남아 있다. '저장된 이름이 이긴다' 를 그대로 적용하면 이 문으로 다시 실려 나간다.
+    const googlePayload = {
+      sub: 'google-user-5',
+      email: 'legacy@gmail.com',
+      name: 'Google Name',
+      aud: ENV.GOOGLE_CLIENT_ID,
+      iss: 'accounts.google.com',
+      email_verified: true,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => googlePayload,
+    }) as unknown as typeof fetch;
+    mockDB.pushResult([
+      {
+        id: 'legacy-user-id',
+        google_id: 'google-user-5',
+        email: 'legacy@gmail.com',
+        // 공백뿐 + 제로폭 → 정리하면 아무것도 안 남는다.
+        name: '  ​ ',
+        plan: 'free',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // 남는 게 없으면 구글 이름으로 고쳐 준다.
+    expect(body.user.name).toBe('Google Name');
+    expect(mockDB.calls[1]?.args?.[2]).toBe('Google Name');
+  });
+
+  it('저장된 이름이 규칙을 넘기면 다듬어서 쓴다', async () => {
+    const googlePayload = {
+      sub: 'google-user-6',
+      email: 'long@gmail.com',
+      name: 'Google Name',
+      aud: ENV.GOOGLE_CLIENT_ID,
+      iss: 'accounts.google.com',
+      email_verified: true,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => googlePayload,
+    }) as unknown as typeof fetch;
+    mockDB.pushResult([
+      {
+        id: 'long-user-id',
+        google_id: 'google-user-6',
+        email: 'long@gmail.com',
+        name: `  ${'가'.repeat(40)}  `,
+        plan: 'free',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // 사용자가 고른 이름이라 유지하되, 30자로 잘라 규칙 안으로 들인다.
+    expect(body.user.name).toBe('가'.repeat(30));
+    expect(mockDB.calls[1]?.args?.[2]).toBe('가'.repeat(30));
+  });
+
+  it('구글이 준 이름도 우리 규칙(길이·보이지 않는 문자)을 통과시킨다', async () => {
+    // 외부에서 온 값이라고 검증을 건너뛰면, 앱·PATCH 경로에만 있는 규칙이 이 문으로 샌다.
+    const googlePayload = {
+      sub: 'google-user-4',
+      email: 'weird@gmail.com',
+      name: `홍​길동${'가'.repeat(40)}`,
+      aud: ENV.GOOGLE_CLIENT_ID,
+      iss: 'accounts.google.com',
+      email_verified: true,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => googlePayload,
+    }) as unknown as typeof fetch;
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/google', { id_token: 'google-id-token' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.user.name).not.toContain('​');
+    expect(body.user.name.length).toBe(30);
   });
 
   it('Google 검증 실패 시 401을 반환한다', async () => {
@@ -646,6 +802,200 @@ describe('GET /auth/me', () => {
     expect(meRes.status).toBe(200);
     const meBody = await meRes.json();
     expect(meBody.user.email).toBe('kim@test.com');
+  });
+
+  // 세션을 굴려 준다(rolling refresh). 앱을 열 때마다 만료가 뒤로 밀려야, 오래 안 열었다가
+  // 연 사용자가 조용히 로그아웃돼 있는 일이 없다 — 그 로그아웃이 알람 재예약 소유자
+  // 게이트에 걸리면 알람이 아예 안 울린다(AlarmRepository.reschedulePendingAlarms).
+  it('/auth/me 는 만료가 더 뒤인 새 토큰을 함께 내려준다', async () => {
+    await pushValidEmailVerification('roll@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('roll@test.com')),
+      undefined,
+      ENV,
+    );
+    const reg = await regRes.json();
+    const token = reg.token as string;
+
+    mockDB.pushResult([
+      { id: reg.user.id, email: 'roll@test.com', name: '김규원', plan: 'free', token_epoch: 0 },
+    ]);
+
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(200);
+    const meBody = await meRes.json();
+
+    expect(typeof meBody.token).toBe('string');
+    expect(meBody.token).not.toBe('');
+
+    const decodeExp = (jwt: string) =>
+      JSON.parse(Buffer.from(jwt.split('.')[1]!, 'base64url').toString()).exp as number;
+    // 같은 초에 발급되면 exp 가 같을 수 있으므로 '뒤로 밀리지 않았다'만 요구한다.
+    expect(decodeExp(meBody.token)).toBeGreaterThanOrEqual(decodeExp(token));
+
+    // sub 은 users.id 다 — sub 이 google_id 인 구 토큰을 들고 와도 여기서 정규화된다.
+    const decodeSub = (jwt: string) =>
+      JSON.parse(Buffer.from(jwt.split('.')[1]!, 'base64url').toString()).sub as string;
+    expect(decodeSub(meBody.token)).toBe(reg.user.id);
+  });
+
+  // 폐기된 토큰(전 기기 로그아웃·비밀번호 재설정)은 갱신 대상이 아니다. 여기서 새 토큰을
+  // 내주면 token_epoch 로 끊는 수단이 무력화된다.
+  // 정규화가 **실제로 일어나는** 경우: 구 토큰의 sub 이 google_id 라 users.id 와 다르다.
+  // 기존 테스트는 둘이 같은 계정만 써서, 구현을 payload.sub 로 되돌려도 통과했다.
+  it('sub 이 google_id 인 구 토큰을 굴리면 users.id 로 정규화된다', async () => {
+    const { signAppJwt } = await import('../src/lib/jwt');
+    const legacyToken = await signAppJwt(
+      { sub: 'google-oauth-id-999', email: 'legacy@test.com', epoch: 0 },
+      ENV.JWT_SECRET,
+    );
+
+    // users 행은 id 와 google_id 가 다르다(계정 연동으로 갈라진 계정).
+    mockDB.pushResult([
+      {
+        id: 'users-uuid-111',
+        email: 'legacy@test.com',
+        name: '김규원',
+        plan: 'free',
+        token_epoch: 0,
+      },
+    ]);
+
+    const app = buildApp();
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${legacyToken}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(200);
+    const rolled = (await meRes.json()).token as string;
+    const sub = JSON.parse(Buffer.from(rolled.split('.')[1]!, 'base64url').toString()).sub;
+    expect(sub).toBe('users-uuid-111');
+    expect(sub).not.toBe('google-oauth-id-999');
+  });
+
+  // TTL 은 이 PR 의 본체다 — 상수를 되돌리면 이 테스트가 잡는다.
+  it('발급 토큰의 수명은 90일이다', async () => {
+    await pushValidEmailVerification('ttl@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('ttl@test.com')),
+      undefined,
+      ENV,
+    );
+    const token = (await regRes.json()).token as string;
+    const payload = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString());
+    const NINETY_DAYS = 60 * 60 * 24 * 90;
+    expect(payload.exp - payload.iat).toBe(NINETY_DAYS);
+  });
+
+  // DB 장애를 401 로 뭉개면 클라가 그걸 '세션 만료' 로 읽고 로그아웃시킨다. /auth/me 는
+  // rolling refresh 때문에 앱을 열 때마다 도는 자리라 그 피해가 크다.
+  it('DB 장애는 401 이 아니라 503 이다(세션을 지우지 않게)', async () => {
+    await pushValidEmailVerification('infra@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('infra@test.com')),
+      undefined,
+      ENV,
+    );
+    const token = (await regRes.json()).token as string;
+
+    mockDB.pushError(new Error('SQLITE_BUSY: database is locked'));
+
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(503);
+    const body = await meRes.json();
+    expect(body.error_code).toBe('ACCOUNT_STATUS_UNVERIFIED');
+    // 내부 예외 메시지를 반사하지 않는다.
+    expect(JSON.stringify(body)).not.toContain('SQLITE_BUSY');
+  });
+
+  // 문자열 휴리스틱으로 가르면 스키마 스큐(`no such column: token_epoch`)처럼 token/expired 가
+  // 들어간 인프라 오류가 401 로 나가고, 클라가 멀쩡한 세션을 지운다.
+  it('token/expired 가 들어간 인프라 오류도 401 이 아니라 503 이다', async () => {
+    await pushValidEmailVerification('skew@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('skew@test.com')),
+      undefined,
+      ENV,
+    );
+    const token = (await regRes.json()).token as string;
+
+    mockDB.pushError(new Error('SQLITE_ERROR: no such column: token_epoch (expired schema)'));
+
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(503);
+    expect((await meRes.json()).error_code).toBe('ACCOUNT_STATUS_UNVERIFIED');
+  });
+
+  it('폐기된 토큰은 새 토큰을 받지 못한다(401)', async () => {
+    await pushValidEmailVerification('revoked@test.com');
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const regRes = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('revoked@test.com')),
+      undefined,
+      ENV,
+    );
+    const reg = await regRes.json();
+    const token = reg.token as string;
+
+    // 발급 토큰의 epoch 는 0 인데 서버 쪽은 1 로 올라가 있다(= 전 기기 로그아웃 이후).
+    mockDB.pushResult([
+      { id: reg.user.id, email: 'revoked@test.com', name: '김규원', plan: 'free', token_epoch: 1 },
+    ]);
+
+    const meRes = await app.request(
+      new Request('http://localhost/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      undefined,
+      ENV,
+    );
+    expect(meRes.status).toBe(401);
+    expect((await meRes.json()).error_code).toBe('TOKEN_REVOKED');
   });
 
   it('잘못된 토큰 → 401', async () => {

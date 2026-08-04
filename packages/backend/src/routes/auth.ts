@@ -15,6 +15,7 @@ import {
   EmailVerificationConfirmRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetConfirmRequestSchema,
+  clampDisplayName,
 } from '@alarmtalk/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
@@ -616,7 +617,9 @@ auth.post('/google', async (c) => {
     const google = await verifyGoogleIdToken(parsed.data.id_token, c.env.GOOGLE_CLIENT_ID);
     const googleId = google.sub;
     const email = (google.email || `${googleId}@google.local`).toLowerCase().trim();
-    const name = google.name ?? '';
+    // 구글이 준 이름도 **외부 입력**이다. 우리 규칙을 통과시키고 상한으로 자른다 —
+    // 검증 없이 받으면 앱·PATCH 경로에만 있는 30자·보이지 않는 문자 규칙이 이 문으로 새 나간다.
+    const name = clampDisplayName(google.name ?? '');
 
     const existing = await db.execute({
       sql: `SELECT id, google_id, email, name, plan, token_epoch,
@@ -631,6 +634,9 @@ auth.post('/google', async (c) => {
     let userId: string;
     let plan: 'free' | 'plus' | 'family';
     let tokenEpoch = 0;
+    // DB 에 쓰는 이름과 응답·JWT 에 담는 이름은 **같은 값이어야 한다.** 갈라지면 로그인
+    // 직후엔 구글 이름이 보이다가 새로고침하면 저장된 닉네임으로 바뀐다.
+    let effectiveName = name;
 
     if (existing.rows.length > 0) {
       const row = typedRow<
@@ -646,12 +652,23 @@ auth.post('/google', async (c) => {
       userId = row.id;
       plan = row.plan ?? 'free';
       tokenEpoch = Number(row.token_epoch ?? 0);
+      // 이미 이름이 있으면 그게 사용자가 고른 닉네임이다. 구글 이름은 빈 칸만 채운다.
+      //
+      // 단 **저장된 값도 규칙을 통과시킨다.** 옛 스키마(가입 max(64)·trim 없음)로 만들어진
+      // 행에는 공백뿐인 이름, 보이지 않는 문자, 64자짜리가 남아 있을 수 있다. 그대로
+      // 이기게 두면 이 문으로 다시 DB·JWT·응답에 실려 나가, 규칙을 한 곳으로 모은 의미가
+      // 없어진다. 정리해서 남는 게 없으면 구글 이름으로 고쳐 준다(Codex #671 P2).
+      const storedName = clampDisplayName(row.name ?? '');
+      effectiveName = storedName || name;
 
       await db.execute({
         sql: `UPDATE users
               SET google_id = ?, email = ?, name = ?, updated_at = datetime('now')
               WHERE id = ?`,
-        args: [googleId, email, name || row.name || null, userId],
+        // **저장된 이름이 이긴다.** 반대였다 — 재로그인할 때마다 구글 프로필 이름이
+        // 사용자가 앱에서 고친 닉네임을 덮어써서, 닉네임 수정이 다음 로그인에 되돌아갔다.
+        // 구글 이름은 아직 이름이 없을 때만 채운다.
+        args: [googleId, email, effectiveName || null, userId],
       });
     } else {
       // 신규 구글 가입도 서버 생성 UUID 를 PK 로 쓴다. 과거에는 googleId 를 그대로 PK 로
@@ -671,7 +688,7 @@ auth.post('/google', async (c) => {
     // `WHERE google_id = ?` 로 조회하는 라우트와 users.id 로 조회하는 라우트가 서로 다른
     // 사용자를 보게 되어(구독·가족그룹·코드등록이 조용히 0행) 데이터가 반으로 쪼개졌다.
     const token = await signAppJwt(
-      { sub: userId, email, name: name || undefined, epoch: tokenEpoch },
+      { sub: userId, email, name: effectiveName || undefined, epoch: tokenEpoch },
       c.env.JWT_SECRET,
     );
 
@@ -701,7 +718,7 @@ auth.post('/google', async (c) => {
       user: {
         id: userId,
         email,
-        name,
+        name: effectiveName,
         plan,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
@@ -734,8 +751,19 @@ auth.get('/me', async (c) => {
     return c.json(jsonError('AUTH_MISSING', 'Authorization header required'), 401);
   }
   const token = authHeader.slice(7);
+  // **검증 실패와 그 뒤의 장애를 구조로 가른다.** 하나의 try 로 묶으면 DB 오류까지 401 로
+  // 나가고, 클라는 그걸 '세션 만료' 로 읽어 로그아웃시킨다 — /auth/me 는 rolling refresh 때문에
+  // 앱을 열 때마다 도는 자리라 피해가 크다. 메시지 문자열로 가르는 것도 틀렸다:
+  // `no such column: token_epoch` 같은 스키마 스큐 오류에 token 이 들어간다(Codex #665 P1).
+  // authMiddleware 가 이미 같은 구조를 쓴다.
+  let payload: Awaited<ReturnType<typeof verifyAppJwt>>;
   try {
-    const payload = await verifyAppJwt(token, c.env.JWT_SECRET);
+    payload = await verifyAppJwt(token, c.env.JWT_SECRET);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
+  }
+  try {
     const db = getDB(c.env);
     const result = await db.execute({
       sql: `SELECT id, email, name, plan, token_epoch, deletion_status,
@@ -765,7 +793,28 @@ auth.get('/me', async (c) => {
     }
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);
+    // 세션을 굴린다(rolling refresh). 여기까지 온 토큰은 서명·만료·폐기 검사를 모두
+    // 통과했으므로, 같은 수명의 새 토큰을 발급해 앱이 갈아 끼우게 한다. 앱을 열 때마다
+    // 만료가 뒤로 밀려 "업데이트했더니 로그아웃돼 있다"가 사라진다.
+    //
+    // sub 은 payload.sub 이 아니라 **row.id** 다. sub 이 google_id 인 구 토큰을 들고 온
+    // 경우 여기서 users.id 로 갈아 끼워진다 — 발급 경로가 이미 users.id 로 통일돼 있어
+    // (b05c6c19) 새 토큰만 그 규약을 따르면 된다.
+    //
+    // 재발급이 실패해도 200 은 유지한다. /auth/me 는 본래 사용자 정보를 주는 자리라,
+    // 토큰을 못 갱신했다고 로그인 자체를 깨뜨릴 이유가 없다 — 클라는 token 이 없으면
+    // 쓰던 토큰을 그대로 쓰고 다음 기회에 다시 시도한다.
+    const rolledToken = await signAppJwt(
+      {
+        sub: String(row.id),
+        email: row.email,
+        name: row.name ?? undefined,
+        epoch: Number(row.token_epoch ?? 0),
+      },
+      c.env.JWT_SECRET,
+    ).catch(() => null);
     return c.json({
+      ...(rolledToken ? { token: rolledToken } : {}),
       user: {
         id: row.id,
         email: row.email,
@@ -782,8 +831,16 @@ auth.get('/me', async (c) => {
       },
     });
   } catch (err) {
+    // 토큰 검증은 위에서 이미 통과했다 — 여기 오는 건 DB 등 인프라 장애뿐이다. 503 으로 돌려
+    // 클라가 세션을 지우지 않고 다음 기회에 다시 시도하게 한다. 내부 예외 메시지는 반사하지
+    // 않고 서버 로그에만 남긴다.
     const detail = err instanceof Error ? err.message : String(err);
-    return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
+    const { logStructured } = await import('../lib/logger');
+    logStructured('error', { at: 'auth.me', error: detail });
+    return c.json(
+      jsonError('ACCOUNT_STATUS_UNVERIFIED', 'Unable to verify account status'),
+      503,
+    );
   }
 });
 

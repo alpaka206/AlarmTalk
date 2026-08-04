@@ -10,7 +10,13 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- 정식 알람/시계 앱: USE_EXACT_ALARM 은 자동 부여·사용자 회수 불가라 정확 알람을
-         안정적으로 보장한다(SCHEDULE_EXACT_ALARM 회수 시 비정확 폴백으로 떨어지는 것 방지). -->
+         안정적으로 보장한다(SCHEDULE_EXACT_ALARM 회수 시 비정확 폴백으로 떨어지는 것 방지).
+
+         ⚠ **API 33+ 에서만 그렇다.** 이 앱의 minSdk 는 26 이라 API 31·32 기기에는
+         SCHEDULE_EXACT_ALARM 만 적용되고, 그건 사용자가 회수할 수 있다 — 그 기기들은
+         비정확 폴백(setAndAllowWhileIdle)을 **실제로 탄다**. "이 권한이 있으니 비정확
+         경로는 안 탄다" 고 읽지 말 것. 그 오독으로 실제 판단을 한 번 그르쳤다.
+         남는 한계는 AlarmRepository.reschedulePendingAlarms 의 '알려진 한계' 주석 참고. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.VIBRATE" />

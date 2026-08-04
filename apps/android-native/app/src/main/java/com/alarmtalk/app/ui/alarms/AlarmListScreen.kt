@@ -115,6 +115,8 @@ internal fun AlarmListScreen(
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
     onRequestAlarmPermissions: () -> Unit,
+    /** 배너에서 곧장 그 권한 요청/설정으로 보낸다(모달을 거치지 않는다). */
+    onRequestAlarmPermission: (PermissionTarget) -> Unit = {},
     // 선택 모드 진입/이탈을 알린다 — 상위 Scaffold 가 ＋ FAB 를 감추는 데 쓴다.
     onAlarmSelectionModeChange: (Boolean) -> Unit = {},
 ) {
@@ -186,7 +188,10 @@ internal fun AlarmListScreen(
                         },
                     )
                 } else {
-                    HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm)
+                    HomeHeader(
+                        nextAlarm = nextAlarm,
+                        hasAnyAlarm = hasAnyAlarm,
+                    )
                 }
             }
         }
@@ -256,11 +261,28 @@ internal fun AlarmListScreen(
                         EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
                     }
                 }
-                // 권한 안내는 '이미 알람이 있는데 권한이 없어 조용히 안 울리는' 경우에만 남긴다.
-                // 새 유저(알람 없음)에겐 홈에서 권한을 미리 조르지 않는다 — 알람 만들기 시점에 요청.
-                if (hasAnyAlarm && !permissions.alarmReady) {
+                // 권한 안내는 '이미 알람이 있는데 권한이 모자란' 경우에만. 새 유저에겐 홈에서
+                // 미리 조르지 않는다 — 알람 만들기 시점에 요청한다.
+                // 헤드라인이 이미 '안 울린다'를 말했으므로, 배너는 같은 말을 반복하지 않고
+                // 각각 **왜 그런지 / 무엇을 하면 되는지**를 말한다.
+                permissions.firstMissingAlarmTarget()?.takeIf { hasAnyAlarm }?.let { missing ->
                     item {
-                        AlarmPermissionWarningBanner(onClick = onRequestAlarmPermissions)
+                        AlarmPermissionWarningBanner(
+                            // 헤드라인(남은 시간/경고)과 붙어 있으면 한 덩어리로 읽힌다.
+                            // 목록 기본 간격(16)에 더해 한 칸 더 띄운다.
+                            modifier = Modifier.padding(top = 8.dp),
+                            // **어떤 권한인지** 말한다. '권한' 이라고만 하면 어디를 켜야 하는지
+                            // 모른 채 설정 화면에서 헤맨다. 결과도 권한마다 다르다.
+                            //
+                            textResId = when (missing) {
+                                PermissionTarget.Notifications -> R.string.hs_perm_banner_notifications
+                                PermissionTarget.ExactAlarms -> R.string.hs_perm_banner_exact_alarm
+                                else -> R.string.hs_perm_banner_full_screen
+                            },
+                            // 탭하면 우리 모달을 한 번 더 거치지 않고 바로 그 권한 요청/설정으로
+                            // 보낸다 — 배너가 이미 무엇을 왜 켜야 하는지 말했다.
+                            onClick = { onRequestAlarmPermission(missing) },
+                        )
                     }
                 }
                 items(sortedAlarms, key = { it.id }) { alarm ->

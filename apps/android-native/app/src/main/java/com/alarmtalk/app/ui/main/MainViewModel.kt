@@ -22,6 +22,8 @@ import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.observeSession
+import com.alarmtalk.app.network.shouldAbsorbStoredSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
@@ -111,10 +113,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     internal val api = AlarmTalkApiClient.create(
         unauthorizedHandler = object : AlarmTalkApiClient.UnauthorizedHandler {
-            override fun onUnauthorized() {
-                // 백엔드에 refresh 엔드포인트가 없어 같은 토큰으로 재시도해도 의미가 없다.
+            override fun onUnauthorized(failedToken: String?) {
+                // 같은 토큰으로 재시도해도 의미가 없다(그 토큰이 거부된 것이다).
                 // 401(TOKEN_REVOKED 포함) 이면 세션을 비우고 화면에 재로그인을 안내한다.
-                handleUnauthorized()
+                handleUnauthorized(failedToken)
             }
 
             override fun onConsentRequired(consent: String?) {
@@ -154,9 +156,90 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * okhttp Authenticator 에서 호출되는 401 처리.
      * 다른 스레드(non-main) 에서 호출될 수 있어 UI 스레드로 옮긴 뒤 세션을 클리어한다.
      */
-    private fun handleUnauthorized() {
+    /**
+     * 명시적 로그아웃·탈퇴가 진행 중인가.
+     *
+     * 로그아웃은 서버 `token_epoch` 를 올리므로 **그 순간 진행 중이던 다른 요청이 401 로
+     * 돌아오는 게 정상 경로다.** 그 401 을 '자동 만료' 로 처리하면 방금 지운 복원 표시를 다시
+     * 켜서, 떼어낸 알람이 다음 주기(15분)에 전부 되살아난다 — 로그인 화면 뒤라 끌 수 없다.
+     */
+    @Volatile
+    internal var signingOut = false
+
+    /**
+     * 저장소에만 반영된 세션 갱신을 메모리로 끌어온다.
+     *
+     * 백그라운드 워커는 `GET /auth/me` 로 받은 새 토큰을 **저장소에만** 쓴다. 이 ViewModel 은
+     * 생성 시점 말고는 저장소를 읽지 않아 옛 토큰을 계속 들고 있고, 그 토큰이 만료되면
+     * 이후 요청이 전부 401 로 실패한다. 그런데 401 처리기는 '저장소에 더 새 토큰이 있다' 는
+     * 이유로 그 401 을 **무시**하고, okhttp 인증기도 재발급 수단이 없어 재시도하지 않는다 —
+     * 멀쩡한 토큰을 두고 요청만 조용히 실패한다(Codex #665 P2).
+     *
+     * 401 을 맞은 **뒤에** 흡수하는 것으로는 부족하다. 그 요청은 이미 실패했고 아무도 다시
+     * 보내 주지 않아, 사용자는 이유도 모른 채 같은 동작을 다시 해야 한다. 저장소가 바뀌는
+     * 즉시 맞춰야 그 실패 자체가 생기지 않는다.
+     *
+     * `bearerOrMessage` 한 곳만 고치는 방법도 있었지만, 토큰을 쓰는 자리가 그 헬퍼를 거치지
+     * 않는 곳까지 마흔 곳 가까이 된다. 세션 자체를 수렴시켜 한 곳에서 끝낸다.
+     *
+     * **덮어쓰지 않는 경우** — 셋 다 '저장소가 지금 메모리보다 낫다' 가 성립하지 않는다:
+     *  - 저장소가 비었다(로그아웃 직후). 여기서 되살리면 세션 정리를 되돌리는 셈이다.
+     *  - 로그아웃이 진행 중이다([signingOut]).
+     *  - 계정이 다르다. 계정 전환은 로그인 경로가 정리와 함께 처리한다.
+     */
+    private fun absorbStoredSession(stored: AuthSession?) {
+        if (!shouldAbsorbStoredSession(stored, authSession, signingOut)) return
+        authSession = stored
+        Log.i(TAG, "Absorbed a session update written by a background worker")
+    }
+
+    private fun handleUnauthorized(failedToken: String?) {
         viewModelScope.launch {
-            if (authSession == null) return@launch
+            val session = authSession ?: return@launch
+            if (signingOut) {
+                Log.i(TAG, "Ignoring 401 during explicit sign-out")
+                return@launch
+            }
+            // **옛 토큰의 뒤늦은 401 은 무시한다.** GET /auth/me 가 세션을 굴린 직후
+            // (rolling refresh), 그 전에 옛 토큰으로 이미 날아간 요청이 만료돼 401 로 돌아올 수
+            // 있다. 어느 토큰이 거부됐는지 안 보고 지우면 **방금 갱신한 세션을 스스로 날린다**
+            // — 사용자는 갱신됐는데도 로그아웃된다(Codex #665 P2).
+            //
+            // 토큰을 못 읽은 경우(null)는 예전처럼 처리한다 — 판단할 근거가 없으면 안전하게
+            // 세션을 정리하는 쪽이 맞다(진짜 폐기를 놓치면 안 된다).
+            // 메모리(authSession)만 보면 안 된다. 백그라운드 워커가 저장소에 새 토큰을 심어도
+            // 이 ViewModel 은 그걸 관찰하지 않아 옛 토큰을 들고 있다. 그 옛 토큰이 만료돼 401 이
+            // 오면 '지금 세션의 토큰' 으로 보여 가드를 통과하고, **저장소의 멀쩡한 새 토큰까지
+            // 지운다**(Codex #665 P2). 저장소 값도 함께 본다.
+            val stored = runCatching { authSessionStore.read() }.getOrNull()
+            val storedToken = stored?.token
+            val isCurrentToken = failedToken == null ||
+                failedToken == session.token ||
+                failedToken == storedToken
+            val supersededByStore = failedToken != null &&
+                storedToken != null &&
+                failedToken != storedToken
+            if (!isCurrentToken || supersededByStore) {
+                // **무시만 하면 좀비 세션이 된다.** 여기서 걸렀다는 건 메모리 토큰과 저장소
+                // 토큰이 갈렸다는 뜻이다. 그대로 두면 이후 모든 요청이 메모리의 옛 토큰으로
+                // 나가 계속 401 을 맞는데, 그 401 은 또 여기서 무시된다 — 화면은 '로그인됨'
+                // 인데 서버 호출은 전부 실패하고 안내조차 없는 상태가 된다(Codex #665 P1).
+                //
+                // 갈라지는 것 자체는 [absorbStoredSession] 이 저장소 변경을 관찰해 막는다.
+                // 여기는 그 관찰이 아직 도착하지 않은 찰나를 위한 마지막 방어다 — 같은 계정
+                // 이면 지금 읽은 저장소 세션을 그대로 흡수한다. 저장소 토큰이 살아 있으면
+                // 복구되고, 그것마저 폐기됐으면 다음 401 은 `failedToken == storedToken` 이
+                // 되어 정상적으로 만료 처리로 떨어진다 — 어느 쪽이든 올바른 종착점이다.
+                if (stored != null &&
+                    stored.user.id == session.user.id &&
+                    authSession?.token == session.token
+                ) {
+                    authSession = stored
+                    Log.i(TAG, "Absorbed the stored session after a superseded 401")
+                }
+                Log.i(TAG, "Ignoring 401 from a superseded token")
+                return@launch
+            }
             // 알람 예약은 건드리지 않는다. 토큰 만료나 우발적 401 은 '같은 사람이 다시
             // 로그인하면 되는' 상황인데, 여기서 예약을 취소하면 사용자가 안내를 못 본 사이
             // 알람이 조용히 안 울린다 — 알람 전달이 서버 인증 상태에 묶여선 안 된다.
@@ -172,10 +255,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 본인이 다시 로그인할 때까지 알람만 조용히 안 울린다. 대신 다음 로그인에서
             // 예약 경로가 authSessionStore.pendingOwnerUserId 로 이 계정을 알아내 마저 새긴다.
             runCatching {
-                repository.claimUnownedAlarmsFor(authSession?.user?.id?.takeIf { it.isNotBlank() })
+                repository.claimUnownedAlarmsFor(session.user.id.takeIf { it.isNotBlank() })
             }.onFailure { error ->
                 Log.w(TAG, "Failed to stamp ownerless alarms on session expiry", error)
             }
+            // **suspend 지점을 지난 뒤 다시 확인한다.** 위 Room 쓰기 동안 세션이 바뀔 수 있다:
+            //  - GET /auth/me 가 새 토큰을 심었다(rolling refresh) → 지금 살아 있는 세션을
+            //    이 옛 401 로 지우면 안 된다(Codex #665 P2).
+            //  - 사용자가 로그아웃을 눌렀다 → 그건 '자동 만료' 가 아니다. 여기서 만료 표시를
+            //    남기면 방금 떼어낸 알람이 15분 뒤 워커에 의해 전부 되살아난다.
+            //    (로그아웃은 서버 token_epoch 를 올리므로, 진행 중이던 다른 요청이 401 로
+            //     돌아와 이 경로를 타는 게 예외가 아니라 정상 경로다.)
+            val stillSame = authSession?.token == session.token
+            if (!stillSame || signingOut) {
+                Log.i(TAG, "Skipping session-expiry bookkeeping: session changed or signing out")
+                return@launch
+            }
+            // **자동으로** 끊긴 계정을 남긴다 — 비로그인 상태에서 되살려도 되는 알람의 주인이다.
+            // 세션을 비우기 전에 해야 id 를 알 수 있다. 명시적 로그아웃은 이 값을 지우므로,
+            // 여러 계정이 오간 기기에서도 방금 만료된 계정의 알람만 되살아난다(Codex #665 P1).
+            runCatching { authSessionStore.markSessionExpired(session.user.id) }
+                .onFailure { error -> Log.w(TAG, "Failed to mark session expired owner", error) }
             clearSessionKeepingAlarms()
             message = getApplication<android.app.Application>().getString(R.string.r3misc_session_expired)
         }
@@ -190,14 +290,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 사용자에게는 '보이지도 않고 끌 수도 없는 알람이 울리는' 상태가 된다.
      */
     internal suspend fun clearSignedInSession() {
+        // 로그아웃이 끝날 때까지 401 처리기를 잠근다 — 이유는 [signingOut] 주석 참고.
+        signingOut = true
         val signedOutUserId = authSession?.user?.id?.takeIf { it.isNotBlank() }
-        runCatching { repository.detachAlarmsOnSignOut(signedOutUserId) }
-            .onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
+        // 표시를 **먼저** 지운다. 떼어내기가 중간에 실패하거나 프로세스가 죽어도 "명시적
+        // 로그아웃이었다" 는 사실이 남아야, 다음 재예약이 이 계정 알람을 되살리지 않는다.
+        // (앞서 자동 만료로 남아 있던 값이 있으면 그게 이 계정을 되살려 버린다.)
+        runCatching { authSessionStore.clearSessionExpiredOwner() }
+            .onFailure { error -> Log.w(TAG, "Failed to clear expired-session owner on sign-out", error) }
+        // 세션 저장소 비우기를 **떼어내기와 같은 임계구역 안에서** 끝낸다. 락을 놓은 뒤에
+        // 비우면, 그 틈에 락을 잡은 복원(주기 워커 등)이 prefs 를 아직 '로그인됨' 으로 읽어
+        // 방금 취소한 예약을 전부 되살린다(Codex #666 P1).
+        runCatching {
+            repository.detachAlarmsOnSignOut(signedOutUserId) {
+                authSessionStore.clear()
+            }
+        }.onFailure { error -> Log.w(TAG, "Failed to detach device alarms on session clear", error) }
         // 기본 목소리 취향(마지막 쓴 목소리·'나중에 받기' 선택)은 계정을 명시적으로 끝낼 때만
         // 지운다. 자동 401 은 같은 사람이 다시 로그인하는 경우가 대부분이라, 거기서 지우면
         // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
         // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
         clearCurrentDefaultVoicePreferences()
+        // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
+        // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
         clearSessionKeepingAlarms()
     }
 
@@ -934,6 +1049,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        // 저장소에만 반영된 세션 갱신을 메모리로 계속 끌어온다 — 이유는
+        // [absorbStoredSession] 과 AuthSessionStore.observeSession 주석 참고.
+        viewModelScope.launch {
+            authSessionStore.observeSession().collect(::absorbStoredSession)
+        }
         RemoteAlarmSyncScheduler.ensurePeriodic(application)
         if (authSession != null) {
             RemoteAlarmSyncScheduler.runOnce(application)

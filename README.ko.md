@@ -29,7 +29,7 @@ iOS 앱은 없습니다. SwiftUI 클라이언트와 그 빌드 워크플로는 �
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (결정적 TTS 캐시) |
 | Voice AI | ElevenLabs — Instant Voice Clone + TTS |
-| Auth | JWT (HS256, 7일) · 이메일 인증 코드 · Google ID 토큰 |
+| Auth | JWT (HS256, 90일 · 열 때마다 갱신) · 이메일 인증 코드 · Google ID 토큰 |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## 저장소 구조
