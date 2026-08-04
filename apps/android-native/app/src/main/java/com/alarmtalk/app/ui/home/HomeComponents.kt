@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
 import com.alarmtalk.app.R
 import com.alarmtalk.app.network.AuthSession
@@ -350,61 +351,46 @@ internal fun NicknameEditDialog(
     val trimmedValue = value.trim()
     val canSave = !busy && trimmedValue.isNotEmpty() && trimmedValue != initial
 
-    Dialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    // 공용 알럿을 그대로 쓴다 — 입력이 있다고 별도 모달을 두지 않는다([IosAlertDialog]).
+    // 액션이 둘이라 가로로 놓이고(로그아웃 알럿과 같은 모양), 닫기가 액션으로 들어가므로
+    // 제목줄의 X 는 없앤다.
+    IosAlertDialog(
+        title = stringResource(R.string.hs_nickname_dialog_title),
+        message = null,
+        onDismiss = { if (!busy) onDismiss() },
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.r3dlg_modal_dialog_close),
+                onClick = { if (!busy) onDismiss() },
+            ),
+            IosAlertAction(
+                label = if (busy) {
+                    stringResource(R.string.hs_nickname_saving)
+                } else {
+                    stringResource(R.string.hs_nickname_save)
+                },
+                emphasized = true,
+                onClick = { if (canSave) onConfirm(value) },
+            ),
+        ),
     ) {
-        Surface(
+        // 라벨을 두지 않는다 — 제목이 이미 "닉네임 수정" 이라 같은 말을 두 번 하는 셈이다.
+        // 비었을 때 무엇을 넣는 자리인지는 placeholder 가 알려 준다.
+        IosAlertField(
+            value = value,
+            onValueChange = { value = sanitizeDisplayName(it, maxLength = 30) },
+            placeholder = stringResource(R.string.hs_nickname_field_placeholder),
+            enabled = !busy,
+        )
+        Text(
+            text = stringResource(R.string.hs_nickname_char_counter, value.length),
+            style = IosAlertType.Message,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .widthIn(max = 430.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.hs_nickname_dialog_title),
-                    onDismiss = onDismiss,
-                    dismissEnabled = !busy,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(
-                        value = value,
-                        onValueChange = { value = it.take(30) },
-                        label = { Text(stringResource(R.string.hs_nickname_field_label)) },
-                        placeholder = { Text(stringResource(R.string.hs_nickname_field_placeholder)) },
-                        singleLine = true,
-                        enabled = !busy,
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        text = stringResource(R.string.hs_nickname_char_counter, value.length),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.End),
-                    )
-                }
-                Button(
-                    onClick = { onConfirm(value) },
-                    enabled = canSave,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Text(if (busy) stringResource(R.string.hs_nickname_saving) else stringResource(R.string.hs_nickname_save))
-                }
-            }
-        }
+                .padding(top = 6.dp),
+            textAlign = TextAlign.End,
+        )
     }
 }
 

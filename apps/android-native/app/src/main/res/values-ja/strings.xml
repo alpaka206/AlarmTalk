@@ -223,6 +223,7 @@
     <string name="editor_selected_ringtone">選択したアラーム</string>
     <string name="editor_snooze_custom">カスタム設定</string>
     <string name="editor_snooze_custom_dialog_title">間隔をカスタム設定</string>
+    <string name="editor_snooze_custom_range_error">1分から60分の間で指定してください。</string>
     <string name="editor_snooze_custom_value">カスタム設定 · %1$d分</string>
     <string name="editor_snooze_interval">間隔</string>
     <string name="editor_snooze_repeat">繰り返し</string>
@@ -251,8 +252,13 @@
     <string name="editor_volume">音量</string>
     <string name="editorp_fortune_birthdate_placeholder">タップして生年月日を選択</string>
     <string name="editorp_fortune_birthdate_section">生年月日</string>
+    <string name="editorp_fortune_birthdate_year">年</string>
+    <string name="editorp_fortune_birthdate_month">月</string>
+    <string name="editorp_fortune_birthdate_day">日</string>
+    <string name="editorp_fortune_unit_year">年</string>
+    <string name="editorp_fortune_unit_month">月</string>
+    <string name="editorp_fortune_unit_day">日</string>
     <string name="editorp_fortune_birthtime_section">生まれた時間</string>
-    <string name="editorp_fortune_birthtime_subtitle">正確にわからない場合は、近い時間帯を選んでも大丈夫です。</string>
     <string name="editorp_fortune_birthtime_placeholder">選択</string>
     <string name="editorp_fortune_date_confirm">確定</string>
     <string name="editorp_fortune_date_title">生年月日</string>
@@ -280,7 +286,6 @@
     <string name="hs_delete_account_confirm">退会する</string>
     <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">ニックネームを編集</string>
-    <string name="hs_nickname_field_label">ニックネーム</string>
     <string name="hs_nickname_field_placeholder">例：りん</string>
     <string name="hs_nickname_save">保存</string>
     <string name="hs_nickname_saving">保存中</string>
@@ -848,7 +853,6 @@
     <string name="editor_voice_switch_drops_text_message">基本の声は用意された文だけを話すので、直接入力した文はなくなります。</string>
     <string name="editor_voice_switch_drops_text_confirm">変える</string>
     <string name="onb_voice_download_progress">%1$d%%</string>
-    <string name="onb_voice_download_stay">最初の一度だけです。</string>
     <string name="onb_voice_download_failed">少し経ってからもう一度お試しください。</string>
     <string name="onb_voice_download_retry">再試行</string>
     <string name="onb_voice_download_later">あとで受け取る</string>

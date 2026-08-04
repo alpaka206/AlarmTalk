@@ -2041,64 +2041,32 @@ internal fun VoiceProfileManagementPanel(
     // 등록 결정 구간(만드는 중/미리듣기)에서 나가려 할 때 — 나가면 임시 목소리(초안)가 삭제됨을 경고.
     if (draftExitWarningOpen) {
         val exitDraftId = (confirmNewVoice ?: pendingVoiceDraft)?.id
-        Dialog(
-            onDismissRequest = { draftExitWarningOpen = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = WakerDialogShape,
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 0.dp,
-                shadowElevation = 18.dp,
-                border = wakerCardBorder(),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            text = stringResource(R.string.voices_draft_exit_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        MutedText(stringResource(R.string.voices_draft_exit_body))
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TextButton(
-                            onClick = {
-                                draftExitWarningOpen = false
-                                // 명시적 '삭제' 버튼과 동일한 draft 삭제 경로를 태운 뒤 플로우를 닫는다.
-                                exitDraftId?.let(onDeleteVoiceDraft)
-                                closeCreateDialog()
-                            },
-                            enabled = !voiceProfileBusy,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.voices_draft_exit_leave),
-                                color = MaterialTheme.colorScheme.error,
-                            )
+        // 확인형 모달은 전부 공용 알럿으로. 나가면 초안이 지워지므로 '나가기' 는 destructive,
+        // 머무르기가 기본(강조)이다 — 되돌릴 수 없는 쪽이 기본이 되면 안 된다.
+        IosAlertDialog(
+            title = stringResource(R.string.voices_draft_exit_title),
+            message = stringResource(R.string.voices_draft_exit_body),
+            onDismiss = { draftExitWarningOpen = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.voices_draft_exit_leave),
+                    destructive = true,
+                    onClick = {
+                        if (!voiceProfileBusy) {
+                            draftExitWarningOpen = false
+                            // 명시적 '삭제' 버튼과 동일한 draft 삭제 경로를 태운 뒤 플로우를 닫는다.
+                            exitDraftId?.let(onDeleteVoiceDraft)
+                            closeCreateDialog()
                         }
-                        Button(
-                            onClick = { draftExitWarningOpen = false },
-                            modifier = Modifier.weight(1f),
-                            shape = WakerButtonShape,
-                        ) {
-                            Text(stringResource(R.string.voices_draft_exit_stay))
-                        }
-                    }
-                }
-            }
-        }
+                    },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.voices_draft_exit_stay),
+                    emphasized = true,
+                    onClick = { draftExitWarningOpen = false },
+                ),
+            ),
+        )
     }
 
     renameTarget?.let { profile ->
@@ -2109,7 +2077,7 @@ internal fun VoiceProfileManagementPanel(
             description = stringResource(R.string.voices_edit_name_desc),
             name = renameName,
             nameError = renameNameError,
-            onNameChange = { renameName = it.take(50) },
+            onNameChange = { renameName = sanitizeDisplayName(it, maxLength = 50) },
             onDismiss = { renameTarget = null },
             onConfirm = {
                 renameSubmitAttempted = true

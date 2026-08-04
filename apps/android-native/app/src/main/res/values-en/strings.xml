@@ -223,6 +223,7 @@
     <string name="editor_selected_ringtone">Selected alarm</string>
     <string name="editor_snooze_custom">Custom</string>
     <string name="editor_snooze_custom_dialog_title">Set custom interval</string>
+    <string name="editor_snooze_custom_range_error">Choose between 1 and 60 minutes.</string>
     <string name="editor_snooze_custom_value">Custom · %1$d min</string>
     <string name="editor_snooze_interval">Interval</string>
     <string name="editor_snooze_repeat">Repeat</string>
@@ -251,8 +252,13 @@
     <string name="editor_volume">Volume</string>
     <string name="editorp_fortune_birthdate_placeholder">Tap to pick your date of birth</string>
     <string name="editorp_fortune_birthdate_section">Date of birth</string>
+    <string name="editorp_fortune_birthdate_year">Year</string>
+    <string name="editorp_fortune_birthdate_month">Month</string>
+    <string name="editorp_fortune_birthdate_day">Day</string>
+    <string name="editorp_fortune_unit_year"></string>
+    <string name="editorp_fortune_unit_month"></string>
+    <string name="editorp_fortune_unit_day"></string>
     <string name="editorp_fortune_birthtime_section">Time of birth</string>
-    <string name="editorp_fortune_birthtime_subtitle">If you\'re not sure, just pick the closest time.</string>
     <string name="editorp_fortune_birthtime_placeholder">Select</string>
     <string name="editorp_fortune_date_confirm">OK</string>
     <string name="editorp_fortune_date_title">Date of birth</string>
@@ -280,7 +286,6 @@
     <string name="hs_delete_account_confirm">Delete</string>
     <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">Edit nickname</string>
-    <string name="hs_nickname_field_label">Nickname</string>
     <string name="hs_nickname_field_placeholder">e.g. Gyuwon</string>
     <string name="hs_nickname_save">Save</string>
     <string name="hs_nickname_saving">Saving</string>
@@ -840,7 +845,6 @@ for a smooth and secure experience.</string>
     <string name="editor_voice_switch_drops_text_message">Basic voices only speak ready-made lines, so the message you typed will be removed.</string>
     <string name="editor_voice_switch_drops_text_confirm">Switch</string>
     <string name="onb_voice_download_progress">%1$d%%</string>
-    <string name="onb_voice_download_stay">This only happens once.</string>
     <string name="onb_voice_download_failed">Please try again in a moment.</string>
     <string name="onb_voice_download_retry">Try again</string>
     <string name="onb_voice_download_later">Do this later</string>

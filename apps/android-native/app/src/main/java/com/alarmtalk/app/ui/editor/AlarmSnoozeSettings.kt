@@ -37,6 +37,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -47,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -252,39 +255,51 @@ internal fun SnoozeSettingsPane(
 
     if (customIntervalDialogOpen) {
         val customMinutes = customMinutesText.toIntOrNull()
-        AlertDialog(
-            onDismissRequest = { customIntervalDialogOpen = false },
-            title = {
-                ModalDialogTitle(
-                    title = stringResource(R.string.editor_snooze_custom_dialog_title),
-                    onDismiss = { customIntervalDialogOpen = false },
-                )
-            },
-            text = {
-                OutlinedTextField(
-                    value = customMinutesText,
-                    onValueChange = { value ->
-                        customMinutesText = value.filter { it.isDigit() }.take(2)
-                    },
-                    label = { Text(stringResource(R.string.editor_minute_label)) },
-                    singleLine = true,
-                    isError = customMinutesText.isNotBlank() && customMinutes !in 1..60,
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = customMinutes in 1..60,
+        // 앱 공용 알럿으로 통일한다 — 입력이 하나뿐인 모달이라 별도 껍데기가 필요 없다.
+        IosAlertDialog(
+            title = stringResource(R.string.editor_snooze_custom_dialog_title),
+            message = null,
+            onDismiss = { customIntervalDialogOpen = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.r3dlg_modal_dialog_close),
+                    onClick = { customIntervalDialogOpen = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.editor_apply),
+                    emphasized = true,
                     onClick = {
-                        onSnoozeMinutesChange(requireNotNull(customMinutes))
-                        customIntervalDialogOpen = false
+                        // 범위 밖이면 아무 일도 하지 않는다 — iOS 알럿은 액션을 흐리게 두는
+                        // 문법이 없어, 눌러도 닫히지 않는 것으로 '아직 아니다' 를 알린다.
+                        customMinutes?.takeIf { it in 1..60 }?.let {
+                            onSnoozeMinutesChange(it)
+                            customIntervalDialogOpen = false
+                        }
                     },
-                ) {
-                    Text(stringResource(R.string.editor_apply))
-                }
-            },
-        )
+                ),
+            ),
+        ) {
+            IosAlertField(
+                value = customMinutesText,
+                onValueChange = { value -> customMinutesText = value.filter { it.isDigit() }.take(2) },
+                placeholder = stringResource(R.string.editor_minute_label),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            )
+            // 범위를 벗어나면 이유를 말해 준다. 예전 Material 필드는 isError 로 테두리를
+            // 붉혔는데, 알럿으로 옮기며 그 신호가 사라져 '적용을 눌러도 아무 일이 없는'
+            // 상태가 됐다 — 눌리지 않는 이유는 눈에 보여야 한다.
+            if (customMinutesText.isNotBlank() && customMinutes !in 1..60) {
+                Text(
+                    text = stringResource(R.string.editor_snooze_custom_range_error),
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    style = IosAlertType.Message,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                )
+            }
+        }
     }
 }
 

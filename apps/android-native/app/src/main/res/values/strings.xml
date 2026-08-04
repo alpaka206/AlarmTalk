@@ -225,6 +225,7 @@
     <string name="editor_selected_ringtone">선택한 알람</string>
     <string name="editor_snooze_custom">직접 설정</string>
     <string name="editor_snooze_custom_dialog_title">간격 직접 설정</string>
+    <string name="editor_snooze_custom_range_error">1분에서 60분 사이로 정해 주세요.</string>
     <string name="editor_snooze_custom_value">직접 설정 · %1$d분</string>
     <string name="editor_snooze_interval">간격</string>
     <string name="editor_snooze_repeat">반복</string>
@@ -253,8 +254,13 @@
     <string name="editor_volume">볼륨</string>
     <string name="editorp_fortune_birthdate_placeholder">탭하여 생년월일 선택</string>
     <string name="editorp_fortune_birthdate_section">생년월일</string>
+    <string name="editorp_fortune_birthdate_year">연도</string>
+    <string name="editorp_fortune_birthdate_month">월</string>
+    <string name="editorp_fortune_birthdate_day">일</string>
+    <string name="editorp_fortune_unit_year">년</string>
+    <string name="editorp_fortune_unit_month">월</string>
+    <string name="editorp_fortune_unit_day">일</string>
     <string name="editorp_fortune_birthtime_section">태어난 시간</string>
-    <string name="editorp_fortune_birthtime_subtitle">정확히 모르면 가까운 시간대를 골라도 돼요.</string>
     <string name="editorp_fortune_birthtime_placeholder">선택</string>
     <string name="editorp_fortune_date_confirm">확인</string>
     <string name="editorp_fortune_date_title">생년월일</string>
@@ -282,7 +288,6 @@
     <string name="hs_delete_account_confirm">탈퇴</string>
     <string name="hs_nickname_char_counter">%1$d/30</string>
     <string name="hs_nickname_dialog_title">닉네임 수정</string>
-    <string name="hs_nickname_field_label">닉네임</string>
     <string name="hs_nickname_field_placeholder">예: 규원</string>
     <string name="hs_nickname_save">저장</string>
     <string name="hs_nickname_saving">저장 중</string>
@@ -868,7 +873,6 @@
     <string name="editor_voice_switch_drops_text_message">기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.</string>
     <string name="editor_voice_switch_drops_text_confirm">바꾸기</string>
     <string name="onb_voice_download_progress">%1$d%%</string>
-    <string name="onb_voice_download_stay">처음 한 번만 하면 돼요.</string>
     <string name="onb_voice_download_failed">잠시 뒤 다시 시도해 주세요.</string>
     <string name="onb_voice_download_retry">다시 시도</string>
     <string name="onb_voice_download_later">나중에 받기</string>

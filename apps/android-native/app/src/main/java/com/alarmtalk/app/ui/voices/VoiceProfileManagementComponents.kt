@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -78,98 +79,41 @@ internal fun VoiceProfileEditDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    VoiceFormDialog(
+    // 공용 알럿으로 통일한다. 예전에는 이것만을 위한 `VoiceFormDialog` 껍데기가 따로 있었는데,
+    // 입력 하나짜리 모달이라 알럿과 다를 이유가 없어 껍데기를 걷어냈다.
+    IosAlertDialog(
         title = title,
-        description = description,
+        message = description,
         onDismiss = onDismiss,
-        onConfirm = onConfirm,
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.voicesr_close),
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.voicesr_save),
+                emphasized = true,
+                // 이름이 비면 저장하지 않는다 — 눌러도 닫히지 않는 것으로 '아직 아니다' 를 알리고,
+                // 아래 오류 문구가 이유를 말한다.
+                onClick = { if (name.isNotBlank()) onConfirm() },
+            ),
+        ),
     ) {
-        OutlinedTextField(
+        IosAlertField(
             value = name,
             onValueChange = onNameChange,
-            label = { Text(stringResource(R.string.voicesr_voice_name_label)) },
-            singleLine = true,
-            isError = nameError,
-            supportingText = {
-                if (nameError) Text(stringResource(R.string.voicesr_required_field))
-            },
-            shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
-            modifier = Modifier.fillMaxWidth(),
+            placeholder = stringResource(R.string.voicesr_voice_name_label),
         )
-    }
-}
-
-@Composable
-internal fun VoiceFormDialog(
-    title: String,
-    description: String,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
+        if (nameError) {
+            Text(
+                text = stringResource(R.string.voicesr_required_field),
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                style = IosAlertType.Message,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        MutedText(description)
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(42.dp),
-                    ) {
-                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voicesr_close))
-                    }
-                }
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    content()
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(
-                        onClick = onConfirm,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text(stringResource(R.string.voicesr_save))
-                    }
-                }
-            }
+                    .padding(top = 6.dp),
+            )
         }
     }
 }
@@ -180,69 +124,25 @@ internal fun VoiceProfileDeleteDialog(
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.voicesr_delete_dialog_title),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        MutedText(stringResource(R.string.voicesr_delete_dialog_confirm, profileName))
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(42.dp),
-                    ) {
-                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voicesr_close))
-                    }
-                }
-                MutedText(stringResource(R.string.voicesr_delete_dialog_warning))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(
-                        onClick = onDelete,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            contentColor = MaterialTheme.colorScheme.onError,
-                        ),
-                    ) {
-                        Text(stringResource(R.string.voicesr_delete))
-                    }
-                }
-            }
-        }
-    }
+    // 확인형 모달은 전부 공용 알럿으로 — 되돌릴 수 없는 삭제는 destructive 로 붉게 둔다.
+    // 두 문장(무엇을 지우는지 + 무엇이 함께 바뀌는지)을 한 본문으로 잇는다.
+    IosAlertDialog(
+        title = stringResource(R.string.voicesr_delete_dialog_title),
+        message = stringResource(R.string.voicesr_delete_dialog_confirm, profileName) +
+            "\n" + stringResource(R.string.voicesr_delete_dialog_warning),
+        onDismiss = onDismiss,
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.voicesr_close),
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.voicesr_delete),
+                destructive = true,
+                onClick = onDelete,
+            ),
+        ),
+    )
 }
 
 

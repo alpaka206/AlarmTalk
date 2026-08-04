@@ -2,25 +2,24 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
 /**
  * [text] 안의 [highlight] 만 강조색으로 칠한다. 없으면 그냥 원문 — 번역에서 그 표현이
@@ -58,10 +57,9 @@ private fun highlighted(text: String, highlight: String): AnnotatedString {
  * 닫기가 1급 선택지다 — 코드가 없어도 앱은 그대로 쓸 수 있고, 그 사실이 문구에서 먼저
  * 읽혀야 한다. 강제로 통과시키는 게이트가 아니라 지나칠 수 있는 안내다.
  *
- * **껍데기는 앱의 표준 모달 그대로다**(닉네임 변경·운세 설정·스누즈 설정과 같은 형태):
- * 화면 폭을 채우고 좌우 20dp 를 띄운 뒤 큰 화면에서는 430dp 로 묶고, 테두리·그림자로
- * 띄운다. 예전에는 이 다이얼로그만 `usePlatformDefaultWidth` 기본값에 폭을 맡겨
- * **내용 크기대로 쪼그라들었고**, 좌우 여백도 다른 모달과 달랐다.
+ * 껍데기는 앱의 공용 알럿([IosAlertDialog])이다. 입력이 있다고 별도 모달을 두지 않는다 —
+ * iOS 알럿도 `addTextField` 로 입력을 받는다. 액션이 셋이라 세로로 쌓이고(2개면 가로),
+ * 닫기는 X 아이콘이 아니라 액션 하나로 들어간다.
  */
 @Composable
 internal fun WelcomePromoDialog(
@@ -73,81 +71,77 @@ internal fun WelcomePromoDialog(
     // 이 안내는 계정당 1회라 실패했다고 닫아 버리면 고쳐 넣을 기회가 사라진다(Codex #660).
     errorText: String? = null,
 ) {
-    Dialog(
-        onDismissRequest = { if (!busy) onDismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    var code by remember { mutableStateOf("") }
+    IosAlertDialog(
+        title = stringResource(R.string.welcome_promo_title),
+        // 본문은 강조색이 섞인 두 줄이라 알럿의 message(순수 문자열) 대신 슬롯에서 그린다.
+        // 타이포는 알럿 본문과 같게 맞춘다(13/18, 가운데, 보조색).
+        message = null,
+        onDismiss = { if (!busy) onDismiss() },
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.code_redeem_submit),
+                emphasized = true,
+                onClick = { code.trim().takeIf { it.isNotBlank() }?.let(onSubmitCode) },
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.welcome_promo_where),
+                onClick = onOpenInstagram,
+            ),
+            // iOS 는 세로 스택에서 닫기를 맨 아래에 둔다.
+            IosAlertAction(
+                label = stringResource(R.string.r3dlg_modal_dialog_close),
+                onClick = onDismiss,
+            ),
+        ),
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .widthIn(max = 430.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Column(
+            AlertBodyLine(
+                highlighted(
+                    text = stringResource(R.string.welcome_promo_body_free),
+                    highlight = stringResource(R.string.welcome_promo_highlight_free),
+                ),
+            )
+            AlertBodyLine(
+                highlighted(
+                    text = stringResource(R.string.welcome_promo_body_later),
+                    highlight = stringResource(R.string.welcome_promo_highlight_where),
+                ),
+            )
+        }
+        // 설명과 입력란 사이는 알럿의 필드 간격(16)을 그대로 쓴다.
+        IosAlertField(
+            value = code,
+            onValueChange = { code = sanitizeRedeemCode(it) },
+            placeholder = stringResource(R.string.code_redeem_placeholder),
+            enabled = !busy,
+            modifier = Modifier.padding(top = 14.dp),
+        )
+        errorText?.let {
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                style = IosAlertType.Message,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                // 제목 + 우상단 닫기(X) — 다른 모달과 같은 헤더. 닫기가 1급 선택지라는 성격이
-                // 앱 어디서나 같은 자리에서 보이는 편이 낫다.
-                ModalDialogTitle(
-                    title = stringResource(R.string.welcome_promo_title),
-                    onDismiss = onDismiss,
-                    dismissEnabled = !busy,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // 두 문장을 각각 한 줄로 둔다 — 한 덩어리로 흘리면 '무료로 쓸 수 있다' 와
-                    // '나중에 넣을 수 있다' 가 섞여 읽힌다. 각 줄의 핵심어만 강조색으로 띄운다.
-                    Text(
-                        text = highlighted(
-                            text = stringResource(R.string.welcome_promo_body_free),
-                            highlight = stringResource(R.string.welcome_promo_highlight_free),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = highlighted(
-                            text = stringResource(R.string.welcome_promo_body_later),
-                            highlight = stringResource(R.string.welcome_promo_highlight_where),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    CodeRedeemField(busy = busy, onSubmit = onSubmitCode)
-                    // 오류는 입력란 **바로 아래**에 붙인다 — 무엇을 고쳐야 하는지가 붙어 읽힌다.
-                    errorText?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-                // 닫기는 헤더의 X 하나뿐이다. '건너뛰기' 버튼도 같은 일을 했는데, 같은 동작을
-                // 두 자리에 두면 사용자가 둘의 차이를 찾느라 멈춘다(코드를 버리는 건지, 다음에
-                // 다시 물어보는 건지). 앱의 다른 모달도 닫기는 X 하나다.
-                //
-                // 가로 컨텐트 패딩을 0 으로 둬서 라벨이 위 제목·본문과 **같은 세로선**에서
-                // 시작하게 한다. TextButton 기본값(12dp)을 그대로 두면 이 손수 짠 컬럼 안에서
-                // 이 줄만 안쪽으로 밀려 들쭉날쭉해 보인다.
-                TextButton(
-                    onClick = onOpenInstagram,
-                    enabled = !busy,
-                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.welcome_promo_where),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
+                    .padding(top = 6.dp),
+            )
         }
     }
+}
+
+/** 알럿 본문과 같은 타이포의 한 줄 — 강조색이 섞여 message 파라미터로는 못 넘기는 경우에 쓴다. */
+@Composable
+private fun AlertBodyLine(text: AnnotatedString) {
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        style = IosAlertType.Message,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }

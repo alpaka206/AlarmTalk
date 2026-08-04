@@ -281,76 +281,52 @@ internal fun MemberManagementScreen(
     }
 
     pendingRemoveMember?.let { member ->
-        AlertDialog(
-            onDismissRequest = { pendingRemoveMember = null },
-            title = {
-                ModalDialogTitle(
-                    title = stringResource(R.string.social_remove_member_dialog_title),
-                    onDismiss = { pendingRemoveMember = null },
-                )
-            },
-            text = {
-                Text(
-                    text = stringResource(R.string.social_remove_member_dialog_message),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            confirmButton = {
-                val groupId = group?.id
-                TextButton(
-                    enabled = !socialBusy && groupId != null,
+        val groupId = group?.id
+        // 확인형 모달은 전부 공용 알럿으로 통일한다(M3 AlertDialog 를 쓰던 마지막 두 곳).
+        IosAlertDialog(
+            title = stringResource(R.string.social_remove_member_dialog_title),
+            message = stringResource(R.string.social_remove_member_dialog_message),
+            onDismiss = { pendingRemoveMember = null },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.social_cancel_button),
+                    onClick = { pendingRemoveMember = null },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.social_remove_button),
+                    destructive = true,
                     onClick = {
-                        if (groupId != null) {
+                        if (!socialBusy && groupId != null) {
                             onRemoveFamilyMember(groupId, member.userId)
+                            pendingRemoveMember = null
                         }
-                        pendingRemoveMember = null
                     },
-                ) {
-                    Text(
-                        text = stringResource(R.string.social_remove_button),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
+                ),
+            ),
         )
     }
 
     if (showRegenerateConfirm) {
-        AlertDialog(
-            onDismissRequest = { showRegenerateConfirm = false },
-            title = {
-                ModalDialogTitle(
-                    title = stringResource(R.string.social_regenerate_share_code_dialog_title),
-                    onDismiss = { showRegenerateConfirm = false },
-                )
-            },
-            text = {
-                Text(
-                    text = stringResource(R.string.social_regenerate_share_code_dialog_message),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = !billingBusy,
+        IosAlertDialog(
+            title = stringResource(R.string.social_regenerate_share_code_dialog_title),
+            message = stringResource(R.string.social_regenerate_share_code_dialog_message),
+            onDismiss = { showRegenerateConfirm = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.social_cancel_button),
+                    onClick = { showRegenerateConfirm = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.social_regenerate_share_code),
+                    destructive = true,
                     onClick = {
-                        showRegenerateConfirm = false
-                        onRegenerateFamilyShareCode()
+                        if (!billingBusy) {
+                            showRegenerateConfirm = false
+                            onRegenerateFamilyShareCode()
+                        }
                     },
-                ) {
-                    Text(
-                        text = stringResource(R.string.social_regenerate_share_code),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRegenerateConfirm = false }) {
-                    Text(stringResource(R.string.social_cancel_button))
-                }
-            },
+                ),
+            ),
         )
     }
 
