@@ -1126,21 +1126,21 @@ internal fun MainViewModel.saveSessionPreservingCurrentToken(
     // A 의 유저 정보에 B 의 토큰이 붙은 잡종 세션이 저장된다 — 목록은 A 로 걸러지는데 서버
     // 호출은 B 로 나가고, 이어지는 재예약이 A 의 알람을 되살리고 B 의 것을 취소한다
     // (Codex #665 P1). refreshAppSession 과 같은 기준으로 본다.
-    val current = authSessionStore.read()
-    if (current == null ||
-        current.user.id != updated.user.id ||
-        authSessionStore.sessionGeneration() != expectedGeneration
-    ) {
+    //
+    // 그 판정과 저장을 **저장소가 한 덩어리로** 한다. 여기서 읽고·병합하고·쓰면 그 사이에
+    // 워커가 굴러간 토큰을 저장할 수 있고, 그러면 이 저장이 옛 토큰을 되써서 **방금 갱신된
+    // 토큰을 버린다**(Codex #665 P2).
+    val saved = authSessionStore.saveSessionIfAlive(
+        expectedGeneration = expectedGeneration,
+        user = updated.user,
+        provider = updated.provider,
+        // 프로필 갱신은 토큰을 건드리지 않는다 — 저장소의 현재 토큰을 그대로 지킨다.
+        rolledToken = null,
+    )
+    if (saved == null) {
         Log.i(TAG, "Dropping stale profile save: session ended or switched")
-        return null
     }
-    val currentToken = current.token.takeIf { it.isNotBlank() }
-    val merged = if (currentToken != null && currentToken != updated.token) {
-        updated.copy(token = currentToken)
-    } else {
-        updated
-    }
-    return authSessionStore.save(merged)
+    return saved
 }
 
 internal fun MainViewModel.refreshAppSession() {
@@ -1161,23 +1161,28 @@ internal fun MainViewModel.refreshAppSession() {
             // 그 토큰은 이미 폐기돼 다음 요청이 또 로그아웃시킨다. 세션 세대로 함께 본다
             // (두 워커 가드와 같은 기준, Codex #665 P2).
             val stillSameAccount = authSession?.user?.id == session.user.id
-            val stillSameGeneration = authSessionStore.sessionGeneration() == startGeneration
-            if (signingOut || !stillSameAccount || !stillSameGeneration) {
+            if (signingOut || !stillSameAccount) {
                 Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
                 return@onSuccess
             }
             // 서버가 새 토큰을 주면 갈아 끼운다(rolling refresh) — 앱을 열 때마다 만료가
             // 뒤로 밀려, 오래 안 열었다가 열었을 때 조용히 로그아웃돼 있는 일이 없어진다.
-            // 안 주면(구버전 서버·재발급 실패) 쓰던 토큰을 그대로 둔다.
-            val response = AuthTokenResponse(
-                token = me.token?.takeIf { it.isNotBlank() } ?: session.token,
+            // **안 주면(구버전 서버·재발급 실패) 저장소의 현재 토큰을 지킨다** — 시작할 때
+            // 잡아 둔 session.token 으로 되돌리면 그 사이 워커가 굴린 토큰을 옛 것으로 덮는다.
+            //
+            // 세대 확인도 저장소가 쓰기와 같은 락 안에서 한다. 여기서 따로 보면 확인 뒤
+            // 로그아웃이 끼어들어 비운 저장소에 끝난 세션을 되쓴다(Codex #665 P1/P2).
+            val saved = authSessionStore.saveSessionIfAlive(
+                expectedGeneration = startGeneration,
                 user = me.user,
+                provider = session.provider,
+                rolledToken = me.token,
             )
-            authSession = if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
-                authSessionStore.saveGoogleSession(response)
-            } else {
-                authSessionStore.saveAppSession(response)
+            if (saved == null) {
+                Log.i(TAG, "Dropping stale /auth/me result: session ended or switched")
+                return@onSuccess
             }
+            authSession = saved
         }.onFailure { error ->
             Log.w(TAG, "Auth refresh failed", error)
         }

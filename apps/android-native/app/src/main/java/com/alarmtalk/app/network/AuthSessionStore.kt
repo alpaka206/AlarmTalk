@@ -372,6 +372,46 @@ class AuthSessionStore(context: Context) {
             read()
         }
 
+    /**
+     * 서버 응답을 세션에 반영한다 — **판정과 쓰기를 한 덩어리로.** [clear]·
+     * [saveTokenIfGeneration] 과 같은 락을 잡는다.
+     *
+     * 검사와 저장을 따로 하면 그 사이가 창이다. 두 가지가 실제로 새어 나왔다:
+     *  - 세대를 확인한 뒤 로그아웃이 끼면 **비운 저장소에 끝난 세션을 되쓴다**(Codex #665 P1).
+     *  - 전경이 토큰 A 를 읽은 뒤 워커가 굴러간 B 를 저장하고, 전경이 프로필을 쓰며 A 를
+     *    되쓴다 — **방금 갱신된 B 가 버려진다.** A 의 만료가 가까웠다면 다음 요청이 401 로
+     *    떨어져, 갱신에 성공하고도 재로그인을 강요한다(Codex #665 P2).
+     *
+     * @param rolledToken 서버가 이번 응답으로 **새로 준** 토큰. 없으면(null·공백) 저장소의
+     *   현재 토큰을 지킨다 — 호출부가 시작할 때 잡아 둔 토큰으로 되돌리면 안 된다. 그 사이
+     *   굴러간 토큰을 옛 것으로 덮는 것이기 때문이다.
+     *
+     * 저장하지 않는 경우(모두 null 반환):
+     *  - 시작할 때의 세션이 이미 끝났다([sessionSurvivedForWrite]).
+     *  - 그 사이 다른 계정이 됐다. 그대로 쓰면 A 의 유저 정보에 B 의 토큰이 붙은 **잡종 세션**
+     *    이 저장된다 — 목록은 A 로 걸러지는데 서버 호출은 B 로 나간다.
+     */
+    fun saveSessionIfAlive(
+        expectedGeneration: Long,
+        user: AuthUser,
+        provider: String,
+        rolledToken: String?,
+    ): AuthSession? = synchronized(sessionWriteLock) {
+        val storedToken = prefs.getString(KEY_TOKEN, null)
+        val alive = sessionSurvivedForWrite(
+            expectedGeneration = expectedGeneration,
+            currentGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L),
+            currentToken = storedToken,
+        )
+        if (!alive) return@synchronized null
+        if (prefs.getString(KEY_USER_ID, null) != user.id) return@synchronized null
+        save(
+            token = rolledToken?.takeIf { it.isNotBlank() } ?: storedToken.orEmpty(),
+            provider = provider,
+            user = user,
+        )
+    }
+
     fun save(session: AuthSession): AuthSession =
         save(token = session.token, provider = session.provider, user = session.user)
 
