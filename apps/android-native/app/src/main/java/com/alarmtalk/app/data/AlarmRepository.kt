@@ -53,9 +53,12 @@ class AlarmRepository(
     // 명시적 로그아웃은 이 값을 지우므로 그 계정 알람은 되살아나지 않는다.
     // 자세한 이유는 AuthSessionStore.sessionExpiredOwnerUserId 주석 참고.
     private val sessionExpiredOwnerUserIdProvider: () -> String? = { null },
-    // 지금 실제로 울리는 중인 알람 id(없으면 null). 영속 상태(state=RINGING)가 아니라 이걸로
-    // 판정해야, 서비스가 죽어 굳어 버린 RINGING 행이 복구에서 영구 배제되지 않는다.
-    private val ringingAlarmIdProvider: () -> String? = { RingingService.ringingOrHandingOffAlarmId() },
+    // 지금 실제로 울리는 중이거나 리시버→서비스 인계 중인 알람 id**들**(없으면 빈 집합).
+    // 영속 상태(state=RINGING)가 아니라 이걸로 판정해야, 서비스가 죽어 굳어 버린 RINGING 행이
+    // 복구에서 영구 배제되지 않는다. **하나가 아니라 집합인 이유**는
+    // [RingingService.ringingOrHandingOffAlarmIds] 주석 참고 — 울리는 알람과 인계 중인 알람이
+    // 서로 다를 수 있고, 하나만 보면 뒤엣것이 무방비가 된다.
+    private val ringingAlarmIdsProvider: () -> Set<String> = { RingingService.ringingOrHandingOffAlarmIds() },
 ) {
     /**
      * 예약 복원과 예약 해제를 **서로 겹치지 않게** 한다.
@@ -1085,7 +1088,11 @@ class AlarmRepository(
             // enabled=1 · state=RINGING · fireAtMillis=과거 로 남고, 이 함수가 유일한 복구
             // 길목이라 **다시는 안 울린다**(목록에는 켜져 보인다). develop 은 그 행을 다음
             // 발생으로 재계산해 스스로 나았다 — 스킵이 그 자가치유를 없애면 안 된다.
-            val ringingNow = ringingAlarmIdProvider() == alarm.id
+            //
+            // **하나가 아니라 집합으로 본다.** A 가 울리는 동안 B 의 스누즈가 마감되면 울리는
+            // 알람은 A, 인계 중인 알람은 B 다. 하나만 보면 A 에 가려 B 가 무방비가 되고, 그
+            // 순간 이 함수가 B 의 지난 시각을 그대로 다시 등록해 한 번 더 울린다(Codex #666 P2).
+            val ringingNow = alarm.id in ringingAlarmIdsProvider()
             if (ringingNow) return@forEach
 
             // 목록을 읽은 뒤 사용자가 그 알람을 끄거나 지웠을 수 있다. 스냅샷 그대로 진행하면
@@ -1096,7 +1103,7 @@ class AlarmRepository(
             // 콜드스타트·부팅에서만 돌 때는 사용자 조작과 겹칠 일이 드물었지만, 주기 워커가
             // 부르면서 흔해진다. 쓰기 직전에 한 번 더 읽어 그 창을 좁힌다.
             val fresh = alarmDao.getById(alarm.id)
-            if (fresh == null || !fresh.enabled || ringingAlarmIdProvider() == fresh.id) return@forEach
+            if (fresh == null || !fresh.enabled || fresh.id in ringingAlarmIdsProvider()) return@forEach
             val alarm = fresh
 
             runCatching {

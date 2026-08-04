@@ -855,16 +855,23 @@ class RingingService : Service() {
             handoffAtElapsedMs = android.os.SystemClock.elapsedRealtime()
         }
 
-        /** 지금 울리는 중이거나, 방금 받아 서비스가 뜨는 중인 알람 id. */
-        fun ringingOrHandingOffAlarmId(): String? {
-            activeRingingAlarmId?.let { return it }
-            val pending = handoffAlarmId ?: return null
-            val fresh = android.os.SystemClock.elapsedRealtime() - handoffAtElapsedMs < HANDOFF_TTL_MS
-            if (!fresh) {
-                handoffAlarmId = null
-                return null
+        /**
+         * 지금 울리는 중이거나, 방금 받아 서비스가 뜨는 중인 알람 id들.
+         *
+         * **하나가 아니라 집합인 이유.** 두 표시는 서로 다른 알람을 가리킬 수 있다 — A 가
+         * 울리는 동안 B 의 스누즈가 마감되면 [activeRingingAlarmId] 는 A, [handoffAlarmId] 는
+         * B 다. 예전처럼 하나만 돌려주면 A 에 가려 **B 가 무방비**가 되고, 그 순간 정합성
+         * 워커가 B(state=SNOOZED · fireAtMillis 과거)를 보고 지난 시각을 그대로 다시 등록해
+         * 한 번 더 울린다(Codex #666 P2). 두 값을 독립적으로 내보내야 한다.
+         */
+        fun ringingOrHandingOffAlarmIds(): Set<String> {
+            val pending = handoffAlarmId?.takeIf {
+                val fresh = android.os.SystemClock.elapsedRealtime() - handoffAtElapsedMs < HANDOFF_TTL_MS
+                // 서비스가 뜨지 못하고 끝난 경우(FGS 차단 등) 표시가 영영 남지 않게 여기서 만료시킨다.
+                if (!fresh) handoffAlarmId = null
+                fresh
             }
-            return pending
+            return setOfNotNull(activeRingingAlarmId, pending)
         }
 
         private const val RINGING_NOTIFICATION_ID = 1001

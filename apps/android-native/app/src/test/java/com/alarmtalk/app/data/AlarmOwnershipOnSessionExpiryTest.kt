@@ -42,8 +42,13 @@ class AlarmOwnershipOnSessionExpiryTest {
     /** 자동으로 세션이 끊긴 계정(실제로는 AuthSessionStore prefs). 비로그인 복원 대상. */
     private var sessionExpiredOwner: String? = null
 
-    /** 지금 실제로 울리는 중인 알람(실제로는 RingingService.activeRingingAlarmId). */
-    private var ringingAlarmId: String? = null
+    /**
+     * 지금 울리는 중이거나 리시버→서비스 인계 중인 알람들
+     * (실제로는 `RingingService.ringingOrHandingOffAlarmIds()`).
+     *
+     * **집합인 이유**: 울리는 알람(A)과 방금 받아 인계 중인 알람(B)이 서로 다를 수 있다.
+     */
+    private var ringingAlarmIds: Set<String> = emptySet()
 
     private val repository by lazy { repositoryWith(dao) }
 
@@ -58,7 +63,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         pendingOwnerUserIdProvider = { pendingOwner },
         onOwnershipSettled = { pendingOwner = null },
         sessionExpiredOwnerUserIdProvider = { sessionExpiredOwner },
-        ringingAlarmIdProvider = { ringingAlarmId },
+        ringingAlarmIdsProvider = { ringingAlarmIds },
     )
 
     private val shadowAlarmManager
@@ -552,7 +557,7 @@ class AlarmOwnershipOnSessionExpiryTest {
             state = AlarmStates.RINGING,
         )
         currentUser = "account-A"
-        ringingAlarmId = "legacy-1" // 지금 실제로 울리는 중
+        ringingAlarmIds = setOf("legacy-1") // 지금 실제로 울리는 중
 
         val scheduled = repository.reschedulePendingAlarms()
 
@@ -561,6 +566,43 @@ class AlarmOwnershipOnSessionExpiryTest {
         assertEquals("상태도 RINGING 그대로", AlarmStates.RINGING, after?.state)
         // 과거 시각 그대로 다시 예약하면 즉시 재발화한다 — 사용자가 그 사이 껐다면 되살아난다.
         assertEquals("울리는 중인 알람은 예약 대상이 아니다", 0, scheduled)
+    }
+
+    /**
+     * 회귀 방지: **A 가 울리는 동안 인계된 B 도 함께 지켜져야 한다**(Codex #666 P2).
+     *
+     * A 를 끄기 전에 B 의 스누즈가 마감되면 '울리는 중' 은 A, '인계 중' 은 B 다. 표시를
+     * 하나만 내보내면 A 에 가려 **B 가 무방비**가 되고, 그 순간 정합성 워커가 B(SNOOZED ·
+     * 지난 시각)를 보고 그 지난 시각을 그대로 다시 등록해 한 번 더 울린다.
+     *
+     * 판정을 집합이 아니라 단일 값으로 되돌리면(`ringingAlarmIds.first() == alarm.id` 류)
+     * 이 테스트가 깨진다.
+     */
+    @Test
+    fun handedOffAlarmIsProtectedWhileAnotherAlarmIsRinging() = runBlocking {
+        seedLegacyAlarm(
+            id = "ringing-A",
+            owner = "account-A",
+            repeatDaysMask = 0,
+            state = AlarmStates.RINGING,
+        )
+        seedLegacyAlarm(
+            id = "handoff-B",
+            owner = "account-A",
+            repeatDaysMask = 0, // 반복 없음 — 지켜지지 않으면 '놓친 알람' 으로 꺼진다
+            state = AlarmStates.SNOOZED,
+        )
+        currentUser = "account-A"
+        // A 는 서비스가 울리는 중, B 는 방금 리시버가 받아 서비스가 뜨는 중.
+        ringingAlarmIds = setOf("ringing-A", "handoff-B")
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("둘 다 예약 대상이 아니다", 0, scheduled)
+        val b = dao.getById("handoff-B")
+        assertEquals("인계 중인 B 도 켜져 있어야 한다", true, b?.enabled)
+        assertEquals("B 의 상태도 그대로", AlarmStates.SNOOZED, b?.state)
+        assertEquals("B 의 발화 시각을 다시 계산해 덮으면 안 된다", 1_000L, b?.fireAtMillis)
     }
 
     @Test
