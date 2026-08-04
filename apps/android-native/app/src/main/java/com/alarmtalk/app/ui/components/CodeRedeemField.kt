@@ -64,13 +64,26 @@ internal fun sanitizeUserText(raw: String, allowNewlines: Boolean = false): Stri
     }
 }
 
+/**
+ * 길이 상한까지 자르되 **서러게이트 쌍을 반으로 가르지 않는다.**
+ *
+ * 코틀린 `String.take` 는 UTF-16 코드 유닛 단위라, 29자 뒤에 이모지가 오면 30에서 자를 때
+ * 앞쪽 절반만 남아 깨진 문자가 된다. 그대로 서버로 올라가 DB·JWT 에 실린다
+ * (서버도 `@alarmtalk/shared` 의 `clampDisplayName` 이 같은 규칙으로 막는다 — Codex #671 P2).
+ */
+internal fun String.takeWithoutSplittingPairs(maxLength: Int): String {
+    if (length <= maxLength) return this
+    val cut = take(maxLength)
+    return if (cut.last().isHighSurrogate()) cut.dropLast(1) else cut
+}
+
 /** 한 줄 표시 이름(닉네임·목소리 이름). 줄바꿈을 막고 앞뒤 공백을 정리한다. */
 internal fun sanitizeDisplayName(raw: String, maxLength: Int): String =
     sanitizeUserText(raw, allowNewlines = false)
         // 연속 공백을 하나로 — 공백만으로 이름을 다르게 보이게 하는 것도 막는다.
         .replace(Regex("\\s+"), " ")
         .trimStart()
-        .take(maxLength)
+        .takeWithoutSplittingPairs(maxLength)
 
 internal fun sanitizeRedeemCode(raw: String): String = raw
     .uppercase()

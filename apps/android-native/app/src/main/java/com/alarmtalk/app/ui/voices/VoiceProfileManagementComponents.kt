@@ -93,9 +93,11 @@ internal fun VoiceProfileEditDialog(
             IosAlertAction(
                 label = stringResource(R.string.voicesr_save),
                 emphasized = true,
-                // 이름이 비면 저장하지 않는다 — 눌러도 닫히지 않는 것으로 '아직 아니다' 를 알리고,
-                // 아래 오류 문구가 이유를 말한다.
-                onClick = { if (name.isNotBlank()) onConfirm() },
+                // **여기서 비었는지 보고 삼키면 안 된다.** 빈 이름 검증은 부모가 하고,
+                // 그 오류 문구를 켜는 '제출 시도' 플래그도 부모의 onConfirm 이 세운다 —
+                // 여기서 막으면 플래그가 안 켜져 오류가 영영 안 뜨고, 저장 버튼은 멀쩡해
+                // 보이는데 눌러도 아무 일이 없다(Codex #671 P2).
+                onClick = onConfirm,
             ),
         ),
     ) {

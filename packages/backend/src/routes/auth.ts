@@ -15,8 +15,7 @@ import {
   EmailVerificationConfirmRequestSchema,
   PasswordResetRequestSchema,
   PasswordResetConfirmRequestSchema,
-  DISPLAY_NAME_MAX_LENGTH,
-  normalizeDisplayName,
+  clampDisplayName,
 } from '@alarmtalk/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
@@ -620,7 +619,7 @@ auth.post('/google', async (c) => {
     const email = (google.email || `${googleId}@google.local`).toLowerCase().trim();
     // 구글이 준 이름도 **외부 입력**이다. 우리 규칙을 통과시키고 상한으로 자른다 —
     // 검증 없이 받으면 앱·PATCH 경로에만 있는 30자·보이지 않는 문자 규칙이 이 문으로 새 나간다.
-    const name = normalizeDisplayName(google.name ?? '').slice(0, DISPLAY_NAME_MAX_LENGTH);
+    const name = clampDisplayName(google.name ?? '');
 
     const existing = await db.execute({
       sql: `SELECT id, google_id, email, name, plan, token_epoch,
@@ -659,7 +658,7 @@ auth.post('/google', async (c) => {
       // 행에는 공백뿐인 이름, 보이지 않는 문자, 64자짜리가 남아 있을 수 있다. 그대로
       // 이기게 두면 이 문으로 다시 DB·JWT·응답에 실려 나가, 규칙을 한 곳으로 모은 의미가
       // 없어진다. 정리해서 남는 게 없으면 구글 이름으로 고쳐 준다(Codex #671 P2).
-      const storedName = normalizeDisplayName(row.name ?? '').slice(0, DISPLAY_NAME_MAX_LENGTH);
+      const storedName = clampDisplayName(row.name ?? '');
       effectiveName = storedName || name;
 
       await db.execute({

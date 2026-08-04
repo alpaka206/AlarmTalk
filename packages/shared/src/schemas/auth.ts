@@ -70,6 +70,24 @@ export function normalizeDisplayName(raw: string): string {
   );
 }
 
+/**
+ * 정리한 뒤 상한까지 자른다. **거부가 아니라 다듬기**가 필요한 곳에서 쓴다 —
+ * 사용자가 직접 입력한 값은 스키마로 거부해 알려 주지만, 구글이 준 이름이나 옛 스키마로
+ * 저장된 값은 거부해 봐야 알려 줄 사람이 없어 로그인이 막힐 뿐이다.
+ *
+ * `slice` 를 그냥 쓰면 안 된다. JS 문자열 길이는 UTF-16 코드 유닛이라, 29자 뒤에 이모지가
+ * 오면 30에서 자를 때 **서러게이트 쌍의 앞쪽 절반만 남는다.** 그 깨진 문자가 DB·JWT·응답에
+ * 그대로 실려 나간다. 경계가 쌍 한가운데면 그 글자를 통째로 버린다(Codex #671 P2).
+ */
+export function clampDisplayName(raw: string): string {
+  const normalized = normalizeDisplayName(raw);
+  if (normalized.length <= DISPLAY_NAME_MAX_LENGTH) return normalized;
+  const cut = normalized.slice(0, DISPLAY_NAME_MAX_LENGTH);
+  const last = cut.charCodeAt(cut.length - 1);
+  const cutsSurrogatePair = last >= 0xd800 && last <= 0xdbff;
+  return cutsSurrogatePair ? cut.slice(0, -1) : cut;
+}
+
 export const DisplayNameSchema = z
   .string()
   .transform(normalizeDisplayName)

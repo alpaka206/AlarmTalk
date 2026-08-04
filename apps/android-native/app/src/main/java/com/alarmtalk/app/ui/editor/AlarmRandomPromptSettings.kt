@@ -347,7 +347,7 @@ private fun ManualMessageDialog(
     ) {
         IosAlertField(
             value = draft,
-            onValueChange = { draft = sanitizeUserText(it, allowNewlines = true).take(200) },
+            onValueChange = { draft = sanitizeUserText(it, allowNewlines = true).takeWithoutSplittingPairs(200) },
             placeholder = stringResource(R.string.editor_manual_input_placeholder),
             singleLine = false,
             minHeight = 108.dp,

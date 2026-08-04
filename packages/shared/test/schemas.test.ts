@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { RegisterRequestSchema, LoginRequestSchema, DisplayNameSchema } from '../src/index.js';
+import {
+  RegisterRequestSchema,
+  LoginRequestSchema,
+  DisplayNameSchema,
+  clampDisplayName,
+} from '../src/index.js';
 
 describe('RegisterRequestSchema', () => {
   it('accepts a well-formed registration', () => {
@@ -102,5 +107,27 @@ describe('DisplayNameSchema', () => {
     expect(RegisterRequestSchema.safeParse({ ...base, name: '  ' }).success).toBe(false);
     expect(RegisterRequestSchema.safeParse({ ...base, name: '가'.repeat(31) }).success).toBe(false);
     expect(RegisterRequestSchema.parse({ ...base, name: '  김규원 ' }).name).toBe('김규원');
+  });
+});
+
+describe('clampDisplayName', () => {
+  it('상한을 넘으면 자르되 이모지를 반으로 가르지 않는다', () => {
+    // 29자 + 이모지(서러게이트 쌍) = 31 유닛. 30 에서 그냥 자르면 앞쪽 절반만 남아
+    // 깨진 문자가 DB·JWT 에 그대로 실린다.
+    const name = `${'a'.repeat(29)}\u{1F600}`;
+    const clamped = clampDisplayName(name);
+    expect(clamped).toBe('a'.repeat(29));
+    // 깨진 서러게이트가 남지 않았는지 — 코드포인트로 다시 세도 같은 길이여야 한다.
+    expect([...clamped].length).toBe(clamped.length);
+  });
+
+  it('경계가 쌍 밖이면 그대로 30자까지 자른다', () => {
+    expect(clampDisplayName('가'.repeat(40))).toBe('가'.repeat(30));
+  });
+
+  it('짧으면 정리만 하고 그대로 둔다', () => {
+    expect(clampDisplayName('  김\u200B규원 ')).toBe('김규원');
+    // 이모지로 끝나도 상한 안이면 온전히 남는다.
+    expect(clampDisplayName('웃음\u{1F600}')).toBe('웃음\u{1F600}');
   });
 });
