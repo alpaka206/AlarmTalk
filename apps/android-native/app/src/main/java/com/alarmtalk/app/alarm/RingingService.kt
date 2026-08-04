@@ -55,6 +55,21 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * 울림 정리(`stopRingingOutputs`)가 **지금 이 서비스가 울리는 알람의 것인가.**
+ *
+ * 소리·진동·알림·오디오 포커스는 서비스가 하나씩만 들고 있는 공유 자원이다. 늦게 도는
+ * 마무리가 이미 다른 알람으로 넘어간 서비스의 그것들을 끄면, 새 알람이 소리 없이 살아 있고
+ * 울림 표시만 굳어 정합성 복원이 그 알람을 영영 건너뛴다(Codex #666 P1).
+ *
+ * `completedAlarmId` 가 null 이면(onDestroy 등 어떤 알람인지 모를 때) 정리한다 — 굳은 표시를
+ * 남기는 쪽이 더 나쁘다. `currentAlarmId` 가 null 이면 이미 정리된 상태라 그대로 진행한다.
+ */
+internal fun ringingTeardownBelongsToCurrentAlarm(
+    currentAlarmId: String?,
+    completedAlarmId: String?,
+): Boolean = completedAlarmId == null || currentAlarmId == null || currentAlarmId == completedAlarmId
+
 internal fun storedVoiceFallbackUri(
     localAudioUri: String?,
     bucketId: String?,
@@ -758,6 +773,21 @@ class RingingService : Service() {
      *   모르면(null) 예전처럼 전부 거둔다 — 이유는 [releaseRingingMarkers] 참고.
      */
     private fun stopRingingOutputs(completedAlarmId: String? = ringingAlarmId) {
+        // **이 서비스가 이미 다른 알람으로 넘어갔으면 정리에서 빠진다.**
+        //
+        // A 의 끝맺음 목소리가 끝나고 마무리가 도는 사이 B 가 시작될 수 있다. 그때 아래를
+        // 그대로 실행하면 A 의 마무리가 **B 의** 소리·진동·알림을 끄고 `ringingAlarmId` 까지
+        // 비운다. 그런데 `stopSelf(A의 startId)` 는 B 의 더 새 시작 때문에 서비스를 끝내지
+        // 않으므로, B 는 소리 없이 살아 있고 `activeRingingAlarmId` 는 B 에 **굳는다** —
+        // 정합성 복원이 B 를 영원히 건너뛰어 다음 발생으로 넘어가지도, 다시 울리지도 않는다
+        // (Codex #666 P1). 표시를 '내 것만 거두게' 바꾸면서 생긴 구멍이다.
+        //
+        // 자기 인계 표시만 거두고 빠진다 — 공유 출력은 지금 주인인 B 의 것이다.
+        if (!ringingTeardownBelongsToCurrentAlarm(ringingAlarmId, completedAlarmId)) {
+            releaseRingingMarkers(completedAlarmId)
+            Log.i(TAG, "Skipped ringing teardown: alarm $completedAlarmId was replaced by $ringingAlarmId")
+            return
+        }
         stopMediaAndVibration()
         NotificationManagerCompat.from(this).cancel(RINGING_NOTIFICATION_ID)
         runCatching {

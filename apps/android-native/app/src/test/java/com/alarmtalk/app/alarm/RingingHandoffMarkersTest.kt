@@ -34,6 +34,34 @@ class RingingHandoffMarkersTest {
         )
     }
 
+    /**
+     * 늦게 도는 마무리가 **이미 다른 알람으로 넘어간** 서비스의 공유 출력(소리·진동·알림·
+     * 오디오 포커스)을 끄면 안 된다(Codex #666 P1).
+     *
+     * 끄면 새 알람 B 는 소리 없이 살아 있는데 `stopSelf` 는 A 의 startId 라 서비스가 안 끝나고,
+     * `activeRingingAlarmId` 가 B 에 **굳어** 정합성 복원이 B 를 영영 건너뛴다 — 다음 발생으로
+     * 넘어가지도, 다시 울리지도 않는다.
+     */
+    @Test
+    fun aLateFinalizerDoesNotTearDownTheAlarmThatReplacedIt() {
+        assertFalse(
+            "A 의 마무리가 B 의 소리·진동·알림을 끄면 안 된다",
+            ringingTeardownBelongsToCurrentAlarm(currentAlarmId = "alarm-B", completedAlarmId = "alarm-A"),
+        )
+        assertTrue(
+            "자기 알람의 마무리는 정상적으로 정리한다",
+            ringingTeardownBelongsToCurrentAlarm(currentAlarmId = "alarm-A", completedAlarmId = "alarm-A"),
+        )
+        assertTrue(
+            "어떤 알람인지 모르면(onDestroy 등) 정리한다 — 굳은 표시를 남기는 쪽이 더 나쁘다",
+            ringingTeardownBelongsToCurrentAlarm(currentAlarmId = "alarm-A", completedAlarmId = null),
+        )
+        assertTrue(
+            "이미 정리된 상태면 그대로 진행한다",
+            ringingTeardownBelongsToCurrentAlarm(currentAlarmId = null, completedAlarmId = "alarm-A"),
+        )
+    }
+
     @Test
     fun anUnmarkedAlarmIsNotReportedAsHandingOff() {
         assertFalse(
