@@ -5,7 +5,7 @@
 
 | 파일 | 크기 | 파생물 |
 | --- | --- | --- |
-| `app-icon-master.png` | 2048×2048 | 안드로이드 런처 아이콘 15종, 랜딩 `app/icon.png`·`public/brand-icon.png` |
+| `app-icon-master.png` | 2048×2048 | 안드로이드 런처 아이콘 20종(레거시·원형·적응형 전경·테마), 랜딩 `app/icon.png`·`public/brand-icon.png` |
 | `og-master.png` | 3104×1312 | 랜딩 `app/opengraph-image.png` (1200×630) |
 
 ## 다시 만들기
@@ -54,6 +54,22 @@ for d, px in {'mdpi':108,'hdpi':162,'xhdpi':216,'xxhdpi':324,'xxxhdpi':432}.item
     canvas.paste(c, ((px - nw) // 2, (px - nh) // 2), c)
     canvas.save(f'{RES}/mipmap-{d}/ic_launcher_foreground.png')
 
+# 테마 아이콘(Android 13+) — 시스템이 **알파만 보고 단색으로 칠한다.**
+# 컬러용(70~150)보다 단단한 임계값으로 잘라야 그림자가 안 번지고 실루엣이 깔끔하다.
+# 시계 안 파형은 여기서도 구멍이라 테마 배경색이 그대로 비친다.
+am = mn.point(lambda v: 0 if v <= 120 else (255 if v >= 175 else int((v - 120) * 255 / 55)))
+sil = Image.new('RGBA', SQ.size, (0, 0, 0, 0)); sil.putalpha(am)
+sil = sil.crop(am.point(lambda v: 255 if v > 8 else 0).getbbox())
+for d, px in {'mdpi':108,'hdpi':162,'xhdpi':216,'xxhdpi':324,'xxxhdpi':432}.items():
+    canvas = Image.new('RGBA', (px, px), (0, 0, 0, 0))
+    t = round(px * 54 / 108)
+    w, h = sil.size
+    sc = t / max(w, h)
+    nw, nh = round(w * sc), round(h * sc)
+    c = sil.resize((nw, nh), Image.LANCZOS)
+    canvas.paste(c, ((px - nw) // 2, (px - nh) // 2), c)
+    canvas.save(f'{RES}/mipmap-{d}/ic_launcher_monochrome.png')
+
 SQ.resize((512, 512), Image.LANCZOS).save('apps/landing/app/icon.png')
 SQ.resize((256, 256), Image.LANCZOS).save('apps/landing/public/brand-icon.png')
 
@@ -75,6 +91,11 @@ OG 이미지를 `[locale]/` 밖에 두는 이유: 이미지는 로케일별로 �
 **적응형 아이콘 배경색**은 `values/colors.xml` 의 `ic_launcher_background` = `#0560E9` 다.
 원본 배경(그라데이션)의 평균색이라 시계 안 파형 색과 이어진다 — 여기가 어긋나면 파형만
 다른 파랑으로 떠 보인다. 기기가 아이콘을 확대·시차 이동시킬 때도 이 색이 가장자리에 드러난다.
+
+**테마 아이콘**(`ic_launcher_monochrome.png`)은 `mipmap-anydpi-v26/ic_launcher{,_round}.xml`
+의 `<monochrome>` 으로 연결한다. Android 13+ 에서 사용자가 테마 아이콘을 켰을 때만 쓰이고,
+안 켜져 있으면 평소 아이콘이 그대로 나온다. 크기·중심은 전경과 같은 54% 로 맞춘다 —
+어긋나면 테마를 켤 때마다 아이콘이 튀어 보인다.
 
 레거시 `ic_launcher.png`·`ic_launcher_round.png` 는 풀블리드 원본 그대로 둔다 — minSdk 26
 이라 모든 기기가 적응형을 쓰고, 이 PNG 들은 마스크·확대가 적용되지 않는 폴백이다.
