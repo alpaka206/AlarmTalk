@@ -145,8 +145,8 @@ android {
         // document_version 을 보내기 시작한 건 그 다음날(7/30)이다. 즉 "versionCode 20" 이
         // 두 가지 앱을 가리켜서 강제 업데이트 하한으로 쓸 수 없다 — app-version.ts 의
         // minSupported 도 21 로 맞춰 두었다.
-        versionCode = 22
-        versionName = "1.2.2"
+        versionCode = 23
+        versionName = "1.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
