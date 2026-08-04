@@ -19,6 +19,47 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.2 (versionCode 22)
+
+1.2.1 이후 사용자가 눈으로 확인할 수 있는 변화만 적었다. 알람 엔진 수정(끈 알람이 정합성
+워커에 되살아나 울리던 창)은 "끈 알람이 다시 울리던 문제" 로 한 줄에 넣었다 — 사용자에게는
+그것이 증상이다.
+
+### ko-KR
+
+```
+• 알람 음성이 준비되는 동안 진행률을 하나로 보여줍니다. 만드는 중과 받는 중이 이어져서, 어디까지 됐는지 알 수 있어요.
+• 알림 권한이 없을 때 화면이 사실대로 말합니다. 무엇을 켜야 하는지, 켜지 않으면 어떻게 되는지 권한마다 다르게 안내해요.
+• 껐던 알람이 다시 켜져 울리던 문제를 고쳤습니다.
+• 알람을 만들 때 권한을 먼저 확인합니다. 음성을 만들고 나서 막히는 일이 없어요.
+• 알람 설정 창이 모두 같은 모양으로 통일됐고, 운세 생년월일은 창 안에서 바로 고릅니다.
+• 새 아이콘으로 바뀌었습니다.
+```
+
+### en-US
+
+```
+• One progress number while your alarm voice gets ready — creating and downloading now count as one.
+• Clearer permission notices: what to turn on, and what happens if you don't.
+• Fixed alarms switching themselves back on and ringing.
+• Permissions are checked before the voice is made, so you aren't stopped afterwards.
+• Alarm dialogs share one look; pick the fortune birth date right in the sheet.
+• New app icon.
+```
+
+### ja-JP
+
+```
+• アラーム音声の準備状況を一つの進捗で表示します。作成中とダウンロード中がつながり、どこまで進んだか分かります。
+• 権限が足りないときの案内を正確にしました。何をオンにするか、しないとどうなるかを権限ごとに伝えます。
+• オフにしたアラームがひとりでにオンに戻って鳴る問題を修正しました。
+• アラーム作成時に権限を先に確認します。音声を作ったあとで止まることがなくなりました。
+• アラームの各ダイアログの見た目を統一し、占いの生年月日はその場で選べます。
+• アプリアイコンを新しくしました。
+```
+
+---
+
 ## 1.2.1 (versionCode 21)
 
 `versionCode 20` 은 **건너뛴 번호**다 — 7/29 에 20 을 찍은 빌드가 Play 에 올라가 있어 재사용할
