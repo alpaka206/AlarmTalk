@@ -72,20 +72,23 @@ class PlanChangeSyncWorker(
             snapshotStore.updateFamilyGroup(userId, familyGroup)
             // 토큰 우선순위: **이 요청이 방금 받은 새 토큰 → 지금 저장소의 토큰**. 시작 시점에
             // 잡아 둔 session.token 은 쓰지 않는다 — 그 사이 굴러간 토큰을 옛 것으로 되돌린다.
-            // 위 확인 이후에도 로그아웃이 끼어들 수 있다 — 쓰기 **직전에** 한 번 더 본다.
-            // 비운 저장소에 이 세션을 다시 쓰면 로그아웃이 통째로 되돌아가고, 이어지는
-            // 무료 강등이 떼어낸 알람을 로그인 화면 뒤에서 다시 예약한다(Codex #665 P1).
-            if (sessionStore.sessionGeneration() != startGeneration || sessionStore.read() == null) {
-                return@runCatching Result.success()
-            }
+            //
+            // 위 확인 이후에도 로그아웃이 끼어들 수 있다. 그래서 '검사 후 저장' 이 아니라
+            // **검사와 저장을 한 덩어리로** 하는 [AuthSessionStore.saveSessionIfGeneration] 을
+            // 쓴다. 따로 하면 그 사이가 창이라, 비운 저장소에 이 세션을 되쓰면 로그아웃이 통째로
+            // 되돌아가고 이어지는 무료 강등이 떼어낸 알람을 로그인 화면 뒤에서 다시 예약한다
+            // (Codex #665 P1).
             val response = AuthTokenResponse(
                 token = me.token?.takeIf { it.isNotBlank() } ?: current.token,
                 user = freshUser,
             )
-            if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
-                sessionStore.saveGoogleSession(response)
+            val provider = if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
+                AuthSessionStore.PROVIDER_GOOGLE
             } else {
-                sessionStore.saveAppSession(response)
+                AuthSessionStore.PROVIDER_APP
+            }
+            if (sessionStore.saveSessionIfGeneration(startGeneration, response, provider) == null) {
+                return@runCatching Result.success()
             }
 
             // '진짜 무료'만 변환: 유료 구독 없음 + 가족/커플 접근 없음 + user.plan 무료.
@@ -94,6 +97,14 @@ class PlanChangeSyncWorker(
                 !hasCoupleOrFamilyAccess(billing, familyGroup) &&
                 (plan.isBlank() || plan == "free")
             if (genuinelyFree) {
+                // **강등도 세션이 살아 있을 때만 한다.** 세션 쓰기 앞에서 한 번 봤다고 끝이
+                // 아니다 — `lockPaidAlarmTalks` 는 알람 행을 고치고 OS 예약을 **새로 거는**
+                // 파괴적 쓰기라, 그 사이 로그아웃이 끼면 방금 취소된 예약을 되살린다.
+                // 목록은 소유자 필터에 가려 안 보이는데 리시버는 Room 을 직접 읽어 울린다 —
+                // 로그인 화면 뒤에서 끌 수 없는 알람이 된다(Codex #665 P1).
+                if (sessionStore.sessionGeneration() != startGeneration || sessionStore.read() == null) {
+                    return@runCatching Result.success()
+                }
                 AlarmAppContainer.repository(applicationContext).lockPaidAlarmTalks()
             }
             Result.success()
