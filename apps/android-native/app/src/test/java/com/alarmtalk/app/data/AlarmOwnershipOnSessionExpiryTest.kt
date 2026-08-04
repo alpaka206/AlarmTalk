@@ -427,6 +427,12 @@ class AlarmOwnershipOnSessionExpiryTest {
      * 이 테스트는 세션 전환을 **오직 `clearSessionInsideLock` 람다 안에서만** 한다. 본문에서
      * `currentUser` 를 손으로 먼저 바꾸면 그 순간 이 불변식은 검증 불가능해진다 — 락이
      * 세션 전환을 덮든 말든 결과가 같아지기 때문이다.
+     *
+     * 세우는 자리는 **예약 취소가 끝난 뒤**(`claimUnownedAlarms`)여야 한다. 취소 전에 세우면
+     * 락이 없어도 최종 상태가 '예약 없음' 이 된다 — 워커가 먼저 예약해도 그 뒤에 취소 루프가
+     * 지나가기 때문이다. 실제로 취소 전(`getAllAlarms`)에 세워 봤더니 뮤텍스를 지워도 통과했다.
+     * (`claimUnownedAlarms` 는 detach 경로에서만 불린다 — 복원 쪽은 임자 표시가 없으면
+     *  `settlePendingAlarmOwnership` 이 DAO 를 타지 않고 바로 true 를 준다.)
      */
     @Test
     fun signOutClearsTheSessionBeforeReleasingTheRestoreLock() = runBlocking {
@@ -436,10 +442,10 @@ class AlarmOwnershipOnSessionExpiryTest {
         val insideDetach = CompletableDeferred<Unit>()
         val releaseDetach = CompletableDeferred<Unit>()
         val gated = object : AlarmDao by dao {
-            override suspend fun getAllAlarms(): List<AlarmEntity> {
-                val rows = dao.getAllAlarms()
+            override suspend fun claimUnownedAlarms(userId: String): Int {
+                val claimed = dao.claimUnownedAlarms(userId)
                 if (insideDetach.complete(Unit)) releaseDetach.await()
-                return rows
+                return claimed
             }
         }
         val repo = repositoryWith(gated)
@@ -456,8 +462,13 @@ class AlarmOwnershipOnSessionExpiryTest {
         }
         insideDetach.await()
 
-        // 락을 기다리는 복원(정합성 워커에 해당).
+        // 정합성 워커에 해당하는 복원. 락이 있으면 여기서 멈춰 있어야 한다.
         val worker = launch(Dispatchers.Default) { repo.reschedulePendingAlarms() }
+        assertNull(
+            "락이 있으면 복원은 로그아웃이 끝나기 전엔 끝날 수 없다",
+            withTimeoutOrNull(300) { worker.join() },
+        )
+
         releaseDetach.complete(Unit)
         signOut.join()
         worker.join()
