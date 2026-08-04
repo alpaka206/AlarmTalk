@@ -448,7 +448,7 @@
     <string name="msg_verification_code_six_digits_required">6桁の認証コードを入力してください。</string>
     <string name="msg_voice_already_deleted">すでに削除された声です。</string>
     <string name="msg_voice_clone_audio_too_long">声を作成する音声は2分以下でご用意ください。</string>
-    <string name="msg_voice_clone_audio_too_short">声を作成する音声は1分以上必要です。</string>
+    <string name="msg_voice_clone_audio_too_short">声を作成する音声は12秒以上必要です。</string>
     <string name="msg_voice_create_failed">声を作成できませんでした。</string>
     <string name="msg_voice_create_login_required">声を作成するには、まずログインしてください。</string>
     <string name="msg_voice_created_single">「%1$s」の声を作成しました。</string>

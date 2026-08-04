@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "lucide-react": "^1.27.0",
+    "lucide-react": "^1.28.0",
     "motion": "^12.42.2",
     "next": "^16.2.12",
     "next-intl": "^4.13.4",
@@ -19,10 +19,10 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/node": "^26.1.1",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.0.0",
-    "postcss": "^8.5.23",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "postcss": "^8.5.25",
     "tailwindcss": "^4.0.0",
     "typescript": "^6.0.3"
   }

@@ -451,7 +451,7 @@
     <string name="msg_verification_code_six_digits_required">6자리 인증 코드를 입력해 주세요</string>
     <string name="msg_voice_already_deleted">이미 삭제된 목소리예요</string>
     <string name="msg_voice_clone_audio_too_long">목소리를 만들 음성은 2분 이하로 준비해 주세요.</string>
-    <string name="msg_voice_clone_audio_too_short">목소리를 만들 음성은 1분 이상이어야 해요.</string>
+    <string name="msg_voice_clone_audio_too_short">목소리를 만들 음성은 12초 이상이어야 해요.</string>
     <string name="msg_voice_create_failed">목소리를 만들지 못했어요</string>
     <string name="msg_voice_create_login_required">목소리를 만들려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_created_single">\'%1$s\' 목소리를 만들었어요</string>
