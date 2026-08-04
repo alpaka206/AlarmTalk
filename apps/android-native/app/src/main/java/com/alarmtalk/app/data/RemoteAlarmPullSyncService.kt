@@ -31,6 +31,12 @@ internal class RemoteAlarmPullSyncService(
     // 받은 알람을 복원·스케줄하지 못하게 함). 없으면(null) 레거시처럼 미기록으로 둔다.
     private val currentUserIdProvider: () -> String? = { null },
     /**
+     * 지금 울리는(또는 리시버→서비스 인계 중인) 알람 id. 이 알람들은 pull 이 건드리지
+     * 않는다 — 과거 시각을 살려 다시 예약하면 즉시 재발화한다(Codex #675 P1).
+     */
+    private val ringingAlarmIds: () -> Set<String> =
+        { com.alarmtalk.app.alarm.RingingService.ringingOrHandingOffAlarmIds() },
+    /**
      * 알람 행 + OS 예약을 바꾸는 구간을 **저장소의 다른 경로들과** 직렬화하는 락
      * (`AlarmRepository.restoreMutex` 를 그대로 받는다).
      *
@@ -104,6 +110,18 @@ internal class RemoteAlarmPullSyncService(
                 // 과거 동시 pull 레이스로 같은 서버 알람이 여러 로컬 행으로 임포트됐다면
                 // 가장 오래된 행만 남기고 나머지를 정리한다(같은 시각 중복 울림 자가 치유).
                 // 행 삭제 + 예약 취소라 [alarmMutationLock] 안에서 한다.
+                // **지금 울리는 중인 알람은 건드리지 않는다.** RINGING 은 enabled=true 이고
+                // fireAtMillis 가 이미 과거인데, 아래에서 그 값을 그대로 살려 SCHEDULED 로
+                // 다시 세우고 예약까지 걸면 **즉시 다시 울린다**(Codex #675 P1). 정합성
+                // 경로도 같은 이유로 울리는 행을 건너뛴다(AlarmRepository 의 ringingNow).
+                // 다음 예약은 dismiss/snooze 가 잡으므로 여기서 손댈 이유가 없다.
+                if (alarmDao.getAllByRemoteAlarmId(remote.id)
+                        .any { it.id in ringingAlarmIds() }
+                ) {
+                    skipped += 1
+                    return@runCatching
+                }
+
                 val existing = alarmMutationLock.withLock {
                     val existingRows = alarmDao.getAllByRemoteAlarmId(remote.id)
                     existingRows.drop(1).forEach { duplicate ->
@@ -212,6 +230,7 @@ internal class RemoteAlarmPullSyncService(
             ?.toSet()
         if (snapshotComplete && declinedRemoteIds != null) {
             val servedRemoteIds = remoteAlarms.map { it.id }.toSet()
+            val allRemoteIds = allRemote.map { it.id }.toSet()
             // 서버가 취소한 알람을 지우고 예약을 내리는 구간 — 정합성 복원과 겹치면 복원이
             // 방금 지운 알람의 옛 예약을 되심어 **서버가 취소한 알람이 그대로 울린다**
             // (Codex #666 P1). 네트워크 없이 로컬만 만지므로 통째로 잡아도 짧다.
@@ -225,10 +244,20 @@ internal class RemoteAlarmPullSyncService(
                             ownedByRecipient(it) &&
                             !it.remoteAlarmId.isNullOrBlank() &&
                             it.remoteAlarmId !in servedRemoteIds &&
-                            // **그만받기 한 것만 지운다.** 서버 목록에서 빠지는 이유는 두
-                            // 가지인데(수신자 그만받기 / 발신자 삭제) 응답만으로는 구분이 안
-                            // 된다. 그만받기는 이 기기가 직접 한 일이라 로컬에 기록이 남는다.
-                            declinedRemoteIds.contains(it.remoteAlarmId)
+                            // 서버 목록에서 빠지는 이유는 셋이고, 하나만 남겨야 한다.
+                            //  (a) 수신자가 그만받기 → 지운다(다른 기기에서도 지워져야 한다)
+                            //  (b) 구 네임스페이스 버그로 **내가 보낸 알람**을 받은 것으로
+                            //      잘못 임포트한 잔재 → 지운다. 그 행의 remoteAlarmId 는
+                            //      전체 목록에는 있는데 '받은 것' 에는 없다. 생성자는 자기
+                            //      알람을 decline 할 수 없어(resolveDeclineTarget 이 거부)
+                            //      (a) 조건만 두면 이 잔재가 영영 남아 진짜 알람과 함께 울린다
+                            //      (Codex #675 P2).
+                            //  (c) 발신자가 삭제 → **남긴다.** 받은 뒤부터는 받는 사람 것이라,
+                            //      내가 기대고 자는 알람이 남의 조작으로 사라지면 안 된다.
+                            (
+                                declinedRemoteIds.contains(it.remoteAlarmId) ||
+                                    it.remoteAlarmId in allRemoteIds
+                                )
                     }
                     .forEach { stale ->
                         alarmScheduler.cancel(stale.id)

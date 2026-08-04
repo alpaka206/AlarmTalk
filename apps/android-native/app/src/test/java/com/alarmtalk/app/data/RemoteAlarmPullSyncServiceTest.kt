@@ -221,6 +221,18 @@ class RemoteAlarmPullSyncServiceTest {
         assertEquals(null, resolved.keptFireAtMillis)
     }
 
+    @Test
+    fun ringingReceivedAlarmKeepsPastFireTimeSoPullMustSkipIt() {
+        // 울리는 중인 행은 enabled=true 인데 fireAtMillis 가 이미 과거다. 그 값을 살려
+        // 다시 SCHEDULED 로 세우고 예약하면 즉시 재발화한다(Codex #675 P1).
+        // 그래서 pull 은 이 행을 아예 건너뛴다 — 아래는 '살리면 과거가 그대로 남는다' 는
+        // 사실을 고정해, 건너뛰기를 지우면 무엇이 깨지는지 남긴다.
+        val ringing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+        val resolved = resolveReceivedSchedule(ringing, 6, 0, 0, 5)
+        assertEquals(ringing.fireAtMillis, resolved.keptFireAtMillis)
+        assertTrue("울리는 행의 fireAt 은 과거다", ringing.fireAtMillis < 2_000L)
+    }
+
     private fun alarm(
         enabled: Boolean,
         origin: String,
