@@ -380,7 +380,7 @@ internal fun NicknameEditDialog(
         // 비었을 때 무엇을 넣는 자리인지는 placeholder 가 알려 준다.
         IosAlertField(
             value = value,
-            onValueChange = { value = sanitizeDisplayName(it, maxLength = 30) },
+            onValueChange = { value = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
             placeholder = stringResource(R.string.hs_nickname_field_placeholder),
             enabled = !busy,
         )

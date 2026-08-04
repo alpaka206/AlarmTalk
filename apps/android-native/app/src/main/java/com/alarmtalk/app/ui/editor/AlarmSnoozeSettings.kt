@@ -267,9 +267,10 @@ internal fun SnoozeSettingsPane(
                 IosAlertAction(
                     label = stringResource(R.string.editor_apply),
                     emphasized = true,
+                    // 범위 밖이면 **버튼을 흐리게** 둔다. 예전엔 '눌러도 닫히지 않는 것' 으로
+                    // 알렸는데, 그건 고장과 구분되지 않는다(Codex #671 P2).
+                    enabled = customMinutes != null && customMinutes in 1..60,
                     onClick = {
-                        // 범위 밖이면 아무 일도 하지 않는다 — iOS 알럿은 액션을 흐리게 두는
-                        // 문법이 없어, 눌러도 닫히지 않는 것으로 '아직 아니다' 를 알린다.
                         customMinutes?.takeIf { it in 1..60 }?.let {
                             onSnoozeMinutesChange(it)
                             customIntervalDialogOpen = false

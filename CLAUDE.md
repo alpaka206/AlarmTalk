@@ -44,9 +44,14 @@
 같은 값에 규칙이 여러 개면 **가장 느슨한 경로가 실질 규칙**이 된다. 실제로 표시 이름이
 가입 64자·trim 없음 / `PATCH /user/me` 30자 / 구글 로그인 무검증 으로 갈라져 있었다.
 
-- **표시 이름(닉네임·목소리 이름)**: `@alarmtalk/shared` 의 `DisplayNameSchema`·
-  `normalizeDisplayName`·`DISPLAY_NAME_MAX_LENGTH`(30) 가 유일 출처. 새 경로가 이름을 받으면
-  자체 `trim()`/`max()` 를 쓰지 말고 이걸 가져다 쓴다. **외부 신원공급자(구글)가 준 이름도 외부 입력**이다.
+- **표시 이름**: `@alarmtalk/shared` 의 `DisplayNameSchema`·`normalizeDisplayName` 이 **글자
+  규칙의** 유일 출처. 새 경로가 이름을 받으면 자체 `trim()`/`max()` 를 쓰지 말고 이걸 가져다
+  쓴다. **외부 신원공급자(구글)가 준 이름도 외부 입력**이다.
+- **길이는 필드마다 다르고, 그 값도 shared 에만 둔다**: 계정 닉네임 `DISPLAY_NAME_MAX_LENGTH`
+  (30) / 목소리 프로필 이름 `VOICE_NAME_MAX_LENGTH`(50). 목소리 쪽이 긴 건 의도다 — 사람
+  이름이 아니라 라벨("엄마 목소리(2024년 녹음)")이라 여유를 둔다. **글자 규칙은 둘이 같다.**
+  앱에도 같은 값의 `DisplayNameMaxLength`·`VoiceNameMaxLength` 를 두고 리터럴을 쓰지 않는다 —
+  앱이 더 느슨하면 서버에서 거절당하고, 더 빡빡하면 서버가 허용하는 이름을 못 쓴다.
 - **앱 1차 방어선**: `ui/components/CodeRedeemField.kt` 의 `sanitizeUserText` /
   `sanitizeDisplayName` / `sanitizeRedeemCode`. 새 입력창은 `onValueChange` 에서 이걸 통과시킨다.
 - **거르는 것**: 제어문자(로그·CSV 를 깨고 TTS 낭독을 망친다), 제로폭(U+200B~, U+FEFF —

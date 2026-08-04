@@ -341,6 +341,8 @@ private fun ManualMessageDialog(
             IosAlertAction(
                 label = stringResource(R.string.editorp_random_save_button),
                 emphasized = true,
+                // 빈 문구로는 저장할 수 없다 — 눌러도 아무 일 없는 버튼 대신 흐리게 둔다.
+                enabled = draft.isNotBlank(),
                 onClick = { draft.trim().takeIf { it.isNotBlank() }?.let(onConfirm) },
             ),
         ),
@@ -429,7 +431,8 @@ internal fun WeatherLocationDialog(
             ) {
                 OutlinedTextField(
                     value = draftCity,
-                    onValueChange = { draftCity = sanitizeDisplayName(it, maxLength = 30) },
+                    // 도시명은 사람 이름이 아니지만 '한 줄·보이지 않는 문자 없음' 규칙은 같다.
+                    onValueChange = { draftCity = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
                     label = { Text(stringResource(R.string.hs_weather_city_label)) },
                     placeholder = { Text(stringResource(R.string.hs_weather_city_placeholder)) },
                     singleLine = true,

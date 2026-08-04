@@ -2076,7 +2076,7 @@ internal fun VoiceProfileManagementPanel(
             description = stringResource(R.string.voices_edit_name_desc),
             name = renameName,
             nameError = renameNameError,
-            onNameChange = { renameName = sanitizeDisplayName(it, maxLength = 50) },
+            onNameChange = { renameName = sanitizeDisplayName(it, maxLength = VoiceNameMaxLength) },
             onDismiss = { renameTarget = null },
             onConfirm = {
                 renameSubmitAttempted = true

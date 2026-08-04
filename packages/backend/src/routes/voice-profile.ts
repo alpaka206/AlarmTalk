@@ -28,7 +28,7 @@ import {
 } from '../lib/voice-slots';
 import { analyzeSpeechStyleWithVertex } from '../lib/vertex-translate';
 import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
-import { VoicePreviewTextUpdateSchema } from '@alarmtalk/shared';
+import { VoicePreviewTextUpdateSchema, VOICE_NAME_MAX_LENGTH } from '@alarmtalk/shared';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
@@ -657,13 +657,13 @@ voiceProfile.patch('/:id', async (c) => {
   const listenerTitle = normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle);
   if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
     return c.json(
-      { error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' },
+      { error: `name must be 1-${VOICE_NAME_MAX_LENGTH} characters`, error_code: 'INVALID_NAME_LENGTH' },
       400,
     );
   }
-  if (hasName && (name.length === 0 || name.length > 50)) {
+  if (hasName && (name.length === 0 || name.length > VOICE_NAME_MAX_LENGTH)) {
     return c.json(
-      { error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' },
+      { error: `name must be 1-${VOICE_NAME_MAX_LENGTH} characters`, error_code: 'INVALID_NAME_LENGTH' },
       400,
     );
   }
@@ -1215,9 +1215,9 @@ voiceProfile.post('/clone', async (c) => {
     // 검증 통과 후의 durationMs — 아래 voice_uploads 보관(재시도용 원본)에 기록한다.
     const cloneDurationMs = Number.parseInt(String(formData.get('durationMs')), 10);
 
-    if (name.length > 50) {
+    if (name.length > VOICE_NAME_MAX_LENGTH) {
       return c.json(
-        { error: 'Name must be 50 characters or less', error_code: 'NAME_TOO_LONG' },
+        { error: `Name must be ${VOICE_NAME_MAX_LENGTH} characters or less`, error_code: 'NAME_TOO_LONG' },
         400,
       );
     }

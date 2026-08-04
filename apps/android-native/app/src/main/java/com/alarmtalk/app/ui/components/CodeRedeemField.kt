@@ -65,6 +65,17 @@ internal fun sanitizeUserText(raw: String, allowNewlines: Boolean = false): Stri
 }
 
 /**
+ * 표시 이름 상한. 서버(`@alarmtalk/shared`)의 `DISPLAY_NAME_MAX_LENGTH`·
+ * `VOICE_NAME_MAX_LENGTH` 와 같은 값이어야 한다 — 앱이 더 느슨하면 서버에서 거절당하고,
+ * 더 빡빡하면 서버가 허용하는 이름을 못 쓴다.
+ *
+ * 목소리 이름이 더 긴 건 의도다. 사람 이름이 아니라 라벨이라("엄마 목소리(2024년 녹음)")
+ * 여유를 둔다. **글자 규칙은 둘이 같다**(sanitizeDisplayName).
+ */
+internal const val DisplayNameMaxLength = 30
+internal const val VoiceNameMaxLength = 50
+
+/**
  * 길이 상한까지 자르되 **서러게이트 쌍을 반으로 가르지 않는다.**
  *
  * 코틀린 `String.take` 는 UTF-16 코드 유닛 단위라, 29자 뒤에 이모지가 오면 30에서 자를 때

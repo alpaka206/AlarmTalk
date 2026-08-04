@@ -56,6 +56,14 @@ export type PasswordResetConfirmRequest = z.infer<typeof PasswordResetConfirmReq
  */
 export const DISPLAY_NAME_MAX_LENGTH = 30;
 
+/**
+ * 목소리 프로필 이름 상한. 계정 닉네임(30)과 **일부러 다르다** — 이건 사람 이름이 아니라
+ * 라벨이라("엄마 목소리(2024년 녹음)") 조금 길게 둔다. 반면 **글자 규칙은 같다**
+ * (`normalizeDisplayName` — 제어문자·제로폭·양방향 문자 제거, 줄바꿈→공백).
+ * 값이 여기 한 곳에만 있어야 앱·서버가 갈라지지 않는다.
+ */
+export const VOICE_NAME_MAX_LENGTH = 50;
+
 // eslint-disable-next-line no-control-regex -- 제어문자를 **일부러** 매칭한다. 걸러내는 게 목적이다.
 const INVISIBLE_RE = /[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/g;
 
