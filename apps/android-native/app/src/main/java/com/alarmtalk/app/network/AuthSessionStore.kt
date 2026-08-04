@@ -55,6 +55,25 @@ fun AuthSessionStore.observeUserId(): Flow<String?> =
     prefsSnapshotFlow(::registerChangeListener, ::unregisterChangeListener) { read()?.user?.id }
 
 /**
+ * 저장된 세션 전체를 흘린다(비로그인 null).
+ *
+ * [observeUserId] 는 '계정이 바뀌었나' 만 보므로 **같은 계정 안에서 토큰이 굴러가는 것**을
+ * 잡지 못한다. 그런데 그게 실제로 일어난다 — 백그라운드 워커가 `GET /auth/me` 로 받은 새
+ * 토큰을 저장소에만 쓰고, 이미 살아 있는 ViewModel 은 옛 토큰을 계속 들고 있다.
+ *
+ * 그 상태가 위험한 이유는 401 이 나서가 아니라 **401 이 나도 아무 일도 안 일어나서**다:
+ * 401 처리기는 '저장소에 더 새 토큰이 있다' 는 이유로 그 401 을 무시하고, okhttp 인증기는
+ * 재발급 수단이 없어 재시도하지 않는다. 그래서 멀쩡한 토큰을 두고 요청만 조용히 실패하고
+ * 사용자는 이유도 모른 채 같은 동작을 다시 해야 한다(Codex #665 P2).
+ *
+ * 토큰만이 아니라 세션 전체를 흘리는 이유: 프로필 갱신도 같은 경로로 저장되므로, 화면이
+ * 쓰는 값까지 한 번에 수렴한다. [AuthSession] 은 data class 라 [distinctUntilChanged] 가
+ * 무관한 prefs 변경(예약 표시 등)을 접어 준다.
+ */
+fun AuthSessionStore.observeSession(): Flow<AuthSession?> =
+    prefsSnapshotFlow(::registerChangeListener, ::unregisterChangeListener) { read() }
+
+/**
  * 세션을 비울 때 '소유자 미정 알람의 임자'로 남길 값.
  *
  * 이 마커는 "마지막에 로그인했던 사람"이 아니라 **"아직 소유자를 못 새긴 알람의 주인"**이다.
@@ -86,6 +105,27 @@ internal fun resolvePendingOwnerUserId(leavingUserId: String?, existingPendingOw
  * 순수 함수로 떼어 둔 이유는 [resolvePendingOwnerUserId] 와 같다 — 이 판정이 조용히 뒤집히면
  * 로그아웃이 통째로 되돌아가는데, 암호화 prefs 를 띄우지 않고 규칙만 고정해 두려는 것이다.
  */
+/**
+ * 저장소에 쓰인 세션을 메모리로 **끌어와도 되는가**.
+ *
+ * 판정은 하나다 — "저장소가 지금 메모리보다 나은가". 셋 중 하나라도 걸리면 아니다:
+ *  - 저장소가 비었다(로그아웃 직후). 끌어오면 세션 정리를 되돌리는 셈이다.
+ *  - 메모리에 세션이 없다. 로그인은 로그인 경로가 한다.
+ *  - 계정이 다르다. 계정 전환은 정리와 함께 로그인 경로가 처리한다.
+ *
+ * 순수 함수로 떼어 둔 이유는 [sessionSurvivedForWrite] 와 같다 — 이 판정이 느슨해지면
+ * 로그아웃한 세션이 되살아나고, 빡빡해지면 좀비 세션이 남는다.
+ */
+internal fun shouldAbsorbStoredSession(
+    stored: AuthSession?,
+    current: AuthSession?,
+    signingOut: Boolean,
+): Boolean {
+    if (stored == null || current == null || signingOut) return false
+    if (stored.user.id != current.user.id) return false
+    return stored != current
+}
+
 internal fun sessionSurvivedForWrite(
     expectedGeneration: Long,
     currentGeneration: Long,

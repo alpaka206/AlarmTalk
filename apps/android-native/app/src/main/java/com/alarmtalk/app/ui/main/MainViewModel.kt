@@ -22,6 +22,8 @@ import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
+import com.alarmtalk.app.network.observeSession
+import com.alarmtalk.app.network.shouldAbsorbStoredSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
@@ -164,6 +166,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile
     internal var signingOut = false
 
+    /**
+     * 저장소에만 반영된 세션 갱신을 메모리로 끌어온다.
+     *
+     * 백그라운드 워커는 `GET /auth/me` 로 받은 새 토큰을 **저장소에만** 쓴다. 이 ViewModel 은
+     * 생성 시점 말고는 저장소를 읽지 않아 옛 토큰을 계속 들고 있고, 그 토큰이 만료되면
+     * 이후 요청이 전부 401 로 실패한다. 그런데 401 처리기는 '저장소에 더 새 토큰이 있다' 는
+     * 이유로 그 401 을 **무시**하고, okhttp 인증기도 재발급 수단이 없어 재시도하지 않는다 —
+     * 멀쩡한 토큰을 두고 요청만 조용히 실패한다(Codex #665 P2).
+     *
+     * 401 을 맞은 **뒤에** 흡수하는 것으로는 부족하다. 그 요청은 이미 실패했고 아무도 다시
+     * 보내 주지 않아, 사용자는 이유도 모른 채 같은 동작을 다시 해야 한다. 저장소가 바뀌는
+     * 즉시 맞춰야 그 실패 자체가 생기지 않는다.
+     *
+     * `bearerOrMessage` 한 곳만 고치는 방법도 있었지만, 토큰을 쓰는 자리가 그 헬퍼를 거치지
+     * 않는 곳까지 마흔 곳 가까이 된다. 세션 자체를 수렴시켜 한 곳에서 끝낸다.
+     *
+     * **덮어쓰지 않는 경우** — 셋 다 '저장소가 지금 메모리보다 낫다' 가 성립하지 않는다:
+     *  - 저장소가 비었다(로그아웃 직후). 여기서 되살리면 세션 정리를 되돌리는 셈이다.
+     *  - 로그아웃이 진행 중이다([signingOut]).
+     *  - 계정이 다르다. 계정 전환은 로그인 경로가 정리와 함께 처리한다.
+     */
+    private fun absorbStoredSession(stored: AuthSession?) {
+        if (!shouldAbsorbStoredSession(stored, authSession, signingOut)) return
+        authSession = stored
+        Log.i(TAG, "Absorbed a session update written by a background worker")
+    }
+
     private fun handleUnauthorized(failedToken: String?) {
         viewModelScope.launch {
             val session = authSession ?: return@launch
@@ -192,16 +221,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 failedToken != storedToken
             if (!isCurrentToken || supersededByStore) {
                 // **무시만 하면 좀비 세션이 된다.** 여기서 걸렀다는 건 메모리 토큰과 저장소
-                // 토큰이 갈렸다는 뜻인데(워커가 저장소만 갱신하는 경로가 있다), 이 ViewModel 은
-                // 생성 시점 말고는 저장소를 관찰하지 않는다. 그대로 두면 앞으로의 모든 요청이
-                // 메모리의 옛 토큰으로 나가 계속 401 을 맞는데, 그 401 은 또 여기서 무시된다 —
-                // 화면은 '로그인됨' 인데 서버 호출은 전부 실패하고 안내조차 없는 상태가
-                // 프로세스가 죽을 때까지 이어진다(Codex #665 P1).
+                // 토큰이 갈렸다는 뜻이다. 그대로 두면 이후 모든 요청이 메모리의 옛 토큰으로
+                // 나가 계속 401 을 맞는데, 그 401 은 또 여기서 무시된다 — 화면은 '로그인됨'
+                // 인데 서버 호출은 전부 실패하고 안내조차 없는 상태가 된다(Codex #665 P1).
                 //
-                // 그래서 저장소 세션을 **메모리로 흡수**한다(같은 계정일 때만). 저장소 토큰이
-                // 살아 있으면 그대로 복구되고, 그것마저 폐기됐으면 다음 401 은
-                // `failedToken == storedToken` 이 되어 정상적으로 만료 처리로 떨어진다 —
-                // 어느 쪽이든 올바른 종착점으로 수렴한다.
+                // 갈라지는 것 자체는 [absorbStoredSession] 이 저장소 변경을 관찰해 막는다.
+                // 여기는 그 관찰이 아직 도착하지 않은 찰나를 위한 마지막 방어다 — 같은 계정
+                // 이면 지금 읽은 저장소 세션을 그대로 흡수한다. 저장소 토큰이 살아 있으면
+                // 복구되고, 그것마저 폐기됐으면 다음 401 은 `failedToken == storedToken` 이
+                // 되어 정상적으로 만료 처리로 떨어진다 — 어느 쪽이든 올바른 종착점이다.
                 if (stored != null &&
                     stored.user.id == session.user.id &&
                     authSession?.token == session.token
@@ -1013,6 +1041,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
+        // 저장소에만 반영된 세션 갱신을 메모리로 계속 끌어온다 — 이유는
+        // [absorbStoredSession] 과 AuthSessionStore.observeSession 주석 참고.
+        viewModelScope.launch {
+            authSessionStore.observeSession().collect(::absorbStoredSession)
+        }
         RemoteAlarmSyncScheduler.ensurePeriodic(application)
         if (authSession != null) {
             RemoteAlarmSyncScheduler.runOnce(application)
