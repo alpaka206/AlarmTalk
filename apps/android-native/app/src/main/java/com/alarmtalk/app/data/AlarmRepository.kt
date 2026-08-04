@@ -732,12 +732,24 @@ class AlarmRepository(
      * 기본 알람음을 재생하게 한다. 캐시 오디오·목소리 참조는 그대로 보존해 재유료 시 복원한다.
      * 로컬만 갱신(upsertPreservingServerSyncFields)해 서버의 원본 목소리 알람은 백스톱으로 남긴다.
      */
-    // 복원·로그아웃과 직렬화한다([restoreMutex]). 락이 없으면 로그아웃이 예약을 다 취소한 뒤
+    /**
+     * @param expectedOwnerUserId 이 강등을 **확정한 계정**. 소유자를 고르는 시점에 계정이 그대로인지
+     *   확인한다 — 워커가 A 로 '진짜 무료' 를 확정한 뒤 로그아웃·B 로그인이 끼면, 그 판정이 B 의
+     *   **유료** 알람에 적용돼 sound-only 로 바뀌고 다시 예약된다. 호출부의 사전 확인만으로는 이
+     *   창을 못 닫는다(Codex #665 P1). `degradeAlarmsWithInaccessibleVoice` 와 같은 규약이다.
+     *   null 이면 검사하지 않는다 — 방금 읽은 세션으로 곧바로 부르는 전경 경로용이다.
+     */
+    // 복원·로그아웃과도 직렬화한다([restoreMutex]). 락이 없으면 로그아웃이 예약을 다 취소한 뒤
     // (행은 enabled 로 남는다) 이 함수가 그 행들을 sound-only 로 **다시 예약**한다 — 목록은
-    // 소유자 필터에 가려 안 보이는데 리시버는 Room 을 직접 읽어 울리는, 끌 수 없는 알람이 된다
-    // (Codex #665 P1). 아래 currentUserIdProvider() 를 락 안에서 읽는 것도 같은 이유다.
-    suspend fun lockPaidAlarmTalks(): Int = restoreMutex.withLock {
+    // 소유자 필터에 가려 안 보이는데 리시버는 Room 을 직접 읽어 울리는, 끌 수 없는 알람이 된다.
+    // 아래 currentUserIdProvider() 를 락 안에서 읽는 것도 같은 이유다. 락과 기대 계정은 서로
+    // 다른 것을 막는다 — 락은 '로그아웃과 겹치는 것', 기대 계정은 '검사 이후 계정이 바뀐 것'.
+    suspend fun lockPaidAlarmTalks(expectedOwnerUserId: String? = null): Int = restoreMutex.withLock {
         val currentUser = currentUserIdProvider() ?: return 0
+        if (expectedOwnerUserId != null && currentUser != expectedOwnerUserId) {
+            Log.i(TAG, "Skipped paid-alarm lock: account changed since the plan was confirmed")
+            return 0
+        }
         // 미기록 행에 소유자를 '영구히' 새기는 경로다. 새기기 전에 임자를 먼저 확정하지 않으면
         // 앞 계정 A 의 미기록 알람이 B 것으로 박히고, 뒤늦은 확정(claimUnownedAlarms 는 null 만
         // 대상)이 더는 손댈 수 없어 A 는 그 알람을 영영 잃는다. reschedulePendingAlarms 와 같은 규칙.

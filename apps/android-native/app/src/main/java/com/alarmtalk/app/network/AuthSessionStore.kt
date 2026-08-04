@@ -55,6 +55,25 @@ fun AuthSessionStore.observeUserId(): Flow<String?> =
     prefsSnapshotFlow(::registerChangeListener, ::unregisterChangeListener) { read()?.user?.id }
 
 /**
+ * 저장된 세션 전체를 흘린다(비로그인 null).
+ *
+ * [observeUserId] 는 '계정이 바뀌었나' 만 보므로 **같은 계정 안에서 토큰이 굴러가는 것**을
+ * 잡지 못한다. 그런데 그게 실제로 일어난다 — 백그라운드 워커가 `GET /auth/me` 로 받은 새
+ * 토큰을 저장소에만 쓰고, 이미 살아 있는 ViewModel 은 옛 토큰을 계속 들고 있다.
+ *
+ * 그 상태가 위험한 이유는 401 이 나서가 아니라 **401 이 나도 아무 일도 안 일어나서**다:
+ * 401 처리기는 '저장소에 더 새 토큰이 있다' 는 이유로 그 401 을 무시하고, okhttp 인증기는
+ * 재발급 수단이 없어 재시도하지 않는다. 그래서 멀쩡한 토큰을 두고 요청만 조용히 실패하고
+ * 사용자는 이유도 모른 채 같은 동작을 다시 해야 한다(Codex #665 P2).
+ *
+ * 토큰만이 아니라 세션 전체를 흘리는 이유: 프로필 갱신도 같은 경로로 저장되므로, 화면이
+ * 쓰는 값까지 한 번에 수렴한다. [AuthSession] 은 data class 라 [distinctUntilChanged] 가
+ * 무관한 prefs 변경(예약 표시 등)을 접어 준다.
+ */
+fun AuthSessionStore.observeSession(): Flow<AuthSession?> =
+    prefsSnapshotFlow(::registerChangeListener, ::unregisterChangeListener) { read() }
+
+/**
  * 세션을 비울 때 '소유자 미정 알람의 임자'로 남길 값.
  *
  * 이 마커는 "마지막에 로그인했던 사람"이 아니라 **"아직 소유자를 못 새긴 알람의 주인"**이다.
@@ -72,6 +91,27 @@ fun AuthSessionStore.observeUserId(): Flow<String?> =
 internal fun resolvePendingOwnerUserId(leavingUserId: String?, existingPendingOwner: String?): String? =
     existingPendingOwner?.takeIf { it.isNotBlank() }
         ?: leavingUserId?.takeIf { it.isNotBlank() }
+
+/**
+ * 저장소에 쓰인 세션을 메모리로 **끌어와도 되는가**.
+ *
+ * 판정은 하나다 — "저장소가 지금 메모리보다 나은가". 셋 중 하나라도 걸리면 아니다:
+ *  - 저장소가 비었다(로그아웃 직후). 끌어오면 세션 정리를 되돌리는 셈이다.
+ *  - 메모리에 세션이 없다. 로그인은 로그인 경로가 한다.
+ *  - 계정이 다르다. 계정 전환은 정리와 함께 로그인 경로가 처리한다.
+ *
+ * 순수 함수로 떼어 둔 이유는 [sessionSurvivedForWrite] 와 같다 — 이 판정이 느슨해지면
+ * 로그아웃한 세션이 되살아나고, 빡빡해지면 좀비 세션이 남는다.
+ */
+internal fun shouldAbsorbStoredSession(
+    stored: AuthSession?,
+    current: AuthSession?,
+    signingOut: Boolean,
+): Boolean {
+    if (stored == null || current == null || signingOut) return false
+    if (stored.user.id != current.user.id) return false
+    return stored != current
+}
 
 /**
  * 오래 걸린 작업이 결과를 되쓰기 직전에 묻는 것: **내가 시작할 때의 그 세션이 아직 살아 있나.**
@@ -309,35 +349,28 @@ class AuthSessionStore(context: Context) {
     }
 
     /**
-     * **시작할 때의 세션이 아직 살아 있을 때만** 저장한다. 살아 있지 않으면 아무것도 쓰지 않고
-     * null 을 돌려준다.
+     * **토큰만** 갈아 끼운다(프로필은 저장소에 있는 것을 그대로 둔다). 시작할 때의 세션이
+     * 살아 있지 않으면 아무것도 쓰지 않고 null.
      *
-     * 왜 별도 API 인가. 오래 걸리는 작업(워커의 네트워크 왕복)은 결과를 쓰기 전에
-     * [sessionGeneration] 을 대조하는데, **검사와 쓰기가 따로면 그 사이가 창이다.**
-     * 검사를 통과한 직후 [clear] 가 끼면 워커가 **비워진 저장소에 옛 세션을 되쓴다** —
-     * 세대는 이미 올라간 뒤라 그 부활을 알아챌 방법이 그다음 어디에도 없고, 로그아웃이
-     * 떼어낸 알람이 콜드 스타트에서 전부 되살아난다(Codex #665 P1).
+     * 백그라운드 워커는 이걸 쓴다. 워커가 [saveSessionIfGeneration] 으로 **프로필까지** 쓰면,
+     * 자기가 `/auth/me` 를 받은 뒤 남은 요청을 도는 사이 전경에서 닉네임·설정이 바뀌었을 때
+     * **그 최신 값을 자기 옛 스냅샷으로 되돌린다.** 화면은 관찰로 저장소를 따라오므로 사용자가
+     * 방금 바꾼 이름이 눈앞에서 옛 이름으로 돌아간다(Codex #665 P2).
      *
-     * 락이 **클래스 단위**인 이유: 이 저장소는 인스턴스가 여럿이다(워커는 매번
-     * `AuthSessionStore(context)` 를 새로 만든다). 같은 prefs 파일을 보므로 인스턴스 락은
-     * 상호배제가 되지 않는다.
-     *
-     * `read() == null` 도 함께 본다 — 세대가 같아도 토큰이 비어 있으면 그건 '세션이 없는
-     * 상태'이고, 거기에 쓰는 것은 부활이다.
+     * 워커가 정말 필요한 건 굴러간 토큰 하나뿐이다 — 플랜 판정은 이 함수와 무관하게
+     * 워커 안에서 쓰고, 권한 스냅샷은 `AccessSnapshotStore` 가 따로 들고 있다.
      */
-    fun saveSessionIfGeneration(
-        expectedGeneration: Long,
-        response: AuthTokenResponse,
-        provider: String,
-    ): AuthSession? = synchronized(sessionWriteLock) {
-        val alive = sessionSurvivedForWrite(
-            expectedGeneration = expectedGeneration,
-            currentGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L),
-            currentToken = prefs.getString(KEY_TOKEN, null),
-        )
-        if (!alive) return@synchronized null
-        save(token = response.token, provider = provider, user = response.user)
-    }
+    fun saveTokenIfGeneration(expectedGeneration: Long, token: String): AuthSession? =
+        synchronized(sessionWriteLock) {
+            val alive = sessionSurvivedForWrite(
+                expectedGeneration = expectedGeneration,
+                currentGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L),
+                currentToken = prefs.getString(KEY_TOKEN, null),
+            )
+            if (!alive || token.isBlank()) return@synchronized null
+            prefs.edit().putString(KEY_TOKEN, token).apply()
+            read()
+        }
 
     fun save(session: AuthSession): AuthSession =
         save(token = session.token, provider = session.provider, user = session.user)
