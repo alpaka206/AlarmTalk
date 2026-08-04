@@ -15,28 +15,28 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Button
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -179,10 +179,14 @@ private fun FortuneBirthDatePickers(
     error: Boolean,
     onChange: (String) -> Unit,
 ) {
+    // **고르는 중인 값은 여기 남는다.** 부모는 완성된 날짜만 들고 있어서, 연도만 고른
+    // 상태를 표현할 방법이 없다 — 아래 emit 이 미완성일 때 "" 를 내보내므로 부모에만
+    // 기대면 연도·월 선택이 그대로 버려지고 셋을 다 고를 방법이 없어진다.
+    // value 가 바뀔 때(= 날짜가 완성됐거나 밖에서 갈아끼웠을 때)만 다시 읽는다.
     val digits = value.filter { it.isDigit() }
-    val year = digits.take(4).toIntOrNull()
-    val month = digits.drop(4).take(2).toIntOrNull()
-    val day = digits.drop(6).take(2).toIntOrNull()
+    var year by remember(value) { mutableStateOf(digits.take(4).toIntOrNull()) }
+    var month by remember(value) { mutableStateOf(digits.drop(4).take(2).toIntOrNull()) }
+    var day by remember(value) { mutableStateOf(digits.drop(6).take(2).toIntOrNull()) }
 
     // 올해부터 120년 전까지 — 생년월일에 미래는 없다.
     val thisYear = Calendar.getInstance().get(Calendar.YEAR)
@@ -192,12 +196,14 @@ private fun FortuneBirthDatePickers(
     val days = (1..daysInMonth).toList()
 
     fun emit(y: Int?, m: Int?, d: Int?) {
-        if (y == null || m == null) {
-            onChange("")
-            return
-        }
-        val clamped = d?.coerceAtMost(daysInMonth(y, m))
-        if (clamped == null) {
+        // 월이 짧아지면 이미 고른 일자를 그 달 말일로 당긴다(2/31 은 선택지에 없다).
+        val clamped = if (y != null && m != null) d?.coerceAtMost(daysInMonth(y, m)) else d
+        year = y
+        month = m
+        day = clamped
+        // 셋이 다 있을 때만 완성된 날짜를 올려보낸다. 미완성은 "" — 저장 시 필수값
+        // 검사에 걸려야 하고, 반쯤 만든 날짜가 알람에 저장돼선 안 된다.
+        if (y == null || m == null || clamped == null) {
             onChange("")
             return
         }
@@ -246,6 +252,33 @@ private fun daysInMonth(year: Int?, month: Int?): Int {
     }.getActualMaximum(Calendar.DAY_OF_MONTH)
 }
 
+/** 드롭다운이 화면을 다 덮지 않게 하는 상한. 이 아래는 메뉴 안에서 스크롤한다. */
+private val MenuMaxHeight = 288.dp
+
+/** DropdownMenuItem 기본 높이(M3). 스크롤 위치 계산에 쓴다. */
+private val MenuItemHeight = 48.dp
+
+/** 고른 값을 눈에 띄게 — 목록에서 지금 뭐가 선택돼 있는지 보이지 않으면 매번 다시 읽어야 한다. */
+@Composable
+private fun MenuChoice(label: String, selected: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Text(
+                text = label,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            )
+        },
+        colors = MenuDefaults.itemColors(
+            textColor = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        ),
+        onClick = onClick,
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FortuneUnitDropdown(
@@ -259,6 +292,7 @@ private fun FortuneUnitDropdown(
     onSelect: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val menuItemHeightPx = with(LocalDensity.current) { MenuItemHeight.roundToPx() }
     ExposedDropdownMenuBox(
         expanded = expanded && enabled,
         onExpandedChange = { if (enabled) expanded = it },
@@ -278,13 +312,36 @@ private fun FortuneUnitDropdown(
                 .fillMaxWidth()
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable),
         )
+        val scrollState = rememberScrollState()
+        // 연도는 100개가 넘는다. 열 때마다 맨 위(올해)에서 시작하면 1990년생은 매번
+        // 서른여섯 번을 긁어 내려야 한다 — 이미 고른 값이 보이는 위치에서 연다.
+        LaunchedEffect(expanded, selected) {
+            if (!expanded) return@LaunchedEffect
+            val index = options.indexOf(selected)
+            if (index >= 0) scrollState.scrollTo(index * menuItemHeightPx)
+        }
         ExposedDropdownMenu(
             expanded = expanded && enabled,
             onDismissRequest = { expanded = false },
+            scrollState = scrollState,
+            modifier = Modifier.heightIn(max = MenuMaxHeight),
         ) {
             options.forEach { option ->
+                val isSelected = option == selected
                 DropdownMenuItem(
-                    text = { Text("$option$suffix") },
+                    text = {
+                        Text(
+                            text = "$option$suffix",
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    colors = MenuDefaults.itemColors(
+                        textColor = if (isSelected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    ),
                     onClick = {
                         onSelect(option)
                         expanded = false
@@ -352,17 +409,20 @@ internal fun FortuneBirthTimeDropdown(
         ExposedDropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = MenuMaxHeight),
         ) {
-            DropdownMenuItem(
-                text = { Text(unknownLabel) },
+            MenuChoice(
+                label = unknownLabel,
+                selected = value == FortuneBirthTimeUnknown,
                 onClick = {
                     onSelect(FortuneBirthTimeUnknown)
                     expanded = false
                 },
             )
             FortuneBirthTimeChoices.forEach { range ->
-                DropdownMenuItem(
-                    text = { Text(range) },
+                MenuChoice(
+                    label = range,
+                    selected = value == range,
                     onClick = {
                         onSelect(range)
                         expanded = false

@@ -43,6 +43,15 @@ internal val AlarmTalkDarkColorScheme = androidx.compose.material3.darkColorSche
     onBackground = Color(0xFFF7F8FC),
     surface = Color(0xFF1B2542),
     surfaceVariant = Color(0xFF29345A),
+    // surfaceContainer* 를 비워 두면 M3 기본 **무채색 회흑**이 그대로 나온다. 우리가
+    // 직접 그리는 화면은 surface 를 쓰니 티가 안 나지만, 팝업(드롭다운 메뉴·시간 선택
+    // 다이얼로그처럼 프레임워크가 그리는 것)은 이 역할을 읽어서 네이비 모달 위에 회색
+    // 상자가 얹혔다. 배경(#090D16)과 surface(#1B2542) 사이를 단계로 채운다.
+    surfaceContainerLowest = Color(0xFF0D1424),
+    surfaceContainerLow = Color(0xFF16203A),
+    surfaceContainer = Color(0xFF1B2542),
+    surfaceContainerHigh = Color(0xFF222E52),
+    surfaceContainerHighest = Color(0xFF29345A),
     onSurface = Color(0xFFF7F8FC),
     onSurfaceVariant = Color(0xFFA7AFC0),
     outline = Color(0xFF4C587E),
@@ -84,6 +93,12 @@ internal fun AlarmTalkTheme(
             onBackground = Color(0xFF181922),
             surface = Color(0xFFFFFFFF),
             surfaceVariant = Color(0xFFEDEEF3),
+            // 라이트도 같은 이유로 채운다 — 안 채우면 팝업만 미묘하게 다른 회색이 된다.
+            surfaceContainerLowest = Color(0xFFFFFFFF),
+            surfaceContainerLow = Color(0xFFFBFBFD),
+            surfaceContainer = Color(0xFFFFFFFF),
+            surfaceContainerHigh = Color(0xFFF4F5F8),
+            surfaceContainerHighest = Color(0xFFEDEEF3),
             onSurface = Color(0xFF181922),
             onSurfaceVariant = Color(0xFF5F6470),
             outline = Color(0xFFCCCED8),
