@@ -855,7 +855,8 @@
     <string name="onb_voice_download_progress">%1$d%%</string>
     <string name="onb_voice_download_failed">少し経ってからもう一度お試しください。</string>
     <string name="onb_voice_download_retry">再試行</string>
-    <string name="onb_voice_download_later">バックグラウンドで受信を続ける</string>
+    <string name="onb_voice_download_later">あとで受信</string>
+    <string name="onb_voice_download_background">バックグラウンドで受信を続ける</string>
     <string name="voicesr_share_voice_desc">同じプランの家族がこの声でアラームを作れます。</string>
     <string name="voicesr_share_voice_locked">ファミリー・カップルプランで共有できます。</string>
     <string name="voicesr_preview_action">再生</string>

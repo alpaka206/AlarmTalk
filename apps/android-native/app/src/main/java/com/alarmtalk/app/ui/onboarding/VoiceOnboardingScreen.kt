@@ -171,13 +171,22 @@ internal fun VoiceOnboardingScreen(
                 // 정상적으로 받는 중에는 숨긴다 — 몇 초면 끝나는 일에 선택지를 내밀 필요가 없다.
                 // 그 '몇 초' 가 지나면 어떤 상태든 반드시 보여준다. 여기서 갇히면 앱을 아예 못 쓴다.
                 //
-                // 문구는 '나중에 받기' 가 아니라 '백그라운드에서 계속 받기' 다 — 이 버튼은
-                // 프리페치 워커를 **취소하지 않는다**(skipVoiceSetup 은 화면만 닫는다).
-                // 미루는 것처럼 말하면 사용자는 알람 음성이 없는 줄 알고 기다린다.
+                // 문구는 **상태에 따라 다르다.** 받는 중이면 '백그라운드에서 계속 받기' 다 —
+                // 이 버튼은 워커를 취소하지 않으므로(skipVoiceSetup 은 화면만 닫는다) 실제로
+                // 계속 받는다. 미루는 것처럼 말하면 사용자는 알람 음성이 없는 줄 알고 기다린다.
+                //
+                // 반대로 **실패했으면 아무것도 돌고 있지 않다** — WorkManager 의 FAILED 는
+                // 종료 상태라 그대로 나가면 재시도가 없다. 그때까지 '계속 받기' 라고 하면
+                // 돌지 않는 다운로드를 돈다고 말하는 셈이다(Codex #673 P2). 그 경우엔
+                // '나중에 받기' 로 사실대로 말한다(받으려면 위의 [다시 시도]).
                 if (showEscape) {
                     TextButton(onClick = onSkip) {
                         Text(
-                            text = stringResource(R.string.onb_voice_download_later),
+                            text = if (failed) {
+                                stringResource(R.string.onb_voice_download_later)
+                            } else {
+                                stringResource(R.string.onb_voice_download_background)
+                            },
                             color = AuthTextMuted,
                         )
                     }
