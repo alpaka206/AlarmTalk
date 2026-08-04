@@ -178,32 +178,6 @@ internal fun PermissionPanel(
  * 알람 홈용 슬림 권한 경고 배너. 이미 알람이 있는데 알람 권한이 없어 '조용히 안 울릴' 수 있을 때만
  * 노출한다(큰 PermissionPanel 카드 대신 한 줄). 탭하면 권한 게이트 모달이 열려 바로 요청/설정으로 잇는다.
  */
-@Composable
-internal fun AlarmPermissionWarningBanner(onClick: () -> Unit) {
-    OutlinedCard(
-        onClick = onClick,
-        shape = WakerTileShape,
-        border = wakerCardBorder(),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(
-                Icons.Outlined.ErrorOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(20.dp),
-            )
-            Text(
-                text = stringResource(R.string.r3app_perm_banner_alarm_wont_ring),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-    }
-}
 
 @Composable
 internal fun PermissionRow(
@@ -303,9 +277,13 @@ internal fun AlarmRow(
     /** 길게 누르면 선택 모드로 들어간다(그 행을 첫 선택으로). */
     onEnterSelection: () -> Unit = {},
     /**
-     * 알람 권한이 다 갖춰졌는지. 켜진 알람인데 권한이 빠져 있으면 **그 행이 직접** 말한다 —
-     * 목록 위 배너 하나로는 '어느 알람이 위험한지' 를 알 수 없고, 토글이 켜진 얼굴을 하고
-     * 있으면 사용자는 울릴 거라고 믿는다. 알람 앱에서 제일 나쁜 실패다.
+     * 알람 권한이 다 갖춰졌는지. 빠져 있으면 이 알람은 **켜져 있어도 울리지 않으므로**
+     * 행도 꺼진 것으로 보인다(스위치·시각 색). 왜 안 울리는지는 화면 맨 위 헤드라인이
+     * 한 번만 말한다 — 행마다 반복하지 않는다.
+     *
+     * 저장된 `alarm.enabled` 는 **건드리지 않는다.** 표시만 바꾼다 — 권한을 되돌리면
+     * 켜 뒀던 알람이 그대로 살아나야 한다. 여기서 진짜로 꺼 버리면 사용자는 권한을
+     * 복구하고도 알람이 꺼진 걸 모른 채 늦잠 잔다.
      */
     alarmPermissionsReady: Boolean = true,
 ) {
@@ -329,7 +307,9 @@ internal fun AlarmRow(
         dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = Spring.StiffnessMediumLow,
     )
-    val rowNotice = alarmRowNotice(alarm, alarmPermissionsReady)
+    val rowNotice = alarmRowNotice(alarm)
+    // '지금 실제로 울릴 알람인가'. 행의 모든 표시는 이 값을 따른다.
+    val ringable = alarm.enabled && alarmPermissionsReady
     val warningText = rowNotice?.let { stringResource(it.textResId) }
     // 스와이프 외에 접근성(TalkBack/지체장애) 대체 삭제 수단: 길게 눌러 메뉴 노출.
     val deleteVisible = offsetX.value < -0.5f
@@ -429,7 +409,7 @@ internal fun AlarmRow(
                     // weight(1f) 로 스위치 공간을 남기고 라벨이 가질 폭을 확정해야
                     // 긴 알람 이름이 ellipsis(말줄임)로 잘려 행 레이아웃이 깨지지 않는다.
                     Column(modifier = Modifier.weight(1f)) {
-                        val timeColor = if (alarm.enabled) {
+                        val timeColor = if (ringable) {
                             MaterialTheme.colorScheme.onSurface
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -465,7 +445,7 @@ internal fun AlarmRow(
                         }
                         // 라벨 대신 '다음 울릴 날짜'를 안내(기본 시계 라벨보다 실용적). 꺼진 알람도 미리 보이도록,
                         // 켜진 건 실제 예약값(fireAtMillis), 꺼진 건 스케줄로 다음 울림을 계산해 표시한다.
-                        val nextFireMillis = if (alarm.enabled) {
+                        val nextFireMillis = if (ringable) {
                             alarm.fireAtMillis
                         } else {
                             remember(alarm.hour, alarm.minute, alarm.repeatDaysMask, alarm.holidayOff) {
@@ -518,7 +498,7 @@ internal fun AlarmRow(
                     } else {
                         // 켜짐/꺼짐 텍스트는 두지 않는다 — 스위치 위치·색이 곧 상태 표시.
                         AlarmTalkSwitch(
-                            checked = alarm.enabled,
+                            checked = ringable,
                             onCheckedChange = onToggleEnabled,
                         )
                     }
@@ -566,10 +546,7 @@ internal fun AlarmRow(
 
 private data class AlarmRowNotice(val textResId: Int, val isError: Boolean)
 
-private fun alarmRowNotice(alarm: AlarmEntity, alarmPermissionsReady: Boolean): AlarmRowNotice? = when {
-    // 권한이 빠지면 **켜져 있어도 안 울린다.** 다른 어떤 안내보다 먼저 말해야 한다.
-    alarm.enabled && !alarmPermissionsReady ->
-        AlarmRowNotice(R.string.common_alarm_warning_permission_off, isError = true)
+private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
     alarm.state == AlarmStates.FAILED ->
         AlarmRowNotice(R.string.common_alarm_warning_reschedule_failed, isError = true)
     alarm.syncState == AlarmSyncStates.FAILED ->

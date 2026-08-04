@@ -186,7 +186,12 @@ internal fun AlarmListScreen(
                         },
                     )
                 } else {
-                    HomeHeader(nextAlarm = nextAlarm, hasAnyAlarm = hasAnyAlarm)
+                    HomeHeader(
+                        nextAlarm = nextAlarm,
+                        hasAnyAlarm = hasAnyAlarm,
+                        alarmPermissionsReady = permissions.alarmReady,
+                        onRequestAlarmPermissions = onRequestAlarmPermissions,
+                    )
                 }
             }
         }
@@ -254,13 +259,6 @@ internal fun AlarmListScreen(
                 if (alarmsLoaded && !hasAnyAlarm) {
                     item {
                         EmptyAlarmHeroCard(onCreateAlarm = onCreateAlarm)
-                    }
-                }
-                // 권한 안내는 '이미 알람이 있는데 권한이 없어 조용히 안 울리는' 경우에만 남긴다.
-                // 새 유저(알람 없음)에겐 홈에서 권한을 미리 조르지 않는다 — 알람 만들기 시점에 요청.
-                if (hasAnyAlarm && !permissions.alarmReady) {
-                    item {
-                        AlarmPermissionWarningBanner(onClick = onRequestAlarmPermissions)
                     }
                 }
                 items(sortedAlarms, key = { it.id }) { alarm ->
