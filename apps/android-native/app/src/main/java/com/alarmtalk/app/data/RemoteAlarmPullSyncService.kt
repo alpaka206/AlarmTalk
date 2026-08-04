@@ -1,5 +1,6 @@
 package com.alarmtalk.app.data
 
+import android.content.Context
 import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.alarm.AlarmScheduler
@@ -131,18 +132,17 @@ internal class RemoteAlarmPullSyncService(
                     }
                     existingRows.firstOrNull()
                 }
-                // **락 밖에서 만든다** — 음성 다운로드가 들어 있어, 잡고 있으면 그동안 스누즈·
-                // 해제가 막힌다.
-                val local = buildLocalAlarm(
+                // **락 밖에서 받는다** — 음성 다운로드는 오래 걸려서, 잡고 있으면 그동안
+                // 스누즈·해제가 막힌다. 행을 만드는 일은 여기서 하지 않는다(아래 참조).
+                val cachedAudio = fetchRemoteMessageAudio(
                     api = api,
                     authorization = authorization,
                     remote = remote,
-                    existing = existing,
-                ) ?: run {
-                    skipped += 1
-                    return@runCatching
-                }
+                )
 
+                // 실제로 저장한 행. 건너뛴 경우(삭제됨·울리는 중·형식 불량)는 null 로 남아
+                // 아래 알림·집계를 건너뛴다.
+                var applied: AlarmEntity? = null
                 // 여기부터 반영 구간 — 전부 로컬 행 쓰기 + OS 예약이다. 정합성 복원이 이 사이에
                 // 끼면 자기가 읽어 둔 옛 값으로 예약을 되심는다(Codex #666 P1).
                 alarmMutationLock.withLock {
@@ -169,48 +169,22 @@ internal class RemoteAlarmPullSyncService(
                         return@withLock
                     }
 
-                    // 최신 행이 있으면 **조건 없이** 그 행을 기준으로 다시 만든다. 예전에는
-                    // 스케줄이 달라졌을 때만 다시 만들었는데, 그러면 대기 중에 사용자가 알람을
-                    // **끄기만** 한 경우(스케줄은 그대로)를 놓쳐 옛 enabled=true 로 되살렸다.
-                    // 무엇이 바뀌었는지 하나씩 세지 말고, 바뀔 수 있는 것을 전부 최신 행에서 가져온다.
-                    val local = current?.let { row ->
-                        val fresh = resolveReceivedSchedule(
-                            existing = row,
-                            remoteHour = local.hour,
-                            remoteMinute = local.minute,
-                            remoteRepeatDaysMask = local.repeatDaysMask,
-                            remoteSnoozeMinutes = local.snoozeMinutes,
-                        )
-                        val enabledNow = resolveReceivedRemoteEnabled(row, remote.isActive)
-                        // 스누즈 '한 회차' 를 통째로 이어받을지. 마감(fireAtMillis)·상태·이미 누른
-                        // 횟수는 한 묶음이라 따로 놀면 안 된다.
-                        val keepSnoozeEpisode = enabledNow && row.state == AlarmStates.SNOOZED
-                        local.copy(
-                            id = row.id,
-                            hour = fresh.hour,
-                            minute = fresh.minute,
-                            repeatDaysMask = fresh.repeatDaysMask,
-                            snoozeMinutes = fresh.snoozeMinutes,
-                            snoozeEnabled = fresh.snoozeEnabled,
-                            holidayOff = fresh.holidayOff,
-                            fireAtMillis = fresh.keptFireAtMillis ?: local.fireAtMillis,
-                            enabled = enabledNow,
-                            // **스누즈 중이면 그 상태를 지킨다.** fireAtMillis 는 스누즈 마감인데
-                            // state 만 SCHEDULED 로 바꾸면, 정합성 복원이 SNOOZED 만 재계산에서
-                            // 빼므로(AlarmRepository) 이 알람은 다음 정규 발생으로 밀린다 —
-                            // 5분 뒤 울리기로 한 스누즈가 사라진다(Codex #675 P1).
-                            state = when {
-                                !enabledNow -> AlarmStates.DISABLED
-                                keepSnoozeEpisode -> AlarmStates.SNOOZED
-                                else -> AlarmStates.SCHEDULED
-                            },
-                            // 이어받은 회차라면 **누른 횟수도 같이** 가져온다. 새로 만든 엔티티는
-                            // snoozeCount = 0 이라, 이것만 빠지면 스누즈 제한(snoozeRepeatLimit)이
-                            // 초기화돼 같은 회차에서 스누즈를 처음부터 다시 쓸 수 있게 된다
-                            // (Codex #675 P2).
-                            snoozeCount = if (keepSnoozeEpisode) row.snoozeCount else local.snoozeCount,
-                        )
-                    } ?: local
+                    // **행은 여기서, 다시 읽은 값으로 만든다.** 예전에는 다운로드 전 스냅샷으로
+                    // 미리 만들어 두고 달라진 필드만 골라 덮었는데, 그 목록에서 빠진 것이 네 번
+                    // 나왔다(시각 → 끄기 → 스누즈 상태 → 볼륨·알람음). 무엇이 바뀌었는지 세는
+                    // 대신, 만드는 입력 자체를 최신 행으로 바꾼다 — 그러면 수신자가 고칠 수 있는
+                    // 값은 세어 볼 것 없이 전부 최신이다(Codex #675 P1).
+                    // 네트워크는 이미 끝났으므로(cachedAudio) 이 호출은 락 안에서도 짧다.
+                    val local = buildReceivedAlarmRow(
+                        context = context,
+                        remote = remote,
+                        existing = current,
+                        cachedAudio = cachedAudio,
+                        currentUserId = currentUserIdProvider(),
+                    ) ?: run {
+                        skipped += 1
+                        return@withLock
+                    }
 
                     if (existing != null) {
                         alarmScheduler.cancel(existing.id)
@@ -253,15 +227,17 @@ internal class RemoteAlarmPullSyncService(
                                 Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
                             }
                     }
+                    applied = local
                 }
+                val saved = applied ?: return@runCatching
                 if (existing == null) {
                     SocialNotificationFactory.notifyReceivedAlarm(
                         context = context,
-                        alarmId = local.id,
+                        alarmId = saved.id,
                         senderName = remote.senderName
                             ?.takeIf { it.isNotBlank() }
                             ?: remote.senderEmail,
-                        time = "%02d:%02d".format(local.hour, local.minute),
+                        time = "%02d:%02d".format(saved.hour, saved.minute),
                     )
                     imported += 1
                 } else {
@@ -358,18 +334,18 @@ internal class RemoteAlarmPullSyncService(
         )
     }
 
-    private suspend fun buildLocalAlarm(
+    /**
+     * 받은 알람의 음성을 **미리** 확보한다 — 유일한 네트워크 구간이라 락 밖에서 돈다.
+     *
+     * 행을 만드는 일([buildReceivedAlarmRow])과 떼어 놓은 이유: 다운로드가 오래 걸리는 사이에
+     * 수신자가 그 알람을 고칠 수 있어서, 행은 **반영 직전에 다시 읽은 값**으로 만들어야 한다.
+     */
+    private suspend fun fetchRemoteMessageAudio(
         api: AlarmTalkApi,
         authorization: String,
         remote: RemoteAlarm,
-        existing: AlarmEntity?,
-    ): AlarmEntity? {
-        val time = parseTime(remote.time) ?: return null
-        val repeatMask = repeatDaysToMask(remote.repeatDays.orEmpty())
-        val now = System.currentTimeMillis()
-        val enabled = resolveReceivedRemoteEnabled(existing, remote.isActive)
-
-        val cachedAudio = if (shouldDownloadRemoteMessageAudio(remote)) {
+    ): CachedAlarmAudio? =
+        if (shouldDownloadRemoteMessageAudio(remote)) {
             val messageId = remote.messageId?.trim().orEmpty()
             val cacheKey = "remote-message-$messageId"
             // 이미 받아 둔 음성이면 다시 받지 않는다. 이 pull 은 로그인마다·푸시마다 도는데,
@@ -391,99 +367,6 @@ internal class RemoteAlarmPullSyncService(
         } else {
             null
         }
-        val hasVoiceAudio = cachedAudio != null
-
-        val schedule = resolveReceivedSchedule(
-            existing = existing,
-            remoteHour = time.first,
-            remoteMinute = time.second,
-            remoteRepeatDaysMask = repeatMask,
-            remoteSnoozeMinutes = remote.snoozeMinutes ?: 5,
-        )
-        val fireAtMillis = schedule.keptFireAtMillis ?: AlarmTimeCalculator.nextFireAtMillis(
-            hour = schedule.hour,
-            minute = schedule.minute,
-            repeatDaysMask = schedule.repeatDaysMask,
-            holidayOff = schedule.holidayOff,
-            nowMillis = now,
-        )
-        val computedPlayMode = when {
-            cachedAudio == null -> AlarmPlayModes.ALARM_ONLY
-            remote.wakeMode == "voice_only" -> AlarmPlayModes.VOICE_ONLY
-            else -> AlarmPlayModes.ALARM_VOICE
-        }
-        val lockState = resolveReceivedLockState(computedPlayMode, existing)
-        val label = receivedRemoteAlarmLabel(context, remote.senderName, remote.senderEmail)
-
-        return AlarmEntity(
-            id = existing?.id ?: UUID.randomUUID().toString(),
-            label = label,
-            hour = schedule.hour,
-            minute = schedule.minute,
-            fireAtMillis = fireAtMillis,
-            repeatDaysMask = schedule.repeatDaysMask,
-            // 수신자가 끈 스누즈·켜 둔 공휴일 건너뛰기도 지킨다 — 값만 지키고 토글을 놓치면
-            // 다음 pull 이 스누즈를 다시 켜고 공휴일에도 울린다(Codex #675 P2).
-            holidayOff = schedule.holidayOff,
-            snoozeEnabled = schedule.snoozeEnabled,
-            snoozeMinutes = schedule.snoozeMinutes,
-            snoozeRepeatLimit = existing?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
-            snoozeCount = 0,
-            vibrationPattern = remote.vibrationPattern ?: VibrationPatterns.DEFAULT,
-            playMode = lockState.playMode,
-            defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
-            localAudioUri = cachedAudio?.localAudioUri,
-            audioCacheKey = cachedAudio?.cacheKey,
-            rawAudioUri = cachedAudio?.rawAudioUri,
-            voiceSource = if (hasVoiceAudio) VoiceSources.SERVER_TTS else VoiceSources.LOCAL_AUDIO,
-            voiceProfileId = remote.voiceProfileId.takeIf { hasVoiceAudio },
-            voiceListenerTitle = null,
-            voiceText = remote.messageText.takeIf { hasVoiceAudio },
-            voiceCategory = remote.category.takeIf { hasVoiceAudio },
-            voiceLanguage = null,
-            voiceRandomPrompt = false,
-            voiceRandomContext = null,
-            voiceWeatherCountry = null,
-            voiceWeatherCity = null,
-            voiceFortuneGender = null,
-            voiceFortuneBirthDate = null,
-            voiceFortuneBirthTime = null,
-            dynamicVoicePreparedForFireAtMillis = null,
-            voiceRepeat = existing?.voiceRepeat ?: true,
-            voiceVolumePercent = existing?.voiceVolumePercent ?: 100,
-            ttsMessageId = remote.messageId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
-            // 받은 알람은 버킷 식별자만 보존(회전 클립은 미다운로드 → 대표 클립 단일 재생 폴백).
-            bucketId = remote.bucketId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
-            remoteAlarmId = remote.id,
-            lastSyncedAtMillis = now,
-            syncState = AlarmSyncStates.SYNCED,
-            origin = AlarmOrigins.RECEIVED_REMOTE,
-            alarmVolumePercent = existing?.alarmVolumePercent ?: 100,
-            alarmSoundUri = existing?.alarmSoundUri,
-            alarmSoundLabel = existing?.alarmSoundLabel,
-            alarmSoundEnabled = existing?.alarmSoundEnabled ?: true,
-            enabled = enabled,
-            state = if (enabled) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
-            createdAtMillis = existing?.createdAtMillis ?: now,
-            updatedAtMillis = now,
-            // 무료 잠금 상태·소유자를 재구성 시에도 보존한다(resolveReceivedLockState 참조).
-            // 새 받은 알람은 현재 수신자를 소유자로 기록하고, 기존 행은 그 값을 보존한다.
-            preLockPlayMode = lockState.preLockPlayMode,
-            ownerUserId = resolveReceivedOwner(existing, currentUserIdProvider()),
-        )
-    }
-
-    private fun parseTime(value: String?): Pair<Int, Int>? {
-        val parts = value?.split(':') ?: return null
-        if (parts.size < 2) return null
-        val hour = parts[0].toIntOrNull() ?: return null
-        val minute = parts[1].toIntOrNull() ?: return null
-        if (hour !in 0..23 || minute !in 0..59) return null
-        return hour to minute
-    }
-
-    private fun repeatDaysToMask(days: List<Int>): Int =
-        days.filter { it in 0..6 }.fold(0) { mask, day -> mask or (1 shl day) }
 }
 
 /**
@@ -588,17 +471,6 @@ internal fun resolveReceivedSchedule(
     )
 }
 
-/** 두 행의 '수신자가 고칠 수 있는 스케줄' 이 같은지 — 다르면 반영 직전에 다시 계산한다. */
-internal fun sameReceivedSchedule(a: AlarmEntity, b: AlarmEntity?): Boolean =
-    b != null &&
-        a.hour == b.hour &&
-        a.minute == b.minute &&
-        a.repeatDaysMask == b.repeatDaysMask &&
-        a.snoozeMinutes == b.snoozeMinutes &&
-        a.snoozeEnabled == b.snoozeEnabled &&
-        a.holidayOff == b.holidayOff &&
-        a.fireAtMillis == b.fireAtMillis
-
 internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive: Boolean?): Boolean {
     val remoteEnabled = remoteIsActive != false
     return if (existing?.origin == AlarmOrigins.RECEIVED_REMOTE) {
@@ -611,3 +483,129 @@ internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive
 internal fun shouldDownloadRemoteMessageAudio(remote: RemoteAlarm): Boolean =
     !remote.messageId.isNullOrBlank() &&
         !remote.messageAudioUrl.isNullOrBlank()
+
+/**
+ * 서버가 보낸 알람 + **지금 로컬에 있는 행**으로 저장할 행을 만든다.
+ *
+ * `existing` 에서 가져오는 값(시각·볼륨·알람음·스누즈 설정·소유자 …)이 곧 '받은 뒤부터는
+ * 수신자 것' 인 값들이다. 그래서 이 함수에는 **반영 직전에 다시 읽은 행**을 넘겨야 한다 —
+ * 다운로드 전 스냅샷을 넘기면 그 사이의 편집이 조용히 되돌아간다. 필드를 하나씩 골라 덮던
+ * 시절에는 빠뜨린 값이 네 번 나왔다(Codex #675).
+ *
+ * 네트워크가 없어(음성은 [RemoteAlarmPullSyncService.fetchRemoteMessageAudio] 가 미리 받아
+ * 둔다) 반영 락 안에서 불러도 짧다.
+ */
+internal fun buildReceivedAlarmRow(
+    context: Context,
+    remote: RemoteAlarm,
+    existing: AlarmEntity?,
+    cachedAudio: CachedAlarmAudio?,
+    currentUserId: String?,
+    now: Long = System.currentTimeMillis(),
+): AlarmEntity? {
+    val time = parseTime(remote.time) ?: return null
+    val repeatMask = repeatDaysToMask(remote.repeatDays.orEmpty())
+    val enabled = resolveReceivedRemoteEnabled(existing, remote.isActive)
+    val hasVoiceAudio = cachedAudio != null
+
+    // 스누즈 '한 회차' 는 마감(fireAtMillis)·상태·누른 횟수가 한 묶음이라 따로 놀면 안 된다.
+    // 마감만 지키고 state 를 SCHEDULED 로 되돌리면 정합성 복원이 이 알람을 다음 정규 발생으로
+    // 밀어(SNOOZED 만 재계산에서 뺀다) 5분 뒤 울리기로 한 스누즈가 사라지고, 횟수를 0 으로
+    // 되돌리면 같은 회차에서 스누즈 제한이 초기화된다(Codex #675 P1·P2).
+    val keepSnoozeEpisode = enabled && existing != null && existing.state == AlarmStates.SNOOZED
+
+    val schedule = resolveReceivedSchedule(
+        existing = existing,
+        remoteHour = time.first,
+        remoteMinute = time.second,
+        remoteRepeatDaysMask = repeatMask,
+        remoteSnoozeMinutes = remote.snoozeMinutes ?: 5,
+    )
+    val fireAtMillis = schedule.keptFireAtMillis ?: AlarmTimeCalculator.nextFireAtMillis(
+        hour = schedule.hour,
+        minute = schedule.minute,
+        repeatDaysMask = schedule.repeatDaysMask,
+        holidayOff = schedule.holidayOff,
+        nowMillis = now,
+    )
+    val computedPlayMode = when {
+        cachedAudio == null -> AlarmPlayModes.ALARM_ONLY
+        remote.wakeMode == "voice_only" -> AlarmPlayModes.VOICE_ONLY
+        else -> AlarmPlayModes.ALARM_VOICE
+    }
+    val lockState = resolveReceivedLockState(computedPlayMode, existing)
+    val label = receivedRemoteAlarmLabel(context, remote.senderName, remote.senderEmail)
+
+    return AlarmEntity(
+        id = existing?.id ?: UUID.randomUUID().toString(),
+        label = label,
+        hour = schedule.hour,
+        minute = schedule.minute,
+        fireAtMillis = fireAtMillis,
+        repeatDaysMask = schedule.repeatDaysMask,
+        // 수신자가 끈 스누즈·켜 둔 공휴일 건너뛰기도 지킨다 — 값만 지키고 토글을 놓치면
+        // 다음 pull 이 스누즈를 다시 켜고 공휴일에도 울린다(Codex #675 P2).
+        holidayOff = schedule.holidayOff,
+        snoozeEnabled = schedule.snoozeEnabled,
+        snoozeMinutes = schedule.snoozeMinutes,
+        snoozeRepeatLimit = existing?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
+        snoozeCount = if (keepSnoozeEpisode) existing.snoozeCount else 0,
+        vibrationPattern = remote.vibrationPattern ?: VibrationPatterns.DEFAULT,
+        playMode = lockState.playMode,
+        defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
+        localAudioUri = cachedAudio?.localAudioUri,
+        audioCacheKey = cachedAudio?.cacheKey,
+        rawAudioUri = cachedAudio?.rawAudioUri,
+        voiceSource = if (hasVoiceAudio) VoiceSources.SERVER_TTS else VoiceSources.LOCAL_AUDIO,
+        voiceProfileId = remote.voiceProfileId.takeIf { hasVoiceAudio },
+        voiceListenerTitle = null,
+        voiceText = remote.messageText.takeIf { hasVoiceAudio },
+        voiceCategory = remote.category.takeIf { hasVoiceAudio },
+        voiceLanguage = null,
+        voiceRandomPrompt = false,
+        voiceRandomContext = null,
+        voiceWeatherCountry = null,
+        voiceWeatherCity = null,
+        voiceFortuneGender = null,
+        voiceFortuneBirthDate = null,
+        voiceFortuneBirthTime = null,
+        dynamicVoicePreparedForFireAtMillis = null,
+        voiceRepeat = existing?.voiceRepeat ?: true,
+        voiceVolumePercent = existing?.voiceVolumePercent ?: 100,
+        ttsMessageId = remote.messageId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
+        // 받은 알람은 버킷 식별자만 보존(회전 클립은 미다운로드 → 대표 클립 단일 재생 폴백).
+        bucketId = remote.bucketId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
+        remoteAlarmId = remote.id,
+        lastSyncedAtMillis = now,
+        syncState = AlarmSyncStates.SYNCED,
+        origin = AlarmOrigins.RECEIVED_REMOTE,
+        alarmVolumePercent = existing?.alarmVolumePercent ?: 100,
+        alarmSoundUri = existing?.alarmSoundUri,
+        alarmSoundLabel = existing?.alarmSoundLabel,
+        alarmSoundEnabled = existing?.alarmSoundEnabled ?: true,
+        enabled = enabled,
+        state = when {
+            !enabled -> AlarmStates.DISABLED
+            keepSnoozeEpisode -> AlarmStates.SNOOZED
+            else -> AlarmStates.SCHEDULED
+        },
+        createdAtMillis = existing?.createdAtMillis ?: now,
+        updatedAtMillis = now,
+        // 무료 잠금 상태·소유자를 재구성 시에도 보존한다(resolveReceivedLockState 참조).
+        // 새 받은 알람은 현재 수신자를 소유자로 기록하고, 기존 행은 그 값을 보존한다.
+        preLockPlayMode = lockState.preLockPlayMode,
+        ownerUserId = resolveReceivedOwner(existing, currentUserId),
+    )
+}
+
+private fun parseTime(value: String?): Pair<Int, Int>? {
+    val parts = value?.split(':') ?: return null
+    if (parts.size < 2) return null
+    val hour = parts[0].toIntOrNull() ?: return null
+    val minute = parts[1].toIntOrNull() ?: return null
+    if (hour !in 0..23 || minute !in 0..59) return null
+    return hour to minute
+}
+
+private fun repeatDaysToMask(days: List<Int>): Int =
+    days.filter { it in 0..6 }.fold(0) { mask, day -> mask or (1 shl day) }

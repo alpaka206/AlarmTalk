@@ -244,16 +244,77 @@ class RemoteAlarmPullSyncServiceTest {
     }
 
     @Test
-    fun scheduleComparisonDetectsAnEditMadeDuringPull()  {
-        // pull 이 음성을 받는 사이 수신자가 시각을 고치면, 반영 직전 비교가 그걸 알아채야
-        // 옛 스냅샷으로 덮어쓰지 않는다(Codex #675 P1).
-        val before = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
-        assertTrue(sameReceivedSchedule(before, before))
-        assertFalse(sameReceivedSchedule(before.copy(hour = 5), before))
-        assertFalse(sameReceivedSchedule(before.copy(snoozeEnabled = false), before))
-        assertFalse(sameReceivedSchedule(before.copy(holidayOff = true), before))
-        assertFalse("비교 대상이 없으면 같다고 볼 수 없다", sameReceivedSchedule(before, null))
+    fun pullKeepsEverythingTheRecipientCanEdit() {
+        // pull 이 음성을 받는 사이 수신자가 알람을 고칠 수 있다. 그래서 행은 **반영 직전에
+        // 다시 읽은 값**으로 만든다 — 예전에는 다운로드 전 스냅샷으로 미리 만들고 달라진
+        // 필드만 골라 덮었는데, 그 목록에서 빠진 값이 네 번 나왔다(시각 → 끄기 → 스누즈 →
+        // 볼륨·알람음). 여기서 한 번에 못 박는다(Codex #675 P1).
+        val edited = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
+            hour = 5,
+            minute = 45,
+            repeatDaysMask = 0b0111110,
+            snoozeEnabled = false,
+            snoozeMinutes = 9,
+            snoozeRepeatLimit = SnoozeRepeatLimits.FIVE,
+            holidayOff = true,
+            alarmVolumePercent = 30,
+            alarmSoundEnabled = false,
+            voiceVolumePercent = 40,
+            voiceRepeat = false,
+        )
+        val rebuilt = requireNotNull(
+            buildReceivedAlarmRow(
+                context = context,
+                remote = remote(),
+                existing = edited,
+                cachedAudio = null,
+                currentUserId = "user-1",
+            ),
+        )
+        assertEquals("고친 시각", 5, rebuilt.hour)
+        assertEquals(45, rebuilt.minute)
+        assertEquals(0b0111110, rebuilt.repeatDaysMask)
+        assertFalse("끈 스누즈", rebuilt.snoozeEnabled)
+        assertEquals(9, rebuilt.snoozeMinutes)
+        assertEquals(SnoozeRepeatLimits.FIVE, rebuilt.snoozeRepeatLimit)
+        assertTrue("공휴일 건너뛰기", rebuilt.holidayOff)
+        assertEquals("낮춘 알람음 볼륨", 30, rebuilt.alarmVolumePercent)
+        assertFalse("끈 알람음", rebuilt.alarmSoundEnabled)
+        assertEquals(40, rebuilt.voiceVolumePercent)
+        assertFalse(rebuilt.voiceRepeat)
+        assertEquals("같은 행을 갱신한다", edited.id, rebuilt.id)
     }
+
+    @Test
+    fun pullKeepsTheWholeSnoozeEpisode() {
+        // 마감·상태·누른 횟수는 한 묶음이다. 상태만 SCHEDULED 로 되돌리면 정합성 복원이
+        // 다음 정규 발생으로 밀어 스누즈가 사라지고, 횟수만 0 으로 되돌리면 같은 회차에서
+        // 스누즈 제한이 초기화된다(Codex #675 P1·P2).
+        val snoozed = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(state = AlarmStates.SNOOZED, snoozeCount = 2, fireAtMillis = 9_999L)
+        val rebuilt = requireNotNull(
+            buildReceivedAlarmRow(
+                context = context,
+                remote = remote(),
+                existing = snoozed,
+                cachedAudio = null,
+                currentUserId = "user-1",
+            ),
+        )
+        assertEquals(AlarmStates.SNOOZED, rebuilt.state)
+        assertEquals("이미 누른 횟수", 2, rebuilt.snoozeCount)
+        assertEquals("스누즈 마감", 9_999L, rebuilt.fireAtMillis)
+    }
+
+    private fun remote(): RemoteAlarm = RemoteAlarm(
+        id = "remote-id",
+        time = "07:30",
+        repeatDays = emptyList(),
+        isActive = true,
+        snoozeMinutes = 5,
+        senderName = "보낸 사람",
+        isReceived = true,
+    )
 
     private fun alarm(
         enabled: Boolean,
