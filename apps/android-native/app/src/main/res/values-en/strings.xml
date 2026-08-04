@@ -591,9 +591,10 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_edit_failed">Couldn\'t update the line.</string>
     <string name="voices_previous">Back</string>
     <string name="voices_record_done_duration">Recorded · %1$s</string>
-    <string name="voices_record_video_tip">No audio file of the voice you want? Play a video of them and record that.</string>
-    <string name="voices_record_script_title">Read this script aloud</string>
-    <string name="voices_record_status_hint">The longer you talk, the closer it sounds · up to 2 min</string>
+    <string name="voices_record_video_tip">No file of the voice you want? Play a video and record that.</string>
+    <string name="voices_record_script_title">Example script</string>
+    <string name="voices_record_too_short">Record at least 12 seconds</string>
+    <string name="voices_record_status_hint">Too short and the voice may not match.</string>
     <string name="voices_recording_start_failed">Couldn\'t start recording.</string>
     <string name="voices_recording_stop_failed">Recording failed.</string>
     <string name="voices_register">Register</string>

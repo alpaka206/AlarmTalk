@@ -603,9 +603,10 @@
     <string name="voices_preview_edit_failed">문구를 수정하지 못했어요.</string>
     <string name="voices_previous">이전</string>
     <string name="voices_record_done_duration">녹음 완료 · %1$s</string>
-    <string name="voices_record_video_tip">원하는 목소리의 파일이 없다면, 그 사람이 나오는 영상을 틀어 놓고 녹음해도 돼요.</string>
-    <string name="voices_record_script_title">아래 대사를 따라 읽어 주세요</string>
-    <string name="voices_record_status_hint">길게 말할수록 더 비슷해져요 · 최대 2분</string>
+    <string name="voices_record_video_tip">원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요.</string>
+    <string name="voices_record_script_title">예시 대본</string>
+    <string name="voices_record_too_short">12초 이상 녹음해 주세요</string>
+    <string name="voices_record_status_hint">너무 짧으면 목소리가 다르게 나올 수 있어요.</string>
     <string name="voices_recording_start_failed">녹음을 시작할 수 없어요.</string>
     <string name="voices_recording_stop_failed">녹음에 실패했어요.</string>
     <string name="voices_register">등록</string>

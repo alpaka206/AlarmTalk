@@ -864,7 +864,20 @@ async function resolveDeclineTarget(
     res.rows.length > 0
       ? (typedRow<{ target_user_id: string | null }>(res.rows[0]!).target_user_id ?? null)
       : null;
-  // 대상이 아니면(생성자/무관자 포함) 존재 노출 최소화로 404. 생성자는 일반 삭제(DELETE /:id)를 쓴다.
+  // **알람이 이미 없으면 그래도 그만받기를 기록한다.**
+  //
+  // 발신자가 먼저 지운 뒤 수신자가 '그만받기' 를 누르면 여기서 404 가 났고, 클라는 그걸
+  // 멱등 성공으로 보고 로컬 행만 지웠다. 기록이 안 남으니 **같은 계정의 다른 기기**는
+  // 그 알람을 계속 갖고 울렸다 — 사용자는 껐다고 믿는다(Codex #675 P1).
+  // 기록은 (alarm_id, recipient_user_id) 한 행이라 알람이 없어도 쓸 수 있다.
+  //
+  // 트레이드오프: 존재하지 않는 id 로도 한 행이 써진다. 호출자 본인 id 로만 쌓이고 행이
+  // 작으며, 읽는 쪽(GET /alarm/declined)은 페이지 상한이 있어 감수한다.
+  if (res.rows.length === 0) {
+    return { id, target: userPk };
+  }
+  // 알람은 있는데 대상이 아니면(생성자/무관자 포함) 존재 노출 최소화로 404.
+  // 생성자는 일반 삭제(DELETE /:id)를 쓴다.
   if (!target || !viewer.includes(target)) {
     return { error: c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404) };
   }

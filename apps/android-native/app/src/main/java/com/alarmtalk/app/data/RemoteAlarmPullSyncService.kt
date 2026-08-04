@@ -192,7 +192,15 @@ internal class RemoteAlarmPullSyncService(
                             holidayOff = fresh.holidayOff,
                             fireAtMillis = fresh.keptFireAtMillis ?: local.fireAtMillis,
                             enabled = enabledNow,
-                            state = if (enabledNow) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
+                            // **스누즈 중이면 그 상태를 지킨다.** fireAtMillis 는 스누즈 마감인데
+                            // state 만 SCHEDULED 로 바꾸면, 정합성 복원이 SNOOZED 만 재계산에서
+                            // 빼므로(AlarmRepository) 이 알람은 다음 정규 발생으로 밀린다 —
+                            // 5분 뒤 울리기로 한 스누즈가 사라진다(Codex #675 P1).
+                            state = when {
+                                !enabledNow -> AlarmStates.DISABLED
+                                row.state == AlarmStates.SNOOZED -> AlarmStates.SNOOZED
+                                else -> AlarmStates.SCHEDULED
+                            },
                         )
                     } ?: local
 

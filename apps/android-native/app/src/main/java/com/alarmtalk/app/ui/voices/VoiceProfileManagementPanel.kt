@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
@@ -54,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -145,6 +148,7 @@ private fun VoiceRecordScriptCard(
     fillHeight: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    var scriptExpanded by rememberSaveable { mutableStateOf(false) }
     OutlinedCard(
         modifier = modifier,
         shape = WakerCardShape,
@@ -157,12 +161,31 @@ private fun VoiceRecordScriptCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = stringResource(R.string.voices_record_script_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            // 녹음하며 읽는 본문이라 항상 펼쳐 둔다(토글로 접으면 녹음 도중 다시 펼쳐야 한다).
+            // **대사는 예시일 뿐 필수가 아니다.** 항상 펼쳐 두면 화면 절반을 차지해
+            // '이걸 그대로 읽어야 하는 것' 처럼 보인다. 필요한 사람만 펼치게 접어 둔다.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { scriptExpanded = !scriptExpanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = stringResource(R.string.voices_record_script_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Icon(
+                    imageVector = if (scriptExpanded) {
+                        Icons.Outlined.KeyboardArrowUp
+                    } else {
+                        Icons.Outlined.KeyboardArrowDown
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (scriptExpanded) {
             Text(
                 text = stringResource(R.string.voices2_record_script),
                 modifier = Modifier
@@ -178,6 +201,7 @@ private fun VoiceRecordScriptCard(
                 lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            }
         }
     }
 }
@@ -1569,11 +1593,10 @@ internal fun VoiceProfileManagementPanel(
                                         maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                         level = recordingLevel,
                                         enabled = !voiceProfileBusy && !createPreparing,
-                                        // 마이크 버튼이 행동을 설명하므로 "눌러서 녹음 시작" 대신
-                                        // 길이 안내를 대기 상태 문구로 쓴다. 최소 길이(12초)는
-                                        // 대부분 자연히 넘기므로 못 박지 않고, 길수록 좋다는
-                                        // 쪽으로 유도한다 — 1분을 요구하던 문구가 부담이었다.
-                                        idleStatusText = stringResource(R.string.voices_record_status_hint),
+                                        // 카드 안은 비워 둔다 — 옆에 `0:00 / 2:00` 이 이미 있어
+                                        // 문구까지 넣으면 두 줄로 접히고 시간이 밀린다.
+                                        // 길이 안내는 카드 아래 안내문으로 내렸다.
+                                        idleStatusText = "",
                                         onRecordClick = {
                                             if (isRecording) {
                                                 stopRecording()
@@ -1591,7 +1614,12 @@ internal fun VoiceProfileManagementPanel(
                                     )
                                     // 곁에 없는 사람의 목소리를 등록하려는 경우가 흔하다.
                                     // 업로드할 파일이 없어도 방법이 있다는 걸 알려 준다.
-                                    MutedText(stringResource(R.string.voices_record_video_tip))
+                                    // 두 안내를 마침표마다 줄을 나눠 둔다 — 한 문단으로 붙이면
+                                    // 서로 다른 이야기가 한 덩어리로 읽힌다.
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        MutedText(stringResource(R.string.voices_record_status_hint))
+                                        MutedText(stringResource(R.string.voices_record_video_tip))
+                                    }
                                     // 남은 화면 높이를 대사 카드가 채운다(내용이 짧으면 그만큼만).
                                     // 짧은 창 폴백에선 페이지가 스크롤되므로 weight 대신 높이 캡.
                                     VoiceRecordScriptCard(
@@ -2004,11 +2032,20 @@ internal fun VoiceProfileManagementPanel(
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
+                                    // 못 넘어가는 이유를 **버튼 자리에서** 말한다. 예전에는
+                                    // '다음' 이 흐린 채로만 있어, 왜 안 눌리는지 알 수 없었다.
+                                    val tooShort = !canAdvanceFromSource && !createPreparing &&
+                                        (
+                                            inputMode == VoiceCaptureMode.Record &&
+                                                selectedAudio != null ||
+                                                inputMode == VoiceCaptureMode.File &&
+                                                selectedFileUri != null
+                                            )
                                     Text(
-                                        if (createPreparing) {
-                                            stringResource(R.string.voices_preparing)
-                                        } else {
-                                            stringResource(R.string.voices_next)
+                                        when {
+                                            createPreparing -> stringResource(R.string.voices_preparing)
+                                            tooShort -> stringResource(R.string.voices_record_too_short)
+                                            else -> stringResource(R.string.voices_next)
                                         },
                                     )
                                 }
