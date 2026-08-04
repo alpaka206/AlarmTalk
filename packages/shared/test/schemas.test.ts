@@ -131,3 +131,10 @@ describe('clampDisplayName', () => {
     expect(clampDisplayName('웃음\u{1F600}')).toBe('웃음\u{1F600}');
   });
 });
+
+describe('DisplayNameSchema — 양방향 표식', () => {
+  it('삽입·격리뿐 아니라 방향 표식(ALM/LRM/RLM)도 거른다', () => {
+    // U+202A~ 만 막으면 표식만으로 같은 스푸핑이 된다(Codex #672 P2).
+    expect(DisplayNameSchema.parse('a\u061Cb\u200Ec\u200Fd')).toBe('abcd');
+  });
+});
