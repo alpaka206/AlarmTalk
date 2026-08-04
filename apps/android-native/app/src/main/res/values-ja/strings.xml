@@ -121,6 +121,7 @@
     <string name="billing_voucher_unregistered_with_date">未登録 · 発行日 %1$s</string>
     <string name="common_alarm_delete">削除</string>
     <string name="common_alarm_warning_reschedule_failed">アラームを再設定できませんでした。時間を確認して、もう一度保存してください。</string>
+    <string name="common_alarm_warning_permission_off">権限がオフのため、このアラームは鳴りません</string>
     <string name="common_alarm_warning_sync_failed">保存が少し遅れています。アラームはそのまま鳴り、自動で再保存します。</string>
     <string name="common_alarm_notice_free_downgraded">無料プランに変わったため、基本アラーム音に変換されました。</string>
     <string name="common_alarm_notice_default_converted">声が使えなくなったため、基本アラーム音に変換されました。</string>
@@ -186,7 +187,6 @@
     <string name="editor_error_weather_location_required">天気を含む文には、都市を入力してください。</string>
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
     <string name="editor_family_alarm_set">相手のアラームを設定しました。</string>
-    <string name="editor_generated_voice_saved_local">生成した音声をローカルに保存しました。</string>
     <string name="editor_holiday_off_subtitle">振替休日・臨時祝日を含む</string>
     <string name="editor_holiday_off_title">祝日はオフにする</string>
     <string name="editor_holiday_country_label">祝日カレンダー: %1$s</string>

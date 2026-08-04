@@ -1074,7 +1074,14 @@ internal fun AlarmTalkApp(
                                   viewModel.setAlarmEnabled(id, enabled)
                               }
                           },
-                          onEditAlarm = { navController.navigate(AppRoute.alarmEdit(it.id)) },
+                          // 권한이 없으면 편집기에 들어가지도 않는다 — 들어가 봐야 저장이 막힌다.
+                          onEditAlarm = {
+                              if (permissions.alarmReady) {
+                                  navController.navigate(AppRoute.alarmEdit(it.id))
+                              } else {
+                                  requestFirstMissingAlarmPermission()
+                              }
+                          },
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestAlarmPermissions = ::requestFirstMissingAlarmPermission,
                       )
@@ -1127,6 +1134,7 @@ internal fun AlarmTalkApp(
                       onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                       onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                      onMissingAlarmPermission = ::requestFirstMissingAlarmPermission,
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
                               requestFirstMissingAlarmPermission()
@@ -1172,6 +1180,7 @@ internal fun AlarmTalkApp(
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                           onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
                           onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                          onMissingAlarmPermission = ::requestFirstMissingAlarmPermission,
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
                                   requestFirstMissingAlarmPermission()

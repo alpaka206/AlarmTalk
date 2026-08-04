@@ -302,6 +302,12 @@ internal fun AlarmRow(
     onToggleSelected: () -> Unit = {},
     /** 길게 누르면 선택 모드로 들어간다(그 행을 첫 선택으로). */
     onEnterSelection: () -> Unit = {},
+    /**
+     * 알람 권한이 다 갖춰졌는지. 켜진 알람인데 권한이 빠져 있으면 **그 행이 직접** 말한다 —
+     * 목록 위 배너 하나로는 '어느 알람이 위험한지' 를 알 수 없고, 토글이 켜진 얼굴을 하고
+     * 있으면 사용자는 울릴 거라고 믿는다. 알람 앱에서 제일 나쁜 실패다.
+     */
+    alarmPermissionsReady: Boolean = true,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val deleteWidth = 92.dp
@@ -323,7 +329,7 @@ internal fun AlarmRow(
         dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = Spring.StiffnessMediumLow,
     )
-    val rowNotice = alarmRowNotice(alarm)
+    val rowNotice = alarmRowNotice(alarm, alarmPermissionsReady)
     val warningText = rowNotice?.let { stringResource(it.textResId) }
     // 스와이프 외에 접근성(TalkBack/지체장애) 대체 삭제 수단: 길게 눌러 메뉴 노출.
     val deleteVisible = offsetX.value < -0.5f
@@ -560,7 +566,10 @@ internal fun AlarmRow(
 
 private data class AlarmRowNotice(val textResId: Int, val isError: Boolean)
 
-private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
+private fun alarmRowNotice(alarm: AlarmEntity, alarmPermissionsReady: Boolean): AlarmRowNotice? = when {
+    // 권한이 빠지면 **켜져 있어도 안 울린다.** 다른 어떤 안내보다 먼저 말해야 한다.
+    alarm.enabled && !alarmPermissionsReady ->
+        AlarmRowNotice(R.string.common_alarm_warning_permission_off, isError = true)
     alarm.state == AlarmStates.FAILED ->
         AlarmRowNotice(R.string.common_alarm_warning_reschedule_failed, isError = true)
     alarm.syncState == AlarmSyncStates.FAILED ->

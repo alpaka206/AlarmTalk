@@ -289,6 +289,7 @@ internal fun AlarmListScreen(
                             }
                         },
                         onEnterSelection = { selectedAlarmIds = setOf(alarm.id) },
+                        alarmPermissionsReady = permissions.alarmReady,
                     )
                 }
             }

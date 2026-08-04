@@ -121,6 +121,7 @@
     <string name="billing_voucher_unregistered_with_date">Unregistered · Issued %1$s</string>
     <string name="common_alarm_delete">Delete</string>
     <string name="common_alarm_warning_reschedule_failed">We couldn\'t reschedule the alarm. Please check the time and save again.</string>
+    <string name="common_alarm_warning_permission_off">Permissions are off, so this alarm will not ring</string>
     <string name="common_alarm_warning_sync_failed">Saving is briefly delayed. Your alarm will still ring, and we\'ll retry automatically.</string>
     <string name="common_alarm_notice_free_downgraded">Switched to the free plan, so this alarm now uses the default sound.</string>
     <string name="common_alarm_notice_default_converted">The voice is no longer available, so this alarm now uses the default sound.</string>
@@ -186,7 +187,6 @@
     <string name="editor_error_weather_location_required">For phrases with weather, please enter a city.</string>
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>
     <string name="editor_family_alarm_set">The alarm for the other person is set.</string>
-    <string name="editor_generated_voice_saved_local">The generated voice was saved locally.</string>
     <string name="editor_holiday_off_subtitle">Includes substitute and temporary holidays</string>
     <string name="editor_holiday_off_title">Turn off on holidays</string>
     <string name="editor_holiday_country_label">Holiday calendar: %1$s</string>
