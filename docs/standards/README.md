@@ -42,6 +42,8 @@
 - 로그는 `AlarmTalkLog.TAG`. `Log.d` / `Log.w` 직접 호출 금지.
 - 장시간 작업은 WorkManager 또는 명시적 포그라운드 서비스.
 - 모서리 반경·색은 생 리터럴 대신 디자인 토큰을 쓴다(`WakerDesign.kt`, `AlarmTalkTheme.kt`). 예외 목록은 루트 `CLAUDE.md`.
+- 알럿 모달은 `ui/components/IosAlertDialog.kt` 하나로만 만든다(입력이 있는 것도 `content` 슬롯 + `IosAlertField`). M3 `AlertDialog` 를 화면에서 직접 쓰거나 전용 껍데기를 새로 만들지 말 것 — 규약 전문은 루트 `CLAUDE.md` 의 「모달 = IosAlertDialog 하나」.
+- 사용자 입력창은 `CodeRedeemField.kt` 의 `sanitizeUserText`/`sanitizeDisplayName` 를 `onValueChange` 에서 통과시킨다(앱 1차 방어선). 표시 이름 규칙 자체는 `@alarmtalk/shared` 의 `DisplayNameSchema` 가 유일 출처.
 
 ## 5. 주석, 로깅
 
