@@ -42,6 +42,23 @@ internal data class PermissionSnapshot(
     val alarmReady: Boolean
         get() = exactAlarms && notifications && fullScreenIntent
 
+    /**
+     * **아예 못 울리는가.** 세 권한이 같은 무게가 아니다 —
+     *  - 알림(POST_NOTIFICATIONS) 없음: 울림 화면을 띄울 통로가 없다 → 알람이 안 울린다.
+     *  - 정확 알람 없음: `AlarmScheduler.schedule()` 이 `setAndAllowWhileIdle` 로 폴백해
+     *    **울리기는 한다**(수 분 늦을 수 있음).
+     *  - 전체화면 인텐트 없음: 소리·알림은 나지만 잠금화면을 덮지 못한다.
+     *
+     * 그래서 "울리지 않아요" 는 알림 권한이 없을 때만 참이다. 나머지를 같이 묶어
+     * 안 울린다고 말하면 사용자는 멀쩡히 울릴 알람을 꺼진 것으로 오해한다(Codex #671 P2).
+     */
+    val ringingBlocked: Boolean
+        get() = !notifications
+
+    /** 울리기는 하지만 제 성능이 안 나오는 상태(늦거나, 잠금화면을 못 덮거나). */
+    val ringingDegraded: Boolean
+        get() = notifications && (!exactAlarms || !fullScreenIntent)
+
     val allStartupGranted: Boolean
         get() = alarmReady && recordAudio
 

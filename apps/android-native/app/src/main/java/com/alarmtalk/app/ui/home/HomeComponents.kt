@@ -57,12 +57,14 @@ internal fun HomeHeader(
     nextAlarm: AlarmEntity?,
     hasAnyAlarm: Boolean,
     /**
-     * 알람 권한이 다 갖춰졌는지. 빠져 있으면 헤드라인이 **남은 시간 대신 그 사실**을 말한다 —
-     * 권한이 없으면 "13시간 후에 울려요" 는 거짓말이고, 헤드라인은 화면에서 사용자가
+     * 권한이 없어 **아예 못 울리는** 상태(= 알림 권한 없음). 이때 "13시간 후에 울려요" 는
+     * 거짓말이라 헤드라인이 그 자리에서 사실을 말한다 — 여기가 이 화면에서 사용자가
      * 유일하게 확실히 읽는 줄이다. 권한은 알람 하나가 아니라 전부에 걸리는 문제라
      * 행마다 붙이지 않고 여기 한 번만 말한다.
      */
-    alarmPermissionsReady: Boolean = true,
+    alarmRingingBlocked: Boolean = false,
+    /** 울리기는 하지만 늦거나 잠금화면을 못 덮는 상태(정확 알람·전체화면 권한 없음). */
+    alarmRingingDegraded: Boolean = false,
     onRequestAlarmPermissions: () -> Unit = {},
 ) {
     // 절대 시각은 바로 아래 카드에 이미 있으니 헤더는 '남은 시간'을 말한다.
@@ -75,10 +77,12 @@ internal fun HomeHeader(
             now = System.currentTimeMillis()
         }
     }
-    // 권한이 없으면 남은 시간을 말하지 않는다. 알람이 하나도 없을 때는 조르지 않는다 —
-    // 만들 때 어차피 권한을 묻는다.
-    val permissionBlocked = hasAnyAlarm && !alarmPermissionsReady
+    // 알람이 하나도 없을 때는 조르지 않는다 — 만들 때 어차피 권한을 묻는다.
+    val permissionBlocked = hasAnyAlarm && alarmRingingBlocked
+    val permissionDegraded = hasAnyAlarm && !alarmRingingBlocked && alarmRingingDegraded
     val statusText: String? = when {
+        // 못 울리면 남은 시간을 말하지 않는다. 늦게라도 울리는 경우엔 남은 시간이 여전히
+        // 유효하므로 그대로 두고, 아래 줄에 '늦을 수 있다' 만 덧붙인다.
         permissionBlocked -> stringResource(R.string.hs_status_permission_off)
         nextAlarm != null -> {
             val remainingMillis = nextAlarm.fireAtMillis - now
@@ -111,8 +115,15 @@ internal fun HomeHeader(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
+        if (permissionDegraded) {
+            Text(
+                text = stringResource(R.string.hs_status_permission_degraded),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         // 사실만 말하고 끝내면 고칠 길이 없다. 경고를 반복하지 않고 **할 일**만 하나 둔다.
-        if (permissionBlocked) {
+        if (permissionBlocked || permissionDegraded) {
             TextButton(
                 onClick = onRequestAlarmPermissions,
                 contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),

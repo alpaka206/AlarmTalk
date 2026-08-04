@@ -189,7 +189,8 @@ internal fun AlarmListScreen(
                     HomeHeader(
                         nextAlarm = nextAlarm,
                         hasAnyAlarm = hasAnyAlarm,
-                        alarmPermissionsReady = permissions.alarmReady,
+                        alarmRingingBlocked = permissions.ringingBlocked,
+                        alarmRingingDegraded = permissions.ringingDegraded,
                         onRequestAlarmPermissions = onRequestAlarmPermissions,
                     )
                 }
@@ -287,7 +288,7 @@ internal fun AlarmListScreen(
                             }
                         },
                         onEnterSelection = { selectedAlarmIds = setOf(alarm.id) },
-                        alarmPermissionsReady = permissions.alarmReady,
+                        alarmRingingBlocked = permissions.ringingBlocked,
                     )
                 }
             }
