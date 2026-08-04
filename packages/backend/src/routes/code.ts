@@ -7,6 +7,9 @@ import { redeemPromoCode, PromoRedemptionError } from '../lib/promo-redemption';
 
 const codeRoutes = new Hono<AppEnv>();
 
+/** 프로모 코드 실제 상한(admin 발급 폼 maxlength=64)과 같은 값. 클라도 이 길이로 자른다. */
+const MAX_CODE_LENGTH = 64;
+
 /**
  * 통합 코드 등록 — 클라이언트는 코드 종류를 몰라도 된다. 입력 하나를 받아
  * 아래 순서로 판별·처리한다:
@@ -25,6 +28,12 @@ codeRoutes.post('/register', async (c) => {
   const raw = typeof body.code === 'string' ? body.code.trim() : '';
   if (!raw) {
     return c.json({ error: 'code is required', error_code: 'CODE_REQUIRED' }, 400);
+  }
+  // **길이 상한은 서버에도 있어야 한다.** 클라(CodeRedeemField)가 64자로 자르지만 그건
+  // 앱을 거칠 때만이다 — 직접 호출하면 몇 MB 짜리 문자열이 아래 조회·쓰기 트랜잭션까지
+  // 그대로 흘러간다. 프로모 코드의 실제 상한(admin 발급 폼 maxlength=64)과 맞춘다.
+  if (raw.length > MAX_CODE_LENGTH) {
+    return c.json({ error: 'code is too long', error_code: 'CODE_TOO_LONG' }, 400);
   }
 
   const userRes = await db.execute({
