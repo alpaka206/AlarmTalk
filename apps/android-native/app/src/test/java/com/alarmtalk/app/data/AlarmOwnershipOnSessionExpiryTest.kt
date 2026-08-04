@@ -600,6 +600,30 @@ class AlarmOwnershipOnSessionExpiryTest {
     }
 
     /**
+     * 회귀 방지: **인계 중인 알람이 둘이어도 둘 다 지켜져야 한다**(Codex #666 P2).
+     *
+     * 지연·스누즈 마감이 겹치면 서비스가 뜨기 전에 브로드캐스트가 연달아 온다. 인계 표시가
+     * 값 하나면 나중 것이 앞엣것을 덮어써 앞 알람이 무방비가 되고, 그 순간 이 함수가 그
+     * 알람의 지난 시각을 다시 등록해 한 번 더 울린다. 표시를 집합으로 바꾼 것만으로는
+     * 닫히지 않는 창이라 따로 못 박는다.
+     */
+    @Test
+    fun twoAlarmsHandingOffAtOnceAreBothProtected() = runBlocking {
+        seedLegacyAlarm(id = "handoff-B", owner = "account-A", repeatDaysMask = 0, state = AlarmStates.SNOOZED)
+        seedLegacyAlarm(id = "handoff-C", owner = "account-A", repeatDaysMask = 0, state = AlarmStates.SNOOZED)
+        currentUser = "account-A"
+        // 서비스는 아직 하나도 안 떴다 — 둘 다 인계 구간이다.
+        ringingAlarmIds = setOf("handoff-B", "handoff-C")
+
+        val scheduled = repository.reschedulePendingAlarms()
+
+        assertEquals("인계 중인 알람은 둘 다 등록 대상이 아니다", 0, scheduled)
+        assertNull("지난 시각이 다시 걸리면 안 된다", shadowAlarmManager.peekNextScheduledAlarm())
+        assertEquals("B 가 꺼지면 안 된다", true, dao.getById("handoff-B")?.enabled)
+        assertEquals("C 가 꺼지면 안 된다", true, dao.getById("handoff-C")?.enabled)
+    }
+
+    /**
      * 회귀 방지: **A 가 울리는 동안 인계된 B 도 함께 지켜져야 한다**(Codex #666 P2).
      *
      * A 를 끄기 전에 B 의 스누즈가 마감되면 '울리는 중' 은 A, '인계 중' 은 B 다. 표시를

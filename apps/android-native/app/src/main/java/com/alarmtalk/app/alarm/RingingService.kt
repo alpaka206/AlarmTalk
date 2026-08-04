@@ -165,9 +165,9 @@ class RingingService : Service() {
         }
         ringingAlarmId = alarmId
         activeRingingAlarmId = alarmId
-        // 인계가 끝났으니 표시를 거둔다 — 단 **이 알람의 것일 때만**. 다른 알람이 인계 중이면
-        // 그 표시는 남겨야 한다(같은 이유는 [releaseRingingMarkers] 참고).
-        if (handoffAlarmId == alarmId) handoffAlarmId = null
+        // 이 알람의 인계는 끝났다 — 표시를 거둔다. 다른 알람이 인계 중이면 그 표시는
+        // 그대로 남는다(맵이라 서로를 덮지 않는다, [handoffAtElapsedMs] 참고).
+        handoffAtElapsedMs.remove(alarmId)
 
         serviceScope.launch {
             val repository = AlarmAppContainer.repository(applicationContext)
@@ -839,27 +839,28 @@ class RingingService : Service() {
             private set
 
         /**
-         * 리시버가 알람을 받아 **서비스가 뜨기 전까지**의 인계 구간 표시(+ 받은 시각).
+         * 리시버가 알람을 받아 **서비스가 뜨기 전까지**의 인계 구간 표시(알람 id → 받은 시각).
          *
          * [activeRingingAlarmId] 는 서비스가 실제로 울리기 시작해야 채워진다. 그 사이 예약
          * 정합성 워커가 끼어들면 그 알람을 '안 울리는 중' 으로 보고, 스누즈 마감처럼 이미
          * 지난 시각을 그대로 다시 등록해 **한 번 더 울린다**(사용자가 첫 번째를 끈 뒤일 수도
          * 있다). 받은 즉시 표시해 그 창을 닫는다(Codex #666 P2).
          *
+         * **슬롯 하나가 아니라 맵인 이유**: 인계 중인 알람이 동시에 여럿일 수 있다. 지연·스누즈
+         * 마감이 겹쳐 B·C 가 연달아 배달되면 서비스가 뜨기 전에 브로드캐스트가 두 번 온다.
+         * 값 하나면 C 가 B 를 덮어써 **B 가 무방비**가 되고, 워커가 B 의 지난 시각을 다시
+         * 등록한다 — 값 하나를 집합으로 바꾼 것만으로는 이 창이 닫히지 않았다.
+         *
          * 서비스가 뜨지 못하고 끝나는 경우(FGS 차단 등)에 표시가 영영 남지 않도록 짧은 TTL 을
-         * 둔다 — 굳어 버린 상태가 복구를 영구히 막는 문제를 다시 만들면 안 된다.
+         * 둔다 — 굳어 버린 상태가 복구를 영구히 막는 문제를 다시 만들면 안 된다. 만료된 항목은
+         * 읽을 때 함께 걷어내므로 맵이 무한정 자라지 않는다.
          */
-        @Volatile
-        private var handoffAlarmId: String? = null
-
-        @Volatile
-        private var handoffAtElapsedMs: Long = 0L
+        private val handoffAtElapsedMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
         private const val HANDOFF_TTL_MS = 60_000L
 
         fun markAlarmHandoff(alarmId: String) {
-            handoffAlarmId = alarmId
-            handoffAtElapsedMs = android.os.SystemClock.elapsedRealtime()
+            handoffAtElapsedMs[alarmId] = android.os.SystemClock.elapsedRealtime()
         }
 
         /**
@@ -876,30 +877,30 @@ class RingingService : Service() {
         private fun releaseRingingMarkers(completedAlarmId: String?) {
             if (completedAlarmId == null) {
                 activeRingingAlarmId = null
-                handoffAlarmId = null
+                handoffAtElapsedMs.clear()
                 return
             }
             if (activeRingingAlarmId == completedAlarmId) activeRingingAlarmId = null
-            if (handoffAlarmId == completedAlarmId) handoffAlarmId = null
+            handoffAtElapsedMs.remove(completedAlarmId)
         }
 
         /**
          * 지금 울리는 중이거나, 방금 받아 서비스가 뜨는 중인 알람 id들.
          *
          * **하나가 아니라 집합인 이유.** 두 표시는 서로 다른 알람을 가리킬 수 있다 — A 가
-         * 울리는 동안 B 의 스누즈가 마감되면 [activeRingingAlarmId] 는 A, [handoffAlarmId] 는
+         * 울리는 동안 B 의 스누즈가 마감되면 [activeRingingAlarmId] 는 A, [handoffAtElapsedMs] 는
          * B 다. 예전처럼 하나만 돌려주면 A 에 가려 **B 가 무방비**가 되고, 그 순간 정합성
          * 워커가 B(state=SNOOZED · fireAtMillis 과거)를 보고 지난 시각을 그대로 다시 등록해
          * 한 번 더 울린다(Codex #666 P2). 두 값을 독립적으로 내보내야 한다.
          */
         fun ringingOrHandingOffAlarmIds(): Set<String> {
-            val pending = handoffAlarmId?.takeIf {
-                val fresh = android.os.SystemClock.elapsedRealtime() - handoffAtElapsedMs < HANDOFF_TTL_MS
-                // 서비스가 뜨지 못하고 끝난 경우(FGS 차단 등) 표시가 영영 남지 않게 여기서 만료시킨다.
-                if (!fresh) handoffAlarmId = null
-                fresh
-            }
-            return setOfNotNull(activeRingingAlarmId, pending)
+            val now = android.os.SystemClock.elapsedRealtime()
+            // 서비스가 뜨지 못하고 끝난 경우(FGS 차단 등) 표시가 영영 남지 않게 여기서 만료시킨다.
+            handoffAtElapsedMs.entries.removeAll { now - it.value >= HANDOFF_TTL_MS }
+            val ids = LinkedHashSet<String>(handoffAtElapsedMs.size + 1)
+            activeRingingAlarmId?.let { ids += it }
+            ids += handoffAtElapsedMs.keys
+            return ids
         }
 
         private const val RINGING_NOTIFICATION_ID = 1001
