@@ -77,10 +77,12 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
 internal fun MainViewModel.reconcileInaccessibleVoiceAlarms() {
     if (!familyVoicesLoadedFresh || !voiceProfilesLoadedFresh) return
     val accessibleVoiceIds = (voiceProfiles.map { it.id } + familyVoices.map { it.id }).toSet()
+    // 목록을 가져온 계정을 함께 넘긴다 — 강등은 되돌릴 수 없어, 그 사이 계정이 바뀌었으면
+    // 저장소가 그만둔다. **목록과 같은 자리에서** 잡는다: 코루틴 안에서 읽으면 넘기는 값이
+    // '목록을 가져온 계정' 이 아니라 '지금 계정' 이 되어, 둘이 갈리는 순간 저장소 가드가
+    // 무력해진다(가드의 전제가 깨진다).
+    val listOwner = authSession?.user?.id
     viewModelScope.launch {
-        // 목록을 가져온 계정을 함께 넘긴다 — 강등은 되돌릴 수 없어, 그 사이 계정이 바뀌었으면
-        // 저장소가 그만둔다.
-        val listOwner = authSession?.user?.id
         runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner) }
             .onSuccess { count ->
                 if (count > 0) Log.i(TAG, "Degraded $count alarm(s) using inaccessible voice")

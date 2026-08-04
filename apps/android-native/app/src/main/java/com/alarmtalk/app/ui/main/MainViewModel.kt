@@ -182,7 +182,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // 이 ViewModel 은 그걸 관찰하지 않아 옛 토큰을 들고 있다. 그 옛 토큰이 만료돼 401 이
             // 오면 '지금 세션의 토큰' 으로 보여 가드를 통과하고, **저장소의 멀쩡한 새 토큰까지
             // 지운다**(Codex #665 P2). 저장소 값도 함께 본다.
-            val storedToken = runCatching { authSessionStore.read()?.token }.getOrNull()
+            val stored = runCatching { authSessionStore.read() }.getOrNull()
+            val storedToken = stored?.token
             val isCurrentToken = failedToken == null ||
                 failedToken == session.token ||
                 failedToken == storedToken
@@ -190,6 +191,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 storedToken != null &&
                 failedToken != storedToken
             if (!isCurrentToken || supersededByStore) {
+                // **무시만 하면 좀비 세션이 된다.** 여기서 걸렀다는 건 메모리 토큰과 저장소
+                // 토큰이 갈렸다는 뜻인데(워커가 저장소만 갱신하는 경로가 있다), 이 ViewModel 은
+                // 생성 시점 말고는 저장소를 관찰하지 않는다. 그대로 두면 앞으로의 모든 요청이
+                // 메모리의 옛 토큰으로 나가 계속 401 을 맞는데, 그 401 은 또 여기서 무시된다 —
+                // 화면은 '로그인됨' 인데 서버 호출은 전부 실패하고 안내조차 없는 상태가
+                // 프로세스가 죽을 때까지 이어진다(Codex #665 P1).
+                //
+                // 그래서 저장소 세션을 **메모리로 흡수**한다(같은 계정일 때만). 저장소 토큰이
+                // 살아 있으면 그대로 복구되고, 그것마저 폐기됐으면 다음 401 은
+                // `failedToken == storedToken` 이 되어 정상적으로 만료 처리로 떨어진다 —
+                // 어느 쪽이든 올바른 종착점으로 수렴한다.
+                if (stored != null &&
+                    stored.user.id == session.user.id &&
+                    authSession?.token == session.token
+                ) {
+                    authSession = stored
+                    Log.i(TAG, "Absorbed the stored session after a superseded 401")
+                }
                 Log.i(TAG, "Ignoring 401 from a superseded token")
                 return@launch
             }
