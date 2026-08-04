@@ -883,10 +883,12 @@ Pass code: %1$s
 1. Install AlarmTalk https://play.google.com/store/apps/details?id=com.alarmtalk.app
 2. Sign up and log in
 3. Enter the code under More → Register code</string>
-    <string name="welcome_promo_title">Have a code? Enter it now</string>
-    <string name="welcome_promo_body">Core features stay free even without a code. You can register one later from More → Register code at any time.</string>
+    <string name="welcome_promo_title">Have a code?</string>
+    <string name="welcome_promo_body_free">Core features stay free even without a code.</string>
+    <string name="welcome_promo_body_later">You can enter one later from Register code in More.</string>
+    <string name="welcome_promo_highlight_free">free</string>
+    <string name="welcome_promo_highlight_where">Register code in More</string>
     <string name="welcome_promo_where">Get a code</string>
-    <string name="welcome_promo_skip">Skip</string>
     <string name="welcome_promo_instagram_hint">Message us on Instagram @alarmtalk.app and we will help.</string>
     <string name="auth_consent_title_updated">We have updated our terms</string>
     <string name="auth_consent_subtitle_updated">Only the items that changed are listed below. Everything you already agreed to stays as it is.</string>

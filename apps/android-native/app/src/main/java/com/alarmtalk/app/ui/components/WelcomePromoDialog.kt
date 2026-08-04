@@ -3,7 +3,6 @@ package com.alarmtalk.app
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -14,9 +13,39 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+
+/**
+ * [text] 안의 [highlight] 만 강조색으로 칠한다. 없으면 그냥 원문 — 번역에서 그 표현이
+ * 달라져도 문장이 깨지지 않는다(강조가 빠질 뿐이다).
+ *
+ * 문장을 조각내 이어붙이지 않는 이유: 조각 순서가 언어마다 달라서, 붙이는 순간 번역이
+ * 어색해진다. 완성된 문장을 두고 그 안에서 찾는 편이 안전하다.
+ */
+@Composable
+private fun highlighted(text: String, highlight: String): AnnotatedString {
+    val start = text.indexOf(highlight)
+    if (highlight.isBlank() || start < 0) return AnnotatedString(text)
+    return buildAnnotatedString {
+        append(text.substring(0, start))
+        withStyle(
+            SpanStyle(
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            ),
+        ) {
+            append(highlight)
+        }
+        append(text.substring(start + highlight.length))
+    }
+}
 
 /**
  * 첫 로그인 + 무료 플랜에게 한 번만 뜨는 웰컴 코드 안내.
@@ -71,13 +100,23 @@ internal fun WelcomePromoDialog(
                     title = stringResource(R.string.welcome_promo_title),
                     onDismiss = onDismiss,
                     dismissEnabled = !busy,
-                    // 다른 모달 제목은 "닉네임 수정" 같은 짧은 구절이라 1줄로 충분하지만,
-                    // 이건 문장이라 1줄로 두면 "받은 코드가 있다면 지금 등…" 으로 잘린다.
-                    titleMaxLines = 2,
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // 두 문장을 각각 한 줄로 둔다 — 한 덩어리로 흘리면 '무료로 쓸 수 있다' 와
+                    // '나중에 넣을 수 있다' 가 섞여 읽힌다. 각 줄의 핵심어만 강조색으로 띄운다.
                     Text(
-                        text = stringResource(R.string.welcome_promo_body),
+                        text = highlighted(
+                            text = stringResource(R.string.welcome_promo_body_free),
+                            highlight = stringResource(R.string.welcome_promo_highlight_free),
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        text = highlighted(
+                            text = stringResource(R.string.welcome_promo_body_later),
+                            highlight = stringResource(R.string.welcome_promo_highlight_where),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -91,33 +130,22 @@ internal fun WelcomePromoDialog(
                         )
                     }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                // 닫기는 헤더의 X 하나뿐이다. '건너뛰기' 버튼도 같은 일을 했는데, 같은 동작을
+                // 두 자리에 두면 사용자가 둘의 차이를 찾느라 멈춘다(코드를 버리는 건지, 다음에
+                // 다시 물어보는 건지). 앱의 다른 모달도 닫기는 X 하나다.
+                //
+                // 가로 컨텐트 패딩을 0 으로 둬서 라벨이 위 제목·본문과 **같은 세로선**에서
+                // 시작하게 한다. TextButton 기본값(12dp)을 그대로 두면 이 손수 짠 컬럼 안에서
+                // 이 줄만 안쪽으로 밀려 들쭉날쭉해 보인다.
+                TextButton(
+                    onClick = onOpenInstagram,
+                    enabled = !busy,
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
                 ) {
-                    // 가로 컨텐트 패딩을 0 으로 둬서 라벨이 위 제목·본문과 **같은 세로선**에서
-                    // 시작하게 한다. TextButton 기본값(12dp)을 그대로 두면 이 손수 짠 컬럼
-                    // 안에서 두 줄만 안쪽으로 밀려 들쭉날쭉해 보인다.
-                    TextButton(
-                        onClick = onOpenInstagram,
-                        enabled = !busy,
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.welcome_promo_where),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    TextButton(
-                        onClick = onDismiss,
-                        enabled = !busy,
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.welcome_promo_skip),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
+                    Text(
+                        text = stringResource(R.string.welcome_promo_where),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
