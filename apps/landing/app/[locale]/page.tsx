@@ -3,11 +3,11 @@ import { SiteHeader } from "@/components/site-header";
 import { Hero } from "@/components/sections/hero";
 import { Trust } from "@/components/sections/trust";
 import { FeatureSection } from "@/components/sections/feature-section";
-import {
-  VoiceVisual,
-  SharedVisual,
-  LanguageVisual,
-} from "@/components/sections/feature-visuals";
+import { Declare } from "@/components/sections/declare";
+import { Privacy } from "@/components/sections/privacy";
+import { Pricing } from "@/components/sections/pricing";
+import { FinalCta } from "@/components/sections/final-cta";
+import { DeviceShot, DeviceShotPair } from "@/components/device-shot";
 import { Scenarios } from "@/components/sections/scenarios";
 import { Faq } from "@/components/sections/faq";
 import { SiteFooter } from "@/components/sections/site-footer";
@@ -65,22 +65,36 @@ export default async function HomePage({
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageLd) }}
       />
       <SiteHeader />
+      {/* 순서는 **사용자가 겪는 시간**이 정한다: 이게 뭔가 → 왜 또 알람인가 →
+          어떻게 시작하나(등록) → 매일 뭘 얻나 → 같이 쓰면 → 나는 이런 사람인가 →
+          안전한가 → 얼마인가 → 나머지 → 어디서 받나.
+
+          '목소리 나누기' 를 뒤로 내린 이유: 그건 인원이 둘 이상일 때만 성립하는데,
+          두 번째로 보여주면 혼자 쓰는 사람이 "내 얘기 아니네" 로 떠난다. */}
       <main className="relative">
         <Hero />
+        <Declare />
         <Trust />
         <FeatureSection
           id="how"
           namespace="voice"
-          visual={<VoiceVisual />}
+          visual={<DeviceShot name="register" />}
+        />
+        <FeatureSection
+          namespace="language"
+          reverse
+          alt
+          visual={<DeviceShotPair names={["message", "fortune"]} />}
         />
         <FeatureSection
           namespace="shared"
-          reverse
-          visual={<SharedVisual />}
+          visual={<DeviceShotPair names={["voices", "share"]} />}
         />
-        <FeatureSection namespace="language" visual={<LanguageVisual />} />
         <Scenarios />
+        <Privacy />
+        <Pricing />
         <Faq />
+        <FinalCta />
       </main>
       <SiteFooter />
     </>

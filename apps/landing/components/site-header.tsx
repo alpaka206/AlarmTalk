@@ -53,31 +53,31 @@ export function SiteHeader() {
         <nav className="hidden items-center gap-1 md:flex">
           <Link
             href="/#voices"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition hover:text-text"
+            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
           >
             {t("voices")}
           </Link>
           <Link
             href="/#how"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition hover:text-text"
+            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
           >
             {t("how")}
           </Link>
           <Link
             href="/#faq"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition hover:text-text"
+            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
           >
             {t("faq")}
           </Link>
           <Link
             href="/company"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition hover:text-text"
+            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
           >
             {t("company")}
           </Link>
           <Link
             href="/contact"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition hover:text-text"
+            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
           >
             {t("contact")}
           </Link>

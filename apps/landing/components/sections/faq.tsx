@@ -24,7 +24,7 @@ export function Faq() {
             <RevealItem
               as="details"
               key={i}
-              className="group p-6 transition open:bg-raised md:p-7"
+              className="group p-6 transition-[background-color] duration-150 ease-[var(--ease-ui)] open:bg-raised md:p-7"
             >
               <summary className="flex cursor-pointer list-none items-start justify-between gap-6">
                 <span className="text-[16px] font-semibold text-text sm:text-[17px]">
@@ -32,7 +32,7 @@ export function Faq() {
                 </span>
                 <span
                   aria-hidden="true"
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line text-text-muted transition group-open:rotate-45 group-open:border-accent group-open:text-accent"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-line text-text-muted transition-[transform,color,border-color] duration-150 ease-[var(--ease-ui)] group-open:rotate-45 group-open:border-accent group-open:text-accent"
                 >
                   <svg
                     width="14"

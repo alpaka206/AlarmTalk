@@ -48,7 +48,7 @@ export function MobileMenu() {
         aria-expanded={open}
         aria-controls="mobile-menu-panel"
         onClick={() => setOpen(true)}
-        className="inline-grid h-10 w-10 place-items-center rounded-full border border-line bg-surface text-text-muted transition hover:text-text md:hidden"
+        className="inline-grid h-10 w-10 place-items-center rounded-full border border-line bg-surface text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text md:hidden"
       >
         <Menu className="h-4 w-4" aria-hidden="true" />
       </button>
@@ -70,7 +70,7 @@ export function MobileMenu() {
               type="button"
               aria-label={tMenu("close")}
               onClick={() => setOpen(false)}
-              className="inline-grid h-10 w-10 place-items-center rounded-full border border-line bg-surface text-text-muted transition hover:text-text"
+              className="inline-grid h-10 w-10 place-items-center rounded-full border border-line bg-surface text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -82,7 +82,7 @@ export function MobileMenu() {
                 key={link.href}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="rounded-2xl border border-transparent px-4 py-4 text-[18px] font-semibold text-text transition hover:border-line hover:bg-surface"
+                className="rounded-2xl border border-transparent px-4 py-4 text-[18px] font-semibold text-text transition-[color,background-color,border-color] duration-150 ease-[var(--ease-ui)] hover:border-line hover:bg-surface focus-visible:border-line focus-visible:bg-surface"
               >
                 {link.label}
               </Link>

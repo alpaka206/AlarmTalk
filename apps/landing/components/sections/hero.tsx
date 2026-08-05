@@ -13,18 +13,17 @@ export function Hero() {
         {/* Left column — staggered on-load entrance. Text stays server-rendered;
             only the thin Reveal wrappers are client. */}
         <RevealGroup className="flex flex-col" stagger={0.07} delay={0.05} trigger="mount">
-          <RevealItem
-            as="h1"
-            className="text-[44px] font-bold leading-[1.04] tracking-[-0.03em] text-text sm:text-[60px] lg:text-[72px]"
-          >
-            {t("headline1")}
-            <span className="mt-3 block text-accent">{t("headline2")}</span>
+          {/* 강조색 예산의 절반이 여기 있다. 예전에는 아이브로가 비어 있고 60px 헤드라인
+              한 줄 전체가 파랬다 — 예산이 정확히 거꾸로 쓰이고 있었다. */}
+          <RevealItem as="p" className="eyebrow mb-4">
+            {t("tag")}
           </RevealItem>
 
-          <RevealItem
-            as="p"
-            className="mt-7 max-w-135 text-[17px] leading-[1.65] text-text-muted sm:text-[18px]"
-          >
+          <RevealItem as="h1" className="t-display text-text">
+            {t("headline")}
+          </RevealItem>
+
+          <RevealItem as="p" className="t-lead mt-6 max-w-135 text-text-body">
             {t("description")}
           </RevealItem>
 
@@ -37,7 +36,7 @@ export function Hero() {
 
         {/* Phone — "powers on" after the text settles. */}
         <Reveal
-          variant="focus"
+          variant="heavy"
           delay={0.42}
           trigger="mount"
           className="flex items-center justify-center"
