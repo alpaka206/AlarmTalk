@@ -1061,8 +1061,16 @@ internal fun MainViewModel.syncNow() {
         message = getApplication<android.app.Application>().getString(R.string.msg_sync_login_required)
         return
     }
+    // ⚠ **이미 돌고 있으면 또 돌리지 않는다.** syncNow 는 알람 탭 진입·시작·푸시 등 여러
+    // 곳에서 불려 짧은 간격으로 두 번 들어온다. 두 회차가 같은 '아직 안 올린' 목록을 읽으면
+    // (remoteAlarmId 는 응답이 와야 커밋된다) 둘 다 create 로 가서 **서버에 같은 알람이 두 개**
+    // 생긴다 — 가족 알람이면 수신자에게 두 번 간다. 2026-08-06 실기기 재현(운세 알람 1개가
+    // 서버에 2행). 켜는 건 반드시 launch **밖**이어야 한다. 안에서 켜면 두 코루틴이 모두
+    // 예약된 뒤에 켜져 아무것도 못 막는다.
+    if (syncBusy) return
+    syncBusy = true
     viewModelScope.launch {
-        syncBusy = true
+        try {
         runCatching {
             val push = repository.syncWithBackend(api, session.token)
             val pull = repository.pullReceivedAlarms(api, session.token)
@@ -1102,7 +1110,10 @@ internal fun MainViewModel.syncNow() {
                 AlarmTalkLog.reportError("Backend sync failed", error)
             }
         }
-        syncBusy = false
+        } finally {
+            // 취소·예외로 빠져나가도 반드시 푼다 — 안 그러면 이 세션 동안 sync 가 영영 막힌다.
+            syncBusy = false
+        }
     }
 }
 
