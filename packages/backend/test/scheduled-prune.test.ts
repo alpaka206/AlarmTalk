@@ -76,3 +76,42 @@ describe('scheduled() — email_verification_codes prune (FIX 10)', () => {
     expect(stmt.args[0]).toBe(expected);
   });
 });
+
+describe('scheduled() — 탈퇴 파기 알림', () => {
+  it('배치 뒤쪽이 실패해도 이미 커밋된 파기는 알린다', async () => {
+    const { withWriteTransaction } = await import('../src/lib/transactions');
+    const { notifyDowngradedAlarms } = await import('../src/lib/fcm');
+    const env = {
+      TURSO_DATABASE_URL: 'mock',
+      TURSO_AUTH_TOKEN: 'mock',
+      PASSWORD_PEPPER: 'pep',
+    } as never;
+
+    // 파기 대상 2명 — 첫 계정은 커밋되고 둘째에서 던진다.
+    executeMock.mockImplementation((arg: unknown) => {
+      const sql = (arg as { sql?: string })?.sql ?? '';
+      if (sql.includes("deletion_status = 'pending_deletion'")) {
+        return Promise.resolve({ rows: [{ id: 'A', google_id: 'gA' }, { id: 'B', google_id: 'gB' }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
+    vi.mocked(withWriteTransaction)
+      .mockResolvedValueOnce({
+        downgradedAlarms: [{ alarmId: 'al-1', ownerUserId: 'R1', isReceived: true }],
+        voiceAccessRevokedUserIds: ['M1'],
+      } as never)
+      .mockRejectedValueOnce(new Error('turso down'));
+
+    await worker.scheduled(
+      { scheduledTime: new Date('2026-06-22T00:00:00.000Z').getTime(), cron: '*/5 * * * *' } as never,
+      env,
+    );
+
+    // A 의 파기는 롤백되지 않는다. 안 알리면 R1·M1 은 폴백 주기만큼 탈퇴자의 목소리를 더 든다.
+    expect(notifyDowngradedAlarms).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![2]).toEqual([
+      { alarmId: 'al-1', ownerUserId: 'R1', isReceived: true },
+    ]);
+    expect(vi.mocked(notifyDowngradedAlarms).mock.calls[0]![3]).toEqual(['M1']);
+  });
+});

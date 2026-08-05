@@ -338,24 +338,36 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
     });
     const revokedTargets: RevokedRecipientTarget[] = [];
     const voiceAccessRevokedUserIds: string[] = [];
-    for (const row of due.rows) {
-      const userPk = String(row.id);
-      const userId = (row.google_id as string | null) ?? userPk;
-      const purged = await withWriteTransaction(db, async (tx) => {
-        await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
-        return purgeUserAccount(tx, userPk, userId);
-      });
-      revokedTargets.push(...purged.downgradedAlarms);
-      voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);
+    // **이미 커밋된 파기는 반드시 알린다.** 배치 뒤쪽 계정에서 던져도 앞 계정의 파기는
+    // 이미 커밋돼 되돌아가지 않는다 — 그 수신자들에게 안 알리면 탈퇴자의 목소리를 폴백
+    // 주기만큼 더 들고 있게 된다. 그래서 발송은 finally 에 둔다(모아 보내는 건 유지 —
+    // sendPushNotifications 는 호출마다 OAuth 를 새로 받아, 계정마다 나눠 부르면 틱당
+    // 최대 50 왕복이 된다).
+    try {
+      for (const row of due.rows) {
+        const userPk = String(row.id);
+        const userId = (row.google_id as string | null) ?? userPk;
+        const purged = await withWriteTransaction(db, async (tx) => {
+          await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
+          return purgeUserAccount(tx, userPk, userId);
+        });
+        revokedTargets.push(...purged.downgradedAlarms);
+        voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);
+      }
+      if (due.rows.length > 0) {
+        logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
+      }
+    } finally {
+      // 파기된 계정의 목소리를 들고 있는 기기들에 알린다 — 받은 알람은 pull 신호로,
+      // 본인 알람·미동기화 알람은 접근권 재확인으로. **여기서 던지면 안 된다** —
+      // 원래 파기 실패를 이 실패가 덮어써 바깥 catch 가 엉뚱한 걸 기록한다.
+      try {
+        const { notifyDowngradedAlarms } = await import('./lib/fcm');
+        await notifyDowngradedAlarms(db, env, revokedTargets, voiceAccessRevokedUserIds);
+      } catch (notifyErr) {
+        captureCron('scheduled.account_purge_notify', notifyErr);
+      }
     }
-    if (due.rows.length > 0) {
-      logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
-    }
-    // 파기된 계정의 목소리를 들고 있는 기기들에 **커밋 후에** 알린다 — 받은 알람은 pull
-    // 신호로, 본인 알람·미동기화 알람은 접근권 재확인으로. 틱당 한 번으로 모아 보낸다
-    // (sendPushNotifications 는 호출마다 OAuth 를 새로 받는다).
-    const { notifyDowngradedAlarms } = await import('./lib/fcm');
-    await notifyDowngradedAlarms(db, env, revokedTargets, voiceAccessRevokedUserIds);
   } catch (err) {
     captureCron('scheduled.account_purge', err);
   }
