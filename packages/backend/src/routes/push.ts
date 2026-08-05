@@ -5,7 +5,11 @@ import { withWriteTransaction } from '../lib/transactions';
 
 const push = new Hono<AppEnv>();
 
-const PUSH_PLATFORMS = ['android', 'web'] as const;
+// 'ios' 는 마이그레이션 #94 가 push_tokens.platform CHECK 에 되돌려 놓은 값이다.
+// ⚠ 배포가 마이그레이션보다 먼저 도는 창(최대 ~1분)에는 여기서 통과한 'ios' 가 DB
+// CHECK 에 걸려 INSERT 가 실패한다 — 의도된 fail-closed 다. 등록이 500 으로 떨어지고
+// 클라가 재시도하면 되며, 잘못된 행이 남지 않는다.
+const PUSH_PLATFORMS = ['ios', 'android', 'web'] as const;
 type PushPlatform = (typeof PUSH_PLATFORMS)[number];
 const TOKEN_MAX = 4096;
 

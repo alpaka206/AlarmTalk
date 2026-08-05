@@ -46,8 +46,24 @@ const ANDROID: AppVersionPolicy = {
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 
-// platform 파라미터는 유지한다 — 앱이 이미 붙여 보내고 있고, 향후 플랫폼이 늘면
-// 여기서 분기한다. 지금은 어떤 값이 와도 Android 정책을 돌려준다.
-export function appVersionPolicy(_platform?: string | null): AppVersionPolicy {
-  return ANDROID;
+const IOS: AppVersionPolicy = {
+  // iOS 는 아직 아무도 안 쓴다 — App Store 에 올라간 적이 없다. 막을 사용자가 없으므로
+  // 하한은 1 로 시작한다. Android 정책(21)을 그대로 물려주면 iOS 빌드번호(CFBundleVersion,
+  // 현재 project.yml 의 CURRENT_PROJECT_VERSION = 1)가 즉시 강제 업데이트 차단 화면에 걸린다.
+  //
+  // 올릴 시점은 Android 와 같은 기준이다 — 서버가 요구하는 필수 계약(예: 동의
+  // document_version)을 못 보내는 빌드를 잘라내야 할 때만. 그전에는 1 로 둔다.
+  minSupported: 1,
+  // 권장 업데이트 기준. 첫 릴리스 전이라 latest 도 1 이다(= 아무 배너도 뜨지 않는다).
+  latest: 1,
+  // ⚠ 앱을 App Store 에 올린 뒤 실제 앱 ID 로 교체할 것. 그전까지는 iOS 클라가 이 URL 을
+  // 열 일이 없다(minSupported/latest 가 둘 다 1 이라 업데이트 화면 자체가 안 뜬다).
+  storeUrl: 'https://apps.apple.com/app/id0000000000',
+};
+
+// platform 파라미터로 정책을 고른다. 앱이 이미 붙여 보내고 있다.
+// 값이 없거나 모르는 값이면 Android 정책으로 폴백한다 — 운영 중인 클라이언트가
+// Android 뿐이라, 모르는 플랫폼에 iOS 의 느슨한 정책(하한 1)을 주는 것보다 안전하다.
+export function appVersionPolicy(platform?: string | null): AppVersionPolicy {
+  return platform?.toLowerCase() === 'ios' ? IOS : ANDROID;
 }

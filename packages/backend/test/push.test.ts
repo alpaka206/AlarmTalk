@@ -67,6 +67,16 @@ describe('POST /push/register — FCM 토큰 등록', () => {
     expect((await res.json()).error_code).toBe('INVALID_PLATFORM');
   });
 
+  // iOS 는 마이그레이션 #88 이 push_tokens.platform CHECK 에서 걷어냈다가 #94 가
+  // 되돌린 값이다. 라우트 레벨에서 다시 막히면 iOS 기기가 가족 알람·목소리 공유·
+  // 목소리 철회 신호를 하나도 못 받는다.
+  it('ios platform 을 받아들인다 (#94)', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/push/register', { token: 'apns-token-abc', platform: 'ios' }),
+    );
+    expect(res.status).toBe(200);
+  });
+
   it('잘못된 JSON → 400 INVALID_JSON', async () => {
     const res = await buildApp().request(
       new Request('http://localhost/push/register', {

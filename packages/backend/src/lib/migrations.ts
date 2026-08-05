@@ -2011,6 +2011,42 @@ export const migrations: Migration[] = [
     name: 'alarm-recipient-state-sender',
     statements: [`ALTER TABLE alarm_recipient_state ADD COLUMN sender_user_id TEXT`],
   },
+  {
+    /**
+     * push_tokens.platform CHECK 에 'ios' 를 되돌린다.
+     *
+     * #88 이 iOS 미운영을 이유로 CHECK 를 `('android','web')` 로 좁혔는데, iOS 앱을
+     * 되살리면서 **DB 가 iOS 토큰 등록을 거절하는** 상태가 됐다. 이게 막히면 가족 알람·
+     * 목소리 공유·목소리 철회 신호를 iOS 기기가 하나도 못 받는다.
+     *
+     * SQLite/libSQL 은 CHECK 제약을 ALTER 로 못 고쳐서 테이블 재작성이 유일한 방법이다.
+     * #88 과 같은 방식이되 **필터 없이 전 행을 옮긴다** — 좁힐 때와 달리 넓히는
+     * 방향이라 버릴 행이 없다. 기존 android/web 토큰은 그대로 보존된다.
+     *
+     * 인덱스는 **지금 살아 있는 2개만** 다시 만든다. `idx_push_tokens_user` 는 #89 가
+     * 중복이라고 지운 것이라(`idx_push_tokens_unique` 의 선두 컬럼이 user_id) 여기서
+     * 되살리면 그 정리를 무효화한다.
+     */
+    id: 94,
+    name: 'restore-ios-push-platform',
+    atomic: true,
+    statements: [
+      `CREATE TABLE push_tokens_v3 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        token TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('ios','android','web')),
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO push_tokens_v3 (id, user_id, token, platform, created_at, updated_at)
+        SELECT id, user_id, token, platform, created_at, updated_at FROM push_tokens`,
+      `DROP TABLE push_tokens`,
+      `ALTER TABLE push_tokens_v3 RENAME TO push_tokens`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_unique ON push_tokens(user_id, token)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
