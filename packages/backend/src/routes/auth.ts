@@ -11,6 +11,7 @@ import {
   RegisterRequestSchema,
   LoginRequestSchema,
   GoogleLoginRequestSchema,
+  AppleLoginRequestSchema,
   EmailVerificationRequestSchema,
   EmailVerificationConfirmRequestSchema,
   PasswordResetRequestSchema,
@@ -18,6 +19,7 @@ import {
   clampDisplayName,
 } from '@alarmtalk/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
+import { verifyAppleIdToken } from '../lib/apple-oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
@@ -742,6 +744,165 @@ auth.post('/google', async (c) => {
         ? 401
         : 500;
     return c.json(jsonError('AUTH_GOOGLE_FAILED', 'Google sign-in failed'), status);
+  }
+});
+
+// Sign in with Apple. 구조는 POST /google 과 같고 식별자 컬럼만 apple_id 다.
+//
+// 애플 고유의 두 가지:
+//  1) **이름은 최초 1회만 온다.** 애플은 첫 로그인 응답에만 fullName 을 주고 그 뒤로는
+//     영영 안 준다. 그래서 앱이 그때 받은 값을 `full_name` 으로 보내 주고, 여기서
+//     빈 칸을 채우는 데만 쓴다.
+//  2) **이메일 가리기(Private Relay).** 사용자가 이메일 가리기를 고르면 `@privaterelay
+//     .appleid.com` 주소가 온다. 정상 값이라 그대로 저장한다. 아예 이메일이 없는 경우도
+//     있어(재로그인 시 미포함) 구글과 같은 방식으로 합성 주소를 쓴다.
+auth.post('/apple', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = AppleLoginRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const db = getDB(c.env);
+
+  try {
+    // 구성 가드 — 구글과 같은 이유로 fail-closed. aud(번들 ID)를 모르면 **다른 앱용으로
+    // 발급된 유효한 애플 토큰**도 통과해 그 앱 사용자가 우리 계정을 차지할 수 있다.
+    if (!c.env.APPLE_BUNDLE_ID) {
+      return c.json(
+        jsonError('AUTH_APPLE_CONFIG_MISSING', 'Apple bundle ID is not configured'),
+        500,
+      );
+    }
+
+    const apple = await verifyAppleIdToken(
+      parsed.data.identity_token,
+      c.env.APPLE_BUNDLE_ID,
+      parsed.data.nonce,
+    );
+    const appleId = apple.sub;
+    const email = (apple.email || `${appleId}@apple.local`).toLowerCase().trim();
+    // 애플이 준 이름도 **외부 입력**이다(구글과 동일 규약 — CLAUDE.md 「입력 규칙은 한 곳에서만」).
+    const name = clampDisplayName(parsed.data.full_name ?? '');
+
+    const existing = await db.execute({
+      sql: `SELECT id, apple_id, email, name, plan, token_epoch,
+                   allow_family_alarms,
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+            FROM users
+            WHERE apple_id = ? OR email = ?
+            LIMIT 1`,
+      args: [appleId, email],
+    });
+
+    let userId: string;
+    let plan: 'free' | 'plus' | 'family';
+    let tokenEpoch = 0;
+    let effectiveName = name;
+
+    if (existing.rows.length > 0) {
+      const row = typedRow<
+        {
+          id: string;
+          apple_id: string | null;
+          email: string;
+          name: string | null;
+          plan: 'free' | 'plus' | 'family' | null;
+          token_epoch: number | string | null;
+        } & Record<string, unknown>
+      >(existing.rows[0]!);
+      userId = row.id;
+      plan = row.plan ?? 'free';
+      tokenEpoch = Number(row.token_epoch ?? 0);
+      // 저장된 이름이 이긴다 — 애플 이름은 빈 칸만 채운다(구글 경로와 동일한 이유:
+      // 재로그인이 사용자가 고친 닉네임을 덮어쓰면 안 된다). 옛 스키마로 저장된 값도
+      // 규칙을 통과시킨다.
+      const storedName = clampDisplayName(row.name ?? '');
+      effectiveName = storedName || name;
+
+      await db.execute({
+        sql: `UPDATE users
+              SET apple_id = ?, name = ?, updated_at = datetime('now')
+              WHERE id = ?`,
+        // ⚠ 구글 경로와 달리 **email 을 덮어쓰지 않는다.** 애플은 재로그인 때 이메일을
+        // 안 주는 경우가 있어, 그때 합성한 `<sub>@apple.local` 로 갱신하면 이미 저장된
+        // 진짜 주소가 지워진다.
+        args: [appleId, effectiveName || null, userId],
+      });
+    } else {
+      userId = crypto.randomUUID();
+      plan = 'free';
+      await db.execute({
+        sql: `INSERT INTO users (id, apple_id, email, name)
+              VALUES (?, ?, ?, ?)`,
+        args: [userId, appleId, email, name || null],
+      });
+    }
+
+    // JWT sub 은 항상 users.id (구글 경로 주석 참고).
+    const token = await signAppJwt(
+      { sub: userId, email, name: effectiveName || undefined, epoch: tokenEpoch },
+      c.env.JWT_SECRET,
+    );
+
+    const fresh = await db.execute({
+      sql: `SELECT allow_family_alarms,
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
+            FROM users WHERE id = ? LIMIT 1`,
+      args: [userId],
+    });
+    const familyAlarmSettings =
+      fresh.rows.length > 0
+        ? familyAlarmSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : {
+            allowFamilyAlarms: false,
+            quietDays: [1, 2, 3, 4, 5],
+            quietStart: '09:00',
+            quietEnd: '18:30',
+            quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+          };
+    const dynamicPromptSettings =
+      fresh.rows.length > 0
+        ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : EMPTY_DYNAMIC_PROMPT_SETTINGS;
+
+    return c.json({
+      token,
+      user: {
+        id: userId,
+        email,
+        name: effectiveName,
+        plan,
+        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
+        family_alarm_quiet_days: familyAlarmSettings.quietDays,
+        family_alarm_quiet_start: familyAlarmSettings.quietStart,
+        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
+        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+        dynamic_prompt_settings: dynamicPromptSettings,
+      },
+    });
+  } catch (err) {
+    // 구글 경로와 동일 — 검증 실패 상세는 서버 로그에만, 클라에는 generic.
+    logRouteError(c, err);
+    const detail = err instanceof Error ? err.message : String(err);
+    const status =
+      detail.includes('Apple token') ||
+      detail.includes('Apple signing key') ||
+      detail.includes('Apple identity token') ||
+      detail.includes('issuer') ||
+      detail.includes('audience') ||
+      detail.includes('expired') ||
+      detail.includes('nonce') ||
+      detail.includes('Token')
+        ? 401
+        : 500;
+    return c.json(jsonError('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
   }
 });
 

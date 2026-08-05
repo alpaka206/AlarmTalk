@@ -123,3 +123,18 @@ export const GoogleLoginRequestSchema = z.object({
   id_token: z.string().min(1),
 });
 export type GoogleLoginRequest = z.infer<typeof GoogleLoginRequestSchema>;
+
+// Sign in with Apple. 앱이 `ASAuthorizationAppleIDCredential` 에서 얻은 값을 그대로 보낸다.
+//
+// - `identity_token`: 애플이 서명한 JWT. 서버가 애플 공개키(JWKS)로 검증한다.
+// - `nonce`: 앱이 만든 원본 nonce 의 **SHA-256 hex**. 재생 공격 방지용이라 선택이지만
+//   앱은 항상 보내야 한다(옛 iOS 코드의 `NonceGenerator.swift` 가 이 값을 만든다).
+// - `full_name`: 애플은 이름을 **최초 1회 로그인에만** 준다. 그 뒤로는 영영 안 준다.
+//   그래서 앱이 받은 그 순간 서버로 보내야 하고, 없으면 없는 대로 진행한다.
+//   서버는 이 값도 외부 입력으로 취급해 `clampDisplayName` 을 통과시킨다.
+export const AppleLoginRequestSchema = z.object({
+  identity_token: z.string().min(1),
+  nonce: z.string().min(1).max(256).optional(),
+  full_name: z.string().max(256).optional(),
+});
+export type AppleLoginRequest = z.infer<typeof AppleLoginRequestSchema>;

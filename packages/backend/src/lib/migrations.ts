@@ -2047,6 +2047,26 @@ export const migrations: Migration[] = [
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_token ON push_tokens(token)`,
     ],
   },
+  {
+    /**
+     * Sign in with Apple 을 위해 users.apple_id 를 되돌린다.
+     *
+     * #82 가 "iOS 미운영" 을 이유로 떨궜던 것(그때 dev·prod 실측 0건이라 손실은 없었다)을
+     * 같은 정의로 되살린다 — 부분 UNIQUE 인덱스라 NULL 인 행끼리는 충돌하지 않으므로
+     * 기존 안드로이드·이메일 계정에는 아무 영향이 없다.
+     *
+     * App Store 심사 규정상 소셜 로그인(구글)이 있으면 Sign in with Apple 은 **필수**라
+     * 선택지가 아니다.
+     */
+    id: 95,
+    name: 'restore-apple-identity',
+    statements: [
+      `ALTER TABLE users ADD COLUMN apple_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_apple_id
+        ON users(apple_id)
+        WHERE apple_id IS NOT NULL`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
