@@ -337,24 +337,25 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
       args: [now.toISOString()],
     });
     const revokedTargets: RevokedRecipientTarget[] = [];
+    const voiceAccessRevokedUserIds: string[] = [];
     for (const row of due.rows) {
       const userPk = String(row.id);
       const userId = (row.google_id as string | null) ?? userPk;
-      revokedTargets.push(
-        ...(await withWriteTransaction(db, async (tx) => {
-          await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
-          return purgeUserAccount(tx, userPk, userId);
-        })),
-      );
+      const purged = await withWriteTransaction(db, async (tx) => {
+        await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
+        return purgeUserAccount(tx, userPk, userId);
+      });
+      revokedTargets.push(...purged.downgradedAlarms);
+      voiceAccessRevokedUserIds.push(...purged.voiceAccessRevokedUserIds);
     }
     if (due.rows.length > 0) {
       logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
     }
-    // 파기된 계정이 남에게 보낸 알람의 수신자에게 **커밋 후에** pull 신호를 보낸다 —
-    // 받은 기기가 즉시 탈퇴자의 목소리를 걷어낸다. 틱당 한 번으로 모아 보낸다
+    // 파기된 계정의 목소리를 들고 있는 기기들에 **커밋 후에** 알린다 — 받은 알람은 pull
+    // 신호로, 본인 알람·미동기화 알람은 접근권 재확인으로. 틱당 한 번으로 모아 보낸다
     // (sendPushNotifications 는 호출마다 OAuth 를 새로 받는다).
     const { notifyDowngradedAlarms } = await import('./lib/fcm');
-    await notifyDowngradedAlarms(db, env, revokedTargets);
+    await notifyDowngradedAlarms(db, env, revokedTargets, voiceAccessRevokedUserIds);
   } catch (err) {
     captureCron('scheduled.account_purge', err);
   }

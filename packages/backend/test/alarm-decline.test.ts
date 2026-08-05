@@ -27,6 +27,7 @@ function appFor(userId: string) {
 }
 
 const ALARM_ID = '11111111-1111-1111-1111-111111111111';
+const FAMILY_PLAN_ID = '70000000-0000-4000-8000-000000000003'; // 마이그레이션 시드 '가족' 플랜
 
 async function seed() {
   const db = createClient({ url: ':memory:' });
@@ -141,7 +142,7 @@ describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
   });
 
   it('알릴 수신자를 돌려준다 — 커밋 후 push 로 즉시 걷어내게', async () => {
-    const targets = await purgeUserAccount(testDb, 'A', 'gA');
+    const { downgradedAlarms: targets } = await purgeUserAccount(testDb, 'A', 'gA');
     // 기록만 남기고 안 알리면 B 가 백그라운드일 때 다음 주기 pull 까지 탈퇴자의
     // 목소리로 계속 울린다. 형태는 notifyDowngradedAlarms 의 target 그대로.
     expect(targets).toEqual([{ alarmId: ALARM_ID, ownerUserId: 'B', isReceived: true }]);
@@ -157,7 +158,7 @@ describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
       args: [mine],
     });
 
-    const targets = await purgeUserAccount(testDb, 'A', 'gA');
+    const { downgradedAlarms: targets } = await purgeUserAccount(testDb, 'A', 'gA');
 
     // 본인 소유 알람이라 pull 이 아니라 목소리 접근권 재확인으로 알린다(isReceived=false).
     expect(targets).toContainEqual({ alarmId: mine, ownerUserId: 'B', isReceived: false });
@@ -172,13 +173,55 @@ describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
     expect(Number(row.rows[0]!.is_active)).toBe(1);
   });
 
+  it('서버에 알람 행이 없어도 같은 그룹 멤버에게는 알린다(미동기화 로컬 알람)', async () => {
+    // 알람은 로컬이 원본이라, 아직 서버로 올라가지 않은 알람은 alarms 조회에 안 잡힌다.
+    // 그래도 그 기기는 캐시된 A 의 녹음으로 그대로 울리므로, 목소리를 볼 수 있었던
+    // 사람에게는 알람 유무와 무관하게 알려야 한다.
+    // 스코프는 plan_group_members 동석만 본다(공유 목소리 조회와 같은 기준).
+    await testDb.execute({
+      sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id) VALUES ('g1','A',?)`,
+      args: [FAMILY_PLAN_ID],
+    });
+    await testDb.execute({
+      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
+            VALUES ('pm1','g1','A','owner'), ('pm2','g1','B','member')`,
+      args: [],
+    });
+
+    const purged = await purgeUserAccount(testDb, 'A', 'gA');
+
+    // 본인은 빼고 상대만. voice_access_revoked → VoiceAccessSyncWorker 가 재조회 후 강등한다.
+    expect(purged.voiceAccessRevokedUserIds).toEqual(['B']);
+  });
+
+  it('클론이 없으면 아무도 깨우지 않는다(파기할 생체정보가 없다)', async () => {
+    await testDb.execute({
+      sql: `UPDATE voice_profiles SET is_system = 1 WHERE id = 'vp-A'`,
+      args: [],
+    });
+    // 스코프는 plan_group_members 동석만 본다(공유 목소리 조회와 같은 기준).
+    await testDb.execute({
+      sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id) VALUES ('g1','A',?)`,
+      args: [FAMILY_PLAN_ID],
+    });
+    await testDb.execute({
+      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
+            VALUES ('pm1','g1','A','owner'), ('pm2','g1','B','member')`,
+      args: [],
+    });
+
+    const purged = await purgeUserAccount(testDb, 'A', 'gA');
+
+    expect(purged.voiceAccessRevokedUserIds).toEqual([]);
+  });
+
   it('탈퇴한 본인이 받은 알람은 알릴 대상이 아니다(그 기기는 이미 계정이 없다)', async () => {
     await testDb.execute({
       sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode, is_active)
             VALUES ('22222222-2222-2222-2222-222222222222', 'B', 'A', 'm1', '08:00', 'tts', 1)`,
       args: [],
     });
-    const targets = await purgeUserAccount(testDb, 'A', 'gA');
+    const { downgradedAlarms: targets } = await purgeUserAccount(testDb, 'A', 'gA');
     expect(targets.map((t) => t.ownerUserId)).toEqual(['B']);
   });
 });

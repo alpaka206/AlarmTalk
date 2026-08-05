@@ -67,12 +67,26 @@ export type RevokedRecipientTarget = {
   isReceived: boolean;
 };
 
+/** 탈퇴 커밋 후 보내야 할 알림. 그대로 `notifyDowngradedAlarms` 의 3·4번째 인자다. */
+export type AccountPurgeNotifications = {
+  /** 서버 알람 행에서 찾은 강등 대상. 받은 알람이면 pull, 본인 알람이면 접근권 재확인. */
+  downgradedAlarms: RevokedRecipientTarget[];
+  /**
+   * 서버 알람 행과 **무관하게** 목소리 접근권을 잃은 계정들.
+   *
+   * 알람은 로컬이 원본이라, 아직 서버로 동기화되지 않은 알람은 위 목록에 안 잡힌다.
+   * 그런데 발사는 로컬이고 울림 시점 게이트도 이 경우를 못 봐서, 그 기기는 탈퇴자의
+   * 녹음으로 계속 울린다. 그래서 **내 목소리를 볼 수 있었던 사람 전부**에게 알린다.
+   */
+  voiceAccessRevokedUserIds: string[];
+};
+
 /**
  * 사용자 계정과 모든 관련 데이터를 영구 삭제한다. DELETE /user/me 핸들러와 탈퇴 유예
  * cron 양쪽에서 재사용한다. SQL 발행 순서는 기존 핸들러와 동일하게 유지한다.
  *
- * 반환값은 **커밋 후에** 알려야 할 수신자 목록이다(트랜잭션 안에서 push 를 보내면
- * 롤백될 수 있는 변경을 미리 알리게 된다).
+ * 반환값은 **커밋 후에** 보내야 할 알림이다(트랜잭션 안에서 push 를 보내면 롤백될 수
+ * 있는 변경을 미리 알리게 된다).
  */
 export async function purgeUserAccount(
   tx: DbExecutor,
@@ -80,7 +94,7 @@ export async function purgeUserAccount(
   // 토큰이 담고 있던 로그인 식별자. 통일 이전에 user_id 컬럼에 이 값이 저장된 자식
   // 데이터까지 지우려면 users.id 와 함께 넘겨야 한다(같은 값이면 자연히 한 벌로 동작).
   userLoginId: string,
-): Promise<RevokedRecipientTarget[]> {
+): Promise<AccountPurgeNotifications> {
   // userPk(users.id) 를 해석하지 못한 채 진행하면 PK 로 연결된 자식 PII(클론 음성·
   // 결제 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
   // 해석 실패이므로 소리 없이 users 만 지우지 말고 throw 해 호출부에서 롤백되게 한다.
@@ -96,6 +110,7 @@ export async function purgeUserAccount(
     }
   }
   const revokedTargets: RevokedRecipientTarget[] = [];
+  const voiceAccessRevokedUserIds: string[] = [];
   if (userPk) {
     // 중복을 제거하지 않는다. 아래 DELETE 들이 `IN (?, ?)` 로 개수를 고정해 두고 있어서,
     // 두 값이 같을 때(=정규화 이후의 일반적인 경우) 하나로 줄이면 바인딩 개수가 어긋나
@@ -105,6 +120,36 @@ export async function purgeUserAccount(
     // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
     await enqueueUserVoiceArtifacts(tx, userIds);
     await cancelActiveSubscriptionsForUser(tx, userPk);
+
+    // **내 클론을 볼 수 있었던 사람들을 그룹이 해체되기 전에 뽑아 둔다.**
+    //
+    // 아래에서 plan_group_members·plan_groups 를 지우고 나면 '누가 내 목소리를 쓸 수
+    // 있었는지' 를 알 방법이 없어진다. 그리고 서버 alarms 행만 보면 부족하다 — 알람은
+    // 로컬이 원본이라 아직 동기화 안 된 알람은 서버에 없는데, 그 기기는 캐시된 내 녹음으로
+    // 그대로 울린다. 그래서 알람 유무와 무관하게 **볼 수 있었던 사람 전부**에게 알린다
+    // (받은 쪽은 목소리 목록을 다시 받아 '없어진 목소리' 알람만 강등한다 — 과다발송해도
+    // 재조회로 확인하므로 안전하다). 스코프는 공유 목소리 조회와 같은 그룹 동석 기준이다.
+    //
+    // 클론이 하나도 없으면 파기할 생체정보가 없으니 아무도 안 깨운다.
+    const cloneProfiles = await tx.execute({
+      // is_system 이 시스템/클론을 가르는 유일한 컬럼이다(paid-voice-cleanup.ts 와 같은 기준).
+      sql: `SELECT id FROM voice_profiles
+            WHERE user_id IN (?, ?) AND COALESCE(is_system, 0) = 0`,
+      args: userIds,
+    });
+    const cloneIds = cloneProfiles.rows.map((row) => String(row.id));
+    if (cloneIds.length > 0) {
+      const members = await tx.execute({
+        sql: `SELECT DISTINCT m2.user_id
+                FROM plan_group_members m1
+                JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
+               WHERE m1.user_id IN (?, ?) AND m2.user_id NOT IN (?, ?)`,
+        args: [...userIds, ...userIds],
+      });
+      for (const row of members.rows) {
+        voiceAccessRevokedUserIds.push(String(row.user_id));
+      }
+    }
 
     await tx.execute({
       sql: `DELETE FROM voucher_redemptions
@@ -220,13 +265,7 @@ export async function purgeUserAccount(
     //
     // 여긴 `DELETE FROM alarms` **뒤**라 내 알람은 이미 없다 — 남의 알람만 남는다.
     // messages·voice_profiles 는 아직 살아 있어야 하므로 그 삭제보다는 **앞**이어야 한다.
-    const cloneProfiles = await tx.execute({
-      // is_system 이 시스템/클론을 가르는 유일한 컬럼이다(paid-voice-cleanup.ts 와 같은 기준).
-      sql: `SELECT id FROM voice_profiles
-            WHERE user_id IN (?, ?) AND COALESCE(is_system, 0) = 0`,
-      args: userIds,
-    });
-    const cloneIds = cloneProfiles.rows.map((row) => String(row.id));
+    // (cloneIds 는 위에서 그룹 해체 전에 뽑아 둔 것을 그대로 쓴다.)
     if (cloneIds.length > 0) {
       const cph = cloneIds.map(() => '?').join(', ');
       const sharedScope = `voice_profile_id IN (${cph})
@@ -320,5 +359,5 @@ export async function purgeUserAccount(
     args: [userPk ?? userLoginId, userLoginId],
   });
 
-  return revokedTargets;
+  return { downgradedAlarms: revokedTargets, voiceAccessRevokedUserIds };
 }

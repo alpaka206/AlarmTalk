@@ -10,13 +10,16 @@ vi.mock('../src/lib/billing-cancel', () => ({
   processSubscriptionExpiry: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/account-deletion', () => ({
-  // 철회 대상 목록을 돌려준다(커밋 후 push 대상). 빈 배열이어도 형태는 지켜야
-  // cron 이 그대로 펴 담을 수 있다.
-  purgeUserAccount: vi.fn().mockResolvedValue([]),
+  // 커밋 후 알릴 대상을 돌려준다. 비어 있어도 **형태는 지켜야** cron 이 그대로 펴 담는다.
+  purgeUserAccount: vi
+    .fn()
+    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
   pseudonymizeBillingForRetention: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../src/lib/transactions', () => ({
-  withWriteTransaction: vi.fn().mockResolvedValue([]),
+  withWriteTransaction: vi
+    .fn()
+    .mockResolvedValue({ downgradedAlarms: [], voiceAccessRevokedUserIds: [] }),
 }));
 vi.mock('../src/lib/fcm', () => ({
   sendAlarmPush: vi.fn().mockResolvedValue(undefined),
