@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { Reveal } from "../motion/reveal";
 import { RevealGroup, RevealItem } from "../motion/reveal-group";
+import { ScrollDrift } from "../motion/scroll-drift";
 
 type Props = {
   namespace: "voice" | "shared" | "language";
@@ -53,10 +53,10 @@ export function FeatureSection({ namespace, reverse, visual, id, alt }: Props) {
           </div>
 
           {/* 시각물은 컨테이너 밖으로 조금 흘러나간다 — 세로 폰은 이미 시선을 많이
-              먹으므로 5.5% 가 상한이다. */}
-          <Reveal
-            variant="heavy"
-            delay={0.24}
+              먹으므로 5.5% 가 상한이다.
+              한 번 나타나고 멈추는 리빌 대신 스크롤에 묶은 흐름을 쓴다. 화면이 지나가는
+              내내 아주 조금씩 움직여야 페이지가 스크롤에 반응하는 것처럼 읽힌다. */}
+          <ScrollDrift
             className={`flex items-center justify-center ${
               reverse
                 ? "lg:[direction:ltr] lg:-ml-16"
@@ -64,7 +64,7 @@ export function FeatureSection({ namespace, reverse, visual, id, alt }: Props) {
             }`}
           >
             {visual}
-          </Reveal>
+          </ScrollDrift>
         </div>
       </div>
     </section>

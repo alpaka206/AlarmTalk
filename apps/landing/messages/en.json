@@ -332,5 +332,9 @@
     "fortune": "Fortune settings screen",
     "voices": "Voices screen listing your voice, voices shared with you, and built-in voices",
     "share": "Screen for choosing who to wake"
+  },
+  "productScroll": {
+    "before": "Keep the alarm.\nChange the voice.",
+    "after": "6:00 tomorrow,\nin your mom’s voice."
   }
 }

@@ -18,18 +18,28 @@ import { useTranslations } from "next-intl";
 const SCREEN_TOP = "#182850";
 const SCREEN_BOTTOM = "#070b13";
 const SCREEN_CARD = "rgba(255,255,255,0.06)";
-const SCREEN_LINE = "rgba(255,255,255,0.10)";
+export const SCREEN_LINE = "rgba(255,255,255,0.10)";
 const SCREEN_TEXT = "#f2f5fa";
 const SCREEN_MUTED = "#9fb0cc";
-const SCREEN_ACCENT = "#a9cbf5";
+export const SCREEN_ACCENT = "#a9cbf5";
 
-export function PhonePreview() {
+type Props = {
+  /**
+   * 알람 토글 자리에 끼워 넣을 노드. 스크롤에 묶어 켜지는 모습을 보여줄 때 쓴다.
+   * 안 주면 켜져 있는 정적 스위치를 그린다.
+   */
+  toggle?: React.ReactNode;
+  /** 기본 min(340px, 78vw). 구간에 따라 더 크게 놓고 싶을 때만 넘긴다. */
+  widthClass?: string;
+};
+
+export function PhonePreview({ toggle, widthClass }: Props = {}) {
   const t = useTranslations("hero.phone");
 
   // 폭은 --w 하나로만 바뀐다(.device 가 그걸로 베젤 두께·라운드까지 계산한다).
   // 좁은 화면에서 넘치지 않게 뷰포트에 물린다.
   return (
-    <div className="device mx-auto [--w:min(340px,78vw)]">
+    <div className={`device mx-auto ${widthClass ?? "[--w:min(340px,78vw)]"}`}>
       <div
         className="flex h-full w-full flex-col overflow-hidden rounded-[inherit]"
         style={{
@@ -60,14 +70,17 @@ export function PhonePreview() {
                 {t("alarmMeta")}
               </p>
             </div>
-            {/* 켜져 있는 토글. 앱에서 이 스위치는 저장된 켬/끔에만 묶인다. */}
-            <span
-              aria-hidden="true"
-              className="relative block h-6 w-11 shrink-0 rounded-full"
-              style={{ background: SCREEN_ACCENT }}
-            >
-              <span className="absolute right-0.5 top-0.5 block h-5 w-5 rounded-full bg-white" />
-            </span>
+            {/* 앱에서 이 스위치는 저장된 켬/끔에만 묶인다(권한이 모자라다고 꺼진 것처럼
+                그리지 않는다). 여기서는 스크롤이 그 자리를 대신할 수 있다. */}
+            {toggle ?? (
+              <span
+                aria-hidden="true"
+                className="relative block h-6 w-11 shrink-0 rounded-full"
+                style={{ background: SCREEN_ACCENT }}
+              >
+                <span className="absolute right-0.5 top-0.5 block h-5 w-5 rounded-full bg-white" />
+              </span>
+            )}
           </div>
         </div>
 

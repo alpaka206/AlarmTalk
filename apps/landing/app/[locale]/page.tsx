@@ -3,6 +3,7 @@ import { SiteHeader } from "@/components/site-header";
 import { Hero } from "@/components/sections/hero";
 import { Trust } from "@/components/sections/trust";
 import { FeatureSection } from "@/components/sections/feature-section";
+import { ProductScroll } from "@/components/sections/product-scroll";
 import { Declare } from "@/components/sections/declare";
 import { Privacy } from "@/components/sections/privacy";
 import { Pricing } from "@/components/sections/pricing";
@@ -73,6 +74,8 @@ export default async function HomePage({
           두 번째로 보여주면 혼자 쓰는 사람이 "내 얘기 아니네" 로 떠난다. */}
       <main className="relative">
         <Hero />
+        {/* 제품이 처음 나오는 자리. 히어로에서 폰을 뺀 대신 여기서 스크롤과 함께 켠다. */}
+        <ProductScroll />
         <Declare />
         <Trust />
         <FeatureSection
