@@ -7,7 +7,8 @@ import Foundation
 /// `Sendable` — MainActor 격리된 호출자가 async 컨텍스트로 self 인스턴스를 캡처할 때
 /// race 경고를 피하기 위해. 실제 conformer 인 `AlarmTalkAPI` 는 `@unchecked Sendable`.
 protocol AuthAPIProviding: AnyObject, Sendable {
-    func me(token: String) async throws -> AuthUser
+    /// rolling refresh — 새 토큰을 함께 돌려준다(서버 재발급 실패 시 nil).
+    func me(token: String) async throws -> (token: String?, user: AuthUser)
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse
     func deleteAccount(token: String) async throws -> DeleteAccountResponse
     func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse
@@ -374,7 +375,7 @@ final class AuthViewModel: ObservableObject {
     func refreshUser() async {
         guard let token else { return }
         do {
-            let user = try await api.me(token: token)
+            let (rolledToken, user) = try await api.me(token: token)
             // Apple 로그인 사용자라면 기존에 보관 중이던 appleUserId 가 유실되지 않도록
             // merge 한다. (백엔드가 `apple_user_id` 를 빈 채로 반환하는 경우 대비.)
             var merged = user
@@ -382,7 +383,11 @@ final class AuthViewModel: ObservableObject {
                let prev = session?.user.appleUserId, !prev.isEmpty {
                 merged.appleUserId = prev
             }
-            let nextSession = AuthSession(token: token, user: merged)
+            // **rolling refresh** — 서버가 준 새 토큰으로 갈아 끼운다. 이걸 빠뜨리면 최초
+            // 발급 토큰이 90일 뒤 죽고, 조용히 로그아웃된 상태로 소유자 게이트에 걸려
+            // 알람이 사라진다. 서버가 재발급에 실패하면 token 키가 빠져 오므로 그때는 유지.
+            let nextToken = rolledToken?.nilIfBlank ?? token
+            let nextSession = AuthSession(token: nextToken, user: merged)
             try KeychainStore.saveSession(nextSession)
             session = nextSession
             // 탈퇴 유예 상태 반영 — pending_deletion 이면 RootView 가 복구 화면으로 게이팅.

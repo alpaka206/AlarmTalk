@@ -178,6 +178,61 @@ final class AuthViewModelTests: XCTestCase {
         )
     }
 
+    // MARK: - rolling refresh
+
+    /// `GET /auth/me` 가 내려주는 새 토큰으로 세션이 갈아 끼워져야 한다.
+    ///
+    /// 이걸 빠뜨리면 최초 발급 토큰이 90일 뒤 그대로 죽는다. 그 순간 조용히 로그아웃된
+    /// 상태가 되고, 소유자 게이트에 걸려 **알람이 목록에서 사라지고 울리지도 않는다.**
+    /// 실제로 이 앱은 그 상태였다(응답의 token 을 버리고 있었다).
+    func test_refreshUser_rollingRefresh_swapsToken() async {
+        let api = MockAuthAPI()
+        api.meResult = .success(makeEmailSession().user)
+        api.meRolledToken = "rolled-token-2"
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.refreshUser()
+
+        XCTAssertEqual(vm.token, "rolled-token-2", "새 토큰으로 갈아 끼워야 한다")
+
+        // 다음 호출은 새 토큰을 써야 한다 — 갈아 끼우기만 하고 안 쓰면 의미가 없다.
+        await vm.refreshUser()
+        XCTAssertEqual(api.lastMeToken, "rolled-token-2")
+    }
+
+    /// 서버가 재발급에 실패하면 `token` 키를 통째로 빼고 200 을 준다
+    /// (`signAppJwt(...).catch(() => null)`). 그때는 쓰던 토큰을 유지해야 한다 —
+    /// nil 을 그대로 넣어 세션을 날리면 멀쩡한 사용자가 로그아웃된다.
+    func test_refreshUser_whenServerOmitsToken_keepsExistingToken() async {
+        let api = MockAuthAPI()
+        api.meResult = .success(makeEmailSession().user)
+        api.meRolledToken = nil
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let original = makeEmailSession()
+        vm._setSessionForTesting(original)
+
+        await vm.refreshUser()
+
+        XCTAssertEqual(vm.token, original.token, "재발급 실패 시 기존 토큰 유지")
+        XCTAssertNotNil(vm.session)
+    }
+
+    /// 빈 문자열도 '없는 것' 으로 취급해야 한다. 빈 토큰으로 갈아 끼우면 이후 모든
+    /// 요청이 401 이 되어 즉시 로그아웃된다.
+    func test_refreshUser_whenServerSendsBlankToken_keepsExistingToken() async {
+        let api = MockAuthAPI()
+        api.meResult = .success(makeEmailSession().user)
+        api.meRolledToken = "   "
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        let original = makeEmailSession()
+        vm._setSessionForTesting(original)
+
+        await vm.refreshUser()
+
+        XCTAssertEqual(vm.token, original.token)
+    }
+
     func test_refreshUser_success_clearsLastNetworkError_andPreservesAppleUserId() async {
         let api = MockAuthAPI()
         // 서버 응답이 appleUserId 를 누락해도 기존 세션의 값이 유지되어야 한다.
@@ -580,12 +635,18 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     private(set) var consentStatusCallCount = 0
     private(set) var recordConsentsCallCount = 0
     private(set) var lastRecordConsentsRequest: RecordConsentsRequest?
+    /// `GET /auth/me` 가 rolling refresh 로 내려주는 새 토큰. nil 이면 서버가 재발급에
+    /// 실패해 `token` 키를 뺀 경우를 흉내낸다.
+    var meRolledToken: String?
+    /// `me()` 에 실제로 전달된 토큰. rolling 이후 다음 호출이 새 토큰을 쓰는지 확인용.
+    private(set) var lastMeToken: String?
 
-    func me(token: String) async throws -> AuthUser {
+    func me(token: String) async throws -> (token: String?, user: AuthUser) {
         meCallCount += 1
+        lastMeToken = token
         switch meResult {
         case .success(let user):
-            return user
+            return (meRolledToken, user)
         case .failure(let apiError):
             throw apiError
         case .failureRaw(let err):

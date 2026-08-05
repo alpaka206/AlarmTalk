@@ -58,10 +58,24 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
-    func me(token: String) async throws -> AuthUser {
-        struct Response: Decodable { var user: AuthUser }
+    /// `GET /auth/me` — 사용자 부트스트랩 + **rolling refresh**.
+    ///
+    /// 서버는 이 응답에 **새 토큰**을 함께 내려준다(`auth.ts` 의 `rolledToken`). 호출할 때마다
+    /// 만료가 밀리므로, 앱을 90일에 한 번이라도 열면 사실상 만료를 만나지 않는다.
+    ///
+    /// ⚠ **새 토큰을 반드시 갈아 끼워야 한다.** 예전에는 이 함수가 `user` 만 꺼내고 토큰을
+    /// 버렸다. 그러면 최초 발급 토큰이 90일 뒤 그대로 죽고, 그 순간 조용히 로그아웃된 상태가
+    /// 되어 소유자 게이트에 걸려 **알람이 목록에서 사라지고 울리지도 않는다.**
+    ///
+    /// `token` 은 옵셔널이다 — 서버가 재발급에 실패하면 키를 통째로 빼고 200 을 준다
+    /// (`signAppJwt(...).catch(() => null)`). 그때는 쓰던 토큰을 계속 쓰면 된다.
+    func me(token: String) async throws -> (token: String?, user: AuthUser) {
+        struct Response: Decodable {
+            var token: String?
+            var user: AuthUser
+        }
         let response: Response = try await request("auth/me", token: token)
-        return response.user
+        return (response.token, response.user)
     }
 
     /// W2 백엔드 토큰 폐기. 서버의 `token_epoch` 를 올려 기존에 발급된 모든 토큰을
