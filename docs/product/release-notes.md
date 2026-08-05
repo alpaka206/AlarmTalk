@@ -19,6 +19,68 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.4 (versionCode 24)
+
+#685 한 건. 마이그레이션은 없다(백엔드는 알람 저장의 메시지 접근 조건만 고쳤다).
+
+핵심은 **알람 편집기가 내 선택을 안 잊는다**는 것이다. 문구 종류가 저장 과정에서 통째로
+사라지고 있었다 — 새 알람은 매번 '기본 인사말' 로 열리고, 그 알람을 다시 열면 '직접 입력'
+으로 보였다. 두 증상이 같은 원인이라 한 줄로 적는다.
+
+**검은 화면은 반드시 적는다.** 저장을 두 번 눌렀을 때 화면이 통째로 검게 남고 앱을 다시
+켜야 했다 — 사용자가 "알람이 저장됐나?" 를 확인할 방법조차 없던 상태다.
+
+공유받은 목소리 알람이 서버에 저장되지 않던 것도 적는다. 알람은 울렸지만 다른 기기에
+안 뜨고 목록에 계속 경고가 붙어 있었다. 반대로 **동기화 경고를 없앤 것 자체는 안 적는다** —
+"경고가 사라졌다" 는 사용자에게 변화가 아니라 그냥 정상이다.
+
+### ko-KR
+
+```
+• 새 알람이 지난번에 고른 문구를 그대로 이어받습니다. 직접 입력은 문구까지 이어받아요.
+• 저장한 알람을 다시 열면 그때 고른 문구가 그대로 보입니다.
+• 저장을 두 번 눌러도 화면이 검게 남지 않습니다. 저장 중에는 버튼에서 돌아갑니다.
+• 지역과 운세 정보는 한 번 넣으면 다시 묻지 않습니다. 바꾸려면 '변경하기' 를 누르세요.
+• 공유받은 목소리로 만든 알람이 이제 제대로 저장됩니다.
+• 가입 화면에서 필수 항목이 위로 모였습니다.
+```
+
+### en-US
+
+```
+• New alarms keep the message type you picked last time — including your own text.
+• Reopen a saved alarm and you see the message you actually chose.
+• Tapping Save twice no longer leaves a black screen. Saving now shows on the button.
+• Region and fortune details are asked once. Tap Change to edit them.
+• Alarms made with a voice shared with you now save properly.
+• On the sign-up screen, required items come first.
+```
+
+### ja-JP
+
+```
+• 新しいアラームに、前回選んだ文面の種類を引き継ぎます。直接入力は文面ごと引き継ぎます。
+• 保存したアラームを開き直すと、そのとき選んだ文面がそのまま表示されます。
+• 保存を二度押しても画面が真っ暗になりません。保存中はボタンで分かります。
+• 地域と占い情報は一度入れれば再び聞きません。変えるときは「変更」から。
+• 共有された声で作ったアラームが正しく保存されるようになりました。
+• 登録画面で必須項目が上にまとまりました。
+```
+
+### 근거 (적은 항목만)
+
+| 노트 항목 | 근거 |
+| --- | --- |
+| 문구 종류 이어받기 | `AlarmEditorState.toDraft()` 가 버킷 알람의 `voiceRandomContext` 를 떨어뜨리던 것을 고쳤다. 유료 클론은 문구 5종이 전부 버킷으로 매핑돼(`clonePrerenderBucketCategoryFor`) 사실상 모든 저장이 이 경로였다 |
+| 직접 입력 문구까지 | `last_manual_text_<userId>`(`DynamicPromptPreferenceStore`). 글자가 같으면 오디오 캐시에 걸려 재생성·한도 차감이 없다 — 그래서 새 알람이 **바로 저장 가능**하다 |
+| 재편집 시 문구 유지 | 판정을 `!voiceRandomPrompt && !isActiveBucketAlarm()` 로 통일(저장·pane·요약 행). 종류를 잃은 옛 행은 `randomPromptContextForBucket(bucketId)` 로 되짚는다 |
+| 검은 화면 | `popBackStackOrHome()` 이 바닥에서 팝하지 않는다. 두 번 팝되던 경로는 `MainViewModel.alarmSaving` 으로 잠근다 |
+| 다시 묻지 않기 | `RandomPromptSettingsPane` 의 `selectContext` 가 값이 없을 때만 다이얼로그를 연다. 고치는 길은 `RandomPromptDetailRow` 의 '변경하기' |
+| 공유 목소리 알람 저장 | `messageBelongsToCaller` 에 공유 프리셋 갈래 추가(소유자 유료일 때만 — `isPaidVoicePlan`). `GET /tts/messages/:id/audio` 와 같은 규칙 |
+| 동의 필수 우선 | `ConsentScreen` 이 서버 `optional` 로 필수/선택을 갈라 정렬한다 |
+
+---
+
 ## 1.2.3 (versionCode 23)
 
 #675(받은 알람 소유권) · #677·#678(탈퇴 시 목소리 철회) 세 건. 마이그레이션 92·93 이 있다.

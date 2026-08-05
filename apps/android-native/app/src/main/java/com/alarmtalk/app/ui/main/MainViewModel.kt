@@ -372,6 +372,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .onEach { alarmsLoaded = true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * 알람 생성·수정이 **실제로 진행 중**인지. 편집기가 저장/취소 버튼을 잠그고 스피너를 돌린다.
+     *
+     * 편집기 로컬 플래그만으로는 부족하다 — 음성 생성 없이 바로 저장하는 빠른 경로(알람 전용·
+     * 녹음·오디오 재사용)는 편집기 입장에선 '순식간' 이지만, 여기서는 Room 쓰기와 날씨 변형
+     * 조회(네트워크)까지 남아 있다. 그 사이 버튼이 살아 있으면 저장이 두 번 돌고, 완료 콜백이
+     * 백스택을 두 번 팝해 검은 화면이 된다([popBackStackOrHome] 주석 참고).
+     *
+     * **성공·실패 모두에서 내려야 한다.** 실패로 편집기가 남았는데 켜진 채면 다시 저장할 길이
+     * 없다.
+     */
+    var alarmSaving by mutableStateOf(false)
+        internal set
+
     var authSession by mutableStateOf<AuthSession?>(initialAuthSession)
         internal set
 
@@ -405,6 +419,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 전환 '후' 화면에 보여야 하므로 화면 전환 시 정리되는 loginError/registerError 와 분리한다.
     var authNotice by mutableStateOf<String?>(null)
         internal set
+
+    /**
+     * 지금 회차가 도는 동안 sync 요청이 또 들어왔는가. 겹쳐 돌리면 서버에 같은 알람이 두 개
+     * 생기지만(`syncNow` 주석), 그렇다고 버리면 앞 회차가 목록을 스냅샷한 뒤 저장된 알람이
+     * 다음 트리거까지 안 올라간다. 그래서 표시만 남기고 회차가 끝난 뒤 한 번 더 돈다.
+     */
+    internal var syncRequestedWhileBusy = false
 
     var syncBusy by mutableStateOf(false)
         internal set
@@ -840,7 +861,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (!draft.targetUserId.isNullOrBlank()) return
         if (draft.playMode == com.alarmtalk.app.data.AlarmPlayModes.ALARM_ONLY) return
         val rememberContext = {
-            draft.voiceRandomContext
+            // 버킷 알람의 종류는 draft 가 실어 온다(AlarmEditorState.toDraft). 그래도 버킷에서
+            // 한 번 더 되짚는 이유: 종류가 비면 여기서 **조용히 아무 일도 일어나지 않고**,
+            // 그 증상은 한참 뒤 '새 알람이 매번 기본 인사말로 열린다'로만 드러난다.
+            (draft.voiceRandomContext ?: randomPromptContextForBucket(draft.bucketId))
                 ?.takeIf { it.isNotBlank() }
                 ?.let { dynamicPromptStore.saveLastMessageContext(userId, it) }
             Unit
@@ -859,7 +883,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             //  - 정작 문구 종류는 기록되지 않아 다음 클론 알람이 옛 문구로 열린다.
             bucket != null -> rememberContext()
             draft.voiceRandomPrompt -> rememberContext()
-            // 직접 입력은 기억하지 않는다 — 그 문구는 그 알람의 것이다.
+            // 직접 입력: **문구까지** 기억한다. 종류만 기억하면 새 알람이 빈 직접입력으로 열려
+            // 저장이 막히고, 문구를 함께 이어받으면 글자가 같아 오디오 캐시에 걸려 서버 호출도
+            // 월 한도 차감도 없이 곧바로 저장된다. 녹음·알람전용은 문구 개념이 없어 걸러진다.
+            draft.voiceSource == com.alarmtalk.app.data.VoiceSources.TTS_PROFILE ->
+                draft.voiceText
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { dynamicPromptStore.saveLastManualText(userId, it) }
+                    ?: Unit
             else -> Unit
         }
     }
@@ -870,6 +901,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     internal fun lastFreeBucket(): String? =
         dynamicPromptStore.readLastFreeBucket(authSession?.user?.id)
+
+    /** 마지막에 쓴 직접 입력 문구. 차 있으면 마지막 선택이 '직접 입력' 이었다는 뜻이다. */
+    internal fun lastManualText(): String? =
+        dynamicPromptStore.readLastManualText(authSession?.user?.id)
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
     // 재로그인/콜드스타트 시 서버 응답을 기다리는 로딩 없이 바로 통과시키되, 백그라운드

@@ -74,9 +74,17 @@ async function usesOnlySystemStockVoice(
 }
 
 /**
- * message_id 가 호출자(ownerIds) 소유이거나 시스템 스톡 프리셋인지 확인한다.
- * POST 생성 경로(아래)와 GET /tts/messages/:id/audio 의 허용 규칙과 동일하게
- * 맞춰, PATCH 에서 타인 메시지 id 를 알람에 끼워 넣는 IDOR 을 막는다.
+ * message_id 가 호출자(ownerIds) 가 쓸 수 있는 메시지인지 확인한다. 허용 갈래는 셋:
+ * 본인 소유 / 시스템 스톡 프리셋 / **같은 플랜 그룹이 공유한 목소리의 프리셋 클립(소유자가
+ * 유료일 때만)**.
+ *
+ * GET /tts/messages/:id/audio 와 **같은 규칙이어야 한다.** 어긋나면 두 방향 모두 사고가 난다:
+ * 여기가 좁으면 '들리는데 저장이 안 되고'(공유 클론 갈래 누락 — 2026-08-05), 여기가 넓으면
+ * '저장은 되는데 받을 수 없는' 알람이 생긴다(소유자 플랜 게이트 누락 — Codex #685).
+ * 규칙을 고칠 땐 두 곳을 같이 고칠 것. 목소리 쪽 짝은 [voiceProfileBelongsToCaller] 다.
+ *
+ * 넓히더라도 타인 메시지 id 를 알람에 끼워 넣는 IDOR 은 계속 막는다 — 접근 근거는 언제나
+ * '그 목소리를 쓸 수 있는가' 이고, 초안(is_draft) 보이스의 메시지는 어느 갈래로도 못 지난다.
  */
 async function messageBelongsToCaller(
   db: DbExecutor,
@@ -105,7 +113,38 @@ async function messageBelongsToCaller(
           LIMIT 1`,
     args: [messageId, ...ownerIds],
   });
-  return msg.rows.length > 0;
+  if (msg.rows.length > 0) return true;
+
+  // 공유받은 가족 클론의 사전렌더 클립. 이 갈래가 없으면 **재생은 되는데 알람은 저장이
+  // 안 된다** — GET /tts/messages/:id/audio 는 같은 조건을 이미 허용하므로 클라는 클립을
+  // 받아 재생까지 해 놓고, POST /alarm 만 404(MESSAGE_NOT_FOUND) 로 막혀 알람이 로컬에만
+  // 남는다(2026-08-05 실기기 재현). 목소리 자체는 voiceProfileBelongsToCaller 가 이미 같은
+  // 이유로 공유를 허용하고 있었다 — 한 함수 건너뛴 같은 구멍이었다.
+  //
+  // ⚠ **소유자 플랜 게이트까지 같이 봐야 한다.** ON_HOLD/PAUSED 는 회복형 상태라 그룹·
+  // is_shared 구조를 그대로 두고 소유자 users.plan 만 free 로 회수하는데(billing-cancel.ts
+  // 의 resolvePlanAfterSuspend), 오디오 라우트는 그때 비시스템 클립을 VOICE_LOCKED_FREE_PLAN
+  // 으로 막는다. 여기서 플랜을 안 보면 **받을 수 없는 클립을 가리키는 알람**이 저장된다.
+  const shared = await db.execute({
+    sql: `SELECT owner.plan AS owner_plan
+          FROM messages
+          JOIN voice_profiles vp ON vp.id = messages.voice_profile_id
+          JOIN users owner ON owner.id = vp.user_id OR owner.google_id = vp.user_id
+          JOIN plan_group_members pgm_owner ON pgm_owner.user_id = owner.id
+          JOIN plan_group_members pgm_me ON pgm_me.plan_group_id = pgm_owner.plan_group_id
+          WHERE messages.id = ?
+            AND COALESCE(messages.is_preset, 0) = 1
+            AND COALESCE(vp.is_shared, 0) = 1
+            AND COALESCE(vp.is_draft, 0) = 0
+            AND vp.deleted_at IS NULL
+            AND pgm_me.user_id = ?
+          LIMIT 1`,
+    // 두 번째 인자는 **PK 하나** — plan_group_members 는 google_id 가 아니라 users.id 로 묶인다.
+    args: [messageId, ownerIds[0]],
+  });
+  if (shared.rows.length === 0) return false;
+  // 판정은 오디오 라우트와 같은 헬퍼로 한다 — 유료 플랜 목록을 SQL 에 베껴 두면 둘이 갈라진다.
+  return isPaidVoicePlan(shared.rows[0]!.owner_plan);
 }
 
 /**

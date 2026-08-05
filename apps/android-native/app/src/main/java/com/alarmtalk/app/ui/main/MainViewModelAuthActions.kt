@@ -603,7 +603,16 @@ internal fun MainViewModel.checkConsentStatus() {
     if (isConsentCachedDone(userId)) {
         needsConsent = false
         consentChecked = true
-    } else {
+    } else if (!consentStatusChecked) {
+        // **한 번 통과시킨 화면을 다시 로딩으로 덮지 않는다.** 이 함수는 토큰이 바뀔 때마다
+        // 다시 도는데(AlarmTalkApp 의 LaunchedEffect(authSession?.token)), 그때마다 false 로
+        // 되돌리면 이미 홈을 쓰고 있던 사용자의 화면이 스피너로 덮인다. 그 화면은
+        // GateBackGuard 가 뒤로가기를 통째로 삼키므로 **그 동안 앱이 안 닫힌다.**
+        //
+        // 캐시(isConsentCachedDone)가 아니라 consentStatusChecked 를 보는 이유: 받을 게 남은
+        // 계정(선택 동의 재수집 등)은 완료 캐시가 아예 안 만들어져서, 캐시로 판단하면 매번
+        // 다시 덮인다. consentStatusChecked 는 '이 계정의 응답을 실제로 받았다' 는 뜻이고
+        // 계정 전환 시 clearUserScopedRemoteState 가 되돌린다.
         consentChecked = false
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -1047,23 +1056,55 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
 }
 
 internal fun MainViewModel.syncNow() {
-    val session = authSession
-    if (session == null) {
+    if (authSession == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_sync_login_required)
         return
     }
+    // ⚠ **두 회차를 겹쳐 돌리지 않는다.** syncNow 는 알람 탭 진입·시작·푸시 등 여러 곳에서
+    // 불려 짧은 간격으로 두 번 들어온다. 두 회차가 같은 '아직 안 올린' 목록을 읽으면
+    // (remoteAlarmId 는 응답이 와야 커밋된다) 둘 다 create 로 가서 **서버에 같은 알람이 두 개**
+    // 생긴다 — 가족 알람이면 수신자에게 두 번 간다. 2026-08-06 실기기 재현(운세 알람 1개가
+    // 서버에 2행).
+    //
+    // 다만 **버리지는 않고 미뤄 둔다.** 그냥 return 하면, 앞 회차가 목록을 이미 스냅샷한 뒤에
+    // 저장된 알람이 다음 트리거(탭 재진입·앱 재실행)까지 서버에 안 올라간다 — repository.
+    // syncWithBackend 를 부르는 곳은 여기뿐이고 워커는 pull 만 한다(Codex #686). 그래서
+    // 요청이 겹치면 표시만 남기고, 지금 회차가 끝난 뒤 한 번 더 돈다.
+    //
+    // 켜는 건 반드시 launch **밖**이어야 한다. 안에서 켜면 두 코루틴이 모두 예약된 뒤에
+    // 켜져 아무것도 못 막는다.
+    if (syncBusy) {
+        syncRequestedWhileBusy = true
+        return
+    }
+    syncBusy = true
     viewModelScope.launch {
-        syncBusy = true
+        try {
+        do {
+        // 이번 회차가 시작될 때 표시를 내린다. 도는 도중에 다시 켜지면 한 번 더 돈다.
+        syncRequestedWhileBusy = false
+        // ⚠ **세션은 회차마다 다시 읽는다.** 미뤄 둔 회차는 앞 회차의 네트워크 왕복이 끝난
+        // 뒤에 도는데, 그 사이 토큰이 바뀔 수 있다(로그인·롤링 갱신 — 알람 탭 효과 자체가
+        // authSession?.token 을 키로 쓴다). 처음 잡아 둔 토큰을 계속 쓰면 옛 자격증명으로
+        // 나가고, 더 나쁘게는 repository.syncWithBackend 가 **소유자를 지금 세션 저장소에서**
+        // 가져오므로 재로그인 직후엔 새 계정의 로컬 행이 옛 계정 토큰으로 올라간다(Codex #686).
+        // 로그아웃됐으면 이번 회차는 돌리지 않고 끝낸다.
+        val session = authSession ?: break
         runCatching {
             val push = repository.syncWithBackend(api, session.token)
             val pull = repository.pullReceivedAlarms(api, session.token)
             push to pull
         }.onSuccess { (push, pull) ->
-            val failed = push.failed + pull.failed
             val app = getApplication<android.app.Application>()
             when {
-                failed > 0 ->
-                    message = alarmSyncFailureMessage(pushFailed = push.failed, pullFailed = pull.failed)
+                // push 실패는 **그 알람 행이 직접 말한다**(syncState=FAILED →
+                // common_alarm_warning_sync_failed). 같은 말을 위에서 한 번 더 하면 사용자는
+                // 서로 다른 두 문제로 읽는다 — 어느 알람 이야기인지도 위쪽 문구로는 알 수 없다.
+                //
+                // pull 실패는 다르다. 못 받아온 알람은 화면에 행 자체가 없어서, 알릴 자리가
+                // 여기밖에 없다.
+                pull.failed > 0 ->
+                    message = app.getString(R.string.msg_sync_pull_partial_failed)
                 // 앱이 열려 있을 때 새로 받은 상대 알람을 인앱으로도 알린다(시스템 알림에만 의존하지 않음).
                 // syncNow 는 알람 탭 진입 시 자동 실행되므로, 사용자가 보던 메시지를 덮지 않게 비어 있을 때만.
                 pull.imported > 0 && message.isNullOrBlank() ->
@@ -1088,18 +1129,14 @@ internal fun MainViewModel.syncNow() {
                 AlarmTalkLog.reportError("Backend sync failed", error)
             }
         }
-        syncBusy = false
+        } while (syncRequestedWhileBusy)
+        } finally {
+            // 취소·예외로 빠져나가도 반드시 푼다 — 안 그러면 이 세션 동안 sync 가 영영 막힌다.
+            // 미뤄 둔 요청 표시도 함께 내린다(다음 트리거가 정상적으로 새 회차를 연다).
+            syncRequestedWhileBusy = false
+            syncBusy = false
+        }
     }
-}
-
-private fun MainViewModel.alarmSyncFailureMessage(pushFailed: Int, pullFailed: Int): String = when {
-    pushFailed > 0 && pullFailed > 0 ->
-        getApplication<android.app.Application>().getString(R.string.msg_sync_push_and_pull_partial_failed)
-    pushFailed > 0 ->
-        getApplication<android.app.Application>().getString(R.string.msg_sync_push_partial_failed)
-    pullFailed > 0 ->
-        getApplication<android.app.Application>().getString(R.string.msg_sync_pull_partial_failed)
-    else -> getApplication<android.app.Application>().getString(R.string.msg_sync_generic_failed)
 }
 
 internal fun MainViewModel.showGoogleSetupRequired() {

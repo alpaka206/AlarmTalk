@@ -124,7 +124,6 @@
     <string name="billing_voucher_unregistered_with_date">미등록 · 발급일 %1$s</string>
     <string name="common_alarm_delete">삭제</string>
     <string name="common_alarm_warning_reschedule_failed">알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요.</string>
-    <string name="common_alarm_warning_sync_failed">저장이 잠시 미뤄졌어요. 알람은 정상적으로 울리고, 자동으로 다시 저장해요.</string>
     <string name="common_alarm_notice_free_downgraded">무료 요금제로 바뀌어 기본 알람으로 변환되었어요.</string>
     <string name="common_alarm_notice_default_converted">목소리를 쓸 수 없어 기본 알람으로 변환되었어요.</string>
     <string name="common_day_fri">금</string>
@@ -208,7 +207,6 @@
     <string name="editor_play_mode_alarm_voice">알람 + 목소리</string>
     <string name="editor_play_mode_title">재생 방식</string>
     <string name="editor_play_mode_voice_only">목소리만</string>
-    <string name="editor_preparing_voice_alarm">목소리 알람을 준비하는 중이에요.</string>
     <string name="editor_quiet_hours_label">받지 않는 시간: %1$s</string>
     <string name="editor_msg_section">문구</string>
     <string name="editor_msg_mode_manual">직접 입력</string>
@@ -273,6 +271,8 @@
     <string name="editorp_random_back">뒤로</string>
     <string name="editorp_random_fortune_required">운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.</string>
     <string name="editorp_random_fortune_saved">상대가 저장한 운세 정보를 사용해요.</string>
+    <string name="editorp_random_detail_change">변경하기</string>
+    <string name="editorp_random_manual_title">직접 입력 문구</string>
     <string name="editorp_random_fortune_title">운세 정보</string>
     <string name="editorp_random_save_button">저장</string>
     <string name="editorp_random_title">문구</string>
@@ -443,11 +443,8 @@
     <plurals name="msg_received_alarm_arrived">
         <item quantity="other">상대가 맞춰준 알람 %1$d개가 도착했어요.</item>
     </plurals>
-    <string name="msg_sync_generic_failed">일시적인 오류가 있었어요. 잠시 후 자동으로 다시 시도해요.</string>
     <string name="msg_sync_login_required">동기화하려면 먼저 로그인해 주세요</string>
     <string name="msg_sync_pull_partial_failed">받은 알람 일부를 아직 불러오지 못했어요. 잠시 후 자동으로 다시 시도해요.</string>
-    <string name="msg_sync_push_and_pull_partial_failed">알람 정보 일부를 아직 주고받지 못했어요. 알람은 정상적으로 울리고, 자동으로 다시 시도해요.</string>
-    <string name="msg_sync_push_partial_failed">변경사항 일부가 아직 저장되지 않았어요. 알람은 정상적으로 울리고, 자동으로 다시 시도해요.</string>
     <string name="msg_test_alarm_saved">테스트 알람을 저장했어요. %1$s</string>
     <string name="msg_test_alarm_schedule_failed">테스트 알람 예약에 실패했어요</string>
     <string name="msg_time_format_required">시간은 HH:mm 형식으로 입력해 주세요</string>
