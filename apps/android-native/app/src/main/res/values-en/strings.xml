@@ -122,7 +122,6 @@
     <string name="billing_voucher_unregistered_with_date">Unregistered · Issued %1$s</string>
     <string name="common_alarm_delete">Delete</string>
     <string name="common_alarm_warning_reschedule_failed">We couldn\'t reschedule the alarm. Please check the time and save again.</string>
-    <string name="common_alarm_warning_sync_failed">Saving is briefly delayed. Your alarm will still ring, and we\'ll retry automatically.</string>
     <string name="common_alarm_notice_free_downgraded">Switched to the free plan, so this alarm now uses the default sound.</string>
     <string name="common_alarm_notice_default_converted">The voice is no longer available, so this alarm now uses the default sound.</string>
     <string name="common_day_fri">Fri</string>
@@ -206,7 +205,6 @@
     <string name="editor_play_mode_alarm_voice">Alarm + voice</string>
     <string name="editor_play_mode_title">Playback mode</string>
     <string name="editor_play_mode_voice_only">Voice only</string>
-    <string name="editor_preparing_voice_alarm">Preparing your voice alarm.</string>
     <string name="editor_quiet_hours_label">Hours they don\'t receive alarms: %1$s</string>
     <string name="editor_msg_section">Message</string>
     <string name="editor_msg_mode_manual">Type it yourself</string>
@@ -271,6 +269,8 @@
     <string name="editorp_random_back">Back</string>
     <string name="editorp_random_fortune_required">To use fortune-based messages, gender, date of birth, and time of birth are required.</string>
     <string name="editorp_random_fortune_saved">Using the fortune info your partner saved.</string>
+    <string name="editorp_random_detail_change">Change</string>
+    <string name="editorp_random_manual_title">Your message</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>
@@ -432,11 +432,8 @@
         <item quantity="one">A new alarm set for you by your family arrived.</item>
         <item quantity="other">%1$d new alarms set for you by your family arrived.</item>
     </plurals>
-    <string name="msg_sync_generic_failed">Something went wrong for a moment. We\'ll retry automatically.</string>
     <string name="msg_sync_login_required">Please log in first to sync.</string>
     <string name="msg_sync_pull_partial_failed">Some received alarms haven\'t loaded yet. We\'ll retry automatically in a moment.</string>
-    <string name="msg_sync_push_and_pull_partial_failed">Some alarm info hasn\'t been exchanged yet. Your alarms will still ring, and we\'ll retry automatically.</string>
-    <string name="msg_sync_push_partial_failed">Some changes haven\'t been saved yet. Your alarms will still ring, and we\'ll retry automatically.</string>
     <string name="msg_test_alarm_saved">Your test alarm has been saved. %1$s</string>
     <string name="msg_test_alarm_schedule_failed">Couldn\'t schedule your test alarm.</string>
     <string name="msg_time_format_required">Please enter the time in HH:mm format.</string>

@@ -603,7 +603,16 @@ internal fun MainViewModel.checkConsentStatus() {
     if (isConsentCachedDone(userId)) {
         needsConsent = false
         consentChecked = true
-    } else {
+    } else if (!consentStatusChecked) {
+        // **한 번 통과시킨 화면을 다시 로딩으로 덮지 않는다.** 이 함수는 토큰이 바뀔 때마다
+        // 다시 도는데(AlarmTalkApp 의 LaunchedEffect(authSession?.token)), 그때마다 false 로
+        // 되돌리면 이미 홈을 쓰고 있던 사용자의 화면이 스피너로 덮인다. 그 화면은
+        // GateBackGuard 가 뒤로가기를 통째로 삼키므로 **그 동안 앱이 안 닫힌다.**
+        //
+        // 캐시(isConsentCachedDone)가 아니라 consentStatusChecked 를 보는 이유: 받을 게 남은
+        // 계정(선택 동의 재수집 등)은 완료 캐시가 아예 안 만들어져서, 캐시로 판단하면 매번
+        // 다시 덮인다. consentStatusChecked 는 '이 계정의 응답을 실제로 받았다' 는 뜻이고
+        // 계정 전환 시 clearUserScopedRemoteState 가 되돌린다.
         consentChecked = false
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -1059,11 +1068,16 @@ internal fun MainViewModel.syncNow() {
             val pull = repository.pullReceivedAlarms(api, session.token)
             push to pull
         }.onSuccess { (push, pull) ->
-            val failed = push.failed + pull.failed
             val app = getApplication<android.app.Application>()
             when {
-                failed > 0 ->
-                    message = alarmSyncFailureMessage(pushFailed = push.failed, pullFailed = pull.failed)
+                // push 실패는 **그 알람 행이 직접 말한다**(syncState=FAILED →
+                // common_alarm_warning_sync_failed). 같은 말을 위에서 한 번 더 하면 사용자는
+                // 서로 다른 두 문제로 읽는다 — 어느 알람 이야기인지도 위쪽 문구로는 알 수 없다.
+                //
+                // pull 실패는 다르다. 못 받아온 알람은 화면에 행 자체가 없어서, 알릴 자리가
+                // 여기밖에 없다.
+                pull.failed > 0 ->
+                    message = app.getString(R.string.msg_sync_pull_partial_failed)
                 // 앱이 열려 있을 때 새로 받은 상대 알람을 인앱으로도 알린다(시스템 알림에만 의존하지 않음).
                 // syncNow 는 알람 탭 진입 시 자동 실행되므로, 사용자가 보던 메시지를 덮지 않게 비어 있을 때만.
                 pull.imported > 0 && message.isNullOrBlank() ->
@@ -1090,16 +1104,6 @@ internal fun MainViewModel.syncNow() {
         }
         syncBusy = false
     }
-}
-
-private fun MainViewModel.alarmSyncFailureMessage(pushFailed: Int, pullFailed: Int): String = when {
-    pushFailed > 0 && pullFailed > 0 ->
-        getApplication<android.app.Application>().getString(R.string.msg_sync_push_and_pull_partial_failed)
-    pushFailed > 0 ->
-        getApplication<android.app.Application>().getString(R.string.msg_sync_push_partial_failed)
-    pullFailed > 0 ->
-        getApplication<android.app.Application>().getString(R.string.msg_sync_pull_partial_failed)
-    else -> getApplication<android.app.Application>().getString(R.string.msg_sync_generic_failed)
 }
 
 internal fun MainViewModel.showGoogleSetupRequired() {

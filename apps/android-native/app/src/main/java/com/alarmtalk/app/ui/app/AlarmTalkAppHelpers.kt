@@ -118,10 +118,26 @@ internal fun NavHostController.navigateHomeClearingStack() {
     }
 }
 
+/**
+ * 한 칸 뒤로. 돌아갈 곳이 없으면 홈으로.
+ *
+ * ⚠ **`popBackStack()` 의 반환값으로 판단하면 안 된다.** 마지막 남은 목적지(=시작 목적지)
+ * 까지 팝하고 `true` 를 돌려주기 때문이다. 그러면 백스택이 비면서 세 가지가 한꺼번에 터진다:
+ * NavHost 가 아무것도 안 그리고, `currentTab` 이 null 이 되며, 그걸 보는 `showAppChrome` 이
+ * 꺼져 하단바·＋FAB 까지 사라진다 — **되돌릴 방법이 없는 검은 화면**이다
+ * (`navigateHomeClearingStack` 도 `currentDestination == null` 이라 아무것도 못 한다).
+ *
+ * 실제로 이걸 밟는 경로는 '두 번 팝' 이다: 저장이 비동기라 그 사이 저장/취소를 한 번 더
+ * 누르거나 시스템 뒤로가기를 누르면, 화면은 이미 팝됐는데 저장 완료 콜백이 또 팝한다.
+ * 그래서 **바닥에서는 팝하지 않는 것**이 이 함수의 계약이다.
+ */
 internal fun NavHostController.popBackStackOrHome() {
-    if (!popBackStack()) {
+    if (previousBackStackEntry == null) {
+        // 이미 바닥(홈)이다. 여기서 팝하면 백스택이 비므로 팝하지 않는다.
         navigateHomeClearingStack()
+        return
     }
+    popBackStack()
 }
 
 internal suspend fun signOutGoogleAccount(context: Context) {

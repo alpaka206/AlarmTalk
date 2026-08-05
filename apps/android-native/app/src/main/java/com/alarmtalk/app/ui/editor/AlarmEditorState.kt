@@ -184,10 +184,17 @@ internal class AlarmEditorState(
             voiceCategory = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else activeVoiceCategory(),
             voiceLanguage = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else activeVoiceLanguage(),
             voiceRandomPrompt = !alarmOnly && voiceSource != VoiceSources.LOCAL_AUDIO && voiceRandomPrompt,
+            // **버킷 알람도 종류를 남긴다.** 버킷은 저장 직전 setBucketAudio 가 붙이면서
+            // voiceRandomPrompt 를 끄므로, `!voiceRandomPrompt` 만 보고 떨어뜨리면 사용자가
+            // 고른 문구 종류가 통째로 사라진다. 유료 클론은 5종이 전부 버킷으로 매핑돼
+            // (clonePrerenderBucketCategoryFor) 사실상 **모든 저장**에서 사라졌고, 그래서
+            // (1) 다음 새 알람이 '기본 인사말'로 되돌아가고 (2) 이 알람을 다시 열면
+            // '직접 입력'으로 보였다. 바로 아래 weatherContextForSave()/fortuneContextForSave()
+            // 도 같은 이유로 버킷을 예외 처리한다 — 판정을 하나만 고치지 말 것.
             voiceRandomContext = if (
                 alarmOnly ||
                 voiceSource == VoiceSources.LOCAL_AUDIO ||
-                !voiceRandomPrompt
+                (!voiceRandomPrompt && !isActiveBucketAlarm())
             ) {
                 null
             } else {
@@ -262,6 +269,11 @@ internal class AlarmEditorState(
      * '직접 입력'과의 구분에도 쓰는 단일 출처다. 버킷 알람도 저장될 때 voiceRandomPrompt=false 에
      * voiceText=클립문구가 되므로, `!voiceRandomPrompt` 만으로 판별하면 버킷 알람이 직접 입력으로
      * 오분류된다(그 오분류 때문에 2026-07-21 에 문구 프리필이 통째로 제거됐었다).
+     *
+     * **판정식 `!voiceRandomPrompt && !isActiveBucketAlarm()` 을 쓰는 자리는 셋이고, 셋이 같아야
+     * 한다**: 저장([toDraft] 의 voiceRandomContext), 문구 pane 프리셀렉트(`AlarmEditorScreen` 의
+     * `random_prompt` → randomContext·manualText), 요약 행(`VoiceAudioCard` 의 isManual).
+     * 2026-08-05 에 요약 행만 맞고 나머지가 틀려, 행은 '사랑'인데 눌러 열면 '직접 입력'이었다.
      */
     fun isActiveBucketAlarm(): Boolean {
         if (playMode == AlarmPlayModes.ALARM_ONLY || voiceSource == VoiceSources.LOCAL_AUDIO) return false
@@ -399,7 +411,12 @@ internal class AlarmEditorState(
 
     /**
      * 무료 버킷 선택 결과를 상태에 반영한다. 대표(변형0) 클립을 단일 재생 폴백으로 박고,
-     * 회전용 N개 클립의 cacheKey 목록을 저장한다. 랜덤 문구 생성과는 무관(voiceRandomPrompt=false).
+     * 회전용 N개 클립의 cacheKey 목록을 저장한다.
+     *
+     * 여기서 끄는 `voiceRandomPrompt` 는 **'지금 라이브로 생성하느냐'** 일 뿐, 사용자가 고른
+     * **문구 종류(`voiceRandomContext`)를 무효로 만들지 않는다.** 버킷은 그 종류에서 유도된
+     * 결과다(사랑→love …). 둘을 같은 것으로 읽어 종류를 지우면 다음 새 알람이 '기본 인사말'로
+     * 되돌아가고 이 알람을 다시 열면 '직접 입력'으로 보인다 — [toDraft] 위 주석 참고.
      */
     fun setBucketAudio(
         audio: CachedAlarmAudio,
@@ -446,7 +463,17 @@ internal class AlarmEditorState(
             // 새 알람의 기본 문구 종류. 호출측이 '마지막에 고른 문구'를 넘기고, 없으면
             // '기본 인사말'(preset)로 폴백한다. 기존 알람은 자신의 voiceRandomContext 를 쓴다.
             defaultRandomContext: String = DefaultRandomPromptContext,
+            /**
+             * 마지막에 쓴 직접 입력 문구. **차 있으면 마지막 선택이 직접 입력이었다는 뜻**이라
+             * 새 알람을 그 문구가 담긴 직접 입력으로 연다(생성형을 저장하면 저장소에서 지워지므로
+             * 둘이 동시에 차 있지 않다 — DynamicPromptPreferenceStore.saveLastMessageContext).
+             *
+             * 문구를 같이 얹는 이유는 빈 직접입력으로 열면 저장이 막히기 때문이다. 글자가 같으면
+             * 오디오 캐시에 걸려 재생성도 한도 차감도 없다. 기존 알람에는 쓰지 않는다.
+             */
+            defaultManualText: String? = null,
         ): AlarmEditorState {
+            val seedManualText = defaultManualText?.takeIf { alarm == null && it.isNotBlank() }
             val defaultTime = java.time.LocalTime.of(6, 0)
             return AlarmEditorState(
                 label = alarm?.label ?: "",
@@ -465,19 +492,25 @@ internal class AlarmEditorState(
                 voiceSource = alarm?.voiceSource ?: VoiceSources.TTS_PROFILE,
                 voiceProfileId = alarm?.voiceProfileId,
                 voiceListenerTitle = alarm?.voiceListenerTitle,
-                voiceText = alarm?.voiceText,
+                voiceText = alarm?.voiceText ?: seedManualText,
                 voiceCategory = alarm?.voiceCategory ?: "morning",
                 voiceLanguage = alarm?.voiceLanguage ?: "ko",
                 // 새 알람은 랜덤(기본 문구) ON — 목소리만 고르면 추가 입력 없이 저장 가능.
+                // 단 마지막 선택이 직접 입력이었으면 그 문구로 연다(seedManualText).
                 voiceRandomPrompt = alarm?.voiceRandomPrompt ?: alarm?.let {
                     it.voiceSource == VoiceSources.TTS_PROFILE && it.voiceText.isNullOrBlank()
-                } ?: true,
+                } ?: (seedManualText == null),
                 // 마지막 문구 기억은 '신규 알람'에만 적용. 기존 알람(수동/알람전용 등 context=null 포함)은
                 // 자기 값(없으면 기본 preset)을 그대로 써, 편집만 열어도 문구가 바뀌는 일이 없게 한다.
                 voiceRandomContext = if (alarm == null) {
                     defaultRandomContext
                 } else {
-                    alarm.voiceRandomContext ?: DefaultRandomPromptContext
+                    // 종류를 떨어뜨리던 시절에 저장된 버킷 알람은 이 값이 null 이라, 그대로
+                    // 열면 고른 적 없는 '기본 인사말'로 보인다. 버킷은 종류에서 유도된 값이라
+                    // 되짚을 수 있다(randomPromptContextForBucket).
+                    alarm.voiceRandomContext
+                        ?: randomPromptContextForBucket(alarm.bucketId)
+                        ?: DefaultRandomPromptContext
                 },
                 voiceWeatherCountry = alarm?.voiceWeatherCountry,
                 voiceWeatherCity = alarm?.voiceWeatherCity,
@@ -555,6 +588,26 @@ internal fun clonePrerenderBucketCategoryFor(context: String?): String? =
         // 조건을 resolve 해 contextVariantIndex 를 갱신한다(편집기가 저장 시점에 직접 resolve 하지는 않음).
         // 발사는 그 인덱스로 오프라인 lookup.
         "wake_weather" -> "weather"
+        else -> null
+    }
+
+/**
+ * [clonePrerenderBucketCategoryFor] 의 역 — 버킷 category 로 문구 종류를 되짚는다.
+ *
+ * 쓰는 곳은 두 군데다. 둘 다 "종류는 없는데 버킷은 있다" 는 같은 상황을 다룬다:
+ *  - 옛 알람 행을 열 때(AlarmEditorState.from) — 종류를 떨어뜨리던 시절 저장분.
+ *  - 저장 성공 시 마지막 선택 기록(MainViewModel.rememberMessageChoiceUsed) — 거기서
+ *    조용히 넘어가면 다음 새 알람이 '기본 인사말'로 되돌아간다.
+ *
+ * 위 매핑과 짝이므로 한쪽만 고치지 말 것.
+ */
+internal fun randomPromptContextForBucket(bucket: String?): String? =
+    when (bucket?.trim()) {
+        "greeting" -> "preset"
+        "love" -> "love"
+        "medication" -> "medication"
+        "fortune" -> "wake_fortune"
+        "weather" -> "wake_weather"
         else -> null
     }
 

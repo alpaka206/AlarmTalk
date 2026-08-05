@@ -50,6 +50,7 @@
 - **페이지네이션 상한**: `limit`/`offset`은 `Math.min(...,100)`/`Math.max(...,0)`로 클램프 후 바인딩(신규 리스트 엔드포인트 필수).
 - **요청 입력 검증**: 바디는 `@alarmtalk/shared` zod 스키마로 `safeParse`, 경로/쿼리 파라미터도 검증·바운드.
 - **IDOR 방어**: 클라 제공 id/code는 조회·수정·삭제 전 소유권 확인(`WHERE ... AND user_id = ?` 게이트, cross-tenant 참조는 `*BelongsToCaller` 헬퍼). 예: `alarm-mutation.ts`의 `voiceProfileBelongsToCaller`/`messageBelongsToCaller`.
+- ⚠ **`messageBelongsToCaller`(쓰기 허용)와 `GET /tts/messages/:id/audio`(읽기 허용)는 한 쌍이다 — 항상 같이 고친다.** 어긋나면 양방향으로 사고가 난다: 쓰기가 좁으면 **들리는데 저장이 안 되고**(공유 클론 프리셋 갈래 누락, 2026-08-05 실기기 재현 — 알람이 로컬에만 남고 서버 sync 가 계속 404), 쓰기가 넓으면 **저장은 되는데 받을 수 없는** 알람이 생긴다(소유자 플랜 게이트 누락, Codex #685). 현재 허용 갈래 셋: 본인 소유 / 시스템 스톡 프리셋 / 같은 플랜 그룹이 공유한 목소리의 프리셋 클립. 마지막 갈래는 **소유자가 유료일 때만** — `ON_HOLD/PAUSED` 는 회복형이라 그룹·`is_shared` 를 그대로 두고 `users.plan` 만 회수하므로(`resolvePlanAfterSuspend`), 플랜을 안 보면 오디오 라우트가 `VOICE_LOCKED_FREE_PLAN` 으로 막을 클립을 알람에 심게 된다. 판정은 SQL 에 목록을 베끼지 말고 `isPaidVoicePlan` 헬퍼로.
 - **R2 object key**: 사용자 파생 세그먼트는 `encodeURIComponent`+새니타이즈 또는 JWT `sub`+`crypto.randomUUID()`로 생성(경로 조작 차단).
 - **길이 상한은 서버에도 둔다.** 클라의 `take(n)` 은 앱을 거칠 때만 유효하다 — 직접 호출하면
   거대한 문자열이 조회·쓰기 트랜잭션까지 그대로 흘러간다(`POST /code/register` 가 실제로 그랬다).
@@ -168,6 +169,16 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 - **준비 신호는 성공·실패 모두 `true`.** 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다 — 네트워크 실패로 영영 `false` 면 그 오버레이는 영영 안 뜬다.
 - **가드만 넣지 말고 `LaunchedEffect` 키에도 넣어야 한다.** 키에 없으면 응답이 도착해도 효과가 재실행되지 않아, 게이트가 풀린 뒤에도 오버레이가 안 뜬다.
 - **계정별 신호는 세션 정리에서 `false` 로 되돌린다**(`clearUserScopedRemoteState` — `consentChecked`·`accountStatusChecked`). 앞 계정의 '확인 끝남' 이 새 계정에 새면 안 된다. 반면 `versionChecked` 는 앱·기기 단위라 되돌리지 않는다(계정이 바뀐다고 설치 버전이 바뀌지 않는다).
+- ⚠ **되돌리는 건 세션 정리뿐이다 — 같은 계정을 재확인한다고 `false` 로 내리지 말 것.** `checkConsentStatus` 는 토큰이 바뀔 때마다 다시 도는데, 그때 내리면 이미 홈을 쓰던 화면이 로딩 게이트로 덮인다. 그 화면은 뒤로가기를 삼키므로 **그 동안 앱이 안 닫힌다**(2026-08-05 재현). 그래서 판정은 `consentStatusChecked`(이 계정 응답을 실제로 받았나)로 하고, 캐시(`isConsentCachedDone`)로 하지 않는다 — 받을 게 남은 계정은 완료 캐시가 영영 안 만들어져 매번 다시 덮인다.
+- **로딩 게이트에는 `GateBackGuard` 를 두지 않는다.** 그 가드는 *화면에 정식 선택지가 있어서* 실수로 나가는 걸 막는 장치다. 응답을 기다리는 로딩 화면에는 지킬 선택지가 없고, 삼키면 네트워크가 느릴 때 뒤로가기가 죽은 것처럼 보인다.
+
+### 저장 뒤 검은 화면 (회귀 방지)
+
+`NavHostController.popBackStack()` 은 **마지막 남은 목적지까지 팝하고 `true` 를 돌려준다.** 백스택이 비면 NavHost 가 아무것도 안 그리고, `currentTab` 이 null 이 되며, 그걸 보는 `showAppChrome` 이 꺼져 하단바·＋FAB 까지 사라진다 — **되돌릴 수 없는 검은 화면**이다.
+
+- `popBackStackOrHome()` 은 **바닥에서 팝하지 않는다**(`previousBackStackEntry == null` 이면 홈으로). 반환값으로 판단하지 말 것.
+- 실제로 이걸 밟는 경로는 '두 번 팝' 이다: 저장은 비동기라 그 사이 저장/취소를 한 번 더 누르거나 시스템 뒤로가기를 누르면, 화면은 이미 팝됐는데 저장 완료 콜백이 또 팝한다.
+- 그래서 **저장 중에는 버튼이 잠겨야 한다.** 편집기 로컬 플래그만으로는 부족하다 — 음성 생성 없이 저장하는 빠른 경로(알람 전용·녹음·오디오 재사용)는 편집기 입장에선 순식간이지만 뷰모델에는 Room 쓰기와 날씨 조회(네트워크)가 남아 있다. 판정은 언제나 `generating || saving`(`MainViewModel.alarmSaving`)이고, `alarmSaving` 은 **성공·실패 모두에서** 내린다(실패로 편집기가 남았는데 켜진 채면 다시 저장할 길이 없다).
 - 새 게이트를 추가하면 **준비 신호도 함께 만든다.** 상태 하나만 추가하면 이 버그가 다섯 번째로 재현된다.
 
 ### 알람 편집기 기본값 = **직전 선택 유지** (회귀 방지)
@@ -176,12 +187,35 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 
 - **단일 출처(둘 다 계정별 키, SharedPreferences)**
   - 목소리: `DefaultVoicePreferenceStore` (`default_voice_<userId>`). 클래스·키 이름의 `default_` 는 **이력상 남은 이름**이고 뜻은 last-used 다. 이름만 보고 사장된 저장소로 판단해 지우지 말 것.
-  - 문구 종류·무료 테마: `DynamicPromptPreferenceStore` (`last_message_context_<userId>`, `last_free_bucket_<userId>`).
+  - 문구 종류·무료 테마·직접 입력 문구: `DynamicPromptPreferenceStore` (`last_message_context_<userId>`, `last_free_bucket_<userId>`, `last_manual_text_<userId>`).
 - **기록 시점은 알람 저장 성공 시 한 곳뿐** — `MainViewModel.rememberVoiceUsed` / `rememberMessageChoiceUsed`(`MainViewModelAlarmActions` 의 create/update `onSuccess`). 편집기에서 눌러만 보고 취소한 것은 기억하지 않는다. 선택 즉시 저장하는 코드를 다시 넣지 말 것.
+- ⚠ **버킷이 붙으면 `voiceRandomPrompt` 가 꺼진다 — 그때 문구 종류를 떨어뜨리지 말 것.** 이 규약이
+  **가장 자주 깨진 지점**이다(2026-08-05 에도 재발). 저장 직전 `setBucketAudio` 가 사전렌더 클립을
+  바인딩하면서 랜덤 생성을 끄는데, 유료 클론은 문구 5종이 **전부** 버킷으로 매핑되므로
+  (`clonePrerenderBucketCategoryFor`) 사실상 **모든 저장**이 이 경로다. 그래서 `!voiceRandomPrompt`
+  하나만 보고 판단하면 결과가 "가끔 안 된다" 가 아니라 "라이브 생성 폴백일 때만 된다" 가 된다.
+  - 버킷/직접입력 판정식은 언제나 **`!voiceRandomPrompt && !isActiveBucketAlarm()`** 이고, 이걸 쓰는
+    자리는 셋이다: 저장(`AlarmEditorState.toDraft`), 문구 pane 프리셀렉트(`AlarmEditorScreen` 의
+    `random_prompt`), 요약 행·문구 프리필(`VoiceAudioCard`, `manualText`). **한 곳만 고치지 말 것** —
+    2026-08-05 에는 요약 행만 맞고 저장·pane 이 틀려서, 행은 '사랑' 인데 눌러 열면 '직접 입력' 이었다.
+  - 저장에서 종류를 잃으면 증상이 둘로 갈라져 보인다: **새 알람이 매번 '기본 인사말'** 이고,
+    **그 알람을 다시 열면 '직접 입력'** 이다. 같은 원인이다.
+  - 종류를 떨어뜨리던 시절의 옛 행은 종류가 null 이라, 열 때 `randomPromptContextForBucket(bucketId)`
+    으로 되짚는다(`clonePrerenderBucketCategoryFor` 의 역 — 한쪽만 고치지 말 것).
+  - `rememberMessageChoiceUsed` 는 값이 비면 **조용히 아무 일도 하지 않는다.** 그래서 이 버그는
+    저장 시점이 아니라 한참 뒤 "새 알람이 매번 기본 인사말" 로만 드러난다. 회귀 테스트는
+    `AlarmEditorStateTest`(저장 시 종류 보존·옛 행 복구·직접 입력은 그대로 null).
 - **적용 대상은 새 알람뿐.** 기존 알람을 열 때는 저장된 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다). `AlarmTalkApp` 이 `lastMessageContext`/`lastFreeBucket` 을 **신규 라우트에만** 넘기고, 버킷 이어받기는 `alarm == null` 로 한 번 더 막는다.
 - **목소리 프리셀렉트는 마지막에 쓴 것이 그룹보다 우선**(`VoiceAudioCard`). 그룹(내 클론 → 공유받은 → 기본)을 먼저 보면, 클론을 가진 사람이 기본 목소리를 골라 저장해도 매번 클론으로 되돌아간다.
 - **한 번도 고른 적 없을 때만** 폴백: 문구는 `preset`(기본 인사말), 무료/기본 목소리 경로는 `FreeBucketOrder` 첫 값(약). `FreeBucketOrder` 는 최후 폴백 순서일 뿐 "항상 적용되는 기본값" 이 아니다.
-- **직접 입력 문구는 기억하지 않는다** — 그 문구는 그 알람의 것이다. 단, 기존 알람을 편집할 때는 당연히 그대로 남아 있어야 한다(delivery 태그 제거가 이걸 깎아먹지 않도록 `DeliveryTags.kt` 는 **우리가 내보낸 태그만** 벗긴다).
+- **직접 입력은 문구까지 기억한다**(2026-08-06 변경. 그전에는 아예 기억하지 않았다).
+  - 바뀐 이유: 종류만 이어받으면 새 알람이 **빈 직접입력**으로 열려 저장이 막힌다 — 그게 예전에 '기억하지 않는다' 를 택한 실질적 근거였다. 문구를 함께 이어받으면 글자가 같아 `AlarmAudioStore` 입력 캐시에 걸려 **서버 호출도 월 한도 차감도 없이** 곧바로 저장된다(오프라인 포함). 근거가 사라졌으니 규칙도 바뀐다.
+  - ⚠ **기억되는 값은 입력 원문이 아니라 서버 표시 문구다.** 알람에 저장되는 게 그 값이라서다(`setGeneratedTtsAudio` — 잠금화면 문구와 음성을 맞추려고 일부러 그렇게 한다). 번역이 켜진 기기(앱 언어 ≠ ko)에서는 둘이 갈라지므로, 생성 후 **표시 문구 키로도 `linkTtsInput` 을 남긴다**. 안 그러면 다음 새 알람이 표시 문구로 열려 입력 캐시를 빗나가고, 위의 '재생성·한도 차감 없음' 약속이 조용히 깨진다(Codex #685).
+  - **마지막 선택은 하나다.** 생성형을 저장하면 `saveLastMessageContext` 가 직접 입력 기록을 **지운다** — 별도 '어느 쪽이 마지막' 플래그를 두지 않는다(플래그와 값이 어긋나는 상태 자체를 없앤다). 그래서 `last_manual_text` 가 차 있다 = 마지막이 직접 입력이었다.
+  - ⚠ **요약 행에 문구를 반드시 함께 보여준다**(`MessageModeSummaryRow` 의 `manualText`). 생성형은 내용이 매번 새로 만들어져 틀릴 일이 없지만 직접 입력은 글자가 그대로다 — 안 보이면 어제 문구를 물고 온 새 알람을 알아챌 방법이 없다. 요약 행은 한 줄 말줄임, 전문은 문구 화면의 상세 카드에서 본다.
+  - 기존 알람을 편집할 때는 당연히 자기 문구가 그대로 남는다(delivery 태그 제거가 이걸 깎아먹지 않도록 `DeliveryTags.kt` 는 **우리가 내보낸 태그만** 벗긴다).
+- **이미 등록한 정보는 다시 묻지 않는다**(문구 화면). 날씨 지역·운세 사주·직접 입력 문구는 값이 **없을 때만** 고르는 순간 입력창이 뜬다. 이미 있으면 선택만 되고, 고치는 길은 리스트 아래 상세 카드의 '변경하기' 하나다(`RandomPromptDetailRow` 의 `onChange`). 이 액션을 지우면 등록한 값을 영영 못 바꾼다.
+- **모달은 자기만 닫는다.** 날씨·운세·직접 입력 다이얼로그는 확인해도 문구 목록을 닫지 않는다(예전에는 확인이 곧 `onSaveSettings` 라 목록까지 닫혀, 도시 하나 바꾸려다 화면 밖으로 튕겼다). 최종 반영은 문구 화면의 저장 버튼 **한 곳**이다.
 - **삭제는 명시적 로그아웃·탈퇴에서만**(`clearCurrentDefaultVoicePreferences`). 자동 401(`clearSessionKeepingAlarms`)에서 지우면 같은 사람이 다시 로그인할 때 취향을 잃는다(Codex #646 회귀).
 - 이어받는 것은 **선택 값 하나**뿐이다. 회전 인덱스·클립 키(`bucketRotationIndex`/`bucketClipKeysJson` 등)는 알람별 상태라 절대 따라가지 않는다. 무료 버킷 **회전**(울릴 때마다 클립 순차 이동)과는 다른 축이라 서로 충돌하지 않는다.
 

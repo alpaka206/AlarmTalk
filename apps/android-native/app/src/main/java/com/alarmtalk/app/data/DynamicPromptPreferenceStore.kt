@@ -56,13 +56,32 @@ class DynamicPromptPreferenceStore(context: Context) {
 
     /**
      * 마지막에 고른 문구 종류(랜덤 컨텍스트). **새 알람**의 기본값으로 이어받는다 — 없으면
-     * 호출측이 '기본 인사말'(preset)로 폴백한다. '직접 입력'은 저장하지 않는다: 그 문구는 그
-     * 알람의 것이라 다음 알람에 끌고 오면 안 되고(사용자 확정), 빈 직접입력으로 시작하면 저장이
-     * 막힌다. 기록 시점은 **알람 저장 성공 시** — 편집기에서 눌러만 보고 취소한 것은 기억하지
-     * 않는다(마지막에 쓴 목소리와 같은 규칙).
+     * 호출측이 '기본 인사말'(preset)로 폴백한다. 기록 시점은 **알람 저장 성공 시** —
+     * 편집기에서 눌러만 보고 취소한 것은 기억하지 않는다(마지막에 쓴 목소리와 같은 규칙).
+     *
+     * '직접 입력'은 이 값이 아니라 [readLastManualText] 가 맡는다. 마지막 선택이 무엇이었는지는
+     * **둘 중 어느 쪽이 차 있는가**로 정해진다 — 아래 [saveLastMessageContext] 주석 참고.
      */
     fun readLastMessageContext(userId: String?): String? =
         readScoped(KEY_LAST_MESSAGE_CONTEXT, userId) ?: claimLegacyLastMessageContext(userId)
+
+    /**
+     * 마지막에 쓴 **직접 입력 문구**. 차 있으면 마지막 선택이 '직접 입력'이었다는 뜻이고,
+     * 새 알람은 그 문구를 그대로 얹어 연다.
+     *
+     * 문구까지 이어받는 이유: 종류만 이어받으면 새 알람이 **빈 직접입력**으로 열려 저장이
+     * 막힌다. 반대로 문구를 함께 이어받으면 글자가 같아 [AlarmAudioStore] 의 입력 캐시에
+     * 걸리므로 서버 호출도 월 한도 차감도 없이 곧바로 저장된다(오프라인에서도).
+     *
+     * 대신 **요약 행에 문구를 함께 보여줘야 한다**(MessageModeSummaryRow). 생성형 문구는
+     * 내용이 매번 새로 만들어지지만 직접 입력은 글자가 그대로라, 안 보이면 어제 문구를
+     * 물고 온 새 알람을 알아챌 방법이 없다.
+     */
+    fun readLastManualText(userId: String?): String? = readScoped(KEY_LAST_MANUAL_TEXT, userId)
+
+    fun saveLastManualText(userId: String?, text: String) {
+        saveScoped(KEY_LAST_MANUAL_TEXT, userId, text)
+    }
 
     /**
      * 계정별 키를 도입하기 전, 이 값은 기기 전역 키 하나에 저장됐다. 그 값을 그대로 두면
@@ -81,8 +100,14 @@ class DynamicPromptPreferenceStore(context: Context) {
         return legacy
     }
 
+    /**
+     * 생성형 문구 종류를 기록한다. **직접 입력 기록은 함께 지운다** — 마지막 선택은 하나뿐이라
+     * 둘 다 차 있으면 어느 쪽이 마지막인지 알 수 없다. 별도 '마지막은 어느 쪽' 플래그를 두는
+     * 대신 이 규칙 하나로 단일 출처를 지킨다(플래그와 값이 어긋나는 상태 자체를 없앤다).
+     */
     fun saveLastMessageContext(userId: String?, context: String) {
         saveScoped(KEY_LAST_MESSAGE_CONTEXT, userId, context)
+        scopedKey(KEY_LAST_MANUAL_TEXT, userId)?.let { prefs.edit().remove(it).apply() }
     }
 
     /**
@@ -100,9 +125,17 @@ class DynamicPromptPreferenceStore(context: Context) {
     fun clearLastSelections(userId: String?) {
         val message = scopedKey(KEY_LAST_MESSAGE_CONTEXT, userId) ?: return
         val bucket = scopedKey(KEY_LAST_FREE_BUCKET, userId) ?: return
+        // 직접 입력 문구는 **사용자가 친 글**이라 특히 남기면 안 된다 — 다음 계정의 새 알람에
+        // 앞 사람이 쓴 문구가 그대로 얹힌다.
+        val manual = scopedKey(KEY_LAST_MANUAL_TEXT, userId) ?: return
         // 옛 전역 키도 함께 지운다 — 아직 아무도 넘겨받지 않은 채 남아 있으면, 로그아웃 뒤
         // 로그인하는 다음 계정이 그걸 물려받는다.
-        prefs.edit().remove(message).remove(bucket).remove(KEY_LAST_MESSAGE_CONTEXT).apply()
+        prefs.edit()
+            .remove(message)
+            .remove(bucket)
+            .remove(manual)
+            .remove(KEY_LAST_MESSAGE_CONTEXT)
+            .apply()
     }
 
     private fun readScoped(key: String, userId: String?): String? {
@@ -124,6 +157,7 @@ class DynamicPromptPreferenceStore(context: Context) {
         private const val KEY_FORTUNE_BIRTH_TIME = "fortune_birth_time"
         private const val KEY_LAST_MESSAGE_CONTEXT = "last_message_context"
         private const val KEY_LAST_FREE_BUCKET = "last_free_bucket"
+        private const val KEY_LAST_MANUAL_TEXT = "last_manual_text"
 
         // 마지막 선택은 계정별로 나눈다 — 날씨/사주와 달리 이건 '그 사람이 쓰던 것'이라
         // 기기 전역으로 두면 계정을 바꿨을 때 앞 사람 선택으로 첫 알람이 열린다.

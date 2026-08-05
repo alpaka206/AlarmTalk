@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,6 +40,22 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+
+/**
+ * 이 화면이 그릴 수 있는 동의 유형과 **같은 그룹 안에서의** 나열 순서.
+ *
+ * 필수/선택 그룹 자체는 서버가 내려준 `optional` 로 갈린다 — 여기 순서는 그룹 안에서만
+ * 쓰인다. 목록에 없는 유형(서버가 새 유형을 먼저 추가한 구간)은 그리지 않고, 그게 필수면
+ * [ConsentScreen] 의 통과 판정이 막는다.
+ */
+private val ConsentRowOrder = listOf(
+    "age14",
+    "terms",
+    "privacy",
+    "overseas_transfer",
+    "voice_biometric",
+    "marketing",
+)
 
 /**
  * 로그인 후 필수 약관/개인정보 동의를 받는 게이트 화면.
@@ -54,7 +71,8 @@ import androidx.compose.ui.unit.dp
  * 거절한 사람만 목소리 등록 화면에서 인라인으로 다시 만난다.
  *
  * 어떤 항목이 선택인지는 서버가 [optional] 로 내려준다 — 화면이 목록을 따로 들고 있으면
- * 서버가 필수/선택을 바꿀 때 조용히 어긋난다.
+ * 서버가 필수/선택을 바꿀 때 조용히 어긋난다. **나열도 이 값으로 필수 먼저·선택 나중**
+ * 으로 가른다(그래서 필수 항목 사이에 선택이 끼지 않는다).
  *
  * **[collect] 에 든 유형만 그린다.** 서버가 유형별 최소 정책 버전으로 계산해 내려주며,
  * 이미 유효한 동의는 목록에 없다 — 개정 때 필요한 것만 다시 묻고, 묻지 않은 항목의 기존
@@ -88,12 +106,18 @@ internal fun ConsentScreen(
     val showVoiceBiometric = "voice_biometric" in collect
     val showOverseas = "overseas_transfer" in collect
     val showMarketing = "marketing" in collect
-    val shownCount = listOf(
-        showAge14, showTerms, showPrivacy, showVoiceBiometric, showOverseas, showMarketing,
-    ).count { it }
     // 구버전 서버(optional 없음)와 섞여 돌 수 있다. 비어 있으면 마케팅만 선택으로 본다 —
     // 그쪽이 안전한 폴백이다(선택을 필수로 잘못 그리면 사용자가 화면을 못 벗어난다).
     val optionalTypes = optional.ifEmpty { listOf("marketing") }.toSet()
+
+    // 실제로 그릴 항목과 그 순서. **필수를 먼저 세우고 선택을 뒤로 민다** — 통과 조건이
+    // 되는 항목이 선택 항목 아래로 밀리면 무엇을 체크해야 버튼이 켜지는지 스크롤해야
+    // 알 수 있다. `sortedBy` 는 안정 정렬이라 그룹 안에서는 [ConsentRowOrder] 그대로다.
+    val shownTypes = ConsentRowOrder.filter { it in collect }.sortedBy { it in optionalTypes }
+    val shownCount = shownTypes.size
+    // 통과 판정은 **그리는 목록이 아니라 [collect] 원본**으로 한다. 이 앱이 모르는 필수
+    // 유형(서버가 새 유형을 먼저 추가한 구간)은 그려지지 않지만 아래 when 의 else 에서
+    // 막혀 CTA 가 켜지지 않아야 한다 — 목록을 좁히면 그 방어가 사라진다.
     val requiredShown = collect.filter { it !in optionalTypes }
     val shownRequired = requiredShown.isNotEmpty()
 
@@ -177,59 +201,57 @@ internal fun ConsentScreen(
                     .verticalScroll(rememberScrollState()),
             ) {
                 Spacer(Modifier.height(4.dp))
-                if (showAge14) {
-                    ConsentRow(
-                        checked = age14,
-                        onCheckedChange = { age14 = it },
-                        label = stringResource(R.string.auth_consent_age14),
-                    )
-                }
-                if (showTerms) {
-                    ConsentRow(
-                        checked = terms,
-                        onCheckedChange = { terms = it },
-                        label = stringResource(R.string.auth_consent_terms),
-                        detail = termsText,
-                        scrollableDetail = true,
-                    )
-                }
-                if (showPrivacy) {
-                    ConsentRow(
-                        checked = privacy,
-                        onCheckedChange = { privacy = it },
-                        label = stringResource(R.string.auth_consent_privacy),
-                        detail = privacyText,
-                        scrollableDetail = true,
-                    )
-                }
-                if (showVoiceBiometric) {
-                    ConsentRow(
-                        checked = voiceBiometric,
-                        onCheckedChange = { voiceBiometric = it },
-                        label = stringResource(R.string.auth_consent_voice_biometric),
-                        // 필수로 보이면 안 된다 — 체크하지 않아도 CTA 는 눌린다.
-                        detail = AnnotatedString(
-                            stringResource(R.string.auth_consent_voice_biometric_desc),
-                        ),
-                    )
-                }
-                if (showOverseas) {
-                    ConsentRow(
-                        checked = overseasTransfer,
-                        onCheckedChange = { overseasTransfer = it },
-                        label = stringResource(R.string.auth_consent_overseas_transfer),
-                        detail = AnnotatedString(
-                            stringResource(R.string.auth_consent_overseas_transfer_desc),
-                        ),
-                    )
-                }
-                if (showMarketing) {
-                    ConsentRow(
-                        checked = marketing,
-                        onCheckedChange = { marketing = it },
-                        label = stringResource(R.string.auth_consent_marketing),
-                        detail = AnnotatedString(stringResource(R.string.auth_consent_marketing_detail)),
-                    )
+                // 순서가 바뀔 수 있으니 key 로 묶는다 — 없으면 자리(위치)로 기억되는 각 행의
+                // 펼침 상태가 옆 항목으로 옮겨 붙는다.
+                shownTypes.forEach { type ->
+                    key(type) {
+                        when (type) {
+                            "age14" -> ConsentRow(
+                                checked = age14,
+                                onCheckedChange = { age14 = it },
+                                label = stringResource(R.string.auth_consent_age14),
+                            )
+                            "terms" -> ConsentRow(
+                                checked = terms,
+                                onCheckedChange = { terms = it },
+                                label = stringResource(R.string.auth_consent_terms),
+                                detail = termsText,
+                                scrollableDetail = true,
+                            )
+                            "privacy" -> ConsentRow(
+                                checked = privacy,
+                                onCheckedChange = { privacy = it },
+                                label = stringResource(R.string.auth_consent_privacy),
+                                detail = privacyText,
+                                scrollableDetail = true,
+                            )
+                            "overseas_transfer" -> ConsentRow(
+                                checked = overseasTransfer,
+                                onCheckedChange = { overseasTransfer = it },
+                                label = stringResource(R.string.auth_consent_overseas_transfer),
+                                detail = AnnotatedString(
+                                    stringResource(R.string.auth_consent_overseas_transfer_desc),
+                                ),
+                            )
+                            "voice_biometric" -> ConsentRow(
+                                checked = voiceBiometric,
+                                onCheckedChange = { voiceBiometric = it },
+                                label = stringResource(R.string.auth_consent_voice_biometric),
+                                // 필수로 보이면 안 된다 — 체크하지 않아도 CTA 는 눌린다.
+                                detail = AnnotatedString(
+                                    stringResource(R.string.auth_consent_voice_biometric_desc),
+                                ),
+                            )
+                            "marketing" -> ConsentRow(
+                                checked = marketing,
+                                onCheckedChange = { marketing = it },
+                                label = stringResource(R.string.auth_consent_marketing),
+                                detail = AnnotatedString(
+                                    stringResource(R.string.auth_consent_marketing_detail),
+                                ),
+                            )
+                        }
+                    }
                 }
             }
 

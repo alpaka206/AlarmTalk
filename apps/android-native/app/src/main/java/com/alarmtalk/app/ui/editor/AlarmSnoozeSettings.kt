@@ -28,8 +28,10 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -462,6 +464,18 @@ internal fun EditorActionButtons(
             modifier = Modifier.weight(1f),
             shape = WakerButtonShape,
         ) {
+            // 저장 진행은 **누른 그 버튼 위에서** 보여준다. 예전엔 목소리 카드에 '준비하는
+            // 중이에요' 한 줄이 떴는데, 방금 누른 곳에서 멀어 눌리긴 한 건지 알기 어려웠다.
+            // 스피너는 텍스트 왼쪽에 두고 폭은 weight(1f) 로 고정돼 있어 버튼이 튀지 않는다.
+            if (isSaving) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    // 비활성 상태의 흐린 라벨색을 그대로 따라간다(색을 새로 박지 않는다).
+                    color = LocalContentColor.current,
+                )
+                Spacer(Modifier.width(8.dp))
+            }
             Text(
                 text = when {
                     isSaving -> stringResource(R.string.editor_saving)

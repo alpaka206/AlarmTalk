@@ -52,6 +52,8 @@ import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
 internal fun RandomPromptSettingsPane(
@@ -111,6 +113,9 @@ internal fun RandomPromptSettingsPane(
     var draftFortuneBirthTime by remember(fortuneBirthTime, savedFortuneBirthTime) {
         mutableStateOf(fortuneBirthTime.ifBlank { savedFortuneBirthTime })
     }
+    // 직접 입력 문구도 다른 상세값과 같은 층위로 다룬다 — 다이얼로그에서 확인하면 여기에
+    // 담기고, 아래 상세 카드에 보이며, 최종 반영은 이 화면의 저장에서 한 번에 한다.
+    var draftManualText by remember(manualText) { mutableStateOf(manualText) }
     var weatherDialogOpen by remember { mutableStateOf(false) }
     var fortuneDialogOpen by remember { mutableStateOf(false) }
     var manualDialogOpen by remember { mutableStateOf(false) }
@@ -134,14 +139,16 @@ internal fun RandomPromptSettingsPane(
                 fortuneGender = draftFortuneGender.trim(),
                 fortuneBirthDate = draftFortuneBirthDate.trim(),
                 fortuneBirthTime = draftFortuneBirthTime.trim(),
+                manualText = draftManualText,
             ),
         )
     }
 
     fun requestRequiredInfoOrSave() {
         when {
-            // 직접 입력은 문구를 다이얼로그로만 받는다(빈 문구로 저장되지 않게).
-            isManual -> manualDialogOpen = true
+            // 값이 아직 없으면 저장 대신 그 입력창을 연다. 여기서 못 채우면 저장이 막히는데,
+            // 이유를 안 알려 주면 사용자는 버튼이 고장 난 줄 안다.
+            isManual && draftManualText.isBlank() -> manualDialogOpen = true
             randomContextUsesWeather(normalizedContext) && !hasWeatherInfo() -> weatherDialogOpen = true
             normalizedContext == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
             else -> saveResolvedSettings()
@@ -150,11 +157,14 @@ internal fun RandomPromptSettingsPane(
 
     fun selectContext(context: String) {
         draftContext = context
-        // 상세 입력이 필요한 모드는 고르는 즉시 다이얼로그를 띄운다(날씨·운세·직접 입력).
+        // 상세 입력이 필요한 모드는 **아직 값이 없을 때만** 그 자리에서 다이얼로그를 띄운다.
+        // 이미 등록한 값이 있으면 고르기만 하고 넘어간다 — 매번 같은 정보를 다시 확인시키면
+        // 문구 하나 바꾸는 데 모달을 두 번 지나야 한다. 고치고 싶으면 아래 상세 카드의
+        // '변경하기' 로 간다.
         when {
-            context == ManualMessageContext -> manualDialogOpen = true
-            randomContextUsesWeather(context) -> weatherDialogOpen = true
-            context == "wake_fortune" -> fortuneDialogOpen = true
+            context == ManualMessageContext && draftManualText.isBlank() -> manualDialogOpen = true
+            randomContextUsesWeather(context) && !hasWeatherInfo() -> weatherDialogOpen = true
+            context == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
         }
     }
 
@@ -213,9 +223,20 @@ internal fun RandomPromptSettingsPane(
                     }
                 }
 
+                // 직접 입력도 날씨·운세와 같은 자리에서 값을 보여주고 같은 자리에서 고친다.
+                // 문구는 전체를 그대로 보여준다(요약 행에서는 말줄임되므로 여기가 전문이다).
+                if (isManual && draftManualText.isNotBlank()) {
+                    RandomPromptDetailRow(
+                        title = stringResource(R.string.editorp_random_manual_title),
+                        value = draftManualText,
+                        onChange = { manualDialogOpen = true },
+                    )
+                }
+
                 if (randomContextUsesWeather(normalizedContext)) {
                     RandomPromptDetailRow(
                         title = stringResource(R.string.editorp_random_weather_region_title),
+                        onChange = { weatherDialogOpen = true },
                         value = when {
                             draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank() ->
                                 stringResource(
@@ -232,6 +253,7 @@ internal fun RandomPromptSettingsPane(
                 if (normalizedContext == "wake_fortune") {
                     RandomPromptDetailRow(
                         title = stringResource(R.string.editorp_random_fortune_title),
+                        onChange = { fortuneDialogOpen = true },
                         value = when {
                             draftFortuneGender.isNotBlank() &&
                                 draftFortuneBirthDate.isNotBlank() &&
@@ -264,16 +286,19 @@ internal fun RandomPromptSettingsPane(
         }
     }
 
+    // 세 다이얼로그 모두 **자기만 닫는다.** 예전에는 확인하면 곧바로 onSaveSettings 로
+    // 이어져 문구 목록까지 통째로 닫혔는데, 사용자는 '문구를 고르는 중' 이지 '고르기를
+    // 끝낸' 게 아니다 — 도시 하나 바꾸려다 목록 밖으로 튕겨 나가면 다시 들어와야 한다.
+    // 취소(닫기)도 마찬가지로 이 화면을 닫지 않는다. 최종 반영은 아래 저장 버튼 한 곳.
     if (weatherDialogOpen) {
         WeatherLocationDialog(
             country = draftWeatherCountry,
             city = draftWeatherCity,
-            onDismissWithoutSave = onDismissWithoutSave,
+            onDismissWithoutSave = { weatherDialogOpen = false },
             onConfirm = { country, city ->
                 draftWeatherCountry = country
                 draftWeatherCity = city
                 weatherDialogOpen = false
-                saveResolvedSettings()
             },
         )
     }
@@ -283,36 +308,25 @@ internal fun RandomPromptSettingsPane(
             gender = draftFortuneGender,
             birthDate = draftFortuneBirthDate,
             birthTime = draftFortuneBirthTime,
-            onDismissWithoutSave = onDismissWithoutSave,
+            onDismissWithoutSave = { fortuneDialogOpen = false },
             onConfirm = { gender, birthDate, birthTime ->
                 draftFortuneGender = gender
                 draftFortuneBirthDate = birthDate
                 draftFortuneBirthTime = birthTime
                 fortuneDialogOpen = false
-                saveResolvedSettings()
             },
         )
     }
 
     if (manualDialogOpen) {
         ManualMessageDialog(
-            // 기존 직접 입력 문구가 있으면 그대로 열어 준다(수정 흐름). 없으면 빈칸.
-            // 저장(확인) 없이 닫으면 입력한 내용은 그대로 폐기된다.
-            initialText = manualText,
+            // 지금까지 담긴 문구로 연다(기존 알람의 문구든, 방금 이 화면에서 친 것이든).
+            // 확인 없이 닫으면 입력한 내용은 그대로 폐기된다.
+            initialText = draftManualText,
             onDismiss = { manualDialogOpen = false },
             onConfirm = { text ->
+                draftManualText = text
                 manualDialogOpen = false
-                onSaveSettings(
-                    RandomPromptSettingsResult(
-                        randomContext = ManualMessageContext,
-                        weatherCountry = draftWeatherCountry.trim(),
-                        weatherCity = draftWeatherCity.trim(),
-                        fortuneGender = draftFortuneGender.trim(),
-                        fortuneBirthDate = draftFortuneBirthDate.trim(),
-                        fortuneBirthTime = draftFortuneBirthTime.trim(),
-                        manualText = text,
-                    ),
-                )
             },
         )
     }
@@ -361,22 +375,43 @@ private fun ManualMessageDialog(
 internal fun RandomPromptDetailRow(
     title: String,
     value: String,
+    // 이 값을 고치는 액션. 넘기면 오른쪽에 '변경하기' 가 붙는다.
+    // 한 번 등록한 뒤에는 목록에서 그 항목을 다시 눌러도 입력창이 뜨지 않으므로, 고치는
+    // 길은 여기 하나뿐이다 — 없으면 등록한 값을 영영 못 바꾼다.
+    onChange: (() -> Unit)? = null,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = WakerChipShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+        Row(
+            modifier = Modifier.padding(start = 14.dp, top = 12.dp, end = 6.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(title, fontWeight = FontWeight.SemiBold)
+                // **여기서는 자르지 않는다.** 직접 입력 문구는 길지만, 이 카드가 그 문구를
+                // 전부 확인하는 유일한 자리다(요약 행은 좁아서 말줄임한다). 목록이 세로
+                // 스크롤이라 길어져도 잘린 채 갇히지 않는다.
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (onChange != null) {
+                TextButton(onClick = onChange) {
+                    Text(
+                        text = stringResource(R.string.editorp_random_detail_change),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }
