@@ -36,3 +36,13 @@ INIT_DB_SECRET=
 # Used by sync-worker-secrets.ts and reset-test-data.ts.
 CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_API_TOKEN=
+
+# --- Apple (iOS) ---
+# 로그인만 쓰려면 APPLE_BUNDLE_ID 하나면 된다(공개키 검증이라 비밀키 불필요).
+APPLE_BUNDLE_ID=com.voicealarm.nativeapp.ios
+# 결제까지 쓰려면 App Store Connect 에서 발급받아 아래 셋을 채운다.
+# 채우기 전에는 POST /billing/apple/confirm 이 503 으로 fail-closed 된다.
+APPLE_ISSUER_ID=
+APPLE_KEY_ID=
+# .p8 파일 내용 전체(PEM). 개행이 들어가므로 따옴표로 감싸거나 \n 로 이스케이프한다.
+APPLE_PRIVATE_KEY=

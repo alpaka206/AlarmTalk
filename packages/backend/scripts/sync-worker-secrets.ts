@@ -30,6 +30,12 @@ const WORKER_SECRET_KEYS = [
   'GOOGLE_RTDN_VERIFICATION_TOKEN',
   'ADMIN_SECRET',
   'KASI_SERVICE_KEY',
+  // Apple — 로그인은 APPLE_BUNDLE_ID 하나면 되고(공개키 검증이라 비밀키 불필요),
+  // 결제는 App Store Server API 값 3개가 더 필요하다. 빈 값은 자동 skip.
+  'APPLE_BUNDLE_ID',
+  'APPLE_ISSUER_ID',
+  'APPLE_KEY_ID',
+  'APPLE_PRIVATE_KEY',
 ] as const;
 
 const REQUIRED_SECRET_KEYS = [
