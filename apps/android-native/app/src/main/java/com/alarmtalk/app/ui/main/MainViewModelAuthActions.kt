@@ -1056,8 +1056,7 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
 }
 
 internal fun MainViewModel.syncNow() {
-    val session = authSession
-    if (session == null) {
+    if (authSession == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_sync_login_required)
         return
     }
@@ -1084,6 +1083,13 @@ internal fun MainViewModel.syncNow() {
         do {
         // 이번 회차가 시작될 때 표시를 내린다. 도는 도중에 다시 켜지면 한 번 더 돈다.
         syncRequestedWhileBusy = false
+        // ⚠ **세션은 회차마다 다시 읽는다.** 미뤄 둔 회차는 앞 회차의 네트워크 왕복이 끝난
+        // 뒤에 도는데, 그 사이 토큰이 바뀔 수 있다(로그인·롤링 갱신 — 알람 탭 효과 자체가
+        // authSession?.token 을 키로 쓴다). 처음 잡아 둔 토큰을 계속 쓰면 옛 자격증명으로
+        // 나가고, 더 나쁘게는 repository.syncWithBackend 가 **소유자를 지금 세션 저장소에서**
+        // 가져오므로 재로그인 직후엔 새 계정의 로컬 행이 옛 계정 토큰으로 올라간다(Codex #686).
+        // 로그아웃됐으면 이번 회차는 돌리지 않고 끝낸다.
+        val session = authSession ?: break
         runCatching {
             val push = repository.syncWithBackend(api, session.token)
             val pull = repository.pullReceivedAlarms(api, session.token)
