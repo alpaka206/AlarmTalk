@@ -128,8 +128,12 @@ describe('lib/consent — config', () => {
     expect(REQUIRED_CONSENT_TYPES).not.toContain('voice_biometric');
     expect([...FEATURE_CONSENT_TYPES]).toEqual(['voice_biometric']);
   });
-  it('문서 버전은 4 이지만 유형별 최소 버전은 전부 3 (v4 는 축소 개정 → 재동의 사유 아님)', () => {
-    expect(CURRENT_POLICY_VERSION).toBe('4');
+  // 이 단언은 정책버전이 **실수로** 올라가는 것을 막는 가드다. 값을 바꿀 때는 반드시
+  // docs/legal/*.ko.md 의 '정책 버전' 머리말과 함께 바꾸고, 왜 올렸는지 남길 것.
+  // (안드로이드 빌드가 privacy-policy.ko.md / terms-of-service.ko.md 의 '정책 버전: N' 을
+  //  파싱해 BuildConfig.LEGAL_POLICY_VERSION 을 만든다 — 서버와 어긋나면 동의 기록이 409 된다.)
+  it('문서 버전은 5, 유형별 최소 버전은 전부 3 (v5 의 확대분은 iOS 이용자에만 적용 → Android 재동의 사유 아님)', () => {
+    expect(CURRENT_POLICY_VERSION).toBe('5');
     expect(Object.values(CONSENT_MIN_POLICY_VERSION).every((v) => v === 3)).toBe(true);
   });
 });

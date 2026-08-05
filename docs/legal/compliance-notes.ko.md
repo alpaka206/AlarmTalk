@@ -87,8 +87,8 @@
   (이메일 인증코드 해시도 동일하게 일방향 SHA-256 + pepper ✅)
 - **고유식별정보**(주민등록번호·여권번호·운전면허번호·외국인등록번호): 저장 시 암호화.
   → **본 서비스는 고유식별정보를 수집하지 않는다**(수집 금지 방침). 해당 위험 회피.
-- **계좌·카드번호·바이오정보**: 저장 시 암호화. → 결제는 Google Play 인앱결제를 통하며
-  카드원번호를 직접 저장하지 않는다.
+- **계좌·카드번호·바이오정보**: 저장 시 암호화. → 결제는 앱 마켓 인앱결제(Google Play /
+  App Store)를 통하며 카드원번호를 직접 저장하지 않는다.
 - 전송 구간: HTTPS(TLS) 사용 ✅.
 
 ### "복호화하면 안 되는 정보"
@@ -97,7 +97,7 @@
 
 ### 결제 거래 기록 DB 암호화 의무 검토 (인앱결제 IAP 구조)
 
-질문: 카드번호(PAN)·CVC·계좌번호는 **전혀 저장하지 않고**, Google Play 인앱결제(IAP)의
+질문: 카드번호(PAN)·CVC·계좌번호는 **전혀 저장하지 않고**, 앱 마켓 인앱결제(IAP)의
 구독 거래 검증 기록만 저장하는 `store_transactions` 테이블(컬럼: `user_id`, `provider`,
 `provider_transaction_id`(구매토큰/주문ID), `product_id`, `plan_key`, `expires_at`,
 `raw_payload`(Google: `latestOrderId` + `subscriptionState`만))을 **법적으로 암호화해야 하는가?**
@@ -196,8 +196,8 @@
 - **삭제 완전성**: `lib/account-deletion.ts`는 행 삭제 전 외부 삭제(클론 음성·R2)를 큐에 적재하고,
   `userPk` 미해석 시 자식 PII 고아화를 막기 위해 throw 한다. 결제 거래기록은 가명처리 분리보관(제3절).
 - **수탁 항목**: Firebase Cloud Messaging(푸시 토큰), Google Cloud Vertex AI(문구 생성/번역)를
-  처리방침 §5 위탁/국외이전 표에 기재. 결제는 Google Play 인앱결제 단일 경로이며, 별도 PG 는
-  쓰지 않는다.
+  처리방침 §5 위탁/국외이전 표에 기재. 결제는 앱 마켓 인앱결제(Android=Google Play,
+  iOS=App Store)만 쓰며, 별도 PG 는 쓰지 않는다.
 
 ## 출처
 - ElevenLabs 개인정보처리방침: https://elevenlabs.io/privacy
