@@ -41,6 +41,20 @@ final class LocalHolidayCalendarLunarTests: XCTestCase {
         // 연휴 전날/다음날은 엔진 단독으로는 false (시드가 채운다)
         XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 16)))
         XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 18)))
+
+        // --- `.chinese` 회귀 핀 ---
+        // 아래 3줄은 음력 캘린더가 dangi 에서 `.chinese` 로 되돌아가면 **즉시** 빨간불이 된다.
+        // (`.chinese` 는 자오선이 중국(120°E)이라 삭이 CST 23:00~23:59 에 드는 해가 하루 빠르다.)
+        // 2020~2031 KASI 앵커 36개 중 `.chinese` 가 틀리는 것은 이 3건뿐이다.
+        XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2027, 2, 6)),
+                       "2/6 은 설날 기준일이 아니다 — .chinese 로 되돌아가면 여기가 true 가 된다")
+        XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2028, 1, 26)),
+                       "1/26 은 설날 기준일이 아니다 — 같은 회귀 핀")
+        // 부처님오신날 2023: KASI 5/27, `.chinese` 는 5/26 을 준다.
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2023, 5, 27)),
+                      "2023 부처님오신날(KASI 5/27)")
+        XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2023, 5, 26)),
+                       "5/26 은 .chinese 의 답이지 KASI 의 답이 아니다")
         // 경계: 연휴 바깥 평일도 false
         XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 15)))
         XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 19)))
