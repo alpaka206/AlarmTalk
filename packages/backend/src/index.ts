@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env, AppEnv } from './types';
+// 타입만 정적으로 가져온다(런타임에는 지워짐) — 구현은 cron 안에서 동적 import 한다.
+import type { RevokedRecipientTarget } from './lib/account-deletion';
 import { authMiddleware } from './middleware/auth';
 import { consentMiddleware } from './middleware/consent';
 import { loggerMiddleware } from './middleware/logger';
@@ -334,17 +336,25 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
             LIMIT 50`,
       args: [now.toISOString()],
     });
+    const revokedTargets: RevokedRecipientTarget[] = [];
     for (const row of due.rows) {
       const userPk = String(row.id);
       const userId = (row.google_id as string | null) ?? userPk;
-      await withWriteTransaction(db, async (tx) => {
-        await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
-        await purgeUserAccount(tx, userPk, userId);
-      });
+      revokedTargets.push(
+        ...(await withWriteTransaction(db, async (tx) => {
+          await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
+          return purgeUserAccount(tx, userPk, userId);
+        })),
+      );
     }
     if (due.rows.length > 0) {
       logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
     }
+    // 파기된 계정이 남에게 보낸 알람의 수신자에게 **커밋 후에** pull 신호를 보낸다 —
+    // 받은 기기가 즉시 탈퇴자의 목소리를 걷어낸다. 틱당 한 번으로 모아 보낸다
+    // (sendPushNotifications 는 호출마다 OAuth 를 새로 받는다).
+    const { notifyDowngradedAlarms } = await import('./lib/fcm');
+    await notifyDowngradedAlarms(db, env, revokedTargets);
   } catch (err) {
     captureCron('scheduled.account_purge', err);
   }

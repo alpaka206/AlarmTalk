@@ -139,4 +139,21 @@ describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
     });
     expect(rows.rows.length).toBe(0);
   });
+
+  it('알릴 수신자를 돌려준다 — 커밋 후 push 로 즉시 걷어내게', async () => {
+    const targets = await purgeUserAccount(testDb, 'A', 'gA');
+    // 기록만 남기고 안 알리면 B 가 백그라운드일 때 다음 주기 pull 까지 탈퇴자의
+    // 목소리로 계속 울린다. 형태는 notifyDowngradedAlarms 의 target 그대로.
+    expect(targets).toEqual([{ alarmId: ALARM_ID, ownerUserId: 'B', isReceived: true }]);
+  });
+
+  it('탈퇴한 본인이 받은 알람은 알릴 대상이 아니다(그 기기는 이미 계정이 없다)', async () => {
+    await testDb.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode, is_active)
+            VALUES ('22222222-2222-2222-2222-222222222222', 'B', 'A', 'm1', '08:00', 'tts', 1)`,
+      args: [],
+    });
+    const targets = await purgeUserAccount(testDb, 'A', 'gA');
+    expect(targets.map((t) => t.ownerUserId)).toEqual(['B']);
+  });
 });

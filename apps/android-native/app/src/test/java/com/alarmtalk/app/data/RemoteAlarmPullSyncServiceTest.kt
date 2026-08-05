@@ -321,7 +321,7 @@ class RemoteAlarmPullSyncServiceTest {
             voiceText = "일어나",
             ttsMessageId = "m1",
         )
-        assertTrue("철회 대상 판정", hasVoice(received))
+        assertTrue("철회 대상 판정", hasSenderVoice(received))
 
         val stripped = withVoiceRevoked(received, context)
 
@@ -336,7 +336,45 @@ class RemoteAlarmPullSyncServiceTest {
         assertNull(stripped.voiceText)
         assertNull(stripped.ttsMessageId)
         assertFalse("보낸 사람 이름도 지운다", stripped.label.contains("김규원"))
-        assertFalse("한 번 걷어낸 뒤에는 다시 걷어내지 않는다", hasVoice(stripped))
+        assertFalse("한 번 걷어낸 뒤에는 다시 걷어내지 않는다", hasSenderVoice(stripped))
+    }
+
+    @Test
+    fun revocationDoesNotTouchAVoiceTheRecipientChoseThemselves() {
+        // 서버는 철회 기록을 영구히 들고 있다. '목소리가 있으면 걷어낸다' 로 잡으면, 알람을
+        // 물려받은 수신자가 나중에 넣은 자기 목소리까지 pull 마다 걷어내 **다시는 목소리를
+        // 쓸 수 없는 알람**이 된다(Codex #677 P2). 걷어낼 것은 탈퇴한 사람이 보낸 음성뿐이다.
+        val mine = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
+            label = "출근",
+            playMode = AlarmPlayModes.ALARM_VOICE,
+            localAudioUri = "file:///cache/tts-abc.m4a",
+            audioCacheKey = "tts-abc",
+            voiceProfileId = "vp-mine",
+            ttsMessageId = "my-message",
+        )
+        assertFalse("내가 고른 목소리는 철회 대상이 아니다", hasSenderVoice(mine))
+
+        // 직접 녹음·기본 목소리(스톡)·무료 버킷도 마찬가지다.
+        assertFalse(hasSenderVoice(mine.copy(audioCacheKey = "stock_wake_01")))
+        assertFalse(
+            hasSenderVoice(
+                mine.copy(audioCacheKey = null, localAudioUri = null, bucketId = "wake"),
+            ),
+        )
+    }
+
+    @Test
+    fun revocationTargetsAFreeLockedRowToo() {
+        // 무료로 잠긴 받은 알람은 재생만 막혔지(playMode=ALARM_ONLY) 발신자의 녹음 파일은
+        // 디스크에 그대로 있다. 재생 모드로 판정하면 이 행을 놓쳐 생체정보가 남는다.
+        val locked = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
+            playMode = AlarmPlayModes.ALARM_ONLY,
+            preLockPlayMode = AlarmPlayModes.ALARM_VOICE,
+            localAudioUri = "file:///cache/remote-message-m1.m4a",
+            audioCacheKey = "remote-message-m1",
+        )
+        assertTrue(hasSenderVoice(locked))
+        assertNull(withVoiceRevoked(locked, context).audioCacheKey)
     }
 
     private fun remote(): RemoteAlarm = RemoteAlarm(

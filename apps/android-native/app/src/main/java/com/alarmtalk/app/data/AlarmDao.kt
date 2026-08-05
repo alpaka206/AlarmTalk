@@ -320,29 +320,9 @@ interface AlarmDao {
         lastSyncedAtMillis: Long?,
     )
 
-    @Query(
-        """
-        UPDATE alarms
-        SET localAudioUri = :localAudioUri,
-            audioCacheKey = :audioCacheKey,
-            rawAudioUri = :rawAudioUri,
-            voiceText = :voiceText,
-            ttsMessageId = :ttsMessageId,
-            dynamicVoicePreparedForFireAtMillis = :preparedForFireAtMillis,
-            updatedAtMillis = :updatedAtMillis
-        WHERE id = :id
-        """,
-    )
-    suspend fun updateDynamicVoiceAudio(
-        id: String,
-        localAudioUri: String,
-        audioCacheKey: String?,
-        rawAudioUri: String?,
-        voiceText: String,
-        ttsMessageId: String?,
-        preparedForFireAtMillis: Long,
-        updatedAtMillis: Long,
-    )
+    // updateDynamicVoiceAudio 는 지웠다 — 호출부가 없었고, 시그니처가 localAudioUri(non-null)에
+    // audioCacheKey(nullable)를 짝지어 **참조 카운트로 지울 수 없는 음성 파일**을 만들 수 있는
+    // 레포 유일의 API 였다(Codex #677 P1). 다시 필요해지면 두 값을 함께 non-null 로 둘 것.
 
     /** 무료 버킷 회전 인덱스를 다음 값으로 영속화한다(알람이 울린 직후 호출). */
     @Query(

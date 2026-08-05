@@ -303,11 +303,18 @@ internal class RemoteAlarmPullSyncService(
                 // **발신자가 탈퇴하면 목소리만 걷어내고 알람은 남긴다.** 복제 목소리는 그
                 // 사람의 생체정보라 파기 대상이지만, 시각은 수신자가 기대고 자는 자기 정보다 —
                 // 통째로 지우면 그날 못 일어난다(Codex #676 P1).
+                //
+                // 대상은 [hasSenderVoice] — '목소리가 있는 행' 이 아니라 '발신자 음성을 든 행'
+                // 이다. 서버는 철회 기록을 영구히 들고 있어서, 넓게 잡으면 수신자가 나중에
+                // 넣은 자기 목소리까지 매번 걷어낸다(Codex #677 P2). 이 판정이 캐시 키를
+                // 요구하므로, 키 없이 파일만 남아 삭제를 못 하는 경우도 생기지 않는다(#677 P1).
                 receivedRows
-                    .filter { it.remoteAlarmId in revokedRemoteIds && hasVoice(it) }
+                    .filter { it.remoteAlarmId in revokedRemoteIds && hasSenderVoice(it) }
                     .forEach { revokedRow ->
                         val cacheKey = revokedRow.audioCacheKey
                         alarmDao.upsert(withVoiceRevoked(revokedRow, context))
+                        // 먼저 upsert 해 이 행의 참조를 지운 뒤 센다 — 같은 메시지를 여러 행이
+                        // 쓰고 있어도 마지막 행에서 0 이 되어 파일이 실제로 지워진다.
                         alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
                         Log.i(TAG, "Revoked voice on received alarm remoteId=${revokedRow.remoteAlarmId}")
                     }
@@ -387,7 +394,7 @@ internal class RemoteAlarmPullSyncService(
     ): CachedAlarmAudio? =
         if (shouldDownloadRemoteMessageAudio(remote)) {
             val messageId = remote.messageId?.trim().orEmpty()
-            val cacheKey = "remote-message-$messageId"
+            val cacheKey = "$REMOTE_MESSAGE_CACHE_KEY_PREFIX$messageId"
             // 이미 받아 둔 음성이면 다시 받지 않는다. 이 pull 은 로그인마다·푸시마다 도는데,
             // 그때마다 같은 파일을 다시 내려받으면 재로그인 한 번에 받은 알람 수만큼 왕복이
             // 생긴다(생성 음성은 messageId 당 불변이라 다시 받을 이유가 없다).
@@ -520,16 +527,31 @@ internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive
     }
 }
 
+/**
+ * 받은 알람의 음성 캐시 키 접두사. **발신자가 보낸 음성의 유일한 표식**이라,
+ * 철회([hasSenderVoice])가 수신자 자신이 고른 음성과 구분하는 근거가 된다.
+ */
+internal const val REMOTE_MESSAGE_CACHE_KEY_PREFIX = "remote-message-"
+
 internal fun shouldDownloadRemoteMessageAudio(remote: RemoteAlarm): Boolean =
     !remote.messageId.isNullOrBlank() &&
         !remote.messageAudioUrl.isNullOrBlank()
 
-/** 이 행이 아직 (발신자의) 복제 목소리를 들고 있는가. */
-internal fun hasVoice(alarm: AlarmEntity): Boolean =
-    !alarm.audioCacheKey.isNullOrBlank() ||
-        !alarm.localAudioUri.isNullOrBlank() ||
-        !alarm.ttsMessageId.isNullOrBlank() ||
-        alarm.playMode != AlarmPlayModes.ALARM_ONLY
+/**
+ * 이 행이 아직 **발신자가 보낸** 목소리를 들고 있는가.
+ *
+ * '목소리가 있는가' 로 물으면 안 된다. 서버는 철회 기록을 영구히 들고 있고 그 알람의
+ * 서버 행은 사라져 다시 만들어지지 않으므로, 받은 뒤 수신자가 자기 목소리(내 클론·기본
+ * 목소리·직접 녹음)를 넣으면 **pull 마다 그것까지 걷어내 다시는 목소리를 못 쓰는 알람**이
+ * 된다(Codex #677 P2). 걷어낼 것은 탈퇴한 사람이 보낸 그 음성뿐이다.
+ *
+ * 판별은 캐시 키로 한다 — 받은 알람의 음성은 [RemoteAlarmPullSyncService.fetchRemoteMessageAudio]
+ * 만 만들고([REMOTE_MESSAGE_CACHE_KEY_PREFIX] + 서버 messageId), 수신자가 고른 음성은
+ * TTS·스톡·녹음 키라 겹치지 않는다. 무료로 잠긴 행(playMode 는 ALARM_ONLY 인데 파일은
+ * 그대로)도 이 키로 잡힌다 — 재생만 막혔지 생체정보는 디스크에 남아 있으니 걷어내야 한다.
+ */
+internal fun hasSenderVoice(alarm: AlarmEntity): Boolean =
+    alarm.audioCacheKey?.startsWith(REMOTE_MESSAGE_CACHE_KEY_PREFIX) == true
 
 /**
  * 발신자가 탈퇴해 목소리가 철회된 받은 알람 — **목소리만 걷어내고 알람은 남긴다.**

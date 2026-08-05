@@ -57,8 +57,22 @@ export async function pseudonymizeBillingForRetention(
 }
 
 /**
+ * 탈퇴로 목소리가 철회된 받은-알람. 수신자 기기가 **즉시** 걷어내도록 커밋 후 push 를
+ * 보내야 해서, 행이 지워지기 전에 모아 호출부로 돌려준다.
+ * (`notifyDowngradedAlarms` 의 target 형태 그대로 — 수신자당 한 번으로 접어 보낸다.)
+ */
+export type RevokedRecipientTarget = {
+  alarmId: string;
+  ownerUserId: string;
+  isReceived: boolean;
+};
+
+/**
  * 사용자 계정과 모든 관련 데이터를 영구 삭제한다. DELETE /user/me 핸들러와 탈퇴 유예
  * cron 양쪽에서 재사용한다. SQL 발행 순서는 기존 핸들러와 동일하게 유지한다.
+ *
+ * 반환값은 **커밋 후에** 알려야 할 수신자 목록이다(트랜잭션 안에서 push 를 보내면
+ * 롤백될 수 있는 변경을 미리 알리게 된다).
  */
 export async function purgeUserAccount(
   tx: DbExecutor,
@@ -66,7 +80,7 @@ export async function purgeUserAccount(
   // 토큰이 담고 있던 로그인 식별자. 통일 이전에 user_id 컬럼에 이 값이 저장된 자식
   // 데이터까지 지우려면 users.id 와 함께 넘겨야 한다(같은 값이면 자연히 한 벌로 동작).
   userLoginId: string,
-): Promise<void> {
+): Promise<RevokedRecipientTarget[]> {
   // userPk(users.id) 를 해석하지 못한 채 진행하면 PK 로 연결된 자식 PII(클론 음성·
   // 결제 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
   // 해석 실패이므로 소리 없이 users 만 지우지 말고 throw 해 호출부에서 롤백되게 한다.
@@ -81,6 +95,7 @@ export async function purgeUserAccount(
       );
     }
   }
+  const revokedTargets: RevokedRecipientTarget[] = [];
   if (userPk) {
     // 중복을 제거하지 않는다. 아래 DELETE 들이 `IN (?, ?)` 로 개수를 고정해 두고 있어서,
     // 두 값이 같을 때(=정규화 이후의 일반적인 경우) 하나로 줄이면 바인딩 개수가 어긋나
@@ -159,6 +174,25 @@ export async function purgeUserAccount(
     // 안 남기면 수신자 기기는 '보낸 사람이 알람 하나를 지웠다'(=내 알람은 남긴다)와
     // 구분하지 못해, 탈퇴한 사람의 복제 목소리가 그 기기에서 계속 울린다.
     // 기록을 보면 수신자 앱이 목소리만 걷어내고 알람은 남긴다(RemoteAlarmPullSyncService).
+    //
+    // 알릴 대상은 행이 지워지기 전에 뽑아 둔다. 기록만 남기고 알리지 않으면 수신자가
+    // 백그라운드일 때 다음 주기 pull 까지 탈퇴자의 목소리로 계속 울린다 — 파기 요구가
+    // 걸린 생체정보를 폴백 주기만큼 더 들고 있게 된다.
+    const revoked = await tx.execute({
+      sql: `SELECT a.id AS alarm_id, a.target_user_id AS recipient_user_id
+              FROM alarms a
+             WHERE a.user_id IN (?, ?)
+               AND a.target_user_id IS NOT NULL
+               AND a.target_user_id NOT IN (?, ?)`,
+      args: [...userIds, ...userIds],
+    });
+    for (const row of revoked.rows) {
+      revokedTargets.push({
+        alarmId: String(row.alarm_id),
+        ownerUserId: String(row.recipient_user_id),
+        isReceived: true,
+      });
+    }
     await tx.execute({
       sql: `INSERT INTO alarm_recipient_state
               (alarm_id, recipient_user_id, declined, revoked, created_at, updated_at)
@@ -241,4 +275,6 @@ export async function purgeUserAccount(
     sql: `DELETE FROM users WHERE id = ? OR google_id = ?`,
     args: [userPk ?? userLoginId, userLoginId],
   });
+
+  return revokedTargets;
 }
