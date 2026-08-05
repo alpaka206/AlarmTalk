@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -45,6 +46,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import androidx.compose.ui.window.Dialog
@@ -94,12 +97,16 @@ internal fun SettingsRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // 라벨은 제 너비를 그대로 갖고, **남는 폭을 값이 가져간다.** 반대로(라벨에 weight)
+        // 두면 값이 길 때 라벨이 밀려 "운세 / 정보" 처럼 두 줄로 접혔다 — 접혀야 할 쪽은
+        // 항상 값이다. 값이 없는 행(로그아웃 등)은 Spacer 가 그 자리를 대신 채워
+        // 오른쪽 셰브론이 늘 같은 자리에 온다.
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f),
+            maxLines = 1,
         )
         if (value != null) {
             Text(
@@ -107,7 +114,13 @@ internal fun SettingsRow(
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+        } else {
+            Spacer(modifier = Modifier.weight(1f))
         }
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
@@ -487,11 +500,25 @@ internal fun fortuneInfoSettingsLabel(
     birthDate: String,
     birthTime: String,
 ): String {
-    val value = listOf(gender, birthDate, birthTime)
+    val value = listOf(gender, compactBirthDate(birthDate), birthTime)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" · ")
     return value.ifBlank { context.getString(R.string.misc2_settings_not_set) }
+}
+
+/**
+ * 설정 행에 쓰는 짧은 생년월일 — `2000-05-17` → `000517`.
+ *
+ * 행 하나에 성별·생년월일·태어난 시간이 다 들어가는데 `2000-05-17` 그대로면 폭을 다 먹는다.
+ * 여섯 자리는 주민번호 앞자리와 같은 모양이라 한국어 사용자는 바로 읽고, 정확한 값은
+ * 눌러서 여는 다이얼로그에 그대로 있다. **형식이 다르면 손대지 않는다.**
+ */
+private fun compactBirthDate(raw: String): String {
+    val trimmed = raw.trim()
+    val looksLikeIsoDate = trimmed.length == 10 && trimmed[4] == '-' && trimmed[7] == '-' &&
+        trimmed.filter { it != '-' }.all { it.isDigit() }
+    return if (looksLikeIsoDate) trimmed.substring(2).replace("-", "") else trimmed
 }
 
 internal fun quietWindowLabel(context: Context, window: FamilyAlarmQuietWindow): String =

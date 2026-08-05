@@ -653,6 +653,36 @@ class AlarmAudioStore(
     }
 
     /**
+     * URI 가 가리키는 캐시 파일을 지운다 — **우리 캐시 디렉터리 안일 때만.**
+     *
+     * 캐시 키가 없어 [deleteCachedAudio] 로 지울 수 없는 옛 행을 위한 경로다. 디렉터리를
+     * 확인하는 이유는 [localAudioUri] 가 언제나 우리 파일이라는 보장이 없어서다 —
+     * 사용자가 고른 원본(`content://`, 공유 저장소)을 지우면 남의 파일을 지우는 것이다.
+     * 메타(.meta) 사이드카는 이름이 같아 함께 지운다.
+     */
+    fun deleteCachedFileAt(localAudioUri: String) {
+        val path = runCatching { Uri.parse(localAudioUri).path }.getOrNull() ?: return
+        val file = File(path)
+        val dir = audioDir
+        val insideCacheDir = runCatching {
+            file.parentFile?.canonicalPath == dir.canonicalPath
+        }.getOrDefault(false)
+        if (!insideCacheDir) {
+            Log.i(TAG, "Skipped deleting audio outside cache dir path=$path")
+            return
+        }
+        dir.listFiles()?.forEach { candidate ->
+            if (candidate.isFile && candidate.nameWithoutExtension == file.nameWithoutExtension) {
+                if (candidate.delete()) {
+                    Log.i(TAG, "Deleted keyless cached audio path=${candidate.absolutePath}")
+                } else {
+                    Log.w(TAG, "Failed to delete keyless cached audio path=${candidate.absolutePath}")
+                }
+            }
+        }
+    }
+
+    /**
      * 오래 손대지 않은 캐시 음성 파일을 정리한다.
      * 같은 캐시 파일을 여러 알람이 공유할 수 있으므로, 호출자가 DB 에서 모은
      * [inUseFileNames](확장자 제외 파일명) 에 포함된 파일은 건너뛴다.
@@ -1108,6 +1138,22 @@ internal suspend fun AlarmAudioStore.deleteCachedAudioIfUnreferenced(
     if (cacheKey.isNullOrBlank()) return
     if (alarmDao.countByAudioCacheKey(cacheKey) > 0) return
     deleteCachedAudio(cacheKey)
+}
+
+/**
+ * 캐시 키가 없어 [deleteCachedAudioIfUnreferenced] 로는 못 지우는 옛 행의 음성 파일을,
+ * 다른 알람이 같은 URI 를 안 쓸 때만 지운다.
+ *
+ * 키가 있는 행에는 쓰지 말 것 — 같은 파일을 여러 URI 로 가리킬 수 있어 카운트가 어긋난다.
+ * 여긴 '키가 없어서 참조를 셀 방법이 URI 뿐인' 경우의 최후 수단이다.
+ */
+internal suspend fun AlarmAudioStore.deleteLocalAudioIfUnreferenced(
+    alarmDao: AlarmDao,
+    localAudioUri: String?,
+) {
+    if (localAudioUri.isNullOrBlank()) return
+    if (alarmDao.countByLocalAudioUri(localAudioUri) > 0) return
+    deleteCachedFileAt(localAudioUri)
 }
 
 private data class CachedAudioMetadata(

@@ -1974,6 +1974,43 @@ export const migrations: Migration[] = [
           AND CAST(policy_version AS INTEGER) > 4`,
     ],
   },
+  {
+    /**
+     * 수신자 쪽 '이 알람은 이제 없다' 기록에 **이유**를 붙인다.
+     *
+     * 지금까지는 `declined` 하나뿐이라 "수신자가 그만받기를 눌렀다" 만 표현할 수 있었다.
+     * 그런데 발신자가 **탈퇴**하면 그 사람의 알람 행이 통째로 지워지는데, 기록이 없으니
+     * 수신자 기기는 '보낸 사람이 알람 하나를 지웠다'(=남긴다)와 구분하지 못해 **탈퇴한
+     * 사람의 복제 목소리가 계속 울린다.** 음성 생체정보 파기 요구와 정면으로 어긋난다.
+     *
+     * 둘의 처리는 다르다: 그만받기는 알람을 지우고, 탈퇴/철회는 **목소리만 걷어내고 알람은
+     * 남긴다**(기대고 자던 알람이 남의 사정으로 사라져 못 일어나는 일이 없게).
+     */
+    id: 92,
+    name: 'alarm-recipient-state-revoked',
+    statements: [
+      `ALTER TABLE alarm_recipient_state ADD COLUMN revoked INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    /**
+     * 발신자가 **알람을 먼저 지운 뒤** 탈퇴하는 경로를 위한 보낸이 표식.
+     *
+     * 탈퇴 시 철회 기록은 `alarms` 행을 훑어 만든다. 그런데 발신자가 그 알람을 먼저
+     * 지웠으면 훑을 행이 없다 — 수신자 기기는 (설계대로) 알람을 그대로 들고 있는데,
+     * 그 안의 복제 목소리를 걷어낼 근거가 영영 사라진다.
+     *
+     * 그래서 보낸 알람을 지울 때 (alarm_id, recipient) 표식을 남기고 보낸이를 적어 둔다.
+     * `declined=0, revoked=0` 이라 그때는 아무 효력이 없고(수신자 알람은 그대로 남는다),
+     * 나중에 그 보낸이가 탈퇴할 때 이 행이 `revoked=1` 로 바뀐다.
+     *
+     * 탈퇴 처리는 플래그를 세우면서 **이 컬럼을 NULL 로 지운다** — 철회 사실만 남기고
+     * 탈퇴자의 식별자는 남기지 않는다(개인정보보호법 제21조).
+     */
+    id: 93,
+    name: 'alarm-recipient-state-sender',
+    statements: [`ALTER TABLE alarm_recipient_state ADD COLUMN sender_user_id TEXT`],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
@@ -54,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -117,13 +120,6 @@ private fun voiceProfileDurationError(context: android.content.Context, duration
     else -> null
 }
 
-private fun voiceProfileFileDurationError(context: android.content.Context, durationMillis: Long?): String? = when {
-    durationMillis == null -> context.getString(R.string.voices2_audio_duration_unknown)
-    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS ->
-        context.getString(R.string.voices2_select_file_min_duration)
-    else -> null
-}
-
 // 파일에서 잘라낸 구간 길이 검증 — 파일 흐름에서는 녹음 문구("~녹음해 주세요") 대신
 // 구간 선택 문구로 안내한다.
 private fun voiceProfileCropDurationError(context: android.content.Context, durationMillis: Long?): String? = when {
@@ -145,6 +141,7 @@ private fun VoiceRecordScriptCard(
     fillHeight: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    var scriptExpanded by rememberSaveable { mutableStateOf(false) }
     OutlinedCard(
         modifier = modifier,
         shape = WakerCardShape,
@@ -157,12 +154,31 @@ private fun VoiceRecordScriptCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = stringResource(R.string.voices_record_script_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            // 녹음하며 읽는 본문이라 항상 펼쳐 둔다(토글로 접으면 녹음 도중 다시 펼쳐야 한다).
+            // **대사는 예시일 뿐 필수가 아니다.** 항상 펼쳐 두면 화면 절반을 차지해
+            // '이걸 그대로 읽어야 하는 것' 처럼 보인다. 필요한 사람만 펼치게 접어 둔다.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { scriptExpanded = !scriptExpanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = stringResource(R.string.voices_record_script_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Icon(
+                    imageVector = if (scriptExpanded) {
+                        Icons.Outlined.KeyboardArrowUp
+                    } else {
+                        Icons.Outlined.KeyboardArrowDown
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (scriptExpanded) {
             Text(
                 text = stringResource(R.string.voices2_record_script),
                 modifier = Modifier
@@ -178,6 +194,7 @@ private fun VoiceRecordScriptCard(
                 lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            }
         }
     }
 }
@@ -259,6 +276,11 @@ internal fun VoiceProfileManagementPanel(
     var localMessage by remember { mutableStateOf<String?>(null) }
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var isRecording by remember { mutableStateOf(false) }
+
+    // 하한(12초) 미달로 버려진 녹음이 있었는지. 버려지면 selectedAudio 가 null 이라 길이만
+    // 봐서는 "아직 녹음 안 함" 과 구분되지 않는데, 이 둘의 안내는 달라야 한다 —
+    // 전자는 '12초 이상 녹음해 주세요', 후자는 '다음'(흐림).
+    var recordTooShort by remember { mutableStateOf(false) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
     // 실제 마이크 입력 진폭(0~1) — 녹음 카드의 미니 레벨 바가 소비한다.
     var recordingLevel by remember { mutableStateOf(0f) }
@@ -597,7 +619,9 @@ internal fun VoiceProfileManagementPanel(
                 selectedFileDurationMillis = durationMillis
                 cropStartMillis = 0L
                 cropEndMillis = durationMillis.coerceAtMost(VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
-                localMessage = voiceProfileFileDurationError(context, durationMillis)
+                // 짧은 파일도 배너로 나무라지 않는다 — 못 넘어가는 이유는 '다음' 버튼 자리에서
+                // 말한다(녹음과 같은 규칙).
+                localMessage = null
             }
                 .onFailure { error ->
                     AlarmTalkLog.reportError("Failed to cache voice profile audio", error)
@@ -621,13 +645,16 @@ internal fun VoiceProfileManagementPanel(
                     // 저장된 것처럼 보인다.
                     selectedAudio = null
                     recordingElapsedMillis = 0L
-                    // 짧아서 버려졌으면 그렇다고 말한다. 예전에는 마이크 카드 대기 문구가
-                    // "1분 이상 녹음해 주세요" 라서 여기서 또 띄우면 중복이었지만, 하한을 12초로
-                    // 내리면서 그 문구는 "길게 말할수록 더 비슷해져요 · 최대 2분"(최소 길이를
-                    // 일부러 말하지 않는다)으로 바뀌었다. 억제만 남으니 하한 미달 녹음이 안내도
-                    // 없이 사라졌다 — 위에서 오디오와 타이머를 되돌리므로 화면에는 아무 일도
-                    // 일어나지 않은 것처럼 보인다.
-                    localMessage = error
+                    // 짧아서 버려졌으면 그렇다고 말한다. 위에서 오디오와 타이머를 되돌리므로
+                    // 아무 말도 안 하면 화면에는 아무 일도 일어나지 않은 것처럼 보인다.
+                    // 다만 **하한 미달은 배너로 띄우지 않는다** — 그 말이 필요한 곳은 못 넘어가는
+                    // '다음' 버튼 자리다. 화면 위쪽 배너는 버튼에서 멀어 왜 안 눌리는지 이어지지
+                    // 않는다. 길이를 못 읽는 등 다른 실패만 배너로 남긴다.
+                    if (duration != null && duration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
+                        recordTooShort = true
+                    } else {
+                        localMessage = error
+                    }
                 }
             }.onFailure { error ->
                 isRecording = false
@@ -647,6 +674,7 @@ internal fun VoiceProfileManagementPanel(
             recordingLevel = 0f
             isRecording = true
             localMessage = null
+            recordTooShort = false
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to start voice profile recording", error)
             localMessage = userFacingError(error, context.getString(R.string.voices_recording_start_failed))
@@ -658,6 +686,7 @@ internal fun VoiceProfileManagementPanel(
         isRecording = false
         recordingElapsedMillis = 0L
         recordingLevel = 0f
+        recordTooShort = false
         stopMediaPreview()
         selectedFileUri = null
         selectedFileDurationMillis = null
@@ -1556,6 +1585,7 @@ internal fun VoiceProfileManagementPanel(
                                         if (inputMode != it) {
                                             stopMediaPreview()
                                             localMessage = null
+                                            recordTooShort = false
                                         }
                                         inputMode = it
                                     },
@@ -1569,11 +1599,10 @@ internal fun VoiceProfileManagementPanel(
                                         maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                         level = recordingLevel,
                                         enabled = !voiceProfileBusy && !createPreparing,
-                                        // 마이크 버튼이 행동을 설명하므로 "눌러서 녹음 시작" 대신
-                                        // 길이 안내를 대기 상태 문구로 쓴다. 최소 길이(12초)는
-                                        // 대부분 자연히 넘기므로 못 박지 않고, 길수록 좋다는
-                                        // 쪽으로 유도한다 — 1분을 요구하던 문구가 부담이었다.
-                                        idleStatusText = stringResource(R.string.voices_record_status_hint),
+                                        // 카드 안은 비워 둔다 — 옆에 `0:00 / 2:00` 이 이미 있어
+                                        // 문구까지 넣으면 두 줄로 접히고 시간이 밀린다.
+                                        // 길이 안내는 카드 아래 안내문으로 내렸다.
+                                        idleStatusText = "",
                                         onRecordClick = {
                                             if (isRecording) {
                                                 stopRecording()
@@ -1591,7 +1620,12 @@ internal fun VoiceProfileManagementPanel(
                                     )
                                     // 곁에 없는 사람의 목소리를 등록하려는 경우가 흔하다.
                                     // 업로드할 파일이 없어도 방법이 있다는 걸 알려 준다.
-                                    MutedText(stringResource(R.string.voices_record_video_tip))
+                                    // 두 안내를 마침표마다 줄을 나눠 둔다 — 한 문단으로 붙이면
+                                    // 서로 다른 이야기가 한 덩어리로 읽힌다.
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        MutedText(stringResource(R.string.voices_record_status_hint))
+                                        MutedText(stringResource(R.string.voices_record_video_tip))
+                                    }
                                     // 남은 화면 높이를 대사 카드가 채운다(내용이 짧으면 그만큼만).
                                     // 짧은 창 폴백에선 페이지가 스크롤되므로 weight 대신 높이 캡.
                                     VoiceRecordScriptCard(
@@ -2004,11 +2038,24 @@ internal fun VoiceProfileManagementPanel(
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
+                                    // 못 넘어가는 이유를 **버튼 자리에서** 말한다. 예전에는
+                                    // '다음' 이 흐린 채로만 있어, 왜 안 눌리는지 알 수 없었다.
+                                    // 녹음은 하한 미달이면 클립을 버리므로(selectedAudio = null)
+                                    // 길이가 아니라 recordTooShort 로 판정한다.
+                                    val blocked = !canAdvanceFromSource && !createPreparing
+                                    val tooShortRes = when {
+                                        !blocked -> null
+                                        inputMode == VoiceCaptureMode.Record && recordTooShort ->
+                                            R.string.voices_record_too_short
+                                        inputMode == VoiceCaptureMode.File && selectedFileUri != null ->
+                                            R.string.voices2_select_file_min_duration
+                                        else -> null
+                                    }
                                     Text(
-                                        if (createPreparing) {
-                                            stringResource(R.string.voices_preparing)
-                                        } else {
-                                            stringResource(R.string.voices_next)
+                                        when {
+                                            createPreparing -> stringResource(R.string.voices_preparing)
+                                            tooShortRes != null -> stringResource(tooShortRes)
+                                            else -> stringResource(R.string.voices_next)
                                         },
                                     )
                                 }

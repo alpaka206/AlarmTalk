@@ -603,9 +603,10 @@
     <string name="voices_preview_edit_failed">문구를 수정하지 못했어요.</string>
     <string name="voices_previous">이전</string>
     <string name="voices_record_done_duration">녹음 완료 · %1$s</string>
-    <string name="voices_record_video_tip">원하는 목소리의 파일이 없다면, 그 사람이 나오는 영상을 틀어 놓고 녹음해도 돼요.</string>
-    <string name="voices_record_script_title">아래 대사를 따라 읽어 주세요</string>
-    <string name="voices_record_status_hint">길게 말할수록 더 비슷해져요 · 최대 2분</string>
+    <string name="voices_record_video_tip">원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요.</string>
+    <string name="voices_record_script_title">예시 대본</string>
+    <string name="voices_record_too_short">12초 이상 녹음해 주세요</string>
+    <string name="voices_record_status_hint">너무 짧으면 목소리가 다르게 나올 수 있어요.</string>
     <string name="voices_recording_start_failed">녹음을 시작할 수 없어요.</string>
     <string name="voices_recording_stop_failed">녹음에 실패했어요.</string>
     <string name="voices_register">등록</string>
@@ -722,7 +723,7 @@
     <string name="voices2_audio_duration_unknown">오디오 길이를 확인할 수 없어요.</string>
     <string name="voices2_record_min_duration">12초 이상 녹음해 주세요.</string>
     <string name="voices2_register_under_two_minutes">2분 이하 음성으로 등록할 수 있어요.</string>
-    <string name="voices2_select_file_min_duration">12초 이상인 파일을 선택해 주세요.</string>
+    <string name="voices2_select_file_min_duration">12초 이상인 파일을 선택해 주세요</string>
     <string name="voices2_record_script">안녕하세요, 지금부터 알람톡에서 쓸 목소리를 함께 만들어 볼게요.\n매일 아침 이 목소리가 좋아하는 사람을 깨워 준다니, 설레지 않나요?\n\n오늘은 하늘도 맑고 바람도 부드러운, 걷기 좋은 날이에요.\n이런 날엔 따뜻한 커피 한 잔을 들고 동네를 한 바퀴 돌고 싶어지는 것 같아요.\n\n이번에는 숫자도 읽어 볼까요?\n하나, 둘, 셋, 넷, 다섯, 여섯, 일곱, 여덟, 아홉, 열.\n\n기쁜 날에는 마음껏 웃고, 지친 날에는 \"오늘도 수고했어\" 하고 말해 주세요.\n아침에 창문을 활짝 열고 시원한 공기를 들이마시면, 하루가 한결 가볍게 시작되거든요.\n\n벌써 마지막 문장이에요. 여기까지 또렷하게 읽어 주셔서 고마워요.\n내일 아침에는 이 목소리가 가장 다정한 알람이 되어 줄 거예요.</string>
     <string name="voices2_relationship_mom">엄마</string>
     <string name="voices2_relationship_dad">아빠</string>

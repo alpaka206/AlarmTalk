@@ -864,7 +864,20 @@ async function resolveDeclineTarget(
     res.rows.length > 0
       ? (typedRow<{ target_user_id: string | null }>(res.rows[0]!).target_user_id ?? null)
       : null;
-  // 대상이 아니면(생성자/무관자 포함) 존재 노출 최소화로 404. 생성자는 일반 삭제(DELETE /:id)를 쓴다.
+  // **알람이 이미 없으면 그래도 그만받기를 기록한다.**
+  //
+  // 발신자가 먼저 지운 뒤 수신자가 '그만받기' 를 누르면 여기서 404 가 났고, 클라는 그걸
+  // 멱등 성공으로 보고 로컬 행만 지웠다. 기록이 안 남으니 **같은 계정의 다른 기기**는
+  // 그 알람을 계속 갖고 울렸다 — 사용자는 껐다고 믿는다(Codex #675 P1).
+  // 기록은 (alarm_id, recipient_user_id) 한 행이라 알람이 없어도 쓸 수 있다.
+  //
+  // 트레이드오프: 존재하지 않는 id 로도 한 행이 써진다. 호출자 본인 id 로만 쌓이고 행이
+  // 작으며, 읽는 쪽(GET /alarm/declined)은 페이지 상한이 있어 감수한다.
+  if (res.rows.length === 0) {
+    return { id, target: userPk };
+  }
+  // 알람은 있는데 대상이 아니면(생성자/무관자 포함) 존재 노출 최소화로 404.
+  // 생성자는 일반 삭제(DELETE /:id)를 쓴다.
   if (!target || !viewer.includes(target)) {
     return { error: c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404) };
   }
@@ -898,14 +911,51 @@ alarmMutation.delete('/:id', async (c) => {
   }
 
   const targetRes = await db.execute({
-    sql: `SELECT message_id FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
+    sql: `SELECT message_id, target_user_id FROM alarms
+           WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
     args: [id, ...ownerIds],
   });
   const targetAlarm =
     targetRes.rows.length > 0
-      ? typedRow<{ message_id: string | null }>(targetRes.rows[0]!)
+      ? typedRow<{ message_id: string | null; target_user_id: string | null }>(targetRes.rows[0]!)
       : null;
   const messageId = targetAlarm?.message_id ?? null;
+  const recipientUserId = targetAlarm?.target_user_id ?? null;
+
+  // **남에게 보낸 알람이면 지우기 전에 보낸이를 적어 둔다.**
+  //
+  // 수신자 기기는 이 알람을 지우지 않는다 — 받은 뒤부터는 받는 사람 것이라, 기대고 자던
+  // 알람이 남의 조작으로 사라지면 그날 못 일어난다(#675). 그래서 그 기기에는 내 복제
+  // 목소리가 그대로 남는다. 나중에 내가 **탈퇴**하면 그걸 걷어내야 하는데, 그때는 훑을
+  // 알람 행이 이미 없다 — 표식이 유일한 근거다(Codex #676 P1).
+  //
+  // **순서와 fail-closed 가 둘 다 중요하다.** 지운 뒤에 적으면서 실패를 삼키면, 알람도
+  // 표식도 없는 상태가 남아 걷어낼 근거가 영영 사라진다 — 이 변경이 막으려던 바로 그
+  // 구멍이 되돌아온다(Codex #678 P1). 배포 직후 마이그레이션 93 이 아직 안 돌았을 때가
+  // 실제로 그 창이다. 그래서 **먼저 적고, 실패하면 지우지 않는다** — 사용자는 재시도하면
+  // 되고 잃는 것이 없다(CLAUDE.md 「배포가 마이그레이션보다 먼저 돈다」 규약).
+  //
+  // `declined=0, revoked=0` 이라 지금은 아무 효력이 없다(GET /alarm/declined 는 둘 중
+  // 하나가 1 인 행만 내보낸다). 탈퇴 때 purgeUserAccount 가 revoked=1 로 바꾸고
+  // sender_user_id 는 지운다.
+  if (recipientUserId) {
+    try {
+      await db.execute({
+        sql: `INSERT INTO alarm_recipient_state
+                (alarm_id, recipient_user_id, declined, revoked, sender_user_id, created_at, updated_at)
+              VALUES (?, ?, 0, 0, ?, datetime('now'), datetime('now'))
+              ON CONFLICT(alarm_id, recipient_user_id)
+              DO UPDATE SET sender_user_id = excluded.sender_user_id, updated_at = datetime('now')`,
+        args: [id, recipientUserId, c.get('userIdPK') ?? ownerIds[0]!],
+      });
+    } catch (err) {
+      logRouteError(c, err);
+      return c.json(
+        { error: 'Failed to delete alarm', error_code: 'ALARM_DELETE_FAILED' },
+        500,
+      );
+    }
+  }
 
   const result = await db.execute({
     sql: `DELETE FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)})`,

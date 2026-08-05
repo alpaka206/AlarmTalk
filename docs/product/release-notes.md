@@ -19,6 +19,101 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ---
 
+## 1.2.3 (versionCode 23)
+
+`fix/received-alarm-ownership`(#675) 한 건이다. 마이그레이션은 없다.
+
+핵심은 **받은 알람의 주인이 바뀌었다**는 것이다. 예전에는 15분 주기·푸시 pull 이 서버 값으로
+계속 덮어써서, 수신자가 시각을 고쳐도 1초 만에 조용히 되돌아갔다 — 사용자는 고쳐 뒀다고 믿고
+그 시각에 못 일어난다. 이제 서버 값은 **처음 받을 때의 씨앗**일 뿐이다.
+
+### ko-KR
+
+```
+• 받은 알람은 이제 받은 사람 것입니다. 시간을 바꾸거나 꺼 두면 그대로 유지됩니다.
+• 보낸 사람이 알람을 지워도 내 알람은 남습니다. 그만받기를 누르면 다른 기기에서도 사라집니다.
+• 받은 알람의 스누즈가 사라지거나, 방금 끈 알람이 다시 울리던 문제를 고쳤습니다.
+• 목소리 만들기: 예시 대본은 필요할 때만 펼칩니다. 녹음이 짧으면 버튼에서 바로 알려 줍니다.
+• 화면을 캡처할 수 있습니다.
+```
+
+### en-US
+
+```
+• Received alarms are yours now — change the time or turn one off and it stays that way.
+• If the sender deletes an alarm, yours stays. Stop receiving also clears it on your other devices.
+• Fixed snoozes vanishing on received alarms, and an alarm you just turned off ringing again.
+• Creating a voice: the sample script stays folded until you need it, and the button says when a recording is too short.
+• Screenshots work now.
+```
+
+### ja-JP
+
+```
+• 受け取ったアラームは受け取った人のものになりました。時刻を変えても、オフにしてもそのまま保たれます。
+• 送った人が削除しても自分のアラームは残ります。「受け取らない」を押すと他の端末からも消えます。
+• 受け取ったアラームのスヌーズが消える問題、今オフにしたアラームが再び鳴る問題を修正しました。
+• 声を作る画面: サンプル台本は必要なときだけ開きます。録音が短いとボタンで知らせます。
+• スクリーンショットが撮れるようになりました。
+```
+
+---
+
+## 1.2.2 (versionCode 22)
+
+`fix/session-persistence`(#665)·`fix/alarm-survives-update`(#666) 가 **이 출시에서 처음 나간다.**
+그 둘을 "다음 출시" 로 따로 적어 두고 1.2.2 노트를 쓰다가 아래 필수 한 줄을 빠뜨릴 뻔했다
+(Codex #674 P1). 대기 절은 이 절로 합쳤다.
+
+### 이 출시에 반드시 넣어야 하는 한 줄
+
+**1.2.1 이하에서 이미 로그인이 풀린 기기는 이 업데이트만으로 알람이 되살아나지 않는다.**
+한 번 로그인해야 한다. 아래 ko/en/ja 의 두 번째 줄이 그 안내다.
+
+왜 자동으로 못 하는가: 되살려도 되는 계정을 가리는 표시(`session_expired_owner`)가 이번
+출시에서 처음 생긴다. 그 이전 버전에서는 **자동 로그아웃과 사용자가 직접 한 로그아웃이
+로컬에 똑같은 흔적을 남긴다** — 알람 행은 둘 다 `ownerUserId=A`·`enabled=1` 이고 세션만
+비어 있다. 추측으로 되살리면 직접 로그아웃한 사람의 알람이 울리는데, 그 목록은 로그인
+화면에 가려 **끌 수가 없다.** 못 가릴 때는 로그인 한 번 시키는 쪽이 안전하다(2026-08-04 확정).
+
+이번 출시부터는 재발하지 않는다 — 토큰 수명 90일 + `/auth/me` 롤링 갱신 + 자동 만료 표시.
+
+### ko-KR
+
+```
+• 앱을 업데이트해도 알람이 그대로 울립니다. 앱을 열지 않아도 예약이 다시 잡힙니다.
+• 이전 버전에서 로그인이 이미 풀려 있었다면, 한 번만 로그인해 주세요. 알람이 되살아납니다.
+• 로그인이 주기적으로 풀리던 문제를 고쳤습니다.
+• 스누즈를 누른 알람이 5분 뒤에 울리지 않던 문제, 껐던 알람이 다시 켜져 울리던 문제를 고쳤습니다.
+• 알람 음성이 준비되는 동안 진행률을 하나로 보여줍니다.
+• 권한이 없을 때 무엇을 켜야 하는지, 켜지 않으면 어떻게 되는지 정확히 안내합니다.
+• 알람 설정 창을 같은 모양으로 통일하고 아이콘을 새로 바꿨습니다.
+```
+
+### en-US
+
+```
+• Alarms keep ringing after an app update — rescheduled without opening the app.
+• If you were already signed out on an older version, sign in once and your alarms come back.
+• Fixed sign-in dropping every so often.
+• Fixed snoozed alarms not ringing after 5 minutes, and alarms switching themselves back on.
+• One progress number while your alarm voice gets ready.
+• Clearer permission notices; new app icon.
+```
+
+### ja-JP
+
+```
+• アプリを更新してもアラームはそのまま鳴ります。アプリを開かなくても再設定されます。
+• 以前のバージョンで既にログアウトされていた場合は、一度ログインしてください。アラームが戻ります。
+• ログインが定期的に切れる問題を修正しました。
+• スヌーズしたアラームが5分後に鳴らない問題、オフにしたアラームが再びオンになって鳴る問題を修正しました。
+• アラーム音声の準備状況を一つの進捗で表示します。
+• 権限が足りないときの案内を正確にしました。アイコンも新しくなりました。
+```
+
+---
+
 ## 1.2.1 (versionCode 21)
 
 `versionCode 20` 은 **건너뛴 번호**다 — 7/29 에 20 을 찍은 빌드가 Play 에 올라가 있어 재사용할
@@ -76,59 +171,3 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 | 동의 철회 | `ConsentHistoryScreen.kt` (더보기 → 설정 → 약관 및 개인정보 처리 동의). **철회할 수 있는 건 두 가지뿐** — 음성 생체정보는 단방향 "동의 철회" 액션, 광고성 정보 수신은 토글. 약관·개인정보·만14세·국외이전 같은 **필수 동의는 철회 액션이 없다**(국외이전은 `:141` 에 의도라고 적혀 있다). 그래서 "동의 철회 언제든 가능" 이라고 뭉뚱그리지 않고 두 항목을 이름으로 적는다 |
 | 준비 화면 탈출 | `VoiceOnboardingScreen.kt` `ESCAPE_GRACE_MILLIS = 12_000` |
 | 계정 전환 잔존 데이터 | `fix(android): 같은 계열의 남은 크로스계정 누수 네 곳을 막는다` 외 |
-
----
-
-## 다음 출시 (versionCode 미정 — 릴리스 시 +1)
-
-`fix/session-persistence`(#665) + `fix/alarm-survives-update`(#666) 기준. 번호는 실제 업로드
-시점에 정한다.
-
-### 이 출시에 반드시 넣어야 하는 한 줄
-
-**1.2.1 이하에서 이미 로그인이 풀린 기기는 이 업데이트만으로 알람이 되살아나지 않는다.**
-한 번 로그인해야 한다. 아래 ko/en/ja 마지막 줄이 그 안내다.
-
-왜 자동으로 못 하는가: 되살려도 되는 계정을 가리는 표시(`session_expired_owner`)가 이번
-출시에서 처음 생긴다. 그 이전 버전에서는 **자동 로그아웃과 사용자가 직접 한 로그아웃이
-로컬에 똑같은 흔적을 남긴다** — 알람 행은 둘 다 `ownerUserId=A`·`enabled=1` 이고 세션만
-비어 있다. 추측으로 되살리면 직접 로그아웃한 사람의 알람이 울리는데, 그 목록은 로그인
-화면에 가려 **끌 수가 없다.** 못 가릴 때는 로그인 한 번 시키는 쪽이 안전하다(2026-08-04 확정).
-
-이번 출시부터는 재발하지 않는다 — 토큰 수명 90일 + `/auth/me` 롤링 갱신 + 자동 만료 표시.
-
-### ko-KR
-
-```
-• 앱을 업데이트해도 알람이 그대로 울립니다. 앱을 열지 않아도 예약이 다시 잡힙니다.
-• 로그인이 주기적으로 풀리던 문제를 고쳤습니다.
-• 스누즈를 누른 알람이 5분 뒤에 울리지 않던 문제를 고쳤습니다.
-• 이전 버전에서 로그인이 이미 풀려 있었다면, 한 번만 로그인해 주세요. 알람이 되살아납니다.
-```
-
-### en-US
-
-```
-• Alarms keep ringing after an app update — they are rescheduled without opening the app.
-• Fixed sign-in dropping every so often.
-• Fixed snoozed alarms not ringing again after 5 minutes.
-• If you were already signed out on an older version, sign in once and your alarms come back.
-```
-
-### ja-JP
-
-```
-• アプリを更新してもアラームはそのまま鳴ります。アプリを開かなくても再設定されます。
-• ログインが定期的に切れる問題を修正しました。
-• スヌーズしたアラームが5分後に鳴らない問題を修正しました。
-• 以前のバージョンで既にログアウトされていた場合は、一度ログインしてください。アラームが戻ります。
-```
-
-### 근거 (적은 항목만)
-
-| 노트 항목 | 근거 |
-| --- | --- |
-| 업데이트 후 재예약 | `AlarmScheduleIntegrityWorker`(15분 주기, 무제약) + `BootCompletedReceiver` 의 `MY_PACKAGE_REPLACED`. **강제 종료된 앱은 브로드캐스트도 워커도 못 받는다** — 그 경우는 이 노트로 약속하지 않는다 |
-| 로그인 유지 | `packages/backend/src/lib/jwt.ts` `DEFAULT_TTL_SECONDS = 90일`, `GET /auth/me` 의 롤링 토큰 재발급 |
-| 스누즈 | `AlarmRepository.snooze` 를 `restoreMutex` 안으로 — 정합성 워커가 스누즈를 다음 날로 덮던 경합 |
-| 한 번 로그인 안내 | `AuthSessionStore.sessionExpiredOwnerUserId` KDoc 의 '구버전 코호트' 절 |

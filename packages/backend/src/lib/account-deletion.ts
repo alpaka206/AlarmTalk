@@ -57,8 +57,36 @@ export async function pseudonymizeBillingForRetention(
 }
 
 /**
+ * 탈퇴로 목소리가 철회된 받은-알람. 수신자 기기가 **즉시** 걷어내도록 커밋 후 push 를
+ * 보내야 해서, 행이 지워지기 전에 모아 호출부로 돌려준다.
+ * (`notifyDowngradedAlarms` 의 target 형태 그대로 — 수신자당 한 번으로 접어 보낸다.)
+ */
+export type RevokedRecipientTarget = {
+  alarmId: string;
+  ownerUserId: string;
+  isReceived: boolean;
+};
+
+/** 탈퇴 커밋 후 보내야 할 알림. 그대로 `notifyDowngradedAlarms` 의 3·4번째 인자다. */
+export type AccountPurgeNotifications = {
+  /** 서버 알람 행에서 찾은 강등 대상. 받은 알람이면 pull, 본인 알람이면 접근권 재확인. */
+  downgradedAlarms: RevokedRecipientTarget[];
+  /**
+   * 서버 알람 행과 **무관하게** 목소리 접근권을 잃은 계정들.
+   *
+   * 알람은 로컬이 원본이라, 아직 서버로 동기화되지 않은 알람은 위 목록에 안 잡힌다.
+   * 그런데 발사는 로컬이고 울림 시점 게이트도 이 경우를 못 봐서, 그 기기는 탈퇴자의
+   * 녹음으로 계속 울린다. 그래서 **내 목소리를 볼 수 있었던 사람 전부**에게 알린다.
+   */
+  voiceAccessRevokedUserIds: string[];
+};
+
+/**
  * 사용자 계정과 모든 관련 데이터를 영구 삭제한다. DELETE /user/me 핸들러와 탈퇴 유예
  * cron 양쪽에서 재사용한다. SQL 발행 순서는 기존 핸들러와 동일하게 유지한다.
+ *
+ * 반환값은 **커밋 후에** 보내야 할 알림이다(트랜잭션 안에서 push 를 보내면 롤백될 수
+ * 있는 변경을 미리 알리게 된다).
  */
 export async function purgeUserAccount(
   tx: DbExecutor,
@@ -66,7 +94,7 @@ export async function purgeUserAccount(
   // 토큰이 담고 있던 로그인 식별자. 통일 이전에 user_id 컬럼에 이 값이 저장된 자식
   // 데이터까지 지우려면 users.id 와 함께 넘겨야 한다(같은 값이면 자연히 한 벌로 동작).
   userLoginId: string,
-): Promise<void> {
+): Promise<AccountPurgeNotifications> {
   // userPk(users.id) 를 해석하지 못한 채 진행하면 PK 로 연결된 자식 PII(클론 음성·
   // 결제 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
   // 해석 실패이므로 소리 없이 users 만 지우지 말고 throw 해 호출부에서 롤백되게 한다.
@@ -81,6 +109,8 @@ export async function purgeUserAccount(
       );
     }
   }
+  const revokedTargets: RevokedRecipientTarget[] = [];
+  const voiceAccessRevokedUserIds: string[] = [];
   if (userPk) {
     // 중복을 제거하지 않는다. 아래 DELETE 들이 `IN (?, ?)` 로 개수를 고정해 두고 있어서,
     // 두 값이 같을 때(=정규화 이후의 일반적인 경우) 하나로 줄이면 바인딩 개수가 어긋나
@@ -90,6 +120,36 @@ export async function purgeUserAccount(
     // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
     await enqueueUserVoiceArtifacts(tx, userIds);
     await cancelActiveSubscriptionsForUser(tx, userPk);
+
+    // **내 클론을 볼 수 있었던 사람들을 그룹이 해체되기 전에 뽑아 둔다.**
+    //
+    // 아래에서 plan_group_members·plan_groups 를 지우고 나면 '누가 내 목소리를 쓸 수
+    // 있었는지' 를 알 방법이 없어진다. 그리고 서버 alarms 행만 보면 부족하다 — 알람은
+    // 로컬이 원본이라 아직 동기화 안 된 알람은 서버에 없는데, 그 기기는 캐시된 내 녹음으로
+    // 그대로 울린다. 그래서 알람 유무와 무관하게 **볼 수 있었던 사람 전부**에게 알린다
+    // (받은 쪽은 목소리 목록을 다시 받아 '없어진 목소리' 알람만 강등한다 — 과다발송해도
+    // 재조회로 확인하므로 안전하다). 스코프는 공유 목소리 조회와 같은 그룹 동석 기준이다.
+    //
+    // 클론이 하나도 없으면 파기할 생체정보가 없으니 아무도 안 깨운다.
+    const cloneProfiles = await tx.execute({
+      // is_system 이 시스템/클론을 가르는 유일한 컬럼이다(paid-voice-cleanup.ts 와 같은 기준).
+      sql: `SELECT id FROM voice_profiles
+            WHERE user_id IN (?, ?) AND COALESCE(is_system, 0) = 0`,
+      args: userIds,
+    });
+    const cloneIds = cloneProfiles.rows.map((row) => String(row.id));
+    if (cloneIds.length > 0) {
+      const members = await tx.execute({
+        sql: `SELECT DISTINCT m2.user_id
+                FROM plan_group_members m1
+                JOIN plan_group_members m2 ON m2.plan_group_id = m1.plan_group_id
+               WHERE m1.user_id IN (?, ?) AND m2.user_id NOT IN (?, ?)`,
+        args: [...userIds, ...userIds],
+      });
+      for (const row of members.rows) {
+        voiceAccessRevokedUserIds.push(String(row.user_id));
+      }
+    }
 
     await tx.execute({
       sql: `DELETE FROM voucher_redemptions
@@ -155,11 +215,122 @@ export async function purgeUserAccount(
                )`,
       args: [...userIds, ...userIds, ...userIds],
     });
+    // 이 사람이 **남에게 보낸** 알람은 지우기 전에 수신자 쪽에 철회 기록을 남긴다.
+    // 안 남기면 수신자 기기는 '보낸 사람이 알람 하나를 지웠다'(=내 알람은 남긴다)와
+    // 구분하지 못해, 탈퇴한 사람의 복제 목소리가 그 기기에서 계속 울린다.
+    // 기록을 보면 수신자 앱이 목소리만 걷어내고 알람은 남긴다(RemoteAlarmPullSyncService).
+    //
+    // 알릴 대상은 행이 지워지기 전에 뽑아 둔다. 기록만 남기고 알리지 않으면 수신자가
+    // 백그라운드일 때 다음 주기 pull 까지 탈퇴자의 목소리로 계속 울린다 — 파기 요구가
+    // 걸린 생체정보를 폴백 주기만큼 더 들고 있게 된다.
+    const revoked = await tx.execute({
+      sql: `SELECT a.id AS alarm_id, a.target_user_id AS recipient_user_id
+              FROM alarms a
+             WHERE a.user_id IN (?, ?)
+               AND a.target_user_id IS NOT NULL
+               AND a.target_user_id NOT IN (?, ?)`,
+      args: [...userIds, ...userIds],
+    });
+    for (const row of revoked.rows) {
+      revokedTargets.push({
+        alarmId: String(row.alarm_id),
+        ownerUserId: String(row.recipient_user_id),
+        isReceived: true,
+      });
+    }
+    await tx.execute({
+      sql: `INSERT INTO alarm_recipient_state
+              (alarm_id, recipient_user_id, declined, revoked, created_at, updated_at)
+            SELECT a.id, a.target_user_id, 0, 1, datetime('now'), datetime('now')
+              FROM alarms a
+             WHERE a.user_id IN (?, ?)
+               AND a.target_user_id IS NOT NULL
+               AND a.target_user_id NOT IN (?, ?)
+            ON CONFLICT(alarm_id, recipient_user_id)
+              DO UPDATE SET revoked = 1, updated_at = datetime('now')`,
+      args: [...userIds, ...userIds],
+    });
+    // **내가 이미 지운 보낸 알람**도 걷어낸다. 위 SELECT/INSERT 는 `alarms` 행을 훑으므로,
+    // 지운 알람은 잡히지 않는다 — 그런데 수신자 기기는 그 알람을 그대로 들고 있다(#675).
+    // 삭제할 때 남겨 둔 표식(sender_user_id)이 그 근거다(Codex #676 P1).
+    const senderTombstones = await tx.execute({
+      sql: `SELECT alarm_id, recipient_user_id FROM alarm_recipient_state
+             WHERE sender_user_id IN (?, ?) AND recipient_user_id NOT IN (?, ?)`,
+      args: [...userIds, ...userIds],
+    });
+    for (const row of senderTombstones.rows) {
+      revokedTargets.push({
+        alarmId: String(row.alarm_id),
+        ownerUserId: String(row.recipient_user_id),
+        isReceived: true,
+      });
+    }
+    // 플래그를 세우면서 **보낸이 식별자는 지운다** — 철회 사실만 남기고 탈퇴자의 직접
+    // 식별자는 남기지 않는다(개인정보보호법 제21조). 이 행 자체는 수신자 것이라 남는다.
+    await tx.execute({
+      sql: `UPDATE alarm_recipient_state
+               SET revoked = 1, sender_user_id = NULL, updated_at = datetime('now')
+             WHERE sender_user_id IN (?, ?)`,
+      args: userIds,
+    });
     await tx.execute({
       sql: `DELETE FROM alarms
             WHERE user_id IN (?, ?) OR target_user_id IN (?, ?)`,
       args: [...userIds, ...userIds],
     });
+    // **내 클론 목소리를 쓰던 남의 알람도 목소리를 잃는다.**
+    //
+    // 위 철회 기록은 '내가 보낸 알람' 만 덮는다. 그런데 같은 플랜 그룹에서 내 목소리를 공유
+    // 받은 사람은 **자기 알람**에 내 클론을 골라 뒀을 수 있다. 그 알람은 내 알람이 아니라
+    // 지워지지 않고, 그 기기는 캐시된 녹음으로 계속 울린다 — 파기 대상인 내 생체정보다.
+    // 서버 행을 알람음으로 내리고(아래 UPDATE), 주인들에게 알려 기기에서도 걷어내게 한다
+    // (isReceived=false → voice_access_revoked → VoiceAccessSyncWorker).
+    //
+    // 여긴 `DELETE FROM alarms` **뒤**라 내 알람은 이미 없다 — 남의 알람만 남는다.
+    // messages·voice_profiles 는 아직 살아 있어야 하므로 그 삭제보다는 **앞**이어야 한다.
+    // (cloneIds 는 위에서 그룹 해체 전에 뽑아 둔 것을 그대로 쓴다.)
+    if (cloneIds.length > 0) {
+      const cph = cloneIds.map(() => '?').join(', ');
+      const sharedScope = `voice_profile_id IN (${cph})
+             OR message_id IN (SELECT id FROM messages WHERE voice_profile_id IN (${cph}))`;
+      const sharedArgs = [...cloneIds, ...cloneIds];
+      const sharedVoiceAlarms = await tx.execute({
+        sql: `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
+                     target_user_id IS NOT NULL AS is_received
+                FROM alarms
+               WHERE ${sharedScope}`,
+        args: sharedArgs,
+      });
+      for (const row of sharedVoiceAlarms.rows) {
+        revokedTargets.push({
+          alarmId: String(row.id),
+          ownerUserId: String(row.owner_user_id),
+          isReceived: Number(row.is_received) === 1,
+        });
+      }
+      await tx.execute({
+        sql: `UPDATE alarms
+              SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+                  message_id = NULL, voice_profile_id = NULL
+              WHERE ${sharedScope}`,
+        args: sharedArgs,
+      });
+      // 알람에서 떼어 냈다고 끝이 아니다 — 그 알람이 쓰던 **문구 행**은 남의 것이라
+      // (messages.user_id = 그 멤버) 아래 `DELETE FROM messages WHERE user_id IN (내 것)`
+      // 에 안 걸리는데, messages.voice_profile_id 는 NOT NULL FK 로 내 클론을 가리킨다.
+      // 그대로 두면 `DELETE FROM voice_profiles` 가 FK 로 실패해 **탈퇴가 통째로 500** 이
+      // 된다(paid-voice-cleanup 이 같은 순서로 지우는 이유다). message_library 가
+      // messages 를 참조하므로 그쪽을 먼저 지운다.
+      await tx.execute({
+        sql: `DELETE FROM message_library
+              WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id IN (${cph}))`,
+        args: cloneIds,
+      });
+      await tx.execute({
+        sql: `DELETE FROM messages WHERE voice_profile_id IN (${cph})`,
+        args: cloneIds,
+      });
+    }
     await tx.execute({
       sql: `DELETE FROM message_library
             WHERE user_id IN (?, ?)
@@ -225,4 +396,6 @@ export async function purgeUserAccount(
     sql: `DELETE FROM users WHERE id = ? OR google_id = ?`,
     args: [userPk ?? userLoginId, userLoginId],
   });
+
+  return { downgradedAlarms: revokedTargets, voiceAccessRevokedUserIds };
 }
