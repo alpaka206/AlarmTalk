@@ -13,6 +13,12 @@ export interface Env {
    * 하므로 비밀키가 필요 없다. `.p8` 은 웹/서버 대 서버 플로우에서만 쓴다.
    */
   APPLE_BUNDLE_ID?: string;
+  /** App Store Connect Issuer ID (UUID). 미설정 시 Apple 결제 503. */
+  APPLE_ISSUER_ID?: string;
+  /** App Store Server API 키의 Key ID. */
+  APPLE_KEY_ID?: string;
+  /** App Store Server API 개인키(.p8 PEM 전체). 결제 검증 **전용** — 로그인과 무관하다. */
+  APPLE_PRIVATE_KEY?: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
   GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED?: string;
   GOOGLE_VERTEX_LOCATION?: string;

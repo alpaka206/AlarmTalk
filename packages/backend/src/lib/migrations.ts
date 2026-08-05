@@ -2067,6 +2067,66 @@ export const migrations: Migration[] = [
         WHERE apple_id IS NOT NULL`,
     ],
   },
+  {
+    /**
+     * Apple 결제(StoreKit 2)를 위한 스키마 복구. #82 가 떨궜던 것을 같은 정의로 되살리고,
+     * #88 이 `provider = 'google'` 로 좁혀 둔 store_transactions CHECK 를 넓힌다.
+     *
+     * store_transactions 는 CHECK 변경이라 테이블 재작성이 필요하다(#88·#94 와 같은 방식).
+     * **넓히는 방향이라 필터 없이 전 행을 옮긴다** — 기존 구글 결제 이력은 그대로 보존된다.
+     * 인덱스 3개를 모두 되살린다: #88 이 만든 provider_tx·user 둘과 #89 가 추가한
+     * subscription 하나(구독 해지 경로가 subscription_id 로 훑는다).
+     *
+     * subscriptions 의 apple 컬럼 3개는 ALTER ADD COLUMN 이라 append-only 다:
+     *   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
+     *   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
+     *   - apple_product_id: SKU (com.voicealarm.nativeapp.ios.personal_monthly 등)
+     *
+     * ⚠ 기존 구글 경로는 건드리지 않는다. provider 를 좁히던 CHECK 만 넓히는 것이라
+     * 구글 결제 코드·데이터는 그대로 동작한다.
+     */
+    id: 96,
+    name: 'restore-apple-billing',
+    atomic: true,
+    statements: [
+      `ALTER TABLE subscriptions ADD COLUMN apple_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_original_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_product_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_apple_transaction
+        ON subscriptions(apple_transaction_id)
+        WHERE apple_transaction_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_apple_original
+        ON subscriptions(apple_original_transaction_id)
+        WHERE apple_original_transaction_id IS NOT NULL`,
+      `CREATE TABLE store_transactions_v3 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK(provider IN ('apple','google')),
+        provider_transaction_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        subscription_id TEXT,
+        expires_at TEXT,
+        raw_payload TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO store_transactions_v3 (
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      ) SELECT
+        id, user_id, provider, provider_transaction_id, product_id, plan_key,
+        subscription_id, expires_at, raw_payload, created_at
+      FROM store_transactions`,
+      `DROP TABLE store_transactions`,
+      `ALTER TABLE store_transactions_v3 RENAME TO store_transactions`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_store_transactions_provider_tx
+        ON store_transactions(provider, provider_transaction_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_user
+        ON store_transactions(user_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_subscription
+        ON store_transactions(subscription_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

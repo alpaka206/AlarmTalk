@@ -1,5 +1,5 @@
 /**
- * 스토어 결제(Google Play) entitlement 적용.
+ * 스토어 결제(Google Play / App Store) entitlement 적용.
  *
  * 각 provider 라우트가 결제를 외부 API 로 검증한 뒤 이 모듈로 구독을 반영한다.
  *  - store_transactions (provider, provider_transaction_id) 유니크로 중복 처리 방지.
@@ -12,7 +12,9 @@ import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser, clearPaidVoiceRetention } from './billing-cancel';
 import { planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
 
-export type StoreProvider = 'google';
+// 'apple' 은 마이그레이션 #96 이 store_transactions.provider CHECK 에 되돌린 값이다.
+// applyStoreEntitlement 자체는 원래부터 provider-agnostic 이라 로직 변경이 없다.
+export type StoreProvider = 'google' | 'apple';
 
 export interface StorePlan {
   id: string;
