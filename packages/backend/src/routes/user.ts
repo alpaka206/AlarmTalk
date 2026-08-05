@@ -261,12 +261,27 @@ user.delete('/me', async (c) => {
     if (!pepper) {
       throw new Error('PASSWORD_PEPPER is not configured');
     }
-    await withWriteTransaction(db, async (tx) => {
+    const purgeNotifications = await withWriteTransaction(db, async (tx) => {
       if (userPk) {
         await pseudonymizeBillingForRetention(tx, userPk, pepper, now);
       }
-      await purgeUserAccount(tx, userPk, userLoginId);
+      return purgeUserAccount(tx, userPk, userLoginId);
     });
+
+    // 내 목소리를 들고 있는 기기들에 **커밋 후에** 알린다 — 받은 알람은 pull 신호로
+    // (family_alarm), 본인 알람·미동기화 알람은 접근권 재확인으로(voice_access_revoked).
+    // 안 보내면 다음 주기까지 탈퇴자의 복제 목소리로 계속 울린다.
+    // 실패해도 탈퇴는 성공이다(즉시성만 잃고 주기 재조회가 폴백).
+    try {
+      await notifyDowngradedAlarms(
+        db,
+        c.env,
+        purgeNotifications.downgradedAlarms,
+        purgeNotifications.voiceAccessRevokedUserIds,
+      );
+    } catch (err) {
+      logRouteError(c, err);
+    }
 
     return c.json({ success: true });
   } catch (err) {

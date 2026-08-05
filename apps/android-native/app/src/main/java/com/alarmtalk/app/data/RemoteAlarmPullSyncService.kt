@@ -266,21 +266,28 @@ internal class RemoteAlarmPullSyncService(
         var pruned = 0
         // 그만받기 한 알람만 지우기 위해 서버에 따로 묻는다. 실패하면(네트워크 등) **아무것도
         // 지우지 않는다** — 못 물어봤다고 남의 알람을 지우는 쪽으로 기울면 안 된다.
-        val declinedRemoteIds = runCatching {
+        val recipientState = runCatching {
             // 페이지를 끝까지 받는다 — 한 페이지만 보고 지우면 뒤 페이지에 있는 그만받기
             // 알람이 계속 울린다. 페이지 상한은 서버가 100 으로 클램프한다.
-            val collected = mutableSetOf<String>()
+            val declined = mutableSetOf<String>()
+            val revoked = mutableSetOf<String>()
             var offset = 0
             while (true) {
                 val page = api.getDeclinedAlarmIds(authorization, limit = 100, offset = offset)
-                collected.addAll(page.alarmIds)
-                if (!page.hasMore || page.alarmIds.isEmpty()) break
-                offset += page.alarmIds.size
+                declined.addAll(page.alarmIds)
+                revoked.addAll(page.revokedAlarmIds)
+                val rows = page.alarmIds.size + page.revokedAlarmIds.size
+                if (!page.hasMore || rows == 0) break
+                // 서버는 한 페이지에 두 종류를 섞어 보낸다. **합만큼** 전진해야 오프셋이
+                // 어긋나지 않는다(한쪽 크기로 전진하면 같은 행을 다시 읽거나 건너뛴다).
+                offset += rows
             }
-            collected.toSet()
+            declined.toSet() to revoked.toSet()
         }
             .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
             .getOrNull()
+        val declinedRemoteIds = recipientState?.first
+        val revokedRemoteIds = recipientState?.second.orEmpty()
         if (snapshotComplete && declinedRemoteIds != null) {
             val servedRemoteIds = remoteAlarms.map { it.id }.toSet()
             val allRemoteIds = allRemote.map { it.id }.toSet()
@@ -288,14 +295,42 @@ internal class RemoteAlarmPullSyncService(
             // 방금 지운 알람의 옛 예약을 되심어 **서버가 취소한 알람이 그대로 울린다**
             // (Codex #666 P1). 네트워크 없이 로컬만 만지므로 통째로 잡아도 짧다.
             alarmMutationLock.withLock {
-                alarmDao.getAllAlarms()
+                val receivedRows = alarmDao.getAllAlarms().filter {
+                    it.origin == AlarmOrigins.RECEIVED_REMOTE &&
+                        ownedByRecipient(it) &&
+                        !it.remoteAlarmId.isNullOrBlank()
+                }
+                // **발신자가 탈퇴하면 목소리만 걷어내고 알람은 남긴다.** 복제 목소리는 그
+                // 사람의 생체정보라 파기 대상이지만, 시각은 수신자가 기대고 자는 자기 정보다 —
+                // 통째로 지우면 그날 못 일어난다(Codex #676 P1).
+                //
+                // 대상은 [hasSenderVoice] — '목소리가 있는 행' 이 아니라 '발신자 음성을 든 행'
+                // 이다. 서버는 철회 기록을 영구히 들고 있어서, 넓게 잡으면 수신자가 나중에
+                // 넣은 자기 목소리까지 매번 걷어낸다(Codex #677 P2). 이 판정이 캐시 키를
+                // 요구하므로, 키 없이 파일만 남아 삭제를 못 하는 경우도 생기지 않는다(#677 P1).
+                receivedRows
+                    .filter { it.remoteAlarmId in revokedRemoteIds && hasSenderVoice(it) }
+                    .forEach { revokedRow ->
+                        val cacheKey = revokedRow.audioCacheKey
+                        val localAudioUri = revokedRow.localAudioUri
+                        alarmDao.upsert(withVoiceRevoked(revokedRow, context))
+                        // 먼저 upsert 해 이 행의 참조를 지운 뒤 센다 — 같은 메시지를 여러 행이
+                        // 쓰고 있어도 마지막 행에서 0 이 되어 파일이 실제로 지워진다.
+                        if (cacheKey.isNullOrBlank()) {
+                            // 키가 없는 옛 행은 참조를 URI 로밖에 못 센다. 이걸 안 하면 방금
+                            // 경로를 비운 파일이 주인 없이 디스크에 남는다(Codex #677 P1).
+                            alarmAudioStore.deleteLocalAudioIfUnreferenced(alarmDao, localAudioUri)
+                        } else {
+                            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+                        }
+                        Log.i(TAG, "Revoked voice on received alarm remoteId=${revokedRow.remoteAlarmId}")
+                    }
+                receivedRows
                     .filter {
                         it.origin == AlarmOrigins.RECEIVED_REMOTE &&
                             // 서버 알람의 수신자는 한 명이라, 앞 계정이 받은 알람은 이 스냅샷에
                             // 없는 게 당연하다. 소유자를 안 보면 B 의 첫 완전 pull 이 A 가 받은
                             // 알람과 그 음성 캐시를 통째로 지운다.
-                            ownedByRecipient(it) &&
-                            !it.remoteAlarmId.isNullOrBlank() &&
                             it.remoteAlarmId !in servedRemoteIds &&
                             // 서버 목록에서 빠지는 이유는 셋이고, 하나만 남겨야 한다.
                             //  (a) 수신자가 그만받기 → 지운다(다른 기기에서도 지워져야 한다)
@@ -366,7 +401,7 @@ internal class RemoteAlarmPullSyncService(
     ): CachedAlarmAudio? =
         if (shouldDownloadRemoteMessageAudio(remote)) {
             val messageId = remote.messageId?.trim().orEmpty()
-            val cacheKey = "remote-message-$messageId"
+            val cacheKey = "$REMOTE_MESSAGE_CACHE_KEY_PREFIX$messageId"
             // 이미 받아 둔 음성이면 다시 받지 않는다. 이 pull 은 로그인마다·푸시마다 도는데,
             // 그때마다 같은 파일을 다시 내려받으면 재로그인 한 번에 받은 알람 수만큼 왕복이
             // 생긴다(생성 음성은 messageId 당 불변이라 다시 받을 이유가 없다).
@@ -499,9 +534,64 @@ internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive
     }
 }
 
+/**
+ * 받은 알람의 음성 캐시 키 접두사. **발신자가 보낸 음성의 유일한 표식**이라,
+ * 철회([hasSenderVoice])가 수신자 자신이 고른 음성과 구분하는 근거가 된다.
+ */
+internal const val REMOTE_MESSAGE_CACHE_KEY_PREFIX = "remote-message-"
+
 internal fun shouldDownloadRemoteMessageAudio(remote: RemoteAlarm): Boolean =
     !remote.messageId.isNullOrBlank() &&
         !remote.messageAudioUrl.isNullOrBlank()
+
+/**
+ * 이 행이 아직 **발신자가 보낸** 목소리를 들고 있는가.
+ *
+ * '목소리가 있는가' 로 물으면 안 된다. 서버는 철회 기록을 영구히 들고 있고 그 알람의
+ * 서버 행은 사라져 다시 만들어지지 않으므로, 받은 뒤 수신자가 자기 목소리(내 클론·기본
+ * 목소리·직접 녹음)를 넣으면 **pull 마다 그것까지 걷어내 다시는 목소리를 못 쓰는 알람**이
+ * 된다(Codex #677 P2). 걷어낼 것은 탈퇴한 사람이 보낸 그 음성뿐이다.
+ *
+ * 판별은 캐시 키로 한다 — 받은 알람의 음성은 [RemoteAlarmPullSyncService.fetchRemoteMessageAudio]
+ * 만 만들고([REMOTE_MESSAGE_CACHE_KEY_PREFIX] + 서버 messageId), 수신자가 고른 음성은
+ * TTS·스톡·녹음 키라 겹치지 않는다. 무료로 잠긴 행(playMode 는 ALARM_ONLY 인데 파일은
+ * 그대로)도 이 키로 잡힌다 — 재생만 막혔지 생체정보는 디스크에 남아 있으니 걷어내야 한다.
+ */
+internal fun hasSenderVoice(alarm: AlarmEntity): Boolean =
+    alarm.audioCacheKey?.startsWith(REMOTE_MESSAGE_CACHE_KEY_PREFIX) == true ||
+        // 캐시 키 없이 파일 경로만 든 옛 행도 포함한다. 지금 코드로는 이런 행이 안 만들어지지만
+        // (buildReceivedAlarmRow 가 두 값을 같은 CachedAlarmAudio 에서 채운다), 실기기의 옛
+        // DB 까지 없다고 단정하고 생체정보를 남겨 둘 수는 없다. 수신자가 고른 음성은 항상 키가
+        // 있으므로(AlarmAudioStore 의 모든 생산자가 cacheKey 를 채운다) 오탐이 되지 않는다.
+        (alarm.audioCacheKey.isNullOrBlank() && !alarm.localAudioUri.isNullOrBlank())
+
+/**
+ * 발신자가 탈퇴해 목소리가 철회된 받은 알람 — **목소리만 걷어내고 알람은 남긴다.**
+ *
+ * 복제 목소리는 그 사람의 생체정보라 파기 대상이다. 보낸 사람 이름이 든 라벨도 마찬가지다.
+ * 반면 **시각·요일은 수신자가 기대고 자는 자기 정보**라, 통째로 지우면 그날 못 일어난다.
+ * 그래서 알람음만 남긴 채(ALARM_ONLY) 같은 시각에 그대로 울린다.
+ *
+ * 음성 **파일**은 이 함수가 지우지 않는다 — 같은 캐시를 다른 알람이 쓸 수 있어, 호출한 쪽이
+ * 참조 카운트를 보고 지운다(`deleteCachedAudioIfUnreferenced`).
+ */
+internal fun withVoiceRevoked(alarm: AlarmEntity, context: Context): AlarmEntity = alarm.copy(
+    label = context.getString(com.alarmtalk.app.R.string.rd_default_alarm_label),
+    playMode = AlarmPlayModes.ALARM_ONLY,
+    // 무료 잠금 복원용 스냅샷도 비운다 — 남겨 두면 재구독 때 없어진 목소리로 되돌리려 한다.
+    preLockPlayMode = null,
+    localAudioUri = null,
+    audioCacheKey = null,
+    rawAudioUri = null,
+    voiceSource = VoiceSources.LOCAL_AUDIO,
+    voiceProfileId = null,
+    voiceListenerTitle = null,
+    voiceText = null,
+    voiceCategory = null,
+    ttsMessageId = null,
+    bucketId = null,
+    updatedAtMillis = System.currentTimeMillis(),
+)
 
 /**
  * 서버가 보낸 알람 + **지금 로컬에 있는 행**으로 저장할 행을 만든다.
