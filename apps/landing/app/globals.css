@@ -261,16 +261,6 @@
     box-shadow: inset 0 0 0 1px var(--color-ink-line);
   }
 
-  /* 남겨는 두되 쓰지 않는다 — 흰 바탕에서 그레인은 종이 질감이 아니라 노이즈다.
-     표면은 평평하게 두고 깊이는 여백이 만든다. */
-  .grain {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0.025;
-    z-index: 1;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  }
 
   /* 페이퍼 위에서는 **흰색이 곧 "떠 있는 것"** 이다. 테두리와 그림자를 둘 다 주면
      한 번 말할 것을 두 번 말하는 셈이라 테두리만 남긴다. 그림자를 넣고 싶어질 때마다

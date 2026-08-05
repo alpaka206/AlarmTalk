@@ -68,7 +68,10 @@ export function ProductScroll() {
     // 높이가 스크롤 예산이다. 240vh = 뷰포트 1.4개분을 이 장면에 쓴다.
     <section ref={ref} className="relative h-[240vh] bg-bg-alt">
       <div className="sticky top-0 flex h-screen flex-col items-center justify-center overflow-hidden px-5">
-        <div className="relative h-24 w-full max-w-2xl">
+        {/* 문구 자리를 두 줄 높이로 잡아 둔다(높이를 고정해야 문구가 바뀔 때 폰이
+            위아래로 밀리지 않는다). 아래 여백은 폰과 글자를 떼어 놓기 위한 것이고,
+            **행간은 건드리지 않는다** — 붙어 보이는 건 행간이 아니라 블록 간격 탓이다. */}
+        <div className="relative h-28 w-full max-w-2xl sm:h-32">
           <motion.h2
             className="t-h1 absolute inset-x-0 top-0 text-center text-text"
             style={{ opacity: beforeOpacity }}
@@ -84,7 +87,7 @@ export function ProductScroll() {
         </div>
 
         <motion.div
-          className="mt-6"
+          className="mt-14 sm:mt-16"
           style={{ y: phoneY, opacity: phoneOpacity, scale: phoneScale }}
         >
           <PhonePreview

@@ -12,9 +12,8 @@
     "pricing": "Pricing"
   },
   "hero": {
-    "tag": "Voice alarm",
     "headline": "Wake up to a voice\nyou actually want to hear.",
-    "description": "Your own recording, a voice a family member shared, or one of ours. You decide what it says.",
+    "description": "A voice you recorded, one a family member shared, or ours.\nYou decide what it says.",
     "phone": {
       "countdown": "Rings in 9 hours 21 minutes.",
       "meridiem": "AM",
@@ -28,9 +27,9 @@
   "trust": {
     "items": [
       {
-        "metric": "12s",
-        "title": "of audio",
-        "body": "That much is enough to build the voice.\nUpload a file, or play something you love and record that."
+        "metric": "Unlimited",
+        "title": "alarms",
+        "body": "Make as many as you want, free.\nRepeat, snooze and weekdays work like any alarm."
       },
       {
         "metric": "4",
@@ -47,8 +46,8 @@
   "voice": {
     "headline": "Set it up once,\nuse it on every alarm.",
     "description": "Record something or upload a file, and the voice is ready.\nAfter that you only write the line — the alarm reads it back in that voice, on as many alarms as you like.",
-    "bullet1": "From 12 seconds, up to 2 minutes — audio files work too",
-    "bullet2": "One voice, reused across every alarm you make",
+    "bullet1": "Record it or upload a file, whichever is easier",
+    "bullet2": "Use the voice you made on your alarms",
     "bullet3": "Adding your own voice needs a plan — one per month"
   },
   "shared": {
@@ -60,34 +59,34 @@
   },
   "language": {
     "headline": "Don’t feel like writing it\nevery night?",
-    "description": "Pick a topic instead and the greeting changes daily — today’s weather, a nudge to take your medication, or a line of fortune.",
+    "description": "Pick a topic instead of writing it, and the greeting changes daily.\nToday’s weather, a reminder to take your medication, or a line of fortune.",
     "bullet1": "Weather and medication reminders are free",
     "bullet2": "Fortune and words of love come with a voice of your own",
-    "bullet3": "Read in Korean, English, or Japanese"
+    "bullet3": "Choose Korean, English or Japanese"
   },
   "scenarios": {
-    "headline": "Opposite people. Same single insight.",
-    "description": "Fans and seniors look nothing alike — but they share one thing: there's one specific voice they want to hear every single day. That's the center of AlarmTalk.",
+    "headline": "How people set it up.",
+    "description": "Not sure what it should say? Start with one of these.",
     "items": [
       {
-        "tag": "Fandom",
-        "title": "Wake up to your favorite idol's voice",
-        "body": "Register a short clip from a fan video once, then create as many alarms as you like that read any line in that voice."
+        "tag": "Morning",
+        "title": "\"Get up, you have that presentation\"",
+        "body": "Record one line the night before and hear it back in that voice."
       },
       {
-        "tag": "Seniors",
-        "title": "Parents waking to a grandchild's voice",
-        "body": "Twelve seconds from a far-away grandchild is enough to register their voice and set up a morning greeting alarm."
+        "tag": "Family far away",
+        "title": "\"Grandma, time for your medicine\"",
+        "body": "Twelve seconds from a grandchild, and that voice checks in every day."
       },
       {
-        "tag": "Couple",
-        "title": "Apart every weekend",
-        "body": "“Good night. See you tomorrow morning.” Use the recording as an alarm — or write more lines to read back in the same voice."
+        "tag": "Weekend couple",
+        "title": "\"Sleep well? See you later\"",
+        "body": "Record a line on the way home and put it on their alarm."
       },
       {
         "tag": "Living alone",
-        "title": "A warmer first second",
-        "body": "Instead of a beep, your mother's voice. Human warmth in the most private second of the day."
+        "title": "\"5°C in Seoul today, dress warm\"",
+        "body": "You don’t have to write anything. Pick weather and it changes daily."
       }
     ]
   },
@@ -276,23 +275,6 @@
     "headline": "Not a louder alarm.\nOne you want to keep hearing.",
     "body": "No math problems, no photo missions.\nWe’d rather you opened your eyes because you wanted to hear it."
   },
-  "privacy": {
-    "tag": "On trusting us with a voice",
-    "headline": "It never leaves\nyour group.",
-    "body": "A voice is sensitive.\nSo we kept the circle it can travel in deliberately small.",
-    "point1": {
-      "title": "Invited people only",
-      "body": "Couple and Family groups are joined by invite code. Voices move only inside that group."
-    },
-    "point2": {
-      "title": "No downloads",
-      "body": "Whoever receives a voice can use it for alarms in the app. There is no way to export the audio as a file."
-    },
-    "point3": {
-      "title": "Delete it and it is gone",
-      "body": "Delete your account and the voice is destroyed on our servers. Alarms built from it fall back to an alarm sound, even on someone else’s phone."
-    }
-  },
   "pricing": {
     "tag": "Pricing",
     "headline": "Start free.",
@@ -325,16 +307,15 @@
     "headline": "Whose voice should\nwake you tomorrow?",
     "body": "Install it and set one alarm.\nYou can hear the built-in voices right away."
   },
-  "shot": {
-    "home": "Alarms screen showing the time left until the next alarm and the alarm list",
-    "register": "Create a voice screen with a choice between recording and uploading a file",
-    "message": "Screen for choosing what the alarm says, listing greeting, weather, fortune and other topics",
-    "fortune": "Fortune settings screen",
-    "voices": "Voices screen listing your voice, voices shared with you, and built-in voices",
-    "share": "Screen for choosing who to wake"
-  },
   "productScroll": {
     "before": "Keep the alarm.\nChange the voice.",
     "after": "6:00 tomorrow,\nin your mom’s voice."
+  },
+  "crop": {
+    "alarm-row": "Alarm list showing time left until the next alarm",
+    "record": "Create a voice — record or upload a file",
+    "pick-message": "Choosing what it says — greeting, weather, fortune, love, medication, or your own",
+    "voice-groups": "Voice list — your voice and voices shared with you",
+    "who-to-wake": "Choosing who to wake"
   }
 }

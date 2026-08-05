@@ -22,15 +22,11 @@ export function Hero() {
           delay={0.05}
           trigger="mount"
         >
-          <RevealItem as="p" className="eyebrow mb-5">
-            {t("tag")}
-          </RevealItem>
-
           <RevealItem as="h1" className="t-display max-w-4xl text-text">
             {t("headline")}
           </RevealItem>
 
-          <RevealItem as="p" className="t-lead mt-7 max-w-2xl text-text-body">
+          <RevealItem as="p" className="t-lead mt-7 max-w-3xl text-balance text-text-body">
             {t("description")}
           </RevealItem>
 

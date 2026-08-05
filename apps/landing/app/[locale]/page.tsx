@@ -5,10 +5,10 @@ import { Trust } from "@/components/sections/trust";
 import { FeatureSection } from "@/components/sections/feature-section";
 import { ProductScroll } from "@/components/sections/product-scroll";
 import { Declare } from "@/components/sections/declare";
-import { Privacy } from "@/components/sections/privacy";
 import { Pricing } from "@/components/sections/pricing";
 import { FinalCta } from "@/components/sections/final-cta";
-import { DeviceShot, DeviceShotPair } from "@/components/device-shot";
+import { UiCrop } from "@/components/ui-crop";
+import { UiCropStack } from "@/components/ui-crop-stack";
 import { Scenarios } from "@/components/sections/scenarios";
 import { Faq } from "@/components/sections/faq";
 import { SiteFooter } from "@/components/sections/site-footer";
@@ -81,20 +81,19 @@ export default async function HomePage({
         <FeatureSection
           id="how"
           namespace="voice"
-          visual={<DeviceShot name="register" />}
+          visual={<UiCrop name="record" />}
         />
         <FeatureSection
           namespace="language"
           reverse
           alt
-          visual={<DeviceShotPair names={["message", "fortune"]} />}
+          visual={<UiCrop name="pick-message" />}
         />
         <FeatureSection
           namespace="shared"
-          visual={<DeviceShotPair names={["voices", "share"]} />}
+          visual={<UiCropStack names={["voice-groups", "who-to-wake"]} />}
         />
         <Scenarios />
-        <Privacy />
         <Pricing />
         <Faq />
         <FinalCta />
