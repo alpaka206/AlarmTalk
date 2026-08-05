@@ -215,6 +215,55 @@ describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
     expect(purged.voiceAccessRevokedUserIds).toEqual([]);
   });
 
+  it('발신자가 알람을 먼저 지운 뒤 탈퇴해도 목소리는 걷힌다', async () => {
+    // A 가 보낸 알람을 지운다. 수신자 B 의 기기는 그 알람을 **그대로 들고 있다**(#675) —
+    // 시각은 B 것이니까. 그래서 A 의 복제 목소리도 그 기기에 남는다.
+    const del = await appFor('A').request('/' + ALARM_ID, { method: 'DELETE' });
+    expect(del.status).toBe(200);
+    // 이 시점에는 아직 아무 효력이 없다. 알람을 지웠다고 남의 목소리를 걷어낼 이유는 없다.
+    expect((await recipientState('B')).revoked_alarm_ids).not.toContain(ALARM_ID);
+
+    // 그 다음 A 가 탈퇴한다. 훑을 alarms 행은 이미 없지만 표식이 남아 있다.
+    const purged = await purgeUserAccount(testDb, 'A', 'gA');
+
+    expect((await recipientState('B')).revoked_alarm_ids).toContain(ALARM_ID);
+    expect(purged.downgradedAlarms).toContainEqual({
+      alarmId: ALARM_ID,
+      ownerUserId: 'B',
+      isReceived: true,
+    });
+    // 철회 사실만 남기고 탈퇴자의 식별자는 남기지 않는다.
+    const row = await testDb.execute({
+      sql: `SELECT sender_user_id FROM alarm_recipient_state WHERE alarm_id = ?`,
+      args: [ALARM_ID],
+    });
+    expect(row.rows[0]!.sender_user_id).toBeNull();
+  });
+
+  it('남이 내 클론으로 만든 문구가 있어도 탈퇴가 FK 로 죽지 않는다', async () => {
+    // B 가 A 의 공유 클론(vp-A)으로 자기 문구를 만들어 뒀다. messages.voice_profile_id 는
+    // NOT NULL FK 라, 안 지우면 DELETE FROM voice_profiles 가 실패해 탈퇴가 통째로 500 이 된다.
+    await testDb.execute({
+      sql: `INSERT INTO messages (id, user_id, voice_profile_id, text) VALUES ('m-b','B','vp-A','hi')`,
+      args: [],
+    });
+    await testDb.execute({
+      sql: `INSERT INTO message_library (id, user_id, message_id) VALUES ('ml-b','B','m-b')`,
+      args: [],
+    });
+
+    await expect(purgeUserAccount(testDb, 'A', 'gA')).resolves.toBeDefined();
+
+    const gone = await testDb.execute({ sql: `SELECT id FROM messages WHERE id = 'm-b'`, args: [] });
+    expect(gone.rows.length).toBe(0);
+    // A 의 클론은 사라진다(시스템 보이스는 남는다 — 남의 알람이 쓰고 있다).
+    const profiles = await testDb.execute({
+      sql: `SELECT id FROM voice_profiles WHERE id = 'vp-A'`,
+      args: [],
+    });
+    expect(profiles.rows.length).toBe(0);
+  });
+
   it('탈퇴한 본인이 받은 알람은 알릴 대상이 아니다(그 기기는 이미 계정이 없다)', async () => {
     await testDb.execute({
       sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode, is_active)

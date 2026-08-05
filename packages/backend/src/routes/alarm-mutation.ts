@@ -911,14 +911,16 @@ alarmMutation.delete('/:id', async (c) => {
   }
 
   const targetRes = await db.execute({
-    sql: `SELECT message_id FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
+    sql: `SELECT message_id, target_user_id FROM alarms
+           WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)}) LIMIT 1`,
     args: [id, ...ownerIds],
   });
   const targetAlarm =
     targetRes.rows.length > 0
-      ? typedRow<{ message_id: string | null }>(targetRes.rows[0]!)
+      ? typedRow<{ message_id: string | null; target_user_id: string | null }>(targetRes.rows[0]!)
       : null;
   const messageId = targetAlarm?.message_id ?? null;
+  const recipientUserId = targetAlarm?.target_user_id ?? null;
 
   const result = await db.execute({
     sql: `DELETE FROM alarms WHERE id = ? AND user_id IN (${inPlaceholders(ownerIds)})`,
@@ -927,6 +929,32 @@ alarmMutation.delete('/:id', async (c) => {
 
   if (result.rowsAffected === 0) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
+  }
+
+  // **남에게 보낸 알람을 지웠으면 보낸이를 적어 둔다.**
+  //
+  // 수신자 기기는 이 알람을 지우지 않는다 — 받은 뒤부터는 받는 사람 것이라, 기대고 자던
+  // 알람이 남의 조작으로 사라지면 그날 못 일어난다(#675). 그래서 그 기기에는 내 복제
+  // 목소리가 그대로 남는다. 나중에 내가 **탈퇴**하면 그걸 걷어내야 하는데, 그때는 훑을
+  // 알람 행이 이미 없다 — 걷어낼 근거가 영영 사라진다(Codex #676 P1).
+  //
+  // `declined=0, revoked=0` 이라 지금은 아무 효력이 없다(GET /alarm/declined 는 둘 중
+  // 하나가 1 인 행만 내보낸다). 탈퇴 때 purgeUserAccount 가 이 행을 revoked=1 로 바꾸고
+  // sender_user_id 는 지운다. 실패해도 삭제는 성공이다 — 표식이 없으면 탈퇴 시 못 걷어낼
+  // 뿐이고, 삭제 자체를 막을 이유는 없다.
+  if (recipientUserId) {
+    try {
+      await db.execute({
+        sql: `INSERT INTO alarm_recipient_state
+                (alarm_id, recipient_user_id, declined, revoked, sender_user_id, created_at, updated_at)
+              VALUES (?, ?, 0, 0, ?, datetime('now'), datetime('now'))
+              ON CONFLICT(alarm_id, recipient_user_id)
+              DO UPDATE SET sender_user_id = excluded.sender_user_id, updated_at = datetime('now')`,
+        args: [id, recipientUserId, c.get('userIdPK') ?? ownerIds[0]!],
+      });
+    } catch (err) {
+      logRouteError(c, err);
+    }
   }
 
   if (messageId) {
