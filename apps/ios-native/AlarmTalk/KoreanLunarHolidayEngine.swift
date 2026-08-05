@@ -16,17 +16,24 @@ import Foundation
 // 오프라인 보장 FLOOR 이므로 안전하다. (de-dup/override 불필요 — 라벨 집합이 아니라 Bool 반환.)
 //
 // === KST 보정 (핵심 정확성 이슈) ===
-// Apple 의 Calendar(identifier: .chinese) 는 음력 월 경계를 중국표준시(UTC+8)로 계산한다.
-// 한국 민용 음력(KASI/한국천문연구원, 설날·추석의 법적 근거)은 KST(UTC+9)로 삭(신월) 순간이
-// 속한 민용일을 정한다. 삭의 순간이 중국시 23:00~23:59 구간에 들면, 같은 순간이 한국시로는
-// 이미 다음 날 00:00~00:59 이므로 그 해의 음력 월(=설날/추석)이 .chinese 원시값보다 양력 하루
-// 늦게 떨어진다. 이 off-by-one 을 줄이기 위해:
-//   (a) 모든 민용일 버킷팅/컴포넌트 추출을 Asia/Seoul 고정 캘린더로 수행한다. (UTC+8/디바이스로컬 금지)
-//       이는 "삭 순간이 어느 민용일에 속하는가"를 KASI 방식으로 정렬하여 대다수 연도를 맞춘다.
-//       또한 HolidaySeedData.ymd(역시 Asia/Seoul)와 같은 시계라서 epochDay 가 정확히 일치한다.
-//   (b) ICU 의 천문 경계 자체는 CST 고정이라 (a)가 모든 희귀 연도를 증명하지는 못한다. 따라서 엔진을
-//       체인의 3순위(서버 캐시·KASI 검증 시드 아래)에 둔다 — 발산 연도는 server_sync 또는 시드가 보정.
-//   (c) kasiOverrides[year] 정적 테이블로 알려진 발산 연도를 코드 수정 없이 오프라인으로 pin.
+// 한국 민용 음력(KASI/한국천문연구원, 설날·추석의 법적 근거)은 KST(UTC+9, 자오선 135°E)로
+// 삭(신월) 순간이 속한 민용일을 정한다. 그래서 음력 월 경계도 그 기준으로 계산해야 한다.
+//
+//   (a) 음력 월/일 추출은 **ICU dangi(단기력)** 캘린더로 한다 — 한국 민용 음력이라 KASI 와
+//       삭 경계가 같다. (`seoulLunar` 주석 참고.)
+//       ⚠ 예전에는 `.chinese` 에 `timeZone = Asia/Seoul` 을 물리면 KASI 에 정렬된다고 적혀
+//       있었으나 **그건 틀렸다.** timeZone 은 instant 를 어느 민용일에 담을지만 정하고,
+//       음력 월의 경계는 ICU 가 그 역법의 기준 자오선(중국 120°E)으로 계산한다. 실제로
+//       2027 설날(2/6 vs 2/7)·2028 설날(1/26 vs 1/27)에서 KASI 와 갈렸다.
+//   (b) 모든 양력 민용일 버킷팅/컴포넌트 추출은 Asia/Seoul 고정 캘린더로 수행한다
+//       (디바이스 로컬 금지). HolidaySeedData.ymd 와 같은 시계라 epochDay 가 정확히 일치한다.
+//   (c) 그래도 엔진은 체인 3순위(서버 캐시·KASI 검증 시드 아래)에 둔다 — 미래 연도에서
+//       ICU 와 KASI 가 갈리면 server_sync 또는 시드가 보정한다.
+//   (d) kasiOverrides[year] 정적 테이블로 알려진 발산 연도를 코드 수정 없이 오프라인으로 pin.
+//
+// 회귀 방지: `LocalHolidayCalendarLunarTests.test_seollal_goldenVectors` 의 값은 KASI 공식이며
+// 안드로이드 ground truth(`LunarHolidayCalendarTest.kt` 의 `seollalByYear`)와 같은 값이다.
+// 여기가 틀리면 "공휴일엔 알람 끄기" 가 엉뚱한 날 꺼지고 설날 당일에 울린다.
 //
 // 모든 Date 생성/컴포넌트 추출/epochDay 도출은 고정 Asia/Seoul 캘린더만 사용한다 (Calendar.current 금지).
 enum KoreanLunarHolidayEngine {
@@ -58,9 +65,27 @@ enum KoreanLunarHolidayEngine {
         return cal
     }()
 
-    /// 음력 월/일 추출용. KST 버킷팅으로 KASI 경계에 정렬.
-    private static let seoulChinese: Calendar = {
-        var cal = Calendar(identifier: .chinese)
+    /// 음력 월/일 추출용 — **ICU dangi(단기력)**. 한국 민용 음력이라 KASI 와 삭 경계가 같다.
+    ///
+    /// ⚠ 예전에는 `Calendar(identifier: .chinese)` 에 `timeZone = Asia/Seoul` 을 물려
+    /// "KST 버킷팅으로 KASI 경계에 정렬" 한다고 적어 뒀는데 **그건 틀렸다.** timeZone 은
+    /// instant 를 어느 날로 담을지만 정하고, 음력 **월의 경계(삭 순간)** 는 ICU 가 그
+    /// 역법의 기준 자오선으로 계산한다. `.chinese` 는 중국 표준시(120°E), dangi 는
+    /// 한국(135°E) 기준이라 삭이 두 자오선의 자정을 사이에 두고 떨어지는 해에 하루가 갈린다.
+    ///
+    /// 실제로 갈린다(2025~2031 스캔): `.chinese` 는 **2027 설날을 2/6, 2028 설날을 1/26** 으로
+    /// 계산하는데 KASI 공식은 **2/7, 1/27** 이다. 나머지 5개 연도는 같다. 안드로이드의
+    /// ground truth 도 KASI 다(`LunarHolidayCalendarTest.kt` 의 `seollalByYear`,
+    /// `LunarHolidayCalendarInstrumentedTest.kt` 의 `seollal` — 둘 다 2027=2/7, 2028=1/27).
+    ///
+    /// 알람 앱에서 이게 틀리면 "공휴일엔 알람 끄기" 가 **엉뚱한 날 꺼지고 설날 당일에 울린다.**
+    ///
+    /// dangi 는 `Calendar.Identifier` 에 케이스가 없어 로케일 확장으로 만든다. 못 만들면
+    /// `.chinese` 로 폴백하되, 그 경우 골든벡터 테스트가 큰 소리로 실패해서 알 수 있다.
+    private static let seoulLunar: Calendar = {
+        var cal =
+            Locale(identifier: "ko_KR@calendar=dangi").calendar
+            ?? Calendar(identifier: .chinese)
         cal.timeZone = TimeZone(identifier: "Asia/Seoul") ?? TimeZone(secondsFromGMT: 9 * 3600)!
         cal.locale = Locale(identifier: "en_US_POSIX")
         return cal
@@ -202,7 +227,7 @@ enum KoreanLunarHolidayEngine {
         seedDay: Int
     ) -> Int? {
         let greg = seoulGregorian
-        let chinese = seoulChinese
+        let chinese = seoulLunar
         guard let seed = greg.date(from: DateComponents(year: year, month: seedMonth, day: seedDay)) else {
             return nil
         }

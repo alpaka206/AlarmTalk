@@ -24,11 +24,20 @@ final class LocalHolidayCalendarLunarTests: XCTestCase {
     // Android `LunarHolidayCalendar.kt:15-16` 와 동일: 엔진은 법정 기준일만, 연휴는 시드가.
 
     func test_seollal_goldenVectors() {
-        // 기준일(설날 당일)만 true: 2026=2/17, 2027=2/7, 2028=1/27, 2029=2/13
+        // 기준일(설날 당일)만 true: 2026=2/17(화), 2027=2/7(일), 2028=1/27(목), 2029=2/13(화)
+        //
+        // ⚠ 이 값은 **KASI(한국천문연구원) 공식 민용 음력**이고, 안드로이드의 ground truth
+        // (`LunarHolidayCalendarTest.kt` 의 `seollalByYear`,
+        // `LunarHolidayCalendarInstrumentedTest.kt` 의 `seollal`)와 같은 값이다.
+        //
+        // ICU `.chinese` 로 재계산하면 2027=2/6, 2028=1/26 이 나오는데 **그건 중국 자오선
+        // (120°E) 기준이라 한국 민용력과 다르다.** 한국은 135°E 기준(dangi)이다. 엔진이
+        // `.chinese` 를 쓰던 동안 이 두 해가 하루씩 어긋났고, 그건 엔진 버그였다.
+        // 이 기대값을 "엔진에 맞춰" 고치지 말 것 — 고치는 순간 설날 당일에 알람이 울린다.
         XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 17)), "2026 설날 기준일")
-        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2027, 2, 7)))
-        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2028, 1, 27)))
-        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2029, 2, 13)))
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2027, 2, 7)), "2027 설날 기준일")
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2028, 1, 27)), "2028 설날 기준일")
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2029, 2, 13)), "2029 설날 기준일")
         // 연휴 전날/다음날은 엔진 단독으로는 false (시드가 채운다)
         XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 16)))
         XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 18)))
