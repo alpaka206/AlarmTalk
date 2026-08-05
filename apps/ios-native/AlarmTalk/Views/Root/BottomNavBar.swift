@@ -1,0 +1,100 @@
+import SwiftUI
+
+/// 커스텀 바텀 네비게이션 바.
+///
+/// ContentView 의 `bottomBar` 를 그대로 옮긴 것. 3개 탭에 배지를 띄울 수 있도록
+/// `badgeProvider` 클로저를 받는다. (호출부: MainTabsView 가 store.alarms 기반
+/// 받은-알람 카운트 등을 넘긴다.)
+struct BottomNavBar: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var selected: NativeTab
+    let badgeProvider: (NativeTab) -> Int
+    var onSelect: ((NativeTab) -> Void)? = nil
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(NativeTab.allCases) { tab in
+                Button {
+                    if let onSelect {
+                        onSelect(tab)
+                    } else {
+                        selected = tab
+                    }
+                } label: {
+                    VStack(spacing: 3) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: tab.systemImage)
+                                .font(.system(size: 22, weight: .semibold))
+                            let badge = badgeProvider(tab)
+                            if badge > 0 {
+                                Text(badge > 99 ? "99+" : "\(badge)")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(theme.palette.onError)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 2)
+                                    .background(theme.palette.error, in: Capsule())
+                                    .offset(x: 12, y: -8)
+                            }
+                        }
+                        Text(tab.title)
+                            .font(.caption2.weight(selected == tab ? .semibold : .medium))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 58)
+                    .foregroundStyle(selected == tab ? selectedContentColor : theme.palette.onSurfaceVariant)
+                    .background(
+                        selected == tab ? selectedBackgroundColor : Color.clear,
+                        in: RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(selected == tab)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+        .background(theme.palette.surface)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(theme.palette.surfaceVariant)
+                .frame(height: 1)
+        }
+    }
+
+    /// 선택 탭 배경: 밝게에선 primaryContainer(파랑 알약), 어둡게에선 surfaceVariant.
+    /// Android `AlarmTalkBottomBar.kt:117-121` (isDarkScheme 분기) 미러.
+    private var selectedBackgroundColor: Color {
+        colorScheme == .dark ? theme.palette.surfaceVariant : theme.palette.primaryContainer
+    }
+
+    /// 선택 탭 전경: 밝게 onPrimaryContainer, 어둡게 primary. Android `:122-126` 미러.
+    private var selectedContentColor: Color {
+        colorScheme == .dark ? theme.palette.primary : theme.palette.onPrimaryContainer
+    }
+}
+
+#if DEBUG
+private struct BottomNavBarPreviewHost: View {
+    @State private var tab: NativeTab = .home
+    var body: some View {
+        BottomNavBar(selected: $tab) { tab in
+            switch tab {
+            case .alarms: return 2
+            default: return 0
+            }
+        }
+    }
+}
+
+#Preview("BottomNavBar (light)") {
+    BottomNavBarPreviewHost()
+        .voiceAlarmPreviewEnvironment()
+}
+
+#Preview("BottomNavBar (dark)") {
+    BottomNavBarPreviewHost()
+        .preferredColorScheme(.dark)
+        .voiceAlarmPreviewEnvironment()
+}
+#endif
