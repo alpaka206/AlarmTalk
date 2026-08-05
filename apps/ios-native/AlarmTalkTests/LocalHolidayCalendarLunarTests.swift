@@ -164,6 +164,7 @@ final class LocalHolidayCalendarLunarTests: XCTestCase {
 
     // MARK: - epochDay 가 시드의 ymd 와 정확히 일치 (시계 정렬)
 
+    @MainActor
     func test_epochDay_matchesSeedYmdClock() {
         // HolidayStore.epochDay(of:) 와 엔진 epochDay 가 동일해야 cache/seed/engine 레이어가 정렬됨.
         let d = seoulDate(2026, 2, 17)
