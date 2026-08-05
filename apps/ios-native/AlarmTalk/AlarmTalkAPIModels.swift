@@ -825,8 +825,15 @@ struct ConsentItemRequest: Encodable, Equatable {
 }
 
 /// 약관 동의 기록 요청. Android `AuthApi.kt:143` `RecordConsentsRequest`.
+///
+/// `documentVersion` 은 **이 빌드가 담고 있는 법무 문서의 버전**이다(snake_case 로 나간다).
+/// 서버는 이 값이 없으면 400 `DOCUMENT_VERSION_REQUIRED`, 자기가 게시 중인 버전과 다르면
+/// 409 `POLICY_VERSION_MISMATCH` 로 거부한다 — "무엇에 동의했는지" 를 증명하지 못하는
+/// 기록은 받아 줄 수 없기 때문이다.
 struct RecordConsentsRequest: Encodable, Equatable {
     var consents: [ConsentItemRequest]
+    /// 기본값은 빌드 시 `docs/legal` 에서 뽑은 값(`scripts/generate-legal-version.sh`).
+    var documentVersion: String = LegalPolicy.bundledVersion
 }
 
 /// 약관 동의 기록 응답. Android `AuthApi.kt:147` `RecordConsentsResponse`.

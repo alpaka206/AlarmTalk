@@ -49,6 +49,7 @@
 		4185273F1EDBB5EAE6D11EBD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0221058C929FB1DAA401AFD7 /* Assets.xcassets */; };
 		42F0D9521755F54DDF582883 /* AlarmVoicePlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53F74ECE9BEB717AE2FAA2A3 /* AlarmVoicePlayerTests.swift */; };
 		4351F743AA119C72711E26EA /* SocialFeatureViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056DB53565C8BBE7AD69B128 /* SocialFeatureViewModelTests.swift */; };
+		45952503DEBA249D459D13A7 /* LegalPolicyVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 292E865976B0C064162ED225 /* LegalPolicyVersion.swift */; };
 		4595EEB8FB64EA9ED32897B6 /* AlarmTalkAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64309C1B0B71EE457BAFB65C /* AlarmTalkAPI.swift */; };
 		46755794A3CFB39DB2A07D3E /* AuthViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376BBDA5FD78ACD795C78581 /* AuthViewModelTests.swift */; };
 		46C1C613B52586A9E527A86D /* AlarmAppContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAFEFFCE341357461A47A64B /* AlarmAppContext.swift */; };
@@ -241,6 +242,7 @@
 		256A1A74503F37FA8770ADFD /* AudioUserFacingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioUserFacingError.swift; sourceTree = "<group>"; };
 		26FEEB9D5F4B19556BAAD9C6 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManagerTests.swift; sourceTree = "<group>"; };
+		292E865976B0C064162ED225 /* LegalPolicyVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalPolicyVersion.swift; sourceTree = "<group>"; };
 		2D91CA086C7D4B708EBFB7D9 /* RemoteAlarmSyncViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmSyncViewModel.swift; sourceTree = "<group>"; };
 		33EACFD24875EBC9DCCC831F /* DynamicVoiceRefreshServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicVoiceRefreshServiceTests.swift; sourceTree = "<group>"; };
 		36AC7F203A72A8231656B726 /* VoicesPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicesPanelView.swift; sourceTree = "<group>"; };
@@ -746,10 +748,19 @@
 				76438009279B4ED7982E6BE5 /* WeatherLocationProvider.swift */,
 				F2A71A66F1FAC416B56FAA2A /* Configuration */,
 				E0E0F3F178A8E20C54336C7C /* Fonts */,
+				FF8F65773E6CB9583D25E272 /* Generated */,
 				1FD2FD6D5BF456329538EFBE /* Services */,
 				BB608ACEC9D9D43D89B32E0E /* Views */,
 			);
 			path = AlarmTalk;
+			sourceTree = "<group>";
+		};
+		FF8F65773E6CB9583D25E272 /* Generated */ = {
+			isa = PBXGroup;
+			children = (
+				292E865976B0C064162ED225 /* LegalPolicyVersion.swift */,
+			);
+			path = Generated;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -759,6 +770,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 055F8B957A92D4399BD3E2D5 /* Build configuration list for PBXNativeTarget "AlarmTalk" */;
 			buildPhases = (
+				7BD11E502740A804FBA5C93B /* Generate LegalPolicyVersion.swift */,
 				6F6005E66300391CE2B797E6 /* Sources */,
 				A41515E9EB83B79A8C09A545 /* Resources */,
 				E39FA08B34A03720EB397114 /* Embed Foundation Extensions */,
@@ -871,6 +883,28 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		7BD11E502740A804FBA5C93B /* Generate LegalPolicyVersion.swift */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Generate LegalPolicyVersion.swift";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$PROJECT_DIR/scripts/generate-legal-version.sh\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		6F6005E66300391CE2B797E6 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -939,6 +973,7 @@
 				0E5B76527C4E572E042DC557 /* KeychainStore.swift in Sources */,
 				68198E3D4BC57296B43E7DE7 /* KoreanLunarHolidayEngine.swift in Sources */,
 				CA02D54C99DB8E021BAF2D19 /* LandingView.swift in Sources */,
+				45952503DEBA249D459D13A7 /* LegalPolicyVersion.swift in Sources */,
 				27CF6DF15148B755FC84D1B3 /* LocalAlarmRecord.swift in Sources */,
 				9A94D143FF4D06179D7213A2 /* LocalAlarmStore.swift in Sources */,
 				AA4726217F43F082D2ADD8E7 /* LoginPermissionGateView.swift in Sources */,

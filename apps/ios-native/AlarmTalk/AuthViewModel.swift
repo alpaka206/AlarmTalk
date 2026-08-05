@@ -66,6 +66,9 @@ final class AuthViewModel: ObservableObject {
     /// 마케팅 동의 상태 로드가 실패했는지. true 면 UI 가 재시도 안내를 노출할 수 있다.
     /// Android `MainViewModel.marketingConsentLoadFailed`.
     @Published private(set) var marketingConsentLoadFailed = false
+    /// 서버가 이 빌드보다 새 법무 문서를 게시 중이라 동의를 기록할 수 없는 상태.
+    /// true 면 UI 가 업데이트 안내로 게이팅한다. Android `MainViewModel.consentUnsupported`.
+    @Published private(set) var consentUnsupported = false
 
     private let api: AuthAPIProviding
     private let appleCredentialProvider: AppleCredentialStateProviding
@@ -621,15 +624,21 @@ final class AuthViewModel: ObservableObject {
         do {
             let status = try await api.consentStatus(token: token)
             needsConsent = status.needsConsent
+            // 서버가 게시 중인 문서 버전. 409 를 만났을 때 "업데이트하면 풀리는가" 판단에 쓴다.
+            serverPolicyVersionHint = status.policyVersion
         } catch {
             // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
             needsConsent = false
         }
     }
 
-    /// 서버 `CURRENT_POLICY_VERSION` 과 동일해야 하는 클라이언트 정책 버전.
-    /// ElevenLabs 기준 법무 문서 정정으로 "3" 으로 상향됨 — 동의 기록 시 이 버전을 동봉한다.
-    static let currentPolicyVersion = "3"
+    /// 동의 항목마다 동봉하는 정책 버전. **손으로 관리하지 않는다** —
+    /// 빌드 시 `docs/legal` 에서 뽑은 값(`scripts/generate-legal-version.sh`)을 그대로 쓴다.
+    ///
+    /// 예전에는 "3" 이 리터럴로 박혀 있어 문서가 4·5 로 올라가는 동안 그대로 남아 있었다.
+    /// (서버는 항목별 version 을 받기만 하고 무시하므로 기록이 깨지진 않았지만, 기록에
+    ///  남는 값이 사실과 달랐다. 요청 단위 `document_version` 은 서버가 실제로 검증한다.)
+    static var currentPolicyVersion: String { LegalPolicy.bundledVersion }
 
     /// 동의 기록 요청을 만든다. 필수 항목은 화면의 체크값을 기록하고, marketing 은 선택값으로 기록한다.
     /// 모든 항목에 현재 정책 버전을 동봉한다.
@@ -648,6 +657,35 @@ final class AuthViewModel: ObservableObject {
             ConsentItemRequest(type: "marketing", agreed: marketingAgreed, version: version),
         ])
     }
+
+    /// 동의 기록이 '문서 버전 불일치' 로 거부됐을 때의 처리. 처리했으면 true.
+    ///
+    /// Android `handleConsentVersionMismatch` 와 같은 판단이다:
+    ///  - **서버가 앞서면**(문서가 개정됐는데 이 빌드가 옛 본문을 싣고 있으면) 사용자가 할 수
+    ///    있는 일은 업데이트뿐이다 → 업데이트 게이트로 보낸다.
+    ///  - **이 빌드가 앞서면**(백엔드 배포가 아직 안 끝난 구간) 업데이트해도 안 풀린다.
+    ///    그때 "업데이트하세요" 라고 하면 거짓말이므로 일반 실패 메시지만 낸다.
+    private func handleConsentVersionMismatch(_ error: Error) -> Bool {
+        guard case let APIError.server(status, _, errorCode) = error else { return false }
+        let isVersionError =
+            errorCode == "POLICY_VERSION_MISMATCH"
+            || errorCode == "DOCUMENT_VERSION_REQUIRED"
+            || status == 409
+        guard isVersionError else { return false }
+
+        // 서버가 게시 중인 버전을 알 수 없으면(구 응답 등) 보수적으로 업데이트 게이트.
+        let bundled = Int(LegalPolicy.bundledVersion)
+        let server = serverPolicyVersionHint.flatMap(Int.init)
+        if let server, let bundled, server <= bundled {
+            statusMessage = "동의 기록에 실패했어요. 잠시 후 다시 시도해 주세요"
+            return true
+        }
+        consentUnsupported = true
+        return true
+    }
+
+    /// 마지막 `GET /user/consents/status` 가 알려 준 서버의 게시 버전. 위 판별에만 쓴다.
+    private var serverPolicyVersionHint: String?
 
     /// 동의 화면 제출. 성공 시 `needsConsent` 를 내려 정상 진입. Android `MainViewModel.submitConsents()`.
     func submitConsents(
@@ -675,6 +713,7 @@ final class AuthViewModel: ObservableObject {
             needsConsent = false
             statusMessage = "동의가 완료됐어요"
         } catch {
+            if handleConsentVersionMismatch(error) { return }
             statusMessage = userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요")
         }
     }
@@ -718,6 +757,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = agreed ? "마케팅 정보 수신에 동의했어요." : "마케팅 정보 수신 동의를 해제했어요."
         } catch {
             marketingConsentAgreed = previous
+            if handleConsentVersionMismatch(error) { return }
             statusMessage = userFacingErrorMessage(error, fallback: "마케팅 수신 설정을 변경하지 못했어요")
         }
     }

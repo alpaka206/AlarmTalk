@@ -178,6 +178,36 @@ final class AuthViewModelTests: XCTestCase {
         )
     }
 
+    // MARK: - 동의 document_version
+
+    /// `POST /user/consents` 는 `document_version` 이 없으면 400, 서버 게시본과 다르면 409 다.
+    /// 값은 빌드 시 docs/legal 에서 뽑으므로(scripts/generate-legal-version.sh) 손으로
+    /// 관리하지 않는다 — 리터럴이 박혀 있으면 문서가 올라갈 때 조용히 어긋난다.
+    func test_consentsRequest_carriesBundledDocumentVersion() {
+        let req = AuthViewModel.makeConsentsRequest(
+            marketingAgreed: true,
+            voiceBiometricAgreed: true,
+            overseasTransferAgreed: true
+        )
+        XCTAssertEqual(req.documentVersion, LegalPolicy.bundledVersion)
+        XCTAssertFalse(LegalPolicy.bundledVersion.isEmpty)
+        // 항목별 version 도 같은 출처를 쓴다(예전엔 "3" 이 박혀 있었다).
+        XCTAssertTrue(req.consents.allSatisfy { $0.version == LegalPolicy.bundledVersion })
+    }
+
+    /// 인코딩되면 snake_case 로 나가야 한다 — 서버가 읽는 키는 `document_version` 이다.
+    func test_consentsRequest_encodesAsSnakeCase() throws {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let data = try encoder.encode(
+            AuthViewModel.makeConsentsRequest(
+                marketingAgreed: false, voiceBiometricAgreed: false, overseasTransferAgreed: true
+            )
+        )
+        let json = String(decoding: data, as: UTF8.self)
+        XCTAssertTrue(json.contains("\"document_version\""), "실제 전송 키는 document_version 이다")
+    }
+
     // MARK: - rolling refresh
 
     /// `GET /auth/me` 가 내려주는 새 토큰으로 세션이 갈아 끼워져야 한다.

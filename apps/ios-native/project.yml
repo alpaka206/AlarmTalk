@@ -44,6 +44,13 @@ targets:
     dependencies:
       - target: AlarmTalkWidget
         embed: true
+    # 법무 문서(docs/legal)의 '정책 버전' 을 Swift 상수로 뽑는다. 안드로이드가
+    # app/build.gradle.kts:101 에서 하는 것과 같다 — 손으로 관리하면 서버와 어긋나는
+    # 순간 동의 기록이 전부 409 로 거부된다. 두 문서 버전이 다르면 빌드를 세운다.
+    preBuildScripts:
+      - script: "\"$PROJECT_DIR/scripts/generate-legal-version.sh\""
+        name: Generate LegalPolicyVersion.swift
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios
