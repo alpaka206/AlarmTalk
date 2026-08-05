@@ -67,7 +67,10 @@ export function ProductScroll() {
   return (
     // 높이가 스크롤 예산이다. 240vh = 뷰포트 1.4개분을 이 장면에 쓴다.
     <section ref={ref} className="relative h-[240vh] bg-bg-alt">
-      <div className="sticky top-0 flex h-screen flex-col items-center justify-center overflow-hidden px-5">
+      {/* 헤더가 sticky 라 뷰포트 전체를 기준으로 가운데 정렬하면 글자가 그 아래로
+          들어간다. 헤더 높이(py-5 + 로고 ≈ 72px)만큼 위를 비우고, **남은 영역의**
+          가운데에 놓는다. */}
+      <div className="sticky top-0 flex h-screen flex-col items-center justify-center overflow-hidden px-5 pt-[72px]">
         {/* 문구 자리를 두 줄 높이로 잡아 둔다(높이를 고정해야 문구가 바뀔 때 폰이
             위아래로 밀리지 않는다). 아래 여백은 폰과 글자를 떼어 놓기 위한 것이고,
             **행간은 건드리지 않는다** — 붙어 보이는 건 행간이 아니라 블록 간격 탓이다. */}
@@ -87,11 +90,11 @@ export function ProductScroll() {
         </div>
 
         <motion.div
-          className="mt-14 sm:mt-16"
+          className="mt-10 sm:mt-12"
           style={{ y: phoneY, opacity: phoneOpacity, scale: phoneScale }}
         >
           <PhonePreview
-            widthClass="[--w:min(300px,68vw)]"
+            widthClass="[--w:min(300px,68vw,34vh)]"
             toggle={
               <motion.span
                 aria-hidden="true"
