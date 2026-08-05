@@ -312,10 +312,17 @@ internal class RemoteAlarmPullSyncService(
                     .filter { it.remoteAlarmId in revokedRemoteIds && hasSenderVoice(it) }
                     .forEach { revokedRow ->
                         val cacheKey = revokedRow.audioCacheKey
+                        val localAudioUri = revokedRow.localAudioUri
                         alarmDao.upsert(withVoiceRevoked(revokedRow, context))
                         // 먼저 upsert 해 이 행의 참조를 지운 뒤 센다 — 같은 메시지를 여러 행이
                         // 쓰고 있어도 마지막 행에서 0 이 되어 파일이 실제로 지워진다.
-                        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+                        if (cacheKey.isNullOrBlank()) {
+                            // 키가 없는 옛 행은 참조를 URI 로밖에 못 센다. 이걸 안 하면 방금
+                            // 경로를 비운 파일이 주인 없이 디스크에 남는다(Codex #677 P1).
+                            alarmAudioStore.deleteLocalAudioIfUnreferenced(alarmDao, localAudioUri)
+                        } else {
+                            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+                        }
                         Log.i(TAG, "Revoked voice on received alarm remoteId=${revokedRow.remoteAlarmId}")
                     }
                 receivedRows
@@ -551,7 +558,12 @@ internal fun shouldDownloadRemoteMessageAudio(remote: RemoteAlarm): Boolean =
  * 그대로)도 이 키로 잡힌다 — 재생만 막혔지 생체정보는 디스크에 남아 있으니 걷어내야 한다.
  */
 internal fun hasSenderVoice(alarm: AlarmEntity): Boolean =
-    alarm.audioCacheKey?.startsWith(REMOTE_MESSAGE_CACHE_KEY_PREFIX) == true
+    alarm.audioCacheKey?.startsWith(REMOTE_MESSAGE_CACHE_KEY_PREFIX) == true ||
+        // 캐시 키 없이 파일 경로만 든 옛 행도 포함한다. 지금 코드로는 이런 행이 안 만들어지지만
+        // (buildReceivedAlarmRow 가 두 값을 같은 CachedAlarmAudio 에서 채운다), 실기기의 옛
+        // DB 까지 없다고 단정하고 생체정보를 남겨 둘 수는 없다. 수신자가 고른 음성은 항상 키가
+        // 있으므로(AlarmAudioStore 의 모든 생산자가 cacheKey 를 채운다) 오탐이 되지 않는다.
+        (alarm.audioCacheKey.isNullOrBlank() && !alarm.localAudioUri.isNullOrBlank())
 
 /**
  * 발신자가 탈퇴해 목소리가 철회된 받은 알람 — **목소리만 걷어내고 알람은 남긴다.**

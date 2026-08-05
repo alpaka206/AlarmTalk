@@ -123,6 +123,13 @@ interface AlarmDao {
     @Query("SELECT COUNT(*) FROM alarms WHERE audioCacheKey = :cacheKey")
     suspend fun countByAudioCacheKey(cacheKey: String): Int
 
+    /**
+     * 캐시 키 없이 파일 경로만 든 옛 행의 참조 카운트. 키가 있는 행은
+     * [countByAudioCacheKey] 로 세고, 이건 그걸로 셀 수 없는 행 전용이다.
+     */
+    @Query("SELECT COUNT(*) FROM alarms WHERE localAudioUri = :localAudioUri")
+    suspend fun countByLocalAudioUri(localAudioUri: String): Int
+
     @Upsert
     suspend fun upsertRow(alarm: AlarmEntity)
 

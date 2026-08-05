@@ -364,6 +364,22 @@ class RemoteAlarmPullSyncServiceTest {
     }
 
     @Test
+    fun revocationStillCatchesAKeylessLegacyRow() {
+        // 지금 코드는 캐시 키 없는 받은-알람 행을 만들지 않는다(buildReceivedAlarmRow 가 두
+        // 값을 같은 CachedAlarmAudio 에서 채운다). 그래도 실기기의 옛 DB 까지 없다고 단정하고
+        // 발신자의 녹음을 남겨 둘 수는 없다 — 키가 없으면 URI 로 잡는다(Codex #677 P1).
+        val legacy = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
+            playMode = AlarmPlayModes.ALARM_VOICE,
+            localAudioUri = "file:///data/audio/legacy_recording.m4a",
+            audioCacheKey = null,
+        )
+        assertTrue(hasSenderVoice(legacy))
+
+        // 반대로 파일도 키도 없으면 걷어낼 목소리가 없다 — 라벨만 날리면 안 된다.
+        assertFalse(hasSenderVoice(legacy.copy(localAudioUri = null)))
+    }
+
+    @Test
     fun revocationTargetsAFreeLockedRowToo() {
         // 무료로 잠긴 받은 알람은 재생만 막혔지(playMode=ALARM_ONLY) 발신자의 녹음 파일은
         // 디스크에 그대로 있다. 재생 모드로 판정하면 이 행을 놓쳐 생체정보가 남는다.

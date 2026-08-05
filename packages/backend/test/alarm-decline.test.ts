@@ -147,6 +147,31 @@ describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
     expect(targets).toEqual([{ alarmId: ALARM_ID, ownerUserId: 'B', isReceived: true }]);
   });
 
+  it('내 클론을 자기 알람에 쓰던 사람도 알림 대상이다 — 알람은 남기고 목소리만 내린다', async () => {
+    // B 가 **자기 알람**에 A 의 공유 클론(vp-A)을 골라 뒀다. A 가 보낸 알람이 아니라
+    // 탈퇴로 지워지지 않는데, B 의 기기는 캐시된 A 의 녹음으로 계속 울린다.
+    const mine = '33333333-3333-3333-3333-333333333333';
+    await testDb.execute({
+      sql: `INSERT INTO alarms (id, user_id, target_user_id, voice_profile_id, time, mode, is_active)
+            VALUES (?, 'B', NULL, 'vp-A', '06:00', 'tts', 1)`,
+      args: [mine],
+    });
+
+    const targets = await purgeUserAccount(testDb, 'A', 'gA');
+
+    // 본인 소유 알람이라 pull 이 아니라 목소리 접근권 재확인으로 알린다(isReceived=false).
+    expect(targets).toContainEqual({ alarmId: mine, ownerUserId: 'B', isReceived: false });
+    const row = await testDb.execute({
+      sql: `SELECT mode, voice_profile_id, message_id, is_active FROM alarms WHERE id = ?`,
+      args: [mine],
+    });
+    // 알람은 남아 울리되(시각은 B 것이다) 목소리만 걷힌다.
+    expect(row.rows.length).toBe(1);
+    expect(row.rows[0]!.mode).toBe('sound-only');
+    expect(row.rows[0]!.voice_profile_id).toBeNull();
+    expect(Number(row.rows[0]!.is_active)).toBe(1);
+  });
+
   it('탈퇴한 본인이 받은 알람은 알릴 대상이 아니다(그 기기는 이미 계정이 없다)', async () => {
     await testDb.execute({
       sql: `INSERT INTO alarms (id, user_id, target_user_id, message_id, time, mode, is_active)

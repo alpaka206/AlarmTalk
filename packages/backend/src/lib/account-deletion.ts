@@ -210,6 +210,50 @@ export async function purgeUserAccount(
             WHERE user_id IN (?, ?) OR target_user_id IN (?, ?)`,
       args: [...userIds, ...userIds],
     });
+    // **내 클론 목소리를 쓰던 남의 알람도 목소리를 잃는다.**
+    //
+    // 위 철회 기록은 '내가 보낸 알람' 만 덮는다. 그런데 같은 플랜 그룹에서 내 목소리를 공유
+    // 받은 사람은 **자기 알람**에 내 클론을 골라 뒀을 수 있다. 그 알람은 내 알람이 아니라
+    // 지워지지 않고, 그 기기는 캐시된 녹음으로 계속 울린다 — 파기 대상인 내 생체정보다.
+    // 서버 행을 알람음으로 내리고(아래 UPDATE), 주인들에게 알려 기기에서도 걷어내게 한다
+    // (isReceived=false → voice_access_revoked → VoiceAccessSyncWorker).
+    //
+    // 여긴 `DELETE FROM alarms` **뒤**라 내 알람은 이미 없다 — 남의 알람만 남는다.
+    // messages·voice_profiles 는 아직 살아 있어야 하므로 그 삭제보다는 **앞**이어야 한다.
+    const cloneProfiles = await tx.execute({
+      // is_system 이 시스템/클론을 가르는 유일한 컬럼이다(paid-voice-cleanup.ts 와 같은 기준).
+      sql: `SELECT id FROM voice_profiles
+            WHERE user_id IN (?, ?) AND COALESCE(is_system, 0) = 0`,
+      args: userIds,
+    });
+    const cloneIds = cloneProfiles.rows.map((row) => String(row.id));
+    if (cloneIds.length > 0) {
+      const cph = cloneIds.map(() => '?').join(', ');
+      const sharedScope = `voice_profile_id IN (${cph})
+             OR message_id IN (SELECT id FROM messages WHERE voice_profile_id IN (${cph}))`;
+      const sharedArgs = [...cloneIds, ...cloneIds];
+      const sharedVoiceAlarms = await tx.execute({
+        sql: `SELECT id, COALESCE(target_user_id, user_id) AS owner_user_id,
+                     target_user_id IS NOT NULL AS is_received
+                FROM alarms
+               WHERE ${sharedScope}`,
+        args: sharedArgs,
+      });
+      for (const row of sharedVoiceAlarms.rows) {
+        revokedTargets.push({
+          alarmId: String(row.id),
+          ownerUserId: String(row.owner_user_id),
+          isReceived: Number(row.is_received) === 1,
+        });
+      }
+      await tx.execute({
+        sql: `UPDATE alarms
+              SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+                  message_id = NULL, voice_profile_id = NULL
+              WHERE ${sharedScope}`,
+        args: sharedArgs,
+      });
+    }
     await tx.execute({
       sql: `DELETE FROM message_library
             WHERE user_id IN (?, ?)
