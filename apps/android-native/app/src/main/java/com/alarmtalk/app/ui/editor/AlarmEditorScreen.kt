@@ -893,7 +893,26 @@ internal fun AlarmEditorScreen(
                 }
                 // 다음에 같은 문구를 넣으면 이 파일을 바로 찾을 수 있게 화살표를 남긴다.
                 // 서버 표시 문구(response.text)도 함께 — 번역이 켜지면 입력 원문과 다르다.
-                ttsInputKey?.let { audioStore.linkTtsInput(it, cacheKey, response.text) }
+                ttsInputKey?.let { inputKey ->
+                    audioStore.linkTtsInput(inputKey, cacheKey, response.text)
+                    // **표시 문구로도 화살표를 남긴다.** 알람에 저장되는 건 입력 원문이 아니라
+                    // 서버 표시 문구이고(setGeneratedTtsAudio — 잠금화면 문구와 음성을 맞추려고),
+                    // '마지막에 쓴 직접 입력 문구' 로 기억되는 것도 그 값이다. 번역이 켜진
+                    // 기기(앱 언어 ≠ ko)에서는 둘이 달라서, 입력 원문 키만 남기면 다음 새 알람이
+                    // 표시 문구로 열려 캐시를 빗나간다 — 재생성도 없고 한도도 안 깎인다던 약속이
+                    // 조용히 깨진다(Codex #685). 같은 값이면 굳이 두 번 쓰지 않는다.
+                    val displayTextKey = AlarmAudioStore.ttsInputKey(
+                        userId = reuseUserId!!,
+                        profileId = profileId,
+                        text = response.text,
+                        category = editor.activeVoiceCategory(),
+                        language = editor.activeVoiceLanguage(),
+                        listenerTitle = listenerTitleForSave,
+                    )
+                    if (displayTextKey != inputKey) {
+                        audioStore.linkTtsInput(displayTextKey, cacheKey, response.text)
+                    }
+                }
                 editor.setGeneratedTtsAudio(
                     audio = cachedAudio,
                     profileId = profileId,
