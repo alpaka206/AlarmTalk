@@ -1992,6 +1992,25 @@ export const migrations: Migration[] = [
       `ALTER TABLE alarm_recipient_state ADD COLUMN revoked INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    /**
+     * 발신자가 **알람을 먼저 지운 뒤** 탈퇴하는 경로를 위한 보낸이 표식.
+     *
+     * 탈퇴 시 철회 기록은 `alarms` 행을 훑어 만든다. 그런데 발신자가 그 알람을 먼저
+     * 지웠으면 훑을 행이 없다 — 수신자 기기는 (설계대로) 알람을 그대로 들고 있는데,
+     * 그 안의 복제 목소리를 걷어낼 근거가 영영 사라진다.
+     *
+     * 그래서 보낸 알람을 지울 때 (alarm_id, recipient) 표식을 남기고 보낸이를 적어 둔다.
+     * `declined=0, revoked=0` 이라 그때는 아무 효력이 없고(수신자 알람은 그대로 남는다),
+     * 나중에 그 보낸이가 탈퇴할 때 이 행이 `revoked=1` 로 바뀐다.
+     *
+     * 탈퇴 처리는 플래그를 세우면서 **이 컬럼을 NULL 로 지운다** — 철회 사실만 남기고
+     * 탈퇴자의 식별자는 남기지 않는다(개인정보보호법 제21조).
+     */
+    id: 93,
+    name: 'alarm-recipient-state-sender',
+    statements: [`ALTER TABLE alarm_recipient_state ADD COLUMN sender_user_id TEXT`],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

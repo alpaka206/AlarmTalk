@@ -250,6 +250,29 @@ export async function purgeUserAccount(
               DO UPDATE SET revoked = 1, updated_at = datetime('now')`,
       args: [...userIds, ...userIds],
     });
+    // **내가 이미 지운 보낸 알람**도 걷어낸다. 위 SELECT/INSERT 는 `alarms` 행을 훑으므로,
+    // 지운 알람은 잡히지 않는다 — 그런데 수신자 기기는 그 알람을 그대로 들고 있다(#675).
+    // 삭제할 때 남겨 둔 표식(sender_user_id)이 그 근거다(Codex #676 P1).
+    const senderTombstones = await tx.execute({
+      sql: `SELECT alarm_id, recipient_user_id FROM alarm_recipient_state
+             WHERE sender_user_id IN (?, ?) AND recipient_user_id NOT IN (?, ?)`,
+      args: [...userIds, ...userIds],
+    });
+    for (const row of senderTombstones.rows) {
+      revokedTargets.push({
+        alarmId: String(row.alarm_id),
+        ownerUserId: String(row.recipient_user_id),
+        isReceived: true,
+      });
+    }
+    // 플래그를 세우면서 **보낸이 식별자는 지운다** — 철회 사실만 남기고 탈퇴자의 직접
+    // 식별자는 남기지 않는다(개인정보보호법 제21조). 이 행 자체는 수신자 것이라 남는다.
+    await tx.execute({
+      sql: `UPDATE alarm_recipient_state
+               SET revoked = 1, sender_user_id = NULL, updated_at = datetime('now')
+             WHERE sender_user_id IN (?, ?)`,
+      args: userIds,
+    });
     await tx.execute({
       sql: `DELETE FROM alarms
             WHERE user_id IN (?, ?) OR target_user_id IN (?, ?)`,
@@ -291,6 +314,21 @@ export async function purgeUserAccount(
                   message_id = NULL, voice_profile_id = NULL
               WHERE ${sharedScope}`,
         args: sharedArgs,
+      });
+      // 알람에서 떼어 냈다고 끝이 아니다 — 그 알람이 쓰던 **문구 행**은 남의 것이라
+      // (messages.user_id = 그 멤버) 아래 `DELETE FROM messages WHERE user_id IN (내 것)`
+      // 에 안 걸리는데, messages.voice_profile_id 는 NOT NULL FK 로 내 클론을 가리킨다.
+      // 그대로 두면 `DELETE FROM voice_profiles` 가 FK 로 실패해 **탈퇴가 통째로 500** 이
+      // 된다(paid-voice-cleanup 이 같은 순서로 지우는 이유다). message_library 가
+      // messages 를 참조하므로 그쪽을 먼저 지운다.
+      await tx.execute({
+        sql: `DELETE FROM message_library
+              WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id IN (${cph}))`,
+        args: cloneIds,
+      });
+      await tx.execute({
+        sql: `DELETE FROM messages WHERE voice_profile_id IN (${cph})`,
+        args: cloneIds,
       });
     }
     await tx.execute({
