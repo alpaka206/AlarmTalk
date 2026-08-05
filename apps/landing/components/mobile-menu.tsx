@@ -33,8 +33,8 @@ export function MobileMenu() {
   }, [open]);
 
   const links: { href: string; label: string }[] = [
-    { href: "/#voices", label: t("voices") },
-    { href: "/#how", label: t("how") },
+    { href: "/#how", label: t("features") },
+    { href: "/#pricing", label: t("pricing") },
     { href: "/#faq", label: t("faq") },
     { href: "/company", label: t("company") },
     { href: "/contact", label: t("contact") },

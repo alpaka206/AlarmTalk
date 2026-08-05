@@ -4,12 +4,11 @@
     "description": "Register a voice once, then create alarms that read any line you write — in that voice. Shared only inside your private family, couple, or friend group."
   },
   "nav": {
-    "voices": "Features",
-    "how": "How it works",
+    "features": "Features",
+    "pricing": "Pricing",
     "faq": "FAQ",
     "company": "Company",
-    "contact": "Contact",
-    "pricing": "Pricing"
+    "contact": "Contact"
   },
   "hero": {
     "headline": "Wake up to a voice\nyou actually want to hear.",
@@ -96,6 +95,30 @@
       {
         "q": "How do I make a voice?",
         "a": "Record something or upload an audio file. Recordings run from 12 seconds up to 2 minutes. If you don’t have a file, playing a video of that person and recording it works too. Once the voice exists, every line you write is read back in it, on as many alarms as you like. Adding a voice of your own needs a plan, and you can create one per month."
+      },
+      {
+        "q": "Does it ring in airplane mode or without internet?",
+        "a": "Yes. Alarms use your phone’s own alarm scheduler and audio that was downloaded ahead of time. Nothing is asked of a server at ring time, so it works in airplane mode, underground, or with no data."
+      },
+      {
+        "q": "Do I still get snooze and weekday repeats?",
+        "a": "Yes. Repeat days, snooze length and limit, vibration patterns, alarm sounds and skipping public holidays all work like any alarm app. The only difference is what you hear."
+      },
+      {
+        "q": "How far does my voice travel?",
+        "a": "No further than the people on your Couple or Family plan. Groups are joined by invite code, and whoever receives a voice can only use it for alarms inside the app. There is no way to export the audio as a file."
+      },
+      {
+        "q": "What happens to my voice if I delete my account?",
+        "a": "It is destroyed on our servers. If someone else has an alarm built from it, the voice is removed there too and the alarm falls back to an alarm sound. The alarm itself stays — the time is theirs."
+      },
+      {
+        "q": "Can I redo a voice I’m not happy with?",
+        "a": "You can re-record as many times as you like before you confirm it. After that, you can register one voice per month — deleting the one you made won’t give you another that month."
+      },
+      {
+        "q": "If I cancel, do I lose access right away?",
+        "a": "No. Cancel in Google Play and you keep everything until the time you already paid for runs out. After that you move to the free plan, and alarms built from your own voice fall back to an alarm sound."
       },
       {
         "q": "Are there forced missions, like math or photo challenges?",

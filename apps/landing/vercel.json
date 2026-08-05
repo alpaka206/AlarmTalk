@@ -20,8 +20,8 @@
     { "source": "/ko", "destination": "/", "permanent": true },
     { "source": "/ko/", "destination": "/", "permanent": true }
   ],
+  "_comment_rewrites": "루트(/)는 app/page.tsx 가 진짜 파일로 만들어 rewrite 가 필요 없다(파일시스템이 rewrite 보다 먼저다). 하위 한국어 페이지는 아직 /ko/* 로만 생성되므로 접두사 없는 주소를 그쪽으로 넘긴다.",
   "rewrites": [
-    { "source": "/", "destination": "/ko/" },
     {
       "source": "/:page(privacy|terms|account-deletion|company|contact)/",
       "destination": "/ko/:page/"

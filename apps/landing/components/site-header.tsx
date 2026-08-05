@@ -5,6 +5,7 @@ import { motion, useScroll, useSpring, useTransform } from "motion/react";
 import { Link } from "@/i18n/navigation";
 import { BrandMark } from "./brand-mark";
 import { MobileMenu } from "./mobile-menu";
+import { LocaleSwitcher } from "./locale-switcher";
 
 export function SiteHeader() {
   const t = useTranslations("nav");
@@ -50,18 +51,19 @@ export function SiteHeader() {
           </span>
         </Link>
 
+        {/* 라벨과 도착지를 맞춘다 — 앵커는 홈 안의 섹션 id 와 1:1 이다. */}
         <nav className="hidden items-center gap-1 md:flex">
-          <Link
-            href="/#voices"
-            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
-          >
-            {t("voices")}
-          </Link>
           <Link
             href="/#how"
             className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
           >
-            {t("how")}
+            {t("features")}
+          </Link>
+          <Link
+            href="/#pricing"
+            className="whitespace-nowrap rounded-full px-3.5 py-2 text-[13.5px] font-medium text-text-muted transition-[color] duration-150 ease-[var(--ease-ui)] hover:text-text focus-visible:text-text"
+          >
+            {t("pricing")}
           </Link>
           <Link
             href="/#faq"
@@ -84,6 +86,9 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <div className="hidden md:block">
+            <LocaleSwitcher />
+          </div>
           <MobileMenu />
         </div>
       </div>
