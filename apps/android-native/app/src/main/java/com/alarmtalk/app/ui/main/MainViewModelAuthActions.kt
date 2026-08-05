@@ -1056,13 +1056,40 @@ internal suspend fun MainViewModel.withdrawVoiceBiometricConsent(): Boolean {
 }
 
 internal fun MainViewModel.syncNow() {
-    val session = authSession
-    if (session == null) {
+    if (authSession == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_sync_login_required)
         return
     }
+    // ⚠ **두 회차를 겹쳐 돌리지 않는다.** syncNow 는 알람 탭 진입·시작·푸시 등 여러 곳에서
+    // 불려 짧은 간격으로 두 번 들어온다. 두 회차가 같은 '아직 안 올린' 목록을 읽으면
+    // (remoteAlarmId 는 응답이 와야 커밋된다) 둘 다 create 로 가서 **서버에 같은 알람이 두 개**
+    // 생긴다 — 가족 알람이면 수신자에게 두 번 간다. 2026-08-06 실기기 재현(운세 알람 1개가
+    // 서버에 2행).
+    //
+    // 다만 **버리지는 않고 미뤄 둔다.** 그냥 return 하면, 앞 회차가 목록을 이미 스냅샷한 뒤에
+    // 저장된 알람이 다음 트리거(탭 재진입·앱 재실행)까지 서버에 안 올라간다 — repository.
+    // syncWithBackend 를 부르는 곳은 여기뿐이고 워커는 pull 만 한다(Codex #686). 그래서
+    // 요청이 겹치면 표시만 남기고, 지금 회차가 끝난 뒤 한 번 더 돈다.
+    //
+    // 켜는 건 반드시 launch **밖**이어야 한다. 안에서 켜면 두 코루틴이 모두 예약된 뒤에
+    // 켜져 아무것도 못 막는다.
+    if (syncBusy) {
+        syncRequestedWhileBusy = true
+        return
+    }
+    syncBusy = true
     viewModelScope.launch {
-        syncBusy = true
+        try {
+        do {
+        // 이번 회차가 시작될 때 표시를 내린다. 도는 도중에 다시 켜지면 한 번 더 돈다.
+        syncRequestedWhileBusy = false
+        // ⚠ **세션은 회차마다 다시 읽는다.** 미뤄 둔 회차는 앞 회차의 네트워크 왕복이 끝난
+        // 뒤에 도는데, 그 사이 토큰이 바뀔 수 있다(로그인·롤링 갱신 — 알람 탭 효과 자체가
+        // authSession?.token 을 키로 쓴다). 처음 잡아 둔 토큰을 계속 쓰면 옛 자격증명으로
+        // 나가고, 더 나쁘게는 repository.syncWithBackend 가 **소유자를 지금 세션 저장소에서**
+        // 가져오므로 재로그인 직후엔 새 계정의 로컬 행이 옛 계정 토큰으로 올라간다(Codex #686).
+        // 로그아웃됐으면 이번 회차는 돌리지 않고 끝낸다.
+        val session = authSession ?: break
         runCatching {
             val push = repository.syncWithBackend(api, session.token)
             val pull = repository.pullReceivedAlarms(api, session.token)
@@ -1102,7 +1129,13 @@ internal fun MainViewModel.syncNow() {
                 AlarmTalkLog.reportError("Backend sync failed", error)
             }
         }
-        syncBusy = false
+        } while (syncRequestedWhileBusy)
+        } finally {
+            // 취소·예외로 빠져나가도 반드시 푼다 — 안 그러면 이 세션 동안 sync 가 영영 막힌다.
+            // 미뤄 둔 요청 표시도 함께 내린다(다음 트리거가 정상적으로 새 회차를 연다).
+            syncRequestedWhileBusy = false
+            syncBusy = false
+        }
     }
 }
 

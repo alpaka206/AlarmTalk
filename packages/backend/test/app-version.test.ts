@@ -32,7 +32,7 @@ it('대소문자 무시', () => {
   // latest 를 안 올리면 구버전 사용자에게 업데이트 안내가 영영 안 뜬다(1.2.2 때 실제로
   // 그랬다). 이 단언은 "권장 기준이 출시된 버전을 따라가고 있는가" 를 묻는다 — 앱의
   // versionCode 를 올릴 때 여기도 같이 보게 하는 장치다.
-  it('latest 는 출시된 versionCode(23) 이상이다 — 안 올리면 안내가 안 뜬다', () => {
-    expect(appVersionPolicy('android').latest).toBeGreaterThanOrEqual(23);
+  it('latest 는 출시된 versionCode(24) 이상이다 — 안 올리면 안내가 안 뜬다', () => {
+    expect(appVersionPolicy('android').latest).toBeGreaterThanOrEqual(24);
   });
 });

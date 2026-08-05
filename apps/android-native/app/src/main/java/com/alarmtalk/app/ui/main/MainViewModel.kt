@@ -420,6 +420,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var authNotice by mutableStateOf<String?>(null)
         internal set
 
+    /**
+     * 지금 회차가 도는 동안 sync 요청이 또 들어왔는가. 겹쳐 돌리면 서버에 같은 알람이 두 개
+     * 생기지만(`syncNow` 주석), 그렇다고 버리면 앞 회차가 목록을 스냅샷한 뒤 저장된 알람이
+     * 다음 트리거까지 안 올라간다. 그래서 표시만 남기고 회차가 끝난 뒤 한 번 더 돈다.
+     */
+    internal var syncRequestedWhileBusy = false
+
     var syncBusy by mutableStateOf(false)
         internal set
 
