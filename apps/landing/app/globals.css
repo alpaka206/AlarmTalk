@@ -1,42 +1,39 @@
-/* remote @import must precede the Tailwind import so it stays first after the
-   Tailwind plugin inlines its rules (otherwise CSS nesting order warns). */
-@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600;700&display=swap");
 @import "tailwindcss";
 @import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 
 @theme {
-  /* warm gray ramp — paper-like, slightly toasted */
-  --color-gray-50: #faf9f5;
-  --color-gray-100: #f0eee6;
-  --color-gray-200: #e6e2d9;
-  --color-gray-300: #d3cdc0;
-  --color-gray-400: #b0a99c;
-  --color-gray-500: #8a8377;
-  --color-gray-600: #6b675f;
-  --color-gray-700: #4a463f;
-  --color-gray-800: #2e2b26;
-  --color-gray-900: #1f1e1c;
-  --color-gray-950: #14130f;
+  /* 쿨 그레이 램프. 바닥이 흰색이면 램프도 쿨이어야 한다 — 웜 회색은 흰 바탕에서
+     누렇게 뜬다(반대로 페이퍼 바닥에서는 쿨 회색이 뜬다. 램프는 바닥에서 나온다). */
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f2f4f6;
+  --color-gray-200: #e5e8eb;
+  --color-gray-300: #d1d6db;
+  --color-gray-400: #b0b8c1;
+  --color-gray-500: #8b95a1;
+  --color-gray-600: #6b7684;
+  --color-gray-700: #4e5968;
+  --color-gray-800: #333d4b;
+  --color-gray-900: #191f28;
+  --color-gray-950: #0f1622;
 
-  /* surface tokens — paper */
-  --color-bg: #faf9f5;
+  /* 흰 바닥. 깊이는 그림자가 아니라 여백과 아주 얕은 배경 단차가 만든다. */
+  --color-bg: #ffffff;
   /* 교대 섹션. paper 대비 1.053 — 단차가 눈에 "보이기" 시작하면 그건 색을 더 줄
      이유가 아니라 여백이 모자라다는 신호다. 이보다 진하게 만들지 말 것. */
-  --color-bg-alt: #f5f3ee;
+  --color-bg-alt: #f9fafb;
   --color-surface: #ffffff;
-  --color-raised: #f4f1ea;
-  --color-line: #e6e2d9;
-  --color-line-soft: #efece4;
+  --color-raised: #f2f4f6;
+  --color-line: #e5e8eb;
+  --color-line-soft: #f2f4f6;
 
-  /* text — warm near-black. 사다리에 본문 칸(~6.7)이 비어 있어서 본문이 보조 문구용
-     5.4 로 조판되고 있었다. strong·body 두 칸을 채우고 muted 는 보조로 내린다.
-     대비비는 #faf9f5 기준. */
-  --color-text: #1f1e1c; /* 15.8 — 제목 */
-  --color-text-strong: #3a3630; /* 11.4 — 두 줄 헤드라인의 뒷줄, 부제 */
-  --color-text-body: #5f594f; /*  6.7 — 본문 기본 */
-  --color-text-muted: #6b675f; /*  5.4 — 보조 문구 */
-  --color-text-dim: #8a8377; /*  3.6 — 아이콘·구분자 전용, 글자 금지 */
-  --color-text-faint: #aaa395; /*  2.4 — 장식 전용 */
+  /* 사다리에 본문 칸이 비어 있어서 본문이 보조 문구용 등급으로 조판되고 있었다.
+     strong·body 두 칸을 채우고 muted 는 보조로 내린다. 대비비는 흰 바탕 기준. */
+  --color-text: #191f28; /* 15.9 — 제목 */
+  --color-text-strong: #333d4b; /* 11.0 — 두 줄 헤드라인의 뒷줄, 부제 */
+  --color-text-body: #4e5968; /*  7.4 — 본문 기본 */
+  --color-text-muted: #6b7684; /*  5.1 — 보조 문구 */
+  --color-text-dim: #8b95a1; /*  3.4 — 아이콘·구분자 전용, 글자 금지 */
+  --color-text-faint: #b0b8c1; /*  2.2 — 장식 전용 */
 
   /* accent — brand blue, unified with the native apps (#175FB0) */
   --color-accent: #175fb0;
@@ -61,9 +58,6 @@
   --font-sans:
     "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
     "Segoe UI", system-ui, sans-serif;
-  --font-serif:
-    "Noto Serif KR", "Apple SD Gothic Neo", Georgia, "Times New Roman", serif;
-
   /* radii */
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -72,10 +66,10 @@
   --radius-2xl: 24px;
   --radius-3xl: 28px;
 
-  /* shadows — soft, warm, low-contrast (light theme) */
-  --shadow-card: 0 1px 2px rgba(60, 50, 35, 0.04), 0 18px 44px rgba(90, 75, 55, 0.08);
-  --shadow-elevated: 0 1px 3px rgba(60, 50, 35, 0.05), 0 34px 80px rgba(90, 75, 55, 0.14);
-  --shadow-hairline: inset 0 0 0 1px rgba(40, 35, 25, 0.04);
+  /* 그림자는 기기 마운트에만 쓴다. 흰 바닥에서는 웜 그림자가 누렇게 뜬다. */
+  --shadow-card: 0 1px 2px rgba(25, 31, 40, 0.04), 0 18px 44px rgba(25, 31, 40, 0.06);
+  --shadow-elevated: 0 1px 3px rgba(25, 31, 40, 0.05), 0 34px 80px rgba(25, 31, 40, 0.1);
+  --shadow-hairline: inset 0 0 0 1px rgba(25, 31, 40, 0.05);
 
   /* motion — 역할이 둘이라 곡선도 둘이다.
      expo-out 은 앞 80% 가 구간의 20% 에서 끝난다. 진입(450~800ms)에는 최선이지만
@@ -102,12 +96,12 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* 세리프 = display·h1·h2. 자간은 크기별 유틸(.t-*)이 정한다 — 세리프는 획 끝이
-     서로 침범해서 산세리프 권장치의 **절반**이 상한이다. */
+  /* 제목도 본문과 같은 산세리프다. 무게로만 가른다 — 800 은 한글에서 획이 뭉치지
+     않으면서 확실히 굵게 읽히는 상한이다. 자간은 크기별 유틸(.t-*)이 정한다. */
   h1,
-  h2 {
-    font-family: var(--font-serif);
-    font-weight: 700;
+  h2,
+  h3 {
+    font-weight: 800;
   }
 
   /* 카피 요소만 JSON 의 `\n` 을 줄바꿈으로 살린다.
@@ -146,30 +140,33 @@
 
 @layer utilities {
   /* 타입 스케일 — 브레이크포인트는 640px 하나.
-     크기가 커질수록 leading 을 줄인다(1.7 → 1.18). 한글은 받침 때문에 실제 글자
-     높이가 로마자보다 커서, 큰 글자에 1.5 를 주면 줄이 따로 놀고 본문은 1.7 까지
-     벌려야 받침이 아랫줄에 안 붙는다. */
+     제목은 **무게로** 말한다(800). 그래서 leading 을 조이지 않고 1.34~1.42 로 벌려
+     둔다 — 굵은 한글을 좁은 행간에 넣으면 글자 덩어리가 서로 밀어낸다. 대신 자간은
+     크게 조인다(-0.03em): 큰 산세리프는 기본 자간이 헐렁해서 안 조이면 흩어져 보인다.
+     본문은 반대로 1.7 까지 벌려야 받침이 아랫줄에 안 붙는다. */
   .t-display {
     font-size: 34px;
-    line-height: 1.18;
-    letter-spacing: -0.02em;
+    font-weight: 800;
+    line-height: 1.34;
+    letter-spacing: -0.035em;
   }
   .t-h1 {
     font-size: 26px;
-    line-height: 1.28;
-    letter-spacing: -0.018em;
+    font-weight: 800;
+    line-height: 1.38;
+    letter-spacing: -0.03em;
   }
   .t-h2 {
-    font-size: 24px;
-    line-height: 1.35;
-    letter-spacing: -0.015em;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.42;
+    letter-spacing: -0.025em;
   }
   .t-h3 {
-    font-family: var(--font-sans);
-    font-size: 18px;
+    font-size: 17px;
     font-weight: 700;
-    line-height: 1.45;
-    letter-spacing: -0.01em;
+    line-height: 1.5;
+    letter-spacing: -0.02em;
   }
   .t-lead {
     font-size: 17px;
@@ -177,7 +174,7 @@
     line-height: 1.6;
     letter-spacing: -0.005em;
   }
-  /* 한글은 획이 많아 400 에서 흐려진다. 세리프 제목과의 대비 때문에 600 은 무거워 500. */
+  /* 한글은 획이 많아 400 에서 흐려진다. 제목이 800 이라 본문은 500 이면 위계가 선다. */
   .t-body {
     font-size: 15.5px;
     font-weight: 500;
@@ -190,28 +187,27 @@
     line-height: 1.5;
   }
   .t-metric {
-    font-family: var(--font-sans);
-    font-size: 40px;
-    font-weight: 700;
+    font-size: 44px;
+    font-weight: 800;
     line-height: 1;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.04em;
   }
 
   @media (min-width: 640px) {
     /* 히어로 상한은 취향이 아니라 **일본어 카피가 정한다**. 좌측 컬럼 유효폭 ≈572px,
-       ja 최장 줄이 9글자(전각 ≈1em)라 60px 에서 540px 로 들어가고 64px 이면 넘친다.
+       ja 최장 줄이 9글자(전각 ≈1em)다. 56px + 자간 -0.035em 이면 약 494px 로 들어간다.
        카피를 바꾸면 이 계산을 다시 할 것. */
     .t-display {
-      font-size: 60px;
+      font-size: 56px;
     }
     .t-h1 {
-      font-size: 44px;
+      font-size: 40px;
     }
     .t-h2 {
-      font-size: 32px;
+      font-size: 28px;
     }
     .t-h3 {
-      font-size: 20px;
+      font-size: 19px;
     }
     .t-lead {
       font-size: 20px;
@@ -223,27 +219,27 @@
       font-size: 13.5px;
     }
     .t-metric {
-      font-size: 56px;
+      font-size: 60px;
     }
   }
 
   /* 섹션 리듬 — 데스크톱:모바일 = 2:1. 지금까지 섹션마다 달라서 리듬이 없었다. */
   .section-pad {
-    padding-block: 80px;
+    padding-block: 88px;
   }
   @media (min-width: 641px) {
     .section-pad {
-      padding-block: 112px;
+      padding-block: 128px;
     }
   }
   @media (min-width: 992px) {
     .section-pad {
-      padding-block: 160px;
+      padding-block: 180px;
     }
   }
 
-  /* 기기 마운트 — 구운 PNG 목업을 쓰지 않는다. PNG 는 배경색에 고정돼서, 흰 배경에
-     맞춰 렌더된 그림자를 웜 페이퍼에 올리면 회색으로 뜬다. */
+  /* 기기 마운트 — 구운 PNG 목업을 쓰지 않는다. PNG 는 렌더될 때의 배경색에 고정돼서
+     다른 바닥에 올리면 그림자가 뜬다. CSS 로 그리면 바닥이 바뀌어도 따라온다. */
   .device {
     --w: 300px;
     width: var(--w);
@@ -254,9 +250,10 @@
       /* 베젤이 #000 이 아닌 이유: 밝은 페이지 → 딥네이비 베젤 → 딥네이비 UI 로 두
          단계를 밟는다. 한 번에 떨어지면 앱 화면이 아니라 페이지에 뚫린 구멍이 된다. */
       0 0 0 calc(var(--w) * 0.033) var(--color-ink),
-      /* 앰비언트가 웜이라야 페이퍼 위에서 회색으로 뜨지 않는다. */ 0 28px 56px
-        rgba(90, 75, 55, 0.16),
-      0 6px 14px rgba(90, 75, 55, 0.1);
+      /* 페이지에서 그림자를 쓰는 유일한 자리. 기기는 실제로 떠 있어야 하고, 흰 바닥
+         위라 중성 그림자여야 누렇게 뜨지 않는다. */
+      0 24px 48px rgba(25, 31, 40, 0.14),
+      0 6px 14px rgba(25, 31, 40, 0.08);
   }
 
   /* ink 위에 ink 베젤을 올리면 베젤이 사라진다. 어두운 섹션에서는 가장자리만 남긴다. */
@@ -264,8 +261,8 @@
     box-shadow: inset 0 0 0 1px var(--color-ink-line);
   }
 
-  /* 종이 질감. 장식 그라데이션·후광은 전부 걷었지만 이건 남긴다 — 색을 더하지 않고
-     표면의 성질만 바꾼다. */
+  /* 남겨는 두되 쓰지 않는다 — 흰 바탕에서 그레인은 종이 질감이 아니라 노이즈다.
+     표면은 평평하게 두고 깊이는 여백이 만든다. */
   .grain {
     position: fixed;
     inset: 0;
@@ -282,7 +279,7 @@
     position: relative;
     background: var(--color-surface);
     border: 1px solid var(--color-line);
-    border-radius: var(--radius-2xl);
+    border-radius: var(--radius-3xl);
   }
 
   /* 호버 피드백은 색·테두리로만. transform 은 마우스를 스칠 때 커졌다 작아지는 게
@@ -323,10 +320,10 @@
   .btn-primary {
     background: var(--color-accent);
     color: #fff;
-    height: 52px;
-    padding: 0 1.75rem;
-    font-size: 15px;
-    box-shadow: 0 1px 2px rgba(15, 50, 90, 0.18), 0 8px 24px rgba(23, 95, 176, 0.22);
+    height: 56px;
+    padding: 0 2rem;
+    font-size: 16px;
+    font-weight: 700;
   }
   .btn-primary:hover {
     background: var(--color-accent-strong);
@@ -346,7 +343,7 @@
   }
 
   /* 아이브로 — 강조색 예산이 쓰이는 두 자리 중 하나(다른 하나는 CTA 채움).
-     글자 자체가 브랜드색이다. 페이퍼 위 대비 6.08. */
+     글자 자체가 브랜드색이다. 흰 바탕 대비 6.44. */
   .eyebrow {
     display: inline-flex;
     align-items: center;

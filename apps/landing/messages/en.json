@@ -29,18 +29,18 @@
     "items": [
       {
         "metric": "12s",
-        "title": "minimum",
-        "body": "Twelve seconds of recording is enough to build the voice.\nUpload a file, or play a video you like and record that."
+        "title": "of audio",
+        "body": "That much is enough to build the voice.\nUpload a file, or play something you love and record that."
       },
       {
-        "metric": "3",
-        "title": "groups of voices",
-        "body": "Your own, voices shared with you, and four built-in ones. Pick per alarm."
+        "metric": "4",
+        "title": "built-in voices",
+        "body": "Four voices you can use today, no setup.\nTap one to hear how it greets you."
       },
       {
         "metric": "0",
         "title": "missions",
-        "body": "No shaking, no arithmetic, no photos. Mornings are hard enough without a penalty."
+        "body": "No shaking, no arithmetic, no photos.\nMornings are hard enough without a penalty."
       }
     ]
   },
