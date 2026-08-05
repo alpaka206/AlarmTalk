@@ -4,98 +4,88 @@
     "description": "Register a voice once, then create alarms that read any line you write — in that voice. Shared only inside your private family, couple, or friend group."
   },
   "nav": {
-    "voices": "Features",
-    "how": "How it works",
+    "features": "Features",
+    "pricing": "Pricing",
     "faq": "FAQ",
     "company": "Company",
     "contact": "Contact"
   },
   "hero": {
-    "tag": "Voice alarm",
-    "headline1": "Wake up to",
-    "headline2": "a voice you love.",
-    "description": "Register the voice you want, and set your alarms in that voice.",
+    "headline": "Wake up to a voice\nyou actually want to hear.",
+    "description": "A voice you recorded, one a family member shared, or ours.\nYou decide what it says.",
     "phone": {
-      "greetTop": "Good morning,",
-      "greetBottom": "whose voice woke you up?",
-      "nextAlarm": "Next alarm",
-      "alarmLabel": "Mom's voice",
-      "alarmEdit": "Edit",
-      "quickStart": "Quick start",
-      "quickVoice": "Voice profiles",
-      "quickAlarm": "New alarm",
+      "countdown": "Rings in 9 hours 21 minutes.",
+      "meridiem": "AM",
+      "alarmTime": "6:00",
+      "alarmMeta": "Wed, Aug 5 - Mom’s voice",
       "tabAlarms": "Alarms",
       "tabVoice": "Voices",
       "tabMore": "More"
     }
   },
   "trust": {
-    "headline": "Not a louder alarm.\nA voice you actually want to keep hearing.",
     "items": [
       {
-        "metric": "1×",
-        "title": "Voice setup",
-        "body": "Record a clip or upload a voice file to create a voice. Then make alarms in the voice you want."
+        "metric": "Unlimited",
+        "title": "alarms",
+        "body": "Make as many as you want, free.\nRepeat, snooze and weekdays work like any alarm."
       },
       {
-        "metric": "Any",
-        "title": "words you write",
-        "body": "Write the words you want to hear, and that voice says them. Pick weather or a daily fortune, and it wakes you with a fresh line every morning."
+        "metric": "4",
+        "title": "built-in voices",
+        "body": "Four voices you can use today, no setup.\nTap one to hear how it greets you."
       },
       {
         "metric": "0",
-        "title": "cold missions",
-        "body": "Mornings are hard enough. Skip the cold missions — start the day with a warm word instead."
+        "title": "missions",
+        "body": "No shaking, no arithmetic, no photos.\nMornings are hard enough without a penalty."
       }
     ]
   },
   "voice": {
-    "headline1": "Set up once,",
-    "headline2": "as many alarms as you want.",
-    "description": "Record or upload a voice file once to build a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like.",
-    "bullet1": "Build a voice profile from a recording or a file",
-    "bullet2": "Type any sentence, read back in that voice",
-    "bullet3": "Reuse one registered voice across many alarms"
+    "headline": "Set it up once,\nuse it on every alarm.",
+    "description": "Record something or upload a file, and the voice is ready.\nAfter that you only write the line — the alarm reads it back in that voice, on as many alarms as you like.",
+    "bullet1": "Record it or upload a file, whichever is easier",
+    "bullet2": "Use the voice you made on your alarms",
+    "bullet3": "Adding your own voice needs a plan — one per month"
   },
   "shared": {
-    "headline1": "Share a voice",
-    "headline2": "with the people you love.",
-    "description": "Share voices with the people on your plan. Wake up to a family member's or partner's voice — and set the morning alarm for someone far away, too.",
-    "bullet1": "Share voices with the people on your plan",
-    "bullet2": "Build your own alarms with the voices you receive",
-    "bullet3": "Set alarms for family or a partner living far away"
+    "headline": "Far apart,\nstill the voice beside you.",
+    "description": "On a Couple or Family plan you can share voices with each other — build your alarms from a voice you received, or set their morning alarm for them.",
+    "bullet1": "Couple is 2 people, Family is 5 including you",
+    "bullet2": "Use a voice you received on any alarm of yours",
+    "bullet3": "Set an alarm for them — once sent, it is theirs to change"
   },
   "language": {
-    "headline1": "Too busy to type?",
-    "headline2": "Let it write itself.",
-    "description": "Don't feel like writing a line every time? Pick a context like weather or fortune, and a fresh greeting is generated daily in that voice. It's an optional mode you turn on when you want it.",
-    "bullet1": "Today's weather and temperature, in that voice",
-    "bullet2": "Today's fortune, a medication reminder, or a loving line",
-    "bullet3": "Read out in Korean, English, or Japanese — whichever the app is set to"
+    "headline": "Don’t feel like writing it\nevery night?",
+    "description": "Pick a topic instead of writing it, and the greeting changes daily.\nToday’s weather, a reminder to take your medication, or a line of fortune.",
+    "bullet1": "Weather and medication reminders are free",
+    "bullet2": "Fortune and words of love come with a voice of your own",
+    "bullet3": "Choose Korean, English or Japanese"
   },
   "scenarios": {
-    "headline": "Opposite people. Same single insight.",
-    "description": "Fans and seniors look nothing alike — but they share one thing: there's one specific voice they want to hear every single day. That's the center of AlarmTalk.",
+    "headline": "What it says in the morning.",
+    "description": "Not sure what to put in? Start with one of these.\nThe weather and medication lines already ship with the app.",
     "items": [
       {
-        "tag": "Fandom",
-        "title": "Wake up to your favorite idol's voice",
-        "body": "Register a short clip from a fan video once, then create as many alarms as you like that read any line in that voice."
+        "tag": "If you have a favorite voice",
+        "title": "\"Time to get up. Let’s have a good one today.\"",
+        "body": "Lift a voice from a video you love and let it open your morning.\nMake it once, then change the words as often as you like."
       },
       {
-        "tag": "Seniors",
-        "title": "Parents waking to a grandchild's voice",
-        "body": "Twelve seconds from a far-away grandchild is enough to register their voice and set up a morning greeting alarm."
+        "tag": "Family far away",
+        "title": "\"It’s time for your medicine. Take it now with a glass of water, before it slips your mind.\"",
+        "body": "Set your parents’ alarm for them when you can’t check in as often as you’d like.\nYou don’t have to write this line yourself."
       },
       {
-        "tag": "Couple",
-        "title": "Apart every weekend",
-        "body": "“Good night. See you tomorrow morning.” Use the recording as an alarm — or write more lines to read back in the same voice."
+        "tag": "Couples living apart",
+        "title": "\"Sleep well? Have a good day.\"",
+        "body": "Set their morning alarm in your own voice.\nOnce it arrives it’s theirs — they can move the time however they want."
       },
       {
-        "tag": "Living alone",
-        "title": "A warmer first second",
-        "body": "Instead of a beep, your mother's voice. Human warmth in the most private second of the day."
+        "tag": "If writing lines is a chore",
+        "title": "\"It’s really cold out today. Bundle up in a warm coat before you head out.\"",
+        "body": "Pick weather and it chooses a greeting to match the sky that morning.\nClear, rain, snow, cold — a different line each day."
       }
     ]
   },
@@ -103,12 +93,32 @@
     "headline": "Frequently asked",
     "items": [
       {
-        "q": "What can I do with 12 seconds of audio?",
-        "a": "It builds a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like. You can also use a raw recording as-is, or optionally auto-generate a fresh line daily from contexts like weather or fortune."
+        "q": "How do I make a voice?",
+        "a": "Record something or upload an audio file. Recordings run from 12 seconds up to 2 minutes. If you don’t have a file, playing a video of that person and recording it works too. Once the voice exists, every line you write is read back in it, on as many alarms as you like. Adding a voice of your own needs a plan, and you can create one per month."
       },
       {
-        "q": "Where does my voice go after I record it?",
-        "a": "Nothing leaves the group. Family, partner, and friend groups are invite-code only. Recipients can play voices in their own library, but cannot export or download them."
+        "q": "Does it ring in airplane mode or without internet?",
+        "a": "Yes. Alarms use your phone’s own alarm scheduler and audio that was downloaded ahead of time. Nothing is asked of a server at ring time, so it works in airplane mode, underground, or with no data."
+      },
+      {
+        "q": "Do I still get snooze and weekday repeats?",
+        "a": "Yes. Repeat days, snooze length and limit, vibration patterns, alarm sounds and skipping public holidays all work like any alarm app. The only difference is what you hear."
+      },
+      {
+        "q": "How far does my voice travel?",
+        "a": "No further than the people on your Couple or Family plan. Groups are joined by invite code, and whoever receives a voice can only use it for alarms inside the app. There is no way to export the audio as a file."
+      },
+      {
+        "q": "What happens to my voice if I delete my account?",
+        "a": "It is destroyed on our servers. If someone else has an alarm built from it, the voice is removed there too and the alarm falls back to an alarm sound. The alarm itself stays — the time is theirs."
+      },
+      {
+        "q": "Can I redo a voice I’m not happy with?",
+        "a": "You can re-record as many times as you like before you confirm it. After that, you can register one voice per month — deleting the one you made won’t give you another that month."
+      },
+      {
+        "q": "If I cancel, do I lose access right away?",
+        "a": "No. Cancel in Google Play and you keep everything until the time you already paid for runs out. After that you move to the free plan, and alarms built from your own voice fall back to an alarm sound."
       },
       {
         "q": "Are there forced missions, like math or photo challenges?",
@@ -117,10 +127,6 @@
       {
         "q": "Who actually uses this?",
         "a": "Two groups. Fans who want to wake up to their favorite idol, voice actor, or character — and seniors and long-distance families who want their child, grandchild, or partner's voice every morning. Both share one thing: a specific voice they want to hear daily."
-      },
-      {
-        "q": "Is it free?",
-        "a": "Alarms and our built-in voices are free. Free alarms come with two phrase sets — a weather line and a medication reminder — and you can tap any built-in voice to hear its greeting sample. Registering a voice of your own, writing your own lines, and picking the fortune or love contexts start with a paid plan. Sharing voices with family or a partner — and setting their alarms for them — comes with the couple and family plans."
       },
       {
         "q": "Which devices are supported?",
@@ -143,7 +149,8 @@
     "linkTerms": "Terms",
     "linkAccountDeletion": "Account deletion",
     "rights": "All rights reserved.",
-    "made": "Made in Korea"
+    "made": "Made in Korea",
+    "linkPricing": "Pricing"
   },
   "language_switcher": {
     "label": "Language",
@@ -256,7 +263,7 @@
       "alarmtalk": {
         "tag": "AlarmTalk",
         "title": "A voice alarm app",
-        "body": "Twelve seconds of audio creates a voice profile, then any sentence you write is read aloud in that voice across your alarms. Family, partner, and friend groups exchange voices privately.",
+        "body": "Register a voice you love and build alarms that read your lines back in it. Family, partners and friends exchange voices only inside their group.",
         "cta": "Back to home"
       }
     },
@@ -264,9 +271,21 @@
       "headline": "Coming soon to this page",
       "description": "Press, awards, and the team's story will land here at launch.",
       "items": [
-        { "tag": "Press", "title": "Press", "body": "First coverage will live here once we launch." },
-        { "tag": "Team", "title": "Team & culture", "body": "Stories about the people building this — published at launch." },
-        { "tag": "Careers", "title": "Careers", "body": "Hiring runs through direct contact for now. Formal postings will follow launch." }
+        {
+          "tag": "Press",
+          "title": "Press",
+          "body": "First coverage will live here once we launch."
+        },
+        {
+          "tag": "Team",
+          "title": "Team & culture",
+          "body": "Stories about the people building this — published at launch."
+        },
+        {
+          "tag": "Careers",
+          "title": "Careers",
+          "body": "Hiring runs through direct contact for now. Formal postings will follow launch."
+        }
       ]
     },
     "cta": {
@@ -274,5 +293,52 @@
       "body": "Get notified when the app launches, or reach out via contact.",
       "secondary": "Contact us"
     }
+  },
+  "declare": {
+    "headline": "Not a louder alarm.\nOne you want to keep hearing.",
+    "body": "No math problems, no photo missions.\nWe’d rather you opened your eyes because you wanted to hear it."
+  },
+  "pricing": {
+    "tag": "Pricing",
+    "headline": "Start free.",
+    "description": "Alarms and our built-in voices are free.\nYou need a plan when you want a voice of your own.",
+    "plans": {
+      "free": {
+        "name": "Free",
+        "price": "Free",
+        "includes": "Unlimited alarms - 4 built-in voices - weather and medication lines - tap a voice to hear a sample"
+      },
+      "personal": {
+        "name": "Personal",
+        "price": "$3.90/mo",
+        "includes": "Add a voice of your own (one a month) - write your own lines - fortune and words of love"
+      },
+      "couple": {
+        "name": "Couple",
+        "price": "$6.90/mo · 2 people",
+        "includes": "Everything in Personal - share voices with each other - set their alarm"
+      },
+      "family": {
+        "name": "Family",
+        "price": "$14.90/mo · 5 including you",
+        "includes": "Everything in Couple - five people sharing voices"
+      }
+    },
+    "note": "Monthly plans only. The exact amount in your currency is shown in Google Play, where billing and cancellation happen — cancelling leaves the time you already paid for intact."
+  },
+  "finalCta": {
+    "headline": "Whose voice should\nwake you tomorrow?",
+    "body": "Install it and set one alarm.\nYou can hear the built-in voices right away."
+  },
+  "productScroll": {
+    "before": "Keep the alarm.\nChange the voice.",
+    "after": "6:00 tomorrow,\nin your mom’s voice."
+  },
+  "crop": {
+    "alarm-row": "Alarm list showing time left until the next alarm",
+    "record": "Create a voice — record or upload a file",
+    "pick-message": "Choosing what it says — greeting, weather, fortune, love, medication, or your own",
+    "voice-groups": "Voice list — your voice and voices shared with you",
+    "who-to-wake": "Choosing who to wake"
   }
 }

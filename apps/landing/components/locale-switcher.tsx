@@ -29,7 +29,7 @@ export function LocaleSwitcher() {
             type="button"
             onClick={() => handleChange(l)}
             aria-pressed={active}
-            className={`whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition ${
+            className={`whitespace-nowrap rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-[color,background-color] duration-150 ease-[var(--ease-ui)] ${
               active
                 ? "bg-raised text-text"
                 : "text-text-muted hover:text-text"

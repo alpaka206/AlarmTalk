@@ -1,203 +1,125 @@
-import { ArrowRight, Mic, AlarmClock } from "lucide-react";
+import { AlarmClock, Mic, Menu, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { BrandMark } from "./brand-mark";
-import { LivingWaveform } from "./motion/living-waveform";
 
-const WAVEFORM = [
-  0.18, 0.24, 0.16, 0.34, 0.28, 0.52, 0.38, 0.7, 0.42, 0.6, 0.32, 0.56, 0.24,
-  0.66, 0.46, 0.78, 0.4, 0.62, 0.34, 0.58, 0.28, 0.54, 0.36, 0.64, 0.44, 0.72,
-  0.3, 0.48, 0.22, 0.42, 0.18, 0.36, 0.26, 0.5, 0.2, 0.4, 0.16, 0.32, 0.14,
-  0.28,
-];
+/**
+ * 히어로 폰. 여기만 스크린샷이 아니라 DOM 으로 그린다 — 두 가지 이유다.
+ *  1. LCP 요소라 22KB 이미지보다 DOM 이 빠르다.
+ *  2. 로케일이 붙는다. 스크린샷은 한국어 화면 하나뿐이라 en/ja 에서 거짓이 된다.
+ *
+ * 대신 **실제 홈 화면과 같은 구조**여야 한다. 예전 목업은 앱에 없는 화면("다음 알람"
+ * 카드 + 파형 + 바로가기 2칸)을 그리고 있었고, 화면 색도 웜브라운이라 딥네이비인 앱과
+ * 달랐다. 실제 홈은 남은 시간 헤드라인 → 알람 한 줄(시각·날짜·목소리·토글) → FAB →
+ * 탭 3개다.
+ *
+ * 파형은 여기서 빼고 소리를 실제로 들려주는 자리에 둔다 — 앱 홈에는 파형이 없다.
+ */
 
-// Phone screen mirrors the app's native dark UI, tinted to the brand blue so it
-// reads as one family with the light page (matches the native app's accent).
-const ACCENT = "#6ba8f0";
-const SCREEN_TEXT = "#f7f4ee";
-const SCREEN_MUTED = "#b0a89c";
-const SCREEN_CARD = "#1c1813";
-const SCREEN_LINE = "#2e2820";
+// 앱의 딥네이비 화면 값. 페이지 토큰(웜 페이퍼)과 섞이면 안 되는 값이라 이 파일에 둔다.
+const SCREEN_TOP = "#182850";
+const SCREEN_BOTTOM = "#070b13";
+const SCREEN_CARD = "rgba(255,255,255,0.06)";
+export const SCREEN_LINE = "rgba(255,255,255,0.10)";
+const SCREEN_TEXT = "#f2f5fa";
+const SCREEN_MUTED = "#9fb0cc";
+export const SCREEN_ACCENT = "#a9cbf5";
 
-export function PhonePreview() {
+type Props = {
+  /**
+   * 알람 토글 자리에 끼워 넣을 노드. 스크롤에 묶어 켜지는 모습을 보여줄 때 쓴다.
+   * 안 주면 켜져 있는 정적 스위치를 그린다.
+   */
+  toggle?: React.ReactNode;
+  /** 기본 min(340px, 78vw). 구간에 따라 더 크게 놓고 싶을 때만 넘긴다. */
+  widthClass?: string;
+};
+
+export function PhonePreview({ toggle, widthClass }: Props = {}) {
   const t = useTranslations("hero.phone");
 
+  // 폭은 --w 하나로만 바뀐다(.device 가 그걸로 베젤 두께·라운드까지 계산한다).
+  // 좁은 화면에서 넘치지 않게 뷰포트에 물린다.
   return (
-    <div className="relative mx-auto w-full max-w-85">
-      {/* warm glow behind device */}
+    <div className={`device mx-auto ${widthClass ?? "[--w:min(340px,78vw)]"}`}>
       <div
-        aria-hidden="true"
-        className="absolute -inset-x-12 -top-10 -bottom-6 -z-10 rounded-[60px] bg-[radial-gradient(circle_at_50%_30%,rgba(23,95,176,0.20),transparent_60%)] blur-2xl"
-      />
-
-      {/* device bezel — 9:19.5 portrait */}
-      <div
-        className="relative aspect-9/19.5 w-full rounded-[44px] p-2.5"
+        className="flex h-full w-full flex-col overflow-hidden rounded-[inherit]"
         style={{
-          background:
-            "linear-gradient(180deg, #2b2724 0%, #16130f 60%, #0c0a08 100%)",
-          boxShadow:
-            "0 40px 90px rgba(70,52,34,0.28), inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(255,255,255,0.04), 0 0 0 1px rgba(255,255,255,0.05)",
+          background: `linear-gradient(180deg, ${SCREEN_TOP} 0%, #0d1730 52%, ${SCREEN_BOTTOM} 100%)`,
         }}
       >
-        {/* punch hole camera */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-4.5 z-20 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-black ring-1 ring-white/10"
-        />
+        <div className="flex-1 px-5 pt-7">
+          {/* 헤드라인은 언제나 '남은 시간' 이다 — 앱이 그렇게 말한다. */}
+          <p
+            className="text-[19px] font-bold leading-[1.25] tracking-[-0.01em]"
+            style={{ color: SCREEN_TEXT }}
+          >
+            {t("countdown")}
+          </p>
 
-        {/* screen */}
-        <div className="relative h-full w-full overflow-hidden rounded-[36px] bg-[#100e0b]">
-          {/* status bar */}
-          <div className="flex items-center justify-between px-6 pt-4 text-[10.5px] font-semibold" style={{ color: SCREEN_TEXT }}>
-            <span className="whitespace-nowrap">9:41</span>
-            <div className="flex items-center gap-1.5">
-              <svg width="14" height="9" viewBox="0 0 14 9" fill="none">
-                <rect x="0.5" y="0.5" width="11" height="8" rx="1.5" stroke={SCREEN_TEXT} strokeOpacity="0.6" />
-                <rect x="2" y="2" width="7" height="5" rx="0.5" fill={SCREEN_TEXT} fillOpacity="0.8" />
-                <rect x="12.5" y="2.5" width="1" height="4" rx="0.5" fill={SCREEN_TEXT} fillOpacity="0.6" />
-              </svg>
-            </div>
-          </div>
-
-          {/* content */}
-          <div className="px-5 pt-5">
-            {/* HomeHeader */}
-            <div className="leading-[1.18]">
-              <p className="text-[20px] font-bold tracking-[-0.01em]" style={{ color: SCREEN_TEXT }}>
-                {t("greetTop")}
+          <div
+            className="mt-5 flex items-center justify-between rounded-[18px] px-4 py-4"
+            style={{ background: SCREEN_CARD, border: `1px solid ${SCREEN_LINE}` }}
+          >
+            <div className="min-w-0">
+              <p className="whitespace-nowrap leading-none" style={{ color: SCREEN_TEXT }}>
+                <span className="text-[15px] font-semibold">{t("meridiem")}</span>
+                <span className="ml-1.5 text-[30px] font-bold tracking-[-0.02em]">
+                  {t("alarmTime")}
+                </span>
               </p>
-              <p className="text-[20px] font-bold tracking-[-0.01em]" style={{ color: SCREEN_TEXT }}>
-                {t("greetBottom")}
+              <p className="mt-2 truncate text-[11.5px]" style={{ color: SCREEN_MUTED }}>
+                {t("alarmMeta")}
               </p>
             </div>
-
-            {/* NextAlarmHeroCard */}
-            <div className="mt-5 rounded-xl p-4" style={{ border: `1px solid ${SCREEN_LINE}`, background: SCREEN_CARD }}>
-              <p className="text-[10.5px] font-medium" style={{ color: SCREEN_MUTED }}>
-                {t("nextAlarm")}
-              </p>
-              <p className="mt-1 whitespace-nowrap text-[42px] font-bold leading-none" style={{ color: SCREEN_TEXT }}>
-                07:30
-              </p>
-
-              {/* mini waveform — the signature, now quietly breathing */}
-              <div className="mt-4 h-7">
-                <LivingWaveform
-                  bars={WAVEFORM}
-                  mode="breathe"
-                  color={ACCENT}
-                  barWidth={1.5}
-                  gapPx={1.5}
-                  minPx={5}
-                  spanPx={22}
-                  amplitude={0.12}
-                  opacityBase={0.45}
-                  opacityScale={0.55}
-                />
-              </div>
-
-              <div className="mt-4 flex items-center justify-between">
-                <div className="min-w-0">
-                  <p className="truncate text-[12.5px] font-semibold" style={{ color: SCREEN_TEXT }}>
-                    {t("alarmLabel")}
-                  </p>
-                  <p className="truncate text-[10.5px]" style={{ color: SCREEN_MUTED }}>
-                    {t("alarmEdit")}
-                  </p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0" style={{ color: ACCENT }} />
-              </div>
-            </div>
-
-            {/* QuickStartGrid header */}
-            <p className="mt-5 text-[12.5px] font-bold" style={{ color: SCREEN_TEXT }}>
-              {t("quickStart")}
-            </p>
-
-            {/* QuickStartGrid 2-up */}
-            <div className="mt-2.5 grid grid-cols-2 gap-2">
-              <QuickCard
-                icon={<Mic className="h-3.5 w-3.5" strokeWidth={2.2} />}
-                label={t("quickVoice")}
-                accentBg="#16304d"
-                accentFg="#cfe3ff"
-              />
-              <QuickCard
-                icon={<AlarmClock className="h-3.5 w-3.5" strokeWidth={2.2} />}
-                label={t("quickAlarm")}
-                accentBg="#1b3147"
-                accentFg="#d4e6ff"
-              />
-            </div>
-          </div>
-
-          {/* bottom tab bar */}
-          <div className="absolute inset-x-0 bottom-0 px-5 pb-4 pt-2 backdrop-blur" style={{ borderTop: `1px solid ${SCREEN_LINE}`, background: "rgba(12,10,8,0.8)" }}>
-            {/* 실제 앱 하단 탭과 동일한 3개(알람·목소리·더보기) */}
-            <div className="flex items-center justify-around">
-              {[
-                { label: t("tabAlarms"), active: true },
-                { label: t("tabVoice"), active: false },
-                { label: t("tabMore"), active: false },
-              ].map((tab) => (
-                <div
-                  key={tab.label}
-                  className="flex flex-col items-center gap-1"
-                >
-                  <span
-                    className="block h-1 w-1 rounded-full"
-                    style={{ backgroundColor: tab.active ? ACCENT : "transparent" }}
-                  />
-                  <span
-                    className="whitespace-nowrap text-[9.5px] font-semibold"
-                    style={{ color: tab.active ? SCREEN_TEXT : "#8a8175" }}
-                  >
-                    {tab.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div
-              aria-hidden="true"
-              className="mx-auto mt-3 h-0.75 w-22 rounded-full bg-white/25"
-            />
+            {/* 앱에서 이 스위치는 저장된 켬/끔에만 묶인다(권한이 모자라다고 꺼진 것처럼
+                그리지 않는다). 여기서는 스크롤이 그 자리를 대신할 수 있다. */}
+            {toggle ?? (
+              <span
+                aria-hidden="true"
+                className="relative block h-6 w-11 shrink-0 rounded-full"
+                style={{ background: SCREEN_ACCENT }}
+              >
+                <span className="absolute right-0.5 top-0.5 block h-5 w-5 rounded-full bg-white" />
+              </span>
+            )}
           </div>
         </div>
-      </div>
 
-      {/* brand mark floating beside */}
-      <div
-        aria-hidden="true"
-        className="absolute -right-3 -top-3 z-30 hidden rounded-2xl border border-line bg-surface p-2 shadow-[0_10px_30px_rgba(90,75,55,0.16)] sm:block"
-      >
-        <BrandMark size={28} className="rounded-md" />
-      </div>
-    </div>
-  );
-}
+        {/* FAB — 앱과 같은 자리(오른쪽 아래) */}
+        <div className="flex justify-end px-5 pb-4">
+          <span
+            aria-hidden="true"
+            className="grid h-13 w-13 place-items-center rounded-full"
+            style={{ background: SCREEN_ACCENT }}
+          >
+            <Plus className="h-6 w-6" strokeWidth={2.4} style={{ color: "#0d1730" }} />
+          </span>
+        </div>
 
-function QuickCard({
-  icon,
-  label,
-  accentBg,
-  accentFg,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  accentBg: string;
-  accentFg: string;
-}) {
-  return (
-    <div className="flex items-center gap-2.5 rounded-[14px] p-3" style={{ border: "1px solid #2e2820", background: "#1c1813" }}>
-      <div
-        className="grid h-7 w-7 shrink-0 place-items-center rounded-full"
-        style={{ backgroundColor: accentBg, color: accentFg }}
-      >
-        {icon}
+        <div
+          className="flex items-center justify-around px-5 pb-6 pt-3"
+          style={{ borderTop: `1px solid ${SCREEN_LINE}`, background: "rgba(0,0,0,0.28)" }}
+        >
+          {[
+            { icon: AlarmClock, label: t("tabAlarms"), active: true },
+            { icon: Mic, label: t("tabVoice"), active: false },
+            { icon: Menu, label: t("tabMore"), active: false },
+          ].map(({ icon: Icon, label, active }) => (
+            <span key={label} className="flex flex-col items-center gap-1">
+              <Icon
+                className="h-4.5 w-4.5"
+                strokeWidth={2}
+                style={{ color: active ? SCREEN_ACCENT : SCREEN_MUTED }}
+              />
+              <span
+                className="whitespace-nowrap text-[9.5px] font-semibold"
+                style={{ color: active ? SCREEN_ACCENT : SCREEN_MUTED }}
+              >
+                {label}
+              </span>
+            </span>
+          ))}
+        </div>
       </div>
-      <span className="truncate text-[11.5px] font-semibold" style={{ color: "#f7f4ee" }}>
-        {label}
-      </span>
     </div>
   );
 }

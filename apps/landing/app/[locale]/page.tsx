@@ -1,88 +1,13 @@
-import { getTranslations, setRequestLocale } from "next-intl/server";
-import { SiteHeader } from "@/components/site-header";
-import { Hero } from "@/components/sections/hero";
-import { Trust } from "@/components/sections/trust";
-import { FeatureSection } from "@/components/sections/feature-section";
-import {
-  VoiceVisual,
-  SharedVisual,
-  LanguageVisual,
-} from "@/components/sections/feature-visuals";
-import { Scenarios } from "@/components/sections/scenarios";
-import { Faq } from "@/components/sections/faq";
-import { SiteFooter } from "@/components/sections/site-footer";
-import { SITE_NAME, STORE_LINKS, localeUrl } from "@/lib/site";
+import { setRequestLocale } from "next-intl/server";
+import { HomeContent } from "@/components/home-content";
 
-type FaqItem = { q: string; a: string };
-
-export default async function HomePage({
+/** `/en/`, `/ja/` (그리고 빌드 산출물의 `/ko/`). 본문은 루트와 공유한다. */
+export default async function LocaleHomePage({
   params,
 }: {
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
-
-  const tMeta = await getTranslations({ locale, namespace: "meta" });
-  const tFaq = await getTranslations({ locale, namespace: "faq" });
-  const faqItems = tFaq.raw("items") as FaqItem[];
-
-  const softwareApplicationLd = {
-    "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    name: SITE_NAME,
-    description: tMeta("description"),
-    applicationCategory: "LifestyleApplication",
-    operatingSystem: "Android",
-    url: localeUrl(locale),
-    inLanguage: locale,
-    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    ...(STORE_LINKS.googlePlay !== "#"
-      ? { downloadUrl: [STORE_LINKS.googlePlay] }
-      : {}),
-  };
-
-  const faqPageLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: faqItems.map((item) => ({
-      "@type": "Question",
-      name: item.q,
-      acceptedAnswer: { "@type": "Answer", text: item.a },
-    })),
-  };
-
-  return (
-    <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(softwareApplicationLd),
-        }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqPageLd) }}
-      />
-      <SiteHeader />
-      <main className="relative">
-        <Hero />
-        <Trust />
-        <FeatureSection
-          id="how"
-          namespace="voice"
-          visual={<VoiceVisual />}
-        />
-        <FeatureSection
-          namespace="shared"
-          reverse
-          visual={<SharedVisual />}
-        />
-        <FeatureSection namespace="language" visual={<LanguageVisual />} />
-        <Scenarios />
-        <Faq />
-      </main>
-      <SiteFooter />
-    </>
-  );
+  return <HomeContent locale={locale} />;
 }

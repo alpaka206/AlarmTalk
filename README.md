@@ -10,12 +10,12 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 
 ## Status
 
-- **Version**: `v1.2.1` (closed beta preparation)
+- **Version**: `v1.2.3` (versionCode 23) — live on Google Play
 - **Android** — the only client; core alarm engine verified on physical devices:
   - Free tier: system voices with pre-rendered alarm preset clips, rotated locally on each dismiss (bucket rotation)
   - Paid tier: AI-cloned voice presets pre-rendered server-side after an explicit "keep", played fully offline at ring time — offline (flight-mode) ring pending device QA
   - Family alarms delivered to members instantly via FCM data push (the ring itself stays local — see rule #1) — background delivery pending device QA
-  - Google Play Billing: code-complete, awaiting Play Console configuration
+  - Google Play Billing: live — monthly subscriptions only (Personal / Couple / Family)
 - **Backend**: Cloudflare Workers + Hono + Turso — CI auto-deploys with DB migrations (`develop` → dev, `main` → prod)
 
 There is no iOS app. The SwiftUI client and its build workflow were removed from the repository.
