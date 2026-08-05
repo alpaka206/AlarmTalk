@@ -305,26 +305,26 @@
     "plans": {
       "free": {
         "name": "Free",
-        "price": "₩0",
+        "price": "Free",
         "includes": "Unlimited alarms - 4 built-in voices - weather and medication lines - tap a voice to hear a sample"
       },
       "personal": {
         "name": "Personal",
-        "price": "₩3,900/mo",
+        "price": "$3.90/mo",
         "includes": "Add a voice of your own (one a month) - write your own lines - fortune and words of love"
       },
       "couple": {
         "name": "Couple",
-        "price": "₩6,900/mo - 2 people",
+        "price": "$6.90/mo · 2 people",
         "includes": "Everything in Personal - share voices with each other - set their alarm"
       },
       "family": {
         "name": "Family",
-        "price": "₩14,900/mo - 5 including you",
+        "price": "$14.90/mo · 5 including you",
         "includes": "Everything in Couple - five people sharing voices"
       }
     },
-    "note": "Monthly plans only. Billing and cancellation happen in Google Play, and cancelling leaves the time you already paid for intact."
+    "note": "Monthly plans only. The exact amount in your currency is shown in Google Play, where billing and cancellation happen — cancelling leaves the time you already paid for intact."
   },
   "finalCta": {
     "headline": "Whose voice should\nwake you tomorrow?",
