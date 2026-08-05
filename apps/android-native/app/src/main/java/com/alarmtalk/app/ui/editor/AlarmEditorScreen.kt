@@ -267,6 +267,18 @@ internal fun AlarmEditorScreen(
     } else {
         activeDynamicPromptPreferences.weatherCity.isNotBlank()
     }
+    /**
+     * 가족 알람이고 수신자가 **자기 설정을 이미 갖고 있는가**.
+     *
+     * 이때 이 화면의 지역·사주 칸은 비어 있는 게 정상이다 — 서버가 남의 설정 값을 숨기고
+     * 준비 여부만 내려주기 때문이다(`family-group.ts` 의 `dynamic_prompt_settings` 는
+     * 본인일 때만 실값). 그러니 비었다고 저장을 막으면 안 된다. 생성은 서버가 하고,
+     * 서버는 `target_user_id` 로 **수신자 본인의 설정**을 읽어 채운다
+     * (`tts.ts` 의 `loadTargetDynamicPromptSettings` → `firstNonBlankText(요청값, 수신자값)`).
+     * 요청에 값이 있으면 그게 이기므로, 수신자 설정이 없을 때 내가 임시로 채워 넣는 흐름도
+     * 그대로 동작한다.
+     */
+    val targetProvidesWeather = familyAlarmMode && savedWeatherConfigured
     val savedFortuneConfigured = if (familyAlarmMode) {
         selectedFamilyRecipientValue?.dynamicPromptSettingsState?.fortuneReady == true
     } else {
@@ -274,6 +286,8 @@ internal fun AlarmEditorScreen(
             activeDynamicPromptPreferences.fortuneBirthDate.isNotBlank() &&
             activeDynamicPromptPreferences.fortuneBirthTime.isNotBlank()
     }
+    /** [targetProvidesWeather] 의 사주 짝. */
+    val targetProvidesFortune = familyAlarmMode && savedFortuneConfigured
     val ringtonePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -687,10 +701,13 @@ internal fun AlarmEditorScreen(
             audioMessage = context.getString(R.string.editor_error_enter_message_or_random)
             return
         }
+        // 수신자가 자기 설정을 갖고 있으면 이 칸들은 비어 있는 게 정상이다(서버가 값을 숨긴다).
+        // 서버가 target_user_id 로 채우므로 막지 않는다 — targetProvidesWeather 주석 참고.
         if (
             editor.voiceRandomPrompt &&
             randomContextUsesWeather(editor.voiceRandomContext) &&
-            editor.voiceWeatherCity.isBlank()
+            editor.voiceWeatherCity.isBlank() &&
+            !targetProvidesWeather
         ) {
             audioMessage = context.getString(R.string.editor_error_weather_location_required)
             return
@@ -698,6 +715,7 @@ internal fun AlarmEditorScreen(
         if (
             editor.voiceRandomPrompt &&
             normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
+            !targetProvidesFortune &&
             (
                 editor.voiceFortuneGender.isBlank() ||
                     editor.voiceFortuneBirthDate.isBlank() ||
@@ -1025,14 +1043,18 @@ internal fun AlarmEditorScreen(
     fun randomPromptSettingsComplete(): Boolean {
         if (!editor.voiceRandomPrompt) return false
         val context = normalizedRandomPromptContext(editor.voiceRandomContext)
+        // 가족 알람에서 수신자가 이미 설정을 갖고 있으면 여기 칸이 비어 있어도 완성이다 —
+        // 값은 서버가 수신자 것으로 채운다(targetProvidesWeather 주석 참고).
         if (
             randomContextUsesWeather(context) &&
-            editor.voiceWeatherCity.isBlank()
+            editor.voiceWeatherCity.isBlank() &&
+            !targetProvidesWeather
         ) {
             return false
         }
         if (
             context == "wake_fortune" &&
+            !targetProvidesFortune &&
             (
                 editor.voiceFortuneGender.isBlank() ||
                     editor.voiceFortuneBirthDate.isBlank() ||
