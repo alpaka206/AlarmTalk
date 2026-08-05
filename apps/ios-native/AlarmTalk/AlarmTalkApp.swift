@@ -227,18 +227,32 @@ struct AlarmTalkApp: App {
         names.append(UIApplication.significantTimeChangeNotification)
         #endif
 
+        // 루프 본문을 `@MainActor` 메서드로 빼 둔다. 인라인 `group.addTask { @MainActor in ... }`
+        // 로 쓰면 Swift 6.3 의 region-based isolation checker 가
+        // "pattern that the region-based isolation checker does not understand how to check"
+        // 로 컴파일을 거부한다(컴파일러 한계). 이름 붙은 @MainActor 함수로 넘기면
+        // 격리는 그대로 유지되면서 검사기가 이해할 수 있는 형태가 된다.
+        // ⚠ 격리를 낮추는 방향으로 고치지 말 것 — 여기서 경쟁 상태가 나면 증상은 "안 울림" 이다.
         await withTaskGroup(of: Void.self) { group in
             for name in names {
-                group.addTask { @MainActor in
-                    for await _ in NotificationCenter.default.notifications(named: name) {
-                        guard store.hasLoadedFromDisk else { continue }
-                        await kit.recoverScheduledAlarms(
-                            store: store,
-                            forceHolidayOffRecompute: true
-                        )
-                    }
+                group.addTask {
+                    await Self.observeAndRecover(named: name, store: store, kit: kit)
                 }
             }
+        }
+    }
+
+    /// `observeTimeAndTimezoneChanges` 의 감시 루프 한 갈래.
+    /// 시간대/유의미한 시각 변경 알림을 받을 때마다 예약을 재계산한다.
+    @MainActor
+    private static func observeAndRecover(
+        named name: Notification.Name,
+        store: LocalAlarmStore,
+        kit: AlarmKitViewModel
+    ) async {
+        for await _ in NotificationCenter.default.notifications(named: name) {
+            guard store.hasLoadedFromDisk else { continue }
+            await kit.recoverScheduledAlarms(store: store, forceHolidayOffRecompute: true)
         }
     }
 

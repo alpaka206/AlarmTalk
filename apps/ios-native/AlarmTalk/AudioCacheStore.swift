@@ -55,7 +55,16 @@ enum AudioCacheError: LocalizedError {
 ///   - `<safeCacheKey>.meta.json` (메타 사이드카)
 @MainActor
 final class AudioCacheStore {
-    static let shared = AudioCacheStore()
+    /// `nonisolated` — 이 타입의 실제 멤버는 사실상 전부 `nonisolated` 다(FileManager /
+    /// AVAsset 만 건드린다). 클래스의 `@MainActor` 는 SwiftUI 호출처 편의를 위한 것이고,
+    /// 캐싱 경로는 `Task.detached` 등 백그라운드에서 `Self.shared` 를 await 없이 잡아야 한다
+    /// (아래 `cache(tts:)` / `cacheStockClip(...)`). 기본값인 MainActor 격리로 두면
+    /// 그 경로들이 컴파일되지 않는다.
+    ///
+    /// 안전한 이유: `@MainActor` 타입은 암묵적으로 `Sendable` 이고, 이 프로퍼티는 `let` 이라
+    /// 재할당이 없다. 가리키는 인스턴스는 상태를 메모리에 들고 있지 않으며(디스크가 진실),
+    /// 동시 접근이 닿는 메서드는 전부 `nonisolated` 로 표시돼 있다.
+    nonisolated static let shared = AudioCacheStore()
 
     /// `nonisolated` — 빈 바디라 상태를 건드리지 않으며, `shared` 와 단위 테스트의
     /// `AudioCacheStore()` 가 어떤 격리에서도 인스턴스를 만들 수 있게 한다(change 5:
