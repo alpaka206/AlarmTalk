@@ -67,7 +67,7 @@ export function StoreBadges() {
     <a
       href={href}
       aria-label={t("googlePlayAria")}
-      className="group inline-flex w-fit items-center gap-3 rounded-sm bg-black px-5 py-3 transition hover:bg-neutral-800"
+      className="group inline-flex w-fit items-center gap-3 rounded-sm bg-black px-5 py-3 transition-[background-color] duration-150 ease-[var(--ease-ui)] hover:bg-neutral-800"
     >
       {inner}
     </a>

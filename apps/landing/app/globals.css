@@ -1,51 +1,63 @@
-/* remote @import must precede the Tailwind import so it stays first after the
-   Tailwind plugin inlines its rules (otherwise CSS nesting order warns). */
-@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600;700&display=swap");
 @import "tailwindcss";
 @import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 
 @theme {
-  /* warm gray ramp — paper-like, slightly toasted */
-  --color-gray-50: #faf9f5;
-  --color-gray-100: #f0eee6;
-  --color-gray-200: #e6e2d9;
-  --color-gray-300: #d3cdc0;
-  --color-gray-400: #b0a99c;
-  --color-gray-500: #8a8377;
-  --color-gray-600: #6b675f;
-  --color-gray-700: #4a463f;
-  --color-gray-800: #2e2b26;
-  --color-gray-900: #1f1e1c;
-  --color-gray-950: #14130f;
+  /* 쿨 그레이 램프. 바닥이 흰색이면 램프도 쿨이어야 한다 — 웜 회색은 흰 바탕에서
+     누렇게 뜬다(반대로 페이퍼 바닥에서는 쿨 회색이 뜬다. 램프는 바닥에서 나온다). */
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f2f4f6;
+  --color-gray-200: #e5e8eb;
+  --color-gray-300: #d1d6db;
+  --color-gray-400: #b0b8c1;
+  --color-gray-500: #8b95a1;
+  --color-gray-600: #6b7684;
+  --color-gray-700: #4e5968;
+  --color-gray-800: #333d4b;
+  --color-gray-900: #191f28;
+  --color-gray-950: #0f1622;
 
-  /* surface tokens — Claude "paper" */
-  --color-bg: #faf9f5;
+  /* 흰 바닥. 깊이는 그림자가 아니라 여백과 아주 얕은 배경 단차가 만든다. */
+  --color-bg: #ffffff;
+  /* 교대 섹션. paper 대비 1.053 — 단차가 눈에 "보이기" 시작하면 그건 색을 더 줄
+     이유가 아니라 여백이 모자라다는 신호다. 이보다 진하게 만들지 말 것. */
+  --color-bg-alt: #f9fafb;
   --color-surface: #ffffff;
-  --color-raised: #f4f1ea;
-  --color-line: #e6e2d9;
-  --color-line-soft: #efece4;
+  --color-raised: #f2f4f6;
+  --color-line: #e5e8eb;
+  --color-line-soft: #f2f4f6;
 
-  /* text — warm near-black */
-  --color-text: #1f1e1c;
-  --color-text-muted: #6b675f;
-  --color-text-dim: #8a8377;
-  --color-text-faint: #aaa395;
+  /* 사다리에 본문 칸이 비어 있어서 본문이 보조 문구용 등급으로 조판되고 있었다.
+     strong·body 두 칸을 채우고 muted 는 보조로 내린다. 대비비는 흰 바탕 기준. */
+  --color-text: #191f28; /* 15.9 — 제목 */
+  --color-text-strong: #333d4b; /* 11.0 — 두 줄 헤드라인의 뒷줄, 부제 */
+  --color-text-body: #4e5968; /*  7.4 — 본문 기본 */
+  --color-text-muted: #6b7684; /*  5.1 — 보조 문구 */
+  --color-text-dim: #8b95a1; /*  3.4 — 아이콘·구분자 전용, 글자 금지 */
+  --color-text-faint: #b0b8c1; /*  2.2 — 장식 전용 */
 
   /* accent — brand blue, unified with the native apps (#175FB0) */
   --color-accent: #175fb0;
   --color-accent-strong: #124e8c;
   --color-accent-soft: rgba(23, 95, 176, 0.1);
   --color-accent-fg: #06243c;
+  /* 브랜드 블루는 어두운 바닥에서 대비 2.83 으로 **못 쓴다**. 밝은 바닥용과 어두운
+     바닥용을 쌍으로 못박는다 — 하나로 버티면 반드시 한쪽이 깨진다. */
+  --color-accent-on-dark: #4b93e4; /* ink 위 5.65 */
   --color-mint: #5e9b7d;
   --color-rose: #db7e63;
+
+  /* ink — 페이지에서 **딱 한 번** 쓰는 어두운 블록. 앱 UI 가 딥네이비라 그 안의
+     스크린샷이 가장자리 없이 앉는다(밝은 페이지에 어두운 UI 를 앉히는 문제를,
+     그 자리에서는 문제 자체를 없애서 푼다). 웜을 반전하지 않고 쿨로 간다. */
+  --color-ink: #0f1622; /* 흰 글자 대비 18.1 */
+  --color-ink-raised: #16203a;
+  --color-ink-body: #b0b8c1; /* ink 위 9.0 */
+  --color-ink-line: rgba(255, 255, 255, 0.1);
 
   /* typography */
   --font-sans:
     "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
     "Segoe UI", system-ui, sans-serif;
-  --font-serif:
-    "Noto Serif KR", "Apple SD Gothic Neo", Georgia, "Times New Roman", serif;
-
   /* radii */
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -54,14 +66,16 @@
   --radius-2xl: 24px;
   --radius-3xl: 28px;
 
-  /* shadows — soft, warm, low-contrast (light theme) */
-  --shadow-card: 0 1px 2px rgba(60, 50, 35, 0.04), 0 18px 44px rgba(90, 75, 55, 0.08);
-  --shadow-elevated: 0 1px 3px rgba(60, 50, 35, 0.05), 0 34px 80px rgba(90, 75, 55, 0.14);
-  --shadow-hairline: inset 0 0 0 1px rgba(40, 35, 25, 0.04);
+  /* 그림자는 기기 마운트에만 쓴다. 흰 바닥에서는 웜 그림자가 누렇게 뜬다. */
+  --shadow-card: 0 1px 2px rgba(25, 31, 40, 0.04), 0 18px 44px rgba(25, 31, 40, 0.06);
+  --shadow-elevated: 0 1px 3px rgba(25, 31, 40, 0.05), 0 34px 80px rgba(25, 31, 40, 0.1);
+  --shadow-hairline: inset 0 0 0 1px rgba(25, 31, 40, 0.05);
 
-  /* motion — single house easing token (mirrors the inline curve in .btn / fadeup
-     and every JS motion config so the whole site feels authored, not random) */
-  --ease-paper: cubic-bezier(0.16, 1, 0.3, 1);
+  /* motion — 역할이 둘이라 곡선도 둘이다.
+     expo-out 은 앞 80% 가 구간의 20% 에서 끝난다. 진입(450~800ms)에는 최선이지만
+     150ms 짜리 상태 변화에 쓰면 계단처럼 튄다. */
+  --ease-paper: cubic-bezier(0.16, 1, 0.3, 1); /* 진입 전용 */
+  --ease-ui: cubic-bezier(0.4, 0, 0.2, 1); /* 상태 변화 전용 */
 }
 
 @layer base {
@@ -82,12 +96,27 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* serif display for headings — Claude editorial feel */
+  /* 제목도 본문과 같은 산세리프다. 무게로만 가른다 — 800 은 한글에서 획이 뭉치지
+     않으면서 확실히 굵게 읽히는 상한이다. 자간은 크기별 유틸(.t-*)이 정한다. */
   h1,
-  h2 {
-    font-family: var(--font-serif);
-    font-weight: 600;
-    letter-spacing: -0.01em;
+  h2,
+  h3 {
+    font-weight: 800;
+  }
+
+  /* 카피 요소만 JSON 의 `\n` 을 줄바꿈으로 살린다.
+     `pre-wrap` 을 body 에 걸지 않는 이유: white-space 는 상속 속성이라 모든 레이아웃
+     컨테이너로 내려가고, 연속 공백까지 보존해 3개 로케일 JSON 의 트레일링 스페이스가
+     그대로 렌더된다. 우리가 필요한 건 개행뿐이라 pre-line 이면 된다. */
+  h1,
+  h2,
+  h3,
+  h4,
+  p,
+  li,
+  summary,
+  blockquote {
+    white-space: pre-line;
   }
 
   ::selection {
@@ -110,39 +139,200 @@
 }
 
 @layer utilities {
-  /* warm radial paper wash */
-  .bg-aurora {
-    background-color: var(--color-bg);
-    background-image:
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(23, 95, 176, 0.1), transparent 60%),
-      radial-gradient(ellipse 60% 45% at 100% 0%, rgba(23, 95, 176, 0.06), transparent 55%),
-      radial-gradient(ellipse 55% 40% at 0% 25%, rgba(94, 155, 125, 0.05), transparent 55%);
+  /* 타입 스케일 — 브레이크포인트는 640px 하나.
+     제목은 **무게로** 말한다(800). 그래서 leading 을 조이지 않고 1.34~1.42 로 벌려
+     둔다 — 굵은 한글을 좁은 행간에 넣으면 글자 덩어리가 서로 밀어낸다. 대신 자간은
+     크게 조인다(-0.03em): 큰 산세리프는 기본 자간이 헐렁해서 안 조이면 흩어져 보인다.
+     본문은 반대로 1.7 까지 벌려야 받침이 아랫줄에 안 붙는다. */
+  .t-display {
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1.34;
+    letter-spacing: -0.035em;
+  }
+  .t-h1 {
+    font-size: 26px;
+    font-weight: 800;
+    line-height: 1.38;
+    letter-spacing: -0.03em;
+  }
+  .t-h2 {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.42;
+    letter-spacing: -0.025em;
+  }
+  .t-h3 {
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.5;
+    letter-spacing: -0.02em;
+  }
+  .t-lead {
+    font-size: 17px;
+    font-weight: 500;
+    line-height: 1.6;
+    letter-spacing: -0.005em;
+  }
+  /* 한글은 획이 많아 400 에서 흐려진다. 제목이 800 이라 본문은 500 이면 위계가 선다. */
+  .t-body {
+    font-size: 15.5px;
+    font-weight: 500;
+    line-height: 1.7;
+    letter-spacing: -0.005em;
+  }
+  .t-caption {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+  .t-metric {
+    font-size: 44px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.04em;
   }
 
-  .bg-grid {
-    background-image:
-      linear-gradient(rgba(40, 35, 25, 0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(40, 35, 25, 0.025) 1px, transparent 1px);
-    background-size: 56px 56px;
-    mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, #000 30%, transparent 70%);
+  @media (min-width: 640px) {
+    /* 히어로 상한은 취향이 아니라 **일본어 카피가 정한다**. 좌측 컬럼 유효폭 ≈572px,
+       ja 최장 줄이 9글자(전각 ≈1em)다. 56px + 자간 -0.035em 이면 약 494px 로 들어간다.
+       카피를 바꾸면 이 계산을 다시 할 것. */
+    .t-display {
+      font-size: 56px;
+    }
+    .t-h1 {
+      font-size: 40px;
+    }
+    .t-h2 {
+      font-size: 28px;
+    }
+    .t-h3 {
+      font-size: 19px;
+    }
+    .t-lead {
+      font-size: 20px;
+    }
+    .t-body {
+      font-size: 16.5px;
+    }
+    .t-caption {
+      font-size: 13.5px;
+    }
+    .t-metric {
+      font-size: 60px;
+    }
   }
 
-  .grain {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0.025;
-    z-index: 1;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  /* 섹션 리듬 — 데스크톱:모바일 = 2:1. 지금까지 섹션마다 달라서 리듬이 없었다. */
+  .section-pad {
+    padding-block: 88px;
+  }
+  @media (min-width: 641px) {
+    .section-pad {
+      padding-block: 128px;
+    }
+  }
+  @media (min-width: 992px) {
+    .section-pad {
+      padding-block: 180px;
+    }
   }
 
-  /* hairline cards */
+  /* 기기 마운트 — 구운 PNG 목업을 쓰지 않는다. PNG 는 렌더될 때의 배경색에 고정돼서
+     다른 바닥에 올리면 그림자가 뜬다. CSS 로 그리면 바닥이 바뀌어도 따라온다. */
+  .device {
+    --w: 300px;
+    width: var(--w);
+    aspect-ratio: 440 / 843; /* 원본 비율 그대로 — 리플로우 0 */
+    border-radius: calc(var(--w) * 0.14);
+    display: block;
+    box-shadow:
+      /* 베젤이 #000 이 아닌 이유: 밝은 페이지 → 딥네이비 베젤 → 딥네이비 UI 로 두
+         단계를 밟는다. 한 번에 떨어지면 앱 화면이 아니라 페이지에 뚫린 구멍이 된다. */
+      0 0 0 calc(var(--w) * 0.033) var(--color-ink),
+      /* 페이지에서 그림자를 쓰는 유일한 자리. 기기는 실제로 떠 있어야 하고, 흰 바닥
+         위라 중성 그림자여야 누렇게 뜨지 않는다. */
+      0 24px 48px rgba(25, 31, 40, 0.14),
+      0 6px 14px rgba(25, 31, 40, 0.08);
+  }
+
+  /* 스크롤에 묶인 장면.
+     **높이는 CSS 가 정한다.** JS 로 갈라 놓으면 서버는 긴 쪽을, 하이드레이션 뒤 클라는
+     짧은 쪽을 그려서 섹션이 접힌다 — 그 아래 앵커(#pricing·#faq)로 들어온 사람은
+     스크롤이 끝난 뒤 엉뚱한 자리에 남는다. 미디어 쿼리는 첫 페인트에 이미 적용되므로
+     어긋날 틈이 없다. */
+  .scrub-stage {
+    position: relative;
+    height: 240vh;
+  }
+  .scrub-pin {
+    position: sticky;
+    top: 0;
+    display: flex;
+    height: 100vh;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    /* 헤더가 sticky 라 뷰포트 전체 기준으로 가운데 정렬하면 글자가 그 아래로 들어간다. */
+    padding-top: 72px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* 핀도 스크럽도 없다. 240vh 를 강제로 스크롤시키는 건 전정 장애가 있는 사람에게
+       접근성 문제라, 평범한 섹션 하나로 접고 **끝난 상태**를 보여준다. */
+    .scrub-stage {
+      height: auto;
+    }
+    .scrub-pin {
+      position: static;
+      height: auto;
+      overflow: visible;
+      padding-block: 88px;
+    }
+    .scrub-stage [data-scrub] {
+      opacity: 1 !important;
+      transform: none !important;
+    }
+    .scrub-stage [data-scrub="before"] {
+      display: none;
+    }
+    /* 알람은 켜진 채로 보여준다 — 이 장면이 말하려는 것이 그 상태다. */
+    .scrub-stage [data-scrub-knob] {
+      transform: translateX(100%) !important;
+    }
+    .scrub-stage [data-scrub-track] {
+      background: var(--scrub-on) !important;
+    }
+  }
+
+  /* ink 위에 ink 베젤을 올리면 베젤이 사라진다. 어두운 섹션에서는 가장자리만 남긴다. */
+  .section-ink .device {
+    box-shadow: inset 0 0 0 1px var(--color-ink-line);
+  }
+
+
+  /* 페이퍼 위에서는 **흰색이 곧 "떠 있는 것"** 이다. 테두리와 그림자를 둘 다 주면
+     한 번 말할 것을 두 번 말하는 셈이라 테두리만 남긴다. 그림자를 넣고 싶어질 때마다
+     먼저 여백이 모자란 게 아닌지 물을 것. */
   .card {
     position: relative;
     background: var(--color-surface);
     border: 1px solid var(--color-line);
-    border-radius: var(--radius-2xl);
-    box-shadow: var(--shadow-card);
+    border-radius: var(--radius-3xl);
+  }
+
+  /* 호버 피드백은 색·테두리로만. transform 은 마우스를 스칠 때 커졌다 작아지는 게
+     보이고, :focus-visible 을 같은 묶음에 넣어야 키보드 사용자도 같은 피드백을 받는다. */
+  .card-interactive {
+    transition-property: background-color, border-color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-ui);
+  }
+  .card-interactive:hover,
+  .card-interactive:focus-visible {
+    border-color: var(--color-text-dim);
+    background: var(--color-bg-alt);
   }
 
   .card-raised {
@@ -151,7 +341,9 @@
     border-radius: var(--radius-3xl);
   }
 
-  /* button base — never wraps, never breaks */
+  /* button base — never wraps, never breaks.
+     transition-property 를 명시하고 `all` 을 쓰지 않는다(레이아웃 속성까지 끌려간다).
+     transform 은 목록에서 뺐다 — 호버는 색으로만 말한다. */
   .btn {
     display: inline-flex;
     align-items: center;
@@ -159,19 +351,19 @@
     white-space: nowrap;
     font-weight: 600;
     border-radius: 9999px;
-    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
-      background 200ms ease, box-shadow 200ms ease, color 200ms ease,
-      border-color 200ms ease;
+    transition-property: background-color, border-color, box-shadow, color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-ui);
     user-select: none;
   }
 
   .btn-primary {
     background: var(--color-accent);
     color: #fff;
-    height: 52px;
-    padding: 0 1.75rem;
-    font-size: 15px;
-    box-shadow: 0 1px 2px rgba(15, 50, 90, 0.18), 0 8px 24px rgba(23, 95, 176, 0.22);
+    height: 56px;
+    padding: 0 2rem;
+    font-size: 16px;
+    font-weight: 700;
   }
   .btn-primary:hover {
     background: var(--color-accent-strong);
@@ -190,7 +382,8 @@
     border-color: var(--color-line);
   }
 
-  /* small uppercase eyebrow */
+  /* 아이브로 — 강조색 예산이 쓰이는 두 자리 중 하나(다른 하나는 CTA 채움).
+     글자 자체가 브랜드색이다. 흰 바탕 대비 6.44. */
   .eyebrow {
     display: inline-flex;
     align-items: center;
@@ -198,8 +391,19 @@
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.04em;
-    color: var(--color-text-muted);
+    color: var(--color-accent);
     white-space: nowrap;
+  }
+  @media (min-width: 640px) {
+    .eyebrow {
+      font-size: 13px;
+    }
+  }
+  .section-ink .eyebrow {
+    color: var(--color-accent-on-dark);
+  }
+  .section-ink .eyebrow::before {
+    background: var(--color-accent-on-dark);
   }
   .eyebrow::before {
     content: "";

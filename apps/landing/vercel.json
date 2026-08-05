@@ -21,7 +21,6 @@
     { "source": "/ko/", "destination": "/", "permanent": true }
   ],
   "rewrites": [
-    { "source": "/", "destination": "/ko/" },
     {
       "source": "/:page(privacy|terms|account-deletion|company|contact)/",
       "destination": "/ko/:page/"
