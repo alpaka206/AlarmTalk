@@ -1,7 +1,8 @@
 import XCTest
 @testable import AlarmTalk
 
-/// `LocalAlarmRecord` 의 Codable 라운드트립 + legacy 17필드 JSON 호환.
+/// `LocalAlarmRecord` 의 Codable 라운드트립 + 부분 JSON 폴백.
+/// (옛 17필드 legacy 키 매핑은 4d5004a2 에서 삭제됐다 — 아래 테스트 주석 참고.)
 final class LocalAlarmRecordCodableTests: XCTestCase {
 
     func test_fullFieldRoundTrip() throws {
@@ -96,53 +97,81 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertEqual(decoded.state, AlarmRuntimeState.idle.rawValue)
     }
 
-    func test_legacy17FieldJSONCompatibility() throws {
-        // iOS 초기 빌드의 17필드 JSON.  `remoteID`, `repeatWeekdays` (Calendar weekday 1..7),
-        // `messageID`, `voiceProfileID`, `rawAudioURL`, `localAudioFilePath`, `updatedAt`
-        // 모두 새 필드로 매핑되는지 확인.
+    /// 현행 `init(from:)` 에 살아 있는 **부분 JSON 보정 3종**.
+    ///
+    /// 원래 이 자리에는 `test_legacy17FieldJSONCompatibility` 가 있었다. iOS 초기빌드의
+    /// 17필드 포맷(`remoteID`/`repeatWeekdays`/`voiceProfileID`/`messageID`/`rawAudioURL`/
+    /// `localAudioFilePath`/`updatedAt`)을 새 필드로 매핑하는 legacy 디코더를 지키던 테스트인데,
+    /// 그 디코더는 `4d5004a2` 에서 **의도적으로** 삭제됐다. 되살리지 말 것 — 지킬 데이터가
+    /// 존재한 적이 없다:
+    ///   - 그 포맷의 수명은 `7c9fcd7f`(2026-05-19 04:48) ~ `e350ee63`(같은 날 14:09), 9시간 남짓.
+    ///   - 호환 디코더와 그 테스트는 포맷을 갈아엎은 `e350ee63` 이 **동시에** 만든 투기적 호환이었다.
+    ///   - 당시 워크스페이스가 Windows 라 iOS 는 컴파일조차 되지 않았고, 지금도 App Store
+    ///     출시 이력이 0이다. 그 포맷으로 저장된 기기는 세상에 없다.
+    ///
+    /// 아래는 그 삭제 이후에도 **현행 디코더에 남아 있는** 보정만 지킨다.
+    func test_partialJSON_playModeAlias_syncStateBackfill_fireAtFallback() throws {
         let json = """
         {
             "id": "1A4B0AE6-1F1D-4E14-9A05-E8E5C1F0F9AA",
-            "remoteID": "remote-legacy-1",
+            "remoteAlarmId": "remote-1",
             "label": "Legacy",
             "hour": 8,
             "minute": 0,
-            "repeatWeekdays": [2, 3, 4, 5, 6],
+            "repeatDaysMask": 62,
             "enabled": true,
             "snoozeMinutes": 5,
             "playMode": "alarm_voice",
-            "voiceProfileID": "vp-legacy",
-            "messageID": "msg-legacy",
-            "rawAudioURL": "https://example.com/legacy.mp3",
-            "localAudioFilePath": "msg-legacy.mp3",
+            "voiceProfileId": "vp-1",
+            "ttsMessageId": "msg-1",
+            "rawAudioUri": "https://example.com/a.mp3",
+            "localAudioUri": "msg-1.mp3",
             "voiceText": "hello",
-            "voiceLanguage": "ko",
-            "updatedAt": 700000000.0
+            "voiceLanguage": "ko"
         }
         """.data(using: .utf8)!
 
-        let decoder = JSONDecoder()
-        let decoded = try decoder.decode(LocalAlarmRecord.self, from: json)
+        let decoded = try JSONDecoder().decode(LocalAlarmRecord.self, from: json)
 
         XCTAssertEqual(decoded.label, "Legacy")
-        XCTAssertEqual(decoded.remoteAlarmId, "remote-legacy-1")
-        // repeatWeekdays [2..6] = Mon..Fri = bit 1..5 = 0b0111_1110 / 2 = 0x3E
-        XCTAssertEqual(decoded.repeatDaysMask, RepeatDay.monday.mask | RepeatDay.tuesday.mask | RepeatDay.wednesday.mask | RepeatDay.thursday.mask | RepeatDay.friday.mask)
-        // playMode "alarm_voice" → "sound_then_voice"
+        XCTAssertEqual(decoded.remoteAlarmId, "remote-1")
+        // 62 = 0b0111_1110 = 월~금
+        XCTAssertEqual(
+            decoded.repeatDaysMask,
+            RepeatDay.monday.mask | RepeatDay.tuesday.mask | RepeatDay.wednesday.mask
+                | RepeatDay.thursday.mask | RepeatDay.friday.mask
+        )
+        // ① playMode 별칭: "alarm_voice" → "sound_then_voice"
         XCTAssertEqual(decoded.playMode, AlarmPlayMode.soundThenVoice.rawValue)
-        XCTAssertEqual(decoded.ttsMessageId, "msg-legacy")
-        XCTAssertEqual(decoded.voiceProfileId, "vp-legacy")
-        XCTAssertEqual(decoded.rawAudioUri, "https://example.com/legacy.mp3")
-        XCTAssertEqual(decoded.localAudioUri, "msg-legacy.mp3")
-        // remoteAlarmId 존재 → syncState 가 synced 로 보정되어야 함.
+        XCTAssertEqual(decoded.ttsMessageId, "msg-1")
+        XCTAssertEqual(decoded.voiceProfileId, "vp-1")
+        XCTAssertEqual(decoded.rawAudioUri, "https://example.com/a.mp3")
+        XCTAssertEqual(decoded.localAudioUri, "msg-1.mp3")
+        // ② syncState 보정: remoteAlarmId 가 있으면 synced 로 채운다.
         XCTAssertEqual(decoded.syncState, AlarmSyncState.synced.rawValue)
         XCTAssertEqual(decoded.origin, AlarmOrigin.localOwned.rawValue)
-        // fireAtMillis 가 JSON 에 없으므로 fallback 으로 채워졌어야.
+        // ③ fireAtMillis 폴백: JSON 에 없으면 0 이 아닌 값으로 채운다.
         XCTAssertGreaterThan(decoded.fireAtMillis, 0)
-        // legacy "updatedAt" 는 Swift Date 기본 인코딩(.deferredToDate = 2001 기준 초)으로
-        // 저장됐다. JSONDecoder 기본 전략도 동일하게 timeIntervalSinceReferenceDate 로 읽으므로
-        // 700000000 초(2001 기준) → unix 1678307200 초 → 1678307200000 ms.
-        XCTAssertEqual(decoded.updatedAtMillis, 1_678_307_200_000)
+        // updatedAtMillis 도 없으면 현재 시각으로 채운다(0 이면 동기화 비교가 깨진다).
+        XCTAssertGreaterThan(decoded.updatedAtMillis, 0)
+    }
+
+    /// `remoteAlarmId` 가 없으면 syncState 는 `local_only` 로 남아야 한다(보정의 반대 방향).
+    func test_partialJSON_withoutRemoteId_staysLocalOnly() throws {
+        let json = """
+        {
+            "id": "2B4B0AE6-1F1D-4E14-9A05-E8E5C1F0F9AA",
+            "label": "Local",
+            "hour": 6,
+            "minute": 15,
+            "repeatDaysMask": 0,
+            "enabled": true
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(LocalAlarmRecord.self, from: json)
+        XCTAssertNil(decoded.remoteAlarmId)
+        XCTAssertEqual(decoded.syncState, AlarmSyncState.localOnly.rawValue)
     }
 
     func test_alarmKitID_decodesUUIDObjectFromLegacyJSON() throws {

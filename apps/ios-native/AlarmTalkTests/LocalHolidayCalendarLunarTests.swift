@@ -138,37 +138,60 @@ final class LocalHolidayCalendarLunarTests: XCTestCase {
 
     // MARK: - 타임존 독립성: 동일 instant 를 극단 디바이스 TZ 로 입력해도 동일 판정
 
-    func test_timezoneIndependence_extremeDeviceTimezones() {
-        // 한국에서 2026-02-17(설날)에 해당하는 "그 민용일의 정오 instant" 를 여러 시계로 생성.
-        // 엔진은 내부적으로 Asia/Seoul 로 버킷팅하므로, 어떤 디바이스 TZ 의 instant 든
-        // Asia/Seoul 기준 같은 민용일이면 동일 결과여야 한다.
-        let seoulNoon = noonInstant(2026, 2, 17, tzId: "Asia/Seoul")
-        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulNoon))
+    /// **디바이스 타임존 독립성** — 같은 instant 라면 기기 시계를 무엇으로 바꿔도 판정이 같다.
+    ///
+    /// 이것이 원래 검증하려던 것이다. 엔진은 `seoulGregorian`(고정 Asia/Seoul)만 쓰고
+    /// `Calendar.current` 를 참조하지 않으므로, 해외에 있는 사용자도 **한국 공휴일**을
+    /// 한국 달력대로 본다. 안드로이드 계측 테스트의 `TimeZone.setDefault` 루프와 같은 축이다.
+    func test_engine_isDeviceTimeZoneIndependent() {
+        let original = NSTimeZone.default
+        defer { NSTimeZone.default = original }
 
-        // 동일 민용일을 다른 극단 TZ 정오로 만들어도 엔진은 Asia/Seoul 로 환산해 같은 날로 본다.
-        // (UTC+14 Kiritimati, UTC-11 Pago_Pago 정오 instant)
-        let kiritimatiNoon = noonInstant(2026, 2, 17, tzId: "Pacific/Kiritimati")
-        let pagoNoon = noonInstant(2026, 2, 17, tzId: "Pacific/Pago_Pago")
+        // 설날(2026-02-17) 한국 정오 instant 하나를 고정한다.
+        let instant = noonInstant(2026, 2, 17, tzId: "Asia/Seoul")
+        let expectedEpoch = KoreanLunarHolidayEngine.epochDay(year: 2026, month: 2, day: 17)
 
-        // Asia/Seoul 기준 민용일이 같은지부터 확인(엔진 epochDay 일치).
+        for tzId in ["Asia/Seoul", "UTC", "America/New_York", "Pacific/Kiritimati", "Pacific/Pago_Pago"] {
+            NSTimeZone.default = TimeZone(identifier: tzId)!
+            XCTAssertEqual(KoreanLunarHolidayEngine.epochDay(of: instant), expectedEpoch,
+                           "기기 시계가 \(tzId) 여도 같은 민용일이어야 한다")
+            XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(instant),
+                          "기기 시계가 \(tzId) 여도 설날이어야 한다")
+        }
+
+        // 대체공휴일(2026-08-17 광복절 대체)도 같은 축으로 확인.
+        let subInstant = noonInstant(2026, 8, 17, tzId: "Asia/Seoul")
+        for tzId in ["Asia/Seoul", "UTC", "Pacific/Pago_Pago"] {
+            NSTimeZone.default = TimeZone(identifier: tzId)!
+            XCTAssertTrue(KoreanLunarHolidayEngine.isSubstituteHoliday(subInstant),
+                          "기기 시계가 \(tzId) 여도 대체공휴일이어야 한다")
+        }
+    }
+
+    /// **서로 다른 instant 는 다른 민용일일 수 있다** — 위 테스트와 헷갈리면 안 되는 축.
+    ///
+    /// 예전에는 이 두 축이 한 테스트에 섞여 있었고, "여러 존의 **정오**" 를 만들어 놓고
+    /// 그것들이 전부 Asia/Seoul 기준 같은 날이라고 기대했다. 그건 틀린 전제다 —
+    /// 각 존의 정오는 **서로 다른 순간**이라 한국 민용일이 갈릴 수 있다:
+    ///
+    ///   - Kiritimati(UTC+14) 2026-02-17 정오 = 2026-02-16T22:00Z = KST 02-17 07:00 → 같은 날
+    ///   - Pago_Pago(UTC-11) 2026-02-17 정오 = 2026-02-17T23:00Z = KST 02-**18** 08:00 → 다음 날
+    ///
+    /// 엔진이 Pago 정오를 2/18 로 보는 것은 **옳다.** 사모아에서 정오일 때 한국은 이미
+    /// 다음 날 아침이고, 한국 공휴일 판정은 한국 달력을 따른다.
+    func test_engine_differentInstantsMayMapToDifferentSeoulDays() {
         let seoulEpoch = KoreanLunarHolidayEngine.epochDay(year: 2026, month: 2, day: 17)
-        XCTAssertEqual(KoreanLunarHolidayEngine.epochDay(of: seoulNoon), seoulEpoch)
+
+        let kiritimatiNoon = noonInstant(2026, 2, 17, tzId: "Pacific/Kiritimati")
         XCTAssertEqual(KoreanLunarHolidayEngine.epochDay(of: kiritimatiNoon), seoulEpoch,
-                       "Kiritimati 정오는 Asia/Seoul 로 환산해도 같은 민용일")
-        XCTAssertEqual(KoreanLunarHolidayEngine.epochDay(of: pagoNoon), seoulEpoch,
-                       "Pago_Pago 정오는 Asia/Seoul 로 환산해도 같은 민용일")
-
-        // 따라서 음력 판정도 동일하게 true.
+                       "Kiritimati 정오는 KST 로 아직 같은 날 아침이다")
         XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(kiritimatiNoon))
-        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(pagoNoon))
 
-        // 대체공휴일도 동일 instant 독립성 확인 (2026-08-17 광복절 대체).
-        let subSeoul = noonInstant(2026, 8, 17, tzId: "Asia/Seoul")
-        let subKiritimati = noonInstant(2026, 8, 17, tzId: "Pacific/Kiritimati")
-        let subPago = noonInstant(2026, 8, 17, tzId: "Pacific/Pago_Pago")
-        XCTAssertTrue(KoreanLunarHolidayEngine.isSubstituteHoliday(subSeoul))
-        XCTAssertTrue(KoreanLunarHolidayEngine.isSubstituteHoliday(subKiritimati))
-        XCTAssertTrue(KoreanLunarHolidayEngine.isSubstituteHoliday(subPago))
+        let pagoNoon = noonInstant(2026, 2, 17, tzId: "Pacific/Pago_Pago")
+        XCTAssertEqual(KoreanLunarHolidayEngine.epochDay(of: pagoNoon), seoulEpoch + 1,
+                       "Pago_Pago 정오는 KST 로 이미 다음 날이다")
+        XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(pagoNoon),
+                       "2026-02-18 은 설날 기준일이 아니다(연휴는 시드가 담당)")
     }
 
     // MARK: - epochDay 가 시드의 ymd 와 정확히 일치 (시계 정렬)
