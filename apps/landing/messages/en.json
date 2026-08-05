@@ -65,28 +65,28 @@
     "bullet3": "Choose Korean, English or Japanese"
   },
   "scenarios": {
-    "headline": "How people set it up.",
-    "description": "Not sure what it should say? Start with one of these.",
+    "headline": "What it says in the morning.",
+    "description": "Not sure what to put in? Start with one of these.\nThe weather and medication lines already ship with the app.",
     "items": [
       {
-        "tag": "Morning",
-        "title": "\"Get up, you have that presentation\"",
-        "body": "Record one line the night before and hear it back in that voice."
+        "tag": "If you have a favorite voice",
+        "title": "\"Time to get up. Let’s have a good one today.\"",
+        "body": "Lift a voice from a video you love and let it open your morning.\nMake it once, then change the words as often as you like."
       },
       {
         "tag": "Family far away",
-        "title": "\"Grandma, time for your medicine\"",
-        "body": "Twelve seconds from a grandchild, and that voice checks in every day."
+        "title": "\"It’s time for your medicine. Take it now with a glass of water, before it slips your mind.\"",
+        "body": "Set your parents’ alarm for them when you can’t check in as often as you’d like.\nYou don’t have to write this line yourself."
       },
       {
-        "tag": "Weekend couple",
-        "title": "\"Sleep well? See you later\"",
-        "body": "Record a line on the way home and put it on their alarm."
+        "tag": "Couples living apart",
+        "title": "\"Sleep well? Have a good day.\"",
+        "body": "Set their morning alarm in your own voice.\nOnce it arrives it’s theirs — they can move the time however they want."
       },
       {
-        "tag": "Living alone",
-        "title": "\"5°C in Seoul today, dress warm\"",
-        "body": "You don’t have to write anything. Pick weather and it changes daily."
+        "tag": "If writing lines is a chore",
+        "title": "\"It’s really cold out today. Bundle up in a warm coat before you head out.\"",
+        "body": "Pick weather and it chooses a greeting to match the sky that morning.\nClear, rain, snow, cold — a different line each day."
       }
     ]
   },
@@ -94,8 +94,8 @@
     "headline": "Frequently asked",
     "items": [
       {
-        "q": "What can I do with 12 seconds of audio?",
-        "a": "It builds a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like. You can also use a raw recording as-is, or optionally auto-generate a fresh line daily from contexts like weather or fortune."
+        "q": "How do I make a voice?",
+        "a": "Record something or upload an audio file. Recordings run from 12 seconds up to 2 minutes. If you don’t have a file, playing a video of that person and recording it works too. Once the voice exists, every line you write is read back in it, on as many alarms as you like. Adding a voice of your own needs a plan, and you can create one per month."
       },
       {
         "q": "Are there forced missions, like math or photo challenges?",
@@ -240,7 +240,7 @@
       "alarmtalk": {
         "tag": "AlarmTalk",
         "title": "A voice alarm app",
-        "body": "Twelve seconds of audio creates a voice profile, then any sentence you write is read aloud in that voice across your alarms. Family, partner, and friend groups exchange voices privately.",
+        "body": "Register a voice you love and build alarms that read your lines back in it. Family, partners and friends exchange voices only inside their group.",
         "cta": "Back to home"
       }
     },
