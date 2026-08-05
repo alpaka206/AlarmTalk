@@ -256,6 +256,56 @@
       0 6px 14px rgba(25, 31, 40, 0.08);
   }
 
+  /* 스크롤에 묶인 장면.
+     **높이는 CSS 가 정한다.** JS 로 갈라 놓으면 서버는 긴 쪽을, 하이드레이션 뒤 클라는
+     짧은 쪽을 그려서 섹션이 접힌다 — 그 아래 앵커(#pricing·#faq)로 들어온 사람은
+     스크롤이 끝난 뒤 엉뚱한 자리에 남는다. 미디어 쿼리는 첫 페인트에 이미 적용되므로
+     어긋날 틈이 없다. */
+  .scrub-stage {
+    position: relative;
+    height: 240vh;
+  }
+  .scrub-pin {
+    position: sticky;
+    top: 0;
+    display: flex;
+    height: 100vh;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    /* 헤더가 sticky 라 뷰포트 전체 기준으로 가운데 정렬하면 글자가 그 아래로 들어간다. */
+    padding-top: 72px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* 핀도 스크럽도 없다. 240vh 를 강제로 스크롤시키는 건 전정 장애가 있는 사람에게
+       접근성 문제라, 평범한 섹션 하나로 접고 **끝난 상태**를 보여준다. */
+    .scrub-stage {
+      height: auto;
+    }
+    .scrub-pin {
+      position: static;
+      height: auto;
+      overflow: visible;
+      padding-block: 88px;
+    }
+    .scrub-stage [data-scrub] {
+      opacity: 1 !important;
+      transform: none !important;
+    }
+    .scrub-stage [data-scrub="before"] {
+      display: none;
+    }
+    /* 알람은 켜진 채로 보여준다 — 이 장면이 말하려는 것이 그 상태다. */
+    .scrub-stage [data-scrub-knob] {
+      transform: translateX(100%) !important;
+    }
+    .scrub-stage [data-scrub-track] {
+      background: var(--scrub-on) !important;
+    }
+  }
+
   /* ink 위에 ink 베젤을 올리면 베젤이 사라진다. 어두운 섹션에서는 가장자리만 남긴다. */
   .section-ink .device {
     box-shadow: inset 0 0 0 1px var(--color-ink-line);
