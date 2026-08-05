@@ -64,6 +64,7 @@ import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
+import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
 internal fun VoiceAudioCard(
@@ -259,6 +260,7 @@ internal fun VoiceAudioCard(
                                 MessageModeSummaryRow(
                                     isManual = !editor.voiceRandomPrompt && !editor.isActiveBucketAlarm(),
                                     randomContext = editor.voiceRandomContext,
+                                    manualText = editor.voiceText,
                                     onClick = onOpenRandomPromptSettings,
                                 )
                             }
@@ -677,11 +679,18 @@ internal fun FreeBucketSettingsPane(
 internal fun MessageModeSummaryRow(
     isManual: Boolean,
     randomContext: String,
+    // 직접 입력일 때 이 알람이 실제로 읽어 줄 문구. 새 알람이 직전 문구를 이어받게 되면서
+    // **여기 보여 주지 않으면 안 된다** — 종류만 '직접 입력' 이라고 적혀 있으면, 어제 넣은
+    // 문구를 그대로 물고 온 새 알람을 사용자가 알아챌 방법이 없다(생성형은 내용이 매번 새로
+    // 만들어져 이 위험이 없다). 전문은 문구 화면의 상세 카드에서 본다.
+    manualText: String = "",
     onClick: () -> Unit,
 ) {
     val valueLabel = when {
-        // 직접 입력은 문구 내용을 어디에도 노출하지 않는다 — 값은 '직접 입력'으로만 표기.
-        isManual -> stringResource(R.string.editor_msg_mode_manual)
+        isManual -> {
+            val label = stringResource(R.string.editor_msg_mode_manual)
+            manualText.trim().takeIf { it.isNotBlank() }?.let { "$label · $it" } ?: label
+        }
         // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
         normalizedRandomPromptContext(randomContext) == DefaultRandomPromptContext ->
             stringResource(R.string.editor_msg_mode_preset)
@@ -705,7 +714,15 @@ internal fun MessageModeSummaryRow(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(stringResource(R.string.editor_msg_section), fontWeight = FontWeight.SemiBold)
-                MutedText(valueLabel)
+                // 문구가 길어도 행을 늘리지 않는다 — 두 줄로 접히면 아래 행들이 밀려
+                // 카드 전체가 들썩인다. 한 줄로 자르고 전문은 문구 화면에서 본다.
+                Text(
+                    text = valueLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             Spacer(Modifier.width(12.dp))
             Icon(

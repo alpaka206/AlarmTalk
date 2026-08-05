@@ -948,7 +948,10 @@ internal fun AlarmTalkApp(
       // 동의 확인이 끝나기 전엔 온보딩·홈을 띄우지 않고 로딩으로 잡아둬, 동의가 필요한
       // 사용자에게 다른 화면이 먼저 깜빡였다가 동의 화면이 끼어드는 일을 막는다.
       if (!viewModel.consentChecked) {
-          GateBackGuard()
+          // 여기엔 GateBackGuard 를 두지 않는다. 다른 게이트는 **화면에 정식 선택지가 있어서**
+          // 뒤로가기로 실수로 나가는 걸 막는 것인데, 이건 응답을 기다리는 로딩 화면이라
+          // 지킬 선택지가 없다. 삼키면 네트워크가 느릴 때 스피너 앞에서 뒤로가기가 죽은
+          // 것처럼 보이고, 사용자는 앱을 못 닫는다. 여기선 표준 동작(앱 종료)이 맞다.
           ConsentCheckLoadingScreen(contentPadding = padding)
           return@Scaffold
       }
@@ -1113,6 +1116,7 @@ internal fun AlarmTalkApp(
                   // 계정이 바뀌면 다시 읽는다(저장소가 계정별 키라 값도 계정별이다).
                   val lastMessageContext = remember(authSession?.user?.id) { viewModel.lastMessageContext() }
                   val lastFreeBucket = remember(authSession?.user?.id) { viewModel.lastFreeBucket() }
+                  val lastManualText = remember(authSession?.user?.id) { viewModel.lastManualText() }
                   AlarmEditorScreen(
                       contentPadding = padding,
                       onRegisterCode = viewModel::registerCode,
@@ -1130,6 +1134,7 @@ internal fun AlarmTalkApp(
                       lastUsedVoiceId = viewModel.lastUsedVoiceId,
                       lastMessageContext = lastMessageContext,
                       lastFreeBucket = lastFreeBucket,
+                      lastManualText = lastManualText,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
@@ -1139,6 +1144,7 @@ internal fun AlarmTalkApp(
                       onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onMissingAlarmPermission = ::requestFirstMissingAlarmPermission,
+                      saving = viewModel.alarmSaving,
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
                               requestFirstMissingAlarmPermission()
@@ -1185,6 +1191,7 @@ internal fun AlarmTalkApp(
                           onPrefetchRestrictedVoiceClips = viewModel::prefetchFreeBucketClips,
                           onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                           onMissingAlarmPermission = ::requestFirstMissingAlarmPermission,
+                          saving = viewModel.alarmSaving,
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
                                   requestFirstMissingAlarmPermission()

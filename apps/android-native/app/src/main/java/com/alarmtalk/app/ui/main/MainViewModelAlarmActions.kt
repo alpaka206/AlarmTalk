@@ -85,7 +85,11 @@ internal fun MainViewModel.createAlarm(
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
+    // 여기부터가 '저장 중' 이다 — 아래는 전부 비동기고, 날씨 버킷이면 네트워크까지 탄다.
+    // 내리는 건 finally 한 곳뿐: 실패로 편집기가 남았는데 켜진 채면 다시 저장할 길이 없다.
+    alarmSaving = true
     viewModelScope.launch {
+      try {
         if (!draft.targetUserId.isNullOrBlank()) {
             // 가족(수신자) 알람은 여기서 끝난다 — '직전 선택' 을 **일부러 기억하지 않는다.**
             // 이 화면의 목소리·문구는 수신자를 위해 고른 것이고, 문구 설정도 수신자의
@@ -111,6 +115,9 @@ internal fun MainViewModel.createAlarm(
                 message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_save_failed))
             }
         }
+      } finally {
+        alarmSaving = false
+      }
     }
 }
 
@@ -221,7 +228,10 @@ internal fun MainViewModel.updateAlarm(
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
+    // 생성과 같은 규약 — 아래 [MainViewModel.alarmSaving] 주석 참고.
+    alarmSaving = true
     viewModelScope.launch {
+      try {
         runCatching {
             repository.updateAlarm(alarmId, withResolvedWeatherVariant(draft), replaceExisting)
         }.onSuccess {
@@ -239,6 +249,9 @@ internal fun MainViewModel.updateAlarm(
                 message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_update_failed))
             }
         }
+      } finally {
+        alarmSaving = false
+      }
     }
 }
 

@@ -122,7 +122,6 @@
     <string name="billing_voucher_unregistered_with_date">未登録 · 発行日 %1$s</string>
     <string name="common_alarm_delete">削除</string>
     <string name="common_alarm_warning_reschedule_failed">アラームを再設定できませんでした。時間を確認して、もう一度保存してください。</string>
-    <string name="common_alarm_warning_sync_failed">保存が少し遅れています。アラームはそのまま鳴り、自動で再保存します。</string>
     <string name="common_alarm_notice_free_downgraded">無料プランに変わったため、基本アラーム音に変換されました。</string>
     <string name="common_alarm_notice_default_converted">声が使えなくなったため、基本アラーム音に変換されました。</string>
     <string name="common_day_fri">金</string>
@@ -206,7 +205,6 @@
     <string name="editor_play_mode_alarm_voice">アラーム＋声</string>
     <string name="editor_play_mode_title">再生方式</string>
     <string name="editor_play_mode_voice_only">声のみ</string>
-    <string name="editor_preparing_voice_alarm">声のアラームを準備しています。</string>
     <string name="editor_quiet_hours_label">受け取らない時間：%1$s</string>
     <string name="editor_msg_section">文</string>
     <string name="editor_msg_mode_manual">自分で入力</string>
@@ -271,6 +269,8 @@
     <string name="editorp_random_back">戻る</string>
     <string name="editorp_random_fortune_required">占いを使った文を作るには、性別・生年月日・生まれた時間が必要です。</string>
     <string name="editorp_random_fortune_saved">相手が保存した占い情報を使います。</string>
+    <string name="editorp_random_detail_change">変更</string>
+    <string name="editorp_random_manual_title">入力した文面</string>
     <string name="editorp_random_fortune_title">占い情報</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>
@@ -440,11 +440,8 @@
     <plurals name="msg_received_alarm_arrived">
         <item quantity="other">相手が設定したアラーム%1$d件が届きました。</item>
     </plurals>
-    <string name="msg_sync_generic_failed">一時的なエラーが発生しました。自動で再試行します。</string>
     <string name="msg_sync_login_required">同期するには、まずログインしてください。</string>
     <string name="msg_sync_pull_partial_failed">受け取ったアラームの一部がまだ読み込めていません。しばらくして自動で再試行します。</string>
-    <string name="msg_sync_push_and_pull_partial_failed">アラーム情報の一部がまだ同期できていません。アラームはそのまま鳴り、自動で再試行します。</string>
-    <string name="msg_sync_push_partial_failed">変更の一部がまだ保存されていません。アラームはそのまま鳴り、自動で再試行します。</string>
     <string name="msg_test_alarm_saved">テストアラームを保存しました。%1$s</string>
     <string name="msg_test_alarm_schedule_failed">テストアラームの予約に失敗しました。</string>
     <string name="msg_time_format_required">時刻はHH:mm形式で入力してください。</string>

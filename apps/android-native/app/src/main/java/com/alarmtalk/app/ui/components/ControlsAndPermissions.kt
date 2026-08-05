@@ -574,11 +574,16 @@ internal fun AlarmRow(
 
 private data class AlarmRowNotice(val textResId: Int, val isError: Boolean)
 
+// 여기 넣기 전 기준: **사용자가 할 일이 있는가.** 없으면 넣지 않는다.
+// 서버 동기화 실패(syncState=FAILED)를 뺀 이유가 그것이다 — 알람은 그대로 울리고
+// (울림은 온디바이스다), 실패한 행은 다음 sync 마다 자동으로 다시 올라간다
+// (AlarmSyncService 의 OUTBOUND_SYNC_STATES 에 FAILED 가 들어 있다). 할 일이 없는데
+// 빨간 경고를 띄우면, 멀쩡히 울릴 알람을 고장 난 것으로 믿고 다른 알람을 또 맞춘다.
+// 대신 조용히 삼키지는 않는다 — 실패는 로그(AlarmTalkLog)에 남는다.
 private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
+    // 이건 다르다: 예약 자체가 실패해 **정말 안 울린다.** 다시 저장해 달라고 해야 한다.
     alarm.state == AlarmStates.FAILED ->
         AlarmRowNotice(R.string.common_alarm_warning_reschedule_failed, isError = true)
-    alarm.syncState == AlarmSyncStates.FAILED ->
-        AlarmRowNotice(R.string.common_alarm_warning_sync_failed, isError = true)
     // 유료 목소리를 못 써 기본 알람(사운드온리)으로 변환됨(preLockPlayMode 마커, 영구).
     // 무료 강등은 목소리 참조를 남겨두므로(voiceProfileId 유지) '무료 요금제' 안내, 공유 목소리
     // 해제는 참조를 비우므로(voiceProfileId=null) 원인 무관 중립 안내.
