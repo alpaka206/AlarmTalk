@@ -168,7 +168,9 @@ struct LoginView: View {
             enabled: !auth.isBusy
         )
         .onChange(of: name) { _, newValue in
-            if newValue.count > 30 { name = String(newValue.prefix(30)) }
+            // 규칙은 InputSanitizer 한 곳에서만(제어·제로폭·양방향 문자 제거, 줄바꿈→공백).
+            let cleaned = InputSanitizer.clampDisplayName(newValue)
+            if cleaned != newValue { name = cleaned }
         }
     }
 

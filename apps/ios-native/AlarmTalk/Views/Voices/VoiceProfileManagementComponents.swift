@@ -252,8 +252,9 @@ struct VoiceProfileEditDialog: View {
                 TextField("목소리 이름", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: name) { _, newValue in
-                        if newValue.count > 50 {
-                            name = String(newValue.prefix(50))
+                        let cleaned = InputSanitizer.clampVoiceName(newValue)
+                        if cleaned != newValue {
+                            name = cleaned
                         }
                     }
                 if submitted && trimmedName.isEmpty {

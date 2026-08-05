@@ -153,8 +153,9 @@ private struct NicknameEditSheet: View {
                     .disableAutocorrection(true)
                     .disabled(isBusy)
                     .onChange(of: name) { _, newValue in
-                        if newValue.count > 30 {
-                            name = String(newValue.prefix(30))
+                        let cleaned = InputSanitizer.clampDisplayName(newValue)
+                        if cleaned != newValue {
+                            name = cleaned
                         }
                     }
                 Text("\(name.count)/30")

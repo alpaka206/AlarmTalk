@@ -200,8 +200,9 @@ struct VoiceCloneUploadFlow: View {
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: profileName) { _, newValue in
                     voice.cloneName = newValue
-                    if newValue.count > 50 {
-                        profileName = String(newValue.prefix(50))
+                    let cleaned = InputSanitizer.clampVoiceName(newValue)
+                    if cleaned != newValue {
+                        profileName = cleaned
                         voice.cloneName = profileName
                     }
                 }

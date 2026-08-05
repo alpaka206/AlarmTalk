@@ -74,8 +74,9 @@ struct VoiceSetupView: View {
                             .textFieldStyle(.roundedBorder)
                             .submitLabel(.done)
                             .onChange(of: listenerTitle) { _, newValue in
-                                if newValue.count > 30 {
-                                    listenerTitle = String(newValue.prefix(30))
+                                let cleaned = InputSanitizer.clampDisplayName(newValue)
+                                if cleaned != newValue {
+                                    listenerTitle = cleaned
                                 }
                             }
                         Spacer().frame(height: 6)

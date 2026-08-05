@@ -15,6 +15,7 @@
 		0A8A4E0F5546C4B079315431 /* SpeakerSeparationFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6466EB410BED3723240AE8C5 /* SpeakerSeparationFlow.swift */; };
 		0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */; };
 		0E5B76527C4E572E042DC557 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70196163DEB277ED30F5976 /* KeychainStore.swift */; };
+		0F95A7B5A7D70D76F64A1DF6 /* InputSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BC3CAD414D42352F98B1FE /* InputSanitizerTests.swift */; };
 		0FB05A977664FB0D75719963 /* AlarmEditDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D06985F5E8ED62B425536DC /* AlarmEditDraftTests.swift */; };
 		128C91C62BC6308BA1781AE7 /* BottomNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD5149AC925F9E7568727C4B /* BottomNavBar.swift */; };
 		14BEBC10C8EB922C30A26F98 /* AlarmTalkAPIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FAA02E16F860ED36A858566 /* AlarmTalkAPIModels.swift */; };
@@ -28,6 +29,7 @@
 		1F91FD72D98E3051B4FD6BD7 /* AlarmTimeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FFCC8AFC12D1CB8AD6A44F /* AlarmTimeCalculatorTests.swift */; };
 		211DD3BCAC0CE23AD3436301 /* AlarmTalkBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521C02BC3EAB475219595232 /* AlarmTalkBrand.swift */; };
 		23DD6CB6C45C98F8C67EC651 /* AppVersionGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6631E3233534A061DF16833B /* AppVersionGateTests.swift */; };
+		24532A821DBDA7E12D150865 /* InputSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */; };
 		27CF6DF15148B755FC84D1B3 /* LocalAlarmRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02293324F4C4AB3487AF27E4 /* LocalAlarmRecord.swift */; };
 		2818E8AD2FDB6E08A568E080 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7F732DF290FB6337B9E693 /* AppGroup.swift */; };
 		2B97C025AE8A2E50DD85D909 /* AlarmEnumsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE1C56D44C36C22F69C9EA9 /* AlarmEnumsTests.swift */; };
@@ -369,10 +371,12 @@
 		E077F439D01E160ED901D7FE /* VoicePlayModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayModePicker.swift; sourceTree = "<group>"; };
 		E3B1ECBB5616D418A9932BCA /* ReceivedAlarmBadgeStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedAlarmBadgeStoreTests.swift; sourceTree = "<group>"; };
 		E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidayStore.swift; sourceTree = "<group>"; };
+		E5BC3CAD414D42352F98B1FE /* InputSanitizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputSanitizerTests.swift; sourceTree = "<group>"; };
 		E83EE33037EEA219CF54843B /* AuxiliaryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliaryScreen.swift; sourceTree = "<group>"; };
 		EA9FAAF577180183F039752F /* LoginPermissionGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginPermissionGateView.swift; sourceTree = "<group>"; };
 		EC6B972EFA8543A20D363BEE /* SectionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionCard.swift; sourceTree = "<group>"; };
 		EFC34434C86CC3C2BB8B2F5A /* SystemVoices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemVoices.swift; sourceTree = "<group>"; };
+		F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputSanitizer.swift; sourceTree = "<group>"; };
 		F22A748B61AC101C73FABFB6 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		F2BD54D0D21050EB9BBA9364 /* AlarmTimeCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTimeCalculator.swift; sourceTree = "<group>"; };
 		F346F83B654542F502B5CBE1 /* AudioCacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheStore.swift; sourceTree = "<group>"; };
@@ -631,6 +635,7 @@
 				33EACFD24875EBC9DCCC831F /* DynamicVoiceRefreshServiceTests.swift */,
 				92C56157192A2B5CBADB2977 /* FortunePromptInputFormatTests.swift */,
 				F6CD38FF3D3609DABDD69394 /* HelperFormattersTests.swift */,
+				E5BC3CAD414D42352F98B1FE /* InputSanitizerTests.swift */,
 				74D34672FE277577EA788912 /* LocalAlarmRecordCodableTests.swift */,
 				98DEA7F0002B6032EA05DA9B /* LocalAlarmStoreCopyTests.swift */,
 				37125E930AF979262A6C3253 /* LocalAlarmStoreDeletionTests.swift */,
@@ -722,6 +727,7 @@
 				E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */,
 				6E362F291A9E83445BE588E2 /* Info.plist */,
 				DAD47DD9BE2DBBFF3D0FEE46 /* InfoPlist.xcstrings */,
+				F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */,
 				A70196163DEB277ED30F5976 /* KeychainStore.swift */,
 				5AEC8A234A39D4E7AAFC0F82 /* KoreanLunarHolidayEngine.swift */,
 				02293324F4C4AB3487AF27E4 /* LocalAlarmRecord.swift */,
@@ -970,6 +976,7 @@
 				BBF0654D24C76A9D352ADD7F /* HolidayStore.swift in Sources */,
 				48884F4EE9CE03EA2B89F592 /* HolidayUpcomingList.swift in Sources */,
 				522194330161FE1DEEE81F75 /* HomeView.swift in Sources */,
+				24532A821DBDA7E12D150865 /* InputSanitizer.swift in Sources */,
 				0E5B76527C4E572E042DC557 /* KeychainStore.swift in Sources */,
 				68198E3D4BC57296B43E7DE7 /* KoreanLunarHolidayEngine.swift in Sources */,
 				CA02D54C99DB8E021BAF2D19 /* LandingView.swift in Sources */,
@@ -1056,6 +1063,7 @@
 				D4F5DBE93B1684A6861D4672 /* DynamicVoiceRefreshServiceTests.swift in Sources */,
 				DF01070F5A7680AF08057F3C /* FortunePromptInputFormatTests.swift in Sources */,
 				7FBA137EBE5195718A628111 /* HelperFormattersTests.swift in Sources */,
+				0F95A7B5A7D70D76F64A1DF6 /* InputSanitizerTests.swift in Sources */,
 				8A15F66D4F04702BFAAB6A8A /* LocalAlarmRecordCodableTests.swift in Sources */,
 				5A66F85A29014C9FF33D58C0 /* LocalAlarmStoreCopyTests.swift in Sources */,
 				374F4559CFF13812F44B63AF /* LocalAlarmStoreDeletionTests.swift in Sources */,
