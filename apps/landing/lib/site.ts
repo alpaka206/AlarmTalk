@@ -55,8 +55,14 @@ export function languageAlternates(page = ""): Record<string, string> {
 }
 
 // iOS 앱은 없다 → 스토어 링크는 Google Play 하나뿐이다.
+//
+// 기본값이 "#" 이던 시절에는 배지가 '곧 출시' 로 떨어졌다. 출시 전에는 그게 정직했지만
+// 지금은 앱이 스토어에 있다 — 배포 환경변수를 하나 빠뜨렸다는 이유로 출시된 앱을
+// '곧 출시' 라고 말하게 두지 않는다. 패키지명은 앱과 백엔드가 쓰는 것과 같다.
 export const STORE_LINKS = {
-  googlePlay: process.env.NEXT_PUBLIC_GOOGLE_PLAY_URL ?? "#",
+  googlePlay:
+    process.env.NEXT_PUBLIC_GOOGLE_PLAY_URL ??
+    "https://play.google.com/store/apps/details?id=com.alarmtalk.app",
 } as const;
 
 export const ORGANIZATION = {
