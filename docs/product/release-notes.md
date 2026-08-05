@@ -21,17 +21,22 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 
 ## 1.2.3 (versionCode 23)
 
-`fix/received-alarm-ownership`(#675) 한 건이다. 마이그레이션은 없다.
+#675(받은 알람 소유권) · #677·#678(탈퇴 시 목소리 철회) 세 건. 마이그레이션 92·93 이 있다.
 
 핵심은 **받은 알람의 주인이 바뀌었다**는 것이다. 예전에는 15분 주기·푸시 pull 이 서버 값으로
 계속 덮어써서, 수신자가 시각을 고쳐도 1초 만에 조용히 되돌아갔다 — 사용자는 고쳐 뒀다고 믿고
 그 시각에 못 일어난다. 이제 서버 값은 **처음 받을 때의 씨앗**일 뿐이다.
+
+**탈퇴 철회는 한 줄만 적는다.** 눈에 보이는 변화는 딱 하나다 — 보낸 사람이 계정을 지우면
+그 목소리가 기기에서 사라지고 알람은 같은 시각에 그대로 울린다. 이걸 안 적으면 사용자는
+"엄마 목소리가 왜 없어졌지" 를 알 길이 없다. 반대로 푸시·마이그레이션·FK 같은 건 안 적는다.
 
 ### ko-KR
 
 ```
 • 받은 알람은 이제 받은 사람 것입니다. 시간을 바꾸거나 꺼 두면 그대로 유지됩니다.
 • 보낸 사람이 알람을 지워도 내 알람은 남습니다. 그만받기를 누르면 다른 기기에서도 사라집니다.
+• 보낸 사람이 계정을 지우면 그 목소리는 기기에서 지워지고, 알람은 같은 시각에 그대로 울립니다.
 • 받은 알람의 스누즈가 사라지거나, 방금 끈 알람이 다시 울리던 문제를 고쳤습니다.
 • 목소리 만들기: 예시 대본은 필요할 때만 펼칩니다. 녹음이 짧으면 버튼에서 바로 알려 줍니다.
 • 화면을 캡처할 수 있습니다.
@@ -40,10 +45,11 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 ### en-US
 
 ```
-• Received alarms are yours now — change the time or turn one off and it stays that way.
-• If the sender deletes an alarm, yours stays. Stop receiving also clears it on your other devices.
+• Received alarms are yours — change the time or turn one off and it stays.
+• If the sender deletes an alarm, yours stays. Stop receiving clears it on your other devices.
+• If they delete their account, their voice is removed but the alarm still rings.
 • Fixed snoozes vanishing on received alarms, and an alarm you just turned off ringing again.
-• Creating a voice: the sample script stays folded until you need it, and the button says when a recording is too short.
+• Creating a voice: the sample script folds away, and the button says when a recording is too short.
 • Screenshots work now.
 ```
 
@@ -52,6 +58,7 @@ node -e "const m=require('fs').readFileSync('docs/product/release-notes.md','utf
 ```
 • 受け取ったアラームは受け取った人のものになりました。時刻を変えても、オフにしてもそのまま保たれます。
 • 送った人が削除しても自分のアラームは残ります。「受け取らない」を押すと他の端末からも消えます。
+• 送った人がアカウントを削除すると、その声は端末から消えますが、アラームは同じ時刻に鳴り続けます。
 • 受け取ったアラームのスヌーズが消える問題、今オフにしたアラームが再び鳴る問題を修正しました。
 • 声を作る画面: サンプル台本は必要なときだけ開きます。録音が短いとボタンで知らせます。
 • スクリーンショットが撮れるようになりました。
