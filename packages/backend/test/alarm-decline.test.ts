@@ -240,6 +240,19 @@ describe('발신자 탈퇴 = 목소리 철회(revoked)', () => {
     expect(row.rows[0]!.sender_user_id).toBeNull();
   });
 
+  it('표식을 못 남기면 알람도 지우지 않는다 — 알람만 사라지는 상태를 만들지 않는다', async () => {
+    // 배포 직후 마이그레이션 93 이 아직 안 돌았을 때가 실제로 이 상황이다. 지운 뒤에
+    // 적으면서 실패를 삼키면 알람도 표식도 없어 걷어낼 근거가 영영 사라진다(Codex #678 P1).
+    await testDb.execute({ sql: `ALTER TABLE alarm_recipient_state DROP COLUMN sender_user_id`, args: [] });
+
+    const res = await appFor('A').request('/' + ALARM_ID, { method: 'DELETE' });
+
+    expect(res.status).toBe(500);
+    // 알람은 그대로 남는다 — 사용자는 재시도하면 되고 잃는 것이 없다.
+    const still = await testDb.execute({ sql: `SELECT id FROM alarms WHERE id = ?`, args: [ALARM_ID] });
+    expect(still.rows.length).toBe(1);
+  });
+
   it('남이 내 클론으로 만든 문구가 있어도 탈퇴가 FK 로 죽지 않는다', async () => {
     // B 가 A 의 공유 클론(vp-A)으로 자기 문구를 만들어 뒀다. messages.voice_profile_id 는
     // NOT NULL FK 라, 안 지우면 DELETE FROM voice_profiles 가 실패해 탈퇴가 통째로 500 이 된다.
