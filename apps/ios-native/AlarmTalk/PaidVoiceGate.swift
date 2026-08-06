@@ -1,0 +1,141 @@
+import Foundation
+
+/// 유료 목소리 권한을 **예약 시점에** 재확인한다.
+///
+/// ## 왜 예약 시점인가 — iOS 와 안드로이드의 결정적 차이
+///
+/// 안드로이드는 `RingingService` 가 **울릴 때** 로컬 영속 구독으로 유료 권한을 다시 보고,
+/// 무료로 떨어졌으면 그 자리에서 기본 톤으로 강등한다. 푸시가 유실돼도, 앱을 몇 주 안 열어도,
+/// 오프라인이어도 그 게이트가 막아 준다.
+///
+/// **iOS 에는 그 자리가 없다.** AlarmKit 은 발사 시점에 우리 코드를 실행하지 않는다
+/// (해제 시점의 `stopIntent` 뿐이다). 예약해 둔 사운드가 그대로 울린다. 그래서 같은 판단을
+/// **예약·재예약 시점으로 옮긴다** — `AlarmKitViewModel.schedule` 이 사운드를 고르기 전에 본다.
+///
+/// 그 결과 판정 시점이 최대 '다음 예약까지' 만큼 이르다. 구독이 만료돼도 이미 예약된 알람은
+/// 다음 재예약 전까지 유료 목소리로 울릴 수 있다. 이건 iOS 의 구조적 한계이지 버그가 아니다 —
+/// 반대 방향(멀쩡한 알람을 무음화)보다 이쪽이 안전하다.
+///
+/// ## fail-open 이 원칙이다
+///
+/// 어떤 단계에서 실패하든 **강등하지 않는다.** 알람 앱에서 잘못된 강등은 "목소리가 안 나옴"
+/// 이지만, 판단 실패로 알람을 건드리는 건 사용자가 기대고 자는 것을 흔드는 일이다.
+/// 스냅샷이 아예 없으면(한 번도 조회 못 함) 판단 불가로 보고 그대로 둔다.
+enum PaidVoiceGate {
+
+    /// 이 알람이 **유료 목소리**를 쓰는가. 안드로이드 `alarmUsesPaidVoice` 와 동일.
+    static func usesPaidVoice(_ record: LocalAlarmRecord) -> Bool {
+        record.playModeEnum != .alarmOnly
+            || record.localAudioUri?.nilIfBlank != nil
+            || record.rawAudioUri?.nilIfBlank != nil
+            || record.voiceProfileId?.nilIfBlank != nil
+            || record.ttsMessageId?.nilIfBlank != nil
+    }
+
+    /// 무료 플랜에서도 쓸 수 있는 **시스템 스톡 보이스** 알람인가.
+    /// 안드로이드 `SystemVoices.usesFreeSystemVoiceAlarm` 과 동일한 판정이다.
+    static func usesFreeSystemVoice(_ record: LocalAlarmRecord) -> Bool {
+        if record.playModeEnum == .alarmOnly { return false }
+        if record.voiceSourceEnum == .localAudio { return false }
+        guard isSystemVoiceId(record.voiceProfileId) else { return false }
+
+        let noCachedAudio = record.localAudioUri?.nilIfBlank == nil && record.rawAudioUri?.nilIfBlank == nil
+        let stockClipAudio = record.audioCacheKey?.hasPrefix("stock_") == true
+        let language = record.voiceLanguage?.trimmingCharacters(in: .whitespaces)
+        let presetGeneratedAudio = record.voiceRandomPrompt
+            && record.voiceRandomContext?.trimmingCharacters(in: .whitespaces) == "preset"
+            && (language == nil || language!.isEmpty || language == "ko")
+        return noCachedAudio || stockClipAudio || presetGeneratedAudio
+    }
+
+    /// 로컬에 저장된 구독 스냅샷으로 유료 목소리 권한이 살아 있는지 본다.
+    ///
+    /// - 스냅샷에 구독 응답 자체가 없으면 **판단 불가 → true**(강등하지 않는다).
+    /// - 응답은 있는데 `subscription` 이 nil 이면 서버가 '본인 구독 없음' 이라고 답한 것이다.
+    ///   그때는 커플/가족 그룹 접근이 있는지 본다(본인 구독 없이 그룹으로 쓰는 멤버).
+    /// - 본인 구독이 있으면 만료 시각까지 검사한다(그룹 체크로 만료 게이트를 우회하지 않게).
+    static func isEntitled(snapshot: AccessSnapshot, now: Date = Date()) -> Bool {
+        guard let response = snapshot.subscriptionResponse else { return true }
+        guard let subscription = response.subscription else {
+            return hasGroupAccess(response: response, familyGroup: snapshot.familyGroup)
+        }
+        return isSubscriptionActive(subscription, now: now)
+    }
+
+    /// 예약 시점에 이 알람의 유료 목소리를 기본 톤으로 강등해야 하는가.
+    ///
+    /// **본인 소유(`localOwned`) 알람만 대상이다.** 공유받은 알람(`receivedRemote`)은
+    /// 보낸 사람의 구독으로 성립하는 것이라 받는 쪽 구독으로 판단하지 않는다.
+    /// 무료 시스템 보이스는 애초에 강등 대상이 아니다.
+    static func shouldDowngrade(
+        record: LocalAlarmRecord,
+        snapshot: AccessSnapshot,
+        now: Date = Date()
+    ) -> Bool {
+        guard record.originEnum == .localOwned else { return false }
+        guard !usesFreeSystemVoice(record) else { return false }
+        guard usesPaidVoice(record) else { return false }
+        return !isEntitled(snapshot: snapshot, now: now)
+    }
+
+    /// 강등된 형태 — **알람은 그대로 울린다.** 목소리만 빼고 기본 알람음으로 떨어뜨린다.
+    ///
+    /// ⚠ 이 값을 store 에 쓰지 **않는다.** 예약에 쓸 사운드를 고르기 위한 일시적 형태일 뿐이고,
+    /// 저장해 버리면 구독을 되살렸을 때 되돌릴 원본이 사라진다.
+    static func downgraded(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
+        var next = record
+        next.playMode = AlarmPlayMode.alarmOnly.rawValue
+        return next
+    }
+
+    // MARK: - 내부
+
+    private static func hasGroupAccess(
+        response: BillingSubscriptionResponse,
+        familyGroup: FamilyGroupCurrentResponse?
+    ) -> Bool {
+        // 그룹에 소속돼 있으면 본인 구독이 없어도 유료 목소리를 쓴다.
+        if let group = familyGroup?.group, group.id.nilIfBlank != nil { return true }
+        // 응답이 플랜을 직접 알려 주면 그걸로도 본다.
+        if let planType = response.plan?.planType.lowercased(),
+           planType == "couple" || planType == "family" {
+            return true
+        }
+        return false
+    }
+
+    private static func isSubscriptionActive(_ subscription: BillingSubscription, now: Date) -> Bool {
+        let status = subscription.status.lowercased()
+        // 회복형 상태(ON_HOLD/PAUSED)는 그룹·공유를 그대로 두므로 권한을 회수하지 않는다.
+        // 서버 `resolvePlanAfterSuspend` 와 같은 취급이다.
+        if status == "on_hold" || status == "paused" { return true }
+        if status == "canceled" || status == "expired" { return false }
+
+        // 만료 시각이 있으면 그때까지만 유효하다.
+        if let expires = subscription.expiresAt.nilIfBlank, let expiryDate = parseTimestamp(expires) {
+            return expiryDate > now
+        }
+        // 만료를 모르면 회수하지 않는다(fail-open).
+        return true
+    }
+
+    /// 서버는 `expires_at` 을 ISO8601 로도, SQLite `datetime('now')` 형식
+    /// (`YYYY-MM-DD HH:MM:SS`, UTC)으로도 내려준다. 둘 다 받아들인다.
+    ///
+    /// ⚠ 포매터를 static 으로 캐시하지 않는다 — `ISO8601DateFormatter`/`DateFormatter` 는
+    /// `Sendable` 이 아니라 Swift 6 에서 공유 가변 상태가 된다. 예약은 자주 일어나는 일이
+    /// 아니라 매번 만들어도 무해하다.
+    static func parseTimestamp(_ raw: String) -> Date? {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: raw) { return date }
+        iso.formatOptions = [.withInternetDateTime]
+        if let date = iso.date(from: raw) { return date }
+
+        let sqlite = DateFormatter()
+        sqlite.locale = Locale(identifier: "en_US_POSIX")
+        sqlite.timeZone = TimeZone(identifier: "UTC")
+        sqlite.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return sqlite.date(from: raw)
+    }
+}

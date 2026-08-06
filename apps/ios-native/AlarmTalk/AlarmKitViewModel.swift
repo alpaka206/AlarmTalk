@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import SwiftUI
 
 #if canImport(UIKit)
@@ -11,6 +12,8 @@ import AlarmKit
 
 @MainActor
 final class AlarmKitViewModel: ObservableObject {
+    private static let paidGateLogger = Logger(subsystem: "com.voicealarm.nativeapp.ios", category: "PaidVoiceGate")
+
     @Published var authorizationLabel = "확인 전"
     @Published private(set) var alarmAuthorized = false
     /// 권한이 `.denied`/`.restricted` 로 굳어 in-app 재프롬프트가 막힌 상태인지.
@@ -43,6 +46,10 @@ final class AlarmKitViewModel: ObservableObject {
     /// AlarmSoundResolver / AlarmVoicePlayer 가 사용하는 캐시.
     /// `AudioCacheStore.shared` 를 의도적으로 instance 로 잡아 두어 테스트 가능성 유지.
     let audioCache: AudioCacheStore = .shared
+    /// 유료 목소리 권한 재확인용 로컬 스냅샷. 안드로이드 `RingingService` 가
+    /// `AccessSnapshotStore` 를 직접 읽는 것과 같은 방식이다 — 예약은 앱 어느 경로에서나
+    /// 일어나므로 주입 경로를 늘리지 않고 여기서 읽는다.
+    let accessSnapshotStore = AccessSnapshotStore()
 
     /// 가장 최근 schedule(...) 호출이 결정한 사운드 전략. ContentView / debug surface
     /// 에서 in-app 폴백 안내 문구를 띄울 때 참조한다. nil = 아직 schedule 호출 없음.
@@ -438,10 +445,25 @@ final class AlarmKitViewModel: ObservableObject {
             // Phase 2-B4: playMode + 캐시 상태에 따라 AlarmKit sound 전략 결정.
             // 결과는 lastSoundResolution 으로 expose 하여 ContentView 등이 in-app
             // fallback 안내 문구를 표시할 수 있다.
-            let resolution = AlarmSoundResolver.resolve(for: record, audioCache: audioCache)
+            // 유료 목소리 권한을 **예약 시점에** 재확인한다.
+            //
+            // 안드로이드는 RingingService 가 울릴 때 이 판단을 한다. iOS 는 발사 시점에
+            // 우리 코드가 돌지 않으므로(AlarmKit 은 해제 시점의 stopIntent 뿐) 예약해 둔
+            // 사운드가 그대로 울린다 — 그래서 같은 게이트를 여기로 옮겼다.
+            // 강등되어도 **알람 자체는 그대로 울린다**(기본 톤으로). 자세한 근거는 PaidVoiceGate.
+            let snapshot = KeychainStore.readSession().map { accessSnapshotStore.read(userID: $0.user.id) } ?? .empty
+            let effectiveRecord = PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot)
+                ? PaidVoiceGate.downgraded(record)
+                : record
+            if effectiveRecord.playMode != record.playMode {
+                Self.paidGateLogger.info(
+                    "Free plan at schedule time — downgrading paid voice to alarm tone (id: \(record.id, privacy: .public))"
+                )
+            }
+            let resolution = AlarmSoundResolver.resolve(for: effectiveRecord, audioCache: audioCache)
             lastSoundResolution = resolution
             let configuration = makeConfiguration(
-                record: record,
+                record: effectiveRecord,
                 alarmKitID: id,
                 schedule: schedule,
                 resolution: resolution
