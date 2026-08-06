@@ -574,6 +574,7 @@ struct VoiceCloneUploadFlow: View {
         }
         // 일본어 정중체 토글: 켜면 'polite', 끄면 'auto'. Android `:966,992` 미러.
 
+        let created: VoiceProfile?
         switch sourceMode {
         case .record:
             guard let url = voice.recorder.latestRecordingURL,
@@ -582,7 +583,7 @@ struct VoiceCloneUploadFlow: View {
                 return
             }
             if noiseRemovalEnabled {
-                let _ = await voice.cloneWithNoiseRemoval(
+                created = await voice.cloneWithNoiseRemoval(
                     audioFileURL: url,
                     name: trimmedName,
                     durationMs: durationMs,
@@ -593,7 +594,7 @@ struct VoiceCloneUploadFlow: View {
                 )
             } else {
                 voice.cloneName = trimmedName
-                await voice.uploadRecordingForClone(
+                created = await voice.uploadRecordingForClone(
                     session: auth.session,
                     isShared: shouldShareVoice,
                     relationshipLabel: trimmedRelationship,
@@ -603,7 +604,7 @@ struct VoiceCloneUploadFlow: View {
         case .file:
             do {
                 let prepared = try await preparedFileAudio()
-                _ = await voice.cloneAudioForProfile(
+                created = await voice.cloneAudioForProfile(
                     audioFileURL: prepared.url,
                     name: trimmedName,
                     durationMs: prepared.durationMs,
@@ -621,8 +622,13 @@ struct VoiceCloneUploadFlow: View {
                 return
             }
         }
-        // 성공 시 management 로 복귀.
-        if voice.statusMessage?.contains("등록") == true || voice.statusMessage?.contains("완료") == true {
+        // 성공 판정은 **반환된 프로필로만** 한다.
+        // ⚠ `statusMessage.contains("등록")` 으로 판정하지 말 것 — 실패 문구
+        // "2분 이하 음성으로 등록할 수 있어요." 에도 '등록' 이 들어 있어, 2분을 넘긴 녹음이
+        // 실패 안내를 띄운 채 목록으로 넘어가 방금 녹음한 음성이 사라졌다.
+        // 또 `guard !isBusy` 로 빠져나간 회차는 statusMessage 를 건드리지 않아
+        // 직전 성공 문구가 그대로 남는다 — 문자열로는 이번 시도의 결과를 알 수 없다.
+        if created != nil {
             route = .management
         }
     }

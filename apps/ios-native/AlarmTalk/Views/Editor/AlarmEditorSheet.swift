@@ -1189,6 +1189,25 @@ struct AlarmEditorSheet: View {
             return
         }
 
+        // 권한 확인은 **TTS 생성보다 먼저**여야 한다.
+        // `alarmKit.schedule()` 안에도 확인이 있지만 그건 서버 호출이 끝난 뒤라,
+        // 결국 저장되지 않을 알람 때문에 이번 달 목소리 생성 한도만 깎인다.
+        // (편집기를 연 뒤 설정에 다녀와 권한을 끄면 진입 시 검사만으로는 못 막는다.)
+        alarmKit.refreshAuthorizationState()
+        if !alarmKit.alarmAuthorized {
+            await alarmKit.requestAuthorization()
+            alarmKit.refreshAuthorizationState()
+            guard alarmKit.alarmAuthorized else {
+                validationAlert = ValidationAlertContent(
+                    title: "알람 권한이 필요해요",
+                    message: alarmKit.permissionRecoveryNeeded
+                        ? AlarmKitViewModel.alarmRecoveryMessage
+                        : "알람 권한을 허용해야 알람을 저장할 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
+                )
+                return
+            }
+        }
+
         if voiceModeBlocked && draft.playMode != .alarmOnly {
             draft.playMode = .alarmOnly
             showVoicePlanLockedAlert()

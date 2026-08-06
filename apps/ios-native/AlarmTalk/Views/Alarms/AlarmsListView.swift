@@ -128,9 +128,18 @@ struct AlarmsListView: View {
     private func openCreateAlarm() async {
         alarmKit.refreshAuthorizationState()
         guard alarmKit.alarmAuthorized else {
+            // 굳은 거부에서는 프롬프트가 뜨지 않는다 — 그냥 return 하면 버튼이 무반응이다.
+            if alarmKit.permissionRecoveryNeeded {
+                actionMessage = AlarmKitViewModel.alarmRecoveryMessage
+                openAppSettings()
+                return
+            }
             await alarmKit.requestAuthorization()
             alarmKit.refreshAuthorizationState()
-            guard alarmKit.alarmAuthorized else { return }
+            guard alarmKit.alarmAuthorized else {
+                actionMessage = "알람 권한을 허용해야 알람을 만들 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
+                return
+            }
             openEditor(.create())
             return
         }
@@ -140,10 +149,28 @@ struct AlarmsListView: View {
     @MainActor
     private func setAlarm(_ alarm: LocalAlarmRecord, enabled: Bool) async {
         if enabled {
+            // 권한이 먼저다. 켠 다음에 확인하면 schedule 실패 뒤에도 `enabled=true` 가
+            // 남아 **켜진 척하는 행**이 된다 — `markFailed` 는 state 만 바꾸고 enabled 는
+            // 건드리지 않는다. iOS 는 그 알람이 정말 울리지 않으므로 최악의 실패다.
+            alarmKit.refreshAuthorizationState()
+            if !alarmKit.alarmAuthorized {
+                await alarmKit.requestAuthorization()
+                alarmKit.refreshAuthorizationState()
+                guard alarmKit.alarmAuthorized else {
+                    actionMessage = alarmKit.permissionRecoveryNeeded
+                        ? AlarmKitViewModel.alarmRecoveryMessage
+                        : "알람 권한을 허용해야 알람을 켤 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
+                    return
+                }
+            }
             store.setEnabled(id: alarm.id, enabled: true)
             guard let updated = store.record(id: alarm.id) else { return }
             let scheduled = await alarmKit.schedule(record: updated, store: store)
             if !scheduled {
+                // 사용자가 **방금 켜려다** 실패한 것이므로 켜기 전 상태로 되돌린다.
+                // (이미 켜져 있던 알람의 권한이 나중에 회수된 경우와는 다르다 — 그쪽은
+                // 자동으로 끄지 않는다. 권한을 되돌려도 꺼진 채라 더 위험하다.)
+                store.setEnabled(id: updated.id, enabled: false)
                 store.markFailed(id: updated.id)
                 actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
                 return

@@ -110,14 +110,38 @@ final class AlarmKitViewModel: ObservableObject {
         #endif
     }
 
+    /// 권한이 없을 때 **무슨 일이 벌어지는지**를 말한다 — 상태 이름("거부됨")이 아니라 결과다.
+    ///
+    /// ⚠ **안드로이드와 문구가 반대인 것이 의도다.** 규칙은 양쪽 다 "사실을 말한다" 로 같은데,
+    /// 두 OS 의 사실이 다르다:
+    ///  - 안드로이드는 권한 셋이 다 없어도 `RingingService` 가 소리·진동을 직접 시작한다.
+    ///    그래서 "울리지 않는다" 고 쓰면 멀쩡히 울릴 알람을 없는 것으로 믿고 다른 알람을 또
+    ///    맞춘다 — CLAUDE.md 가 그 문구를 금지하는 이유다.
+    ///  - **iOS 에는 그 폴백이 없다.** AlarmKit 권한이 없으면 `AlarmManager.schedule` 이 던져
+    ///    알람이 **예약조차 되지 않는다**. 울릴 코드가 애초에 돌지 않으므로 정말 안 울린다.
+    ///
+    /// 그러니 안드로이드 문구("알림만 안 뜬다")를 iOS 로 옮겨 오면 그게 거짓말이 된다.
+    nonisolated static let alarmDeniedConsequence = "권한이 없으면 알람이 예약되지 않아 울리지 않아요."
+
+    /// 거부가 굳은 뒤의 안내. **"다시 시도" 라고 하지 않는다** — iOS 는 권한 프롬프트를 한 번만
+    /// 띄우므로 눌러도 아무 일이 없다. 유일하게 남은 경로(설정 앱)를 그대로 말한다.
+    nonisolated static let alarmRecoveryMessage =
+        "설정에서 알람 권한을 켜 주세요. \(alarmDeniedConsequence)"
+
     func requestAuthorization() async {
         #if canImport(AlarmKit)
         do {
             let state = try await AlarmManager.shared.requestAuthorization()
             applyAuthorizationState(state)
-            statusMessage = alarmAuthorized
-                ? "알람 권한이 허용됐어요."
-                : "알람 권한을 허용한 뒤 다시 시도해 주세요."
+            if alarmAuthorized {
+                statusMessage = "알람 권한이 허용됐어요."
+            } else if permissionRecoveryNeeded {
+                // 프롬프트가 뜨지 않은 채 돌아온 경우다. "다시 시도" 를 안내하면
+                // 눌러도 아무 일이 없는 버튼을 계속 누르게 만든다.
+                statusMessage = Self.alarmRecoveryMessage
+            } else {
+                statusMessage = "알람 권한을 허용한 뒤 다시 시도해 주세요."
+            }
         } catch {
             statusMessage = "알람 권한을 확인하지 못했어요. 잠시 후 다시 시도해 주세요."
         }

@@ -449,15 +449,22 @@ final class VoiceStudioViewModel: ObservableObject {
         statusMessage = "녹음을 저장했어요. \(recordingDurationLabel)"
     }
 
+    /// 녹음본으로 목소리를 등록한다.
+    ///
+    /// ⚠ **성공 여부는 반환값으로만 알린다.** 호출부가 `statusMessage` 를 읽어 성공을
+    /// 판정하면 안 된다 — 실패 문구 "2분 이하 음성으로 **등록**할 수 있어요." 에도 '등록' 이
+    /// 들어 있어 부분 문자열 판정이 실패를 성공으로 읽는다(실제로 그랬다).
+    /// 형제 메서드(`cloneWithNoiseRemoval`/`cloneAudioForProfile`)와 시그니처를 맞춘다.
+    @discardableResult
     func uploadRecordingForClone(
         session: AuthSession?,
         isShared: Bool = false,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil
-    ) async {
+    ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
-            return
+            return nil
         }
         guard let fields = requiredVoiceProfileFields(
             name: cloneName,
@@ -465,20 +472,20 @@ final class VoiceStudioViewModel: ObservableObject {
             relationshipLabel: relationshipLabel,
             listenerTitle: listenerTitle
         ) else {
-            return
+            return nil
         }
         cloneName = fields.name
         guard let url = recorder.latestRecordingURL, let durationMs = recorder.latestDurationMs else {
             statusMessage = "먼저 목소리를 녹음해 주세요."
-            return
+            return nil
         }
         guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs else {
             statusMessage = durationMs < VoiceProfileLimits.minDurationMs
                 ? "1분 이상 녹음해 주세요."
                 : "2분 이하 음성으로 등록할 수 있어요."
-            return
+            return nil
         }
-        guard !isBusy else { return }
+        guard !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
 
@@ -495,8 +502,10 @@ final class VoiceStudioViewModel: ObservableObject {
             selectedProfileID = profile.id
             statusMessage = "목소리 학습을 등록했어요."
             await refresh(session: session, force: true, successMessage: nil)
+            return profile
         } catch {
             statusMessage = mapVoiceError(error)
+            return nil
         }
     }
 

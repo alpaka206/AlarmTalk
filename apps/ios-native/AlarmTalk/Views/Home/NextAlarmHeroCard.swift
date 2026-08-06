@@ -10,22 +10,42 @@ import SwiftUI
 struct NextAlarmHeroCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let nextAlarm: LocalAlarmRecord?
+    /// AlarmKit 권한이 없어 예약된 알람이 실제로는 울리지 않는 상태.
+    ///
+    /// 이때 "다음 알람 07:30" 은 **거짓말이다** — iOS 는 권한이 없으면 예약 자체가 안 된다.
+    /// 헤드라인은 이 화면에서 사용자가 유일하게 확실히 읽는 줄이라, 그 자리를 사실이
+    /// 대신한다(Android 7b1a967c 와 같은 판단).
+    ///
+    /// ⚠ **행마다 같은 경고를 붙이지 말 것.** 권한은 알람 하나가 아니라 전부에 걸리는
+    /// 문제라, 안드로이드는 행별 배지를 넣었다가 9분 만에 되돌렸다(86bf9d90 → 7b1a967c).
+    /// 한 곳에서만 말한다.
+    var alarmPermissionMissing: Bool = false
     let onTap: () -> Void
 
     private var hasAlarm: Bool { nextAlarm != nil }
+
+    /// 예약된 알람이 있는데 권한이 없는 경우에만 헤드라인을 경고로 바꾼다.
+    /// 알람이 없으면 원래도 시각을 약속하지 않으므로 거짓말이 아니다.
+    private var showsPermissionWarning: Bool { hasAlarm && alarmPermissionMissing }
 
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(hasAlarm ? "다음 알람" : "아직 알람이 없어요.")
+                    Text(showsPermissionWarning ? "알람 권한 꺼짐" : (hasAlarm ? "다음 알람" : "아직 알람이 없어요."))
                         .font(theme.typography.labelLarge)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .foregroundStyle(showsPermissionWarning ? theme.palette.error : theme.palette.onSurfaceVariant)
                     Text(hasAlarm ? (nextAlarm?.timeString ?? "") : "알람 예약")
                         .font(hasAlarm ? theme.typography.displayLarge : theme.typography.displaySmall)
-                        .foregroundStyle(theme.palette.onSurface)
+                        .foregroundStyle(showsPermissionWarning ? theme.palette.error : theme.palette.onSurface)
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
+                    if showsPermissionWarning {
+                        Text("권한이 꺼져 있어 이 알람은 울리지 않아요. 탭해서 켜 주세요.")
+                            .font(theme.typography.bodyMedium)
+                            .foregroundStyle(theme.palette.error)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 waveform(active: hasAlarm)

@@ -15,7 +15,17 @@ struct AlarmPermissionSection: View {
                 Spacer()
                 PermissionPill(text: alarmKit.authorizationLabel)
             }
-            if let message = alarmKit.statusMessage {
+            // 필 라벨은 **상태**("거부됨")만 말한다. 상태는 무엇을 잃는지 알려 주지 않으므로
+            // 권한이 없는 동안에는 **결과**를 함께 띄운다 (AlarmKitViewModel.alarmDeniedConsequence
+            // 주석 참조 — iOS 는 정말 안 울린다).
+            if !alarmKit.alarmAuthorized {
+                Text(AlarmKitViewModel.alarmDeniedConsequence)
+                    .font(.footnote)
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+            }
+            // 요청 결과 메시지는 결과 문구와 겹치지 않을 때만 덧붙인다.
+            if let message = alarmKit.statusMessage,
+               !message.contains(AlarmKitViewModel.alarmDeniedConsequence) {
                 Text(message)
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
