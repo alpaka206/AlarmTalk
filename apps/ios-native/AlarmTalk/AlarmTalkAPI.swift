@@ -38,7 +38,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
         idToken: String,
         name: String?,
         email: String?,
-        nonce: String?
+        nonce: String?,
+        authorizationCode: String?
     ) async throws -> AuthSession {
         // ⚠ 필드명은 서버 `AppleLoginRequestSchema`(@alarmtalk/shared) 와 정확히 같아야 한다:
         //   identity_token / nonce / full_name.  (`convertToSnakeCase` 로 변환된다.)
@@ -48,6 +49,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
             var identityToken: String
             var nonce: String?
             var fullName: String?
+            /// 탈퇴 때 애플 연결을 끊으려면 서버가 refresh token 을 갖고 있어야 하고,
+            /// 그걸 얻는 유일한 재료가 이 코드다(애플 심사 5.1.1(v)).
+            /// ⚠ **5분·1회용**이라 로그인 요청에 같이 실어야 한다 — 나중에 쓰려고
+            /// 들고 있으면 그때는 이미 죽어 있다.
+            var authorizationCode: String?
         }
         return try await request(
             "auth/apple",
@@ -57,7 +63,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 // **raw nonce** 를 보낸다 — 서버가 SHA-256 해싱해 토큰의 nonce 클레임과 맞춘다
                 // (NonceGenerator.swift 가 선언한 계약).
                 nonce: nonce?.nilIfBlank,
-                fullName: name.nilIfBlank
+                fullName: name.nilIfBlank,
+                authorizationCode: authorizationCode?.nilIfBlank
             )
         )
     }

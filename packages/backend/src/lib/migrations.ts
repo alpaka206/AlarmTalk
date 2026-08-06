@@ -2127,6 +2127,23 @@ export const migrations: Migration[] = [
         ON store_transactions(subscription_id)`,
     ],
   },
+  {
+    /**
+     * 탈퇴 시 애플 연결을 끊기 위한 refresh token 보관.
+     *
+     * ⚠ **애플 심사 지침 5.1.1(v) 요구사항이다.** 계정 삭제를 제공하는 앱은 Sign in with
+     * Apple 연결도 함께 끊어야 한다. 안 끊으면 탈퇴한 사용자의 기기 '설정 → Apple 계정 →
+     * 암호 및 보안 → Apple로 로그인' 목록에 우리 앱이 **영원히 남는다** — 지웠다고 믿는
+     * 사용자에게 거짓말이 되고, 심사에서 반려된다.
+     *
+     * 왜 이 값이어야 하나: 애플의 `/auth/revoke` 는 폐기할 토큰을 요구하는데, 로그인
+     * 시점의 `id_token` 으로는 못 한다. `authorization_code` 는 5분·1회용이라 저장해 둘
+     * 수도 없다. 그래서 로그인 순간에 refresh token 으로 바꿔 이 컬럼에 넣어 둔다.
+     */
+    id: 97,
+    name: 'apple-refresh-token-for-revocation',
+    statements: [`ALTER TABLE users ADD COLUMN apple_refresh_token TEXT`],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

@@ -13,6 +13,26 @@ export interface Env {
    * 하므로 비밀키가 필요 없다. `.p8` 은 웹/서버 대 서버 플로우에서만 쓴다.
    */
   APPLE_BUNDLE_ID?: string;
+  /**
+   * Apple Developer **Team ID**(10자). 로그인 client_secret 의 `iss`.
+   * 결제(App Store Server API)가 쓰는 `APPLE_ISSUER_ID` 와 **다른 값**이다.
+   */
+  APPLE_TEAM_ID?: string;
+  /**
+   * **Sign in with Apple** 키의 Key ID.
+   *
+   * ⚠ `APPLE_KEY_ID` 에 넣지 말 것 — 그건 App Store Server API(결제 검증)의 *다른 키*라,
+   * 같은 이름에 넣으면 애플 결제 검증이 통째로 죽는다.
+   */
+  APPLE_SIGNIN_KEY_ID?: string;
+  /**
+   * **Sign in with Apple** 키의 `.p8` **내용**(PEM 전문).
+   *
+   * ⚠ 파일 **경로가 아니다.** Cloudflare Workers 에는 파일시스템이 없어 경로를 넣으면
+   * 런타임에 아무것도 읽지 못한다.
+   * ⚠ 결제용 `APPLE_PRIVATE_KEY` 와 **다른 키**다(위와 같은 이유로 이름을 갈랐다).
+   */
+  APPLE_SIGNIN_PRIVATE_KEY?: string;
   /** App Store Connect Issuer ID (UUID). 미설정 시 Apple 결제 503. */
   APPLE_ISSUER_ID?: string;
   /** App Store Server API 키의 Key ID. */

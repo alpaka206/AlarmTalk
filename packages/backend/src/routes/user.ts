@@ -28,6 +28,7 @@ import {
   loadLatestConsents,
   missingConsentTypesFrom,
 } from '../lib/consent';
+import { appleSignInConfig, revokeAppleToken } from '../lib/apple-revoke';
 
 const user = new Hono<AppEnv>();
 
@@ -247,10 +248,30 @@ user.delete('/me', async (c) => {
     // 지워지고 나머지 PII 가 고아로 남는다(유예 파기 cron 은 row.google_id 를 읽어 이걸 피한다).
     const userLoginId = c.get('userLoginId') || userId;
     const userRes = await db.execute({
-      sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
+      sql: `SELECT id, apple_refresh_token FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
       args: [userLoginId, userId],
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
+
+    // 애플 연결을 끊는다 — **행을 지우기 전에.** 지운 뒤에는 refresh token 을 읽을 곳이
+    // 없어 영영 폐기하지 못하고, 사용자의 '설정 → Apple로 로그인' 목록에 우리 앱이
+    // 남는다(애플 심사 5.1.1(v)).
+    //
+    // ⚠ **실패해도 탈퇴는 진행한다.** 애플이 잠깐 죽었다고 탈퇴를 막으면 사용자는 자기
+    // 데이터를 못 지운다 — 그건 폐기 누락보다 나쁘다. 대신 로그에 남겨 추적한다.
+    const appleRefreshToken = userRes.rows.length > 0
+      ? (userRes.rows[0]!.apple_refresh_token as string | null)
+      : null;
+    if (appleRefreshToken) {
+      const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
+      if (signInConfig) {
+        try {
+          await revokeAppleToken(signInConfig, appleRefreshToken);
+        } catch (err) {
+          logRouteError(c, err);
+        }
+      }
+    }
 
     // 즉시 hard delete 경로에서도 전자상거래법(5년) 결제·구독 기록 가명보존을 먼저 수행한다.
     // (cron 유예 파기 경로와 동일하게 보존 후 파기 — 어느 경로든 보존 누락이 없도록)

@@ -20,6 +20,7 @@ import {
 } from '@alarmtalk/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
 import { verifyAppleIdToken } from '../lib/apple-oauth';
+import { appleSignInConfig, exchangeAppleAuthorizationCode } from '../lib/apple-revoke';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
@@ -843,6 +844,33 @@ auth.post('/apple', async (c) => {
               VALUES (?, ?, ?, ?)`,
         args: [userId, appleId, email, name || null],
       });
+    }
+
+    // 탈퇴 때 애플 연결을 끊으려면 refresh token 이 있어야 한다(애플 심사 5.1.1(v)).
+    //
+    // ⚠ **여기서 실패해도 로그인은 성공시킨다.** 애플 토큰 엔드포인트가 잠깐 죽었다고
+    // 로그인을 막을 이유가 없고, 폐기는 다음 로그인에서 다시 채울 수 있다. 반대로
+    // 로그인을 막으면 사용자는 들어올 방법이 아예 없어진다.
+    //
+    // ⚠ authorization_code 는 **5분·1회용**이라 지금 교환하지 않으면 영영 못 쓴다.
+    if (parsed.data.authorization_code) {
+      const signInConfig = appleSignInConfig(c.env, c.env.APPLE_BUNDLE_ID);
+      if (signInConfig) {
+        try {
+          const { refreshToken } = await exchangeAppleAuthorizationCode(
+            signInConfig,
+            parsed.data.authorization_code,
+          );
+          if (refreshToken) {
+            await db.execute({
+              sql: `UPDATE users SET apple_refresh_token = ? WHERE id = ?`,
+              args: [refreshToken, userId],
+            });
+          }
+        } catch (err) {
+          logRouteError(c, err);
+        }
+      }
     }
 
     // JWT sub 은 항상 users.id (구글 경로 주석 참고).

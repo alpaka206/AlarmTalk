@@ -183,7 +183,9 @@ describe('DELETE /user/me', () => {
     expect(body.success).toBe(true);
     const sqls = mockDB.calls.map((c) => c.sql);
     const indexOf = (pattern: string) => sqls.findIndex((sql) => sql.includes(pattern));
-    expect(indexOf('SELECT id FROM users')).toBe(0);
+    // 첫 쿼리는 계정 조회다. 컬럼 목록까지 문자열로 물면 컬럼이 하나 늘 때마다
+    // 깨지므로(apple_refresh_token 추가 때 실제로 깨졌다) 테이블만 본다.
+    expect(indexOf('FROM users WHERE google_id')).toBe(0);
     expect(indexOf('DELETE FROM voucher_redemptions')).toBeLessThan(indexOf('DELETE FROM voucher_codes'));
     expect(indexOf('DELETE FROM voucher_codes')).toBeLessThan(indexOf('DELETE FROM subscriptions'));
     expect(indexOf('DELETE FROM plan_group_invites')).toBeLessThan(indexOf('DELETE FROM plan_groups'));

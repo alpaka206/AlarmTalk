@@ -132,9 +132,13 @@ export type GoogleLoginRequest = z.infer<typeof GoogleLoginRequestSchema>;
 // - `full_name`: 애플은 이름을 **최초 1회 로그인에만** 준다. 그 뒤로는 영영 안 준다.
 //   그래서 앱이 받은 그 순간 서버로 보내야 하고, 없으면 없는 대로 진행한다.
 //   서버는 이 값도 외부 입력으로 취급해 `clampDisplayName` 을 통과시킨다.
+// - `authorization_code`: 탈퇴 때 애플 연결을 끊으려면 refresh token 이 필요하고, 그걸
+//   얻는 유일한 재료가 이 코드다(**5분·1회용**이라 로그인 순간에 바로 교환해야 한다).
+//   옛 앱은 안 보내므로 optional 이다 — 없으면 폐기 없이 로그인만 된다.
 export const AppleLoginRequestSchema = z.object({
   identity_token: z.string().min(1),
   nonce: z.string().min(1).max(256).optional(),
   full_name: z.string().max(256).optional(),
+  authorization_code: z.string().min(1).max(2048).optional(),
 });
 export type AppleLoginRequest = z.infer<typeof AppleLoginRequestSchema>;

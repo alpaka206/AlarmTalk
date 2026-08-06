@@ -279,11 +279,16 @@ final class AuthViewModel: ObservableObject {
         }
 
         let displayName = credential.fullName.flatMap(Self.displayName)
+        // 탈퇴 시 애플 연결 해제에 쓸 authorization code. 매 로그인마다 새로 오고
+        // 5분·1회용이라 그대로 흘려보낸다.
+        let authorizationCode = credential.authorizationCode
+            .flatMap { String(data: $0, encoding: .utf8) }
         await loginWithApple(
             idToken: idToken,
             name: displayName,
             email: credential.email,
             rawNonce: rawNonce,
+            authorizationCode: authorizationCode,
             // Apple 의 stable user identifier. 백엔드 응답이 비어 있어도
             // 이 값을 세션에 보존해 credentialState 조회에 사용한다.
             appleUserIdHint: credential.user
@@ -299,6 +304,7 @@ final class AuthViewModel: ObservableObject {
         name: String?,
         email: String?,
         rawNonce: String?,
+        authorizationCode: String? = nil,
         appleUserIdHint: String? = nil
     ) async {
         guard !isBusy else { return }
@@ -310,7 +316,8 @@ final class AuthViewModel: ObservableObject {
                 idToken: idToken,
                 name: name,
                 email: email,
-                nonce: rawNonce
+                nonce: rawNonce,
+                authorizationCode: authorizationCode
             )
             // 백엔드가 `apple_user_id` 를 비워서 돌려주는 경우에도 클라이언트가
             // 갖고 있던 credential.user 를 보존. 백엔드 변경 전/후 모두 호환.
