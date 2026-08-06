@@ -1,86 +1,142 @@
 import SwiftUI
 
-/// 로그인 후 필수 약관/개인정보 동의를 받는 게이트 화면.
+/// 이 화면이 그릴 수 있는 동의 유형과 **같은 그룹 안에서의** 나열 순서.
+///
+/// 필수/선택 그룹 자체는 서버가 내려준 `optional` 로 갈린다 — 여기 순서는 그룹 안에서만
+/// 쓰인다. 목록에 없는 유형(서버가 새 유형을 먼저 추가한 구간)은 그리지 않고, 그게 필수면
+/// 아래 통과 판정이 막는다.
+private let consentRowOrder = [
+    "age14",
+    "terms",
+    "privacy",
+    "overseas_transfer",
+    "voice_biometric",
+    "marketing",
+]
+
+/// 로그인 후 약관/개인정보 동의를 받는 게이트 화면.
 /// 신규 가입자뿐 아니라 기존 가입자도 미동의 시 이 화면을 통과해야 앱을 쓸 수 있다.
 ///
-/// 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침 / 음성 생체정보 / 국외 이전
-/// 선택: 광고성 정보 수신(마케팅)
+/// 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침 / 국외 이전
+/// 선택: 음성 생체정보(내 목소리 등록) / 광고성 정보 수신(마케팅)
+///
+/// ⚠ **음성 생체정보를 필수로 만들지 말 것.** 내 목소리를 등록하지 않아도 기본 목소리
+/// 알람으로 앱을 온전히 쓸 수 있으므로, 가입 조건으로 강제하면 개인정보보호법 제22조제5항에
+/// 걸린다. 그렇다고 등록하려는 순간에만 모달로 띄우면 그때가 가장 거부감이 큰 자리라,
+/// 가입 화면에 선택 항목으로 두어 대부분은 한 번에 끝내고 **여기서 거절한 사람만** 목소리
+/// 등록 화면에서 인라인으로 다시 만난다(`consentSensitiveMissing`).
+///
+/// ⚠ **`collect` 에 든 유형만 그린다.** 서버가 유형별 최소 정책 버전으로 계산해 내려주며,
+/// 이미 유효한 동의는 목록에 없다 — 개정 때 필요한 것만 다시 묻고, 묻지 않은 항목의 기존
+/// 선택(특히 마케팅 수신)은 그대로 유지된다. 6종을 항상 그리면 재동의 화면이 묻지도 않은
+/// marketing 을 화면 초기값(false)으로 제출해 **기존 동의를 조용히 철회한다.**
 ///
 /// Android `ConsentScreen.kt` 의 1:1 포팅.
 struct ConsentView: View {
     let busy: Bool
-    let onAgree: (_ marketingAgreed: Bool, _ voiceBiometricAgreed: Bool, _ overseasTransferAgreed: Bool) -> Void
+    /// 이번에 받아야 하는 유형. 비어 있으면 호출자가 가입 필수로 폴백한 상태다.
+    let collect: [String]
+    /// `collect` 중 체크 없이 통과하는 유형.
+    let optional: [String]
+    /// 개정에 따른 재동의인가(이미 동의한 적 있는 계정).
+    let isReconsent: Bool
+    /// 사용자가 실제로 체크한 **선택** 유형만 넘긴다.
+    let onAgree: (_ agreedOptional: Set<String>) -> Void
     let onOpenTerms: () -> Void
     let onOpenPrivacy: () -> Void
 
-    @State private var age14 = false
-    @State private var terms = false
-    @State private var privacy = false
-    @State private var voiceBiometric = false
-    @State private var overseasTransfer = false
-    @State private var marketing = false
+    @State private var checked: Set<String> = []
+
+    /// 구버전 서버(`optional` 없음)와 섞여 돌 수 있다. 비어 있으면 마케팅만 선택으로 본다 —
+    /// 그쪽이 안전한 폴백이다(선택을 필수로 잘못 그리면 사용자가 화면을 못 벗어난다).
+    private var optionalTypes: Set<String> {
+        Set(optional.isEmpty ? ["marketing"] : optional)
+    }
+
+    /// 실제로 그릴 항목과 순서. **필수를 먼저 세우고 선택을 뒤로 민다** — 통과 조건이 되는
+    /// 항목이 선택 아래로 밀리면 무엇을 체크해야 버튼이 켜지는지 스크롤해야 알 수 있다.
+    private var shownTypes: [String] {
+        let optionalTypes = optionalTypes
+        return consentRowOrder
+            .filter { collect.contains($0) }
+            .sorted { lhs, rhs in
+                // 안정 정렬이 아니므로 그룹이 같으면 원래 순서를 명시적으로 유지한다.
+                let l = optionalTypes.contains(lhs), r = optionalTypes.contains(rhs)
+                if l != r { return !l }
+                let li = consentRowOrder.firstIndex(of: lhs) ?? 0
+                let ri = consentRowOrder.firstIndex(of: rhs) ?? 0
+                return li < ri
+            }
+    }
+
+    /// 통과 판정은 **그리는 목록이 아니라 `collect` 원본**으로 한다.
+    /// 이 앱이 모르는 필수 유형(서버가 새 유형을 먼저 추가한 구간)은 그려지지 않지만
+    /// 여기서 막혀 CTA 가 켜지지 않아야 한다 — 목록을 좁히면 그 방어가 사라진다.
+    private var requiredTypes: [String] {
+        let optionalTypes = optionalTypes
+        return collect.filter { !optionalTypes.contains($0) }
+    }
 
     private var allRequiredChecked: Bool {
-        age14 && terms && privacy && voiceBiometric && overseasTransfer
+        requiredTypes.allSatisfy { type in
+            // 모르는 유형은 그리지 못했으므로 통과시키지 않는다 — 통과시키면 사용자가
+            // 본 적 없는 동의가 '체크됨' 으로 기록된다.
+            consentRowOrder.contains(type) && checked.contains(type)
+        }
     }
-    private var allChecked: Bool { allRequiredChecked && marketing }
+
+    private var allChecked: Bool { shownTypes.allSatisfy { checked.contains($0) } }
 
     private func setAll(_ value: Bool) {
-        age14 = value
-        terms = value
-        privacy = value
-        voiceBiometric = value
-        overseasTransfer = value
-        marketing = value
+        if value { checked = Set(shownTypes) } else { checked.removeAll() }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer().frame(height: 24)
 
-            Text("서비스 이용을 위해\n약관에 동의해 주세요")
+            Text(isReconsent ? "약관이 개정되어\n다시 동의가 필요해요" : "서비스 이용을 위해\n약관에 동의해 주세요")
                 .font(.title2.weight(.bold))
                 .foregroundStyle(AlarmTalkTheme.text)
 
-            Spacer().frame(height: 8)
-
-            Text("원활한 서비스 제공을 위해 아래 약관에 대한 동의가 필요해요.")
-                .font(.subheadline)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
+            // 이미 동의했던 사람에게는 '왜 또 묻는지' 를 먼저 말해 준다.
+            // 신규 가입자에게는 제목만으로 충분해 덧붙이지 않는다.
+            if isReconsent {
+                Spacer().frame(height: 8)
+                Text("변경된 내용을 확인하고 동의해 주세요. 이전에 동의하신 항목 중 바뀐 것만 다시 여쭤봐요.")
+                    .font(.subheadline)
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+            } else {
+                Spacer().frame(height: 8)
+                Text("원활한 서비스 제공을 위해 아래 약관에 대한 동의가 필요해요.")
+                    .font(.subheadline)
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+            }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer().frame(height: 24)
-                    ConsentRow(
-                        checked: allChecked,
-                        onToggle: { setAll(!allChecked) },
-                        label: "약관 전체 동의",
-                        emphasized: true
-                    )
-                    Spacer().frame(height: 4)
-                    Divider()
-                    Spacer().frame(height: 4)
-                    ConsentRow(checked: age14, onToggle: { age14.toggle() }, label: "[필수] 만 14세 이상입니다")
-                    ConsentRow(checked: terms, onToggle: { terms.toggle() }, label: "[필수] 이용약관 동의", onOpenDetail: onOpenTerms)
-                    ConsentRow(checked: privacy, onToggle: { privacy.toggle() }, label: "[필수] 개인정보 처리방침 동의", onOpenDetail: onOpenPrivacy)
-                    ConsentRow(
-                        checked: voiceBiometric,
-                        onToggle: { voiceBiometric.toggle() },
-                        label: "[필수] 음성 생체정보 처리 동의",
-                        description: "녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다."
-                    )
-                    ConsentRow(
-                        checked: overseasTransfer,
-                        onToggle: { overseasTransfer.toggle() },
-                        label: "[필수] 음성 AI 처리를 위한 국외 이전 동의",
-                        description: "음성 AI, 번역, 동적 문구 처리를 위해 음성·알람 문구·운세 입력값이 ElevenLabs, Google Vertex 등 국외 처리자에게 전송될 수 있습니다."
-                    )
-                    ConsentRow(checked: marketing, onToggle: { marketing.toggle() }, label: "[선택] 광고성 정보 수신 동의")
+                    // 항목이 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지 않는다.
+                    if shownTypes.count > 1 {
+                        ConsentRow(
+                            checked: allChecked,
+                            onToggle: { setAll(!allChecked) },
+                            label: "약관 전체 동의",
+                            emphasized: true
+                        )
+                        Spacer().frame(height: 4)
+                        Divider()
+                        Spacer().frame(height: 4)
+                    }
+                    ForEach(shownTypes, id: \.self) { type in
+                        row(for: type)
+                    }
                 }
             }
 
             Button {
-                onAgree(marketing, voiceBiometric, overseasTransfer)
+                // 화면에서 실제로 체크한 '선택' 유형만 넘긴다.
+                onAgree(checked.intersection(optionalTypes))
             } label: {
                 Text(busy ? "처리 중…" : "동의하고 시작하기")
                     .fontWeight(.semibold)
@@ -94,6 +150,43 @@ struct ConsentView: View {
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AlarmTalkTheme.background)
+    }
+
+    @ViewBuilder
+    private func row(for type: String) -> some View {
+        let isOptional = optionalTypes.contains(type)
+        let prefix = isOptional ? "[선택] " : "[필수] "
+        let toggle = { toggleChecked(type) }
+        switch type {
+        case "age14":
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: prefix + "만 14세 이상입니다")
+        case "terms":
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: prefix + "이용약관 동의", onOpenDetail: onOpenTerms)
+        case "privacy":
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: prefix + "개인정보 처리방침 동의", onOpenDetail: onOpenPrivacy)
+        case "voice_biometric":
+            ConsentRow(
+                checked: checked.contains(type),
+                onToggle: toggle,
+                label: prefix + "음성 생체정보 처리 동의",
+                description: "녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다."
+            )
+        case "overseas_transfer":
+            ConsentRow(
+                checked: checked.contains(type),
+                onToggle: toggle,
+                label: prefix + "음성 AI 처리를 위한 국외 이전 동의",
+                description: "음성 AI, 번역, 동적 문구 처리를 위해 음성·알람 문구·운세 입력값이 ElevenLabs, Google Vertex 등 국외 처리자에게 전송될 수 있습니다."
+            )
+        case "marketing":
+            ConsentRow(checked: checked.contains(type), onToggle: toggle, label: prefix + "광고성 정보 수신 동의")
+        default:
+            EmptyView()
+        }
+    }
+
+    private func toggleChecked(_ type: String) {
+        if checked.contains(type) { checked.remove(type) } else { checked.insert(type) }
     }
 }
 
@@ -141,14 +234,31 @@ private struct ConsentRow: View {
 }
 
 #if DEBUG
-#Preview("Consent (light)") {
-    ConsentView(busy: false, onAgree: { _, _, _ in }, onOpenTerms: {}, onOpenPrivacy: {})
-        .voiceAlarmPreviewEnvironment()
+private let previewCollect = ["age14", "terms", "privacy", "overseas_transfer", "voice_biometric", "marketing"]
+private let previewOptional = ["voice_biometric", "marketing"]
+
+#Preview("Consent — 신규 가입") {
+    ConsentView(
+        busy: false, collect: previewCollect, optional: previewOptional, isReconsent: false,
+        onAgree: { _ in }, onOpenTerms: {}, onOpenPrivacy: {}
+    )
+    .voiceAlarmPreviewEnvironment()
+}
+
+#Preview("Consent — 개정 재동의(마케팅만)") {
+    ConsentView(
+        busy: false, collect: ["marketing"], optional: ["voice_biometric", "marketing"], isReconsent: true,
+        onAgree: { _ in }, onOpenTerms: {}, onOpenPrivacy: {}
+    )
+    .voiceAlarmPreviewEnvironment()
 }
 
 #Preview("Consent (dark)") {
-    ConsentView(busy: false, onAgree: { _, _, _ in }, onOpenTerms: {}, onOpenPrivacy: {})
-        .preferredColorScheme(.dark)
-        .voiceAlarmPreviewEnvironment()
+    ConsentView(
+        busy: false, collect: previewCollect, optional: previewOptional, isReconsent: false,
+        onAgree: { _ in }, onOpenTerms: {}, onOpenPrivacy: {}
+    )
+    .preferredColorScheme(.dark)
+    .voiceAlarmPreviewEnvironment()
 }
 #endif

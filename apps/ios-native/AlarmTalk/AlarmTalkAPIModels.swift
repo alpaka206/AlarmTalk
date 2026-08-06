@@ -792,11 +792,32 @@ struct RecordConsentsResponse: Decodable, Equatable {
     var recorded: Int = 0
 }
 
-/// 약관 동의 필요 여부 응답. Android `AuthApi.kt:152` `ConsentStatusResponse`.
+/// 약관 동의 상태 응답 (`GET /user/consents/status`).
+///
+/// ⚠ **`needsConsent` 와 `needsCollection` 은 뜻이 다르다 — 섞어 쓰면 안 된다.**
+///  - `needsConsent`: **앱을 못 쓰게 막는 게이트** 신호(필수 유형 기준). 선택 동의 때문에
+///    앱이 잠기면 안 되므로 여기에는 marketing 이 절대 들어가지 않는다.
+///  - `needsCollection`: **동의 화면을 한 번 띄워 물어봐야 한다**는 신호. 선택 유형만
+///    재수집 대상일 때도 true 다. 이걸 안 보면, 개정이 marketing 최소버전만 올렸을 때
+///    화면이 영영 안 떠 재수집이 일어나지 않는다.
 struct ConsentStatusResponse: Decodable, Equatable {
     var needsConsent: Bool = false
+    var needsCollection: Bool = false
     var required: [String] = []
     var missing: [String] = []
+    /// **이번 화면에서 받아야 하는 유형.** 이미 유효한 동의는 담기지 않는다 —
+    /// 개정 때 필요한 것만 다시 묻고, 묻지 않은 항목의 기존 선택(특히 마케팅 수신)은
+    /// 그대로 살아남는다. 화면은 이 목록에 든 것만 그리고, 제출도 이 목록으로만 한다.
+    var collect: [String] = []
+    /// `collect` 중 **체크 없이 통과**하는 유형(선택 동의). 화면이 목록을 따로 들고 있으면
+    /// 서버가 필수/선택을 바꿀 때 조용히 어긋난다.
+    var optional: [String] = []
+    /// 음성 라우트가 요구하는 민감 동의 중 아직 없는 것. 가입 때 `voice_biometric` 을
+    /// 거절한 사람만 남는다 — 목소리 등록 화면에서 인라인으로 다시 묻는 근거다.
+    var sensitiveMissing: [String] = []
+    /// 이 계정에 동의 기록이 하나라도 있으면 '개정에 따른 재동의' 다.
+    /// 처음 가입한 사람과 문구가 달라야 한다.
+    var hasPriorConsent: Bool = false
     var policyVersion: String = "1"
 }
 

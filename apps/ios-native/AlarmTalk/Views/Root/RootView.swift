@@ -37,19 +37,18 @@ struct RootView: View {
                     onRecover: { Task { await auth.cancelAccountDeletion() } },
                     onLogout: { auth.signOut() }
                 )
-            } else if auth.needsConsent {
-                // 필수 약관 미동의 — 동의 전까지 앱 진입을 막는다.
-                // Android `ConsentScreen` 게이팅과 동등.
+            } else if auth.showConsentScreen {
+                // 받을 동의가 남아 있으면 그 화면을 먼저 통과해야 한다.
+                // ⚠ `needsConsent` 가 아니라 `showConsentScreen` 을 본다 — 선택 유형만
+                // 재수집하는 경우(collect == ["marketing"]) needsConsent 는 false 라
+                // 화면이 영영 안 뜬다. Android `ConsentScreen` 게이팅과 동등.
                 ConsentView(
                     busy: auth.isBusy,
-                    onAgree: { marketingAgreed, voiceBiometricAgreed, overseasTransferAgreed in
-                        Task {
-                            await auth.submitConsents(
-                                marketingAgreed: marketingAgreed,
-                                voiceBiometricAgreed: voiceBiometricAgreed,
-                                overseasTransferAgreed: overseasTransferAgreed
-                            )
-                        }
+                    collect: auth.consentCollect,
+                    optional: auth.consentOptional,
+                    isReconsent: auth.consentIsReconsent,
+                    onAgree: { agreedOptional in
+                        Task { await auth.submitConsents(agreedOptional: agreedOptional) }
                     },
                     onOpenTerms: { openURL(Self.termsURL) },
                     onOpenPrivacy: { openURL(Self.privacyURL) }

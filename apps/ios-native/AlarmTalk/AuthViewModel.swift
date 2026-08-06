@@ -54,9 +54,44 @@ final class AuthViewModel: ObservableObject {
     /// `/auth/me` 응답의 `deletion_status == "pending_deletion"` 에서 설정된다.
     /// Android `MainViewModel.pendingDeletion`.
     @Published private(set) var pendingDeletion = false
-    /// 필수 약관 동의가 필요한지. true 면 RootView 가 동의 화면으로 게이팅한다.
-    /// `/user/consents/status` 의 `needs_consent` 에서 설정된다. Android `MainViewModel.needsConsent`.
+    /// **필수** 약관 동의가 없어 앱을 못 쓰는 상태인지.
+    /// `/user/consents/status` 의 `needs_consent`. Android `MainViewModel.needsConsent`.
+    ///
+    /// ⚠ 화면을 띄울지는 이 값이 아니라 `showConsentScreen` 으로 판단한다.
     @Published private(set) var needsConsent = false
+    /// 서버가 계산해 준 '받을 게 있는가'(선택 유형만 재수집일 때도 true).
+    @Published private(set) var consentNeedsCollection = false
+    /// 이번 화면에서 받아야 하는 동의 유형. **화면은 이것만 그리고 제출도 이것만 한다.**
+    @Published private(set) var consentCollect: [String] = []
+    /// `consentCollect` 중 체크 없이 통과하는 유형(선택 동의).
+    @Published private(set) var consentOptional: [String] = []
+    /// 목소리 등록 화면에서 인라인으로 다시 물어야 하는 민감 동의.
+    @Published private(set) var consentSensitiveMissing: [String] = []
+    /// 개정에 따른 재동의인지(이미 동의한 적 있는 계정). 문구가 달라야 한다.
+    @Published private(set) var consentIsReconsent = false
+
+    /// 동의 화면을 띄워야 하는가.
+    ///
+    /// ⚠ **`needsConsent` 만 보면 안 된다.** 선택 유형만 재수집하는 경우
+    /// (`collect == ["marketing"]`) `needsConsent` 는 false 라 화면이 영영 안 뜬다.
+    /// 반대로 이 값을 보지 않고 크롬(하단바·FAB)을 그리면 동의 화면 **아래에** 탭이 남아
+    /// 수집이 끝나기 전에 다른 화면으로 샐 수 있다(Android Codex #660 과 같은 판단).
+    var showConsentScreen: Bool {
+        needsConsent || consentNeedsCollection || !consentCollect.isEmpty
+    }
+
+    /// **이 앱 버전이 화면에 그릴 수 있는** 동의 유형 전부.
+    ///
+    /// 서버가 새 유형을 먼저 추가하고 구버전 앱이 살아 있는 구간이 있다. 그때 화면이 그리지
+    /// 못한 유형을 '체크됨' 으로 취급하면 **사용자가 본 적 없는 동의가 기록된다** — 동의
+    /// 기록의 신뢰성이 통째로 무너지는 종류의 버그다. 모르는 유형은 제출에서 빼고,
+    /// 그게 필수면 화면이 CTA 를 막는다.
+    static let knownConsentTypes: Set<String> = [
+        "terms", "privacy", "age14", "marketing", "voice_biometric", "overseas_transfer",
+    ]
+
+    /// status 응답을 못 받았을 때의 폴백(가입 필수 4종).
+    static let signupRequiredConsentTypes = ["age14", "terms", "privacy", "overseas_transfer"]
     /// 비밀번호 재설정 코드를 발송한 이메일. 비어 있지 않으면 UI(PasswordResetView)가
     /// "코드 + 새 비밀번호" 입력 단계를 노출한다. Android `MainViewModel.passwordResetCodeSentTo`.
     @Published var passwordResetCodeSentTo: String?
@@ -625,11 +660,20 @@ final class AuthViewModel: ObservableObject {
         do {
             let status = try await api.consentStatus(token: token)
             needsConsent = status.needsConsent
+            consentNeedsCollection = status.needsCollection
+            // 이 앱 버전이 그릴 수 있는 유형만 남긴다. 서버가 새 유형을 먼저 추가한 구간에서
+            // **보여주지 않은 동의를 기록하는 것**을 막는다(그 유형이 필수면 화면이 CTA 를 막는다).
+            consentCollect = status.collect.filter { Self.knownConsentTypes.contains($0) }
+            consentOptional = status.optional
+            consentSensitiveMissing = status.sensitiveMissing
+            consentIsReconsent = status.hasPriorConsent
             // 서버가 게시 중인 문서 버전. 409 를 만났을 때 "업데이트하면 풀리는가" 판단에 쓴다.
             serverPolicyVersionHint = status.policyVersion
         } catch {
             // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
             needsConsent = false
+            consentNeedsCollection = false
+            consentCollect = []
         }
     }
 
@@ -641,22 +685,31 @@ final class AuthViewModel: ObservableObject {
     ///  남는 값이 사실과 달랐다. 요청 단위 `document_version` 은 서버가 실제로 검증한다.)
     static var currentPolicyVersion: String { LegalPolicy.bundledVersion }
 
-    /// 동의 기록 요청을 만든다. 필수 항목은 화면의 체크값을 기록하고, marketing 은 선택값으로 기록한다.
-    /// 모든 항목에 현재 정책 버전을 동봉한다.
+    /// 동의 기록 요청을 만든다.
+    ///
+    /// ⚠ **`collect` 에 든 유형만 담는다.** 예전에는 6종을 항상 보냈는데, 그러면 재동의
+    /// 화면에서 묻지도 않은 marketing 이 화면 초기값(false)으로 제출돼 **기존 마케팅 동의가
+    /// 조용히 철회된다.**
+    ///
+    /// - 필수 유형은 화면을 통과한 시점에 이미 체크됐으므로 `true`.
+    /// - 선택 유형은 사용자가 실제로 체크한 것만 `true`.
+    /// - 구버전 서버(`optional` 없음) 폴백은 **화면과 같은 기준**이어야 한다 — 여기만 다르면
+    ///   화면에서 선택으로 그린 항목이 제출에서 필수로 둔갑해 동의로 기록된다.
     static func makeConsentsRequest(
-        marketingAgreed: Bool,
-        voiceBiometricAgreed: Bool,
-        overseasTransferAgreed: Bool
+        collect: [String],
+        optional: [String],
+        agreedOptional: Set<String>,
+        version: String = currentPolicyVersion
     ) -> RecordConsentsRequest {
-        let version = currentPolicyVersion
-        return RecordConsentsRequest(consents: [
-            ConsentItemRequest(type: "terms", agreed: true, version: version),
-            ConsentItemRequest(type: "privacy", agreed: true, version: version),
-            ConsentItemRequest(type: "age14", agreed: true, version: version),
-            ConsentItemRequest(type: "voice_biometric", agreed: voiceBiometricAgreed, version: version),
-            ConsentItemRequest(type: "overseas_transfer", agreed: overseasTransferAgreed, version: version),
-            ConsentItemRequest(type: "marketing", agreed: marketingAgreed, version: version),
-        ])
+        let optionalTypes = Set(optional.isEmpty ? ["marketing"] : optional)
+        let types = collect.filter { knownConsentTypes.contains($0) }
+        return RecordConsentsRequest(consents: types.map { type in
+            ConsentItemRequest(
+                type: type,
+                agreed: !optionalTypes.contains(type) || agreedOptional.contains(type),
+                version: version
+            )
+        })
     }
 
     /// 동의 기록이 '문서 버전 불일치' 로 거부됐을 때의 처리. 처리했으면 true.
@@ -689,29 +742,44 @@ final class AuthViewModel: ObservableObject {
     private var serverPolicyVersionHint: String?
 
     /// 동의 화면 제출. 성공 시 `needsConsent` 를 내려 정상 진입. Android `MainViewModel.submitConsents()`.
-    func submitConsents(
-        marketingAgreed: Bool,
-        voiceBiometricAgreed: Bool,
-        overseasTransferAgreed: Bool
-    ) async {
+    func submitConsents(agreedOptional: Set<String>) async {
         guard let token else {
             statusMessage = "로그인이 필요해요."
             return
         }
         guard !isBusy else { return }
+        // 이 요청을 시작한 계정. 응답이 오는 사이 401 로 세션이 끊기고 다른 계정이 로그인해도
+        // 이 continuation 은 살아 있다 — 앞 계정의 성공으로 뒤 계정의 동의 상태를 비우면
+        // 뒤 계정이 받아야 할 재수집·민감 동의를 건너뛴다.
+        let ownerUserID = session?.user.id
+        // collect 가 비어 있는 건 status 응답을 못 받은 경우다 — 그때만 가입 필수로 폴백한다.
+        let collect = consentCollect.isEmpty ? Self.signupRequiredConsentTypes : consentCollect
+        let request = Self.makeConsentsRequest(
+            collect: collect,
+            optional: consentOptional,
+            agreedOptional: agreedOptional
+        )
+        guard !request.consents.isEmpty else {
+            // 이 앱이 그릴 수 있는 유형이 하나도 없다 = 서버가 앞서 있다. 업데이트가 답이다.
+            statusMessage = "앱을 업데이트해야 동의를 진행할 수 있어요."
+            return
+        }
         isBusy = true
         defer { isBusy = false }
 
         do {
-            _ = try await api.recordConsents(
-                Self.makeConsentsRequest(
-                    marketingAgreed: marketingAgreed,
-                    voiceBiometricAgreed: voiceBiometricAgreed,
-                    overseasTransferAgreed: overseasTransferAgreed
-                ),
-                token: token
-            )
+            _ = try await api.recordConsents(request, token: token)
+            // 화면 상태는 **현재 세션이 그대로일 때만** 건드린다(위 ownerUserID 주석).
+            guard session?.user.id == ownerUserID else { return }
             needsConsent = false
+            // 방금 받은 유형은 더 받을 게 없다. 비우지 않으면 showConsentScreen 이 계속 true 라
+            // 화면이 닫히지 않는다.
+            consentCollect = []
+            consentOptional = []
+            consentNeedsCollection = false
+            // 방금 **동의로** 기록한 민감 유형은 서버 상태와 맞춘다 — 안 지우면 목소리 등록
+            // 화면이 이미 받은 동의를 또 묻는다. 거절한 유형은 그대로 남아 그때 다시 묻는다.
+            consentSensitiveMissing = consentSensitiveMissing.filter { !agreedOptional.contains($0) }
             statusMessage = "동의가 완료됐어요"
         } catch {
             if handleConsentVersionMismatch(error) { return }
@@ -777,6 +845,13 @@ final class AuthViewModel: ObservableObject {
         session = nil
         pendingDeletion = false
         needsConsent = false
+        // 동의 수집 상태도 계정별이다 — 앞 계정의 '받을 게 없음' 이 새 계정에 새면
+        // 새 계정이 받아야 할 재수집·민감 동의를 건너뛴다.
+        consentNeedsCollection = false
+        consentCollect = []
+        consentOptional = []
+        consentSensitiveMissing = []
+        consentIsReconsent = false
         // 사용자 범위 상태 초기화 — 계정 전환 시 옛 사용자 값이 새지 않게 한다.
         // Android `clearUserScopedRemoteState` 와 동등.
         passwordResetCodeSentTo = nil

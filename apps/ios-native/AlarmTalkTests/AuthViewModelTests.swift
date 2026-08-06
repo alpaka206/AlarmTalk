@@ -185,9 +185,9 @@ final class AuthViewModelTests: XCTestCase {
     /// 관리하지 않는다 — 리터럴이 박혀 있으면 문서가 올라갈 때 조용히 어긋난다.
     func test_consentsRequest_carriesBundledDocumentVersion() {
         let req = AuthViewModel.makeConsentsRequest(
-            marketingAgreed: true,
-            voiceBiometricAgreed: true,
-            overseasTransferAgreed: true
+            collect: ["terms", "privacy", "age14", "overseas_transfer", "marketing"],
+            optional: ["marketing"],
+            agreedOptional: ["marketing"]
         )
         XCTAssertEqual(req.documentVersion, LegalPolicy.bundledVersion)
         XCTAssertFalse(LegalPolicy.bundledVersion.isEmpty)
@@ -201,7 +201,7 @@ final class AuthViewModelTests: XCTestCase {
         encoder.keyEncodingStrategy = .convertToSnakeCase
         let data = try encoder.encode(
             AuthViewModel.makeConsentsRequest(
-                marketingAgreed: false, voiceBiometricAgreed: false, overseasTransferAgreed: true
+                collect: ["terms", "overseas_transfer"], optional: ["marketing"], agreedOptional: []
             )
         )
         let json = String(decoding: data, as: UTF8.self)
@@ -566,7 +566,12 @@ final class AuthViewModelTests: XCTestCase {
 
     func test_submitConsents_recordsAllRequiredAndMarketing() async {
         let api = MockAuthAPI()
-        api.consentStatusResult = .success(ConsentStatusResponse(needsConsent: true))
+        api.consentStatusResult = .success(ConsentStatusResponse(
+            needsConsent: true,
+            needsCollection: true,
+            collect: ["age14", "terms", "privacy", "overseas_transfer", "voice_biometric", "marketing"],
+            optional: ["voice_biometric", "marketing"]
+        ))
         let vm = AuthViewModel(
             api: api,
             appleCredentialProvider: MockAppleCredentialProvider(),
@@ -576,11 +581,7 @@ final class AuthViewModelTests: XCTestCase {
         await vm.checkConsentStatus()
         XCTAssertTrue(vm.needsConsent)
 
-        await vm.submitConsents(
-            marketingAgreed: true,
-            voiceBiometricAgreed: true,
-            overseasTransferAgreed: true
-        )
+        await vm.submitConsents(agreedOptional: ["voice_biometric", "marketing"])
 
         XCTAssertFalse(vm.needsConsent)
         XCTAssertEqual(api.recordConsentsCallCount, 1)
@@ -595,18 +596,97 @@ final class AuthViewModelTests: XCTestCase {
 
     func test_makeConsentsRequest_usesSensitiveConsentChoices() {
         let request = AuthViewModel.makeConsentsRequest(
-            marketingAgreed: false,
-            voiceBiometricAgreed: false,
-            overseasTransferAgreed: true
+            collect: ["terms", "privacy", "age14", "voice_biometric", "overseas_transfer", "marketing"],
+            optional: ["voice_biometric", "marketing"],
+            agreedOptional: []
         )
         let values = Dictionary(uniqueKeysWithValues: request.consents.map { ($0.type, $0.agreed) })
 
+        // 필수는 화면을 통과한 시점에 이미 체크됐다.
         XCTAssertEqual(values["terms"], true)
         XCTAssertEqual(values["privacy"], true)
         XCTAssertEqual(values["age14"], true)
-        XCTAssertEqual(values["voice_biometric"], false)
         XCTAssertEqual(values["overseas_transfer"], true)
+        // 선택은 사용자가 체크한 것만 true.
+        XCTAssertEqual(values["voice_biometric"], false)
         XCTAssertEqual(values["marketing"], false)
+    }
+
+    // MARK: - collect 계약 (재동의에서 기존 동의를 지우지 않는다)
+
+    /// ⚠ **이 테스트가 막는 것**: 예전에는 6종을 항상 보내서, 마케팅만 재수집하는 화면이
+    /// 묻지도 않은 terms/privacy 를 함께 기록하고 **기존 marketing 동의를 화면 초기값으로
+    /// 덮어썼다.** 제출은 `collect` 에 든 것만 나가야 한다.
+    func test_makeConsentsRequest_submitsOnlyCollectedTypes() {
+        let request = AuthViewModel.makeConsentsRequest(
+            collect: ["marketing"],
+            optional: ["voice_biometric", "marketing"],
+            agreedOptional: ["marketing"]
+        )
+        XCTAssertEqual(request.consents.map(\.type), ["marketing"])
+        XCTAssertEqual(request.consents.first?.agreed, true)
+    }
+
+    /// 이 앱이 그리지 못하는 유형(서버가 새 유형을 먼저 추가한 구간)은 제출하지 않는다.
+    /// 보내면 **사용자가 본 적 없는 동의가 기록된다.**
+    func test_makeConsentsRequest_dropsUnknownTypes() {
+        let request = AuthViewModel.makeConsentsRequest(
+            collect: ["terms", "biometric_v2_future"],
+            optional: [],
+            agreedOptional: []
+        )
+        XCTAssertEqual(request.consents.map(\.type), ["terms"])
+    }
+
+    /// 구버전 서버(optional 없음) 폴백은 화면과 같은 기준이어야 한다 — marketing 만 선택.
+    /// 여기만 다르면 화면에서 선택으로 그린 항목이 제출에서 필수로 둔갑해 동의로 기록된다.
+    func test_makeConsentsRequest_fallsBackToMarketingOnlyOptional() {
+        let request = AuthViewModel.makeConsentsRequest(
+            collect: ["terms", "marketing"], optional: [], agreedOptional: []
+        )
+        let values = Dictionary(uniqueKeysWithValues: request.consents.map { ($0.type, $0.agreed) })
+        XCTAssertEqual(values["terms"], true)
+        XCTAssertEqual(values["marketing"], false)
+    }
+
+    /// **선택 유형만 재수집하는 경우** `needs_consent` 는 false 다. 그것만 보면 화면이
+    /// 영영 안 떠 재수집이 일어나지 않는다 — `showConsentScreen` 이 받아야 한다.
+    func test_showConsentScreen_trueWhenOnlyOptionalNeedsCollection() async {
+        let api = MockAuthAPI()
+        api.consentStatusResult = .success(ConsentStatusResponse(
+            needsConsent: false, needsCollection: true, collect: ["marketing"], optional: ["marketing"]
+        ))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "consent3-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.checkConsentStatus()
+
+        XCTAssertFalse(vm.needsConsent, "선택 동의로 앱이 잠기면 안 된다")
+        XCTAssertTrue(vm.showConsentScreen, "그래도 화면은 떠야 재수집이 일어난다")
+    }
+
+    /// 제출에 성공하면 화면이 닫혀야 한다 — collect 를 비우지 않으면 계속 떠 있다.
+    func test_submitConsents_closesScreenOnSuccess() async {
+        let api = MockAuthAPI()
+        api.consentStatusResult = .success(ConsentStatusResponse(
+            needsConsent: false, needsCollection: true, collect: ["marketing"], optional: ["marketing"]
+        ))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "consent4-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.checkConsentStatus()
+        XCTAssertTrue(vm.showConsentScreen)
+
+        await vm.submitConsents(agreedOptional: [])
+
+        XCTAssertFalse(vm.showConsentScreen)
     }
 
     func test_consentRequiredNotification_keepsGateOpenWithoutStatusRecheck() async {
