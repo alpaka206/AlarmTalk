@@ -28,15 +28,11 @@ struct VoiceProfileDeleteDialog: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                Text("목소리 삭제")
-                    .font(.title3.weight(.bold))
-                Spacer()
-                Button(action: onCancel) {
-                    Image(systemName: "xmark")
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-            }
+            // ⚠ X 를 두지 않는다 — 아래 [취소]와 같은 일이라 취소 어포던스가 둘이 된다
+            // (CLAUDE.md 「모달」). 시트라 아래로 끌어내리는 표준 탈출구도 이미 있다.
+            Text("목소리 삭제")
+                .font(.title3.weight(.bold))
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             Text("'\(profileName)' 목소리를 삭제할까요?")
                 .font(.subheadline)

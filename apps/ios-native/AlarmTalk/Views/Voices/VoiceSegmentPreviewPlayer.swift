@@ -34,7 +34,10 @@ struct VoiceSegmentPreviewPlayer: View {
                         }
                     }
                 } label: {
-                    Image(systemName: controller.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    // ⚠ **정지(stop)에 일시정지(pause) 아이콘을 쓰지 말 것.** 이 버튼은 누르면
+                // `controller.stop()` 이라 다시 누르면 **처음부터** 재생된다 — ⏸ 를 보여주면
+                // '이어 듣기' 를 약속하는 셈이라 사용자가 기대와 다른 결과를 얻는다.
+                Image(systemName: controller.isPlaying ? "stop.fill" : "play.fill")
                         .font(.system(size: 36))
                         .foregroundStyle(AlarmTalkTheme.primary)
                 }

@@ -51,7 +51,8 @@ struct VoiceCatalogRow<Below: View>: View {
 
                 if let onOpenActions {
                     Button(action: onOpenActions) {
-                        Image(systemName: "ellipsis")
+                        // ⚠ `ellipsis` 는 점이 **가로**(…)다. 안드로이드는 `MoreVert`(⋮) 라 방향이 반대였다.
+                        Image(systemName: "ellipsis.vertical")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(theme.palette.onSurfaceVariant)
                             .frame(width: Self.contentHeight, height: Self.contentHeight)
