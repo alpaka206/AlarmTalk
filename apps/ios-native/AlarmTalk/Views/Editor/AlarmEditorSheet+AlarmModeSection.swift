@@ -52,51 +52,32 @@ extension AlarmEditorSheet {
                     }
 
                     if voiceSourceMode == .ttsProfile {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("목소리")
-                                .font(theme.typography.titleSmall)
-                            AlarmVoiceProfilePicker(
-                                ownProfiles: voiceStudio.profiles,
-                                familyVoices: voiceStudio.familyVoices,
-                                selectedProfileID: voiceStudio.selectedProfileID,
-                                defaultVoiceId: voiceStudio.defaultVoiceId,
-                                loading: voiceStudio.isBusy,
-                                onSelectOwn: { profile in
-                                    // 무료 등급은 시스템 보이스만 허용한다(서버 tts.ts:684-693).
-                                    // 비-시스템 목소리 선택은 유료 잠금으로 안내해 generateTTS
-                                    // 403(VOICE_FEATURE_REQUIRES_PAID_PLAN)을 미연에 막는다
-                                    // (Android `VoiceAudioCard.kt` onLockedFeature 게이팅 미러).
-                                    if freeVoiceTier && !isSystemVoice(profile) {
-                                        showVoicePlanLockedAlert()
-                                        return
-                                    }
-                                    voiceStudio.selectedProfileID = profile.id
-                                    voiceStudio.preparedAlarm = nil
-                                },
-                                onSelectShared: { profile in
-                                    // 공유/가족 목소리는 비-시스템이므로 무료 등급에선 선택을
-                                    // 막고 유료 잠금으로 안내한다 (행은 숨기지 않고 선택만 게이트).
-                                    if freeVoiceTier {
-                                        showVoicePlanLockedAlert()
-                                        return
-                                    }
-                                    if profile.requiresViewerInfo {
-                                        sharedVoiceSetupTarget = profile
-                                    } else {
-                                        voiceStudio.selectedProfileID = profile.id
-                                        voiceStudio.preparedAlarm = nil
-                                    }
-                                }
-                            )
-                            preparedVoiceChip
+                        // ⚠ **인라인 목록으로 되돌리지 말 것.** 요약 행 하나가 지금 값을
+                        // 말하고, 바꿀 때만 시트를 연다(안드로이드 `VoiceAudioCard.kt:500-547`).
+                        // 시트 안에서는 행마다 '들어보기' 가 있다 — 고르려면 먼저 들어봐야
+                        // 하는데, iOS 편집기에는 미리 들을 방법이 아예 없었다.
+                        AlarmSettingRow(
+                            title: "목소리",
+                            subtitle: selectedVoiceName ?? "고르기",
+                            onTap: { voiceSheetOpen = true }
+                        )
+
+                        preparedVoiceChip
+
+                        // ⚠ '음성 탭에서 만들기' 버튼을 상시로 두지 않는다 — 목소리가 이미
+                        // 있는 사람에게는 매번 다른 탭으로 보내는 버튼이 편집기에 남는다.
+                        // 고를 목소리가 하나도 없을 때만 낸다.
+                        if voiceOptions.isEmpty && !voiceStudio.isBusy {
                             Button {
                                 onJumpToVoices()
                             } label: {
-                                Label("음성 탭에서 만들기", systemImage: "waveform")
+                                Label("목소리 탭에서 만들기", systemImage: "waveform")
                             }
                             .buttonStyle(.bordered)
                         }
+                    }
 
+                    if voiceSourceMode == .ttsProfile {
                         // 무료 등급은 **테마(버킷)** 를 고른다 — 약 / 날씨.
                         //
                         // ⚠ **버킷 안의 개별 문구를 노출하지 말 것.** 예전 iOS 는 스톡

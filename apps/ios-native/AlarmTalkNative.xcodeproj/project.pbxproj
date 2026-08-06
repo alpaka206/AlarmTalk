@@ -98,6 +98,7 @@
 		6B9AA51D2C1FC31ECED8952B /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DAD47DD9BE2DBBFF3D0FEE46 /* InfoPlist.xcstrings */; };
 		6BEF7CCCB8DFADB90171CF04 /* VoiceMessagePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B014500554663BFC83F74EC /* VoiceMessagePanel.swift */; };
 		6CEC9C2CFA66AF76BFC562F1 /* WeatherLocationInputFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48CF19CFBA073E3D7CC46441 /* WeatherLocationInputFields.swift */; };
+		6CFB12D255AB21B12F5175DF /* VoiceSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04D77313A4CF5DBFD7203E5 /* VoiceSelectionSheet.swift */; };
 		703F018B82D32AB6B45C4DBA /* UsageGuideSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A189CBA805B03B6CF0BEAC00 /* UsageGuideSheet.swift */; };
 		708D3503AD539D289233A772 /* VoicePlayModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E077F439D01E160ED901D7FE /* VoicePlayModePicker.swift */; };
 		709B957CE1750DFA66018C4E /* pretendard_regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = 566AA8670AC11EF2C70548C8 /* pretendard_regular.otf */; };
@@ -380,6 +381,7 @@
 		9E9DC62B90B8D3C7D339AE8E /* AudioPreviewPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPreviewPlayer.swift; sourceTree = "<group>"; };
 		9FAA02E16F860ED36A858566 /* AlarmTalkAPIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkAPIModels.swift; sourceTree = "<group>"; };
 		9FE1C56D44C36C22F69C9EA9 /* AlarmEnumsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEnumsTests.swift; sourceTree = "<group>"; };
+		A04D77313A4CF5DBFD7203E5 /* VoiceSelectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSelectionSheet.swift; sourceTree = "<group>"; };
 		A1460F6B80519002D6B9F945 /* pretendard_medium.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = pretendard_medium.otf; sourceTree = "<group>"; };
 		A186A9ECD18C026BD44B42E0 /* EmptyStatePlaceholder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStatePlaceholder.swift; sourceTree = "<group>"; };
 		A189CBA805B03B6CF0BEAC00 /* UsageGuideSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageGuideSheet.swift; sourceTree = "<group>"; };
@@ -674,6 +676,7 @@
 				0E7477E7C446FAC757144181 /* TimeWheelPicker.swift */,
 				785541EABF51C626605C29DC /* VibrationPatternPicker.swift */,
 				E077F439D01E160ED901D7FE /* VoicePlayModePicker.swift */,
+				A04D77313A4CF5DBFD7203E5 /* VoiceSelectionSheet.swift */,
 			);
 			path = Editor;
 			sourceTree = "<group>";
@@ -1158,6 +1161,7 @@
 				E9B7002071739EC7C12B0CFE /* VoiceRecorder.swift in Sources */,
 				C30F8BAE2A9D81D92D2BC65B /* VoiceRelationshipInputField.swift in Sources */,
 				AB6952C6C2E757ECEF15B909 /* VoiceSegmentPreviewPlayer.swift in Sources */,
+				6CFB12D255AB21B12F5175DF /* VoiceSelectionSheet.swift in Sources */,
 				3702A38AD268B0B9F13931C7 /* VoiceSetupView.swift in Sources */,
 				4BCD4EFA36C7AC732ADCAA8E /* VoiceShareAccess.swift in Sources */,
 				E6A1A9B80790C9D77AF34DAD /* VoiceStudioViewModel+ErrorMapping.swift in Sources */,

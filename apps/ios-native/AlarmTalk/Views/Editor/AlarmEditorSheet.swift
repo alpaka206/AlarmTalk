@@ -53,6 +53,9 @@ struct AlarmEditorSheet: View {
     /// 무료 테마(버킷) 선택 화면.
     @State var freeBucketPaneOpen = false
 
+    /// 목소리 고르기 시트.
+    @State var voiceSheetOpen = false
+
     @State var draft: AlarmEditDraft = .newDefault()
     @State var didLoadInitial = false
     @State var validationAlert: ValidationAlertContent?
@@ -277,6 +280,18 @@ struct AlarmEditorSheet: View {
                 saveEnabled: editorSaveBlockedReason == nil,
                 onCancel: onClose,
                 onSave: { Task { await saveFlow() } }
+            )
+        }
+        .sheet(isPresented: $voiceSheetOpen) {
+            VoiceSelectionSheet(
+                options: voiceOptions,
+                selectedID: voiceStudio.selectedProfileID,
+                playingID: editorPreviewPlayer.isPlaying ? voiceStudio.previewingGreetingVoiceId : nil,
+                preparingID: editorPreviewPlayer.isPreparing ? voiceStudio.previewingGreetingVoiceId : nil,
+                onSelect: selectVoiceOption,
+                onPreview: { option in
+                    Task { await voiceStudio.previewGreeting(voiceId: option.id, session: auth.session) }
+                }
             )
         }
         .navigationDestination(isPresented: $freeBucketPaneOpen) {
@@ -687,6 +702,58 @@ struct AlarmEditorSheet: View {
             return existing?.voiceListenerTitle
         }
         return voiceStudio.selectedListenerTitle
+    }
+
+    /// 목소리 시트에 보여줄 항목들 — 내 목소리 → 공유받은 목소리 → 기본 목소리.
+    ///
+    /// ⚠ **기본(시스템) 목소리 4종을 전부 노출한다.** 예전에는 '기본으로 설정해 둔 1개'
+    /// 만 보여줬는데, 이제 4개를 미리 받아 두므로 알람마다 자유롭게 고를 수 있어야 한다
+    /// (안드로이드 `VoiceAudioCard.kt:130-133` 주석).
+    var voiceOptions: [VoiceSelectionSheet.Option] {
+        let own = voiceStudio.profiles
+            .filter { $0.isReadyForAlarmSelection && !isSystemVoice($0) }
+            .map {
+                VoiceSelectionSheet.Option(
+                    id: $0.id,
+                    name: $0.name,
+                    detail: $0.relationshipLabel?.nilIfBlank,
+                    // 무료 등급은 시스템 목소리만 쓸 수 있다(서버 `tts.ts:684-693`).
+                    locked: freeVoiceTier
+                )
+            }
+        let shared = voiceStudio.familyVoices
+            .filter(\.isReadyForAlarmSelection)
+            .map {
+                VoiceSelectionSheet.Option(
+                    id: $0.id,
+                    name: $0.name,
+                    detail: $0.sharedFromLabel,
+                    locked: freeVoiceTier
+                )
+            }
+        let system = voiceStudio.profiles
+            .filter { $0.isReadyForAlarmSelection && isSystemVoice($0) }
+            .map { VoiceSelectionSheet.Option(id: $0.id, name: $0.name, detail: "기본 목소리") }
+        return own + shared + system
+    }
+
+    var selectedVoiceName: String? {
+        voiceOptions.first { $0.id == voiceStudio.selectedProfileID }?.name
+    }
+
+    func selectVoiceOption(_ option: VoiceSelectionSheet.Option) {
+        if option.locked {
+            showVoicePlanLockedAlert()
+            return
+        }
+        // 공유받은 목소리는 '나를 부를 호칭' 이 없으면 먼저 받는다 — 없이 저장하면
+        // 서버가 호칭 자리를 비운 문장을 만든다.
+        if let shared = voiceStudio.familyVoices.first(where: { $0.id == option.id }), shared.requiresViewerInfo {
+            sharedVoiceSetupTarget = shared
+            return
+        }
+        voiceStudio.selectedProfileID = option.id
+        voiceStudio.preparedAlarm = nil
     }
 
     /// 이 목소리로 쓸 수 있는 무료 테마. 서버가 내려준 스톡 클립의 카테고리에서 뽑되,
