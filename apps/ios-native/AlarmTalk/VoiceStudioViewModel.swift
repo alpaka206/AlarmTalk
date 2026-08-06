@@ -58,6 +58,10 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var defaultListenerTitle: String?
     /// 온보딩/목소리 탭에서 "들어보기"(greeting) 재생 중인 시스템 음성 id. nil 이면 정지 상태.
     @Published var previewingGreetingVoiceId: String?
+
+    /// 방금 만든 **초안**. 목록 새로고침이 아직 안 끝났어도 확인 스텝이 이걸로 그린다.
+    /// 승격하거나 지우면 nil 로 되돌린다.
+    @Published var pendingDraft: VoiceProfile?
     @Published var ttsText = "좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!"
     @Published var ttsCategory = "morning"
     @Published var ttsLanguage = "ko"
@@ -252,6 +256,64 @@ final class VoiceStudioViewModel: ObservableObject {
             if requestId == greetingPreviewRequestId {
                 previewingGreetingVoiceId = nil
             }
+        }
+    }
+
+    /// 초안 미리듣기 재생 결과.
+    enum DraftPreviewOutcome {
+        /// 끝까지 재생하고 서버에 청취를 기록했다. 딸린 값은 실제 합성된 문구.
+        case played(String)
+        case failed(String)
+    }
+
+    /// 등록 확인 스텝의 미리듣기 — 합성 → 끝까지 재생 → 서버에 청취 기록.
+    ///
+    /// ⚠ **재생이 끝난 뒤에야 `preview-played` 를 부른다.** 시작하자마자 부르면 사용자가
+    /// 안 듣고 넘어가도 저장이 열려, 이 스텝을 둔 이유(결과를 듣고 결정하게 하기)가
+    /// 사라진다. 안드로이드도 `setOnCompletionListener` 안에서 부른다.
+    func playDraftPreview(draft: VoiceProfile, session: AuthSession?) async -> DraftPreviewOutcome {
+        guard let token = session?.token else { return .failed("로그인이 필요해요.") }
+        do {
+            let response = try await api.generateTTS(
+                TtsGenerateRequest(
+                    voiceProfileId: draft.id,
+                    text: "",
+                    category: "morning",
+                    language: Self.appVoiceLanguage(),
+                    translate: false,
+                    random: true,
+                    listenerTitle: draft.listenerTitle,
+                    draftPreview: true
+                ),
+                token: token
+            )
+            guard let data = Data(base64Encoded: response.audioBase64) else {
+                return .failed("미리듣기를 재생하지 못했어요.")
+            }
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("draft_preview_\(response.messageId)")
+                .appendingPathExtension(response.audioFormat.isEmpty ? "mp3" : response.audioFormat)
+            try data.write(to: url, options: .atomic)
+
+            // 재생이 끝날 때까지 기다린다.
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                previewPlayer.onFinish = { continuation.resume() }
+                if (try? previewPlayer.play(url: url)) == nil { continuation.resume() }
+            }
+            previewPlayer.onFinish = nil
+
+            if let playbackToken = response.previewPlaybackToken {
+                _ = try await api.confirmVoicePreviewPlayed(
+                    id: draft.id,
+                    playbackToken: playbackToken,
+                    token: token
+                )
+            } else if response.previewPlaybackConfirmed != true {
+                return .failed("미리듣기 확인에 실패했어요. 다시 들어 주세요.")
+            }
+            return .played(response.text)
+        } catch {
+            return .failed(mapVoiceError(error))
         }
     }
 

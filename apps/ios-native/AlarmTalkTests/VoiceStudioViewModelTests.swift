@@ -23,7 +23,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_localizedVoiceMessage_VOICE_CLONE_AUDIO_TOO_SHORT() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_CLONE_AUDIO_TOO_SHORT"),
-            "목소리를 만들 음성은 1분 이상이어야 해요."
+            "목소리를 만들 음성은 12초 이상이어야 해요."
         )
     }
 
@@ -151,7 +151,9 @@ final class VoiceStudioViewModelTests: XCTestCase {
 
     func test_profileLimits_constants() {
         XCTAssertEqual(VoiceProfileLimits.maxProfiles, 1)
-        XCTAssertEqual(VoiceProfileLimits.minDurationMs, 60_000)
+        // ⚠ 12초다. 안드로이드(`AlarmAudioStore.kt:33`)·서버(`voice-profile.ts:50`)와 같은 값.
+        // 60초는 `POST /voice/upload` 전용 상수(`voice-upload.ts:19`)지 클론 값이 아니다.
+        XCTAssertEqual(VoiceProfileLimits.minDurationMs, 12_000)
         XCTAssertEqual(VoiceProfileLimits.maxDurationMs, 120_000)
     }
 
@@ -230,8 +232,14 @@ final class VoiceStudioViewModelTests: XCTestCase {
 
         XCTAssertEqual(fields["relationshipLabel"], "")
         XCTAssertEqual(fields["listenerTitle"], "")
-        // isDraft 는 더 이상 보내지 않는다 — draft 승격 플로우가 제품에서 사라졌다.
-        XCTAssertNil(fields["isDraft"])
+        // ⚠ isDraft 를 **반드시** 보낸다. 예전 주석은 "draft 승격 플로우가 제품에서
+        // 사라졌다" 고 적었지만 사실이 아니다 — 서버는 `/voice/draft`, `preview-played`,
+        // `preview-text` 라우트를 그대로 갖고 있고(`voice-profile.ts:371,497,550`),
+        // 클론 등록도 `isDraft` 를 파싱한다(:1080). 안드로이드도 보낸다. 안 보내면
+        // 등록이 곧바로 정식 프로필이 되어 결과를 들어보기도 전에 페르소나가 잠긴다.
+        XCTAssertEqual(fields["isDraft"], "true")
+        // 사전렌더 언어. 미전송 시 서버가 'ko' 로 폴백해 비-한국어 사용자가 버킷을 못 받는다.
+        XCTAssertEqual(fields["language"], "ko")
         // noiseRemoval/noise_removal 필드는 제거됨(Android 도 더는 전송 안 함, 백엔드 무시).
         XCTAssertNil(fields["noiseRemoval"])
         XCTAssertNil(fields["noise_removal"])

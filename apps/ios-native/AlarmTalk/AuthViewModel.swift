@@ -1,5 +1,6 @@
 import AuthenticationServices
 import Foundation
+import OSLog
 
 /// `AuthViewModel` 이 의존하는 API 시그니처. 단위 테스트에서 mock 으로 주입하기 위해
 /// protocol 로 분리한다. `AlarmTalkAPI` 가 conform.
@@ -297,8 +298,7 @@ final class AuthViewModel: ObservableObject {
                let hint = appleUserIdHint, !hint.isEmpty {
                 nextSession.user.appleUserId = hint
             }
-            try KeychainStore.saveSession(nextSession)
-            session = nextSession
+            persistSession(nextSession)
             statusMessage = "로그인됐어요."
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
@@ -356,8 +356,7 @@ final class AuthViewModel: ObservableObject {
 
         do {
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
-            try KeychainStore.saveSession(nextSession)
-            session = nextSession
+            persistSession(nextSession)
             statusMessage = "로그인됐어요."
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
@@ -387,8 +386,7 @@ final class AuthViewModel: ObservableObject {
                 name: name,
                 verificationCode: verificationCode
             )
-            try KeychainStore.saveSession(nextSession)
-            session = nextSession
+            persistSession(nextSession)
             statusMessage = "환영해요! 계정이 만들어졌어요."
             lastNetworkError = nil
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
@@ -449,6 +447,31 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    /// 세션을 메모리에 반영하고 Keychain 에도 남긴다.
+    ///
+    /// ⚠ **Keychain 쓰기 실패로 세션 반영을 통째로 버리지 말 것.** 예전에는
+    /// `try KeychainStore.saveSession(...)` 이 던지면 그 아래 `session = nextSession`
+    /// 이 실행되지 않아 **로그인·토큰 갱신 결과가 메모리에서도 사라졌다.**
+    /// 특히 `refreshUser` 의 rolling refresh 가 이 경로라, 기기가 잠겨 있거나 Keychain 이
+    /// 일시적으로 실패하는 순간마다 새 토큰이 버려졌다 — 그 상태가 이어지면 최초 발급
+    /// 토큰이 90일 뒤 죽고 조용히 로그아웃된다(그게 rolling refresh 를 넣은 이유다).
+    ///
+    /// 저장에 실패하면 잃는 것은 **앱을 껐다 켰을 때의 자동 로그인**뿐이다. 그건
+    /// 다시 로그인하면 되지만, 갱신 자체를 버리면 되돌릴 방법이 없다.
+    private static let keychainLogger = Logger(
+        subsystem: "com.voicealarm.nativeapp.ios",
+        category: "AuthSessionPersistence"
+    )
+
+    private func persistSession(_ nextSession: AuthSession) {
+        do {
+            try KeychainStore.saveSession(nextSession)
+        } catch {
+            Self.keychainLogger.error("Failed to persist session to Keychain: \(String(describing: error), privacy: .public)")
+        }
+        session = nextSession
+    }
+
     /// 401 만 세션 만료로 처리하고, 그 외는 lastNetworkError 만 갱신 + 세션 유지.
     /// `URLError`(네트워크 단절/타임아웃), 5xx, 4xx 기타 모두 세션 보존.
     func refreshUser() async {
@@ -467,8 +490,7 @@ final class AuthViewModel: ObservableObject {
             // 알람이 사라진다. 서버가 재발급에 실패하면 token 키가 빠져 오므로 그때는 유지.
             let nextToken = rolledToken?.nilIfBlank ?? token
             let nextSession = AuthSession(token: nextToken, user: merged)
-            try KeychainStore.saveSession(nextSession)
-            session = nextSession
+            persistSession(nextSession)
             // 탈퇴 유예 상태 반영 — pending_deletion 이면 RootView 가 복구 화면으로 게이팅.
             // Android `MainViewModel.checkAccountStatus()` 와 동등.
             pendingDeletion = merged.isPendingDeletion

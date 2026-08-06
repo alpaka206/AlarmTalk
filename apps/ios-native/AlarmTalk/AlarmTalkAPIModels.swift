@@ -475,6 +475,9 @@ struct TtsGenerateRequest: Encodable {
     var targetUserId: String?
     /// 공유 음성 viewer 가 자신을 부를 호칭.
     var listenerTitle: String?
+    /// 등록 확인 스텝의 미리듣기 합성인가. 서버가 이때만 `preview_playback_token` 을
+    /// 함께 내려주고, 그 토큰을 `preview-played` 로 돌려줘야 초안 승격이 허용된다.
+    var draftPreview: Bool?
 
     init(
         voiceProfileId: String,
@@ -492,7 +495,8 @@ struct TtsGenerateRequest: Encodable {
         fortuneBirthDate: String? = nil,
         fortuneBirthTime: String? = nil,
         listenerTitle: String? = nil,
-        targetUserId: String? = nil
+        targetUserId: String? = nil,
+        draftPreview: Bool? = nil
     ) {
         self.voiceProfileId = voiceProfileId
         self.text = text
@@ -510,6 +514,7 @@ struct TtsGenerateRequest: Encodable {
         self.fortuneBirthTime = fortuneBirthTime
         self.listenerTitle = listenerTitle
         self.targetUserId = targetUserId
+        self.draftPreview = draftPreview
     }
 }
 
@@ -527,6 +532,11 @@ struct TtsGenerateResponse: Decodable, Equatable {
     /// 랜덤 프롬프트가 사용된 경우, 백엔드가 선택한 실제 컨텍스트(다양화/감사 용).
     /// Android `TtsApi.kt:39`.
     var randomContext: String?
+    /// 초안 미리듣기 합성일 때만 온다. 재생을 **끝까지** 마친 뒤 `preview-played` 로
+    /// 돌려주면 서버가 청취를 기록하고 승격이 열린다.
+    var previewPlaybackToken: String?
+    /// 서버가 이미 청취를 기록해 둔 경우(재합성 등) `true`.
+    var previewPlaybackConfirmed: Bool?
 }
 
 extension TtsGenerateResponse {

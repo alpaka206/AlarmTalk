@@ -198,6 +198,7 @@
 		F07FB40F608D6690144075E7 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98CCA14FD6E4C634ECED32A9 /* RootView.swift */; };
 		F4592AC12059D8F4652C2BD7 /* VoiceShareAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD88376E4686A1C79C01C265 /* VoiceShareAccessTests.swift */; };
 		F4ADF93D76B2C3B51808668A /* PreviewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB37514CB12D62CC34E1E0F3 /* PreviewSupport.swift */; };
+		FA829EC15BA5EEA61B8977DF /* VoicePreviewConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F34DCC0A471726BA780305A8 /* VoicePreviewConfirmView.swift */; };
 		FA9B722109464AA4DE0FBE8F /* license_mit.txt in Resources */ = {isa = PBXBuildFile; fileRef = 5959914AF1770BDECFF5C1F6 /* license_mit.txt */; };
 		FDE7F606F313F39BE459D19D /* AccessSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE78632AE30E18FFA63B74D /* AccessSnapshotStore.swift */; };
 		FDF7FCD6E8BA38D1DCD2F161 /* AlarmsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7EBDD70C5FB802C400559B /* AlarmsListView.swift */; };
@@ -427,6 +428,7 @@
 		F2BD54D0D21050EB9BBA9364 /* AlarmTimeCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTimeCalculator.swift; sourceTree = "<group>"; };
 		F3418B6C866BD7A4BAF69FB1 /* OssLicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OssLicensesView.swift; sourceTree = "<group>"; };
 		F346F83B654542F502B5CBE1 /* AudioCacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheStore.swift; sourceTree = "<group>"; };
+		F34DCC0A471726BA780305A8 /* VoicePreviewConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePreviewConfirmView.swift; sourceTree = "<group>"; };
 		F447DE78A51BEA7ED75F5DA3 /* voice_greeting_soeun_en.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_soeun_en.mp3; sourceTree = "<group>"; };
 		F51D645677265F4903D07EFE /* LocalHolidayCalendarLunarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHolidayCalendarLunarTests.swift; sourceTree = "<group>"; };
 		F53865164F0DA5BE67D28848 /* ReceivedAlarmBadgeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedAlarmBadgeStore.swift; sourceTree = "<group>"; };
@@ -771,6 +773,7 @@
 				A2EDFA6B7FF78DB736258523 /* VoiceCatalogRow.swift */,
 				F702C79A431AE0668621A1F1 /* VoiceCloneUploadFlow.swift */,
 				0FB97FB9ECF9DE47DBCAEE83 /* VoiceImportContentTypes.swift */,
+				F34DCC0A471726BA780305A8 /* VoicePreviewConfirmView.swift */,
 				381C934DB89DBC2881DBE3D9 /* VoiceProfileManagementComponents.swift */,
 				39D0590DA9571CFBFE194ACF /* VoiceProfileManagementPanel.swift */,
 				8E25753B97B6CFEAA8E709FB /* VoiceSegmentPreviewPlayer.swift */,
@@ -1137,6 +1140,7 @@
 				4E63E387440150425DC0B71C /* VoiceImportContentTypes.swift in Sources */,
 				6BEF7CCCB8DFADB90171CF04 /* VoiceMessagePanel.swift in Sources */,
 				708D3503AD539D289233A772 /* VoicePlayModePicker.swift in Sources */,
+				FA829EC15BA5EEA61B8977DF /* VoicePreviewConfirmView.swift in Sources */,
 				899458BC01E2D85B412765FD /* VoiceProfileManagementComponents.swift in Sources */,
 				E49463B02FB2F50F117AF44C /* VoiceProfileManagementPanel.swift in Sources */,
 				E9B7002071739EC7C12B0CFE /* VoiceRecorder.swift in Sources */,

@@ -717,8 +717,13 @@ struct VoiceCloneUploadFlow: View {
         // 실패 안내를 띄운 채 목록으로 넘어가 방금 녹음한 음성이 사라졌다.
         // 또 `guard !isBusy` 로 빠져나간 회차는 statusMessage 를 건드리지 않아
         // 직전 성공 문구가 그대로 남는다 — 문자열로는 이번 시도의 결과를 알 수 없다.
-        if created != nil {
-            route = .management
+        if let created {
+            // ⚠ **목록으로 곧바로 돌아가지 말 것.** 서버는 클론을 초안(`is_draft=true`)으로
+            // 만들고 승격을 기다린다 — 여기서 목록으로 보내면 사용자는 자기 목소리를
+            // 한 번도 못 들어본 채 이번 달 등록 횟수를 쓰고, 초안은 승격되지 않아
+            // 알람에 쓸 수도 없다.
+            voice.pendingDraft = created
+            route = .preview(created.id)
         }
     }
 
