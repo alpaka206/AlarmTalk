@@ -628,7 +628,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         }
         let serverError = try? decoder.decode(ServerError.self, from: data)
         if http.statusCode == 403, serverError?.errorCode == Self.consentRequiredErrorCode {
-            Self.handleConsentRequired()
+            Self.handleConsentRequired(consent: serverError?.consent)
         }
         throw APIError.server(
             status: http.statusCode,
@@ -690,7 +690,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         }
         let serverError = try? decoder.decode(ServerError.self, from: responseData)
         if http.statusCode == 403, serverError?.errorCode == Self.consentRequiredErrorCode {
-            Self.handleConsentRequired()
+            Self.handleConsentRequired(consent: serverError?.consent)
         }
         throw APIError.server(
             status: http.statusCode,
@@ -732,6 +732,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     static let consentRequiredErrorCode = "CONSENT_REQUIRED"
 
+    /// `consentRequiredNotification` 의 userInfo 키 — 서버가 지목한 민감 동의 유형.
+    static let consentRequiredTypeKey = "consentType"
+
     /// 디바운스용 상태. 동시 호출이 있을 수 있어 lock 으로 보호한다.
     private static let unauthorizedLock = NSLock()
     private nonisolated(unsafe) static var lastUnauthorizedAt: Date?
@@ -751,7 +754,12 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// 403 + `CONSENT_REQUIRED` 을 받으면 한 번만 동의 필요 알림을 쏜다.
     /// `handleUnauthorized` 와 동일하게 연발(동시 요청)을 디바운스해 1회로 묶는다.
-    private static func handleConsentRequired() {
+    ///
+    /// ⚠ **서버가 지목한 `consent` 를 반드시 실어 보낸다.** 이 값이 없으면 수신측이
+    /// 가입 게이트를 여는데, 민감 동의(voice_biometric/overseas_transfer)를 이미 '거절'로
+    /// 답한 사람은 `collect` 가 비어 있어 **항목이 하나도 없는 화면**을 만난다 —
+    /// 체크할 게 없으니 통과 판정은 참이 되고, 제출할 것도 없어 그 자리에서 막힌다.
+    private static func handleConsentRequired(consent: String?) {
         unauthorizedLock.lock()
         let now = Date()
         if let last = lastConsentRequiredAt, now.timeIntervalSince(last) < 3 {
@@ -760,7 +768,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
         }
         lastConsentRequiredAt = now
         unauthorizedLock.unlock()
-        NotificationCenter.default.post(name: consentRequiredNotification, object: nil)
+        NotificationCenter.default.post(
+            name: consentRequiredNotification,
+            object: nil,
+            userInfo: consent.map { [Self.consentRequiredTypeKey: $0] }
+        )
     }
 
     private static func defaultBaseURL() -> URL {
@@ -829,6 +841,9 @@ struct MultipartFile {
 struct ServerError: Decodable {
     var error: String?
     var errorCode: String?
+    /// 403 CONSENT_REQUIRED 일 때 서버가 **지목한** 민감 동의 유형
+    /// (`voice_biometric` / `overseas_transfer`). 일반 게이트 403 에는 없다.
+    var consent: String?
 }
 
 enum APIError: LocalizedError {

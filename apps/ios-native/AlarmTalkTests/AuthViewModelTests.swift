@@ -669,6 +669,81 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertTrue(vm.showConsentScreen, "그래도 화면은 떠야 재수집이 일어난다")
     }
 
+    // MARK: - 민감 동의 (목소리/TTS 라우트 403)
+
+    /// ⚠ **가입 때 voice_biometric 을 거절한 사람의 유일한 회복 경로다.**
+    /// 서버는 이미 '거절' 로 답한 유형을 `collect` 에 담지 않으므로, 가입 게이트를 열면
+    /// 항목이 하나도 없는 화면이 떠서 동의할 방법이 없다 → 같은 403 무한 반복.
+    func test_consentRequiredWithSensitiveType_opensSheetNotSignupGate() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "sensitive1-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        NotificationCenter.default.post(
+            name: AlarmTalkAPI.consentRequiredNotification,
+            object: nil,
+            userInfo: [AlarmTalkAPI.consentRequiredTypeKey: "voice_biometric"]
+        )
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertFalse(vm.needsConsent, "민감 동의로 가입 게이트를 열면 안 된다")
+        XCTAssertEqual(vm.pendingSensitiveConsent?.types, ["voice_biometric"])
+        XCTAssertTrue(vm.consentSensitiveMissing.contains("voice_biometric"))
+    }
+
+    /// 유형을 지목하지 않은 일반 게이트 403 은 가입 화면을 연다. 이때 `collect` 가 비어
+    /// 있으면 **항목 없는 화면이 '다 체크됨' 으로 판정돼** 보지도 않은 동의가 기록된다 —
+    /// 가입 필수 전체로 채운다.
+    func test_consentRequiredWithoutType_fillsCollectFallback() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "sensitive2-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertTrue(vm.needsConsent)
+        XCTAssertEqual(vm.consentCollect, AuthViewModel.signupRequiredConsentTypes)
+        XCTAssertNil(vm.pendingSensitiveConsent)
+    }
+
+    /// 시트가 물어본 유형만 기록하고, 성공하면 목록에서 지운다 —
+    /// 안 지우면 목소리 등록 화면이 이미 받은 동의를 또 묻는다.
+    func test_submitSensitiveConsents_recordsAndClears() async {
+        let api = MockAuthAPI()
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "sensitive3-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+        NotificationCenter.default.post(
+            name: AlarmTalkAPI.consentRequiredNotification,
+            object: nil,
+            userInfo: [AlarmTalkAPI.consentRequiredTypeKey: "voice_biometric"]
+        )
+        await Task.yield()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        let ok = await vm.submitSensitiveConsents(types: ["voice_biometric"])
+
+        XCTAssertTrue(ok)
+        XCTAssertEqual(api.lastRecordConsentsRequest?.consents.map(\.type), ["voice_biometric"])
+        XCTAssertEqual(api.lastRecordConsentsRequest?.consents.first?.agreed, true)
+        XCTAssertFalse(vm.consentSensitiveMissing.contains("voice_biometric"))
+        XCTAssertNil(vm.pendingSensitiveConsent)
+    }
+
     /// 제출에 성공하면 화면이 닫혀야 한다 — collect 를 비우지 않으면 계속 떠 있다.
     func test_submitConsents_closesScreenOnSuccess() async {
         let api = MockAuthAPI()

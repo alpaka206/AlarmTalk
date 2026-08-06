@@ -48,4 +48,10 @@ enum AlarmTalkTheme {
     // Signal
     static let error = Color.dynamicScheme(light: AlarmTalkPalette.light.error, dark: AlarmTalkPalette.dark.error)
     static let outline = Color.dynamicScheme(light: AlarmTalkPalette.light.outline, dark: AlarmTalkPalette.dark.outline)
+
+    /// 오버레이 스크림. 안드로이드 `WakerScrimColor`(0xBD05080E)와 같은 값 —
+    /// 라이트/다크 공통이다(딥네이비 위에 얹는 어두운 막이라 모드별로 갈리지 않는다).
+    /// 모달을 덮을 때 `Color.black.opacity(...)` 를 새로 박지 말고 이걸 쓴다.
+    static let scrim = Color(red: 0x05 / 255, green: 0x08 / 255, blue: 0x0E / 255)
+        .opacity(0xBD / 255)
 }

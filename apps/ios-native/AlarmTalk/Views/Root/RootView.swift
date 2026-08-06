@@ -73,6 +73,27 @@ struct RootView: View {
         .task(id: auth.session?.user.id) {
             refreshOnboardingCompletion()
         }
+        // 민감 동의 시트는 **차단 게이트가 없을 때만** 띄운다 — 업데이트 강제·탈퇴 유예·
+        // 동의 게이트 위에 겹치면, 사용자는 못 쓰는 화면 위에서 동의부터 하게 된다.
+        .overlay {
+            if let request = auth.pendingSensitiveConsent, !blockingGateActive {
+                ZStack {
+                    AlarmTalkTheme.scrim.ignoresSafeArea()
+                    VoiceConsentSheet(
+                        busy: auth.isBusy,
+                        types: request.types,
+                        registeringVoice: request.registeringVoice,
+                        onAgree: { Task { await auth.submitSensitiveConsents(types: request.types) } },
+                        onDismiss: { auth.pendingSensitiveConsent = nil }
+                    )
+                }
+            }
+        }
+    }
+
+    /// 앱을 못 쓰게 막고 있는 게이트가 떠 있는가.
+    private var blockingGateActive: Bool {
+        versionGate.updateRequired || !auth.isAuthenticated || auth.pendingDeletion || auth.showConsentScreen
     }
 
     private func refreshOnboardingCompletion() {

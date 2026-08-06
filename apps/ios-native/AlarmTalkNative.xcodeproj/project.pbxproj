@@ -129,6 +129,7 @@
 		9B207F7901C5B7F4124ABDCC /* RemoteAlarmPushSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBFD31524C3C55B15E0967A /* RemoteAlarmPushSync.swift */; };
 		9E3D16B1AA2460CB5F94405E /* AlarmKitViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEBAA873DFD96871D86C066E /* AlarmKitViewModel.swift */; };
 		A031DEE871E1440456148FCA /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 26FEEB9D5F4B19556BAAD9C6 /* Localizable.xcstrings */; };
+		A734B2129FFB376AD151FF94 /* VoiceConsentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FED5C5FC2F31030D968F1A3B /* VoiceConsentSheet.swift */; };
 		A7954BAC173CE395F24B39D9 /* RemoteAlarmPullSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16516A5700E953E5C1170E41 /* RemoteAlarmPullSyncTests.swift */; };
 		A98BAC75D5B210C60A0A5F69 /* DefaultVoicePreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */; };
 		AA4726217F43F082D2ADD8E7 /* LoginPermissionGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9FAAF577180183F039752F /* LoginPermissionGateView.swift */; };
@@ -393,6 +394,7 @@
 		FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultVoicePreferenceStore.swift; sourceTree = "<group>"; };
 		FA51DB6D40069D4B62BFF572 /* SubscriptionProduct.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionProduct.swift; sourceTree = "<group>"; };
 		FEBAA873DFD96871D86C066E /* AlarmKitViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmKitViewModel.swift; sourceTree = "<group>"; };
+		FED5C5FC2F31030D968F1A3B /* VoiceConsentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceConsentSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -434,6 +436,7 @@
 				F664DD2926368C5CC795A839 /* OnboardingView.swift */,
 				757B82D057BE9B65E819C252 /* PasswordResetView.swift */,
 				ACD1A5C25E56DD57B17BE473 /* UpdateRequiredView.swift */,
+				FED5C5FC2F31030D968F1A3B /* VoiceConsentSheet.swift */,
 				D27AF1639158440548C96717 /* VoiceSetupView.swift */,
 			);
 			path = Auth;
@@ -1024,6 +1027,7 @@
 				8FCE05C6FF63445465A31229 /* UserFacingError.swift in Sources */,
 				BC5F3203F44ECB6076935D82 /* VibrationPatternPicker.swift in Sources */,
 				923B167E7FF2406C9C789716 /* VoiceCloneUploadFlow.swift in Sources */,
+				A734B2129FFB376AD151FF94 /* VoiceConsentSheet.swift in Sources */,
 				4E63E387440150425DC0B71C /* VoiceImportContentTypes.swift in Sources */,
 				6BEF7CCCB8DFADB90171CF04 /* VoiceMessagePanel.swift in Sources */,
 				708D3503AD539D289233A772 /* VoicePlayModePicker.swift in Sources */,

@@ -92,6 +92,24 @@ final class AuthViewModel: ObservableObject {
 
     /// status 응답을 못 받았을 때의 폴백(가입 필수 4종).
     static let signupRequiredConsentTypes = ["age14", "terms", "privacy", "overseas_transfer"]
+
+    /// 목소리/TTS 라우트가 그 자리에서 요구하는 민감 동의. 가입 게이트와 별개다.
+    static let sensitiveConsentTypes: Set<String> = ["voice_biometric", "overseas_transfer"]
+
+    /// 목소리를 만들려는 순간에 받아야 하는 민감 동의 요청.
+    struct SensitiveConsentRequest: Identifiable, Equatable {
+        let id = UUID()
+        /// 이번에 받을 유형. 서버가 지목한 것만 담는다 — 이미 유효한 동의를 다시 묻지 않는다.
+        var types: [String]
+        /// 동의 직후 목소리 등록이 이어지는가. **문맥은 '무엇을 묻는가' 가 아니라 '동의 직후
+        /// 무엇을 하는가' 로 정한다** — 묻는 항목으로 문맥을 파생하면, 국외 이전만 빠진
+        /// 상태에서 TTS 문구가 떠서 사용자는 '문구 생성 동의' 인 줄 알고 눌렀는데 실제로는
+        /// 녹음이 올라가고 클론이 만들어진다.
+        var registeringVoice: Bool = false
+    }
+
+    /// 떠 있어야 하는 민감 동의 시트. nil 이면 없음.
+    @Published var pendingSensitiveConsent: SensitiveConsentRequest?
     /// 비밀번호 재설정 코드를 발송한 이메일. 비어 있지 않으면 UI(PasswordResetView)가
     /// "코드 + 새 비밀번호" 입력 단계를 노출한다. Android `MainViewModel.passwordResetCodeSentTo`.
     @Published var passwordResetCodeSentTo: String?
@@ -167,9 +185,10 @@ final class AuthViewModel: ObservableObject {
             forName: AlarmTalkAPI.consentRequiredNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] note in
+            let consent = note.userInfo?[AlarmTalkAPI.consentRequiredTypeKey] as? String
             Task { @MainActor [weak self] in
-                self?.handleConsentRequired()
+                self?.handleConsentRequired(consent: consent)
             }
         }
     }
@@ -468,13 +487,33 @@ final class AuthViewModel: ObservableObject {
         signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
     }
 
-    /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받았을 때 — 동의 화면으로 게이팅.
-    /// 세션은 유지(로그아웃하지 않음). 민감/국외이전 동의만 빠진 경우 일반 동의 상태
-    /// 재조회가 게이트를 다시 닫을 수 있으므로 여기서는 화면만 연다.
-    /// 로그인 상태가 아니면(이미 로그아웃) 무시한다.
-    private func handleConsentRequired() {
+    /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받았을 때. 세션은 유지한다(로그아웃하지 않음).
+    ///
+    /// 서버가 **민감 동의를 지목했으면**(`consent`) 가입 게이트가 아니라 그 동의만 받는
+    /// 시트를 연다. 여기서 안내만 하고 끝내면, 가입 때 그 동의를 거절한 사람은 동의할
+    /// 방법이 없어 같은 403 을 무한 반복한다 — `collect` 에도 안 담긴다(이미 '거절'로
+    /// 답했으므로 서버는 다시 묻지 않는다).
+    private func handleConsentRequired(consent: String?) {
         guard session != nil else { return }
+        if let consent, Self.sensitiveConsentTypes.contains(consent) {
+            if !consentSensitiveMissing.contains(consent) {
+                consentSensitiveMissing.append(consent)
+            }
+            if pendingSensitiveConsent == nil {
+                pendingSensitiveConsent = SensitiveConsentRequest(types: [consent])
+            }
+            return
+        }
         needsConsent = true
+        // ⚠ **무엇을 받아야 하는지 모르는 채로 게이트를 열지 않는다.** 상태 조회가 늦거나
+        // 실패한 상태에서 이 403(일반 게이트, consent 필드 없음)이 먼저 오면 collect 가 비어
+        // 화면에 항목이 하나도 안 그려지는데, 그 화면은 '필수 다 체크됨' 으로 판정돼 버튼이
+        // 켜진다 → 사용자가 보지도 않은 동의가 기록된다. 채울 목록은 **가입 게이트가 요구하는
+        // 전부**여야 한다(이 403 을 낸 미들웨어는 일반 3종만 보지만, 3종만 받고 닫으면
+        // 국외 이전이 안 기록된 채 통과된다).
+        if consentCollect.isEmpty {
+            consentCollect = Self.signupRequiredConsentTypes
+        }
     }
 
     /// Apple 자격 증명이 외부에서 revoke 되었을 때 — 강제 로그아웃.
@@ -784,6 +823,43 @@ final class AuthViewModel: ObservableObject {
         } catch {
             if handleConsentVersionMismatch(error) { return }
             statusMessage = userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요")
+        }
+    }
+
+    /// 민감 동의 시트 제출. 시트가 물어본 유형만 `agreed: true` 로 기록한다.
+    ///
+    /// 성공하면 `consentSensitiveMissing` 에서 그 유형을 지운다 — 안 지우면 목소리 등록
+    /// 화면이 이미 받은 동의를 또 묻는다.
+    @discardableResult
+    func submitSensitiveConsents(types: [String]) async -> Bool {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return false
+        }
+        let ownerUserID = session?.user.id
+        let recordable = types.filter { Self.knownConsentTypes.contains($0) }
+        guard !recordable.isEmpty else {
+            statusMessage = "앱을 업데이트해야 동의를 진행할 수 있어요."
+            return false
+        }
+        guard !isBusy else { return false }
+        isBusy = true
+        defer { isBusy = false }
+
+        let version = Self.currentPolicyVersion
+        let request = RecordConsentsRequest(
+            consents: recordable.map { ConsentItemRequest(type: $0, agreed: true, version: version) }
+        )
+        do {
+            _ = try await api.recordConsents(request, token: token)
+            guard session?.user.id == ownerUserID else { return false }
+            consentSensitiveMissing.removeAll { recordable.contains($0) }
+            pendingSensitiveConsent = nil
+            return true
+        } catch {
+            if handleConsentVersionMismatch(error) { return false }
+            statusMessage = userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요")
+            return false
         }
     }
 
