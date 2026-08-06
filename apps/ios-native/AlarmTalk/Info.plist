@@ -31,7 +31,7 @@
   <key>NSSupportsLiveActivities</key>
   <true/>
   <key>VOICE_ALARM_API_BASE_URL</key>
-  <string>https://api.alarm-talk.com/api</string>
+  <string>$(VOICE_ALARM_API_BASE_URL)</string>
   <key>UIApplicationSceneManifest</key>
   <dict>
     <key>UIApplicationSupportsMultipleScenes</key>

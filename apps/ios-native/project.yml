@@ -25,10 +25,15 @@ settings:
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: "DEBUG"
       ONLY_ACTIVE_ARCH: YES
       GCC_OPTIMIZATION_LEVEL: "0"
+      # 개발 빌드는 dev 백엔드를 본다. 안드로이드의 dev product flavor 와 같은 분리다
+      # (build.gradle.kts 의 alarmTalkDevApiBaseUrl). 예전에는 Info.plist 에 prod URL 이
+      # 박혀 있어서 **개발 중에 prod 를 때리고 있었다** — prod 에는 베타 테스터 실데이터가 있다.
+      VOICE_ALARM_API_BASE_URL: "https://api-dev.alarm-talk.com/api"
     Release:
       SWIFT_OPTIMIZATION_LEVEL: "-O"
       GCC_OPTIMIZATION_LEVEL: "s"
       ONLY_ACTIVE_ARCH: NO
+      VOICE_ALARM_API_BASE_URL: "https://api.alarm-talk.com/api"
 targets:
   AlarmTalk:
     type: application
