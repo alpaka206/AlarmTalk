@@ -13,7 +13,7 @@ import AlarmKit
 // Android `RemoteAlarmSyncScheduler` (WorkManager 15 분 주기 + initial run) 의
 // iOS 대응. `BGAppRefreshTask` 로 15 분 이상 지연된 백그라운드 실행을 시스템에 위임한다.
 //
-// 식별자 `com.voicealarm.nativeapp.ios.refresh` 는 다음 두 곳에 등록되어야 한다.
+// 식별자 `com.alarmtalk.app.refresh` 는 다음 두 곳에 등록되어야 한다.
 //   1. `AlarmTalk/Info.plist` 의 `BGTaskSchedulerPermittedIdentifiers` (Phase 1-B 확정)
 //   2. 본 파일의 `BackgroundSyncTask.taskIdentifier`
 //
@@ -25,7 +25,7 @@ import AlarmKit
 final class BackgroundSyncTask {
 
     /// Info.plist BGTaskSchedulerPermittedIdentifiers 와 정확히 일치해야 한다.
-    static let taskIdentifier = "com.voicealarm.nativeapp.ios.refresh"
+    static let taskIdentifier = "com.alarmtalk.app.refresh"
 
     /// Android WorkManager 의 15 분 주기와 동일.
     static let refreshInterval: TimeInterval = 15 * 60

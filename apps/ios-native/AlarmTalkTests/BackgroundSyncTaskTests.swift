@@ -16,7 +16,7 @@ final class BackgroundSyncTaskTests: XCTestCase {
         // Info.plist 에 등록된 식별자와 일치해야만 BGTaskScheduler 에서 register 가 동작.
         XCTAssertEqual(
             BackgroundSyncTask.taskIdentifier,
-            "com.voicealarm.nativeapp.ios.refresh"
+            "com.alarmtalk.app.refresh"
         )
     }
 

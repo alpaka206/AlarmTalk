@@ -479,7 +479,7 @@ final class AuthViewModel: ObservableObject {
     /// 저장에 실패하면 잃는 것은 **앱을 껐다 켰을 때의 자동 로그인**뿐이다. 그건
     /// 다시 로그인하면 되지만, 갱신 자체를 버리면 되돌릴 방법이 없다.
     private static let keychainLogger = Logger(
-        subsystem: "com.voicealarm.nativeapp.ios",
+        subsystem: "com.alarmtalk.app",
         category: "AuthSessionPersistence"
     )
 

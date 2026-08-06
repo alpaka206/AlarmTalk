@@ -58,7 +58,7 @@
   </array>
   <key>BGTaskSchedulerPermittedIdentifiers</key>
   <array>
-    <string>com.voicealarm.nativeapp.ios.refresh</string>
+    <string>com.alarmtalk.app.refresh</string>
   </array>
   <key>UIAppFonts</key>
   <array>

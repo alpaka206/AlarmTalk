@@ -7,7 +7,7 @@ import Foundation
 /// `containerURL` 은 nil 을 반환하므로 호출부는 fallback 을 보장해야 한다.
 public enum AppGroup {
     /// App Group 식별자. entitlements 와 동일하게 유지할 것.
-    public static let identifier = "group.com.voicealarm.nativeapp.ios.shared"
+    public static let identifier = "group.com.alarmtalk.app.shared"
 
     /// Cross-process JSON/캐시를 저장할 컨테이너 URL.
     public static var containerURL: URL? {

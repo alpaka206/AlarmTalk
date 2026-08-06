@@ -12,7 +12,7 @@ import AlarmKit
 
 @MainActor
 final class AlarmKitViewModel: ObservableObject {
-    private static let paidGateLogger = Logger(subsystem: "com.voicealarm.nativeapp.ios", category: "PaidVoiceGate")
+    private static let paidGateLogger = Logger(subsystem: "com.alarmtalk.app", category: "PaidVoiceGate")
 
     @Published var authorizationLabel = "확인 전"
     @Published private(set) var alarmAuthorized = false

@@ -1328,7 +1328,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alarmtalk.app;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ALARMTALK_APP";
 				TARGETED_DEVICE_FAMILY = 1;
@@ -1345,7 +1345,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alarmtalk.app.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AlarmTalk;
@@ -1424,7 +1424,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alarmtalk.app.uitests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = AlarmTalk;
@@ -1441,7 +1441,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alarmtalk.app.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AlarmTalk.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AlarmTalk";
@@ -1458,7 +1458,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alarmtalk.app.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AlarmTalk.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AlarmTalk";
@@ -1477,7 +1477,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alarmtalk.app.widget;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -1495,7 +1495,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alarmtalk.app.widget;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -1581,7 +1581,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alarmtalk.app;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ALARMTALK_APP";
 				TARGETED_DEVICE_FAMILY = 1;

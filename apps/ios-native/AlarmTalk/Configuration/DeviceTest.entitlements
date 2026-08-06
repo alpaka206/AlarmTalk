@@ -6,10 +6,11 @@
     실기기 **테스트 전용** entitlements.
 
     ⚠ 배포에 쓰지 말 것 — App Group 과 keychain 공유 그룹이 빠져 있다.
-    정식 번들 ID `com.voicealarm.nativeapp.ios` 와 App Group
-    `group.com.voicealarm.nativeapp.ios.shared` 는 **다른 팀이 선점**하고 있어
-    이 개발자 팀으로는 등록이 안 된다("cannot be registered … not available").
-    그래서 로컬 실기기 검증은 임시 번들 ID + 이 파일로 서명한다.
+
+    ⚠ **이게 필요했던 이유는 2026-08-06 에 사라졌다.** 예전 번들 ID
+    `com.voicealarm.nativeapp.ios` 를 다른 팀이 선점하고 있어 정식 값으로 서명이
+    안 됐던 것이고, 지금 번들 ID(`com.alarmtalk.app`)는 우리 것이다.
+    이제는 App Group 없는 상태를 **일부러** 재현할 때만 쓴다.
 
     빠진 것의 영향:
       - App Group → `AppGroup.containerURL` 이 nil 이라 오디오 캐시가 앱 자체

@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    private static let service = "com.voicealarm.nativeapp.ios.auth"
+    private static let service = "com.alarmtalk.app.auth"
     private static let sessionAccount = "session"
 
     static func saveSession(_ session: AuthSession) throws {

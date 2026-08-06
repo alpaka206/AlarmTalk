@@ -448,7 +448,10 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(draft.label, "")
         XCTAssertEqual(draft.hour, 6)
         XCTAssertEqual(draft.minute, 0)
-        XCTAssertEqual(draft.playMode, .alarmOnly)
+        // ⚠ 기본값은 **목소리**다(2026-08-06). 우리는 목소리 알람 앱이라 새 알람은
+        // 목소리로 연다 — 무료 등급 잠금만 호출부(`defaultPlayModeForPlan`)가 알람으로
+        // 되돌린다. 이걸 `.alarmOnly` 로 되돌리는 변경은 회귀다.
+        XCTAssertEqual(draft.playMode, .voiceOnly)
         XCTAssertTrue(draft.snoozeEnabled)
         XCTAssertEqual(draft.snoozeMinutes, 5)
         XCTAssertEqual(draft.snoozeRepeatLimit, .three)

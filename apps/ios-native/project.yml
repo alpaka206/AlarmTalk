@@ -1,6 +1,6 @@
 name: AlarmTalkNative
 options:
-  bundleIdPrefix: com.voicealarm.nativeapp.ios
+  bundleIdPrefix: com.alarmtalk.app
   deploymentTarget:
     iOS: "26.0"
   # 소스 문자열은 한국어. SwiftUI `Text("한국어")` 리터럴이 String Catalog 의 키로 쓰이고,
@@ -70,7 +70,7 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: AlarmTalk/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios
+        PRODUCT_BUNDLE_IDENTIFIER: com.alarmtalk.app
         CODE_SIGN_ENTITLEMENTS: AlarmTalk/AlarmTalk.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
@@ -103,7 +103,7 @@ targets:
       - Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.widget
+        PRODUCT_BUNDLE_IDENTIFIER: com.alarmtalk.app.widget
         INFOPLIST_FILE: AlarmTalkWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: AlarmTalkWidget/AlarmTalkWidget.entitlements
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -118,7 +118,7 @@ targets:
       - target: AlarmTalk
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.alarmtalk.app.uitests
         TEST_TARGET_NAME: AlarmTalk
         # 실기기에서 돌리려면 테스트 번들도 서명해야 하고, 서명에는 Info.plist 가 필요하다.
         GENERATE_INFOPLIST_FILE: YES
@@ -131,7 +131,7 @@ targets:
       - target: AlarmTalk
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.alarmtalk.app.tests
         GENERATE_INFOPLIST_FILE: YES
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AlarmTalk.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AlarmTalk"

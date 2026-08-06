@@ -59,7 +59,7 @@ https://api.alarm-talk.com/api
 ## Backend Requirements
 
 - Apply migration `35_apple-login-users`.
-- Set `APPLE_CLIENT_ID` to the iOS bundle ID, for example `com.voicealarm.nativeapp.ios`.
+- Set `APPLE_CLIENT_ID` to the iOS bundle ID, for example `com.alarmtalk.app`.
 - Deploy the backend before testing Apple login from the iOS app.
 
 The app exchanges the Apple identity token at `POST /api/auth/apple`, stores the returned app JWT in Keychain, and uses that app JWT for all backend calls.
