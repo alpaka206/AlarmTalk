@@ -65,10 +65,20 @@ final class AuthViewModel: ObservableObject {
     @Published private(set) var consentCollect: [String] = []
     /// `consentCollect` 중 체크 없이 통과하는 유형(선택 동의).
     @Published private(set) var consentOptional: [String] = []
+    /// `consentCollect` 중 이미 동의해 둔 유형 — 화면의 초기 체크 상태.
+    @Published private(set) var consentPrechecked: [String] = []
     /// 목소리 등록 화면에서 인라인으로 다시 물어야 하는 민감 동의.
     @Published private(set) var consentSensitiveMissing: [String] = []
     /// 개정에 따른 재동의인지(이미 동의한 적 있는 계정). 문구가 달라야 한다.
     @Published private(set) var consentIsReconsent = false
+    /// **이 계정의 동의 상태 응답을 실제로 받았는가.** 성공·실패 모두 true 다 —
+    /// 못 물어본 것이 기능을 막을 이유는 아니다(네트워크 실패로 영영 false 면 영영 잠긴다).
+    ///
+    /// ⚠ 이게 없으면 응답 전 `consentSensitiveMissing` 이 빈 배열이라, 가입 때 생체정보를
+    /// 거절한 사람에게 **등록 폼의 동의 체크박스가 안 그려진 채** 제출이 열려 403 을 맞는다
+    /// (CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」와 같은 형태의 버그).
+    /// 계정별 신호이므로 세션 정리에서 되돌린다.
+    @Published private(set) var consentStatusChecked = false
 
     /// 동의 화면을 띄워야 하는가.
     ///
@@ -704,15 +714,19 @@ final class AuthViewModel: ObservableObject {
             // **보여주지 않은 동의를 기록하는 것**을 막는다(그 유형이 필수면 화면이 CTA 를 막는다).
             consentCollect = status.collect.filter { Self.knownConsentTypes.contains($0) }
             consentOptional = status.optional
+            consentPrechecked = status.prechecked
             consentSensitiveMissing = status.sensitiveMissing
             consentIsReconsent = status.hasPriorConsent
             // 서버가 게시 중인 문서 버전. 409 를 만났을 때 "업데이트하면 풀리는가" 판단에 쓴다.
             serverPolicyVersionHint = status.policyVersion
+            consentStatusChecked = true
         } catch {
             // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
             needsConsent = false
             consentNeedsCollection = false
             consentCollect = []
+            // 실패해도 true — 못 물어본 것이 등록을 막을 이유는 아니다.
+            consentStatusChecked = true
         }
     }
 
@@ -815,6 +829,7 @@ final class AuthViewModel: ObservableObject {
             // 화면이 닫히지 않는다.
             consentCollect = []
             consentOptional = []
+            consentPrechecked = []
             consentNeedsCollection = false
             // 방금 **동의로** 기록한 민감 유형은 서버 상태와 맞춘다 — 안 지우면 목소리 등록
             // 화면이 이미 받은 동의를 또 묻는다. 거절한 유형은 그대로 남아 그때 다시 묻는다.
@@ -926,8 +941,10 @@ final class AuthViewModel: ObservableObject {
         consentNeedsCollection = false
         consentCollect = []
         consentOptional = []
+        consentPrechecked = []
         consentSensitiveMissing = []
         consentIsReconsent = false
+        consentStatusChecked = false
         // 사용자 범위 상태 초기화 — 계정 전환 시 옛 사용자 값이 새지 않게 한다.
         // Android `clearUserScopedRemoteState` 와 동등.
         passwordResetCodeSentTo = nil

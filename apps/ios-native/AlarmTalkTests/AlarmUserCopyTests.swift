@@ -56,39 +56,44 @@ final class AlarmUserCopyTests: XCTestCase {
     }
 }
 
-/// 목소리 등록 폼의 인라인 확인·동의 게이트.
+/// 목소리 등록 폼의 동의 게이트.
 ///
-/// 안드로이드는 이걸 **전용 모달이 아니라 폼 안의 체크박스**로 둔다 — 등록 흐름을 끊지
-/// 않고, 무엇에 동의하는지가 화면에 그대로 보인다. 시트는 폼 밖 경로를 위한 폴백이다.
+/// ⚠ **권리 보증 확인(attestation)은 여기 없다 — 의도된 변경이다.**
+/// 그 내용(본인/권한 있는 목소리만, 무단 등록 책임은 이용자)은 **약관 제7조**가 이미 담고
+/// 있고 약관은 가입 필수 동의다. 등록마다 체크박스로 다시 받는 것은 계약상 중복이었다.
+/// 화면에는 비차단 안내로 남아 업로드 시점 고지만 유지한다.
+/// 되돌리려면 약관 제7조를 먼저 확인할 것 — 그 조항이 사라졌다면 체크박스가 다시 필요하다.
 final class VoiceRegistrationConsentGateTests: XCTestCase {
 
-    /// 이 녹음에 대한 확인은 **생체정보 동의 여부와 무관하게 매번** 받는다.
-    /// 두 체크를 한 조건으로 합치면 이미 동의한 사람에게는 확인이 사라진다.
-    func test_attestationRequiredEvenWhenBiometricAlreadyAgreed() {
+    /// 동의 상태 응답 **전에는 등록을 열지 않는다.**
+    /// 그 창에서는 `needsBiometric` 이 항상 false 라, 가입 때 거절한 사람에게 체크박스가
+    /// 안 그려진 채 제출이 열려 403 을 맞는다(CLAUDE.md 「확인이 끝난 뒤에만 판단한다」).
+    func test_blockedUntilConsentStatusArrives() {
         XCTAssertFalse(
             VoiceCloneUploadFlow.registrationConsentSatisfied(
-                attested: false, needsBiometric: false, biometricAgreed: false
+                statusChecked: false, needsBiometric: false, biometricAgreed: false
             ),
-            "가입 때 동의한 사람도 이 녹음 확인은 받아야 한다"
+            "응답 전에는 열면 안 된다"
         )
         XCTAssertTrue(
             VoiceCloneUploadFlow.registrationConsentSatisfied(
-                attested: true, needsBiometric: false, biometricAgreed: false
-            )
+                statusChecked: true, needsBiometric: false, biometricAgreed: false
+            ),
+            "가입 때 동의한 사람은 추가 체크 없이 등록된다"
         )
     }
 
-    /// 가입 때 거절한 사람은 확인 + 생체정보 동의 **둘 다** 있어야 등록이 열린다.
+    /// 가입 때 거절한 사람은 인라인 생체정보 동의가 있어야 등록이 열린다.
     func test_biometricRequiredOnlyWhenMissing() {
         XCTAssertFalse(
             VoiceCloneUploadFlow.registrationConsentSatisfied(
-                attested: true, needsBiometric: true, biometricAgreed: false
+                statusChecked: true, needsBiometric: true, biometricAgreed: false
             ),
             "거절한 사람은 동의 없이 등록되면 안 된다"
         )
         XCTAssertTrue(
             VoiceCloneUploadFlow.registrationConsentSatisfied(
-                attested: true, needsBiometric: true, biometricAgreed: true
+                statusChecked: true, needsBiometric: true, biometricAgreed: true
             )
         )
     }

@@ -40,12 +40,17 @@ struct ConsentView: View {
     let optional: [String]
     /// 개정에 따른 재동의인가(이미 동의한 적 있는 계정).
     let isReconsent: Bool
+    /// **이미 동의해 둔** 유형 — 초기 체크 상태로 쓴다(서버 `prechecked`).
+    var prechecked: [String] = []
     /// 사용자가 실제로 체크한 **선택** 유형만 넘긴다.
     let onAgree: (_ agreedOptional: Set<String>) -> Void
     let onOpenTerms: () -> Void
     let onOpenPrivacy: () -> Void
 
     @State private var checked: Set<String> = []
+    /// `prechecked` 를 한 번만 반영하기 위한 표시. 매 렌더마다 덮으면 사용자가 해제한 것이
+    /// 곧바로 되살아나 체크를 끌 수 없다.
+    @State private var didApplyPrechecked = false
 
     /// 구버전 서버(`optional` 없음)와 섞여 돌 수 있다. 비어 있으면 마케팅만 선택으로 본다 —
     /// 그쪽이 안전한 폴백이다(선택을 필수로 잘못 그리면 사용자가 화면을 못 벗어난다).
@@ -85,10 +90,27 @@ struct ConsentView: View {
         }
     }
 
-    private var allChecked: Bool { shownTypes.allSatisfy { checked.contains($0) } }
+    /// ⚠ **'전체 동의' 는 필수 유형만 다룬다.**
+    /// 선택 동의(마케팅·생체정보)까지 한 탭에 켜면, 명시적으로 거절했던 사람이 필수 재동의
+    /// 화면에서 **한 번의 탭으로 마케팅을 켜게 되는 화면**이 된다 — 개인정보보호법 제22조의
+    /// 선택 동의 구분 수령 취지에 어긋나는 다크패턴이다.
+    /// `setAll` 과 `allChecked` 는 **반드시 같은 집합**을 봐야 한다(한쪽만 바꾸면 전체 동의
+    /// 표시가 영영 안 켜지거나, 켜져 있는데 아무것도 안 하는 행이 된다).
+    private var masterTypes: [String] {
+        let optionalTypes = optionalTypes
+        return shownTypes.filter { !optionalTypes.contains($0) }
+    }
+
+    private var allChecked: Bool {
+        !masterTypes.isEmpty && masterTypes.allSatisfy { checked.contains($0) }
+    }
 
     private func setAll(_ value: Bool) {
-        if value { checked = Set(shownTypes) } else { checked.removeAll() }
+        if value {
+            checked.formUnion(masterTypes)
+        } else {
+            checked.subtract(masterTypes)
+        }
     }
 
     var body: some View {
@@ -116,12 +138,13 @@ struct ConsentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer().frame(height: 24)
-                    // 항목이 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지 않는다.
-                    if shownTypes.count > 1 {
+                    // 필수가 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지 않는다.
+                    // (선택 항목은 마스터가 다루지 않으므로 개수에 넣지 않는다.)
+                    if masterTypes.count > 1 {
                         ConsentRow(
                             checked: allChecked,
                             onToggle: { setAll(!allChecked) },
-                            label: "약관 전체 동의",
+                            label: "필수 약관 전체 동의",
                             emphasized: true
                         )
                         Spacer().frame(height: 4)
@@ -150,6 +173,15 @@ struct ConsentView: View {
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AlarmTalkTheme.background)
+        .task(id: prechecked) {
+            // ⚠ **이미 동의해 둔 것을 초기 체크로 보여준다.** 안 하면 이미 동의한 사용자가
+            // 화면을 그냥 지나가는 순간 그 동의가 `false` 로 제출돼 조용히 사라진다.
+            // 미리 눌러 주는 게 아니라 **가진 것을 보여주는 것**이다(필수 유형은 서버가
+            // prechecked 에 담지 않으므로 여기 들어오지 않는다).
+            guard !didApplyPrechecked, !prechecked.isEmpty else { return }
+            didApplyPrechecked = true
+            checked.formUnion(prechecked)
+        }
     }
 
     @ViewBuilder

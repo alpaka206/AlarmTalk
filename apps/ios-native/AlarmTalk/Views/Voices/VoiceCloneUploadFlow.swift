@@ -38,9 +38,6 @@ struct VoiceCloneUploadFlow: View {
     /// Android 생성 플로우처럼 랜덤 문구와 공유 음성에서 쓸 호칭을 함께 저장한다.
     @State private var listenerTitle: String = ""
     @State private var submitted: Bool = false
-    /// 이 녹음에 대한 확인. **매번** 받는다 — 등록할 때마다 그 목소리의 권한을 확인하는 것이라
-    /// 서버 동의 유형이 아니고 기록되지도 않는다.
-    @State private var recordingAttested: Bool = false
     /// 음성 생체정보 동의 인라인 체크. 가입 화면에서 **거절한 사람에게만** 뜬다
     /// (`auth.consentSensitiveMissing`). 한 번 동의하면 서버 기록이 남아 다시 보이지 않는다.
     @State private var voiceBiometricAgreed: Bool = false
@@ -107,10 +104,10 @@ struct VoiceCloneUploadFlow: View {
         auth.consentSensitiveMissing.contains("voice_biometric")
     }
 
-    /// 등록을 눌러도 되는지. **이 녹음에 대한 확인은 매번**, 법정 동의는 아직 없을 때만 받는다.
+    /// 등록을 눌러도 되는지 — **법정 동의만** 본다.
     private var registrationConsentSatisfied: Bool {
         Self.registrationConsentSatisfied(
-            attested: recordingAttested,
+            statusChecked: auth.consentStatusChecked,
             needsBiometric: needsBiometricConsent,
             biometricAgreed: voiceBiometricAgreed
         )
@@ -118,15 +115,20 @@ struct VoiceCloneUploadFlow: View {
 
     /// 위 판정의 순수 함수 형태 — 회귀 테스트가 이걸 고정한다.
     ///
-    /// ⚠ **`attested` 는 조건 없이 항상 요구한다.** 이건 서버 동의 유형이 아니라 '이 녹음의
-    /// 권한을 확인한다' 는 매 등록마다의 확인이라, 생체정보 동의를 이미 받아 둔 사람에게도
-    /// 받아야 한다. 두 체크를 한 조건으로 합치면 그 사람에게는 확인이 사라진다.
+    /// ⚠ **권리 보증 확인(attestation)은 여기 없다.** 그 내용은 약관 제7조가 이미 담고
+    /// 있고(「본인의 목소리 또는 적법한 권한과 명시적 동의를 받은 사람의 목소리만 등록할 수
+    /// 있습니다」·「권한 없는 음성 등록으로 발생하는 책임은 해당 이용자가 부담합니다」),
+    /// 약관은 가입 필수 동의라 이미 받았다. 등록마다 체크박스로 다시 받는 것은 계약상
+    /// 중복이었다. 화면에는 **비차단 안내**로 남겨 업로드 시점 고지만 유지한다.
+    ///
+    /// ⚠ **`statusChecked` 를 빼지 말 것.** 동의 상태 응답 전에는 `needsBiometric` 이
+    /// 항상 false 라, 거절한 사람에게 체크박스가 안 그려진 채 제출이 열려 403 을 맞는다.
     static func registrationConsentSatisfied(
-        attested: Bool,
+        statusChecked: Bool,
         needsBiometric: Bool,
         biometricAgreed: Bool
     ) -> Bool {
-        attested && (!needsBiometric || biometricAgreed)
+        statusChecked && (!needsBiometric || biometricAgreed)
     }
 
     private var canSubmit: Bool {
@@ -538,15 +540,20 @@ struct VoiceCloneUploadFlow: View {
         }
     }
 
-    /// 등록 직전 확인·동의. 안드로이드는 이걸 **전용 모달이 아니라 등록 폼 안의 체크박스**로
-    /// 둔다 — 등록하려는 흐름을 끊지 않고, 무엇에 동의하는지가 화면에 그대로 보인다.
+    /// 등록 직전 고지·동의. 생체정보 동의는 **전용 모달이 아니라 폼 안의 체크박스**로 받는다
+    /// — 등록하려는 흐름을 끊지 않고, 무엇에 동의하는지가 화면에 그대로 보인다.
     /// (`VoiceConsentSheet` 는 폼 밖에서 호출된 경로를 위한 폴백이다.)
     private var consentSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            consentCheck(
-                isOn: $recordingAttested,
-                label: "본인이거나 동의를 받은 사람의 목소리이고, 무단 등록에 대한 책임이 저에게 있다는 걸 확인해요."
+            // 권리 보증은 **약관 제7조**가 담당한다(가입 시 필수 동의). 여기서는 업로드
+            // 시점 고지만 남긴다 — 체크박스로 다시 받지 않는다.
+            Label(
+                "본인 또는 적법한 권한과 동의를 받은 사람의 목소리만 등록할 수 있어요. 권한 없는 등록으로 생기는 책임은 등록한 사람에게 있어요(이용약관 제7조).",
+                systemImage: "info.circle"
             )
+            .font(.footnote)
+            .foregroundStyle(AlarmTalkTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
             if needsBiometricConsent {
                 consentCheck(
                     isOn: $voiceBiometricAgreed,

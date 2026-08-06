@@ -499,6 +499,19 @@ user.get('/consents/status', async (c) => {
       // 가입 화면에 '선택' 으로 함께 띄우는 유형. 클라가 이 목록을 보고 필수와 다르게
       // 그린다(체크 안 해도 CTA 통과).
       optional: [...FEATURE_CONSENT_TYPES, ...OPTIONAL_CONSENT_TYPES],
+      // `collect` 중 **이미 동의해 둔** 유형. 클라는 이걸 화면의 **초기 체크 상태**로 쓴다.
+      //
+      // 왜 필요한가: 선택/기능 동의는 체크 없이도 CTA 가 통과된다. 초기 상태를 항상 미체크로
+      // 두면, 이미 동의한 사용자가 화면을 그냥 지나가는 순간 그 동의가 `agreed=false` 로
+      // 뒤집힌다 — 사용자는 아무것도 바꾼 적이 없는데 목소리 기능이 막히고(sensitive_missing),
+      // 마케팅 수신 동의가 사라진다. **가진 것을 보여주는 것**이지 미리 눌러 주는 게 아니다.
+      //
+      // ⚠ 필수 유형은 여기 담지 않는다 — 재동의는 명시적 체크로 받아야 한다.
+      prechecked: collect.filter(
+        (type) =>
+          !REQUIRED_CONSENT_TYPES.includes(type as (typeof REQUIRED_CONSENT_TYPES)[number]) &&
+          latest.get(type)?.agreed === true,
+      ),
       // 음성 라우트가 요구하는 민감 동의 중 아직 없는 것. overseas_transfer 는 가입 필수라
       // 보통 비어 있고, 가입 때 voice_biometric 을 거절한 사람만 여기에 남는다 — 클라는
       // 목소리 등록 화면에서 이 값으로 인라인 동의 항목을 띄운다.

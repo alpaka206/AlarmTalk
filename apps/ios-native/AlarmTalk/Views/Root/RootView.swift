@@ -47,6 +47,7 @@ struct RootView: View {
                     collect: auth.consentCollect,
                     optional: auth.consentOptional,
                     isReconsent: auth.consentIsReconsent,
+                    prechecked: auth.consentPrechecked,
                     onAgree: { agreedOptional in
                         Task { await auth.submitConsents(agreedOptional: agreedOptional) }
                     },
