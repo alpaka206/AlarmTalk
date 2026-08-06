@@ -14,6 +14,7 @@
 		0954B1BBAC9F69FCABB9B58F /* AuthGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCE612B197E5B5761457E13E /* AuthGateView.swift */; };
 		0A8A4E0F5546C4B079315431 /* SpeakerSeparationFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6466EB410BED3723240AE8C5 /* SpeakerSeparationFlow.swift */; };
 		0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */; };
+		0D6DE12A148737B55879EBFC /* DynamicPromptPreferenceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */; };
 		0E5B76527C4E572E042DC557 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70196163DEB277ED30F5976 /* KeychainStore.swift */; };
 		0F95A7B5A7D70D76F64A1DF6 /* InputSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BC3CAD414D42352F98B1FE /* InputSanitizerTests.swift */; };
 		0FB05A977664FB0D75719963 /* AlarmEditDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D06985F5E8ED62B425536DC /* AlarmEditDraftTests.swift */; };
@@ -120,6 +121,7 @@
 		918CB0198810A501FC415D2D /* AuxiliarySheetHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AECB7E9C88E521DB6347408 /* AuxiliarySheetHost.swift */; };
 		923B167E7FF2406C9C789716 /* VoiceCloneUploadFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F702C79A431AE0668621A1F1 /* VoiceCloneUploadFlow.swift */; };
 		92AB37D1B9F9FC78EA7D2F62 /* VoicesPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36AC7F203A72A8231656B726 /* VoicesPanelView.swift */; };
+		958277D566D3D4EA2B3B7C86 /* DynamicPromptPreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB105C21A1ACA71A315BA97A /* DynamicPromptPreferenceStore.swift */; };
 		974A3C55BF92271DF01C5112 /* AudioUserFacingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 256A1A74503F37FA8770ADFD /* AudioUserFacingError.swift */; };
 		990A7E3AA0A6BA5103D0DAEA /* HolidayOffToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E8BB6661FCBCBE21C888ACE /* HolidayOffToggle.swift */; };
 		992A9D8F236801102199EBA7 /* AccessSnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10CE147023F745A31BD0720B /* AccessSnapshotStoreTests.swift */; };
@@ -357,7 +359,9 @@
 		BD5149AC925F9E7568727C4B /* BottomNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavBar.swift; sourceTree = "<group>"; };
 		C147826DE6871E7FF9B5563D /* AlarmTalkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkApp.swift; sourceTree = "<group>"; };
 		C2045E291994B947F86212FC /* HolidayUpcomingList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidayUpcomingList.swift; sourceTree = "<group>"; };
+		C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicPromptPreferenceStoreTests.swift; sourceTree = "<group>"; };
 		C85849E44ED914564F02925F /* StoreKitConfiguration.storekit */ = {isa = PBXFileReference; path = StoreKitConfiguration.storekit; sourceTree = "<group>"; };
+		CB105C21A1ACA71A315BA97A /* DynamicPromptPreferenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicPromptPreferenceStore.swift; sourceTree = "<group>"; };
 		D03ECCB0C7064914B464A555 /* AlarmAppContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmAppContextTests.swift; sourceTree = "<group>"; };
 		D0A2D4893E2A513F69B59F66 /* SocialNotificationTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialNotificationTracker.swift; sourceTree = "<group>"; };
 		D27AF1639158440548C96717 /* VoiceSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSetupView.swift; sourceTree = "<group>"; };
@@ -636,6 +640,7 @@
 				8A1415DAB86286CDD5AB4219 /* AuthUserDecodingTests.swift */,
 				376BBDA5FD78ACD795C78581 /* AuthViewModelTests.swift */,
 				BC6803137321D0177FF40243 /* BackgroundSyncTaskTests.swift */,
+				C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */,
 				33EACFD24875EBC9DCCC831F /* DynamicVoiceRefreshServiceTests.swift */,
 				92C56157192A2B5CBADB2977 /* FortunePromptInputFormatTests.swift */,
 				F6CD38FF3D3609DABDD69394 /* HelperFormattersTests.swift */,
@@ -728,6 +733,7 @@
 				84AC75AB7D2226A17D90E228 /* BackgroundSyncTask.swift */,
 				A7577C539C3E926AE4FD3D1C /* ContentView.swift */,
 				FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */,
+				CB105C21A1ACA71A315BA97A /* DynamicPromptPreferenceStore.swift */,
 				A5135A5FE94F635FB316DEB4 /* DynamicVoiceRefreshService.swift */,
 				E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */,
 				6E362F291A9E83445BE588E2 /* Info.plist */,
@@ -972,6 +978,7 @@
 				4C5565C2CE444AA557AC024A /* ConsentView.swift in Sources */,
 				C6A181AE295935BA835954D4 /* ContentView.swift in Sources */,
 				A98BAC75D5B210C60A0A5F69 /* DefaultVoicePreferenceStore.swift in Sources */,
+				958277D566D3D4EA2B3B7C86 /* DynamicPromptPreferenceStore.swift in Sources */,
 				190BFA3083E95460C92FC2B7 /* DynamicVoiceRefreshService.swift in Sources */,
 				307C97195816A03C44D1D5B5 /* EmptyStatePlaceholder.swift in Sources */,
 				ED9DF32A8A426E3CE9FBDD6E /* FamilyAlarmQuietTimeDialog.swift in Sources */,
@@ -1067,6 +1074,7 @@
 				DB82555FB5EDA5964A490C43 /* AuthUserDecodingTests.swift in Sources */,
 				46755794A3CFB39DB2A07D3E /* AuthViewModelTests.swift in Sources */,
 				516F57BD13DEACD0054A1F59 /* BackgroundSyncTaskTests.swift in Sources */,
+				0D6DE12A148737B55879EBFC /* DynamicPromptPreferenceStoreTests.swift in Sources */,
 				D4F5DBE93B1684A6861D4672 /* DynamicVoiceRefreshServiceTests.swift in Sources */,
 				DF01070F5A7680AF08057F3C /* FortunePromptInputFormatTests.swift in Sources */,
 				7FBA137EBE5195718A628111 /* HelperFormattersTests.swift in Sources */,

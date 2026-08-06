@@ -900,6 +900,26 @@ struct AlarmEditorSheet: View {
         // (Android `AlarmEditorState.from` line 331-333). 기존 알람은 저장값을 따른다.
         voiceStudio.randomPrompt = alarm?.voiceRandomPrompt ?? true
         voiceStudio.randomContext = RandomPromptContext.normalized(alarm?.voiceRandomContext).rawValue
+
+        // **직전 선택 유지 — 새 알람에만 적용한다.**
+        // 기존 알람을 열 때는 저장된 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다).
+        // 규약 전문은 CLAUDE.md 「알람 편집기 기본값 = 직전 선택 유지」.
+        if alarm == nil {
+            let store = DynamicPromptPreferenceStore()
+            let userID = auth.session?.user.id
+            if let manual = store.lastManualText(userID: userID) {
+                // `last_manual_text` 가 차 있다 = 마지막 선택이 직접 입력이었다.
+                // 문구까지 함께 이어받는다 — 종류만 이어받으면 빈 직접입력으로 열려
+                // 저장이 막힌다(2026-08-06 규칙 변경의 근거).
+                voiceStudio.randomPrompt = false
+                voiceStudio.ttsText = manual
+            } else if let context = store.lastMessageContext(userID: userID) {
+                voiceStudio.randomPrompt = true
+                voiceStudio.randomContext = RandomPromptContext.normalized(context).rawValue
+            }
+            // 한 번도 고른 적 없으면 위에서 정한 폴백(랜덤 ON + preset)을 그대로 쓴다.
+        }
+
         voiceStudio.translateText = !voiceStudio.randomPrompt && voiceStudio.ttsLanguage != "ko"
         voiceStudio.weatherCountry = alarm?.voiceWeatherCountry ?? saved.weatherCountry
         voiceStudio.weatherCity = alarm?.voiceWeatherCity ?? saved.weatherCity
@@ -1377,9 +1397,33 @@ struct AlarmEditorSheet: View {
         if let existing {
             await alarmKit.cancelScheduledAlarm(record: existing)
         }
+        rememberChoicesUsed(merged)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSchedulingDidFinish()
         return true
+    }
+
+    /// **저장 성공 시에만** 직전 선택을 기록한다. 편집기에서 눌러만 보고 취소한 것은
+    /// 기억하지 않는다 — 선택 즉시 저장하는 코드를 넣지 말 것
+    /// (CLAUDE.md 「알람 편집기 기본값 = 직전 선택 유지」).
+    private func rememberChoicesUsed(_ record: LocalAlarmRecord) {
+        let userID = auth.session?.user.id
+
+        // 목소리 — 온보딩 완료 판정(`default_voice_`)과는 **다른 키**에 쓴다.
+        if let voiceID = record.voiceProfileId?.nilIfBlank {
+            DefaultVoicePreferenceStore().setLastUsedVoiceId(userID: userID, voiceId: voiceID)
+        }
+
+        // 문구 — 생성형이면 종류를, 직접 입력이면 문구를 기록한다. 저장소가 반대쪽 키를
+        // 지워 '마지막 선택은 하나' 를 지킨다.
+        let promptStore = DynamicPromptPreferenceStore()
+        if record.voiceRandomPrompt {
+            promptStore.saveLastMessageContext(userID: userID, context: record.voiceRandomContext)
+        } else {
+            // 기억하는 값은 입력 원문이 아니라 **알람에 저장된 문구**다 — 잠금화면 문구와
+            // 음성을 맞추려고 그 값을 저장하기 때문이다.
+            promptStore.saveLastManualText(userID: userID, text: record.voiceText)
+        }
     }
 
     /// 중복 시각 교체 동의: 새 알람을 먼저 저장·예약한 뒤, 충돌 알람을 삭제한다.

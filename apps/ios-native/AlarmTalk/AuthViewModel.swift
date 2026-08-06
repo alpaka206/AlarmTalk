@@ -564,6 +564,7 @@ final class AuthViewModel: ObservableObject {
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
+                DynamicPromptPreferenceStore().clear(userID: currentUserID)
             }
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
@@ -589,6 +590,7 @@ final class AuthViewModel: ObservableObject {
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
+                DynamicPromptPreferenceStore().clear(userID: currentUserID)
             }
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
         } catch {

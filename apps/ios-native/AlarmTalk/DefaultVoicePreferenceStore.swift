@@ -20,6 +20,33 @@ struct DefaultVoicePreferenceStore {
         self.defaults = defaults
     }
 
+    // MARK: last-used 목소리 (온보딩 기본 목소리와 **다른 키**)
+
+    /// 마지막으로 **알람에 실제로 저장한** 목소리 id.
+    ///
+    /// ⚠ `default_voice_<uid>` 와 **절대 섞지 않는다.** 그 키는 온보딩 완료 판정
+    /// (`hasChosen` → `hasCompletedSetup` → `RootView`)에 쓰이므로, 알람 저장이 그걸
+    /// 덮으면 온보딩을 건너뛴 사용자가 갑자기 '완료' 로 바뀐다.
+    ///
+    /// 규약(`CLAUDE.md` 「알람 편집기 기본값 = 직전 선택 유지」):
+    ///  - 기록은 **알람 저장 성공 시에만**. 편집기에서 눌러만 보고 취소한 건 기억하지 않는다.
+    ///  - 프리셀렉트는 **마지막에 쓴 것이 그룹보다 우선**이다. 그룹(내 클론 → 공유받은 →
+    ///    기본) 순서를 먼저 보면, 클론을 가진 사람이 기본 목소리를 골라 저장해도 매번
+    ///    클론으로 되돌아간다.
+    func lastUsedVoiceId(userID: String?) -> String? {
+        guard let key = lastUsedVoiceKey(userID) else { return nil }
+        return defaults.string(forKey: key)?.nilIfBlank
+    }
+
+    func setLastUsedVoiceId(userID: String?, voiceId: String?) {
+        guard let key = lastUsedVoiceKey(userID) else { return }
+        if let voiceId = voiceId?.trimmingCharacters(in: .whitespacesAndNewlines), !voiceId.isEmpty {
+            defaults.set(voiceId, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     /// 저장된 기본 목소리 id. 고른 적 없으면 nil.
     func defaultVoiceId(userID: String?) -> String? {
         guard let key = voiceKey(userID) else { return nil }
@@ -74,6 +101,8 @@ struct DefaultVoicePreferenceStore {
         }
     }
 
+    /// 명시적 로그아웃·탈퇴에서만 부른다.
+    /// ⚠ 자동 401 에서 지우면 같은 사람이 다시 로그인할 때 취향을 잃는다.
     func clear(userID: String?) {
         guard let voiceKey = voiceKey(userID),
               let listenerKey = listenerKey(userID),
@@ -81,6 +110,7 @@ struct DefaultVoicePreferenceStore {
         defaults.removeObject(forKey: voiceKey)
         defaults.removeObject(forKey: listenerKey)
         defaults.removeObject(forKey: skippedKey)
+        if let lastUsed = lastUsedVoiceKey(userID) { defaults.removeObject(forKey: lastUsed) }
     }
 
     private func voiceKey(_ userID: String?) -> String? {
@@ -91,6 +121,11 @@ struct DefaultVoicePreferenceStore {
     private func listenerKey(_ userID: String?) -> String? {
         guard let id = normalized(userID) else { return nil }
         return "default_listener_\(id)"
+    }
+
+    private func lastUsedVoiceKey(_ userID: String?) -> String? {
+        guard let id = normalized(userID) else { return nil }
+        return "last_voice_\(id)"
     }
 
     private func skippedKey(_ userID: String?) -> String? {

@@ -312,11 +312,21 @@ final class VoiceStudioViewModel: ObservableObject {
                 self.selectedProfileID = nil
             }
             if selectedProfileID == nil {
-                // 온보딩에서 고른 기본 목소리를 우선 선택(목록에 있으면).
+                // **마지막에 쓴 목소리가 그룹·기본보다 우선한다.**
+                // 그룹(내 클론 → 공유받은 → 기본) 순서를 먼저 보면, 클론을 가진 사람이
+                // 기본 목소리를 골라 저장해도 매번 클론으로 되돌아간다
+                // (CLAUDE.md 「목소리 프리셀렉트는 마지막에 쓴 것이 그룹보다 우선」).
+                let lastUsedID = defaultVoiceStore.lastUsedVoiceId(userID: activeUserID)
+                let preferredLastUsed = lastUsedID.flatMap { id in
+                    profiles.first(where: { $0.id == id })?.id
+                        ?? familyVoices.first(where: { $0.id == id })?.id
+                }
+                // 그 다음이 온보딩에서 고른 기본 목소리(목록에 있으면).
                 let preferredDefault = defaultVoiceId.flatMap { id in
                     profiles.first(where: { $0.id == id })?.id
                 }
-                selectedProfileID = preferredDefault ??
+                selectedProfileID = preferredLastUsed ??
+                    preferredDefault ??
                     profiles.first(where: { $0.status == "ready" })?.id ??
                     profiles.first?.id ??
                     familyVoices.first(where: { $0.status == "ready" })?.id ??
