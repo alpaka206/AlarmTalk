@@ -55,3 +55,41 @@ final class AlarmUserCopyTests: XCTestCase {
         XCTAssertFalse(AlarmKitViewModel.isPermissionRecoveryNeeded("authorized"))
     }
 }
+
+/// 목소리 등록 폼의 인라인 확인·동의 게이트.
+///
+/// 안드로이드는 이걸 **전용 모달이 아니라 폼 안의 체크박스**로 둔다 — 등록 흐름을 끊지
+/// 않고, 무엇에 동의하는지가 화면에 그대로 보인다. 시트는 폼 밖 경로를 위한 폴백이다.
+final class VoiceRegistrationConsentGateTests: XCTestCase {
+
+    /// 이 녹음에 대한 확인은 **생체정보 동의 여부와 무관하게 매번** 받는다.
+    /// 두 체크를 한 조건으로 합치면 이미 동의한 사람에게는 확인이 사라진다.
+    func test_attestationRequiredEvenWhenBiometricAlreadyAgreed() {
+        XCTAssertFalse(
+            VoiceCloneUploadFlow.registrationConsentSatisfied(
+                attested: false, needsBiometric: false, biometricAgreed: false
+            ),
+            "가입 때 동의한 사람도 이 녹음 확인은 받아야 한다"
+        )
+        XCTAssertTrue(
+            VoiceCloneUploadFlow.registrationConsentSatisfied(
+                attested: true, needsBiometric: false, biometricAgreed: false
+            )
+        )
+    }
+
+    /// 가입 때 거절한 사람은 확인 + 생체정보 동의 **둘 다** 있어야 등록이 열린다.
+    func test_biometricRequiredOnlyWhenMissing() {
+        XCTAssertFalse(
+            VoiceCloneUploadFlow.registrationConsentSatisfied(
+                attested: true, needsBiometric: true, biometricAgreed: false
+            ),
+            "거절한 사람은 동의 없이 등록되면 안 된다"
+        )
+        XCTAssertTrue(
+            VoiceCloneUploadFlow.registrationConsentSatisfied(
+                attested: true, needsBiometric: true, biometricAgreed: true
+            )
+        )
+    }
+}
