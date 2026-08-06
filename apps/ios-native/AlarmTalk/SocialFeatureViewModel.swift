@@ -455,30 +455,5 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "무료 이용권으로 전환되어 목소리 알람을 삭제했어요."
         }
     }
-
-    /// 일반 코드(=plan voucher) 사용. Android `BillingApi.redeem`.
-    /// 가족 초대 코드(INV-) 는 `registerCode` 로 처리해야 한다.
-    func redeemVoucher(code: String, session: AuthSession?) async {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return
-        }
-        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            statusMessage = "코드를 입력해 주세요."
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            _ = try await api.redeemVoucher(code: trimmed, token: token)
-            await refreshAllAfterMutation(session: session, successMessage: "코드를 적용했어요.")
-        } catch {
-            statusMessage = Self.billingErrorMessage(error, fallback: "코드 적용에 실패했어요")
-        }
-    }
-
 }
 

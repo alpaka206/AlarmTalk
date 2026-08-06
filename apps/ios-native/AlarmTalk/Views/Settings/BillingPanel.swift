@@ -15,7 +15,7 @@ import UIKit
 ///
 /// Phase 3-C3 호환 노트
 ///   - 백엔드 표준 plan key (`free` / `personal` / `couple` / `family`) 는 그대로.
-///   - 비-IAP 흐름 (`/billing/vouchers/family-share`, `/billing/redeem`) 은
+///   - 비-IAP 흐름 (`/billing/vouchers/family-share`, `/code/register`) 은
 ///     SocialFeatureViewModel 이 계속 담당.
 struct BillingPanel: View {
     @EnvironmentObject private var auth: AuthViewModel

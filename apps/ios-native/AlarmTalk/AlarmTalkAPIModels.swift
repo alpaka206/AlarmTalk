@@ -824,6 +824,25 @@ struct ConsentItemRequest: Encodable, Equatable {
     var version: String? = nil
 }
 
+/// `GET /alarm/declined` 응답.
+///
+/// 목록(`GET /alarm`)은 그만받기 한 알람을 아예 빼서 내려주므로, 클라는 "목록에서 사라짐" 의
+/// 이유를 구분할 수 없다 — **수신자가 그만받기** 했는지, **발신자가 지웠**는지.
+/// 그 둘은 결과가 **정반대**여야 하므로 서버가 따로 알려 준다:
+///
+///  - `alarmIds`(declined): 수신자가 그만받기 → **알람을 지운다**(이 계정의 다른 기기에서도).
+///  - `revokedAlarmIds`(revoked): 발신자 탈퇴/철회 → **목소리만 걷어내고 알람은 남긴다.**
+///    복제 목소리는 그 사람의 생체정보라 파기 대상이지만, 시각은 수신자가 기대고 자는
+///    자기 정보다 — 통째로 지우면 그날 못 일어난다.
+///
+/// ⚠ 페이지네이션은 두 배열을 **한 페이지에 섞어** 내려준다. 다음 offset 은 **둘의 합**만큼
+/// 전진시켜야 한다(한쪽 크기로 전진하면 같은 행을 다시 읽거나 건너뛴다).
+struct DeclinedAlarmsResponse: Decodable, Equatable {
+    var alarmIds: [String] = []
+    var revokedAlarmIds: [String] = []
+    var hasMore: Bool = false
+}
+
 /// 약관 동의 기록 요청. Android `AuthApi.kt:143` `RecordConsentsRequest`.
 ///
 /// `documentVersion` 은 **이 빌드가 담고 있는 법무 문서의 버전**이다(snake_case 로 나간다).
@@ -950,11 +969,6 @@ struct FamilyAlarmTalkResponse: Decodable, Equatable {
     var alarm: RemoteAlarm
 }
 
-struct VoucherRedemptionResponse: Decodable, Equatable {
-    var success: Bool
-    var voucher: VoucherItem?
-    var planKey: String?
-}
 
 struct UserSearchResult: Decodable, Identifiable, Equatable {
     var id: String

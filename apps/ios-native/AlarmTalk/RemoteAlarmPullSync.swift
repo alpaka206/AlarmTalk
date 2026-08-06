@@ -143,8 +143,17 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             )
         }
 
-        // 2. cascade 삭제: 서버에 더는 없는 receivedRemote 만 정리.
-        await pruneOrphanReceivedRemotes(serverIDs: Set(remoteAlarms.map(\.id)))
+        // 2. 수신자 상태 반영 — 그만받기(삭제) vs 목소리 철회(목소리만 제거).
+        //
+        // 목록(`GET /alarm`)은 그만받기 한 알람을 빼서 내려주므로 "목록에서 사라짐" 만으로는
+        // 이유를 알 수 없다. 서버에 따로 물어 셋을 구분한다(`GET /alarm/declined`).
+        // **못 물어보면 아무것도 지우지 않는다** — 네트워크 실패를 이유로 남의 알람을 지우는
+        // 쪽으로 기울면 안 된다.
+        await applyRecipientState(
+            servedReceivedIDs: Set(receivedRemoteAlarms.map(\.id)),
+            allRemoteIDs: Set(remoteAlarms.map(\.id)),
+            token: token
+        )
 
         return PullResult(imported: imported, updated: updated, skipped: skipped, failed: failed)
     }
@@ -251,14 +260,123 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     /// 로컬에 receivedRemote 로 들고 있으나 서버 응답에 사라진 알람을 정리.
     /// AlarmKit 도 함께 해제한다.
-    private func pruneOrphanReceivedRemotes(serverIDs: Set<String>) async {
-        let candidates = store.recordsBy(origin: .receivedRemote)
-        for record in candidates {
-            guard let remoteID = record.remoteAlarmId else { continue }
-            if !serverIDs.contains(remoteID) {
-                await alarmKit.cancel(record: record, store: store)
+    /// 받은 알람의 수신자 상태를 반영한다. Android `RemoteAlarmPullSyncService` 와 1:1.
+    ///
+    /// - Parameter servedReceivedIDs: 이번 pull 에서 **받은 알람으로** 내려온 remote id 들.
+    /// - Parameter allRemoteIDs: `GET /alarm` 이 내려준 **전체** remote id 들(내가 보낸 것 포함).
+    private func applyRecipientState(
+        servedReceivedIDs: Set<String>,
+        allRemoteIDs: Set<String>,
+        token: String
+    ) async {
+        guard let state = await fetchRecipientState(token: token) else {
+            // 못 물어봤다 — 아무것도 건드리지 않는다.
+            Self.logger.warning("Pull sync: /alarm/declined unavailable; skipping recipient-state pruning")
+            return
+        }
+
+        let received = store.recordsBy(origin: .receivedRemote)
+
+        // (1) 목소리 철회 — **목소리만 걷어내고 알람은 남긴다.**
+        //
+        // 복제 목소리는 발신자의 생체정보라 파기 대상이지만, 시각·요일은 수신자가 기대고
+        // 자는 자기 정보다. 통째로 지우면 그날 못 일어난다.
+        //
+        // 대상은 `hasSenderVoice` — '목소리가 있는 행' 이 아니라 '발신자 음성을 든 행' 이다.
+        // 서버는 철회 기록을 영구히 들고 있어서, 넓게 잡으면 수신자가 나중에 넣은 자기
+        // 목소리까지 매번 걷어낸다.
+        for record in received {
+            guard let remoteID = record.remoteAlarmId,
+                  state.revoked.contains(remoteID),
+                  Self.hasSenderVoice(record) else { continue }
+            let releasedKey = record.audioCacheKey
+            _ = store.upsert(Self.withVoiceRevoked(record))
+            // 먼저 upsert 해 이 행의 참조를 지운 뒤 센다 — 같은 캐시를 여러 행이 쓰고 있어도
+            // 마지막 행에서 0 이 되어 파일이 실제로 지워진다.
+            if let key = releasedKey?.nilIfBlank, store.countByAudioCacheKey(key) == 0 {
+                try? AudioCacheStore.shared.deleteCachedAudio(cacheKey: key)
+            }
+            Self.logger.info("Pull sync: revoked sender voice on received alarm (remoteId: \(remoteID, privacy: .public))")
+        }
+
+        // (2) 그만받기 — 알람을 지운다.
+        //
+        // 서버 목록에서 빠지는 이유는 셋이고 **하나만 남겨야 한다**:
+        //  (a) 수신자가 그만받기      → 지운다(이 계정의 다른 기기에서도 지워져야 한다)
+        //  (b) 옛 네임스페이스 버그로 **내가 보낸 알람**을 받은 것으로 잘못 임포트한 잔재
+        //      → 지운다. 그 행의 remote id 는 전체 목록에는 있는데 '받은 것' 에는 없다.
+        //      생성자는 자기 알람을 decline 할 수 없어 (a) 만 두면 이 잔재가 영영 남아
+        //      진짜 알람과 함께 울린다.
+        //  (c) 발신자가 삭제          → **남긴다.** 받은 뒤부터는 받는 사람 것이라,
+        //      내가 기대고 자는 알람이 남의 조작으로 사라지면 안 된다.
+        for record in store.recordsBy(origin: .receivedRemote) {
+            guard let remoteID = record.remoteAlarmId,
+                  !servedReceivedIDs.contains(remoteID),
+                  state.declined.contains(remoteID) || allRemoteIDs.contains(remoteID)
+            else { continue }
+            await alarmKit.cancel(record: record, store: store)
+            Self.logger.info("Pull sync: pruned received alarm (remoteId: \(remoteID, privacy: .public))")
+        }
+    }
+
+    /// `GET /alarm/declined` 를 **끝까지** 받아 온다. 한 페이지만 보고 지우면 뒤 페이지에
+    /// 있는 그만받기 알람이 계속 울린다. 실패하면 nil — 호출자가 아무것도 안 한다.
+    private func fetchRecipientState(token: String) async -> (declined: Set<String>, revoked: Set<String>)? {
+        var declined = Set<String>()
+        var revoked = Set<String>()
+        var offset = 0
+        // 서버가 limit 을 100 으로 클램프한다. 무한 루프 방지용 상한도 둔다.
+        for _ in 0..<100 {
+            do {
+                let page = try await api.declinedAlarms(limit: 100, offset: offset, token: token)
+                declined.formUnion(page.alarmIds)
+                revoked.formUnion(page.revokedAlarmIds)
+                let rows = page.alarmIds.count + page.revokedAlarmIds.count
+                if !page.hasMore || rows == 0 { return (declined, revoked) }
+                // 서버는 한 페이지에 **두 종류를 섞어** 보낸다. 합만큼 전진해야 오프셋이
+                // 어긋나지 않는다(한쪽 크기로 전진하면 같은 행을 다시 읽거나 건너뛴다).
+                offset += rows
+            } catch {
+                return nil
             }
         }
+        return (declined, revoked)
+    }
+
+    /// 이 행이 **발신자가 준 음성**을 들고 있는가.
+    ///
+    /// 받은 알람의 캐시 키는 `remote-message-<id>` 로 만들어진다(`RemoteAlarmMapper`).
+    /// 키 없이 파일 경로만 든 옛 행도 포함한다 — 지금 코드로는 안 만들어지지만, 그렇다고
+    /// 단정하고 생체정보를 남겨 둘 수는 없다. 수신자가 고른 음성은 항상 키가 있으므로
+    /// 오탐이 되지 않는다.
+    static func hasSenderVoice(_ record: LocalAlarmRecord) -> Bool {
+        if let key = record.audioCacheKey?.nilIfBlank {
+            return key.hasPrefix("remote-message-")
+        }
+        return record.localAudioUri?.nilIfBlank != nil
+    }
+
+    /// 발신자가 탈퇴해 목소리가 철회된 받은 알람 — 목소리만 걷어내고 알람은 남긴다.
+    /// 보낸 사람 이름이 든 라벨도 파기 대상이라 기본 라벨로 되돌린다.
+    /// 알람음만 남긴 채(`alarmOnly`) 같은 시각에 그대로 울린다.
+    ///
+    /// 음성 **파일**은 여기서 지우지 않는다 — 같은 캐시를 다른 알람이 쓸 수 있어,
+    /// 호출한 쪽이 참조 수를 보고 지운다.
+    static func withVoiceRevoked(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
+        var next = record
+        next.label = "알람"
+        next.playMode = AlarmPlayMode.alarmOnly.rawValue
+        next.localAudioUri = nil
+        next.audioCacheKey = nil
+        next.rawAudioUri = nil
+        next.voiceSource = VoiceSource.localAudio.rawValue
+        next.voiceProfileId = nil
+        next.voiceListenerTitle = nil
+        next.voiceText = nil
+        next.voiceCategory = nil
+        next.ttsMessageId = nil
+        next.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        return next
     }
 
     // MARK: Audio fetch

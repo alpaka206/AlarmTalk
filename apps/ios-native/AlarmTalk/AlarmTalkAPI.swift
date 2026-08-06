@@ -717,16 +717,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
-    /// 코드 redeem — 자기 자신의 바우처를 사용해 플랜을 적용. Android
-    /// `BillingApi.redeem` 과 동등. 일반 INV 코드는 `registerCode` 로 처리.
-    func redeemVoucher(code: String, token: String) async throws -> VoucherRedemptionResponse {
-        struct Body: Encodable { var code: String }
-        return try await request(
-            "billing/redeem",
-            method: "POST",
-            token: token,
-            body: Body(code: code)
-        )
+    /// `GET /alarm/declined` 한 페이지. 서버가 limit 을 100 으로 클램프한다.
+    func declinedAlarms(limit: Int = 100, offset: Int = 0, token: String) async throws -> DeclinedAlarmsResponse {
+        try await request("alarm/declined?limit=\(limit)&offset=\(offset)", token: token)
     }
 
     /// 사용자 검색. Android 및 backend contract 의 `GET /user/search` 와 동일.
