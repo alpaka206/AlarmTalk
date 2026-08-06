@@ -188,6 +188,84 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
 
     // MARK: - Helpers
 
+    // MARK: - 받은 알람 소유권 (받은 뒤부터는 받는 사람 것)
+
+    /// **수신자가 고친 값은 다음 pull 이 되돌리면 안 된다.**
+    ///
+    /// 예전 구현은 '무엇을 보존할지 세는' 방식이라 시각·요일·스누즈 간격·스누즈 토글·
+    /// 발화시각을 빠뜨렸다. 수신자가 07:00 → 06:30 으로 고쳐도 다음 pull 에 되돌아갔다 —
+    /// 고쳐 뒀다고 믿고 그 시각에 못 일어난다. 안드로이드도 같은 버그를 네 번 겪고
+    /// 세는 방식을 폐기했다.
+    ///
+    /// ⚠ 이 테스트에 필드를 계속 더해라. 편집 가능한 필드가 늘 때 같이 늘어야 한다.
+    func test_merge_receivedRemote_recipientOwnsSchedule() {
+        var existing = makeReceivedRemote(remoteID: "r1")
+        existing.hour = 6
+        existing.minute = 30
+        existing.repeatDaysMask = 0b0000_0010
+        existing.fireAtMillis = 111_111
+        existing.snoozeEnabled = false
+        existing.snoozeMinutes = 12
+        existing.holidayOff = true
+
+        var mapped = makeReceivedRemote(remoteID: "r1")
+        mapped.hour = 7          // 서버가 보낸 원래 시각
+        mapped.minute = 0
+        mapped.repeatDaysMask = 0b0111_1110
+        mapped.fireAtMillis = 999_999
+        mapped.snoozeEnabled = true
+        mapped.snoozeMinutes = 5
+        mapped.holidayOff = false
+
+        let merged = RemoteAlarmPullSync.merge(existing: existing, mapped: mapped)
+
+        XCTAssertEqual(merged.hour, 6, "수신자가 고친 시각이 이긴다")
+        XCTAssertEqual(merged.minute, 30)
+        XCTAssertEqual(merged.repeatDaysMask, 0b0000_0010)
+        XCTAssertEqual(merged.fireAtMillis, 111_111)
+        XCTAssertFalse(merged.snoozeEnabled, "스누즈 토글도 수신자 것이다")
+        XCTAssertEqual(merged.snoozeMinutes, 12)
+        XCTAssertTrue(merged.holidayOff, "놓치면 공휴일에 울린다")
+    }
+
+    /// 스누즈 회차는 **한 묶음으로** 지킨다. 상태만 지키고 마감을 갈아 끼우면
+    /// '5분 뒤 다시 울림' 이 사라져 다음 정규 회차로 밀린다.
+    func test_merge_keepsSnoozeEpisodeIntact() {
+        var existing = makeReceivedRemote(remoteID: "r1")
+        existing.state = AlarmRuntimeState.snoozed.rawValue
+        existing.fireAtMillis = 555_555
+        existing.snoozeCount = 2
+        existing.enabled = true
+
+        var mapped = makeReceivedRemote(remoteID: "r1")
+        mapped.fireAtMillis = 999_999
+        mapped.snoozeCount = 0
+        mapped.enabled = true
+
+        let merged = RemoteAlarmPullSync.merge(existing: existing, mapped: mapped)
+
+        XCTAssertEqual(merged.state, AlarmRuntimeState.snoozed.rawValue)
+        XCTAssertEqual(merged.fireAtMillis, 555_555, "스누즈 마감이 유지돼야 한다")
+        XCTAssertEqual(merged.snoozeCount, 2)
+    }
+
+    /// 지금 울리는(또는 스누즈 중인) 행은 pull 이 아예 건드리지 않는다.
+    /// 건드리면 `rescheduleReceivedRemote` 가 **울리는 중인 AlarmKit 알람을 취소**해
+    /// 알람이 울리다 말고 조용해진다.
+    func test_isInFlight_coversRingingAndSnoozed() {
+        var ringing = makeReceivedRemote(remoteID: "r1")
+        ringing.state = AlarmRuntimeState.ringing.rawValue
+        XCTAssertTrue(RemoteAlarmPullSync.isInFlight(ringing))
+
+        var snoozed = makeReceivedRemote(remoteID: "r2")
+        snoozed.state = AlarmRuntimeState.snoozed.rawValue
+        XCTAssertTrue(RemoteAlarmPullSync.isInFlight(snoozed))
+
+        var armed = makeReceivedRemote(remoteID: "r3")
+        armed.state = AlarmRuntimeState.armed.rawValue
+        XCTAssertFalse(RemoteAlarmPullSync.isInFlight(armed))
+    }
+
     // MARK: - 목소리 철회 (발신자 탈퇴)
 
     /// 대상은 '목소리가 있는 행' 이 아니라 **'발신자 음성을 든 행'** 이다.

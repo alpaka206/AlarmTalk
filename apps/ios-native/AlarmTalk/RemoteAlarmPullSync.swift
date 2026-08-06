@@ -203,22 +203,46 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     private func mergeRemote(remote: RemoteAlarm, mapped initialMapped: LocalAlarmRecord, token: String) async throws -> MergeOutcome {
         var mapped = initialMapped
         if let existing = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
-            // 충돌 정책 + last write wins.
+            // ── 1차 거르기(다운로드 전). 통과해도 **확정이 아니다.**
             guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return .unchanged }
+            guard !Self.isInFlight(existing) else { return .unchanged }
 
+            // 여기가 유일한 서스펜션이다 — 음원을 통째로 내려받으므로 수 초가 걸린다.
             mapped = await recordWithCachedTTSIfNeeded(mapped, token: token)
 
-            // 기존 로컬 ID/alarmKitID/snoozeCount/state 는 보존해서 머지.
-            let merged = Self.merge(existing: existing, mapped: mapped)
+            // ── 반영 구간: 위 `existing` 은 **다운로드 전 값**이다. 그걸로 판단·머지하면
+            // 그 사이에 사용자가 한 일이 조용히 뒤집힌다. 전부 최신 행에서 다시 가져온다.
+            guard let current = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) else {
+                // 대기 중 지워졌다 — **되살리지 않는다.** 받아 둔 음성은 주인이 없으니 정리한다.
+                if let key = mapped.audioCacheKey?.nilIfBlank, store.countByAudioCacheKey(key) == 0 {
+                    try? audioCache.deleteCachedAudio(cacheKey: key)
+                }
+                Self.logger.info("Pull sync: row deleted during download; skipping (remoteId: \(remote.id, privacy: .public))")
+                return .unchanged
+            }
+            // 대기 중 울리기 시작했거나 스누즈로 넘어갔으면 건드리지 않는다.
+            guard !Self.isInFlight(current) else { return .unchanged }
+            // 대기 중 로컬 편집이 붙었으면 로컬이 우선한다(그 dirty 를 여기서 처음 본다).
+            guard Self.shouldApplyRemote(existing: current, mapped: mapped) else { return .unchanged }
+
+            let merged = Self.merge(existing: current, mapped: mapped)
             store.upsert(merged)
 
             // receivedRemote 라면 일정 변경이 있을 수 있으므로 다시 스케줄.
             if merged.originEnum == .receivedRemote && merged.enabled {
-                await rescheduleReceivedRemote(record: merged, existing: existing)
+                await rescheduleReceivedRemote(record: merged, existing: current)
             }
             return .updated
         } else {
             mapped = await recordWithCachedTTSIfNeeded(mapped, token: token)
+
+            // 다운로드 사이에 다른 회차가 같은 remote 를 먼저 넣었을 수 있다. 그대로 upsert 하면
+            // `RemoteAlarmMapper` 가 매번 새 UUID 를 만들기 때문에 **행이 둘 생기고 둘 다 울린다.**
+            if let raced = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
+                guard !Self.isInFlight(raced) else { return .unchanged }
+                store.upsert(Self.merge(existing: raced, mapped: mapped))
+                return .updated
+            }
 
             // 신규 import.
             store.upsert(mapped)
@@ -240,23 +264,67 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// Android `RemoteAlarmPullSyncService.buildLocalAlarm` 의 existing 보존 동일.
     ///
     /// `internal` 로 노출해 `@testable import AlarmTalk` 에서 직접 호출 가능하게 한다.
+    /// **받은 뒤부터는 받는 사람 것이다.**
+    ///
+    /// ⚠ 예전 구현은 '무엇을 보존할지 세는' 방식이었고, 그러다 **시각·요일·스누즈 간격·
+    /// 스누즈 토글·발화시각**을 빠뜨려 서버 값으로 덮고 있었다. 수신자가 받은 알람을
+    /// 07:00 → 06:30 으로 고쳐도 다음 pull 에 07:00 으로 되돌아간다 —
+    /// **고쳐 뒀다고 믿고 그 시각에 못 일어난다.**
+    ///
+    /// 안드로이드는 같은 버그를 네 번 겪고(시각 → 끄기 → 스누즈 상태 → 볼륨·알람음)
+    /// 세는 방식을 폐기했다(`2cafd54f`, `850b9032`). 여기서도 방향을 뒤집는다:
+    /// **받은 알람은 수신자 것이 기본이고, 서버에서 오는 것만 명시한다.**
+    ///
+    /// 서버가 권위인 것은 '보낸 사람이 정한 내용' 뿐이다 — 라벨·음성/문구·진동 패턴.
+    /// (보낸 알람은 한 번 보내면 발신자가 못 고치므로, 서버 값은 사실상 최초 씨앗이다.)
+    ///
+    /// ⚠ `shouldApplyRemote` 의 dirty 가드는 받은 알람을 못 지킨다 —
+    /// `nextLocalSyncState` 가 받은 알람을 항상 `.synced` 로 되돌리고
+    /// `mapped.lastSyncedAtMillis` 는 매번 now 라 비교가 언제나 참이다.
     static func merge(existing: LocalAlarmRecord, mapped: LocalAlarmRecord) -> LocalAlarmRecord {
         var merged = mapped
         merged.id = existing.id                                  // 로컬 ID 유지
         merged.alarmKitID = existing.alarmKitID                  // 스케줄러 ID 보존
-        merged.snoozeCount = existing.snoozeCount                // 누적 카운트 유지
-        merged.snoozeRepeatLimit = existing.snoozeRepeatLimit    // 사용자가 바꾼 값 보존
+        merged.createdAtMillis = existing.createdAtMillis
+
+        // ── (1) **서버에 사본이 없는 로컬 전용 값**은 origin 과 무관하게 지킨다.
+        // 매퍼는 이 값들을 기본치(100·nil 등)로 만들어 내므로, 여기서 잃으면 영영 잃는다.
+        merged.snoozeCount = existing.snoozeCount
+        merged.snoozeRepeatLimit = existing.snoozeRepeatLimit
         merged.voiceRepeat = existing.voiceRepeat
         merged.voiceVolumePercent = existing.voiceVolumePercent
-        merged.holidayOff = existing.holidayOff
         merged.alarmVolumePercent = existing.alarmVolumePercent
         merged.alarmSoundUri = existing.alarmSoundUri
         merged.alarmSoundLabel = existing.alarmSoundLabel
-        merged.createdAtMillis = existing.createdAtMillis
-        // receivedRemote 에서는 사용자가 disable 했다면 그 의도를 존중.
-        if existing.originEnum == .receivedRemote {
-            merged.enabled = existing.enabled && merged.enabled
-            merged.state = merged.enabled ? AlarmRuntimeState.armed.rawValue : AlarmRuntimeState.disabled.rawValue
+        merged.defaultAlarmSoundId = existing.defaultAlarmSoundId
+        merged.holidayOff = existing.holidayOff
+
+        guard existing.originEnum == .receivedRemote else {
+            // 내가 보낸 알람은 로컬이 권위다 — 올리는 쪽은 push 다.
+            return merged
+        }
+
+        // ── (2) 받은 알람은 **일정까지 수신자 것이다.** 세지 않고 전부 로컬에서 가져온다.
+        merged.hour = existing.hour
+        merged.minute = existing.minute
+        merged.repeatDaysMask = existing.repeatDaysMask
+        merged.fireAtMillis = existing.fireAtMillis
+        merged.snoozeEnabled = existing.snoozeEnabled
+        merged.snoozeMinutes = existing.snoozeMinutes
+        // 사용자가 껐으면 그 의도를 존중한다(서버가 켜도 다시 켜지지 않는다).
+        merged.enabled = existing.enabled && merged.enabled
+
+        // 스누즈 회차는 **한 묶음으로** 지킨다. 상태만 지키고 마감을 갈아 끼우면
+        // '5분 뒤 다시 울림' 이 사라져 다음 정규 회차로 밀린다.
+        let keepSnoozeEpisode = merged.enabled && existing.runtimeStateEnum == .snoozed
+        if keepSnoozeEpisode {
+            merged.state = AlarmRuntimeState.snoozed.rawValue
+            merged.fireAtMillis = existing.fireAtMillis
+            merged.snoozeCount = existing.snoozeCount
+        } else {
+            merged.state = merged.enabled
+                ? AlarmRuntimeState.armed.rawValue
+                : AlarmRuntimeState.disabled.rawValue
         }
         return merged
     }
@@ -393,6 +461,21 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             }
         }
         return (declined, revoked)
+    }
+
+    /// 지금 pull 이 **건드리면 안 되는** 행 — 울리는 중이거나 스누즈 회차가 살아 있다.
+    ///
+    /// 안드로이드는 `RingingService` 가 울리는 알람 집합을 런타임으로 들고 있지만 iOS 에는
+    /// 그런 게 없어 저장된 `state` 로 판단한다.
+    ///
+    /// `.snoozed` 를 포함하는 이유는 안드로이드와 다르다: iOS 재예약(`makeSchedule`)은
+    /// `.relative(hour:minute)` 라 `fireAtMillis` 를 읽지 않는다. 상태를 이어받아도
+    /// AlarmKit countdown 이 취소돼 '5분 뒤' 가 사라지므로, **회차 자체를 건드리지 않는다.**
+    ///
+    /// ⚠ 이 판정을 `recoverScheduledAlarms` 로 옮기지 말 것 — 거기서 배제 조건으로 쓰면
+    /// 상태가 굳은 행이 영구 제외된다.
+    static func isInFlight(_ record: LocalAlarmRecord) -> Bool {
+        record.runtimeStateEnum == .ringing || record.runtimeStateEnum == .snoozed
     }
 
     /// 이 행이 **발신자가 준 음성**을 들고 있는가.
