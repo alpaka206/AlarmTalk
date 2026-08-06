@@ -128,6 +128,29 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         String(format: "%02d:%02d", hour, minute)
     }
 
+    /// 알람 행에 쓰는 **12시간제** 시각(오전/오후는 [meridiemLabel] 로 따로 그린다).
+    /// 안드로이드 `alarmRowClockLabel` 과 같다 — 시계 화면과 같은 읽기 방식이라
+    /// 24시간제("19:30")보다 알람 목록에서 알아보기 쉽다.
+    var clockLabel12h: String {
+        let h12 = hour % 12 == 0 ? 12 : hour % 12
+        return String(format: "%d:%02d", h12, minute)
+    }
+
+    /// 오전/오후. 시각 앞에 **작게** 붙인다(안드로이드 `rd2_am`/`rd2_pm`).
+    var meridiemLabel: String { hour < 12 ? "오전" : "오후" }
+
+    /// 행 둘째 줄의 '다음 울릴 날짜' — 예: "8월 7일 (금)".
+    ///
+    /// 안드로이드는 `DateUtils.formatDateTime(SHOW_DATE|ABBREV_MONTH|SHOW_WEEKDAY|
+    /// ABBREV_WEEKDAY|NO_YEAR)` 로 만든다. 라벨(알람 이름) 대신 이걸 두는 게 의도다 —
+    /// 기본 시계 앱의 라벨보다 '언제 울리나' 가 실용적이라서.
+    func nextFireDateLabel(now: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.setLocalizedDateFormatFromTemplate("MMMEd")
+        return formatter.string(from: nextFireDate)
+    }
+
     /// 호환 헬퍼: 기존 `repeatWeekdays` (1..7 Calendar weekday) 형식.
     /// Android mask 의 bit 0=Sun..bit 6=Sat 을 Calendar 1=Sun..7=Sat 으로 변환.
     var repeatWeekdays: [Int] {

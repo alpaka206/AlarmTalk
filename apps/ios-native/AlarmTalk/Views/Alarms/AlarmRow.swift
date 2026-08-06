@@ -9,6 +9,9 @@ import SwiftUI
 struct AlarmRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let alarm: LocalAlarmRecord
+    /// 둘째 줄에 붙는 '누구 목소리로 울리는지'. 이 앱에서 알람을 구분하는 고유 정보라
+    /// 라벨 없는 목록에서 구분자 역할도 겸한다(안드로이드 `AlarmRow(voiceName=)`).
+    var voiceName: String?
     let onTap: () -> Void
     let onToggleEnabled: (Bool) -> Void
     let onDelete: () -> Void
@@ -59,19 +62,41 @@ struct AlarmRow: View {
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
     }
 
+    private var timeColor: Color {
+        alarm.enabled ? theme.palette.onSurface : theme.palette.onSurfaceVariant
+    }
+
+    /// "8월 7일 (금) · 엄마 목소리" — 목소리를 모르면 날짜만.
+    private var secondLine: String {
+        let date = alarm.nextFireDateLabel()
+        guard let voiceName, !voiceName.trimmingCharacters(in: .whitespaces).isEmpty else { return date }
+        return "\(date) · \(voiceName) 목소리"
+    }
+
     private var rowContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 8) {
                 Button(action: onTap) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(alarm.timeString)
-                            .font(.pretendard(.regular, size: 32))
-                            .foregroundStyle(alarm.enabled ? theme.palette.onSurface : theme.palette.onSurfaceVariant)
-                        Text(alarm.label)
-                            .font(.pretendard(.semibold, size: 14))
+                        // 시각 앞에 오전/오후를 **작게** 붙이고 12시간제로 쓴다.
+                        // 24시간제("19:30")로 되돌리지 말 것 — 안드로이드와 읽는 방식이 갈린다.
+                        HStack(alignment: .lastTextBaseline, spacing: 6) {
+                            Text(alarm.meridiemLabel)
+                                .font(.pretendard(.semibold, size: 16))
+                            Text(alarm.clockLabel12h)
+                                .font(.pretendard(.regular, size: 32))
+                                // 분이 바뀔 때 숫자 폭이 흔들리지 않게(안드로이드 tnum).
+                                .monospacedDigit()
+                        }
+                        .foregroundStyle(timeColor)
+
+                        // 라벨(알람 이름)이 아니라 **다음 울릴 날짜 · 목소리**다.
+                        // 기본 시계 앱의 라벨보다 '언제 · 누구 목소리로' 가 실용적이라는 판단.
+                        Text(secondLine)
+                            .font(.pretendard(.semibold, size: 15))
                             .lineLimit(1)
                             .truncationMode(.tail)
-                            .foregroundStyle(alarm.enabled ? theme.palette.onSurface : theme.palette.onSurfaceVariant)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -85,6 +110,8 @@ struct AlarmRow: View {
                     )
                 )
                 .labelsHidden()
+                // iOS 기본 초록이 아니라 앱 팔레트를 쓴다 — 안드로이드 `AlarmTalkSwitch` 대응.
+                .tint(theme.palette.primary)
                 .accessibilityLabel(Text(alarm.enabled ? "알람 끄기" : "알람 켜기"))
             }
 
@@ -166,9 +193,10 @@ struct AlarmRow: View {
         if alarm.runtimeStateEnum == .failed {
             return "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요."
         }
-        if alarm.syncStateEnum == .syncFailed {
-            return "서버에 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
-        }
+        // ⚠ **동기화 실패(syncFailed)는 행에 띄우지 않는다.** 기준은 안드로이드
+        // `ControlsAndPermissions.kt:577-582` 그대로다 — "사용자가 할 일이 있는가.
+        // 없으면 넣지 않는다." 서버 저장 실패는 다음 sync 가 알아서 재시도하므로
+        // 사용자가 할 일이 없는데, 빨간 경고 톤이라 멀쩡한 알람이 '고장' 으로 읽힌다.
         return nil
     }
 }

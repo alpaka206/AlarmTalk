@@ -129,6 +129,8 @@ final class AlarmKitViewModel: ObservableObject {
         "설정에서 알람 권한을 켜 주세요. \(alarmDeniedConsequence)"
 
     func requestAuthorization() async {
+        // 화면 확인 모드에서는 권한 팝업이 화면을 가린다(스크립트로 탭할 방법이 없다).
+        if UIPreviewSeed.isEnabled { return }
         #if canImport(AlarmKit)
         do {
             let state = try await AlarmManager.shared.requestAuthorization()

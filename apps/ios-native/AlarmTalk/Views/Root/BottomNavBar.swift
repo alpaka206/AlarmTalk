@@ -7,7 +7,6 @@ import SwiftUI
 /// 받은-알람 카운트 등을 넘긴다.)
 struct BottomNavBar: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    @Environment(\.colorScheme) private var colorScheme
     @Binding var selected: NativeTab
     let badgeProvider: (NativeTab) -> Int
     var onSelect: ((NativeTab) -> Void)? = nil
@@ -40,38 +39,26 @@ struct BottomNavBar: View {
                         Text(tab.title)
                             .font(.caption2.weight(selected == tab ? .semibold : .medium))
                     }
+                    // ⚠ **선택 탭에 배경 알약을 두지 않는다.** 안드로이드는 색(+채워진
+                    // 아이콘 스왑)만으로 선택을 표시한다(`AlarmTalkBottomBar.kt:107` 주석
+                    // "배경 인디케이터 없이 색으로만"). 알약을 다시 넣지 말 것.
                     .frame(maxWidth: .infinity, minHeight: 58)
-                    .foregroundStyle(selected == tab ? selectedContentColor : theme.palette.onSurfaceVariant)
-                    .background(
-                        selected == tab ? selectedBackgroundColor : Color.clear,
-                        in: RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
-                    )
+                    .foregroundStyle(selected == tab ? theme.palette.primary : theme.palette.onSurfaceVariant)
                 }
                 .buttonStyle(.plain)
                 .disabled(selected == tab)
             }
         }
         .padding(.horizontal, 6)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
-        .background(theme.palette.surface)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(theme.palette.surfaceVariant)
-                .frame(height: 1)
-        }
+        .padding(.vertical, 6)
+        // 배경색과 같게 깔아 시스템 홈 인디케이터 영역과 이음새 없이 이어지게 한다
+        // (안드로이드 `AlarmTalkBottomBar.kt:49-52`). 구분선도 두지 않는다 —
+        // `surface` + 상단 1px 선은 옛 iOS 전용 처리였다.
+        .background(theme.palette.background)
     }
 
-    /// 선택 탭 배경: 밝게에선 primaryContainer(파랑 알약), 어둡게에선 surfaceVariant.
-    /// Android `AlarmTalkBottomBar.kt:117-121` (isDarkScheme 분기) 미러.
-    private var selectedBackgroundColor: Color {
-        colorScheme == .dark ? theme.palette.surfaceVariant : theme.palette.primaryContainer
-    }
 
     /// 선택 탭 전경: 밝게 onPrimaryContainer, 어둡게 primary. Android `:122-126` 미러.
-    private var selectedContentColor: Color {
-        colorScheme == .dark ? theme.palette.primary : theme.palette.onPrimaryContainer
-    }
 }
 
 #if DEBUG

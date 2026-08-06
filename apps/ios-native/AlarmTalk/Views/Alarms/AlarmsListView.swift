@@ -21,25 +21,20 @@ struct AlarmsListView: View {
         VStack(alignment: .leading, spacing: 16) {
             // 안드로이드 첫 탭과 같은 모양 — '알람' 라벨 대신 **상태 문구를 헤드라인으로**
             // 승격한다(제목 = 결론). 절대 시각은 바로 아래 카드에 이미 있다.
-            HStack(alignment: .center) {
-                NextAlarmHeadline(
-                    nextAlarm: nextAlarmForHeadline,
-                    hasAnyAlarm: !store.alarms.isEmpty,
-                    alarmPermissionMissing: !alarmKit.alarmAuthorized
-                )
-                Spacer(minLength: 12)
-                Button {
-                    Task { await openCreateAlarm() }
-                } label: {
-                    Label("알람 만들기", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AlarmTalkTheme.primary)
-                .foregroundStyle(AlarmTalkTheme.text)
-            }
+            // 만들기 액션은 **＋FAB 하나**다(MainTabsView). 헤드라인 옆에 버튼을 또 두면
+            // 같은 일을 하는 진입점이 둘이 되고, 헤드라인('다음 알람까지 …')이 눌릴 자리를
+            // 뺏겨 짧게 잘린다. 안드로이드도 FAB 하나뿐이다(`AlarmTalkApp.kt:862`).
+            NextAlarmHeadline(
+                nextAlarm: nextAlarmForHeadline,
+                hasAnyAlarm: !store.alarms.isEmpty,
+                alarmPermissionMissing: !alarmKit.alarmAuthorized
+            )
 
-            if !alarmKit.alarmAuthorized {
-                AlarmPermissionSection()
+            // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
+            // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
+            // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen.kt:268-287`).
+            if !alarmKit.alarmAuthorized && !store.alarms.isEmpty {
+                alarmPermissionBanner
             }
             // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
             // (로그인 필요 / push·pull 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
@@ -110,6 +105,7 @@ struct AlarmsListView: View {
                 ForEach(sortedAlarms) { alarm in
                     AlarmRow(
                         alarm: alarm,
+                        voiceName: voiceName(for: alarm),
                         onTap: { openEditor(.edit(alarm.id)) },
                         onToggleEnabled: { enabled in
                             Task { await setAlarm(alarm, enabled: enabled) }
@@ -122,32 +118,85 @@ struct AlarmsListView: View {
             }
         }
     }
-
-    /// 빈 상태 카드. Android `EmptyAlarmCard` 미러: 가운데 정렬, 큰 secondary 알람
-    /// 아이콘, titleLarge 굵은 제목(부제 없음), 만들기 버튼을 한 장의 WakerPanelShape(18)
-    /// surface 카드에 담는다.
-    private var emptyAlarmCard: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "alarm")
-                .font(.system(size: 44))
-                .foregroundStyle(theme.palette.secondary)
-            Text("아직 알람이 없어요.")
-                .font(theme.typography.titleLarge)
-                .fontWeight(.bold)
-                .foregroundStyle(theme.palette.onSurface)
-            Button {
-                Task { await openCreateAlarm() }
-            } label: {
-                Text("새 알람 만들기")
+    /// 권한 한 줄 배너 — 탭하면 모달을 거치지 않고 곧바로 권한 요청으로 간다.
+    /// 안드로이드 `ControlsAndPermissions.kt:188-217` 의 슬림 배너.
+    ///
+    /// 문구는 **iOS 의 사실**을 말한다: AlarmKit 권한이 없으면 예약 자체가 안 되므로
+    /// 정말로 울리지 않는다. (안드로이드는 권한 셋 중 무엇이 빠져도 울리기는 해서
+    /// "울리지 않아요" 라고 쓰지 않는다 — 그쪽 문구를 그대로 베끼지 말 것.)
+    private var alarmPermissionBanner: some View {
+        Button {
+            Task { await alarmKit.requestAuthorization() }
+        } label: {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(theme.palette.error)
+                Text("알람 권한이 없어 알람이 예약되지 않아요.")
+                    .font(theme.typography.bodyMedium)
+                    .foregroundStyle(theme.palette.onSurface)
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(theme.palette.primary)
-            .foregroundStyle(theme.palette.onPrimary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
+            .background(
+                theme.palette.surface,
+                in: RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
+            )
         }
-        .frame(maxWidth: .infinity)
-        .padding(24)
-        .background(theme.palette.surface)
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
+        .buttonStyle(.plain)
+    }
+
+    /// 알람 행 둘째 줄에 붙일 목소리 이름. 공유받은 목소리는 관계 라벨(엄마·할머니)이
+    /// 있으면 그걸 우선한다 — 목록에서 "엄마 목소리" 로 읽히는 게 사람 이름보다 낫다.
+    private func voiceName(for alarm: LocalAlarmRecord) -> String? {
+        guard let id = alarm.voiceProfileId, !id.isEmpty else { return nil }
+        guard let profile = remoteSync.voiceProfiles.first(where: { $0.id == id }) else { return nil }
+        let relationship = profile.relationshipLabel?.trimmingCharacters(in: .whitespaces) ?? ""
+        return relationship.isEmpty ? profile.name : relationship
+    }
+
+    /// 빈 상태 카드 — 안드로이드 `ui/home/HomeCards.kt:29-92`.
+    ///
+    /// 좌우 2단(제목+보조문 / ＋버튼)이고 **카드 전체가 눌린다**.
+    /// ⚠ "아직 알람이 없어요." 같은 **상황 라벨은 두지 않는다**(HomeCards.kt:54-55 가 못
+    /// 박은 규칙). 빈 화면인 걸 이미 보고 있는 사람에게 비었다고 말하는 대신, 다음에 할
+    /// 일과 그걸 하면 뭐가 좋은지를 말한다.
+    private var emptyAlarmCard: some View {
+        Button {
+            Task { await openCreateAlarm() }
+        } label: {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("첫 알람 만들기")
+                        .font(.pretendard(.bold, size: 24))
+                        .foregroundStyle(theme.palette.onSurface)
+                    Text("듣고 싶은 목소리가 깨워줘요.")
+                        .font(theme.typography.bodyMedium)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "plus")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(theme.palette.onPrimary)
+                    .frame(width: 40, height: 40)
+                    .background(theme.palette.primary, in: Capsule())
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity)
+            .background(
+                theme.palette.surface,
+                in: RoundedRectangle(cornerRadius: theme.shapes.large, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("첫 알람 만들기")
     }
 
     /// 헤드라인이 셀 '다음 알람' — 켜져 있는 것 중 가장 먼저 울릴 것.

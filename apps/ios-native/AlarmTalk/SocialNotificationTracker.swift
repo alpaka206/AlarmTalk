@@ -12,6 +12,8 @@ struct SocialNotificationRequest: Equatable {
 
 enum SocialNotificationTracker {
     static func requestAuthorizationIfNeeded() async {
+        // 화면 확인 모드에서는 권한 팝업이 화면을 가린다(시뮬레이터엔 탭할 방법이 없다).
+        if UIPreviewSeed.isEnabled { return }
         #if canImport(UserNotifications)
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()

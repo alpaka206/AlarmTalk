@@ -115,7 +115,7 @@ struct MemberManagementView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(theme.palette.background.ignoresSafeArea())
+        .homeGradientBackground()
         .navigationTitle("공유 이용권")
         .navigationBarTitleDisplayMode(.inline)
         .alert(

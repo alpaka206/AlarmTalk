@@ -121,3 +121,31 @@ struct AlarmTalkThemeProvider<Content: View>: View {
             .environment(\.voiceAlarmTheme, .resolve(for: colorScheme))
     }
 }
+
+/// 화면 배경을 홈 그라데이션으로 깐다.
+///
+/// 안드로이드는 `homeGradientBrush()` 를 **탭뿐 아니라 하위 전체화면에도** 깐다 —
+/// 설정(`SettingsScreen.kt:73`)·구성원 관리(`MemberManagementScreen.kt:106`)·
+/// 동의 내역(`ConsentHistoryScreen.kt:83`)·약관 전문(`LegalDocumentScreen.kt:41`)·
+/// 오픈소스 라이선스(`OssLicensesScreen.kt:84`)까지. 그래서 탭에서 하위 화면으로
+/// 들어가도 배경 톤이 튀지 않는다.
+///
+/// ⚠ iOS 는 탭(`MainTabsView`)에만 깔고 하위 화면은 단색 `background` 였다 — 설정에
+/// 들어가는 순간 딥네이비가 회백으로 바뀌어 다른 앱처럼 보였다. **새 전체화면을
+/// 만들면 이 모디파이어를 붙인다.** `theme.palette.background` 로 되돌리지 말 것.
+extension View {
+    func homeGradientBackground() -> some View {
+        modifier(HomeGradientBackground())
+    }
+}
+
+private struct HomeGradientBackground: ViewModifier {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            // List/Form 은 자기 배경을 먼저 그리므로 걷어내야 그라데이션이 보인다.
+            .scrollContentBackground(.hidden)
+            .background(theme.homeGradient.ignoresSafeArea())
+    }
+}

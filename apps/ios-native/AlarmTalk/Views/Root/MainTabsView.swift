@@ -51,42 +51,39 @@ struct MainTabsView: View {
                     onSelect: selectTab
                 )
             }
-            .background(theme.homeGradient)
-            .navigationTitle(selectedTab.navigationTitle)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        if socialFeatures.familyGroup?.group == nil {
-                            Button {
-                                auxiliaryScreen = .people
-                            } label: {
-                                Label("초대 코드 등록", systemImage: "qrcode")
-                            }
-                        }
-                        Button {
-                            auxiliaryScreen = .billing
-                        } label: {
-                            Label("이용권", systemImage: "creditcard")
-                        }
-                        if socialFeatures.familyGroup?.group != nil {
-                            Button {
-                                auxiliaryScreen = .members
-                            } label: {
-                                Label("공유 이용권", systemImage: "person.2")
-                            }
-                        }
-                        Divider()
-                        Button {
-                            settingsPresented = true
-                        } label: {
-                            Label("설정", systemImage: "gearshape")
-                        }
+            // ＋FAB — 알람 탭에서 **알람이 하나라도 있을 때만**. 비어 있을 때는 빈 상태
+            // 카드의 '새 알람 만들기' 가 이미 그 일을 하고, 둘이 같이 뜨면 오른쪽 아래에서
+            // 손가락이 뭘 노리는지 애매해진다(안드로이드 `AlarmTalkApp.kt:855-873`).
+            .overlay(alignment: .bottomTrailing) {
+                if selectedTab == .alarms && !store.alarms.isEmpty {
+                    Button {
+                        editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil, familyAlarmMode: false)
                     } label: {
-                        Image(systemName: "person.crop.circle")
+                        Image(systemName: "plus")
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundStyle(theme.palette.onPrimary)
+                            .frame(width: 56, height: 56)
+                            .background(theme.palette.primary, in: Circle())
+                            .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
                     }
-                    .accessibilityLabel("프로필")
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 20)
+                    // 하단바(76) 위에 얹는다.
+                    .padding(.bottom, 92)
+                    .accessibilityLabel("알람 만들기")
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
             }
+            .animation(.snappy(duration: 0.18), value: selectedTab)
+            .background(theme.homeGradient)
+            // ⚠ **상단 바를 두지 않는다.** 안드로이드에는 앱 전체에 TopAppBar 가 하나도
+            // 없다(`AlarmListScreen.kt:178-180`). large title 을 켜면 '알람' 대제목과
+            // 네비바 머티리얼이 그라데이션 위에 얹혀 배경이 두 겹으로 갈린다.
+            .toolbar(.hidden, for: .navigationBar)
+            // ⚠ **상단 프로필 드롭다운을 되살리지 말 것.** 여기 있던 항목(코드 등록·
+            // 이용권·공유 이용권·설정)은 전부 **더보기 탭**에 그대로 있다. 안드로이드는
+            // 이 메뉴를 더보기 탭으로 승격하면서 없앴다 — 같은 곳으로 가는 길이 둘이면
+            // 어느 쪽이 정본인지 매번 헷갈린다.
             .sheet(item: $editorTarget) { target in
                 NavigationStack {
                     AlarmEditorSheet(

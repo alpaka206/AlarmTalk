@@ -106,7 +106,7 @@ struct SettingsView: View {
             }
             .padding(20)
         }
-        .background(AlarmTalkTheme.background)
+        .homeGradientBackground()
         .onAppear {
             nicknameDraft = auth.session?.user.name ?? ""
             loadPromptPreferences()
@@ -362,7 +362,7 @@ private struct HolidayCountryPickerSheet: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .background(AlarmTalkTheme.background)
+        .homeGradientBackground()
     }
 }
 
@@ -428,7 +428,7 @@ struct ThemeModePickerSheet: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .background(AlarmTalkTheme.background)
+        .homeGradientBackground()
     }
 }
 
@@ -466,7 +466,7 @@ private struct WeatherLocationPreferenceSheet: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .background(AlarmTalkTheme.background)
+        .homeGradientBackground()
         .onAppear {
             country = initial.weatherCountry
             city = initial.weatherCity
@@ -518,7 +518,7 @@ private struct FortuneInfoPreferenceSheet: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .background(AlarmTalkTheme.background)
+        .homeGradientBackground()
         .onAppear {
             gender = FortunePromptInputFormat.normalizedGender(initial.fortuneGender)
             birthDate = FortunePromptInputFormat.normalizedBirthDate(initial.fortuneBirthDate)

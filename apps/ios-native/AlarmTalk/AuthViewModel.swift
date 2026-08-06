@@ -162,6 +162,15 @@ final class AuthViewModel: ObservableObject {
         self.appleCredentialProvider = appleCredentialProvider
         self.accessSnapshotStore = accessSnapshotStore
         session = KeychainStore.readSession()
+        #if DEBUG
+        // 화면 확인 모드(-UIPreviewSeed)에서는 여기서 바로 세션을 심는다. 뷰의 `.task`
+        // 에서 심으면 게이트 판정과 경쟁해 어떤 실행에서는 랜딩이 그대로 남는다.
+        if UIPreviewSeed.isEnabled {
+            let seeded = UIPreviewSeed.makeSession()
+            UIPreviewSeed.markGatesPassed(userID: seeded.user.id)
+            session = seeded
+        }
+        #endif
 
         // Apple 자격 증명이 다른 디바이스에서 revoke 되면 시스템이 이 알림을 쏜다.
         // block-based observer 는 deinit 에서 명시 removeObserver 가 필요하므로
@@ -465,7 +474,11 @@ final class AuthViewModel: ObservableObject {
             switch apiError {
             case .server(let status, _, _):
                 if status == 401 {
-                    signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
+                    // 화면 확인 모드는 서버 없이 도는 모드라 첫 /auth/me 가 401 이다.
+                    // 여기서 로그아웃하면 랜딩으로 튕겨 아무 화면도 못 본다.
+                    if !UIPreviewSeed.isEnabled {
+                        signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
+                    }
                 } else if status == 403 {
                     // 권한 박탈 — 세션은 유지하되 사용자에게 알림
                     lastNetworkError = "이 계정으로는 접근할 수 없는 기능이 있어요."

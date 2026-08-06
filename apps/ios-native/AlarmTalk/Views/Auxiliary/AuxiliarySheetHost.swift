@@ -24,7 +24,7 @@ struct AuxiliarySheetHost: View {
                 content
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(AlarmTalkTheme.background)
+            .homeGradientBackground()
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(action: onClose) {
@@ -62,7 +62,7 @@ struct AuxiliarySheetHost: View {
                 }
                 .padding(20)
             }
-            .background(AlarmTalkTheme.background)
+            .homeGradientBackground()
         }
     }
 }
