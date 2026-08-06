@@ -397,9 +397,7 @@ struct VoiceUploadResponse: Decodable {
 
 struct VoiceUpload: Decodable, Identifiable, Equatable {
     var id: String
-    var objectKey: String?
     var mimeType: String?
-    var sizeBytes: Int?
     var durationMs: Int?
     var originalName: String?
     var createdAt: String?
@@ -684,7 +682,6 @@ struct CheckoutRequest: Encodable {
 
 struct CheckoutResponse: Decodable, Equatable {
     var success: Bool
-    var checkoutStub: Bool?
     var subscription: BillingSubscription?
     var plan: BillingPlan
     var voucher: CheckoutVoucher?
@@ -743,8 +740,6 @@ struct DeleteAccountResponse: Decodable, Equatable {
 struct AccountDeletionResponse: Decodable, Equatable {
     var success: Bool = false
     var status: String = "pending_deletion"
-    var purgeAt: String? = nil
-    var graceDays: Int = 30
 }
 
 /// 유예 탈퇴 철회(복구) 응답. Android `AuthApi.kt:132` `CancelDeletionResponse`.
@@ -809,7 +804,6 @@ struct ConsentStatusResponse: Decodable, Equatable {
 struct AppVersionResponse: Decodable, Equatable {
     var platform: String = "ios"
     var minSupportedVersion: Int = 1
-    var latestVersion: Int = 1
     var storeUrl: String = ""
 }
 
@@ -821,9 +815,6 @@ struct RequestEmailVerificationRequest: Encodable {
 
 struct RequestEmailVerificationResponse: Decodable, Equatable {
     var success: Bool
-    /// 코드 유효시간(초). 백엔드 auth.ts:189/300 의 `expires_in_seconds`.
-    /// decoder 의 convertFromSnakeCase 로 자동 매핑. Android `AuthApi.kt:83`.
-    var expiresInSeconds: Int?
     /// 디버그(dev) 환경에서 서버가 바로 코드를 돌려보내는 경우가 있어 옵셔널로 둔다.
     /// 백엔드는 `debug_code` 키로 보낸다(auth.ts:190/301). convertFromSnakeCase 로
     /// `debugCode` 에 매핑된다. Android `AuthApi.kt:84`.
@@ -884,7 +875,6 @@ struct ConsentRecord: Decodable, Equatable {
     var consentType: String
     var policyVersion: String
     var agreed: Bool
-    var agreedAt: String?
 }
 
 /// `GET user/consents` 응답. 유형별 최신 동의값 목록. Android `ConsentListResponse`.
