@@ -372,7 +372,7 @@ final class SocialFeatureViewModel: ObservableObject {
         "USER_NOT_FOUND"
     ]
 
-    // MARK: - Phase 3-C3: 멤버 액션, family alarm, 바우처 redeem, plan downgrade cascade
+    // MARK: - 멤버 액션, family alarm, plan downgrade cascade
 
     /// 내가 가족/커플 그룹에서 나간다. Android `MainViewModelSocialActions.leaveFamilyGroup` 와 동등.
     func leaveFamilyGroup(groupId: String, session: AuthSession?) async {

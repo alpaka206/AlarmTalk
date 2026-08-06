@@ -163,7 +163,6 @@
 		E219CEA80369015652EF372A /* NextAlarmHeroCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C15DF9ACFE11774732F25E0 /* NextAlarmHeroCard.swift */; };
 		E280AE375CB9149F23F1BAA8 /* ReceivedAlarmBadgeStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3B1ECBB5616D418A9932BCA /* ReceivedAlarmBadgeStoreTests.swift */; };
 		E49463B02FB2F50F117AF44C /* VoiceProfileManagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D0590DA9571CFBFE194ACF /* VoiceProfileManagementPanel.swift */; };
-		E4C93E5C006FC8DA83A5F180 /* AlarmTalkElevation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 998E0B246A8A6956205D5CD3 /* AlarmTalkElevation.swift */; };
 		E6A1A9B80790C9D77AF34DAD /* VoiceStudioViewModel+ErrorMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9641A64BF7F32B31E960BA67 /* VoiceStudioViewModel+ErrorMapping.swift */; };
 		E79084A3E375418A8A801CA6 /* QuickStartGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C9FE903B996FF16470B978C /* QuickStartGrid.swift */; };
 		E94CC690A94BFFFF3999081A /* PaidVoiceGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECF3BDC0CB41DDC6B8481013 /* PaidVoiceGate.swift */; };
@@ -330,7 +329,6 @@
 		98CCA14FD6E4C634ECED32A9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		98DEA7F0002B6032EA05DA9B /* LocalAlarmStoreCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAlarmStoreCopyTests.swift; sourceTree = "<group>"; };
 		993F13DD98269244F828B44E /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
-		998E0B246A8A6956205D5CD3 /* AlarmTalkElevation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkElevation.swift; sourceTree = "<group>"; };
 		99E9564C1E25D37106ECC398 /* AccountPendingDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountPendingDeletionView.swift; sourceTree = "<group>"; };
 		9E9DC62B90B8D3C7D339AE8E /* AudioPreviewPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPreviewPlayer.swift; sourceTree = "<group>"; };
 		9FAA02E16F860ED36A858566 /* AlarmTalkAPIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkAPIModels.swift; sourceTree = "<group>"; };
@@ -708,7 +706,6 @@
 				64309C1B0B71EE457BAFB65C /* AlarmTalkAPI.swift */,
 				9FAA02E16F860ED36A858566 /* AlarmTalkAPIModels.swift */,
 				C147826DE6871E7FF9B5563D /* AlarmTalkApp.swift */,
-				998E0B246A8A6956205D5CD3 /* AlarmTalkElevation.swift */,
 				52A22132409AC4AE4AB65E3B /* AlarmTalkPalette.swift */,
 				07AE96180817F4A2A28B5ED4 /* AlarmTalkShapes.swift */,
 				0DA0DFFC6243F7340FEE4E83 /* AlarmTalkSpacing.swift */,
@@ -940,7 +937,6 @@
 				14BEBC10C8EB922C30A26F98 /* AlarmTalkAPIModels.swift in Sources */,
 				7BCA1560C3D2E94AF7130A58 /* AlarmTalkApp.swift in Sources */,
 				211DD3BCAC0CE23AD3436301 /* AlarmTalkBrand.swift in Sources */,
-				E4C93E5C006FC8DA83A5F180 /* AlarmTalkElevation.swift in Sources */,
 				7638CB240847562DCB768E5F /* AlarmTalkMetadata.swift in Sources */,
 				63953880A52D27B707DAD2CF /* AlarmTalkPalette.swift in Sources */,
 				75A5F309003D743578C5B318 /* AlarmTalkShapes.swift in Sources */,

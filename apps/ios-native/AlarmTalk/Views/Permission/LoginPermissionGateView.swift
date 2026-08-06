@@ -19,8 +19,6 @@ struct LoginPermissionSnapshot: Equatable {
     var alarmRecoveryNeeded: Bool = false
     var microphoneRecoveryNeeded: Bool = false
 
-    var allGranted: Bool { alarmAuthorized && microphoneGranted }
-
     static let unknown = LoginPermissionSnapshot(
         alarmAuthorized: false,
         microphoneGranted: false

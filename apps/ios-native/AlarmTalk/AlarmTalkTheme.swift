@@ -67,13 +67,11 @@ struct AlarmTalkThemeValues: Equatable {
     let typography: AlarmTalkTypography
     let shapes: AlarmTalkShapes
     let spacing: AlarmTalkSpacing
-    let elevation: AlarmTalkElevation
 
     static func == (lhs: AlarmTalkThemeValues, rhs: AlarmTalkThemeValues) -> Bool {
         lhs.palette == rhs.palette &&
         lhs.shapes == rhs.shapes &&
-        lhs.spacing == rhs.spacing &&
-        lhs.elevation == rhs.elevation
+        lhs.spacing == rhs.spacing
         // `typography` intentionally omitted: `SwiftUI.Font` does not conform to
         // Equatable. Palette/shape/spacing changes are sufficient signals for
         // SwiftUI invalidation.
@@ -87,13 +85,11 @@ extension AlarmTalkThemeValues {
             homeGradient: AlarmTalkGradient.home(for: colorScheme),
             typography: .default,
             shapes: .default,
-            spacing: .default,
-            elevation: .default
+            spacing: .default
         )
     }
 
     static let light = AlarmTalkThemeValues.resolve(for: .light)
-    static let dark = AlarmTalkThemeValues.resolve(for: .dark)
 }
 
 private struct AlarmTalkThemeKey: EnvironmentKey {

@@ -137,8 +137,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         durationMs: Int,
         noiseRemoval: Bool = false,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil,
-        isDraft: Bool? = nil
+        listenerTitle: String? = nil
     ) -> [String: String] {
         _ = noiseRemoval // stale: 더 이상 전송하지 않음(backend 무시, Android 미전송).
         let fields: [String: String] = [
@@ -147,7 +146,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             "durationMs": String(durationMs),
             "relationshipLabel": relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "listenerTitle": listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            "isDraft": (isDraft ?? false) ? "true" : "false",
         ]
         return fields
     }
@@ -161,8 +159,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         noiseRemoval: Bool = false,
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil,
-        isDraft: Bool? = nil
+        listenerTitle: String? = nil
     ) async throws -> VoiceProfile {
         let fields = Self.voiceCloneMultipartFields(
             name: name,
@@ -170,8 +167,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
             durationMs: durationMs,
             noiseRemoval: noiseRemoval,
             relationshipLabel: relationshipLabel,
-            listenerTitle: listenerTitle,
-            isDraft: isDraft
+            listenerTitle: listenerTitle
         )
         // 관계/호칭이 비어 있어도 필드를 포함해 Android 와 같은 서버 검증 경로를 탄다.
         let response: VoiceProfileResponse = try await multipartRequest(
@@ -205,7 +201,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         id: String,
         name: String? = nil,
         isShared: Bool? = nil,
-        isDraft: Bool? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
         token: String
@@ -217,7 +212,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             body: VoiceProfileUpdateRequest(
                 name: name.nilIfBlank,
                 isShared: isShared,
-                isDraft: isDraft,
                 relationshipLabel: relationshipLabel.nilIfBlank,
                 listenerTitle: listenerTitle.nilIfBlank
             )
@@ -570,7 +564,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
-    // MARK: - Phase 3-C3: Family voice alarm + 바우처 redeem + user 검색
+    // MARK: - Family voice alarm + 받은 알람 그만받기
 
     /// 가족 멤버에게 보내는 voice alarm 생성. Android `FamilyApi.kt:87` 의
     /// `createFamilyAlarmTalk`. targetUserId 가 수신자.
@@ -736,10 +730,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 401(세션 만료)과 달리 세션은 유지하고 동의 화면만 띄운다.
     static let consentRequiredNotification = Notification.Name("AlarmTalkAPIConsentRequired")
 
-    /// 401 응답의 `error_code`. TOKEN_REVOKED(로그아웃으로 token_epoch 상향) 도
-    /// 일반 401 과 동일하게 강제 로그아웃 경로를 탄다 — 별도 분기 없이 status==401
-    /// 로 충분하지만, 호출자 참조용으로 상수를 노출한다.
-    static let tokenRevokedErrorCode = "TOKEN_REVOKED"
     static let consentRequiredErrorCode = "CONSENT_REQUIRED"
 
     /// 디바운스용 상태. 동시 호출이 있을 수 있어 lock 으로 보호한다.
@@ -799,12 +789,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
     private func splitPathAndQuery(_ path: String) -> (path: String, query: String?) {
         guard let qIndex = path.firstIndex(of: "?") else { return (path, nil) }
         return (String(path[path.startIndex..<qIndex]), String(path[path.index(after: qIndex)...]))
-    }
-
-    private static func percentEncodedQueryValue(_ value: String) -> String {
-        var allowed = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: "&=+")
-        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
     static func multipartUploadFileName(fileURL: URL, originalName: String?) -> String {

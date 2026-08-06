@@ -184,8 +184,6 @@ enum LocalHolidayCalendar {
 @MainActor
 final class HolidayStore: ObservableObject {
     nonisolated static let defaultCountryCode = "KR"
-    nonisolated static let defaultLookaheadDays = 370
-
     /// Phase 2: 지원 국가는 정확히 이 5개. (EU/GB 없음.)
     nonisolated static let supportedCountryCodes = ["KR", "JP", "US", "VN", "CN"]
 
@@ -269,18 +267,6 @@ final class HolidayStore: ObservableObject {
                 h.epochDay == epochDay
         }
         return inCache || LocalHolidayCalendar.isHoliday(year: y, month: m, day: d, countryCode: cc)
-    }
-
-    func holidaysIn(range: ClosedRange<Date>,
-                    countryCode: String? = nil) -> [HolidayEntity] {
-        let cc = countryCode ?? selectedCountryCode
-        let startEpoch = Self.epochDay(of: range.lowerBound)
-        let endEpoch = Self.epochDay(of: range.upperBound)
-        return holidays.filter { h in
-            h.countryCode.uppercased() == cc.uppercased() &&
-                h.epochDay >= startEpoch &&
-                h.epochDay <= endEpoch
-        }
     }
 
     /// Android `HolidayCalendarStore.upcomingHolidays` / DAO `getUpcoming` 동등.

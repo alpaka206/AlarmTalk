@@ -216,7 +216,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(fields["durationMs"], "60000")
         XCTAssertEqual(fields["relationshipLabel"], "granddaughter")
         XCTAssertEqual(fields["listenerTitle"], "grandpa")
-        XCTAssertEqual(fields["isDraft"], "false")
     }
 
     func test_voiceCloneMultipartFields_keepBlankRelationshipPartsForServerValidation() {
@@ -226,13 +225,13 @@ final class VoiceStudioViewModelTests: XCTestCase {
             durationMs: 60_000,
             noiseRemoval: true,
             relationshipLabel: nil,
-            listenerTitle: "   ",
-            isDraft: true
+            listenerTitle: "   "
         )
 
         XCTAssertEqual(fields["relationshipLabel"], "")
         XCTAssertEqual(fields["listenerTitle"], "")
-        XCTAssertEqual(fields["isDraft"], "true")
+        // isDraft 는 더 이상 보내지 않는다 — draft 승격 플로우가 제품에서 사라졌다.
+        XCTAssertNil(fields["isDraft"])
         // noiseRemoval/noise_removal 필드는 제거됨(Android 도 더는 전송 안 함, 백엔드 무시).
         XCTAssertNil(fields["noiseRemoval"])
         XCTAssertNil(fields["noise_removal"])

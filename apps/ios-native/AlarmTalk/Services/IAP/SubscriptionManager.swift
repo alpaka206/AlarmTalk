@@ -279,13 +279,11 @@ final class SubscriptionManager: ObservableObject {
     ///     "결제 확인 동기화 실패 — 자동 재시도됩니다" 메시지만 노출.
     ///   - 다음 foreground 진입 또는 `resyncEntitlements()` 호출 시 재시도.
     ///
-    /// 백엔드 라우트가 아직 구현되지 않은 경우 (404/501) 나 점검 중(503):
-    ///   - 동일한 graceful degradation. 사용자는 IAP 결제 완료 자체는 영수증으로
-    ///     보장되며, 백엔드 동기화는 라우트 배포 후 자동으로 catch-up 된다.
+    /// 점검 등으로 서버가 못 받는 경우(503)도 동일한 graceful degradation —
+    /// 결제 자체는 영수증으로 보장되고, 다음 재시도에서 catch-up 된다.
     ///
-    /// 페이로드에는 transaction id 들과 함께 `jws_representation`
-    /// 서버는 transaction id 로 애플에 직접 물어본다 —
-    /// 서버가 서명 검증만으로 트랜잭션 진위를 확인할 수 있게 한다.
+    /// 클라가 보내는 것은 transaction id 하나뿐이다 —
+    /// 상품·만료·환불은 서버가 애플에 직접 물어본 응답이 권위다.
     private func syncWithBackend(transaction: Transaction) async {
         guard let session = authProvider() else {
             // 로그아웃 상태에서 가족공유 등으로 들어온 트랜잭션. 재로그인 후

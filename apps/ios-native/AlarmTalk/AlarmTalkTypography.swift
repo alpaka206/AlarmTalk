@@ -38,15 +38,6 @@ enum PretendardWeight: String {
     case semibold = "Pretendard-SemiBold"
     case bold = "Pretendard-Bold"
 
-    /// SwiftUI weight used by `Font.system(...)` if the custom font fails to load.
-    var fallbackWeight: Font.Weight {
-        switch self {
-        case .regular: return .regular
-        case .medium: return .medium
-        case .semibold: return .semibold
-        case .bold: return .bold
-        }
-    }
 }
 
 extension Font {

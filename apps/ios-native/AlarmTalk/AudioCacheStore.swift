@@ -214,11 +214,6 @@ final class AudioCacheStore {
         try Self.legacyAudioDirectory().appendingPathComponent(fileName)
     }
 
-    nonisolated static func exists(fileName: String) -> Bool {
-        guard let url = try? Self.url(for: fileName) else { return false }
-        return FileManager.default.fileExists(atPath: url.path)
-    }
-
     // MARK: cacheKey-based API
 
     /// SHA-256 hex 해시 계산 (64 char).

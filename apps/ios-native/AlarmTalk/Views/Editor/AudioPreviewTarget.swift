@@ -17,8 +17,6 @@ enum AudioPreviewTarget: Equatable {
     case selectedCrop
     /// 기존 알람에 저장돼 있던 로컬 오디오 캐시 재생.
     case cachedLocalAudio
-    /// 공유받은 목소리 설정 시트의 미리듣기.
-    case sharedVoiceInfo
     /// 스톡 클립 미리듣기. 연관 값은 클립의 messageId.
     case stockClip(String)
 }

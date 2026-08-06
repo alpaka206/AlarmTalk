@@ -55,7 +55,8 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var translateText = false
     @Published var randomPrompt = false
     /// 랜덤 프롬프트 컨텍스트. Android `TtsApi.kt` randomContext 와 동일.
-    /// 허용 값: preset / wake_weather / wake_fortune / meal / sleep / exercise / love.
+    /// 허용 값: preset / wake_weather / wake_fortune / love / medication (`RandomPromptContext` 참조).
+    /// meal/sleep/exercise 는 제품에서 사라졌고 서버가 400 으로 거절한다.
     /// randomPrompt 가 true 일 때만 의미가 있다.
     @Published var randomContext: String = RandomPromptContext.defaultContext.rawValue
     @Published var weatherCountry = ""
@@ -148,6 +149,15 @@ final class VoiceStudioViewModel: ObservableObject {
         defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: activeUserID)
     }
 
+    /// 이 계정이 **마지막으로 알람 저장에 성공하며 쓴** 목소리 id.
+    ///
+    /// 로컬(UserDefaults) 읽기라 네트워크와 무관하게 항상 답한다 — `refresh` 의 성공 경로
+    /// 안에서만 보면, 조기 반환(다른 refresh 진행 중)이나 네트워크 실패 때 편집기가
+    /// 온보딩 기본 목소리로 되돌아간다(CLAUDE.md 「마지막에 쓴 것이 그룹보다 우선」 위반).
+    var lastUsedVoiceId: String? {
+        defaultVoiceStore.lastUsedVoiceId(userID: activeUserID)
+    }
+
     /// 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때.
     func completeVoiceSetup(voiceId: String, listenerTitle: String?) {
         setDefaultVoice(voiceId)
@@ -225,12 +235,6 @@ final class VoiceStudioViewModel: ObservableObject {
             return trimmed
         }
         return nil
-    }
-
-    var canUploadRecording: Bool {
-        recorder.latestRecordingURL != nil
-            && (recorder.latestDurationMs ?? 0) >= VoiceProfileLimits.minDurationMs
-            && (recorder.latestDurationMs ?? 0) <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs
     }
 
     var hasWeatherInfo: Bool {

@@ -417,14 +417,6 @@ final class LocalAlarmStore: ObservableObject {
         persist()
     }
 
-    /// 오프라인 수정 시 dirty 표시.
-    func markDirty(id: String) {
-        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
-        alarms[index].syncState = nextLocalSyncState(for: alarms[index]).rawValue
-        alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
-        persist()
-    }
-
     /// 동기화 실패 시 호출.
     func markSyncFailed(id: String) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }

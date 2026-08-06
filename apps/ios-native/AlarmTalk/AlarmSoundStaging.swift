@@ -115,11 +115,6 @@ enum AlarmSoundStaging {
         #endif
     }
 
-    /// staged sounds 디렉터리 (`Library/Sounds/`) 를 보장.
-    static func soundsDirectoryURL() throws -> URL {
-        return try ensureSoundsDirectory()
-    }
-
     /// 외부 호출자가 cache invalidation 시 정리하기 위한 헬퍼.
     static func clearStagedSound(forKey key: String) {
         let fm = FileManager.default

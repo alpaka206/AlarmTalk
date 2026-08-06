@@ -22,8 +22,6 @@ struct TimeWheelPicker: View {
 
     /// Wheel 한 칸 높이. Android `AlarmTimePicker.kt:56` 의 `itemHeight = 72.dp` 와 일치.
     static let itemHeight: CGFloat = 72
-    /// 위/아래로 보일 인접 항목 수. 항상 1.
-    static let visibleNeighbours: Int = 1
 
     var body: some View {
         HStack(spacing: 16) {

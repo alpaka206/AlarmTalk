@@ -331,7 +331,6 @@ struct RemoteAlarmWriteRequest: Encodable {
     var targetUserId: String?
     /// 기기 타임존 식별자 (예: "Asia/Seoul"). 서버가 사용자 로컬 시각 기준으로
     /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
-    /// 서버 측 처리는 별도 작업 중 — 미인식 환경에서는 무시된다.
     var timezone: String? = TimeZone.current.identifier
 }
 
@@ -368,25 +367,17 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
 struct VoiceProfileUpdateRequest: Encodable {
     var name: String?
     var isShared: Bool?
-    /// promote 시 false 로 명시 전송.
-    var isDraft: Bool?
     var relationshipLabel: String?
     var listenerTitle: String?
-    /// 'male' | 'female' | 'neutral'. encoder 의 convertToSnakeCase 로 `voice_gender` 전송.
-    /// Android `VoiceProfileApi.kt:59-60`, backend voice-profile.ts PATCH(:519-520).
-    /// 'auto' | 'polite'(일본어 정중체). convertToSnakeCase 로 `speech_formality` 전송.
-    /// Android `VoiceProfileApi.kt:61-62`, backend voice-profile.ts PATCH(:523-524).
 
     init(
         name: String? = nil,
         isShared: Bool? = nil,
-        isDraft: Bool? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
     ) {
         self.name = name
         self.isShared = isShared
-        self.isDraft = isDraft
         self.relationshipLabel = relationshipLabel
         self.listenerTitle = listenerTitle
     }
@@ -822,7 +813,7 @@ struct AppVersionResponse: Decodable, Equatable {
     var storeUrl: String = ""
 }
 
-// MARK: - Phase 3-C3: 이메일/비밀번호 + 인증코드 + 멤버/Family 액션 + 바우처 + 검색
+// MARK: - 이메일/비밀번호 + 인증코드 + 멤버/Family 액션 + 바우처
 
 struct RequestEmailVerificationRequest: Encodable {
     var email: String

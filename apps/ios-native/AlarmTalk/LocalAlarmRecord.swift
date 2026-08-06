@@ -63,10 +63,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var voiceSourceEnum: VoiceSource { VoiceSource(rawValue: voiceSource) ?? .ttsProfile }
     var vibrationPatternEnum: VibrationPattern { VibrationPattern(rawValue: vibrationPattern) ?? .default }
 
-    var hasVoiceAudio: Bool {
-        ttsMessageId != nil || rawAudioUri != nil || localAudioUri != nil
-    }
-
     var usesPaidVoiceFeatures: Bool {
         playModeEnum != .alarmOnly ||
             !(localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||

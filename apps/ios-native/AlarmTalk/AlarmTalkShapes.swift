@@ -14,8 +14,6 @@ struct AlarmTalkShapes: Equatable {
     let vocaCard: CGFloat
     /// `WakerButtonShape` / `WakerInputShape` — 18.dp on Android.
     let vocaButton: CGFloat
-    /// Capsule-styled chip (effectively `999.dp` on Android).
-    let vocaChip: CGFloat
 }
 
 extension AlarmTalkShapes {
@@ -26,20 +24,6 @@ extension AlarmTalkShapes {
         large: 24,
         extraLarge: 28,
         vocaCard: 22,
-        vocaButton: 18,
-        vocaChip: 999
+        vocaButton: 18
     )
-}
-
-extension View {
-    /// Applies the Voca card corner radius via a `RoundedRectangle` clip shape.
-    /// Matches `WakerCardShape` (22.dp) from Android.
-    func vocaCardShape() -> some View {
-        clipShape(RoundedRectangle(cornerRadius: AlarmTalkShapes.default.vocaCard, style: .continuous))
-    }
-
-    /// Applies the Voca button corner radius (18.dp on Android).
-    func vocaButtonShape() -> some View {
-        clipShape(RoundedRectangle(cornerRadius: AlarmTalkShapes.default.vocaButton, style: .continuous))
-    }
 }

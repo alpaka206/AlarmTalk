@@ -635,8 +635,6 @@ struct AlarmEditorSheet: View {
         return nil
     }
 
-    var editorCanSave: Bool { editorSaveBlockedReason == nil }
-
     /// 랜덤 문구가 켜졌을 때 컨텍스트별 필수 정보가 채워졌는지. 가족 알람은 상대의 준비
     /// 상태(weatherReady/fortuneReady)도 인정한다 — generateTTS 검증(688-694) 미러.
     var randomPromptSettingsComplete: Bool {
@@ -1132,8 +1130,18 @@ struct AlarmEditorSheet: View {
         // 온보딩/목소리 탭에서 고른 기본 목소리(시스템)를 우선 선택 — Android VoiceAudioCard 미러.
         let defaultVoice = readyOwn.first { $0.id == voiceStudio.defaultVoiceId }
 
+        // **마지막에 쓴 목소리가 기본·그룹보다 우선한다**(CLAUDE.md 「목소리 프리셀렉트는
+        // 마지막에 쓴 것이 그룹보다 우선」). `refresh` 안에도 같은 판단이 있지만 그건 성공
+        // 경로 안이라, 조기 반환(다른 refresh 진행 중)이나 네트워크 실패로 여기까지 오면
+        // 선택이 비어 있고 아래 폴백이 온보딩 기본 목소리를 집는다.
+        let lastUsedID = voiceStudio.lastUsedVoiceId
+        let lastUsedOwn = readyOwn.first { $0.id == lastUsedID }
+        let lastUsedShared = readyShared.first { $0.id == lastUsedID && !$0.requiresViewerInfo }
+
         if freeVoiceTier {
-            let systemVoice = defaultVoice ?? readyOwn.first { isSystemVoice($0) }
+            // 무료 등급은 서버가 시스템 보이스만 허용하므로, 마지막에 쓴 것도 시스템일 때만 쓴다.
+            let lastUsedSystem = lastUsedOwn.flatMap { isSystemVoice($0) ? $0 : nil }
+            let systemVoice = lastUsedSystem ?? defaultVoice ?? readyOwn.first { isSystemVoice($0) }
             let selectedIsSystem = voiceStudio.isSystemVoiceProfile(id: selected)
             if selectedIsSystem,
                readyOwn.contains(where: { $0.id == selected }) {
@@ -1152,7 +1160,11 @@ struct AlarmEditorSheet: View {
         if selectedStillAvailable {
             return
         }
-        if let defaultVoice {
+        if let lastUsedOwn {
+            voiceStudio.selectedProfileID = lastUsedOwn.id
+        } else if let lastUsedShared {
+            voiceStudio.selectedProfileID = lastUsedShared.id
+        } else if let defaultVoice {
             voiceStudio.selectedProfileID = defaultVoice.id
         } else if let first = readyOwn.first {
             voiceStudio.selectedProfileID = first.id
@@ -1475,6 +1487,11 @@ struct AlarmEditorSheet: View {
         let saved = await finishScheduling(merged: content.merged, existing: content.existing)
         guard saved else { return }
         for conflict in content.conflicts {
+            // 서버에도 알린 뒤 로컬을 지운다(AlarmsListView.deleteAlarm 와 같은 순서).
+            // ⚠ 로컬만 지우면 **받은 알람이 다음 pull 에 새 UUID 로 되살아난다** —
+            // decline 이 기록되지 않아 프루닝 조건(`state.declined`)에 걸리지 않고,
+            // 서버 목록에는 그대로 있기 때문이다. 본인 알람도 서버에 남아 되살아난다.
+            await remoteSync.deleteRemote(record: conflict, session: auth.session)
             // cancel(record:store:) = AlarmKit 예약 취소 + store.delete + 고아 캐시만 정리.
             _ = await alarmKit.cancel(record: conflict, store: store)
         }

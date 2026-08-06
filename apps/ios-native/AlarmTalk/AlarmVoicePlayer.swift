@@ -250,10 +250,6 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
         return VoiceVolumeRampPlan(startVolume: start, stepVolumes: stepVolumes)
     }
 
-    static func voiceFadeStartVolume(targetVolume: Float) -> Float {
-        voiceVolumeRampPlan(targetVolume: targetVolume, fadeIn: true).startVolume
-    }
-
     // MARK: AVAudioPlayerDelegate
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

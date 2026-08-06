@@ -10,8 +10,6 @@ struct UsageGuideStore {
         case voiceClone = "voice_clone_v1"
         /// 홈 탭 첫 방문 코치마크 — Android `UsageGuideStore.GUIDE_HOME`("home_v1") parity.
         case home = "home_v1"
-        /// 목소리 탭 첫 방문 코치마크 — Android `UsageGuideStore.GUIDE_VOICE_REGISTER`("voice_register_v1") parity.
-        case voiceRegister = "voice_register_v1"
     }
 
     private let defaults: UserDefaults
