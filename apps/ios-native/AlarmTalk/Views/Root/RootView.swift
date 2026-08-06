@@ -12,12 +12,18 @@ struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var versionGate: AppVersionGate
     @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @State private var onboardingCompleted: Bool?
     /// 온보딩 완료 후 기본 목소리를 한 번이라도 골랐는지. 안 골랐으면 `VoiceSetupView` 노출.
     /// Android `MainViewModel.showVoiceSetup`(= !hasChosen) 게이팅 미러.
     @State private var voiceSetupDone: Bool?
     /// 동의 화면에서 띄우는 인앱 약관 뷰어.
     @State private var legalDocument: LegalDocumentTarget?
+
+    /// 웰컴 프로모 코드 안내(계정당 1회, 무료 플랜만).
+    @State private var showWelcomePromo = false
+    @State private var promoBusy = false
+    @State private var promoError: String?
 
     struct LegalDocumentTarget: Identifiable, Hashable {
         let title: String
@@ -98,6 +104,38 @@ struct RootView: View {
         .task(id: auth.session?.user.id) {
             refreshOnboardingCompletion()
         }
+        // ⚠ **차단 게이트가 없을 때만** 띄운다. 응답 전 기본값 `false` 가 '아니오' 와
+        // 구분되지 않아, 그 틈에 1회성 오버레이가 뜨면 **소진 플래그까지 태우고** 뒤늦게
+        // 온 차단 화면이 그 위를 덮는다 — 사용자는 본 적도 없이 잃는다
+        // (CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」).
+        // 그래서 판정 키에 준비 신호(`consentStatusChecked`)를 함께 넣는다.
+        .task(id: promoGateKey) { evaluateWelcomePromo() }
+        .overlay {
+            if showWelcomePromo, !blockingGateActive {
+                ZStack {
+                    AlarmTalkTheme.scrim.ignoresSafeArea()
+                    WelcomePromoDialog(
+                        busy: promoBusy,
+                        errorText: promoError,
+                        onSubmitCode: { code in
+                            Task {
+                                promoBusy = true
+                                promoError = nil
+                                let result = await socialFeatures.registerCode(code, session: auth.session)
+                                promoBusy = false
+                                if result != nil {
+                                    showWelcomePromo = false
+                                } else {
+                                    promoError = socialFeatures.statusMessage ?? "코드를 등록하지 못했어요."
+                                }
+                            }
+                        },
+                        onOpenInstagram: { openURL(URL(string: "https://instagram.com/alarmtalk.app")!) },
+                        onDismiss: { showWelcomePromo = false }
+                    )
+                }
+            }
+        }
         .sheet(item: $legalDocument) { target in
             NavigationStack {
                 LegalDocumentView(title: target.title, url: target.url)
@@ -129,6 +167,28 @@ struct RootView: View {
     /// 앱을 못 쓰게 막고 있는 게이트가 떠 있는가.
     private var blockingGateActive: Bool {
         versionGate.updateRequired || !auth.isAuthenticated || auth.pendingDeletion || auth.showConsentScreen
+    }
+
+    /// 프로모 판정에 필요한 값이 다 모였는지 나타내는 키.
+    /// ⚠ 가드만 넣지 말고 **키에도 넣어야** 응답이 도착한 뒤 효과가 다시 돈다.
+    private var promoGateKey: String {
+        "\(auth.session?.user.id ?? "-")|\(auth.consentStatusChecked)|\(blockingGateActive)"
+    }
+
+    /// 웰컴 코드 안내를 띄울지 판정한다. 조건이 하나라도 어긋나면 조용히 넘어간다.
+    ///  - 동의 확인 응답이 **도착했을 것**(그 전에는 차단 화면 여부를 알 수 없다)
+    ///  - 차단 게이트가 없을 것
+    ///  - 무료 플랜일 것(이미 유료면 보여줄 이유가 없다)
+    ///  - 이 계정에 아직 안 띄웠을 것
+    /// 노출과 동시에 '봤음' 을 기록한다 — 닫든 등록하든 다시 뜨지 않는다.
+    private func evaluateWelcomePromo() {
+        guard auth.consentStatusChecked, !blockingGateActive else { return }
+        guard let userID = auth.session?.user.id, !userID.isEmpty else { return }
+        guard (auth.session?.user.plan ?? "free").lowercased() == "free" else { return }
+        let store = PromoPromptStore()
+        guard !store.hasPrompted(userID: userID) else { return }
+        store.markPrompted(userID: userID)
+        showWelcomePromo = true
     }
 
     private func refreshOnboardingCompletion() {

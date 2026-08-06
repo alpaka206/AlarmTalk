@@ -125,3 +125,15 @@ enum InputSanitizer {
         }
     }
 }
+
+extension InputSanitizer {
+    /// 이용권·초대 코드 정리. 안드로이드 `sanitizeRedeemCode`(`CodeRedeemField.kt`).
+    ///
+    /// 대문자·영숫자·하이픈만 남긴다 — 코드는 사람이 옮겨 적는 값이라 눈에 안 보이는
+    /// 공백·제로폭이 섞이면 "맞게 넣었는데 안 된다" 가 된다.
+    static func sanitizeRedeemCode(_ raw: String) -> String {
+        String(sanitizeUserText(raw).uppercased().filter { $0.isLetter || $0.isNumber || $0 == "-" })
+            .prefix(64)
+            .description
+    }
+}
