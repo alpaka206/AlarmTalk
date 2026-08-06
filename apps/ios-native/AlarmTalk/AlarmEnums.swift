@@ -89,8 +89,11 @@ enum VoiceSource: String, Codable, CaseIterable, Hashable {
 }
 
 // MARK: - Vibration Pattern
-// Android: `AlarmEntity.kt:70-98` `VibrationPatterns` (12종, default/strong/short/medium/
-// heartbeat/ticktock/waltz/zigzag/off_beat/ripple/siren/none)
+// Android `data/AlarmConstants.kt:28-49` `VibrationPatterns` — **17종**.
+//
+// ⚠ **6종을 빠뜨리지 말 것.** iOS 에는 rise/pulse/bounce/drumroll/soft/sos 가 없어서,
+// 안드로이드에서 그 패턴으로 만든 알람을 iOS 로 동기화하면 값이 낯설어 기본으로
+// 떨어졌다 — 사용자가 고른 진동이 조용히 바뀐다. 순서도 안드로이드 목록 그대로 둔다.
 enum VibrationPattern: String, Codable, CaseIterable {
     case `default`
     case strong
@@ -103,6 +106,12 @@ enum VibrationPattern: String, Codable, CaseIterable {
     case offBeat = "off_beat"
     case ripple
     case siren
+    case rise
+    case pulse
+    case bounce
+    case drumroll
+    case soft
+    case sos
     case none
 }
 

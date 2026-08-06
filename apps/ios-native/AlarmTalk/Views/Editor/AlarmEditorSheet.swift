@@ -44,6 +44,9 @@ struct AlarmEditorSheet: View {
 
     // MARK: - Form state
 
+    /// 세부 설정 카드가 여는 상세 화면.
+    @State private var settingsPane: AlarmSettingsPane?
+
     @State var draft: AlarmEditDraft = .newDefault()
     @State var didLoadInitial = false
     @State var validationAlert: ValidationAlertContent?
@@ -61,7 +64,6 @@ struct AlarmEditorSheet: View {
     @State var localAudioCropStartMs = 0
     @State var localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
     @State var clearExistingLocalAudio = false
-    @State var usageGuidePresented = false
     /// 선택/미리듣기 중인 스톡 클립의 messageId. StockClipPicker 의 선택 표시에 사용.
     @State var stockSelectedMessageID: String?
     /// 현재 활성 미리듣기 대상(단일 진실 공급원, change 4). 스톡 클립 미리듣기 id 는
@@ -121,23 +123,29 @@ struct AlarmEditorSheet: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                TimeWheelPicker(hour: $draft.hour, minute: $draft.minute)
-                    .frame(maxWidth: .infinity)
-                    .listRowInsets(EdgeInsets(top: 12, leading: 8, bottom: 12, trailing: 8))
-                    .listRowBackground(Color.clear)
-            }
+        // ⚠ **`Form` 으로 되돌리지 말 것.** `Form` 은 iOS 표준 그룹 목록 모양을 강제해
+        // (회색 배경 위 흰 그룹, 자체 여백·구분선) 안드로이드의 Waker 카드와 나란히
+        // 놓으면 다른 앱이 된다. 편집기는 카드 목록이지 설정 폼이 아니다.
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // 타임휠은 **카드에 담지 않는다** — 안드로이드도 배경 없이 화면 위에
+                    // 그대로 얹는다. 파란 박스 안에 넣으면 시각이 한 덩어리 위젯처럼 보여
+                    // 화면의 주인공에서 밀려난다.
+                    TimeWheelPicker(hour: $draft.hour, minute: $draft.minute)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
 
-            Section("반복") {
+            EditorSectionTitle(text: "반복")
+            EditorCard {
                 Text(repeatSummary)
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 0, trailing: 16))
+                    .padding(.top, 10)
                     .accessibilityLabel(Text("반복 \(repeatSummary)"))
                 RepeatWeekdayChips(mask: $draft.repeatDaysMask)
-                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                    .padding(.vertical, 10)
                 // Android `ScheduleDetailsCard` 와 동일: 반복 요일이 하나라도 선택됐을 때만
                 // 공휴일off 토글을 노출한다(미선택 시 dimmed 가 아니라 통째로 숨김).
                 if draft.repeatDaysMask != 0 {
@@ -162,22 +170,16 @@ struct AlarmEditorSheet: View {
                     }
                 }
 
-                // 알람 이름 필드는 반복 선택 바로 아래에 둔다 (Android ScheduleDetailsCard:
-                // RepeatSelector 다음에 라벨 입력). 플로팅 라벨(editor_label_alarm_name) +
-                // placeholder(editor_placeholder_alarm_name) 를 모두 노출한다.
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("알람 이름")
-                        .font(theme.typography.titleSmall)
-                    TextField("예: 출근 준비", text: $draft.label)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                        .submitLabel(.done)
-                }
-                .padding(.top, 2)
+                // ⚠ **알람 이름(라벨) 입력창을 되살리지 말 것.** 안드로이드
+                // `ScheduleDetailsCard`(`AlarmEditorControls.kt:47-77`)에는 라벨 입력이
+                // 없다 — 있다고 적혀 있던 옛 주석은 사실이 아니었다(`editor_label_alarm_name`
+                // 문자열 자체가 존재하지 않는다). 알람 행 둘째 줄은 라벨이 아니라
+                // '다음 울릴 날짜 · 목소리' 라, 라벨을 채워도 어디에도 보이지 않는다.
             }
 
             if target.familyAlarmMode {
-                Section("알람 받을 사람") {
+                EditorSectionTitle(text: "알람 받을 사람")
+                EditorCard {
                     FamilyAlarmTargetPicker(
                         recipients: familyRecipients,
                         selectedRecipientID: selectedFamilyRecipientID,
@@ -192,122 +194,111 @@ struct AlarmEditorSheet: View {
 
             alarmModeSection
 
-            Section("스누즈") {
-                Toggle("스누즈 허용", isOn: $draft.snoozeEnabled)
-                    .tint(theme.palette.primary)
-
-                if draft.snoozeEnabled {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("간격")
-                            .font(theme.typography.titleSmall)
-                        // Android `AlarmSnoozeSettings.kt` SnoozeIntervals(5/10/15/30) +
-                        // 직접 설정. 백엔드 계약(snooze_minutes 1–30)에 맞춰 직접 입력은 30 으로 캡한다.
-                        SnoozeIntervalPicker(minutes: $draft.snoozeMinutes)
+            // ⚠ **'세부 설정' 카드 하나다.** 예전에는 '스누즈' 와 '사운드 & 진동' 두
+            // 섹션으로 쪼개져 스누즈 간격·반복 횟수·진동 패턴이 전부 본문에 펼쳐져
+            // 있었다 — 한 번 정하고 다시 안 볼 값들이 시각·목소리와 같은 무게로 화면을
+            // 차지했다. 안드로이드는 요약 행 넷을 한 카드에 모으고 상세는 pane 으로 뺀다.
+            EditorSectionTitle(text: "세부 설정")
+            EditorCard(verticalPadding: 0) {
+                AlarmSettingRow(
+                    title: "다시 알림",
+                    subtitle: snoozeSummary,
+                    onTap: { settingsPane = .snooze },
+                    trailing: {
+                        Toggle("", isOn: $draft.snoozeEnabled)
+                            .labelsHidden()
+                            .tint(theme.palette.primary)
                     }
-                    .padding(.vertical, 4)
+                )
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("최대 반복 횟수")
-                            .font(theme.typography.titleSmall)
-                        SnoozeRepeatLimitPicker(limit: $draft.snoozeRepeatLimit)
+                AlarmSettingDivider()
+
+                AlarmSettingRow(
+                    title: "진동",
+                    subtitle: draft.vibrationPattern == .none ? "꺼짐" : draft.vibrationPattern.displayName,
+                    onTap: { settingsPane = .vibration },
+                    trailing: {
+                        Toggle("", isOn: vibrationEnabledBinding)
+                            .labelsHidden()
+                            .tint(theme.palette.primary)
                     }
-                    .padding(.vertical, 4)
-                }
-            }
+                )
 
-            Section("사운드 & 진동") {
                 if draft.showsAlarmSoundControls {
-                    // ⚠ **iOS 에는 알람 음량 슬라이더를 두지 않는다.**
-                    // AlarmKit 이 OS 알람 톤을 소유하고 알람별 음량 API 가 없어서, 슬라이더를
-                    // 움직여도 소리가 전혀 달라지지 않는다 — 아무것도 제어하지 못하는 컨트롤을
-                    // 두면 사용자는 값을 바꿔 보고 저장하고 다시 확인하기를 반복한다.
-                    // (안드로이드는 자체 플레이어라 그 슬라이더가 실제로 동작한다.)
-                    // 같은 이유로 '알람음 종류' 도 고를 수 없어 값 표시만 남긴다.
-                    HStack {
-                        Text("알람음 종류")
-                            .font(theme.typography.titleSmall)
-                        Spacer()
-                        Text(alarmSoundDisplayLabel)
-                            .font(theme.typography.bodyMedium)
-                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                    }
+                    AlarmSettingDivider()
+                    AlarmSettingRow(
+                        title: "알람음",
+                        subtitle: alarmSoundDisplayLabel,
+                        onTap: { settingsPane = .alarmSound }
+                    )
                 }
 
-                // 진동 on/off (Android `AlarmSettingsCard.kt:143-147` vibrationPattern != NONE Switch;
-                // 켜면 default, 끄면 none). '없음' 은 패턴 목록에서 빼고 이 토글이 대신한다.
-                Toggle("진동", isOn: vibrationEnabledBinding)
-                    .tint(theme.palette.primary)
-                if draft.vibrationPattern != .none {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("진동 패턴")
-                                .font(theme.typography.titleSmall)
-                            Spacer()
-                            VibrationPatternPicker(selected: $draft.vibrationPattern)
-                        }
-                        // 캡션은 picker 컨트롤 밖, 행 아래 전체 너비로 배치해 HStack 안에서
-                        // 어색하게 줄바꿈되는 문제를 없앤다.
-                        Text(VibrationPatternPicker.usageCaption)
-                            .font(theme.typography.bodySmall)
-                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                if draft.playMode == .voiceOnly {
+                    AlarmSettingDivider()
+                    AlarmSettingRow(
+                        title: "음성 출력",
+                        subtitle: voiceOutputSummary,
+                        onTap: { settingsPane = .voiceOutput }
+                    )
                 }
             }
 
-            Section {
-                // 사전 게이트: 정말로 만족 불가능한 상태면 사유를 보여주고 버튼을 막는다.
-                if let reason = editorSaveBlockedReason {
-                    Text(reason)
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else if let status = voiceStudio.statusMessage, voiceStudio.preparedAlarm == nil, !voiceStudio.isBusy {
-                    // 생성 실패 등의 결과 메시지(mapVoiceError)는 statusMessage 가 나른다.
-                    // prepared 음원이 없고 생성 중도 아닐 때만 노출해, 캐시 미스 생성 실패가
-                    // 명확히 보이게 한다(RISK A).
-                    Text(status)
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            // 저장이 막힌 이유 — 비활성 버튼만으로는 무엇이 빠졌는지 알 수 없다.
+            if let reason = editorSaveBlockedReason {
+                Text(reason)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let status = voiceStudio.statusMessage, voiceStudio.preparedAlarm == nil, !voiceStudio.isBusy {
+                Text(status)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 20)
+            }
+            .scrollDismissesKeyboard(.interactively)
 
-                Button {
-                    Task { await saveFlow() }
-                } label: {
-                    if voiceStudio.isBusy {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("음성 만드는 중…")
-                        }
-                        .frame(maxWidth: .infinity)
-                    } else {
-                        Label(saveButtonTitle, systemImage: "calendar.badge.plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(theme.palette.primary)
-                .disabled(isWorking || voiceStudio.isBusy || editorSaveBlockedReason != nil)
+            EditorActionBar(
+                saveTitle: saveButtonTitle,
+                saving: isWorking || voiceStudio.isBusy,
+                savingLabel: voiceStudio.isBusy ? "음성 만드는 중…" : "저장 중…",
+                saveEnabled: editorSaveBlockedReason == nil,
+                onCancel: onClose,
+                onSave: { Task { await saveFlow() } }
+            )
+        }
+        .navigationDestination(item: $settingsPane) { pane in
+            switch pane {
+            case .snooze:
+                SnoozeSettingsPane(
+                    enabled: $draft.snoozeEnabled,
+                    minutes: $draft.snoozeMinutes,
+                    repeatLimit: Binding(
+                        get: { draft.snoozeRepeatLimit.rawValue },
+                        set: { draft.snoozeRepeatLimit = SnoozeRepeatLimit(rawValue: $0) ?? .three }
+                    )
+                )
+            case .vibration:
+                VibrationSettingsPane(pattern: $draft.vibrationPattern)
+            case .alarmSound:
+                AlarmSoundSettingsPane(soundLabel: alarmSoundDisplayLabel)
+            case .voiceOutput:
+                VoiceOutputSettingsPane(
+                    volumePercent: $draft.voiceVolumePercent,
+                    repeatVoice: $draft.voiceRepeat
+                )
             }
         }
-        .scrollContentBackground(.hidden)
-        .scrollDismissesKeyboard(.interactively)
-        .background(theme.palette.background)
+        .homeGradientBackground()
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    usageGuidePresented = true
-                } label: {
-                    Image(systemName: "questionmark.circle")
-                }
-                .accessibilityLabel(Text("사용 가이드"))
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
@@ -328,13 +319,6 @@ struct AlarmEditorSheet: View {
         }
         // 아래로 쓸어 닫는 것도 같은 이유로 막는다 — X 만 잠그면 제스처로 같은 상태가 된다.
         .interactiveDismissDisabled(isWorking)
-        .sheet(isPresented: $usageGuidePresented, onDismiss: {
-            UsageGuideStore().markSeen(.alarmEditor)
-        }) {
-            UsageGuideSheet(steps: Self.usageGuideSteps) {
-                usageGuidePresented = false
-            }
-        }
         .alert(item: $validationAlert) { content in
             Alert(
                 title: Text(content.title),
@@ -362,11 +346,6 @@ struct AlarmEditorSheet: View {
             guard !didLoadInitial else { return }
             didLoadInitial = true
             loadInitialState()
-            if target.editingAlarmID == nil,
-               !target.familyAlarmMode,
-               !UsageGuideStore().hasSeen(.alarmEditor) {
-                usageGuidePresented = true
-            }
             Task {
                 await voiceStudio.refresh(session: auth.session)
                 selectDefaultVoiceProfileIfNeeded()
@@ -492,24 +471,11 @@ struct AlarmEditorSheet: View {
         previewTarget = nil
     }
 
-    /// 처음 알람을 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
-    static let usageGuideSteps: [UsageGuideStep] = [
-        UsageGuideStep(
-            systemImage: "clock.fill",
-            title: "시간과 반복부터",
-            body: "휠을 돌려 시각을 맞추고 반복할 요일을 골라요. 반복을 켜면 공휴일에는 끄기도 선택할 수 있어요."
-        ),
-        UsageGuideStep(
-            systemImage: "waveform",
-            title: "재생 방식을 골라요",
-            body: "'알람 + 음성'을 고르면 등록한 목소리가 함께 울려요. 랜덤 문구를 켜면 아침마다 새로운 메시지로 깨워줘요."
-        ),
-        UsageGuideStep(
-            systemImage: "checkmark.circle.fill",
-            title: "저장하면 끝이에요",
-            body: "음량·진동·스누즈는 아래로 스크롤해 조정할 수 있어요. 저장을 누르면 알람이 바로 예약돼요."
-        ),
-    ]
+    // ⚠ **사용 가이드 시트를 되살리지 말 것.** 안드로이드 편집기에는 없다
+    // (`AlarmEditorScreen.kt:1269` 주석: "상단바(제목·뒤로가기·가이드)는 제거하고,
+    // 취소·저장을 하단에 모았다"). 게다가 그 가이드의 2번 카드는 지금은 없는
+    // '알람 + 음성' 모드를 설명하고 있었다 — 안내가 제품보다 오래 남으면 거짓말이 된다.
+
 
     var saveButtonTitle: String {
         target.editingAlarmID == nil ? "저장" : "수정 저장"
@@ -694,6 +660,19 @@ struct AlarmEditorSheet: View {
             return existing?.voiceListenerTitle
         }
         return voiceStudio.selectedListenerTitle
+    }
+
+    /// 세부 설정 카드의 '다시 알림' 요약.
+    private var snoozeSummary: String {
+        guard draft.snoozeEnabled else { return "꺼짐" }
+        let limit = SnoozeSettingsPane.repeatLabel(draft.snoozeRepeatLimit.rawValue)
+        return "\(draft.snoozeMinutes)분 · \(limit)"
+    }
+
+    /// 세부 설정 카드의 '음성 출력' 요약.
+    private var voiceOutputSummary: String {
+        let repeatLabel = draft.voiceRepeat ? "끌 때까지 반복" : "한 번만"
+        return "\(draft.voiceVolumePercent)% · \(repeatLabel)"
     }
 
     var navigationTitle: String {

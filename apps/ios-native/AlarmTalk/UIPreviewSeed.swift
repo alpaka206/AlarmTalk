@@ -31,6 +31,15 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 실행하자마자 알람 편집기를 연다 — `-UIPreviewEditor`. 화면 확인용.
+    static var opensEditor: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-UIPreviewEditor")
+        #else
+        return false
+        #endif
+    }
+
     /// 첫 화면으로 띄울 탭 — `-UIPreviewTab alarms|voices|menu`. 화면 확인용.
     static var initialTab: NativeTab? {
         #if DEBUG

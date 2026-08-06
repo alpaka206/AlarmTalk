@@ -60,13 +60,17 @@ final class AlarmEnumsTests: XCTestCase {
         XCTAssertFalse(SnoozeRepeatLimit.isValid(99))
     }
 
-    func test_vibrationPatternAllCases_matchesAndroidCount() {
-        // Android `AlarmEntity.kt:70-98` 의 12종 (default 포함).
-        XCTAssertEqual(VibrationPattern.allCases.count, 12)
-        XCTAssertTrue(VibrationPattern.allCases.contains(.default))
-        XCTAssertTrue(VibrationPattern.allCases.contains(.none))
-        XCTAssertTrue(VibrationPattern.allCases.contains(.offBeat))
-        // raw value 동등.
+    func test_vibrationPatternAllCases_matchesAndroid() {
+        // 안드로이드 `data/AlarmConstants.kt:28-49` `VibrationPatterns` — **18종**
+        // (16개 패턴 + default + none). 옛 테스트는 12를 지키고 있었는데, 그건 iOS 가
+        // rise/pulse/bounce/drumroll/soft/sos 6종을 빠뜨린 상태를 고정한 것이었다 —
+        // 그 상태에서는 안드로이드에서 만든 알람이 iOS 로 오면 진동이 조용히 바뀐다.
+        let androidRawValues: Set<String> = [
+            "default", "strong", "short", "medium", "heartbeat", "ticktock",
+            "waltz", "zigzag", "off_beat", "ripple", "siren",
+            "rise", "pulse", "bounce", "drumroll", "soft", "sos", "none",
+        ]
+        XCTAssertEqual(Set(VibrationPattern.allCases.map(\.rawValue)), androidRawValues)
         XCTAssertEqual(VibrationPattern.offBeat.rawValue, "off_beat")
     }
 

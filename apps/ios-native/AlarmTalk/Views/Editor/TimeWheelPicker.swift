@@ -20,8 +20,10 @@ struct TimeWheelPicker: View {
     @Binding var hour: Int
     @Binding var minute: Int
 
-    /// Wheel 한 칸 높이. Android `AlarmTimePicker.kt:56` 의 `itemHeight = 72.dp` 와 일치.
-    static let itemHeight: CGFloat = 72
+    /// Wheel 한 칸 높이. 안드로이드 `AlarmTimePicker.kt:60` 은 **92dp**(× fontScale)다 —
+    /// 옛 주석이 "72dp 와 일치" 라고 적었지만 그 값은 안드로이드에 없다. 72 로 두면 같은
+    /// 57pt 숫자가 더 좁은 칸에 들어가 위아래가 답답하고, 인접 숫자가 잘려 보인다.
+    static let itemHeight: CGFloat = 92
 
     var body: some View {
         HStack(spacing: 16) {
@@ -45,12 +47,11 @@ struct TimeWheelPicker: View {
             .frame(maxWidth: .infinity)
         }
         .frame(height: Self.itemHeight * 3)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .fill(theme.palette.primaryContainer)
-        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 24)
+        // ⚠ **배경을 칠하지 말 것.** 안드로이드는 `wheelBackgroundColor = Color.Transparent`
+        // 다(`AlarmTimePicker.kt:65`). `primaryContainer` 파란 박스를 두면 시각이 한 덩어리
+        // 위젯처럼 보여, 화면의 주인공이어야 할 숫자가 배경에 갇힌다.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("시간 선택"))
     }
@@ -126,10 +127,17 @@ struct DraggableNumberColumn: View {
                     let normalized = abs(CGFloat(offset) * itemHeight + dragOffset) / itemHeight
                     let clamped = min(normalized, 1.4)
 
+                    // ⚠ **선택/인접 크기가 다르다.** 안드로이드는 선택 `displayLarge`(57),
+                    // 인접 `displayMedium`(45)을 쓴다(`DraggableTimeWheelColumn.kt:152-154`).
+                    // 같은 크기로 그리면 알파만으로 초점을 만들어야 해서, 스크롤 중에
+                    // 어느 숫자가 골라질 것인지가 흐릿하다.
+                    //
+                    // ⚠ 글꼴은 **Pretendard** 다. `design: .rounded`(SF Rounded)로 두면
+                    // 이 화면만 다른 서체가 되어 앱에서 가장 큰 글자가 튄다.
                     Text(formatter(displayValue))
-                        .font(.system(size: 56, weight: .bold, design: .rounded))
+                        .font(.pretendard(.bold, size: clamped < 0.5 ? 57 : 45))
                         .monospacedDigit()
-                        .foregroundStyle(theme.palette.onPrimaryContainer.opacity(textAlpha(for: clamped)))
+                        .foregroundStyle(theme.palette.onSurface.opacity(textAlpha(for: clamped)))
                         .frame(maxWidth: .infinity)
                         .frame(height: itemHeight)
                         .position(x: proxy.size.width / 2, y: yPosition)
@@ -286,8 +294,8 @@ struct AmPmWheelColumn: View {
     @ViewBuilder
     private func label(title: String, selected: Bool) -> some View {
         Text(title)
-            .font(.system(size: selected ? 38 : 32, weight: selected ? .bold : .semibold))
-            .foregroundStyle(theme.palette.onPrimaryContainer.opacity(selected ? 1.0 : 0.18))
+            .font(.pretendard(selected ? .bold : .semibold, size: selected ? 38 : 32))
+            .foregroundStyle(theme.palette.onSurface.opacity(selected ? 1.0 : 0.18))
             .frame(maxWidth: .infinity)
     }
 }
@@ -299,9 +307,11 @@ private struct ColonSeparator: View {
 
     var body: some View {
         Text(":")
-            .font(.system(size: 56, weight: .bold, design: .rounded))
-            .foregroundStyle(theme.palette.onPrimaryContainer)
-            .frame(width: 18)
+            .font(.pretendard(.bold, size: 57))
+            .foregroundStyle(theme.palette.onSurface)
+            // 안드로이드는 36dp 폭을 준다(`AlarmTimePicker.kt:135`). 18 이면 절반이라
+            // 시:분 사이가 붙어 보인다.
+            .frame(width: 36)
             .accessibilityHidden(true)
     }
 }

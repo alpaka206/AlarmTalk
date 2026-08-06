@@ -75,6 +75,12 @@ struct MainTabsView: View {
                 }
             }
             .animation(.snappy(duration: 0.18), value: selectedTab)
+            .task {
+                // DEBUG 전용 — 편집기 화면 확인 진입점.
+                if UIPreviewSeed.opensEditor, editorTarget == nil {
+                    editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil, familyAlarmMode: false)
+                }
+            }
             .background(theme.homeGradient)
             // ⚠ **상단 바를 두지 않는다.** 안드로이드에는 앱 전체에 TopAppBar 가 하나도
             // 없다(`AlarmListScreen.kt:178-180`). large title 을 켜면 '알람' 대제목과

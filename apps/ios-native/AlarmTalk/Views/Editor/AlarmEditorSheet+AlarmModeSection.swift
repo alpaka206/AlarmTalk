@@ -1,9 +1,13 @@
 import SwiftUI
 
-// AlarmEditorSheet 의 '알람 방식' 섹션 분리(파일 길이 축소). 동작/디자인 불변.
+// AlarmEditorSheet 의 '재생 방식' 섹션 분리(파일 길이 축소).
 extension AlarmEditorSheet {
+    @ViewBuilder
     var alarmModeSection: some View {
-            Section("알람 방식") {
+            // 제목은 **'재생 방식'** 이다 — 안드로이드 `editor_play_mode_title` 과 같은
+            // 말로 맞춘다('알람 방식' 은 iOS 에만 있던 표현이었다).
+            EditorSectionTitle(text: "재생 방식")
+            Group {
                 VoicePlayModePicker(
                     mode: $draft.playMode,
                     voiceLocked: voiceModeBlocked,
@@ -20,7 +24,6 @@ extension AlarmEditorSheet {
                             coerceFreeVoiceTierConstraints()
                         }
                     }
-                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
 
                 if draft.playMode != .alarmOnly {
                     Picker("음성 소스", selection: Binding(

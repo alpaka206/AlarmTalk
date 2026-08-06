@@ -108,6 +108,12 @@ extension VibrationPattern {
         case .offBeat: return "Off-beat"
         case .ripple: return "Ripple"
         case .siren: return "Siren"
+        case .rise: return "Rise"
+        case .pulse: return "Pulse"
+        case .bounce: return "Bounce"
+        case .drumroll: return "Drumroll"
+        case .soft: return "Soft"
+        case .sos: return "SOS"
         case .none: return "Off"
         }
     }
@@ -182,6 +188,32 @@ enum VibrationHapticPreview {
         case .siren:
             return Descriptor(style: .heavy, intensity: 1.0,
                               timing: [0, 240, 110, 240, 110, 520, 360])
+        // 약하게 시작해 점점 세지는 웨이크업 램프 — 잠결에 놀라지 않게 깨운다.
+        case .rise:
+            return Descriptor(style: .medium, intensity: 0.9,
+                              timing: [0, 220, 110, 220, 110, 280, 110, 380, 130, 520, 700])
+        // 여림-세게가 번갈아 오는 이중 맥동.
+        case .pulse:
+            return Descriptor(style: .medium, intensity: 0.9,
+                              timing: [0, 420, 200, 420, 620])
+        // 튀는 공처럼 세게 시작해 점점 잦아드는 감쇠 바운스.
+        case .bounce:
+            return Descriptor(style: .heavy, intensity: 1.0,
+                              timing: [0, 110, 80, 110, 80, 110, 80, 110, 520])
+        // 빠른 연타가 점점 세지는 드럼롤.
+        case .drumroll:
+            return Descriptor(style: .light, intensity: 0.8,
+                              timing: [0, 60, 55, 60, 55, 60, 55, 70, 55, 90, 55, 130, 45, 220, 640])
+        // 낮은 세기의 긴 울림 — 조용한 환경용.
+        case .soft:
+            return Descriptor(style: .light, intensity: 0.5,
+                              timing: [0, 900, 520])
+        // 모스 부호 SOS(··· ——— ···).
+        case .sos:
+            return Descriptor(style: .medium, intensity: 0.95,
+                              timing: [0, 120, 120, 120, 120, 120, 260,
+                                       360, 140, 360, 140, 360, 260,
+                                       120, 120, 120, 120, 120, 780])
         case .none:
             return Descriptor(style: .light, intensity: 0.0, timing: [])
         }
