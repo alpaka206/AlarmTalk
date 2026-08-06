@@ -323,13 +323,9 @@ internal fun PlayModeSelector(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             // ⚠ **두 칸이다.** '알람 + 목소리' 를 되살리지 말 것(AlarmPlayModes 주석 참조).
-            // 순서는 iOS 세그먼트와 같게 알람 → 목소리.
-            PlayModeChip(
-                label = stringResource(R.string.editor_play_mode_alarm_only),
-                selected = AlarmPlayModes.normalize(selected) == AlarmPlayModes.ALARM_ONLY,
-                onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
-                modifier = Modifier.weight(1f),
-            )
+            // ⚠ **목소리가 왼쪽**이다 — 우리는 목소리 알람 앱이고, 새 알람의 기본값도
+            // 목소리다(`AlarmEditorState` 의 초기 playMode). 읽는 순서와 기본 선택이
+            // 어긋나면 첫 화면에서 오른쪽 칸이 켜져 있어 무엇이 기본인지 흐려진다.
             PlayModeChip(
                 label = stringResource(R.string.editor_play_mode_voice_only),
                 selected = AlarmPlayModes.normalize(selected) == AlarmPlayModes.VOICE_ONLY,
@@ -337,6 +333,12 @@ internal fun PlayModeSelector(
                 onClick = {
                     if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.VOICE_ONLY)
                 },
+                modifier = Modifier.weight(1f),
+            )
+            PlayModeChip(
+                label = stringResource(R.string.editor_play_mode_alarm_only),
+                selected = AlarmPlayModes.normalize(selected) == AlarmPlayModes.ALARM_ONLY,
+                onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
                 modifier = Modifier.weight(1f),
             )
         }

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height as androidxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -1330,12 +1331,38 @@ internal fun AlarmEditorScreen(
                 // 이미 고르므로, 편집기에선 하단 저장 버튼 위에 '○○에게 설정돼요'로만 짧게 알린다.
 
                 item {
-                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                        // 목소리 on/off 토글은 목소리 카드 안에 있다(별도 '재생 방식' 카드 없음).
-                        // 끄면 playMode=ALARM_ONLY(목소리 미재생), 켜면 VOICE_ONLY.
+                    // ⚠ Column 이다 — Box 로 두면 재생 방식 카드와 목소리 카드가 **겹친다**.
+                    androidx.compose.foundation.layout.Column(
+                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
+                    ) {
                         val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
+                        // ⚠ **재생 방식은 2택 세그먼트로 고른다** — 목소리 / 알람.
+                        // `PlayModeCard` 는 있는데 아무도 부르지 않아 **화면에 안 나오고**
+                        // 있었다(목소리 카드 안 스위치가 대신하고 있었다). 그러면 iOS 와
+                        // 다른 화면이 되고, 무엇보다 '둘 중 하나' 라는 결정이 스위치의
+                        // 켜짐/꺼짐으로 흐려진다. 실기기 대조로 잡았다.
+                        PlayModeCard(
+                            selected = editor.playMode,
+                            onSelect = { mode ->
+                                if (mode != AlarmPlayModes.ALARM_ONLY && voicePlanLocked) showVoicePlanGate()
+                                else applyAlarmOutput(
+                                    voice = mode != AlarmPlayModes.ALARM_ONLY,
+                                    sound = mode == AlarmPlayModes.ALARM_ONLY,
+                                )
+                            },
+                            voiceLocked = voicePlanLocked,
+                            onLockedVoiceClick = { showVoicePlanGate() },
+                        )
+                        // ⚠ **고른 쪽 박스만 그린다.** '알람' 이면 목소리 카드가 통째로 없고,
+                        // '목소리' 면 세부설정의 알람음 행이 없다(`showAlarmSound`). 둘 중
+                        // 하나라고 해 놓고 안 고른 쪽 설정을 계속 보여 주면, 만질 수는 있는데
+                        // 울릴 때 아무 영향이 없는 컨트롤이 남는다.
+                        if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+                        androidx.compose.foundation.layout.Spacer(
+                            Modifier.androidxHeight(12.dp),
+                        )
                         VoiceAudioCard(
-                            voiceEnabled = editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            voiceEnabled = true,
                             onVoiceEnabledChange = { on ->
                                 if (voicePlanLocked) showVoicePlanGate()
                                 else applyAlarmOutput(voice = on, sound = alarmSoundOn)
@@ -1383,6 +1410,7 @@ internal fun AlarmEditorScreen(
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                             )
                         }
+                        }
                     }
 
                 item {
@@ -1396,9 +1424,9 @@ internal fun AlarmEditorScreen(
                             vibrationPattern = editor.vibrationPattern,
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
-                            // 알람음 on/off 토글은 이 행에 함께 둔다. 행은 항상 노출.
                             alarmSoundEnabled = alarmSoundOn,
-                            showAlarmSound = true,
+                            // 목소리 모드에서는 알람음 행 자체를 숨긴다(위 주석 참조).
+                            showAlarmSound = editor.playMode == AlarmPlayModes.ALARM_ONLY,
                             // 목소리 크기는 무료·유료 모두 목소리 카드 안의 행에서 연다(UI 통일) —
                             // 세부설정의 '목소리' 행은 더 이상 쓰지 않는다.
                             showVoiceOutput = false,

@@ -187,8 +187,6 @@ internal fun VoiceAudioCard(
             VoiceProfileSelector(
                 options = profileOptions + recordingOption,
                 selectedId = selectorSelectedId,
-                voiceEnabled = voiceEnabled,
-                onVoiceEnabledChange = onVoiceEnabledChange,
                 onSelect = { option ->
                     // 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를
                     // 비운다. 조용히 지우면 '문구가 사라졌다'가 되므로 한 번 확인받는다.
@@ -470,8 +468,6 @@ private fun NoUsableVoiceProfileCallout(
 private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
     selectedId: String,
-    voiceEnabled: Boolean,
-    onVoiceEnabledChange: (Boolean) -> Unit,
     onSelect: (VoiceProfileOption) -> Unit,
     /** 행의 재생 버튼 — 고르기 전에 목소리를 들어볼 수 있게 한다(목소리 선택 화면과 동일). */
     onPreview: (VoiceProfileOption) -> Unit,
@@ -502,17 +498,13 @@ private fun VoiceProfileSelector(
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                MutedText(
-                    if (voiceEnabled) {
-                        selectedOption?.name ?: stringResource(R.string.editor_voice_select)
-                    } else {
-                        stringResource(R.string.editor_off)
-                    },
-                )
+                // ⚠ **스위치를 다시 넣지 말 것.** 목소리를 쓸지는 위 '재생 방식' 세그먼트가
+                // 소유한다. 여기 스위치를 두면 같은 상태를 조종하는 컨트롤이 둘이 되고,
+                // 이 카드는 목소리 모드에서만 그려지므로 스위치를 끄는 순간 **자기 자신이
+                // 사라진다**.
+                MutedText(selectedOption?.name ?: stringResource(R.string.editor_voice_select))
             }
             Spacer(Modifier.width(12.dp))
-            AlarmTalkSwitch(checked = voiceEnabled, onCheckedChange = onVoiceEnabledChange)
-            Spacer(Modifier.width(6.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                 contentDescription = null,
