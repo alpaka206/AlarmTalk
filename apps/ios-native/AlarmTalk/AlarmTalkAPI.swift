@@ -433,12 +433,16 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.vouchers
     }
 
-    /// 백엔드 stub-friendly 체크아웃. **Phase 4-D1 이후 deprecated** — App Store
-    /// 심사 통과를 위해 디지털 구독은 Apple StoreKit2 IAP (`SubscriptionManager`)
-    /// 가 권위 경로다. 본 메서드는 비-IAP 흐름 (gift 발급용 voucher / 내부 테스트)
-    /// 에만 남겨두며, 일반 사용자 구매에는 사용하지 않는다.
-    @available(*, deprecated, message: "Apple IAP 로 통합. SubscriptionManager.purchase(_:) 사용. gift voucher 발급만 남는 경우 유지.")
-
+    /// 선물용 이용권(voucher) 발급. `POST /billing/checkout` 의 `gift: true` 갈래다.
+    ///
+    /// **본인 구매가 아니다.** 디지털 구독 본인 구매는 App Store 심사 규정상 Apple
+    /// StoreKit2 IAP(`SubscriptionManager.purchase`)가 유일 경로이고, 그 경로는
+    /// `confirmAppleSubscription` 으로 서버와 맞춘다. 여기는 선물 코드를 만드는 것뿐이다.
+    /// 안드로이드도 같은 라우트를 쓴다(`BillingApi.kt` 의 `@POST("billing/checkout")`).
+    ///
+    /// ⚠ 서버는 production 에서 이 라우트를 **항상 비활성**한다
+    /// (`isBillingStubEnabled` — env 오설정 하나로 무결제 유료지급 디스펜서가 되는 것 차단).
+    /// 그때는 409 `CHECKOUT_DISABLED` 가 온다.
     func createGiftVoucher(planKey: String, token: String) async throws -> CheckoutResponse {
         try await request(
             "billing/checkout",
