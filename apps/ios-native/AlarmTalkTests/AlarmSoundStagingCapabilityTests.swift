@@ -4,19 +4,22 @@ import XCTest
 
 /// ⚠ **이 파일이 답하는 질문: staging 이 성공하는가, 항상 실패하는가.**
 ///
-/// `AlarmSoundStaging.stage` 는 `AVAssetExportPresetAppleM4A` 로 `.caf` 를 굽는다. 그런데
-/// 그 프리셋의 `supportedFileTypes` 에 `.caf` 가 없으면 **모든 목소리 클립의 staging 이 항상
-/// 실패**하고, 그러면 AlarmKit 은 `.default` 시스템 톤만 울린다 — 앱이 꺼져 있거나 잠금
-/// 화면이면 **목소리가 아예 안 들린다.** 페이드보다 훨씬 큰 문제이고, 코드 독해만으로는
-/// 판별되지 않아 감사에서 미결로 남았던 지점이다.
+/// staging 이 실패하면 AlarmKit 은 `.default` 시스템 톤만 울린다 — 앱이 꺼져 있거나 잠금
+/// 화면이면 **목소리가 아예 안 들린다.** 코드 독해만으로는 판별되지 않아 감사에서 미결로
+/// 남았던 지점이라 테스트로 못박는다.
 ///
 /// 실기기가 없어도 여기서 답이 나온다 — 시뮬레이터도 같은 AVFoundation 을 쓴다.
 /// (실기기와 결과가 다를 여지는 남지만, '항상 실패' 인지 아닌지는 이걸로 갈린다.)
 @MainActor
 final class AlarmSoundStagingCapabilityTests: XCTestCase {
 
-    /// 이 프리셋이 `.caf` 를 낼 수 있는가. 못 내면 staging 은 구조적으로 불가능하다.
-    func test_appleM4APreset_supportsCafOutput() throws {
+    /// **회귀 방지** — `AVAssetExportSession` 으로 되돌아가지 말 것.
+    ///
+    /// 예전 구현이 `AVAssetExportPresetAppleM4A` + `outputFileType = .caf` 였는데, 그
+    /// 프리셋은 `.m4a` 밖에 못 낸다. 그래서 `supportedFileTypes.contains(.caf)` 가드가
+    /// **항상** 걸려 staging 이 매번 실패했다. 이 테스트는 그 사실을 고정해, 누군가
+    /// "간단하니까" 하고 export 방식으로 되돌리는 걸 막는다.
+    func test_appleM4APreset_cannotProduceCaf_soDoNotUseExportSession() throws {
         let url = try makeSilentM4A()
         defer { try? FileManager.default.removeItem(at: url) }
 
@@ -26,12 +29,12 @@ final class AlarmSoundStagingCapabilityTests: XCTestCase {
         )
         let types = exporter.supportedFileTypes
 
-        XCTAssertTrue(
+        XCTAssertFalse(
             types.contains(.caf),
             """
-            AVAssetExportPresetAppleM4A 가 .caf 를 지원하지 않는다.
-            → AlarmSoundStaging.stage 가 **항상** 실패하고, 잠금화면·백그라운드에서
-              목소리가 전혀 재생되지 않는다. 지원 목록: \(types.map { $0.rawValue })
+            이 프리셋이 .caf 를 지원하게 됐다면 이 테스트의 전제가 바뀐 것이다.
+            그래도 AVAssetReader/Writer 경로가 더 확실하니 구현을 되돌릴 이유는 없다.
+            지원 목록: \(types.map { $0.rawValue })
             """
         )
     }
@@ -53,8 +56,15 @@ final class AlarmSoundStagingCapabilityTests: XCTestCase {
         let dir = try XCTUnwrap(
             FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
         ).appendingPathComponent("Sounds", isDirectory: true)
-        let out = dir.appendingPathComponent(staged)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: out.path), "staged 파일이 없다")
+        // `stage` 는 **확장자를 뺀 base name** 을 돌려준다(`AlertSound.named(_)` 규약).
+        // 실제 파일은 그 base name + 실제 확장자다.
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        let fileName = try XCTUnwrap(
+            contents.first { ($0 as NSString).deletingPathExtension == staged },
+            "staged 파일이 없다 (dir: \(contents))"
+        )
+        let out = dir.appendingPathComponent(fileName)
+        XCTAssertEqual((fileName as NSString).pathExtension, "caf", "AlarmKit 이 받는 컨테이너여야 한다")
 
         // 실제로 재생 가능한 오디오인지 확인한다(빈 파일이 만들어질 수 있다).
         let player = try AVAudioPlayer(contentsOf: out)

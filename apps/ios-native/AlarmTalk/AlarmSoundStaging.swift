@@ -161,49 +161,121 @@ enum AlarmSoundStaging {
     }
 
     #if canImport(AVFoundation)
-    /// AVAssetExportSession 으로 source → `.caf` 변환. 30s 클립 (AlarmKit 한도) 으로 자른다.
-    /// 실패 시 만들다 만 파일을 정리하고 throw 한다.
+    /// source → `.caf`(LPCM) 변환. 30초(AlarmKit 한도)로 자른다.
+    ///
+    /// ⚠ **`AVAssetExportSession` 으로는 안 된다.** 예전에는
+    /// `AVAssetExportPresetAppleM4A` + `outputFileType = .caf` 를 썼는데, 그 프리셋의
+    /// `supportedFileTypes` 는 **`.m4a` 뿐**이라 `.caf` 가 절대 들어 있지 않다.
+    /// 그래서 위의 `supportedFileTypes.contains(.caf)` 가드가 **항상** 걸려
+    /// staging 이 매번 실패했고, 호출부가 in-app 폴백으로 떨어졌다 —
+    /// 그 폴백은 앱이 떠 있을 때만 도므로 **잠금화면·앱 종료 상태에서 목소리가 아예 안
+    /// 울렸다.** (`AlarmSoundStagingCapabilityTests` 가 이걸 시뮬레이터에서 증명한다.)
+    ///
+    /// 대신 `AVAssetReader` → `AVAssetWriter` 로 직접 쓴다. 컨테이너는 CAF, 샘플은
+    /// 16-bit LPCM 이다. Apple 의 커스텀 알림음 규약(`UNNotificationSound`)이 받는
+    /// 것이 aiff/wav/caf 이고, 그중 LPCM 이 가장 확실하게 재생된다.
     private static func transcodeToCAF(from src: URL, to dst: URL) throws {
         let asset = AVURLAsset(url: src)
         let assetDuration = asset.duration
         if assetDuration.isIndefinite {
             throw AlarmSoundStagingError.writeFailed("Indefinite source duration.")
         }
+        guard let track = asset.tracks(withMediaType: .audio).first else {
+            throw AlarmSoundStagingError.writeFailed("No audio track in source.")
+        }
+
         let seconds = CMTimeGetSeconds(assetDuration)
-        // 30초 초과 소스는 reject 하지 않고 아래 timeRange 로 첫 30초만 캡한다(change 6).
-        // 트림은 제품 결정이며, 캡 덕분에 staged 파일은 항상 <=30s 라 .named 로 잠금 재생 가능.
-
-        // AppleM4A preset 은 mp3/m4a/aac 입력을 폭넓게 받는다. outputFileType 만 caf 로 지정.
-        guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
-            throw AlarmSoundStagingError.writeFailed("AVAssetExportSession init failed.")
-        }
-        // 손상/비오디오 입력에서는 .caf 가 지원되지 않아 outputFileType 설정 시
-        // ObjC 예외(NSInvalidArgumentException)가 던져진다. Swift `try?` 로 못 잡으므로
-        // 지원 여부를 먼저 확인해 미지원이면 graceful 하게 throw → 호출부가 in-app 폴백.
-        guard exporter.supportedFileTypes.contains(.caf) else {
-            throw AlarmSoundStagingError.writeFailed("Output type .caf unsupported for source.")
-        }
-        exporter.outputFileType = .caf
-        exporter.outputURL = dst
-
-        // 30s 한도. 짧으면 source 의 전체 길이를 사용.
+        // 30초 초과 소스는 거절하지 않고 앞 30초만 쓴다 — 잘라서라도 울리는 게 낫다.
         let cappedSeconds = min(seconds, Double(AlarmAudioLimits.maxDurationMillis) / 1000.0)
-        let timescale: CMTimeScale = 600
+
+        let reader: AVAssetReader
+        let writer: AVAssetWriter
+        do {
+            reader = try AVAssetReader(asset: asset)
+            writer = try AVAssetWriter(outputURL: dst, fileType: .caf)
+        } catch {
+            throw AlarmSoundStagingError.writeFailed("reader/writer init: \(error.localizedDescription)")
+        }
         if cappedSeconds > 0 {
-            exporter.timeRange = CMTimeRange(
+            reader.timeRange = CMTimeRange(
                 start: .zero,
-                duration: CMTime(seconds: cappedSeconds, preferredTimescale: timescale)
+                duration: CMTime(seconds: cappedSeconds, preferredTimescale: 600)
             )
         }
 
-        // 동기 대기. AlarmKit scheduling 은 사용자 액션 후 즉시 실행이라 짧은 동기 대기 허용.
-        let sema = DispatchSemaphore(value: 0)
-        exporter.exportAsynchronously { sema.signal() }
-        sema.wait()
+        // 디코드는 LPCM 으로 받고, 그대로 LPCM 으로 쓴다(재인코딩 없음).
+        //
+        // ⚠ **`AVChannelLayoutKey` 를 빼지 말 것.** AVAssetWriter 로 LPCM 을 쓸 때 채널
+        // 레이아웃이 없으면 파일은 만들어지는데 **열리지 않는다**(AVAudioPlayer 가
+        // `kAudioFileUnsupportedFileTypeError` 로 거절). 실패가 재생 시점에야 드러나서
+        // 잡기 어렵다.
+        var monoLayout = AudioChannelLayout()
+        monoLayout.mChannelLayoutTag = kAudioChannelLayoutTag_Mono
+        let layoutData = Data(bytes: &monoLayout, count: MemoryLayout<AudioChannelLayout>.size)
 
-        if exporter.status != .completed {
+        let pcmSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 44_100,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+            AVChannelLayoutKey: layoutData,
+        ]
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: pcmSettings)
+        guard reader.canAdd(output) else {
+            throw AlarmSoundStagingError.writeFailed("Reader cannot add PCM output.")
+        }
+        reader.add(output)
+
+        let input = AVAssetWriterInput(mediaType: .audio, outputSettings: pcmSettings)
+        input.expectsMediaDataInRealTime = false
+        guard writer.canAdd(input) else {
+            throw AlarmSoundStagingError.writeFailed("Writer cannot add PCM input.")
+        }
+        writer.add(input)
+
+        guard writer.startWriting() else {
             try? FileManager.default.removeItem(at: dst)
-            let reason = exporter.error?.localizedDescription ?? "status=\(exporter.status.rawValue)"
+            throw AlarmSoundStagingError.writeFailed(writer.error?.localizedDescription ?? "startWriting failed")
+        }
+        writer.startSession(atSourceTime: .zero)
+        guard reader.startReading() else {
+            writer.cancelWriting()
+            try? FileManager.default.removeItem(at: dst)
+            throw AlarmSoundStagingError.writeFailed(reader.error?.localizedDescription ?? "startReading failed")
+        }
+
+        // 동기 대기. AlarmKit 예약은 사용자 액션 직후라 짧은 동기 대기가 허용된다.
+        let semaphore = DispatchSemaphore(value: 0)
+        let queue = DispatchQueue(label: "com.voicealarm.alarm-sound-staging")
+        input.requestMediaDataWhenReady(on: queue) {
+            while input.isReadyForMoreMediaData {
+                guard reader.status == .reading, let buffer = output.copyNextSampleBuffer() else {
+                    input.markAsFinished()
+                    semaphore.signal()
+                    return
+                }
+                if !input.append(buffer) {
+                    reader.cancelReading()
+                    input.markAsFinished()
+                    semaphore.signal()
+                    return
+                }
+            }
+        }
+        semaphore.wait()
+
+        let finishSemaphore = DispatchSemaphore(value: 0)
+        writer.finishWriting { finishSemaphore.signal() }
+        finishSemaphore.wait()
+
+        guard writer.status == .completed, reader.status != .failed else {
+            try? FileManager.default.removeItem(at: dst)
+            let reason = writer.error?.localizedDescription
+                ?? reader.error?.localizedDescription
+                ?? "writer status=\(writer.status.rawValue)"
             throw AlarmSoundStagingError.writeFailed(reason)
         }
     }
