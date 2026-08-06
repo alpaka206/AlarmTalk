@@ -169,6 +169,9 @@ final class AuthViewModel: ObservableObject {
             let seeded = UIPreviewSeed.makeSession()
             UIPreviewSeed.markGatesPassed(userID: seeded.user.id)
             session = seeded
+            // 서버가 없으니 동의 확인이 60초 타임아웃까지 매달린다 — 화면 확인 모드에서는
+            // 그 사이 로딩 게이트가 화면을 덮어 아무것도 못 본다.
+            consentStatusChecked = true
         }
         #endif
 

@@ -364,6 +364,38 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     var listenerTitle: String? = nil
 }
 
+/// `PATCH voice/{id}` 로 초안을 승격할 때만 쓰는 최소 바디.
+///
+/// ⚠ **이름·관계·호칭을 함께 보내지 말 것.** 정식 프로필이 된 뒤 관계·호칭을 보내면
+/// 서버가 409 `VOICE_PERSONA_LOCKED` 로 거절한다(`voice-profile.ts:733-741`).
+struct VoiceDraftPromoteRequest: Encodable {
+    var isDraft: Bool
+}
+
+struct VoicePreviewPlayedRequest: Encodable {
+    var previewPlaybackToken: String
+}
+
+struct VoicePreviewTextUpdateRequest: Encodable {
+    var previewText: String
+}
+
+/// `GET voice/{id}/prerender-status` — 유료 클론 사전렌더 진행 상태.
+struct VoicePrerenderStatus: Decodable, Equatable {
+    /// "pending" | "done" | "failed" | "none"("none" = 큐 행이 없음 → retry 로 재적재 가능)
+    var status: String?
+    var total: Int
+    var generated: Int
+    var attempts: Int
+}
+
+/// `POST voice/{id}/prerender/advance` — 호출당 최대 3클립 전진.
+struct VoicePrerenderAdvance: Decodable, Equatable {
+    var done: Bool
+    var generated: Int
+    var total: Int
+}
+
 struct VoiceProfileUpdateRequest: Encodable {
     var name: String?
     var isShared: Bool?

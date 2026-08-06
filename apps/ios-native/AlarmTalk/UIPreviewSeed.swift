@@ -31,6 +31,17 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 첫 화면으로 띄울 탭 — `-UIPreviewTab alarms|voices|menu`. 화면 확인용.
+    static var initialTab: NativeTab? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-UIPreviewTab"), i + 1 < args.count else { return nil }
+        return NativeTab(rawValue: args[i + 1])
+        #else
+        return nil
+        #endif
+    }
+
     #if DEBUG
     /// 로그인 다음 게이트(온보딩·기본 목소리 고르기)도 통과 처리한다.
     /// 화면을 보려는 것이지 온보딩을 보려는 게 아니다.
@@ -52,6 +63,24 @@ enum UIPreviewSeed {
                 plan: "personal"
             )
         )
+    }
+
+    /// 목소리 탭을 채우는 표본 프로필(내 목소리 1 + 기본 목소리 4).
+    static func makeVoiceProfiles() -> [VoiceProfile] {
+        var own = VoiceProfile(id: "preview-voice", name: "엄마 목소리", status: "ready")
+        own.relationshipLabel = "엄마"
+        own.isShared = true
+        let names = ["아담", "미나", "하준", "소은"]
+        let system = names.enumerated().map { index, name -> VoiceProfile in
+            var profile = VoiceProfile(
+                id: systemVoiceIDPrefix + String(format: "%012d", 101 + index),
+                name: name,
+                status: "ready"
+            )
+            profile.isSystem = true
+            return profile
+        }
+        return [own] + system
     }
 
     /// 알람 목록·헤드라인이 비어 보이지 않게 하는 표본 알람.

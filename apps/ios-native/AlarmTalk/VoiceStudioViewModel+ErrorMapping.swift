@@ -49,7 +49,7 @@ extension VoiceStudioViewModel {
         case "VOICE_FEATURE_REQUIRES_PAID_PLAN":
             return "유료 이용권에서 사용할 수 있어요."
         case "VOICE_CLONE_AUDIO_TOO_SHORT":
-            return "목소리를 만들 음성은 1분 이상이어야 해요."
+            return "목소리를 만들 음성은 12초 이상이어야 해요."
         case "VOICE_CLONE_AUDIO_TOO_LONG":
             return "목소리를 만들 음성은 2분 이하로 준비해 주세요."
         case "INVALID_DURATION":

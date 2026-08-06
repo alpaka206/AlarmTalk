@@ -24,7 +24,11 @@ enum VoiceProfileLimits {
     /// (5 였을 때 UI 는 5칸을 보여줬으나 서버가 2번째부터 거부해 불일치였음.)
     static let maxProfiles = 1
     /// 클로닝에 허용되는 최소 음성 길이 (ms).
-    static let minDurationMs = 60_000
+    /// 클론 최소 녹음 길이. ⚠ **60초가 아니다.** 안드로이드(`AlarmAudioStore.kt:33`)와
+    /// 서버 게이트(`voice-profile.ts:50 MIN_CLONE_DURATION_MS`) 모두 12초다. 60초는
+    /// `POST /voice/upload` 전용 상수(`voice-upload.ts:19`)지 클론 값이 아니다 —
+    /// 이걸 60초로 두면 서버가 받아 줄 녹음을 앱이 먼저 거절한다.
+    static let minDurationMs = 12_000
     /// 클로닝에 허용되는 최대 음성 길이 (ms).
     static let maxDurationMs = 120_000
     /// 길이 측정 반올림을 흡수하는 상단 허용 오차 (ms). Android
@@ -35,7 +39,12 @@ enum VoiceProfileLimits {
 
 @MainActor
 final class VoiceStudioViewModel: ObservableObject {
-    @Published var profiles: [VoiceProfile] = []
+    @Published var profiles: [VoiceProfile] = {
+        #if DEBUG
+        if UIPreviewSeed.isEnabled { return UIPreviewSeed.makeVoiceProfiles() }
+        #endif
+        return []
+    }()
     @Published var familyVoices: [FamilyVoiceProfile] = []
     @Published var messages: [TtsMessage] = []
     /// 기본 제공(스톡) 알람 클립 카탈로그. 무료 등급 + 시스템 보이스 선택 시
@@ -109,6 +118,8 @@ final class VoiceStudioViewModel: ObservableObject {
     }
 
     func clearUserScopedRemoteState() {
+        // 화면 확인 모드에서는 시드를 지우지 않는다 — 세션 변화마다 목록이 비워진다.
+        if UIPreviewSeed.isEnabled { return }
         activeUserID = nil
         greetingPreviewRequestId += 1
         previewPlayer.stop()
@@ -204,7 +215,32 @@ final class VoiceStudioViewModel: ObservableObject {
             previewingGreetingVoiceId = nil
             return
         }
-        guard let clip = greetingClip(voiceId: voiceId) else { return }
+        // 기본 목소리는 **번들 클립**이 먼저다 — 서버 왕복 없이, 네트워크가 없어도 들린다.
+        // (안드로이드 `playGreeting` 의 `bundledSystemGreetingRes` 분기와 같은 순서.)
+        if let resource = bundledSystemGreetingResource(
+            voiceProfileId: voiceId,
+            appLanguage: Self.appVoiceLanguage()
+        ), let url = Bundle.main.url(forResource: resource, withExtension: "mp3") {
+            greetingPreviewRequestId += 1
+            previewPlayer.stop()
+            previewPlayer.onFinish = { [weak self] in
+                Task { @MainActor in
+                    if self?.previewingGreetingVoiceId == voiceId { self?.previewingGreetingVoiceId = nil }
+                }
+            }
+            guard (try? previewPlayer.play(url: url)) != nil else {
+                statusMessage = "미리듣기를 재생하지 못했어요."
+                return
+            }
+            previewingGreetingVoiceId = voiceId
+            return
+        }
+        guard let clip = greetingClip(voiceId: voiceId) else {
+            // 클론은 사전렌더가 끝나야 인사말 클립이 생긴다 — 조용히 아무 일도 안 하면
+            // 버튼이 고장 난 것처럼 보인다.
+            statusMessage = "미리듣기를 준비하고 있어요. 잠시 뒤에 다시 눌러 주세요."
+            return
+        }
         greetingPreviewRequestId += 1
         let requestId = greetingPreviewRequestId
         previewPlayer.stop()
@@ -278,6 +314,8 @@ final class VoiceStudioViewModel: ObservableObject {
         force: Bool = false,
         successMessage: String? = "목소리 정보를 불러왔어요."
     ) async {
+        // 화면 확인 모드는 서버가 없다 — 실패 메시지로 목록을 덮지 않는다.
+        if UIPreviewSeed.isEnabled { return }
         guard let token = session?.token,
               let userID = normalizedUserID(session?.user.id) else {
             clearUserScopedRemoteState()
@@ -449,7 +487,7 @@ final class VoiceStudioViewModel: ObservableObject {
     func startRecording() async {
         do {
             try await recorder.start()
-            statusMessage = "녹음 중이에요. 1분 이상 2분 이하로 녹음해 주세요."
+            statusMessage = "녹음 중이에요. 12초 이상 2분 이하로 녹음해 주세요."
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -492,7 +530,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs else {
             statusMessage = durationMs < VoiceProfileLimits.minDurationMs
-                ? "1분 이상 녹음해 주세요."
+                ? "12초 이상 녹음해 주세요."
                 : "2분 이하 음성으로 등록할 수 있어요."
             return nil
         }
@@ -590,7 +628,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs else {
             statusMessage = durationMs < VoiceProfileLimits.minDurationMs
-                ? "1분 이상 준비해 주세요."
+                ? "12초 이상 준비해 주세요."
                 : "2분 이하 음성으로 등록할 수 있어요."
             return nil
         }
@@ -990,28 +1028,17 @@ final class VoiceStudioViewModel: ObservableObject {
         return (relationshipLabel, listenerTitle)
     }
 
-    /// 프로필 정보 변경 — VoiceProfileManagementPanel 의 편집 다이얼로그가 호출.
-    func updateProfileInfo(
-        _ profile: VoiceProfile,
-        newName: String,
-        relationshipLabel: String,
-        listenerTitle: String,
-        session: AuthSession?
-    ) async {
+    /// 목소리 **이름 변경**.
+    ///
+    /// ⚠ **관계·호칭을 함께 보내지 말 것.** 등록이 끝난 프로필에 그 둘을 실으면 서버가
+    /// 409 `VOICE_PERSONA_LOCKED` 로 요청 **전체**를 거절해 이름 변경까지 실패한다
+    /// (`voice-profile.ts:733-741`). 알람 클립이 등록 시점 페르소나로 이미 전부 렌더돼
+    /// 있어 바꿀 수 있는 값이 아니다 — 안드로이드도 이름 하나만 보낸다.
+    func renameProfile(_ profile: VoiceProfile, newName: String, session: AuthSession?) async {
         guard let token = session?.token else { return }
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedRelationship = relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = InputSanitizer.clampVoiceName(newName)
         guard !trimmed.isEmpty else {
             statusMessage = "이름을 비울 수 없어요."
-            return
-        }
-        guard !trimmedRelationship.isEmpty else {
-            statusMessage = "나와의 관계를 입력해 주세요."
-            return
-        }
-        guard !trimmedListener.isEmpty else {
-            statusMessage = "이 목소리가 나를 부를 이름을 입력해 주세요."
             return
         }
         guard !isBusy else { return }
@@ -1022,11 +1049,11 @@ final class VoiceStudioViewModel: ObservableObject {
                 id: profile.id,
                 name: trimmed,
                 isShared: nil,
-                relationshipLabel: trimmedRelationship,
-                listenerTitle: trimmedListener,
+                relationshipLabel: nil,
+                listenerTitle: nil,
                 token: token
             )
-            statusMessage = "정보를 수정했어요."
+            statusMessage = "이름을 바꿨어요."
             await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)

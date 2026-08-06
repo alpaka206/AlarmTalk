@@ -57,7 +57,7 @@ struct VoiceCloneUploadFlow: View {
         UsageGuideStep(
             systemImage: "mic.fill",
             title: "조용한 곳에서 녹음해요",
-            body: "1분 이상 2분 이하로 평소 목소리처럼 또박또박 읽어 주세요. 가지고 있는 음성 파일이나 영상으로도 만들 수 있어요."
+            body: "12초 이상 2분 이하로 평소 목소리처럼 또박또박 읽어 주세요. 가지고 있는 음성 파일이나 영상으로도 만들 수 있어요."
         ),
         UsageGuideStep(
             systemImage: "person.text.rectangle",
@@ -353,7 +353,7 @@ struct VoiceCloneUploadFlow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("파일/영상으로 목소리 만들기")
                         .font(.subheadline.weight(.semibold))
-                    Text("1분 이상 2분 이하 구간만 학습에 사용할 수 있어요.")
+                    Text("12초 이상 2분 이하 구간만 학습에 사용할 수 있어요.")
                         .font(.caption)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
@@ -420,7 +420,7 @@ struct VoiceCloneUploadFlow: View {
                         cropStartMs: $cropStartMs,
                         cropEndMs: $cropEndMs
                     )
-                    Text("1분 이상 2분 이하 구간을 골라 주세요.")
+                    Text("12초 이상 2분 이하 구간을 골라 주세요.")
                         .font(.caption2)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
@@ -436,11 +436,11 @@ struct VoiceCloneUploadFlow: View {
             )
 
             if durationMs < VoiceProfileLimits.minDurationMs {
-                Text("1분 이상 파일을 선택해 주세요.")
+                Text("12초 이상 파일을 선택해 주세요.")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
             } else if effectiveDurationMs < VoiceProfileLimits.minDurationMs {
-                Text("1분 이상 들리는 구간을 선택해 주세요.")
+                Text("12초 이상 들리는 구간을 선택해 주세요.")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
             }
@@ -488,12 +488,12 @@ struct VoiceCloneUploadFlow: View {
             }
             .frame(height: 8)
 
-            Text(sourceMode == .record ? "1분 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요." : "1분 이상 2분 이하 구간만 사용할 수 있어요.")
+            Text(sourceMode == .record ? "12초 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요." : "12초 이상 2분 이하 구간만 사용할 수 있어요.")
                 .font(.footnote)
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
             if !isInValidRange && activeDurationMs > 0 {
                 Text(activeDurationMs < VoiceProfileLimits.minDurationMs
-                     ? "1분 이상 준비해야 등록할 수 있어요."
+                     ? "12초 이상 준비해야 등록할 수 있어요."
                      : "2분 이내 구간만 사용할 수 있어요.")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
@@ -766,7 +766,7 @@ struct VoiceCloneUploadFlow: View {
                 selectedFileDurationMs = durationMs
                 applyCropDefaults(durationMs: durationMs)
                 localError = durationMs < VoiceProfileLimits.minDurationMs
-                    ? "1분 이상 파일을 선택해 주세요."
+                    ? "12초 이상 파일을 선택해 주세요."
                     : nil
             }
         } catch {

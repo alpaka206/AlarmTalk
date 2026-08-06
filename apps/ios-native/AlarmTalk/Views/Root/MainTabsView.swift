@@ -13,7 +13,7 @@ struct MainTabsView: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var store: LocalAlarmStore
 
-    @State private var selectedTab: NativeTab = .alarms
+    @State private var selectedTab: NativeTab = UIPreviewSeed.initialTab ?? .alarms
     @State private var receivedAlarmSeenAtMillis: Int64 = 0
 
     /// 탭 전환 시 매번 네트워크 요청이 나가면 살짝 버벅인다. 탭+토큰별 마지막

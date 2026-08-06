@@ -7,6 +7,7 @@ import SwiftUI
 /// 매핑까지 한 화면이 책임진다. 녹음/업로드 워크플로우는 형제 컴포넌트
 /// `VoiceCloneUploadFlow` 가 맡고 본 화면은 라우팅만 한다.
 struct VoiceProfileManagementPanel: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
     @EnvironmentObject private var alarmStore: LocalAlarmStore
@@ -35,6 +36,13 @@ struct VoiceProfileManagementPanel: View {
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
 
+    /// 내 목소리 행의 ⋮ 가 여는 액션 시트 대상.
+    @State private var actionSheetTarget: VoiceProfile?
+
+    /// 사전렌더(알람 음성 준비) 상태 — 목소리 id → 상태. 5초 폴링으로 채운다.
+    @State private var prerenderStatuses: [String: VoicePrerenderStatus] = [:]
+    @State private var retryingPrerenderIDs: Set<String> = []
+
     /// 공유받은 음성에 viewer 가 자신의 관계/호칭을 등록할 때 사용하는 다이얼로그 타깃.
     /// Android `SharedVoiceViewerInfoDialog` (VoiceProfileManagementPanel.kt:1543) 와 동일한 의도.
     @State private var sharedViewerInfoTarget: FamilyVoiceProfile?
@@ -51,10 +59,14 @@ struct VoiceProfileManagementPanel: View {
     }
 
     var body: some View {
+        // ⚠ **페이지 대제목('목소리')을 두지 않는다.** 하단 탭 라벨이 이미 위치를 말해주고,
+        // 첫 섹션 제목('내 목소리')이 곧바로 내용을 연다(안드로이드 `AlarmListScreen.kt:212`
+        // 주석과 알람 탭의 무제목 규칙에 맞춤).
+        //
+        // ⚠ **'목소리 슬롯' 진행바 카드도 두지 않는다.** 안드로이드에 없는 컨트롤이다 —
+        // 남은 개수는 '내 목소리' 섹션 헤더의 '이번 달 n/m' 이 말하고, 슬롯이 가득 차면
+        // 추가 버튼을 누를 때 안내 모달이 뜬다. 진행바는 상시로 자리만 차지했다.
         VStack(alignment: .leading, spacing: 16) {
-            ScreenHeader(title: "목소리", subtitle: nil)
-            slotStatusCard
-            addActionsRow
             if let message = voice.statusMessage {
                 Text(message)
                     .font(.footnote)
@@ -62,52 +74,73 @@ struct VoiceProfileManagementPanel: View {
                     .padding(.horizontal, 4)
             }
 
-            if voice.profiles.isEmpty && hasPaidVoiceAccess {
-                EmptyStatePlaceholder(
-                    title: "아직 사용할 수 있는 목소리가 없어요.",
-                    subtitle: "60초 이상 녹음한 뒤 학습을 등록해 주세요.",
-                    icon: "mic.slash"
-                )
-            } else {
-                if !ownVoices.isEmpty {
-                    ownProfilesSection
-                }
-                if !systemVoices.isEmpty {
-                    systemVoicesSection
-                }
-            }
+            // ⚠ **전용 '목소리 없음' 빈 화면을 두지 않는다.** 안드로이드는 기본 목소리
+            // 섹션이 **항상** 나오므로 이 화면이 비는 일이 없다 — 빈 화면을 그리면
+            // 무료 사용자에게 쓸 수 있는 기본 목소리 4개를 도로 가리게 된다.
+            ownProfilesSection
             familyProfilesSection
+            if !systemVoices.isEmpty {
+                // 기본 제공 목소리는 맨 아래 — 개인화된 목소리(내 것·공유받은 것)가 먼저다.
+                systemVoicesSection
+            }
         }
         .task { await voice.refresh(session: auth.session) }
-        .sheet(item: $editTarget) { profile in
-            VoiceProfileEditDialog(
-                initialName: editName,
-                initialRelationship: editRelationship,
-                initialListenerTitle: editListenerTitle,
-                initialIsShared: editIsShared,
-                canShareVoice: canShareVoice,
-                onCancel: { editTarget = nil },
-                onSave: { newName, newRelationship, newListenerTitle, newShared in
-                    Task {
-                        if newName != profile.name ||
-                            newRelationship != (profile.relationshipLabel ?? "") ||
-                            newListenerTitle != (profile.listenerTitle ?? "") {
-                            await voice.updateProfileInfo(
-                                profile,
-                                newName: newName,
-                                relationshipLabel: newRelationship,
-                                listenerTitle: newListenerTitle,
-                                session: auth.session
-                            )
-                        }
-                        if newShared != (profile.isShared ?? false) {
-                            await voice.toggleShare(profile, isShared: newShared, session: auth.session)
-                        }
-                        editTarget = nil
-                    }
+        // 내 목소리 행의 ⋮ — 안드로이드는 관리 시트(이름 수정·공유·삭제)를 연다.
+        .confirmationDialog(
+            actionSheetTarget?.name ?? "",
+            isPresented: Binding(get: { actionSheetTarget != nil }, set: { if !$0 { actionSheetTarget = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("이 목소리 사용") {
+                if let profile = actionSheetTarget { voice.selectedProfileID = profile.id }
+                actionSheetTarget = nil
+            }
+            Button("이름 수정") {
+                if let profile = actionSheetTarget {
+                    editName = profile.name
+                    actionSheetTarget = nil
+                    // 다음 런루프에 알럿을 띄운다 — 액션시트가 닫히는 프레임에 겹치면
+                    // 둘 다 안 뜨는 상태로 끝난다.
+                    DispatchQueue.main.async { editTarget = profile }
                 }
-            )
-            .presentationDetents([.medium, .large])
+            }
+            if canShareVoice, let profile = actionSheetTarget {
+                Button(profile.isShared == true ? "공유 끄기" : "공유 허용") {
+                    let next = !(profile.isShared ?? false)
+                    actionSheetTarget = nil
+                    Task { await voice.toggleShare(profile, isShared: next, session: auth.session) }
+                }
+            }
+            Button("삭제", role: .destructive) {
+                if let profile = actionSheetTarget {
+                    deleteForce = true
+                    actionSheetTarget = nil
+                    DispatchQueue.main.async { deleteTarget = profile }
+                }
+            }
+            Button("취소", role: .cancel) { actionSheetTarget = nil }
+        }
+        // 사전렌더 진행 폴링 — 준비 중인 목소리가 하나라도 있는 동안만 돈다.
+        .task(id: ownVoices.map(\.id).joined(separator: ",")) {
+            await pollPrerenderStatuses()
+        }
+        // ⚠ **이름만 고친다.** 관계·호칭을 함께 보내면 서버가 409
+        // `VOICE_PERSONA_LOCKED` 로 거절해(`voice-profile.ts:733-741`) **이름 변경조차
+        // 실패했다.** 등록이 끝난 뒤엔 알람 클립이 이미 그 페르소나로 전부 렌더돼 있어
+        // 바꿀 수 있는 값이 아니다. 관계·호칭 입력은 등록 플로우에만 둔다.
+        .alert("이름 수정", isPresented: renameAlertBinding) {
+            TextField("목소리 이름", text: $editName)
+                .textInputAutocapitalization(.never)
+            Button("닫기", role: .cancel) { editTarget = nil }
+            Button("저장") {
+                guard let profile = editTarget else { return }
+                let newName = editName.trimmingCharacters(in: .whitespacesAndNewlines)
+                editTarget = nil
+                guard !newName.isEmpty, newName != profile.name else { return }
+                Task { await voice.renameProfile(profile, newName: newName, session: auth.session) }
+            }
+        } message: {
+            Text("알람 목록과 목소리 탭에 보이는 이름이에요.")
         }
         .sheet(item: $deleteTarget) { profile in
             VoiceProfileDeleteDialog(
@@ -175,78 +208,6 @@ struct VoiceProfileManagementPanel: View {
 
     // MARK: - Slot status card
 
-    private var slotStatusCard: some View {
-        let used = voice.usedProfileSlots
-        let max = VoiceProfileLimits.maxProfiles
-        let progress = max == 0 ? 0.0 : Double(used) / Double(max)
-        let isFull = voice.isProfileLimitReached
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: isFull ? "exclamationmark.triangle.fill" : "person.crop.circle.badge.checkmark")
-                    .foregroundStyle(isFull ? AlarmTalkTheme.error : AlarmTalkTheme.primary)
-                Text("목소리 슬롯")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text("\(used) / \(max)")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
-            ProgressView(value: progress)
-                .tint(isFull ? AlarmTalkTheme.error : AlarmTalkTheme.primary)
-            if isFull {
-                Text("슬롯이 가득 찼어요. 기존 목소리를 삭제하거나 플랜을 업그레이드해 주세요.")
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.error)
-            } else {
-                Text("최대 \(max)개까지 등록할 수 있어요. 남은 슬롯 \(voice.remainingProfileSlots)개.")
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
-        }
-        .sectionSurface()
-    }
-
-    private var addActionsRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("만들기")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                // 이번 달 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
-                if let quota = monthlyQuota {
-                    Text("이번 달 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)")
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-            }
-            HStack(spacing: 8) {
-                Button {
-                    if !hasPaidVoiceAccess {
-                        planGateOpen = true
-                    } else if !voice.isProfileLimitReached {
-                        route = .clone
-                    }
-                } label: {
-                    Label("녹음으로 만들기", systemImage: "mic.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AlarmTalkTheme.primary)
-                // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 위에 '이번 달 0/1' 이 있어
-                // 왜 흐린지가 그 자리에서 읽힌다. **무료는 끄지 않는다**(숫자가 없으니 왜
-                // 흐린지 알 길이 없다) — 항상 눌리게 두고 이용권 안내로 보낸다.
-                .disabled(voice.isBusy || (hasPaidVoiceAccess && (voice.isProfileLimitReached || monthlyExhausted)))
-
-            }
-            if !hasPaidVoiceAccess {
-                Text("유료 이용권에서 사용할 수 있어요.")
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
-        }
-        .sectionSurface()
-    }
-
     /// 화면에 숫자를 띄울 쿼터. **유료 사용자에게만** 의미가 있다 —
     /// 무료에게 '이번 달 0/1' 은 마치 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다.
     private var monthlyQuota: VoiceDraftQuotaResponse? {
@@ -272,112 +233,192 @@ struct VoiceProfileManagementPanel: View {
     // MARK: - Own profiles list
 
     private var ownProfilesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("내 목소리")
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Button("새로고침") {
-                    Task { await voice.refresh(session: auth.session) }
-                }
-                .font(.footnote)
-                .disabled(voice.isBusy)
+        // ⚠ **'새로고침' 버튼은 두지 않는다.** 안드로이드에 없는 컨트롤이고, 화면 진입
+        // `.task` 와 사전렌더 폴링이 이미 최신값을 가져온다 — 눌러야 최신이 되는 것처럼
+        // 보이면 사용자가 그걸 매번 누르게 된다.
+        VoiceSectionCard(title: "내 목소리", trailing: AnyView(addVoiceHeaderTrailing)) {
+            if ownVoices.isEmpty {
+                Text("아직 만든 목소리가 없어요.")
+                    .font(theme.typography.bodyMedium)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
             }
-            ForEach(ownVoices) { profile in
-                VoiceProfileRow(
-                    profile: profile,
-                    isSelected: profile.id == voice.selectedProfileID,
-                    canShareVoice: canShareVoice,
-                    onSelect: { voice.selectedProfileID = profile.id },
-                    onEdit: {
-                        editName = profile.name
-                        editRelationship = profile.relationshipLabel ?? ""
-                        editListenerTitle = profile.listenerTitle ?? ""
-                        editIsShared = profile.isShared ?? false
-                        editTarget = profile
+            ForEach(Array(ownVoices.enumerated()), id: \.element.id) { index, profile in
+                if index > 0 {
+                    Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
+                }
+                VoiceCatalogRow(
+                    name: profile.name,
+                    subtitle: ownSubtitle(profile),
+                    isPlaying: voice.previewingGreetingVoiceId == profile.id,
+                    onPreview: {
+                        Task { await voice.previewGreeting(voiceId: profile.id, session: auth.session) }
                     },
-                    onDelete: {
-                        deleteForce = true
-                        deleteTarget = profile
-                    },
-                    onToggleShare: { newValue in
-                        Task { await voice.toggleShare(profile, isShared: newValue, session: auth.session) }
+                    // 생성 중인 행은 손대지 못하게 한다 — 그 사이 이름을 바꾸거나 지우면
+                    // 서버 상태와 어긋난 요청이 나간다.
+                    enabled: normalizedStatus(profile.status) != "processing" && !voice.isBusy,
+                    onOpenActions: { actionSheetTarget = profile },
+                    below: {
+                        if let status = prerenderStatuses[profile.id] {
+                            VoicePrerenderStatusRow(
+                                status: status,
+                                retrying: retryingPrerenderIDs.contains(profile.id),
+                                onRetry: { Task { await retryPrerender(profile) } }
+                            )
+                        }
                     }
                 )
             }
         }
     }
 
+    /// 섹션 헤더 오른쪽 — 이번 달 남은 횟수 + '추가'. 안드로이드 `VoiceProfileManagementPanel.kt:1274-1305`.
+    private var addVoiceHeaderTrailing: some View {
+        HStack(spacing: 10) {
+            // ⚠ **유료만 숫자를 본다.** 무료에게 '이번 달 0/1' 은 마치 이용권만 있으면
+            // 이미 다 쓴 것처럼 읽혀 거짓말이 된다 — 무료는 숫자 없이 버튼만 두고,
+            // 눌렀을 때 이용권 안내로 보낸다.
+            if let quota = monthlyQuota, hasPaidVoiceAccess, quota.registrationLimit > 0 {
+                Text("이번 달 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            }
+            Button("추가") {
+                if !hasPaidVoiceAccess {
+                    planGateOpen = true
+                } else if !voice.isProfileLimitReached {
+                    route = .clone
+                } else {
+                    planGateOpen = true
+                }
+            }
+            .font(theme.typography.bodyMedium.weight(.semibold))
+            .buttonStyle(.borderedProminent)
+            .tint(theme.palette.primary)
+            .controlSize(.small)
+            // 유료인데 이번 달을 다 썼으면 끈다 — 바로 옆 '이번 달 0/1' 이 이유를 말한다.
+            // 무료는 끄지 않는다(숫자가 없어 왜 흐린지 알 길이 없다).
+            .disabled(voice.isBusy || (hasPaidVoiceAccess && monthlyExhausted))
+        }
+    }
+
+    /// 행 둘째 줄 — 관계 라벨이 있으면 그걸, 없으면 상태를 보여준다.
+    private func ownSubtitle(_ profile: VoiceProfile) -> String? {
+        switch normalizedStatus(profile.status) {
+        case "processing": return "만드는 중"
+        case "failed": return "만들지 못했어요"
+        default: break
+        }
+        var parts: [String] = []
+        if let relationship = profile.relationshipLabel?.nilIfBlank { parts.append(relationship) }
+        if profile.isShared == true { parts.append("공유 중") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     @ViewBuilder
     private var familyProfilesSection: some View {
         if canShareVoice && !voice.familyVoices.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("공유받은 목소리")
-                    .font(.subheadline.weight(.semibold))
-                ForEach(voice.familyVoices) { family in
-                    FamilyVoiceProfileRow(
-                        profile: family,
-                        onEdit: { sharedViewerInfoTarget = family }
+            VoiceSectionCard(title: "공유받은 목소리") {
+                ForEach(Array(voice.familyVoices.enumerated()), id: \.element.id) { index, family in
+                    if index > 0 {
+                        Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
+                    }
+                    VoiceCatalogRow(
+                        name: family.name,
+                        subtitle: family.sharedFromLabel,
+                        isPlaying: voice.previewingGreetingVoiceId == family.id,
+                        onPreview: {
+                            Task { await voice.previewGreeting(voiceId: family.id, session: auth.session) }
+                        },
+                        // 공유받은 목소리에서 내가 손댈 수 있는 건 '나를 부를 호칭' 뿐이라
+                        // ⋮ 대신 아래 CTA 로 낸다(관계·호칭이 비어 있을 때만).
+                        below: {
+                            if family.requiresViewerInfo {
+                                Button {
+                                    sharedViewerInfoTarget = family
+                                } label: {
+                                    Text("이 목소리가 나를 어떻게 부를지 설정")
+                                        .font(theme.typography.bodySmall.weight(.semibold))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(theme.palette.primary)
+                            }
+                        }
                     )
                 }
             }
         }
     }
 
-    // MARK: - 기본(시스템) 목소리 (Android VoiceProfileManagementPanel.kt systemVoicesSection 미러)
+    // MARK: - 기본(시스템) 목소리
 
-    private var defaultVoiceName: String? {
-        systemVoices.first { $0.id == voice.defaultVoiceId }?.name
-    }
-
+    /// ⚠ **시트 뒤에 숨기지 말 것.** 안드로이드는 기본 목소리 4종을 목록에 그대로 펼친다.
+    /// 예전 구조(값 + 셰브론 → 시트)에서는 **무료 사용자에게 정작 쓸 수 있는 기본 목소리
+    /// 4개가 시트를 열기 전까진 보이지 않았다** — 안드로이드가 이 화면을 고친 이유가 그거다.
+    ///
+    /// '호칭' TextField 도 여기 두지 않는다(안드로이드에 없다). 호칭은 등록 플로우에서 받는다.
     @ViewBuilder
     private var systemVoicesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // 토스식 [제목 … 값 + 셰브론] 행 — 탭하면 기본 목소리 선택 시트를 연다.
-            Button {
-                defaultVoiceSheetOpen = true
-            } label: {
-                HStack(spacing: 4) {
-                    Text("기본 목소리")
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                    // 정해진 기본 목소리 이름이 값. 아직 없으면 '선택하기'로 행동을 유도한다.
-                    Text(defaultVoiceName ?? "선택하기")
-                        .font(.subheadline)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+        VoiceSectionCard(title: "기본 목소리") {
+            ForEach(Array(systemVoices.enumerated()), id: \.element.id) { index, profile in
+                if index > 0 {
+                    Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
                 }
+                // ⚠ **부가설명도 ⋮ 도 두지 않는다.** 섹션 이름이 이미 '기본 목소리' 라고
+                // 말하고, 이 행에는 관리할 게 없다(안드로이드 `VoiceProfileManagementPanel.kt:1411`).
+                // 행 전체가 미리듣기다.
+                VoiceCatalogRow(
+                    name: profile.name,
+                    isPlaying: voice.previewingGreetingVoiceId == profile.id,
+                    onPreview: {
+                        Task { await voice.previewGreeting(voiceId: profile.id, session: auth.session) }
+                    }
+                )
             }
-            .buttonStyle(.plain)
+        }
+    }
 
-            // 기본 목소리가 정해졌으면 호칭을 여기서 수정(펼치지 않아도 보임). 입력 즉시 저장.
-            if voice.defaultVoiceId != nil {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("호칭")
-                        .font(.caption)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                    TextField("예: 지호, 자기, 대표님", text: Binding(
-                        get: { voice.defaultListenerTitle ?? "" },
-                        set: { voice.setDefaultListenerTitle(String($0.prefix(30))) }
-                    ))
-                    .textFieldStyle(.roundedBorder)
+    /// 사전렌더 상태 폴링. 안드로이드는 5초 간격으로 돈다(`VoiceProfileManagementPanel.kt:979-1036`).
+    ///
+    /// ⚠ **끝나면 멈춘다.** 준비 중(`pending`)인 목소리가 없으면 루프를 빠져나온다 —
+    /// 안 그러면 목소리 탭을 열어 둔 내내 5초마다 네트워크를 친다.
+    private func pollPrerenderStatuses() async {
+        guard let token = auth.session?.token else { return }
+        while !Task.isCancelled {
+            var anyPending = false
+            for profile in ownVoices where !isSystemVoice(profile) {
+                guard let status = try? await AlarmTalkAPI.shared.voicePrerenderStatus(id: profile.id, token: token)
+                else { continue }
+                prerenderStatuses[profile.id] = status
+                if status.status == "pending" {
+                    anyPending = true
+                    // 앱이 열려 있는 동안은 cron 을 기다리지 않고 우리가 앞당긴다
+                    // (호출당 최대 3클립). 실패는 무시 — 다음 회차가 다시 시도한다.
+                    _ = try? await AlarmTalkAPI.shared.advanceVoicePrerender(id: profile.id, token: token)
                 }
-                .padding(.top, 4)
             }
+            guard anyPending else { return }
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
         }
-        .sheet(isPresented: $defaultVoiceSheetOpen, onDismiss: { voice.stopGreetingPreview() }) {
-            DefaultVoiceSelectionSheet(
-                voices: systemVoices,
-                selectedVoiceId: voice.defaultVoiceId,
-                playingVoiceId: voice.previewingGreetingVoiceId,
-                onTap: { profile in
-                    voice.setDefaultVoice(profile.id)
-                    Task { await voice.previewGreeting(voiceId: profile.id, session: auth.session) }
-                }
-            )
+    }
+
+    private func retryPrerender(_ profile: VoiceProfile) async {
+        guard let token = auth.session?.token else { return }
+        retryingPrerenderIDs.insert(profile.id)
+        defer { retryingPrerenderIDs.remove(profile.id) }
+        guard (try? await AlarmTalkAPI.shared.retryVoicePrerender(id: profile.id, token: token)) != nil else {
+            voice.statusMessage = "다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요."
+            return
         }
+        await pollPrerenderStatuses()
+    }
+
+    /// `.alert` 는 `item:` 형태가 없어 Bool 바인딩으로 감싼다.
+    private var renameAlertBinding: Binding<Bool> {
+        Binding(get: { editTarget != nil }, set: { if !$0 { editTarget = nil } })
     }
 
     private var canShareVoice: Bool {
@@ -388,65 +429,5 @@ struct VoiceProfileManagementPanel: View {
             storeTier: subscriptions.currentTier,
             userPlan: auth.session?.user.plan
         )
-    }
-}
-
-/// 기본 목소리 선택 시트 — 탭 = 선택 + 인사말 미리듣기(재탭 시 정지), 탭해도 시트를 닫지 않는다.
-/// 여러 목소리를 이어 들어보며 고르는 흐름이라 닫기는 스와이프/배경 탭에 맡긴다.
-/// Android `WakerSelectionSheet` 기본 목소리 변형 미러.
-private struct DefaultVoiceSelectionSheet: View {
-    let voices: [VoiceProfile]
-    let selectedVoiceId: String?
-    let playingVoiceId: String?
-    let onTap: (VoiceProfile) -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("기본 목소리")
-                    .font(.title3.weight(.bold))
-                ForEach(voices) { profile in
-                    let selected = profile.id == selectedVoiceId
-                    Button {
-                        onTap(profile)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Text(profile.name)
-                                .font(.subheadline.weight(.semibold))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            // 재생 중 표시 (Android PlayingEqualizer 대응). 정지는 행 재탭.
-                            if playingVoiceId == profile.id {
-                                Image(systemName: "waveform")
-                                    .foregroundStyle(AlarmTalkTheme.primary)
-                            }
-                            if selected {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 20))
-                                    .foregroundStyle(AlarmTalkTheme.primary)
-                            } else {
-                                Circle()
-                                    .strokeBorder(AlarmTalkTheme.outline, lineWidth: 1.5)
-                                    .frame(width: 20, height: 20)
-                            }
-                        }
-                        .padding(EdgeInsets(top: 13, leading: 14, bottom: 13, trailing: 14))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(selected ? AlarmTalkTheme.primary.opacity(0.10) : AlarmTalkTheme.surfaceVariant.opacity(0.34))
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(
-                                    selected ? AlarmTalkTheme.primary.opacity(0.5) : AlarmTalkTheme.outline.opacity(0.4),
-                                    lineWidth: 1
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(20)
-        }
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
     }
 }

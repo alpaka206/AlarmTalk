@@ -137,7 +137,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
         durationMs: Int,
         noiseRemoval: Bool = false,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        isDraft: Bool = true,
+        language: String = "ko"
     ) -> [String: String] {
         _ = noiseRemoval // stale: 더 이상 전송하지 않음(backend 무시, Android 미전송).
         let fields: [String: String] = [
@@ -146,6 +148,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
             "durationMs": String(durationMs),
             "relationshipLabel": relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "listenerTitle": listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            // ⚠ **초안(draft)으로 만든다.** 서버는 draft → 미리듣기 확인 → 승격 흐름을
+            // 전제한다(`voice-profile.ts:1080`). 이걸 안 보내면 등록이 곧바로 정식
+            // 프로필이 되어, 사용자가 결과를 들어보기도 전에 페르소나가 잠기고
+            // (`:733-741` 409 VOICE_PERSONA_LOCKED) 마음에 안 들어도 되돌릴 수 없다.
+            "isDraft": isDraft ? "true" : "false",
+            // 미전송 시 서버가 'ko' 로 폴백해 비-한국어 사용자가 클론 버킷을 못 받는다.
+            "language": language,
         ]
         return fields
     }
@@ -159,7 +168,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
         noiseRemoval: Bool = false,
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        isDraft: Bool = true,
+        language: String = "ko"
     ) async throws -> VoiceProfile {
         let fields = Self.voiceCloneMultipartFields(
             name: name,
@@ -167,7 +178,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
             durationMs: durationMs,
             noiseRemoval: noiseRemoval,
             relationshipLabel: relationshipLabel,
-            listenerTitle: listenerTitle
+            listenerTitle: listenerTitle,
+            isDraft: isDraft,
+            language: language
         )
         // 관계/호칭이 비어 있어도 필드를 포함해 Android 와 같은 서버 검증 경로를 탄다.
         let response: VoiceProfileResponse = try await multipartRequest(
@@ -222,6 +235,77 @@ final class AlarmTalkAPI: @unchecked Sendable {
             )
         )
         return response.profile
+    }
+
+    /// 초안(draft)을 정식 프로필로 승격한다. 미리듣기를 확인한 뒤에만 부른다.
+    /// 서버는 이 시점에 페르소나(관계·호칭)를 잠그고 사전렌더 큐를 적재한다.
+    func promoteVoiceDraft(id: String, token: String) async throws -> VoiceProfile {
+        let response: VoiceProfileResponse = try await request(
+            "voice/\(id)",
+            method: "PATCH",
+            token: token,
+            body: VoiceDraftPromoteRequest(isDraft: false)
+        )
+        return response.profile
+    }
+
+    /// 미리듣기를 **끝까지 들었다**고 서버에 알린다. 서버가 준 재생 토큰을 그대로 돌려준다.
+    /// 이게 기록돼야 승격(저장하기)이 열린다 — 결과를 안 듣고 저장하는 걸 막는 장치다.
+    @discardableResult
+    func confirmVoicePreviewPlayed(id: String, playbackToken: String, token: String) async throws -> Bool {
+        struct Response: Decodable { let success: Bool; let previewed: Bool }
+        let response: Response = try await request(
+            "voice/\(id)/preview-played",
+            method: "POST",
+            token: token,
+            body: VoicePreviewPlayedRequest(previewPlaybackToken: playbackToken)
+        )
+        return response.previewed
+    }
+
+    /// 등록 미리듣기 문구 수정(초안 전용). 서버가 `previewed_at` 을 리셋해 **재청취를
+    /// 강제**하므로, 호출 뒤에는 저장 버튼이 다시 잠겨야 한다.
+    /// 반환값은 서버가 공백 정규화한 최종 문구다(이후 합성 캐시 키와 같다).
+    func updateVoicePreviewText(id: String, previewText: String, token: String) async throws -> String {
+        struct Response: Decodable { let success: Bool; let previewText: String }
+        let response: Response = try await request(
+            "voice/\(id)/preview-text",
+            method: "PATCH",
+            token: token,
+            body: VoicePreviewTextUpdateRequest(previewText: previewText)
+        )
+        return response.previewText
+    }
+
+    /// 유료 클론 사전렌더(R2 21클립) 진행 상태. 목소리 탭 준비 표시가 짧게 폴링한다.
+    func voicePrerenderStatus(id: String, token: String) async throws -> VoicePrerenderStatus {
+        try await request("voice/\(id)/prerender-status", token: token)
+    }
+
+    /// attempts 상한 초과로 'failed' 가 된 큐를 pending 으로 되돌린다(빠진 클립만 다시 채운다).
+    @discardableResult
+    func retryVoicePrerender(id: String, token: String) async throws -> Bool {
+        struct Response: Decodable { let success: Bool }
+        let response: Response = try await request("voice/\(id)/prerender-retry", method: "POST", token: token)
+        return response.success
+    }
+
+    /// 소유자 주도 사전렌더 전진(호출당 최대 3클립). 앱이 열려 있는 동안 cron 을 앞당긴다.
+    func advanceVoicePrerender(id: String, token: String) async throws -> VoicePrerenderAdvance {
+        try await request("voice/\(id)/prerender/advance", method: "POST", token: token)
+    }
+
+    /// 말투 분석 재시도. 실패 502 `SPEECH_STYLE_ANALYSIS_FAILED`, 소스 없음 409.
+    @discardableResult
+    func retryVoiceSpeechStyle(id: String, token: String) async throws -> Bool {
+        struct Response: Decodable { let success: Bool }
+        let response: Response = try await request("voice/\(id)/speech-style/retry", method: "POST", token: token)
+        return response.success
+    }
+
+    /// 초안 정리 전용 삭제. 서버는 `is_draft=1` 인 경우에만 실제로 지운다(등록된 보이스 보호).
+    func deleteVoiceDraft(id: String, token: String) async throws {
+        let _: EmptyResponse = try await request("voice/\(id)?draftOnly=true", method: "DELETE", token: token)
     }
 
     func deleteVoiceProfile(id: String, token: String, force: Bool = false) async throws {

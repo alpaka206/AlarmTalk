@@ -69,172 +69,172 @@
         }
       }
     },
-    "1분 이상 2분 이하 구간만 학습에 사용할 수 있어요.": {
+    "12초 이상 2분 이하 구간만 학습에 사용할 수 있어요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Only a 1- to 2-minute range can be used for training."
+            "value": "Only a 12-second to 2-minute range can be used for training."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上2分以下の区間のみ学習に使用できます。"
+            "value": "12秒以上2分以下の区間のみ学習に使用できます。"
           }
         }
       }
     },
-    "1분 이상 2분 이하 구간을 골라 주세요.": {
+    "12초 이상 2분 이하 구간을 골라 주세요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose a range between 1 and 2 minutes."
+            "value": "Choose a range between 12 seconds and 2 minutes."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上2分以下の区間を選んでください。"
+            "value": "12秒以上2分以下の区間を選んでください。"
           }
         }
       }
     },
-    "1분 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요.": {
+    "12초 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Record for 1 to 2 minutes. We recommend 1 minute 30 seconds."
+            "value": "Record for 12 seconds to 2 minutes. We recommend 1 minute 30 seconds."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上2分以下で録音してください。1分30秒をおすすめします。"
+            "value": "12秒以上2分以下で録音してください。1分30秒をおすすめします。"
           }
         }
       }
     },
-    "1분 이상 2분 이하로 평소 목소리처럼 또박또박 읽어 주세요. 가지고 있는 음성 파일이나 영상으로도 만들 수 있어요.": {
+    "12초 이상 2분 이하로 평소 목소리처럼 또박또박 읽어 주세요. 가지고 있는 음성 파일이나 영상으로도 만들 수 있어요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Read clearly in your normal voice for 1 to 2 minutes. You can also use an audio file or video you already have."
+            "value": "Read clearly in your normal voice for 12 seconds to 2 minutes. You can also use an audio file or video you already have."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上2分以下で、普段の声ではっきりと読んでください。お持ちの音声ファイルや動画でも作成できます。"
+            "value": "12秒以上2分以下で、普段の声ではっきりと読んでください。お持ちの音声ファイルや動画でも作成できます。"
           }
         }
       }
     },
-    "1분 이상 녹음해 주세요.": {
+    "12초 이상 녹음해 주세요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Please record for at least 1 minute."
+            "value": "Please record for at least 12 seconds."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上録音してください。"
+            "value": "12秒以上録音してください。"
           }
         }
       }
     },
-    "1분 이상 들리는 구간을 선택해 주세요.": {
+    "12초 이상 들리는 구간을 선택해 주세요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Please choose a range with at least 1 minute of clear audio."
+            "value": "Please choose a range with at least 12 seconds of clear audio."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上はっきり聞こえる区間を選んでください。"
+            "value": "12秒以上はっきり聞こえる区間を選んでください。"
           }
         }
       }
     },
-    "1분 이상 들리는 구간이 필요해요.": {
+    "12초 이상 들리는 구간이 필요해요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You need a range with at least 1 minute of clear audio."
+            "value": "You need a range with at least 12 seconds of clear audio."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上はっきり聞こえる区間が必要です。"
+            "value": "12秒以上はっきり聞こえる区間が必要です。"
           }
         }
       }
     },
-    "1분 이상 준비해 주세요.": {
+    "12초 이상 준비해 주세요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Please prepare at least 1 minute."
+            "value": "Please prepare at least 12 seconds."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上ご用意ください。"
+            "value": "12秒以上ご用意ください。"
           }
         }
       }
     },
-    "1분 이상 준비해야 등록할 수 있어요.": {
+    "12초 이상 준비해야 등록할 수 있어요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You need at least 1 minute to register."
+            "value": "You need at least 12 seconds to register."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上ないと登録できません。"
+            "value": "12秒以上ないと登録できません。"
           }
         }
       }
     },
-    "1분 이상 파일을 선택해 주세요.": {
+    "12초 이상 파일을 선택해 주세요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Please choose a file of at least 1 minute."
+            "value": "Please choose a file of at least 12 seconds."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1分以上のファイルを選んでください。"
+            "value": "12秒以上のファイルを選んでください。"
           }
         }
       }
@@ -2653,19 +2653,19 @@
         }
       }
     },
-    "녹음 중이에요. 1분 이상 2분 이하로 녹음해 주세요.": {
+    "녹음 중이에요. 12초 이상 2분 이하로 녹음해 주세요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recording. Please record for 1 to 2 minutes."
+            "value": "Recording. Please record for 12 seconds to 2 minutes."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "録音中です。1分以上2分以下で録音してください。"
+            "value": "録音中です。12秒以上2分以下で録音してください。"
           }
         }
       }
@@ -4268,19 +4268,19 @@
         }
       }
     },
-    "목소리를 만들 음성은 1분 이상이어야 해요.": {
+    "목소리를 만들 음성은 12초 이상이어야 해요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The audio for creating a voice needs to be at least 1 min long."
+            "value": "The audio for creating a voice needs to be at least 12 seconds long."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "声を作成する音声は1分以上必要です。"
+            "value": "声を作成する音声は12秒以上必要です。"
           }
         }
       }
@@ -11544,19 +11544,19 @@
         }
       }
     },
-    "최대 3명까지 분리하고, 1분 이상 충분히 들리는 화자만 등록할 수 있어요.": {
+    "최대 3명까지 분리하고, 12초 이상 충분히 들리는 화자만 등록할 수 있어요.": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You can separate up to 3 people, and only register speakers heard clearly for at least 1 minute."
+            "value": "You can separate up to 3 people, and only register speakers heard clearly for at least 12 seconds."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "最大3人まで分離でき、1分以上はっきり聞こえる話者だけ登録できます。"
+            "value": "最大3人まで分離でき、12秒以上はっきり聞こえる話者だけ登録できます。"
           }
         }
       }
