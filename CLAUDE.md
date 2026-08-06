@@ -4,7 +4,10 @@
 - `packages/backend` — Cloudflare Workers + Hono + Turso(libSQL). 라우트 `src/routes`, 마이그레이션 `src/lib/migrations.ts`.
 - `packages/shared` — zod 스키마(`src/schemas`), 백엔드·클라 공용 계약.
 - `apps/android-native` — Kotlin/Compose. dev/prod product flavor.
-- iOS 앱은 없다. SwiftUI 앱(`apps/ios-native`)과 iOS 빌드 워크플로는 미운영이라 제거했다 — 재개 시 앱과 워크플로를 함께 되살린다.
+- `apps/ios-native` — SwiftUI. **2026-08-06 되살렸다**(브랜치 `feat/ios-revive`, 아직 미출시).
+  탭 구성은 안드로이드와 같다(알람/목소리/더보기). 빌드·테스트는 XcodeGen(`project.yml`)으로
+  `AlarmTalkNative.xcodeproj` 를 만든 뒤 시뮬레이터에서 돌린다 — 상세는 `docs/ios/`.
+  ⚠ 아직 App Store 에 없고 CI 워크플로도 복구하지 않았다. Apple 개발자 계정이 선행이다.
 - `apps/landing` — 웹 랜딩.
 
 ## 배포 / 환경
@@ -28,6 +31,15 @@
     건너뛰고 다음 주기 재시도).
   - 마이그레이션이 실패하면 워크플로가 **빨간불로 죽는다**(러너가 throw). 창이 조용히
     길어지지는 않는다.
+- ⚠ **법무 문서 버전(`CURRENT_POLICY_VERSION`)은 앱 릴리스와 짝을 맞춰 올린다.**
+  문서 전문은 **APK/IPA 에 실려** 있고(빌드 시 `docs/legal` 복사 → `BuildConfig.LEGAL_POLICY_VERSION`),
+  앱은 그 값을 `document_version` 으로 보낸다. 서버가 먼저 올라가면
+  `POST /user/consents` 가 **409 POLICY_VERSION_MISMATCH** 로 전부 거부하고, 앱은 그걸
+  '업데이트 필요' 차단 화면으로 처리한다 — **받을 새 버전이 스토어에 없으면 신규 가입과
+  재동의가 통째로 막힌다.**
+  순서: 새 문서를 번들한 앱을 **스토어에 먼저 올린 뒤** 서버의 버전 상수를 main 에 머지한다.
+  강제 업데이트로 구버전을 잘라낼 거면 `app-version.ts` 의 `minSupported` 상향도 **그 릴리스가
+  게재된 뒤**여야 한다(안 그러면 받을 게 없는 강제 업데이트로 앱이 벽돌이 된다).
 - **init-db 시크릿**: dev/prod 분리. GitHub `INIT_DB_SECRET_DEV`/`INIT_DB_SECRET_PROD`(**Repository** Actions secret)가 각 워커의 `INIT_DB_SECRET`(`.dev.vars.{dev,prod}` → `npm run secrets:sync:{dev,prod}`)과 일치해야 migrate 통과. 안 맞으면 404.
 
 ## Android dev 빌드 / 설치
@@ -159,13 +171,52 @@
 게이트 제목은 정책을 말하므로 권한별로 "…권한을 허용해야 알람을 설정할 수 있어요" 로
 통일하고, 홈 화면은 위 표대로 **사실**을 말한다.
 
+### 동의 화면 규약 — 미체크는 '철회'가 아니다 (백엔드 + 양 앱)
+
+동의 화면은 **서버가 내려준 목록대로** 그리고 제출한다. 화면이 목록을 따로 들고 있으면
+서버가 필수/선택을 바꿀 때 조용히 어긋난다.
+
+| 서버 필드 | 뜻 | 클라가 하는 일 |
+| --- | --- | --- |
+| `collect` | 이번에 받아야 하는 유형 | **이것만** 그리고 **이것만** 제출 |
+| `optional` | 체크 없이 통과하는 유형 | '선택' 으로 그리고 CTA 조건에서 뺀다 |
+| `prechecked` | 이미 동의해 둔 유형 | **초기 체크 상태**로 쓴다 |
+| `needs_consent` | 앱을 막는 게이트(필수 기준) | 화면 표시 판단에 쓰지 **말 것** |
+| `needs_collection` | 화면을 띄워야 하나 | `showConsentScreen` 이 이걸 본다 |
+| `sensitive_missing` | 목소리 라우트가 요구하는데 없는 동의 | 등록 화면 인라인 체크박스 |
+| `has_prior_consent` | 개정 재동의인가 | 제목·부제 문구를 가른다 |
+
+- ⚠ **`agreed=false` 를 무조건 철회로 읽지 말 것.** 민감 동의는 `optional` 이라 CTA 가 체크를
+  요구하지 않는다. 이미 동의한 사람이 화면을 그냥 통과하면 false 가 제출되는데, 그걸 철회로
+  처리하면 **ElevenLabs 보이스와 R2 원본이 영구 삭제된다.** 판별은 **지금 그 유형을 다시
+  묻고 있었는가**(`collect` 포함 여부)로 한다 — 대상이면 기록만, 아무도 안 물었는데 온
+  false 만 명시적 철회(설정 화면)다. `routes/user.ts` 의 `withdrewSensitiveConsent`.
+- **초기 체크 상태는 `prechecked` 로 채운다.** 항상 미체크로 두면 위와 같은 이유로 기존
+  동의(마케팅 수신·생체정보)가 조용히 사라진다. 미리 눌러 주는 게 아니라 **가진 것을
+  보여주는 것**이다. 필수 유형은 서버가 담지 않는다.
+- **'전체 동의' 는 필수 전용이다.** 선택까지 한 탭에 켜면 거절했던 사람이 한 번의 탭으로
+  마케팅을 켜게 되어 개인정보보호법 제22조 구분 수령 취지에 어긋난다.
+  `setAll` 과 `allChecked` 와 **마스터 행 표시 조건이 모두 같은 집합**을 봐야 한다.
+- **마케팅 재유도**는 거절자에게 **다른 이유로 화면이 이미 뜰 때만** 함께 노출한다.
+  마케팅만으로 화면이 뜨면 거절자는 그 화면을 영영 보게 된다. 앱 화면에서만 유도하고
+  푸시·이메일로 권하지 않는다(그 메시지 자체가 광고성 정보로 평가된다).
+- ⚠ **목소리 등록의 권리 보증은 체크박스가 아니다**(2026-08-06 변경). 그 내용은 **약관
+  제7조**가 담고 있고 약관은 가입 필수 동의라 이미 받았다 — 등록마다 다시 받는 것은 계약상
+  중복이었다. 화면에는 **비차단 안내**로만 남긴다. 되돌리려면 약관 제7조를 먼저 확인할 것.
+  (생체정보 동의 체크박스는 그대로 — 서버 기록 기반 법정 동의라 성격이 다르다.)
+- ⚠ **`CONSENT_MIN_POLICY_VERSION` 을 올리는 것이 재동의의 유일한 레버다.**
+  `CURRENT_POLICY_VERSION`(문서 버전)이 올라도 재동의는 안 뜬다. 올릴 때는 **그 유형의 동의
+  내용이 실제로 바뀐 경우만**, 그리고 **배포된 앱이 그 문서 버전을 번들한 뒤에** 올린다 —
+  `POST /user/consents` 가 `document_version` 불일치를 409 로 막으므로, 구버전 앱은 화면은
+  뜨는데 제출이 안 되는 상태에 갇힌다.
+
 ### 1회성 오버레이는 **확인이 끝난 뒤에만** 판단한다 (Android)
 
 PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버전 → 계정 상태 → 권한). 규약으로 고정한다.
 
 문제의 형태: 게이트 상태(`updateRequired`·`pendingDeletion`·`needsConsent` …)는 서버 응답으로 채워지는데, **응답 전 기본값 `false` 가 '아니오' 와 구분되지 않는다.** 그 틈에 1회성 오버레이(웰컴 프로모, 첫 권한 안내)가 떠서 **소진 플래그까지 태우고**, 뒤늦게 응답이 와 차단 화면이 깔리면 그 위를 덮는다. 사용자는 본 적도 없이 잃고, 플래그는 계정/기기에 남아 앱을 업데이트해도 되살아나지 않는다.
 
-- **소진되는 플래그를 태우는 오버레이는 관련 `checkXxx` 응답이 도착한 뒤에만 판단한다.** 현재 준비 신호 3종: `consentChecked`(`checkConsentStatus`) / `versionChecked`(`checkAppVersion`) / `accountStatusChecked`(`checkAccountStatus`).
+- **소진되는 플래그를 태우는 오버레이는 관련 `checkXxx` 응답이 도착한 뒤에만 판단한다.** 현재 준비 신호 3종: `consentChecked`(`checkConsentStatus`) / `versionChecked`(`checkAppVersion`) / `accountStatusChecked`(`checkAccountStatus`). **iOS 도 같은 축이 필요하다** — `AuthViewModel.consentStatusChecked` 가 그 역할이고, 목소리 등록 폼이 이걸 봐야 응답 전에 동의 체크박스가 안 그려진 채 제출이 열리지 않는다.
 - **준비 신호는 성공·실패 모두 `true`.** 못 물어본 것이 앱을 못 쓰게 할 이유는 아니다 — 네트워크 실패로 영영 `false` 면 그 오버레이는 영영 안 뜬다.
 - **가드만 넣지 말고 `LaunchedEffect` 키에도 넣어야 한다.** 키에 없으면 응답이 도착해도 효과가 재실행되지 않아, 게이트가 풀린 뒤에도 오버레이가 안 뜬다.
 - **계정별 신호는 세션 정리에서 `false` 로 되돌린다**(`clearUserScopedRemoteState` — `consentChecked`·`accountStatusChecked`). 앞 계정의 '확인 끝남' 이 새 계정에 새면 안 된다. 반면 `versionChecked` 는 앱·기기 단위라 되돌리지 않는다(계정이 바뀐다고 설치 버전이 바뀌지 않는다).
