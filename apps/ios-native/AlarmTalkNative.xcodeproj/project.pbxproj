@@ -74,6 +74,7 @@
 		4E4BF159153E15EFFCC3364D /* AlarmRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2066E213CEFC39ADF9763B43 /* AlarmRow.swift */; };
 		4E63E387440150425DC0B71C /* VoiceImportContentTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FB97FB9ECF9DE47DBCAEE83 /* VoiceImportContentTypes.swift */; };
 		4F17B4ED7CC3C97D426E515A /* SocialFeatureViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0618736D787E420EF19C236B /* SocialFeatureViewModel.swift */; };
+		4FA9B768B6E51C73C71A0699 /* SignUpFlowUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */; };
 		4FFC3CC8A76CE52455FCA840 /* NextAlarmHeadline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DB79BA5EE6921E448839E2 /* NextAlarmHeadline.swift */; };
 		50E4087A937F896B623AD8E8 /* StoreKitConfiguration.storekit in Resources */ = {isa = PBXBuildFile; fileRef = C85849E44ED914564F02925F /* StoreKitConfiguration.storekit */; };
 		516F57BD13DEACD0054A1F59 /* BackgroundSyncTaskTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC6803137321D0177FF40243 /* BackgroundSyncTaskTests.swift */; };
@@ -214,6 +215,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		32ED58056B23541101294D80 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D12DCF0AF6D03CFD3757DA72 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7BEA4B94496745601F0B0159;
+			remoteInfo = AlarmTalk;
+		};
 		A3FD480313888B80D69045B3 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = D12DCF0AF6D03CFD3757DA72 /* Project object */;
@@ -262,6 +270,7 @@
 		0E7477E7C446FAC757144181 /* TimeWheelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelPicker.swift; sourceTree = "<group>"; };
 		0FB97FB9ECF9DE47DBCAEE83 /* VoiceImportContentTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceImportContentTypes.swift; sourceTree = "<group>"; };
 		10CE147023F745A31BD0720B /* AccessSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSnapshotStoreTests.swift; sourceTree = "<group>"; };
+		114611674486F08A23080002 /* AlarmTalkUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AlarmTalkUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1348344040C8AFF0EECE3D69 /* FortunePromptInputFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FortunePromptInputFields.swift; sourceTree = "<group>"; };
 		142DE041DBD586F69F89110D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		14B49A7ECFA042EE038EE23D /* NonceGeneratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonceGeneratorTests.swift; sourceTree = "<group>"; };
@@ -422,6 +431,7 @@
 		DEA4053147240A726E543944 /* AlarmUserCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmUserCopyTests.swift; sourceTree = "<group>"; };
 		DF8FEE20605F1122A2E8963A /* AlarmSoundStagingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundStagingCapabilityTests.swift; sourceTree = "<group>"; };
 		E077F439D01E160ED901D7FE /* VoicePlayModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayModePicker.swift; sourceTree = "<group>"; };
+		E2F77DC95A95FDD81F176FCA /* DeviceTest.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DeviceTest.entitlements; sourceTree = "<group>"; };
 		E3B1ECBB5616D418A9932BCA /* ReceivedAlarmBadgeStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedAlarmBadgeStoreTests.swift; sourceTree = "<group>"; };
 		E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidayStore.swift; sourceTree = "<group>"; };
 		E4FA548127A2AE3F3ED3B6D3 /* GradientCta.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientCta.swift; sourceTree = "<group>"; };
@@ -430,6 +440,7 @@
 		EA9FAAF577180183F039752F /* LoginPermissionGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginPermissionGateView.swift; sourceTree = "<group>"; };
 		EC6B972EFA8543A20D363BEE /* SectionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionCard.swift; sourceTree = "<group>"; };
 		ECF3BDC0CB41DDC6B8481013 /* PaidVoiceGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidVoiceGate.swift; sourceTree = "<group>"; };
+		EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignUpFlowUITests.swift; sourceTree = "<group>"; };
 		EFC34434C86CC3C2BB8B2F5A /* SystemVoices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemVoices.swift; sourceTree = "<group>"; };
 		F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputSanitizer.swift; sourceTree = "<group>"; };
 		F22A748B61AC101C73FABFB6 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
@@ -459,6 +470,7 @@
 			children = (
 				FB287F14A5FE531507F0974F /* AlarmTalk */,
 				D4CE6C1058055F9F6C851277 /* AlarmTalkTests */,
+				2C960B22A5BB85C19C0116F6 /* AlarmTalkUITests */,
 				9A3B80618799C1CC960CAEBF /* AlarmTalkWidget */,
 				320BA8D4EC539E0BD75ABE34 /* Shared */,
 				55BF668CB7AEA9502D9F327C /* Products */,
@@ -480,6 +492,14 @@
 				16C57EC5D4E7BBA98E14786F /* IAP */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		2C960B22A5BB85C19C0116F6 /* AlarmTalkUITests */ = {
+			isa = PBXGroup;
+			children = (
+				EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */,
+			);
+			path = AlarmTalkUITests;
 			sourceTree = "<group>";
 		};
 		310639804EE465A783A61106 /* Auth */ = {
@@ -551,6 +571,7 @@
 			children = (
 				DCB68718409EED0E6D7B5440 /* AlarmTalk.app */,
 				6F10C03ABE07CF4A44D21B61 /* AlarmTalkTests.xctest */,
+				114611674486F08A23080002 /* AlarmTalkUITests.xctest */,
 				DA991BC0E37E0A9D0C4A1487 /* AlarmTalkWidget.appex */,
 			);
 			name = Products;
@@ -773,6 +794,7 @@
 		F2A71A66F1FAC416B56FAA2A /* Configuration */ = {
 			isa = PBXGroup;
 			children = (
+				E2F77DC95A95FDD81F176FCA /* DeviceTest.entitlements */,
 				C85849E44ED914564F02925F /* StoreKitConfiguration.storekit */,
 			);
 			path = Configuration;
@@ -877,6 +899,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1FDF1A4A066783AD6983CA33 /* AlarmTalkUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C93AE5865D96BCEE4C19ABAF /* Build configuration list for PBXNativeTarget "AlarmTalkUITests" */;
+			buildPhases = (
+				3C5DD95BAD7B9BADF7737A3B /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7F05E89CBAB6A57BC7B4C2C2 /* PBXTargetDependency */,
+			);
+			name = AlarmTalkUITests;
+			packageProductDependencies = (
+			);
+			productName = AlarmTalkUITests;
+			productReference = 114611674486F08A23080002 /* AlarmTalkUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		7BEA4B94496745601F0B0159 /* AlarmTalk */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 055F8B957A92D4399BD3E2D5 /* Build configuration list for PBXNativeTarget "AlarmTalk" */;
@@ -942,14 +982,22 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					1FDF1A4A066783AD6983CA33 = {
+						DevelopmentTeam = 29N7GX354N;
+						ProvisioningStyle = Automatic;
+						TestTargetID = 7BEA4B94496745601F0B0159;
+					};
 					7BEA4B94496745601F0B0159 = {
-						DevelopmentTeam = "$(DEVELOPMENT_TEAM)";
+						DevelopmentTeam = 29N7GX354N;
+						ProvisioningStyle = Automatic;
 					};
 					9EA0BB006ECA031CABA0B568 = {
-						DevelopmentTeam = "$(DEVELOPMENT_TEAM)";
+						DevelopmentTeam = 29N7GX354N;
+						ProvisioningStyle = Automatic;
 					};
 					D65BA20F07245DC2D0A880D3 = {
-						DevelopmentTeam = "$(DEVELOPMENT_TEAM)";
+						DevelopmentTeam = 29N7GX354N;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -971,6 +1019,7 @@
 			targets = (
 				7BEA4B94496745601F0B0159 /* AlarmTalk */,
 				9EA0BB006ECA031CABA0B568 /* AlarmTalkWidget */,
+				1FDF1A4A066783AD6983CA33 /* AlarmTalkUITests */,
 				D65BA20F07245DC2D0A880D3 /* AlarmTalkTests */,
 			);
 		};
@@ -1033,6 +1082,14 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		3C5DD95BAD7B9BADF7737A3B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4FA9B768B6E51C73C71A0699 /* SignUpFlowUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6F6005E66300391CE2B797E6 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1241,6 +1298,11 @@
 			target = 9EA0BB006ECA031CABA0B568 /* AlarmTalkWidget */;
 			targetProxy = A3FD480313888B80D69045B3 /* PBXContainerItemProxy */;
 		};
+		7F05E89CBAB6A57BC7B4C2C2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7BEA4B94496745601F0B0159 /* AlarmTalk */;
+			targetProxy = 32ED58056B23541101294D80 /* PBXContainerItemProxy */;
+		};
 		CDCB7BAAC98DC0B0152B5217 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 7BEA4B94496745601F0B0159 /* AlarmTalk */;
@@ -1253,7 +1315,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = AlarmTalk/AlarmTalk.entitlements;
+				CODE_SIGN_ENTITLEMENTS = AlarmTalk/Configuration/DeviceTest.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = AlarmTalk/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
@@ -1262,12 +1324,29 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.devtest;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ALARMTALK_APP";
 				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
+		};
+		5D54E70A2F29B14CCD42C5C9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.devtest.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AlarmTalk;
+			};
+			name = Release;
 		};
 		60EBD031D3914D79EAC2B8B5 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -1302,10 +1381,11 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
+				DEVELOPMENT_TEAM = 29N7GX354N;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -1331,16 +1411,34 @@
 			};
 			name = Release;
 		};
-		9CD128DD72ECA881DBFF694B /* Release */ = {
+		772B30AC59553F48D2A20352 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.devtest.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AlarmTalk;
+			};
+			name = Debug;
+		};
+		9CD128DD72ECA881DBFF694B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.devtest.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AlarmTalk.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AlarmTalk";
@@ -1351,12 +1449,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.devtest.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AlarmTalk.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AlarmTalk";
@@ -1367,7 +1466,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = AlarmTalkWidget/AlarmTalkWidget.entitlements;
+				CODE_SIGN_ENTITLEMENTS = AlarmTalk/Configuration/DeviceTest.entitlements;
 				INFOPLIST_FILE = AlarmTalkWidget/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1375,7 +1474,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.devtest.widget;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -1385,7 +1484,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
-				CODE_SIGN_ENTITLEMENTS = AlarmTalkWidget/AlarmTalkWidget.entitlements;
+				CODE_SIGN_ENTITLEMENTS = AlarmTalk/Configuration/DeviceTest.entitlements;
 				INFOPLIST_FILE = AlarmTalkWidget/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1393,7 +1492,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.widget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.devtest.widget;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -1432,10 +1531,11 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
+				DEVELOPMENT_TEAM = 29N7GX354N;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -1470,7 +1570,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = AlarmTalk/AlarmTalk.entitlements;
+				CODE_SIGN_ENTITLEMENTS = AlarmTalk/Configuration/DeviceTest.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = AlarmTalk/Info.plist;
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
@@ -1479,7 +1579,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voicealarm.nativeapp.ios.devtest;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) ALARMTALK_APP";
 				TARGETED_DEVICE_FAMILY = 1;
@@ -1521,6 +1621,15 @@
 			buildConfigurations = (
 				C4B40AE9E64496165E33F226 /* Debug */,
 				60EBD031D3914D79EAC2B8B5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C93AE5865D96BCEE4C19ABAF /* Build configuration list for PBXNativeTarget "AlarmTalkUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				772B30AC59553F48D2A20352 /* Debug */,
+				5D54E70A2F29B14CCD42C5C9 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -89,3 +89,6 @@ handoff
 voice-preview/
 # 로컬 QA용 임시 DB 조회 스크립트(시크릿 파일 경로 참조) — 커밋 금지
 *.tmp.mjs
+
+# Xcode 사용자별 상태(스킴 선택·창 배치 등) — 커밋하지 않는다.
+apps/ios-native/**/xcuserdata/

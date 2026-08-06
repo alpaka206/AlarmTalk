@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    실기기 **테스트 전용** entitlements.
+
+    ⚠ 배포에 쓰지 말 것 — App Group 과 keychain 공유 그룹이 빠져 있다.
+    정식 번들 ID `com.voicealarm.nativeapp.ios` 와 App Group
+    `group.com.voicealarm.nativeapp.ios.shared` 는 **다른 팀이 선점**하고 있어
+    이 개발자 팀으로는 등록이 안 된다("cannot be registered … not available").
+    그래서 로컬 실기기 검증은 임시 번들 ID + 이 파일로 서명한다.
+
+    빠진 것의 영향:
+      - App Group → `AppGroup.containerURL` 이 nil 이라 오디오 캐시가 앱 자체
+        컨테이너로 폴백한다(`AudioCacheStore.audioDirectory()` 가 이미 처리).
+        위젯/Live Activity 와의 캐시 공유만 안 된다.
+      - keychain-access-groups → 앱 자체 키체인만 쓴다(세션 저장은 그대로 동작).
+    알람 예약·목소리 재생·가족 알람 등 검증 대상 기능은 영향받지 않는다.
+  -->
+  <key>com.apple.developer.applesignin</key>
+  <array>
+    <string>Default</string>
+  </array>
+</dict>
+</plist>

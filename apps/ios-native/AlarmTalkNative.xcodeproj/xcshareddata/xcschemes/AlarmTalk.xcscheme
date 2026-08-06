@@ -50,6 +50,17 @@
                ReferencedContainer = "container:AlarmTalkNative.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "1FDF1A4A066783AD6983CA33"
+               BuildableName = "AlarmTalkUITests.xctest"
+               BlueprintName = "AlarmTalkUITests"
+               ReferencedContainer = "container:AlarmTalkNative.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>
