@@ -80,12 +80,11 @@ enum KoreanLunarHolidayEngine {
     ///
     /// 알람 앱에서 이게 틀리면 "공휴일엔 알람 끄기" 가 **엉뚱한 날 꺼지고 설날 당일에 울린다.**
     ///
-    /// dangi 는 `Calendar.Identifier` 에 케이스가 없어 로케일 확장으로 만든다. 못 만들면
-    /// `.chinese` 로 폴백하되, 그 경우 골든벡터 테스트가 큰 소리로 실패해서 알 수 있다.
+    /// dangi 는 `Calendar.Identifier` 에 케이스가 없어 **로케일 확장**으로 만든다
+    /// (`ko_KR@calendar=dangi`). 이 로케일이 dangi 로 해석되지 않으면 골든벡터 테스트가
+    /// 큰 소리로 실패해서 알 수 있다 — 조용한 폴백을 두지 않는 이유다.
     private static let seoulLunar: Calendar = {
-        var cal =
-            Locale(identifier: "ko_KR@calendar=dangi").calendar
-            ?? Calendar(identifier: .chinese)
+        var cal = Locale(identifier: "ko_KR@calendar=dangi").calendar
         cal.timeZone = TimeZone(identifier: "Asia/Seoul") ?? TimeZone(secondsFromGMT: 9 * 3600)!
         cal.locale = Locale(identifier: "en_US_POSIX")
         return cal

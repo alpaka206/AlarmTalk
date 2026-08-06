@@ -211,7 +211,8 @@ struct SettingsView: View {
 
 /// 라벨 + (선택) 값 + chevron 클릭 행. Android `SettingsRow`(SettingsScreenComponents.kt:77-110)
 /// 와 동일하게 선행 아이콘은 두지 않는다.
-private struct SettingsValueButton: View {
+/// 라벨 + (선택) 값 + chevron 행. 설정·더보기 두 화면이 함께 쓴다.
+struct SettingsValueButton: View {
     let label: String
     var value: String? = nil
     let action: () -> Void
@@ -365,7 +366,7 @@ private struct HolidayCountryPickerSheet: View {
     }
 }
 
-private struct ThemeModePickerSheet: View {
+struct ThemeModePickerSheet: View {
     let current: AlarmTalkThemeMode
     let onDismiss: () -> Void
     let onSelect: (AlarmTalkThemeMode) -> Void

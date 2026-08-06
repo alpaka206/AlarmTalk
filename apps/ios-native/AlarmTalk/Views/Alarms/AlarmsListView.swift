@@ -10,15 +10,24 @@ struct AlarmsListView: View {
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @State private var actionMessage: String?
+    /// "누구를 깨울까요?" 시트 노출 여부. 구성원이 있을 때만 뜬다.
+    @State private var wakeTargetSheetOpen = false
 
     let openEditor: (AlarmEditorTarget) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // 안드로이드 첫 탭과 같은 모양 — '알람' 라벨 대신 **상태 문구를 헤드라인으로**
+            // 승격한다(제목 = 결론). 절대 시각은 바로 아래 카드에 이미 있다.
             HStack(alignment: .center) {
-                ScreenHeader(title: "알람")
-                Spacer()
+                NextAlarmHeadline(
+                    nextAlarm: nextAlarmForHeadline,
+                    hasAnyAlarm: !store.alarms.isEmpty,
+                    alarmPermissionMissing: !alarmKit.alarmAuthorized
+                )
+                Spacer(minLength: 12)
                 Button {
                     Task { await openCreateAlarm() }
                 } label: {
@@ -47,6 +56,31 @@ struct AlarmsListView: View {
                     .accessibilityHint("탭하면 닫혀요")
             }
             localAlarmSection
+        }
+        .sheet(isPresented: $wakeTargetSheetOpen) {
+            WakeTargetSheet(
+                recipients: familyRecipients,
+                onSelectSelf: {
+                    wakeTargetSheetOpen = false
+                    openEditor(.create())
+                },
+                onSelectRecipient: { _ in
+                    wakeTargetSheetOpen = false
+                    openEditor(.createFamily())
+                }
+            )
+            .presentationDetents([.height(260), .medium])
+        }
+    }
+
+    /// 상대 알람을 보낼 수 있는 구성원(본인 제외 + 허용한 사람만).
+    private var familyRecipients: [FamilyGroupMember] {
+        let currentUserID = auth.session?.user.id
+        let currentEmail = auth.session?.user.email
+        return (socialFeatures.familyGroup?.members ?? []).filter { member in
+            member.userId != currentUserID &&
+                member.email != currentEmail &&
+                member.allowFamilyAlarms == true
         }
     }
 
@@ -116,6 +150,11 @@ struct AlarmsListView: View {
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
     }
 
+    /// 헤드라인이 셀 '다음 알람' — 켜져 있는 것 중 가장 먼저 울릴 것.
+    private var nextAlarmForHeadline: LocalAlarmRecord? {
+        store.alarms.filter(\.enabled).min { $0.nextFireDate < $1.nextFireDate }
+    }
+
     private var sortedAlarms: [LocalAlarmRecord] {
         store.alarms.sorted { lhs, rhs in
             if lhs.hour != rhs.hour { return lhs.hour < rhs.hour }
@@ -140,10 +179,21 @@ struct AlarmsListView: View {
                 actionMessage = "알람 권한을 허용해야 알람을 만들 수 있어요. \(AlarmKitViewModel.alarmDeniedConsequence)"
                 return
             }
-            openEditor(.create())
+            presentCreateEntry()
             return
         }
-        openEditor(.create())
+        presentCreateEntry()
+    }
+
+    /// 편집기로 바로 갈지, "누구를 깨울까요?" 를 먼저 물을지 정한다.
+    /// **선택지가 하나면 묻지 않는다** — 탭을 한 번 더 받을 뿐 아무것도 결정하지 않는다.
+    @MainActor
+    private func presentCreateEntry() {
+        if familyRecipients.isEmpty {
+            openEditor(.create())
+        } else {
+            wakeTargetSheetOpen = true
+        }
     }
 
     @MainActor

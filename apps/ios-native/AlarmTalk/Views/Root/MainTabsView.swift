@@ -13,7 +13,7 @@ struct MainTabsView: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var store: LocalAlarmStore
 
-    @State private var selectedTab: NativeTab = .home
+    @State private var selectedTab: NativeTab = .alarms
     @State private var receivedAlarmSeenAtMillis: Int64 = 0
 
     /// 탭 전환 시 매번 네트워크 요청이 나가면 살짝 버벅인다. 탭+토큰별 마지막
@@ -131,11 +131,8 @@ struct MainTabsView: View {
     @ViewBuilder
     private var currentTabContent: some View {
         switch selectedTab {
-        case .home:
-            HomeView(
-                openEditor: { editorTarget = $0 },
-                selectTab: selectTab
-            )
+        case .alarms:
+            AlarmsListView(openEditor: { editorTarget = $0 })
         case .voices:
             // Phase 4-D1: 슬롯 가득 PlanGate 의 "결제 화면으로" 가 눌리면 BillingPanel
             // auxiliary 시트로 chain. PlanGate 시트가 자신을 닫는 dismiss animation 과
@@ -149,8 +146,12 @@ struct MainTabsView: View {
                     auxiliaryScreen = .billing
                 }
             })
-        case .alarms:
-            AlarmsListView(openEditor: { editorTarget = $0 })
+        case .menu:
+            MenuView(
+                onOpenSettings: { settingsPresented = true },
+                onOpenBilling: { auxiliaryScreen = .billing },
+                onOpenMembers: { auxiliaryScreen = .members }
+            )
         }
     }
 
@@ -163,7 +164,7 @@ struct MainTabsView: View {
         switch destination {
         case .home:
             auxiliaryScreen = nil
-            selectedTab = .home
+            selectedTab = .alarms
         case .sharedPass:
             auxiliaryScreen = .members
         }
@@ -171,7 +172,7 @@ struct MainTabsView: View {
 
     private func badgeCount(for tab: NativeTab) -> Int {
         switch tab {
-        case .home, .voices:
+        case .menu, .voices:
             return 0
         case .alarms:
             return selectedTab == .alarms ? 0 : unreadReceivedAlarmCount
@@ -230,7 +231,7 @@ struct MainTabsView: View {
         lastRefreshAt[throttleKey] = now
 
         switch tab {
-        case .home:
+        case .menu:
             await socialFeatures.refreshAll(session: auth.session)
         case .voices:
             await voiceStudio.refresh(session: auth.session)

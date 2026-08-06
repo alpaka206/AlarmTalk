@@ -54,33 +54,40 @@ struct AlarmEditorTarget: Identifiable, Equatable {
 ///
 /// ContentView 안의 `private enum NativeTab` 을 그대로 옮긴 것. internal 가시성으로
 /// 끌어올려 BottomNavBar 와 MainTabsView 에서 공유한다.
+/// ⚠ **탭 구성과 순서는 안드로이드와 같아야 한다** — 알람 / 목소리 / 더보기.
+/// 예전 iOS 에는 안드로이드에 없는 '홈' 탭이 첫 자리에 있고 '더보기' 가 없었다.
+/// 안드로이드의 첫 탭은 알람 목록 자체이고, 그 위에 남은 시간 헤드라인이 붙는다.
 enum NativeTab: String, CaseIterable, Identifiable {
-    case home
-    case voices
     case alarms
+    case voices
+    case menu
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .home: return "홈"
-        case .voices: return "목소리"
         case .alarms: return "알람"
+        case .voices: return "목소리"
+        case .menu: return "더보기"
         }
     }
 
-    var navigationTitle: String {
-        switch self {
-        case .home: return "AlarmTalk"
-        default: return title
-        }
-    }
+    var navigationTitle: String { title }
 
     var systemImage: String {
         switch self {
-        case .home: return "house"
-        case .voices: return "mic"
         case .alarms: return "alarm"
+        case .voices: return "mic"
+        case .menu: return "line.3.horizontal"
+        }
+    }
+
+    /// 선택됐을 때의 채워진 아이콘. 안드로이드 `Icons.Filled.*` 미러.
+    var selectedSystemImage: String {
+        switch self {
+        case .alarms: return "alarm.fill"
+        case .voices: return "mic.fill"
+        case .menu: return "line.3.horizontal"
         }
     }
 }

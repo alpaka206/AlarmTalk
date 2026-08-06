@@ -24,7 +24,7 @@ struct BottomNavBar: View {
                 } label: {
                     VStack(spacing: 3) {
                         ZStack(alignment: .topTrailing) {
-                            Image(systemName: tab.systemImage)
+                            Image(systemName: selected == tab ? tab.selectedSystemImage : tab.systemImage)
                                 .font(.system(size: 22, weight: .semibold))
                             let badge = badgeProvider(tab)
                             if badge > 0 {
@@ -76,7 +76,7 @@ struct BottomNavBar: View {
 
 #if DEBUG
 private struct BottomNavBarPreviewHost: View {
-    @State private var tab: NativeTab = .home
+    @State private var tab: NativeTab = .alarms
     var body: some View {
         BottomNavBar(selected: $tab) { tab in
             switch tab {

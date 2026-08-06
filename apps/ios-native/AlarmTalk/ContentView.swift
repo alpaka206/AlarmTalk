@@ -10,8 +10,6 @@ import SwiftUI
 /// - 라우팅 분기: `Views/Root/RootView.swift`
 /// - 4개 탭 라우터/시트 호스트: `Views/Root/MainTabsView.swift`
 /// - 바텀 네비: `Views/Root/BottomNavBar.swift`
-/// - 홈 화면: `Views/Home/HomeView.swift`, `NextAlarmHeroCard.swift`,
-///   `QuickStartGrid.swift`
 /// - 알람 화면: `Views/Alarms/AlarmsListView.swift`, `AlarmRow.swift`,
 ///   `AlarmPermissionSection.swift`
 /// - 음성 화면: `Views/Voices/VoicesPanelView.swift`
