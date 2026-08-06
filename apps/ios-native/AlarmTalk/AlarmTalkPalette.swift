@@ -96,14 +96,22 @@ extension AlarmTalkPalette {
         onTertiary: .hex(0x123226),
         tertiaryContainer: .hex(0x28483B),
         onTertiaryContainer: .hex(0xE3F6EC),
-        background: .hex(0x090A0F),
-        onBackground: .hex(0xF7F7FA),
-        surface: .hex(0x14161E),
-        onSurface: .hex(0xF7F7FA),
-        surfaceVariant: .hex(0x20232D),
-        onSurfaceVariant: .hex(0xA8AEBA),
-        outline: .hex(0x3A3D49),
-        outlineVariant: .hex(0x2D313D),
+        // 배경/표면 계열은 랜딩(일출 씬)의 **딥 네이비** 축과 같은 색조로 맞춘다 —
+        // 무채색 회흑 대신 밤바다 톤이라 랜딩 → 앱 진입 시 톤이 이어진다.
+        // 카드(surface)는 탭 배경 그라데이션(#1A2A52→#070C1D)보다 어두우면 '검은 박스' 로
+        // 꺼져 보이므로, 그라데이션 상단과 비슷한 밝기의 네이비로 한 단계 띄운다.
+        //
+        // ⚠ 값은 안드로이드 `AlarmTalkTheme.kt` 의 `AlarmTalkDarkColorScheme` 과 같아야 한다.
+        // 예전 iOS 값은 무채색 회흑(#090A0F / #14161E / #20232D)이었는데, 그건 안드로이드가
+        // 의도적으로 벗어난 바로 그 톤이라 두 앱이 다른 앱처럼 보였다.
+        background: .hex(0x090D16),
+        onBackground: .hex(0xF7F8FC),
+        surface: .hex(0x1B2542),
+        onSurface: .hex(0xF7F8FC),
+        surfaceVariant: .hex(0x29345A),
+        onSurfaceVariant: .hex(0xA7AFC0),
+        outline: .hex(0x4C587E),
+        outlineVariant: .hex(0x3B4870),
         error: .hex(0xFF9A8A),
         onError: .hex(0x3D0703),
         errorContainer: .hex(0x5B211B),
@@ -115,3 +123,39 @@ extension AlarmTalkPalette {
 // Live Activity widget target share one definition (the widget cannot see this file).
 // The light/dark `primary` above derive from `AlarmTalkBrand.primaryLight/Dark`, which
 // hold the canonical locked brand hexes (#175FB0 / #A6D2FF).
+
+// MARK: - 홈 그라데이션
+
+/// 탭·하위 전체화면이 공유하는 **새벽 네이비 그라데이션 배경**(로그인 딥네이비 감성).
+///
+/// 안드로이드 `WakerDesign.kt` 의 `HomeGradientDark`/`HomeGradientLight` 와 **같은 값**이다.
+/// 탭과 설정·구성원 관리·약관 동의 등 하위 화면이 같은 브러시를 써서 화면 전환 시
+/// 배경 톤이 튀지 않는다. 라이트/다크 2종.
+///
+/// ⚠ iOS 에는 이게 아예 없어서 배경이 단색이었다. 안드로이드와 나란히 놓으면 다른 앱처럼 보인다.
+enum AlarmTalkGradient {
+    static let dark = LinearGradient(
+        stops: [
+            .init(color: .hex(0x1A2A52), location: 0),
+            .init(color: .hex(0x0E1938), location: 0.55),
+            .init(color: .hex(0x070C1D), location: 1),
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    static let light = LinearGradient(
+        stops: [
+            .init(color: .hex(0xF4F7FD), location: 0),
+            .init(color: .hex(0xDBE6F7), location: 0.5),
+            .init(color: .hex(0xBED2EF), location: 1),
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    /// 현재 테마 명암에 맞는 홈 그라데이션 — 시스템 값이 아니라 **앱이 실제 쓰는 스킴** 기준.
+    static func home(for scheme: ColorScheme) -> LinearGradient {
+        scheme == .dark ? dark : light
+    }
+}

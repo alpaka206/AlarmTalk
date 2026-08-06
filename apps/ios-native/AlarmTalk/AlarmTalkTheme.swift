@@ -62,6 +62,8 @@ enum AlarmTalkThemeMode: String, CaseIterable, Identifiable {
 /// is decided by the current `ColorScheme` of the surrounding view.
 struct AlarmTalkThemeValues: Equatable {
     let palette: AlarmTalkPalette
+    /// 탭·하위 전체화면이 공유하는 배경 그라데이션(안드로이드 `homeGradientBrush()` 대응).
+    let homeGradient: LinearGradient
     let typography: AlarmTalkTypography
     let shapes: AlarmTalkShapes
     let spacing: AlarmTalkSpacing
@@ -82,6 +84,7 @@ extension AlarmTalkThemeValues {
     static func resolve(for colorScheme: ColorScheme) -> AlarmTalkThemeValues {
         AlarmTalkThemeValues(
             palette: colorScheme == .dark ? .dark : .light,
+            homeGradient: AlarmTalkGradient.home(for: colorScheme),
             typography: .default,
             shapes: .default,
             spacing: .default,

@@ -43,7 +43,7 @@ struct MainTabsView: View {
                     .padding(.top, 20)
                     .padding(.bottom, 24)
                 }
-                .background(theme.palette.background)
+                .background(theme.homeGradient)
 
                 BottomNavBar(
                     selected: $selectedTab,
@@ -51,7 +51,7 @@ struct MainTabsView: View {
                     onSelect: selectTab
                 )
             }
-            .background(theme.palette.background)
+            .background(theme.homeGradient)
             .navigationTitle(selectedTab.navigationTitle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
