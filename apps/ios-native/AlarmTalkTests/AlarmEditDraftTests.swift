@@ -20,7 +20,7 @@ final class AlarmEditDraftTests: XCTestCase {
             snoozeRepeatLimit: SnoozeRepeatLimit.five.rawValue,
             snoozeCount: 0,
             vibrationPattern: VibrationPattern.heartbeat.rawValue,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             defaultAlarmSoundId: DefaultAlarmSounds.bundledDefault,
             localAudioUri: "file:///tmp/voice.m4a",
             audioCacheKey: "sha-abc",
@@ -54,7 +54,7 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(draft.minute, 15)
         XCTAssertEqual(draft.repeatDaysMask, (1 << 1) | (1 << 3) | (1 << 5))
         XCTAssertEqual(draft.holidayOff, true)
-        XCTAssertEqual(draft.playMode, .soundThenVoice)
+        XCTAssertEqual(draft.playMode, .voiceOnly)
         XCTAssertTrue(draft.snoozeEnabled)
         XCTAssertEqual(draft.snoozeMinutes, 7)
         XCTAssertEqual(draft.snoozeRepeatLimit, .five)
@@ -89,7 +89,7 @@ final class AlarmEditDraftTests: XCTestCase {
 
     func testRandomPromptFieldsRoundTrip() throws {
         var draft = AlarmEditDraft.newDefault()
-        draft.playMode = .soundThenVoice
+        draft.playMode = .voiceOnly
         draft.voiceRandomPrompt = true
         draft.voiceRandomContext = RandomPromptContext.wakeWeather.rawValue
         draft.voiceWeatherCountry = "대한민국"
@@ -119,7 +119,7 @@ final class AlarmEditDraftTests: XCTestCase {
             hour: 7,
             minute: 0,
             fireAtMillis: now + 60_000,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             localAudioUri: "voice.m4a",
             audioCacheKey: "voice-key",
             rawAudioUri: "https://example.com/voice.m4a",
@@ -206,23 +206,30 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertTrue(errors.contains(.invalidAlarmVolume))
     }
 
-    func testValidationFlagsVoiceVolumeBelowAndroidMinimumForVoiceModes() {
-        var draft = AlarmEditDraft.newDefault(defaultPlayMode: .soundThenVoice)
-        draft.voiceVolumePercent = 29
+    /// 목소리 음량 하한은 **10%**(양 플랫폼 동일). 0 은 허용하지 않는다 —
+    /// 0 은 '무음' 이라는 별개의 뜻인데 슬라이더 끝값으로 두면 실수로 닿아
+    /// 목소리 알람이 조용히 안 들리게 된다. 끄는 것은 재생 방식을 '알람' 으로 바꾸는 것이다.
+    func testValidationFlagsVoiceVolumeBelowMinimumForVoiceMode() {
+        var draft = AlarmEditDraft.newDefault(defaultPlayMode: .voiceOnly)
+        draft.voiceVolumePercent = 9
         XCTAssertTrue(draft.validate().contains(.invalidVoiceVolume))
 
-        draft.voiceVolumePercent = 30
+        draft.voiceVolumePercent = 0
+        XCTAssertTrue(draft.validate().contains(.invalidVoiceVolume), "0(무음)은 슬라이더로 만들 수 없다")
+
+        draft.voiceVolumePercent = 10
         XCTAssertFalse(draft.validate().contains(.invalidVoiceVolume))
     }
 
-    func testVoiceVolumeLoadsAndSavesAtAndroidMinimum() {
+    /// 옛 행에 0 이 저장돼 있어도 편집기는 하한으로 끌어올려 연다(저장도 하한).
+    func testVoiceVolumeLoadsAndSavesAtMinimum() {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let original = LocalAlarmRecord(
             label: "작은 목소리",
             hour: 7,
             minute: 0,
             fireAtMillis: now + 60_000,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             localAudioUri: "voice.m4a",
             audioCacheKey: "voice-key",
             voiceVolumePercent: 0,
@@ -231,10 +238,10 @@ final class AlarmEditDraftTests: XCTestCase {
         )
 
         let draft = AlarmEditDraft(from: original)
-        XCTAssertEqual(draft.voiceVolumePercent, 30)
+        XCTAssertEqual(draft.voiceVolumePercent, 10)
 
         let record = draft.toRecord(existing: original, fireAtMillis: now + 120_000, nowMillis: now)
-        XCTAssertEqual(record.voiceVolumePercent, 30)
+        XCTAssertEqual(record.voiceVolumePercent, 10)
     }
 
     func testCanReuseExistingTtsAudioForUnchangedManualVoice() {
@@ -414,15 +421,14 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertTrue(draft.isValid)
     }
 
-    func testAlarmSoundControlsHiddenOnlyForVoiceOnlyMode() {
-        var draft = AlarmEditDraft.newDefault(defaultPlayMode: .soundThenVoice)
-        XCTAssertTrue(draft.showsAlarmSoundControls)
+    /// 재생 방식이 둘뿐이므로 알람음 설정은 **'알람' 에서만** 보인다.
+    /// (예전에는 '알람 + 음성' 이 있어 목소리 모드에서도 알람음 설정이 함께 떴다.)
+    func testAlarmSoundControlsShowOnlyForAlarmMode() {
+        var draft = AlarmEditDraft.newDefault(defaultPlayMode: .voiceOnly)
+        XCTAssertFalse(draft.showsAlarmSoundControls)
 
         draft.playMode = .alarmOnly
         XCTAssertTrue(draft.showsAlarmSoundControls)
-
-        draft.playMode = .voiceOnly
-        XCTAssertFalse(draft.showsAlarmSoundControls)
     }
 
     // MARK: - Empty label fallback in toRecord
@@ -455,8 +461,8 @@ final class AlarmEditDraftTests: XCTestCase {
     }
 
     func testNewAlarmCanUsePaidDefaultPlayMode() {
-        let draft = AlarmEditDraft.newDefault(defaultPlayMode: .soundThenVoice)
-        XCTAssertEqual(draft.playMode, .soundThenVoice)
+        let draft = AlarmEditDraft.newDefault(defaultPlayMode: .voiceOnly)
+        XCTAssertEqual(draft.playMode, .voiceOnly)
     }
 
     // MARK: - RepeatDay mask consistency with RepeatWeekdayChips
@@ -492,7 +498,7 @@ final class AlarmEditDraftTests: XCTestCase {
             hour: 7,
             minute: 0,
             fireAtMillis: now + 60_000,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             localAudioUri: "voice.m4a",
             audioCacheKey: "voice-cache",
             voiceSource: VoiceSource.serverTts.rawValue,

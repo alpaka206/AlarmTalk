@@ -91,12 +91,10 @@ class RingingService : Service() {
     private var audioSequenceActive = false
     private var voiceLoopActive = false
     private var voiceRepeatJob: Job? = null
-    private var voiceFadeJob: Job? = null
     private var voiceRepeatLoudness: LoudnessEnhancer? = null
     private var currentAlarm: AlarmEntity? = null
     private var ringingAlarmId: String? = null
     private var voiceAfterAlarmStarted = false
-    private var voiceHasPlayedThisRing = false
 
     /**
      * 울림 시작(`startRinging`)과 정리(`stopRingingOutputs`)를 서로 겹치지 않게 한다.
@@ -212,7 +210,6 @@ class RingingService : Service() {
             if (ringingAlarmId != alarmId) return@launch
             currentAlarm = alarm
             voiceAfterAlarmStarted = false
-            voiceHasPlayedThisRing = false
             requestAlarmAudioFocus()
             val bucketVoiceUri = alarm?.let { repository.resolveBucketClipLocalUri(it) }
             startRingingAudio(alarm, bucketVoiceUri)
@@ -267,7 +264,7 @@ class RingingService : Service() {
         )
         when {
             playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null && voiceVolumePercent > 0 -> {
-                startVoiceLoop(voiceUri, alarm, fadeIn = true)
+                startVoiceLoop(voiceUri, alarm)
             }
 
             playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null -> {
@@ -280,7 +277,7 @@ class RingingService : Service() {
                     startAlarmToneLoop(alarm)
                 } else if (voiceVolumePercent > 0) {
                     voiceAfterAlarmStarted = true
-                    startVoiceLoop(voiceUri, alarm, fadeIn = true)
+                    startVoiceLoop(voiceUri, alarm)
                 } else {
                     stopMediaOnly()
                     Log.i(TAG, "Alarm+voice audio muted by per-alarm settings id=${alarm?.id}")
@@ -300,9 +297,20 @@ class RingingService : Service() {
         }
     }
 
-    /** 알람음(기상 톤)을 재생해도 되는지 — 알람음 토글이 켜져 있고 볼륨 > 0. 톤 재생/폴백 단일 판정. */
-    private fun isAlarmToneAllowed(alarm: AlarmEntity?): Boolean =
-        (alarm?.alarmSoundEnabled ?: true) && (alarm?.alarmVolumePercent ?: 100) > 0
+    /**
+     * 알람음(기상 톤)을 재생해도 되는지 — 알람음 토글이 켜져 있고 볼륨 > 0. 톤 재생/폴백 단일 판정.
+     *
+     * ⚠ **'목소리만' 알람은 톤 폴백을 막지 않는다.** 그 모드를 고른 사용자는 알람음을
+     * 거부한 게 아니라 목소리를 고른 것이다. 목소리를 못 틀 때(유료 만료·프로필 삭제·캐시
+     * 유실)까지 톤을 막으면 진동만 남아 **소리가 하나도 안 난다** — 위 강등 주석이 약속한
+     * "알람 자체는 그대로 울린다" 를 어긴다. 옛 행에는 그 조합이 저장돼 있으므로 여기서 받는다.
+     */
+    private fun isAlarmToneAllowed(alarm: AlarmEntity?): Boolean {
+        if (alarm?.playMode == AlarmPlayModes.VOICE_ONLY) {
+            return (alarm.alarmVolumePercent) > 0
+        }
+        return (alarm?.alarmSoundEnabled ?: true) && (alarm?.alarmVolumePercent ?: 100) > 0
+    }
 
     /** 유료(무료 강등 대상) 목소리를 쓰는 알람인지 — lockPaidAlarmTalks 의 usesVoice 기준과 동일. */
     private fun alarmUsesPaidVoice(alarm: AlarmEntity): Boolean =
@@ -350,7 +358,6 @@ class RingingService : Service() {
         audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
-        cancelVoiceFadeJob()
         mediaPlayer?.release()
         val player = createAlarmTonePlayer(alarm, looping = true)
         // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
@@ -370,15 +377,13 @@ class RingingService : Service() {
         }
     }
 
-    private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?, fadeIn: Boolean) {
+    private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?) {
         audioSequenceActive = false
         voiceLoopActive = true
         cancelVoiceRepeatJob()
-        cancelVoiceFadeJob()
         releaseVoiceRepeatLoudness()
         mediaPlayer?.release()
         val repeatVoice = alarm?.voiceRepeat != false
-        val shouldFadeIn = fadeIn && !voiceHasPlayedThisRing
         val player = createVoicePlayer(voiceUri)
         // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
         if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
@@ -387,13 +392,11 @@ class RingingService : Service() {
             return
         }
         mediaPlayer = player?.apply {
-            voiceHasPlayedThisRing = true
-            applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
+            applyVoiceVolume(this, alarm)
             isLooping = false
             setOnCompletionListener { completed ->
                 if (repeatVoice && voiceLoopActive) {
                     if (mediaPlayer === completed) {
-                        cancelVoiceFadeJob()
                         scheduleVoiceRepeat(completed, alarm)
                     } else {
                         completed.release()
@@ -401,7 +404,6 @@ class RingingService : Service() {
                 } else {
                     completed.release()
                     if (mediaPlayer === completed) {
-                        cancelVoiceFadeJob()
                         mediaPlayer = null
                     }
                 }
@@ -443,11 +445,6 @@ class RingingService : Service() {
         voiceRepeatJob = null
     }
 
-    private fun cancelVoiceFadeJob() {
-        voiceFadeJob?.cancel()
-        voiceFadeJob = null
-    }
-
     private fun enableVoiceRepeatLoudness(player: MediaPlayer) {
         if (voiceRepeatLoudness != null) return
         runCatching {
@@ -468,58 +465,6 @@ class RingingService : Service() {
             release()
         }
         voiceRepeatLoudness = null
-    }
-
-    private fun startAlarmVoiceSequence(voiceUri: Uri, alarm: AlarmEntity?) {
-        voiceLoopActive = false
-        cancelVoiceRepeatJob()
-        cancelVoiceFadeJob()
-        audioSequenceActive = true
-        mediaPlayer?.release()
-        playSequenceStep(voiceUri = voiceUri, alarm = alarm, playAlarmTone = true)
-    }
-
-    private fun playSequenceStep(voiceUri: Uri, alarm: AlarmEntity?, playAlarmTone: Boolean) {
-        if (!audioSequenceActive) return
-
-        val nextPlayer = if (playAlarmTone) {
-            createAlarmTonePlayer(alarm, looping = false)
-        } else {
-            createVoicePlayer(voiceUri)
-        }
-
-        if (nextPlayer == null) {
-            AlarmTalkLog.reportError("Failed to create sequence MediaPlayer")
-            startToneFallbackOrSilent(alarm, isAlarmToneAllowed(alarm), "sequence MediaPlayer creation failed")
-            return
-        }
-
-        // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 플레이어를 남기지 않는다.
-        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
-            nextPlayer.release()
-            mediaPlayer = null
-            return
-        }
-
-        mediaPlayer = nextPlayer.apply {
-            if (playAlarmTone) {
-                applyAlarmVolume(alarm)
-            } else {
-                val shouldFadeIn = !voiceHasPlayedThisRing
-                voiceHasPlayedThisRing = true
-                applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
-            }
-            isLooping = false
-            setOnCompletionListener { completed ->
-                completed.release()
-                if (mediaPlayer === completed) {
-                    if (!playAlarmTone) cancelVoiceFadeJob()
-                    mediaPlayer = null
-                }
-                playSequenceStep(voiceUri, alarm, playAlarmTone = !playAlarmTone)
-            }
-            start()
-        }
     }
 
     private fun createAlarmTonePlayer(alarm: AlarmEntity?, looping: Boolean): MediaPlayer? {
@@ -573,28 +518,15 @@ class RingingService : Service() {
         setVolume(volume, volume)
     }
 
-    private fun applyVoiceVolume(player: MediaPlayer, alarm: AlarmEntity?, fadeIn: Boolean) {
-        val plan = VoiceVolumeRamp.plan(
-            volumePercent = alarm?.voiceVolumePercent ?: 100,
-            fadeIn = fadeIn,
-        )
-        Log.i(
-            TAG,
-            "Applying voice volume fadeIn=$fadeIn start=${plan.startVolume} target=${VoiceVolumeRamp.targetVolume(alarm?.voiceVolumePercent ?: 100)} steps=${plan.stepVolumes.size}",
-        )
-        player.setVolume(plan.startVolume, plan.startVolume)
-        if (plan.stepVolumes.isEmpty()) {
-            return
-        }
-
-        voiceFadeJob = serviceScope.launch {
-            plan.stepVolumes.forEach { volume ->
-                delay(VoiceVolumeRamp.FADE_IN_MS / VoiceVolumeRamp.FADE_STEPS)
-                if (mediaPlayer !== player) return@launch
-                runCatching { player.setVolume(volume, volume) }
-            }
-            if (mediaPlayer === player) voiceFadeJob = null
-        }
+    /**
+     * 목소리 게인을 **첫 샘플부터 target 으로** 건다. 램프 없음(VoiceVolumeRamp 주석 참조).
+     *
+     * `start()` 보다 먼저 불려야 한다 — 그래야 첫 샘플부터 제 크기이고 진폭 점프가 없다.
+     */
+    private fun applyVoiceVolume(player: MediaPlayer, alarm: AlarmEntity?) {
+        val target = VoiceVolumeRamp.targetVolume(alarm?.voiceVolumePercent ?: 100)
+        Log.i(TAG, "Applying voice volume target=$target")
+        player.setVolume(target, target)
     }
 
     private fun startVibration(patternName: String) {
@@ -737,14 +669,11 @@ class RingingService : Service() {
             return
         }
         mediaPlayer = player.apply {
-            val shouldFadeIn = !voiceHasPlayedThisRing
-            voiceHasPlayedThisRing = true
-            applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
+            applyVoiceVolume(this, alarm)
             isLooping = false
             setOnCompletionListener { completed ->
                 completed.release()
                 if (mediaPlayer === completed) {
-                    cancelVoiceFadeJob()
                     mediaPlayer = null
                 }
                 serviceScope.launch {
@@ -819,7 +748,6 @@ class RingingService : Service() {
         releaseRingingMarkers(completedAlarmId)
         currentAlarm = null
         voiceAfterAlarmStarted = false
-        voiceHasPlayedThisRing = false
         abandonAlarmAudioFocus()
     }
 
@@ -832,7 +760,6 @@ class RingingService : Service() {
         audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
-        cancelVoiceFadeJob()
         releaseVoiceRepeatLoudness()
         mediaPlayer?.run {
             runCatching {

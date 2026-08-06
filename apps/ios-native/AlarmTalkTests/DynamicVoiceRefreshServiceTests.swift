@@ -155,7 +155,7 @@ final class DynamicVoiceRefreshServiceTests: XCTestCase {
             minute: 0,
             fireAtMillis: fireAtMillis,
             repeatDaysMask: RepeatDay.wednesday.mask,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             localAudioUri: "old-message.mp3",
             audioCacheKey: audioCacheKey,
             rawAudioUri: "r2://old",

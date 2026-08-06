@@ -342,7 +342,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         record.minute = 40
         record.repeatDaysMask = 0b0111_1110
         record.enabled = true
-        record.playMode = AlarmPlayMode.soundThenVoice.rawValue
+        record.playMode = AlarmPlayMode.voiceOnly.rawValue
         record.audioCacheKey = "remote-message-msg-9"
         record.localAudioUri = "file:///tmp/a.m4a"
         record.rawAudioUri = "https://example.com/a.mp3"

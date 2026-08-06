@@ -24,7 +24,7 @@ final class PaidVoiceGateTests: XCTestCase {
             createdAtMillis: now,
             updatedAtMillis: now
         )
-        record.playMode = AlarmPlayMode.soundThenVoice.rawValue
+        record.playMode = AlarmPlayMode.voiceOnly.rawValue
         record.voiceProfileId = "clone-abc"          // 시스템 보이스 prefix 가 아니다 = 유료 클론
         record.audioCacheKey = "abcdef123456"
         record.ttsMessageId = "msg-1"

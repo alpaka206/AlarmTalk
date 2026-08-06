@@ -9,7 +9,10 @@ import Foundation
 ///
 /// Android 의 `AlarmEditorState` 와 같은 저장 계약을 쓰되, UI 표현은 iOS 흐름에 맞춘다.
 struct AlarmEditDraft: Equatable {
-    private static let minVoiceVolumePercent = 30
+    /// 목소리 음량 하한. **0 을 허용하지 않는다** — 0 은 '무음' 이라는 별개의 뜻인데
+    /// 슬라이더 끝값으로 두면 실수로 닿아 목소리 알람이 조용히 안 들리게 된다.
+    /// 끄는 것은 재생 방식을 '알람' 으로 바꾸는 것으로 표현한다.
+    private static let minVoiceVolumePercent = 10
 
     var label: String
     var hour: Int           // 0..23
@@ -294,7 +297,11 @@ struct AlarmEditDraft: Equatable {
                 ? AlarmSyncState.localOnly.rawValue
                 : AlarmSyncState.dirty.rawValue,
             origin: existing?.origin ?? AlarmOrigin.localOwned.rawValue,
-            alarmVolumePercent: alarmVolumePercent,
+            // iOS 는 OS 알람 톤 음량을 바꿀 수 없어 이 값이 아무것도 제어하지 않는다.
+            // 그래도 **0 이 갇히는 것은 막는다** — 예전 빌드의 '알람음' 토글이 0 을 저장했고,
+            // 그 값이 in-app 폴백 재생을 막아 '목소리 알람인데 목소리가 안 난다' 가 됐다.
+            // 화면에 그 값을 되돌릴 컨트롤이 더는 없으므로 저장 시 정규화한다.
+            alarmVolumePercent: alarmVolumePercent > 0 ? alarmVolumePercent : 100,
             alarmSoundUri: existing?.alarmSoundUri,
             alarmSoundLabel: existing?.alarmSoundLabel,
             enabled: true,

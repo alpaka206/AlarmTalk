@@ -380,6 +380,18 @@ internal fun AlarmEditorScreen(
         previewPreparing = true
 
         val player = MediaPlayer()
+        // ⚠ **울림과 같은 스트림으로 낸다(USAGE_ALARM).** 기본값(USAGE_MEDIA)으로 두면
+        // 미리듣기는 미디어 볼륨, 실제 알람은 알람 볼륨으로 나가 **같은 설정인데 크기가 다르게**
+        // 들린다. 그러면 목소리 크기 설정을 미리듣기로 검증할 수 없다 — 크게 들어보고 저장했는데
+        // 알람은 작은 상황이 생긴다. 조건은 RingingService.createVoicePlayer 와 같게 유지할 것.
+        runCatching {
+            player.setAudioAttributes(
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+        }
         mediaPlayer = player
         runCatching {
             player.setDataSource(context, uri)
@@ -612,7 +624,16 @@ internal fun AlarmEditorScreen(
             voice && !sound -> AlarmPlayModes.VOICE_ONLY
             else -> AlarmPlayModes.ALARM_ONLY
         }
-        editor.alarmSoundEnabled = sound
+        // ⚠ **'목소리만' 에서는 alarmSoundEnabled 를 끄지 않는다.**
+        // 톤을 안 트는 것은 playMode 가 이미 표현한다(표시도 파생값이라 화면은 그대로다).
+        // 여기서 0 으로 박으면, 나중에 유료 만료·목소리 삭제로 그 알람이 강등됐을 때
+        // 톤 폴백까지 함께 막혀 **소리가 하나도 안 나는 알람**이 된다 — 폴백이 가장 필요한
+        // 바로 그 상황에서만 꺼진다. 그 값은 '알람음을 쓸 때의 설정' 으로만 둔다.
+        if (sound) {
+            editor.alarmSoundEnabled = true
+        } else if (!voice) {
+            editor.alarmSoundEnabled = false
+        }
         if (voice && authSession == null) {
             editor.voiceSource = VoiceSources.LOCAL_AUDIO
             editor.clearTtsMeta()

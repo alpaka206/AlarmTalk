@@ -620,7 +620,7 @@ struct VoiceVolumeEditor: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .monospacedDigit()
             }
-            Slider(value: volumeBinding, in: 30...100, step: 10)
+            Slider(value: volumeBinding, in: 10...100, step: 10)
                 .tint(theme.palette.primary)
         }
     }

@@ -1,41 +1,47 @@
 import Foundation
 
 // MARK: - Play Mode
-// Android: `AlarmEntity.kt:150-156` `AlarmPlayModes`
-// 주의: Android 는 ALARM_VOICE("alarm_voice") 를 쓰고 있으나, 사양 문서에서는
-// 새 이식 시 "sound_then_voice" 로 정합한다. 두 raw 모두 디코딩 가능하도록
-// CustomStringConvertible/Codable 보조를 제공한다.
+// Android: `AlarmConstants.kt` `AlarmPlayModes`
+//
+// ⚠ **재생 방식은 둘뿐이다(2026-08-06). '알람 + 목소리' 를 되살리지 말 것.**
+// 그 모드는 두 플랫폼 어디에서도 약속을 지키지 못했다:
+//  - iOS: AlarmKit 에 넘길 사운드는 **1개**라 '톤 먼저, 목소리 나중' 이 구조적으로 불가능하다.
+//    재생 코드도 `!= .alarmOnly` 하나로만 갈라져 '목소리만' 과 완전히 같게 동작했다 —
+//    픽커의 아이콘과 설명만 달랐고, 없는 기능을 광고하고 있었다.
+//  - Android: 톤이 울리고 **해제할 때** 목소리가 한 번 났는데, 알림을 밀어서 없애면
+//    건너뛰었다(`ACTION_DISMISS_SILENT`). 목소리를 들으려면 알람을 꺼야 하는 구조라
+//    발견 자체가 어려웠고 "목소리가 안 나온다" 문의가 반복됐다.
+//
+// 저장된 `sound_then_voice` / `alarm_voice` 는 **`voice_only` 로 읽는다** —
+// 그 모드를 고른 사람은 목소리를 만들어 둔 사용자이므로 목소리를 살리는 쪽이 의도에 가깝다
+// (알람음으로 옮기면 애써 만든 목소리를 못 듣게 된다).
 enum AlarmPlayMode: String, Codable, CaseIterable, Identifiable {
     case alarmOnly = "alarm_only"
     case voiceOnly = "voice_only"
-    case soundThenVoice = "sound_then_voice"
 
     var id: String { rawValue }
 
-    static let pickerCases: [AlarmPlayMode] = [
-        .soundThenVoice,
-        .voiceOnly,
-        .alarmOnly
-    ]
+    /// 화면에 그리는 순서. 세그먼트 컨트롤이 이 순서로 좌→우.
+    static let pickerCases: [AlarmPlayMode] = [.alarmOnly, .voiceOnly]
 
-    /// Legacy / Android 호환: "alarm_voice" 도 sound_then_voice 로 매핑.
+    /// 옛 값 호환: `sound_then_voice` / `alarm_voice` 는 목소리로 읽는다(위 주석 참조).
     static func decode(_ raw: String) -> AlarmPlayMode {
-        if raw == "alarm_voice" { return .soundThenVoice }
+        if raw == "alarm_voice" || raw == "sound_then_voice" { return .voiceOnly }
         return AlarmPlayMode(rawValue: raw) ?? .alarmOnly
     }
 
     var label: String {
         switch self {
         case .alarmOnly: return "알람"
-        case .voiceOnly: return "음성"
-        case .soundThenVoice: return "알람 + 음성"
+        case .voiceOnly: return "목소리"
         }
     }
 
+    /// 서버 계약(`wake_mode`)은 그대로 둔다 — 안드로이드 구버전과 값이 같아야 한다.
     var remoteWakeMode: String {
         switch self {
         case .voiceOnly: return "voice_only"
-        default: return "sound_then_voice"
+        case .alarmOnly: return "sound_then_voice"
         }
     }
 }

@@ -217,21 +217,19 @@ struct AlarmEditorSheet: View {
 
             Section("사운드 & 진동") {
                 if draft.showsAlarmSoundControls {
-                    // 알람음 on/off (Android `AlarmSettingsCard.kt:160-167` alarmVolumePercent>0 Switch;
-                    // 켜면 100, 끄면 0). iOS 는 AlarmKit 이 OS 알람 톤을 소유해 커스텀 링톤
-                    // 선택 API 가 없으므로, 사운드 종류는 '기본 알람음' 라벨로만 노출한다.
-                    Toggle("알람음", isOn: alarmSoundEnabledBinding)
-                        .tint(theme.palette.primary)
-                    if draft.alarmVolumePercent > 0 {
-                        HStack {
-                            Text("알람음 종류")
-                                .font(theme.typography.titleSmall)
-                            Spacer()
-                            Text(alarmSoundDisplayLabel)
-                                .font(theme.typography.bodyMedium)
-                                .foregroundStyle(theme.palette.onSurfaceVariant)
-                        }
-                        AlarmVolumeSlider(volume: alarmVolumeDecileBinding)
+                    // ⚠ **iOS 에는 알람 음량 슬라이더를 두지 않는다.**
+                    // AlarmKit 이 OS 알람 톤을 소유하고 알람별 음량 API 가 없어서, 슬라이더를
+                    // 움직여도 소리가 전혀 달라지지 않는다 — 아무것도 제어하지 못하는 컨트롤을
+                    // 두면 사용자는 값을 바꿔 보고 저장하고 다시 확인하기를 반복한다.
+                    // (안드로이드는 자체 플레이어라 그 슬라이더가 실제로 동작한다.)
+                    // 같은 이유로 '알람음 종류' 도 고를 수 없어 값 표시만 남긴다.
+                    HStack {
+                        Text("알람음 종류")
+                            .font(theme.typography.titleSmall)
+                        Spacer()
+                        Text(alarmSoundDisplayLabel)
+                            .font(theme.typography.bodyMedium)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
                     }
                 }
 
@@ -750,7 +748,7 @@ struct AlarmEditorSheet: View {
     }
 
     var defaultPlayModeForPlan: AlarmPlayMode {
-        voiceModeBlocked ? .alarmOnly : .soundThenVoice
+        voiceModeBlocked ? .alarmOnly : .voiceOnly
     }
 
     /// 준비된 음성 미리듣기 chip(change 1).

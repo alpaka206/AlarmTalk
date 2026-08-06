@@ -45,7 +45,6 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     private var player: AVAudioPlayer?
     private var activePlayerID: ObjectIdentifier?
     private var repeatTask: Task<Void, Never>?
-    private var fadeTask: Task<Void, Never>?
     private var playbackGeneration = 0
     private var currentVoiceURL: URL?
     private var currentRepeatVoice = false
@@ -59,16 +58,22 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
 
     /// playMode 가 voice/sound_then_voice 이고 캐시된 목소리가 있을 때만 재생.
     /// 이미 같은 record 가 재생 중이면 no-op. 다른 record 가 재생 중이면 교체.
-    /// 음량: 이 재생은 in-app 폴백이므로 AVAudioPlayer.volume 으로
-    /// `voiceVolumePercent` 와 `alarmVolumePercent` 를 곱한 게인을 적용한다.
-    /// `alarmVolumePercent == 0` ("무음") 이면 in-app 폴백 재생 자체를 건너뛴다.
-    /// (OS 알람 톤은 AlarmKit 이 시스템 알람 음량으로 별도 재생하며 여기서 제어
-    /// 불가.)
+    /// 음량: 이 재생은 in-app 폴백이므로 `voiceVolumePercent` 만 게인으로 적용한다.
+    ///
+    /// ⚠ **`alarmVolumePercent` 를 곱하지 않는다(2026-08-06 변경).** 예전에는 두 값을 곱했는데
+    /// 방향이 반대였다 — 이 경로에서는 AlarmKit 이 OS 톤을 `.default` 로 **함께** 울리고
+    /// 우리는 `.mixWithOthers` 로 겹쳐 재생한다. 알람 음량을 낮추면 **줄일 수 없는 톤은
+    /// 그대로인 채 목소리만 묻힌다** — 사용자 의도와 정반대다. 안드로이드도 두 값을 곱하지
+    /// 않으므로(RingingService 는 톤/목소리 플레이어가 분리돼 있다) 의미도 그쪽에 맞춘다:
+    /// **목소리 슬라이더 = 목소리 게인.**
+    ///
+    /// ⚠ **`alarmVolumePercent == 0` 으로 목소리를 막지 않는다.** 그 토글의 라벨은 '알람음'
+    /// 인데 실제로는 목소리를 껐다 — 알람음만 끄고 목소리로 깨려던 사용자가 정확히 반대
+    /// 결과(톤은 그대로, 목소리만 사라짐)를 얻었다.
     func playIfNeeded(for record: LocalAlarmRecord, audioCache: AudioCacheStore) {
         guard record.playModeEnum != .alarmOnly,
               let key = record.audioCacheKey,
-              record.voiceVolumePercent > 0,
-              record.alarmVolumePercent > 0 else {
+              record.voiceVolumePercent > 0 else {
             return
         }
 
@@ -95,13 +100,9 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
             currentRecordID = record.id
             currentVoiceURL = url
             currentRepeatVoice = record.voiceRepeat
-            // in-app 폴백 게인: voice 음량 × 알람 음량 (둘 다 OS 톤이 아닌 우리
-            // AVAudioPlayer 재생에만 적용되는 상대 게인). 호출자가 이미 두 값이
-            // 모두 0 보다 큼을 보장한다.
-            currentVoiceVolumePercent = Self.combinedVolumePercent(
-                voicePercent: record.voiceVolumePercent,
-                alarmPercent: record.alarmVolumePercent
-            )
+            // in-app 폴백 게인 = **목소리 음량만**. 알람 음량을 곱하지 않는 이유는
+            // playIfNeeded 주석 참조(톤을 못 줄이는 경로에서 목소리만 줄이면 대비가 반대로 벌어진다).
+            currentVoiceVolumePercent = max(0, min(100, record.voiceVolumePercent))
             voiceHasPlayedThisRing = false
             startVoicePlayback(url: url)
         } catch {
@@ -117,10 +118,12 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
             let p = try AVAudioPlayer(contentsOf: url)
             p.delegate = self
             p.numberOfLoops = 0
-            let shouldFadeIn = !voiceHasPlayedThisRing
+            // ⚠ 이 플래그는 **페이드가 아니라 재진입 가드**다(beginPlayback 의 조기 return).
+            // 램프를 지우면서 함께 지우지 말 것 — 지우면 앱을 다시 열 때마다 같은 회차의
+            // 목소리가 처음부터 다시 재생된다.
             voiceHasPlayedThisRing = true
-            let targetVolume = Self.voiceVolume(forPercent: currentVoiceVolumePercent)
-            applyVoiceVolume(to: p, targetVolume: targetVolume, fadeIn: shouldFadeIn)
+            // 게인은 **첫 샘플부터 target**. 램프 없음 — play() 전에 확정하므로 진폭 점프도 없다.
+            p.volume = Self.voiceVolume(forPercent: currentVoiceVolumePercent)
             p.prepareToPlay()
             p.play()
             playbackGeneration += 1
@@ -132,38 +135,9 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
         }
     }
 
-    private func applyVoiceVolume(to player: AVAudioPlayer, targetVolume: Float, fadeIn: Bool) {
-        fadeTask?.cancel()
-        fadeTask = nil
-
-        let plan = Self.voiceVolumeRampPlan(targetVolume: targetVolume, fadeIn: fadeIn)
-        player.volume = plan.startVolume
-        guard !plan.stepVolumes.isEmpty else {
-            return
-        }
-
-        let generation = playbackGeneration + 1
-        fadeTask = Task { @MainActor [weak self] in
-            for volume in plan.stepVolumes {
-                try? await Task.sleep(nanoseconds: Self.voiceFadeInNanos / UInt64(Self.voiceFadeSteps))
-                guard let self,
-                      self.playbackGeneration == generation,
-                      let player = self.player else {
-                    return
-                }
-                player.volume = volume
-            }
-            if self?.playbackGeneration == generation {
-                self?.fadeTask = nil
-            }
-        }
-    }
-
     private func handlePlaybackFinished(playerID: ObjectIdentifier) {
         guard activePlayerID == playerID else { return }
 
-        fadeTask?.cancel()
-        fadeTask = nil
         player = nil
         activePlayerID = nil
 
@@ -196,8 +170,6 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     private func stopPlayback(deactivateSession: Bool) {
         repeatTask?.cancel()
         repeatTask = nil
-        fadeTask?.cancel()
-        fadeTask = nil
         player?.stop()
         resetPlaybackState(deactivateSession: deactivateSession)
     }
@@ -220,36 +192,6 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
         max(0.0, min(1.0, Float(percent) / 100.0))
     }
 
-    /// voice 음량(%)과 알람 음량(%)을 곱해 in-app 폴백 재생의 실효 게인(%)을
-    /// 구한다. 두 값 모두 OS 알람 톤이 아닌 우리 AVAudioPlayer 재생에만 적용되는
-    /// 상대값이다. 결과는 0...100 으로 클램프.
-    static func combinedVolumePercent(voicePercent: Int, alarmPercent: Int) -> Int {
-        let voice = max(0, min(100, voicePercent))
-        let alarm = max(0, min(100, alarmPercent))
-        return Int((Double(voice) * Double(alarm) / 100.0).rounded())
-    }
-
-    static let voiceFadeInNanos: UInt64 = 6_000_000_000
-    static let voiceFadeSteps = 12
-
-    static func voiceVolumeRampPlan(targetVolume: Float, fadeIn: Bool) -> VoiceVolumeRampPlan {
-        let target = max(0.0, min(1.0, targetVolume))
-        guard fadeIn, target > 0 else {
-            return VoiceVolumeRampPlan(startVolume: target, stepVolumes: [])
-        }
-
-        let start = min(max(VoiceVolumeRampPlan.minimumStartVolume, target * VoiceVolumeRampPlan.startRatio), target)
-        guard start < target else {
-            return VoiceVolumeRampPlan(startVolume: target, stepVolumes: [])
-        }
-
-        let stepVolumes = (1...voiceFadeSteps).map { step in
-            let progress = Float(step) / Float(voiceFadeSteps)
-            return start + ((target - start) * progress)
-        }
-        return VoiceVolumeRampPlan(startVolume: start, stepVolumes: stepVolumes)
-    }
-
     // MARK: AVAudioPlayerDelegate
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
@@ -268,11 +210,4 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     }
 }
 
-struct VoiceVolumeRampPlan: Equatable {
-    static let startRatio: Float = 0.15
-    static let minimumStartVolume: Float = 0.10
-
-    let startVolume: Float
-    let stepVolumes: [Float]
-}
 #endif

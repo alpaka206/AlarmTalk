@@ -140,7 +140,7 @@ final class AlarmAppContextTests: XCTestCase {
             hour: 7,
             minute: 30,
             fireAtMillis: now + 60_000,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             voiceProfileId: "profile-1",
             state: AlarmRuntimeState.armed.rawValue,
             createdAtMillis: now,

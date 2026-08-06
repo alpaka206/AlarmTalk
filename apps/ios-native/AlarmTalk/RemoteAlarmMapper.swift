@@ -12,7 +12,7 @@ import Foundation
 //   - 그 외                              -> origin = `.localOwned`
 //   - `wakeMode` 와 로컬 `playMode` 변환은 다음 표를 따른다.
 //       * remote "voice_only"         <-> local .voiceOnly
-//       * remote "sound_then_voice"   <-> local .soundThenVoice
+//       * remote "sound_then_voice"   -> local .voiceOnly  (모드 2개화, AlarmEnums 주석 참조)
 //       * 그 외 (예: remote nil/모름)  -> local .alarmOnly (서버 알람만 흐름)
 //   - `repeat_days` (서버 0..6 배열) <-> `repeatDaysMask` (bit 0=Sun..bit 6=Sat)
 //   - `tts_message_id` <-> `ttsMessageId`
@@ -187,8 +187,8 @@ enum RemoteAlarmMapper {
         guard hasVoice else { return .alarmOnly }
         switch remote.wakeMode {
         case "voice_only": return .voiceOnly
-        case "sound_then_voice", "alarm_voice": return .soundThenVoice
-        default: return .soundThenVoice
+        case "sound_then_voice", "alarm_voice": return .voiceOnly
+        default: return .voiceOnly
         }
     }
 

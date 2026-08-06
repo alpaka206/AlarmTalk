@@ -44,9 +44,9 @@ final class AlarmEnumsTests: XCTestCase {
     func test_playModeDecode_legacyAlarmVoice() {
         XCTAssertEqual(AlarmPlayMode.decode("alarm_only"), .alarmOnly)
         XCTAssertEqual(AlarmPlayMode.decode("voice_only"), .voiceOnly)
-        XCTAssertEqual(AlarmPlayMode.decode("sound_then_voice"), .soundThenVoice)
+        XCTAssertEqual(AlarmPlayMode.decode("sound_then_voice"), .voiceOnly)
         // Android raw "alarm_voice" 도 sound_then_voice 로 매핑.
-        XCTAssertEqual(AlarmPlayMode.decode("alarm_voice"), .soundThenVoice)
+        XCTAssertEqual(AlarmPlayMode.decode("alarm_voice"), .voiceOnly)
         // 알 수 없는 값은 alarmOnly 폴백.
         XCTAssertEqual(AlarmPlayMode.decode("garbage"), .alarmOnly)
     }

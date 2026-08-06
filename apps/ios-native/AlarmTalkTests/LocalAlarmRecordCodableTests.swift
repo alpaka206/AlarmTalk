@@ -19,7 +19,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             snoozeRepeatLimit: SnoozeRepeatLimit.five.rawValue,
             snoozeCount: 1,
             vibrationPattern: VibrationPattern.heartbeat.rawValue,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             defaultAlarmSoundId: DefaultAlarmSounds.bundledDefault,
             localAudioUri: "file:///tmp/audio.m4a",
             audioCacheKey: "abc123",
@@ -142,7 +142,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
                 | RepeatDay.thursday.mask | RepeatDay.friday.mask
         )
         // ① playMode 별칭: "alarm_voice" → "sound_then_voice"
-        XCTAssertEqual(decoded.playMode, AlarmPlayMode.soundThenVoice.rawValue)
+        XCTAssertEqual(decoded.playMode, AlarmPlayMode.voiceOnly.rawValue)
         XCTAssertEqual(decoded.ttsMessageId, "msg-1")
         XCTAssertEqual(decoded.voiceProfileId, "vp-1")
         XCTAssertEqual(decoded.rawAudioUri, "https://example.com/a.mp3")
@@ -198,7 +198,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             hour: 7,
             minute: 30,
             fireAtMillis: 1_700_000_000_000,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             localAudioUri: "file:///cache/generated.mp3",
             audioCacheKey: "tts-cache",
             rawAudioUri: "r2://tts/generated",
@@ -221,7 +221,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             hour: 7,
             minute: 30,
             fireAtMillis: 1_700_000_000_000,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             localAudioUri: "file:///cache/custom.mp3",
             audioCacheKey: "tts-cache",
             rawAudioUri: "r2://tts/custom",

@@ -113,15 +113,15 @@ final class AlarmSoundResolverTests: XCTestCase {
         }
     }
 
-    func test_resolve_soundThenVoice_isHandledIdenticallyToVoiceOnly() throws {
+    func test_resolve_voiceOnly_stagesVoiceClip() throws {
         let store = AudioCacheStore()
-        let key = AudioCacheStore.computeCacheKey(Data("soundThenVoice".utf8))
+        let key = AudioCacheStore.computeCacheKey(Data("voiceOnly".utf8))
         _ = try seedCache(store: store, key: key, durationMs: 60_000)
         addTeardownBlock {
             try? store.deleteCachedAudio(cacheKey: key)
         }
 
-        let record = makeRecord(playMode: .soundThenVoice, audioCacheKey: key)
+        let record = makeRecord(playMode: .voiceOnly, audioCacheKey: key)
         let r = AlarmSoundResolver.resolve(for: record, audioCache: store)
         switch r {
         case .cachedAudio(_, let durationMs):

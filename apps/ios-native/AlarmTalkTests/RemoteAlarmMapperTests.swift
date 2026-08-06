@@ -98,14 +98,14 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertEqual(RemoteAlarmMapper.resolvePlayMode(remote), .voiceOnly)
     }
 
-    func test_resolvePlayMode_soundThenVoice() {
+    func test_resolvePlayMode_legacySoundThenVoiceBecomesVoiceOnly() {
         let remote = makeRemote(messageId: "m1", wakeMode: "sound_then_voice")
-        XCTAssertEqual(RemoteAlarmMapper.resolvePlayMode(remote), .soundThenVoice)
+        XCTAssertEqual(RemoteAlarmMapper.resolvePlayMode(remote), .voiceOnly)
     }
 
     func test_resolvePlayMode_legacyAlarmVoice_mapsToSoundThenVoice() {
         let remote = makeRemote(messageId: "m1", wakeMode: "alarm_voice")
-        XCTAssertEqual(RemoteAlarmMapper.resolvePlayMode(remote), .soundThenVoice)
+        XCTAssertEqual(RemoteAlarmMapper.resolvePlayMode(remote), .voiceOnly)
     }
 
     func test_resolvePlayMode_noVoice_returnsAlarmOnly() {
@@ -183,7 +183,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
             repeatDaysMask: RepeatDay.monday.mask | RepeatDay.wednesday.mask,
             snoozeMinutes: 5,
             vibrationPattern: VibrationPattern.heartbeat.rawValue,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             voiceSource: VoiceSource.serverTts.rawValue,
             voiceProfileId: "vp-1",
             ttsMessageId: "m-1",
@@ -194,7 +194,9 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertEqual(req.time, "07:30")
         XCTAssertEqual(req.repeatDays, [1, 3])
         XCTAssertEqual(req.mode, "tts")
-        XCTAssertEqual(req.wakeMode, "sound_then_voice")
+        // 목소리 알람이므로 voice_only 로 나간다. 안드로이드도 같은 매핑이다
+        // (RemoteAlarmMapper.kt: VOICE_ONLY -> "voice_only", 그 외 -> "sound_then_voice").
+        XCTAssertEqual(req.wakeMode, "voice_only")
         XCTAssertEqual(req.vibrationPattern, VibrationPattern.heartbeat.rawValue)
         XCTAssertEqual(req.messageId, "m-1")
         XCTAssertEqual(req.voiceProfileId, "vp-1")
@@ -241,7 +243,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
             hour: 8,
             minute: 10,
             fireAtMillis: now + 60_000,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             voiceSource: VoiceSource.ttsProfile.rawValue,
             voiceProfileId: "  vp-1  ",
             ttsMessageId: "  m-1  ",
@@ -263,7 +265,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
             hour: 8,
             minute: 10,
             fireAtMillis: now + 60_000,
-            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
             voiceSource: VoiceSource.ttsProfile.rawValue,
             voiceProfileId: "   ",
             ttsMessageId: "   ",
