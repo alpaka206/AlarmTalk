@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 울리는 동안 기기 알람 볼륨을 알람에 맞춘 크기로 올리고 끝나면 되돌린다
+         (AlarmStreamVolume). MediaPlayer 게인은 스트림 볼륨에 곱해지는 상대값이라,
+         기기 알람 볼륨이 낮으면 앱에서 100% 로 맞춰도 작게 울린다. normal 권한이라
+         런타임 요청이 필요 없다. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- 정식 알람/시계 앱: USE_EXACT_ALARM 은 자동 부여·사용자 회수 불가라 정확 알람을
          안정적으로 보장한다(SCHEDULE_EXACT_ALARM 회수 시 비정확 폴백으로 떨어지는 것 방지).

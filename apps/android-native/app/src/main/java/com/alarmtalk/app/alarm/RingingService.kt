@@ -94,13 +94,12 @@ class RingingService : Service() {
     private var voiceRepeatLoudness: LoudnessEnhancer? = null
     private var currentAlarm: AlarmEntity? = null
     private var ringingAlarmId: String? = null
-    private var voiceAfterAlarmStarted = false
 
     /**
      * 울림 시작(`startRinging`)과 정리(`stopRingingOutputs`)를 서로 겹치지 않게 한다.
      *
-     * 둘은 **다른 스레드에서 온다** — 시작은 `onStartCommand`(메인), 정리는 끝맺음 목소리를
-     * 기다리다 도는 `finishDismiss`([serviceScope] = IO)다. 락이 없으면 이렇게 샌다: A 의
+     * 둘은 **다른 스레드에서 온다** — 시작은 `onStartCommand`(메인), 정리는 `dismiss`/`snooze`
+     * 가 도는 [serviceScope](= IO)다. 락이 없으면 이렇게 샌다: A 의
      * 정리가 '내가 아직 주인인가' 를 통과한 직후 B 가 시작해 자기 플레이어와 표시를 걸고,
      * 이어서 A 가 `stopMediaAndVibration()` 을 돌며 **B 를 침묵시키고** `ringingAlarmId` 를
      * 비운다. 그런데 `activeRingingAlarmId` 는 B 로 남아 정합성 복원이 B 를 영영 건너뛴다
@@ -121,6 +120,9 @@ class RingingService : Service() {
             getSystemService(VIBRATOR_SERVICE) as Vibrator
         }
         audioManager = getSystemService(AudioManager::class.java)
+        // 지난 울림이 원복하지 못하고 죽었으면 여기서 되돌린다 — 안 되돌리면 사용자의
+        // 알람 볼륨이 우리가 올린 값에 영구히 고정된다.
+        AlarmStreamVolume.restoreIfLeftOver(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -141,14 +143,11 @@ class RingingService : Service() {
                 START_NOT_STICKY
             }
 
-            // 알림 스와이프 제거. 끝맺음 목소리 없이 즉시 정지한다 — 플래그를 미리 세우면
-            // dismiss() 의 끝맺음 분기(voiceUri != null && !voiceAfterAlarmStarted)를 건너뛰고
-            // stopRingingOutputs() 로 직행한다.
+            // 알림 스와이프 제거. '알람 + 목소리' 가 사라져 끝맺음 목소리 자체가 없으므로
+            // 이제 ACTION_DISMISS 와 결과가 완전히 같다. 액션은 남겨 둔다 —
+            // 알림 delete intent 가 이미 이 액션을 가리키고 있고, 구버전 알림이 살아 있을 수 있다.
             ACTION_DISMISS_SILENT -> {
-                if (!alarmId.isNullOrBlank()) {
-                    voiceAfterAlarmStarted = true
-                    dismiss(alarmId, startId)
-                }
+                if (!alarmId.isNullOrBlank()) dismiss(alarmId, startId)
                 START_NOT_STICKY
             }
 
@@ -209,8 +208,14 @@ class RingingService : Service() {
             val alarm = repository.getAlarm(alarmId)
             if (ringingAlarmId != alarmId) return@launch
             currentAlarm = alarm
-            voiceAfterAlarmStarted = false
             requestAlarmAudioFocus()
+            // 기기 알람 볼륨이 낮거나 0 이면 앱에서 100% 로 맞춰도 작게/안 들린다.
+            // 알람은 미리 맞춰 둔 약속이므로 그 순간만큼은 기기 볼륨을 우리가 맞춘다.
+            // (원복은 stopRingingOutputs 에서. 상세는 AlarmStreamVolume 주석 참조.)
+            AlarmStreamVolume.applyForRinging(
+                applicationContext,
+                alarm?.alarmVolumePercent ?: 100,
+            )
             val bucketVoiceUri = alarm?.let { repository.resolveBucketClipLocalUri(it) }
             startRingingAudio(alarm, bucketVoiceUri)
             val pattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT
@@ -247,7 +252,7 @@ class RingingService : Service() {
             Log.i(TAG, "Free plan at ring time — downgrading paid voice to alarm tone id=${alarm?.id}")
         }
         val voiceUri = if (downgradePaidVoice) null else rawVoiceUri
-        val playMode = if (downgradePaidVoice) AlarmPlayModes.ALARM_ONLY else rawPlayMode
+        val playMode = AlarmPlayModes.normalize(if (downgradePaidVoice) AlarmPlayModes.ALARM_ONLY else rawPlayMode)
         val alarmVolumePercent = alarm?.alarmVolumePercent ?: 100
         val voiceVolumePercent = alarm?.voiceVolumePercent ?: 100
         // 알람음(기상 톤) 토글. off 면 톤을 재생하지 않는다(볼륨 0 과 동일 취급). 알람 자체는
@@ -272,25 +277,9 @@ class RingingService : Service() {
                 Log.i(TAG, "Voice-only alarm muted by per-voice volume id=${alarm?.id}")
             }
 
-            playMode == AlarmPlayModes.ALARM_VOICE && voiceUri != null -> {
-                if (alarmToneAllowed) {
-                    startAlarmToneLoop(alarm)
-                } else if (voiceVolumePercent > 0) {
-                    voiceAfterAlarmStarted = true
-                    startVoiceLoop(voiceUri, alarm)
-                } else {
-                    stopMediaOnly()
-                    Log.i(TAG, "Alarm+voice audio muted by per-alarm settings id=${alarm?.id}")
-                }
-            }
-
             playMode == AlarmPlayModes.VOICE_ONLY && voiceUri == null -> {
                 // 음성이 없어도 알람음을 끈 사용자에겐 톤을 강제하지 않는다(진동·화면은 계속 울린다).
                 startToneFallbackOrSilent(alarm, alarmToneAllowed, "Voice-only alarm has no local voice audio")
-            }
-
-            playMode == AlarmPlayModes.ALARM_VOICE && voiceUri == null -> {
-                startToneFallbackOrSilent(alarm, alarmToneAllowed, "Alarm+voice alarm has no local voice audio")
             }
 
             else -> startToneFallbackOrSilent(alarm, alarmToneAllowed, "Ringing audio fallback")
@@ -620,24 +609,9 @@ class RingingService : Service() {
 
     private fun dismiss(alarmId: String, startId: Int) {
         serviceScope.launch {
-            val repository = AlarmAppContainer.repository(applicationContext)
-            val alarm = currentAlarm ?: repository.getAlarm(alarmId)
-            val voiceUri = alarm
-                ?.takeIf { it.playMode == AlarmPlayModes.ALARM_VOICE }
-                ?.let {
-                    repository.resolveBucketClipLocalUri(it)
-                        ?: storedVoiceFallbackUri(
-                            localAudioUri = it.localAudioUri,
-                            bucketId = it.bucketId,
-                            bucketClipCount = decodeBucketClipKeys(it.bucketClipKeysJson).size,
-                            bucketSelectionAvailable = false,
-                        )
-                }
-                ?.let(Uri::parse)
-            if (voiceUri != null && !voiceAfterAlarmStarted) {
-                startDismissVoiceThenFinish(alarmId, startId, voiceUri, alarm)
-                return@launch
-            }
+            // ⚠ 예전에는 '알람 + 목소리' 모드에서 여기서 끝맺음 목소리를 한 번 재생했다.
+            // 그 모드가 사라졌으므로(AlarmPlayModes 주석 참조) 해제는 그냥 멈추는 것이다 —
+            // 목소리는 울리는 동안 재생된다.
             stopRingingOutputs(alarmId)
             runCatching {
                 AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
@@ -646,53 +620,6 @@ class RingingService : Service() {
             }
             stopSelf(startId)
         }
-    }
-
-    private fun startDismissVoiceThenFinish(alarmId: String, startId: Int, voiceUri: Uri, alarm: AlarmEntity?) {
-        voiceAfterAlarmStarted = true
-        stopMediaAndVibration()
-        val player = createVoicePlayer(voiceUri)
-        if (player == null) {
-            AlarmTalkLog.reportError("Failed to play voice after alarm dismissal; dismissing alarm id=$alarmId")
-            serviceScope.launch {
-                finishDismiss(alarmId, startId)
-            }
-            return
-        }
-        // 준비 도중 파괴/알람 교체 시 좀비 플레이어를 남기지 않고, 파괴가 아니면 dismiss 는 마무리한다.
-        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
-            player.release()
-            mediaPlayer = null
-            serviceScope.launch {
-                finishDismiss(alarmId, startId)
-            }
-            return
-        }
-        mediaPlayer = player.apply {
-            applyVoiceVolume(this, alarm)
-            isLooping = false
-            setOnCompletionListener { completed ->
-                completed.release()
-                if (mediaPlayer === completed) {
-                    mediaPlayer = null
-                }
-                serviceScope.launch {
-                    finishDismiss(alarmId, startId)
-                }
-            }
-            start()
-        }
-        Log.i(TAG, "Alarm tone dismissed; playing voice once before finish id=$alarmId")
-    }
-
-    private suspend fun finishDismiss(alarmId: String, startId: Int) {
-        stopRingingOutputs(alarmId)
-        runCatching {
-            AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to dismiss alarm id=$alarmId", error)
-        }
-        stopSelf(startId)
     }
 
     private fun snooze(alarmId: String, startId: Int) {
@@ -747,8 +674,9 @@ class RingingService : Service() {
         ringingAlarmId = null
         releaseRingingMarkers(completedAlarmId)
         currentAlarm = null
-        voiceAfterAlarmStarted = false
         abandonAlarmAudioFocus()
+        // 우리가 올린 기기 알람 볼륨을 되돌린다. 사용자 설정을 건드린 것이므로 반드시 짝이 맞아야 한다.
+        AlarmStreamVolume.restore(applicationContext)
     }
 
     private fun stopMediaAndVibration() {

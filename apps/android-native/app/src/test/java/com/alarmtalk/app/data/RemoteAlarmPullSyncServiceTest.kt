@@ -99,23 +99,23 @@ class RemoteAlarmPullSyncServiceTest {
     fun unlockedReceivedAlarmKeepsRebuiltRemoteVoiceMode() {
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
 
-        val state = resolveReceivedLockState(AlarmPlayModes.ALARM_VOICE, existing)
+        val state = resolveReceivedLockState(AlarmPlayModes.VOICE_ONLY, existing)
 
-        assertEquals(AlarmPlayModes.ALARM_VOICE, state.playMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, state.playMode)
         assertEquals(null, state.preLockPlayMode)
     }
 
     @Test
     fun lockedReceivedAlarmStaysLockedAfterPullAndSnapshotsRebuiltVoiceMode() {
-        // 무료로 잠긴 받은 알람: pull 이 원격 목소리 모드(ALARM_VOICE)를 재구성해도 잠금을 유지하고,
+        // 무료로 잠긴 받은 알람: pull 이 원격 목소리 모드(VOICE_ONLY)를 재구성해도 잠금을 유지하고,
         // 그 최신 모드를 복원용으로 스냅샷한다(재유료 시 unlockPaidAlarmTalks 가 이 값으로 복원).
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
             .copy(playMode = AlarmPlayModes.ALARM_ONLY, preLockPlayMode = AlarmPlayModes.VOICE_ONLY)
 
-        val state = resolveReceivedLockState(AlarmPlayModes.ALARM_VOICE, existing)
+        val state = resolveReceivedLockState(AlarmPlayModes.VOICE_ONLY, existing)
 
         assertEquals(AlarmPlayModes.ALARM_ONLY, state.playMode)
-        assertEquals(AlarmPlayModes.ALARM_VOICE, state.preLockPlayMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, state.preLockPlayMode)
     }
 
     @Test
@@ -123,12 +123,12 @@ class RemoteAlarmPullSyncServiceTest {
         // 이번 pull 에서 오디오를 못 받아 사운드온리(computed==ALARM_ONLY)가 돼도 기존 잠금 마커를
         // 잃지 않는다 — 잃으면 다음 성공 pull 이 무료인데도 목소리로 되살린다.
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
-            .copy(playMode = AlarmPlayModes.ALARM_ONLY, preLockPlayMode = AlarmPlayModes.ALARM_VOICE)
+            .copy(playMode = AlarmPlayModes.ALARM_ONLY, preLockPlayMode = AlarmPlayModes.VOICE_ONLY)
 
         val state = resolveReceivedLockState(AlarmPlayModes.ALARM_ONLY, existing)
 
         assertEquals(AlarmPlayModes.ALARM_ONLY, state.playMode)
-        assertEquals(AlarmPlayModes.ALARM_VOICE, state.preLockPlayMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, state.preLockPlayMode)
     }
 
     @Test
@@ -313,8 +313,8 @@ class RemoteAlarmPullSyncServiceTest {
         // 기대고 자는 자기 정보라, 알람까지 지우면 그날 못 일어난다(Codex #676 P1).
         val received = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
             label = "김규원 님이 보낸 알람",
-            playMode = AlarmPlayModes.ALARM_VOICE,
-            preLockPlayMode = AlarmPlayModes.ALARM_VOICE,
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
             localAudioUri = "file:///cache/remote-message-m1.m4a",
             audioCacheKey = "remote-message-m1",
             voiceProfileId = "vp-A",
@@ -346,7 +346,7 @@ class RemoteAlarmPullSyncServiceTest {
         // 쓸 수 없는 알람**이 된다(Codex #677 P2). 걷어낼 것은 탈퇴한 사람이 보낸 음성뿐이다.
         val mine = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
             label = "출근",
-            playMode = AlarmPlayModes.ALARM_VOICE,
+            playMode = AlarmPlayModes.VOICE_ONLY,
             localAudioUri = "file:///cache/tts-abc.m4a",
             audioCacheKey = "tts-abc",
             voiceProfileId = "vp-mine",
@@ -369,7 +369,7 @@ class RemoteAlarmPullSyncServiceTest {
         // 값을 같은 CachedAlarmAudio 에서 채운다). 그래도 실기기의 옛 DB 까지 없다고 단정하고
         // 발신자의 녹음을 남겨 둘 수는 없다 — 키가 없으면 URI 로 잡는다(Codex #677 P1).
         val legacy = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
-            playMode = AlarmPlayModes.ALARM_VOICE,
+            playMode = AlarmPlayModes.VOICE_ONLY,
             localAudioUri = "file:///data/audio/legacy_recording.m4a",
             audioCacheKey = null,
         )
@@ -385,7 +385,7 @@ class RemoteAlarmPullSyncServiceTest {
         // 디스크에 그대로 있다. 재생 모드로 판정하면 이 행을 놓쳐 생체정보가 남는다.
         val locked = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
             playMode = AlarmPlayModes.ALARM_ONLY,
-            preLockPlayMode = AlarmPlayModes.ALARM_VOICE,
+            preLockPlayMode = AlarmPlayModes.VOICE_ONLY,
             localAudioUri = "file:///cache/remote-message-m1.m4a",
             audioCacheKey = "remote-message-m1",
         )

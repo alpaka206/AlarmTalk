@@ -614,4 +614,15 @@ internal fun randomPromptContextForBucket(bucket: String?): String? =
 private const val DefaultRandomTtsCategory = "morning"
 // 기본은 추가 입력이 필요 없는 고정 문구(preset) — 목소리만 고르면 바로 저장할 수 있다.
 internal const val DefaultRandomPromptContext = "preset"
-internal const val MinVoiceVolumePercent = 30
+/**
+ * 목소리 음량 하한. **0 을 허용하지 않는다** — 0 은 '무음' 이라는 별개의 뜻인데 슬라이더
+ * 끝값으로 두면 실수로 닿아 목소리 알람이 조용히 안 들리게 된다. 끄는 것은 재생 방식을
+ * '알람' 으로 바꾸는 것으로 표현한다. iOS `AlarmEditDraft.minVoiceVolumePercent` 와 같은 값.
+ */
+internal const val MinVoiceVolumePercent = 10
+
+/**
+ * 알람 음량 하한. 목소리와 같은 이유로 **0 을 슬라이더로 만들 수 없다** —
+ * 무음은 알람음 스위치(`alarmSoundEnabled`)로만 표현한다.
+ */
+internal const val MinAlarmVolumePercent = 10

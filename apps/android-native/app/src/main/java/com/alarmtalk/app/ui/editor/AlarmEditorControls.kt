@@ -322,28 +322,21 @@ internal fun PlayModeSelector(
             modifier = Modifier.padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            // ⚠ **두 칸이다.** '알람 + 목소리' 를 되살리지 말 것(AlarmPlayModes 주석 참조).
+            // 순서는 iOS 세그먼트와 같게 알람 → 목소리.
             PlayModeChip(
-                label = stringResource(R.string.editor_play_mode_alarm_voice),
-                selected = selected == AlarmPlayModes.ALARM_VOICE,
-                locked = voiceLocked,
-                onClick = {
-                    if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.ALARM_VOICE)
-                },
+                label = stringResource(R.string.editor_play_mode_alarm_only),
+                selected = AlarmPlayModes.normalize(selected) == AlarmPlayModes.ALARM_ONLY,
+                onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
                 modifier = Modifier.weight(1f),
             )
             PlayModeChip(
                 label = stringResource(R.string.editor_play_mode_voice_only),
-                selected = selected == AlarmPlayModes.VOICE_ONLY,
+                selected = AlarmPlayModes.normalize(selected) == AlarmPlayModes.VOICE_ONLY,
                 locked = voiceLocked,
                 onClick = {
                     if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.VOICE_ONLY)
                 },
-                modifier = Modifier.weight(1f),
-            )
-            PlayModeChip(
-                label = stringResource(R.string.editor_play_mode_alarm_only),
-                selected = selected == AlarmPlayModes.ALARM_ONLY,
-                onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
                 modifier = Modifier.weight(1f),
             )
         }

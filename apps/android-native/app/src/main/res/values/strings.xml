@@ -203,10 +203,9 @@
     <string name="editor_plan_gate_login_title">로그인이 필요해요</string>
     <string name="editor_plan_gate_login_required">로그인하면 목소리 알람을 만들 수 있어요.</string>
     <string name="editor_plan_gate_paid_features">이용권을 연결하면 직접 만든 목소리·녹음·직접 입력 문구로 알람을 만들 수 있어요.</string>
-    <string name="editor_play_mode_alarm_only">알람만</string>
-    <string name="editor_play_mode_alarm_voice">알람 + 목소리</string>
+    <string name="editor_play_mode_alarm_only">알람</string>
     <string name="editor_play_mode_title">재생 방식</string>
-    <string name="editor_play_mode_voice_only">목소리만</string>
+    <string name="editor_play_mode_voice_only">목소리</string>
     <string name="editor_quiet_hours_label">받지 않는 시간: %1$s</string>
     <string name="editor_msg_section">문구</string>
     <string name="editor_msg_mode_manual">직접 입력</string>

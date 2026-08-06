@@ -35,7 +35,7 @@ class RemoteAlarmMapperTest {
     @Test
     fun generatedTtsUsesMessageIdInsteadOfRawR2Url() {
         val alarm = alarm(
-            playMode = AlarmPlayModes.ALARM_VOICE,
+            playMode = AlarmPlayModes.VOICE_ONLY,
             rawAudioUri = "r2://voices/user/audio",
             voiceSource = VoiceSources.TTS_PROFILE,
             ttsMessageId = "message-id",

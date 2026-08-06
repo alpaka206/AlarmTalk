@@ -640,7 +640,7 @@ internal fun buildReceivedAlarmRow(
     val computedPlayMode = when {
         cachedAudio == null -> AlarmPlayModes.ALARM_ONLY
         remote.wakeMode == "voice_only" -> AlarmPlayModes.VOICE_ONLY
-        else -> AlarmPlayModes.ALARM_VOICE
+        else -> AlarmPlayModes.VOICE_ONLY
     }
     val lockState = resolveReceivedLockState(computedPlayMode, existing)
     val label = receivedRemoteAlarmLabel(context, remote.senderName, remote.senderEmail)

@@ -169,7 +169,7 @@ internal fun AlarmEditorScreen(
     } else {
         voiceProfiles
     }
-    val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
+    val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.VOICE_ONLY
     // 새 알람은 마지막에 고른 문구 종류를 기본값으로 이어받는다(한 번도 고른 적 없으면 목록에
     // 노출하지 않는 '기본 인사말'=preset 으로 시작). '직접 입력'은 기억하지 않아 빈 직접입력으로
     // 시작하지 않는다.
@@ -620,8 +620,7 @@ internal fun AlarmEditorScreen(
     fun applyAlarmOutput(voice: Boolean, sound: Boolean) {
         val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
         editor.playMode = when {
-            voice && sound -> AlarmPlayModes.ALARM_VOICE
-            voice && !sound -> AlarmPlayModes.VOICE_ONLY
+            voice -> AlarmPlayModes.VOICE_ONLY
             else -> AlarmPlayModes.ALARM_ONLY
         }
         // ⚠ **'목소리만' 에서는 alarmSoundEnabled 를 끄지 않는다.**
@@ -1333,7 +1332,7 @@ internal fun AlarmEditorScreen(
                 item {
                     Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
                         // 목소리 on/off 토글은 목소리 카드 안에 있다(별도 '재생 방식' 카드 없음).
-                        // 끄면 playMode=ALARM_ONLY(목소리 미재생), 켜면 알람음 상태에 따라 ALARM_VOICE/VOICE_ONLY.
+                        // 끄면 playMode=ALARM_ONLY(목소리 미재생), 켜면 VOICE_ONLY.
                         val alarmSoundOn = editor.playMode != AlarmPlayModes.VOICE_ONLY && editor.alarmSoundEnabled
                         VoiceAudioCard(
                             voiceEnabled = editor.playMode != AlarmPlayModes.ALARM_ONLY,

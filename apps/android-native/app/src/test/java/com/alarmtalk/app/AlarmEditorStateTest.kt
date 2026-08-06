@@ -53,7 +53,7 @@ class AlarmEditorStateTest {
     fun bucketAlarmKeepsItsMessageContextOnSave() {
         // 버킷을 붙이면 voiceRandomPrompt 가 꺼진다. 그때 종류까지 떨어뜨리면 다음 새 알람이
         // '기본 인사말'로 되돌아가고, 이 알람을 다시 열면 '직접 입력'으로 보인다.
-        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.ALARM_VOICE)
+        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
         editor.voiceProfileId = "clone-profile"
         editor.voiceRandomPrompt = true
         editor.voiceRandomContext = "love"
@@ -85,7 +85,7 @@ class AlarmEditorStateTest {
     @Test
     fun manualAlarmStillDropsItsMessageContextOnSave() {
         // 직접 입력은 종류가 없다 — 버킷 예외가 여기까지 새면 안 된다.
-        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.ALARM_VOICE)
+        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
         editor.voiceProfileId = "clone-profile"
         editor.voiceRandomContext = "love"
         editor.voiceRandomPrompt = false
@@ -99,7 +99,7 @@ class AlarmEditorStateTest {
         // 문구까지 이어받아야 새 알람이 **바로 저장 가능**하다(빈 직접입력이면 저장이 막힌다).
         val editor = AlarmEditorState.from(
             alarm = null,
-            defaultPlayMode = AlarmPlayModes.ALARM_VOICE,
+            defaultPlayMode = AlarmPlayModes.VOICE_ONLY,
             defaultManualText = "회의 자료 챙겨",
         )
 
@@ -122,7 +122,7 @@ class AlarmEditorStateTest {
     fun blankLastManualTextFallsBackToTheGenerativeChoice() {
         val editor = AlarmEditorState.from(
             alarm = null,
-            defaultPlayMode = AlarmPlayModes.ALARM_VOICE,
+            defaultPlayMode = AlarmPlayModes.VOICE_ONLY,
             defaultRandomContext = "love",
             defaultManualText = "   ",
         )
@@ -229,7 +229,7 @@ class AlarmEditorStateTest {
         snoozeRepeatLimit = SnoozeRepeatLimits.THREE,
         snoozeCount = 0,
         vibrationPattern = VibrationPatterns.DEFAULT,
-        playMode = AlarmPlayModes.ALARM_VOICE,
+        playMode = AlarmPlayModes.VOICE_ONLY,
         defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
         localAudioUri = "file://clip0.mp3",
         audioCacheKey = "stock_clip-0",

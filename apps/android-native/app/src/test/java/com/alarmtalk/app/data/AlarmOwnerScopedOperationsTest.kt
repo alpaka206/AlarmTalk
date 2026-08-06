@@ -103,7 +103,7 @@ class AlarmOwnerScopedOperationsTest {
         snoozeRepeatLimit = SnoozeRepeatLimits.THREE,
         snoozeCount = 0,
         vibrationPattern = VibrationPatterns.DEFAULT,
-        playMode = AlarmPlayModes.ALARM_VOICE,
+        playMode = AlarmPlayModes.VOICE_ONLY,
         defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
         localAudioUri = null,
         audioCacheKey = null,
@@ -169,7 +169,7 @@ class AlarmOwnerScopedOperationsTest {
         assertEquals("A 의 알람은 그대로", "clone-a", voiceOf("a-1"))
         // 강등 마커(목록 배지)도 남아야 한다.
         assertEquals(AlarmPlayModes.ALARM_ONLY, dao.getById("b-1")?.playMode)
-        assertEquals(AlarmPlayModes.ALARM_VOICE, dao.getById("b-1")?.preLockPlayMode)
+        assertEquals(AlarmPlayModes.VOICE_ONLY, dao.getById("b-1")?.preLockPlayMode)
     }
 
     @Test

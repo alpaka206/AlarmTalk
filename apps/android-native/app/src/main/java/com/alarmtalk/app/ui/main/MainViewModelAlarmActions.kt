@@ -205,7 +205,7 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
         snoozeMinutes = snoozeMinutes,
         mode = if (hasRemoteVoice) "tts" else "sound-only",
         vibrationPattern = vibrationPattern,
-        wakeMode = when (playMode) {
+        wakeMode = when (AlarmPlayModes.normalize(playMode)) {
             AlarmPlayModes.VOICE_ONLY -> "voice_only"
             else -> "sound_then_voice"
         },
