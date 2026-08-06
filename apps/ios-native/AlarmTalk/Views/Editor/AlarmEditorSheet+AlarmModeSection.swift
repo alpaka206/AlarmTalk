@@ -261,10 +261,8 @@ extension RandomPromptContext {
         case .preset: return "추가 입력 없이 바로 쓰는 기본 인사예요."
         case .wakeWeather: return "오늘 날씨를 알려주고 옷차림을 권해요."
         case .wakeFortune: return "가벼운 오늘의 운세를 곁들여요."
-        case .meal: return "끼니를 챙기도록 다정하게 권해요."
-        case .sleep: return "잠들기 좋게 차분한 톤으로 말해요."
-        case .exercise: return "활기차게 몸을 움직이도록 응원해요."
         case .love: return "사랑이 담긴 다정한 한마디를 건네요."
+        case .medication: return "약 챙겨 먹도록 잊지 않게 말해 줘요."
         }
     }
 }

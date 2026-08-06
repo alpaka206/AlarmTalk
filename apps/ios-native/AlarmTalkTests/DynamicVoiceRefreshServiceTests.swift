@@ -108,17 +108,17 @@ final class DynamicVoiceRefreshServiceTests: XCTestCase {
             audioFormat: "mp3",
             audioUrl: nil,
             audioObjectKey: "tts/message-fallback.mp3",
-            text: "점심 맛있게 드세요.",
+            text: "약 챙겨 드세요.",
             voiceProfileId: "voice-1",
             cacheKey: nil,
             cacheHit: false,
             provider: "fake",
-            randomContext: RandomPromptContext.meal.rawValue
+            randomContext: RandomPromptContext.medication.rawValue
         ))
         let expectedCacheKey = AudioCacheStore.ttsCacheKey(
             profileId: "voice-1",
-            text: "점심 맛있게 드세요.",
-            category: "lunch",
+            text: "약 챙겨 드세요.",
+            category: "medication",
             language: "ko"
         )
         let service = DynamicVoiceRefreshService(

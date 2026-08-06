@@ -137,19 +137,11 @@ final class DynamicVoiceRefreshService {
         return nowMillis >= prepareAtMillis && nowMillis < latestPrepareMillis
     }
 
+    /// 문구 종류 → TTS 카테고리. **매핑은 `RandomPromptContext.ttsCategory` 한 곳에만 둔다** —
+    /// 예전에는 같은 switch 가 여기에도 복사돼 있어서, enum 을 고쳐도 이쪽이 옛 값을 계속
+    /// 내보냈다(제품에서 사라진 lunch/night/exercise).
     static func ttsCategory(for context: String?) -> String {
-        switch RandomPromptContext.normalized(context) {
-        case .meal:
-            return "lunch"
-        case .sleep:
-            return "night"
-        case .exercise:
-            return "exercise"
-        case .love:
-            return "love"
-        default:
-            return "morning"
-        }
+        RandomPromptContext.normalized(context).ttsCategory
     }
 
 }

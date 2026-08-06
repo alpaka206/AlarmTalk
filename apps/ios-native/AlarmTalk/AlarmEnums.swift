@@ -163,14 +163,25 @@ enum AlarmAudioLimits {
 // Android: `TtsApi.kt:17` `randomContext`. 랜덤 깨움말 생성 시 함께 보내는
 // 컨텍스트 키. 백엔드가 컨텍스트별 프롬프트 템플릿/추가 입력값 (날씨/운세 등) 을
 // 결정한다. 추가 컨텍스트는 백엔드 합의 후 enum case 만 늘리면 된다.
+/// 문구 종류. **서버가 받는 값과 정확히 같아야 한다.**
+///
+/// 서버 화이트리스트는 `tts.ts` 의 `RANDOM_CONTEXTS = ['preset','wake_weather',
+/// 'wake_fortune','love']` 이고, `medication` 은 일부러 그 밖에 두어 `preset` 으로
+/// 정규화된다(고정 프리셋 문구 경로를 탄다). 안드로이드 `RandomPromptContexts` 도 같은
+/// 다섯이다.
+///
+/// ⚠ 예전에는 여기에 `meal`/`sleep`/`exercise` 가 있었다. 제품에서 '10테마 개별선택' 이
+/// 사라지면서 서버가 그 셋을 **400 으로 거절**하게 됐는데 iOS 만 메뉴에 계속 그리고 있었다 —
+/// 고르면 저장이 100% 실패했다. 반대로 실제로 있는 `medication`(약)은 iOS 에서 **고를 수조차
+/// 없었다.** 새 값을 늘릴 때는 반드시 `tts.ts` 의 화이트리스트부터 확인할 것.
 enum RandomPromptContext: String, CaseIterable, Identifiable {
     case preset
     case wakeWeather = "wake_weather"
     case wakeFortune = "wake_fortune"
-    case meal
-    case sleep
-    case exercise
     case love
+    /// 동적 생성이 아니라 **고정 프리셋**이다. 서버가 `preset` 으로 정규화하고
+    /// `category='medication'` 문구를 뽑는다.
+    case medication
 
     var id: String { rawValue }
 
@@ -179,10 +190,8 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
         .preset,
         .wakeWeather,
         .wakeFortune,
-        .meal,
-        .sleep,
-        .exercise,
-        .love
+        .love,
+        .medication
     ]
 
     static func normalized(_ rawValue: String?) -> RandomPromptContext {
@@ -191,6 +200,9 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
             return .wakeWeather
         case "fortune":
             return .wakeFortune
+        // 사라진 값으로 저장된 옛 행은 기본으로 접는다 — 그대로 두면 서버가 400 을 준다.
+        case "meal", "sleep", "exercise":
+            return .preset
         default:
             // 'preset' 은 서버 무료 게이트(tts.ts:695)가 요구하는 정식 값이므로
             // 더 이상 defaultContext 로 흡수하지 않고 그대로 보존한다.
@@ -202,41 +214,28 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 안드로이드 문자열과 같은 라벨(strings.xml 의 editor_msg_mode_preset·editor2_ctx_*).
     var label: String {
         switch self {
-        case .preset: return "기본"
-        case .wakeWeather: return "기상 + 날씨"
-        case .wakeFortune: return "기상 + 운세"
-        case .meal: return "식사"
-        case .sleep: return "취침"
-        case .exercise: return "운동"
+        case .preset: return "기본 인사말"
+        case .wakeWeather: return "날씨"
+        case .wakeFortune: return "운세"
         case .love: return "사랑"
+        case .medication: return "약"
         }
     }
 
+    /// 서버 `TTS_CATEGORIES = ['morning','medication','love','custom']` 안의 값이어야 한다.
     var ttsCategory: String {
         switch self {
-        case .meal:
-            return "lunch"
-        case .sleep:
-            return "night"
-        case .exercise:
-            return "exercise"
-        case .love:
-            return "love"
-        default:
-            return "morning"
+        case .love: return "love"
+        case .medication: return "medication"
+        // preset·날씨·운세는 공통 라벨 morning 을 쓴다(문구는 preset/동적 경로가 따로 정한다).
+        case .preset, .wakeWeather, .wakeFortune: return "morning"
         }
     }
 
-    var usesWeather: Bool {
-        switch self {
-        case .wakeWeather, .meal, .exercise:
-            return true
-        default:
-            return false
-        }
-    }
+    var usesWeather: Bool { self == .wakeWeather }
 
     var usesFortune: Bool { self == .wakeFortune }
 }
