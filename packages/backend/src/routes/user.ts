@@ -370,8 +370,33 @@ user.post('/consents', async (c) => {
     // 지워 버린다.
     const finalAgreedByType = new Map<string, boolean>();
     for (const r of rows) finalAgreedByType.set(r.type, r.agreed);
+
+    // ⚠ **재동의 화면에서 안 누른 것을 '철회' 로 읽으면 안 된다.**
+    //
+    // 민감 동의(voice_biometric)는 `optional` 로 내려가므로 동의 화면의 CTA 가 체크를
+    // 요구하지 않는다. 그 상태에서 이미 동의한 사용자가 화면을 그냥 통과하면 `agreed=false`
+    // 가 제출되는데, 그걸 철회로 처리하면 **ElevenLabs 보이스와 R2 원본이 영구 삭제된다.**
+    // 사용자는 무언가를 지운다는 자각조차 없다.
+    //
+    // 판별 기준은 요청 모양이 아니라 **지금 그 유형을 다시 묻고 있었는가** 다:
+    //  - 재동의 대상(`collect`)에 있었다 → 화면이 물어본 것이다. false 는 '안 눌렀다' 이지
+    //    '지워 달라' 가 아니다. 기록만 하고 파기하지 않는다.
+    //  - 대상이 아니었다 → 아무도 묻지 않았는데 false 가 왔다 = 설정 화면의 명시적 철회다
+    //    (`withdrawVoiceBiometricConsent`). 그때만 파기한다.
+    //
+    // 요청 모양(항목 1개인가)으로 가르지 않는 이유: 개정이 민감 유형 하나만 대상으로 하면
+    // 동의 화면도 항목 1개를 보내므로 둘이 구분되지 않는다.
+    //
+    // 서버에서 막으므로 **구버전 클라도 즉시 보호된다** — 클라 수정을 기다리지 않는다.
+    const latestBeforeWrite = await loadLatestConsents(db, userPk);
+    const reAskedTypes = new Set([
+      ...missingConsentTypesFrom(latestBeforeWrite, REQUIRED_CONSENT_TYPES),
+      ...[...FEATURE_CONSENT_TYPES, ...OPTIONAL_CONSENT_TYPES].filter(
+        (type) => !consentAnswerIsCurrent(latestBeforeWrite, type),
+      ),
+    ]);
     const withdrewSensitiveConsent = SENSITIVE_REQUIRED_CONSENTS.some(
-      (type) => finalAgreedByType.get(type) === false,
+      (type) => finalAgreedByType.get(type) === false && !reAskedTypes.has(type),
     );
 
     let downgradedAlarms: DowngradedAlarm[] = [];
