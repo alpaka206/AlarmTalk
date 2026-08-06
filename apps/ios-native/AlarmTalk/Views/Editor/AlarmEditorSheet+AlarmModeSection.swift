@@ -201,7 +201,18 @@ extension AlarmEditorSheet {
                                 .padding(.top, 4)
                             }
                             } // end !freeVoiceTier (preset 컨텍스트 고정)
-                        } else {
+                        // 직접 입력 pane 은 **유료 전용이고, 스톡 클립 알람에는 뜨면 안 된다.**
+                        //
+                        // 스톡 클립을 고른 알람은 저장 시 `voiceRandomPrompt = false` 가 되므로
+                        // (스톡 음원을 그대로 쓰려고 랜덤 생성을 끈다), `randomPrompt` 하나만 보고
+                        // '직접 입력' 으로 판정하면 **다시 열 때 유료 전용 입력창이 클립 문구가
+                        // 채워진 채 뜬다.** 거기서 한 글자만 고쳐도 `onInvalidatePreparedAudio` 가
+                        // preparedAlarm 을 날려, 저장 시 고른 클립도 방금 친 문구도 없이 일반
+                        // 프리셋 랜덤 알람으로 조용히 덮인다.
+                        //
+                        // 안드로이드도 같은 이유로 판정식을 `!voiceRandomPrompt && !isActiveBucketAlarm()`
+                        // 으로 통일했다(CLAUDE.md — 「한 곳만 고치지 말 것」).
+                        } else if !freeVoiceTier && !isActiveStockClipAlarm {
                             ManualVoiceMessageEditor(
                                 text: $voiceStudio.ttsText,
                                 translationEnabled: $voiceStudio.translateText,

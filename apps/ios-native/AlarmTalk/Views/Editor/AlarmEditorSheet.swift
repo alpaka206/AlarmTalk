@@ -76,6 +76,17 @@ struct AlarmEditorSheet: View {
     /// 실수를 원천 차단한다.
     @State var suppressProfileChangeInvalidation = false
     @State var ttsProfileChangedDuringEdit = false
+    /// 지금 편집 중인 것이 **스톡 클립 알람**인가.
+    ///
+    /// 안드로이드 `AlarmEditorState.isActiveBucketAlarm()` 대응. 스톡 클립도 저장 시
+    /// `voiceRandomPrompt = false` 가 되므로, `!randomPrompt` 만으로 '직접 입력' 을
+    /// 판별하면 안 된다.
+    ///
+    /// ⚠ `selectedStockMessageID`(= preparedAlarm 파생) **하나로만** 정의한다.
+    /// `stockSelectedMessageID`(@State)를 OR 로 더하면, 유료 사용자가 랜덤 ON→OFF 를
+    /// 왕복한 뒤 직접 입력창이 영영 안 뜬다.
+    var isActiveStockClipAlarm: Bool { selectedStockMessageID != nil }
+
     var selectedStockMessageID: String? {
         guard let prepared = voiceStudio.preparedAlarm,
               prepared.audioCacheKey.hasPrefix("stock_") else {
@@ -435,6 +446,10 @@ struct AlarmEditorSheet: View {
             stopAllEditorPreviews()
             stockSelectedMessageID = nil
             voiceStudio.preparedAlarm = nil
+            // 스톡 선택을 잃는 순간(위 두 줄) 무료 등급은 곧바로 랜덤/preset 로 되돌린다.
+            // 안 그러면 randomPrompt=false 인 채로 남는데, 무료에는 직접 입력 pane 이
+            // 안 뜨므로 아무 문구 UI 도 없는 상태가 된다.
+            coerceFreeVoiceTierConstraints()
         }
         .onChange(of: voiceStudio.weatherCountry) { _, _ in voiceStudio.preparedAlarm = nil }
         .onChange(of: voiceStudio.weatherCity) { _, _ in voiceStudio.preparedAlarm = nil }
@@ -920,7 +935,11 @@ struct AlarmEditorSheet: View {
             // 한 번도 고른 적 없으면 위에서 정한 폴백(랜덤 ON + preset)을 그대로 쓴다.
         }
 
-        voiceStudio.translateText = !voiceStudio.randomPrompt && voiceStudio.ttsLanguage != "ko"
+        // 스톡 클립은 서버가 ko/en/ja 로 확정 발화를 미리 만들어 둔 것이라 번역 대상이 아니다.
+        // (restore 는 아래에서 뒤에 도므로 원본 레코드로 판정한다.)
+        voiceStudio.translateText = !voiceStudio.randomPrompt
+            && voiceStudio.ttsLanguage != "ko"
+            && !(alarm?.isStockVoiceClip ?? false)
         voiceStudio.weatherCountry = alarm?.voiceWeatherCountry ?? saved.weatherCountry
         voiceStudio.weatherCity = alarm?.voiceWeatherCity ?? saved.weatherCity
         voiceStudio.fortuneGender = alarm?.voiceFortuneGender ?? saved.fortuneGender
