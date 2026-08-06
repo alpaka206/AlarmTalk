@@ -32,6 +32,9 @@ struct MainTabsView: View {
     /// 보조 시트 표시 — People/Billing.
     @State private var auxiliaryScreen: AuxiliaryScreen?
 
+    /// 알람 탭이 다중 선택 모드인가(＋FAB 를 숨긴다).
+    @State private var alarmSelectionActive = false
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -39,6 +42,9 @@ struct MainTabsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         currentTabContent
                     }
+                    // 알람 탭이 선택 모드에 들어가면 ＋FAB 를 숨겨야 한다 — 자식이
+                    // 위로 알려 주는 신호라 environment(아래로 흐름) 대신 preference 다.
+                    .onPreferenceChange(AlarmSelectionActiveKey.self) { alarmSelectionActive = $0 }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
                     .padding(.bottom, 24)
@@ -55,7 +61,9 @@ struct MainTabsView: View {
             // 카드의 '새 알람 만들기' 가 이미 그 일을 하고, 둘이 같이 뜨면 오른쪽 아래에서
             // 손가락이 뭘 노리는지 애매해진다(안드로이드 `AlarmTalkApp.kt:855-873`).
             .overlay(alignment: .bottomTrailing) {
-                if selectedTab == .alarms && !store.alarms.isEmpty {
+                // 선택 모드에서는 숨긴다 — 삭제 바와 ＋가 함께 있으면 오른쪽 아래에서
+                // 손가락이 뭘 노리는지 애매해진다(안드로이드 `!alarmSelectionActive`).
+                if selectedTab == .alarms && !store.alarms.isEmpty && !alarmSelectionActive {
                     Button {
                         editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil, familyAlarmMode: false)
                     } label: {

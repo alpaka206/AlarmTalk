@@ -15,20 +15,38 @@ struct AlarmsListView: View {
     /// "누구를 깨울까요?" 시트 노출 여부. 구성원이 있을 때만 뜬다.
     @State private var wakeTargetSheetOpen = false
 
+    /// 다중 선택 삭제 — 길게 눌러 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
+    /// 안드로이드 `AlarmListScreen.kt:138-152`.
+    @State private var selectedAlarmIDs: Set<String> = []
+
     let openEditor: (AlarmEditorTarget) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // 안드로이드 첫 탭과 같은 모양 — '알람' 라벨 대신 **상태 문구를 헤드라인으로**
             // 승격한다(제목 = 결론). 절대 시각은 바로 아래 카드에 이미 있다.
-            // 만들기 액션은 **＋FAB 하나**다(MainTabsView). 헤드라인 옆에 버튼을 또 두면
-            // 같은 일을 하는 진입점이 둘이 되고, 헤드라인('다음 알람까지 …')이 눌릴 자리를
-            // 뺏겨 짧게 잘린다. 안드로이드도 FAB 하나뿐이다(`AlarmTalkApp.kt:862`).
-            NextAlarmHeadline(
-                nextAlarm: nextAlarmForHeadline,
-                hasAnyAlarm: !store.alarms.isEmpty,
-                alarmPermissionMissing: !alarmKit.alarmAuthorized
-            )
+            // 선택 모드에선 **같은 자리를** [취소·삭제] 바가 대신한다. 상단 바를 새로
+            // 다는 대신 헤드라인을 바꿔 끼운다 — 이 앱엔 상단 바가 하나도 없다.
+            if selectionMode {
+                AlarmSelectionBar(
+                    count: selectedAlarmIDs.count,
+                    onCancel: { selectedAlarmIDs = [] },
+                    onDelete: {
+                        let targets = store.alarms.filter { selectedAlarmIDs.contains($0.id) }
+                        selectedAlarmIDs = []
+                        Task { for alarm in targets { await deleteAlarm(alarm) } }
+                    }
+                )
+            } else {
+                // 만들기 액션은 **＋FAB 하나**다(MainTabsView). 헤드라인 옆에 버튼을 또 두면
+                // 같은 일을 하는 진입점이 둘이 되고, 헤드라인('다음 알람까지 …')이 눌릴 자리를
+                // 뺏겨 짧게 잘린다. 안드로이드도 FAB 하나뿐이다(`AlarmTalkApp.kt:862`).
+                NextAlarmHeadline(
+                    nextAlarm: nextAlarmForHeadline,
+                    hasAnyAlarm: !store.alarms.isEmpty,
+                    alarmPermissionMissing: !alarmKit.alarmAuthorized
+                )
+            }
 
             // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
             // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
@@ -52,6 +70,8 @@ struct AlarmsListView: View {
             }
             localAlarmSection
         }
+        .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
+        .preference(key: AlarmSelectionActiveKey.self, value: selectionMode)
         .sheet(isPresented: $wakeTargetSheetOpen) {
             WakeTargetSheet(
                 recipients: familyRecipients,
@@ -106,6 +126,16 @@ struct AlarmsListView: View {
                     AlarmRow(
                         alarm: alarm,
                         voiceName: voiceName(for: alarm),
+                        selectionMode: selectionMode,
+                        selected: selectedAlarmIDs.contains(alarm.id),
+                        onEnterSelection: { selectedAlarmIDs = [alarm.id] },
+                        onToggleSelected: {
+                            if selectedAlarmIDs.contains(alarm.id) {
+                                selectedAlarmIDs.remove(alarm.id)
+                            } else {
+                                selectedAlarmIDs.insert(alarm.id)
+                            }
+                        },
                         onTap: { openEditor(.edit(alarm.id)) },
                         onToggleEnabled: { enabled in
                             Task { await setAlarm(alarm, enabled: enabled) }
@@ -118,6 +148,17 @@ struct AlarmsListView: View {
             }
         }
     }
+    private var selectionMode: Bool { !selectedAlarmIDs.isEmpty }
+
+    /// 목록에서 사라진 알람(삭제·동기화)은 선택에서도 뺀다 — 안 그러면 '3개 선택' 인데
+    /// 실제로는 2개만 지워진다. 안드로이드 `AlarmListScreen.kt:143-146`.
+    private func pruneSelection() {
+        guard selectionMode else { return }
+        let present = Set(store.alarms.map(\.id))
+        let pruned = selectedAlarmIDs.intersection(present)
+        if pruned != selectedAlarmIDs { selectedAlarmIDs = pruned }
+    }
+
     /// 권한 한 줄 배너 — 탭하면 모달을 거치지 않고 곧바로 권한 요청으로 간다.
     /// 안드로이드 `ControlsAndPermissions.kt:188-217` 의 슬림 배너.
     ///

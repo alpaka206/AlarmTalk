@@ -12,6 +12,12 @@ struct AlarmRow: View {
     /// 둘째 줄에 붙는 '누구 목소리로 울리는지'. 이 앱에서 알람을 구분하는 고유 정보라
     /// 라벨 없는 목록에서 구분자 역할도 겸한다(안드로이드 `AlarmRow(voiceName=)`).
     var voiceName: String?
+    /// 다중 선택 모드인가. 켜지면 스위치 자리에 선택 표시가 들어간다.
+    var selectionMode: Bool = false
+    var selected: Bool = false
+    /// 길게 눌러 선택 모드로 들어간다(그 행을 첫 선택으로).
+    var onEnterSelection: () -> Void = {}
+    var onToggleSelected: () -> Void = {}
     let onTap: () -> Void
     let onToggleEnabled: (Bool) -> Void
     let onDelete: () -> Void
@@ -58,6 +64,11 @@ struct AlarmRow: View {
                 // 스와이프 드래그가 내부 Button(onTap)/Toggle 보다 우선하도록
                 // highPriorityGesture 로 부착한다.
                 .highPriorityGesture(swipeGesture)
+                // 길게 눌러 선택 모드로. 선택 모드에서는 이미 탭이 '고르기' 라 필요 없다.
+                .onLongPressGesture {
+                    guard !selectionMode else { return }
+                    onEnterSelection()
+                }
         }
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
     }
@@ -76,7 +87,7 @@ struct AlarmRow: View {
     private var rowContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 8) {
-                Button(action: onTap) {
+                Button(action: selectionMode ? onToggleSelected : onTap) {
                     VStack(alignment: .leading, spacing: 2) {
                         // 시각 앞에 오전/오후를 **작게** 붙이고 12시간제로 쓴다.
                         // 24시간제("19:30")로 되돌리지 말 것 — 안드로이드와 읽는 방식이 갈린다.
@@ -102,17 +113,25 @@ struct AlarmRow: View {
                 }
                 .buttonStyle(.plain)
 
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { alarm.enabled },
-                        set: { onToggleEnabled($0) }
+                if selectionMode {
+                    // 선택 모드에선 켜기/끄기 대신 선택 표시를 **같은 자리**에 둔다 —
+                    // 스위치가 남아 있으면 고르려다 알람을 꺼뜨린다.
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 24))
+                        .foregroundStyle(selected ? theme.palette.primary : theme.palette.outline)
+                } else {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { alarm.enabled },
+                            set: { onToggleEnabled($0) }
+                        )
                     )
-                )
-                .labelsHidden()
-                // iOS 기본 초록이 아니라 앱 팔레트를 쓴다 — 안드로이드 `AlarmTalkSwitch` 대응.
-                .tint(theme.palette.primary)
-                .accessibilityLabel(Text(alarm.enabled ? "알람 끄기" : "알람 켜기"))
+                    .labelsHidden()
+                    // iOS 기본 초록이 아니라 앱 팔레트를 쓴다 — 안드로이드 `AlarmTalkSwitch` 대응.
+                    .tint(theme.palette.primary)
+                    .accessibilityLabel(Text(alarm.enabled ? "알람 끄기" : "알람 켜기"))
+                }
             }
 
             if let warningText {
@@ -265,3 +284,45 @@ private extension LocalAlarmRecord {
     .preferredColorScheme(.dark)
 }
 #endif
+
+/// 선택 모드 상단 바 — 오른쪽에 [취소][삭제] 둘만.
+///
+/// 안드로이드 `AlarmListScreen.kt:382-407`. 선택 개수는 행마다 체크 표시로 이미 보이므로
+/// 숫자를 따로 쓰지 않고, 취소·삭제를 오른쪽에 나란히 둬 엄지 이동을 줄인다
+/// (되돌릴 수 없는 삭제가 바깥쪽).
+struct AlarmSelectionBar: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    let count: Int
+    let onCancel: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            Button("취소", action: onCancel)
+                .font(theme.typography.titleMedium)
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+
+            Button("삭제", action: onDelete)
+                .font(theme.typography.titleMedium.weight(.semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.palette.error)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .disabled(count == 0)
+        }
+        .frame(minHeight: 48)
+    }
+}
+
+/// 알람 탭이 다중 선택 모드인지 부모(MainTabsView)에 알리는 신호 — ＋FAB 를 숨긴다.
+struct AlarmSelectionActiveKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
