@@ -97,130 +97,34 @@ extension AlarmEditorSheet {
                             .buttonStyle(.bordered)
                         }
 
-                        // 무료 등급 + 시스템(스톡) 보이스 선택 시에만 기본 제공 음성
-                        // 목록을 노출한다 (Android `VoiceAudioCard.kt:195` freeVoiceTier
-                        // gate + `if (!isSystemVoice) return` 미러). greeting 카테고리는
-                        // 제외하고 선택 프로필로 스코프한다.
+                        // 무료 등급은 **테마(버킷)** 를 고른다 — 약 / 날씨.
+                        //
+                        // ⚠ **버킷 안의 개별 문구를 노출하지 말 것.** 예전 iOS 는 스톡
+                        // 클립 본문을 최대 3줄씩 행으로 나열했는데(`StockClipPicker`),
+                        // 그러면 매일 도는 회전 클립 중 하나를 '고른 문구' 로 오해하게
+                        // 된다. 안드로이드는 테마만 고르고 클립은 알람마다 순차 회전한다.
                         if freeVoiceTier && voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID) {
-                            StockClipPicker(
-                                clips: voiceStudio.stockClips.filter {
-                                    $0.voiceProfileId == voiceStudio.selectedProfileID &&
-                                        $0.category != StockClipPicker.greetingCategory
-                                },
-                                selectedMessageID: selectedStockMessageID,
-                                // 재생이 끝나면 play 아이콘으로 되돌아가도록 실제
-                                // 재생 중일 때만 previewing id 를 전달한다.
-                                previewingMessageID: editorPreviewPlayer.isPlaying ? previewingStockClipID : nil,
-                                // 다운로드 중인 클립에는 스피너를 띄운다(change 2).
-                                preparingMessageID: editorPreviewPlayer.isPreparing ? previewingStockClipID : nil,
-                                onPreview: { clip in Task { await previewStockClip(clip) } },
-                                onSelect: { clip in Task { await selectStockClip(clip) } }
+                            FreeThemeSummaryRow(
+                                selectedBucket: selectedFreeBucket,
+                                weatherCity: voiceStudio.weatherCity,
+                                onTap: { freeBucketPaneOpen = true }
                             )
                         }
 
-                        Toggle("랜덤 문구 사용", isOn: Binding(
-                            get: { voiceStudio.randomPrompt },
-                            set: { enabled in
-                                // 무료 등급은 직접 문구가 유료라서 랜덤 OFF 를 막고
-                                // 잠금 안내 후 켜진 상태를 유지한다 (Android `VoiceAudioCard.kt:245-247`).
-                                if freeVoiceTier && !enabled {
-                                    showVoicePlanLockedAlert()
-                                    return
-                                }
-                                voiceStudio.randomPrompt = enabled
-                                voiceStudio.preparedAlarm = nil
-                                if !enabled && !voiceStudio.translateText {
-                                    voiceStudio.ttsLanguage = "ko"
-                                }
-                            }
-                        ))
-                            .tint(theme.palette.primary)
-                        if voiceStudio.randomPrompt {
-                            // 무료 등급은 preset 컨텍스트로 고정 — 컨텍스트/언어/날씨·운세
-                            // 맞춤(유료)을 숨긴다 (Android `VoiceAudioCard.kt:279`).
-                            if freeVoiceTier {
-                                Text("무료에서는 시스템 목소리와 기본 랜덤 문구로 깨워드려요.")
-                                    .font(theme.typography.bodySmall)
-                                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                            } else {
-                            Picker("랜덤 컨텍스트", selection: $voiceStudio.randomContext) {
-                                ForEach(RandomPromptContext.alarmEditorCases, id: \.rawValue) { context in
-                                    Text(context.label).tag(context.rawValue)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .onChange(of: voiceStudio.randomContext) { _, _ in
-                                voiceStudio.preparedAlarm = nil
-                            }
-                            Picker("언어", selection: $voiceStudio.ttsLanguage) {
-                                ForEach(ttsLanguages, id: \.code) { option in
-                                    Text(option.label).tag(option.code)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .onChange(of: voiceStudio.ttsLanguage) { _, _ in
-                                voiceStudio.preparedAlarm = nil
-                            }
-                            // 컨텍스트별 안내 문구 (Android `AlarmRandomPromptSettings.kt:299-324`
-                            // RandomPromptContextDescription 미러). 선택한 상황마다 톤·내용을 한 줄로 설명한다.
-                            Text(activePromptContext.contextDescription)
+                        // ⚠ **'랜덤 문구 사용' 토글 + 컨텍스트 드롭다운으로 되돌리지 말 것.**
+                        // 그 구조에는 '직접 입력' 이 들어갈 자리가 없다 — 토글을 꺼야
+                        // 나오는 숨은 상태가 된다. 안드로이드는 여섯 갈래(기본 인사말·
+                        // 날씨·운세·사랑·약·직접 입력)를 한 목록에 같은 층위로 두고,
+                        // 요약 행을 눌러 그 화면으로 들어간다.
+                        if freeVoiceTier {
+                            Text("무료에서는 시스템 목소리와 기본 랜덤 문구로 깨워드려요.")
                                 .font(theme.typography.bodySmall)
                                 .foregroundStyle(theme.palette.onSurfaceVariant)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if activePromptContext.usesWeather {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("날씨 지역")
-                                        .font(theme.typography.titleSmall)
-                                    WeatherLocationInputFields(
-                                        country: $voiceStudio.weatherCountry,
-                                        city: $voiceStudio.weatherCity,
-                                        helperText: "날씨가 들어간 깨움말에 사용할 지역이에요."
-                                    )
-                                    if !voiceStudio.hasWeatherInfo || targetWeatherReady {
-                                        Text(targetWeatherReady ? "상대가 저장한 날씨 지역을 사용해요." : "날씨가 들어간 문구를 쓰려면 지역을 입력해 주세요.")
-                                            .font(theme.typography.bodySmall)
-                                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                                    }
-                                }
-                                .padding(.top, 4)
-                            }
-                            if activePromptContext.usesFortune {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("운세 정보")
-                                        .font(theme.typography.titleSmall)
-                                    FortunePromptInputFields(
-                                        gender: $voiceStudio.fortuneGender,
-                                        birthDate: $voiceStudio.fortuneBirthDate,
-                                        birthTime: $voiceStudio.fortuneBirthTime,
-                                        helperText: "운세가 들어간 깨움말을 만들 때만 사용해요."
-                                    )
-                                    if !voiceStudio.hasFortuneInfo || targetFortuneReady {
-                                        Text(targetFortuneReady ? "상대가 저장한 운세 정보를 사용해요." : "운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.")
-                                            .font(theme.typography.bodySmall)
-                                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                                    }
-                                }
-                                .padding(.top, 4)
-                            }
-                            } // end !freeVoiceTier (preset 컨텍스트 고정)
-                        // 직접 입력 pane 은 **유료 전용이고, 스톡 클립 알람에는 뜨면 안 된다.**
-                        //
-                        // 스톡 클립을 고른 알람은 저장 시 `voiceRandomPrompt = false` 가 되므로
-                        // (스톡 음원을 그대로 쓰려고 랜덤 생성을 끈다), `randomPrompt` 하나만 보고
-                        // '직접 입력' 으로 판정하면 **다시 열 때 유료 전용 입력창이 클립 문구가
-                        // 채워진 채 뜬다.** 거기서 한 글자만 고쳐도 `onInvalidatePreparedAudio` 가
-                        // preparedAlarm 을 날려, 저장 시 고른 클립도 방금 친 문구도 없이 일반
-                        // 프리셋 랜덤 알람으로 조용히 덮인다.
-                        //
-                        // 안드로이드도 같은 이유로 판정식을 `!voiceRandomPrompt && !isActiveBucketAlarm()`
-                        // 으로 통일했다(CLAUDE.md — 「한 곳만 고치지 말 것」).
-                        } else if !freeVoiceTier && !isActiveStockClipAlarm {
-                            ManualVoiceMessageEditor(
-                                text: $voiceStudio.ttsText,
-                                translationEnabled: $voiceStudio.translateText,
-                                language: $voiceStudio.ttsLanguage,
-                                onInvalidatePreparedAudio: { voiceStudio.preparedAlarm = nil }
+                        } else {
+                            MessageModeSummaryRow(
+                                context: currentMessageContext,
+                                manualText: voiceStudio.ttsText,
+                                onTap: { messagePaneOpen = true }
                             )
                         }
                     } else {

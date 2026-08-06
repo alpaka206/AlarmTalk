@@ -47,6 +47,12 @@ struct AlarmEditorSheet: View {
     /// 세부 설정 카드가 여는 상세 화면.
     @State private var settingsPane: AlarmSettingsPane?
 
+    /// '문구' 요약 행이 여는 화면.
+    @State var messagePaneOpen = false
+
+    /// 무료 테마(버킷) 선택 화면.
+    @State var freeBucketPaneOpen = false
+
     @State var draft: AlarmEditDraft = .newDefault()
     @State var didLoadInitial = false
     @State var validationAlert: ValidationAlertContent?
@@ -271,6 +277,27 @@ struct AlarmEditorSheet: View {
                 saveEnabled: editorSaveBlockedReason == nil,
                 onCancel: onClose,
                 onSave: { Task { await saveFlow() } }
+            )
+        }
+        .navigationDestination(isPresented: $freeBucketPaneOpen) {
+            FreeBucketSettingsPane(
+                available: availableFreeBuckets,
+                initialSelection: selectedFreeBucket,
+                onSave: { bucket in Task { await selectFreeBucket(bucket) } }
+            )
+        }
+        .navigationDestination(isPresented: $messagePaneOpen) {
+            MessageSettingsPane(
+                initialContext: currentMessageContext,
+                initialManualText: voiceStudio.ttsText,
+                manualRemaining: nil,
+                manualLimit: nil,
+                savedWeatherCountry: voiceStudio.weatherCountry,
+                savedWeatherCity: voiceStudio.weatherCity,
+                savedFortuneGender: voiceStudio.fortuneGender,
+                savedFortuneBirthDate: voiceStudio.fortuneBirthDate,
+                savedFortuneBirthTime: voiceStudio.fortuneBirthTime,
+                onSave: applyMessageSettings
             )
         }
         .navigationDestination(item: $settingsPane) { pane in
@@ -660,6 +687,71 @@ struct AlarmEditorSheet: View {
             return existing?.voiceListenerTitle
         }
         return voiceStudio.selectedListenerTitle
+    }
+
+    /// 이 목소리로 쓸 수 있는 무료 테마. 서버가 내려준 스톡 클립의 카테고리에서 뽑되,
+    /// 순서는 안드로이드 `FreeBucketOrder` 를 따른다.
+    var availableFreeBuckets: [FreeBucket] {
+        let categories = Set(
+            voiceStudio.stockClips
+                .filter { $0.voiceProfileId == voiceStudio.selectedProfileID }
+                .compactMap(\.category)
+        )
+        let resolved = FreeBucket.order.filter { categories.contains($0.rawValue) }
+        // 서버 응답이 아직 없으면 목록이 비는데, 그때도 고를 수는 있어야 한다.
+        return resolved.isEmpty ? FreeBucket.order : resolved
+    }
+
+    /// 지금 고른 테마 — 준비된 클립의 카테고리에서 되짚는다.
+    var selectedFreeBucket: FreeBucket? {
+        guard let id = selectedStockMessageID,
+              let clip = voiceStudio.stockClips.first(where: { $0.id == id }),
+              let category = clip.category
+        else { return nil }
+        return FreeBucket(rawValue: category)
+    }
+
+    /// 테마를 고르면 그 안의 첫 클립을 준비한다(회전은 울릴 때마다 서버·로컬이 이어받는다).
+    func selectFreeBucket(_ bucket: FreeBucket) async {
+        let clips = voiceStudio.stockClips.filter {
+            $0.voiceProfileId == voiceStudio.selectedProfileID && $0.category == bucket.rawValue
+        }
+        guard let clip = clips.first else {
+            voiceStudio.statusMessage = "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요."
+            return
+        }
+        await selectStockClip(clip)
+    }
+
+    /// 지금 고른 문구 갈래 — 요약 행과 문구 화면이 함께 읽는다.
+    ///
+    /// ⚠ **판정식은 `!randomPrompt && !isActiveStockClipAlarm` 이다.** `randomPrompt`
+    /// 하나만 보면 스톡 클립(버킷) 알람이 '직접 입력' 으로 읽힌다 — 저장 시
+    /// `voiceRandomPrompt = false` 가 되기 때문이다. 그러면 다시 열었을 때 요약 행은
+    /// '사랑' 인데 눌러 열면 '직접 입력' 이 되고, 거기서 한 글자만 고쳐도 고른 클립도
+    /// 방금 친 문구도 없이 일반 프리셋 알람으로 조용히 덮인다(CLAUDE.md 규약).
+    var currentMessageContext: String {
+        if !voiceStudio.randomPrompt && !isActiveStockClipAlarm {
+            return MessageSettingsResult.manualContext
+        }
+        return voiceStudio.randomContext
+    }
+
+    /// 문구 화면의 저장 — 최종 반영은 여기 한 곳이다.
+    func applyMessageSettings(_ result: MessageSettingsResult) {
+        voiceStudio.preparedAlarm = nil
+        if result.isManual {
+            voiceStudio.randomPrompt = false
+            voiceStudio.ttsText = result.manualText
+        } else {
+            voiceStudio.randomPrompt = true
+            voiceStudio.randomContext = result.context
+        }
+        voiceStudio.weatherCountry = result.weatherCountry
+        voiceStudio.weatherCity = result.weatherCity
+        voiceStudio.fortuneGender = result.fortuneGender
+        voiceStudio.fortuneBirthDate = result.fortuneBirthDate
+        voiceStudio.fortuneBirthTime = result.fortuneBirthTime
     }
 
     /// 세부 설정 카드의 '다시 알림' 요약.
