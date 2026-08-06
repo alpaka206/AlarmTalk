@@ -16,7 +16,7 @@
     <string name="auth_consent_terms">［必須］利用規約に同意</string>
     <string name="auth_consent_title">サービスをご利用いただくために\n規約に同意してください</string>
     <string name="auth_consent_voice_biometric">［任意］音声生体情報の処理に同意</string>
-    <string name="auth_consent_voice_biometric_desc">自分の声をアラームに使いたい場合にのみ必要です。録音またはアップロードした声を音声プロフィール作成・音声クローン・TTS生成に使用し、個人を識別または再現し得る生体情報として処理します。同意しなくても標準の声のアラームはそのまま使え、声を登録するときに改めてお伺いします。</string>
+    <string name="auth_consent_voice_biometric_desc">自分の声をアラームに使いたい場合にのみ必要です。\n録音またはアップロードした声を音声プロフィール作成・音声クローン・TTS生成に使用し、個人を識別または再現し得る生体情報として処理します。\n同意しなくても標準の声のアラームはそのまま使え、声を登録するときに改めてお伺いします。</string>
     <string name="auth_already_have_account">すでにアカウントをお持ちですか？</string>
     <string name="auth_create_account">新規登録</string>
     <string name="auth_email_verify">メール認証</string>

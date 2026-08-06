@@ -18,7 +18,7 @@
     <string name="auth_consent_terms">[필수] 이용약관 동의</string>
     <string name="auth_consent_title">서비스 이용을 위해\n약관에 동의해 주세요</string>
     <string name="auth_consent_voice_biometric">[선택] 음성 생체정보 처리 동의</string>
-    <string name="auth_consent_voice_biometric_desc">내 목소리를 알람에 쓰고 싶을 때만 필요해요. 녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다. 지금 동의하지 않아도 기본 목소리 알람은 그대로 쓸 수 있고, 나중에 목소리를 등록할 때 다시 여쭤봐요.</string>
+    <string name="auth_consent_voice_biometric_desc">내 목소리를 알람에 쓰고 싶을 때만 필요해요.\n녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다.\n지금 동의하지 않아도 기본 목소리 알람은 그대로 쓸 수 있고, 나중에 목소리를 등록할 때 다시 여쭤봐요.</string>
     <string name="auth_already_have_account">이미 계정이 있나요?</string>
     <string name="auth_create_account">회원가입</string>
     <string name="auth_email_verify">이메일 인증</string>

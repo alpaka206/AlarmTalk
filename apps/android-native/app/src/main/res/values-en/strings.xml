@@ -16,7 +16,7 @@
     <string name="auth_consent_terms">[Required] Agree to Terms of Service</string>
     <string name="auth_consent_title">Please agree to the terms\nto use the service</string>
     <string name="auth_consent_voice_biometric">[Optional] Agree to voice biometric processing</string>
-    <string name="auth_consent_voice_biometric_desc">Only needed if you want to use your own voice for alarms. Recorded or uploaded voices are used to create voice profiles, clone voices, and generate TTS, and are processed as biometric information that can identify or reproduce a person. Declining keeps the built-in voices working, and we will ask again when you register a voice.</string>
+    <string name="auth_consent_voice_biometric_desc">Only needed if you want to use your own voice for alarms.\nRecorded or uploaded voices are used to create voice profiles, clone voices, and generate TTS, and are processed as biometric information that can identify or reproduce a person.\nDeclining keeps the built-in voices working, and we will ask again when you register a voice.</string>
     <string name="auth_already_have_account">Already have an account?</string>
     <string name="auth_create_account">Sign up</string>
     <string name="auth_email_verify">Verify email</string>

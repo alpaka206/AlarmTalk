@@ -201,7 +201,15 @@ struct ConsentView: View {
                 checked: checked.contains(type),
                 onToggle: toggle,
                 label: prefix + "음성 생체정보 처리 동의",
-                description: "녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다."
+                // ⚠ 안드로이드 `auth_consent_voice_biometric_desc` 와 **같은 세 문장**이다.
+                // iOS 는 가운데 한 문장만 있어서, "안 해도 기본 목소리는 그대로 쓸 수 있다" 는
+                // 안심시키는 맥락이 빠져 있었다 — 그게 없으면 선택 동의가 필수처럼 읽힌다.
+                // 마침표마다 줄을 바꿔 문장이 한눈에 끊기게 한다.
+                description: """
+                내 목소리를 알람에 쓰고 싶을 때만 필요해요.
+                녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다.
+                지금 동의하지 않아도 기본 목소리 알람은 그대로 쓸 수 있고, 나중에 목소리를 등록할 때 다시 여쭤봐요.
+                """
             )
         case "overseas_transfer":
             ConsentRow(
