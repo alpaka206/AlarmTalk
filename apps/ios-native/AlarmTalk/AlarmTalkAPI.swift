@@ -459,21 +459,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 자동 catch-up 된다.
     func confirmAppleSubscription(
         transactionID: String,
-        originalTransactionID: String,
-        productID: String,
-        jwsRepresentation: String?,
         token: String
     ) async throws -> ConfirmAppleSubscriptionResponse {
         try await request(
             "billing/apple/confirm",
             method: "POST",
             token: token,
-            body: ConfirmAppleSubscriptionRequest(
-                transactionId: transactionID,
-                originalTransactionId: originalTransactionID,
-                productId: productID,
-                jwsRepresentation: jwsRepresentation.nilIfBlank
-            )
+            body: ConfirmAppleSubscriptionRequest(transactionId: transactionID)
         )
     }
 

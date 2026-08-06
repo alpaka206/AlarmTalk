@@ -933,25 +933,19 @@ struct FamilyAlarmTalkResponse: Decodable, Equatable {
 
 /// Apple StoreKit 영수증 검증을 백엔드에 위임하기 위한 페이로드.
 ///
-/// 백엔드는 Apple 의 verifyReceipt / App Store Server API 를 사용해 transaction
-/// 의 진위와 만료일을 확인한 뒤, 자체 `subscriptions` 테이블에 plan key 매핑을
-/// 기록한다. 라우트: `POST /api/billing/apple/confirm`.
+/// `POST /api/billing/apple/confirm` 요청.
 ///
-/// 라우트가 미구현이거나 일시적으로 다운된 경우 클라이언트는 graceful
-/// degradation — StoreKit 영수증 자체가 권위이므로 currentTier 는 이미 정확.
+/// **보내는 것은 `transaction_id` 하나뿐이다.** 서버는 그 id 로 App Store Server API 에
+/// **직접 물어서** 상품·만료·환불 여부를 확인한다(`routes/billing-apple.ts`).
+/// 클라가 주장하는 상품/원본 트랜잭션/JWS 를 믿지 않는 것이 요점이라, 보내 봐야
+/// 서버가 읽지 않는다 — 읽지 않는 값을 보내면 "서버가 이걸 본다" 는 오해만 남는다.
 struct ConfirmAppleSubscriptionRequest: Encodable {
     var transactionId: String
-    var originalTransactionId: String
-    var productId: String
-    /// StoreKit2 `VerificationResult.jwsRepresentation` — Apple 이 서명한 raw JWS.
-    /// 서버가 App Store Server API 호출 없이도 서명 검증으로 트랜잭션 진위를
-    /// 확인할 수 있도록 동봉한다. snake_case 인코딩으로 `jws_representation` 전송.
-    var jwsRepresentation: String?
 }
 
 /// `POST /api/billing/apple/confirm` 성공 응답.
 /// `{ success: true, plan_key: string, subscription: {...} }` 형태.
-/// 라우트 미구현(501)/점검(503) 시에는 본 디코드에 도달하지 않는다.
+/// 서버 구성값(APPLE_*)이 없으면 503 이라 본 디코드에 도달하지 않는다.
 struct ConfirmAppleSubscriptionResponse: Decodable, Equatable {
     /// 서버 측 검증 + entitlement upsert 성공 여부.
     var success: Bool

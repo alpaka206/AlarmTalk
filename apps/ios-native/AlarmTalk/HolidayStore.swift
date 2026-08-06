@@ -390,12 +390,6 @@ final class HolidayStore: ObservableObject {
         upsertAll(collected)
     }
 
-    /// 서버 sync 진입점 placeholder. Phase 2-B3 또는 별도 작업에서 호출자가 구현.
-    /// 시그니처만 정의해두고 구현은 미룬다.
-    func syncFromRemote(_ remoteHolidays: [HolidayEntity]) {
-        upsertAll(remoteHolidays)
-    }
-
     func upsertAll(_ items: [HolidayEntity]) {
         var bucket = holidays
         for item in items {

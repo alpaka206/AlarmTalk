@@ -114,8 +114,7 @@ final class SubscriptionManager: ObservableObject {
             case .success(let verificationResult):
                 let transaction = try checkVerified(verificationResult)
                 await syncWithBackend(
-                    transaction: transaction,
-                    jwsRepresentation: verificationResult.jwsRepresentation
+                    transaction: transaction
                 )
                 await transaction.finish()
                 await refreshPurchasedProducts()
@@ -212,8 +211,7 @@ final class SubscriptionManager: ObservableObject {
         for await result in Transaction.currentEntitlements {
             guard let transaction = try? checkVerified(result) else { continue }
             await syncWithBackend(
-                transaction: transaction,
-                jwsRepresentation: result.jwsRepresentation
+                transaction: transaction
             )
         }
     }
@@ -240,8 +238,7 @@ final class SubscriptionManager: ObservableObject {
                 do {
                     let transaction = try await self.verifyInIsolated(result)
                     await self.syncWithBackend(
-                        transaction: transaction,
-                        jwsRepresentation: result.jwsRepresentation
+                        transaction: transaction
                     )
                     await transaction.finish()
                     await self.refreshPurchasedProducts()
@@ -287,20 +284,18 @@ final class SubscriptionManager: ObservableObject {
     ///     보장되며, 백엔드 동기화는 라우트 배포 후 자동으로 catch-up 된다.
     ///
     /// 페이로드에는 transaction id 들과 함께 `jws_representation`
-    /// (`VerificationResult.jwsRepresentation` — Apple 이 서명한 raw JWS) 을 동봉해
+    /// 서버는 transaction id 로 애플에 직접 물어본다 —
     /// 서버가 서명 검증만으로 트랜잭션 진위를 확인할 수 있게 한다.
-    private func syncWithBackend(transaction: Transaction, jwsRepresentation: String?) async {
+    private func syncWithBackend(transaction: Transaction) async {
         guard let session = authProvider() else {
             // 로그아웃 상태에서 가족공유 등으로 들어온 트랜잭션. 재로그인 후
             // resyncEntitlements 로 catch-up 한다.
             return
         }
         do {
+            // 서버는 이 id 로 애플에 직접 물어본다 — 상품·만료·환불은 그 응답이 권위다.
             let response = try await api.confirmAppleSubscription(
                 transactionID: String(transaction.id),
-                originalTransactionID: String(transaction.originalID),
-                productID: transaction.productID,
-                jwsRepresentation: jwsRepresentation,
                 token: session.token
             )
             self.lastError = nil
@@ -309,11 +304,11 @@ final class SubscriptionManager: ObservableObject {
                 // 클라이언트 측 서버 구독 상태도 새로고침한다.
                 await onServerEntitlementUpdated?()
             }
-        } catch APIError.server(let status, _, _) where status == 501 || status == 503 {
-            // 라우트 미구현(501) / 일시 점검(503) — 비파괴 처리. StoreKit 영수증이
-            // 권위이므로 로컬 entitlement(currentTier) 는 그대로 유지하고, 사용자
-            // 노출 에러 없이 다음 foreground 사이클의 resyncEntitlements 가
-            // 자동 catch-up 한다.
+        } catch APIError.server(let status, _, _) where status == 503 {
+            // 서버 구성값(APPLE_ISSUER_ID/KEY_ID/PRIVATE_KEY/BUNDLE_ID) 미설정 또는 일시
+            // 점검 — 비파괴 처리. StoreKit 영수증이 권위이므로 로컬 entitlement 는 그대로
+            // 두고, 다음 foreground 사이클의 resyncEntitlements 가 자동 catch-up 한다.
+            // (501 은 라우트가 없던 시절의 잔재라 뺐다 — 지금은 라우트가 있다.)
         } catch {
             self.lastError = "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다."
         }

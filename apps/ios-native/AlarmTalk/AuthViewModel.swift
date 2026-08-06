@@ -415,9 +415,8 @@ final class AuthViewModel: ObservableObject {
             case .invalidResponse:
                 lastNetworkError = "서버 응답을 해석하지 못했어요."
             }
-        } catch let urlError as URLError {
+        } catch is URLError {
             // 네트워크 끊김, 타임아웃 등 — 세션 보존
-            _ = urlError // 추후 카테고리별 메시지 분기를 위해 keep
             lastNetworkError = "네트워크 연결을 확인해 주세요."
         } catch {
             // 알 수 없는 에러 — 보수적으로 세션 보존

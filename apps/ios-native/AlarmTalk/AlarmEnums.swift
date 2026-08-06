@@ -150,8 +150,11 @@ extension Array where Element == RepeatDay {
 // MARK: - Audio Duration Limits
 // Android: `AlarmAudioStore.kt:21-29`
 enum AlarmAudioLimits {
-    /// 알람 재생 음원의 최대 길이. 본 Phase 에서는 메타에만 기록하고,
-    /// trim 자체는 Phase 2-B4 또는 추후. 단 cacheBytes 시 한도를 넘으면 throw.
+    /// 알람 재생 음원의 최대 길이(AlarmKit 커스텀 사운드 상한).
+    ///
+    /// 초과분은 `AudioCacheStore.trimCachedAudioIfNeeded` 가 앞 30초로 잘라 낸다.
+    /// 서버가 길이를 보장하는 TTS·스톡 클립은 `enforceMaxDuration: false` 로 받아
+    /// 한도를 메타에만 기록한다(트림이 필요하면 그때 발화).
     static let maxDurationMillis: Int64 = 30_000
 
     /// `MediaMetadataRetriever` 가 ms 단위 끝자리에서 들쭉날쭉할 수 있어
