@@ -246,7 +246,7 @@
     <string name="editor_voice_repeat_title">반복 재생</string>
     <string name="editor_voice_select">목소리 선택</string>
     <string name="editor_voice_source_local">직접 녹음</string>
-    <string name="editor_voice_local_detail">내가 녹음한 목소리</string>
+    <string name="editor_voice_local_detail">이 알람에만 쓸 소리를 직접 녹음하기</string>
     <string name="editor_voice_volume">목소리 크기</string>
     <string name="editor_volume">볼륨</string>
     <string name="editorp_fortune_birthdate_placeholder">탭하여 생년월일 선택</string>

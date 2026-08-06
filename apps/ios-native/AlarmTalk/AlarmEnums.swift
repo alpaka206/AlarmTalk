@@ -22,7 +22,10 @@ enum AlarmPlayMode: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// 화면에 그리는 순서. 세그먼트 컨트롤이 이 순서로 좌→우.
-    static let pickerCases: [AlarmPlayMode] = [.alarmOnly, .voiceOnly]
+    /// ⚠ **목소리가 먼저다** — 목소리 알람 앱이고 새 알람의 기본값도 목소리라
+    /// (`defaultPlayModeForPlan`), 읽는 순서와 기본 선택을 맞춘다. 안드로이드
+    /// `PlayModeSelector` 와 같은 순서여야 한다.
+    static let pickerCases: [AlarmPlayMode] = [.voiceOnly, .alarmOnly]
 
     /// 옛 값 호환: `sound_then_voice` / `alarm_voice` 는 목소리로 읽는다(위 주석 참조).
     static func decode(_ raw: String) -> AlarmPlayMode {

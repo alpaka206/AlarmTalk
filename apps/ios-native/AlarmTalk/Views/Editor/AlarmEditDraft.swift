@@ -41,7 +41,9 @@ struct AlarmEditDraft: Equatable {
 
     // MARK: - 신규 생성 default
 
-    static func newDefault(defaultPlayMode: AlarmPlayMode = .alarmOnly) -> AlarmEditDraft {
+    /// ⚠ 기본 인자가 **목소리**다. 우리는 목소리 알람 앱이라 새 알람은 목소리로 연다
+    /// — 무료 등급 잠금은 호출부(`defaultPlayModeForPlan`)가 판단한다.
+    static func newDefault(defaultPlayMode: AlarmPlayMode = .voiceOnly) -> AlarmEditDraft {
         return AlarmEditDraft(
             label: "",
             hour: 6,

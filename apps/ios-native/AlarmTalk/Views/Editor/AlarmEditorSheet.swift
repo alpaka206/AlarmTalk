@@ -45,7 +45,7 @@ struct AlarmEditorSheet: View {
     // MARK: - Form state
 
     /// 세부 설정 카드가 여는 상세 화면.
-    @State private var settingsPane: AlarmSettingsPane?
+    @State var settingsPane: AlarmSettingsPane?
 
     /// '문구' 요약 행이 여는 화면.
     @State var messagePaneOpen = false
@@ -569,9 +569,16 @@ struct AlarmEditorSheet: View {
             minute: draft.minute,
             referenceMillis: now
         )
-        return Self.repeatSummaryDateFormatter.string(
-            from: Date(timeIntervalSince1970: TimeInterval(fireAt) / 1000.0)
-        )
+        // ⚠ **'오늘'/'내일' 을 앞에 붙인다**(안드로이드 `editor2_repeat_today/tomorrow`).
+        // 날짜만 있으면 "8월 7일" 이 오늘인지 내일인지 머릿속으로 계산해야 한다 —
+        // 알람은 '언제 울리나' 가 전부라 그 한 단어가 실제로 정보를 준다.
+        let fireDate = Date(timeIntervalSince1970: TimeInterval(fireAt) / 1000.0)
+        let label = Self.repeatSummaryDateFormatter.string(from: fireDate)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "ko_KR")
+        if calendar.isDateInToday(fireDate) { return "오늘 - \(label)" }
+        if calendar.isDateInTomorrow(fireDate) { return "내일 - \(label)" }
+        return label
     }
 
     /// "한 번만" 알람의 다음 발화 날짜 표기(예: 6월 21일 (토)). 매 호출 생성 비용을 피하려 static.

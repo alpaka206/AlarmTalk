@@ -244,7 +244,7 @@
     <string name="editor_voice_repeat_title">繰り返し再生</string>
     <string name="editor_voice_select">声を選択</string>
     <string name="editor_voice_source_local">自分で録音</string>
-    <string name="editor_voice_local_detail">自分で録音した声</string>
+    <string name="editor_voice_local_detail">このアラームだけに使う音をその場で録音</string>
     <string name="editor_voice_volume">声の大きさ</string>
     <string name="editor_volume">音量</string>
     <string name="editorp_fortune_birthdate_placeholder">タップして生年月日を選択</string>

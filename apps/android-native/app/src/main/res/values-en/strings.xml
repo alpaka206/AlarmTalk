@@ -244,7 +244,7 @@
     <string name="editor_voice_repeat_title">Repeat playback</string>
     <string name="editor_voice_select">Select voice</string>
     <string name="editor_voice_source_local">Record it</string>
-    <string name="editor_voice_local_detail">Your own recorded voice</string>
+    <string name="editor_voice_local_detail">Record a sound just for this alarm</string>
     <string name="editor_voice_volume">Voice volume</string>
     <string name="editor_volume">Volume</string>
     <string name="editorp_fortune_birthdate_placeholder">Tap to pick your date of birth</string>
