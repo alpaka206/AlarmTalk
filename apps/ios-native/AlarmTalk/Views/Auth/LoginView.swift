@@ -84,20 +84,24 @@ struct LoginView: View {
     }
 
     var body: some View {
-        ZStack {
-            theme.palette.background.ignoresSafeArea()
+        AuthBackdrop {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    ModePicker(mode: $mode, onChange: handleModeChange)
+                    // 안드로이드는 세그먼트 피커가 없다(AuthScreen.kt:215-232) — 화면 안에
+                    // 제목을 두고, 로그인↔가입은 **맨 아래 전환 행**에서 고른다. 피커를
+                    // 위에 두면 아직 계정이 있는지도 모르는 사람에게 먼저 답을 강요하게 된다.
+                    Text(mode == .login ? "로그인" : "회원가입")
+                        .font(theme.typography.headlineSmall)
+                        .fontWeight(.bold)
+                        .foregroundStyle(AuthSceneColors.text)
                         .padding(.top, 6)
 
-                    // Android `AuthScreen.kt:111` 과 동일한 문구.
                     Text(mode == .login
                          ? "좋아하는 목소리 알람을 다시 불러올게요."
                          : "목소리 알람을 만들 계정을 준비해요.")
                         .font(theme.typography.bodyMedium)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .foregroundStyle(AuthSceneColors.textDim)
 
                     if mode == .register {
                         nameField
@@ -132,26 +136,20 @@ struct LoginView: View {
                     if let message = auth.statusMessage {
                         Text(message)
                             .font(theme.typography.bodySmall)
-                            .foregroundStyle(theme.palette.error)
+                            .foregroundStyle(AuthSceneColors.error)
                             .padding(.top, 4)
                     }
+
+                    modeSwitchRow
                 }
                 .padding(.horizontal, 22)
                 .padding(.vertical, 18)
             }
         }
-        .navigationTitle(mode == .login ? "로그인" : "회원가입")
+        // 제목은 화면 **안**에 있다(위 Text) — 네비게이션 바에 또 그리면 같은 말이 두 번 나온다.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.backward")
-                }
-                .accessibilityLabel("뒤로")
-            }
-        }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .navigationDestination(isPresented: $showPasswordReset) {
             PasswordResetView()
         }
@@ -194,7 +192,10 @@ struct LoginView: View {
     }
 
     private var verifyEmailRow: some View {
-        Button {
+        AuthOutlinedButton(
+            title: verificationLabel,
+            enabled: !auth.isBusy && emailLooksValid && !isEmailVerifiedForCurrentInput
+        ) {
             Task {
                 await auth.requestEmailVerification(email: normalizedEmail)
                 // 발송이 성공했을 때만 코드 입력 단계를 노출한다. 중복 이메일(AUTH_EMAIL_TAKEN)
@@ -202,13 +203,7 @@ struct LoginView: View {
                 // 뜨지 않는다. Android 는 codeSentForEmail 을 발송 성공 시에만 세팅한다.
                 verificationSent = (auth.statusMessage == Self.verificationCodeSentMessage)
             }
-        } label: {
-            Text(verificationLabel)
-                .font(theme.typography.labelLarge)
-                .frame(maxWidth: .infinity, minHeight: 54)
         }
-        .buttonStyle(.bordered)
-        .disabled(auth.isBusy || !emailLooksValid || isEmailVerifiedForCurrentInput)
     }
 
     private var verificationLabel: String {
@@ -246,18 +241,25 @@ struct LoginView: View {
                 } label: {
                     Text("확인")
                         .font(theme.typography.labelLarge)
+                        .foregroundStyle(confirmCodeEnabled ? AuthSceneColors.text : Color.white.opacity(0x59 / 255.0))
                         .padding(.vertical, 16)
                         .padding(.horizontal, 18)
                 }
-                .buttonStyle(.bordered)
-                .disabled(auth.isBusy || verificationCode.count != 6)
+                .buttonStyle(.plain)
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                        .stroke(confirmCodeEnabled ? AuthSceneColors.line : AuthSceneColors.lineSoft, lineWidth: 1)
+                )
+                .disabled(!confirmCodeEnabled)
             }
 
             Text("메일로 받은 6자리 코드를 입력해 주세요.")
                 .font(theme.typography.bodySmall)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .foregroundStyle(AuthSceneColors.textDim)
         }
     }
+
+    private var confirmCodeEnabled: Bool { !auth.isBusy && verificationCode.count == 6 }
 
     private var passwordField: some View {
         VocaSecureField(
@@ -294,7 +296,11 @@ struct LoginView: View {
     }
 
     private var submitButton: some View {
-        Button {
+        GradientCta(
+            title: mode == .login ? "로그인" : "계정 만들기",
+            enabled: canSubmit,
+            loading: auth.isBusy
+        ) {
             Task {
                 if mode == .login {
                     await auth.loginWithEmail(email: normalizedEmail, password: password)
@@ -307,17 +313,26 @@ struct LoginView: View {
                     )
                 }
             }
-        } label: {
-            Text(auth.isBusy ? "처리 중" : (mode == .login ? "로그인" : "계정 만들기"))
-                .font(theme.typography.labelLarge)
-                .frame(maxWidth: .infinity, minHeight: 54)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(theme.palette.primary)
-        .foregroundStyle(theme.palette.onPrimary)
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-        .disabled(!canSubmit)
         .padding(.top, 4)
+    }
+
+    /// 로그인 ↔ 회원가입 전환 — 안드로이드 `AuthScreen.kt:533-553` 의 하단 행.
+    private var modeSwitchRow: some View {
+        HStack(spacing: 2) {
+            Spacer(minLength: 0)
+            Text(mode == .login ? "처음 사용하시나요?" : "이미 계정이 있나요?")
+                .font(theme.typography.bodyMedium)
+                .foregroundStyle(AuthSceneColors.textMuted)
+            Button(mode == .login ? "회원가입" : "로그인") {
+                handleModeChange(mode == .login ? .register : .login)
+            }
+            .font(theme.typography.bodyMedium)
+            .tint(AuthSceneColors.accent)
+            .disabled(auth.isBusy)
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 6)
     }
 
     /// 비밀번호 찾기 진입 — 로그인 모드에서만 노출. Android `AuthScreen.kt:314-328`.

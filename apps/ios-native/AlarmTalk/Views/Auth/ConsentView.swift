@@ -172,7 +172,7 @@ struct ConsentView: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(AlarmTalkTheme.background)
+        .background(AuthBackdrop { Color.clear })
         .task(id: prechecked) {
             // ⚠ **이미 동의해 둔 것을 초기 체크로 보여준다.** 안 하면 이미 동의한 사용자가
             // 화면을 그냥 지나가는 순간 그 동의가 `false` 로 제출돼 조용히 사라진다.

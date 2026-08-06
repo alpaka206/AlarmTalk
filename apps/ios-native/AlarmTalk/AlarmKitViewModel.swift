@@ -382,6 +382,13 @@ final class AlarmKitViewModel: ObservableObject {
 
     @discardableResult
     func schedule(record: LocalAlarmRecord, store: LocalAlarmStore) async -> Bool {
+        // UI 미리보기 모드에서는 실제 예약을 하지 않는다 — 화면을 보려는 것이지 알람을
+        // 걸려는 게 아니다. 권한 프롬프트가 떠서 화면을 가리는 것도 막는다.
+        if UIPreviewSeed.isEnabled {
+            alarmAuthorized = true
+            authorizationLabel = "허용됨"
+            return true
+        }
         #if canImport(AlarmKit)
         do {
             if AlarmManager.shared.authorizationState != .authorized {

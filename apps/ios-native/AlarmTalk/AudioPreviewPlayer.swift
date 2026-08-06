@@ -50,6 +50,31 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
         scheduleAutoStop(after: stopAfterMs)
     }
 
+    /// 재생 진행률(0…1). 재생할 것이 없으면 0. 랜딩 미리듣기 파형이 읽는다.
+    var playbackProgress: Double {
+        guard let player, player.duration > 0 else { return 0 }
+        return min(1, max(0, player.currentTime / player.duration))
+    }
+
+    /// 위치를 지키며 잠시 멈춘다. [stop] 과 달리 플레이어를 버리지 않으므로 [resume] 이
+    /// 이어서 재생한다(랜딩 미리듣기의 일시정지).
+    func pause() {
+        cancelAutoStop()
+        player?.pause()
+        isPlaying = false
+    }
+
+    /// [pause] 로 멈춘 재생을 이어서 시작한다. 멈춰 둔 플레이어가 없으면 `false`.
+    @discardableResult
+    func resume() -> Bool {
+        guard let player else { return false }
+        // 끝까지 들은 뒤 다시 누르면 처음부터.
+        if player.currentTime >= player.duration - 0.05 { player.currentTime = 0 }
+        player.play()
+        isPlaying = true
+        return true
+    }
+
     func stop() {
         cancelAutoStop()
         player?.stop()

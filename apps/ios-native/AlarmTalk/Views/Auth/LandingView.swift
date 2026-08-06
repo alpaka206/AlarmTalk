@@ -19,58 +19,59 @@ struct LandingView: View {
     @State private var navigateToLogin: LoginMode?
 
     var body: some View {
-        ZStack {
-            theme.palette.background
-                .ignoresSafeArea()
-
+        SunriseBackdrop {
             VStack(alignment: .leading, spacing: 0) {
                 Color.clear.frame(height: 16)
 
-                WakerBrandHeader()
+                // 안드로이드는 로고 이미지 없이 워드마크 텍스트 하나다
+                // (LandingScreen.kt:162-168). iOS 의 그라데이션 박스 + waveform 은
+                // **지금은 없는 옛 안드로이드**(WakerBrandHeader)를 베낀 것이었다.
+                Text("AlarmTalk")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(AuthSceneColors.text.opacity(0.94))
 
                 Color.clear.frame(height: 18)
 
-                Text("좋아하는 목소리로\n깨어나는 알람")
-                    .font(theme.typography.displaySmall)
-                    .foregroundStyle(theme.palette.onBackground)
+                // 강조는 **가운데 키워드만**, 색만 다르고 굵기는 같다(둘 다 Bold).
+                (Text("좋아하는 ")
+                    + Text("목소리").foregroundColor(AuthSceneColors.accent)
+                    + Text("로\n깨어나는 아침"))
+                    .font(.system(size: 32, weight: .bold))
+                    .foregroundStyle(AuthSceneColors.text)
                     .multilineTextAlignment(.leading)
+
+                Color.clear.frame(height: 10)
+
+                Text("매일 아침, 그 목소리가 새로운 한마디로 깨워드려요.")
+                    .font(theme.typography.bodyMedium)
+                    .foregroundStyle(AuthSceneColors.textDim)
 
                 // Android 의 weight(1) 스페이서 — 미리듣기 카드를 가운데로, 버튼을 아래로.
                 Spacer(minLength: 24)
 
-                AlarmIdentityPreviewCard()
+                VoicePreviewCard()
 
                 Spacer(minLength: 24)
 
-                Button {
+                // 안드로이드는 CTA 가 **하나**다(LandingScreen.kt:194-198). 로그인/회원가입
+                // 갈래는 로그인 화면 하단 전환 행에서 고른다 — 첫 화면에서 두 개를 물으면
+                // 아직 계정이 있는지도 모르는 사람에게 결정을 강요하게 된다.
+                GradientCta(title: "시작하기") {
                     navigateToLogin = .login
-                } label: {
-                    Text("로그인")
-                        .font(theme.typography.titleMedium)
-                        .frame(maxWidth: .infinity, minHeight: 56)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(theme.palette.primary)
-                .foregroundStyle(theme.palette.onPrimary)
-                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-
-                Color.clear.frame(height: 10)
-
-                Button {
-                    navigateToLogin = .register
-                } label: {
-                    Text("회원가입")
-                        .font(theme.typography.titleMedium)
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                }
-                .buttonStyle(.bordered)
-                .foregroundStyle(theme.palette.onSurface)
-                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
             }
             .padding(.horizontal, 22)
             .padding(.vertical, 22)
         }
         .navigationBarBackButtonHidden(true)
+        .task {
+            // DEBUG 전용 — 화면 확인 진입점. 릴리스에서는 authScreen 이 항상 nil.
+            switch UIPreviewSeed.authScreen {
+            case "login": navigateToLogin = .login
+            case "register": navigateToLogin = .register
+            default: break
+            }
+        }
         .navigationDestination(item: $navigateToLogin) { mode in
             LoginView(initialMode: mode)
         }
@@ -102,53 +103,79 @@ private struct WakerBrandHeader: View {
     }
 }
 
-/// 알람 미리듣기 카드 — Android `AlarmIdentityPreview:168-275` 와 동등.
-private struct AlarmIdentityPreviewCard: View {
+/// 목소리 미리듣기 카드 — 안드로이드 `LandingScreen.kt:454-537` `VoicePreviewCard`.
+///
+/// ⚠ **씬 위에 얹히는 글라스 카드다.** 테마 `surface` 로 칠하면 라이트 기기에서 흰 카드가
+/// 일출 하늘을 가린다. 안드로이드는 반투명 흰색(`GlassFill`/`GlassBorder`)뿐이다.
+///
+/// 내용은 **실제로 재생되는 대사 3줄**이다. '내일 아침 / 07:30' 은 안드로이드에 없던
+/// 문구였고, 무엇보다 이 카드의 요점(어떤 목소리가 무슨 말을 해 주는지)을 못 보여준다.
+private struct VoicePreviewCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @StateObject private var preview = LandingPreviewController()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("내일 아침")
-                        .font(theme.typography.bodyMedium)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                    Text("07:30")
-                        .font(theme.typography.displaySmall)
-                        .foregroundStyle(theme.palette.onSurface)
-                }
-                Spacer()
-                Button {
-                    preview.toggle()
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(theme.palette.primary.opacity(0.14))
-                        Circle()
-                            .stroke(theme.palette.primary.opacity(0.28), lineWidth: 1)
-                        Image(systemName: preview.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(theme.palette.primary)
-                    }
-                    .frame(width: 54, height: 54)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(preview.isPlaying ? "미리듣기 일시정지" : "목소리 미리듣기")
+        HStack(alignment: .center, spacing: 14) {
+            Button {
+                preview.toggle()
+            } label: {
+                Image(systemName: preview.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(AuthSceneColors.accent)
+                    .frame(width: 48, height: 48)
+                    .background(Capsule().fill(AuthSceneColors.accent.opacity(0.18)))
+                    .overlay(Capsule().stroke(AuthSceneColors.accent.opacity(0.45), lineWidth: 1))
             }
+            .buttonStyle(.plain)
+            .disabled(!preview.hasAudio)
+            .accessibilityLabel(preview.isPlaying ? "미리듣기 일시정지" : "목소리 미리듣기")
 
-            LandingWaveformBar(progress: preview.progress)
-                .frame(height: 50)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("할아버지, 좋은 아침이에요\n오늘은 비가 온대요\n나가실 때 우산 꼭 챙기세요")
+                    .font(theme.typography.bodyMedium)
+                    .fontWeight(.medium)
+                    .foregroundStyle(AuthSceneColors.text)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                MiniWaveform(progress: preview.progress)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(18)
+        .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(theme.palette.surface)
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .fill(AuthSceneColors.glassFill)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                .stroke(AuthSceneColors.glassBorder, lineWidth: 1)
         )
+    }
+}
+
+/// 30바 미니 파형. 재생된 만큼 왼쪽부터 accent 로 채워진다.
+/// 안드로이드 `LandingScreen.kt:539-567` `MiniWaveform` 의 levels 를 그대로 옮겼다.
+private struct MiniWaveform: View {
+    let progress: Double
+
+    private static let levels: [CGFloat] = [
+        0.18, 0.30, 0.22, 0.46, 0.28, 0.58, 0.36, 0.68, 0.44, 0.60,
+        0.32, 0.52, 0.40, 0.72, 0.48, 0.62, 0.34, 0.54, 0.26, 0.44,
+        0.30, 0.50, 0.22, 0.38, 0.28, 0.46, 0.20, 0.34, 0.16, 0.26,
+    ]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(Self.levels.enumerated()), id: \.offset) { index, level in
+                let barProgress = Double(index) / Double(Self.levels.count - 1)
+                let played = progress > 0 && barProgress <= progress
+                Capsule()
+                    .fill(played ? AuthSceneColors.accent : Color.white.opacity(0.30))
+                    .frame(width: 1.5, height: 4 + level * 20)
+                if index < Self.levels.count - 1 { Spacer(minLength: 0) }
+            }
+        }
+        .frame(height: 26)
     }
 }
 
@@ -196,82 +223,61 @@ private struct LandingWaveformBar: View {
 ///
 /// 두 경우 모두 progress 는 `Task.sleep` 기반 ticker 로 갱신한다.
 @MainActor
+/// 랜딩 미리듣기 재생 상태.
+///
+/// ⚠ **소리 없이 진행바만 채우는 '시뮬레이션' 을 되살리지 말 것.** 예전에는 번들에 mp3 가
+/// 없어서 5초짜리 가짜 진행바를 돌렸다 — 버튼을 눌러도 아무 소리가 안 나는데 화면은
+/// 재생 중처럼 보여, 이 카드가 보여줘야 할 단 하나(목소리가 어떤지)를 정반대로 전했다.
+/// 이제 `AlarmTalk/Resources/landing_voice_preview.mp3` 가 번들에 있고, 그래도 못 찾으면
+/// [hasAudio] 가 `false` 라 버튼이 **비활성**된다.
 private final class LandingPreviewController: ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var progress: Double = 0
 
     private let player = AudioPreviewPlayer()
     private var tickerTask: Task<Void, Never>?
-    private var simulatedElapsed: Double = 0
+    private var started = false
 
-    /// 번들 mp3 URL. nil 이면 시뮬레이션 모드.
-    private var bundledURL: URL? {
-        Bundle.main.url(forResource: "landing_voice_preview", withExtension: "mp3")
-    }
+    private let bundledURL = Bundle.main.url(forResource: "landing_voice_preview", withExtension: "mp3")
 
-    /// Task<_, Never>.cancel 자체는 Sendable 하지만, main-actor isolated 프로퍼티
-    /// 접근을 deinit 에서 하면 경고가 날 수 있어 명시적으로 cancel API 만 호출.
-    /// view 의 onDisappear 에서 stop() 을 부르는 흐름이 일반적이므로 deinit 의
-    /// cancel 은 안전망 역할만 한다.
-    nonisolated deinit {
-        // 아무것도 하지 않는다 — Task 는 weak self 캡처로 leak 하지 않고,
-        // 시뮬레이션 ticker 는 isPlaying == false 가 되면 자연스럽게 종료된다.
-    }
+    var hasAudio: Bool { bundledURL != nil }
 
     func toggle() {
+        guard let url = bundledURL else { return }
         if isPlaying {
-            stopPlayback()
+            player.pause()
+            isPlaying = false
+            tickerTask?.cancel()
+            tickerTask = nil
+            return
+        }
+        if started, player.resume() {
+            isPlaying = true
         } else {
-            startPlayback()
+            player.onFinish = { [weak self] in
+                Task { @MainActor in
+                    self?.isPlaying = false
+                    self?.progress = 0
+                    self?.started = false
+                }
+            }
+            guard (try? player.play(url: url)) != nil else { return }
+            started = true
+            isPlaying = true
         }
-    }
-
-    private func startPlayback() {
-        if progress >= 0.98 {
-            progress = 0
-            simulatedElapsed = 0
-        }
-        if let url = bundledURL {
-            try? player.play(url: url)
-        }
-        isPlaying = true
         startTicker()
-    }
-
-    private func stopPlayback() {
-        player.stop()
-        isPlaying = false
-        tickerTask?.cancel()
-        tickerTask = nil
     }
 
     private func startTicker() {
         tickerTask?.cancel()
         tickerTask = Task { @MainActor [weak self] in
-            let total: Double = 5.0
-            let step: Double = 0.08
+            // 안드로이드도 80ms 마다 currentPosition 을 읽는다(LandingScreen.kt:471-477).
             while !Task.isCancelled {
-                guard let self else { return }
-                let stillPlaying = self.tickOnce(step: step, total: total)
-                if !stillPlaying { return }
-                try? await Task.sleep(nanoseconds: UInt64(step * 1_000_000_000))
+                guard let self, self.isPlaying else { return }
+                self.progress = self.player.playbackProgress
+                try? await Task.sleep(nanoseconds: 80_000_000)
             }
         }
-    }
-
-    /// 한 번의 tick 진행. progress 가 1 에 도달했거나 외부에서 중단됐다면 false 를
-    /// 반환한다. main actor 격리로 sleep 없이 한 step 만 처리.
-    private func tickOnce(step: Double, total: Double) -> Bool {
-        guard isPlaying else { return false }
-        simulatedElapsed += step
-        let value = min(1.0, simulatedElapsed / total)
-        progress = value
-        if value >= 1.0 {
-            isPlaying = false
-            player.stop()
-            return false
-        }
-        return true
     }
 }
 

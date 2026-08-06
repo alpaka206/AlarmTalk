@@ -494,6 +494,9 @@ final class AuthViewModel: ObservableObject {
     /// Android `MainViewModel.handleUnauthorized()` 의 `if (authSession == null) return` 과 동등.
     private func handleUnauthorized() {
         guard session != nil else { return }
+        // UI 미리보기 모드에서는 401 로 로그아웃하지 않는다 — 서버 없이 화면만 보는 모드라
+        // 첫 요청이 실패하는 순간 로그인 화면으로 튕겨 아무것도 못 본다.
+        if UIPreviewSeed.isEnabled { return }
         signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
     }
 

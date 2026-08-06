@@ -46,6 +46,10 @@ targets:
       # 실기기/TestFlight/AppStore 빌드에서는 자동으로 무시됨 (App Store Connect 가 권위).
       - path: AlarmTalk/Configuration/StoreKitConfiguration.storekit
         buildPhase: resources
+      # 랜딩 미리듣기 오디오 — 안드로이드 `res/raw/landing_voice_preview.mp3` 와 같은 파일.
+      # 이게 없으면 재생 버튼이 소리 없이 진행바만 채운다(예전 iOS 가 그랬다).
+      - path: AlarmTalk/Resources
+        buildPhase: resources
     dependencies:
       - target: AlarmTalkWidget
         embed: true

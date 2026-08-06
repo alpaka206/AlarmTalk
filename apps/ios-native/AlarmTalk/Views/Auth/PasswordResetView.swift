@@ -45,8 +45,7 @@ struct PasswordResetView: View {
     }
 
     var body: some View {
-        ZStack {
-            theme.palette.background.ignoresSafeArea()
+        AuthBackdrop {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -108,15 +107,12 @@ struct PasswordResetView: View {
     }
 
     private var sendCodeButton: some View {
-        Button {
+        AuthOutlinedButton(
+            title: codeSent ? "코드를 보냈어요" : "인증 코드 받기",
+            enabled: !auth.isBusy && emailLooksValid && !codeSent
+        ) {
             Task { await auth.requestPasswordReset(email: normalizedEmail) }
-        } label: {
-            Text(codeSent ? "코드를 보냈어요" : "인증 코드 받기")
-                .font(theme.typography.labelLarge)
-                .frame(maxWidth: .infinity, minHeight: 54)
         }
-        .buttonStyle(.bordered)
-        .disabled(auth.isBusy || !emailLooksValid || codeSent)
     }
 
     private var codeField: some View {
@@ -144,7 +140,7 @@ struct PasswordResetView: View {
     }
 
     private var confirmButton: some View {
-        Button {
+        GradientCta(title: "비밀번호 변경", enabled: canConfirm, loading: auth.isBusy) {
             Task {
                 let ok = await auth.confirmPasswordReset(
                     email: normalizedEmail,
@@ -153,16 +149,7 @@ struct PasswordResetView: View {
                 )
                 if ok { dismiss() }
             }
-        } label: {
-            Text("비밀번호 변경")
-                .font(theme.typography.labelLarge)
-                .frame(maxWidth: .infinity, minHeight: 54)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(theme.palette.primary)
-        .foregroundStyle(theme.palette.onPrimary)
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-        .disabled(!canConfirm)
         .padding(.top, 4)
     }
 }

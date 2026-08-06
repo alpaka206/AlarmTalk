@@ -52,6 +52,20 @@ struct AlarmTalkApp: App {
                     // Phase 2: 앱 전역 단일 공휴일 국가 설정을 SettingsView 등이 공유.
                     .environmentObject(holidayStore)
                     .task {
+                        // DEBUG 전용: `-UIPreviewSeed` 실행 인자면 서버·로그인 없이
+                        // 실제 화면을 볼 수 있게 가짜 세션과 알람을 심는다(UIPreviewSeed 주석 참조).
+                        #if DEBUG
+                        if UIPreviewSeed.isEnabled {
+                            let seeded = UIPreviewSeed.makeSession()
+                            UIPreviewSeed.markGatesPassed(userID: seeded.user.id)
+                            auth._setSessionForTesting(seeded)
+                            for record in UIPreviewSeed.makeAlarms() {
+                                alarmStore.upsert(record)
+                            }
+                        }
+                        #endif
+                    }
+                    .task {
                         // Phase 4-D1: StoreKit 제품 fetch + currentEntitlements 동기화.
                         // 다른 await 들과 병렬로 실행해도 의존성이 없다.
                         // 백엔드 confirm 성공 시 기존 구독 fetch 경로로 서버 구독
