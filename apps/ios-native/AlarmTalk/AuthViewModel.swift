@@ -834,6 +834,11 @@ final class AuthViewModel: ObservableObject {
             // 방금 **동의로** 기록한 민감 유형은 서버 상태와 맞춘다 — 안 지우면 목소리 등록
             // 화면이 이미 받은 동의를 또 묻는다. 거절한 유형은 그대로 남아 그때 다시 묻는다.
             consentSensitiveMissing = consentSensitiveMissing.filter { !agreedOptional.contains($0) }
+            // 마케팅을 이 화면에서 결정했으면 설정 토글도 함께 맞춘다. 안 맞추면 방금
+            // 동의했는데 더보기 > 설정의 토글이 이전 값 그대로 '거부' 로 보인다.
+            if collect.contains("marketing") {
+                marketingConsentAgreed = agreedOptional.contains("marketing")
+            }
             statusMessage = "동의가 완료됐어요"
         } catch {
             if handleConsentVersionMismatch(error) { return }

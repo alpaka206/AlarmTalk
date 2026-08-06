@@ -762,6 +762,13 @@ internal fun MainViewModel.submitConsents(agreedOptional: Set<String>) {
             // 등록 화면에서 다시 만난다(그게 이 설계의 핵심이다).
             val agreedNow = consents.filter { it.agreed }.map { it.type }.toSet()
             sensitiveConsentMissing = sensitiveConsentMissing - agreedNow
+            // 마케팅을 이 화면에서 결정했으면 설정 토글과 캐시도 함께 맞춘다.
+            // 안 맞추면 방금 동의했는데 더보기 > 설정의 토글이 캐시 때문에 '거부' 로 보인다.
+            consents.firstOrNull { it.type == "marketing" }?.let { row ->
+                marketingConsentAgreed = row.agreed
+                com.alarmtalk.app.data.MarketingConsentCache(getApplication<android.app.Application>())
+                    .write(ownerUserId, row.agreed)
+            }
             consentChecked = true
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to record consents", error)

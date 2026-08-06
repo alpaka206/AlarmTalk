@@ -10,6 +10,7 @@ vi.mock('../src/lib/db', () => ({
 }));
 
 import userRoutes from '../src/routes/user';
+import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
 
 function buildApp(userId = 'user-1') {
   const app = new Hono<AppEnv>();
@@ -213,3 +214,79 @@ it('userPk 미해석인데 사용자 행이 존재하면 throw → 500 (고아 P
   });
 });
 
+
+/**
+ * 마케팅 재유도 — 거절자에게만, 다른 이유로 화면이 이미 뜰 때만.
+ *
+ * ⚠ 두 조건을 함께 봐야 한다. `collect.length > 0` 가드가 없으면 거절자는 동의 화면을
+ * **영원히** 본다(안 누르면 계속 남는다). `agreed === false` 조건이 없으면 **동의한 사람**
+ * 까지 끌려와 무심코 지나칠 때 멀쩡한 동의가 사라진다.
+ */
+describe('GET /user/consents/status — 마케팅 재유도', () => {
+  function statusFor(rows: Array<{ consent_type: string; policy_version: string; agreed: number }>) {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult(rows);
+    return buildApp().request('/user/consents/status', undefined, {} as AppEnv['Bindings']);
+  }
+  const current = CURRENT_POLICY_VERSION;
+
+  it('거절자라도 다른 받을 게 없으면 화면을 열지 않는다', async () => {
+    const res = await statusFor([
+      { consent_type: 'terms', policy_version: current, agreed: 1 },
+      { consent_type: 'privacy', policy_version: current, agreed: 1 },
+      { consent_type: 'age14', policy_version: current, agreed: 1 },
+      { consent_type: 'overseas_transfer', policy_version: current, agreed: 1 },
+      { consent_type: 'voice_biometric', policy_version: current, agreed: 1 },
+      { consent_type: 'marketing', policy_version: current, agreed: 0 },
+    ]);
+    const body = (await res.json()) as { collect: string[]; needs_collection: boolean };
+    expect(body.collect).toEqual([]);
+    expect(body.needs_collection).toBe(false);
+  });
+
+  it('다른 이유로 화면이 뜨면 거절자에게 마케팅을 함께 띄운다', async () => {
+    const res = await statusFor([
+      // terms 가 옛 버전이라 재동의 대상 — 화면이 뜬다.
+      { consent_type: 'terms', policy_version: '1', agreed: 1 },
+      { consent_type: 'privacy', policy_version: current, agreed: 1 },
+      { consent_type: 'age14', policy_version: current, agreed: 1 },
+      { consent_type: 'overseas_transfer', policy_version: current, agreed: 1 },
+      { consent_type: 'voice_biometric', policy_version: current, agreed: 1 },
+      { consent_type: 'marketing', policy_version: current, agreed: 0 },
+    ]);
+    const body = (await res.json()) as { collect: string[]; prechecked: string[] };
+    expect(body.collect).toContain('terms');
+    expect(body.collect).toContain('marketing');
+    // 거절 상태이므로 미체크로 시작해야 한다.
+    expect(body.prechecked).not.toContain('marketing');
+  });
+
+  it('마케팅에 **동의한** 사람은 끌어오지 않는다', async () => {
+    const res = await statusFor([
+      { consent_type: 'terms', policy_version: '1', agreed: 1 },
+      { consent_type: 'privacy', policy_version: current, agreed: 1 },
+      { consent_type: 'age14', policy_version: current, agreed: 1 },
+      { consent_type: 'overseas_transfer', policy_version: current, agreed: 1 },
+      { consent_type: 'voice_biometric', policy_version: current, agreed: 1 },
+      { consent_type: 'marketing', policy_version: current, agreed: 1 },
+    ]);
+    const body = (await res.json()) as { collect: string[] };
+    expect(body.collect).not.toContain('marketing');
+  });
+
+  /** 이미 동의한 선택 유형이 재동의 대상이면 **체크된 채로** 시작해야 한다. */
+  it('이미 동의한 선택 유형은 prechecked 로 내려준다', async () => {
+    const res = await statusFor([
+      { consent_type: 'terms', policy_version: current, agreed: 1 },
+      { consent_type: 'privacy', policy_version: current, agreed: 1 },
+      { consent_type: 'age14', policy_version: current, agreed: 1 },
+      { consent_type: 'overseas_transfer', policy_version: current, agreed: 1 },
+      // 생체정보 동의가 옛 버전 → 재동의 대상인데, 이미 '동의' 상태다.
+      { consent_type: 'voice_biometric', policy_version: '1', agreed: 1 },
+      { consent_type: 'marketing', policy_version: current, agreed: 1 },
+    ]);
+    const body = (await res.json()) as { collect: string[]; prechecked: string[] };
+    expect(body.collect).toContain('voice_biometric');
+    expect(body.prechecked).toContain('voice_biometric');
+  });
+})

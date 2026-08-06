@@ -482,6 +482,26 @@ user.get('/consents/status', async (c) => {
         (type) => !consentAnswerIsCurrent(latest, type),
       ),
     ];
+    // 마케팅 재유도 — **거절한 사람에게만**, 그리고 **다른 이유로 화면이 이미 뜰 때만** 덧붙인다.
+    //
+    // 왜 이 두 조건인가:
+    //  - `collect.length > 0` 이 없으면: 거절자는 이 항목 하나 때문에 동의 화면을 **영원히**
+    //    본다. 안 누르면 계속 남으니 빠져나갈 방법이 없다. 이 가드가 `needs_collection` 불변도
+    //    함께 보장한다(마케팅이 화면을 여는 유일한 사유가 되지 않는다).
+    //  - `agreed === false` 가 아니면(예: 미응답까지 포함하면): 위 filter 가 이미 미응답을
+    //    잡으므로 중복이고, **동의한 사람**까지 넣으면 화면에 뜬 항목을 무심코 지나칠 때
+    //    멀쩡한 동의가 사라진다(prechecked 로 완화되지만 애초에 넣지 않는 게 맞다).
+    //
+    // 빈도: 개정으로 다른 유형의 최소 버전이 오를 때만 = 개정 1회당 1번. 제출하면 거절이
+    // 새 버전으로 다시 기록돼 그 회차는 닫힌다.
+    //
+    // ⚠ **지금은 발동하지 않는다.** CONSENT_MIN_POLICY_VERSION 6종이 전부 3 이라 위 collect 가
+    // 늘 비어 있다. 실제로 켜는 레버는 그 상수를 올리는 것이고, 그건 별도 결재 사항이다.
+    // ⚠ **앱 내 화면에서만 유도한다.** 푸시·이메일로 재동의를 권하면 그 메시지 자체가
+    // 영리목적 광고성 정보로 평가돼 거절자에게는 정보통신망법 제50조 위반 소지가 있다.
+    if (collect.length > 0 && latest.get('marketing')?.agreed === false) {
+      if (!collect.includes('marketing')) collect.push('marketing');
+    }
     return c.json({
       // needs_consent 와 needs_collection 은 의미가 다르다. 섞어 쓰면 안 된다.
       //  - needs_consent: **앱을 못 쓰게 막는 게이트** 신호(필수 유형 기준). 선택 동의
