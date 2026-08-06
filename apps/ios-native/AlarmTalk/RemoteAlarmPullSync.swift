@@ -328,11 +328,25 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                   state.revoked.contains(remoteID),
                   Self.hasSenderVoice(record) else { continue }
             let releasedKey = record.audioCacheKey
-            _ = store.upsert(Self.withVoiceRevoked(record))
+            let revoked = Self.withVoiceRevoked(record)
+            _ = store.upsert(revoked)
             // 먼저 upsert 해 이 행의 참조를 지운 뒤 센다 — 같은 캐시를 여러 행이 쓰고 있어도
             // 마지막 행에서 0 이 되어 파일이 실제로 지워진다.
             if let key = releasedKey?.nilIfBlank, store.countByAudioCacheKey(key) == 0 {
                 try? AudioCacheStore.shared.deleteCachedAudio(cacheKey: key)
+                // ⚠ 캐시 파일만 지우면 부족하다. 예약할 때 `AlarmSoundStaging` 이
+                // `Library/Sounds/` 로 **사본**을 떠 두는데, 그건 별도 파일이라 그대로 남는다.
+                // 파기 대상인 생체정보(복제 음성)를 디스크에 남기면 안 된다.
+                AlarmSoundStaging.clearStagedSound(forKey: key)
+            }
+            // ⚠ **로컬 행만 고치면 알람은 여전히 그 목소리로 운다.**
+            // 안드로이드는 RingingService 가 울릴 때 DB 를 다시 읽어서 행만 고쳐도 됐지만,
+            // iOS 는 발사 시점에 우리 코드가 돌지 않는다 — 이미 AlarmKit 에 넘긴 사운드가
+            // 그대로 울린다(PaidVoiceGate 주석과 같은 이유). 반복 알람은 재예약 계기도
+            // 없어 사실상 무기한이다. 그래서 **다시 깔아 준다.**
+            await alarmKit.cancelScheduledAlarm(record: record)
+            if revoked.enabled {
+                _ = await alarmKit.schedule(record: revoked, store: store)
             }
             Self.logger.info("Pull sync: revoked sender voice on received alarm (remoteId: \(remoteID, privacy: .public))")
         }

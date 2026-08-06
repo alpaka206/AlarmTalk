@@ -221,9 +221,20 @@ final class AlarmKitViewModel: ObservableObject {
                     fireForegroundRingHaptic()
                     // 30s 초과 또는 트랜스코드 실패로 AlarmKit 가 시스템 톤만 울리는 경우,
                     // 앱이 활성일 때 캐싱된 voice 를 동시 재생한다 (mixWithOthers).
-                    let resolution = AlarmSoundResolver.resolve(for: record, audioCache: audioCache)
+                    //
+                    // ⚠ **여기도 유료 게이트를 지나야 한다.** 예약 시점 게이트
+                    // (`schedule`)는 AlarmKit 에 넘길 사운드만 강등하고 store 의 원본은
+                    // 그대로 두는데, 이 폴백은 그 원본을 다시 읽는다. 게이트를 안 걸면
+                    // 구독이 끝난 사용자가 앱을 열어 둔 상태에서 유료 복제 목소리를
+                    // 그대로 듣게 된다 — 게이트가 있다고 믿는 바로 그 상황에서 샌다.
+                    let snapshot = KeychainStore.readSession()
+                        .map { accessSnapshotStore.read(userID: $0.user.id) } ?? .empty
+                    let effective = PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot)
+                        ? PaidVoiceGate.downgraded(record)
+                        : record
+                    let resolution = AlarmSoundResolver.resolve(for: effective, audioCache: audioCache)
                     if resolution.requiresInAppFallback {
-                        AlarmVoicePlayer.shared.playIfNeeded(for: record, audioCache: audioCache)
+                        AlarmVoicePlayer.shared.playIfNeeded(for: effective, audioCache: audioCache)
                     }
                 }
             }

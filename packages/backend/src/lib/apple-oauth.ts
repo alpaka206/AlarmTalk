@@ -69,6 +69,14 @@ function base64UrlDecode(s: string): Uint8Array {
   return out;
 }
 
+/** raw nonce → SHA-256 hex. 앱이 `ASAuthorizationAppleIDRequest.nonce` 에 넣은 값과 같은 형식. */
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 function decodeJsonSegment<T>(segment: string): T {
   return JSON.parse(new TextDecoder().decode(base64UrlDecode(segment))) as T;
 }
@@ -78,7 +86,10 @@ function decodeJsonSegment<T>(segment: string): T {
  *
  * @param identityToken 앱이 넘긴 `identityToken` (JWT)
  * @param expectedAudience 앱 번들 ID. 네이티브 앱 토큰의 `aud` 는 번들 ID 다.
- * @param expectedNonce 앱이 로그인 요청에 넣은 nonce 의 **SHA-256 hex**. 있으면 대조한다.
+ * @param expectedNonce 앱이 만든 **raw nonce**. 있으면 SHA-256 hex 로 해싱해 대조한다.
+ *   (앱은 `ASAuthorizationAppleIDRequest.nonce` 에 sha256(raw) 를 넣고 애플이 그 값을
+ *   토큰의 `nonce` 클레임에 그대로 담는다. 그래서 서버는 raw 를 받아 다시 해싱한다 —
+ *   iOS `NonceGenerator.swift` 주석이 선언한 계약이다.)
  */
 export async function verifyAppleIdToken(
   identityToken: string,
@@ -134,9 +145,14 @@ export async function verifyAppleIdToken(
   if (!payload.sub) throw new Error('Apple token has no subject');
 
   // nonce 대조는 **재생 공격 방지**다. 앱이 nonce 를 넣어 보냈다면 반드시 일치해야 한다.
-  // (앱은 원본 nonce 를 SHA-256 해서 요청에 넣고, 애플이 그 해시를 토큰에 그대로 담는다.)
-  if (expectedNonce !== undefined && payload.nonce !== expectedNonce) {
-    throw new Error('Apple token nonce mismatch');
+  //
+  // ⚠ 앱이 보내는 것은 **raw nonce** 이고, 토큰에 담긴 것은 그 **SHA-256 hex** 다.
+  // 그대로 비교하면 sha256(raw) !== raw 라 **모든 애플 로그인이 401** 이 된다.
+  if (expectedNonce !== undefined) {
+    const hashed = await sha256Hex(expectedNonce);
+    if (payload.nonce !== hashed) {
+      throw new Error('Apple token nonce mismatch');
+    }
   }
 
   // 구글과 같은 이유로, 검증되지 않은 이메일은 신뢰하지 않는다 — 다운스트림이 email 로

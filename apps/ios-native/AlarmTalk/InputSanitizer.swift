@@ -73,17 +73,26 @@ enum InputSanitizer {
         return String(collapsed.drop(while: { $0 == " " }))
     }
 
-    /// 상한까지 자른다.
+    /// 상한까지 자른다. **길이는 서버와 같은 단위(UTF-16 코드 유닛)로 센다.**
     ///
-    /// Swift `String` 은 **grapheme cluster** 단위라 `prefix(n)` 이 서러게이트 쌍을 반으로
-    /// 가르지 않는다 — JS `slice` 나 코틀린 `take` 가 UTF-16 코드 유닛 단위라 겪던 문제
-    /// (29자 뒤에 이모지가 오면 앞쪽 절반만 남아 깨진 문자가 DB·JWT 에 실린다)가 여기선
-    /// 애초에 생기지 않는다. 그래도 규칙을 한 곳에 모아 두기 위해 함수로 둔다.
+    /// ⚠ Swift `String.count` 는 **grapheme cluster** 단위라 서버와 다르다. 서버
+    /// (`@alarmtalk/shared` 의 `DisplayNameSchema`)는 JS `String.length` = UTF-16 코드
+    /// 유닛으로 센다. 이모지 하나가 Swift 로는 1, 서버로는 2다.
     ///
-    /// 다만 **가족 이모지처럼 ZWJ 로 이어 붙은 것**은 grapheme 하나로 세므로, 서버의
-    /// UTF-16 기준 길이보다 짧게 셀 수 있다. 그 방향은 안전하다(서버가 거절하지 않는다).
+    /// 그래서 `count` 로 자르면 **앱은 통과시키는데 서버가 거절하는 이름**이 생긴다 —
+    /// 이모지 20개는 Swift 20(통과)이지만 UTF-16 40(거절)이다. 사용자는 "16/30" 을 보면서
+    /// 저장이 안 되고, 무엇을 지워야 하는지 알 방법이 없어 갇힌다. 가입 화면에서는
+    /// 가입 자체가 막힌다.
+    ///
+    /// 자를 때 **서러게이트 쌍을 반으로 가르지 않는다** — 깨진 문자가 DB·JWT 에 실린다.
+    /// 서버 `clampDisplayName` 도 같은 보호를 한다.
     static func clamp(_ raw: String, max maxLength: Int) -> String {
-        raw.count <= maxLength ? raw : String(raw.prefix(maxLength))
+        let units = Array(raw.utf16)
+        guard units.count > maxLength else { return raw }
+        var end = maxLength
+        // 경계가 서러게이트 쌍 한가운데면 그 글자를 통째로 버린다.
+        if end > 0, UTF16.isLeadSurrogate(units[end - 1]) { end -= 1 }
+        return String(decoding: units[0..<end], as: UTF16.self)
     }
 
     /// 표시 이름 한 번에 — 정리 후 상한까지. 외부에서 받은 값(애플/구글이 준 이름 등)처럼

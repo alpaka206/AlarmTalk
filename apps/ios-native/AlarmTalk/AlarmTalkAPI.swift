@@ -40,20 +40,24 @@ final class AlarmTalkAPI: @unchecked Sendable {
         email: String?,
         nonce: String?
     ) async throws -> AuthSession {
+        // ⚠ 필드명은 서버 `AppleLoginRequestSchema`(@alarmtalk/shared) 와 정확히 같아야 한다:
+        //   identity_token / nonce / full_name.  (`convertToSnakeCase` 로 변환된다.)
+        //   예전에는 idToken/name/email 을 보내 **모든 애플 로그인이 400** 이었다.
+        //   email 은 서버가 토큰에서 직접 읽으므로 보내지 않는다.
         struct Body: Encodable {
-            var idToken: String
-            var name: String?
-            var email: String?
+            var identityToken: String
             var nonce: String?
+            var fullName: String?
         }
         return try await request(
             "auth/apple",
             method: "POST",
             body: Body(
-                idToken: idToken,
-                name: name.nilIfBlank,
-                email: email.nilIfBlank,
-                nonce: nonce?.isEmpty == true ? nil : nonce
+                identityToken: idToken,
+                // **raw nonce** 를 보낸다 — 서버가 SHA-256 해싱해 토큰의 nonce 클레임과 맞춘다
+                // (NonceGenerator.swift 가 선언한 계약).
+                nonce: nonce?.nilIfBlank,
+                fullName: name.nilIfBlank
             )
         )
     }

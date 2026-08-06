@@ -92,19 +92,32 @@ final class InputSanitizerTests: XCTestCase {
     }
 
     func test_clampDisplayName() {
+        // 한글은 UTF-16 1유닛이라 count 와 utf16.count 가 같다.
         let long = String(repeating: "가", count: 100)
-        XCTAssertEqual(InputSanitizer.clampDisplayName(long).count, 30)
-        XCTAssertEqual(InputSanitizer.clampVoiceName(long).count, 50)
+        XCTAssertEqual(InputSanitizer.clampDisplayName(long).utf16.count, 30)
+        XCTAssertEqual(InputSanitizer.clampVoiceName(long).utf16.count, 50)
     }
 
-    /// Swift `String` 은 grapheme cluster 단위라 이모지를 반으로 가르지 않는다.
-    /// (JS `slice`·코틀린 `take` 는 UTF-16 코드 유닛이라 깨진 문자를 만든다.)
-    func test_clamp_doesNotSplitEmoji() {
+    /// ⚠ **길이는 서버와 같은 단위(UTF-16)로 센다.**
+    /// Swift `String.count` 는 grapheme 단위라 서버(JS `String.length`)와 다르다 —
+    /// `count` 로 자르면 앱은 통과시키는데 서버가 거절하는 이름이 생긴다.
+    func test_clamp_countsUTF16LikeServer() {
+        // 이모지 20개: Swift count 20(옛 구현은 통과) / UTF-16 40(서버는 거절)
+        let emojis = String(repeating: "😀", count: 20)
+        let clamped = InputSanitizer.clampDisplayName(emojis)
+        XCTAssertLessThanOrEqual(clamped.utf16.count, 30, "서버가 세는 단위로 상한 안이어야 한다")
+        XCTAssertEqual(clamped.utf16.count, 30)
+        XCTAssertEqual(clamped.count, 15, "이모지 15개 = UTF-16 30")
+    }
+
+    /// 자를 때 서러게이트 쌍을 반으로 가르지 않는다 — 깨진 문자가 DB·JWT 에 실린다.
+    func test_clamp_doesNotSplitSurrogatePair() {
         let name = String(repeating: "가", count: 29) + "😀😀"
         let clamped = InputSanitizer.clampDisplayName(name)
-        XCTAssertEqual(clamped.count, 30)
-        XCTAssertTrue(clamped.hasSuffix("😀"), "이모지가 통째로 남아야 한다")
-        // 깨진 서러게이트가 없는지 — 왕복이 되면 정상이다.
+        // 29 + 이모지(2) = 31 > 30 이므로 이모지가 통째로 잘려 29 가 된다.
+        XCTAssertEqual(clamped.utf16.count, 29)
+        XCTAssertEqual(clamped, String(repeating: "가", count: 29))
+        // 깨진 서러게이트가 없는지 — UTF-8 왕복이 되면 정상이다.
         XCTAssertEqual(String(decoding: Array(clamped.utf8), as: UTF8.self), clamped)
     }
 

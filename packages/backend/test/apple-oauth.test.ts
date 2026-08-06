@@ -142,17 +142,33 @@ describe('verifyAppleIdToken', () => {
   });
 
   // nonce 는 재생 공격 방지다. 앱이 보냈으면 반드시 일치해야 한다.
-  it('nonce 가 다르면 거부한다', async () => {
-    const token = await makeToken(basePayload({ nonce: 'hash-A' }));
-    await expect(verifyAppleIdToken(token, BUNDLE_ID, 'hash-B', jwksFetch())).rejects.toThrow(
-      /nonce/i,
-    );
+  //
+  // ⚠ 계약: 앱은 **raw nonce** 를 보내고, 토큰에는 그 **SHA-256 hex** 가 들어 있다
+  // (앱이 ASAuthorizationAppleIDRequest.nonce 에 해시를 넣기 때문). 서버가 raw 를
+  // 그대로 비교하면 모든 애플 로그인이 401 이 된다 — 실제로 그랬다.
+  async function sha256Hex(v: string): Promise<string> {
+    const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+    return Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  it('raw nonce 를 해싱해 토큰의 nonce 클레임과 맞춘다', async () => {
+    const raw = 'raw-nonce-abc';
+    const token = await makeToken(basePayload({ nonce: await sha256Hex(raw) }));
+    const p = await verifyAppleIdToken(token, BUNDLE_ID, raw, jwksFetch());
+    expect(p.sub).toBe('apple-sub-001');
   });
 
-  it('nonce 가 일치하면 통과한다', async () => {
-    const token = await makeToken(basePayload({ nonce: 'hash-A' }));
-    const p = await verifyAppleIdToken(token, BUNDLE_ID, 'hash-A', jwksFetch());
-    expect(p.sub).toBe('apple-sub-001');
+  it('raw nonce 를 그대로 비교하지 않는다 (해시가 아닌 값이 토큰에 있으면 거부)', async () => {
+    const raw = 'raw-nonce-abc';
+    const token = await makeToken(basePayload({ nonce: raw }));
+    await expect(verifyAppleIdToken(token, BUNDLE_ID, raw, jwksFetch())).rejects.toThrow(/nonce/i);
+  });
+
+  it('nonce 가 다르면 거부한다', async () => {
+    const token = await makeToken(basePayload({ nonce: await sha256Hex('raw-A') }));
+    await expect(verifyAppleIdToken(token, BUNDLE_ID, 'raw-B', jwksFetch())).rejects.toThrow(
+      /nonce/i,
+    );
   });
 
   // 검증되지 않은 이메일을 신뢰하면 계정 연동 탈취 경로가 된다(다운스트림이 email 로
