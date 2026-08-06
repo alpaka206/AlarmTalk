@@ -86,7 +86,12 @@ final class BackgroundSyncTask {
                 task.setTaskCompleted(success: false)
                 return
             }
-            Task { @MainActor in
+            // ⚠ Task 핸들을 잡아 둔다. 잡지 않으면 만료·타임아웃에서 `setTaskCompleted` 만
+            // 부르고 **실행 중인 사이클은 그대로 살아 있다** — 앱이 서스펜드되면 await 가
+            // 매달려 있다가 다음 포그라운드 복귀 때 재개돼, 그때 도는 foreground 사이클과
+            // 겹친다. sync 클래스의 타입 게이트가 그 겹침을 직렬화해 주긴 하지만,
+            // 창 자체를 안 만드는 편이 낫다.
+            let work = Task { @MainActor in
                 let runner = BackgroundSyncTask(
                     pull: pull,
                     push: push,
@@ -97,6 +102,8 @@ final class BackgroundSyncTask {
                 )
                 await runner.runAndSchedule(task: refresh)
             }
+            // 시스템이 예산을 회수하면 실행 중인 사이클도 함께 접는다.
+            refresh.expirationHandler = { work.cancel() }
         }
         #endif
     }
@@ -114,8 +121,11 @@ final class BackgroundSyncTask {
     func runAndSchedule(task: BGAppRefreshTask) async {
         scheduleNext()
 
+        // ⚠ 등록부(`register`)가 이미 expirationHandler 로 Task 를 취소하도록 걸어 뒀다.
+        // 여기서 덮어쓰면 그 취소가 사라지므로, 완료 통보만 **덧붙인다**.
+        let cancelWork = task.expirationHandler
         task.expirationHandler = {
-            // 시스템이 task 를 종료하면 더 이상 실행할 수 없다.
+            cancelWork?()
             task.setTaskCompleted(success: false)
         }
 

@@ -87,12 +87,50 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         self.auth = auth
     }
 
-    /// 한 번의 pull 사이클을 수행한다. 호출자가 동시 호출을 방지해야 한다.
+    /// **타입 단위** 겹침 가드. push 쪽(`RemoteAlarmPushSync`)과 같은 이유다 —
+    /// 인스턴스는 둘(`RemoteAlarmSyncViewModel` / `AlarmTalkApp` 백그라운드)인데
+    /// `LocalAlarmStore` 는 하나다.
+    ///
+    /// pull 쪽 증상은 push 보다 직접적이다: `mergeRemote` 가 기존 행을 찾은 뒤
+    /// `recordWithCachedTTSIfNeeded` 에서 **음원을 통째로 내려받고**(수 초) 그 다음에야
+    /// upsert 한다. 그 창에서 겹치면 같은 받은-알람이 **로컬에 두 행**으로 들어오고 둘 다
+    /// 예약돼 **같은 알람이 두 번 울린다.** 하나를 꺼도 다른 하나가 울린다.
+    private static var isRunning = false
+    private static var requestedWhileRunning = false
+
+    /// pull 사이클을 수행한다. **동시 호출은 이 함수가 직렬화한다** — 호출자가 막지
+    /// 않아도 된다(예전 주석은 "호출자가 동시 호출을 방지해야 한다" 였는데, 실제로는
+    /// 아무도 막고 있지 않았다).
     ///
     /// 반환하는 `PullResult` 는 Android `RemoteAlarmPullSyncService.pullReceivedAlarms`
     /// 의 카운터와 동일한 의미를 가진다. `BackgroundSyncTask` 가 retry 판단에 사용한다.
+    /// 미뤄 둔 회차가 함께 돌면 카운터는 **합산**된다.
     @discardableResult
     func runOnce() async throws -> PullResult {
+        if Self.isRunning {
+            Self.requestedWhileRunning = true
+            return PullResult(imported: 0, updated: 0, skipped: 0, failed: 0)
+        }
+        Self.isRunning = true
+        defer { Self.isRunning = false }
+
+        var total = PullResult(imported: 0, updated: 0, skipped: 0, failed: 0)
+        repeat {
+            Self.requestedWhileRunning = false
+            let cycle = try await runCycle()
+            total = PullResult(
+                imported: total.imported + cycle.imported,
+                updated: total.updated + cycle.updated,
+                skipped: total.skipped + cycle.skipped,
+                failed: total.failed + cycle.failed
+            )
+        } while Self.requestedWhileRunning
+        return total
+    }
+
+    /// 한 회차. **세션은 회차마다 다시 읽는다**(안드로이드 `2836ebcf`) — 미뤄 둔 회차가
+    /// 앞 회차의 왕복 뒤에 도는데, 그 사이 로그아웃/계정 전환이 있었으면 옛 토큰으로 나간다.
+    private func runCycle() async throws -> PullResult {
         guard let session = auth.session else { throw PullError.noSession }
         let userID = session.user.id
         let token = session.token

@@ -303,9 +303,17 @@ struct AlarmEditorSheet: View {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                 }
+                // 저장·음성 생성 중에는 **닫기도 잠근다.** 저장 버튼만 잠그면(:285) 사용자가
+                // X 를 눌러 취소한 줄 아는데 몇 초 뒤 알람이 저장·예약되고 탭이 튄다.
+                // 반대로 예약이 실패해도 경고 알럿이 이미 사라진 뷰에 붙어 아무 데도 안 뜬다.
+                // 안드로이드도 저장 중에는 취소를 함께 잠근다
+                // (AlarmEditorScreen 의 `val busy = generating || saving` → EditorActionButtons).
+                .disabled(isWorking || voiceStudio.isBusy)
                 .accessibilityLabel(Text("닫기"))
             }
         }
+        // 아래로 쓸어 닫는 것도 같은 이유로 막는다 — X 만 잠그면 제스처로 같은 상태가 된다.
+        .interactiveDismissDisabled(isWorking || voiceStudio.isBusy)
         .sheet(isPresented: $usageGuidePresented, onDismiss: {
             UsageGuideStore().markSeen(.alarmEditor)
         }) {
