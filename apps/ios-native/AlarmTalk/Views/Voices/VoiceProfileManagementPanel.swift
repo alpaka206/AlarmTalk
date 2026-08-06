@@ -134,7 +134,9 @@ struct VoiceProfileManagementPanel: View {
             )
             .presentationDetents([.medium])
         }
-        .alert("녹음과 화자 분리로 목소리를 만들려면 유료 플랜이 필요해요.", isPresented: $planGateOpen) {
+        // 화자 분리는 제품에서 사라졌다(VoicesPanelView 주석 참조) — 없는 기능을 근거로
+        // 결제를 권하지 않는다.
+        .alert("녹음으로 목소리를 만들려면 유료 플랜이 필요해요.", isPresented: $planGateOpen) {
             Button("닫기", role: .cancel) {}
             Button("플랜 보기") {
                 onRequestBilling?()

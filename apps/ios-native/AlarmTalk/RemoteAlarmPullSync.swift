@@ -420,10 +420,17 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         // 대상은 `hasSenderVoice` — '목소리가 있는 행' 이 아니라 '발신자 음성을 든 행' 이다.
         // 서버는 철회 기록을 영구히 들고 있어서, 넓게 잡으면 수신자가 나중에 넣은 자기
         // 목소리까지 매번 걷어낸다.
-        for record in received {
-            guard let remoteID = record.remoteAlarmId,
-                  state.revoked.contains(remoteID),
-                  Self.hasSenderVoice(record) else { continue }
+        for staleRecord in received {
+            guard let remoteID = staleRecord.remoteAlarmId,
+                  state.revoked.contains(remoteID) else { continue }
+            // ⚠ `received` 는 루프 **시작 전** 스냅샷이다. 아래에 await 가 있어 앞 회차가
+            // 도는 동안 사용자가 이 행을 편집했을 수 있다 — 스냅샷으로 upsert 하면 그 편집을
+            // 조용히 되돌린다. 반영 직전에 최신 행을 다시 읽는다(mergeRemote 와 같은 순서).
+            guard let record = store.alarms.first(where: { $0.remoteAlarmId == remoteID }) else { continue }
+            guard Self.hasSenderVoice(record) else { continue }
+            // 지금 울리는 중이거나 스누즈 회차 중이면 건드리지 않는다 — 취소·재예약이
+            // 그 회차를 끊는다. 다음 사이클에 다시 본다(서버는 철회 기록을 계속 들고 있다).
+            guard !Self.isInFlight(record) else { continue }
             let releasedKey = record.audioCacheKey
             let revoked = Self.withVoiceRevoked(record)
             _ = store.upsert(revoked)
@@ -458,11 +465,15 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         //      진짜 알람과 함께 울린다.
         //  (c) 발신자가 삭제          → **남긴다.** 받은 뒤부터는 받는 사람 것이라,
         //      내가 기대고 자는 알람이 남의 조작으로 사라지면 안 된다.
-        for record in store.recordsBy(origin: .receivedRemote) {
-            guard let remoteID = record.remoteAlarmId,
+        for staleRecord in store.recordsBy(origin: .receivedRemote) {
+            guard let remoteID = staleRecord.remoteAlarmId,
                   !servedReceivedIDs.contains(remoteID),
                   state.declined.contains(remoteID) || allRemoteIDs.contains(remoteID)
             else { continue }
+            // 여기도 최신 행을 다시 읽는다. 앞 회차의 await 동안 사용자가 이 알람을 편집해
+            // 재예약됐으면 `alarmKitID` 가 바뀌어 있는데, 스냅샷의 옛 id 로 취소하면
+            // **새 예약이 남은 채 행만 지워져** 주인 없는 알람이 울린다.
+            guard let record = store.alarms.first(where: { $0.remoteAlarmId == remoteID }) else { continue }
             await alarmKit.cancel(record: record, store: store)
             Self.logger.info("Pull sync: pruned received alarm (remoteId: \(remoteID, privacy: .public))")
         }

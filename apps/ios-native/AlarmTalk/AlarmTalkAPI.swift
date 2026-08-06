@@ -232,24 +232,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         let _: EmptyResponse = try await request(path, method: "DELETE", token: token)
     }
 
-    /// 임시(draft) 음성을 정식 프로필로 승격. `PATCH /voice/:id` body 에
-    /// `is_draft: false` 만 보내는 변형. Android `MainViewModelVoiceActions` 의 promote 흐름.
-    func promoteDraftVoice(profileId: String, token: String) async throws -> VoiceProfile {
-        let response: VoiceProfileResponse = try await request(
-            "voice/\(profileId)",
-            method: "PATCH",
-            token: token,
-            body: VoiceProfileUpdateRequest(isDraft: false)
-        )
-        return response.profile
-    }
-
-    /// 임시(draft) 음성을 영구 삭제. `DELETE /voice/:id?force=true`.
-    /// promote 하지 않고 시트를 닫은 경우 호출.
-    func deleteDraftVoice(profileId: String, token: String) async throws {
-        try await deleteVoiceProfile(id: profileId, token: token, force: true)
-    }
-
     /// 공유받은 음성에 대한 viewer 의 관계/호칭 갱신.
     /// `PATCH /voice/:id/relationship`. body 의 두 필드는 모두 필수.
     /// Android `VoiceProfileApi.kt:132-137`.
@@ -416,10 +398,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("family/groups/current", token: token)
     }
 
-    func leaveFamilyGroup(id: String, token: String) async throws {
-        let _: EmptyResponse = try await request("family/groups/\(id)/leave", method: "POST", token: token)
-    }
-
     func registerCode(_ code: String, token: String) async throws -> CodeRegisterResponse {
         try await request("code/register", method: "POST", token: token, body: CodeRegisterRequest(code: code))
     }
@@ -499,15 +477,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             method: "POST",
             token: token,
             body: CancelSubscriptionRequest(mode: mode)
-        )
-    }
-
-    func changePlan(planKey: String, mode: String, token: String) async throws -> ChangePlanResponse {
-        try await request(
-            "billing/change-plan",
-            method: "POST",
-            token: token,
-            body: ChangePlanRequest(planKey: planKey, mode: mode)
         )
     }
 
@@ -592,19 +561,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
-    /// 소유권 이양. 새 소유자는 동일 그룹 멤버여야 한다.
-    func transferFamilyOwnership(groupId: String, newOwnerId: String, token: String) async throws -> EmptyResponse {
-        struct Body: Encodable { var targetUserId: String }
-        return try await request(
-            "family/groups/\(groupId)/transfer-ownership",
-            method: "POST",
-            token: token,
-            body: Body(targetUserId: newOwnerId)
-        )
-    }
-
-    /// 내가 가족 그룹에서 나간다. 본 메서드는 명시적 alias 로,
-    /// 기존 `leaveFamilyGroup(id:token:)` 와 동일한 endpoint 를 호출한다.
+    /// 내가 가족 그룹에서 나간다.
     func leaveFamilyGroup(groupId: String, token: String) async throws -> EmptyResponse {
         try await request(
             "family/groups/\(groupId)/leave",

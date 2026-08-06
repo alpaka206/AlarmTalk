@@ -133,6 +133,11 @@ struct AlarmTalkApp: App {
                     .task(id: auth.session?.token) {
                         // 로그인 직후 또는 토큰 갱신 시 즉시 sync.
                         guard auth.session != nil else { return }
+                        // 알림 권한을 **sync 보다 먼저** 물어본다. 받은 알람 알림
+                        // (`SocialNotificationTracker.notifyReceivedAlarm`)은 `.notDetermined`
+                        // 에서 조용히 버려지므로, 한 번도 묻지 않으면 신규 설치에서 그 알림이
+                        // 영영 뜨지 않는다. 이미 답한 뒤에는 no-op 이라 매 토큰 갱신마다 불려도 된다.
+                        await SocialNotificationTracker.requestAuthorizationIfNeeded()
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
                         await refreshDynamicVoicesIfNeeded()

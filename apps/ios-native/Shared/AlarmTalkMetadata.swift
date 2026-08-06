@@ -7,7 +7,6 @@ import AlarmKit
 ///
 /// Phase 2-B4 에서 `playMode` 와 `voiceCacheKey` 를 추가해 LiveActivity / Widget /
 /// alarmUpdates 핸들러가 어떤 사운드 전략으로 등록된 알람인지 식별할 수 있게 한다.
-/// (Phase 1-B 가 SharedAlarmSnapshot 에 같은 필드를 도입했으므로 양쪽이 정합한다.)
 ///
 /// GROUP 3 에서 `alarmKitID` 와 `voiceText` 를 추가한다:
 ///   - `alarmKitID`: LiveActivity 의 Stop/Snooze 버튼이 `Button(intent:)` 로

@@ -48,8 +48,15 @@ final class LocalAlarmStore: ObservableObject {
         alarms.filter { $0.originEnum == origin }
     }
 
+    /// 무료 전환 시 정리 대상이 되는 유료 목소리 알람.
+    ///
+    /// ⚠ **본인 소유(`localOwned`)만 대상이다.** 공유받은 알람의 유료 목소리는 **보낸 사람의
+    /// 구독으로 성립**하는 것이라, 받는 쪽이 무료가 됐다고 뺏으면 안 된다
+    /// (`PaidVoiceGate.shouldDowngrade` 와 같은 원칙 — 거기만 지키고 여기서 빠뜨리면
+    /// 강등이 아니라 **삭제**라 더 나쁘다. 게다가 이 삭제는 decline 을 보내지 않아
+    /// 다음 pull 이 새 UUID 로 되살린다).
     func paidAlarmTalks() -> [LocalAlarmRecord] {
-        alarms.filter(\.isPaidVoiceForDowngrade)
+        alarms.filter { $0.originEnum == .localOwned && $0.isPaidVoiceForDowngrade }
     }
 
     func countByAudioCacheKey(_ key: String) -> Int {

@@ -9,16 +9,8 @@ public enum AppGroup {
     /// App Group 식별자. entitlements 와 동일하게 유지할 것.
     public static let identifier = "group.com.voicealarm.nativeapp.ios.shared"
 
-    /// 공유 키체인 access group. `$(AppIdentifierPrefix)` 는 런타임에 해석된다.
-    public static let keychainAccessGroup = "com.voicealarm.nativeapp.ios.keychain"
-
     /// Cross-process JSON/캐시를 저장할 컨테이너 URL.
     public static var containerURL: URL? {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier)
-    }
-
-    /// 공유된 UserDefaults suite.
-    public static var sharedDefaults: UserDefaults? {
-        UserDefaults(suiteName: identifier)
     }
 }

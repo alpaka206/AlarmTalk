@@ -38,12 +38,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var voiceRepeat: Bool
     var voiceVolumePercent: Int     // 0..100
     var ttsMessageId: String?
-    // 무료 버킷 회전(Android `AlarmEntity` 미러). voiceBucket=가리키는 버킷 카테고리,
-    // voiceRotationIndex=매 발화마다 +1 되는 순차 인덱스, voiceBucketClipKeys=사전 캐시한
-    // N개 클립의 audioCacheKey(variant 순). 옵션(a): 재스케줄 시 다음 클립을 localAudioUri 로 지정.
-    var voiceBucket: String?
-    var voiceRotationIndex: Int
-    var voiceBucketClipKeys: [String]?
     var remoteAlarmId: String?
     var lastSyncedAtMillis: Int64?
     var syncState: String           // AlarmSyncState.rawValue
@@ -191,9 +185,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         voiceRepeat: Bool = true,
         voiceVolumePercent: Int = 100,
         ttsMessageId: String? = nil,
-        voiceBucket: String? = nil,
-        voiceRotationIndex: Int = 0,
-        voiceBucketClipKeys: [String]? = nil,
         remoteAlarmId: String? = nil,
         lastSyncedAtMillis: Int64? = nil,
         syncState: String = AlarmSyncState.localOnly.rawValue,
@@ -241,9 +232,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceRepeat = voiceRepeat
         self.voiceVolumePercent = voiceVolumePercent
         self.ttsMessageId = ttsMessageId
-        self.voiceBucket = voiceBucket
-        self.voiceRotationIndex = voiceRotationIndex
-        self.voiceBucketClipKeys = voiceBucketClipKeys
         self.remoteAlarmId = remoteAlarmId
         self.lastSyncedAtMillis = lastSyncedAtMillis
         self.syncState = syncState
@@ -293,9 +281,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case voiceRepeat
         case voiceVolumePercent
         case ttsMessageId
-        case voiceBucket
-        case voiceRotationIndex
-        case voiceBucketClipKeys
         case remoteAlarmId
         case lastSyncedAtMillis
         case syncState
@@ -368,9 +353,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceRepeat = try c.decodeIfPresent(Bool.self, forKey: .voiceRepeat) ?? true
         self.voiceVolumePercent = try c.decodeIfPresent(Int.self, forKey: .voiceVolumePercent) ?? 100
         self.ttsMessageId = try c.decodeIfPresent(String.self, forKey: .ttsMessageId)
-        self.voiceBucket = try c.decodeIfPresent(String.self, forKey: .voiceBucket)
-        self.voiceRotationIndex = try c.decodeIfPresent(Int.self, forKey: .voiceRotationIndex) ?? 0
-        self.voiceBucketClipKeys = try c.decodeIfPresent([String].self, forKey: .voiceBucketClipKeys)
 
         self.remoteAlarmId = try c.decodeIfPresent(String.self, forKey: .remoteAlarmId)
         self.lastSyncedAtMillis = try c.decodeIfPresent(Int64.self, forKey: .lastSyncedAtMillis)
@@ -450,9 +432,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encode(voiceRepeat, forKey: .voiceRepeat)
         try c.encode(voiceVolumePercent, forKey: .voiceVolumePercent)
         try c.encodeIfPresent(ttsMessageId, forKey: .ttsMessageId)
-        try c.encodeIfPresent(voiceBucket, forKey: .voiceBucket)
-        try c.encode(voiceRotationIndex, forKey: .voiceRotationIndex)
-        try c.encodeIfPresent(voiceBucketClipKeys, forKey: .voiceBucketClipKeys)
         try c.encodeIfPresent(remoteAlarmId, forKey: .remoteAlarmId)
         try c.encodeIfPresent(lastSyncedAtMillis, forKey: .lastSyncedAtMillis)
         try c.encode(syncState, forKey: .syncState)

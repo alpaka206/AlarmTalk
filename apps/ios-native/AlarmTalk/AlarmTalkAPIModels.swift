@@ -723,20 +723,6 @@ struct CancelSubscriptionResponse: Decodable, Equatable {
     var subscriptionId: String?
 }
 
-struct ChangePlanRequest: Encodable {
-    var planKey: String
-    var mode: String
-}
-
-struct ChangePlanResponse: Decodable, Equatable {
-    var success: Bool
-    var mode: String
-    var subscriptionId: String?
-    var requiresCheckout: Bool?
-    var planKey: String?
-    var nextPlanKey: String?
-}
-
 struct UpdateProfileRequest: Encodable {
     var name: String?
     var allowFamilyAlarms: Bool?

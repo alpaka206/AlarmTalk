@@ -413,24 +413,6 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    /// 소유권 이양. 본인은 일반 멤버로 강등됨.
-    func transferOwnership(groupId: String, newOwnerId: String, session: AuthSession?) async {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return
-        }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            _ = try await api.transferFamilyOwnership(groupId: groupId, newOwnerId: newOwnerId, token: token)
-            await refreshAllAfterMutation(session: session, successMessage: "소유권을 이양했어요.")
-        } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "소유권을 이양하지 못했어요")
-        }
-    }
-
     /// Android `MainViewModelGrowthBillingActions.applyFreePlanVoiceLock` equivalent.
     /// When paid voice access is gone, remove local voice alarms and clear paid voice state.
     @discardableResult

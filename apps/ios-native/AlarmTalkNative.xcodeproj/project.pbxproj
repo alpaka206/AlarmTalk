@@ -128,7 +128,6 @@
 		9AC80FB57A9BDBC92C3C33F5 /* SystemVoices.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC34434C86CC3C2BB8B2F5A /* SystemVoices.swift */; };
 		9B207F7901C5B7F4124ABDCC /* RemoteAlarmPushSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBFD31524C3C55B15E0967A /* RemoteAlarmPushSync.swift */; };
 		9E3D16B1AA2460CB5F94405E /* AlarmKitViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEBAA873DFD96871D86C066E /* AlarmKitViewModel.swift */; };
-		9EFD0D29A4B1346DEEEDB8AD /* SharedAlarmCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3FB4D11868FD5DC9DE70CA0 /* SharedAlarmCache.swift */; };
 		A031DEE871E1440456148FCA /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 26FEEB9D5F4B19556BAAD9C6 /* Localizable.xcstrings */; };
 		A7954BAC173CE395F24B39D9 /* RemoteAlarmPullSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16516A5700E953E5C1170E41 /* RemoteAlarmPullSyncTests.swift */; };
 		A98BAC75D5B210C60A0A5F69 /* DefaultVoicePreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */; };
@@ -139,7 +138,6 @@
 		AC2D607D698A02FF2BE124A1 /* AlarmLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 715631AD8DB550734A8E0C0E /* AlarmLiveActivity.swift */; };
 		AE0095879E13A110AF20B521 /* SocialNotificationTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A2D4893E2A513F69B59F66 /* SocialNotificationTracker.swift */; };
 		B12C38F17D8F80C34124BD88 /* ReceivedAlarmBadgeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F53865164F0DA5BE67D28848 /* ReceivedAlarmBadgeStore.swift */; };
-		B4660AEF317DB227E8CA1CE2 /* SharedAlarmCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3FB4D11868FD5DC9DE70CA0 /* SharedAlarmCache.swift */; };
 		B573CBE4954ECB2FB22012F7 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7F732DF290FB6337B9E693 /* AppGroup.swift */; };
 		B7908479E2E176386EE2A84A /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F664DD2926368C5CC795A839 /* OnboardingView.swift */; };
 		BB1CAC0563FC0292925DC027 /* BillingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95B28A584FFD00AD1BF0633C /* BillingPanel.swift */; };
@@ -386,7 +384,6 @@
 		F22A748B61AC101C73FABFB6 /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		F2BD54D0D21050EB9BBA9364 /* AlarmTimeCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTimeCalculator.swift; sourceTree = "<group>"; };
 		F346F83B654542F502B5CBE1 /* AudioCacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheStore.swift; sourceTree = "<group>"; };
-		F3FB4D11868FD5DC9DE70CA0 /* SharedAlarmCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedAlarmCache.swift; sourceTree = "<group>"; };
 		F51D645677265F4903D07EFE /* LocalHolidayCalendarLunarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHolidayCalendarLunarTests.swift; sourceTree = "<group>"; };
 		F53865164F0DA5BE67D28848 /* ReceivedAlarmBadgeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedAlarmBadgeStore.swift; sourceTree = "<group>"; };
 		F5614A67355CB6778BA0DECE /* PlanGateDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanGateDialog.swift; sourceTree = "<group>"; };
@@ -451,7 +448,6 @@
 				521C02BC3EAB475219595232 /* AlarmTalkBrand.swift */,
 				DC283DE15D2853C6F4669754 /* AlarmTalkMetadata.swift */,
 				4E7F732DF290FB6337B9E693 /* AppGroup.swift */,
-				F3FB4D11868FD5DC9DE70CA0 /* SharedAlarmCache.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -1016,7 +1012,6 @@
 				F07FB40F608D6690144075E7 /* RootView.swift in Sources */,
 				AB049D79EABC198B5DE731CD /* SectionCard.swift in Sources */,
 				BB470280C0AFF88637CA39EC /* SettingsView.swift in Sources */,
-				B4660AEF317DB227E8CA1CE2 /* SharedAlarmCache.swift in Sources */,
 				15D56324F71243939700EEA4 /* SnoozeRepeatLimitPicker.swift in Sources */,
 				4F17B4ED7CC3C97D426E515A /* SocialFeatureViewModel.swift in Sources */,
 				AE0095879E13A110AF20B521 /* SocialNotificationTracker.swift in Sources */,
@@ -1107,7 +1102,6 @@
 				C41E6CE571C5663A87BF2C94 /* AlarmTalkMetadata.swift in Sources */,
 				7BA0C354549ED496204CA756 /* AlarmTalkWidgetBundle.swift in Sources */,
 				B573CBE4954ECB2FB22012F7 /* AppGroup.swift in Sources */,
-				9EFD0D29A4B1346DEEEDB8AD /* SharedAlarmCache.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
