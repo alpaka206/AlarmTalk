@@ -32,33 +32,45 @@ private struct SectionSurfaceModifier: ViewModifier {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(theme.palette.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(theme.palette.surfaceVariant, lineWidth: 1)
+                RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
             )
     }
 }
 
+/// 설정 카드 — **제목이 카드 안에 들어간다.**
+///
+/// 안드로이드 `ui/settings/SettingsScreenComponents.kt:60-83` 의 `SettingsCard` 대응.
+/// 그 주석이 이 컴포넌트의 존재 이유를 말한다: "화면마다 카드/행 간격이 달라 보이던
+/// 문제의 단일 출처".
+///
+/// ⚠ **제목을 카드 밖으로 빼지 말 것.** 예전 iOS 는 카드 위에 작은 회색 라벨을 띄웠는데,
+/// 그러면 카드가 무엇에 대한 것인지가 카드와 분리돼 스크롤 중에 짝이 어긋나 보인다.
+/// 모서리 8·테두리 `surfaceVariant` 도 토큰 위반이었다(18 / `outlineVariant`).
 private struct SettingsCardModifier: ViewModifier {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String?
 
     func body(content: Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             if let title {
                 Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .padding(.leading, 4)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(theme.palette.onSurface)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
             }
             content
-                .background(theme.palette.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(theme.palette.surfaceVariant, lineWidth: 1)
-                )
         }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.palette.surface)
+        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+        )
     }
 }

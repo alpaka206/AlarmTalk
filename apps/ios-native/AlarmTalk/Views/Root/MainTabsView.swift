@@ -147,7 +147,9 @@ struct MainTabsView: View {
             MenuView(
                 onOpenSettings: { settingsPresented = true },
                 onOpenBilling: { auxiliaryScreen = .billing },
-                onOpenMembers: { auxiliaryScreen = .members }
+                onOpenMembers: { auxiliaryScreen = .members },
+                onOpenPeople: { auxiliaryScreen = .people },
+                hasSharedPass: socialFeatures.familyGroup?.group != nil
             )
         }
     }

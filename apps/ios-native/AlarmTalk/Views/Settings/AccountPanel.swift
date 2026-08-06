@@ -10,6 +10,7 @@ struct AccountPanel: View {
     let user: AuthUser
     let onSignOut: () -> Void
     @State private var nicknameDialogOpen = false
+    @State private var logoutConfirming = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -35,8 +36,9 @@ struct AccountPanel: View {
             .buttonStyle(.plain)
             Divider()
             Button {
-                auth.signOut()
-                onSignOut()
+                // ⚠ **즉시 로그아웃하지 않는다.** 누르는 순간 나가지면 잘못 눌렀을 때
+                // 되돌릴 수 없다(안드로이드 `SettingsScreen.kt:143-147` 도 확인을 먼저 띄운다).
+                logoutConfirming = true
             } label: {
                 HStack {
                     Text("로그아웃")
@@ -64,6 +66,13 @@ struct AccountPanel: View {
             )
             .presentationDetents([.medium])
             .interactiveDismissDisabled(auth.isBusy)
+        }
+        .alert("로그아웃할까요?", isPresented: $logoutConfirming) {
+            Button("취소", role: .cancel) { }
+            Button("로그아웃", role: .destructive) {
+                auth.signOut()
+                onSignOut()
+            }
         }
     }
 }

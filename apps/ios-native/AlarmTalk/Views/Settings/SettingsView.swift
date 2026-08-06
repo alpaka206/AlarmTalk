@@ -53,14 +53,11 @@ struct SettingsView: View {
                         .font(.title2.weight(.bold))
                 }
 
-                // Android `SettingsScreen.kt:104-118` 의 '화면' 카드 — 테마 + 공휴일 달력.
+                // ⚠ **'테마' 행을 여기 다시 넣지 말 것.** 테마는 더보기 탭에서만 바꾼다
+                // (안드로이드 `SettingsScreen.kt:98-107` 주석: "테마·앱 언어는 전체 탭에서
+                // 관리한다"). 양쪽에 두면 같은 값을 바꾸는 자리가 둘이 되어, 한쪽만
+                // 고쳤을 때 다른 쪽이 옛 값을 보여준다.
                 VStack(alignment: .leading, spacing: 0) {
-                    SettingsValueButton(
-                        label: "테마",
-                        value: currentThemeMode.label,
-                        action: { themeDialogOpen = true }
-                    )
-                    Divider()
                     SettingsValueButton(
                         label: "공휴일 달력",
                         value: holidayCountryLabel,
@@ -91,12 +88,14 @@ struct SettingsView: View {
                         onSignOut: onClose
                     )
 
-                    MarketingConsentSection()
+                    // ⚠ 마케팅 수신 토글은 여기가 아니라 **동의 내역 화면의 '선택 동의'**
+                    // 섹션에 있다(안드로이드와 같은 위치). 법정 동의와 나란히 두는 게
+                    // 개인정보보호법 제22조의 구분 수령 취지에도 맞는다.
                 }
 
-                if auth.session?.user != nil {
-                    DeleteAccountPanel(onDeleted: onClose)
-                }
+                // ⚠ **회원 탈퇴는 더보기 탭 한 곳뿐이다.** 예전에는 여기와 더보기 양쪽에
+                // 있었고 확인 문구까지 서로 달랐다 — 같은 행동을 두 문구로 설명하면
+                // 어느 쪽이 진짜인지 알 수 없다(안드로이드는 더보기에만 둔다).
 
                 // 법적 정보 — 처리방침·약관 접근과 오픈소스 고지는 스토어·법적 요구라
                 // 앱 안에 유지해야 한다(안드로이드 `SettingsScreen.kt:154-171`).
@@ -237,6 +236,8 @@ struct SettingsView: View {
 /// 와 동일하게 선행 아이콘은 두지 않는다.
 /// 라벨 + (선택) 값 + chevron 행. 설정·더보기 두 화면이 함께 쓴다.
 struct SettingsValueButton: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+
     let label: String
     var value: String? = nil
     let action: () -> Void
@@ -246,16 +247,20 @@ struct SettingsValueButton: View {
             HStack {
                 Text(label)
                     .fontWeight(.medium)
-                    .foregroundStyle(AlarmTalkTheme.text)
+                    .foregroundStyle(theme.palette.onSurface)
                 Spacer(minLength: 12)
                 if let value {
+                    // ⚠ **값은 primary 로 강조한다.** 라벨과 값이 둘 다 무채색이면
+                    // 어느 쪽이 현재 설정값인지 안 읽힌다(안드로이드
+                    // `SettingsScreenComponents.kt:111-121` 도 primary + SemiBold).
                     Text(value)
-                        .font(.subheadline)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(theme.palette.primary)
                         .lineLimit(1)
+                        .multilineTextAlignment(.trailing)
                 }
                 Image(systemName: "chevron.right")
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)

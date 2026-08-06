@@ -161,6 +161,9 @@ final class AlarmKitViewModel: ObservableObject {
     }
 
     func startObserving(store: LocalAlarmStore) async {
+        // 화면 확인 모드에서는 구독하지 않는다 — `alarmUpdates` 구독만으로도 시스템이
+        // 권한 팝업을 띄워 화면을 가린다.
+        if UIPreviewSeed.isEnabled { return }
         #if canImport(AlarmKit)
         refreshAuthorizationState()
         guard observationTask == nil else { return }
