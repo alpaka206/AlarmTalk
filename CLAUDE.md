@@ -5,7 +5,8 @@
 - `packages/shared` — zod 스키마(`src/schemas`), 백엔드·클라 공용 계약.
 - `apps/android-native` — Kotlin/Compose. dev/prod product flavor.
 - `apps/ios-native` — SwiftUI. **2026-08-06 되살렸다**(브랜치 `feat/ios-revive`, 아직 미출시).
-  탭 구성은 안드로이드와 같다(알람/목소리/더보기). 빌드·테스트는 XcodeGen(`project.yml`)으로
+  탭 구성·화면 구성 모두 안드로이드와 같다(알람/목소리/더보기) — 「iOS 는 안드로이드를
+  원본으로 삼는다」 절 참조. 빌드·테스트는 XcodeGen(`project.yml`)으로
   `AlarmTalkNative.xcodeproj` 를 만든 뒤 시뮬레이터에서 돌린다 — 상세는 `docs/ios/`.
   ⚠ 아직 App Store 에 없고 CI 워크플로도 복구하지 않았다. Apple 개발자 계정이 선행이다.
 - `apps/landing` — 웹 랜딩.
@@ -304,6 +305,41 @@ PR #660 에서 **같은 모양의 버그가 네 번** 나왔다(동의 → 버�
 - **모달은 자기만 닫는다.** 날씨·운세·직접 입력 다이얼로그는 확인해도 문구 목록을 닫지 않는다(예전에는 확인이 곧 `onSaveSettings` 라 목록까지 닫혀, 도시 하나 바꾸려다 화면 밖으로 튕겼다). 최종 반영은 문구 화면의 저장 버튼 **한 곳**이다.
 - **삭제는 명시적 로그아웃·탈퇴에서만**(`clearCurrentDefaultVoicePreferences`). 자동 401(`clearSessionKeepingAlarms`)에서 지우면 같은 사람이 다시 로그인할 때 취향을 잃는다(Codex #646 회귀).
 - 이어받는 것은 **선택 값 하나**뿐이다. 회전 인덱스·클립 키(`bucketRotationIndex`/`bucketClipKeysJson` 등)는 알람별 상태라 절대 따라가지 않는다. 무료 버킷 **회전**(울릴 때마다 클립 순차 이동)과는 다른 축이라 서로 충돌하지 않는다.
+
+### iOS 는 안드로이드를 **원본**으로 삼는다 (2026-08-06 전수 대조)
+
+두 앱을 나란히 놓고 124건을 대조해 iOS 를 안드로이드에 맞췄다. 다시 갈라지지 않도록
+고정할 규약만 남긴다. **화면을 만들 때 안드로이드 대응 파일을 먼저 열 것.**
+
+- **주석의 '안드로이드 미러' 근거를 믿지 말고 확인할 것.** 이번에 틀린 근거가 여럿
+  나왔다 — `WakerBrandHeader:156-166`(존재하지 않음), `StockClipDropdown`(없음),
+  `editor_label_alarm_name`(문자열 자체가 없음), `AlarmTalkBottomBar.kt:117-121
+  isDarkScheme 분기`(이미 없앤 옛 디자인), 타임휠 `itemHeight = 72.dp`(실제 92).
+  **안드로이드가 이미 지운 화면을 베낀 주석이 그대로 남아 있었다.**
+- **테스트가 틀린 값을 지키고 있을 수 있다.** 클론 최소 길이 60초, 진동 12종,
+  "isDraft 는 더 이상 보내지 않는다(draft 플로우가 사라졌다)" — 셋 다 회귀 테스트가
+  잘못된 상태를 고정하고 있었다. 서버 라우트와 안드로이드를 근거로 삼는다.
+- **번역 카탈로그(`Localizable.xcstrings`)도 함께 고친다.** 소스만 고치면 en·ja 기기에
+  옛 문구가 그대로 남는다.
+- **iOS 가 안드로이드와 달라야 하는 곳은 딱 두 갈래다.**
+  1. **AlarmKit 제약**: 울림 화면을 우리가 못 그린다(시스템 ALERT UI 소유). 알람 음량
+     슬라이더도 두지 않는다 — 못 움직이는 컨트롤이라서. 대신 alert 제목과 Live Activity
+     에 **시각**을 넣어 정보량을 맞춘다.
+  2. **플랫폼 표준**: 확인 알럿은 시스템 `.alert` 를 쓴다(안드로이드의 `IosAlertDialog`
+     이 그걸 흉내 낸 것이므로, iOS 에서 껍데기를 새로 만들면 오히려 원본에서 멀어진다).
+  그 외에는 **다르면 iOS 가 틀린 것**으로 본다.
+- **오디오 스테이징은 `AVAssetExportSession` 으로 하지 않는다.** `AVAssetExportPresetAppleM4A`
+  는 `.caf` 를 못 내므로 staging 이 **항상** 실패하고, 잠금화면·앱 종료 상태에서 목소리가
+  아예 안 울린다. `AVAssetReader`→`AVAssetWriter` 로 CAF(LPCM)를 직접 쓰고,
+  `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파일은 생기는데 열리지 않는다).
+  회귀 테스트: `AlarmSoundStagingCapabilityTests`.
+- **Keychain 저장 실패로 세션 반영을 버리지 않는다**(`AuthViewModel.persistSession`).
+  저장에 실패하면 잃는 건 재시작 시 자동 로그인뿐이지만, 갱신을 버리면 rolling refresh
+  가 죽어 90일 뒤 조용히 로그아웃된다.
+- **화면 확인 모드**: `-UIPreviewSeed`(가짜 세션·알람·목소리) + `-UIPreviewTab
+  alarms|voices|menu` + `-UIPreviewEditor` + `-UIPreviewAuthScreen login|register`.
+  DEBUG 전용이고 서버·권한 팝업을 모두 건너뛴다. 시뮬레이터를 스크립트로 탭할 방법이
+  없어서 만든 진입점이다.
 
 ## 진행 중 작업 (세션 재개 시 먼저 읽을 것)
 현재 상태·폰 테스트 체크리스트·남은 follow-up: **[`docs/qa/dev-test-handoff.md`](docs/qa/dev-test-handoff.md)**.
