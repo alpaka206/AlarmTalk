@@ -6,7 +6,7 @@
     <string name="auth_confirm_password_hide">Hide confirm password</string>
     <string name="auth_confirm_password_show">Show confirm password</string>
     <string name="auth_consent_age14">[Required] I am 14 or older</string>
-    <string name="auth_consent_agree_all">Agree to all terms</string>
+    <string name="auth_consent_agree_all">Agree to all required terms</string>
     <string name="auth_consent_agree_and_start">Agree and start</string>
     <string name="auth_consent_marketing">[Optional] Agree to receive marketing messages</string>
     <string name="auth_consent_overseas_transfer">[Required] Agree to overseas transfer for voice AI processing</string>
@@ -900,7 +900,7 @@ Pass code: %1$s
     <string name="auth_consent_continue">Continue</string>
     <string name="voice_consent_agree_continue">Agree and continue</string>
     <string name="onb_voice_title_failed">We could not get the voices</string>
-    <string name="voices_register_attest">This is my voice, or one I have permission to use, and I take responsibility for registering it.</string>
+    <string name="voices_register_attest_notice">Only register your own voice, or someone's voice you have permission and consent to use. You are responsible for any unauthorized registration (Terms of Service, Article 7).</string>
     <string name="voices_register_biometric_consent">I agree to voice biometric processing</string>
     <string name="voices_register_biometric_desc">Your voice is used to build a voice profile, clone it, and read alarms aloud, and is handled as biometric information that can identify or reproduce a person. Deleting the voice deletes it too, and you can withdraw consent any time from the More tab.</string>
     <string name="msg_consent_update_required">Update the app to continue with consent.</string>

@@ -628,6 +628,7 @@ internal fun MainViewModel.checkConsentStatus() {
             // 섞여 돌 수 있으니 비어 있으면 missing 으로 폴백한다.
             val collected = status.collect.ifEmpty { status.missing }
             consentOptional = status.optional
+            consentPrechecked = status.prechecked
             // 서버가 이 앱 버전이 모르는 **필수** 동의를 요구하면 화면을 띄우지 않고 업데이트로
             // 보낸다. (보통은 min_supported_version 을 함께 올려 여기까지 오지 않는다. 안전망이다.)
             consentUnsupported = collected.any {

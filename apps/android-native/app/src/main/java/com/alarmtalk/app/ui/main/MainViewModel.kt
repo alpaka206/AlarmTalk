@@ -573,6 +573,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // consentCollect 중 '선택'(체크 없이 통과) 인 유형. 서버가 내려준다 — 화면이 목록을 따로
     // 들고 있으면 서버가 필수/선택을 바꿀 때 조용히 어긋난다.
     var consentOptional by mutableStateOf<List<String>>(emptyList())
+
+    // collect 중 **이미 동의해 둔** 유형 — 동의 화면의 초기 체크 상태.
+    // 이걸 안 쓰면 이미 동의한 사용자가 화면을 그냥 지나가는 순간 그 동의가 agreed=false 로
+    // 제출돼 조용히 사라진다(목소리 기능 차단 + 마케팅 수신 동의 소멸).
+    var consentPrechecked by mutableStateOf<List<String>>(emptyList())
         internal set
 
     // 아직 없는 민감 동의(voice_biometric·overseas_transfer).
@@ -1018,6 +1023,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         consentChecked = false
         consentCollect = emptyList()
         consentOptional = emptyList()
+        consentPrechecked = emptyList()
         consentUnsupported = false
         consentNeedsCollection = false
         consentIsReconsent = false

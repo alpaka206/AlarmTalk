@@ -203,6 +203,14 @@ data class ConsentStatusResponse(
      */
     val optional: List<String> = emptyList(),
     /**
+     * [collect] 중 **이미 동의해 둔** 유형. 화면의 **초기 체크 상태**로 쓴다.
+     *
+     * 선택 동의는 체크 없이도 CTA 가 통과되므로, 초기 상태를 항상 미체크로 두면 이미 동의한
+     * 사용자가 화면을 그냥 지나가는 순간 그 동의가 agreed=false 로 제출돼 사라진다.
+     * **가진 것을 보여주는 것**이지 미리 눌러 주는 게 아니다(필수 유형은 서버가 담지 않는다).
+     */
+    val prechecked: List<String> = emptyList(),
+    /**
      * 음성 라우트가 요구하는 민감 동의 중 아직 없는 것.
      *
      * `overseas_transfer` 는 가입 필수라 보통 비어 있고, 가입 화면에서 `voice_biometric`

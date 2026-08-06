@@ -85,15 +85,23 @@ internal fun ConsentScreen(
     busy: Boolean,
     collect: List<String>,
     optional: List<String>,
+    // **이미 동의해 둔** 유형 — 초기 체크 상태로 쓴다(서버 prechecked).
+    prechecked: List<String>,
     isReconsent: Boolean,
     onAgree: (agreedOptional: Set<String>) -> Unit,
 ) {
     var age14 by remember { mutableStateOf(false) }
     var terms by remember { mutableStateOf(false) }
     var privacy by remember { mutableStateOf(false) }
-    var voiceBiometric by remember { mutableStateOf(false) }
     var overseasTransfer by remember { mutableStateOf(false) }
-    var marketing by remember { mutableStateOf(false) }
+    // ⚠ **이미 동의해 둔 선택 항목은 체크된 채로 시작한다.**
+    // 선택 동의는 체크 없이도 CTA 가 통과되므로, 초기 상태를 항상 미체크로 두면 이미
+    // 동의한 사용자가 화면을 그냥 지나가는 순간 그 동의가 agreed=false 로 제출돼 사라진다
+    // — 목소리 기능이 막히고(sensitive_missing) 마케팅 수신 동의가 없어진다.
+    // 미리 눌러 주는 게 아니라 **가진 것을 보여주는 것**이다(필수 유형은 서버가 prechecked
+    // 에 담지 않으므로 여기 들어오지 않는다). key 를 prechecked 로 둬 응답이 늦게 와도 반영된다.
+    var voiceBiometric by remember(prechecked) { mutableStateOf("voice_biometric" in prechecked) }
+    var marketing by remember(prechecked) { mutableStateOf("marketing" in prechecked) }
 
     // 전문은 앱에 실려 있어 네트워크가 없어도 읽힌다. 문서가 바뀌지 않으니 한 번만 파싱한다.
     val context = LocalContext.current
@@ -120,6 +128,9 @@ internal fun ConsentScreen(
     // 막혀 CTA 가 켜지지 않아야 한다 — 목록을 좁히면 그 방어가 사라진다.
     val requiredShown = collect.filter { it !in optionalTypes }
     val shownRequired = requiredShown.isNotEmpty()
+    // '전체 동의' 가 실제로 다루는 집합 — **그릴 수 있는 필수**만. setAll 과 allChecked 도
+    // 같은 집합을 본다(iOS `ConsentView.masterTypes` 와 동일 정의).
+    val masterTypes = shownTypes.filter { it !in optionalTypes }
 
     // 그리지 않은 필수 항목은 이미 동의된 것이므로 통과 조건에서 뺀다.
     // 모르는 유형(서버가 새 유형을 먼저 추가한 구간)은 else -> false 로 통과를 막는다.
@@ -137,8 +148,13 @@ internal fun ConsentScreen(
             else -> false
         }
     }
-    val allChecked = allRequiredChecked &&
-        (!showVoiceBiometric || voiceBiometric) && (!showMarketing || marketing)
+    // ⚠ **'전체 동의' 는 필수 유형만 다룬다.**
+    // 선택 동의까지 한 탭에 켜면, 명시적으로 거절했던 사람이 필수 재동의 화면에서 **한 번의
+    // 탭으로 마케팅을 켜게 되는 화면**이 된다 — 개인정보보호법 제22조의 선택 동의 구분 수령
+    // 취지에 어긋나는 다크패턴이다.
+    // setAll 과 allChecked 는 **반드시 같은 집합**을 봐야 한다(한쪽만 바꾸면 전체 동의 표시가
+    // 영영 안 켜지거나, 켜져 있는데 아무것도 안 하는 행이 된다).
+    val allChecked = allRequiredChecked
 
     // 화면에서 사용자가 실제로 체크한 '선택' 유형 — 제출은 이 값으로 agreed 를 정한다.
     val agreedOptional = buildSet {
@@ -146,13 +162,12 @@ internal fun ConsentScreen(
         if (showMarketing && marketing) add("marketing")
     }
 
+    // 필수 전용 — 위 allChecked 와 같은 집합이다. 선택 항목(생체정보·마케팅)은 건드리지 않는다.
     fun setAll(value: Boolean) {
         if (showAge14) age14 = value
         if (showTerms) terms = value
         if (showPrivacy) privacy = value
-        if (showVoiceBiometric) voiceBiometric = value
         if (showOverseas) overseasTransfer = value
-        if (showMarketing) marketing = value
     }
 
     AuthBackdrop {
@@ -181,9 +196,10 @@ internal fun ConsentScreen(
                     color = TextOnSceneDim,
                 )
             }
-            // '약관 전체 동의' 는 스크롤 밖에 고정한다 — 항목을 펼쳐 읽다가도 한 번에 동의할 수
-            // 있어야 한다(항목이 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지 않는다).
-            if (shownCount > 1) {
+            // '필수 약관 전체 동의' 는 스크롤 밖에 고정한다 — 항목을 펼쳐 읽다가도 한 번에
+            // 동의할 수 있어야 한다. 필수가 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지
+            // 않는다(선택 항목은 마스터가 다루지 않으므로 개수에 넣지 않는다).
+            if (masterTypes.size > 1) {
                 Spacer(Modifier.height(24.dp))
                 ConsentRow(
                     checked = allChecked,

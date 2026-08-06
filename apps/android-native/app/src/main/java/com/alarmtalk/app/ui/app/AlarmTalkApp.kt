@@ -963,6 +963,7 @@ internal fun AlarmTalkApp(
               collect = viewModel.consentCollect,
               isReconsent = viewModel.consentIsReconsent,
               optional = viewModel.consentOptional,
+              prechecked = viewModel.consentPrechecked,
               onAgree = { agreedOptional -> viewModel.submitConsents(agreedOptional) },
           )
           return@Scaffold

@@ -156,15 +156,18 @@ internal fun VoiceProfileDeleteDialog(
  * 생성이다. 마지막 '저장하기'(승격) 앞에 두면 이미 목소리를 만들어 놓고 사후 동의를 받는
  * 꼴이라 동의의 의미가 없다.
  *
- * 두 항목의 성격이 다르다:
- *  - [attested] 는 **이 녹음**에 대한 이용자 확인이라 등록할 때마다 받는다(서버 동의 기록 아님).
- *  - [showBiometricConsent] 는 가입 화면에서 음성 생체정보(선택)를 거절한 사람에게만 뜨는
- *    법정 동의다. 한 번 체크하면 서버에 기록돼 다음 등록부터는 아예 그리지 않는다.
+ * ⚠ **권리 보증은 체크박스로 받지 않는다 — 약관 제7조가 담당한다.**
+ * 「본인의 목소리 또는 적법한 권한과 명시적 동의를 받은 사람의 목소리만 등록할 수 있습니다」
+ * 「권한 없는 음성 등록으로 발생하는 책임은 해당 이용자가 부담합니다」가 이미 약관에 있고,
+ * 약관은 가입 필수 동의라 이미 받았다. 등록마다 다시 체크받는 것은 계약상 중복이었다.
+ * 여기서는 **업로드 시점 고지**만 비차단 안내로 남긴다.
+ * 되돌리려면 약관 제7조를 먼저 확인할 것 — 그 조항이 사라졌다면 체크박스가 다시 필요하다.
+ *
+ * [showBiometricConsent] 는 가입 화면에서 음성 생체정보(선택)를 거절한 사람에게만 뜨는
+ * 법정 동의다. 한 번 체크하면 서버에 기록돼 다음 등록부터는 아예 그리지 않는다.
  */
 @Composable
 internal fun VoiceRegistrationAttestation(
-    attested: Boolean,
-    onAttestedChange: (Boolean) -> Unit,
     showBiometricConsent: Boolean,
     biometricAgreed: Boolean,
     onBiometricAgreedChange: (Boolean) -> Unit,
@@ -180,10 +183,10 @@ internal fun VoiceRegistrationAttestation(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            VoiceRegistrationCheck(
-                checked = attested,
-                onCheckedChange = onAttestedChange,
-                label = stringResource(R.string.voices_register_attest),
+            Text(
+                text = stringResource(R.string.voices_register_attest_notice),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (showBiometricConsent) {
                 VoiceRegistrationCheck(

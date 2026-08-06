@@ -263,15 +263,14 @@ internal fun VoiceProfileManagementPanel(
     // 인라인 동의 체크. 등록 요청이 나가기 전 단계에서만 의미가 있으므로 다이얼로그를 닫을 때
     // 함께 초기화한다(closeCreateDialog).
     var voiceBiometricAgreed by remember { mutableStateOf(false) }
-    var recordingAttested by remember { mutableStateOf(false) }
     var currentStep by remember { mutableStateOf(VoiceRegistrationStep.Source) }
     // 가입 화면에서 음성 생체정보(선택)를 거절한 사람에게만 인라인 동의 항목을 그린다.
     // 한 번 동의하면 서버 기록이 남아 sensitiveConsentMissing 이 비고 다시 뜨지 않는다.
     val needsBiometricConsent = "voice_biometric" in sensitiveConsentMissing
-    // 등록(=draft 생성=실제 클론 생성)을 눌러도 되는지. 이 녹음에 대한 확인은 매번 받고,
-    // 법정 동의는 아직 없을 때만 받는다.
-    val registrationConsentSatisfied =
-        recordingAttested && (!needsBiometricConsent || voiceBiometricAgreed)
+    // 등록(=draft 생성=실제 클론 생성)을 눌러도 되는지 — **법정 동의만** 본다.
+    // 권리 보증 확인은 약관 제7조가 담당하므로 체크박스가 아니라 안내 문구다
+    // (VoiceRegistrationAttestation 주석 참조).
+    val registrationConsentSatisfied = !needsBiometricConsent || voiceBiometricAgreed
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
@@ -700,7 +699,6 @@ internal fun VoiceProfileManagementPanel(
         profileListenerTitle = ""
         shareVoice = false
         voiceBiometricAgreed = false
-        recordingAttested = false
         currentStep = VoiceRegistrationStep.Source
         selectedAudio = null
         mediaPlayer?.release()
@@ -1744,8 +1742,6 @@ internal fun VoiceProfileManagementPanel(
                                 // 때문이다. 마지막 '저장하기'(승격) 앞에 두면 이미 목소리를
                                 // 만들어 놓고 사후 동의를 받는 꼴이 된다.
                                 VoiceRegistrationAttestation(
-                                    attested = recordingAttested,
-                                    onAttestedChange = { recordingAttested = it },
                                     // 가입 화면에서 이미 동의했으면 그리지 않는다 — 한 번 받은
                                     // 동의를 등록할 때마다 다시 묻지 않는다.
                                     showBiometricConsent = needsBiometricConsent,
