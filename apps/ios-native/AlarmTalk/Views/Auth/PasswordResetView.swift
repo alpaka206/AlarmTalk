@@ -68,10 +68,11 @@ struct PasswordResetView: View {
                     }
 
                     if let message = auth.statusMessage {
-                        // 코드 발송 안내·오류 모두 여기로 노출. 성공/실패가 섞이므로 중립색을 쓴다.
+                        // 코드 발송 안내·오류가 모두 여기로 온다 — 중립색으로 뭉뚱그리지
+                        // 않고 `statusIsError` 로 갈라 그린다.
                         Text(message)
                             .font(theme.typography.bodySmall)
-                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                            .foregroundStyle(auth.statusIsError ? AuthSceneColors.error : AuthSceneColors.notice)
                             .padding(.top, 4)
                     }
                 }

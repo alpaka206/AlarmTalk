@@ -134,9 +134,13 @@ struct LoginView: View {
                     }
 
                     if let message = auth.statusMessage {
+                        // ⚠ **성공을 빨간색으로 그리지 말 것.** 이 자리에는 "인증 코드를
+                        // 보냈어요"(안내)와 "비밀번호가 달라요"(오류)가 함께 온다 —
+                        // 전부 error 색으로 칠하면 코드를 잘 받은 사용자가 뭔가
+                        // 잘못된 줄 안다(안드로이드는 AuthErrorText/AuthNoticeText 로 나눈다).
                         Text(message)
                             .font(theme.typography.bodySmall)
-                            .foregroundStyle(AuthSceneColors.error)
+                            .foregroundStyle(auth.statusIsError ? AuthSceneColors.error : AuthSceneColors.notice)
                             .padding(.top, 4)
                     }
 
@@ -442,16 +446,25 @@ struct VocaTextField: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(theme.typography.labelMedium)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .foregroundStyle(AuthSceneColors.textMuted)
             TextField("", text: $text)
                 .keyboardType(keyboardType)
                 .submitLabel(submitLabel)
                 .disabled(!enabled)
+                .foregroundStyle(AuthSceneColors.text)
+                .tint(AuthSceneColors.accent)
                 .padding(.vertical, 12)
                 .padding(.horizontal, 14)
+                // ⚠ 인증 화면은 고정 다크라 테마 `outline` 만 두면 남색 배경에서 테두리가
+                // 거의 안 보이고 입력칸이 어디부터인지 모른다. 안드로이드는 글라스 채움
+                // (`AuthFieldGlass`) + `AuthLine` 테두리다(`AuthScreen.kt:61-64`).
                 .background(
                     RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                        .stroke(theme.palette.outline, lineWidth: 1)
+                        .fill(AuthSceneColors.fieldGlass)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                        .stroke(AuthSceneColors.line, lineWidth: 1)
                 )
         }
     }
@@ -469,7 +482,7 @@ struct VocaSecureField: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(theme.typography.labelMedium)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .foregroundStyle(AuthSceneColors.textMuted)
             HStack(spacing: 8) {
                 Group {
                     if isVisible {
@@ -479,6 +492,8 @@ struct VocaSecureField: View {
                     }
                 }
                 .disabled(!enabled)
+                .foregroundStyle(AuthSceneColors.text)
+                .tint(AuthSceneColors.accent)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
 
@@ -486,7 +501,7 @@ struct VocaSecureField: View {
                     isVisible.toggle()
                 } label: {
                     Image(systemName: isVisible ? "eye.slash" : "eye")
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .foregroundStyle(AuthSceneColors.textMuted)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(isVisible ? "비밀번호 숨기기" : "비밀번호 보기")
@@ -495,7 +510,11 @@ struct VocaSecureField: View {
             .padding(.horizontal, 14)
             .background(
                 RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                    .stroke(isError ? theme.palette.error : theme.palette.outline, lineWidth: 1)
+                    .fill(AuthSceneColors.fieldGlass)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .stroke(isError ? AuthSceneColors.error : AuthSceneColors.line, lineWidth: 1)
             )
         }
     }

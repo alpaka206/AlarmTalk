@@ -45,7 +45,27 @@ struct LiveAppleCredentialStateProvider: AppleCredentialStateProviding {
 @MainActor
 final class AuthViewModel: ObservableObject {
     @Published private(set) var session: AuthSession?
-    @Published var statusMessage: String?
+    @Published var statusMessage: String? {
+        didSet {
+            // 새 메시지는 기본이 '안내' 다. 오류 경로는 대입 **직후**
+            // `statusIsError = true` 로 표시한다(아래 `failStatus` 헬퍼).
+            if statusMessage != oldValue { statusIsError = false }
+        }
+    }
+
+    /// 지금 `statusMessage` 가 오류인가.
+    ///
+    /// ⚠ **이게 없으면 화면이 성공까지 빨간색으로 그린다.** 로그인 화면은 이 값 하나에
+    /// "인증 코드를 보냈어요"(안내)와 "비밀번호가 달라요"(오류)를 모두 실어 보내는데,
+    /// iOS 는 전부 error 색으로 칠하고 있었다 — 코드를 잘 받은 사용자에게 빨간 글씨가
+    /// 뜨면 뭔가 잘못된 줄 안다. 안드로이드는 `AuthErrorText`/`AuthNoticeText` 로 나눈다.
+    @Published private(set) var statusIsError = false
+
+    /// 오류 메시지를 세운다. `statusMessage` 에 직접 대입하면 안내로 처리된다.
+    func failStatus(_ message: String?) {
+        statusMessage = message
+        statusIsError = message != nil
+    }
     @Published var isBusy = false
     /// 401 외의 일시 오류(5xx, 4xx 기타, 네트워크 단절 등) 를 사용자에게 보여주되
     /// 세션은 유지한다. UI 가 빨간 띠/스낵바 등으로 노출하면 된다.
@@ -271,7 +291,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func handleAppleAuthorizationFailure(_ error: Error) {
-        statusMessage = userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
+        failStatus(userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요."))
     }
 
     func loginWithApple(
@@ -306,7 +326,7 @@ final class AuthViewModel: ObservableObject {
             // 필수 약관 미동의면 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
+            failStatus(userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요."))
         }
     }
 
@@ -322,7 +342,7 @@ final class AuthViewModel: ObservableObject {
             _ = try await AlarmTalkAPI.shared.requestEmailVerification(email: email)
             statusMessage = "인증 코드를 보냈어요. 메일을 확인해 주세요."
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요"))
         }
     }
 
@@ -343,7 +363,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "이메일 인증이 완료됐어요."
             return true
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "인증 코드가 맞지 않아요")
+            failStatus(userFacingErrorMessage(error, fallback: "인증 코드가 맞지 않아요"))
             return false
         }
     }
@@ -364,7 +384,7 @@ final class AuthViewModel: ObservableObject {
             // 필수 약관 미동의면 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "로그인에 실패했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "로그인에 실패했어요"))
         }
     }
 
@@ -392,7 +412,7 @@ final class AuthViewModel: ObservableObject {
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "회원가입에 실패했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "회원가입에 실패했어요"))
         }
     }
 
@@ -412,7 +432,7 @@ final class AuthViewModel: ObservableObject {
             passwordResetCodeSentTo = normalized
             statusMessage = "재설정 코드를 보냈어요. 메일을 확인해 주세요."
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요"))
         }
     }
 
@@ -442,7 +462,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요."
             return true
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "비밀번호 재설정에 실패했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "비밀번호 재설정에 실패했어요"))
             return false
         }
     }
@@ -641,7 +661,7 @@ final class AuthViewModel: ObservableObject {
             await refreshUser()
             statusMessage = "프로필을 저장했어요."
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요"))
         }
     }
 
@@ -692,7 +712,7 @@ final class AuthViewModel: ObservableObject {
             }
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요"))
         }
     }
 
@@ -718,7 +738,7 @@ final class AuthViewModel: ObservableObject {
             }
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요"))
         }
     }
 
@@ -738,7 +758,7 @@ final class AuthViewModel: ObservableObject {
             pendingDeletion = false
             statusMessage = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "탈퇴 취소에 실패했어요. 다시 시도해 주세요")
+            failStatus(userFacingErrorMessage(error, fallback: "탈퇴 취소에 실패했어요. 다시 시도해 주세요"))
         }
     }
 
@@ -883,7 +903,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "동의가 완료됐어요"
         } catch {
             if handleConsentVersionMismatch(error) { return }
-            statusMessage = userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요")
+            failStatus(userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요"))
         }
     }
 
@@ -919,7 +939,7 @@ final class AuthViewModel: ObservableObject {
             return true
         } catch {
             if handleConsentVersionMismatch(error) { return false }
-            statusMessage = userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요")
+            failStatus(userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요"))
             return false
         }
     }
@@ -964,7 +984,7 @@ final class AuthViewModel: ObservableObject {
         } catch {
             marketingConsentAgreed = previous
             if handleConsentVersionMismatch(error) { return }
-            statusMessage = userFacingErrorMessage(error, fallback: "마케팅 수신 설정을 변경하지 못했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "마케팅 수신 설정을 변경하지 못했어요"))
         }
     }
 
@@ -997,7 +1017,7 @@ final class AuthViewModel: ObservableObject {
             // 시스템(기본) 목소리는 내 생체정보가 아니라 철회와 무관하다.
             revokedVoiceIDs = profiles.filter { $0.isSystem != true }.map(\.id).filter { !$0.isEmpty }
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요"))
             return false
         }
 
@@ -1010,7 +1030,7 @@ final class AuthViewModel: ObservableObject {
             )
         } catch {
             if handleConsentVersionMismatch(error) { return false }
-            statusMessage = userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요")
+            failStatus(userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요"))
             return false
         }
 
