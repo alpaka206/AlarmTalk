@@ -918,6 +918,9 @@ struct ConsentRecord: Decodable, Equatable {
     var consentType: String
     var policyVersion: String
     var agreed: Bool
+    /// 동의한 시각(UTC, "2026-07-06 04:12:33"). 동의 내역 화면이 날짜로 보여준다.
+    /// 서버 `user.ts:453` 가 항상 실어 보내지만 옛 응답 호환으로 옵셔널.
+    var agreedAt: String?
 }
 
 /// `GET user/consents` 응답. 유형별 최신 동의값 목록. Android `ConsentListResponse`.

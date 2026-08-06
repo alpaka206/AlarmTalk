@@ -27,6 +27,11 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
     var alarmKitID: String?
     /// 알람 모먼트에 인용할 보이스 문구 (Android RingingActivity parity).
     var voiceText: String?
+    /// 알람 시각(0…23 / 0…59). Live Activity 가 **시각을 가장 크게** 보여주기 위해
+    /// 필요하다 — 안드로이드 울림 화면이 104sp 시계를 첫 요소로 두는 것과 같은 이유다.
+    /// 잠결에 보는 화면이라 "지금 울리는 중" 보다 "오전 7:30" 이 먼저 읽혀야 한다.
+    var hour: Int?
+    var minute: Int?
 
     init(
         localAlarmID: String,
@@ -34,7 +39,9 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
         playMode: String? = nil,
         voiceCacheKey: String? = nil,
         alarmKitID: String? = nil,
-        voiceText: String? = nil
+        voiceText: String? = nil,
+        hour: Int? = nil,
+        minute: Int? = nil
     ) {
         self.localAlarmID = localAlarmID
         self.label = label
@@ -42,6 +49,15 @@ struct AlarmTalkMetadata: AlarmMetadata, Codable, Hashable, Sendable {
         self.voiceCacheKey = voiceCacheKey
         self.alarmKitID = alarmKitID
         self.voiceText = voiceText
+        self.hour = hour
+        self.minute = minute
+    }
+
+    /// "오전 7:30" — 없으면 nil(옛 레코드 호환).
+    var clockLabel: String? {
+        guard let hour, let minute, (0...23).contains(hour), (0...59).contains(minute) else { return nil }
+        let h12 = hour % 12 == 0 ? 12 : hour % 12
+        return String(format: "%@ %d:%02d", hour < 12 ? "오전" : "오후", h12, minute)
     }
 
     enum CodingKeys: String, CodingKey {

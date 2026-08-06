@@ -50,6 +50,13 @@ targets:
       # 이게 없으면 재생 버튼이 소리 없이 진행바만 채운다(예전 iOS 가 그랬다).
       - path: AlarmTalk/Resources
         buildPhase: resources
+        excludes:
+          - "Licenses"
+      # 라이선스 전문은 폴더 구조 없이 번들 루트에 둔다 —
+      # `Bundle.main.url(forResource:withExtension:)` 이 그렇게 찾는다.
+      - path: AlarmTalk/Resources/Licenses
+        buildPhase: resources
+        type: group
     dependencies:
       - target: AlarmTalkWidget
         embed: true

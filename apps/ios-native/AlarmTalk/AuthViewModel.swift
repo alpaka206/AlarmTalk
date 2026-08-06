@@ -943,6 +943,69 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    // MARK: - 음성 생체정보 동의 철회
+
+    /// 동의 내역 화면의 '동의 철회'. 등록한 목소리·녹음 원본·생성 음성이 서버에서
+    /// 영구 삭제되고, 그 목소리로 울리던 알람은 기본 알람음으로 강등된다.
+    ///
+    /// ⚠ **철회로 사라질 목소리 id 를 POST 전에 서버에서 확정한다.** 화면 상태만 믿으면
+    /// 프리로드가 아직 안 끝났거나 실패했을 때 대상이 0개가 되어, 철회한 목소리가 그
+    /// 기기에서 계속 울린다. 확정하지 못하면 **철회를 시작하지 않는다** — 아직 아무것도
+    /// 지우지 않은 상태라 재시도가 안전하고, 지운 뒤 실패하면 되돌릴 방법이 없다.
+    ///
+    /// 반환값은 성공 여부다(호출부가 기록을 다시 읽을지 판단한다).
+    @discardableResult
+    func withdrawVoiceBiometricConsent(
+        voiceStudio: VoiceStudioViewModel?,
+        alarmStore: LocalAlarmStore?,
+        audioCache: AudioCacheStore?
+    ) async -> Bool {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return false
+        }
+        let userID = session?.user.id
+
+        let revokedVoiceIDs: [String]
+        do {
+            let profiles = try await AlarmTalkAPI.shared.listVoiceProfiles(token: token)
+            // 시스템(기본) 목소리는 내 생체정보가 아니라 철회와 무관하다.
+            revokedVoiceIDs = profiles.filter { $0.isSystem != true }.map(\.id).filter { !$0.isEmpty }
+        } catch {
+            statusMessage = userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요")
+            return false
+        }
+
+        do {
+            _ = try await api.recordConsents(
+                RecordConsentsRequest(consents: [
+                    ConsentItemRequest(type: "voice_biometric", agreed: false, version: Self.currentPolicyVersion),
+                ]),
+                token: token
+            )
+        } catch {
+            if handleConsentVersionMismatch(error) { return false }
+            statusMessage = userFacingErrorMessage(error, fallback: "동의를 철회하지 못했어요")
+            return false
+        }
+
+        // 1) 서버가 지웠다고 확인해 준 것부터 **세션 가드보다 먼저** 로컬에서 끊는다.
+        if let alarmStore {
+            voiceStudio?.degradeAlarms(
+                usingVoiceProfileIDs: revokedVoiceIDs,
+                alarmStore: alarmStore,
+                audioCache: audioCache
+            )
+        }
+        // 2) 여기부터는 **이 계정 화면의 상태**라 세션이 바뀌었으면 건드리지 않는다.
+        guard session?.user.id == userID else { return true }
+        if !consentSensitiveMissing.contains("voice_biometric") {
+            consentSensitiveMissing.append("voice_biometric")
+        }
+        statusMessage = "음성 생체정보 처리 동의를 철회했어요."
+        return true
+    }
+
     func signOut(message: String? = nil) {
         // W2: 로컬 세션을 지우기 전에 서버 토큰을 폐기(token_epoch 상향)한다.
         // best-effort — 네트워크 실패/만료 토큰이어도 로그아웃은 그대로 진행한다.

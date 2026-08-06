@@ -128,6 +128,14 @@ final class AlarmKitViewModel: ObservableObject {
     nonisolated static let alarmRecoveryMessage =
         "설정에서 알람 권한을 켜 주세요. \(alarmDeniedConsequence)"
 
+    /// 울림 알럿 제목 — "오전 7:30 · 아침 알람". 라벨이 없으면 시각만.
+    /// 안드로이드 울림 화면이 시각을 가장 크게 보여주는 것에 맞춘 최소 대응이다.
+    nonisolated static func alertTitle(for record: LocalAlarmRecord) -> String {
+        let time = "\(record.meridiemLabel) \(record.clockLabel12h)"
+        let label = record.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return label.isEmpty ? time : "\(time) · \(label)"
+    }
+
     func requestAuthorization() async {
         // 화면 확인 모드에서는 권한 팝업이 화면을 가린다(스크립트로 탭할 방법이 없다).
         if UIPreviewSeed.isEnabled { return }
@@ -527,8 +535,12 @@ final class AlarmKitViewModel: ObservableObject {
         // 자동 재무장하므로, snoozeRepeatLimit 도달 시에도 알람이 계속 되살아난다
         // (Android AlarmRepository.snooze() 의 한도 종료 동작과 어긋남). .custom 은
         // OS 자동 동작을 끄고 우리 intent 가 countdown(id:) / stop(id:) 을 직접 호출.
+        // ⚠ **여기가 iOS 에서 우리가 쓸 수 있는 유일한 울림 화면 문구다.** AlarmKit 이
+        // 시스템 ALERT UI 를 소유해 안드로이드 `RingingActivity`(전용 잠금화면 씬 —
+        // 날짜·104sp 시계·낭독 문구 카드·밀어서 끄기) 를 복제할 수 없다. 그래서 최소한
+        // **시각만이라도** 제목에 넣는다 — 라벨 하나만 뜨면 잠결에 어느 알람인지 모른다.
         let alert = AlarmPresentation.Alert(
-            title: LocalizedStringResource(stringLiteral: record.label),
+            title: LocalizedStringResource(stringLiteral: Self.alertTitle(for: record)),
             stopButton: stopButton,
             secondaryButton: snoozeButton,
             secondaryButtonBehavior: .custom
@@ -558,7 +570,9 @@ final class AlarmKitViewModel: ObservableObject {
             playMode: record.playMode,
             voiceCacheKey: record.audioCacheKey,
             alarmKitID: alarmKitID.uuidString,
-            voiceText: quotedVoiceText
+            voiceText: quotedVoiceText,
+            hour: record.hour,
+            minute: record.minute
         )
         let attributes = AlarmAttributes(
             presentation: presentation,

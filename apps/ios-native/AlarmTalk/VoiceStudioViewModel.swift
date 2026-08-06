@@ -888,6 +888,18 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
+    /// 생체정보 동의 철회로 사라진 목소리들을 로컬 알람에서 한 번에 끊는다.
+    ///
+    /// ⚠ **서버 응답을 받은 즉시, 세션 가드보다 먼저 부른다.** 응답을 기다리는 사이
+    /// 자동 401 이 세션을 비웠을 수 있는데 그 경로는 로컬 알람 예약을 일부러 그대로
+    /// 둔다(알람 전달이 인증 상태에 묶이면 안 되므로). 여기서 안 끊으면 서버에선 이미
+    /// 지워진 목소리가 그 기기에서 계속 울린다.
+    func degradeAlarms(usingVoiceProfileIDs ids: [String], alarmStore: LocalAlarmStore, audioCache: AudioCacheStore?) {
+        for id in ids where !id.isEmpty {
+            cascadeAlarmsAfterVoiceDeletion(profileID: id, alarmStore: alarmStore, audioCache: audioCache)
+        }
+    }
+
     /// 로컬 알람의 voice 메타를 비우고 sound-only 로 강등 + 더 이상 참조되지 않는 캐시 정리.
     private func cascadeAlarmsAfterVoiceDeletion(
         profileID: String,

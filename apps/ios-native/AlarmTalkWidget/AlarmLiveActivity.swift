@@ -76,15 +76,31 @@ struct AlarmLiveActivity: Widget {
                     .foregroundStyle(AlarmTalkBrand.activitySecondaryText)
             }
 
-            // 현재 모드 상태 라벨 (정적).
-            timingText(context)
-                .font(.system(size: 34, weight: .bold).monospacedDigit())
-                .foregroundStyle(.white)
+            // ⚠ **시각이 가장 크다.** 안드로이드 울림 화면(`RingingActivity.kt:266-290`)이
+            // 104sp 시계를 첫 요소로 두는 것과 같은 이유 — 잠결에 보는 화면이라
+            // "지금 울리는 중" 보다 "오전 7:30" 이 먼저 읽혀야 한다. 옛 레코드(시각 필드
+            // 없음)는 종전대로 모드 라벨을 크게 그린다.
+            if let clock = context.attributes.metadata?.clockLabel {
+                Text(clock)
+                    .font(.system(size: 40, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
 
-            // 모드별 부제 (Android ring-moment 정보 parity).
-            subtitleText(context)
+                HStack(spacing: 6) {
+                    timingText(context)
+                    Text("·")
+                    subtitleText(context)
+                }
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.84))
+            } else {
+                timingText(context)
+                    .font(.system(size: 34, weight: .bold).monospacedDigit())
+                    .foregroundStyle(.white)
+
+                subtitleText(context)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.84))
+            }
 
             // 인용 보이스 문구 (있을 때만).
             if let voiceText = quotedVoiceText(context) {

@@ -16,6 +16,16 @@ struct SettingsView: View {
     @State private var fortuneDialogOpen: Bool = false
     @State private var holidayDialogOpen: Bool = false
     @State private var promptPreferences: DynamicPromptPreferences = .loadFromDefaults()
+    @State private var legalDestination: LegalDestination?
+
+    /// 설정 하단 '법적 정보' 카드가 여는 화면들.
+    enum LegalDestination: String, Identifiable, Hashable {
+        case consentHistory
+        case ossLicenses
+        case terms
+        case privacy
+        var id: String { rawValue }
+    }
 
     /// Android `SettingsScreen.kt:150,156` 의 약관/방침 외부 링크.
     private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
@@ -88,25 +98,39 @@ struct SettingsView: View {
                     DeleteAccountPanel(onDeleted: onClose)
                 }
 
-                HStack(spacing: 6) {
-                    Link("서비스 이용약관", destination: Self.termsURL)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-
-                    Text("·")
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-
-                    Link("개인정보 처리방침", destination: Self.privacyURL)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                // 법적 정보 — 처리방침·약관 접근과 오픈소스 고지는 스토어·법적 요구라
+                // 앱 안에 유지해야 한다(안드로이드 `SettingsScreen.kt:154-171`).
+                // ⚠ 예전에는 여기 웹 `Link` 두 개뿐이었다 — 외부 Safari 로 나가는 데다
+                // **동의 내역(생체정보 철회) 경로가 앱에 아예 없었다.**
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsValueButton(label: "약관 및 개인정보 처리 동의") {
+                        legalDestination = .consentHistory
+                    }
+                    Divider().padding(.horizontal, 8).padding(.vertical, 4)
+                    SettingsValueButton(label: "오픈소스 라이선스") {
+                        legalDestination = .ossLicenses
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 4)
+                .settingsCard(title: "법적 정보")
             }
             .padding(20)
         }
         .homeGradientBackground()
+        .navigationDestination(item: $legalDestination) { destination in
+            switch destination {
+            case .consentHistory:
+                ConsentHistoryView(
+                    onOpenTerms: { legalDestination = .terms },
+                    onOpenPrivacy: { legalDestination = .privacy }
+                )
+            case .ossLicenses:
+                OssLicensesView()
+            case .terms:
+                LegalDocumentView(title: "서비스 이용약관", url: Self.termsURL)
+            case .privacy:
+                LegalDocumentView(title: "개인정보 처리방침", url: Self.privacyURL)
+            }
+        }
         .onAppear {
             nicknameDraft = auth.session?.user.name ?? ""
             loadPromptPreferences()
