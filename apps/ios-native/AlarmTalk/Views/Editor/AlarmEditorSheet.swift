@@ -308,12 +308,17 @@ struct AlarmEditorSheet: View {
                 // 반대로 예약이 실패해도 경고 알럿이 이미 사라진 뷰에 붙어 아무 데도 안 뜬다.
                 // 안드로이드도 저장 중에는 취소를 함께 잠근다
                 // (AlarmEditorScreen 의 `val busy = generating || saving` → EditorActionButtons).
-                .disabled(isWorking || voiceStudio.isBusy)
+                //
+                // ⚠ 조건은 `isWorking`(저장 흐름) **뿐이다.** 저장 버튼(:285)과 달리
+                // `voiceStudio.isBusy` 를 넣으면 안 된다 — 그 플래그는 미리듣기·프로필
+                // 새로고침·업로드 등 저장과 무관한 15곳에서도 서고, 그동안 시트를 못 닫으면
+                // 사용자가 갇힌다. 못 나가게 막는 것과 못 저장하게 막는 것은 무게가 다르다.
+                .disabled(isWorking)
                 .accessibilityLabel(Text("닫기"))
             }
         }
         // 아래로 쓸어 닫는 것도 같은 이유로 막는다 — X 만 잠그면 제스처로 같은 상태가 된다.
-        .interactiveDismissDisabled(isWorking || voiceStudio.isBusy)
+        .interactiveDismissDisabled(isWorking)
         .sheet(isPresented: $usageGuidePresented, onDismiss: {
             UsageGuideStore().markSeen(.alarmEditor)
         }) {
