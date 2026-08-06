@@ -126,8 +126,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// noiseRemoval 파라미터는 호출부 소스 호환을 위해 유지하지만 더 이상 multipart 로
     /// 전송하지 않는다. Android 는 이 필드를 보내지 않고, 백엔드도 읽지 않는다(stale).
-    /// 대신 Android 처럼 voiceGender(male/female/neutral)/speechFormality(auto/polite)를
-    /// **항상** 동봉한다. Android `VoiceProfileApi.kt:106-121`.
+    ///
+    /// ⚠ `voiceGender`/`speechFormality` 는 **보내지 않는다.** 두 컬럼은 마이그레이션 #83 이
+    /// DROP 했고, 대체재인 `speech_style` 은 등록 녹음 전사를 서버가 **자동 분석**해 채운다
+    /// (`voice-profile.ts` 의 speech_style_status). 안드로이드도 이 둘을 보내지 않고 UI 도 없다
+    /// (`VoiceProfileApi.createVoiceClone` 파라미터 참고). 되살리지 말 것.
     static func voiceCloneMultipartFields(
         name: String,
         isShared: Bool,
@@ -135,9 +138,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         noiseRemoval: Bool = false,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        isDraft: Bool? = nil,
-        voiceGender: String = "neutral",
-        speechFormality: String = "auto"
+        isDraft: Bool? = nil
     ) -> [String: String] {
         _ = noiseRemoval // stale: 더 이상 전송하지 않음(backend 무시, Android 미전송).
         let fields: [String: String] = [
@@ -147,10 +148,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
             "relationshipLabel": relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "listenerTitle": listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "isDraft": (isDraft ?? false) ? "true" : "false",
-            // Android 와 동일하게 항상 동봉(기본 neutral/auto). backend 가 폼이 없으면 null 로
-            // 저장하므로, 기본값을 명시 전송해 일본어 정중체·성별 튜닝 기준을 일치시킨다.
-            "voiceGender": voiceGender.trimmingCharacters(in: .whitespacesAndNewlines),
-            "speechFormality": speechFormality.trimmingCharacters(in: .whitespacesAndNewlines),
         ]
         return fields
     }
@@ -165,9 +162,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        isDraft: Bool? = nil,
-        voiceGender: String = "neutral",
-        speechFormality: String = "auto"
+        isDraft: Bool? = nil
     ) async throws -> VoiceProfile {
         let fields = Self.voiceCloneMultipartFields(
             name: name,
@@ -176,12 +171,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
             noiseRemoval: noiseRemoval,
             relationshipLabel: relationshipLabel,
             listenerTitle: listenerTitle,
-            isDraft: isDraft,
-            voiceGender: voiceGender,
-            speechFormality: speechFormality
+            isDraft: isDraft
         )
         // 관계/호칭이 비어 있어도 필드를 포함해 Android 와 같은 서버 검증 경로를 탄다.
-        // voiceGender/speechFormality 도 항상 동봉(Android `VoiceProfileApi.kt:117-120`).
         let response: VoiceProfileResponse = try await multipartRequest(
             "voice/clone",
             token: token,
@@ -209,75 +201,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.upload
     }
 
-    func separateVoiceUpload(uploadId: String, token: String) async throws -> [VoiceSpeakerSegment] {
-        let response: VoiceSpeakerListResponse = try await request(
-            "voice/uploads/\(uploadId)/separate",
-            method: "POST",
-            token: token
-        )
-        return response.speakers
-    }
-
-    /// 업로드된 raw 음원의 화자 분리 결과를 다시 불러온다.
-    /// `separate` 가 한 번 실행된 뒤 클라이언트가 재진입했을 때 호출.
-    /// `GET /api/voice/uploads/:uploadId/speakers`.
-    func getVoiceUploadSpeakers(uploadId: String, token: String) async throws -> VoiceUploadSpeakersResponse {
-        let response: VoiceSpeakerListResponse = try await request(
-            "voice/uploads/\(uploadId)/speakers",
-            token: token
-        )
-        return VoiceUploadSpeakersResponse(
-            uploadId: uploadId,
-            speakers: response.speakers,
-            provider: response.provider
-        )
-    }
-
-    /// 화자 라벨 변경 — Android `MainViewModelVoiceActions` 의 rename speaker 와 동일.
-    /// `PATCH /api/voice/uploads/:uploadId/speakers/:speakerId`.
-    func updateVoiceUploadSpeaker(
-        uploadId: String,
-        speakerId: String,
-        label: String,
-        token: String
-    ) async throws -> VoiceSpeakerSegment {
-        struct Body: Encodable { var label: String }
-        struct Response: Decodable { var speaker: VoiceSpeakerSegment }
-        let response: Response = try await request(
-            "voice/uploads/\(uploadId)/speakers/\(speakerId)",
-            method: "PATCH",
-            token: token,
-            body: Body(label: label)
-        )
-        return response.speaker
-    }
-
-    /// 업로드와 화자 분리를 한 번에 — 라이트한 단발 사용용. `POST /api/voice/diarize`.
-    func diarizeVoice(
-        audioFileURL: URL,
-        durationMs: Int,
-        token: String
-    ) async throws -> VoiceUploadSpeakersResponse {
-        struct Response: Decodable {
-            var uploadId: String?
-            var speakers: [VoiceSpeakerSegment]
-            var provider: String?
-        }
-        let response: Response = try await multipartRequest(
-            "voice/diarize",
-            token: token,
-            fields: [
-                "durationMs": String(durationMs),
-            ],
-            files: [try multipartFile(fieldName: "audio", fileURL: audioFileURL)]
-        )
-        return VoiceUploadSpeakersResponse(
-            uploadId: response.uploadId ?? "",
-            speakers: response.speakers,
-            provider: response.provider
-        )
-    }
-
     func updateVoiceProfile(
         id: String,
         name: String? = nil,
@@ -285,24 +208,18 @@ final class AlarmTalkAPI: @unchecked Sendable {
         isDraft: Bool? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        voiceGender: String? = nil,
-        speechFormality: String? = nil,
         token: String
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
             "voice/\(id)",
             method: "PATCH",
             token: token,
-            // voiceGender/speechFormality 는 convertToSnakeCase 로 voice_gender/speech_formality
-            // 로 인코딩되어 PATCH /voice/:id 가 갱신한다. Android `VoiceProfileApi.kt:53-63`.
             body: VoiceProfileUpdateRequest(
                 name: name.nilIfBlank,
                 isShared: isShared,
                 isDraft: isDraft,
                 relationshipLabel: relationshipLabel.nilIfBlank,
-                listenerTitle: listenerTitle.nilIfBlank,
-                voiceGender: voiceGender.nilIfBlank,
-                speechFormality: speechFormality.nilIfBlank
+                listenerTitle: listenerTitle.nilIfBlank
             )
         )
         return response.profile
@@ -521,14 +438,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 가 권위 경로다. 본 메서드는 비-IAP 흐름 (gift 발급용 voucher / 내부 테스트)
     /// 에만 남겨두며, 일반 사용자 구매에는 사용하지 않는다.
     @available(*, deprecated, message: "Apple IAP 로 통합. SubscriptionManager.purchase(_:) 사용. gift voucher 발급만 남는 경우 유지.")
-    func checkoutPlan(planKey: String, gift: Bool, token: String) async throws -> CheckoutResponse {
-        try await request(
-            "billing/checkout",
-            method: "POST",
-            token: token,
-            body: CheckoutRequest(planKey: planKey, gift: gift)
-        )
-    }
 
     func createGiftVoucher(planKey: String, token: String) async throws -> CheckoutResponse {
         try await request(
@@ -726,13 +635,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("alarm/declined?limit=\(limit)&offset=\(offset)", token: token)
     }
 
-    /// 사용자 검색. Android 및 backend contract 의 `GET /user/search` 와 동일.
-    /// 호출 사이트가 없으면 dead code 가 아닌 "공개된 미사용 API" 로 남는다.
-    func searchUsers(query: String, token: String) async throws -> [UserSearchResult] {
-        let escaped = Self.percentEncodedQueryValue(query)
-        let response: UserSearchResponse = try await request("user/search?q=\(escaped)", token: token)
-        return response.users
-    }
 
     private func request<Response: Decodable, Body: Encodable>(
         _ path: String,

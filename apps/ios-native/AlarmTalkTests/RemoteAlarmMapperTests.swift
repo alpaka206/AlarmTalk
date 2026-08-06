@@ -18,13 +18,10 @@ final class RemoteAlarmMapperTests: XCTestCase {
             vibrationPattern: "default",
             wakeMode: "sound_then_voice",
             voiceProfileId: "vp",
-            speakerId: nil,
             messageId: "m1",
             messageText: "good morning",
             category: "morning",
-            rawAudioUrl: nil,
             messageAudioUrl: nil,
-            rawAudioDurationMs: nil,
             targetUserId: "me",
             senderUserId: "other",
             senderName: "Sender",
@@ -39,8 +36,8 @@ final class RemoteAlarmMapperTests: XCTestCase {
         let remote = RemoteAlarm(
             id: "r1", time: "07:30", repeatDays: nil, isActive: true, snoozeMinutes: nil,
             mode: nil, vibrationPattern: nil, wakeMode: nil, voiceProfileId: nil,
-            speakerId: nil, messageId: nil, messageText: nil, category: nil,
-            rawAudioUrl: nil, messageAudioUrl: nil, rawAudioDurationMs: nil,
+            messageId: nil, messageText: nil, category: nil,
+            messageAudioUrl: nil,
             targetUserId: "someone-else", senderUserId: "me", senderName: nil,
             senderEmail: nil, isFamilyAlarm: false, isReceivedFamilyAlarm: false
         )
@@ -52,8 +49,8 @@ final class RemoteAlarmMapperTests: XCTestCase {
         let remote = RemoteAlarm(
             id: "r1", time: "07:30", repeatDays: nil, isActive: true, snoozeMinutes: nil,
             mode: nil, vibrationPattern: nil, wakeMode: nil, voiceProfileId: nil,
-            speakerId: nil, messageId: nil, messageText: nil, category: nil,
-            rawAudioUrl: nil, messageAudioUrl: nil, rawAudioDurationMs: nil,
+            messageId: nil, messageText: nil, category: nil,
+            messageAudioUrl: nil,
             targetUserId: "me", senderUserId: "me", senderName: nil,
             senderEmail: nil, isFamilyAlarm: false, isReceivedFamilyAlarm: false
         )
@@ -129,11 +126,10 @@ final class RemoteAlarmMapperTests: XCTestCase {
             id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
             isActive: remote.isActive, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
             vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
-            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            voiceProfileId: remote.voiceProfileId,
             messageId: remote.messageId, messageText: "message text should not become label",
-            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            category: remote.category,
             messageAudioUrl: remote.messageAudioUrl,
-            rawAudioDurationMs: remote.rawAudioDurationMs,
             targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
             senderName: "규원님", senderEmail: remote.senderEmail,
             isFamilyAlarm: remote.isFamilyAlarm,
@@ -148,11 +144,10 @@ final class RemoteAlarmMapperTests: XCTestCase {
             id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
             isActive: remote.isActive, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
             vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
-            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            voiceProfileId: remote.voiceProfileId,
             messageId: remote.messageId, messageText: remote.messageText,
-            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            category: remote.category,
             messageAudioUrl: remote.messageAudioUrl,
-            rawAudioDurationMs: remote.rawAudioDurationMs,
             targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
             senderName: nil, senderEmail: "sender@example.com",
             isFamilyAlarm: remote.isFamilyAlarm,
@@ -164,11 +159,10 @@ final class RemoteAlarmMapperTests: XCTestCase {
             id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
             isActive: remote.isActive, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
             vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
-            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            voiceProfileId: remote.voiceProfileId,
             messageId: remote.messageId, messageText: remote.messageText,
-            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            category: remote.category,
             messageAudioUrl: remote.messageAudioUrl,
-            rawAudioDurationMs: remote.rawAudioDurationMs,
             targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
             senderName: nil, senderEmail: nil,
             isFamilyAlarm: remote.isFamilyAlarm,
@@ -204,8 +198,6 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertEqual(req.vibrationPattern, VibrationPattern.heartbeat.rawValue)
         XCTAssertEqual(req.messageId, "m-1")
         XCTAssertEqual(req.voiceProfileId, "vp-1")
-        // ttsMessageId 가 있으면 rawAudioUrl 은 전송하지 않는다.
-        XCTAssertNil(req.rawAudioUrl)
     }
 
     func test_toRemoteRequest_withoutVoice_setsSoundOnly() {
@@ -222,7 +214,6 @@ final class RemoteAlarmMapperTests: XCTestCase {
         let req = RemoteAlarmMapper.toRemoteRequest(local)
         XCTAssertEqual(req.mode, "sound-only")
         XCTAssertNil(req.messageId)
-        XCTAssertNil(req.rawAudioUrl)
     }
 
     func test_toRemoteRequest_localAudioSource_doesNotSendVoiceProfileID() {
@@ -300,13 +291,10 @@ final class RemoteAlarmMapperTests: XCTestCase {
             vibrationPattern: "heartbeat",
             wakeMode: "voice_only",
             voiceProfileId: "vp-9",
-            speakerId: nil,
             messageId: "m-9",
             messageText: "Wake up",
             category: "morning",
-            rawAudioUrl: nil,
             messageAudioUrl: "https://example.com/audio.mp3",
-            rawAudioDurationMs: nil,
             targetUserId: "me",
             senderUserId: "sender",
             senderName: "Sender",
@@ -341,11 +329,10 @@ final class RemoteAlarmMapperTests: XCTestCase {
             id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
             isActive: false, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
             vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
-            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            voiceProfileId: remote.voiceProfileId,
             messageId: remote.messageId, messageText: remote.messageText,
-            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            category: remote.category,
             messageAudioUrl: remote.messageAudioUrl,
-            rawAudioDurationMs: remote.rawAudioDurationMs,
             targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
             senderName: remote.senderName, senderEmail: remote.senderEmail,
             isFamilyAlarm: remote.isFamilyAlarm,
@@ -394,13 +381,10 @@ final class RemoteAlarmMapperTests: XCTestCase {
             vibrationPattern: "default",
             wakeMode: wakeMode,
             voiceProfileId: "vp",
-            speakerId: nil,
             messageId: messageId,
             messageText: "msg",
             category: nil,
-            rawAudioUrl: nil,
             messageAudioUrl: messageId == nil ? nil : messageAudioUrl,
-            rawAudioDurationMs: nil,
             targetUserId: "me",
             senderUserId: "other",
             senderName: "Other",

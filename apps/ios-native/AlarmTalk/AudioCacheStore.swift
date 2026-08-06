@@ -253,17 +253,13 @@ final class AudioCacheStore {
         return computeCacheKey(text: ["tts-v2", profileId, normalizedText, normalizedCategory, language].joined(separator: "|"))
     }
 
-    /// Android `AlarmEditorState.normalizedTtsCategory(...)` 의 레거시 remap 부분.
-    /// 마이그레이션된 알람의 레거시 카테고리 키를 정식 키로 옮겨 cacheKey 를 안정화한다.
-    /// Android `ttsCacheKey` 는 카테고리를 검증/치환하지 않으므로 (`custom` 등은 그대로 통과),
-    /// 여기서도 검증 후 `morning` 으로 떨구는 처리는 하지 않고 레거시 키만 remap 한다.
+    /// 카테고리는 그대로 쓴다.
+    ///
+    /// ⚠ 예전에는 레거시 별칭(afternoon→cheer, sleep→night, medicine→medication)을 remap 했는데,
+    /// **서버가 그 별칭 표를 통째로 버렸다**(`e4fad460` — '10테마' 분류 제거). 한쪽만 남기면
+    /// 같은 문구가 두 키로 캐싱돼 재생성·한도 차감이 한 번 더 일어난다. 되살리지 말 것.
     nonisolated static func normalizedTtsCategory(_ category: String) -> String {
-        let legacy: [String: String] = [
-            "afternoon": "cheer",
-            "sleep": "night",
-            "medicine": "medication",
-        ]
-        return legacy[category] ?? category
+        category
     }
 
     /// bytes 를 cacheKey 기반 위치에 기록하고 메타 사이드카를 생성한다.

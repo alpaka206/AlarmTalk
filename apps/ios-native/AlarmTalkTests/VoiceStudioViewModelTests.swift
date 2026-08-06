@@ -192,22 +192,6 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(vm.remainingProfileSlots, 0)
     }
 
-    // MARK: - VoiceSpeakerSegment 헬퍼
-
-    func test_voiceSpeakerSegment_durationLabel() {
-        let s = VoiceSpeakerSegment(id: "a", uploadId: nil, label: "Speaker A",
-                                    startMs: 10_000, endMs: 95_000, confidence: nil)
-        XCTAssertEqual(s.durationMs, 85_000)
-        XCTAssertEqual(s.durationLabel, "1:25")
-    }
-
-    func test_voiceSpeakerSegment_negativeRangeClampsToZero() {
-        let s = VoiceSpeakerSegment(id: "b", uploadId: nil, label: "X",
-                                    startMs: 5_000, endMs: 0, confidence: nil)
-        XCTAssertEqual(s.durationMs, 0)
-        XCTAssertEqual(s.durationLabel, "0:00")
-    }
-
     // MARK: - APIError 보조
 
     func test_apiError_serverErrorCodeAccessor() {
@@ -252,9 +236,11 @@ final class VoiceStudioViewModelTests: XCTestCase {
         // noiseRemoval/noise_removal 필드는 제거됨(Android 도 더는 전송 안 함, 백엔드 무시).
         XCTAssertNil(fields["noiseRemoval"])
         XCTAssertNil(fields["noise_removal"])
-        // voiceGender/speechFormality 는 Android 와 동일하게 항상 기본값으로 전송된다.
-        XCTAssertEqual(fields["voiceGender"], "neutral")
-        XCTAssertEqual(fields["speechFormality"], "auto")
+        // voiceGender/speechFormality 는 **보내지 않는다** — 마이그레이션 #83 이 두 컬럼을
+        // DROP 했고 대체재 speech_style 은 서버가 등록 녹음에서 자동 분석한다.
+        // 안드로이드도 보내지 않고 UI 도 없다(VoiceProfileApi.createVoiceClone).
+        XCTAssertNil(fields["voiceGender"])
+        XCTAssertNil(fields["speechFormality"])
     }
 
     func test_multipartUploadFileName_prefersTrimmedSelectedFileName() {

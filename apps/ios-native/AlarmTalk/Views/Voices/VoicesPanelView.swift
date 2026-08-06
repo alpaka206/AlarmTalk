@@ -4,10 +4,12 @@ import SwiftUI
 enum VoicesRoute: Hashable {
     case management
     case clone
-    case separate
 }
 
-/// 음성 탭 컨테이너 — VoiceProfileManagementPanel 을 중심으로 자식 플로우(녹음/화자분리) 를 라우팅.
+/// 음성 탭 컨테이너 — VoiceProfileManagementPanel 을 중심으로 자식 플로우(녹음)를 라우팅.
+///
+/// ⚠ 화자 분리(`.separate`)는 **제품에서 사라졌다** — 백엔드 라우트도 `voice_speakers`
+/// 테이블도 없다(마이그레이션 #79 DROP). 되살리지 말 것.
 ///
 /// Phase 3-C1 의 인라인 패널을 Phase 3-C4 가 본 3-라우트 구조로 교체. 모든 자식
 /// 컴포넌트는 동일한 `VoiceStudioViewModel` 을 공유한다. `MainTabsView` 가 본
@@ -28,8 +30,6 @@ struct VoicesPanelView: View {
                 VoiceProfileManagementPanel(route: $route, onRequestBilling: onRequestBilling)
             case .clone:
                 VoiceCloneUploadFlow(route: $route)
-            case .separate:
-                SpeakerSeparationFlow(route: $route)
             }
         }
         .animation(.default, value: route)

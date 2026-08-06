@@ -5,7 +5,7 @@ import SwiftUI
 /// Android `VoiceProfileManagementPanel.kt` (1158 줄) 의 SwiftUI 포팅. 슬롯 상태,
 /// 프로필 행, 편집/공유/삭제 다이얼로그, 슬롯 부족 시 PlanGate 트리거, errorCode
 /// 매핑까지 한 화면이 책임진다. 녹음/업로드 워크플로우는 형제 컴포넌트
-/// `VoiceCloneUploadFlow` / `SpeakerSeparationFlow` 가 맡고 본 화면은 라우팅만 한다.
+/// `VoiceCloneUploadFlow` 가 맡고 본 화면은 라우팅만 한다.
 struct VoiceProfileManagementPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
@@ -222,18 +222,6 @@ struct VoiceProfileManagementPanel: View {
                 .tint(AlarmTalkTheme.primary)
                 .disabled(voice.isBusy || (hasPaidVoiceAccess && voice.isProfileLimitReached))
 
-                Button {
-                    if !hasPaidVoiceAccess {
-                        planGateOpen = true
-                    } else if !voice.isProfileLimitReached {
-                        route = .separate
-                    }
-                } label: {
-                    Label("화자 분리", systemImage: "person.2.wave.2")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(voice.isBusy || (hasPaidVoiceAccess && voice.isProfileLimitReached))
             }
             if !hasPaidVoiceAccess {
                 Text("유료 이용권에서 사용할 수 있어요.")

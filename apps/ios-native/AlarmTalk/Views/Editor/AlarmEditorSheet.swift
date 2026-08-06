@@ -1594,8 +1594,6 @@ struct AlarmEditorSheet: View {
                     isActive: true,
                     messageId: prepared?.messageID,
                     voiceProfileId: prepared?.voiceProfileID,
-                    rawAudioUrl: nil,
-                    rawAudioDurationMs: nil,
                     targetUserId: recipient.userId
                 )
                 _ = try await AlarmTalkAPI.shared.createAlarm(request, token: token)

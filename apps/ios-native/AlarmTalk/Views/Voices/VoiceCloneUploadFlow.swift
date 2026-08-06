@@ -35,10 +35,6 @@ struct VoiceCloneUploadFlow: View {
     @State private var relationshipSelection = VoiceRelationshipSelection()
     @State private var noiseRemovalEnabled: Bool = false
     @State private var isShared: Bool = false
-    /// 목소리 성별('male'|'female'|'neutral', 기본 neutral)과 일본어 정중체 선택.
-    /// 켜면 speech_formality='polite', 끄면 'auto'(기본). Android `VoiceProfileManagementPanel.kt:340-341`.
-    @State private var voiceGender: String = "neutral"
-    @State private var japanesePolite: Bool = false
     /// Android 생성 플로우처럼 랜덤 문구와 공유 음성에서 쓸 호칭을 함께 저장한다.
     @State private var listenerTitle: String = ""
     @State private var submitted: Bool = false
@@ -112,7 +108,6 @@ struct VoiceCloneUploadFlow: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             nameSection
-            voiceTuningSection
             sourceModeSection
             if sourceMode == .record {
                 recordingSection
@@ -257,54 +252,6 @@ struct VoiceCloneUploadFlow: View {
             }
         }
         .sectionSurface()
-    }
-
-    /// 목소리 성별(male/female/neutral)·일본어 정중체(speech_formality) 선택 카드.
-    /// Android `VoiceProfileManagementPanel.kt:207-289,1390-1397` 의 VoiceGenderSelector /
-    /// JapanesePoliteToggle 를 옮겼다. 생성 시 두 값을 항상 함께 전송해 일본어 1인칭·말투
-    /// 자연성과 성별 튜닝 기준을 백엔드와 맞춘다.
-    private var voiceTuningSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("목소리 성별")
-                    .font(.subheadline.weight(.semibold))
-                HStack(spacing: 8) {
-                    genderChip(value: "male", label: "남성")
-                    genderChip(value: "female", label: "여성")
-                    genderChip(value: "neutral", label: "중립")
-                }
-            }
-            Toggle(isOn: $japanesePolite) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("일본어 정중체")
-                        .font(.subheadline.weight(.semibold))
-                    Text("일본어로 말할 때 정중한 말투(です·ます)를 써요.")
-                        .font(.caption)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-            }
-            .toggleStyle(.switch)
-            .tint(AlarmTalkTheme.primary)
-        }
-        .sectionSurface()
-    }
-
-    private func genderChip(value: String, label: String) -> some View {
-        let isSelected = voiceGender == value
-        return Button {
-            voiceGender = value
-        } label: {
-            Text(label)
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 11)
-                .background(
-                    isSelected ? AlarmTalkTheme.primary.opacity(0.15) : AlarmTalkTheme.surfaceVariant.opacity(0.45),
-                    in: RoundedRectangle(cornerRadius: 14)
-                )
-                .foregroundStyle(isSelected ? AlarmTalkTheme.primary : AlarmTalkTheme.text)
-        }
-        .buttonStyle(.plain)
     }
 
     private var recordingSection: some View {
@@ -626,7 +573,6 @@ struct VoiceCloneUploadFlow: View {
             return
         }
         // 일본어 정중체 토글: 켜면 'polite', 끄면 'auto'. Android `:966,992` 미러.
-        let speechFormality = japanesePolite ? "polite" : "auto"
 
         switch sourceMode {
         case .record:
@@ -643,9 +589,7 @@ struct VoiceCloneUploadFlow: View {
                     isShared: shouldShareVoice,
                     session: auth.session,
                     relationshipLabel: trimmedRelationship,
-                    listenerTitle: trimmedListener,
-                    voiceGender: voiceGender,
-                    speechFormality: speechFormality
+                    listenerTitle: trimmedListener
                 )
             } else {
                 voice.cloneName = trimmedName
@@ -653,9 +597,7 @@ struct VoiceCloneUploadFlow: View {
                     session: auth.session,
                     isShared: shouldShareVoice,
                     relationshipLabel: trimmedRelationship,
-                    listenerTitle: trimmedListener,
-                    voiceGender: voiceGender,
-                    speechFormality: speechFormality
+                    listenerTitle: trimmedListener
                 )
             }
         case .file:
@@ -670,9 +612,7 @@ struct VoiceCloneUploadFlow: View {
                     noiseRemoval: noiseRemovalEnabled,
                     uploadFileName: prepared.uploadFileName,
                     relationshipLabel: trimmedRelationship,
-                    listenerTitle: trimmedListener,
-                    voiceGender: voiceGender,
-                    speechFormality: speechFormality
+                    listenerTitle: trimmedListener
                 )
             } catch {
                 let message = AudioUserFacingError.message(for: error, fallback: "선택한 음성을 준비하지 못했어요.")

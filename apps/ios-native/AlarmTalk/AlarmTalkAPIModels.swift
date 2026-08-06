@@ -306,13 +306,10 @@ struct RemoteAlarm: Codable, Identifiable, Equatable {
     var vibrationPattern: String?
     var wakeMode: String?
     var voiceProfileId: String?
-    var speakerId: String?
     var messageId: String?
     var messageText: String?
     var category: String?
-    var rawAudioUrl: String?
     var messageAudioUrl: String?
-    var rawAudioDurationMs: Int?
     var targetUserId: String?
     var senderUserId: String?
     var senderName: String?
@@ -331,8 +328,6 @@ struct RemoteAlarmWriteRequest: Encodable {
     var isActive: Bool?
     var messageId: String?
     var voiceProfileId: String?
-    var rawAudioUrl: String?
-    var rawAudioDurationMs: Int?
     var targetUserId: String?
     /// 기기 타임존 식별자 (예: "Asia/Seoul"). 서버가 사용자 로컬 시각 기준으로
     /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
@@ -379,10 +374,8 @@ struct VoiceProfileUpdateRequest: Encodable {
     var listenerTitle: String?
     /// 'male' | 'female' | 'neutral'. encoder 의 convertToSnakeCase 로 `voice_gender` 전송.
     /// Android `VoiceProfileApi.kt:59-60`, backend voice-profile.ts PATCH(:519-520).
-    var voiceGender: String?
     /// 'auto' | 'polite'(일본어 정중체). convertToSnakeCase 로 `speech_formality` 전송.
     /// Android `VoiceProfileApi.kt:61-62`, backend voice-profile.ts PATCH(:523-524).
-    var speechFormality: String?
 
     init(
         name: String? = nil,
@@ -390,16 +383,12 @@ struct VoiceProfileUpdateRequest: Encodable {
         isDraft: Bool? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        voiceGender: String? = nil,
-        speechFormality: String? = nil
     ) {
         self.name = name
         self.isShared = isShared
         self.isDraft = isDraft
         self.relationshipLabel = relationshipLabel
         self.listenerTitle = listenerTitle
-        self.voiceGender = voiceGender
-        self.speechFormality = speechFormality
     }
 }
 
@@ -423,36 +412,6 @@ struct VoiceUpload: Decodable, Identifiable, Equatable {
     var durationMs: Int?
     var originalName: String?
     var createdAt: String?
-}
-
-struct VoiceSpeakerListResponse: Decodable {
-    var speakers: [VoiceSpeakerSegment]
-    var provider: String?
-}
-
-struct VoiceSpeakerSegment: Decodable, Identifiable, Equatable {
-    var id: String
-    var uploadId: String?
-    var label: String
-    var startMs: Int
-    var endMs: Int
-    var confidence: Double?
-
-    /// 화자 구간 길이(ms). 음수 방지.
-    var durationMs: Int { max(0, endMs - startMs) }
-
-    /// 사람이 읽을 시간 라벨. (`mm:ss`)
-    var durationLabel: String {
-        let totalSeconds = max(0, durationMs / 1000)
-        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
-    }
-}
-
-/// 업로드된 raw 음원 + 분리된 화자 list 한 묶음. SpeakerSeparationFlow 가 사용.
-struct VoiceUploadSpeakersResponse: Decodable, Equatable {
-    var uploadId: String
-    var speakers: [VoiceSpeakerSegment]
-    var provider: String?
 }
 
 struct TtsGenerateRequest: Encodable {
@@ -969,17 +928,6 @@ struct FamilyAlarmTalkResponse: Decodable, Equatable {
     var alarm: RemoteAlarm
 }
 
-
-struct UserSearchResult: Decodable, Identifiable, Equatable {
-    var id: String
-    var email: String?
-    var name: String?
-    var picture: String?
-}
-
-struct UserSearchResponse: Decodable {
-    var users: [UserSearchResult]
-}
 
 // MARK: - Phase 4-D1: Apple StoreKit2 IAP confirmation
 

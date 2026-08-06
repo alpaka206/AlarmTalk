@@ -255,7 +255,7 @@ final class VoiceStudioViewModel: ObservableObject {
 
     var isProfileLimitReached: Bool { usedProfileSlots >= VoiceProfileLimits.maxProfiles }
 
-    /// 남은 슬롯 — SpeakerSeparationFlow 가 동시에 여러 화자 선택을 허용할 때 cap.
+    /// 남은 등록 슬롯.
     var remainingProfileSlots: Int {
         max(0, VoiceProfileLimits.maxProfiles - usedProfileSlots)
     }
@@ -453,9 +453,7 @@ final class VoiceStudioViewModel: ObservableObject {
         session: AuthSession?,
         isShared: Bool = false,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil,
-        voiceGender: String = "neutral",
-        speechFormality: String = "auto"
+        listenerTitle: String? = nil
     ) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -492,9 +490,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 durationMs: durationMs,
                 token: token,
                 relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle,
-                voiceGender: voiceGender,
-                speechFormality: speechFormality
+                listenerTitle: fields.listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "목소리 학습을 등록했어요."
@@ -512,9 +508,7 @@ final class VoiceStudioViewModel: ObservableObject {
         isShared: Bool,
         session: AuthSession?,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil,
-        voiceGender: String = "neutral",
-        speechFormality: String = "auto"
+        listenerTitle: String? = nil
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -539,9 +533,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 token: token,
                 noiseRemoval: true,
                 relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle,
-                voiceGender: voiceGender,
-                speechFormality: speechFormality
+                listenerTitle: fields.listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "배경음 제거 학습이 완료됐어요."
@@ -563,9 +555,7 @@ final class VoiceStudioViewModel: ObservableObject {
         noiseRemoval: Bool = false,
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil,
-        voiceGender: String = "neutral",
-        speechFormality: String = "auto"
+        listenerTitle: String? = nil
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -597,9 +587,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 noiseRemoval: noiseRemoval,
                 uploadFileName: uploadFileName,
                 relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle,
-                voiceGender: voiceGender,
-                speechFormality: speechFormality
+                listenerTitle: fields.listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = noiseRemoval ? "배경음 제거 학습이 완료됐어요." : "목소리 학습을 등록했어요."
@@ -687,67 +675,8 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// SpeakerSeparationFlow 의 1단계 — raw 음원을 업로드해 uploadId 를 얻는다.
-    func uploadForSeparation(
-        audioFileURL: URL,
-        durationMs: Int,
-        originalName: String? = nil,
-        session: AuthSession?
-    ) async -> String? {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return nil
-        }
-        guard !isBusy else { return nil }
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            let upload = try await api.uploadVoiceAudio(
-                audioFileURL: audioFileURL,
-                durationMs: durationMs,
-                originalName: originalName,
-                token: token
-            )
-            return upload.id
-        } catch {
-            statusMessage = mapVoiceError(error)
-            return nil
-        }
-    }
 
-    /// SpeakerSeparationFlow 의 2단계 — 업로드된 음원을 분리하고 segments 반환.
-    func runSeparation(uploadId: String, session: AuthSession?) async -> [VoiceSpeakerSegment] {
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return []
-        }
-        guard !isBusy else { return [] }
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            let speakers = try await api.separateVoiceUpload(uploadId: uploadId, token: token)
-            statusMessage = speakers.isEmpty
-                ? "분리할 화자를 찾지 못했어요."
-                : "\(speakers.count)명의 목소리를 찾았어요."
-            return speakers
-        } catch {
-            statusMessage = mapVoiceError(error)
-            return []
-        }
-    }
-
-    /// 이미 분리된 결과를 다시 불러올 때 — 화면을 재진입한 경우 사용.
-    func fetchExistingSpeakers(uploadId: String, session: AuthSession?) async -> [VoiceSpeakerSegment] {
-        guard let token = session?.token else { return [] }
-        do {
-            let response = try await api.getVoiceUploadSpeakers(uploadId: uploadId, token: token)
-            return response.speakers
-        } catch {
-            return []
-        }
-    }
-
-    /// SpeakerSeparationFlow 의 draft 단계 — 화자 구간을 임시 목소리로 학습한다.
+    /// draft 단계 — 잘라 낸 구간을 임시 목소리로 학습한다.
     /// 관계/호칭은 정식 프로필 편집 단계에서 관리하므로 draft 생성 때는 요구하지 않는다.
     func cloneSpeakerDraft(
         audioFileURL: URL,

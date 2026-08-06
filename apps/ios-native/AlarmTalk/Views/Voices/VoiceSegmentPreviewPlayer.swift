@@ -6,7 +6,7 @@ import SwiftUI
 ///
 /// Android `MainViewModelVoiceActions.playSpeakerPreview` + `VoiceProfileManagementPanel`
 /// 의 `SpeakerCandidateRow` 가 결합돼 있던 기능을 SwiftUI 컴포넌트로 분리한 것.
-/// SpeakerSeparationFlow / VoiceCloneUploadFlow 가 공통으로 사용한다.
+/// VoiceCloneUploadFlow 가 사용한다.
 struct VoiceSegmentPreviewPlayer: View {
     let title: String
     let subtitle: String?

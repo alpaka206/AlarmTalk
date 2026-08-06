@@ -3,7 +3,7 @@ import Foundation
 
 /// 임의 시간 구간을 잘라 새 m4a 로 저장하는 헬퍼.
 ///
-/// `SpeakerSeparationFlow` 가 선택된 화자 구간만 추출해 `/voice/clone` 으로 다시
+/// `VoiceCloneUploadFlow` 가 선택 구간만 추출해 `/voice/clone` 으로
 /// 업로드할 때 사용한다. Android `AlarmAudioStore.cacheFromUri(start:duration:)`
 /// 가 하는 일을 iOS 에서는 `AVAssetExportSession` 으로 구현.
 enum AudioCropper {

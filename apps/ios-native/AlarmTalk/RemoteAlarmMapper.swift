@@ -60,7 +60,7 @@ enum RemoteAlarmMapper {
         let remoteMessageId = remoteMessageIDForAudio(remote)
         let cacheKey: String? = remoteMessageId.map { "remote-message-\($0)" }
         let remoteAudioUri = remoteMessageId == nil ? nil : (
-            trimmedOrNil(remote.messageAudioUrl) ?? trimmedOrNil(remote.rawAudioUrl)
+            trimmedOrNil(remote.messageAudioUrl)
         )
 
         return LocalAlarmRecord(
@@ -111,17 +111,16 @@ enum RemoteAlarmMapper {
     /// 로컬 레코드를 서버 push 본문으로 변환한다.
     ///
     /// Android `RemoteAlarmMapper.toWriteRequest` 와 동일한 규약:
-    ///   - 음성 캐시(ttsMessageId 또는 원격 URL) 가 있으면 mode = "tts"
-    ///   - 아니면 mode = "sound-only"
-    ///   - rawAudioUrl 은 https/http/r2 만 보내고, ttsMessageId 가 있는 경우 제외
-    ///     (서버가 messageId 로 충분히 음원을 식별)
+    ///   - ttsMessageId 가 있으면 mode = "tts", 아니면 "sound-only"
     ///   - voiceProfileId 는 voiceSource != localAudio 일 때만 동봉
+    ///
+    /// ⚠ `rawAudioUrl`/`rawAudioDurationMs`/`speakerId` 는 **보내지 않는다.**
+    /// 내 알람 오디오를 R2 에 올려 두던 제3의 경로(`POST /alarm/source`)가 제품에서
+    /// 사라졌고 컬럼도 DROP 됐다(마이그레이션 #84, `5bb90de8`). 보내도 무시되며,
+    /// 그 값으로 `mode` 를 정하면 **서버가 모르는 음원을 근거로 tts 모드가 되어**
+    /// 수신자가 소리 없는 알람을 받는다. 내 알람 녹음은 폰에만 둔다.
     static func toRemoteRequest(_ local: LocalAlarmRecord) -> RemoteAlarmWriteRequest {
-        let rawAudioUrl: String? = {
-            guard let uri = local.rawAudioUri, isRemoteAudioUrl(uri) else { return nil }
-            return local.ttsMessageId == nil ? uri : nil
-        }()
-        let hasRemoteVoice = local.ttsMessageId != nil || rawAudioUrl != nil
+        let hasRemoteVoice = local.ttsMessageId != nil
         let messageId = trimmedOrNil(local.ttsMessageId)
         let voiceProfileId = local.voiceSourceEnum == .localAudio ? nil : trimmedOrNil(local.voiceProfileId)
 
@@ -135,8 +134,6 @@ enum RemoteAlarmMapper {
             isActive: local.enabled,
             messageId: messageId,
             voiceProfileId: voiceProfileId,
-            rawAudioUrl: rawAudioUrl,
-            rawAudioDurationMs: nil,
             targetUserId: nil
         )
     }
