@@ -288,8 +288,16 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         merged.createdAtMillis = existing.createdAtMillis
 
         // ── (1) **서버에 사본이 없는 로컬 전용 값**은 origin 과 무관하게 지킨다.
-        // 매퍼는 이 값들을 기본치(100·nil 등)로 만들어 내므로, 여기서 잃으면 영영 잃는다.
+        // 매퍼는 이 값들을 기본치(100·nil·false 등)로 만들어 내므로, 여기서 잃으면 영영 잃는다.
+        //
+        // ⚠ **기준은 `RemoteAlarm` 이 그 값을 표현할 수 있는가**다(AlarmTalkAPIModels.swift).
+        // 서버가 내려주는 것은 time / repeatDays / isActive / snoozeMinutes / mode /
+        // vibrationPattern / wakeMode / voiceProfileId / messageId / messageText /
+        // category / messageAudioUrl / sender·target 뿐이다. **그 밖은 전부 로컬 전용이다.**
+        // 필드를 새로 추가하면 이 목록에 넣을지 먼저 판단할 것 — 빠뜨리면 pull 이 돌 때마다
+        // 조용히 기본값으로 되돌아간다.
         merged.snoozeCount = existing.snoozeCount
+        merged.snoozeEnabled = existing.snoozeEnabled
         merged.snoozeRepeatLimit = existing.snoozeRepeatLimit
         merged.voiceRepeat = existing.voiceRepeat
         merged.voiceVolumePercent = existing.voiceVolumePercent
@@ -298,6 +306,27 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         merged.alarmSoundLabel = existing.alarmSoundLabel
         merged.defaultAlarmSoundId = existing.defaultAlarmSoundId
         merged.holidayOff = existing.holidayOff
+
+        // 동적 문구(날씨·운세·랜덤) 설정 일체. 서버는 이 개념을 모른다 —
+        // 매퍼가 `voiceRandomPrompt: false` 로 만들어 내므로 지키지 않으면 **pull 한 번에
+        // 날씨 알람이 고정 문구 알람으로 바뀐다**(DynamicVoiceRefreshService 의
+        // `isRepeatingDynamicAlarmTalk` 가 false 가 되어 갱신 대상에서 아예 빠진다).
+        merged.voiceRandomPrompt = existing.voiceRandomPrompt
+        merged.voiceRandomContext = existing.voiceRandomContext
+        merged.voiceWeatherCountry = existing.voiceWeatherCountry
+        merged.voiceWeatherCity = existing.voiceWeatherCity
+        merged.voiceFortuneGender = existing.voiceFortuneGender
+        merged.voiceFortuneBirthDate = existing.voiceFortuneBirthDate
+        merged.voiceFortuneBirthTime = existing.voiceFortuneBirthTime
+        merged.voiceLanguage = existing.voiceLanguage
+        merged.voiceListenerTitle = existing.voiceListenerTitle
+        // "이 발사 시각용 음성은 이미 만들어 뒀다" 표식. 잃으면 다음 갱신 주기에
+        // **다시 합성해 이번 달 목소리 생성 한도를 깎는다.**
+        merged.dynamicVoicePreparedForFireAtMillis = existing.dynamicVoicePreparedForFireAtMillis
+
+        // 내려받은 음원 경로가 이번 회차에 잡혔으면 그걸 쓰고, 없으면 갖고 있던 것을 지킨다.
+        // 무조건 덮으면 로컬 녹음(voiceSource == .localAudio)을 쓰는 알람이 음원을 잃는다.
+        merged.localAudioUri = mapped.localAudioUri ?? existing.localAudioUri
 
         guard existing.originEnum == .receivedRemote else {
             // 내가 보낸 알람은 로컬이 권위다 — 올리는 쪽은 push 다.
@@ -309,7 +338,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         merged.minute = existing.minute
         merged.repeatDaysMask = existing.repeatDaysMask
         merged.fireAtMillis = existing.fireAtMillis
-        merged.snoozeEnabled = existing.snoozeEnabled
+        // snoozeEnabled 는 (1) 에서 이미 지켰다(서버가 표현하지 못하는 값).
         merged.snoozeMinutes = existing.snoozeMinutes
         // 사용자가 껐으면 그 의도를 존중한다(서버가 켜도 다시 켜지지 않는다).
         merged.enabled = existing.enabled && merged.enabled

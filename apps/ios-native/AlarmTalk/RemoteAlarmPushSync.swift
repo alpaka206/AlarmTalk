@@ -90,11 +90,16 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
         return total
     }
 
-    /// 한 회차. **세션은 회차마다 다시 읽는다** — 미뤄 둔 회차는 앞 회차의 네트워크 왕복이
-    /// 끝난 뒤에 도는데, 그 사이 로그아웃/계정 전환이 있었으면 옛 토큰으로 나간다
-    /// (안드로이드 `2836ebcf`). rolling refresh 를 넣은 뒤로는 토큰이 더 자주 바뀐다.
+    /// 한 회차. **세션은 회차마다, 그리고 건마다 다시 읽는다** — 미뤄 둔 회차는 앞 회차의
+    /// 네트워크 왕복이 끝난 뒤에 도는데, 그 사이 로그아웃/계정 전환이 있었으면 옛 토큰으로
+    /// 나간다(안드로이드 `2836ebcf`). rolling refresh 를 넣은 뒤로는 토큰이 더 자주 바뀌어,
+    /// 회차 시작에 한 번 읽는 것만으로는 건이 여러 개일 때 뒤쪽이 옛 토큰을 쓴다.
+    /// 다시 읽을 때는 **주인이 같은지 먼저 확인한다**(아래 `ownerID`).
     private func runCycle() async throws -> PushResult {
-        guard let token = auth.session?.token else { throw PushError.noSession }
+        guard let session = auth.session else { throw PushError.noSession }
+        // 이 회차가 **누구의** 알람을 올리는지 고정한다. candidates 는 지금의 store 스냅샷이라
+        // 도중에 계정이 바뀌면 그 알람들은 더 이상 현재 사용자의 것이 아니다.
+        let ownerID = session.user.id
 
         let candidates = store.alarms.filter { record in
             record.originEnum == .localOwned && record.syncStateEnum != .synced
@@ -106,6 +111,16 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
 
         for record in candidates {
+            // 토큰은 **건마다 다시 읽는다.** 회차 시작에 한 번만 읽으면, 건이 여러 개일 때
+            // 중간에 rolling refresh 로 토큰이 갱신돼도 뒤쪽 건이 옛 토큰으로 나가
+            // 만료 직전이었다면 401 로 떨어진다.
+            guard let current = auth.session else { throw PushError.noSession }
+            // ⚠ **토큰만 다시 읽으면 더 위험하다.** 계정이 바뀌었는데 새 토큰을 쓰면
+            // 앞 계정의 알람을 **새 계정에 써 넣는다.** 주인이 달라지면 회차를 멈춘다 —
+            // 남은 건은 syncState 가 그대로라 다음 회차에 새 주인 기준으로 다시 걸러진다.
+            guard current.user.id == ownerID else { break }
+            let token = current.token
+
             let body = RemoteAlarmMapper.toRemoteRequest(record)
             do {
                 let remote: RemoteAlarm
@@ -128,8 +143,10 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
             }
         }
 
+        // 계정이 바뀌어 중간에 멈췄으면 남은 건은 시도하지 않았다 —
+        // `candidates.count` 를 그대로 쓰면 하지도 않은 시도를 셌다고 보고한다.
         return PushResult(
-            attempted: candidates.count,
+            attempted: created + updated + failed,
             created: created,
             updated: updated,
             failed: failed

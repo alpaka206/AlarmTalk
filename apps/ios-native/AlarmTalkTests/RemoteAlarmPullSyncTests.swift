@@ -377,6 +377,75 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertEqual(revoked.voiceSource, VoiceSource.localAudio.rawValue)
     }
 
+    // MARK: - 서버가 표현하지 못하는 값은 merge 가 지킨다
+
+    /// ⚠ **회귀 방지의 핵심.** `RemoteAlarm` 에 없는 필드는 매퍼가 기본값으로 만들어 내므로,
+    /// merge 가 지키지 않으면 **pull 이 돌 때마다 조용히 초기화된다.**
+    /// 실제로 날씨/운세 알람이 pull 한 번에 고정 문구 알람이 됐다
+    /// (`voiceRandomPrompt` 가 false 로 덮여 `isRepeatingDynamicAlarmTalk` 에서 빠짐).
+    func test_merge_preservesDynamicPromptConfigForLocalOwned() {
+        var existing = makeLocalOwned(remoteID: "remote")
+        existing.voiceRandomPrompt = true
+        existing.voiceRandomContext = "wakeWeather"
+        existing.voiceWeatherCountry = "KR"
+        existing.voiceWeatherCity = "서울"
+        existing.voiceFortuneGender = "female"
+        existing.voiceFortuneBirthDate = "1990-01-01"
+        existing.voiceFortuneBirthTime = "07:00"
+        existing.voiceLanguage = "ko"
+        existing.voiceListenerTitle = "우리 딸"
+        existing.dynamicVoicePreparedForFireAtMillis = existing.fireAtMillis
+        existing.snoozeEnabled = false
+
+        // 매퍼가 만들어 낸 것처럼 기본값만 든 mapped.
+        var mapped = makeLocalOwned(remoteID: "remote")
+        mapped.voiceRandomPrompt = false
+        mapped.snoozeEnabled = true
+
+        let merged = RemoteAlarmPullSync.merge(existing: existing, mapped: mapped)
+
+        XCTAssertTrue(merged.voiceRandomPrompt, "동적 문구 알람이 고정 문구로 바뀌면 안 된다")
+        XCTAssertEqual(merged.voiceRandomContext, "wakeWeather")
+        XCTAssertEqual(merged.voiceWeatherCountry, "KR")
+        XCTAssertEqual(merged.voiceWeatherCity, "서울")
+        XCTAssertEqual(merged.voiceFortuneGender, "female")
+        XCTAssertEqual(merged.voiceFortuneBirthDate, "1990-01-01")
+        XCTAssertEqual(merged.voiceFortuneBirthTime, "07:00")
+        XCTAssertEqual(merged.voiceLanguage, "ko")
+        XCTAssertEqual(merged.voiceListenerTitle, "우리 딸")
+        XCTAssertEqual(
+            merged.dynamicVoicePreparedForFireAtMillis, existing.fireAtMillis,
+            "표식을 잃으면 다음 주기에 다시 합성해 목소리 생성 한도를 깎는다"
+        )
+        XCTAssertFalse(merged.snoozeEnabled, "서버는 snoozeEnabled 를 표현하지 못한다")
+    }
+
+    /// 로컬 녹음을 쓰는 알람은 `localAudioUri` 가 유일한 음원 경로다. 매퍼는 이걸 nil 로
+    /// 만들어 내므로, 이번 회차에 내려받은 것이 없으면 갖고 있던 것을 지켜야 한다.
+    func test_merge_keepsLocalAudioWhenRemoteBroughtNone() {
+        var existing = makeLocalOwned(remoteID: "remote")
+        existing.localAudioUri = "my-recording.m4a"
+        let mapped = makeLocalOwned(remoteID: "remote")   // localAudioUri == nil
+
+        XCTAssertEqual(
+            RemoteAlarmPullSync.merge(existing: existing, mapped: mapped).localAudioUri,
+            "my-recording.m4a"
+        )
+    }
+
+    /// 반대로 이번 회차에 새로 받은 경로가 있으면 그쪽이 이긴다.
+    func test_merge_prefersFreshlyDownloadedAudio() {
+        var existing = makeLocalOwned(remoteID: "remote")
+        existing.localAudioUri = "old.m4a"
+        var mapped = makeLocalOwned(remoteID: "remote")
+        mapped.localAudioUri = "new.m4a"
+
+        XCTAssertEqual(
+            RemoteAlarmPullSync.merge(existing: existing, mapped: mapped).localAudioUri,
+            "new.m4a"
+        )
+    }
+
     private func makeLocalOwned(remoteID: String?) -> LocalAlarmRecord {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         return LocalAlarmRecord(
