@@ -339,6 +339,10 @@ struct VoiceProfileEditDialog: View {
 struct VoiceProfileDeleteDialog: View {
     let profileName: String
     @Binding var force: Bool
+    /// 이번 달 등록 쿼터를 이미 다 썼는가. true 면 '지우면 이번 달엔 다시 못 만든다' 를
+    /// 함께 알린다 — 되돌릴 수 없는 삭제라 누르기 전에 말해야 한다.
+    /// **막지는 않는다**(본인 목소리다). 경고형이다.
+    var monthlyQuotaExhausted: Bool = false
     let onCancel: () -> Void
     let onConfirm: () -> Void
 
@@ -359,6 +363,12 @@ struct VoiceProfileDeleteDialog: View {
             Text("이 목소리를 쓰는 메시지는 텍스트만 남고, 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.")
                 .font(.footnote)
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
+            if monthlyQuotaExhausted {
+                Text("이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AlarmTalkTheme.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Toggle(isOn: $force) {
                 VStack(alignment: .leading, spacing: 2) {

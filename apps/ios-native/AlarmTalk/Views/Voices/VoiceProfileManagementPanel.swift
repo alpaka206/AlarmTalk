@@ -113,6 +113,7 @@ struct VoiceProfileManagementPanel: View {
             VoiceProfileDeleteDialog(
                 profileName: profile.name,
                 force: $deleteForce,
+                monthlyQuotaExhausted: monthlyExhausted,
                 onCancel: { deleteTarget = nil },
                 onConfirm: {
                     let target = profile
@@ -207,8 +208,17 @@ struct VoiceProfileManagementPanel: View {
 
     private var addActionsRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("만들기")
-                .font(.subheadline.weight(.semibold))
+            HStack {
+                Text("만들기")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                // 이번 달 남은 생성 횟수 — 버튼을 누르기 전에 몇 번 남았는지 먼저 보인다.
+                if let quota = monthlyQuota {
+                    Text("이번 달 \(max(quota.registrationRemaining, 0))/\(quota.registrationLimit)")
+                        .font(.footnote)
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                }
+            }
             HStack(spacing: 8) {
                 Button {
                     if !hasPaidVoiceAccess {
@@ -222,7 +232,10 @@ struct VoiceProfileManagementPanel: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AlarmTalkTheme.primary)
-                .disabled(voice.isBusy || (hasPaidVoiceAccess && voice.isProfileLimitReached))
+                // 유료인데 이번 달을 다 썼으면 버튼을 끈다 — 바로 위에 '이번 달 0/1' 이 있어
+                // 왜 흐린지가 그 자리에서 읽힌다. **무료는 끄지 않는다**(숫자가 없으니 왜
+                // 흐린지 알 길이 없다) — 항상 눌리게 두고 이용권 안내로 보낸다.
+                .disabled(voice.isBusy || (hasPaidVoiceAccess && (voice.isProfileLimitReached || monthlyExhausted)))
 
             }
             if !hasPaidVoiceAccess {
@@ -232,6 +245,19 @@ struct VoiceProfileManagementPanel: View {
             }
         }
         .sectionSurface()
+    }
+
+    /// 화면에 숫자를 띄울 쿼터. **유료 사용자에게만** 의미가 있다 —
+    /// 무료에게 '이번 달 0/1' 은 마치 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다.
+    private var monthlyQuota: VoiceDraftQuotaResponse? {
+        guard hasPaidVoiceAccess, let quota = voice.draftQuota, quota.registrationLimit > 0 else { return nil }
+        return quota
+    }
+
+    /// ⚠ **정식 등록 쿼터로 판정한다.** 초안 쿼터의 `remaining` 은 제한 해제 후 호환용으로
+    /// 0 고정이라, 그걸 쓰면 이번 달 등록이 남아 있어도 소진으로 읽힌다.
+    private var monthlyExhausted: Bool {
+        (monthlyQuota?.registrationRemaining ?? 1) <= 0
     }
 
     private var hasPaidVoiceAccess: Bool {

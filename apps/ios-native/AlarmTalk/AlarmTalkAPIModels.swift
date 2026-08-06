@@ -391,6 +391,22 @@ struct VoiceProfileRelationshipUpdateRequest: Encodable {
     var listenerTitle: String
 }
 
+/// 이번 달(KST) 목소리 쿼터. Android `VoiceDraftQuotaResponse` 미러.
+///
+/// ⚠ **두 쿼터가 한 응답에 들어 있고 뜻이 다르다.**
+///  - `limit`/`used`/`remaining` : 초안(draft) 재시도 여유. iOS 는 draft 플로우가 없어 쓰지 않는다.
+///    제한 해제 후 호환용으로 `remaining` 이 0 고정이라, 이걸로 판정하면 **이번 달 등록이
+///    남아 있어도** 소진으로 읽힌다.
+///  - `registration*` : **정식 등록** 쿼터(한 달에 1개). 화면 표시와 삭제 경고는 이쪽이다.
+struct VoiceDraftQuotaResponse: Decodable, Equatable {
+    var limit: Int = 0
+    var used: Int = 0
+    var remaining: Int = 0
+    var registrationLimit: Int = 0
+    var registrationUsed: Int = 0
+    var registrationRemaining: Int = 0
+}
+
 struct VoiceUploadResponse: Decodable {
     var upload: VoiceUpload
 }

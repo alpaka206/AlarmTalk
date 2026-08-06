@@ -179,6 +179,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.profile
     }
 
+    /// 이번 달 목소리 쿼터. 실패해도 화면을 막지 않는다(호출자가 nil 로 두고 숫자를 감춘다).
+    func voiceDraftQuota(token: String) async throws -> VoiceDraftQuotaResponse {
+        try await request("voice/draft-quota", token: token)
+    }
+
     func uploadVoiceAudio(
         audioFileURL: URL,
         durationMs: Int,

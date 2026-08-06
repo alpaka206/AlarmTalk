@@ -68,6 +68,9 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var isBusy = false
     @Published var statusMessage: String?
     @Published var preparedAlarm: PreparedAlarmTalk?
+    /// 이번 달 목소리 쿼터. 조회 실패면 nil — 화면은 숫자를 감추고 평소대로 그린다
+    /// (못 물어본 것이 버튼을 끄는 이유가 되면 안 된다).
+    @Published private(set) var draftQuota: VoiceDraftQuotaResponse?
 
     let recorder = VoiceRecorder()
     let previewPlayer = AudioPreviewPlayer()
@@ -120,6 +123,7 @@ final class VoiceStudioViewModel: ObservableObject {
         previewingGreetingVoiceId = nil
         statusMessage = nil
         preparedAlarm = nil
+        draftQuota = nil
     }
 
     func clearPaidVoiceState() {
@@ -304,12 +308,15 @@ final class VoiceStudioViewModel: ObservableObject {
             } catch {
                 familyResult = []
             }
+            // 쿼터도 실패해도 무시한다 — 숫자를 못 보여줄 뿐 목소리 목록은 정상이어야 한다.
+            let quotaResult = try? await api.voiceDraftQuota(token: token)
             let resolvedProfiles = try await nextProfiles
             let resolvedMessages = try await nextMessages
             guard activeUserID == userID else { return }
             profiles = resolvedProfiles
             messages = resolvedMessages
             familyVoices = familyResult
+            draftQuota = quotaResult
             if let selectedProfileID,
                !profiles.contains(where: { $0.id == selectedProfileID }),
                !familyVoices.contains(where: { $0.id == selectedProfileID }) {
