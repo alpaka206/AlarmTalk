@@ -155,10 +155,18 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     }
 
     /// 단일 원격 알람 삭제 (서버 측). 로컬 cascade 는 AlarmKitViewModel.cancel 이 수행.
+    ///
+    /// ⚠ **받은 알람은 지우는 게 아니라 '그만받기' 다.** `DELETE /alarm/:id` 는 서버가
+    /// 소유자만 허용해서 받은 알람에는 404 가 나고, 그러면 그만받기가 기록되지 않아
+    /// **다음 pull 이 그 알람을 다시 임포트한다** — 지웠는데 되살아난다.
     func deleteRemote(record: LocalAlarmRecord, session: AuthSession?) async {
         guard let token = session?.token, let remoteID = record.remoteAlarmId else { return }
         do {
-            try await api.deleteAlarm(id: remoteID, token: token)
+            if record.originEnum == .receivedRemote {
+                try await api.declineAlarm(id: remoteID, token: token)
+            } else {
+                try await api.deleteAlarm(id: remoteID, token: token)
+            }
             await refresh(session: session)
         } catch {
             statusMessage = userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요")

@@ -1395,7 +1395,10 @@ struct AlarmEditorSheet: View {
     /// 롤백하고 false 를 반환한다(교체 흐름이 충돌 알람을 지우지 않도록).
     @discardableResult
     func finishScheduling(merged: LocalAlarmRecord, existing: LocalAlarmRecord?) async -> Bool {
-        store.upsert(merged)
+        // ⚠ 편집 커밋은 전용 진입점을 쓴다. 화면 진입 시점의 스냅샷으로 전체 행을 덮으면,
+        // TTS 생성(수 초~수십 초) 사이에 push 가 새긴 remoteAlarmId 를 nil 로 되돌려
+        // 다음 push 가 같은 알람을 또 create 한다(서버에 두 행).
+        store.upsertPreservingServerSyncFields(merged)
         let scheduled = await alarmKit.schedule(record: merged, store: store)
         guard scheduled else {
             if let existing {

@@ -188,6 +188,41 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
 
     // MARK: - Helpers
 
+    // MARK: - 편집 커밋이 sync 필드를 되돌리지 않는다
+
+    /// 편집기는 화면 진입 시점의 스냅샷으로 전체 행을 덮는다. 그 사이에 push 가
+    /// `remoteAlarmId` 를 새겼다면 편집 커밋이 그걸 **nil 로 되돌리면 안 된다** —
+    /// 되돌리면 다음 push 가 같은 알람을 또 create 해 서버에 두 행이 생긴다.
+    @MainActor
+    func test_upsertPreservingServerSyncFields_keepsRemoteIdSetDuringEdit() {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("upsert-preserve-\(UUID().uuidString).json")
+        let store = LocalAlarmStore(storageURL: url, loadFromDisk: false)
+        defer { try? FileManager.default.removeItem(at: url) }
+        var record = makeLocalOwned(remoteID: nil)
+        record.syncState = AlarmSyncState.localOnly.rawValue
+        store.upsert(record)
+
+        // 편집 중 push 가 끼어들어 remoteAlarmId 를 새긴다.
+        store.markRemote(
+            localID: record.id,
+            remoteID: "remote-new",
+            lastSyncedAtMillis: 777,
+            syncState: .synced
+        )
+
+        // 편집기가 들고 있던 **옛 스냅샷**으로 커밋한다.
+        var stale = record
+        stale.label = "사용자가 고친 라벨"
+        let committed = store.upsertPreservingServerSyncFields(stale)
+
+        XCTAssertEqual(committed.label, "사용자가 고친 라벨", "사용자 편집은 반영된다")
+        XCTAssertEqual(committed.remoteAlarmId, "remote-new", "push 가 새긴 값이 살아남아야 한다")
+        XCTAssertEqual(committed.lastSyncedAtMillis, 777)
+        // remoteAlarmId 가 있으므로 편집분은 dirty 여야 다음 push 가 update 로 간다.
+        XCTAssertEqual(committed.syncState, AlarmSyncState.dirty.rawValue)
+    }
+
     // MARK: - 받은 알람 소유권 (받은 뒤부터는 받는 사람 것)
 
     /// **수신자가 고친 값은 다음 pull 이 되돌리면 안 된다.**
@@ -342,7 +377,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertEqual(revoked.voiceSource, VoiceSource.localAudio.rawValue)
     }
 
-    private func makeLocalOwned(remoteID: String) -> LocalAlarmRecord {
+    private func makeLocalOwned(remoteID: String?) -> LocalAlarmRecord {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         return LocalAlarmRecord(
             id: UUID().uuidString,

@@ -121,6 +121,30 @@ final class LocalAlarmStore: ObservableObject {
 
     // MARK: Mutations
 
+    /// **사용자 편집 커밋 전용** 저장. 커밋 직전에 최신 행의 sync 전용 필드를 병합한다.
+    ///
+    /// 왜 필요한가: 편집기는 `existing` 을 화면 진입 시점에 잡아 두고, TTS 생성(수 초~수십 초)
+    /// 을 거쳐 `store.upsert(merged)` 로 **전체 행을 덮는다.** 그 사이에 push 회차가 이 알람을
+    /// create 해 `markRemote` 로 `remoteAlarmId` 를 새겨 놓았다면, 편집 커밋이 그 값을
+    /// **stale 스냅샷의 nil 로 되돌린다.** 그러면 다음 push 가 같은 알람을 또 create 한다 —
+    /// 서버에 두 행이 생기는 **두 번째 경로**다(첫 번째는 겹친 sync, `eb70f2f2` 에서 막았다).
+    ///
+    /// 병합 대상은 `remoteAlarmId` / `lastSyncedAtMillis` / `syncState` **뿐이다.**
+    /// ⚠ `alarmKitID`·`fireAtMillis`·`enabled` 는 절대 병합하지 말 것 — `alarmKitID` 를
+    /// 되살리면 방금 재예약한 핸들과 어긋나 취소·재예약이 깨진다(알람이 안 울리는 방향).
+    ///
+    /// `@MainActor` 라 재조회와 쓰기 사이에 `await` 가 없어 원자적이다.
+    @discardableResult
+    func upsertPreservingServerSyncFields(_ updated: LocalAlarmRecord) -> LocalAlarmRecord {
+        var next = updated
+        if let fresh = alarms.first(where: { $0.id == updated.id }) {
+            next.remoteAlarmId = fresh.remoteAlarmId
+            next.lastSyncedAtMillis = fresh.lastSyncedAtMillis
+            next.syncState = nextLocalSyncState(for: next).rawValue
+        }
+        return upsert(next)
+    }
+
     /// 동일 ID 가 있으면 갱신, 없으면 추가. updatedAtMillis 자동 갱신.
     @discardableResult
     func upsert(_ record: LocalAlarmRecord) -> LocalAlarmRecord {

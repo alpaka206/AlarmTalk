@@ -630,6 +630,18 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
+    /// `POST /alarm/:id/decline` — **받은 알람 그만받기.**
+    ///
+    /// 받은 알람을 지울 때 `DELETE /alarm/:id` 를 쓰면 안 된다 — 서버가 **소유자만**
+    /// 허용해서 404 가 나고(`alarm-mutation.ts` 의 `user_id IN (ownerIds)` 게이트),
+    /// 그러면 그만받기가 기록되지 않아 **다음 pull 이 그 알람을 다시 임포트한다.**
+    /// 사용자는 지웠는데 되살아나는 것으로 겪는다.
+    ///
+    /// 한 번 declined 되면 API 로 되돌릴 방법이 없다(un-decline 라우트는 삭제됐다).
+    func declineAlarm(id: String, token: String) async throws {
+        let _: EmptyResponse = try await request("alarm/\(id)/decline", method: "POST", token: token)
+    }
+
     /// `GET /alarm/declined` 한 페이지. 서버가 limit 을 100 으로 클램프한다.
     func declinedAlarms(limit: Int = 100, offset: Int = 0, token: String) async throws -> DeclinedAlarmsResponse {
         try await request("alarm/declined?limit=\(limit)&offset=\(offset)", token: token)
