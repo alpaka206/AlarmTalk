@@ -81,6 +81,21 @@ struct AlarmTalkApp: App {
                         await versionGate.checkAppVersion()
                     }
                     .task {
+                        // ⚠ **BGTask 핸들러 등록을 이 task 의 맨 앞에 둔다 — 어떤 await 보다도
+                        // 먼저.** 예전에는 `restoreSession()` 등 여러 await 뒤에 있었는데,
+                        // 세션이 복원되는 순간 아래 `.task(id: auth.session?.token)` 이 깨어나
+                        // **등록 전에** `scheduleNext()` 로 submit 해 버렸다. 그러면
+                        // `No launch handler registered for task with identifier ...` 로
+                        // **앱이 launch 중에 죽는다**(2026-08-06 실기기 재현 — 로그인 세션이
+                        // 있는 상태로 켤 때마다). 등록은 동기 호출이고 의존성도 전부 준비돼
+                        // 있으므로 앞으로 옮기는 데 대가가 없다.
+                        bootstrap.registerIfNeeded(
+                            store: alarmStore,
+                            alarmKit: alarmKit,
+                            auth: auth,
+                            socialFeatures: socialFeatures
+                        )
+
                         // AlarmAppContext: LiveActivity Intent 가 perform() 시점에
                         // 정적으로 참조한다. Scene 초기화 직후 1회만 설정.
                         if AlarmAppContext.shared == nil {
@@ -118,13 +133,6 @@ struct AlarmTalkApp: App {
                         // 이후 viewModel.refresh() 는 RemoteAlarmPullSync 를 위임 호출한다.
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
 
-                        // BGAppRefreshTask 핸들러 등록 (1회).
-                        bootstrap.registerIfNeeded(
-                            store: alarmStore,
-                            alarmKit: alarmKit,
-                            auth: auth,
-                            socialFeatures: socialFeatures
-                        )
 
                         // 로그인되어 있으면 즉시 한 사이클.
                         if auth.session != nil {

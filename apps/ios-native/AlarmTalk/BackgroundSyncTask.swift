@@ -27,6 +27,15 @@ final class BackgroundSyncTask {
     /// Info.plist BGTaskSchedulerPermittedIdentifiers 와 정확히 일치해야 한다.
     static let taskIdentifier = "com.alarmtalk.app.refresh"
 
+    /// 핸들러가 꽂혔는가.
+    ///
+    /// ⚠ **submit 은 등록 전에 부르면 `NSInternalInconsistencyException` 으로 앱을 죽인다**
+    /// — throw 가 아니라 예외라 `try?` 로도 못 막는다. 등록과 예약이 서로 다른 `.task` 에서
+    /// 시작되는 구조라 순서가 뒤집힐 수 있었고, 실제로 뒤집혀 launch 크래시가 났다
+    /// (2026-08-06). 순서는 호출부에서 바로잡았고, 이 플래그는 다시 어긋났을 때
+    /// **죽는 대신 예약만 건너뛰게** 하는 안전장치다.
+    private static var didRegisterHandler = false
+
     /// Android WorkManager 의 15 분 주기와 동일.
     static let refreshInterval: TimeInterval = 15 * 60
 
@@ -78,6 +87,7 @@ final class BackgroundSyncTask {
         alarmKit: AlarmKitViewModel? = nil
     ) {
         #if canImport(BackgroundTasks)
+        didRegisterHandler = true
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: taskIdentifier,
             using: nil
@@ -189,6 +199,9 @@ final class BackgroundSyncTask {
         // 재예약이 조용히 버려진다. cancel-then-submit 으로 last-writer-wins 를 보장한다:
         // 초기 예약은 expiration safety 를 그대로 제공하고, 재시도 submit 이 그것을 취소한 뒤
         // 5분 요청으로 교체한다. submit 이 즉시 뒤따르므로 pending 0 인 의미 있는 창은 없다.
+        // 등록 전이면 조용히 건너뛴다. 잃는 것은 이번 회차 예약 하나뿐이고,
+        // 등록 직후 호출부가 다시 예약한다.
+        guard didRegisterHandler else { return }
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: taskIdentifier)
         let request = BGAppRefreshTaskRequest(identifier: taskIdentifier)
         request.earliestBeginDate = earliestBeginDate ?? Date(timeIntervalSinceNow: refreshInterval)

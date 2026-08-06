@@ -55,7 +55,6 @@ enum UIPreviewSeed {
     /// 로그인 다음 게이트(온보딩·기본 목소리 고르기)도 통과 처리한다.
     /// 화면을 보려는 것이지 온보딩을 보려는 게 아니다.
     static func markGatesPassed(userID: String) {
-        OnboardingCompletionStore().markCompleted(userID: userID)
         let voiceStore = DefaultVoicePreferenceStore()
         voiceStore.markSkipped(userID: userID)
         voiceStore.setDefaultVoiceId(userID: userID, voiceId: "preview-voice")

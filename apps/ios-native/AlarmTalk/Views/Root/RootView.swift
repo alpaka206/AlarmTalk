@@ -13,7 +13,6 @@ struct RootView: View {
     @EnvironmentObject private var versionGate: AppVersionGate
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
-    @State private var onboardingCompleted: Bool?
     /// 온보딩 완료 후 기본 목소리를 한 번이라도 골랐는지. 안 골랐으면 `VoiceSetupView` 노출.
     /// Android `MainViewModel.showVoiceSetup`(= !hasChosen) 게이팅 미러.
     @State private var voiceSetupDone: Bool?
@@ -84,15 +83,17 @@ struct RootView: View {
                     onOpenTerms: { legalDocument = .init(title: "서비스 이용약관", url: Self.termsURL) },
                     onOpenPrivacy: { legalDocument = .init(title: "개인정보 처리방침", url: Self.privacyURL) }
                 )
-            } else if onboardingCompleted == nil || voiceSetupDone == nil {
+            } else if voiceSetupDone == nil {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(AlarmTalkTheme.background)
-            } else if onboardingCompleted == false {
-                NavigationStack {
-                    OnboardingView(onComplete: completeOnboarding)
-                }
-            } else if voiceSetupDone == false {
+            }
+            // ⚠ **인트로 캐러셀(OnboardingView)을 되살리지 말 것.** 안드로이드에는 그런
+            // 화면이 없다 — 로그인하면 곧바로 '기본 목소리 준비' 로 간다
+            // (`VoiceOnboardingScreen` 은 이름만 온보딩이고 스톡 클립 프리페치 진행 화면이다).
+            // iOS 에만 3장짜리 소개 페이지가 남아 있어, 로그인 직후 웰컴 프로모·권한 팝업과
+            // 겹쳐 뜨고 있었다(2026-08-06 실기기 확인).
+            else if voiceSetupDone == false {
                 // 온보딩 직후 "기본 목소리 고르기" — 기본 목소리를 아직 안 고른 사용자에게만 1회.
                 NavigationStack {
                     VoiceSetupView(onComplete: completeVoiceSetup)
@@ -193,19 +194,10 @@ struct RootView: View {
 
     private func refreshOnboardingCompletion() {
         guard let userID = auth.session?.user.id else {
-            onboardingCompleted = nil
             voiceSetupDone = nil
             return
         }
-        onboardingCompleted = OnboardingCompletionStore().hasCompleted(userID: userID)
         voiceSetupDone = DefaultVoicePreferenceStore().hasCompletedSetup(userID: userID)
-    }
-
-    private func completeOnboarding() {
-        if let userID = auth.session?.user.id {
-            OnboardingCompletionStore().markCompleted(userID: userID)
-        }
-        onboardingCompleted = true
     }
 
     private func completeVoiceSetup() {

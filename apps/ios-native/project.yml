@@ -86,6 +86,14 @@ targets:
         Release:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ALARMTALK_APP"
     scheme:
+      # ⚠ **UI 테스트 프로세스에는 `xcodebuild FOO=bar` 가 닿지 않는다.** 그건 빌드
+      # 설정이고, `TEST_RUNNER_FOO` 는 *앱* 프로세스로 간다. 그래서 실기기 로그인처럼
+      # 테스트가 직접 값을 알아야 하는 경우엔 여기 환경변수를 두고, 값은 `$(...)` 로
+      # **빌드 설정에서 끌어온다** — 자격증명이 저장소에 남지 않는다.
+      #   xcodebuild test ... E2E_EMAIL=... E2E_PASSWORD=...
+      environmentVariables:
+        E2E_EMAIL: "$(E2E_EMAIL)"
+        E2E_PASSWORD: "$(E2E_PASSWORD)"
       # Xcode 가 시뮬레이터에서 본 .storekit 파일을 자동 선택하도록 scheme run action 에 등록.
       # 실기기 빌드/Release 에서는 무시되고 App Store Connect 가 권위로 사용된다.
       storeKitConfiguration: AlarmTalk/Configuration/StoreKitConfiguration.storekit
