@@ -107,6 +107,14 @@ function loadEnvFile(path: string): Record<string, string> {
     if (eq < 0) continue;
     const key = line.slice(0, eq).trim();
     const value = stripQuotes(line.slice(eq + 1));
+    // ⚠ 이 파서는 **줄 단위**라 여러 줄 값을 담을 수 없다. PEM 을 그대로 붙여넣으면
+    // 첫 줄만 올라가는데, 업로드는 성공하고 런타임에서만 조용히 실패한다.
+    // 한 줄에 `\n` 이스케이프로 넣어야 한다 — 실수를 여기서 잡는다.
+    if (value.includes('BEGIN ') && !value.includes('END ')) {
+      throw new Error(
+        `${key}: PEM 이 잘렸다(첫 줄만 들어옴). 한 줄에 \\n 이스케이프로 넣을 것.`,
+      );
+    }
     values[key] = value;
   }
   return values;

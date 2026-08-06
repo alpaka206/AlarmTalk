@@ -36,6 +36,15 @@ export function appleSignInConfig(
 ): AppleSignInSecretConfig | null {
   if (!env.APPLE_TEAM_ID || !env.APPLE_SIGNIN_KEY_ID || !env.APPLE_SIGNIN_PRIVATE_KEY) return null;
   if (!clientId) return null;
+  // ⚠ **잘린 키를 설정된 것으로 치지 않는다.** `.dev.vars` 가 줄 단위로 파싱돼 PEM 이
+  // 첫 줄(`-----BEGIN PRIVATE KEY-----`)만 올라간 적이 있다. 그 상태로 두면 서명이
+  // 만들어지긴 하는데 애플이 거절해, 탈퇴 폐기가 **말없이** 매번 실패한다.
+  if (!env.APPLE_SIGNIN_PRIVATE_KEY.includes('END PRIVATE KEY')) {
+    throw new Error(
+      'APPLE_SIGNIN_PRIVATE_KEY looks truncated (no END marker) — ' +
+        'store the PEM on one line with \\n escapes',
+    );
+  }
   return {
     teamId: env.APPLE_TEAM_ID,
     keyId: env.APPLE_SIGNIN_KEY_ID,
@@ -53,6 +62,11 @@ function b64url(bytes: Uint8Array | ArrayBuffer): string {
 
 function pemToPkcs8(pem: string): Uint8Array {
   const body = pem
+    // ⚠ **리터럴 `\n` 을 먼저 진짜 개행으로 바꾼다.** `.dev.vars` 와 wrangler secret 은
+    // **줄 단위**로 파싱돼 여러 줄 값을 담을 수 없다. 그래서 PEM 은 한 줄에 `\n`
+    // 이스케이프로 넣는데, 이걸 안 풀면 뒤의 공백 제거가 백슬래시만 지우고 `n` 을
+    // base64 본문에 남겨 **조용히 망가진 키**가 된다(`n` 도 base64 문자라서).
+    .replace(/\\n/g, '\n')
     .replace(/-----BEGIN [^-]+-----/g, '')
     .replace(/-----END [^-]+-----/g, '')
     .replace(/\s+/g, '');
