@@ -20,38 +20,55 @@ struct LandingView: View {
 
     var body: some View {
         SunriseBackdrop {
+            // ⚠ **두 덩어리를 위·아래로 벌린다**(안드로이드 `LandingScreen.kt:154-194` 의
+            // `Arrangement.SpaceBetween`): 위에는 워드마크만, 아래에 헤드라인+서브카피+
+            // 미리듣기 카드를 모은다. 전부 위에 붙여 놓으면 글자가 하늘을 덮어 일출 씬이
+            // 배경이 아니라 '글자 뒤 그림' 이 되고, 두 앱이 완전히 다른 화면으로 보인다.
+            //
+            // 접근성 글꼴 확대·좁은 화면에서 내용이 넘쳐도 '시작하기' 는 아래 고정으로
+            // 남도록, CTA 위 영역만 스크롤한다.
             VStack(alignment: .leading, spacing: 0) {
-                Color.clear.frame(height: 16)
+                GeometryReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("AlarmTalk")
+                                .font(theme.typography.titleLarge)
+                                .fontWeight(.bold)
+                                .foregroundStyle(AuthSceneColors.text.opacity(0.94))
+                                .padding(.top, 18)
 
-                // 안드로이드는 로고 이미지 없이 워드마크 텍스트 하나다
-                // (LandingScreen.kt:162-168). iOS 의 그라데이션 박스 + waveform 은
-                // **지금은 없는 옛 안드로이드**(WakerBrandHeader)를 베낀 것이었다.
-                Text("AlarmTalk")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(AuthSceneColors.text.opacity(0.94))
+                            Spacer(minLength: 24)
+
+                            VStack(alignment: .leading, spacing: 0) {
+                                // 강조는 **가운데 키워드만**, 색만 다르고 굵기는 같다(둘 다 Bold).
+                                (Text("좋아하는 ")
+                                    + Text("목소리").foregroundColor(AuthSceneColors.accent)
+                                    + Text("로\n깨어나는 아침"))
+                                    .font(theme.typography.headlineLarge)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(AuthSceneColors.text)
+                                    .multilineTextAlignment(.leading)
+
+                                Color.clear.frame(height: 10)
+
+                                Text("매일 아침, 그 목소리가 새로운 한마디로 깨워드려요.")
+                                    .font(theme.typography.bodyMedium)
+                                    .foregroundStyle(AuthSceneColors.textDim)
+
+                                Color.clear.frame(height: 20)
+
+                                VoicePreviewCard()
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // 화면이 넉넉하면 뷰포트 높이를 채워 위·아래로 벌어지고,
+                        // 모자라면 그때만 스크롤이 생긴다(안드로이드 heightIn(min:) 대응).
+                        .frame(minHeight: proxy.size.height, alignment: .top)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                }
 
                 Color.clear.frame(height: 18)
-
-                // 강조는 **가운데 키워드만**, 색만 다르고 굵기는 같다(둘 다 Bold).
-                (Text("좋아하는 ")
-                    + Text("목소리").foregroundColor(AuthSceneColors.accent)
-                    + Text("로\n깨어나는 아침"))
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(AuthSceneColors.text)
-                    .multilineTextAlignment(.leading)
-
-                Color.clear.frame(height: 10)
-
-                Text("매일 아침, 그 목소리가 새로운 한마디로 깨워드려요.")
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(AuthSceneColors.textDim)
-
-                // Android 의 weight(1) 스페이서 — 미리듣기 카드를 가운데로, 버튼을 아래로.
-                Spacer(minLength: 24)
-
-                VoicePreviewCard()
-
-                Spacer(minLength: 24)
 
                 // 안드로이드는 CTA 가 **하나**다(LandingScreen.kt:194-198). 로그인/회원가입
                 // 갈래는 로그인 화면 하단 전환 행에서 고른다 — 첫 화면에서 두 개를 물으면
@@ -61,7 +78,8 @@ struct LandingView: View {
                 }
             }
             .padding(.horizontal, 22)
-            .padding(.vertical, 22)
+            .padding(.top, 14)
+            .padding(.bottom, 22)
         }
         .navigationBarBackButtonHidden(true)
         .task {
