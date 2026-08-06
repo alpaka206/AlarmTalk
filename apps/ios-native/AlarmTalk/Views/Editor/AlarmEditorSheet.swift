@@ -62,6 +62,10 @@ struct AlarmEditorSheet: View {
     @State var duplicateAlarmConfirm: DuplicateAlarmConfirmContent?
     @State var isWorking = false
     @State var sharedVoiceSetupTarget: FamilyVoiceProfile?
+    /// 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를 비운다.
+    /// 조용히 지우면 '문구가 사라졌다' 가 되므로 한 번 확인받는다
+    /// (안드로이드 `VoiceAudioCard.kt:194-201` 의 `pendingVoiceSwitch`).
+    @State var pendingVoiceSwitch: VoiceSelectionSheet.Option?
     @State var selectedFamilyRecipientID: String?
     @State var voiceSourceMode: VoiceSource = .ttsProfile
     @State var localAudioMode: AlarmLocalAudioInputMode = .record
@@ -384,6 +388,21 @@ struct AlarmEditorSheet: View {
             // 스톡 클립 카탈로그는 refresh 와 독립적으로 1회 로드한다(무료 등급 +
             // 시스템 보이스 선택 시 StockClipPicker 가 사용). 실패는 비차단.
             Task { await voiceStudio.loadStockClips(session: auth.session) }
+        }
+        .alert(
+            "기본 목소리로 바꿀까요?",
+            isPresented: Binding(
+                get: { pendingVoiceSwitch != nil },
+                set: { if !$0 { pendingVoiceSwitch = nil } }
+            )
+        ) {
+            Button("바꾸기") {
+                if let pending = pendingVoiceSwitch { applyVoiceSelection(pending) }
+                pendingVoiceSwitch = nil
+            }
+            Button("닫기", role: .cancel) { pendingVoiceSwitch = nil }
+        } message: {
+            Text("기본 목소리는 준비된 문구로만 말할 수 있어서, 직접 입력한 문구는 사라져요.")
         }
         .sheet(item: $sharedVoiceSetupTarget) { profile in
             SharedVoiceSelectionSetupSheet(
@@ -744,8 +763,28 @@ struct AlarmEditorSheet: View {
             sharedVoiceSetupTarget = shared
             return
         }
+        // 기본 목소리는 준비된 문구로만 말할 수 있다 — 직접 입력한 문구가 있으면 묻는다.
+        if losesManualText(switchingTo: option) {
+            pendingVoiceSwitch = option
+            return
+        }
+        applyVoiceSelection(option)
+    }
+
+    func applyVoiceSelection(_ option: VoiceSelectionSheet.Option) {
         voiceStudio.selectedProfileID = option.id
         voiceStudio.preparedAlarm = nil
+    }
+
+    /// 판정식은 안드로이드와 같다: **시스템 목소리로 바꾸는데** 직접 입력 문구가 있고,
+    /// 랜덤 생성도 버킷도 아닌 경우. ⚠ `!voiceRandomPrompt` 하나만 보면 안 된다 —
+    /// 버킷이 붙으면 랜덤이 꺼지므로 버킷 알람까지 경고 대상이 되어 버린다
+    /// (CLAUDE.md 「버킷이 붙으면 voiceRandomPrompt 가 꺼진다」).
+    func losesManualText(switchingTo option: VoiceSelectionSheet.Option) -> Bool {
+        isSystemVoiceId(option.id)
+            && !voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !draft.voiceRandomPrompt
+            && selectedFreeBucket == nil
     }
 
     /// 이 목소리로 쓸 수 있는 무료 테마. 서버가 내려준 스톡 클립의 카테고리에서 뽑되,

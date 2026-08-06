@@ -95,7 +95,7 @@ struct SnoozeSettingsPane: View {
                 }
             }
         }
-        .alert("다시 알림 간격", isPresented: $customOpen) {
+        .alert("간격 직접 설정", isPresented: $customOpen) {
             TextField("분", text: $customDraft).keyboardType(.numberPad)
             Button("취소", role: .cancel) { }
             Button("확인") {

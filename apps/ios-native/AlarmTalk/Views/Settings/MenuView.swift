@@ -101,7 +101,7 @@ struct MenuView: View {
             .presentationDetents([.medium])
         }
         // 30일 유예 탈퇴. 즉시 삭제가 아니라는 것을 문구가 분명히 말해야 한다.
-        .alert("회원 탈퇴", isPresented: $deleteConfirming) {
+        .alert("정말 탈퇴할까요?", isPresented: $deleteConfirming) {
             Button("탈퇴", role: .destructive) {
                 Task { await auth.requestAccountDeletion() }
             }

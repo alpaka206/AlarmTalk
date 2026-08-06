@@ -35,6 +35,9 @@ struct VoicePreviewConfirmView: View {
     /// 미리듣기를 끝까지 들었는가. 문구를 고치면 `false` 로 되돌린다.
     @State private var listened = false
     @State private var errorMessage: String?
+    /// 뒤로 나가려 할 때 뜨는 경고. 이 화면을 벗어나면 초안이 삭제된다
+    /// (안드로이드 `VoiceProfileManagementPanel.kt:2141` `draftExitWarningOpen`).
+    @State private var exitWarningOpen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -155,6 +158,29 @@ struct VoicePreviewConfirmView: View {
             // ⚠ **끝까지 듣기 전에는 저장할 수 없다.** 서버도 재생 토큰 없이는 승격을
             // 거부하므로, 여기서 열어 두면 눌러도 실패하는 버튼이 된다.
             .disabled(busy || !listened)
+        }
+        // ⚠ **기본 뒤로가기를 그대로 두지 말 것.** 이 화면을 벗어나면 초안이 삭제되는데,
+        // 시스템 back 은 아무 말 없이 나간다 — 사용자는 만들던 목소리를 잃고도 왜 사라졌는지
+        // 모른다. 안드로이드는 여기서 경고를 띄운다.
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    exitWarningOpen = true
+                } label: {
+                    Label("뒤로", systemImage: "chevron.left")
+                }
+                .disabled(busy)
+            }
+        }
+        .alert("나가면 임시 목소리가 삭제돼요", isPresented: $exitWarningOpen) {
+            // ⚠ **되돌릴 수 없는 쪽을 기본으로 두지 않는다.** '계속 만들기' 가 취소 역할이다.
+            Button("나가고 삭제", role: .destructive) {
+                Task { await discard() }
+            }
+            Button("계속 만들기", role: .cancel) {}
+        } message: {
+            Text("지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요.")
         }
     }
 

@@ -225,7 +225,7 @@ struct DeleteAccountPanel: View {
         }
         .settingsCard(title: "위험 작업")
         // Android `DeleteAccountDialog` (HomeComponents.kt:480) 와 동일한 안내 + 30일 유예 탈퇴.
-        .alert("회원 탈퇴", isPresented: $confirming) {
+        .alert("정말 탈퇴할까요?", isPresented: $confirming) {
             Button("탈퇴", role: .destructive) {
                 Task {
                     await auth.requestAccountDeletion()

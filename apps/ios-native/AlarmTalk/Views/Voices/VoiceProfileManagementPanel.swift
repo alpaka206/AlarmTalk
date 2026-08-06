@@ -35,6 +35,9 @@ struct VoiceProfileManagementPanel: View {
 
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
+    /// 유료인데 **이번 달 등록 한도**를 다 쓴 경우. 이용권 안내와 **다른 모달**이다 —
+    /// 이미 이용권이 있는 사람에게 이용권을 사라고 하면 안 된다.
+    @State private var monthlyLimitNoticeOpen: Bool = false
 
     /// 내 목소리 행의 ⋮ 가 여는 액션 시트 대상.
     @State private var actionSheetTarget: VoiceProfile?
@@ -170,6 +173,11 @@ struct VoiceProfileManagementPanel: View {
         }
         // 화자 분리는 제품에서 사라졌다(VoicesPanelView 주석 참조) — 없는 기능을 근거로
         // 결제를 권하지 않는다.
+        .alert("이번 달 목소리는 다 만들었어요", isPresented: $monthlyLimitNoticeOpen) {
+            Button("닫기", role: .cancel) {}
+        } message: {
+            Text("목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.")
+        }
         .alert("녹음으로 목소리를 만들려면 유료 플랜이 필요해요.", isPresented: $planGateOpen) {
             Button("닫기", role: .cancel) {}
             Button("플랜 보기") {
@@ -285,8 +293,14 @@ struct VoiceProfileManagementPanel: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
             Button("추가") {
+                // ⚠ **세 갈래를 구분한다**(안드로이드 `VoiceProfileManagementPanel.kt:1293-1299`).
+                // 무료면 이용권 안내, 유료인데 이번 달을 다 썼으면 한도 안내.
+                // 예전에는 둘 다 이용권 안내로 보내, 이용권이 있는 사람에게 이용권을
+                // 사라고 말하고 있었다.
                 if !hasPaidVoiceAccess {
                     planGateOpen = true
+                } else if monthlyExhausted {
+                    monthlyLimitNoticeOpen = true
                 } else if !voice.isProfileLimitReached {
                     route = .clone
                 } else {
@@ -297,9 +311,10 @@ struct VoiceProfileManagementPanel: View {
             .buttonStyle(.borderedProminent)
             .tint(theme.palette.primary)
             .controlSize(.small)
-            // 유료인데 이번 달을 다 썼으면 끈다 — 바로 옆 '이번 달 0/1' 이 이유를 말한다.
-            // 무료는 끄지 않는다(숫자가 없어 왜 흐린지 알 길이 없다).
-            .disabled(voice.isBusy || (hasPaidVoiceAccess && monthlyExhausted))
+            // ⚠ **한도를 다 썼다고 버튼을 끄지 않는다.** 안드로이드는 켜 두고 눌렀을 때
+            // 이유를 말한다 — 흐린 버튼은 '왜' 를 말하지 못하고, 옆의 '이번 달 0/1' 을
+            // 스스로 해석하게 만든다.
+            .disabled(voice.isBusy)
         }
     }
 
