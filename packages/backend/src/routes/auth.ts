@@ -461,8 +461,12 @@ auth.post('/register', async (c) => {
     // google_id = users.id 를 박아 넣어(외부 식별자 공간 오염) 나중에 같은 이메일로
     // 구글 로그인하면 그 값이 덮어써지며 식별자가 갈라졌다. 이제 NULL 로 둔다.
     await db.execute({
-      sql: `INSERT INTO users (id, email, google_id, password_hash, name)
-            VALUES (?, ?, NULL, ?, ?)`,
+      // ⚠ **`family_alarm_quiet_windows` 를 반드시 명시한다.** 생략하면 SQLite 가 컬럼
+      // DEFAULT(`평일 09:00-18:30`)를 박아, 가입만 한 사람에게 아무도 설정한 적 없는
+      // 방해금지 시간이 생긴다(2026-08-08 규칙). 컬럼 DEFAULT 는 SQLite 에서 바꿀 수 없어
+      // 여기서 덮는 것이 유일한 방법이다 — INSERT 를 새로 만들 때도 빠뜨리지 말 것.
+      sql: `INSERT INTO users (id, email, google_id, password_hash, name, family_alarm_quiet_windows)
+            VALUES (?, ?, NULL, ?, ?, '[]')`,
       args: [id, normalizedEmail, passwordHash, name],
     });
 
@@ -682,8 +686,12 @@ auth.post('/google', async (c) => {
       userId = crypto.randomUUID();
       plan = 'free';
       await db.execute({
-        sql: `INSERT INTO users (id, google_id, email, name)
-              VALUES (?, ?, ?, ?)`,
+        // ⚠ **`family_alarm_quiet_windows` 를 반드시 명시한다.** 생략하면 SQLite 가 컬럼
+        // DEFAULT(`평일 09:00-18:30`)를 박아, 가입만 한 사람에게 아무도 설정한 적 없는
+        // 방해금지 시간이 생긴다(2026-08-08 규칙). 컬럼 DEFAULT 는 SQLite 에서 바꿀 수 없어
+        // 여기서 덮는 것이 유일한 방법이다 — INSERT 를 새로 만들 때도 빠뜨리지 말 것.
+        sql: `INSERT INTO users (id, google_id, email, name, family_alarm_quiet_windows)
+              VALUES (?, ?, ?, ?, '[]')`,
         args: [userId, googleId, email, name || null],
       });
     }
@@ -843,8 +851,10 @@ auth.post('/apple', async (c) => {
       userId = crypto.randomUUID();
       plan = 'free';
       await db.execute({
-        sql: `INSERT INTO users (id, apple_id, email, name)
-              VALUES (?, ?, ?, ?)`,
+        // ⚠ 위 두 INSERT 와 같은 이유로 `family_alarm_quiet_windows` 를 명시한다 —
+        // 생략하면 컬럼 DEFAULT(평일 09:00-18:30)가 박힌다.
+        sql: `INSERT INTO users (id, apple_id, email, name, family_alarm_quiet_windows)
+              VALUES (?, ?, ?, ?, '[]')`,
         args: [userId, appleId, email, name || null],
       });
     }

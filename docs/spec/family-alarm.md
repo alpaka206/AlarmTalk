@@ -41,9 +41,16 @@
 
 | 자리 | 규칙 |
 | --- | --- |
+| **가입 INSERT** | `family_alarm_quiet_windows` 를 **명시**해 `'[]'` 를 넣는다 |
 | 가입 응답 | `family_alarm_quiet_windows: []` 를 보낸다 |
 | 저장된 값 읽기 | 비어 있으면 **빈 목록**. 기본 창을 만들어 내지 않는다 |
 | 앱의 저장 경로 | 사용자가 창을 다 지웠으면 **지운 대로** 보낸다 |
+
+⚠ **첫 줄이 가장 잘 빠진다.** 컬럼 DEFAULT 가 `평일 09:00–18:30` 이라, INSERT 에서
+그 컬럼을 생략하면 SQLite 가 알아서 박는다. SQLite 는 컬럼 DEFAULT 를 바꿀 수 없고
+(테이블 재작성이 필요한데 prod 재생성은 금지) 그래서 **INSERT 마다 명시하는 것이 유일한
+방법**이다. 새 로그인 경로를 만들면 그 INSERT 도 같이 고칠 것 —
+회귀 테스트 `test/no-auto-quiet-windows.test.ts` 가 소스에서 이를 검사한다.
 
 빈 목록이면 판정 함수가 곧바로 통과시킨다(`quietWindows.length === 0` 가드).
 
