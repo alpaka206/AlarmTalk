@@ -457,7 +457,7 @@ struct AlarmEditorSheet: View {
         // (및 currentPlan) 변화에도 4-값 잠금을 다시 강제해 유료 컨트롤이 잠깐
         // 노출되는 일을 막는다. coerceFreeVoiceTierConstraints 는 값이 실제로
         // 달라질 때만 재할당하므로 무한 루프가 생기지 않는다.
-        .onChange(of: freeVoiceTier) { _, _ in coerceFreeVoiceTierConstraints() }
+        .onChange(of: restrictToWeatherMedication) { _, _ in coerceFreeVoiceTierConstraints() }
         .onChange(of: currentPlan) { _, _ in coerceFreeVoiceTierConstraints() }
         // 선택 목소리가 바뀌면 직전 생성/스톡 선택을 비워, 다른 프로필의 오디오를
         // 저장하지 않게 한다. 미리듣기 중이면 함께 정지한다.
@@ -904,6 +904,22 @@ struct AlarmEditorSheet: View {
     /// 로그인 무료 등급 — 음성은 허용하되 시스템 보이스/preset 으로 강제하는 graduated 경로.
     var freeVoiceTier: Bool { planAccess == .free }
 
+    /// 문구를 무료 버킷('날씨+약')으로 **제한하는가.**
+    ///
+    /// 안드로이드 `AlarmEditorScreen.kt:190` 의 `restrictToWeatherMedication` 미러 —
+    /// 판정식은 **OR** 다: `freeVoiceTier || 시스템 보이스 선택됨`.
+    ///
+    /// ⚠ **`&&` 로 쓰지 말 것.** 기본(시스템) 목소리는 미리 만들어 둔 클립만 말할 수 있어
+    /// **유료여도** 직접 입력 문구를 읽지 못한다. iOS 는 이걸 `freeVoiceTier && 시스템보이스`
+    /// 로 잘못 써서, 유료 사용자가 기본 목소리에 직접 입력 문구를 붙일 수 있었다 —
+    /// 저장은 되는데 그 문구를 말할 방법이 없는 알람이 된다(2026-08-07 확인).
+    ///
+    /// 안드로이드는 이 플래그 하나를 렌더·상태강제·저장검증에서 함께 본다. 한 곳만
+    /// 고치면 화면과 저장이 어긋난다.
+    var restrictToWeatherMedication: Bool {
+        freeVoiceTier || voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID)
+    }
+
     var familyAlarmLocked: Bool {
         socialFeatures.familyGroup?.group == nil && !currentPlan.meetsOrExceeds(.couple)
     }
@@ -1161,7 +1177,9 @@ struct AlarmEditorSheet: View {
     /// 값이 실제로 달라질 때만 재할당하고 preparedAlarm 을 무효화한다(무한 무효화 방지).
     @discardableResult
     func coerceFreeVoiceTierConstraints() -> Bool {
-        guard freeVoiceTier, draft.playMode != .alarmOnly else { return false }
+        // ⚠ `freeVoiceTier` 가 아니라 `restrictToWeatherMedication` 이다 — 유료가 기본
+        // 목소리를 골랐을 때도 preset 4-값으로 고정해야 화면과 저장이 어긋나지 않는다.
+        guard restrictToWeatherMedication, draft.playMode != .alarmOnly else { return false }
         // 스톡 클립이 스테이징된 동안에는 4-값 강제를 건너뛴다. 스톡 선택은 생성을
         // 우회해 preparedAlarm 을 직접 채우므로, 혹시라도 randomPrompt 등이 흔들려
         // coerce 가 preparedAlarm 을 무효화하면 선택이 사라진다(spec risk 3 mitigation).
@@ -1262,12 +1280,19 @@ struct AlarmEditorSheet: View {
     }
 
     func showVoicePlanLockedAlert() {
-        // Android `editor_plan_gate_paid_features` vs `editor_plan_gate_login_required` 분기.
+        // ⚠ **상태는 셋이다 — 둘로 가르지 말 것.** 예전에는 `voiceModeBlocked` 하나로
+        // 갈라, 그 `else` 에 **로그인한 유료 사용자**까지 들어가 이미 가진 이용권을
+        // 사라고 말했다. 안드로이드도 같은 결함이 있었고 `VoiceGateReason` 으로 고쳤다
+        // (2026-08-07, 사용자 문의로 확인).
         let message: String
-        if voiceModeBlocked {
+        switch planAccess {
+        case .loggedOut:
             message = "음성 알람은 로그인 후 사용할 수 있어요."
-        } else {
+        case .free:
             message = "녹음/파일·직접 문구·날씨/운세 맞춤은 유료 이용권에서 사용할 수 있어요. 무료에서는 시스템 목소리와 기본 랜덤 문구로 알람을 만들 수 있어요."
+        case .paid:
+            // 유료인데 막혔다 = 플랜이 아니라 **목소리 종류**의 문제다.
+            message = "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
         }
         validationAlert = ValidationAlertContent(
             title: "이용권이 필요해요",
