@@ -222,7 +222,7 @@
     <string name="editor_save_blocked_select_voice">アラームで聞く声を選択してください。</string>
     <string name="editor_save_blocked_voice_unusable">選択した声は使用できません。別の声を選択してください。</string>
     <string name="editor_save">保存</string>
-    <string name="editor_save_for">%1$sさんに保存</string>
+    <string name="editor_save_for">保存 · %1$s</string>
     <string name="editor_cancel">キャンセル</string>
     <string name="editor_saving">保存中</string>
     <string name="editor_selected_ringtone">選択したアラーム</string>

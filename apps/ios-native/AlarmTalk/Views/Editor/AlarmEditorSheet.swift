@@ -643,8 +643,19 @@ struct AlarmEditorSheet: View {
     // '알람 + 음성' 모드를 설명하고 있었다 — 안내가 제품보다 오래 남으면 거짓말이 된다.
 
 
+    /// 저장 버튼 라벨.
+    ///
+    /// 가족 알람이면 **받는 사람 이름을 함께** 보여준다(안드로이드 `editor_save_for`).
+    /// 남의 기기에서 울릴 알람을 만드는 것이라, 누르기 직전에 누구인지 한 번 더 확인시킨다.
+    ///
+    /// ⚠ **동사를 앞에 둔다.** 큰 글꼴에서 라벨이 한 줄로 잘리는데, 한국어 어순대로
+    /// "…에게 저장" 이면 잘려 나가는 게 하필 동사라 "rel dev에…" 가 되어 무슨 버튼인지
+    /// 알 수 없다(안드로이드 fontScale 1.8 실기기 확인).
     var saveButtonTitle: String {
-        target.editingAlarmID == nil ? "저장" : "수정 저장"
+        if target.familyAlarmMode, let name = (selectedFamilyRecipient?.name).nilIfBlank {
+            return "저장 · \(name)"
+        }
+        return target.editingAlarmID == nil ? "저장" : "수정 저장"
     }
 
     /// 알람음 on/off 바인딩 (Android `AlarmSettingsCard.kt:162-165`). 켜면 100%, 끄면 0%

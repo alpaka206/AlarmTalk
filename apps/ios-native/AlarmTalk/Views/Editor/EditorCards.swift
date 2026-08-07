@@ -131,7 +131,10 @@ struct EditorActionBar: View {
             // ⚠ 프레임을 **label 안에** 준다. `.buttonStyle` 뒤에 붙이면 버튼 자체는
             // 내용 크기로 잡히고 바깥 프레임만 넓어져, 두 버튼이 5:5 로 안 나뉜다.
             Button(action: onCancel) {
-                Text("취소").frame(maxWidth: .infinity, minHeight: 52)
+                Text("취소")
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(maxWidth: .infinity, minHeight: 52)
             }
             .font(theme.typography.titleMedium)
             .buttonStyle(.bordered)
@@ -140,16 +143,26 @@ struct EditorActionBar: View {
             .disabled(saving)
 
             Button(action: onSave) {
+                // ⚠ **큰 글꼴에서 라벨이 잘리지 않게 줄어들게 한다**(`minimumScaleFactor`).
+                // 가족 알람 라벨은 "저장 · {이름}" 이라 길고, 접근성 글꼴을 키운 기기에서
+                // 그냥 두면 버튼이 두 줄로 번지거나 이름이 통째로 잘린다.
+                // 안드로이드 Compose 에는 이 기능이 없어 말줄임을 쓰되 **동사를 앞에** 둔다
+                // (`editor_save_for` = "저장 · %1$s") — 잘려도 무슨 버튼인지는 남는다.
                 if saving {
                     HStack(spacing: 8) {
                         ProgressView().tint(theme.palette.onPrimary)
                         Text(savingLabel)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
                     .frame(maxWidth: .infinity)
                 } else {
                     // ⚠ 아이콘을 붙이지 않는다 — 안드로이드는 글자만이고, 캘린더 아이콘은
                     // '일정에 추가' 라는 다른 동작을 연상시킨다.
-                    Text(saveTitle).frame(maxWidth: .infinity)
+                    Text(saveTitle)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity)
                 }
             }
             .frame(minHeight: 52)

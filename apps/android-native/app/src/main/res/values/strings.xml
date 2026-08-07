@@ -224,7 +224,10 @@
     <string name="editor_save_blocked_select_voice">알람에서 들을 목소리를 선택해 주세요.</string>
     <string name="editor_save_blocked_voice_unusable">선택한 목소리를 쓸 수 없어요. 다른 목소리를 선택해 주세요.</string>
     <string name="editor_save">저장</string>
-    <string name="editor_save_for">%1$s에게 저장</string>
+    <!-- ⚠ **동사를 앞에 둔다.** 큰 글꼴에서 버튼 라벨이 maxLines=1 로 잘리는데,
+         한국어 어순대로 "…에게 저장" 이면 잘려 나가는 게 하필 동사라 "rel dev에…" 가
+         되어 무슨 버튼인지 알 수 없다(fontScale 1.8 실기기 확인). -->
+    <string name="editor_save_for">저장 · %1$s</string>
     <string name="editor_cancel">취소</string>
     <string name="editor_saving">저장 중</string>
     <string name="editor_selected_ringtone">선택한 알람</string>

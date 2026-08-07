@@ -222,7 +222,7 @@
     <string name="editor_save_blocked_select_voice">Please choose the voice to hear in the alarm.</string>
     <string name="editor_save_blocked_voice_unusable">The selected voice can\'t be used. Please choose another voice.</string>
     <string name="editor_save">Save</string>
-    <string name="editor_save_for">Save for %1$s</string>
+    <string name="editor_save_for">Save · %1$s</string>
     <string name="editor_cancel">Cancel</string>
     <string name="editor_saving">Saving</string>
     <string name="editor_selected_ringtone">Selected alarm</string>
