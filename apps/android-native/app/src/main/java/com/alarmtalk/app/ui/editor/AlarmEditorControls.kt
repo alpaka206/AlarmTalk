@@ -345,9 +345,12 @@ internal fun PlayModeSelector(
     }
 }
 
-// 편집기 공용 세그먼트 선택기 — '재생 방식'과 '목소리/녹음·파일' 소스가 같은 트랙·크기·
-// 선택색(primaryContainer)을 쓰도록 통일한다. PlayModeChip 을 그대로 재사용해 높이·모서리·
-// 굵기가 일치한다(예전엔 소스가 M3 FilterChip 라 더 작고 선택색도 secondaryContainer 였다).
+// 공용 세그먼트 선택기 — `PlayModeChip` 을 그대로 재사용해 '재생 방식' 세그먼트와 높이·
+// 모서리·굵기·선택색(primaryContainer)이 일치한다.
+//
+// ⚠ 주석에 적혀 있던 '목소리/녹음·파일 소스' 는 **더 이상 없다.** 그 세그먼트는 없앴고
+// '직접 녹음' 은 목소리 목록의 마지막 항목이 됐다(`VoiceAudioCard` 의 `recordingOption`).
+// 현재 사용처는 `VoiceProfileManagementPanel` 한 곳뿐이다.
 @Composable
 internal fun EditorSegmentedSelector(
     options: List<Pair<String, String>>,

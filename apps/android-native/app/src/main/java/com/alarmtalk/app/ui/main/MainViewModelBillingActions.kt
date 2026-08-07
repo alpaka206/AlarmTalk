@@ -187,7 +187,19 @@ private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Bo
  * 호출부가 화면을 열어 둔 채 인라인으로 보여 준다(다이얼로그가 떠 있으면 스낵바는 그 뒤로 가린다).
  * 넘기지 않으면 지금처럼 스낵바로만 알린다.
  */
-internal fun MainViewModel.registerCode(code: String, onResult: ((String?) -> Unit)? = null) {
+/**
+ * 코드 등록(초대·선물·프로모 공용).
+ *
+ * @param navigateOnSuccess 성공 시 화면을 옮길지. **편집기 게이트에서 부를 때는 false**다 —
+ *   true 로 두면 쿠폰을 넣는 순간 홈/구성원 탭으로 튕겨 **편집 중이던 알람이 통째로
+ *   사라진다**(시각·반복·문구를 다시 입력해야 한다). 잠금이 풀리는 것은 구독 갱신
+ *   (`refreshBillingAfterMutation`)이 하므로 화면을 옮기지 않아도 그 자리에서 이어서 쓴다.
+ */
+internal fun MainViewModel.registerCode(
+    code: String,
+    navigateOnSuccess: Boolean = true,
+    onResult: ((String?) -> Unit)? = null,
+) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code))
         ?: run {
             // 조기 반환도 결과를 알린다 — 안 그러면 호출부는 로딩도 에러도 없이 멈춘 것처럼 보인다.
@@ -220,10 +232,12 @@ internal fun MainViewModel.registerCode(code: String, onResult: ((String?) -> Un
             val joinedSharedPass = response.type == "invite" ||
                 response.type == "group_invite" ||
                 response.plan.isSharedPassPlan()
-            if (joinedSharedPass) {
-                navigateSharedPassTick++
-            } else {
-                navigateHomeTick++
+            if (navigateOnSuccess) {
+                if (joinedSharedPass) {
+                    navigateSharedPassTick++
+                } else {
+                    navigateHomeTick++
+                }
             }
             onResult?.invoke(null)
         }.onFailure { error ->

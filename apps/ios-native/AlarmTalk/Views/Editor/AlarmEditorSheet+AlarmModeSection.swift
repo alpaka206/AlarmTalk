@@ -26,48 +26,31 @@ extension AlarmEditorSheet {
                     }
 
                 if draft.playMode != .alarmOnly {
-                    Picker("음성 소스", selection: Binding(
-                        get: { voiceSourceMode },
-                        set: { newValue in
-                            // 무료 등급은 녹음/파일이 유료라서 .localAudio 선택을 막고
-                            // 잠금 안내 후 .ttsProfile 을 유지한다 (Android `VoiceAudioCard.kt:142-145`).
-                            if freeVoiceTier && newValue == .localAudio {
-                                showVoicePlanLockedAlert()
-                                return
-                            }
-                            voiceSourceMode = newValue
-                        }
-                    )) {
-                        Text("목소리").tag(VoiceSource.ttsProfile)
-                        Text("녹음/파일").tag(VoiceSource.localAudio)
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel(Text("음성 소스"))
-                    .onChange(of: voiceSourceMode) { _, newValue in
-                        voiceStudio.preparedAlarm = nil
-                        stopAllEditorPreviews()
-                        if newValue == .ttsProfile {
-                            localRecorder.stop()
-                        }
+                    // ⚠ **'목소리 / 녹음·파일' 세그먼트를 되살리지 말 것.** 안드로이드에는
+                    // 그런 세그먼트가 없다 — '직접 녹음' 은 목소리 목록의 **마지막 항목**이다
+                    // (`VoiceAudioCard.kt` 의 `options = profileOptions + recordingOption`).
+                    // 세그먼트로 두면 같은 질문("이 알람은 무엇으로 울리나")에 컨트롤이 둘이
+                    // 되고, 목소리를 고르러 왔는데 먼저 갈래를 정하라는 단계가 하나 늘어난다.
+                    //
+                    // ⚠ **행은 카드 안에 있다.** 안드로이드도 선택 행을 `WakerCardShape`
+                    // 서피스로 감싼다 — 카드 밖에 두면 편집기에서 이 행만 배경 없이 떠 있다.
+                    EditorCard(verticalPadding: 0) {
+                        AlarmSettingRow(
+                            title: "목소리",
+                            subtitle: voiceRowSubtitle,
+                            onTap: { voiceSheetOpen = true }
+                        )
+                        // 화면 순회 캡처가 하단 탭바의 '목소리' 와 헷갈리지 않게 하는 식별자.
+                        .accessibilityIdentifier("editor.voiceRow")
                     }
 
                     if voiceSourceMode == .ttsProfile {
-                        // ⚠ **인라인 목록으로 되돌리지 말 것.** 요약 행 하나가 지금 값을
-                        // 말하고, 바꿀 때만 시트를 연다(안드로이드 `VoiceAudioCard.kt:500-547`).
-                        // 시트 안에서는 행마다 '들어보기' 가 있다 — 고르려면 먼저 들어봐야
-                        // 하는데, iOS 편집기에는 미리 들을 방법이 아예 없었다.
-                        AlarmSettingRow(
-                            title: "목소리",
-                            subtitle: selectedVoiceName ?? "고르기",
-                            onTap: { voiceSheetOpen = true }
-                        )
-
                         preparedVoiceChip
 
                         // ⚠ '음성 탭에서 만들기' 버튼을 상시로 두지 않는다 — 목소리가 이미
                         // 있는 사람에게는 매번 다른 탭으로 보내는 버튼이 편집기에 남는다.
                         // 고를 목소리가 하나도 없을 때만 낸다.
-                        if voiceOptions.isEmpty && !voiceStudio.isBusy {
+                        if voiceProfileOptions.isEmpty && !voiceStudio.isBusy {
                             Button {
                                 onJumpToVoices()
                             } label: {
@@ -78,25 +61,39 @@ extension AlarmEditorSheet {
                     }
 
                     if voiceSourceMode == .ttsProfile {
-                        // 무료 등급은 **테마(버킷)** 를 고른다 — 약 / 날씨.
+                        // ⚠ **문구와 목소리 크기는 한 카드에 구분선으로 묶는다.**
+                        // 안드로이드 `VoiceAudioCard` 가 그렇다("문구·목소리 크기를 하나의
+                        // 카드+구분선으로 묶는다"). 따로 떼면 배경 없는 행이 편집기에
+                        // 떠 있고, 카드 경계가 화면마다 달라진다.
                         //
                         // ⚠ **버킷 안의 개별 문구를 노출하지 말 것.** 예전 iOS 는 스톡
                         // 클립 본문을 최대 3줄씩 행으로 나열했는데(`StockClipPicker`),
                         // 그러면 매일 도는 회전 클립 중 하나를 '고른 문구' 로 오해하게
                         // 된다. 안드로이드는 테마만 고르고 클립은 알람마다 순차 회전한다.
-                        if restrictToWeatherMedication {
-                            FreeThemeSummaryRow(
-                                selectedBucket: selectedFreeBucket,
-                                weatherCity: voiceStudio.weatherCity,
-                                onTap: { freeBucketPaneOpen = true }
-                            )
-                        }
-
+                        //
                         // ⚠ **'랜덤 문구 사용' 토글 + 컨텍스트 드롭다운으로 되돌리지 말 것.**
                         // 그 구조에는 '직접 입력' 이 들어갈 자리가 없다 — 토글을 꺼야
                         // 나오는 숨은 상태가 된다. 안드로이드는 여섯 갈래(기본 인사말·
                         // 날씨·운세·사랑·약·직접 입력)를 한 목록에 같은 층위로 두고,
                         // 요약 행을 눌러 그 화면으로 들어간다.
+                        EditorCard(verticalPadding: 0) {
+                            if restrictToWeatherMedication {
+                                FreeThemeSummaryRow(
+                                    selectedBucket: selectedFreeBucket,
+                                    weatherCity: voiceStudio.weatherCity,
+                                    onTap: { freeBucketPaneOpen = true }
+                                )
+                            } else {
+                                MessageModeSummaryRow(
+                                    context: currentMessageContext,
+                                    manualText: voiceStudio.ttsText,
+                                    onTap: { messagePaneOpen = true }
+                                )
+                            }
+                            AlarmSettingDivider()
+                            voiceVolumeRow
+                        }
+
                         if restrictToWeatherMedication {
                             // 무료라서 막힌 것과 기본 목소리라서 막힌 것은 **다른 사실**이다.
                             // 유료에게 '무료에서는…' 이라고 하면 거짓말이 된다.
@@ -107,12 +104,6 @@ extension AlarmEditorSheet {
                             )
                                 .font(theme.typography.bodySmall)
                                 .foregroundStyle(theme.palette.onSurfaceVariant)
-                        } else {
-                            MessageModeSummaryRow(
-                                context: currentMessageContext,
-                                manualText: voiceStudio.ttsText,
-                                onTap: { messagePaneOpen = true }
-                            )
                         }
                     } else {
                         LocalAlarmAudioEditor(
@@ -134,14 +125,27 @@ extension AlarmEditorSheet {
                             onPreview: previewLocalAlarmAudio,
                             onClear: clearLocalAlarmAudio
                         )
+                        // 녹음 모드에도 목소리 크기를 녹음 박스 바로 아래에 둔다(안드로이드와 같다).
+                        EditorCard(verticalPadding: 0) { voiceVolumeRow }
                     }
 
-                    if draft.playMode == .voiceOnly {
-                        VoiceRepeatEditor(isRepeating: $draft.voiceRepeat)
-                    }
-                    VoiceVolumeEditor(volumePercent: $draft.voiceVolumePercent)
+                    // ⚠ **'반복 재생' 세그먼트와 음량 슬라이더를 본문에 다시 펼치지 말 것.**
+                    // 둘 다 '목소리 크기' 행이 여는 상세(`VoiceOutputSettingsPane`) 안에 있다.
+                    // 예전 iOS 는 본문에 인라인으로 두고 **세부 설정에도 '음성 출력' 행**을
+                    // 둬서, 같은 값을 바꾸는 자리가 셋이었다.
                 }
             }
+    }
+
+    /// 목소리 크기 요약 행 — 누르면 음량·반복을 함께 다루는 상세로 간다.
+    /// 안드로이드 `VoiceVolumeSummaryRow`.
+    @ViewBuilder
+    private var voiceVolumeRow: some View {
+        AlarmSettingRow(
+            title: "목소리 크기",
+            subtitle: "\(draft.voiceVolumePercent)%",
+            onTap: { settingsPane = .voiceOutput }
+        )
     }
 }
 

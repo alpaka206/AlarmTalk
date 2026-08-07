@@ -226,13 +226,16 @@ struct VoiceOutputSettingsPane: View {
                     // ⚠ **하한은 10% 다.** 30% 로 막아 두면 안드로이드에서 10~29% 로 맞춘
                     // 알람이 iOS 에서 다른 크기로 울린다. 0 은 슬라이더로 만들 수 없다 —
                     // '무음' 은 별개의 뜻이라 끝값으로 두면 실수로 닿아 조용히 안 울린다.
+                    // ⚠ **눈금은 10단위**(안드로이드 `VoiceVolumeSelector` 와 같은 stop).
+                    // 5단위로 두면 iOS 에서만 만들 수 있는 값(15·25…)이 생겨, 같은 알람을
+                    // 두 기기에서 열었을 때 숫자가 달라 보인다.
                     Slider(
                         value: Binding(
                             get: { Double(volumePercent) },
                             set: { volumePercent = Int($0.rounded()) }
                         ),
                         in: 10...100,
-                        step: 5
+                        step: 10
                     )
                     .tint(theme.palette.primary)
                 }

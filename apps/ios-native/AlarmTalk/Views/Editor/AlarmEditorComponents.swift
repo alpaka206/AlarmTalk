@@ -460,71 +460,11 @@ let ttsTranslationLanguages: [EditorLanguageOption] = [
     .init(code: "it", label: "이탈리아어")
 ]
 
-struct VoiceRepeatEditor: View {
-    @Binding var repeatVoice: Bool
-    @Environment(\.voiceAlarmTheme) private var theme
-
-    init(isRepeating repeatVoice: Binding<Bool>) {
-        self._repeatVoice = repeatVoice
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("반복 재생")
-                .font(theme.typography.titleSmall)
-            HStack(spacing: 8) {
-                repeatButton("한 번만", selected: !repeatVoice) {
-                    repeatVoice = false
-                }
-                repeatButton("반복", selected: repeatVoice) {
-                    repeatVoice = true
-                }
-            }
-        }
-    }
-
-    private func repeatButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(theme.typography.labelLarge)
-                .fontWeight(.semibold)
-                .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 11)
-                .background(selected ? theme.palette.primaryContainer : theme.palette.surfaceVariant.opacity(0.44))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-struct VoiceVolumeEditor: View {
-    @Binding var volumePercent: Int
-    @Environment(\.voiceAlarmTheme) private var theme
-
-    private var volumeBinding: Binding<Double> {
-        Binding(
-            get: { Double(max(30, min(100, volumePercent))) },
-            set: { volumePercent = max(30, min(100, Int($0.rounded()))) }
-        )
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("목소리 크기")
-                    .font(theme.typography.titleSmall)
-                Spacer()
-                Text("\(max(30, min(100, volumePercent)))%")
-                    .font(theme.typography.labelLarge)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .monospacedDigit()
-            }
-            Slider(value: volumeBinding, in: 10...100, step: 10)
-                .tint(theme.palette.primary)
-        }
-    }
-}
+// ⚠ **`VoiceRepeatEditor` / `VoiceVolumeEditor` 를 되살리지 말 것**(2026-08-07 삭제).
+// 편집기 본문에 반복 세그먼트와 음량 슬라이더를 펼쳐 두던 뷰들이다. 안드로이드는 둘 다
+// '목소리 크기' 행이 여는 상세(`VoiceOutputSettingsPane`)에만 두고, 본문에는 요약 행
+// 하나만 낸다. 인라인으로 두면 세부 설정의 '음성 출력' 행과 합쳐 같은 값을 바꾸는 자리가
+// 셋이 됐다. 삭제 시점의 `VoiceVolumeEditor` 는 하한도 30% 로 잘못 잡고 있었다(규약은 10%).
 
 extension VoiceProfile {
     var isReadyForAlarmSelection: Bool {

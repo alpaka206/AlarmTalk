@@ -20,6 +20,9 @@ struct VoiceSelectionSheet: View {
         let detail: String?
         /// 무료 등급에서 고를 수 없는 항목(선택 시 이용권 안내로 보낸다).
         var locked: Bool = false
+        /// 들어볼 수 있는 항목인가. '직접 녹음' 은 아직 녹음한 것이 없으므로 **false** —
+        /// 눌러도 아무 소리가 안 나는 버튼을 두지 않는다.
+        var previewable: Bool = true
     }
 
     let options: [Option]
@@ -91,22 +94,27 @@ struct VoiceSelectionSheet: View {
                     .foregroundStyle(theme.palette.primary)
             }
 
-            Button {
-                onPreview(option)
-            } label: {
-                Group {
-                    if option.id == preparingID {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: option.id == playingID ? "stop.fill" : "play.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(theme.palette.primary)
+            if option.previewable {
+                Button {
+                    onPreview(option)
+                } label: {
+                    Group {
+                        if option.id == preparingID {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: option.id == playingID ? "stop.fill" : "play.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(theme.palette.primary)
+                        }
                     }
+                    .frame(width: 44, height: 44)
                 }
-                .frame(width: 44, height: 44)
+                .buttonStyle(.plain)
+                .accessibilityLabel(option.id == playingID ? "정지" : "들어보기")
+            } else {
+                // 재생 버튼 자리를 비워도 폭을 유지해 다른 행과 제목 끝선이 어긋나지 않는다.
+                Color.clear.frame(width: 44, height: 44)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(option.id == playingID ? "정지" : "들어보기")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

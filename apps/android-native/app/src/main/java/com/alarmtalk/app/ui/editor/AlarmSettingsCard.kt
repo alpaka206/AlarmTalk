@@ -90,10 +90,6 @@ internal fun AlarmSettingsCard(
     alarmSoundLabel: String?,
     alarmSoundEnabled: Boolean,
     showAlarmSound: Boolean,
-    showVoiceOutput: Boolean,
-    voiceVolumePercent: Int,
-    voiceRepeat: Boolean,
-    voiceRepeatActive: Boolean,
     onSnoozeEnabledChange: (Boolean) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
     onSnoozeRepeatLimitChange: (Int) -> Unit,
@@ -104,7 +100,6 @@ internal fun AlarmSettingsCard(
     onOpenSnoozeSettings: () -> Unit,
     onOpenVibrationSettings: () -> Unit,
     onOpenAlarmSoundSettings: () -> Unit,
-    onOpenVoiceOutputSettings: () -> Unit,
 ) {
     val context = LocalContext.current
     // 라벨이 없으면(시스템 기본) 실제 기본 알람음 이름으로 보여준다.
@@ -172,31 +167,12 @@ internal fun AlarmSettingsCard(
                         },
                     )
                 }
-                if (showVoiceOutput) {
-                    AlarmSettingDivider()
-                    AlarmSettingRow(
-                        title = stringResource(R.string.editor_voice_output_title),
-                        subtitle = voiceOutputSummary(context, voiceVolumePercent, voiceRepeat, voiceRepeatActive),
-                        onClick = onOpenVoiceOutputSettings,
-                        trailing = {},
-                    )
-                }
+                // ⚠ **'목소리' 행을 여기에 다시 넣지 말 것.** 음량·반복은 목소리 카드 안의
+                // '목소리 크기' 행(`VoiceVolumeSummaryRow`)이 소유한다. 예전에는 이곳에도
+                // 같은 행이 있었고, 호출부가 `showVoiceOutput = false` 로 꺼 둔 채로
+                // 남아 있었다 — 살아있는 코드처럼 보이는 죽은 분기였다(2026-08-07 삭제).
             }
         }
-    }
-}
-
-private fun voiceOutputSummary(
-    context: android.content.Context,
-    voiceVolumePercent: Int,
-    voiceRepeat: Boolean,
-    voiceRepeatActive: Boolean,
-): String {
-    val volume = "${voiceVolumePercent.coerceIn(0, 100)}%"
-    return if (voiceRepeatActive && voiceRepeat) {
-        context.getString(R.string.editor2_voice_output_summary_repeat, volume)
-    } else {
-        volume
     }
 }
 

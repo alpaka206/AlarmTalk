@@ -160,17 +160,60 @@ struct AlarmEditorSheet: View {
         // ⚠ **`Form` 으로 되돌리지 말 것.** `Form` 은 iOS 표준 그룹 목록 모양을 강제해
         // (회색 배경 위 흰 그룹, 자체 여백·구분선) 안드로이드의 Waker 카드와 나란히
         // 놓으면 다른 앱이 된다. 편집기는 카드 목록이지 설정 폼이 아니다.
+        chrome(content)
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             ScrollView {
+                // ⚠ **여기에 뷰를 직접 늘어놓지 말 것 — 하위 뷰로 빼서 붙인다.**
+                // SwiftUI 의 `ViewBuilder` 는 형제 뷰를 **중첩 튜플 타입**으로 쌓는다.
+                // 이 스크롤 본문이 한때 조건 분기까지 포함해 십수 겹으로 자랐고, 그러자
+                // 타입 메타데이터를 복사하는 런타임 루틴(`initializeWithCopy`)이 스택을
+                // 다 써서 편집기를 여는 순간 **세그폴트로 죽었다**(2026-08-07).
+                // 한 계층에 조각 6개까지만 두고, 새 섹션은 새 `@ViewBuilder` 프로퍼티로.
                 VStack(alignment: .leading, spacing: 16) {
-                    // 타임휠은 **카드에 담지 않는다** — 안드로이드도 배경 없이 화면 위에
-                    // 그대로 얹는다. 파란 박스 안에 넣으면 시각이 한 덩어리 위젯처럼 보여
-                    // 화면의 주인공에서 밀려난다.
-                    TimeWheelPicker(hour: $draft.hour, minute: $draft.minute)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 4)
+                    timeWheelSection
+                    repeatCard
+                    familyTargetSection
+                    alarmModeSection
+                    detailSettingsSection
+                    saveBlockedNotice
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 20)
+            }
+            .scrollDismissesKeyboard(.interactively)
 
-            EditorSectionTitle(text: "반복")
+            EditorActionBar(
+                saveTitle: saveButtonTitle,
+                saving: isWorking || voiceStudio.isBusy,
+                savingLabel: voiceStudio.isBusy ? "음성 만드는 중…" : "저장 중…",
+                saveEnabled: editorSaveBlockedReason == nil,
+                onCancel: onClose,
+                onSave: { Task { await saveFlow() } }
+            )
+        }
+    }
+
+    // MARK: - Body sections
+
+    /// 타임휠은 **카드에 담지 않는다** — 안드로이드도 배경 없이 화면 위에 그대로 얹는다.
+    /// 파란 박스 안에 넣으면 시각이 한 덩어리 위젯처럼 보여 화면의 주인공에서 밀려난다.
+    @ViewBuilder
+    private var timeWheelSection: some View {
+        TimeWheelPicker(hour: $draft.hour, minute: $draft.minute)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+    }
+
+    /// ⚠ **'반복' 섹션 제목을 다시 넣지 말 것.** 안드로이드에는 편집기 섹션 제목이
+    /// 둘뿐이다 — '재생 방식'(`editor_play_mode_title`)과 '세부 설정'
+    /// (`editor_detail_settings`). 반복 카드는 첫 줄이 이미 '내일 - 8월 8일 (토)' 로
+    /// 자기가 무엇인지 말하고, 요일 칩이 바로 아래 붙는다.
+    @ViewBuilder
+    private var repeatCard: some View {
             EditorCard {
                 Text(repeatSummary)
                     .font(theme.typography.bodySmall)
@@ -210,7 +253,10 @@ struct AlarmEditorSheet: View {
                 // 문자열 자체가 존재하지 않는다). 알람 행 둘째 줄은 라벨이 아니라
                 // '다음 울릴 날짜 · 목소리' 라, 라벨을 채워도 어디에도 보이지 않는다.
             }
+    }
 
+    @ViewBuilder
+    private var familyTargetSection: some View {
             if target.familyAlarmMode {
                 EditorSectionTitle(text: "알람 받을 사람")
                 EditorCard {
@@ -225,17 +271,20 @@ struct AlarmEditorSheet: View {
                     )
                 }
             }
+    }
 
-            alarmModeSection
-
-            // ⚠ **'세부 설정' 카드 하나다.** 예전에는 '스누즈' 와 '사운드 & 진동' 두
-            // 섹션으로 쪼개져 스누즈 간격·반복 횟수·진동 패턴이 전부 본문에 펼쳐져
-            // 있었다 — 한 번 정하고 다시 안 볼 값들이 시각·목소리와 같은 무게로 화면을
-            // 차지했다. 안드로이드는 요약 행 넷을 한 카드에 모으고 상세는 pane 으로 뺀다.
+    /// ⚠ **'세부 설정' 카드 하나다.** 예전에는 '스누즈' 와 '사운드 & 진동' 두
+    /// 섹션으로 쪼개져 스누즈 간격·반복 횟수·진동 패턴이 전부 본문에 펼쳐져
+    /// 있었다 — 한 번 정하고 다시 안 볼 값들이 시각·목소리와 같은 무게로 화면을
+    /// 차지했다. 안드로이드는 요약 행 넷을 한 카드에 모으고 상세는 pane 으로 뺀다.
+    @ViewBuilder
+    private var detailSettingsSection: some View {
             EditorSectionTitle(text: "세부 설정")
             EditorCard(verticalPadding: 0) {
+                // 문구는 안드로이드 `editor_snooze_title` 과 같은 '다시 울림' 이다.
+                // ('다시 알림' 은 알림의 스누즈 버튼 문구 `rd_snooze_button_minutes` 쪽이다.)
                 AlarmSettingRow(
-                    title: "다시 알림",
+                    title: "다시 울림",
                     subtitle: snoozeSummary,
                     onTap: { settingsPane = .snooze },
                     trailing: {
@@ -267,17 +316,16 @@ struct AlarmEditorSheet: View {
                     )
                 }
 
-                if draft.playMode == .voiceOnly {
-                    AlarmSettingDivider()
-                    AlarmSettingRow(
-                        title: "음성 출력",
-                        subtitle: voiceOutputSummary,
-                        onTap: { settingsPane = .voiceOutput }
-                    )
-                }
+                // ⚠ **'음성 출력' 행을 여기에 되살리지 말 것.** 음량·반복은 목소리 카드
+                // 안의 '목소리 크기' 행이 여는 상세가 소유한다. 안드로이드도 이 행을
+                // `showVoiceOutput = false` 로 꺼 두었다 — 같은 값을 바꾸는 자리가 둘이면
+                // 어느 쪽이 진짜인지 매번 확인해야 한다.
             }
+    }
 
-            // 저장이 막힌 이유 — 비활성 버튼만으로는 무엇이 빠졌는지 알 수 없다.
+    /// 저장이 막힌 이유 — 비활성 버튼만으로는 무엇이 빠졌는지 알 수 없다.
+    @ViewBuilder
+    private var saveBlockedNotice: some View {
             if let reason = editorSaveBlockedReason {
                 Text(reason)
                     .font(theme.typography.bodySmall)
@@ -291,26 +339,21 @@ struct AlarmEditorSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                .padding(.bottom, 20)
-            }
-            .scrollDismissesKeyboard(.interactively)
+    }
 
-            EditorActionBar(
-                saveTitle: saveButtonTitle,
-                saving: isWorking || voiceStudio.isBusy,
-                savingLabel: voiceStudio.isBusy ? "음성 만드는 중…" : "저장 중…",
-                saveEnabled: editorSaveBlockedReason == nil,
-                onCancel: onClose,
-                onSave: { Task { await saveFlow() } }
-            )
-        }
-        .sheet(isPresented: $voiceSheetOpen) {
+    // MARK: - Chrome (sheets · panes · alerts)
+
+    /// 본문에 붙는 시트·pane·알럿. `body` 에서 `.modifier(...)` 대신 여기에 모아 두면
+    /// `@State` 를 뷰 바깥으로 넘기지 않고도 `body` 자체는 짧게 유지된다.
+    @ViewBuilder
+    private func chrome<V: View>(_ content: V) -> some View {
+        content
+            .sheet(isPresented: $voiceSheetOpen) {
             VoiceSelectionSheet(
                 options: voiceOptions,
-                selectedID: voiceStudio.selectedProfileID,
+                // 녹음 갈래일 때는 체크가 '직접 녹음' 행에 있어야 한다 — 프로필 id 를 그대로
+                // 넘기면 목록에서 지금 고른 것이 무엇인지 보이지 않는다.
+                selectedID: voiceSourceMode == .localAudio ? Self.recordingOptionID : voiceStudio.selectedProfileID,
                 playingID: editorPreviewPlayer.isPlaying ? voiceStudio.previewingGreetingVoiceId : nil,
                 preparingID: editorPreviewPlayer.isPreparing ? voiceStudio.previewingGreetingVoiceId : nil,
                 onSelect: selectVoiceOption,
@@ -792,12 +835,16 @@ struct AlarmEditorSheet: View {
         return voiceStudio.selectedListenerTitle
     }
 
-    /// 목소리 시트에 보여줄 항목들 — 내 목소리 → 공유받은 목소리 → 기본 목소리.
+    /// 고를 수 있는 **목소리 프로필** — 내 목소리 → 공유받은 목소리 → 기본 목소리.
+    ///
+    /// ⚠ **여기에 '직접 녹음' 을 넣지 말 것.** 그건 프로필이 아니라 갈래 전환이라
+    /// `voiceOptions` 에서만 붙인다 — 섞으면 "고를 목소리가 하나도 없다" 판정이
+    /// 영영 거짓이 되어 '목소리 탭에서 만들기' 안내가 사라진다.
     ///
     /// ⚠ **기본(시스템) 목소리 4종을 전부 노출한다.** 예전에는 '기본으로 설정해 둔 1개'
     /// 만 보여줬는데, 이제 4개를 미리 받아 두므로 알람마다 자유롭게 고를 수 있어야 한다
     /// (안드로이드 `VoiceAudioCard.kt:130-133` 주석).
-    var voiceOptions: [VoiceSelectionSheet.Option] {
+    var voiceProfileOptions: [VoiceSelectionSheet.Option] {
         let own = voiceStudio.profiles
             .filter { $0.isReadyForAlarmSelection && !isSystemVoice($0) }
             .map {
@@ -825,14 +872,52 @@ struct AlarmEditorSheet: View {
         return own + shared + system
     }
 
+    /// 목소리 시트가 실제로 그리는 목록 = 프로필들 + **마지막에 '직접 녹음'**.
+    ///
+    /// ⚠ 별도 세그먼트로 되돌리지 말 것 — 안드로이드도 한 목록이다
+    /// (`VoiceAudioCard.kt` 의 `options = profileOptions + recordingOption`).
+    var voiceOptions: [VoiceSelectionSheet.Option] {
+        voiceProfileOptions + [
+            VoiceSelectionSheet.Option(
+                id: Self.recordingOptionID,
+                name: "직접 녹음",
+                detail: "이 알람에만 쓸 소리를 직접 녹음하기",
+                // 무료 등급은 녹음/파일이 유료다(안드로이드 `VoiceAudioCard.kt` 와 같은 판정).
+                locked: freeVoiceTier,
+                // 아직 녹음한 것이 없으니 들어볼 것도 없다.
+                previewable: false
+            )
+        ]
+    }
+
+    /// 목소리 목록에서 '직접 녹음' 을 가리키는 id. `VoiceSource.localAudio` 의 원시값과
+    /// 같게 두어 안드로이드(`VoiceSources.LOCAL_AUDIO`)와 문자열까지 일치시킨다.
+    static let recordingOptionID = VoiceSource.localAudio.rawValue
+
+    /// 목소리 행이 보여줄 값 — 녹음 갈래면 '직접 녹음', 아니면 고른 목소리 이름.
+    var voiceRowSubtitle: String {
+        if voiceSourceMode == .localAudio { return "직접 녹음" }
+        return selectedVoiceName ?? "고르기"
+    }
+
     var selectedVoiceName: String? {
-        voiceOptions.first { $0.id == voiceStudio.selectedProfileID }?.name
+        voiceProfileOptions.first { $0.id == voiceStudio.selectedProfileID }?.name
     }
 
     func selectVoiceOption(_ option: VoiceSelectionSheet.Option) {
         if option.locked {
             showVoicePlanLockedAlert()
             return
+        }
+        // '직접 녹음' 은 프로필이 아니라 **갈래 전환**이다. 예전에는 이 전환을 세그먼트의
+        // `.onChange` 가 맡았는데, 세그먼트를 없앴으니 부수효과도 여기로 옮긴다 —
+        // 준비된 음성 무효화 / 미리듣기 정지 / (TTS 로 돌아갈 때) 녹음 중단.
+        if option.id == Self.recordingOptionID {
+            switchVoiceSource(to: .localAudio)
+            return
+        }
+        if voiceSourceMode != .ttsProfile {
+            switchVoiceSource(to: .ttsProfile)
         }
         // 공유받은 목소리는 '나를 부를 호칭' 이 없으면 먼저 받는다 — 없이 저장하면
         // 서버가 호칭 자리를 비운 문장을 만든다.
@@ -851,6 +936,17 @@ struct AlarmEditorSheet: View {
     func applyVoiceSelection(_ option: VoiceSelectionSheet.Option) {
         voiceStudio.selectedProfileID = option.id
         voiceStudio.preparedAlarm = nil
+    }
+
+    /// 음성 갈래 전환 — 목소리(TTS) ↔ 직접 녹음.
+    func switchVoiceSource(to newValue: VoiceSource) {
+        guard voiceSourceMode != newValue else { return }
+        voiceSourceMode = newValue
+        voiceStudio.preparedAlarm = nil
+        stopAllEditorPreviews()
+        if newValue == .ttsProfile {
+            localRecorder.stop()
+        }
     }
 
     /// 판정식은 안드로이드와 같다: **시스템 목소리로 바꾸는데** 직접 입력 문구가 있고,
@@ -955,12 +1051,6 @@ struct AlarmEditorSheet: View {
         guard draft.snoozeEnabled else { return "꺼짐" }
         let limit = SnoozeSettingsPane.repeatLabel(draft.snoozeRepeatLimit.rawValue)
         return "\(draft.snoozeMinutes)분 · \(limit)"
-    }
-
-    /// 세부 설정 카드의 '음성 출력' 요약.
-    private var voiceOutputSummary: String {
-        let repeatLabel = draft.voiceRepeat ? "끌 때까지 반복" : "한 번만"
-        return "\(draft.voiceVolumePercent)% · \(repeatLabel)"
     }
 
     var navigationTitle: String {
@@ -1093,11 +1183,13 @@ struct AlarmEditorSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-        } else {
-            Text("아직 생성한 음성이 없어요. 음성 탭에서 음성을 생성해 주세요.")
-                .font(theme.typography.bodySmall)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
         }
+        // ⚠ **여기에 "아직 생성한 음성이 없어요" 를 다시 넣지 말 것.**
+        // `preparedAlarm` 은 **저장 직전에 만들어지는 음성**이라 새 알람에서는 늘 nil 이다.
+        // 그걸 '목소리가 없다' 로 읽어 안내를 띄우면, 목소리를 이미 고른 사람에게도
+        // 편집기를 열 때마다 "없어요" 가 뜬다(2026-08-07 실제 화면에서 확인).
+        // 고를 목소리가 정말 하나도 없는 경우는 `voiceProfileOptions.isEmpty` 가 판정하고
+        // '목소리 탭에서 만들기' 버튼이 안내한다.
     }
 
     /// 준비된 음성 chip 의 언어 라벨. raw locale(ko/en/ja)을 한국어/영어/일본어로 풀고,

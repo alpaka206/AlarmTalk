@@ -1437,12 +1437,6 @@ internal fun AlarmEditorScreen(
                             alarmSoundEnabled = alarmSoundOn,
                             // 목소리 모드에서는 알람음 행 자체를 숨긴다(위 주석 참조).
                             showAlarmSound = editor.playMode == AlarmPlayModes.ALARM_ONLY,
-                            // 목소리 크기는 무료·유료 모두 목소리 카드 안의 행에서 연다(UI 통일) —
-                            // 세부설정의 '목소리' 행은 더 이상 쓰지 않는다.
-                            showVoiceOutput = false,
-                            voiceVolumePercent = editor.voiceVolumePercent,
-                            voiceRepeat = editor.voiceRepeat,
-                            voiceRepeatActive = editor.playMode == AlarmPlayModes.VOICE_ONLY,
                             onSnoozeEnabledChange = { editor.snoozeEnabled = it },
                             onSnoozeMinutesChange = { editor.snoozeMinutes = it },
                             onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
@@ -1455,7 +1449,6 @@ internal fun AlarmEditorScreen(
                             onOpenSnoozeSettings = { settingsDetailPanel = "snooze" },
                             onOpenVibrationSettings = { settingsDetailPanel = "vibration" },
                             onOpenAlarmSoundSettings = { settingsDetailPanel = "sound" },
-                            onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                         )
                     }
                 }

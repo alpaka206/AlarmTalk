@@ -528,11 +528,16 @@ private fun VoiceProfileSelector(
                         dismiss()
                     },
                     trailing = {
-                        VoicePreviewButton(
-                            playing = playingVoiceId == option.id,
-                            preparing = preparingVoiceId == option.id,
-                            onClick = { onPreview(option) },
-                        )
+                        // ⚠ '직접 녹음' 에는 재생 버튼을 달지 않는다. 아직 녹음한 것이 없어
+                        // `previewVoice` 가 조용히 return 하므로, 눌러도 아무 소리가 안 나는
+                        // 버튼이 된다(못 움직이는 컨트롤은 두지 않는다 — CLAUDE.md).
+                        if (option.id != VoiceSources.LOCAL_AUDIO) {
+                            VoicePreviewButton(
+                                playing = playingVoiceId == option.id,
+                                preparing = preparingVoiceId == option.id,
+                                onClick = { onPreview(option) },
+                            )
+                        }
                     },
                     divider = index != options.lastIndex,
                 )
@@ -899,11 +904,14 @@ private fun VoiceVolumeSelector(
                 fontWeight = FontWeight.SemiBold,
             )
         }
+        // ⚠ **눈금은 10단위다**(10/20/…/100 = 10구간 → 중간 마크 9개).
+        // `steps = 6` 이던 시절에는 구간이 (100-10)/7 = 12.857 이라 22%·48%·74% 같은
+        // 값이 나왔다 — 알람음 볼륨은 10단위인데 목소리만 어중간한 숫자가 찍혔다.
         Slider(
             value = volumePercent.coerceIn(MinVoiceVolumePercent, 100).toFloat(),
             onValueChange = { onVolumeChange(it.toInt().coerceIn(MinVoiceVolumePercent, 100)) },
             valueRange = MinVoiceVolumePercent.toFloat()..100f,
-            steps = 6,
+            steps = 9,
         )
     }
 }

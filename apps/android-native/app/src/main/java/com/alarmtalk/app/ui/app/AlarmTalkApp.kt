@@ -1104,7 +1104,9 @@ internal fun AlarmTalkApp(
                   val lastManualText = remember(authSession?.user?.id) { viewModel.lastManualText() }
                   AlarmEditorScreen(
                       contentPadding = padding,
-                      onRegisterCode = viewModel::registerCode,
+                      // ⚠ **편집기에서는 화면을 옮기지 않는다.** 옮기면 쿠폰을 넣는 순간
+                      // 홈으로 튕겨 편집 중이던 알람이 통째로 사라진다.
+                      onRegisterCode = { code -> viewModel.registerCode(code, navigateOnSuccess = false) },
                       redeemBusy = viewModel.billingBusy,
                       alarm = null,
                       authSession = authSession,
@@ -1155,7 +1157,7 @@ internal fun AlarmTalkApp(
                   } else {
                       AlarmEditorScreen(
                           contentPadding = padding,
-                          onRegisterCode = viewModel::registerCode,
+                          onRegisterCode = { code -> viewModel.registerCode(code, navigateOnSuccess = false) },
                           redeemBusy = viewModel.billingBusy,
                           alarm = currentAlarm,
                           authSession = authSession,

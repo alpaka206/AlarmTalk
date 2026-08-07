@@ -1,12 +1,14 @@
 import SwiftUI
 import UIKit
 
-/// 12 종 진동 패턴 선택용 dropdown + 미리듣기 버튼.
+/// 진동 패턴 선택용 dropdown + 미리듣기 버튼. 목록은 **17종**이다
+/// (`VibrationPattern` 열거형 — 안드로이드 `data/AlarmConstants.kt` 의 `VibrationPatterns`).
 ///
 /// Android 의 `VibrationPatternLibrary.waveform(...)` 가 사용하는 ms 시퀀스를
 /// iOS `UIImpactFeedbackGenerator` 의 펄스 시퀀스로 근사한다. (Core Haptics 의
 /// 풀 envelope 패턴은 별도 엔진 셋업이 필요해 본 picker 범위에서는 다루지
-/// 않는다.) Android `AlarmSettingsCard.kt:90-103` 의 라벨/정렬을 그대로 차용.
+/// 않는다.) 라벨·정렬은 안드로이드 `ui/editor/AlarmSettingsCard.kt` 의
+/// `VibrationOptions` 를 그대로 따른다.
 ///
 /// 정직한 한계: iOS 에서 알람이 울릴 때의 진동은 AlarmKit 이 소유하는 *시스템
 /// 알람 진동* 이다 — 시스템 알람음이 울리는 동안 임의의 진동 패턴을 반복시키는
@@ -93,19 +95,23 @@ struct VibrationPatternPicker: View {
 // MARK: - Display labels
 
 extension VibrationPattern {
-    /// Android `AlarmSettingsCard.kt:70-82` 의 `VibrationOptions` 영문 라벨과 1:1 일치시킨다.
-    /// (.none 은 패턴 목록에서 제외되며 on/off 토글로 끄므로 'Off' 표기만 둔다.)
+    /// 안드로이드 `ui/util/PlatformAndLabelUtils.kt` 의 `vibrationLabel` 과 1:1 일치시킨다.
+    ///
+    /// ⚠ **패턴 고유명은 전 로케일 영어 고정**이고(알람음 이름과 같은 취급),
+    /// **'기본'·'꺼짐' 같은 의미어만 번역한다** — 안드로이드 `strings.xml` 의
+    /// `translatable="false"` 표시가 그 경계다. 기본 패턴을 "Basic call" 로 두면
+    /// 한국어 기기에서 진동 행에 영어가 뜬다(안드로이드는 '기본' 이다).
     var displayName: String {
         switch self {
-        case .default: return "Basic call"
+        case .default: return String(localized: "기본")
         case .strong: return "Strong"
         case .short: return "Short"
         case .medium: return "Medium"
         case .heartbeat: return "Heartbeat"
         case .ticktock: return "Ticktock"
         case .waltz: return "Waltz"
-        case .zigzag: return "Zig-zig-zig"
-        case .offBeat: return "Off-beat"
+        case .zigzag: return "Zigzag"
+        case .offBeat: return "Offbeat"
         case .ripple: return "Ripple"
         case .siren: return "Siren"
         case .rise: return "Rise"
@@ -114,7 +120,7 @@ extension VibrationPattern {
         case .drumroll: return "Drumroll"
         case .soft: return "Soft"
         case .sos: return "SOS"
-        case .none: return "Off"
+        case .none: return String(localized: "꺼짐")
         }
     }
 }
