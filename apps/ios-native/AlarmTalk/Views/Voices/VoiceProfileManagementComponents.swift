@@ -16,69 +16,6 @@ func normalizedStatus(_ raw: String?) -> String {
 // MARK: - Delete dialog
 
 /// 삭제 확인 다이얼로그. force 토글 + 영향받는 알람 수 안내.
-struct VoiceProfileDeleteDialog: View {
-    let profileName: String
-    @Binding var force: Bool
-    /// 이번 달 등록 쿼터를 이미 다 썼는가. true 면 '지우면 이번 달엔 다시 못 만든다' 를
-    /// 함께 알린다 — 되돌릴 수 없는 삭제라 누르기 전에 말해야 한다.
-    /// **막지는 않는다**(본인 목소리다). 경고형이다.
-    var monthlyQuotaExhausted: Bool = false
-    let onCancel: () -> Void
-    let onConfirm: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // ⚠ X 를 두지 않는다 — 아래 [취소]와 같은 일이라 취소 어포던스가 둘이 된다
-            // (CLAUDE.md 「모달」). 시트라 아래로 끌어내리는 표준 탈출구도 이미 있다.
-            Text("목소리 삭제")
-                .font(.title3.weight(.bold))
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text("'\(profileName)' 목소리를 삭제할까요?")
-                .font(.subheadline)
-            Text("이 목소리를 쓰는 메시지는 텍스트만 남고, 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.")
-                .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
-            if monthlyQuotaExhausted {
-                Text("이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.error)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Toggle(isOn: $force) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("사용 중인 알람도 함께 정리").font(.subheadline.weight(.semibold))
-                    Text(force ? "기본 알람음으로 강등돼요" : "사용 중이면 삭제하지 않아요")
-                        .font(.caption)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-            }
-
-            HStack {
-                Button("취소", action: onCancel)
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
-                Button(role: .destructive, action: onConfirm) {
-                    Text("삭제")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AlarmTalkTheme.error)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(20)
-    }
-}
-
-// MARK: - Shared voice viewer info dialog
-
-/// 공유받은 음성에 대해 viewer 가 자신과의 관계와 호칭을 설정하는 다이얼로그.
-///
-/// Android `SharedVoiceViewerInfoDialog`
-/// (`VoiceProfileManagementPanel.kt:1543`) 와 1:1 대응. 둘 다 필수이며, 비어 있으면
-/// 인라인 오류 메시지를 띄우고 저장을 막는다.
 struct SharedVoiceViewerInfoDialog: View {
     let profileName: String
     let sharedFromLabel: String
@@ -289,13 +226,4 @@ struct AudioCropRangeSlider: View {
         .voiceAlarmPreviewEnvironment()
 }
 
-#Preview("Delete dialog") {
-    VoiceProfileDeleteDialog(
-        profileName: "아침 목소리",
-        force: .constant(true),
-        onCancel: {},
-        onConfirm: {}
-    )
-    .padding()
-}
 #endif

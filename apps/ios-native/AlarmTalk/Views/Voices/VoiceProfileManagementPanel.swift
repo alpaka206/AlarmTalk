@@ -31,7 +31,6 @@ struct VoiceProfileManagementPanel: View {
 
     /// 삭제 확인 다이얼로그 입력값. force 토글 포함.
     @State private var deleteTarget: VoiceProfile?
-    @State private var deleteForce: Bool = true
 
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
@@ -116,7 +115,6 @@ struct VoiceProfileManagementPanel: View {
             }
             Button("삭제", role: .destructive) {
                 if let profile = actionSheetTarget {
-                    deleteForce = true
                     actionSheetTarget = nil
                     DispatchQueue.main.async { deleteTarget = profile }
                 }
@@ -135,41 +133,64 @@ struct VoiceProfileManagementPanel: View {
             TextField("목소리 이름", text: $editName)
                 .textInputAutocapitalization(.never)
             Button("닫기", role: .cancel) { editTarget = nil }
+            // ⚠ **빈 이름을 조용히 삼키지 말 것.** 예전에는 `editTarget = nil` 로
+            // 알럿을 먼저 닫고 그다음 guard 로 return 했다 — 저장을 눌러도 알럿만
+            // 닫히고 아무 일도 일어나지 않아, 사용자는 저장된 줄 안다.
+            // 이제 빈 값이면 **버튼 자체가 비활성**이라 그 상태가 만들어지지 않는다.
             Button("저장") {
                 guard let profile = editTarget else { return }
-                let newName = editName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let newName = InputSanitizer.clampVoiceName(
+                    InputSanitizer.sanitizeDisplayName(editName)
+                )
                 editTarget = nil
                 guard !newName.isEmpty, newName != profile.name else { return }
                 Task { await voice.renameProfile(profile, newName: newName, session: auth.session) }
             }
+            .disabled(
+                InputSanitizer.sanitizeDisplayName(editName)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty
+            )
         } message: {
-            Text("알람 목록과 목소리 탭에 보이는 이름이에요.")
+            Text("알람 목록과 목소리 탭에 보이는 이름이에요. 이름은 비울 수 없어요.")
         }
-        .sheet(item: $deleteTarget) { profile in
-            VoiceProfileDeleteDialog(
-                profileName: profile.name,
-                force: $deleteForce,
-                monthlyQuotaExhausted: monthlyExhausted,
-                onCancel: { deleteTarget = nil },
-                onConfirm: {
-                    let target = profile
-                    let force = deleteForce
-                    deleteTarget = nil
-                    Task {
-                        let didDelete = await voice.deleteProfile(
-                            target,
-                            session: auth.session,
-                            force: force,
-                            alarmStore: alarmStore,
-                            audioCache: AudioCacheStore.shared
-                        )
-                        if didDelete {
-                            await socialFeatures.refreshAll(session: auth.session, force: true)
-                        }
+        // ⚠ **확인형 모달은 시스템 `.alert` 다**(CLAUDE.md 「iOS 는 안드로이드를 원본으로
+        // 삼는다」의 플랫폼 표준 갈래). 예전에는 커스텀 시트였고, 거기에 안드로이드에
+        // 없는 '사용 중인 알람도 함께 정리' 토글이 붙어 있었다 — 끄면 사용 중인 목소리는
+        // 삭제가 조용히 실패한다. 안드로이드는 선택지를 주지 않고 **항상 강등 삭제**다.
+        .alert(
+            monthlyExhausted ? "정말 삭제할까요?" : "목소리 삭제",
+            isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            ),
+            presenting: deleteTarget
+        ) { profile in
+            Button("삭제", role: .destructive) {
+                let target = profile
+                deleteTarget = nil
+                Task {
+                    let didDelete = await voice.deleteProfile(
+                        target,
+                        session: auth.session,
+                        // 안드로이드와 같이 **항상 강등 삭제**다. 선택지를 두면 끈 사람은
+                        // 사용 중인 목소리를 영영 못 지운다.
+                        force: true,
+                        alarmStore: alarmStore,
+                        audioCache: AudioCacheStore.shared
+                    )
+                    if didDelete {
+                        await socialFeatures.refreshAll(session: auth.session, force: true)
                     }
                 }
-            )
-            .presentationDetents([.medium])
+            }
+            Button("취소", role: .cancel) { deleteTarget = nil }
+        } message: { profile in
+            if monthlyExhausted {
+                Text("이 목소리로 만든 알람은 기본 알람음으로 바뀌고, 저장된 음성도 함께 지워져요. 되돌릴 수 없어요. 이번 달에는 새 목소리를 만들 수 없고, 다음 달부터 다시 만들 수 있어요.")
+            } else {
+                Text("'\(profile.name)' 목소리를 삭제할까요?\n이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.")
+            }
         }
         // 화자 분리는 제품에서 사라졌다(VoicesPanelView 주석 참조) — 없는 기능을 근거로
         // 결제를 권하지 않는다.

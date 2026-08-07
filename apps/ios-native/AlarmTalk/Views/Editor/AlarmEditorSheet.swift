@@ -39,6 +39,8 @@ struct AlarmEditorSheet: View {
     let onClose: () -> Void
     /// 사용자가 "음성 탭에서 만들기" 버튼을 누른 경우 부모가 탭 전환을 처리.
     let onJumpToVoices: () -> Void
+    /// 이용권 화면으로 보낸다. 게이트의 '이용권 보기' 가 쓴다.
+    var onRequestBilling: (() -> Void)?
     /// 저장 완료 후 알람 탭으로 전환.
     let onSchedulingDidFinish: () -> Void
 
@@ -64,6 +66,9 @@ struct AlarmEditorSheet: View {
     @State var validationAlert: ValidationAlertContent?
     @State var duplicateAlarmConfirm: DuplicateAlarmConfirmContent?
     @State var isWorking = false
+    @State var voiceGateAlert: VoiceGateAlertContent?
+    @State var redeemCodeAlertOpen = false
+    @State var redeemCodeDraft = ""
     @State var sharedVoiceSetupTarget: FamilyVoiceProfile?
     /// 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를 비운다.
     /// 조용히 지우면 '문구가 사라졌다' 가 되므로 한 번 확인받는다
@@ -126,6 +131,16 @@ struct AlarmEditorSheet: View {
         let id = UUID()
         let title: String
         let message: String
+    }
+
+    /// 목소리 게이트 전용 내용. **액션이 상태마다 다르므로** 일반 검증 알럿과 분리한다
+    /// (`docs/spec/plan-gates.md` 「상태는 셋이다」).
+    struct VoiceGateAlertContent: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+        /// 이용권이 없어서 막힌 경우에만 true — 그때만 쿠폰·결제 액션이 뜻을 갖는다.
+        let offersPlanActions: Bool
     }
 
     /// 같은 시각 알람 교체 확인 모달의 내용. merged/existing 은 동의 시 저장을 마무리하는 데 쓴다.
@@ -359,6 +374,45 @@ struct AlarmEditorSheet: View {
                 message: Text(content.message),
                 dismissButton: .default(Text("확인"))
             )
+        }
+        // ⚠ **게이트에는 상태에 맞는 액션이 붙어야 한다.** 예전에는 '확인' 하나뿐이라,
+        // 이용권이 없어서 막힌 사람에게 **살 길도 쿠폰 넣을 길도 주지 않았다**
+        // (안드로이드 `PlanGateDialog` 는 [닫기 / 쿠폰이 있어요 / 이용권 보기]).
+        .alert(
+            voiceGateAlert?.title ?? "",
+            isPresented: Binding(
+                get: { voiceGateAlert != nil },
+                set: { if !$0 { voiceGateAlert = nil } }
+            ),
+            presenting: voiceGateAlert
+        ) { content in
+            if content.offersPlanActions {
+                Button("쿠폰이 있어요") {
+                    voiceGateAlert = nil
+                    redeemCodeAlertOpen = true
+                }
+                Button("이용권 보기") {
+                    voiceGateAlert = nil
+                    onRequestBilling?()
+                }
+            }
+            Button("닫기", role: .cancel) { voiceGateAlert = nil }
+        } message: { content in
+            Text(content.message)
+        }
+        .alert("쿠폰 입력", isPresented: $redeemCodeAlertOpen) {
+            TextField("초대·선물·프로모션 코드", text: $redeemCodeDraft)
+                .textInputAutocapitalization(.characters)
+            Button("등록") {
+                let code = InputSanitizer.sanitizeRedeemCode(redeemCodeDraft)
+                redeemCodeDraft = ""
+                guard !code.isEmpty else { return }
+                Task { _ = await socialFeatures.registerCode(code, session: auth.session) }
+            }
+            .disabled(InputSanitizer.sanitizeRedeemCode(redeemCodeDraft).isEmpty)
+            Button("취소", role: .cancel) { redeemCodeDraft = "" }
+        } message: {
+            Text("받으신 프로모션·선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요.")
         }
         // 검증/실패 알림이 뜰 때 한 번 error 햅틱을 울려 저장 실패를 촉각으로 알린다.
         .onChange(of: validationAlert?.id) { _, newID in
@@ -1337,9 +1391,18 @@ struct AlarmEditorSheet: View {
             // 유료인데 막혔다 = 플랜이 아니라 **목소리 종류**의 문제다.
             message = "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
         }
-        validationAlert = ValidationAlertContent(
-            title: "이용권이 필요해요",
-            message: message
+        let title: String
+        switch planAccess {
+        case .loggedOut: title = "로그인이 필요해요"
+        case .free: title = "유료 이용권이 필요해요"
+        case .paid: title = "기본 목소리로는 직접 입력을 쓸 수 없어요"
+        }
+        voiceGateAlert = VoiceGateAlertContent(
+            title: title,
+            message: message,
+            // ⚠ 쿠폰·결제 액션은 **이용권이 없어서 막힌 경우에만**. 비로그인에게는
+            // 등록할 계정이 없고, 이미 유료인 사람에게는 눌러도 아무 일이 없다.
+            offersPlanActions: planAccess == .free
         )
     }
 

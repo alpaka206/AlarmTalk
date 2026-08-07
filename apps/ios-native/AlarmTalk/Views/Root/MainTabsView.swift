@@ -119,6 +119,14 @@ struct MainTabsView: View {
                             editorTarget = nil
                             selectedTab = .voices
                         },
+                        onRequestBilling: {
+                            editorTarget = nil
+                            Task { @MainActor in
+                                // 편집기 시트가 닫히는 애니메이션과 겹치지 않게 짧게 지연한다.
+                                try? await Task.sleep(nanoseconds: 300_000_000)
+                                auxiliaryScreen = .billing
+                            }
+                        },
                         onSchedulingDidFinish: {
                             editorTarget = nil
                             selectedTab = .alarms

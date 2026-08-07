@@ -7,6 +7,13 @@ import SwiftUI
 struct AccountPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Binding var nicknameDraft: String
+
+    /// 상한을 **넘겨 쳤을 때만** true. 정확히 상한이면 false 다 —
+    /// 잘라 돌려준 값을 IME 가 되돌려 보내면 경고가 곧바로 꺼져 깜빡이기 때문이다.
+    private var nicknameOverLimit: Bool {
+        Array(InputSanitizer.sanitizeDisplayName(nicknameDraft).utf16).count
+            > InputSanitizer.displayNameMaxLength
+    }
     let user: AuthUser
     let onSignOut: () -> Void
     @State private var nicknameDialogOpen = false
@@ -53,19 +60,36 @@ struct AccountPanel: View {
             .buttonStyle(.plain)
         }
         .settingsCard(title: "계정")
-        .sheet(isPresented: $nicknameDialogOpen) {
-            NicknameEditSheet(
-                initialName: user.name,
-                isBusy: auth.isBusy,
-                onDismiss: { nicknameDialogOpen = false },
-                onSave: { name in
-                    nicknameDraft = name
-                    nicknameDialogOpen = false
-                    Task { await auth.updateProfile(name: name) }
-                }
+        // ⚠ **확인형 모달은 시스템 `.alert` 다.** 예전에는 커스텀 시트였고, 안드로이드에
+        // 없는 부제·아이콘 카드에 **금지된 상시 카운터(N/30)** 까지 달려 있었다.
+        // CLAUDE.md: "항상 켜진 카운터는 넘기 전까진 알려 줄 게 없어 두지 않는다."
+        .alert("닉네임 수정", isPresented: $nicknameDialogOpen) {
+            TextField("예: 규원", text: $nicknameDraft)
+                .textInputAutocapitalization(.never)
+            Button("저장") {
+                let name = InputSanitizer.clampDisplayName(
+                    InputSanitizer.sanitizeDisplayName(nicknameDraft)
+                )
+                guard !name.isEmpty else { return }
+                Task { await auth.updateProfile(name: name) }
+            }
+            .disabled(
+                auth.isBusy
+                    || InputSanitizer.sanitizeDisplayName(nicknameDraft)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .isEmpty
             )
-            .presentationDetents([.medium])
-            .interactiveDismissDisabled(auth.isBusy)
+            Button("닫기", role: .cancel) {}
+        } message: {
+            // ⚠ **말없이 자르지 않는다.** 넘겨 친 순간에만 이유를 말한다 —
+            // 정확히 상한일 때는 켜지 않는다(잘라 돌려준 값을 IME 가 되돌려 보내면
+            // 경고가 곧바로 꺼져 깜빡인다).
+            if nicknameOverLimit {
+                Text("이름은 \(InputSanitizer.displayNameMaxLength)자까지 쓸 수 있어요.")
+            }
+        }
+        .onChange(of: nicknameDialogOpen) { _, open in
+            if open { nicknameDraft = user.name }
         }
         .alert("로그아웃할까요?", isPresented: $logoutConfirming) {
             Button("취소", role: .cancel) { }
@@ -77,129 +101,6 @@ struct AccountPanel: View {
     }
 }
 
-private struct NicknameEditSheet: View {
-    let initialName: String
-    let isBusy: Bool
-    let onDismiss: () -> Void
-    let onSave: (String) -> Void
-
-    @State private var name = ""
-    @State private var submitted = false
-
-    private var trimmedName: String {
-        name.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var normalizedInitialName: String {
-        initialName.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var canSave: Bool {
-        !isBusy && !trimmedName.isEmpty && trimmedName != normalizedInitialName
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("닉네임 수정")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(AlarmTalkTheme.text)
-                    Text("공유 이용권과 메시지에서 표시되는 이름이에요.")
-                        .font(.subheadline)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-                Spacer()
-                Button {
-                    if !isBusy {
-                        onDismiss()
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.headline)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(AlarmTalkTheme.surfaceVariant, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(isBusy)
-            }
-
-            HStack(spacing: 12) {
-                Image(systemName: "person")
-                    .font(.title3)
-                    .foregroundStyle(AlarmTalkTheme.primary)
-                    .frame(width: 42, height: 42)
-                    .background(AlarmTalkTheme.surface, in: Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(AlarmTalkTheme.outline, lineWidth: 1)
-                    )
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("앱에서 보일 이름")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AlarmTalkTheme.text)
-                    Text("알람, 메시지, 공유 이용권 화면에서 이 이름을 사용해요.")
-                        .font(.caption)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(14)
-            .background(AlarmTalkTheme.surfaceVariant.opacity(0.42), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(AlarmTalkTheme.outline, lineWidth: 1)
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("닉네임")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-                TextField("예: 규원", text: $name)
-                    .textFieldStyle(.roundedBorder)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .disabled(isBusy)
-                    .onChange(of: name) { _, newValue in
-                        let cleaned = InputSanitizer.clampDisplayName(newValue)
-                        if cleaned != newValue {
-                            name = cleaned
-                        }
-                    }
-                Text("\(name.count)/30")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                if submitted && trimmedName.isEmpty {
-                    Text("닉네임을 입력해 주세요.")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(AlarmTalkTheme.error)
-                }
-            }
-
-            // Android `NicknameEditDialog` 처럼 저장 중에는 "저장 중" 으로 표시.
-            Button(isBusy ? "저장 중" : "저장") {
-                submitted = true
-                guard canSave else { return }
-                onSave(trimmedName)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-            .frame(maxWidth: .infinity)
-            .disabled(!canSave)
-
-            Spacer(minLength: 0)
-        }
-        .padding(20)
-        .background(AlarmTalkTheme.background)
-        .onAppear {
-            name = initialName
-        }
-    }
-}
-
-/// 회원 탈퇴 카드 — 별도 카드로 분리해 위험 행동을 시각적으로 격리.
 struct DeleteAccountPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
     let onDeleted: () -> Void

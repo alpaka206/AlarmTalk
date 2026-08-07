@@ -36,6 +36,11 @@ struct MessageSettingsPane: View {
 
     @State private var draftContext: String = "preset"
     @State private var draftManualText: String = ""
+    /// 「직접 입력」 알럿 안에서만 쓰는 임시 값. '저장' 을 눌러야 `draftManualText` 로 간다.
+    @State private var manualAlertDraft: String = ""
+
+    /// 알람 문구 길이 상한. 서버와 같은 값이어야 한다.
+    private static let manualTextMaxLength = 200
     @State private var draftWeatherCountry: String = ""
     @State private var draftWeatherCity: String = ""
     @State private var draftFortuneGender: String = ""
@@ -136,12 +141,32 @@ struct MessageSettingsPane: View {
             }
             .presentationDetents([.medium, .large])
         }
+        // ⚠ **`$draftManualText` 에 직접 바인딩하지 말 것.** 그러면 타이핑이 곧바로
+        // 화면 draft 에 반영돼 **'취소' 가 취소가 아니게 된다**(두 버튼 body 가 비어
+        // 있어도 이미 값이 바뀐 뒤다). 알럿 전용 상태에 받아 '저장' 에서만 대입한다.
         .alert("직접 입력", isPresented: $manualDialogOpen) {
-            TextField("알람에서 읽어 줄 문구", text: $draftManualText)
+            TextField("알람에서 읽어 줄 문구", text: $manualAlertDraft)
             Button("취소", role: .cancel) { }
-            Button("확인") { }
+            Button("저장") {
+                // 새니타이즈·길이 상한은 여기서 건다 — 서버도 막지만, 앱이 1차
+                // 방어선이라 제어문자·제로폭이 문구에 남으면 TTS 낭독이 망가진다.
+                draftManualText = InputSanitizer.clamp(
+                    InputSanitizer.sanitizeUserText(manualAlertDraft),
+                    max: Self.manualTextMaxLength
+                )
+            }
+            .disabled(
+                InputSanitizer.sanitizeUserText(manualAlertDraft)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty
+            )
         } message: {
             Text("이 문구를 그대로 읽어 드려요.")
+        }
+        .onChange(of: manualDialogOpen) { _, open in
+            // 열 때만 현재 값으로 시드한다. 닫힐 때는 건드리지 않는다 —
+            // '저장' 이 이미 반영했거나, '취소' 라 반영하지 않아야 한다.
+            if open { manualAlertDraft = draftManualText }
         }
     }
 
