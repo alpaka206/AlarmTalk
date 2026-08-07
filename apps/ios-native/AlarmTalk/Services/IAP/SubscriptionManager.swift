@@ -194,6 +194,10 @@ final class SubscriptionManager: ObservableObject {
             guard let transaction = try? checkVerified(result) else { continue }
             newSet.insert(transaction.productID)
             if let plan = SubscriptionProduct(rawValue: transaction.productID) {
+                // ⚠ **선물 구매는 구매자의 등급을 올리지 않는다.** 사서 남에게 주는
+                // 코드라 본인 권한이 아니다. 이 가드가 없으면 선물을 산 무료 사용자가
+                // 유료로 판정돼, 자기 앱의 유료 기능이 열린다.
+                guard plan.isSubscription else { continue }
                 if plan.planTier.tierOrder > maxTier.tierOrder {
                     maxTier = plan.planTier
                 }

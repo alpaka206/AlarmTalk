@@ -20,10 +20,20 @@ enum SubscriptionProduct: String, CaseIterable {
     case coupleMonthly   = "com.voicealarm.nativeapp.ios.couple_monthly"
     case familyMonthly   = "com.voicealarm.nativeapp.ios.family_monthly"
 
+    /// 선물용 **1회성(소모성)** 상품.
+    ///
+    /// ⚠ **자동 갱신 구독은 남에게 줄 수 없다** — 스토어가 구매자 계정에 묶는다.
+    /// 그래서 선물은 소모성 상품을 팔고, 서버가 그 결제로 **바우처 코드**를 만든다
+    /// (`billing-apple.ts` 의 `isAppleGiftProductId` 갈래).
+    case personalGift    = "com.voicealarm.nativeapp.ios.personal_gift_1m"
+
+    /// 이 상품이 **본인 구독**인가. 선물은 아니다 — 사서 남에게 주는 코드다.
+    var isSubscription: Bool { self != .personalGift }
+
     /// 백엔드 PlanTier 매핑.
     var planTier: PlanTier {
         switch self {
-        case .personalMonthly: return .personal
+        case .personalMonthly, .personalGift: return .personal
         case .coupleMonthly:   return .couple
         case .familyMonthly:   return .family
         }

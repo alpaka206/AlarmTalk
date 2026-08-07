@@ -16,8 +16,19 @@ final class SubscriptionManagerTests: XCTestCase {
 
     // MARK: - Product enum
 
-    func testHasExactlyThreeProducts() {
-        XCTAssertEqual(SubscriptionProduct.allCases.count, 3)
+    /// 구독 3종 + 선물 1종.
+    /// ⚠ 선물은 **소모성**이라 구독이 아니다 — `isSubscription` 이 그걸 가른다.
+    func testHasThreeSubscriptionsAndOneGift() {
+        XCTAssertEqual(SubscriptionProduct.allCases.count, 4)
+        XCTAssertEqual(SubscriptionProduct.allCases.filter(\.isSubscription).count, 3)
+        XCTAssertEqual(SubscriptionProduct.allCases.filter { !$0.isSubscription }, [.personalGift])
+    }
+
+    /// 선물 구매가 **구매자의 등급을 올리면 안 된다.** 사서 남에게 주는 코드다.
+    func testGiftIsNotASubscription() {
+        XCTAssertFalse(SubscriptionProduct.personalGift.isSubscription)
+        // planTier 는 '무엇을 선물하는가' 를 뜻할 뿐, 구매자 권한이 아니다.
+        XCTAssertEqual(SubscriptionProduct.personalGift.planTier, .personal)
     }
 
     func testAllProductIDsAreUnique() {

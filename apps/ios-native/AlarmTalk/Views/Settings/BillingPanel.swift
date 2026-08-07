@@ -257,8 +257,29 @@ struct BillingPanel: View {
         }
     }
 
+    /// 선물 이용권 **구매**.
+    ///
+    /// ⚠ **결제 없이 코드를 만들지 않는다.** 예전에는 `POST /billing/checkout` 의
+    /// `gift: true` 를 불렀는데, 그건 무결제 발급이라 서버가 production 에서 항상 막는다
+    /// (열면 누구나 무료로 유료 이용권을 뽑을 수 있다). 이제 소모성 상품을 실제로 사고,
+    /// 서버가 그 영수증을 검증해 바우처를 만든다.
     private func giftPersonalPass() async {
-        let success = await socialFeatures.giftPersonalPass(session: auth.session)
+        let result = await subscriptions.purchase(.personalGift)
+        switch result {
+        case .success:
+            // 영수증 동기화(`syncWithBackend`)가 이미 서버에 바우처를 만들었다.
+            // 목록을 새로 받아 방금 생긴 코드를 화면에 띄운다.
+            await socialFeatures.refreshAll(session: auth.session, force: true)
+        case .userCancelled:
+            return
+        case .pending:
+            socialFeatures.statusMessage = "결제 승인을 기다리고 있어요. 완료되면 코드가 만들어져요."
+            return
+        case .failure(let reason):
+            socialFeatures.statusMessage = reason
+            return
+        }
+        let success = true
         await auth.refreshUser()
         guard success else { return }
 

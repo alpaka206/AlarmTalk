@@ -1,177 +1,177 @@
 {
-  "identifier" : "AlarmTalkStoreKit",
-  "nonRenewingSubscriptions" : [
-
+  "identifier": "AlarmTalkStoreKit",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "1.99",
+      "familyShareable": false,
+      "internalID": "55927B60",
+      "localizations": [
+        {
+          "description": "개인 이용권 1개월을 선물할 수 있는 코드를 만들어요.",
+          "displayName": "개인 이용권 선물 (1개월)",
+          "locale": "ko_KR"
+        }
+      ],
+      "productID": "com.voicealarm.nativeapp.ios.personal_gift_1m",
+      "referenceName": "Personal Gift 1 Month",
+      "type": "Consumable"
+    }
   ],
-  "products" : [
-
-  ],
-  "settings" : {
-    "_billingIssuesEnabled" : false,
-    "_compatibilityTimeRate" : 0,
-    "_failTransactionsEnabled" : false,
-    "_locale" : "ko_KR",
-    "_storefront" : "KOR",
-    "_storeKitErrors" : [
+  "settings": {
+    "_billingIssuesEnabled": false,
+    "_compatibilityTimeRate": 0,
+    "_failTransactionsEnabled": false,
+    "_locale": "ko_KR",
+    "_storefront": "KOR",
+    "_storeKitErrors": [
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "Load Products"
+        "current": null,
+        "enabled": false,
+        "name": "Load Products"
       },
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "Purchase"
+        "current": null,
+        "enabled": false,
+        "name": "Purchase"
       },
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "Verification"
+        "current": null,
+        "enabled": false,
+        "name": "Verification"
       },
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "App Store Sync"
+        "current": null,
+        "enabled": false,
+        "name": "App Store Sync"
       },
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "Subscription Status"
+        "current": null,
+        "enabled": false,
+        "name": "Subscription Status"
       },
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "App Transaction"
+        "current": null,
+        "enabled": false,
+        "name": "App Transaction"
       },
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "Manage Subscriptions Sheet"
+        "current": null,
+        "enabled": false,
+        "name": "Manage Subscriptions Sheet"
       },
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "Refund Request Sheet"
+        "current": null,
+        "enabled": false,
+        "name": "Refund Request Sheet"
       },
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "Offer Code Redeem Sheet"
+        "current": null,
+        "enabled": false,
+        "name": "Offer Code Redeem Sheet"
       }
     ]
   },
-  "subscriptionGroups" : [
+  "subscriptionGroups": [
     {
-      "id" : "21500001",
-      "localizations" : [
+      "id": "21500001",
+      "localizations": [
         {
-          "description" : "AlarmTalk 목소리 알람 구독 그룹",
-          "displayName" : "AlarmTalk Subscriptions",
-          "locale" : "ko_KR"
+          "description": "AlarmTalk 목소리 알람 구독 그룹",
+          "displayName": "AlarmTalk Subscriptions",
+          "locale": "ko_KR"
         },
         {
-          "description" : "AlarmTalk voice alarm subscriptions",
-          "displayName" : "AlarmTalk Subscriptions",
-          "locale" : "en_US"
+          "description": "AlarmTalk voice alarm subscriptions",
+          "displayName": "AlarmTalk Subscriptions",
+          "locale": "en_US"
         }
       ],
-      "name" : "AlarmTalk Subscriptions",
-      "subscriptions" : [
+      "name": "AlarmTalk Subscriptions",
+      "subscriptions": [
         {
-          "adHocOffers" : [
-
-          ],
-          "codeOffers" : [
-
-          ],
-          "displayPrice" : "1.99",
-          "familyShareable" : false,
-          "groupNumber" : 1,
-          "internalID" : "21500101",
-          "introductoryOffer" : null,
-          "localizations" : [
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "1.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "21500101",
+          "introductoryOffer": null,
+          "localizations": [
             {
-              "description" : "개인 플랜 월간 구독",
-              "displayName" : "개인 (월간)",
-              "locale" : "ko_KR"
+              "description": "개인 플랜 월간 구독",
+              "displayName": "개인 (월간)",
+              "locale": "ko_KR"
             },
             {
-              "description" : "Personal plan, monthly",
-              "displayName" : "Personal (Monthly)",
-              "locale" : "en_US"
+              "description": "Personal plan, monthly",
+              "displayName": "Personal (Monthly)",
+              "locale": "en_US"
             }
           ],
-          "productID" : "com.voicealarm.nativeapp.ios.personal_monthly",
-          "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Personal Monthly",
-          "subscriptionGroupID" : "21500001",
-          "type" : "RecurringSubscription"
+          "productID": "com.voicealarm.nativeapp.ios.personal_monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Personal Monthly",
+          "subscriptionGroupID": "21500001",
+          "type": "RecurringSubscription"
         },
         {
-          "adHocOffers" : [
-
-          ],
-          "codeOffers" : [
-
-          ],
-          "displayPrice" : "3.99",
-          "familyShareable" : false,
-          "groupNumber" : 2,
-          "internalID" : "21500103",
-          "introductoryOffer" : null,
-          "localizations" : [
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "3.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "21500103",
+          "introductoryOffer": null,
+          "localizations": [
             {
-              "description" : "커플 플랜 월간 구독",
-              "displayName" : "커플 (월간)",
-              "locale" : "ko_KR"
+              "description": "커플 플랜 월간 구독",
+              "displayName": "커플 (월간)",
+              "locale": "ko_KR"
             },
             {
-              "description" : "Couple plan, monthly",
-              "displayName" : "Couple (Monthly)",
-              "locale" : "en_US"
+              "description": "Couple plan, monthly",
+              "displayName": "Couple (Monthly)",
+              "locale": "en_US"
             }
           ],
-          "productID" : "com.voicealarm.nativeapp.ios.couple_monthly",
-          "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Couple Monthly",
-          "subscriptionGroupID" : "21500001",
-          "type" : "RecurringSubscription"
+          "productID": "com.voicealarm.nativeapp.ios.couple_monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Couple Monthly",
+          "subscriptionGroupID": "21500001",
+          "type": "RecurringSubscription"
         },
         {
-          "adHocOffers" : [
-
-          ],
-          "codeOffers" : [
-
-          ],
-          "displayPrice" : "5.99",
-          "familyShareable" : true,
-          "groupNumber" : 3,
-          "internalID" : "21500105",
-          "introductoryOffer" : null,
-          "localizations" : [
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "5.99",
+          "familyShareable": true,
+          "groupNumber": 3,
+          "internalID": "21500105",
+          "introductoryOffer": null,
+          "localizations": [
             {
-              "description" : "가족 플랜 월간 구독 (최대 5인)",
-              "displayName" : "가족 (월간)",
-              "locale" : "ko_KR"
+              "description": "가족 플랜 월간 구독 (최대 5인)",
+              "displayName": "가족 (월간)",
+              "locale": "ko_KR"
             },
             {
-              "description" : "Family plan, monthly (up to 5 members)",
-              "displayName" : "Family (Monthly)",
-              "locale" : "en_US"
+              "description": "Family plan, monthly (up to 5 members)",
+              "displayName": "Family (Monthly)",
+              "locale": "en_US"
             }
           ],
-          "productID" : "com.voicealarm.nativeapp.ios.family_monthly",
-          "recurringSubscriptionPeriod" : "P1M",
-          "referenceName" : "Family Monthly",
-          "subscriptionGroupID" : "21500001",
-          "type" : "RecurringSubscription"
+          "productID": "com.voicealarm.nativeapp.ios.family_monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Family Monthly",
+          "subscriptionGroupID": "21500001",
+          "type": "RecurringSubscription"
         }
       ]
     }
   ],
-  "version" : {
-    "major" : 4,
-    "minor" : 0
+  "version": {
+    "major": 4,
+    "minor": 0
   }
 }
