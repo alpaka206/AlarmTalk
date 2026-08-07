@@ -339,14 +339,23 @@ struct PlanCard: View {
         }
     }
 
-    /// 플랜별 기능 불릿 목록. Android `SubscriptionPanel`(BillingPanels.kt:91-134)의
-    /// `billing_plan_*_feature_*` 문자열과 1:1.
+    /// 플랜별 기능 불릿. 안드로이드 `ui/billing/BillingPanels.kt` 의
+    /// `billing_plan_*_feature_*` 문자열과 **글자까지 같아야 한다.**
+    ///
+    /// ⚠ 2026-08-08 전까지 여기 문구가 전부 달랐다("목소리"/"음성 메시지"/"최대 2명" …).
+    /// 주석은 "1:1" 이라고 적혀 있었지만 실제로는 아니었다 — 같은 상품을 두 스토어에서
+    /// **다르게 설명**하고 있었고, 커플 카드의 '개인 이용권 기능 전부 포함' 은 아예 빠져
+    /// 있어 왜 더 비싼지 알 수 없었다.
     private static func features(for tier: PlanTier) -> [String] {
         switch tier {
-        case .free:     return ["일반 알람"]
-        case .personal: return ["목소리", "음성 메시지", "개인 이용권 선물"]
-        case .couple:   return ["음성 공유", "메시지", "최대 2명"]
-        case .family:   return ["음성 공유", "메시지", "최대 5명"]
+        case .free:
+            return ["일반 알람 무제한", "기본 목소리 알람"]
+        case .personal:
+            return ["원하는 목소리 1개 등록", "날씨·운세 등 매일 다른 문구"]
+        case .couple:
+            return ["개인 이용권 기능 전부 포함", "서로의 목소리 공유", "상대 알람 맞춰주기", "2명이 함께 사용"]
+        case .family:
+            return ["개인 이용권 기능 전부 포함", "가족 목소리 공유", "가족에게 알람 보내기", "최대 5명이 함께 사용"]
         }
     }
 }
