@@ -217,7 +217,6 @@ async function main() {
       db,
       'SELECT COUNT(*) FROM alarms WHERE bucket_id IS NOT NULL',
     ),
-    'raw_alarm_uploads.total': await tryNum(db, 'SELECT COUNT(*) FROM raw_alarm_uploads'),
     'voice_uploads.total': await tryNum(db, 'SELECT COUNT(*) FROM voice_uploads'),
     'voice_profiles.avatar_url NOT NULL': await tryNum(
       db,
