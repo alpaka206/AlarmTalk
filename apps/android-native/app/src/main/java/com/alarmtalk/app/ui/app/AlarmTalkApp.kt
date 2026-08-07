@@ -227,10 +227,50 @@ internal fun AlarmTalkApp(
         permissionState.refresh()
     }
 
+    /**
+     * 시스템이 **처음으로** 물어보는 런타임 권한인가.
+     *
+     * `shouldShowRequestPermissionRationale` 는 "사용자가 한 번 거부한 적이 있다" 일 때만
+     * true 다. 그러니 **false + 아직 미허용**이면 두 경우다 — 한 번도 안 물어봤거나,
+     * 영구 거부거나. 영구 거부는 우리가 따로 기록해 두므로(`InitialPermissionPromptStore`)
+     * 그 기록이 없으면 '처음' 이다.
+     */
+    fun isFirstRuntimeAsk(permission: String): Boolean {
+        val activity = context.findHostActivity() ?: return false
+        if (ActivityCompat.shouldShowRequestPermissionRationale(activity, permission)) return false
+        return !initialPermissionPromptStore.hasPrompted(permission)
+    }
+
     fun requestFirstMissingAlarmPermission() {
-        // 토스트 대신 권한 게이트 모달을 띄운다. 모달의 '허용하기'가 실제 권한 요청을 실행하고,
-        // 필요한 권한이 모두 채워질 때까지 모달이 유지돼 알람 생성을 막는다(권한 없으면 생성 차단).
         val target = PermissionSnapshot.read(context).firstMissingAlarmTarget() ?: return
+
+        // ⚠ **처음 물어볼 때는 우리 모달을 거치지 않는다.**
+        //
+        // 시스템 권한 다이얼로그가 이미 "무엇을 허용할지" 를 묻고, 우리는 그 위에
+        // `NSAlarmKitUsageDescription` 격의 설명을 붙여 둔다. 그 앞에 안내 모달을 하나 더
+        // 두면 **모든 신규 사용자가 같은 말을 두 번 읽고 탭을 한 번 더 해야 한다.**
+        // 안드로이드 가이드도 rationale 은 '거부한 뒤' 에 보이라고 한다.
+        //
+        // 모달이 값을 하는 경우는 남겨 둔다:
+        //  - 한 번 거부한 뒤(다시 물어보는 이유를 설명해야 한다)
+        //  - 런타임 권한이 아닌 것(정확 알람·전체화면 — 시스템이 설명 없이 **설정 화면**만
+        //    열어 주므로, 무엇을 켜야 하는지 우리가 말하지 않으면 알 수 없다)
+        val runtimePermission = when (target) {
+            PermissionTarget.Notifications ->
+                Manifest.permission.POST_NOTIFICATIONS.takeIf {
+                    context.shouldRequestNotificationRuntimePermission()
+                }
+            PermissionTarget.RecordAudio -> Manifest.permission.RECORD_AUDIO
+            PermissionTarget.ExactAlarms, PermissionTarget.FullScreenIntent -> null
+        }
+        if (runtimePermission != null && isFirstRuntimeAsk(runtimePermission)) {
+            initialPermissionPromptStore.markPrompted(runtimePermission)
+            runtimePermissionLauncher.launch(arrayOf(runtimePermission))
+            return
+        }
+
+        // 그 외에는 게이트 모달을 띄운다. 모달의 '허용하기'가 실제 권한 요청을 실행하고,
+        // 필요한 권한이 모두 채워질 때까지 모달이 유지돼 알람 생성을 막는다(권한 없으면 생성 차단).
         viewModel.requestPermissionGate(target)
     }
 

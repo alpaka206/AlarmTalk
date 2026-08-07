@@ -200,11 +200,15 @@ struct VoiceProfileManagementPanel: View {
         } message: {
             Text("목소리는 한 달에 1개 만들 수 있어요. 다음 달에 새로 만들 수 있고, 지금 목소리를 지워도 이번 달에는 다시 만들 수 없어요.")
         }
-        .alert("녹음으로 목소리를 만들려면 유료 플랜이 필요해요.", isPresented: $planGateOpen) {
+        // ⚠ **alert 제목에 마침표를 찍지 말 것**(Apple HIG). 제목은 짧은 구절이고,
+        // 문장이 필요하면 `message` 로 내린다 — 다른 alert 들도 전부 그렇게 돼 있다.
+        .alert("유료 플랜이 필요해요", isPresented: $planGateOpen) {
             Button("닫기", role: .cancel) {}
             Button("플랜 보기") {
                 onRequestBilling?()
             }
+        } message: {
+            Text("내 목소리를 녹음해 만들려면 이용권이 필요해요.")
         }
         .sheet(item: $sharedViewerInfoTarget) { profile in
             SharedVoiceViewerInfoDialog(
