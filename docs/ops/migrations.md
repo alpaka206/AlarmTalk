@@ -43,7 +43,22 @@
 2. 합칠 구간에 **데이터 마이그레이션(UPDATE/INSERT)이 없다** — 있으면 그것만 베이스라인
    뒤로 남긴다.
 3. 베이스라인을 **prod 의 실제 스키마에서 뽑는다**(손으로 쓰지 않는다). 그래야 새 환경이
-   조용히 갈라지지 않는다.
+   조용히 갈라지지 않는다. 생성기가 있다:
+
+   ```
+   node --experimental-strip-types scripts/generate-baseline-migration.ts --env-file .dev.vars.prod
+   ```
+
+   표준출력으로 코드를 내보내니 눈으로 확인한 뒤 `src/lib/migrations.ts` 맨 앞에 붙이고,
+   합친 구간을 지운다. **파일을 직접 쓰지 않는 건 의도다** — 눈으로 한 번 보게 만든다.
+
+### 덤: 컬럼 DEFAULT 를 그때 고칠 수 있다
+
+`users.family_alarm_quiet_windows` 의 DEFAULT 가 `평일 09:00–18:30` 이라 지금은 INSERT
+마다 `'[]'` 를 명시하는 우회를 쓴다(SQLite 는 컬럼 DEFAULT 를 ALTER 로 못 바꾼다).
+베이스라인은 `CREATE TABLE` 이므로 **거기서 DEFAULT 자체를 `'[]'` 로 바꾸면** 그 우회를
+없앨 수 있다. 다만 우회를 지우는 건 **베이스라인이 실제로 쓰이는 새 DB 부터**라,
+기존 DB 를 위해 INSERT 명시는 그대로 두는 편이 안전하다.
 
 그리고 베이스라인의 id 는 **기존 DB 가 이미 지난 번호**여야 한다(예: 1). 그래야 기존
 DB 는 건너뛰고 새 DB 만 실행한다.
