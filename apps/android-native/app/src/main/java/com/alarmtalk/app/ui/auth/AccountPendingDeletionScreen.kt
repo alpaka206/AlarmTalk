@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -7,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -36,10 +39,16 @@ internal fun AccountPendingDeletionScreen(
     onRecover: () -> Unit,
     onLogout: () -> Unit,
 ) {
+        // ⚠ **스크롤을 빼지 말 것.** 이 화면의 탈출구는 아래 버튼 하나뿐이라,
+        // 큰 글꼴(배율 1.5~2.0)에서 내용이 화면을 넘치면 버튼이 밖으로 나가
+        // **누를 방법이 사라진다** — 탈퇴를 되돌리려던 사용자가 30일 뒤 계정·알람·
+        // 목소리를 잃고, 강제 업데이트 화면에서는 앱이 벽돌이 된다.
+        // 버튼 높이도 고정(height)이 아니라 최소치(heightIn)여야 두 줄이 안 잘린다.
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -70,7 +79,7 @@ internal fun AccountPendingDeletionScreen(
             enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp),
+                .heightIn(min = 50.dp),
         ) {
             Text(if (busy) stringResource(R.string.r3dlg_pending_deletion_processing) else stringResource(R.string.r3dlg_pending_deletion_recover))
         }
@@ -80,7 +89,7 @@ internal fun AccountPendingDeletionScreen(
             enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp),
+                .heightIn(min = 50.dp),
         ) {
             Text(stringResource(R.string.r3dlg_pending_deletion_logout))
         }

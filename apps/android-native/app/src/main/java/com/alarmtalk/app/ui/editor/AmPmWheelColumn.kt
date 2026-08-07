@@ -56,7 +56,9 @@ internal fun AmPmWheelColumn(
     unselectedTextColor: Color,
     onStep: (Int) -> Unit,
     // 좁은 화면에서 컬럼 고정폭·글자를 함께 줄이는 배율(1f = 그대로).
-    textScale: Float = 1f,
+    textScale: Float,
+    /// dp 치수용 배율 — `textScale` 을 dp 에 곱하면 글꼴 배율만큼 상자가 좁아져 글자가 잘린다.
+    boxScale: Float = 1f,
 ) {
     val amPmIndex = if (hour >= 12) 1 else 0
     val isPm = amPmIndex == 1
@@ -98,7 +100,7 @@ internal fun AmPmWheelColumn(
 
     Box(
         modifier = Modifier
-            .width(96.dp * textScale)
+            .width(96.dp * boxScale)
             .height(itemHeight * 3)
             .clipToBounds()
             .draggable(

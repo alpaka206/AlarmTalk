@@ -148,3 +148,25 @@ internal fun fitToWidthScale(
     if (referenceWidth <= 0.dp || fontScale <= 0f) return 1f
     return (availableWidth / (referenceWidth * fontScale)).coerceIn(minimumScale, 1f)
 }
+
+/**
+ * 위 배율과 **짝을 이루는 `dp` 치수용 배율**. 글꼴 배율로 나누지 **않는다.**
+ *
+ * ⚠ **`fitToWidthScale` 을 dp 에 곱하지 말 것.** 그게 실제 버그였다 — 타임휠의
+ * '오전/오후' 상자가 `96.dp * fitToWidthScale(...)` 이었는데, 글자 크기는 `sp` 라
+ * 글꼴 배율이 이미 반영돼 배율의 나눗셈과 상쇄되는 반면 **상자만 글꼴 배율만큼
+ * 좁아졌다.** 그래서 화면 폭과 무관하게 **글꼴 배율 1.26 을 넘는 순간**(삼성 기본
+ * 슬라이더 최대치가 1.3이다) 글자가 상자를 넘고, `clipToBounds` 가 좌우를 잘라내
+ * 오전인지 오후인지 읽을 수 없었다 — 12시간 어긋난 알람을 저장하게 된다.
+ *
+ * 정리하면: **`sp` 에는 [fitToWidthScale], `dp` 에는 이 함수.**
+ */
+@Composable
+internal fun fitToWidthBoxScale(
+    availableWidth: Dp,
+    referenceWidth: Dp,
+    minimumScale: Float = 0.45f,
+): Float {
+    if (referenceWidth <= 0.dp) return 1f
+    return (availableWidth / referenceWidth).coerceIn(minimumScale, 1f)
+}

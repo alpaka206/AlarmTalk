@@ -208,8 +208,10 @@ internal fun AlarmEditorScreen(
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
     val dynamicPromptPreferenceStore = remember(appContext) { DynamicPromptPreferenceStore(appContext) }
-    var dynamicPromptPreferences by remember(appContext) {
-        mutableStateOf(dynamicPromptPreferenceStore.read())
+    // 계정별 값이다 — 계정이 바뀌면 다시 읽는다(앞 사람의 사주를 물려받지 않게).
+    val promptOwnerUserId = authSession?.user?.id
+    var dynamicPromptPreferences by remember(appContext, promptOwnerUserId) {
+        mutableStateOf(dynamicPromptPreferenceStore.read(promptOwnerUserId))
     }
     // 앱 전역 공휴일 달력 국가 + 그 국가의 다가오는 공휴일 목록(토글 아래 표시용).
     val holidayCountryStore = remember(appContext) { HolidayCountryPreferenceStore(appContext) }
@@ -1205,8 +1207,8 @@ internal fun AlarmEditorScreen(
             randomContextUsesWeather(result.randomContext) &&
             result.weatherCity.isNotBlank()
         ) {
-            dynamicPromptPreferenceStore.saveWeatherLocation(result.weatherCountry, result.weatherCity)
-            dynamicPromptPreferences = dynamicPromptPreferenceStore.read()
+            dynamicPromptPreferenceStore.saveWeatherLocation(promptOwnerUserId, result.weatherCountry, result.weatherCity)
+            dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
             shouldSyncOwnDynamicPromptSettings = true
         }
         if (
@@ -1217,11 +1219,12 @@ internal fun AlarmEditorScreen(
             result.fortuneBirthTime.isNotBlank()
         ) {
             dynamicPromptPreferenceStore.saveFortuneInfo(
+                promptOwnerUserId,
                 gender = result.fortuneGender,
                 birthDate = result.fortuneBirthDate,
                 birthTime = result.fortuneBirthTime,
             )
-            dynamicPromptPreferences = dynamicPromptPreferenceStore.read()
+            dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
             shouldSyncOwnDynamicPromptSettings = true
         }
         if (shouldSyncOwnDynamicPromptSettings) {

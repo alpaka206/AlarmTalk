@@ -58,7 +58,11 @@ internal fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val promptPreferenceStore = remember(context) { DynamicPromptPreferenceStore(context) }
-    var promptPreferences by remember(context) { mutableStateOf(promptPreferenceStore.read()) }
+    // 계정별 값이다 — 계정이 바뀌면 다시 읽는다(앞 사람의 사주를 물려받지 않게).
+    val promptOwnerUserId = authSession?.user?.id
+    var promptPreferences by remember(context, promptOwnerUserId) {
+        mutableStateOf(promptPreferenceStore.read(promptOwnerUserId))
+    }
     val holidayCountryStore = remember(context) { HolidayCountryPreferenceStore(context) }
     var holidayCountryCode by remember(context) { mutableStateOf(holidayCountryStore.read()) }
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
@@ -200,8 +204,8 @@ internal fun SettingsScreen(
             city = promptPreferences.weatherCity,
             onDismissWithoutSave = { showWeatherLocationDialog = false },
             onConfirm = { country, city ->
-                promptPreferenceStore.saveWeatherLocation(country, city)
-                promptPreferences = promptPreferenceStore.read()
+                promptPreferenceStore.saveWeatherLocation(promptOwnerUserId, country, city)
+                promptPreferences = promptPreferenceStore.read(promptOwnerUserId)
                 onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
                 showWeatherLocationDialog = false
             },
@@ -215,8 +219,8 @@ internal fun SettingsScreen(
             birthTime = promptPreferences.fortuneBirthTime,
             onDismissWithoutSave = { showFortuneInfoDialog = false },
             onConfirm = { gender, birthDate, birthTime ->
-                promptPreferenceStore.saveFortuneInfo(gender, birthDate, birthTime)
-                promptPreferences = promptPreferenceStore.read()
+                promptPreferenceStore.saveFortuneInfo(promptOwnerUserId, gender, birthDate, birthTime)
+                promptPreferences = promptPreferenceStore.read(promptOwnerUserId)
                 onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
                 showFortuneInfoDialog = false
             },

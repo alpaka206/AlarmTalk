@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -38,12 +39,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import com.alarmtalk.app.fitToWidthBoxScale
 import com.alarmtalk.app.fitToWidthScale
 
 @Composable
@@ -88,6 +91,17 @@ internal fun AlarmTimePickerCard(
         commitTime(workingHour, floorMod(workingMinute + steps, 60))
     }
 
+    // ⚠ **이 컨트롤만 글꼴 배율에 상한을 둔다.** 타임휠은 3칸 높이·고정 폭이라 글자가
+    // 흐를 데가 없고, 축소 하한(0.78)만으로는 배율 2.0 을 감당하지 못해 '오전/오후' 와
+    // 분 숫자가 잘렸다 — 오전/오후를 못 읽으면 12시간 어긋난 알람을 저장하게 된다.
+    // iOS 도 같은 이유로 `.dynamicTypeSize(...DynamicTypeSize.xxLarge)` 로 막는다.
+    // ⚠ 앱 전체에 걸지 말 것 — 그건 사용자가 키운 글꼴을 도로 취소하는 셈이다(CLAUDE.md).
+    val density = LocalDensity.current
+    val cappedDensity = remember(density) {
+        if (density.fontScale <= MaxWheelFontScale) density
+        else Density(density.density, MaxWheelFontScale)
+    }
+    CompositionLocalProvider(LocalDensity provides cappedDensity) {
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
         // 좁은 화면(360dp급, S22 등)에선 오전/오후 고정폭 + displayLarge 숫자가 컬럼 폭을
         // 넘어 분 숫자 오른쪽이 잘렸다 — 가용 폭에 비례해 휠 타이포·고정폭을 함께 줄인다.
@@ -95,7 +109,10 @@ internal fun AlarmTimePickerCard(
         // ⚠ **글꼴 배율까지 함께 본다**(`fitToWidthScale`). 예전에는 폭만 나눠서, 폭이
         // 넉넉해도 사용자가 글꼴을 키우면 숫자가 컬럼을 넘어 잘렸다.
         val wheelScale = fitToWidthScale(maxWidth, 392.dp, minimumScale = 0.78f)
-        val scaledItemHeight = itemHeight * wheelScale
+        // ⚠ **dp 치수에는 이쪽을 쓴다**(글꼴 배율로 나누지 않는 배율). sp 에 쓰는
+        // `wheelScale` 을 dp 에 곱하면 글꼴을 키울수록 상자만 좁아져 글자가 잘린다.
+        val wheelBoxScale = fitToWidthBoxScale(maxWidth, 392.dp, minimumScale = 0.78f)
+        val scaledItemHeight = itemHeight * wheelBoxScale
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(34.dp),
@@ -117,6 +134,7 @@ internal fun AlarmTimePickerCard(
                     selectedTextColor = selectedTextColor,
                     unselectedTextColor = unselectedTextColor,
                     textScale = wheelScale,
+                    boxScale = wheelBoxScale,
                     onStep = { steps ->
                         if (abs(steps) % 2 == 1) {
                             commitTime((workingHour + 12) % 24, workingMinute)
@@ -160,7 +178,11 @@ internal fun AlarmTimePickerCard(
             }
         }
     }
+    }
 }
+
+/// 타임휠에 허용하는 글꼴 배율 상한. 이 위로는 글자가 컬럼을 넘어 잘린다.
+private const val MaxWheelFontScale = 1.3f
 
 // 휠 타이포를 축소 배율에 맞게 줄인다(fontSize·lineHeight 동시 축소, 미지정이면 그대로).
 internal fun androidx.compose.ui.text.TextStyle.scaledBy(scale: Float): androidx.compose.ui.text.TextStyle =

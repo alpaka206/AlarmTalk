@@ -30,28 +30,68 @@ fun DynamicPromptPreferences.toDynamicPromptSettings(): DynamicPromptSettings =
 class DynamicPromptPreferenceStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun read(): DynamicPromptPreferences =
-        DynamicPromptPreferences(
-            weatherCountry = prefs.getString(KEY_WEATHER_COUNTRY, "")?.trim().orEmpty(),
-            weatherCity = prefs.getString(KEY_WEATHER_CITY, "")?.trim().orEmpty(),
-            fortuneGender = prefs.getString(KEY_FORTUNE_GENDER, "")?.trim().orEmpty(),
-            fortuneBirthDate = prefs.getString(KEY_FORTUNE_BIRTH_DATE, "")?.trim().orEmpty(),
-            fortuneBirthTime = prefs.getString(KEY_FORTUNE_BIRTH_TIME, "")?.trim().orEmpty(),
+    /**
+     * ⚠ **계정별이다.** 예전에는 날씨·사주만 기기 전역 키를 썼고, 주석에도 "날씨/사주와
+     * 달리" 라고 적혀 있었다. 그런데 성별·생년월일·태어난 시간은 **기기 취향이 아니라
+     * 특정 사람의 개인정보**다 — 로그아웃하고 다른 계정으로 들어오면 앞 사람의 사주가
+     * 새 사용자의 '내 정보' 로 채워져 보였고, 그대로 저장하면 남의 생년월일로 운세를
+     * 받게 된다. 서버(`users.dynamic_prompt_settings_json`)도 계정별로 들고 있으므로
+     * 로컬만 전역인 것은 계약과도 어긋났다.
+     *
+     * 로그인 전(`userId == null`)에는 읽지도 쓰지도 않는다 — 그 값을 누구 것으로
+     * 새길지 알 수 없다.
+     */
+    fun read(userId: String?): DynamicPromptPreferences {
+        claimLegacyPromptInputs(userId)
+        return DynamicPromptPreferences(
+            weatherCountry = readScoped(KEY_WEATHER_COUNTRY, userId).orEmpty(),
+            weatherCity = readScoped(KEY_WEATHER_CITY, userId).orEmpty(),
+            fortuneGender = readScoped(KEY_FORTUNE_GENDER, userId).orEmpty(),
+            fortuneBirthDate = readScoped(KEY_FORTUNE_BIRTH_DATE, userId).orEmpty(),
+            fortuneBirthTime = readScoped(KEY_FORTUNE_BIRTH_TIME, userId).orEmpty(),
         )
-
-    fun saveWeatherLocation(country: String, city: String) {
-        prefs.edit()
-            .putString(KEY_WEATHER_COUNTRY, country.trim())
-            .putString(KEY_WEATHER_CITY, city.trim())
-            .apply()
     }
 
-    fun saveFortuneInfo(gender: String, birthDate: String, birthTime: String) {
-        prefs.edit()
-            .putString(KEY_FORTUNE_GENDER, gender.trim())
-            .putString(KEY_FORTUNE_BIRTH_DATE, birthDate.trim())
-            .putString(KEY_FORTUNE_BIRTH_TIME, birthTime.trim())
-            .apply()
+    fun saveWeatherLocation(userId: String?, country: String, city: String) {
+        saveScoped(KEY_WEATHER_COUNTRY, userId, country)
+        saveScoped(KEY_WEATHER_CITY, userId, city)
+    }
+
+    fun saveFortuneInfo(userId: String?, gender: String, birthDate: String, birthTime: String) {
+        saveScoped(KEY_FORTUNE_GENDER, userId, gender)
+        saveScoped(KEY_FORTUNE_BIRTH_DATE, userId, birthDate)
+        saveScoped(KEY_FORTUNE_BIRTH_TIME, userId, birthTime)
+    }
+
+    /**
+     * 계정 스코프로 옮기기 전에 저장된 전역 값을 **처음 읽는 계정이 넘겨받는다.**
+     * 안 하면 이미 사주를 등록해 둔 사용자가 앱 업데이트 후 값을 잃는다
+     * ([claimLegacyLastMessageContext] 와 같은 규약).
+     *
+     * 넘겨받은 뒤 전역 키는 지운다 — 남겨 두면 다음 계정이 또 물려받아 애초의 누수가
+     * 그대로 재현된다.
+     */
+    private fun claimLegacyPromptInputs(userId: String?) {
+        if (userId?.trim().isNullOrEmpty()) return
+        val legacyKeys = listOf(
+            KEY_WEATHER_COUNTRY,
+            KEY_WEATHER_CITY,
+            KEY_FORTUNE_GENDER,
+            KEY_FORTUNE_BIRTH_DATE,
+            KEY_FORTUNE_BIRTH_TIME,
+        )
+        if (legacyKeys.none { prefs.contains(it) }) return
+        val editor = prefs.edit()
+        for (key in legacyKeys) {
+            val scoped = scopedKey(key, userId) ?: continue
+            val legacy = prefs.getString(key, null)?.trim().orEmpty()
+            // 이미 이 계정 값이 있으면 옛 전역 값으로 덮지 않는다.
+            if (legacy.isNotEmpty() && prefs.getString(scoped, null).isNullOrBlank()) {
+                editor.putString(scoped, legacy)
+            }
+            editor.remove(key)
+        }
+        editor.apply()
     }
 
     /**
@@ -130,12 +170,25 @@ class DynamicPromptPreferenceStore(context: Context) {
         val manual = scopedKey(KEY_LAST_MANUAL_TEXT, userId) ?: return
         // 옛 전역 키도 함께 지운다 — 아직 아무도 넘겨받지 않은 채 남아 있으면, 로그아웃 뒤
         // 로그인하는 다음 계정이 그걸 물려받는다.
-        prefs.edit()
+        val editor = prefs.edit()
             .remove(message)
             .remove(bucket)
             .remove(manual)
             .remove(KEY_LAST_MESSAGE_CONTEXT)
-            .apply()
+        // ⚠ 사주·날씨도 함께 지운다. 성별·생년월일·태어난 시간은 **그 사람의 개인정보**라
+        // 기기에 남겨 둘 이유가 없다 — 다음 계정의 운세 입력창에 앞 사람 값이 채워지면
+        // 그대로 저장돼 남의 생년월일로 운세를 받게 된다.
+        for (key in listOf(
+            KEY_WEATHER_COUNTRY,
+            KEY_WEATHER_CITY,
+            KEY_FORTUNE_GENDER,
+            KEY_FORTUNE_BIRTH_DATE,
+            KEY_FORTUNE_BIRTH_TIME,
+        )) {
+            scopedKey(key, userId)?.let { editor.remove(it) }
+            editor.remove(key) // 아직 아무도 안 넘겨받은 옛 전역 값
+        }
+        editor.apply()
     }
 
     private fun readScoped(key: String, userId: String?): String? {
