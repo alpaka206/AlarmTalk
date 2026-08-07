@@ -63,7 +63,7 @@ struct SnoozeSettingsPane: View {
         PaneScaffold(title: AlarmSettingsPane.snooze.title) {
             EditorCard {
                 Toggle("다시 알림 사용", isOn: $enabled)
-                    .tint(theme.palette.primary)
+                    .alarmTalkSwitch()
                     .padding(.vertical, 12)
             }
 
@@ -244,7 +244,7 @@ struct VoiceOutputSettingsPane: View {
                 AlarmSettingDivider()
 
                 Toggle("끌 때까지 반복", isOn: $repeatVoice)
-                    .tint(theme.palette.primary)
+                    .alarmTalkSwitch()
                     .padding(.vertical, 12)
             }
 

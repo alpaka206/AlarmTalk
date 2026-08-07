@@ -279,7 +279,7 @@ private struct ConsentToggleRow: View {
             } else {
                 Toggle("", isOn: Binding(get: { agreed == true }, set: onChange))
                     .labelsHidden()
-                    .tint(theme.palette.primary)
+                    .alarmTalkSwitch()
                     // 로드 전(nil)엔 비활성, 쓰기 중(busy)엔 연속 토글로 인한 opt-out 유실 방지.
                     .disabled(agreed == nil || busy)
             }

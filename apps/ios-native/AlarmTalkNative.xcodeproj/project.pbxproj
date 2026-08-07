@@ -54,6 +54,7 @@
 		4071709CE487DE4698DD3F00 /* SocialFeatureViewModelBillingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB34A0D05EB70E2E076F463A /* SocialFeatureViewModelBillingTests.swift */; };
 		4185273F1EDBB5EAE6D11EBD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0221058C929FB1DAA401AFD7 /* Assets.xcassets */; };
 		425C4E0947E9247D756A71E8 /* voice_greeting_mina_ko.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = FB7140D90A5272AD50F78449 /* voice_greeting_mina_ko.mp3 */; };
+		42B60B438C0902EDFCE4EE3E /* AlarmTalkSwitch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6060CBDBC2E6E31887ADA06 /* AlarmTalkSwitch.swift */; };
 		42F0D9521755F54DDF582883 /* AlarmVoicePlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53F74ECE9BEB717AE2FAA2A3 /* AlarmVoicePlayerTests.swift */; };
 		4351F743AA119C72711E26EA /* SocialFeatureViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056DB53565C8BBE7AD69B128 /* SocialFeatureViewModelTests.swift */; };
 		44A6C48873FB045F7E545806 /* RememberChoicesGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 431B4F1B68A4F2AD65B924D9 /* RememberChoicesGuardTests.swift */; };
@@ -422,6 +423,7 @@
 		A3E8E695B7F6BDC920646C75 /* AlarmTalkWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AlarmTalkWidget.entitlements; sourceTree = "<group>"; };
 		A5135A5FE94F635FB316DEB4 /* DynamicVoiceRefreshService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicVoiceRefreshService.swift; sourceTree = "<group>"; };
 		A537812556462EBCB324CD35 /* AlarmTalkTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkTheme.swift; sourceTree = "<group>"; };
+		A6060CBDBC2E6E31887ADA06 /* AlarmTalkSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkSwitch.swift; sourceTree = "<group>"; };
 		A70196163DEB277ED30F5976 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		A7577C539C3E926AE4FD3D1C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkTypography.swift; sourceTree = "<group>"; };
@@ -657,6 +659,7 @@
 		891C648D672DBE1032DC26B5 /* Common */ = {
 			isa = PBXGroup;
 			children = (
+				A6060CBDBC2E6E31887ADA06 /* AlarmTalkSwitch.swift */,
 				993F13DD98269244F828B44E /* AppSettings.swift */,
 				F6B2B49556CF324D4708CAA5 /* ChipStyle.swift */,
 				A186A9ECD18C026BD44B42E0 /* EmptyStatePlaceholder.swift */,
@@ -1151,6 +1154,7 @@
 				63953880A52D27B707DAD2CF /* AlarmTalkPalette.swift in Sources */,
 				75A5F309003D743578C5B318 /* AlarmTalkShapes.swift in Sources */,
 				DEF798B6B98F2007BF6AB469 /* AlarmTalkSpacing.swift in Sources */,
+				42B60B438C0902EDFCE4EE3E /* AlarmTalkSwitch.swift in Sources */,
 				89084CF8D39ABECD33772866 /* AlarmTalkTheme.swift in Sources */,
 				0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */,
 				8D2BACFDF9ECF6FAB7E9883D /* AlarmTimeCalculator.swift in Sources */,

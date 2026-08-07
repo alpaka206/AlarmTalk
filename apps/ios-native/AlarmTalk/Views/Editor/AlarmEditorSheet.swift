@@ -283,7 +283,7 @@ struct AlarmEditorSheet: View {
                     trailing: {
                         Toggle("", isOn: $draft.snoozeEnabled)
                             .labelsHidden()
-                            .tint(theme.palette.primary)
+                            .alarmTalkSwitch()
                     }
                 )
 
@@ -296,7 +296,7 @@ struct AlarmEditorSheet: View {
                     trailing: {
                         Toggle("", isOn: vibrationEnabledBinding)
                             .labelsHidden()
-                            .tint(theme.palette.primary)
+                            .alarmTalkSwitch()
                     }
                 )
 
@@ -369,7 +369,16 @@ struct AlarmEditorSheet: View {
         .navigationDestination(isPresented: $messagePaneOpen) {
             MessageSettingsPane(
                 initialContext: currentMessageContext,
-                initialManualText: voiceStudio.ttsText,
+                // ⚠ **직접 입력일 때만 문구를 넘긴다.** `voiceStudio.ttsText` 는 기존 알람을
+                // 열면 저장된 **서버 생성 문장**으로 채워진다(`merged.voiceText = prepared.text`).
+                // 조건 없이 넘기던 시절에는 생성형 알람(날씨·운세 등)을 열어 '직접 입력' 을
+                // 고르면 입력창이 빈 채로 뜨는 대신 **어제 서버가 만든 문장이 '내가 쓴 문구'
+                // 로 채워져** 있었고, 그대로 저장하면 매일 같은 문장이 반복됐다.
+                // 판정은 `currentMessageContext` 단일 출처를 재사용한다 — 리터럴 비교를
+                // 새로 박으면 CLAUDE.md 가 경고한 '세 자리 중 한 곳만 고치는' 사고가 난다.
+                initialManualText: currentMessageContext == MessageSettingsResult.manualContext
+                    ? voiceStudio.ttsText
+                    : "",
                 // ⚠ nil 로 하드코딩하지 말 것 — 그러면 '이번 달 남은 횟수' 가 영영 안 뜬다.
                 manualRemaining: manualQuota?.remaining,
                 manualLimit: manualQuota?.limit,
@@ -1865,6 +1874,12 @@ struct AlarmEditorSheet: View {
         // playMode 가 음성을 포함하면, voiceStudio 의 prepared 결과를 record 의
         // 음원/프로필 필드에 합쳐 둔다.
         var merged = draft.toRecord(existing: existing, fireAtMillis: fireAt, nowMillis: now)
+        // ⚠ **소유자를 새긴다.** 예전에는 실사용 알람의 `ownerUserId` 가 전부 nil 이었고
+        // (값을 쓰는 곳이 DEBUG 시드와 pull 병합의 '기존 값 보존' 뿐이었다), '옛 행은 이
+        // 계정 것으로 본다' 는 관용이 **모든 행에** 적용됐다. 그러면 계정을 바꿨을 때
+        // 앞 계정 알람까지 무료 잠금·복원 대상이 된다. 신규 저장부터 채워야 그 관용이
+        // 예외로 남는다(안드로이드 `expectedOwnerUserId` 게이트와 같은 취지).
+        merged.ownerUserId = auth.session?.user.id ?? existing?.ownerUserId
         applyVoicePromptState(to: &merged)
         // 입력한 날씨 지역/운세 정보를 기기 기본값에 보존(다음 알람 입력 생략). 음성 비활성
         // 알람은 randomPrompt 가 무시되므로 enabled 분기를 한 번 더 게이트한다.
@@ -1922,10 +1937,32 @@ struct AlarmEditorSheet: View {
                 merged.bucketId = category
                 // ⚠ **그 테마의 클립을 전부 묶는다.** 하나만 들고 있으면 매일 같은 문구를
                 // 듣는다 — 무료 테마는 울릴 때마다 다음 클립으로 넘어가는 게 기능이다.
-                merged.bucketClipKeys = category.map { bucketClipKeys(forCategory: $0) }
-                // 지금 준비된 클립이 몇 번째인지에서 시작한다(편집기에서 들어본 그 문구부터).
-                merged.bucketRotationIndex = merged.bucketClipKeys?
-                    .firstIndex(of: prepared.audioCacheKey) ?? 0
+                //
+                // ⚠ **테마가 그대로면 회전 상태를 건드리지 않는다.** 예전에는 저장할
+                // 때마다 목록을 다시 만들고 인덱스를 `firstIndex(of:) ?? 0` 으로 새로
+                // 잡아서, 시각만 고쳐 저장해도 **회전이 처음으로 되돌아갔다** — 매일
+                // 같은 첫 문구를 듣게 된다. 게다가 `bucketClipKeys(forCategory:)` 는
+                // 메모리의 `voiceStudio.stockClips` 를 거르는데 그 배열은 네트워크로만
+                // 채워지므로, 목록을 못 받은 상태에서 저장하면 **빈 배열로 덮여 회전이
+                // 영구히 죽는다.** 그래서 (a) 테마가 바뀌었거나 (b) 기존 목록이 비었을
+                // 때만 새로 계산하고, 새로 계산한 결과가 비면 기존 값을 지키다.
+                let freshKeys = category.map { bucketClipKeys(forCategory: $0) } ?? []
+                let keptKeys = editingAlarm?.bucketClipKeys ?? []
+                let sameBucket = editingAlarm?.bucketId != nil && editingAlarm?.bucketId == category
+                if sameBucket && !keptKeys.isEmpty {
+                    // 같은 테마를 계속 쓴다 — 목록도 회전 위치도 그대로 이어받는다.
+                    merged.bucketClipKeys = keptKeys
+                    merged.bucketRotationIndex = editingAlarm?.bucketRotationIndex ?? 0
+                } else if !freshKeys.isEmpty {
+                    merged.bucketClipKeys = freshKeys
+                    // 지금 준비된 클립이 몇 번째인지에서 시작한다(편집기에서 들어본 그 문구부터).
+                    merged.bucketRotationIndex = freshKeys.firstIndex(of: prepared.audioCacheKey) ?? 0
+                } else {
+                    // 목록을 못 받았다 — 빈 배열로 덮지 않는다. 다음에 목록이 들어오면
+                    // 그때 채워진다.
+                    merged.bucketClipKeys = keptKeys.isEmpty ? nil : keptKeys
+                    merged.bucketRotationIndex = editingAlarm?.bucketRotationIndex
+                }
             } else {
                 // 테마 알람이 아니게 됐으면 값을 비운다 — 남겨 두면 다음에 열 때 없는
                 // 테마가 고른 것처럼 보인다.

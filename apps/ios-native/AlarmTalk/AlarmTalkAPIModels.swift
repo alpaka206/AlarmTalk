@@ -366,6 +366,14 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     /// 공유 음성이 viewer 를 부를 때 쓰는 호칭(예: "지호야").
     /// Android `VoiceProfileApi.kt:74`.
     var listenerTitle: String? = nil
+    /// 말투 분석 상태(`ready` / `failed` / nil). 서버가 `GET /voice-profile` 에 실어 보낸다
+    /// (`voice-profile.ts` 의 `speech_style_status`).
+    ///
+    /// ⚠ **`failed` 를 화면에 드러내야 한다.** 분석이 실패하면 그 목소리는 말투 없이
+    /// 밋밋하게 읽는데, iOS 는 상태를 디코딩조차 안 해서 사용자가 **실패한 줄도 모르고
+    /// 다시 시도할 수도 없었다**(서버에는 `/:id/speech-style/retry` 가 있다).
+    /// 안드로이드는 `voicesr_speech_style_failed` + `_retry` 행을 그린다.
+    var speechStyleStatus: String? = nil
 }
 
 /// `PATCH voice/{id}` 로 초안을 승격할 때만 쓰는 최소 바디.

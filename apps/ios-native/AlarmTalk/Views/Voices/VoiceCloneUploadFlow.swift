@@ -284,7 +284,7 @@ struct VoiceCloneUploadFlow: View {
                             .foregroundStyle(AlarmTalkTheme.textSecondary)
                     }
                 }
-                .toggleStyle(.switch)
+                .alarmTalkSwitch()
                 .disabled(!canShareVoice)
             }
         }

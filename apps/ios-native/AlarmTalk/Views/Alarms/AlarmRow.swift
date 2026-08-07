@@ -134,19 +134,23 @@ struct AlarmRow: View {
                 }
             }
 
-            if let warningText {
+            if let notice = rowNotice {
                 HStack(alignment: .center, spacing: 8) {
-                    Image(systemName: "exclamationmark.circle")
+                    Image(systemName: notice.isError ? "exclamationmark.circle" : "info.circle")
                         .font(.system(size: 18))
-                    Text(warningText)
+                    Text(notice.text)
                         .font(.pretendard(.semibold, size: 12))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .foregroundStyle(theme.palette.onErrorContainer)
+                .foregroundStyle(
+                    notice.isError ? theme.palette.onErrorContainer : theme.palette.onSecondaryContainer
+                )
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    theme.palette.errorContainer.opacity(0.72),
+                    (notice.isError ? theme.palette.errorContainer : theme.palette.secondaryContainer)
+                        .opacity(0.72),
                     in: RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous)
                 )
             }
@@ -208,9 +212,39 @@ struct AlarmRow: View {
         dragOffset = 0
     }
 
-    private var warningText: String? {
+    /// 행 아래에 붙이는 안내. 에러(빨강)와 정보(중립)를 가른다.
+    private struct RowNotice {
+        let text: String
+        let isError: Bool
+    }
+
+    /// 안드로이드 `ui/components/ControlsAndPermissions.kt` 의 `alarmRowNotice` 와 같은 판정.
+    ///
+    /// ⚠ **여기 넣기 전 기준은 "사용자가 할 일이 있는가" 다.** 없으면 넣지 않는다 —
+    /// 동기화 실패를 뺀 이유가 그것이다(아래 주석).
+    ///
+    /// ⚠ 무료 강등 안내가 iOS 에만 없었다. 강등은 `playMode` 를 알람음으로 바꾸면서
+    /// `voiceProfileId` 는 남기므로, 행에는 **목소리 이름이 그대로 보이는데 실제로는
+    /// 알람음이 울린다** — 왜 목소리가 안 나오는지 알 방법이 없었다.
+    private var rowNotice: RowNotice? {
         if alarm.runtimeStateEnum == .failed {
-            return "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요."
+            // 예약 자체가 실패해 **정말 안 울린다.** 다시 저장해 달라고 해야 한다.
+            return RowNotice(
+                text: "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요.",
+                isError: true
+            )
+        }
+        // 유료 목소리를 못 써 기본 알람으로 변환됨(preLockPlayMode 마커).
+        // 무료 강등은 목소리 참조를 남기고(voiceProfileId 유지) → '무료 요금제' 안내,
+        // 공유 목소리 해제는 참조를 비우므로 → 원인 무관 중립 안내.
+        if alarm.preLockPlayMode != nil {
+            let hasVoice = !(alarm.voiceProfileId ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+            return RowNotice(
+                text: hasVoice
+                    ? "무료 요금제로 바뀌어 기본 알람으로 변환되었어요."
+                    : "목소리를 쓸 수 없어 기본 알람으로 변환되었어요.",
+                isError: false
+            )
         }
         // ⚠ **동기화 실패(syncFailed)는 행에 띄우지 않는다.** 기준은 안드로이드
         // `ControlsAndPermissions.kt:577-582` 그대로다 — "사용자가 할 일이 있는가.

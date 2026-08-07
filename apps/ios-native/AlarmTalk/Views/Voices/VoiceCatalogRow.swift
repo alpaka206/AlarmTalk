@@ -181,6 +181,33 @@ struct VoiceSectionCard<Content: View>: View {
 ///
 /// ⚠ **iOS 에는 이게 아예 없었다.** 유료 클론을 등록하면 21개 클립이 서버에서 렌더되는
 /// 동안 알람에 쓸 수 없는데, 화면에는 아무 표시도 없어 "만들었는데 안 쓰인다" 로 보였다.
+/// 말투 분석이 실패했을 때의 안내 + 재시도.
+///
+/// ⚠ **이 행이 없으면 사용자는 실패한 줄도 모른다.** 분석이 실패한 목소리는 말투 없이
+/// 밋밋하게 읽는데, 화면에는 아무 표시가 없었다. 서버에는 재시도 라우트가 있는데도
+/// 부를 방법이 앱에 없었다. 안드로이드 `ui/voices/VoiceProfileRowComponents.kt` 의
+/// `voicesr_speech_style_failed` / `voicesr_speech_style_retry` 행과 같은 모양이다.
+struct VoiceSpeechStyleFailedRow: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    let retrying: Bool
+    let onRetry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("말투 분석에 실패했어요")
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.error)
+            Button("다시 분석", action: onRetry)
+                .font(theme.typography.bodySmall.weight(.semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.palette.primary)
+                .disabled(retrying)
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 struct VoicePrerenderStatusRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
 

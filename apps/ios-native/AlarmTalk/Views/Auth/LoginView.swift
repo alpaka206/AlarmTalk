@@ -29,6 +29,8 @@ struct LoginView: View {
     @State private var confirmPassword: String = ""
     @State private var name: String = ""
     @State private var verificationCode: String = ""
+    /// 닉네임이 상한을 넘겨 잘렸는가 — 이유를 입력창 아래에 띄운다(말없이 자르지 않는다).
+    @State private var nameTooLong = false
     @State private var verificationSent: Bool = false
     @State private var verificationCompleted: Bool = false
     @State private var verifiedEmail: String = ""
@@ -162,6 +164,7 @@ struct LoginView: View {
     // MARK: - Sections
 
     private var nameField: some View {
+        VStack(alignment: .leading, spacing: 0) {
         VocaTextField(
             title: "이름",
             text: $name,
@@ -171,8 +174,28 @@ struct LoginView: View {
         )
         .onChange(of: name) { _, newValue in
             // 규칙은 InputSanitizer 한 곳에서만(제어·제로폭·양방향 문자 제거, 줄바꿈→공백).
+            let sanitized = InputSanitizer.sanitizeDisplayName(newValue)
             let cleaned = InputSanitizer.clampDisplayName(newValue)
+            // ⚠ **말없이 자르지 말 것**(CLAUDE.md). 상한에서 입력은 막되, 넘겨 치는
+            // 순간 이유를 띄운다. 안 그러면 사용자는 글자가 왜 안 들어가는지 모른 채
+            // 갇힌다. 안드로이드 `AuthScreen` 의 `nameTooLong` 과 같은 규칙이다.
+            //
+            // ⚠ **상한과 정확히 같을 때는 플래그를 건드리지 않는다.** 잘라서 돌려준
+            // 값을 IME 가 그대로 되돌려 보내므로, 여기서 끄면 경고가 곧바로 사라진다.
+            if sanitized.count > InputSanitizer.displayNameMaxLength {
+                nameTooLong = true
+            } else if sanitized.count < InputSanitizer.displayNameMaxLength {
+                nameTooLong = false
+            }
             if cleaned != newValue { name = cleaned }
+        }
+        if nameTooLong {
+            Text("닉네임은 \(InputSanitizer.displayNameMaxLength)자 이내로 써 주세요")
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(AuthSceneColors.error)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
+        }
         }
     }
 

@@ -342,6 +342,7 @@ private struct FamilyAlarmPermissionCard: View {
                     )
                 )
                 .labelsHidden()
+                .alarmTalkSwitch()
                 .disabled(isBusy)
             }
             .padding(.horizontal, 14)

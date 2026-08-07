@@ -29,7 +29,7 @@ struct HolidayOffToggle: View {
 
                 Toggle("", isOn: $isOn)
                     .labelsHidden()
-                    .tint(theme.palette.primary)
+                    .alarmTalkSwitch()
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text("공휴일에는 알람 끄기"))

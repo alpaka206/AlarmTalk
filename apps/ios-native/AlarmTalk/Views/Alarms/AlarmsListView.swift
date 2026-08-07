@@ -230,9 +230,26 @@ struct AlarmsListView: View {
     /// 있으면 그걸 우선한다 — 목록에서 "엄마 목소리" 로 읽히는 게 사람 이름보다 낫다.
     private func voiceName(for alarm: LocalAlarmRecord) -> String? {
         guard let id = alarm.voiceProfileId, !id.isEmpty else { return nil }
-        guard let profile = remoteSync.voiceProfiles.first(where: { $0.id == id }) else { return nil }
-        let relationship = profile.relationshipLabel?.trimmingCharacters(in: .whitespaces) ?? ""
-        return relationship.isEmpty ? profile.name : relationship
+        // ⚠ **잠긴 알람에는 목소리 이름을 보여주지 않는다.** 무료 강등은 재생 방식만
+        // 알람음으로 바꾸고 `voiceProfileId` 는 남기므로, 이 게이트가 없으면 행에
+        // 목소리 이름이 그대로 보이는데 실제로는 알람음이 울린다 — 왜 목소리가 안
+        // 나오는지 알 방법이 없다. 대신 행 아래 안내(`AlarmRow.rowNotice`)가 이유를 말한다.
+        guard alarm.preLockPlayMode == nil else { return nil }
+
+        func label(_ name: String, _ relationship: String?) -> String {
+            let trimmed = relationship?.trimmingCharacters(in: .whitespaces) ?? ""
+            return trimmed.isEmpty ? name : trimmed
+        }
+        if let profile = remoteSync.voiceProfiles.first(where: { $0.id == id }) {
+            return label(profile.name, profile.relationshipLabel)
+        }
+        // ⚠ **공유받은 목소리 폴백.** `GET /voice-profile` 은 내 것과 시스템 것만 주므로,
+        // 가족이 공유한 목소리로 만든 알람은 위에서 못 찾고 이름이 통째로 사라졌다.
+        // 그 목록은 `familyVoices` 에 따로 온다.
+        if let shared = socialFeatures.familyVoices.first(where: { $0.id == id }) {
+            return label(shared.name, shared.relationshipLabel)
+        }
+        return nil
     }
 
     /// 빈 상태 카드 — 안드로이드 `ui/home/HomeCards.kt:29-92`.

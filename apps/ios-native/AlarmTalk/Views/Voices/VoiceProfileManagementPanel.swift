@@ -44,6 +44,7 @@ struct VoiceProfileManagementPanel: View {
     /// 사전렌더(알람 음성 준비) 상태 — 목소리 id → 상태. 5초 폴링으로 채운다.
     @State private var prerenderStatuses: [String: VoicePrerenderStatus] = [:]
     @State private var retryingPrerenderIDs: Set<String> = []
+    @State private var retryingSpeechStyleIDs: Set<String> = []
 
     /// 공유받은 음성에 viewer 가 자신의 관계/호칭을 등록할 때 사용하는 다이얼로그 타깃.
     /// (⚠ 안드로이드에 `SharedVoiceViewerInfoDialog` 라는 이름은 없다 — 옛 주석이 틀렸다.
@@ -301,6 +302,13 @@ struct VoiceProfileManagementPanel: View {
                                 onRetry: { Task { await retryPrerender(profile) } }
                             )
                         }
+                        // 말투 분석 실패 — 서버에 재시도 라우트가 있는데 부를 길이 없었다.
+                        if profile.speechStyleStatus == "failed" {
+                            VoiceSpeechStyleFailedRow(
+                                retrying: retryingSpeechStyleIDs.contains(profile.id),
+                                onRetry: { Task { await retrySpeechStyle(profile) } }
+                            )
+                        }
                     }
                 )
             }
@@ -455,6 +463,20 @@ struct VoiceProfileManagementPanel: View {
             return
         }
         await pollPrerenderStatuses()
+    }
+
+    /// 말투 분석 재시도. 서버에 라우트가 있는데 부를 길이 없어 실패가 영구였다.
+    private func retrySpeechStyle(_ profile: VoiceProfile) async {
+        guard let token = auth.session?.token else { return }
+        retryingSpeechStyleIDs.insert(profile.id)
+        defer { retryingSpeechStyleIDs.remove(profile.id) }
+        do {
+            _ = try await AlarmTalkAPI.shared.retryVoiceSpeechStyle(id: profile.id, token: token)
+            // 상태는 서버가 다시 계산하므로 목록을 새로 읽어 실패 행이 사라지게 한다.
+            await voice.refresh(session: auth.session)
+        } catch {
+            voice.statusMessage = "말투 분석을 다시 시도하지 못했어요. 잠시 뒤에 눌러 주세요."
+        }
     }
 
     /// `.alert` 는 `item:` 형태가 없어 Bool 바인딩으로 감싼다.
