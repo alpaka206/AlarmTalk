@@ -12,6 +12,7 @@ import {
   schedulePlanChangeAtPeriodEnd,
 } from '../lib/billing-cancel';
 import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
+import { APPLE_MANAGE_SUBSCRIPTIONS_URL } from '../lib/store-billing';
 import { logStructured } from '../lib/logger';
 import {
   playCancelSubscription,
@@ -713,6 +714,29 @@ billingMutation.post('/cancel', async (c) => {
     purchaseToken: String(row.provider_transaction_id),
     productId: String(row.product_id),
   }));
+
+  // ⚠ **애플 결제 구독은 서버가 해지할 수 없다 — 여기서 막는다.**
+  //
+  // App Store Server API 에는 Play 의 `purchases.subscriptions.cancel` 에 해당하는
+  // 것이 없다. 자동갱신 구독은 사용자가 App Store 구독 관리 화면에서 직접 끊어야 한다.
+  // 그런데 아래 Play 처리는 `provider === 'google'` 만 보므로, 애플 트랜잭션은 스토어
+  // 호출 없이 **로컬 DB 만 취소**되고 200 이 나갔다 — 앱은 "이용권을 해지했어요" 를
+  // 띄우는데 **Apple 은 계속 과금한다.** 권한은 잃고 돈은 나가는, 가장 나쁜 조합이다.
+  //
+  // Play 실패 갈래와 같은 모양으로 낸다(무변경 + manage_url). 안드로이드 클라의
+  // `STORE_MANAGE_REQUIRED_CODES` 에 이미 이 코드가 들어 있고, iOS 는 이 코드를 받으면
+  // StoreKit 관리 시트를 연다.
+  const appleTxn = storeTxns.find((txn) => txn.provider === 'apple');
+  if (appleTxn) {
+    return c.json(
+      {
+        error: 'App Store subscriptions must be cancelled in the App Store',
+        error_code: 'STORE_CANCEL_UNSUPPORTED',
+        manage_url: APPLE_MANAGE_SUBSCRIPTIONS_URL,
+      },
+      409,
+    );
+  }
 
   // 같은 토큰이 여러 구독 행에 걸쳐 있어도 Play 호출은 토큰당 한 번만 한다.
   const googleTxns = new Map<string, { purchaseToken: string; productId: string }>();

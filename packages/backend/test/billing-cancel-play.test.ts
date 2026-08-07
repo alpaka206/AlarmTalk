@@ -1014,3 +1014,67 @@ describe('POST /billing/google/confirm — 계정 바인딩 (C4)', () => {
     expect(ackCalls).toHaveLength(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// POST /billing/cancel — App Store 결제 구독
+//
+// ⚠ Apple 의 자동갱신 구독은 **서버가 해지할 수 없다.** App Store Server API 에는 Play 의
+// `purchases.subscriptions.cancel` 에 해당하는 것이 없다. 그런데 취소 라우트는
+// `provider === 'google'` 만 스토어 호출을 하므로, 애플 트랜잭션은 스토어를 건드리지 않고
+// **로컬 DB 만 취소**되고 200 이 나갔다 — 앱은 "해지했어요" 를 띄우는데 Apple 은 계속
+// 과금한다. 권한은 잃고 돈은 나가는 조합이라, 반드시 거절 + 무변경이어야 한다.
+// ---------------------------------------------------------------------------
+describe('POST /billing/cancel (apple 결제)', () => {
+  const APPLE_TXN_ROW = {
+    provider: 'apple',
+    provider_transaction_id: 'apple-txn-1',
+    product_id: 'com.voicealarm.nativeapp.ios.personal_monthly',
+  };
+
+  function pushAppleSubscription() {
+    mockDB.pushResult([{ id: 'user-pk-1' }]); // resolveUserPk
+    mockDB.pushResult([SUB_ROW]); // 활성 구독
+    mockDB.pushResult([APPLE_TXN_ROW]); // store_transactions
+  }
+
+  for (const mode of ['at_period_end', 'immediate'] as const) {
+    it(`${mode}: 409 STORE_CANCEL_UNSUPPORTED + manage_url, DB 무변경`, async () => {
+      const fetchMock = stubPlayFetch(200, {});
+      pushAppleSubscription();
+
+      const res = await buildApp().request(
+        jsonReq('POST', '/billing/cancel', { mode }),
+        undefined,
+        PLAY_ENV,
+      );
+
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error_code: string; manage_url: string };
+      expect(body.error_code).toBe('STORE_CANCEL_UNSUPPORTED');
+      expect(body.manage_url).toBe('https://apps.apple.com/account/subscriptions');
+
+      // 스토어도, DB 도 건드리지 않는다.
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(findCall('cancel_at_period_end')).toBeUndefined();
+      expect(findCall('UPDATE subscriptions')).toBeUndefined();
+      expect(findCall('UPDATE users')).toBeUndefined();
+    });
+  }
+
+  it('애플 트랜잭션이 하나라도 섞여 있으면 거절한다(구글과 혼재)', async () => {
+    const fetchMock = stubPlayFetch(200, {});
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([SUB_ROW]);
+    // 구글이 먼저 와도 애플이 있으면 막아야 한다 — 부분 해지는 상태를 갈라 놓는다.
+    mockDB.pushResult([GOOGLE_TXN_ROW, APPLE_TXN_ROW]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/cancel', { mode: 'immediate' }),
+      undefined,
+      PLAY_ENV,
+    );
+
+    expect(res.status).toBe(409);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});

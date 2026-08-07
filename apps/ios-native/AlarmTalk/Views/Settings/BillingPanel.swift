@@ -191,6 +191,18 @@ struct BillingPanel: View {
         } message: {
             Text(cancelDescription)
         }
+        // ⚠ **해지의 유일한 길이다(App Store 결제일 때).** Apple 자동갱신 구독은 서버가
+        // 못 끊어서 백엔드가 `STORE_CANCEL_UNSUPPORTED` 로 거절하고 아무것도 바꾸지 않는다.
+        // 그 신호를 받으면 시스템 구독 관리 시트를 연다 — 이게 없으면 "해지에 실패했어요"
+        // 만 남고 앱 안에서 해지할 방법이 사라진다(심사 거절 사유이기도 하다).
+        //
+        // `AppStore.showManageSubscriptions(in:)` 는 시트를 **앱 안에서** 띄운다. URL 로
+        // App Store 를 여는 폴백은 앱을 떠나므로, 시트를 못 띄울 때만 쓴다.
+        .onChange(of: socialFeatures.needsAppStoreSubscriptionManagement) { _, needs in
+            guard needs else { return }
+            socialFeatures.needsAppStoreSubscriptionManagement = false
+            Task { await openAppStoreSubscriptionManagement() }
+        }
         .alert("지금 바로 해지할까요?", isPresented: $showCancelImmediateConfirm) {
             Button("지금 해지하기", role: .destructive) {
                 Task {
@@ -224,6 +236,37 @@ struct BillingPanel: View {
             )
             .presentationDetents([.medium])
         }
+    }
+
+    // MARK: - App Store 구독 관리
+
+    /// 시스템 구독 관리 시트를 띄운다. 실패하면 App Store 링크로 폴백한다.
+    ///
+    /// ⚠ **조용히 실패하게 두지 말 것.** 둘 다 실패하면 사용자는 해지 버튼을 눌렀는데
+    /// 아무 일도 일어나지 않는 걸 보게 된다 — 그때는 어디로 가야 하는지 글로 알려 준다.
+    @MainActor
+    private func openAppStoreSubscriptionManagement() async {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        if let scene {
+            do {
+                try await AppStore.showManageSubscriptions(in: scene)
+                // 시트에서 해지했을 수 있다 — 닫히면 서버 상태를 다시 읽는다.
+                await subscriptions.resyncEntitlements()
+                await auth.refreshUser()
+                await socialFeatures.refreshAll(session: auth.session, force: true)
+                return
+            } catch {
+                // 시트를 못 띄웠다 — 아래 URL 폴백으로 이어진다.
+            }
+        }
+        if let url = URL(string: "https://apps.apple.com/account/subscriptions"),
+           UIApplication.shared.canOpenURL(url) {
+            await UIApplication.shared.open(url)
+            return
+        }
+        purchaseFeedback = "설정 앱 > Apple 계정 > 구독 에서 해지할 수 있어요."
     }
 
     // MARK: - Restore

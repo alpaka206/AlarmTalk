@@ -16,6 +16,17 @@ import { planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
 // applyStoreEntitlement 자체는 원래부터 provider-agnostic 이라 로직 변경이 없다.
 export type StoreProvider = 'google' | 'apple';
 
+/**
+ * App Store 구독 관리 화면. **해지는 여기서만 된다.**
+ *
+ * ⚠ Apple 의 자동갱신 구독은 **서버가 해지할 수 없다.** Google Play 에는
+ * `purchases.subscriptions.cancel` 이 있지만 App Store Server API 에는 대응물이 없고,
+ * 사용자가 직접 이 화면(또는 StoreKit `AppStore.showManageSubscriptions`)에서 끊어야 한다.
+ * 그래서 `POST /billing/cancel` 은 애플 결제 구독을 **거절**한다 — 로컬만 취소하면
+ * 사용자는 권한을 잃은 채 Apple 에 계속 과금된다.
+ */
+export const APPLE_MANAGE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subscriptions';
+
 export interface StorePlan {
   id: string;
   key: string;

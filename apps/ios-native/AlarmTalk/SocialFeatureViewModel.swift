@@ -15,6 +15,10 @@ final class SocialFeatureViewModel: ObservableObject {
     @Published var isBusy = false
     @Published var statusMessage: String?
 
+    /// 해지를 App Store 에서 해야 하는가 — 서버가 `STORE_CANCEL_UNSUPPORTED` 로 거절했을 때.
+    /// 이용권 화면이 이걸 보고 StoreKit 구독 관리 시트를 연다.
+    @Published var needsAppStoreSubscriptionManagement = false
+
     private let api: AlarmTalkAPI
     private let accessSnapshotStore: AccessSnapshotStore
     private var activeUserID: String?
@@ -245,6 +249,16 @@ final class SocialFeatureViewModel: ObservableObject {
             let successMessage = normalizedMode == "immediate" ? "이용권을 해지했어요." : "구독 해지를 예약했어요."
             await refreshAllAfterMutation(session: session, successMessage: successMessage)
         } catch {
+            // ⚠ **App Store 구독은 서버가 못 끊는다.** Apple 에는 Play 의
+            // `purchases.subscriptions.cancel` 에 해당하는 API 가 없어서, 사용자가 App Store
+            // 구독 관리 화면에서 직접 끊어야 한다. 서버가 이 코드로 거절하면(무변경)
+            // 여기서 그 화면으로 보낸다 — 안 보내면 "해지에 실패했어요" 만 남고 **해지할
+            // 길이 앱 어디에도 없다**(심사 거절 사유이기도 하다).
+            if Self.extractServerErrorCode(from: error) == "STORE_CANCEL_UNSUPPORTED" {
+                needsAppStoreSubscriptionManagement = true
+                statusMessage = nil
+                return
+            }
             statusMessage = Self.billingErrorMessage(error, fallback: "해지에 실패했어요")
         }
     }
