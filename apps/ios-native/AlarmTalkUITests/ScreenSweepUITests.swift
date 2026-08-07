@@ -45,6 +45,20 @@ final class ScreenSweepUITests: XCTestCase {
             return false
         }
         app.launch()
+        // ⚠ **`addUIInterruptionMonitor` 는 상호작용이 있어야 발동한다.** 런치 직후 뜨는
+        // 알람 권한 팝업을 그냥 두면 첫 화면이 통째로 팝업에 덮인 채 캡처된다.
+        // 앱을 한 번 두드려 모니터를 깨운다.
+        app.tap()
+        // 시스템 알럿은 우리 앱의 요소 트리 밖이라 위 모니터가 못 잡는 경우가 있다 —
+        // springboard 에서 직접 눌러 준다.
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for label in ["허용", "Allow"] {
+            let button = springboard.buttons[label]
+            if button.waitForExistence(timeout: 2) {
+                button.tap()
+                break
+            }
+        }
     }
 
     /// 스크롤 가능한 화면을 **바닥까지** 훑으며 한 화면씩 남긴다.

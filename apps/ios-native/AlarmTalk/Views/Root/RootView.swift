@@ -183,17 +183,19 @@ struct RootView: View {
     /// 프로모 판정에 필요한 값이 다 모였는지 나타내는 키.
     /// ⚠ 가드만 넣지 말고 **키에도 넣어야** 응답이 도착한 뒤 효과가 다시 돈다.
     private var promoGateKey: String {
-        "\(auth.session?.user.id ?? "-")|\(auth.consentStatusChecked)|\(blockingGateActive)"
+        "\(auth.session?.user.id ?? "-")|\(auth.consentStatusChecked)|\(versionGate.checked)|\(blockingGateActive)"
     }
 
     /// 웰컴 코드 안내를 띄울지 판정한다. 조건이 하나라도 어긋나면 조용히 넘어간다.
-    ///  - 동의 확인 응답이 **도착했을 것**(그 전에는 차단 화면 여부를 알 수 없다)
+    ///  - **확인 응답이 다 도착했을 것** — 동의(`consentStatusChecked`)와
+    ///    버전(`versionGate.checked`) 둘 다. 하나라도 응답 전이면 그 게이트가 뜰지
+    ///    아직 모르는데, 기본값 `false` 는 '아니오' 와 구분되지 않는다.
     ///  - 차단 게이트가 없을 것
     ///  - 무료 플랜일 것(이미 유료면 보여줄 이유가 없다)
     ///  - 이 계정에 아직 안 띄웠을 것
     /// 노출과 동시에 '봤음' 을 기록한다 — 닫든 등록하든 다시 뜨지 않는다.
     private func evaluateWelcomePromo() {
-        guard auth.consentStatusChecked, !blockingGateActive else { return }
+        guard auth.consentStatusChecked, versionGate.checked, !blockingGateActive else { return }
         guard let userID = auth.session?.user.id, !userID.isEmpty else { return }
         guard (auth.session?.user.plan ?? "free").lowercased() == "free" else { return }
         let store = PromoPromptStore()

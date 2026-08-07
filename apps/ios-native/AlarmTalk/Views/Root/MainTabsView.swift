@@ -42,18 +42,27 @@ struct MainTabsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        currentTabContent
+                // ⚠ **알람 탭은 스크롤을 스스로 소유한다.** 헤드라인(선택 모드에서는
+                // [취소·삭제] 바)을 목록 **밖에 고정**해야 하기 때문이다. 예전처럼 전부
+                // 한 `ScrollView` 에 넣으면, 목록을 내린 상태에서 길게 눌러 선택 모드에
+                // 들어갔을 때 **삭제·취소 바가 화면 위로 밀려나 닿을 수 없다.**
+                // 안드로이드도 헤더를 `LazyColumn` 밖 `Column` 에 둔다.
+                if selectedTab == .alarms {
+                    AlarmsListView(createRequest: alarmCreateRequest, openEditor: { editorTarget = $0 })
+                        .onPreferenceChange(AlarmSelectionActiveKey.self) { alarmSelectionActive = $0 }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(theme.homeGradient)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            currentTabContent
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 20)
+                        .padding(.bottom, 24)
                     }
-                    // 알람 탭이 선택 모드에 들어가면 ＋FAB 를 숨겨야 한다 — 자식이
-                    // 위로 알려 주는 신호라 environment(아래로 흐름) 대신 preference 다.
-                    .onPreferenceChange(AlarmSelectionActiveKey.self) { alarmSelectionActive = $0 }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    .padding(.bottom, 24)
+                    .background(theme.homeGradient)
                 }
-                .background(theme.homeGradient)
 
                 BottomNavBar(
                     selected: $selectedTab,
@@ -159,11 +168,13 @@ struct MainTabsView: View {
         }
     }
 
+    /// 알람 탭을 **뺀** 나머지 탭 — 위 `body` 의 공용 `ScrollView` 안에 들어간다.
+    /// 알람 탭은 헤더 고정 때문에 스크롤을 스스로 소유하므로 여기 없다.
     @ViewBuilder
     private var currentTabContent: some View {
         switch selectedTab {
         case .alarms:
-            AlarmsListView(createRequest: alarmCreateRequest, openEditor: { editorTarget = $0 })
+            EmptyView()
         case .voices:
             // Phase 4-D1: 슬롯 가득 PlanGate 의 "결제 화면으로" 가 눌리면 BillingPanel
             // auxiliary 시트로 chain. PlanGate 시트가 자신을 닫는 dismiss animation 과

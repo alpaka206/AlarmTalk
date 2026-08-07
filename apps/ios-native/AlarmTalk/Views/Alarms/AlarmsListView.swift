@@ -25,53 +25,36 @@ struct AlarmsListView: View {
     let openEditor: (AlarmEditorTarget) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // 안드로이드 첫 탭과 같은 모양 — '알람' 라벨 대신 **상태 문구를 헤드라인으로**
-            // 승격한다(제목 = 결론). 절대 시각은 바로 아래 카드에 이미 있다.
-            // 선택 모드에선 **같은 자리를** [취소·삭제] 바가 대신한다. 상단 바를 새로
-            // 다는 대신 헤드라인을 바꿔 끼운다 — 이 앱엔 상단 바가 하나도 없다.
-            if selectionMode {
-                AlarmSelectionBar(
-                    count: selectedAlarmIDs.count,
-                    onCancel: { selectedAlarmIDs = [] },
-                    onDelete: {
-                        let targets = store.alarms.filter { selectedAlarmIDs.contains($0.id) }
-                        selectedAlarmIDs = []
-                        Task { for alarm in targets { await deleteAlarm(alarm) } }
-                    }
-                )
-            } else {
-                // 만들기 액션은 **＋FAB 하나**다(MainTabsView). 헤드라인 옆에 버튼을 또 두면
-                // 같은 일을 하는 진입점이 둘이 되고, 헤드라인('다음 알람까지 …')이 눌릴 자리를
-                // 뺏겨 짧게 잘린다. 안드로이드도 FAB 하나뿐이다(`AlarmTalkApp.kt:862`).
-                NextAlarmHeadline(
-                    nextAlarm: nextAlarmForHeadline,
-                    hasAnyAlarm: !store.alarms.isEmpty,
-                    alarmPermissionMissing: !alarmKit.alarmAuthorized
-                )
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            pinnedHeader
 
-            // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
-            // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
-            // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen.kt:268-287`).
-            if !alarmKit.alarmAuthorized && !store.alarms.isEmpty {
-                alarmPermissionBanner
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
+                    // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
+                    // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
+                    if !alarmKit.alarmAuthorized && !store.alarms.isEmpty {
+                        alarmPermissionBanner
+                    }
+                    // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
+                    // (로그인 필요 / push·pull 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
+                    // Android syncNow / msg_sync_*_partial_failed parity.
+                    if let displayedMessage {
+                        Text(displayedMessage)
+                            .font(.footnote)
+                            .foregroundStyle(AlarmTalkTheme.textSecondary)
+                            .padding(.horizontal, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture { dismissDisplayedMessage() }
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityHint("탭하면 닫혀요")
+                    }
+                    localAlarmSection
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
             }
-            // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
-            // (로그인 필요 / push·pull 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
-            // Android syncNow / msg_sync_*_partial_failed parity.
-            if let displayedMessage {
-                Text(displayedMessage)
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-                    .padding(.horizontal, 4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture { dismissDisplayedMessage() }
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityHint("탭하면 닫혀요")
-            }
-            localAlarmSection
         }
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
         .onChange(of: createRequest) { _, new in
@@ -120,6 +103,48 @@ struct AlarmsListView: View {
         } else {
             remoteSync.statusMessage = nil
         }
+    }
+
+    /// 목록 **밖에 고정**되는 헤더. 스크롤해도 '다음 알람까지' 가 남고, 무엇보다 목록을
+    /// 내린 상태에서 선택 모드에 들어가도 [취소·삭제]에 닿을 수 있다.
+    ///
+    /// ⚠ **다시 `ScrollView` 안으로 넣지 말 것.** 넣으면 길게 눌러 선택 모드에 들어간
+    /// 순간 삭제 바가 화면 위에 있어 스크롤을 되올려야 취소할 수 있다.
+    ///
+    /// 최소 높이를 두는 이유: 헤드라인과 선택 바의 높이가 달라, 고정하지 않으면 선택
+    /// 모드에 드나들 때마다 목록 전체가 위아래로 튄다(안드로이드도 `heightIn(min = 48.dp)`).
+    @ViewBuilder
+    private var pinnedHeader: some View {
+        Group {
+            // 안드로이드 첫 탭과 같은 모양 — '알람' 라벨 대신 **상태 문구를 헤드라인으로**
+            // 승격한다(제목 = 결론). 절대 시각은 바로 아래 카드에 이미 있다.
+            // 선택 모드에선 **같은 자리를** [취소·삭제] 바가 대신한다. 상단 바를 새로
+            // 다는 대신 헤드라인을 바꿔 끼운다 — 이 앱엔 상단 바가 하나도 없다.
+            if selectionMode {
+                AlarmSelectionBar(
+                    count: selectedAlarmIDs.count,
+                    onCancel: { selectedAlarmIDs = [] },
+                    onDelete: {
+                        let targets = store.alarms.filter { selectedAlarmIDs.contains($0.id) }
+                        selectedAlarmIDs = []
+                        Task { for alarm in targets { await deleteAlarm(alarm) } }
+                    }
+                )
+            } else {
+                // 만들기 액션은 **＋FAB 하나**다(MainTabsView). 헤드라인 옆에 버튼을 또 두면
+                // 같은 일을 하는 진입점이 둘이 되고, 헤드라인('다음 알람까지 …')이 눌릴 자리를
+                // 뺏겨 짧게 잘린다. 안드로이드도 FAB 하나뿐이다.
+                NextAlarmHeadline(
+                    nextAlarm: nextAlarmForHeadline,
+                    hasAnyAlarm: !store.alarms.isEmpty,
+                    alarmPermissionMissing: !alarmKit.alarmAuthorized
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
     }
 
     @ViewBuilder
