@@ -13,7 +13,9 @@ SwiftUI + AlarmKit. **더 이상 PoC 가 아니다** — 실기기(iPhone 14 Pro
 
 ## Scope
 
-- SwiftUI app shell using the same unified blue (azure) Material 3 brand direction as Android (light primary `#175FB0`, dark primary `#A6D2FF`); see `docs/design/README.md`.
+- SwiftUI app shell using the same unified blue (azure) Material 3 brand direction as Android (light primary `#175FB0`, dark primary `#A6D2FF`).
+  색 토큰의 단일 출처는 코드다 — Android `theme/AlarmTalkTheme.kt` 의 `colorScheme`,
+  iOS `AlarmTalkTheme.swift`. 규약은 CLAUDE.md 「디자인 토큰」 절.
 - Native Sign in with Apple using `AuthenticationServices`.
 - Backend `/api/auth/apple` session exchange and app JWT storage in Keychain.
 - AlarmKit authorization request.

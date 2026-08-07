@@ -18,8 +18,12 @@ dist/
 *.tsbuildinfo
 .turbo/
 .wrangler/
-ios/
-android/
+# ⚠ **앞의 `/` 를 빼지 말 것.** 이건 Expo 가 루트에 뱉던 네이티브 프로젝트 잔재인데,
+# 빗금 없는 `ios/` 는 **어느 깊이의 `ios` 디렉터리든** 삼킨다. 실제로 `docs/ios/` 가
+# 통째로 추적되지 않아서, CLAUDE.md 가 "상세는 docs/ios/" 라고 가리키는 문서와
+# parity 감사가 근거로 인용한 파일들이 저장소에 아예 없었다(클론하면 안 보인다).
+/ios/
+/android/
 
 # Native Android local/generated files
 apps/android-native/.gradle/
