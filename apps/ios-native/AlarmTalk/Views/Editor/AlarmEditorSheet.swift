@@ -1053,10 +1053,13 @@ struct AlarmEditorSheet: View {
     }
 
     var selectedFamilyRecipient: FamilyGroupMember? {
-        if let selectedFamilyRecipientID,
-           let selected = familyRecipients.first(where: { $0.userId == selectedFamilyRecipientID }) {
+        // 「누구를 깨울까요?」 에서 고른 사람이 우선이다.
+        let preferredID = selectedFamilyRecipientID ?? target.recipientUserID
+        if let preferredID,
+           let selected = familyRecipients.first(where: { $0.userId == preferredID }) {
             return selected
         }
+        // ⚠ 폴백은 **고른 적이 없을 때만**이다. 고른 값을 흘리면 첫 번째 사람에게 간다.
         return familyRecipients.first
     }
 

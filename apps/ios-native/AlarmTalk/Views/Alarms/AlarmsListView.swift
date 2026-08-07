@@ -19,6 +19,9 @@ struct AlarmsListView: View {
     /// 안드로이드 `AlarmListScreen.kt:138-152`.
     @State private var selectedAlarmIDs: Set<String> = []
 
+    /// ＋FAB 의 만들기 요청. 값이 바뀌면 `openCreateAlarm()` 을 탄다 —
+    /// FAB 가 권한 확인과 「누구를 깨울까요?」 를 건너뛰지 않게 하는 통로다.
+    var createRequest: UUID?
     let openEditor: (AlarmEditorTarget) -> Void
 
     var body: some View {
@@ -71,6 +74,10 @@ struct AlarmsListView: View {
             localAlarmSection
         }
         .onChange(of: store.alarms.count) { _, _ in pruneSelection() }
+        .onChange(of: createRequest) { _, new in
+            guard new != nil else { return }
+            Task { await openCreateAlarm() }
+        }
         .preference(key: AlarmSelectionActiveKey.self, value: selectionMode)
         .sheet(isPresented: $wakeTargetSheetOpen) {
             WakeTargetSheet(
@@ -79,9 +86,10 @@ struct AlarmsListView: View {
                     wakeTargetSheetOpen = false
                     openEditor(.create())
                 },
-                onSelectRecipient: { _ in
+                onSelectRecipient: { recipient in
                     wakeTargetSheetOpen = false
-                    openEditor(.createFamily())
+                    // ⚠ 인자를 버리지 말 것 — 버리면 편집기가 첫 번째 구성원으로 폴백한다.
+                    openEditor(.createFamily(recipientUserID: recipient.userId))
                 }
             )
             .presentationDetents([.height(260), .medium])

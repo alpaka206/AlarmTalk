@@ -32,7 +32,7 @@
 
 </details>
 
-### ☐ [screens-flow] ＋FAB 가 "누구를 깨울까요?" 시트를 건너뛴다 — 알람이 하나라도 있으면 가족 알람을 만들 길이 사라진다
+### ☑ [screens-flow] ＋FAB 가 "누구를 깨울까요?" 시트를 건너뛴다 — 알람이 하나라도 있으면 가족 알람을 만들 길이 사라진다
 
 **안드로이드**: apps/android-native/.../ui/app/AlarmTalkApp.kt:646-652 `requestCreateAlarm()` 이 `canCreateFamilyAlarm` 이면 `alarmTargetSheetVisible = true`, 아니면 `startCreateAlarm(false)`. 이 함수 하나를 **두 진입점이 모두** 탄다 — FAB(:862-871 `onClick = ::requestCreateAlarm`)와 빈 상태 히어로 카드(AlarmListScreen.kt:259-262 → `onCreateAlarm` = 같은 함수). 게다가 `startCreateAlarm`(:635-645)이 `permissions.alarmReady` 를 먼저 확인하고, 부족하면 게이트를 띄운 뒤 허용되면 편집기로 이어 준다.
 
@@ -224,7 +224,7 @@ P1 급 표현("같은 제품이 플랫폼마다 다른 상품 구성")은 과장
 
 </details>
 
-### ☐ [modals] 「누구를 깨울까요?」 시트에서 고른 수신자가 버려진다 — iOS 는 항상 첫 번째 구성원에게 알람이 간다
+### ☑ [modals] 「누구를 깨울까요?」 시트에서 고른 수신자가 버려진다 — iOS 는 항상 첫 번째 구성원에게 알람이 간다
 
 **안드로이드**: apps/android-native/.../ui/app/AlarmTalkApp.kt:779-812 — WakerSelectionSheet(title=alarms_target_sheet_title "누구를 깨울까요?")의 수신자 행이 807줄 `startCreateAlarm(familyTargetMode = true, targetUserId = recipient.userId)` 로 **누른 사람의 userId 를 편집기 라우트에 실어 보낸다**. 편집기는 AlarmEditorScreen.kt:892 에서 그 값을 targetUserId 로 저장·생성에 쓴다.
 
@@ -677,7 +677,7 @@ CLAUDE.md 예외에 해당하지 않는다: 울림 화면(AlarmKit 소유)이나
 
 </details>
 
-### ☐ [screens-flow] '누구를 깨울까요?' 에서 고른 구성원이 편집기로 전달되지 않는다 — 항상 첫 번째 구성원에게 간다
+### ☑ [screens-flow] '누구를 깨울까요?' 에서 고른 구성원이 편집기로 전달되지 않는다 — 항상 첫 번째 구성원에게 간다
 
 **안드로이드**: apps/android-native/.../ui/app/AlarmTalkApp.kt:797-810 — 시트의 각 행이 `startCreateAlarm(familyTargetMode = true, targetUserId = recipient.userId)` 로 **고른 사람의 id 를** 넘기고, 라우트 인자(`AppRoute.TargetUserIdArg`)로 실려 :1113-1130 에서 `initialFamilyRecipientId = targetUserId` 로 편집기에 주입된다. 주석(:795-796)이 목적을 명시한다 — "대상을 사람별로 바로 고른다 … 자동선택으로 엉뚱한 사람에게 알람이 가는 일을 막는다".
 

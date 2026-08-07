@@ -32,6 +32,10 @@ struct MainTabsView: View {
     /// 보조 시트 표시 — People/Billing.
     @State private var auxiliaryScreen: AuxiliaryScreen?
 
+    /// ＋FAB 가 알람 목록에 '만들기' 를 요청하는 신호. 값이 바뀌면 목록이
+    /// `openCreateAlarm()`(권한 확인 → 누구를 깨울까요?)을 탄다.
+    @State private var alarmCreateRequest: UUID?
+
     /// 알람 탭이 다중 선택 모드인가(＋FAB 를 숨긴다).
     @State private var alarmSelectionActive = false
 
@@ -65,7 +69,15 @@ struct MainTabsView: View {
                 // 손가락이 뭘 노리는지 애매해진다(안드로이드 `!alarmSelectionActive`).
                 if selectedTab == .alarms && !store.alarms.isEmpty && !alarmSelectionActive {
                     Button {
-                        editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil, familyAlarmMode: false)
+                        // ⚠ **여기서 편집기를 직접 열지 말 것.** 예전에는 이 버튼이
+                        // `editorTarget` 을 곧바로 세워, 알람 목록의 `openCreateAlarm()`
+                        // 이 하는 두 가지를 건너뛰었다:
+                        //   1. 알람 권한 확인·요청 (굳은 거부면 설정으로 안내)
+                        //   2. 「누구를 깨울까요?」 시트
+                        // FAB 는 **알람이 하나라도 있을 때만** 뜨고 빈 상태 카드는 그때
+                        // 사라지므로, 알람이 생긴 뒤로는 **가족 알람을 만들 길이 아예
+                        // 없어졌다**(2026-08-07 수정).
+                        alarmCreateRequest = UUID()
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 24, weight: .medium))
@@ -86,7 +98,7 @@ struct MainTabsView: View {
             .task {
                 // DEBUG 전용 — 편집기 화면 확인 진입점.
                 if UIPreviewSeed.opensEditor, editorTarget == nil {
-                    editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil, familyAlarmMode: false)
+                    editorTarget = AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil, familyAlarmMode: false, recipientUserID: nil)
                 }
             }
             .background(theme.homeGradient)
@@ -143,7 +155,7 @@ struct MainTabsView: View {
     private var currentTabContent: some View {
         switch selectedTab {
         case .alarms:
-            AlarmsListView(openEditor: { editorTarget = $0 })
+            AlarmsListView(createRequest: alarmCreateRequest, openEditor: { editorTarget = $0 })
         case .voices:
             // Phase 4-D1: 슬롯 가득 PlanGate 의 "결제 화면으로" 가 눌리면 BillingPanel
             // auxiliary 시트로 chain. PlanGate 시트가 자신을 닫는 dismiss animation 과
