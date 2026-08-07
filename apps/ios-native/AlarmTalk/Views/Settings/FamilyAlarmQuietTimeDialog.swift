@@ -308,9 +308,9 @@ private struct QuietWindowCard: View {
         .padding(14)
         .background(AlarmTalkTheme.surface)
         .overlay(
-            RoundedRectangle(cornerRadius: 14).stroke(AlarmTalkTheme.outline, lineWidth: 1)
+            RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small).stroke(AlarmTalkTheme.outline, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small))
     }
 
     private func timeChip(label: String, action: @escaping () -> Void) -> some View {
@@ -319,9 +319,9 @@ private struct QuietWindowCard: View {
                 .font(.title3.weight(.bold))
                 .foregroundStyle(AlarmTalkTheme.primary)
                 .frame(maxWidth: .infinity, minHeight: 48)
-                .background(AlarmTalkTheme.primary.opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
+                .background(AlarmTalkTheme.primary.opacity(0.15), in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
+                    RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small)
                         .stroke(AlarmTalkTheme.primary.opacity(0.5), lineWidth: 1)
                 )
         }

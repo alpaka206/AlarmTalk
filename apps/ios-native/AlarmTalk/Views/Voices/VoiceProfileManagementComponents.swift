@@ -73,9 +73,9 @@ struct SharedVoiceViewerInfoDialog: View {
             .padding(14)
             .background(AlarmTalkTheme.surfaceVariant.opacity(0.55))
             .overlay(
-                RoundedRectangle(cornerRadius: 16).stroke(AlarmTalkTheme.outline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.card).stroke(AlarmTalkTheme.outline, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.card))
 
             VoiceRelationshipInputField(
                 selection: $relationshipSelection,

@@ -362,10 +362,10 @@ struct ThemeModePickerSheet: View {
                             mode == current
                                 ? AlarmTalkTheme.primary.opacity(0.16)
                                 : AlarmTalkTheme.surfaceVariant.opacity(0.42),
-                            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.button, style: .continuous)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.button, style: .continuous)
                                 .stroke(mode == current ? AlarmTalkTheme.primary.opacity(0.52) : AlarmTalkTheme.outline, lineWidth: 1)
                         )
                     }

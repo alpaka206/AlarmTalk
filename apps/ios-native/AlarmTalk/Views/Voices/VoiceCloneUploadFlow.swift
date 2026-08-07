@@ -446,7 +446,7 @@ struct VoiceCloneUploadFlow: View {
             }
         }
         .padding(12)
-        .background(AlarmTalkTheme.surfaceVariant.opacity(0.44), in: RoundedRectangle(cornerRadius: 12))
+        .background(AlarmTalkTheme.surfaceVariant.opacity(0.44), in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.extraSmall))
     }
 
     private var durationSection: some View {

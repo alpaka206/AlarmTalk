@@ -31,6 +31,25 @@ extension Color {
 /// 밝게/어둡게를 자동 전환**한다. (이전에는 light 전용이라 다크모드에서 밝은 팔레트가
 /// 그대로 렌더되는 버그가 있었음 — Android M3 colorScheme 동작과 일치하도록 수정.)
 enum AlarmTalkTheme {
+    /// 모서리 반경 토큰 — `AlarmTalkShapes.default` 와 **같은 값**이다.
+    ///
+    /// 왜 두 갈래인가: 대부분의 뷰는 `@Environment(\.voiceAlarmTheme)` 로 `theme.shapes.*`
+    /// 를 읽지만, 환경을 안 받는 작은 시트·다이얼로그가 몇 개 있다. 그 화면들이 생 숫자를
+    /// 쓰다 보니 같은 카드가 파일마다 다른 반경으로 그려졌다(2026-08-07 iOS 생 숫자 47곳).
+    /// 여기 정적 접근자를 두어 **환경이 없어도 토큰을 쓸 수 있게** 한다.
+    ///
+    /// ⚠ 생 숫자(`cornerRadius: 14`)를 새로 박지 말 것 — 안드로이드 `WakerDesign.kt` 의
+    /// `Waker*Shape` 규약과 같은 이유다(CLAUDE.md 「디자인 토큰」).
+    enum Shape {
+        static let extraSmall = AlarmTalkShapes.default.extraSmall   // 12
+        static let small = AlarmTalkShapes.default.small             // 14
+        static let medium = AlarmTalkShapes.default.medium           // 18
+        static let large = AlarmTalkShapes.default.large             // 24
+        static let extraLarge = AlarmTalkShapes.default.extraLarge   // 28
+        static let card = AlarmTalkShapes.default.vocaCard           // 22
+        static let button = AlarmTalkShapes.default.vocaButton       // 18
+    }
+
     // Brand / primary — 다이내믹(밝게/어둡게).
     static let primary = Color.dynamicScheme(light: AlarmTalkPalette.light.primary, dark: AlarmTalkPalette.dark.primary)
     static let secondary = Color.dynamicScheme(light: AlarmTalkPalette.light.secondary, dark: AlarmTalkPalette.dark.secondary)

@@ -161,7 +161,7 @@ struct LocalAlarmAudioEditor: View {
         }
         .padding(12)
         .background(theme.palette.surfaceVariant.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
     }
 
     private var fileCard: some View {
@@ -209,7 +209,7 @@ struct LocalAlarmAudioEditor: View {
         }
         .padding(12)
         .background(theme.palette.surfaceVariant.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
     }
 
 }
@@ -435,9 +435,9 @@ struct SharedVoiceSelectionSetupSheet: View {
             .padding(14)
             .background(AlarmTalkTheme.surfaceVariant.opacity(0.55))
             .overlay(
-                RoundedRectangle(cornerRadius: 16).stroke(AlarmTalkTheme.outline, lineWidth: 1)
+                RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.card).stroke(AlarmTalkTheme.outline, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.card))
 
             VoiceRelationshipInputField(
                 selection: $relationshipSelection,

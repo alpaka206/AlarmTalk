@@ -79,7 +79,7 @@ struct WelcomePromoDialog: View {
         .frame(maxWidth: 300)
         .background(
             theme.palette.surface,
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            in: RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
         )
     }
 

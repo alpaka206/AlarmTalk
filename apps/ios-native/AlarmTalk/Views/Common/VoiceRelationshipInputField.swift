@@ -120,9 +120,9 @@ struct VoiceRelationshipInputField: View {
                 }
                 .padding(.horizontal, 12)
                 .frame(minHeight: 46)
-                .background(AlarmTalkTheme.surfaceVariant.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+                .background(AlarmTalkTheme.surfaceVariant.opacity(0.55), in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small)
                         .stroke(isError ? AlarmTalkTheme.error : AlarmTalkTheme.outline, lineWidth: 1)
                 )
             }
@@ -176,7 +176,7 @@ struct VoiceListenerPreviewCard: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AlarmTalkTheme.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+            .background(AlarmTalkTheme.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.extraSmall))
         }
     }
 }

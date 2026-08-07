@@ -294,10 +294,10 @@ struct FortunePromptInputFields: View {
                 .frame(height: 42)
                 .background(selected ? AlarmTalkTheme.primary.opacity(0.18) : AlarmTalkTheme.surfaceVariant.opacity(0.7))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small, style: .continuous)
                         .stroke(selected ? AlarmTalkTheme.primary.opacity(0.55) : AlarmTalkTheme.outline, lineWidth: 1)
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -324,10 +324,10 @@ struct FortunePromptInputFields: View {
             .padding(.horizontal, 12)
             .background(AlarmTalkTheme.surfaceVariant.opacity(0.7))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small, style: .continuous)
                     .stroke(AlarmTalkTheme.outline, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small, style: .continuous))
         }
         .buttonStyle(.plain)
     }

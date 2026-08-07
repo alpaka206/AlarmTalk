@@ -103,7 +103,7 @@ private struct WakerBrandHeader: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
+        RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous)
             .fill(
                 LinearGradient(
                     colors: [theme.palette.primary, theme.palette.secondary],

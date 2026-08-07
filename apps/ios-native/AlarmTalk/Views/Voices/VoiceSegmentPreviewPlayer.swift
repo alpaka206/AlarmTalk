@@ -62,7 +62,7 @@ struct VoiceSegmentPreviewPlayer: View {
         }
         .padding(12)
         .background(AlarmTalkTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small))
         .onDisappear { controller.stop() }
     }
 

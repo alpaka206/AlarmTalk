@@ -45,10 +45,10 @@ struct WeatherLocationInputFields: View {
             .padding(14)
             .background(AlarmTalkTheme.surfaceVariant.opacity(0.62))
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.extraSmall, style: .continuous)
                     .stroke(AlarmTalkTheme.outline, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.extraSmall, style: .continuous))
 
             if let message = locator.statusMessage {
                 Text(message)

@@ -111,6 +111,24 @@
   - **`surfaceContainer*` 5종을 비워 두지 말 것**(Lowest/Low/기본/High/Highest, 라이트·다크 양쪽). 우리가 직접 그리는 화면은 `surface` 를 쓰니 티가 안 나지만, **프레임워크가 그리는 팝업**(드롭다운 메뉴 등)은 이 역할을 읽는다 — 비워 두면 M3 기본 무채색 회흑이 네이비 화면 위에 회색 상자로 얹힌다(2026-08-04 실제 발생).
   - 문서화된 예외: `RingingActivity`(잠금화면 전용 고정 팔레트), 알림 팩토리(Notification accent), 랜딩/로그인 브랜드 비주얼, 탭 배경 그라데이션(`AlarmListScreen`의 `HomeGradientDark/Light` — 로그인 딥네이비 감성을 알람/목소리/더보기 탭 전체에 재현, 라이트/다크 2종).
 
+### 디자인 토큰 (iOS)
+
+같은 규약이 iOS 에도 적용된다. 값은 안드로이드와 **같은 숫자**다.
+
+- **모서리 반경**: `AlarmTalkShapes`(환경 — `theme.shapes.*`) / `AlarmTalkTheme.Shape.*`(정적).
+  둘은 같은 값이고, 환경을 안 받는 작은 시트·다이얼로그가 정적 쪽을 쓴다.
+  - 매핑: `extraSmall`(12) / `small`(14 = `WakerChipShape`) / `medium`·`button`(18 =
+    `WakerButtonShape`·`WakerInputShape`) / `card`(22 = `WakerCardShape`) / `large`(24) /
+    `extraLarge`(28).
+  - ⚠ **생 숫자(`cornerRadius: 14`)를 새로 박지 말 것.** 2026-08-07 전에는 iOS 가 47곳에서
+    생값을 썼고, 안드로이드에 없는 10·16 같은 값이 섞여 **같은 카드가 화면마다 다른 반경**
+    으로 그려졌다(카드 16 vs 22, 칩 10 vs 14).
+  - **예외(토큰화 안 함)**: 진행바 채움처럼 4~8 짜리 장식 도형. 안드로이드에 대응이 없다.
+- **글자 크기가 자리를 넘칠 때**: 무조건 줄이지 않는다. 기준은 `WakerDesign.kt` 의
+  `fitToWidthScale` 주석에 표로 있다 — **줄바꿈으로 흐를 수 없는 자리**(울림 시계·타임휠·
+  하단 버튼 라벨)만 줄이고, 본문·제목·목록 행은 커지게 둔다. 전부에 걸면 사용자가 키운
+  글꼴 설정을 앱이 도로 취소하는 셈이다.
+
 ### 모달 = `IosAlertDialog` 하나 (Android)
 
 알럿 껍데기는 **하나뿐**이다: `ui/components/IosAlertDialog.kt`. 새 모달을 만들 때 M3

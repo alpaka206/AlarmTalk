@@ -221,7 +221,7 @@ struct MemberManagementView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(socialFeatures.isBusy || isCapacityFull)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous))
             }
         }
     }
@@ -251,7 +251,7 @@ struct MemberManagementView: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous))
 
                 Button {
                     Task {
@@ -278,7 +278,7 @@ struct MemberManagementView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(theme.palette.primary)
                 .foregroundStyle(theme.palette.onPrimary)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous))
                 .disabled(socialFeatures.isBusy || isFull)
             }
 
@@ -290,7 +290,7 @@ struct MemberManagementView: View {
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.bordered)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous))
             .disabled(socialFeatures.isBusy)
 
             Text("코드가 외부에 노출됐다면 재발급해서 기존 코드를 막을 수 있어요.")
@@ -299,7 +299,7 @@ struct MemberManagementView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
                 .fill(theme.palette.surfaceVariant)
         )
     }
@@ -368,11 +368,11 @@ private struct FamilyAlarmPermissionCard: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.card, style: .continuous)
                 .fill(theme.palette.surface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.card, style: .continuous)
                 .stroke(theme.palette.outlineVariant, lineWidth: 1)
         )
     }
@@ -430,13 +430,13 @@ private struct MemberRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
                 .fill(isMe
                       ? theme.palette.secondaryContainer.opacity(0.5)
                       : theme.palette.surface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: theme.shapes.small, style: .continuous)
                 .stroke(theme.palette.outlineVariant, lineWidth: 1)
         )
     }

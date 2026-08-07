@@ -88,7 +88,7 @@ struct VoiceConsentSheet: View {
         }
         .padding(20)
         .background(AlarmTalkTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.extraLarge, style: .continuous))
         .padding(24)
     }
 
