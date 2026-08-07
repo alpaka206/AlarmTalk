@@ -64,6 +64,11 @@
     <string name="billing_cancel_description_no_date">Choose when to cancel. Canceling on the end date keeps your pass until the current period ends. Canceling now gives you a prorated refund for the remaining time.</string>
     <string name="billing_cancel_description_with_date">Canceling on the end date keeps your pass until %1$s. Canceling now ends your pass immediately with a prorated refund for the remaining time.</string>
     <string name="billing_cancel_dialog_title">Cancel your pass?</string>
+    <string name="billing_gift_personal_action">Gift a Personal pass</string>
+    <string name="billing_gift_personal_desc">Creates a code that gifts one month. Whoever redeems it can start right away.</string>
+    <string name="billing_gift_ready">Your gift code is ready. Share it below.</string>
+    <string name="billing_gift_pending">Waiting for payment approval. The code appears once it completes.</string>
+    <string name="billing_gift_failed">We couldn\'t create the gift code. Please try again in a moment.</string>
     <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days — resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
     <string name="billing_cancel_now">Cancel now</string>

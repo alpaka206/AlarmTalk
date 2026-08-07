@@ -1047,6 +1047,7 @@ internal fun AlarmTalkApp(
                           onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
                           planPrices = viewModel.billingPlanPrices,
                           onPurchasePlay = viewModel::startPlayPurchase,
+                          onGiftPersonal = viewModel::startGiftPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,

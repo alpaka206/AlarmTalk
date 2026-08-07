@@ -347,6 +347,44 @@ internal fun MainViewModel.checkoutPlan(planKey: String) {
 }
 
 /**
+ * 선물 이용권 **구매**를 시작한다(1회성 인앱 상품).
+ *
+ * ⚠ **결제 없이 코드를 만들지 않는다.** 무결제 발급 경로(`POST /billing/checkout`
+ * gift:true)는 서버가 production 에서 항상 막는다 — 열면 누구나 무료로 유료 이용권을
+ * 뽑을 수 있다. 여기서는 1회성 상품을 실제로 사고, 서버가 그 구매를 검증해 바우처를 만든다.
+ *
+ * ⚠ 구독 경로(`startPlayPurchase`)와 **섞지 말 것**: INAPP 에는 offerToken 이 없고,
+ * 구독 교체 파라미터를 붙이면 Play 가 거절한다.
+ */
+internal fun MainViewModel.startGiftPurchase(activity: android.app.Activity) {
+    val session = authSession
+    if (session == null) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_purchase_plan)
+        return
+    }
+    if (billingBusy) return
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            playBilling.launchOneTimePurchase(
+                activity,
+                com.alarmtalk.app.billing.PlayBillingProducts.PERSONAL_GIFT_1M,
+                userId = session.user.id.takeIf { it.isNotBlank() },
+            )
+        }.onSuccess { launched ->
+            if (!launched) {
+                message = getApplication<android.app.Application>().getString(R.string.msg_gb_google_play_start_failed)
+                billingBusy = false
+            }
+        }.onFailure { error ->
+            AlarmTalkLog.reportError("Failed to launch Play gift purchase", error)
+            message = getApplication<android.app.Application>().getString(R.string.billing_gift_failed)
+            billingBusy = false
+        }
+    }
+}
+
+/**
  * Google Play 구독 결제를 시작한다. 결제 시트 결과(성공/보류/취소)는
  * [MainViewModel.playBilling] 의 리스너로 비동기 전달되어 [confirmGooglePurchase] 로 이어진다.
  */

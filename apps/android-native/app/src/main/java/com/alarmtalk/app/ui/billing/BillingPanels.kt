@@ -67,6 +67,7 @@ internal fun SubscriptionPanel(
     // planKey → Play 실제 표시가격(formattedPrice). 비어 있으면 문자열 리소스로 폴백.
     planPrices: Map<String, String>,
     onPurchasePlay: (Activity, String) -> Unit,
+    onGiftPersonal: (Activity) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
@@ -215,6 +216,41 @@ internal fun SubscriptionPanel(
                     onChange = { changeTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
                 )
+            }
+        }
+
+        // 선물하기 — 개인 이용권 1개월을 **결제해서** 코드로 만든다.
+        // ⚠ 무결제 발급이 아니다(서버가 production 에서 막는다). 1회성 인앱 상품을 산다.
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp),
+            shape = WakerPanelShape,
+            color = MaterialTheme.colorScheme.surface,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.billing_gift_personal_action),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                MutedText(stringResource(R.string.billing_gift_personal_desc))
+                OutlinedButton(
+                    onClick = {
+                        val activity = context.findActivity()
+                        if (!billingBusy && activity != null) onGiftPersonal(activity)
+                    },
+                    enabled = !billingBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.billing_gift_personal_action))
+                }
             }
         }
 

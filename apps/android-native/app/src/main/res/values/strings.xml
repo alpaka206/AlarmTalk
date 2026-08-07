@@ -66,6 +66,11 @@
     <string name="billing_cancel_description_no_date">해지 시점을 선택해 주세요. 종료일 해지는 이번 이용 기간까지 그대로 쓸 수 있어요. 지금 해지하면 남은 기간 요금은 비례 환불돼요.</string>
     <string name="billing_cancel_description_with_date">종료일 해지는 %1$s까지 그대로 쓰고 끝나요. 지금 해지하면 남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요.</string>
     <string name="billing_cancel_dialog_title">이용권을 해지할까요?</string>
+    <string name="billing_gift_personal_action">개인 이용권 선물하기</string>
+    <string name="billing_gift_personal_desc">1개월 이용권을 선물할 수 있는 코드를 만들어요. 받은 사람이 코드를 등록하면 바로 쓸 수 있어요.</string>
+    <string name="billing_gift_ready">선물 코드를 만들었어요. 아래에서 공유해 주세요.</string>
+    <string name="billing_gift_pending">결제 승인을 기다리고 있어요. 완료되면 코드가 만들어져요.</string>
+    <string name="billing_gift_failed">선물 코드를 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="billing_cancel_immediate_description">남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요 — 그 안에 다시 이용권을 등록하면 그대로 다시 쓸 수 있고, 지나면 영구 삭제돼요.</string>
     <string name="billing_cancel_immediate_title">지금 바로 해지할까요?</string>
     <string name="billing_cancel_now">지금 해지하기</string>

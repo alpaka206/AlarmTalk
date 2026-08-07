@@ -37,11 +37,25 @@ object PlayBillingProducts {
     const val COUPLE_MONTHLY = "couple_monthly"
     const val FAMILY_MONTHLY = "family_monthly"
 
+    /**
+     * 선물용 **1회성 인앱 상품**.
+     *
+     * ⚠ **구독이 아니다.** 자동 갱신 구독은 남에게 줄 수 없어(Play 가 구매자 계정에 묶는다)
+     * 선물은 1회성 상품을 팔고 그 대금으로 서버가 **바우처 코드**를 만든다.
+     * 그래서 조회·구매 모두 `ProductType.INAPP` 을 써야 한다 — SUBS 로 조회하면 안 나온다.
+     */
+    const val PERSONAL_GIFT_1M = "personal_gift_1m"
+
     val all: List<String> = listOf(
         PERSONAL_MONTHLY,
         COUPLE_MONTHLY,
         FAMILY_MONTHLY,
     )
+
+    /** 1회성 상품 목록. SUBS 조회에 섞으면 안 된다. */
+    val oneTime: List<String> = listOf(PERSONAL_GIFT_1M)
+
+    fun isOneTime(productId: String): Boolean = productId in oneTime
 
     /** 이용권 plan key("personal"/"couple"/"family") → Play 상품 ID. */
     fun productIdFor(planKey: String): String? {
@@ -177,6 +191,54 @@ class PlayBillingManager(
             it.recurrenceMode == ProductDetails.RecurrenceMode.INFINITE_RECURRING
         } ?: phases.lastOrNull()
         return basePhase?.formattedPrice
+    }
+
+    /**
+     * 1회성(INAPP) 상품 결제 시트를 띄운다 — 선물 전용.
+     *
+     * ⚠ 구독 경로와 **섞지 말 것**: INAPP 에는 offerToken 이 없고, 구독 교체
+     * (`setSubscriptionUpdateParams`)를 붙이면 Play 가 거절한다.
+     */
+    suspend fun launchOneTimePurchase(
+        activity: Activity,
+        productId: String,
+        userId: String? = null,
+    ): Boolean {
+        if (!ensureConnected()) return false
+        val details = productDetailsCache[productId] ?: run {
+            val fetched = billingClient.queryProductDetails(
+                QueryProductDetailsParams.newBuilder()
+                    .setProductList(
+                        listOf(
+                            QueryProductDetailsParams.Product.newBuilder()
+                                .setProductId(productId)
+                                .setProductType(BillingClient.ProductType.INAPP)
+                                .build(),
+                        ),
+                    )
+                    .build(),
+            ).productDetailsList?.firstOrNull()
+            if (fetched != null) productDetailsCache[productId] = fetched
+            fetched
+        } ?: run {
+            Log.w(TAG, "Play one-time product not found productId=$productId")
+            return false
+        }
+        val builder = BillingFlowParams.newBuilder()
+            .setProductDetailsParamsList(
+                listOf(
+                    BillingFlowParams.ProductDetailsParams.newBuilder()
+                        .setProductDetails(details)
+                        .build(),
+                ),
+            )
+        userId?.takeIf { it.isNotBlank() }?.let { builder.setObfuscatedAccountId(sha256Hex(it)) }
+        val result = billingClient.launchBillingFlow(activity, builder.build())
+        if (result.responseCode != BillingClient.BillingResponseCode.OK) {
+            Log.w(TAG, "launchBillingFlow(one-time) failed code=${result.responseCode}")
+            return false
+        }
+        return true
     }
 
     /**

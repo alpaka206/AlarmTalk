@@ -64,6 +64,11 @@
     <string name="billing_cancel_description_no_date">解約のタイミングを選択してください。終了日での解約は今の利用期間までそのまま使えます。今すぐ解約すると残り期間の料金は日割りで返金されます。</string>
     <string name="billing_cancel_description_with_date">終了日での解約は%1$sまでそのまま使えます。今すぐ解約すると残り期間の料金は日割りで返金され、利用券はすぐに終了します。</string>
     <string name="billing_cancel_dialog_title">利用券を解約しますか？</string>
+    <string name="billing_gift_personal_action">個人プランを贈る</string>
+    <string name="billing_gift_personal_desc">1か月分を贈れるコードを作ります。受け取った方がコードを登録するとすぐに使えます。</string>
+    <string name="billing_gift_ready">ギフトコードを作りました。下から共有してください。</string>
+    <string name="billing_gift_pending">決済の承認を待っています。完了するとコードが作られます。</string>
+    <string name="billing_gift_failed">ギフトコードを作れませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="billing_cancel_immediate_description">残り期間の料金は日割りで返金され、プランはすぐに終了します。声は3日間保管されます — その間に再登録すればそのまま使え、過ぎると完全に削除されます。</string>
     <string name="billing_cancel_immediate_title">今すぐ解約しますか？</string>
     <string name="billing_cancel_now">今すぐ解約</string>
