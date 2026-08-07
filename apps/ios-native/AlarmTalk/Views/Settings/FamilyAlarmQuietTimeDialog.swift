@@ -17,7 +17,22 @@ struct FamilyAlarmQuietTimeDialog: View {
     @State private var drafts: [QuietWindowDraft] = []
     @State private var pickerTarget: QuietTimePickerTarget?
 
-    private static let maxWindows = 8
+    /// ⚠ **서버 상한과 같아야 한다.** 백엔드 `family-alarm-settings.ts` 의
+    /// `MAX_QUIET_WINDOWS = 2` 를 넘기면 `PATCH /user/me` 가 400 으로 통째로 거절한다.
+    /// iOS 는 8 로 두고 있었다 — 3개째부터 저장이 **말없이 실패**했다(2026-08-07 수정).
+    private static let maxWindows = 2
+
+    /// 요일은 **프리셋 3택**이다(평일 / 주말 / 매일).
+    ///
+    /// ⚠ **개별 요일 토글로 되돌리지 말 것.** 서버 `coerceToPresetDays` 가 어떤 조합이든
+    /// 이 셋 중 하나로 **말없이 확장**하므로, 개별로 고르게 하면 고른 것과 저장된 것이
+    /// 달라진다(예: 월·수만 골라도 평일 전체로 저장된다). 안드로이드는 처음부터
+    /// `QUIET_DAY_PRESETS` 3택이다.
+    static let dayPresets: [(label: String, days: Set<Int>)] = [
+        ("평일", [1, 2, 3, 4, 5]),
+        ("주말", [0, 6]),
+        ("매일", [0, 1, 2, 3, 4, 5, 6]),
+    ]
 
     private var isValid: Bool {
         !drafts.isEmpty && drafts.allSatisfy { $0.isValid }
@@ -33,7 +48,7 @@ struct FamilyAlarmQuietTimeDialog: View {
                             index: index,
                             draft: draft,
                             removable: drafts.count > 1,
-                            onToggleDay: { day in toggleDay(index: index, day: day) },
+                            onSelectDays: { days in selectDayPreset(index: index, days: days) },
                             onPickStart: {
                                 pickerTarget = QuietTimePickerTarget(index: index, isStart: true)
                             },
@@ -132,14 +147,11 @@ struct FamilyAlarmQuietTimeDialog: View {
 
     // MARK: - Edits
 
-    private func toggleDay(index: Int, day: Int) {
+    /// 프리셋 집합을 **통째로 대입**한다. 개별 요일을 켜고 끄지 않는다(위 주석 참조).
+    private func selectDayPreset(index: Int, days: Set<Int>) {
         guard drafts.indices.contains(index) else { return }
         var draft = drafts[index]
-        if draft.days.contains(day) {
-            draft.days.remove(day)
-        } else {
-            draft.days.insert(day)
-        }
+        draft.days = days
         drafts[index] = draft
     }
 
@@ -247,7 +259,7 @@ private struct QuietWindowCard: View {
     let index: Int
     let draft: QuietWindowDraft
     let removable: Bool
-    let onToggleDay: (Int) -> Void
+    let onSelectDays: (Set<Int>) -> Void
     let onPickStart: () -> Void
     let onPickEnd: () -> Void
     let onRemove: () -> Void
@@ -268,12 +280,12 @@ private struct QuietWindowCard: View {
                 }
             }
             HStack(spacing: 6) {
-                ForEach(0..<7, id: \.self) { day in
-                    let selected = draft.days.contains(day)
+                ForEach(FamilyAlarmQuietTimeDialog.dayPresets, id: \.label) { preset in
+                    let selected = draft.days == preset.days
                     Button {
-                        onToggleDay(day)
+                        onSelectDays(preset.days)
                     } label: {
-                        Text(dayLabel(day))
+                        Text(preset.label)
                             .font(.footnote.weight(.semibold))
                             .frame(maxWidth: .infinity, minHeight: 36)
                             .background(
@@ -314,11 +326,6 @@ private struct QuietWindowCard: View {
                 )
         }
         .buttonStyle(.plain)
-    }
-
-    private func dayLabel(_ day: Int) -> String {
-        let labels = ["일", "월", "화", "수", "목", "금", "토"]
-        return labels[max(0, min(6, day))]
     }
 
     private func timeLabel(hour: Int, minute: Int) -> String {

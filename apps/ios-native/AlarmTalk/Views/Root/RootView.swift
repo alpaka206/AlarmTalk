@@ -36,9 +36,15 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if versionGate.updateRequired {
+            if versionGate.updateRequired || auth.consentUnsupported {
                 // 최소지원버전 미만 — 로그인 여부와 무관하게 앱 진입을 막고 업데이트만 유도.
-                // Android `UpdateRequiredScreen` 게이팅과 동등.
+                //
+                // ⚠ **`consentUnsupported` 도 같은 화면이다.** 서버가 앱이 번들한 것보다
+                // 새 문서 버전을 요구하면 `POST /user/consents` 가 409 로 전부 거부되는데,
+                // 그때 동의 화면에 남겨 두면 **제출이 영영 안 되는 화면에 갇힌다.**
+                // 사용자가 할 수 있는 일이 업데이트뿐이라 안드로이드도 같은 화면으로 보낸다
+                // (`AlarmTalkApp.kt` 의 `updateRequired || consentUnsupported`).
+                // 예전 iOS 는 이 값을 세우기만 하고 **읽는 뷰가 하나도 없었다**(2026-08-07 수정).
                 UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
             } else if !auth.isAuthenticated {
                 AuthGateView()
@@ -167,7 +173,11 @@ struct RootView: View {
 
     /// 앱을 못 쓰게 막고 있는 게이트가 떠 있는가.
     private var blockingGateActive: Bool {
-        versionGate.updateRequired || !auth.isAuthenticated || auth.pendingDeletion || auth.showConsentScreen
+        versionGate.updateRequired
+            || auth.consentUnsupported
+            || !auth.isAuthenticated
+            || auth.pendingDeletion
+            || auth.showConsentScreen
     }
 
     /// 프로모 판정에 필요한 값이 다 모였는지 나타내는 키.
