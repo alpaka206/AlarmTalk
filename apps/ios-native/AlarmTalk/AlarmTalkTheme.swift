@@ -11,9 +11,11 @@ enum AlarmTalkThemeMode: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .system: return "시스템 설정"
-        case .light: return "밝게"
-        case .dark: return "어둡게"
+        // 안드로이드 `misc2_theme_mode_system` 과 같은 문구다 — '시스템 설정' 만 쓰면
+        // 설정 화면으로 가는 링크처럼 읽힌다.
+        case .system: return "시스템 설정과 같이"
+        case .light: return "밝은 모드"
+        case .dark: return "어두운 모드"
         }
     }
 
