@@ -465,8 +465,10 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
         message = getApplication<android.app.Application>().getString(R.string.msg_time_format_required)
         return
     }
+    // ⚠ **창을 다 지웠으면 지운 대로 둔다**(2026-08-08 변경). 예전에는 여기서 평일
+    // 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시 생겼다 —
+    // "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 null 로 보낸다.
     val firstWindow = normalizedWindows.firstOrNull()
-        ?: FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")
     // 요청 시작 시점의 세션 세대 — 응답을 저장하기 전에 대조한다.
     val startGeneration = authSessionStore.sessionGeneration()
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -477,9 +479,9 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                 authorization,
                 com.alarmtalk.app.network.UpdateProfileRequest(
                     allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = firstWindow.days,
-                    familyAlarmQuietStart = firstWindow.start,
-                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
+                    familyAlarmQuietStart = firstWindow?.start,
+                    familyAlarmQuietEnd = firstWindow?.end,
                     familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
@@ -487,9 +489,11 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
             val updated = session.copy(
                 user = session.user.copy(
                     allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = firstWindow.days,
-                    familyAlarmQuietStart = firstWindow.start,
-                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietDays = firstWindow?.days ?: emptyList(),
+                    // 세션 캐시의 레거시 3필드는 non-null 이라 표시용 자리값을 둔다.
+                    // 실제 판정은 언제나 `familyAlarmQuietWindows`(빈 목록 = 방해금지 없음)다.
+                    familyAlarmQuietStart = firstWindow?.start ?: "09:00",
+                    familyAlarmQuietEnd = firstWindow?.end ?: "18:30",
                     familyAlarmQuietWindows = normalizedWindows,
                 ),
             )

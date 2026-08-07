@@ -33,6 +33,7 @@
 | [alarm-ringing.md](alarm-ringing.md) | 알람이 울릴 때 무엇이 뜨고, 어떻게 꺼지는가 |
 | [voice-and-message.md](voice-and-message.md) | 목소리·문구를 고르고 저장하는 규칙, 등급별 제한 |
 | [plan-gates.md](plan-gates.md) | 로그인·이용권 게이트가 뜨는 조건과 문구 |
+| [family-alarm.md](family-alarm.md) | 남에게 보내는 알람 — 보내면 끝, 설정 불가능 시간 |
 
 ## 여기 넣지 않는 것
 

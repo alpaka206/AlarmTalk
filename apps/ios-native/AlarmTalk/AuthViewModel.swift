@@ -646,8 +646,10 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "시간은 HH:mm 형식으로 입력해 주세요."
             return
         }
+        // ⚠ **창을 다 지웠으면 지운 대로 둔다**(2026-08-08 변경). 예전에는 여기서
+        // 평일 09:00-18:30 을 되살려, 사용자가 방해금지를 전부 없애도 서버에는 다시
+        // 생겼다 — "껐는데 계속 막힌다" 가 된다. 레거시 3필드는 창이 없으면 nil 이다.
         let firstQuietWindow = normalizedQuietWindows?.first
-            ?? (quietWindows == nil ? nil : Self.defaultFamilyAlarmQuietWindow)
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
@@ -672,11 +674,9 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    private static let defaultFamilyAlarmQuietWindow = FamilyAlarmQuietWindow(
-        days: [1, 2, 3, 4, 5],
-        start: "09:00",
-        end: "18:30"
-    )
+    // ⚠ **기본 방해금지 창을 되살리지 말 것**(2026-08-08 삭제). 방해금지는 사용자가
+    // 명시적으로 켜는 기능이다 — 만들어 주면 아무도 설정한 적 없는 시간에 가족 알람이
+    // 막히고, 받는 사람은 자기가 막아 둔 줄 모른다.
 
     private static func normalizedQuietWindows(_ windows: [FamilyAlarmQuietWindow]) -> [FamilyAlarmQuietWindow] {
         Array(

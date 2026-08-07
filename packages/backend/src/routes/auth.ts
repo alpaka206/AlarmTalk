@@ -484,10 +484,13 @@ auth.post('/register', async (c) => {
           name,
           plan: 'free' as const,
           allow_family_alarms: false,
-          family_alarm_quiet_days: [1, 2, 3, 4, 5],
+          // ⚠ **가입 시 방해금지 시간을 만들어 주지 말 것**(2026-08-08 변경).
+          // 예전에는 평일 09:00-18:30 을 실어 보냈다. 그래서 가입만 하면 아무도 설정한
+          // 적 없는 시간대에 가족 알람이 막혔고, 받는 사람은 자기가 막아 둔 줄 몰랐다.
+          family_alarm_quiet_days: [],
           family_alarm_quiet_start: '09:00',
           family_alarm_quiet_end: '18:30',
-          family_alarm_quiet_windows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+          family_alarm_quiet_windows: [],
           dynamic_prompt_settings: EMPTY_DYNAMIC_PROMPT_SETTINGS,
         },
       },

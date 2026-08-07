@@ -2144,6 +2144,28 @@ export const migrations: Migration[] = [
     name: 'apple-refresh-token-for-revocation',
     statements: [`ALTER TABLE users ADD COLUMN apple_refresh_token TEXT`],
   },
+  {
+    /**
+     * 아무도 설정한 적 없는 '설정 불가능 시간' 을 지운다.
+     *
+     * ⚠ 마이그레이션 30 이 이 컬럼을 `DEFAULT '[{"days":[1,2,3,4,5],...09:00~18:30}]'`
+     * 로 만들었다. 그래서 **가입만 하면 평일 낮에 가족 알람이 막혔다** — 받는 사람은
+     * 자기가 막아 둔 줄 모르고, 보내는 사람은 왜 못 보내는지 모른다. 방해금지는
+     * 사용자가 **명시적으로 켜는** 기능이라는 것이 2026-08-08 결정이다.
+     *
+     * ⚠ **정확히 그 기본값인 행만** 비운다. 사용자가 직접 만든 창은 값이 다르므로
+     * 건드리지 않는다 — 공백까지 같은 문자열만 대상이라 오탐이 없다.
+     * (SQLite 는 컬럼 DEFAULT 를 바꿀 수 없어 새 행은 여전히 저 값으로 생기지만,
+     *  읽는 쪽이 그 값을 만들어 내지 않게 바꿨고 가입 응답도 빈 목록을 준다.)
+     */
+    id: 98,
+    name: 'clear-auto-added-family-quiet-windows',
+    statements: [
+      `UPDATE users
+          SET family_alarm_quiet_windows = '[]'
+        WHERE family_alarm_quiet_windows = '[{"days":[1,2,3,4,5],"start":"09:00","end":"18:30"}]'`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
