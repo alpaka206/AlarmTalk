@@ -2166,6 +2166,30 @@ export const migrations: Migration[] = [
         WHERE family_alarm_quiet_windows = '[{"days":[1,2,3,4,5],"start":"09:00","end":"18:30"}]'`,
     ],
   },
+  {
+    /**
+     * 오디오 TTL 스윕이 `messages` 를 **행마다 풀스캔**하던 것을 막는다.
+     *
+     * 스윕 쿼리(`lib/audio-retention.ts`)는 만료 후보마다
+     * `NOT EXISTS (SELECT 1 FROM alarms a JOIN messages m ON m.id = a.message_id
+     *              WHERE m.audio_url = 'r2://' || g.audio_object_key)`
+     * 를 돈다. `messages.audio_url` 에 인덱스가 없어 후보 하나당 messages 전체를
+     * 훑었다 — 데이터가 늘수록 곱으로 느려진다.
+     *
+     * ⚠ **이게 느려지면 탈퇴자 목소리 파기까지 같이 멈춘다.** 스윕은 같은 크론
+     * 사이클에서 외부 삭제 큐를 함께 처리하므로, 여기서 시간을 다 쓰면 파기가
+     * 밀린다 — 개인정보 파기 약속이 걸린 자리다.
+     *
+     * 인덱스 추가는 되돌리기가 `DROP INDEX` 한 줄이라 데이터 손실이 0 이다.
+     */
+    id: 99,
+    name: 'index-audio-retention-sweep',
+    statements: [
+      `CREATE INDEX IF NOT EXISTS idx_messages_audio_url ON messages(audio_url)`,
+      `CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_created
+         ON generated_audio_assets(created_at)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

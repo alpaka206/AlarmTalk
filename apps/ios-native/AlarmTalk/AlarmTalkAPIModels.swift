@@ -567,23 +567,6 @@ extension TtsGenerateResponse {
     }
 }
 
-struct TtsMessageListResponse: Decodable {
-    var messages: [TtsMessage]
-    var total: Int?
-    var limit: Int?
-    var offset: Int?
-}
-
-struct TtsMessage: Decodable, Identifiable, Equatable {
-    var id: String
-    var text: String
-    var category: String?
-    var audioUrl: String?
-    var voiceProfileId: String?
-    var voiceName: String?
-    var createdAt: String?
-}
-
 struct TtsMessageAudioResponse: Decodable, Equatable {
     var messageId: String
     var audioBase64: String

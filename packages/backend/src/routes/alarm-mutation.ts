@@ -633,6 +633,15 @@ alarmMutation.patch('/:id', async (c) => {
     );
   }
 
+  // ⚠ **이 검사를 "트랜잭션 안에서 또 하니 중복" 이라며 지우지 말 것.** 두 검사는
+  // 역할이 다르다. 트랜잭션 안쪽은 TOCTOU 방어이고, **바깥쪽은 검증되지 않은 id 로
+  // 뒤따르는 쿼리가 도는 것을 막는 게이트**다 — 아래 greeting 버킷 정책은
+  // `messageGreetingUsesCloneVoice` 로 소유권 스코프 없이 messageId 를 조회하므로,
+  // 바깥 검사를 빼면 남의 메시지 id 를 넣었을 때 404 대신 400(INVALID_BUCKET_ID)이
+  // 나가 **그 메시지가 클론 보이스를 쓰는지 여부가 에러 코드로 새어 나간다.**
+  // 실제로 지워 봤다가 회귀 테스트 8건이 깨져 되돌렸다(2026-08-08).
+  // 쿼리 2~4회를 아끼자고 IDOR 라우트의 실패 순서를 바꿀 이유가 없다.
+  //
   // IDOR 방어: PATCH 로 새 message_id / voice_profile_id 를 기록하기 전에,
   // POST 생성 경로와 동일한 소유권/프리셋 검증을 다시 수행한다. 이 검증이
   // 없으면 호출자가 타인 소유 message_id(타인 음성 클립)나 voice_profile_id 를
@@ -1035,6 +1044,15 @@ alarmMutation.delete('/:id', async (c) => {
       }
       await db.execute({
         sql: 'DELETE FROM generated_audio_assets WHERE message_id = ? AND user_id IN (?, ?)',
+        args: [messageId, ...ownerIds],
+      });
+      // ⚠ **그 오브젝트를 가리키던 포인터도 끊는다.** R2 오브젝트와 에셋 행만 지우고
+      // `messages.audio_url` 을 그대로 두면 `r2://...` 가 **영구히 죽은 포인터**로
+      // 남는다. 그 메시지를 다시 쓰는 경로가 있으면 없는 오브젝트를 받으러 가고,
+      // TTL 스윕은 그 행 때문에 '아직 참조 중' 으로 오판해 청소를 건너뛴다.
+      // 삭제와 **같은 소유권 스코프**를 건다(cross-tenant 파괴 방지, 위와 같은 이유).
+      await db.execute({
+        sql: 'UPDATE messages SET audio_url = NULL WHERE id = ? AND user_id IN (?, ?)',
         args: [messageId, ...ownerIds],
       });
     }

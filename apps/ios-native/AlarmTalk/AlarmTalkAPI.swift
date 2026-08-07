@@ -352,11 +352,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("tts/generate", method: "POST", token: token, body: requestBody)
     }
 
-    func listTTSMessages(token: String) async throws -> [TtsMessage] {
-        let response: TtsMessageListResponse = try await request("tts/messages", token: token)
-        return response.messages
-    }
-
     /// 기본 제공(스톡) 알람 클립 카탈로그 조회. 서버는 모든 인증 사용자에게 동일한
     /// 전역 목록을 주며, 쿼리 파라미터를 받지 않는다(tts.ts:1287-1313). 언어/카테고리
     /// 필터·정렬은 클라이언트(StockClipPicker)가 담당한다. 미리듣기/선택 시 음원은

@@ -46,7 +46,6 @@ final class VoiceStudioViewModel: ObservableObject {
         return []
     }()
     @Published var familyVoices: [FamilyVoiceProfile] = []
-    @Published var messages: [TtsMessage] = []
     /// 기본 제공(스톡) 알람 클립 카탈로그. 무료 등급 + 시스템 보이스 선택 시
     /// 에디터의 StockClipPicker 가 사용. 세션당 1회 로드한다.
     @Published var stockClips: [StockClip] = []
@@ -130,7 +129,6 @@ final class VoiceStudioViewModel: ObservableObject {
         recorder.clearLatest()
         profiles = []
         familyVoices = []
-        messages = []
         stockClips = []
         selectedProfileID = nil
         defaultVoiceId = nil
@@ -148,7 +146,6 @@ final class VoiceStudioViewModel: ObservableObject {
         // 온보딩 "기본 목소리 고르기"가 빈 목록으로 멈추는 것 방지(Android applyFreePlanVoiceLock 미러, Codex P2).
         profiles = profiles.filter { isSystemVoice($0) }
         familyVoices = []
-        messages = []
         stockClips = []
         selectedProfileID = nil
         preparedAlarm = nil
@@ -400,7 +397,6 @@ final class VoiceStudioViewModel: ObservableObject {
 
         do {
             async let nextProfiles = api.listVoiceProfiles(token: token)
-            async let nextMessages = api.listTTSMessages(token: token)
             // 가족 목소리는 plan 에 따라 403 이 날 수 있으므로 실패해도 무시.
             let familyResult: [FamilyVoiceProfile]
             do {
@@ -411,10 +407,8 @@ final class VoiceStudioViewModel: ObservableObject {
             // 쿼터도 실패해도 무시한다 — 숫자를 못 보여줄 뿐 목소리 목록은 정상이어야 한다.
             let quotaResult = try? await api.voiceDraftQuota(token: token)
             let resolvedProfiles = try await nextProfiles
-            let resolvedMessages = try await nextMessages
             guard activeUserID == userID else { return }
             profiles = resolvedProfiles
-            messages = resolvedMessages
             familyVoices = familyResult
             draftQuota = quotaResult
             if let selectedProfileID,
