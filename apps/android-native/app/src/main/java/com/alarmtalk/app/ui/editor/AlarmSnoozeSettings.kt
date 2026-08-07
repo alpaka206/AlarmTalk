@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -54,6 +56,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.fitToWidthScale
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
 import com.alarmtalk.app.WakerPanelShape
@@ -448,7 +451,15 @@ internal fun EditorActionButtons(
     recipientName: String? = null,
 ) {
     // 상단바를 없앴으므로 취소·저장을 하단에 한 쌍으로 모은다(삼성 시계식). 취소=외곽선, 저장=채움.
-    // 두 버튼은 같은 폭(각 weight 1). 저장은 '○○에게 저장'처럼 길어지면 maxLines=1 로 ... 축약된다.
+    // 두 버튼은 같은 폭(각 weight 1).
+    //
+    // ⚠ **여기가 `fitToWidthScale` 표의 세 번째 자리다**(WakerDesign.kt 의 '하단 액션
+    // 버튼 라벨 — 폭이 반으로 고정'). 표에는 적혀 있었는데 적용은 안 돼 있었고, 대신
+    // `maxLines=1` + `Ellipsis` 로 **잘라내고** 있었다 — '○○에게 저장' 이 '○○에…' 가
+    // 되면 누구에게 저장하는지 알 수 없다. 줄바꿈으로 흐를 수 없는 자리이므로 자르는
+    // 대신 줄인다(말줄임은 그래도 최후 안전망으로 남긴다).
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+    val actionLabelScale = fitToWidthScale(maxWidth, 392.dp, minimumScale = 0.7f)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -462,6 +473,7 @@ internal fun EditorActionButtons(
         ) {
             Text(
                 text = stringResource(R.string.editor_cancel),
+                fontSize = LocalTextStyle.current.fontSize * actionLabelScale,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -490,9 +502,11 @@ internal fun EditorActionButtons(
                     recipientName != null -> stringResource(R.string.editor_save_for, recipientName)
                     else -> stringResource(R.string.editor_save)
                 },
+                fontSize = LocalTextStyle.current.fontSize * actionLabelScale,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
     }
 }

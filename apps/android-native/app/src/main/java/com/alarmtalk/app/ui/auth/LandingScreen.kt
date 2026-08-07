@@ -574,7 +574,7 @@ internal fun GradientCta(text: String, onClick: () -> Unit, enabled: Boolean = t
         enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .heightIn(min = 56.dp)
             .alpha(if (enabled) 1f else 0.45f),
         shape = WakerButtonShape,
         color = Color.Transparent,

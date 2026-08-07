@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -119,7 +120,7 @@ internal fun PasswordResetScreen(
                 enabled = !busy && emailLooksValid && !codeSent,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp),
+                    .heightIn(min = 54.dp),
                 shape = WakerButtonShape,
                 border = authOutlinedButtonBorder(!busy && emailLooksValid && !codeSent),
                 colors = authOutlinedButtonColors(),

@@ -2,6 +2,7 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.fitToWidthScale
 import com.alarmtalk.app.WakerChipShape
 import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.data.AlarmAudioLimits
@@ -220,16 +222,25 @@ internal fun DayTextChip(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
-        Box(
+        // ⚠ **칩은 `aspectRatio(1f)` 원이라 글자가 줄바꿈으로 흐를 수 없다** —
+        // `fitToWidthScale` 표의 '쓴다' 쪽에 해당한다. 안전망이 없던 시절에는 좁은
+        // 화면(폴드 커버)이나 큰 글꼴에서 원 안 글자가 잘렸다. iOS 는 같은 자리에
+        // `minimumScaleFactor(0.6)` 이 있다 — 하한 숫자를 맞춘다.
+        BoxWithConstraints(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
+            val labelScale = fitToWidthScale(maxWidth, 44.dp, minimumScale = 0.6f)
+            val baseStyle = MaterialTheme.typography.bodyLarge
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyLarge,
+                style = baseStyle,
+                fontSize = baseStyle.fontSize * labelScale,
+                lineHeight = baseStyle.lineHeight * labelScale,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
                 color = contentColor,
+                maxLines = 1,
             )
         }
     }

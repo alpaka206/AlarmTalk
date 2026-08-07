@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -316,7 +317,7 @@ internal fun AuthScreen(
                     enabled = verifyEnabled,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp),
+                        .heightIn(min = 54.dp),
                     shape = WakerButtonShape,
                     border = authOutlinedButtonBorder(verifyEnabled),
                     colors = authOutlinedButtonColors(),
@@ -357,7 +358,7 @@ internal fun AuthScreen(
                         OutlinedButton(
                             onClick = { onConfirmEmailVerification(email, emailCode) },
                             enabled = confirmEnabled,
-                            modifier = Modifier.height(56.dp),
+                            modifier = Modifier.heightIn(min = 56.dp),
                             shape = WakerButtonShape,
                             border = authOutlinedButtonBorder(confirmEnabled),
                             colors = authOutlinedButtonColors(),

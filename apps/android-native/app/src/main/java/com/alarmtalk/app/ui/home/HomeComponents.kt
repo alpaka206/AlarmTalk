@@ -5,6 +5,8 @@ import android.icu.util.Measure
 import android.icu.util.MeasureUnit
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -300,18 +302,22 @@ private fun MenuTabRow(
     value: String? = null,
 ) {
     // 토스처럼 텍스트+값+셰브론만 — 행마다 아이콘을 붙이지 않는다.
+    // ⚠ **높이는 최소치이고, 접히는 쪽은 값이다.** 설정 화면의 같은 모양 행
+    // (`ui/settings/SettingsScreenComponents.kt` 의 `SettingsRow`)이 이미 그 규칙을
+    // 주석으로 못박아 뒀는데 여기만 반대였다 — 높이가 `height(52.dp)` 고정이라 큰
+    // 글꼴에서 글자가 잘리고, `weight` 가 **라벨**에 붙어 있어 '초대 및 구성원 관리'
+    // 같은 **항목 이름**이 줄어들었다. 이름이 줄면 무엇을 누르는지 알 수 없다.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .heightIn(min = 52.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = label,
-            modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -319,10 +325,16 @@ private fun MenuTabRow(
         if (value != null) {
             Text(
                 text = value,
+                modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+        } else {
+            Spacer(Modifier.weight(1f))
         }
         Icon(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
