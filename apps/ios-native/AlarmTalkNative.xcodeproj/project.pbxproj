@@ -183,7 +183,6 @@
 		CA02D54C99DB8E021BAF2D19 /* LandingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC8E6B3DC78145608078758B /* LandingView.swift */; };
 		D46D09E78B1AEE5C9E99BB38 /* AlarmVoiceStopOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */; };
 		D4F5DBE93B1684A6861D4672 /* DynamicVoiceRefreshServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33EACFD24875EBC9DCCC831F /* DynamicVoiceRefreshServiceTests.swift */; };
-		D53EB2D2CE9D34BE24CEA1C7 /* AlarmVolumeSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F7EFD62C06051F598FCC97A /* AlarmVolumeSlider.swift */; };
 		D61E2402A6A6C7569C172B7F /* LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318294BCA312AB4B0D42EBCB /* LegalDocumentView.swift */; };
 		D88FA641458DDF013DFBAFD7 /* PaidVoiceGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15619730ABF3EC66C8C2DC0A /* PaidVoiceGateTests.swift */; };
 		DA74241C9B726EF21F7111B0 /* TimeWheelPickerLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A12157E5D422109667286EC /* TimeWheelPickerLogicTests.swift */; };
@@ -369,7 +368,6 @@
 		783543645669523E589D0B1A /* RemoteAlarmMapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmMapperTests.swift; sourceTree = "<group>"; };
 		785541EABF51C626605C29DC /* VibrationPatternPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibrationPatternPicker.swift; sourceTree = "<group>"; };
 		7EA00DB3AD3CC0D979813908 /* voice_greeting_mina_en.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_mina_en.mp3; sourceTree = "<group>"; };
-		7F7EFD62C06051F598FCC97A /* AlarmVolumeSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmVolumeSlider.swift; sourceTree = "<group>"; };
 		7FAA3E0645594172886EF0BB /* VoiceShareAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceShareAccess.swift; sourceTree = "<group>"; };
 		7FE78632AE30E18FFA63B74D /* AccessSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSnapshotStore.swift; sourceTree = "<group>"; };
 		815C67F5CF2B0B4499090916 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
@@ -696,7 +694,6 @@
 				65E21A05EC23A5BC2A3198BF /* AlarmEditorSheet.swift */,
 				583FF694DDB298FD88A6CD93 /* AlarmEditorSheet+AlarmModeSection.swift */,
 				4E5EB62D321ED56F1E52993D /* AlarmSettingsPanes.swift */,
-				7F7EFD62C06051F598FCC97A /* AlarmVolumeSlider.swift */,
 				6C888F3A407F04A9A8E871EE /* AudioPreviewTarget.swift */,
 				35B8072175C30FB26D1D7397 /* EditorCards.swift */,
 				3C91668BFFA3C24F48F19CD2 /* FreeBucketSettings.swift */,
@@ -1133,7 +1130,6 @@
 				0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */,
 				8D2BACFDF9ECF6FAB7E9883D /* AlarmTimeCalculator.swift in Sources */,
 				770FB03D2E3917E515FF9241 /* AlarmVoicePlayer.swift in Sources */,
-				D53EB2D2CE9D34BE24CEA1C7 /* AlarmVolumeSlider.swift in Sources */,
 				FDF7FCD6E8BA38D1DCD2F161 /* AlarmsListView.swift in Sources */,
 				2818E8AD2FDB6E08A568E080 /* AppGroup.swift in Sources */,
 				E9DA4C9C3F2A27761DEA405C /* AppSettings.swift in Sources */,

@@ -271,93 +271,9 @@ struct SettingsValueButton: View {
 }
 
 /// 라벨 + 설명 + 스위치 토글 행. Android `SettingsToggleRow`(SettingsScreenComponents.kt:112-143).
-private struct SettingsToggleRow: View {
-    let label: String
-    let description: String
-    @Binding var isOn: Bool
-    var enabled: Bool = true
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .fontWeight(.medium)
-                    .foregroundStyle(AlarmTalkTheme.text)
-                Text(description)
-                    .font(.subheadline)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(AlarmTalkTheme.primary)
-                .disabled(!enabled)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-    }
-}
-
 /// '마케팅 수신' 카드. Android `SettingsScreen.kt:161-190` 의 3-상태(로드 완료·로드 실패·로드 전)를
 /// 이식한다. AuthViewModel 의 `loadMarketingConsent`/`updateMarketingConsent` 를 호출하며,
 /// 로드 완료 여부(`loaded`)와 쓰기 진행 여부(`busy`)는 화면 로컬 상태로 추적한다.
-private struct MarketingConsentSection: View {
-    @EnvironmentObject private var auth: AuthViewModel
-    @State private var loaded = false
-    @State private var busy = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if loaded {
-                // 로드 완료: 정상 토글. 쓰기 진행 중엔 연속 토글로 인한 opt-out 유실을 막아 비활성화.
-                SettingsToggleRow(
-                    label: "광고성 정보 수신",
-                    description: "혜택·이벤트 소식을 받아요. 언제든 끌 수 있어요.",
-                    isOn: Binding(
-                        get: { auth.marketingConsentAgreed },
-                        set: { newValue in
-                            guard newValue != auth.marketingConsentAgreed else { return }
-                            Task {
-                                busy = true
-                                await auth.updateMarketingConsent(newValue)
-                                busy = false
-                            }
-                        }
-                    ),
-                    enabled: !busy
-                )
-            } else if auth.marketingConsentLoadFailed {
-                // 로드 실패: 'off'로 오인되지 않게 토글 대신 다시 시도 행을 보여준다.
-                SettingsValueButton(
-                    label: "광고성 정보 수신",
-                    value: "불러오지 못했어요 · 다시 시도",
-                    action: { Task { await load() } }
-                )
-            } else {
-                // 로드 전: 비활성 토글 + '불러오는 중…'으로 미로드 상태를 명확히 한다.
-                SettingsToggleRow(
-                    label: "광고성 정보 수신",
-                    description: "불러오는 중…",
-                    isOn: .constant(false),
-                    enabled: false
-                )
-            }
-        }
-        .settingsCard(title: "마케팅 수신")
-        .task(id: auth.session?.user.id) {
-            await load()
-        }
-    }
-
-    private func load() async {
-        loaded = false
-        await auth.loadMarketingConsent()
-        if !auth.marketingConsentLoadFailed {
-            loaded = true
-        }
-    }
-}
-
 /// '공휴일 달력' 국가 선택 시트. Android `HolidayCountryPickerDialog`(SettingsScreen.kt:283-321)
 /// 의 라디오 목록을 이식 — 행을 누르면 즉시 적용하고 닫는다.
 private struct HolidayCountryPickerSheet: View {

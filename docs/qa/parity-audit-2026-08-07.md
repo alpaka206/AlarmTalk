@@ -885,7 +885,7 @@ AlarmKit 제약(울림 화면·알람 음량)과 무관하고, 플랫폼 표준(
 
 ## P3 (11건)
 
-### ☐ [dead-code] iOS FeatureLockBadge 는 정의만 있고 아무도 호출하지 않는다 — 잠금 표시를 두 곳에서 생 lock.fill 로 손수 그려 안드로이드와 다르게 보인다
+### ☑ [dead-code] iOS FeatureLockBadge 는 정의만 있고 아무도 호출하지 않는다 — 잠금 표시를 두 곳에서 생 lock.fill 로 손수 그려 안드로이드와 다르게 보인다
 
 **안드로이드**: apps/android-native/.../ui/components/FeatureLockBadge.kt:20 정의, 실제 호출 2곳: ui/editor/AlarmEditorControls.kt:430-435(잠긴 칩의 TopEnd, size=18dp/icon=10dp), ui/editor/AlarmSnoozeSettings.kt:381(SnoozeLockedRow 의 좌측, size=18dp/icon=11dp). 모양은 primaryContainer 원 + surface 1px 보더 + Icons.Outlined.Lock(아웃라인).
 
@@ -986,7 +986,7 @@ P3. 죽은 컴포넌트 + 시각적 불일치이고 기능·데이터 손실은 
 
 </details>
 
-### ☐ [dead-code] iOS 에 렌더되지 않는 SwiftUI View 8개 — 시스템 .alert 로 대체된 시트, 다른 화면으로 옮겨간 섹션, 사라진 로그인 세그먼트 컨트롤의 잔재
+### ☑ [dead-code] iOS 에 렌더되지 않는 SwiftUI View 8개 — 시스템 .alert 로 대체된 시트, 다른 화면으로 옮겨간 섹션, 사라진 로그인 세그먼트 컨트롤의 잔재
 
 **안드로이드**: 각각의 살아 있는 대응물: 해지 2단 확인은 BillingPanels.kt:649 CancelSubscriptionDialog, 탈퇴는 더보기 한 곳, 마케팅 동의 토글은 ui/settings/ConsentHistoryScreen.kt:176-181, 로그인/가입 전환은 ui/auth/AuthScreen.kt 하단 텍스트 버튼, 직접 입력 문구는 ui/editor/AlarmRandomPromptSettings.kt 의 ManualMessageDialog. 번역 토글은 안드로이드에 아예 없다 — voiceLanguage 는 ui/editor/AlarmEditorScreen.kt:1003,1171,1183 에서 앱 언어로 자동 설정된다.
 

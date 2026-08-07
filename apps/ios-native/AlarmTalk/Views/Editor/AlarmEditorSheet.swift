@@ -615,7 +615,7 @@ struct AlarmEditorSheet: View {
     }
 
     /// 알람 음량 슬라이더를 Android 와 동일하게 10단위(0/10/…/100, 11개 stop)로 스냅시킨다.
-    /// AlarmVolumeSlider 자체는 step 1 이므로, 호출부 바인딩 setter 가 가장 가까운 10의
+    /// 슬라이더 자체는 step 1 이므로, 호출부 바인딩 setter 가 가장 가까운 10의
     /// 배수로 반올림해 deciles 로 제한한다 (Android `AlarmSettingsCard.kt:376` Slider steps=9 미러).
     var alarmVolumeDecileBinding: Binding<Int> {
         Binding(

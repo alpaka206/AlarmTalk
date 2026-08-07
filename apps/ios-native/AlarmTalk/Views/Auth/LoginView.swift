@@ -412,26 +412,6 @@ enum LoginMode: Hashable, Identifiable {
     var id: Self { self }
 }
 
-private struct ModePicker: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-    @Binding var mode: LoginMode
-    let onChange: (LoginMode) -> Void
-
-    var body: some View {
-        Picker(selection: Binding(
-            get: { mode },
-            set: { new in
-                mode = new
-                onChange(new)
-            }
-        ), label: Text("모드")) {
-            Text("로그인").tag(LoginMode.login)
-            Text("회원가입").tag(LoginMode.register)
-        }
-        .pickerStyle(.segmented)
-    }
-}
-
 // MARK: - Inputs
 
 struct VocaTextField: View {

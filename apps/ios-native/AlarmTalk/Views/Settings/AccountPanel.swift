@@ -101,48 +101,6 @@ struct AccountPanel: View {
     }
 }
 
-struct DeleteAccountPanel: View {
-    @EnvironmentObject private var auth: AuthViewModel
-    let onDeleted: () -> Void
-    @State private var confirming = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button(role: .destructive) {
-                confirming = true
-            } label: {
-                HStack {
-                    Text("회원 탈퇴")
-                        .fontWeight(.medium)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-            }
-            .buttonStyle(.plain)
-            .disabled(auth.isBusy)
-        }
-        .settingsCard(title: "위험 작업")
-        // Android `DeleteAccountDialog` (HomeComponents.kt:480) 와 동일한 안내 + 30일 유예 탈퇴.
-        .alert("정말 탈퇴할까요?", isPresented: $confirming) {
-            Button("탈퇴", role: .destructive) {
-                Task {
-                    await auth.requestAccountDeletion()
-                    onDeleted()
-                }
-            }
-            Button("취소", role: .cancel) {}
-        } message: {
-            Text(
-                "정말 탈퇴할까요? 신청 후 30일이 지나면 알람, 음성, 메시지 등 모든 데이터가 "
-                    + "영구 삭제돼요. 그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요."
-            )
-        }
-    }
-}
-
 #if DEBUG
 private struct AccountPanelPreviewHost: View {
     @State private var nickname = "AlarmTalk"
@@ -158,7 +116,6 @@ private struct AccountPanelPreviewHost: View {
                 ),
                 onSignOut: {}
             )
-            DeleteAccountPanel(onDeleted: {})
         }
         .padding()
     }

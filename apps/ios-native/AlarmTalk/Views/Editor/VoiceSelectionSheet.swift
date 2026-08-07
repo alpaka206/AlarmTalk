@@ -71,9 +71,7 @@ struct VoiceSelectionSheet: View {
                             .fontWeight(.semibold)
                             .foregroundStyle(theme.palette.onSurface)
                         if option.locked {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 12))
-                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                            FeatureLockBadge(size: 18, iconSize: 11)
                         }
                     }
                     if let detail = option.detail, !detail.isEmpty {

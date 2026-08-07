@@ -55,8 +55,9 @@ struct VoicePlayModePicker: View {
                 Text(option.label)
                     .font(theme.typography.labelLarge)
                 if locked && !selected {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 10, weight: .bold))
+                    // 잠금 표시는 **공용 배지 하나**로 그린다 — 생 `lock.fill` 을 손으로
+                    // 그리면 화면마다 크기·배경이 달라진다(안드로이드 `FeatureLockBadge`).
+                    FeatureLockBadge(size: 18, iconSize: 10)
                 }
             }
             .fontWeight(selected ? .bold : .semibold)
