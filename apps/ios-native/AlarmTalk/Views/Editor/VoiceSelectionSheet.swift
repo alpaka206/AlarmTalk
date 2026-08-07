@@ -102,7 +102,8 @@ struct VoiceSelectionSheet: View {
                         if option.id == preparingID {
                             ProgressView().controlSize(.small)
                         } else {
-                            Image(systemName: option.id == playingID ? "stop.fill" : "play.fill")
+                            // 목소리 목록과 같은 아이콘을 쓴다(위 `VoiceCatalogRow` 주석 참조).
+                            Image(systemName: option.id == playingID ? "stop.fill" : "speaker.wave.2.fill")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundStyle(theme.palette.primary)
                         }

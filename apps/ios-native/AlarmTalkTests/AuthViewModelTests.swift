@@ -414,7 +414,12 @@ final class AuthViewModelTests: XCTestCase {
         )
     }
 
-    func test_updateProfile_withEmptyQuietWindows_sendsDefaultLegacyWindow() async {
+    /// ⚠ **창을 다 지우면 지운 대로 보낸다**(2026-08-08 규칙 변경).
+    ///
+    /// 이 테스트는 원래 반대를 지키고 있었다 — 창이 비면 `평일 09:00-18:30` 을 되살려
+    /// 보냈고, 그래서 사용자가 방해금지를 전부 없애도 서버에는 다시 생겼다("껐는데 계속
+    /// 막힌다"). 방해금지는 사용자가 명시적으로 켜는 기능이라 기본값을 만들지 않는다.
+    func test_updateProfile_withEmptyQuietWindows_sendsNothing() async {
         let api = MockAuthAPI()
         api.meResult = .success(makeEmailSession().user)
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
@@ -425,9 +430,9 @@ final class AuthViewModelTests: XCTestCase {
         let request = api.lastUpdateProfileRequest
         XCTAssertEqual(api.updateProfileCallCount, 1)
         XCTAssertEqual(request?.allowFamilyAlarms, false)
-        XCTAssertEqual(request?.familyAlarmQuietDays, [1, 2, 3, 4, 5])
-        XCTAssertEqual(request?.familyAlarmQuietStart, "09:00")
-        XCTAssertEqual(request?.familyAlarmQuietEnd, "18:30")
+        XCTAssertNil(request?.familyAlarmQuietDays)
+        XCTAssertNil(request?.familyAlarmQuietStart)
+        XCTAssertNil(request?.familyAlarmQuietEnd)
         XCTAssertEqual(request?.familyAlarmQuietWindows ?? [], [])
     }
 

@@ -67,7 +67,10 @@ struct VoiceCatalogRow<Below: View>: View {
                 }
 
                 Button(action: onPreview) {
-                    Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                    // ⚠ **스피커 아이콘이다**(안드로이드 `ic_voice_listen_24`).
+                    // 목록 행의 이 버튼은 "이 목소리가 어떤지 들어본다" 는 뜻이라
+                    // 재생(▶)보다 스피커가 맞다 — 정지는 실제로 정지다(다시 누르면 처음부터).
+                    Image(systemName: isPlaying ? "stop.fill" : "speaker.wave.2.fill")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(theme.palette.primary)
                         .frame(width: Self.contentHeight, height: Self.contentHeight)
@@ -107,40 +110,70 @@ extension VoiceCatalogRow where Below == EmptyView {
     }
 }
 
-/// 목소리 섹션을 감싸는 그룹 카드. 안드로이드는 섹션 하나가 한 장의 카드고 행 사이는
+/// 목소리 섹션 — **제목은 카드 밖**, 내용만 한 장의 카드.
+///
+/// 안드로이드 `VoiceCatalogSectionHeader` 미러. 섹션 하나가 한 장의 카드고 행 사이는
 /// 구분선이다 — 행마다 카드를 두면 목록이 계단처럼 보인다.
+///
+/// ⚠ **제목을 카드 안으로 되돌리지 말 것.** 안드로이드는 제목이 카드 위에 떠 있고,
+/// 눌러서 **접을 수 있다**(목소리가 많아졌을 때 스스로 접는 선택지). 제목을 카드에 넣으면
+/// 누를 자리가 카드 안이 되어 '행을 누른 것' 과 구분되지 않는다.
+///
+/// ⚠ **처음에는 펼쳐진 상태다.** 접기는 사용자가 고르는 것이지 기본이 아니다 — 기본을
+/// 접힘으로 두면 목소리를 찾으려고 매번 펼쳐야 한다.
 struct VoiceSectionCard<Content: View>: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String
     var trailing: AnyView?
     @ViewBuilder var content: () -> Content
 
+    @State private var expanded = true
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(title)
-                    .font(theme.typography.titleSmall)
-                    .fontWeight(.bold)
-                    .foregroundStyle(theme.palette.onSurface)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 4) {
+                Button {
+                    withAnimation(.snappy(duration: 0.22)) { expanded.toggle() }
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(title)
+                            .font(theme.typography.titleSmall)
+                            .fontWeight(.bold)
+                            .foregroundStyle(theme.palette.onSurface)
+                        // 펼침 ⌄ / 접힘 › — 회전으로 상태가 이어져 보이게 한다(안드로이드와 같다).
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                            .rotationEffect(.degrees(expanded ? 0 : -90))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("\(title) 섹션"))
+                .accessibilityHint(Text(expanded ? "접기" : "펼치기"))
+
                 Spacer(minLength: 8)
                 trailing
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
+            .frame(minHeight: 40)
 
-            content()
+            if expanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    content()
+                }
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    theme.palette.surface,
+                    in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                        .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                )
+            }
         }
-        .padding(.bottom, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            theme.palette.surface,
-            in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
-        )
     }
 }
 
