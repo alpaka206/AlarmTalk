@@ -42,7 +42,8 @@ enum HelperFormatters {
         }
     }
 
-    /// 가족 알람 quiet schedule 라벨. Android `quietScheduleLabel` (SettingsScreen.kt:746) 1:1.
+    /// 가족 알람 quiet schedule 라벨.
+    /// Android `quietScheduleLabel`(`ui/settings/SettingsScreenComponents.kt`) 1:1.
     /// 앞 2개 윈도우만 표시하고 나머지는 "외 N개" 로 축약한다. 비어 있으면 "없음".
     static func quietScheduleLabel(_ windows: [FamilyAlarmQuietWindow]?) -> String {
         let list = windows ?? []

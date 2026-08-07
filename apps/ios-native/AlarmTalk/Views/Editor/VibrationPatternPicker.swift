@@ -28,7 +28,7 @@ struct VibrationPatternPicker: View {
         HStack(spacing: 12) {
             Menu {
                 // '없음'(.none) 은 목록에서 제외한다 — 진동 on/off 는 호출부의 토글이
-                // 담당한다 (Android `AlarmSettingsCard.kt:459` VibrationOptions 가 NONE 제외).
+                // 담당한다 (안드로이드 `AlarmSettingsCard.kt` 의 `VibrationOptions` 도 NONE 제외).
                 ForEach(VibrationPattern.allCases.filter { $0 != .none }, id: \.self) { pattern in
                     Button {
                         commit(pattern)

@@ -270,11 +270,13 @@ struct SettingsValueButton: View {
     }
 }
 
-/// 라벨 + 설명 + 스위치 토글 행. Android `SettingsToggleRow`(SettingsScreenComponents.kt:112-143).
-/// '마케팅 수신' 카드. Android `SettingsScreen.kt:161-190` 의 3-상태(로드 완료·로드 실패·로드 전)를
+/// 라벨 + 설명 + 스위치 토글 행.
+/// (⚠ 안드로이드에 `SettingsToggleRow` 라는 이름은 없다 — 옛 주석이 틀렸다.
+///  같은 모양의 행은 `ui/settings/ConsentHistoryScreen.kt` 의 `ConsentToggleRow` 다.)
+/// '마케팅 수신' 카드. Android `ui/settings/SettingsScreen.kt` 의 3-상태(로드 완료·로드 실패·로드 전)를
 /// 이식한다. AuthViewModel 의 `loadMarketingConsent`/`updateMarketingConsent` 를 호출하며,
 /// 로드 완료 여부(`loaded`)와 쓰기 진행 여부(`busy`)는 화면 로컬 상태로 추적한다.
-/// '공휴일 달력' 국가 선택 시트. Android `HolidayCountryPickerDialog`(SettingsScreen.kt:283-321)
+/// '공휴일 달력' 국가 선택 시트. Android `HolidayCountryPickerDialog`(`ui/settings/SettingsScreen.kt`)
 /// 의 라디오 목록을 이식 — 행을 누르면 즉시 적용하고 닫는다.
 private struct HolidayCountryPickerSheet: View {
     let current: String

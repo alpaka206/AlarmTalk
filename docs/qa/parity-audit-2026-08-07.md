@@ -439,7 +439,7 @@ iOS `apps/ios-native/AlarmTalk/Views/Settings/AccountPanel.swift`
 
 </details>
 
-### ☐ [plan-gate] 게이트에서 쿠폰을 등록하면 편집 중이던 알람이 통째로 사라진다 (Android)
+### ☑ [plan-gate] 게이트에서 쿠폰을 등록하면 편집 중이던 알람이 통째로 사라진다 (Android)
 
 **안드로이드**: PlanGateDialog.kt:65-74 — CodeRedeemField 제출 즉시 `onRegisterCode(code)` 후 `onDismiss()`. 편집기 호출부는 AlarmEditorScreen.kt:1650 `onRedeemCode = onRegisterCode`(AlarmTalkApp.kt:1123/:1174 `viewModel::registerCode`). registerCode 는 성공 시 MainViewModelBillingActions.kt:224-228 에서 `navigateSharedPassTick++`(초대·커플·가족) 또는 `navigateHomeTick++`(개인 플랜) 를 올리고, AlarmTalkApp.kt:325-329 → AlarmTalkAppHelpers.kt:113-119 `navigateHomeClearingStack()` 이 `popUpTo(NativeTab.Alarms.route)` 로 편집기를 스택에서 걷어낸다(공유패스 갈래는 :331-337 로 구성원 관리 화면으로 이동).
 
@@ -849,7 +849,7 @@ AlarmKit 제약(울림 화면·알람 음량)과 무관하고, 플랫폼 표준(
 
 </details>
 
-### ☐ [voice-save] iOS 에는 `ttsInputKey`/`linkTtsInput` 입력 캐시가 없다 — '직접 입력 문구 이어받기' 가 오프라인에서 저장 불가
+### ☑ [voice-save] iOS 에는 `ttsInputKey`/`linkTtsInput` 입력 캐시가 없다 — '직접 입력 문구 이어받기' 가 오프라인에서 저장 불가
 
 **안드로이드**: data/AlarmAudioStore.kt:1079-1097 `ttsInputKey`(userId+profileId+text+category+language+listenerTitle) 와 :607 `linkTtsInput` / :626 `resolveTtsInput` 별칭. ui/editor/AlarmEditorScreen.kt:784-797 이 저장 직전에 그 별칭을 먼저 찾아 서버 호출 없이 기존 음원을 재사용하고, :917-934 는 생성 후 **입력 원문 키와 서버 표시 문구 키 둘 다**로 별칭을 남긴다. CLAUDE.md 가 직접 입력 문구를 기억하기로 한 근거가 바로 이것이다 — "글자가 같아 AlarmAudioStore 입력 캐시에 걸려 **서버 호출도 월 한도 차감도 없이** 곧바로 저장된다(오프라인 포함)".
 
@@ -920,7 +920,7 @@ P3. 죽은 컴포넌트 + 시각적 불일치이고 기능·데이터 손실은 
 
 </details>
 
-### ☐ [dead-code] 근거가 썩은 iOS 주석 22곳 — 안드로이드에 실제로 없는 심볼·파일을 가리키거나 줄번호가 파일 길이를 넘는다
+### ☑ [dead-code] 근거가 썩은 iOS 주석 22곳 — 안드로이드에 실제로 없는 심볼·파일을 가리키거나 줄번호가 파일 길이를 넘는다
 
 **안드로이드**: grep 결과 아래 심볼은 안드로이드 소스(app/src 전체, .kt+.xml)에 0건이다: WakerBrandHeader / LandingPreviewWaveform / DeleteAccountDialog / SettingsToggleRow / CurrentPassSummaryCard / PassSummaryChip / MenuScreen / auth_reset_password_hint / SharedVoiceViewerInfoDialog / previewStockClip / selectStockClip / alarmSyncFailureMessage / firstMissingTarget / defaultPlayModeForPlan / deletePaidAlarmTalks / UsageGuideStore. 존재하지만 위치가 다른 것: HolidayCountryPickerDialog 는 ui/settings/SettingsScreen.kt:247(파일 271줄), FamilyAlarmQuietTimeDialog 는 ui/settings/SettingsScreenComponents.kt:154, quietScheduleLabel 은 SettingsScreenComponents.kt:482, SubscriptionPlanCard 는 ui/billing/BillingPanels.kt:503(파일 761줄). 약관/방침 URL 은 SettingsScreen.kt 가 아니라 ui/app/AlarmTalkApp.kt:1251-1253 에 있다. SettingsScreen.kt:152-170 은 '법적 정보' 카드지 마케팅 동의가 아니다.
 
@@ -1124,7 +1124,7 @@ AlarmKit 제약도, 플랫폼 표준(iOS 시스템 .alert)도 아니다. 이건 
 
 </details>
 
-### ☐ [screens-flow] 웰컴 프로모 게이트에 준비 신호 3개(versionChecked·accountStatusChecked·showVoiceSetup)가 빠져 있다
+### ☑ [screens-flow] 웰컴 프로모 게이트에 준비 신호 3개(versionChecked·accountStatusChecked·showVoiceSetup)가 빠져 있다
 
 **안드로이드**: apps/android-native/.../ui/app/AlarmTalkApp.kt:409-433 — 프로모 판정은 키와 가드 양쪽에 `versionChecked`, `accountStatusChecked`, `pendingDeletion`, `consentStatusChecked`, `showConsentScreen`, `consentUnsupported`, `showVoiceSetup`, `permissionGateRequest` 를 전부 넣는다. 주석(:399-408)이 이유를 적어 뒀다 — 응답 전 기본값 `false` 가 '아니오' 와 구분되지 않아 1회 플래그를 태우고, 뒤늦게 차단 화면이 덮으면 사용자는 본 적도 없이 잃는다.
 
@@ -1162,7 +1162,7 @@ AlarmKit 제약도 플랫폼 표준도 아니다 — 순수 게이팅 로직이�
 
 </details>
 
-### ☐ [screens-flow] 선택 모드 [취소·삭제] 바가 목록과 함께 스크롤돼 화면 밖으로 밀려난다
+### ☑ [screens-flow] 선택 모드 [취소·삭제] 바가 목록과 함께 스크롤돼 화면 밖으로 밀려난다
 
 **안드로이드**: apps/android-native/.../ui/alarms/AlarmListScreen.kt:160-197 — 헤더(HomeHeader ↔ AlarmSelectionBar)를 `LazyColumn` **바깥** Column 에 고정하고, 주석(:161-166)이 이유를 적어 뒀다: "스크롤해도 '다음 알람까지' 안내가 남고, 무엇보다 목록을 내린 상태에서 선택 모드에 들어가도 [취소·삭제]에 닿을 수 있다." 높이도 `heightIn(min = 48.dp)` 로 고정해 모드 전환 시 목록이 튀지 않게 했다.
 
@@ -1193,7 +1193,7 @@ AlarmKit 제약도 플랫폼 표준도 아니다 — 순수 게이팅 로직이�
 
 </details>
 
-### ☐ [voice-save] 고른 테마(bucket)가 알람 레코드에도 서버에도 저장되지 않아, 캐시가 사라지면 알람이 조용히 '기본 인사말' 로 바뀐다
+### ☑ [voice-save] 고른 테마(bucket)가 알람 레코드에도 서버에도 저장되지 않아, 캐시가 사라지면 알람이 조용히 '기본 인사말' 로 바뀐다
 
 **안드로이드**: data/AlarmEntity.kt:46-59 — `bucketId`/`bucketRotationIndex`/`bucketClipKeysJson`/`bucketClipTextsJson`/`contextVariantIndex` 를 Room 행에 영속한다. ui/editor/AlarmEditorState.kt:235-238 `toDraft` 가 `isActiveBucketAlarm()` 일 때 그 값을 실어 보내고, :194-202 는 버킷 알람도 `voiceRandomContext` 를 **떨어뜨리지 않는다**(주석이 "한 곳만 고치지 말 것" 이라고 못 박은 지점). 서버에도 network/RemoteAlarmMapper.kt:28 `bucketId = alarm.bucketId.trimmedOrNull()` 로 보내고(network/RemoteAlarmApi.kt:59-60 `bucket_id`), data/RemoteAlarmPullSyncService.kt:686 이 `remote.bucketId` 로 되읽는다. 그래서 재설치·기기 교체 후에도 테마가 살아 있다.
 

@@ -68,6 +68,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # iOS 주석이 대는 안드로이드·백엔드 근거가 실재하는지. iOS 는 안드로이드를 원본으로
+      # 삼으므로(CLAUDE.md) 주석 대부분이 "안드로이드 Foo.kt 미러" 꼴인데, 안드로이드가
+      # 그 화면을 지워도 주석은 남는다 — 그걸 믿고 고친 코드가 다시 틀렸다.
+      - name: Check cross-platform comment references
+        run: python3 scripts/check-cross-platform-refs.py
+
   typecheck:
     runs-on: ubuntu-latest
     strategy:

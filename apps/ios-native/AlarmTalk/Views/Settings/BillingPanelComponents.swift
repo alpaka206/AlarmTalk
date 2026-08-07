@@ -192,7 +192,7 @@ struct PlanCard: View {
     let onShareVouchers: () -> Void
 
     var body: some View {
-        // Android `SubscriptionPlanCard`(BillingPanels.kt:682-826): WakerCardShape(22),
+        // Android `SubscriptionPlanCard`(`ui/billing/BillingPanels.kt`): WakerCardShape(22),
         // 현재 플랜이면 primaryContainer@0.44 / primary@0.48 보더, 아니면 surface /
         // outlineVariant 보더. 헤더에 잠금 뱃지를 두지 않고 기능 불릿 목록을 렌더한다.
         VStack(alignment: .leading, spacing: 12) {

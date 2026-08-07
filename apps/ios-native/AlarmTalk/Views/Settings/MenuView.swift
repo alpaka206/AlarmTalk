@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// '더보기' 탭. 안드로이드 `MenuScreen` 미러.
+/// '더보기' 탭. 안드로이드 `MenuTabPanel`(`ui/home/HomeComponents.kt`) 미러.
+/// (⚠ `MenuScreen` 이라는 파일·컴포저블은 안드로이드에 없다 — 옛 주석이 틀렸다.)
 ///
 /// 카드 구성(위→아래)은 스크린샷 그대로다:
 ///   1. 프로필 — 이름 + "내 정보 · 앱 설정"

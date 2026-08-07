@@ -46,7 +46,8 @@ struct VoiceProfileManagementPanel: View {
     @State private var retryingPrerenderIDs: Set<String> = []
 
     /// 공유받은 음성에 viewer 가 자신의 관계/호칭을 등록할 때 사용하는 다이얼로그 타깃.
-    /// Android `SharedVoiceViewerInfoDialog` (VoiceProfileManagementPanel.kt:1543) 와 동일한 의도.
+    /// (⚠ 안드로이드에 `SharedVoiceViewerInfoDialog` 라는 이름은 없다 — 옛 주석이 틀렸다.
+    ///  같은 일을 하는 곳은 `ui/voices/VoiceProfileManagementPanel.kt` 의 호칭 등록 흐름이다.)
     @State private var sharedViewerInfoTarget: FamilyVoiceProfile?
 
     /// 기본 목소리 선택 시트 노출 상태 (Android defaultVoiceSheetOpen 미러).

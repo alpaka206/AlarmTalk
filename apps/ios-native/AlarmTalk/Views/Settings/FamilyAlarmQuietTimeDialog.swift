@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 가족 알람 "설정 불가 시간" 편집 모달.
 ///
-/// Android `FamilyAlarmQuietTimeDialog` (`SettingsScreen.kt:387-559`) 의 SwiftUI
+/// Android `FamilyAlarmQuietTimeDialog` (`ui/settings/SettingsScreenComponents.kt`) 의 SwiftUI
 /// 포팅. 시간대 목록(최대 8개)을 관리하며, 각 시간대마다 요일 선택과 시작/종료
 /// 시각을 편집한다. 저장 시 `[FamilyAlarmQuietWindow]` 를 콜백으로 돌려준다.
 ///
