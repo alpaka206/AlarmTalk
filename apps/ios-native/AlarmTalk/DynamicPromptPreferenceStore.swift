@@ -20,8 +20,7 @@ import Foundation
 /// 않는다" 였는데, 종류만 이어받으면 새 알람이 **빈 직접입력**으로 열려 저장이 막히는 게
 /// 실질적 근거였다. 문구를 함께 이어받으면 그 문제가 사라지므로 규칙도 바뀌었다.
 ///
-/// ⚠ `last_free_bucket_<userId>` 는 만들지 않는다 — iOS 에는 무료 버킷 회전 개념이 아직 없다.
-/// 버킷을 구현하면 그때 같은 키 이름으로 추가할 것.
+///   - `last_free_bucket_<userId>`    : 무료 테마(버킷). 안드로이드와 같은 키 이름이다.
 struct DynamicPromptPreferenceStore {
     private let defaults: UserDefaults
 
@@ -74,6 +73,28 @@ struct DynamicPromptPreferenceStore {
         }
     }
 
+    // MARK: 무료 테마(버킷)
+
+    /// 마지막으로 **저장에 성공한** 무료 테마. 한 번도 고른 적 없으면 nil.
+    func lastFreeBucket(userID: String?) -> String? {
+        guard let key = freeBucketKey(userID) else { return nil }
+        return defaults.string(forKey: key)?.nilIfBlank
+    }
+
+    /// 무료 테마를 기록한다.
+    ///
+    /// ⚠ **직접 입력 기록과 섞지 말 것.** 예전에는 테마를 담을 키가 없어서, 테마를 골라
+    /// 저장하면 **서버 스톡 클립의 문장**이 `last_manual_text` 로 새어 들어갔다. 그러면
+    /// 다음 새 알람이 '직접 입력' 으로 열리고 테마 선택은 매번 초기화된다(2026-08-07 수정).
+    func saveLastFreeBucket(userID: String?, bucket: String?) {
+        guard let key = freeBucketKey(userID) else { return }
+        if let bucket = bucket?.nilIfBlank {
+            defaults.set(bucket, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     // MARK: 세션 정리
 
     /// 명시적 로그아웃·탈퇴에서만 부른다.
@@ -83,11 +104,17 @@ struct DynamicPromptPreferenceStore {
     func clear(userID: String?) {
         if let key = contextKey(userID) { defaults.removeObject(forKey: key) }
         if let key = manualTextKey(userID) { defaults.removeObject(forKey: key) }
+        if let key = freeBucketKey(userID) { defaults.removeObject(forKey: key) }
     }
 
     private func contextKey(_ userID: String?) -> String? {
         guard let id = normalized(userID) else { return nil }
         return "last_message_context_\(id)"
+    }
+
+    private func freeBucketKey(_ userID: String?) -> String? {
+        guard let id = normalized(userID) else { return nil }
+        return "last_free_bucket_\(id)"
     }
 
     private func manualTextKey(_ userID: String?) -> String? {

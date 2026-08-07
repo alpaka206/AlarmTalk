@@ -16,7 +16,7 @@
 
 ## P1 (5건)
 
-### ☐ [modals] 「알람 받지 않을 시간」 모달이 서버 계약을 어긴다 — 구간 8개 허용(서버 상한 2), 요일도 개별 선택(서버는 프리셋만)
+### ☑ [modals] 「알람 받지 않을 시간」 모달이 서버 계약을 어긴다 — 구간 8개 허용(서버 상한 2), 요일도 개별 선택(서버는 프리셋만)
 
 **안드로이드**: apps/android-native/.../ui/settings/SettingsScreenComponents.kt:250 `private const val QUIET_WINDOW_MAX = 2` 이고 236-241 에서 `drafts.size < QUIET_WINDOW_MAX` 로 추가를 막는다. 요일은 같은 파일 355-377 — `QUIET_DAY_PRESETS`(평일/주말/매일) FilterChip 3택 단일 선택이고 `onSelectDays(preset.days)` 로 프리셋 집합만 넘긴다.
 
@@ -63,7 +63,7 @@
 
 </details>
 
-### ☐ [screens-flow] `consentUnsupported` 게이트가 iOS 에 없다 — 서버가 새 문서 버전을 요구하면 동의 화면에 갇힌다
+### ☑ [screens-flow] `consentUnsupported` 게이트가 iOS 에 없다 — 서버가 새 문서 버전을 요구하면 동의 화면에 갇힌다
 
 **안드로이드**: apps/android-native/.../ui/app/AlarmTalkApp.kt:692-693 `blockingGateActive = updateRequired || consentUnsupported || pendingDeletion`, :876-890 — `updateRequired || consentUnsupported` 이면 `UpdateRequiredScreen` 으로 보낸다("둘 다 사용자가 할 수 있는 일이 업데이트뿐이라 같은 화면으로"). 설정 출처는 MainViewModelAuthActions.kt:699 `consentUnsupported = true`.
 
@@ -784,7 +784,7 @@ AlarmKit 제약(울림 화면·알람 음량)과 무관하고, 플랫폼 표준(
 
 </details>
 
-### ☐ [voice-save] 알람 전용·녹음 알람을 저장하면 iOS 가 '마지막 직접 입력 문구' 기록을 지운다 (안드로이드는 조기 return)
+### ☑ [voice-save] 알람 전용·녹음 알람을 저장하면 iOS 가 '마지막 직접 입력 문구' 기록을 지운다 (안드로이드는 조기 return)
 
 **안드로이드**: apps/android-native/.../ui/main/MainViewModel.kt:861-901 `rememberMessageChoiceUsed` — :866 `if (!draft.targetUserId.isNullOrBlank()) return`, :867 `if (draft.playMode == ALARM_ONLY) return` 로 먼저 빠져나가고, 직접 입력 기록은 :894-898 에서 `draft.voiceSource == VoiceSources.TTS_PROFILE` 이면서 `voiceText` 가 `isNotBlank` 일 때만 `saveLastManualText` 를 부른다. 녹음(LOCAL_AUDIO)·알람전용은 :899 `else -> Unit` 으로 **아무 것도 건드리지 않는다.**
 
@@ -816,7 +816,7 @@ AlarmKit 제약(울림 화면·알람 음량)과 무관하고, 플랫폼 표준(
 
 </details>
 
-### ☐ [voice-save] 무료 '테마(버킷)' 를 골라 저장하면 테마 대신 **스톡 문장이 '직접 입력' 으로** 기억된다 — 다음 새 알람의 테마가 매번 초기화된다
+### ☑ [voice-save] 무료 '테마(버킷)' 를 골라 저장하면 테마 대신 **스톡 문장이 '직접 입력' 으로** 기억된다 — 다음 새 알람의 테마가 매번 초기화된다
 
 **안드로이드**: apps/android-native/.../ui/main/MainViewModel.kt:877-881 — `bucket != null && isSystemVoiceId(draft.voiceProfileId)` 이면 `dynamicPromptStore.saveLastFreeBucket(userId, bucket)` 로 **테마를 기억한다**(유료 클론 버킷은 :889 에서 문구 종류로 기억). 그 값을 ui/editor/AlarmEditorScreen.kt:1051-1062 가 신규 알람에서 이어받아(`remembered = lastFreeBucket?.takeIf { alarm == null && it in buckets ... }`) 프리셀렉트한다. 저장소는 data/DynamicPromptPreferenceStore.kt:118-122 `readLastFreeBucket`/`saveLastFreeBucket`(`last_free_bucket_<userId>`).
 
@@ -1224,7 +1224,7 @@ AlarmKit 제약도 플랫폼 표준도 아니다 — 순수 게이팅 로직이�
 
 </details>
 
-### ☐ [voice-save] iOS 는 자기가 만든 TTS 알람의 `voiceSource` 를 `server_tts` 로 저장한다 — 안드로이드에서 그 값은 '남에게서 받은 알람' 이라는 뜻
+### ☑ [voice-save] iOS 는 자기가 만든 TTS 알람의 `voiceSource` 를 `server_tts` 로 저장한다 — 안드로이드에서 그 값은 '남에게서 받은 알람' 이라는 뜻
 
 **안드로이드**: data/AlarmConstants.kt:267-273 `VoiceSources` = local_audio / tts_profile / server_tts. 내가 만든 TTS 알람은 항상 `TTS_PROFILE` 이다(ui/editor/AlarmEditorState.kt:380 `setGeneratedTtsAudio`, :398 `setStockClipAudio`, :432 `setBucketAudio`). `SERVER_TTS` 는 서버에서 받아온 알람 전용이고(data/RemoteAlarmPullSyncService.kt:668), 편집기는 그 값을 보면 ui/editor/VoiceAudioCard.kt:158-163 에서 `TTS_PROFILE` 로 되돌리고 `clearTtsMeta()` 로 메시지 메타를 비운다 — '내 것이 아닌 음원' 이라는 판정이다. 직전 선택 기록도 이 값을 술어로 쓴다(ui/main/MainViewModel.kt:894 `draft.voiceSource == VoiceSources.TTS_PROFILE`).
 

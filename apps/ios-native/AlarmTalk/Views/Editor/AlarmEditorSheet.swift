@@ -52,6 +52,9 @@ struct AlarmEditorSheet: View {
 
     /// 무료 테마(버킷) 선택 화면.
     @State var freeBucketPaneOpen = false
+    /// 직전에 고른 무료 테마를 이어받으려는 의도. 스톡 매니페스트가 도착하면 집는다.
+    /// ⚠ 새 알람에서만 세운다 — 기존 알람은 자기 값을 써야 한다.
+    @State var pendingFreeBucket: FreeBucket?
 
     /// 목소리 고르기 시트.
     @State var voiceSheetOpen = false
@@ -459,6 +462,11 @@ struct AlarmEditorSheet: View {
         // 달라질 때만 재할당하므로 무한 루프가 생기지 않는다.
         .onChange(of: restrictToWeatherMedication) { _, _ in coerceFreeVoiceTierConstraints() }
         .onChange(of: currentPlan) { _, _ in coerceFreeVoiceTierConstraints() }
+        // 직전에 고른 무료 테마 이어받기. 목소리·스톡 매니페스트가 준비되는 시점이
+        // 제각각이라 **둘을 한 키로 묶어** 건다 — 나눠 걸면 SwiftUI 타입체크가 터진다.
+        .onChange(of: freeBucketReadinessKey) { _, _ in
+            Task { await applyPendingFreeBucketIfNeeded() }
+        }
         // 선택 목소리가 바뀌면 직전 생성/스톡 선택을 비워, 다른 프로필의 오디오를
         // 저장하지 않게 한다. 미리듣기 중이면 함께 정지한다.
         .onChange(of: voiceStudio.selectedProfileID) { oldProfileID, newProfileID in
@@ -809,6 +817,27 @@ struct AlarmEditorSheet: View {
         return FreeBucket(rawValue: category)
     }
 
+    /// 테마 이어받기를 시도할 시점을 알리는 합성 키.
+    /// 스톡 매니페스트 도착과 제한 여부 확정이 각각 다른 때에 오므로 둘을 묶는다.
+    var freeBucketReadinessKey: String {
+        "\(voiceStudio.stockClips.count)|\(restrictToWeatherMedication)|\(voiceStudio.selectedProfileID ?? "")"
+    }
+
+    /// 이어받으려던 테마를 실제로 집는다. 목소리와 스톡 클립이 모두 준비된 뒤에 한 번만.
+    ///
+    /// ⚠ **이미 고른 게 있으면 덮지 않는다.** 사용자가 화면에서 고른 값이 우선이다.
+    func applyPendingFreeBucketIfNeeded() async {
+        guard let bucket = pendingFreeBucket else { return }
+        guard restrictToWeatherMedication else { pendingFreeBucket = nil; return }
+        guard selectedStockMessageID == nil, voiceStudio.preparedAlarm == nil else {
+            pendingFreeBucket = nil
+            return
+        }
+        guard !voiceStudio.stockClips.isEmpty, voiceStudio.selectedProfileID != nil else { return }
+        pendingFreeBucket = nil
+        await selectFreeBucket(bucket)
+    }
+
     /// 테마를 고르면 그 안의 첫 클립을 준비한다(회전은 울릴 때마다 서버·로컬이 이어받는다).
     func selectFreeBucket(_ bucket: FreeBucket) async {
         let clips = voiceStudio.stockClips.filter {
@@ -1116,6 +1145,10 @@ struct AlarmEditorSheet: View {
                 voiceStudio.randomPrompt = true
                 voiceStudio.randomContext = RandomPromptContext.normalized(context).rawValue
             }
+            // 무료 테마는 **문구 종류·직접입력과 다른 축**이라 따로 이어받는다.
+            // 실제 클립 바인딩은 목소리·스톡 매니페스트가 준비된 뒤라야 하므로 여기서는
+            // 의도만 남기고, `applyPendingFreeBucketIfNeeded` 가 준비되면 집는다.
+            pendingFreeBucket = store.lastFreeBucket(userID: userID).flatMap(FreeBucket.init(rawValue:))
             // 한 번도 고른 적 없으면 위에서 정한 폴백(랜덤 ON + preset)을 그대로 쓴다.
         }
 
@@ -1575,7 +1608,10 @@ struct AlarmEditorSheet: View {
             // 여기서도 voiceRandomPrompt=false + dynamicVoicePreparedForFireAtMillis=nil
             // 로 강제해 REPEATING 스톡 알람이 refresh 윈도우에 덮어써지지 않게 한다.
             let isStockClip = prepared.audioCacheKey.hasPrefix("stock_")
-            merged.voiceSource = VoiceSource.serverTts.rawValue
+            // ⚠ `server_tts` 로 쓰지 말 것. 안드로이드에서 그 값은 **'남에게서 받은 알람'**
+            // 이라는 뜻이고, pull 경로(`RemoteAlarmMapper`)에서만 붙는다. 내가 편집기에서
+            // 만든 것은 `tts_profile` 이다(2026-08-07 수정).
+            merged.voiceSource = VoiceSource.ttsProfile.rawValue
             merged.localAudioUri = prepared.localAudioFileName
             merged.audioCacheKey = prepared.audioCacheKey
             merged.rawAudioUri = prepared.rawAudioURL ?? merged.rawAudioUri
@@ -1662,6 +1698,13 @@ struct AlarmEditorSheet: View {
     /// 기억하지 않는다 — 선택 즉시 저장하는 코드를 넣지 말 것
     /// (CLAUDE.md 「알람 편집기 기본값 = 직전 선택 유지」).
     private func rememberChoicesUsed(_ record: LocalAlarmRecord) {
+        // ⚠ **문구 개념이 없는 알람은 기록을 건드리지 않는다**(안드로이드의 조기 return 미러).
+        // 알람 전용·녹음/파일 알람은 `voiceText` 가 nil 인데, 가드 없이 내려가면
+        // `saveLastManualText(nil)` 이 **직전에 기억해 둔 직접 입력 문구를 지운다.**
+        // 알람음 알람 하나 저장했다고 취향이 사라지면 안 된다(2026-08-07 수정).
+        guard record.playModeEnum != .alarmOnly else { return }
+        guard record.voiceSourceEnum != .localAudio else { return }
+
         let userID = auth.session?.user.id
 
         // 목소리 — 온보딩 완료 판정(`default_voice_`)과는 **다른 키**에 쓴다.
@@ -1669,16 +1712,35 @@ struct AlarmEditorSheet: View {
             DefaultVoicePreferenceStore().setLastUsedVoiceId(userID: userID, voiceId: voiceID)
         }
 
+        let promptStore = DynamicPromptPreferenceStore()
+
+        // ⚠ **스톡 클립(무료 테마)은 '직접 입력' 이 아니다.** 스톡은 고정 음원이라
+        // `voiceRandomPrompt = false` 로 저장되는데, 그것만 보고 else 로 떨어뜨리면
+        // **서버 스톡 클립의 문장**이 '내가 친 직접 입력 문구' 로 기억된다. 그러면 다음
+        // 새 알람이 직접 입력으로 열리고 테마 선택은 매번 초기화된다.
+        if let bucket = selectedFreeBucketCategory(for: record) {
+            promptStore.saveLastFreeBucket(userID: userID, bucket: bucket)
+            return
+        }
+
         // 문구 — 생성형이면 종류를, 직접 입력이면 문구를 기록한다. 저장소가 반대쪽 키를
         // 지워 '마지막 선택은 하나' 를 지킨다.
-        let promptStore = DynamicPromptPreferenceStore()
         if record.voiceRandomPrompt {
             promptStore.saveLastMessageContext(userID: userID, context: record.voiceRandomContext)
-        } else {
+        } else if let text = record.voiceText?.nilIfBlank {
             // 기억하는 값은 입력 원문이 아니라 **알람에 저장된 문구**다 — 잠금화면 문구와
             // 음성을 맞추려고 그 값을 저장하기 때문이다.
-            promptStore.saveLastManualText(userID: userID, text: record.voiceText)
+            // 빈 값이면 저장소를 건드리지 않는다(지우지도 않는다).
+            promptStore.saveLastManualText(userID: userID, text: text)
         }
+    }
+
+    /// 이 레코드가 무료 테마(스톡 클립)로 저장된 것이면 그 카테고리를 돌려준다.
+    /// 스톡 캐시 키는 `stock_<messageId>` 라, 그 messageId 로 매니페스트에서 카테고리를 찾는다.
+    private func selectedFreeBucketCategory(for record: LocalAlarmRecord) -> String? {
+        guard let cacheKey = record.audioCacheKey, cacheKey.hasPrefix("stock_") else { return nil }
+        let messageID = String(cacheKey.dropFirst("stock_".count))
+        return voiceStudio.stockClips.first { $0.messageId == messageID }?.category?.nilIfBlank
     }
 
     /// 중복 시각 교체 동의: 새 알람을 먼저 저장·예약한 뒤, 충돌 알람을 삭제한다.
