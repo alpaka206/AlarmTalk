@@ -309,11 +309,21 @@ struct AlarmTalkApp: App {
             storeTier: subscriptions.currentTier,
             userPlan: auth.session?.user.plan
         )
-        guard !currentPlan.meetsOrExceeds(.personal) else { return }
+        // ⚠ **유료면 잠긴 것을 되돌린다.** 예전에는 여기서 그냥 return 해서, 한 번
+        // 잠긴 알람은 재결제해도 영영 알람음으로 남았다(예전엔 아예 삭제였다).
+        guard !currentPlan.meetsOrExceeds(.personal) else {
+            _ = await socialFeatures.restorePaidVoiceAlarms(
+                alarmStore: alarmStore,
+                alarmKit: alarmKit
+            )
+            return
+        }
         _ = await socialFeatures.applyFreePlanVoiceLock(
             alarmStore: alarmStore,
             alarmKit: alarmKit,
-            voiceStudio: voiceStudio
+            voiceStudio: voiceStudio,
+            // 같은 기기에서 계정을 바꿨을 때 앞 계정 알람까지 잠그지 않게 한다.
+            expectedOwnerUserId: auth.session?.user.id
         )
     }
 }

@@ -50,6 +50,20 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var createdAtMillis: Int64
     var updatedAtMillis: Int64
 
+    /// 무료 전환으로 **잠그기 전의** 재생 방식.
+    ///
+    /// ⚠ **잠금은 삭제가 아니다.** 구독이 끝나면 목소리 알람을 지우는 게 아니라
+    /// `playMode` 만 `alarm_only` 로 내리고 원래 값을 여기 보관한다. 다시 유료가 되면
+    /// 이 값으로 되돌린다 — 안드로이드 `AlarmEntity.preLockPlayMode` 미러.
+    ///
+    /// iOS 는 예전에 **행과 음원을 함께 영구 삭제**했다. 재결제해도 돌아오지 않아
+    /// "내일 아침 알람이 없어졌다" 가 됐다(2026-08-07 수정).
+    var preLockPlayMode: String?
+
+    /// 이 알람을 만든 계정. 무료 전환 잠금이 **다른 계정 알람까지 건드리지 않게** 하는 가드.
+    /// 안드로이드 `AlarmEntity.ownerUserId` 미러.
+    var ownerUserId: String?
+
     // iOS-only:
     /// AlarmKit `Alarm.id` (UUID). 직렬화는 String 으로.
     var alarmKitID: String?

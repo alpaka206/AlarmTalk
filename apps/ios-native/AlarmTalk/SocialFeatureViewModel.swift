@@ -413,28 +413,77 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    /// Android `MainViewModelGrowthBillingActions.applyFreePlanVoiceLock` equivalent.
-    /// When paid voice access is gone, remove local voice alarms and clear paid voice state.
+    /// 무료 전환 시 목소리 알람을 **잠근다**(안드로이드 `AlarmRepository.lockPaidAlarmTalks` 미러).
+    ///
+    /// ⚠ **지우지 않는다.** 예전 iOS 는 `alarmKit.cancel` 로 행과 음원을 함께 **영구
+    /// 삭제**했다 — 시각·반복·문구·목소리 선택이 전부 사라지고 재결제해도 돌아오지
+    /// 않았다. 알람 앱에서 "내일 아침 알람이 없어졌다" 는 가장 무거운 실패다.
+    /// 안드로이드는 원래 `playMode` 를 `preLockPlayMode` 에 보관하고 `alarm_only` 로
+    /// 내려 **사운드온리로 계속 울린다**. 다시 유료가 되면 그대로 되살아난다.
+    ///
+    /// - Parameter expectedOwnerUserId: 이 계정 알람만 건드린다. 같은 기기에서 계정을
+    ///   바꿨을 때 앞 계정 알람까지 잠그지 않기 위한 가드(안드로이드와 동일).
     @discardableResult
     func applyFreePlanVoiceLock(
         alarmStore: LocalAlarmStore,
         alarmKit: AlarmKitViewModel,
-        voiceStudio: VoiceStudioViewModel
+        voiceStudio: VoiceStudioViewModel,
+        expectedOwnerUserId: String? = nil
     ) async -> Int {
-        let targets = alarmStore.paidAlarmTalks()
+        let targets = alarmStore.paidAlarmTalks().filter { record in
+            // 소유자가 안 적힌 옛 행은 이 계정 것으로 본다(안드로이드와 같은 관용).
+            guard let expectedOwnerUserId, let owner = record.ownerUserId else { return true }
+            return owner == expectedOwnerUserId
+        }
+
+        var locked = 0
         for record in targets {
-            await alarmKit.cancel(record: record, store: alarmStore)
+            var updated = record
+            // 이미 잠긴 알람을 다시 잠그면 원래 값을 잃는다 — 처음 한 번만 적는다.
+            if updated.preLockPlayMode == nil {
+                updated.preLockPlayMode = updated.playMode
+            }
+            updated.playMode = AlarmPlayMode.alarmOnly.rawValue
+            _ = alarmStore.upsert(updated)
+            // 사운드온리로 **다시 예약한다.** 재예약을 빠뜨리면 잠근 게 아니라
+            // 조용히 안 울리는 알람이 된다.
+            _ = await alarmKit.schedule(record: updated, store: alarmStore)
+            locked += 1
         }
 
         voiceStudio.clearPaidVoiceState()
-        clearPaidVoiceState(deletedAlarmCount: targets.count)
-        return targets.count
+        clearPaidVoiceState(lockedAlarmCount: locked)
+        return locked
     }
 
-    func clearPaidVoiceState(deletedAlarmCount: Int = 0) {
+    /// 유료로 돌아오면 잠가 둔 재생 방식을 되돌린다
+    /// (안드로이드 `AlarmRepository.unlockPaidAlarmTalks` 미러).
+    @discardableResult
+    func restorePaidVoiceAlarms(
+        alarmStore: LocalAlarmStore,
+        alarmKit: AlarmKitViewModel
+    ) async -> Int {
+        let locked = alarmStore.alarms.filter { $0.preLockPlayMode != nil }
+        var restored = 0
+        for record in locked {
+            var updated = record
+            updated.playMode = updated.preLockPlayMode ?? updated.playMode
+            updated.preLockPlayMode = nil
+            _ = alarmStore.upsert(updated)
+            _ = await alarmKit.schedule(record: updated, store: alarmStore)
+            restored += 1
+        }
+        if restored > 0 {
+            statusMessage = "이용권이 확인되어 목소리 알람을 다시 켰어요."
+        }
+        return restored
+    }
+
+    func clearPaidVoiceState(lockedAlarmCount: Int = 0) {
         familyVoices = []
-        if deletedAlarmCount > 0 {
-            statusMessage = "무료 이용권으로 전환되어 목소리 알람을 삭제했어요."
+        if lockedAlarmCount > 0 {
+            // '삭제했어요' 라고 하지 않는다 — 지우지 않았고, 알람은 알람음으로 계속 울린다.
+            statusMessage = "무료 이용권으로 전환되어 목소리 알람을 알람음으로 바꿨어요. 이용권을 다시 등록하면 목소리가 돌아와요."
         }
     }
 }

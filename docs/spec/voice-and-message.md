@@ -84,7 +84,31 @@
 ⚠ 이 화면은 **고르는 화면이 아니라 받는 화면**이다. "기본 목소리를 골라보세요" 같은
 피커로 되돌리지 말 것 — 목소리는 **알람 편집기에서** 고른다.
 
-## 6. 의도된 플랫폼 차이
+## 6. 무료로 내려가면 **잠근다 — 지우지 않는다**
+
+구독이 끝나거나 해지되면 목소리 알람을 **삭제하지 않는다.**
+
+| 무엇을 | 어떻게 |
+| --- | --- |
+| 재생 방식 | 원래 값을 `preLockPlayMode` 에 보관하고 `alarm_only` 로 내린다 |
+| 알람 자체 | **그대로 둔다.** 시각·반복·문구·목소리 선택 전부 보존 |
+| 음원 캐시 | 지우지 않는다 |
+| 예약 | 사운드온리로 **다시 예약한다** — 안 하면 잠근 게 아니라 조용히 안 울리는 알람이 된다 |
+| 유료 복귀 시 | `preLockPlayMode` 로 되돌리고 다시 예약한다 |
+
+⚠ **삭제는 되돌릴 수 없다.** iOS 가 실제로 행과 음원을 함께 지우고 있었다 — 재결제해도
+돌아오지 않았다. 알람 앱에서 "내일 아침 알람이 없어졌다" 는 가장 무거운 실패다
+(2026-08-07 수정).
+
+⚠ **두 번 잠가도 원래 값을 잃지 않아야 한다.** `preLockPlayMode` 가 이미 있으면 덮어쓰지
+않는다 — 덮어쓰면 두 번째 잠금이 `alarm_only` 를 '원래 값' 으로 적어 복원이 불가능해진다.
+
+⚠ **소유자를 확인한다.** 같은 기기에서 계정을 바꾸면 앞 계정 알람까지 잠글 수 있다.
+소유자가 안 적힌 옛 행은 이 계정 것으로 본다.
+
+⚠ **문구를 '삭제했어요' 로 쓰지 말 것.** 지우지 않았고, 알람은 알람음으로 계속 울린다.
+
+## 7. 의도된 플랫폼 차이
 
 | 항목 | 안드로이드 | iOS | 이유 |
 | --- | --- | --- | --- |
@@ -108,6 +132,7 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 오디오 캐시 키 | `stock_<messageId>` | `AudioCacheStore.stockCacheKey` (같은 규칙) | — |
+| 무료 전환 잠금 | `AlarmRepository.lockPaidAlarmTalks` / `unlockPaidAlarmTalks` | `SocialFeatureViewModel.applyFreePlanVoiceLock` / `restorePaidVoiceAlarms` | `users.plan`, `resolvePlanAfterSuspend` |
 
 ## 검증 방법
 

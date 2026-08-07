@@ -107,7 +107,7 @@
 
 </details>
 
-### ☐ [screens-flow] 무료 전환 시 iOS 는 목소리 알람을 **삭제**한다 — 안드로이드는 사운드온리로 잠그고 행에 안내를 남긴다
+### ☑ [screens-flow] 무료 전환 시 iOS 는 목소리 알람을 **삭제**한다 — 안드로이드는 사운드온리로 잠그고 행에 안내를 남긴다
 
 **안드로이드**: apps/android-native/.../ui/main/MainViewModelBillingActions.kt:528-548 — 주석이 정책을 못 박는다: "무료 전환 시 유료 목소리/알람 데이터를 삭제하지 않고, 기존 유료 목소리 알람을 사운드온리로 '잠근다'(preLockPlayMode 에 원래 모드 보관). 다시 유료가 되면 그대로 복원한다"(`lockPaidAlarmTalks` / `restorePaidVoiceAlarmsIfLocked`). 목록에서는 행이 남고 ControlsAndPermissions.kt:583-595 `alarmRowNotice` 가 '무료 요금제로 기본 알람 전환' 안내를 정보색으로 붙이며, AlarmListScreen.kt:292-297 이 그때 목소리 이름을 감춘다.
 
@@ -150,7 +150,7 @@ AlarmKit 제약은 "발사 시점에 우리 코드가 안 돈다" 뿐이고, 그
 
 </details>
 
-### ☐ [voice-save] 무료 전환 시 iOS 는 목소리 알람을 **삭제**한다 — 안드로이드는 잠갔다가 유료 복귀 시 복원한다
+### ☑ [voice-save] 무료 전환 시 iOS 는 목소리 알람을 **삭제**한다 — 안드로이드는 잠갔다가 유료 복귀 시 복원한다
 
 **안드로이드**: apps/android-native/.../data/AlarmRepository.kt:807-850 `lockPaidAlarmTalks` — 알람을 지우지 않고 `preLockPlayMode = alarm.playMode` 로 원래 재생모드를 보관한 뒤 `playMode = ALARM_ONLY` 로 내리고 사운드온리로 재예약한다. 캐시 오디오·voiceProfileId·ttsMessageId 는 전부 보존. :860-878 `unlockPaidAlarmTalks` 가 재유료 시 `preLockPlayMode` 로 되돌린다. 호출부 ui/main/MainViewModelBillingActions.kt:531-547(lock, `expectedOwnerUserId` 로 계정 바뀜 가드) / :550-558(unlock). 저장 필드는 data/AlarmEntity.kt:76 `preLockPlayMode`, :80 `ownerUserId`.
 
