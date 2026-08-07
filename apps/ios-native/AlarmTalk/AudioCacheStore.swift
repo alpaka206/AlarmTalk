@@ -20,6 +20,21 @@ struct AudioCacheMetadata: Codable, Equatable {
     let createdAtMillis: Int64
     let messageId: String?
     let rawAudioUri: String?
+
+    /// **입력 별칭**: 이 사이드카가 오디오가 아니라 '입력 → 서버 캐시키' 를 가리킬 때 채워진다.
+    /// 안드로이드 `.meta` 의 `alias_of` / `alias_text` 대응.
+    var aliasOf: String?
+    var aliasText: String?
+}
+
+/// 같은 입력으로 이미 만들어 둔 음성이 있다는 표시. 안드로이드 `TtsInputAlias`.
+struct TtsInputAlias: Equatable {
+    /// 서버가 준 캐시키(실제 오디오 파일이 여기 있다).
+    let cacheKey: String
+    /// **서버 표시 문구.** 알람에 저장되는 건 입력 원문이 아니라 이 값이다
+    /// (번역이 켜진 기기에서는 둘이 갈라진다). 이게 없는 별칭은 없는 것으로 친다 —
+    /// 그 값 없이 재사용하면 번역된 오디오에 원문을 붙이게 된다.
+    let displayText: String
 }
 
 enum AudioCacheError: LocalizedError {
@@ -351,6 +366,82 @@ final class AudioCacheStore {
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(metadata)
         try data.write(to: url, options: Self.audioWriteOptions)
+    }
+
+    // MARK: - 입력 별칭 (같은 문구를 다시 만들지 않는다)
+
+    /// **입력 키** — 같은 사람이 같은 목소리로 같은 문구를 다시 고르면 같은 값이 나온다.
+    /// 안드로이드 `AlarmAudioStore.ttsInputKey`.
+    ///
+    /// 서버 캐시키(`ttsCacheKey`)와 다른 이유: 서버 키는 **응답을 받아야** 계산할 수 있다
+    /// (표시 문구가 번역될 수 있어서). 저장 직전에 "이미 만들어 둔 게 있나" 를 묻는 데는
+    /// **부르기 전에** 만들 수 있는 키가 필요하다.
+    ///
+    /// 키에 들어가는 것과 이유:
+    ///  - `userId`·`profileId` — 사람과 목소리가 다르면 다른 음성이다
+    ///  - `text` — 공백을 하나로 접어 비교한다(줄바꿈만 다른 같은 문구를 갈라놓지 않게)
+    ///  - `category` — 같은 문구라도 카테고리가 다르면 서버가 다르게 만든다
+    ///  - `language` — 번역 여부가 이 값으로 갈린다
+    ///  - `listenerTitle` — 서버가 호칭을 문구 **안에** 병합하고, 공유 목소리는 보는
+    ///    사람마다 호칭이 다르다. 빼면 '엄마 목소리로 아빠 호칭' 이 나온다
+    nonisolated static func ttsInputKey(
+        userId: String,
+        profileId: String,
+        text: String,
+        category: String,
+        language: String,
+        listenerTitle: String?
+    ) -> String {
+        let normalizedText = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return computeCacheKey(text: [
+            "tts-input-v1",
+            userId,
+            profileId,
+            normalizedText,
+            normalizedTtsCategory(category),
+            language,
+            listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        ].joined(separator: "|"))
+    }
+
+    /// 입력 키 → (서버 캐시키, 서버 표시 문구) 별칭을 남긴다.
+    ///
+    /// 별칭은 오디오와 **같은 사이드카 형식**을 쓴다(새 파일 형식을 만들지 않는다).
+    /// 스윕이 별칭을 지웠거나 오디오가 먼저 사라졌으면 조회가 nil 이 되어 서버 경로로
+    /// 폴백한다 — 최악의 경우가 '지금과 똑같음' 이다.
+    nonisolated func linkTtsInput(inputKey: String, serverCacheKey: String, displayText: String) {
+        guard !inputKey.isEmpty, !serverCacheKey.isEmpty, inputKey != serverCacheKey else { return }
+        guard !displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let alias = AudioCacheMetadata(
+            cacheKey: inputKey,
+            source: "tts_input_alias",
+            mimeType: "",
+            durationMs: nil,
+            createdAtMillis: Int64(Date().timeIntervalSince1970 * 1000),
+            messageId: nil,
+            rawAudioUri: nil,
+            aliasOf: serverCacheKey,
+            aliasText: displayText
+        )
+        try? writeMetadata(alias)
+    }
+
+    /// `linkTtsInput` 이 남긴 별칭. 없거나 **가리키는 오디오가 사라졌으면** nil 이다.
+    ///
+    /// ⚠ 오디오 존재까지 확인한다 — 별칭만 보고 재사용하면 파일이 스윕된 뒤에도
+    /// '캐시 히트' 라고 판단해 소리 없는 알람을 저장한다.
+    nonisolated func resolveTtsInput(inputKey: String) -> TtsInputAlias? {
+        guard !inputKey.isEmpty,
+              let meta = readMetadata(cacheKey: inputKey),
+              let target = meta.aliasOf, !target.isEmpty,
+              let text = meta.aliasText, !text.isEmpty,
+              cachedURL(for: target) != nil
+        else { return nil }
+        return TtsInputAlias(cacheKey: target, displayText: text)
     }
 
     /// 단일 cacheKey 의 파일 + 사이드카 삭제.

@@ -64,6 +64,15 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 안드로이드 `AlarmEntity.ownerUserId` 미러.
     var ownerUserId: String?
 
+    /// 고른 **무료 테마(버킷)**. 안드로이드 `AlarmEntity.bucketId` 미러.
+    ///
+    /// ⚠ **런타임 파생으로 두지 말 것.** 예전 iOS 는 테마를 `audioCacheKey` 의
+    /// `stock_<messageId>` 에서 스톡 매니페스트를 거꾸로 뒤져 알아냈고, 그 복원은
+    /// **캐시 파일이 살아 있을 때만** 됐다. 파일이 없으면 편집기가 테마를 잃은 채 열리고,
+    /// 그대로 저장하면 고른 적 없는 '기본 인사말' 알람으로 조용히 바뀐다.
+    /// 값 하나를 행에 적어 두면 캐시와 무관하게 무엇을 골랐는지 남는다.
+    var bucketId: String?
+
     // iOS-only:
     /// AlarmKit `Alarm.id` (UUID). 직렬화는 String 으로.
     var alarmKitID: String?
@@ -326,6 +335,14 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case createdAtMillis
         case updatedAtMillis
         case alarmKitID
+        // ⚠ 아래 셋은 **한때 빠져 있었다**(2026-08-07 발견). CodingKeys 에 없으면
+        // 디스크 왕복에서 조용히 사라진다 — 무료 전환 잠금이 원래 재생 방식을 잃어
+        // 재결제해도 복원되지 않았고(preLockPlayMode), 잠금이 다른 계정 알람까지
+        // 건드리지 않게 막는 가드도 늘 통과했다(ownerUserId).
+        // **새 필드를 추가할 때는 여기와 디코더·인코더 세 곳을 함께 고칠 것.**
+        case preLockPlayMode
+        case ownerUserId
+        case bucketId
     }
 
     /// Codable 디코딩. 신규 필드 누락 시 default 폴백.
@@ -414,6 +431,9 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
         // alarmKitID: String 직렬화. 없으면 nil.
         self.alarmKitID = try c.decodeIfPresent(String.self, forKey: .alarmKitID)
+        self.preLockPlayMode = try c.decodeIfPresent(String.self, forKey: .preLockPlayMode)
+        self.ownerUserId = try c.decodeIfPresent(String.self, forKey: .ownerUserId)
+        self.bucketId = try c.decodeIfPresent(String.self, forKey: .bucketId)
 
         // fireAtMillis: 신규는 Int64. 없으면 hour/minute 으로 today/tomorrow 기본값.
         if let raw = try c.decodeIfPresent(Int64.self, forKey: .fireAtMillis) {
@@ -477,6 +497,9 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encode(createdAtMillis, forKey: .createdAtMillis)
         try c.encode(updatedAtMillis, forKey: .updatedAtMillis)
         try c.encodeIfPresent(alarmKitID, forKey: .alarmKitID)
+        try c.encodeIfPresent(preLockPlayMode, forKey: .preLockPlayMode)
+        try c.encodeIfPresent(ownerUserId, forKey: .ownerUserId)
+        try c.encodeIfPresent(bucketId, forKey: .bucketId)
     }
 
     /// hour/minute 만 알 때 다음 발화 시각 계산 (legacy import 폴백용).

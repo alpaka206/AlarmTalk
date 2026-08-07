@@ -185,4 +185,63 @@ final class AudioCacheStoreTests: XCTestCase {
         XCTAssertNil(store.cachedURL(for: key))
         XCTAssertNil(store.readMetadata(cacheKey: key))
     }
+
+    // MARK: - 입력 별칭 (같은 문구 재사용)
+
+    func test_ttsInputKey_normalizesWhitespaceAndIncludesEveryAxis() {
+        let base = AudioCacheStore.ttsInputKey(
+            userId: "u1", profileId: "v1", text: "  일어나\n  세요 ",
+            category: "custom", language: "ko", listenerTitle: " 엄마 "
+        )
+        // 공백만 다른 같은 문구는 같은 키 — 줄바꿈 하나로 캐시를 빗나가면 안 된다.
+        XCTAssertEqual(base, AudioCacheStore.ttsInputKey(
+            userId: "u1", profileId: "v1", text: "일어나 세요",
+            category: "custom", language: "ko", listenerTitle: "엄마"
+        ))
+        // 축이 하나라도 다르면 다른 키여야 한다.
+        for changed in [
+            AudioCacheStore.ttsInputKey(userId: "u2", profileId: "v1", text: "일어나 세요", category: "custom", language: "ko", listenerTitle: "엄마"),
+            AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v2", text: "일어나 세요", category: "custom", language: "ko", listenerTitle: "엄마"),
+            AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v1", text: "다른 문구", category: "custom", language: "ko", listenerTitle: "엄마"),
+            AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v1", text: "일어나 세요", category: "love", language: "ko", listenerTitle: "엄마"),
+            AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v1", text: "일어나 세요", category: "custom", language: "en", listenerTitle: "엄마"),
+            AudioCacheStore.ttsInputKey(userId: "u1", profileId: "v1", text: "일어나 세요", category: "custom", language: "ko", listenerTitle: "아빠"),
+        ] {
+            XCTAssertNotEqual(base, changed)
+        }
+    }
+
+    func test_resolveTtsInput_returnsAliasOnlyWhenAudioStillExists() throws {
+        let store = AudioCacheStore()
+        let payload = Data("reuse-me".utf8)
+        let serverKey = AudioCacheStore.computeCacheKey(payload)
+        _ = try store.cacheBytes(
+            payload, cacheKey: serverKey, mimeType: "audio/mpeg",
+            durationOverrideMs: 1_000, enforceMaxDuration: false
+        )
+        let inputKey = AudioCacheStore.ttsInputKey(
+            userId: "u1", profileId: "v1", text: "일어나요",
+            category: "custom", language: "ko", listenerTitle: nil
+        )
+        store.linkTtsInput(inputKey: inputKey, serverCacheKey: serverKey, displayText: "Wake up")
+
+        let alias = store.resolveTtsInput(inputKey: inputKey)
+        XCTAssertEqual(alias?.cacheKey, serverKey)
+        // 표시 문구는 입력 원문이 아니라 서버가 준 문구다(번역 켜지면 갈라진다).
+        XCTAssertEqual(alias?.displayText, "Wake up")
+
+        // 오디오가 스윕되면 별칭만 보고 '히트' 라고 하면 안 된다 — 소리 없는 알람이 된다.
+        try store.deleteCachedAudio(cacheKey: serverKey)
+        XCTAssertNil(store.resolveTtsInput(inputKey: inputKey))
+    }
+
+    func test_linkTtsInput_ignoresUselessAliases() throws {
+        let store = AudioCacheStore()
+        let key = AudioCacheStore.computeCacheKey(text: "self")
+        // 자기 자신을 가리키는 별칭 / 표시 문구가 빈 별칭은 남기지 않는다.
+        store.linkTtsInput(inputKey: key, serverCacheKey: key, displayText: "text")
+        XCTAssertNil(store.resolveTtsInput(inputKey: key))
+        store.linkTtsInput(inputKey: key, serverCacheKey: "other", displayText: "   ")
+        XCTAssertNil(store.resolveTtsInput(inputKey: key))
+    }
 }

@@ -973,13 +973,23 @@ struct AlarmEditorSheet: View {
         return resolved.isEmpty ? FreeBucket.order : resolved
     }
 
-    /// 지금 고른 테마 — 준비된 클립의 카테고리에서 되짚는다.
+    /// 지금 고른 테마.
+    ///
+    /// ⚠ **순서가 중요하다.** 편집기에서 방금 고른 값(준비된 클립의 카테고리)이 먼저고,
+    /// 없을 때만 저장된 `bucketId` 로 되짚는다. 반대로 두면 편집기에서 테마를 바꿔도
+    /// 저장된 옛 값이 계속 이긴다.
+    ///
+    /// 저장값 폴백이 필요한 이유: 클립 캐시 파일이 사라지면 `selectedStockMessageID`
+    /// 복원이 실패하는데, 그때 테마까지 잃으면 그대로 저장했을 때 고른 적 없는
+    /// '기본 인사말' 알람으로 조용히 바뀐다.
     var selectedFreeBucket: FreeBucket? {
-        guard let id = selectedStockMessageID,
-              let clip = voiceStudio.stockClips.first(where: { $0.id == id }),
-              let category = clip.category
-        else { return nil }
-        return FreeBucket(rawValue: category)
+        if let id = selectedStockMessageID,
+           let clip = voiceStudio.stockClips.first(where: { $0.id == id }),
+           let category = clip.category,
+           let bucket = FreeBucket(rawValue: category) {
+            return bucket
+        }
+        return (editingAlarm?.bucketId).nilIfBlank.flatMap(FreeBucket.init(rawValue:))
     }
 
     /// 테마 이어받기를 시도할 시점을 알리는 합성 키.
@@ -1051,6 +1061,83 @@ struct AlarmEditorSheet: View {
         guard draft.snoozeEnabled else { return "꺼짐" }
         let limit = SnoozeSettingsPane.repeatLabel(draft.snoozeRepeatLimit.rawValue)
         return "\(draft.snoozeMinutes)분 · \(limit)"
+    }
+
+    // MARK: - 같은 문구 재사용 (입력 캐시)
+
+    /// 서버를 부르기 **전에** 만들 수 있는 입력 키. 재사용 대상이 아니면 nil.
+    ///
+    /// 제외하는 것:
+    ///  - **랜덤 문구** — 매번 문장이 달라지는 게 기능이다
+    ///  - **가족 알람** — 서버가 수신자별로 만들어야 하고, 내 로컬 캐시는 수신자 기기에
+    ///    없어 그대로 저장하면 상대에게 **무음**이 된다
+    func ttsInputKeyForReuse(listenerTitle: String?) -> String? {
+        guard !voiceStudio.randomPrompt, !target.familyAlarmMode else { return nil }
+        guard let userID = (auth.session?.user.id).nilIfBlank,
+              let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return nil }
+        let text = voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        return AudioCacheStore.ttsInputKey(
+            userId: userID,
+            profileId: profileID,
+            text: text,
+            // 랜덤이 아닌 경로의 카테고리·언어는 `VoiceStudioViewModel.generateTTS` 와 같다.
+            category: "custom",
+            language: voiceStudio.translateText ? voiceStudio.ttsLanguage : "ko",
+            listenerTitle: listenerTitle
+        )
+    }
+
+    func reusableTtsInputAlias(listenerTitle: String?) -> TtsInputAlias? {
+        guard let key = ttsInputKeyForReuse(listenerTitle: listenerTitle) else { return nil }
+        return AudioCacheStore.shared.resolveTtsInput(inputKey: key)
+    }
+
+    /// 별칭이 가리키는 오디오를 `preparedAlarm` 으로 세운다. 성공하면 true.
+    func applyReusedTtsAudio(_ alias: TtsInputAlias) -> Bool {
+        guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank,
+              let url = AudioCacheStore.shared.cachedURL(for: alias.cacheKey) else { return false }
+        let meta = AudioCacheStore.shared.readMetadata(cacheKey: alias.cacheKey)
+        voiceStudio.preparedAlarm = PreparedAlarmTalk(
+            messageID: meta?.messageId ?? (editingAlarm?.ttsMessageId).nilIfBlank ?? "",
+            voiceProfileID: profileID,
+            localAudioFileName: url.lastPathComponent,
+            audioCacheKey: alias.cacheKey,
+            rawAudioURL: meta?.rawAudioUri,
+            // ⚠ 입력 원문이 아니라 **그 오디오와 짝이 되는 서버 표시 문구**를 쓴다.
+            // 번역이 켜지면 둘이 달라지는데, 원문을 쓰면 잠금화면 문구와 실제 음성이 어긋난다.
+            text: alias.displayText,
+            language: voiceStudio.translateText ? voiceStudio.ttsLanguage : "ko",
+            listenerTitle: alias.displayText.isEmpty ? nil : voiceStudio.selectedListenerTitle
+        )
+        voiceStudio.statusMessage = "전에 만든 음성을 그대로 사용했어요."
+        return true
+    }
+
+    /// 다음에 같은 문구를 넣으면 이 파일을 바로 찾도록 화살표를 남긴다.
+    ///
+    /// ⚠ **두 개를 남긴다** — 입력 원문 키와 **서버 표시 문구 키**. 알람에 저장되는 건
+    /// 표시 문구이고 '마지막에 쓴 직접 입력 문구' 로 기억되는 것도 그 값이다. 번역이
+    /// 켜진 기기에서는 둘이 달라서, 원문 키만 남기면 다음 새 알람이 표시 문구로 열려
+    /// 캐시를 빗나간다 — '재생성도 한도 차감도 없다' 던 약속이 조용히 깨진다.
+    func rememberTtsInputAlias(for prepared: PreparedAlarmTalk, listenerTitle: String?) {
+        guard let inputKey = ttsInputKeyForReuse(listenerTitle: listenerTitle) else { return }
+        let store = AudioCacheStore.shared
+        store.linkTtsInput(inputKey: inputKey, serverCacheKey: prepared.audioCacheKey, displayText: prepared.text)
+
+        guard let userID = (auth.session?.user.id).nilIfBlank,
+              let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return }
+        let displayTextKey = AudioCacheStore.ttsInputKey(
+            userId: userID,
+            profileId: profileID,
+            text: prepared.text,
+            category: "custom",
+            language: voiceStudio.translateText ? voiceStudio.ttsLanguage : "ko",
+            listenerTitle: listenerTitle
+        )
+        // 같은 값이면 굳이 두 번 쓰지 않는다.
+        guard displayTextKey != inputKey else { return }
+        store.linkTtsInput(inputKey: displayTextKey, serverCacheKey: prepared.audioCacheKey, displayText: prepared.text)
     }
 
     var navigationTitle: String {
@@ -1685,6 +1772,15 @@ struct AlarmEditorSheet: View {
                 fireAtMillis: fireAt,
                 listenerTitle: currentListenerTitle
             ) {
+            // 문구가 글자까지 똑같으면 **서버를 부르지 않고** 전에 만든 오디오를 그대로 쓴다
+            // (대기 없음 + 직접 입력 월 한도 안 깎임 + 오프라인에서도 저장됨).
+            // CLAUDE.md 가 '직접 입력 문구를 기억한다' 로 바꾼 근거가 바로 이 경로다 —
+            // 이게 없으면 이어받은 문구로 새 알람을 만들 때마다 서버 왕복이 필요하고,
+            // 오프라인이면 저장 자체가 실패한다.
+            if let alias = reusableTtsInputAlias(listenerTitle: currentListenerTitle),
+               applyReusedTtsAudio(alias) {
+                // 재사용 성공 — 서버 호출을 건너뛴다.
+            } else {
             let prepared = await voiceStudio.generateTTS(
                 session: auth.session,
                 alarmHour: draft.hour,
@@ -1699,7 +1795,9 @@ struct AlarmEditorSheet: View {
             )
             // 실패 게이트: nil 이면 statusMessage 에 사유가 남고, 레코드를 만들거나
             // finishScheduling 하기 전에 중단한다. draft(시간/이름/반복)는 @State 라 그대로다.
-            guard prepared != nil else { return }
+            guard let prepared else { return }
+            rememberTtsInputAlias(for: prepared, listenerTitle: currentListenerTitle)
+            }
         }
 
         let familyLocalVoiceSource: FamilyLocalVoiceUploadSource?
@@ -1796,6 +1894,14 @@ struct AlarmEditorSheet: View {
             if isStockClip {
                 merged.voiceRandomPrompt = false
                 merged.voiceRandomContext = nil
+                // 고른 테마를 **행에 적는다.** 캐시 파일이 사라져도 무엇을 골랐는지 남는다.
+                merged.bucketId = voiceStudio.stockClips
+                    .first { $0.messageId == prepared.messageID }?.category?.nilIfBlank
+                    ?? (editingAlarm?.bucketId).nilIfBlank
+            } else {
+                // 테마 알람이 아니게 됐으면 값을 비운다 — 남겨 두면 다음에 열 때 없는
+                // 테마가 고른 것처럼 보인다.
+                merged.bucketId = nil
             }
         }
 
@@ -1906,8 +2012,12 @@ struct AlarmEditorSheet: View {
     }
 
     /// 이 레코드가 무료 테마(스톡 클립)로 저장된 것이면 그 카테고리를 돌려준다.
-    /// 스톡 캐시 키는 `stock_<messageId>` 라, 그 messageId 로 매니페스트에서 카테고리를 찾는다.
+    ///
+    /// 저장된 `bucketId` 를 **먼저** 본다 — 매니페스트를 못 받았거나(오프라인) 클립이
+    /// 목록에서 빠져도 무엇을 골랐는지는 행에 남아 있다. 옛 행(그 필드가 없던 시절)만
+    /// `stock_<messageId>` 로 매니페스트를 되짚는다.
     private func selectedFreeBucketCategory(for record: LocalAlarmRecord) -> String? {
+        if let saved = (record.bucketId).nilIfBlank { return saved }
         guard let cacheKey = record.audioCacheKey, cacheKey.hasPrefix("stock_") else { return nil }
         let messageID = String(cacheKey.dropFirst("stock_".count))
         return voiceStudio.stockClips.first { $0.messageId == messageID }?.category?.nilIfBlank

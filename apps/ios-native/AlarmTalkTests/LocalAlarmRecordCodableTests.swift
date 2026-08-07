@@ -237,4 +237,22 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
 
         XCTAssertTrue(alarm.isPaidVoiceForDowngrade)
     }
+
+    /// ⚠ 회귀 방지: `preLockPlayMode`·`ownerUserId`·`bucketId` 는 한때 `CodingKeys` 에
+    /// 없어 디스크 왕복에서 조용히 사라졌다. 무료 전환 잠금이 원래 재생 방식을 잃어
+    /// 재결제해도 복원되지 않았고, 잠금이 남의 계정 알람을 건드리지 않게 막는 가드도
+    /// 늘 통과했다. **새 필드를 추가하면 이 테스트에도 넣을 것.**
+    func test_roundTrip_keepsLockAndOwnerAndBucketFields() throws {
+        var record = LocalAlarmRecord(label: "테스트", hour: 6, minute: 30, fireAtMillis: 1_000)
+        record.preLockPlayMode = AlarmPlayMode.voiceOnly.rawValue
+        record.ownerUserId = "user-1"
+        record.bucketId = "weather"
+
+        let data = try JSONEncoder().encode(record)
+        let decoded = try JSONDecoder().decode(LocalAlarmRecord.self, from: data)
+
+        XCTAssertEqual(decoded.preLockPlayMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertEqual(decoded.ownerUserId, "user-1")
+        XCTAssertEqual(decoded.bucketId, "weather")
+    }
 }

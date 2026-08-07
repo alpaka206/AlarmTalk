@@ -306,6 +306,15 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         merged.alarmSoundLabel = existing.alarmSoundLabel
         merged.defaultAlarmSoundId = existing.defaultAlarmSoundId
         merged.holidayOff = existing.holidayOff
+        // ⚠ 아래 셋도 **서버에 사본이 없다**(2026-08-07 추가). 빠져 있던 동안 pull 이 돌
+        // 때마다 조용히 nil 이 됐다:
+        //  - `preLockPlayMode` — 무료 전환 잠금 전의 재생 방식. 잃으면 재결제해도 목소리
+        //    알람이 안 돌아온다.
+        //  - `ownerUserId` — 잠금이 다른 계정 알람을 건드리지 않게 막는 가드.
+        //  - `bucketId` — 고른 무료 테마.
+        merged.preLockPlayMode = existing.preLockPlayMode
+        merged.ownerUserId = existing.ownerUserId
+        merged.bucketId = existing.bucketId
 
         // 동적 문구(날씨·운세·랜덤) 설정 일체. 서버는 이 개념을 모른다 —
         // 매퍼가 `voiceRandomPrompt: false` 로 만들어 내므로 지키지 않으면 **pull 한 번에

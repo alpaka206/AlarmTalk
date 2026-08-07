@@ -172,12 +172,20 @@ struct RootView: View {
     }
 
     /// 앱을 못 쓰게 막고 있는 게이트가 떠 있는가.
+    ///
+    /// ⚠ **목소리 받기 화면도 여기 들어간다.** `voiceSetupDone` 은 아직 판정 전이면 nil,
+    /// 안 받았으면 false 이고 그때 `VoiceSetupView`(스톡 클립 다운로드)가 전체 화면을
+    /// 차지한다. 이걸 빼 두면 **신규 가입 100% 에서** 그 위에 웰컴 프로모가 얹혀,
+    /// 스크림이 다운로드 화면의 '다시 시도'·6초 뒤 탈출구를 가린다(레이스가 아니라
+    /// 결정적 재현). 안드로이드도 `showVoiceSetup` 을 게이트에 넣어 두었다가 끝난
+    /// **뒤에** 프로모를 띄운다.
     private var blockingGateActive: Bool {
         versionGate.updateRequired
             || auth.consentUnsupported
             || !auth.isAuthenticated
             || auth.pendingDeletion
             || auth.showConsentScreen
+            || voiceSetupDone != true
     }
 
     /// 프로모 판정에 필요한 값이 다 모였는지 나타내는 키.

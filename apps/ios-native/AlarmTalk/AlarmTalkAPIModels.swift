@@ -329,6 +329,10 @@ struct RemoteAlarmWriteRequest: Encodable {
     var messageId: String?
     var voiceProfileId: String?
     var targetUserId: String?
+    /// 고른 무료 테마. 서버 `alarms.bucket_id` — 안드로이드도 같은 키로 보낸다.
+    /// 서버가 값을 검증하므로(`alarm-helpers.ts` 의 `INVALID_BUCKET_ID`) 아무 문자열이나
+    /// 넣으면 400 이 난다.
+    var bucketId: String?
     /// 기기 타임존 식별자 (예: "Asia/Seoul"). 서버가 사용자 로컬 시각 기준으로
     /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
     var timezone: String? = TimeZone.current.identifier
