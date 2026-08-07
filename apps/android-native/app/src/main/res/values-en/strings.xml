@@ -201,6 +201,9 @@
     <string name="editor_plan_gate_login_title">Sign in required</string>
     <string name="editor_plan_gate_login_required">Sign in to create voice alarms.</string>
     <string name="editor_plan_gate_paid_features">With a plan, you can use your own voices, recordings, and custom phrases.</string>
+    <string name="editor_plan_gate_system_voice_title">Default voices can\'t read custom text</string>
+    <string name="editor_plan_gate_system_voice_message">Default voices only speak the lines we prepared. To wake up to your own words, register your own voice.</string>
+    <string name="editor_plan_gate_system_voice_confirm">Register a voice</string>
     <string name="editor_play_mode_alarm_only">Alarm</string>
     <string name="editor_play_mode_title">Playback mode</string>
     <string name="editor_play_mode_voice_only">Voice</string>

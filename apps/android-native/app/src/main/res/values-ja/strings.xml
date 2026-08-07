@@ -201,6 +201,9 @@
     <string name="editor_plan_gate_login_title">ログインが必要です</string>
     <string name="editor_plan_gate_login_required">ログインすると音声アラームを作成できます。</string>
     <string name="editor_plan_gate_paid_features">プランに加入すると、自分で作った声・録音・自由入力の文でアラームを作れます。</string>
+    <string name="editor_plan_gate_system_voice_title">基本の声では自由入力を使えません</string>
+    <string name="editor_plan_gate_system_voice_message">基本の声は用意された文章だけを話せます。自分で書いた文章で起こしてもらうには、自分の声を登録してください。</string>
+    <string name="editor_plan_gate_system_voice_confirm">声を登録する</string>
     <string name="editor_play_mode_alarm_only">アラーム</string>
     <string name="editor_play_mode_title">再生方式</string>
     <string name="editor_play_mode_voice_only">声</string>

@@ -1631,26 +1631,77 @@ internal fun AlarmEditorScreen(
     }
 
     if (voicePlanGateOpen) {
+        // ⚠ **상태는 셋인데 분기는 둘이었다 — 그래서 유료 사용자가 '로그인이 필요해요' 를
+        // 봤다**(2026-08-07 사용자 문의로 확인). `freeVoiceTier` 는 `로그인함 && !유료` 라,
+        // 그 `else` 에는 비로그인뿐 아니라 **로그인한 유료 사용자**도 들어간다.
+        //
+        // 유료가 이 게이트에 닿는 길은 실재한다: 기본(시스템) 목소리를 고르면 유료여도
+        // 문구가 '날씨+약' 으로 제한되고(위 `restrictToWeatherMedication` 주석), 그 pane 의
+        // 잠긴 '직접 입력' 을 누르면 `onManualLocked` 가 이 게이트를 연다. 이용권을 이미
+        // 가진 사람에게 로그인을 요구하고 이용권을 팔려 든 셈이다.
+        //
+        // 이제 셋으로 가른다. **각 상태에 맞는 액션만 붙인다** — 쿠폰·이용권 버튼은
+        // '이용권이 없어서' 막힌 경우에만 뜻이 있다.
+        val gateReason = when {
+            authSession == null -> VoiceGateReason.LOGIN_REQUIRED
+            freeVoiceTier -> VoiceGateReason.PLAN_REQUIRED
+            // 로그인 + 유료인데 막혔다 = 목소리 종류의 문제다(플랜 문제가 아니다).
+            else -> VoiceGateReason.SYSTEM_VOICE_LIMIT
+        }
         PlanGateDialog(
-            title = if (freeVoiceTier) {
-                stringResource(R.string.r3dlg_plan_gate_title)
-            } else {
-                stringResource(R.string.editor_plan_gate_login_title)
-            },
-            message = if (freeVoiceTier) {
-                stringResource(R.string.editor_plan_gate_paid_features)
-            } else {
-                stringResource(R.string.editor_plan_gate_login_required)
-            },
+            title = stringResource(
+                when (gateReason) {
+                    VoiceGateReason.LOGIN_REQUIRED -> R.string.editor_plan_gate_login_title
+                    VoiceGateReason.PLAN_REQUIRED -> R.string.r3dlg_plan_gate_title
+                    VoiceGateReason.SYSTEM_VOICE_LIMIT -> R.string.editor_plan_gate_system_voice_title
+                },
+            ),
+            message = stringResource(
+                when (gateReason) {
+                    VoiceGateReason.LOGIN_REQUIRED -> R.string.editor_plan_gate_login_required
+                    VoiceGateReason.PLAN_REQUIRED -> R.string.editor_plan_gate_paid_features
+                    VoiceGateReason.SYSTEM_VOICE_LIMIT -> R.string.editor_plan_gate_system_voice_message
+                },
+            ),
+            confirmLabel = stringResource(
+                when (gateReason) {
+                    VoiceGateReason.SYSTEM_VOICE_LIMIT -> R.string.editor_plan_gate_system_voice_confirm
+                    else -> R.string.r3dlg_plan_gate_confirm
+                },
+            ),
             onConfirm = {
                 voicePlanGateOpen = false
-                onOpenBilling()
+                // 유료인데 막힌 사람에게 결제 화면을 열면 살 게 없다 — 목소리 등록으로 보낸다.
+                if (gateReason == VoiceGateReason.SYSTEM_VOICE_LIMIT) {
+                    onCreateVoiceProfile()
+                } else {
+                    onOpenBilling()
+                }
             },
             onDismiss = { voicePlanGateOpen = false },
-            onRedeemCode = onRegisterCode,
+            // ⚠ 쿠폰 입력은 **이용권이 없을 때만** 붙인다. 비로그인에게 붙이면 등록할 계정이
+            // 없고, 이미 유료인 사람에게 붙이면 넣어 봐야 아무 일도 일어나지 않는다.
+            onRedeemCode = if (gateReason == VoiceGateReason.PLAN_REQUIRED) onRegisterCode else null,
             redeemBusy = redeemBusy,
         )
     }
 }
 
+/**
+ * 목소리 게이트가 뜬 **이유**. 예전에는 이 셋을 불리언 하나(`freeVoiceTier`)로 갈라서,
+ * 로그인한 유료 사용자가 '로그인이 필요해요' 를 보는 사고가 났다.
+ */
+private enum class VoiceGateReason {
+    /** 세션이 없다. 쿠폰을 등록할 계정도 없다. */
+    LOGIN_REQUIRED,
 
+    /** 로그인했지만 이용권이 없다. 여기서만 쿠폰 입력이 뜻을 갖는다. */
+    PLAN_REQUIRED,
+
+    /**
+     * 로그인 + 유료인데 막혔다 = **목소리 종류**의 제약이다.
+     * 기본(시스템) 목소리는 준비된 문구만 말할 수 있어 직접 입력을 쓸 수 없다.
+     * 플랜 문제가 아니므로 결제 화면이 아니라 목소리 등록으로 보낸다.
+     */
+    SYSTEM_VOICE_LIMIT,
+}
