@@ -66,8 +66,6 @@
     <string name="billing_cancel_dialog_title">利用券を解約しますか？</string>
     <string name="billing_gift_personal_action">個人プランを贈る</string>
     <string name="billing_gift_personal_desc">1か月分を贈れるコードを作ります。受け取った方がコードを登録するとすぐに使えます。</string>
-    <string name="billing_gift_ready">ギフトコードを作りました。下から共有してください。</string>
-    <string name="billing_gift_pending">決済の承認を待っています。完了するとコードが作られます。</string>
     <string name="billing_gift_failed">ギフトコードを作れませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="billing_cancel_immediate_description">残り期間の料金は日割りで返金され、プランはすぐに終了します。声は3日間保管されます — その間に再登録すればそのまま使え、過ぎると完全に削除されます。</string>
     <string name="billing_cancel_immediate_title">今すぐ解約しますか？</string>
@@ -129,13 +127,6 @@
     <string name="common_alarm_warning_reschedule_failed">アラームを再設定できませんでした。時間を確認して、もう一度保存してください。</string>
     <string name="common_alarm_notice_free_downgraded">無料プランに変わったため、基本アラーム音に変換されました。</string>
     <string name="common_alarm_notice_default_converted">声が使えなくなったため、基本アラーム音に変換されました。</string>
-    <string name="common_day_fri">金</string>
-    <string name="common_day_mon">月</string>
-    <string name="common_day_sat">土</string>
-    <string name="common_day_sun">日</string>
-    <string name="common_day_thu">木</string>
-    <string name="common_day_tue">火</string>
-    <string name="common_day_wed">水</string>
     <string name="common_google_continue">Googleで続ける</string>
     <string name="common_google_login">Googleでログイン</string>
     <string name="common_permission_allow_action">許可する</string>
@@ -152,8 +143,6 @@
     <string name="common_permission_notifications_label">通知</string>
     <string name="common_permission_required">必要</string>
     <string name="common_permission_title">権限</string>
-    <string name="common_stepper_decrease">%1$s を下げる</string>
-    <string name="common_stepper_increase">%1$s を上げる</string>
     <string name="common_tab_billing">利用券</string>
     <string name="common_tab_code_register">コード登録</string>
     <string name="common_voice_capture_mode_file">ファイル</string>
@@ -255,7 +244,6 @@
     <string name="editor_voice_local_detail">このアラームだけに使う音をその場で録音</string>
     <string name="editor_voice_volume">声の大きさ</string>
     <string name="editor_volume">音量</string>
-    <string name="editorp_fortune_birthdate_placeholder">タップして生年月日を選択</string>
     <string name="editorp_fortune_birthdate_section">生年月日</string>
     <string name="editorp_fortune_birthdate_year">年</string>
     <string name="editorp_fortune_birthdate_month">月</string>
@@ -265,8 +253,6 @@
     <string name="editorp_fortune_unit_day">日</string>
     <string name="editorp_fortune_birthtime_section">生まれた時間</string>
     <string name="editorp_fortune_birthtime_placeholder">選択</string>
-    <string name="editorp_fortune_date_confirm">確定</string>
-    <string name="editorp_fortune_date_title">生年月日</string>
     <string name="editorp_fortune_dialog_title">占い情報</string>
     <string name="editorp_fortune_gender_female">女性</string>
     <string name="editorp_fortune_gender_male">男性</string>
@@ -616,7 +602,6 @@
     <string name="voices_sharing_shared_desc_enabled">登録した声を家族・恋人も一緒に使えます。</string>
     <string name="voices_sharing_shared_title">家族・恋人への共有を許可</string>
     <string name="voices_step_sharing">共有設定</string>
-    <string name="voices_default_voice_prefetching">アラーム音声を準備中 %1$d/%2$d</string>
     <string name="voices_single_speaker_hint">一人の声だけが入った音声を入れてください。\n複数人が混ざると、声が正確に再現されません。</string>
     <string name="voices_upload_file_or_video">ファイルまたは動画をアップロード</string>
     <string name="voices_upload_zone_subtitle">12秒以上2分以内の音声か動画であれば大丈夫です</string>
@@ -650,15 +635,6 @@
     <string name="voicesr_status_deleting">削除中</string>
     <string name="voicesr_voice_name_label">声の名前</string>
     <string name="label_audio_file">音声ファイル</string>
-    <string name="label_repeat_none">繰り返しなし</string>
-    <string name="label_repeat_daily">毎日</string>
-    <string name="label_weekday_sun">日</string>
-    <string name="label_weekday_mon">月</string>
-    <string name="label_weekday_tue">火</string>
-    <string name="label_weekday_wed">水</string>
-    <string name="label_weekday_thu">木</string>
-    <string name="label_weekday_fri">金</string>
-    <string name="label_weekday_sat">土</string>
     <string name="label_snooze_repeat_three">3回</string>
     <string name="label_snooze_repeat_five">5回</string>
     <string name="label_snooze_repeat_forever">繰り返し</string>
@@ -689,7 +665,6 @@
     <string name="editor2_voice_detail_default">基本の声</string>
     <string name="editor2_voice_detail_mine_sharing">自分の声 · 共有中</string>
     <string name="editor2_voice_detail_mine">自分の声</string>
-    <string name="editor2_voice_output_summary_repeat">%1$s · 繰り返し</string>
     <string name="editor2_silent">無音</string>
     <string name="editor2_alarm_sound_summary">%1$s · %2$s</string>
     <string name="editor2_default_alarm_sound">基本アラーム音</string>
@@ -699,7 +674,6 @@
     <string name="editor2_quiet_days_weekend">週末</string>
     <string name="editor2_quiet_days_everyday">毎日</string>
     <string name="editor2_fortune_time_unknown">時間不明</string>
-    <string name="editor2_birthdate_display">%1$s年%2$s月%3$s日</string>
     <string name="editor2_weather_location_prompt">都市を入力してください。</string>
     <string name="editor2_fortune_info_prompt">性別、生年月日、生まれた時間を入力してください。</string>
     <string name="voices2_audio_duration_unknown">音声の長さを確認できませんでした。</string>
@@ -806,7 +780,6 @@
     <string name="r3app_update_restart">再起動</string>
     <string name="r3app_google_signin_failed">Googleログインに失敗しました</string>
     <string name="r3app_google_signin_no_info">Googleログイン情報を取得できませんでした。もう一度お試しください。</string>
-    <string name="r3app_plan_gate_confirm">プランを見る</string>
     <string name="r3dlg_duplicate_alarm_message">%1$sのアラームを新しいアラームに置き換えますか？</string>
     <string name="r3dlg_duplicate_alarm_title">同じ時刻にアラームがあります</string>
     <string name="r3dlg_duplicate_alarm_replace">置き換える</string>

@@ -27,10 +27,6 @@ export const EMPTY_DYNAMIC_PROMPT_SETTINGS: DynamicPromptSettings = {
   },
 };
 
-export const EMPTY_DYNAMIC_PROMPT_SETTINGS_STATE: DynamicPromptSettingsState = {
-  weather_ready: false,
-  fortune_ready: false,
-};
 
 export function dynamicPromptSettingsFromRow(row: Record<string, unknown>): DynamicPromptSettings {
   return parseDynamicPromptSettings(row.dynamic_prompt_settings_json);

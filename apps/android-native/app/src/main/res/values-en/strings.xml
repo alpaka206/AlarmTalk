@@ -66,8 +66,6 @@
     <string name="billing_cancel_dialog_title">Cancel your pass?</string>
     <string name="billing_gift_personal_action">Gift a Personal pass</string>
     <string name="billing_gift_personal_desc">Creates a code that gifts one month. Whoever redeems it can start right away.</string>
-    <string name="billing_gift_ready">Your gift code is ready. Share it below.</string>
-    <string name="billing_gift_pending">Waiting for payment approval. The code appears once it completes.</string>
     <string name="billing_gift_failed">We couldn\'t create the gift code. Please try again in a moment.</string>
     <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days — resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
@@ -129,13 +127,6 @@
     <string name="common_alarm_warning_reschedule_failed">We couldn\'t reschedule the alarm. Please check the time and save again.</string>
     <string name="common_alarm_notice_free_downgraded">Switched to the free plan, so this alarm now uses the default sound.</string>
     <string name="common_alarm_notice_default_converted">The voice is no longer available, so this alarm now uses the default sound.</string>
-    <string name="common_day_fri">Fri</string>
-    <string name="common_day_mon">Mon</string>
-    <string name="common_day_sat">Sat</string>
-    <string name="common_day_sun">Sun</string>
-    <string name="common_day_thu">Thu</string>
-    <string name="common_day_tue">Tue</string>
-    <string name="common_day_wed">Wed</string>
     <string name="common_google_continue">Continue with Google</string>
     <string name="common_google_login">Sign in with Google</string>
     <string name="common_permission_allow_action">Allow</string>
@@ -152,8 +143,6 @@
     <string name="common_permission_notifications_label">Notifications</string>
     <string name="common_permission_required">Required</string>
     <string name="common_permission_title">Permissions</string>
-    <string name="common_stepper_decrease">Decrease %1$s</string>
-    <string name="common_stepper_increase">Increase %1$s</string>
     <string name="common_tab_billing">Plan</string>
     <string name="common_tab_code_register">Register code</string>
     <string name="common_voice_capture_mode_file">File</string>
@@ -255,7 +244,6 @@
     <string name="editor_voice_local_detail">Record a sound just for this alarm</string>
     <string name="editor_voice_volume">Voice volume</string>
     <string name="editor_volume">Volume</string>
-    <string name="editorp_fortune_birthdate_placeholder">Tap to pick your date of birth</string>
     <string name="editorp_fortune_birthdate_section">Date of birth</string>
     <string name="editorp_fortune_birthdate_year">Year</string>
     <string name="editorp_fortune_birthdate_month">Month</string>
@@ -265,8 +253,6 @@
     <string name="editorp_fortune_unit_day"></string>
     <string name="editorp_fortune_birthtime_section">Time of birth</string>
     <string name="editorp_fortune_birthtime_placeholder">Select</string>
-    <string name="editorp_fortune_date_confirm">OK</string>
-    <string name="editorp_fortune_date_title">Date of birth</string>
     <string name="editorp_fortune_dialog_title">Fortune info</string>
     <string name="editorp_fortune_gender_female">Female</string>
     <string name="editorp_fortune_gender_male">Male</string>
@@ -608,7 +594,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_sharing_shared_desc_enabled">Your family or partner can use the voice you register, too.</string>
     <string name="voices_sharing_shared_title">Allow sharing with family or partner</string>
     <string name="voices_step_sharing">Sharing settings</string>
-    <string name="voices_default_voice_prefetching">Preparing alarm voice %1$d/%2$d</string>
     <string name="voices_single_speaker_hint">Use audio with only one person\'s voice.\nIf several voices are mixed, the cloned voice won\'t be accurate.</string>
     <string name="voices_upload_file_or_video">Upload a file or video</string>
     <string name="voices_upload_zone_subtitle">Any audio or video from 12 seconds to 2 minutes works</string>
@@ -642,15 +627,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voicesr_status_deleting">Deleting</string>
     <string name="voicesr_voice_name_label">Voice name</string>
     <string name="label_audio_file">Audio file</string>
-    <string name="label_repeat_none">No repeat</string>
-    <string name="label_repeat_daily">Daily</string>
-    <string name="label_weekday_sun">Sun</string>
-    <string name="label_weekday_mon">Mon</string>
-    <string name="label_weekday_tue">Tue</string>
-    <string name="label_weekday_wed">Wed</string>
-    <string name="label_weekday_thu">Thu</string>
-    <string name="label_weekday_fri">Fri</string>
-    <string name="label_weekday_sat">Sat</string>
     <string name="label_snooze_repeat_three">3 times</string>
     <string name="label_snooze_repeat_five">5 times</string>
     <string name="label_snooze_repeat_forever">Repeat forever</string>
@@ -681,7 +657,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="editor2_voice_detail_default">Default voice</string>
     <string name="editor2_voice_detail_mine_sharing">My voice · Sharing</string>
     <string name="editor2_voice_detail_mine">My voice</string>
-    <string name="editor2_voice_output_summary_repeat">%1$s · Repeat</string>
     <string name="editor2_silent">Silent</string>
     <string name="editor2_alarm_sound_summary">%1$s · %2$s</string>
     <string name="editor2_default_alarm_sound">Default alarm sound</string>
@@ -691,7 +666,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="editor2_quiet_days_weekend">Weekends</string>
     <string name="editor2_quiet_days_everyday">Every day</string>
     <string name="editor2_fortune_time_unknown">Unknown</string>
-    <string name="editor2_birthdate_display">%1$s-%2$s-%3$s</string>
     <string name="editor2_weather_location_prompt">Please enter your city.</string>
     <string name="editor2_fortune_info_prompt">Please enter your gender, date of birth, and time of birth.</string>
     <string name="voices2_audio_duration_unknown">We couldn\'t check the audio length.</string>
@@ -798,7 +772,6 @@ for a smooth and secure experience.</string>
     <string name="r3app_update_restart">Restart</string>
     <string name="r3app_google_signin_failed">Google sign-in failed</string>
     <string name="r3app_google_signin_no_info">We couldn\'t get your Google sign-in info. Please try again.</string>
-    <string name="r3app_plan_gate_confirm">View plans</string>
     <string name="r3dlg_duplicate_alarm_message">Replace the %1$s alarm with your new one?</string>
     <string name="r3dlg_duplicate_alarm_title">An alarm is already set for this time</string>
     <string name="r3dlg_duplicate_alarm_replace">Replace</string>

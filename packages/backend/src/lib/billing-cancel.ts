@@ -32,13 +32,6 @@ export interface ActiveSubscription {
   planGroupId: string | null;
 }
 
-export async function findActiveSubscriptionByUserPk(
-  db: DbExecutor,
-  userPk: string,
-): Promise<ActiveSubscription | null> {
-  const subscriptions = await findActiveSubscriptionsByUserPk(db, userPk);
-  return subscriptions[0] ?? null;
-}
 
 export async function findActiveSubscriptionsByUserPk(
   db: DbExecutor,

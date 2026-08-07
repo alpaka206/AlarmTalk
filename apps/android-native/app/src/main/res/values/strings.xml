@@ -68,8 +68,6 @@
     <string name="billing_cancel_dialog_title">이용권을 해지할까요?</string>
     <string name="billing_gift_personal_action">개인 이용권 선물하기</string>
     <string name="billing_gift_personal_desc">1개월 이용권을 선물할 수 있는 코드를 만들어요. 받은 사람이 코드를 등록하면 바로 쓸 수 있어요.</string>
-    <string name="billing_gift_ready">선물 코드를 만들었어요. 아래에서 공유해 주세요.</string>
-    <string name="billing_gift_pending">결제 승인을 기다리고 있어요. 완료되면 코드가 만들어져요.</string>
     <string name="billing_gift_failed">선물 코드를 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="billing_cancel_immediate_description">남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요 — 그 안에 다시 이용권을 등록하면 그대로 다시 쓸 수 있고, 지나면 영구 삭제돼요.</string>
     <string name="billing_cancel_immediate_title">지금 바로 해지할까요?</string>
@@ -131,13 +129,6 @@
     <string name="common_alarm_warning_reschedule_failed">알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요.</string>
     <string name="common_alarm_notice_free_downgraded">무료 요금제로 바뀌어 기본 알람으로 변환되었어요.</string>
     <string name="common_alarm_notice_default_converted">목소리를 쓸 수 없어 기본 알람으로 변환되었어요.</string>
-    <string name="common_day_fri">금</string>
-    <string name="common_day_mon">월</string>
-    <string name="common_day_sat">토</string>
-    <string name="common_day_sun">일</string>
-    <string name="common_day_thu">목</string>
-    <string name="common_day_tue">화</string>
-    <string name="common_day_wed">수</string>
     <string name="common_google_continue">Google로 계속하기</string>
     <string name="common_google_login">Google로 로그인</string>
     <string name="common_permission_allow_action">허용하기</string>
@@ -154,8 +145,6 @@
     <string name="common_permission_notifications_label">알림</string>
     <string name="common_permission_required">필요함</string>
     <string name="common_permission_title">권한</string>
-    <string name="common_stepper_decrease">%1$s 줄이기</string>
-    <string name="common_stepper_increase">%1$s 올리기</string>
     <string name="common_tab_billing">이용권</string>
     <string name="common_tab_code_register">코드 등록</string>
     <string name="common_voice_capture_mode_file">파일</string>
@@ -260,7 +249,6 @@
     <string name="editor_voice_local_detail">이 알람에만 쓸 소리를 직접 녹음하기</string>
     <string name="editor_voice_volume">목소리 크기</string>
     <string name="editor_volume">볼륨</string>
-    <string name="editorp_fortune_birthdate_placeholder">탭하여 생년월일 선택</string>
     <string name="editorp_fortune_birthdate_section">생년월일</string>
     <string name="editorp_fortune_birthdate_year">연도</string>
     <string name="editorp_fortune_birthdate_month">월</string>
@@ -270,8 +258,6 @@
     <string name="editorp_fortune_unit_day">일</string>
     <string name="editorp_fortune_birthtime_section">태어난 시간</string>
     <string name="editorp_fortune_birthtime_placeholder">선택</string>
-    <string name="editorp_fortune_date_confirm">확인</string>
-    <string name="editorp_fortune_date_title">생년월일</string>
     <string name="editorp_fortune_dialog_title">운세 정보</string>
     <string name="editorp_fortune_gender_female">여성</string>
     <string name="editorp_fortune_gender_male">남성</string>
@@ -623,7 +609,6 @@
     <string name="voices_sharing_shared_desc_enabled">등록한 목소리를 가족·연인도 함께 사용할 수 있어요.</string>
     <string name="voices_sharing_shared_title">가족·연인에게 공유 허용</string>
     <string name="voices_step_sharing">공유 설정</string>
-    <string name="voices_default_voice_prefetching">알람 음성 준비 중 %1$d/%2$d</string>
     <string name="voices_single_speaker_hint">한 사람 목소리만 들어간 오디오를 넣어주세요.\n여러 명의 음성이 들어가 있으면 목소리가 달라질 수 있어요.</string>
     <string name="voices_upload_file_or_video">파일 또는 영상 업로드</string>
     <string name="voices_upload_zone_subtitle">12초 이상 2분 이하 오디오나 영상이면 돼요</string>
@@ -657,15 +642,6 @@
     <string name="voicesr_status_deleting">삭제 중</string>
     <string name="voicesr_voice_name_label">목소리 이름</string>
     <string name="label_audio_file">음성 파일</string>
-    <string name="label_repeat_none">반복 없음</string>
-    <string name="label_repeat_daily">매일</string>
-    <string name="label_weekday_sun">일</string>
-    <string name="label_weekday_mon">월</string>
-    <string name="label_weekday_tue">화</string>
-    <string name="label_weekday_wed">수</string>
-    <string name="label_weekday_thu">목</string>
-    <string name="label_weekday_fri">금</string>
-    <string name="label_weekday_sat">토</string>
     <string name="label_snooze_repeat_three">3회</string>
     <string name="label_snooze_repeat_five">5회</string>
     <string name="label_snooze_repeat_forever">계속 반복</string>
@@ -712,7 +688,6 @@
     <string name="editor2_voice_detail_default">기본 목소리</string>
     <string name="editor2_voice_detail_mine_sharing">내 목소리 · 공유 중</string>
     <string name="editor2_voice_detail_mine">내 목소리</string>
-    <string name="editor2_voice_output_summary_repeat">%1$s · 반복</string>
     <string name="editor2_silent">무음</string>
     <string name="editor2_alarm_sound_summary">%1$s · %2$s</string>
     <string name="editor2_default_alarm_sound">기본 알람음</string>
@@ -722,7 +697,6 @@
     <string name="editor2_quiet_days_weekend">주말</string>
     <string name="editor2_quiet_days_everyday">매일</string>
     <string name="editor2_fortune_time_unknown">시간 모름</string>
-    <string name="editor2_birthdate_display">%1$s년 %2$s월 %3$s일</string>
     <string name="editor2_weather_location_prompt">도시를 입력해 주세요.</string>
     <string name="editor2_fortune_info_prompt">성별, 생년월일, 태어난 시간을 입력해 주세요.</string>
     <string name="voices2_audio_duration_unknown">오디오 길이를 확인할 수 없어요.</string>
@@ -829,7 +803,6 @@
     <string name="r3app_update_restart">재시작</string>
     <string name="r3app_google_signin_failed">Google 로그인에 실패했어요</string>
     <string name="r3app_google_signin_no_info">Google 로그인 정보를 받지 못했어요. 다시 시도해 주세요.</string>
-    <string name="r3app_plan_gate_confirm">이용권 보기</string>
     <string name="r3dlg_duplicate_alarm_message">%1$s 알람을 새 알람으로 교체할까요?</string>
     <string name="r3dlg_duplicate_alarm_title">같은 시각 알람이 있어요</string>
     <string name="r3dlg_duplicate_alarm_replace">교체하기</string>

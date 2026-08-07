@@ -197,40 +197,8 @@ private struct MiniWaveform: View {
     }
 }
 
-/// 32-bar 파형. 진행률에 따라 왼쪽부터 primary 색으로 채워진다.
-/// Android `LandingPreviewWaveform:277-311` 의 levels 배열을 그대로 가져왔다.
-private struct LandingWaveformBar: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-    let progress: Double
-
-    private let levels: [CGFloat] = [
-        0.12, 0.28, 0.18, 0.44, 0.26, 0.60, 0.34, 0.76,
-        0.48, 0.70, 0.38, 0.64, 0.30, 0.58, 0.42, 0.82,
-        0.52, 0.74, 0.46, 0.68, 0.36, 0.62, 0.28, 0.54,
-        0.40, 0.66, 0.32, 0.50, 0.22, 0.42, 0.18, 0.34,
-    ]
-
-    var body: some View {
-        GeometryReader { proxy in
-            let spacing = max(
-                2,
-                (proxy.size.width - CGFloat(levels.count) * 2) / CGFloat(levels.count - 1)
-            )
-            HStack(alignment: .center, spacing: spacing) {
-                ForEach(Array(levels.enumerated()), id: \.offset) { index, level in
-                    let barProgress = Double(index) / Double(levels.count - 1)
-                    let played = progress > 0 && barProgress <= progress
-                    Capsule()
-                        .fill(played
-                              ? theme.palette.primary
-                              : theme.palette.outlineVariant.opacity(0.78))
-                        .frame(width: 2, height: 9 + level * 34)
-                }
-            }
-            .frame(width: proxy.size.width, alignment: .leading)
-        }
-    }
-}
+// ⚠ **`LandingWaveformBar`(32칸 파형)를 되살리지 말 것**(2026-08-07 삭제).
+// 선언만 있고 그리는 곳이 없었다. 안드로이드 랜딩도 파형을 쓰지 않는다.
 
 /// 미리듣기 상태 컨트롤러.
 ///

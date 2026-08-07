@@ -468,35 +468,7 @@ internal fun normalizeFortuneBirthTime(value: String): String {
     }
 }
 
-internal fun parseBirthDateMillis(value: String): Long? {
-    val digits = value.filter { it.isDigit() }
-    if (digits.length != 8) return null
-    val year = digits.substring(0, 4).toIntOrNull() ?: return null
-    val month = digits.substring(4, 6).toIntOrNull() ?: return null
-    val day = digits.substring(6, 8).toIntOrNull() ?: return null
-    val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-        clear()
-        set(year, month - 1, day)
-    }
-    return calendar.timeInMillis
-}
 
-internal fun formatBirthDateIso(millis: Long): String {
-    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-    formatter.timeZone = TimeZone.getTimeZone("UTC")
-    return formatter.format(java.util.Date(millis))
-}
-
-internal fun formatBirthDateDisplay(context: android.content.Context, value: String): String {
-    val digits = value.filter { it.isDigit() }
-    if (digits.length != 8) return value
-    return context.getString(
-        R.string.editor2_birthdate_display,
-        digits.substring(0, 4),
-        digits.substring(4, 6).trimStart('0'),
-        digits.substring(6, 8).trimStart('0'),
-    )
-}
 
 // 섹션별 테두리 상자는 제거 — 내부 컨트롤(성별 칩·날짜 선택 행·시간 드롭다운)에 이미
 // 테두리가 있어 이중 테두리 시각 소음이었다. 라벨+컨트롤만 남기고 오류는 라벨 색·필수

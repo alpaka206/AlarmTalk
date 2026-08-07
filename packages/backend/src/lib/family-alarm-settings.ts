@@ -67,9 +67,6 @@ export function validateQuietDays(raw: unknown): number[] | null {
   return Array.from(new Set(raw as number[])).sort((a, b) => a - b);
 }
 
-export function normalizeQuietTime(raw: unknown, fallback: string): string {
-  return typeof raw === 'string' && TIME_RE.test(raw) ? raw : fallback;
-}
 
 export function validateQuietTime(raw: unknown): string | null {
   return typeof raw === 'string' && TIME_RE.test(raw) ? raw : null;

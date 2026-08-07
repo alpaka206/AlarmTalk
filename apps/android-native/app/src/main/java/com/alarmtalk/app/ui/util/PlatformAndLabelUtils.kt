@@ -121,20 +121,6 @@ internal fun voiceUploadPart(audio: CachedAlarmAudio): MultipartBody.Part {
     )
 }
 
-internal fun repeatLabel(context: Context, mask: Int): String {
-    if (mask == 0) return context.getString(R.string.label_repeat_none)
-    if (mask == 0b1111111) return context.getString(R.string.label_repeat_daily)
-    val days = listOf(
-        context.getString(R.string.label_weekday_sun),
-        context.getString(R.string.label_weekday_mon),
-        context.getString(R.string.label_weekday_tue),
-        context.getString(R.string.label_weekday_wed),
-        context.getString(R.string.label_weekday_thu),
-        context.getString(R.string.label_weekday_fri),
-        context.getString(R.string.label_weekday_sat),
-    )
-    return days.filterIndexed { index, _ -> mask and (1 shl index) != 0 }.joinToString(", ")
-}
 
 internal fun snoozeRepeatLabel(context: Context, limit: Int): String = when (limit) {
     SnoozeRepeatLimits.THREE -> context.getString(R.string.label_snooze_repeat_three)

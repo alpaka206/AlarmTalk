@@ -118,4 +118,3 @@ export async function verifyAppJwt(token: string, secret: string): Promise<AppJw
 }
 
 export const APP_JWT_ISSUER = ISSUER;
-export const APP_JWT_AUDIENCE = AUDIENCE;

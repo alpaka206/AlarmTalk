@@ -233,32 +233,9 @@ export async function sendVoiceShareChangedPush(
  * 구독/플랜을 재조회해 '진짜 무료'면 유료 목소리 알람을 기본 알람으로 변환한다. 과다발송해도 클라가
  * 재조회로 확인(유료면 무시)하므로 안전. 놓쳐도 다음 앱 시작·울림 시점 게이트가 폴백.
  */
-/**
- * 목소리 접근권이 서버에서 사라졌음을 알리는 data-only 신호.
- *
- * 받은 알람은 원격 pull 로 갱신되지만 **본인 소유 알람은 그 pull 대상이 아니다**
- * (RemoteAlarmPullSyncService 는 받은 알람만 훑는다). 그래서 본인 알람은 목소리 목록을
- * 다시 받아 접근권을 잃은 것을 로컬에서 강등해야 한다 — 클라의 VoiceAccessSyncWorker 가
- * 그 일을 한다. 플랜 만료와 달리 동의 철회는 users.plan 이 그대로라 plan_changed 경로의
- * '진짜 무료' 게이트에 걸리지 않으므로, 별도 신호가 필요하다.
- */
-export async function sendVoiceAccessRevokedPush(
-  db: Client,
-  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
-  userId: string,
-): Promise<FcmSendResult[]> {
-  const tokens = await getTokensForUser(db, userId);
-  if (tokens.length === 0) return [];
-  const messages: FcmMessage[] = tokens.map((token) => ({
-    token,
-    title: '',
-    body: '',
-    data: { type: 'voice_access_revoked' },
-  }));
-  const results = await sendPushNotifications(messages, env);
-  await pruneStaleTokens(db, results);
-  return results;
-}
+// ⚠ **`sendVoiceAccessRevokedPush` 를 되살리지 말 것**(2026-08-07 삭제).
+// 같은 `voice_access_revoked` 신호를 아래 `buildFamilyAlarmMessages` 가 이미 보낸다.
+// 부르는 곳 없이 선언만 남아 있어, 신호 경로가 둘인 것처럼 보였다.
 
 /**
  * 서버가 강등한 알람을 그 기기가 **즉시 다시 받아 가게** 하는 신호.
