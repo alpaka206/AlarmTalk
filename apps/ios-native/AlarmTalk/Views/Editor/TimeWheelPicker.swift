@@ -25,28 +25,46 @@ struct TimeWheelPicker: View {
     /// 57pt 숫자가 더 좁은 칸에 들어가 위아래가 답답하고, 인접 숫자가 잘려 보인다.
     static let itemHeight: CGFloat = 92
 
+    /// 이 폭이면 축소 없이 그대로 그린다. 안드로이드 `AlarmTimePicker` 의 392dp 기준과 같다.
+    private static let referenceWidth: CGFloat = 392
+    /// 아무리 좁아도 이보다 더 줄이지는 않는다(안드로이드 `coerceIn(0.78, 1)`).
+    private static let minimumScale: CGFloat = 0.78
+
     var body: some View {
-        HStack(spacing: 16) {
-            AmPmWheelColumn(isPM: amPmBinding)
-                .frame(width: 96)
+        // ⚠ **폭에 맞춰 휠 타이포를 줄인다.** 좁은 화면(360pt급)에서 '오전/오후' 고정폭 +
+        // 57pt 숫자가 컬럼 폭을 넘어 분 숫자 오른쪽이 잘렸다. 안드로이드는
+        // `BoxWithConstraints` 로 같은 축소를 이미 하고 있었고 iOS 에만 없었다.
+        GeometryReader { proxy in
+            let scale = wheelScale(for: proxy.size.width)
+            HStack(spacing: 16 * scale) {
+                AmPmWheelColumn(isPM: amPmBinding, scale: scale)
+                    .frame(width: 96 * scale)
 
-            DraggableNumberColumn(
-                value: hour12Binding,
-                range: 1...12,
-                formatter: { String($0) }
-            )
-            .frame(maxWidth: .infinity)
+                DraggableNumberColumn(
+                    value: hour12Binding,
+                    range: 1...12,
+                    formatter: { String($0) },
+                    scale: scale
+                )
+                .frame(maxWidth: .infinity)
 
-            ColonSeparator()
+                ColonSeparator(scale: scale)
 
-            DraggableNumberColumn(
-                value: $minute,
-                range: 0...59,
-                formatter: { String(format: "%02d", $0) }
-            )
-            .frame(maxWidth: .infinity)
+                DraggableNumberColumn(
+                    value: $minute,
+                    range: 0...59,
+                    formatter: { String(format: "%02d", $0) },
+                    scale: scale
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .frame(width: proxy.size.width, height: Self.itemHeight * 3 * scale)
         }
         .frame(height: Self.itemHeight * 3)
+        // ⚠ **접근성 글꼴에서 휠은 더 커지지 않는다.** 휠은 3칸 높이가 고정된 **컨트롤**이라
+        // 글자만 커지면 칸을 넘쳐 '오전' 이 "…" 으로, 분이 "0" 으로 잘린다(시뮬레이터
+        // accessibility-extra-large 에서 확인). 본문 글자는 그대로 커지고 여기만 묶는다.
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .padding(.horizontal, 12)
         .padding(.vertical, 24)
         // ⚠ **배경을 칠하지 말 것.** 안드로이드는 `wheelBackgroundColor = Color.Transparent`
@@ -54,6 +72,12 @@ struct TimeWheelPicker: View {
         // 위젯처럼 보여, 화면의 주인공이어야 할 숫자가 배경에 갇힌다.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("시간 선택"))
+    }
+
+    /// 가용 폭에 비례한 휠 축소 배율. 안드로이드와 같은 식·같은 하한.
+    private func wheelScale(for width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 1 }
+        return min(max(width / Self.referenceWidth, Self.minimumScale), 1)
     }
 
     // MARK: - 12h ↔ 24h 변환
@@ -109,12 +133,14 @@ struct DraggableNumberColumn: View {
     @Binding var value: Int
     let range: ClosedRange<Int>
     let formatter: (Int) -> String
+    /// 가용 폭에 따른 축소 배율. 상위 `TimeWheelPicker` 가 계산해 내려준다.
+    var scale: CGFloat = 1
 
     @State private var dragOffset: CGFloat = 0
     @GestureState private var isDragging: Bool = false
     @State private var selectionGenerator = UISelectionFeedbackGenerator()
 
-    private let itemHeight = TimeWheelPicker.itemHeight
+    private var itemHeight: CGFloat { TimeWheelPicker.itemHeight * scale }
 
     var body: some View {
         GeometryReader { proxy in
@@ -135,7 +161,7 @@ struct DraggableNumberColumn: View {
                     // ⚠ 글꼴은 **Pretendard** 다. `design: .rounded`(SF Rounded)로 두면
                     // 이 화면만 다른 서체가 되어 앱에서 가장 큰 글자가 튄다.
                     Text(formatter(displayValue))
-                        .font(.pretendard(.bold, size: clamped < 0.5 ? 57 : 45))
+                        .font(.pretendard(.bold, size: (clamped < 0.5 ? 57 : 45) * scale))
                         .monospacedDigit()
                         .foregroundStyle(theme.palette.onSurface.opacity(textAlpha(for: clamped)))
                         .frame(maxWidth: .infinity)
@@ -241,9 +267,11 @@ struct DraggableNumberColumn: View {
 struct AmPmWheelColumn: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Binding var isPM: Bool
+    /// 가용 폭에 따른 축소 배율. 상위 `TimeWheelPicker` 가 계산해 내려준다.
+    var scale: CGFloat = 1
     @State private var selectionGenerator = UISelectionFeedbackGenerator()
 
-    private let itemHeight = TimeWheelPicker.itemHeight
+    private var itemHeight: CGFloat { TimeWheelPicker.itemHeight * scale }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -294,7 +322,10 @@ struct AmPmWheelColumn: View {
     @ViewBuilder
     private func label(title: String, selected: Bool) -> some View {
         Text(title)
-            .font(.pretendard(selected ? .bold : .semibold, size: selected ? 38 : 32))
+            .font(.pretendard(selected ? .bold : .semibold, size: (selected ? 38 : 32) * scale))
+            // 좁은 폭에서 "오전"/"오후" 가 "…" 으로 사라지지 않게 줄어들어 맞춘다.
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
             .foregroundStyle(theme.palette.onSurface.opacity(selected ? 1.0 : 0.18))
             .frame(maxWidth: .infinity)
     }
@@ -304,14 +335,16 @@ struct AmPmWheelColumn: View {
 
 private struct ColonSeparator: View {
     @Environment(\.voiceAlarmTheme) private var theme
+    /// 가용 폭에 따른 축소 배율. 상위 `TimeWheelPicker` 가 계산해 내려준다.
+    var scale: CGFloat = 1
 
     var body: some View {
         Text(":")
-            .font(.pretendard(.bold, size: 57))
+            .font(.pretendard(.bold, size: 57 * scale))
             .foregroundStyle(theme.palette.onSurface)
-            // 안드로이드는 36dp 폭을 준다(`AlarmTimePicker.kt:135`). 18 이면 절반이라
+            // 안드로이드는 36dp 폭을 준다(`ui/editor/AlarmTimePicker.kt`). 18 이면 절반이라
             // 시:분 사이가 붙어 보인다.
-            .frame(width: 36)
+            .frame(width: 36 * scale)
             .accessibilityHidden(true)
     }
 }

@@ -79,6 +79,15 @@ extension AlarmTalkTypography {
 
     /// Leading (line height) tokens paired with the scale above. Mirrors the
     /// Material 3 defaults Compose applies on top of `Typography()`.
+    ///
+    /// ⚠ **이 값들은 참고용이고, 실제로 적용되지 않는다**(2026-08-07 확인).
+    /// SwiftUI 는 `Font` 에 리딩을 담지 못해 여러 줄 문구는 Pretendard 자체 리딩으로
+    /// 그려진다. 안드로이드(Material 3 lineHeight)와의 차이는 **줄당 최대 2pt** 라
+    /// 눈에 띄지 않고, 맞추려면 여러 줄 문구 16곳에 `lineSpacing` 을 일일이 붙여야 해서
+    /// 그대로 두기로 했다.
+    ///
+    /// 언젠가 맞추기로 한다면 **한 곳도 빠뜨리지 말 것** — 절반만 적용하면 같은 화면 안에서
+    /// 문단마다 줄 간격이 달라져 지금보다 나빠진다.
     enum LineHeight {
         static let displayLarge: CGFloat = 64
         static let displayMedium: CGFloat = 52
