@@ -53,9 +53,7 @@ struct PeoplePanel: View {
             CodeRegisterRow(onCodeRegistered: onCodeRegistered)
 
             if socialFeatures.vouchers.isEmpty {
-                Text("발급된 공유 코드가 없어요.")
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                EmptyStatePlaceholder(title: "발급된 공유 코드가 없어요.")
             } else {
                 ForEach(socialFeatures.vouchers.prefix(4)) { voucher in
                     VoucherRow(voucher: voucher)

@@ -7,14 +7,19 @@ import SwiftUI
 /// 공통 컴포넌트로 분리했다.
 struct EmptyStatePlaceholder: View {
     let title: String
-    let subtitle: String
-    let icon: String
+    /// 없으면 제목만 그린다.
+    var subtitle: String = ""
+    /// 아이콘이 없다고 맨 회색 한 줄을 따로 만들지 말 것 — 그렇게 갈라져서
+    /// **같은 카드 안에** 아이콘 있는 빈 상태와 없는 빈 상태가 나란히 보였다.
+    var icon: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(AlarmTalkTheme.primary)
+            if let icon {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(AlarmTalkTheme.primary)
+            }
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AlarmTalkTheme.text)
@@ -27,7 +32,7 @@ struct EmptyStatePlaceholder: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(AlarmTalkTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.extraSmall, style: .continuous))
     }
 }
 

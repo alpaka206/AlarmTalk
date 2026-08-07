@@ -24,12 +24,22 @@ struct WelcomePromoDialog: View {
 
     private var trimmed: String { InputSanitizer.sanitizeRedeemCode(code) }
 
+    /// ⚠ **시스템 `.alert` 로 바꾸지 말 것.** CLAUDE.md 는 iOS 확인 알럿에 시스템
+    /// `.alert` 를 쓰라고 하지만, 이건 확인이 아니라 **입력 + 실패 사유 표시**가 있는
+    /// 알럿이다. 시스템 알럿은 필드 아래에 오류를 그릴 자리가 없어서, 바꾸면 등록
+    /// 실패 사유(만료·중복·정원초과 …)를 보여줄 곳이 사라지고 알럿이 닫혀 버린다.
+    /// 안드로이드도 같은 이유로 `IosAlertDialog` + `IosAlertField` + 오류 슬롯을 쓴다.
+    ///
+    /// ⚠ **좌우 여백을 빼지 말 것.** `.padding(.top, 20)` 만 있던 시절에는 제목·설명·
+    /// 입력창이 카드 모서리에 그대로 붙었다. 액션 행은 구분선이 카드 폭 전체를 가로질러야
+    /// 하므로(iOS UIAlertController 규칙) 여백을 **바깥이 아니라 내용에** 준다.
     var body: some View {
         VStack(spacing: 14) {
             Text("코드가 있으신가요?")
                 .font(theme.typography.titleMedium)
                 .fontWeight(.bold)
                 .foregroundStyle(theme.palette.onSurface)
+                .padding(.horizontal, 20)
 
             // 강조는 문장을 조각내 이어붙이지 않고 **완성된 문장 안에서 찾아** 칠한다 —
             // 조각 순서가 언어마다 달라 붙이는 순간 번역이 어색해진다.
@@ -40,6 +50,7 @@ struct WelcomePromoDialog: View {
             .font(theme.typography.bodySmall)
             .foregroundStyle(theme.palette.onSurfaceVariant)
             .multilineTextAlignment(.center)
+            .padding(.horizontal, 20)
 
             TextField("초대·선물·프로모션 코드", text: $code)
                 .textInputAutocapitalization(.characters)
@@ -50,6 +61,7 @@ struct WelcomePromoDialog: View {
                     RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
                         .stroke(theme.palette.outlineVariant, lineWidth: 1)
                 )
+                .padding(.horizontal, 20)
                 .disabled(busy)
                 .onChange(of: code) { _, new in
                     let cleaned = InputSanitizer.sanitizeRedeemCode(new)
@@ -61,6 +73,7 @@ struct WelcomePromoDialog: View {
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.error)
                     .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
             }
 
             // 액션이 셋이라 **세로로 쌓는다**(2개면 가로) — iOS UIAlertController 규칙.

@@ -369,12 +369,21 @@ struct FortunePromptInputFields: View {
 
 private struct FortuneBirthDatePickerSheet: View {
     @State private var selectedDate: Date
+    /// 사용자가 달력에서 **실제로 날짜를 골랐는가.**
+    ///
+    /// ⚠ **'30년 전 오늘' 을 고른 값으로 취급하지 말 것.** 시트가 그 날짜에 이미 맞춰진
+    /// 채로 열리는데 바로 아래 '선택' 을 누르면, 스크롤 한 번 없이 **아무 상관 없는
+    /// 날짜가 내 사주로 저장된다.** 안드로이드는 빈 값으로 시작한다.
+    /// 30년 전은 **스크롤 시작 위치**로만 쓰고, 고르기 전에는 버튼을 잠근다.
+    @State private var didPick: Bool
 
     let onDismiss: () -> Void
     let onSelect: (Date) -> Void
 
     init(initialDate: Date?, onDismiss: @escaping () -> Void, onSelect: @escaping (Date) -> Void) {
         _selectedDate = State(initialValue: initialDate ?? Calendar.current.date(byAdding: .year, value: -30, to: Date()) ?? Date())
+        // 이미 등록된 값이 있으면 그건 사용자가 고른 것이다 — 바로 확인할 수 있다.
+        _didPick = State(initialValue: initialDate != nil)
         self.onDismiss = onDismiss
         self.onSelect = onSelect
     }
@@ -385,6 +394,7 @@ private struct FortuneBirthDatePickerSheet: View {
                 DatePicker("생년월일", selection: $selectedDate, displayedComponents: .date)
                     .datePickerStyle(.graphical)
                     .labelsHidden()
+                    .onChange(of: selectedDate) { _, _ in didPick = true }
                 Button {
                     onSelect(selectedDate)
                 } label: {
@@ -393,6 +403,12 @@ private struct FortuneBirthDatePickerSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AlarmTalkTheme.primary)
+                .disabled(!didPick)
+                if !didPick {
+                    Text("생년월일을 골라 주세요.")
+                        .font(.footnote)
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                }
                 Spacer(minLength: 0)
             }
             .padding(20)
