@@ -501,24 +501,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.vouchers
     }
 
-    /// 선물용 이용권(voucher) 발급. `POST /billing/checkout` 의 `gift: true` 갈래다.
-    ///
-    /// **본인 구매가 아니다.** 디지털 구독 본인 구매는 App Store 심사 규정상 Apple
-    /// StoreKit2 IAP(`SubscriptionManager.purchase`)가 유일 경로이고, 그 경로는
-    /// `confirmAppleSubscription` 으로 서버와 맞춘다. 여기는 선물 코드를 만드는 것뿐이다.
-    /// 안드로이드도 같은 라우트를 쓴다(`BillingApi.kt` 의 `@POST("billing/checkout")`).
-    ///
-    /// ⚠ 서버는 production 에서 이 라우트를 **항상 비활성**한다
-    /// (`isBillingStubEnabled` — env 오설정 하나로 무결제 유료지급 디스펜서가 되는 것 차단).
-    /// 그때는 409 `CHECKOUT_DISABLED` 가 온다.
-    func createGiftVoucher(planKey: String, token: String) async throws -> CheckoutResponse {
-        try await request(
-            "billing/checkout",
-            method: "POST",
-            token: token,
-            body: CheckoutRequest(planKey: planKey, gift: true)
-        )
-    }
 
     /// Phase 4-D1: Apple StoreKit2 영수증을 백엔드로 보내 entitlement 동기화.
     ///

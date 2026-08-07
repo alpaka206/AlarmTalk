@@ -368,7 +368,6 @@
     <string name="msg_gb_promo_redeemed">Promo code applied</string>
     <string name="msg_gb_promo_redeem_failed">Couldn\'t apply the promo code.</string>
     <string name="msg_gb_free_plan_voice_alarms_locked">You\'ve switched to the free plan, so your voice alarms are locked. They\'ll be restored when you resubscribe.</string>
-    <string name="msg_gb_gift_failed">Couldn\'t send the gift.</string>
     <string name="msg_gb_google_play_start_failed">Couldn\'t start the Google Play payment. Please try again in a moment.</string>
     <string name="msg_gb_billing_info_load_failed">Couldn\'t load your plan info</string>
     <string name="msg_gb_login_required_apply_plan">Please log in first to apply a plan.</string>
@@ -390,7 +389,6 @@
     <string name="msg_gb_plan_change_failed">Couldn\'t change your plan.</string>
     <string name="msg_gb_plan_change_scheduled">We\'ve scheduled the change for when your current plan ends.</string>
     <string name="msg_gb_plan_changed">Your plan has been changed.</string>
-    <string name="msg_gb_plan_gift_available">You can gift the %1$s plan.</string>
     <string name="msg_gb_plan_label_couple">Couple</string>
     <string name="msg_gb_plan_label_family">Family</string>
     <string name="msg_gb_plan_label_shared">Shared</string>
@@ -717,7 +715,6 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="msg2_billing_fail_plan_not_found">We couldn\'t find the plan information</string>
     <string name="msg2_billing_fail_plan_inactive">This plan can\'t be selected right now</string>
     <string name="msg2_billing_fail_free_not_billable">The free plan can\'t be applied here</string>
-    <string name="msg2_billing_fail_gift_personal_only">Gifting is only available with personal plans</string>
     <string name="msg2_billing_fail_checkout_disabled">In the test version, please enter an invite code</string>
     <string name="msg2_billing_fail_user_not_found">Please check your login details again</string>
     <string name="msg2_code_fail_code_required">Please enter a code</string>

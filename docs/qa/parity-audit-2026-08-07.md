@@ -185,7 +185,7 @@ CLAUDE.md 가 인정하는 예외 아님. AlarmKit 제약은 울림 화면·알�
 
 ## P2 (19건)
 
-### ☐ [dead-code] 안드로이드가 의도적으로 걷어낸 '이용권 선물하기' 결제 UI 가 iOS 에만 살아 있다 (안드로이드 쪽에는 문자열 잔재 2개가 남았다)
+### ☑ [dead-code] 안드로이드가 의도적으로 걷어낸 '이용권 선물하기' 결제 UI 가 iOS 에만 살아 있다 (안드로이드 쪽에는 문자열 잔재 2개가 남았다)
 
 **안드로이드**: apps/android-native/.../ui/main/MainViewModelBillingActions.kt:299-301 — "이용권 '선물' 결제는 UI 가 없다(선물은 GIFT- 코드 등록/공유 경로로만 쓴다). 남아 있던 gift 인자와 그 분기를 걷었다 — 두 호출부 모두 기본값(false)으로만 불렀다." network/BillingApi.kt:126-162 에도 gift 갈래가 없다. 그 흔적으로 res/values/strings.xml:383 `msg_gb_gift_failed`, :405 `msg_gb_plan_gift_available` 이 코드 참조 0건으로 남아 있다.
 
@@ -256,7 +256,7 @@ iOS 편집기에는 안드로이드에 **없는** 수신자 피커가 있다: `A
 
 </details>
 
-### ☐ [modals] 목소리 삭제 확인이 시스템 알럿이 아니라 커스텀 시트이고, 안드로이드에 없는 '사용 중인 알람도 함께 정리' 토글이 붙어 있다
+### ☑ [modals] 목소리 삭제 확인이 시스템 알럿이 아니라 커스텀 시트이고, 안드로이드에 없는 '사용 중인 알람도 함께 정리' 토글이 붙어 있다
 
 **안드로이드**: apps/android-native/.../ui/voices/VoiceProfileManagementComponents.kt:124-149 `VoiceProfileDeleteDialog` = IosAlertDialog(title=`voicesr_delete_dialog_title` "목소리 삭제", message="'%s' 목소리를 삭제할까요?" + \n + "이 목소리를 쓰는 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.", actions=[닫기, 삭제(destructive)]). 토글 없음. 월 한도 소진 시에는 VoiceProfileManagementPanel.kt:2192-2214 에서 아예 다른 알럿(title "정말 삭제할까요?", message `voices_delete_quota_message`, actions [취소, 삭제(destructive)])으로 갈아탄다.
 
@@ -295,7 +295,7 @@ iOS 편집기에는 안드로이드에 **없는** 수신자 피커가 있다: `A
 
 </details>
 
-### ☐ [modals] 목소리 '이름 수정' 알럿이 빈 이름을 조용히 삼킨다 — 저장을 눌러도 알럿만 닫히고 아무 일도 안 일어난다
+### ☑ [modals] 목소리 '이름 수정' 알럿이 빈 이름을 조용히 삼킨다 — 저장을 눌러도 알럿만 닫히고 아무 일도 안 일어난다
 
 **안드로이드**: apps/android-native/.../ui/voices/VoiceProfileManagementComponents.kt:84-121 — 저장 액션에 "여기서 비었는지 보고 삼키면 안 된다"(Codex #671 P2) 주석과 함께 검증을 부모로 올려 뒀다. VoiceProfileManagementPanel.kt:2171-2189 의 onConfirm 이 `renameSubmitAttempted = true` 를 세우고, 비어 있으면 다이얼로그를 닫지 않고 `voicesr_required_field`("꼭 입력해 주세요.")를 필드 아래 붉게 띄운다. 설명 문구는 `voices_edit_name_desc` = "알람 목록과 목소리 선택에서 보일 이름이에요."
 
@@ -324,7 +324,7 @@ iOS 편집기에는 안드로이드에 **없는** 수신자 피커가 있다: `A
 
 </details>
 
-### ☐ [modals] 「직접 입력」 알럿의 '취소' 가 취소가 아니다 — 두 버튼 모두 빈 클로저이고 입력이 draft 에 곧바로 반영된다
+### ☑ [modals] 「직접 입력」 알럿의 '취소' 가 취소가 아니다 — 두 버튼 모두 빈 클로저이고 입력이 draft 에 곧바로 반영된다
 
 **안드로이드**: apps/android-native/.../ui/editor/AlarmRandomPromptSettings.kt:320-331, 337-370 — `ManualMessageDialog` 는 로컬 `draft` 에 타이핑하고 onConfirm 때만 `draftManualText = text` 로 반영한다. 322줄 주석: "확인 없이 닫으면 입력한 내용은 그대로 폐기된다." 입력은 367줄 `sanitizeUserText(allowNewlines = true).takeWithoutSplittingPairs(200)` 으로 정리·200자 상한, 확인 라벨은 `editorp_random_save_button`("저장"), 빈 문구면 359줄에서 버튼을 흐리게 둔다.
 
@@ -354,7 +354,7 @@ CLAUDE.md 예외에 해당하지 않는다. 시스템 `.alert` 를 쓰는 것 �
 
 </details>
 
-### ☐ [modals] 쿠폰 입력이 붙은 PlanGateDialog 가 iOS 에 통째로 없다 — PlanGateState 는 아무도 안 쓰는 죽은 코드다
+### ☑ [modals] 쿠폰 입력이 붙은 PlanGateDialog 가 iOS 에 통째로 없다 — PlanGateState 는 아무도 안 쓰는 죽은 코드다
 
 **안드로이드**: apps/android-native/.../ui/components/PlanGateDialog.kt:32-140 — 액션 3개(닫기 / `plan_gate_redeem_action` "쿠폰이 있어요" / confirmLabel)이고, '쿠폰이 있어요' 를 누르면 같은 파일 47-79줄의 코드 입력 다이얼로그(`plan_gate_redeem_title` "쿠폰 입력")가 뜬다. 호출부: AlarmTalkApp.kt:756-769, VoiceProfileManagementPanel.kt:1456-1467(title=`voices_create_paid_title` "내 목소리 만들기는 유료 기능이에요", message=`voices_create_paid_notice` "기본 목소리는 계속 무료로 쓸 수 있어요.", confirm="이용권 보기"), AlarmEditorScreen.kt:1653-1686.
 
@@ -390,7 +390,7 @@ AlarmKit 제약과 무관하고(울림 화면·알람 음량이 아니다), 플�
 
 </details>
 
-### ☐ [modals] 닉네임 수정이 알럿이 아니라 커스텀 시트이고, 금지된 상시 카운터(N/30) + 말없는 잘라내기를 쓴다
+### ☑ [modals] 닉네임 수정이 알럿이 아니라 커스텀 시트이고, 금지된 상시 카운터(N/30) + 말없는 잘라내기를 쓴다
 
 **안드로이드**: apps/android-native/.../ui/home/HomeComponents.kt:345-413 — `IosAlertDialog(title=hs_nickname_dialog_title "닉네임 수정", message=null, actions=[닫기, 저장/저장 중])`. 주석 361-363: "라벨을 두지 않는다 — 제목이 이미 '닉네임 수정' 이라 같은 말을 두 번 하는 셈". 카운터를 두지 않고 상한을 넘겨 칠 때만 404-412줄에서 `auth_error_name_too_long` 을 띄운다(`tooLong` 은 상한과 정확히 같을 때 건드리지 않는다).
 
@@ -477,7 +477,7 @@ CLAUDE.md 예외 아님: AlarmKit 제약도 플랫폼 표준도 아니고, 오�
 
 </details>
 
-### ☐ [plan-gate] iOS 플랜 게이트에는 '쿠폰이 있어요' 도 '이용권 보기' 도 없다 (편집기는 '확인' 버튼 하나)
+### ☑ [plan-gate] iOS 플랜 게이트에는 '쿠폰이 있어요' 도 '이용권 보기' 도 없다 (편집기는 '확인' 버튼 하나)
 
 **안드로이드**: PlanGateDialog.kt:86-108 — 액션이 언제나 세 개다: `r3dlg_modal_dialog_close`(닫기) / `plan_gate_redeem_action`(strings.xml:887 "쿠폰이 있어요", onRedeemCode 가 있을 때) / `confirmLabel`(strings.xml:830 "이용권 보기", 강조). 주석 :27-29 가 이유를 명시한다 — "결제 화면까지 갔다가 거기서 코드 입력란을 찾아야 했는데, 막힌 그 자리에서 바로 넣을 수 있게 한다". 두 호출부 모두 onRedeemCode 를 넘긴다(AlarmEditorScreen.kt:1650, VoiceProfileManagementPanel.kt:1465).
 
@@ -712,7 +712,7 @@ CLAUDE.md 예외에 해당하지 않는다: 울림 화면(AlarmKit 소유)이나
 
 </details>
 
-### ☐ [screens-flow] '목소리 받기' 게이트 통과가 저장되지 않아 콜드 스타트마다 다시 뜬다
+### ☑ [screens-flow] '목소리 받기' 게이트 통과가 저장되지 않아 콜드 스타트마다 다시 뜬다
 
 **안드로이드**: apps/android-native/.../ui/main/MainViewModel.kt:797 `showVoiceSetup = cachedStockClips == 0 && !defaultVoiceStore.hasSkipped(userId)` — 클립을 받았거나 '나중에 받기' 를 눌러 `hasSkipped` 가 남으면 다시 뜨지 않는다. :819 `skipVoiceSetup()` 이 그 플래그를 쓰고, :830 `completeVoiceSetupIfDownloaded()` 가 캐시가 생겼는지로 게이트를 닫는다.
 
@@ -747,7 +747,7 @@ CLAUDE.md 예외에 해당하지 않는다: 울림 화면(AlarmKit 소유)이나
 
 </details>
 
-### ☐ [screens-flow] 동의 확인 결과 캐시가 없어 콜드 스타트마다 전체 화면 스피너를 본다
+### ☑ [screens-flow] 동의 확인 결과 캐시가 없어 콜드 스타트마다 전체 화면 스피너를 본다
 
 **안드로이드**: apps/android-native/.../ui/main/MainViewModelAuthActions.kt:601-617 — `isConsentCachedDone(userId)` 면 `consentChecked = true` 로 **즉시** 통과시키고, 캐시가 없을 때만 로딩을 건다. AlarmTalkApp.kt:948-957 의 로딩 게이트가 보는 값도 그 `consentChecked` 다. 즉 이미 동의를 마친 계정은 재실행 시 홈이 바로 뜬다.
 
@@ -950,7 +950,7 @@ P3. 죽은 컴포넌트 + 시각적 불일치이고 기능·데이터 손실은 
 
 </details>
 
-### ☐ [dead-code] 안드로이드에 호출되지 않는 Composable 7개 — AccountPanel.kt 의 옛 알람 편집기 잔재 5개 + FortuneSelectorRow + PlayingEqualizer
+### ☑ [dead-code] 안드로이드에 호출되지 않는 Composable 7개 — AccountPanel.kt 의 옛 알람 편집기 잔재 5개 + FortuneSelectorRow + PlayingEqualizer
 
 **안드로이드**: 전이적 dead-code 판정(정의 본문 안의 상호 참조 제외) 결과 7개: ui/account/AccountPanel.kt:51 StepperField, :88 OptionSection, :109 DayRows, :143 DayChip(DayRows 만 부른다), :157 OptionChips — 다섯이 서로만 부르고 파일 밖 참조 0건이다(같은 파일의 GoogleSignInButton:176 은 AuthScreen.kt 에서 살아 있다). ui/editor/AlarmFortuneSettings.kt:534 FortuneSelectorRow — 참조 0건(현재 생년월일은 같은 파일 :215-240 의 연/월/일 텍스트 필드로 받는다). ui/voices/VoiceProfileRowComponents.kt:602 PlayingEqualizer — 참조 0건.
 

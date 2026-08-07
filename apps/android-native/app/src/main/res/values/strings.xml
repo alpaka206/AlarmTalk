@@ -380,7 +380,6 @@
     <string name="msg_gb_promo_redeemed">프로모 코드를 적용했어요</string>
     <string name="msg_gb_promo_redeem_failed">프로모 코드를 적용하지 못했어요</string>
     <string name="msg_gb_free_plan_voice_alarms_locked">무료 이용권으로 전환되어 목소리 알람이 잠겼어요. 다시 이용권을 등록하면 복구돼요.</string>
-    <string name="msg_gb_gift_failed">선물하기에 실패했어요</string>
     <string name="msg_gb_google_play_start_failed">Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_gb_billing_info_load_failed">이용권 정보를 불러오지 못했어요</string>
     <string name="msg_gb_login_required_apply_plan">이용권을 적용하려면 먼저 로그인해 주세요</string>
@@ -402,7 +401,6 @@
     <string name="msg_gb_plan_change_failed">이용권 변경에 실패했어요</string>
     <string name="msg_gb_plan_change_scheduled">이용권 종료일에 변경하도록 예약했어요</string>
     <string name="msg_gb_plan_changed">이용권을 변경했어요</string>
-    <string name="msg_gb_plan_gift_available">%1$s 이용권을 선물할 수 있어요</string>
     <string name="msg_gb_plan_label_couple">커플</string>
     <string name="msg_gb_plan_label_family">가족</string>
     <string name="msg_gb_plan_label_shared">공유</string>
@@ -745,7 +743,6 @@
     <string name="msg2_billing_fail_plan_not_found">이용권 정보를 찾지 못했어요</string>
     <string name="msg2_billing_fail_plan_inactive">지금은 선택할 수 없는 이용권이에요</string>
     <string name="msg2_billing_fail_free_not_billable">무료 이용권은 여기에서 적용할 수 없어요</string>
-    <string name="msg2_billing_fail_gift_personal_only">선물하기는 개인 이용권에서만 사용할 수 있어요</string>
     <string name="msg2_billing_fail_checkout_disabled">테스트 버전에서는 초대 코드를 등록해 주세요</string>
     <string name="msg2_billing_fail_user_not_found">로그인 정보를 다시 확인해 주세요</string>
     <string name="msg2_code_fail_code_required">코드를 입력해 주세요</string>

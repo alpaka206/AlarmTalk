@@ -532,48 +532,6 @@ internal fun FortuneInputSection(
 }
 
 @Composable
-internal fun FortuneSelectorRow(
-    value: String,
-    placeholderActive: Boolean,
-    error: Boolean,
-    onClick: () -> Unit,
-) {
-    val borderColor = when {
-        error -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.outline
-    }
-    Surface(
-        onClick = onClick,
-        shape = WakerInputShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, borderColor),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (placeholderActive) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                modifier = Modifier.weight(1f),
-            )
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
 internal fun GenderChoice(
     label: String,
     selected: Boolean,

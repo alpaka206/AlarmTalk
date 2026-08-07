@@ -377,7 +377,6 @@
     <string name="msg_gb_promo_redeemed">プロモコードを適用しました</string>
     <string name="msg_gb_promo_redeem_failed">プロモコードを適用できませんでした。</string>
     <string name="msg_gb_free_plan_voice_alarms_locked">無料プランに切り替わったため、声のアラームがロックされました。再び利用券を登録すると復元されます。</string>
-    <string name="msg_gb_gift_failed">プレゼントの送信に失敗しました。</string>
     <string name="msg_gb_google_play_start_failed">Google Play決済を開始できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="msg_gb_billing_info_load_failed">プラン情報を読み込めませんでした</string>
     <string name="msg_gb_login_required_apply_plan">プランを適用するには、まずログインしてください。</string>
@@ -399,7 +398,6 @@
     <string name="msg_gb_plan_change_failed">プランの変更に失敗しました。</string>
     <string name="msg_gb_plan_change_scheduled">プランの終了日に変更されるよう予約しました。</string>
     <string name="msg_gb_plan_changed">プランを変更しました。</string>
-    <string name="msg_gb_plan_gift_available">%1$sプランをプレゼントできます。</string>
     <string name="msg_gb_plan_label_couple">カップル</string>
     <string name="msg_gb_plan_label_family">ファミリー</string>
     <string name="msg_gb_plan_label_shared">共有</string>
@@ -725,7 +723,6 @@
     <string name="msg2_billing_fail_plan_not_found">プラン情報が見つかりませんでした</string>
     <string name="msg2_billing_fail_plan_inactive">今は選択できないプランです</string>
     <string name="msg2_billing_fail_free_not_billable">無料プランはここでは適用できません</string>
-    <string name="msg2_billing_fail_gift_personal_only">プレゼントは個人プランでのみご利用いただけます</string>
     <string name="msg2_billing_fail_checkout_disabled">テスト版では招待コードを登録してください</string>
     <string name="msg2_billing_fail_user_not_found">ログイン情報をもう一度ご確認ください</string>
     <string name="msg2_code_fail_code_required">コードを入力してください</string>

@@ -188,7 +188,6 @@ struct PlanCard: View {
     let isBusy: Bool
     let vouchers: [VoucherItem]
     let onPurchase: (SubscriptionProduct) -> Void
-    let onGiftPersonal: () -> Void
     let onShareVouchers: () -> Void
 
     var body: some View {
@@ -232,14 +231,6 @@ struct PlanCard: View {
             }
 
             if tier == .personal {
-                Button(action: onGiftPersonal) {
-                    Label("개인 이용권 선물하기", systemImage: "gift")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isBusy || subscriptions.isPurchasing)
             }
 
             if !vouchers.isEmpty {
@@ -479,47 +470,6 @@ struct SubscriptionTermsFootnote: View {
         }
         .padding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-struct PersonalGiftPassSheet: View {
-    let onDismiss: () -> Void
-    let onConfirm: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("개인 이용권 선물하기")
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(AlarmTalkTheme.text)
-                    Text("받는 사람이 직접 등록할 수 있는 개인 이용권 코드를 만들어요. 내 이용권은 그대로 유지돼요.")
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(8)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("닫기")
-            }
-
-            Button(action: onConfirm) {
-                Text("선물 코드 만들기")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-            .foregroundStyle(.white)
-        }
-        .padding(20)
-        .background(AlarmTalkTheme.background)
     }
 }
 

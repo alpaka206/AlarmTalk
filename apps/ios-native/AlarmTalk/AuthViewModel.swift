@@ -788,6 +788,14 @@ final class AuthViewModel: ObservableObject {
             // 서버가 게시 중인 문서 버전. 409 를 만났을 때 "업데이트하면 풀리는가" 판단에 쓴다.
             serverPolicyVersionHint = status.policyVersion
             consentStatusChecked = true
+            // 더 받을 게 없으면 이 기기에 '완료' 를 적어 둔다 — 다음 콜드 스타트에서
+            // 로딩 게이트를 즉시 통과시키기 위해서다. 받을 게 남았으면 적지 않는다.
+            if !status.needsConsent && !status.needsCollection {
+                ConsentCompletionStore().markCompleted(
+                    userID: session?.user.id,
+                    policyVersion: Self.currentPolicyVersion
+                )
+            }
         } catch {
             // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
             needsConsent = false

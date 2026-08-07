@@ -56,7 +56,7 @@ struct RootView: View {
                     onRecover: { Task { await auth.cancelAccountDeletion() } },
                     onLogout: { auth.signOut() }
                 )
-            } else if !auth.consentStatusChecked {
+            } else if !auth.consentStatusChecked && !consentCachedDone {
                 // 동의 확인 응답 전에는 온보딩·홈을 아예 그리지 않는다. 응답 전 기본값
                 // `false` 가 '아니오' 와 구분되지 않아, 그 틈에 1회성 오버레이(웰컴 프로모·
                 // 첫 권한 안내)가 떠서 소진 플래그까지 태우고 뒤늦게 온 차단 화면이 그
@@ -202,15 +202,34 @@ struct RootView: View {
         showWelcomePromo = true
     }
 
+    /// 이 기기에서 이미 동의를 마친 계정인가 — **로딩 게이트 통과에만** 쓴다.
+    ///
+    /// ⚠ 1회성 오버레이 판정에는 쓰지 말 것. 그건 `auth.consentStatusChecked`(이 계정의
+    /// 응답을 실제로 받았나)가 봐야 한다 — 받을 게 남은 계정은 완료 캐시가 아예 안
+    /// 만들어져, 캐시로 판정하면 오버레이가 영영 안 뜬다.
+    private var consentCachedDone: Bool {
+        ConsentCompletionStore().hasCompleted(
+            userID: auth.session?.user.id,
+            policyVersion: AuthViewModel.currentPolicyVersion
+        )
+    }
+
     private func refreshOnboardingCompletion() {
         guard let userID = auth.session?.user.id else {
             voiceSetupDone = nil
             return
         }
+        // 받아 둔 스톡 클립이 있으면 게이트를 열지 않는다 — 안드로이드도 캐시 개수로
+        // 판정한다. 다운로드가 성공한 사람에게 다시 받으라고 하지 않기 위해서다.
         voiceSetupDone = DefaultVoicePreferenceStore().hasCompletedSetup(userID: userID)
+            || AudioCacheStore.shared.hasAnyStockClip
     }
 
     private func completeVoiceSetup() {
+        // ⚠ **메모리만 바꾸면 콜드 스타트마다 다시 뜬다.** 판정은 저장된 플래그를
+        // 읽으므로(`hasCompletedSetup`), 통과했다는 사실을 **영구 저장**해야 한다.
+        // 안드로이드는 `skipVoiceSetup()` → `markSkipped` 로 그렇게 한다.
+        DefaultVoicePreferenceStore().markSkipped(userID: auth.session?.user.id)
         voiceSetupDone = true
     }
 }

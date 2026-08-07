@@ -308,6 +308,19 @@ final class AudioCacheStore {
         return target
     }
 
+    /// 받아 둔 무료 버킷 스톡 클립이 하나라도 있는가.
+    ///
+    /// '목소리 받기' 게이트를 다시 띄울지 판정하는 데 쓴다 — 다운로드가 성공한 사람에게
+    /// 콜드 스타트마다 다시 받으라고 하지 않기 위해서다(안드로이드도 캐시 개수로 본다).
+    nonisolated var hasAnyStockClip: Bool {
+        guard let directory = try? Self.audioDirectory() else { return false }
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        return files.contains { name in
+            let (base, ext) = Self.splitName(name)
+            return base.hasPrefix("stock_") && ext != "meta.json" && ext != "json"
+        }
+    }
+
     /// cacheKey 로 파일 URL 조회.
     nonisolated func cachedURL(for cacheKey: String) -> URL? {
         guard let directory = try? Self.audioDirectory() else { return nil }

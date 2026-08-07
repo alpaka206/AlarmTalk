@@ -128,7 +128,6 @@ private fun billingFailureMessage(context: android.content.Context, errorCode: S
         "PLAN_NOT_FOUND" -> context.getString(R.string.msg2_billing_fail_plan_not_found)
         "PLAN_INACTIVE" -> context.getString(R.string.msg2_billing_fail_plan_inactive)
         "FREE_NOT_BILLABLE" -> context.getString(R.string.msg2_billing_fail_free_not_billable)
-        "GIFT_PERSONAL_ONLY" -> context.getString(R.string.msg2_billing_fail_gift_personal_only)
         "CHECKOUT_DISABLED" -> context.getString(R.string.msg2_billing_fail_checkout_disabled)
         "USER_NOT_FOUND" -> context.getString(R.string.msg2_billing_fail_user_not_found)
         else -> fallback

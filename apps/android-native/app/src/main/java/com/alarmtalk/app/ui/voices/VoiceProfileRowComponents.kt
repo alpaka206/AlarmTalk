@@ -600,34 +600,6 @@ private fun VoiceProfileMenuSheet(
 }
 
 @Composable
-internal fun PlayingEqualizer() {
-    val transition = rememberInfiniteTransition(label = "voicePlaying")
-    val barColor = MaterialTheme.colorScheme.primary
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        listOf(0, 160, 320, 120).forEachIndexed { index, delayMillis ->
-            val scale by transition.animateFloat(
-                initialValue = 0.35f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 520, delayMillis = delayMillis),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "bar$index",
-            )
-            Box(
-                modifier = Modifier
-                    .width(3.dp)
-                    .height((6 + scale * 14).dp)
-                    .background(barColor, WakerPillShape),
-            )
-        }
-    }
-}
-
-@Composable
 internal fun SharedVoiceProfileRow(
     profile: FamilyVoiceProfile,
     isPlaying: Boolean,
