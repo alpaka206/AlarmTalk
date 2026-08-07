@@ -175,7 +175,6 @@ struct AlarmEditorSheet: View {
                 VStack(alignment: .leading, spacing: 16) {
                     timeWheelSection
                     repeatCard
-                    familyTargetSection
                     alarmModeSection
                     detailSettingsSection
                     saveBlockedNotice
@@ -255,23 +254,17 @@ struct AlarmEditorSheet: View {
             }
     }
 
-    @ViewBuilder
-    private var familyTargetSection: some View {
-            if target.familyAlarmMode {
-                EditorSectionTitle(text: "알람 받을 사람")
-                EditorCard {
-                    FamilyAlarmTargetPicker(
-                        recipients: familyRecipients,
-                        selectedRecipientID: selectedFamilyRecipientID,
-                        hour: draft.hour,
-                        minute: draft.minute,
-                        repeatDaysMask: draft.repeatDaysMask,
-                        holidayOff: draft.holidayOff,
-                        onSelect: selectFamilyRecipient
-                    )
-                }
-            }
-    }
+    // ⚠ **편집기 안에서 받는 사람을 바꾸는 카드를 되살리지 말 것**(2026-08-07 제거).
+    //
+    // 안드로이드에는 그런 컨트롤이 아예 없다 — 받는 사람은 「누구를 깨울까요?」 시트에서
+    // 정해져 편집기로 넘어오고, 그 뒤로는 바뀌지 않는다(`initialFamilyRecipientId`).
+    // iOS 에만 있던 카드였다.
+    //
+    // 왜 없는 게 맞나: 가족 알람은 **한 번 보내면 끝**이다. 보낸 사람은 그 뒤로 고칠 수
+    // 없고, 받은 사람이 자기 기기에서 알아서 관리한다. 그래서 '누구에게' 는 만들기 시작할
+    // 때 한 번 정하는 값이지, 편집 중에 오가는 값이 아니다.
+    //
+    // 지금 누구에게 저장되는지는 **하단 저장 버튼**이 말한다("저장 · 이름").
 
     /// ⚠ **'세부 설정' 카드 하나다.** 예전에는 '스누즈' 와 '사운드 & 진동' 두
     /// 섹션으로 쪼개져 스누즈 간격·반복 횟수·진동 패턴이 전부 본문에 펼쳐져

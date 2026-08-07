@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import com.alarmtalk.app.fitToWidthScale
 
 @Composable
 internal fun AlarmTimePickerCard(
@@ -91,7 +92,9 @@ internal fun AlarmTimePickerCard(
         // 좁은 화면(360dp급, S22 등)에선 오전/오후 고정폭 + displayLarge 숫자가 컬럼 폭을
         // 넘어 분 숫자 오른쪽이 잘렸다 — 가용 폭에 비례해 휠 타이포·고정폭을 함께 줄인다.
         // 392dp 이상(대부분의 큰 폰)은 1.0 그대로.
-        val wheelScale = (maxWidth / 392.dp).coerceIn(0.78f, 1f)
+        // ⚠ **글꼴 배율까지 함께 본다**(`fitToWidthScale`). 예전에는 폭만 나눠서, 폭이
+        // 넉넉해도 사용자가 글꼴을 키우면 숫자가 컬럼을 넘어 잘렸다.
+        val wheelScale = fitToWidthScale(maxWidth, 392.dp, minimumScale = 0.78f)
         val scaledItemHeight = itemHeight * wheelScale
         Surface(
             modifier = Modifier.fillMaxWidth(),

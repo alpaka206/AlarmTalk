@@ -738,8 +738,12 @@ tts.post('/generate', async (c) => {
     );
   }
 
+  // ⚠ `SELECT *` 로 두지 말 것. 여기서 쓰는 건 `plan` 하나인데, users 행에는
+  // `apple_refresh_token` 같은 **비밀값**과 JSON 덩어리(`dynamic_prompt_settings_json`,
+  // `family_alarm_quiet_windows`)가 함께 있다. 알람 저장마다 도는 경로라 필요 없는 값을
+  // 메모리에 올릴 이유가 없고, 특히 토큰은 쓰지도 않으면서 끌어오면 안 된다.
   const user = await db.execute({
-    sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
   });
   if (user.rows.length === 0) {

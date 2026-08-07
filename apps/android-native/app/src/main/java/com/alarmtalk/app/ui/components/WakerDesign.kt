@@ -18,6 +18,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 디자인 토큰 — 모서리 반경(코너 radius)의 단일 출처(single source of truth).
@@ -115,4 +117,34 @@ internal fun Modifier.wakerPressScale(interactionSource: InteractionSource): Mod
         scaleX = scale
         scaleY = scale
     }
+}
+
+/**
+ * **고정 자리에 들어가는 큰 한 줄 글자**를 가용 폭에 맞춰 줄이는 배율.
+ *
+ * ⚠ **아무 데나 쓰지 말 것.** 글꼴을 키운 사용자의 설정을 앱이 도로 취소하는 셈이 된다.
+ * 쓰는 기준은 하나다 — **줄바꿈으로 흐를 수 없는 자리**인가:
+ *
+ * | 쓴다 | 안 쓴다 |
+ * | --- | --- |
+ * | 울림 화면 시계 — 자다 깬 사람이 읽는 유일한 정보. 겹치면 화면이 무용지물 | 본문·설명 — 커지면 스크롤로 흐르게 둔다 |
+ * | 편집기 타임휠 — 3칸 높이가 고정된 컨트롤 | 섹션 제목 — 줄이 늘어나도 된다 |
+ * | 하단 액션 버튼 라벨 — 폭이 반으로 고정 | 알람 목록 행 — 행 높이가 늘어날 뿐 안 깨진다 |
+ *
+ * 식은 `가용 폭 ÷ (기준 폭 × 글꼴 배율)` 이다. **글꼴 배율로 나누는 것이 핵심** —
+ * 폭은 dp 라 사용자가 글꼴을 키워도 그대로인데 글자만 커져서 넘치기 때문이다.
+ *
+ * @param availableWidth `BoxWithConstraints` 의 `maxWidth`
+ * @param referenceWidth 축소 없이 들어가는 폭
+ * @param minimumScale 아무리 좁아도 이보다 더 줄이지 않는다(읽을 수 없어지면 의미가 없다)
+ */
+@Composable
+internal fun fitToWidthScale(
+    availableWidth: Dp,
+    referenceWidth: Dp,
+    minimumScale: Float = 0.45f,
+): Float {
+    val fontScale = LocalDensity.current.fontScale
+    if (referenceWidth <= 0.dp || fontScale <= 0f) return 1f
+    return (availableWidth / (referenceWidth * fontScale)).coerceIn(minimumScale, 1f)
 }

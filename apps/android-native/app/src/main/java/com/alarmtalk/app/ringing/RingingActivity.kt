@@ -21,6 +21,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -68,6 +69,7 @@ import com.alarmtalk.app.AlarmTalkDarkColorScheme
 import com.alarmtalk.app.R
 import com.alarmtalk.app.stripDeliveryTags
 import com.alarmtalk.app.WakerDialogShape
+import com.alarmtalk.app.fitToWidthScale
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -263,28 +265,48 @@ private fun RingingRoute(
     }
 }
 
+/**
+ * 울림 화면의 시계.
+ *
+ * ⚠ **폭에 맞춰 줄인다.** 104sp 를 고정으로 두면 좁은 화면(갤럭시 폴드 커버 화면 등)이나
+ * 큰 글꼴에서 '오전' 과 시각이 서로 **겹쳐 보인다**(실제 제보). 이 화면은 자다 깬 사람이
+ * 몇 시인지 확인하는 곳이라 시각이 읽히지 않으면 화면 자체가 쓸모없다.
+ *
+ * 배율은 [가용 폭] ÷ ([기준 폭] × [글꼴 배율]) 이다 — 글꼴 배율을 나누는 이유는, 폭은
+ * dp 라 사용자가 글꼴을 키워도 그대로지만 글자만 커져 넘치기 때문이다. 알람 편집기의
+ * `AlarmTimePicker` 도 같은 방식으로 줄인다.
+ */
 @Composable
 private fun RingingClock(ampm: String, time: String) {
-    Row(
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        if (ampm.isNotBlank()) {
+    // '오전' + 104sp 시각이 여유롭게 들어가는 폭. 이보다 넓으면 줄이지 않는다.
+    val referenceWidth = 320.dp
+    BoxWithConstraints {
+        val scale = fitToWidthScale(maxWidth, referenceWidth)
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(10.dp * scale),
+        ) {
+            if (ampm.isNotBlank()) {
+                Text(
+                    text = ampm,
+                    modifier = Modifier.padding(bottom = 18.dp * scale),
+                    color = Color(0xFFA6BDDA),
+                    fontSize = 26.sp * scale,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
             Text(
-                text = ampm,
-                modifier = Modifier.padding(bottom = 18.dp),
-                color = Color(0xFFA6BDDA),
-                fontSize = 26.sp,
-                fontWeight = FontWeight.SemiBold,
+                text = time,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 104.sp * scale,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-3).sp * scale,
+                maxLines = 1,
+                softWrap = false,
             )
         }
-        Text(
-            text = time,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 104.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = (-3).sp,
-        )
     }
 }
 

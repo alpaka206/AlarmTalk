@@ -156,20 +156,26 @@ export async function sendPushNotifications(
 /** 무효 토큰(UNREGISTERED 등)을 push_tokens 에서 제거한다. */
 export async function pruneStaleTokens(db: Client, results: FcmSendResult[]): Promise<void> {
   const stale = results.filter((r) => !r.success && r.error && STALE_TOKEN_ERRORS.has(r.error));
-  for (const result of stale) {
-    try {
-      await db.execute({
-        sql: 'DELETE FROM push_tokens WHERE token = ?',
-        args: [result.token],
-      });
-      logStructured('info', {
-        at: 'fcm.pruneStaleTokens',
-        token: result.token.slice(0, 8) + '...',
-        error: result.error,
-      });
-    } catch (err) {
-      logStructured('error', { at: 'fcm.pruneStaleTokens', error: String(err) });
-    }
+  if (stale.length === 0) return;
+
+  // ⚠ **한 번에 지운다.** 예전에는 토큰마다 DELETE 를 돌렸는데, 가족 그룹 전체에 푸시를
+  // 보내고 여러 기기가 한꺼번에 UNREGISTERED 로 돌아오면 그 수만큼 왕복이 생겼다.
+  // 플레이스홀더는 개수만큼 만들고 값은 예외 없이 `args` 로 넘긴다(SQL 규약).
+  const tokens = stale.map((r) => r.token);
+  const placeholders = tokens.map(() => '?').join(', ');
+  try {
+    await db.execute({
+      sql: `DELETE FROM push_tokens WHERE token IN (${placeholders})`,
+      args: tokens,
+    });
+    logStructured('info', {
+      at: 'fcm.pruneStaleTokens',
+      removed: tokens.length,
+      // 토큰 전문은 남기지 않는다 — 앞 8자만으로도 어느 기기였는지 대조는 된다.
+      samples: tokens.slice(0, 5).map((t) => t.slice(0, 8) + '...'),
+    });
+  } catch (err) {
+    logStructured('error', { at: 'fcm.pruneStaleTokens', error: String(err) });
   }
 }
 
