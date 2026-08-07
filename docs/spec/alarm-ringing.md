@@ -66,7 +66,22 @@
 | 정확한 알람 | 울리되 수 분 늦을 수 있다 | "제때 울리지 않을 수 있어요" |
 | 잠금 화면 | 소리는 나되 잠금 화면을 못 덮는다 | "잠금 화면에 뜨지 않아요" |
 
-## 5. 의도된 플랫폼 차이
+## 5. iOS 는 이 판정을 하지 않는다 — 그리고 그게 맞다
+
+위 1·2절은 **안드로이드의 규칙**이다. iOS 는 같은 결과를 다른 방식으로 낸다.
+
+| 물음 | iOS 의 사실 | 근거 |
+| --- | --- | --- |
+| 전체화면/알림을 누가 고르나 | **시스템(AlarmKit)**. 앱은 판정하지 않는다 | 알람을 `AlarmManager.shared.schedule` 로 넘기면 ALERT UI 는 OS 가 그린다 |
+| 우리가 울림용 알림을 따로 띄우나 | **아니다** | `UNMutableNotificationContent` 는 `SocialNotificationTracker` 한 곳뿐이고, 그건 '가족 알람을 받았다' 안내 전용이다 |
+| 알림을 스와이프하면 꺼지나 | **해당 없음** | 시스템 alert 은 스와이프로 지울 수 없다. 정지·스누즈 버튼으로만 끝난다 |
+| 정지·스누즈는 어떻게 도나 | `StopAlarmIntent` / `SnoozeAlarmIntent`(LiveActivityIntent) → `AlarmManager.shared.stop` / `countdown` | `Shared/AlarmIntents.swift` |
+| 포그라운드일 때 추가로 하는 것 | ring 시점 **경고 햅틱 1회**만 | 백그라운드·잠금화면에서는 시스템이 진동을 소유하므로 앱이 겹쳐 울리지 않게 `applicationState == .active` 로 가드 |
+
+⚠ **그러니 iOS 에 '전체화면 vs 알림' 분기 코드를 만들지 말 것.** 만들어도 시스템이 이미
+정한 뒤라 아무 효과가 없고, 두 개가 겹쳐 뜨는 위험만 생긴다.
+
+## 6. 의도된 플랫폼 차이
 
 | 항목 | 안드로이드 | iOS | 이유 |
 | --- | --- | --- | --- |
