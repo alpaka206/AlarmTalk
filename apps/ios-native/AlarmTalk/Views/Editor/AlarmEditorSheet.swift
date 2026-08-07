@@ -957,10 +957,17 @@ struct AlarmEditorSheet: View {
     /// 랜덤 생성도 버킷도 아닌 경우. ⚠ `!voiceRandomPrompt` 하나만 보면 안 된다 —
     /// 버킷이 붙으면 랜덤이 꺼지므로 버킷 알람까지 경고 대상이 되어 버린다
     /// (CLAUDE.md 「버킷이 붙으면 voiceRandomPrompt 가 꺼진다」).
+    ///
+    /// ⚠ **`draft.voiceRandomPrompt` 를 보지 말 것.** 그 값은 편집기를 여는 순간
+    /// (`AlarmEditDraft.newDefault` / `init(record:)`) 정해지고 **편집 중 한 번도
+    /// 갱신되지 않는다.** 살아 있는 상태는 `voiceStudio.randomPrompt` 이고, 문구 화면
+    /// 저장(`applyMessageSettings`)이 그쪽만 바꾼다. draft 를 보던 시절에는 새 알람이
+    /// 언제나 `true` 로 굳어 있어 **경고가 아예 뜨지 않았고**, 직접 입력한 문장이
+    /// 말없이 버려졌다(기존 알람에서는 반대로 잃을 게 없는데 경고가 떴다).
     func losesManualText(switchingTo option: VoiceSelectionSheet.Option) -> Bool {
         isSystemVoiceId(option.id)
             && !voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !draft.voiceRandomPrompt
+            && !voiceStudio.randomPrompt
             && selectedFreeBucket == nil
     }
 

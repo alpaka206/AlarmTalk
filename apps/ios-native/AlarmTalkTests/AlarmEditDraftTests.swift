@@ -519,3 +519,113 @@ final class AlarmEditDraftTests: XCTestCase {
         )
     }
 }
+
+// MARK: - 편집기가 안 건드리는 필드가 저장에서 사라지지 않는가
+
+extension AlarmEditDraftTests {
+
+    /// ⚠ 가장 무거운 실패: 무료 강등으로 잠긴 알람의 시각만 고쳐 저장하면
+    /// `preLockPlayMode` 가 사라져, **재결제해도 그 알람만 영영 알람음으로 울린다**
+    /// (`restorePaidVoiceAlarms` 의 `filter { $0.preLockPlayMode != nil }` 에 안 걸린다).
+    func test_toRecord_keepsPreLockPlayMode() {
+        let locked = Self.makeRecord {
+            $0.playMode = AlarmPlayMode.alarmOnly.rawValue
+            $0.preLockPlayMode = AlarmPlayMode.voiceOnly.rawValue
+        }
+        var draft = AlarmEditDraft(from: locked)
+        draft.hour = 7
+
+        let saved = draft.toRecord(existing: locked, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertEqual(saved.preLockPlayMode, AlarmPlayMode.voiceOnly.rawValue)
+    }
+
+    /// 소유자를 잃으면 계정 전환 시 남의 알람으로 취급된다.
+    func test_toRecord_keepsOwnerUserId() {
+        let owned = Self.makeRecord { $0.ownerUserId = "user-1" }
+        var draft = AlarmEditDraft(from: owned)
+        draft.label = "새 이름"
+
+        let saved = draft.toRecord(existing: owned, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertEqual(saved.ownerUserId, "user-1")
+    }
+
+    /// 시각만 고치는 저장은 스톡 클립 갈래를 타지 않는다 — 그때도 고른 테마가 살아야 한다.
+    func test_toRecord_keepsBucketSelection() {
+        let themed = Self.makeRecord {
+            $0.bucketId = "weather"
+            $0.bucketClipKeys = ["a", "b", "c"]
+            $0.bucketRotationIndex = 2
+        }
+        var draft = AlarmEditDraft(from: themed)
+        draft.minute = 30
+
+        let saved = draft.toRecord(existing: themed, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertEqual(saved.bucketId, "weather")
+        XCTAssertEqual(saved.bucketClipKeys, ["a", "b", "c"])
+        XCTAssertEqual(saved.bucketRotationIndex, 2)
+    }
+
+    /// 새 알람(기존 레코드 없음)은 당연히 비어 있어야 한다.
+    func test_toRecord_newAlarmHasNoCarriedFields() {
+        let draft = AlarmEditDraft.newDefault()
+        let saved = draft.toRecord(existing: nil, fireAtMillis: 1_000, nowMillis: 500)
+
+        XCTAssertNil(saved.preLockPlayMode)
+        XCTAssertNil(saved.ownerUserId)
+        XCTAssertNil(saved.bucketId)
+    }
+}
+
+// MARK: - 테스트 헬퍼
+
+extension AlarmEditDraftTests {
+    /// 기본 알람 레코드. `mutate` 로 필요한 필드만 바꿔 쓴다.
+    static func makeRecord(_ mutate: (inout LocalAlarmRecord) -> Void = { _ in }) -> LocalAlarmRecord {
+        let now = Int64(1_700_000_000_000)
+        var record = LocalAlarmRecord(
+            id: "alarm-42",
+            label: "아침",
+            hour: 7,
+            minute: 15,
+            fireAtMillis: now + 60_000,
+            repeatDaysMask: (1 << 1) | (1 << 3) | (1 << 5),  // 월/수/금
+            holidayOff: true,
+            snoozeEnabled: true,
+            snoozeMinutes: 7,
+            snoozeRepeatLimit: SnoozeRepeatLimit.five.rawValue,
+            snoozeCount: 0,
+            vibrationPattern: VibrationPattern.heartbeat.rawValue,
+            playMode: AlarmPlayMode.voiceOnly.rawValue,
+            defaultAlarmSoundId: DefaultAlarmSounds.bundledDefault,
+            localAudioUri: "file:///tmp/voice.m4a",
+            audioCacheKey: "sha-abc",
+            rawAudioUri: nil,
+            voiceSource: VoiceSource.serverTts.rawValue,
+            voiceProfileId: "vp-1",
+            voiceText: "굿모닝",
+            voiceCategory: "morning",
+            voiceLanguage: "ko",
+            voiceRandomPrompt: false,
+            voiceRepeat: true,
+            voiceVolumePercent: 72,
+            ttsMessageId: "msg-1",
+            remoteAlarmId: "remote-1",
+            lastSyncedAtMillis: now - 1_000,
+            syncState: AlarmSyncState.synced.rawValue,
+            origin: AlarmOrigin.localOwned.rawValue,
+            alarmVolumePercent: 65,
+            alarmSoundUri: nil,
+            alarmSoundLabel: nil,
+            enabled: true,
+            state: AlarmRuntimeState.armed.rawValue,
+            createdAtMillis: now - 100_000,
+            updatedAtMillis: now - 50_000,
+            alarmKitID: "AK-1"
+        )
+        mutate(&record)
+        return record
+    }
+}

@@ -255,7 +255,7 @@ struct AlarmEditDraft: Equatable {
         let storesWeather = !alarmOnly && voiceRandomPrompt && promptContext.usesWeather
         let storesFortune = !alarmOnly && voiceRandomPrompt && promptContext.usesFortune
 
-        return LocalAlarmRecord(
+        var record = LocalAlarmRecord(
             id: existing?.id ?? UUID().uuidString,
             label: safeLabel,
             hour: hour,
@@ -312,6 +312,36 @@ struct AlarmEditDraft: Equatable {
             updatedAtMillis: nowMillis,
             alarmKitID: nil
         )
+        carryOverNonEditableFields(from: existing, to: &record)
+        return record
+    }
+
+    /// 편집기가 **건드리지 않지만 알람 행이 계속 들고 있어야 하는** 값들을 이어받는다.
+    ///
+    /// ⚠ `LocalAlarmRecord.init` 파라미터에 없는 필드는 **기본값 nil 로 생긴다.** 그래서
+    /// 여기서 명시적으로 옮기지 않으면, 시각이나 이름만 고쳐 저장해도 조용히 사라진다.
+    /// 실제로 그랬고 피해가 가장 컸던 건 `preLockPlayMode` 다 — 무료 강등으로 잠긴
+    /// 목소리 알람이 원래 어떤 모드였는지 적어 둔 값이라, 이게 없으면
+    /// `restorePaidVoiceAlarms` 의 `filter { $0.preLockPlayMode != nil }` 에 걸리지 않아
+    /// **재결제해도 그 알람만 영영 알람음으로 울린다.** 화면에는 '목소리 알람을 다시
+    /// 켰어요' 가 뜨는데 그 알람만 안 돌아오므로 원인을 짚을 수 없다.
+    ///
+    /// 버킷 3종은 저장 경로(`AlarmEditorSheet` 의 스톡 클립 갈래)가 다시 계산해 덮어쓰지만,
+    /// 그 갈래는 오디오를 새로 준비했을 때만 돈다 — 시각만 고치는 저장은 타지 않는다.
+    /// 그래서 여기서도 이어받아 **어느 경로로 저장하든** 고른 테마가 살아남게 한다.
+    ///
+    /// 새 영속 필드를 추가하면 `LocalAlarmRecord` 의 CodingKeys·디코더·인코더 세 곳과
+    /// **여기까지 네 곳**을 함께 고친다.
+    private func carryOverNonEditableFields(
+        from existing: LocalAlarmRecord?,
+        to record: inout LocalAlarmRecord
+    ) {
+        guard let existing else { return }
+        record.preLockPlayMode = existing.preLockPlayMode
+        record.ownerUserId = existing.ownerUserId
+        record.bucketId = existing.bucketId
+        record.bucketClipKeys = existing.bucketClipKeys
+        record.bucketRotationIndex = existing.bucketRotationIndex
     }
 
     private static func normalizedVoiceVolume(_ value: Int) -> Int {

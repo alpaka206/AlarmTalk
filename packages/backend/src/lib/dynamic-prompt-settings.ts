@@ -1,3 +1,5 @@
+import { isValidFortuneBirthDate, isValidFortuneBirthTime } from '@alarmtalk/shared';
+
 export type DynamicPromptSettings = {
   weather: {
     country: string | null;
@@ -67,10 +69,14 @@ export function normalizeDynamicPromptSettings(raw: unknown): DynamicPromptSetti
 export function validateDynamicPromptSettings(raw: unknown): DynamicPromptSettings | null {
   if (!raw || typeof raw !== 'object') return null;
   const normalized = normalizeDynamicPromptSettings(raw);
-  if (normalized.fortune.birth_date && !/^\d{4}-\d{2}-\d{2}$/.test(normalized.fortune.birth_date)) {
+  if (normalized.fortune.birth_date && !isValidFortuneBirthDate(normalized.fortune.birth_date)) {
     return null;
   }
-  if (normalized.fortune.birth_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(normalized.fortune.birth_time)) {
+  // ⚠ 형식 판정은 `@alarmtalk/shared` 가 유일 출처다. 예전에는 여기에 `HH:MM` 정규식이
+  // 박혀 있었는데, 안드로이드는 사주 시진을 **구간**(`"00:00~01:30"`)으로 보내므로
+  // **모든 선택지가 400** 이었다. 게다가 이 라우트는 운세와 날씨를 한 payload 로 받아서,
+  // 태어난 시간을 고른 순간 **날씨 지역까지 함께 저장에 실패**했다.
+  if (normalized.fortune.birth_time && !isValidFortuneBirthTime(normalized.fortune.birth_time)) {
     return null;
   }
   return normalized;

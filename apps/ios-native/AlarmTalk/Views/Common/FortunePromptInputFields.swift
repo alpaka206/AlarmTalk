@@ -12,12 +12,36 @@ enum FortunePromptInputFormat {
     static let female = "여성"
     static let unknownTime = "시간 모름"
 
+    /// 태어난 시간 선택지 — **사주 시진 경계(한국 표준시 +30분 보정)** 그대로.
+    ///
+    /// ⚠ 계약의 단일 출처는 `packages/shared/src/schemas/fortune.ts` 의
+    /// `FORTUNE_BIRTH_TIME_CHOICES` 다. 안드로이드는
+    /// `ui/editor/AlarmFortuneSettings.kt` 의 `FortuneBirthTimeChoices` 로 같은 값을 쓴다 —
+    /// **세 곳이 같아야 한다**(회귀 테스트: `FortunePromptInputFormatTests`).
+    ///
+    /// ⚠ 예전 iOS 는 여기에 대략 시간대 4종(`"05:00"` 새벽 / `"09:00"` 오전 /
+    /// `"15:00"` 오후 / `"20:00"` 저녁)을 두고 있었다. 사주는 두 시간짜리 시진 단위로
+    /// 보는 것이라, **같은 사람이 두 기기에서 다른 사주를 갖게 된다** — 아이폰에서
+    /// "오전"(09:00)을 고른 사람은 안드로이드의 07:31~09:30 과 09:31~11:30 어느 쪽에도
+    /// 정확히 대응하지 않는다.
+    ///
+    /// ⚠ **라벨을 번역하지 말 것.** 이 문자열이 그대로 저장되고 프롬프트로 들어간다.
+    /// 안드로이드도 같은 이유로 구간 문자열을 그대로 보여준다.
     static let timeChoices: [FortuneBirthTimeChoice] = [
-        .init(value: unknownTime, label: "시간 모름"),
-        .init(value: "05:00", label: "새벽"),
-        .init(value: "09:00", label: "오전"),
-        .init(value: "15:00", label: "오후"),
-        .init(value: "20:00", label: "저녁")
+        .init(value: unknownTime, label: unknownTime),
+        .init(value: "00:00~01:30", label: "00:00~01:30"),
+        .init(value: "01:31~03:30", label: "01:31~03:30"),
+        .init(value: "03:31~05:30", label: "03:31~05:30"),
+        .init(value: "05:31~07:30", label: "05:31~07:30"),
+        .init(value: "07:31~09:30", label: "07:31~09:30"),
+        .init(value: "09:31~11:30", label: "09:31~11:30"),
+        .init(value: "11:31~13:30", label: "11:31~13:30"),
+        .init(value: "13:31~15:30", label: "13:31~15:30"),
+        .init(value: "15:31~17:30", label: "15:31~17:30"),
+        .init(value: "17:31~19:30", label: "17:31~19:30"),
+        .init(value: "19:31~21:30", label: "19:31~21:30"),
+        .init(value: "21:31~23:30", label: "21:31~23:30"),
+        .init(value: "23:31~24:00", label: "23:31~24:00")
     ]
 
     static func normalizedGender(_ value: String) -> String {
@@ -72,10 +96,20 @@ enum FortunePromptInputFormat {
         return formatter.date(from: normalized) != nil
     }
 
+    /// ⚠ 판정은 서버(`packages/shared/src/schemas/fortune.ts` 의 `isValidFortuneBirthTime`)와
+    /// **같은 규칙**이어야 한다. 여기가 더 빡빡하면 저장 버튼이 안 켜지고, 더 느슨하면
+    /// 서버가 400 으로 거절한다 — 그리고 `PATCH /user/me` 는 운세와 날씨를 한 payload 로
+    /// 보내므로, 거절되면 **날씨 지역까지 함께 날아간다.**
+    ///
+    /// 받는 것: 시진 구간(`HH:MM~HH:MM`, 끝값 `24:00` 허용) / 단일 시각(`HH:MM`, 옛 값) /
+    /// '시간 모름'.
     static func isValidBirthTime(_ value: String) -> Bool {
         let normalized = normalizedBirthTime(value)
         if normalized == unknownTime { return true }
-        return normalized.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil
+        let exact = #"^([01]\d|2[0-3]):[0-5]\d$"#
+        let range = #"^([01]\d|2[0-3]):[0-5]\d~(([01]\d|2[0-3]):[0-5]\d|24:00)$"#
+        return normalized.range(of: exact, options: .regularExpression) != nil
+            || normalized.range(of: range, options: .regularExpression) != nil
     }
 
     static func isComplete(gender: String, birthDate: String, birthTime: String) -> Bool {

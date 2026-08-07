@@ -392,6 +392,11 @@ struct LoginView: View {
     }
 
     private func handleModeChange(_ next: LoginMode) {
+        // ⚠ **이 대입을 빼지 말 것.** 예전에는 아래 리셋만 하고 `mode` 를 바꾸지 않아서,
+        // '회원가입' 을 눌러도 화면이 로그인 그대로였다. 랜딩의 '시작하기' 는 `.login`
+        // 으로만 들어오고 `.register` 진입은 DEBUG 프리뷰 플래그뿐이라, **이메일로 계정을
+        // 만들 방법이 앱에 하나도 없었다**(애플 로그인만 가능했다).
+        mode = next
         // 모드 전환 시 인증/오류 메시지를 살짝 리셋해 혼동을 줄인다.
         if next == .login {
             verificationSent = false
