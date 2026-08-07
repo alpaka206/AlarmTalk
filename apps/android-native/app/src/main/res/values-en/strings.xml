@@ -332,8 +332,6 @@
     <string name="msg_account_deletion_cancelled">Your account deletion was canceled. Your account has been restored.</string>
     <string name="msg_account_deletion_request_failed">Couldn\'t submit your account deletion request.</string>
     <string name="msg_account_deletion_requested">Your account deletion request has been received. You can cancel it by logging back in within 30 days.</string>
-    <string name="msg_alarm_copied_ten_minutes">Copied the alarm 10 minutes later. %1$s</string>
-    <string name="msg_alarm_copy_failed">Couldn\'t copy your alarm.</string>
     <string name="msg_alarm_delete_failed">Couldn\'t delete your alarm.</string>
     <string name="msg_alarm_save_failed">Couldn\'t save your alarm.</string>
     <string name="msg_alarm_toggle_failed">Couldn\'t change the alarm status.</string>
@@ -425,23 +423,18 @@
     </plurals>
     <string name="msg_sync_login_required">Please log in first to sync.</string>
     <string name="msg_sync_pull_partial_failed">Some received alarms haven\'t loaded yet. We\'ll retry automatically in a moment.</string>
-    <string name="msg_test_alarm_saved">Your test alarm has been saved. %1$s</string>
-    <string name="msg_test_alarm_schedule_failed">Couldn\'t schedule your test alarm.</string>
     <string name="msg_time_format_required">Please enter the time in HH:mm format.</string>
     <string name="msg_verification_code_debug">Verification code: %1$s</string>
     <string name="msg_verification_code_mismatch">That verification code doesn\'t match.</string>
     <string name="msg_verification_code_send_failed">Couldn\'t send the verification code.</string>
     <string name="msg_verification_code_sent">We\'ve sent your verification code.</string>
     <string name="msg_verification_code_six_digits_required">Please enter the 6-digit verification code.</string>
-    <string name="msg_voice_already_deleted">This voice has already been deleted.</string>
     <string name="msg_voice_clone_audio_too_long">Please keep the audio for creating a voice to 2 min or less.</string>
     <string name="msg_voice_clone_audio_too_short">The audio for creating a voice needs to be at least 12 seconds long.</string>
     <string name="msg_voice_create_failed">Couldn\'t create the voice.</string>
     <string name="msg_voice_create_login_required">Please log in first to create a voice.</string>
-    <string name="msg_voice_created_single">The \'%1$s\' voice has been created.</string>
     <string name="msg_voice_delete_failed">Couldn\'t delete the voice.</string>
     <string name="msg_voice_delete_login_required">Please log in first to delete the voice.</string>
-    <string name="msg_voice_deleted">The voice has been deleted.</string>
     <string name="msg_voice_duration_unknown">Couldn\'t check the recording length. Please record again.</string>
     <string name="msg_voice_prerender_retry_failed">Couldn\'t retry. Please try again later.</string>
     <string name="msg_voice_speech_style_retry_failed">Speech style analysis failed. Please try again later.</string>
@@ -460,8 +453,6 @@
     <string name="msg_voice_slot_exhausted">There are a lot of voice creation requests right now. Please try again in a moment.</string>
     <string name="msg_voice_tts_audio_load_login_required">Please log in first to load saved voice audio.</string>
     <string name="msg_voice_tts_generate_login_required">Please log in first to create voice audio.</string>
-    <string name="msg_voice_tts_load_failed">Couldn\'t load saved voices.</string>
-    <string name="msg_voice_tts_load_login_required">Please log in first to load saved voices.</string>
     <string name="rd_audio_duration_unreadable">Files whose audio length can\'t be read can\'t be used.</string>
     <string name="rd_audio_extract_failed">We couldn\'t extract audio from the selected file. Please try a different file.</string>
     <string name="rd_audio_mp3_trim_failed">We couldn\'t save the MP3 section. Please choose a different file.</string>

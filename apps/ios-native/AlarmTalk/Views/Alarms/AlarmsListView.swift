@@ -396,7 +396,6 @@ struct AlarmsListView: View {
         await remoteSync.deleteRemote(record: alarm, session: auth.session)
         let deleted = await alarmKit.cancel(record: alarm, store: store)
         if deleted {
-            actionMessage = "알람을 삭제했어요."
         } else {
             actionMessage = alarmKit.statusMessage ?? "알람 삭제에 실패했어요."
         }

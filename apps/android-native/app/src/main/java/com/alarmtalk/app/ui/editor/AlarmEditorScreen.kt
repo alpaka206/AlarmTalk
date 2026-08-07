@@ -10,7 +10,6 @@ import android.net.Uri
 import android.os.Build
 import android.util.Base64
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -362,13 +361,6 @@ internal fun AlarmEditorScreen(
         audioMessage = null
     }
 
-    // 가족/상대방 알람 등록 흐름의 안내는 카드와 텍스트로만 노출한다.
-    // 토스트로 숨겨진 알림만 의존하지 않고 모든 모드에서 동일하게 확인할 수 있게 한다.
-    fun showFamilyAlarmToast(message: String) {
-        if (!familyAlarmMode) return
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-    }
-
     fun stopPreview() {
         previewStopJob?.cancel()
         previewStopJob = null
@@ -581,7 +573,11 @@ internal fun AlarmEditorScreen(
             audioMessage = context.getString(R.string.editor_error_select_recipient)
             return
         }
-        showFamilyAlarmToast(context.getString(R.string.editor_family_alarm_set))
+        // ⚠ **여기서 성공을 말하지 않는다.** onSave 는 비동기라 서버 응답을 보기 전인데,
+        // 예전에는 Toast 로 '상대 알람을 설정했어요' 를 먼저 띄웠다 — 실패하면 그 뒤에
+        // '상대 알람 설정에 실패했어요' 가 이어져 **정면으로 모순되는 두 문장**이 연달아
+        // 떴다. 성공 확인은 서버 응답 뒤 뷰모델의 스낵바 한 번으로 충분하고, 그쪽은
+        // 수신자 이름까지 말해 준다.
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
@@ -684,13 +680,11 @@ internal fun AlarmEditorScreen(
                     earliestLabel,
                 )
                 audioMessage = message
-                showFamilyAlarmToast(message)
                 return
             }
             if (isFamilyAlarmTimeUnavailable(recipient, editor.hour, editor.minute, editor.repeatDaysMask)) {
                 val message = context.getString(R.string.editor_error_family_alarm_time_unavailable)
                 audioMessage = message
-                showFamilyAlarmToast(message)
                 return
             }
         }

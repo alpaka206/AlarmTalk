@@ -326,7 +326,6 @@ final class AuthViewModel: ObservableObject {
                 nextSession.user.appleUserId = hint
             }
             persistSession(nextSession)
-            statusMessage = "로그인됐어요."
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -384,7 +383,6 @@ final class AuthViewModel: ObservableObject {
         do {
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
             persistSession(nextSession)
-            statusMessage = "로그인됐어요."
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -668,7 +666,6 @@ final class AuthViewModel: ObservableObject {
                 token: token
             )
             await refreshUser()
-            statusMessage = "프로필을 저장했어요."
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요"))
         }

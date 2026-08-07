@@ -25,7 +25,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
-
 internal fun MainViewModel.loadVoiceProfiles() {
     fetchVoiceProfiles(showMessage = true)
 }
@@ -288,7 +287,6 @@ internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
             )
             pendingVoiceDraft = null
             voiceProfiles = listOf(official) + voiceProfiles.filterNot { it.id == official.id }
-            message = getApplication<android.app.Application>().getString(R.string.msg_voice_created_single, official.name)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to promote voice draft id=$profileId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_create_failed))
@@ -491,7 +489,6 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             }
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-            message = getApplication<android.app.Application>().getString(R.string.msg_voice_deleted)
             // 삭제된 목소리를 쓰던 내 알람을 즉시 기본 알람으로 변환한다(공유해제·무료강등과 동일 결과).
             // 서버는 sound-only 로 바꾸지만 본인 LOCAL_OWNED 알람은 pull 로 안 돌아오므로 로컬에서 강등.
             // 삭제된 id 만 대상으로 하는 타깃 강등이라 소셜 목록 신선도(reconcile 가드)에 막히지 않는다.
@@ -499,7 +496,6 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-                message = getApplication<android.app.Application>().getString(R.string.msg_voice_already_deleted)
                 viewModelScope.launch { runCatching { repository.degradeAlarmsUsingVoiceProfile(profileId) } }
             } else {
                 if (originalProfile != null) {
@@ -532,26 +528,6 @@ internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
         !translate &&
         language == "ko" &&
         text.isBlank()
-
-internal fun MainViewModel.loadTtsMessages() {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_tts_load_login_required)
-        return
-    }
-    viewModelScope.launch {
-        ttsMessageBusy = true
-        runCatching {
-            api.listTtsMessages(AlarmTalkApiClient.bearer(session.token)).messages
-        }.onSuccess { messages ->
-            ttsMessages = messages
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to load saved TTS messages", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_tts_load_failed))
-        }
-        ttsMessageBusy = false
-    }
-}
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
@@ -834,7 +810,6 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
         }
     }
 }
-
 
 /**
  * 클론 등록에 쓴 로컬 녹음 원본(음성 생체정보 **평문** .m4a)을 지운다.

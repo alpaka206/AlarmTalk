@@ -782,7 +782,6 @@ final class VoiceStudioViewModel: ObservableObject {
             let cached = try await AudioCacheStore.cacheOffMain(tts: response, cacheKey: cacheKey)
             // play(...) 가 isPreparing 을 false 로 내린다.
             try previewPlayer.play(url: AudioCacheStore.url(for: cached.fileName))
-            statusMessage = "미리듣기를 재생하고 있어요."
         } catch {
             previewPlayer.setPreparing(false)
             statusMessage = mapVoiceError(error)
@@ -950,13 +949,11 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             try await api.deleteVoiceProfile(id: profile.id, token: token, force: force)
             handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
-            statusMessage = "목소리를 삭제했어요."
             await refresh(session: session, force: true, successMessage: nil)
             return true
         } catch {
             if isNotFoundError(error) {
                 handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
-                statusMessage = "이미 삭제된 목소리예요."
                 await refresh(session: session, force: true, successMessage: nil)
                 return true
             }
@@ -1109,7 +1106,6 @@ final class VoiceStudioViewModel: ObservableObject {
                 listenerTitle: nil,
                 token: token
             )
-            statusMessage = "이름을 바꿨어요."
             await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)

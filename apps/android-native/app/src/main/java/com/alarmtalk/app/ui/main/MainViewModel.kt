@@ -446,13 +446,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var voiceProfileLoadFinished by mutableStateOf(false)
         internal set
 
-    var ttsMessages by mutableStateOf<List<TtsMessage>>(emptyList())
-        internal set
-
     var stockClips by mutableStateOf<List<com.alarmtalk.app.network.StockClip>>(emptyList())
-        internal set
-
-    var ttsMessageBusy by mutableStateOf(false)
         internal set
 
     var socialBusy by mutableStateOf(false)
@@ -1004,7 +998,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfilesLoadedFresh = false
         showVoiceSetup = false
         lastUsedVoiceId = null
-        ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()
         // 공유 목소리 신선-로드 플래그도 함께 초기화 — 안 그러면 다음 세션에서 fetchVoiceProfiles 가

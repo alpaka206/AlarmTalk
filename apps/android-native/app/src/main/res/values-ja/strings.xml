@@ -341,8 +341,6 @@
     <string name="msg_account_deletion_cancelled">退会をキャンセルしました。アカウントが復元されました。</string>
     <string name="msg_account_deletion_request_failed">退会の申請に失敗しました。</string>
     <string name="msg_account_deletion_requested">退会の申請を受け付けました。30日以内に再度ログインすると取り消せます。</string>
-    <string name="msg_alarm_copied_ten_minutes">アラームを10分後にコピーしました。%1$s</string>
-    <string name="msg_alarm_copy_failed">アラームのコピーに失敗しました。</string>
     <string name="msg_alarm_delete_failed">アラームの削除に失敗しました。</string>
     <string name="msg_alarm_save_failed">アラームの保存に失敗しました。</string>
     <string name="msg_alarm_toggle_failed">アラームの状態変更に失敗しました。</string>
@@ -433,23 +431,18 @@
     </plurals>
     <string name="msg_sync_login_required">同期するには、まずログインしてください。</string>
     <string name="msg_sync_pull_partial_failed">受け取ったアラームの一部がまだ読み込めていません。しばらくして自動で再試行します。</string>
-    <string name="msg_test_alarm_saved">テストアラームを保存しました。%1$s</string>
-    <string name="msg_test_alarm_schedule_failed">テストアラームの予約に失敗しました。</string>
     <string name="msg_time_format_required">時刻はHH:mm形式で入力してください。</string>
     <string name="msg_verification_code_debug">認証コード: %1$s</string>
     <string name="msg_verification_code_mismatch">認証コードが一致しません。</string>
     <string name="msg_verification_code_send_failed">認証コードを送れませんでした。</string>
     <string name="msg_verification_code_sent">認証コードを送りました。</string>
     <string name="msg_verification_code_six_digits_required">6桁の認証コードを入力してください。</string>
-    <string name="msg_voice_already_deleted">すでに削除された声です。</string>
     <string name="msg_voice_clone_audio_too_long">声を作成する音声は2分以下でご用意ください。</string>
     <string name="msg_voice_clone_audio_too_short">声を作成する音声は12秒以上必要です。</string>
     <string name="msg_voice_create_failed">声を作成できませんでした。</string>
     <string name="msg_voice_create_login_required">声を作成するには、まずログインしてください。</string>
-    <string name="msg_voice_created_single">「%1$s」の声を作成しました。</string>
     <string name="msg_voice_delete_failed">声の削除に失敗しました。</string>
     <string name="msg_voice_delete_login_required">声を削除するには、まずログインしてください。</string>
-    <string name="msg_voice_deleted">声を削除しました。</string>
     <string name="msg_voice_duration_unknown">音声の長さを確認できませんでした。もう一度録音してください。</string>
     <string name="msg_voice_prerender_retry_failed">再試行できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="msg_voice_speech_style_retry_failed">話し方の分析に失敗しました。しばらくしてからもう一度お試しください。</string>
@@ -468,8 +461,6 @@
     <string name="msg_voice_slot_exhausted">現在、声の作成リクエストが集中しています。しばらくしてからもう一度お試しください。</string>
     <string name="msg_voice_tts_audio_load_login_required">保存した音声オーディオを読み込むには、まずログインしてください。</string>
     <string name="msg_voice_tts_generate_login_required">音声オーディオを作成するには、まずログインしてください。</string>
-    <string name="msg_voice_tts_load_failed">保存した音声を読み込めませんでした。</string>
-    <string name="msg_voice_tts_load_login_required">保存した音声を読み込むには、まずログインしてください。</string>
     <string name="rd_audio_duration_unreadable">オーディオの長さを確認できないファイルは使用できません。</string>
     <string name="rd_audio_extract_failed">選択したファイルからオーディオを抽出できませんでした。別のファイルでお試しください。</string>
     <string name="rd_audio_mp3_trim_failed">MP3の区間を保存できませんでした。別のファイルを選んでください。</string>

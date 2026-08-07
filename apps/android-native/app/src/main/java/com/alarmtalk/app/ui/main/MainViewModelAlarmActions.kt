@@ -26,7 +26,6 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
-
 private fun MainViewModel.requireAlarmPermissionsForMutation(): Boolean {
     val snapshot = PermissionSnapshot.read(getApplication<Application>())
     val missingTarget = snapshot.firstMissingAlarmTarget() ?: return true
@@ -324,30 +323,3 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
     }
 }
 
-internal fun MainViewModel.copyAlarm(alarmId: String) {
-    if (!requireAlarmPermissionsForMutation()) return
-    viewModelScope.launch {
-        runCatching {
-            repository.copyAlarm(alarmId)
-        }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_alarm_copied_ten_minutes, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to copy alarm id=$alarmId", error)
-            message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_copy_failed))
-        }
-    }
-}
-
-internal fun MainViewModel.createTestAlarm(delayMinutes: Int) {
-    if (!requireAlarmPermissionsForMutation()) return
-    viewModelScope.launch {
-        runCatching {
-            repository.createTestAlarm(delayMinutes)
-        }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_test_alarm_saved, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to create test alarm", error)
-            message = userFacingError(error, getApplication<Application>().getString(R.string.msg_test_alarm_schedule_failed))
-        }
-    }
-}

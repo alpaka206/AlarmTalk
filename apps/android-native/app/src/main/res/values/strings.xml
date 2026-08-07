@@ -347,8 +347,6 @@
     <string name="msg_account_deletion_cancelled">회원 탈퇴를 취소했어요. 계정이 복구됐어요.</string>
     <string name="msg_account_deletion_request_failed">회원 탈퇴 신청에 실패했어요</string>
     <string name="msg_account_deletion_requested">회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.</string>
-    <string name="msg_alarm_copied_ten_minutes">알람을 10분 뒤로 복사했어요. %1$s</string>
-    <string name="msg_alarm_copy_failed">알람 복사에 실패했어요</string>
     <string name="msg_alarm_delete_failed">알람 삭제에 실패했어요</string>
     <string name="msg_alarm_save_failed">알람 저장에 실패했어요</string>
     <string name="msg_alarm_toggle_failed">알람 상태 변경에 실패했어요</string>
@@ -439,23 +437,18 @@
     </plurals>
     <string name="msg_sync_login_required">동기화하려면 먼저 로그인해 주세요</string>
     <string name="msg_sync_pull_partial_failed">받은 알람 일부를 아직 불러오지 못했어요. 잠시 후 자동으로 다시 시도해요.</string>
-    <string name="msg_test_alarm_saved">테스트 알람을 저장했어요. %1$s</string>
-    <string name="msg_test_alarm_schedule_failed">테스트 알람 예약에 실패했어요</string>
     <string name="msg_time_format_required">시간은 HH:mm 형식으로 입력해 주세요</string>
     <string name="msg_verification_code_debug">인증 코드: %1$s</string>
     <string name="msg_verification_code_mismatch">인증 코드가 맞지 않아요</string>
     <string name="msg_verification_code_send_failed">인증 코드를 보내지 못했어요</string>
     <string name="msg_verification_code_sent">인증 코드를 보냈어요</string>
     <string name="msg_verification_code_six_digits_required">6자리 인증 코드를 입력해 주세요</string>
-    <string name="msg_voice_already_deleted">이미 삭제된 목소리예요</string>
     <string name="msg_voice_clone_audio_too_long">목소리를 만들 음성은 2분 이하로 준비해 주세요.</string>
     <string name="msg_voice_clone_audio_too_short">목소리를 만들 음성은 12초 이상이어야 해요.</string>
     <string name="msg_voice_create_failed">목소리를 만들지 못했어요</string>
     <string name="msg_voice_create_login_required">목소리를 만들려면 먼저 로그인해 주세요</string>
-    <string name="msg_voice_created_single">\'%1$s\' 목소리를 만들었어요</string>
     <string name="msg_voice_delete_failed">목소리 삭제에 실패했어요</string>
     <string name="msg_voice_delete_login_required">목소리를 삭제하려면 먼저 로그인해 주세요</string>
-    <string name="msg_voice_deleted">목소리를 삭제했어요</string>
     <string name="msg_voice_duration_unknown">음성 길이를 확인하지 못했어요. 다시 녹음해 주세요.</string>
     <string name="msg_voice_prerender_retry_failed">다시 시도하지 못했어요. 잠시 후 다시 시도해 주세요</string>
     <string name="msg_voice_speech_style_retry_failed">말투 분석에 실패했어요. 잠시 후 다시 시도해 주세요</string>
@@ -474,8 +467,6 @@
     <string name="msg_voice_slot_exhausted">지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_voice_tts_audio_load_login_required">저장된 음성 오디오를 불러오려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_tts_generate_login_required">음성 오디오를 만들려면 먼저 로그인해 주세요</string>
-    <string name="msg_voice_tts_load_failed">저장된 음성을 불러오지 못했어요</string>
-    <string name="msg_voice_tts_load_login_required">저장된 음성을 불러오려면 먼저 로그인해 주세요</string>
     <string name="rd_audio_duration_unreadable">오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.</string>
     <string name="rd_audio_extract_failed">선택한 파일에서 오디오를 추출하지 못했어요. 다른 파일로 시도해 주세요.</string>
     <string name="rd_audio_mp3_trim_failed">MP3 구간을 저장하지 못했어요. 다른 파일을 선택해 주세요.</string>

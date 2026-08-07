@@ -231,7 +231,6 @@ struct VoicePreviewConfirmView: View {
         do {
             _ = try await AlarmTalkAPI.shared.promoteVoiceDraft(id: draft.id, token: token)
             await voice.refresh(session: auth.session, force: true, successMessage: nil)
-            voice.statusMessage = "목소리를 저장했어요."
             onSaved()
         } catch {
             errorMessage = voice.mapVoiceError(error)

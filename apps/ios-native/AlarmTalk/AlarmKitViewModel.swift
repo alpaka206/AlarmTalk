@@ -144,7 +144,6 @@ final class AlarmKitViewModel: ObservableObject {
             let state = try await AlarmManager.shared.requestAuthorization()
             applyAuthorizationState(state)
             if alarmAuthorized {
-                statusMessage = "알람 권한이 허용됐어요."
             } else if permissionRecoveryNeeded {
                 // 프롬프트가 뜨지 않은 채 돌아온 경우다. "다시 시도" 를 안내하면
                 // 눌러도 아무 일이 없는 버튼을 계속 누르게 만든다.
