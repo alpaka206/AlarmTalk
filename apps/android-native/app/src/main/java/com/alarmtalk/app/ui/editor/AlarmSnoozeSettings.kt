@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
 import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.data.SnoozeMinutes
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
@@ -271,9 +272,16 @@ internal fun SnoozeSettingsPane(
                     emphasized = true,
                     // 범위 밖이면 **버튼을 흐리게** 둔다. 예전엔 '눌러도 닫히지 않는 것' 으로
                     // 알렸는데, 그건 고장과 구분되지 않는다(Codex #671 P2).
-                    enabled = customMinutes != null && customMinutes in 1..60,
+                    //
+                    // ⚠ 상한은 **30**이다 — 서버 계약(`routes/alarm-helpers.ts` 의
+                    // `INVALID_SNOOZE_MINUTES`)과 `AlarmRepository.saveAlarm` 의
+                    // `require(snoozeMinutes in 1..30)` 이 그렇다. 여기가 60 이던 시절에는
+                    // 31~60 을 넣으면 다이얼로그는 통과시켜 놓고 저장에서 예외가 났다 —
+                    // 사용자에겐 "알람 저장에 실패했어요" 만 보이고 이유가 없었다.
+                    // 세 숫자(UI·리포지토리·서버)는 항상 같이 움직인다.
+                    enabled = customMinutes != null && customMinutes in SnoozeMinutes.range,
                     onClick = {
-                        customMinutes?.takeIf { it in 1..60 }?.let {
+                        customMinutes?.takeIf { it in SnoozeMinutes.range }?.let {
                             onSnoozeMinutesChange(it)
                             customIntervalDialogOpen = false
                         }
@@ -290,7 +298,7 @@ internal fun SnoozeSettingsPane(
             // 범위를 벗어나면 이유를 말해 준다. 예전 Material 필드는 isError 로 테두리를
             // 붉혔는데, 알럿으로 옮기며 그 신호가 사라져 '적용을 눌러도 아무 일이 없는'
             // 상태가 됐다 — 눌리지 않는 이유는 눈에 보여야 한다.
-            if (customMinutesText.isNotBlank() && customMinutes !in 1..60) {
+            if (customMinutesText.isNotBlank() && customMinutes !in SnoozeMinutes.range) {
                 Text(
                     text = stringResource(R.string.editor_snooze_custom_range_error),
                     color = MaterialTheme.colorScheme.error,

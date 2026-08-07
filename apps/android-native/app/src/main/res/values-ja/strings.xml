@@ -217,7 +217,7 @@
     <string name="editor_selected_ringtone">選択したアラーム</string>
     <string name="editor_snooze_custom">カスタム設定</string>
     <string name="editor_snooze_custom_dialog_title">間隔をカスタム設定</string>
-    <string name="editor_snooze_custom_range_error">1分から60分の間で指定してください。</string>
+    <string name="editor_snooze_custom_range_error">1分から30分の間で指定してください。</string>
     <string name="editor_snooze_custom_value">カスタム設定 · %1$d分</string>
     <string name="editor_snooze_interval">間隔</string>
     <string name="editor_snooze_repeat">繰り返し</string>

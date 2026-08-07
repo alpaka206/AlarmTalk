@@ -256,6 +256,21 @@ object AlarmPlayModes {
     }
 }
 
+/// 다시 알림 간격의 허용 범위. **서버 계약이 원본**이다 —
+/// `packages/backend/src/routes/alarm-helpers.ts` 가 1~30 을 벗어나면
+/// `INVALID_SNOOZE_MINUTES` 로 400 을 낸다.
+///
+/// ⚠ 리터럴을 다시 박지 말 것. 예전에는 편집기 다이얼로그가 `1..60` 을 통과시키고
+/// `AlarmRepository.validateDraft` 가 `1..30` 으로 던져서, 31~60 을 넣으면 다이얼로그는
+/// 닫히는데 저장이 "알람 저장에 실패했어요" 로 끝났다 — 이유는 어디에도 안 보였다.
+/// iOS 는 `Views/Editor/AlarmSettingsPanes.swift` 에 같은 범위를 둔다.
+object SnoozeMinutes {
+    const val MIN = 1
+    const val MAX = 30
+
+    val range = MIN..MAX
+}
+
 object SnoozeRepeatLimits {
     const val THREE = 3
     const val FIVE = 5

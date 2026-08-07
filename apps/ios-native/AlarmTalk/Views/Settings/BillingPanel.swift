@@ -17,6 +17,15 @@ import UIKit
 ///   - 백엔드 표준 plan key (`free` / `personal` / `couple` / `family`) 는 그대로.
 ///   - 비-IAP 흐름 (`/billing/vouchers/family-share`, `/code/register`) 은
 ///     SocialFeatureViewModel 이 계속 담당.
+///
+/// ⚠ **'이용권 변경(지금 / 종료일에)' 을 iOS 에 만들지 말 것.** 안드로이드에는 그 선택지가
+/// 있지만(`billing_change_now`·`billing_change_at_end_date`), 그건 우리 백엔드가 변경
+/// 시점을 소유하기 때문이다. iOS 는 네 플랜이 **같은 구독 그룹**이라 다른 플랜 카드를
+/// 사는 것 자체가 StoreKit 업그레이드/다운그레이드이고, **시점은 Apple 이 정한다**
+/// (업그레이드 즉시+비례정산 / 다운그레이드는 갱신일). Apple 확인 시트가 그걸 문장으로
+/// 알려 주므로, 우리가 고르는 UI 를 얹으면 지킬 수 없는 약속이 된다.
+/// 지금 플랜 카드만 `.disabled(isCurrent)` 이고 나머지는 그대로 눌리는 게 그 경로다.
+/// (해지는 우리 백엔드가 처리하므로 '지금/종료일' 두 갈래가 그대로 있다.)
 struct BillingPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel

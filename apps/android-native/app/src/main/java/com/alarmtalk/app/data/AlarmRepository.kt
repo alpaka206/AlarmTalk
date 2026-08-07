@@ -1448,7 +1448,7 @@ class AlarmRepository(
         require(draft.hour in 0..23) { "Hour must be between 0 and 23." }
         require(draft.minute in 0..59) { "Minute must be between 0 and 59." }
         require(draft.repeatDaysMask in 0..0x7f) { "Repeat days mask must only use Sunday through Saturday bits." }
-        require(draft.snoozeMinutes in 1..30) { "Snooze must be between 1 and 30 minutes." }
+        require(draft.snoozeMinutes in SnoozeMinutes.range) { "Snooze must be between ${SnoozeMinutes.MIN} and ${SnoozeMinutes.MAX} minutes." }
         require(draft.snoozeRepeatLimit in SnoozeRepeatLimits.all) { "Unknown snooze repeat limit." }
         require(draft.alarmVolumePercent in 0..100) { "Alarm volume must be between 0 and 100." }
         require(draft.voiceVolumePercent in 0..100) { "Voice volume must be between 0 and 100." }

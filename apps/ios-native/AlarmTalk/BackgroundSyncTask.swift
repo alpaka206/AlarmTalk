@@ -146,6 +146,12 @@ final class BackgroundSyncTask {
         }
 
         do {
+            // 만료가 가까우면 여기서 세션을 되살린다. 갱신이 '앱을 여는 것' 에만 걸려
+            // 있으면 몇 달씩 안 여는 사용자는 만료된 채로 열게 된다
+            // (`SessionTokenRenewal` 주석 참조). 남은 동기화가 굴러간 토큰을 쓰도록
+            // **맨 앞**에서 한다.
+            await Self.renewSessionTokenIfNeeded()
+
             _ = try await push.runOnce()
             let pullResult = try await pull.runOnce()
             if let session = KeychainStore.readSession() {
@@ -184,6 +190,30 @@ final class BackgroundSyncTask {
         }
     }
     #endif
+
+    /// 만료가 가까울 때만 `GET /auth/me` 로 토큰을 굴려 Keychain 에 다시 넣는다.
+    ///
+    /// ⚠ **실패해도 던지지 않는다.** 갱신은 알람 동기화의 전제 조건이 아니다 — 여기서
+    /// 던지면 네트워크가 잠깐 나빴다는 이유로 push/pull 까지 통째로 재시도로 밀려난다.
+    ///
+    /// ⚠ **저장 직전에 Keychain 을 다시 읽는다.** 네트워크 왕복 중 로그아웃·계정 전환이
+    /// 끼면 비운 저장소에 끝난 세션을 되쓰게 된다. 사용자 id 가 다르면 버린다
+    /// (안드로이드는 같은 자리를 `saveTokenIfGeneration` 의 세션 세대로 막는다).
+    static func renewSessionTokenIfNeeded() async {
+        guard let session = KeychainStore.readSession(),
+              SessionTokenRenewal.shouldRenew(token: session.token) else { return }
+        do {
+            let (rolledToken, _) = try await AlarmTalkAPI.shared.me(token: session.token)
+            guard let rolledToken, !rolledToken.isEmpty else { return }
+            guard var current = KeychainStore.readSession(),
+                  current.user.id == session.user.id else { return }
+            current.token = rolledToken
+            try KeychainStore.saveSession(current)
+        } catch {
+            // 갱신 실패는 조용히 넘어간다 — 만료까지 아직 여유가 있고(임계값이 90일),
+            // 다음 백그라운드 회차나 앱 오픈이 다시 시도한다.
+        }
+    }
 
     /// 다음 BGAppRefreshTask 를 시스템에 예약한다. 실패는 무시 (예: 시뮬레이터, 권한 없음).
     /// `earliestBeginDate` 를 주면 그 시각으로, 없으면 표준 주기(15분 뒤)로 예약한다.

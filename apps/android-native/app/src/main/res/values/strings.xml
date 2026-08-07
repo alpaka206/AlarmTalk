@@ -222,7 +222,7 @@
     <string name="editor_selected_ringtone">선택한 알람</string>
     <string name="editor_snooze_custom">직접 설정</string>
     <string name="editor_snooze_custom_dialog_title">간격 직접 설정</string>
-    <string name="editor_snooze_custom_range_error">1분에서 60분 사이로 정해 주세요.</string>
+    <string name="editor_snooze_custom_range_error">1분에서 30분 사이로 정해 주세요.</string>
     <string name="editor_snooze_custom_value">직접 설정 · %1$d분</string>
     <string name="editor_snooze_interval">간격</string>
     <string name="editor_snooze_repeat">반복</string>
