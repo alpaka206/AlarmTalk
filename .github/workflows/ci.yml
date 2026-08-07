@@ -74,6 +74,11 @@ jobs:
       - name: Check cross-platform comment references
         run: python3 scripts/check-cross-platform-refs.py
 
+      # 동작 규칙은 `docs/spec/` 한 곳에 모으고 CLAUDE.md 는 포인터만 남겼다. 그 포인터가
+      # 깨지면 규칙이 있는 줄도 모른 채 코드만 고치게 된다.
+      - name: Check docs links and spec index
+        run: python3 scripts/check-docs-links.py
+
   typecheck:
     runs-on: ubuntu-latest
     strategy:

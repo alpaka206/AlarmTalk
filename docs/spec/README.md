@@ -34,6 +34,8 @@
 | [voice-and-message.md](voice-and-message.md) | 목소리·문구를 고르고 저장하는 규칙, 등급별 제한 |
 | [plan-gates.md](plan-gates.md) | 로그인·이용권 게이트가 뜨는 조건과 문구 |
 | [family-alarm.md](family-alarm.md) | 남에게 보내는 알람 — 보내면 끝, 설정 불가능 시간 |
+| [consent.md](consent.md) | 동의 화면 — 미체크는 철회가 아니다, 재동의 레버 |
+| [gates-and-overlays.md](gates-and-overlays.md) | 차단 게이트와 1회성 오버레이의 순서 |
 
 ## 여기 넣지 않는 것
 
