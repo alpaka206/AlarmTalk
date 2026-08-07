@@ -73,6 +73,19 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 값 하나를 행에 적어 두면 캐시와 무관하게 무엇을 골랐는지 남는다.
     var bucketId: String?
 
+    /// 이 테마에 묶인 클립들의 캐시 키. 안드로이드 `AlarmEntity.bucketClipKeysJson` 미러.
+    ///
+    /// ⚠ **한 개만 들고 있지 말 것.** 무료 테마는 울릴 때마다 다음 클립으로 넘어가는 게
+    /// 기능이다 — 하나만 묶으면 매일 같은 문구를 듣는다(iOS 가 2026-08-08 전까지 그랬다).
+    var bucketClipKeys: [String]?
+
+    /// 다음에 쓸 클립의 자리. 울린 뒤 하나씩 전진한다.
+    ///
+    /// ⚠ **날씨·운세 테마는 전진하지 않는다.** 그 둘은 '조건에 맞는 클립' 을 고르는
+    /// 것이라(비 오는 날엔 비 문구) 순서를 돌리면 엉뚱한 문구가 나온다. 안드로이드
+    /// `MATCHING_BUCKET_IDS` 와 같은 이유다.
+    var bucketRotationIndex: Int?
+
     // iOS-only:
     /// AlarmKit `Alarm.id` (UUID). 직렬화는 String 으로.
     var alarmKitID: String?
@@ -343,6 +356,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case preLockPlayMode
         case ownerUserId
         case bucketId
+        case bucketClipKeys
+        case bucketRotationIndex
     }
 
     /// Codable 디코딩. 신규 필드 누락 시 default 폴백.
@@ -434,6 +449,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.preLockPlayMode = try c.decodeIfPresent(String.self, forKey: .preLockPlayMode)
         self.ownerUserId = try c.decodeIfPresent(String.self, forKey: .ownerUserId)
         self.bucketId = try c.decodeIfPresent(String.self, forKey: .bucketId)
+        self.bucketClipKeys = try c.decodeIfPresent([String].self, forKey: .bucketClipKeys)
+        self.bucketRotationIndex = try c.decodeIfPresent(Int.self, forKey: .bucketRotationIndex)
 
         // fireAtMillis: 신규는 Int64. 없으면 hour/minute 으로 today/tomorrow 기본값.
         if let raw = try c.decodeIfPresent(Int64.self, forKey: .fireAtMillis) {
@@ -500,6 +517,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(preLockPlayMode, forKey: .preLockPlayMode)
         try c.encodeIfPresent(ownerUserId, forKey: .ownerUserId)
         try c.encodeIfPresent(bucketId, forKey: .bucketId)
+        try c.encodeIfPresent(bucketClipKeys, forKey: .bucketClipKeys)
+        try c.encodeIfPresent(bucketRotationIndex, forKey: .bucketRotationIndex)
     }
 
     /// hour/minute 만 알 때 다음 발화 시각 계산 (legacy import 폴백용).

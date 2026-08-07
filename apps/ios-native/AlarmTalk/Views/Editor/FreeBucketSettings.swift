@@ -3,12 +3,13 @@ import SwiftUI
 /// 무료 등급의 **테마(버킷)** 개념. 무료 사용자는 개별 문구가 아니라 테마를 고른다.
 /// 안드로이드 `ui/editor/AlarmEditorControls.kt` 의 `FreeBucketOrder` / `freeBucketsFor`.
 ///
-/// ⚠ **iOS 는 아직 회전하지 않는다.** 안드로이드는 테마 안의 클립을 알람이 울릴 때마다
-/// 순차로 바꾸지만(`bindStockBucketClips` → `setBucketAudio` → 울릴 때 인덱스 전진),
-/// iOS 는 `selectFreeBucket` 이 `clips.first` 하나만 묶는다 — 무료 알람이 매일 같은
-/// 문구로 울린다. 여기 "회전한다" 고 적혀 있던 주석은 **없는 동작을 근거로 쓴 것**이었다
-/// (2026-08-07 정정). 회전을 붙이려면 클립 키 목록과 인덱스를 알람 행에 영속하고,
-/// 울린 뒤 다음 클립으로 다시 스테이징해야 한다(AlarmKit 은 사운드 파일 하나만 받는다).
+/// 테마 안의 클립은 **울릴 때마다 다음 것으로 넘어간다**(2026-08-08 구현).
+/// 클립 키 목록과 인덱스를 알람 행에 영속하고(`bucketClipKeys`·`bucketRotationIndex`),
+/// 울린 뒤 `LocalAlarmStore.markStopped` 가 인덱스를 올린 다음 **다시 예약**한다 —
+/// AlarmKit 은 사운드 파일을 예약 시점에 받아 가므로 다시 예약하지 않으면 인덱스만
+/// 올라가고 소리는 지난 회차 그대로다.
+///
+/// ⚠ **날씨·운세는 돌리지 않는다.** 그 둘은 순서가 아니라 조건으로 고른다.
 ///
 /// ⚠ **버킷 안 개별 문구를 노출하지 말 것.** 예전 iOS 는 스톡 클립 본문을 행으로
 /// 나열해서, 매일 도는 회전 클립 중 하나를 '내가 고른 문구' 로 오해하게 만들었다.
@@ -21,6 +22,14 @@ enum FreeBucket: String, CaseIterable, Identifiable {
     /// ⚠ 순서는 안드로이드 `FreeBucketOrder` 그대로다. 이 순서가 "한 번도 고른 적 없을
     /// 때" 의 최후 폴백이기도 하다 — '항상 적용되는 기본값' 이 아니다(CLAUDE.md).
     static let order: [FreeBucket] = [.medication, .weather]
+
+    /// **순서가 아니라 조건으로** 클립을 고르는 테마. 회전을 전진시키지 않는다.
+    ///
+    /// 날씨는 그날 날씨에, 운세는 그날 운세에 맞는 클립을 골라야 한다 — 순서를 돌리면
+    /// 비 오는 날 맑음 문구가 나온다. 안드로이드 `AlarmRepository.MATCHING_BUCKET_IDS`
+    /// 와 같은 집합이다(운세는 유료 클론 전용이라 이 열거형에는 없지만, 문자열로 비교하는
+    /// 자리에서 함께 걸러야 해서 여기 둔다).
+    static let matchingBucketIDs: Set<String> = ["weather", "fortune"]
 
     var label: String {
         switch self {

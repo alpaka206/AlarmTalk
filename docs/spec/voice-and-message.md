@@ -87,10 +87,32 @@
 상세(저장 키 이름, 버킷 판정식, 직접 입력 문구 기억)는 `CLAUDE.md`
 「알람 편집기 기본값 = 직전 선택 유지」 절에 있다.
 
-## 5. 무료 버킷 클립은 **미리 받아 둔다**
+## 5. 무료 버킷은 **울릴 때마다 다음 클립으로 넘어간다**
 
-무료 버킷은 알람이 울릴 때마다 클립을 순차 회전한다. 울릴 시각에 네트워크가 없으면 그
-회차가 조용히 비므로, 로그인 직후 받아 둔다.
+테마 하나에 클립이 여럿이고, 알람이 울릴 때마다 순서대로 넘어간다. 같은 테마라도
+매일 다른 문구를 듣는 것이 이 기능의 요점이다.
+
+| | 규칙 |
+| --- | --- |
+| 무엇을 저장하나 | 그 테마의 **클립 키 전부** + 다음에 쓸 자리 |
+| 언제 전진하나 | 알람이 **끝났을 때**(정지·알럿 사라짐 — 어느 경로든) |
+| 돌리지 않는 테마 | **날씨·운세** — 순서가 아니라 **조건**으로 고른다(비 오는 날엔 비 문구) |
+| 그 클립이 없으면 | 받아진 것 중 하나로 대체 — 소리가 없는 것보다 순서가 어긋나는 편이 낫다 |
+
+⚠ **iOS 는 울린 뒤 알람을 다시 예약해야 한다.** AlarmKit 은 사운드 파일을 **예약 시점에**
+받아 가므로, 인덱스만 올리고 다시 예약하지 않으면 OS 는 지난 회차의 파일을 그대로 울린다.
+안드로이드는 울릴 때 직접 파일을 고르므로 그 단계가 없다.
+
+⚠ **예약할 때 돌리지 말 것.** 재예약은 시간대 변경·복구로도 일어난다 — 거기서 돌리면
+울리지도 않았는데 문구가 건너뛴다.
+
+⚠ iOS 는 2026-08-08 전까지 **회전이 아예 없었다**(`clips.first` 하나만 묶었다). 그런데
+주석 두 곳은 "울릴 때마다 순차 회전한다" 고 적혀 있었다 — 코드가 아니라 주석이 기능을
+광고하고 있었다.
+
+### 미리 받아 둔다
+
+울릴 시각에 네트워크가 없으면 그 회차가 조용히 비므로, 로그인 직후 받아 둔다.
 
 - 받는 대상 = 기본 목소리 × **기기 언어 하나** × 무료 버킷 카테고리(weather, medication)
 - 언어를 하나로 좁힌다 — 앱은 한 번에 한 언어만 쓰고, 언어를 바꾸면 다시 돌아 채운다
@@ -149,6 +171,8 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 목소리 전환 경고 | `pendingVoiceSwitch` (`ui/editor/VoiceAudioCard.kt`) | `pendingVoiceSwitch` (`AlarmEditorSheet.swift`) | — |
 | 직전 선택 저장 | `DefaultVoicePreferenceStore` / `DynamicPromptPreferenceStore` | `DefaultVoicePreferenceStore` | — |
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
+| 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
+| 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 오디오 캐시 키 | `stock_<messageId>` | `AudioCacheStore.stockCacheKey` (같은 규칙) | — |
 | 무료 전환 잠금 | `AlarmRepository.lockPaidAlarmTalks` / `unlockPaidAlarmTalks` | `SocialFeatureViewModel.applyFreePlanVoiceLock` / `restorePaidVoiceAlarms` | `users.plan`, `resolvePlanAfterSuspend` |
 

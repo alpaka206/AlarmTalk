@@ -69,7 +69,24 @@ final class AlarmAppContext {
            let id = recordBeforeStop?.id {
             await rearmHolidayOffOneShot(id)
         }
+
+        // ⚠ **무료 테마 반복 알람은 다음 클립으로 다시 예약해야 한다.**
+        // AlarmKit 은 사운드 파일을 **예약할 때** 받아 간다 — `markStopped` 가 회전
+        // 인덱스를 올려도, 다시 예약하지 않으면 OS 는 지난 회차의 파일을 그대로 울린다.
+        //
+        // 공휴일off 반복은 위 재무장이 이미 같은 일을 하므로 건너뛴다(이중 예약 방지).
+        if let record = recordBeforeStop,
+           record.bucketId != nil,
+           (record.bucketClipKeys?.count ?? 0) > 1,
+           record.repeatDaysMask != 0,
+           !record.isHolidayOffRecurring {
+            await rescheduleForNextBucketClip(record.id)
+        }
     }
+
+    /// 회전한 클립으로 알람을 다시 예약한다. `AlarmTalkApp` 이 `AlarmKitViewModel` 로 잇는다.
+    /// 기본은 no-op 이라 테스트·콜드부팅에서 안전하다.
+    var rescheduleForNextBucketClip: (String) async -> Void = { _ in }
 
     /// 인스턴스가 없어도 같은 규칙을 쓰게 하는 진입점.
     /// `AlarmKitViewModel` 의 disappearance 루프가 `AlarmAppContext.shared == nil` 인

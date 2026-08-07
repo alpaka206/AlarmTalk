@@ -273,12 +273,30 @@ final class LocalAlarmStore: ObservableObject {
     ///   `LocalHolidayCalendar` 고정 규칙. 호출자(handleAlarmStopped/disappearance)는
     ///   서버 sync 공휴일까지 반영하도록 `HolidayStore.holidayPredicate()` 를 넘긴다
     ///   (Android dismiss 가 full holiday predicate 로 recompute 하는 것과 동일).
+    /// 울린 뒤 다음에 쓸 클립 자리. 테마가 아니거나 클립이 하나뿐이면 그대로 둔다.
+    ///
+    /// ⚠ **날씨·운세는 전진시키지 않는다.** 그 둘은 순서가 아니라 **조건**으로 클립을
+    /// 고른다(비 오는 날엔 비 문구, 오늘 운세엔 오늘 것). 돌려 버리면 조건과 무관한
+    /// 문구가 나온다 — 안드로이드 `MATCHING_BUCKET_IDS` 와 같은 이유다.
+    static func advancedBucketRotationIndex(_ record: LocalAlarmRecord) -> Int? {
+        guard let bucketId = record.bucketId,
+              let keys = record.bucketClipKeys, keys.count > 1,
+              !FreeBucket.matchingBucketIDs.contains(bucketId) else {
+            return record.bucketRotationIndex
+        }
+        return ((record.bucketRotationIndex ?? 0) + 1) % keys.count
+    }
+
     func markStopped(
         alarmKitID: String,
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
     ) {
         guard let index = alarms.firstIndex(where: { $0.alarmKitID == alarmKitID }) else { return }
         let now = Int64(Date().timeIntervalSince1970 * 1000)
+        // ⚠ **여기서 회전을 전진시킨다.** 알람이 어떻게 끝나든(정지 버튼·시스템 alert
+        // 사라짐) 이 함수로 모이므로, 다음 회차가 다음 문구로 울린다.
+        // 안드로이드 `advancedBucketRotationIndex` 와 같은 규칙이다.
+        alarms[index].bucketRotationIndex = Self.advancedBucketRotationIndex(alarms[index])
         if alarms[index].repeatDaysMask != 0,
            let nextFireAt = try? AlarmTimeCalculator.nextFireAtMillis(
             hour: alarms[index].hour,

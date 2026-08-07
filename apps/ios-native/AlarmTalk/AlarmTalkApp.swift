@@ -117,6 +117,15 @@ struct AlarmTalkApp: App {
                                 guard let alarmKit, let alarmStore else { return }
                                 await alarmKit.rearmIfHolidayOffOneShot(localID: id, store: alarmStore)
                             }
+                            // 무료 테마 회전 — 울린 뒤 다음 클립으로 다시 예약한다.
+                            // AlarmKit 은 사운드를 **예약할 때** 받아 가므로, 다시 예약하지
+                            // 않으면 인덱스만 올라가고 소리는 지난 회차 그대로다.
+                            ctx.rescheduleForNextBucketClip = { [weak alarmKit, weak alarmStore] id in
+                                guard let alarmKit, let alarmStore,
+                                      let record = alarmStore.alarms.first(where: { $0.id == id })
+                                else { return }
+                                _ = await alarmKit.schedule(record: record, store: alarmStore)
+                            }
                         }
                         // PR3 FIX: AlarmKitViewModel 이 앱-레벨 단일 HolidayStore 를
                         // 쓰도록 주입한다. recoverScheduledAlarms / processAlarmUpdate 가

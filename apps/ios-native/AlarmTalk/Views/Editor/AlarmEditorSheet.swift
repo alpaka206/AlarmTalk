@@ -1026,7 +1026,17 @@ struct AlarmEditorSheet: View {
             voiceStudio.statusMessage = "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요."
             return
         }
+        // 편집기에서는 첫 클립을 들려준다. **회전은 저장된 뒤 울릴 때** 일어난다 —
+        // 여기서 무작위로 고르면 눌러 볼 때마다 다른 문구가 나와 뭘 고른 건지 알 수 없다.
         await selectStockClip(clip)
+    }
+
+    /// 이 테마에 묶을 클립 캐시 키 전부. 매니페스트 순서를 그대로 쓴다 —
+    /// 순서가 흔들리면 회전이 같은 문구를 두 번 내거나 건너뛴다.
+    func bucketClipKeys(forCategory category: String) -> [String] {
+        voiceStudio.stockClips
+            .filter { $0.voiceProfileId == voiceStudio.selectedProfileID && $0.category == category }
+            .map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) }
     }
 
     /// 지금 고른 문구 갈래 — 요약 행과 문구 화면이 함께 읽는다.
@@ -1899,13 +1909,22 @@ struct AlarmEditorSheet: View {
                 merged.voiceRandomPrompt = false
                 merged.voiceRandomContext = nil
                 // 고른 테마를 **행에 적는다.** 캐시 파일이 사라져도 무엇을 골랐는지 남는다.
-                merged.bucketId = voiceStudio.stockClips
+                let category = voiceStudio.stockClips
                     .first { $0.messageId == prepared.messageID }?.category?.nilIfBlank
                     ?? (editingAlarm?.bucketId).nilIfBlank
+                merged.bucketId = category
+                // ⚠ **그 테마의 클립을 전부 묶는다.** 하나만 들고 있으면 매일 같은 문구를
+                // 듣는다 — 무료 테마는 울릴 때마다 다음 클립으로 넘어가는 게 기능이다.
+                merged.bucketClipKeys = category.map { bucketClipKeys(forCategory: $0) }
+                // 지금 준비된 클립이 몇 번째인지에서 시작한다(편집기에서 들어본 그 문구부터).
+                merged.bucketRotationIndex = merged.bucketClipKeys?
+                    .firstIndex(of: prepared.audioCacheKey) ?? 0
             } else {
                 // 테마 알람이 아니게 됐으면 값을 비운다 — 남겨 두면 다음에 열 때 없는
                 // 테마가 고른 것처럼 보인다.
                 merged.bucketId = nil
+                merged.bucketClipKeys = nil
+                merged.bucketRotationIndex = nil
             }
         }
 

@@ -108,6 +108,7 @@
 		71252028579C48FC970B8DF4 /* LocalAlarmStoreRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08347BEE6A41D76AC9CD1CFC /* LocalAlarmStoreRecoveryTests.swift */; };
 		716D52D7183251917FEA075E /* voice_greeting_hajun_en.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 24A21A25176F8CB2F87741F6 /* voice_greeting_hajun_en.mp3 */; };
 		7295D42A8506430B2EF80CFA /* voice_greeting_soeun_ko.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 068018CE7C24F2A94A84FDB4 /* voice_greeting_soeun_ko.mp3 */; };
+		749B993C6D0AA5AE3EB95E1D /* BucketClipRotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F41853E4CF850DF4EB6F24 /* BucketClipRotationTests.swift */; };
 		75A5F309003D743578C5B318 /* AlarmTalkShapes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07AE96180817F4A2A28B5ED4 /* AlarmTalkShapes.swift */; };
 		7638CB240847562DCB768E5F /* AlarmTalkMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC283DE15D2853C6F4669754 /* AlarmTalkMetadata.swift */; };
 		76F875CA136A77C1804563CD /* AlarmTalkBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521C02BC3EAB475219595232 /* AlarmTalkBrand.swift */; };
@@ -386,6 +387,7 @@
 		8E3D0092573DFD5413095F8F /* AudioCropper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCropper.swift; sourceTree = "<group>"; };
 		8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunctionalE2EUITests.swift; sourceTree = "<group>"; };
 		8EC3F92F3D5BF3B4B8568196 /* AlarmEditDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditDraft.swift; sourceTree = "<group>"; };
+		90F41853E4CF850DF4EB6F24 /* BucketClipRotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketClipRotationTests.swift; sourceTree = "<group>"; };
 		920F8A0EE7DA7744FBDA1206 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		927710A2BFE14D1CDCFEAC77 /* voice_greeting_adam_ko.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_adam_ko.mp3; sourceTree = "<group>"; };
 		92C56157192A2B5CBADB2977 /* FortunePromptInputFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FortunePromptInputFormatTests.swift; sourceTree = "<group>"; };
@@ -735,6 +737,7 @@
 				8A1415DAB86286CDD5AB4219 /* AuthUserDecodingTests.swift */,
 				376BBDA5FD78ACD795C78581 /* AuthViewModelTests.swift */,
 				BC6803137321D0177FF40243 /* BackgroundSyncTaskTests.swift */,
+				90F41853E4CF850DF4EB6F24 /* BucketClipRotationTests.swift */,
 				C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */,
 				33EACFD24875EBC9DCCC831F /* DynamicVoiceRefreshServiceTests.swift */,
 				92C56157192A2B5CBADB2977 /* FortunePromptInputFormatTests.swift */,
@@ -1268,6 +1271,7 @@
 				DB82555FB5EDA5964A490C43 /* AuthUserDecodingTests.swift in Sources */,
 				46755794A3CFB39DB2A07D3E /* AuthViewModelTests.swift in Sources */,
 				516F57BD13DEACD0054A1F59 /* BackgroundSyncTaskTests.swift in Sources */,
+				749B993C6D0AA5AE3EB95E1D /* BucketClipRotationTests.swift in Sources */,
 				0D6DE12A148737B55879EBFC /* DynamicPromptPreferenceStoreTests.swift in Sources */,
 				D4F5DBE93B1684A6861D4672 /* DynamicVoiceRefreshServiceTests.swift in Sources */,
 				DF01070F5A7680AF08057F3C /* FortunePromptInputFormatTests.swift in Sources */,

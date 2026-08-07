@@ -65,14 +65,35 @@ enum AlarmSoundResolver {
     /// AlarmKit sound 전략을 결정한다. 본 함수는 절대 throw 하지 않는다 —
     /// 어떤 단계에서 실패하더라도 가장 보수적인 fallback (.systemDefault 또는
     /// .cachedAudio) 으로 떨어진다.
+    /// 무료 테마 알람이 **이번에 쓸** 클립 키. 테마가 아니거나 그 클립이 캐시에 없으면 nil.
+    ///
+    /// 인덱스는 울린 뒤 `LocalAlarmStore.markStopped` 가 전진시킨다. 여기서는 읽기만 한다 —
+    /// 예약할 때마다 돌리면 재예약(시간대 변경·복구)만으로도 문구가 건너뛴다.
+    static func rotatedBucketClipKey(
+        for record: LocalAlarmRecord,
+        audioCache: AudioCacheStore
+    ) -> String? {
+        guard record.bucketId != nil,
+              let keys = record.bucketClipKeys, !keys.isEmpty else { return nil }
+        let index = (record.bucketRotationIndex ?? 0) % keys.count
+        // 고른 자리의 클립이 아직 안 받아졌으면, 받아진 것 중 아무거나로 대체한다.
+        // 소리가 없는 것보다 순서가 어긋나는 편이 낫다(안드로이드도 같은 폴백이다).
+        if audioCache.cachedURL(for: keys[index]) != nil { return keys[index] }
+        return keys.first { audioCache.cachedURL(for: $0) != nil }
+    }
+
     static func resolve(
         for record: LocalAlarmRecord,
         audioCache: AudioCacheStore
     ) -> AlarmSoundResolution {
 
         // 1) voice / sound_then_voice + 캐시 존재
+        //
+        // ⚠ **무료 테마는 회전한 클립을 쓴다.** `audioCacheKey` 는 저장할 때 골랐던 그
+        // 클립이라, 그것만 보면 매일 같은 문구가 나온다(iOS 가 2026-08-08 전까지 그랬다).
+        // 캐시에 없으면 저장 시 키로 폴백한다 — 회전 때문에 소리가 사라지면 안 된다.
         if record.playModeEnum != .alarmOnly,
-           let key = record.audioCacheKey,
+           let key = rotatedBucketClipKey(for: record, audioCache: audioCache) ?? record.audioCacheKey,
            let url = audioCache.cachedURL(for: key) {
 
             let meta = audioCache.readMetadata(cacheKey: key)
