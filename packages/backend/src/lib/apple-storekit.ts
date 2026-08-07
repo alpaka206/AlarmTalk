@@ -163,6 +163,97 @@ export async function fetchAppleTransaction(
   throw new AppleTransactionNotFoundError();
 }
 
+/** 애플이 돌려주는 구독 상태 코드. 1·2·3·4 만 쓰이고 나머지는 없다. */
+export const APPLE_SUBSCRIPTION_STATUS = {
+  ACTIVE: 1,
+  EXPIRED: 2,
+  /** 결제 실패 후 재시도 중(billing retry). 아직 만료가 아니다. */
+  IN_BILLING_RETRY: 3,
+  /** 가격 인상 동의 대기. 아직 유효하다. */
+  IN_GRACE_PERIOD: 4,
+} as const;
+
+export interface AppleSubscriptionStatus {
+  /** `APPLE_SUBSCRIPTION_STATUS` 중 하나. */
+  status: number;
+  /** 가장 최근 갱신 트랜잭션의 만료 시각(ms). 없으면 조회 실패로 본다. */
+  expiresDate?: number;
+  productId: string;
+  /** 자동 갱신이 켜져 있나(0/1). 사용자가 스토어에서 껐으면 0. */
+  autoRenewStatus?: number;
+}
+
+/**
+ * **구독의 현재 상태**를 애플에 묻는다 — 만료 재조회(reconciliation)용.
+ *
+ * ⚠ `fetchAppleTransaction` 으로는 이걸 못 한다. 자동갱신 구독은 **갱신마다 트랜잭션
+ * ID 가 바뀌는데** 우리가 저장한 건 `originalTransactionId`(수명 동안 고정)라, 그걸로
+ * 개별 트랜잭션을 조회하면 **첫 결제의 만료일**만 돌아온다. 그러면 갱신을 영영 못 본다.
+ * 이 엔드포인트(`/subscriptions/{id}`)는 구독의 **어떤** 트랜잭션 ID 로도 조회되고
+ * 최신 갱신 정보를 준다 — 구글의 `getPlaySubscriptionV2` 와 같은 역할이다.
+ *
+ * 프로덕션에 없으면 샌드박스를 한 번 더 본다(`fetchAppleTransaction` 과 같은 이유).
+ */
+export async function fetchAppleSubscriptionStatus(
+  originalTransactionId: string,
+  config: AppleStoreKitConfig,
+  fetchImpl: typeof fetch = fetch,
+  nowMs: number = Date.now(),
+): Promise<AppleSubscriptionStatus> {
+  const jwt = await signAppStoreServerJwt(config, nowMs);
+  const path = `/subscriptions/${encodeURIComponent(originalTransactionId)}`;
+
+  for (const base of [PRODUCTION_BASE, SANDBOX_BASE]) {
+    const res = await fetchImpl(`${base}${path}`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`Apple subscription status lookup failed (${res.status})`);
+
+    const body = (await res.json()) as {
+      bundleId?: string;
+      data?: Array<{
+        lastTransactions?: Array<{
+          originalTransactionId?: string;
+          status?: number;
+          signedTransactionInfo?: string;
+          signedRenewalInfo?: string;
+        }>;
+      }>;
+    };
+
+    // 다른 앱의 구독이 우리 것으로 들어오면 안 된다(`fetchAppleTransaction` 과 같은 규칙).
+    if (body.bundleId && body.bundleId !== config.bundleId) {
+      throw new Error('Apple subscription bundle id mismatch');
+    }
+
+    // `data` 는 구독 그룹별 배열이고 `lastTransactions` 는 그룹 안의 구독들이다.
+    // 우리가 물은 originalTransactionId 와 일치하는 항목만 본다 — 같은 그룹의 다른
+    // 구독(예: 개인 → 가족으로 갈아탄 흔적)을 집으면 엉뚱한 만료일을 쓰게 된다.
+    const entry = (body.data ?? [])
+      .flatMap((group) => group.lastTransactions ?? [])
+      .find((t) => t.originalTransactionId === originalTransactionId);
+    if (!entry) continue;
+
+    if (!entry.signedTransactionInfo) throw new Error('Apple response missing signedTransactionInfo');
+    const info = decodeAppleJws<AppleTransactionInfo>(entry.signedTransactionInfo);
+    if (info.bundleId !== config.bundleId) {
+      throw new Error('Apple subscription bundle id mismatch');
+    }
+    const renewal = entry.signedRenewalInfo
+      ? decodeAppleJws<{ autoRenewStatus?: number }>(entry.signedRenewalInfo)
+      : undefined;
+
+    return {
+      status: Number(entry.status ?? APPLE_SUBSCRIPTION_STATUS.EXPIRED),
+      expiresDate: info.expiresDate,
+      productId: info.productId,
+      autoRenewStatus: renewal?.autoRenewStatus,
+    };
+  }
+  throw new AppleTransactionNotFoundError();
+}
+
 /**
  * App Store Connect 상품 ID → plans.key.
  *

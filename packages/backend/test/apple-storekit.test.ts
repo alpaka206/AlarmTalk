@@ -10,6 +10,7 @@ import {
   applePlanKeyFromProductId,
   appleStoreKitConfigFromEnv,
   AppleTransactionNotFoundError,
+  fetchAppleSubscriptionStatus,
   type AppleStoreKitConfig,
 } from '../src/lib/apple-storekit';
 
@@ -210,5 +211,132 @@ describe('appleStoreKitConfigFromEnv', () => {
       APPLE_BUNDLE_ID: 'b',
     });
     expect(cfg).toEqual({ issuerId: 'i', keyId: 'k', privateKeyPem: 'p', bundleId: 'b' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fetchAppleSubscriptionStatus — 만료 재조회의 근거
+//
+// ⚠ `fetchAppleTransaction` 으로는 이걸 못 한다. 자동갱신 구독은 갱신마다 트랜잭션 ID 가
+// 바뀌는데 우리가 저장한 건 originalTransactionId 라, 개별 트랜잭션 조회는 **첫 결제의
+// 만료일**만 준다 — 그러면 갱신을 영영 못 보고, 돈은 내는데 무료로 강등된다.
+// ---------------------------------------------------------------------------
+describe('fetchAppleSubscriptionStatus', () => {
+  const ORIGINAL_ID = '2000000800000001';
+
+  function signedRenewalInfo(payload: Record<string, unknown>): string {
+    const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: 'ES256' })));
+    const body = b64url(new TextEncoder().encode(JSON.stringify(payload)));
+    return `${header}.${body}.c2ln`;
+  }
+
+  function statusBody(over: {
+    status?: number;
+    expiresDate?: number;
+    autoRenewStatus?: number;
+    originalTransactionId?: string;
+    bundleId?: string;
+  } = {}) {
+    return {
+      bundleId: over.bundleId ?? BUNDLE_ID,
+      data: [
+        {
+          lastTransactions: [
+            {
+              originalTransactionId: over.originalTransactionId ?? ORIGINAL_ID,
+              status: over.status ?? 1,
+              signedTransactionInfo: signedTransactionInfo(
+                txPayload({
+                  originalTransactionId: over.originalTransactionId ?? ORIGINAL_ID,
+                  expiresDate: over.expiresDate ?? Date.now() + 30 * 24 * 3600 * 1000,
+                }),
+              ),
+              signedRenewalInfo: signedRenewalInfo({
+                autoRenewStatus: over.autoRenewStatus ?? 1,
+              }),
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it('구독 상태 엔드포인트를 부르고 최신 만료일을 돌려준다', async () => {
+    const config = await makeConfig();
+    const expires = Date.now() + 30 * 24 * 3600 * 1000;
+    const fetchMock = async (url: string) => {
+      expect(String(url)).toContain(`/subscriptions/${ORIGINAL_ID}`);
+      return new Response(JSON.stringify(statusBody({ expiresDate: expires })), { status: 200 });
+    };
+    const result = await fetchAppleSubscriptionStatus(
+      ORIGINAL_ID,
+      config,
+      fetchMock as unknown as typeof fetch,
+    );
+    expect(result.status).toBe(1);
+    expect(result.expiresDate).toBe(expires);
+    expect(result.autoRenewStatus).toBe(1);
+  });
+
+  it('사용자가 App Store 에서 해지하면 autoRenewStatus=0 을 준다', async () => {
+    const config = await makeConfig();
+    const fetchMock = async () =>
+      new Response(JSON.stringify(statusBody({ autoRenewStatus: 0 })), { status: 200 });
+    const result = await fetchAppleSubscriptionStatus(
+      ORIGINAL_ID,
+      config,
+      fetchMock as unknown as typeof fetch,
+    );
+    expect(result.autoRenewStatus).toBe(0);
+  });
+
+  it('프로덕션에 없으면 샌드박스를 한 번 더 본다', async () => {
+    const config = await makeConfig();
+    const seen: string[] = [];
+    const fetchMock = async (url: string) => {
+      seen.push(String(url));
+      if (seen.length === 1) return new Response('', { status: 404 });
+      return new Response(JSON.stringify(statusBody()), { status: 200 });
+    };
+    const result = await fetchAppleSubscriptionStatus(
+      ORIGINAL_ID,
+      config,
+      fetchMock as unknown as typeof fetch,
+    );
+    expect(result.status).toBe(1);
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toContain('sandbox');
+  });
+
+  it('양쪽 다 없으면 AppleTransactionNotFoundError', async () => {
+    const config = await makeConfig();
+    const fetchMock = async () => new Response('', { status: 404 });
+    await expect(
+      fetchAppleSubscriptionStatus(ORIGINAL_ID, config, fetchMock as unknown as typeof fetch),
+    ).rejects.toBeInstanceOf(AppleTransactionNotFoundError);
+  });
+
+  // ⚠ 다른 앱의 구독이 우리 것으로 들어오면 안 된다.
+  it('번들 ID 가 다르면 거절한다', async () => {
+    const config = await makeConfig();
+    const fetchMock = async () =>
+      new Response(JSON.stringify(statusBody({ bundleId: 'com.someone.else' })), { status: 200 });
+    await expect(
+      fetchAppleSubscriptionStatus(ORIGINAL_ID, config, fetchMock as unknown as typeof fetch),
+    ).rejects.toThrow(/bundle id mismatch/);
+  });
+
+  // 같은 구독 그룹 안의 **다른** 구독을 집으면 엉뚱한 만료일로 연장하게 된다
+  // (예: 개인 → 가족으로 갈아탄 흔적이 같은 그룹에 남는다).
+  it('같은 그룹의 다른 구독을 집지 않는다', async () => {
+    const config = await makeConfig();
+    const fetchMock = async () =>
+      new Response(
+        JSON.stringify(statusBody({ originalTransactionId: '9999999999999999' })),
+        { status: 200 },
+      );
+    await expect(
+      fetchAppleSubscriptionStatus(ORIGINAL_ID, config, fetchMock as unknown as typeof fetch),
+    ).rejects.toBeInstanceOf(AppleTransactionNotFoundError);
   });
 });

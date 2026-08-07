@@ -37,6 +37,7 @@
 | [consent.md](consent.md) | 동의 화면 — 미체크는 철회가 아니다, 재동의 레버 |
 | [gates-and-overlays.md](gates-and-overlays.md) | 차단 게이트와 1회성 오버레이의 순서 |
 | [session-and-auth.md](session-and-auth.md) | 로그인 유지 — 한 번 하면 다시 안 한다, 백그라운드 갱신 |
+| [billing-lifecycle.md](billing-lifecycle.md) | 구독 해지·만료 — 스토어가 권위, 못 물으면 안 바꾼다 |
 
 ## 여기 넣지 않는 것
 

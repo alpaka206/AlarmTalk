@@ -16,13 +16,32 @@ import {
   type PlayEnv,
   type SubscriptionV2Response,
 } from './play-subscriptions';
+import {
+  APPLE_SUBSCRIPTION_STATUS,
+  AppleTransactionNotFoundError,
+  appleStoreKitConfigFromEnv,
+  fetchAppleSubscriptionStatus,
+  type AppleSubscriptionStatus,
+} from './apple-storekit';
 import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
 import { notifyDowngradedAlarms, sendPlanChangedPush } from './fcm';
 import type { Env } from '../types';
 
 // 만료 크론이 FCM(plan_changed) 을 쏘려면 Play env 외에 FIREBASE 설정도 필요하다. index.ts 의 scheduled
 // 핸들러가 워커 env(전체)를 넘기므로 런타임엔 존재하며, 타입만 넓혀 준다.
-type ExpiryEnv = PlayEnv & Partial<Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>>;
+// 애플 재조회(reconcileAppleBeforeExpiry)에는 App Store Server API 자격증명도 필요하다.
+type ExpiryEnv = PlayEnv &
+  Partial<
+    Pick<
+      Env,
+      | 'FIREBASE_PROJECT_ID'
+      | 'FIREBASE_SERVICE_ACCOUNT_JSON'
+      | 'APPLE_ISSUER_ID'
+      | 'APPLE_KEY_ID'
+      | 'APPLE_PRIVATE_KEY'
+      | 'APPLE_BUNDLE_ID'
+    >
+  >;
 
 export interface ActiveSubscription {
   subscriptionId: string;
@@ -704,6 +723,138 @@ async function reconcileGoogleBeforeExpiry(
 }
 
 /**
+ * 애플 결제 구독의 만료 재조회. `reconcileGoogleBeforeExpiry` 의 애플 판.
+ *
+ * ⚠ **이게 없으면 돈은 내는데 기능을 잃는다.** 애플에는 Play 의 RTDN 에 해당하는
+ * 서버 알림을 우리가 받는 라우트가 없고(App Store Server Notifications 미구현),
+ * 구독 연장은 **앱이 전경으로 올라올 때** iOS 가 `resyncEntitlements` 로 알려 주는 게
+ * 전부였다. 알람 앱은 안 열어도 울리므로 한 달 넘게 안 여는 사용자가 흔한데, 그 사이
+ * 5분마다 도는 만료 크론이 `expires_at` 을 지나 **무료로 강등**시킨다 —
+ * 목소리 알람이 잠기고(applyFreePlanVoiceLock) 애플은 계속 청구한다.
+ *
+ * 그래서 구글과 **같은 모양**으로 만료 직전 스토어에 되묻는다.
+ */
+async function reconcileAppleBeforeExpiry(
+  db: Client,
+  env: ExpiryEnv | undefined,
+  params: {
+    subscriptionId: string;
+    userPk: string;
+    planType: string;
+    expiresAt: string;
+    now: Date;
+  },
+): Promise<'expire' | 'skip'> {
+  const txnRes = await db.execute({
+    sql: `SELECT provider_transaction_id FROM store_transactions
+          WHERE subscription_id = ? AND provider = 'apple'`,
+    args: [params.subscriptionId],
+  });
+  if (txnRes.rows.length === 0) return 'expire';
+
+  // env 미설정(dev/테스트) — 재조회 없이 현행대로 만료 진행(구글과 같은 규칙).
+  const config = appleStoreKitConfigFromEnv(env ?? {});
+  if (!config) return 'expire';
+
+  const originalTransactionId = String(txnRes.rows[0]!.provider_transaction_id);
+  let status: AppleSubscriptionStatus;
+  try {
+    status = await fetchAppleSubscriptionStatus(originalTransactionId, config);
+  } catch (err) {
+    // 구독이 애플에 아예 없다 → 만료가 맞다.
+    if (err instanceof AppleTransactionNotFoundError) return 'expire';
+    // 일시 장애 — 이번 run 은 보류하고 다음 run 에 재시도. 단 만료가 72시간 넘게
+    // 지났으면 강행한다(영구 좀비 방지). 구글 갈래와 같은 규칙이다.
+    const expiredMs = new Date(params.expiresAt).getTime();
+    const forceExpire =
+      Number.isFinite(expiredMs) && expiredMs <= params.now.getTime() - 72 * 60 * 60 * 1000;
+    logStructured('warn', {
+      at: 'billing.expiry.reconcile.apple',
+      subscriptionId: params.subscriptionId,
+      error: String(err),
+      forceExpire,
+    });
+    return forceExpire ? 'expire' : 'skip';
+  }
+
+  // ⚠ ACTIVE 만 보면 안 된다. 결제 재시도(3)와 유예기간(4)도 **아직 권한이 있다** —
+  // 카드가 잠깐 막힌 사용자를 그 자리에서 무료로 떨어뜨리면, 결제가 통과한 뒤에도
+  // 알람은 이미 잠긴 채다. 구글 갈래가 CANCELED 를 살려 두는 것과 같은 취지다.
+  const entitledStatuses: number[] = [
+    APPLE_SUBSCRIPTION_STATUS.ACTIVE,
+    APPLE_SUBSCRIPTION_STATUS.IN_BILLING_RETRY,
+    APPLE_SUBSCRIPTION_STATUS.IN_GRACE_PERIOD,
+  ];
+  const expiryMs = status.expiresDate ?? NaN;
+  const stillEntitled =
+    entitledStatuses.includes(status.status) &&
+    Number.isFinite(expiryMs) &&
+    expiryMs > params.now.getTime();
+  if (!stillEntitled) return 'expire';
+
+  // 애플이 아직 유효하다고 한다 — 만료 대신 애플 권위값으로 연장한다.
+  // 자동갱신이 꺼져 있으면(사용자가 App Store 에서 해지) 기간종료 해지 예약 상태로 세운다.
+  const expiryIso = new Date(expiryMs).toISOString();
+  const cancelAtPeriodEnd = status.autoRenewStatus === 0 ? 1 : 0;
+  await withWriteTransaction(db, async (tx) => {
+    await tx.execute({
+      sql: `UPDATE subscriptions
+            SET expires_at = ?, status = 'active', cancel_at_period_end = ?,
+                updated_at = datetime('now')
+            WHERE id = ?`,
+      args: [expiryIso, cancelAtPeriodEnd, params.subscriptionId],
+    });
+    await tx.execute({
+      sql: `UPDATE voucher_codes SET expires_at = ?
+            WHERE issuer_subscription_id = ? AND status IN ('issued', 'used')`,
+      args: [expiryIso, params.subscriptionId],
+    });
+    await tx.execute({
+      sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+      args: [planTypeToUserPlan(params.planType), params.userPk],
+    });
+    await tx.execute({
+      sql: `UPDATE store_transactions SET expires_at = ?
+            WHERE provider = 'apple' AND provider_transaction_id = ?`,
+      args: [expiryIso, originalTransactionId],
+    });
+  });
+  logStructured('info', {
+    at: 'billing.expiry.reconcile.apple',
+    action: 'extended',
+    subscriptionId: params.subscriptionId,
+    expiresAt: expiryIso,
+    status: status.status,
+  });
+  return 'skip';
+}
+
+/**
+ * 만료 직전 **스토어에 되묻는다.** 결제 스토어에 따라 갈라진다.
+ *
+ * ⚠ 새 스토어를 붙이면 **여기에 갈래를 추가해야 한다.** 빠뜨리면 그 스토어 구독은
+ * 재조회 없이 만료된다 — 애플이 정확히 그 상태였다(구글 갈래만 있어서, 애플 결제는
+ * 스토어에 묻지도 않고 강등됐다).
+ */
+async function reconcileStoreBeforeExpiry(
+  db: Client,
+  env: ExpiryEnv | undefined,
+  params: {
+    subscriptionId: string;
+    userPk: string;
+    planType: string;
+    expiresAt: string;
+    now: Date;
+  },
+): Promise<'expire' | 'skip'> {
+  const google = await reconcileGoogleBeforeExpiry(db, env, params);
+  if (google === 'skip') return 'skip';
+  // 구글 트랜잭션이 없어 'expire' 가 나왔을 수 있다 — 애플도 물어본다.
+  // (한 구독이 두 스토어에 동시에 묶이는 일은 없으므로 순서는 무해하다.)
+  return reconcileAppleBeforeExpiry(db, env, params);
+}
+
+/**
  * 강등/플랜변경으로 영향받은 사용자들에게 plan_changed 푸시(즉시성 목적). FIREBASE 설정이
  * 없거나(dev/테스트) 대상이 없으면 no-op. 실패해도 호출부 흐름을 깨지 않게 격리(로깅만).
  * **반드시 DB 트랜잭션 커밋 '후'에** 호출한다 — FCM 은 네트워크 I/O 라 tx 안에서 쏘면 안 된다.
@@ -764,7 +915,7 @@ export async function processSubscriptionExpiry(
 
     // 만료 처리 전에 Play 실상태 재조회 — RTDN 을 놓쳐 DB 만료가 뒤처진 경우
     // 즉시 해지 대신 연장한다.
-    const decision = await reconcileGoogleBeforeExpiry(db, env, {
+    const decision = await reconcileStoreBeforeExpiry(db, env, {
       subscriptionId: active.subscriptionId,
       userPk: active.userPk,
       planType: active.planType,
@@ -816,7 +967,7 @@ export async function processSubscriptionExpiry(
     const userPk = String(r.user_id);
     const planType = String(r.plan_type);
 
-    const decision = await reconcileGoogleBeforeExpiry(db, env, {
+    const decision = await reconcileStoreBeforeExpiry(db, env, {
       subscriptionId,
       userPk,
       planType,
