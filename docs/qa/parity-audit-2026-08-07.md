@@ -1022,7 +1022,7 @@ P3. 죽은 컴포넌트 + 시각적 불일치이고 기능·데이터 손실은 
 
 </details>
 
-### ☐ [plan-gate] 구독 응답 도착 전에는 유료 사용자가 무료로 판정된다 — 클론이 사라지고 문구가 테마로 잠긴다 (Android)
+### ☑ [plan-gate] 구독 응답 도착 전에는 유료 사용자가 무료로 판정된다 — 클론이 사라지고 문구가 테마로 잠긴다 (Android)
 
 **안드로이드**: PlatformAndLabelUtils.kt:204-210 `hasPaidVoiceAccess` 는 `subscriptionResponse?.subscription` 이 null 이면 즉시 false — **로딩 중과 무료를 구분하지 않는다.** 그 값이 AlarmEditorScreen.kt:164 freeVoiceTier → :168-172 `visibleVoiceProfiles = voiceProfiles.filter { isSystem == true }`(내 클론이 목록에서 사라짐) → :190 restrictToWeatherMedication(문구가 테마로 잠김) → :228-230 manualQuota 조회 스킵 으로 이어진다. 목소리 탭도 같다: VoiceProfileManagementPanel.kt:343 `canCreateVoice = hasPaidVoiceAccess(...)`, :345-347 `ownVoices = if (canCreateVoice) … else emptyList()`, :1293-1299 `!canCreateVoice -> voicePlanGateOpen = true`(:1456-1467 "내 목소리 만들기는 유료 기능이에요"). 캐시는 있으나 계정별이라 빈틈이 남는다 — MainViewModelAuthActions.kt:286 `restoreAccessSnapshotForCurrentUser()`, MainViewModel.kt:98-103/:953-961. 새 기기 첫 로그인엔 스냅샷이 없고, 갱신은 AlarmTalkApp.kt:453-462 에서 `consentChecked && !showConsentScreen` 이후에야 나가며 실패 시 다음 탭 전환(60초 스로틀, :513-530)까지 null 로 남는다.
 
@@ -1064,7 +1064,7 @@ CLAUDE.md 예외 둘(AlarmKit 제약 / 플랫폼 표준) 어디에도 해당하�
 
 </details>
 
-### ☐ [plan-gate] 앱 최상위 PlanGateDialog 는 절대 뜨지 않는 죽은 코드다 (Android)
+### ☑ [plan-gate] 앱 최상위 PlanGateDialog 는 절대 뜨지 않는 죽은 코드다 (Android)
 
 **안드로이드**: AlarmTalkApp.kt:102 `var planGateDialog by remember { mutableStateOf<PlanGateDialogState?>(null) }` 로 선언된 뒤, 파일 전체에서 대입은 :349 / :761 / :764 **세 곳 모두 `= null`** 뿐이다(레포 전역 grep 으로 확인 — 비-null 대입 없음). 따라서 :755-767 의 `planGateDialog?.let { … PlanGateDialog(...) }` 블록과 AlarmTalkAppHelpers.kt:175-181 의 `PlanGateDialogState`(title/confirmLabel 커스터마이즈 필드 포함)는 실행되지 않는다. 이 죽은 호출부만 `r3app_plan_gate_confirm` 을 쓴다.
 
@@ -1105,7 +1105,7 @@ AlarmKit 제약도, 플랫폼 표준(iOS 시스템 .alert)도 아니다. 이건 
 
 </details>
 
-### ☐ [ringing] iOS: 진동을 '없음'으로 꺼도 포그라운드 울림 때 햅틱이 울린다
+### ☑ [ringing] iOS: 진동을 '없음'으로 꺼도 포그라운드 울림 때 햅틱이 울린다
 
 **안드로이드**: apps/android-native/.../alarm/RingingService.kt:521-525 startVibration — `if (patternName == VibrationPatterns.NONE) { Log.i(...); return }` 로 즉시 빠진다. 호출부 :221-222 도 알람의 vibrationPattern 을 그대로 넘긴다.
 

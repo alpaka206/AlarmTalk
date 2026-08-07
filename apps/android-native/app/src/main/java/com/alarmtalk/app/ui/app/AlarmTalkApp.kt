@@ -99,7 +99,6 @@ internal fun AlarmTalkApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentTab = navBackStackEntry?.destination?.route.toNativeTab()
     val selectedTab = currentTab ?: NativeTab.Alarms
-    var planGateDialog by remember { mutableStateOf<PlanGateDialogState?>(null) }
     // 인증 화면 백스택 — 로그인↔회원가입 전환 히스토리를 보존해 뒤로가기가 한 단계씩 돌아가게 한다.
     var authBackStack by remember { mutableStateOf(listOf<AuthRoute>(AuthRoute.Landing)) }
     val authRoute = authBackStack.last()
@@ -346,7 +345,6 @@ internal fun AlarmTalkApp(
             navController.navigateHomeClearingStack()
         }
         viewModel.loadReceivedAlarmBadgeState()
-        planGateDialog = null
         authResetToLanding()
     }
 
@@ -749,21 +747,6 @@ internal fun AlarmTalkApp(
             registeringVoice = request.resumeVoiceDrafts != null,
             onAgree = viewModel::submitVoiceConsents,
             onDismiss = { viewModel.pendingSensitiveConsent = null },
-        )
-    }
-
-    planGateDialog?.let { gate ->
-        PlanGateDialog(
-            title = gate.title ?: stringResource(R.string.r3dlg_plan_gate_title),
-            message = gate.message,
-            confirmLabel = gate.confirmLabel ?: stringResource(R.string.r3app_plan_gate_confirm),
-            onConfirm = {
-                planGateDialog = null
-                navController.navigateTopLevelTab(NativeTab.Billing)
-            },
-            onDismiss = { planGateDialog = null },
-            onRedeemCode = viewModel::registerCode,
-            redeemBusy = viewModel.billingBusy,
         )
     }
 

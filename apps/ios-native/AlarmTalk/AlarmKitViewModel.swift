@@ -261,7 +261,10 @@ final class AlarmKitViewModel: ObservableObject {
                     // 스냅샷 멱등성으로 ring 당 1회만 진입하므로 별도 가드 불필요. 앱이
                     // 활성(.active)일 때만 발화 — 백그라운드/락스크린에선 AlarmKit/시스템이
                     // 자체 진동을 소유하므로 중복을 피한다 (Android RingingService 진동과 분리).
-                    fireForegroundRingHaptic()
+                    // ⚠ **진동을 '없음' 으로 끈 사용자에게는 울리지 않는다.**
+                    // 실제 알람 진동은 시스템이 소유하지만, 이 한 번의 햅틱은 우리가
+                    // 내는 것이라 사용자 선택을 따라야 한다(2026-08-07 수정).
+                    fireForegroundRingHaptic(for: record)
                     // 30s 초과 또는 트랜스코드 실패로 AlarmKit 가 시스템 톤만 울리는 경우,
                     // 앱이 활성일 때 캐싱된 voice 를 동시 재생한다 (mixWithOthers).
                     //
@@ -290,8 +293,9 @@ final class AlarmKitViewModel: ObservableObject {
     /// 호출부(`processAlarmUpdate` 의 didEnterAlerting)가 ring 당 1회만 진입하므로
     /// 멱등성은 그쪽에서 보장된다. 앱이 포그라운드 활성일 때만 발화한다 — 백그라운드/
     /// 락스크린에서는 AlarmKit/시스템이 자체 진동을 소유하기 때문이다.
-    private func fireForegroundRingHaptic() {
+    private func fireForegroundRingHaptic(for record: LocalAlarmRecord) {
         #if canImport(UIKit)
+        guard record.vibrationPatternEnum != .none else { return }
         guard UIApplication.shared.applicationState == .active else { return }
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.warning)

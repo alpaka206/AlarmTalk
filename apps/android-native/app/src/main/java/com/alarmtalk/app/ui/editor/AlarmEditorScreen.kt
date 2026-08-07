@@ -161,7 +161,17 @@ internal fun AlarmEditorScreen(
     // 로그인하지 않은 경우만 음성 모드를 잠근다.
     val voicePlanLocked = authSession == null
     // 무료 플랜 제한 모드: 녹음/파일·직접 입력·동적(날씨/운세) 문구·번역은 유료 게이트.
-    val freeVoiceTier = authSession != null && !hasPaidVoiceAccess(subscriptionResponse)
+    //
+    // ⚠ **구독 응답이 오기 전에는 서버 `users.plan` 을 본다.** `hasPaidVoiceAccess` 는
+    // 응답이 없으면 false 라, 그것만 보면 편집기를 여는 순간 유료 사용자가 잠깐 무료로
+    // 판정된다 — 내 클론이 목록에서 사라지고 문구가 테마로 잠긴 채 보인다.
+    // 같은 폴백을 이미 알람 잠금 판정(`AlarmTalkApp` 의 `planIsFree`)이 쓰고 있다.
+    val planSaysPaid = authSession?.user?.plan
+        ?.lowercase()
+        ?.let { it.isNotBlank() && it != "free" } == true
+    val freeVoiceTier = authSession != null &&
+        !hasPaidVoiceAccess(subscriptionResponse) &&
+        !(subscriptionResponse == null && planSaysPaid)
     // 무료 강등 시 본인 클론은 서버에 보존되지만 사용 불가 — 편집기에는 시스템 목소리만
     // 노출/선택 가능하게 목록을 걸러 쓴다(재유료 시 그대로 복귀). 보이스 선택지·저장 가능
     // 목록이 모두 이 걸러진 목록을 참조한다.

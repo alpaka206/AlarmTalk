@@ -172,14 +172,6 @@ internal sealed interface AuthRoute {
 
 internal enum class MessageSeverity { Success, Error, Info }
 
-internal data class PlanGateDialogState(
-    val message: String,
-    // null이면 PlanGateDialog의 현지화된 기본 제목을 사용한다.
-    val title: String? = null,
-    // null이면 PlanGateDialog의 현지화된 기본 확인 라벨을 사용한다.
-    val confirmLabel: String? = null,
-)
-
 internal fun messageSeverity(text: String): MessageSeverity = when {
     "실패" in text || "못했어요" in text || "오류" in text -> MessageSeverity.Error
     "했어요" in text || "었어요" in text || "완료" in text -> MessageSeverity.Success
