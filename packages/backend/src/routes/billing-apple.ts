@@ -15,10 +15,12 @@ import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import {
   appleStoreKitConfigFromEnv,
   applePlanKeyFromProductId,
+  isAppleGiftProductId,
   fetchAppleTransaction,
   AppleTransactionNotFoundError,
 } from '../lib/apple-storekit';
 import { resolveUserPk } from './billing-helpers';
+import { issueVoucherCode } from '../lib/voucher-issue';
 
 const billingApple = new Hono<AppEnv>();
 
@@ -96,6 +98,61 @@ billingApple.post('/apple/confirm', async (c) => {
   // 환불·취소된 트랜잭션으로 권한을 얻을 수 없게 한다.
   if (info.revocationDate) {
     return c.json({ error: 'Transaction was revoked', error_code: 'TRANSACTION_REVOKED' }, 400);
+  }
+
+  const db0 = getDB(c.env);
+
+  // ⚠ **선물 상품은 여기서 갈라진다.** 자동 갱신 구독은 남에게 줄 수 없어(스토어가
+  // 구매자 계정에 묶는다) 선물은 1회성 상품을 팔고 그 대금으로 **바우처 코드**를 만든다.
+  // 이 갈래를 안 만들면 구매자 본인이 이용권을 받게 되고, 아래 `expiresDate` 검사에
+  // 걸려 소모성 결제는 통째로 거절된다.
+  if (isAppleGiftProductId(info.productId)) {
+    const giftPlan = await loadPlanByKey(db0, planKey);
+    if (!giftPlan) {
+      return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
+    }
+    const issuedAt = new Date(info.purchaseDate);
+    // 바우처 유효기간은 **받는 사람이 등록할 때까지의 기한**이다. 등록하면 그 시점부터
+    // 플랜 기간이 시작된다.
+    const voucherExpiresAt = new Date(
+      issuedAt.getTime() + giftPlan.period_days * 24 * 60 * 60 * 1000,
+    );
+    const gift = await withWriteTransaction(db0, async (txDb) => {
+      // ⚠ **같은 결제로 두 번 발급하지 않는다.** 스토어는 같은 트랜잭션을 재전송할 수
+      // 있고(네트워크 재시도·복원), 멱등하지 않으면 코드가 여러 장 나온다.
+      const seen = await txDb.execute({
+        sql: `SELECT id FROM store_transactions
+              WHERE provider = 'apple' AND provider_transaction_id = ? LIMIT 1`,
+        args: [info.transactionId],
+      });
+      if (seen.rows.length > 0) return null;
+      await txDb.execute({
+        sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, subscription_id, raw_payload)
+              VALUES (?, ?, 'apple', ?, ?, NULL, ?)`,
+        args: [
+          crypto.randomUUID(),
+          userPk,
+          info.transactionId,
+          info.productId,
+          JSON.stringify({ kind: 'gift', environment: info.environment ?? null }),
+        ],
+      });
+      return issueVoucherCode(txDb, {
+        kind: 'gift',
+        planId: giftPlan.id,
+        issuerUserId: userPk,
+        issuerSubscriptionId: null,
+        issuedAt: issuedAt.toISOString(),
+        expiresAt: voucherExpiresAt.toISOString(),
+        maxUses: 1,
+      });
+    });
+    if (!gift) {
+      // 이미 처리한 결제다. 실패가 아니라 **같은 결과**를 돌려준다.
+      return c.json({ ok: true, gift: true, duplicate: true });
+    }
+    return c.json({ ok: true, gift: true, voucher: { code: gift.code, expires_at: gift.expires_at } });
   }
 
   // 자동 갱신 구독은 expiresDate 가 반드시 있다. 없으면 우리가 파는 상품이 아니다

@@ -275,6 +275,29 @@ final class SocialFeatureViewModel: ObservableObject {
         [voucher] + vouchers.filter { $0.id != voucher.id }
     }
 
+    @discardableResult
+    func giftPersonalPass(session: AuthSession?) async -> Bool {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return false
+        }
+        guard !isBusy else { return false }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await api.createGiftVoucher(planKey: "personal", token: token)
+            await refreshAllAfterMutation(
+                session: session,
+                successMessage: "개인 이용권 선물 코드를 준비했어요."
+            )
+            return true
+        } catch {
+            statusMessage = Self.billingErrorMessage(error, fallback: "선물하기에 실패했어요")
+            return false
+        }
+    }
+
     static func codeRegistrationDestination(responseType: String?, code: String) -> CodeRegistrationDestination {
         let normalizedType = responseType?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let normalizedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -5,6 +5,7 @@ import { withWriteTransaction } from '../lib/transactions';
 import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
+import { issueVoucherCode } from '../lib/voucher-issue';
 import {
   ANDROID_PUBLISHER_SCOPE,
   ENTITLED_STATES,
@@ -38,7 +39,23 @@ const GOOGLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family
   personal_monthly: 'personal',
   couple_monthly: 'couple',
   family_monthly: 'family',
+  // ⚠ **선물 상품은 구독이 아니라 1회성 인앱 상품이다.** 자동 갱신 구독은 남에게 줄 수
+  // 없어서(Play 가 구매자 계정에 묶는다), 선물은 1회성 상품을 팔고 그 대금으로
+  // **바우처 코드**를 발급한다.
+  personal_gift_1m: 'personal',
 };
+
+/**
+ * 선물용 1회성 상품 ID.
+ *
+ * ⚠ 검증 API 가 **다르다.** 구독은 `purchases/subscriptionsv2`, 1회성은
+ * `purchases/products` 다. 구독 경로로 조회하면 404 가 나므로 반드시 갈라야 한다.
+ */
+const GOOGLE_GIFT_PRODUCT_IDS = new Set<string>(['personal_gift_1m']);
+
+export function isGoogleGiftProductId(productId: string): boolean {
+  return GOOGLE_GIFT_PRODUCT_IDS.has(productId);
+}
 
 export function googlePlanKeyFromProductId(
   productId: string,
@@ -174,6 +191,86 @@ billingGoogle.post('/google/confirm', async (c) => {
   }
 
   const baseUrl = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(expectedPackage)}`;
+
+  // ⚠ **선물(1회성 상품)은 여기서 갈라진다.** 검증 API 가 구독과 다르고
+  // (`purchases/products`), 결과도 구독이 아니라 **바우처 코드**다.
+  if (isGoogleGiftProductId(parsed.product_id)) {
+    const giftRes = await fetch(
+      `${baseUrl}/purchases/products/${encodeURIComponent(parsed.product_id)}/tokens/${encodeURIComponent(parsed.purchase_token)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!giftRes.ok) {
+      const detail = (await giftRes.text()).slice(0, 300);
+      logStructured('warn', { at: 'billing.google.gift', status: giftRes.status, detail });
+      const status = giftRes.status === 404 || giftRes.status === 400 ? 404 : 502;
+      return c.json(
+        {
+          error: 'Google purchase not found or verification failed',
+          error_code: status === 404 ? 'GOOGLE_PURCHASE_NOT_FOUND' : 'GOOGLE_VERIFICATION_FAILED',
+        },
+        status,
+      );
+    }
+    const product = (await giftRes.json()) as {
+      purchaseState?: number;
+      orderId?: string;
+      purchaseTimeMillis?: string;
+    };
+    // purchaseState: 0=구매완료, 1=취소, 2=보류. 완료가 아니면 권한을 주지 않는다.
+    if (product.purchaseState !== 0) {
+      return c.json(
+        { error: 'Purchase is not completed', error_code: 'PURCHASE_NOT_COMPLETED' },
+        400,
+      );
+    }
+    const db = getDB(c.env);
+    const giftPlan = await loadPlanByKey(db, planKey);
+    if (!giftPlan) {
+      return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
+    }
+    const issuedAt = product.purchaseTimeMillis
+      ? new Date(Number(product.purchaseTimeMillis))
+      : new Date();
+    const voucherExpiresAt = new Date(
+      issuedAt.getTime() + giftPlan.period_days * 24 * 60 * 60 * 1000,
+    );
+    const gift = await withWriteTransaction(db, async (txDb) => {
+      // ⚠ **멱등**해야 한다. Play 는 같은 구매를 재전송할 수 있고(재시도·복원),
+      // 그때 코드가 여러 장 나가면 결제 한 번에 이용권 여러 개를 주게 된다.
+      const seen = await txDb.execute({
+        sql: `SELECT id FROM store_transactions
+              WHERE provider = 'google' AND provider_transaction_id = ? LIMIT 1`,
+        args: [parsed.purchase_token],
+      });
+      if (seen.rows.length > 0) return null;
+      await txDb.execute({
+        sql: `INSERT INTO store_transactions
+              (id, user_id, provider, provider_transaction_id, product_id, subscription_id, raw_payload)
+              VALUES (?, ?, 'google', ?, ?, NULL, ?)`,
+        args: [
+          crypto.randomUUID(),
+          userPk,
+          parsed.purchase_token,
+          parsed.product_id,
+          JSON.stringify({ kind: 'gift', orderId: product.orderId ?? null }),
+        ],
+      });
+      return issueVoucherCode(txDb, {
+        kind: 'gift',
+        planId: giftPlan.id,
+        issuerUserId: userPk,
+        issuerSubscriptionId: null,
+        issuedAt: issuedAt.toISOString(),
+        expiresAt: voucherExpiresAt.toISOString(),
+        maxUses: 1,
+      });
+    });
+    if (!gift) {
+      return c.json({ ok: true, gift: true, duplicate: true });
+    }
+    return c.json({ ok: true, gift: true, voucher: { code: gift.code, expires_at: gift.expires_at } });
+  }
+
   const lookupRes = await fetch(
     `${baseUrl}/purchases/subscriptionsv2/tokens/${encodeURIComponent(parsed.purchase_token)}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },

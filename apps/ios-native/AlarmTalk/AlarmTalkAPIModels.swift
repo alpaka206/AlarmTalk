@@ -733,6 +733,18 @@ struct VoucherItem: Decodable, Identifiable, Equatable {
     var useCount: Int?
 }
 
+struct CheckoutRequest: Encodable {
+    var planKey: String
+    var gift: Bool
+}
+
+struct CheckoutResponse: Decodable, Equatable {
+    var success: Bool
+    var subscription: BillingSubscription?
+    var plan: BillingPlan
+    var voucher: CheckoutVoucher?
+}
+
 struct CheckoutVoucher: Decodable, Identifiable, Equatable {
     var id: String
     var code: String

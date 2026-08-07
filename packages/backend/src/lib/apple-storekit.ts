@@ -174,7 +174,21 @@ const APPLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'
   'com.voicealarm.nativeapp.ios.personal_monthly': 'personal',
   'com.voicealarm.nativeapp.ios.couple_monthly': 'couple',
   'com.voicealarm.nativeapp.ios.family_monthly': 'family',
+  // ⚠ **선물 상품은 구독이 아니라 소모성(consumable)이다.** 자동 갱신 구독은 남에게
+  // 줄 수 없어서(스토어가 구매자 계정에 묶는다), 선물은 1회성 상품을 팔고 그 대금으로
+  // **바우처 코드**를 발급한다. 그래서 이 상품의 결제는 구독 갈래를 타면 안 된다 —
+  // `isAppleGiftProductId` 로 갈라 `billing-apple.ts` 가 바우처를 만든다.
+  'com.voicealarm.nativeapp.ios.personal_gift_1m': 'personal',
 };
+
+/** 선물용 1회성 상품 ID. 구독 갈래로 새면 구매자 본인이 이용권을 받게 된다. */
+const APPLE_GIFT_PRODUCT_IDS = new Set<string>([
+  'com.voicealarm.nativeapp.ios.personal_gift_1m',
+]);
+
+export function isAppleGiftProductId(productId: string): boolean {
+  return APPLE_GIFT_PRODUCT_IDS.has(productId);
+}
 
 export function applePlanKeyFromProductId(
   productId: string,

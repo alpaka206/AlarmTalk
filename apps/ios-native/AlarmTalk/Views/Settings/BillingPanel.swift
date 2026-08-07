@@ -27,6 +27,7 @@ struct BillingPanel: View {
     @State private var showLeaveSharedPassConfirm = false
     @State private var showCancelSubscriptionSheet = false
     @State private var showCancelImmediateConfirm = false
+    @State private var showPersonalGiftSheet = false
     @State private var voucherShareTargets: [VoucherItem] = []
 
     private var currentTier: PlanTier {
@@ -83,6 +84,9 @@ struct BillingPanel: View {
                         vouchers: shareableVouchers,
                         onPurchase: { product in
                             Task { await purchase(product) }
+                        },
+                        onGiftPersonal: {
+                            showPersonalGiftSheet = true
                         },
                         onShareVouchers: {
                             Task { await refreshAndOpenVoucherShare(planKey: tier.apiKey) }
@@ -189,6 +193,16 @@ struct BillingPanel: View {
         } message: {
             Text("남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요 — 그 안에 다시 이용권을 등록하면 그대로 다시 쓸 수 있고, 지나면 영구 삭제돼요.")
         }
+        .sheet(isPresented: $showPersonalGiftSheet) {
+            PersonalGiftPassSheet(
+                onDismiss: { showPersonalGiftSheet = false },
+                onConfirm: {
+                    showPersonalGiftSheet = false
+                    Task { await giftPersonalPass() }
+                }
+            )
+            .presentationDetents([.medium])
+        }
         .sheet(
             isPresented: Binding(
                 get: { !voucherShareTargets.isEmpty },
@@ -240,6 +254,20 @@ struct BillingPanel: View {
             // 백엔드 plan/구독 row 도 함께 새로고침해 UI 일관성 유지.
             await auth.refreshUser()
             await socialFeatures.refreshAll(session: auth.session, force: true)
+        }
+    }
+
+    private func giftPersonalPass() async {
+        let success = await socialFeatures.giftPersonalPass(session: auth.session)
+        await auth.refreshUser()
+        guard success else { return }
+
+        let refreshedTargets = shareableVouchersForPlan(
+            socialFeatures.vouchers,
+            planKey: "personal"
+        )
+        if !refreshedTargets.isEmpty {
+            voucherShareTargets = refreshedTargets
         }
     }
 
