@@ -80,6 +80,9 @@ struct MemberManagementView: View {
 
                     if let user = auth.session?.user {
                         FamilyAlarmPermissionCard(
+                            title: activePlanKey == "couple"
+                                ? "커플이 내 알람 맞추기 허용"
+                                : "가족이 내 알람 맞추기 허용",
                             allowFamilyAlarms: user.allowFamilyAlarms ?? false,
                             quietWindows: user.familyAlarmQuietWindows ?? [],
                             isBusy: auth.isBusy || socialFeatures.isBusy,
@@ -306,9 +309,16 @@ struct MemberManagementView: View {
 
 }
 
-/// 한 멤버 행. Android `MemberRow:264-332` 와 동등.
+/// 함께 쓰는 사람이 **내 알람을 맞추게 할지** 정하는 카드.
+/// 안드로이드 `ui/members/MemberManagementScreen.kt` 의 `FamilyAlarmPermissionCard`.
+///
+/// ⚠ **제목은 플랜에 따라 갈린다.** 예전 iOS 는 "상대 알람 허용" 한 줄로 고정이었는데,
+/// 그 말은 *내가 알람을 받는 걸 허용한다* 로도 읽힌다 — 방향이 정반대인데 화면에서
+/// 구분할 방법이 없었다. 안드로이드처럼 **누가 · 무엇을** 다 적어 모호함을 없앤다
+/// (`social_allow_partner_alarm`/`_couple`). 제목이 다 말하므로 설명 줄은 두지 않는다.
 private struct FamilyAlarmPermissionCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
+    let title: String
     let allowFamilyAlarms: Bool
     let quietWindows: [FamilyAlarmQuietWindow]
     let isBusy: Bool
@@ -319,12 +329,9 @@ private struct FamilyAlarmPermissionCard: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("상대 알람 허용")
+                    Text(title)
                         .font(theme.typography.bodyMedium.weight(.medium))
                         .foregroundStyle(theme.palette.onSurface)
-                    Text("함께 쓰는 사람이 내 알람을 맞출 수 있게 해요.")
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
                 Spacer()
                 Toggle(

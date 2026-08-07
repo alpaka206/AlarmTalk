@@ -15,6 +15,7 @@
 		06A307409933FC5592EBFC44 /* PlanGateDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5614A67355CB6778BA0DECE /* PlanGateDialog.swift */; };
 		0954B1BBAC9F69FCABB9B58F /* AuthGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCE612B197E5B5761457E13E /* AuthGateView.swift */; };
 		0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */; };
+		0CF827BE8A681B76673BBE99 /* UserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22CBB5AEC61506D5E9A1B5C7 /* UserFacingErrorTests.swift */; };
 		0D6DE12A148737B55879EBFC /* DynamicPromptPreferenceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */; };
 		0E5B76527C4E572E042DC557 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70196163DEB277ED30F5976 /* KeychainStore.swift */; };
 		0F95A7B5A7D70D76F64A1DF6 /* InputSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BC3CAD414D42352F98B1FE /* InputSanitizerTests.swift */; };
@@ -163,6 +164,7 @@
 		AB049D79EABC198B5DE731CD /* SectionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6B972EFA8543A20D363BEE /* SectionCard.swift */; };
 		AB1FC3889B08059140C23BBE /* WakeTargetSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B8315D2F1C50CA0F66E9458 /* WakeTargetSheet.swift */; };
 		AB6952C6C2E757ECEF15B909 /* VoiceSegmentPreviewPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E25753B97B6CFEAA8E709FB /* VoiceSegmentPreviewPlayer.swift */; };
+		AB8A9EB691B9DE89974FA8FF /* CodeRegistrationErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4184659F9F09362DAA337E35 /* CodeRegistrationErrorTests.swift */; };
 		AC2D607D698A02FF2BE124A1 /* AlarmLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 715631AD8DB550734A8E0C0E /* AlarmLiveActivity.swift */; };
 		AE0095879E13A110AF20B521 /* SocialNotificationTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A2D4893E2A513F69B59F66 /* SocialNotificationTracker.swift */; };
 		B12C38F17D8F80C34124BD88 /* ReceivedAlarmBadgeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F53865164F0DA5BE67D28848 /* ReceivedAlarmBadgeStore.swift */; };
@@ -177,6 +179,7 @@
 		C30F8BAE2A9D81D92D2BC65B /* VoiceRelationshipInputField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F687F1C7FA0B73B24DA338D /* VoiceRelationshipInputField.swift */; };
 		C3D6BD92355A2E98E6D23762 /* AlarmSoundStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D034E124A17E717E9835F2 /* AlarmSoundStaging.swift */; };
 		C41E6CE571C5663A87BF2C94 /* AlarmTalkMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC283DE15D2853C6F4669754 /* AlarmTalkMetadata.swift */; };
+		C5EC889738337D1C0FB7D53F /* CodeRegistrationError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AE98BCEE48F6854D6A02AA4 /* CodeRegistrationError.swift */; };
 		C6A181AE295935BA835954D4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7577C539C3E926AE4FD3D1C /* ContentView.swift */; };
 		C6D9D903A1464A0F1120DD84 /* pretendard_medium.otf in Resources */ = {isa = PBXBuildFile; fileRef = A1460F6B80519002D6B9F945 /* pretendard_medium.otf */; };
 		C9AC298F3AC6D9B84D3F93D5 /* SubscriptionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */; };
@@ -271,6 +274,7 @@
 		068018CE7C24F2A94A84FDB4 /* voice_greeting_soeun_ko.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_soeun_ko.mp3; sourceTree = "<group>"; };
 		07AE96180817F4A2A28B5ED4 /* AlarmTalkShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkShapes.swift; sourceTree = "<group>"; };
 		08347BEE6A41D76AC9CD1CFC /* LocalAlarmStoreRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAlarmStoreRecoveryTests.swift; sourceTree = "<group>"; };
+		0AE98BCEE48F6854D6A02AA4 /* CodeRegistrationError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeRegistrationError.swift; sourceTree = "<group>"; };
 		0B8315D2F1C50CA0F66E9458 /* WakeTargetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeTargetSheet.swift; sourceTree = "<group>"; };
 		0CE60628CC826194C627674A /* AlarmVoicePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmVoicePlayer.swift; sourceTree = "<group>"; };
 		0DA0DFFC6243F7340FEE4E83 /* AlarmTalkSpacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkSpacing.swift; sourceTree = "<group>"; };
@@ -289,6 +293,7 @@
 		2066E213CEFC39ADF9763B43 /* AlarmRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmRow.swift; sourceTree = "<group>"; };
 		21CBB976863F3883B2FCE2A2 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		21F6264B67DC977F47D0E3A9 /* RemoteAlarmPullSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmPullSync.swift; sourceTree = "<group>"; };
+		22CBB5AEC61506D5E9A1B5C7 /* UserFacingErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserFacingErrorTests.swift; sourceTree = "<group>"; };
 		234FC6F5E92A588195E95D45 /* AlarmEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEnums.swift; sourceTree = "<group>"; };
 		24A21A25176F8CB2F87741F6 /* voice_greeting_hajun_en.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_hajun_en.mp3; sourceTree = "<group>"; };
 		256A1A74503F37FA8770ADFD /* AudioUserFacingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioUserFacingError.swift; sourceTree = "<group>"; };
@@ -312,6 +317,7 @@
 		3EE89C0338FF0981C544A8AD /* pretendard_semibold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = pretendard_semibold.otf; sourceTree = "<group>"; };
 		3F687F1C7FA0B73B24DA338D /* VoiceRelationshipInputField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRelationshipInputField.swift; sourceTree = "<group>"; };
 		4028869EEA0A313C4D673E6B /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
+		4184659F9F09362DAA337E35 /* CodeRegistrationErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeRegistrationErrorTests.swift; sourceTree = "<group>"; };
 		431B4F1B68A4F2AD65B924D9 /* RememberChoicesGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RememberChoicesGuardTests.swift; sourceTree = "<group>"; };
 		4621CAE23798A7737B7DE436 /* FeatureLockBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureLockBadge.swift; sourceTree = "<group>"; };
 		47D034E124A17E717E9835F2 /* AlarmSoundStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundStaging.swift; sourceTree = "<group>"; };
@@ -738,6 +744,7 @@
 				376BBDA5FD78ACD795C78581 /* AuthViewModelTests.swift */,
 				BC6803137321D0177FF40243 /* BackgroundSyncTaskTests.swift */,
 				90F41853E4CF850DF4EB6F24 /* BucketClipRotationTests.swift */,
+				4184659F9F09362DAA337E35 /* CodeRegistrationErrorTests.swift */,
 				C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */,
 				33EACFD24875EBC9DCCC831F /* DynamicVoiceRefreshServiceTests.swift */,
 				92C56157192A2B5CBADB2977 /* FortunePromptInputFormatTests.swift */,
@@ -762,6 +769,7 @@
 				056DB53565C8BBE7AD69B128 /* SocialFeatureViewModelTests.swift */,
 				291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */,
 				5A12157E5D422109667286EC /* TimeWheelPickerLogicTests.swift */,
+				22CBB5AEC61506D5E9A1B5C7 /* UserFacingErrorTests.swift */,
 				DD88376E4686A1C79C01C265 /* VoiceShareAccessTests.swift */,
 				6BB3292333BDA9F421AC0D0A /* VoiceStudioViewModelTests.swift */,
 			);
@@ -863,6 +871,7 @@
 				BCE612B197E5B5761457E13E /* AuthGateView.swift */,
 				920F8A0EE7DA7744FBDA1206 /* AuthViewModel.swift */,
 				84AC75AB7D2226A17D90E228 /* BackgroundSyncTask.swift */,
+				0AE98BCEE48F6854D6A02AA4 /* CodeRegistrationError.swift */,
 				5ECFEF72F91CB168058ADDDA /* ConsentCompletionStore.swift */,
 				A7577C539C3E926AE4FD3D1C /* ContentView.swift */,
 				FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */,
@@ -1159,6 +1168,7 @@
 				496C23BF2BF03B282CBF1E97 /* BillingPanelComponents.swift in Sources */,
 				128C91C62BC6308BA1781AE7 /* BottomNavBar.swift in Sources */,
 				38FAD9501D95B722F1DBD8FE /* ChipStyle.swift in Sources */,
+				C5EC889738337D1C0FB7D53F /* CodeRegistrationError.swift in Sources */,
 				8DC7DD3711FBC2E895F4C5B2 /* ConsentCompletionStore.swift in Sources */,
 				9BCCCEA96763482373E3305E /* ConsentHistoryView.swift in Sources */,
 				4C5565C2CE444AA557AC024A /* ConsentView.swift in Sources */,
@@ -1272,6 +1282,7 @@
 				46755794A3CFB39DB2A07D3E /* AuthViewModelTests.swift in Sources */,
 				516F57BD13DEACD0054A1F59 /* BackgroundSyncTaskTests.swift in Sources */,
 				749B993C6D0AA5AE3EB95E1D /* BucketClipRotationTests.swift in Sources */,
+				AB8A9EB691B9DE89974FA8FF /* CodeRegistrationErrorTests.swift in Sources */,
 				0D6DE12A148737B55879EBFC /* DynamicPromptPreferenceStoreTests.swift in Sources */,
 				D4F5DBE93B1684A6861D4672 /* DynamicVoiceRefreshServiceTests.swift in Sources */,
 				DF01070F5A7680AF08057F3C /* FortunePromptInputFormatTests.swift in Sources */,
@@ -1296,6 +1307,7 @@
 				4351F743AA119C72711E26EA /* SocialFeatureViewModelTests.swift in Sources */,
 				C9AC298F3AC6D9B84D3F93D5 /* SubscriptionManagerTests.swift in Sources */,
 				DA74241C9B726EF21F7111B0 /* TimeWheelPickerLogicTests.swift in Sources */,
+				0CF827BE8A681B76673BBE99 /* UserFacingErrorTests.swift in Sources */,
 				F4592AC12059D8F4652C2BD7 /* VoiceShareAccessTests.swift in Sources */,
 				00B56BDA058D957CBAA95386 /* VoiceStudioViewModelTests.swift in Sources */,
 			);

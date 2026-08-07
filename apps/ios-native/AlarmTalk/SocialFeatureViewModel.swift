@@ -168,7 +168,9 @@ final class SocialFeatureViewModel: ObservableObject {
             await refreshAllAfterMutation(session: session, successMessage: "코드를 등록했어요.")
             return Self.codeRegistrationDestination(responseType: response.type, code: code)
         } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "코드 등록에 실패했어요.")
+            // ⚠ 서버가 영어로 주는 사유를 한국어로 옮긴다. 이걸 `userFacingErrorMessage`
+            // 로 되돌리면 만료·중복·정원초과가 전부 같은 폴백 한 줄이 된다.
+            statusMessage = CodeRegistrationError.message(for: error, fallback: "코드 등록에 실패했어요.")
             return nil
         }
     }
