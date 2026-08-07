@@ -58,6 +58,10 @@ struct FreeBucketSettingsPane: View {
     let available: [FreeBucket]
     let initialSelection: FreeBucket?
     let onSave: (FreeBucket) -> Void
+    /// 잠긴 '직접 입력' 행을 눌렀을 때. 이 행이 없으면 **유료에 무엇이 있는지 알 길이
+    /// 없다** — 안드로이드는 "목록에서 아예 빼면 이런 기능이 있는지조차 모르고, 유료
+    /// 전환 동기 중 가장 강한 것을 잃는다" 고 적어 두고 잠긴 행을 남긴다.
+    var onManualLocked: (() -> Void)?
 
     @State private var draft: FreeBucket?
 
@@ -70,9 +74,24 @@ struct FreeBucketSettingsPane: View {
                             if index > 0 { AlarmSettingDivider() }
                             RadioRow(label: bucket.label, selected: draft == bucket) { draft = bucket }
                         }
+                        if let onManualLocked {
+                            AlarmSettingDivider()
+                            Button(action: onManualLocked) {
+                                HStack(spacing: 10) {
+                                    Text("직접 입력")
+                                        .font(theme.typography.bodyLarge)
+                                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                                    Spacer()
+                                    FeatureLockBadge(size: 18, iconSize: 11)
+                                }
+                                .frame(minHeight: 52)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
 
-                    Text("고른 테마의 문구가 알람마다 번갈아 나와요. 유료 이용권에서는 목소리를 직접 만들고 문구도 고를 수 있어요.")
+                    Text("고른 테마의 문구가 알람마다 번갈아 나와요.")
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                         .fixedSize(horizontal: false, vertical: true)

@@ -1018,3 +1018,12 @@ struct ConfirmAppleSubscriptionResponse: Decodable, Equatable {
         self.subscription = subscription
     }
 }
+
+/// `GET /tts/manual-quota` — 이번 달 직접 입력 문구 생성 여유.
+/// 안드로이드 `ManualQuotaResponse` 미러. `limit == 0` 이면 표시하지 않는다.
+struct ManualQuotaResponse: Decodable, Equatable {
+    var planKey: String?
+    var limit: Int
+    var used: Int
+    var remaining: Int
+}

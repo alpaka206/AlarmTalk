@@ -519,7 +519,7 @@ AlarmKit 제약과 무관. 플랫폼 표준도 아니다 — 같은 파일 Alarm
 
 </details>
 
-### ☐ [plan-gate] iOS 무료 테마 화면에 잠긴 '직접 입력' 행이 없다 — 유료에 무엇이 있는지 알 길이 사라졌다
+### ☑ [plan-gate] iOS 무료 테마 화면에 잠긴 '직접 입력' 행이 없다 — 유료에 무엇이 있는지 알 길이 사라졌다
 
 **안드로이드**: VoiceAudioCard.kt:655-661 — FreeBucketSettingsPane 의 버킷 라디오 목록 아래에 `SnoozeLockedRow(label = stringResource(R.string.editor_msg_mode_manual), onClick = onManualLocked)` 가 붙는다. 바로 위 주석 :656-657 이 의도를 못박는다: "무료에게도 '직접 입력'이 존재한다는 걸 보여준다. 목록에서 아예 빼면 이런 기능이 있는지조차 모르고, 유료 전환 동기 중 가장 강한 것을 잃는다." 행 모양은 AlarmSnoozeSettings.kt:369-390(자물쇠 배지 + 흐린 라벨).
 
@@ -566,7 +566,7 @@ AlarmKit 제약(울림 화면·알람 음량 슬라이더)과 무관하고, 플�
 
 </details>
 
-### ☐ [plan-gate] iOS 문구 화면은 직접 입력 월 한도를 아예 표시하지 않는다 (manualRemaining/manualLimit 이 항상 nil)
+### ☑ [plan-gate] iOS 문구 화면은 직접 입력 월 한도를 아예 표시하지 않는다 (manualRemaining/manualLimit 이 항상 nil)
 
 **안드로이드**: AlarmEditorScreen.kt:227-230 `LaunchedEffect(freeVoiceTier, onLoadManualQuota) { manualQuota = if (!freeVoiceTier && onLoadManualQuota != null) onLoadManualQuota() else null }`(유료만 조회), :1572-1573 `manualRemaining = manualQuota?.remaining, manualLimit = manualQuota?.limit` → AlarmRandomPromptSettings.kt:210-213 에서 `"$baseLabel ($manualRemaining/$manualLimit)"` 로 '직접 입력' 옆에 남은 횟수를 붙인다. 한도 소진은 게이트가 아니라 생성 실패로 나타난다 — AlarmEditorScreen.kt:948-951 `"MANUAL_TTS_QUOTA_EXCEEDED" -> editor_error_manual_tts_quota`.
 

@@ -496,6 +496,11 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("billing/subscription", token: token)
     }
 
+    /// 이번 달 직접 입력 문구 생성 여유. **유료일 때만** 의미가 있다(limit == 0 이면 표시 안 함).
+    func manualQuota(token: String) async throws -> ManualQuotaResponse {
+        try await request("tts/manual-quota", token: token)
+    }
+
     func listVouchers(token: String) async throws -> [VoucherItem] {
         let response: VoucherListResponse = try await request("billing/vouchers", token: token)
         return response.vouchers

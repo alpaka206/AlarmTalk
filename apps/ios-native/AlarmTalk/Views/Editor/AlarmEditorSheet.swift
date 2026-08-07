@@ -66,6 +66,9 @@ struct AlarmEditorSheet: View {
     @State var validationAlert: ValidationAlertContent?
     @State var duplicateAlarmConfirm: DuplicateAlarmConfirmContent?
     @State var isWorking = false
+    /// 이번 달 직접 입력 여유. **유료일 때만** 조회한다(무료에게 숫자를 보이면
+    /// 이용권만 있으면 이미 다 쓴 것처럼 읽혀 거짓말이 된다).
+    @State var manualQuota: ManualQuotaResponse?
     @State var voiceGateAlert: VoiceGateAlertContent?
     @State var redeemCodeAlertOpen = false
     @State var redeemCodeDraft = ""
@@ -320,15 +323,20 @@ struct AlarmEditorSheet: View {
             FreeBucketSettingsPane(
                 available: availableFreeBuckets,
                 initialSelection: selectedFreeBucket,
-                onSave: { bucket in Task { await selectFreeBucket(bucket) } }
+                onSave: { bucket in Task { await selectFreeBucket(bucket) } },
+                onManualLocked: {
+                    freeBucketPaneOpen = false
+                    showVoicePlanLockedAlert()
+                }
             )
         }
         .navigationDestination(isPresented: $messagePaneOpen) {
             MessageSettingsPane(
                 initialContext: currentMessageContext,
                 initialManualText: voiceStudio.ttsText,
-                manualRemaining: nil,
-                manualLimit: nil,
+                // ⚠ nil 로 하드코딩하지 말 것 — 그러면 '이번 달 남은 횟수' 가 영영 안 뜬다.
+                manualRemaining: manualQuota?.remaining,
+                manualLimit: manualQuota?.limit,
                 savedWeatherCountry: voiceStudio.weatherCountry,
                 savedWeatherCity: voiceStudio.weatherCity,
                 savedFortuneGender: voiceStudio.fortuneGender,
@@ -520,6 +528,13 @@ struct AlarmEditorSheet: View {
         // 제각각이라 **둘을 한 키로 묶어** 건다 — 나눠 걸면 SwiftUI 타입체크가 터진다.
         .onChange(of: freeBucketReadinessKey) { _, _ in
             Task { await applyPendingFreeBucketIfNeeded() }
+        }
+        .task(id: planAccess) {
+            guard planAccess == .paid, let token = auth.session?.token else {
+                manualQuota = nil
+                return
+            }
+            manualQuota = try? await AlarmTalkAPI.shared.manualQuota(token: token)
         }
         // 선택 목소리가 바뀌면 직전 생성/스톡 선택을 비워, 다른 프로필의 오디오를
         // 저장하지 않게 한다. 미리듣기 중이면 함께 정지한다.

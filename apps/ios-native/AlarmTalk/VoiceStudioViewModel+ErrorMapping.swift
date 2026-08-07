@@ -44,6 +44,9 @@ extension VoiceStudioViewModel {
     /// 코드 -> 한국어 메시지. 테스트가 직접 호출할 수 있게 static.
     nonisolated static func localizedVoiceMessage(forCode code: String) -> String {
         switch code {
+        case "MANUAL_TTS_QUOTA_EXCEEDED":
+            // 안드로이드 `editor_error_manual_tts_quota` 와 같은 뜻이어야 한다.
+            return "이번 달 직접 입력 문구 만들기 횟수를 다 썼어요. 다음 달에 다시 채워져요."
         case "VOICE_SLOT_EXHAUSTED":
             return "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
         case "VOICE_FEATURE_REQUIRES_PAID_PLAN":
