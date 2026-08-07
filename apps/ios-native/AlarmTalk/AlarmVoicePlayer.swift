@@ -27,13 +27,23 @@ import AVFoundation
 //     Stop/Snooze 를 누르거나 앱을 직접 열면 그 시점에 `playIfNeeded(...)` 가
 //     호출되어 (이미 알람이 멈췄거나 스누즈 상태라면) no-op 으로 끝난다.
 //
-// 호출자(Phase 2-B2):
-//   AlarmKitViewModel.startObserving 가 alarmUpdates 루프에서 `ringing` 상태에 진입한
-//   알람을 감지하면 `AlarmVoicePlayer.shared.playIfNeeded(record:audioCache:)` 호출.
-//   `dismissed` / `stopped` / `snoozed` 에서는 `AlarmVoicePlayer.shared.stop()`.
+// 호출자:
+//   재생 — `AlarmKitViewModel.startObserving` 이 alarmUpdates 루프에서 `ringing` 진입을
+//   감지하면 `playIfNeeded(record:audioCache:)`.
 //
-// 본 클래스는 Phase 2-B4 가 정의만 하고, 실제 호출 주입은 B2 agent 가
-// `startObserving` 의 ringing handler 에서 수행한다.
+//   정지 — **반드시 `AlarmAppContext.stopVoiceIfOwnedStatic(by:)` 을 거친다.**
+//   `stop()` 을 직접 부르지 말 것: 지금 재생 중인 것이 **그 알람의 목소리인지** 확인해야
+//   한다. 다른 알람을 지우다가 울리고 있는 알람의 목소리를 끄면, 알람은 계속 울리는데
+//   목소리만 사라진다(안드로이드 `ringingTeardownBelongsToCurrentAlarm` 과 같은 규칙).
+//
+//   정지가 걸리는 자리는 셋이다:
+//     1. `AlarmAppContext.handleAlarmStopped`  — 시스템 알럿·Live Activity 의 '끄기'
+//     2. `AlarmAppContext.handleAlarmSnoozed`  — '다시 울림'
+//     3. `AlarmKitViewModel` 의 disappearance 루프 — 알람이 목록에서 사라졌을 때
+//
+//   ⚠ 예전에는 3번 하나뿐이었다. 그런데 **스누즈는 같은 id 로 countdown 을 걸어 알람이
+//   목록에 남고, 주간 반복 알람은 정지해도 AlarmKit 이 recurrence 를 소유해 남는다** —
+//   두 경우 다 3번이 안 돌아 목소리가 계속 났다(2026-08-07 수정).
 
 #if canImport(AVFoundation)
 @MainActor
@@ -51,6 +61,12 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     private var currentVoiceVolumePercent = 100
     private var voiceHasPlayedThisRing = false
     private(set) var currentRecordID: String?
+
+    #if DEBUG
+    /// 테스트에서 '지금 이 알람의 목소리가 나고 있다' 상태만 만든다.
+    /// 실제 오디오를 틀지 않는다 — 소유권 판정만 검증하기 위한 것이다.
+    func debugSetCurrentRecordID(_ id: String?) { currentRecordID = id }
+    #endif
 
     private override init() {
         super.init()

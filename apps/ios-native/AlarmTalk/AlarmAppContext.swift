@@ -49,6 +49,13 @@ final class AlarmAppContext {
     func handleAlarmStopped(alarmKitIDString: String) async {
         guard let store else { return }
         let recordBeforeStop = store.recordByAlarmKitID(alarmKitIDString)
+        // ⚠ **소리를 먼저 끈다.** 예전에는 `AlarmVoicePlayer.stop()` 호출부가
+        // `AlarmKitViewModel` 의 '알람이 목록에서 사라졌을 때' 하나뿐이었는데,
+        // **주간 반복 알람은 정지해도 목록에 남으므로**(AlarmKit 이 recurrence 를 소유)
+        // 그 분기가 아예 안 돌아 목소리가 계속 났다. 시스템 알럿은 이미 사라진 뒤라
+        // 화면에 멈출 버튼이 없어 앱을 강제 종료해야 그쳤다.
+        // 안드로이드는 어떤 경로로 끝나든 `stopRingingOutputs` 를 먼저 부른다.
+        stopVoiceIfOwned(by: recordBeforeStop?.id)
         // markStopped 는 alarmKitID 매칭이 안 되면 no-op 이므로 안전.
         // PR3: 공휴일 술어를 넘겨 store 측 fireAtMillis 전진을 공휴일-정확하게 만든다
         // (Android dismiss 의 full-predicate recompute parity).
@@ -62,6 +69,33 @@ final class AlarmAppContext {
            let id = recordBeforeStop?.id {
             await rearmHolidayOffOneShot(id)
         }
+    }
+
+    /// 인스턴스가 없어도 같은 규칙을 쓰게 하는 진입점.
+    /// `AlarmKitViewModel` 의 disappearance 루프가 `AlarmAppContext.shared == nil` 인
+    /// 경로에서도 소유권 확인을 건너뛰지 않도록 static 으로 둔다.
+    static func stopVoiceIfOwnedStatic(by recordID: String?) {
+        #if ALARMTALK_APP
+        guard let recordID else {
+            AlarmVoicePlayer.shared.stop()
+            return
+        }
+        if AlarmVoicePlayer.shared.currentRecordID == nil
+            || AlarmVoicePlayer.shared.currentRecordID == recordID {
+            AlarmVoicePlayer.shared.stop()
+        }
+        #endif
+    }
+
+    /// 지금 재생 중인 목소리가 **이 알람의 것일 때만** 끈다.
+    ///
+    /// 안드로이드 `RingingService.ringingTeardownBelongsToCurrentAlarm`(Codex #666 P1)과
+    /// 같은 규칙이다 — 늦게 도는 마무리가 이미 다른 알람으로 넘어간 재생을 끄면
+    /// **새로 울리는 알람이 소리 없이 살아 있다.**
+    ///
+    /// 대상을 모르면(레코드를 못 찾음) 끈다 — 소리가 남는 쪽이 더 나쁘다.
+    func stopVoiceIfOwned(by recordID: String?) {
+        Self.stopVoiceIfOwnedStatic(by: recordID)
     }
 
     // MARK: - Snooze
@@ -91,6 +125,10 @@ final class AlarmAppContext {
         guard let store else { return }
         guard let record = store.recordByAlarmKitID(alarmKitIDString) else { return }
         guard record.canSnooze else { return }
+        // ⚠ **다시 울림에서도 소리를 끈다.** 스누즈는 같은 id 로 countdown 을 걸어
+        // 알람이 목록에 **남으므로**, disappearance 분기는 절대 돌지 않는다. 이걸
+        // 빠뜨리면 스누즈 5분 내내 목소리가 900ms 간격으로 반복된다.
+        stopVoiceIfOwned(by: record.id)
 
         let now = nowProvider()
         let minutes = snoozeMinutesOverride ?? record.snoozeMinutes

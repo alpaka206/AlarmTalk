@@ -221,7 +221,13 @@ final class AlarmKitViewModel: ObservableObject {
         for kitID in disappearedIDs {
             let recordBeforeStop = store.recordByAlarmKitID(kitID)
             // In-app voice fallback 재생 중이면 정지 (AlarmKit 자체 stop 과 별개).
-            AlarmVoicePlayer.shared.stop()
+            //
+            // ⚠ **무조건 끄지 말 것.** 이 루프는 '목록에서 사라진 알람' 을 도는데,
+            // 사용자가 **다른** 알람을 지우거나 끄면 그 알람도 여기 들어온다. 그때
+            // 조건 없이 끄면 **지금 울리고 있는 알람의 목소리가 끊긴다**(알람은 계속
+            // 울리는데 목소리만 사라져 '왜 목소리가 안 나오지' 로 보인다).
+            // 안드로이드 `ringingTeardownBelongsToCurrentAlarm`(Codex #666 P1)과 같은 규칙.
+            AlarmAppContext.stopVoiceIfOwnedStatic(by: recordBeforeStop?.id)
             // LiveActivity 가 아닌 경로(앱이 살아있는 채 알람이 사라진 경우)의 stop 도
             // AlarmAppContext 로 수렴시켜 markStopped + dismiss-time 공휴일 재계산/재무장을
             // 한 곳에서 처리한다.
