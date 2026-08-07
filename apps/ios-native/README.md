@@ -1,6 +1,15 @@
-# Voice Alarm iOS Native PoC
+# AlarmTalk iOS
 
-SwiftUI + AlarmKit scaffold for Phase 7. This is source-ready for Xcode on macOS, but it is not built in this Windows workspace.
+> ⭐ **동작 규칙은 [`docs/spec/`](../../docs/spec/README.md) 이 단일 출처다.**
+> 안드로이드·iOS·백엔드가 같이 본다. 화면 동작을 고치기 전에 거기부터 읽고,
+> 동작을 바꾸면 **스펙을 먼저** 고친다. 구현이 스펙과 다르면 구현이 틀린 것이다.
+
+
+SwiftUI + AlarmKit. **더 이상 PoC 가 아니다** — 실기기(iPhone 14 Pro, iOS 26)에 정식 번들 ID
+`com.alarmtalk.app` 로 설치·로그인·알람 예약까지 확인했다(2026-08-07).
+
+빌드는 XcodeGen 으로 `project.yml` → `AlarmTalkNative.xcodeproj` 를 만든 뒤 돌린다.
+상세는 [`docs/ios/`](../../docs/ios/). **아직 App Store 에 없고 CI 워크플로도 없다.**
 
 ## Scope
 

@@ -1,5 +1,10 @@
 # AlarmTalk Android
 
+> ⭐ **동작 규칙은 [`docs/spec/`](../../docs/spec/README.md) 이 단일 출처다.**
+> 안드로이드·iOS·백엔드가 같이 본다. 화면 동작을 고치기 전에 거기부터 읽고,
+> 동작을 바꾸면 **스펙을 먼저** 고친다. 구현이 스펙과 다르면 구현이 틀린 것이다.
+
+
 Phase 1-6 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, backend sync outside the ring path, and social sharing:
 
 - Kotlin + Jetpack Compose + Material 3

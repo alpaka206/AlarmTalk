@@ -1,5 +1,10 @@
 # AlarmTalk Backend
 
+> ⭐ **동작 규칙은 [`docs/spec/`](../../docs/spec/README.md) 이 단일 출처다.**
+> 안드로이드·iOS·백엔드가 같이 본다. 화면 동작을 고치기 전에 거기부터 읽고,
+> 동작을 바꾸면 **스펙을 먼저** 고친다. 구현이 스펙과 다르면 구현이 틀린 것이다.
+
+
 Cloudflare Workers + Hono 기반 API 서버.
 
 ## 기술 스택
