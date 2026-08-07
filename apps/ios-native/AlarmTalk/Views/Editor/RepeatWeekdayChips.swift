@@ -40,17 +40,31 @@ struct RepeatWeekdayChips: View {
         let selected = mask.hasRepeatDay(day)
         let palette = colorPalette(for: day, selected: selected)
 
-        Text(day.shortLabel)
-            .font(theme.typography.titleSmall)
-            .fontWeight(selected ? .bold : .semibold)
-            .foregroundStyle(palette.foreground)
-            .frame(maxWidth: .infinity)
+        // ⚠ **`Text` 에 `aspectRatio` 를 직접 걸지 말 것.** 그러면 정사각형이 **글자 높이**
+        // 기준으로 잡혀 칩이 안드로이드의 절반 크기가 된다(2026-08-08 실기기 대조에서
+        // 안드로이드 ≈33dp / iOS ≈16pt 로 확인). 안드로이드는 `weight(1f).aspectRatio(1f)`
+        // 라 **가로 몫만큼 커지는 원**이다.
+        //
+        // `Color.clear` 는 제안된 폭을 그대로 받으므로, 거기에 비율을 걸고 글자를 얹으면
+        // 같은 동작이 된다.
+        Color.clear
             .aspectRatio(1, contentMode: .fit)
+            .frame(maxWidth: .infinity)
             .background(
                 Circle().fill(palette.background)
             )
             .overlay(
                 Circle().stroke(palette.border, lineWidth: 1)
+            )
+            .overlay(
+                Text(day.shortLabel)
+                    .font(theme.typography.titleSmall)
+                    .fontWeight(selected ? .bold : .semibold)
+                    .foregroundStyle(palette.foreground)
+                    // 큰 글꼴에서 원을 넘치지 않게 줄어든다.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .padding(2)
             )
     }
 
