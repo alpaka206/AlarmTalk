@@ -62,6 +62,16 @@ struct AlarmTalkApp: App {
                             for record in UIPreviewSeed.makeAlarms() {
                                 alarmStore.upsert(record)
                             }
+                            // 울림 확인용 — `-UIPreviewRingIn <초>` 면 그만큼 뒤에 실제로
+                            // 예약한다. iOS 울림 화면은 AlarmKit 이 그리는 시스템 alert 이라
+                            // 우리가 띄울 수 없고, 편집기로 만들려면 시각 휠을 드래그해야
+                            // 하는데 시뮬레이터에는 그 방법이 없다.
+                            if let seconds = UIPreviewSeed.ringInSeconds {
+                                var record = UIPreviewSeed.makeRingSoonAlarm(inSeconds: seconds)
+                                record.ownerUserId = seeded.user.id
+                                alarmStore.upsert(record)
+                                _ = await alarmKit.schedule(record: record, store: alarmStore)
+                            }
                         }
                         #endif
                     }

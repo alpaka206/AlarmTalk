@@ -407,7 +407,10 @@ final class AlarmKitViewModel: ObservableObject {
     func schedule(record: LocalAlarmRecord, store: LocalAlarmStore) async -> Bool {
         // UI 미리보기 모드에서는 실제 예약을 하지 않는다 — 화면을 보려는 것이지 알람을
         // 걸려는 게 아니다. 권한 프롬프트가 떠서 화면을 가리는 것도 막는다.
-        if UIPreviewSeed.isEnabled {
+        //
+        // ⚠ 단, `-UIPreviewRingIn` 은 **울리는 것을 보려는** 진입점이라 통과시킨다.
+        // 여기서 막으면 그 인자가 아무 일도 하지 않는다.
+        if UIPreviewSeed.isEnabled && UIPreviewSeed.ringInSeconds == nil {
             alarmAuthorized = true
             authorizationLabel = "허용됨"
             return true

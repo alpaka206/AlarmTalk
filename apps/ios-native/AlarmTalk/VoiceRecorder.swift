@@ -7,15 +7,11 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     @Published private(set) var elapsedSeconds: TimeInterval = 0
     @Published private(set) var latestRecordingURL: URL?
     @Published private(set) var latestDurationMs: Int?
-    /// Live waveform levels for the recording UI. Matches Android: 18 bars, idle baseline 0.08.
-    @Published private(set) var recordingLevels: [Float] = VoiceRecorder.idleLevels
-
-    /// Bar count + idle level mirror Android's recording waveform (List(18) { 0.08f }).
-    private static let barCount = 18
-    private static let idleLevel: Float = 0.08
-    /// Live levels clamp to the same floor as Android (coerceIn(0.06f, 1f)).
-    private static let minLevel: Float = 0.06
-    private static let idleLevels = [Float](repeating: idleLevel, count: barCount)
+    // ⚠ **`recordingLevels`(18칸 파형)를 되살리지 말 것**(2026-08-07 삭제).
+    // 발행만 하고 **읽는 화면이 하나도 없었다** — 0.25초마다 배열을 새로 만들어 발행하니
+    // 녹음 중 편집기 전체가 그만큼 다시 그려졌다. 안드로이드도 2026-07-07 개편에서
+    // 18칸 파형을 없앴다. 레벨 표시가 다시 필요해지면 **그 화면 안에서** 관측하게 만들 것 —
+    // 편집기 전체가 관측하는 자리에 두면 같은 일이 반복된다.
 
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
@@ -43,14 +39,15 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
         let recorder = try AVAudioRecorder(url: url, settings: settings)
         recorder.delegate = self
-        recorder.isMeteringEnabled = true
+        // 계측(레벨 미터)은 쓰지 않는다 — 읽던 파형 발행자를 없앴다(위 주석).
+        // 켜 두면 매 버퍼마다 파워를 계산해 두고 아무도 읽지 않는다.
+        recorder.isMeteringEnabled = false
         recorder.record()
 
         self.recorder = recorder
         latestRecordingURL = url
         latestDurationMs = nil
         elapsedSeconds = 0
-        recordingLevels = VoiceRecorder.idleLevels
         startedAt = Date()
         isRecording = true
         startTimer()
@@ -62,7 +59,6 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         timer?.invalidate()
         timer = nil
         isRecording = false
-        recordingLevels = VoiceRecorder.idleLevels
         if let startedAt {
             latestDurationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
         }
@@ -87,7 +83,6 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         latestRecordingURL = nil
         latestDurationMs = nil
         elapsedSeconds = 0
-        recordingLevels = VoiceRecorder.idleLevels
     }
 
     private func startTimer() {
@@ -96,35 +91,23 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let startedAt = self.startedAt else { return }
-                self.elapsedSeconds = Date().timeIntervalSince(startedAt)
-                self.sampleLevel()
+                // ⚠ **초가 바뀔 때만 발행한다.** 화면에 나오는 건 "0:05" 처럼 초 단위인데
+                // 0.25초마다 발행하면 같은 글자를 그리려고 편집기가 네 배로 다시 그려진다.
+                // (2분 상한 판정은 아래에서 실제 경과 시간으로 따로 본다.)
+                let elapsed = Date().timeIntervalSince(startedAt)
+                if Int(elapsed) != Int(self.elapsedSeconds) {
+                    self.elapsedSeconds = elapsed
+                }
                 // Android `VoiceProfileManagementPanel.kt:599-601` 의 하드 캡 미러 —
                 // 2분(MAX_DURATION) 도달 시 녹음을 자동 정지한다. 사용자가 멈추지 않아
                 // 2분을 넘기면 업로드 단계에서 거부되던 문제를 사전 차단한다.
-                if self.elapsedSeconds * 1000 >= Double(VoiceProfileLimits.maxDurationMs) {
+                if elapsed * 1000 >= Double(VoiceProfileLimits.maxDurationMs) {
                     self.stop()
                 }
             }
         }
     }
 
-    /// Polls the recorder's metering and appends a normalized level to the sliding
-    /// 18-bar window.
-    /// NOTE(패리티): Android 는 2026-07-07 녹음 UI 개편으로 18-bar 파형을 없애고
-    /// 단일 진폭(recordingLevel: Float) 기반 미니 레벨 바만 남겼다 — iOS 녹음 화면을
-    /// 개편할 때 이 슬라이딩 윈도우도 단일 레벨로 축소할 것.
-    private func sampleLevel() {
-        guard let recorder else { return }
-        recorder.updateMeters()
-        // averagePower is in dBFS (~ -160 silence ... 0 max). Map to a 0...1 linear level.
-        let power = recorder.averagePower(forChannel: 0)
-        let normalized = pow(10, power / 20)
-        let level = min(max(normalized, VoiceRecorder.minLevel), 1)
-        var next = recordingLevels
-        next.removeFirst()
-        next.append(level)
-        recordingLevels = next
-    }
 
     private func requestMicrophonePermission() async -> Bool {
         await withCheckedContinuation { continuation in

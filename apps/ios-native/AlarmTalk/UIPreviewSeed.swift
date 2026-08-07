@@ -40,6 +40,25 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// **울림 확인용** — `-UIPreviewRingIn <초>` 면 그만큼 뒤에 울릴 알람을 하나 예약한다.
+    ///
+    /// 왜 필요한가: iOS 의 울림 화면은 **AlarmKit 이 그리는 시스템 alert** 이라 우리가
+    /// 띄울 수 없고, 편집기로 알람을 만들려면 시각 휠을 드래그해야 하는데 시뮬레이터를
+    /// 스크립트로 조작할 방법이 없다. 그래서 "울리긴 하는가" 를 눈으로 확인할 길이
+    /// 아예 없었다. 이 인자가 그 길이다.
+    ///
+    /// ⚠ 예약만 한다 — 소리·시스템 alert 은 전부 AlarmKit 이 소유한다. 우리 코드가
+    /// 화면을 그리지 않는다는 사실 자체를 확인하는 것도 이 진입점의 목적이다.
+    static var ringInSeconds: Int? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-UIPreviewRingIn"), i + 1 < args.count else { return nil }
+        return Int(args[i + 1]).map { max(5, min($0, 600)) }
+        #else
+        return nil
+        #endif
+    }
+
     /// 첫 화면으로 띄울 탭 — `-UIPreviewTab alarms|voices|menu`. 화면 확인용.
     static var initialTab: NativeTab? {
         #if DEBUG
@@ -89,6 +108,41 @@ enum UIPreviewSeed {
             return profile
         }
         return [own] + system
+    }
+
+    /// `-UIPreviewRingIn <초>` 용 — 지금부터 그만큼 뒤에 울릴 **단발** 알람.
+    ///
+    /// 알람음 모드로 만든다. 목소리 모드는 캐시된 음원이 있어야 하는데 시드에는 실제
+    /// 오디오가 없어서, 목소리로 두면 '왜 소리가 안 나지' 가 되어 확인하려던 것(=시스템
+    /// alert 이 뜨는가)이 흐려진다.
+    static func makeRingSoonAlarm(
+        inSeconds: Int,
+        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+    ) -> LocalAlarmRecord {
+        // ⚠ **다음 '분' 으로 올림한다.** AlarmKit 단발 알람은 `fireAtMillis` 가 아니라
+        // **시:분** 으로 예약된다(`makeSchedule` 의 `.relative(.never)`). 지금과 같은 분에
+        // 걸면 그 시각이 이미 지난 것으로 읽혀 **즉시 울린다** — 기다려서 확인하려던 것이
+        // 앱을 켜자마자 울려 버린다(2026-08-07 실제로 그랬다).
+        let secondsIntoMinute = Int64(nowMillis / 1000) % 60
+        let toNextMinute = 60 - secondsIntoMinute
+        let fireAt = nowMillis + max(Int64(inSeconds), toNextMinute + 5) * 1000
+        let fireDate = Date(timeIntervalSince1970: TimeInterval(fireAt) / 1000)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let parts = calendar.dateComponents([.hour, .minute], from: fireDate)
+        var record = LocalAlarmRecord(
+            id: "preview-ring-soon",
+            label: "울림 확인",
+            hour: parts.hour ?? 0,
+            minute: parts.minute ?? 0,
+            fireAtMillis: fireAt,
+            repeatDaysMask: 0,
+            createdAtMillis: nowMillis,
+            updatedAtMillis: nowMillis
+        )
+        record.playMode = AlarmPlayMode.alarmOnly.rawValue
+        record.enabled = true
+        return record
     }
 
     /// 알람 목록·헤드라인이 비어 보이지 않게 하는 표본 알람.
