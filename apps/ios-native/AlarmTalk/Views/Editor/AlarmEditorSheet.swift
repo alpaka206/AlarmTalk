@@ -1180,6 +1180,13 @@ struct AlarmEditorSheet: View {
         // ⚠ `freeVoiceTier` 가 아니라 `restrictToWeatherMedication` 이다 — 유료가 기본
         // 목소리를 골랐을 때도 preset 4-값으로 고정해야 화면과 저장이 어긋나지 않는다.
         guard restrictToWeatherMedication, draft.playMode != .alarmOnly else { return false }
+        // ⚠ **직접 녹음에는 이 제한을 걸지 않는다**(안드로이드
+        // `AlarmEditorScreen.kt` 의 `voiceSource != LOCAL_AUDIO` 가드 미러).
+        // 녹음본은 그냥 로컬 오디오 재생이라 플랜·목소리 종류와 무관하게 허용된다.
+        // 여기서 `ttsProfile` 로 되돌리면 **녹음해 둔 것이 지워진다** — 특히 유료
+        // 사용자가 기본 목소리를 고른 채 녹음했을 때(선택 목소리 id 는 시스템인데
+        // 소스는 녹음) 제한이 걸려 녹음이 날아간다.
+        guard voiceSourceMode != .localAudio else { return false }
         // 스톡 클립이 스테이징된 동안에는 4-값 강제를 건너뛴다. 스톡 선택은 생성을
         // 우회해 preparedAlarm 을 직접 채우므로, 혹시라도 randomPrompt 등이 흔들려
         // coerce 가 preparedAlarm 을 무효화하면 선택이 사라진다(spec risk 3 mitigation).
