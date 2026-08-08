@@ -6,7 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { verifyAppleIdToken, __resetAppleJwksCacheForTests } from '../src/lib/apple-oauth';
 
-const BUNDLE_ID = 'com.voicealarm.nativeapp.ios';
+const BUNDLE_ID = 'com.alarmtalk.app';
 const KID = 'test-key-1';
 
 function b64url(bytes: Uint8Array | ArrayBuffer): string {

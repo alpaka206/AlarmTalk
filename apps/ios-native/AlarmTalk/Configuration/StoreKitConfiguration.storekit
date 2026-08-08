@@ -13,7 +13,7 @@
           "locale": "ko_KR"
         }
       ],
-      "productID": "com.voicealarm.nativeapp.ios.personal_gift_1m",
+      "productID": "com.alarmtalk.app.personal_gift_1m",
       "referenceName": "Personal Gift 1 Month",
       "type": "Consumable"
     }
@@ -109,7 +109,7 @@
               "locale": "en_US"
             }
           ],
-          "productID": "com.voicealarm.nativeapp.ios.personal_monthly",
+          "productID": "com.alarmtalk.app.personal_monthly",
           "recurringSubscriptionPeriod": "P1M",
           "referenceName": "Personal Monthly",
           "subscriptionGroupID": "21500001",
@@ -135,7 +135,7 @@
               "locale": "en_US"
             }
           ],
-          "productID": "com.voicealarm.nativeapp.ios.couple_monthly",
+          "productID": "com.alarmtalk.app.couple_monthly",
           "recurringSubscriptionPeriod": "P1M",
           "referenceName": "Couple Monthly",
           "subscriptionGroupID": "21500001",
@@ -161,7 +161,7 @@
               "locale": "en_US"
             }
           ],
-          "productID": "com.voicealarm.nativeapp.ios.family_monthly",
+          "productID": "com.alarmtalk.app.family_monthly",
           "recurringSubscriptionPeriod": "P1M",
           "referenceName": "Family Monthly",
           "subscriptionGroupID": "21500001",

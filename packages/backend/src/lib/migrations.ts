@@ -728,7 +728,7 @@ export const migrations: Migration[] = [
     // Apple StoreKit2 IAP 트랜잭션 추적 컬럼.
     //   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
     //   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
-    //   - apple_product_id: SKU (com.voicealarm.nativeapp.ios.personal_monthly 등)
+    //   - apple_product_id: SKU (com.alarmtalk.app.personal_monthly 등)
     // 유니크 인덱스로 동일 transaction_id 의 중복 INSERT 를 방지 (POST /billing/apple/confirm 멱등성).
     id: 36,
     name: 'subscriptions-apple-fields',
@@ -2080,7 +2080,7 @@ export const migrations: Migration[] = [
      * subscriptions 의 apple 컬럼 3개는 ALTER ADD COLUMN 이라 append-only 다:
      *   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
      *   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
-     *   - apple_product_id: SKU (com.voicealarm.nativeapp.ios.personal_monthly 등)
+     *   - apple_product_id: SKU (com.alarmtalk.app.personal_monthly 등)
      *
      * ⚠ 기존 구글 경로는 건드리지 않는다. provider 를 좁히던 CHECK 만 넓히는 것이라
      * 구글 결제 코드·데이터는 그대로 동작한다.

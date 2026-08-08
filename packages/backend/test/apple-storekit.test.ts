@@ -14,7 +14,7 @@ import {
   type AppleStoreKitConfig,
 } from '../src/lib/apple-storekit';
 
-const BUNDLE_ID = 'com.voicealarm.nativeapp.ios';
+const BUNDLE_ID = 'com.alarmtalk.app';
 
 function b64url(bytes: Uint8Array | ArrayBuffer): string {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -63,7 +63,7 @@ function txPayload(over: Record<string, unknown> = {}) {
     transactionId: '2000000900000001',
     originalTransactionId: '2000000800000001',
     bundleId: BUNDLE_ID,
-    productId: 'com.voicealarm.nativeapp.ios.personal_monthly',
+    productId: 'com.alarmtalk.app.personal_monthly',
     purchaseDate: Date.now() - 1000,
     expiresDate: Date.now() + 30 * 24 * 3600 * 1000,
     type: 'Auto-Renewable Subscription',
@@ -174,13 +174,13 @@ describe('fetchAppleTransaction', () => {
 describe('applePlanKeyFromProductId', () => {
   // 이 ID 들은 StoreKitConfiguration.storekit 의 SKU 3개와 정확히 같아야 한다.
   it('세 상품을 매핑한다', () => {
-    expect(applePlanKeyFromProductId('com.voicealarm.nativeapp.ios.personal_monthly')).toBe('personal');
-    expect(applePlanKeyFromProductId('com.voicealarm.nativeapp.ios.couple_monthly')).toBe('couple');
-    expect(applePlanKeyFromProductId('com.voicealarm.nativeapp.ios.family_monthly')).toBe('family');
+    expect(applePlanKeyFromProductId('com.alarmtalk.app.personal_monthly')).toBe('personal');
+    expect(applePlanKeyFromProductId('com.alarmtalk.app.couple_monthly')).toBe('couple');
+    expect(applePlanKeyFromProductId('com.alarmtalk.app.family_monthly')).toBe('family');
   });
 
   it('모르는 상품은 null', () => {
-    expect(applePlanKeyFromProductId('com.voicealarm.nativeapp.ios.lifetime')).toBeNull();
+    expect(applePlanKeyFromProductId('com.alarmtalk.app.lifetime')).toBeNull();
     // 구글 쪽 짧은 ID 가 애플 경로로 새면 안 된다.
     expect(applePlanKeyFromProductId('personal_monthly')).toBeNull();
   });

@@ -23,7 +23,7 @@ vi.mock('../src/lib/google-oauth', () => ({
 
 import { processSubscriptionExpiry } from '../src/lib/billing-cancel';
 
-const BUNDLE_ID = 'com.voicealarm.nativeapp.ios';
+const BUNDLE_ID = 'com.alarmtalk.app';
 const ORIGINAL_ID = '2000000800000001';
 
 const NOW = new Date('2026-07-18T00:00:00.000Z');
@@ -69,7 +69,7 @@ function appleStatusBody(over: { status?: number; expiresDate?: number; autoRene
               transactionId: '2000000900000009',
               originalTransactionId: ORIGINAL_ID,
               bundleId: BUNDLE_ID,
-              productId: 'com.voicealarm.nativeapp.ios.personal_monthly',
+              productId: 'com.alarmtalk.app.personal_monthly',
               purchaseDate: NOW.getTime() - 30 * 24 * 3600 * 1000,
               expiresDate: over.expiresDate ?? APPLE_FUTURE_MS,
               type: 'Auto-Renewable Subscription',

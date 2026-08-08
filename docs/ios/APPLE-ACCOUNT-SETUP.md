@@ -32,12 +32,18 @@
 
 ## 1. App ID 등록 (2개)
 
+> ⚠ **번들 ID 는 `com.alarmtalk.app` 이다.** 이 문서는 한동안 `com.voicealarm.nativeapp.ios`
+> 라고 적고 있었는데, **`project.yml` 의 실제 값과 달랐다.** 그 문자열은 Apple 이 등록을
+> 거부하고(과거에 만들었다 지운 것으로 보인다) App Store Connect 앱 레코드 생성부터
+> 막힌다 — 2026-08-08 에 실제로 그 벽에 부딪혔다.
+> 실제 값은 언제나 `apps/ios-native/project.yml` 의 `PRODUCT_BUNDLE_IDENTIFIER` 다.
+
 <https://developer.apple.com/account/resources/identifiers> → Identifiers → `+` → App IDs → App
 
 | | Bundle ID |
 |---|---|
-| 앱 | `com.voicealarm.nativeapp.ios` |
-| 위젯 확장 | `com.voicealarm.nativeapp.ios.widget` |
+| 앱 | `com.alarmtalk.app` |
+| 위젯 확장 | `com.alarmtalk.app.widget` |
 
 **앱**(`...ios`)에 켤 Capability 3개:
 
@@ -58,7 +64,7 @@
 Identifiers → App Groups → `+`
 
 ```
-group.com.voicealarm.nativeapp.ios.shared
+group.com.alarmtalk.app.shared
 ```
 
 **엔타이틀먼트 파일의 문자열과 한 글자도 다르면 안 된다.** 이 컨테이너로 앱과 위젯이
@@ -66,7 +72,7 @@ group.com.voicealarm.nativeapp.ios.shared
 
 ## 3. Keychain Sharing 그룹
 
-엔타이틀먼트에 `$(AppIdentifierPrefix)com.voicealarm.nativeapp.ios.keychain` 이 이미 들어 있다.
+엔타이틀먼트에 `$(AppIdentifierPrefix)com.alarmtalk.app.keychain` 이 이미 들어 있다.
 `$(AppIdentifierPrefix)` 는 Team ID 로 자동 치환되므로 **따로 등록할 것은 없다.**
 Xcode 의 Signing & Capabilities 에 Keychain Sharing 이 자동으로 잡히는지만 확인한다.
 
@@ -75,7 +81,7 @@ Xcode 의 Signing & Capabilities 에 Keychain Sharing 이 자동으로 잡히는
 ## 4. Sign in with Apple — 서버에 넣을 값은 **하나뿐**
 
 ```
-APPLE_BUNDLE_ID=com.voicealarm.nativeapp.ios
+APPLE_BUNDLE_ID=com.alarmtalk.app
 ```
 
 **`.p8` 개인키가 필요 없다.** 네이티브 앱 로그인은 앱이 준 identity token 을 애플 공개키
@@ -99,9 +105,9 @@ APPLE_BUNDLE_ID=com.voicealarm.nativeapp.ios
 
 | 상품 ID | 플랜 | 한국 가격 | 정원 |
 |---|---|---|---|
-| `com.voicealarm.nativeapp.ios.personal_monthly` | personal | ₩3,900 | 1인 |
-| `com.voicealarm.nativeapp.ios.couple_monthly` | couple | ₩6,900 | 2인 |
-| `com.voicealarm.nativeapp.ios.family_monthly` | family | ₩14,900 | 5인 |
+| `com.alarmtalk.app.personal_monthly` | personal | ₩3,900 | 1인 |
+| `com.alarmtalk.app.couple_monthly` | couple | ₩6,900 | 2인 |
+| `com.alarmtalk.app.family_monthly` | family | ₩14,900 | 5인 |
 
 전부 **자동 갱신 구독(Auto-Renewable Subscription)**, 월간.
 
@@ -117,7 +123,7 @@ StoreKit 업그레이드/다운그레이드로 처리된다 — 앱에 '이용�
 
 | 상품 ID | 한국 가격 | 유형 |
 |---|---|---|
-| `com.voicealarm.nativeapp.ios.personal_gift_1m` | ₩3,900 | **소모성(Consumable)** |
+| `com.alarmtalk.app.personal_gift_1m` | ₩3,900 | **소모성(Consumable)** |
 
 ⚠ **자동 갱신 구독으로 만들지 말 것.** 자동 갱신 구독은 남에게 줄 수 없다(스토어가
 구매자 계정에 묶는다). 그래서 선물은 1회성 상품을 팔고 그 대금으로 **바우처 코드**를
@@ -159,7 +165,7 @@ App Store Connect → 사용자 및 액세스 → 통합 → **App Store Connect
 
 ```bash
 # packages/backend/.dev.vars.dev  (prod 는 .dev.vars.prod)
-APPLE_BUNDLE_ID=com.voicealarm.nativeapp.ios
+APPLE_BUNDLE_ID=com.alarmtalk.app
 APPLE_ISSUER_ID=57246542-96fe-1a63-e053-0824d011072a
 APPLE_KEY_ID=ABC123DEFG
 APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
@@ -182,7 +188,7 @@ npm run secrets:sync:prod    # prod 워커로
 계정이 생기면 미리 해 둘 수 있는 것:
 
 1. Certificates → Keys → `+` → **Apple Push Notifications service (APNs)** 키 생성 → `.p8` 저장
-2. Firebase 콘솔 → 프로젝트 설정 → iOS 앱 추가(번들 ID `com.voicealarm.nativeapp.ios`)
+2. Firebase 콘솔 → 프로젝트 설정 → iOS 앱 추가(번들 ID `com.alarmtalk.app`)
 3. Cloud Messaging 탭 → APNs 인증 키 업로드(`.p8` + Key ID + Team ID)
 4. `GoogleService-Info.plist` 다운로드 → `apps/ios-native/AlarmTalk/` 에 넣는다
    (⚠ 지금 레포에 이 파일이 **없다**. gitignore 여부를 정해서 커밋 정책을 잡을 것.)

@@ -16,16 +16,16 @@ import Foundation
 /// 본 enum 은 순수 데이터 매핑이며 StoreKit 의 `Product` 인스턴스를 직접 들지
 /// 않는다. 실제 `Product` 는 `SubscriptionManager.products` 에 lazy-cache 된다.
 enum SubscriptionProduct: String, CaseIterable {
-    case personalMonthly = "com.voicealarm.nativeapp.ios.personal_monthly"
-    case coupleMonthly   = "com.voicealarm.nativeapp.ios.couple_monthly"
-    case familyMonthly   = "com.voicealarm.nativeapp.ios.family_monthly"
+    case personalMonthly = "com.alarmtalk.app.personal_monthly"
+    case coupleMonthly   = "com.alarmtalk.app.couple_monthly"
+    case familyMonthly   = "com.alarmtalk.app.family_monthly"
 
     /// 선물용 **1회성(소모성)** 상품.
     ///
     /// ⚠ **자동 갱신 구독은 남에게 줄 수 없다** — 스토어가 구매자 계정에 묶는다.
     /// 그래서 선물은 소모성 상품을 팔고, 서버가 그 결제로 **바우처 코드**를 만든다
     /// (`billing-apple.ts` 의 `isAppleGiftProductId` 갈래).
-    case personalGift    = "com.voicealarm.nativeapp.ios.personal_gift_1m"
+    case personalGift    = "com.alarmtalk.app.personal_gift_1m"
 
     /// 이 상품이 **본인 구독**인가. 선물은 아니다 — 사서 남에게 주는 코드다.
     var isSubscription: Bool { self != .personalGift }

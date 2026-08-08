@@ -37,7 +37,7 @@ final class SubscriptionManagerTests: XCTestCase {
     }
 
     func testProductIDPrefixMatchesBundle() {
-        let prefix = "com.voicealarm.nativeapp.ios."
+        let prefix = "com.alarmtalk.app."
         for product in SubscriptionProduct.allCases {
             XCTAssertTrue(
                 product.rawValue.hasPrefix(prefix),
@@ -80,7 +80,7 @@ final class SubscriptionManagerTests: XCTestCase {
     func testFromProductIDReturnsNilForUnknown() {
         XCTAssertNil(SubscriptionProduct(rawValue: "com.unknown.product"))
         XCTAssertNil(SubscriptionProduct(rawValue: ""))
-        XCTAssertNil(SubscriptionProduct(rawValue: "com.voicealarm.nativeapp.ios.premium"))
+        XCTAssertNil(SubscriptionProduct(rawValue: "com.alarmtalk.app.premium"))
     }
 
     // MARK: - make(tier:) factory

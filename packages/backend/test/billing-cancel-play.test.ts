@@ -1028,7 +1028,7 @@ describe('POST /billing/cancel (apple 결제)', () => {
   const APPLE_TXN_ROW = {
     provider: 'apple',
     provider_transaction_id: 'apple-txn-1',
-    product_id: 'com.voicealarm.nativeapp.ios.personal_monthly',
+    product_id: 'com.alarmtalk.app.personal_monthly',
   };
 
   function pushAppleSubscription() {

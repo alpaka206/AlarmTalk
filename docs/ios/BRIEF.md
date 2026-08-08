@@ -165,7 +165,7 @@ xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk -configuration D
       Android 정책(min 21 / latest 23)을 돌려준다. iOS 는 `minSupported: 1` 로 시작한다.
 - [ ] **Apple 로그인**: `POST /auth/apple` + `users.apple_id` 복구(#82 가 DROP 했다).
       앱이 준 identity token 을 **Apple JWKS(`https://appleid.apple.com/auth/keys`)로 검증**하는
-      방식이라 **비밀키가 필요 없다.** `aud` = 번들 ID(`com.voicealarm.nativeapp.ios`),
+      방식이라 **비밀키가 필요 없다.** `aud` = 번들 ID(`com.alarmtalk.app`),
       `iss` = `https://appleid.apple.com` 확인. 테스트는 JWKS 를 목킹해서 짠다.
 - [ ] **Apple 결제**: `billing-apple.ts`, `store_transactions.provider` CHECK 에 `'apple'` 추가
       (지금 `CHECK(provider = 'google')`), `subscriptions` 의 apple 컬럼 3개 복구.
@@ -405,10 +405,10 @@ cd /Users/devrel/Desktop/AlarmTalk && npm run lint && npm run typecheck
 3. **`docs/ios/APPLE-ACCOUNT-SETUP.md` 를 써라.** 아침에 사람이 이것만 보고 따라 할 수 있어야
    한다. 순서대로, 클릭 경로까지. 최소한 아래를 포함:
    - Developer Program 가입 → Team ID 확인 위치
-   - App ID 등록: 번들 ID `com.voicealarm.nativeapp.ios` / 위젯 `...ios.widget`
+   - App ID 등록: 번들 ID `com.alarmtalk.app` / 위젯 `com.alarmtalk.app.widget`
      — 켜야 할 Capability: **App Groups, Sign in with Apple, Push Notifications**
-   - App Group 생성: `group.com.voicealarm.nativeapp.ios.shared` (엔타이틀먼트와 정확히 일치)
-   - Keychain Sharing 그룹: `com.voicealarm.nativeapp.ios.keychain`
+   - App Group 생성: `group.com.alarmtalk.app.shared` (엔타이틀먼트와 정확히 일치)
+   - Keychain Sharing 그룹: `com.alarmtalk.app.keychain`
    - Sign in with Apple: 서버 검증에 필요한 값이 무엇이고 **무엇이 필요 없는지** 명확히
      (네이티브 앱 플로우는 JWKS 검증이라 .p8 이 불필요하다 — 웹/서비스 ID 플로우와 헷갈리지 말 것)
    - APNs 키(.p8) 생성 → Key ID / Team ID → Firebase 콘솔 iOS 앱 등록 → `GoogleService-Info.plist`

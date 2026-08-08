@@ -7,7 +7,7 @@ export interface Env {
    * Sign in with Apple 검증용 **앱 번들 ID**. 네이티브 앱이 보내는 identity token 의
    * `aud` 가 이 값이다. 미설정 시 POST /auth/apple 이 500 으로 fail-closed 된다 —
    * aud 를 안 보면 다른 앱용으로 발급된 유효 토큰도 통과하기 때문이다.
-   * (예: `com.voicealarm.nativeapp.ios`)
+   * (예: `com.alarmtalk.app` — 실제 값은 `apps/ios-native/project.yml`)
    *
    * ⚠ 이건 `.p8` 개인키가 **아니다.** 네이티브 로그인 플로우는 공개키(JWKS) 검증만
    * 하므로 비밀키가 필요 없다. `.p8` 은 웹/서버 대 서버 플로우에서만 쓴다.

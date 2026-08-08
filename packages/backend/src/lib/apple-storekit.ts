@@ -262,19 +262,19 @@ export async function fetchAppleSubscriptionStatus(
  * 의 SKU 3개와 **정확히 같아야 한다** — App Store Connect 에 상품을 만들 때도 같은 ID 를 쓴다.
  */
 const APPLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'> = {
-  'com.voicealarm.nativeapp.ios.personal_monthly': 'personal',
-  'com.voicealarm.nativeapp.ios.couple_monthly': 'couple',
-  'com.voicealarm.nativeapp.ios.family_monthly': 'family',
+  'com.alarmtalk.app.personal_monthly': 'personal',
+  'com.alarmtalk.app.couple_monthly': 'couple',
+  'com.alarmtalk.app.family_monthly': 'family',
   // ⚠ **선물 상품은 구독이 아니라 소모성(consumable)이다.** 자동 갱신 구독은 남에게
   // 줄 수 없어서(스토어가 구매자 계정에 묶는다), 선물은 1회성 상품을 팔고 그 대금으로
   // **바우처 코드**를 발급한다. 그래서 이 상품의 결제는 구독 갈래를 타면 안 된다 —
   // `isAppleGiftProductId` 로 갈라 `billing-apple.ts` 가 바우처를 만든다.
-  'com.voicealarm.nativeapp.ios.personal_gift_1m': 'personal',
+  'com.alarmtalk.app.personal_gift_1m': 'personal',
 };
 
 /** 선물용 1회성 상품 ID. 구독 갈래로 새면 구매자 본인이 이용권을 받게 된다. */
 const APPLE_GIFT_PRODUCT_IDS = new Set<string>([
-  'com.voicealarm.nativeapp.ios.personal_gift_1m',
+  'com.alarmtalk.app.personal_gift_1m',
 ]);
 
 export function isAppleGiftProductId(productId: string): boolean {
