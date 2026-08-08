@@ -86,13 +86,11 @@
     <string name="billing_plan_couple_feature_message">相手のアラーム設定</string>
     <string name="billing_plan_couple_feature_voice_share">お互いの声を共有</string>
     <string name="billing_plan_couple_name">カップル</string>
-    <string name="billing_plan_couple_price">月額690円</string>
     <string name="billing_plan_family_feature_max_six">最大5人で一緒に利用</string>
     <string name="billing_plan_family_feature_message">家族へのアラーム送信</string>
     <string name="billing_plan_family_feature_voice_share">家族の声を共有</string>
     <string name="billing_plan_feature_includes_personal">パーソナルの全機能を含む</string>
     <string name="billing_plan_family_name">ファミリー</string>
-    <string name="billing_plan_family_price">月額1,490円</string>
     <string name="billing_plan_free_feature_basic_alarm">通常アラーム無制限</string>
     <string name="billing_plan_free_feature_stock_voice">基本の声のアラーム</string>
     <string name="billing_plan_free_name">無料</string>
@@ -100,10 +98,10 @@
     <string name="billing_plan_personal_feature_daily_prompt">天気・運勢など毎日新しいひとこと</string>
     <string name="billing_plan_personal_feature_voice">好きな声を1つ登録</string>
     <string name="billing_plan_personal_name">パーソナル</string>
-    <string name="billing_plan_personal_price">月額390円</string>
     <string name="billing_play_manage_description">アプリで解約を完了できませんでした。Google Playの定期購入管理から直接解約できます。契約状態は変わっていません。</string>
     <string name="billing_play_manage_open">Google Playを開く</string>
     <string name="billing_play_manage_title">Google Playでの管理が必要です</string>
+    <string name="billing_play_purchase_description_no_price">%1$s は Google Play で安全にお支払いいただけます。価格は決済画面で確認でき、いつでも解約できます。解約しても残りの期間はそのままご利用いただけます。</string>
     <string name="billing_play_purchase_description">%1$s利用券は%2$sです。Google Playで安全に決済され、いつでも解約できます。解約しても残りの期間はそのまま利用できます。</string>
     <string name="billing_play_purchase_title">%1$s利用券を始めますか？</string>
     <string name="code_redeem_placeholder">招待・ギフト・プロモコード</string>

@@ -6,6 +6,7 @@ import UIKit
 
 struct CurrentPassSummaryCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
+    @EnvironmentObject private var subscriptions: SubscriptionManager
     let subscription: BillingSubscription?
     let currentPlan: BillingPlan?
     let nextPlan: BillingPlanSummary?
@@ -83,14 +84,20 @@ struct CurrentPassSummaryCard: View {
         return "기본 알람은 무료로 사용할 수 있어요."
     }
 
+    /// ⚠ **가격의 권위는 App Store 다 — DB `price_krw` 를 쓰지 말 것.**
+    /// 플랜 카드는 이미 `Product.displayPrice` 를 쓰는데 이 요약 카드만 DB 값을 써서,
+    /// 같은 화면 안에서 **두 가격이 다르게 보일 수 있었다**(스토어에서 가격을 바꾸거나
+    /// 프로모션을 걸면, 그리고 한국 밖 사용자에게는 통화부터 틀렸다).
+    /// StoreKit 이 지역 통화·세금까지 반영한 문자열을 준다.
+    ///
+    /// 상품을 아직 못 받았으면 **숫자를 지어내지 않는다** — 모를 땐 결제 수단만 말한다.
     private var priceText: String {
-        guard currentPlan != nil else {
-            return currentTier == .free ? "0원" : "App Store 결제"
+        if currentTier == .free { return "0원" }
+        if let productID = SubscriptionProduct.make(tier: currentTier)?.rawValue,
+           let product = subscriptions.products.first(where: { $0.id == productID }) {
+            return "월 \(product.displayPrice)"
         }
-        guard let price = currentPlan?.priceKrw, price > 0 else {
-            return "0원"
-        }
-        return "월 \(formatKrw(price))원"
+        return "App Store 결제"
     }
 
     private var capacityText: String {

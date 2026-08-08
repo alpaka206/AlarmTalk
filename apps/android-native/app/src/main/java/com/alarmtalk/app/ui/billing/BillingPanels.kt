@@ -64,7 +64,13 @@ internal fun SubscriptionPanel(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     vouchers: List<VoucherItem>,
-    // planKey → Play 실제 표시가격(formattedPrice). 비어 있으면 문자열 리소스로 폴백.
+    /// planKey → **Play 가 준 표시가격**(`formattedPrice`, 지역 통화·세금 포함).
+    ///
+    /// ⚠ **없으면 빈 문자열로 둔다 — 앱에 박아 둔 숫자로 폴백하지 말 것.** 가격의 권위는
+    /// 스토어다. 예전에는 `strings.xml` 의 `billing_plan_*_price`(월 3,900원 …)로
+    /// 폴백했는데, Play 에서 가격을 바꾸거나 프로모션을 걸면 **앱이 틀린 가격을 자신
+    /// 있게 보여줬다.** 지역·통화가 다른 사용자에게는 애초에 맞은 적도 없다.
+    /// 모르면 숫자를 안 보여주는 게 맞다(카드는 :589 에서 빈 값을 알아서 숨긴다).
     planPrices: Map<String, String>,
     onPurchasePlay: (Activity, String) -> Unit,
     onGiftPersonal: (Activity) -> Unit,
@@ -104,7 +110,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
-            price = planPrices["personal"] ?: stringResource(R.string.billing_plan_personal_price),
+            price = planPrices["personal"].orEmpty(),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
@@ -114,7 +120,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "couple",
             name = stringResource(R.string.billing_plan_couple_name),
-            price = planPrices["couple"] ?: stringResource(R.string.billing_plan_couple_price),
+            price = planPrices["couple"].orEmpty(),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -126,7 +132,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "family",
             name = stringResource(R.string.billing_plan_family_name),
-            price = planPrices["family"] ?: stringResource(R.string.billing_plan_family_price),
+            price = planPrices["family"].orEmpty(),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -383,7 +389,15 @@ private fun PlayPurchaseDialog(
 ) {
     BillingActionDialog(
         title = stringResource(R.string.billing_play_purchase_title, target.name),
-        description = stringResource(R.string.billing_play_purchase_description, target.name, target.price),
+        // ⚠ 가격은 스토어가 권위라 **없을 수도 있다**(Play 조회 실패·미출시 상품).
+        // 그때 가격 자리에 빈 문자열을 끼우면 "개인 이용권은 이에요." 가 된다 —
+        // 숫자를 모를 땐 가격을 말하지 않는 문장을 쓴다. 실제 금액은 Play 결제
+        // 시트가 어차피 다시 보여준다.
+        description = if (target.price.isBlank()) {
+            stringResource(R.string.billing_play_purchase_description_no_price, target.name)
+        } else {
+            stringResource(R.string.billing_play_purchase_description, target.name, target.price)
+        },
         onDismiss = onDismiss,
     ) {
         BillingDialogButton(

@@ -86,13 +86,11 @@
     <string name="billing_plan_couple_feature_message">Set your partner\'s alarm</string>
     <string name="billing_plan_couple_feature_voice_share">Share each other\'s voices</string>
     <string name="billing_plan_couple_name">Couple</string>
-    <string name="billing_plan_couple_price">$6.90/mo</string>
     <string name="billing_plan_family_feature_max_six">Up to 5 people together</string>
     <string name="billing_plan_family_feature_message">Send alarms to your family</string>
     <string name="billing_plan_family_feature_voice_share">Share family voices</string>
     <string name="billing_plan_feature_includes_personal">Everything in Personal</string>
     <string name="billing_plan_family_name">Family</string>
-    <string name="billing_plan_family_price">$14.90/mo</string>
     <string name="billing_plan_free_feature_basic_alarm">Unlimited standard alarms</string>
     <string name="billing_plan_free_feature_stock_voice">Alarms with default voices</string>
     <string name="billing_plan_free_name">Free</string>
@@ -100,10 +98,10 @@
     <string name="billing_plan_personal_feature_daily_prompt">Fresh lines every day: weather, fortune, and more</string>
     <string name="billing_plan_personal_feature_voice">Register 1 voice of your choice</string>
     <string name="billing_plan_personal_name">Personal</string>
-    <string name="billing_plan_personal_price">$3.90/mo</string>
     <string name="billing_play_manage_description">We couldn\'t complete the cancellation in the app. You can cancel directly in Google Play subscriptions. Your subscription hasn\'t changed.</string>
     <string name="billing_play_manage_open">Open Google Play</string>
     <string name="billing_play_manage_title">Manage it directly in Google Play</string>
+    <string name="billing_play_purchase_description_no_price">%1$s is purchased securely through Google Play. You can check the price on the payment screen and cancel anytime — you keep access for the rest of the period.</string>
     <string name="billing_play_purchase_description">The %1$s pass is %2$s. Payment is handled securely by Google Play, and you can cancel anytime. You\'ll keep access for the time you\'ve paid for.</string>
     <string name="billing_play_purchase_title">Start the %1$s pass?</string>
     <string name="code_redeem_placeholder">Invite, gift, or promo code</string>
