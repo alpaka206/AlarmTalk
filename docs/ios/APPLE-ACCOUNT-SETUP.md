@@ -97,17 +97,38 @@ APPLE_BUNDLE_ID=com.voicealarm.nativeapp.ios
 `apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 및 백엔드
 `packages/backend/src/lib/apple-storekit.ts` 의 매핑과 일치해야 한다.
 
-| 상품 ID | 플랜 | 참고가(.storekit) |
+| 상품 ID | 플랜 | 한국 가격 | 정원 |
+|---|---|---|---|
+| `com.voicealarm.nativeapp.ios.personal_monthly` | personal | ₩3,900 | 1인 |
+| `com.voicealarm.nativeapp.ios.couple_monthly` | couple | ₩6,900 | 2인 |
+| `com.voicealarm.nativeapp.ios.family_monthly` | family | ₩14,900 | 5인 |
+
+전부 **자동 갱신 구독(Auto-Renewable Subscription)**, 월간.
+
+⚠ **넷 다 같은 구독 그룹에 넣는다**(`AlarmTalk Subscriptions`). 그래야 플랜 변경이
+StoreKit 업그레이드/다운그레이드로 처리된다 — 앱에 '이용권 변경' UI 가 없는 이유가
+이것이다(`docs/spec/billing-lifecycle.md` 의 「의도된 플랫폼 차이」).
+
+⚠ 가격의 권위는 **App Store Connect** 이고 DB `price_krw` 는 표시용이다. 둘을 일치시켜
+둔다 — 위 값은 마이그레이션 `#52` 의 시드가이고 안드로이드 Play 상품과도 같다.
+`.storekit` 파일의 $1.99/$3.99/$5.99 는 **시뮬레이터 테스트용 참고값**이라 여기와 무관하다.
+
+### 5-2b. 선물 상품 1개 등록 — **소모성(Consumable)**
+
+| 상품 ID | 한국 가격 | 유형 |
 |---|---|---|
-| `com.voicealarm.nativeapp.ios.personal_monthly` | personal | $1.99 |
-| `com.voicealarm.nativeapp.ios.couple_monthly` | couple | $3.99 |
-| `com.voicealarm.nativeapp.ios.family_monthly` | family | $5.99 |
+| `com.voicealarm.nativeapp.ios.personal_gift_1m` | ₩3,900 | **소모성(Consumable)** |
 
-전부 **자동 갱신 구독(Auto-Renewable Subscription)**, 월간. 같은 구독 그룹에 넣으면
-사용자가 플랜 간 업/다운그레이드를 할 수 있다.
+⚠ **자동 갱신 구독으로 만들지 말 것.** 자동 갱신 구독은 남에게 줄 수 없다(스토어가
+구매자 계정에 묶는다). 그래서 선물은 1회성 상품을 팔고 그 대금으로 **바우처 코드**를
+발급한다 — 서버가 `isAppleGiftProductId` 로 갈라 구독 갈래를 타지 않게 한다
+(`routes/billing-apple.ts`). 구독으로 만들면 `expiresDate` 검사에 걸려 결제가 통째로
+거절되거나, 구매자 본인이 이용권을 받게 된다.
 
-> ⚠ 한국 원화 가격은 `PRICING.md` 와 안드로이드 상품을 보고 맞출 것. 위 달러 값은
-> 시뮬레이터 테스트용 `.storekit` 파일에 적힌 참고값이다.
+⚠ **구독 그룹에 넣지 않는다.** 소모성 상품은 그룹 개념이 없다.
+
+> 발급되는 바우처의 유효기간은 **받는 사람이 등록할 때까지의 기한**(30일)이고,
+> 등록한 시점부터 개인 플랜 1개월이 시작된다.
 
 ### 5-3. App Store Server API 키 발급
 

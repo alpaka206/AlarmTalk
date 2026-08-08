@@ -58,13 +58,21 @@
 2. **구독 상품 3개 생성** — *Monetize → Products → Subscriptions*:
    - 상품 ID: `personal_monthly`, `couple_monthly`, `family_monthly` (위 표와 **철자 동일**, 자동갱신 구독)
    - 각 상품에 **base plan(월간, auto-renewing)** + **가격**(아래 §4) 설정 후 **활성화(Active)**.
-3. **라이선스 테스터 등록** — *Setup → License testing*: 테스트 계정은 실제 청구 없이 구매 가능.
-4. **(중요) RTDN 연결** — *Monetize → Monetization setup → Real-time developer notifications*:
+3. **선물 상품 1개 생성** — *Monetize → Products → **In-app products*** (구독 아님):
+   - 상품 ID: **`personal_gift_1m`**, 유형 **일회성(one-time / consumable)**, 가격 **₩3,900**.
+   - ⚠ **구독으로 만들지 말 것.** 자동갱신 구독은 남에게 줄 수 없어서(스토어가 구매자
+     계정에 묶는다), 선물은 1회성 상품을 팔고 그 대금으로 **바우처 코드**를 발급한다.
+     서버가 `GOOGLE_GIFT_PRODUCT_IDS`(`routes/billing-google.ts`)로 갈라 구독 갈래를
+     타지 않게 한다 — 구독으로 만들면 구매자 본인이 이용권을 받게 된다.
+   - 발급 바우처의 유효기간은 **받는 사람이 등록할 때까지의 기한**(30일)이고, 등록한
+     시점부터 개인 플랜 1개월이 시작된다.
+4. **라이선스 테스터 등록** — *Setup → License testing*: 테스트 계정은 실제 청구 없이 구매 가능.
+5. **(중요) RTDN 연결** — *Monetize → Monetization setup → Real-time developer notifications*:
    - Cloud Pub/Sub 토픽 생성 → push 구독 URL을
      `https://api.alarm-talk.com/api/billing/google/rtdn?token=<GOOGLE_RTDN_VERIFICATION_TOKEN>` 로 설정.
    - 토픽에 `google-play-developer-notifications@system.gserviceaccount.com` publish 권한 부여.
    - Play Console에서 **Send test notification**으로 200 응답 확인.
-5. **Play Developer API 서비스 계정** — Google Cloud Console에서 서비스 계정 + JSON 키 생성,
+6. **Play Developer API 서비스 계정** — Google Cloud Console에서 서비스 계정 + JSON 키 생성,
    Play Console에서 해당 계정에 *View financial data / Manage orders* 권한 부여 (서버 검증용).
 
 ---
