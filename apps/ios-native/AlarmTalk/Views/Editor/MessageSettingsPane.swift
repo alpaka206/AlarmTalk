@@ -285,12 +285,28 @@ struct MessageSettingsPane: View {
     }
 
     /// 필요한 값이 비어 있으면 저장을 막는다 — 저장한 뒤 울릴 때 실패하면 되돌릴 수 없다.
+    ///
+    /// ⚠ **판정은 설정 화면·서버와 같아야 한다.** 예전 편집기는 운세를 **생년월일 하나만**
+    /// 보고 통과시켰는데(설정 화면은 `FortunePromptInputFormat.isComplete` 로 성별·
+    /// 생년월일·시간 셋을 다 본다), 그래서 편집기로 넣은 값은 서버의
+    /// `fortune_ready`(`lib/dynamic-prompt-settings.ts` — 셋 다 있어야 true)를 만족하지
+    /// 못해 **어디에도 반영되지 않았다.** 사용자는 저장했다고 믿고 알람을 맞추는데
+    /// 울릴 때 운세 문구가 안 나온다.
+    /// 규칙을 새로 쓰지 말고 `isComplete` 를 그대로 가져다 쓴다.
     private var saveEnabled: Bool {
         switch draftContext {
-        case "wake_weather": return !draftWeatherCity.trimmingCharacters(in: .whitespaces).isEmpty
-        case "wake_fortune": return !draftFortuneBirthDate.trimmingCharacters(in: .whitespaces).isEmpty
-        case MessageSettingsResult.manualContext: return !draftManualText.trimmingCharacters(in: .whitespaces).isEmpty
-        default: return true
+        case "wake_weather":
+            return !draftWeatherCity.trimmingCharacters(in: .whitespaces).isEmpty
+        case "wake_fortune":
+            return FortunePromptInputFormat.isComplete(
+                gender: draftFortuneGender,
+                birthDate: draftFortuneBirthDate,
+                birthTime: draftFortuneBirthTime
+            )
+        case MessageSettingsResult.manualContext:
+            return !draftManualText.trimmingCharacters(in: .whitespaces).isEmpty
+        default:
+            return true
         }
     }
 

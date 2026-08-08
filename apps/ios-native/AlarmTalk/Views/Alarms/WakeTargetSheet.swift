@@ -13,50 +13,56 @@ struct WakeTargetSheet: View {
     let onSelectSelf: () -> Void
     let onSelectRecipient: (FamilyGroupMember) -> Void
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("누구를 깨울까요?")
-                .font(.title3.weight(.bold))
-                .foregroundStyle(theme.palette.onSurface)
-                .padding(.bottom, 20)
+    /// 목적지 — 나 또는 구성원.
+    private enum Target: Identifiable {
+        case myself
+        case member(FamilyGroupMember)
 
-            Button(action: onSelectSelf) {
+        var id: String {
+            switch self {
+            case .myself: return "__self__"
+            case .member(let m): return m.userId
+            }
+        }
+    }
+
+    private var targets: [Target] { [.myself] + recipients.map(Target.member) }
+
+    var body: some View {
+        // 껍데기는 다른 선택 시트와 공유한다 — 제목 스타일·행 높이·구분선이 화면마다
+        // 다르지 않게(`SelectionSheet` 주석). 여기는 '지금 고른 값' 이 없는 목적지
+        // 고르기라 `selectedID` 를 비워 체크마크가 뜨지 않는다.
+        SelectionSheet(
+            title: "누구를 깨울까요?",
+            items: targets,
+            selectedID: nil,
+            onSelect: { target in
+                switch target {
+                case .myself: onSelectSelf()
+                case .member(let m): onSelectRecipient(m)
+                }
+            }
+        ) { target in
+            switch target {
+            case .myself:
                 Text("내 알람 맞추기")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(theme.palette.onSurface)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            ForEach(recipients) { recipient in
-                Divider()
-                Button {
-                    onSelectRecipient(recipient)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(recipient.name?.nilIfBlank ?? recipient.email ?? "구성원")
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(theme.palette.onSurface)
-                        // 상대가 알람을 받지 않는 시간대를 **고르기 전에** 보여준다.
-                        // 편집기에서야 막히면 시각을 다 정한 뒤에 되돌아와야 한다.
-                        let quiet = FamilyAlarmScheduleRules.quietScheduleLabel(recipient)
-                        if !quiet.isEmpty {
-                            Text("받지 않는 시간: \(quiet)")
-                                .font(.footnote)
-                                .foregroundStyle(theme.palette.onSurfaceVariant)
-                        }
+            case .member(let recipient):
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recipient.name?.nilIfBlank ?? recipient.email ?? "구성원")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(theme.palette.onSurface)
+                    // 상대가 알람을 받지 않는 시간대를 **고르기 전에** 보여준다.
+                    // 편집기에서야 막히면 시각을 다 정한 뒤에 되돌아와야 한다.
+                    let quiet = FamilyAlarmScheduleRules.quietScheduleLabel(recipient)
+                    if !quiet.isEmpty {
+                        Text("받지 않는 시간: \(quiet)")
+                            .font(.footnote)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

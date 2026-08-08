@@ -278,104 +278,56 @@ struct SettingsValueButton: View {
 /// 로드 완료 여부(`loaded`)와 쓰기 진행 여부(`busy`)는 화면 로컬 상태로 추적한다.
 /// '공휴일 달력' 국가 선택 시트. Android `HolidayCountryPickerDialog`(`ui/settings/SettingsScreen.kt`)
 /// 의 라디오 목록을 이식 — 행을 누르면 즉시 적용하고 닫는다.
+/// 선택 시트는 공용 껍데기(`SelectionSheet`)를 쓴다 — 라디오 원·'선택됨' 알약을
+/// 화면마다 새로 만들지 않는다(자세한 이유는 `SelectionSheet` 주석).
 private struct HolidayCountryPickerSheet: View {
     let current: String
     let onDismiss: () -> Void
     let onSelect: (String) -> Void
 
+    private struct CountryCode: Identifiable { let id: String }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSheetHeader(title: "공휴일 달력", onDismiss: onDismiss)
-            VStack(spacing: 4) {
-                ForEach(HolidayStore.supportedCountryCodes, id: \.self) { code in
-                    Button {
-                        onSelect(code)
-                    } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: code == current ? "largecircle.fill.circle" : "circle")
-                                .font(.title3)
-                                .foregroundStyle(code == current ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
-                            Text("\(HolidayCountryFlag.emoji(for: code)) \(HolidayStore.localizedCountryName(code))")
-                                .foregroundStyle(AlarmTalkTheme.text)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 12)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            Spacer(minLength: 0)
+        SelectionSheet(
+            title: "공휴일 달력",
+            items: HolidayStore.supportedCountryCodes.map(CountryCode.init),
+            selectedID: current,
+            onSelect: { onSelect($0.id) }
+        ) { item in
+            Text("\(HolidayCountryFlag.emoji(for: item.id)) \(HolidayStore.localizedCountryName(item.id))")
+                .foregroundStyle(AlarmTalkTheme.text)
         }
-        .padding(20)
-        .homeGradientBackground()
     }
 }
 
+/// 테마 선택 — 공용 시트를 쓴다(아이콘 + 제목 + 설명 라벨).
 struct ThemeModePickerSheet: View {
     let current: AlarmTalkThemeMode
     let onDismiss: () -> Void
     let onSelect: (AlarmTalkThemeMode) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSheetHeader(title: "테마 선택", subtitle: "휴대폰 설정과 앱 화면 모드를 선택해요.", onDismiss: onDismiss)
-            VStack(spacing: 10) {
-                ForEach(AlarmTalkThemeMode.allCases) { mode in
-                    Button {
-                        onSelect(mode)
-                    } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(mode == current ? AlarmTalkTheme.primary : AlarmTalkTheme.surface)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(AlarmTalkTheme.outline, lineWidth: 1)
-                                    )
-                                Image(systemName: mode.systemImage)
-                                    .font(.title3)
-                                    .foregroundStyle(mode == current ? Color.white : AlarmTalkTheme.primary)
-                            }
-                            .frame(width: 42, height: 42)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(mode.pickerTitle)
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(AlarmTalkTheme.text)
-                                Text(mode.subtitle)
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-                            }
-                            Spacer()
-                            if mode == current {
-                                Text("선택됨")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.white)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(AlarmTalkTheme.primary, in: Capsule())
-                            }
-                        }
-                        .padding(14)
-                        .background(
-                            mode == current
-                                ? AlarmTalkTheme.primary.opacity(0.16)
-                                : AlarmTalkTheme.surfaceVariant.opacity(0.42),
-                            in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.button, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.button, style: .continuous)
-                                .stroke(mode == current ? AlarmTalkTheme.primary.opacity(0.52) : AlarmTalkTheme.outline, lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
+        SelectionSheet(
+            title: "화면 테마",
+            items: AlarmTalkThemeMode.allCases,
+            selectedID: current.id,
+            onSelect: onSelect
+        ) { mode in
+            HStack(spacing: 12) {
+                Image(systemName: mode.systemImage)
+                    .font(.title3)
+                    .foregroundStyle(AlarmTalkTheme.primary)
+                    .frame(width: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(mode.pickerTitle)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(AlarmTalkTheme.text)
+                    Text(mode.subtitle)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
             }
-            Spacer(minLength: 0)
         }
-        .padding(20)
-        .homeGradientBackground()
     }
 }
 
