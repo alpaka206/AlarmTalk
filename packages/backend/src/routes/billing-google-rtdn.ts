@@ -10,8 +10,10 @@ import {
   notifyPlanChanged,
   resolvePlanAfterSuspend,
   schedulePaidVoiceRetention,
+  propagateGroupMemberPlans,
   type ActiveSubscription,
 } from '../lib/billing-cancel';
+import { sendPaymentFailedPush, sendPlanChangedPush } from '../lib/fcm';
 import { timingSafeEqualStr } from '../lib/timing-safe-equal';
 import {
   acknowledgeGoogleSubscription,
@@ -243,7 +245,34 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         accessToken,
       });
     }
-    logStructured('info', { at: 'billing.google.rtdn', action: 'entitle', state, userPk });
+    // ⚠ **멤버 권한도 되돌린다.** 보류 때 멤버들을 free 로 내렸으므로(위 isRecoverable
+    // 갈래), 여기서 복원하지 않으면 소유자만 살아나고 **가족·커플 멤버는 영영 무료로
+    // 남는다** — 보류 전파보다 더 나쁜 버그가 된다.
+    // 그룹은 보류 중에도 보존되므로 재초대 없이 그대로 살아난다.
+    const groupRes = await db.execute({
+      sql: `SELECT plan_group_id FROM subscriptions
+            WHERE user_id = ? AND status = 'active' AND plan_group_id IS NOT NULL
+            ORDER BY starts_at DESC LIMIT 1`,
+      args: [userPk],
+    });
+    const restoredGroupId =
+      groupRes.rows.length > 0 ? (groupRes.rows[0]!.plan_group_id as string | null) : null;
+    const restoredMembers = restoredGroupId
+      ? await propagateGroupMemberPlans(db, restoredGroupId, userPk, false)
+      : [];
+    if (restoredMembers.length > 0) {
+      // 조용한 신호로 충분하다 — 클라가 재조회해 잠긴 목소리 알람을 되살리고
+      // 그 결과를 자기 화면에서 알린다. 여기서 또 알림을 띄우면 말이 두 번 나온다.
+      await sendPlanChangedPush(db, c.env, restoredMembers);
+    }
+
+    logStructured('info', {
+      at: 'billing.google.rtdn',
+      action: 'entitle',
+      state,
+      userPk,
+      restoredMembers: restoredMembers.length,
+    });
     return c.json({ success: true, action: 'entitled' });
   }
 
@@ -262,7 +291,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   // Play 권위 재조회(reconcile)가 보정한다.
   const mappedRes = mappedSubscriptionId
     ? await db.execute({
-        sql: `SELECT s.plan_id, s.plan_group_id, p.plan_type
+        sql: `SELECT s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
               FROM subscriptions s JOIN plans p ON p.id = s.plan_id
               WHERE s.id = ? AND s.user_id = ? AND s.status = 'active'`,
         args: [mappedSubscriptionId, userPk],
@@ -287,6 +316,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
     userPk,
     planId: String(mappedRow.plan_id),
     planType: String(mappedRow.plan_type),
+    planKey: String(mappedRow.plan_key),
     planGroupId: (mappedRow.plan_group_id as string | null) ?? null,
   };
 
@@ -340,13 +370,33 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
       userPk,
       mappedSubscription.subscriptionId,
     );
+
+    // ⚠ **멤버들도 함께 회수한다.** 예전에는 소유자만 free 가 되고 그룹 멤버는 유료
+    // 그대로였다 — 소유자는 돈을 안 내는데 가족·커플 전원이 최대 30일(Play 계정보류)간
+    // 유료 기능을 계속 썼다. 게다가 멤버 화면에는 공유 목소리가 멀쩡히 보이는데 그걸로
+    // 새 알람을 만들면 404 로 막혀서 '보이는데 안 되는' 상태였다.
+    // 그룹 구조(plan_group_members·멤버 구독 행)는 그대로 둔다 — 결제가 복구되면
+    // 재초대 없이 살아나야 한다(커플도 같은 경로다).
+    const suspendedMembers = mappedSubscription.planGroupId
+      ? await propagateGroupMemberPlans(db, mappedSubscription.planGroupId, userPk, true)
+      : [];
+
     logStructured('info', {
       at: 'billing.google.rtdn',
       action: 'suspend',
       state,
       userPk,
       keptPlanType,
+      suspendedMembers: suspendedMembers.length,
     });
+
+    // ⚠ 푸시는 **DB 쓰기가 끝난 뒤에** 쏜다(FCM 은 네트워크 I/O). 실패해도 흐름을 깨지
+    // 않는다 — 정확성은 클라의 재조회가 보장하고 푸시는 즉시성만 담당한다.
+    await sendPaymentFailedPush(db, c.env, {
+      ownerUserPk: userPk,
+      memberUserPks: suspendedMembers,
+    });
+
     return c.json({ success: true, action: 'suspended' });
   }
 

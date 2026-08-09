@@ -23,7 +23,7 @@ import {
   fetchAppleSubscriptionStatus,
   type AppleSubscriptionStatus,
 } from './apple-storekit';
-import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
+import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses, isGroupPlanType } from '../routes/billing-helpers';
 import { notifyDowngradedAlarms, sendPlanChangedPush } from './fcm';
 import type { Env } from '../types';
 
@@ -47,7 +47,20 @@ export interface ActiveSubscription {
   subscriptionId: string;
   userPk: string;
   planId: string;
+  /**
+   * **행동 분류** — 그룹을 갖는가(`isGroupPlanType`). 커플도 여기서는 'family' 다.
+   * 그룹 생성·초대·해체 같은 **구조** 판정에 쓴다.
+   */
   planType: string;
+  /**
+   * **상품** — `personal` / `couple` / `family`.
+   *
+   * ⚠ 커플과 가족의 **차별점은 여기서 가른다.** 지금은 정원(2 vs 5)만 다르지만,
+   * 나중에 커플에만 있는 기능이 생기면 `plan_type` 을 쪼갤 게 아니라 이 값을 본다 —
+   * `plan_type` 은 "그룹형인가" 라는 구조 질문이고, 상품 차이는 `key` 의 몫이다.
+   * (쪼개면 그룹 경로 전부가 목록 검사가 되고, 한 곳만 빠뜨려도 커플이 조용히 깨진다.)
+   */
+  planKey: string;
   planGroupId: string | null;
 }
 
@@ -57,7 +70,7 @@ export async function findActiveSubscriptionsByUserPk(
   userPk: string,
 ): Promise<ActiveSubscription[]> {
   const res = await db.execute({
-    sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, p.plan_type
+    sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, p.plan_type, p.key AS plan_key
           FROM subscriptions s JOIN plans p ON p.id = s.plan_id
           WHERE s.user_id = ? AND s.status = 'active'
           ORDER BY s.starts_at DESC`,
@@ -68,6 +81,7 @@ export async function findActiveSubscriptionsByUserPk(
     userPk: String(r.user_id),
     planId: String(r.plan_id),
     planType: String(r.plan_type),
+    planKey: String(r.plan_key),
     planGroupId: (r.plan_group_id as string | null) ?? null,
   }));
 }
@@ -374,6 +388,86 @@ export async function resolvePlanAfterSuspend(
 }
 
 /**
+ * 보류/복구를 **그룹 멤버 전체에 전파**한다. 소유자는 호출부가 따로 처리한다.
+ *
+ * ⚠ **왜 필요한가.** `resolvePlanAfterSuspend` 는 인자로 받은 **한 사람**만 처리한다.
+ * 그래서 소유자 결제가 밀려도 멤버들의 `users.plan` 은 유료 그대로였다 — 소유자는
+ * 돈을 안 내는데 가족·커플 멤버 전원이 최대 30일(Play 계정보류)간 유료 기능을 계속
+ * 썼다. 게다가 멤버 화면에는 공유 목소리가 멀쩡히 보이는데 그걸로 새 알람을 만들면
+ * 404 로 막혀서(소유자 플랜 게이트), **보이는데 안 되는** 상태가 됐다.
+ *
+ * ⚠ **그룹 구조는 건드리지 않는다.** `plan_group_members` 와 멤버의 `subscriptions`
+ * 행은 그대로 둔다 — 결제가 복구되면 재초대 없이 그대로 살아나야 한다. 카드 하나
+ * 만료됐다고 가족 다섯 명을 다시 초대하게 만들 수는 없다.
+ *
+ * ⚠ **멤버가 자기 개인 구독을 따로 가진 경우를 지켜야 한다.** 그래서 값을 직접
+ * 대입하지 않고 `resolvePlanAfterSuspend` 를 그대로 재사용한다 — 그 함수가 남은 활성
+ * 구독에서 plan 을 다시 계산하므로, 자기 결제가 있으면 그 등급이 유지된다.
+ *
+ * 커플도 같은 경로다(`isGroupPlanType` 주석 참조 — 커플은 정원 2명짜리 그룹이다).
+ *
+ * @param suspend `true` 면 그룹 구독을 제외하고 재계산(→ 대개 free),
+ *                `false` 면 제외 없이 재계산(→ 그룹 플랜으로 복구).
+ * @returns 실제로 plan 이 바뀐 멤버들의 userPk (알림 대상).
+ */
+export async function propagateGroupMemberPlans(
+  db: DbExecutor,
+  planGroupId: string,
+  ownerUserPk: string,
+  suspend: boolean,
+): Promise<string[]> {
+  const memberRes = await db.execute({
+    sql: `SELECT user_id FROM plan_group_members WHERE plan_group_id = ? AND user_id != ?`,
+    args: [planGroupId, ownerUserPk],
+  });
+
+  const affected: string[] = [];
+  for (const row of memberRes.rows) {
+    const memberPk = String(row.user_id);
+
+    const before = await db.execute({
+      sql: `SELECT plan FROM users WHERE id = ?`,
+      args: [memberPk],
+    });
+    const planBefore = before.rows.length > 0 ? String(before.rows[0]!.plan ?? 'free') : 'free';
+
+    // 보류: 이 그룹에 묶인 멤버 구독을 **제외**하고 재계산한다. 멤버가 자기 개인
+    // 구독을 따로 샀다면 그건 그대로 남는다.
+    // 복구: 제외 없이 재계산 — 그룹 구독이 다시 잡혀 원래 등급으로 돌아온다.
+    let excludeSubscriptionId = '';
+    if (suspend) {
+      const memberSubRes = await db.execute({
+        sql: `SELECT id FROM subscriptions
+              WHERE user_id = ? AND status = 'active' AND plan_group_id = ?`,
+        args: [memberPk, planGroupId],
+      });
+      // 한 멤버가 같은 그룹에 활성 구독을 둘 이상 갖는 일은 없지만, 있어도
+      // 전부 제외해야 한다 — 하나만 빼면 나머지가 유료로 남는다.
+      for (const subRow of memberSubRes.rows) {
+        excludeSubscriptionId = String(subRow.id);
+        await resolvePlanAfterSuspend(db, memberPk, excludeSubscriptionId);
+      }
+      if (memberSubRes.rows.length === 0) {
+        // 그룹 멤버인데 구독 행이 없다 — 재계산만 해 둔다(방어적).
+        await resolvePlanAfterSuspend(db, memberPk, '');
+      }
+    } else {
+      await resolvePlanAfterSuspend(db, memberPk, '');
+    }
+
+    const after = await db.execute({
+      sql: `SELECT plan FROM users WHERE id = ?`,
+      args: [memberPk],
+    });
+    const planAfter = after.rows.length > 0 ? String(after.rows[0]!.plan ?? 'free') : 'free';
+    // ⚠ **바뀐 사람만 알린다.** 안 바뀐 멤버(자기 결제가 따로 있는 사람)에게
+    // "결제가 실패했어요" 를 보내면 자기 카드에 문제가 생긴 줄 안다.
+    if (planBefore !== planAfter) affected.push(memberPk);
+  }
+  return affected;
+}
+
+/**
  * 소유 그룹 해체: 소유자를 제외한 멤버들의 그룹 연동 구독을 취소하고 plan 을 재정렬한 뒤
  * 멤버 행을 전부 지운다. cancelSubscriptionImmediate 의 소유자 경로와, 그룹 연결이 빠진
  * 구독(스크립트 부여/레거시)을 위한 방어 스윕이 공유한다.
@@ -466,7 +560,7 @@ export async function cancelSubscriptionImmediate(
   // 그룹 연결이 빈(레거시) family 타입(커플 포함) 활성 구독이 남아 있는 경우.
   const remaining = await findActiveSubscriptionsByUserPk(db, subscription.userPk);
   const hasUnlinkedGroupCapablePlan = remaining.some(
-    (s) => s.planType === 'family' && !s.planGroupId,
+    (s) => isGroupPlanType(s.planType) && !s.planGroupId,
   );
   const ownedGroups = await db.execute({
     sql: `SELECT id FROM plan_groups WHERE owner_user_id = ?`,
@@ -576,7 +670,7 @@ export async function createNewSubscriptionForPlan(
   const subscriptionId = crypto.randomUUID();
   let planGroupId: string | null = null;
 
-  if (params.planType === 'family') {
+  if (isGroupPlanType(params.planType)) {
     planGroupId = crypto.randomUUID();
     await db.execute({
       sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
@@ -608,7 +702,7 @@ export async function createNewSubscriptionForPlan(
     args: [planTypeToUserPlan(params.planType), params.userPk],
   });
 
-  if (params.planType === 'family') {
+  if (isGroupPlanType(params.planType)) {
     await issueVoucherCode(db, {
       kind: 'invite',
       planId: params.planId,
@@ -639,7 +733,7 @@ async function reconcileGoogleBeforeExpiry(
     expiresAt: string;
     now: Date;
   },
-): Promise<'expire' | 'skip'> {
+): Promise<'expire' | 'skip' | 'suspend'> {
   const txnRes = await db.execute({
     sql: `SELECT provider_transaction_id FROM store_transactions
           WHERE subscription_id = ? AND provider = 'google'`,
@@ -744,7 +838,7 @@ async function reconcileAppleBeforeExpiry(
     expiresAt: string;
     now: Date;
   },
-): Promise<'expire' | 'skip'> {
+): Promise<'expire' | 'skip' | 'suspend'> {
   const txnRes = await db.execute({
     sql: `SELECT provider_transaction_id FROM store_transactions
           WHERE subscription_id = ? AND provider = 'apple'`,
@@ -780,9 +874,12 @@ async function reconcileAppleBeforeExpiry(
   // ⚠ ACTIVE 만 보면 안 된다. 결제 재시도(3)와 유예기간(4)도 **아직 권한이 있다** —
   // 카드가 잠깐 막힌 사용자를 그 자리에서 무료로 떨어뜨리면, 결제가 통과한 뒤에도
   // 알람은 이미 잠긴 채다. 구글 갈래가 CANCELED 를 살려 두는 것과 같은 취지다.
+  // ⚠ **재시도(3)와 유예(4)는 다르다.** 유예는 애플이 **명시적으로 접근을 허용**하는
+  // 기간이라 그대로 유료다. 재시도는 유예가 끝났거나 애초에 유예를 안 걸어 둔 상태로,
+  // 결제가 실패한 채 카드만 다시 긁고 있는 것이다 — 구글의 ON_HOLD 에 해당한다.
+  // 정책(사용자 확정): **결제 실패 보류 기간에는 free.** 그래서 3 은 권한에서 뺀다.
   const entitledStatuses: number[] = [
     APPLE_SUBSCRIPTION_STATUS.ACTIVE,
-    APPLE_SUBSCRIPTION_STATUS.IN_BILLING_RETRY,
     APPLE_SUBSCRIPTION_STATUS.IN_GRACE_PERIOD,
   ];
   const expiryMs = status.expiresDate ?? NaN;
@@ -790,7 +887,13 @@ async function reconcileAppleBeforeExpiry(
     entitledStatuses.includes(status.status) &&
     Number.isFinite(expiryMs) &&
     expiryMs > params.now.getTime();
-  if (!stillEntitled) return 'expire';
+  if (!stillEntitled) {
+    // ⚠ **재시도는 회복형이라 'expire' 로 보내면 안 된다.** expire 는 그룹을 해체하고
+    // 멤버를 전원 떼어내는 종료 처리라, 카드가 며칠 막힌 것으로 가족 다섯 명이
+    // 재초대 대상이 된다. 권한만 회수하고 구조는 남기는 'suspend' 로 보낸다
+    // (구글의 ON_HOLD 갈래와 같은 취급).
+    return status.status === APPLE_SUBSCRIPTION_STATUS.IN_BILLING_RETRY ? 'suspend' : 'expire';
+  }
 
   // 애플이 아직 유효하다고 한다 — 만료 대신 애플 권위값으로 연장한다.
   // 자동갱신이 꺼져 있으면(사용자가 App Store 에서 해지) 기간종료 해지 예약 상태로 세운다.
@@ -846,7 +949,7 @@ async function reconcileStoreBeforeExpiry(
     expiresAt: string;
     now: Date;
   },
-): Promise<'expire' | 'skip'> {
+): Promise<'expire' | 'skip' | 'suspend'> {
   const google = await reconcileGoogleBeforeExpiry(db, env, params);
   if (google === 'skip') return 'skip';
   // 구글 트랜잭션이 없어 'expire' 가 나왔을 수 있다 — 애플도 물어본다.
@@ -896,7 +999,7 @@ export async function processSubscriptionExpiry(
   const notifyUserPks = new Set<string>();
   const dueRes = await db.execute({
     sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, s.next_plan_id,
-                 s.expires_at, p.plan_type
+                 s.expires_at, p.plan_type, p.key AS plan_key
           FROM subscriptions s JOIN plans p ON p.id = s.plan_id
           WHERE s.status = 'active'
             AND s.cancel_at_period_end = 1
@@ -909,6 +1012,7 @@ export async function processSubscriptionExpiry(
       userPk: String(r.user_id),
       planId: String(r.plan_id),
       planType: String(r.plan_type),
+      planKey: String(r.plan_key),
       planGroupId: (r.plan_group_id as string | null) ?? null,
     };
     const nextPlanId = (r.next_plan_id as string | null) ?? null;
@@ -923,6 +1027,15 @@ export async function processSubscriptionExpiry(
       now,
     });
     if (decision === 'skip') continue;
+    // ⚠ **보류는 종료가 아니다.** 권한(소유자+멤버 plan)만 회수하고 그룹·구독 행은
+    // 남긴다 — 결제가 복구되면 재초대 없이 살아나야 한다(구글 ON_HOLD 와 같은 취급).
+    if (decision === 'suspend') {
+      await resolvePlanAfterSuspend(db, active.userPk, active.subscriptionId);
+      if (active.planGroupId) {
+        await propagateGroupMemberPlans(db, active.planGroupId, active.userPk, true);
+      }
+      continue;
+    }
 
     // 소유자 구독이 만료/변경되면(무료 강등뿐 아니라 개인플랜 예약 전환 포함) 소유 그룹이 해체돼
     // 멤버가 강등된다. cancelSubscriptionImmediate 가 취소 당사자+해체 멤버를 반환하므로 그대로
@@ -957,7 +1070,7 @@ export async function processSubscriptionExpiry(
   }
 
   const expiredRes = await db.execute({
-    sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, s.expires_at, p.plan_type
+    sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id, s.expires_at, p.plan_type, p.key AS plan_key
           FROM subscriptions s JOIN plans p ON p.id = s.plan_id
           WHERE s.status = 'active' AND s.expires_at <= ? AND s.cancel_at_period_end = 0`,
     args: [now.toISOString()],
@@ -975,6 +1088,13 @@ export async function processSubscriptionExpiry(
       now,
     });
     if (decision === 'skip') continue;
+    // 보류 — 권한만 회수하고 그룹은 남긴다(위 갈래와 같은 이유).
+    if (decision === 'suspend') {
+      await resolvePlanAfterSuspend(db, userPk, subscriptionId);
+      const groupId = (r.plan_group_id as string | null) ?? null;
+      if (groupId) await propagateGroupMemberPlans(db, groupId, userPk, true);
+      continue;
+    }
 
     // 일반 만료도 소유자면 그룹 해체 → 멤버 강등. cancelSubscriptionImmediate 반환값(당사자+해체
     // 멤버)을 그대로 통지 대상에 넣는다.
@@ -986,6 +1106,7 @@ export async function processSubscriptionExpiry(
           userPk,
           planId: String(r.plan_id),
           planType,
+          planKey: String(r.plan_key),
           planGroupId: (r.plan_group_id as string | null) ?? null,
         },
         now,

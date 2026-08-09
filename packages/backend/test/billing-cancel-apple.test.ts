@@ -153,25 +153,44 @@ describe('processSubscriptionExpiry — Apple reconciliation', () => {
     expect(findCall('UPDATE users SET plan')?.args[0]).toBe('plus');
   });
 
-  // ⚠ ACTIVE 만 보면 카드가 잠깐 막힌 사용자를 그 자리에서 무료로 떨어뜨린다 —
-  // 결제가 통과한 뒤에도 알람은 이미 잠긴 채다.
-  for (const [label, status] of [
-    ['결제 재시도 중(3)', 3],
-    ['유예 기간(4)', 4],
-  ] as const) {
-    it(`${label}도 아직 권한이 있다 — 연장한다`, async () => {
-      stubAppleFetch(appleStatusBody({ status }));
-      pushAppleSubscriptionDue();
-      pushExtensionWrites();
+  // ⚠ **재시도(3)와 유예(4)는 다르다.**
+  //  - 4(유예): 애플이 **명시적으로 접근을 허용**하는 기간 → 유료 유지.
+  //  - 3(재시도): 유예가 끝났거나 애초에 없는 상태로 결제가 실패한 채 카드만 다시 긁는다.
+  //    구글의 ON_HOLD 에 해당하고, 정책상 **보류 기간에는 free** 다.
+  it('유예 기간(4)은 아직 권한이 있다 — 연장한다', async () => {
+    stubAppleFetch(appleStatusBody({ status: 4 }));
+    pushAppleSubscriptionDue();
+    pushExtensionWrites();
 
-      await processSubscriptionExpiry(mockDB.client as never, APPLE_ENV as never, NOW);
+    await processSubscriptionExpiry(mockDB.client as never, APPLE_ENV as never, NOW);
 
-      expect(findCall("status = 'cancelled'")).toBeUndefined();
-      expect(findCall('UPDATE subscriptions')?.args[0]).toBe(
-        new Date(APPLE_FUTURE_MS).toISOString(),
-      );
-    });
-  }
+    expect(findCall("status = 'cancelled'")).toBeUndefined();
+    expect(findCall('UPDATE subscriptions')?.args[0]).toBe(new Date(APPLE_FUTURE_MS).toISOString());
+  });
+
+  // ⚠ **재시도는 종료가 아니다.** 권한만 회수하고 그룹·구독 행은 남겨야 한다 —
+  //    'expire' 로 보내면 그룹이 해체돼 카드가 며칠 막힌 것으로 가족 전원이
+  //    재초대 대상이 된다.
+  it('결제 재시도(3)는 free 로 내리되 그룹·구독은 보존한다', async () => {
+    stubAppleFetch(appleStatusBody({ status: 3 }));
+    pushAppleSubscriptionDue();
+    // 소유자 재계산
+    mockDB.pushResult([
+      { sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
+    ]);
+    mockDB.pushResult([], 1); // UPDATE users SET plan → free
+    mockDB.pushResult([]); // 일반 만료 대상 없음
+    mockDB.pushResult([]); // sweep 대상 없음
+
+    await processSubscriptionExpiry(mockDB.client as never, APPLE_ENV as never, NOW);
+
+    // 권한은 회수된다.
+    expect(findCall('UPDATE users SET plan = ?')?.args).toEqual(['free', 'user-pk-1']);
+    // ⚠ 종료 처리(그룹 해체·구독 취소·음성 보관 예약)는 하지 않는다.
+    expect(findCall("status = 'cancelled'")).toBeUndefined();
+    expect(findCall('DELETE FROM plan_group_members')).toBeUndefined();
+    expect(findCall('INSERT INTO paid_voice_retention')).toBeUndefined();
+  });
 
   it('사용자가 App Store 에서 해지했으면(autoRenewStatus=0) 연장하되 기간종료 해지로 표시한다', async () => {
     stubAppleFetch(appleStatusBody({ autoRenewStatus: 0 }));

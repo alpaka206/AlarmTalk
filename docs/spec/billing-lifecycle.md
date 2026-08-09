@@ -27,6 +27,42 @@
 - Play 호출이 실패하면 502 + `manage_url`, **DB 무변경**. 이미 성공한 토큰이 있어도
   재시도가 안전하다(이미 취소된 토큰 재시도는 성공으로 수렴).
 
+## 결제 실패 — 보류는 **그룹 전체**에 걸리고, 구조는 남는다
+
+결제가 실패하면 스토어가 재시도한다(Play `ON_HOLD`, Apple 상태 3). 이때:
+
+| 대상 | 처리 |
+| --- | --- |
+| 소유자 | `users.plan = free` |
+| **같은 그룹 멤버 전원** | **`users.plan = free`** — 가족·커플 모두 |
+| 그룹·멤버십·구독 행 | **보존** |
+| 알림 | 소유자 "결제 수단을 확인하면 바로 다시 쓸 수 있어요" / 멤버 "이용권 주인의 결제가 확인되지 않아 공유 기능이 잠시 잠겼어요" |
+
+- ⚠ **멤버를 빼먹지 말 것.** 예전에는 소유자만 내려가서, 소유자는 돈을 안 내는데 가족·커플
+  전원이 최대 30일간 유료 기능을 계속 썼다. 게다가 멤버 화면에는 공유 목소리가 멀쩡히
+  보이는데 그걸로 새 알람을 만들면 404 로 막혀 **보이는데 안 되는** 상태였다.
+- ⚠ **그룹을 해체하지 말 것.** 카드가 며칠 막힌 것으로 가족 다섯 명을 재초대 대상으로
+  만들면 안 된다. 업계 표준(Spotify·Apple 가족공유)도 그룹은 유지하고 서비스만 멈춘다.
+- ⚠ **멤버가 자기 개인 구독을 따로 가진 경우를 지킨다.** 값을 직접 대입하지 말고
+  `resolvePlanAfterSuspend` 로 **남은 활성 구독에서 다시 계산**한다.
+- ⚠ **바뀐 사람에게만 알린다.** 자기 결제가 따로 있어 등급이 안 바뀐 멤버에게
+  "결제가 실패했어요" 를 보내면 자기 카드에 문제가 생긴 줄 안다.
+- ⚠ **복구도 같이 구현한다.** 보류만 넣고 복구를 빠뜨리면 멤버가 **영영 무료로 남아**
+  원래 버그보다 나빠진다. 결제가 되살아나면(`entitle`) 멤버 plan 을 다시 계산한다.
+
+### 유예(grace)와 재시도(retry)는 다르다
+
+| 스토어 | 유예 — 접근 허용 | 재시도 — 보류(free) |
+| --- | --- | --- |
+| Google Play | 그레이스 기간(구독 상태가 아직 ACTIVE 계열) | `SUBSCRIPTION_STATE_ON_HOLD` / `PAUSED` |
+| App Store | 상태 **4** `IN_GRACE_PERIOD` | 상태 **3** `IN_BILLING_RETRY` |
+
+유예는 스토어가 **명시적으로 접근을 허용**하는 기간이라 유료를 유지한다. 재시도는 유예가
+끝났거나 애초에 없는 상태다.
+
+⚠ 애플 재시도를 `expire` 로 보내면 **그룹이 해체된다** — 종료가 아니라 `suspend` 로 보내
+권한만 회수한다(`reconcileAppleBeforeExpiry`).
+
 ## 만료 — 크론 전에 스토어에 되묻는다
 
 만료 크론은 5분마다 돈다(`processSubscriptionExpiry`). `expires_at` 이 지났다고 바로
@@ -40,13 +76,15 @@
 
 | 판정 | 뜻 |
 | --- | --- |
-| `expire` | 스토어도 만료 / 결제 구독이 아님 / env 미설정 |
+| `expire` | 스토어도 만료 → **종료 처리**(그룹 해체 포함) |
+| `suspend` | 결제 재시도 중 → **권한만 회수**(그룹 보존, 위 「결제 실패」 절) |
 | `skip` | 스토어가 아직 유효 → **연장**했거나, 일시 장애 → 다음 회차 재시도 |
 
 - ⚠ **"활성" 만 보면 안 된다.** 아직 권한이 있는 상태가 더 있다:
   - Google: `SUBSCRIPTION_STATE_CANCELED`(기간종료 해지 예약)도 만료 전까지 유효
-  - Apple: `IN_BILLING_RETRY`(3) · `IN_GRACE_PERIOD`(4) 도 유효 — 카드가 잠깐 막힌
-    사용자를 그 자리에서 떨어뜨리면, 결제가 통과한 뒤에도 알람은 이미 잠긴 채다
+  - Apple: `IN_GRACE_PERIOD`(4) — 애플이 명시적으로 접근을 허용하는 기간이다
+  - ⚠ Apple `IN_BILLING_RETRY`(3)는 **권한이 없다**(보류). 다만 종료도 아니라서
+    `expire` 가 아니라 `suspend` 로 보낸다 — `expire` 로 보내면 그룹이 해체된다
 - ⚠ **일시 장애로 강등하지 말 것.** 스토어 API 가 5분 삐끗한 값으로 유료 사용자가 무료가
   된다. 단 **만료가 72시간 넘게 지났으면 강행**한다 — 안 그러면 좀비 구독이 영원히 남는다.
 - ⚠ **자동갱신이 꺼져 있으면 연장하되 `cancel_at_period_end = 1`** 로 세운다. 그래야
@@ -78,6 +116,10 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 | 만료 재조회 디스패처 | `lib/billing-cancel.ts` `reconcileStoreBeforeExpiry` | — | — |
 | 만료 재조회 — Google | 같은 파일 `reconcileGoogleBeforeExpiry` | — | — |
 | 만료 재조회 — Apple | 같은 파일 `reconcileAppleBeforeExpiry` | — | — |
+| 보류 — 그룹 전파 | `lib/billing-cancel.ts` `propagateGroupMemberPlans` | — | — |
+| 보류 — Google 진입점 | `routes/billing-google-rtdn.ts` 회복형 갈래 | — | — |
+| 보류 — Apple 진입점 | `reconcileAppleBeforeExpiry` → `'suspend'` | — | — |
+| 결제 실패 알림 | `lib/fcm.ts` `sendPaymentFailedPush` | `fcm/AlarmTalkMessagingService.kt` | 미구현(푸시 코드 없음) |
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | — | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | — | — |

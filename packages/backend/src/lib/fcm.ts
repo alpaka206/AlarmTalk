@@ -329,6 +329,54 @@ export async function notifyDowngradedAlarms(
   }
 }
 
+/**
+ * **결제 실패로 플랜이 보류됐다**는 알림 — 소유자와 멤버에게 **다른 문구**로 보낸다.
+ *
+ * ⚠ `sendPlanChangedPush` 와 달리 **눈에 보이는 알림**이다(title/body 를 채운다).
+ * 조용한 데이터 푸시로만 보내면 사용자는 어느 날 갑자기 목소리 알람이 잠긴 것을
+ * 발견하고 앱이 고장 났다고 생각한다 — 카드를 고치면 되는 일인데 그걸 모른다.
+ *
+ * ⚠ **문구가 갈려야 한다.** 소유자는 자기 카드를 고칠 수 있지만, 멤버는 할 수 있는 게
+ * 없다. 멤버에게 "결제 수단을 확인해 주세요" 를 보내면 자기 카드에 문제가 생긴 줄 알고
+ * 엉뚱한 곳을 뒤진다.
+ *
+ * ⚠ 호출은 **DB 쓰기가 끝난 뒤**에(FCM 은 네트워크 I/O). 실패해도 흐름을 깨지 않는다 —
+ * 정확성은 클라의 재조회가 보장하고 푸시는 즉시성만 담당한다.
+ */
+export async function sendPaymentFailedPush(
+  db: Client,
+  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  params: { ownerUserPk: string; memberUserPks: string[] },
+): Promise<void> {
+  const messages: FcmMessage[] = [];
+
+  const push = async (userId: string, title: string, body: string) => {
+    for (const token of await getTokensForUser(db, userId)) {
+      // channelId 를 알람 채널로 두면 결제 안내가 알람 소리로 울린다 — 일반 채널을 쓴다.
+      messages.push({ token, title, body, data: { type: 'plan_changed', channelId: 'general' } });
+    }
+  };
+
+  await push(
+    params.ownerUserPk,
+    '결제가 확인되지 않았어요',
+    '이용권이 잠시 멈췄어요. 결제 수단을 확인하면 바로 다시 쓸 수 있어요.',
+  );
+  // 소유자가 멤버 목록에 섞여 들어와도 두 번 보내지 않는다.
+  for (const memberPk of Array.from(new Set(params.memberUserPks))) {
+    if (memberPk === params.ownerUserPk) continue;
+    await push(
+      memberPk,
+      '함께 쓰는 이용권이 멈췄어요',
+      '이용권 주인의 결제가 확인되지 않아 공유 기능이 잠시 잠겼어요.',
+    );
+  }
+
+  if (messages.length === 0) return;
+  const results = await sendPushNotifications(messages, env);
+  await pruneStaleTokens(db, results);
+}
+
 export async function sendPlanChangedPush(
   db: Client,
   env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,

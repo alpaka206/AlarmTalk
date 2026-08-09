@@ -10,7 +10,7 @@
 import { issueVoucherCode } from './voucher-issue';
 import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser, clearPaidVoiceRetention } from './billing-cancel';
-import { planTypeToUserPlan, plannedMaxUses } from '../routes/billing-helpers';
+import { planTypeToUserPlan, plannedMaxUses, isGroupPlanType } from '../routes/billing-helpers';
 
 // 'apple' 은 마이그레이션 #96 이 store_transactions.provider CHECK 에 되돌린 값이다.
 // applyStoreEntitlement 자체는 원래부터 provider-agnostic 이라 로직 변경이 없다.
@@ -176,7 +176,7 @@ export async function applyStoreEntitlement(
   const subscriptionId = crypto.randomUUID();
   let planGroupId: string | null = null;
 
-  if (input.plan.plan_type === 'family') {
+  if (isGroupPlanType(input.plan.plan_type)) {
     planGroupId = crypto.randomUUID();
     await tx.execute({
       sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
@@ -201,7 +201,7 @@ export async function applyStoreEntitlement(
     args: [planTypeToUserPlan(input.plan.plan_type), input.userPk],
   });
 
-  if (input.plan.plan_type === 'family') {
+  if (isGroupPlanType(input.plan.plan_type)) {
     await issueVoucherCode(tx, {
       kind: 'invite',
       planId: input.plan.id,

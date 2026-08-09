@@ -413,8 +413,8 @@ describe('billing google RTDN', () => {
       mockDB.pushResult([TXN_ROW]); // store_transactions 매핑 (subscription_id='sub-old')
       mockDB.pushResult([ACTIVE_MAPPED_ROW]); // 매핑 구독이 현재 활성 (게이트 통과)
       mockDB.pushResult([
-        { sub_id: 'sub-other', user_id: 'user-pk-1', plan_id: 'plan-2', plan_group_id: null, plan_type: 'family' },
-        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal' },
+        { sub_id: 'sub-other', user_id: 'user-pk-1', plan_id: 'plan-2', plan_group_id: null, plan_type: 'family', plan_key: 'family' },
+        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
       ]); // 남은 활성 구독 (매핑 sub-old + 다른 유료 sub-other)
 
       const res = await buildApp().request(rtdnRequest(5), undefined, RTDN_ENV);
@@ -429,12 +429,62 @@ describe('billing google RTDN', () => {
       expect(findCall('UPDATE alarms')).toBeUndefined();
     });
 
+    // -------------------------------------------------------------------------
+    // 보류는 **그룹 전체**에 전파된다.
+    //
+    // ⚠ 예전에는 소유자만 free 가 되고 멤버는 유료 그대로였다 — 소유자는 돈을 안 내는데
+    //    가족·커플 전원이 최대 30일(Play 계정보류)간 유료 기능을 계속 썼다. 게다가 멤버
+    //    화면에는 공유 목소리가 멀쩡히 보이는데 그걸로 새 알람을 만들면 404 로 막혔다.
+    // ⚠ 그룹 구조는 **보존**해야 한다 — 결제가 복구되면 재초대 없이 살아나야 한다.
+    // -------------------------------------------------------------------------
+    it('suspend 시 그룹 멤버도 함께 free 로 내리되 그룹은 보존한다', async () => {
+      stubPlayLookup('SUBSCRIPTION_STATE_ON_HOLD', FUTURE);
+      mockDB.pushResult([TXN_ROW]);
+      // 매핑 구독이 그룹 소유 구독이다.
+      mockDB.pushResult([{ plan_id: 'plan-fam', plan_group_id: 'grp-1', plan_type: 'family', plan_key: 'family' }]);
+      // 소유자 재계산 — 남은 건 정지된 구독뿐 → free
+      mockDB.pushResult([
+        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-fam', plan_group_id: 'grp-1', plan_type: 'family', plan_key: 'family' },
+      ]);
+      mockDB.pushResult([], 1); // UPDATE users SET plan (소유자 → free)
+      // 그룹 멤버 목록
+      mockDB.pushResult([{ user_id: 'member-1' }]);
+      mockDB.pushResult([{ plan: 'family' }]); // 멤버 plan(before)
+      mockDB.pushResult([{ id: 'sub-member-1' }]); // 멤버의 그룹 구독
+      mockDB.pushResult([
+        { sub_id: 'sub-member-1', user_id: 'member-1', plan_id: 'plan-fam', plan_group_id: 'grp-1', plan_type: 'family', plan_key: 'family' },
+      ]); // 멤버 재계산 대상(제외되면 유료 없음)
+      mockDB.pushResult([], 1); // UPDATE users SET plan (멤버 → free)
+      mockDB.pushResult([{ plan: 'free' }]); // 멤버 plan(after)
+      mockDB.pushResult([]); // FCM 토큰 조회(소유자)
+      mockDB.pushResult([]); // FCM 토큰 조회(멤버)
+
+      const res = await buildApp().request(rtdnRequest(5), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).action).toBe('suspended');
+
+      // 소유자와 멤버 **둘 다** free 로 내려간다.
+      const planUpdates = mockDB.calls.filter((c) => c.sql.includes('UPDATE users SET plan = ?'));
+      expect(planUpdates.map((c) => c.args)).toEqual([
+        ['free', 'user-pk-1'],
+        ['free', 'member-1'],
+      ]);
+
+      // ⚠ 그룹·멤버십·구독 행은 건드리지 않는다(재초대 없이 복구되어야 한다).
+      expect(findCall('DELETE FROM plan_group_members')).toBeUndefined();
+      expect(findCall('DELETE FROM plan_groups')).toBeUndefined();
+      expect(findCall("status = 'cancelled'")).toBeUndefined();
+      // 회복형이라 음성 접근 정리도 하지 않는다.
+      expect(findCall('UPDATE voice_profiles')).toBeUndefined();
+    });
+
     it('suspend 시 매핑 구독뿐이면(다른 유료 구독 없음) free 로 내린다 (E)', async () => {
       stubPlayLookup('SUBSCRIPTION_STATE_PAUSED', FUTURE);
       mockDB.pushResult([TXN_ROW]);
       mockDB.pushResult([ACTIVE_MAPPED_ROW]);
       mockDB.pushResult([
-        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal' },
+        { sub_id: 'sub-old', user_id: 'user-pk-1', plan_id: 'plan-1', plan_group_id: null, plan_type: 'personal', plan_key: 'personal' },
       ]); // 남은 활성 구독은 매핑(정지된) 구독뿐 → 제외하면 유료 없음
 
       const res = await buildApp().request(rtdnRequest(6), undefined, RTDN_ENV);
