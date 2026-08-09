@@ -137,6 +137,53 @@ describe('fetchAppleTransaction', () => {
     );
   });
 
+  // ⚠ **출시 전·심사 중에는 프로덕션이 404 가 아니라 401 이다**(2026-08-10 실측).
+  // 401 에서 바로 던지면 샌드박스에 도달조차 못 해, TestFlight·심사 빌드가 만든
+  // 샌드박스 구독을 영영 확인할 수 없다.
+  it('프로덕션 401 이어도 샌드박스를 본다', async () => {
+    const config = await makeConfig();
+    const urls: string[] = [];
+    const f = (async (url: string) => {
+      urls.push(String(url));
+      if (String(url).includes('sandbox')) {
+        return new Response(
+          JSON.stringify({ signedTransactionInfo: signedTransactionInfo(txPayload()) }),
+          { status: 200 },
+        );
+      }
+      return new Response('unauthorized', { status: 401 });
+    }) as unknown as typeof fetch;
+
+    const info = await fetchAppleTransaction('2000000900000001', config, f);
+    expect(info.productId).toContain('personal_monthly');
+    expect(urls).toHaveLength(2);
+    expect(urls[1]).toContain('sandbox');
+  });
+
+  // ⚠ 여기가 가장 위험한 갈래다. 호출부(`reconcileAppleBeforeExpiry`)는 NotFound 를
+  // **즉시 만료**로 읽으므로, 키가 깨졌을 때 NotFound 로 흘리면 **돈을 내고 있는 애플
+  // 구독자가 전원 무료로 강등된다.** 일반 오류여야 `skip`(다음 크론 재시도)이 된다.
+  it('양쪽 다 401 이면 NotFound 가 아니라 오류를 던진다', async () => {
+    const config = await makeConfig();
+    const f = (async () => new Response('unauthorized', { status: 401 })) as unknown as typeof fetch;
+    const err = await fetchAppleTransaction('x', config, f).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(AppleTransactionNotFoundError);
+    expect(String(err)).toContain('401');
+  });
+
+  // 프로덕션이 안 열렸는데 샌드박스도 모르면 "존재하지 않는다" 고 단정할 수 없다 —
+  // 확인 불가는 fail-closed(오류 → skip)로 끝낸다.
+  it('프로덕션 401 + 샌드박스 404 도 만료로 단정하지 않는다', async () => {
+    const config = await makeConfig();
+    const f = (async (url: string) =>
+      String(url).includes('sandbox')
+        ? new Response('nope', { status: 404 })
+        : new Response('unauthorized', { status: 401 })) as unknown as typeof fetch;
+    const err = await fetchAppleTransaction('x', config, f).catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(AppleTransactionNotFoundError);
+  });
+
   // 다른 앱의 트랜잭션이 우리 구독으로 들어오면 안 된다.
   it('번들 ID 가 다르면 거부한다', async () => {
     const config = await makeConfig();
@@ -260,6 +307,40 @@ describe('fetchAppleSubscriptionStatus', () => {
       ],
     };
   }
+
+  // ⚠ 재조회는 이 함수를 쓴다 — 401 폴백이 없으면 출시 전·심사 중 애플 재조회가 통째로
+  // 죽고, NotFound 로 흘리면 유료 구독자가 전원 강등된다. `fetchAppleTransaction` 과 같은 규칙.
+  it('프로덕션 401 이어도 샌드박스를 본다', async () => {
+    const config = await makeConfig();
+    const urls: string[] = [];
+    const fetchMock = async (url: string) => {
+      urls.push(String(url));
+      return String(url).includes('sandbox')
+        ? new Response(JSON.stringify(statusBody()), { status: 200 })
+        : new Response('unauthorized', { status: 401 });
+    };
+    const result = await fetchAppleSubscriptionStatus(
+      ORIGINAL_ID,
+      config,
+      fetchMock as unknown as typeof fetch,
+    );
+    expect(result.status).toBe(1);
+    expect(urls).toHaveLength(2);
+    expect(urls[1]).toContain('sandbox');
+  });
+
+  it('양쪽 다 401 이면 NotFound 가 아니라 오류를 던진다', async () => {
+    const config = await makeConfig();
+    const fetchMock = async () => new Response('unauthorized', { status: 401 });
+    const err = await fetchAppleSubscriptionStatus(
+      ORIGINAL_ID,
+      config,
+      fetchMock as unknown as typeof fetch,
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(AppleTransactionNotFoundError);
+    expect(String(err)).toContain('401');
+  });
 
   it('구독 상태 엔드포인트를 부르고 최신 만료일을 돌려준다', async () => {
     const config = await makeConfig();

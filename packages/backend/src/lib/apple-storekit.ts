@@ -127,6 +127,35 @@ export class AppleTransactionNotFoundError extends Error {
 }
 
 /**
+ * 이 상태 코드가 **"그 환경이 우리에게 안 열려 있다"** 인가.
+ *
+ * ⚠ 이게 없으면 **출시 전·심사 중에 애플 재조회가 통째로 죽는다.** 앱이 아직 프로덕션에
+ * 없으면 프로덕션 호스트는 404 가 아니라 **401** 을 준다(2026-08-10 실측: production 401 /
+ * sandbox 400 `Invalid transaction id` — 샌드박스는 인증을 통과했다는 뜻이다).
+ * 401 에서 바로 throw 하면 **샌드박스에 도달조차 못 해서**, TestFlight·심사 빌드가 만든
+ * 샌드박스 구독을 영영 확인할 수 없다 — `docs/spec/billing-lifecycle.md` 가 경고한
+ * "프로덕션만 보면 심사에서 떨어진다" 가 정확히 이 경로다.
+ */
+function isEnvironmentClosed(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
+/**
+ * 어느 환경도 열리지 않았으면 **NotFound 가 아니라 오류로** 끝낸다.
+ *
+ * ⚠ 이 구분이 핵심이다. `AppleTransactionNotFoundError` 를 호출부
+ * (`billing-cancel.ts` 의 `reconcileAppleBeforeExpiry`)는 **"애플도 모르는 구독" = 즉시
+ * `expire`** 로 읽는다. 자격증명이 깨졌거나 키가 만료됐을 때 그 길로 흘리면, 돈을 내고
+ * 있는 애플 구독자가 **전원 한 번에 무료로 강등된다.** 일반 오류로 던지면 같은 호출부가
+ * `skip`(다음 크론 재시도)으로 처리한다 — fail-closed 다.
+ */
+function assertNoAuthFailure(authFailure: number | null, what: string): void {
+  if (authFailure !== null) {
+    throw new Error(`Apple ${what} lookup: no environment authorized (${authFailure})`);
+  }
+}
+
+/**
  * transactionId 로 애플에 트랜잭션을 조회한다.
  *
  * 프로덕션에 없으면 샌드박스를 한 번 더 본다 — 애플 권장 순서다. 심사 중인 앱과
@@ -141,11 +170,16 @@ export async function fetchAppleTransaction(
   const jwt = await signAppStoreServerJwt(config, nowMs);
   const path = `/transactions/${encodeURIComponent(transactionId)}`;
 
+  let authFailure: number | null = null;
   for (const base of [PRODUCTION_BASE, SANDBOX_BASE]) {
     const res = await fetchImpl(`${base}${path}`, {
       headers: { Authorization: `Bearer ${jwt}` },
     });
     if (res.status === 404) continue; // 다음 환경에서 다시 본다
+    if (isEnvironmentClosed(res.status)) {
+      authFailure = res.status;
+      continue; // 이 환경은 우리에게 안 열려 있다 — 다음 환경을 본다
+    }
     if (!res.ok) {
       throw new Error(`Apple transaction lookup failed (${res.status})`);
     }
@@ -160,6 +194,8 @@ export async function fetchAppleTransaction(
     }
     return info;
   }
+  // ⚠ 401 을 "없음" 으로 흘리면 안 된다 — 호출부가 NotFound 를 **즉시 만료**로 읽는다.
+  assertNoAuthFailure(authFailure, 'transaction');
   throw new AppleTransactionNotFoundError();
 }
 
@@ -203,11 +239,16 @@ export async function fetchAppleSubscriptionStatus(
   const jwt = await signAppStoreServerJwt(config, nowMs);
   const path = `/subscriptions/${encodeURIComponent(originalTransactionId)}`;
 
+  let authFailure: number | null = null;
   for (const base of [PRODUCTION_BASE, SANDBOX_BASE]) {
     const res = await fetchImpl(`${base}${path}`, {
       headers: { Authorization: `Bearer ${jwt}` },
     });
     if (res.status === 404) continue;
+    if (isEnvironmentClosed(res.status)) {
+      authFailure = res.status;
+      continue; // 출시 전 프로덕션이 여기 걸린다 — 샌드박스를 마저 본다
+    }
     if (!res.ok) throw new Error(`Apple subscription status lookup failed (${res.status})`);
 
     const body = (await res.json()) as {
@@ -251,6 +292,8 @@ export async function fetchAppleSubscriptionStatus(
       autoRenewStatus: renewal?.autoRenewStatus,
     };
   }
+  // ⚠ 401 을 "없음" 으로 흘리면 재조회가 **즉시 만료**로 떨어진다 — 위 헬퍼 주석 참조.
+  assertNoAuthFailure(authFailure, 'subscription status');
   throw new AppleTransactionNotFoundError();
 }
 
