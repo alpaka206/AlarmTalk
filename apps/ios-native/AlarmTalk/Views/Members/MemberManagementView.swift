@@ -271,8 +271,10 @@ struct MemberManagementView: View {
                             socialFeatures.statusMessage = "정원이 가득 차서 공유할 수 없어요."
                             return
                         }
-                        shareText = latestVoucher.code
-                        UIPasteboard.general.string = shareText
+                        // 클립보드는 **코드만** — 받은 사람이 붙여넣기로 바로 등록한다.
+                        // 안내는 공유 본문에만 싣는다(안드로이드 `ShareCode.kt` 와 같다).
+                        UIPasteboard.general.string = latestVoucher.code
+                        shareText = CodeShareText.invite(code: latestVoucher.code)
                         isSharePresented = true
                     }
                 } label: {

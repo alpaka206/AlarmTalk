@@ -570,8 +570,10 @@ struct VoucherShareSelectionSheet: View {
             VStack(spacing: 10) {
                 ForEach(vouchers) { voucher in
                     VoucherShareRow(voucher: voucher) {
-                        shareText = voucher.code
+                        // 클립보드는 **코드만**, 설치 안내는 공유 본문에만
+                        // (안드로이드 `ui/billing/BillingPanels.kt` 의 `shareVoucher` 와 같다).
                         UIPasteboard.general.string = voucher.code
+                        shareText = CodeShareText.forCode(voucher.code)
                         isSharePresented = true
                     }
                 }
