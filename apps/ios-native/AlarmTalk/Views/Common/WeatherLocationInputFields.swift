@@ -99,9 +99,8 @@ struct WeatherLocationInputFields: View {
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .onChange(of: text.wrappedValue) { _, newValue in
-                    if newValue.count > 30 {
-                        text.wrappedValue = String(newValue.prefix(30))
-                    }
+                    let cleaned = InputSanitizer.clampDisplayName(newValue)
+                    if cleaned != newValue { text.wrappedValue = cleaned }
                 }
         }
     }

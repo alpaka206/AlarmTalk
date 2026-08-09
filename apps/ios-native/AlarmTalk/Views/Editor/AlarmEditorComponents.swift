@@ -494,9 +494,8 @@ struct SharedVoiceSelectionSetupSheet: View {
             TextField(placeholder, text: text)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: text.wrappedValue) { _, newValue in
-                    if newValue.count > 30 {
-                        text.wrappedValue = String(newValue.prefix(30))
-                    }
+                    let cleaned = InputSanitizer.clampDisplayName(newValue)
+                    if cleaned != newValue { text.wrappedValue = cleaned }
                 }
             if showError {
                 Text("꼭 입력해 주세요.")

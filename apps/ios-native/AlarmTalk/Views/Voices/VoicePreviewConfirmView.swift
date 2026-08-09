@@ -80,7 +80,15 @@ struct VoicePreviewConfirmView: View {
                     .background(theme.palette.surfaceVariant.opacity(0.4))
                     .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
                     .onChange(of: editDraft) { _, new in
-                        if new.count > 200 { editDraft = String(new.prefix(200)) }
+                        // ⚠ **이 글자는 TTS 가 읽는다** — 제어문자·제로폭이 그대로 들어가면
+                        // 낭독이 망가진다. 줄바꿈은 지우지 않고 공백으로 바꾼다(안드로이드
+                        // `ui/voices/VoiceProfileManagementPanel.kt` 의 `confirmPreviewEditText`
+                        // 와 같은 조합). 길이는 UTF-16 으로 세야 서버와 어긋나지 않는다.
+                        let cleaned = InputSanitizer.clamp(
+                            InputSanitizer.sanitizeUserText(new, allowNewlines: true),
+                            max: 200
+                        )
+                        if cleaned != new { editDraft = cleaned }
                     }
 
                 HStack(spacing: 8) {

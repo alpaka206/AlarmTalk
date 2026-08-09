@@ -258,7 +258,7 @@ struct VoiceCloneUploadFlow: View {
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: listenerTitle) { _, newValue in
                     if newValue.count > 30 {
-                        listenerTitle = String(newValue.prefix(30))
+                        listenerTitle = InputSanitizer.clampDisplayName(newValue)
                     }
                 }
             if submitted && listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

@@ -133,7 +133,11 @@ internal fun RelationshipDropdownField(
             OutlinedTextField(
                 value = selection.customLabel,
                 onValueChange = {
-                    onSelectionChange(selection.copy(customLabel = it.take(30)))
+                    onSelectionChange(
+                        selection.copy(
+                            customLabel = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength),
+                        ),
+                    )
                 },
                 label = { Text(stringResource(R.string.voicesr_relationship_custom_label)) },
                 placeholder = { Text(stringResource(R.string.voicesr_relationship_custom_placeholder)) },

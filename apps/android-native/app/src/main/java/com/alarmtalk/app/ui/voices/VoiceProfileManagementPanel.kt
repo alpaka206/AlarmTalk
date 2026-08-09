@@ -1671,7 +1671,7 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Details -> {
                                 OutlinedTextField(
                                     value = profileName,
-                                    onValueChange = { profileName = it.take(50) },
+                                    onValueChange = { profileName = sanitizeDisplayName(it, maxLength = VoiceNameMaxLength) },
                                     label = { Text(stringResource(R.string.voices_name_label)) },
                                     placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
                                     singleLine = true,
@@ -1695,7 +1695,7 @@ internal fun VoiceProfileManagementPanel(
                                 )
                                 OutlinedTextField(
                                     value = profileListenerTitle,
-                                    onValueChange = { profileListenerTitle = it.take(30) },
+                                    onValueChange = { profileListenerTitle = sanitizeDisplayName(it, maxLength = DisplayNameMaxLength) },
                                     label = { Text(stringResource(R.string.voices_listener_title_label)) },
                                     placeholder = { Text(stringResource(R.string.voices_listener_title_placeholder)) },
                                     singleLine = true,
@@ -1861,7 +1861,11 @@ internal fun VoiceProfileManagementPanel(
                                             if (confirmPreviewEditing) {
                                                 OutlinedTextField(
                                                     value = confirmPreviewEditText,
-                                                    onValueChange = { confirmPreviewEditText = it.take(200) },
+                                                    onValueChange = {
+                                        confirmPreviewEditText =
+                                            sanitizeUserText(it, allowNewlines = true)
+                                                .takeWithoutSplittingPairs(200)
+                                    },
                                                     minLines = 2,
                                                     enabled = !confirmPreviewSaving,
                                                     shape = WakerInputShape,

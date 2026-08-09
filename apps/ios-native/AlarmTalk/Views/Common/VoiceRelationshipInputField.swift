@@ -131,7 +131,7 @@ struct VoiceRelationshipInputField: View {
             if selection.preset == .custom {
                 TextField(placeholder, text: Binding(
                     get: { selection.customLabel },
-                    set: { selection.customLabel = String($0.prefix(30)) }
+                    set: { selection.customLabel = InputSanitizer.clampDisplayName($0) }
                 ))
                 .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.never)
