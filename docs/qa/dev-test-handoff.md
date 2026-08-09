@@ -117,6 +117,30 @@ S23 Ultra·A32 두 대에서 끝냈다(웰컴 프로모·닉네임·스누즈 �
 - [ ] 서버 목소리 삭제 + **그 기기의 알람이 기본 알람음으로 강등**되는지(응답 직후
       세션 가드보다 먼저 끊는다)
 
+### ⓖ 애플 계정 — 출시 전에 사람이 해야 하는 것 (2026-08-10 실측)
+
+키 설정과 검증은 끝났다. **남은 둘은 코드로 못 고친다** — 애플 콘솔에서 해야 한다.
+자세한 판정표·검증법은 [`docs/ios/APPLE-ACCOUNT-SETUP.md`](../ios/APPLE-ACCOUNT-SETUP.md).
+
+- [ ] **APNs 키를 다시 발급한다.** 지금 키(`3CNKCBLC5U`)는 **Sandbox 전용**이라
+      프로덕션이 403 `BadEnvironmentKeyInToken` 이다. 개발·TestFlight 는 되지만
+      **출시하면 prod 워커의 푸시가 전부 막힌다.** Certificates → Keys 에서 제한 없는
+      APNs 키를 만들고 `.dev.vars.prod` 갱신 → `npm run secrets:sync:prod`.
+- [ ] **App Store Connect 에 상품을 등록한다.** 구독 그룹 하나에 3종 +
+      선물용 소모성 1종. ID 는 `apple-storekit.ts` 의 `APPLE_PRODUCT_TO_PLAN_KEY` ·
+      `StoreKitConfiguration.storekit` 과 **정확히 같아야** 한다.
+
+      | 상품 ID | 종류 | 가격 |
+      | --- | --- | --- |
+      | `com.alarmtalk.app.personal_monthly` | 자동갱신 구독 | ₩3,900 |
+      | `com.alarmtalk.app.couple_monthly` | 자동갱신 구독 | ₩6,900 |
+      | `com.alarmtalk.app.family_monthly` | 자동갱신 구독 | ₩14,900 |
+      | `com.alarmtalk.app.personal_gift_1m` | 소모성 | ₩3,900 |
+
+- [ ] 상품 등록 후 **가격이 스토어에서 내려오는지** 확인(앱은 하드코딩하지 않는다).
+- 결제 검증 키는 **정상이다.** 지금 프로덕션이 401 인 건 앱이 아직 프로덕션에
+      없어서고, 출시하면 열린다 — 고칠 것 없다.
+
 ## 2. 예정 기능 (미구현)
 
 0. **정리 감사 백로그**: 안 쓰는 코드·스키마와 현황과 어긋나는 문구/문서 49건 → [`cleanup-audit-2026-08-01.md`](cleanup-audit-2026-08-01.md). 버킷별로 PR 을 나눠 처리한다.
