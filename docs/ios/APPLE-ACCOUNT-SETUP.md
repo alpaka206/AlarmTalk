@@ -179,22 +179,56 @@ npm run secrets:sync:dev     # dev 워커로
 npm run secrets:sync:prod    # prod 워커로
 ```
 
-## 7. 푸시(APNs) — iOS 푸시는 아직 **코드가 없다**
+### 결제 검증 키가 살아 있는지 확인하는 법
 
-계정이 생겨도 iOS 푸시는 바로 안 된다. **옛 iOS 코드에 푸시 구현이 0줄**이다
-(`registerForRemoteNotifications` 0건, Firebase 참조 0건). DB 쪽 준비(마이그레이션 #94 가
-`push_tokens.platform` 에 `'ios'` 복구)는 끝났지만 클라 코드는 새로 써야 한다.
+없는 구독 ID 로 `GET /inApps/v1/subscriptions/{id}` 를 쏴 보면 **인증만** 따로 볼 수 있다.
 
-계정이 생기면 미리 해 둘 수 있는 것:
+| 응답 | 뜻 |
+| --- | --- |
+| 401 | 인증 실패 — Key ID / Issuer ID / `.p8` 조합이 틀렸다 **또는 그 환경에 앱이 없다** |
+| 400 `Invalid transaction id` | **인증 통과** (ID 만 가짜라 거부) |
+| 404 | 인증 통과, 그런 구독이 없다 |
 
-1. Certificates → Keys → `+` → **Apple Push Notifications service (APNs)** 키 생성 → `.p8` 저장
-2. Firebase 콘솔 → 프로젝트 설정 → iOS 앱 추가(번들 ID `com.alarmtalk.app`)
-3. Cloud Messaging 탭 → APNs 인증 키 업로드(`.p8` + Key ID + Team ID)
-4. `GoogleService-Info.plist` 다운로드 → `apps/ios-native/AlarmTalk/` 에 넣는다
-   (⚠ 지금 레포에 이 파일이 **없다**. gitignore 여부를 정해서 커밋 정책을 잡을 것.)
+⚠ **401 을 곧바로 "키가 틀렸다" 로 읽지 말 것.** 2026-08-10 실측에서 같은 JWT 로
+production 은 401, sandbox 는 400 이 나왔다 — 키는 정상이고 **앱이 아직 프로덕션에
+안 올라가서** 프로덕션 호스트가 안 열린 것이다. 출시하면 프로덕션도 열린다.
+(그래서 `apple-storekit.ts` 는 401 을 만나면 샌드박스를 마저 본다 —
+`docs/spec/billing-lifecycle.md` 참조.)
 
-백엔드는 이미 FCM HTTP v1 으로 보내므로(`lib/fcm.ts`), Firebase 에 iOS 앱만 붙으면
-서버 쪽 추가 작업은 없다.
+## 7. 푸시(APNs) — **Firebase 를 거치지 않는다**
+
+구현은 끝났다(`lib/apns.ts` 서버 · `PushNotificationCoordinator.swift` 앱).
+**iOS 는 Firebase 를 쓰지 않는다** — 필요한 건 "토큰으로 알림 하나 보내기" 뿐이고
+APNs 인증은 App Store Server API 와 똑같은 ES256 JWT 라, SDK·`GoogleService-Info.plist`
+없이 서버가 직접 쏘는 쪽이 훨씬 가볍다. 이유는 `lib/apns.ts` 머리 주석에 있다.
+
+필요한 값은 넷: `APNS_KEY_ID` · `APNS_PRIVATE_KEY` · `APPLE_TEAM_ID` · `APPLE_BUNDLE_ID`.
+⚠ **결제 검증 키(`APPLE_KEY_ID`/`APPLE_PRIVATE_KEY`)와 다른 키다.** 서로 넣으면 401 만 난다.
+
+### ⚠ 키를 만들 때 **Sandbox 전용으로 만들지 말 것**
+
+Developer Portal 의 APNs 키 생성 화면에는 갈래가 둘이다:
+
+| 고른 것 | 샌드박스 | 프로덕션 |
+| --- | --- | --- |
+| Apple Push Notification service (APNs) | ✅ | ✅ |
+| **…(APNs) — Sandbox** | ✅ | ❌ `BadEnvironmentKeyInToken` |
+
+2026-08-10 실측에서 현재 키(`3CNKCBLC5U`)가 **Sandbox 전용**으로 확인됐다:
+
+```
+production   403  BadEnvironmentKeyInToken
+sandbox      400  BadDeviceToken   ← 인증은 통과(가짜 토큰이라 거부된 것뿐)
+```
+
+개발·TestFlight 는 이대로 되지만 **출시하면 프로덕션 푸시가 전부 막힌다.**
+`apnsConfigFromEnv` 가 `ENVIRONMENT === 'production'` 일 때만 프로덕션 호스트로
+보내므로 dev 워커는 지금도 정상이고, **막히는 건 prod 워커뿐**이다.
+
+**출시 전에 할 일**: Certificates → Keys 에서 제한 없는 APNs 키를 새로 만들고
+`.p8`·Key ID 를 `.dev.vars.prod` 에 넣은 뒤 `npm run secrets:sync:prod`.
+검증은 가짜 토큰으로 쏴 보면 된다 — `BadDeviceToken` 이면 키가 정상이고,
+`InvalidProviderToken` 이면 Key ID/Team ID 가 틀린 것이다.
 
 ---
 
