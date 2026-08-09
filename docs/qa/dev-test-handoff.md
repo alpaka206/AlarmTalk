@@ -122,24 +122,22 @@ S23 Ultra·A32 두 대에서 끝냈다(웰컴 프로모·닉네임·스누즈 �
 키 설정과 검증은 끝났다. **남은 둘은 코드로 못 고친다** — 애플 콘솔에서 해야 한다.
 자세한 판정표·검증법은 [`docs/ios/APPLE-ACCOUNT-SETUP.md`](../ios/APPLE-ACCOUNT-SETUP.md).
 
-- [ ] **APNs 키를 다시 발급한다.** 지금 키(`3CNKCBLC5U`)는 **Sandbox 전용**이라
-      프로덕션이 403 `BadEnvironmentKeyInToken` 이다. 개발·TestFlight 는 되지만
-      **출시하면 prod 워커의 푸시가 전부 막힌다.** Certificates → Keys 에서 제한 없는
-      APNs 키를 만들고 `.dev.vars.prod` 갱신 → `npm run secrets:sync:prod`.
-- [ ] **App Store Connect 에 상품을 등록한다.** 구독 그룹 하나에 3종 +
-      선물용 소모성 1종. ID 는 `apple-storekit.ts` 의 `APPLE_PRODUCT_TO_PLAN_KEY` ·
-      `StoreKitConfiguration.storekit` 과 **정확히 같아야** 한다.
+**끝난 것** — 앱 레코드(`Alarm-Talk`, Apple ID `6799711245`), 상품 4종 등록,
+결제 검증 키, 프로덕션 APNs 키(`8S2AH3937P`). 상품 ID 4종이 콘솔 =
+`apple-storekit.ts` = `StoreKitConfiguration.storekit` 로 일치함을 대조했다.
 
-      | 상품 ID | 종류 | 가격 |
-      | --- | --- | --- |
-      | `com.alarmtalk.app.personal_monthly` | 자동갱신 구독 | ₩3,900 |
-      | `com.alarmtalk.app.couple_monthly` | 자동갱신 구독 | ₩6,900 |
-      | `com.alarmtalk.app.family_monthly` | 자동갱신 구독 | ₩14,900 |
-      | `com.alarmtalk.app.personal_gift_1m` | 소모성 | ₩3,900 |
-
-- [ ] 상품 등록 후 **가격이 스토어에서 내려오는지** 확인(앱은 하드코딩하지 않는다).
-- 결제 검증 키는 **정상이다.** 지금 프로덕션이 401 인 건 앱이 아직 프로덕션에
-      없어서고, 출시하면 열린다 — 고칠 것 없다.
+- [ ] **dev 워커 APNs 키를 되살린다.** `.dev.vars.dev` 의 키가 양쪽 호스트에서
+      `InvalidProviderToken` 이다(Key ID `3CNKCBLC5U` 와 짝이 아니거나 폐기됨).
+      **prod 는 정상이라 출시에는 영향 없고, 막히는 건 dev 워커 푸시뿐이다.**
+      ① `3CNKCBLC5U` 의 `.p8` 재확보 또는 ② 두 환경 모두 되는 키 하나 발급 후
+      dev·prod 양쪽에 같은 값. 자세한 판정표는
+      [`docs/ios/APPLE-ACCOUNT-SETUP.md`](../ios/APPLE-ACCOUNT-SETUP.md).
+- [ ] **시크릿을 워커로 올린다** — `npm run secrets:sync:dev` / `:prod`.
+      (아직 안 올렸다. 배포는 PR 이후이므로 그때 함께.)
+- [ ] 실기기에서 **가격이 스토어에서 내려오는지** 확인(앱은 하드코딩하지 않는다).
+      상품 상태가 "제출 준비 중" 이라 **1.0 빌드와 함께 제출해야** 조회된다.
+- [ ] 첫 제출 후 결제 검증 키의 **프로덕션 401 이 풀리는지** 확인. 지금 401 인 건
+      키 문제가 아니라 앱이 아직 프로덕션에 없어서다 — 고칠 것 없다.
 
 ## 2. 예정 기능 (미구현)
 

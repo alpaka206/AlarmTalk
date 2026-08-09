@@ -205,30 +205,43 @@ APNs 인증은 App Store Server API 와 똑같은 ES256 JWT 라, SDK·`GoogleSer
 필요한 값은 넷: `APNS_KEY_ID` · `APNS_PRIVATE_KEY` · `APPLE_TEAM_ID` · `APPLE_BUNDLE_ID`.
 ⚠ **결제 검증 키(`APPLE_KEY_ID`/`APPLE_PRIVATE_KEY`)와 다른 키다.** 서로 넣으면 401 만 난다.
 
-### ⚠ 키를 만들 때 **Sandbox 전용으로 만들지 말 것**
+### ⚠ APNs 키는 **환경에 묶일 수 있다**
 
-Developer Portal 의 APNs 키 생성 화면에는 갈래가 둘이다:
+2026-08-10 실측에서 우리 키 둘이 **정확히 반대 환경**에서만 동작했다:
 
-| 고른 것 | 샌드박스 | 프로덕션 |
+| 키 | sandbox | production |
 | --- | --- | --- |
-| Apple Push Notification service (APNs) | ✅ | ✅ |
-| **…(APNs) — Sandbox** | ✅ | ❌ `BadEnvironmentKeyInToken` |
+| `3CNKCBLC5U` | ✅ 통과 | ❌ 403 `BadEnvironmentKeyInToken` |
+| `8S2AH3937P` | ❌ 403 `BadEnvironmentKeyInToken` | ✅ 통과 |
 
-2026-08-10 실측에서 현재 키(`3CNKCBLC5U`)가 **Sandbox 전용**으로 확인됐다:
+**이건 우리 구조에서 문제가 되지 않는다.** 워커가 환경별로 갈리고
+(`apnsConfigFromEnv` 의 `useSandbox: ENVIRONMENT !== 'production'`) 앱 빌드도
+같은 축으로 갈리기 때문이다 — 각 워커에 그 환경 키를 넣으면 **코드 변경 없이** 맞는다.
 
-```
-production   403  BadEnvironmentKeyInToken
-sandbox      400  BadDeviceToken   ← 인증은 통과(가짜 토큰이라 거부된 것뿐)
-```
+| 빌드 | 백엔드 | APNs 호스트 | 넣을 키 |
+| --- | --- | --- | --- |
+| Debug (Xcode 직접 설치) | `api-dev` (dev 워커) | sandbox | `.dev.vars.dev` |
+| Release (TestFlight·출시) | `api` (prod 워커) | production | `.dev.vars.prod` |
 
-개발·TestFlight 는 이대로 되지만 **출시하면 프로덕션 푸시가 전부 막힌다.**
-`apnsConfigFromEnv` 가 `ENVIRONMENT === 'production'` 일 때만 프로덕션 호스트로
-보내므로 dev 워커는 지금도 정상이고, **막히는 건 prod 워커뿐**이다.
+⚠ **TestFlight 는 프로덕션 APNs 다**(샌드박스가 아니다). 위 표대로 prod 워커를
+보므로 짝이 맞는다.
 
-**출시 전에 할 일**: Certificates → Keys 에서 제한 없는 APNs 키를 새로 만들고
-`.p8`·Key ID 를 `.dev.vars.prod` 에 넣은 뒤 `npm run secrets:sync:prod`.
-검증은 가짜 토큰으로 쏴 보면 된다 — `BadDeviceToken` 이면 키가 정상이고,
-`InvalidProviderToken` 이면 Key ID/Team ID 가 틀린 것이다.
+**검증법** — 가짜 토큰(0 × 64)으로 쏴 보면 인증만 따로 볼 수 있다.
+
+| 응답 | 뜻 |
+| --- | --- |
+| 400 `BadDeviceToken` | **키 정상** (토큰만 가짜라 거부) |
+| 403 `BadEnvironmentKeyInToken` | 키는 살아 있으나 **그 환경용이 아니다** |
+| 403 `InvalidProviderToken` | Key ID 와 `.p8` 이 짝이 아니거나 **키가 폐기됐다** |
+
+APNs 는 HTTP/2 전용이라 `fetch`(undici, HTTP/1.1)로는 못 부른다 — `node:http2` 를 쓴다.
+
+> ⚠ **미해결(2026-08-10)**: `.dev.vars.dev` 의 APNs 키가 양쪽 호스트에서
+> `InvalidProviderToken` 이다. Key ID 는 `3CNKCBLC5U` 인데 짝이 되는 `.p8` 이
+> 아니거나 그 키가 폐기된 것으로 보인다(`.secrets/` 에 그 파일이 남아 있지 않다).
+> **prod 는 정상이라 출시에는 영향이 없고, 막히는 건 dev 워커 푸시뿐이다.**
+> 해결은 둘 중 하나 — ① `3CNKCBLC5U` 의 `.p8` 을 다시 받아 넣는다,
+> ② 두 환경 모두 되는 키 하나를 새로 발급해 dev·prod 양쪽에 같은 값을 넣는다.
 
 ---
 
