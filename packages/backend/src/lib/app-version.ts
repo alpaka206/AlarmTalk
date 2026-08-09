@@ -56,9 +56,11 @@ const IOS: AppVersionPolicy = {
   minSupported: 1,
   // 권장 업데이트 기준. 첫 릴리스 전이라 latest 도 1 이다(= 아무 배너도 뜨지 않는다).
   latest: 1,
-  // ⚠ 앱을 App Store 에 올린 뒤 실제 앱 ID 로 교체할 것. 그전까지는 iOS 클라가 이 URL 을
-  // 열 일이 없다(minSupported/latest 가 둘 다 1 이라 업데이트 화면 자체가 안 뜬다).
-  storeUrl: 'https://apps.apple.com/app/id0000000000',
+  // App Store Connect 앱 레코드의 Apple ID(2026-08-10 생성, 스토어 표기명 `Alarm-Talk`).
+  // 아직 심사 전이라 이 주소는 게재 뒤에야 열리지만, 자리표시자(`id0000000000`)로 두는
+  // 것보다 낫다 — 위 minSupported/latest 를 올리는 순간 곧바로 쓰이는 값이라, 그때
+  // 고치는 걸 잊으면 사용자가 존재하지 않는 페이지로 간다.
+  storeUrl: 'https://apps.apple.com/app/id6799711245',
 };
 
 // platform 파라미터로 정책을 고른다. 앱이 이미 붙여 보내고 있다.

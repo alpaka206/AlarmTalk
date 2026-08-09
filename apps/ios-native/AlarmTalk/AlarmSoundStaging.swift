@@ -249,7 +249,7 @@ enum AlarmSoundStaging {
 
         // 동기 대기. AlarmKit 예약은 사용자 액션 직후라 짧은 동기 대기가 허용된다.
         let semaphore = DispatchSemaphore(value: 0)
-        let queue = DispatchQueue(label: "com.voicealarm.alarm-sound-staging")
+        let queue = DispatchQueue(label: "com.alarmtalk.app.alarm-sound-staging")
         input.requestMediaDataWhenReady(on: queue) {
             while input.isReadyForMoreMediaData {
                 guard reader.status == .reading, let buffer = output.copyNextSampleBuffer() else {

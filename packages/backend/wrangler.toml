@@ -60,7 +60,7 @@ crons = ["*/5 * * * *"]
 # FIREBASE_SERVICE_ACCOUNT_JSON   (서비스 계정 JSON 전체, client_email/private_key 포함)
 #
 # Apple 로그인 (POST /auth/apple) — 미설정 시 500 fail-closed:
-# APPLE_BUNDLE_ID                 (iOS 앱 번들 ID, 예: com.voicealarm.nativeapp.ios)
+# APPLE_BUNDLE_ID                 (iOS 앱 번들 ID — 우리 값은 com.alarmtalk.app)
 #                                  네이티브 로그인은 애플 공개키(JWKS) 검증이라 **비밀키가 필요 없다.**
 #                                  aud 대조용이라 이 값이 없으면 다른 앱용 토큰도 통과하므로 fail-closed.
 #

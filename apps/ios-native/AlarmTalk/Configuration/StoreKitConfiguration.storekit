@@ -3,7 +3,7 @@
   "nonRenewingSubscriptions": [],
   "products": [
     {
-      "displayPrice": "1.99",
+      "displayPrice": "3900",
       "familyShareable": false,
       "internalID": "55927B60",
       "localizations": [
@@ -74,7 +74,7 @@
   },
   "subscriptionGroups": [
     {
-      "id": "21500001",
+      "id": "22297659",
       "localizations": [
         {
           "description": "AlarmTalk 목소리 알람 구독 그룹",
@@ -92,33 +92,33 @@
         {
           "adHocOffers": [],
           "codeOffers": [],
-          "displayPrice": "1.99",
-          "familyShareable": false,
+          "displayPrice": "14900",
+          "familyShareable": true,
           "groupNumber": 1,
-          "internalID": "21500101",
+          "internalID": "21500105",
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "개인 플랜 월간 구독",
-              "displayName": "개인 (월간)",
+              "description": "가족 플랜 월간 구독 (최대 5인)",
+              "displayName": "가족 (월간)",
               "locale": "ko_KR"
             },
             {
-              "description": "Personal plan, monthly",
-              "displayName": "Personal (Monthly)",
+              "description": "Family plan, monthly (up to 5 members)",
+              "displayName": "Family (Monthly)",
               "locale": "en_US"
             }
           ],
-          "productID": "com.alarmtalk.app.personal_monthly",
+          "productID": "com.alarmtalk.app.family_monthly",
           "recurringSubscriptionPeriod": "P1M",
-          "referenceName": "Personal Monthly",
+          "referenceName": "Family Monthly",
           "subscriptionGroupID": "21500001",
           "type": "RecurringSubscription"
         },
         {
           "adHocOffers": [],
           "codeOffers": [],
-          "displayPrice": "3.99",
+          "displayPrice": "6900",
           "familyShareable": false,
           "groupNumber": 2,
           "internalID": "21500103",
@@ -144,26 +144,26 @@
         {
           "adHocOffers": [],
           "codeOffers": [],
-          "displayPrice": "5.99",
-          "familyShareable": true,
+          "displayPrice": "3900",
+          "familyShareable": false,
           "groupNumber": 3,
-          "internalID": "21500105",
+          "internalID": "21500101",
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "가족 플랜 월간 구독 (최대 5인)",
-              "displayName": "가족 (월간)",
+              "description": "개인 플랜 월간 구독",
+              "displayName": "개인 (월간)",
               "locale": "ko_KR"
             },
             {
-              "description": "Family plan, monthly (up to 5 members)",
-              "displayName": "Family (Monthly)",
+              "description": "Personal plan, monthly",
+              "displayName": "Personal (Monthly)",
               "locale": "en_US"
             }
           ],
-          "productID": "com.alarmtalk.app.family_monthly",
+          "productID": "com.alarmtalk.app.personal_monthly",
           "recurringSubscriptionPeriod": "P1M",
-          "referenceName": "Family Monthly",
+          "referenceName": "Personal Monthly",
           "subscriptionGroupID": "21500001",
           "type": "RecurringSubscription"
         }
