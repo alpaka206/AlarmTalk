@@ -39,6 +39,17 @@ export interface ApnsMessage {
   body: string;
   /** 앱이 읽는 부가 데이터. FCM 의 `data` 와 같은 역할. */
   data?: Record<string, string>;
+  /**
+   * **조용한 푸시**인가 — 배너 없이 앱만 깨운다.
+   *
+   * ⚠ 이게 핵심이다. 조용한 푸시는 **알림 권한이 필요 없어서**, 알림을 거절한
+   * 사용자도 받은 알람이 제때 예약되고 제때 울린다. 가족 알람이 여기 해당한다.
+   * (배너를 띄우려면 권한이 필요하고, 그건 별개 문제다.)
+   *
+   * ⚠ 애플 규격: 조용한 푸시는 `content-available: 1` + `apns-push-type: background`
+   * + **`apns-priority: 5`** 여야 한다. priority 10 으로 보내면 애플이 거절한다.
+   */
+  silent?: boolean;
 }
 
 export interface ApnsSendResult {
@@ -120,22 +131,24 @@ export async function sendApnsNotifications(
   for (const message of messages) {
     // ⚠ `alert` 를 채워야 **눈에 보이는 알림**이 된다. 데이터만 보내면 사용자는 아무것도
     //   못 보고, 앱이 백그라운드면 그마저도 늦게 온다.
-    const payload = {
-      aps: {
-        alert: { title: message.title, body: message.body },
-        sound: 'default',
-      },
-      ...(message.data ?? {}),
-    };
+    const payload = message.silent
+      ? { aps: { 'content-available': 1 }, ...(message.data ?? {}) }
+      : {
+          aps: {
+            alert: { title: message.title, body: message.body },
+            sound: 'default',
+          },
+          ...(message.data ?? {}),
+        };
     try {
       const res = await fetchImpl(`${host}/3/device/${encodeURIComponent(message.token)}`, {
         method: 'POST',
         headers: {
           authorization: `bearer ${jwt}`,
           'apns-topic': config.bundleId,
-          // alert 푸시는 10 이 즉시 전송이다(5 는 절전 대기).
-          'apns-priority': '10',
-          'apns-push-type': 'alert',
+          // ⚠ 조용한 푸시는 **반드시 5** 다 — 10 으로 보내면 애플이 거절한다.
+          'apns-priority': message.silent ? '5' : '10',
+          'apns-push-type': message.silent ? 'background' : 'alert',
           'content-type': 'application/json',
         },
         body: JSON.stringify(payload),

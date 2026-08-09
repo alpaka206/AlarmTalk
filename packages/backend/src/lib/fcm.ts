@@ -221,25 +221,73 @@ export async function pruneStaleTokens(db: Client, results: FcmSendResult[]): Pr
  * 중복 알림을 막는다. 앱이 완전 종료돼 신호를 놓쳐도 15분 주기 pull 이 폴백. 토큰 없으면 no-op.
  * userId 는 수신자의 users.id(PK) — push_tokens.user_id(=FK users(id))와 정합.
  */
+/**
+ * **조용한 신호 푸시를 두 플랫폼에 보낸다.** 안드로이드는 FCM data-only, iOS 는 APNs
+ * background push 로 나간다.
+ *
+ * ⚠ iOS 를 빼먹으면 **받은 알람이 제때 예약되지 않는다.** iOS 에는 안드로이드
+ * WorkManager 같은 보장된 주기 실행이 없어서, 이 푸시가 실질적으로 유일한 즉시 경로다
+ * (`BGAppRefreshTask` 는 iOS 가 실행 시점을 정하고 보장하지 않는다).
+ *
+ * ⚠ **알림 권한과 무관하다.** background push 는 권한 없이 배달되므로, 알림을 거절한
+ * 사용자도 알람은 제때 울린다.
+ *
+ * ⚠ 갈래를 호출부마다 베끼지 말 것 — 네 곳에 흩어지면 하나를 빠뜨린다.
+ */
+async function sendSilentSignalPush(
+  db: Client,
+  env: SignalPushEnv,
+  userIds: readonly string[],
+  data: Record<string, string>,
+): Promise<FcmSendResult[]> {
+  const fcmMessages: FcmMessage[] = [];
+  const apnsMessages: ApnsMessage[] = [];
+  for (const userId of Array.from(new Set(userIds))) {
+    for (const target of await getPushTargetsForUser(db, userId)) {
+      if (target.platform === 'ios') {
+        apnsMessages.push({ token: target.token, title: '', body: '', data, silent: true });
+      } else {
+        fcmMessages.push({ token: target.token, title: '', body: '', data });
+      }
+    }
+  }
+
+  let results: FcmSendResult[] = [];
+  if (fcmMessages.length > 0) {
+    results = await sendPushNotifications(fcmMessages, env);
+    await pruneStaleTokens(db, results);
+  }
+  if (apnsMessages.length > 0) {
+    const config = apnsConfigFromEnv(env);
+    // 키가 없으면 조용히 건너뛴다 — 주기 동기화가 그물로 남아 있다.
+    if (config) {
+      await pruneDeadApnsTokens(db, await sendApnsNotifications(apnsMessages, config));
+    }
+  }
+  return results;
+}
+
+/** 신호 푸시가 두 스토어를 다 쓰므로 env 도 둘을 함께 받는다. */
+type SignalPushEnv = Partial<
+  Pick<
+  Env,
+  | 'FIREBASE_PROJECT_ID'
+  | 'FIREBASE_SERVICE_ACCOUNT_JSON'
+  | 'APNS_KEY_ID'
+  | 'APNS_PRIVATE_KEY'
+  | 'APPLE_TEAM_ID'
+  | 'APPLE_BUNDLE_ID'
+  | 'ENVIRONMENT'
+  >
+>;
+
 export async function sendFamilyAlarmPush(
   db: Client,
-  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  env: SignalPushEnv,
   recipientUserId: string,
   alarmId: string,
 ): Promise<FcmSendResult[]> {
-  const tokens = await getTokensForUser(db, recipientUserId);
-  if (tokens.length === 0) return [];
-
-  const messages: FcmMessage[] = tokens.map((token) => ({
-    token,
-    title: '',
-    body: '',
-    data: { type: 'family_alarm', alarmId },
-  }));
-
-  const results = await sendPushNotifications(messages, env);
-  await pruneStaleTokens(db, results);
-  return results;
+  return sendSilentSignalPush(db, env, [recipientUserId], { type: 'family_alarm', alarmId });
 }
 
 /**
@@ -249,19 +297,10 @@ export async function sendFamilyAlarmPush(
  */
 export async function sendVoiceShareChangedPush(
   db: Client,
-  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  env: SignalPushEnv,
   recipientUserIds: string[],
 ): Promise<void> {
-  const messages: FcmMessage[] = [];
-  for (const userId of recipientUserIds) {
-    const tokens = await getTokensForUser(db, userId);
-    for (const token of tokens) {
-      messages.push({ token, title: '', body: '', data: { type: 'voice_share_changed' } });
-    }
-  }
-  if (messages.length === 0) return;
-  const results = await sendPushNotifications(messages, env);
-  await pruneStaleTokens(db, results);
+  await sendSilentSignalPush(db, env, recipientUserIds, { type: 'voice_share_changed' });
 }
 
 /**
@@ -473,19 +512,10 @@ async function pruneDeadApnsTokens(db: Client, results: ApnsSendResult[]): Promi
 
 export async function sendPlanChangedPush(
   db: Client,
-  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  env: SignalPushEnv,
   userIds: string[],
 ): Promise<void> {
-  const messages: FcmMessage[] = [];
-  for (const userId of Array.from(new Set(userIds))) {
-    const tokens = await getTokensForUser(db, userId);
-    for (const token of tokens) {
-      messages.push({ token, title: '', body: '', data: { type: 'plan_changed' } });
-    }
-  }
-  if (messages.length === 0) return;
-  const results = await sendPushNotifications(messages, env);
-  await pruneStaleTokens(db, results);
+  await sendSilentSignalPush(db, env, userIds, { type: 'plan_changed' });
 }
 
 export async function sendAlarmPush(

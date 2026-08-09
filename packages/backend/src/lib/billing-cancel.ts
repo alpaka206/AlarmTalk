@@ -41,6 +41,11 @@ type ExpiryEnv = PlayEnv &
       | 'APPLE_KEY_ID'
       | 'APPLE_PRIVATE_KEY'
       | 'APPLE_BUNDLE_ID'
+      | 'ENVIRONMENT'
+      // iOS 신호 푸시(APNs). 없으면 발송부가 조용히 건너뛴다.
+      | 'APNS_KEY_ID'
+      | 'APNS_PRIVATE_KEY'
+      | 'APPLE_TEAM_ID'
     >
   >;
 
@@ -984,21 +989,23 @@ async function reconcileStoreBeforeExpiry(
  */
 export async function notifyPlanChanged(
   db: Client,
-  env: Partial<Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>> | undefined,
+  env: ExpiryEnv | undefined,
   userIds: string[],
 ): Promise<void> {
-  if (!env?.FIREBASE_PROJECT_ID || !env?.FIREBASE_SERVICE_ACCOUNT_JSON || userIds.length === 0) {
+  // ⚠ **Firebase 값만 뽑아 넘기지 말 것.** 예전에는 두 필드만 새 객체로 만들어 넘겼는데,
+  // 그러면 APNs 설정(`APNS_*`·`APPLE_TEAM_ID`·`APPLE_BUNDLE_ID`)이 통째로 떨어져
+  // **iOS 기기에는 신호가 영영 안 간다** — 강등/복구가 반영되지 않는다.
+  // env 를 그대로 넘기고, 어느 쪽 키가 없든 발송부가 알아서 건너뛴다.
+  //
+  // ⚠ 게이트도 Firebase 로만 걸면 안 된다. iOS 전용 사용자에게 보낼 때
+  // Firebase 가 비어 있다고 전체를 막으면 APNs 까지 같이 죽는다.
+  const hasFirebase = Boolean(env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const hasApns = Boolean(env?.APNS_KEY_ID && env?.APNS_PRIVATE_KEY && env?.APPLE_TEAM_ID);
+  if ((!hasFirebase && !hasApns) || userIds.length === 0) {
     return;
   }
   try {
-    await sendPlanChangedPush(
-      db,
-      {
-        FIREBASE_PROJECT_ID: env.FIREBASE_PROJECT_ID,
-        FIREBASE_SERVICE_ACCOUNT_JSON: env.FIREBASE_SERVICE_ACCOUNT_JSON,
-      },
-      userIds,
-    );
+    await sendPlanChangedPush(db, env as ExpiryEnv, userIds);
   } catch (err) {
     logStructured('error', {
       at: 'billing.plan_changed_push',

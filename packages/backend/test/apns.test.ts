@@ -164,3 +164,61 @@ describe('apnsConfigFromEnv', () => {
     expect(apnsConfigFromEnv(full)?.useSandbox).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 조용한 푸시(background) — **알림 권한 없이도 앱을 깨우는** 경로.
+//
+// ⚠ 가족 알람이 여기 해당한다. iOS 에는 안드로이드 WorkManager 같은 보장된 주기 실행이
+// 없어서, 이 푸시가 받은 알람을 제때 예약하는 실질적으로 유일한 즉시 경로다.
+// ---------------------------------------------------------------------------
+describe('조용한 푸시(silent)', () => {
+  it('애플 규격대로 content-available + background + priority 5 로 보낸다', async () => {
+    const config = await makeConfig();
+    let headers: Record<string, string> = {};
+    let body: Record<string, unknown> = {};
+    const fetchMock = async (_url: string, init: RequestInit) => {
+      headers = init.headers as Record<string, string>;
+      body = JSON.parse(String(init.body));
+      return new Response('', { status: 200 });
+    };
+
+    await sendApnsNotifications(
+      [{ token: 't', title: '', body: '', data: { type: 'family_alarm', alarmId: 'a1' }, silent: true }],
+      config,
+      fetchMock as unknown as typeof fetch,
+    );
+
+    expect(headers['apns-push-type']).toBe('background');
+    // ⚠ **반드시 5.** priority 10 으로 보내면 애플이 조용한 푸시를 거절한다.
+    expect(headers['apns-priority']).toBe('5');
+    expect(body.aps).toEqual({ 'content-available': 1 });
+    // 배너를 띄우지 않는다 — alert 가 있으면 권한이 필요해진다.
+    expect(JSON.stringify(body.aps)).not.toContain('alert');
+    // 앱이 무엇을 할지 알아야 하므로 data 는 실린다.
+    expect(body.type).toBe('family_alarm');
+    expect(body.alarmId).toBe('a1');
+  });
+
+  it('표시용과 조용한 푸시가 같은 함수에서 갈린다', async () => {
+    const config = await makeConfig();
+    const seen: Array<Record<string, string>> = [];
+    const fetchMock = async (_url: string, init: RequestInit) => {
+      seen.push(init.headers as Record<string, string>);
+      return new Response('', { status: 200 });
+    };
+
+    await sendApnsNotifications(
+      [
+        { token: 'a', title: '제목', body: '내용' },
+        { token: 'b', title: '', body: '', silent: true },
+      ],
+      config,
+      fetchMock as unknown as typeof fetch,
+    );
+
+    expect(seen[0]!['apns-push-type']).toBe('alert');
+    expect(seen[0]!['apns-priority']).toBe('10');
+    expect(seen[1]!['apns-push-type']).toBe('background');
+    expect(seen[1]!['apns-priority']).toBe('5');
+  });
+});

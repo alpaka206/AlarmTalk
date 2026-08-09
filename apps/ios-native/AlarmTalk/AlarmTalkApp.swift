@@ -6,6 +6,8 @@ import UIKit
 
 @main
 struct AlarmTalkApp: App {
+    /// SwiftUI `App` 에는 원격 알림 콜백이 없어 델리게이트로 받는다.
+    @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AlarmTalkThemeMode.storageKey) private var themeModeRaw = AlarmTalkThemeMode.system.rawValue
 
@@ -23,6 +25,10 @@ struct AlarmTalkApp: App {
     /// 백엔드 최소지원버전 게이팅. 로그인 여부와 무관하게 앱 진입을 막을 수 있어
     /// 앱 lifetime 동안 떠 있어야 한다. Android `MainViewModel.checkAppVersion()`.
     @StateObject private var versionGate = AppVersionGate()
+
+    /// iOS 푸시. **알림 권한과 별개** — background push 는 권한 없이도 오고, 그게
+    /// 받은 알람을 제때 예약하는 유일한 즉시 경로다(`PushNotificationCoordinator` 주석).
+    @StateObject private var push = PushNotificationCoordinator()
 
     /// Phase 4-D1: Apple StoreKit2 IAP 관리자. 앱 lifetime 내내 떠 있어야
     /// `Transaction.updates` listener 가 가족 공유 / 자동 갱신 / 환불 등 외부
@@ -179,6 +185,17 @@ struct AlarmTalkApp: App {
                         // 에서 조용히 버려지므로, 한 번도 묻지 않으면 신규 설치에서 그 알림이
                         // 영영 뜨지 않는다. 이미 답한 뒤에는 no-op 이라 매 토큰 갱신마다 불려도 된다.
                         await SocialNotificationTracker.requestAuthorizationIfNeeded()
+                        // ⚠ 권한 결과와 **무관하게** 원격 알림에 등록한다 — 거절해도
+                        // background push 는 오고, 그게 받은 알람을 예약한다.
+                        PushAppDelegate.coordinator = push
+                        PushAppDelegate.currentSession = { auth.session }
+                        push.onFamilyAlarm = { await remoteSync.runFullSync() }
+                        push.onVoiceChanged = { await voiceStudio.refresh(session: auth.session) }
+                        push.onPlanChanged = {
+                            await socialFeatures.refreshAll(session: auth.session, force: true)
+                            await auth.refreshUser()
+                        }
+                        push.start()
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
                         await refreshDynamicVoicesIfNeeded()

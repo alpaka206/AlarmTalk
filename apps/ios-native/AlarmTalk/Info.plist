@@ -47,6 +47,8 @@
     <string>audio</string>
     <string>processing</string>
     <string>fetch</string>
+    <!-- 조용한 푸시로 앱을 깨워 받은 알람을 즉시 예약한다(알림 권한 불필요). -->
+    <string>remote-notification</string>
   </array>
   <key>UIRequiredDeviceCapabilities</key>
   <array>

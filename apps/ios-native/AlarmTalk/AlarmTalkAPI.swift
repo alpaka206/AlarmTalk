@@ -302,6 +302,23 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("voice/\(id)/prerender/advance", method: "POST", token: token)
     }
 
+    /// 기기 푸시 토큰 등록. 같은 토큰이 다른 계정에 묶여 있으면 서버가 옮긴다.
+    ///
+    /// ⚠ 알림 **권한과 무관하게** 호출한다 — background push 는 권한 없이도 오고,
+    /// 그게 받은 알람을 제때 예약하는 유일한 즉시 경로다.
+    func registerPushToken(token: String, platform: String, authToken: String) async throws {
+        struct Body: Encodable {
+            let token: String
+            let platform: String
+        }
+        let _: EmptyResponse = try await request(
+            "push/token",
+            method: "POST",
+            token: authToken,
+            body: Body(token: token, platform: platform)
+        )
+    }
+
     /// 말투 분석 재시도. 실패 502 `SPEECH_STYLE_ANALYSIS_FAILED`, 소스 없음 409.
     @discardableResult
     func retryVoiceSpeechStyle(id: String, token: String) async throws -> Bool {
