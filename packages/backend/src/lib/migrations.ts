@@ -2190,6 +2190,40 @@ export const migrations: Migration[] = [
          ON generated_audio_assets(created_at)`,
     ],
   },
+  {
+    id: 100,
+    name: 'index-missing-lookup-columns',
+    // 실제 스키마(마이그레이션 전량 적용)와 코드의 SQL 을 대조해 **필터로 쓰이는데
+    // 인덱스가 없는** 컬럼만 골랐다(2026-08-10). 인덱스만 만드는 append-only 라
+    // 되돌릴 수 없는 DDL 이 없고 기존 행도 건드리지 않는다.
+    //
+    // 뽑을 때 걸러낸 것들 — 이미 복합 인덱스가 덮고 있어 넣지 않았다:
+    //   store_transactions.provider_transaction_id → 조회가 항상 `provider = ? AND ...`
+    //     이라 `idx_store_transactions_provider_tx(provider, provider_transaction_id)` 가 탄다.
+    //   promo_code_redemptions(promo_code_id, user_id) 조회 → 기존 UNIQUE 인덱스가 덮는다.
+    //   plans 를 가리키는 *_plan_id → plans 는 행이 몇 개뿐이라 인덱스 이득이 없다.
+    statements: [
+      // 그룹 플랜의 핵심 조인. 한도 계산·그룹 전파·바우처 사용에서 매번 탄다.
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_plan_group
+         ON subscriptions(plan_group_id)`,
+      // 결제 이벤트(RTDN)·만료 크론이 발급 구독으로 바우처를 되짚는다.
+      `CREATE INDEX IF NOT EXISTS idx_voucher_codes_issuer_subscription
+         ON voucher_codes(issuer_subscription_id)`,
+      // UNIQUE(user_id, voice_profile_id) 는 **user_id 가 앞**이라 프로필 단독 조회를
+      // 못 탄다. tts 요청 경로에서 쓰인다.
+      `CREATE INDEX IF NOT EXISTS idx_voice_profile_relationships_profile
+         ON voice_profile_relationships(voice_profile_id)`,
+      // 목소리 삭제·복구가 업로드 원본을 프로필로 찾는다.
+      `CREATE INDEX IF NOT EXISTS idx_voice_uploads_profile
+         ON voice_uploads(voice_profile_id)`,
+      // 유료 만료 정리·스톡 클립 조회가 소유자로 큐를 훑는다(기존 인덱스는 status 가 앞).
+      `CREATE INDEX IF NOT EXISTS idx_voice_prerender_queue_owner
+         ON voice_prerender_queue(owner_user_id)`,
+      // 프로모 이력 조회가 사용자 단독으로 거른다(UNIQUE 는 promo_code_id 가 앞).
+      `CREATE INDEX IF NOT EXISTS idx_promo_redemptions_user
+         ON promo_code_redemptions(user_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
