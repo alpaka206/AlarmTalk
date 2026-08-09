@@ -38,6 +38,16 @@ export const ENTITLED_STATES = new Set([
 ]);
 
 /** Play 구독 제어에 필요한 env 부분집합 (billing-google.ts confirm 과 동일 시크릿). */
+/**
+ * **결제 실패로 보류된(회복형) 상태인가** — 종료가 아니라 카드만 다시 긁는 중이다.
+ *
+ * ⚠ RTDN 갈래와 만료 크론 재조회가 **같은 판정을 써야 한다.** 갈라지면 한쪽은 그룹을
+ * 보존했는데 다른 쪽이 5분 뒤 해체하는 사고가 난다(실제로 그랬다).
+ */
+export function isRecoverablePlayState(state: string): boolean {
+  return state === 'SUBSCRIPTION_STATE_ON_HOLD' || state === 'SUBSCRIPTION_STATE_PAUSED';
+}
+
 export type PlayEnv = Pick<Env, 'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON' | 'ANDROID_PACKAGE_NAME'>;
 
 /** 서비스 계정/패키지 env 미설정 — 호출자가 스텁 폴백이나 스킵을 판단한다. */

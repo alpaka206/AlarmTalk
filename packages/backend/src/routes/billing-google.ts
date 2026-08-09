@@ -9,6 +9,7 @@ import { issueVoucherCode } from '../lib/voucher-issue';
 import {
   ANDROID_PUBLISHER_SCOPE,
   ENTITLED_STATES,
+  isRecoverablePlayState,
   type SubscriptionV2Response,
 } from '../lib/play-subscriptions';
 import { resolveUserPk } from './billing-helpers';
@@ -28,7 +29,7 @@ import { resolveUserPk } from './billing-helpers';
 // scope·응답 타입·ENTITLED_STATES 는 lib/play-subscriptions.ts 가 단일 출처
 // (해지/RTDN/reconciliation 과 공유). 기존 import 경로 유지를 위해 re-export 한다.
 
-export { ANDROID_PUBLISHER_SCOPE, ENTITLED_STATES };
+export { ANDROID_PUBLISHER_SCOPE, ENTITLED_STATES, isRecoverablePlayState };
 export type { SubscriptionV2Response };
 
 /**

@@ -12,6 +12,7 @@ import { logStructured } from './logger';
 import {
   ENTITLED_STATES,
   getPlaySubscriptionV2,
+  isRecoverablePlayState,
   PlayBillingUnconfiguredError,
   type PlayEnv,
   type SubscriptionV2Response,
@@ -373,12 +374,20 @@ async function syncUserPlanAfterCancel(
 export async function resolvePlanAfterSuspend(
   db: DbExecutor,
   userPk: string,
-  excludeSubscriptionId: string,
+  /**
+   * 제외할 구독 id. **여러 개를 한 번에 넘겨야 한다** — 예전에는 문자열 하나만 받아서,
+   * 한 사람이 같은 그룹에 활성 구독을 둘 이상 가지면 마지막 것만 제외되고 나머지가
+   * 유료로 남아 **강등이 안 됐다**(주석은 '전부 제외한다' 였는데 코드가 반대였다).
+   */
+  excludeSubscriptionIds: string | readonly string[],
 ): Promise<string | null> {
+  const excluded = new Set(
+    typeof excludeSubscriptionIds === 'string' ? [excludeSubscriptionIds] : excludeSubscriptionIds,
+  );
   const remaining = await findActiveSubscriptionsByUserPk(db, userPk);
   // 조회가 starts_at DESC 정렬이므로 가장 최근 유료 구독이 우선된다. 매핑(정지된) 구독은 제외.
   const paid = remaining.find(
-    (s) => s.subscriptionId !== excludeSubscriptionId && PAID_PLAN_TYPES.has(s.planType),
+    (s) => !excluded.has(s.subscriptionId) && PAID_PLAN_TYPES.has(s.planType),
   );
   await db.execute({
     sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -434,25 +443,22 @@ export async function propagateGroupMemberPlans(
     // 보류: 이 그룹에 묶인 멤버 구독을 **제외**하고 재계산한다. 멤버가 자기 개인
     // 구독을 따로 샀다면 그건 그대로 남는다.
     // 복구: 제외 없이 재계산 — 그룹 구독이 다시 잡혀 원래 등급으로 돌아온다.
-    let excludeSubscriptionId = '';
     if (suspend) {
       const memberSubRes = await db.execute({
         sql: `SELECT id FROM subscriptions
               WHERE user_id = ? AND status = 'active' AND plan_group_id = ?`,
         args: [memberPk, planGroupId],
       });
-      // 한 멤버가 같은 그룹에 활성 구독을 둘 이상 갖는 일은 없지만, 있어도
-      // 전부 제외해야 한다 — 하나만 빼면 나머지가 유료로 남는다.
-      for (const subRow of memberSubRes.rows) {
-        excludeSubscriptionId = String(subRow.id);
-        await resolvePlanAfterSuspend(db, memberPk, excludeSubscriptionId);
-      }
-      if (memberSubRes.rows.length === 0) {
-        // 그룹 멤버인데 구독 행이 없다 — 재계산만 해 둔다(방어적).
-        await resolvePlanAfterSuspend(db, memberPk, '');
-      }
+      // 한 멤버가 같은 그룹에 활성 구독을 둘 이상 갖는 일은 없지만, 있어도 **전부**
+      // 제외해야 한다 — 하나만 빼면 나머지가 유료로 남아 강등이 안 된다.
+      // 행이 없으면 빈 배열이라 '제외 없이 재계산' 과 같은 뜻이 된다(방어적).
+      await resolvePlanAfterSuspend(
+        db,
+        memberPk,
+        memberSubRes.rows.map((r) => String(r.id)),
+      );
     } else {
-      await resolvePlanAfterSuspend(db, memberPk, '');
+      await resolvePlanAfterSuspend(db, memberPk, []);
     }
 
     const after = await db.execute({
@@ -772,7 +778,16 @@ async function reconcileGoogleBeforeExpiry(
     (ENTITLED_STATES.has(state) || state === 'SUBSCRIPTION_STATE_CANCELED') &&
     Number.isFinite(expiryMs) &&
     expiryMs > params.now.getTime();
-  if (!stillEntitled) return 'expire';
+  if (!stillEntitled) {
+    // ⚠ **ON_HOLD/PAUSED 를 'expire' 로 보내면 그룹이 해체된다.** RTDN 이 보류로
+    // 그룹을 보존해도, 구독 행은 status='active' + 옛 expires_at 으로 남아 이 크론의
+    // 만료 쿼리에 **바로 걸린다**(5분 주기). 그러면 `cancelSubscriptionImmediate` →
+    // `disbandOwnedPlanGroup` 이 멤버십을 통째로 지우고, 결제가 복구돼도 초대 코드까지
+    // 만료돼 **가족·커플이 영구히 깨진다.** 판정은 RTDN 과 같은 헬퍼를 쓴다.
+    // ⚠ `!stillEntitled` **이후에만** 갈라야 한다 — 앞에 두면 '기간종료 해지 예약 +
+    //    만료 미래'(CANCELED)까지 보류로 새어 나간다.
+    return isRecoverablePlayState(state) ? 'suspend' : 'expire';
+  }
 
   // RTDN(갱신 알림) 유실 — Play 는 아직 유효하다. 만료 처리 대신 Play 권위값으로
   // 연장한다 (applyStoreEntitlement 갱신 분기와 동일 규칙: 구독·스토어 트랜잭션·
@@ -951,7 +966,11 @@ async function reconcileStoreBeforeExpiry(
   },
 ): Promise<'expire' | 'skip' | 'suspend'> {
   const google = await reconcileGoogleBeforeExpiry(db, env, params);
-  if (google === 'skip') return 'skip';
+  // ⚠ **'expire' 일 때만 애플에 물어본다.** 'skip'(아직 유효)과 'suspend'(보류)는
+  // 구글이 내린 확정 판정이라 그대로 돌려줘야 한다. 예전에는 'skip' 만 단락시켜서,
+  // 구글이 'suspend' 를 내도 애플 갈래가 다시 돌고 애플 트랜잭션이 없어 'expire' 로
+  // 덮였다 — 보류가 통째로 무효가 되는 자리였다.
+  if (google !== 'expire') return google;
   // 구글 트랜잭션이 없어 'expire' 가 나왔을 수 있다 — 애플도 물어본다.
   // (한 구독이 두 스토어에 동시에 묶이는 일은 없으므로 순서는 무해하다.)
   return reconcileAppleBeforeExpiry(db, env, params);

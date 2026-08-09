@@ -39,6 +39,19 @@ export interface Env {
   APPLE_KEY_ID?: string;
   /** App Store Server API 개인키(.p8 PEM 전체). 결제 검증 **전용** — 로그인과 무관하다. */
   APPLE_PRIVATE_KEY?: string;
+  /**
+   * **APNs**(iOS 푸시) 키의 Key ID.
+   *
+   * ⚠ 애플 키가 이제 셋이고 **전부 다르다.** 한쪽에 다른 쪽 값을 넣으면 그 기능만
+   * 조용히 401 로 죽는다:
+   *   - 로그인:  `APPLE_SIGNIN_KEY_ID` / `APPLE_SIGNIN_PRIVATE_KEY`
+   *   - 결제:    `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY` (+ `APPLE_ISSUER_ID`)
+   *   - 푸시:    `APNS_KEY_ID` / `APNS_PRIVATE_KEY` (+ `APPLE_TEAM_ID`)
+   * 푸시 키는 Developer Portal → Keys 에서 **APNs** 권한으로 발급한다(추가 비용 없음).
+   */
+  APNS_KEY_ID?: string;
+  /** APNs 키의 `.p8` **내용**(PEM 전문). 파일 경로가 아니다(Workers 에 파일시스템이 없다). */
+  APNS_PRIVATE_KEY?: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
   GOOGLE_VERTEX_DYNAMIC_TEXT_ENABLED?: string;
   GOOGLE_VERTEX_LOCATION?: string;

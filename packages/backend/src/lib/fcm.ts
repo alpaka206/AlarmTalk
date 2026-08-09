@@ -1,6 +1,20 @@
 import type { Client } from '@libsql/client/web';
 import type { Env } from '../types';
 import { logStructured } from './logger';
+
+/**
+ * 소셜/안내 알림 채널. **앱의 `alarm/NotificationChannels.kt` 값과 같아야 한다** —
+ * 존재하지 않는 채널 id 를 주면 Android 8+ 에서 알림이 **아예 표시되지 않는다**(로그에는
+ * 성공으로 남아 발견이 극히 어렵다). 결제 안내를 울림 채널로 보내면 알람 소리가 난다.
+ */
+const SOCIAL_CHANNEL_ID = 'voice_alarm_social_updates_v1';
+import {
+  apnsConfigFromEnv,
+  isDeadApnsToken,
+  sendApnsNotifications,
+  type ApnsMessage,
+  type ApnsSendResult,
+} from './apns';
 import { getGoogleAccessToken, parseServiceAccountJson } from './google-oauth';
 
 export type PushLocale = 'ko' | 'en';
@@ -58,6 +72,28 @@ function buildFcmMessage(msg: FcmMessage): Record<string, unknown> {
 
 /** 영구적으로 무효한 토큰을 뜻하는 FCM v1 에러 코드 — push_tokens 에서 제거 대상. */
 const STALE_TOKEN_ERRORS = new Set(['UNREGISTERED', 'INVALID_ARGUMENT', 'NOT_FOUND']);
+
+export interface PushTarget {
+  token: string;
+  platform: string;
+}
+
+/**
+ * 사용자의 푸시 토큰을 **플랫폼과 함께** 가져온다.
+ *
+ * ⚠ iOS 는 FCM 이 아니라 **APNs 로 직접** 보낸다(`lib/apns.ts` 주석 참조). 그래서
+ * 보내는 쪽이 플랫폼을 알아야 한다 — 섞어서 FCM 으로 보내면 iOS 토큰은 전부 조용히
+ * 버려진다(FCM 은 등록되지 않은 토큰으로 보고 지운다).
+ */
+export async function getPushTargetsForUser(db: Client, userId: string): Promise<PushTarget[]> {
+  const result = await db.execute({
+    sql: `SELECT pt.token, pt.platform FROM push_tokens pt
+          JOIN users u ON u.id = pt.user_id
+          WHERE u.id = ? OR u.google_id = ?`,
+    args: [userId, userId],
+  });
+  return result.rows.map((r) => ({ token: String(r.token), platform: String(r.platform) }));
+}
 
 export async function getTokensForUser(db: Client, userId: string): Promise<string[]> {
   // push_tokens.user_id 는 users.id(PK, FK REFERENCES users(id))로 저장한다. 하지만 호출부는 users.id
@@ -345,15 +381,45 @@ export async function notifyDowngradedAlarms(
  */
 export async function sendPaymentFailedPush(
   db: Client,
-  env: Pick<Env, 'FIREBASE_PROJECT_ID' | 'FIREBASE_SERVICE_ACCOUNT_JSON'>,
+  env: Pick<
+    Env,
+    | 'FIREBASE_PROJECT_ID'
+    | 'FIREBASE_SERVICE_ACCOUNT_JSON'
+    | 'APNS_KEY_ID'
+    | 'APNS_PRIVATE_KEY'
+    | 'APPLE_TEAM_ID'
+    | 'APPLE_BUNDLE_ID'
+    | 'ENVIRONMENT'
+  >,
   params: { ownerUserPk: string; memberUserPks: string[] },
 ): Promise<void> {
-  const messages: FcmMessage[] = [];
+  const fcmMessages: FcmMessage[] = [];
+  const apnsMessages: ApnsMessage[] = [];
 
   const push = async (userId: string, title: string, body: string) => {
-    for (const token of await getTokensForUser(db, userId)) {
-      // channelId 를 알람 채널로 두면 결제 안내가 알람 소리로 울린다 — 일반 채널을 쓴다.
-      messages.push({ token, title, body, data: { type: 'plan_changed', channelId: 'general' } });
+    for (const target of await getPushTargetsForUser(db, userId)) {
+      if (target.platform === 'ios') {
+        // iOS 는 APNs 로 직접 간다(`lib/apns.ts` 주석). FCM 에 섞어 보내면 조용히 버려진다.
+        apnsMessages.push({ token: target.token, title, body, data: { type: 'plan_changed' } });
+      } else {
+        // ⚠ **두 통을 보낸다.** `notification` 블록이 붙은 메시지는 앱이 백그라운드일 때
+        // `onMessageReceived` 를 호출하지 않는다 — 표시용 한 통만 보내면 알림은 뜨는데
+        // `PlanChangeSyncWorker` 가 안 돌아 **무료로 내려간 목소리 알람이 그대로 울린다.**
+        // (1) 표시용 — 결제 안내는 울림 채널이 아니라 소셜 채널로.
+        fcmMessages.push({
+          token: target.token,
+          title,
+          body,
+          data: { type: 'billing_hold', channelId: SOCIAL_CHANNEL_ID },
+        });
+        // (2) 워커 기동용 data-only — title/body 가 없어야 onMessageReceived 가 온다.
+        fcmMessages.push({
+          token: target.token,
+          title: '',
+          body: '',
+          data: { type: 'plan_changed' },
+        });
+      }
     }
   };
 
@@ -372,9 +438,37 @@ export async function sendPaymentFailedPush(
     );
   }
 
-  if (messages.length === 0) return;
-  const results = await sendPushNotifications(messages, env);
-  await pruneStaleTokens(db, results);
+  if (fcmMessages.length > 0) {
+    await pruneStaleTokens(db, await sendPushNotifications(fcmMessages, env));
+  }
+  if (apnsMessages.length > 0) {
+    const config = apnsConfigFromEnv(env);
+    // ⚠ 키가 없으면 조용히 건너뛴다 — 푸시가 없다고 보류 처리가 깨지면 안 된다.
+    if (config) {
+      const results = await sendApnsNotifications(apnsMessages, config);
+      await pruneDeadApnsTokens(db, results);
+    }
+  }
+}
+
+/**
+ * APNs 가 "이 토큰은 죽었다" 고 한 것만 지운다.
+ *
+ * ⚠ 네트워크 오류로 지우면 그 기기는 재로그인 전까지 푸시를 영영 못 받는다.
+ */
+async function pruneDeadApnsTokens(db: Client, results: ApnsSendResult[]): Promise<void> {
+  const dead = results.filter((r) => !r.success && isDeadApnsToken(r.reason)).map((r) => r.token);
+  if (dead.length === 0) return;
+  const placeholders = dead.map(() => '?').join(', ');
+  try {
+    await db.execute({
+      sql: `DELETE FROM push_tokens WHERE token IN (${placeholders})`,
+      args: dead,
+    });
+    logStructured('info', { at: 'push.apns.prune', removed: dead.length });
+  } catch (err) {
+    logStructured('error', { at: 'push.apns.prune', error: String(err) });
+  }
 }
 
 export async function sendPlanChangedPush(

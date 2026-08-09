@@ -20,6 +20,7 @@ import {
   ANDROID_PUBLISHER_SCOPE,
   ENTITLED_STATES,
   googlePlanKeyFromProductId,
+  isRecoverablePlayState,
   type SubscriptionV2Response,
 } from './billing-google';
 
@@ -359,8 +360,9 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   // 소유자 권한만 보수적으로 회수한다(결제가 복구되면 entitle 가 users.plan 을
   // 원복). 진짜 종료 상태(EXPIRED/REVOKED/CANCELED+만료지남)에서만 그룹 정리를
   // 포함한 완전 취소를 한다. 스테일 토큰(비활성 매핑)은 위 게이트에서 걸러졌다.
-  const isRecoverable =
-    state === 'SUBSCRIPTION_STATE_ON_HOLD' || state === 'SUBSCRIPTION_STATE_PAUSED';
+  // 판정은 만료 크론 재조회(`reconcileGoogleBeforeExpiry`)와 **같은 헬퍼**를 쓴다 —
+  // 갈라지면 한쪽이 보존한 그룹을 다른 쪽이 해체한다.
+  const isRecoverable = isRecoverablePlayState(state);
   if (isRecoverable) {
     // 매핑(정지된) 구독을 제외한 다른 활성 유료 구독이 있으면 그 plan 을 유지하고,
     // 없을 때만 free 로 내린다 (deactivate 의 E2 잔여구독 유지와 대칭). 회복형 상태라

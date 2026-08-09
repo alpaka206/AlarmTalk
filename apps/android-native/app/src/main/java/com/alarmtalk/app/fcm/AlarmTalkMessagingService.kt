@@ -48,6 +48,19 @@ class AlarmTalkMessagingService : FirebaseMessagingService() {
             runCatching { com.alarmtalk.app.sync.VoiceAccessSyncWorker.runOnce(applicationContext) }
                 .onFailure { AlarmTalkLog.reportError("voice_access_revoked handling failed", it) }
         }
+        // 공유 이용권 결제 실패 — 표시 전용. 백그라운드에서는 시스템이 띄우지만
+        // 포그라운드에서는 여기로만 오므로 직접 그린다(안 그리면 아무것도 안 보인다).
+        if (message.data["type"] == "billing_hold") {
+            val title = message.notification?.title ?: message.data["title"]
+            val body = message.notification?.body ?: message.data["body"]
+            if (!title.isNullOrBlank() && !body.isNullOrBlank()) {
+                runCatching {
+                    com.alarmtalk.app.alarm.SocialNotificationFactory.notifyBillingHold(
+                        applicationContext, title, body,
+                    )
+                }.onFailure { AlarmTalkLog.reportError("billing_hold notification failed", it) }
+            }
+        }
         if (message.data["type"] == "plan_changed") {
             runCatching { com.alarmtalk.app.sync.PlanChangeSyncWorker.runOnce(applicationContext) }
                 .onFailure { AlarmTalkLog.reportError("plan_changed handling failed", it) }
