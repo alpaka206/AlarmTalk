@@ -45,6 +45,7 @@ private struct LegalWebView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(host: url.host) }
 
+    @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
         private let host: String?
 
@@ -52,21 +53,26 @@ private struct LegalWebView: UIViewRepresentable {
 
         /// 문서 안의 외부 링크는 **앱 안에서 열지 않는다.** 인앱 뷰어가 아무 사이트나
         /// 여는 창이 되면, 사용자는 자기가 어디에 있는지 알 수 없게 된다.
+        ///
+        /// ⚠ **완료 핸들러 형태로 쓰지 말 것 — 그러면 아예 안 불린다.** 예전에는
+        /// `decisionHandler:` 를 받는 변형을 썼는데, 최신 SDK 에서 그 요구사항은
+        /// `@MainActor` 로 격리돼 있어서 nonisolated 인 `NSObject` 메서드와 **서명이
+        /// 어긋났다**. 컴파일러는 "nearly matches optional requirement" 경고만 내고
+        /// 넘어가고(선택 요구사항이라 오류가 아니다), WebKit 은 그 메서드를 찾지 못해
+        /// **외부 링크가 인앱 뷰어 안에서 그대로 열렸다** — 이 코드가 막으려던 바로 그것이다.
+        /// async 변형 + `@MainActor` 는 그 어긋남이 생길 수 없다.
         func webView(
             _ webView: WKWebView,
-            decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-        ) {
-            guard let target = navigationAction.request.url else {
-                decisionHandler(.cancel)
-                return
-            }
+            decidePolicyFor navigationAction: WKNavigationAction
+        ) async -> WKNavigationActionPolicy {
+            guard let target = navigationAction.request.url else { return .cancel }
             if navigationAction.navigationType == .linkActivated, target.host != host {
-                UIApplication.shared.open(target)
-                decisionHandler(.cancel)
-                return
+                // 완료 핸들러 오버로드를 **명시**한다 — 인자 하나짜리는 async 로도 풀려서
+                // `await` 를 요구하고, 그러면 사파리가 열릴 때까지 정책 결정이 미뤄진다.
+                UIApplication.shared.open(target, options: [:], completionHandler: nil)
+                return .cancel
             }
-            decisionHandler(.allow)
+            return .allow
         }
     }
 }

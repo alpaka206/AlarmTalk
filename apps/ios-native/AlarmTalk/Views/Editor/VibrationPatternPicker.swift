@@ -133,6 +133,11 @@ extension VibrationPattern {
 /// 본 헬퍼는 짝수 인덱스(on time) 만 시간 오프셋 누적 시점으로 사용해
 /// `UIImpactFeedbackGenerator` 펄스를 발사한다.
 enum VibrationHapticPreview {
+    /// ⚠ `@MainActor` 가 필요하다. `UIImpactFeedbackGenerator` 는 메인 액터 격리 타입이라
+    /// nonisolated 문맥에서 만들고 `prepare()` 하면 Swift 6 에서 데이터 레이스 경고가 나고,
+    /// 실제로도 UIKit 을 백그라운드에서 건드리는 것이 된다. 호출부는 전부 뷰(메인)라
+    /// 격리를 붙여도 잃는 것이 없다.
+    @MainActor
     static func play(_ pattern: VibrationPattern) {
         guard pattern != .none else { return }
         let descriptor = descriptor(for: pattern)

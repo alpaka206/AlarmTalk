@@ -331,24 +331,33 @@ struct VoiceProfileManagementPanel: View {
                 // 무료면 이용권 안내, 유료인데 이번 달을 다 썼으면 한도 안내.
                 // 예전에는 둘 다 이용권 안내로 보내, 이용권이 있는 사람에게 이용권을
                 // 사라고 말하고 있었다.
+                // 안드로이드 `ui/voices/VoiceProfileManagementPanel.kt` 의 when 과 **같은 세 갈래**다:
+                //   canOpenCreateForm → 폼 / !canCreateVoice → 이용권 안내 / else → 한도 안내
                 if !hasPaidVoiceAccess {
                     planGateOpen = true
-                } else if monthlyExhausted {
-                    monthlyLimitNoticeOpen = true
                 } else if !voice.isProfileLimitReached {
                     route = .clone
                 } else {
-                    planGateOpen = true
+                    // ⚠ **여기서 이용권 안내를 띄우지 말 것.** 이미 유료인 사람에게
+                    // "이용권을 사세요" 라고 말하게 된다 — 슬롯이 찬 것과 이용권이 없는 것은
+                    // 다른 문제다. 안드로이드는 이 자리에서 한도 안내를 띄운다.
+                    monthlyLimitNoticeOpen = true
                 }
             }
             .font(theme.typography.bodyMedium.weight(.semibold))
             .buttonStyle(.borderedProminent)
             .tint(theme.palette.primary)
             .controlSize(.small)
-            // ⚠ **한도를 다 썼다고 버튼을 끄지 않는다.** 안드로이드는 켜 두고 눌렀을 때
-            // 이유를 말한다 — 흐린 버튼은 '왜' 를 말하지 못하고, 옆의 '이번 달 0/1' 을
-            // 스스로 해석하게 만든다.
-            .disabled(voice.isBusy)
+            // ⚠ **이번 달을 다 썼으면 버튼을 끈다** — 안드로이드
+            // (`ui/voices/VoiceProfileManagementPanel.kt` 의 `enabled = !voiceProfileBusy
+            // && !monthlyExhausted`)와 같다. 흐려도 '왜' 가 읽히는 건 **바로 옆에
+            // '이번 달 0/1' 이 있기 때문**이고, 그 숫자는 유료일 때만 뜨는데
+            // `monthlyExhausted` 도 유료일 때만 참이라 둘은 항상 같이 나타난다.
+            //
+            // (예전 주석은 "안드로이드는 켜 두고 눌렀을 때 이유를 말한다" 고 적어 두고
+            // 켜 둔 채로 안내 모달을 띄웠는데, **안드로이드는 그런 적이 없다.** 없는 근거로
+            // 갈라져 있었다 — 한 번 더 눌러야 이유를 듣는 만큼 iOS 쪽이 손해였다.)
+            .disabled(voice.isBusy || monthlyExhausted)
         }
     }
 

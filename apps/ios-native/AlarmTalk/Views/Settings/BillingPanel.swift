@@ -331,9 +331,11 @@ struct BillingPanel: View {
             socialFeatures.statusMessage = reason
             return
         }
-        let success = true
+        // 여기 오는 건 `.success` 하나뿐이다(나머지 갈래는 위에서 전부 return).
+        // 예전에는 `let success = true` + `guard success else { return }` 가 남아 있어
+        // **없는 실패 경로가 있는 것처럼** 보였다 — 컴파일러도 "will never be executed"
+        // 로 잡았다.
         await auth.refreshUser()
-        guard success else { return }
 
         let refreshedTargets = shareableVouchersForPlan(
             socialFeatures.vouchers,

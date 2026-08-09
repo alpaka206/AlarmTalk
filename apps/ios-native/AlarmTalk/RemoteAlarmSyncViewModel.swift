@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 // MARK: - RemoteAlarmSyncViewModel
 //
@@ -132,12 +133,30 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             )
             statusMessage = failedMessage ?? "전체 동기화 완료"
         } catch {
-            statusMessage = userFacingErrorMessage(
-                error,
-                fallback: "알람 정보를 불러오거나 변경사항을 저장하지 못했어요"
-            )
+            // ⚠ **사이클 전체 실패는 사용자에게 띄우지 않는다 — 로그만 남긴다.**
+            // `runFullSync` 는 사용자가 누른 것이 아니라 앱 시작·세션 변경·전경 복귀·
+            // 알람 탭 진입에서 **자동으로** 돈다. 그래서 실패 문구를 띄우면 사용자가
+            // 한 적 없는 일이 실패했다고 말하는 꼴이고, 다음 진입·주기 sync 가 알아서
+            // 재시도한다. 특히 첫 로그인 직후 동의가 정착하기 전 `GET /alarm` 이 잠깐
+            // `CONSENT_REQUIRED` 로 막히는 게 흔한데, 이건 정상 재시도로 곧 풀린다.
+            //
+            // 안드로이드가 같은 이유로 이미 이 토스트를 걷어냈다
+            // (`MainViewModelAuthActions.kt` 의 `syncNow` onFailure) — iOS 만 남아 있었다.
+            // ⚠ **부분 실패(`failedMessage`)는 그대로 띄운다.** 그건 개별 알람이 실제로
+            // 안 올라간 것이라 사용자가 알아야 한다.
+            // ⚠ 403 이라고 다 강등하지 말 것 — `error_code` 로 CONSENT_REQUIRED 만 고른다.
+            // `CONSENT_STATE_UNAVAILABLE`·`ACCOUNT_PENDING_DELETION` 같은 실제 파손은
+            // 로그에 error 로 남아야 한다(안드로이드도 같은 구분을 한다).
+            let code: String? = if case let APIError.server(_, _, errorCode) = error { errorCode } else { nil }
+            if code == AlarmTalkAPI.consentRequiredErrorCode {
+                Self.syncLogger.info("자동 동기화 연기: 동의 정착 전이라 다음 회차에 재시도한다")
+            } else {
+                Self.syncLogger.error("자동 동기화 실패: \(String(describing: error), privacy: .public)")
+            }
         }
     }
+
+    private static let syncLogger = Logger(subsystem: "com.alarmtalk.app", category: "AlarmSync")
 
     /// push/pull 부분 실패 카운트를 사람이 읽는 안내로 변환. 실패가 없으면 nil.
     /// Android `alarmSyncFailureMessage` (strings.xml msg_sync_*_partial_failed) parity.
