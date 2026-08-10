@@ -291,6 +291,9 @@ internal fun MenuTabPanel(
                     // **넘기는 호출자가 하나도 없었다.**
                     WakerSheetOptionRow(
                         icon = themeModeIcon(mode),
+                        // iOS 와 같이 **맨몸 아이콘 + 끝까지 가는 구분선**이다(배지 없음).
+                        iconBadged = false,
+                        dividerInset = false,
                         title = themeModeShortLabel(context, mode),
                         description = themeModeDescription(context, mode),
                         selected = themeMode == mode,

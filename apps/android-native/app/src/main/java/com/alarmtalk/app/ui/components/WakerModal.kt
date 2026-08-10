@@ -157,6 +157,20 @@ internal fun WakerSheetOptionRow(
     modifier: Modifier = Modifier,
     description: String? = null,
     icon: ImageVector? = null,
+    /**
+     * 아이콘을 **배지(둥근 상자 + 배경)** 로 감쌀지. 기본은 감싼다.
+     *
+     * ⚠ 테마 시트는 `false` 다 — iOS 는 맨몸 심볼이고 배지를 두지 않는다
+     * (2026-08-10 "아이콘에 박스랑 배경 안 깔아줘도 돼"). 배지는 아이콘이 여러 종류의
+     * 대상을 구분해야 할 때 쓰는 표현이라, 세 항목뿐인 테마에는 과하다.
+     */
+    iconBadged: Boolean = true,
+    /**
+     * 구분선을 **텍스트 시작선까지 들여쓸지**. 기본은 들여쓴다(아이콘이 있을 때).
+     *
+     * ⚠ 테마 시트는 `false` 다 — iOS 선택 시트의 구분선은 좌우 끝까지 간다.
+     */
+    dividerInset: Boolean = true,
     leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     divider: Boolean = false,
@@ -176,11 +190,19 @@ internal fun WakerSheetOptionRow(
         ) {
             when {
                 leading != null -> leading()
-                icon != null -> WakerIconBadge(
+                icon != null && iconBadged -> WakerIconBadge(
                     icon = icon,
                     containerColor = if (selected) scheme.primary else scheme.surface,
                     contentColor = if (selected) scheme.onPrimary else scheme.primary,
                     bordered = !selected,
+                )
+                icon != null -> Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    // iOS 는 선택 여부와 무관하게 항상 primary 색이다.
+                    tint = scheme.primary,
+                    // iOS `frame(width: 32)` 과 같은 자리를 차지한다(아이콘 24 + 여유).
+                    modifier = Modifier.size(32.dp),
                 )
             }
             Column(
@@ -219,11 +241,11 @@ internal fun WakerSheetOptionRow(
             }
         }
         if (divider) {
-            // 텍스트 시작선까지 들여쓴 헤어라인 — pane(SnoozeOptionDivider)과 동일 문법.
-            // 아이콘 배지(40) + 간격(12) + 좌패딩(20) = 72, 배지 없으면 좌패딩만.
+            // 아이콘 배지가 있으면 텍스트 시작선(40+12+20=72)까지 들여쓰고, 아니면
+            // **좌우 끝까지** 긋는다 — iOS 선택 시트가 그렇다(2026-08-10 "구분선을 더 길게").
             Box(
                 modifier = Modifier
-                    .padding(start = if (hasLeading) 72.dp else 20.dp)
+                    .padding(start = if (hasLeading && dividerInset) 72.dp else 0.dp)
                     .fillMaxWidth()
                     .height(1.dp)
                     .background(scheme.outlineVariant),
