@@ -331,52 +331,48 @@ internal fun PlayModeSelector(
     voiceLocked: Boolean = false,
     onLockedVoiceClick: () -> Unit = {},
 ) {
-    // 세그먼트 컨트롤: 하나의 트랙 안에서 선택 세그먼트만 채워진다.
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerButtonShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-        border = wakerCardBorder(),
-    ) {
-        Row(
-            modifier = Modifier.padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            // ⚠ **두 칸이다.** '알람 + 목소리' 를 되살리지 말 것(AlarmPlayModes 주석 참조).
-            // ⚠ **목소리가 왼쪽**이다 — 우리는 목소리 알람 앱이고, 새 알람의 기본값도
-            // 목소리다(`AlarmEditorState` 의 초기 playMode). 읽는 순서와 기본 선택이
-            // 어긋나면 첫 화면에서 오른쪽 칸이 켜져 있어 무엇이 기본인지 흐려진다.
-            PlayModeChip(
-                label = stringResource(R.string.editor_play_mode_voice_only),
-                selected = AlarmPlayModes.normalize(selected) == AlarmPlayModes.VOICE_ONLY,
-                locked = voiceLocked,
-                onClick = {
-                    if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.VOICE_ONLY)
-                },
-                modifier = Modifier.weight(1f),
-            )
-            PlayModeChip(
-                label = stringResource(R.string.editor_play_mode_alarm_only),
-                selected = AlarmPlayModes.normalize(selected) == AlarmPlayModes.ALARM_ONLY,
-                onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
+    // ⚠ **트랙을 직접 그리지 말고 `EditorSegmentedSelector` 에 맡긴다.**
+    // 예전에는 여기서 `Surface` + `PlayModeChip` 두 개를 직접 늘어놓았는데, 선택 표시를
+    // 칩 배경에서 **미끄러지는 트랙 배경**으로 옮기면서(2026-08-10) 이쪽에는 그 배경을
+    // 그려 줄 주체가 없어졌다 — 그래서 **목소리·알람 어느 쪽도 선택돼 보이지 않았다**
+    // (같은 날 지적 "둘 다 표시가 안 되어 있다"). 세그먼트가 둘이면 또 갈라진다.
+    //
+    // ⚠ **두 칸이다.** '알람 + 목소리' 를 되살리지 말 것(AlarmPlayModes 주석 참조).
+    // ⚠ **목소리가 왼쪽**이다 — 우리는 목소리 알람 앱이고, 새 알람의 기본값도
+    // 목소리다(`AlarmEditorState` 의 초기 playMode). 읽는 순서와 기본 선택이
+    // 어긋나면 첫 화면에서 오른쪽 칸이 켜져 있어 무엇이 기본인지 흐려진다.
+    EditorSegmentedSelector(
+        options = listOf(
+            AlarmPlayModes.VOICE_ONLY to stringResource(R.string.editor_play_mode_voice_only),
+            AlarmPlayModes.ALARM_ONLY to stringResource(R.string.editor_play_mode_alarm_only),
+        ),
+        // ⚠ **정규화한 값으로 비교한다.** 저장된 옛 값('알람 + 목소리')은 목소리로 읽는다 —
+        // 날것으로 비교하면 어느 칸과도 안 맞아 선택 표시가 사라진다.
+        selected = AlarmPlayModes.normalize(selected),
+        onSelect = { value ->
+            if (value == AlarmPlayModes.VOICE_ONLY && voiceLocked) {
+                onLockedVoiceClick()
+            } else {
+                onSelect(value)
+            }
+        },
+        lockedValues = if (voiceLocked) setOf(AlarmPlayModes.VOICE_ONLY) else emptySet(),
+    )
 }
 
-// 공용 세그먼트 선택기 — `PlayModeChip` 을 그대로 재사용해 '재생 방식' 세그먼트와 높이·
-// 모서리·굵기·선택색(primaryContainer)이 일치한다.
+// 공용 세그먼트 선택기 — 앱의 **유일한** 세그먼트 구현이다.
 //
 // ⚠ 주석에 적혀 있던 '목소리/녹음·파일 소스' 는 **더 이상 없다.** 그 세그먼트는 없앴고
 // '직접 녹음' 은 목소리 목록의 마지막 항목이 됐다(`VoiceAudioCard` 의 `recordingOption`).
-// 현재 사용처는 `VoiceProfileManagementPanel` 한 곳뿐이다.
+// 지금 쓰는 곳은 `PlayModeSelector`(재생 방식)와 `VoiceProfileManagementPanel` 이다.
 @Composable
 internal fun EditorSegmentedSelector(
     options: List<Pair<String, String>>,
     selected: String,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /// 자물쇠 배지를 달 값들(무료 등급에서 못 고르는 칸). 눌리기는 하되 호출부가 안내를 띄운다.
+    lockedValues: Set<String> = emptySet(),
 ) {
     // ⚠ **선택 표시는 배경 하나가 미끄러져 옮겨간다.** 예전에는 칸마다 색이 즉시
     // 바뀌어(`Surface(color=...)`) 전환이 툭 끊겼다 — iOS 는 `matchedGeometryEffect` 로
@@ -400,27 +396,36 @@ internal fun EditorSegmentedSelector(
             val count = options.size.coerceAtLeast(1)
             BoxWithConstraints {
                 val slotWidth = maxWidth / count
-                // 미끄러지는 배경 — 칸 하나 크기로 두고 위치만 옮긴다.
-                Box(
-                    modifier = Modifier
-                        .width(slotWidth)
-                        .fillMaxHeight()
-                        .offset(x = slotWidth * thumbFraction)
-                        .clip(WakerChipShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .border(
-                            BorderStroke(
-                                1.dp,
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+                // ⚠ **`matchParentSize()` 로 한 겹 감싼다.** 트랙의 높이는 아래 `Row`(칩)가
+                // 정하는데, 이 `Box` 에 들어오는 높이 제약은 **위가 열려 있다**(wrap content).
+                // 그래서 배경에 `fillMaxHeight()` 만 걸면 늘어날 상한이 없어 **높이 0** 이
+                // 되고, 배경이 그려지긴 하는데 **보이지 않는다** — 선택된 칸이 아무 표시도
+                // 없어 보인다. `matchParentSize` 는 자기 크기를 부모(=Row가 정한 크기)에
+                // 맞추면서 **부모 크기 계산에는 끼지 않아** 순환도 생기지 않는다.
+                Box(modifier = Modifier.matchParentSize()) {
+                    // 미끄러지는 배경 — 칸 하나 크기로 두고 위치만 옮긴다.
+                    Box(
+                        modifier = Modifier
+                            .width(slotWidth)
+                            .fillMaxHeight()
+                            .offset(x = slotWidth * thumbFraction)
+                            .clip(WakerChipShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .border(
+                                BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+                                ),
+                                WakerChipShape,
                             ),
-                            WakerChipShape,
-                        ),
-                )
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
                     options.forEach { (value, label) ->
                         PlayModeChip(
                             label = label,
                             selected = selected == value,
+                            locked = lockedValues.contains(value),
                             onClick = { onSelect(value) },
                             modifier = Modifier.weight(1f),
                         )

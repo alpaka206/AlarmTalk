@@ -240,9 +240,8 @@
     <string name="editor_voice_generation_canceled_time_changed">알람 시각이 바뀌어 음성 생성을 중단했어요.</string>
     <string name="editor_voice_loading">목소리를 불러오는 중이에요.</string>
     <string name="editor_voice_output_title">목소리</string>
-    <string name="editor_voice_repeat_on">반복</string>
-    <string name="editor_voice_repeat_once">한 번만</string>
-    <string name="editor_voice_repeat_title">반복 재생</string>
+    <string name="editor_voice_repeat_hint">반복을 끄면 목소리가 한 번만 나와요.</string>
+    <string name="editor_voice_repeat_title">끌 때까지 반복</string>
     <string name="editor_voice_select">목소리 선택</string>
     <string name="editor_voice_source_local">직접 녹음</string>
     <string name="editor_voice_local_detail">이 알람에만 쓸 소리를 직접 녹음하기</string>

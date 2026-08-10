@@ -33,18 +33,27 @@ final class HolidaySheetScreenshotUITests: XCTestCase {
         capture("holiday-sheet")
 
         // 시트를 닫고 날씨·운세도 이어서 담는다.
-        app.tap()
+        dismissSheet(app)
         if app.buttons.containing(.staticText, identifier: "날씨 지역").firstMatch.waitForExistence(timeout: 5) {
             app.buttons.containing(.staticText, identifier: "날씨 지역").firstMatch.tap()
             _ = app.staticTexts["원하는 지역"].waitForExistence(timeout: 5)
             capture("weather-sheet")
-            app.tap()
+            dismissSheet(app)
         }
         if app.buttons.containing(.staticText, identifier: "운세 정보").firstMatch.waitForExistence(timeout: 5) {
             app.buttons.containing(.staticText, identifier: "운세 정보").firstMatch.tap()
             _ = app.staticTexts["운세 정보"].waitForExistence(timeout: 5)
             capture("fortune-dialog")
         }
+    }
+
+    /// 바텀시트를 스크림 탭으로 닫는다.
+    ///
+    /// ⚠ **`app.tap()` 을 쓰지 말 것 — 화면 정중앙을 누른다.** 시트가 화면의 50% 를
+    /// 차지하므로 그 지점은 스크림과 시트의 **경계**라, 시트가 안 닫힌 채 다음 행을 누르러
+    /// 가서 "not hittable" 로 실패했다(2026-08-10). 위쪽 15% 지점은 언제나 스크림이다.
+    private func dismissSheet(_ app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
     }
 
     private func capture(_ name: String) {

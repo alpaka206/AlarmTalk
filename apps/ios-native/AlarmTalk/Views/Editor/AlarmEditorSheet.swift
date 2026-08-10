@@ -341,7 +341,9 @@ struct AlarmEditorSheet: View {
     @ViewBuilder
     private func chrome<V: View>(_ content: V) -> some View {
         content
-            .sheet(isPresented: $voiceSheetOpen) {
+            // ⚠ **`.sheet` 로 되돌리지 말 것.** 다른 선택 시트와 같은 바텀시트다
+            // (`BottomSheetHost` — 좌우 여백 0, 위 모서리만 둥글다).
+            .bottomSheet(isPresented: $voiceSheetOpen, onDismiss: { voiceSheetOpen = false }) {
             VoiceSelectionSheet(
                 options: voiceOptions,
                 // 녹음 갈래일 때는 체크가 '직접 녹음' 행에 있어야 한다 — 프로필 id 를 그대로
@@ -352,7 +354,8 @@ struct AlarmEditorSheet: View {
                 onSelect: selectVoiceOption,
                 onPreview: { option in
                     Task { await voiceStudio.previewGreeting(voiceId: option.id, session: auth.session) }
-                }
+                },
+                onClose: { voiceSheetOpen = false }
             )
         }
         .navigationDestination(isPresented: $freeBucketPaneOpen) {

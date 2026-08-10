@@ -10,9 +10,15 @@ import SwiftUI
 ///
 /// ⚠ **행마다 '들어보기' 버튼이 있다.** 행 자체는 '선택', 버튼은 '들어보기' 로 나눈다 —
 /// 고르려면 먼저 들어봐야 하는데, iOS 에는 편집기에서 미리 들을 방법이 아예 없었다.
+///
+/// ⚠ **`NavigationStack` + '닫기' 툴바로 되돌리지 말 것**(2026-08-10 지적 "다른 곳처럼 해,
+/// 닫기 버튼 꼭 필요할까?"). 이 시트만 상단바에 가운데 작은 제목과 '닫기' 를 달고 있어
+/// 다른 선택 시트(`SelectionSheet` — 좌측 정렬 큰 제목, 버튼 없음)와 달라 보였다.
+/// 닫는 법은 **스크림 탭과 아래로 끌기**에 맡긴다 — 고르면 어차피 닫히므로 '닫기' 는
+/// 취소와 같은 일을 하는 두 번째 액션이다(CLAUDE.md 「취소와 같은 일을 하는 버튼을 두
+/// 개 두지 않는다」).
 struct VoiceSelectionSheet: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    @Environment(\.dismiss) private var dismiss
 
     struct Option: Identifiable, Equatable {
         let id: String
@@ -31,33 +37,33 @@ struct VoiceSelectionSheet: View {
     let preparingID: String?
     let onSelect: (Option) -> Void
     let onPreview: (Option) -> Void
+    /// 시트를 닫는다. 바텀시트가 `fullScreenCover` 위에 직접 그려지므로 `dismiss` 대신
+    /// 호출부의 플래그를 내린다(`SelectionSheet` 를 쓰는 다른 시트와 같은 방식).
+    let onClose: () -> Void
 
     var body: some View {
-        NavigationStack {
+        // 껍데기(배경·모서리·드래그 핸들)는 `BottomSheetHost` 가 그린다.
+        // 안쪽 구성은 `SelectionSheet` 와 같은 규칙 — 좌측 정렬 22pt Bold 제목 + 행 목록.
+        VStack(alignment: .leading, spacing: 14) {
+            Text("목소리 고르기")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(theme.palette.onSurface)
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
+                .measuredSheetHeader()
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
-                        if index > 0 { AlarmSettingDivider() }
+                        if index > 0 { Divider() }
                         row(option)
                     }
                 }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 8)
-                .background(
-                    theme.palette.surface,
-                    in: RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-                )
-                .padding(20)
-            }
-            .homeGradientBackground()
-            .navigationTitle("목소리 고르기")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("닫기") { dismiss() }
-                }
+                .measuredSheetContent()
             }
         }
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func row(_ option: Option) -> some View {
@@ -65,7 +71,7 @@ struct VoiceSelectionSheet: View {
             Button {
                 onSelect(option)
                 // 잠긴 항목은 안내만 뜨고 선택되지 않으므로 시트를 닫지 않는다.
-                if !option.locked { dismiss() }
+                if !option.locked { onClose() }
             } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
@@ -117,7 +123,11 @@ struct VoiceSelectionSheet: View {
                 Color.clear.frame(width: 44, height: 44)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        // ⚠ **`SelectionSheet` 의 행 규격과 같게 둔다**(가로 20 · 세로 10 · 최소 높이 56 =
+        // 안드로이드 `WakerSheetOptionRow`). 패딩을 먼저, 그다음 최소 높이 — 순서를
+        // 뒤집으면 56 + 20 = 76 이 되어 다른 시트보다 행이 20 이나 높아진다.
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .frame(minHeight: 56)
     }
 }

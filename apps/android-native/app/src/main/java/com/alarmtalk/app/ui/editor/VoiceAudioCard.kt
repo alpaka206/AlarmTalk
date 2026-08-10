@@ -42,17 +42,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerChipShape
 import com.alarmtalk.app.WakerPanelShape
-import com.alarmtalk.app.WakerTileShape
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VibrationPatterns
@@ -822,61 +821,36 @@ private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
     }
 }
 
+/// 목소리를 **끌 때까지 반복**할지. 켜기/끄기 두 값뿐이라 스위치 하나로 낸다.
+///
+/// ⚠ **두 칸짜리 세그먼트('한 번만' / '반복')로 되돌리지 말 것**(2026-08-10 결정).
+/// 값이 둘인 것과 **선택지가 둘인 것은 다르다** — 반복은 켜고 끄는 성질이라 스위치가
+/// 맞고, iOS 가 이미 그렇게 돼 있었다. 세그먼트는 켠 상태가 어느 쪽인지 라벨을 읽어야
+/// 알 수 있는 반면 스위치는 한눈에 보인다.
 @Composable
 private fun VoiceRepeatSelector(
     repeat: Boolean,
     onRepeatChange: (Boolean) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.editor_voice_repeat_title), fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            VoiceRepeatChoice(
-                label = stringResource(R.string.editor_voice_repeat_once),
-                selected = !repeat,
-                onClick = { onRepeatChange(false) },
-                modifier = Modifier.weight(1f),
-            )
-            VoiceRepeatChoice(
-                label = stringResource(R.string.editor_voice_repeat_on),
-                selected = repeat,
-                onClick = { onRepeatChange(true) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun VoiceRepeatChoice(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = WakerTileShape,
-        color = if (selected) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-        },
-    ) {
-        Text(
-            text = label,
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 11.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onSecondaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-        )
+                // 스위치만이 아니라 **행 전체**가 눌린다 — 라벨을 눌러도 바뀌어야 한다.
+                .clip(WakerChipShape)
+                .clickable { onRepeatChange(!repeat) }
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.editor_voice_repeat_title),
+                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.width(12.dp))
+            AlarmTalkSwitch(checked = repeat, onCheckedChange = onRepeatChange)
+        }
+        MutedText(stringResource(R.string.editor_voice_repeat_hint))
     }
 }
 

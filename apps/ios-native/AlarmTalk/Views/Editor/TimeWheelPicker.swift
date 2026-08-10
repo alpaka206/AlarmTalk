@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// 휠이 자기 폭을 위로 보고한다(축소 배율 계산용).
+private struct TimeWheelWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// 드래그-스냅 방식의 시간 휠 picker.
 ///
 /// Android 의 `AlarmTimePicker.kt` / `DraggableTimeWheelColumn.kt` /
@@ -11,7 +19,7 @@ import SwiftUI
 ///
 /// UX:
 /// - 가운데 정렬된 큰 숫자 + 위아래 흐릿한 인접 항목.
-/// - 드래그 거리에 따른 자석 스냅 (항목 높이 72pt).
+/// - 드래그 거리에 따른 자석 스냅 (항목 높이 `itemHeight`).
 /// - 항목 변경 시 `UISelectionFeedbackGenerator` 햅틱.
 /// - 상하단 fade gradient mask 로 wheel-edge 효과.
 /// - `snappy(duration: 0.25)` 스프링 애니메이션.
@@ -30,51 +38,67 @@ struct TimeWheelPicker: View {
     /// 아무리 좁아도 이보다 더 줄이지는 않는다(안드로이드 `coerceIn(0.78, 1)`).
     private static let minimumScale: CGFloat = 0.78
 
+    /// 축소 배율을 정하려고 **폭만** 잰다. 높이는 우리가 정하므로 순환하지 않는다.
+    @State private var measuredWidth: CGFloat = 0
+
     var body: some View {
         // ⚠ **폭에 맞춰 휠 타이포를 줄인다.** 좁은 화면(360pt급)에서 '오전/오후' 고정폭 +
         // 57pt 숫자가 컬럼 폭을 넘어 분 숫자 오른쪽이 잘렸다. 안드로이드는
         // `BoxWithConstraints` 로 같은 축소를 이미 하고 있었고 iOS 에만 없었다.
-        GeometryReader { proxy in
-            let scale = wheelScale(for: proxy.size.width)
-            HStack(spacing: 16 * scale) {
-                AmPmWheelColumn(isPM: amPmBinding, scale: scale)
-                    .frame(width: 96 * scale)
+        //
+        // ⚠ **`GeometryReader` 로 감싸지 말 것 — 아래에 빈 공간이 생긴다.** `GeometryReader`
+        // 는 주어진 자리를 전부 차지하고 자식을 **위쪽 정렬**로 놓는다. 바깥 높이를
+        // 축소 전 값(`itemHeight*3`)으로 두고 안쪽만 배율을 곱하면, 그 차이(392pt 기준
+        // 폭이 좁을수록 커진다)가 **휠 아래 죽은 공간**으로 남는다 — 실기에서 시각과
+        // 반복 카드 사이가 안드로이드의 44pt 대신 100pt 가까이 벌어졌다
+        // (2026-08-10 지적 "시간 돌리는 거랑 날짜가 살짝 거리가 멀어 보인다").
+        // 폭은 배경으로 재고 높이는 **같은 배율을 곱해** 준다.
+        let scale = wheelScale(for: measuredWidth)
+        HStack(spacing: 16 * scale) {
+            AmPmWheelColumn(isPM: amPmBinding, scale: scale)
+                .frame(width: 96 * scale)
 
-                // ⚠ **12시간이 아니라 24시간 값을 굴린다.** 예전에는 1...12 를 굴리면서
-                // 오전/오후를 **그대로 유지**해서, 11시에서 12시로 넘겨도 오전/오후가
-                // 바뀌지 않았다(2026-08-10 사용자 보고 "시간 바꿨을 때 오전·오후가 안 바뀐다").
-                // 안드로이드는 24시간 값(`workingHour`)을 굴리고 표시만 `hour12` 로 하며,
-                // 오전/오후 칼럼은 `hour >= 12` 에서 **파생**된다 — 같은 구조로 맞춘다.
-                DraggableNumberColumn(
-                    value: $hour,
-                    range: 0...23,
-                    formatter: { String(TimeWheelMath.hour24To12($0)) },
-                    scale: scale,
-                    typeInTitle: "시",
-                    // 사용자는 화면에 보이는 **12시간** 숫자를 넣는다 — 지금 오전/오후를
-                    // 유지한 채 24시간으로 되돌린다. (오전/오후를 바꾸려면 그 칼럼을 쓴다.)
-                    applyTypedValue: { typed in
-                        let display = min(max(typed, 1), 12)
-                        hour = TimeWheelMath.combine(displayHour: display, isPM: hour >= 12)
-                    }
-                )
-                .frame(maxWidth: .infinity)
+            // ⚠ **12시간이 아니라 24시간 값을 굴린다.** 예전에는 1...12 를 굴리면서
+            // 오전/오후를 **그대로 유지**해서, 11시에서 12시로 넘겨도 오전/오후가
+            // 바뀌지 않았다(2026-08-10 사용자 보고 "시간 바꿨을 때 오전·오후가 안 바뀐다").
+            // 안드로이드는 24시간 값(`workingHour`)을 굴리고 표시만 `hour12` 로 하며,
+            // 오전/오후 칼럼은 `hour >= 12` 에서 **파생**된다 — 같은 구조로 맞춘다.
+            DraggableNumberColumn(
+                value: $hour,
+                range: 0...23,
+                formatter: { String(TimeWheelMath.hour24To12($0)) },
+                scale: scale,
+                typeInTitle: "시",
+                // 사용자는 화면에 보이는 **12시간** 숫자를 넣는다 — 지금 오전/오후를
+                // 유지한 채 24시간으로 되돌린다. (오전/오후를 바꾸려면 그 칼럼을 쓴다.)
+                applyTypedValue: { typed in
+                    let display = min(max(typed, 1), 12)
+                    hour = TimeWheelMath.combine(displayHour: display, isPM: hour >= 12)
+                }
+            )
+            .frame(maxWidth: .infinity)
 
-                ColonSeparator(scale: scale)
+            ColonSeparator(scale: scale)
 
-                DraggableNumberColumn(
-                    value: $minute,
-                    range: 0...59,
-                    formatter: { String(format: "%02d", $0) },
-                    scale: scale,
-                    typeInTitle: "분",
-                    applyTypedValue: { typed in minute = min(max(typed, 0), 59) }
-                )
-                .frame(maxWidth: .infinity)
-            }
-            .frame(width: proxy.size.width, height: Self.itemHeight * 3 * scale)
+            DraggableNumberColumn(
+                value: $minute,
+                range: 0...59,
+                formatter: { String(format: "%02d", $0) },
+                scale: scale,
+                typeInTitle: "분",
+                applyTypedValue: { typed in minute = min(max(typed, 0), 59) }
+            )
+            .frame(maxWidth: .infinity)
         }
-        .frame(height: Self.itemHeight * 3)
+        .frame(maxWidth: .infinity)
+        // 높이도 **같은 배율**을 따른다(안드로이드 `scaledItemHeight * 3` 과 같다).
+        .frame(height: Self.itemHeight * 3 * scale)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: TimeWheelWidthKey.self, value: proxy.size.width)
+            }
+        )
+        .onPreferenceChange(TimeWheelWidthKey.self) { measuredWidth = $0 }
         // ⚠ **접근성 글꼴에서 휠은 더 커지지 않는다.** 휠은 3칸 높이가 고정된 **컨트롤**이라
         // 글자만 커지면 칸을 넘쳐 '오전' 이 "…" 으로, 분이 "0" 으로 잘린다(시뮬레이터
         // accessibility-extra-large 에서 확인). 본문 글자는 그대로 커지고 여기만 묶는다.

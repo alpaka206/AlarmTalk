@@ -135,8 +135,14 @@ final class FunctionalE2EUITests: XCTestCase {
         shot("10-편집기")
 
         // 목소리가 **왼쪽**이고 기본 선택이다(2026-08-06 결정).
-        XCTAssertTrue(app.buttons["목소리"].exists || app.staticTexts["목소리"].exists, "목소리 세그먼트가 없다")
-        XCTAssertTrue(app.buttons["알람"].exists || app.staticTexts["알람"].exists, "알람 세그먼트가 없다")
+        //
+        // ⚠ **라벨 글자("목소리"/"알람")로 찾지 말 것.** 세그먼트 버튼은
+        // `.accessibilityLabel(Text("재생 방식 \(option.label)"))` 로 자식 글자를 덮으므로
+        // 접근성 트리에 "알람" 이라는 요소는 **없다**. 예전 단언은 '알람' 쪽이 늘 실패했고,
+        // '목소리' 쪽은 같은 이름의 **다른 행**(목소리 요약 행)에 걸려 우연히 통과했다 —
+        // 세그먼트가 사라져도 알아채지 못하는 단언이었다(2026-08-10 발견).
+        XCTAssertTrue(app.buttons["재생 방식 목소리"].exists, "목소리 세그먼트가 없다")
+        XCTAssertTrue(app.buttons["재생 방식 알람"].exists, "알람 세그먼트가 없다")
     }
 }
 

@@ -235,9 +235,8 @@
     <string name="editor_voice_generation_canceled_time_changed">アラームの時刻が変わったため、音声の生成を中止しました。</string>
     <string name="editor_voice_loading">声を読み込んでいます。</string>
     <string name="editor_voice_output_title">声</string>
-    <string name="editor_voice_repeat_on">繰り返し</string>
-    <string name="editor_voice_repeat_once">1回だけ</string>
-    <string name="editor_voice_repeat_title">繰り返し再生</string>
+    <string name="editor_voice_repeat_hint">繰り返しをオフにすると、声は1回だけ再生されます。</string>
+    <string name="editor_voice_repeat_title">停止するまで繰り返す</string>
     <string name="editor_voice_select">声を選択</string>
     <string name="editor_voice_source_local">自分で録音</string>
     <string name="editor_voice_local_detail">このアラームだけに使う音をその場で録音</string>
