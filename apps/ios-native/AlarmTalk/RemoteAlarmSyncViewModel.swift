@@ -72,8 +72,14 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             async let profilesTask = api.listVoiceProfiles(token: token)
             remoteAlarms = try await alarmsTask
             voiceProfiles = try await profilesTask
-            statusMessage = "서버 동기화 완료"
+            // ⚠ **성공을 알리지 말 것.** 이 동기화는 사용자가 누른 게 아니라 화면 진입·
+            // 전경 복귀에서 자동으로 돈다. 성공은 알람 목록이 이미 보여 주므로, 여기에
+            // 문구를 세우면 사용자가 한 적 없는 일의 결과가 매번 떠 있는다.
+            // 안드로이드에는 이 문구가 아예 없다(strings.xml 에 대응 항목 없음).
+            statusMessage = nil
         } catch {
+            // ⚠ 취소는 표시하지 않는다 — 우리가 스스로 접은 것이다(아래 주석 참조).
+            guard !isCancellation(error) else { return }
             statusMessage = userFacingErrorMessage(error, fallback: "알람 정보를 불러오지 못했어요")
         }
     }
@@ -108,6 +114,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             await refresh(session: session, force: true)
         } catch {
             store.markSyncFailed(id: record.id)
+            guard !isCancellation(error) else { return }
             statusMessage = userFacingErrorMessage(error, fallback: "알람 변경사항을 저장하지 못했어요")
         }
     }
@@ -131,7 +138,8 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
                 pushFailed: pushResult.failed,
                 pullFailed: pullResult.failed
             )
-            statusMessage = failedMessage ?? "전체 동기화 완료"
+            // 부분 실패만 알린다 — 성공은 위와 같은 이유로 침묵한다.
+            statusMessage = failedMessage
         } catch {
             // ⚠ **사이클 전체 실패는 사용자에게 띄우지 않는다 — 로그만 남긴다.**
             // `runFullSync` 는 사용자가 누른 것이 아니라 앱 시작·세션 변경·전경 복귀·
@@ -188,6 +196,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             }
             await refresh(session: session)
         } catch {
+            guard !isCancellation(error) else { return }
             statusMessage = userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요")
         }
     }

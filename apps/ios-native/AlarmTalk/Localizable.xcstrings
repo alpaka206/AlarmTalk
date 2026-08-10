@@ -4149,23 +4149,6 @@
         }
       }
     },
-    "목소리 정보를 불러왔어요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Voice info loaded."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "声の情報を読み込みました。"
-          }
-        }
-      }
-    },
     "목소리 크기": {
       "extractionState": "manual",
       "localizations": {

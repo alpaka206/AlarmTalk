@@ -71,8 +71,18 @@
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
+            key = "E2E_NEW_PASSWORD"
+            value = "$(E2E_NEW_PASSWORD)"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "E2E_PASSWORD"
             value = "$(E2E_PASSWORD)"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "E2E_RESET_CODE"
+            value = "$(E2E_RESET_CODE)"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
@@ -106,8 +116,18 @@
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
+            key = "E2E_NEW_PASSWORD"
+            value = "$(E2E_NEW_PASSWORD)"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "E2E_PASSWORD"
             value = "$(E2E_PASSWORD)"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "E2E_RESET_CODE"
+            value = "$(E2E_RESET_CODE)"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>
@@ -140,8 +160,18 @@
             isEnabled = "YES">
          </EnvironmentVariable>
          <EnvironmentVariable
+            key = "E2E_NEW_PASSWORD"
+            value = "$(E2E_NEW_PASSWORD)"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
             key = "E2E_PASSWORD"
             value = "$(E2E_PASSWORD)"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+         <EnvironmentVariable
+            key = "E2E_RESET_CODE"
+            value = "$(E2E_RESET_CODE)"
             isEnabled = "YES">
          </EnvironmentVariable>
       </EnvironmentVariables>

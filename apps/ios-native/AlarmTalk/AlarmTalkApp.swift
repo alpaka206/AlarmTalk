@@ -99,7 +99,7 @@ struct AlarmTalkApp: App {
                     .task {
                         // ⚠ **BGTask 핸들러 등록을 이 task 의 맨 앞에 둔다 — 어떤 await 보다도
                         // 먼저.** 예전에는 `restoreSession()` 등 여러 await 뒤에 있었는데,
-                        // 세션이 복원되는 순간 아래 `.task(id: auth.session?.token)` 이 깨어나
+                        // 세션이 복원되는 순간 아래 `.task(id: auth.session?.user.id)` 가 깨어나
                         // **등록 전에** `scheduleNext()` 로 submit 해 버렸다. 그러면
                         // `No launch handler registered for task with identifier ...` 로
                         // **앱이 launch 중에 죽는다**(2026-08-06 실기기 재현 — 로그인 세션이
@@ -177,7 +177,8 @@ struct AlarmTalkApp: App {
                         // 네이티브 `.relative` 알람은 AlarmKit 이 스스로 재anchor 하므로 제외(narrow filter).
                         await observeTimeAndTimezoneChanges()
                     }
-                    .task(id: auth.session?.token) {
+                    // 위와 같은 이유로 user.id 로 건다(토큰은 갱신마다 바뀐다).
+                    .task(id: auth.session?.user.id) {
                         // 로그인 직후 또는 토큰 갱신 시 즉시 sync.
                         guard auth.session != nil else { return }
                         // 알림 권한을 **sync 보다 먼저** 물어본다. 받은 알람 알림

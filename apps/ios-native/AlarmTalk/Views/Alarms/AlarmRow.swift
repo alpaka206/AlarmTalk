@@ -128,8 +128,10 @@ struct AlarmRow: View {
                         )
                     )
                     .labelsHidden()
-                    // iOS 기본 초록이 아니라 앱 팔레트를 쓴다 — 안드로이드 `AlarmTalkSwitch` 대응.
-                    .tint(theme.palette.primary)
+                    // ⚠ `.tint` 로 직접 칠하지 말 것 — 그건 트랙만 바꾸고 손잡이는 흰색
+                    // 그대로라 옅은 하늘색 트랙 위에서 바래 보인다. 공용 스타일이 트랙·
+                    // 손잡이를 **둘 다** 안드로이드와 같은 규칙으로 정한다.
+                    .alarmTalkSwitch()
                     .accessibilityLabel(Text(alarm.enabled ? "알람 끄기" : "알람 켜기"))
                 }
             }

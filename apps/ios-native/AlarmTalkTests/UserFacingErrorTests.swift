@@ -78,4 +78,31 @@ final class UserFacingErrorTests: XCTestCase {
         XCTAssertEqual(message, "폴백")
         XCTAssertFalse(message.contains("NSURLErrorDomain"))
     }
+
+    // MARK: - 취소는 **오류가 아니다**
+
+    /// ⚠ 이 테스트가 지키는 것: OS 의 취소 문구가 화면에 새지 않는다.
+    ///
+    /// URLSession 이 주는 `NSURLErrorCancelled`(-999) 에는 `NSLocalizedDescription`
+    /// 이 채워져 있어서, "사람이 쓴 문장인가" 검사를 그대로 통과했다. 그 값의 한국어가
+    /// 정확히 **"취소됨"** 이라, 사용자는 취소한 적도 없는데 알람 목록에 "취소됨" 이
+    /// 떠 있는 걸 봤다(2026-08-10 사용자 보고).
+    func test_cancelledRequest_doesNotLeakOSMessage() {
+        let cancelled = NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorCancelled,
+            userInfo: [NSLocalizedDescriptionKey: "취소됨"]
+        )
+        XCTAssertEqual(userFacingErrorMessage(cancelled, fallback: "폴백"), "폴백")
+    }
+
+    /// 호출부가 "표시할지" 를 정할 수 있어야 한다 — 동기화처럼 사용자가 시작하지
+    /// 않은 작업은 아무것도 띄우지 않는다.
+    func test_isCancellation_detectsBothKinds() {
+        XCTAssertTrue(isCancellation(CancellationError()))
+        XCTAssertTrue(isCancellation(NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)))
+        // 취소가 아닌 네트워크 오류는 그대로 오류다.
+        XCTAssertFalse(isCancellation(NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)))
+        XCTAssertFalse(isCancellation(APIError.invalidResponse))
+    }
 }

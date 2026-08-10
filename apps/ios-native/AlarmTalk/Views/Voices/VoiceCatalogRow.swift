@@ -125,6 +125,10 @@ struct VoiceSectionCard<Content: View>: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let title: String
     var trailing: AnyView?
+    /// 내용이 하나도 없으면 **카드(배경·테두리)를 그리지 않는다.** 헤더는 남긴다 —
+    /// '내 목소리' 헤더의 '추가' 가 목소리 등록으로 가는 **유일한 진입점**이라
+    /// 헤더까지 감추면 만들 길이 사라진다.
+    var hasContent: Bool = true
     @ViewBuilder var content: () -> Content
 
     @State private var expanded = true
@@ -157,7 +161,7 @@ struct VoiceSectionCard<Content: View>: View {
             }
             .frame(minHeight: 40)
 
-            if expanded {
+            if expanded && hasContent {
                 VStack(alignment: .leading, spacing: 0) {
                     content()
                 }

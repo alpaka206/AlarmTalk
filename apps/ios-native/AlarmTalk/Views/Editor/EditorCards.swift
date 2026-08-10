@@ -157,17 +157,19 @@ struct EditorActionBar: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, minHeight: 52)
                 } else {
                     // ⚠ 아이콘을 붙이지 않는다 — 안드로이드는 글자만이고, 캘린더 아이콘은
                     // '일정에 추가' 라는 다른 동작을 연상시킨다.
                     Text(saveTitle)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, minHeight: 52)
                 }
             }
-            .frame(minHeight: 52)
+            // ⚠ 바깥에 `.frame(minHeight:)` 를 붙이지 않는다 — 위 주석이 말한 그대로,
+            // `.buttonStyle` 뒤 프레임은 **버튼이 아니라 그 바깥 상자**만 키운다.
+            // 그래서 취소(52)보다 저장이 낮게 그려졌고, 눌리는 영역도 44pt 를 밑돌았다.
             .font(theme.typography.titleMedium)
             .buttonStyle(.borderedProminent)
             .tint(theme.palette.primary)

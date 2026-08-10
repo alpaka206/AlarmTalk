@@ -78,21 +78,15 @@ internal fun AlarmTalkSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    // 다크 팔레트는 onPrimary 가 진네이비라 켜짐 썸이 트랙보다 어두워져 꺼짐으로 오독될 수
-    // 있다 — 다크에선 밝은 썸(onPrimaryContainer)으로 켜짐을 명확히 하고, 라이트는 흰 썸 유지.
-    val checkedThumbColor = if (darkTheme) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onPrimary
-    }
-    // 꺼짐 썸도 다크에선 surface 가 트랙(surfaceVariant)과 동화돼 알맹이가 안 보인다 —
-    // 밝은 회색(onSurfaceVariant)으로 분리한다. 라이트는 기존 흰 썸 유지.
-    val uncheckedThumbColor = if (darkTheme) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
+    // 손잡이는 **켜짐/꺼짐 모두 흰색**이다(2026-08-10 결정 — iOS 시스템 스위치에 맞춘다).
+    //
+    // 예전에는 다크에서 켜짐 썸을 `onPrimaryContainer`, 꺼짐 썸을 `onSurfaceVariant` 로
+    // 따로 줬다. 이유는 타당했다(진네이비 썸이 밝은 트랙보다 어두워 꺼짐으로 오독된다 /
+    // surface 썸이 트랙과 동화된다). 다만 그러면 두 앱의 스위치가 서로 다른 물건으로
+    // 보였고, 흰 썸으로도 그 두 문제가 생기지 않는다 — 흰색은 켜짐 트랙(#A6D2FF)보다
+    // 밝고 꺼짐 트랙(surfaceVariant)과도 충분히 분리된다.
+    val checkedThumbColor = Color.White
+    val uncheckedThumbColor = Color.White
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,

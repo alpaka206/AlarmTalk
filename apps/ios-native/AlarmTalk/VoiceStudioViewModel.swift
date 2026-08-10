@@ -371,7 +371,11 @@ final class VoiceStudioViewModel: ObservableObject {
     func refresh(
         session: AuthSession?,
         force: Bool = false,
-        successMessage: String? = "목소리 정보를 불러왔어요."
+        // ⚠ **기본값은 nil 이다 — 성공을 알리지 않는다.** 이 새로고침은 사용자가 누른
+        // 것이 아니라 화면 진입에서 자동으로 돈다. 성공은 목록이 이미 보여 주므로,
+        // 문구를 세우면 목소리 탭에 들어갈 때마다 "불러왔어요" 가 떠 있게 된다.
+        // (알릴 값이 있는 호출부가 생기면 그때 명시적으로 넘긴다.)
+        successMessage: String? = nil
     ) async {
         // 화면 확인 모드는 서버가 없다 — 실패 메시지로 목록을 덮지 않는다.
         if UIPreviewSeed.isEnabled { return }
@@ -410,7 +414,10 @@ final class VoiceStudioViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             profiles = resolvedProfiles
             familyVoices = familyResult
-            draftQuota = quotaResult
+            // ⚠ **조회 실패로 기존 한도를 지우지 말 것.** `try?` 라 실패하면 nil 이
+            // 오는데, 그대로 대입하면 이미 이번 달을 다 쓴 사용자에게 '추가' 버튼이
+            // 다시 켜진다(한도 표시도 사라진다). 실패는 "모른다" 이지 "0 이다" 가 아니다.
+            if let quotaResult { draftQuota = quotaResult }
             if let selectedProfileID,
                !profiles.contains(where: { $0.id == selectedProfileID }),
                !familyVoices.contains(where: { $0.id == selectedProfileID }) {

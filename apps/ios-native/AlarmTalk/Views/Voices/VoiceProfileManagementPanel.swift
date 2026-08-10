@@ -271,14 +271,15 @@ struct VoiceProfileManagementPanel: View {
         // ⚠ **'새로고침' 버튼은 두지 않는다.** 안드로이드에 없는 컨트롤이고, 화면 진입
         // `.task` 와 사전렌더 폴링이 이미 최신값을 가져온다 — 눌러야 최신이 되는 것처럼
         // 보이면 사용자가 그걸 매번 누르게 된다.
-        VoiceSectionCard(title: "내 목소리", trailing: AnyView(addVoiceHeaderTrailing)) {
-            if ownVoices.isEmpty {
-                Text("아직 만든 목소리가 없어요.")
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-            }
+        // ⚠ 목소리가 없으면 **빈 카드를 그리지 않는다.** 예전에는 "아직 만든 목소리가
+        // 없어요." 한 줄이 든 빈 상자가 항상 자리를 차지했다 — 바로 옆 '추가' 버튼이
+        // 이미 무엇을 해야 하는지 말하고 있어서 같은 말을 두 번 하는 셈이었다.
+        // (그 문구는 번역 카탈로그에도 없어 en/ja 기기에는 한국어로 떴다.)
+        VoiceSectionCard(
+            title: "내 목소리",
+            trailing: AnyView(addVoiceHeaderTrailing),
+            hasContent: !ownVoices.isEmpty
+        ) {
             ForEach(Array(ownVoices.enumerated()), id: \.element.id) { index, profile in
                 if index > 0 {
                     Divider().overlay(theme.palette.outlineVariant).padding(.leading, 16)
@@ -345,9 +346,12 @@ struct VoiceProfileManagementPanel: View {
                 }
             }
             .font(theme.typography.bodyMedium.weight(.semibold))
+            // ⚠ `.controlSize(.small)` 을 쓰지 말 것 — 높이가 28pt 안팎으로 떨어져
+            // **최소 터치 타깃(44pt)을 밑돈다.** 섹션 헤더에 있다고 작게 만들 이유가
+            // 없다. 이 버튼이 목소리를 만드는 **유일한 진입점**이다.
+            .frame(minHeight: 44)
             .buttonStyle(.borderedProminent)
             .tint(theme.palette.primary)
-            .controlSize(.small)
             // ⚠ **이번 달을 다 썼으면 버튼을 끈다** — 안드로이드
             // (`ui/voices/VoiceProfileManagementPanel.kt` 의 `enabled = !voiceProfileBusy
             // && !monthlyExhausted`)와 같다. 흐려도 '왜' 가 읽히는 건 **바로 옆에

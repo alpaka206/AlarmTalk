@@ -94,6 +94,12 @@ targets:
       environmentVariables:
         E2E_EMAIL: "$(E2E_EMAIL)"
         E2E_PASSWORD: "$(E2E_PASSWORD)"
+        # 비밀번호 재설정 E2E — 코드는 서버가 메일로만 보내므로 호출부가 넣어 준다.
+        # ⚠ **여기 선언하지 않은 이름은 러너에 전달되지 않는다.** 명령줄에
+        # `TEST_RUNNER_FOO=...` 를 줘도 이 목록에 없으면 조용히 비어 온다
+        # (2026-08-10 에 그것 때문에 테스트가 계속 skip 됐다).
+        E2E_RESET_CODE: "$(E2E_RESET_CODE)"
+        E2E_NEW_PASSWORD: "$(E2E_NEW_PASSWORD)"
       # Xcode 가 시뮬레이터에서 본 .storekit 파일을 자동 선택하도록 scheme run action 에 등록.
       # 실기기 빌드/Release 에서는 무시되고 App Store Connect 가 권위로 사용된다.
       storeKitConfiguration: AlarmTalk/Configuration/StoreKitConfiguration.storekit

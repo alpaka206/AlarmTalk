@@ -472,7 +472,9 @@ final class AlarmKitViewModel: ObservableObject {
         guard let alarmKitUUID = record.alarmKitUUID else { return true }
         do {
             try AlarmManager.shared.cancel(id: alarmKitUUID)
-            statusMessage = "\(record.label) 알람을 취소했어요."
+            // ⚠ **끈 것을 다시 말하지 않는다.** 스위치가 이미 꺼진 상태를 보여 주므로
+            // 화면이 이미 답한 것을 한 번 더 말하는 셈이다. 안드로이드에도 이 토스트는 없다.
+            // (실패는 결과가 달라지므로 아래 catch 에서 계속 알린다.)
             return true
         } catch {
             statusMessage = "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요."

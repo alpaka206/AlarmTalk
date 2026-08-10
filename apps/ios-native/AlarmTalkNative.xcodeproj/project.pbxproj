@@ -159,6 +159,7 @@
 		A031DEE871E1440456148FCA /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 26FEEB9D5F4B19556BAAD9C6 /* Localizable.xcstrings */; };
 		A1B69BFC2424FE0015F308A7 /* WelcomePromoDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE68A4DA835D566B9592F59F /* WelcomePromoDialog.swift */; };
 		A2480C4858F514D4A2DA8357 /* voice_greeting_hajun_ja.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 0453E7CB9DE103C7B74AA663 /* voice_greeting_hajun_ja.mp3 */; };
+		A26F3948811CBF00487223C0 /* PasswordResetE2EUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E225F300F6C400D8EDBB183 /* PasswordResetE2EUITests.swift */; };
 		A2C7111FB7DD26F428366C60 /* EditorCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B8072175C30FB26D1D7397 /* EditorCards.swift */; };
 		A4F77CBFD932FC212CA3F876 /* SelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D97B19A1D9E8E81B2EBCFA6 /* SelectionSheet.swift */; };
 		A6E4507993DE6307C2A87CE5 /* AuthBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E08EA39F68F4C059B5B58EC /* AuthBackdrop.swift */; };
@@ -367,6 +368,7 @@
 		5C9CC00560A81642ECFE44C4 /* voice_greeting_adam_en.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_adam_en.mp3; sourceTree = "<group>"; };
 		5CBFD31524C3C55B15E0967A /* RemoteAlarmPushSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmPushSync.swift; sourceTree = "<group>"; };
 		5CF0160D993D91879DDDFF3A /* ScreenSweepUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenSweepUITests.swift; sourceTree = "<group>"; };
+		5E225F300F6C400D8EDBB183 /* PasswordResetE2EUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordResetE2EUITests.swift; sourceTree = "<group>"; };
 		5ECFEF72F91CB168058ADDDA /* ConsentCompletionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsentCompletionStore.swift; sourceTree = "<group>"; };
 		601CCC6270DF54E411B83B10 /* AlarmSoundResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundResolver.swift; sourceTree = "<group>"; };
 		60C9E3B75BCA36472CA4EFFB /* PeoplePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeoplePanel.swift; sourceTree = "<group>"; };
@@ -534,6 +536,7 @@
 			isa = PBXGroup;
 			children = (
 				8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */,
+				5E225F300F6C400D8EDBB183 /* PasswordResetE2EUITests.swift */,
 				5CF0160D993D91879DDDFF3A /* ScreenSweepUITests.swift */,
 				EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */,
 			);
@@ -1137,6 +1140,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F257AFC84C3E1A8F0AE60485 /* FunctionalE2EUITests.swift in Sources */,
+				A26F3948811CBF00487223C0 /* PasswordResetE2EUITests.swift in Sources */,
 				DFF8884296CA033A9B8C6890 /* ScreenSweepUITests.swift in Sources */,
 				4FA9B768B6E51C73C71A0699 /* SignUpFlowUITests.swift in Sources */,
 			);

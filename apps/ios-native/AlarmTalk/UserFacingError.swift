@@ -39,6 +39,21 @@ func userFacingErrorMessage(_ error: Error, fallback: String) -> String {
     //    한국어 기기에서는 그게 한국어라 통과해 버린다. userInfo 검사는 기기 언어와
     //    무관하게 "사람이 쓴 문장인가" 만 본다.
     let nsError = error as NSError
+
+    // ⚠ **취소는 오류가 아니다 — 문구를 만들지 말 것.**
+    // 요청이 취소되면 URLSession 이 `NSURLErrorCancelled`(-999) 를 주는데, 여기에도
+    // `NSLocalizedDescription` 이 채워져 있어 아래 검사를 그대로 통과한다. 그 값의
+    // 한국어가 정확히 **"취소됨"** 이라, 사용자는 자기가 취소한 적도 없는데 알람 목록에
+    // "취소됨" 이 떠 있는 걸 보게 된다(2026-08-10 사용자 보고).
+    //
+    // 취소는 대개 **우리가 스스로 만든다** — 화면이 사라지거나 `.task(id:)` 의 id 가
+    // 바뀌면 SwiftUI 가 진행 중이던 task 를 접는다. 사용자에게 알릴 사건이 아니다.
+    // 호출부는 이 값을 받으면 아무것도 표시하지 않아야 한다.
+    // 여기서는 폴백을 돌려준다(문구를 만들 수는 있어야 하므로). **표시할지 말지는
+    // 호출부가 정한다** — 동기화처럼 사용자가 시작하지 않은 작업은 `isCancellation`
+    // 으로 걸러 아무것도 띄우지 않는다.
+    if isCancellation(error) { return fallback }
+
     if nsError.userInfo[NSLocalizedDescriptionKey] != nil {
         let message = nsError.localizedDescription
         return message.containsKorean ? message : fallback
@@ -46,4 +61,16 @@ func userFacingErrorMessage(_ error: Error, fallback: String) -> String {
 
     // 그 밖의 에러는 사람이 읽을 문장을 가지고 있다는 보장이 없다.
     return fallback
+}
+
+
+
+/// 이 오류가 **취소**인가. `Task` 취소와 URLSession 취소를 함께 본다.
+///
+/// ⚠ 둘 다 봐야 한다. `Task.isCancelled` 를 호출부에서 검사해도, 이미 날아간
+/// URLSession 요청은 `NSURLErrorCancelled` 로 돌아오지 취소 예외로 돌아오지 않는다.
+func isCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    let nsError = error as NSError
+    return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
 }

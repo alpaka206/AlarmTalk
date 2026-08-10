@@ -185,7 +185,15 @@ struct MemberManagementView: View {
             )
             .presentationDetents([.large])
         }
-        .task(id: auth.session?.token) {
+        // ⚠ **토큰을 id 로 쓰지 말 것 — 스스로를 취소한다.**
+        // `GET /auth/me` 는 부를 때마다 **새 JWT** 를 발급하고
+        // `refreshUser()` 가 그걸 세션에 갈아 끼운다. 전경 복귀마다 그게
+        // 돌므로, 토큰을 id 로 두면 그 순간 이 task 가 접히고 진행 중이던
+        // URLSession 요청이 `NSURLErrorCancelled` 로 끊긴다. 그 OS 문구의
+        // 한국어가 "취소됨" 이라, 사용자는 취소한 적 없는 "취소됨" 을 본다
+        // (2026-08-10 사용자 보고 → 원인 확인).
+        // 다시 돌아야 하는 건 **계정이 바뀔 때**뿐이므로 user.id 로 건다.
+        .task(id: auth.session?.user.id) {
             await socialFeatures.refreshAll(session: auth.session)
         }
     }
