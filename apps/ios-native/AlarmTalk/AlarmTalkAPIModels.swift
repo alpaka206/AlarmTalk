@@ -382,6 +382,10 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
 /// 서버가 409 `VOICE_PERSONA_LOCKED` 로 거절한다(`voice-profile.ts:733-741`).
 struct VoiceDraftPromoteRequest: Encodable {
     var isDraft: Bool
+    /// 등록 확정 화면의 **교체 체크**. 이미 등록된 목소리가 있어 한도에 걸릴 때,
+    /// 막는 대신 **그 목소리 자리에 이 목소리를 앉힌다**(서버가 프로필 행을 재사용한다).
+    /// nil 이면 키가 아예 안 나가서 서버는 지금까지처럼 한도로 막는다.
+    var replaceExisting: Bool?
 }
 
 struct VoicePreviewPlayedRequest: Encodable {

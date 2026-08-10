@@ -257,7 +257,7 @@ internal fun MainViewModel.createVoiceProfiles(
     return true
 }
 
-internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
+internal fun MainViewModel.promoteVoiceDraft(profileId: String, replaceExisting: Boolean = false) {
     val session = authSession ?: return
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
@@ -267,7 +267,11 @@ internal fun MainViewModel.promoteVoiceDraft(profileId: String) {
                 api.updateVoiceProfile(
                     authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
-                    request = VoiceProfileUpdateRequest(isDraft = false, language = deviceAppVoiceLanguage()),
+                    request = VoiceProfileUpdateRequest(
+                        isDraft = false,
+                        language = deviceAppVoiceLanguage(),
+                        replaceExisting = if (replaceExisting) true else null,
+                    ),
                 ).profile
             }
         }.onSuccess { profile ->

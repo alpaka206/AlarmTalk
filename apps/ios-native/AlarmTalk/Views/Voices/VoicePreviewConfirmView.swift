@@ -35,6 +35,8 @@ struct VoicePreviewConfirmView: View {
     /// 미리듣기를 끝까지 들었는가. 문구를 고치면 `false` 로 되돌린다.
     @State private var listened = false
     @State private var errorMessage: String?
+    /// 등록 확정 화면의 **교체 체크**. 이미 등록된 목소리가 있을 때만 보인다.
+    @State private var replaceExisting = false
     /// 뒤로 나가려 할 때 뜨는 경고. 이 화면을 벗어나면 초안이 삭제된다
     /// (안드로이드 `VoiceProfileManagementPanel.kt:2141` `draftExitWarningOpen`).
     @State private var exitWarningOpen = false
@@ -57,6 +59,10 @@ struct VoicePreviewConfirmView: View {
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.error)
             }
+
+            // 교체 체크는 **저장 버튼 바로 위**에 둔다 — 무엇에 동의하고 누르는지가
+            // 손가락 옆에 있어야 한다.
+            replaceConsent
 
             actions
         }
@@ -148,6 +154,70 @@ struct VoicePreviewConfirmView: View {
         )
     }
 
+    /// 이미 등록된 **내** 목소리(이 초안 제외). 있으면 저장이 한도에 걸리므로
+    /// 교체 체크를 낸다.
+    private var registeredVoice: VoiceProfile? {
+        voice.profiles.first { profile in
+            profile.id != draft.id
+                && profile.isDraft != true
+                && profile.isSystem != true
+                && normalizedStatus(profile.status) != "failed"
+        }
+    }
+
+    private func normalizedStatus(_ value: String?) -> String {
+        (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// 교체 안내 + 체크. **이미 등록된 목소리가 있을 때만** 낸다 — 없으면 그냥 저장되고,
+    /// 체크를 보여 줄 이유가 없다.
+    ///
+    /// ⚠ 문구가 곧 계약이다. 체크하면 실제로 이 두 가지가 일어난다:
+    ///   - 이전 목소리는 목록에서 사라진다(서버는 그 행을 지우지 않고 **재사용**한다 —
+    ///     지우면 그 목소리를 쓰던 알람이 전부 기본 알람음으로 떨어지기 때문이다).
+    ///   - 직접 입력 문구로 만든 알람만 기본 알람음이 된다(그 음성은 옛 목소리로 만들어
+    ///     둔 것이라 자동 재생성이 안 된다). 나머지 알람은 그대로 살아 새 목소리로 운다.
+    @ViewBuilder
+    private var replaceConsent: some View {
+        if let registeredVoice {
+            Button {
+                replaceExisting.toggle()
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: replaceExisting ? "checkmark.square.fill" : "square")
+                        .font(.title3)
+                        .foregroundStyle(replaceExisting ? theme.palette.primary : theme.palette.onSurfaceVariant)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("‘\(registeredVoice.name)’ 을(를) 이 목소리로 교체합니다")
+                            .font(theme.typography.bodyMedium)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(theme.palette.onSurface)
+                        Text("이전에 저장해둔 목소리는 삭제됩니다. 직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다.")
+                            .font(theme.typography.bodySmall)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .multilineTextAlignment(.leading)
+                .padding(14)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(
+                theme.palette.surface,
+                in: RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
+                    .stroke(
+                        replaceExisting ? theme.palette.primary : theme.palette.outlineVariant,
+                        lineWidth: 1
+                    )
+            )
+            .disabled(busy)
+        }
+    }
+
     private var actions: some View {
         HStack(spacing: 8) {
             Button("다시 만들기") {
@@ -165,7 +235,11 @@ struct VoicePreviewConfirmView: View {
             .frame(maxWidth: .infinity)
             // ⚠ **끝까지 듣기 전에는 저장할 수 없다.** 서버도 재생 토큰 없이는 승격을
             // 거부하므로, 여기서 열어 두면 눌러도 실패하는 버튼이 된다.
-            .disabled(busy || !listened)
+            //
+            // ⚠ 이미 등록된 목소리가 있으면 **교체에 동의해야** 저장이 열린다. 서버가
+            // 어차피 `VOICE_LIMIT_REACHED` 로 막으므로, 열어 두면 눌러도 실패하는
+            // 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
+            .disabled(busy || !listened || (registeredVoice != nil && !replaceExisting))
         }
         // ⚠ **기본 뒤로가기를 그대로 두지 말 것.** 이 화면을 벗어나면 초안이 삭제되는데,
         // 시스템 back 은 아무 말 없이 나간다 — 사용자는 만들던 목소리를 잃고도 왜 사라졌는지
@@ -237,7 +311,11 @@ struct VoicePreviewConfirmView: View {
         busy = true
         defer { saving = false; busy = false }
         do {
-            _ = try await AlarmTalkAPI.shared.promoteVoiceDraft(id: draft.id, token: token)
+            _ = try await AlarmTalkAPI.shared.promoteVoiceDraft(
+                id: draft.id,
+                token: token,
+                replaceExisting: replaceExisting
+            )
             await voice.refresh(session: auth.session, force: true, successMessage: nil)
             onSaved()
         } catch {

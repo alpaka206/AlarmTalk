@@ -1,7 +1,5 @@
 package com.alarmtalk.app
 
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf

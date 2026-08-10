@@ -246,12 +246,21 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     /// 초안(draft)을 정식 프로필로 승격한다. 미리듣기를 확인한 뒤에만 부른다.
     /// 서버는 이 시점에 페르소나(관계·호칭)를 잠그고 사전렌더 큐를 적재한다.
-    func promoteVoiceDraft(id: String, token: String) async throws -> VoiceProfile {
+    /// - Parameter replaceExisting: 등록 확정 화면의 교체 체크. true 면 한도에 걸려도
+    ///   막지 않고 **기존 목소리 자리에 이 목소리를 앉힌다**(알람은 그대로 살아 있다).
+    func promoteVoiceDraft(
+        id: String,
+        token: String,
+        replaceExisting: Bool = false
+    ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
             "voice/\(id)",
             method: "PATCH",
             token: token,
-            body: VoiceDraftPromoteRequest(isDraft: false)
+            body: VoiceDraftPromoteRequest(
+                isDraft: false,
+                replaceExisting: replaceExisting ? true : nil
+            )
         )
         return response.profile
     }

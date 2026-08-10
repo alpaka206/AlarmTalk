@@ -878,4 +878,6 @@ Pass code: %1$s
     <string name="consent_overseas_withdraw_notice">Consent to overseas transfer is required to use AlarmTalk. To withdraw it, delete your account from More.</string>
     <string name="msg_voice_consent_withdrawn">Voice biometric consent withdrawn. Your registered voices were deleted.</string>
     <string name="msg_voice_consent_withdraw_failed">Couldn’t withdraw consent. Please try again.</string>
+    <string name="voices_replace_existing_title">Replace ‘%1$s’ with this voice</string>
+    <string name="voices_replace_existing_desc">Your previously saved voice will be deleted. Alarms you set with your own typed message will fall back to the default alarm sound.</string>
 </resources>

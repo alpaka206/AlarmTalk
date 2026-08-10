@@ -909,4 +909,6 @@
     <string name="consent_overseas_withdraw_notice">국외 이전 동의는 서비스 이용에 반드시 필요해요. 철회하려면 더보기에서 회원 탈퇴를 진행해 주세요.</string>
     <string name="msg_voice_consent_withdrawn">음성 생체정보 동의를 철회했어요. 등록한 목소리가 삭제됐어요.</string>
     <string name="msg_voice_consent_withdraw_failed">동의 철회에 실패했어요. 다시 시도해 주세요.</string>
+    <string name="voices_replace_existing_title">‘%1$s’ 을(를) 이 목소리로 교체합니다</string>
+    <string name="voices_replace_existing_desc">이전에 저장해둔 목소리는 삭제됩니다. 직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다.</string>
 </resources>

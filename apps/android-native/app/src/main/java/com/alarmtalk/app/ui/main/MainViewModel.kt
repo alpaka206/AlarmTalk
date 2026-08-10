@@ -4,9 +4,6 @@ import android.app.Application
 import android.util.Log
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel

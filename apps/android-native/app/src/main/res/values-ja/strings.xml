@@ -886,4 +886,6 @@
     <string name="consent_overseas_withdraw_notice">国外移転への同意はサービスの利用に必須です。撤回するには「もっと見る」から退会してください。</string>
     <string name="msg_voice_consent_withdrawn">音声生体情報の同意を撤回しました。登録した声は削除されました。</string>
     <string name="msg_voice_consent_withdraw_failed">同意の撤回に失敗しました。もう一度お試しください。</string>
+    <string name="voices_replace_existing_title">「%1$s」をこの声に置き換えます</string>
+    <string name="voices_replace_existing_desc">以前に保存した声は削除されます。直接入力で設定したアラームも既定のアラーム音になります。</string>
 </resources>

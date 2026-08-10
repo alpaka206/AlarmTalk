@@ -31,13 +31,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
@@ -222,7 +222,7 @@ internal fun VoiceProfileManagementPanel(
     onDeleteVoiceProfile: (String) -> Unit,
     onConfirmVoicePreviewPlayed: suspend (String, String) -> Unit,
     onUpdateVoicePreviewText: suspend (String, String) -> String,
-    onPromoteVoiceDraft: (String) -> Unit,
+    onPromoteVoiceDraft: (String, Boolean) -> Unit,
     onDeleteVoiceDraft: (String) -> Unit,
     onOpenBilling: () -> Unit,
     // 이번 달 목소리 생성 쿼터 — 추가 버튼 옆에 '남은/전체'로 보여준다.
@@ -337,6 +337,8 @@ internal fun VoiceProfileManagementPanel(
     var confirmPreviewEditing by remember { mutableStateOf(false) }
     var confirmPreviewEditText by remember { mutableStateOf("") }
     var confirmPreviewSaving by remember { mutableStateOf(false) }
+    // 등록 확정의 **교체 체크**. 이미 등록된 목소리가 있을 때만 낸다.
+    var replaceExistingChecked by remember { mutableStateOf(false) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
@@ -345,6 +347,14 @@ internal fun VoiceProfileManagementPanel(
     // 노출하지 않는다 — 유료 요금제여야 사용 가능하므로 리스트에서 숨긴다.
     val ownVoices = remember(voiceProfiles, canCreateVoice) {
         if (canCreateVoice) voiceProfiles.filter { it.isSystem != true } else emptyList()
+    }
+    // 등록 확정에서 교체 대상이 되는 **이미 등록된** 목소리(초안·실패 제외).
+    // 있으면 저장이 한도에 걸리므로 교체 체크를 낸다.
+    val replaceTargetVoice = remember(ownVoices, confirmNewVoice) {
+        ownVoices.firstOrNull {
+            it.id != confirmNewVoice?.id && it.isDraft != true &&
+                it.status?.trim()?.lowercase() != "failed"
+        }
     }
     val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
     val canOpenCreateForm = canCreateVoice && !isLimitReached
@@ -1976,6 +1986,52 @@ internal fun VoiceProfileManagementPanel(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+
+                                    // 교체 안내 + 체크. **이미 등록된 목소리가 있을 때만** 낸다 —
+                                    // 없으면 그냥 저장되므로 체크를 보여 줄 이유가 없다.
+                                    //
+                                    // ⚠ 문구가 곧 계약이다. 체크하면 실제로 이 두 가지가 일어난다:
+                                    //  - 이전 목소리는 목록에서 사라진다(서버는 그 행을 지우지 않고
+                                    //    **재사용**한다 — 지우면 그 목소리를 쓰던 알람이 전부 기본
+                                    //    알람음으로 떨어진다).
+                                    //  - 직접 입력 문구로 만든 알람만 기본 알람음이 된다. 나머지
+                                    //    알람은 그대로 살아 새 목소리로 운다.
+                                    replaceTargetVoice?.let { targetVoice ->
+                                        OutlinedCard(
+                                            onClick = { replaceExistingChecked = !replaceExistingChecked },
+                                            enabled = !voiceProfileBusy && !confirmPreviewSaving,
+                                            shape = WakerPanelShape,
+                                            border = wakerCardBorder(),
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(14.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            ) {
+                                                Checkbox(
+                                                    checked = replaceExistingChecked,
+                                                    onCheckedChange = { checked -> replaceExistingChecked = checked },
+                                                    enabled = !voiceProfileBusy && !confirmPreviewSaving,
+                                                )
+                                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Text(
+                                                        text = stringResource(
+                                                            R.string.voices_replace_existing_title,
+                                                            targetVoice.name,
+                                                        ),
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                    )
+                                                    Text(
+                                                        text = stringResource(R.string.voices_replace_existing_desc),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2111,11 +2167,15 @@ internal fun VoiceProfileManagementPanel(
                                     onClick = {
                                         confirmNewVoice?.let {
                                             promotedForPrerenderId = it.id
-                                            onPromoteVoiceDraft(it.id)
+                                            onPromoteVoiceDraft(it.id, replaceExistingChecked)
                                         }
                                     },
+                                    // ⚠ 이미 등록된 목소리가 있으면 **교체에 동의해야** 저장이 열린다.
+                                    // 서버가 어차피 VOICE_LIMIT_REACHED 로 막으므로, 열어 두면 눌러도
+                                    // 실패하는 버튼이 된다 — 무엇을 해야 저장되는지도 알 수 없다.
                                     enabled = confirmPreviewCompleted && !voiceProfileBusy &&
-                                        !confirmPreviewEditing && !confirmPreviewSaving,
+                                        !confirmPreviewEditing && !confirmPreviewSaving &&
+                                        (replaceTargetVoice == null || replaceExistingChecked),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
