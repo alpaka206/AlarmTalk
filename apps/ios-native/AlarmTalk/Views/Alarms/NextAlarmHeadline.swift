@@ -44,7 +44,9 @@ struct NextAlarmHeadline: View {
 
     private var isWarning: Bool { nextAlarm != nil && alarmPermissionMissing }
 
-    private var statusText: String {
+    // 반환형이 `LocalizedStringKey` 라서 보간이 든 문장도 카탈로그 키가 된다
+    // ("%@ 후에 울려요."). `String` 이면 `Text(변수)` 로 그려져 번역이 죽는다.
+    private var statusText: LocalizedStringKey {
         if let nextAlarm {
             if alarmPermissionMissing {
                 return "권한이 꺼져 있어 알람이 울리지 않아요."
@@ -57,18 +59,25 @@ struct NextAlarmHeadline: View {
     }
 
     /// "13시간 40분" / "2일 5시간" — 분 단위 올림, **상위 두 단위만** 노출.
+    ///
+    /// 여기서 `String(localized:)` 로 **미리** 번역해 둔다 — 위 `statusText` 의
+    /// 보간 자리(`%@`)에 들어갈 값이라, 조각째로 넘기면 번역될 기회가 없다.
     static func remainingLabel(seconds: TimeInterval) -> String {
         let totalMinutes = max(Int((seconds + 59) / 60), 0)
         let days = totalMinutes / (24 * 60)
         let hours = totalMinutes % (24 * 60) / 60
         let minutes = totalMinutes % 60
         if days > 0 {
-            return hours > 0 ? "\(days)일 \(hours)시간" : "\(days)일"
+            return hours > 0
+                ? String(localized: "\(days)일 \(hours)시간")
+                : String(localized: "\(days)일")
         }
         if hours > 0 {
-            return minutes > 0 ? "\(hours)시간 \(minutes)분" : "\(hours)시간"
+            return minutes > 0
+                ? String(localized: "\(hours)시간 \(minutes)분")
+                : String(localized: "\(hours)시간")
         }
-        return "\(minutes)분"
+        return String(localized: "\(minutes)분")
     }
 }
 

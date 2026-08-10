@@ -85,7 +85,9 @@ enum NativeTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    // 반환형이 `LocalizedStringKey` 여야 세 리터럴이 카탈로그 키로 잡힌다 —
+    // `String` 이면 하단 탭이 `Text(변수)` 로 그려져 en/ja 기기에서 한국어가 그대로 뜬다.
+    var title: LocalizedStringKey {
         switch self {
         case .alarms: return "알람"
         case .voices: return "목소리"
@@ -93,7 +95,7 @@ enum NativeTab: String, CaseIterable, Identifiable {
         }
     }
 
-    var navigationTitle: String { title }
+    var navigationTitle: LocalizedStringKey { title }
 
     var systemImage: String {
         switch self {

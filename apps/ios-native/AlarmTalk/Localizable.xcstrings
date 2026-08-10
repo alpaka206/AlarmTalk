@@ -69,6 +69,23 @@
         }
       }
     },
+    "%@ 후에 울려요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rings in %@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@後に鳴ります。"
+          }
+        }
+      }
+    },
     "%lld/%lld명 사용": {
       "extractionState": "manual",
       "localizations": {
@@ -99,6 +116,91 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld/%lld人が使用中 · 定員がいっぱいで共有できません"
+          }
+        }
+      }
+    },
+    "%lld분": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld minutes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld分"
+          }
+        }
+      }
+    },
+    "%lld시간": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld hours"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld時間"
+          }
+        }
+      }
+    },
+    "%lld시간 %lld분": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld hours %lld minutes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld時間%lld分"
+          }
+        }
+      }
+    },
+    "%lld일": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld days"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld日"
+          }
+        }
+      }
+    },
+    "%lld일 %lld시간": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld days %lld hours"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld日%lld時間"
           }
         }
       }
@@ -1446,6 +1548,23 @@
         }
       }
     },
+    "곧 울려요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ringing soon."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まもなく鳴ります。"
+          }
+        }
+      }
+    },
     "공부": {
       "extractionState": "manual",
       "localizations": {
@@ -2190,6 +2309,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "国外移転への同意はサービスの利用に必須です。撤回するには「もっと見る」から退会してください。"
+          }
+        }
+      }
+    },
+    "권한이 꺼져 있어 알람이 울리지 않아요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alarms won't ring because permission is off."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "権限がオフのため、アラームが鳴りません。"
           }
         }
       }
@@ -3244,6 +3380,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "退出させる"
+          }
+        }
+      }
+    },
+    "내일 - %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tomorrow - %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明日 - %@"
           }
         }
       }
@@ -5080,6 +5233,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "モード"
+          }
+        }
+      }
+    },
+    "모든 알람이 꺼진 상태입니다.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All alarms are off."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのアラームがオフです。"
           }
         }
       }
@@ -9929,6 +10099,23 @@
         }
       }
     },
+    "알람이 없습니다.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No alarms yet."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アラームがありません。"
+          }
+        }
+      }
+    },
     "알람톡 이용권을 보냈어요.\n\n이용권 코드: %1$@\n\n1. 알람톡 설치 %2$@\n2. 가입하고 로그인\n3. 더보기 → 코드 등록에 위 코드 입력": {
       "extractionState": "manual",
       "localizations": {
@@ -10524,6 +10711,23 @@
         }
       }
     },
+    "오늘 - %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Today - %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今日 - %@"
+          }
+        }
+      }
+    },
     "오늘 날씨를 알려주고 옷차림을 권해요.": {
       "extractionState": "manual",
       "localizations": {
@@ -10928,6 +11132,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "位置情報を取得中"
+          }
+        }
+      }
+    },
+    "위치를 가져오지 못했어요. 위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't get your location. Check that Location Services is on, or enter it manually."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置情報を取得できませんでした。位置情報サービスがオンか確認するか、直接入力してください。"
           }
         }
       }
@@ -15535,6 +15756,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "現在地を使う"
+          }
+        }
+      }
+    },
+    "현재 위치를 가져오는 중...": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Getting your current location..."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在地を取得中..."
           }
         }
       }

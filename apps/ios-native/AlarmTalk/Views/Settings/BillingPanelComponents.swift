@@ -174,7 +174,9 @@ nonisolated(unsafe) private let BillingShortISODateFormatter: ISO8601DateFormatt
 
 let BillingDisplayDateFormatter: DateFormatter = {
     let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "ko_KR")
+    // 숫자 포맷이라 로케일 영향이 거의 없지만, 고정할 이유도 없다(연·월·일 숫자 체계가
+    // 다른 로케일에서 아라비아 숫자가 아닌 글자로 나오는 것을 막으려면 en_US_POSIX 가 맞다).
+    formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "yyyy.MM.dd"
     return formatter
 }()

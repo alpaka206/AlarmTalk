@@ -173,7 +173,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     }
 
     /// 오전/오후. 시각 앞에 **작게** 붙인다(안드로이드 `rd2_am`/`rd2_pm`).
-    var meridiemLabel: String { hour < 12 ? "오전" : "오후" }
+    var meridiemLabel: String { hour < 12 ? String(localized: "오전") : String(localized: "오후") }
 
     /// 행 둘째 줄의 '다음 울릴 날짜' — 예: "8월 7일 (금)".
     ///
@@ -181,8 +181,11 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// ABBREV_WEEKDAY|NO_YEAR)` 로 만든다. 라벨(알람 이름) 대신 이걸 두는 게 의도다 —
     /// 기본 시계 앱의 라벨보다 '언제 울리나' 가 실용적이라서.
     func nextFireDateLabel(now: Date = Date()) -> String {
+        // ⚠ **로케일을 고정하지 말 것.** 사용자에게 보여 주는 날짜라 기기 언어를 따라야 한다
+        // (안드로이드는 어디에서도 로케일을 고정하지 않는다). 기계 파싱용 포맷터만
+        // `en_US_POSIX` 를 쓴다.
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.locale = .autoupdatingCurrent
         formatter.setLocalizedDateFormatFromTemplate("MMMEd")
         return formatter.string(from: nextFireDate)
     }

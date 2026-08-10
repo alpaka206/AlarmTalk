@@ -728,16 +728,17 @@ struct AlarmEditorSheet: View {
         let fireDate = Date(timeIntervalSince1970: TimeInterval(fireAt) / 1000.0)
         let label = Self.repeatSummaryDateFormatter.string(from: fireDate)
         var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = Locale(identifier: "ko_KR")
-        if calendar.isDateInToday(fireDate) { return "오늘 - \(label)" }
-        if calendar.isDateInTomorrow(fireDate) { return "내일 - \(label)" }
+        calendar.locale = .autoupdatingCurrent
+        if calendar.isDateInToday(fireDate) { return String(localized: "오늘 - \(label)") }
+        if calendar.isDateInTomorrow(fireDate) { return String(localized: "내일 - \(label)") }
         return label
     }
 
     /// "한 번만" 알람의 다음 발화 날짜 표기(예: 6월 21일 (토)). 매 호출 생성 비용을 피하려 static.
     static let repeatSummaryDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ko_KR")
+        // 로케일 고정 금지 — 사용자에게 보이는 날짜다(위 `nextFireDateLabel` 주석 참조).
+        formatter.locale = .autoupdatingCurrent
         formatter.setLocalizedDateFormatFromTemplate("MMMd EEE")
         return formatter
     }()
