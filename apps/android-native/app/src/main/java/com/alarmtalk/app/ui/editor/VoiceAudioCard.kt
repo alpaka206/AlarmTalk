@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
@@ -50,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -393,7 +393,7 @@ internal fun VoiceOutputSettingsPane(
             ) {
                 IconButton(onClick = onDismiss) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                        painter = painterResource(R.drawable.ic_chevron_back),
                         contentDescription = stringResource(R.string.editor_back),
                     )
                 }
@@ -632,7 +632,7 @@ internal fun FreeBucketSettingsPane(
             ) {
                 IconButton(onClick = onDismiss) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                        painter = painterResource(R.drawable.ic_chevron_back),
                         contentDescription = stringResource(R.string.editor_back),
                     )
                 }

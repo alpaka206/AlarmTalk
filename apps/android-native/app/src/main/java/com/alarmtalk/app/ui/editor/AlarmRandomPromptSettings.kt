@@ -20,8 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.Button
@@ -45,6 +43,7 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -183,7 +182,7 @@ internal fun RandomPromptSettingsPane(
             ) {
                 IconButton(onClick = onDismissWithoutSave) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                        painter = painterResource(R.drawable.ic_chevron_back),
                         contentDescription = stringResource(R.string.editorp_random_back),
                     )
                 }

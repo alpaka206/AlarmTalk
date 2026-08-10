@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Visibility
@@ -49,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -144,6 +144,28 @@ internal fun authFieldColors() = OutlinedTextFieldDefaults.colors(
  * 칸 높이는 iOS(약 44pt)보다 큰 Material 기본 56dp 를 **그대로 둔다** — 안드로이드
  * 최소 터치 타깃이 48dp 라 iOS 치수를 그대로 가져오면 오히려 규격을 깬다.
  */
+/** 스크롤 밖에 고정되는 원형 뒤로가기 줄. iOS `AuthCircleBackButton` 과 같은 스펙. */
+@Composable
+private fun BackCircleRow(onBack: () -> Unit) {
+    // ⚠ **뒤로가기와 제목을 한 줄에 두지 않는다** — iOS 와 같은 구성이다.
+    // 뒤로가기는 원형 버튼으로 위에 따로 두고, 제목은 그 아래 본문 첫 줄로 크게 세운다
+    // (디자인 언어: 제목 = 결론). 2026-08-10 결정: 이 화면만은 **iOS 를 원본으로 삼는다**.
+    IconButton(
+        onClick = onBack,
+        modifier = Modifier
+            .padding(start = 24.dp, top = 18.dp)
+            .size(44.dp)
+            .background(AuthBackCircleFill, CircleShape)
+            .border(1.dp, AuthBackCircleStroke, CircleShape),
+    ) {
+        Icon(
+            painterResource(R.drawable.ic_chevron_back),
+            contentDescription = stringResource(R.string.auth_back),
+            tint = TextOnScene,
+        )
+    }
+}
+
 @Composable
 internal fun AuthFieldLabel(text: String) {
     Text(
@@ -234,30 +256,21 @@ internal fun AuthScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding)
+                .padding(contentPadding),
+        ) {
+        // ⚠ **뒤로가기는 스크롤 밖에 둔다.** 안에 두면 폼을 내리거나 키보드가 올라와
+        // 내용이 밀릴 때 같이 사라져, 나갈 길이 화면에서 없어진다. 스크롤되는 건 폼이고
+        // 탈출구는 늘 같은 자리에 있어야 한다(iOS `LoginView` 도 같은 구조).
+        BackCircleRow(onBack = onBack)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 18.dp),
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 18.dp),
             // iOS `LoginView` 의 `VStack(spacing: 14)` 와 같은 값.
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            // ⚠ **뒤로가기와 제목을 한 줄에 두지 않는다** — iOS 와 같은 구성이다.
-            // 뒤로가기는 원형 버튼으로 위에 따로 두고, 제목은 그 아래 본문 첫 줄로
-            // 크게 세운다(디자인 언어: 제목 = 결론). 한 줄로 붙이면 제목이 앱바 라벨처럼
-            // 작아져, 바로 아래 부제와 위계가 붙어 버린다.
-            // 2026-08-10 결정: 이 화면만은 **iOS 를 원본으로 삼는다**(사용자 지시).
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(AuthBackCircleFill, CircleShape)
-                    .border(1.dp, AuthBackCircleStroke, CircleShape),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                    contentDescription = stringResource(R.string.auth_back),
-                    tint = TextOnScene,
-                )
-            }
             Text(
                 text = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
                 // iOS 와 같은 단계 — `theme.typography.headlineSmall`(24pt).
@@ -599,6 +612,7 @@ internal fun AuthScreen(
                 }
             }
         }
+    }
     }
 }
 
