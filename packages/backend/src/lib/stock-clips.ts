@@ -265,6 +265,18 @@ export interface StockClipTarget {
   /** 등록 녹음 전사에서 분석한 화자 말투(사투리 등, 클론만). */
   speechStyle?: SpeechStyle | null;
   claimToken?: string;
+  /**
+   * **목소리 교체 회차인가.** true 면 같은 (voice·category·language·variant) preset 이
+   * 이미 있을 때 no-op 로 물러나지 않고 그 행의 오디오·문구를 **덮어쓴다**.
+   *
+   * ⚠ 이게 없으면 교체가 성립하지 않는다. 기본 경로는 조건부 INSERT 라 기존 preset 이
+   * 있으면 아무것도 안 하고 방금 합성한 R2 오브젝트까지 지운다 — cron 이 겹쳐 돌 때
+   * 중복 행을 막으려고 그렇게 만든 것이고, 교체에는 정반대로 작용한다.
+   *
+   * ⚠ **message_id 는 바꾸지 않는다.** 알람이 그 값을 가리키고 있어서다 — 그대로 둬야
+   * 알람이 아무것도 눈치채지 못하고 소리만 새 목소리가 된다.
+   */
+  refreshExisting?: boolean;
 }
 
 /** 사전렌더 대상 보이스(시스템 or 유료 클론). ownerUserId·categories 로 소유자/버킷을 구분. */
@@ -840,14 +852,66 @@ export async function generateStockClip(
         args: [target.voiceProfileId, target.category, language, target.variantIndex],
       });
       const row = existing.rows[0];
-      return row
-        ? {
-            inserted: false as const,
-            messageId: String(row.id),
-            text: String(row.text ?? displayText),
-            audioUrl: String(row.audio_url ?? ''),
-          }
-        : null;
+      if (!row) return null;
+
+      // ── 목소리 교체: 기존 preset 을 **덮어쓴다** ────────────────────────────
+      // ⚠ **`message_id` 는 그대로 둔다.** 알람이 그 값을 가리키고 있어서, 새 행을
+      // 만들면 알람이 옛 행에 남아 교체가 반영되지 않는다. id 를 유지한 채
+      // `audio_url` 만 갈아끼우면 알람은 아무것도 눈치채지 못하고 소리만 바뀐다.
+      //
+      // ⚠ 기기 캐시는 키(`stock_<messageId>`)에 버전이 없어 message_id 만으로는 낡음을
+      // 알 수 없다. 그래서 **새 R2 키**에 올리는 게 중요하다 — 앱이 `audio_url` 이
+      // 달라진 것을 보고 다시 받는다(iOS `AudioCacheStore.isStale`).
+      if (target.refreshExisting) {
+        const existingMessageId = String(row.id);
+        await tx.execute({
+          sql: `UPDATE messages
+                SET text = ?, synthesis_text = ?, delivery_tags_json = ?, audio_url = ?
+                WHERE id = ?`,
+          args: [displayText, synthesisText, deliveryTagsJson, audioUrl, existingMessageId],
+        });
+        // 오디오 대장에도 새 렌더를 남긴다. `request_hash` 가 UNIQUE 라 같은 해시가 이미
+        // 있으면(같은 목소리·같은 문구) 무시된다 — 교체는 provider voice id 가 달라
+        // 해시가 반드시 갈라지므로 정상적으로 새 행이 생긴다.
+        await tx.execute({
+          sql: `INSERT OR IGNORE INTO generated_audio_assets
+                (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
+                 model_id, language, request_hash, text,
+                 audio_url, audio_object_key, audio_format, mime_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            crypto.randomUUID(),
+            target.ownerUserId,
+            target.voiceProfileId,
+            existingMessageId,
+            generated.provider,
+            generated.providerVoiceId,
+            generated.modelId,
+            language,
+            cacheKey,
+            synthesisText,
+            audioUrl,
+            audioObjectKey,
+            generated.outputFormat,
+            generated.mimeType,
+          ],
+        });
+        return {
+          inserted: false as const,
+          messageId: existingMessageId,
+          text: displayText,
+          audioUrl,
+          // 덮어쓰기 전 값 — 커밋 뒤 이 오브젝트를 지운다(아래 참조).
+          replacedAudioUrl: String(row.audio_url ?? ''),
+        };
+      }
+
+      return {
+        inserted: false as const,
+        messageId: String(row.id),
+        text: String(row.text ?? displayText),
+        audioUrl: String(row.audio_url ?? ''),
+      };
     }
 
     await tx.execute({
@@ -887,8 +951,25 @@ export async function generateStockClip(
     await discardStagedAudio();
     throw new Error('Preset publication authorization expired.');
   }
+  // ⚠ **교체 회차에서는 여기 걸리면 안 된다.** 이 가드는 "이미 다른 렌더가 이겼으니 내가
+  // 만든 오브젝트는 쓰레기다" 를 뜻한다. 교체는 방금 만든 audioUrl 을 그대로 게시하므로
+  // 두 값이 같아 통과한다 — `publication.audioUrl` 을 옛 값으로 돌려주도록 바꾸면
+  // **방금 심은 음원을 지워** 알람이 빈 URL 을 물게 되니 주의.
   if (!publication.inserted && publication.audioUrl !== audioUrl) {
     await discardStagedAudio();
+  }
+
+  // 교체로 밀려난 옛 오브젝트를 정리한다. 커밋이 끝난 뒤에 한다 — R2 삭제는 트랜잭션이
+  // 아니라, 롤백되는 트랜잭션 안에서 지우면 되살릴 수 없는 것을 먼저 잃는다.
+  const replacedAudioUrl = (publication as { replacedAudioUrl?: string }).replacedAudioUrl;
+  if (replacedAudioUrl && replacedAudioUrl !== audioUrl && replacedAudioUrl.startsWith('r2://')) {
+    const staleKey = replacedAudioUrl.slice('r2://'.length);
+    try {
+      await new R2VoiceStorage(env.VOICE_BUCKET).delete(staleKey);
+    } catch {
+      // 지우지 못해도 교체 자체는 성공이다 — 큐에 넘겨 나중에 치운다.
+      await enqueueExternalDeletion(db, 'r2_object', staleKey);
+    }
   }
 
   return {

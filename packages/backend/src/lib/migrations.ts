@@ -2224,6 +2224,22 @@ export const migrations: Migration[] = [
          ON promo_code_redemptions(user_id)`,
     ],
   },
+  {
+    id: 101,
+    name: 'voice-prerender-replace-mode',
+    // 목소리 **교체**(같은 프로필의 음원만 갈아끼우기)를 위한 append-only 컬럼 하나.
+    //
+    // 지금까지 등록은 "새 프로필을 만들고 옛 것을 지운다" 였다. 지우는 순간 그 목소리를
+    // 쓰던 알람이 기본 알람음으로 떨어진다 — 사용자가 없애고 싶어 한 동작이다.
+    // 교체는 프로필 id·message id 를 **그대로 두고** 오디오 실체만 덮어쓰므로 알람이
+    // 아무것도 눈치채지 못한다.
+    //
+    // 큐가 이 회차를 '재렌더' 로 알아야 `generateStockClip` 이 기존 preset 을 no-op 로
+    // 건너뛰지 않고 **UPDATE** 한다. 기본값 0 이라 기존 행은 지금과 똑같이 동작한다.
+    statements: [
+      `ALTER TABLE voice_prerender_queue ADD COLUMN refresh_existing INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
