@@ -32,6 +32,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -917,7 +918,21 @@ internal fun AlarmTalkApp(
                   contentPadding = padding,
                   onStart = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
               )
-              AuthRoute.ResetPassword -> PasswordResetScreen(
+              AuthRoute.ResetPassword -> {
+                  // ⚠ **화면을 나갈 때 발송 상태를 지운다.** 안 지우면 뒤로 갔다가 다시
+                  // 들어왔을 때 아무것도 안 했는데 "인증 코드를 보냈어요" 가 떠 있고
+                  // 코드·새 비밀번호 단계가 **이미 열린 채**라, 오지도 않은 코드를
+                  // 기다리게 된다(iOS `PasswordResetView.onDisappear` 와 같은 처리).
+                  //
+                  // ⚠ 화면 이탈에서만 지운다 — 앱을 백그라운드로 보내는 것(메일 확인)은
+                  // 이탈이 아니다. `DisposableEffect` 는 컴포지션이 떠날 때만 돈다.
+                  DisposableEffect(Unit) {
+                      onDispose {
+                          viewModel.passwordResetCodeSentTo = null
+                          viewModel.message = null
+                      }
+                  }
+                  PasswordResetScreen(
                   contentPadding = padding,
                   busy = authBusy,
                   codeSentTo = viewModel.passwordResetCodeSentTo,
@@ -926,7 +941,8 @@ internal fun AlarmTalkApp(
                   onConfirm = { resetEmail, resetCode, newPassword ->
                       viewModel.confirmPasswordReset(resetEmail, resetCode, newPassword) { authBack() }
                   },
-              )
+                  )
+              }
               is AuthRoute.Auth -> AuthScreen(
                   contentPadding = padding,
                   mode = route.mode,

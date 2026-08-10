@@ -82,6 +82,18 @@ struct PasswordResetView: View {
         }
         .navigationTitle("비밀번호 재설정")
         .navigationBarTitleDisplayMode(.inline)
+        // ⚠ **화면을 나갈 때 발송 상태를 지운다.** 예전에는 `passwordResetCodeSentTo` 와
+        // `statusMessage` 가 뷰모델에 남아, 뒤로 갔다가 다시 들어오면 아무것도 안 했는데
+        // "재설정 코드를 보냈어요. 메일을 확인해 주세요." 가 떠 있고 코드·새 비밀번호
+        // 단계가 **이미 열린 채**였다. 사용자는 오지도 않은 코드를 기다리게 된다.
+        //
+        // ⚠ 지우는 시점은 `onDisappear`(화면 이탈)여야 한다 — `scenePhase` 로 지우면
+        // **메일 앱에 다녀오는 사이에** 상태가 날아가, 방금 받은 코드를 넣을 화면이
+        // 초기화된다. 앱 전환은 이탈이 아니다.
+        .onDisappear {
+            auth.passwordResetCodeSentTo = nil
+            auth.statusMessage = nil
+        }
         // ⚠ **뒤로가기를 직접 그리지 말 것 — 두 개가 된다.**
         // 이 화면은 `LoginView` 의 `.navigationDestination` 으로 **push** 되므로
         // NavigationStack 이 이미 시스템 뒤로가기를 그린다. 예전에는 여기에
