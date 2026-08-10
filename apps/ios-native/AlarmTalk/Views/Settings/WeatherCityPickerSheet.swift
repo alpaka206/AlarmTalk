@@ -39,7 +39,7 @@ struct WeatherCityPickerSheet: View {
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(theme.palette.onSurface)
                 .padding(.horizontal, 20)
-                .padding(.top, 18)
+                .padding(.top, 4)
 
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -82,10 +82,7 @@ struct WeatherCityPickerSheet: View {
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.palette.surface)
-        .presentationDragIndicator(.visible)
-        // 높이는 실측(`FittedSheetHeight`) — 항목이 늘어도 마지막 행이 잘리지 않는다.
-        .fittedSheetHeight()
+        // 배경·모서리·드래그 핸들은 `BottomSheetHost` 가 그린다.
     }
 
     /// 프리셋 도시는 전부 국내다 — 국가를 따로 묻지 않는 이유다.

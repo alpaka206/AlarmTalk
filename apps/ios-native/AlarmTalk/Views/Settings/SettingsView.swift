@@ -131,7 +131,7 @@ struct SettingsView: View {
         .onChange(of: auth.session?.user.dynamicPromptSettings) { _, _ in
             loadPromptPreferences()
         }
-        .sheet(isPresented: $weatherDialogOpen) {
+        .bottomSheet(isPresented: $weatherDialogOpen, onDismiss: { weatherDialogOpen = false }) {
             // ⚠ **국가·도시 입력 폼으로 되돌리지 말 것.** 안드로이드는 도시 목록
             // 바텀시트다 — `WeatherCityPickerSheet` 주석 참조.
             WeatherCityPickerSheet(
@@ -165,7 +165,7 @@ struct SettingsView: View {
                 }
             )
         }
-        .sheet(isPresented: $holidayDialogOpen) {
+        .bottomSheet(isPresented: $holidayDialogOpen, onDismiss: { holidayDialogOpen = false }) {
             HolidayCountryPickerSheet(
                 current: holidayStore.selectedCountryCode,
                 onDismiss: { holidayDialogOpen = false },

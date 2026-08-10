@@ -90,7 +90,7 @@ struct MenuView: View {
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .frame(maxWidth: .infinity, alignment: .center)
         }
-        .sheet(isPresented: $themeDialogOpen) {
+        .bottomSheet(isPresented: $themeDialogOpen, onDismiss: { themeDialogOpen = false }) {
             ThemeModePickerSheet(
                 current: currentThemeMode,
                 onDismiss: { themeDialogOpen = false },

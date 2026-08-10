@@ -40,7 +40,7 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
                 // 아래에 22pt 굵은 제목이 닿는다(2026-08-10 지적 "모달 위에 여백이 없어
                 // 잘리려고 한다"). 안드로이드는 핸들이 위 12 + 아래 10 을 갖고 그 뒤에
                 // 제목이 온다 — 같은 간격이 되도록 18 을 준다.
-                .padding(.top, 18)
+                .padding(.top, 4)
 
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -81,10 +81,7 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.palette.surface)
+        // 배경·모서리·드래그 핸들은 `BottomSheetHost` 가 그린다.
         // 드래그 핸들은 시스템이 그린다(안드로이드는 `WakerSheetDragHandle` 로 직접 그린다).
-        .presentationDragIndicator(.visible)
-        // ⚠ 높이는 **실측**이다 — 상수를 더하지 말 것(`FittedSheetHeight` 주석).
-        .fittedSheetHeight()
     }
 }

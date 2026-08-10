@@ -36,6 +36,10 @@ private struct FittedSheetHeight: ViewModifier {
         content
             .onPreferenceChange(SheetContentHeightKey.self) { contentHeight = $0 }
             .presentationDetents(detents)
+            // ⚠ **좌우를 꽉 채운다.** iOS 26 기본 시트는 화면 가장자리에서 들어가 그려지는데,
+            // 안드로이드 `ModalBottomSheet` 는 폭을 꽉 채운다(2026-08-10 지적).
+            // `.page` 는 '가장자리까지 붙는 전통적 시트' 크기다.
+            .presentationSizing(.page)
     }
 
     private var detents: Set<PresentationDetent> {

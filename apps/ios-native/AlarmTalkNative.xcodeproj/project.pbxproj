@@ -66,6 +66,7 @@
 		4595EEB8FB64EA9ED32897B6 /* AlarmTalkAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64309C1B0B71EE457BAFB65C /* AlarmTalkAPI.swift */; };
 		46755794A3CFB39DB2A07D3E /* AuthViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376BBDA5FD78ACD795C78581 /* AuthViewModelTests.swift */; };
 		46C1C613B52586A9E527A86D /* AlarmAppContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAFEFFCE341357461A47A64B /* AlarmAppContext.swift */; };
+		4782087541F062C7FB42F907 /* BottomSheetHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F1B0A3B4CA06019853F34D /* BottomSheetHost.swift */; };
 		48884F4EE9CE03EA2B89F592 /* HolidayUpcomingList.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2045E291994B947F86212FC /* HolidayUpcomingList.swift */; };
 		48F7AD578B49FDD7234B4E98 /* license_ofl_1_1.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1E4779B9B3184263A018270C /* license_ofl_1_1.txt */; };
 		49165A0BBDF7A26945A62D65 /* license_apache_2_0.txt in Resources */ = {isa = PBXBuildFile; fileRef = C0526E1D1135CBBCE4AD42A5 /* license_apache_2_0.txt */; };
@@ -467,6 +468,7 @@
 		BD5149AC925F9E7568727C4B /* BottomNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavBar.swift; sourceTree = "<group>"; };
 		BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmVoiceStopOwnershipTests.swift; sourceTree = "<group>"; };
 		C0526E1D1135CBBCE4AD42A5 /* license_apache_2_0.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = license_apache_2_0.txt; sourceTree = "<group>"; };
+		C0F1B0A3B4CA06019853F34D /* BottomSheetHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSheetHost.swift; sourceTree = "<group>"; };
 		C147826DE6871E7FF9B5563D /* AlarmTalkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkApp.swift; sourceTree = "<group>"; };
 		C2045E291994B947F86212FC /* HolidayUpcomingList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidayUpcomingList.swift; sourceTree = "<group>"; };
 		C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DynamicPromptPreferenceStoreTests.swift; sourceTree = "<group>"; };
@@ -702,6 +704,7 @@
 				205D0CC3E1C28F766AD8FB8F /* AlarmTalkFieldStyle.swift */,
 				A6060CBDBC2E6E31887ADA06 /* AlarmTalkSwitch.swift */,
 				993F13DD98269244F828B44E /* AppSettings.swift */,
+				C0F1B0A3B4CA06019853F34D /* BottomSheetHost.swift */,
 				F6B2B49556CF324D4708CAA5 /* ChipStyle.swift */,
 				A186A9ECD18C026BD44B42E0 /* EmptyStatePlaceholder.swift */,
 				4621CAE23798A7737B7DE436 /* FeatureLockBadge.swift */,
@@ -1233,6 +1236,7 @@
 				BB1CAC0563FC0292925DC027 /* BillingPanel.swift in Sources */,
 				496C23BF2BF03B282CBF1E97 /* BillingPanelComponents.swift in Sources */,
 				128C91C62BC6308BA1781AE7 /* BottomNavBar.swift in Sources */,
+				4782087541F062C7FB42F907 /* BottomSheetHost.swift in Sources */,
 				38FAD9501D95B722F1DBD8FE /* ChipStyle.swift in Sources */,
 				C5EC889738337D1C0FB7D53F /* CodeRegistrationError.swift in Sources */,
 				EFAC3FF8315CEAA3BDF2AA09 /* CodeShareText.swift in Sources */,
