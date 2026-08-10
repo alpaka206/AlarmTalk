@@ -90,6 +90,14 @@ struct LoginView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    // ⚠ **시스템 뒤로가기를 쓰지 않는다 — 두 앱이 달라진다.**
+                    // 시스템 버튼은 OS 버전이 정하는 모양(iOS 26 은 유리 원형)이라
+                    // 안드로이드에서 같은 것을 만들 수 없다. 두 앱을 같게 두려고 **양쪽 다
+                    // 같은 스펙의 원형 버튼을 직접 그린다**(채움 12% 흰색, 테두리 1px
+                    // 액센트 36%, 지름 44). 안드로이드 대응: `ui/auth/AuthScreen.kt` 의
+                    // `AuthBackCircleFill`·`AuthBackCircleStroke`.
+                    AuthCircleBackButton { dismiss() }
+
                     // 안드로이드는 세그먼트 피커가 없다(AuthScreen.kt:215-232) — 화면 안에
                     // 제목을 두고, 로그인↔가입은 **맨 아래 전환 행**에서 고른다. 피커를
                     // 위에 두면 아직 계정이 있는지도 모르는 사람에게 먼저 답을 강요하게 된다.
@@ -156,6 +164,8 @@ struct LoginView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
+        // 위에서 직접 그리므로 시스템 것은 숨긴다(둘 다 뜨면 화살표가 두 개가 된다).
+        .navigationBarBackButtonHidden(true)
         .navigationDestination(isPresented: $showPasswordReset) {
             PasswordResetView()
         }
@@ -585,3 +595,33 @@ enum LoginValidator {
     .voiceAlarmPreviewEnvironment()
 }
 #endif
+
+
+/// 원형 뒤로가기 — **안드로이드와 같은 스펙**을 직접 그린다.
+///
+/// ⚠ 시스템 뒤로가기(`NavigationStack` 기본)를 쓰면 모양을 OS 가 정해서
+/// 안드로이드에서 같은 것을 만들 수 없다. 두 앱을 나란히 놓았을 때 화살표만 다른 게
+/// 눈에 띄어(2026-08-10) 양쪽 다 같은 값으로 고정했다.
+/// 안드로이드 대응: `ui/auth/AuthScreen.kt` 의 뒤로가기 `IconButton`.
+struct AuthCircleBackButton: View {
+    var action: () -> Void
+
+    /// 안드로이드 `AuthBackCircleFill` = `Color(0x1FFFFFFF)`.
+    private static let fill = Color.white.opacity(0x1F / 255.0)
+    /// 안드로이드 `AuthBackCircleStroke` = `Color(0x5CA6D2FF)` — 액센트 36%.
+    private static let stroke = Color.hex(0xA6D2FF).opacity(0x5C / 255.0)
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.backward")
+                // Material `KeyboardArrowLeft` 의 두께에 맞춘 값 — SF 기본은 더 가늘다.
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(AuthSceneColors.text)
+                .frame(width: 44, height: 44)
+                .background(Circle().fill(Self.fill))
+                .overlay(Circle().stroke(Self.stroke, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("뒤로")
+    }
+}

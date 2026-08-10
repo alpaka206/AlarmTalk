@@ -149,8 +149,9 @@ internal fun AuthFieldLabel(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
+        // ⚠ 여백을 여기서 주지 말 것 — 감싸는 Column 의 `spacedBy(6.dp)` 가 담당한다.
+        // 패딩과 형제 간격이 더해지면 라벨이 자기 칸에서 멀어져 어느 칸의 라벨인지 흐려진다.
         color = AuthTextMuted,
-        modifier = Modifier.padding(bottom = 6.dp),
     )
 }
 
@@ -236,7 +237,8 @@ internal fun AuthScreen(
                 .padding(contentPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            // iOS `LoginView` 의 `VStack(spacing: 14)` 와 같은 값.
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             // ⚠ **뒤로가기와 제목을 한 줄에 두지 않는다** — iOS 와 같은 구성이다.
             // 뒤로가기는 원형 버튼으로 위에 따로 두고, 제목은 그 아래 본문 첫 줄로
@@ -285,63 +287,67 @@ internal fun AuthScreen(
             }
 
             if (mode == AuthMode.Register) {
-                AuthFieldLabel(stringResource(R.string.auth_label_name))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AuthFieldLabel(stringResource(R.string.auth_label_name))
+                    OutlinedTextField(
+                        value = name,
+                        // 서버(`DisplayNameSchema`)와 같은 규칙을 앱에서 먼저 태운다 — 제로폭·
+                        // 양방향 문자가 남으면 isNotBlank() 는 통과하는데 서버에서 정리하면 빈 값이
+                        // 되어 **이메일 인증까지 마친 뒤에야** 400 이 난다.
+                        //
+                        // 30자에서 막되, **말없이 막지 않는다.** 넘겨 치면 그 순간 아래에
+                        // 이유가 뜨고(글자는 들어가지 않는다), 지워서 여유가 생기면 사라진다.
+                        // 항상 켜진 카운터(7/30)는 넘기 전까진 알려 줄 게 없어 두지 않는다.
+                        onValueChange = { raw ->
+                            val cleaned = sanitizeDisplayName(raw)
+                            // 30자 **정확히** 일 때는 플래그를 건드리지 않는다 — 잘라서 돌려준
+                            // 값을 IME 가 되돌려 보내면 방금 켠 경고가 곧바로 꺼진다.
+                            if (cleaned.length > DisplayNameMaxLength) {
+                                nameTooLong = true
+                            } else if (cleaned.length < DisplayNameMaxLength) {
+                                nameTooLong = false
+                            }
+                            name = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
+                        },
+                        isError = nameTooLong,
+                        supportingText = if (nameTooLong) {
+                            { Text(stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength)) }
+                        } else {
+                            null
+                        },
+                        singleLine = true,
+                        enabled = !busy,
+                        shape = WakerInputShape,
+                        colors = authFieldColors(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Next,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AuthFieldLabel(stringResource(R.string.auth_label_email))
                 OutlinedTextField(
-                    value = name,
-                    // 서버(`DisplayNameSchema`)와 같은 규칙을 앱에서 먼저 태운다 — 제로폭·
-                    // 양방향 문자가 남으면 isNotBlank() 는 통과하는데 서버에서 정리하면 빈 값이
-                    // 되어 **이메일 인증까지 마친 뒤에야** 400 이 난다.
-                    //
-                    // 30자에서 막되, **말없이 막지 않는다.** 넘겨 치면 그 순간 아래에
-                    // 이유가 뜨고(글자는 들어가지 않는다), 지워서 여유가 생기면 사라진다.
-                    // 항상 켜진 카운터(7/30)는 넘기 전까진 알려 줄 게 없어 두지 않는다.
-                    onValueChange = { raw ->
-                        val cleaned = sanitizeDisplayName(raw)
-                        // 30자 **정확히** 일 때는 플래그를 건드리지 않는다 — 잘라서 돌려준
-                        // 값을 IME 가 되돌려 보내면 방금 켠 경고가 곧바로 꺼진다.
-                        if (cleaned.length > DisplayNameMaxLength) {
-                            nameTooLong = true
-                        } else if (cleaned.length < DisplayNameMaxLength) {
-                            nameTooLong = false
-                        }
-                        name = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
-                    },
-                    isError = nameTooLong,
-                    supportingText = if (nameTooLong) {
-                        { Text(stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength)) }
-                    } else {
-                        null
+                    value = email,
+                    onValueChange = {
+                        email = it
+                        onClearLoginError()
                     },
                     singleLine = true,
                     enabled = !busy,
                     shape = WakerInputShape,
                     colors = authFieldColors(),
+                    isError = mode == AuthMode.Login && loginError != null,
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
+                        keyboardType = KeyboardType.Email,
                         imeAction = ImeAction.Next,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-
-            AuthFieldLabel(stringResource(R.string.auth_label_email))
-            OutlinedTextField(
-                value = email,
-                onValueChange = {
-                    email = it
-                    onClearLoginError()
-                },
-                singleLine = true,
-                enabled = !busy,
-                shape = WakerInputShape,
-                colors = authFieldColors(),
-                isError = mode == AuthMode.Login && loginError != null,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
 
             if (mode == AuthMode.Register) {
                 val verifyEnabled = !busy && emailLooksValid && !isEmailVerified
@@ -370,23 +376,25 @@ internal fun AuthScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
-                        OutlinedTextField(
-                            value = emailCode,
-                            onValueChange = {
-                                emailCode = it.filter(Char::isDigit).take(6)
-                                onClearLoginError()
-                            },
-                            singleLine = true,
-                            enabled = !busy,
-                            shape = WakerInputShape,
-                            colors = authFieldColors(),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.NumberPassword,
-                                imeAction = ImeAction.Next,
-                            ),
-                            modifier = Modifier.weight(1f),
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
+                            OutlinedTextField(
+                                value = emailCode,
+                                onValueChange = {
+                                    emailCode = it.filter(Char::isDigit).take(6)
+                                    onClearLoginError()
+                                },
+                                singleLine = true,
+                                enabled = !busy,
+                                shape = WakerInputShape,
+                                colors = authFieldColors(),
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.NumberPassword,
+                                    imeAction = ImeAction.Next,
+                                ),
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                         val confirmEnabled = !busy && emailCode.length == 6
                         OutlinedButton(
                             onClick = { onConfirmEmailVerification(email, emailCode) },
@@ -423,82 +431,86 @@ internal fun AuthScreen(
                 }
             }
 
-            AuthFieldLabel(stringResource(R.string.auth_label_password))
-            OutlinedTextField(
-                value = password,
-                onValueChange = {
-                    password = it
-                    onClearLoginError()
-                },
-                singleLine = true,
-                enabled = !busy,
-                shape = WakerInputShape,
-                colors = authFieldColors(),
-                isError = mode == AuthMode.Login && loginError != null,
-                supportingText = if (mode == AuthMode.Login && loginError != null) {
-                    { Text(loginError, color = AuthErrorText) }
-                } else {
-                    null
-                },
-                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Icon(
-                            imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                            contentDescription = if (passwordVisible) stringResource(R.string.auth_password_hide) else stringResource(R.string.auth_password_show),
-                        )
-                    }
-                },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = if (mode == AuthMode.Register) ImeAction.Next else ImeAction.Done,
-                ),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            if (mode == AuthMode.Register) {
-                // 비밀번호·비밀번호 확인 입력창을 붙여 두고, 조건 안내는 확인 필드 아래에 모은다.
-                AuthFieldLabel(stringResource(R.string.auth_label_confirm_password))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AuthFieldLabel(stringResource(R.string.auth_label_password))
                 OutlinedTextField(
-                    value = confirmPassword,
-                    onValueChange = { confirmPassword = it },
+                    value = password,
+                    onValueChange = {
+                        password = it
+                        onClearLoginError()
+                    },
                     singleLine = true,
                     enabled = !busy,
                     shape = WakerInputShape,
                     colors = authFieldColors(),
-                    isError = confirmPassword.isNotBlank() && !passwordMatches,
-                    visualTransformation = if (confirmPasswordVisible) {
-                        VisualTransformation.None
+                    isError = mode == AuthMode.Login && loginError != null,
+                    supportingText = if (mode == AuthMode.Login && loginError != null) {
+                        { Text(loginError, color = AuthErrorText) }
                     } else {
-                        PasswordVisualTransformation()
+                        null
                     },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
-                        IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
-                                imageVector = if (confirmPasswordVisible) {
-                                    Icons.Outlined.VisibilityOff
-                                } else {
-                                    Icons.Outlined.Visibility
-                                },
-                                contentDescription = if (confirmPasswordVisible) {
-                                    stringResource(R.string.auth_confirm_password_hide)
-                                } else {
-                                    stringResource(R.string.auth_confirm_password_show)
-                                },
+                                imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription = if (passwordVisible) stringResource(R.string.auth_password_hide) else stringResource(R.string.auth_password_show),
                             )
-                        }
-                    },
-                    supportingText = {
-                        if (confirmPassword.isNotBlank() && !passwordMatches) {
-                            Text(stringResource(R.string.auth_password_mismatch))
                         }
                     },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done,
+                        imeAction = if (mode == AuthMode.Register) ImeAction.Next else ImeAction.Done,
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+
+            if (mode == AuthMode.Register) {
+                // 비밀번호·비밀번호 확인 입력창을 붙여 두고, 조건 안내는 확인 필드 아래에 모은다.
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AuthFieldLabel(stringResource(R.string.auth_label_confirm_password))
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        singleLine = true,
+                        enabled = !busy,
+                        shape = WakerInputShape,
+                        colors = authFieldColors(),
+                        isError = confirmPassword.isNotBlank() && !passwordMatches,
+                        visualTransformation = if (confirmPasswordVisible) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        trailingIcon = {
+                            IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (confirmPasswordVisible) {
+                                        Icons.Outlined.VisibilityOff
+                                    } else {
+                                        Icons.Outlined.Visibility
+                                    },
+                                    contentDescription = if (confirmPasswordVisible) {
+                                        stringResource(R.string.auth_confirm_password_hide)
+                                    } else {
+                                        stringResource(R.string.auth_confirm_password_show)
+                                    },
+                                )
+                            }
+                        },
+                        supportingText = {
+                            if (confirmPassword.isNotBlank() && !passwordMatches) {
+                                Text(stringResource(R.string.auth_password_mismatch))
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
                 PasswordRules(
                     passwordAtLeastMin = passwordAtLeastMin,
