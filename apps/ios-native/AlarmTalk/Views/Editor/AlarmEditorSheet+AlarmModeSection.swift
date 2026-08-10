@@ -50,7 +50,10 @@ extension AlarmEditorSheet {
                         // ⚠ '음성 탭에서 만들기' 버튼을 상시로 두지 않는다 — 목소리가 이미
                         // 있는 사람에게는 매번 다른 탭으로 보내는 버튼이 편집기에 남는다.
                         // 고를 목소리가 하나도 없을 때만 낸다.
-                        if voiceProfileOptions.isEmpty && !voiceStudio.isBusy {
+                        // ⚠ 여기는 **`isRefreshing`** 이다(쓰기 플래그 `isBusy` 가 아니다).
+                        // 목록을 아직 불러오는 중에 "없음" 으로 단정해 버튼을 내면 안 된다 —
+                        // 목소리가 있는 사람에게 잠깐 깜빡였다가 사라진다.
+                        if voiceProfileOptions.isEmpty && !voiceStudio.isRefreshing {
                             Button {
                                 onJumpToVoices()
                             } label: {

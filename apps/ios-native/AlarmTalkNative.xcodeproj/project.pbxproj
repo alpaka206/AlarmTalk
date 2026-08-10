@@ -105,6 +105,7 @@
 		6BEF7CCCB8DFADB90171CF04 /* VoiceMessagePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B014500554663BFC83F74EC /* VoiceMessagePanel.swift */; };
 		6CEC9C2CFA66AF76BFC562F1 /* WeatherLocationInputFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48CF19CFBA073E3D7CC46441 /* WeatherLocationInputFields.swift */; };
 		6CFB12D255AB21B12F5175DF /* VoiceSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04D77313A4CF5DBFD7203E5 /* VoiceSelectionSheet.swift */; };
+		6D9AC3EA23FDF9D9158057C4 /* BusyFlagSeparationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA56E681611EE77E99D4BE4 /* BusyFlagSeparationTests.swift */; };
 		6F43E5944AB00E7EFBA6DEEA /* SessionTokenRenewalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F64DE0D8C2700FE29E59B63 /* SessionTokenRenewalTests.swift */; };
 		703F018B82D32AB6B45C4DBA /* UsageGuideSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A189CBA805B03B6CF0BEAC00 /* UsageGuideSheet.swift */; };
 		708D3503AD539D289233A772 /* VoicePlayModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E077F439D01E160ED901D7FE /* VoicePlayModePicker.swift */; };
@@ -497,6 +498,7 @@
 		F702C79A431AE0668621A1F1 /* VoiceCloneUploadFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCloneUploadFlow.swift; sourceTree = "<group>"; };
 		FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultVoicePreferenceStore.swift; sourceTree = "<group>"; };
 		FA51DB6D40069D4B62BFF572 /* SubscriptionProduct.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionProduct.swift; sourceTree = "<group>"; };
+		FAA56E681611EE77E99D4BE4 /* BusyFlagSeparationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusyFlagSeparationTests.swift; sourceTree = "<group>"; };
 		FB7140D90A5272AD50F78449 /* voice_greeting_mina_ko.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_mina_ko.mp3; sourceTree = "<group>"; };
 		FEBAA873DFD96871D86C066E /* AlarmKitViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmKitViewModel.swift; sourceTree = "<group>"; };
 		FED5C5FC2F31030D968F1A3B /* VoiceConsentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceConsentSheet.swift; sourceTree = "<group>"; };
@@ -766,6 +768,7 @@
 				376BBDA5FD78ACD795C78581 /* AuthViewModelTests.swift */,
 				BC6803137321D0177FF40243 /* BackgroundSyncTaskTests.swift */,
 				90F41853E4CF850DF4EB6F24 /* BucketClipRotationTests.swift */,
+				FAA56E681611EE77E99D4BE4 /* BusyFlagSeparationTests.swift */,
 				4184659F9F09362DAA337E35 /* CodeRegistrationErrorTests.swift */,
 				4DA363023A1B8AF26EB147D6 /* CodeShareTextTests.swift */,
 				C84FBD5267145436CD8B0F93 /* DynamicPromptPreferenceStoreTests.swift */,
@@ -1316,6 +1319,7 @@
 				46755794A3CFB39DB2A07D3E /* AuthViewModelTests.swift in Sources */,
 				516F57BD13DEACD0054A1F59 /* BackgroundSyncTaskTests.swift in Sources */,
 				749B993C6D0AA5AE3EB95E1D /* BucketClipRotationTests.swift in Sources */,
+				6D9AC3EA23FDF9D9158057C4 /* BusyFlagSeparationTests.swift in Sources */,
 				AB8A9EB691B9DE89974FA8FF /* CodeRegistrationErrorTests.swift in Sources */,
 				BC5819D719B5CD821BE56BC4 /* CodeShareTextTests.swift in Sources */,
 				0D6DE12A148737B55879EBFC /* DynamicPromptPreferenceStoreTests.swift in Sources */,

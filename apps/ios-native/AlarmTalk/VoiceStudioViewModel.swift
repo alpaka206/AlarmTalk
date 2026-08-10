@@ -77,7 +77,14 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var fortuneBirthDate = ""
     @Published var fortuneBirthTime = ""
     @Published var cloneName = "내 목소리"
+    /// **사용자가 시작한 쓰기**(등록·삭제·이름변경·공유 토글…) 전용. 화면이 버튼을 잠근다.
     @Published var isBusy = false
+
+    /// **자동 새로고침 전용**(화면 진입·전경 복귀·푸시). 버튼을 잠그지 않는다.
+    /// 이유는 `SocialFeatureViewModel.isRefreshing` 주석 참조 —
+    /// 하나로 합치면 목록을 불러오는 사이에 누른 버튼이 조용히 무시된다.
+    @Published private(set) var isRefreshing = false
+
     @Published var statusMessage: String?
     @Published var preparedAlarm: PreparedAlarmTalk?
     /// 이번 달 목소리 쿼터. 조회 실패면 nil — 화면은 숫자를 감추고 평소대로 그린다
@@ -388,14 +395,15 @@ final class VoiceStudioViewModel: ObservableObject {
         // 기본 목소리/호칭은 기기 클라 설정(유저별). 프로필 로드와 무관하게 바로 채운다.
         defaultVoiceId = defaultVoiceStore.defaultVoiceId(userID: userID)
         defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: userID)
-        guard force || !isBusy else { return }
-        let shouldManageBusy = !isBusy
+        // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.
+        guard force || !isRefreshing else { return }
+        let shouldManageBusy = !isRefreshing
         if shouldManageBusy {
-            isBusy = true
+            isRefreshing = true
         }
         defer {
             if shouldManageBusy {
-                isBusy = false
+                isRefreshing = false
             }
         }
 
@@ -948,7 +956,12 @@ final class VoiceStudioViewModel: ObservableObject {
         alarmStore: LocalAlarmStore? = nil,
         audioCache: AudioCacheStore? = nil
     ) async -> Bool {
-        guard let token = session?.token else { return false }
+        // ⚠ 조용히 빠지지 말 것 — 사용자는 삭제를 눌렀는데 아무 일도 안 일어난 것으로 본다.
+        // 안드로이드는 같은 자리에서 `msg_voice_delete_login_required` 를 띄운다.
+        guard let token = session?.token else {
+            statusMessage = String(localized: "로그인이 필요해요.")
+            return false
+        }
         guard !isBusy else { return false }
         isBusy = true
         defer { isBusy = false }
@@ -1095,7 +1108,10 @@ final class VoiceStudioViewModel: ObservableObject {
     /// (`voice-profile.ts:733-741`). 알람 클립이 등록 시점 페르소나로 이미 전부 렌더돼
     /// 있어 바꿀 수 있는 값이 아니다 — 안드로이드도 이름 하나만 보낸다.
     func renameProfile(_ profile: VoiceProfile, newName: String, session: AuthSession?) async {
-        guard let token = session?.token else { return }
+        guard let token = session?.token else {
+            statusMessage = String(localized: "로그인이 필요해요.")
+            return
+        }
         let trimmed = InputSanitizer.clampVoiceName(newName)
         guard !trimmed.isEmpty else {
             statusMessage = "이름을 비울 수 없어요."
@@ -1121,7 +1137,10 @@ final class VoiceStudioViewModel: ObservableObject {
 
     /// 공유 토글 — VoiceProfileManagementPanel 의 공유 스위치가 호출.
     func toggleShare(_ profile: VoiceProfile, isShared: Bool, session: AuthSession?) async {
-        guard let token = session?.token else { return }
+        guard let token = session?.token else {
+            statusMessage = String(localized: "로그인이 필요해요.")
+            return
+        }
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }

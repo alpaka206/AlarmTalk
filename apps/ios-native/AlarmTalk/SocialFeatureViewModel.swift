@@ -12,7 +12,21 @@ final class SocialFeatureViewModel: ObservableObject {
     @Published var subscription: BillingSubscriptionResponse?
     @Published var vouchers: [VoucherItem] = []
     @Published var inviteCode = ""
+    /// **사용자가 시작한 쓰기**(코드 등록·그룹 나가기·내보내기·해지…) 전용.
+    /// 화면이 이 값으로 버튼을 잠근다.
     @Published var isBusy = false
+
+    /// **자동 새로고침 전용**(화면 진입·전경 복귀·푸시). 버튼을 잠그지 않는다.
+    ///
+    /// ⚠ **`isBusy` 하나로 되돌리지 말 것.** 예전에는 읽기 새로고침도 `isBusy` 를 올렸고,
+    /// 쓰기 액션은 전부 `guard !isBusy else { return }` 로 **조용히** 물러섰다. 그래서
+    /// 패널에 들어가자마자 누른 버튼이 아무 일도 안 하는 것처럼 보였다(2026-08-10 사용자
+    /// 보고 "버튼 눌렀는데 바로바로 작동 안 될 때가 있다"). 특히 확인 알럿의 버튼은
+    /// `.disabled` 로 막을 수 없어 **알럿만 닫히고 끝났다.**
+    /// 안드로이드가 같은 문제를 먼저 겪고 갈라 두었다 —
+    /// `ui/main/MainViewModelBillingActions.kt` 의 `billingRefreshing` vs `billingBusy`.
+    @Published private(set) var isRefreshing = false
+
     @Published var statusMessage: String?
 
     /// 해지를 App Store 에서 해야 하는가 — 서버가 `STORE_CANCEL_UNSUPPORTED` 로 거절했을 때.
@@ -64,11 +78,12 @@ final class SocialFeatureViewModel: ObservableObject {
             return
         }
         activeUserID = userID
-        guard force || !isBusy else { return }
-        let shouldSetBusy = !isBusy
-        if shouldSetBusy { isBusy = true }
+        // 읽기 전용이라 `isRefreshing` 만 본다 — 사용자의 쓰기 액션을 막지 않는다.
+        guard force || !isRefreshing else { return }
+        let shouldSetBusy = !isRefreshing
+        if shouldSetBusy { isRefreshing = true }
         defer {
-            if shouldSetBusy { isBusy = false }
+            if shouldSetBusy { isRefreshing = false }
         }
 
         var messages: [String] = []
