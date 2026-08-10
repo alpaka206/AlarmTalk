@@ -613,6 +613,124 @@ voiceProfile.patch('/:id/preview-text', async (c) => {
   return c.json({ success: true, preview_text: previewText });
 });
 
+type ReplaceResult =
+  | { ok: true; profile: Record<string, unknown> }
+  | { ok: false; error: string; errorCode: string; status: 404 | 409 };
+
+/**
+ * **목소리 교체 — 옛 프로필 자리에 새 목소리를 앉힌다.**
+ *
+ * 사용자에게는 "이전에 저장해둔 목소리는 삭제됩니다" 지만, 서버는 옛 프로필 행을
+ * **지우지 않고 재사용**한다. 지우면 그 목소리를 쓰던 알람이 전부 기본 알람음으로
+ * 떨어지기 때문이다(알람은 `voice_profile_id`·`message_id` 를 가리킨다).
+ *
+ * 순서가 중요하다 — **먼저 옮기고, 마지막에 정리한다.**
+ * 중간에 끊겨도 사용자는 "옛 목소리 그대로" 이거나 "새 목소리로 바뀜" 중 하나이지,
+ * **둘 다 없는 상태가 되지 않는다.** 반대로 옛 provider voice 를 먼저 지우면 그 사이에
+ * 실패했을 때 되돌릴 수 없는 것을 먼저 잃는다.
+ *
+ * 1. 드래프트에서 새 목소리의 실체(provider voice id·이름·페르소나·미리듣기)를 읽는다.
+ * 2. 한 트랜잭션에서 **옛 프로필에 덮어쓰고**, 드래프트 행은 소비된 것으로 지운다.
+ * 3. 프리셋 클립 재렌더를 큐에 넣는다(`refresh_existing = 1`) — 클립은 cron 이 덮어쓴다.
+ * 4. 옛 provider voice 는 **커밋 뒤에** 외부 삭제 큐로 넘긴다.
+ */
+async function replaceVoiceInPlace(
+  db: ReturnType<typeof getDB>,
+  params: { targetUserIds: string[]; draftProfileId: string; language: string },
+): Promise<ReplaceResult> {
+  const { targetUserIds, draftProfileId, language } = params;
+  const ph = targetUserIds.map(() => '?').join(',');
+
+  const draftRes = await db.execute({
+    sql: `SELECT id, user_id, name, elevenlabs_voice_id, relationship_label, listener_title,
+                 preview_text, preview_language, speech_style, is_shared
+          FROM voice_profiles
+          WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL
+            AND COALESCE(is_draft, 0) = 1
+          LIMIT 1`,
+    args: [draftProfileId, ...targetUserIds],
+  });
+  const draft = draftRes.rows[0];
+  if (!draft) {
+    return { ok: false, error: 'Voice draft not found', errorCode: 'VOICE_PROFILE_NOT_FOUND', status: 404 };
+  }
+
+  // 교체 대상 = 이 사용자의 **현역** 목소리. 한도가 1이라 하나뿐이지만, 늘어나도
+  // 가장 오래된 것을 고르지 않도록 명시적으로 하나만 있을 때만 진행한다.
+  const targetRes = await db.execute({
+    sql: `SELECT id, elevenlabs_voice_id
+          FROM voice_profiles
+          WHERE user_id IN (${ph}) AND deleted_at IS NULL AND status != 'failed'
+            AND COALESCE(is_draft, 0) = 0 AND id != ?`,
+    args: [...targetUserIds, draftProfileId],
+  });
+  if (targetRes.rows.length !== 1) {
+    return {
+      ok: false,
+      error: 'Exactly one registered voice is required to replace.',
+      errorCode: 'VOICE_REPLACE_TARGET_AMBIGUOUS',
+      status: 409,
+    };
+  }
+  const target = targetRes.rows[0]!;
+  const targetId = String(target.id);
+  const staleProviderVoiceId = target.elevenlabs_voice_id ? String(target.elevenlabs_voice_id) : null;
+  const ownerUserId = String(draft.user_id);
+
+  await withWriteTransaction(db, async (tx) => {
+    await tx.execute({
+      sql: `UPDATE voice_profiles
+            SET name = ?, elevenlabs_voice_id = ?, relationship_label = ?, listener_title = ?,
+                preview_text = ?, preview_language = ?, speech_style = ?, is_shared = ?,
+                status = 'ready'
+            WHERE id = ?`,
+      args: [
+        draft.name ?? null,
+        draft.elevenlabs_voice_id ?? null,
+        draft.relationship_label ?? null,
+        draft.listener_title ?? null,
+        draft.preview_text ?? null,
+        draft.preview_language ?? null,
+        draft.speech_style ?? null,
+        Number(draft.is_shared ?? 0),
+        targetId,
+      ],
+    });
+    // 드래프트는 소비됐다. provider voice 는 **대상 프로필로 넘어갔으므로 지우지 않는다** —
+    // 여기서 외부 삭제 큐에 넣으면 방금 앉힌 목소리를 스스로 지운다.
+    await tx.execute({
+      sql: `UPDATE voice_profiles SET deleted_at = datetime('now') WHERE id = ?`,
+      args: [draftProfileId],
+    });
+  });
+
+  // 프리셋 클립 재렌더 예약. `refresh_existing = 1` 이라 `generateStockClip` 이 기존
+  // preset 을 no-op 로 건너뛰지 않고 덮어쓴다. 이미 큐에 행이 있으면 그 행을 재렌더로
+  // 되돌린다(done 으로 끝나 있던 경우 포함).
+  await db.execute({
+    sql: `INSERT INTO voice_prerender_queue
+            (voice_profile_id, owner_user_id, language, status, attempts, refresh_existing)
+          VALUES (?, ?, ?, 'pending', 0, 1)
+          ON CONFLICT(voice_profile_id) DO UPDATE SET
+            status = 'pending', attempts = 0, refresh_existing = 1,
+            claimed_at = NULL, claim_token = NULL,
+            language = excluded.language, updated_at = datetime('now')`,
+    args: [targetId, ownerUserId, language],
+  });
+
+  // 옛 provider voice 정리는 **맨 마지막**이다(위 주석 참조).
+  if (staleProviderVoiceId && staleProviderVoiceId !== String(draft.elevenlabs_voice_id ?? '')) {
+    await enqueueExternalDeletion(db, 'elevenlabs_voice', staleProviderVoiceId);
+  }
+
+  const refreshed = await db.execute({
+    sql: `SELECT id, name, status, is_shared, relationship_label, listener_title, created_at
+          FROM voice_profiles WHERE id = ? LIMIT 1`,
+    args: [targetId],
+  });
+  return { ok: true, profile: (refreshed.rows[0] ?? {}) as Record<string, unknown> };
+}
+
 voiceProfile.patch('/:id', async (c) => {
   const ids = ownerIds(c);
   const userId = c.get('userId') as string;
@@ -639,6 +757,8 @@ voiceProfile.patch('/:id', async (c) => {
     listenerTitle?: unknown;
     language?: unknown;
     app_language?: unknown;
+    replace_existing?: unknown;
+    replaceExisting?: unknown;
   };
   try {
     body = await c.req.json();
@@ -668,6 +788,18 @@ voiceProfile.patch('/:id', async (c) => {
   );
   const hasListenerTitle = body.listener_title !== undefined || body.listenerTitle !== undefined;
   const listenerTitle = normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle);
+  /**
+   * 등록 확정 화면의 **체크 하나**. "이전에 저장해둔 목소리는 삭제됩니다 / 직접 입력으로
+   * 해둔 알람들도 기본 알람으로 설정됩니다" 에 동의했다는 뜻이다.
+   *
+   * 켜져 있으면 한도 초과(`VOICE_LIMIT_REACHED`)로 막는 대신 **기존 목소리 자리에 새
+   * 목소리를 앉힌다.** 사용자에게는 '교체' 지만 서버는 프로필 행을 **지우지 않고 재사용**
+   * 한다 — 지우면 그 목소리를 쓰던 알람이 전부 기본 알람음으로 떨어지기 때문이다.
+   * 프리셋 문구를 쓰는 알람은 그대로 살아서 새 목소리로 울고, 직접 입력 알람만 기본
+   * 알람음이 된다(그 음성은 옛 목소리로 만들어 둔 것이라 자동 재생성이 안 된다).
+   */
+  const replaceExisting =
+    body.replace_existing === true || body.replaceExisting === true;
   if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
     return c.json(
       { error: `name must be 1-${VOICE_NAME_MAX_LENGTH} characters`, error_code: 'INVALID_NAME_LENGTH' },
@@ -762,13 +894,30 @@ voiceProfile.patch('/:id', async (c) => {
     const row = nonDraftCount.rows[0]!;
     const existingCount = Number(row.active_count ?? row.count ?? 0);
     if (existingCount >= MAX_VOICE_PROFILES) {
-      return c.json(
-        {
-          error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
-          error_code: 'VOICE_LIMIT_REACHED',
-        },
-        409,
-      );
+      // 체크를 안 했으면 지금까지처럼 막는다.
+      if (!replaceExisting) {
+        return c.json(
+          {
+            error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
+            error_code: 'VOICE_LIMIT_REACHED',
+          },
+          409,
+        );
+      }
+      // ⚠ **교체는 지우지 않는다.** 옛 프로필을 DELETE 하면 그 목소리를 쓰던 알람이
+      // 전부 기본 알람음으로 떨어진다 — 그게 없애려던 동작이다. 대신 옛 프로필 행을
+      // **그대로 재사용**해서 새 목소리(provider voice id·이름·페르소나)를 그 자리에
+      // 앉히고, 프리셋 클립은 재렌더로 덮어쓴다(`refresh_existing`).
+      // 알람은 `voice_profile_id`·`message_id` 가 안 바뀌므로 아무것도 눈치채지 못한다.
+      const replaced = await replaceVoiceInPlace(db, {
+        targetUserIds: ids,
+        draftProfileId: id,
+        language: prerenderLanguage,
+      });
+      if (!replaced.ok) {
+        return c.json({ error: replaced.error, error_code: replaced.errorCode }, replaced.status);
+      }
+      return c.json({ profile: replaced.profile, replaced: true });
     }
   }
 

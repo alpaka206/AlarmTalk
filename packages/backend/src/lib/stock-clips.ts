@@ -412,6 +412,14 @@ export async function listReadyCloneVoices(
 export async function findMissingStockTargets(
   db: Client,
   voices?: PrerenderVoice[],
+  /**
+   * **목소리 교체 회차**. true 면 "이미 있는 것" 을 건너뛰지 않고 **전부** 대상으로 삼고,
+   * 각 target 에 `refreshExisting` 을 실어 보낸다.
+   *
+   * ⚠ 이게 없으면 교체가 조용히 아무 일도 안 한다 — 교체 대상은 클립이 이미 다 있어서
+   * '빠진 것' 이 0이고, cron 이 곧바로 `markPrerenderDone` 으로 끝내 버린다.
+   */
+  refreshExisting = false,
 ): Promise<StockClipTarget[]> {
   const prerenderVoices = voices ?? systemPrerenderVoices(await listSystemVoices(db));
   if (prerenderVoices.length === 0) return [];
@@ -425,7 +433,7 @@ export async function findMissingStockTargets(
             AND voice_profile_id IN (${ph})`,
     args: voiceIds,
   });
-  const seen = new Set(
+  const seen = refreshExisting ? new Set<string>() : new Set(
     existing.rows.map(
       (row) =>
         `${row.voice_profile_id}|${row.category}|${row.language}|${Number(row.variant ?? 0)}`,
@@ -476,6 +484,7 @@ export async function findMissingStockTargets(
             defaultTag: source.defaultTag,
             styleReference: voice.styleReference ?? null,
             speechStyle: voice.speechStyle ?? null,
+            refreshExisting,
             claimToken: voice.claimToken,
           });
         });
@@ -523,7 +532,7 @@ export async function claimPendingPrerenderVoices(
           )
             AND status = 'pending'
             AND (claimed_at IS NULL OR claimed_at <= datetime('now', '-15 minutes'))
-          RETURNING voice_profile_id, owner_user_id, language, claim_token`,
+          RETURNING voice_profile_id, owner_user_id, language, claim_token, refresh_existing`,
     args: [claimToken, Math.max(1, Math.min(Math.trunc(limit), 50))],
   });
   return res.rows.map((row) => ({
@@ -531,6 +540,7 @@ export async function claimPendingPrerenderVoices(
     ownerUserId: String(row.owner_user_id),
     language: String(row.language),
     claimToken: String(row.claim_token),
+    refreshExisting: Number(row.refresh_existing ?? 0) === 1,
   }));
 }
 
@@ -539,6 +549,8 @@ export type PrerenderClaim = {
   readonly ownerUserId: string;
   readonly language: string;
   readonly claimToken: string;
+  /** 목소리 교체 회차 — 기존 preset 을 건너뛰지 않고 덮어쓴다. */
+  readonly refreshExisting: boolean;
 };
 
 export async function releasePrerenderClaim(

@@ -113,6 +113,37 @@ describe('목소리 교체 — 제자리 덮어쓰기', () => {
     expect(joined.rows.length, '삭제해도 조인이 살아 있다면 이 테스트의 전제가 틀린 것이다').toBe(0);
   });
 
+  it('교체 회차는 이미 있는 클립도 전부 대상이 된다 — 아니면 조용히 아무 일도 안 한다', async () => {
+    const { findMissingStockTargets } = await import('../src/lib/stock-clips');
+    const db = await migratedDb();
+    await db.execute("INSERT INTO users (id, email, name) VALUES ('u1','a@b.c','나')");
+    await db.execute(`INSERT INTO voice_profiles (id, user_id, name, status, elevenlabs_voice_id, is_draft)
+                      VALUES ('vp1','u1','엄마','ready','eleven-1',0)`);
+    const voice = {
+      id: 'vp1', name: '엄마', elevenlabsVoiceId: 'eleven-1', ownerUserId: 'u1',
+      categories: ['greeting'], languageOverride: 'ko', isClone: true,
+    } as Parameters<typeof findMissingStockTargets>[1] extends (infer T)[] ? T : never;
+
+    const first = await findMissingStockTargets(db, [voice as never]);
+    expect(first.length, '처음에는 빠진 클립이 있어야 한다').toBeGreaterThan(0);
+
+    // 그 클립들이 이미 있다고 심는다.
+    for (const t of first) {
+      await db.execute({
+        sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category, language, variant, is_preset, audio_url)
+              VALUES (?, 'u1', ?, '문구', ?, ?, ?, 1, 'r2://old')`,
+        args: [crypto.randomUUID(), t.voiceProfileId, t.category, t.language, t.variantIndex],
+      });
+    }
+
+    const missing = await findMissingStockTargets(db, [voice as never]);
+    expect(missing.length, '다 채웠으니 빠진 것은 0 이어야 한다').toBe(0);
+
+    const refresh = await findMissingStockTargets(db, [voice as never], true);
+    expect(refresh.length, '교체 회차인데 대상이 0 이면 목소리가 바뀌지 않는다').toBe(first.length);
+    expect(refresh.every((t) => t.refreshExisting === true), '각 대상에 덮어쓰기 표시가 실려야 한다').toBe(true);
+  });
+
   it('audio_url 이 그대로면 기기가 새 음원을 받지 못한다 — 교체는 반드시 URL 을 바꾼다', async () => {
     // 캐시 키는 `stock_<messageId>` 라 버전이 없다. message_id 를 유지하는 것이 교체의
     // 핵심인데, 그러면 낡음을 알릴 수단이 `audio_url` 하나뿐이다.

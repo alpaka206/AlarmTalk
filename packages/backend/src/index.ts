@@ -424,7 +424,9 @@ async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext)
           await releasePrerenderClaim(db, voice.id, claim.claimToken);
           continue;
         }
-        const targets = await findMissingStockTargets(db, [voice]);
+        // ⚠ 교체 회차면 **전부** 다시 렌더한다. 그냥 두면 '빠진 것' 이 0이라
+        // 곧바로 done 으로 끝나고 목소리가 바뀌지 않는다.
+        const targets = await findMissingStockTargets(db, [voice], claim.refreshExisting);
         if (targets.length === 0) {
           await markPrerenderDone(db, voice.id, claim.claimToken);
           continue;
