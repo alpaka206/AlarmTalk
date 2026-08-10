@@ -353,7 +353,7 @@ voiceProfile.get('/', async (c) => {
       // (`elevenlabs_voice_id`) 처럼 **클라가 쓰지도 않고 나가서도 안 되는** 컬럼이 있다.
       // 같은 파일이 users 조회에는 이미 컬럼을 나열하고 있었다 — 여기만 빠져 있었다.
       // 목록은 두 앱의 모델(`VoiceProfileApi.kt` / `AlarmTalkAPIModels.swift`)이 읽는 것.
-      sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, voice_gender, speech_formality, speech_style_status, previewed_at FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -380,7 +380,7 @@ voiceProfile.get('/draft', async (c) => {
   const ph = ids.map(() => '?').join(',');
   const result = await db.execute({
     // 위 목록과 같은 이유로 컬럼을 나열한다 — 아래에서 `...row` 로 그대로 나간다.
-    sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, voice_gender, speech_formality, speech_style_status, previewed_at FROM voice_profiles
+    sql: `SELECT id, user_id, name, status, created_at, updated_at, is_shared, is_draft, is_system, relationship_label, listener_title, speech_style_status, previewed_at FROM voice_profiles
           WHERE user_id IN (${ph}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 1
             AND status != 'failed'
           ORDER BY created_at DESC LIMIT 1`,
