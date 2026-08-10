@@ -132,10 +132,11 @@ struct SettingsView: View {
             loadPromptPreferences()
         }
         .sheet(isPresented: $weatherDialogOpen) {
-            WeatherLocationPreferenceSheet(
-                initial: promptPreferences,
-                onDismiss: { weatherDialogOpen = false },
-                onSave: { country, city in
+            // ⚠ **국가·도시 입력 폼으로 되돌리지 말 것.** 안드로이드는 도시 목록
+            // 바텀시트다 — `WeatherCityPickerSheet` 주석 참조.
+            WeatherCityPickerSheet(
+                currentCity: promptPreferences.weatherCity,
+                onSelect: { country, city in
                     var next = promptPreferences
                     next.weatherCountry = country
                     next.weatherCity = city
@@ -143,9 +144,14 @@ struct SettingsView: View {
                     weatherDialogOpen = false
                 }
             )
-            .presentationDetents([.medium])
         }
-        .sheet(isPresented: $fortuneDialogOpen) {
+        // ⚠ **바텀시트가 아니라 가운데 카드다.** 안드로이드에서 운세 정보는
+        // `ModalDialogTitle` + Dialog(가운데 카드)이고, 목록형만 바텀시트다.
+        .formDialog(
+            isPresented: $fortuneDialogOpen,
+            title: "운세 정보",
+            onDismiss: { fortuneDialogOpen = false }
+        ) {
             FortuneInfoPreferenceSheet(
                 initial: promptPreferences,
                 onDismiss: { fortuneDialogOpen = false },
@@ -158,7 +164,6 @@ struct SettingsView: View {
                     fortuneDialogOpen = false
                 }
             )
-            .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $holidayDialogOpen) {
             HolidayCountryPickerSheet(
@@ -315,48 +320,6 @@ struct ThemeModePickerSheet: View {
     }
 }
 
-private struct WeatherLocationPreferenceSheet: View {
-    let initial: DynamicPromptPreferences
-    let onDismiss: () -> Void
-    let onSave: (String, String) -> Void
-
-    @State private var country = ""
-    @State private var city = ""
-    @State private var submitted = false
-
-    private var countryValue: String { WeatherLocationInputFields.clean(country) }
-    private var cityValue: String { WeatherLocationInputFields.clean(city) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSheetHeader(
-                title: "날씨 지역",
-                onDismiss: onDismiss
-            )
-            WeatherLocationInputFields(
-                country: $country,
-                city: $city,
-                submitted: submitted
-            )
-            Button("저장") {
-                submitted = true
-                guard !countryValue.isEmpty, !cityValue.isEmpty else { return }
-                onSave(countryValue, cityValue)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-            .frame(maxWidth: .infinity)
-            Spacer(minLength: 0)
-        }
-        .padding(20)
-        .homeGradientBackground()
-        .onAppear {
-            country = initial.weatherCountry
-            city = initial.weatherCity
-        }
-    }
-}
-
 private struct FortuneInfoPreferenceSheet: View {
     let initial: DynamicPromptPreferences
     let onDismiss: () -> Void
@@ -378,12 +341,11 @@ private struct FortuneInfoPreferenceSheet: View {
     }
 
     var body: some View {
+        // ⚠ 제목·닫기(X)는 `FormDialog` 가 그린다 — 여기서 또 그리면 두 번 나온다.
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSheetHeader(
-                title: "운세 정보",
-                subtitle: "운세가 들어간 랜덤 깨움말을 만들 때만 사용해요.",
-                onDismiss: onDismiss
-            )
+            Text("운세가 들어간 랜덤 깨움말을 만들 때만 사용해요.")
+                .font(.footnote)
+                .foregroundStyle(AlarmTalkTheme.textSecondary)
             FortunePromptInputFields(
                 gender: $gender,
                 birthDate: $birthDate,
@@ -398,7 +360,6 @@ private struct FortuneInfoPreferenceSheet: View {
             .buttonStyle(.borderedProminent)
             .tint(AlarmTalkTheme.primary)
             .frame(maxWidth: .infinity)
-            Spacer(minLength: 0)
         }
         .padding(20)
         .homeGradientBackground()
