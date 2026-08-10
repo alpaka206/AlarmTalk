@@ -65,9 +65,9 @@ struct CodeRegisterRow: View {
                         get: { codeDraft },
                         set: { codeDraft = InputSanitizer.sanitizeRedeemCode($0) }
                     ))
-                    .textFieldStyle(.roundedBorder)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
+                    .alarmTalkFieldStyle()
                     Button("등록") {
                         pendingCode = codeDraft
                     }

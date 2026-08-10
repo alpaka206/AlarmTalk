@@ -133,9 +133,9 @@ struct VoiceRelationshipInputField: View {
                     get: { selection.customLabel },
                     set: { selection.customLabel = InputSanitizer.clampDisplayName($0) }
                 ))
-                .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
+                .alarmTalkFieldStyle()
             }
 
             if isError {

@@ -87,12 +87,12 @@ struct SharedVoiceViewerInfoDialog: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                 TextField("예: 지호야, 우리 강아지", text: $listenerTitle)
-                    .textFieldStyle(.roundedBorder)
                     .onChange(of: listenerTitle) { _, newValue in
                         if newValue.count > 30 {
                             listenerTitle = InputSanitizer.clampDisplayName(newValue)
                         }
                     }
+                    .alarmTalkFieldStyle()
                 if listenerError {
                     Text("필수 입력 값입니다.")
                         .font(.caption2.weight(.semibold))

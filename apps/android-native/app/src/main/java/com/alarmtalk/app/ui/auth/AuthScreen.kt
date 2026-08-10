@@ -267,7 +267,10 @@ internal fun AuthScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 18.dp),
+                // ⚠ 뒤로가기와 제목 사이 간격. 스크롤 밖으로 버튼을 빼면서 이 여백이
+                // 통째로 사라져 제목이 버튼에 붙어 있었다. iOS 와 같은 24
+                // (`LoginView` 의 ScrollView `.padding(.vertical, 18)` + 제목 `.padding(.top, 6)`).
+                .padding(top = 24.dp, bottom = 18.dp),
             // iOS `LoginView` 의 `VStack(spacing: 14)` 와 같은 값.
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {

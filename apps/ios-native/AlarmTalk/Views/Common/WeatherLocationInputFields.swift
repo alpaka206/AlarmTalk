@@ -95,13 +95,13 @@ struct WeatherLocationInputFields: View {
                 }
             }
             TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .onChange(of: text.wrappedValue) { _, newValue in
                     let cleaned = InputSanitizer.clampDisplayName(newValue)
                     if cleaned != newValue { text.wrappedValue = cleaned }
                 }
+                .alarmTalkFieldStyle()
         }
     }
 

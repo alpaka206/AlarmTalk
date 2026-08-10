@@ -12,6 +12,7 @@
 		0244A8EBB6AE8ADBBF12F6AC /* FeatureLockBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4621CAE23798A7737B7DE436 /* FeatureLockBadge.swift */; };
 		025B6F51C2D5595312339A33 /* MessageSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8196F91EF515F9CE279AF0F9 /* MessageSettingsPane.swift */; };
 		03A1BBF5895831F6960661FB /* AudioUserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549140C4B45ACA42A0427334 /* AudioUserFacingErrorTests.swift */; };
+		05D19CA98ED9856DDDCAFD2E /* AlarmTalkFieldStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 205D0CC3E1C28F766AD8FB8F /* AlarmTalkFieldStyle.swift */; };
 		06A307409933FC5592EBFC44 /* PlanGateDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5614A67355CB6778BA0DECE /* PlanGateDialog.swift */; };
 		0954B1BBAC9F69FCABB9B58F /* AuthGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCE612B197E5B5761457E13E /* AuthGateView.swift */; };
 		0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */; };
@@ -298,6 +299,7 @@
 		1D97B19A1D9E8E81B2EBCFA6 /* SelectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionSheet.swift; sourceTree = "<group>"; };
 		1E4779B9B3184263A018270C /* license_ofl_1_1.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = license_ofl_1_1.txt; sourceTree = "<group>"; };
 		1F3CB496801850A36588DBD5 /* AlarmIntentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmIntentsTests.swift; sourceTree = "<group>"; };
+		205D0CC3E1C28F766AD8FB8F /* AlarmTalkFieldStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkFieldStyle.swift; sourceTree = "<group>"; };
 		2066E213CEFC39ADF9763B43 /* AlarmRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmRow.swift; sourceTree = "<group>"; };
 		21CBB976863F3883B2FCE2A2 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		21F6264B67DC977F47D0E3A9 /* RemoteAlarmPullSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmPullSync.swift; sourceTree = "<group>"; };
@@ -667,6 +669,7 @@
 		891C648D672DBE1032DC26B5 /* Common */ = {
 			isa = PBXGroup;
 			children = (
+				205D0CC3E1C28F766AD8FB8F /* AlarmTalkFieldStyle.swift */,
 				A6060CBDBC2E6E31887ADA06 /* AlarmTalkSwitch.swift */,
 				993F13DD98269244F828B44E /* AppSettings.swift */,
 				F6B2B49556CF324D4708CAA5 /* ChipStyle.swift */,
@@ -1162,6 +1165,7 @@
 				14BEBC10C8EB922C30A26F98 /* AlarmTalkAPIModels.swift in Sources */,
 				7BCA1560C3D2E94AF7130A58 /* AlarmTalkApp.swift in Sources */,
 				211DD3BCAC0CE23AD3436301 /* AlarmTalkBrand.swift in Sources */,
+				05D19CA98ED9856DDDCAFD2E /* AlarmTalkFieldStyle.swift in Sources */,
 				7638CB240847562DCB768E5F /* AlarmTalkMetadata.swift in Sources */,
 				63953880A52D27B707DAD2CF /* AlarmTalkPalette.swift in Sources */,
 				75A5F309003D743578C5B318 /* AlarmTalkShapes.swift in Sources */,

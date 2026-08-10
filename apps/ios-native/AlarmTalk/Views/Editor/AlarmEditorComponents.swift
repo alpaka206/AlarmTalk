@@ -492,11 +492,11 @@ struct SharedVoiceSelectionSetupSheet: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
             TextField(placeholder, text: text)
-                .textFieldStyle(.roundedBorder)
                 .onChange(of: text.wrappedValue) { _, newValue in
                     let cleaned = InputSanitizer.clampDisplayName(newValue)
                     if cleaned != newValue { text.wrappedValue = cleaned }
                 }
+                .alarmTalkFieldStyle()
             if showError {
                 Text("꼭 입력해 주세요.")
                     .font(.caption2.weight(.semibold))

@@ -229,7 +229,6 @@ struct VoiceCloneUploadFlow: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
             TextField("목소리 이름", text: $profileName)
-                .textFieldStyle(.roundedBorder)
                 .onChange(of: profileName) { _, newValue in
                     voice.cloneName = newValue
                     let cleaned = InputSanitizer.clampVoiceName(newValue)
@@ -238,6 +237,7 @@ struct VoiceCloneUploadFlow: View {
                         voice.cloneName = profileName
                     }
                 }
+                .alarmTalkFieldStyle()
             if submitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text("목소리 이름을 입력해 주세요.")
                     .font(.caption2.weight(.semibold))
@@ -255,12 +255,12 @@ struct VoiceCloneUploadFlow: View {
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
                 .padding(.top, 4)
             TextField("예: 지호야, 우리 강아지", text: $listenerTitle)
-                .textFieldStyle(.roundedBorder)
                 .onChange(of: listenerTitle) { _, newValue in
                     if newValue.count > 30 {
                         listenerTitle = InputSanitizer.clampDisplayName(newValue)
                     }
                 }
+                .alarmTalkFieldStyle()
             if submitted && listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text("이 목소리가 나를 부를 이름을 입력해 주세요.")
                     .font(.caption2.weight(.semibold))
