@@ -82,16 +82,11 @@ struct PasswordResetView: View {
         }
         .navigationTitle("비밀번호 재설정")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.backward")
-                }
-                .accessibilityLabel("뒤로")
-            }
-        }
+        // ⚠ **뒤로가기를 직접 그리지 말 것 — 두 개가 된다.**
+        // 이 화면은 `LoginView` 의 `.navigationDestination` 으로 **push** 되므로
+        // NavigationStack 이 이미 시스템 뒤로가기를 그린다. 예전에는 여기에
+        // `ToolbarItem(.topBarLeading)` 로 `chevron.backward` 를 하나 더 얹어서
+        // 왼쪽 위에 화살표가 나란히 두 개 보였다(둘 다 같은 `dismiss()` 를 했다).
     }
 
     // MARK: - Sections
