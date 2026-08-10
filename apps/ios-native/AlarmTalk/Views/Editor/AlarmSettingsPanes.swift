@@ -46,6 +46,10 @@ private struct PaneScaffold<Content: View>: View {
         .homeGradientBackground()
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        // ⚠ **바를 명시적으로 켠다.** 부모(편집기)가 `.toolbar(.hidden, for: .navigationBar)`
+        // 로 자기 상단바를 지우는데, 그게 하위로 번지면 이 화면에 **뒤로갈 길이 사라진다.**
+        // 여기는 뒤로가기가 유일한 탈출구라(하단 액션바가 없다) 반드시 보여야 한다.
+        .toolbar(.visible, for: .navigationBar)
     }
 }
 

@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// ContentView 안에 `private enum` 으로 묶여 있던 것을 internal 로 끌어올린다.
 /// MainTabsView, Settings 화면, Home 의 빠른 가기 카드 모두에서 참조한다.
-enum AuxiliaryScreen: String, Identifiable {
+enum AuxiliaryScreen: String, Identifiable, Hashable {
     case people
     case members
     case billing
@@ -27,7 +27,7 @@ enum AuxiliaryScreen: String, Identifiable {
 ///
 /// `.sheet(item:)` 패턴으로 시트를 띄우기 위해 식별 가능한 wrapper 가 필요하다.
 /// `editingAlarmID == nil` 이면 새 알람, 값이 있으면 기존 알람 수정.
-struct AlarmEditorTarget: Identifiable, Equatable {
+struct AlarmEditorTarget: Identifiable, Equatable, Hashable {
     let id: String
     let editingAlarmID: String?
     let familyAlarmMode: Bool

@@ -415,12 +415,21 @@ struct AlarmEditorSheet: View {
         .homeGradientBackground()
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
-        // ⚠ **상단 X 를 두지 않는다.** 하단 [취소]와 같은 일을 하는 컨트롤이 둘이 되면
-        // 어느 쪽이 취소인지 매번 읽어야 한다(CLAUDE.md 「모달」). 안드로이드도 상단바를
-        // 없애고 취소·저장을 하단에 모았다. 저장 중 이탈 차단은 아래
-        // `.interactiveDismissDisabled(isWorking)` 가 이미 담당한다.
-        // 아래로 쓸어 닫는 것도 같은 이유로 막는다 — X 만 잠그면 제스처로 같은 상태가 된다.
-        .interactiveDismissDisabled(isWorking)
+        // ⚠ **편집기에는 상단바를 두지 않는다 — 취소가 두 개가 된다.**
+        // 안드로이드 편집기에는 TopAppBar 가 아예 없고 취소·저장을 하단에 모았다
+        // (`ui/editor/AlarmEditorScreen.kt`). iOS 도 시트일 때는 상단 X 를 일부러 안 뒀다.
+        // 그런데 push 로 바꾸면 네비게이션 바가 **뒤로가기를 자동으로** 그리고, 그건 하단
+        // [취소]와 완전히 같은 일을 한다 — CLAUDE.md 「취소와 같은 일을 하는 버튼을 두 개
+        // 두지 않는다」에 정면으로 걸린다. 그래서 바를 숨기고 탈출구는 [취소] 하나로 둔다.
+        // (제목은 `.navigationTitle` 로 남겨 둔다 — 바가 보이는 순간이 있으면 그때 쓰이고,
+        //  VoiceOver 가 화면 이름으로 읽는다.)
+        .toolbar(.hidden, for: .navigationBar)
+        // ⚠ **저장 중에는 나갈 길을 잠근다 — push 는 잠그는 API 가 다르다.**
+        // 시트였을 때는 `.interactiveDismissDisabled(isWorking)` 가 아래로 쓸어 닫기를
+        // 막았다. push 에서는 그 API 가 아무 일도 하지 않고, 대신 **가장자리 스와이프**가
+        // 새 탈출구다. 그대로 두면 저장이 도는 중에 화면을 뜰 수 있어, 하단 [취소]·[저장]을
+        // 잠가 둔 의미가 사라진다.
+        .navigationBarBackButtonHidden(isWorking)
         .alert(item: $validationAlert) { content in
             Alert(
                 title: Text(content.title),

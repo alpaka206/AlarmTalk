@@ -39,6 +39,7 @@
 		2818E8AD2FDB6E08A568E080 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7F732DF290FB6337B9E693 /* AppGroup.swift */; };
 		28EB46140302DF5F6CA800D9 /* FreeBucketSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C91668BFFA3C24F48F19CD2 /* FreeBucketSettings.swift */; };
 		2B97C025AE8A2E50DD85D909 /* AlarmEnumsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE1C56D44C36C22F69C9EA9 /* AlarmEnumsTests.swift */; };
+		2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */; };
 		305BF4D6DC819972454207B9 /* pretendard_semibold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 3EE89C0338FF0981C544A8AD /* pretendard_semibold.otf */; };
 		307C97195816A03C44D1D5B5 /* EmptyStatePlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A186A9ECD18C026BD44B42E0 /* EmptyStatePlaceholder.swift */; };
 		325F179DCA00F9EF7DBE04B6 /* AudioPreviewPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E9DC62B90B8D3C7D339AE8E /* AudioPreviewPlayer.swift */; };
@@ -393,6 +394,7 @@
 		76438009279B4ED7982E6BE5 /* WeatherLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherLocationProvider.swift; sourceTree = "<group>"; };
 		783543645669523E589D0B1A /* RemoteAlarmMapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmMapperTests.swift; sourceTree = "<group>"; };
 		785541EABF51C626605C29DC /* VibrationPatternPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibrationPatternPicker.swift; sourceTree = "<group>"; };
+		7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPushNavigationUITests.swift; sourceTree = "<group>"; };
 		7EA00DB3AD3CC0D979813908 /* voice_greeting_mina_en.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_mina_en.mp3; sourceTree = "<group>"; };
 		7FAA3E0645594172886EF0BB /* VoiceShareAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceShareAccess.swift; sourceTree = "<group>"; };
 		7FE78632AE30E18FFA63B74D /* AccessSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSnapshotStore.swift; sourceTree = "<group>"; };
@@ -539,6 +541,7 @@
 		2C960B22A5BB85C19C0116F6 /* AlarmTalkUITests */ = {
 			isa = PBXGroup;
 			children = (
+				7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */,
 				8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */,
 				5E225F300F6C400D8EDBB183 /* PasswordResetE2EUITests.swift */,
 				5CF0160D993D91879DDDFF3A /* ScreenSweepUITests.swift */,
@@ -1145,6 +1148,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */,
 				F257AFC84C3E1A8F0AE60485 /* FunctionalE2EUITests.swift in Sources */,
 				A26F3948811CBF00487223C0 /* PasswordResetE2EUITests.swift in Sources */,
 				DFF8884296CA033A9B8C6890 /* ScreenSweepUITests.swift in Sources */,

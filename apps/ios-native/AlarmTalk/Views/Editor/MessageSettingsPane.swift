@@ -100,6 +100,9 @@ struct MessageSettingsPane: View {
         }
         .homeGradientBackground()
         .navigationTitle("문구")
+        // ⚠ 부모(편집기)가 상단바를 숨기므로 여기서 명시적으로 켠다 —
+        // 번지면 뒤로갈 길이 사라진다(`AlarmSettingsPanes.PaneScaffold` 주석 참조).
+        .toolbar(.visible, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .onAppear(perform: loadDraft)

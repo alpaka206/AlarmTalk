@@ -119,38 +119,47 @@ struct MainTabsView: View {
             // 이용권·공유 이용권·설정)은 전부 **더보기 탭**에 그대로 있다. 안드로이드는
             // 이 메뉴를 더보기 탭으로 승격하면서 없앴다 — 같은 곳으로 가는 길이 둘이면
             // 어느 쪽이 정본인지 매번 헷갈린다.
-            .sheet(item: $editorTarget) { target in
-                NavigationStack {
-                    AlarmEditorSheet(
-                        target: target,
-                        onClose: { editorTarget = nil },
-                        onJumpToVoices: {
-                            editorTarget = nil
-                            selectedTab = .voices
-                        },
-                        onRequestBilling: {
-                            editorTarget = nil
-                            Task { @MainActor in
-                                // 편집기 시트가 닫히는 애니메이션과 겹치지 않게 짧게 지연한다.
-                                try? await Task.sleep(nanoseconds: 300_000_000)
-                                auxiliaryScreen = .billing
-                            }
-                        },
-                        onSchedulingDidFinish: {
-                            editorTarget = nil
-                            selectedTab = .alarms
+            // ⚠ **화면급 이동은 `.sheet` 가 아니라 push 다.** 편집기·설정·이용권·코드
+            // 등록·공유 이용권 다섯 화면이 iOS 만 아래에서 올라오는 시트였고, 안드로이드는
+            // 다섯 다 NavHost 목적지(옆에서 밀려옴)다. 특히 편집기는 안드로이드가
+            // `slideInHorizontally(tween(220))` 를 **일부러 지정**해 뒀다
+            // (`ui/app/AlarmTalkApp.kt` 의 AlarmCreate/AlarmEdit 라우트) — 의도한 차이가
+            // 아니라 iOS 가 틀린 것이었다(2026-08-10 사용자 지적).
+            //
+            // 하단바·＋FAB 가 함께 사라지는 것도 안드로이드와 같다 — 그쪽은 `showAppChrome`
+            // 이 `currentTab != null` 을 보므로 탭이 아닌 목적지에서는 크롬을 내린다.
+            //
+            // ⚠ 바텀시트로 남겨 둔 것들과 헷갈리지 말 것. 「누구를 깨울까요?」·목소리
+            // 고르기·화면 테마·공휴일 국가·날씨 지역은 **안드로이드도 바텀시트**
+            // (`WakerSelectionSheet`)라 그대로 둔다.
+            .navigationDestination(item: $editorTarget) { target in
+                AlarmEditorSheet(
+                    target: target,
+                    onClose: { editorTarget = nil },
+                    onJumpToVoices: {
+                        editorTarget = nil
+                        selectedTab = .voices
+                    },
+                    onRequestBilling: {
+                        editorTarget = nil
+                        Task { @MainActor in
+                            // 편집기가 팝되는 애니메이션과 겹치지 않게 짧게 지연한다.
+                            try? await Task.sleep(nanoseconds: 300_000_000)
+                            auxiliaryScreen = .billing
                         }
-                    )
-                }
+                    },
+                    onSchedulingDidFinish: {
+                        editorTarget = nil
+                        selectedTab = .alarms
+                    }
+                )
             }
-            .sheet(isPresented: $settingsPresented) {
-                NavigationStack {
-                    SettingsView(
-                        onClose: { settingsPresented = false }
-                    )
-                }
+            .navigationDestination(isPresented: $settingsPresented) {
+                SettingsView(
+                    onClose: { settingsPresented = false }
+                )
             }
-            .sheet(item: $auxiliaryScreen) { screen in
+            .navigationDestination(item: $auxiliaryScreen) { screen in
                 AuxiliarySheetHost(
                     screen: screen,
                     onClose: { auxiliaryScreen = nil },

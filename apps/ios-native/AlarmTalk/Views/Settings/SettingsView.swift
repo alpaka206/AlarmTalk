@@ -30,27 +30,19 @@ struct SettingsView: View {
     private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
     private static let privacyURL = URL(string: "https://alarm-talk.com/ko/privacy")!
 
-    /// 사용자가 시트를 닫고 싶을 때(상단 X) 호출.
+    /// 이 화면을 떠나야 할 때(로그아웃 직후) 호출. **닫기 버튼용이 아니다** — 아래 참조.
     let onClose: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    Button {
-                        onClose()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.headline)
-                            .foregroundStyle(AlarmTalkTheme.textSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(AlarmTalkTheme.surfaceVariant, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text("닫기"))
-                    Text("설정")
-                        .font(.title2.weight(.bold))
-                }
+                // ⚠ **상단 X 도, 본문 제목도 다시 넣지 말 것.** 이 화면은 시트가 아니라
+                // push 라 네비게이션 바가 뒤로가기와 제목을 이미 그린다. X 를 같이 두면
+                // 같은 일을 하는 탈출구가 둘이 되고(CLAUDE.md 「모달」), 본문에 제목을 또
+                // 두면 '설정' 이 화면에 두 번 나온다. 안드로이드는 상단바가 없어서 본문에
+                // 셰브론+제목 행을 직접 그리는 것이고(`ui/settings/SettingsScreen.kt`),
+                // iOS 에서 그 자리를 맡는 게 네비게이션 바다 — 같은 것의 두 표현이다.
+                // `onClose` 는 로그아웃 뒤 화면을 뜨는 데만 남는다.
 
                 // ⚠ **'테마' 행을 여기 다시 넣지 말 것.** 테마는 더보기 탭에서만 바꾼다
                 // (안드로이드 `SettingsScreen.kt:98-107` 주석: "테마·앱 언어는 전체 탭에서
@@ -114,6 +106,9 @@ struct SettingsView: View {
             .padding(20)
         }
         .homeGradientBackground()
+        // 제목은 네비게이션 바가 그린다(본문에 또 두지 않는다 — 위 주석).
+        .navigationTitle("설정")
+        .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $legalDestination) { destination in
             switch destination {
             case .consentHistory:
