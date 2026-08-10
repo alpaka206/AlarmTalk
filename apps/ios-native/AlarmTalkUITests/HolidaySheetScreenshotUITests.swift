@@ -30,8 +30,26 @@ final class HolidaySheetScreenshotUITests: XCTestCase {
             "공휴일 시트가 뜨지 않았다"
         )
 
+        capture("holiday-sheet")
+
+        // 시트를 닫고 날씨·운세도 이어서 담는다.
+        app.tap()
+        if app.buttons.containing(.staticText, identifier: "날씨 지역").firstMatch.waitForExistence(timeout: 5) {
+            app.buttons.containing(.staticText, identifier: "날씨 지역").firstMatch.tap()
+            _ = app.staticTexts["원하는 지역"].waitForExistence(timeout: 5)
+            capture("weather-sheet")
+            app.tap()
+        }
+        if app.buttons.containing(.staticText, identifier: "운세 정보").firstMatch.waitForExistence(timeout: 5) {
+            app.buttons.containing(.staticText, identifier: "운세 정보").firstMatch.tap()
+            _ = app.staticTexts["운세 정보"].waitForExistence(timeout: 5)
+            capture("fortune-dialog")
+        }
+    }
+
+    private func capture(_ name: String) {
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        shot.name = "holiday-sheet"
+        shot.name = name
         shot.lifetime = .keepAlways
         add(shot)
     }

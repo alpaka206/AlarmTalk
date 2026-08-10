@@ -193,6 +193,7 @@
 		BF63F06A6574FF0FBF9E4377 /* PromoPromptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49029209F735E8EAFC7C25AF /* PromoPromptStore.swift */; };
 		BF8DACEBEA118AA299940BE0 /* AlarmEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65E21A05EC23A5BC2A3198BF /* AlarmEditorSheet.swift */; };
 		C30F8BAE2A9D81D92D2BC65B /* VoiceRelationshipInputField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F687F1C7FA0B73B24DA338D /* VoiceRelationshipInputField.swift */; };
+		C360727032046DC4FE180362 /* FittedSheetHeight.swift in Sources */ = {isa = PBXBuildFile; fileRef = 723F2E451301108C1FDC3F92 /* FittedSheetHeight.swift */; };
 		C3D6BD92355A2E98E6D23762 /* AlarmSoundStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D034E124A17E717E9835F2 /* AlarmSoundStaging.swift */; };
 		C41E6CE571C5663A87BF2C94 /* AlarmTalkMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC283DE15D2853C6F4669754 /* AlarmTalkMetadata.swift */; };
 		C50DEC1CB5458F453DC0E919 /* AudioCacheStalenessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9311A4ED6398F9049299873 /* AudioCacheStalenessTests.swift */; };
@@ -399,6 +400,7 @@
 		6F10C03ABE07CF4A44D21B61 /* AlarmTalkTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AlarmTalkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		708BA77A5FC721F1C50268EB /* voice_greeting_soeun_ja.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_soeun_ja.mp3; sourceTree = "<group>"; };
 		715631AD8DB550734A8E0C0E /* AlarmLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmLiveActivity.swift; sourceTree = "<group>"; };
+		723F2E451301108C1FDC3F92 /* FittedSheetHeight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FittedSheetHeight.swift; sourceTree = "<group>"; };
 		74D34672FE277577EA788912 /* LocalAlarmRecordCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAlarmRecordCodableTests.swift; sourceTree = "<group>"; };
 		757B82D057BE9B65E819C252 /* PasswordResetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordResetView.swift; sourceTree = "<group>"; };
 		76438009279B4ED7982E6BE5 /* WeatherLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherLocationProvider.swift; sourceTree = "<group>"; };
@@ -703,6 +705,7 @@
 				F6B2B49556CF324D4708CAA5 /* ChipStyle.swift */,
 				A186A9ECD18C026BD44B42E0 /* EmptyStatePlaceholder.swift */,
 				4621CAE23798A7737B7DE436 /* FeatureLockBadge.swift */,
+				723F2E451301108C1FDC3F92 /* FittedSheetHeight.swift */,
 				05A5C5B4AFCD856E0062F049 /* FormDialog.swift */,
 				1348344040C8AFF0EECE3D69 /* FortunePromptInputFields.swift */,
 				AFDD372A3465266C2A553883 /* HelperFormatters.swift */,
@@ -1244,6 +1247,7 @@
 				307C97195816A03C44D1D5B5 /* EmptyStatePlaceholder.swift in Sources */,
 				ED9DF32A8A426E3CE9FBDD6E /* FamilyAlarmQuietTimeDialog.swift in Sources */,
 				0244A8EBB6AE8ADBBF12F6AC /* FeatureLockBadge.swift in Sources */,
+				C360727032046DC4FE180362 /* FittedSheetHeight.swift in Sources */,
 				4A56053263F3E7E22C6D4FB5 /* FormDialog.swift in Sources */,
 				80DF2F14CA7B8F775875874E /* FortunePromptInputFields.swift in Sources */,
 				28EB46140302DF5F6CA800D9 /* FreeBucketSettings.swift in Sources */,

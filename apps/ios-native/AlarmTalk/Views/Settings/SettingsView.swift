@@ -352,14 +352,19 @@ private struct FortuneInfoPreferenceSheet: View {
                 birthTime: $birthTime,
                 submitted: submitted
             )
-            Button("저장") {
+            Button {
                 submitted = true
                 guard isValid else { return }
                 onSave(FortunePromptInputFormat.normalizedGender(gender), birthDateValue, birthTimeValue)
+            } label: {
+                // ⚠ **프레임을 label 안에 준다.** `.buttonStyle` 뒤에 붙이면 버튼은 내용
+                // 크기로 잡히고 바깥 상자만 넓어져, 가운데 작은 알약으로 그려진다
+                // (`EditorActionBar` 에 같은 함정이 기록돼 있다).
+                Text("저장")
+                    .frame(maxWidth: .infinity, minHeight: 30)
             }
             .buttonStyle(.borderedProminent)
             .tint(AlarmTalkTheme.primary)
-            .frame(maxWidth: .infinity)
         }
         .padding(20)
         .homeGradientBackground()

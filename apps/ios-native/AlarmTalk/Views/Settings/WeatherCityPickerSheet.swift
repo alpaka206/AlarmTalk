@@ -77,25 +77,19 @@ struct WeatherCityPickerSheet: View {
                         .padding(.top, 12)
                     }
                 }
+                .measuredSheetContent()
             }
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.palette.surface)
         .presentationDragIndicator(.visible)
-        .presentationDetents(detents)
+        // 높이는 실측(`FittedSheetHeight`) — 항목이 늘어도 마지막 행이 잘리지 않는다.
+        .fittedSheetHeight()
     }
 
     /// 프리셋 도시는 전부 국내다 — 국가를 따로 묻지 않는 이유다.
     private static let defaultCountry = "대한민국"
-
-    /// 높이는 내용에 맞춘다(`SelectionSheet` 와 같은 실측 상수).
-    private var detents: Set<PresentationDetent> {
-        let rows = CGFloat(Self.presetCities.count + 1) * 55
-        let fitted = 40 + rows + (customMode ? 140 : 0)
-        let cap = UIScreen.main.bounds.height * 0.85
-        return fitted <= cap ? [.height(fitted)] : [.height(cap), .large]
-    }
 
     @ViewBuilder
     private func row(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
