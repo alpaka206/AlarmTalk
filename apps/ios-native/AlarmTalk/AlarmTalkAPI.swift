@@ -402,7 +402,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// `RemoteAlarmPullSync` 가 신규 수신 알람의 음원을 캐싱할 때 호출.
     func getTtsAudio(messageId: String, token: String) async throws -> DecodedTtsAudio {
         let response = try await getTTSMessageAudio(id: messageId, token: token)
-        guard let data = Data(base64Encoded: response.audioBase64) else {
+        // 0바이트 방어 — `AudioCacheStore.cache(tts:)` 주석 참조.
+        guard let data = Data(base64Encoded: response.audioBase64), !data.isEmpty else {
             throw APIError.invalidResponse
         }
         let format = AudioCacheStore.normalizedFormat(response.audioFormat)

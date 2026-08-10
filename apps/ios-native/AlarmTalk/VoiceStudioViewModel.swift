@@ -291,8 +291,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 ),
                 token: token
             )
-            guard let data = Data(base64Encoded: response.audioBase64) else {
-                return .failed("미리듣기를 재생하지 못했어요.")
+            guard let data = Data(base64Encoded: response.audioBase64), !data.isEmpty else {
+                return .failed(String(localized: "미리듣기를 재생하지 못했어요."))
             }
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("draft_preview_\(response.messageId)")

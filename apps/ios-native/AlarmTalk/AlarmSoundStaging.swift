@@ -76,18 +76,24 @@ enum AlarmSoundStaging {
         let stagedURL: URL
         if isPassthroughFormat(sourceExt) && !sourceTooLong {
             stagedURL = soundsDir.appendingPathComponent("\(baseName).\(sourceExt)")
-            if !fm.fileExists(atPath: stagedURL.path) {
-                do {
-                    try fm.copyItem(at: sourceURL, to: stagedURL)
-                } catch {
-                    throw AlarmSoundStagingError.writeFailed(error.localizedDescription)
+            if !isUsableStagedFile(stagedURL) {
+                try? fm.removeItem(at: stagedURL)
+                try writeAtomically(into: stagedURL) { tmp in
+                    do {
+                        try fm.copyItem(at: sourceURL, to: tmp)
+                    } catch {
+                        throw AlarmSoundStagingError.writeFailed(error.localizedDescription)
+                    }
                 }
             }
         } else if isTranscodableFormat(sourceExt) || (isPassthroughFormat(sourceExt) && sourceTooLong) {
             #if canImport(AVFoundation)
             stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
-            if !fm.fileExists(atPath: stagedURL.path) {
-                try transcodeToCAF(from: sourceURL, to: stagedURL)
+            if !isUsableStagedFile(stagedURL) {
+                try? fm.removeItem(at: stagedURL)
+                try writeAtomically(into: stagedURL) { tmp in
+                    try transcodeToCAF(from: sourceURL, to: tmp)
+                }
             }
             #else
             throw AlarmSoundStagingError.avfoundationUnavailable
@@ -98,6 +104,63 @@ enum AlarmSoundStaging {
 
         return baseName
     }
+
+    /// 최종 경로에 **직접 쓰지 않는다** — 임시 이름으로 만든 뒤 rename 으로 갈아끼운다.
+    ///
+    /// ⚠ **이게 이 파일에서 가장 중요한 규약이다.** 예전에는 `copyItem`·`AVAssetWriter` 가
+    /// 최종 경로에 곧바로 썼다. 둘 다 원자적이지 않아서, 쓰는 도중 앱이 죽으면 **잘린 파일이
+    /// 최종 이름으로** 남는다. 그런데 재사용 판정이 `fileExists` 하나뿐이라 그 파일이
+    /// 영원히 쓰였고, `.bundledNamed` 는 `requiresInAppFallback == false` 라 인앱 폴백조차
+    /// 돌지 않는다 — 결과는 **알람이 뜨는데 소리가 안 나는** 것이고 스스로 복구되지 않는다.
+    /// 같은 디렉터리 안의 rename 은 원자적이라, 이제 최종 이름이 보이면 완성된 파일이다.
+    private static func writeAtomically(into finalURL: URL, _ body: (URL) throws -> Void) throws {
+        let fm = FileManager.default
+        let tmpURL = finalURL.deletingLastPathComponent()
+            .appendingPathComponent(".staging-\(UUID().uuidString).\(finalURL.pathExtension)")
+        defer { try? fm.removeItem(at: tmpURL) }
+
+        try body(tmpURL)
+
+        // 산출물이 쓸 수 있는 것인지 **게시하기 전에** 본다. 여기서 거르면 호출자
+        // (`AlarmSoundResolver.resolve`)가 throw 를 받아 `.cachedAudio` 인앱 폴백으로
+        // 내려간다 — 무음으로 우는 것보다 낫다.
+        guard isUsableStagedFile(tmpURL) else {
+            throw AlarmSoundStagingError.writeFailed("staged output is empty or unreadable")
+        }
+
+        do {
+            try fm.moveItem(at: tmpURL, to: finalURL)
+        } catch {
+            // 그사이 다른 경로가 같은 이름을 완성해 뒀다면 그걸 그대로 쓴다.
+            if isUsableStagedFile(finalURL) { return }
+            throw AlarmSoundStagingError.writeFailed(error.localizedDescription)
+        }
+    }
+
+    /// 이 파일을 알람 사운드로 써도 되는가 — **존재만 보지 않는다.**
+    ///
+    /// 두 가지를 본다: (1) 바이트가 실제로 들어 있는가(0바이트 캐시가 실재했다),
+    /// (2) 오디오로 열려서 길이가 0보다 큰가. (2)가 필요한 이유는 트랜스코드가
+    /// **정상 종료로 보이면서 빈 파일**을 낼 수 있어서다 — 소스에 샘플이 없으면
+    /// `copyNextSampleBuffer()` 가 곧바로 nil 을 주고 writer 는 `.completed` 로 끝난다.
+    private static func isUsableStagedFile(_ url: URL) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return false }
+        let size = (try? fm.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
+        guard size > minimumUsableBytes else { return false }
+
+        #if canImport(AVFoundation)
+        let asset = AVURLAsset(url: url)
+        let duration = asset.duration
+        guard !duration.isIndefinite else { return false }
+        return CMTimeGetSeconds(duration) > 0
+        #else
+        return true
+        #endif
+    }
+
+    /// 헤더만 있고 오디오가 없는 파일을 거르는 하한. CAF/WAV 헤더는 수십 바이트다.
+    private static let minimumUsableBytes: Int64 = 512
 
     /// 소스가 30초(+tolerance)를 넘는지. 측정 불가/AVFoundation 미가용 시 false 로 보아
     /// passthrough 를 막지 않는다(트림은 cacheBytes 단계에서 이미 시도됐을 수 있음).
@@ -250,6 +313,9 @@ enum AlarmSoundStaging {
         // 동기 대기. AlarmKit 예약은 사용자 액션 직후라 짧은 동기 대기가 허용된다.
         let semaphore = DispatchSemaphore(value: 0)
         let queue = DispatchQueue(label: "com.alarmtalk.app.alarm-sound-staging")
+        // append 가 실패해 중간에 접었는지 기록한다 — 아래 완료 판정이 이걸 본다.
+        let appendFailed = Mutex(false)
+        let appendedAny = Mutex(false)
         input.requestMediaDataWhenReady(on: queue) {
             while input.isReadyForMoreMediaData {
                 guard reader.status == .reading, let buffer = output.copyNextSampleBuffer() else {
@@ -258,11 +324,13 @@ enum AlarmSoundStaging {
                     return
                 }
                 if !input.append(buffer) {
+                    appendFailed.set(true)
                     reader.cancelReading()
                     input.markAsFinished()
                     semaphore.signal()
                     return
                 }
+                appendedAny.set(true)
             }
         }
         semaphore.wait()
@@ -271,13 +339,32 @@ enum AlarmSoundStaging {
         writer.finishWriting { finishSemaphore.signal() }
         finishSemaphore.wait()
 
-        guard writer.status == .completed, reader.status != .failed else {
+        // ⚠ **`reader.status != .failed` 만 보지 말 것 — 잘린 파일이 통과한다.**
+        // append 가 실패하면 위에서 `reader.cancelReading()` 을 부르는데, 그러면 상태가
+        // `.cancelled` 이지 `.failed` 가 아니다. writer 는 여기까지 쓴 것으로 정상 종료
+        // (`.completed`)하므로, 예전 판정은 **중간에 끊긴 오디오를 완성품으로 채택**했다.
+        // 샘플을 하나도 못 붙인 경우(빈 소스)도 같은 이유로 통과해 **무음 파일**이 됐다.
+        guard writer.status == .completed,
+              reader.status == .completed,
+              !appendFailed.get(),
+              appendedAny.get() else {
             try? FileManager.default.removeItem(at: dst)
             let reason = writer.error?.localizedDescription
                 ?? reader.error?.localizedDescription
-                ?? "writer status=\(writer.status.rawValue)"
+                ?? (appendFailed.get() ? "writer input rejected a sample (truncated)"
+                    : !appendedAny.get() ? "source produced no audio samples"
+                    : "writer status=\(writer.status.rawValue) reader status=\(reader.status.rawValue)")
             throw AlarmSoundStagingError.writeFailed(reason)
         }
+    }
+
+    /// 트랜스코드 콜백이 다른 큐에서 돌아 값을 되돌려주기 위한 최소 상자.
+    private final class Mutex<Value>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Value
+        init(_ value: Value) { self.value = value }
+        func get() -> Value { lock.lock(); defer { lock.unlock() }; return value }
+        func set(_ newValue: Value) { lock.lock(); value = newValue; lock.unlock() }
     }
     #endif
 }

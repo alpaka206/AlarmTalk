@@ -99,7 +99,11 @@ final class AudioCacheStore {
     /// `nonisolated` — `Task.detached` 등 백그라운드 컨텍스트에서 호출하면 메인 액터를
     /// 막지 않는다(change 5, Android 의 Dispatchers.IO 캐싱과 동일 의도).
     nonisolated static func cache(tts: TtsGenerateResponse, cacheKey overrideCacheKey: String?) throws -> CachedVoiceAudio {
-        guard let data = Data(base64Encoded: tts.audioBase64) else {
+        // ⚠ **`!data.isEmpty` 를 빼지 말 것.** `Data(base64Encoded: "")` 는 nil 이 아니라
+        // **0바이트 Data** 다(실측). 서버가 빈 audio_base64 를 주면 0바이트 파일이
+        // 캐시에 앉고, 재다운로드도 캐시 히트로 막혀 영영 안 덮인다 — 그 파일을 문
+        // 알람은 무음으로 운다.
+        guard let data = Data(base64Encoded: tts.audioBase64), !data.isEmpty else {
             throw AudioCacheError.invalidBase64
         }
         let format = Self.normalizedFormat(tts.audioFormat)
@@ -137,7 +141,8 @@ final class AudioCacheStore {
         messageId: String,
         cacheKey: String
     ) throws -> CachedVoiceAudio {
-        guard let data = Data(base64Encoded: response.audioBase64) else {
+        // 0바이트 방어는 위 `cache(tts:)` 주석 참조.
+        guard let data = Data(base64Encoded: response.audioBase64), !data.isEmpty else {
             throw AudioCacheError.invalidBase64
         }
         let format = Self.normalizedFormat(response.audioFormat)
