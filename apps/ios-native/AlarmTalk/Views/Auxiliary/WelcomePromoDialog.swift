@@ -27,8 +27,15 @@ struct WelcomePromoDialog: View {
     /// ⚠ **시스템 `.alert` 로 바꾸지 말 것.** CLAUDE.md 는 iOS 확인 알럿에 시스템
     /// `.alert` 를 쓰라고 하지만, 이건 확인이 아니라 **입력 + 실패 사유 표시**가 있는
     /// 알럿이다. 시스템 알럿은 필드 아래에 오류를 그릴 자리가 없어서, 바꾸면 등록
-    /// 실패 사유(만료·중복·정원초과 …)를 보여줄 곳이 사라지고 알럿이 닫혀 버린다.
-    /// 안드로이드도 같은 이유로 `IosAlertDialog` + `IosAlertField` + 오류 슬롯을 쓴다.
+    /// 실패 사유(만료·중복·정원초과 …)를 보여줄 곳이 사라지고, 문장 안의 강조
+    /// ('무료'·'더보기의 코드 등록')도 잃는다. 안드로이드도 같은 이유로
+    /// `IosAlertDialog` + `IosAlertField` + 오류 슬롯을 쓴다.
+    ///
+    /// ⚠ **대신 수치는 안드로이드 `IosAlertDialog` 를 그대로 따른다 — 그쪽이 유일 출처다.**
+    /// (안드로이드 것이 UIAlertController 복제 스펙이라, 여기서 따로 정하면 원본에서 멀어진다.)
+    /// 2026-08-10 대조 전에는 껍데기(폭 300·반경 14·액션 52)만 맞고 **글자 크기와 입력칸이
+    /// 전부 달랐다** — 제목 16 vs 17, 본문 12 vs 13, 액션 16 vs 17, 입력칸 반경 18·테두리 1
+    /// vs 반경 8·테두리 0.5·surface 50% 채움.
     ///
     /// ⚠ **좌우 여백을 빼지 말 것.** `.padding(.top, 20)` 만 있던 시절에는 제목·설명·
     /// 입력창이 카드 모서리에 그대로 붙었다. 액션 행은 구분선이 카드 폭 전체를 가로질러야
@@ -36,8 +43,8 @@ struct WelcomePromoDialog: View {
     var body: some View {
         VStack(spacing: 14) {
             Text("코드가 있으신가요?")
-                .font(theme.typography.titleMedium)
-                .fontWeight(.bold)
+                // 안드로이드 `IosAlertType.Title` = 17sp SemiBold.
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(theme.palette.onSurface)
                 .padding(.horizontal, 20)
 
@@ -47,19 +54,29 @@ struct WelcomePromoDialog: View {
                 highlighted("코드가 없어도 기본 기능은 무료로 쓸 수 있어요.", "무료")
                 highlighted("나중에 더보기의 코드 등록에서 언제든 넣을 수 있어요.", "더보기의 코드 등록")
             }
-            .font(theme.typography.bodySmall)
+            // 안드로이드 `IosAlertType.Message` = 13sp.
+            .font(.system(size: 13))
             .foregroundStyle(theme.palette.onSurfaceVariant)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 20)
 
+            // 안드로이드 `IosAlertField`: 15sp / 최소 높이 48 / 반경 8(컨테이너 14 보다
+            // 작다 — 안에 든 요소가 더 각지는 iOS 문법) / 테두리 0.5·onSurface 22% /
+            // 채움 surface 50%. `vocaButton`(18) 을 쓰면 알럿 안에서 너무 둥글어진다.
             TextField("초대·선물·프로모션 코드", text: $code)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
                 .multilineTextAlignment(.center)
-                .frame(height: 48)
+                .font(.system(size: 15))
+                .padding(.horizontal, 10)
+                .frame(minHeight: 48)
                 .background(
-                    RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous)
-                        .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(theme.palette.surface.opacity(0.5))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(theme.palette.onSurface.opacity(0.22), lineWidth: 0.5)
                 )
                 .padding(.horizontal, 20)
                 .disabled(busy)
@@ -70,7 +87,7 @@ struct WelcomePromoDialog: View {
 
             if let errorText {
                 Text(errorText)
-                    .font(theme.typography.bodySmall)
+                    .font(.system(size: 13))
                     .foregroundStyle(theme.palette.error)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 20)
@@ -104,8 +121,8 @@ struct WelcomePromoDialog: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(theme.typography.bodyLarge)
-                .fontWeight(emphasized ? .semibold : .regular)
+                // 안드로이드 `IosAlertType.Action` = 17sp(강조는 SemiBold).
+                .font(.system(size: 17, weight: emphasized ? .semibold : .regular))
                 .frame(maxWidth: .infinity, minHeight: 52)
         }
         .buttonStyle(.plain)

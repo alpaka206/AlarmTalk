@@ -123,10 +123,11 @@ struct FamilyAlarmQuietTimeDialog: View {
     }
 
     private var footer: some View {
+        // ⚠ **[취소]를 다시 넣지 말 것 — 헤더 X 와 같은 일이다.**
+        // CLAUDE.md 「닫기(X)를 버튼과 같이 두지 말 것」. 안드로이드 대응 화면
+        // (`ui/settings/SettingsScreenComponents.kt` 의 설정 불가 시간 다이얼로그)도
+        // `ModalDialogTitle` 의 X + [저장] **둘뿐**이고 취소가 없다.
         HStack(spacing: 10) {
-            Button("취소", action: onCancel)
-                .buttonStyle(.bordered)
-                .frame(maxWidth: .infinity)
             Button("저장") {
                 onConfirm(drafts.map { $0.toWindow() })
             }
@@ -365,10 +366,8 @@ private struct QuietTimePicker: View {
             .datePickerStyle(.wheel)
             .labelsHidden()
             .frame(maxWidth: .infinity)
+            // 취소는 위 X 하나로 낸다(같은 이유 — `footer` 주석 참조).
             HStack(spacing: 10) {
-                Button("취소", action: onCancel)
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
                 Button("확인") {
                     let cal = Calendar(identifier: .gregorian)
                     let parts = cal.dateComponents([.hour, .minute], from: selection)

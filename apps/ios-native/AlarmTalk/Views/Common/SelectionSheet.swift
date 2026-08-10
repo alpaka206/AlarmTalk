@@ -25,7 +25,18 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
     @ViewBuilder let label: (Item) -> Label
 
     var body: some View {
-        NavigationStack {
+        // ⚠ **제목은 `NavigationStack` + 인라인 타이틀이 아니라 왼쪽 정렬 큰 제목이다.**
+        // 안드로이드 `WakerSelectionSheet` 는 드래그 핸들 아래에 좌측 정렬 `titleLarge`
+        // (22, Bold)를 두고 상단바가 없다. 여기에 네비게이션 바를 두면 가운데 작은 제목 +
+        // 시트 배경 위 바 재질이 겹쳐 **같은 시트가 두 앱에서 전혀 다르게** 보인다.
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title)
+                // 안드로이드 titleLarge = 22 Bold.
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(theme.palette.onSurface)
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
+
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -43,19 +54,24 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
                                         .foregroundStyle(theme.palette.primary)
                                 }
                             }
-                            // 최소 높이는 안드로이드 행과 같은 52 — 큰 글꼴에서는 늘어난다.
-                            .frame(minHeight: 52)
+                            // ⚠ 최소 높이 **56** — 안드로이드 `WakerSheetOptionRow` 의
+                            // `heightIn(min = 56.dp)` 와 같은 값이다. 예전 주석은 "안드로이드
+                            // 행과 같은 52" 라고 적었는데 **안드로이드는 52였던 적이 없다.**
+                            // 큰 글꼴에서는 이보다 늘어난다.
+                            .frame(minHeight: 56)
                             .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.vertical, 4)
             }
-            .homeGradientBackground()
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
         }
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.palette.surface)
+        // 드래그 핸들은 시스템이 그린다(안드로이드는 `WakerSheetDragHandle` 로 직접 그린다).
+        .presentationDragIndicator(.visible)
     }
 }
