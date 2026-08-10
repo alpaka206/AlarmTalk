@@ -40,11 +40,23 @@ struct TimeWheelPicker: View {
                 AmPmWheelColumn(isPM: amPmBinding, scale: scale)
                     .frame(width: 96 * scale)
 
+                // ⚠ **12시간이 아니라 24시간 값을 굴린다.** 예전에는 1...12 를 굴리면서
+                // 오전/오후를 **그대로 유지**해서, 11시에서 12시로 넘겨도 오전/오후가
+                // 바뀌지 않았다(2026-08-10 사용자 보고 "시간 바꿨을 때 오전·오후가 안 바뀐다").
+                // 안드로이드는 24시간 값(`workingHour`)을 굴리고 표시만 `hour12` 로 하며,
+                // 오전/오후 칼럼은 `hour >= 12` 에서 **파생**된다 — 같은 구조로 맞춘다.
                 DraggableNumberColumn(
-                    value: hour12Binding,
-                    range: 1...12,
-                    formatter: { String($0) },
-                    scale: scale
+                    value: $hour,
+                    range: 0...23,
+                    formatter: { String(TimeWheelMath.hour24To12($0)) },
+                    scale: scale,
+                    typeInTitle: "시",
+                    // 사용자는 화면에 보이는 **12시간** 숫자를 넣는다 — 지금 오전/오후를
+                    // 유지한 채 24시간으로 되돌린다. (오전/오후를 바꾸려면 그 칼럼을 쓴다.)
+                    applyTypedValue: { typed in
+                        let display = min(max(typed, 1), 12)
+                        hour = TimeWheelMath.combine(displayHour: display, isPM: hour >= 12)
+                    }
                 )
                 .frame(maxWidth: .infinity)
 
@@ -54,7 +66,9 @@ struct TimeWheelPicker: View {
                     value: $minute,
                     range: 0...59,
                     formatter: { String(format: "%02d", $0) },
-                    scale: scale
+                    scale: scale,
+                    typeInTitle: "분",
+                    applyTypedValue: { typed in minute = min(max(typed, 0), 59) }
                 )
                 .frame(maxWidth: .infinity)
             }
@@ -136,9 +150,18 @@ struct DraggableNumberColumn: View {
     /// 가용 폭에 따른 축소 배율. 상위 `TimeWheelPicker` 가 계산해 내려준다.
     var scale: CGFloat = 1
 
+    /// 탭했을 때 뜨는 직접 입력 알럿의 제목(예: "시" / "분"). 비면 탭 입력을 열지 않는다.
+    var typeInTitle: String?
+    /// 직접 입력한 값을 실제 값으로 바꾼다. 시 칼럼은 12시간 표기를 24시간으로 되돌려야 해서
+    /// 칼럼마다 규칙이 다르다 — 그래서 호출부가 준다.
+    var applyTypedValue: ((Int) -> Void)?
+
     @State private var dragOffset: CGFloat = 0
     @GestureState private var isDragging: Bool = false
     @State private var selectionGenerator = UISelectionFeedbackGenerator()
+    @State private var typeInOpen = false
+    @State private var typeInDraft = ""
+
 
     private var itemHeight: CGFloat { TimeWheelPicker.itemHeight * scale }
 
@@ -170,7 +193,15 @@ struct DraggableNumberColumn: View {
                 }
             }
             .contentShape(Rectangle())
+            // ⚠ **탭이 드래그를 잡아먹지 않게 순서를 지킨다.** `.onTapGesture` 를
+            // `.gesture(dragGesture)` **뒤에** 두면 SwiftUI 가 드래그를 우선 인식하고,
+            // 손가락을 움직이지 않은 경우에만 탭으로 떨어진다.
             .gesture(dragGesture)
+            .onTapGesture {
+                guard typeInTitle != nil else { return }
+                typeInDraft = ""
+                typeInOpen = true
+            }
             .mask(fadeMask)
         }
         .frame(height: itemHeight * 3)
@@ -181,6 +212,24 @@ struct DraggableNumberColumn: View {
             case .increment: applyStep(1)
             case .decrement: applyStep(-1)
             @unknown default: break
+            }
+        }
+        // 휠을 굴리지 않고 **숫자로 바로** 넣는 길. 멀리 있는 값(7시 → 11시)을 고를 때
+        // 92pt 씩 끌지 않아도 된다.
+        .alert(typeInTitle.map { "\($0) 직접 입력" } ?? "", isPresented: $typeInOpen) {
+            TextField(typeInTitle ?? "", text: $typeInDraft)
+                .keyboardType(.numberPad)
+            Button("취소", role: .cancel) { }
+            Button("확인") {
+                // 범위를 벗어나면 **거절하지 않고 잘라서** 넣는다 — 여기서 튕기면
+                // 사용자는 왜 안 되는지 모른 채 같은 값을 다시 넣는다(스누즈 알럿과 같은 규칙).
+                guard let typed = Int(typeInDraft.filter(\.isNumber)) else { return }
+                if let applyTypedValue {
+                    applyTypedValue(typed)
+                } else {
+                    value = min(max(typed, range.lowerBound), range.upperBound)
+                }
+                selectionGenerator.selectionChanged()
             }
         }
     }
@@ -204,25 +253,56 @@ struct DraggableNumberColumn: View {
             }
             .onEnded { gesture in
                 let velocity = gesture.predictedEndTranslation.height - gesture.translation.height
-                // velocity 가 크면 한 칸 더 굴린다.
-                let flingThreshold: CGFloat = itemHeight * 0.6
-                let snapStep: Int
-                if dragOffset <= -itemHeight * 0.5 || velocity < -flingThreshold {
-                    snapStep = 1
-                } else if dragOffset >= itemHeight * 0.5 || velocity > flingThreshold {
-                    snapStep = -1
-                } else {
-                    snapStep = 0
-                }
+                let snapStep = Self.snapStep(
+                    dragOffset: dragOffset,
+                    velocity: velocity,
+                    itemHeight: itemHeight
+                )
+                // ⚠ **부호를 뒤집지 말 것 — 뒤집혀 있었다.**
+                // 예전에는 `applyStep(-snapStep)` 이었다. 끌 때(`onChanged`)는 위로 끌면
+                // 값이 **증가**하는데, 놓을 때만 반대로 적용돼서 **반 칸 이상 끌어 올린 뒤
+                // 손을 떼면 값이 한 칸 도로 내려갔다** — 사용자에겐 "맞춰도 되돌아간다"
+                // 로 보인다(2026-08-10 보고). 두 자리의 방향은 반드시 같아야 한다.
                 if snapStep != 0 {
-                    applyStep(-snapStep)
+                    applyStep(snapStep)
                 }
                 withAnimation(.snappy(duration: 0.25)) {
                     dragOffset = 0
                 }
                 lastEmittedSteps = 0
             }
+
     }
+
+    /// 손을 뗄 때 몇 칸 더 굴릴지 판정한다. **+ 는 값 증가(위로 끌기)** 다.
+    ///
+    /// 제스처 없이 검증할 수 있게 순수 함수로 뺐다 — 이 방향이 `onChanged` 와 어긋나면
+    /// 휠이 되돌아간다(실제로 뒤집혀 있었다).
+    ///
+    /// ⚠ **한 칸만 굴리지 말 것 — 그게 "휠이 잘 안 돌아간다" 의 원인이었다.**
+    /// 예전에는 아무리 세게 튕겨도 최대 한 칸이라, 7시에서 11시로 가려면 92pt 씩 네 번을
+    /// 끌어야 했다. 안드로이드는 속도에 비례해 여러 칸을 굴린다
+    /// (`ui/editor/DraggableTimeWheelColumn.kt` 의 `flingStepsFor`).
+    ///
+    /// - Parameter velocity: SwiftUI 는 px/s 가 아니라 `predictedEndTranslation - translation`
+    ///   (남은 이동 거리)을 준다. UIKit 감속이 대략 0.15초이므로 `px/s ≈ 거리 / 0.15` 로 보고
+    ///   안드로이드 계수를 환산했다 — 최소 속도 `itemHeight*4.2/s` → 거리 `itemHeight*0.63`,
+    ///   칸수 `(|v|/h)*0.12` → `(|거리|/h)*0.8`.
+    static func snapStep(dragOffset: CGFloat, velocity: CGFloat, itemHeight: CGFloat) -> Int {
+        let flingDistance = itemHeight * 0.63
+        if abs(velocity) >= flingDistance {
+            let raw = max(Int(((abs(velocity) / itemHeight) * 0.8).rounded()), 1)
+            let steps = min(raw, maxStepsPerFling)
+            return velocity < 0 ? steps : -steps
+        }
+        // 튕기지 않았으면 반 칸 넘긴 쪽으로만 붙인다(안드로이드 0.45 와 같은 기준).
+        if dragOffset <= -itemHeight * 0.45 { return 1 }
+        if dragOffset >= itemHeight * 0.45 { return -1 }
+        return 0
+    }
+
+    /// 한 번의 튕김으로 넘길 수 있는 최대 칸수. 안드로이드 `maxStepsPerGesture = 15` 와 같다.
+    static let maxStepsPerFling = 15
 
     // SwiftUI @State 가 closure 외부에서 mutate 안 되므로 보조 wrapper 필요.
     @State private var lastEmittedSteps: Int = 0

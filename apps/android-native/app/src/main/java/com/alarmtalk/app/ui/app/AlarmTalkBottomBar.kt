@@ -16,6 +16,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -58,8 +62,13 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Alarms,
                 selectedTab = selectedTab,
-                icon = R.drawable.ic_tab_alarm,
-                selectedIcon = R.drawable.ic_tab_alarm_fill,
+                // ⚠ **알람만 Material 아이콘이다.** 목소리·더보기는 iOS(SF) 모양의 자체
+                // 드로어블인데, 알람은 안드로이드 모양으로 간다(2026-08-10 사용자 결정).
+                // iOS 도 같은 도형을 그려 맞춰 뒀다 — `Views/Root/MaterialAlarmShape.swift`.
+                // ⚠ Material 알람은 Outlined 와 Filled 의 path 가 사실상 같다 — 선택 표시는
+                // **색으로만** 된다. 그게 원래 안드로이드 동작이다.
+                icon = TabIcon.Vector(Icons.Outlined.Alarm),
+                selectedIcon = TabIcon.Vector(Icons.Filled.Alarm),
                 label = stringResource(R.string.r3app_bottom_tab_alarms),
                 badgeCount = unreadAlarmCount,
                 onSelectTab = onSelectTab,
@@ -68,8 +77,8 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Voices,
                 selectedTab = selectedTab,
-                icon = R.drawable.ic_tab_mic,
-                selectedIcon = R.drawable.ic_tab_mic_fill,
+                icon = TabIcon.Resource(R.drawable.ic_tab_mic),
+                selectedIcon = TabIcon.Resource(R.drawable.ic_tab_mic_fill),
                 label = stringResource(R.string.r3app_bottom_tab_voices),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
@@ -77,8 +86,7 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Menu,
                 selectedTab = selectedTab,
-                icon = R.drawable.ic_tab_menu,
-                selectedIcon = R.drawable.ic_tab_menu,
+                icon = TabIcon.Resource(R.drawable.ic_tab_menu),
                 label = stringResource(R.string.r3app_bottom_tab_menu),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
@@ -91,10 +99,11 @@ internal fun AlarmTalkBottomBar(
 internal fun AlarmTalkTabItem(
     tab: NativeTab,
     selectedTab: NativeTab,
-    // ⚠ **`ImageVector`(Material 아이콘)로 되돌리지 말 것.** 탭 아이콘은 iOS 와 같은 도형을
-    // 24 좌표계에 옮긴 **자체 드로어블**이다(`res/drawable/ic_tab_*.xml`).
-    @DrawableRes icon: Int,
-    @DrawableRes selectedIcon: Int = icon,
+    // ⚠ 탭마다 아이콘 출처가 다르다 — 알람은 Material `ImageVector`, 목소리·더보기는
+    // iOS 모양을 옮긴 자체 드로어블(`res/drawable/ic_tab_*.xml`)이다. 하나로 통일하려
+    // 하지 말 것: 알람만 안드로이드 모양으로 두는 게 사용자 결정이다.
+    icon: TabIcon,
+    selectedIcon: TabIcon = icon,
     label: String,
     badgeCount: Int = 0,
     onSelectTab: (NativeTab) -> Unit,
@@ -142,15 +151,22 @@ internal fun AlarmTalkTabItem(
                     }
                 },
             ) {
-                Icon(
-                    painter = painterResource(if (selected) selectedIcon else icon),
-                    contentDescription = label,
-                    tint = selectedContentColor,
-                    // ⚠ 22 가 아니라 **24** 다. 이 드로어블들은 SF Symbol 을 24 좌표계에
-                    // 옮긴 것이라 잉크가 viewport 를 거의 꽉 채운다 — 22 로 그리면
-                    // 아이폰보다 작아 보인다(Material 아이콘은 잉크가 18 안팎이었다).
-                    modifier = Modifier.size(24.dp),
-                )
+                // 크기는 **22** — 안드로이드 원래 값이다(2026-08-10 사용자 결정으로 복귀).
+                val iconModifier = Modifier.size(22.dp)
+                when (val current = if (selected) selectedIcon else icon) {
+                    is TabIcon.Vector -> Icon(
+                        imageVector = current.image,
+                        contentDescription = label,
+                        tint = selectedContentColor,
+                        modifier = iconModifier,
+                    )
+                    is TabIcon.Resource -> Icon(
+                        painter = painterResource(current.id),
+                        contentDescription = label,
+                        tint = selectedContentColor,
+                        modifier = iconModifier,
+                    )
+                }
             }
         }
         Text(
@@ -164,6 +180,12 @@ internal fun AlarmTalkTabItem(
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )
     }
+}
+
+/** 탭 아이콘 출처 — Material 벡터(알람)와 자체 드로어블(목소리·더보기)을 함께 받는다. */
+internal sealed interface TabIcon {
+    data class Vector(val image: ImageVector) : TabIcon
+    data class Resource(@DrawableRes val id: Int) : TabIcon
 }
 
 private fun badgeLabel(count: Int): String = if (count > 99) "99+" else count.toString()

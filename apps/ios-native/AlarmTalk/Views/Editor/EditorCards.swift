@@ -137,7 +137,7 @@ struct EditorActionBar: View {
                 Text("취소")
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .frame(maxWidth: .infinity, minHeight: 40)
             }
             .font(theme.typography.titleMedium)
             .buttonStyle(.bordered)
@@ -160,16 +160,21 @@ struct EditorActionBar: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .frame(maxWidth: .infinity, minHeight: 40)
                 } else {
                     // ⚠ 아이콘을 붙이지 않는다 — 안드로이드는 글자만이고, 캘린더 아이콘은
                     // '일정에 추가' 라는 다른 동작을 연상시킨다.
                     Text(saveTitle)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .frame(maxWidth: .infinity, minHeight: 40)
                 }
             }
+            // ⚠ **라벨 높이는 40 이다(52 아님).** `.bordered*` 스타일이 라벨 **바깥에**
+            // 제 패딩을 더하므로 실제로 그려지는 높이는 그보다 약 14 크다 — 52 로 두면
+            // 66pt 짜리 버튼이 되어 하단이 답답했다(2026-08-10 지적). 40 이면 약 54pt 로,
+            // iOS 최소 터치 타깃(44)을 넘기면서 안드로이드 Material Button(40dp)과도 가깝다.
+            // ⚠ 두 버튼의 값은 **항상 같아야 한다** — 다르면 취소·저장 높이가 어긋난다.
             // ⚠ 바깥에 `.frame(minHeight:)` 를 붙이지 않는다 — 위 주석이 말한 그대로,
             // `.buttonStyle` 뒤 프레임은 **버튼이 아니라 그 바깥 상자**만 키운다.
             // 그래서 취소(52)보다 저장이 낮게 그려졌고, 눌리는 영역도 44pt 를 밑돌았다.
@@ -180,8 +185,13 @@ struct EditorActionBar: View {
             .disabled(!saveEnabled || saving)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
+        // ⚠ **위아래 여백을 다시 늘리지 말 것.** 버튼 자체가 이미 크다 —
+        // `.borderedProminent` 가 라벨(minHeight 52) 바깥에 제 패딩을 더해 실제 높이가
+        // **66pt** 로 그려진다(실측). 여기에 상단 10 + 하단 8 을 얹고 그 아래로 홈
+        // 인디케이터 안전영역(약 34)이 또 붙어서, 버튼 아래만 42pt 가 비었다
+        // (2026-08-10 사용자 지적 "위아래 여분이 너무 크다").
+        // 안드로이드는 이 영역이 상하 10dp 다 — 하단은 안전영역이 대신하므로 0 으로 둔다.
+        .padding(.top, 6)
         .background(theme.palette.background)
     }
 }

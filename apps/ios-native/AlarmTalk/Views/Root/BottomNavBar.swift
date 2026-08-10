@@ -23,8 +23,17 @@ struct BottomNavBar: View {
                 } label: {
                     VStack(spacing: 3) {
                         ZStack(alignment: .topTrailing) {
-                            Image(systemName: selected == tab ? tab.selectedSystemImage : tab.systemImage)
-                                .font(.system(size: 22, weight: .semibold))
+                            // ⚠ **알람만 Material 도형이다.** 목소리·더보기는 SF Symbol 이고,
+                            // 알람은 안드로이드 모양으로 맞춘다(2026-08-10 사용자 결정).
+                            // Material 은 Outlined/Filled path 가 사실상 같아 **선택은 색으로만**
+                            // 구분한다 — 채운 변형을 따로 만들지 말 것(안드로이드도 그렇다).
+                            if tab == .alarms {
+                                MaterialAlarmShape()
+                                    .frame(width: 22, height: 22)
+                            } else {
+                                Image(systemName: selected == tab ? tab.selectedSystemImage : tab.systemImage)
+                                    .font(.system(size: 22, weight: .semibold))
+                            }
                             let badge = badgeProvider(tab)
                             if badge > 0 {
                                 Text(badge > 99 ? "99+" : "\(badge)")

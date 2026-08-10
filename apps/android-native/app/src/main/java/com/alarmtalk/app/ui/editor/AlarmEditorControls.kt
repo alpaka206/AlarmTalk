@@ -3,6 +3,15 @@ package com.alarmtalk.app
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -369,23 +378,54 @@ internal fun EditorSegmentedSelector(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // ⚠ **선택 표시는 배경 하나가 미끄러져 옮겨간다.** 예전에는 칸마다 색이 즉시
+    // 바뀌어(`Surface(color=...)`) 전환이 툭 끊겼다 — iOS 는 `matchedGeometryEffect` 로
+    // 하나의 배경을 옮긴다(`Views/Editor/VoicePlayModePicker.swift`). 같은 움직임으로 맞춘다
+    // (2026-08-10 사용자 요청 "아이폰처럼 자연스럽게 움직이도록").
+    val selectedIndex = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    // iOS 와 같은 박자(0.28초). 시스템 '애니메이션 줄이기' 는 Compose 가
+    // `MotionDurationScale` 로 이미 반영하므로 따로 분기하지 않는다.
+    val thumbFraction by animateFloatAsState(
+        targetValue = selectedIndex.toFloat(),
+        animationSpec = tween(durationMillis = 280),
+        label = "play-mode-thumb",
+    )
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = WakerButtonShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
         border = wakerCardBorder(),
     ) {
-        Row(
-            modifier = Modifier.padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            options.forEach { (value, label) ->
-                PlayModeChip(
-                    label = label,
-                    selected = selected == value,
-                    onClick = { onSelect(value) },
-                    modifier = Modifier.weight(1f),
+        Box(modifier = Modifier.padding(4.dp)) {
+            val count = options.size.coerceAtLeast(1)
+            BoxWithConstraints {
+                val slotWidth = maxWidth / count
+                // 미끄러지는 배경 — 칸 하나 크기로 두고 위치만 옮긴다.
+                Box(
+                    modifier = Modifier
+                        .width(slotWidth)
+                        .fillMaxHeight()
+                        .offset(x = slotWidth * thumbFraction)
+                        .clip(WakerChipShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .border(
+                            BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+                            ),
+                            WakerChipShape,
+                        ),
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                    options.forEach { (value, label) ->
+                        PlayModeChip(
+                            label = label,
+                            selected = selected == value,
+                            onClick = { onSelect(value) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
         }
     }
@@ -407,16 +447,11 @@ internal fun PlayModeChip(
             .alpha(if (locked && !selected) 0.58f else 1f),
         interactionSource = interactionSource,
         shape = WakerChipShape,
-        color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            Color.Transparent
-        },
-        border = if (selected) {
-            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f))
-        } else {
-            null
-        },
+        // ⚠ **칸은 배경을 그리지 않는다.** 선택 표시는 트랙의 미끄러지는 배경이 맡는다
+        // (`EditorSegmentedSelector`). 여기서 색을 또 칠하면 옮겨가는 배경과 겹쳐
+        // 두 칸이 동시에 칠해진 것처럼 보인다.
+        color = Color.Transparent,
+        border = null,
     ) {
         Box(
             modifier = Modifier
