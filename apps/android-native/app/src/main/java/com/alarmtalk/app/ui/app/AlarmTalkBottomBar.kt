@@ -36,6 +36,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -69,6 +70,8 @@ internal fun AlarmTalkBottomBar(
                 // **색으로만** 된다. 그게 원래 안드로이드 동작이다.
                 icon = TabIcon.Vector(Icons.Outlined.Alarm),
                 selectedIcon = TabIcon.Vector(Icons.Filled.Alarm),
+                // ⚠ 알람만 **26** 이다 — 위 `iconSize` 주석 참조(22 로 두면 혼자 작고 얇다).
+                iconSize = 26.dp,
                 label = stringResource(R.string.r3app_bottom_tab_alarms),
                 badgeCount = unreadAlarmCount,
                 onSelectTab = onSelectTab,
@@ -104,6 +107,9 @@ internal fun AlarmTalkTabItem(
     // 하지 말 것: 알람만 안드로이드 모양으로 두는 게 사용자 결정이다.
     icon: TabIcon,
     selectedIcon: TabIcon = icon,
+    /// 아이콘 박스 크기. **잉크 크기를 맞추는 값**이라 아이콘마다 다르다 —
+    /// Material 은 24 격자에서 잉크가 20.2(84%)뿐이라 같은 22 로 두면 혼자 작아 보인다.
+    iconSize: Dp = 22.dp,
     label: String,
     badgeCount: Int = 0,
     onSelectTab: (NativeTab) -> Unit,
@@ -151,8 +157,7 @@ internal fun AlarmTalkTabItem(
                     }
                 },
             ) {
-                // 크기는 **22** — 안드로이드 원래 값이다(2026-08-10 사용자 결정으로 복귀).
-                val iconModifier = Modifier.size(22.dp)
+                val iconModifier = Modifier.size(iconSize)
                 when (val current = if (selected) selectedIcon else icon) {
                     is TabIcon.Vector -> Icon(
                         imageVector = current.image,

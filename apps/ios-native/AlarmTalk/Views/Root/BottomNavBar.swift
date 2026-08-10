@@ -28,8 +28,14 @@ struct BottomNavBar: View {
                             // Material 은 Outlined/Filled path 가 사실상 같아 **선택은 색으로만**
                             // 구분한다 — 채운 변형을 따로 만들지 말 것(안드로이드도 그렇다).
                             if tab == .alarms {
+                            // ⚠ **26 이다(22 아님).** Material 아이콘은 24 격자 안에서
+                            // 잉크가 **20.2(84%)** 뿐이라, 이웃과 같은 22 박스에 넣으면 혼자
+                            // 작고 얇아 보인다(실측: 알람 잉크 18.3pt·획 1.8 vs 마이크 24.0pt·획 2.3
+                            // — 2026-08-10 사용자 지적 "알람만 좀 얇은 건지"). SF 심볼은 잉크가
+                            // 박스를 거의 꽉 채우므로 **박스 크기가 아니라 잉크 크기**를 맞춘다.
+                            // 22 / 0.842 ≈ 26.
                                 MaterialAlarmShape()
-                                    .frame(width: 22, height: 22)
+                                    .frame(width: 26, height: 26)
                             } else {
                                 Image(systemName: selected == tab ? tab.selectedSystemImage : tab.systemImage)
                                     .font(.system(size: 22, weight: .semibold))
