@@ -134,6 +134,26 @@ internal fun authFieldColors() = OutlinedTextFieldDefaults.colors(
     errorTrailingIconColor = TextOnSceneDim,
 )
 
+/**
+ * 입력칸 **위**에 붙는 라벨 — iOS `VocaTextField` 와 같은 구성이다.
+ *
+ * ⚠ `OutlinedTextField(label = …)` 로 안에 넣지 말 것. Material 의 플로팅 라벨은
+ * 비어 있을 때 칸 **안**에 앉고 테두리에 홈을 파서, 같은 색·같은 반경을 써도 iOS 의
+ * '빈 유리판 + 위 라벨' 과 다른 물건으로 보인다(2026-08-10 두 앱 대조).
+ *
+ * 칸 높이는 iOS(약 44pt)보다 큰 Material 기본 56dp 를 **그대로 둔다** — 안드로이드
+ * 최소 터치 타깃이 48dp 라 iOS 치수를 그대로 가져오면 오히려 규격을 깬다.
+ */
+@Composable
+internal fun AuthFieldLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = AuthTextMuted,
+        modifier = Modifier.padding(bottom = 6.dp),
+    )
+}
+
 @Composable
 internal fun authOutlinedButtonColors() = ButtonDefaults.outlinedButtonColors(
     contentColor = TextOnScene,
@@ -238,7 +258,9 @@ internal fun AuthScreen(
             }
             Text(
                 text = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
-                style = MaterialTheme.typography.headlineLarge,
+                // iOS 와 같은 단계 — `theme.typography.headlineSmall`(24pt).
+                // headlineLarge(32) 로 키우면 iOS 보다 한 단계 커져 두 앱이 어긋난다.
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = TextOnScene,
             )
@@ -263,6 +285,7 @@ internal fun AuthScreen(
             }
 
             if (mode == AuthMode.Register) {
+                AuthFieldLabel(stringResource(R.string.auth_label_name))
                 OutlinedTextField(
                     value = name,
                     // 서버(`DisplayNameSchema`)와 같은 규칙을 앱에서 먼저 태운다 — 제로폭·
@@ -283,7 +306,6 @@ internal fun AuthScreen(
                         }
                         name = cleaned.takeWithoutSplittingPairs(DisplayNameMaxLength)
                     },
-                    label = { Text(stringResource(R.string.auth_label_name)) },
                     isError = nameTooLong,
                     supportingText = if (nameTooLong) {
                         { Text(stringResource(R.string.auth_error_name_too_long, DisplayNameMaxLength)) }
@@ -302,13 +324,13 @@ internal fun AuthScreen(
                 )
             }
 
+            AuthFieldLabel(stringResource(R.string.auth_label_email))
             OutlinedTextField(
                 value = email,
                 onValueChange = {
                     email = it
                     onClearLoginError()
                 },
-                label = { Text(stringResource(R.string.auth_label_email)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
@@ -348,13 +370,13 @@ internal fun AuthScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
                         OutlinedTextField(
                             value = emailCode,
                             onValueChange = {
                                 emailCode = it.filter(Char::isDigit).take(6)
                                 onClearLoginError()
                             },
-                            label = { Text(stringResource(R.string.auth_label_verification_code)) },
                             singleLine = true,
                             enabled = !busy,
                             shape = WakerInputShape,
@@ -401,13 +423,13 @@ internal fun AuthScreen(
                 }
             }
 
+            AuthFieldLabel(stringResource(R.string.auth_label_password))
             OutlinedTextField(
                 value = password,
                 onValueChange = {
                     password = it
                     onClearLoginError()
                 },
-                label = { Text(stringResource(R.string.auth_label_password)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
@@ -436,10 +458,10 @@ internal fun AuthScreen(
 
             if (mode == AuthMode.Register) {
                 // 비밀번호·비밀번호 확인 입력창을 붙여 두고, 조건 안내는 확인 필드 아래에 모은다.
+                AuthFieldLabel(stringResource(R.string.auth_label_confirm_password))
                 OutlinedTextField(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
-                    label = { Text(stringResource(R.string.auth_label_confirm_password)) },
                     singleLine = true,
                     enabled = !busy,
                     shape = WakerInputShape,

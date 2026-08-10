@@ -100,10 +100,10 @@ internal fun PasswordResetScreen(
                 color = TextOnSceneDim,
             )
 
+            AuthFieldLabel(stringResource(R.string.auth_label_email))
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
-                label = { Text(stringResource(R.string.auth_label_email)) },
                 singleLine = true,
                 enabled = !busy && !codeSent,
                 shape = WakerInputShape,
@@ -135,10 +135,10 @@ internal fun PasswordResetScreen(
             }
 
             if (codeSent) {
+                AuthFieldLabel(stringResource(R.string.auth_label_verification_code))
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it.filter(Char::isDigit).take(6) },
-                    label = { Text(stringResource(R.string.auth_label_verification_code)) },
                     singleLine = true,
                     enabled = !busy,
                     shape = WakerInputShape,
@@ -150,10 +150,10 @@ internal fun PasswordResetScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
+                AuthFieldLabel(stringResource(R.string.auth_reset_new_password))
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text(stringResource(R.string.auth_reset_new_password)) },
                     singleLine = true,
                     enabled = !busy,
                     shape = WakerInputShape,
