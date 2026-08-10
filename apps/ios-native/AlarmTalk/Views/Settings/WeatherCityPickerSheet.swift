@@ -40,6 +40,7 @@ struct WeatherCityPickerSheet: View {
                 .foregroundStyle(theme.palette.onSurface)
                 .padding(.horizontal, 20)
                 .padding(.top, 4)
+                .measuredSheetHeader()
 
             ScrollView {
                 LazyVStack(spacing: 0) {

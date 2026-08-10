@@ -14,18 +14,22 @@ import UIKit
 /// - 좌우 여백 0, **위 모서리만** 둥글다(`WakerSheetShape`).
 /// - 위에 드래그 핸들(36×4, `onSurfaceVariant` 38%).
 /// - 스크림 탭 또는 아래로 끌어 닫는다.
-/// - 높이는 **내용만큼**. 화면의 85% 를 넘으면 그 안에서 스크롤한다.
+/// - 높이는 **내용만큼**. 화면의 50% 를 넘으면 그 안에서 스크롤한다.
 struct BottomSheetHost<Content: View>: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let onDismiss: () -> Void
+    /// 화면의 몇 %까지 차지할 수 있는가. 넘으면 안에서 스크롤한다.
+    var maxFraction: CGFloat = 0.5
     @ViewBuilder var content: () -> Content
 
     @State private var dragOffset: CGFloat = 0
     @State private var appeared = false
     /// 내용이 보고한 자연 높이(`measuredSheetContent`). 이걸로 시트 높이를 잡는다.
     @State private var contentHeight: CGFloat = 0
+    /// 스크롤 밖 머리말(제목) 높이 — 빼먹으면 마지막 행이 잘린다.
+    @State private var headerHeight: CGFloat = 0
 
     /// 드래그 핸들 영역(12 + 4 + 10).
     private let handleHeight: CGFloat = 26
@@ -42,8 +46,9 @@ struct BottomSheetHost<Content: View>: View {
                 content()
             }
             .onPreferenceChange(SheetContentHeightKey.self) { contentHeight = $0 }
+            .onPreferenceChange(SheetHeaderHeightKey.self) { headerHeight = $0 }
             // ⚠ **높이를 열어 두면 화면을 꽉 채운다.** 안의 `ScrollView` 가 주는 만큼
-            // 늘어나기 때문이다 — 내용이 보고한 자연 높이로 잡고 화면 85% 에서 자른다.
+            // 늘어나기 때문이다 — 내용이 보고한 자연 높이로 잡고 화면 50% 에서 자른다.
             .frame(maxWidth: .infinity)
             .frame(height: resolvedHeight)
             .background(theme.palette.surface)
@@ -70,14 +75,16 @@ struct BottomSheetHost<Content: View>: View {
         }
     }
 
-    /// 내용만큼, 단 화면 85% 까지.
+    /// 내용만큼, 단 화면 50% 까지.
     private var resolvedHeight: CGFloat? {
         guard contentHeight > 0 else { return nil }
         let safeBottom = UIApplication.shared.connectedScenes
             .compactMap { ($0 as? UIWindowScene)?.keyWindow?.safeAreaInsets.bottom }
             .first ?? 0
-        let wanted = contentHeight + handleHeight + safeBottom
-        return min(wanted, UIScreen.main.bounds.height * 0.85)
+        let wanted = contentHeight + headerHeight + handleHeight + safeBottom
+        // ⚠ 상한은 **화면의 50%** 다(2026-08-10 요청) — 그보다 길어지면 시트를 더 키우지
+        // 않고 **안에서 스크롤**한다. 목록이 길다고 화면을 덮으면 뒤 화면이 안 보인다.
+        return min(wanted, UIScreen.main.bounds.height * maxFraction)
     }
 
     private var handle: some View {

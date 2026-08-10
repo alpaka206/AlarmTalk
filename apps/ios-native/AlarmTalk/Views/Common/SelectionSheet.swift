@@ -41,6 +41,7 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
                 // 잘리려고 한다"). 안드로이드는 핸들이 위 12 + 아래 10 을 갖고 그 뒤에
                 // 제목이 온다 — 같은 간격이 되도록 18 을 준다.
                 .padding(.top, 4)
+                .measuredSheetHeader()
 
             ScrollView {
                 LazyVStack(spacing: 0) {
