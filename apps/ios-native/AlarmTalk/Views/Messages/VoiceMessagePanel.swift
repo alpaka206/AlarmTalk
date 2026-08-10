@@ -9,10 +9,12 @@ struct CodeRegisterRow: View {
 
     var onCodeRegistered: (CodeRegistrationDestination) -> Void = { _ in }
 
-    @State private var inviteCodeDraft = ""
-    @State private var voucherCodeDraft = ""
+    @State private var codeDraft = ""
     @State private var showCodeInputs = false
-    @State private var pendingDialog: CodeRegisterDialog?
+    /// 나가기 확인 대상 그룹. nil 이면 알럿을 띄우지 않는다.
+    @State private var leaveGroupId: String?
+    /// 등록 확인 대상 코드. nil 이면 알럿을 띄우지 않는다.
+    @State private var pendingCode: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -26,7 +28,7 @@ struct CodeRegisterRow: View {
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                 Button {
                     if isSharedMember, let groupId = currentGroup?.id {
-                        pendingDialog = .leave(groupId)
+                        leaveGroupId = groupId
                     } else {
                         showCodeInputs = true
                     }
@@ -44,74 +46,86 @@ struct CodeRegisterRow: View {
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
 
-                codeInputSection(
-                    title: "초대 코드",
-                    placeholder: "INV-XXXX-XXXX-XXXX",
-                    text: Binding(
-                        get: { inviteCodeDraft },
-                        set: { inviteCodeDraft = normalizedCode($0, maxLength: 18) }
-                    ),
-                    submitLabel: "참여"
-                )
-
-                codeInputSection(
-                    title: "이용권 코드",
-                    placeholder: "GIFT-XXXX-XXXX-XXXX",
-                    text: Binding(
-                        get: { voucherCodeDraft },
-                        set: { voucherCodeDraft = normalizedCode($0, maxLength: 19) }
-                    ),
-                    submitLabel: "등록"
-                )
+                // ⚠ **입력창은 하나다.** 예전에는 '초대 코드'(INV-…)와 '이용권 코드'(GIFT-…)로
+                // 나뉘어 있었는데, 서버는 처음부터 통합 엔드포인트(`POST /code/register`)로
+                // 바우처·가족 초대·프로모를 **한 번에 판별**한다. 칸을 나누면 두 가지가 깨진다:
+                //   1. **프로모션 코드가 갈 곳이 없다.** 어느 칸에 넣어야 하는지 화면이
+                //      말해 주지 않고, 라벨은 오히려 "둘 중 하나여야 한다" 고 오해시킨다.
+                //   2. 받는 사람은 자기 코드가 어떤 종류인지 모른다 — 그건 서버가 안다.
+                // 안드로이드는 이미 한 칸으로 합쳐 두었다(`ui/social/SocialPanels.kt` 의
+                // "통합 입력" 주석과 `CodeRedeemField`). iOS 만 옛 2칸으로 남아 있었다.
+                Text("코드 입력")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AlarmTalkTheme.text)
+                Text("초대 코드, 이용권 선물 코드, 프로모션 코드 모두 등록할 수 있어요.")
+                    .font(.footnote)
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                HStack(spacing: 8) {
+                    TextField("초대·선물·프로모션 코드", text: Binding(
+                        get: { codeDraft },
+                        set: { codeDraft = InputSanitizer.sanitizeRedeemCode($0) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    Button("등록") {
+                        pendingCode = codeDraft
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AlarmTalkTheme.primary)
+                    .foregroundStyle(.white)
+                    .disabled(
+                        codeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                            socialFeatures.isBusy
+                    )
+                }
             }
         }
-        .sheet(item: $pendingDialog) { dialog in
-            switch dialog {
-            case .leave(let groupId):
-                CodeRegisterConfirmSheet(
-                    title: "현재 이용권 나가고 새 코드 등록",
-                    description: "현재 이용권에서 나가고 새 코드를 등록할까요?",
-                    confirmLabel: "나가고 등록하기",
-                    destructive: true,
-                    onDismiss: { pendingDialog = nil },
-                    onConfirm: {
-                        pendingDialog = nil
-                        showCodeInputs = true
-                        Task {
-                            await socialFeatures.leaveFamilyGroup(
-                                groupId: groupId,
-                                session: auth.session
-                            )
-                            await auth.refreshUser()
-                        }
+        // ⚠ **확인은 시스템 알럿으로 낸다.** 예전에는 하프 시트(`presentationDetents([.medium])`)
+        // 였는데, 그 껍데기는 제목 옆에 X 를 따로 두어 '닫기' 와 '취소' 가 같은 일을 하는
+        // 버튼 둘이 됐다(CLAUDE.md 「모달」 — 취소와 같은 일을 하는 버튼을 두 개 두지 않는다).
+        // 다른 확인형 모달은 이미 전부 `.alert` 로 통일돼 있었고 여기만 남아 있었다.
+        .alert(
+            "현재 이용권에서 나가고 새 코드를 등록할까요?",
+            isPresented: Binding(
+                get: { leaveGroupId != nil },
+                set: { if !$0 { leaveGroupId = nil } }
+            ),
+            presenting: leaveGroupId
+        ) { groupId in
+            Button("취소", role: .cancel) { leaveGroupId = nil }
+            Button("나가고 등록하기", role: .destructive) {
+                leaveGroupId = nil
+                showCodeInputs = true
+                Task {
+                    await socialFeatures.leaveFamilyGroup(groupId: groupId, session: auth.session)
+                    await auth.refreshUser()
+                }
+            }
+        }
+        .alert(
+            "이 코드를 등록할까요?",
+            isPresented: Binding(
+                get: { pendingCode != nil },
+                set: { if !$0 { pendingCode = nil } }
+            ),
+            presenting: pendingCode
+        ) { code in
+            Button("취소", role: .cancel) { pendingCode = nil }
+            Button("등록") {
+                pendingCode = nil
+                codeDraft = ""
+                Task {
+                    if let destination = await socialFeatures.registerCode(code, session: auth.session) {
+                        await auth.refreshUser()
+                        await MainActor.run { onCodeRegistered(destination) }
                     }
-                )
-                .presentationDetents([.medium])
-            case .register(let code):
-                CodeRegisterConfirmSheet(
-                    title: "코드 등록",
-                    description: registerDescription,
-                    confirmLabel: "등록",
-                    destructive: false,
-                    onDismiss: { pendingDialog = nil },
-                    onConfirm: {
-                        pendingDialog = nil
-                        inviteCodeDraft = ""
-                        voucherCodeDraft = ""
-                        Task {
-                            if let destination = await socialFeatures.registerCode(
-                                code,
-                                session: auth.session
-                            ) {
-                                await auth.refreshUser()
-                                await MainActor.run {
-                                    onCodeRegistered(destination)
-                                }
-                            }
-                        }
-                    }
-                )
-                .presentationDetents([.medium])
+                }
+            }
+        } message: { _ in
+            // 이용권을 쓰는 중일 때만 부가 설명이 붙는다(안드로이드와 같다).
+            if hasActivePlan {
+                Text("등록 가능한 코드라면 현재 \(activePlanName ?? "이용권") 이용권은 종료되고 새 이용권으로 바뀌어요.")
             }
         }
     }
@@ -140,122 +154,8 @@ struct CodeRegisterRow: View {
         activePlanName != nil
     }
 
-    private var registerDescription: String {
-        if hasActivePlan {
-            return "등록 가능한 코드라면 현재 \(activePlanName ?? "이용권") 이용권은 종료되고 새 이용권으로 바뀌어요. 등록할까요?"
-        }
-        return "이 코드를 등록할까요?"
-    }
-
-    private func codeInputSection(
-        title: String,
-        placeholder: String,
-        text: Binding<String>,
-        submitLabel: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AlarmTalkTheme.text)
-            HStack(spacing: 8) {
-                TextField(placeholder, text: text)
-                    .textFieldStyle(.roundedBorder)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                Button {
-                    pendingDialog = .register(text.wrappedValue)
-                } label: {
-                    Text(submitLabel)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AlarmTalkTheme.primary)
-                .foregroundStyle(AlarmTalkTheme.text)
-                .disabled(
-                    text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                        socialFeatures.isBusy
-                )
-            }
-        }
-    }
 }
 
-private enum CodeRegisterDialog: Identifiable, Equatable {
-    case leave(String)
-    case register(String)
-
-    var id: String {
-        switch self {
-        case .leave(let groupId): return "leave-\(groupId)"
-        case .register(let code): return "register-\(code)"
-        }
-    }
-}
-
-private struct CodeRegisterConfirmSheet: View {
-    let title: String
-    let description: String
-    let confirmLabel: String
-    let destructive: Bool
-    let onDismiss: () -> Void
-    let onConfirm: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title)
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(AlarmTalkTheme.text)
-                    Text(description)
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(8)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("닫기")
-            }
-
-            if destructive {
-                Button(role: .destructive, action: onConfirm) {
-                    Text(confirmLabel)
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AlarmTalkTheme.error)
-                .foregroundStyle(.white)
-            } else {
-                Button(action: onConfirm) {
-                    Text(confirmLabel)
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AlarmTalkTheme.primary)
-                .foregroundStyle(.white)
-            }
-        }
-        .padding(20)
-        .background(AlarmTalkTheme.background)
-    }
-}
-
-private func normalizedCode(_ value: String, maxLength: Int) -> String {
-    String(
-        value
-            .uppercased()
-            .filter { $0.isLetter || $0.isNumber || $0 == "-" }
-            .prefix(maxLength)
-    )
-}
 
 private func codeRegisterPlanName(_ planKey: String?) -> String {
     switch planKey {

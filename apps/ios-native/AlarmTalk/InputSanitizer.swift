@@ -132,7 +132,9 @@ extension InputSanitizer {
     /// 대문자·영숫자·하이픈만 남긴다 — 코드는 사람이 옮겨 적는 값이라 눈에 안 보이는
     /// 공백·제로폭이 섞이면 "맞게 넣었는데 안 된다" 가 된다.
     static func sanitizeRedeemCode(_ raw: String) -> String {
-        String(sanitizeUserText(raw).uppercased().filter { $0.isLetter || $0.isNumber || $0 == "-" })
+        // ⚠ 밑줄(`_`)도 남긴다 — 안드로이드 `sanitizeRedeemCode` 가 허용하는데 여기서만
+        // 지우면 밑줄이 든 프로모 코드가 **조용히 다른 코드가 되어** 등록에 실패한다.
+        String(sanitizeUserText(raw).uppercased().filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
             .prefix(64)
             .description
     }
