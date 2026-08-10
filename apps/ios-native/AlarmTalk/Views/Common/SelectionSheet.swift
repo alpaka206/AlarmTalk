@@ -24,6 +24,26 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
     let onSelect: (Item) -> Void
     @ViewBuilder let label: (Item) -> Label
 
+    /// 내용 높이만큼의 detent. 목록이 길면 화면을 넘지 않게 큰 detent 도 함께 준다.
+    private var detents: Set<PresentationDetent> {
+        // ⚠ **이 값들은 계산이 아니라 실측이다.** 처음에는 구성요소를 더해서 잡았는데
+        // (핸들+제목+간격+안전영역) 시트가 필요한 높이보다 90~110pt 더 커져 아래가 비었다
+        // — `.height()` 가 안전영역을 어떻게 먹는지, 시트가 최소 높이를 어떻게 잡는지가
+        // 예상과 달라서다. 시뮬레이터에서 실제로 그려진 값을 재서 넣었다(2026-08-10).
+        //   목록 위(드래그 핸들~첫 행) 62 / 행 55 / 아래는 홈 인디케이터 영역이
+        //   시트에 이미 포함돼 있어 따로 더하지 않는다 — 더하면 그만큼 빈다.
+        let chrome: CGFloat = 40
+        let rows = CGFloat(items.count) * rowHeight
+        let fitted = chrome + rows
+        // 화면의 85% 를 넘으면 그 이상은 스크롤로 본다.
+        let cap = UIScreen.main.bounds.height * 0.85
+        return fitted <= cap ? [.height(fitted)] : [.height(cap), .large]
+    }
+
+    /// 행 하나의 높이(안드로이드 `WakerSheetOptionRow` 의 최소 높이와 같다).
+    /// (제네릭 타입이라 `static let` 을 둘 수 없어 계산 프로퍼티로 둔다.)
+    private var rowHeight: CGFloat { 55 }
+
     var body: some View {
         // ⚠ **제목은 `NavigationStack` + 인라인 타이틀이 아니라 왼쪽 정렬 큰 제목이다.**
         // 안드로이드 `WakerSelectionSheet` 는 드래그 핸들 아래에 좌측 정렬 `titleLarge`
@@ -63,9 +83,13 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
                             // `heightIn(min = 56.dp)` 와 같은 값이다. 예전 주석은 "안드로이드
                             // 행과 같은 52" 라고 적었는데 **안드로이드는 52였던 적이 없다.**
                             // 큰 글꼴에서는 이보다 늘어난다.
-                            .frame(minHeight: 56)
                             .padding(.horizontal, 20)
+                            // ⚠ **패딩을 먼저, 그다음 최소 높이.** 안드로이드
+                            // `WakerSheetOptionRow` 는 `heightIn(min = 56.dp)` 안에
+                            // `padding(vertical = 10.dp)` 를 **포함**한다. 순서를 뒤집으면
+                            // 56 + 20 = 76 이 되어 행이 안드로이드보다 20 이나 높아진다.
                             .padding(.vertical, 10)
+                            .frame(minHeight: rowHeight)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -73,10 +97,14 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
                 }
             }
         }
-        .padding(.bottom, 20)
+        .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.palette.surface)
         // 드래그 핸들은 시스템이 그린다(안드로이드는 `WakerSheetDragHandle` 로 직접 그린다).
         .presentationDragIndicator(.visible)
+        // ⚠ **`.medium` 같은 고정 높이를 호출부에서 주지 말 것.** 안드로이드
+        // `ModalBottomSheet` 는 내용 높이만큼만 올라온다 — 항목 3개짜리 시트가 반 화면을
+        // 차지하면 아래가 통째로 빈다(2026-08-10 지적). 여기서 내용 높이를 계산해 잡는다.
+        .presentationDetents(detents)
     }
 }

@@ -137,7 +137,7 @@ struct EditorActionBar: View {
                 Text("취소")
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .frame(maxWidth: .infinity, minHeight: 30)
             }
             .font(theme.typography.titleMedium)
             .buttonStyle(.bordered)
@@ -160,20 +160,21 @@ struct EditorActionBar: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 40)
+                    .frame(maxWidth: .infinity, minHeight: 30)
                 } else {
                     // ⚠ 아이콘을 붙이지 않는다 — 안드로이드는 글자만이고, 캘린더 아이콘은
                     // '일정에 추가' 라는 다른 동작을 연상시킨다.
                     Text(saveTitle)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .frame(maxWidth: .infinity, minHeight: 30)
                 }
             }
-            // ⚠ **라벨 높이는 40 이다(52 아님).** `.bordered*` 스타일이 라벨 **바깥에**
-            // 제 패딩을 더하므로 실제로 그려지는 높이는 그보다 약 14 크다 — 52 로 두면
-            // 66pt 짜리 버튼이 되어 하단이 답답했다(2026-08-10 지적). 40 이면 약 54pt 로,
-            // iOS 최소 터치 타깃(44)을 넘기면서 안드로이드 Material Button(40dp)과도 가깝다.
+            // ⚠ **라벨 높이는 30 이다(52·40 아님).** `.bordered*` 스타일이 라벨 **바깥에**
+            // 제 패딩을 더하므로 실제로 그려지는 높이는 그보다 약 14 크다 — 실측으로
+            // 52 → 66pt, 40 → 54pt 였다. 안드로이드 Material Button 이 **40dp** 라
+            // 거기에 맞추려고 30 으로 둔다(≈44pt, iOS 최소 터치 타깃과 같다).
+            // (2026-08-10 "버튼 크기는 안드로이드 정도가 젤 적당해 보인다")
             // ⚠ 두 버튼의 값은 **항상 같아야 한다** — 다르면 취소·저장 높이가 어긋난다.
             // ⚠ 바깥에 `.frame(minHeight:)` 를 붙이지 않는다 — 위 주석이 말한 그대로,
             // `.buttonStyle` 뒤 프레임은 **버튼이 아니라 그 바깥 상자**만 키운다.

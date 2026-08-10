@@ -99,7 +99,7 @@ struct MenuView: View {
                     themeDialogOpen = false
                 }
             )
-            .presentationDetents([.medium])
+            // 높이는 `SelectionSheet` 가 내용에 맞춰 잡는다(위 주석 참조).
         }
         // 30일 유예 탈퇴. 즉시 삭제가 아니라는 것을 문구가 분명히 말해야 한다.
         .alert("정말 탈퇴할까요?", isPresented: $deleteConfirming) {

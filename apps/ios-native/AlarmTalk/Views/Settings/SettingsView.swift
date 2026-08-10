@@ -169,7 +169,8 @@ struct SettingsView: View {
                     holidayDialogOpen = false
                 }
             )
-            .presentationDetents([.medium])
+            // 높이는 `SelectionSheet` 가 내용에 맞춰 잡는다 — 여기서 `.medium` 을 주면
+            // 항목 3개짜리 시트가 반 화면을 차지해 아래가 빈다.
         }
     }
 
