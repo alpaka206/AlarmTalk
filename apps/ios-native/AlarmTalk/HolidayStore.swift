@@ -185,7 +185,10 @@ enum LocalHolidayCalendar {
 final class HolidayStore: ObservableObject {
     nonisolated static let defaultCountryCode = "KR"
     /// Phase 2: 지원 국가는 정확히 이 5개. (EU/GB 없음.)
-    nonisolated static let supportedCountryCodes = ["KR", "JP", "US", "VN", "CN"]
+    /// ⚠ **베트남·중국은 뺐다(2026-08-10).** 목록에서만 감추는 것이라, 이미 그 값을 고른
+    /// 계정은 저장된 코드를 그대로 들고 있을 수 있다 — `localizedCountryName` 은 계속
+    /// 그 코드를 이름으로 풀 수 있어야 하고, 선택 UI 에만 안 나온다.
+    nonisolated static let supportedCountryCodes = ["KR", "JP", "US"]
 
     /// UserDefaults 키 — 앱 전역 단일 국가 설정.
     nonisolated static let countryDefaultsKey = "holiday.selectedCountryCode"

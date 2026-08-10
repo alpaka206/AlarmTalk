@@ -35,7 +35,12 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(theme.palette.onSurface)
                 .padding(.horizontal, 20)
-                .padding(.top, 4)
+                // ⚠ **위 여백을 4 로 줄이지 말 것 — 드래그 핸들과 붙어 제목이 잘려 보인다.**
+                // 시스템 드래그 인디케이터가 시트 맨 위에 그려지는데, 4 만 두면 그 바로
+                // 아래에 22pt 굵은 제목이 닿는다(2026-08-10 지적 "모달 위에 여백이 없어
+                // 잘리려고 한다"). 안드로이드는 핸들이 위 12 + 아래 10 을 갖고 그 뒤에
+                // 제목이 온다 — 같은 간격이 되도록 18 을 준다.
+                .padding(.top, 18)
 
             ScrollView {
                 LazyVStack(spacing: 0) {
