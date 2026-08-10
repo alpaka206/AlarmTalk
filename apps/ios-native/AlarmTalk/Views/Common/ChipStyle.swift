@@ -5,6 +5,9 @@ import SwiftUI
 /// ContentView 의 `permissionPill(_:)` 헬퍼를 옮긴 것. 알람 권한 라벨,
 /// 가족 그룹 역할, 구독 만료일 등 다양한 컨텍스트에서 동일 스타일을 쓴다.
 struct PermissionPill: View {
+    // ⚠ **`LocalizedStringKey` 로 바꾸지 말 것.** 실제 호출부(`PeoplePanel`)가 넘기는 값은
+    // 서버가 준 역할 문자열을 그대로 흘릴 수 있어서(알 수 없는 role 은 원문 표시),
+    // 키로 받으면 서버 값을 카탈로그에서 조회하게 된다. 번역은 넘기는 쪽 책임이다.
     let text: String
 
     var body: some View {
@@ -22,15 +25,15 @@ struct PermissionPill: View {
 /// ContentView 의 `screenHeader(title:subtitle:)` 를 옮긴 것.
 /// 음성/알람/메시지 등 일반 탭과 보조 시트 모두에서 동일 스타일을 쓴다.
 struct ScreenHeader: View {
-    let title: String
-    var subtitle: String? = nil
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(AlarmTalkTheme.text)
-            if let subtitle, !subtitle.isEmpty {
+            if let subtitle {
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)

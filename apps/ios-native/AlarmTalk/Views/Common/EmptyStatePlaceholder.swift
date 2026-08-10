@@ -6,9 +6,10 @@ import SwiftUI
 /// 알람·음성·메시지·가족 그룹 등 거의 모든 빈 상태에서 같은 스타일을 쓰므로
 /// 공통 컴포넌트로 분리했다.
 struct EmptyStatePlaceholder: View {
-    let title: String
+    // 라벨은 `LocalizedStringKey` — `String` 이면 번역이 죽는다(`GradientCta.title` 주석).
+    let title: LocalizedStringKey
     /// 없으면 제목만 그린다.
-    var subtitle: String = ""
+    var subtitle: LocalizedStringKey? = nil
     /// 아이콘이 없다고 맨 회색 한 줄을 따로 만들지 말 것 — 그렇게 갈라져서
     /// **같은 카드 안에** 아이콘 있는 빈 상태와 없는 빈 상태가 나란히 보였다.
     var icon: String? = nil
@@ -23,7 +24,7 @@ struct EmptyStatePlaceholder: View {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AlarmTalkTheme.text)
-            if !subtitle.isEmpty {
+            if let subtitle {
                 Text(subtitle)
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)

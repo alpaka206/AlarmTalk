@@ -38,14 +38,19 @@ final class WeatherLocationProvider: NSObject, ObservableObject, CLLocationManag
     func resolveCurrentLocation() async -> WeatherLocationFix? {
         guard !isBusy else { return nil }
         isBusy = true
-        statusMessage = "현재 위치를 가져오는 중..."
+        // ⚠ **리터럴을 두 번 적어 비교하지 말 것.** 아래에서 "아직 아무도 사유를 안 채웠다"
+        // 를 이 문구와의 일치로 판정하는데, 번역되면 두 리터럴이 서로 다른 언어로 풀려
+        // 비교가 영영 false 가 된다(= 실패했는데 '가져오는 중...' 이 남는다).
+        // 같은 상수를 양쪽에서 쓴다.
+        let progressMessage = String(localized: "현재 위치를 가져오는 중...")
+        statusMessage = progressMessage
         defer { isBusy = false }
 
         guard let location = await requestLocation() else {
             // requestLocation 내부에서 사유별 안내를 이미 채웠다면 그대로 두고,
             // 안내가 비어 있는 경로(예: 좌표 nil)만 일반 실패 문구로 보강한다.
-            if statusMessage == nil || statusMessage == "현재 위치를 가져오는 중..." {
-                statusMessage = "위치를 가져오지 못했어요. 위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요."
+            if statusMessage == nil || statusMessage == progressMessage {
+                statusMessage = String(localized: "위치를 가져오지 못했어요. 위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요.")
             }
             return nil
         }

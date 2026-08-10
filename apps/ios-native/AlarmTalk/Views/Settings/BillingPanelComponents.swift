@@ -225,7 +225,9 @@ struct PlanCard: View {
                 .multilineTextAlignment(.leading)
 
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(Self.features(for: tier), id: \.self) { feature in
+                // `LocalizedStringKey` 는 Hashable 이 아니라 `id: \.self` 를 못 쓴다.
+                // 목록이 고정 순서라 인덱스를 id 로 삼아도 안전하다.
+                ForEach(Array(Self.features(for: tier).enumerated()), id: \.offset) { _, feature in
                     PlanFeatureRow(text: feature)
                 }
             }
@@ -353,7 +355,7 @@ struct PlanCard: View {
     /// 주석은 "1:1" 이라고 적혀 있었지만 실제로는 아니었다 — 같은 상품을 두 스토어에서
     /// **다르게 설명**하고 있었고, 커플 카드의 '개인 이용권 기능 전부 포함' 은 아예 빠져
     /// 있어 왜 더 비싼지 알 수 없었다.
-    private static func features(for tier: PlanTier) -> [String] {
+    private static func features(for tier: PlanTier) -> [LocalizedStringKey] {
         switch tier {
         case .free:
             return ["일반 알람 무제한", "기본 목소리 알람"]
@@ -371,7 +373,7 @@ struct PlanCard: View {
 /// (BillingPanels.kt:663-680): 6dp primary 점 + bodyMedium onSurfaceVariant 텍스트.
 struct PlanFeatureRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    let text: String
+    let text: LocalizedStringKey
 
     var body: some View {
         HStack(spacing: 8) {

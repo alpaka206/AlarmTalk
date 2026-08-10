@@ -339,16 +339,26 @@ final class AuthViewModel: ObservableObject {
     // MARK: - Phase 3-C3: 이메일/비밀번호 + 인증코드
 
     /// 이메일 인증 코드를 발송한다. UI 는 statusMessage 를 받아 상태 메시지로 노출.
-    func requestEmailVerification(email: String) async {
-        guard !isBusy, !email.isEmpty else { return }
+    /// 인증 코드를 보낸다. **성공하면 true** — 호출부는 이 값으로 다음 단계를 연다.
+    ///
+    /// ⚠ **반환값을 없애고 `statusMessage` 를 비교하는 방식으로 되돌리지 말 것.**
+    /// 예전에는 호출부가 `auth.statusMessage == "인증 코드를 보냈어요…"` 로 성공을
+    /// 판정했다. 사용자에게 보여 주는 **문장**을 제어 신호로 쓴 것이라, 문구를 다듬거나
+    /// 번역하는 순간(en/ja 기기에서는 영어·일본어가 들어온다) 비교가 어긋나 코드 입력칸이
+    /// 영영 안 열린다. 형제 함수 `verifyEmailCode` 는 이미 Bool 을 돌려준다.
+    @discardableResult
+    func requestEmailVerification(email: String) async -> Bool {
+        guard !isBusy, !email.isEmpty else { return false }
         isBusy = true
         defer { isBusy = false }
 
         do {
             _ = try await AlarmTalkAPI.shared.requestEmailVerification(email: email)
-            statusMessage = "인증 코드를 보냈어요. 메일을 확인해 주세요."
+            statusMessage = String(localized: "인증 코드를 보냈어요. 메일을 확인해 주세요.")
+            return true
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요"))
+            failStatus(userFacingErrorMessage(error, fallback: String(localized: "인증 코드를 보내지 못했어요")))
+            return false
         }
     }
 

@@ -233,8 +233,13 @@ struct ConsentView: View {
 private struct ConsentRow: View {
     let checked: Bool
     let onToggle: () -> Void
+    // ⚠ **여기만 `String` 이다 — 다른 컴포넌트를 따라 `LocalizedStringKey` 로 바꾸지 말 것.**
+    // 동의 항목 라벨은 `"[필수] " + "이용약관 동의"` 처럼 **런타임에 결합**되므로 리터럴
+    // 키가 될 수 없다. 대신 카탈로그가 **합쳐진 전체 문자열**을 키로 갖고 있어서
+    // (`"[필수] 이용약관 동의"` → `"[Required] Agree to Terms of Service"`),
+    // 결합한 결과를 `LocalizedStringKey` 로 감싸면 그대로 조회된다.
     let label: String
-    var description: String? = nil
+    var description: LocalizedStringKey? = nil
     var emphasized: Bool = false
     var onOpenDetail: (() -> Void)? = nil
 
@@ -246,7 +251,7 @@ private struct ConsentRow: View {
                         .font(.title3)
                         .foregroundStyle(checked ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(label)
+                        Text(LocalizedStringKey(label))
                             .font(emphasized ? .body.weight(.bold) : .body)
                             .foregroundStyle(AlarmTalkTheme.text)
                             .multilineTextAlignment(.leading)

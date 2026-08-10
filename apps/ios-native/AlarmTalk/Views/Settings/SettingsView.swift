@@ -226,7 +226,7 @@ struct SettingsView: View {
 struct SettingsValueButton: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
-    let label: String
+    let label: LocalizedStringKey
     var value: String? = nil
     let action: () -> Void
 
@@ -415,8 +415,8 @@ private struct FortuneInfoPreferenceSheet: View {
 }
 
 private struct SettingsSheetHeader: View {
-    let title: String
-    var subtitle: String? = nil
+    let title: LocalizedStringKey
+    var subtitle: LocalizedStringKey? = nil
     let onDismiss: () -> Void
 
     var body: some View {

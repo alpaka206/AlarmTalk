@@ -41,11 +41,6 @@ struct LoginView: View {
     @State private var pendingRawNonce: String?
     @State private var showPasswordReset = false
 
-    /// `AuthViewModel.requestEmailVerification` 가 발송 성공 시 세팅하는 statusMessage.
-    /// 발송 성공 여부를 view 에서 알 길이 이 메시지뿐이라(메서드가 결과를 반환하지 않음)
-    /// 동일 문구로 성공을 판별한다. VM 문구가 바뀌면 함께 맞춰야 한다.
-    private static let verificationCodeSentMessage = "인증 코드를 보냈어요. 메일을 확인해 주세요."
-
     init(initialMode: LoginMode) {
         self.initialMode = initialMode
         _mode = State(initialValue: initialMode)
@@ -246,16 +241,17 @@ struct LoginView: View {
             enabled: !auth.isBusy && emailLooksValid && !isEmailVerifiedForCurrentInput
         ) {
             Task {
-                await auth.requestEmailVerification(email: normalizedEmail)
                 // 발송이 성공했을 때만 코드 입력 단계를 노출한다. 중복 이메일(AUTH_EMAIL_TAKEN)
                 // 등으로 발송이 실패하면 verificationSent 가 켜지지 않아 6자리 코드 입력칸이
                 // 뜨지 않는다. Android 는 codeSentForEmail 을 발송 성공 시에만 세팅한다.
-                verificationSent = (auth.statusMessage == Self.verificationCodeSentMessage)
+                verificationSent = await auth.requestEmailVerification(email: normalizedEmail)
             }
         }
     }
 
-    private var verificationLabel: String {
+    // 반환형이 `LocalizedStringKey` 여야 세 리터럴이 카탈로그 키로 잡힌다.
+    // `String` 이면 버튼이 `Text(변수)` 로 그려져 en/ja 기기에서 한국어가 그대로 뜬다.
+    private var verificationLabel: LocalizedStringKey {
         if isEmailVerifiedForCurrentInput { return "이메일 인증 완료" }
         if verificationSent { return "인증 코드 다시 받기" }
         return "이메일 인증"
@@ -466,7 +462,8 @@ enum LoginMode: Hashable, Identifiable {
 
 struct VocaTextField: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    let title: String
+    // 라벨은 `LocalizedStringKey` — `String` 이면 번역이 죽는다(`GradientCta.title` 주석).
+    let title: LocalizedStringKey
     @Binding var text: String
     var keyboardType: UIKeyboardType = .default
     var submitLabel: SubmitLabel = .next
@@ -502,7 +499,8 @@ struct VocaTextField: View {
 
 struct VocaSecureField: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    let title: String
+    // 라벨은 `LocalizedStringKey` — `String` 이면 번역이 죽는다(`GradientCta.title` 주석).
+    let title: LocalizedStringKey
     @Binding var text: String
     @Binding var isVisible: Bool
     var enabled: Bool = true
@@ -552,7 +550,7 @@ struct VocaSecureField: View {
 
 private struct RuleRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    let text: String
+    let text: LocalizedStringKey
     let satisfied: Bool
 
     var body: some View {

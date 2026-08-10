@@ -330,7 +330,7 @@ struct MemberManagementView: View {
 /// (`social_allow_partner_alarm`/`_couple`). 제목이 다 말하므로 설명 줄은 두지 않는다.
 private struct FamilyAlarmPermissionCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    let title: String
+    let title: LocalizedStringKey
     let allowFamilyAlarms: Bool
     let quietWindows: [FamilyAlarmQuietWindow]
     let isBusy: Bool

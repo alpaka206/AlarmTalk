@@ -115,7 +115,10 @@ struct SnoozeSettingsPane: View {
     }
 
     static func repeatLabel(_ value: Int) -> String {
-        value == 0 ? "무제한" : "\(value)회"
+        // ⚠ 여기서 `String(localized:)` 로 **미리** 번역해 둔다. `RadioRow` 는 이미
+        // 번역된 문자열(진동 `displayName` 등)도 받으므로 라벨을 `LocalizedStringKey`
+        // 로 받을 수 없다 — 그러면 번역 결과를 한 번 더 조회하게 된다.
+        value == 0 ? String(localized: "무제한") : String(localized: "\(value)회")
     }
 }
 
@@ -262,6 +265,9 @@ struct VoiceOutputSettingsPane: View {
 // MARK: - 공용 라디오 행
 
 struct RadioRow: View {
+    // ⚠ **`LocalizedStringKey` 로 바꾸지 말 것.** 이 행은 진동 `displayName` 처럼
+    // **이미 번역된** 문자열도 받는다 — 키로 받으면 번역 결과를 한 번 더 조회한다.
+    // 라벨은 넘기는 쪽에서 `String(localized:)` 로 확정해 온다.
     @Environment(\.voiceAlarmTheme) private var theme
     let label: String
     let selected: Bool

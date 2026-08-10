@@ -655,9 +655,10 @@ struct AlarmEditorSheet: View {
     /// 알 수 없다(안드로이드 fontScale 1.8 실기기 확인).
     var saveButtonTitle: String {
         if target.familyAlarmMode, let name = (selectedFamilyRecipient?.name).nilIfBlank {
-            return "저장 · \(name)"
+            // 받는 사람 이름은 사용자 데이터다 — 동사만 번역해서 붙인다.
+            return "\(String(localized: "저장")) · \(name)"
         }
-        return target.editingAlarmID == nil ? "저장" : "수정 저장"
+        return target.editingAlarmID == nil ? String(localized: "저장") : String(localized: "수정 저장")
     }
 
     /// 알람음 on/off 바인딩 (Android `AlarmSettingsCard.kt:162-165`). 켜면 100%, 끄면 0%

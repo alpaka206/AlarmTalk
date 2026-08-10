@@ -11,7 +11,12 @@ import SwiftUI
 struct GradientCta: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
-    let title: String
+    // ⚠ **`String` 으로 되돌리지 말 것 — 번역이 죽는다.**
+    // SwiftUI 는 `Text("리터럴")` 만 String Catalog 키로 잡고, `Text(변수)` 는
+    // 로컬라이즈하지 않는다. 라벨을 `String` 으로 받으면 호출부가 리터럴을 줘도
+    // 여기서 변수가 되어 카탈로그를 못 탄다 — 실제로 en 기기 로그인 화면이
+    // 제목·부제만 영어고 **버튼은 '로그인' 인 채**였다(2026-08-10 시뮬레이터 확인).
+    let title: LocalizedStringKey
     var enabled: Bool = true
     var loading: Bool = false
     let action: () -> Void
@@ -52,7 +57,8 @@ struct GradientCta: View {
 struct AuthOutlinedButton: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
-    let title: String
+    // 라벨은 `LocalizedStringKey` — 이유는 위 `GradientCta.title` 주석 참조.
+    let title: LocalizedStringKey
     var enabled: Bool = true
     let action: () -> Void
 

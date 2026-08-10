@@ -182,7 +182,7 @@ private struct ConsentSectionCard<Content: View>: View {
 
 private struct ConsentRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    let label: String
+    let label: LocalizedStringKey
     let record: ConsentRecord?
     let onOpen: (() -> Void)?
     var onWithdraw: (() -> Void)?
@@ -253,7 +253,7 @@ private struct ConsentRow: View {
 /// 동의 이력 행과 같은 레이아웃이되, 우측이 날짜·화살표 대신 스위치다(선택 동의 켜고 끄기).
 private struct ConsentToggleRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    let label: String
+    let label: LocalizedStringKey
     /// nil = 아직 못 읽음. **false 로 뭉뚱그리지 말 것** — 안 읽힌 값을 '거절' 로 그리면
     /// 동의해 둔 사람에게 꺼진 스위치를 보여주게 된다.
     let agreed: Bool?

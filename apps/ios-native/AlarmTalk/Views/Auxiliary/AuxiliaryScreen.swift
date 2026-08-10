@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// 본 메인 탭 3개 외에 시트로 띄우는 보조 화면들의 식별자.
 ///
@@ -11,7 +12,9 @@ enum AuxiliaryScreen: String, Identifiable {
 
     var id: String { rawValue }
 
-    var title: String {
+    // 반환형이 `LocalizedStringKey` 여야 세 리터럴이 카탈로그 키로 잡힌다
+    // (`String` 이면 `Text(변수)` 로 그려져 번역이 죽는다 — `GradientCta.title` 주석).
+    var title: LocalizedStringKey {
         switch self {
         case .people: return "코드 등록"
         case .members: return "공유 이용권"

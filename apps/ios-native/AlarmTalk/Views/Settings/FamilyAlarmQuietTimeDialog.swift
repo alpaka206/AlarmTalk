@@ -337,7 +337,7 @@ private struct QuietWindowCard: View {
 
 /// 단순 시:분 픽커. SwiftUI `DatePicker(.wheel)` 의 hour/minute 만 사용.
 private struct QuietTimePicker: View {
-    let title: String
+    let title: LocalizedStringKey
     let initialHour: Int
     let initialMinute: Int
     let onCancel: () -> Void

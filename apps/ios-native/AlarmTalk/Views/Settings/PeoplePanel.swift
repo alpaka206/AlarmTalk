@@ -95,11 +95,12 @@ private func sharedPassRoleLabel(_ role: String?) -> String {
     let trimmed = role?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     switch trimmed {
     case "owner":
-        return "관리자"
+        return String(localized: "관리자")
     case "member":
-        return "구성원"
+        return String(localized: "구성원")
     default:
-        return trimmed.isEmpty ? "구성원" : trimmed
+        // 알 수 없는 role 은 서버 원문 그대로 — 번역 대상이 아니다.
+        return trimmed.isEmpty ? String(localized: "구성원") : trimmed
     }
 }
 

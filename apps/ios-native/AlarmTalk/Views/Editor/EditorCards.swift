@@ -3,7 +3,7 @@ import SwiftUI
 /// 편집기 섹션 제목 — 카드 **밖** 위쪽. 안드로이드 `EditorSectionTitle`.
 struct EditorSectionTitle: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    let text: String
+    let text: LocalizedStringKey
 
     var body: some View {
         Text(text)
@@ -119,9 +119,12 @@ struct AlarmSettingDivider: View {
 struct EditorActionBar: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
+    // ⚠ **`saveTitle` 만 `String` 이다.** 가족 알람일 때 "저장 · <받는 사람 이름>" 처럼
+    // **사용자 데이터가 섞이므로** 키가 될 수 없다 — 번역은 넘기는 쪽(`saveButtonTitle`)이
+    // `String(localized:)` 로 끝내 온다. `savingLabel` 은 항상 리터럴이라 키로 받는다.
     let saveTitle: String
     let saving: Bool
-    let savingLabel: String
+    let savingLabel: LocalizedStringKey
     let saveEnabled: Bool
     let onCancel: () -> Void
     let onSave: () -> Void
