@@ -3,6 +3,8 @@ package com.alarmtalk.app
 import android.util.Patterns
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,7 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Visibility
@@ -68,6 +70,9 @@ internal val AuthTextMuted = Color(0x99FFFFFF)
 // 라이트 테마 기기에서도 남색 배경 위에서 안내가 보이도록.
 internal val AuthErrorText = Color(0xFFFFB4AB)
 internal val AuthNoticeText = Color(0xFFA8C8FF)
+// 원형 뒤로가기 버튼 — iOS 로그인 화면과 같은 모양(옅은 채움 + 얇은 테두리).
+private val AuthBackCircleFill = Color(0x1FFFFFFF)
+private val AuthBackCircleStroke = Color(0x5CA6D2FF)
 private val AuthSceneTop = Color(0xFF1A2A52)
 private val AuthSceneBottom = Color(0xFF070C1D)
 
@@ -213,24 +218,30 @@ internal fun AuthScreen(
                 .padding(horizontal = 24.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            // ⚠ **뒤로가기와 제목을 한 줄에 두지 않는다** — iOS 와 같은 구성이다.
+            // 뒤로가기는 원형 버튼으로 위에 따로 두고, 제목은 그 아래 본문 첫 줄로
+            // 크게 세운다(디자인 언어: 제목 = 결론). 한 줄로 붙이면 제목이 앱바 라벨처럼
+            // 작아져, 바로 아래 부제와 위계가 붙어 버린다.
+            // 2026-08-10 결정: 이 화면만은 **iOS 를 원본으로 삼는다**(사용자 지시).
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(AuthBackCircleFill, CircleShape)
+                    .border(1.dp, AuthBackCircleStroke, CircleShape),
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.auth_back),
-                        tint = TextOnScene,
-                    )
-                }
-                Text(
-                    text = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = TextOnScene,
+                Icon(
+                    Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                    contentDescription = stringResource(R.string.auth_back),
+                    tint = TextOnScene,
                 )
             }
+            Text(
+                text = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = TextOnScene,
+            )
             Text(
                 text = if (mode == AuthMode.Login) {
                     stringResource(R.string.auth_subtitle_login)
@@ -513,7 +524,8 @@ internal fun AuthScreen(
                         color = AuthLineSoft,
                     )
                     Text(
-                        text = stringResource(R.string.auth_or),
+                        // iOS 와 같은 문구 — "또는" 은 무엇 사이의 선택인지 말하지 않는다.
+                        text = stringResource(R.string.auth_social_divider),
                         modifier = Modifier.padding(horizontal = 12.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = AuthTextMuted,

@@ -23,6 +23,7 @@
     <string name="auth_email_verify_done">メール認証完了</string>
     <string name="auth_email_verify_resend">認証コードを再送信</string>    <string name="auth_find_password">再設定</string>
     <string name="auth_forgot_password">パスワードをお忘れですか？</string>    <string name="auth_or">または</string>
+    <string name="auth_social_divider">簡単ログイン</string>
     <string name="auth_label_confirm_password">パスワードの確認</string>
     <string name="auth_label_email">メールアドレス</string>
     <string name="auth_reset_title">パスワード再設定</string>

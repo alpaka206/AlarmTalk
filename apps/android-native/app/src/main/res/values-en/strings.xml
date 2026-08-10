@@ -23,6 +23,7 @@
     <string name="auth_email_verify_done">Email verified</string>
     <string name="auth_email_verify_resend">Resend code</string>    <string name="auth_find_password">Reset password</string>
     <string name="auth_forgot_password">Forgot your password?</string>    <string name="auth_or">or</string>
+    <string name="auth_social_divider">Quick sign-in</string>
     <string name="auth_label_confirm_password">Confirm password</string>
     <string name="auth_label_email">Email</string>
     <string name="auth_reset_title">Reset password</string>
