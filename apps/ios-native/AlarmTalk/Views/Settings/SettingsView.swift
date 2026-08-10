@@ -366,8 +366,7 @@ private struct FortuneInfoPreferenceSheet: View {
             .buttonStyle(.borderedProminent)
             .tint(AlarmTalkTheme.primary)
         }
-        .padding(20)
-        .homeGradientBackground()
+        // ⚠ 패딩·배경은 `FormDialog` 가 준다 — 여기서 또 주면 카드 안에 카드가 생긴다.
         .onAppear {
             gender = FortunePromptInputFormat.normalizedGender(initial.fortuneGender)
             birthDate = FortunePromptInputFormat.normalizedBirthDate(initial.fortuneBirthDate)

@@ -191,14 +191,6 @@ struct FortunePromptInputFields: View {
     var submitted: Bool = false
     var helperText: String?
 
-    @State private var datePickerOpen = false
-    @State private var timePickerOpen = false
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8)
-    ]
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if let helperText {
@@ -215,12 +207,25 @@ struct FortunePromptInputFields: View {
             }
 
             fieldSection(title: "생년월일", hasError: submitted && !FortunePromptInputFormat.isValidBirthDate(birthDate)) {
-                selectorButton(
-                    title: birthDate.isEmpty ? "탭하여 생년월일 선택" : FortunePromptInputFormat.birthDateDisplay(birthDate),
-                    placeholder: birthDate.isEmpty,
-                    systemImage: "calendar"
-                ) {
-                    datePickerOpen = true
+                // ⚠ **그래픽 달력 시트로 되돌리지 말 것.** 안드로이드는 연·월·일 드롭다운
+                // 3개다(`ui/editor/AlarmFortuneSettings.kt`). 달력은 1990년처럼 먼 해로 가려면
+                // 여러 번 넘겨야 하고, 무엇보다 같은 입력이 두 앱에서 전혀 다른 화면이었다.
+                HStack(spacing: 8) {
+                    dropdown(display: yearText, isPlaceholder: yearValue == nil) {
+                        ForEach(Self.selectableYears, id: \.self) { year in
+                            Button("\(String(year))년") { setBirth(year: year) }
+                        }
+                    }
+                    dropdown(display: monthText, isPlaceholder: monthValue == nil) {
+                        ForEach(1...12, id: \.self) { month in
+                            Button("\(month)월") { setBirth(month: month) }
+                        }
+                    }
+                    dropdown(display: dayText, isPlaceholder: dayValue == nil) {
+                        ForEach(1...daysInSelectedMonth, id: \.self) { day in
+                            Button("\(day)일") { setBirth(day: day) }
+                        }
+                    }
                 }
             }
 
@@ -229,47 +234,118 @@ struct FortunePromptInputFields: View {
                 subtitle: "정확히 모르면 가까운 시간대나 시간 모름을 골라도 돼요.",
                 hasError: submitted && !FortunePromptInputFormat.isValidBirthTime(birthTime)
             ) {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(FortunePromptInputFormat.timeChoices) { choice in
-                        choiceButton(
-                            label: choice.label,
-                            selected: FortunePromptInputFormat.normalizedBirthTime(birthTime) == choice.value
-                        ) {
-                            birthTime = choice.value
-                        }
-                    }
-                }
-
-                selectorButton(
-                    title: customTimeTitle,
-                    placeholder: birthTime.isEmpty || FortunePromptInputFormat.normalizedBirthTime(birthTime) == FortunePromptInputFormat.unknownTime,
-                    systemImage: "clock"
+                // ⚠ **14개를 펼치지 말 것.** 예전에는 시간대 버튼을 2열 그리드로 전부 펼치고
+                // 그 아래 '정확한 시간 선택' 휠 시트까지 달아서, 카드가 화면을 꽉 채웠다
+                // (2026-08-10 지적). 안드로이드는 드롭다운 **하나**다 — 선택지는 그대로 13종
+                // + 시간 모름이고, 접혀 있을 뿐이다.
+                dropdown(
+                    display: birthTimeText,
+                    isPlaceholder: FortunePromptInputFormat.normalizedBirthTime(birthTime).isEmpty
                 ) {
-                    timePickerOpen = true
+                    ForEach(FortunePromptInputFormat.timeChoices) { choice in
+                        Button(choice.label) { birthTime = choice.value }
+                    }
                 }
             }
         }
         .onAppear(perform: normalizeInitialValues)
-        .sheet(isPresented: $datePickerOpen) {
-            FortuneBirthDatePickerSheet(
-                initialDate: FortunePromptInputFormat.birthDate(from: birthDate),
-                onDismiss: { datePickerOpen = false },
-                onSelect: { date in
-                    birthDate = FortunePromptInputFormat.birthDateString(from: date)
-                    datePickerOpen = false
-                }
+    }
+
+
+    // MARK: - 드롭다운 (안드로이드 ExposedDropdownMenuBox 대응)
+
+    /// 고를 수 있는 연도. 안드로이드와 같은 범위(올해부터 120년 전까지, 최신이 위).
+    static var selectableYears: [Int] {
+        let thisYear = Calendar(identifier: .gregorian).component(.year, from: Date())
+        return Array(stride(from: thisYear, through: thisYear - 120, by: -1))
+    }
+
+    private var birthParts: (year: Int, month: Int, day: Int)? {
+        let v = FortunePromptInputFormat.normalizedBirthDate(birthDate)
+        let p = v.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 3 else { return nil }
+        return (p[0], p[1], p[2])
+    }
+
+    private var yearValue: Int? { birthParts?.year }
+    private var monthValue: Int? { birthParts?.month }
+    private var dayValue: Int? { birthParts?.day }
+
+    private var yearText: String { yearValue.map { "\(String($0))년" } ?? "연도" }
+    private var monthText: String { monthValue.map { "\($0)월" } ?? "월" }
+    private var dayText: String { dayValue.map { "\($0)일" } ?? "일" }
+
+    private var birthTimeText: String {
+        let v = FortunePromptInputFormat.normalizedBirthTime(birthTime)
+        return v.isEmpty ? "선택" : v
+    }
+
+    /// 고른 연·월에 실제로 있는 날 수. ⚠ 윤년을 직접 계산하지 말 것 — `Calendar` 가 안다.
+    private var daysInSelectedMonth: Int {
+        var comps = DateComponents()
+        comps.year = yearValue ?? 2000
+        comps.month = monthValue ?? 1
+        let cal = Calendar(identifier: .gregorian)
+        guard let date = cal.date(from: comps),
+              let range = cal.range(of: .day, in: .month, for: date) else { return 31 }
+        return range.count
+    }
+
+    /// 연·월·일 중 하나만 바꿔 `yyyy-MM-dd` 로 다시 쓴다.
+    ///
+    /// ⚠ **저장 형식을 바꾸지 말 것.** `packages/shared` 의 `fortune.ts` 가 단일 출처이고
+    /// 안드로이드도 같은 문자열을 보낸다 — 컨트롤만 바뀌었지 계약은 그대로다.
+    /// ⚠ 달을 바꿔 그 달에 없는 날이 되면(1/31 → 2월) **말일로 당긴다.** 그냥 두면
+    /// `2-31` 같은 값이 저장돼 서버에서 거절된다.
+    private func setBirth(year: Int? = nil, month: Int? = nil, day: Int? = nil) {
+        let cur = birthParts
+        let y = year ?? cur?.year ?? Calendar(identifier: .gregorian).component(.year, from: Date())
+        let m = month ?? cur?.month ?? 1
+        var comps = DateComponents(); comps.year = y; comps.month = m
+        let cal = Calendar(identifier: .gregorian)
+        let maxDay = cal.date(from: comps).flatMap { cal.range(of: .day, in: .month, for: $0)?.count } ?? 31
+        let d = min(day ?? cur?.day ?? 1, maxDay)
+        birthDate = String(format: "%04d-%02d-%02d", y, m, d)
+    }
+
+    /// 닫힌 상태 껍데기 — 안드로이드 `readOnly OutlinedTextField` + 우측 chevron 과 같다.
+    /// 반경은 `theme.shapes.medium`(18 = `WakerInputShape`).
+    @ViewBuilder
+    private func dropdown<Content: View>(
+        display: String,
+        isPlaceholder: Bool,
+        @ViewBuilder menu: () -> Content
+    ) -> some View {
+        Menu {
+            menu()
+        } label: {
+            HStack(spacing: 6) {
+                Text(display)
+                    .lineLimit(1)
+                    .foregroundStyle(isPlaceholder ? AlarmTalkTheme.textSecondary : AlarmTalkTheme.text)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(AlarmTalkTheme.surfaceVariant.opacity(0.46))
             )
-        }
-        .sheet(isPresented: $timePickerOpen) {
-            FortuneBirthTimePickerSheet(
-                initialTime: FortunePromptInputFormat.timeDate(from: birthTime),
-                onDismiss: { timePickerOpen = false },
-                onSelect: { date in
-                    birthTime = FortunePromptInputFormat.birthTimeString(from: date)
-                    timePickerOpen = false
-                }
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(AlarmTalkTheme.outline, lineWidth: 1)
             )
+            .contentShape(Rectangle())
         }
+        .menuStyle(.borderlessButton)
+        // ⚠ **`layoutPriority` 로 폭 비율을 주지 말 것.** 그건 비율이 아니라 '먼저 자리를
+        // 가져가는 순서'라, 연도가 거의 다 먹고 **월·일은 글자가 안 보일 만큼 찌그러졌다**
+        // (2026-08-10 캡처로 확인). 안드로이드는 weight 1.2 : 1 : 1 인데, 셋을 같은 폭으로
+        // 둬도 '연도' 네 글자가 충분히 들어간다 — 단순한 쪽을 택한다.
+        .frame(maxWidth: .infinity)
     }
 
     private var customTimeTitle: String {

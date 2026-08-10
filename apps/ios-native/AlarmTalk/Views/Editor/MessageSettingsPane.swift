@@ -287,7 +287,12 @@ struct MessageSettingsPane: View {
         let time = draftFortuneBirthTime.trimmingCharacters(in: .whitespaces)
         if !time.isEmpty { parts.append(time) }
         let gender = draftFortuneGender.trimmingCharacters(in: .whitespaces)
-        if !gender.isEmpty { parts.append(gender == "male" ? "남성" : "여성") }
+        // ⚠ **`"male"` 과 비교하지 말 것 — 저장값은 `"남성"`/`"여성"` 이다.**
+        // 그렇게 비교하던 시절에는 조건이 절대 참이 되지 않아 **남성을 고른 사람에게도
+        // 요약이 "여성" 으로** 떴다. 값 계약의 단일 출처는 `FortunePromptInputFormat` 이고,
+        // 정규화를 거치면 옛 표기("male"·"M"·"남" 등)도 올바르게 풀린다.
+        let normalizedGender = FortunePromptInputFormat.normalizedGender(gender)
+        if !normalizedGender.isEmpty { parts.append(normalizedGender) }
         return parts.joined(separator: " · ")
     }
 
