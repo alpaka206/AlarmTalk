@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  하단 탭 아이콘 — **iOS 와 같은 도형**이다(2026-08-10 사용자 요청: "아이폰 아이콘으로 둘 다 통일").
+
+  ⚠ Material 의 `Icons.Outlined/Filled.Alarm` 로 되돌리지 말 것. 모양이 다르다 —
+  Material 알람은 각진 종 2개뿐이고 **다리가 없으며** 바늘 방향도 다르다.
+  게다가 Outlined 와 Filled 의 path 가 사실상 같아 '채워진 아이콘 스왑' 이 무효였다.
+  ⚠ 값은 **iOS 시뮬레이터에 실제로 그려진 SF Symbol 을 재어** 24 좌표계에 옮긴 것이다
+  (SF 글리프 파일을 가져다 쓰지 않는다 — Apple 플랫폼 한정 라이선스라 APK 에 넣을 수 없다).
+  iOS 대응: `Views/Auxiliary/AuxiliaryScreen.swift` 의 `NativeTab.systemImage`.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M5.91,20.98 L3.46,22.96"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.17"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M17.74,20.98 L20.2,22.96"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.17"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M6.97,0.92 A2.55,1.7 -33 0 1 2.69,3.7 A2.55,1.7 -33 0 1 6.97,0.92 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M20.97,3.7 A2.55,1.7 33 0 1 16.69,0.92 A2.55,1.7 33 0 1 20.97,3.7 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M11.83,3.76 A9.07,9.07 0 1 1 11.82,3.76"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M11.83,7.27 L11.83,14.17 L7.33,14.17"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,13 +16,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Menu
-import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -33,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -63,8 +58,8 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Alarms,
                 selectedTab = selectedTab,
-                icon = Icons.Outlined.Alarm,
-                selectedIcon = Icons.Filled.Alarm,
+                icon = R.drawable.ic_tab_alarm,
+                selectedIcon = R.drawable.ic_tab_alarm_fill,
                 label = stringResource(R.string.r3app_bottom_tab_alarms),
                 badgeCount = unreadAlarmCount,
                 onSelectTab = onSelectTab,
@@ -73,8 +68,8 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Voices,
                 selectedTab = selectedTab,
-                icon = Icons.Outlined.Mic,
-                selectedIcon = Icons.Filled.Mic,
+                icon = R.drawable.ic_tab_mic,
+                selectedIcon = R.drawable.ic_tab_mic_fill,
                 label = stringResource(R.string.r3app_bottom_tab_voices),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
@@ -82,8 +77,8 @@ internal fun AlarmTalkBottomBar(
             AlarmTalkTabItem(
                 tab = NativeTab.Menu,
                 selectedTab = selectedTab,
-                icon = Icons.Outlined.Menu,
-                selectedIcon = Icons.Filled.Menu,
+                icon = R.drawable.ic_tab_menu,
+                selectedIcon = R.drawable.ic_tab_menu,
                 label = stringResource(R.string.r3app_bottom_tab_menu),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
@@ -96,8 +91,10 @@ internal fun AlarmTalkBottomBar(
 internal fun AlarmTalkTabItem(
     tab: NativeTab,
     selectedTab: NativeTab,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    selectedIcon: androidx.compose.ui.graphics.vector.ImageVector = icon,
+    // ⚠ **`ImageVector`(Material 아이콘)로 되돌리지 말 것.** 탭 아이콘은 iOS 와 같은 도형을
+    // 24 좌표계에 옮긴 **자체 드로어블**이다(`res/drawable/ic_tab_*.xml`).
+    @DrawableRes icon: Int,
+    @DrawableRes selectedIcon: Int = icon,
     label: String,
     badgeCount: Int = 0,
     onSelectTab: (NativeTab) -> Unit,
@@ -146,10 +143,13 @@ internal fun AlarmTalkTabItem(
                 },
             ) {
                 Icon(
-                    imageVector = if (selected) selectedIcon else icon,
+                    painter = painterResource(if (selected) selectedIcon else icon),
                     contentDescription = label,
                     tint = selectedContentColor,
-                    modifier = Modifier.size(22.dp),
+                    // ⚠ 22 가 아니라 **24** 다. 이 드로어블들은 SF Symbol 을 24 좌표계에
+                    // 옮긴 것이라 잉크가 viewport 를 거의 꽉 채운다 — 22 로 그리면
+                    // 아이폰보다 작아 보인다(Material 아이콘은 잉크가 18 안팎이었다).
+                    modifier = Modifier.size(24.dp),
                 )
             }
         }
