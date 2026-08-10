@@ -222,6 +222,7 @@ struct AlarmsListView: View {
                 RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous)
                     .stroke(theme.palette.outlineVariant, lineWidth: 1)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

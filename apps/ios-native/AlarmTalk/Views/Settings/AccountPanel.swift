@@ -39,6 +39,11 @@ struct AccountPanel: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
+                // ⚠ **`.contentShape` 가 없으면 글자만 눌린다.** `HStack` 의 빈 곳
+                // (Spacer·여백)은 히트테스트 대상이 아니라, 행처럼 생겼는데 가장자리를
+                // 누르면 아무 일도 안 일어난다. 공용 `SettingsValueButton` 은 이미
+                // 넣어 두었는데 이 두 행만 직접 만들면서 빠졌다.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             Divider()
@@ -56,6 +61,11 @@ struct AccountPanel: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
+                // ⚠ **`.contentShape` 가 없으면 글자만 눌린다.** `HStack` 의 빈 곳
+                // (Spacer·여백)은 히트테스트 대상이 아니라, 행처럼 생겼는데 가장자리를
+                // 누르면 아무 일도 안 일어난다. 공용 `SettingsValueButton` 은 이미
+                // 넣어 두었는데 이 두 행만 직접 만들면서 빠졌다.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }

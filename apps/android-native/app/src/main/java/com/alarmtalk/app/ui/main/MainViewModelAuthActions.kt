@@ -1110,7 +1110,7 @@ internal fun MainViewModel.syncNow() {
             val app = getApplication<android.app.Application>()
             when {
                 // push 실패는 **그 알람 행이 직접 말한다**(syncState=FAILED →
-                // common_alarm_warning_sync_failed). 같은 말을 위에서 한 번 더 하면 사용자는
+                // `AlarmStates.FAILED` 배지). 같은 말을 위에서 한 번 더 하면 사용자는
                 // 서로 다른 두 문제로 읽는다 — 어느 알람 이야기인지도 위쪽 문구로는 알 수 없다.
                 //
                 // pull 실패는 다르다. 못 받아온 알람은 화면에 행 자체가 없어서, 알릴 자리가

@@ -125,6 +125,7 @@ struct VoiceRelationshipInputField: View {
                     RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small)
                         .stroke(isError ? AlarmTalkTheme.error : AlarmTalkTheme.outline, lineWidth: 1)
                 )
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 

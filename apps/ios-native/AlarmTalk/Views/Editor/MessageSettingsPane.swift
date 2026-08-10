@@ -79,6 +79,10 @@ struct MessageSettingsPane: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
             }
+            // ⚠ **입력창 밖을 눌러 키보드를 닫을 길을 둔다.** iOS 는 바깥 탭으로 키보드가
+            // 자동으로 닫히지 않아서, 없으면 키보드가 화면 절반을 가린 채 버튼에 닿지 못한다
+            // (2026-08-10 사용자 보고 — 편집기에는 이미 있었고 나머지 화면만 빠져 있었다).
+            .scrollDismissesKeyboard(.interactively)
 
             // 최종 반영은 여기 한 곳이다 — 라디오를 누르는 즉시 알람이 바뀌면
             // 둘러보다가 실수로 바꾼 것도 저장된다.

@@ -362,6 +362,7 @@ struct FortunePromptInputFields: View {
                     .stroke(AlarmTalkTheme.outline, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small, style: .continuous))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

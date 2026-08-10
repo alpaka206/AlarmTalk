@@ -11,7 +11,6 @@ struct SettingsView: View {
     @AppStorage(AlarmTalkThemeMode.storageKey) private var themeModeRaw = AlarmTalkThemeMode.system.rawValue
 
     @State private var nicknameDraft: String = ""
-    @State private var themeDialogOpen: Bool = false
     @State private var weatherDialogOpen: Bool = false
     @State private var fortuneDialogOpen: Bool = false
     @State private var holidayDialogOpen: Bool = false
@@ -136,17 +135,6 @@ struct SettingsView: View {
         }
         .onChange(of: auth.session?.user.dynamicPromptSettings) { _, _ in
             loadPromptPreferences()
-        }
-        .sheet(isPresented: $themeDialogOpen) {
-            ThemeModePickerSheet(
-                current: currentThemeMode,
-                onDismiss: { themeDialogOpen = false },
-                onSelect: { mode in
-                    themeModeRaw = mode.rawValue
-                    themeDialogOpen = false
-                }
-            )
-            .presentationDetents([.medium])
         }
         .sheet(isPresented: $weatherDialogOpen) {
             WeatherLocationPreferenceSheet(
