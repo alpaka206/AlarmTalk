@@ -298,11 +298,23 @@ final class AudioCacheStore {
         let safeKey = Self.safeCacheKey(cacheKey)
         let target = directory.appendingPathComponent("\(safeKey).\(ext)")
 
-        if !FileManager.default.fileExists(atPath: target.path) {
+        // ⚠ **파일이 있다고 무조건 건너뛰지 말 것 — 그러면 캐시가 write-once 가 된다.**
+        // 서버가 같은 message_id 의 오디오 실체를 바꿔도(목소리 교체) 기기는 영영 옛
+        // 소리를 쓴다. 키에 버전이 없으니 판별은 **`audio_url` 이 달라졌는가**로 한다 —
+        // 그 값은 이미 메타에 `rawAudioUri` 로 저장하고 있었는데 **아무도 비교하지
+        // 않았다.** 서버가 새 오디오를 새 R2 키에 올리면 이 값이 반드시 달라진다.
+        let stale = Self.isStaleCachedFile(at: target, storedFor: cacheKey, incomingAudioUri: rawAudioUri)
+        if stale || !FileManager.default.fileExists(atPath: target.path) {
             do {
                 try data.write(to: target, options: Self.audioWriteOptions)
             } catch {
                 throw AudioCacheError.writeFailed(error)
+            }
+            if stale {
+                // ⚠ **구워 둔 알람 사운드도 함께 버린다.** iOS 는 예약 시점에 캐시 파일을
+                // `Library/Sounds/voice-<key>.caf` 로 복사해 그 이름을 AlarmKit 에 박는다.
+                // 캐시만 갈아 끼우면 알람은 **여전히 옛 목소리로** 운다.
+                Task { @MainActor in AlarmSoundStaging.clearStagedSound(forKey: cacheKey) }
             }
         }
 
@@ -342,6 +354,33 @@ final class AudioCacheStore {
     }
 
     /// cacheKey 로 파일 URL 조회.
+    /// 캐시에 든 파일이 **서버가 지금 주는 오디오와 다른 것**인가.
+    ///
+    /// 판정은 `audio_url` 비교 하나다. 서버가 새 음원을 새 R2 키에 올리므로 교체가
+    /// 일어나면 이 값이 반드시 달라진다.
+    ///
+    /// ⚠ **모르면 stale 이 아니다.** 옛 버전이 저장한 메타에는 `rawAudioUri` 가 없고,
+    /// 서버가 주지 않는 경로도 있다. 그때 stale 로 보면 **매번 다시 받는다** —
+    /// 알람마다 네트워크를 타고 오프라인에서는 아예 못 쓴다.
+    nonisolated static func isStaleCachedFile(
+        at url: URL,
+        storedFor cacheKey: String,
+        incomingAudioUri: String?
+    ) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        guard let incoming = incomingAudioUri, !incoming.isEmpty else { return false }
+        guard let stored = AudioCacheStore.shared.readMetadata(cacheKey: cacheKey)?.rawAudioUri,
+              !stored.isEmpty else { return false }
+        return stored != incoming
+    }
+
+    /// 서버가 준 `audio_url` 기준으로 이 키의 캐시가 낡았는지. 프리페치·선다운로드가
+    /// "이미 있으니 건너뛴다" 를 판단할 때 이걸 함께 본다.
+    nonisolated func isStale(cacheKey: String, remoteAudioUri: String?) -> Bool {
+        guard let url = cachedURL(for: cacheKey) else { return false }
+        return Self.isStaleCachedFile(at: url, storedFor: cacheKey, incomingAudioUri: remoteAudioUri)
+    }
+
     nonisolated func cachedURL(for cacheKey: String) -> URL? {
         guard let directory = try? Self.audioDirectory() else { return nil }
         let safeKey = Self.safeCacheKey(cacheKey)
