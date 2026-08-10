@@ -44,6 +44,11 @@ struct BottomSheetHost<Content: View>: View {
             VStack(spacing: 0) {
                 handle
                 content()
+                // ⚠ **홈 인디케이터 영역만큼 시트 자신이 깔린다.** 이걸 빼면 시트 표면이
+                // 화면 맨 아래에서 34pt 위에 끊기고 그 아래로 앱 배경(거의 검정)이 비쳐
+                // **띠처럼 다른 색**이 보인다(2026-08-10 지적). 안드로이드도 시트가 끝까지
+                // 깔리고 내용만 `navigationBarsPadding` 으로 비켜선다.
+                Color.clear.frame(height: safeBottomInset)
             }
             .onPreferenceChange(SheetContentHeightKey.self) { contentHeight = $0 }
             .onPreferenceChange(SheetHeaderHeightKey.self) { headerHeight = $0 }
@@ -67,8 +72,10 @@ struct BottomSheetHost<Content: View>: View {
                         }
                     }
             )
-            .ignoresSafeArea(edges: .bottom)
         }
+        // ⚠ **ZStack 이 안전영역을 무시해야** 아래 정렬된 시트가 화면 진짜 바닥에 닿는다.
+        // 시트에만 `.ignoresSafeArea` 를 걸면 정렬 기준은 여전히 안전영역이라 뜬다.
+        .ignoresSafeArea()
         .onAppear {
             if reduceMotion { appeared = true }
             else { withAnimation(.snappy(duration: 0.28)) { appeared = true } }
@@ -76,12 +83,16 @@ struct BottomSheetHost<Content: View>: View {
     }
 
     /// 내용만큼, 단 화면 50% 까지.
-    private var resolvedHeight: CGFloat? {
-        guard contentHeight > 0 else { return nil }
-        let safeBottom = UIApplication.shared.connectedScenes
+    /// 홈 인디케이터 영역. 시트가 여기까지 깔리고, 내용은 그 위에서 끝난다.
+    private var safeBottomInset: CGFloat {
+        UIApplication.shared.connectedScenes
             .compactMap { ($0 as? UIWindowScene)?.keyWindow?.safeAreaInsets.bottom }
             .first ?? 0
-        let wanted = contentHeight + headerHeight + handleHeight + safeBottom
+    }
+
+    private var resolvedHeight: CGFloat? {
+        guard contentHeight > 0 else { return nil }
+        let wanted = contentHeight + headerHeight + handleHeight + safeBottomInset
         // ⚠ 상한은 **화면의 50%** 다(2026-08-10 요청) — 그보다 길어지면 시트를 더 키우지
         // 않고 **안에서 스크롤**한다. 목록이 길다고 화면을 덮으면 뒤 화면이 안 보인다.
         return min(wanted, UIScreen.main.bounds.height * maxFraction)
