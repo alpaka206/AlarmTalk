@@ -888,4 +888,10 @@
     <string name="msg_voice_consent_withdraw_failed">同意の撤回に失敗しました。もう一度お試しください。</string>
     <string name="voices_replace_existing_title">「%1$s」をこの声に置き換えます</string>
     <string name="voices_replace_existing_desc">以前に保存した声は削除されます。直接入力で設定したアラームも既定のアラーム音になります。</string>
+    <string name="misc2_theme_mode_system_short">システム</string>
+    <string name="misc2_theme_mode_light_short">ライト</string>
+    <string name="misc2_theme_mode_dark_short">ダーク</string>
+    <string name="misc2_theme_mode_system_desc">スマートフォンの設定に従います。</string>
+    <string name="misc2_theme_mode_light_desc">昼でもはっきり見える明るい画面です。</string>
+    <string name="misc2_theme_mode_dark_desc">夜に見やすい暗い画面です。</string>
 </resources>

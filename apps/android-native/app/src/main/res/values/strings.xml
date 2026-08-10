@@ -911,4 +911,10 @@
     <string name="msg_voice_consent_withdraw_failed">동의 철회에 실패했어요. 다시 시도해 주세요.</string>
     <string name="voices_replace_existing_title">‘%1$s’ 을(를) 이 목소리로 교체합니다</string>
     <string name="voices_replace_existing_desc">이전에 저장해둔 목소리는 삭제됩니다. 직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다.</string>
+    <string name="misc2_theme_mode_system_short">시스템</string>
+    <string name="misc2_theme_mode_light_short">밝게</string>
+    <string name="misc2_theme_mode_dark_short">어둡게</string>
+    <string name="misc2_theme_mode_system_desc">휴대폰 설정을 따라가요.</string>
+    <string name="misc2_theme_mode_light_desc">낮에도 선명한 밝은 화면이에요.</string>
+    <string name="misc2_theme_mode_dark_desc">밤에 보기 편한 어두운 화면이에요.</string>
 </resources>

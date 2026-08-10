@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Contrast
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
@@ -280,8 +283,16 @@ internal fun MenuTabPanel(
             val modes = listOf(ThemeMode.System, ThemeMode.Light, ThemeMode.Dark)
             WakerSheetOptionGroup {
                 modes.forEachIndexed { index, mode ->
+                    // ⚠ **아이콘·설명을 빼지 말 것.** iOS 화면 테마 시트는 행마다
+                    // 아이콘 + 짧은 제목 + 설명 3요소다(`Views/Settings/SettingsView.swift`
+                    // 의 `ThemeModePickerSheet`). 안드로이드는 제목 한 줄뿐이라 같은 모달이
+                    // 두 앱에서 다르게 보였다(2026-08-10 요청으로 iOS 를 원본 삼아 맞춘다).
+                    // `WakerSheetOptionRow` 는 원래부터 icon·description 을 받는데
+                    // **넘기는 호출자가 하나도 없었다.**
                     WakerSheetOptionRow(
-                        title = themeModeLabel(context, mode),
+                        icon = themeModeIcon(mode),
+                        title = themeModeShortLabel(context, mode),
+                        description = themeModeDescription(context, mode),
                         selected = themeMode == mode,
                         onClick = {
                             onChangeTheme(mode)
@@ -352,6 +363,27 @@ internal fun themeModeLabel(context: android.content.Context, mode: ThemeMode): 
     ThemeMode.System -> context.getString(R.string.misc2_theme_mode_system)
     ThemeMode.Light -> context.getString(R.string.misc2_theme_mode_light)
     ThemeMode.Dark -> context.getString(R.string.misc2_theme_mode_dark)
+}
+
+/// 시트 행의 **짧은** 제목. 설정 행의 값에는 위 `themeModeLabel`(긴 문구)을 그대로 쓴다 —
+/// iOS 도 같은 구분이다(행 값 = label, 시트 제목 = pickerTitle).
+internal fun themeModeShortLabel(context: android.content.Context, mode: ThemeMode): String = when (mode) {
+    ThemeMode.System -> context.getString(R.string.misc2_theme_mode_system_short)
+    ThemeMode.Light -> context.getString(R.string.misc2_theme_mode_light_short)
+    ThemeMode.Dark -> context.getString(R.string.misc2_theme_mode_dark_short)
+}
+
+internal fun themeModeDescription(context: android.content.Context, mode: ThemeMode): String = when (mode) {
+    ThemeMode.System -> context.getString(R.string.misc2_theme_mode_system_desc)
+    ThemeMode.Light -> context.getString(R.string.misc2_theme_mode_light_desc)
+    ThemeMode.Dark -> context.getString(R.string.misc2_theme_mode_dark_desc)
+}
+
+/// iOS SF Symbol 대응 — `circle.lefthalf.filled` / `sun.max.fill` / `moon.fill`.
+internal fun themeModeIcon(mode: ThemeMode): ImageVector = when (mode) {
+    ThemeMode.System -> Icons.Outlined.Contrast
+    ThemeMode.Light -> Icons.Outlined.LightMode
+    ThemeMode.Dark -> Icons.Outlined.DarkMode
 }
 
 @Composable

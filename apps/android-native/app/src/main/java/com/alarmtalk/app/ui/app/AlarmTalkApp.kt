@@ -806,7 +806,10 @@ internal fun AlarmTalkApp(
         ) { dismiss ->
             WakerSheetOptionGroup {
                 // 아이콘 배지 없이 텍스트만 — 제목이 이미 대상을 다 말해주고, 같은 사람 아이콘이 행마다
-                // 반복되면 장식일 뿐이다(기본 아이콘 남용 금지). 다른 선택 시트(테마/국가/목소리)와 동일 문법.
+                // 반복되면 장식일 뿐이다(기본 아이콘 남용 금지).
+                // ⚠ **"다른 선택 시트와 동일" 이라고 적지 말 것 — 테마 시트는 아이콘을 쓴다.**
+                // 거기서는 세 항목이 서로 다른 개념(시스템/밝게/어둡게)이라 아이콘이 구분에
+                // 기여한다. 여기는 행마다 같은 '사람' 이라 기여하지 않는다 — 그 차이가 기준이다.
                 WakerSheetOptionRow(
                     title = stringResource(R.string.alarms_target_self_title),
                     selected = false,
