@@ -171,9 +171,9 @@ struct SettingsView: View {
             onSave: { saveFortuneDraft() }
         ) {
             VStack(alignment: .leading, spacing: 16) {
-                Text("운세가 들어간 랜덤 깨움말을 만들 때만 사용해요.")
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                // ⚠ 설명 문구를 다시 넣지 말 것(2026-08-11 요청) — 이 화면에 들어온 사람은
+                // 이미 '운세 정보' 행을 눌러서 온 것이라, 무엇에 쓰이는지 한 번 더 말하면
+                // 폼만 길어진다.
                 FortunePromptInputFields(
                     gender: $fortuneGenderDraft,
                     birthDate: $fortuneBirthDateDraft,

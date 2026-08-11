@@ -191,6 +191,10 @@ private fun FortuneBirthDatePickers(
             placeholder = stringResource(R.string.editorp_fortune_birthdate_month),
             suffix = stringResource(R.string.editorp_fortune_unit_month),
             error = error,
+            // ⚠ **연 → 월 → 일 순서로만 고른다**(2026-08-11 요청, iOS 와 같다).
+            // 일(日)만 잠그면 월부터 골라 놓고 연도를 나중에 바꿀 수 있어, 그때 말일이
+            // 달라지며 고른 날이 조용히 당겨진다.
+            enabled = year != null,
             modifier = Modifier.weight(1f),
             onSelect = { emit(year, it, day) },
         )

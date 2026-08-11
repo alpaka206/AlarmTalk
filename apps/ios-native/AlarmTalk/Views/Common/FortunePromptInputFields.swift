@@ -210,18 +210,29 @@ struct FortunePromptInputFields: View {
                 // ⚠ **그래픽 달력 시트로 되돌리지 말 것.** 안드로이드는 연·월·일 드롭다운
                 // 3개다(`ui/editor/AlarmFortuneSettings.kt`). 달력은 1990년처럼 먼 해로 가려면
                 // 여러 번 넘겨야 하고, 무엇보다 같은 입력이 두 앱에서 전혀 다른 화면이었다.
+                // ⚠ **연 → 월 → 일 순서로만 고를 수 있다**(2026-08-11 요청, 안드로이드와 같다).
+                // 앞을 안 고르면 뒤는 잠긴다 — 일(日) 목록은 연·월이 정해져야 **말일이
+                // 결정되고**(2월 28/29), 그 전에는 무엇을 보여줘도 틀린 목록이다.
                 HStack(spacing: 8) {
                     dropdown(display: yearText, isPlaceholder: yearValue == nil) {
                         ForEach(Self.selectableYears, id: \.self) { year in
                             Button("\(String(year))년") { setBirth(year: year) }
                         }
                     }
-                    dropdown(display: monthText, isPlaceholder: monthValue == nil) {
+                    dropdown(
+                        display: monthText,
+                        isPlaceholder: monthValue == nil,
+                        enabled: yearValue != nil
+                    ) {
                         ForEach(1...12, id: \.self) { month in
                             Button("\(month)월") { setBirth(month: month) }
                         }
                     }
-                    dropdown(display: dayText, isPlaceholder: dayValue == nil) {
+                    dropdown(
+                        display: dayText,
+                        isPlaceholder: dayValue == nil,
+                        enabled: yearValue != nil && monthValue != nil
+                    ) {
                         ForEach(1...daysInSelectedMonth, id: \.self) { day in
                             Button("\(day)일") { setBirth(day: day) }
                         }
@@ -231,7 +242,6 @@ struct FortunePromptInputFields: View {
 
             fieldSection(
                 title: "태어난 시간",
-                subtitle: "정확히 모르면 가까운 시간대나 시간 모름을 골라도 돼요.",
                 hasError: submitted && !FortunePromptInputFormat.isValidBirthTime(birthTime)
             ) {
                 // ⚠ **14개를 펼치지 말 것.** 예전에는 시간대 버튼을 2열 그리드로 전부 펼치고
@@ -314,6 +324,7 @@ struct FortunePromptInputFields: View {
     private func dropdown<Content: View>(
         display: String,
         isPlaceholder: Bool,
+        enabled: Bool = true,
         @ViewBuilder menu: () -> Content
     ) -> some View {
         Menu {
@@ -324,11 +335,22 @@ struct FortunePromptInputFields: View {
                     .lineLimit(1)
                     .foregroundStyle(isPlaceholder ? AlarmTalkTheme.textSecondary : AlarmTalkTheme.text)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                // ⚠ **누를 수 있는 자리라는 티를 내야 한다**(2026-08-11 지적 "드롭다운 티가
+                // 잘 안 난다"). 흐린 chevron 하나로는 읽히지 않아, 아래위 화살표를 강조색
+                // 알약 안에 넣는다 — 애플이 자기 폼에서 쓰는 표시와 같은 문법이다.
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(enabled ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
+                    .frame(width: 22, height: 22)
+                    .background(
+                        Circle().fill(
+                            (enabled ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
+                                .opacity(0.14)
+                        )
+                    )
             }
-            .padding(.horizontal, 12)
+            .padding(.leading, 12)
+            .padding(.trailing, 8)
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -341,6 +363,9 @@ struct FortunePromptInputFields: View {
             .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
+        .disabled(!enabled)
+        // 잠긴 칸은 흐리게 — 왜 안 눌리는지 형태로 말한다.
+        .opacity(enabled ? 1 : 0.45)
         // ⚠ **`layoutPriority` 로 폭 비율을 주지 말 것.** 그건 비율이 아니라 '먼저 자리를
         // 가져가는 순서'라, 연도가 거의 다 먹고 **월·일은 글자가 안 보일 만큼 찌그러졌다**
         // (2026-08-10 캡처로 확인). 안드로이드는 weight 1.2 : 1 : 1 인데, 셋을 같은 폭으로

@@ -104,5 +104,12 @@ extension View {
             }
             .presentationBackground(.clear)
         }
+        // ⚠ **커버 자체의 전환을 끈다.** `fullScreenCover` 는 내용을 통째로 아래에서
+        // 밀어 올리는데, 스크림이 그 안에 있으니 **스크림까지 같이 밀려 올라온다** —
+        // 실기 프레임에서 시트가 다 올라온 **뒤에야** 화면 위쪽이 어두워졌다
+        // (2026-08-11 지적, 30fps 영상 f456~463 으로 확인). 배경은 제자리에서 서서히
+        // 어두워지고 시트만 올라와야 한다. 전환을 끄면 `BottomSheetHost` 의
+        // `appeared` 애니메이션(스크림 opacity + 시트 offset)이 그 일을 한다.
+        .transaction { $0.disablesAnimations = true }
     }
 }

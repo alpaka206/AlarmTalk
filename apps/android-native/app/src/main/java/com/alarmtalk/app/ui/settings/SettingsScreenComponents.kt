@@ -172,39 +172,28 @@ internal fun FamilyAlarmQuietTimeDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+    // ⚠ **가운데 카드 + X 로 되돌리지 말 것** — 아이폰의 폼 모달은 시트 + 상단바다
+    // (`ui/components/WakerModal.kt` 의 `WakerFormSheet` 주석 참조).
+    WakerFormSheet(
+        title = stringResource(R.string.hs_quiet_time_dialog_title),
+        onCancel = onDismiss,
+        onSave = { onConfirm(drafts.map { it.toWindow() }) },
+        saveLabel = stringResource(R.string.hs_save),
+        cancelLabel = stringResource(R.string.editor_cancel),
+        // 이 폼은 값이 갖춰져야만 저장할 수 있다(운세와 달리 어느 칸이 비었는지 카드마다
+        // 이미 보인다) — 그래서 잠근다.
+        saveEnabled = valid,
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 22.dp, vertical = 22.dp)
-                    .heightIn(max = 620.dp),
-            ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.hs_quiet_time_dialog_title),
-                    onDismiss = onDismiss,
-                )
                 Text(
                     text = stringResource(R.string.hs_quiet_time_dialog_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
                 )
+                // ⚠ 여기서 다시 `verticalScroll`·`weight` 를 쓰지 말 것 —
+                // 바깥 `WakerFormSheet` 가 이미 스크롤한다(스크롤 안의 스크롤은
+                // 높이 제약이 무한이라 `weight` 가 터진다).
                 Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     drafts.forEachIndexed { draftIndex, draft ->
@@ -245,23 +234,6 @@ internal fun FamilyAlarmQuietTimeDialog(
                         Text(stringResource(R.string.hs_quiet_time_add))
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Button(
-                        onClick = { onConfirm(drafts.map { it.toWindow() }) },
-                        enabled = valid,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text(stringResource(R.string.hs_save))
-                    }
-                }
-            }
-        }
     }
 
     timePickerTarget?.let { target ->
