@@ -20,6 +20,20 @@ final class DeleteAccountAlertUITests: XCTestCase {
             throw XCTSkip("탈퇴 확인 알럿이 뜨지 않았다")
         }
 
+        print(String(format: "알럿: x=%.1f y=%.1f w=%.1f h=%.1f",
+                     alert.frame.minX, alert.frame.minY, alert.frame.width, alert.frame.height))
+        var prevBottom = alert.frame.minY
+        for text in alert.staticTexts.allElementsBoundByIndex {
+            print(String(format: "  텍스트 h=%.1f w=%.1f 위여백=%.1f \"%@\"",
+                         text.frame.height, text.frame.width,
+                         text.frame.minY - prevBottom, String(text.label.prefix(14))))
+            prevBottom = text.frame.maxY
+        }
+        for b in alert.buttons.allElementsBoundByIndex {
+            print(String(format: "  버튼 \"%@\" x=%.1f h=%.1f w=%.1f 위여백=%.1f",
+                         b.label, b.frame.minX, b.frame.height, b.frame.width,
+                         b.frame.minY - prevBottom))
+        }
         // 제목·본문이 가운데인지 프레임으로 본다(좌우 여백이 같으면 가운데다).
         for text in alert.staticTexts.allElementsBoundByIndex {
             let leftGap = text.frame.minX - alert.frame.minX

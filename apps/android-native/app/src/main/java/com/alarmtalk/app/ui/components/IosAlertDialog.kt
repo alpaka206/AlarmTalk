@@ -70,7 +70,7 @@ import androidx.compose.ui.window.DialogProperties
  */
 internal object IosAlertType {
     val Title = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.4).sp, fontWeight = FontWeight.SemiBold)
-    val Message = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = (-0.08).sp)
+    val Message = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, letterSpacing = (-0.08).sp)
     val Field = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = (-0.2).sp)
     val Action = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.4).sp)
 }
@@ -118,10 +118,15 @@ internal fun IosAlertDialog(
     ) {
         Surface(
             modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 40.dp)
+                // ⚠ **순서를 지킬 것 — `fillMaxWidth()` 가 먼저면 상한이 안 걸린다.**
+                // `fillMaxWidth()` 는 최소폭까지 화면폭으로 못박아서, 뒤에 오는
+                // `widthIn(max)` 가 최대만 낮춰도 최소가 그대로라 아무 일도 안 일어난다.
+                // 실제로 그래서 알럿이 **331dp** 로 떴다(상한 320 이 무시됨, 2026-08-11
+                // 실측). 상한을 먼저 걸고 마지막에 채운다.
+                .padding(horizontal = 24.dp)
                 // 실측: iPhone 16 Pro(402pt)에서 폭 **320**, 좌우 여백 41.
-                .widthIn(max = 320.dp),
+                .widthIn(max = 320.dp)
+                .fillMaxWidth(),
             // ⚠ 14 가 아니다 — 실측 반경은 **약 34**(iOS 26). 14 는 iOS 7~18 시절 값이다.
             shape = RoundedCornerShape(34.dp),
             // iOS 알럿은 어두운 글래스 패널 느낌 — 배경보다 한 단계 밝은 surfaceVariant 로 분리감을 준다.
@@ -136,7 +141,7 @@ internal fun IosAlertDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 20.dp),
+                            .padding(start = ALERT_TEXT_INSET, end = ALERT_TEXT_INSET, top = 22.dp, bottom = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         // ⚠ **여러 줄 본문은 가운데가 아니라 왼쪽 정렬이다.**
@@ -161,7 +166,7 @@ internal fun IosAlertDialog(
                             )
                         }
                         if (!title.isNullOrBlank() && !message.isNullOrBlank()) {
-                            Spacer(Modifier.height(4.dp))
+                            Spacer(Modifier.height(TITLE_TO_MESSAGE_GAP))
                         }
                         if (!message.isNullOrBlank()) {
                             Text(
@@ -187,7 +192,7 @@ internal fun IosAlertDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 20.dp),
+                            .padding(start = ALERT_TEXT_INSET, end = ALERT_TEXT_INSET, top = 22.dp, bottom = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         content = content,
                     )
@@ -255,6 +260,22 @@ internal fun IosAlertField(
         },
     )
 }
+
+/**
+ * 알럿 글자 블록의 좌우 여백 — **30dp**(2026-08-11 iOS 실측).
+ *
+ * ⚠ **20 으로 되돌리지 말 것.** 20 이면 같은 문장이 아이폰보다 넓게 퍼져 줄바꿈 위치가
+ * 달라진다(실측: 아이폰 좌우 30 / 우리 18). 아이폰 알럿은 폭 320 에 좌우 30 이라
+ * 글자가 260 폭 안에서 감긴다 — 그 답답함이 알럿의 인상을 만든다.
+ */
+private val ALERT_TEXT_INSET = 30.dp
+
+/**
+ * 제목과 본문 사이 — **7dp**(iOS 실측 7.3).
+ *
+ * ⚠ 4 로 되돌리지 말 것. 절반이라 제목과 본문이 한 덩어리로 붙어 보였다.
+ */
+private val TITLE_TO_MESSAGE_GAP = 7.dp
 
 /**
  * 액션 버튼 높이 — **48dp**.
