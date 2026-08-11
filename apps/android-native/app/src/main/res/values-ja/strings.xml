@@ -190,7 +190,6 @@
     <string name="editor_off">オフ</string>
     <string name="editor_plan_gate_login_title">ログインが必要です</string>
     <string name="editor_plan_gate_login_required">ログインすると音声アラームを作成できます。</string>
-    <string name="editor_plan_gate_paid_features">プランに加入すると、自分で作った声・録音・自由入力の文でアラームを作れます。</string>
     <string name="editor_plan_gate_system_voice_title">基本の声では自由入力を使えません</string>
     <string name="editor_plan_gate_system_voice_message">基本の声は用意された文章だけを話せます。自分で書いた文章で起こしてもらうには、自分の声を登録してください。</string>
     <string name="editor_plan_gate_system_voice_confirm">登録する</string>
@@ -342,7 +341,7 @@
     <string name="msg_alarm_update_failed">アラームの編集に失敗しました。</string>
     <string name="msg_consent_record_failed">同意の記録に失敗しました。もう一度お試しください。</string>
     <string name="msg_marketing_consent_update_failed">設定の変更に失敗しました。もう一度お試しください。</string>
-    <string name="msg_custom_voice_alarm_paid_only">自分で作った声・録音のアラームは、有料プランでご利用いただけます。</string>
+    <string name="msg_custom_voice_alarm_paid_only">この機能は有料利用券でご利用いただけます。</string>
     <string name="msg_email_required">メールアドレスを入力してください。</string>
     <string name="msg_email_verification_completed">メールアドレスの認証が完了しました。</string>
     <string name="msg_family_alarm_couple_family_only">相手のアラームは、カップル・家族プランでご利用いただけます。</string>
@@ -442,7 +441,7 @@
     <string name="msg_voice_invalid_duration">音声の長さを確認できませんでした。ファイルをもう一度選んでください。</string>
     <string name="msg_voice_max_profiles_reached">声は最大%1$d個まで作成できます。</string>
     <string name="msg_voice_name_required">声の名前を入力してください。</string>
-    <string name="msg_voice_paid_plan_required">有料プランでご利用いただけます。</string>
+    <string name="msg_voice_paid_plan_required">この機能は有料利用券でご利用いただけます。</string>
     <string name="msg_voice_share_couple_family_required">音声の共有はカップル・ファミリープランでご利用いただけます。</string>
     <string name="msg_voice_share_login_required">声を共有するには、まずログインしてください。</string>
     <string name="msg_voice_share_setting_failed">声の共有設定に失敗しました。</string>
@@ -519,7 +518,6 @@
     <string name="voices_close">閉じる</string>
     <string name="voices_create_dialog_title">声を作成</string>
     <string name="voices_create_paid_title">マイボイスの作成は有料機能です</string>
-    <string name="voices_create_paid_notice">基本の声は引き続き無料で使えます。</string>
     <string name="voices_crop_duration_notice">12秒以上2分以内の区間を選んでください。</string>
     <string name="voices_crop_section_title">区間の切り取り</string>
     <string name="voices_draft_exit_body">今離れると、作成中の声（下書き）が削除され、最初からやり直しになります。</string>
@@ -540,7 +538,6 @@
     <string name="voices_language_label">アラームを読み上げる言語</string>
     <string name="voices_name_placeholder">例:お母さんの声</string>
     <string name="voices_next">次へ</string>
-    <string name="voices_paid_required">有料プランでご利用いただけます。</string>
     <string name="voices_prepare_recording_first">まず録音した音声をご用意ください。</string>
     <string name="voices_prepare_selected_failed">選択した音声を準備できませんでした。</string>
     <string name="voices_preparing">準備中</string>
@@ -889,4 +886,5 @@
     <string name="downgrade_notice_shared_title">共有利用券から外れました</string>
     <string name="downgrade_notice_shared_message">共有されていた声が使えなくなり、アラーム%1$d件が基本アラーム音に変わりました。再び使うには利用券の登録か新しい招待コードが必要です。</string>
     <string name="downgrade_notice_open_billing">利用券を見る</string>
+    <string name="plan_gate_paid_message">この機能は有料利用券でご利用いただけます。</string>
 </resources>

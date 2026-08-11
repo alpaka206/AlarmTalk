@@ -28,12 +28,21 @@ struct VoicesPanelView: View {
     var onRequestBilling: (() -> Void)? = nil
 
     @EnvironmentObject private var voice: VoiceStudioViewModel
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var auth: AuthViewModel
 
     var body: some View {
         Group {
             switch route {
             case .management:
-                VoiceProfileManagementPanel(route: $route, onRequestBilling: onRequestBilling)
+                VoiceProfileManagementPanel(
+                    route: $route,
+                    onRequestBilling: onRequestBilling,
+                    // 유료 게이트는 **항상** 쿠폰 갈래를 함께 낸다(`PaidGateCopy.redeemCode`).
+                    onRedeemCode: { code in
+                        Task { _ = await socialFeatures.registerCode(code, session: auth.session) }
+                    }
+                )
             case .clone:
                 VoiceCloneUploadFlow(route: $route)
             case .preview(let draftID):

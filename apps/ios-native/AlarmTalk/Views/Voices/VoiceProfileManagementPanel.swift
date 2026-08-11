@@ -21,6 +21,8 @@ struct VoiceProfileManagementPanel: View {
     /// 시트 충돌을 피하기 위해 본 화면의 시트를 먼저 닫고, 다음 runloop 에서
     /// 부모가 BillingPanel 시트를 띄우는 패턴을 사용한다.
     var onRequestBilling: (() -> Void)? = nil
+    /// 쿠폰 코드 등록. 유료 게이트는 **항상** 이 갈래를 함께 낸다(`PaidGateCopy.redeemCode`).
+    var onRedeemCode: ((String) -> Void)? = nil
 
     /// 프로필 편집 다이얼로그 입력값.
     @State private var editTarget: VoiceProfile?
@@ -34,6 +36,8 @@ struct VoiceProfileManagementPanel: View {
 
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
+    @State private var redeemCodeAlertOpen = false
+    @State private var redeemCodeDraft = ""
     /// 유료인데 **이번 달 등록 한도**를 다 쓴 경우. 이용권 안내와 **다른 모달**이다 —
     /// 이미 이용권이 있는 사람에게 이용권을 사라고 하면 안 된다.
     @State private var monthlyLimitNoticeOpen: Bool = false
@@ -203,14 +207,26 @@ struct VoiceProfileManagementPanel: View {
         }
         // ⚠ **alert 제목에 마침표를 찍지 말 것**(Apple HIG). 제목은 짧은 구절이고,
         // 문장이 필요하면 `message` 로 내린다 — 다른 alert 들도 전부 그렇게 돼 있다.
-        .alert("유료 플랜이 필요해요", isPresented: $planGateOpen) {
+        // ⚠ **쿠폰 갈래를 빼지 말 것.** 안드로이드 게이트에는 처음부터 있었는데
+        // 여기만 없어서, 같은 상황에서 iOS 사용자는 **코드로 여는 길을 못 봤다**
+        // (2026-08-11 전수 조사). 제목도 안드로이드(`voices_create_paid_title`)에 맞춘다.
+        .alert("내 목소리 만들기는 유료 기능이에요", isPresented: $planGateOpen) {
             Button("닫기", role: .cancel) {}
-            Button("플랜 보기") {
-                onRequestBilling?()
-            }
+            Button(PaidGateCopy.redeemCode) { redeemCodeAlertOpen = true }
+            Button(PaidGateCopy.viewPlans) { onRequestBilling?() }
         } message: {
-            Text("내 목소리를 녹음해 만들려면 이용권이 필요해요.")
+            Text(PaidGateCopy.message)
         }
+        .modifier(
+            // ⚠ **본문에 알럿을 더 쌓지 말 것.** `ViewBuilder` 가 형제를 중첩 튜플로 쌓아
+            // 타입체크가 터진다(실제로 이 파일에서 "unable to type-check in reasonable time"
+            // 이 났다). 별도 모디파이어로 뺀다 — 이 파일 맨 위 주석과 같은 이유다.
+            RedeemCodeAlert(
+                isPresented: $redeemCodeAlertOpen,
+                draft: $redeemCodeDraft,
+                onSubmit: { onRedeemCode?($0) }
+            )
+        )
         .sheet(item: $sharedViewerInfoTarget) { profile in
             SharedVoiceViewerInfoDialog(
                 profileName: profile.name,
@@ -524,5 +540,28 @@ struct VoiceProfileManagementPanel: View {
             storeTier: subscriptions.currentTier,
             userPlan: auth.session?.user.plan
         )
+    }
+}
+
+
+/// 쿠폰 코드 입력 알럿 — 유료 게이트가 **항상** 함께 내는 갈래.
+///
+/// 별도 모디파이어인 이유는 순전히 컴파일 때문이다(위 주석 참조).
+private struct RedeemCodeAlert: ViewModifier {
+    @Binding var isPresented: Bool
+    @Binding var draft: String
+    let onSubmit: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content.alert("쿠폰 입력", isPresented: $isPresented) {
+            TextField("초대·선물·프로모션 코드", text: $draft)
+                .textInputAutocapitalization(.characters)
+            Button("등록") {
+                let code = draft
+                draft = ""
+                onSubmit(code)
+            }
+            Button("닫기", role: .cancel) { draft = "" }
+        }
     }
 }

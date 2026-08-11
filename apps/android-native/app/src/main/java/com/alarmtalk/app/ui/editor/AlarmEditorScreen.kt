@@ -1672,7 +1672,7 @@ internal fun AlarmEditorScreen(
             message = stringResource(
                 when (gateReason) {
                     VoiceGateReason.LOGIN_REQUIRED -> R.string.editor_plan_gate_login_required
-                    VoiceGateReason.PLAN_REQUIRED -> R.string.editor_plan_gate_paid_features
+                    VoiceGateReason.PLAN_REQUIRED -> R.string.plan_gate_paid_message
                     VoiceGateReason.SYSTEM_VOICE_LIMIT -> R.string.editor_plan_gate_system_voice_message
                 },
             ),

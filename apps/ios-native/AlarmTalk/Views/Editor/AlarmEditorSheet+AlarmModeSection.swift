@@ -125,7 +125,6 @@ extension AlarmEditorSheet {
                             message: localAudioMessage,
                             onModeChange: handleLocalAudioModeChange,
                             onRecord: toggleLocalRecording,
-                            onPickFile: { localAudioFileImporterPresented = true },
                             onPreview: previewLocalAlarmAudio,
                             onClear: clearLocalAlarmAudio
                         )

@@ -197,7 +197,6 @@
     <string name="editor_off">꺼짐</string>
     <string name="editor_plan_gate_login_title">로그인이 필요해요</string>
     <string name="editor_plan_gate_login_required">로그인하면 목소리 알람을 만들 수 있어요.</string>
-    <string name="editor_plan_gate_paid_features">이용권을 연결하면 직접 만든 목소리·녹음·직접 입력 문구로 알람을 만들 수 있어요.</string>
     <string name="editor_plan_gate_system_voice_title">기본 목소리로는 직접 입력을 쓸 수 없어요</string>
     <string name="editor_plan_gate_system_voice_message">기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 등록해 주세요.</string>
     <string name="editor_plan_gate_system_voice_confirm">등록하기</string>
@@ -353,7 +352,7 @@
     <string name="msg_alarm_update_failed">알람 수정에 실패했어요</string>
     <string name="msg_consent_record_failed">동의 기록에 실패했어요. 다시 시도해 주세요</string>
     <string name="msg_marketing_consent_update_failed">수신 설정 변경에 실패했어요. 다시 시도해 주세요</string>
-    <string name="msg_custom_voice_alarm_paid_only">직접 만든 목소리·녹음 알람은 유료 이용권에서 사용할 수 있어요.</string>
+    <string name="msg_custom_voice_alarm_paid_only">해당 기능은 유료 이용권에서 사용할 수 있어요.</string>
     <string name="msg_email_required">이메일을 입력해 주세요</string>
     <string name="msg_email_verification_completed">이메일 인증이 완료됐어요</string>
     <string name="msg_family_alarm_couple_family_only">상대 알람은 커플/가족 이용권에서 사용할 수 있어요</string>
@@ -466,7 +465,7 @@
     <string name="msg_voice_invalid_duration">음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요.</string>
     <string name="msg_voice_max_profiles_reached">목소리는 최대 %1$d개까지 만들 수 있어요</string>
     <string name="msg_voice_name_required">목소리 이름을 입력해 주세요</string>
-    <string name="msg_voice_paid_plan_required">유료 이용권에서 사용할 수 있어요.</string>
+    <string name="msg_voice_paid_plan_required">해당 기능은 유료 이용권에서 사용할 수 있어요.</string>
     <string name="msg_voice_share_couple_family_required">음성 공유는 커플/가족 이용권에서 사용할 수 있어요</string>
     <string name="msg_voice_share_login_required">목소리를 공유하려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_share_setting_failed">목소리 공유 설정에 실패했어요</string>
@@ -541,7 +540,6 @@
     <string name="voices_close">닫기</string>
     <string name="voices_create_dialog_title">목소리 만들기</string>
     <string name="voices_create_paid_title">내 목소리 만들기는 유료 기능이에요</string>
-    <string name="voices_create_paid_notice">기본 목소리는 계속 무료로 쓸 수 있어요.</string>
     <string name="voices_crop_duration_notice">12초 이상 2분 이하 구간을 선택해 주세요.</string>
     <string name="voices_crop_section_title">구간 자르기</string>
     <string name="voices_draft_exit_body">지금 나가면 만들고 있던 목소리(초안)가 삭제되고, 처음부터 다시 만들어야 해요.</string>
@@ -565,7 +563,6 @@
     <string name="voices_lang_ja" translatable="false">日本語</string>
     <string name="voices_name_placeholder">예: 엄마 목소리</string>
     <string name="voices_next">다음</string>
-    <string name="voices_paid_required">유료 이용권에서 사용할 수 있어요.</string>
     <string name="voices_prepare_recording_first">녹음한 음성을 먼저 준비해 주세요.</string>
     <string name="voices_prepare_selected_failed">선택한 음성을 준비하지 못했어요.</string>
     <string name="voices_preparing">준비 중</string>
@@ -804,6 +801,11 @@
     <string name="r3dlg_duplicate_alarm_title">같은 시각 알람이 있어요</string>
     <string name="r3dlg_duplicate_alarm_replace">교체하기</string>
     <string name="r3dlg_duplicate_alarm_cancel">취소</string>
+    <!-- ⚠ **유료 게이트 설명은 이 키 하나다**(2026-08-11 지시). 화면마다 다른 문장을
+         쓰면 같은 사실을 서너 가지로 말하게 된다. 새 게이트를 만들면 이걸 가져다 쓴다.
+         ⚠ **여기에 로그인 게이트·기본목소리 게이트를 섞지 말 것** — 그건 유료 문제가
+         아니라서 이 문장이 거짓이 된다(로그인만 하면 되는데 돈을 내라고 하게 된다). -->
+    <string name="plan_gate_paid_message">해당 기능은 유료 이용권에서 사용할 수 있어요.</string>
     <string name="r3dlg_plan_gate_title">유료 이용권이 필요해요</string>
     <string name="r3dlg_plan_gate_confirm">이용권 보기</string>
     <string name="r3dlg_modal_dialog_close">닫기</string>

@@ -190,7 +190,6 @@
     <string name="editor_off">Off</string>
     <string name="editor_plan_gate_login_title">Sign in required</string>
     <string name="editor_plan_gate_login_required">Sign in to create voice alarms.</string>
-    <string name="editor_plan_gate_paid_features">With a plan, you can use your own voices, recordings, and custom phrases.</string>
     <string name="editor_plan_gate_system_voice_title">Default voices can\'t read custom text</string>
     <string name="editor_plan_gate_system_voice_message">Default voices only speak the lines we prepared. To wake up to your own words, register your own voice.</string>
     <string name="editor_plan_gate_system_voice_confirm">Register</string>
@@ -333,7 +332,7 @@
     <string name="msg_alarm_update_failed">Couldn\'t update your alarm.</string>
     <string name="msg_consent_record_failed">Couldn\'t record your consent. Please try again.</string>
     <string name="msg_marketing_consent_update_failed">Couldn\'t update the setting. Please try again.</string>
-    <string name="msg_custom_voice_alarm_paid_only">Voice and recording alarms you make yourself are available with a paid plan.</string>
+    <string name="msg_custom_voice_alarm_paid_only">This feature is available with a paid pass.</string>
     <string name="msg_email_required">Please enter your email.</string>
     <string name="msg_email_verification_completed">Your email has been verified.</string>
     <string name="msg_family_alarm_couple_family_only">Partner alarms are available with a Couple or Family plan.</string>
@@ -434,7 +433,7 @@
     <string name="msg_voice_invalid_duration">Couldn\'t check the audio length. Please select the file again.</string>
     <string name="msg_voice_max_profiles_reached">You can create up to %1$d voices.</string>
     <string name="msg_voice_name_required">Please enter a name for the voice.</string>
-    <string name="msg_voice_paid_plan_required">This is available on a paid plan.</string>
+    <string name="msg_voice_paid_plan_required">This feature is available with a paid pass.</string>
     <string name="msg_voice_share_couple_family_required">Voice sharing is available on the Couple or Family plan.</string>
     <string name="msg_voice_share_login_required">Please log in first to share the voice.</string>
     <string name="msg_voice_share_setting_failed">Couldn\'t update voice sharing settings.</string>
@@ -511,7 +510,6 @@
     <string name="voices_close">Close</string>
     <string name="voices_create_dialog_title">Create a voice</string>
     <string name="voices_create_paid_title">Creating your voice is a paid feature</string>
-    <string name="voices_create_paid_notice">Default voices stay free to use.</string>
     <string name="voices_crop_duration_notice">Please select a segment between 12 seconds and 2 minutes.</string>
     <string name="voices_crop_section_title">Trim segment</string>
     <string name="voices_draft_exit_body">If you leave now, the voice you were creating (draft) will be deleted and you\'ll have to start over.</string>
@@ -532,7 +530,6 @@ They become available as they finish.</string>
     <string name="voices_language_label">Language for alarm lines</string>
     <string name="voices_name_placeholder">e.g. Mom\'s voice</string>
     <string name="voices_next">Next</string>
-    <string name="voices_paid_required">Available with a paid plan.</string>
     <string name="voices_prepare_recording_first">Please prepare a recorded voice first.</string>
     <string name="voices_prepare_selected_failed">Couldn\'t prepare the selected audio.</string>
     <string name="voices_preparing">Preparing</string>
@@ -881,4 +878,5 @@ Pass code: %1$s
     <string name="downgrade_notice_shared_title">You\'ve left the shared pass</string>
     <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use the default sound. To use it again you need your own pass or a new invite code.</string>
     <string name="downgrade_notice_open_billing">View passes</string>
+    <string name="plan_gate_paid_message">This feature is available with a paid pass.</string>
 </resources>

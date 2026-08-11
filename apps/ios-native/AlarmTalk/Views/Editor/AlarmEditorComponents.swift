@@ -36,18 +36,17 @@ enum LocalAlarmAudioError: LocalizedError {
     }
 }
 
+/// 알람에 붙일 오디오의 입력 방식.
+///
+/// ⚠ **`file` 을 되살리지 말 것** — 알람 편집기에는 파일 업로드가 없다(위 주석 참조).
+/// 값이 하나뿐이지만 열거형을 남겨 두는 이유는 저장된 옛 값(`"file"`)을 읽을 때
+/// 조용히 깨지지 않게 하기 위해서다.
 enum AlarmLocalAudioInputMode: String, CaseIterable, Hashable, Identifiable {
     case record
-    case file
 
     var id: String { rawValue }
 
-    var label: String {
-        switch self {
-        case .record: return "녹음"
-        case .file: return "파일"
-        }
-    }
+    var label: String { "녹음" }
 }
 
 struct LocalAlarmAudioEditor: View {
@@ -64,48 +63,26 @@ struct LocalAlarmAudioEditor: View {
     let message: String?
     let onModeChange: (AlarmLocalAudioInputMode) -> Void
     let onRecord: () -> Void
-    let onPickFile: () -> Void
     let onPreview: () -> Void
     let onClear: () -> Void
 
     @Environment(\.voiceAlarmTheme) private var theme
 
-    private var sourceReady: Bool {
-        switch mode {
-        case .record:
-            return hasRecording || existingAudioLabel != nil
-        case .file:
-            return fileDurationMs != nil || existingAudioLabel != nil
-        }
-    }
+    private var sourceReady: Bool { hasRecording || existingAudioLabel != nil }
 
-    private var durationLabel: String {
-        switch mode {
-        case .record:
-            return HelperFormatters.audioTimeLabel(elapsedMs)
-        case .file:
-            guard let fileDurationMs else { return "0:00" }
-            return HelperFormatters.audioTimeLabel(max(0, min(cropEndMs, fileDurationMs) - cropStartMs))
-        }
-    }
+    private var durationLabel: String { HelperFormatters.audioTimeLabel(elapsedMs) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("녹음/파일", selection: Binding(
-                get: { mode },
-                set: { onModeChange($0) }
-            )) {
-                ForEach(AlarmLocalAudioInputMode.allCases) { option in
-                    Text(option.label).tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            if mode == .record {
-                recordingCard
-            } else {
-                fileCard
-            }
+            // ⚠ **알람 편집기에는 파일 업로드가 없다 — 녹음뿐이다**(2026-08-11 정리).
+            // 안드로이드 알람 편집기에는 처음부터 파일 선택 런처가 없고
+            // (`ui/editor/` 에 `OpenDocument`/`GetContent` 0건), iOS 에만 '녹음/파일'
+            // 세그먼트가 남아 있었다 — 같은 화면이 두 앱에서 다른 기능을 갖고 있었다.
+            //
+            // ⚠ **목소리를 만들 때의 파일 업로드는 그대로다**(`VoiceCloneUploadFlow`,
+            // 안드 `VoiceProfileManagementPanel` 의 `pickAudioLauncher`). 없앤 건
+            // **알람에 붙이는 오디오** 쪽뿐이다.
+            recordingCard
 
             if sourceReady {
                 HStack(spacing: 8) {
@@ -137,7 +114,7 @@ struct LocalAlarmAudioEditor: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(isRecording ? "녹음 중…" : (hasRecording ? "녹음을 저장했어요." : "녹음 또는 파일 업로드"))
+                    Text(isRecording ? "녹음 중…" : (hasRecording ? "녹음을 저장했어요." : "녹음하기"))
                         .font(theme.typography.labelLarge)
                     Text("\(durationLabel) / \(HelperFormatters.audioTimeLabel(Int(AlarmAudioLimits.maxDurationMillis)))")
                         .font(theme.typography.bodySmall)
@@ -164,57 +141,6 @@ struct LocalAlarmAudioEditor: View {
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
     }
 
-    private var fileCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(fileName ?? "파일 업로드")
-                        .font(theme.typography.labelLarge)
-                        .lineLimit(1)
-                    Text(fileDurationMs.map { "전체 \(HelperFormatters.audioTimeLabel($0)) · 사용할 구간 \(durationLabel)" } ?? "최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초")
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                }
-                Spacer()
-                Button(action: onPickFile) {
-                    // ⚠ **`folder` 로 되돌리지 말 것.** 안드로이드는 '문서 + 위 화살표'
-                    // (`UploadFile`)라 폴더와 도형이 아예 달랐다(2026-08-11 대조).
-                    // ⚠ `icloud.and.arrow.up` 도 쓰지 말 것 — 그건 **iCloud** 를 뜻해서,
-                    // 우리 서버에 올리는 일을 사용자 iCloud 에 저장하는 것처럼 오해시킨다.
-                    Label("선택", systemImage: "arrow.up.doc")
-                }
-                .buttonStyle(.bordered)
-            }
-
-            if let fileDurationMs, fileDurationMs > Int(AlarmAudioLimits.maxDurationMillis) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("자를 구간 \(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(min(cropEndMs, fileDurationMs)))")
-                        .font(.caption.weight(.semibold))
-                    Slider(
-                        value: Binding(
-                            get: { Double(cropStartMs) / 1000.0 },
-                            set: { seconds in
-                                let maxStart = max(0, fileDurationMs - Int(AlarmAudioLimits.maxDurationMillis))
-                                cropStartMs = min(maxStart, max(0, Int(seconds * 1000)))
-                                cropEndMs = min(fileDurationMs, cropStartMs + Int(AlarmAudioLimits.maxDurationMillis))
-                            }
-                        ),
-                        in: 0...(Double(max(0, fileDurationMs - Int(AlarmAudioLimits.maxDurationMillis))) / 1000.0),
-                        step: 1
-                    )
-                }
-            }
-
-            if let existingAudioLabel, fileDurationMs == nil {
-                Text(existingAudioLabel)
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-            }
-        }
-        .padding(12)
-        .background(theme.palette.surfaceVariant.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
-    }
 
 }
 

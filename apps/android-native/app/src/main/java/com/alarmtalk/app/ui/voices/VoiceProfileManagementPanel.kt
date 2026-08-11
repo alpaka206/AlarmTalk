@@ -371,7 +371,7 @@ internal fun VoiceProfileManagementPanel(
     // 진행 UI·'백그라운드에서 계속'이 보인다(닫기는 자유 — 드라이브는 ViewModel 에서 계속된다).
     val inPrerenderingFlow = currentStep == VoiceRegistrationStep.Prerendering
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
-    val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
+    val paidVoiceRequiredMessage = stringResource(R.string.plan_gate_paid_message)
     val maxProfilesReachedMessage =
         stringResource(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
 
@@ -1471,7 +1471,7 @@ internal fun VoiceProfileManagementPanel(
     if (voicePlanGateOpen) {
         PlanGateDialog(
             title = stringResource(R.string.voices_create_paid_title),
-            message = stringResource(R.string.voices_create_paid_notice),
+            message = stringResource(R.string.plan_gate_paid_message),
             onConfirm = {
                 voicePlanGateOpen = false
                 onOpenBilling()

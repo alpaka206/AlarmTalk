@@ -81,7 +81,6 @@ struct AlarmEditorSheet: View {
     @State var voiceSourceMode: VoiceSource = .ttsProfile
     @State var localAudioMode: AlarmLocalAudioInputMode = .record
     @State var localAudioMessage: String?
-    @State var localAudioFileImporterPresented = false
     @State var selectedLocalAudioURL: URL?
     @State var selectedLocalAudioName: String?
     @State var selectedLocalAudioDurationMs: Int?
@@ -577,19 +576,6 @@ struct AlarmEditorSheet: View {
                 }
             )
             .presentationDetents([.medium, .large])
-        }
-        .fileImporter(
-            isPresented: $localAudioFileImporterPresented,
-            allowedContentTypes: [.audio],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let source = urls.first else { return }
-                Task { await importLocalAlarmAudio(source) }
-            case .failure(let error):
-                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "파일을 선택하지 못했어요.")
-            }
         }
         // 플랜이 시트 오픈 후 비동기로 free 로 확정되는 경우(socialFeatures.subscription
         // 가 늦게 채워질 때) freeVoiceTier 가 뒤늦게 flip 된다. Android 가
@@ -1666,7 +1652,8 @@ struct AlarmEditorSheet: View {
         case .loggedOut:
             message = "음성 알람은 로그인 후 사용할 수 있어요."
         case .free:
-            message = "녹음/파일·직접 문구·날씨/운세 맞춤은 유료 이용권에서 사용할 수 있어요. 무료에서는 시스템 목소리와 기본 랜덤 문구로 알람을 만들 수 있어요."
+            // 유료 게이트 설명은 `PaidGateCopy` 한 곳에서만 정한다(안드 `plan_gate_paid_message`).
+            message = PaidGateCopy.message
         case .paid:
             // 유료인데 막혔다 = 플랜이 아니라 **목소리 종류**의 문제다.
             message = "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
@@ -2324,9 +2311,9 @@ struct AlarmEditorSheet: View {
 
     func handleLocalAudioModeChange(_ mode: AlarmLocalAudioInputMode) {
         stopAllEditorPreviews()
-        if mode == .file {
-            localRecorder.clearLatest()
-        } else {
+        // 알람 편집기에는 녹음뿐이다 — 파일 갈래는 없앴다(2026-08-11).
+        // 옛 행이 남긴 파일 선택 상태만 비운다.
+        do {
             selectedLocalAudioURL = nil
             selectedLocalAudioName = nil
             selectedLocalAudioDurationMs = nil
@@ -2489,22 +2476,6 @@ struct AlarmEditorSheet: View {
                 throw LocalAlarmAudioError.tooLong
             }
             return (url, min(durationMs, Int(AlarmAudioLimits.maxDurationMillis)))
-        case .file:
-            guard let source = selectedLocalAudioURL,
-                  let sourceDuration = selectedLocalAudioDurationMs else {
-                throw LocalAlarmAudioError.missingSource
-            }
-            let endMs = min(localAudioCropEndMs, sourceDuration)
-            let durationMs = max(0, endMs - localAudioCropStartMs)
-            guard durationMs >= 1_000 else { throw LocalAlarmAudioError.tooShort }
-            guard durationMs <= Int(AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis) else {
-                throw LocalAlarmAudioError.tooLong
-            }
-            if localAudioCropStartMs == 0 && endMs == sourceDuration {
-                return (source, durationMs)
-            }
-            let cropped = try await AudioCropper.crop(source: source, startMs: localAudioCropStartMs, endMs: endMs)
-            return (cropped, durationMs)
         }
     }
 
@@ -2536,16 +2507,9 @@ struct AlarmEditorSheet: View {
 
 
     func localAudioUploadDisplayName(for url: URL) -> String {
-        switch localAudioMode {
-        case .record:
-            return "alarm-recording.m4a"
-        case .file:
-            if let name = selectedLocalAudioName?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !name.isEmpty {
-                return name
-            }
-            return url.lastPathComponent.isEmpty ? "alarm-audio.m4a" : url.lastPathComponent
-        }
+        // 알람 오디오는 녹음뿐이다 — 이름도 하나다.
+        _ = url
+        return "alarm-recording.m4a"
     }
 
     // MARK: - Error formatting
