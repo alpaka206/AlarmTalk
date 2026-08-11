@@ -341,8 +341,6 @@
     <string name="msg_alarm_toggle_failed">アラームの状態変更に失敗しました。</string>
     <string name="msg_alarm_update_failed">アラームの編集に失敗しました。</string>
     <string name="msg_consent_record_failed">同意の記録に失敗しました。もう一度お試しください。</string>
-    <string name="msg_marketing_consent_on">広告性情報の受信に同意しました。</string>
-    <string name="msg_marketing_consent_off">広告性情報の受信をオフにしました。</string>
     <string name="msg_marketing_consent_update_failed">設定の変更に失敗しました。もう一度お試しください。</string>
     <string name="msg_custom_voice_alarm_paid_only">自分で作った声・録音のアラームは、有料プランでご利用いただけます。</string>
     <string name="msg_email_required">メールアドレスを入力してください。</string>

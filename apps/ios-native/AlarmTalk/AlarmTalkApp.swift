@@ -356,6 +356,12 @@ struct AlarmTalkApp: App {
         // ⚠ **유료면 잠긴 것을 되돌린다.** 예전에는 여기서 그냥 return 해서, 한 번
         // 잠긴 알람은 재결제해도 영영 알람음으로 남았다(예전엔 아예 삭제였다).
         guard !currentPlan.meetsOrExceeds(.personal) else {
+            // ⚠ **유료로 돌아오면 대기표를 비운다.** 두 가지를 동시에 지킨다:
+            // ① 아직 확인 안 한 강등 안내가 남아 있으면, 이미 유료가 된 사람에게
+            //    "무료로 바뀌었어요" 를 띄우게 된다.
+            // ② 비워 둬야 **다음에 다시 무료가 됐을 때 깨끗이 다시 뜬다**
+            //    (2026-08-11 요청 "다시 요금제를 쓰면 나중에 바뀌었을 때 알람 뜰 수 있게").
+            DowngradeNoticeStore().clear(userID: auth.session?.user.id)
             _ = await socialFeatures.restorePaidVoiceAlarms(
                 alarmStore: alarmStore,
                 alarmKit: alarmKit,

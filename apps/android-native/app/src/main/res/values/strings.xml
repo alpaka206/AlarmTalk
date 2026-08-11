@@ -352,8 +352,6 @@
     <string name="msg_alarm_toggle_failed">알람 상태 변경에 실패했어요</string>
     <string name="msg_alarm_update_failed">알람 수정에 실패했어요</string>
     <string name="msg_consent_record_failed">동의 기록에 실패했어요. 다시 시도해 주세요</string>
-    <string name="msg_marketing_consent_on">광고성 정보 수신에 동의했어요</string>
-    <string name="msg_marketing_consent_off">광고성 정보 수신을 해제했어요</string>
     <string name="msg_marketing_consent_update_failed">수신 설정 변경에 실패했어요. 다시 시도해 주세요</string>
     <string name="msg_custom_voice_alarm_paid_only">직접 만든 목소리·녹음 알람은 유료 이용권에서 사용할 수 있어요.</string>
     <string name="msg_email_required">이메일을 입력해 주세요</string>

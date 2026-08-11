@@ -332,8 +332,6 @@
     <string name="msg_alarm_toggle_failed">Couldn\'t change the alarm status.</string>
     <string name="msg_alarm_update_failed">Couldn\'t update your alarm.</string>
     <string name="msg_consent_record_failed">Couldn\'t record your consent. Please try again.</string>
-    <string name="msg_marketing_consent_on">You\'ve agreed to receive marketing messages.</string>
-    <string name="msg_marketing_consent_off">You\'ve turned off marketing messages.</string>
     <string name="msg_marketing_consent_update_failed">Couldn\'t update the setting. Please try again.</string>
     <string name="msg_custom_voice_alarm_paid_only">Voice and recording alarms you make yourself are available with a paid plan.</string>
     <string name="msg_email_required">Please enter your email.</string>

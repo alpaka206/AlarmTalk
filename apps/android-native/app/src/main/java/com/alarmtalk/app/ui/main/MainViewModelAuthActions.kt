@@ -944,11 +944,10 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
             val app = getApplication<android.app.Application>()
             // 확정된 값을 캐시에 저장 → 다음 진입 때 즉시 seed(낙관적 표시).
             com.alarmtalk.app.data.MarketingConsentCache(app).write(userId, agreed)
-            message = if (agreed) {
-                app.getString(R.string.msg_marketing_consent_on)
-            } else {
-                app.getString(R.string.msg_marketing_consent_off)
-            }
+            // ⚠ **성공 토스트를 되살리지 말 것**(2026-08-11 요청). 스위치가 이미 결과를
+            // 보여주는데 토스트가 같은 말을 한 번 더 한다 — 켜고 끌 때마다 화면 아래가
+            // 가려진다. **실패는 그대로 알린다**(아래) — 그때는 스위치가 되돌아가므로
+            // 왜 되돌아갔는지 말해 줄 것이 필요하다.
         }.onFailure { error ->
             marketingConsentAgreed = previous
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed))

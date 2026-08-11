@@ -1002,7 +1002,8 @@ final class AuthViewModel: ObservableObject {
                 ]),
                 token: token
             )
-            statusMessage = agreed ? "마케팅 정보 수신에 동의했어요." : "마케팅 정보 수신 동의를 해제했어요."
+            // ⚠ **성공 토스트를 되살리지 말 것**(안드로이드와 같은 조치, 2026-08-11).
+            // 스위치가 이미 결과를 보여준다 — 실패만 알린다(아래 catch).
         } catch {
             marketingConsentAgreed = previous
             if handleConsentVersionMismatch(error) { return }

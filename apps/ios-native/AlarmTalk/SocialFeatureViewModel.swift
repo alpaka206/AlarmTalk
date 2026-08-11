@@ -439,6 +439,11 @@ final class SocialFeatureViewModel: ObservableObject {
         voiceStudio: VoiceStudioViewModel,
         expectedOwnerUserId: String? = nil
     ) async -> Int {
+        // ⚠ **반환값은 '이번에 새로 잠근 개수' 다 — 대상 개수가 아니다.**
+        // 예전에는 이미 잠긴 알람까지 세서, 이 함수가 도는 **앱 시작·전경 복귀마다**
+        // 같은 수를 돌려줬다. 그 값이 `DowngradeNoticeStore` 대기표에 다시 찍혀
+        // **강등 모달이 매번 떴다**(2026-08-11 실기기 지적 "모달 계속 뜨네").
+        // 안드로이드 `lockPaidAlarmTalks` 는 `needsLock` 일 때만 센다.
         let targets = alarmStore.paidAlarmTalks().filter { record in
             // 소유자가 안 적힌 옛 행은 이 계정 것으로 본다(안드로이드와 같은 관용).
             guard let expectedOwnerUserId, let owner = record.ownerUserId else { return true }
@@ -449,15 +454,20 @@ final class SocialFeatureViewModel: ObservableObject {
         for record in targets {
             var updated = record
             // 이미 잠긴 알람을 다시 잠그면 원래 값을 잃는다 — 처음 한 번만 적는다.
-            if updated.preLockPlayMode == nil {
+            let needsLock = updated.preLockPlayMode == nil
+            if needsLock {
                 updated.preLockPlayMode = updated.playMode
             }
             updated.playMode = AlarmPlayMode.alarmOnly.rawValue
             _ = alarmStore.upsert(updated)
-            // 사운드온리로 **다시 예약한다.** 재예약을 빠뜨리면 잠근 게 아니라
-            // 조용히 안 울리는 알람이 된다.
-            _ = await alarmKit.schedule(record: updated, store: alarmStore)
-            locked += 1
+            // ⚠ **새로 잠근 것만 다시 예약한다.** 이미 잠긴 알람은 재생 방식이 그대로라
+            // 예약을 건드릴 이유가 없다(안드로이드 `lockPaidAlarmTalks` 도 `needsLock` 일 때만 한다).
+            if needsLock {
+                // 사운드온리로 **다시 예약한다.** 재예약을 빠뜨리면 잠근 게 아니라
+                // 조용히 안 울리는 알람이 된다.
+                _ = await alarmKit.schedule(record: updated, store: alarmStore)
+                locked += 1
+            }
         }
 
         voiceStudio.clearPaidVoiceState()
