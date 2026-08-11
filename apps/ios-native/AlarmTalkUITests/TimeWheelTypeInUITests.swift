@@ -29,7 +29,9 @@ final class TimeWheelTypeInUITests: XCTestCase {
         add(shot)
 
         app.typeText("45")
-        app.buttons["완료"].tap()
+        // ⚠ **키보드 툴바 '완료' 는 없앴다**(2026-08-11) — 휠 **밖**을 누르면 끝난다.
+        // 휠을 누르면 그 칼럼의 입력이 다시 시작되므로 닫히지 않는 게 정상이다.
+        app.staticTexts["재생 방식"].firstMatch.tap()
 
         XCTAssertEqual(minutes.label, "45", "친 값이 그 칼럼에 들어가지 않았다")
     }
@@ -50,7 +52,9 @@ final class TimeWheelTypeInUITests: XCTestCase {
             throw XCTSkip("키보드가 뜨지 않았다")
         }
         app.typeText("99")
-        app.buttons["완료"].tap()
+        // ⚠ **키보드 툴바 '완료' 는 없앴다**(2026-08-11) — 휠 **밖**을 누르면 끝난다.
+        // 휠을 누르면 그 칼럼의 입력이 다시 시작되므로 닫히지 않는 게 정상이다.
+        app.staticTexts["재생 방식"].firstMatch.tap()
 
         XCTAssertEqual(minutes.label, "59", "59분을 넘겨 쳤으면 59로 잘려야 한다")
     }

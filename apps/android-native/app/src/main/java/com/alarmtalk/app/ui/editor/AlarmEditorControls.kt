@@ -153,24 +153,10 @@ internal fun RepeatSelector(
                     onCheckedChange = onHolidayOffChange,
                 )
             }
-            // 끄기가 켜졌을 때만: (a) 적용되는 공휴일 달력 국가 라벨, (b) 다가오는 공휴일 목록.
-            if (holidayOff) {
-                val flag = holidayCountryFlagEmoji(holidayCountryCode)
-                val countryName = holidayCountryDisplayName(holidayCountryCode)
-                val countryLabelValue = listOf(flag, countryName)
-                    .filter { it.isNotBlank() }
-                    .joinToString(" ")
-                Text(
-                    text = stringResource(R.string.editor_holiday_country_label, countryLabelValue),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                HolidayUpcomingList(
-                    holidays = upcomingHolidays,
-                    countryCode = holidayCountryCode,
-                    onColdCache = onHolidayColdCache,
-                )
-            }
+            // ⚠ **공휴일 달력 국가·다가오는 공휴일 목록을 되살리지 말 것**(2026-08-11 요청).
+            // 토글이 하는 말("공휴일에는 끄기")로 충분하다 — 어느 나라 달력인지는 설정에서
+            // 이미 정했고, 다가오는 공휴일 목록은 이 자리에서 결정에 쓰이지 않는다.
+            // 카드만 길어져 아래 여백이 사라진다.
         }
     }
 }

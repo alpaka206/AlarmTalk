@@ -239,7 +239,11 @@ struct AlarmEditorSheet: View {
     private var repeatCard: some View {
             EditorCard {
                 Text(repeatSummary)
-                    .font(theme.typography.bodySmall)
+                    // ⚠ **`bodySmall` 로 되돌리지 말 것**(2026-08-11 지적 "너무 작아 보인다").
+                    // 이 줄은 카드의 **제목 역할**이다 — '매주 : 수' / '내일 - 8월 12일 (수)' 는
+                    // 이 카드가 무엇인지 말하는 첫 줄이라, 보조 설명 크기로 두면 읽히지 않는다.
+                    .font(theme.typography.bodyLarge)
+                    .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 10)
@@ -254,20 +258,10 @@ struct AlarmEditorSheet: View {
                         enabled: true
                     )
 
-                    if draft.holidayOff {
-                        VStack(alignment: .leading, spacing: 6) {
-                            // Android 와 동일: 보조 색(onSurfaceVariant), '설정에서 변경' 어포던스 없음.
-                            Text("공휴일 달력: \(HolidayCountryFlag.emoji(for: holidayStore.selectedCountryCode)) \(HolidayStore.localizedCountryName(holidayStore.selectedCountryCode))")
-                                .font(theme.typography.bodySmall)
-                                .foregroundStyle(theme.palette.onSurfaceVariant)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            HolidayUpcomingList(
-                                countryCode: holidayStore.selectedCountryCode,
-                                holidayStore: holidayStore
-                            )
-                        }
-                        .padding(.top, 2)
-                    }
+                    // ⚠ **공휴일 달력 국가·다가오는 공휴일 목록을 되살리지 말 것**(2026-08-11 요청).
+                    // 토글이 하는 말("공휴일에는 끄기")로 충분하다 — 어느 나라 달력인지는 설정에서
+                    // 이미 정했고, 다가오는 공휴일 목록은 이 자리에서 결정에 쓰이지 않는다.
+                    // 카드만 길어져 아래 여백이 사라진다.
                 }
 
                 // ⚠ **알람 이름(라벨) 입력창을 되살리지 말 것.** 안드로이드

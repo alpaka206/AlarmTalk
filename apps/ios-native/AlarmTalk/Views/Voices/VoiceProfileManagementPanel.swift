@@ -353,6 +353,10 @@ struct VoiceProfileManagementPanel: View {
                 // 안드로이드 M3 `Button` 기본 높이 40dp 에 맞춘다.
                 Text("추가")
                     .padding(.vertical, 5)
+                    // 좌우도 라벨에 준다 — 세로와 같은 이유다(캡슐은 **라벨 크기**에 맞춰
+                    // 그려지므로 버튼 바깥 여백으로는 안 넓어진다). 2026-08-11 지적
+                    // "좌우 여백이 너무 없다" — 실측 폭 48pt 였다.
+                    .padding(.horizontal, 8)
             }
             .font(theme.typography.bodyMedium.weight(.semibold))
             .buttonStyle(.borderedProminent)
