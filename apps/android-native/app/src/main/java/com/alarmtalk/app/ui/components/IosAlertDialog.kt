@@ -78,9 +78,17 @@ internal object IosAlertType {
     // `alarmTalkTextStyle` 이 모든 스타일에 `letterSpacing = 0.sp` 를 건다).
     // **알럿만 그 규칙 밖에 있었다.** 같은 규칙으로 되돌린다.
     //
-    // 글자 크기(17/13/15)는 iOS 실측과 같다 — 자간만 우리 글꼴에 맞춘다.
+    // ⚠ **본문은 13 이 아니라 14.5 다.** 오래 "iOS 본문 = 13" 으로 알고 썼는데 **틀렸다.**
+    // 2026-08-11 에 두 폰의 스크린샷에서 **글리프 실제 높이**를 재서 확인했다:
+    //
+    //   제목  iOS 15.0pt / 안드 14.9dp  (둘 다 폰트 17) → 이미 일치
+    //   본문  iOS 12.7pt / 안드 10.9dp  (안드 폰트 13)  → 안드가 15% 작다
+    //
+    // 안드로이드 글리프 비율(14.9/17 = 0.874)로 역산하면 iOS 본문과 같은 크기를 내는 값이
+    // **14.5sp** 다. 13 으로 두면 글자가 작아 보일 뿐 아니라 **한 줄에 더 들어가서**
+    // 같은 문장이 아이폰 3줄 / 갤럭시 2줄로 갈린다(사용자가 그걸 먼저 알아챘다).
     val Title = TextStyle(fontSize = 17.sp, lineHeight = 21.sp, letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold)
-    val Message = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, letterSpacing = 0.sp)
+    val Message = TextStyle(fontSize = 14.5.sp, lineHeight = 20.sp, letterSpacing = 0.sp)
     val Field = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 0.sp)
     val Action = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = 0.sp)
 }
