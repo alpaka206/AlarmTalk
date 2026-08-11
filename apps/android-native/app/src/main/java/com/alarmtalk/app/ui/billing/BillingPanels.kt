@@ -318,21 +318,25 @@ internal fun SubscriptionPanel(
     }
 
     if (showLeaveDialog && sharedGroupId != null) {
-        BillingActionDialog(
+        IosAlertDialog(
             title = stringResource(R.string.billing_leave_shared_pass),
-            description = stringResource(R.string.billing_leave_shared_pass_description),
+            message = stringResource(R.string.billing_leave_shared_pass_description),
             onDismiss = { showLeaveDialog = false },
-        ) {
-            BillingDialogButton(
-                label = stringResource(R.string.billing_leave_button),
-                primary = true,
-                destructive = true,
-                onClick = {
-                    showLeaveDialog = false
-                    onLeaveFamilyGroup(sharedGroupId)
-                },
-            )
-        }
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.social_cancel_button),
+                    onClick = { showLeaveDialog = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.billing_leave_button),
+                    destructive = true,
+                    onClick = {
+                        showLeaveDialog = false
+                        onLeaveFamilyGroup(sharedGroupId)
+                    },
+                ),
+            ),
+        )
     }
 
     changeTarget?.let { option ->
@@ -347,12 +351,18 @@ internal fun SubscriptionPanel(
     }
 
     if (shareTarget.isNotEmpty()) {
-        BillingActionDialog(
+        // ⚠ **이건 알럿이 아니라 목록이다** — 바우처 중 하나를 고르는 화면이라
+        // 선택 시트가 맞다(CLAUDE.md 「모달 세 형태」). 예전에는 결제 전용 사설
+        // 껍데기를 써서 같은 '고르기' 인데 공휴일·목소리 고르기와 다르게 보였다.
+        WakerSelectionSheet(
             title = stringResource(R.string.billing_share_voucher_select_title),
-            description = stringResource(R.string.billing_share_voucher_select_description),
+            subtitle = stringResource(R.string.billing_share_voucher_select_description),
             onDismiss = { shareTarget = emptyList() },
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ) { _ ->
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 shareTarget.forEach { voucher ->
                     val issuedAtLabel = formatVoucherIssuedAt(voucher.issuedAt)
                     val subtitle = if (issuedAtLabel != null) {
@@ -387,25 +397,32 @@ private fun PlayPurchaseDialog(
     onDismiss: () -> Unit,
     onPurchase: () -> Unit,
 ) {
-    BillingActionDialog(
+    IosAlertDialog(
         title = stringResource(R.string.billing_play_purchase_title, target.name),
         // ⚠ 가격은 스토어가 권위라 **없을 수도 있다**(Play 조회 실패·미출시 상품).
         // 그때 가격 자리에 빈 문자열을 끼우면 "개인 이용권은 이에요." 가 된다 —
         // 숫자를 모를 땐 가격을 말하지 않는 문장을 쓴다. 실제 금액은 Play 결제
         // 시트가 어차피 다시 보여준다.
-        description = if (target.price.isBlank()) {
+        message = if (target.price.isBlank()) {
             stringResource(R.string.billing_play_purchase_description_no_price, target.name)
         } else {
             stringResource(R.string.billing_play_purchase_description, target.name, target.price)
         },
         onDismiss = onDismiss,
-    ) {
-        BillingDialogButton(
-            label = stringResource(R.string.billing_monthly_subscription),
-            primary = true,
-            onClick = { if (!busy) onPurchase() },
-        )
-    }
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.social_cancel_button),
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.billing_monthly_subscription),
+                emphasized = true,
+                // 결제 요청이 도는 동안 잠근다 — 두 번 눌러 같은 결제가 두 번 열리면 안 된다.
+                enabled = !busy,
+                onClick = onPurchase,
+            ),
+        ),
+    )
 }
 
 /** Compose Context 에서 결제 시트 호출에 필요한 Activity 를 찾는다. */
@@ -413,121 +430,6 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
-}
-
-@Composable
-private fun BillingActionDialog(
-    title: String,
-    description: String,
-    onDismiss: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp),
-            ) {
-                // 설명은 마침표(". ") 단위로 줄바꿈해 한 문장씩 읽기 쉽게 보여준다.
-                val formattedDescription = remember(description) {
-                    description.replace(". ", ".\n")
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = formattedDescription,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 20.sp,
-                        )
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(42.dp),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Close,
-                            contentDescription = stringResource(R.string.billing_close),
-                        )
-                    }
-                }
-                content()
-            }
-        }
-    }
-}
-
-@Composable
-private fun BillingDialogButton(
-    label: String,
-    primary: Boolean,
-    modifier: Modifier = Modifier.fillMaxWidth(),
-    destructive: Boolean = false,
-    onClick: () -> Unit,
-) {
-    if (primary) {
-        Button(
-            onClick = onClick,
-            modifier = modifier,
-            shape = WakerButtonShape,
-            colors = if (destructive) {
-                ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                )
-            } else {
-                ButtonDefaults.buttonColors()
-            },
-        ) {
-            Text(label)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier,
-            shape = WakerButtonShape,
-            border = wakerCardBorder(),
-            colors = wakerOutlinedButtonColors(),
-        ) {
-            Text(label)
-        }
-    }
-}
-
-@Composable
-private fun BillingDialogButtonRow(content: @Composable RowScope.() -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        content()
-    }
 }
 
 @Composable
@@ -762,22 +664,27 @@ internal fun PlayStoreManageDialog(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    BillingActionDialog(
+    IosAlertDialog(
         title = stringResource(R.string.billing_play_manage_title),
-        description = stringResource(R.string.billing_play_manage_description),
+        message = stringResource(R.string.billing_play_manage_description),
         onDismiss = onDismiss,
-    ) {
-        BillingDialogButton(
-            label = stringResource(R.string.billing_play_manage_open),
-            primary = true,
-            onClick = {
-                onDismiss()
-                runCatching {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(manageUrl)))
-                }
-            },
-        )
-    }
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.social_cancel_button),
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.billing_play_manage_open),
+                emphasized = true,
+                onClick = {
+                    onDismiss()
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(manageUrl)))
+                    }
+                },
+            ),
+        ),
+    )
 }
 
 @Composable
@@ -786,26 +693,27 @@ private fun ChangePlanDialog(
     onDismiss: () -> Unit,
     onConfirm: (atPeriodEnd: Boolean) -> Unit,
 ) {
-    BillingActionDialog(
+    // 선택지 2개 + 취소 = **3개라 세로로 쌓인다**(iOS UIAlertController 규칙).
+    IosAlertDialog(
         title = stringResource(R.string.billing_change_plan_title, target.name),
-        description = stringResource(R.string.billing_change_plan_description),
+        message = stringResource(R.string.billing_change_plan_description),
         onDismiss = onDismiss,
-    ) {
-        BillingDialogButtonRow {
-            BillingDialogButton(
-                label = stringResource(R.string.billing_change_at_end_date),
-                primary = false,
-                modifier = Modifier.weight(1f),
-                onClick = { onConfirm(true) },
-            )
-            BillingDialogButton(
+        actions = listOf(
+            IosAlertAction(
                 label = stringResource(R.string.billing_change_now),
-                primary = true,
-                modifier = Modifier.weight(1f),
+                emphasized = true,
                 onClick = { onConfirm(false) },
-            )
-        }
-    }
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.billing_change_at_end_date),
+                onClick = { onConfirm(true) },
+            ),
+            IosAlertAction(
+                label = stringResource(R.string.social_cancel_button),
+                onClick = onDismiss,
+            ),
+        ),
+    )
 }
 
 
