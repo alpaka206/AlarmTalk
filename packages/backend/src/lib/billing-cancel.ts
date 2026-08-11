@@ -94,6 +94,17 @@ export async function findActiveSubscriptionsByUserPk(
 
 type CancelCleanupOptions = {
   deleteVoiceData?: boolean;
+  /**
+   * **해체하지 않고 넘겨줄 소유 그룹** — 그룹형 plan 사이 전환(커플 ↔ 가족)에서 쓴다.
+   *
+   * ⚠ **이게 없으면 업그레이드가 그룹을 부순다.** 전환은 새 purchaseToken 이라
+   * `applyStoreEntitlement` 의 신규 구독 경로를 타고, 거기서 기존 활성 구독을 취소하는데
+   * 소유자 갈래는 `disbandOwnedPlanGroup` 으로 **멤버를 전부 내쫓고 초대 코드까지
+   * 만료**시킨다. 가족 → 개인 다운그레이드라면 맞는 동작이지만(그룹을 뒷받침할 결제가
+   * 사라지므로), 커플 → 가족은 **더 비싼 걸 산 것**인데 파트너가 쫓겨났다.
+   * 이 값이 주어진 그룹은 멤버·코드를 그대로 두고 새 구독에 다시 매단다.
+   */
+  preserveGroupId?: string | null;
 };
 
 async function resolveUserLoginId(db: DbExecutor, userPk: string): Promise<string | null> {
@@ -327,6 +338,12 @@ async function cancelOneSubscriptionRow(
   db: DbExecutor,
   subscriptionId: string,
   now: Date,
+  /**
+   * 이어받는 그룹의 구독이면 **코드를 만료시키지 않는다.** 만료시키면 이미 카톡으로
+   * 뿌린 초대 코드가 조용히 죽어, 소유자는 새 코드를 다시 찾아 재초대해야 한다.
+   * 새 구독으로 다시 매다는 일은 호출부(`applyStoreEntitlement`)가 한다.
+   */
+  keepVouchers = false,
 ): Promise<void> {
   await db.execute({
     sql: `UPDATE subscriptions
@@ -337,7 +354,7 @@ async function cancelOneSubscriptionRow(
           WHERE id = ? AND status = 'active'`,
     args: [now.toISOString(), now.toISOString(), subscriptionId],
   });
-  await expireUnusedVouchersFor(db, subscriptionId);
+  if (!keepVouchers) await expireUnusedVouchersFor(db, subscriptionId);
 }
 
 /**
@@ -538,10 +555,17 @@ export async function cancelSubscriptionImmediate(
   // plan_changed 통지 대상: 취소 당사자 + 소유 그룹 해체로 함께 강등되는 멤버들.
   // (호출자가 트랜잭션 커밋 '후' notifyPlanChanged 로 푸시 — FCM 은 tx 안에서 쏘지 않는다.)
   const affected = new Set<string>([subscription.userPk]);
-  await cancelOneSubscriptionRow(db, subscription.subscriptionId, now);
-  await syncUserPlanAfterCancel(db, subscription.userPk, options);
+  const preservedGroupId = options.preserveGroupId ?? null;
+  const preservingThisSub =
+    preservedGroupId !== null && subscription.planGroupId === preservedGroupId;
+  await cancelOneSubscriptionRow(db, subscription.subscriptionId, now, preservingThisSub);
+  // 이어받는 전환에서는 사용자가 곧바로 새 유료 구독을 갖는다 — 여기서 free 로 떨구면
+  // 그 사이 상태가 free 로 찍히고, 멤버 plan 전파도 free 기준으로 돈다.
+  if (!preservingThisSub) {
+    await syncUserPlanAfterCancel(db, subscription.userPk, options);
+  }
 
-  if (subscription.planGroupId) {
+  if (subscription.planGroupId && !preservingThisSub) {
     const groupRes = await db.execute({
       sql: `SELECT owner_user_id FROM plan_groups WHERE id = ?`,
       args: [subscription.planGroupId],
@@ -580,6 +604,8 @@ export async function cancelSubscriptionImmediate(
   for (const row of ownedGroups.rows) {
     const groupId = String(row.id);
     if (groupId === subscription.planGroupId) continue;
+    // 이어받기로 넘길 그룹은 방어 스윕에서도 건드리지 않는다.
+    if (groupId === preservedGroupId) continue;
     const backedByOwnerSub = remaining.some((s) => s.planGroupId === groupId);
     if (backedByOwnerSub || hasUnlinkedGroupCapablePlan) continue;
     for (const m of await disbandOwnedPlanGroup(db, subscription.userPk, groupId, now)) {

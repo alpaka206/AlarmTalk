@@ -5,6 +5,8 @@ import { withWriteTransaction } from '../lib/transactions';
 import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
+import { purchaseAccountMatches } from '../lib/purchase-account-binding';
+import { notifyPlanChanged } from '../lib/billing-cancel';
 import { issueVoucherCode } from '../lib/voucher-issue';
 import {
   ANDROID_PUBLISHER_SCOPE,
@@ -68,14 +70,6 @@ interface ConfirmRequest {
   purchase_token: string;
   product_id: string;
   package_name?: string;
-}
-
-/** Workers 런타임(crypto.subtle) SHA-256 → 소문자 hex 64자. 계정 바인딩 대조용. */
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 function parseConfirmRequest(value: unknown): ConfirmRequest | { error: string } {
@@ -326,12 +320,12 @@ billingGoogle.post('/google/confirm', async (c) => {
   if (obfuscatedId) {
     // 클라는 구매 시점 세션의 로그인 id(JWT sub)를 해시해 넣는다. userId 는 이제
     // users.id 로 정규화되므로, 구 토큰으로 결제한 사용자를 위해 원래 sub 도 함께 본다.
-    const expectedHashes = await Promise.all(
-      Array.from(new Set([c.get('userLoginId'), c.get('userId'), userPk].filter(Boolean))).map(
-        (id) => sha256Hex(id as string),
-      ),
-    );
-    if (!expectedHashes.includes(obfuscatedId.toLowerCase())) {
+    const matches = await purchaseAccountMatches(obfuscatedId, [
+      c.get('userLoginId'),
+      c.get('userId'),
+      userPk,
+    ]);
+    if (!matches) {
       logStructured('warn', {
         at: 'billing.google.confirm',
         step: 'account_binding',
@@ -400,6 +394,11 @@ billingGoogle.post('/google/confirm', async (c) => {
       result.status,
     );
   }
+
+  // ⚠ **정원 축소로 나가게 된 멤버에게 반드시 알린다.** 전환은 소유자가 하지만 대가는
+  // 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면 앱이 고장 난 줄 안다.
+  // (FCM 은 트랜잭션 안에서 쏘지 않는다 — 커밋 뒤 여기서.)
+  await notifyPlanChanged(db, c.env, result.demotedUserIds);
 
   // acknowledgement 보류 시 서버가 확인 처리 (3일 내 미확인 → Play 자동 환불).
   // 전부 실패해도 success 는 유지한다(entitlement 는 이미 커밋됨) — RTDN entitle 경로가

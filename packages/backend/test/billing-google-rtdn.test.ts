@@ -218,30 +218,85 @@ describe('billing google RTDN', () => {
     // 전까지 store_transactions 에 없으므로, 예전에는 `unmapped_token` 으로 통째로
     // 버려졌다 — 전환 반영이 클라 confirm 하나에만 매달렸다(2026-08-11 확인).
     // 이제 권위 응답의 `linkedPurchaseToken` 으로 옛 구독의 주인을 찾아 잇는다.
-    it('전환: 매핑 없는 새 토큰이어도 linkedPurchaseToken 으로 주인을 찾는다', async () => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
-            linkedPurchaseToken: 'play-token-previous',
-            lineItems: [{ productId: 'family_monthly', expiryTime: FUTURE }],
-          }),
-          { status: 200 },
-        ),
-      );
+    /** 계정 바인딩 대조용 해시 — 클라가 setObfuscatedAccountId 로 싣는 값과 같은 계산. */
+    async function sha256hex(value: string): Promise<string> {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+      return Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+
+    function stubLinkedLookup(obfuscatedId: string | null) {
+      const payload: Record<string, unknown> = {
+        subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+        linkedPurchaseToken: 'play-token-previous',
+        lineItems: [{ productId: 'family_monthly', expiryTime: FUTURE }],
+      };
+      if (obfuscatedId) {
+        payload.externalAccountIdentifiers = { obfuscatedExternalAccountId: obfuscatedId };
+      }
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }));
       vi.stubGlobal('fetch', fetchMock);
+      return fetchMock;
+    }
+
+    it('전환: 매핑 없는 새 토큰이어도 linkedPurchaseToken 으로 주인을 찾는다', async () => {
+      stubLinkedLookup(await sha256hex('user-pk-1')); // 결제 계정 == 옛 구독의 주인
       mockDB.pushResult([]);        // 새 토큰 매핑 없음
-      mockDB.pushResult([TXN_ROW]); // linkedPurchaseToken 으로 재조회 → 주인 찾음
+      mockDB.pushResult([TXN_ROW]); // linkedPurchaseToken 으로 재조회 → 주인 후보
+      mockDB.pushResult([{ google_id: 'google-user-1' }]); // 바인딩 대조용 로그인 id
 
       // ⚠ 여기서 상태 코드를 단언하지 않는다. 주인을 찾은 뒤에는 entitle 경로가 이어져
       // 플랜 조회 등 DB 결과가 더 필요한데, 이 테스트가 보려는 것은 **그 앞 단계**다 —
       // "매핑 없는 새 토큰을 버리지 않고 linked 로 이어 붙였는가".
-      await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+      const res = await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
 
       // 옛 토큰으로 store_transactions 를 한 번 더 뒤졌다는 게 핵심 증거다.
       const lookups = mockDB.calls.filter((c) => c.sql.includes('FROM store_transactions'));
       expect(lookups.length).toBe(2);
       expect(lookups[1]!.args).toContain('play-token-previous');
+      // ⚠ **채택 여부를 직접 단언한다.** 예전에는 "DB 를 더 읽었는가" 로 대신 봤는데,
+      // 그건 뒤 단계 쿼리 개수에 딸린 값이라 무엇을 재는지 불분명했다(디버그 줄 하나만
+      // 넣어도 결과가 뒤집혔다). 채택하면 계정 바인딩 대조를 위해 users 를 읽는다 —
+      // 못 하면 그 전에 `unmapped_token` 으로 빠져나가 이 쿼리가 아예 없다.
+      expect(mockDB.calls.some((c) => c.sql.includes('FROM users'))).toBe(true);
+      // 이 테스트는 채택 단계까지만 본다. 그 뒤 entitle 경로는 여기서 스텁하지 않으므로
+      // 응답 코드는 단언하지 않는다(200 이 아니어도 이 테스트의 관심사가 아니다).
+      expect(res.status).toBeDefined();
+    });
+
+    // ⚠ **`linkedPurchaseToken` 은 '같은 사람' 을 뜻하지 않는다.**
+    // 업/다운그레이드뿐 아니라 **해지했지만 만료 전인 구독의 재가입**에도 실려 오는데,
+    // 그건 같은 **구글 계정**이면 되고 같은 **AlarmTalk 계정**이라는 보장이 없다.
+    // 검증 없이 옛 주인을 물려받으면: 계정 A 해지 → 계정 B 로 재구매 → RTDN 이 confirm 을
+    // 앞질러 도착 → **A 가 이용권을 받고** 새 토큰이 A 에게 영구 바인딩된다.
+    // 돈 낸 B 의 confirm 은 그 뒤로 영영 409(TRANSACTION_OWNED_BY_OTHER_USER)다.
+    it('linked 주인이 결제 계정과 다르면 채택하지 않는다(unmapped_token)', async () => {
+      stubLinkedLookup(await sha256hex('somebody-else')); // 다른 사람이 결제했다
+      mockDB.pushResult([]);        // 새 토큰 매핑 없음
+      mockDB.pushResult([TXN_ROW]); // 옛 토큰의 주인 후보 = user-pk-1
+      mockDB.pushResult([{ google_id: 'google-user-1' }]);
+
+      const res = await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).ignored).toBe('unmapped_token');
+      // **아무것도 쓰지 않는다** — 틀린 주인에게 붙이면 되돌릴 길이 없다.
+      expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
+    });
+
+    // 식별자가 아예 없는 응답도 채택하지 않는다(fail-closed). confirm 은 호출자가 있어
+    // 403 으로 되돌려 줄 수 있지만, RTDN 은 알려 줄 사람이 없다.
+    it('linked 응답에 계정 식별자가 없으면 채택하지 않는다', async () => {
+      stubLinkedLookup(null);
+      mockDB.pushResult([]);
+      mockDB.pushResult([TXN_ROW]);
+
+      const res = await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).ignored).toBe('unmapped_token');
+      expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
     });
 
     // linkedPurchaseToken 이 없거나 그 토큰도 모르면 예전처럼 조용히 흘려보낸다 —

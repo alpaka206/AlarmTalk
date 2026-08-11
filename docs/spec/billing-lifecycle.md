@@ -130,9 +130,43 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 이 처리가 없으면 전환 알림이 통째로 버려지고 **반영이 클라 confirm 하나에만 매달린다** —
 결제 직후 앱이 죽거나 오프라인이면 서버는 그 전환을 영영 모른다(2026-08-11에 고쳤다).
 
-⚠ **전환은 그룹을 해체한다.** `applyStoreEntitlement` 가 plan 이 바뀐 트랜잭션을
-「기존 구독 취소 → 새 구독 생성」으로 처리하므로, **가족 → 개인 다운그레이드는 가족 그룹을
-해체하고 멤버 전원을 강등**시킨다. 이건 정상이다 — 사용자가 직접 고른 다운그레이드다.
+⚠⚠ **`linkedPurchaseToken` 은 "같은 사람" 을 뜻하지 않는다 — 계정 바인딩을 반드시 대조한다.**
+이 값은 업/다운그레이드뿐 아니라 **해지했지만 아직 만료 전인 구독의 재가입**에도 실려 온다.
+그건 같은 **구글 계정**이면 되고 같은 **AlarmTalk 계정**이라는 보장이 없다. 검증 없이 옛
+토큰의 주인을 물려받으면 공용 폰에서 사고가 난다 — 계정 A 해지 → 계정 B 로 재구매 → RTDN 이
+클라 confirm 을 앞질러 도착 → **A 가 이용권을 받고** 새 토큰이 A 에게 영구 바인딩된다.
+돈 낸 B 의 confirm 은 그 뒤로 영영 `TRANSACTION_OWNED_BY_OTHER_USER`(409)다.
+대조는 `lib/purchase-account-binding.ts` **한 곳**에 있고 confirm·RTDN 이 함께 쓴다
+(2026-08-11에 고쳤다 — 그전에는 confirm 만 대조했다). RTDN 은 **식별자가 없으면 채택하지
+않는다**(fail-closed) — 알려 줄 사람이 없는 경로라 틀리면 되돌릴 길이 없고, 흘려보내면
+클라 confirm 이 제 계정으로 올바르게 바인딩한다.
+
+### 전환이 그룹에 하는 일
+
+`applyStoreEntitlement` 는 plan 이 바뀐 트랜잭션을 「기존 구독 취소 → 새 구독 생성」으로
+처리한다. 그때 그룹을 어떻게 할지는 **가는 방향**에 달렸다.
+
+| 전환 | 그룹 |
+| --- | --- |
+| 개인 → 커플/가족 | 새 그룹·새 초대 코드를 만든다 |
+| **커플 ↔ 가족** | **그룹을 이어받는다** — 멤버·초대 코드 그대로, 정원과 plan 만 바뀐다 |
+| 커플/가족 → 개인 | 해체한다. 그룹을 뒷받침할 결제가 사라지므로 정상이다 |
+
+⚠ **그룹형 → 그룹형에서 해체하지 말 것**(2026-08-11에 고쳤다). 그전에는 이 갈래도 소유자
+취소 경로를 그대로 타서 **커플 → 가족 업그레이드가 파트너를 쫓아냈다** — 멤버 강등, 유료
+음성 보관 예약, **이미 카톡으로 뿌린 초대 코드까지 만료**, 게다가 **통지도 없었다.**
+더 비싼 걸 산 대가가 그것이었다. 이어받기는 `store-billing.ts` 의
+`findOwnedGroupToCarryOver`(소유자일 때만) + `cancelActiveSubscriptionsForUser` 의
+`preserveGroupId` 로 한다.
+
+- **정원이 줄면**(가족 5 → 커플 2) 넘치는 인원만 내보낸다. 남길 사람은 **먼저 들어온
+  순서**(`joined_at`)로 고른다 — 임의로 자르면 왜 저 사람이 빠졌는지 설명할 수 없다.
+- **나가게 된 멤버에게는 반드시 알린다**(`demotedUserIds` → `notifyPlanChanged`).
+  전환은 소유자가 하지만 대가는 멤버가 치른다 — 아무 말 없이 유료 접근을 잃으면
+  사용자는 앱이 고장 난 줄 안다.
+- **초대 코드는 새로 발급하지 않고 새 구독으로 옮긴다.** 코드 문자열이 그대로라 뿌려 둔
+  초대장이 계속 통한다. 새로 발급하면 소유자가 그 사실을 알 방법이 없다.
+
 **결제 실패(보류)의 「그룹을 해체하지 말 것」과 혼동하지 말 것.** 그쪽은 회복형이라 그룹을
 보존한다.
 
@@ -174,6 +208,9 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 | 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | — | — |
 | 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
 | 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |
+| 구매-계정 바인딩 대조 | `lib/purchase-account-binding.ts` (confirm·RTDN 공용) | `billing/PlayBillingManager.kt` `setObfuscatedAccountId` | — |
+| 전환 — 그룹 이어받기 | `lib/store-billing.ts` `findOwnedGroupToCarryOver` · `lib/billing-cancel.ts` `preserveGroupId` | — | — |
+| 전환 — 정원 축소 강등 통지 | `lib/store-billing.ts` `enforceGroupCapacity` → `demotedUserIds` → `notifyPlanChanged` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
 | 변경 반영 푸시 | `lib/billing-cancel.ts` `notifyPlanChanged` → `lib/fcm.ts` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
 
 ## 의도된 플랫폼 차이

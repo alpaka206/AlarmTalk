@@ -50,6 +50,24 @@ export function createMockDB() {
   }
 
   /**
+   * **SQL 조각으로 짝지어 주는 결과** — FIFO 큐를 건너뛴다.
+   *
+   * 큐는 호출 **순서**에 묶여 있어서, 검사하려는 쿼리가 흐름 깊숙이 있으면 그 앞의
+   * 모든 쿼리에 자리채움을 밀어 넣어야 하고 구현이 조금만 바뀌어도 깨진다. 그런 자리는
+   * "몇 번째"가 아니라 "어떤 쿼리"로 짝지어야 읽을 수 있다.
+   * 한 번 쓰면 소비된다 — 같은 SQL 이 여러 번 오면 그만큼 등록한다.
+   */
+  const matchers: { fragment: string; result: MockExecuteResult }[] = [];
+  function pushResultFor(fragment: string, rows: MockRow[] = [], rowsAffected = 0) {
+    matchers.push({ fragment, result: { rows, rowsAffected } });
+  }
+  function takeMatched(sql: string): MockExecuteResult | null {
+    const i = matchers.findIndex((m) => sql.includes(m.fragment));
+    if (i === -1) return null;
+    return matchers.splice(i, 1)[0]!.result;
+  }
+
+  /**
    * 다음 execute 를 성공 대신 이 오류로 실패시킨다 — 결과 큐와 같은 FIFO 자리를 차지한다.
    * 구 스키마 폴백('no such column' 을 잡아 다른 SQL 로 재시도)처럼, 실패해야만 도달하는
    * 분기를 검증하기 위한 것.
@@ -73,10 +91,12 @@ export function createMockDB() {
     transactions.rollbacks = 0;
     transactions.closes = 0;
     consentResultsAllowMissing = false;
+    matchers.length = 0;
   }
 
   function clearResults() {
     results.length = 0;
+    matchers.length = 0;
   }
 
   // 동의 게이트(B4)용 기본 응답. needsConsent / consentMiddleware 가 user_consents 를
@@ -99,6 +119,12 @@ export function createMockDB() {
   const client = {
     execute: async (query: { sql: string; args: (string | number | null)[] }) => {
       assertBindingCount(query);
+      // SQL 로 짝지어 둔 결과가 있으면 큐보다 먼저 쓴다(순서 의존 제거).
+      const matched = takeMatched(query.sql);
+      if (matched) {
+        calls.push({ sql: query.sql, args: query.args });
+        return matched;
+      }
       // user_consents 조회 처리:
       //  - 기본(consentResultsAllowMissing=false): 큐 소비/ calls 기록 없이 모든 필수
       //    동의를 '동의함'으로 합성해 돌려준다. 기존 라우트 테스트의 push 순서·calls[N]
@@ -159,6 +185,7 @@ export function createMockDB() {
     client,
     calls,
     pushResult,
+    pushResultFor,
     pushError,
     reset,
     clearResults,

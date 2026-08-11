@@ -6,6 +6,7 @@ import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
 import { getPlaySubscriptionV2 } from '../lib/play-subscriptions';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
+import { purchaseBelongsToUser } from '../lib/purchase-account-binding';
 import {
   cancelSubscriptionImmediate,
   notifyPlanChanged,
@@ -167,17 +168,48 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   if (!txnRow) {
     // 권위 재조회는 아래에서 한 번 더 하지만, 여기서는 **주인을 찾기 위해서만** 부른다.
     // 실패해도 치명적이지 않다 — 매핑을 못 찾은 것과 같게 흘려보낸다.
-    const linked = await getPlaySubscriptionV2(c.env, purchaseToken)
-      .then((r: { linkedPurchaseToken?: string }) => r.linkedPurchaseToken ?? null)
-      .catch(() => null);
-    if (linked) {
+    const linkedLookup = await getPlaySubscriptionV2(c.env, purchaseToken)
+      .then((r) => ({
+        linked: r.linkedPurchaseToken ?? null,
+        obfuscatedId:
+          r.externalAccountIdentifiers?.obfuscatedExternalAccountId?.trim()?.toLowerCase() ?? null,
+      }))
+      .catch(() => ({ linked: null as string | null, obfuscatedId: null as string | null }));
+    if (linkedLookup.linked) {
       const linkedRes = await db.execute({
         sql: `SELECT user_id, subscription_id FROM store_transactions
               WHERE provider = 'google' AND provider_transaction_id = ?`,
-        args: [linked],
+        args: [linkedLookup.linked],
       });
-      txnRow = linkedRes.rows[0] ?? null;
-      if (txnRow) linkedFromToken = linked;
+      const candidate = linkedRes.rows[0] ?? null;
+      // ⚠ **옛 토큰의 주인을 그냥 물려받지 말 것 — 구매-계정 바인딩을 여기서도 본다.**
+      // `linkedPurchaseToken` 은 업/다운그레이드뿐 아니라 **해지했지만 아직 만료 전인
+      // 구독의 재가입(re-signup)** 에도 실려 온다. 그건 **같은 구글 계정**이기만 하면
+      // 되고 **같은 AlarmTalk 계정이라는 보장이 없다.** 검증 없이 물려받으면 공용 폰
+      // 시나리오에서 사고가 난다: 계정 A 가 해지 → 계정 B 로 로그인해 다시 구매 →
+      // RTDN 이 클라 confirm 을 앞질러 도착 → **A 에게 이용권이 붙고** `store_transactions`
+      // 가 새 토큰을 A 에게 영구 바인딩한다. 뒤늦게 온 B 의 confirm 은
+      // `TRANSACTION_OWNED_BY_OTHER_USER` 로 **영구히 409** 다 — 돈 낸 사람이 막히고
+      // 안 낸 사람이 받는다. 게다가 A 의 기존 구독까지 새 것으로 갈아치운다.
+      //
+      // confirm(`billing-google.ts`)은 이 대조를 이미 하고 있었다. 같은 응답에
+      // 식별자가 실려 오므로 여기서 못 할 이유가 없다 — 안 하고 있었을 뿐이다.
+      if (candidate) {
+        const ownerPk = String(candidate.user_id);
+        if (await purchaseBelongsToUser(db, linkedLookup.obfuscatedId, ownerPk)) {
+          txnRow = candidate;
+          linkedFromToken = linkedLookup.linked;
+        } else {
+          // 흘려보낸다(ack). 클라 confirm 이 제 계정으로 바인딩하는 게 정답이다 —
+          // 여기서 틀린 주인에게 붙이면 되돌릴 길이 없다.
+          logStructured('warn', {
+            at: 'billing.google.rtdn',
+            step: 'linked_account_binding',
+            error: 'linked token owner does not match purchase account',
+            notificationType: sub.notificationType ?? null,
+          });
+        }
+      }
     }
   }
   if (!txnRow) {
@@ -255,7 +287,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
       });
       return c.json({ success: true, ignored: 'plan_not_found' });
     }
-    await withWriteTransaction(db, (tx) =>
+    const entitleResult = await withWriteTransaction(db, (tx) =>
       applyStoreEntitlement(tx, {
         userPk,
         provider: 'google',
@@ -267,6 +299,10 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
         rawPayload: JSON.stringify({ via: 'rtdn', state, notificationType: sub.notificationType }),
       }),
     );
+    // ⚠ 정원 축소로 그룹에서 나가게 된 멤버에게 알린다(위 confirm 경로와 같은 이유).
+    if (entitleResult.ok && entitleResult.demotedUserIds.length > 0) {
+      await notifyPlanChanged(db, c.env, entitleResult.demotedUserIds);
+    }
     // 권위 재조회 결과 acknowledgement 이 보류면 서버가 확인 처리한다 — 앱 미실행으로
     // confirm 이 오지 않아도 RTDN(구매/갱신 알림)이 서버측 ack 재시도 경로가 된다
     // (미확인 시 3일 후 Play 자동 환불). confirm 과 동일한 ack 헬퍼를 재사용한다.
