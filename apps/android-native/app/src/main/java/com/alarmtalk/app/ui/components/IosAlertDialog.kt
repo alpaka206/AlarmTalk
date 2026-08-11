@@ -69,10 +69,20 @@ import androidx.compose.ui.window.DialogProperties
  * 스케일이었다. 알럿 안의 모든 텍스트는 여기서만 스타일을 가져간다.
  */
 internal object IosAlertType {
-    val Title = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.4).sp, fontWeight = FontWeight.SemiBold)
-    val Message = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, letterSpacing = (-0.08).sp)
-    val Field = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = (-0.2).sp)
-    val Action = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = (-0.4).sp)
+    // ⚠ **음수 자간을 다시 넣지 말 것.** 이 값들(-0.4/-0.08/-0.2)은 **SF Pro 의 트래킹**을
+    // 그대로 베낀 것인데, 우리가 쓰는 글꼴은 **Pretendard** 다. 라틴 글꼴의 음수 트래킹을
+    // 한글에 걸면 글자가 서로 붙어 읽기 어려워진다 — 2026-08-11 에 "안드로이드 쪽이 잘
+    // 안 읽히고 안 예쁘다" 로 드러난 것이 이것이다.
+    //
+    // 앱 전체는 이미 자간 0 이 규칙이다(`theme/AlarmTalkTypography.kt` 의
+    // `alarmTalkTextStyle` 이 모든 스타일에 `letterSpacing = 0.sp` 를 건다).
+    // **알럿만 그 규칙 밖에 있었다.** 같은 규칙으로 되돌린다.
+    //
+    // 글자 크기(17/13/15)는 iOS 실측과 같다 — 자간만 우리 글꼴에 맞춘다.
+    val Title = TextStyle(fontSize = 17.sp, lineHeight = 21.sp, letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold)
+    val Message = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, letterSpacing = 0.sp)
+    val Field = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = 0.sp)
+    val Action = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, letterSpacing = 0.sp)
 }
 
 internal data class IosAlertAction(
