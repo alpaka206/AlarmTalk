@@ -462,6 +462,14 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 _ = await alarmKit.schedule(record: revoked, store: store)
             }
             Self.logger.info("Pull sync: revoked sender voice on received alarm (remoteId: \(remoteID, privacy: .public))")
+            // ⚠ **여기는 백그라운드다.** 목소리만 걷어내고 말면 사용자는 왜 알람이
+            // 기본 알람음이 됐는지 알 길이 없다 — 대기표에 적어 두면 다음에 앱을 열 때
+            // 모달이 알려 준다(안드로이드 `VoiceAccessSyncWorker` 와 같은 처리).
+            DowngradeNoticeStore().record(
+                userID: auth.session?.user.id,
+                cause: .sharedReleased,
+                count: 1
+            )
         }
 
         // (2) 그만받기 — 알람을 지운다.

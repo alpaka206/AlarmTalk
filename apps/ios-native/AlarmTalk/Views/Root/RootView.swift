@@ -21,6 +21,7 @@ struct RootView: View {
 
     /// 웰컴 프로모 코드 안내(계정당 1회, 무료 플랜만).
     @State private var showWelcomePromo = false
+    @State private var downgradeNotice: DowngradeNoticeStore.Notice?
     @State private var promoBusy = false
     @State private var promoError: String?
 
@@ -117,6 +118,35 @@ struct RootView: View {
         // (CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」).
         // 그래서 판정 키에 준비 신호(`consentStatusChecked`)를 함께 넣는다.
         .task(id: promoGateKey) { evaluateWelcomePromo() }
+        // 강등 안내 — "목소리 알람이 기본 알람음으로 바뀌었어요" 를 **한 번만** 말한다.
+        // 판정 조건은 위 프로모와 **같다**(차단 화면 위에 겹쳐 봐야 못 읽는다).
+        // 다만 성질이 다르다: 이건 소진 플래그가 아니라 **대기표**라, 못 보고 지나가도
+        // 지워지지 않는다(지우는 건 '확인' 뿐) — 잘못 떠서 잃을 것이 없다.
+        .task(id: promoGateKey) { evaluateDowngradeNotice() }
+        .alert(
+            downgradeNotice?.cause == .freePlan
+                ? "무료 이용권으로 바뀌었어요"
+                : "공유 이용권에서 나가게 됐어요",
+            isPresented: Binding(
+                get: { downgradeNotice != nil },
+                // ⚠ 바깥 탭·취소로 닫아도 **지우지 않는다** — 실수로 닫았을 수 있다.
+                set: { if !$0 { downgradeNotice = nil } }
+            ),
+            presenting: downgradeNotice
+        ) { notice in
+            Button("확인") {
+                DowngradeNoticeStore().clear(userID: auth.session?.user.id)
+                downgradeNotice = nil
+            }
+        } message: { notice in
+            // ⚠ **두 원인의 결말이 다르다.** 무료 강등은 이용권을 다시 등록하면 돌아오지만,
+            // 공유 해제는 **돌아오지 않는다** — 같은 말로 뭉치면 기다리면 될 줄 안다.
+            Text(
+                notice.cause == .freePlan
+                    ? "목소리 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 이용권을 다시 등록하면 목소리가 돌아와요."
+                    : "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요."
+            )
+        }
         .overlay {
             if showWelcomePromo, !blockingGateActive {
                 ZStack {
@@ -202,6 +232,12 @@ struct RootView: View {
     ///  - 무료 플랜일 것(이미 유료면 보여줄 이유가 없다)
     ///  - 이 계정에 아직 안 띄웠을 것
     /// 노출과 동시에 '봤음' 을 기록한다 — 닫든 등록하든 다시 뜨지 않는다.
+    /// 대기표에 적힌 강등 안내가 있으면 모달을 연다. 조건은 웰컴 프로모와 같다.
+    private func evaluateDowngradeNotice() {
+        guard auth.consentStatusChecked, versionGate.checked, !blockingGateActive else { return }
+        downgradeNotice = DowngradeNoticeStore().read(userID: auth.session?.user.id)
+    }
+
     private func evaluateWelcomePromo() {
         guard auth.consentStatusChecked, versionGate.checked, !blockingGateActive else { return }
         guard let userID = auth.session?.user.id, !userID.isEmpty else { return }

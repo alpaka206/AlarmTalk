@@ -355,13 +355,17 @@ struct AlarmTalkApp: App {
             )
             return
         }
-        _ = await socialFeatures.applyFreePlanVoiceLock(
+        let ownerID = auth.session?.user.id
+        let locked = await socialFeatures.applyFreePlanVoiceLock(
             alarmStore: alarmStore,
             alarmKit: alarmKit,
             voiceStudio: voiceStudio,
             // 같은 기기에서 계정을 바꿨을 때 앞 계정 알람까지 잠그지 않게 한다.
-            expectedOwnerUserId: auth.session?.user.id
+            expectedOwnerUserId: ownerID
         )
+        // 대기표에 적어 둔다 — 이 자리는 앱 시작·전경 복귀에서 도는데, 그때 토스트를
+        // 띄워 봐야 놓치기 쉽다. 보여줄 수 있을 때 모달이 대신 말한다.
+        DowngradeNoticeStore().record(userID: ownerID, cause: .freePlan, count: locked)
     }
 }
 

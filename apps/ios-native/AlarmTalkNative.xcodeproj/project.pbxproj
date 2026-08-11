@@ -157,6 +157,7 @@
 		8D2BACFDF9ECF6FAB7E9883D /* AlarmTimeCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2BD54D0D21050EB9BBA9364 /* AlarmTimeCalculator.swift */; };
 		8DC7DD3711FBC2E895F4C5B2 /* ConsentCompletionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ECFEF72F91CB168058ADDDA /* ConsentCompletionStore.swift */; };
 		8E2489F41D6DD0F0B2D6B35C /* MemberManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 816ABFEBE1925D4C5C1609D8 /* MemberManagementView.swift */; };
+		8F4A567EE37F72841FADD272 /* DowngradeNoticeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E339441B4151A5A86D7905D /* DowngradeNoticeStore.swift */; };
 		8FCE05C6FF63445465A31229 /* UserFacingError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93D3185391F74B11FC854CB5 /* UserFacingError.swift */; };
 		90D4B576DF0594E4B87266A4 /* AlarmUserCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEA4053147240A726E543944 /* AlarmUserCopyTests.swift */; };
 		918CB0198810A501FC415D2D /* AuxiliarySheetHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AECB7E9C88E521DB6347408 /* AuxiliarySheetHost.swift */; };
@@ -444,6 +445,7 @@
 		8A278280437D8CE9D87E6E41 /* AlarmEditorComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditorComponents.swift; sourceTree = "<group>"; };
 		8CC3F5280A9149E6AE3F2ACA /* AlarmTalkLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkLog.swift; sourceTree = "<group>"; };
 		8E25753B97B6CFEAA8E709FB /* VoiceSegmentPreviewPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSegmentPreviewPlayer.swift; sourceTree = "<group>"; };
+		8E339441B4151A5A86D7905D /* DowngradeNoticeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DowngradeNoticeStore.swift; sourceTree = "<group>"; };
 		8E3D0092573DFD5413095F8F /* AudioCropper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCropper.swift; sourceTree = "<group>"; };
 		8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunctionalE2EUITests.swift; sourceTree = "<group>"; };
 		8EC3F92F3D5BF3B4B8568196 /* AlarmEditDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditDraft.swift; sourceTree = "<group>"; };
@@ -987,6 +989,7 @@
 				5ECFEF72F91CB168058ADDDA /* ConsentCompletionStore.swift */,
 				A7577C539C3E926AE4FD3D1C /* ContentView.swift */,
 				FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */,
+				8E339441B4151A5A86D7905D /* DowngradeNoticeStore.swift */,
 				CB105C21A1ACA71A315BA97A /* DynamicPromptPreferenceStore.swift */,
 				A5135A5FE94F635FB316DEB4 /* DynamicVoiceRefreshService.swift */,
 				E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */,
@@ -1310,6 +1313,7 @@
 				4C5565C2CE444AA557AC024A /* ConsentView.swift in Sources */,
 				C6A181AE295935BA835954D4 /* ContentView.swift in Sources */,
 				A98BAC75D5B210C60A0A5F69 /* DefaultVoicePreferenceStore.swift in Sources */,
+				8F4A567EE37F72841FADD272 /* DowngradeNoticeStore.swift in Sources */,
 				958277D566D3D4EA2B3B7C86 /* DynamicPromptPreferenceStore.swift in Sources */,
 				190BFA3083E95460C92FC2B7 /* DynamicVoiceRefreshService.swift in Sources */,
 				A2C7111FB7DD26F428366C60 /* EditorCards.swift in Sources */,

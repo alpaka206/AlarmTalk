@@ -236,18 +236,12 @@ struct AlarmRow: View {
                 isError: true
             )
         }
-        // 유료 목소리를 못 써 기본 알람으로 변환됨(preLockPlayMode 마커).
-        // 무료 강등은 목소리 참조를 남기고(voiceProfileId 유지) → '무료 요금제' 안내,
-        // 공유 목소리 해제는 참조를 비우므로 → 원인 무관 중립 안내.
-        if alarm.preLockPlayMode != nil {
-            let hasVoice = !(alarm.voiceProfileId ?? "").trimmingCharacters(in: .whitespaces).isEmpty
-            return RowNotice(
-                text: hasVoice
-                    ? "무료 요금제로 바뀌어 기본 알람으로 변환되었어요."
-                    : "목소리를 쓸 수 없어 기본 알람으로 변환되었어요.",
-                isError: false
-            )
-        }
+        // ⚠ **강등 안내를 여기에 되살리지 말 것**(2026-08-11 제거, 안드로이드와 같은 조치).
+        // `preLockPlayMode` 는 **영구 마커**라(다시 유료가 되면 복원하려고 남긴다) 이 행에
+        // 걸면 무료로 지내는 내내 **알람마다** 경고가 붙는다. 그런데 **알람은 정상 작동
+        // 중이다** — 기본 알람음으로 울린다. 고장난 앱처럼 읽힐 뿐이고, 상태는 이용권
+        // 화면에서 언제든 확인된다.
+        // 이제 `DowngradeNoticeStore` 대기표 → **1회성 모달**이 이 일을 맡는다.
         // ⚠ **동기화 실패(syncFailed)는 행에 띄우지 않는다.** 기준은 안드로이드
         // `ControlsAndPermissions.kt:577-582` 그대로다 — "사용자가 할 일이 있는가.
         // 없으면 넣지 않는다." 서버 저장 실패는 다음 sync 가 알아서 재시도하므로

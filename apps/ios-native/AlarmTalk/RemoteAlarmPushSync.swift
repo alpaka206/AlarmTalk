@@ -140,6 +140,21 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
             } catch {
                 failed += 1
                 store.markSyncFailed(id: record.id)
+                // ⚠ **삼키지 말 것.** 여기서 조용히 넘어가는 바람에 사용자에게는
+                // "알람 변경사항 일부를 저장하지 못했어요" 가 계속 뜨는데 **왜인지 알
+                // 방법이 없었다**(2026-08-11 지적). 실패한 건은 다음 회차에 또 걸리므로
+                // 원인이 남지 않으면 같은 안내가 영원히 반복된다.
+                // 알람 id 는 남기지 않는다(로컬 식별자라 쓸모 대비 노출이 크다) —
+                // 무엇이 왜 실패했는지는 상태코드·error_code 가 말해 준다.
+                let detail: String = if case let APIError.server(status, _, code) = error {
+                    "status=\(status) code=\(code ?? "-")"
+                } else {
+                    String(describing: type(of: error))
+                }
+                AlarmTalkLog.reportError(
+                    "알람 push 실패(\(record.remoteAlarmId == nil ? "create" : "update")): \(detail)",
+                    error: error
+                )
             }
         }
 
