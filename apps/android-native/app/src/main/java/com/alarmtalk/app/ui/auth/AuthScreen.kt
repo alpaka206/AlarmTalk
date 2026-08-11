@@ -71,8 +71,6 @@ internal val AuthTextMuted = Color(0x99FFFFFF)
 internal val AuthErrorText = Color(0xFFFFB4AB)
 internal val AuthNoticeText = Color(0xFFA8C8FF)
 // 원형 뒤로가기 버튼 — iOS 로그인 화면과 같은 모양(옅은 채움 + 얇은 테두리).
-private val AuthBackCircleFill = Color(0x1FFFFFFF)
-private val AuthBackCircleStroke = Color(0x5CA6D2FF)
 private val AuthSceneTop = Color(0xFF1A2A52)
 private val AuthSceneBottom = Color(0xFF070C1D)
 
@@ -150,20 +148,13 @@ private fun BackCircleRow(onBack: () -> Unit) {
     // ⚠ **뒤로가기와 제목을 한 줄에 두지 않는다** — iOS 와 같은 구성이다.
     // 뒤로가기는 원형 버튼으로 위에 따로 두고, 제목은 그 아래 본문 첫 줄로 크게 세운다
     // (디자인 언어: 제목 = 결론). 2026-08-10 결정: 이 화면만은 **iOS 를 원본으로 삼는다**.
-    IconButton(
-        onClick = onBack,
-        modifier = Modifier
-            .padding(start = 24.dp, top = 18.dp)
-            .size(44.dp)
-            .background(AuthBackCircleFill, CircleShape)
-            .border(1.dp, AuthBackCircleStroke, CircleShape),
-    ) {
-        Icon(
-            painterResource(R.drawable.ic_chevron_back),
-            contentDescription = stringResource(R.string.auth_back),
-            tint = TextOnScene,
-        )
-    }
+    // 모양은 공용 `WakerBackButton` 이 갖는다 — 이 화면에만 있던 것을 빼서 하위 화면들과
+    // 함께 쓴다(2026-08-11). 여기는 고정 팔레트 화면이라 틴트만 `TextOnScene` 으로 준다.
+    WakerBackButton(
+        onBack = onBack,
+        modifier = Modifier.padding(start = 24.dp, top = 18.dp),
+        tint = TextOnScene,
+    )
 }
 
 @Composable

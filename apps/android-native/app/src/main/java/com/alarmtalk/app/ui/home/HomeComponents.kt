@@ -523,16 +523,11 @@ internal fun WakerTopBar(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        IconButton(
-            onClick = onBack,
+        // 뒤로가기 모양은 공용 `WakerBackButton` 하나뿐이다 — 로그인 화면과 같은 원형이다.
+        WakerBackButton(
+            onBack = onBack,
             modifier = Modifier.align(Alignment.CenterStart),
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
-                contentDescription = stringResource(R.string.common_back),
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        )
     }
 }
 
