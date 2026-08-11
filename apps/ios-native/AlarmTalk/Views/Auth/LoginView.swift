@@ -612,13 +612,16 @@ enum LoginValidator {
 /// ⚠ 시스템 뒤로가기(`NavigationStack` 기본)를 쓰면 모양을 OS 가 정해서
 /// 안드로이드에서 같은 것을 만들 수 없다. 두 앱을 나란히 놓았을 때 화살표만 다른 게
 /// 눈에 띄어(2026-08-10) 양쪽 다 같은 값으로 고정했다.
-/// 안드로이드 대응: `ui/auth/AuthScreen.kt` 의 뒤로가기 `IconButton`.
+/// 안드로이드 대응: `ui/components/WakerBackButton.kt`.
+///
+/// ⚠ 안드로이드는 2026-08-11 에 이 버튼을 로그인 화면 밖으로 빼서 **공용 컴포넌트**로
+/// 만들었다(이용권·코드 등록 상단바도 같은 것을 쓴다). 색이 바뀌면 그쪽도 함께 고친다.
 struct AuthCircleBackButton: View {
     var action: () -> Void
 
-    /// 안드로이드 `AuthBackCircleFill` = `Color(0x1FFFFFFF)`.
+    /// 안드로이드 `WakerBackCircleFill` = `Color(0x1FFFFFFF)`.
     private static let fill = Color.white.opacity(0x1F / 255.0)
-    /// 안드로이드 `AuthBackCircleStroke` = `Color(0x5CA6D2FF)` — 액센트 36%.
+    /// 안드로이드 `WakerBackCircleStroke` = `Color(0x5CA6D2FF)` — 액센트 36%.
     private static let stroke = Color.hex(0xA6D2FF).opacity(0x5C / 255.0)
 
     var body: some View {
