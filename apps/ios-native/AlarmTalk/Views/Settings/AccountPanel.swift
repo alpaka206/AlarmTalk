@@ -55,6 +55,8 @@ struct AccountPanel: View {
                 HStack {
                     Text("로그아웃")
                         .fontWeight(.medium)
+                        // 되돌리기 어려운 행은 빨강 — 확인 알럿의 destructive 액션과 같은 색이다.
+                        .foregroundStyle(AlarmTalkTheme.error)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .foregroundStyle(AlarmTalkTheme.textSecondary)

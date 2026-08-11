@@ -32,7 +32,7 @@ struct FormSheet<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header.measuredSheetHeader()
+            header
 
             ScrollView {
                 content()
@@ -42,6 +42,7 @@ struct FormSheet<Content: View>: View {
                     .padding(.bottom, 20)
                     .measuredSheetContent()
             }
+            .sheetScrollFit()
         }
         .frame(maxWidth: .infinity)
     }

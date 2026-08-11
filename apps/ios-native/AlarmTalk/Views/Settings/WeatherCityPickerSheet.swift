@@ -28,6 +28,10 @@ struct WeatherCityPickerSheet: View {
 
     @State private var customMode = false
     @State private var draftCity = ""
+    @FocusState private var draftFocused: Bool
+
+    /// 열린 입력칸으로 스크롤할 때 쓰는 목적지 표식.
+    private static let customFieldID = "weather-city-custom-field"
 
     private var cleanedDraft: String {
         InputSanitizer.sanitizeDisplayName(draftCity)
@@ -40,45 +44,65 @@ struct WeatherCityPickerSheet: View {
                 .foregroundStyle(theme.palette.onSurface)
                 .padding(.horizontal, 20)
                 .padding(.top, 4)
-                .measuredSheetHeader()
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(Self.presetCities.enumerated()), id: \.element) { index, preset in
-                        if index > 0 { Divider() }
-                        row(title: preset, selected: !customMode && currentCity == preset) {
-                            onSelect(Self.defaultCountry, preset)
-                            dismiss()
-                        }
-                    }
-                    Divider()
-                    // 탭하면 아래로 입력칸이 열린다(안드로이드도 같은 토글이다).
-                    row(title: "직접 입력", selected: customMode) {
-                        customMode.toggle()
-                    }
-
-                    if customMode {
-                        VStack(alignment: .leading, spacing: 12) {
-                            TextField("예: 서울", text: $draftCity)
-                                .alarmTalkFieldStyle()
-                                .onChange(of: draftCity) { _, new in
-                                    let cleaned = InputSanitizer.sanitizeDisplayName(new)
-                                    if cleaned != new { draftCity = cleaned }
-                                }
-                            Button("저장") {
-                                onSelect(Self.defaultCountry, cleanedDraft)
+            // ⚠ **`ScrollViewReader` 를 걷어내지 말 것.** 도시 목록(9개)만으로 이미 시트
+            // 상한(화면 절반)을 넘겨서 스크롤 상태다. '직접 입력' 은 **맨 아래 행**이라,
+            // 눌러서 열리는 입력칸은 보이는 영역 **밖**에 생긴다 — 화면이 그대로여서
+            // **누른 게 아무 일도 안 한 것처럼 보인다**(2026-08-11 지적 "지역에서 직접
+            // 입력 눌렀을 때 아무 효과가 없다"). 열면서 거기로 스크롤해 줘야 한다.
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(Self.presetCities.enumerated()), id: \.element) { index, preset in
+                            if index > 0 { Divider() }
+                            row(title: preset, selected: !customMode && currentCity == preset) {
+                                onSelect(Self.defaultCountry, preset)
                                 dismiss()
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(theme.palette.primary)
-                            .frame(maxWidth: .infinity)
-                            .disabled(cleanedDraft.isEmpty)
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 12)
+                        Divider()
+                        // 탭하면 아래로 입력칸이 열린다(안드로이드도 같은 토글이다).
+                        row(title: "직접 입력", selected: customMode) {
+                            customMode.toggle()
+                        }
+
+                        if customMode {
+                            VStack(alignment: .leading, spacing: 12) {
+                                TextField("예: 서울", text: $draftCity)
+                                    .alarmTalkFieldStyle()
+                                    .focused($draftFocused)
+                                    .onChange(of: draftCity) { _, new in
+                                        let cleaned = InputSanitizer.sanitizeDisplayName(new)
+                                        if cleaned != new { draftCity = cleaned }
+                                    }
+                                Button("저장") {
+                                    onSelect(Self.defaultCountry, cleanedDraft)
+                                    dismiss()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(theme.palette.primary)
+                                .frame(maxWidth: .infinity)
+                                .disabled(cleanedDraft.isEmpty)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 12)
+                            .id(Self.customFieldID)
+                        }
+                    }
+                    .measuredSheetContent()
+                }
+                .sheetScrollFit()
+                .onChange(of: customMode) { _, opened in
+                    guard opened else { return }
+                    // 입력칸이 붙은 **다음** 프레임에 스크롤해야 목적지가 존재한다.
+                    DispatchQueue.main.async {
+                        withAnimation(.snappy(duration: 0.25)) {
+                            proxy.scrollTo(Self.customFieldID, anchor: .bottom)
+                        }
+                        // 스크롤이 끝난 뒤 커서를 준다 — 바로 칠 수 있어야 한 번에 끝난다.
+                        draftFocused = true
                     }
                 }
-                .measuredSheetContent()
             }
         }
         .padding(.bottom, 8)

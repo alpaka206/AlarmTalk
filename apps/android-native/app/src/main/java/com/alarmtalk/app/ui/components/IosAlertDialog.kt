@@ -227,9 +227,9 @@ internal fun IosAlertDialog(
  * `OutlinedTextField` 를 쓰지 않는 이유는 오직 **비율** 이다 — 그건 최소 높이가 56dp 라
  * 액션 행보다 커서, 알럿 안에서 입력창이 혼자 덩치가 다르다(높이를 낮출 파라미터도 없다).
  *
- * 기본 48dp 인 이유는 액션 행([ACTION_ROW_HEIGHT])과 같다 — **Android 최소 터치 타깃**이다.
- * 입력칸도 탭해서 포커스를 잡는 터치 타깃이라 같은 기준을 받는다. 액션 행보다는 4dp 낮게
- * 둬서 '누르는 것' 과 '쓰는 것' 의 위계는 남긴다.
+ * 기본 48dp 인 이유는 액션 행([ACTION_ROW_HEIGHT])과 같다 — **Android 최소 터치 타깃**이면서
+ * 동시에 **iOS 실측값**이다(2026-08-11: `UIAlertController` 의 입력칸 컨테이너 h=48).
+ * 모양도 iOS 와 같은 **캡슐**이다(r=24 = 48/2).
  */
 @Composable
 internal fun IosAlertField(
@@ -258,10 +258,16 @@ internal fun IosAlertField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = minHeight)
-                    // 알럿 컨테이너(14)보다 작은 반경 — 안에 든 요소가 더 각지는 iOS 문법.
-                    .border(0.5.dp, scheme.onSurface.copy(alpha = 0.22f), RoundedCornerShape(8.dp))
-                    .background(scheme.surface.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    // ⚠ **캡슐이다 — 8dp 같은 각진 값으로 되돌리지 말 것**(2026-08-11 실측).
+                    // iOS `UIAlertController` 를 띄워 계층을 훑어 보니 입력칸 컨테이너는
+                    // **h=48, cornerRadius=24** 즉 완전한 캡슐이었다(액션 버튼도 h=48·r=24,
+                    // 알럿 컨테이너는 r=34). 예전 주석은 "컨테이너(14)보다 작은 반경" 이라
+                    // 적었는데 **컨테이너가 14였던 적이 없다** — 34다. 근거가 틀렸으니
+                    // 거기서 나온 8도 틀렸다.
+                    .border(0.5.dp, scheme.onSurface.copy(alpha = 0.22f), WakerPillShape)
+                    .background(scheme.surface.copy(alpha = 0.5f), WakerPillShape)
+                    // 캡슐이라 좌우가 둥글게 파고들어, 10 이면 글자가 모서리에 닿는다.
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
             ) {
                 if (value.isEmpty() && !placeholder.isNullOrBlank()) {

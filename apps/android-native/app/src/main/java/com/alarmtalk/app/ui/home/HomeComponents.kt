@@ -508,9 +508,10 @@ internal fun DeleteAccountConfirmDialog(
 internal fun WakerTopBar(
     title: String,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(bottom = 4.dp),
         contentAlignment = Alignment.Center,

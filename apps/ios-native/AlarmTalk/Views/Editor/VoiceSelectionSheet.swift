@@ -50,7 +50,6 @@ struct VoiceSelectionSheet: View {
                 .foregroundStyle(theme.palette.onSurface)
                 .padding(.horizontal, 20)
                 .padding(.top, 4)
-                .measuredSheetHeader()
 
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -61,6 +60,7 @@ struct VoiceSelectionSheet: View {
                 }
                 .measuredSheetContent()
             }
+            .sheetScrollFit()
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -87,6 +87,8 @@ internal fun SettingsRow(
     label: String,
     value: String?,
     onClick: () -> Unit,
+    /// 되돌리기 어려운 행(로그아웃 등)은 라벨을 빨강으로 — iOS 와 같은 신호다.
+    destructive: Boolean = false,
 ) {
     Row(
         modifier = Modifier
@@ -105,7 +107,11 @@ internal fun SettingsRow(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (destructive) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
             maxLines = 1,
         )
         if (value != null) {

@@ -15,6 +15,9 @@ import UIKit
 /// - 위에 드래그 핸들(36×4, `onSurfaceVariant` 38%).
 /// - 스크림 탭 또는 아래로 끌어 닫는다.
 /// - 높이는 **내용만큼**. 화면의 50% 를 넘으면 그 안에서 스크롤한다.
+///
+/// ⚠ **부분 높이를 더해 시트 높이를 계산하지 말 것.** 왜 그러면 안 되는지는
+/// `SheetContentHeight.swift` 주석 참조 — 22pt 가 모자라 3항목짜리 시트도 스크롤됐다.
 struct BottomSheetHost<Content: View>: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -26,13 +29,6 @@ struct BottomSheetHost<Content: View>: View {
 
     @State private var dragOffset: CGFloat = 0
     @State private var appeared = false
-    /// 내용이 보고한 자연 높이(`measuredSheetContent`). 이걸로 시트 높이를 잡는다.
-    @State private var contentHeight: CGFloat = 0
-    /// 스크롤 밖 머리말(제목) 높이 — 빼먹으면 마지막 행이 잘린다.
-    @State private var headerHeight: CGFloat = 0
-
-    /// 드래그 핸들 영역(12 + 4 + 10).
-    private let handleHeight: CGFloat = 26
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -50,12 +46,13 @@ struct BottomSheetHost<Content: View>: View {
                 // 깔리고 내용만 `navigationBarsPadding` 으로 비켜선다.
                 Color.clear.frame(height: safeBottomInset)
             }
-            .onPreferenceChange(SheetContentHeightKey.self) { contentHeight = $0 }
-            .onPreferenceChange(SheetHeaderHeightKey.self) { headerHeight = $0 }
-            // ⚠ **높이를 열어 두면 화면을 꽉 채운다.** 안의 `ScrollView` 가 주는 만큼
-            // 늘어나기 때문이다 — 내용이 보고한 자연 높이로 잡고 화면 50% 에서 자른다.
             .frame(maxWidth: .infinity)
-            .frame(height: resolvedHeight)
+            // ⚠ **`height` 로 못 박지 말 것 — `maxHeight` 상한만 씌운다.**
+            // 안의 `ScrollView` 가 `sheetScrollFit()` 으로 제 내용에 묶여 있어서, 시트는
+            // 여백·간격까지 포함한 **자연 높이**를 스스로 갖는다. 여기서 할 일은 그게
+            // 화면 절반(=`maxFraction`)을 넘지 않게 막는 것뿐이다. 넘으면 그때
+            // `ScrollView` 가 눌리며 스크롤이 생긴다.
+            .frame(maxHeight: UIScreen.main.bounds.height * maxFraction)
             .background(theme.palette.surface)
             // ⚠ **위 모서리만** 둥글다 — 아래까지 둥글리면 iOS 기본 시트처럼 떠 보인다.
             .clipShape(TopRoundedRectangle(radius: theme.shapes.extraLarge))
@@ -82,7 +79,6 @@ struct BottomSheetHost<Content: View>: View {
         }
     }
 
-    /// 내용만큼, 단 화면 50% 까지.
     /// 홈 인디케이터 영역. 시트가 여기까지 깔리고, 내용은 그 위에서 끝난다.
     private var safeBottomInset: CGFloat {
         UIApplication.shared.connectedScenes
@@ -90,13 +86,6 @@ struct BottomSheetHost<Content: View>: View {
             .first ?? 0
     }
 
-    private var resolvedHeight: CGFloat? {
-        guard contentHeight > 0 else { return nil }
-        let wanted = contentHeight + headerHeight + handleHeight + safeBottomInset
-        // ⚠ 상한은 **화면의 50%** 다(2026-08-10 요청) — 그보다 길어지면 시트를 더 키우지
-        // 않고 **안에서 스크롤**한다. 목록이 길다고 화면을 덮으면 뒤 화면이 안 보인다.
-        return min(wanted, UIScreen.main.bounds.height * maxFraction)
-    }
 
     private var handle: some View {
         // 안드로이드 `WakerSheetDragHandle`: 36×4, 위 12 · 아래 10.
