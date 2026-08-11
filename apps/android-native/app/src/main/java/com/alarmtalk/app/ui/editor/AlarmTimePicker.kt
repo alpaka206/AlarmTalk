@@ -65,6 +65,9 @@ internal fun AlarmTimePickerCard(
     val verticalWheelPadding = 24.dp
     var workingHour by remember { mutableIntStateOf(hour) }
     var workingMinute by remember { mutableIntStateOf(minute) }
+    // 지금 그 자리에서 고쳐 쓰는 칼럼. 두 칼럼이 **함께** 본다 — 한쪽을 고치는 동안
+    // 양쪽의 회색 이웃 숫자를 숨기기 위해서다(iOS `TimeWheelPicker` 의 `editingColumn` 과 같다).
+    var editingColumn by remember { mutableStateOf<WheelColumn?>(null) }
     // 시계에 박스를 두지 않고 배경에 시간 휠만 띄운다(삼성 시계식). 글자는 배경 대비로.
     val wheelBackgroundColor = Color.Transparent
     val selectedTextColor = MaterialTheme.colorScheme.onSurface
@@ -150,6 +153,21 @@ internal fun AlarmTimePickerCard(
                     textScale = wheelScale,
                     onStep = ::applyHourSteps,
                     modifier = Modifier.weight(1f),
+                    editable = true,
+                    isEditing = editingColumn == WheelColumn.Hour,
+                    anyEditing = editingColumn != null,
+                    onBeginEdit = { editingColumn = WheelColumn.Hour },
+                    onCommitEdit = { typed ->
+                        editingColumn = null
+                        if (typed != null) {
+                            // 사용자는 화면에 보이는 **12시간** 숫자를 넣는다 — 지금 오전/오후를
+                            // 유지한 채 24시간으로 되돌린다(오전/오후는 그 칼럼으로 바꾼다).
+                            // 범위를 벗어나면 **거절하지 않고 잘라서** 넣는다.
+                            val display = typed.coerceIn(1, 12)
+                            val base = if (display == 12) 0 else display
+                            commitTime(base + if (workingHour >= 12) 12 else 0, workingMinute)
+                        }
+                    },
                 )
                 Box(
                     modifier = Modifier
@@ -174,12 +192,23 @@ internal fun AlarmTimePickerCard(
                     textScale = wheelScale,
                     onStep = ::applyMinuteSteps,
                     modifier = Modifier.weight(1f),
+                    editable = true,
+                    isEditing = editingColumn == WheelColumn.Minute,
+                    anyEditing = editingColumn != null,
+                    onBeginEdit = { editingColumn = WheelColumn.Minute },
+                    onCommitEdit = { typed ->
+                        editingColumn = null
+                        if (typed != null) commitTime(workingHour, typed.coerceIn(0, 59))
+                    },
                 )
             }
         }
     }
     }
 }
+
+/// 그 자리에서 고쳐 쓸 수 있는 칼럼. 오전/오후는 두 값뿐이라 타이핑할 게 없어 빠져 있다.
+private enum class WheelColumn { Hour, Minute }
 
 /// 타임휠에 허용하는 글꼴 배율 상한. 이 위로는 글자가 컬럼을 넘어 잘린다.
 private const val MaxWheelFontScale = 1.3f

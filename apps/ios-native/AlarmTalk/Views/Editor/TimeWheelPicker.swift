@@ -40,6 +40,9 @@ struct TimeWheelPicker: View {
 
     /// 축소 배율을 정하려고 **폭만** 잰다. 높이는 우리가 정하므로 순환하지 않는다.
     @State private var measuredWidth: CGFloat = 0
+    /// 지금 그 자리에서 고쳐 쓰는 칼럼("시"/"분"). 두 칼럼이 **함께** 본다 —
+    /// 한쪽을 고치는 동안 양쪽의 회색 이웃 숫자를 숨기기 위해서다.
+    @State private var editingColumn: String?
 
     var body: some View {
         // ⚠ **폭에 맞춰 휠 타이포를 줄인다.** 좁은 화면(360pt급)에서 '오전/오후' 고정폭 +
@@ -74,7 +77,8 @@ struct TimeWheelPicker: View {
                 applyTypedValue: { typed in
                     let display = min(max(typed, 1), 12)
                     hour = TimeWheelMath.combine(displayHour: display, isPM: hour >= 12)
-                }
+                },
+                editingColumn: $editingColumn
             )
             .frame(maxWidth: .infinity)
 
@@ -86,7 +90,8 @@ struct TimeWheelPicker: View {
                 formatter: { String(format: "%02d", $0) },
                 scale: scale,
                 typeInTitle: "분",
-                applyTypedValue: { typed in minute = min(max(typed, 0), 59) }
+                applyTypedValue: { typed in minute = min(max(typed, 0), 59) },
+                editingColumn: $editingColumn
             )
             .frame(maxWidth: .infinity)
         }
@@ -119,15 +124,6 @@ struct TimeWheelPicker: View {
     }
 
     // MARK: - 12h ↔ 24h 변환
-
-    private var hour12Binding: Binding<Int> {
-        Binding(
-            get: { TimeWheelMath.hour24To12(hour) },
-            set: { newDisplay in
-                hour = TimeWheelMath.combine(displayHour: newDisplay, isPM: hour >= 12)
-            }
-        )
-    }
 
     private var amPmBinding: Binding<Bool> {
         Binding(
@@ -174,20 +170,28 @@ struct DraggableNumberColumn: View {
     /// 가용 폭에 따른 축소 배율. 상위 `TimeWheelPicker` 가 계산해 내려준다.
     var scale: CGFloat = 1
 
-    /// 탭했을 때 뜨는 직접 입력 알럿의 제목(예: "시" / "분"). 비면 탭 입력을 열지 않는다.
+    /// 탭했을 때 **그 자리에서** 고쳐 쓸 수 있는 칼럼인지, 그리고 그 이름("시"/"분").
+    /// 비면 탭 입력을 열지 않는다(오전/오후 칼럼).
     var typeInTitle: String?
     /// 직접 입력한 값을 실제 값으로 바꾼다. 시 칼럼은 12시간 표기를 24시간으로 되돌려야 해서
     /// 칼럼마다 규칙이 다르다 — 그래서 호출부가 준다.
     var applyTypedValue: ((Int) -> Void)?
+    /// 지금 어느 칼럼을 고쳐 쓰는 중인가(`typeInTitle` 값). 두 칼럼이 공유한다 —
+    /// 한쪽을 고치는 동안 **양쪽의** 회색 이웃 숫자를 숨기기 위해서다.
+    @Binding var editingColumn: String?
 
     @State private var dragOffset: CGFloat = 0
-    @GestureState private var isDragging: Bool = false
     @State private var selectionGenerator = UISelectionFeedbackGenerator()
-    @State private var typeInOpen = false
     @State private var typeInDraft = ""
-
+    @FocusState private var typeInFocused: Bool
+    /// 손을 뗀 뒤 굴러가서 멎는 애니메이션(`TimeWheelSettle.swift` 주석 참조).
+    @State private var settleDriver = WheelSettleDriver()
 
     private var itemHeight: CGFloat { TimeWheelPicker.itemHeight * scale }
+    /// 이 칼럼을 고쳐 쓰는 중인가.
+    private var isEditing: Bool { typeInTitle != nil && editingColumn == typeInTitle }
+    /// 둘 중 어느 칼럼이든 고쳐 쓰는 중인가.
+    private var anyEditing: Bool { editingColumn != nil }
 
     var body: some View {
         GeometryReader { proxy in
@@ -195,42 +199,40 @@ struct DraggableNumberColumn: View {
                 let centerY = proxy.size.height / 2
 
                 ForEach(-1...1, id: \.self) { offset in
-                    let displayValue = wrap(value + offset)
-                    let yPosition = centerY + CGFloat(offset) * itemHeight + dragOffset
-                    let normalized = abs(CGFloat(offset) * itemHeight + dragOffset) / itemHeight
-                    let clamped = min(normalized, 1.4)
-
-                    // ⚠ **선택/인접 크기가 다르다.** 안드로이드는 선택 `displayLarge`(57),
-                    // 인접 `displayMedium`(45)을 쓴다(`DraggableTimeWheelColumn.kt:152-154`).
-                    // 같은 크기로 그리면 알파만으로 초점을 만들어야 해서, 스크롤 중에
-                    // 어느 숫자가 골라질 것인지가 흐릿하다.
-                    //
-                    // ⚠ 글꼴은 **Pretendard** 다. `design: .rounded`(SF Rounded)로 두면
-                    // 이 화면만 다른 서체가 되어 앱에서 가장 큰 글자가 튄다.
-                    Text(formatter(displayValue))
-                        .font(.pretendard(.bold, size: (clamped < 0.5 ? 57 : 45) * scale))
-                        .monospacedDigit()
-                        .foregroundStyle(theme.palette.onSurface.opacity(textAlpha(for: clamped)))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: itemHeight)
-                        .position(x: proxy.size.width / 2, y: yPosition)
+                    // ⚠ **고쳐 쓰는 동안에는 위아래 회색 숫자를 숨긴다**(2026-08-11 요청).
+                    // 큰 입력 글자 옆에 흐린 숫자가 남아 있으면 어느 게 지금 치는 값인지
+                    // 헷갈리고, 커서가 그 사이에 끼어 보인다.
+                    if offset == 0 || !anyEditing {
+                        row(offset: offset, centerY: centerY, width: proxy.size.width)
+                    }
                 }
             }
             .contentShape(Rectangle())
             // ⚠ **탭이 드래그를 잡아먹지 않게 순서를 지킨다.** `.onTapGesture` 를
             // `.gesture(dragGesture)` **뒤에** 두면 SwiftUI 가 드래그를 우선 인식하고,
             // 손가락을 움직이지 않은 경우에만 탭으로 떨어진다.
-            .gesture(dragGesture)
+            //
+            // ⚠ 고쳐 쓰는 동안에는 휠 드래그를 받지 않는다(`.subviews` = 자식만) —
+            // 안 그러면 입력창을 누르는 순간 휠이 같이 끌린다.
+            .gesture(dragGesture, including: anyEditing ? .subviews : .all)
             .onTapGesture {
                 guard typeInTitle != nil else { return }
-                typeInDraft = ""
-                typeInOpen = true
+                beginTypeIn()
             }
-            .mask(fadeMask)
+            // 고쳐 쓰는 동안에는 위아래 페이드를 걸지 않는다 — 커서와 글자 윗동이 깎인다.
+            .mask {
+                if anyEditing { Color.white } else { fadeMask }
+            }
         }
         .frame(height: itemHeight * 3)
+        // 화면이 사라지면 굴리기를 멈춘다 — 안 그러면 `CADisplayLink` 가 사라진 뷰의
+        // 상태를 계속 건드린다.
+        .onDisappear { settleDriver.cancel() }
         .accessibilityElement()
         .accessibilityLabel(Text(formatter(value)))
+        // UI 테스트가 이 칼럼 하나를 집어 값 변화를 읽는다(`TimeWheelFlingUITests`).
+        // 라벨은 값 자체라 칼럼을 특정할 수 없어 식별자를 따로 둔다.
+        .accessibilityIdentifier(typeInTitle.map { "timeWheel.\($0)" } ?? "timeWheel")
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment: applyStep(1)
@@ -238,30 +240,108 @@ struct DraggableNumberColumn: View {
             @unknown default: break
             }
         }
-        // 휠을 굴리지 않고 **숫자로 바로** 넣는 길. 멀리 있는 값(7시 → 11시)을 고를 때
-        // 92pt 씩 끌지 않아도 된다.
-        .alert(typeInTitle.map { "\($0) 직접 입력" } ?? "", isPresented: $typeInOpen) {
-            TextField(typeInTitle ?? "", text: $typeInDraft)
-                .keyboardType(.numberPad)
-            Button("취소", role: .cancel) { }
-            Button("확인") {
-                // 범위를 벗어나면 **거절하지 않고 잘라서** 넣는다 — 여기서 튕기면
-                // 사용자는 왜 안 되는지 모른 채 같은 값을 다시 넣는다(스누즈 알럿과 같은 규칙).
-                guard let typed = Int(typeInDraft.filter(\.isNumber)) else { return }
-                if let applyTypedValue {
-                    applyTypedValue(typed)
-                } else {
-                    value = min(max(typed, range.lowerBound), range.upperBound)
-                }
-                selectionGenerator.selectionChanged()
+    }
+
+    // MARK: - 행 하나 / 그 자리 입력
+
+    /// 휠의 한 줄. 가운데 줄은 고쳐 쓰는 중이면 **입력창**이 된다.
+    @ViewBuilder
+    private func row(offset: Int, centerY: CGFloat, width: CGFloat) -> some View {
+        let yPosition = centerY + CGFloat(offset) * itemHeight + dragOffset
+        let normalized = abs(CGFloat(offset) * itemHeight + dragOffset) / itemHeight
+        let clamped = min(normalized, 1.4)
+
+        Group {
+            if offset == 0, isEditing {
+                typeInField
+            } else {
+                // ⚠ **선택/인접 크기가 다르다.** 안드로이드는 선택 `displayLarge`(57),
+                // 인접 `displayMedium`(45)을 쓴다(`ui/editor/DraggableTimeWheelColumn.kt`).
+                // 같은 크기로 그리면 알파만으로 초점을 만들어야 해서, 스크롤 중에
+                // 어느 숫자가 골라질 것인지가 흐릿하다.
+                //
+                // ⚠ 글꼴은 **Pretendard** 다. `design: .rounded`(SF Rounded)로 두면
+                // 이 화면만 다른 서체가 되어 앱에서 가장 큰 글자가 튄다.
+                Text(formatter(wrap(value + offset)))
+                    .font(.pretendard(.bold, size: (clamped < 0.5 ? 57 : 45) * scale))
+                    .monospacedDigit()
+                    .foregroundStyle(theme.palette.onSurface.opacity(textAlpha(for: clamped)))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: itemHeight)
+        .position(x: width / 2, y: yPosition)
+    }
+
+    /// 숫자를 **그 자리에서** 고쳐 쓰는 입력창.
+    ///
+    /// ⚠ **알럿으로 되돌리지 말 것**(2026-08-11 요청). 예전에는 숫자를 누르면 '시 직접 입력'
+    /// 알럿이 떠서, 고치려는 숫자가 알럿에 가리고 확인까지 두 번을 더 눌러야 했다.
+    /// 지금은 그 숫자가 그대로 입력창이 된다 — 누르고, 치고, 완료다.
+    private var typeInField: some View {
+        TextField(
+            "",
+            text: $typeInDraft,
+            // 비워 두면 큰 글자 자리가 텅 비어 무엇을 치는 자리인지 알 수 없다 —
+            // 지금 값을 흐리게 깔아 둔다(치면 대체된다).
+            prompt: Text(formatter(value))
+                .foregroundColor(theme.palette.onSurface.opacity(0.28))
+        )
+        .keyboardType(.numberPad)
+        .multilineTextAlignment(.center)
+        .font(.pretendard(.bold, size: 57 * scale))
+        .monospacedDigit()
+        .foregroundStyle(theme.palette.onSurface)
+        .tint(theme.palette.primary)
+        .focused($typeInFocused)
+        .onChange(of: typeInDraft) { _, next in
+            // 두 자리까지만 — 세 자리를 받아 봐야 어차피 잘린다.
+            let digits = String(next.filter(\.isNumber).prefix(2))
+            if digits != next { typeInDraft = digits }
+        }
+        // 포커스를 잃으면(다른 칼럼·바깥 탭) 그때까지 친 값을 넣는다 —
+        // 취소 버튼이 없으므로 여기서 안 받으면 친 게 조용히 사라진다.
+        .onChange(of: typeInFocused) { _, focused in
+            if !focused { commitTypeIn() }
+        }
+        // 숫자 키패드에는 완료 키가 없다 — 툴바로 낸다.
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("완료") { typeInFocused = false }
+                    .fontWeight(.semibold)
             }
         }
     }
 
+    private func beginTypeIn() {
+        settleDriver.cancel()
+        dragOffset = 0
+        typeInDraft = ""
+        editingColumn = typeInTitle
+        typeInFocused = true
+    }
+
+    private func commitTypeIn() {
+        let draft = typeInDraft
+        typeInDraft = ""
+        if editingColumn == typeInTitle { editingColumn = nil }
+        // 범위를 벗어나면 **거절하지 않고 잘라서** 넣는다 — 여기서 튕기면
+        // 사용자는 왜 안 되는지 모른 채 같은 값을 다시 넣는다(스누즈 알럿과 같은 규칙).
+        guard let typed = Int(draft.filter(\.isNumber)) else { return }
+        if let applyTypedValue {
+            applyTypedValue(typed)
+        } else {
+            value = min(max(typed, range.lowerBound), range.upperBound)
+        }
+        selectionGenerator.selectionChanged()
+    }
+
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 1)
-            .updating($isDragging) { _, state, _ in state = true }
             .onChanged { gesture in
+                // 굴러가는 중에 손을 대면 **그 자리에서 잡힌다**(안드로이드 `settleJob?.cancel()`).
+                settleDriver.cancel()
                 let delta = gesture.translation.height
                 let stepsConsumed = (delta / itemHeight).rounded(.towardZero)
                 let residual = delta - stepsConsumed * itemHeight
@@ -287,12 +367,19 @@ struct DraggableNumberColumn: View {
                 // 값이 **증가**하는데, 놓을 때만 반대로 적용돼서 **반 칸 이상 끌어 올린 뒤
                 // 손을 떼면 값이 한 칸 도로 내려갔다** — 사용자에겐 "맞춰도 되돌아간다"
                 // 로 보인다(2026-08-10 보고). 두 자리의 방향은 반드시 같아야 한다.
-                if snapStep != 0 {
-                    applyStep(snapStep)
-                }
-                withAnimation(.snappy(duration: 0.25)) {
-                    dragOffset = 0
-                }
+                //
+                // ⚠ **여기서 `applyStep(snapStep)` 으로 한꺼번에 넘기지 말 것.**
+                // 그러면 세게 튕겼을 때 숫자가 굴러가지 않고 **순간이동**한다
+                // (2026-08-11 지적). 칸 경계를 지날 때마다 한 칸씩 넘기는 건 정착
+                // 구동부(TimeWheelSettle.swift)가 맡는다 — 안드로이드 `animateWheelSettle`
+                // 과 같은 곡선·같은 시간이다.
+                settleDriver.start(
+                    from: dragOffset,
+                    steps: snapStep,
+                    itemHeight: itemHeight,
+                    onStep: { applyStep($0) },
+                    onOffset: { dragOffset = $0 }
+                )
                 lastEmittedSteps = 0
             }
 
