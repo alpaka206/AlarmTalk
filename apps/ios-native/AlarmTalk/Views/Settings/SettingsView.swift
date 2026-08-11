@@ -15,6 +15,13 @@ struct SettingsView: View {
     @State private var fortuneDialogOpen: Bool = false
     @State private var holidayDialogOpen: Bool = false
     @State private var promptPreferences: DynamicPromptPreferences = .loadFromDefaults()
+    // 운세 폼의 초안. 상단바의 '저장' 이 눌러야 반영되므로 **모달 밖**에 둔다 —
+    // 값이 폼 안에만 있으면 상단바가 그걸 볼 수 없다.
+    @State private var fortuneGenderDraft = ""
+    @State private var fortuneBirthDateDraft = ""
+    @State private var fortuneBirthTimeDraft = ""
+    /// 한 번이라도 저장을 눌렀는가. 누르기 전에는 빈 칸 경고를 띄우지 않는다.
+    @State private var fortuneSubmitted = false
     @State private var legalDestination: LegalDestination?
 
     /// 설정 하단 '법적 정보' 카드가 여는 화면들.
@@ -67,7 +74,15 @@ struct SettingsView: View {
                     SettingsValueButton(
                         label: "운세 정보",
                         value: fortuneInfoLabel,
-                        action: { fortuneDialogOpen = true }
+                        action: {
+                            // 열 때마다 저장된 값에서 다시 시작한다 — 취소하고 다시 열었을 때
+                            // 지난번에 끄적인 값이 남아 있으면 안 된다.
+                            fortuneGenderDraft = FortunePromptInputFormat.normalizedGender(promptPreferences.fortuneGender)
+                            fortuneBirthDateDraft = FortunePromptInputFormat.normalizedBirthDate(promptPreferences.fortuneBirthDate)
+                            fortuneBirthTimeDraft = FortunePromptInputFormat.normalizedBirthTime(promptPreferences.fortuneBirthTime)
+                            fortuneSubmitted = false
+                            fortuneDialogOpen = true
+                        }
                     )
                 }
                 .settingsCard(title: "랜덤 문구 정보")
@@ -145,25 +160,27 @@ struct SettingsView: View {
                 }
             )
         }
-        // ⚠ **바텀시트가 아니라 가운데 카드다.** 안드로이드에서 운세 정보는
-        // `ModalDialogTitle` + Dialog(가운데 카드)이고, 목록형만 바텀시트다.
-        .formDialog(
+        // ⚠ **가운데 카드 + X 로 되돌리지 말 것.** 아이폰의 폼 모달은 시트로 올라오고
+        // 상단바에 취소·제목·저장을 둔다(`FormSheet` 주석 참조).
+        .formSheet(
             isPresented: $fortuneDialogOpen,
             title: "운세 정보",
-            onDismiss: { fortuneDialogOpen = false }
+            onCancel: { fortuneDialogOpen = false },
+            // ⚠ **저장을 잠그지 않는다.** 잠가 두면 왜 못 누르는지 알 수 없다 — 눌렀을 때
+            // 어느 칸이 비었는지 알려 주는 쪽이 낫다(`fortuneSubmitted`).
+            onSave: { saveFortuneDraft() }
         ) {
-            FortuneInfoPreferenceSheet(
-                initial: promptPreferences,
-                onDismiss: { fortuneDialogOpen = false },
-                onSave: { gender, birthDate, birthTime in
-                    var next = promptPreferences
-                    next.fortuneGender = gender
-                    next.fortuneBirthDate = birthDate
-                    next.fortuneBirthTime = birthTime
-                    savePromptPreferences(next)
-                    fortuneDialogOpen = false
-                }
-            )
+            VStack(alignment: .leading, spacing: 16) {
+                Text("운세가 들어간 랜덤 깨움말을 만들 때만 사용해요.")
+                    .font(.footnote)
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                FortunePromptInputFields(
+                    gender: $fortuneGenderDraft,
+                    birthDate: $fortuneBirthDateDraft,
+                    birthTime: $fortuneBirthTimeDraft,
+                    submitted: fortuneSubmitted
+                )
+            }
         }
         .bottomSheet(isPresented: $holidayDialogOpen, onDismiss: { holidayDialogOpen = false }) {
             HolidayCountryPickerSheet(
@@ -199,6 +216,22 @@ struct SettingsView: View {
         promptPreferences.fortuneReady
             ? [promptPreferences.fortuneGender, promptPreferences.fortuneBirthDate, promptPreferences.fortuneBirthTime].joined(separator: " · ")
             : "미설정"
+    }
+
+    /// 상단바 '저장'. 빈 칸이 있으면 **닫지 않고** 어느 칸이 비었는지 보여 준다.
+    private func saveFortuneDraft() {
+        fortuneSubmitted = true
+        guard FortunePromptInputFormat.isComplete(
+            gender: fortuneGenderDraft,
+            birthDate: fortuneBirthDateDraft,
+            birthTime: fortuneBirthTimeDraft
+        ) else { return }
+        var next = promptPreferences
+        next.fortuneGender = FortunePromptInputFormat.normalizedGender(fortuneGenderDraft)
+        next.fortuneBirthDate = FortunePromptInputFormat.normalizedBirthDate(fortuneBirthDateDraft)
+        next.fortuneBirthTime = FortunePromptInputFormat.normalizedBirthTime(fortuneBirthTimeDraft)
+        savePromptPreferences(next)
+        fortuneDialogOpen = false
     }
 
     private func loadPromptPreferences() {
@@ -316,61 +349,6 @@ struct ThemeModePickerSheet: View {
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
             }
-        }
-    }
-}
-
-private struct FortuneInfoPreferenceSheet: View {
-    let initial: DynamicPromptPreferences
-    let onDismiss: () -> Void
-    let onSave: (String, String, String) -> Void
-
-    @State private var gender = ""
-    @State private var birthDate = ""
-    @State private var birthTime = ""
-    @State private var submitted = false
-
-    private var birthDateValue: String { FortunePromptInputFormat.normalizedBirthDate(birthDate) }
-    private var birthTimeValue: String { FortunePromptInputFormat.normalizedBirthTime(birthTime) }
-    private var isValid: Bool {
-        FortunePromptInputFormat.isComplete(
-            gender: gender,
-            birthDate: birthDate,
-            birthTime: birthTime
-        )
-    }
-
-    var body: some View {
-        // ⚠ 제목·닫기(X)는 `FormDialog` 가 그린다 — 여기서 또 그리면 두 번 나온다.
-        VStack(alignment: .leading, spacing: 16) {
-            Text("운세가 들어간 랜덤 깨움말을 만들 때만 사용해요.")
-                .font(.footnote)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
-            FortunePromptInputFields(
-                gender: $gender,
-                birthDate: $birthDate,
-                birthTime: $birthTime,
-                submitted: submitted
-            )
-            Button {
-                submitted = true
-                guard isValid else { return }
-                onSave(FortunePromptInputFormat.normalizedGender(gender), birthDateValue, birthTimeValue)
-            } label: {
-                // ⚠ **프레임을 label 안에 준다.** `.buttonStyle` 뒤에 붙이면 버튼은 내용
-                // 크기로 잡히고 바깥 상자만 넓어져, 가운데 작은 알약으로 그려진다
-                // (`EditorActionBar` 에 같은 함정이 기록돼 있다).
-                Text("저장")
-                    .frame(maxWidth: .infinity, minHeight: 30)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-        }
-        // ⚠ 패딩·배경은 `FormDialog` 가 준다 — 여기서 또 주면 카드 안에 카드가 생긴다.
-        .onAppear {
-            gender = FortunePromptInputFormat.normalizedGender(initial.fortuneGender)
-            birthDate = FortunePromptInputFormat.normalizedBirthDate(initial.fortuneBirthDate)
-            birthTime = FortunePromptInputFormat.normalizedBirthTime(initial.fortuneBirthTime)
         }
     }
 }

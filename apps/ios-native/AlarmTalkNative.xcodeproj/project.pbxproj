@@ -42,6 +42,7 @@
 		28EB46140302DF5F6CA800D9 /* FreeBucketSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C91668BFFA3C24F48F19CD2 /* FreeBucketSettings.swift */; };
 		2B97C025AE8A2E50DD85D909 /* AlarmEnumsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE1C56D44C36C22F69C9EA9 /* AlarmEnumsTests.swift */; };
 		2C24EFA832ED6E0D0818C5E0 /* TimeWheelSettle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1EF46FAF8334E543D1A159 /* TimeWheelSettle.swift */; };
+		2D3C0A9E656BEC6E425C4AD7 /* SystemAlertMetricsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A537326D52C4948FC559A7 /* SystemAlertMetricsUITests.swift */; };
 		2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */; };
 		305BF4D6DC819972454207B9 /* pretendard_semibold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 3EE89C0338FF0981C544A8AD /* pretendard_semibold.otf */; };
 		307C97195816A03C44D1D5B5 /* EmptyStatePlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A186A9ECD18C026BD44B42E0 /* EmptyStatePlaceholder.swift */; };
@@ -75,7 +76,6 @@
 		49165A0BBDF7A26945A62D65 /* license_apache_2_0.txt in Resources */ = {isa = PBXBuildFile; fileRef = C0526E1D1135CBBCE4AD42A5 /* license_apache_2_0.txt */; };
 		496C23BF2BF03B282CBF1E97 /* BillingPanelComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A16A1874C65D3C925FAE2EF /* BillingPanelComponents.swift */; };
 		498040848F6A941B73D495AB /* voice_greeting_soeun_en.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = F447DE78A51BEA7ED75F5DA3 /* voice_greeting_soeun_en.mp3 */; };
-		4A56053263F3E7E22C6D4FB5 /* FormDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05A5C5B4AFCD856E0062F049 /* FormDialog.swift */; };
 		4ADA36B2EB592A70D97F7BF3 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 920F8A0EE7DA7744FBDA1206 /* AuthViewModel.swift */; };
 		4B50813EDDAD7D092EF80DC7 /* EditorStatePersistenceUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00884D032AF099AA772D95DF /* EditorStatePersistenceUITests.swift */; };
 		4BCD4EFA36C7AC732ADCAA8E /* VoiceShareAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FAA3E0645594172886EF0BB /* VoiceShareAccess.swift */; };
@@ -170,6 +170,7 @@
 		9BCCCEA96763482373E3305E /* ConsentHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8387E0DA3E616BE65DAD2CA6 /* ConsentHistoryView.swift */; };
 		9E2EF89ACCC736480AF7E161 /* AlarmSoundStagingIntegrityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AE8652E77D9E7DDA7C3DE0D /* AlarmSoundStagingIntegrityTests.swift */; };
 		9E3D16B1AA2460CB5F94405E /* AlarmKitViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEBAA873DFD96871D86C066E /* AlarmKitViewModel.swift */; };
+		9F9C6F5F430DFB5B94C6984B /* FormSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A42579D30336AD3260A1D09 /* FormSheet.swift */; };
 		A031DEE871E1440456148FCA /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 26FEEB9D5F4B19556BAAD9C6 /* Localizable.xcstrings */; };
 		A1B69BFC2424FE0015F308A7 /* WelcomePromoDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE68A4DA835D566B9592F59F /* WelcomePromoDialog.swift */; };
 		A2480C4858F514D4A2DA8357 /* voice_greeting_hajun_ja.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 0453E7CB9DE103C7B74AA663 /* voice_greeting_hajun_ja.mp3 */; };
@@ -299,7 +300,6 @@
 		034A8047D121E7FF08703642 /* AppVersionGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppVersionGate.swift; sourceTree = "<group>"; };
 		0453E7CB9DE103C7B74AA663 /* voice_greeting_hajun_ja.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_hajun_ja.mp3; sourceTree = "<group>"; };
 		056DB53565C8BBE7AD69B128 /* SocialFeatureViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialFeatureViewModelTests.swift; sourceTree = "<group>"; };
-		05A5C5B4AFCD856E0062F049 /* FormDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormDialog.swift; sourceTree = "<group>"; };
 		0618736D787E420EF19C236B /* SocialFeatureViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SocialFeatureViewModel.swift; sourceTree = "<group>"; };
 		068018CE7C24F2A94A84FDB4 /* voice_greeting_soeun_ko.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_soeun_ko.mp3; sourceTree = "<group>"; };
 		07AE96180817F4A2A28B5ED4 /* AlarmTalkShapes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkShapes.swift; sourceTree = "<group>"; };
@@ -346,6 +346,7 @@
 		378F22445FC4E2D5C2F90CB4 /* TimeWheelFlingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelFlingUITests.swift; sourceTree = "<group>"; };
 		381C934DB89DBC2881DBE3D9 /* VoiceProfileManagementComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProfileManagementComponents.swift; sourceTree = "<group>"; };
 		39D0590DA9571CFBFE194ACF /* VoiceProfileManagementPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProfileManagementPanel.swift; sourceTree = "<group>"; };
+		3A42579D30336AD3260A1D09 /* FormSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormSheet.swift; sourceTree = "<group>"; };
 		3AECB7E9C88E521DB6347408 /* AuxiliarySheetHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliarySheetHost.swift; sourceTree = "<group>"; };
 		3BFC93E56F33A4EC79AB6F5C /* StringExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringExtensions.swift; sourceTree = "<group>"; };
 		3C91668BFFA3C24F48F19CD2 /* FreeBucketSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeBucketSettings.swift; sourceTree = "<group>"; };
@@ -526,6 +527,7 @@
 		F51D645677265F4903D07EFE /* LocalHolidayCalendarLunarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHolidayCalendarLunarTests.swift; sourceTree = "<group>"; };
 		F53865164F0DA5BE67D28848 /* ReceivedAlarmBadgeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedAlarmBadgeStore.swift; sourceTree = "<group>"; };
 		F5614A67355CB6778BA0DECE /* PlanGateDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanGateDialog.swift; sourceTree = "<group>"; };
+		F5A537326D52C4948FC559A7 /* SystemAlertMetricsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAlertMetricsUITests.swift; sourceTree = "<group>"; };
 		F6B2B49556CF324D4708CAA5 /* ChipStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChipStyle.swift; sourceTree = "<group>"; };
 		F6CD38FF3D3609DABDD69394 /* HelperFormattersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelperFormattersTests.swift; sourceTree = "<group>"; };
 		F6D6BB8C057A15658E4C0837 /* UsageGuideStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageGuideStore.swift; sourceTree = "<group>"; };
@@ -581,6 +583,7 @@
 				5E225F300F6C400D8EDBB183 /* PasswordResetE2EUITests.swift */,
 				5CF0160D993D91879DDDFF3A /* ScreenSweepUITests.swift */,
 				EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */,
+				F5A537326D52C4948FC559A7 /* SystemAlertMetricsUITests.swift */,
 				378F22445FC4E2D5C2F90CB4 /* TimeWheelFlingUITests.swift */,
 				FE4769F44E254B265F288150 /* TimeWheelTypeInUITests.swift */,
 				9A1C8164C5467E1065C0FFF7 /* VoiceSheetScreenshotUITests.swift */,
@@ -726,7 +729,7 @@
 				F6B2B49556CF324D4708CAA5 /* ChipStyle.swift */,
 				A186A9ECD18C026BD44B42E0 /* EmptyStatePlaceholder.swift */,
 				4621CAE23798A7737B7DE436 /* FeatureLockBadge.swift */,
-				05A5C5B4AFCD856E0062F049 /* FormDialog.swift */,
+				3A42579D30336AD3260A1D09 /* FormSheet.swift */,
 				1348344040C8AFF0EECE3D69 /* FortunePromptInputFields.swift */,
 				AFDD372A3465266C2A553883 /* HelperFormatters.swift */,
 				F5614A67355CB6778BA0DECE /* PlanGateDialog.swift */,
@@ -1204,6 +1207,7 @@
 				A26F3948811CBF00487223C0 /* PasswordResetE2EUITests.swift in Sources */,
 				DFF8884296CA033A9B8C6890 /* ScreenSweepUITests.swift in Sources */,
 				4FA9B768B6E51C73C71A0699 /* SignUpFlowUITests.swift in Sources */,
+				2D3C0A9E656BEC6E425C4AD7 /* SystemAlertMetricsUITests.swift in Sources */,
 				AF6A6C53BDDC3906B5EBDEBD /* TimeWheelFlingUITests.swift in Sources */,
 				135765AE28C6C5A5F3CDED93 /* TimeWheelTypeInUITests.swift in Sources */,
 				6D8D1F885562624A94A748BA /* VoiceSheetScreenshotUITests.swift in Sources */,
@@ -1276,7 +1280,7 @@
 				307C97195816A03C44D1D5B5 /* EmptyStatePlaceholder.swift in Sources */,
 				ED9DF32A8A426E3CE9FBDD6E /* FamilyAlarmQuietTimeDialog.swift in Sources */,
 				0244A8EBB6AE8ADBBF12F6AC /* FeatureLockBadge.swift in Sources */,
-				4A56053263F3E7E22C6D4FB5 /* FormDialog.swift in Sources */,
+				9F9C6F5F430DFB5B94C6984B /* FormSheet.swift in Sources */,
 				80DF2F14CA7B8F775875874E /* FortunePromptInputFields.swift in Sources */,
 				28EB46140302DF5F6CA800D9 /* FreeBucketSettings.swift in Sources */,
 				5492863435B4BD0E97A7F73B /* GradientCta.swift in Sources */,

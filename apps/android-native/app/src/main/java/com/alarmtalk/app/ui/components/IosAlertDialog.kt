@@ -2,6 +2,9 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import com.alarmtalk.app.WakerPillShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -111,8 +114,10 @@ internal fun IosAlertDialog(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(horizontal = 40.dp)
-                .widthIn(max = 300.dp),
-            shape = RoundedCornerShape(14.dp),
+                // 실측: iPhone 16 Pro(402pt)에서 폭 **320**, 좌우 여백 41.
+                .widthIn(max = 320.dp),
+            // ⚠ 14 가 아니다 — 실측 반경은 **약 34**(iOS 26). 14 는 iOS 7~18 시절 값이다.
+            shape = RoundedCornerShape(34.dp),
             // iOS 알럿은 어두운 글래스 패널 느낌 — 배경보다 한 단계 밝은 surfaceVariant 로 분리감을 준다.
             color = scheme.surfaceVariant,
             tonalElevation = 0.dp,
@@ -125,7 +130,7 @@ internal fun IosAlertDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 19.dp, bottom = 16.dp),
+                            .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         if (!title.isNullOrBlank()) {
@@ -162,7 +167,7 @@ internal fun IosAlertDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 19.dp, bottom = 16.dp),
+                            .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         content = content,
                     )
@@ -232,40 +237,59 @@ internal fun IosAlertField(
 }
 
 /**
- * 액션 행 높이. iOS 원본은 44dp 지만 그건 **Android 최소 터치 타깃(48dp)보다 작다** —
- * 폰에서 눌러 보면 실제로 빠듯하다. 52dp 로 두면 접근성 기준을 넘기면서도 알럿의
- * 납작한 느낌은 유지된다(세로로 3개 쌓여도 과하지 않다).
+ * 액션 버튼 높이 — **48dp**.
+ *
+ * ⚠ **44 로 되돌리지 말 것.** 예전 주석은 "iOS 원본은 44" 라고 적었는데 **지금 iOS 는
+ * 48이다**(2026-08-11 시뮬레이터 실측 — `AlarmTalkUITests/SystemAlertMetricsUITests`).
+ * 마침 안드로이드 최소 터치 타깃도 48이라, 두 기준이 같은 값에서 만난다.
  */
-private val ACTION_ROW_HEIGHT = 52.dp
+private val ACTION_HEIGHT = 48.dp
 
+/** 알럿 안쪽 여백 — 버튼 좌우·아래가 모두 16dp(실측). */
+private val ALERT_INSET = 16.dp
+
+/** 버튼 사이 간격(실측 8dp). */
+private val ACTION_GAP = 8.dp
+
+/**
+ * 액션 영역.
+ *
+ * ⚠ **구분선으로 나눈 납작한 텍스트 버튼으로 되돌리지 말 것.** 그건 iOS 7~18 의 알럿이고,
+ * **지금 iOS 알럿에는 구분선이 아예 없다** — 액션은 알럿 안쪽에 여백을 두고 놓인
+ * **채워진 캡슐 버튼**이다(2026-08-11 실측: 두 버튼 사이·제목과 버튼 사이 모두 알럿
+ * 배경색 그대로였다). 옛 모양을 흉내 내면 사용자 아이폰의 진짜 알럿과 나란히 놓였을 때
+ * 우리 것만 옛날 앱처럼 보인다.
+ */
 @Composable
 private fun IosAlertActionRow(actions: List<IosAlertAction>, scheme: ColorScheme) {
-    val separator = scheme.onSurface.copy(alpha = 0.20f)
+    // 2개는 가로 한 줄, 3개 이상은 세로 — 이 규칙은 그대로다(iOS 도 같다).
     if (actions.size == 2) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            HorizontalDivider(thickness = 0.5.dp, color = separator)
-            Row(modifier = Modifier.fillMaxWidth().height(ACTION_ROW_HEIGHT)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = ALERT_INSET, end = ALERT_INSET, bottom = ALERT_INSET),
+            horizontalArrangement = Arrangement.spacedBy(ACTION_GAP),
+        ) {
+            actions.forEach { action ->
                 IosAlertButton(
-                    action = actions[0],
+                    action = action,
                     scheme = scheme,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                )
-                VerticalDivider(thickness = 0.5.dp, color = separator)
-                IosAlertButton(
-                    action = actions[1],
-                    scheme = scheme,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    modifier = Modifier.weight(1f).height(ACTION_HEIGHT),
                 )
             }
         }
     } else {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = ALERT_INSET, end = ALERT_INSET, bottom = ALERT_INSET),
+            verticalArrangement = Arrangement.spacedBy(ACTION_GAP),
+        ) {
             actions.forEach { action ->
-                HorizontalDivider(thickness = 0.5.dp, color = separator)
                 IosAlertButton(
                     action = action,
                     scheme = scheme,
-                    modifier = Modifier.fillMaxWidth().height(ACTION_ROW_HEIGHT),
+                    modifier = Modifier.fillMaxWidth().height(ACTION_HEIGHT),
                 )
             }
         }
@@ -278,15 +302,26 @@ private fun IosAlertButton(
     scheme: ColorScheme,
     modifier: Modifier = Modifier,
 ) {
-    val color = if (action.destructive) scheme.error else scheme.primary
+    // ⚠ **글자색만으로 구분한다 — 채움색은 모든 액션이 같다.** 실측에서 '취소'와
+    // 파괴적 '로그아웃' 이 **같은 회색 채움**이었고, 다른 건 글자색(흰색 vs 빨강)뿐이었다.
+    // 파괴적 액션을 빨간 채움으로 만들면 우리만 튄다.
+    val contentColor = when {
+        action.destructive -> scheme.error
+        action.emphasized -> scheme.primary
+        else -> scheme.onSurface
+    }
     Box(
-        modifier = modifier.clickable(enabled = action.enabled, onClick = action.onClick),
+        modifier = modifier
+            // 높이 48 의 캡슐(반경 24) — 실측값이다.
+            .clip(WakerPillShape)
+            .background(scheme.onSurface.copy(alpha = 0.10f))
+            .clickable(enabled = action.enabled, onClick = action.onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = action.label,
             // 잠긴 동안에도 글자는 남기고 흐리게만 — 사라지면 버튼 위치가 밀려 오조작이 된다.
-            color = if (action.enabled) color else color.copy(alpha = 0.38f),
+            color = if (action.enabled) contentColor else contentColor.copy(alpha = 0.38f),
             style = IosAlertType.Action,
             fontWeight = if (action.emphasized) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
