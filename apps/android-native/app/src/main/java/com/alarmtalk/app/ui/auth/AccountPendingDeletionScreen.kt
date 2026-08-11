@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.HistoryToggleOff
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +54,10 @@ internal fun AccountPendingDeletionScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Icon(
-            imageVector = Icons.Outlined.HistoryToggleOff,
+            // ⚠ **`HistoryToggleOff`(시계 문자판) 로 되돌리지 말 것.** 그건 Material 에서
+            // '기록이 꺼짐' 계열이라 **"30일 뒤 삭제되는 유예 기간"** 과 뜻이 다르다.
+            // 모래시계가 카운트다운을 말하고, iOS 도 `hourglass` 다(2026-08-11 대조).
+            imageVector = Icons.Outlined.HourglassEmpty,
             contentDescription = null,
             modifier = Modifier.size(72.dp),
             tint = MaterialTheme.colorScheme.error,

@@ -361,7 +361,7 @@ struct VoiceCloneUploadFlow: View {
                 Button {
                     fileImporterPresented = true
                 } label: {
-                    Label("선택", systemImage: "folder")
+                    Label("선택", systemImage: "arrow.up.doc")
                 }
                 .buttonStyle(.bordered)
             }
@@ -372,7 +372,7 @@ struct VoiceCloneUploadFlow: View {
                 EmptyStatePlaceholder(
                     title: "선택한 음성 파일이나 영상이 없어요.",
                     subtitle: "m4a, mp3, wav, mp4 등 iOS가 읽을 수 있는 파일을 선택해 주세요.",
-                    icon: "folder.badge.plus"
+                    icon: "arrow.up.doc"
                 )
             }
 

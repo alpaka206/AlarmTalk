@@ -177,7 +177,11 @@ struct LocalAlarmAudioEditor: View {
                 }
                 Spacer()
                 Button(action: onPickFile) {
-                    Label("선택", systemImage: "folder")
+                    // ⚠ **`folder` 로 되돌리지 말 것.** 안드로이드는 '문서 + 위 화살표'
+                    // (`UploadFile`)라 폴더와 도형이 아예 달랐다(2026-08-11 대조).
+                    // ⚠ `icloud.and.arrow.up` 도 쓰지 말 것 — 그건 **iCloud** 를 뜻해서,
+                    // 우리 서버에 올리는 일을 사용자 iCloud 에 저장하는 것처럼 오해시킨다.
+                    Label("선택", systemImage: "arrow.up.doc")
                 }
                 .buttonStyle(.bordered)
             }

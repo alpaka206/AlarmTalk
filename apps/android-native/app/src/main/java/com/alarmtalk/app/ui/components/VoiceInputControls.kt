@@ -24,7 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -420,7 +420,7 @@ private fun RecordPulseRing(active: Boolean) {
 @Composable
 private fun UploadIcon() {
     Icon(
-        imageVector = Icons.Outlined.CloudUpload,
+        imageVector = Icons.Outlined.UploadFile,
         contentDescription = null,
         tint = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.size(28.dp),
@@ -499,7 +499,7 @@ internal fun VoiceFileControls(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.CloudUpload,
+                        imageVector = Icons.Outlined.UploadFile,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
