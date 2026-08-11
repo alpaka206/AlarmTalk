@@ -22,6 +22,7 @@
 		0F95A7B5A7D70D76F64A1DF6 /* InputSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BC3CAD414D42352F98B1FE /* InputSanitizerTests.swift */; };
 		0FB05A977664FB0D75719963 /* AlarmEditDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D06985F5E8ED62B425536DC /* AlarmEditDraftTests.swift */; };
 		128C91C62BC6308BA1781AE7 /* BottomNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD5149AC925F9E7568727C4B /* BottomNavBar.swift */; };
+		134E48F30DFE50037507CC9E /* AlarmRowHitAreaUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD780D23F3A7112A5CEF50E1 /* AlarmRowHitAreaUITests.swift */; };
 		135765AE28C6C5A5F3CDED93 /* TimeWheelTypeInUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4769F44E254B265F288150 /* TimeWheelTypeInUITests.swift */; };
 		14BEBC10C8EB922C30A26F98 /* AlarmTalkAPIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FAA02E16F860ED36A858566 /* AlarmTalkAPIModels.swift */; };
 		15A5B1EC292BE3B14658F982 /* VoiceStudioViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51BC54CB113C89792079DBAF /* VoiceStudioViewModel.swift */; };
@@ -512,6 +513,7 @@
 		DB37514CB12D62CC34E1E0F3 /* PreviewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSupport.swift; sourceTree = "<group>"; };
 		DC283DE15D2853C6F4669754 /* AlarmTalkMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkMetadata.swift; sourceTree = "<group>"; };
 		DCB68718409EED0E6D7B5440 /* AlarmTalk.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AlarmTalk.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DD780D23F3A7112A5CEF50E1 /* AlarmRowHitAreaUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmRowHitAreaUITests.swift; sourceTree = "<group>"; };
 		DD88376E4686A1C79C01C265 /* VoiceShareAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceShareAccessTests.swift; sourceTree = "<group>"; };
 		DEA4053147240A726E543944 /* AlarmUserCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmUserCopyTests.swift; sourceTree = "<group>"; };
 		DF8FEE20605F1122A2E8963A /* AlarmSoundStagingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundStagingCapabilityTests.swift; sourceTree = "<group>"; };
@@ -599,6 +601,7 @@
 		2C960B22A5BB85C19C0116F6 /* AlarmTalkUITests */ = {
 			isa = PBXGroup;
 			children = (
+				DD780D23F3A7112A5CEF50E1 /* AlarmRowHitAreaUITests.swift */,
 				9E3E636EE972FA7B3F1B794B /* BillingScreenshotUITests.swift */,
 				654A53A12F47130C19F6922C /* DeleteAccountAlertUITests.swift */,
 				7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */,
@@ -1233,6 +1236,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				134E48F30DFE50037507CC9E /* AlarmRowHitAreaUITests.swift in Sources */,
 				9D1D3F902DCE5965551B5BB6 /* BillingScreenshotUITests.swift in Sources */,
 				27D98E8D75785F7ECAAFD78E /* DeleteAccountAlertUITests.swift in Sources */,
 				2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */,

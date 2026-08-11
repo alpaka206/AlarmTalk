@@ -65,7 +65,7 @@
     <string name="billing_cancel_description_no_date">解約のタイミングを選択してください。終了日での解約は今の利用期間までそのまま使えます。今すぐ解約すると残り期間の料金は日割りで返金されます。</string>
     <string name="billing_cancel_description_with_date">終了日での解約は%1$sまでそのまま使えます。今すぐ解約すると残り期間の料金は日割りで返金され、利用券はすぐに終了します。</string>
     <string name="billing_cancel_dialog_title">利用券を解約しますか？</string>
-    <string name="billing_gift_personal_action">個人プランを贈る</string>
+    <string name="billing_gift_personal_action">ギフト</string>
     <string name="billing_gift_failed">ギフトコードを作れませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="billing_cancel_immediate_description">残り期間の料金は日割りで返金され、プランはすぐに終了します。声は3日間保管されます — その間に再登録すればそのまま使え、過ぎると完全に削除されます。</string>
     <string name="billing_cancel_immediate_title">今すぐ解約しますか？</string>
@@ -193,7 +193,7 @@
     <string name="editor_plan_gate_paid_features">プランに加入すると、自分で作った声・録音・自由入力の文でアラームを作れます。</string>
     <string name="editor_plan_gate_system_voice_title">基本の声では自由入力を使えません</string>
     <string name="editor_plan_gate_system_voice_message">基本の声は用意された文章だけを話せます。自分で書いた文章で起こしてもらうには、自分の声を登録してください。</string>
-    <string name="editor_plan_gate_system_voice_confirm">声を登録する</string>
+    <string name="editor_plan_gate_system_voice_confirm">登録する</string>
     <string name="editor_play_mode_alarm_only">アラーム</string>
     <string name="editor_play_mode_title">再生方式</string>
     <string name="editor_play_mode_voice_only">声</string>
@@ -479,7 +479,7 @@
     <string name="social_edit_button">編集</string>
 
     <string name="social_leave_and_register_button">退出して登録</string>
-    <string name="social_leave_and_register_new_code">現在のプランから退出して新しいコードを登録</string>
+    <string name="social_leave_and_register_new_code">退出して登録</string>
     <string name="social_leave_dialog_message">現在のプランから退出して、新しいコードを登録しますか？</string>
     <string name="social_managing_shared_plan">共有プランを管理中です。</string>
     <string name="social_member_fallback">メンバー</string>
@@ -499,7 +499,7 @@
     <string name="social_register_button">登録</string>
     <string name="social_register_dialog_message">このコードを登録しますか？</string>
     <string name="social_register_dialog_message_active">登録可能なコードの場合、現在の%1$sプランは終了し、新しいプランに切り替わります。</string>
-    <string name="social_register_other_code">別のコードを登録</string>
+    <string name="social_register_other_code">別のコード</string>
     <string name="social_register_will_change_plan">登録すると、現在の%1$sプランが変更されます。</string>
     <string name="social_remove_button">退出させる</string>
     <string name="social_remove_member_dialog_message">このメンバーを退出させますか？もう一度招待するには新しい招待コードが必要です。</string>

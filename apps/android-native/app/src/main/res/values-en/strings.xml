@@ -65,7 +65,7 @@
     <string name="billing_cancel_description_no_date">Choose when to cancel. Canceling on the end date keeps your pass until the current period ends. Canceling now gives you a prorated refund for the remaining time.</string>
     <string name="billing_cancel_description_with_date">Canceling on the end date keeps your pass until %1$s. Canceling now ends your pass immediately with a prorated refund for the remaining time.</string>
     <string name="billing_cancel_dialog_title">Cancel your pass?</string>
-    <string name="billing_gift_personal_action">Gift a Personal pass</string>
+    <string name="billing_gift_personal_action">Gift</string>
     <string name="billing_gift_failed">We couldn\'t create the gift code. Please try again in a moment.</string>
     <string name="billing_cancel_immediate_description">The remaining period is refunded pro rata and your plan ends right away. Your voice is kept for 3 days — resubscribe within that window and it comes back as it was; after that it is deleted for good.</string>
     <string name="billing_cancel_immediate_title">Cancel right now?</string>
@@ -193,7 +193,7 @@
     <string name="editor_plan_gate_paid_features">With a plan, you can use your own voices, recordings, and custom phrases.</string>
     <string name="editor_plan_gate_system_voice_title">Default voices can\'t read custom text</string>
     <string name="editor_plan_gate_system_voice_message">Default voices only speak the lines we prepared. To wake up to your own words, register your own voice.</string>
-    <string name="editor_plan_gate_system_voice_confirm">Register a voice</string>
+    <string name="editor_plan_gate_system_voice_confirm">Register</string>
     <string name="editor_play_mode_alarm_only">Alarm</string>
     <string name="editor_play_mode_title">Playback mode</string>
     <string name="editor_play_mode_voice_only">Voice</string>
@@ -471,7 +471,7 @@
     <string name="social_edit_button">Edit</string>
 
     <string name="social_leave_and_register_button">Leave &amp; register</string>
-    <string name="social_leave_and_register_new_code">Leave current plan &amp; register a new code</string>
+    <string name="social_leave_and_register_new_code">Leave & register</string>
     <string name="social_leave_dialog_message">Leave your current plan and register a new code?</string>
     <string name="social_managing_shared_plan">You\'re managing a shared plan.</string>
     <string name="social_member_fallback">Member</string>
@@ -491,7 +491,7 @@
     <string name="social_register_button">Register</string>
     <string name="social_register_dialog_message">Register this code?</string>
     <string name="social_register_dialog_message_active">If this code is valid, your current %1$s plan will end and switch to the new plan.</string>
-    <string name="social_register_other_code">Register another code</string>
+    <string name="social_register_other_code">Other code</string>
     <string name="social_register_will_change_plan">Registering will change your current %1$s plan.</string>
     <string name="social_remove_button">Remove</string>
     <string name="social_remove_member_dialog_message">Remove this member? You\'ll need a new invite code to invite them again.</string>

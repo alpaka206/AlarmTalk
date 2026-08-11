@@ -33,7 +33,7 @@ struct CodeRegisterRow: View {
                         showCodeInputs = true
                     }
                 } label: {
-                    Text(isSharedMember ? "현재 이용권 나가고 새 코드 등록하기" : "다른 코드 등록하기")
+                    Text(isSharedMember ? "나가고 등록하기" : "다른 코드 등록")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)

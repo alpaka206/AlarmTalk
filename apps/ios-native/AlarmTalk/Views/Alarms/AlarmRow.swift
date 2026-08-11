@@ -61,9 +61,22 @@ struct AlarmRow: View {
                     }
                 }
                 .offset(x: dragOffset)
-                // 스와이프 드래그가 내부 Button(onTap)/Toggle 보다 우선하도록
-                // highPriorityGesture 로 부착한다.
-                .highPriorityGesture(swipeGesture)
+                // ⚠ **탭은 행 전체가 받는다.** `contentShape` 로 빈 자리까지 히트영역에
+                // 넣는다. 토글 스위치는 자식이라 제 탭을 먼저 가져가므로, 스위치를 눌러
+                // 알람을 켜고 끄는 것과 충돌하지 않는다.
+                .contentShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
+                .onTapGesture {
+                    guard !deleteRevealed else { return }
+                    if selectionMode { onToggleSelected() } else { onTap() }
+                }
+                // ⚠ **`highPriorityGesture` 로 되돌리지 말 것 — 그러면 탭이 죽는다.**
+                // 그건 자식보다 **먼저** 터치를 claim 하는데, `minimumDistance 12` 라
+                // 손가락이 안 움직이면 제스처가 실패한다. 그 순간 아래 탭으로 **되돌아가지
+                // 않아**, 행의 빈 자리를 눌러도 아무 일이 없었다(2026-08-11 실측: 탭 지점
+                // x=226 은 글자 끝 139 와 스위치 313 사이의 확실한 빈 자리인데 무반응).
+                // `simultaneousGesture` 면 탭과 드래그가 공존한다 — 12pt 넘게 끌면 스와이프,
+                // 안 움직이면 탭. 토글 스위치는 여전히 제 탭을 먼저 가져간다.
+                .simultaneousGesture(swipeGesture)
                 // 길게 눌러 선택 모드로. 선택 모드에서는 이미 탭이 '고르기' 라 필요 없다.
                 .onLongPressGesture {
                     guard !selectionMode else { return }
@@ -87,8 +100,14 @@ struct AlarmRow: View {
     private var rowContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 8) {
-                Button(action: selectionMode ? onToggleSelected : onTap) {
-                    VStack(alignment: .leading, spacing: 2) {
+                // ⚠ **여기에 `Button` 을 다시 두지 말 것.** 예전에는 이 블록을 `Button`
+                // 으로 감쌌는데 그 버튼의 실제 폭이 **글자 폭에서 멈춰**(실측 x=38..197,
+                // 행은 380 폭) **오른쪽 빈 자리가 죽어 있었다** — 시각 숫자를 정확히
+                // 겨냥해야만 열렸다(2026-08-11 지적). 라벨 안팎 어디에
+                // `.frame(maxWidth:.infinity)`·`.contentShape` 를 걸어도 넓어지지 않았다.
+                // 탭은 **행 전체**가 받는다(아래 `onTapGesture`) — 안드로이드도 카드
+                // 전체에 `combinedClickable` 을 건다.
+                VStack(alignment: .leading, spacing: 2) {
                         // 시각 앞에 오전/오후를 **작게** 붙이고 12시간제로 쓴다.
                         // 24시간제("19:30")로 되돌리지 말 것 — 안드로이드와 읽는 방식이 갈린다.
                         HStack(alignment: .lastTextBaseline, spacing: 6) {
@@ -109,9 +128,10 @@ struct AlarmRow: View {
                             .truncationMode(.tail)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // 행 전체가 하나의 버튼으로 읽히게 한다(VoiceOver).
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
 
                 if selectionMode {
                     // 선택 모드에선 켜기/끄기 대신 선택 표시를 **같은 자리**에 둔다 —

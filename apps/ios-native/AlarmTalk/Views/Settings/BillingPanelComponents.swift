@@ -179,7 +179,7 @@ struct PlanCard: View {
 
             if tier == .personal {
                 Button(action: onGiftPersonal) {
-                    Label("개인 이용권 선물하기", systemImage: "gift")
+                    Label("선물하기", systemImage: "gift")
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
