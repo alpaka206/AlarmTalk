@@ -52,6 +52,17 @@ internal fun AlarmListScreen(
     contentPadding: PaddingValues,
     selectedTab: NativeTab,
     onSelectTab: (NativeTab) -> Unit,
+    /**
+     * 하위 화면(이용권·코드 등록)의 뒤로가기.
+     *
+     * ⚠ **`onSelectTab(Menu)` 로 되돌리지 말 것 — 뒤로가기는 '이동' 이 아니라 '팝' 이다.**
+     * 탭 이동은 `popUpTo(알람) { saveState }` + `restoreState` 를 쓰는데, 이 조합은 팝한
+     * 스택을 **통째로 저장했다가 통째로 복원**한다. 그래서 이용권에서 뒤로가기를 누르면
+     * [알람, 더보기, 이용권] 을 저장했다가 그대로 되살려 **다시 이용권에 서 있었다**
+     * (2026-08-11 실기기 확인 — 눌러도 아무 일이 없었다). 설정·라이선스 등 나머지
+     * 하위 화면은 처음부터 `popBackStackOrHome()` 을 쓰고 있었다 — 같게 맞춘다.
+     */
+    onNavigateBack: () -> Unit,
     alarms: List<AlarmEntity>,
     // Room 첫 방출 여부 — false 인 동안 알람 탭은 빈 상태를 그리지 않는다(콜드 스타트 번쩍임 방지).
     alarmsLoaded: Boolean,
@@ -206,7 +217,7 @@ internal fun AlarmListScreen(
                     if (selectedTab == NativeTab.Billing) R.string.common_tab_billing
                     else R.string.common_tab_code_register,
                 ),
-                onBack = { onSelectTab(NativeTab.Menu) },
+                onBack = onNavigateBack,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
             )
         }

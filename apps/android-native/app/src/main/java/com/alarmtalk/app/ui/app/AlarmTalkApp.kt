@@ -1070,6 +1070,8 @@ internal fun AlarmTalkApp(
                           onAlarmSelectionModeChange = { alarmSelectionActive = it },
                           selectedTab = tab,
                           onSelectTab = ::navigateToTab,
+                          // 하위 화면 뒤로가기는 설정·라이선스와 **같은 한 가지**다.
+                          onNavigateBack = ::goBackInApp,
                           alarms = alarms,
                           alarmsLoaded = viewModel.alarmsLoaded,
                           authSession = authSession,
