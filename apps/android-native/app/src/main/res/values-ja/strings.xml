@@ -119,7 +119,6 @@
     <string name="billing_voucher_unregistered_with_date">未登録 · 発行日 %1$s</string>
     <string name="common_alarm_delete">削除</string>
     <string name="common_alarm_warning_reschedule_failed">アラームを再設定できませんでした。時間を確認して、もう一度保存してください。</string>
-    <string name="common_alarm_notice_free_downgraded">無料プランに変わったため、基本アラーム音に変換されました。</string>
     <string name="common_alarm_notice_default_converted">声が使えなくなったため、基本アラーム音に変換されました。</string>
     <string name="common_google_continue">Googleで続ける</string>
     <string name="common_google_login">Googleでログイン</string>

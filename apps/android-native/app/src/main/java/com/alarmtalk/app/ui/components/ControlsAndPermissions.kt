@@ -578,12 +578,18 @@ private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
     // 이건 다르다: 예약 자체가 실패해 **정말 안 울린다.** 다시 저장해 달라고 해야 한다.
     alarm.state == AlarmStates.FAILED ->
         AlarmRowNotice(R.string.common_alarm_warning_reschedule_failed, isError = true)
-    // 유료 목소리를 못 써 기본 알람(사운드온리)으로 변환됨(preLockPlayMode 마커, 영구).
-    // 무료 강등은 목소리 참조를 남겨두므로(voiceProfileId 유지) '무료 요금제' 안내, 공유 목소리
-    // 해제는 참조를 비우므로(voiceProfileId=null) 원인 무관 중립 안내.
-    alarm.preLockPlayMode != null && !alarm.voiceProfileId.isNullOrBlank() ->
-        AlarmRowNotice(R.string.common_alarm_notice_free_downgraded, isError = false)
-    alarm.preLockPlayMode != null ->
+    // ⚠ **무료 강등 안내를 여기에 되살리지 말 것**(2026-08-11 제거).
+    // `preLockPlayMode` 는 **영구 마커**라(다시 유료가 되면 복원하려고 남긴다) 이 행에
+    // 걸면 안내가 영영 사라지지 않는다 — 해당 알람마다 매번 보인다.
+    //
+    // 그리고 **이미 1회성 안내가 있다**: 잠그는 순간 `applyFreePlanVoiceLock` 이
+    // `msg_gb_free_plan_voice_alarms_locked`("무료 이용권으로 전환되어 목소리 알람이
+    // 잠겼어요. 다시 이용권을 등록하면 복구돼요.")를 띄운다. 같은 말을 두 번, 그것도
+    // 한쪽은 영구로 하고 있었다. iOS 에는 이 행 배지가 아예 없다.
+    //
+    // 공유 목소리 해제(voiceProfileId 가 비는 경우)는 **남겨 둔다** — 그쪽은 1회성 안내가
+    // 없고, 목소리를 잃은 이유를 알 길이 이 행뿐이다.
+    alarm.preLockPlayMode != null && alarm.voiceProfileId.isNullOrBlank() ->
         AlarmRowNotice(R.string.common_alarm_notice_default_converted, isError = false)
     else -> null
 }
