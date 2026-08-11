@@ -75,7 +75,6 @@
 		4782087541F062C7FB42F907 /* BottomSheetHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0F1B0A3B4CA06019853F34D /* BottomSheetHost.swift */; };
 		48884F4EE9CE03EA2B89F592 /* HolidayUpcomingList.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2045E291994B947F86212FC /* HolidayUpcomingList.swift */; };
 		48F7AD578B49FDD7234B4E98 /* license_ofl_1_1.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1E4779B9B3184263A018270C /* license_ofl_1_1.txt */; };
-		49165A0BBDF7A26945A62D65 /* license_apache_2_0.txt in Resources */ = {isa = PBXBuildFile; fileRef = C0526E1D1135CBBCE4AD42A5 /* license_apache_2_0.txt */; };
 		496C23BF2BF03B282CBF1E97 /* BillingPanelComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A16A1874C65D3C925FAE2EF /* BillingPanelComponents.swift */; };
 		498040848F6A941B73D495AB /* voice_greeting_soeun_en.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = F447DE78A51BEA7ED75F5DA3 /* voice_greeting_soeun_en.mp3 */; };
 		4ADA36B2EB592A70D97F7BF3 /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 920F8A0EE7DA7744FBDA1206 /* AuthViewModel.swift */; };
@@ -247,7 +246,6 @@
 		F4592AC12059D8F4652C2BD7 /* VoiceShareAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD88376E4686A1C79C01C265 /* VoiceShareAccessTests.swift */; };
 		F4ADF93D76B2C3B51808668A /* PreviewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB37514CB12D62CC34E1E0F3 /* PreviewSupport.swift */; };
 		FA829EC15BA5EEA61B8977DF /* VoicePreviewConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F34DCC0A471726BA780305A8 /* VoicePreviewConfirmView.swift */; };
-		FA9B722109464AA4DE0FBE8F /* license_mit.txt in Resources */ = {isa = PBXBuildFile; fileRef = 5959914AF1770BDECFF5C1F6 /* license_mit.txt */; };
 		FDE7F606F313F39BE459D19D /* AccessSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE78632AE30E18FFA63B74D /* AccessSnapshotStore.swift */; };
 		FDF7FCD6E8BA38D1DCD2F161 /* AlarmsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7EBDD70C5FB802C400559B /* AlarmsListView.swift */; };
 		FE2B275819243CE8B5EE7AC1 /* StringExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BFC93E56F33A4EC79AB6F5C /* StringExtensions.swift */; };
@@ -391,7 +389,6 @@
 		55E5623528256133099D7F48 /* StockClipPrefetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockClipPrefetcher.swift; sourceTree = "<group>"; };
 		566AA8670AC11EF2C70548C8 /* pretendard_regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = pretendard_regular.otf; sourceTree = "<group>"; };
 		583FF694DDB298FD88A6CD93 /* AlarmEditorSheet+AlarmModeSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AlarmEditorSheet+AlarmModeSection.swift"; sourceTree = "<group>"; };
-		5959914AF1770BDECFF5C1F6 /* license_mit.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = license_mit.txt; sourceTree = "<group>"; };
 		59FFCC8AFC12D1CB8AD6A44F /* AlarmTimeCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTimeCalculatorTests.swift; sourceTree = "<group>"; };
 		5A12157E5D422109667286EC /* TimeWheelPickerLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelPickerLogicTests.swift; sourceTree = "<group>"; };
 		5AEC8A234A39D4E7AAFC0F82 /* KoreanLunarHolidayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoreanLunarHolidayEngine.swift; sourceTree = "<group>"; };
@@ -489,7 +486,6 @@
 		BCE612B197E5B5761457E13E /* AuthGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthGateView.swift; sourceTree = "<group>"; };
 		BD5149AC925F9E7568727C4B /* BottomNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavBar.swift; sourceTree = "<group>"; };
 		BE244676814E7183470594C3 /* AlarmVoiceStopOwnershipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmVoiceStopOwnershipTests.swift; sourceTree = "<group>"; };
-		C0526E1D1135CBBCE4AD42A5 /* license_apache_2_0.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = license_apache_2_0.txt; sourceTree = "<group>"; };
 		C0F1B0A3B4CA06019853F34D /* BottomSheetHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomSheetHost.swift; sourceTree = "<group>"; };
 		C147826DE6871E7FF9B5563D /* AlarmTalkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkApp.swift; sourceTree = "<group>"; };
 		C2045E291994B947F86212FC /* HolidayUpcomingList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidayUpcomingList.swift; sourceTree = "<group>"; };
@@ -875,8 +871,6 @@
 		D7219620F6AA373FB36C235B /* Licenses */ = {
 			isa = PBXGroup;
 			children = (
-				C0526E1D1135CBBCE4AD42A5 /* license_apache_2_0.txt */,
-				5959914AF1770BDECFF5C1F6 /* license_mit.txt */,
 				1E4779B9B3184263A018270C /* license_ofl_1_1.txt */,
 			);
 			path = Licenses;
@@ -1160,8 +1154,6 @@
 				A031DEE871E1440456148FCA /* Localizable.xcstrings in Resources */,
 				50E4087A937F896B623AD8E8 /* StoreKitConfiguration.storekit in Resources */,
 				EF1D0CE3AC0618259C209E96 /* landing_voice_preview.mp3 in Resources */,
-				49165A0BBDF7A26945A62D65 /* license_apache_2_0.txt in Resources */,
-				FA9B722109464AA4DE0FBE8F /* license_mit.txt in Resources */,
 				48F7AD578B49FDD7234B4E98 /* license_ofl_1_1.txt in Resources */,
 				39A7D17C9DF3C10D3D61B1AE /* pretendard_bold.otf in Resources */,
 				C6D9D903A1464A0F1120DD84 /* pretendard_medium.otf in Resources */,

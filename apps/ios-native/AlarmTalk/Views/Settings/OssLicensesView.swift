@@ -6,8 +6,16 @@ import SwiftUI
 ///
 /// ⚠ **목록은 그 플랫폼이 실제로 번들하는 것만 적는다.** 안드로이드 목록(AndroidX·
 /// Retrofit·OkHttp…)을 그대로 베끼면 **쓰지도 않는 소프트웨어를 고지**하는 거짓 문서가
-/// 된다. iOS 타깃은 서드파티 SPM 패키지가 하나도 없고(Apple 프레임워크만 쓴다),
-/// 번들되는 오픈소스는 Pretendard 서체뿐이다. 의존성을 추가하면 여기도 함께 갱신한다.
+/// 된다. 의존성을 추가하면 여기도 함께 갱신한다.
+///
+/// **항목이 하나뿐인 건 정상이다**(2026-08-11 전수 확인). 근거:
+/// - `project.yml` 에 `packages:` 선언이 없고 `Package.resolved`·`.xcframework` 도 없다.
+/// - 전 타깃 `import` 가 전부 Apple 프레임워크다(AlarmKit·StoreKit·WidgetKit …).
+/// - 베껴 온 서드파티 소스도 없다(라이선스 헤더 0건).
+/// - 번들 자산은 Pretendard 서체 4개 + **우리가 만든** 인사말 음원뿐이다.
+///
+/// 안드로이드가 19개인 건 그쪽이 실제로 AndroidX·Retrofit·OkHttp·Gson·Sentry 를 싣기
+/// 때문이다 — 플랫폼이 다른 것이지 이쪽이 빠뜨린 게 아니다.
 struct OssLicensesView: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
@@ -17,24 +25,21 @@ struct OssLicensesView: View {
         var id: String { name }
     }
 
+    /// ⚠ **쓰는 라이선스만 둔다.** Apache 2.0·MIT 케이스가 선언돼 있었지만 **아무 항목도
+    /// 쓰지 않았고**, 전문 `.txt` 두 개가 앱 번들에 그냥 실려 나갔다. 의존성을 추가하면
+    /// 그때 케이스와 전문을 함께 넣는다(안드로이드 `res/raw/` 에 둘 다 있다).
     private enum License: Hashable {
         case ofl11
-        case apache2
-        case mit
 
         var displayName: String {
             switch self {
             case .ofl11: return "SIL Open Font License 1.1"
-            case .apache2: return "Apache License 2.0"
-            case .mit: return "MIT License"
             }
         }
 
         var resourceName: String {
             switch self {
             case .ofl11: return "license_ofl_1_1"
-            case .apache2: return "license_apache_2_0"
-            case .mit: return "license_mit"
             }
         }
     }
