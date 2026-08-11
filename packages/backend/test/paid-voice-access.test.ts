@@ -85,7 +85,12 @@ describe('paid voice access gates', () => {
 
   // F2: 유료 사용자가 '기본(시스템) 목소리'를 고르면 무료처럼 프리셋(날씨/약)만 허용한다 —
   // 직접 입력(커스텀 텍스트)은 차단(BASIC_VOICE_PRESET_ONLY). 이렇게 커스텀 클론 슬롯 공간을 아낀다.
-  it('restricts a paid user to preset phrases when they pick a basic (system) voice', async () => {
+  // ⚠ **이 테스트가 옛 제한을 고정하고 있었다**(2026-08-11 뒤집음).
+  // 유료 사용자가 기본(시스템) 목소리를 고르면 직접 입력이 막혔는데, 이용권을 산 사람이
+  // **왜 안 되는지 알 수 없는 벽**을 만나는 자리였다. 시스템 보이스에도
+  // `elevenlabs_voice_id` 가 있어 말할 수는 있고, 막던 이유(비용)는 **직접 입력 월 한도**가
+  // 이미 세고 있다 — 한도를 차감하는 조건으로 열었다.
+  it('lets a paid user type custom text with a basic (system) voice', async () => {
     mockDB.pushResult([{ plan: 'plus' }]); // 유료 사용자
     mockDB.pushResult([]); // findUsableVoiceProfile: 본인 소유 보이스 없음
     // findUsableVoiceProfile: 시스템(기본) 보이스
@@ -93,6 +98,26 @@ describe('paid voice access gates', () => {
 
     const res = await buildApp().request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: ID.alarm, text: 'hello' }),
+    );
+
+    // 프리셋 게이트를 통과했음만 본다(그 뒤 동의·합성 단계에서 다른 응답이 날 수 있다).
+    expect((await res.json()).error_code).not.toBe('BASIC_VOICE_PRESET_ONLY');
+  });
+
+  // 열린 것은 **직접 입력뿐**이다 — 동적 문구(날씨·운세)는 여전히 막는다.
+  // 그쪽은 매번 새로 만들어야 해서 월 한도로 셀 수 없다.
+  it('still blocks translation on a basic (system) voice even for a paid user', async () => {
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ id: ID.alarm, user_id: 'system-user', status: 'ready', is_system: 1 }]);
+
+    const res = await buildApp().request(
+      // 번역은 매번 새로 만들어야 해서 한도로 셀 수 없다 — 기본 목소리에는 여전히 막힌다.
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: ID.alarm,
+        text: 'hello',
+        translate: true,
+      }),
     );
 
     expect(res.status).toBe(403);

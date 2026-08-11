@@ -818,10 +818,20 @@ tts.post('/generate', async (c) => {
     // 생성 실패(Vertex 미설정/모델 오류) 시의 폴백 문구가 된다.
     requestText = presetTextWithListenerTitle(requestText, listenerTitle);
   }
-  // F2: 기본(시스템) 목소리는 요금제와 무관하게 무료처럼 '프리셋(날씨/약)'만 허용한다.
-  // 커스텀 텍스트·운세/날씨 동적 생성·번역은 유료 '커스텀 클론' 전용이므로, 기본 목소리를
-  // 고른 유료 사용자도 무료와 동일하게 제한한다(→ 그만큼 커스텀 클론 슬롯 공간을 아낀다).
-  const presetOnlyRestricted = freePlanRestricted || isSystemVoice;
+  // 기본(시스템) 목소리는 원칙적으로 '프리셋(날씨/약)'만 허용한다 — 동적 생성·번역은
+  // 매번 비용이 들어 유료 커스텀 클론 전용이다.
+  //
+  // ⚠ **단 하나 예외: 유료 사용자의 '직접 입력' 은 기본 목소리로도 허용한다**
+  // (2026-08-11 결정). 예전에는 유료여도 기본 목소리면 직접 입력이 막혀서, 이용권을 산
+  // 사람이 **왜 안 되는지 알 수 없는 벽**을 만났다("왜 사라졌지"). 시스템 보이스에도
+  // `elevenlabs_voice_id` 가 있어 **말할 수는 있고**, 막던 이유는 비용이었다 —
+  // 그 비용은 **직접 입력 월 한도**(`reserveManualTtsQuota`)가 이미 세고 있다.
+  // 그래서 한도를 차감하는 조건으로 연다.
+  //
+  // 여전히 막는 것: 무료 플랜 / 동적 문구(날씨·운세) / 번역. 그쪽은 한도로 세지 않는다.
+  const manualTextOnSystemVoice =
+    !freePlanRestricted && isSystemVoice && !randomRequested && body.translate !== true;
+  const presetOnlyRestricted = (freePlanRestricted || isSystemVoice) && !manualTextOnSystemVoice;
   // 무료 플랜은 시스템 스톡 보이스만 쓸 수 있다(커스텀 클론 불가). 시스템 보이스면 통과.
   if (freePlanRestricted && !isSystemVoice) {
     return c.json(
@@ -1252,7 +1262,13 @@ tts.post('/generate', async (c) => {
       // 시스템 보이스는 (보이스 × 문구)당 단 한 번만 생성되도록 전체 사용자가
       // 캐시를 공유한다 — 무료 플랜의 한계 비용을 0에 가깝게 유지.
       const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey, {
-        anyUser: isSystemVoice,
+        // ⚠ **직접 입력은 사용자끼리 캐시를 공유하지 않는다.**
+        // 공유하면 남의 `messages` 행 id 를 그대로 돌려주는데, 그 행은 `is_preset` 이
+        // 0이라 `messageBelongsToCaller` 가 나중에 거절한다 — **들리는데 저장이 안 되는**
+        // 그 사고다(CLAUDE.md 「messageBelongsToCaller」 절). 게다가 캐시 히트가
+        // `reserveManualTtsQuota` 보다 앞이라, 남의 문구에 얹히면 **월 한도가 안 깎인다.**
+        // 프리셋(랜덤) 문구는 문구 자체가 우리 것이라 예전처럼 공유한다.
+        anyUser: isSystemVoice && !isManualGeneration,
       });
       if (cached) {
         // F1: 캐시 히트도 '사용'으로 보고 LRU 신호를 갱신한다(사전렌더/캐시 재생 알람이 자주

@@ -268,6 +268,30 @@ iOS `VoiceStudioViewModel+ErrorMapping` 의 switch + `knownErrorCodes`.
   `hasCoupleOrFamilyAccess` 를 함께 본다 — 보류(`ON_HOLD`) 상태에서 갈라지는지 미검증.
 - 스낵바·알럿의 실제 도달 가능성은 코드 경로로만 판단했다.
 
+## 1-G. 기본 목소리 + 직접 입력 — **서버는 열렸다, 클라가 남았다** (2026-08-11)
+
+지시: "기본 목소리여도 유료면 직접 입력 횟수 차감하면서 쓸 수 있도록."
+
+**서버 완료**(`routes/tts.ts`, dev 배포됨):
+- `manualTextOnSystemVoice` — 유료 + 시스템 보이스 + 직접 입력(랜덤 아님, 번역 아님)이면
+  프리셋 게이트를 통과한다. 비용은 기존 `reserveManualTtsQuota`(월 한도)가 센다.
+- ⚠ **캐시 구멍도 같이 닫았다** — 직접 입력은 `anyUser` 공유를 끈다. 안 끄면 남의
+  `messages` 행 id 를 받아 `messageBelongsToCaller` 가 나중에 거절한다(**들리는데 저장이
+  안 되는** 그 사고). 덤으로 남의 문구에 얹혀 **한도가 안 깎이는** 창도 닫혔다.
+- 테스트: `test/paid-voice-access.test.ts` — 허용 1건 + 번역은 여전히 차단 1건.
+  **고의 되돌리기로 검증**(제한 복원 시 빨간불).
+
+**클라 남음 (양 앱)** — 지금은 화면이 여전히 막는다:
+- 판정 `restrictToWeatherMedication = freeVoiceTier || isSystemVoiceSelected` 가 **두 가지를
+  한 플래그로** 묶고 있다: ① 동적 문구(날씨·운세) 차단 ② 직접 입력 차단.
+  **①은 유지, ②만 `freeVoiceTier` 로 좁혀야 한다.**
+- ⚠ 단순히 플래그만 바꿀 수 없다. 무료용 `FreeBucketSettingsPane` 에는 '직접 입력'
+  다이얼로그가 없고(그 다이얼로그는 유료 pane `AlarmRandomPromptSettings` 안에 있다),
+  잠긴 행만 있다. **유료+기본목소리는 어느 pane 을 보여줄지부터 정해야 한다** —
+  (a) 무료 pane 에 직접 입력 다이얼로그를 끌어오거나 (b) 유료 pane 을 쓰되 동적 항목을 숨기거나.
+  (a) 를 시도했다가 다이얼로그 상태가 다른 컴포저블에 있어 되돌렸다.
+- iOS 도 같은 구조(`restrictToWeatherMedication`, `FreeBucketSettings`).
+
 ## 1-C. 콘솔 작업 (코드는 끝, 사람이 눌러야 하는 것)
 
 - [x] ~~Sentry 프로젝트 생성 → DSN 발급~~ **2026-08-11 완료.** 세 프로젝트(ios/android/backend)
