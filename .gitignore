@@ -105,3 +105,9 @@ apps/ios-native/**/xcuserdata/
 **/*.p8
 .secrets/
 **/.secrets/
+
+# 로컬 전용 빌드 설정 — Sentry DSN 등 시크릿이 들어간다. **공개 리포라 절대 커밋 금지.**
+# iOS 는 `VOICE_ALARM_SENTRY_DSN` 을 여기서 읽는다(apps/ios-native/README.md 참조).
+*.local.xcconfig
+Local.xcconfig
+apps/ios-native/Local.xcconfig

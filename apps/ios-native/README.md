@@ -79,9 +79,25 @@ https://api.alarm-talk.com/api
 ```bash
 # 명령줄로 주입
 xcodebuild ... VOICE_ALARM_SENTRY_DSN='https://<key>@<org>.ingest.sentry.io/<project>'
+```
 
-# 또는 gitignore 된 xcconfig 에 한 줄
-VOICE_ALARM_SENTRY_DSN = https://<key>@<org>.ingest.sentry.io/<project>
+또는 gitignore 된 `apps/ios-native/Local.xcconfig` 에 두고 `-xcconfig Local.xcconfig` 로 빌드한다.
+
+⚠ **xcconfig 에서 `//` 는 주석 시작이다 — DSN 을 그대로 적으면 잘린다.**
+`VOICE_ALARM_SENTRY_DSN = https://key@host/id` 라고 쓰면 값이 **`https:`** 까지만 남는다.
+빌드는 멀쩡히 성공하고 **Sentry 만 조용히 꺼지므로** 알아채기 어렵다(2026-08-11 실제로 겪었다).
+슬래시를 변수로 우회한다:
+
+```
+SENTRY_SLASH = /
+VOICE_ALARM_SENTRY_DSN = https:$(SENTRY_SLASH)$(SENTRY_SLASH)<key>@<org>.ingest.sentry.io/<project>
+```
+
+넣은 뒤에는 **빌드 산출물에서 값이 온전한지 확인한다** — 잘려도 빌드는 통과한다:
+
+```bash
+/usr/libexec/PlistBuddy -c "Print :VOICE_ALARM_SENTRY_DSN" \
+  <DerivedData>/Build/Products/Debug-iphoneos/AlarmTalk.app/Info.plist
 ```
 
 **비어 있으면 Sentry 는 그냥 꺼진다**(안드로이드도 같다) — 로그에

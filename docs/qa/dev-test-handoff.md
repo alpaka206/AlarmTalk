@@ -188,11 +188,15 @@ S23 Ultra·A32 두 대에서 끝냈다(웰컴 프로모·닉네임·스누즈 �
 
 ## 1-C. 콘솔 작업 (코드는 끝, 사람이 눌러야 하는 것)
 
-- [ ] **Sentry iOS 프로젝트 생성 → DSN 발급.** 코드는 2026-08-11 에 다 붙였고 DSN 만 없다.
-  없으면 **크래시가 수집되지 않는다**(앱은 정상 동작, 로그에 `Sentry disabled` 만 남는다).
-  넣는 법은 `apps/ios-native/README.md` 「크래시 리포팅」 — 빌드 설정
-  `VOICE_ALARM_SENTRY_DSN`. ⚠ **리포가 공개라 커밋 금지.**
-  - dev/prod 를 나눌지도 정할 것(안드로이드는 flavor 별로 DSN 이 갈려 있다).
+- [x] ~~Sentry 프로젝트 생성 → DSN 발급~~ **2026-08-11 완료.** 세 프로젝트(ios/android/backend)
+  DSN 을 각각 넣고 **전송까지 확인**했다:
+  - iOS → `apps/ios-native/Local.xcconfig`(gitignore). 시뮬레이터에서 조직 ingest 호스트로
+    붙는 것 확인. ⚠ xcconfig 의 `//` 주석 함정 주의 — README 참조.
+  - 안드로이드 → `~/.gradle/gradle.properties`(리포 **밖**). logcat 에 `Initializing SDK with DSN` 확인.
+    리포 안 `gradle.properties` 는 비워 둔 채로 유지한다(공개 리포).
+  - 백엔드 → dev·prod 워커 시크릿 `SENTRY_DSN`(`wrangler secret put`, 단일 키만).
+    dev 에 임시 라우트로 500 을 내 전달을 확인하고 즉시 원복했다.
+  - 알림은 세 프로젝트 모두 기본 Error Monitor("high priority issues → Email") 활성.
 - [ ] **Play Console RTDN**: Pub/Sub 토픽 + push 구독 연결. 없으면 dev 워커가
   `503 RTDN_UNCONFIGURED` 를 돌려준다(구독 전환·해지 알림이 서버에 안 들어온다).
 
