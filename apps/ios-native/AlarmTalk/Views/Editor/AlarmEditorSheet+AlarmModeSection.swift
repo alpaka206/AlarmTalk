@@ -97,14 +97,15 @@ extension AlarmEditorSheet {
                             voiceVolumeRow
                         }
 
-                        if restrictToWeatherMedication {
-                            // 무료라서 막힌 것과 기본 목소리라서 막힌 것은 **다른 사실**이다.
-                            // 유료에게 '무료에서는…' 이라고 하면 거짓말이 된다.
-                            Text(
-                                freeVoiceTier
-                                    ? "무료에서는 시스템 목소리와 기본 랜덤 문구로 깨워드려요."
-                                    : "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력하려면 내 목소리를 골라 주세요."
-                            )
+                        // ⚠ **무료 사용자에게는 "무료에서는 …" 안내를 두지 않는다**(2026-08-11 요청).
+                        // 무엇이 막혔는지는 잠긴 행을 눌렀을 때 게이트가 말한다 — 카드에 미리
+                        // 깔아 두면 알람을 만들 때마다 "너는 무료다" 를 읽게 된다.
+                        //
+                        // 반대로 **유료인데 기본 목소리라서** 막힌 경우는 남긴다. 그건 플랜 문제가
+                        // 아니라 **선택 문제**라, 어떻게 풀 수 있는지(내 목소리를 고르면 된다)를
+                        // 그 자리에서 말해 주지 않으면 이용권을 산 사람이 이유를 알 길이 없다.
+                        if restrictToWeatherMedication, !freeVoiceTier {
+                            Text("기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력하려면 내 목소리를 골라 주세요.")
                                 .font(theme.typography.bodySmall)
                                 .foregroundStyle(theme.palette.onSurfaceVariant)
                         }
