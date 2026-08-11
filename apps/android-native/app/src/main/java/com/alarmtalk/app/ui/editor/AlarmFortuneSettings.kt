@@ -66,33 +66,24 @@ internal fun FortuneInfoDialog(
     val birthDateError = submitted && draftBirthDate.isBlank()
     val birthTimeError = submitted && draftBirthTime.isBlank()
 
-    Dialog(
-        onDismissRequest = onDismissWithoutSave,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .widthIn(max = 460.dp),
-            shape = WakerDialogShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 640.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+    // ⚠ **가운데 카드 + X 로 되돌리지 말 것** — 아이폰의 폼 모달은 시트 + 상단바다
+    // (`ui/components/WakerModal.kt` 의 `WakerFormSheet` 주석 참조).
+    WakerFormSheet(
+        title = stringResource(R.string.editorp_fortune_dialog_title),
+        onCancel = onDismissWithoutSave,
+        onSave = {
+            submitted = true
+            if (
+                draftGender.isNotBlank() &&
+                draftBirthDate.isNotBlank() &&
+                draftBirthTime.isNotBlank()
             ) {
-                ModalDialogTitle(
-                    title = stringResource(R.string.editorp_fortune_dialog_title),
-                    onDismiss = onDismissWithoutSave,
-                )
+                onConfirm(draftGender.trim(), draftBirthDate.trim(), draftBirthTime.trim())
+            }
+        },
+        saveLabel = stringResource(R.string.editorp_fortune_save_button),
+        cancelLabel = stringResource(R.string.editor_cancel),
+    ) {
                 FortuneInputSection(title = stringResource(R.string.editorp_fortune_gender_section), error = genderError) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         GenderChoice(
@@ -132,33 +123,6 @@ internal fun FortuneInfoDialog(
                     )
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Button(
-                        onClick = {
-                            submitted = true
-                            if (
-                                draftGender.isNotBlank() &&
-                                draftBirthDate.isNotBlank() &&
-                                draftBirthTime.isNotBlank()
-                            ) {
-                                onConfirm(
-                                    draftGender.trim(),
-                                    draftBirthDate.trim(),
-                                    draftBirthTime.trim(),
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text(stringResource(R.string.editorp_fortune_save_button))
-                    }
-                }
-            }
-        }
     }
 }
 

@@ -2,6 +2,9 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.alarmtalk.app.WakerChipShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -106,6 +109,103 @@ internal fun WakerSelectionSheet(
                 }
             }
             content(dismiss)
+        }
+    }
+}
+
+/**
+ * **폼 모달의 공용 껍데기** — 아래에서 올라오는 시트 + 상단바(취소 / 제목 / 저장).
+ *
+ * ⚠ **가운데 뜨는 카드 + X 로 되돌리지 말 것**(2026-08-11 결정). 그건 안드로이드·웹 문법이다.
+ * 아이폰의 폼 모달은 시트로 올라오고 상단바에 **좌 `취소` · 가운데 제목 · 우 확정**을 둔다
+ * (애플 캘린더 '새로운 이벤트'). iOS 쪽 짝은 `Views/Common/FormSheet.swift` 이고 **정렬까지
+ * 같아야 한다** — 한쪽만 바꾸면 같은 화면에서 제목이 한쪽은 왼쪽, 한쪽은 가운데가 된다
+ * (실제로 그렇게 어긋나 있었다).
+ *
+ * ⚠ **확정 버튼을 본문 아래에 두지 말 것.** 본문이 길어 스크롤되면 저장 버튼이 화면 밖으로
+ * 밀린다 — 상단바는 항상 보인다.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun WakerFormSheet(
+    title: String,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+    saveLabel: String,
+    cancelLabel: String,
+    saveEnabled: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onCancel,
+        sheetState = sheetState,
+        shape = WakerSheetShape,
+        containerColor = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        scrimColor = WakerScrimColor,
+        dragHandle = { WakerSheetDragHandle() },
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
+            // 제목은 **가운데**, 액션은 양 끝. Row 로 셋을 나란히 두면 좌우 글자 길이에 따라
+            // 제목이 밀려 가운데가 아니게 되므로 겹쳐 놓는다.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = title,
+                    style = IosAlertType.Title,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // 누를 수 있음을 **색으로** 말한다(iOS Design Handbook 「Modals — Clarity」).
+                    Text(
+                        text = cancelLabel,
+                        style = IosAlertType.Action,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clip(WakerChipShape)
+                            .clickable(onClick = onCancel)
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                    )
+                    Text(
+                        text = saveLabel,
+                        style = IosAlertType.Action,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (saveEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+                        },
+                        modifier = Modifier
+                            .clip(WakerChipShape)
+                            .clickable(enabled = saveEnabled, onClick = onSave)
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                    )
+                }
+            }
+            HorizontalDivider(
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                content = content,
+            )
         }
     }
 }
