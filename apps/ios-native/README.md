@@ -141,7 +141,7 @@ xcodegen 후 Xcode 에서:
 
 `SubscriptionManager` 는 결제 성공 후 즉시 `POST /api/billing/apple/confirm` 라우트를 호출해 백엔드 entitlement 동기화를 시도한다. 백엔드는 Apple App Store Server API (`https://api.storekit.itunes.apple.com/inApps/v1/transactions/{transactionId}`) 로 transaction 의 진위와 만료일을 검증한 뒤에만 `subscriptions` 테이블을 갱신해야 한다.
 
-현재 백엔드 라우트는 server-to-server 검증이 구현되기 전까지 fail-closed 로 동작한다. 유효한 SKU 여도 501 `APPLE_TRANSACTION_VERIFICATION_REQUIRED` 를 반환하며 DB entitlement 를 변경하지 않는다. iOS 클라이언트는 StoreKit `currentEntitlements` 를 로컬 권위로 사용하고, 서버 검증 구현 후 foreground 진입 시 `resyncEntitlements()` 로 catch-up 한다.
+⚠ **이 문단은 2026-08-11 에 사실이 아님이 확인돼 고쳤다.** `APPLE_TRANSACTION_VERIFICATION_REQUIRED` 는 코드 어디에도 없고(grep 0건), `routes/billing-apple.ts` 가 `POST /billing/apple/confirm` 을 실제로 구현해 App Store Server API 로 검증한다. 동작 규칙은 [`docs/spec/billing-lifecycle.md`](../../docs/spec/billing-lifecycle.md) 가 단일 출처다. iOS 클라이언트는 StoreKit `currentEntitlements` 를 로컬 권위로 쓰고, foreground 진입 시 `resyncEntitlements()` 로 서버와 맞춘다.
 
 **라우트가 아직 배포되지 않은 경우**: 클라이언트는 graceful degradation 한다. StoreKit `currentEntitlements` 가 권위이므로 `currentTier` 는 정확하게 계산되며, 백엔드 plan/subscription row 만 갱신되지 않을 뿐이다. 백엔드 라우트가 배포된 후 다음 foreground 진입 시 자동 catch-up 된다 (`AlarmTalkApp.swift` 의 `.active` 분기에서 `resyncEntitlements()` 가 호출됨).
 
@@ -181,5 +181,5 @@ xcodegen 후 Xcode 에서:
 `SocialFeatureViewModel.checkout(planKey:)` 는 `@available(*, deprecated)` 마크되었다. 비-IAP 흐름 중 다음만 살아남는다.
 
 - `/api/billing/vouchers/family-share` — 가족 공유 코드 발급.
-- `/api/billing/redeem` — 외부 voucher/INV 코드 redeem.
-- `/api/billing/cancel` — 구독 해지 예약.
+- `/api/code/register` — 선물/프로모/초대 코드 등록(옛 `/billing/redeem` 은 없다).
+- `/api/billing/cancel` — 구독 해지. ⚠ **애플 구독은 서버가 못 끊는다** — 409 `STORE_CANCEL_UNSUPPORTED` + `manage_url` 을 돌려주고 앱이 App Store 관리 화면을 연다(`docs/spec/billing-lifecycle.md`).

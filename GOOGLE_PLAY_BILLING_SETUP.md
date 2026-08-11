@@ -12,7 +12,7 @@
 
 | 영역 | 상태 | 위치 |
 |------|------|------|
-| Billing 라이브러리 | ✅ 의존성 추가됨 (`billing-ktx:7.1.1`) | `apps/android-native/app/build.gradle.kts:264` |
+| Billing 라이브러리 | ✅ 의존성 추가됨 (`billing-ktx:8.0.0`) | `apps/android-native/app/build.gradle.kts` |
 | `com.android.vending.BILLING` 권한 | ✅ 라이브러리 매니페스트가 **자동 병합** (수동 추가 불필요) | (Billing Library 7.x 내장) |
 | 구매 플로우 (연결·조회·구매·재전송) | ✅ 구현 | `…/billing/PlayBillingManager.kt` |
 | 구매 → 서버 검증 호출 | ✅ 구현 | `…/ui/main/MainViewModelBillingActions.kt` (`startPlayPurchase`→`confirmGooglePurchase`) |
@@ -37,7 +37,7 @@
 | `family` (가족) | `family_monthly` | family | **5** | **₩14,900** |
 
 > ✅ **가격(저가 전환형) + 가족 5인이 코드/DB에 반영됨**(마이그레이션 `#52 plan-prices-and-family-5`, `migrations.ts`). 근거·수익률은 `PRICING.md`.
-> **신규** 가족 그룹부터 5인 정원 적용. (plan_groups 는 생성 시점 스냅샷이지만, 출시 전 prod DB 초기화 예정이라 기존 6인 그룹은 없음 — grandfather 대상 없음.)
+> **신규** 가족 그룹부터 5인 정원 적용. (plan_groups 는 생성 시점 스냅샷이지만, ⚠ prod DB 초기화는 **하지 않는다**(2026-08-01 철회, CLAUDE.md). 기존 그룹은 생성 시점 `max_members` 를 그대로 유지한다 — 올려야 하면 제자리 마이그레이션으로이라 기존 6인 그룹은 없음 — grandfather 대상 없음.)
 > Play Console 상품 가격도 위 표에 맞춰 설정하면 된다.
 
 이 매핑이 정의된 곳 (변경 시 **3곳을 같이** 맞춰야 한다 — 의도된 다중 진실 공급원, 서로 주석으로 교차참조됨):
@@ -80,7 +80,7 @@
 ## 3. 서버 시크릿 (운영자)
 
 검증/RTDN 라우트는 아래 시크릿이 **없으면 503**(`GOOGLE_BILLING_UNCONFIGURED` / `RTDN_UNCONFIGURED`)을 낸다.
-이 3개는 `sync-worker-secrets.ts`의 자동 동기화 대상이 **아니라**, `wrangler secret put`으로 **수동 등록**한다(설계 의도, `wrangler.toml:64-73` 참고).
+> ⚠ 이 3개도 `scripts/sync-worker-secrets.ts` 의 **자동 동기화 대상이다**(`WORKER_SECRET_KEYS`). `npm run secrets:sync:prod` 로 올린다 — 예전 문서는 "수동 등록" 이라고 적었지만 사실이 아니다(2026-08-11 확인).
 
 ```bash
 cd packages/backend

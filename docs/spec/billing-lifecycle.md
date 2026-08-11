@@ -115,6 +115,33 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
   있는 애플 구독자가 전원 무료로 강등된다.** 어느 환경도 안 열렸으면 일반 오류로
   던져서 `skip`(다음 크론 재시도)이 되게 한다 — fail-closed 다.
 
+## 플랜 변경 — **스토어 시트가 시점을 정한다**
+
+⚠ **'지금 변경 / 종료일에 변경' 을 우리가 묻는 UI 를 만들지 말 것.** 두 스토어 모두 전환을
+자기가 처리하고 **시점도 자기가 정한다** — 우리가 고르게 하면 지킬 수 없는 약속이 된다.
+
+| | 전환 방식 | 시점 |
+| --- | --- | --- |
+| Play | 구매 요청에 교체 모드를 실어 보낸다(`setSubscriptionUpdateParams`) | 지금은 `WITH_TIME_PRORATION` **고정** — 즉시 전환 + 비례정산 |
+| App Store | 같은 구독 그룹이라 다른 플랜을 사는 것 자체가 업/다운그레이드 | 애플이 정한다(업그레이드 즉시+비례정산 / 다운그레이드는 갱신일) |
+
+⚠ **Play 교체 구매는 새 `purchaseToken` 을 발급한다.** 그래서 RTDN 이 그 토큰으로 사용자를
+못 찾는데, 권위 응답의 **`linkedPurchaseToken`**(대체된 옛 토큰)으로 이어 붙인다.
+이 처리가 없으면 전환 알림이 통째로 버려지고 **반영이 클라 confirm 하나에만 매달린다** —
+결제 직후 앱이 죽거나 오프라인이면 서버는 그 전환을 영영 모른다(2026-08-11에 고쳤다).
+
+⚠ **전환은 그룹을 해체한다.** `applyStoreEntitlement` 가 plan 이 바뀐 트랜잭션을
+「기존 구독 취소 → 새 구독 생성」으로 처리하므로, **가족 → 개인 다운그레이드는 가족 그룹을
+해체하고 멤버 전원을 강등**시킨다. 이건 정상이다 — 사용자가 직접 고른 다운그레이드다.
+**결제 실패(보류)의 「그룹을 해체하지 말 것」과 혼동하지 말 것.** 그쪽은 회복형이라 그룹을
+보존한다.
+
+⚠ **다운그레이드는 아직 준비가 덜 됐다**(2026-08-11 조사). 교체 모드가 `WITH_TIME_PRORATION`
+하드코딩이라 항상 즉시 전환이고, 어느 플랜이 상위인지 판정하는 근거가 앱·서버 어디에도 없다
+(`plans.price_krw` 가 사실상 유일한 순서 근거다). 다운그레이드를 갱신일에 적용하려면
+`ReplacementMode.DEFERRED` 를 골라야 하고, 그때는 결제가 즉시 일어나지 않아 confirm 타이밍이
+달라진다 — **그 설계를 하기 전에는 전환 UI 를 열지 않는다.**
+
 ## 구현 지도
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
@@ -131,11 +158,13 @@ ID 로도 조회되고 최신 갱신 정보를 준다. 구글의 `getPlaySubscri
 | 애플 구독 상태 조회 | `lib/apple-storekit.ts` `fetchAppleSubscriptionStatus` | — | — |
 | 갱신 신호 | `routes/billing-google-rtdn.ts` (RTDN) | — | `SubscriptionManager.resyncEntitlements` (전경 진입) |
 | 회귀 테스트 | `test/billing-cancel-play.test.ts` · `test/billing-cancel-apple.test.ts` · `test/apple-storekit.test.ts` | — | — |
+| 플랜 변경 — 스토어가 처리 | — | `billing/PlayBillingManager.kt` (`setSubscriptionUpdateParams`) | `SubscriptionManager.purchase`(같은 구독 그룹) |
+| 전환 결과 수신 | `routes/billing-google-rtdn.ts`(`linkedPurchaseToken`) → `lib/store-billing.ts` | — | `resyncEntitlements` |
+| 변경 반영 푸시 | `lib/billing-cancel.ts` `notifyPlanChanged` → `lib/fcm.ts` | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` |
 
 ## 의도된 플랫폼 차이
 
 | 차이 | 이유 |
 | --- | --- |
-| iOS 에 '이용권 변경(지금 / 종료일에)' 이 없다 | 네 플랜이 같은 구독 그룹이라 다른 카드를 사는 것 자체가 StoreKit 업그레이드/다운그레이드이고, **시점은 Apple 이 정한다**(업그레이드 즉시+비례정산 / 다운그레이드는 갱신일). 우리가 고르는 UI 를 얹으면 지킬 수 없는 약속이 된다 |
 | iOS 해지는 시스템 시트로 나간다 | App Store Server API 에 해지가 없다 |
 | 애플에는 서버 알림(ASSN) 라우트가 없다 | 아직 미구현 — 그래서 만료 재조회가 **유일한** 서버측 갱신 감지 경로다. ASSN 을 붙이면 재조회는 그때도 안전망으로 남긴다 |

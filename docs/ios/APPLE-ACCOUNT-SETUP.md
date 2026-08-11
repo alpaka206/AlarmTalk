@@ -111,7 +111,7 @@ APPLE_BUNDLE_ID=com.alarmtalk.app
 
 전부 **자동 갱신 구독(Auto-Renewable Subscription)**, 월간.
 
-⚠ **넷 다 같은 구독 그룹에 넣는다**(`AlarmTalk Subscriptions`). 그래야 플랜 변경이
+⚠ ****셋 다** 같은 구독 그룹에 넣는다**(`AlarmTalk Subscriptions`). 그래야 플랜 변경이
 StoreKit 업그레이드/다운그레이드로 처리된다 — 앱에 '이용권 변경' UI 가 없는 이유가
 이것이다(`docs/spec/billing-lifecycle.md` 의 「의도된 플랫폼 차이」).
 

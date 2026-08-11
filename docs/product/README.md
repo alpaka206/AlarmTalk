@@ -62,7 +62,7 @@ Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost b
 ### Before public launch
 
 - Google Play Console external setup, then real-payment E2E verification
-- Prod DB reset (hard-breaking changes are OK until then — no back-compat burden)
+- ⚠ **Prod DB reset was cancelled (2026-08-01)** — beta testers have real data. Schema changes must be in-place, append-only migrations. See `CLAUDE.md` deployment section.
 - Physical-device verification of the current dev build (alarm ring paths, bucket rotation, clone pre-render playback)
 
 ## Risks
