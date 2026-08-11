@@ -296,14 +296,23 @@ internal fun WakerSheetOptionRow(
                     contentColor = if (selected) scheme.onPrimary else scheme.primary,
                     bordered = !selected,
                 )
-                icon != null -> Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    // iOS 는 선택 여부와 무관하게 항상 primary 색이다.
-                    tint = scheme.primary,
-                    // iOS `frame(width: 32)` 과 같은 자리를 차지한다(아이콘 24 + 여유).
+                icon != null -> Box(
+                    // ⚠ **자리(32)와 글리프(20)를 구분한다.** 예전에는 `Icon` 에 바로
+                    // `size(32.dp)` 를 줘서 **글리프 자체가 32** 가 됐고, 아이폰보다 훨씬
+                    // 크게 보였다(2026-08-11 지적 "아이콘이 너무 크다").
+                    // iOS 는 `Image(systemName:).font(.title3).frame(width: 32)` —
+                    // **글리프는 `.title3`(20), 자리만 32** 다. 같은 구조로 맞춘다.
                     modifier = Modifier.size(32.dp),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        // iOS 는 선택 여부와 무관하게 항상 primary 색이다.
+                        tint = scheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
             Column(
                 modifier = Modifier.weight(1f),
