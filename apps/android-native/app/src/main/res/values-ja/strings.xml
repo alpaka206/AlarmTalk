@@ -273,7 +273,7 @@
     <string name="alarms_target_sheet_title">誰を起こしますか？</string>
     <string name="alarms_target_self_title">自分のアラームを設定</string>
     <string name="hs_delete_account_title">本当に退会しますか？</string>
-    <string name="hs_delete_account_body">申請から30日が過ぎると、アラーム・音声などすべてのデータが完全に削除されます。\nそれまでに再ログインして退会を取り消せば復元できます。</string>
+    <string name="hs_delete_account_body">30日後にアカウントとすべてのデータが完全に削除されます。それまでに再度ログインすると退会を取り消せます。</string>
     <string name="hs_delete_account_confirm">退会する</string>
     <string name="hs_nickname_dialog_title">ニックネームを編集</string>
     <string name="hs_nickname_field_placeholder">例：りん</string>

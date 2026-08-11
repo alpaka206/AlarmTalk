@@ -273,7 +273,7 @@
     <string name="alarms_target_sheet_title">Who is this alarm for?</string>
     <string name="alarms_target_self_title">Set my alarm</string>
     <string name="hs_delete_account_title">Are you sure you want to delete your account?</string>
-    <string name="hs_delete_account_body">30 days after you request it, all your data—including alarms and voices—is permanently deleted.\nYou can cancel and restore it by signing back in before then.</string>
+    <string name="hs_delete_account_body">Your account and all data will be permanently deleted in 30 days. Log in again before then to cancel the deletion.</string>
     <string name="hs_delete_account_confirm">Delete</string>
     <string name="hs_nickname_dialog_title">Edit nickname</string>
     <string name="hs_nickname_field_placeholder">e.g. Gyuwon</string>

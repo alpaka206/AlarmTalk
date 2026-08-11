@@ -2,6 +2,10 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import com.alarmtalk.app.WakerPillShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.draw.clip
@@ -106,6 +110,8 @@ internal fun IosAlertDialog(
     content: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
+    // 본문이 몇 줄로 그려졌는지. 정렬을 그 결과로 정한다(위 주석 참조).
+    var messageLineCount by remember(message) { mutableIntStateOf(0) }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -133,11 +139,23 @@ internal fun IosAlertDialog(
                             .padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
+                        // ⚠ **여러 줄 본문은 가운데가 아니라 왼쪽 정렬이다.**
+                        // iOS 알럿은 본문이 한 줄이면 가운데, **여러 줄이면 제목까지 왼쪽
+                        // 정렬**로 바뀐다(2026-08-11 실측 — 탈퇴 알럿의 여러 줄 본문이 왼쪽
+                        // 정렬이었다). 긴 문단을 가운데 정렬하면 줄마다 시작점이 달라 읽는
+                        // 눈이 매 줄 다시 왼쪽을 찾아야 한다.
+                        //
+                        // ⚠ **줄 수 기준을 3 으로 두지 말 것.** 알럿 폭이 기기마다 달라
+                        // 같은 문장이 아이폰에서 3줄, 갤럭시에서 2줄로 감긴다 — 3 으로 두면
+                        // 같은 알럿이 한쪽만 가운데 정렬로 뜬다(실제로 그랬다).
+                        // 판정은 **한 줄인가 아닌가**로만 한다.
+                        val longMessage = messageLineCount >= 2
+                        val blockAlign = if (longMessage) TextAlign.Start else TextAlign.Center
                         if (!title.isNullOrBlank()) {
                             Text(
                                 text = title,
                                 color = scheme.onSurface,
-                                textAlign = TextAlign.Center,
+                                textAlign = blockAlign,
                                 style = IosAlertType.Title,
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -149,9 +167,11 @@ internal fun IosAlertDialog(
                             Text(
                                 text = message,
                                 color = scheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
+                                textAlign = blockAlign,
                                 style = IosAlertType.Message,
                                 modifier = Modifier.fillMaxWidth(),
+                                // 줄 수는 그려 봐야 안다 — 재 보고 다음 배치에서 정렬을 정한다.
+                                onTextLayout = { messageLineCount = it.lineCount },
                             )
                         }
                         if (content != null) {

@@ -38,6 +38,7 @@
 		23DD6CB6C45C98F8C67EC651 /* AppVersionGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6631E3233534A061DF16833B /* AppVersionGateTests.swift */; };
 		24532A821DBDA7E12D150865 /* InputSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */; };
 		27CF6DF15148B755FC84D1B3 /* LocalAlarmRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02293324F4C4AB3487AF27E4 /* LocalAlarmRecord.swift */; };
+		27D98E8D75785F7ECAAFD78E /* DeleteAccountAlertUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 654A53A12F47130C19F6922C /* DeleteAccountAlertUITests.swift */; };
 		2818E8AD2FDB6E08A568E080 /* AppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E7F732DF290FB6337B9E693 /* AppGroup.swift */; };
 		28EB46140302DF5F6CA800D9 /* FreeBucketSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C91668BFFA3C24F48F19CD2 /* FreeBucketSettings.swift */; };
 		2B97C025AE8A2E50DD85D909 /* AlarmEnumsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FE1C56D44C36C22F69C9EA9 /* AlarmEnumsTests.swift */; };
@@ -401,6 +402,7 @@
 		60C9E3B75BCA36472CA4EFFB /* PeoplePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeoplePanel.swift; sourceTree = "<group>"; };
 		611C695982CD4E6257BAEAFB /* FamilyAlarmQuietTimeDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FamilyAlarmQuietTimeDialog.swift; sourceTree = "<group>"; };
 		64309C1B0B71EE457BAFB65C /* AlarmTalkAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkAPI.swift; sourceTree = "<group>"; };
+		654A53A12F47130C19F6922C /* DeleteAccountAlertUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteAccountAlertUITests.swift; sourceTree = "<group>"; };
 		65E21A05EC23A5BC2A3198BF /* AlarmEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditorSheet.swift; sourceTree = "<group>"; };
 		6631E3233534A061DF16833B /* AppVersionGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppVersionGateTests.swift; sourceTree = "<group>"; };
 		66FA500843DCB64B5B77DA13 /* voice_greeting_hajun_ko.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_hajun_ko.mp3; sourceTree = "<group>"; };
@@ -575,6 +577,7 @@
 		2C960B22A5BB85C19C0116F6 /* AlarmTalkUITests */ = {
 			isa = PBXGroup;
 			children = (
+				654A53A12F47130C19F6922C /* DeleteAccountAlertUITests.swift */,
 				7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */,
 				00884D032AF099AA772D95DF /* EditorStatePersistenceUITests.swift */,
 				463A1453ADEB2220E67E7F12 /* FortuneDialogScreenshotUITests.swift */,
@@ -1199,6 +1202,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				27D98E8D75785F7ECAAFD78E /* DeleteAccountAlertUITests.swift in Sources */,
 				2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */,
 				4B50813EDDAD7D092EF80DC7 /* EditorStatePersistenceUITests.swift in Sources */,
 				A32D9C97DB38741FFAE2C060 /* FortuneDialogScreenshotUITests.swift in Sources */,
