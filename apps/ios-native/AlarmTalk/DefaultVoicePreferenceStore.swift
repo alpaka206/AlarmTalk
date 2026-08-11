@@ -80,7 +80,9 @@ struct DefaultVoicePreferenceStore {
         defaults.set(true, forKey: key)
     }
 
-    private func hasSkipped(userID: String?) -> Bool {
+    /// 사용자가 **직접** 건너뛴 적이 있는가. 게이트 판정이 이 값을 본다
+    /// (`RootView.refreshOnboardingCompletion`) — private 이면 안 된다.
+    func hasSkipped(userID: String?) -> Bool {
         guard let key = skippedKey(userID) else { return false }
         return defaults.bool(forKey: key)
     }

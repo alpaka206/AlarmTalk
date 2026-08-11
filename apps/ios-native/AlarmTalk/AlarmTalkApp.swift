@@ -216,7 +216,14 @@ struct AlarmTalkApp: App {
                         // 앱 시작 후 1회: 30일 넘게 미참조 상태로 남은 캐시 음원과
                         // 고아 .meta.json 사이드카를 백그라운드에서 정리한다.
                         // 현재 알람이 참조하는 cacheKey 는 나이와 무관하게 보존.
-                        let activeKeys = Set(alarmStore.alarms.compactMap(\.audioCacheKey))
+                        // ⚠ **버킷(무료 테마) 클립 키도 사용 중이다.** `audioCacheKey` 만
+                        // 모으면 테마 알람이 물고 있는 클립들이 '미참조' 로 보여 지워진다 —
+                        // 안드로이드 `AlarmRepository.sweepStaleAudioCache` 는 `bucketClipKeys()`
+                        // 를 in-use 에 넣는다. iOS 만 빠져 있었다(2026-08-11).
+                        let activeKeys = Set(
+                            alarmStore.alarms.compactMap(\.audioCacheKey)
+                                + alarmStore.alarms.flatMap { $0.bucketClipKeys ?? [] }
+                        )
                         let audioCache = AudioCacheStore.shared
                         Task.detached(priority: .utility) {
                             audioCache.sweepStaleCache(activeCacheKeys: activeKeys)

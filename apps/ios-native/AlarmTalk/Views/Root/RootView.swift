@@ -103,7 +103,7 @@ struct RootView: View {
             else if voiceSetupDone == false {
                 // 온보딩 직후 "기본 목소리 고르기" — 기본 목소리를 아직 안 고른 사용자에게만 1회.
                 NavigationStack {
-                    VoiceSetupView(onComplete: completeVoiceSetup)
+                    VoiceSetupView(onComplete: completeVoiceSetup, onSkip: skipVoiceSetup)
                 }
             } else {
                 MainTabsView()
@@ -265,16 +265,26 @@ struct RootView: View {
             voiceSetupDone = nil
             return
         }
-        // 받아 둔 스톡 클립이 있으면 게이트를 열지 않는다 — 안드로이드도 캐시 개수로
-        // 판정한다. 다운로드가 성공한 사람에게 다시 받으라고 하지 않기 위해서다.
-        voiceSetupDone = DefaultVoicePreferenceStore().hasCompletedSetup(userID: userID)
-            || AudioCacheStore.shared.hasAnyStockClip
+        // ⚠ **판정 기준은 '받은 적 있다' 가 아니라 '지금 파일이 있다' 다.**
+        // 예전에는 `hasCompletedSetup(=고름 또는 건너뜀) || 캐시있음` 이었는데,
+        // 다 받고 화면을 닫을 때도 건너뜀 플래그를 세우고 있어서 **플래그 하나로 게이트가
+        // 영영 닫혔다.** 그래서 사용자가 앱 데이터를 지우거나 캐시가 정리돼 클립이
+        // 사라져도 **다시 받을 길이 없었다**(2026-08-11 확인).
+        // 안드로이드 `MainViewModel` 은 처음부터 이렇게 한다:
+        //   `showVoiceSetup = cachedStockClips == 0 && !hasSkipped(userId)`
+        voiceSetupDone = AudioCacheStore.shared.hasAnyStockClip
+            || DefaultVoicePreferenceStore().hasSkipped(userID: userID)
     }
 
+    /// 다운로드가 끝났다. **건너뜀으로 기록하지 않는다** — 받아 둔 파일이 증거고,
+    /// 그 파일이 사라지면 이 화면이 다시 떠야 한다.
     private func completeVoiceSetup() {
-        // ⚠ **메모리만 바꾸면 콜드 스타트마다 다시 뜬다.** 판정은 저장된 플래그를
-        // 읽으므로(`hasCompletedSetup`), 통과했다는 사실을 **영구 저장**해야 한다.
-        // 안드로이드는 `skipVoiceSetup()` → `markSkipped` 로 그렇게 한다.
+        voiceSetupDone = true
+    }
+
+    /// 사용자가 '나중에 받기' 를 눌렀다. 이때만 '안 받겠다' 를 영구 기록한다 —
+    /// 안 그러면 콜드 스타트마다 같은 화면으로 막는다(안드로이드 `skipVoiceSetup` 미러).
+    private func skipVoiceSetup() {
         DefaultVoicePreferenceStore().markSkipped(userID: auth.session?.user.id)
         voiceSetupDone = true
     }

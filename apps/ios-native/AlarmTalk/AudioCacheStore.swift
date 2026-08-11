@@ -165,7 +165,10 @@ final class AudioCacheStore {
     }
 
     /// 스톡 클립 선택용 cacheKey (`stock_<messageId>`). Android 와 동일 규칙.
-    nonisolated static func stockCacheKey(messageId: String) -> String { "stock_\(messageId)" }
+    nonisolated static func stockCacheKey(messageId: String) -> String { "\(stockCacheKeyPrefix)\(messageId)" }
+
+    /// 스톡 클립 캐시 키 접두. 안드로이드 `AlarmAudioStore.STOCK_CACHE_KEY_PREFIX` 와 같다.
+    nonisolated static let stockCacheKeyPrefix = "stock_"
 
     /// 스톡 클립 미리듣기용 cacheKey (`stock_preview_<messageId>`). Android 와 동일.
     nonisolated static func stockPreviewCacheKey(messageId: String) -> String { "stock_preview_\(messageId)" }
@@ -554,6 +557,12 @@ final class AudioCacheStore {
 
         for (base, grouped) in namesByBase {
             if active.contains(base) { continue }
+            // ⚠ **스톡 클립은 나이로 지우지 않는다.** 이건 사용자가 만든 게 아니라 앱이
+            // 받아 둔 기본 자산이고, 알람이 지금 참조하지 않아도 **다음에 고를 때 필요**하다.
+            // 게다가 iOS 에는 받는 길이 최초 설치 화면 하나뿐이라, 한 번 지워지면
+            // **다시 받을 방법이 없었다**(2026-08-11 확인). 안드로이드
+            // `AlarmAudioStore.sweepStaleCache` 도 같은 예외를 갖고 있다 — iOS 만 빠져 있었다.
+            if base.hasPrefix(Self.stockCacheKeyPrefix) { continue }
 
             let audioNames = grouped.filter { Self.splitName($0).ext != "meta.json" }
 

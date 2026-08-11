@@ -17,7 +17,12 @@ struct VoiceSetupView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.voiceAlarmTheme) private var theme
 
+    /// 다운로드가 끝나 화면을 닫는다. **건너뛴 것과 구분한다**(아래 `onSkip` 참조).
     var onComplete: (() -> Void)?
+    /// 사용자가 **직접** '나중에 받기' 를 눌렀다. 이때만 '안 받겠다' 를 기억한다 —
+    /// 다 받은 사람에게까지 그 플래그를 세우면, 나중에 캐시가 비어도 이 화면이
+    /// 다시 뜨지 않는다(2026-08-11 확인: iOS 가 그 상태였다).
+    var onSkip: (() -> Void)?
 
     @StateObject private var prefetcher = StockClipPrefetcher()
     /// 정상적으로 받는 중에는 탈출구를 숨긴다 — 몇 초면 끝나는 일에 선택지를 내밀 필요가
@@ -67,7 +72,7 @@ struct VoiceSetupView: View {
                     Button(prefetcher.isRunning ? "백그라운드에서 계속 받기" : "나중에 받기") {
                         // ⚠ 다운로드를 취소하지 않는다 — 화면만 닫는다. 그래서
                         // '계속 받기' 가 거짓말이 아니다.
-                        onComplete?()
+                        onSkip?()
                     }
                     .font(theme.typography.bodyMedium)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
