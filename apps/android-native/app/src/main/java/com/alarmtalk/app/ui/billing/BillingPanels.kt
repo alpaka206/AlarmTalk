@@ -224,6 +224,14 @@ internal fun SubscriptionPanel(
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
                     extraAction = if (option.key == "personal") {
                         @Composable { ->
+                            // ⚠ **`wakerCardBorder()` 로 되돌리지 말 것.** 그 테두리는
+                            // 카드 위에서 거의 안 보인다 — 현재 이용권 카드는 배경이
+                            // `primaryContainer` 라 옅은 회색 선이 묻힌다(2026-08-11 지적
+                            // "현재 이용권이 개인일 때 좀 안 보인다"). 강조색 테두리 + 옅은
+                            // 채움으로 두 배경(현재 카드/일반 카드) 모두에서 읽히게 한다.
+                            //
+                            // ⚠ 채워진 버튼으로 만들지는 말 것 — 결제 버튼과 무게가 같아져
+                            // 어느 것이 주 액션인지 흐려진다. 선물은 부가 액션이다.
                             OutlinedButton(
                                 onClick = {
                                     val activity = context.findActivity()
@@ -232,8 +240,14 @@ internal fun SubscriptionPanel(
                                 enabled = !billingBusy,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = WakerButtonShape,
-                                border = wakerCardBorder(),
-                                colors = wakerOutlinedButtonColors(),
+                                border = BorderStroke(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                ),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                    contentColor = MaterialTheme.colorScheme.primary,
+                                ),
                             ) {
                                 Text(stringResource(R.string.billing_gift_personal_action))
                             }

@@ -214,6 +214,49 @@ describe('billing google RTDN', () => {
       vi.unstubAllGlobals();
     });
 
+    // ⚠ **전환(업/다운그레이드)은 새 purchaseToken 으로 온다.** 그 토큰은 클라 confirm
+    // 전까지 store_transactions 에 없으므로, 예전에는 `unmapped_token` 으로 통째로
+    // 버려졌다 — 전환 반영이 클라 confirm 하나에만 매달렸다(2026-08-11 확인).
+    // 이제 권위 응답의 `linkedPurchaseToken` 으로 옛 구독의 주인을 찾아 잇는다.
+    it('전환: 매핑 없는 새 토큰이어도 linkedPurchaseToken 으로 주인을 찾는다', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE',
+            linkedPurchaseToken: 'play-token-previous',
+            lineItems: [{ productId: 'family_monthly', expiryTime: FUTURE }],
+          }),
+          { status: 200 },
+        ),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      mockDB.pushResult([]);        // 새 토큰 매핑 없음
+      mockDB.pushResult([TXN_ROW]); // linkedPurchaseToken 으로 재조회 → 주인 찾음
+
+      // ⚠ 여기서 상태 코드를 단언하지 않는다. 주인을 찾은 뒤에는 entitle 경로가 이어져
+      // 플랜 조회 등 DB 결과가 더 필요한데, 이 테스트가 보려는 것은 **그 앞 단계**다 —
+      // "매핑 없는 새 토큰을 버리지 않고 linked 로 이어 붙였는가".
+      await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+
+      // 옛 토큰으로 store_transactions 를 한 번 더 뒤졌다는 게 핵심 증거다.
+      const lookups = mockDB.calls.filter((c) => c.sql.includes('FROM store_transactions'));
+      expect(lookups.length).toBe(2);
+      expect(lookups[1]!.args).toContain('play-token-previous');
+    });
+
+    // linkedPurchaseToken 이 없거나 그 토큰도 모르면 예전처럼 조용히 흘려보낸다 —
+    // 최초 구매(confirm 전)가 여기로 온다.
+    it('전환이 아니면(linked 없음) 여전히 unmapped_token 으로 ack', async () => {
+      stubPlayLookup('SUBSCRIPTION_STATE_ACTIVE', FUTURE);
+      mockDB.pushResult([]); // 매핑 없음
+
+      const res = await buildApp().request(rtdnRequest(4), undefined, RTDN_ENV);
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).ignored).toBe('unmapped_token');
+      expect(mockDB.calls.some((c) => /INSERT|UPDATE|DELETE/i.test(c.sql))).toBe(false);
+    });
+
     it('스테일 토큰(비활성 구독 매핑) EXPIRED → 아무 것도 안 건드리고 200 ack', async () => {
       stubPlayLookup('SUBSCRIPTION_STATE_EXPIRED', PAST);
       mockDB.pushResult([TXN_ROW]); // store_transactions 매핑

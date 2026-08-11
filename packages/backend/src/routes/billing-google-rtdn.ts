@@ -4,6 +4,7 @@ import { getDB } from '../lib/db';
 import { withWriteTransaction } from '../lib/transactions';
 import { logStructured } from '../lib/logger';
 import { getGoogleAccessToken, parseServiceAccountJson } from '../lib/google-oauth';
+import { getPlaySubscriptionV2 } from '../lib/play-subscriptions';
 import { applyStoreEntitlement, loadPlanByKey } from '../lib/store-billing';
 import {
   cancelSubscriptionImmediate,
@@ -155,7 +156,31 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
           WHERE provider = 'google' AND provider_transaction_id = ?`,
     args: [purchaseToken],
   });
-  if (txnRes.rows.length === 0) {
+  // ⚠ **매핑이 없다고 바로 포기하지 말 것 — 전환(업/다운그레이드)이 여기로 온다.**
+  // Play 는 교체 구매에 **새 purchaseToken** 을 발급하므로, 클라 confirm 이 오기 전에는
+  // 이 표에 행이 없다. 그 토큰의 권위 응답에는 `linkedPurchaseToken`(대체된 옛 토큰)이
+  // 실려 오니, 그걸로 옛 구독의 주인을 찾아 이어 붙인다. 이게 없으면 전환 알림이
+  // 통째로 버려지고 **전환 반영이 클라 confirm 하나에만 매달린다** — 결제 직후 앱이
+  // 죽거나 오프라인이면 서버는 그 전환을 영영 모른다(2026-08-11 확인).
+  let txnRow = txnRes.rows[0] ?? null;
+  let linkedFromToken: string | null = null;
+  if (!txnRow) {
+    // 권위 재조회는 아래에서 한 번 더 하지만, 여기서는 **주인을 찾기 위해서만** 부른다.
+    // 실패해도 치명적이지 않다 — 매핑을 못 찾은 것과 같게 흘려보낸다.
+    const linked = await getPlaySubscriptionV2(c.env, purchaseToken)
+      .then((r: { linkedPurchaseToken?: string }) => r.linkedPurchaseToken ?? null)
+      .catch(() => null);
+    if (linked) {
+      const linkedRes = await db.execute({
+        sql: `SELECT user_id, subscription_id FROM store_transactions
+              WHERE provider = 'google' AND provider_transaction_id = ?`,
+        args: [linked],
+      });
+      txnRow = linkedRes.rows[0] ?? null;
+      if (txnRow) linkedFromToken = linked;
+    }
+  }
+  if (!txnRow) {
     logStructured('info', {
       at: 'billing.google.rtdn',
       note: 'unmapped_token',
@@ -163,10 +188,17 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
     });
     return c.json({ success: true, ignored: 'unmapped_token' });
   }
-  const userPk = String(txnRes.rows[0]!.user_id);
+  if (linkedFromToken) {
+    logStructured('info', {
+      at: 'billing.google.rtdn',
+      note: 'linked_token_resolved',
+      notificationType: sub.notificationType ?? null,
+    });
+  }
+  const userPk = String(txnRow.user_id);
   // 이 토큰이 마지막으로 entitle 된 서버 구독 (applyStoreEntitlement 가 기록).
   // 비활성화 계열 액션은 이 구독 한 건에만 작용해야 한다 — 아래 스테일 토큰 게이트 참고.
-  const mappedSubscriptionId = (txnRes.rows[0]!.subscription_id as string | null) ?? null;
+  const mappedSubscriptionId = (txnRow.subscription_id as string | null) ?? null;
 
   // 권위 재조회 — 알림 본문을 신뢰하지 않는다.
   let accessToken: string;

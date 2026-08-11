@@ -143,7 +143,10 @@ struct BillingPanel: View {
                 }
             }
         }
-        .sectionSurface()
+        // ⚠ **`.sectionSurface()` 로 되돌리지 말 것**(2026-08-11 요청). 플랜 카드들이 이미
+        // 각자 카드라, 그 전체를 또 한 겹 카드로 감싸면 **카드 안의 카드**가 된다 —
+        // 실기에서 요금 상자들을 큰 상자가 다시 감싸고 있었다. 안드로이드는 플랜 카드만
+        // 세로로 늘어놓는다.
         .task {
             // 시트 진입 시 fresh 한 제품 정보 + entitlement 동기화 보장.
             if subscriptions.products.isEmpty {

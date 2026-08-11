@@ -30,6 +30,15 @@ export interface SubscriptionV2Response {
    * confirm 의 구매-계정 바인딩 검증(billing-google.ts)에 쓴다.
    */
   externalAccountIdentifiers?: { obfuscatedExternalAccountId?: string };
+  /**
+   * **교체 구매(업/다운그레이드)에서 대체된 옛 purchaseToken.**
+   *
+   * Play 는 `setSubscriptionUpdateParams` 로 산 구독에 **새 purchaseToken** 을 발급하고,
+   * 옛 토큰을 여기 남긴다. 우리 RTDN 은 `store_transactions` 에 매핑된 토큰으로만
+   * 사용자를 찾으므로, 이 값이 없으면 전환 알림이 **매핑 없는 토큰**으로 버려진다
+   * (2026-08-11 확인 — 전환이 RTDN 으로 안 잡히던 원인).
+   */
+  linkedPurchaseToken?: string;
 }
 
 export const ENTITLED_STATES = new Set([
