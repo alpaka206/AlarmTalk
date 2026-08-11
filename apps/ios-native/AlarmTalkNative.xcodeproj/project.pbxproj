@@ -14,6 +14,7 @@
 		03A1BBF5895831F6960661FB /* AudioUserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549140C4B45ACA42A0427334 /* AudioUserFacingErrorTests.swift */; };
 		05D19CA98ED9856DDDCAFD2E /* AlarmTalkFieldStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 205D0CC3E1C28F766AD8FB8F /* AlarmTalkFieldStyle.swift */; };
 		06A307409933FC5592EBFC44 /* PlanGateDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5614A67355CB6778BA0DECE /* PlanGateDialog.swift */; };
+		090399E0C7D0B71051595D9A /* TimeTypeInUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF34E13AF50391900495E3FB /* TimeTypeInUITests.swift */; };
 		0954B1BBAC9F69FCABB9B58F /* AuthGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCE612B197E5B5761457E13E /* AuthGateView.swift */; };
 		0CA57323774BA469F4DE6795 /* AlarmTalkTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */; };
 		0CF827BE8A681B76673BBE99 /* UserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22CBB5AEC61506D5E9A1B5C7 /* UserFacingErrorTests.swift */; };
@@ -555,6 +556,7 @@
 		FE4769F44E254B265F288150 /* TimeWheelTypeInUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelTypeInUITests.swift; sourceTree = "<group>"; };
 		FEBAA873DFD96871D86C066E /* AlarmKitViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmKitViewModel.swift; sourceTree = "<group>"; };
 		FED5C5FC2F31030D968F1A3B /* VoiceConsentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceConsentSheet.swift; sourceTree = "<group>"; };
+		FF34E13AF50391900495E3FB /* TimeTypeInUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTypeInUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -614,6 +616,7 @@
 				EF9171882548B78326D9E372 /* SignUpFlowUITests.swift */,
 				F5A537326D52C4948FC559A7 /* SystemAlertMetricsUITests.swift */,
 				38D3E3B14EF8A55A1C28CE8D /* ThemeSheetHeightUITests.swift */,
+				FF34E13AF50391900495E3FB /* TimeTypeInUITests.swift */,
 				378F22445FC4E2D5C2F90CB4 /* TimeWheelFlingUITests.swift */,
 				FE4769F44E254B265F288150 /* TimeWheelTypeInUITests.swift */,
 				EE5D7E8DD641A9D8C4B32D01 /* VoiceAddButtonUITests.swift */,
@@ -1249,6 +1252,7 @@
 				4FA9B768B6E51C73C71A0699 /* SignUpFlowUITests.swift in Sources */,
 				2D3C0A9E656BEC6E425C4AD7 /* SystemAlertMetricsUITests.swift in Sources */,
 				431264746540D60C95CDBC6C /* ThemeSheetHeightUITests.swift in Sources */,
+				090399E0C7D0B71051595D9A /* TimeTypeInUITests.swift in Sources */,
 				AF6A6C53BDDC3906B5EBDEBD /* TimeWheelFlingUITests.swift in Sources */,
 				135765AE28C6C5A5F3CDED93 /* TimeWheelTypeInUITests.swift in Sources */,
 				7D72F169889A82309309A05F /* VoiceAddButtonUITests.swift in Sources */,

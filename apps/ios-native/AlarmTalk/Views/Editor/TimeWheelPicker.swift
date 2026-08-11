@@ -299,19 +299,24 @@ struct DraggableNumberColumn: View {
             let digits = String(next.filter(\.isNumber).prefix(2))
             if digits != next { typeInDraft = digits }
         }
-        // 포커스를 잃으면(다른 칼럼·바깥 탭) 그때까지 친 값을 넣는다 —
+        // 포커스를 잃으면(바깥 탭) 그때까지 친 값을 넣는다 —
         // 취소 버튼이 없으므로 여기서 안 받으면 친 게 조용히 사라진다.
         .onChange(of: typeInFocused) { _, focused in
             if !focused { commitTypeIn() }
         }
-        // 숫자 키패드에는 완료 키가 없다 — 툴바로 낸다.
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("완료") { typeInFocused = false }
-                    .fontWeight(.semibold)
-            }
-        }
+        // ⚠ **다른 칼럼으로 옮겨갈 때는 이 경로로 들어온다 — 포커스 변화로는 못 잡는다.**
+        // 시를 치다가 분을 누르면 `editingColumn` 이 바뀌면서 이 입력창이 **뷰 트리에서
+        // 사라지는데**, 그때 `onChange(of: typeInFocused)` 는 오지 않는다(바인딩이 함께
+        // 헐린다). 그래서 친 값이 조용히 버려지고 원래 값으로 되돌아갔다
+        // (2026-08-11 지적 "분 누르면 시간에 써놨던 게 저장 안 되고 롤백된다").
+        // 사라질 때 한 번 더 확정한다 — `commitTypeIn` 은 draft 를 비우고 시작하므로
+        // 위 경로와 겹쳐 불려도 두 번 적용되지 않는다.
+        .onDisappear { commitTypeIn() }
+        // ⚠ **키보드 툴바 '완료' 를 되살리지 말 것**(2026-08-11 요청).
+        // 숫자 키패드에 리턴 키가 없어 툴바를 냈었는데, 누를 곳이 하나 더 생겼을 뿐이다 —
+        // **다른 곳을 누르면 끝난다**(편집기 루트의 `simultaneousGesture` 가 first responder 를
+        // 내려놓고, 그 순간 `commitTypeIn` 이 값을 넣는다). 툴바가 있으면 키패드 위에 바가
+        // 한 겹 더 붙어 화면도 그만큼 가린다.
     }
 
     private func beginTypeIn() {

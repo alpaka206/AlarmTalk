@@ -160,7 +160,25 @@ struct AlarmEditorSheet: View {
         // ⚠ **`Form` 으로 되돌리지 말 것.** `Form` 은 iOS 표준 그룹 목록 모양을 강제해
         // (회색 배경 위 흰 그룹, 자체 여백·구분선) 안드로이드의 Waker 카드와 나란히
         // 놓으면 다른 앱이 된다. 편집기는 카드 목록이지 설정 폼이 아니다.
+        // ⚠ **키패드의 '완료' 를 꼭 눌러야 하지 않게 한다**(2026-08-11 요청).
+        // 숫자 키패드에는 리턴 키가 없어 툴바 '완료' 가 유일한 종료였다 — 다른 곳을 눌러도
+        // 끝나야 한다. 값은 포커스를 잃는 순간 반영되므로(`TimeWheelPicker.commitTypeIn`)
+        // first responder 만 내려놓으면 된다.
+        //
+        // ⚠ **`content` 가 아니라 루트에 건다.** 스크롤 본문에만 걸면 그 **밖**(헤더·타임휠
+        // 주변·하단 바)을 눌렀을 때 안 잡힌다 — 실제로 그렇게 뒀다가 시뮬레이터에서
+        // 키패드가 그대로 남는 걸 확인했다.
+        // ⚠ **`simultaneousGesture` 여야 한다** — `onTapGesture` 로 두면 이 탭이
+        // 자식(카드·행·버튼)의 탭을 **삼켜** 아무 것도 안 눌린다.
         chrome(content)
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder),
+                        to: nil, from: nil, for: nil
+                    )
+                }
+            )
     }
 
     private var content: some View {
@@ -185,6 +203,11 @@ struct AlarmEditorSheet: View {
             }
             .scrollDismissesKeyboard(.interactively)
 
+
+            // ⚠ **키보드가 올라와도 이 바는 제자리다**(2026-08-11 요청).
+            // 기본 동작은 키보드를 피해 위로 밀리는 것인데, 숫자를 고쳐 쓰는 동안
+            // [취소][저장]이 화면 중간까지 따라 올라와 **누르려던 자리가 사라진다.**
+            // 시간 입력은 숫자만 치면 되므로 이 바가 가려도 잃는 게 없다.
             EditorActionBar(
                 saveTitle: saveButtonTitle,
                 saving: isWorking || voiceStudio.isBusy,
@@ -193,6 +216,7 @@ struct AlarmEditorSheet: View {
                 onCancel: onClose,
                 onSave: { Task { await saveFlow() } }
             )
+            .ignoresSafeArea(.keyboard, edges: .bottom)
         }
     }
 
