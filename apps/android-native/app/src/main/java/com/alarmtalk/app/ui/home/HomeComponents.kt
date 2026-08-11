@@ -1,5 +1,8 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import android.icu.text.MeasureFormat
 import android.icu.util.Measure
 import android.icu.util.MeasureUnit
@@ -489,6 +492,49 @@ internal fun DeleteAccountConfirmDialog(
             ),
         ),
     )
+}
+
+/**
+ * 하위 화면의 **상단바** — 좌측 뒤로가기 + **가운데 제목**.
+ *
+ * ⚠ **`ScreenHeader`(왼쪽 정렬 큰 제목)를 하위 화면에 쓰지 말 것.** 그건 탭 자체의 제목이다.
+ * 이용권·코드 등록처럼 **더보기에서 들어가는 화면**은 아이폰에서 네비게이션 바(뒤로가기 +
+ * 가운데 작은 제목)로 뜨는데, 안드로이드에는 그 바가 없어 **나가는 길이 시스템 뒤로가기뿐**
+ * 이었다(2026-08-11 요청). 같은 모양으로 맞춘다.
+ *
+ * 제목은 **가운데**다 — `Row` 로 셋을 나란히 두면 뒤로가기 폭만큼 제목이 밀려 가운데가
+ * 아니게 되므로 겹쳐 놓는다.
+ */
+@Composable
+internal fun WakerTopBar(
+    title: String,
+    onBack: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.CenterStart),
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                contentDescription = stringResource(R.string.common_back),
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
 }
 
 @Composable

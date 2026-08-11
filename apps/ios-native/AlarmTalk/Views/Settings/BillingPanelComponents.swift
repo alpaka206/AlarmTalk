@@ -1,4 +1,30 @@
 import SwiftUI
+
+/// 스토어에서 가격을 못 받았을 때 쓰는 **폴백 가격**.
+///
+/// ⚠ **스토어 가격이 언제나 이긴다.** 이건 "값이 아예 없어서 빈칸으로 보이는" 것을 막는
+/// 안전망일 뿐이다(2026-08-11 결정). `Product.displayPrice` 가 있으면 그걸 쓴다 —
+/// 지역 통화·세금·프로모션이 반영된 값이라 그쪽이 정확하다.
+///
+/// ⚠ **숫자의 출처는 백엔드 `plans.price_krw` 다**(`packages/backend/src/lib/migrations.ts`
+/// 의 personal 3900 / couple 6900 / family 14900). 거기를 바꾸면 여기도, 안드로이드의
+/// `FallbackPlanPriceKrw` 도 함께 바꾼다 — 서버는 **현재 플랜 하나**만 내려주기 때문에
+/// 목록 화면에서는 이 표가 필요하다.
+///
+/// ⚠ 한국 밖 사용자에게는 이 값이 틀릴 수 있다. 그래서 폴백이고, 실제 결제 금액은
+/// App Store 결제 시트가 다시 보여준다.
+enum FallbackPlanPrice {
+    private static let krw: [PlanTier: Int] = [.personal: 3900, .couple: 6900, .family: 14900]
+
+    /// "3,900원" 꼴. 무료 등급이나 모르는 등급이면 nil.
+    static func label(for tier: PlanTier) -> String? {
+        guard let value = krw[tier] else { return nil }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        let number = formatter.string(from: NSNumber(value: value)) ?? String(value)
+        return "\(number)원"
+    }
+}
 import StoreKit
 import UIKit
 
@@ -96,6 +122,10 @@ struct CurrentPassSummaryCard: View {
         if let productID = SubscriptionProduct.make(tier: currentTier)?.rawValue,
            let product = subscriptions.products.first(where: { $0.id == productID }) {
             return "월 \(product.displayPrice)"
+        }
+        // 스토어 가격을 못 받았을 때만 폴백을 쓴다(위 `FallbackPlanPrice` 주석 참조).
+        if let fallback = FallbackPlanPrice.label(for: currentTier) {
+            return "월 \(fallback)"
         }
         return "App Store 결제"
     }
@@ -322,13 +352,19 @@ struct PlanCard: View {
                 .frame(height: 40)
                 .overlay(ProgressView().controlSize(.small))
                 .accessibilityLabel("가격 불러오는 중")
-        } else {
-            // fetch 가 끝났는데도 제품이 없음 — App Store Connect 미등록 등.
+        } else if let fallback = FallbackPlanPrice.label(for: tier) {
+            // ⚠ **"준비중" 같은 말을 지어내지 말 것.** 가격은 **스토어가 권위**라 못 받아
+            // 올 수 있는데(시뮬레이터·미출시 트랙 등), 그때 "준비중" 이라고 쓰면 우리가
+            // 상품 상태를 단정하는 셈이다 — 대개는 상품이 멀쩡하고 조회만 실패한 것이다.
+            //
+            // 대신 **폴백 가격**을 보여 준다(2026-08-11 결정, 안드로이드와 같은 규칙).
+            // 값이 비어 카드가 휑해 보이는 것도, 없는 상태를 단정하는 것도 피한다.
+            // 누르면 결제로는 못 가므로 **비활성**이다 — 살 수 없다는 사실은 그대로 전한다.
             Button {
-                // no-op
+                // no-op — 상품을 못 받았으니 결제로 갈 수 없다.
             } label: {
                 VStack(spacing: 2) {
-                    Text("준비중")
+                    Text(fallback)
                         .font(.subheadline.weight(.semibold))
                     Text("/ \(periodLabel)")
                         .font(.caption2)

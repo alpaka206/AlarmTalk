@@ -916,4 +916,5 @@
     <string name="misc2_theme_mode_system_desc">휴대폰 설정을 따라가요.</string>
     <string name="misc2_theme_mode_light_desc">낮에도 선명한 밝은 화면이에요.</string>
     <string name="misc2_theme_mode_dark_desc">밤에 보기 편한 어두운 화면이에요.</string>
+    <string name="common_back">뒤로</string>
 </resources>

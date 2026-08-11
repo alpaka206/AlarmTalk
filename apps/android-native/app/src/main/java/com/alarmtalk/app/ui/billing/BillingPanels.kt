@@ -110,7 +110,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "personal",
             name = stringResource(R.string.billing_plan_personal_name),
-            price = planPrices["personal"].orEmpty(),
+            price = planPriceLabel(planPrices, "personal"),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_personal_feature_voice),
@@ -120,7 +120,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "couple",
             name = stringResource(R.string.billing_plan_couple_name),
-            price = planPrices["couple"].orEmpty(),
+            price = planPriceLabel(planPrices, "couple"),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -132,7 +132,7 @@ internal fun SubscriptionPanel(
         SubscriptionPlanOption(
             key = "family",
             name = stringResource(R.string.billing_plan_family_name),
-            price = planPrices["family"].orEmpty(),
+            price = planPriceLabel(planPrices, "family"),
             description = "",
             features = listOf(
                 stringResource(R.string.billing_plan_feature_includes_personal),
@@ -716,4 +716,30 @@ private fun ChangePlanDialog(
     )
 }
 
+/**
+ * 스토어에서 가격을 못 받았을 때 쓰는 **폴백 가격**.
+ *
+ * ⚠ **스토어 가격이 언제나 이긴다.** 이건 "값이 아예 없어서 빈칸으로 보이는" 것을 막는
+ * 안전망일 뿐이다(2026-08-11 결정). 스토어가 값을 주면 그걸 쓴다 — 지역 통화·세금·
+ * 프로모션이 반영된 값이라 그쪽이 정확하다.
+ *
+ * ⚠ **숫자의 출처는 백엔드 `plans.price_krw` 다**(`packages/backend/src/lib/migrations.ts`
+ * 의 personal 3900 / couple 6900 / family 14900). 거기를 바꾸면 여기도 바꾼다 —
+ * 서버는 **현재 플랜 하나**만 내려주기 때문에 목록 화면에서는 이 표가 필요하다.
+ *
+ * ⚠ 한국 밖 사용자에게는 이 값이 틀릴 수 있다. 그래서 폴백이고, 실제 결제 금액은
+ * 스토어 결제 시트가 다시 보여준다.
+ */
+private val FallbackPlanPriceKrw = mapOf(
+    "personal" to 3900,
+    "couple" to 6900,
+    "family" to 14900,
+)
+
+/** 스토어 가격이 있으면 그걸, 없으면 폴백을 "월 3,900원" 꼴로 준다. */
+private fun planPriceLabel(planPrices: Map<String, String>, key: String): String {
+    planPrices[key]?.takeIf { it.isNotBlank() }?.let { return it }
+    val krw = FallbackPlanPriceKrw[key] ?: return ""
+    return "월 %,d원".format(krw)
+}
 

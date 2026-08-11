@@ -318,7 +318,11 @@ internal fun AlarmListScreen(
 
             NativeTab.People -> {
                 item {
-                    ScreenHeader(title = stringResource(R.string.common_tab_code_register))
+                    // 더보기에서 들어온 하위 화면이라 상단바(뒤로가기 + 가운데 제목)를 둔다.
+                    WakerTopBar(
+                        title = stringResource(R.string.common_tab_code_register),
+                        onBack = { onSelectTab(NativeTab.Menu) },
+                    )
                 }
                 item {
                     FamilyConnectionPanel(
@@ -353,7 +357,10 @@ internal fun AlarmListScreen(
 
             NativeTab.Billing -> {
                 item {
-                    ScreenHeader(title = stringResource(R.string.common_tab_billing))
+                    WakerTopBar(
+                        title = stringResource(R.string.common_tab_billing),
+                        onBack = { onSelectTab(NativeTab.Menu) },
+                    )
                 }
                 item {
                     SubscriptionPanel(

@@ -885,4 +885,5 @@ Pass code: %1$s
     <string name="misc2_theme_mode_system_desc">Follows your phone\'s setting.</string>
     <string name="misc2_theme_mode_light_desc">A bright screen that stays crisp in daylight.</string>
     <string name="misc2_theme_mode_dark_desc">A dark screen that\'s easy on the eyes at night.</string>
+    <string name="common_back">Back</string>
 </resources>

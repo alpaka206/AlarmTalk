@@ -893,4 +893,5 @@
     <string name="misc2_theme_mode_system_desc">スマートフォンの設定に従います。</string>
     <string name="misc2_theme_mode_light_desc">昼でもはっきり見える明るい画面です。</string>
     <string name="misc2_theme_mode_dark_desc">夜に見やすい暗い画面です。</string>
+    <string name="common_back">戻る</string>
 </resources>
