@@ -9,7 +9,6 @@ import com.alarmtalk.app.network.apiError
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CancelSubscriptionRequest
-import com.alarmtalk.app.network.ChangePlanRequest
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.GooglePlayConfirmRequest
@@ -608,44 +607,3 @@ internal fun MainViewModel.restorePaidVoiceAlarmsIfLocked() {
     }
 }
 
-internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
-    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
-    val mode = if (atPeriodEnd) "at_period_end" else "immediate"
-    viewModelScope.launch {
-        billingBusy = true
-        runCatching {
-            api.changePlan(authorization, ChangePlanRequest(planKey = planKey, mode = mode))
-        }.onSuccess { response ->
-            if (response.requiresCheckout && response.planKey != null) {
-                // 즉시 변경: 기존 해지된 상태이므로 곧바로 새 결제 진행.
-                billingBusy = false
-                checkoutPlan(response.planKey)
-                return@onSuccess
-            }
-            message = if (atPeriodEnd) {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_change_scheduled)
-            } else {
-                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_changed)
-            }
-            refreshBillingAfterMutation(authorization, "plan change")
-            refreshAppSession()
-            refreshSocial()
-        }.onFailure { error ->
-            AlarmTalkLog.reportError("Failed to change plan key=$planKey mode=$mode", error)
-            val errorCode = apiErrorCode(error)
-            if (errorCode == "NO_ACTIVE_SUBSCRIPTION") {
-                message = billingFailureMessage(getApplication<android.app.Application>(), errorCode, getApplication<android.app.Application>().getString(R.string.msg_gb_no_active_subscription_apply_new))
-                billingBusy = false
-                checkoutPlan(planKey)
-                return@onFailure
-            }
-            if (errorCode == "SAME_PLAN") {
-                message = getApplication<android.app.Application>().getString(R.string.msg_gb_same_plan_in_use)
-                refreshBillingAfterMutation(authorization, "same plan check")
-                return@onFailure
-            }
-            message = billingFailureMessage(getApplication<android.app.Application>(), errorCode, userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_plan_change_failed)))
-        }
-        billingBusy = false
-    }
-}

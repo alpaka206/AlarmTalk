@@ -1108,7 +1108,6 @@ internal fun AlarmTalkApp(
                           onPurchasePlay = viewModel::startPlayPurchase,
                           onGiftPersonal = viewModel::startGiftPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
-                          onChangePlan = viewModel::changePlan,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,
                           permissions = permissions,
                           onCreateAlarm = ::requestCreateAlarm,

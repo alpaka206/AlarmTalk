@@ -560,7 +560,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
     }
 
     /// 기존 공유 코드를 무효화(expired)하고 새 코드를 발급한다(유출 의심 시 재발급).
-    /// Android `BillingApi.kt:150-153`, 백엔드 billing-mutation.ts:641.
+    /// Android `BillingApi.regenerateFamilyShareCode`, 백엔드 `billing-mutation.ts`.
     func regenerateFamilyShareCode(token: String) async throws -> VoucherItem {
         let response: EnsureFamilyShareCodeResponse = try await request(
             "billing/vouchers/family-share/regenerate",

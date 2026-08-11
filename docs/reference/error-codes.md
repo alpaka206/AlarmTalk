@@ -147,7 +147,6 @@
 | `INVALID_DAYS` | 테스트 코드 days 범위 오류(1~365) | 400 | `routes/billing-mutation.ts` |
 | `INVALID_CANCEL_MODE` | 해지 mode 가 `at_period_end`/`immediate` 아님 | 400 | `routes/billing-mutation.ts` |
 | `NO_ACTIVE_SUBSCRIPTION` | 활성 구독 없음(취소 대상 없음) | 404 | `routes/billing-mutation.ts` |
-| `SAME_PLAN` | 이미 해당 플랜 이용 중 | 400 | `routes/billing-mutation.ts` |
 | `PLAY_CANCEL_FAILED` | Play 구독 해지 실패(+`manage_url`) | 502 | `routes/billing-mutation.ts` |
 | `PLAY_REVOKE_FAILED` | Play 구독 즉시 철회 실패(+`manage_url`) | 502 | `routes/billing-mutation.ts` |
 | `STORE_CANCEL_UNSUPPORTED` | **애플 구독은 서버가 못 끊는다**(+`manage_url`) — 앱이 App Store 관리 화면을 연다 | 409 | `routes/billing-mutation.ts` |

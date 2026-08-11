@@ -73,11 +73,7 @@
     <string name="billing_cancel_immediate_title">지금 바로 해지할까요?</string>
     <string name="billing_cancel_now">지금 해지하기</string>
     <string name="billing_cancel_pass">이용권 해지</string>
-    <string name="billing_change_at_end_date">종료일에 변경</string>
-    <string name="billing_change_now">지금 변경</string>
     <string name="billing_change_pass">이용권 변경</string>
-    <string name="billing_change_plan_description">즉시 변경하면 현재 이용권은 바로 종료되고 새 이용권이 적용돼요. 종료일 변경은 현재 기간이 끝난 뒤 적용돼요.</string>
-    <string name="billing_change_plan_title">%1$s 이용권으로 변경</string>
     <string name="billing_close">닫기</string>
     <string name="billing_current_pass_label">현재 이용권</string>
     <string name="billing_leave_button">나가기</string>
@@ -381,19 +377,14 @@
     <string name="msg_gb_login_required_register_code">코드를 등록하려면 먼저 로그인해 주세요</string>
     <string name="msg_gb_login_required_share_code_info">공유 코드 정보를 불러오려면 먼저 로그인해 주세요</string>
 
-    <string name="msg_gb_no_active_subscription_apply_new">현재 적용된 이용권이 없어 새 이용권으로 적용할게요</string>
     <string name="msg_gb_payment_confirm_failed">결제 확인에 실패했어요</string>
     <string name="msg_gb_payment_confirm_failed_retry">결제 확인에 실패했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_gb_plan_applied">이용권을 적용했어요</string>
     <string name="msg_gb_plan_applied_named">%1$s 이용권을 적용했어요</string>
     <string name="msg_gb_plan_apply_failed">이용권 적용에 실패했어요</string>
-    <string name="msg_gb_plan_change_failed">이용권 변경에 실패했어요</string>
-    <string name="msg_gb_plan_change_scheduled">이용권 종료일에 변경하도록 예약했어요</string>
-    <string name="msg_gb_plan_changed">이용권을 변경했어요</string>
     <string name="msg_gb_plan_label_couple">커플</string>
     <string name="msg_gb_plan_label_family">가족</string>
     <string name="msg_gb_plan_label_shared">공유</string>
-    <string name="msg_gb_same_plan_in_use">이미 사용 중인 이용권이에요</string>
     <string name="msg_gb_share_code_info_load_failed">공유 코드 정보를 불러오지 못했어요</string>
     <string name="msg_gb_share_code_load_failed">%1$s 공유 코드를 불러오지 못했어요</string>
     <string name="msg_gb_share_code_ready">%1$s 공유 코드를 준비했어요</string>

@@ -103,7 +103,6 @@ internal fun AlarmListScreen(
     onPurchasePlay: (android.app.Activity, String) -> Unit,
     onGiftPersonal: (android.app.Activity) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
-    onChangePlan: (String, Boolean) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
@@ -372,7 +371,6 @@ internal fun AlarmListScreen(
                         onPurchasePlay = onPurchasePlay,
                         onGiftPersonal = onGiftPersonal,
                         onCancelSubscription = onCancelSubscription,
-                        onChangePlan = onChangePlan,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRefreshShareCodeData = onRefreshShareCodeData,
                     )

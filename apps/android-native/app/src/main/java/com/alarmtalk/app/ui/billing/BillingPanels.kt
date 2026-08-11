@@ -76,12 +76,10 @@ internal fun SubscriptionPanel(
     onPurchasePlay: (Activity, String) -> Unit,
     onGiftPersonal: (Activity) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
-    onChangePlan: (String, Boolean) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
-    var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
@@ -220,7 +218,6 @@ internal fun SubscriptionPanel(
                     busy = billingBusy || shareBusy,
                     vouchers = vouchersForPlan,
                     onPurchase = { purchaseTarget = option },
-                    onChange = { changeTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
                     extraAction = if (option.key == "personal") {
                         @Composable { ->
@@ -344,16 +341,6 @@ internal fun SubscriptionPanel(
         )
     }
 
-    changeTarget?.let { option ->
-        ChangePlanDialog(
-            target = option,
-            onDismiss = { changeTarget = null },
-            onConfirm = { atPeriodEnd ->
-                changeTarget = null
-                onChangePlan(option.key, atPeriodEnd)
-            },
-        )
-    }
 
     if (shareTarget.isNotEmpty()) {
         // ⚠ **이건 알럿이 아니라 목록이다** — 바우처 중 하나를 고르는 화면이라
@@ -464,7 +451,6 @@ internal fun SubscriptionPlanCard(
     busy: Boolean,
     vouchers: List<VoucherItem>,
     onPurchase: () -> Unit,
-    onChange: () -> Unit,
     onShareVouchers: () -> Unit,
     // 현재 플랜 카드에만 붙는 만료/전환 상태 한 줄 (예: "7월 20일까지 이용할 수 있어요").
     currentStatusText: String? = null,
@@ -558,13 +544,17 @@ internal fun SubscriptionPlanCard(
                     PlanFeatureRow(feature)
                 }
             }
-            // 이용권 변경(/billing/change-plan)은 스텁 결제 전용이라 dev 에서만 노출한다.
-            // 운영 Play 결제에서는 CHECKOUT_DISABLED 로 항상 실패하므로, Play 구독 교체
-            // (업/다운그레이드) 플로우가 붙기 전까지 변경 버튼을 숨긴다.
-            val changePlanSupported = BuildConfig.FLAVOR == "dev"
-            if (option.key != "free" && !isCurrent && (!hasActiveSubscription || changePlanSupported)) {
+            // ⚠ **`BuildConfig.FLAVOR == "dev"` 게이트를 되살리지 말 것**(2026-08-11 제거).
+            // 그 게이트는 서버 주도 `/billing/change-plan`(스텁 결제 전용, 운영에서 항상 409)
+            // 때문에 있었다. 이제 전환은 **Play 결제 시트**가 처리하므로 운영에서도 동작한다 —
+            // 활성 구독이 있든 없든 같은 `onPurchase` 로 보낸다.
+            //
+            // 시점은 Play 가 정한다: 업그레이드는 즉시+비례정산, 다운그레이드는 다음 갱신일
+            // (`PlayBillingManager` 가 방향을 보고 교체 모드를 고른다). 그래서 우리가
+            // '지금/종료일' 을 묻는 모달을 두지 않는다 — `docs/spec/billing-lifecycle.md`.
+            if (option.key != "free" && !isCurrent) {
                 Button(
-                    onClick = if (hasActiveSubscription) onChange else onPurchase,
+                    onClick = onPurchase,
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
@@ -703,34 +693,6 @@ internal fun PlayStoreManageDialog(
     )
 }
 
-@Composable
-private fun ChangePlanDialog(
-    target: SubscriptionPlanOption,
-    onDismiss: () -> Unit,
-    onConfirm: (atPeriodEnd: Boolean) -> Unit,
-) {
-    // 선택지 2개 + 취소 = **3개라 세로로 쌓인다**(iOS UIAlertController 규칙).
-    IosAlertDialog(
-        title = stringResource(R.string.billing_change_plan_title, target.name),
-        message = stringResource(R.string.billing_change_plan_description),
-        onDismiss = onDismiss,
-        actions = listOf(
-            IosAlertAction(
-                label = stringResource(R.string.billing_change_now),
-                emphasized = true,
-                onClick = { onConfirm(false) },
-            ),
-            IosAlertAction(
-                label = stringResource(R.string.billing_change_at_end_date),
-                onClick = { onConfirm(true) },
-            ),
-            IosAlertAction(
-                label = stringResource(R.string.social_cancel_button),
-                onClick = onDismiss,
-            ),
-        ),
-    )
-}
 
 /**
  * 스토어에서 가격을 못 받았을 때 쓰는 **폴백 가격**.

@@ -71,11 +71,7 @@
     <string name="billing_cancel_immediate_title">今すぐ解約しますか？</string>
     <string name="billing_cancel_now">今すぐ解約</string>
     <string name="billing_cancel_pass">利用券を解約</string>
-    <string name="billing_change_at_end_date">終了日に変更</string>
-    <string name="billing_change_now">今すぐ変更</string>
     <string name="billing_change_pass">利用券を変更</string>
-    <string name="billing_change_plan_description">今すぐ変更すると、現在の利用券はすぐに終了し、新しい利用券が適用されます。終了日での変更は、現在の期間が終わった後に適用されます。</string>
-    <string name="billing_change_plan_title">%1$s利用券に変更</string>
     <string name="billing_close">閉じる</string>
     <string name="billing_current_pass_label">現在の利用券</string>
     <string name="billing_leave_button">抜ける</string>
@@ -375,19 +371,14 @@
     <string name="msg_gb_login_required_register_code">コードを登録するには、まずログインしてください</string>
     <string name="msg_gb_login_required_share_code_info">共有コード情報を読み込むには、まずログインしてください</string>
 
-    <string name="msg_gb_no_active_subscription_apply_new">現在適用中のプランがないため、新しいプランとして適用します。</string>
     <string name="msg_gb_payment_confirm_failed">決済の確認に失敗しました。</string>
     <string name="msg_gb_payment_confirm_failed_retry">決済の確認に失敗しました。しばらくしてからもう一度お試しください。</string>
     <string name="msg_gb_plan_applied">プランを適用しました。</string>
     <string name="msg_gb_plan_applied_named">%1$sプランを適用しました。</string>
     <string name="msg_gb_plan_apply_failed">プランの適用に失敗しました。</string>
-    <string name="msg_gb_plan_change_failed">プランの変更に失敗しました。</string>
-    <string name="msg_gb_plan_change_scheduled">プランの終了日に変更されるよう予約しました。</string>
-    <string name="msg_gb_plan_changed">プランを変更しました。</string>
     <string name="msg_gb_plan_label_couple">カップル</string>
     <string name="msg_gb_plan_label_family">ファミリー</string>
     <string name="msg_gb_plan_label_shared">共有</string>
-    <string name="msg_gb_same_plan_in_use">すでにご利用中のプランです。</string>
     <string name="msg_gb_share_code_info_load_failed">共有コード情報を読み込めませんでした</string>
     <string name="msg_gb_share_code_load_failed">%1$s共有コードを読み込めませんでした。</string>
     <string name="msg_gb_share_code_ready">%1$s共有コードを準備しました。</string>
