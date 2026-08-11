@@ -10,6 +10,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -221,44 +222,34 @@ internal fun SubscriptionPanel(
                     onPurchase = { purchaseTarget = option },
                     onChange = { changeTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
+                    extraAction = if (option.key == "personal") {
+                        @Composable { ->
+                            OutlinedButton(
+                                onClick = {
+                                    val activity = context.findActivity()
+                                    if (!billingBusy && activity != null) onGiftPersonal(activity)
+                                },
+                                enabled = !billingBusy,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = WakerButtonShape,
+                                border = wakerCardBorder(),
+                                colors = wakerOutlinedButtonColors(),
+                            ) {
+                                Text(stringResource(R.string.billing_gift_personal_action))
+                            }
+                        }
+                    } else {
+                        null
+                    },
                 )
             }
         }
 
         // 선물하기 — 개인 이용권 1개월을 **결제해서** 코드로 만든다.
         // ⚠ 무결제 발급이 아니다(서버가 production 에서 막는다). 1회성 인앱 상품을 산다.
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp),
-            shape = WakerPanelShape,
-            color = MaterialTheme.colorScheme.surface,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.billing_gift_personal_action),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                MutedText(stringResource(R.string.billing_gift_personal_desc))
-                OutlinedButton(
-                    onClick = {
-                        val activity = context.findActivity()
-                        if (!billingBusy && activity != null) onGiftPersonal(activity)
-                    },
-                    enabled = !billingBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.billing_gift_personal_action))
-                }
-            }
-        }
+        // ⚠ **'개인 이용권 선물하기' 를 별도 섹션으로 되돌리지 말 것**(2026-08-11 요청).
+        // 이제 **개인 플랜 카드 안**, 결제 버튼 바로 아래에 있다 — 무엇을 선물하는지가
+        // 카드 제목으로 자명해진다. 아이폰이 그렇게 돼 있다.
 
         // 코드 등록(선물 이용권·프로모션·초대)은 '전체' 탭 통합 입력에서만 받는다 — 이용권 화면 중복 제거.
 
@@ -463,6 +454,14 @@ internal fun SubscriptionPlanCard(
     onShareVouchers: () -> Unit,
     // 현재 플랜 카드에만 붙는 만료/전환 상태 한 줄 (예: "7월 20일까지 이용할 수 있어요").
     currentStatusText: String? = null,
+    /**
+     * 카드 안 결제 버튼 **아래**에 붙는 부가 액션(개인 이용권 선물하기).
+     *
+     * ⚠ **화면 아래 별도 섹션으로 되돌리지 말 것**(2026-08-11 요청). 선물은 '개인 이용권'
+     * 을 주는 일이라 그 카드 안에 있어야 무엇을 선물하는지가 자명하다 — 아래로 떼어 놓으면
+     * 어느 플랜을 선물하는지 제목을 읽어야 알 수 있었다. 아이폰이 그렇게 돼 있다.
+     */
+    extraAction: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     OutlinedCard(
         shape = WakerCardShape,
@@ -565,6 +564,9 @@ internal fun SubscriptionPlanCard(
                     )
                 }
             }
+            // 결제 버튼 **바로 아래** 부가 액션(개인 이용권 선물하기 등).
+            extraAction?.invoke(this)
+
             // 코드 공유는 '현재 이용권' 카드에서만 — 해지/강등 후 옛 코드가 남아 있어도
             // (서버가 만료 처리하지만 우회 데이터 방어) 무료 사용자에게 공유 버튼이 뜨지 않게.
             if (isCurrent && vouchers.isNotEmpty()) {

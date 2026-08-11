@@ -57,17 +57,12 @@ struct BillingPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            CurrentPassSummaryCard(
-                subscription: socialFeatures.subscription?.subscription,
-                currentPlan: socialFeatures.subscription?.plan,
-                nextPlan: socialFeatures.subscription?.nextPlan,
-                currentTier: currentTier,
-                isSharedMember: isSharedMember
-            )
-
-            Text("이용권 선택")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AlarmTalkTheme.text)
+            // ⚠ **상단 '현재 이용권' 요약 카드를 되살리지 말 것**(2026-08-11 요청).
+            // 플랜 카드가 이미 '현재 이용권' 배지로 지금 등급을 말하는데, 그 위에 흰 박스를
+            // 한 겹 더 두면 같은 사실을 두 번 말하면서 정작 고르는 카드들을 아래로 민다.
+            // 안드로이드에도 그 카드가 없다.
+            //
+            // ⚠ '이용권 선택' 머리말도 뺐다 — 화면 제목이 이미 '이용권' 이다.
 
             if subscriptions.isLoadingProducts && subscriptions.products.isEmpty {
                 // 첫 로딩 — 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 스켈레톤.

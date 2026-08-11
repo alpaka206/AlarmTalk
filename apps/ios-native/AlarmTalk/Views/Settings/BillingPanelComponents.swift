@@ -30,114 +30,6 @@ import UIKit
 
 // BillingPanel 에서 분리한 하위 카드/시트 컴포넌트. 동작/디자인 변경 없음.
 
-struct CurrentPassSummaryCard: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-    @EnvironmentObject private var subscriptions: SubscriptionManager
-    let subscription: BillingSubscription?
-    let currentPlan: BillingPlan?
-    let nextPlan: BillingPlanSummary?
-    let currentTier: PlanTier
-    let isSharedMember: Bool
-
-    var body: some View {
-        // Android `CurrentPassSummaryCard`(BillingPanels.kt:607-644): WakerCardShape(22)
-        // + primaryContainer.copy(alpha=0.36) + wakerCardBorder, 패딩 18 / 간격 16.
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("현재 이용권")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(theme.palette.onPrimaryContainer)
-                Text(planName)
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(theme.palette.onPrimaryContainer)
-            }
-
-            HStack(spacing: 8) {
-                PassSummaryChip(label: priceText)
-                PassSummaryChip(label: capacityText)
-            }
-
-            Text(statusText)
-                .font(.subheadline)
-                .foregroundStyle(theme.palette.onPrimaryContainer.opacity(0.78))
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-                .fill(theme.palette.primaryContainer.opacity(0.36))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
-        )
-    }
-
-    private var planKey: String {
-        currentPlan?.key ?? currentTier.apiKey
-    }
-
-    private var planName: String {
-        passPlanName(planKey: planKey, fallback: currentPlan?.name ?? currentTier.displayLabel)
-    }
-
-    private var statusText: String {
-        let expiresAt = formatPassDate(subscription?.expiresAt)
-        let cancelScheduled = subscription?.cancelAtPeriodEnd == true
-
-        if isSharedMember {
-            return "공유 이용권에 참여 중이에요."
-        }
-        if cancelScheduled, let nextPlan {
-            let nextName = passPlanName(planKey: nextPlan.key, fallback: nextPlan.name)
-            if let expiresAt {
-                return "\(expiresAt) 이후 \(nextName) 이용권으로 변경돼요."
-            }
-            return "\(nextName) 이용권으로 변경 예정이에요."
-        }
-        if cancelScheduled {
-            if let expiresAt {
-                return "\(expiresAt)까지 사용 후 종료돼요."
-            }
-            return "현재 이용권이 종료 예정이에요."
-        }
-        if subscription != nil, let expiresAt {
-            return "\(expiresAt)까지 사용할 수 있어요."
-        }
-        if subscription != nil {
-            return "사용 중인 이용권이에요."
-        }
-        return "기본 알람은 무료로 사용할 수 있어요."
-    }
-
-    /// ⚠ **가격의 권위는 App Store 다 — DB `price_krw` 를 쓰지 말 것.**
-    /// 플랜 카드는 이미 `Product.displayPrice` 를 쓰는데 이 요약 카드만 DB 값을 써서,
-    /// 같은 화면 안에서 **두 가격이 다르게 보일 수 있었다**(스토어에서 가격을 바꾸거나
-    /// 프로모션을 걸면, 그리고 한국 밖 사용자에게는 통화부터 틀렸다).
-    /// StoreKit 이 지역 통화·세금까지 반영한 문자열을 준다.
-    ///
-    /// 상품을 아직 못 받았으면 **숫자를 지어내지 않는다** — 모를 땐 결제 수단만 말한다.
-    private var priceText: String {
-        if currentTier == .free { return "0원" }
-        if let productID = SubscriptionProduct.make(tier: currentTier)?.rawValue,
-           let product = subscriptions.products.first(where: { $0.id == productID }) {
-            return "월 \(product.displayPrice)"
-        }
-        // 스토어 가격을 못 받았을 때만 폴백을 쓴다(위 `FallbackPlanPrice` 주석 참조).
-        if let fallback = FallbackPlanPrice.label(for: currentTier) {
-            return "월 \(fallback)"
-        }
-        return "App Store 결제"
-    }
-
-    private var capacityText: String {
-        guard let maxMembers = currentPlan?.maxMembers, maxMembers > 1 else {
-            return "개인 사용"
-        }
-        return "최대 \(maxMembers)명"
-    }
-}
-
 struct PassSummaryChip: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let label: String
@@ -230,6 +122,17 @@ struct PlanCard: View {
     let onGiftPersonal: () -> Void
     let onShareVouchers: () -> Void
 
+    /// 카드에 보여줄 가격. 스토어 값이 있으면 그걸, 없으면 폴백을 쓴다.
+    /// 무료는 상품이 아니라 그냥 0원이다.
+    private var priceLabel: String? {
+        if tier == .free { return "0원" }
+        if let productID = SubscriptionProduct.make(tier: tier)?.rawValue,
+           let product = subscriptions.products.first(where: { $0.id == productID }) {
+            return "월 \(product.displayPrice)"
+        }
+        return FallbackPlanPrice.label(for: tier).map { "월 \($0)" }
+    }
+
     var body: some View {
         // Android `SubscriptionPlanCard`(`ui/billing/BillingPanels.kt`): WakerCardShape(22),
         // 현재 플랜이면 primaryContainer@0.44 / primary@0.48 보더, 아니면 surface /
@@ -250,11 +153,17 @@ struct PlanCard: View {
                 }
             }
 
-            Text(Self.description(for: tier))
-                .font(.footnote)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .multilineTextAlignment(.leading)
+            // ⚠ **한 줄 설명(`description(for:)`)을 되살리지 말 것**(2026-08-11 요청).
+            // 아래 기능 불릿이 같은 말을 더 구체적으로 하고 있었다 — 안드로이드에도 없다.
+
+            // 가격은 **플랜 이름 바로 아래**다(안드로이드와 같은 자리). 버튼에 넣으면
+            // 액션 라벨과 가격이 한 덩어리가 되어 무엇을 누르는지 흐려진다.
+            if let priceLabel = priceLabel {
+                Text(priceLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(theme.palette.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 // `LocalizedStringKey` 는 Hashable 이 아니라 `id: \.self` 를 못 쓴다.
@@ -264,11 +173,7 @@ struct PlanCard: View {
                 }
             }
 
-            if tier == .free {
-                Text("₩0")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(theme.palette.onSurface)
-            } else {
+            if tier != .free {
                 purchaseButtons
             }
 
@@ -319,7 +224,7 @@ struct PlanCard: View {
 
     @ViewBuilder
     private func priceButton(for plan: SubscriptionProduct, periodLabel: String) -> some View {
-        if let product = subscriptions.product(for: plan) {
+        if subscriptions.product(for: plan) != nil {
             Button {
                 onPurchase(plan)
             } label: {
@@ -330,10 +235,11 @@ struct PlanCard: View {
                             .controlSize(.small)
                             .tint(theme.palette.onPrimary)
                     } else {
-                        Text(product.displayPrice)
+                        // ⚠ **버튼에 가격을 넣지 말 것**(2026-08-11 요청). 가격은 카드 위쪽
+                        // 제 자리에 있고, 버튼은 **무엇을 하는지**만 말한다 — 안드로이드도
+                        // '이용권 변경' 처럼 액션 라벨만 둔다.
+                        Text(isCurrent ? "사용 중" : "결제하기")
                             .font(.subheadline.weight(.semibold))
-                        Text("/ \(periodLabel)")
-                            .font(.caption2)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -352,23 +258,17 @@ struct PlanCard: View {
                 .frame(height: 40)
                 .overlay(ProgressView().controlSize(.small))
                 .accessibilityLabel("가격 불러오는 중")
-        } else if let fallback = FallbackPlanPrice.label(for: tier) {
+        } else {
             // ⚠ **"준비중" 같은 말을 지어내지 말 것.** 가격은 **스토어가 권위**라 못 받아
             // 올 수 있는데(시뮬레이터·미출시 트랙 등), 그때 "준비중" 이라고 쓰면 우리가
             // 상품 상태를 단정하는 셈이다 — 대개는 상품이 멀쩡하고 조회만 실패한 것이다.
-            //
-            // 대신 **폴백 가격**을 보여 준다(2026-08-11 결정, 안드로이드와 같은 규칙).
-            // 값이 비어 카드가 휑해 보이는 것도, 없는 상태를 단정하는 것도 피한다.
+            // 가격은 카드 위쪽이 폴백으로 이미 말하고 있다.
             // 누르면 결제로는 못 가므로 **비활성**이다 — 살 수 없다는 사실은 그대로 전한다.
             Button {
                 // no-op — 상품을 못 받았으니 결제로 갈 수 없다.
             } label: {
-                VStack(spacing: 2) {
-                    Text(fallback)
-                        .font(.subheadline.weight(.semibold))
-                    Text("/ \(periodLabel)")
-                        .font(.caption2)
-                }
+                Text("결제하기")
+                    .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
             }
@@ -377,14 +277,6 @@ struct PlanCard: View {
         }
     }
 
-    private static func description(for tier: PlanTier) -> String {
-        switch tier {
-        case .free:     return "기본 알람과 무료 목소리 한 슬롯"
-        case .personal: return "내 목소리 만들기, 광고 제거, 개인 이용권 선물"
-        case .couple:   return "두 사람의 알람과 메시지 공유"
-        case .family:   return "최대 5인 가족 공유 알람"
-        }
-    }
 
     /// 플랜별 기능 불릿. 안드로이드 `ui/billing/BillingPanels.kt` 의
     /// `billing_plan_*_feature_*` 문자열과 **글자까지 같아야 한다.**
