@@ -77,7 +77,7 @@
     <string name="billing_leave_button">抜ける</string>
     <string name="billing_leave_shared_pass">共有利用券から抜ける</string>
     <string name="billing_leave_shared_pass_description">抜けると無料利用券に切り替わります。再び参加するには新しい招待コードが必要です。</string>
-    <string name="billing_monthly_subscription">Google Playで購読する</string>
+    <string name="billing_monthly_subscription">購読する</string>
     <string name="billing_plan_couple_feature_max_two">2人で一緒に利用</string>
     <string name="billing_plan_couple_feature_message">相手のアラーム設定</string>
     <string name="billing_plan_couple_feature_voice_share">お互いの声を共有</string>
@@ -100,6 +100,10 @@
     <string name="billing_play_purchase_description_no_price">%1$s は Google Play で安全にお支払いいただけます。価格は決済画面で確認でき、いつでも解約できます。解約しても残りの期間はそのままご利用いただけます。</string>
     <string name="billing_play_purchase_description">%1$s利用券は%2$sです。Google Playで安全に決済され、いつでも解約できます。解約しても残りの期間はそのまま利用できます。</string>
     <string name="billing_play_purchase_title">%1$s利用券を始めますか？</string>
+    <string name="billing_play_change_seats_warning">一緒に使える人数が減るため、定員を超えるメンバーはグループから外れます。</string>
+    <string name="billing_play_change_downgrade">今は課金されません。現在の利用券を期間の最後まで使い、次回の更新日に%1$s利用券へ変わります。</string>
+    <string name="billing_play_change_upgrade">今すぐ%1$s利用券に切り替わります。残りの期間は新しい利用券の基準で換算されます。</string>
+    <string name="billing_play_change_title">%1$s利用券に変えますか？</string>
     <string name="code_redeem_placeholder">招待・ギフト・プロモコード</string>
     <string name="code_redeem_submit">登録</string>
     <string name="billing_select_button">購読を始める</string>

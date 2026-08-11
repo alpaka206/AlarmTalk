@@ -71,7 +71,7 @@
     <string name="billing_gift_failed">선물 코드를 만들지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="billing_cancel_immediate_description">남은 기간 요금은 비례 환불되고 이용권이 바로 종료돼요. 목소리는 3일간 보관돼요 — 그 안에 다시 이용권을 등록하면 그대로 다시 쓸 수 있고, 지나면 영구 삭제돼요.</string>
     <string name="billing_cancel_immediate_title">지금 바로 해지할까요?</string>
-    <string name="billing_cancel_now">지금 해지하기</string>
+    <string name="billing_cancel_now">지금 해지</string>
     <string name="billing_cancel_pass">이용권 해지</string>
     <string name="billing_change_pass">이용권 변경</string>
     <string name="billing_close">닫기</string>
@@ -79,7 +79,8 @@
     <string name="billing_leave_button">나가기</string>
     <string name="billing_leave_shared_pass">공유 이용권에서 나가기</string>
     <string name="billing_leave_shared_pass_description">나가면 무료 이용권으로 전환돼요. 다시 들어오려면 새 초대 코드가 필요해요.</string>
-    <string name="billing_monthly_subscription">Google Play로 구독하기</string>
+    <!-- 알럿 액션은 짧게. 어디로 결제되는지는 본문이 이미 말한다(iOS 도 "결제하기" 하나다). -->
+    <string name="billing_monthly_subscription">결제하기</string>
     <string name="billing_plan_couple_feature_max_two">2명이 함께 사용</string>
     <string name="billing_plan_couple_feature_message">상대 알람 맞춰주기</string>
     <string name="billing_plan_couple_feature_voice_share">서로의 목소리 공유</string>
@@ -102,6 +103,14 @@
     <string name="billing_play_purchase_description_no_price">%1$s 이용권을 Google Play로 안전하게 결제해요. 가격은 결제 화면에서 확인할 수 있고, 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.</string>
     <string name="billing_play_purchase_description">%1$s 이용권은 %2$s이에요. Google Play로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요.</string>
     <string name="billing_play_purchase_title">%1$s 이용권을 시작할까요?</string>
+    <!-- 이미 이용권이 있는 사람이 다른 걸 고른 것 = 전환. "시작" 이라고 하면 안 된다. -->
+    <string name="billing_play_change_title">%1$s 이용권으로 바꿀까요?</string>
+    <!-- 시점은 Play 가 정한다(업그레이드 즉시+비례정산 / 다운그레이드 다음 갱신일).
+         우리가 고르게 하지 않는 대신 **무엇이 언제 일어나는지는 반드시 말한다.** -->
+    <string name="billing_play_change_upgrade">지금 바로 %1$s 이용권으로 바뀌어요. 남은 기간은 새 이용권 기준으로 환산돼요.</string>
+    <string name="billing_play_change_downgrade">지금은 결제되지 않아요. 지금 이용권을 기간 끝까지 쓰고, 다음 갱신일에 %1$s 이용권으로 바뀌어요.</string>
+    <!-- 정원이 줄어드는 전환은 사람이 빠진다 — 사는 순간이 아니라 **누르기 전에** 말한다. -->
+    <string name="billing_play_change_seats_warning">함께 쓰는 인원이 줄어서, 정원을 넘는 멤버는 그룹에서 나가게 돼요.</string>
     <string name="code_redeem_placeholder">초대·선물·프로모션 코드</string>
     <string name="code_redeem_submit">등록</string>
     <string name="billing_select_button">구독 시작하기</string>

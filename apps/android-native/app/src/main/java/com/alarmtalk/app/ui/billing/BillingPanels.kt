@@ -295,6 +295,8 @@ internal fun SubscriptionPanel(
     purchaseTarget?.let { option ->
         PlayPurchaseDialog(
             target = option,
+            // 이미 이용권이 있으면 이건 '시작' 이 아니라 '전환' 이다.
+            currentPlanKey = currentPlan?.key.takeIf { hasActive },
             busy = billingBusy,
             onDismiss = { purchaseTarget = null },
             onPurchase = {
@@ -385,20 +387,53 @@ internal fun SubscriptionPanel(
 @Composable
 private fun PlayPurchaseDialog(
     target: SubscriptionPlanOption,
+    /** 지금 쓰고 있는 유료 플랜 key. null 이면 신규 구매다. */
+    currentPlanKey: String?,
     busy: Boolean,
     onDismiss: () -> Unit,
     onPurchase: () -> Unit,
 ) {
+    // ⚠ **전환을 '시작' 이라고 말하지 말 것.** 카드 버튼은 '이용권 변경' 인데 모달은
+    // "…이용권을 시작할까요?" 였다(2026-08-11 실기기 확인). 게다가 **언제 바뀌는지**를
+    // 한마디도 안 했다 — 다운그레이드는 지금 과금되지 않고 다음 갱신일에 바뀌는데,
+    // 그걸 모르면 누르고 나서 "아무 일도 안 일어난다" 로 읽는다.
+    // 시점은 Play 가 정하므로 우리가 **고르게 하지는 않되, 알려는 준다**.
+    val isChange = currentPlanKey != null && currentPlanKey != target.key
+    val upgrade = isChange && PlayBillingProducts.isUpgrade(
+        PlayBillingProducts.productIdFor(currentPlanKey!!) ?: "",
+        PlayBillingProducts.productIdFor(target.key) ?: "",
+    )
+    // 정원이 줄면 사람이 빠진다 — 누르기 전에 말해야 되돌릴 기회가 있다.
+    val losesSeats = isChange && !upgrade && planSeats(target.key) < planSeats(currentPlanKey!!)
+
     IosAlertDialog(
-        title = stringResource(R.string.billing_play_purchase_title, target.name),
+        title = if (isChange) {
+            stringResource(R.string.billing_play_change_title, target.name)
+        } else {
+            stringResource(R.string.billing_play_purchase_title, target.name)
+        },
         // ⚠ 가격은 스토어가 권위라 **없을 수도 있다**(Play 조회 실패·미출시 상품).
         // 그때 가격 자리에 빈 문자열을 끼우면 "개인 이용권은 이에요." 가 된다 —
         // 숫자를 모를 땐 가격을 말하지 않는 문장을 쓴다. 실제 금액은 Play 결제
         // 시트가 어차피 다시 보여준다.
-        message = if (target.price.isBlank()) {
-            stringResource(R.string.billing_play_purchase_description_no_price, target.name)
-        } else {
-            stringResource(R.string.billing_play_purchase_description, target.name, target.price)
+        message = when {
+            isChange -> buildString {
+                append(
+                    stringResource(
+                        if (upgrade) R.string.billing_play_change_upgrade
+                        else R.string.billing_play_change_downgrade,
+                        target.name,
+                    ),
+                )
+                if (losesSeats) {
+                    append(" ")
+                    append(stringResource(R.string.billing_play_change_seats_warning))
+                }
+            }
+            target.price.isBlank() ->
+                stringResource(R.string.billing_play_purchase_description_no_price, target.name)
+            else ->
+                stringResource(R.string.billing_play_purchase_description, target.name, target.price)
         },
         onDismiss = onDismiss,
         actions = listOf(
@@ -415,6 +450,16 @@ private fun PlayPurchaseDialog(
             ),
         ),
     )
+}
+
+/**
+ * 그 플랜이 **함께 쓸 수 있는 인원**. 백엔드 `plans.max_members` 와 같은 값이다.
+ * 정원이 줄어드는 전환인지 판단하는 데만 쓴다.
+ */
+private fun planSeats(planKey: String): Int = when (planKey) {
+    "family" -> 5
+    "couple" -> 2
+    else -> 1
 }
 
 /** Compose Context 에서 결제 시트 호출에 필요한 Activity 를 찾는다. */

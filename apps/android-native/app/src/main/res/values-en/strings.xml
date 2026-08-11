@@ -77,7 +77,7 @@
     <string name="billing_leave_button">Leave</string>
     <string name="billing_leave_shared_pass">Leave shared pass</string>
     <string name="billing_leave_shared_pass_description">If you leave, you\'ll switch to the free pass. You\'ll need a new invite code to rejoin.</string>
-    <string name="billing_monthly_subscription">Subscribe with Google Play</string>
+    <string name="billing_monthly_subscription">Subscribe</string>
     <string name="billing_plan_couple_feature_max_two">For 2 people together</string>
     <string name="billing_plan_couple_feature_message">Set your partner\'s alarm</string>
     <string name="billing_plan_couple_feature_voice_share">Share each other\'s voices</string>
@@ -100,6 +100,10 @@
     <string name="billing_play_purchase_description_no_price">%1$s is purchased securely through Google Play. You can check the price on the payment screen and cancel anytime — you keep access for the rest of the period.</string>
     <string name="billing_play_purchase_description">The %1$s pass is %2$s. Payment is handled securely by Google Play, and you can cancel anytime. You\'ll keep access for the time you\'ve paid for.</string>
     <string name="billing_play_purchase_title">Start the %1$s pass?</string>
+    <string name="billing_play_change_seats_warning">Fewer people can share this pass, so members over the limit will leave the group.</string>
+    <string name="billing_play_change_downgrade">You are not charged now. You keep your current pass until it ends, then it switches to the %1$s pass at the next renewal.</string>
+    <string name="billing_play_change_upgrade">You switch to the %1$s pass right away. Your remaining time is prorated at the new rate.</string>
+    <string name="billing_play_change_title">Switch to the %1$s pass?</string>
     <string name="code_redeem_placeholder">Invite, gift, or promo code</string>
     <string name="code_redeem_submit">Redeem</string>
     <string name="billing_select_button">Start subscription</string>
