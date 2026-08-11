@@ -192,6 +192,7 @@
 		AB8A9EB691B9DE89974FA8FF /* CodeRegistrationErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4184659F9F09362DAA337E35 /* CodeRegistrationErrorTests.swift */; };
 		AC2D607D698A02FF2BE124A1 /* AlarmLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 715631AD8DB550734A8E0C0E /* AlarmLiveActivity.swift */; };
 		AE0095879E13A110AF20B521 /* SocialNotificationTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A2D4893E2A513F69B59F66 /* SocialNotificationTracker.swift */; };
+		AE3A84A0F4DE15D657B8FEDB /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 113301E9251EE3A26158F72C /* Sentry */; };
 		AF6A6C53BDDC3906B5EBDEBD /* TimeWheelFlingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378F22445FC4E2D5C2F90CB4 /* TimeWheelFlingUITests.swift */; };
 		B12C38F17D8F80C34124BD88 /* ReceivedAlarmBadgeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F53865164F0DA5BE67D28848 /* ReceivedAlarmBadgeStore.swift */; };
 		B4954AC283CF2071193F7968 /* WeatherCityPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCBE050A812B1435387D4C5F /* WeatherCityPickerSheet.swift */; };
@@ -231,6 +232,7 @@
 		E6A1A9B80790C9D77AF34DAD /* VoiceStudioViewModel+ErrorMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9641A64BF7F32B31E960BA67 /* VoiceStudioViewModel+ErrorMapping.swift */; };
 		E7FB88E991B46CC232EDB8ED /* voice_greeting_soeun_ja.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 708BA77A5FC721F1C50268EB /* voice_greeting_soeun_ja.mp3 */; };
 		E94CC690A94BFFFF3999081A /* PaidVoiceGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECF3BDC0CB41DDC6B8481013 /* PaidVoiceGate.swift */; };
+		E9B694855B3A0A9032562EE6 /* AlarmTalkLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CC3F5280A9149E6AE3F2ACA /* AlarmTalkLog.swift */; };
 		E9B7002071739EC7C12B0CFE /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 815C67F5CF2B0B4499090916 /* VoiceRecorder.swift */; };
 		E9D0A56D014F3AC328D685D6 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88E875D85BBF8CD8FDCC8D4B /* MenuView.swift */; };
 		E9DA4C9C3F2A27761DEA405C /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 993F13DD98269244F828B44E /* AppSettings.swift */; };
@@ -246,6 +248,7 @@
 		F4592AC12059D8F4652C2BD7 /* VoiceShareAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD88376E4686A1C79C01C265 /* VoiceShareAccessTests.swift */; };
 		F4ADF93D76B2C3B51808668A /* PreviewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB37514CB12D62CC34E1E0F3 /* PreviewSupport.swift */; };
 		FA829EC15BA5EEA61B8977DF /* VoicePreviewConfirmView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F34DCC0A471726BA780305A8 /* VoicePreviewConfirmView.swift */; };
+		FA9B722109464AA4DE0FBE8F /* license_mit.txt in Resources */ = {isa = PBXBuildFile; fileRef = 5959914AF1770BDECFF5C1F6 /* license_mit.txt */; };
 		FDE7F606F313F39BE459D19D /* AccessSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE78632AE30E18FFA63B74D /* AccessSnapshotStore.swift */; };
 		FDF7FCD6E8BA38D1DCD2F161 /* AlarmsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A7EBDD70C5FB802C400559B /* AlarmsListView.swift */; };
 		FE2B275819243CE8B5EE7AC1 /* StringExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BFC93E56F33A4EC79AB6F5C /* StringExtensions.swift */; };
@@ -389,6 +392,7 @@
 		55E5623528256133099D7F48 /* StockClipPrefetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StockClipPrefetcher.swift; sourceTree = "<group>"; };
 		566AA8670AC11EF2C70548C8 /* pretendard_regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = pretendard_regular.otf; sourceTree = "<group>"; };
 		583FF694DDB298FD88A6CD93 /* AlarmEditorSheet+AlarmModeSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AlarmEditorSheet+AlarmModeSection.swift"; sourceTree = "<group>"; };
+		5959914AF1770BDECFF5C1F6 /* license_mit.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = license_mit.txt; sourceTree = "<group>"; };
 		59FFCC8AFC12D1CB8AD6A44F /* AlarmTimeCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTimeCalculatorTests.swift; sourceTree = "<group>"; };
 		5A12157E5D422109667286EC /* TimeWheelPickerLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelPickerLogicTests.swift; sourceTree = "<group>"; };
 		5AEC8A234A39D4E7AAFC0F82 /* KoreanLunarHolidayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoreanLunarHolidayEngine.swift; sourceTree = "<group>"; };
@@ -437,6 +441,7 @@
 		88E875D85BBF8CD8FDCC8D4B /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		8A1415DAB86286CDD5AB4219 /* AuthUserDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthUserDecodingTests.swift; sourceTree = "<group>"; };
 		8A278280437D8CE9D87E6E41 /* AlarmEditorComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditorComponents.swift; sourceTree = "<group>"; };
+		8CC3F5280A9149E6AE3F2ACA /* AlarmTalkLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkLog.swift; sourceTree = "<group>"; };
 		8E25753B97B6CFEAA8E709FB /* VoiceSegmentPreviewPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSegmentPreviewPlayer.swift; sourceTree = "<group>"; };
 		8E3D0092573DFD5413095F8F /* AudioCropper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCropper.swift; sourceTree = "<group>"; };
 		8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunctionalE2EUITests.swift; sourceTree = "<group>"; };
@@ -545,6 +550,17 @@
 		FEBAA873DFD96871D86C066E /* AlarmKitViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmKitViewModel.swift; sourceTree = "<group>"; };
 		FED5C5FC2F31030D968F1A3B /* VoiceConsentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceConsentSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		8EB8CF922595BE1685856442 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AE3A84A0F4DE15D657B8FEDB /* Sentry in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		044280B0A2CEF9109FFBBDDD = {
@@ -871,6 +887,7 @@
 		D7219620F6AA373FB36C235B /* Licenses */ = {
 			isa = PBXGroup;
 			children = (
+				5959914AF1770BDECFF5C1F6 /* license_mit.txt */,
 				1E4779B9B3184263A018270C /* license_ofl_1_1.txt */,
 			);
 			path = Licenses;
@@ -946,6 +963,7 @@
 				64309C1B0B71EE457BAFB65C /* AlarmTalkAPI.swift */,
 				9FAA02E16F860ED36A858566 /* AlarmTalkAPIModels.swift */,
 				C147826DE6871E7FF9B5563D /* AlarmTalkApp.swift */,
+				8CC3F5280A9149E6AE3F2ACA /* AlarmTalkLog.swift */,
 				52A22132409AC4AE4AB65E3B /* AlarmTalkPalette.swift */,
 				07AE96180817F4A2A28B5ED4 /* AlarmTalkShapes.swift */,
 				0DA0DFFC6243F7340FEE4E83 /* AlarmTalkSpacing.swift */,
@@ -1047,6 +1065,7 @@
 				7BD11E502740A804FBA5C93B /* Generate LegalPolicyVersion.swift */,
 				6F6005E66300391CE2B797E6 /* Sources */,
 				A41515E9EB83B79A8C09A545 /* Resources */,
+				8EB8CF922595BE1685856442 /* Frameworks */,
 				E39FA08B34A03720EB397114 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
@@ -1056,6 +1075,7 @@
 			);
 			name = AlarmTalk;
 			packageProductDependencies = (
+				113301E9251EE3A26158F72C /* Sentry */,
 			);
 			productName = AlarmTalk;
 			productReference = DCB68718409EED0E6D7B5440 /* AlarmTalk.app */;
@@ -1131,6 +1151,9 @@
 			);
 			mainGroup = 044280B0A2CEF9109FFBBDDD;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C926258EE80C50446452EE5A /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 55BF668CB7AEA9502D9F327C /* Products */;
 			projectDirPath = "";
@@ -1154,6 +1177,7 @@
 				A031DEE871E1440456148FCA /* Localizable.xcstrings in Resources */,
 				50E4087A937F896B623AD8E8 /* StoreKitConfiguration.storekit in Resources */,
 				EF1D0CE3AC0618259C209E96 /* landing_voice_preview.mp3 in Resources */,
+				FA9B722109464AA4DE0FBE8F /* license_mit.txt in Resources */,
 				48F7AD578B49FDD7234B4E98 /* license_ofl_1_1.txt in Resources */,
 				39A7D17C9DF3C10D3D61B1AE /* pretendard_bold.otf in Resources */,
 				C6D9D903A1464A0F1120DD84 /* pretendard_medium.otf in Resources */,
@@ -1245,6 +1269,7 @@
 				7BCA1560C3D2E94AF7130A58 /* AlarmTalkApp.swift in Sources */,
 				211DD3BCAC0CE23AD3436301 /* AlarmTalkBrand.swift in Sources */,
 				05D19CA98ED9856DDDCAFD2E /* AlarmTalkFieldStyle.swift in Sources */,
+				E9B694855B3A0A9032562EE6 /* AlarmTalkLog.swift in Sources */,
 				7638CB240847562DCB768E5F /* AlarmTalkMetadata.swift in Sources */,
 				63953880A52D27B707DAD2CF /* AlarmTalkPalette.swift in Sources */,
 				75A5F309003D743578C5B318 /* AlarmTalkShapes.swift in Sources */,
@@ -1567,6 +1592,8 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
 				VOICE_ALARM_API_BASE_URL = "https://api.alarm-talk.com/api";
+				VOICE_ALARM_SENTRY_DSN = "$(VOICE_ALARM_SENTRY_DSN)";
+				VOICE_ALARM_SENTRY_ENVIRONMENT = production;
 			};
 			name = Release;
 		};
@@ -1721,6 +1748,8 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 				VOICE_ALARM_API_BASE_URL = "https://api-dev.alarm-talk.com/api";
+				VOICE_ALARM_SENTRY_DSN = "$(VOICE_ALARM_SENTRY_DSN)";
+				VOICE_ALARM_SENTRY_ENVIRONMENT = development;
 			};
 			name = Debug;
 		};
@@ -1793,6 +1822,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C926258EE80C50446452EE5A /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		113301E9251EE3A26158F72C /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C926258EE80C50446452EE5A /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D12DCF0AF6D03CFD3757DA72 /* Project object */;
 }

@@ -11,9 +11,22 @@ options:
 configurations:
   Debug: debug
   Release: release
+# ⚠ **이 리포의 첫 서드파티 의존성이다.** 안드로이드는 `io.sentry:sentry-android-core` 로
+# 크래시를 수집하는데 iOS 는 아무것도 없어, 출시하면 아이폰 크래시를 볼 방법이
+# App Store Connect 집계뿐이었다(2026-08-11 추가).
+# 추가할 때 **오픈소스 고지 목록도 함께 갱신한다** — `Views/Settings/OssLicensesView.swift`.
+packages:
+  Sentry:
+    url: https://github.com/getsentry/sentry-cocoa
+    from: "8.0.0"
 settings:
   base:
     SWIFT_VERSION: "6.0"
+    # ⚠ **DSN 을 여기 적지 말 것 — 이 리포는 공개다.** 안드로이드가 gradle property
+    # (`alarmTalkDevSentryDsn`, 커밋 안 함)로 받는 것과 같은 자리다. 빌드할 때
+    # `xcodebuild ... VOICE_ALARM_SENTRY_DSN=https://…` 로 넣거나 gitignore 된
+    # xcconfig 에 둔다. **비어 있으면 Sentry 는 그냥 꺼진다**(안드로이드도 같다).
+    VOICE_ALARM_SENTRY_DSN: "$(VOICE_ALARM_SENTRY_DSN)"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     # DEVELOPMENT_TEAM must be set per-developer via xcconfig or Xcode UI.
@@ -29,11 +42,14 @@ settings:
       # (build.gradle.kts 의 alarmTalkDevApiBaseUrl). 예전에는 Info.plist 에 prod URL 이
       # 박혀 있어서 **개발 중에 prod 를 때리고 있었다** — prod 에는 베타 테스터 실데이터가 있다.
       VOICE_ALARM_API_BASE_URL: "https://api-dev.alarm-talk.com/api"
+      # 안드로이드 dev flavor 의 `VOICE_ALARM_SENTRY_ENVIRONMENT` 와 같은 값.
+      VOICE_ALARM_SENTRY_ENVIRONMENT: "development"
     Release:
       SWIFT_OPTIMIZATION_LEVEL: "-O"
       GCC_OPTIMIZATION_LEVEL: "s"
       ONLY_ACTIVE_ARCH: NO
       VOICE_ALARM_API_BASE_URL: "https://api.alarm-talk.com/api"
+      VOICE_ALARM_SENTRY_ENVIRONMENT: "production"
 targets:
   AlarmTalk:
     type: application
@@ -60,6 +76,8 @@ targets:
     dependencies:
       - target: AlarmTalkWidget
         embed: true
+      - package: Sentry
+        product: Sentry
     # 법무 문서(docs/legal)의 '정책 버전' 을 Swift 상수로 뽑는다. 안드로이드가
     # app/build.gradle.kts:101 에서 하는 것과 같다 — 손으로 관리하면 서버와 어긋나는
     # 순간 동의 기록이 전부 409 로 거부된다. 두 문서 버전이 다르면 빌드를 세운다.

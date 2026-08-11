@@ -32,6 +32,10 @@
   <true/>
   <key>VOICE_ALARM_API_BASE_URL</key>
   <string>$(VOICE_ALARM_API_BASE_URL)</string>
+  <key>VOICE_ALARM_SENTRY_DSN</key>
+  <string>$(VOICE_ALARM_SENTRY_DSN)</string>
+  <key>VOICE_ALARM_SENTRY_ENVIRONMENT</key>
+  <string>$(VOICE_ALARM_SENTRY_ENVIRONMENT)</string>
   <key>UIApplicationSceneManifest</key>
   <dict>
     <key>UIApplicationSupportsMultipleScenes</key>

@@ -67,6 +67,38 @@ The app reads `VOICE_ALARM_API_BASE_URL` from `AlarmTalk/Info.plist`. The defaul
 https://api.alarm-talk.com/api
 ```
 
+## 크래시 리포팅 (Sentry)
+
+안드로이드(`io.sentry:sentry-android-core`)와 짝을 맞춰 2026-08-11 에 붙였다.
+이 리포의 **유일한 서드파티 의존성**이다(SPM, `getsentry/sentry-cocoa`).
+
+⚠ **DSN 은 커밋하지 않는다 — 이 리포는 공개다.** 안드로이드가 gradle property
+(`alarmTalkDevSentryDsn`)로 받는 것과 같은 자리이고, iOS 는 빌드 설정
+`VOICE_ALARM_SENTRY_DSN` 으로 받는다(`DEVELOPMENT_TEAM` 과 같은 방식).
+
+```bash
+# 명령줄로 주입
+xcodebuild ... VOICE_ALARM_SENTRY_DSN='https://<key>@<org>.ingest.sentry.io/<project>'
+
+# 또는 gitignore 된 xcconfig 에 한 줄
+VOICE_ALARM_SENTRY_DSN = https://<key>@<org>.ingest.sentry.io/<project>
+```
+
+**비어 있으면 Sentry 는 그냥 꺼진다**(안드로이드도 같다) — 로그에
+`Sentry disabled; DSN is not configured` 만 남고 앱은 정상 동작한다. 그래서 DSN 없이
+빌드해도 아무 문제가 없고, DSN 이 붙기 전까지는 **크래시가 수집되지 않는다**는 뜻이기도 하다.
+
+환경 이름은 configuration 이 정한다: Debug → `development`, Release → `production`
+(안드로이드 dev/prod flavor 와 같다).
+
+- 초기화: `AlarmTalk/AlarmTalkLog.swift` 의 `startCrashReporting()`.
+  호출 지점은 `PushAppDelegate.application(_:didFinishLaunchingWithOptions:)` — 앱에서
+  가장 이른 훅이다(더 늦게 켜면 실행 직후 크래시를 놓친다).
+- 비크래시 오류 보고: `AlarmTalkLog.reportError(_:error:)`.
+- ⚠ **Sentry 로 나가는 문자열은 전부 마스킹을 거친다**(`redactUserURIs`).
+  `sendDefaultPii = false` 로도 못 막는 경로가 있다 — 플랫폼 예외 메시지에는 사용자가
+  고른 파일의 전체 경로가 들어가고 그게 예외 value 로 그대로 전송된다.
+
 ## Backend Requirements
 
 - Apply migration `35_apple-login-users`.

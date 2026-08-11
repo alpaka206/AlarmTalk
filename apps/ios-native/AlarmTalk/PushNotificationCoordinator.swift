@@ -118,6 +118,20 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
     /// 세션은 델리게이트가 직접 못 보므로 앱이 최신 값을 여기 넣어 준다.
     static var currentSession: (() -> AuthSession?)?
 
+    /// ⚠ **크래시 리포팅은 여기서 켠다 — 앱에서 가장 이른 훅이다.**
+    /// 더 늦게(예: 첫 화면의 `.task`) 켜면 그전에 난 크래시를 못 잡는데, 실행 직후
+    /// 크래시야말로 제일 봐야 할 것이다. 안드로이드도 `Application.onCreate` 에서 켠다.
+    func application(
+        _ application: UIApplication,
+        // ⚠ **기본값(`= nil`)을 붙이지 말 것.** 붙여도 컴파일은 되지만 프로토콜 요구사항과
+        // 정확히 같은 시그니처가 아니게 될 소지가 있어, 안 불리면 **크래시 리포팅이 조용히
+        // 꺼진다** — 안 켜진 걸 알아챌 방법이 없는 종류의 실패다.
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        AlarmTalkLog.startCrashReporting()
+        return true
+    }
+
     func application(
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
