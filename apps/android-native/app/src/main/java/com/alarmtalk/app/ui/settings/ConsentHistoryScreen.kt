@@ -74,22 +74,26 @@ internal fun ConsentHistoryScreen(
     // 선택 동의(마케팅) 토글은 서버 최신값을 별도로 읽어 두 방향 반영한다(쓰기 시 낙관·롤백은 뷰모델이 관리).
     LaunchedEffect(Unit) { onLoadMarketingConsent() }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            // 탭·설정과 같은 그라데이션 배경 + 좌우 20dp·간격 16dp 공통 규격.
+            // 탭과 같은 그라데이션 배경 — 진입 시 배경 톤이 튀지 않게.
             .background(homeGradientBrush())
             .padding(contentPadding),
+    ) {
+        // ⚠ **상단바는 목록 밖에 고정한다.** 목록 안에 두면 스크롤과 함께 사라져,
+        // 내려간 상태에서 뒤로가기에 닿으려면 맨 위로 되돌아와야 한다(iOS 는 네비게이션
+        // 바라 항상 남는다). 배경은 깔지 않는다 — 그라데이션이 그대로 비쳐야 한다.
+        WakerTopBar(
+            title = stringResource(R.string.consent_screen_title),
+            onBack = onBack,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
+        )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            WakerTopBar(
-                title = stringResource(R.string.consent_screen_title),
-                onBack = onBack,
-            )
-        }
-
         if (loadFailed) {
             item {
                 Text(
@@ -168,6 +172,7 @@ internal fun ConsentHistoryScreen(
                 )
             }
         }
+    }
     }
 
     if (withdrawConfirmOpen) {

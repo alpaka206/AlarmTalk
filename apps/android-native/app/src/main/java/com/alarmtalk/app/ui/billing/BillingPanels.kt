@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -246,6 +249,14 @@ internal fun SubscriptionPanel(
                                     contentColor = MaterialTheme.colorScheme.primary,
                                 ),
                             ) {
+                                // iOS 는 `Label(..., systemImage: "gift")` 로 아이콘을
+                                // 달고 있었다 — 안드로이드만 글자뿐이라 눈에 덜 걸렸다.
+                                Icon(
+                                    imageVector = Icons.Outlined.CardGiftcard,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                                 Text(stringResource(R.string.billing_gift_personal_action))
                             }
                         }

@@ -61,6 +61,17 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
     /// 백엔드 plan key (소문자).
     var apiKey: String { rawValue }
 
+    /// 이 플랜을 **함께 쓸 수 있는 인원**. 백엔드 `plans.max_members` 와 같은 값이고,
+    /// 안드로이드 `BillingPanels.kt` 의 `planSeats` 와 짝이다.
+    /// 정원이 줄어드는 전환인지 판단하는 데 쓴다.
+    var sharedSeats: Int {
+        switch self {
+        case .family: return 5
+        case .couple: return 2
+        case .personal, .free: return 1
+        }
+    }
+
     /// 현재 플랜이 `required` 이상의 권한을 가지는지. 가족 > 커플 > 개인 > 무료.
     func meetsOrExceeds(_ required: PlanTier) -> Bool {
         Self.tierOrder[self] ?? 0 >= Self.tierOrder[required] ?? 0

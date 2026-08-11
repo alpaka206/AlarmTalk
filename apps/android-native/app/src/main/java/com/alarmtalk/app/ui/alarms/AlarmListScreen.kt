@@ -195,6 +195,21 @@ internal fun AlarmListScreen(
                 }
             }
         }
+        // ⚠ **하위 화면(이용권·코드 등록)의 상단바는 목록 밖에 고정한다.**
+        // 목록 안(`item`)에 두면 스크롤과 함께 위로 사라져, 내려간 상태에서 뒤로가기에
+        // 닿으려면 다시 맨 위로 올라와야 한다. iOS 는 이 화면들을 네비게이션 스택에
+        // push 해서 상단 바가 **항상 남는다**(`AuxiliarySheetHost` 의 `navigationTitle`).
+        // 배경은 깔지 않는다 — 그라데이션이 그대로 비쳐야 한 화면으로 읽힌다.
+        if (selectedTab == NativeTab.Billing || selectedTab == NativeTab.People) {
+            WakerTopBar(
+                title = stringResource(
+                    if (selectedTab == NativeTab.Billing) R.string.common_tab_billing
+                    else R.string.common_tab_code_register,
+                ),
+                onBack = { onSelectTab(NativeTab.Menu) },
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
+            )
+        }
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -203,8 +218,12 @@ internal fun AlarmListScreen(
         contentPadding = PaddingValues(
             // 좌우 여백은 모든 탭 20dp 로 통일 — 탭 전환 시 콘텐츠 폭이 미세하게 널뛰지 않게.
             start = 20.dp,
-            // 알람 탭은 위 고정 헤더가 상단 여백을 이미 냈다.
-            top = if (selectedTab == NativeTab.Alarms) 0.dp else 24.dp,
+            // 알람 탭과 하위 화면(이용권·코드 등록)은 위 **고정 헤더/상단바**가 상단
+            // 여백을 이미 냈다.
+            top = when (selectedTab) {
+                NativeTab.Alarms, NativeTab.Billing, NativeTab.People -> 0.dp
+                else -> 24.dp
+            },
             end = 20.dp,
             // 알람 탭은 우하단 FAB(＋)가 마지막 알람 행을 가리지 않게 하단 여유를 더 준다.
             bottom = if (selectedTab == NativeTab.Alarms) 96.dp else 32.dp,
@@ -316,13 +335,7 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.People -> {
-                item {
-                    // 더보기에서 들어온 하위 화면이라 상단바(뒤로가기 + 가운데 제목)를 둔다.
-                    WakerTopBar(
-                        title = stringResource(R.string.common_tab_code_register),
-                        onBack = { onSelectTab(NativeTab.Menu) },
-                    )
-                }
+                // 상단바는 목록 **밖**에 고정돼 있다(위 Column 참조).
                 item {
                     FamilyConnectionPanel(
                         socialBusy = socialBusy,
@@ -355,12 +368,7 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.Billing -> {
-                item {
-                    WakerTopBar(
-                        title = stringResource(R.string.common_tab_billing),
-                        onBack = { onSelectTab(NativeTab.Menu) },
-                    )
-                }
+                // 상단바는 목록 **밖**에 고정돼 있다(위 Column 참조).
                 item {
                     SubscriptionPanel(
                         billingBusy = billingBusy,

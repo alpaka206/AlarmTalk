@@ -62,24 +62,27 @@ internal fun SettingsScreen(
     var showHolidayCountryDialog by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            // 탭과 같은 그라데이션 배경 — 더보기 → 설정 진입 시 배경 톤이 튀지 않게.
+            // 탭과 같은 그라데이션 배경 — 진입 시 배경 톤이 튀지 않게.
             .background(homeGradientBrush())
             .padding(contentPadding),
+    ) {
+        // ⚠ **상단바는 목록 밖에 고정한다.** 목록 안에 두면 스크롤과 함께 사라져,
+        // 내려간 상태에서 뒤로가기에 닿으려면 맨 위로 되돌아와야 한다(iOS 는 네비게이션
+        // 바라 항상 남는다). 배경은 깔지 않는다 — 그라데이션이 그대로 비쳐야 한다.
+        WakerTopBar(
+            title = stringResource(R.string.hs_settings_title),
+            onBack = onBack,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
+        )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
         // 좌우 20dp·카드 간 16dp — 전 화면 공통 규격.
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            // 하위 전체화면 상단바는 전부 공용 `WakerTopBar` 하나다(뒤로가기 원형 + 가운데 제목).
-            WakerTopBar(
-                title = stringResource(R.string.hs_settings_title),
-                onBack = onBack,
-            )
-        }
-
         item {
             // 테마·앱 언어는 전체 탭에서 관리한다(토스 패턴). 여기엔 알람 동작에 걸리는 설정만 남긴다.
             SettingsCard(title = stringResource(R.string.hs_settings_section_display)) {
@@ -155,6 +158,7 @@ internal fun SettingsScreen(
                 )
             }
         }
+    }
     }
 
     if (showLogoutConfirm) {

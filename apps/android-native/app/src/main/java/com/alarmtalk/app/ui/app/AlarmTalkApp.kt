@@ -849,8 +849,17 @@ internal fun AlarmTalkApp(
     // (collect=[marketing]) needsConsent 는 false 인데 동의 화면은 떠 있어서, 하단바와 ＋ FAB 가
     // 그 화면 아래에 그대로 남아 눌린다 — 수집이 끝나기 전에 탭을 바꾸거나 편집기 라우트를
     // 밀어 넣을 수 있다(Codex #660). 이 파일의 다른 게이트는 모두 이미 showConsentScreen 을 본다.
+    // ⚠ **하단바에 없는 탭은 '하위 화면' 이다 — 그때는 하단바도 감춘다.**
+    // `NativeTab` 다섯 중 하단바가 그리는 건 알람·목소리·더보기 셋뿐이고, 이용권·코드
+    // 등록은 더보기에서 들어가는 하위 화면이다(뒤로가기가 더보기로 돌아간다).
+    // 그런데도 하단바가 남아 있어서, 하위 화면에 있으면서 **아무 탭도 선택돼 보이지
+    // 않는** 하단바를 보게 됐다. iOS 는 이 화면들을 네비게이션 스택에 push 하고
+    // `BottomNavBar` 는 스택 루트에 있어서 자연히 사라진다(`MainTabsView`).
+    val isRootTab = currentTab == NativeTab.Alarms ||
+        currentTab == NativeTab.Voices ||
+        currentTab == NativeTab.Menu
     val showAppChrome = authSession != null && viewModel.consentChecked && !viewModel.showConsentScreen &&
-        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && currentTab != null
+        !viewModel.updateRequired && !viewModel.consentUnsupported && !viewModel.pendingDeletion && !viewModel.showVoiceSetup && isRootTab
 
     Scaffold(
         bottomBar = {

@@ -39,6 +39,8 @@ struct BillingPanel: View {
     @State private var showCancelImmediateConfirm = false
     @State private var showPersonalGiftSheet = false
     @State private var voucherShareTargets: [VoucherItem] = []
+    /// 결제 확인 대기 중인 플랜. nil 이면 알럿이 닫혀 있다.
+    @State private var pendingPurchase: PendingPlanPurchase?
 
     private var currentTier: PlanTier {
         PlanTier.bestKnown(
@@ -88,7 +90,12 @@ struct BillingPanel: View {
                         isBusy: socialFeatures.isBusy,
                         vouchers: shareableVouchers,
                         onPurchase: { product in
-                            Task { await purchase(product) }
+                            // ⚠ **바로 결제로 보내지 말 것.** 전환일 때는 스토어 시트가
+                            // 말해 주지 않는 게 있다 — **언제 바뀌는지**(업그레이드 즉시 /
+                            // 다운그레이드는 다음 갱신일)와 **정원이 줄면 멤버가 나간다**는
+                            // 사실. 안드로이드는 이미 확인 모달로 말하고 있었는데 iOS 만
+                            // 곧장 StoreKit 으로 갔다(2026-08-11 대조).
+                            pendingPurchase = PendingPlanPurchase(product: product, tier: tier)
                         },
                         onGiftPersonal: {
                             showPersonalGiftSheet = true
@@ -178,6 +185,23 @@ struct BillingPanel: View {
         // 커스텀 시트를 쓰지 않는 이유: 확인형 모달은 iOS 표준 `.alert` 다(CLAUDE.md —
         // 안드로이드의 IosAlertDialog 가 이걸 흉내 낸 것이므로, iOS 에서 껍데기를 새로
         // 만들면 오히려 원본에서 멀어진다).
+        // ⚠ 문구는 안드로이드 `billing_play_*` 문자열과 **글자까지 같다**(스토어 이름만 다르다).
+        .alert(
+            pendingPurchaseTitle,
+            isPresented: Binding(
+                get: { pendingPurchase != nil },
+                set: { if !$0 { pendingPurchase = nil } }
+            ),
+            presenting: pendingPurchase
+        ) { pending in
+            Button("결제하기") {
+                pendingPurchase = nil
+                Task { await purchase(pending.product) }
+            }
+            Button("취소", role: .cancel) { pendingPurchase = nil }
+        } message: { pending in
+            Text(purchaseMessage(for: pending))
+        }
         .alert("이용권을 해지할까요?", isPresented: $showCancelSubscriptionSheet) {
             Button(cancelPeriodEndTitle) {
                 Task {
@@ -185,7 +209,7 @@ struct BillingPanel: View {
                     await auth.refreshUser()
                 }
             }
-            Button("지금 해지하기", role: .destructive) { showCancelImmediateConfirm = true }
+            Button("지금 해지", role: .destructive) { showCancelImmediateConfirm = true }
             Button("취소", role: .cancel) {}
         } message: {
             Text(cancelDescription)
@@ -297,6 +321,44 @@ struct BillingPanel: View {
     }
 
     // MARK: - Purchase
+
+    private var pendingPurchaseTitle: String {
+        guard let pending = pendingPurchase else { return "" }
+        let name = pending.tier.displayLabel
+        return isPlanChange(to: pending.tier)
+            ? "\(name) 이용권으로 바꿀까요?"
+            : "\(name) 이용권을 시작할까요?"
+    }
+
+    /// 이미 유료 이용권을 쓰는 중에 다른 플랜을 고른 것 = 전환.
+    private func isPlanChange(to tier: PlanTier) -> Bool {
+        currentTier != .free && currentTier != tier
+    }
+
+    /// 시점은 **스토어가 정한다**(업그레이드 즉시+비례정산 / 다운그레이드는 다음 갱신일).
+    /// 우리가 고르게 하지는 않되, 무엇이 언제 일어나는지는 말한다.
+    private func purchaseMessage(for pending: PendingPlanPurchase) -> String {
+        let name = pending.tier.displayLabel
+        guard isPlanChange(to: pending.tier) else {
+            // 카드에 쓰는 것과 **같은 가격**이다(StoreKit 값 우선, 없으면 폴백표).
+            let price = subscriptions.products
+                .first(where: { $0.id == pending.product.rawValue })?.displayPrice
+                ?? FallbackPlanPrice.label(for: pending.tier)
+                ?? ""
+            return price.isEmpty
+                ? "\(name) 이용권을 App Store로 안전하게 결제해요. 가격은 결제 화면에서 확인할 수 있고, 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요."
+                : "\(name) 이용권은 \(price)이에요. App Store로 안전하게 결제되고 언제든 해지할 수 있어요. 해지해도 남은 기간은 그대로 이용할 수 있어요."
+        }
+        let upgrade = pending.tier.meetsOrExceeds(currentTier) && pending.tier != currentTier
+        var text = upgrade
+            ? "지금 바로 \(name) 이용권으로 바뀌어요. 남은 기간은 새 이용권 기준으로 환산돼요."
+            : "지금은 결제되지 않아요. 지금 이용권을 기간 끝까지 쓰고, 다음 갱신일에 \(name) 이용권으로 바뀌어요."
+        // 정원이 줄면 사람이 빠진다 — 결제 뒤에 알면 늦다.
+        if !upgrade, pending.tier.sharedSeats < currentTier.sharedSeats {
+            text += " 함께 쓰는 인원이 줄어서, 정원을 넘는 멤버는 그룹에서 나가게 돼요."
+        }
+        return text
+    }
 
     private func purchase(_ product: SubscriptionProduct) async {
         let result = await subscriptions.purchase(product)

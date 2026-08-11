@@ -146,6 +146,7 @@
 		8468AF1E6FF5099FA045B85D /* AudioCropper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3D0092573DFD5413095F8F /* AudioCropper.swift */; };
 		85F1CA6CF323909B7DD09F0A /* AppVersionGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 034A8047D121E7FF08703642 /* AppVersionGate.swift */; };
 		86738E1D5E959899E8EB06F7 /* AlarmIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC77A311E60BF357633E18D /* AlarmIntents.swift */; };
+		86FBE60255EEA72E499A3DF8 /* PendingPlanPurchase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BB39945932523F6DCA4EBC1 /* PendingPlanPurchase.swift */; };
 		8794990DE399EA8A9361484B /* MainTabsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 008B17DEDC6678A7B2596974 /* MainTabsView.swift */; };
 		8841D7970A97CC0AF150153C /* AccountPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA5B44687C7E74BE1298D82 /* AccountPanel.swift */; };
 		89084CF8D39ABECD33772866 /* AlarmTalkTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A537812556462EBCB324CD35 /* AlarmTalkTheme.swift */; };
@@ -310,6 +311,7 @@
 		08C420EC89C426D8BAE3E0D0 /* SheetContentHeight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetContentHeight.swift; sourceTree = "<group>"; };
 		0AE98BCEE48F6854D6A02AA4 /* CodeRegistrationError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeRegistrationError.swift; sourceTree = "<group>"; };
 		0B8315D2F1C50CA0F66E9458 /* WakeTargetSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeTargetSheet.swift; sourceTree = "<group>"; };
+		0BB39945932523F6DCA4EBC1 /* PendingPlanPurchase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingPlanPurchase.swift; sourceTree = "<group>"; };
 		0CE60628CC826194C627674A /* AlarmVoicePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmVoicePlayer.swift; sourceTree = "<group>"; };
 		0DA0DFFC6243F7340FEE4E83 /* AlarmTalkSpacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkSpacing.swift; sourceTree = "<group>"; };
 		0E7477E7C446FAC757144181 /* TimeWheelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelPicker.swift; sourceTree = "<group>"; };
@@ -649,6 +651,7 @@
 				318294BCA312AB4B0D42EBCB /* LegalDocumentView.swift */,
 				88E875D85BBF8CD8FDCC8D4B /* MenuView.swift */,
 				F3418B6C866BD7A4BAF69FB1 /* OssLicensesView.swift */,
+				0BB39945932523F6DCA4EBC1 /* PendingPlanPurchase.swift */,
 				60C9E3B75BCA36472CA4EFFB /* PeoplePanel.swift */,
 				8398E207DA979219DF2C1311 /* SettingsView.swift */,
 				FCBE050A812B1435387D4C5F /* WeatherCityPickerSheet.swift */,
@@ -1320,6 +1323,7 @@
 				814E84365280A011DC135BC1 /* OssLicensesView.swift in Sources */,
 				E94CC690A94BFFFF3999081A /* PaidVoiceGate.swift in Sources */,
 				5D1519E70208996918C80652 /* PasswordResetView.swift in Sources */,
+				86FBE60255EEA72E499A3DF8 /* PendingPlanPurchase.swift in Sources */,
 				33D415CA1BC2F1CF1500C39D /* PeoplePanel.swift in Sources */,
 				06A307409933FC5592EBFC44 /* PlanGateDialog.swift in Sources */,
 				F4ADF93D76B2C3B51808668A /* PreviewSupport.swift in Sources */,
