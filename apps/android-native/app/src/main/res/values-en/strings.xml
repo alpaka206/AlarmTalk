@@ -471,7 +471,7 @@
     <string name="social_edit_button">Edit</string>
 
     <string name="social_leave_and_register_button">Leave &amp; register</string>
-    <string name="social_leave_and_register_new_code">Leave & register</string>
+    <string name="social_leave_and_register_new_code">Leave &amp; register</string>
     <string name="social_leave_dialog_message">Leave your current plan and register a new code?</string>
     <string name="social_managing_shared_plan">You\'re managing a shared plan.</string>
     <string name="social_member_fallback">Member</string>

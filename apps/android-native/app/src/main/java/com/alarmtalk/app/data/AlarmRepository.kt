@@ -823,6 +823,31 @@ class AlarmRepository(
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
             if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) return@forEach
+            // ⚠ **받은 알람은 '받는 사람 플랜' 으로 다스리지 않는다 — 축이 다르다.**
+            // 받은 알람의 목소리는 **접근권**(공유가 살아 있는가)이 정한다. 공유가 끊기면
+            // 서버가 직접 걷어내고(`paid-voice-cleanup.ts` 가 `is_received` 까지
+            // sound-only 로 UPDATE) 그 결과가 pull sync 로 내려온다.
+            //
+            // 여기서 플랜으로 한 번 더 잠그면 **결제 보류(유예) 중에 오발한다** —
+            // `resolvePlanAfterSuspend` 는 그룹·공유를 살려 둔 채 `users.plan` 만 회수하므로,
+            // 카드가 잠깐 실패한 사이 파트너가 보낸 알람의 목소리가 잠긴다. 게다가
+            // `unlockPaidAlarmTalks` 는 **받는 사람이 유료가 될 때만** 돌아서, 결제가
+            // 복구돼도 그룹에서 나간 뒤라면 `preLockPlayMode` 가 영구히 남는다.
+            // iOS 는 `LocalAlarmStore.paidAlarmTalks` 의 `.localOwned` 로 처음부터 제외한다.
+            if (alarm.origin != AlarmOrigins.LOCAL_OWNED) {
+                // 옛 버그로 이미 잠긴 받은 알람은 여기서 **되돌린다.** 그냥 건너뛰면
+                // 잠긴 채로 남는데, 플랜 축이 사라졌으니 풀어 줄 다른 경로가 없다.
+                if (alarm.preLockPlayMode != null) {
+                    val unlocked = alarm.copy(
+                        playMode = alarm.preLockPlayMode,
+                        preLockPlayMode = null,
+                        updatedAtMillis = now,
+                    )
+                    if (unlocked.enabled) alarmScheduler.schedule(unlocked)
+                    alarmDao.upsertPreservingServerSyncFields(unlocked)
+                }
+                return@forEach
+            }
             // 다른 계정이 소유한(ownerUserId 불일치) 알람은 건드리지 않는다. 임자가 확정된 미기록
             // (레거시 null) 음성 알람은 현재 활성 계정으로 소유권을 backfill 한다 — 잠금 시점에 소유자를 확정해,
             // 복원은 엄격히 ownerUserId 일치만 보고도 (1) 본인이 재유료 시 복원 가능(영구잠금 방지),
