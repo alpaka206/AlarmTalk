@@ -358,7 +358,9 @@ struct AlarmTalkApp: App {
         guard !currentPlan.meetsOrExceeds(.personal) else {
             _ = await socialFeatures.restorePaidVoiceAlarms(
                 alarmStore: alarmStore,
-                alarmKit: alarmKit
+                alarmKit: alarmKit,
+                // 잠글 때와 **같은 계정**만 복원한다(안드로이드와 같은 규칙).
+                expectedOwnerUserId: auth.session?.user.id
             )
             return
         }

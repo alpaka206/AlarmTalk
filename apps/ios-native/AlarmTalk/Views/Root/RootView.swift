@@ -272,6 +272,14 @@ struct RootView: View {
         // 사라져도 **다시 받을 길이 없었다**(2026-08-11 확인).
         // 안드로이드 `MainViewModel` 은 처음부터 이렇게 한다:
         //   `showVoiceSetup = cachedStockClips == 0 && !hasSkipped(userId)`
+        #if DEBUG
+        // 화면 확인 모드는 서버·권한과 함께 이 게이트도 건너뛴다 — 시뮬레이터에는 받아 둔
+        // 클립이 없어서, 안 건너뛰면 **모든 화면 확인이 받기 화면에서 멈춘다.**
+        if UIPreviewSeed.isEnabled {
+            voiceSetupDone = true
+            return
+        }
+        #endif
         voiceSetupDone = AudioCacheStore.shared.hasAnyStockClip
             || DefaultVoicePreferenceStore().hasSkipped(userID: userID)
     }

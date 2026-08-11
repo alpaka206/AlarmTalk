@@ -765,6 +765,19 @@ struct AlarmEditorSheet: View {
     /// (randomPrompt=true, preset)는 nil 이어야 저장이 활성화돼 탭 시 생성이 돈다(RISK F).
     var editorSaveBlockedReason: String? {
         if draft.playMode == .alarmOnly { return nil }
+
+        // ⚠ **무료 플랜의 유료 목소리 알람은 저장 전에 막는다.**
+        // iOS 에는 이 게이트가 **아예 없어서**, 무료 사용자가 녹음 알람을 저장할 수 있었고
+        // 그 행은 곧바로 `applyFreePlanVoiceLockIfNeeded` 에 잡혀 **방금 만든 알람이
+        // 잠겼다**(2026-08-11 확인). 사용자에겐 "왜 사라졌지" 로만 보인다.
+        //
+        // ⚠ **무료여도 기본(스톡) 프리셋 목소리 알람은 만들 수 있다** — 이건 유료 자산이
+        // 아니다. 안드로이드 `MainViewModelAlarmActions.voiceAlarmAllowed` 와 같은 규칙이고,
+        // 서버 `alarm-mutation.ts` 의 `usesOnlySystemStockVoice` 도 같은 선을 긋는다.
+        if planAccess != .paid, !usesFreeSystemVoiceSelection {
+            return "이용권을 등록하면 이 목소리로 알람을 만들 수 있어요."
+        }
+
         if voiceSourceMode == .localAudio {
             let hasNewSource = selectedLocalAudioURL != nil || localRecorder.latestRecordingURL != nil
             if hasNewSource || existingLocalAudioLabel != nil {
@@ -811,6 +824,17 @@ struct AlarmEditorSheet: View {
             return false
         }
         return true
+    }
+
+    /// 지금 편집기 선택이 **무료로 허용되는 기본(스톡) 목소리**인가.
+    ///
+    /// 안드로이드 `AlarmDraft.usesFreeSystemVoiceAlarm()` 의 편집기판이다. 저장된 행이 아니라
+    /// **선택 상태**로 판단해야 해서 따로 둔다 — 녹음·파일(`localAudio`)은 유료 자산이고,
+    /// 스톡 클립이 스테이징됐거나 고른 목소리가 시스템 목소리면 무료로 허용한다.
+    private var usesFreeSystemVoiceSelection: Bool {
+        if voiceSourceMode == .localAudio { return false }
+        if selectedStockMessageID != nil { return true }
+        return voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID)
     }
 
     /// editorSaveBlockedReason 전용 — 현재 선택으로 기존 알람의 TTS 음원을 그대로 재사용할 수

@@ -470,9 +470,20 @@ final class SocialFeatureViewModel: ObservableObject {
     @discardableResult
     func restorePaidVoiceAlarms(
         alarmStore: LocalAlarmStore,
-        alarmKit: AlarmKitViewModel
+        alarmKit: AlarmKitViewModel,
+        /// 지금 로그인한 계정. **반드시 넘긴다** — 아래 소유자 게이트의 근거다.
+        expectedOwnerUserId: String?
     ) async -> Int {
-        let locked = alarmStore.alarms.filter { $0.preLockPlayMode != nil }
+        // ⚠ **소유자를 반드시 본다.** 예전에는 `preLockPlayMode != nil` 만 보고 전부
+        // 복원했는데, 그러면 **한 기기에서 계정을 바꿨을 때 B(유료)가 A 의 잠긴 알람을
+        // 복원하고 스케줄까지 건다.** 안드로이드 `unlockPaidAlarmTalks` 는 처음부터
+        // `ownerUserId == currentUser` 를 엄격히 요구하고, 그 이유를 주석으로 적어 뒀다.
+        //
+        // ⚠ **소유자 미기록(레거시 null) 행은 복원하지 않는다.** 잠금 경로가 잠글 때
+        // 소유권을 새기므로(`applyFreePlanVoiceLock`), 여기서 null 을 관대하게 받으면
+        // 그 크로스계정 창이 그대로 열린다.
+        guard let owner = expectedOwnerUserId?.nilIfBlank else { return 0 }
+        let locked = alarmStore.alarms.filter { $0.preLockPlayMode != nil && $0.ownerUserId == owner }
         var restored = 0
         for record in locked {
             var updated = record

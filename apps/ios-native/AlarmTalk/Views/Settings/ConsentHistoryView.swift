@@ -224,10 +224,17 @@ private struct ConsentRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(minHeight: 52)
+        // ⚠ **`.contentShape` 가 없으면 글자만 눌린다** — `minHeight 52` 로 생긴 여유와
+        // 좌우 여백이 죽는다. `AlarmRow` 에서 같은 증상을 실측으로 확인했다(2026-08-11).
+        .contentShape(Rectangle())
 
         if let onOpen {
-            Button(action: onOpen) { row }
-                .buttonStyle(.plain)
+            // ⚠ **`Button` 으로 감싸지 말 것 — 안에 '동의 철회' 버튼이 들어 있다.**
+            // 중첩 `Button` 은 바깥이 탭을 가져가 **안쪽이 안 눌린다.** 그러면 철회를
+            // 눌러도 개인정보 처리방침만 열린다 — 그 액션은 ElevenLabs 보이스와 R2 원본을
+            // 지우는 **유일한 진입점**이라, 안 눌리면 사용자가 철회할 방법이 없다.
+            // (철회 자체는 확인 알럿을 거치므로 눌리게 만드는 것이 위험을 늘리지 않는다.)
+            row.onTapGesture(perform: onOpen)
         } else {
             row
         }
