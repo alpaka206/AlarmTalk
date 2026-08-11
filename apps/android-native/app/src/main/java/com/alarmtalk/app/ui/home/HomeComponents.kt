@@ -497,8 +497,7 @@ internal fun DeleteAccountConfirmDialog(
 /**
  * 하위 화면의 **상단바** — 좌측 뒤로가기 + **가운데 제목**.
  *
- * ⚠ **`ScreenHeader`(왼쪽 정렬 큰 제목)를 하위 화면에 쓰지 말 것.** 그건 탭 자체의 제목이다.
- * 이용권·코드 등록처럼 **더보기에서 들어가는 화면**은 아이폰에서 네비게이션 바(뒤로가기 +
+ * ⚠ **왼쪽 정렬 큰 제목으로 되돌리지 말 것.** 이용권·코드 등록처럼 **더보기에서 들어가는 화면**은 아이폰에서 네비게이션 바(뒤로가기 +
  * 가운데 작은 제목)로 뜨는데, 안드로이드에는 그 바가 없어 **나가는 길이 시스템 뒤로가기뿐**
  * 이었다(2026-08-11 요청). 같은 모양으로 맞춘다.
  *
@@ -537,24 +536,3 @@ internal fun WakerTopBar(
     }
 }
 
-@Composable
-internal fun ScreenHeader(
-    title: String,
-    subtitle: String? = null,
-    titleStyle: TextStyle = MaterialTheme.typography.headlineLarge,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = title,
-            style = titleStyle,
-            fontWeight = FontWeight.Bold,
-        )
-        if (!subtitle.isNullOrBlank()) {
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
