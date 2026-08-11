@@ -150,16 +150,19 @@ private fun VoiceRecordScriptCard(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         ),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        Column {
             // **대사는 예시일 뿐 필수가 아니다.** 항상 펼쳐 두면 화면 절반을 차지해
             // '이걸 그대로 읽어야 하는 것' 처럼 보인다. 필요한 사람만 펼치게 접어 둔다.
+            //
+            // ⚠ **여백을 `clickable` **안쪽**에 둔다.** 예전에는 카드 `Column` 이
+            // `padding(16)` 을 갖고 `clickable` 은 그 안의 `Row` 에만 걸려 있어서,
+            // **제목 주변 여백을 눌러도 아무 일이 없었다**(2026-08-11 지적).
+            // 행처럼 생긴 것은 행 전체가 눌려야 한다 — 글자를 정확히 겨냥하게 만들지 말 것.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { scriptExpanded = !scriptExpanded },
+                    .clickable { scriptExpanded = !scriptExpanded }
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -182,6 +185,8 @@ private fun VoiceRecordScriptCard(
             Text(
                 text = stringResource(R.string.voices2_record_script),
                 modifier = Modifier
+                    // 헤더가 제 여백을 가져갔으니 본문도 제 여백을 갖는다.
+                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
                     .then(
                         if (fillHeight) {
                             Modifier.weight(1f, fill = false)

@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.viewModelScope
@@ -588,7 +589,11 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
             repository.lockPaidAlarmTalks(expectedOwnerUserId = lockOwner)
         }.onSuccess { locked ->
             if (locked > 0) {
-                message = getApplication<android.app.Application>().getString(R.string.msg_gb_free_plan_voice_alarms_locked)
+                // ⚠ **토스트로 알리지 않는다**(2026-08-11 변경). 강등은 알람이 조용히 바뀌는
+                // 큰 사건인데 토스트는 놓치기 쉽고, 이 자리는 화면이 없을 수도 있다.
+                // 대기표에 적어 두고 앱이 보여줄 수 있을 때 모달로 띄운다.
+                DowngradeNoticeStore(getApplication())
+                    .record(lockOwner, DowngradeNoticeStore.Cause.FREE_PLAN, locked)
             }
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to lock paid voice alarms on free plan", error)

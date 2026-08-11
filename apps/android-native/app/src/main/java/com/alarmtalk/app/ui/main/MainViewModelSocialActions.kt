@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
@@ -95,6 +96,11 @@ internal fun MainViewModel.reconcileInaccessibleVoiceAlarms(listOwner: String?) 
     val accessibleVoiceIds = (voiceProfiles.map { it.id } + familyVoices.map { it.id }).toSet()
     viewModelScope.launch {
         runCatching { repository.degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, listOwner) }
+            .onSuccess { degraded ->
+                // 공유가 끊겨 목소리를 잃은 알람 — 이유를 알려 줄 곳이 여기뿐이다.
+                DowngradeNoticeStore(getApplication())
+                    .record(listOwner, DowngradeNoticeStore.Cause.SHARED_RELEASED, degraded)
+            }
             .onSuccess { count ->
                 if (count > 0) Log.i(TAG, "Degraded $count alarm(s) using inaccessible voice")
             }

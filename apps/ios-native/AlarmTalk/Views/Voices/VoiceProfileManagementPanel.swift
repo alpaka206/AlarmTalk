@@ -327,7 +327,7 @@ struct VoiceProfileManagementPanel: View {
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }
-            Button("추가") {
+            Button {
                 // ⚠ **세 갈래를 구분한다**(안드로이드 `VoiceProfileManagementPanel.kt:1293-1299`).
                 // 무료면 이용권 안내, 유료인데 이번 달을 다 썼으면 한도 안내.
                 // 예전에는 둘 다 이용권 안내로 보내, 이용권이 있는 사람에게 이용권을
@@ -344,14 +344,29 @@ struct VoiceProfileManagementPanel: View {
                     // 다른 문제다. 안드로이드는 이 자리에서 한도 안내를 띄운다.
                     monthlyLimitNoticeOpen = true
                 }
+            } label: {
+                // ⚠ **여백은 라벨에 준다 — 바깥 `.frame` 은 캡슐을 못 키운다.**
+                // `borderedProminent` 는 **라벨 크기**에 맞춰 색칠된 캡슐을 그리고,
+                // 버튼 바깥에 건 `.frame(minHeight:)` 은 그 위에 **투명 여백**만 얹는다.
+                // 그래서 예전에는 터치 타깃만 44 였고 **보이는 버튼은 31pt** 였다
+                // (2026-08-11 스크린샷 픽셀로 실측 — 눈으로 작아 보인 게 맞았다).
+                // 안드로이드 M3 `Button` 기본 높이 40dp 에 맞춘다.
+                Text("추가")
+                    .padding(.vertical, 5)
             }
             .font(theme.typography.bodyMedium.weight(.semibold))
+            .buttonStyle(.borderedProminent)
+            .tint(theme.palette.primary)
             // ⚠ `.controlSize(.small)` 을 쓰지 말 것 — 높이가 28pt 안팎으로 떨어져
             // **최소 터치 타깃(44pt)을 밑돈다.** 섹션 헤더에 있다고 작게 만들 이유가
             // 없다. 이 버튼이 목소리를 만드는 **유일한 진입점**이다.
+            //
+            // ⚠⚠ **`.buttonStyle` **뒤에** 걸어야 한다.** 앞에 두면 그 44 는 버튼이 아니라
+            // **라벨**에 걸리고, 스타일이 제 높이로 다시 그려서 아무 효과가 없다 —
+            // 그렇게 둔 채로 주석만 "44를 지킨다" 고 적혀 있었고 **실측은 31pt** 였다
+            // (2026-08-11, XCUITest `VoiceAddButtonUITests`). 지켜 준다고 적힌 보호 장치가
+            // 실제로는 아무것도 안 하고 있었다.
             .frame(minHeight: 44)
-            .buttonStyle(.borderedProminent)
-            .tint(theme.palette.primary)
             // ⚠ **이번 달을 다 썼으면 버튼을 끈다** — 안드로이드
             // (`ui/voices/VoiceProfileManagementPanel.kt` 의 `enabled = !voiceProfileBusy
             // && !monthlyExhausted`)와 같다. 흐려도 '왜' 가 읽히는 건 **바로 옆에

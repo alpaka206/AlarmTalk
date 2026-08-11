@@ -130,7 +130,6 @@
     <string name="billing_voucher_unregistered_with_date">미등록 · 발급일 %1$s</string>
     <string name="common_alarm_delete">삭제</string>
     <string name="common_alarm_warning_reschedule_failed">알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요.</string>
-    <string name="common_alarm_notice_default_converted">목소리를 쓸 수 없어 기본 알람으로 변환되었어요.</string>
     <string name="common_google_continue">Google로 계속하기</string>
     <string name="common_google_login">Google로 로그인</string>
     <string name="common_permission_allow_action">허용하기</string>
@@ -373,6 +372,15 @@
     <string name="msg_gb_promo_redeemed">프로모 코드를 적용했어요</string>
     <string name="msg_gb_promo_redeem_failed">프로모 코드를 적용하지 못했어요</string>
     <string name="msg_gb_free_plan_voice_alarms_locked">무료 이용권으로 전환되어 목소리 알람이 잠겼어요. 다시 이용권을 등록하면 복구돼요.</string>
+    <!-- 강등 안내 모달. 알람 행 배지를 대신한다 — 알람은 **정상 작동 중**(기본 알람음으로
+         울린다)이라 행마다 경고를 붙이면 고장난 앱처럼 읽힌다. 한 번만 말하고 끝낸다. -->
+    <string name="downgrade_notice_free_title">무료 이용권으로 바뀌었어요</string>
+    <string name="downgrade_notice_free_message">목소리 알람 %1$d개가 기본 알람음으로 바뀌었어요. 이용권을 다시 등록하면 목소리가 돌아와요.</string>
+    <string name="downgrade_notice_shared_title">공유 이용권에서 나가게 됐어요</string>
+    <!-- ⚠ 이쪽은 **복원되지 않는다** — 공유가 끊긴 목소리는 다시 공유받아야 한다.
+         무료 강등처럼 "돌아와요" 라고 하면 기다리면 될 줄 안다. -->
+    <string name="downgrade_notice_shared_message">공유받던 목소리가 끊겨서 알람 %1$d개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요.</string>
+    <string name="downgrade_notice_open_billing">이용권 보기</string>
     <string name="msg_gb_google_play_start_failed">Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="msg_gb_billing_info_load_failed">이용권 정보를 불러오지 못했어요</string>
     <string name="msg_gb_login_required_apply_plan">이용권을 적용하려면 먼저 로그인해 주세요</string>

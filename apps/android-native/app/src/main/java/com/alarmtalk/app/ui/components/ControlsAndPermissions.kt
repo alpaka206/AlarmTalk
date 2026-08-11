@@ -587,10 +587,10 @@ private fun alarmRowNotice(alarm: AlarmEntity): AlarmRowNotice? = when {
     // 잠겼어요. 다시 이용권을 등록하면 복구돼요.")를 띄운다. 같은 말을 두 번, 그것도
     // 한쪽은 영구로 하고 있었다. iOS 에는 이 행 배지가 아예 없다.
     //
-    // 공유 목소리 해제(voiceProfileId 가 비는 경우)는 **남겨 둔다** — 그쪽은 1회성 안내가
-    // 없고, 목소리를 잃은 이유를 알 길이 이 행뿐이다.
-    alarm.preLockPlayMode != null && alarm.voiceProfileId.isNullOrBlank() ->
-        AlarmRowNotice(R.string.common_alarm_notice_default_converted, isError = false)
+    // 공유 목소리 해제도 **여기서 알리지 않는다**(2026-08-11). 이제 두 경우 모두
+    // `DowngradeNoticeStore` 대기표 → 1회성 모달이 맡는다.
+    // 행에 계속 붙여 두면 무료로 지내는 내내 알람마다 경고가 보이는데, **알람은 정상
+    // 작동 중이다**(기본 알람음으로 울린다) — 고장난 앱처럼 읽힐 뿐이다.
     else -> null
 }
 

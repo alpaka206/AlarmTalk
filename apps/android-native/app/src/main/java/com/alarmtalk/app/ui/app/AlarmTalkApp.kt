@@ -53,6 +53,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.data.DowngradeNoticeStore
 import com.alarmtalk.app.data.AlarmOrigins
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
@@ -97,6 +98,8 @@ internal fun AlarmTalkApp(
     val subscriptionResponse = viewModel.subscriptionResponse
     val vouchers = viewModel.vouchers
     val navController = rememberNavController()
+    val downgradeNoticeStore = remember(context) { DowngradeNoticeStore(context) }
+    var downgradeNotice by remember { mutableStateOf<DowngradeNoticeStore.Notice?>(null) }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentTab = navBackStackEntry?.destination?.route.toNativeTab()
     val selectedTab = currentTab ?: NativeTab.Alarms
@@ -471,6 +474,37 @@ internal fun AlarmTalkApp(
         viewModel.maybeShowWelcomePromo()
     }
 
+    // 강등 안내 모달 — "목소리 알람이 기본 알람음으로 바뀌었어요" 를 **한 번만** 말한다.
+    //
+    // ⚠ 준비 신호를 위 프로모와 **똑같이** 지킨다. 차단 화면(동의·업데이트·탈퇴 유예) 위에
+    // 겹쳐 뜨면 읽을 수 없다 — `docs/spec/gates-and-overlays.md`.
+    // 다만 성질은 프로모와 다르다: 이건 **소진 플래그가 아니라 대기표**라, 못 보고 지나가도
+    // 지워지지 않는다(지우는 건 '확인' 뿐). 그래서 잘못 떠서 잃을 것이 없다.
+    LaunchedEffect(
+        sessionRouteKey,
+        viewModel.permissionGateRequest,
+        viewModel.showVoiceSetup,
+        viewModel.showConsentScreen,
+        viewModel.consentStatusChecked,
+        viewModel.versionChecked,
+        viewModel.updateRequired,
+        viewModel.consentUnsupported,
+        viewModel.accountStatusChecked,
+        viewModel.pendingDeletion,
+        alarms,
+    ) {
+        if (sessionRouteKey == null) return@LaunchedEffect
+        if (!viewModel.versionChecked) return@LaunchedEffect
+        if (viewModel.updateRequired || viewModel.consentUnsupported) return@LaunchedEffect
+        if (!viewModel.accountStatusChecked) return@LaunchedEffect
+        if (viewModel.pendingDeletion) return@LaunchedEffect
+        if (!viewModel.consentStatusChecked || viewModel.showConsentScreen) return@LaunchedEffect
+        if (viewModel.permissionGateRequest != null) return@LaunchedEffect
+        if (viewModel.showVoiceSetup) return@LaunchedEffect
+        downgradeNotice = downgradeNoticeStore.read(authSession?.user?.id)
+    }
+
+
     LaunchedEffect(sessionRouteKey, alarms) {
         if (sessionRouteKey != null) {
             viewModel.ensureReceivedAlarmBadgeBaseline(alarms)
@@ -705,6 +739,42 @@ internal fun AlarmTalkApp(
                 }
                 navController.navigateTopLevelTab(backTarget)
             },
+        )
+    }
+
+    downgradeNotice?.let { notice ->
+        val isFreePlan = notice.cause == DowngradeNoticeStore.Cause.FREE_PLAN
+        IosAlertDialog(
+            title = stringResource(
+                if (isFreePlan) R.string.downgrade_notice_free_title
+                else R.string.downgrade_notice_shared_title,
+            ),
+            message = stringResource(
+                if (isFreePlan) R.string.downgrade_notice_free_message
+                else R.string.downgrade_notice_shared_message,
+                notice.count,
+            ),
+            // ⚠ 바깥 탭·뒤로가기로 닫아도 **지우지 않는다** — 실수로 닫았을 뿐일 수 있다.
+            // 지우는 건 '확인' 하나뿐이다.
+            onDismiss = { downgradeNotice = null },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.downgrade_notice_open_billing),
+                    onClick = {
+                        downgradeNoticeStore.clear(authSession?.user?.id)
+                        downgradeNotice = null
+                        navigateToTab(NativeTab.Billing)
+                    },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.auth_confirm),
+                    emphasized = true,
+                    onClick = {
+                        downgradeNoticeStore.clear(authSession?.user?.id)
+                        downgradeNotice = null
+                    },
+                ),
+            ),
         )
     }
 

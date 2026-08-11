@@ -1,5 +1,6 @@
 package com.alarmtalk.app.sync
 
+import com.alarmtalk.app.data.DowngradeNoticeStore
 import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -80,6 +81,10 @@ class VoiceAccessSyncWorker(
             val accessibleVoiceIds = (myVoices.map { it.id } + sharedVoices.map { it.id }).toSet()
             val degraded = AlarmAppContainer.repository(applicationContext)
                 .degradeAlarmsWithInaccessibleVoice(accessibleVoiceIds, session.user.id)
+            // ⚠ **여기는 화면이 없다.** 강등만 하고 말면 사용자는 목소리가 사라진 이유를
+            // 영영 모른다 — 대기표에 적어 두면 다음에 앱을 열 때 모달이 알려 준다.
+            DowngradeNoticeStore(applicationContext)
+                .record(session.user.id, DowngradeNoticeStore.Cause.SHARED_RELEASED, degraded)
             if (degraded > 0) {
                 Log.i(TAG, "Degraded $degraded alarm(s) after voice access was revoked")
             }

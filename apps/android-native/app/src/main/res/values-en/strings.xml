@@ -123,7 +123,6 @@
     <string name="billing_voucher_unregistered_with_date">Unregistered · Issued %1$s</string>
     <string name="common_alarm_delete">Delete</string>
     <string name="common_alarm_warning_reschedule_failed">We couldn\'t reschedule the alarm. Please check the time and save again.</string>
-    <string name="common_alarm_notice_default_converted">The voice is no longer available, so this alarm now uses the default sound.</string>
     <string name="common_google_continue">Continue with Google</string>
     <string name="common_google_login">Sign in with Google</string>
     <string name="common_permission_allow_action">Allow</string>
