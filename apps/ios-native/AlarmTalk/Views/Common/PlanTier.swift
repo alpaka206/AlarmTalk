@@ -1,47 +1,14 @@
+import Foundation
+
+/// 요금제 등급. **화면·게이트 판정의 공용 축**이다.
+///
+/// ⚠ **`PlanGateState` 를 되살리지 말 것**(2026-08-11 제거). 다이얼로그 상태를 담으려던
+/// 구조체였는데 **리포 전체에서 참조가 0건**이었고, 정작 같은 파일에 **다이얼로그 View 는
+/// 없었다** — 이름만 있고 실물이 없어, 게이트를 만들 때마다 자리마다 알럿을 손으로 짜게
+/// 만든 원인이다. 유료 게이트 문구는 `PaidGateCopy` 가 유일 출처다.
 import SwiftUI
 
 /// PlanGate 상태값. View modifier 들이 sheet item 으로 사용.
-struct PlanGateState: Identifiable, Equatable {
-    let id = UUID()
-    let title: String
-    let body: String
-    let confirmLabel: String
-    let currentPlan: PlanTier
-    let requiredPlan: PlanTier
-
-    init(
-        title: String = String(localized: "유료 기능이에요"),
-        message: String? = nil,
-        confirmLabel: String = String(localized: "요금제 변경하러 가기"),
-        currentPlan: PlanTier,
-        requiredPlan: PlanTier
-    ) {
-        self.title = title
-        self.body = message ?? PlanGateState.defaultMessage(requiredPlan: requiredPlan)
-        self.confirmLabel = confirmLabel
-        self.currentPlan = currentPlan
-        self.requiredPlan = requiredPlan
-    }
-
-    static func defaultMessage(requiredPlan: PlanTier) -> String {
-        switch requiredPlan {
-        case .free:
-            return String(localized: "이 기능은 무료 플랜에서도 사용할 수 있어요.")
-        case .personal:
-            return String(localized: "이 기능은 개인 플랜에서 사용할 수 있어요. 업그레이드해서 녹음과 공유 목소리 기능을 사용해 보세요.")
-        case .couple:
-            return String(localized: "이 기능은 커플 플랜에서 사용할 수 있어요. 두 사람의 알람을 함께 관리해 보세요.")
-        case .family:
-            return String(localized: "이 기능은 가족 플랜에서 사용할 수 있어요. 가족 구성원과 알람과 메시지를 함께 나눠보세요.")
-        }
-    }
-}
-
-/// 백엔드 plan key 와 1:1. Android `BillingApi` 의 plan key 표기를 따른다.
-///
-/// 백엔드 표준 키: `free` / `personal` / `couple` / `family`. iOS BillingPanel
-/// 가 사용하던 임시 `plus_monthly` / `family_monthly` 는 PlanTier 의 `apiKey`
-/// 매핑으로 흡수한다.
 enum PlanTier: String, CaseIterable, Codable, Equatable {
     case free
     case personal

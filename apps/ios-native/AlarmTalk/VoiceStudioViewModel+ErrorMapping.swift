@@ -50,7 +50,15 @@ extension VoiceStudioViewModel {
         case "VOICE_SLOT_EXHAUSTED":
             return "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
         case "VOICE_FEATURE_REQUIRES_PAID_PLAN":
-            return "유료 이용권에서 사용할 수 있어요."
+            return PaidGateCopy.message
+        // ⚠ 아래 셋은 **매핑이 없어서** 지금까지 "목소리를 처리하지 못했어요. 잠시 후 다시
+        // 시도해 주세요." 로 떨어졌다(2026-08-11 전수 조사). 다시 시도해도 안 되는
+        // 종류인데 다시 시도하라고 말하고 있었다.
+        case "FREE_PLAN_PRESET_ONLY", "BASIC_VOICE_PRESET_ONLY":
+            // 유료여도 뜬다 — 플랜이 아니라 **목소리 종류**의 문제라 `PaidGateCopy` 를 쓰지 않는다.
+            return "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
+        case "VOICE_LOCKED_FREE_PLAN":
+            return "무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 등록하면 돌아와요."
         case "VOICE_CLONE_AUDIO_TOO_SHORT":
             return "목소리를 만들 음성은 12초 이상이어야 해요."
         case "VOICE_CLONE_AUDIO_TOO_LONG":
@@ -100,6 +108,9 @@ extension VoiceStudioViewModel {
     nonisolated static let knownErrorCodes: [String] = [
         "VOICE_SLOT_EXHAUSTED",
         "VOICE_FEATURE_REQUIRES_PAID_PLAN",
+        "FREE_PLAN_PRESET_ONLY",
+        "BASIC_VOICE_PRESET_ONLY",
+        "VOICE_LOCKED_FREE_PLAN",
         "VOICE_CLONE_AUDIO_TOO_SHORT",
         "VOICE_CLONE_AUDIO_TOO_LONG",
         "INVALID_DURATION",

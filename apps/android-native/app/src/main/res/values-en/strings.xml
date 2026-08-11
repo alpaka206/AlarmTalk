@@ -332,7 +332,6 @@
     <string name="msg_alarm_update_failed">Couldn\'t update your alarm.</string>
     <string name="msg_consent_record_failed">Couldn\'t record your consent. Please try again.</string>
     <string name="msg_marketing_consent_update_failed">Couldn\'t update the setting. Please try again.</string>
-    <string name="msg_custom_voice_alarm_paid_only">This feature is available with a paid pass.</string>
     <string name="msg_email_required">Please enter your email.</string>
     <string name="msg_email_verification_completed">Your email has been verified.</string>
     <string name="msg_family_alarm_couple_family_only">Partner alarms are available with a Couple or Family plan.</string>
@@ -433,7 +432,6 @@
     <string name="msg_voice_invalid_duration">Couldn\'t check the audio length. Please select the file again.</string>
     <string name="msg_voice_max_profiles_reached">You can create up to %1$d voices.</string>
     <string name="msg_voice_name_required">Please enter a name for the voice.</string>
-    <string name="msg_voice_paid_plan_required">This feature is available with a paid pass.</string>
     <string name="msg_voice_share_couple_family_required">Voice sharing is available on the Couple or Family plan.</string>
     <string name="msg_voice_share_login_required">Please log in first to share the voice.</string>
     <string name="msg_voice_share_setting_failed">Couldn\'t update voice sharing settings.</string>
@@ -879,4 +877,6 @@ Pass code: %1$s
     <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use the default sound. To use it again you need your own pass or a new invite code.</string>
     <string name="downgrade_notice_open_billing">View passes</string>
     <string name="plan_gate_paid_message">This feature is available with a paid pass.</string>
+    <string name="msg_voice_preset_only">Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type.</string>
+    <string name="msg_voice_locked_free_plan">Your pass ended, so this voice can\'t be used. Register a pass again to bring it back.</string>
 </resources>

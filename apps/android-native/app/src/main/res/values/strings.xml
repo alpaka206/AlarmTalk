@@ -352,7 +352,6 @@
     <string name="msg_alarm_update_failed">알람 수정에 실패했어요</string>
     <string name="msg_consent_record_failed">동의 기록에 실패했어요. 다시 시도해 주세요</string>
     <string name="msg_marketing_consent_update_failed">수신 설정 변경에 실패했어요. 다시 시도해 주세요</string>
-    <string name="msg_custom_voice_alarm_paid_only">해당 기능은 유료 이용권에서 사용할 수 있어요.</string>
     <string name="msg_email_required">이메일을 입력해 주세요</string>
     <string name="msg_email_verification_completed">이메일 인증이 완료됐어요</string>
     <string name="msg_family_alarm_couple_family_only">상대 알람은 커플/가족 이용권에서 사용할 수 있어요</string>
@@ -465,7 +464,6 @@
     <string name="msg_voice_invalid_duration">음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요.</string>
     <string name="msg_voice_max_profiles_reached">목소리는 최대 %1$d개까지 만들 수 있어요</string>
     <string name="msg_voice_name_required">목소리 이름을 입력해 주세요</string>
-    <string name="msg_voice_paid_plan_required">해당 기능은 유료 이용권에서 사용할 수 있어요.</string>
     <string name="msg_voice_share_couple_family_required">음성 공유는 커플/가족 이용권에서 사용할 수 있어요</string>
     <string name="msg_voice_share_login_required">목소리를 공유하려면 먼저 로그인해 주세요</string>
     <string name="msg_voice_share_setting_failed">목소리 공유 설정에 실패했어요</string>
@@ -927,4 +925,6 @@
     <string name="misc2_theme_mode_light_desc">낮에도 선명한 밝은 화면이에요.</string>
     <string name="misc2_theme_mode_dark_desc">밤에 보기 편한 어두운 화면이에요.</string>
     <string name="common_back">뒤로</string>
+    <string name="msg_voice_preset_only">기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.</string>
+    <string name="msg_voice_locked_free_plan">무료 이용권으로 바뀌어 이 목소리를 쓸 수 없어요. 이용권을 다시 등록하면 돌아와요.</string>
 </resources>

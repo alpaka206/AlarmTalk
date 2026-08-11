@@ -80,7 +80,7 @@ internal fun MainViewModel.createAlarm(
     onDone: () -> Unit,
 ) {
     if (!voiceAlarmAllowed(draft)) {
-        message = getApplication<Application>().getString(R.string.msg_custom_voice_alarm_paid_only)
+        message = getApplication<Application>().getString(R.string.plan_gate_paid_message)
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
@@ -223,7 +223,7 @@ internal fun MainViewModel.updateAlarm(
     onDone: () -> Unit,
 ) {
     if (!voiceAlarmAllowed(draft)) {
-        message = getApplication<Application>().getString(R.string.msg_custom_voice_alarm_paid_only)
+        message = getApplication<Application>().getString(R.string.plan_gate_paid_message)
         return
     }
     if (!requireAlarmPermissionsForMutation()) return

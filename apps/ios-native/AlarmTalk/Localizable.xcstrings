@@ -2449,6 +2449,29 @@
         }
       }
     },
+    "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基本の声は用意された文だけを話せます。自由入力の文で起こすには、自分の声を選んでください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 목소리는 준비된 문구로만 말할 수 있어요. 직접 입력한 문구로 깨우려면 내 목소리를 골라 주세요."
+          }
+        }
+      }
+    },
     "기본 목소리로 바꿀까요?": {
       "extractionState": "manual",
       "localizations": {
@@ -2462,6 +2485,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "基本の声に変えますか?"
+          }
+        }
+      }
+    },
+    "기본 목소리로는 직접 입력을 쓸 수 없어요": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Basic voices can't read custom text"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "基本の声では自由入力を使えません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 목소리로는 직접 입력을 쓸 수 없어요"
           }
         }
       }
@@ -3214,6 +3260,29 @@
         }
       }
     },
+    "내 목소리 만들기는 유료 기능이에요": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creating your own voice is a paid feature"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の声を作るのは有料機能です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내 목소리 만들기는 유료 기능이에요"
+          }
+        }
+      }
+    },
     "내 목소리가 알람으로 들린다면 어떤 말이 가장 힘이 될지 생각하며 편하게 말해볼게.": {
       "extractionState": "manual",
       "localizations": {
@@ -3227,23 +3296,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "私の声がアラームで聞こえるなら、どんな言葉が一番力になるか考えながら、気楽に話してみるね。"
-          }
-        }
-      }
-    },
-    "내 목소리를 녹음해 만들려면 이용권이 필요해요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You need a plan to record and create your own voice."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自分の声を録音して作るにはプランが必要です。"
           }
         }
       }
@@ -3635,23 +3687,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "録音／ファイル・直接入力の文・天気／占いのカスタマイズは有料プランでご利用いただけます。無料では、システムの声と基本のランダム文でアラームを作成できます。"
-          }
-        }
-      }
-    },
-    "녹음과 화자 분리로 목소리를 만들려면 유료 플랜이 필요해요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A paid plan is required to create voices with recording and speaker separation."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録音と話者分離で声を作成するには有料プランが必要です。"
           }
         }
       }
@@ -5454,23 +5489,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "声スロット無制限、広告削除、パーソナル利用券のプレゼント"
-          }
-        }
-      }
-    },
-    "목소리 슬롯이 가득 찼거나, 본 기능은 유료 플랜에서 사용할 수 있어요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your voice slots are full, or this feature is available on a paid plan."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "声のスロットがいっぱいか、この機能は有料プランでご利用いただけます。"
           }
         }
       }
@@ -10898,23 +10916,6 @@
         }
       }
     },
-    "요금제 변경하러 가기": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Change plan"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プランを変更する"
-          }
-        }
-      }
-    },
     "운동": {
       "extractionState": "manual",
       "localizations": {
@@ -11153,23 +11154,6 @@
         }
       }
     },
-    "유료 기능이에요": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This is a paid feature"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有料機能です"
-          }
-        }
-      }
-    },
     "유료 이용권에서 사용할 수 있어요.": {
       "extractionState": "manual",
       "localizations": {
@@ -11187,19 +11171,25 @@
         }
       }
     },
-    "유료 플랜이 필요해요": {
+    "유료 이용권이 필요해요": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You need a paid plan"
+            "value": "A paid pass is required"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "有料プランが必要です"
+            "value": "有料利用券が必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "유료 이용권이 필요해요"
           }
         }
       }
@@ -12628,6 +12618,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "プランを一緒に使う人たちに声を共有します。"
+          }
+        }
+      }
+    },
+    "이용권을 등록하면 이 목소리로 알람을 만들 수 있어요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Register a pass to create an alarm with this voice."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用券を登録すると、この声でアラームを作成できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이용권을 등록하면 이 목소리로 알람을 만들 수 있어요."
           }
         }
       }
@@ -14077,6 +14090,29 @@
         }
       }
     },
+    "직접 녹음": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record my own"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分で録音"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "직접 녹음"
+          }
+        }
+      }
+    },
     "직접 설정": {
       "extractionState": "manual",
       "localizations": {
@@ -15437,23 +15473,6 @@
         }
       }
     },
-    "플랜 업그레이드가 필요해요": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You need to upgrade your plan"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プランのアップグレードが必要です"
-          }
-        }
-      }
-    },
     "필수": {
       "extractionState": "manual",
       "localizations": {
@@ -15671,6 +15690,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "一緒に使っている人が私のアラームを設定できるようにします。"
+          }
+        }
+      }
+    },
+    "해당 기능은 유료 이용권에서 사용할 수 있어요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This feature is available with a paid pass."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この機能は有料利用券でご利用いただけます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "해당 기능은 유료 이용권에서 사용할 수 있어요."
           }
         }
       }

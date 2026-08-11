@@ -130,7 +130,7 @@ internal fun MainViewModel.createVoiceProfiles(
         return false
     }
     if (!hasPaidVoiceAccess(subscriptionResponse)) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
+        message = getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
         return false
     }
     val drafts = items.map {
@@ -246,7 +246,14 @@ internal fun MainViewModel.createVoiceProfiles(
                 "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
                 "INVALID_AUDIO_MIME_TYPE" -> app.getString(R.string.msg_voice_invalid_audio_format)
                 "VOICE_SLOT_EXHAUSTED" -> app.getString(R.string.msg_voice_slot_exhausted)
-                "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.msg_voice_paid_plan_required)
+                "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.plan_gate_paid_message)
+        // ⚠ 아래 셋은 **매핑이 없어서** 지금까지 일반 오류 문구로 떨어졌다(2026-08-11 전수 조사).
+        // 다시 시도해도 안 되는 종류인데 다시 시도하라고 말하고 있었다.
+        // 앞 둘은 **유료여도 뜬다** — 플랜이 아니라 목소리 종류의 문제라
+        // `plan_gate_paid_message` 를 쓰지 않는다.
+        "FREE_PLAN_PRESET_ONLY", "BASIC_VOICE_PRESET_ONLY" ->
+            app.getString(R.string.msg_voice_preset_only)
+        "VOICE_LOCKED_FREE_PLAN" -> app.getString(R.string.msg_voice_locked_free_plan)
                 else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
         }
@@ -517,7 +524,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
     check(hasPaidVoiceAccess(subscriptionResponse) || request.isFreeSystemPresetRequest()) {
-        getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
+        getApplication<android.app.Application>().getString(R.string.plan_gate_paid_message)
     }
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
     return withContext(Dispatchers.IO) {

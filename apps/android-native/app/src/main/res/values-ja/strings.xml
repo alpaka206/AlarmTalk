@@ -341,7 +341,6 @@
     <string name="msg_alarm_update_failed">アラームの編集に失敗しました。</string>
     <string name="msg_consent_record_failed">同意の記録に失敗しました。もう一度お試しください。</string>
     <string name="msg_marketing_consent_update_failed">設定の変更に失敗しました。もう一度お試しください。</string>
-    <string name="msg_custom_voice_alarm_paid_only">この機能は有料利用券でご利用いただけます。</string>
     <string name="msg_email_required">メールアドレスを入力してください。</string>
     <string name="msg_email_verification_completed">メールアドレスの認証が完了しました。</string>
     <string name="msg_family_alarm_couple_family_only">相手のアラームは、カップル・家族プランでご利用いただけます。</string>
@@ -441,7 +440,6 @@
     <string name="msg_voice_invalid_duration">音声の長さを確認できませんでした。ファイルをもう一度選んでください。</string>
     <string name="msg_voice_max_profiles_reached">声は最大%1$d個まで作成できます。</string>
     <string name="msg_voice_name_required">声の名前を入力してください。</string>
-    <string name="msg_voice_paid_plan_required">この機能は有料利用券でご利用いただけます。</string>
     <string name="msg_voice_share_couple_family_required">音声の共有はカップル・ファミリープランでご利用いただけます。</string>
     <string name="msg_voice_share_login_required">声を共有するには、まずログインしてください。</string>
     <string name="msg_voice_share_setting_failed">声の共有設定に失敗しました。</string>
@@ -887,4 +885,6 @@
     <string name="downgrade_notice_shared_message">共有されていた声が使えなくなり、アラーム%1$d件が基本アラーム音に変わりました。再び使うには利用券の登録か新しい招待コードが必要です。</string>
     <string name="downgrade_notice_open_billing">利用券を見る</string>
     <string name="plan_gate_paid_message">この機能は有料利用券でご利用いただけます。</string>
+    <string name="msg_voice_preset_only">基本の声は用意された文だけを話せます。自由入力の文で起こすには、自分の声を選んでください。</string>
+    <string name="msg_voice_locked_free_plan">無料利用券に変わり、この声は使えません。利用券を登録し直すと戻ります。</string>
 </resources>
