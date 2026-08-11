@@ -239,11 +239,16 @@ private fun ConsentToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            // 로드 전(null)엔 비활성, 쓰기 진행 중(busy)엔 연속 토글로 인한 opt-out 유실 방지로 비활성.
+            // ⚠ **쓰기 중이라고 스위치를 끄지 말 것**(2026-08-11 지적 "위치만 옮겨졌다가
+            // 색이 나중에 나온다"). 비활성으로 만들면 손잡이는 낙관적으로 옮겨가는데 색이
+            // **비활성 회색**으로 바뀌었다가 응답이 와야 제 색이 돌아온다 — 켜고 끌 때마다
+            // 두 단계로 보인다. 연속 토글은 뷰모델이 마지막 값을 이어서 보내 처리한다
+            // (`updateMarketingConsent` 의 `pendingMarketingConsent`).
+            // 로드 전(null)에만 비활성 — 그때는 무엇을 켜고 끄는지 알 수 없다.
             AlarmTalkSwitch(
                 checked = agreed == true,
                 onCheckedChange = onChange,
-                enabled = agreed != null && !busy,
+                enabled = agreed != null,
             )
         }
     }

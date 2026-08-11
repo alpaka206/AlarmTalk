@@ -1602,6 +1602,19 @@ internal fun AlarmEditorScreen(
                 },
                 onDismiss = { settingsDetailPanel = null },
                 onManualLocked = { voicePlanGateOpen = true },
+                weatherRegionSummary = if (editor.selectedBucket == "weather") {
+                    if (editor.voiceWeatherCountry.isNotBlank() && editor.voiceWeatherCity.isNotBlank()) {
+                        stringResource(
+                            R.string.editorp_random_weather_region_value,
+                            weatherLocationSummary(context, editor.voiceWeatherCountry, editor.voiceWeatherCity),
+                        )
+                    } else {
+                        stringResource(R.string.editorp_random_weather_region_required)
+                    }
+                } else {
+                    null
+                },
+                onChangeWeatherRegion = { freeWeatherDialogOpen = true },
             )
 
             "voice_output" -> VoiceOutputSettingsPane(

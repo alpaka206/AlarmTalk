@@ -903,8 +903,15 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
-    // 쓰기가 진행 중이면(토글 disable 우회 등) 새 요청을 시작하지 않는다 — 동시 POST 직렬화.
-    if (marketingConsentWriteInFlight) return
+    // ⚠ **진행 중인 쓰기가 있으면 버리지 말고 '마지막 값' 으로 예약한다.**
+    // 예전에는 그냥 `return` 이라, 스위치가 상시 활성이 된 지금은 연속으로 토글하면
+    // **화면은 켜져 있는데 서버는 꺼진 채**로 끝날 수 있다. 낙관적 표시는 아래에서
+    // 곧바로 하고, 실제 전송은 지금 쓰기가 끝난 뒤 이어서 한 번 더 보낸다.
+    if (marketingConsentWriteInFlight) {
+        marketingConsentAgreed = agreed
+        pendingMarketingConsent = agreed
+        return
+    }
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
@@ -940,6 +947,15 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         // 완료 사이 계정 전환/더 새로운 토글로 사용자나 generation 이 바뀌었으면 이 결과는 폐기한다
         // (상태·잠금 모두 건드리지 않음 — 현재 소유자가 따로 관리).
         if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
+        marketingConsentWriteInFlight = false
+        // 진행 중에 사용자가 또 눌렀으면 **마지막 값**을 이어서 보낸다.
+        pendingMarketingConsent?.let { queued ->
+            pendingMarketingConsent = null
+            if (queued != agreed) {
+                updateMarketingConsent(queued)
+                return@launch
+            }
+        }
         result.onSuccess {
             val app = getApplication<android.app.Application>()
             // 확정된 값을 캐시에 저장 → 다음 진입 때 즉시 seed(낙관적 표시).

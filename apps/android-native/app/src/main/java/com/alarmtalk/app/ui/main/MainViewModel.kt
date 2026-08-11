@@ -658,6 +658,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 마케팅 동의 POST 진행 중 여부. true 동안엔 토글을 비활성화해 동시/연속 쓰기를 막는다.
     // (늦게 도착한 옛 POST 가 최신 의도 뒤에 INSERT 되어 opt-out 이 유실되는 것 방지)
     var marketingConsentWriteInFlight by mutableStateOf(false)
+
+    /**
+     * 쓰기가 도는 동안 사용자가 또 토글했을 때의 **마지막 값**.
+     *
+     * 스위치를 상시 활성으로 둔 뒤로는(쓰기 중 비활성이면 색이 두 단계로 보인다) 연속
+     * 토글이 실제로 들어온다. 그때 새 요청을 그냥 버리면 **화면과 서버가 갈라진다** —
+     * 여기 담아 두고 지금 쓰기가 끝나면 이어서 보낸다.
+     */
+    var pendingMarketingConsent: Boolean? = null
         internal set
 
     // 직전 마케팅 동의 로드(GET)가 실패했는지. marketingConsentAgreed 가 null 인 동안 '로딩 중'과

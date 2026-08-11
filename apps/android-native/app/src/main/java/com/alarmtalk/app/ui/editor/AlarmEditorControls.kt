@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -445,18 +446,25 @@ internal fun PlayModeChip(
     locked: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    Surface(
-        onClick = onClick,
+    // ⚠ **칸은 배경을 그리지 않는다.** 선택 표시는 트랙의 미끄러지는 배경이 맡는다
+    // (`EditorSegmentedSelector`). 여기서 색을 또 칠하면 옮겨가는 배경과 겹쳐
+    // 두 칸이 동시에 칠해진 것처럼 보인다.
+    //
+    // ⚠ **리플(indication)도 끈다**(2026-08-11 요청 "눌렀을 때 회색 표시되는 거 없애도 돼").
+    // `Surface(onClick = …)` 은 기본 리플을 그리는데, 그 회색 사각이 **미끄러지는 선택
+    // 배경 위에 겹쳐** 한 칸이 두 겹으로 칠해진 것처럼 보인다. 눌린 느낌은
+    // `wakerPressScale` 이 이미 준다 — 피드백이 사라지는 게 아니라 중복이 빠지는 것이다.
+    // (같은 이유로 알람 행도 `indication = null` 이다 — `ControlsAndPermissions.kt`.)
+    Box(
         modifier = modifier
             .wakerPressScale(interactionSource)
-            .alpha(if (locked && !selected) 0.58f else 1f),
-        interactionSource = interactionSource,
-        shape = WakerChipShape,
-        // ⚠ **칸은 배경을 그리지 않는다.** 선택 표시는 트랙의 미끄러지는 배경이 맡는다
-        // (`EditorSegmentedSelector`). 여기서 색을 또 칠하면 옮겨가는 배경과 겹쳐
-        // 두 칸이 동시에 칠해진 것처럼 보인다.
-        color = Color.Transparent,
-        border = null,
+            .alpha(if (locked && !selected) 0.58f else 1f)
+            .clip(WakerChipShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
     ) {
         Box(
             modifier = Modifier

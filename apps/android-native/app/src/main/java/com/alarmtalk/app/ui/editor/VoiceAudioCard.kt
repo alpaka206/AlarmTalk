@@ -612,6 +612,16 @@ internal fun FreeBucketSettingsPane(
     onDismiss: () -> Unit,
     /** 잠긴 '직접 입력'을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
     onManualLocked: () -> Unit,
+    /**
+     * 날씨를 골랐을 때 보여줄 지역 요약. null 이면 행을 그리지 않는다.
+     *
+     * ⚠ 유료 pane(`AlarmRandomPromptSettings`)은 고른 값을 같은 자리에서 보여주고
+     * 같은 자리에서 고치는데, 무료 pane 만 **고르고 나면 무엇을 골랐는지 볼 수 없었다**
+     * (2026-08-11 지적). 등록한 값을 확인·변경할 길이 화면에 없으면 다시 고르는 것 말고는
+     * 방법이 없다.
+     */
+    weatherRegionSummary: String? = null,
+    onChangeWeatherRegion: (() -> Unit)? = null,
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -657,6 +667,14 @@ internal fun FreeBucketSettingsPane(
                     SnoozeLockedRow(
                         label = stringResource(R.string.editor_msg_mode_manual),
                         onClick = onManualLocked,
+                    )
+                }
+                // 고른 값을 유료 pane 과 **같은 모양**으로 보여주고 같은 자리에서 고친다.
+                if (weatherRegionSummary != null && onChangeWeatherRegion != null) {
+                    RandomPromptDetailRow(
+                        title = stringResource(R.string.editorp_random_weather_region_title),
+                        value = weatherRegionSummary,
+                        onChange = onChangeWeatherRegion,
                     )
                 }
             }
