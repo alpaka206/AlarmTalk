@@ -124,21 +124,53 @@
 ⚠ 이 화면은 **고르는 화면이 아니라 받는 화면**이다. "기본 목소리를 골라보세요" 같은
 피커로 되돌리지 말 것 — 목소리는 **알람 편집기에서** 고른다.
 
-## 6. 무료로 내려가면 **잠근다 — 지우지 않는다**
+## 6. 무료로 내려가면 — **알람은 잠그고, 목소리는 3일 뒤 지운다**
 
-구독이 끝나거나 해지되면 목소리 알람을 **삭제하지 않는다.**
+축이 **둘**이다. 섞어 읽으면 반드시 사고가 난다.
 
 | 무엇을 | 어떻게 |
 | --- | --- |
+| **알람 행** | **지우지 않는다.** 시각·반복·문구·목소리 선택 전부 보존 |
 | 재생 방식 | 원래 값을 `preLockPlayMode` 에 보관하고 `alarm_only` 로 내린다 |
-| 알람 자체 | **그대로 둔다.** 시각·반복·문구·목소리 선택 전부 보존 |
-| 음원 캐시 | 지우지 않는다 |
 | 예약 | 사운드온리로 **다시 예약한다** — 안 하면 잠근 게 아니라 조용히 안 울리는 알람이 된다 |
-| 유료 복귀 시 | `preLockPlayMode` 로 되돌리고 다시 예약한다 |
+| 기기 음원 캐시 | 지우지 않는다 |
+| **서버 목소리 데이터** | **유예 3일 뒤 영구 삭제**(`PAID_VOICE_RETENTION_DAYS`) — 목소리 프로필·업로드 원본·생성 음성·ElevenLabs 클론·R2 객체 |
+| 유예 **안에** 유료 복귀 | 삭제를 취소하고(`hasActivePaidEntitlement` 재확인 → `clearPaidVoiceRetention`) `preLockPlayMode` 로 되돌린다 |
+| 유예 **뒤** 유료 복귀 | 알람 행은 복원되지만 **말할 목소리가 없다** — 다시 등록해야 한다 |
 
-⚠ **삭제는 되돌릴 수 없다.** iOS 가 실제로 행과 음원을 함께 지우고 있었다 — 재결제해도
-돌아오지 않았다. 알람 앱에서 "내일 아침 알람이 없어졌다" 는 가장 무거운 실패다
-(2026-08-07 수정).
+⚠ **알람 행 삭제는 되돌릴 수 없다.** iOS 가 실제로 행과 음원을 함께 지우고 있었다 —
+재결제해도 돌아오지 않았다. 알람 앱에서 "내일 아침 알람이 없어졌다" 는 가장 무거운
+실패다(2026-08-07 수정). **이 문장은 알람 행에 대한 것이다** — 목소리 데이터는 위 표대로
+의도적으로 지운다.
+
+⚠ **"다시 등록하면 복구돼요" 라고만 쓰지 말 것.** 유예가 지나면 거짓이 된다. 사용자에게
+말할 때는 **기한과 결과를 함께** 말한다("3일 안에 …, 지나면 영구 삭제돼요").
+구현: `downgrade_notice_free_message`·`msg_gb_free_plan_voice_alarms_locked`(안드),
+`RootView` 강등 모달·`SocialFeatureViewModel`(iOS).
+
+⚠ **예고는 눈에 보여야 한다.** 강등 신호(`family_alarm`·`voice_access_revoked`·
+`plan_changed`)는 전부 **무음 데이터 푸시**라 앱을 열어야만 안다. 삭제는 되돌릴 수 없고
+3일 안에 앱을 한 번도 안 여는 사람이 정확히 잃는 쪽이라, 예고만은 표시용 푸시를 보낸다
+(`sendVoiceDeletionWarningPush` ← `notifyVoiceDeletionScheduled`, 커밋 뒤 호출).
+
+### 받은(가족) 알람은 **다른 축**이다
+
+받은 알람의 목소리는 **접근권**(공유가 살아 있는가)이 정한다. **받는 사람의 플랜으로
+다스리지 않는다.**
+
+- 공유가 끊기면 서버가 받은 알람까지 `sound-only` 로 걷어낸다(`paid-voice-cleanup.ts`,
+  `is_received` 포함) → pull sync 로 양 앱에 내려온다.
+- 그래서 잠금(`lockPaidAlarmTalks` / `paidAlarmTalks`)은 **`origin == LOCAL_OWNED` 만** 본다.
+
+⚠ **플랜 축을 받은 알람에 걸면 결제 보류(유예)에서 오발한다.** `resolvePlanAfterSuspend` 는
+그룹·공유를 살려 둔 채 `users.plan` 만 회수하므로, 카드가 잠깐 실패한 사이 파트너가 보낸
+알람의 목소리가 잠긴다. 게다가 해제는 **받는 사람이 유료가 될 때만** 돌아 영구히 남을 수
+있다(2026-08-11 안드로이드에서 제거).
+
+애초에 "무료인데 받은 알람이 있다" 는 상태는 셋뿐이다 — 받으려면 그룹 멤버여야 하고
+(`assertSameGroup`) 멤버는 그룹 플랜을 물려받는다(`propagateGroupMemberPlans`):
+① 결제 보류(유예) ② 그룹 이탈 ③ 소유자 해지. **②③ 은 서버가 이미 강등**하므로,
+플랜 축을 떼면 ①(지켜야 할 유예)이 판정을 따로 만들지 않아도 지켜진다.
 
 ⚠ **두 번 잠가도 원래 값을 잃지 않아야 한다.** `preLockPlayMode` 가 이미 있으면 덮어쓰지
 않는다 — 덮어쓰면 두 번째 잠금이 `alarm_only` 를 '원래 값' 으로 적어 복원이 불가능해진다.
@@ -175,6 +207,10 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
 | 오디오 캐시 키 | `stock_<messageId>` | `AudioCacheStore.stockCacheKey` (같은 규칙) | — |
 | 무료 전환 잠금 | `AlarmRepository.lockPaidAlarmTalks` / `unlockPaidAlarmTalks` | `SocialFeatureViewModel.applyFreePlanVoiceLock` / `restorePaidVoiceAlarms` | `users.plan`, `resolvePlanAfterSuspend` |
+| 목소리 데이터 3일 유예 | `AlarmRepository.lockPaidAlarmTalks`(행만) | `SocialFeatureViewModel.applyFreePlanVoiceLock`(행만) | `PAID_VOICE_RETENTION_DAYS` · `schedulePaidVoiceRetention` · `clearPaidVoiceRetention` |
+| 유예 만료 삭제 | — | — | `sweepPaidVoiceRetention` → `deleteSensitiveVoiceDataForUser`(삭제 직전 `hasActivePaidEntitlement` 재확인) |
+| 삭제 예고 푸시 | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` | `notifyVoiceDeletionScheduled` → `sendVoiceDeletionWarningPush` |
+| 받은 알람은 접근권 축 | `lockPaidAlarmTalks` 의 `origin == LOCAL_OWNED` | `LocalAlarmStore.paidAlarmTalks` 의 `.localOwned` | `paid-voice-cleanup.ts`(`is_received` 까지 sound-only) |
 
 ## 검증 방법
 

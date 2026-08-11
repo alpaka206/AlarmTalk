@@ -26,6 +26,7 @@ import {
 } from './apple-storekit';
 import { PAID_PLAN_TYPES, planTypeToUserPlan, plannedMaxUses, isGroupPlanType } from '../routes/billing-helpers';
 import { notifyDowngradedAlarms, sendPlanChangedPush } from './fcm';
+import { sendVoiceDeletionWarningPush } from './fcm';
 import type { Env } from '../types';
 
 // 만료 크론이 FCM(plan_changed) 을 쏘려면 Play env 외에 FIREBASE 설정도 필요하다. index.ts 의 scheduled
@@ -1013,6 +1014,49 @@ async function reconcileStoreBeforeExpiry(
  * **반드시 DB 트랜잭션 커밋 '후'에** 호출한다 — FCM 은 네트워크 I/O 라 tx 안에서 쏘면 안 된다.
  * (정확성은 클라 로컬 폴백[앱 시작 재조회 + 울림 시점 게이트]이 보장 — 푸시는 즉시성만.)
  */
+/**
+ * **목소리 삭제 예고를 보낸다.** 보관 유예가 걸린 사용자에게만 간다.
+ *
+ * ⚠ **트랜잭션 밖에서 부른다** — FCM 은 tx 안에서 쏘지 않는다(`notifyPlanChanged` 와 같은 규칙).
+ * 그래서 예약(`schedulePaidVoiceRetention`)과 같은 자리에 둘 수 없고, 커밋 뒤에 부른다.
+ *
+ * 유예 행이 없는 사용자는 조용히 건너뛴다 — 강등이라고 다 삭제 예고가 붙는 게 아니다
+ * (결제 보류는 유예를 걸지 않으므로 여기서 자연히 빠진다).
+ */
+export async function notifyVoiceDeletionScheduled(
+  db: Client,
+  env: ExpiryEnv | undefined,
+  userIds: string[],
+): Promise<void> {
+  const unique = Array.from(new Set(userIds.filter(Boolean)));
+  if (unique.length === 0) return;
+  const hasFirebase = Boolean(env?.FIREBASE_PROJECT_ID && env?.FIREBASE_SERVICE_ACCOUNT_JSON);
+  const hasApns = Boolean(env?.APNS_KEY_ID && env?.APNS_PRIVATE_KEY && env?.APPLE_TEAM_ID);
+  if (!hasFirebase && !hasApns) return;
+
+  const ph = unique.map(() => '?').join(', ');
+  const res = await db.execute({
+    sql: `SELECT user_id FROM paid_voice_retention WHERE user_id IN (${ph})`,
+    args: unique,
+  });
+  const scheduled = res.rows.map((r) => String(r.user_id));
+  if (scheduled.length === 0) return;
+
+  try {
+    await sendVoiceDeletionWarningPush(db, env as ExpiryEnv, {
+      userPks: scheduled,
+      retentionDays: PAID_VOICE_RETENTION_DAYS,
+    });
+  } catch (err) {
+    // ⚠ 알림 실패로 강등·예약을 되돌리지 않는다 — 데이터는 이미 정리됐다.
+    logStructured('error', {
+      at: 'billing.notify_voice_deletion',
+      action: 'PUSH_FAILED',
+      error: String(err),
+    });
+  }
+}
+
 export async function notifyPlanChanged(
   db: Client,
   env: ExpiryEnv | undefined,
@@ -1177,6 +1221,8 @@ export async function processSubscriptionExpiry(
   // 강등된 사용자에게 plan_changed 푸시 — 클라가 '강등 시점'에 유료 목소리 알람을 기본 알람으로
   // 변환하게 한다(백그라운드 여도). 과다발송해도 클라가 재조회로 확인.
   await notifyPlanChanged(db, env, Array.from(notifyUserPks));
+  // 유예가 걸린 사람에게만 **눈에 보이는** 삭제 예고를 보낸다(위 신호는 전부 무음이다).
+  await notifyVoiceDeletionScheduled(db, env, Array.from(notifyUserPks));
 
   // 보관 정리가 서버에서 바꾼 '알람 행'은 plan_changed 로는 안 따라온다 — 이유는
   // notifyDowngradedAlarms 참고. 강등된 알람마다 알람 동기화 신호를 보낸다.

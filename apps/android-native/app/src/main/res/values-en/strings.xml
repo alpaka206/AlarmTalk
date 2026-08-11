@@ -351,7 +351,7 @@
     <string name="msg_gb_code_registered">Code registered</string>
     <string name="msg_gb_promo_redeemed">Promo code applied</string>
     <string name="msg_gb_promo_redeem_failed">Couldn\'t apply the promo code.</string>
-    <string name="msg_gb_free_plan_voice_alarms_locked">You\'ve switched to the free plan, so your voice alarms are locked. They\'ll be restored when you resubscribe.</string>
+    <string name="msg_gb_free_plan_voice_alarms_locked">Your voice alarms are locked on the free pass. Subscribe again within 3 days to restore them — after that the voices are deleted permanently.</string>
     <string name="msg_gb_google_play_start_failed">Couldn\'t start the Google Play payment. Please try again in a moment.</string>
     <string name="msg_gb_billing_info_load_failed">Couldn\'t load your plan info</string>
     <string name="msg_gb_login_required_apply_plan">Please log in first to apply a plan.</string>
@@ -379,7 +379,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">You can keep using your pass until the end of this period. There\'s no next payment.</string>
     <string name="msg_gb_subscription_cancel_failed">Couldn\'t cancel your plan.</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">Your plan is canceled. Your voice is kept for 3 days — resubscribe within that window and it comes back as it was</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">Your pass is cancelled. Voices are kept for 3 days — subscribe again within that time to keep them, after that they are deleted permanently</string>
 
 
 
@@ -878,4 +878,9 @@ Pass code: %1$s
     <string name="misc2_theme_mode_light_desc">A bright screen that stays crisp in daylight.</string>
     <string name="misc2_theme_mode_dark_desc">A dark screen that\'s easy on the eyes at night.</string>
     <string name="common_back">Back</string>
+    <string name="downgrade_notice_free_title">You\'re on the free pass now</string>
+    <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use the default sound. Subscribe again within 3 days to get the voices back — after that they are deleted permanently.</string>
+    <string name="downgrade_notice_shared_title">You\'ve left the shared pass</string>
+    <string name="downgrade_notice_shared_message">The shared voice is no longer available, so %1$d alarm(s) now use the default sound. To use it again you need your own pass or a new invite code.</string>
+    <string name="downgrade_notice_open_billing">View passes</string>
 </resources>

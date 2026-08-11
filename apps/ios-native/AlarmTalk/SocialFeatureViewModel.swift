@@ -503,7 +503,7 @@ final class SocialFeatureViewModel: ObservableObject {
         familyVoices = []
         if lockedAlarmCount > 0 {
             // '삭제했어요' 라고 하지 않는다 — 지우지 않았고, 알람은 알람음으로 계속 울린다.
-            statusMessage = "무료 이용권으로 전환되어 목소리 알람을 알람음으로 바꿨어요. 이용권을 다시 등록하면 목소리가 돌아와요."
+            statusMessage = "무료 이용권으로 전환되어 목소리 알람을 알람음으로 바꿨어요. 3일 안에 다시 등록하면 목소리가 돌아오고, 지나면 영구 삭제돼요."
         }
     }
 }

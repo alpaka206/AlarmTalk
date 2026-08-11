@@ -360,7 +360,7 @@
     <string name="msg_gb_code_registered">コードを登録しました</string>
     <string name="msg_gb_promo_redeemed">プロモコードを適用しました</string>
     <string name="msg_gb_promo_redeem_failed">プロモコードを適用できませんでした。</string>
-    <string name="msg_gb_free_plan_voice_alarms_locked">無料プランに切り替わったため、声のアラームがロックされました。再び利用券を登録すると復元されます。</string>
+    <string name="msg_gb_free_plan_voice_alarms_locked">無料利用券に切り替わり、声のアラームがロックされました。3日以内に登録し直すと復元され、過ぎると声は完全に削除されます。</string>
     <string name="msg_gb_google_play_start_failed">Google Play決済を開始できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="msg_gb_billing_info_load_failed">プラン情報を読み込めませんでした</string>
     <string name="msg_gb_login_required_apply_plan">プランを適用するには、まずログインしてください。</string>
@@ -388,7 +388,7 @@
     <string name="msg_gb_subscription_cancel_at_period_end">今の利用期間まではそのまま使えます。次のお支払いはありません。</string>
     <string name="msg_gb_subscription_cancel_failed">解約に失敗しました。</string>
 
-    <string name="msg_gb_subscription_canceled_voice_locked">プランを解約しました。声は3日間保管されます — その間に再登録すればそのまま使えます</string>
+    <string name="msg_gb_subscription_canceled_voice_locked">利用券を解約しました。声は3日間保管されます — その間に登録し直せばそのまま使え、過ぎると完全に削除されます</string>
 
 
 
@@ -886,4 +886,9 @@
     <string name="misc2_theme_mode_light_desc">昼でもはっきり見える明るい画面です。</string>
     <string name="misc2_theme_mode_dark_desc">夜に見やすい暗い画面です。</string>
     <string name="common_back">戻る</string>
+    <string name="downgrade_notice_free_title">無料利用券に変わりました</string>
+    <string name="downgrade_notice_free_message">声のアラーム%1$d件が基本アラーム音に変わりました。3日以内に利用券を登録し直すと声が戻り、過ぎると完全に削除されます。</string>
+    <string name="downgrade_notice_shared_title">共有利用券から外れました</string>
+    <string name="downgrade_notice_shared_message">共有されていた声が使えなくなり、アラーム%1$d件が基本アラーム音に変わりました。再び使うには利用券の登録か新しい招待コードが必要です。</string>
+    <string name="downgrade_notice_open_billing">利用券を見る</string>
 </resources>

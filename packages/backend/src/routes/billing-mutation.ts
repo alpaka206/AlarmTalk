@@ -7,6 +7,7 @@ import {
   clearPaidVoiceRetention,
   findActiveSubscriptionsByUserPk,
   notifyPlanChanged,
+  notifyVoiceDeletionScheduled,
   scheduleCancelAtPeriodEnd,
   schedulePaidVoiceRetention,
 } from '../lib/billing-cancel';
@@ -810,6 +811,8 @@ billingMutation.post('/cancel', async (c) => {
   });
   // 가족 소유자 즉시 해지 시 함께 강등되는 멤버에게 plan_changed 푸시(당사자 포함, 커밋 후).
   await notifyPlanChanged(db, c.env, Array.from(cancelAffected));
+  // 해지 직후가 예고를 보낼 자리다 — 3일 뒤 지워진다는 걸 지금 말해야 되돌릴 시간이 있다.
+  await notifyVoiceDeletionScheduled(db, c.env, Array.from(cancelAffected));
   return c.json({
     success: true,
     mode,

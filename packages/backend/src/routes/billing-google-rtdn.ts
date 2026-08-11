@@ -10,6 +10,7 @@ import { purchaseBelongsToUser } from '../lib/purchase-account-binding';
 import {
   cancelSubscriptionImmediate,
   notifyPlanChanged,
+  notifyVoiceDeletionScheduled,
   resolvePlanAfterSuspend,
   schedulePaidVoiceRetention,
   propagateGroupMemberPlans,
@@ -484,6 +485,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
   // 실시간 만료·취소(Play RTDN 주 경로)로 강등되는 당사자+해체 멤버에게 plan_changed 푸시 →
   // 크론을 기다리지 않고 '강등 시점'에 클라가 유료 목소리 알람을 기본 알람으로 변환(백그라운드 여도).
   await notifyPlanChanged(db, c.env, affected);
+  await notifyVoiceDeletionScheduled(db, c.env, affected);
   logStructured('info', { at: 'billing.google.rtdn', action: 'deactivate', state, userPk });
   return c.json({ success: true, action: 'deactivated' });
 });

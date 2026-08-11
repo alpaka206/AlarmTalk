@@ -491,6 +491,68 @@ export async function sendPaymentFailedPush(
 }
 
 /**
+ * **목소리가 곧 영구 삭제된다고 알린다.** 유료 접근을 잃어 보관 유예가 걸린 순간 보낸다.
+ *
+ * ⚠ **이것만 눈에 보이는 푸시다.** 나머지 강등 신호(`family_alarm`·`voice_access_revoked`·
+ * `plan_changed`)는 전부 **무음 데이터**라 앱을 열어야만 알 수 있다. 그런데 삭제는
+ * 유예 3일이 지나면 **되돌릴 수 없고**, 그 사이 앱을 한 번도 안 여는 사람이 정확히
+ * 잃는 쪽이다 — 그래서 여기만 표시용을 함께 보낸다.
+ *
+ * 문구에 **기한과 결과를 둘 다** 넣는다. "보관돼요" 만 쓰면 기다리면 되는 줄 안다.
+ *
+ * `sendPaymentFailedPush` 와 같은 두 통 규칙을 따른다(표시용 + 워커 기동용 data-only).
+ */
+export async function sendVoiceDeletionWarningPush(
+  db: Client,
+  env: Pick<
+    Env,
+    | 'FIREBASE_PROJECT_ID'
+    | 'FIREBASE_SERVICE_ACCOUNT_JSON'
+    | 'APNS_KEY_ID'
+    | 'APNS_PRIVATE_KEY'
+    | 'APPLE_TEAM_ID'
+    | 'APPLE_BUNDLE_ID'
+  > & { ENVIRONMENT?: string },
+  params: { userPks: string[]; retentionDays: number },
+): Promise<void> {
+  const fcmMessages: FcmMessage[] = [];
+  const apnsMessages: ApnsMessage[] = [];
+  const title = '목소리가 곧 삭제돼요';
+  const body =
+    `이용권이 끝나 목소리를 ${params.retentionDays}일간만 보관해요. ` +
+    '그 안에 다시 등록하면 그대로 쓸 수 있고, 지나면 영구 삭제돼요.';
+
+  for (const userId of Array.from(new Set(params.userPks)).filter(Boolean)) {
+    for (const target of await getPushTargetsForUser(db, userId)) {
+      if (target.platform === 'ios') {
+        apnsMessages.push({ token: target.token, title, body, data: { type: 'plan_changed' } });
+      } else {
+        fcmMessages.push({
+          token: target.token,
+          title,
+          body,
+          data: { type: 'voice_deletion_warning', channelId: SOCIAL_CHANNEL_ID },
+        });
+        // 워커 기동용 — title/body 가 비어야 onMessageReceived 가 온다.
+        fcmMessages.push({ token: target.token, title: '', body: '', data: { type: 'plan_changed' } });
+      }
+    }
+  }
+
+  if (fcmMessages.length > 0) {
+    await pruneStaleTokens(db, await sendPushNotifications(fcmMessages, env));
+  }
+  if (apnsMessages.length > 0) {
+    const config = apnsConfigFromEnv(env);
+    // ⚠ 키가 없으면 조용히 건너뛴다 — 푸시가 없다고 삭제 예약이 깨지면 안 된다.
+    if (config) {
+      const results = await sendApnsNotifications(apnsMessages, config);
+      await pruneDeadApnsTokens(db, results);
+    }
+  }
+}
+
+/**
  * APNs 가 "이 토큰은 죽었다" 고 한 것만 지운다.
  *
  * ⚠ 네트워크 오류로 지우면 그 기기는 재로그인 전까지 푸시를 영영 못 받는다.
