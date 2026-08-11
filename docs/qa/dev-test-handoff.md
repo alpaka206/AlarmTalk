@@ -216,6 +216,58 @@ S23 Ultra·A32 두 대에서 끝냈다(웰컴 프로모·닉네임·스누즈 �
 전수 조사 결과가 워크플로 산출물로 남아 있다(게이트 노출 지점·쿠폰 버튼 위치·
 파일 업로드 심볼·무료 안내 문구). 다음 세션은 그 목록부터 확인하고 시작하면 된다.
 
+## 1-F. 유료 게이트 전수 조사 결과 (2026-08-11, 반증까지 마침)
+
+1-E 를 실행하기 전에 이 목록부터 본다. **찾은 것을 다시 찾지 말 것.**
+
+### ⚠ en/ja 기기에 한국어가 그대로 뜬다 (iOS `Localizable.xcstrings` 누락)
+
+| 누락 문자열 | 나오는 곳 |
+| --- | --- |
+| `유료 이용권이 필요해요` | `AlarmEditorSheet.swift` 무료 게이트 **제목** |
+| `기본 목소리로는 직접 입력을 쓸 수 없어요` | 같은 파일, 유료+기본목소리 게이트 제목 |
+| `기본 목소리는 준비된 문구로만 …` | 카탈로그엔 **옛 문구**가 en/ja 와 함께 남아 있다(소스만 고친 전형) |
+| `이용권을 등록하면 이 목소리로 알람을 만들 수 있어요.` | 저장 버튼 아래 인라인 차단 |
+| `직접 녹음` | 목소리 시트 마지막 항목 |
+
+### 사장 코드 (지울 것)
+
+- `Views/Common/PlanGateDialog.swift` — `PlanGateState` **참조 0건**, 게다가 그 파일에
+  **다이얼로그 View 자체가 없다**(파일명이 거짓말). 살아 있는 건 `PlanTier` 뿐 →
+  `PlanTier.swift` 로 개명.
+- 카탈로그 사장 항목 9개(`유료 기능이에요`·`요금제 변경하러 가기`·`이 기능은 무료
+  플랜에서도…` 계열) — en/ja 번역까지 붙은 채 남아 있다.
+- 안드로이드 `voices_paid_required` ≡ `msg_voice_paid_plan_required` — **글자가 같은 중복 키**.
+
+### 게이트 진입점 (AOS 는 1곳이 아니라 4곳)
+
+`AlarmEditorScreen.kt` 의 `onManualLocked` / PlayModeCard 선택 / `onLockedVoiceClick` /
+VoiceAudioCard 토글, 그리고 `saveEditor()` 사전 차단. ⚠ 뒤 넷은 판정이
+`voicePlanLocked = authSession == null` 이라 **실질 사유가 로그인**이다 — 유료 게이트와
+섞어서 고치면 안 된다.
+
+### 앱 간 불일치 (통일 대상)
+
+| 항목 | 안드로이드 | iOS |
+| --- | --- | --- |
+| 목소리 게이트의 **쿠폰 버튼** | 있다(`PlanGateDialog(onRedeemCode=…)`) | **없다** ← 요청 3번과 직결 |
+| 강등 모달의 '이용권 보기' | 있다(`downgrade_notice_open_billing`) | **없다**(확인 하나뿐) |
+| 무료가 보는 '내 목소리' 목록 | **숨긴다**(`ownVoices = emptyList()`) | 그대로 보인다 |
+| 저장 전 유료 사유 표시 | 없다(눌러야 스낵바) | 있다(`editorSaveBlockedReason`) |
+| 무료가 녹음을 고를 때 | **녹음을 끝낸 뒤** 거절 | 시트에서 자물쇠로 미리 막음 |
+
+### 서버 에러코드 3종이 양 앱 모두 미매핑
+
+`FREE_PLAN_PRESET_ONLY` · `BASIC_VOICE_PRESET_ONLY` · `VOICE_LOCKED_FREE_PLAN` →
+지금은 일반 오류 문구로 떨어진다. 매핑 자리: 안드 `MainViewModelVoiceActions` 의 when,
+iOS `VoiceStudioViewModel+ErrorMapping` 의 switch + `knownErrorCodes`.
+
+### 미확인 (실기기 필요)
+
+- iOS `presentCreateEntry()` 는 `familyRecipients.isEmpty` 만 보는데 안드는
+  `hasCoupleOrFamilyAccess` 를 함께 본다 — 보류(`ON_HOLD`) 상태에서 갈라지는지 미검증.
+- 스낵바·알럿의 실제 도달 가능성은 코드 경로로만 판단했다.
+
 ## 1-C. 콘솔 작업 (코드는 끝, 사람이 눌러야 하는 것)
 
 - [x] ~~Sentry 프로젝트 생성 → DSN 발급~~ **2026-08-11 완료.** 세 프로젝트(ios/android/backend)
