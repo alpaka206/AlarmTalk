@@ -112,14 +112,53 @@
 
 ### 미리 받아 둔다
 
-울릴 시각에 네트워크가 없으면 그 회차가 조용히 비므로, 로그인 직후 받아 둔다.
+울릴 시각에 네트워크가 없으면 그 회차가 조용히 비므로, **미리** 받아 둔다.
 
-- 받는 대상 = 기본 목소리 × **기기 언어 하나** × 무료 버킷 카테고리(weather, medication)
+- 받는 대상 = 기본(시스템) 목소리 **전부** × **기기 언어 하나** × 무료 버킷
+  카테고리(weather, medication)
 - 언어를 하나로 좁힌다 — 앱은 한 번에 한 언어만 쓰고, 언어를 바꾸면 다시 돌아 채운다
 - greeting 은 앱에 내장돼 있어 받지 않는다
 - 운세·사랑은 유료 클론 전용이라 기본 목소리로는 쓸 수 없다
 - 한 클립이 실패해도 나머지는 계속 받는다 — 회전은 남은 것만으로도 돈다.
   **전부 실패했을 때만** 실패로 본다.
+
+#### 언제 받는가 — **한 번이 아니다**
+
+⚠ 예전에는 이 절이 "로그인 직후" 라고만 적어서, 읽는 사람이 **1회성 온보딩 작업**으로
+오해했다(실제로 iOS 는 그렇게 구현돼 있었고 언어를 바꿔도 새 언어분을 영영 안 받았다).
+
+| 계기 | 안드로이드 | iOS |
+| --- | --- | --- |
+| 앱 시작(세션·동의 확인 뒤) | `AlarmTalkApp.kt` 의 `loadStockClips()` + `prefetchStockClips()` | `AlarmTalkApp.swift` 의 계정+언어 키 task |
+| 기기 언어 변경 | 같은 자리(다음 실행) | 같은 task(언어가 키에 있다) |
+| 포그라운드 복귀 | — | `scenePhase == .active` 에서 보충 |
+| 실패 후 재시도 | WorkManager 30초 선형 백오프 | 같은 정책 3회 |
+
+**이미 캐시된 클립은 건너뛴다** — 그래서 여러 번 불러도 값이 싸다. "빠진 것만 보충" 이
+이 작업의 정상 동작이고, 중복 호출은 버그가 아니다.
+
+#### 고를 때·저장할 때 — **네트워크를 타지 않는다**
+
+⚠ **이 절이 없어서 사고가 났다.** 근거가 없으니 읽는 사람이 코드 한 줄(다운로드 폴백)만
+보고 "테마를 고르면 그때 받는다" 로 일반화했다(2026-08-12).
+
+| 시점 | 무엇을 하나 |
+| --- | --- |
+| **테마를 고를 때** | **값만 바꾼다.** 안드로이드 `bindStockBucketClips` 는 `getCachedAudio(cacheKey) ?: 다운로드` 로 **캐시 우선**이고, iOS `prepareStockClip` 도 같다. 선다운로드가 제 일을 했으면 네트워크가 없다 |
+| **저장할 때** | 그 (목소리·테마·언어)의 클립 목록을 **묶기만** 한다. 조건형(날씨·운세)은 조건에, 회전형(약·사랑)은 순번에 맞춰 고른다 |
+| 캐시가 비어 있으면 | 그때만 받는다 — 선다운로드 실패에 대한 **폴백**이지 정상 경로가 아니다 |
+
+⚠ **테마 선택을 준비된 음원에서 파생시키지 말 것.** iOS 는 2026-08-12 전까지 "어떤 테마를
+골랐는가" 를 `preparedAlarm`(미리듣기용 준비 음원)에서 거꾸로 읽었다. 그래서 음원을 못
+받으면 **고른 적 없는 것으로** 표시됐고, 문구 행이 "불러오는 중이에요" 에서 벗어나지
+못했다. 선택은 값 하나여야 한다(안드로이드 `AlarmEditorState.selectedBucket`,
+iOS `selectedBucketDraft`).
+
+#### 알람 편집기에 **미리듣기 칩을 두지 않는다**
+
+고른 목소리·문구로 음원을 미리 만들어 재생 버튼과 문구를 띄우던 UI 는 2026-08-12 에
+없앴다. 안드로이드에는 처음부터 없었고, iOS 만 갖고 있었다. 되살리지 말 것 —
+목소리 자체를 들어보는 미리듣기(목소리 시트·공유 목소리)와 녹음 재생은 **다른 것이고 남는다**.
 
 ⚠ 이 화면은 **고르는 화면이 아니라 받는 화면**이다. "기본 목소리를 골라보세요" 같은
 피커로 되돌리지 말 것 — 목소리는 **알람 편집기에서** 고른다.
@@ -211,6 +250,10 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 유예 만료 삭제 | — | — | `sweepPaidVoiceRetention` → `deleteSensitiveVoiceDataForUser`(삭제 직전 `hasActivePaidEntitlement` 재확인) |
 | 삭제 예고 푸시 | `fcm/AlarmTalkMessagingService.kt` | `PushNotificationCoordinator` | `notifyVoiceDeletionScheduled` → `sendVoiceDeletionWarningPush` |
 | 받은 알람은 접근권 축 | `lockPaidAlarmTalks` 의 `origin == LOCAL_OWNED` | `LocalAlarmStore.paidAlarmTalks` 의 `.localOwned` | `paid-voice-cleanup.ts`(`is_received` 까지 sound-only) |
+| 클립 선다운로드(앱 시작·언어 변경) | `sync/StockClipPrefetchWorker.kt`, `ui/app/AlarmTalkApp.kt` 의 `prefetchStockClips()` | `StockClipPrefetcher.swift`, `AlarmTalkApp.swift` 의 계정+언어 task | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
+| 고를 때는 **캐시 우선**(네트워크 폴백) | `ui/editor/AlarmEditorScreen.kt` 의 `bindStockBucketClips` | `VoiceStudioViewModel.prepareStockClip` | — |
+| 테마 선택은 **독립 상태**(음원 파생 금지) | `AlarmEditorState.selectedBucket` | `AlarmEditorSheet.selectedBucketDraft` | — |
+| 저장된 알람이 기기 언어를 따라감 | `sync/StockClipLanguageRebinder.kt` | `StockClipLanguageRebinder.swift` | — |
 
 ## 검증 방법
 
