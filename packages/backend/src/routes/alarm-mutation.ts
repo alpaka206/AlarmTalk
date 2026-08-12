@@ -26,18 +26,28 @@ import { STOCK_GREETING_CATEGORY } from '../lib/stock-clips';
 
 const alarmMutation = new Hono<AppEnv>();
 
+/**
+ * 이 알람이 **서버가 값을 매기는 목소리 자산**을 쓰는가.
+ *
+ * ⚠ **`wake_mode === 'voice_only'` 를 여기에 넣지 말 것**(2026-08-12 제거).
+ * 그건 "목소리로 깨운다" 는 뜻일 뿐 **무엇으로** 깨우는지를 말하지 않는다.
+ * 사용자가 자기 폰에 직접 녹음한 소리로 깨우는 알람도 `voice_only` 로 오는데,
+ * 그 음원은 **서버에 올라오지 않는다**(양 앱의 `RemoteAlarmMapper` 가
+ * `mode: hasRemoteVoice ? 'tts' : 'sound-only'`, `hasRemoteVoice = ttsMessageId != nil`).
+ * 그래서 이 항이 있으면 **무료 사용자의 직접 녹음 알람이 403 으로 거절**되고,
+ * 앱은 로컬에만 저장돼 sync 가 영구히 실패한다.
+ *
+ * 유료 자산은 `message_id`(우리가 만든 클립)와 `voice_profile_id`(클론 목소리)뿐이다.
+ * `mode === 'tts'` 는 그 둘 중 하나가 있을 때만 붙지만, 옛 클라이언트가 단독으로 보낼
+ * 여지가 있어 남겨 둔다 — 남겨도 녹음 알람은 `sound-only` 라 걸리지 않는다.
+ */
 function alarmUsesPaidVoice(body: {
   mode?: string | null;
   wake_mode?: string | null;
   message_id?: string | null;
   voice_profile_id?: string | null;
 }): boolean {
-  return (
-    body.mode === 'tts' ||
-    body.wake_mode === 'voice_only' ||
-    !!body.message_id ||
-    !!body.voice_profile_id
-  );
+  return body.mode === 'tts' || !!body.message_id || !!body.voice_profile_id;
 }
 
 /**

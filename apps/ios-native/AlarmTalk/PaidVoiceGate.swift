@@ -36,7 +36,14 @@ enum PaidVoiceGate {
     /// 안드로이드 `SystemVoices.usesFreeSystemVoiceAlarm` 과 동일한 판정이다.
     static func usesFreeSystemVoice(_ record: LocalAlarmRecord) -> Bool {
         if record.playModeEnum == .alarmOnly { return false }
-        if record.voiceSourceEnum == .localAudio { return false }
+        // **직접 녹음은 유료 기능이 아니다**(2026-08-12 확정). 내 폰의 파일을 그대로
+        // 재생하는 것이라 서버 자산을 쓰지 않는다. 예전에는 여기서 곧바로 false 로
+        // 떨어뜨려, 무료 사용자의 녹음 알람이 **예약 시점에 알람음으로 강등**됐다.
+        // `localAudioUri` 를 함께 보는 이유는 강등 표식(소스만 남고 파일은 없는 빈 껍데기)을
+        // '녹음' 으로 오인하지 않기 위해서다. 안드로이드 `usesFreeSystemVoiceAlarm` 과 같다.
+        if record.voiceSourceEnum == .localAudio {
+            return record.localAudioUri?.nilIfBlank != nil
+        }
         guard isSystemVoiceId(record.voiceProfileId) else { return false }
 
         let noCachedAudio = record.localAudioUri?.nilIfBlank == nil && record.rawAudioUri?.nilIfBlank == nil

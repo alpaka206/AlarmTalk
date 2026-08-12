@@ -822,7 +822,21 @@ class AlarmRepository(
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
-            if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) return@forEach
+            if (!usesVoice || alarm.usesFreeSystemVoiceAlarm()) {
+                // 옛 규칙(직접 녹음 = 유료)으로 이미 잠긴 행은 여기서 **되돌린다.**
+                // 그냥 건너뛰면 잠긴 채 남는데, 이제 잠글 축이 사라졌으니 풀어 줄 다른
+                // 경로가 없다. 아래 '옛 버그로 잠긴 받은 알람' 과 같은 모양이다.
+                if (alarm.preLockPlayMode != null) {
+                    val unlocked = alarm.copy(
+                        playMode = alarm.preLockPlayMode,
+                        preLockPlayMode = null,
+                        updatedAtMillis = now,
+                    )
+                    if (unlocked.enabled) alarmScheduler.schedule(unlocked)
+                    alarmDao.upsertPreservingServerSyncFields(unlocked)
+                }
+                return@forEach
+            }
             // ⚠ **받은 알람은 '받는 사람 플랜' 으로 다스리지 않는다 — 축이 다르다.**
             // 받은 알람의 목소리는 **접근권**(공유가 살아 있는가)이 정한다. 공유가 끊기면
             // 서버가 직접 걷어내고(`paid-voice-cleanup.ts` 가 `is_received` 까지

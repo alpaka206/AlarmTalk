@@ -871,11 +871,13 @@ struct AlarmEditorSheet: View {
 
     /// 지금 편집기 선택이 **무료로 허용되는 기본(스톡) 목소리**인가.
     ///
-    /// 안드로이드 `AlarmDraft.usesFreeSystemVoiceAlarm()` 의 편집기판이다. 저장된 행이 아니라
-    /// **선택 상태**로 판단해야 해서 따로 둔다 — 녹음·파일(`localAudio`)은 유료 자산이고,
-    /// 스톡 클립이 스테이징됐거나 고른 목소리가 시스템 목소리면 무료로 허용한다.
+    /// 안드로이드 `usesFreeSystemVoiceAlarm` 의 편집기판이다. 저장된 행이 아니라
+    /// **선택 상태**로 판단해야 해서 따로 둔다.
+    ///
+    /// **직접 녹음은 무료다**(2026-08-12 확정) — 내 폰의 파일을 재생할 뿐 서버 자산을
+    /// 쓰지 않는다. 유료인 것은 클론 목소리와 서버가 만든 클립이다.
     private var usesFreeSystemVoiceSelection: Bool {
-        if voiceSourceMode == .localAudio { return false }
+        if voiceSourceMode == .localAudio { return true }
         if selectedFreeBucket != nil { return true }
         return voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID)
     }
@@ -976,8 +978,11 @@ struct AlarmEditorSheet: View {
                 id: Self.recordingOptionID,
                 name: "직접 녹음",
                 detail: "이 알람에만 쓸 소리를 직접 녹음하기",
-                // 무료 등급은 녹음/파일이 유료다(안드로이드 `VoiceAudioCard.kt` 와 같은 판정).
-                locked: freeVoiceTier,
+                // ⚠ **잠그지 말 것** — 직접 녹음은 유료 기능이 아니다(2026-08-12 확정).
+                // 예전 주석은 "안드로이드 `VoiceAudioCard.kt` 와 같은 판정" 이라고 했지만
+                // 안드로이드의 `VoiceProfileOption` 에는 `locked` 필드가 **아예 없다** —
+                // 틀린 근거였다.
+                locked: false,
                 // 아직 녹음한 것이 없으니 들어볼 것도 없다.
                 previewable: false
             )

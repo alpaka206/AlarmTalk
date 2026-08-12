@@ -135,6 +135,10 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// 무료 플랜에서도 유효하므로 보존한다. 또한 스톡 클립 알람(스테이징된 `stock_` 캐시
     /// 파일이 있어 localAudioUri 가 NON-blank)과 생성된 시스템 프리셋 TTS도 보존한다.
     var isPaidVoiceForDowngrade: Bool {
+        // **직접 녹음은 강등 대상이 아니다**(2026-08-12 확정).
+        // ⚠ 이 술어와 `PaidVoiceGate.usesFreeSystemVoice` 는 **한 쌍이다 — 항상 같이 고친다.**
+        // 한쪽만 고치면 '예약은 목소리로 되는데 앱을 껐다 켜면 잠긴다'(또는 그 반대)가 된다.
+        if voiceSourceEnum == .localAudio, localAudioUri?.nilIfBlank != nil { return false }
         let stockVoiceOnly =
             (localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
             (rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
