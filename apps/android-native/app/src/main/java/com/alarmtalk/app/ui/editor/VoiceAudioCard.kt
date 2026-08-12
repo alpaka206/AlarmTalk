@@ -246,6 +246,9 @@ internal fun VoiceAudioCard(
                                 FreeThemeSummaryRow(
                                     selectedBucket = editor.selectedBucket,
                                     weatherCity = editor.voiceWeatherCity,
+                                    manualSelected = !editor.voiceRandomPrompt &&
+                                        !editor.isActiveBucketAlarm(),
+                                    manualText = editor.voiceText,
                                     onClick = onOpenFreeBucketSettings,
                                 )
                             } else {
@@ -558,11 +561,25 @@ private fun VoicePreviewButton(
 private fun FreeThemeSummaryRow(
     selectedBucket: String?,
     weatherCity: String,
+    /**
+     * 직접 입력이 선택됐는가. 판정식은 CLAUDE.md 가 못 박은 일곱 자리와 **철자까지 같게**
+     * `!voiceRandomPrompt && !isActiveBucketAlarm()` 이다.
+     */
+    manualSelected: Boolean,
+    /** 직접 입력 문구. 선택됐으면 이 행에도 함께 보여준다. */
+    manualText: String,
     onClick: () -> Unit,
 ) {
     // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
     val isOnline by rememberIsOnline()
+    val manualLabel = stringResource(R.string.editorp_random_manual_title)
     val valueLabel = when {
+        // ⚠ **직접 입력을 '준비 중' 으로 말하지 말 것.** 직접 입력을 고르면 selectedBucket
+        // 이 null 이 되는데, 예전에는 버킷만 보고 판정해서 문구를 넣어 놨는데도 행이
+        // "문구를 준비하고 있어요" 라고 **거짓말**했다. 유료 요약 행
+        // (`MessageModeSummaryRow`)과 같은 모양으로 문구까지 보여준다.
+        manualSelected && manualText.isNotBlank() -> "$manualLabel · $manualText"
+        manualSelected -> manualLabel
         // 날씨 버킷은 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
         selectedBucket == "weather" && weatherCity.isNotBlank() ->
             "${stringResource(freeBucketLabelRes(selectedBucket))} · $weatherCity"
@@ -636,6 +653,16 @@ internal fun FreeBucketSettingsPane(
      */
     weatherRegionSummary: String? = null,
     onChangeWeatherRegion: (() -> Unit)? = null,
+    /**
+     * 직접 입력으로 넣은 문구. 선택돼 있으면 아래 상세 행에 보여준다.
+     *
+     * ⚠ **문구를 반드시 함께 보여준다.** 예전에는 이 pane 에 직접 입력 문구를 보여주는
+     * 행이 아예 없어서, 문구를 넣고 확인해도 **무슨 문구인지 화면 어디에도 안 나왔다** —
+     * 확인·수정하는 유일한 길이 '직접 입력' 행을 다시 누르는 것이었다.
+     * 생성형은 내용이 매번 새로 만들어져 틀릴 일이 없지만 직접 입력은 글자가 그대로다.
+     */
+    manualText: String = "",
+    onChangeManual: (() -> Unit)? = null,
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -692,7 +719,15 @@ internal fun FreeBucketSettingsPane(
                     }
                 }
                 // 고른 값을 유료 pane 과 **같은 모양**으로 보여주고 같은 자리에서 고친다.
-                if (weatherRegionSummary != null && onChangeWeatherRegion != null) {
+                if (manualSelected && !manualLocked && onChangeManual != null) {
+                    RandomPromptDetailRow(
+                        title = stringResource(R.string.editorp_random_manual_title),
+                        value = manualText.ifBlank {
+                            stringResource(R.string.editorp_random_manual_empty)
+                        },
+                        onChange = onChangeManual,
+                    )
+                } else if (weatherRegionSummary != null && onChangeWeatherRegion != null) {
                     RandomPromptDetailRow(
                         title = stringResource(R.string.editorp_random_weather_region_title),
                         value = weatherRegionSummary,

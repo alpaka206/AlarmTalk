@@ -63,20 +63,48 @@ struct FreeThemeSummaryRow: View {
     }
 }
 
-/// 무료 테마 선택 화면 — 진동·스누즈와 같은 드릴인 서브페이지 문법.
+/// 무료·기본목소리 문구 화면 — 진동·스누즈와 같은 드릴인 서브페이지 문법.
+///
+/// ⚠ **유료 문구 화면(`MessageSettingsPane`)과 같은 규약을 지킨다.** 두 화면이 하는 일이
+/// 같으므로 동작도 같아야 한다:
+///  - 값이 **없을 때만** 고르는 순간 입력창이 뜬다. 이미 있으면 선택만 된다.
+///  - 입력창은 자기만 닫는다 — 이 목록은 그대로 남는다.
+///  - 등록한 값을 바꾸는 길은 아래 상세 카드의 '변경하기' **하나**다.
+///  - 지역 입력은 설정 화면과 **같은** `WeatherCityPickerSheet` 를 쓴다.
 struct FreeBucketSettingsPane: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Environment(\.dismiss) private var dismiss
 
     let available: [FreeBucket]
     let initialSelection: FreeBucket?
-    let onSave: (FreeBucket) -> Void
-    /// 잠긴 '직접 입력' 행을 눌렀을 때. 이 행이 없으면 **유료에 무엇이 있는지 알 길이
-    /// 없다** — 안드로이드는 "목록에서 아예 빼면 이런 기능이 있는지조차 모르고, 유료
-    /// 전환 동기 중 가장 강한 것을 잃는다" 고 적어 두고 잠긴 행을 남긴다.
-    var onManualLocked: (() -> Void)?
 
-    /// 사용자가 이 화면에서 **직접 고른** 값. 아무것도 안 골랐으면 nil 이다.
+    /// 지금 저장된 날씨 도시(없으면 빈 문자열).
+    let weatherCity: String
+    /// 지금 저장된 직접 입력 문구(없으면 빈 문자열).
+    let manualText: String
+
+    /// **직접 입력이 잠기는가.** ⚠ 판정은 **무료 플랜 단독**이다 — 기본(시스템) 목소리를
+    /// 골랐다는 것은 이유가 되지 않는다. 유료면 기본 목소리로도 직접 입력을 쓸 수 있고
+    /// 횟수만 차감된다(2026-08-11 확정).
+    let manualLocked: Bool
+
+    /// 지금 '직접 입력' 이 선택돼 있는가.
+    let manualSelected: Bool
+
+    /// 테마를 골랐을 때. 도시가 없으면 호출부가 지역 시트를 띄운다.
+    let onSave: (FreeBucket) -> Void
+    /// '직접 입력' 을 고르거나 그 문구를 바꿀 때.
+    let onSelectManual: () -> Void
+    /// 잠긴 '직접 입력' 행을 눌렀을 때 — 유료 안내로 보낸다.
+    ///
+    /// 이 행이 없으면 **유료에 무엇이 있는지 알 길이 없다** — 안드로이드는 "목록에서 아예
+    /// 빼면 이런 기능이 있는지조차 모르고, 유료 전환 동기 중 가장 강한 것을 잃는다" 고
+    /// 적어 두고 잠긴 행을 남긴다.
+    let onManualLocked: () -> Void
+    /// 날씨 지역을 바꿀 때 — 상세 카드의 '변경하기'.
+    let onChangeWeather: () -> Void
+
+    /// 사용자가 이 화면에서 **직접 고른** 테마. 아무것도 안 골랐으면 nil 이다.
     ///
     /// ⚠ **여기에 초기값을 찍어 넣지 말 것.** 예전에는 `.onAppear` 에서
     /// `draft = initialSelection ?? available.first` 로 **한 번만** 찍었는데, 첫 진입에는
@@ -85,11 +113,17 @@ struct FreeBucketSettingsPane: View {
     /// 없는** 화면이 됐다(2026-08-12 실기기 재현 — 두 번째로 들어가면 멀쩡해 보였다).
     /// 지금은 아래 `selection` 이 매번 다시 계산한다.
     @State private var draft: FreeBucket?
+    /// 이 화면에서 '직접 입력' 을 골랐는가. 부모 상태(`manualSelected`)를 초기값으로 쓰되,
+    /// 화면 안에서 테마를 고르면 꺼진다.
+    @State private var manualDraft: Bool?
 
     /// 실제로 선택된 것으로 **보여줄** 값. 늦게 도착한 목록에도 자동으로 맞는다.
     private var selection: FreeBucket? {
-        draft ?? initialSelection ?? available.first
+        if manualChosen { return nil }
+        return draft ?? initialSelection ?? available.first
     }
+
+    private var manualChosen: Bool { manualDraft ?? manualSelected }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -98,24 +132,18 @@ struct FreeBucketSettingsPane: View {
                     EditorCard(verticalPadding: 0) {
                         ForEach(Array(available.enumerated()), id: \.element.id) { index, bucket in
                             if index > 0 { AlarmSettingDivider() }
-                            RadioRow(label: bucket.label, selected: selection == bucket) { draft = bucket }
-                        }
-                        if let onManualLocked {
-                            AlarmSettingDivider()
-                            Button(action: onManualLocked) {
-                                HStack(spacing: 10) {
-                                    Text("직접 입력")
-                                        .font(theme.typography.bodyLarge)
-                                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                                    Spacer()
-                                    FeatureLockBadge(size: 18, iconSize: 11)
-                                }
-                                .frame(minHeight: 52)
-                                .contentShape(Rectangle())
+                            RadioRow(label: bucket.label, selected: selection == bucket) {
+                                manualDraft = false
+                                draft = bucket
+                                // 값이 **없을 때만** 묻는다 — 호출부가 판단한다.
+                                onSave(bucket)
                             }
-                            .buttonStyle(.plain)
                         }
+                        AlarmSettingDivider()
+                        manualRow
                     }
+
+                    detailCard
 
                     Text("고른 테마의 문구가 알람마다 번갈아 나와요.")
                         .font(theme.typography.bodySmall)
@@ -130,12 +158,9 @@ struct FreeBucketSettingsPane: View {
                 saveTitle: "저장",
                 saving: false,
                 savingLabel: "",
-                saveEnabled: selection != nil,
+                saveEnabled: manualChosen || selection != nil,
                 onCancel: { dismiss() },
-                onSave: {
-                    if let selection { onSave(selection) }
-                    dismiss()
-                }
+                onSave: { dismiss() }
             )
         }
         .homeGradientBackground()
@@ -145,5 +170,55 @@ struct FreeBucketSettingsPane: View {
         .toolbar(.visible, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
+    }
+
+    /// '직접 입력' 행. 잠겨 있으면 자물쇠 배지를, 아니면 라디오를 그린다.
+    ///
+    /// ⚠ **잠기지 않았는데 자물쇠를 그리지 말 것.** 예전에는 플랜과 무관하게 늘 자물쇠였고,
+    /// 유료 사용자가 눌러도 "기본 목소리로는 직접 입력을 쓸 수 없어요" 로 막혔다.
+    @ViewBuilder
+    private var manualRow: some View {
+        if manualLocked {
+            Button(action: onManualLocked) {
+                HStack(spacing: 10) {
+                    Text("직접 입력")
+                        .font(theme.typography.bodyLarge)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                    Spacer()
+                    FeatureLockBadge(size: 18, iconSize: 11)
+                }
+                .frame(minHeight: 52)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            RadioRow(label: "직접 입력", selected: manualChosen) {
+                manualDraft = true
+                draft = nil
+                // 문구가 **없을 때만** 입력창이 뜬다 — 호출부가 판단한다.
+                onSelectManual()
+            }
+        }
+    }
+
+    /// 등록한 값과 '변경하기'. 유료 문구 화면과 **같은 컴포넌트**다.
+    @ViewBuilder
+    private var detailCard: some View {
+        if manualChosen, !manualLocked {
+            // ⚠ **문구를 반드시 함께 보여준다.** 생성형은 내용이 매번 새로 만들어져 틀릴
+            // 일이 없지만 직접 입력은 글자가 그대로다 — 안 보이면 어제 문구를 물고 온
+            // 새 알람을 알아챌 방법이 없다.
+            PromptDetailCard(
+                title: "문구",
+                value: manualText.isEmpty ? "아직 입력하지 않았어요" : manualText,
+                onChange: onSelectManual
+            )
+        } else if selection == .weather {
+            PromptDetailCard(
+                title: "날씨 지역",
+                value: weatherCity.isEmpty ? "아직 고르지 않았어요" : weatherCity,
+                onChange: onChangeWeather
+            )
+        }
     }
 }

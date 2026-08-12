@@ -258,6 +258,7 @@
     <string name="editorp_random_fortune_saved">Using the fortune info your partner saved.</string>
     <string name="editorp_random_detail_change">Change</string>
     <string name="editorp_random_manual_title">Your message</string>
+    <string name="editorp_random_manual_empty">Not entered yet</string>
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>

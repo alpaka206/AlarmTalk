@@ -40,7 +40,9 @@ struct MessageSettingsPane: View {
     @State private var manualAlertDraft: String = ""
 
     /// 알람 문구 길이 상한. 서버와 같은 값이어야 한다.
-    private static let manualTextMaxLength = 200
+    /// 직접 입력 문구 상한. ⚠ 무료·기본목소리 화면(`AlarmEditorSheet` 의 직접 입력 알럿)도
+    /// 같은 값을 쓴다 — 두 화면이 다른 상한을 갖지 않게 여기 한 곳에 둔다.
+    static let manualTextMaxLength = 200
     @State private var draftWeatherCountry: String = ""
     @State private var draftWeatherCity: String = ""
     @State private var draftFortuneGender: String = ""
@@ -114,7 +116,12 @@ struct MessageSettingsPane: View {
         // 썼고 설정은 `WeatherCityPickerSheet`(도시 목록 바텀시트)를 썼다 — **같은 값을
         // 고르는 화면이 앱 안에서 두 가지**였고, 한쪽을 고쳐도 다른 쪽은 그대로였다.
         // 2026-08-10 에 설정만 목록형으로 고치면서 이쪽이 남았다.
-        .bottomSheet(isPresented: $weatherDialogOpen, onDismiss: { weatherDialogOpen = false }) {
+        .bottomSheet(
+            isPresented: $weatherDialogOpen,
+            onDismiss: { weatherDialogOpen = false },
+            // 도시 9개 + 직접 입력 행이라 절반으로는 반쪽만 보인다.
+            maxFraction: 0.9
+        ) {
             WeatherCityPickerSheet(
                 currentCity: draftWeatherCity,
                 onSelect: { country, city in
@@ -181,13 +188,13 @@ struct MessageSettingsPane: View {
     private var detailCard: some View {
         switch draftContext {
         case "wake_weather":
-            DetailCard(
+            PromptDetailCard(
                 title: "날씨 지역",
                 value: weatherSummary,
                 onChange: { weatherDialogOpen = true }
             )
         case "wake_fortune":
-            DetailCard(
+            PromptDetailCard(
                 title: "사주 정보",
                 value: fortuneSummary,
                 onChange: { fortuneDialogOpen = true }
@@ -196,42 +203,13 @@ struct MessageSettingsPane: View {
             // ⚠ **문구를 반드시 함께 보여준다.** 생성형은 내용이 매번 새로 만들어져 틀릴
             // 일이 없지만 직접 입력은 글자가 그대로다 — 안 보이면 어제 문구를 물고 온
             // 새 알람을 알아챌 방법이 없다.
-            DetailCard(
+            PromptDetailCard(
                 title: "문구",
                 value: draftManualText.isEmpty ? "아직 입력하지 않았어요" : draftManualText,
                 onChange: { manualDialogOpen = true }
             )
         default:
             EmptyView()
-        }
-    }
-
-    private struct DetailCard: View {
-        @Environment(\.voiceAlarmTheme) private var theme
-        let title: String
-        let value: String
-        let onChange: () -> Void
-
-        var body: some View {
-            EditorCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(title)
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                    HStack(alignment: .top, spacing: 12) {
-                        Text(value)
-                            .font(theme.typography.bodyLarge)
-                            .foregroundStyle(theme.palette.onSurface)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        // ⚠ 이 액션을 지우면 등록한 값을 영영 못 바꾼다.
-                        Button("변경하기", action: onChange)
-                            .font(theme.typography.bodyMedium.weight(.semibold))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(theme.palette.primary)
-                    }
-                }
-                .padding(.vertical, 12)
-            }
         }
     }
 

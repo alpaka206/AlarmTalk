@@ -132,13 +132,18 @@ extension View {
     ///
     /// ⚠ `.sheet` 가 아니라 `.fullScreenCover` 위에 직접 그린다 — 시스템 시트의 들여쓴
     /// 표현을 피하고 배경·모서리를 우리가 정하기 위해서다.
+    /// - Parameter maxFraction: 화면의 몇 %까지 차지할 수 있는가. 넘으면 안에서 스크롤한다.
+    ///   ⚠ **긴 목록에는 올려 준다.** 예전에는 이 확장에 파라미터가 아예 없어
+    ///   `BottomSheetHost` 의 기본값 0.5 에 못 박혀 있었고, 도시 목록(9개 + 직접 입력)처럼
+    ///   내용이 확실히 절반을 넘는 시트가 **반쪽만 보이고 스크롤**됐다.
     func bottomSheet<Content: View>(
         isPresented: Binding<Bool>,
         onDismiss: @escaping () -> Void,
+        maxFraction: CGFloat = 0.5,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         fullScreenCover(isPresented: isPresented) {
-            BottomSheetHost(onDismiss: onDismiss, content: content)
+            BottomSheetHost(onDismiss: onDismiss, maxFraction: maxFraction, content: content)
                 .presentationBackground(.clear)
         }
         // ⚠ **커버 자체의 전환을 끈다.** `fullScreenCover` 는 내용을 통째로 아래에서

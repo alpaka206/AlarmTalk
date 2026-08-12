@@ -146,7 +146,12 @@ struct SettingsView: View {
         .onChange(of: auth.session?.user.dynamicPromptSettings) { _, _ in
             loadPromptPreferences()
         }
-        .bottomSheet(isPresented: $weatherDialogOpen, onDismiss: { weatherDialogOpen = false }) {
+        .bottomSheet(
+            isPresented: $weatherDialogOpen,
+            onDismiss: { weatherDialogOpen = false },
+            // 도시 9개 + 직접 입력 행이라 절반으로는 반쪽만 보인다.
+            maxFraction: 0.9
+        ) {
             // ⚠ **국가·도시 입력 폼으로 되돌리지 말 것.** 안드로이드는 도시 목록
             // 바텀시트다 — `WeatherCityPickerSheet` 주석 참조.
             WeatherCityPickerSheet(

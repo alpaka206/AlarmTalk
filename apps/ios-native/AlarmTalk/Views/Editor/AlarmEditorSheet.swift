@@ -128,6 +128,10 @@ struct AlarmEditorSheet: View {
     /// 기존 알람을 열면 `loadVoicePromptState` 가 저장된 `bucketId` 로 심는다. 그 뒤로는
     /// **편집기가 소유한다** — 사용자가 다른 문구 갈래를 고르면 비워진다.
     @State var selectedBucketDraft: FreeBucket?
+    /// 무료·기본목소리 문구 화면에서 여는 지역 시트·직접 입력 알럿.
+    @State var freeWeatherSheetOpen = false
+    @State var freeManualAlertOpen = false
+    @State var freeManualAlertDraft = ""
 
     var selectedStockMessageID: String? {
         guard let prepared = voiceStudio.preparedAlarm,
@@ -396,12 +400,74 @@ struct AlarmEditorSheet: View {
             FreeBucketSettingsPane(
                 available: availableFreeBuckets,
                 initialSelection: selectedFreeBucket,
-                onSave: { bucket in selectFreeBucket(bucket) },
+                weatherCity: voiceStudio.weatherCity,
+                manualText: voiceStudio.ttsText,
+                // ⚠ 잠금은 **무료 플랜 단독**이다. 기본 목소리를 골랐다는 것은 이유가
+                // 되지 않는다 — 유료면 기본 목소리로도 직접 입력을 쓸 수 있다.
+                manualLocked: freeVoiceTier,
+                manualSelected: !voiceStudio.randomPrompt && selectedFreeBucket == nil,
+                onSave: { bucket in
+                    selectFreeBucket(bucket)
+                    // 값이 **없을 때만** 묻는다. 이미 있으면 선택만 되고, 고치는 길은
+                    // 상세 카드의 '변경하기' 하나다(「이미 등록한 정보는 다시 묻지 않는다」).
+                    if bucket == .weather, (voiceStudio.weatherCity).nilIfBlank == nil {
+                        freeWeatherSheetOpen = true
+                    }
+                },
+                onSelectManual: {
+                    voiceStudio.randomPrompt = false
+                    selectedBucketDraft = nil
+                    stockSelectedMessageID = nil
+                    voiceStudio.preparedAlarm = nil
+                    if (voiceStudio.ttsText).nilIfBlank == nil { freeManualAlertOpen = true }
+                },
                 onManualLocked: {
                     freeBucketPaneOpen = false
                     showVoicePlanLockedAlert()
-                }
+                },
+                onChangeWeather: { freeWeatherSheetOpen = true }
             )
+            // ⚠ **설정 화면과 같은 컴포넌트**를 쓴다(`WeatherCityPickerSheet`).
+            // 시트는 자기만 닫고 이 목록은 남는다.
+            .bottomSheet(
+                isPresented: $freeWeatherSheetOpen,
+                onDismiss: { freeWeatherSheetOpen = false },
+                maxFraction: 0.9
+            ) {
+                WeatherCityPickerSheet(
+                    currentCity: voiceStudio.weatherCity,
+                    onSelect: { country, city in
+                        voiceStudio.weatherCountry = country
+                        voiceStudio.weatherCity = city
+                        persistDynamicPromptPreferencesIfNeeded()
+                        freeWeatherSheetOpen = false
+                    }
+                )
+            }
+            // 유료 문구 화면과 **같은** 직접 입력 알럿이다 — 두 벌로 만들지 않는다.
+            .alert("직접 입력", isPresented: $freeManualAlertOpen) {
+                TextField("알람에서 읽어 줄 문구", text: $freeManualAlertDraft)
+                Button("취소", role: .cancel) { }
+                Button("저장") {
+                    voiceStudio.ttsText = InputSanitizer.clamp(
+                        InputSanitizer.sanitizeUserText(freeManualAlertDraft),
+                        max: MessageSettingsPane.manualTextMaxLength
+                    )
+                    voiceStudio.randomPrompt = false
+                }
+                .disabled(
+                    InputSanitizer.sanitizeUserText(freeManualAlertDraft)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .isEmpty
+                )
+            } message: {
+                Text("이 문구를 그대로 읽어 드려요.")
+            }
+            // 열 때만 현재 값으로 시드한다 — 알럿 안 입력이 곧바로 반영되면
+            // '취소' 가 취소가 아니게 된다.
+            .onChange(of: freeManualAlertOpen) { _, open in
+                if open { freeManualAlertDraft = voiceStudio.ttsText }
+            }
         }
         .navigationDestination(isPresented: $messagePaneOpen) {
             MessageSettingsPane(
@@ -830,7 +896,16 @@ struct AlarmEditorSheet: View {
         // tts_profile 분기. 테마를 골랐으면 곧바로 저장 가능 — 음원은 저장이 받는다
         // (`prepareSelectedBucketClipIfNeeded`). ⚠ 예전에는 `selectedStockMessageID`(=음원이
         // 준비됐는가)를 봤는데, 그러면 아직 안 받은 테마 알람의 저장이 막혔다.
-        if selectedFreeBucket != nil { return nil }
+        if let bucket = selectedFreeBucket {
+            // ⚠ **날씨 테마는 도시가 있어야 한다.** 없으면 서버가 조건을 못 맞춰 서울로
+            // 폴백한다 — 사용자는 자기 지역 날씨를 들을 줄 알고 저장한다.
+            // 안드로이드 `editorSaveBlockedReason` 의 `editor_error_weather_location_required`
+            // 대응. iOS 에는 이 갈래가 없어서 도시 없이 그대로 저장됐다.
+            if bucket == .weather, (voiceStudio.weatherCity).nilIfBlank == nil {
+                return "날씨 문구에 사용할 지역을 골라 주세요."
+            }
+            return nil
+        }
 
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else {
             return "알람에서 들을 목소리를 선택해 주세요."

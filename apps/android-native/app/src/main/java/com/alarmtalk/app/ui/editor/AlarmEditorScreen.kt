@@ -1601,12 +1601,16 @@ internal fun AlarmEditorScreen(
                 buckets = freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage),
                 selectedBucket = editor.selectedBucket,
                 onSelectBucket = { bucket ->
-                    if (bucket == "weather") {
-                        // 날씨는 저장한 도시 기준으로 매칭되므로, 고르는 시점에 도시를
-                        // 확인/수정하게 한다(이미 입력돼 있어도 다이얼로그에 채워서 보여줌).
+                    // ⚠ **고르는 것과 묻는 것을 분리한다.** 예전에는 날씨 갈래에
+                    // `selectBucket` 호출이 아예 없어서, 다이얼로그를 취소하면 **날씨가
+                    // 선택조차 되지 않았다**(라디오가 이전 버킷에 남았다).
+                    selectBucket(bucket)
+                    // 값이 **없을 때만** 묻는다. 이미 있으면 선택만 되고, 고치는 길은
+                    // 상세 행의 '변경하기' 하나다(「이미 등록한 정보는 다시 묻지 않는다」).
+                    // 예전에는 저장 여부를 보지 않고 무조건 띄워, 이미 등록한 사람에게
+                    // 같은 것을 매번 다시 물었다.
+                    if (bucket == "weather" && editor.voiceWeatherCity.isBlank() && !savedWeatherConfigured) {
                         freeWeatherDialogOpen = true
-                    } else {
-                        selectBucket(bucket)
                     }
                 },
                 onDismiss = { settingsDetailPanel = null },
@@ -1618,7 +1622,15 @@ internal fun AlarmEditorScreen(
                 // 오디오 바인딩이 풀린 상태(예: applyRandomPromptSettings 의 clearAudio 뒤)에서
                 // 나머지 여섯 자리와 **반대로 답했다** — 요약 행은 '날씨' 인데 pane 은 '직접 입력'.
                 manualSelected = !editor.voiceRandomPrompt && !editor.isActiveBucketAlarm(),
-                onSelectManual = { freeManualDialogOpen = true },
+                onSelectManual = {
+                    // 직접 입력을 고르면 랜덤·버킷을 함께 푼다 — 셋이 동시에 켜질 수 없다.
+                    editor.voiceRandomPrompt = false
+                    editor.selectedBucket = null
+                    // 문구가 **없을 때만** 입력창이 뜬다. 있으면 선택만 되고 '변경하기' 로 고친다.
+                    if (editor.voiceText.isBlank()) freeManualDialogOpen = true
+                },
+                manualText = editor.voiceText,
+                onChangeManual = { freeManualDialogOpen = true },
                 weatherRegionSummary = if (editor.selectedBucket == "weather") {
                     if (editor.voiceWeatherCountry.isNotBlank() && editor.voiceWeatherCity.isNotBlank()) {
                         stringResource(

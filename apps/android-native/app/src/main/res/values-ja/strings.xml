@@ -258,6 +258,7 @@
     <string name="editorp_random_fortune_saved">相手が保存した占い情報を使います。</string>
     <string name="editorp_random_detail_change">変更</string>
     <string name="editorp_random_manual_title">入力した文面</string>
+    <string name="editorp_random_manual_empty">まだ入力していません</string>
     <string name="editorp_random_fortune_title">占い情報</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">文</string>
