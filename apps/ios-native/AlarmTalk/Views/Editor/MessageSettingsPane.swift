@@ -116,12 +116,7 @@ struct MessageSettingsPane: View {
         // 썼고 설정은 `WeatherCityPickerSheet`(도시 목록 바텀시트)를 썼다 — **같은 값을
         // 고르는 화면이 앱 안에서 두 가지**였고, 한쪽을 고쳐도 다른 쪽은 그대로였다.
         // 2026-08-10 에 설정만 목록형으로 고치면서 이쪽이 남았다.
-        .bottomSheet(
-            isPresented: $weatherDialogOpen,
-            onDismiss: { weatherDialogOpen = false },
-            // 도시 9개 + 직접 입력 행이라 절반으로는 반쪽만 보인다.
-            maxFraction: 0.9
-        ) {
+        .bottomSheet(isPresented: $weatherDialogOpen, onDismiss: { weatherDialogOpen = false }) {
             WeatherCityPickerSheet(
                 currentCity: draftWeatherCity,
                 onSelect: { country, city in

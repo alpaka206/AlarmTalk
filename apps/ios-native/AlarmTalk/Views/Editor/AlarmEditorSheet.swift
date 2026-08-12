@@ -431,8 +431,7 @@ struct AlarmEditorSheet: View {
             // 시트는 자기만 닫고 이 목록은 남는다.
             .bottomSheet(
                 isPresented: $freeWeatherSheetOpen,
-                onDismiss: { freeWeatherSheetOpen = false },
-                maxFraction: 0.9
+                onDismiss: { freeWeatherSheetOpen = false }
             ) {
                 WeatherCityPickerSheet(
                     currentCity: voiceStudio.weatherCity,

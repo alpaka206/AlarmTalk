@@ -44,12 +44,8 @@ struct VoiceSelectionSheet: View {
     var body: some View {
         // 껍데기(배경·모서리·드래그 핸들)는 `BottomSheetHost` 가 그린다.
         // 안쪽 구성은 `SelectionSheet` 와 같은 규칙 — 좌측 정렬 22pt Bold 제목 + 행 목록.
-        VStack(alignment: .leading, spacing: 14) {
-            Text("목소리 고르기")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(theme.palette.onSurface)
-                .padding(.horizontal, 20)
-                .padding(.top, 4)
+        VStack(alignment: .leading, spacing: BottomSheetTitle.titleToContentSpacing) {
+            BottomSheetTitle(text: "목소리 고르기")
 
             ScrollView {
                 LazyVStack(spacing: 0) {
