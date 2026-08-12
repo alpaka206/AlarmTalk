@@ -215,7 +215,12 @@ struct AlarmTalkApp: App {
                     .task(id: stockClipLanguageKey) {
                         guard auth.session != nil else { return }
                         stockClipPrefetcher.start(session: auth.session)
-                        await voiceStudio.refresh(session: auth.session)
+                        // ⚠ **매니페스트를 여기서 채운다.** 예전에는 이 자리에서
+                        // `loadStockClips` 를 부르지 않아, 아래 재바인딩이 **항상 빈 배열로
+                        // 돌아 즉시 0건 반환**했다 — 언어를 바꿔도 아무 일도 일어나지 않았다.
+                        // 게다가 매니페스트를 채우는 곳이 알람 편집기 진입 한 곳뿐이라,
+                        // 거기서 실패하면 테마 목록이 통째로 비었다.
+                        await voiceStudio.loadStockClips(session: auth.session)
                         await StockClipLanguageRebinder(store: alarmStore)
                             .rebindIfLanguageChanged(
                                 session: auth.session,

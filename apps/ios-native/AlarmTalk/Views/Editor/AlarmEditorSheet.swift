@@ -107,10 +107,27 @@ struct AlarmEditorSheet: View {
     /// `voiceRandomPrompt = false` 가 되므로, `!randomPrompt` 만으로 '직접 입력' 을
     /// 판별하면 안 된다.
     ///
-    /// ⚠ `selectedStockMessageID`(= preparedAlarm 파생) **하나로만** 정의한다.
-    /// `stockSelectedMessageID`(@State)를 OR 로 더하면, 유료 사용자가 랜덤 ON→OFF 를
-    /// 왕복한 뒤 직접 입력창이 영영 안 뜬다.
-    var isActiveStockClipAlarm: Bool { selectedStockMessageID != nil }
+    /// ⚠ **저장된 `bucketId` 를 직접 보지 말 것.** 그건 편집 중에 사용자가 바꿔도 안 변하는
+    /// 값이라, 유료 사용자가 테마 알람을 열어 '직접 입력' 을 골라도 계속 참이 되어
+    /// **직접 입력창이 영영 안 뜬다.** 대신 `selectedBucketDraft` 를 열 때 한 번 심고
+    /// (`loadVoicePromptState`), 그 뒤로는 편집기가 소유한다 — 안드로이드
+    /// `AlarmEditorState.selectedBucket` 과 같은 수명이다.
+    var isActiveStockClipAlarm: Bool { selectedFreeBucket != nil }
+
+    /// 사용자가 고른 테마. **여기가 단일 출처다.**
+    ///
+    /// ⚠ **음원 준비 상태에서 파생시키지 말 것.** 2026-08-12 전에는 이 값이 없어서
+    /// `preparedAlarm`(미리듣기용 준비 음원)에서 거꾸로 읽었다. 그래서 편집기 안에서
+    /// `preparedAlarm = nil` 을 하는 **열다섯 자리** 중 하나만 밟아도(재생 방식 왕복,
+    /// 같은 목소리 재선택, 가족 상대 선택 …) 고른 테마가 통째로 사라졌고, 요약 행이
+    /// **"불러오는 중이에요"** 로 되돌아갔다. 되돌릴 트리거도 없었다.
+    ///
+    /// 안드로이드 `AlarmEditorState.selectedBucket` 과 같은 위상이다 — 그쪽은 처음부터
+    /// 오디오와 무관한 평범한 상태라 같은 증상이 없다.
+    ///
+    /// 기존 알람을 열면 `loadVoicePromptState` 가 저장된 `bucketId` 로 심는다. 그 뒤로는
+    /// **편집기가 소유한다** — 사용자가 다른 문구 갈래를 고르면 비워진다.
+    @State var selectedBucketDraft: FreeBucket?
 
     var selectedStockMessageID: String? {
         guard let prepared = voiceStudio.preparedAlarm,
@@ -379,7 +396,7 @@ struct AlarmEditorSheet: View {
             FreeBucketSettingsPane(
                 available: availableFreeBuckets,
                 initialSelection: selectedFreeBucket,
-                onSave: { bucket in Task { await selectFreeBucket(bucket) } },
+                onSave: { bucket in selectFreeBucket(bucket) },
                 onManualLocked: {
                     freeBucketPaneOpen = false
                     showVoicePlanLockedAlert()
@@ -587,8 +604,15 @@ struct AlarmEditorSheet: View {
         .onChange(of: currentPlan) { _, _ in coerceFreeVoiceTierConstraints() }
         // 직전에 고른 무료 테마 이어받기. 목소리·스톡 매니페스트가 준비되는 시점이
         // 제각각이라 **둘을 한 키로 묶어** 건다 — 나눠 걸면 SwiftUI 타입체크가 터진다.
-        .onChange(of: freeBucketReadinessKey) { _, _ in
-            Task { await applyPendingFreeBucketIfNeeded() }
+        //
+        // ⚠ **`.onChange` 로 두지 말 것.** `onChange` 는 값이 **바뀔 때만** 돈다. 앱을 켠 뒤
+        // 두 번째로 편집기를 열면 매니페스트도 목소리도 이미 준비돼 있어 이 키가 처음부터
+        // 안정적이고, 그러면 **한 번도 실행되지 않는다** — 테마가 영영 안 붙어 문구 행이
+        // "불러오는 중이에요" 에 머문다(2026-08-12 실기기 재현).
+        // `.task(id:)` 는 나타날 때 한 번 + 키가 바뀔 때마다 돈다. 안드로이드의
+        // `LaunchedEffect` 와 같은 동작이다.
+        .task(id: freeBucketReadinessKey) {
+            applyPendingFreeBucketIfNeeded()
         }
         .task(id: planAccess) {
             guard planAccess == .paid, let token = auth.session?.token else {
@@ -803,8 +827,10 @@ struct AlarmEditorSheet: View {
             return "들려줄 음성을 녹음하거나 파일로 선택해 주세요."
         }
 
-        // tts_profile 분기. 스톡 클립이 스테이징돼 있으면 곧바로 저장 가능.
-        if selectedStockMessageID != nil { return nil }
+        // tts_profile 분기. 테마를 골랐으면 곧바로 저장 가능 — 음원은 저장이 받는다
+        // (`prepareSelectedBucketClipIfNeeded`). ⚠ 예전에는 `selectedStockMessageID`(=음원이
+        // 준비됐는가)를 봤는데, 그러면 아직 안 받은 테마 알람의 저장이 막혔다.
+        if selectedFreeBucket != nil { return nil }
 
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else {
             return "알람에서 들을 목소리를 선택해 주세요."
@@ -850,7 +876,7 @@ struct AlarmEditorSheet: View {
     /// 스톡 클립이 스테이징됐거나 고른 목소리가 시스템 목소리면 무료로 허용한다.
     private var usesFreeSystemVoiceSelection: Bool {
         if voiceSourceMode == .localAudio { return false }
-        if selectedStockMessageID != nil { return true }
+        if selectedFreeBucket != nil { return true }
         return voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID)
     }
 
@@ -1058,22 +1084,13 @@ struct AlarmEditorSheet: View {
 
     /// 지금 고른 테마.
     ///
-    /// ⚠ **순서가 중요하다.** 편집기에서 방금 고른 값(준비된 클립의 카테고리)이 먼저고,
-    /// 없을 때만 저장된 `bucketId` 로 되짚는다. 반대로 두면 편집기에서 테마를 바꿔도
-    /// 저장된 옛 값이 계속 이긴다.
+    /// ⚠ **순서가 중요하다.** 편집기에서 방금 고른 값이 먼저고, 없을 때만 저장된
+    /// `bucketId` 로 되짚는다. 반대로 두면 편집기에서 테마를 바꿔도 저장된 옛 값이 이긴다.
     ///
-    /// 저장값 폴백이 필요한 이유: 클립 캐시 파일이 사라지면 `selectedStockMessageID`
-    /// 복원이 실패하는데, 그때 테마까지 잃으면 그대로 저장했을 때 고른 적 없는
-    /// '기본 인사말' 알람으로 조용히 바뀐다.
-    var selectedFreeBucket: FreeBucket? {
-        if let id = selectedStockMessageID,
-           let clip = voiceStudio.stockClips.first(where: { $0.id == id }),
-           let category = clip.category,
-           let bucket = FreeBucket(rawValue: category) {
-            return bucket
-        }
-        return (editingAlarm?.bucketId).nilIfBlank.flatMap(FreeBucket.init(rawValue:))
-    }
+    /// ⚠ **네트워크·캐시를 보지 않는다.** 예전에는 준비된 클립의 카테고리에서 읽어서,
+    /// 음원을 못 받으면 **고른 적 없는 것으로 표시**됐다(= "불러오는 중이에요").
+    /// 테마 선택은 값 하나이고, 음원은 저장할 때 받는다.
+    var selectedFreeBucket: FreeBucket? { selectedBucketDraft }
 
     /// 테마 이어받기를 시도할 시점을 알리는 합성 키.
     /// 스톡 매니페스트 도착과 제한 여부 확정이 각각 다른 때에 오므로 둘을 묶는다.
@@ -1084,32 +1101,71 @@ struct AlarmEditorSheet: View {
     /// 이어받으려던 테마를 실제로 집는다. 목소리와 스톡 클립이 모두 준비된 뒤에 한 번만.
     ///
     /// ⚠ **이미 고른 게 있으면 덮지 않는다.** 사용자가 화면에서 고른 값이 우선이다.
-    func applyPendingFreeBucketIfNeeded() async {
-        guard let bucket = pendingFreeBucket else { return }
-        guard restrictToWeatherMedication else { pendingFreeBucket = nil; return }
-        guard selectedStockMessageID == nil, voiceStudio.preparedAlarm == nil else {
-            pendingFreeBucket = nil
-            return
-        }
+    func applyPendingFreeBucketIfNeeded() {
+        guard restrictToWeatherMedication else { return }
+        // 이미 고른 게 있으면 덮지 않는다 — 사용자가 화면에서 고른 값이 우선이다.
+        guard selectedFreeBucket == nil else { pendingFreeBucket = nil; return }
         guard !voiceStudio.stockClips.isEmpty, voiceStudio.selectedProfileID != nil else { return }
-        // ⚠ **성공했을 때만 지운다.** 예전에는 시도 전에 지워서, 클립을 못 집으면
-        // (언어가 안 맞아 캐시에 없거나 오프라인) 다시 시도할 길이 영영 없었다 —
-        // 문구 행이 **"불러오는 중이에요" 에 영구히 머물렀다.**
-        await selectFreeBucket(bucket)
-        if selectedStockMessageID != nil { pendingFreeBucket = nil }
+
+        let buckets = availableFreeBuckets
+        guard !buckets.isEmpty else { return }
+
+        // 직전에 고른 테마를 잇는다. 단 **날씨는 도시가 있어야** 잇는다 — 도시가 없으면
+        // 조건을 못 맞추고 저장도 막히므로, 그때는 다음 후보로 넘어간다.
+        let remembered = pendingFreeBucket.flatMap { bucket -> FreeBucket? in
+            guard buckets.contains(bucket) else { return nil }
+            if bucket == .weather, (voiceStudio.weatherCity).nilIfBlank == nil { return nil }
+            return bucket
+        }
+
+        // ⚠ **한 번도 고른 적 없어도 무언가는 붙여야 한다.** 예전에는 `pendingFreeBucket`
+        // 이 nil 이면(= 이 계정이 테마를 고른 적 없음) 그대로 return 해서, 문구 행이
+        // **"불러오는 중이에요" 에서 영영 벗어나지 못했다.** 사용자는 고른 적이 없을 뿐
+        // 무언가 잘못한 게 아니다. 안드로이드도 `?: buckets.firstOrNull()` 로 항상 붙인다.
+        guard let target = remembered ?? buckets.first else { return }
+
+        selectFreeBucket(target)
+        pendingFreeBucket = nil
     }
 
-    /// 테마를 고르면 그 안의 첫 클립을 준비한다(회전은 울릴 때마다 서버·로컬이 이어받는다).
-    func selectFreeBucket(_ bucket: FreeBucket) async {
-        // 언어 필터 없이 고르면 한국어 기기에 영어 문구가 붙는다(`availableFreeBuckets` 주석).
-        let clips = stockClips(forCategory: bucket.rawValue)
-        guard let clip = clips.first else {
-            voiceStudio.statusMessage = "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요."
-            return
+    /// 테마를 고른다. **값만 바꾼다 — 네트워크를 타지 않는다.**
+    ///
+    /// 음원은 저장할 때 받는다(`prepareSelectedBucketClipIfNeeded`). 예전에는 여기서
+    /// 곧바로 다운로드했고, 그 결과가 곧 '고른 테마' 였다 — 그래서 회선이 느리거나
+    /// 끊기면 고른 게 화면에 아예 안 나타났다.
+    func selectFreeBucket(_ bucket: FreeBucket) {
+        selectedBucketDraft = bucket
+        // 테마를 바꾸면 앞 테마로 준비해 둔 음원은 더 이상 맞지 않는다.
+        voiceStudio.preparedAlarm = nil
+        stockSelectedMessageID = nil
+    }
+
+    /// **저장 시점에** 고른 테마의 음원을 준비한다. 성공하면 true.
+    ///
+    /// 편집 중에는 아무것도 받지 않으므로(선택은 값 하나다) 저장이 이 일을 대신한다.
+    /// 그동안 저장 버튼은 이미 '저장 중…' 을 보여준다(`EditorActionBar(saving:)`).
+    ///
+    /// ⚠ **실패하면 저장을 중단해야 한다.** 음원 없이 넘어가면 `LocalAlarmStore.validateDraft`
+    /// 가 `voiceAudioRequired` 로 던져 "저장할 수 없어요" 만 뜨고 이유를 알 수 없다.
+    func prepareSelectedBucketClipIfNeeded() async -> Bool {
+        guard restrictToWeatherMedication, let bucket = selectedFreeBucket else { return true }
+        // 이미 이 테마로 준비돼 있으면 다시 받지 않는다.
+        if let prepared = voiceStudio.preparedAlarm,
+           prepared.audioCacheKey.hasPrefix("stock_"),
+           stockClips(forCategory: bucket.rawValue).contains(where: { $0.messageId == prepared.messageID }) {
+            return true
         }
-        // 편집기에서는 첫 클립을 들려준다. **회전은 저장된 뒤 울릴 때** 일어난다 —
-        // 여기서 무작위로 고르면 눌러 볼 때마다 다른 문구가 나와 뭘 고른 건지 알 수 없다.
-        await selectStockClip(clip)
+        guard let clip = stockClips(forCategory: bucket.rawValue).first else {
+            voiceStudio.statusMessage = "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요."
+            return false
+        }
+        // 편집기에서는 첫 클립을 쓴다. **회전은 저장된 뒤 울릴 때** 일어난다.
+        guard let prepared = await voiceStudio.prepareStockClip(clip, session: auth.session) else {
+            return false
+        }
+        stockSelectedMessageID = clip.id
+        _ = prepared
+        return true
     }
 
     /// 이 (목소리 · 테마 · **기기 언어**)의 클립. 고르는 자리와 묶는 자리가 같은 목록을
@@ -1151,6 +1207,10 @@ struct AlarmEditorSheet: View {
     /// 문구 화면의 저장 — 최종 반영은 여기 한 곳이다.
     func applyMessageSettings(_ result: MessageSettingsResult) {
         voiceStudio.preparedAlarm = nil
+        // ⚠ **테마를 비운다.** 문구 갈래와 테마는 동시에 켜질 수 없다. 안 비우면
+        // `isActiveStockClipAlarm` 이 계속 참이라 '직접 입력' 을 골라도 입력창이 안 뜬다.
+        selectedBucketDraft = nil
+        stockSelectedMessageID = nil
         if result.isManual {
             voiceStudio.randomPrompt = false
             voiceStudio.ttsText = result.manualText
@@ -1323,95 +1383,7 @@ struct AlarmEditorSheet: View {
         voiceModeBlocked ? .alarmOnly : .voiceOnly
     }
 
-    /// 준비된 음성 미리듣기 chip(change 1).
-    ///
-    /// - 준비된 음원이 있으면 재생/정지 버튼 + 문구·언어·길이 표시. 재생은
-    ///   `voiceStudio.playPreparedAudio(using: editorPreviewPlayer)` 로 *캐시 재생만* 한다
-    ///   — 절대 generateTTS 를 호출하지 않고, 자동 재생도 하지 않으며(opt-in 탭),
-    ///   저장을 막지도 않는다(editorSaveBlockedReason 불변).
-    /// - 30초(+tolerance)를 넘으면 잠금 재생을 위해 30초로 잘린다는 경고를 함께 보여준다.
-    /// - 준비된 음원이 없으면 기존 안내 문구를 그대로 텍스트로 보여준다.
-    @ViewBuilder
-    var preparedVoiceChip: some View {
-        if let prepared = voiceStudio.preparedAlarm {
-            let durationMs = AudioCacheStore.shared.readMetadata(cacheKey: prepared.audioCacheKey)?.durationMs
-            let isPlayingChip = previewTarget == .preparedVoice && editorPreviewPlayer.isPlaying
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    Button {
-                        togglePreparedVoicePreview()
-                    } label: {
-                        Image(systemName: isPlayingChip ? "stop.fill" : "play.fill")
-                            .font(.headline)
-                            .foregroundStyle(theme.palette.primary)
-                            .frame(width: 34, height: 34)
-                            .background(theme.palette.primaryContainer.opacity(0.5))
-                            .clipShape(Circle())
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text(isPlayingChip ? "정지" : "미리듣기"))
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(prepared.text)
-                            .font(theme.typography.bodySmall)
-                            .foregroundStyle(theme.palette.onSurface)
-                            .lineLimit(2)
-                        HStack(spacing: 6) {
-                            if let languageLabel = preparedVoiceLanguageLabel(prepared.language) {
-                                Text(languageLabel)
-                                Text("·")
-                            }
-                            if let durationMs {
-                                Text(HelperFormatters.audioTimeLabel(Int(durationMs)))
-                                    .monospacedDigit()
-                                Text("·")
-                            }
-                            Text("준비 완료")
-                        }
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                    }
-                    Spacer(minLength: 0)
-                }
-                if let durationMs,
-                   durationMs > AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis {
-                    Text("30초가 넘는 음성은 잠금 화면에서 울리도록 앞 30초만 사용돼요.")
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        // ⚠ **여기에 "아직 생성한 음성이 없어요" 를 다시 넣지 말 것.**
-        // `preparedAlarm` 은 **저장 직전에 만들어지는 음성**이라 새 알람에서는 늘 nil 이다.
-        // 그걸 '목소리가 없다' 로 읽어 안내를 띄우면, 목소리를 이미 고른 사람에게도
-        // 편집기를 열 때마다 "없어요" 가 뜬다(2026-08-07 실제 화면에서 확인).
-        // 고를 목소리가 정말 하나도 없는 경우는 `voiceProfileOptions.isEmpty` 가 판정하고
-        // '목소리 탭에서 만들기' 버튼이 안내한다.
-    }
-
-    /// 준비된 음성 chip 의 언어 라벨. raw locale(ko/en/ja)을 한국어/영어/일본어로 풀고,
-    /// 알 수 없는 코드는 숨긴다(nil). 서버가 빈 값을 줄 수도 있어 blank 도 숨긴다.
-    func preparedVoiceLanguageLabel(_ language: String) -> String? {
-        switch language {
-        case "ko": return "한국어"
-        case "en": return "영어"
-        case "ja": return "일본어"
-        default: return nil
-        }
-    }
-
-    /// 준비된 음성 chip 의 재생/정지 토글. 캐시 재생만(네트워크 없음).
-    func togglePreparedVoicePreview() {
-        if previewTarget == .preparedVoice, editorPreviewPlayer.isPlaying {
-            stopAllEditorPreviews()
-            return
-        }
-        stopAllEditorPreviews()
-        previewTarget = .preparedVoice
-        voiceStudio.playPreparedAudio(using: editorPreviewPlayer)
-    }
 
     var editingAlarm: LocalAlarmRecord? {
         target.editingAlarmID.flatMap { id in
@@ -1480,6 +1452,9 @@ struct AlarmEditorSheet: View {
         voiceStudio.selectedProfileID = alarm?.voiceProfileId
         voiceStudio.preparedAlarm = nil
         stockSelectedMessageID = nil
+        // 저장된 테마를 편집기 상태로 **한 번** 옮긴다. 이 뒤로는 편집기가 소유한다 —
+        // 저장값을 계속 읽으면 사용자가 문구 갈래를 바꿔도 테마가 안 풀린다.
+        selectedBucketDraft = (alarm?.bucketId).nilIfBlank.flatMap(FreeBucket.init(rawValue:))
         stopAllEditorPreviews()
         voiceStudio.ttsText = alarm?.voiceText ?? ""
         voiceStudio.ttsCategory = alarm?.voiceCategory ?? "morning"
@@ -1591,13 +1566,11 @@ struct AlarmEditorSheet: View {
         // 우회해 preparedAlarm 을 직접 채우므로, 혹시라도 randomPrompt 등이 흔들려
         // coerce 가 preparedAlarm 을 무효화하면 선택이 사라진다(spec risk 3 mitigation).
         // 정상 상태에서는 4-값이 이미 고정돼 있어 어차피 변경이 없다.
-        // selectedStockMessageID(prepared.audioCacheKey 의 stock_ prefix 파생 접근자)도
-        // 함께 검사해, @State stockSelectedMessageID 가 onChange 훅으로 잠깐 비워졌어도
-        // preparedAlarm 이 스톡 클립이면 복원된 선택을 보존한다(belt-and-suspenders).
-        if voiceStudio.preparedAlarm != nil,
-           stockSelectedMessageID != nil || selectedStockMessageID != nil {
-            return false
-        }
+        // ⚠ **테마를 고른 상태면 4-값 강제를 건너뛴다.** 예전에는 `preparedAlarm != nil`
+        // 을 함께 요구했는데, 음원 준비를 저장 시점으로 옮긴 뒤로 편집 중에는 그게 늘 nil
+        // 이다 — 그대로 두면 테마를 골라도 `randomPrompt = true`, `randomContext = "preset"`
+        // 로 되돌아가 고른 테마가 저장되지 않는다.
+        if selectedFreeBucket != nil { return false }
         var changed = false
         if voiceSourceMode != .ttsProfile {
             voiceSourceMode = .ttsProfile
@@ -1631,7 +1604,7 @@ struct AlarmEditorSheet: View {
     /// 시각과 무관하므로 무효화하지 않는다(스크롤 중간값이 스톡 선택을 지우는 것 방지).
     func invalidatePreparedRandomClipOnTimeChange() {
         guard voiceStudio.randomPrompt else { return }
-        guard stockSelectedMessageID == nil, selectedStockMessageID == nil else { return }
+        guard selectedFreeBucket == nil else { return }
         voiceStudio.preparedAlarm = nil
     }
 
@@ -1876,6 +1849,13 @@ struct AlarmEditorSheet: View {
         // 중단해, 음성 없는 알람이 저장되거나 설정한 시간/이름/반복이 사라지는 일이 없다.
         let shouldPreserveExistingListenerTitle = shouldPreserveExistingTtsListenerTitle(existing: existing)
         let currentListenerTitle = ttsListenerTitleForCurrentSelection(existing: existing)
+
+        // ⚠ **테마 갈래를 TTS 생성보다 먼저 처리한다.** 안 그러면 시스템 목소리 알람이
+        // 그대로 아래 `generateTTS` 로 흘러 **테마 클립 대신 라이브 생성 문장**이 저장된다
+        // (서버는 시스템 보이스 라이브 생성을 허용한다).
+        if draft.playMode != .alarmOnly, voiceSourceMode == .ttsProfile {
+            guard await prepareSelectedBucketClipIfNeeded() else { return }
+        }
 
         if draft.playMode != .alarmOnly,
            voiceSourceMode == .ttsProfile,

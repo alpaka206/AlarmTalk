@@ -465,13 +465,23 @@ final class VoiceStudioViewModel: ObservableObject {
     /// `MainViewModelVoiceActions.loadStockClips` 미러: 세션 없으면 무시,
     /// 이미 채워져 있으면 재로딩하지 않고, 실패는 조용히 로그만 남긴다(비차단).
     /// `isBusy` 와 독립적으로 동작해 refresh/generate 와 나란히 실행될 수 있다.
-    func loadStockClips(session: AuthSession?) async {
-        guard let token = session?.token else { return }
-        guard stockClips.isEmpty else { return }
+    /// 스톡 클립 매니페스트를 채운다.
+    ///
+    /// ⚠ **실패를 조용히 삼키되, 다음 호출이 반드시 다시 시도할 수 있어야 한다.**
+    /// 이 함수는 편집기 진입·앱 시작 양쪽에서 불린다. `stockClips` 가 비어 있으면 계속
+    /// 재시도하므로(아래 guard) 한 번 실패해도 다음 기회에 채워진다.
+    /// 매니페스트가 비면 알람 편집기의 테마 목록이 통째로 비어, 문구 행이
+    /// "불러오는 중이에요" 에서 벗어나지 못한다.
+    @discardableResult
+    func loadStockClips(session: AuthSession?) async -> Bool {
+        guard let token = session?.token else { return false }
+        guard stockClips.isEmpty else { return true }
         do {
             stockClips = try await api.getStockClips(token: token)
+            return true
         } catch {
-            // 비차단 — 카탈로그가 비면 picker 가 그냥 렌더되지 않는다.
+            // 비차단 — 다음 호출이 다시 시도한다.
+            return false
         }
     }
 
@@ -487,6 +497,23 @@ final class VoiceStudioViewModel: ObservableObject {
         }
         let stockKey = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
         do {
+            // ⚠ **선다운로드해 둔 캐시를 먼저 본다.** 예전에는 이 확인이 없어서
+            // `StockClipPrefetcher` 가 받아 둔 바로 그 키(`stock_<id>`)를 두고도 **매번
+            // 네트워크를 쳤다.** 그래서 오프라인·약전파에서 테마가 안 붙었고, 프리페처
+            // 주석의 "받아 두니 네트워크 없어도 테마를 고를 수 있다" 는 약속이 거짓이었다.
+            // 안드로이드 `bindStockBucketClips` 는 `audioStore.getCachedAudio(cacheKey) ?: 다운로드`
+            // 로 캐시 우선이다.
+            if let url = AudioCacheStore.shared.cachedURL(for: stockKey) {
+                let cached = CachedVoiceAudio(
+                    url: url,
+                    fileName: url.lastPathComponent,
+                    format: url.pathExtension.isEmpty ? "mp3" : url.pathExtension,
+                    cacheKey: stockKey
+                )
+                let prepared = makeStockPrepared(clip: clip, cached: cached, rawAudioURL: nil)
+                preparedAlarm = prepared
+                return prepared
+            }
             // 4-reuse: 미리듣기가 같은 음원을 stock_preview_<id> 로 이미 받아 캐싱했다면
             // 재다운로드하지 않고 그 바이트를 stock_<id> 로 재키잉한다(Android 미러).
             if let cached = try? reuseStockPreviewCache(for: clip, stockKey: stockKey) {

@@ -76,7 +76,20 @@ struct FreeBucketSettingsPane: View {
     /// 전환 동기 중 가장 강한 것을 잃는다" 고 적어 두고 잠긴 행을 남긴다.
     var onManualLocked: (() -> Void)?
 
+    /// 사용자가 이 화면에서 **직접 고른** 값. 아무것도 안 골랐으면 nil 이다.
+    ///
+    /// ⚠ **여기에 초기값을 찍어 넣지 말 것.** 예전에는 `.onAppear` 에서
+    /// `draft = initialSelection ?? available.first` 로 **한 번만** 찍었는데, 첫 진입에는
+    /// 스톡 매니페스트가 아직 안 와서 `available` 이 비어 있고 `initialSelection` 도 nil 이라
+    /// **draft 가 nil 로 굳었다.** 그 뒤 목록만 채워져, 행은 보이는데 **선택 표시가 하나도
+    /// 없는** 화면이 됐다(2026-08-12 실기기 재현 — 두 번째로 들어가면 멀쩡해 보였다).
+    /// 지금은 아래 `selection` 이 매번 다시 계산한다.
     @State private var draft: FreeBucket?
+
+    /// 실제로 선택된 것으로 **보여줄** 값. 늦게 도착한 목록에도 자동으로 맞는다.
+    private var selection: FreeBucket? {
+        draft ?? initialSelection ?? available.first
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,7 +98,7 @@ struct FreeBucketSettingsPane: View {
                     EditorCard(verticalPadding: 0) {
                         ForEach(Array(available.enumerated()), id: \.element.id) { index, bucket in
                             if index > 0 { AlarmSettingDivider() }
-                            RadioRow(label: bucket.label, selected: draft == bucket) { draft = bucket }
+                            RadioRow(label: bucket.label, selected: selection == bucket) { draft = bucket }
                         }
                         if let onManualLocked {
                             AlarmSettingDivider()
@@ -117,10 +130,10 @@ struct FreeBucketSettingsPane: View {
                 saveTitle: "저장",
                 saving: false,
                 savingLabel: "",
-                saveEnabled: draft != nil,
+                saveEnabled: selection != nil,
                 onCancel: { dismiss() },
                 onSave: {
-                    if let draft { onSave(draft) }
+                    if let selection { onSave(selection) }
                     dismiss()
                 }
             )
@@ -132,6 +145,5 @@ struct FreeBucketSettingsPane: View {
         .toolbar(.visible, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
-        .onAppear { draft = initialSelection ?? available.first }
     }
 }
