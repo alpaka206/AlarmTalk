@@ -268,15 +268,15 @@ class AlarmEditorStateTest {
     )
 
     @Test
-    fun activeVoiceLanguageFollowsSupportedAppLanguageWithoutTranslationToggle() {
+    // 번역을 없앤 뒤에도 **언어 축은 살아 있어야 한다** — 스톡 클립을 어느 언어로 고를지와
+    // 캐시 키를 정하는 값이라, 같이 지우면 en·ja 기기에서 한국어 클립이 나온다.
+    fun activeVoiceLanguageFollowsSupportedAppLanguage() {
         val editor = AlarmEditorState.from(alarm = null)
         editor.voiceRandomPrompt = false
-        editor.voiceTranslationEnabled = false
 
         editor.voiceLanguage = "ja"
 
         assertEquals("ja", editor.activeVoiceLanguage())
-        assertTrue(editor.shouldTranslateVoiceText())
 
         editor.voiceLanguage = "fr"
 

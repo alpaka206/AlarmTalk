@@ -605,9 +605,22 @@ struct AlarmEditorSheet: View {
                 ttsProfileChangedDuringEdit = true
             }
             stopAllEditorPreviews()
+            let wasThemeAlarm = isActiveStockClipAlarm || (editingAlarm?.bucketId).nilIfBlank != nil
             stockSelectedMessageID = nil
             voiceStudio.preparedAlarm = nil
-            // 스톡 선택을 잃는 순간(위 두 줄) 무료 등급은 곧바로 랜덤/preset 로 되돌린다.
+            // ⚠ **테마 알람이 목소리 변경으로 '직접 입력' 으로 뒤집히지 않게 한다.**
+            // 위 두 줄로 스톡 선택을 잃으면 `isActiveStockClipAlarm` 이 false 가 되는데,
+            // 테마 알람은 `randomPrompt` 도 false 로 저장돼 있어 판정식
+            // (`!randomPrompt && !isActiveStockClipAlarm`)이 **직접 입력**으로 읽는다.
+            // 그러면 서버가 준 스톡 문장이 사용자가 친 문구인 양 남고, 저장 시
+            // `last_manual_text` 로 기억돼 **다음 새 알람까지 오염**된다.
+            // 사용자는 문구를 바꾼 적이 없으니 종류를 그대로 두고 랜덤만 되켠다.
+            // (안드로이드는 `selectVoiceProfile` 이 **시스템 목소리로 바꿀 때만** 버킷을
+            // 비워서 같은 일이 안 난다. iOS 는 클론에 버킷 경로가 없어 여기서 막는다.)
+            if wasThemeAlarm, !voiceStudio.randomPrompt {
+                voiceStudio.randomPrompt = true
+            }
+            // 스톡 선택을 잃는 순간 무료 등급은 곧바로 랜덤/preset 로 되돌린다.
             // 안 그러면 randomPrompt=false 인 채로 남는데, 무료에는 직접 입력 pane 이
             // 안 뜨므로 아무 문구 UI 도 없는 상태가 된다.
             coerceFreeVoiceTierConstraints()
@@ -864,7 +877,7 @@ struct AlarmEditorSheet: View {
             randomPrompt: voiceStudio.randomPrompt,
             randomContext: voiceStudio.randomContext,
             language: voiceStudio.ttsLanguage,
-            translateText: voiceStudio.translateText,
+            // 번역 없음 — 직접 입력은 그대로 읽는다(2026-08-12).
             fireAtMillis: fireAt,
             listenerTitle: ttsListenerTitleForCurrentSelection(existing: editingAlarm)
         )
@@ -1155,7 +1168,8 @@ struct AlarmEditorSheet: View {
             text: text,
             // 랜덤이 아닌 경로의 카테고리·언어는 `VoiceStudioViewModel.generateTTS` 와 같다.
             category: "custom",
-            language: voiceStudio.translateText ? voiceStudio.ttsLanguage : "ko",
+            // 번역을 없앴으므로 직접 입력 캐시 키 언어는 언제나 원문(ko)이다(2026-08-12).
+            language: "ko",
             listenerTitle: listenerTitle
         )
     }
@@ -1179,7 +1193,8 @@ struct AlarmEditorSheet: View {
             // ⚠ 입력 원문이 아니라 **그 오디오와 짝이 되는 서버 표시 문구**를 쓴다.
             // 번역이 켜지면 둘이 달라지는데, 원문을 쓰면 잠금화면 문구와 실제 음성이 어긋난다.
             text: alias.displayText,
-            language: voiceStudio.translateText ? voiceStudio.ttsLanguage : "ko",
+            // 번역을 없앴으므로 직접 입력 캐시 키 언어는 언제나 원문(ko)이다(2026-08-12).
+            language: "ko",
             listenerTitle: alias.displayText.isEmpty ? nil : voiceStudio.selectedListenerTitle
         )
         voiceStudio.statusMessage = "전에 만든 음성을 그대로 사용했어요."
@@ -1204,7 +1219,8 @@ struct AlarmEditorSheet: View {
             profileId: profileID,
             text: prepared.text,
             category: "custom",
-            language: voiceStudio.translateText ? voiceStudio.ttsLanguage : "ko",
+            // 번역을 없앴으므로 직접 입력 캐시 키 언어는 언제나 원문(ko)이다(2026-08-12).
+            language: "ko",
             listenerTitle: listenerTitle
         )
         // 같은 값이면 굳이 두 번 쓰지 않는다.
@@ -1447,7 +1463,14 @@ struct AlarmEditorSheet: View {
         // 신규 알람은 랜덤 문구 ON 으로 열려 한-탭 저장이 가능해야 한다
         // (Android `AlarmEditorState.from` line 331-333). 기존 알람은 저장값을 따른다.
         voiceStudio.randomPrompt = alarm?.voiceRandomPrompt ?? true
-        voiceStudio.randomContext = RandomPromptContext.normalized(alarm?.voiceRandomContext).rawValue
+        // 종류를 떨어뜨리던 시절(2026-08-12 저장 수정 이전)에 저장된 테마 알람은 이 값이
+        // nil 이라, 그대로 두면 '직접 입력' 으로 열린다. 테마 id 로 되짚는다 —
+        // `RandomPromptContext.forBucket` 은 저장 쪽 `bucketCategory` 의 역이고 **한 쌍**이다.
+        voiceStudio.randomContext = (
+            alarm?.voiceRandomContext.nilIfBlank.map(RandomPromptContext.normalized)
+                ?? RandomPromptContext.forBucket(alarm?.bucketId)
+                ?? .defaultContext
+        ).rawValue
 
         // **직전 선택 유지 — 새 알람에만 적용한다.**
         // 기존 알람을 열 때는 저장된 자기 값만 쓴다(열기만 해도 문구가 바뀌면 안 된다).
@@ -1472,11 +1495,8 @@ struct AlarmEditorSheet: View {
             // 한 번도 고른 적 없으면 위에서 정한 폴백(랜덤 ON + preset)을 그대로 쓴다.
         }
 
-        // 스톡 클립은 서버가 ko/en/ja 로 확정 발화를 미리 만들어 둔 것이라 번역 대상이 아니다.
-        // (restore 는 아래에서 뒤에 도므로 원본 레코드로 판정한다.)
-        voiceStudio.translateText = !voiceStudio.randomPrompt
-            && voiceStudio.ttsLanguage != "ko"
-            && !(alarm?.isStockVoiceClip ?? false)
+        // ⚠ 여기서 번역 플래그를 세우던 자리다 — **번역을 없앴다**(2026-08-12).
+        // 직접 입력한 문구는 그대로 읽는다.
         voiceStudio.weatherCountry = alarm?.voiceWeatherCountry ?? saved.weatherCountry
         voiceStudio.weatherCity = alarm?.voiceWeatherCity ?? saved.weatherCity
         voiceStudio.fortuneGender = alarm?.voiceFortuneGender ?? saved.fortuneGender
@@ -1568,10 +1588,6 @@ struct AlarmEditorSheet: View {
             voiceStudio.randomContext = presetContext
             changed = true
         }
-        if voiceStudio.translateText {
-            voiceStudio.translateText = false
-            changed = true
-        }
         // 언어를 비번역 기본값 "ko"(source)로 고정한다. randomPrompt 분기에서
         // activeLanguage = ttsLanguage 이므로(VoiceStudioViewModel generateTTS:756) translate=false
         // 라도 stale en/ja 가 그대로 전송돼 서버가 번역 경로로 흐른다. source 로 맞춰 무료
@@ -1597,17 +1613,23 @@ struct AlarmEditorSheet: View {
 
     func savedPromptPreferences() -> DynamicPromptPreferences {
         let server = DynamicPromptPreferences.from(settings: auth.session?.user.dynamicPromptSettings)
-        return server == DynamicPromptPreferences() ? .loadFromDefaults() : server
+        return server == DynamicPromptPreferences() ? .load(userID: auth.session?.user.id) : server
     }
 
-    /// 저장 시 사용자가 입력한 날씨 지역/운세 정보를 기기 기본값에 보존해, 다음 알람을
-    /// 만들 때 매번 서울/대한민국·생년월일을 다시 입력하지 않게 한다. Android
-    /// `AlarmEditorScreen.kt:967-992` 의 saveWeatherLocation/saveFortuneInfo 미러 —
-    /// 가족(상대) 알람은 상대 정보라 내 기본값을 덮어쓰지 않는다.
+    /// 저장 시 사용자가 입력한 날씨 지역·운세 정보를 계정 기본값에 보존해, 다음 알람을
+    /// 만들 때 매번 도시·생년월일을 다시 입력하지 않게 한다.
+    /// 안드로이드 `ui/editor/AlarmEditorScreen.kt` 의 `saveWeatherLocation`/`saveFortuneInfo`
+    /// 미러 — 가족(상대) 알람은 상대 정보라 내 기본값을 덮어쓰지 않는다.
+    ///
+    /// ⚠ **테마(스톡) 알람도 여기 들어와야 한다.** 테마 알람은 `randomPrompt` 가 꺼지므로
+    /// 그것만 보고 걸러내면 '날씨' 테마로 도시를 넣어도 저장되지 않아, 다음 새 알람이
+    /// 날씨를 이어받지 못하고 매번 '약' 으로 돌아간다. 안드로이드 `weatherContextForSave()`·
+    /// `fortuneContextForSave()` 가 버킷 알람을 예외 처리하는 것과 같은 이유다.
     func persistDynamicPromptPreferencesIfNeeded() {
-        guard !target.familyAlarmMode, voiceStudio.randomPrompt else { return }
+        guard !target.familyAlarmMode else { return }
+        guard voiceStudio.randomPrompt || isActiveStockClipAlarm else { return }
         let context = activePromptContext
-        var prefs = DynamicPromptPreferences.loadFromDefaults()
+        var prefs = DynamicPromptPreferences.load(userID: auth.session?.user.id)
         var changed = false
         if context.usesWeather,
            let country = (voiceStudio.weatherCountry).nilIfBlank,
@@ -1626,7 +1648,7 @@ struct AlarmEditorSheet: View {
             changed = true
         }
         if changed {
-            prefs.saveToDefaults()
+            prefs.save(userID: auth.session?.user.id)
         }
     }
 
@@ -1841,7 +1863,7 @@ struct AlarmEditorSheet: View {
                 randomPrompt: voiceStudio.randomPrompt,
                 randomContext: voiceStudio.randomContext,
                 language: voiceStudio.ttsLanguage,
-                translateText: voiceStudio.translateText,
+                // 번역 없음 — 직접 입력은 그대로 읽는다(2026-08-12).
                 fireAtMillis: fireAt,
                 listenerTitle: currentListenerTitle
             ) {
@@ -1972,7 +1994,14 @@ struct AlarmEditorSheet: View {
             merged.ttsMessageId = prepared.messageID
             if isStockClip {
                 merged.voiceRandomPrompt = false
-                merged.voiceRandomContext = nil
+                // ⚠ **여기서 종류를 nil 로 지우지 말 것**(2026-08-12 수정 전까지 그랬다).
+                // 테마 클립을 붙이면 `voiceRandomPrompt` 가 꺼지는데, 그때 종류까지 떨어뜨리면
+                // 사용자가 고른 문구 갈래가 **모든 테마 저장에서** 사라진다. 증상은 둘로
+                // 갈라져 보이지만 원인은 하나다 — (1) 다음 새 알람이 매번 '기본 인사말'
+                // 이고 (2) 이 알람을 다시 열면 '직접 입력' 으로 보인다.
+                // 안드로이드 `AlarmEditorState.toDraft` 가 `(!voiceRandomPrompt &&
+                // !isActiveBucketAlarm())` 일 때만 null 로 두는 것과 같은 규약이다.
+                merged.voiceRandomContext = activePromptContext.rawValue
                 // 고른 테마를 **행에 적는다.** 캐시 파일이 사라져도 무엇을 골랐는지 남는다.
                 let category = voiceStudio.stockClips
                     .first { $0.messageId == prepared.messageID }?.category?.nilIfBlank

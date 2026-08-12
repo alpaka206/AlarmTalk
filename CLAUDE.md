@@ -281,9 +281,19 @@
   (`clonePrerenderBucketCategoryFor`) 사실상 **모든 저장**이 이 경로다. 그래서 `!voiceRandomPrompt`
   하나만 보고 판단하면 결과가 "가끔 안 된다" 가 아니라 "라이브 생성 폴백일 때만 된다" 가 된다.
   - 버킷/직접입력 판정식은 언제나 **`!voiceRandomPrompt && !isActiveBucketAlarm()`** 이고, 이걸 쓰는
-    자리는 셋이다: 저장(`AlarmEditorState.toDraft`), 문구 pane 프리셀렉트(`AlarmEditorScreen` 의
-    `random_prompt`), 요약 행·문구 프리필(`VoiceAudioCard`, `manualText`). **한 곳만 고치지 말 것** —
-    2026-08-05 에는 요약 행만 맞고 저장·pane 이 틀려서, 행은 '사랑' 인데 눌러 열면 '직접 입력' 이었다.
+    자리는 **일곱**이다(2026-08-12 전수 확인): 저장(`AlarmEditorState.toDraft`), 문구 pane 프리셀렉트와
+    `randomContext`·`manualText`(`AlarmEditorScreen` 의 `random_prompt`), `applyRandomPromptSettings`
+    의 `unchanged`, 요약 행(`VoiceAudioCard` 의 `MessageModeSummaryRow`), 목소리 교체 시
+    `losesManualText`(`VoiceAudioCard`), 무료 pane 의 `manualSelected`(`AlarmEditorScreen`).
+    **한 곳만 고치지 말 것** — 2026-08-05 에는 요약 행만 맞고 저장·pane 이 틀려서, 행은 '사랑' 인데
+    눌러 열면 '직접 입력' 이었다. 2026-08-12 에는 `manualSelected` 만 `selectedBucket == null` 을
+    직접 봐서(철자가 달랐다) 나머지 여섯과 반대로 답했다 — **철자까지 같아야 한다.**
+  - **iOS 도 같은 규약이다.** 대응 판정식은 `AlarmEditorSheet.currentMessageContext` 의
+    `!randomPrompt && !isActiveStockClipAlarm` 이고, 저장은 `saveFlow` 의 스톡 분기다.
+    ⚠ iOS 는 2026-08-12 까지 그 저장이 `voiceRandomContext = nil` 로 **종류를 통째로 버렸다** —
+    안드로이드에서 네 번 난 사고를 iOS 는 처음부터 깔고 있었다. 역매핑
+    `RandomPromptContext.forBucket` ↔ `bucketCategory` 는 **한 쌍**이고 회귀 테스트는
+    `MessageContextMemoryTests`.
   - 저장에서 종류를 잃으면 증상이 둘로 갈라져 보인다: **새 알람이 매번 '기본 인사말'** 이고,
     **그 알람을 다시 열면 '직접 입력'** 이다. 같은 원인이다.
   - 종류를 떨어뜨리던 시절의 옛 행은 종류가 null 이라, 열 때 `randomPromptContextForBucket(bucketId)`
@@ -316,9 +326,11 @@
   `editor_label_alarm_name`(문자열 자체가 없음), `AlarmTalkBottomBar.kt:117-121
   isDarkScheme 분기`(이미 없앤 옛 디자인), 타임휠 `itemHeight = 72.dp`(실제 92).
   **안드로이드가 이미 지운 화면을 베낀 주석이 그대로 남아 있었다.**
-  - **없는 동작을 근거로 쓴 주석이 더 위험하다.** 무료 테마 주석 2곳이 "클립이 울릴
-    때마다 순차 회전한다" 고 적었지만 **iOS 에는 그 회전이 없다**(`clips.first` 하나만
-    쓴다). 코드가 아니라 주석이 기능을 광고하고 있었다.
+  - **없는 동작을 근거로 쓴 주석이 더 위험하다.** 2026-08-07 당시 무료 테마 주석 2곳이
+    "클립이 울릴 때마다 순차 회전한다" 고 적었지만 그때 iOS 에는 그 회전이 없었다
+    (`clips.first` 하나만 썼다) — 코드가 아니라 주석이 기능을 광고하고 있었다.
+    (지금은 iOS 에도 회전이 있다 — `AlarmSoundResolver.rotatedBucketClipKey` +
+    `LocalAlarmStore.advancedBucketRotationIndex`. **이 서술 자체가 낡을 수 있다는 예다.**)
   - **새 주석에는 줄번호를 쓰지 말 것.** 어차피 썩는다 — `ui/editor/Foo.kt` 처럼 경로와
     심볼 이름만 적는다.
   - 회귀 방지: `scripts/check-cross-platform-refs.py`(CI lint 잡에 포함). 주석이 대는

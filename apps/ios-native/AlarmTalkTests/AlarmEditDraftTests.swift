@@ -259,7 +259,6 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: false,
             randomContext: nil,
             language: "en",
-            translateText: false,
             // 고정 문구는 fireAt 무관 — 임의 값이어도 재사용 가능해야 한다.
             fireAtMillis: 0,
             listenerTitle: nil
@@ -281,7 +280,6 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: false,
             randomContext: nil,
             language: "ko",
-            translateText: false,
             fireAtMillis: 0,
             listenerTitle: nil
         ))
@@ -292,7 +290,6 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: false,
             randomContext: nil,
             language: "ko",
-            translateText: false,
             fireAtMillis: 0,
             listenerTitle: nil
         ))
@@ -314,7 +311,6 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: false,
             randomContext: nil,
             language: "ko",
-            translateText: false,
             fireAtMillis: 0,
             listenerTitle: "  공주님  "
         ))
@@ -325,7 +321,6 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: false,
             randomContext: nil,
             language: "ko",
-            translateText: false,
             fireAtMillis: 0,
             listenerTitle: "친구"
         ))
@@ -336,7 +331,6 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: false,
             randomContext: nil,
             language: "ko",
-            translateText: false,
             fireAtMillis: 0,
             listenerTitle: nil
         ))
@@ -362,7 +356,6 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: true,
             randomContext: RandomPromptContext.wakeWeather.rawValue,
             language: "ko",
-            translateText: false,
             fireAtMillis: preparedFireAt,
             listenerTitle: nil
         ))
@@ -388,7 +381,6 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: true,
             randomContext: RandomPromptContext.wakeWeather.rawValue,
             language: "ko",
-            translateText: false,
             fireAtMillis: preparedFireAt + 60_000,
             listenerTitle: nil
         ))
@@ -409,7 +401,6 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: true,
             randomContext: RandomPromptContext.wakeWeather.rawValue,
             language: "ko",
-            translateText: false,
             fireAtMillis: preparedFireAt,
             listenerTitle: nil
         ))

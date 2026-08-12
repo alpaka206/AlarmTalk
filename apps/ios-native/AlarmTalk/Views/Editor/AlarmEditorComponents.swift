@@ -274,26 +274,6 @@ enum FamilyAlarmScheduleRules {
 
 }
 
-struct EditorLanguageOption: Identifiable {
-    let code: String
-    let label: String
-    var id: String { code }
-}
-
-let ttsLanguages: [EditorLanguageOption] = [
-    .init(code: "ko", label: "한국어"),
-    .init(code: "en", label: "영어"),
-    .init(code: "ja", label: "일본어")
-]
-
-let ttsTranslationLanguages: [EditorLanguageOption] = [
-    .init(code: "ko", label: "한국어"),
-    .init(code: "en", label: "영어"),
-    .init(code: "ja", label: "일본어"),
-    .init(code: "fr", label: "프랑스어"),
-    .init(code: "it", label: "이탈리아어")
-]
-
 // ⚠ **`VoiceRepeatEditor` / `VoiceVolumeEditor` 를 되살리지 말 것**(2026-08-07 삭제).
 // 편집기 본문에 반복 세그먼트와 음량 슬라이더를 펼쳐 두던 뷰들이다. 안드로이드는 둘 다
 // '목소리 크기' 행이 여는 상세(`VoiceOutputSettingsPane`)에만 두고, 본문에는 요약 행

@@ -331,7 +331,10 @@ internal fun RandomPromptSettingsPane(
 
 // '직접 입력' 선택 시 뜨는 문구 입력 다이얼로그(날씨·운세 다이얼로그와 같은 층위).
 @Composable
-private fun ManualMessageDialog(
+// ⚠ `internal` 이다 — 무료 버킷 pane(`FreeBucketSettingsPane`)도 같은 다이얼로그를 쓴다.
+// 유료 사용자가 **기본 목소리**로도 직접 입력을 할 수 있게 되면서(2026-08-11 서버 개방),
+// 그 pane 에서도 이 입력창이 필요해졌다. 두 벌로 만들지 않는다.
+internal fun ManualMessageDialog(
     initialText: String,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,

@@ -181,8 +181,10 @@ internal fun AlarmEditorScreen(
     }
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.VOICE_ONLY
     // 새 알람은 마지막에 고른 문구 종류를 기본값으로 이어받는다(한 번도 고른 적 없으면 목록에
-    // 노출하지 않는 '기본 인사말'=preset 으로 시작). '직접 입력'은 기억하지 않아 빈 직접입력으로
-    // 시작하지 않는다.
+    // 노출하지 않는 '기본 인사말'=preset 으로 시작).
+    // **직접 입력도 문구까지 기억한다**(2026-08-06 변경). 종류만 이어받으면 빈 직접입력으로
+    // 열려 저장이 막히는데, 문구를 함께 이어받으면 글자가 같아 AlarmAudioStore 입력 캐시에
+    // 걸려 서버 호출도 한도 차감도 없이 저장된다 — '기억하지 않는다' 의 근거가 사라졌다.
     val defaultRandomContext = lastMessageContext ?: DefaultRandomPromptContext
     val editor = remember(alarm?.id) {
         AlarmEditorState.from(
@@ -861,7 +863,7 @@ internal fun AlarmEditorScreen(
                         text = text,
                         category = editor.activeVoiceCategory(),
                         language = editor.activeVoiceLanguage(),
-                        translate = editor.shouldTranslateVoiceText(),
+                        translate = false,
                         random = editor.voiceRandomPrompt,
                         randomContext = if (editor.voiceRandomPrompt) {
                             normalizedRandomPromptContext(editor.voiceRandomContext)
@@ -1010,11 +1012,6 @@ internal fun AlarmEditorScreen(
                 editor.voiceLanguage = appVoiceLanguage
                 editor.clearTtsMeta()
             }
-            val automaticTranslation = !editor.voiceRandomPrompt && appVoiceLanguage != "ko"
-            if (editor.voiceTranslationEnabled != automaticTranslation) {
-                editor.voiceTranslationEnabled = automaticTranslation
-                if (!editor.voiceRandomPrompt) editor.clearTtsMeta()
-            }
         }
     }
 
@@ -1037,8 +1034,19 @@ internal fun AlarmEditorScreen(
             // 아래 TTS 쪽 제한(버킷/문구 강제)은 소스가 TTS 일 때만 적용한다 — 녹음 알람에는
             // 문구 개념이 없다.
             if (editor.voiceSource != VoiceSources.LOCAL_AUDIO) {
+                // ⚠ **제한 모드는 두 축을 묶고 있다 — 여기서 갈라야 한다.**
+                // `restrictToWeatherMedication` 은 "생성 문구를 날씨+약으로 제한한다"(기본
+                // 목소리는 그 둘의 스톡 클립만 있다)와 "직접 입력을 막는다" 를 함께 뜻했다.
+                // 이제 **유료면 기본 목소리로도 직접 입력이 된다**(횟수 차감). 그런데 아래
+                // 잔재 정리는 직접 입력 문구를 잔재로 보고 지우므로, 유료 사용자가 방금 친
+                // 문구가 매니페스트 도착·온오프라인 전환만으로 **조용히 사라진다.**
+                // 직접 입력이 잠기지 않은 등급(= 유료)이 실제로 직접 입력을 고른 상태면
+                // 이 강제를 통째로 건너뛴다. 잠긴 등급(무료)에서는 예전 그대로 돈다.
+                val manualChosen = !editor.voiceRandomPrompt &&
+                    editor.selectedBucket == null &&
+                    editor.voiceText.isNotBlank()
+                if (!freeVoiceTier && manualChosen) return@LaunchedEffect
                 if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
-                if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
                 if (editor.voiceLanguage != appVoiceLanguage) editor.voiceLanguage = appVoiceLanguage
                 // 기존 알람은 selectVoiceProfile 이 안 불려 직접 입력 문구·신선한 TTS 오디오가 그대로
                 // 남는다 — 클립을 아직 못 받았어도(오프라인 등) 그 오디오로 저장이 통과하는 우회를
@@ -1078,6 +1086,7 @@ internal fun AlarmEditorScreen(
     var randomPromptWasEnabledWhenOpened by remember { mutableStateOf(false) }
     // 무료 날씨 버킷 선택 시 도시 입력/확인 다이얼로그.
     var freeWeatherDialogOpen by remember { mutableStateOf(false) }
+    var freeManualDialogOpen by remember { mutableStateOf(false) }
 
     val usableTtsProfileIds = (
         visibleVoiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
@@ -1602,6 +1611,14 @@ internal fun AlarmEditorScreen(
                 },
                 onDismiss = { settingsDetailPanel = null },
                 onManualLocked = { voicePlanGateOpen = true },
+                // ⚠ 잠그는 기준은 **무료 플랜뿐**이다 — 기본 목소리는 이유가 되지 않는다.
+                manualLocked = freeVoiceTier,
+                // ⚠ **판정식은 언제나 `!voiceRandomPrompt && !isActiveBucketAlarm()` 이다.**
+                // 예전에는 이 자리만 `selectedBucket == null` 을 직접 봐서, 버킷은 골라 뒀는데
+                // 오디오 바인딩이 풀린 상태(예: applyRandomPromptSettings 의 clearAudio 뒤)에서
+                // 나머지 여섯 자리와 **반대로 답했다** — 요약 행은 '날씨' 인데 pane 은 '직접 입력'.
+                manualSelected = !editor.voiceRandomPrompt && !editor.isActiveBucketAlarm(),
+                onSelectManual = { freeManualDialogOpen = true },
                 weatherRegionSummary = if (editor.selectedBucket == "weather") {
                     if (editor.voiceWeatherCountry.isNotBlank() && editor.voiceWeatherCity.isNotBlank()) {
                         stringResource(
@@ -1629,6 +1646,21 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    if (freeManualDialogOpen) {
+        // 유료 pane 과 **같은 다이얼로그**를 쓴다(두 벌로 만들지 않는다).
+        ManualMessageDialog(
+            initialText = editor.voiceText,
+            onDismiss = { freeManualDialogOpen = false },
+            onConfirm = { text ->
+                // 직접 입력을 고르면 랜덤·버킷을 함께 푼다 — 셋이 동시에 켜질 수 없다.
+                editor.voiceText = text
+                editor.voiceRandomPrompt = false
+                editor.selectedBucket = null
+                freeManualDialogOpen = false
+            },
+        )
+    }
+
     if (freeWeatherDialogOpen) {
         WeatherLocationDialog(
             country = editor.voiceWeatherCountry,
@@ -1637,6 +1669,17 @@ internal fun AlarmEditorScreen(
             onConfirm = { country, city ->
                 editor.voiceWeatherCountry = country
                 editor.voiceWeatherCity = city
+                // ⚠ **여기서 저장하지 않으면 '날씨' 를 다시는 이어받지 못한다.**
+                // 다음 새 알람의 이어받기 가드는 `it != "weather" || savedWeatherConfigured
+                // || voiceWeatherCity.isNotBlank()` 인데, 둘 다 이 store 에서 읽는다.
+                // 그래서 저장을 빼먹으면 `rememberMessageChoiceUsed` 가 "weather" 를 정직하게
+                // 적어도 읽는 쪽이 버리고, 새 알람이 **매번 '약' 으로 되돌아간다** —
+                // CLAUDE.md 가 회귀라고 못 박은 바로 그 증상이다.
+                // 유료 pane(`applyRandomPromptSettings`)·설정 화면과 같은 자리에 쓴다.
+                if (!familyAlarmMode && city.isNotBlank()) {
+                    dynamicPromptPreferenceStore.saveWeatherLocation(promptOwnerUserId, country, city)
+                    dynamicPromptPreferences = dynamicPromptPreferenceStore.read(promptOwnerUserId)
+                }
                 freeWeatherDialogOpen = false
                 selectBucket("weather")
             },

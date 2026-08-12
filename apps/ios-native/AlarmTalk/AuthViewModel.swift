@@ -723,6 +723,7 @@ final class AuthViewModel: ObservableObject {
                 accessSnapshotStore.clear(userID: currentUserID)
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferenceStore().clear(userID: currentUserID)
+                DynamicPromptPreferences.clear(userID: currentUserID)
             }
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
@@ -749,6 +750,7 @@ final class AuthViewModel: ObservableObject {
                 accessSnapshotStore.clear(userID: currentUserID)
                 DefaultVoicePreferenceStore().clear(userID: currentUserID)
                 DynamicPromptPreferenceStore().clear(userID: currentUserID)
+                DynamicPromptPreferences.clear(userID: currentUserID)
             }
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
         } catch {
@@ -1072,6 +1074,20 @@ final class AuthViewModel: ObservableObject {
         }
         statusMessage = "음성 생체정보 처리 동의를 철회했어요."
         return true
+    }
+
+    /// **사용자가 직접 누른 로그아웃.** 취향 기록(마지막 목소리·문구·사주·날씨 지역)까지 지운다.
+    ///
+    /// ⚠ **`signOut` 안에 넣지 말 것.** 같은 함수를 자동 401(세션 만료·Apple 자격 무효)
+    /// 경로도 쓰는데, 거기서 지우면 **같은 사람이 다시 로그인할 때 취향을 잃는다**
+    /// (Codex #646 회귀). 안드로이드가 `clearSignedInSession`(명시적)과
+    /// `clearSessionKeepingAlarms`(자동)를 함수로 갈라 놓은 것과 같은 분리다.
+    func signOutExplicitly() {
+        let userID = session?.user.id
+        DefaultVoicePreferenceStore().clear(userID: userID)
+        DynamicPromptPreferenceStore().clear(userID: userID)
+        DynamicPromptPreferences.clear(userID: userID)
+        signOut()
     }
 
     func signOut(message: String? = nil) {

@@ -14,7 +14,7 @@ struct SettingsView: View {
     @State private var weatherDialogOpen: Bool = false
     @State private var fortuneDialogOpen: Bool = false
     @State private var holidayDialogOpen: Bool = false
-    @State private var promptPreferences: DynamicPromptPreferences = .loadFromDefaults()
+    @State private var promptPreferences = DynamicPromptPreferences()
     // 운세 폼의 초안. 상단바의 '저장' 이 눌러야 반영되므로 **모달 밖**에 둔다 —
     // 값이 폼 안에만 있으면 상단바가 그걸 볼 수 없다.
     @State private var fortuneGenderDraft = ""
@@ -236,17 +236,18 @@ struct SettingsView: View {
 
     private func loadPromptPreferences() {
         let server = DynamicPromptPreferences.from(settings: auth.session?.user.dynamicPromptSettings)
+        let userID = auth.session?.user.id
         if server != DynamicPromptPreferences() {
             promptPreferences = server
-            server.saveToDefaults()
+            server.save(userID: userID)
         } else {
-            promptPreferences = .loadFromDefaults()
+            promptPreferences = .load(userID: userID)
         }
     }
 
     private func savePromptPreferences(_ preferences: DynamicPromptPreferences) {
         promptPreferences = preferences
-        preferences.saveToDefaults()
+        preferences.save(userID: auth.session?.user.id)
         Task {
             await auth.updateProfile(dynamicPromptSettings: preferences.toSettings())
             await socialFeatures.refreshAll(session: auth.session, force: true)

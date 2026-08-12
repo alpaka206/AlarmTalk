@@ -613,6 +613,20 @@ internal fun FreeBucketSettingsPane(
     /** 잠긴 '직접 입력'을 눌렀을 때 — 호출부가 이용권 안내를 띄운다. */
     onManualLocked: () -> Unit,
     /**
+     * '직접 입력' 이 잠겨 있는가. **잠그는 기준은 무료 플랜뿐이다.**
+     *
+     * ⚠ **기본 목소리라고 잠그지 말 것**(2026-08-11). 유료 사용자는 기본 목소리로도 직접
+     * 입력을 쓸 수 있고, 비용은 **직접 입력 월 한도**가 센다(서버 `tts.ts` 의
+     * `manualTextOnSystemVoice`). 예전에는 유료여도 기본 목소리면 잠겨서, 이용권을 산
+     * 사람이 **왜 안 되는지 알 수 없는 벽**을 만났다.
+     * (동적 문구 — 날씨·운세 — 는 여전히 기본 목소리에서 막는다. 이 목록에 아예 없다.)
+     */
+    manualLocked: Boolean,
+    /** 직접 입력이 선택됐는가(라디오 표시용). */
+    manualSelected: Boolean = false,
+    /** 잠기지 않았을 때 '직접 입력' 을 고른 경우. */
+    onSelectManual: () -> Unit = {},
+    /**
      * 날씨를 골랐을 때 보여줄 지역 요약. null 이면 행을 그리지 않는다.
      *
      * ⚠ 유료 pane(`AlarmRandomPromptSettings`)은 고른 값을 같은 자리에서 보여주고
@@ -664,10 +678,18 @@ internal fun FreeBucketSettingsPane(
                     }
                     // 무료에게도 '직접 입력'이 존재한다는 걸 보여준다. 목록에서 아예 빼면
                     // 이런 기능이 있는지조차 모르고, 유료 전환 동기 중 가장 강한 것을 잃는다.
-                    SnoozeLockedRow(
-                        label = stringResource(R.string.editor_msg_mode_manual),
-                        onClick = onManualLocked,
-                    )
+                    if (manualLocked) {
+                        SnoozeLockedRow(
+                            label = stringResource(R.string.editor_msg_mode_manual),
+                            onClick = onManualLocked,
+                        )
+                    } else {
+                        SnoozeRadioRow(
+                            label = stringResource(R.string.editor_msg_mode_manual),
+                            selected = manualSelected,
+                            onClick = onSelectManual,
+                        )
+                    }
                 }
                 // 고른 값을 유료 pane 과 **같은 모양**으로 보여주고 같은 자리에서 고친다.
                 if (weatherRegionSummary != null && onChangeWeatherRegion != null) {

@@ -124,7 +124,6 @@ internal class AlarmEditorState(
     var voiceFortuneGender by mutableStateOf(voiceFortuneGender ?: "")
     var voiceFortuneBirthDate by mutableStateOf(voiceFortuneBirthDate ?: "")
     var voiceFortuneBirthTime by mutableStateOf(voiceFortuneBirthTime ?: "")
-    var voiceTranslationEnabled by mutableStateOf(!voiceRandomPrompt && (voiceLanguage ?: "ko") != "ko")
     var voiceRepeat by mutableStateOf(voiceRepeat)
     var voiceVolumePercent by mutableIntStateOf(voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100))
     var ttsMessageId by mutableStateOf(ttsMessageId)
@@ -397,7 +396,6 @@ internal class AlarmEditorState(
         voiceProfileId = profileId
         voiceListenerTitleOverride = ""
         voiceRandomPrompt = false
-        voiceTranslationEnabled = false
         clearBucketSelection()
         voiceText = text
         localAudioUri = audio.localAudioUri
@@ -431,7 +429,6 @@ internal class AlarmEditorState(
         voiceProfileId = profileId
         voiceListenerTitleOverride = ""
         voiceRandomPrompt = false
-        voiceTranslationEnabled = false
         voiceText = text
         voiceLanguage = language
         localAudioUri = audio.localAudioUri
@@ -446,13 +443,20 @@ internal class AlarmEditorState(
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
+    /**
+     * ⚠ **이건 번역 스위치가 아니다 — 지우지 말 것.**
+     *
+     * 번역은 2026-08-12 지시("직접 입력한 거 그대로 나오도록")로 없앴다. 예전에는 앱 언어가
+     * 한국어가 아니면 직접 입력 문구를 서버가 그 언어로 **옮겨서** 읽었고, 그래서 사용자가
+     * 친 글자와 실제로 들리는 말이 달라졌다. 이제 TTS 요청의 `translate` 는 언제나 false 다.
+     *
+     * 반면 이 함수가 정하는 건 **어느 언어의 스톡 클립을 고를지**와 캐시 키다. 축이 다르다 —
+     * 번역을 없앴다고 이걸 같이 지우면 en·ja 기기에서 한국어 클립이 재생된다.
+     */
     fun activeVoiceLanguage(): String = supportedAppVoiceLanguage(voiceLanguage)
 
     fun activeVoiceCategory(): String =
         if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
-
-    fun shouldTranslateVoiceText(): Boolean =
-        !voiceRandomPrompt && activeVoiceLanguage() != "ko"
 
     companion object {
         fun from(

@@ -106,7 +106,7 @@ struct AccountPanel: View {
         .alert("로그아웃할까요?", isPresented: $logoutConfirming) {
             Button("취소", role: .cancel) { }
             Button("로그아웃", role: .destructive) {
-                auth.signOut()
+                auth.signOutExplicitly()
                 onSignOut()
             }
         }

@@ -92,7 +92,16 @@ struct DynamicPromptPreferences: Codable, Equatable {
     /// Keychain account 키. 과거 UserDefaults 키와 동일 문자열을 재사용하되 저장소만
     /// Keychain 으로 옮긴다. 운세용 성별/생년월일/태어난 시각은 민감 정보라
     /// UserDefaults(plist, 평문) 대신 Keychain 에 보관한다(audit low 대응).
-    private static let storageKey = "dynamic_prompt_preferences"
+    /// ⚠ **계정별로 나눈다.** 2026-08-12 전에는 이 문자열 하나를 기기 전역으로 썼고,
+    /// 그래서 로그아웃한 뒤 다른 계정으로 들어오면 **앞 사람의 성별·생년월일·태어난 시각**을
+    /// 자기 정보로 물려받았다(운세 문구가 남의 사주로 만들어졌다).
+    /// 안드로이드 `data/DynamicPromptPreferenceStore.kt` 는 처음부터 계정별이다.
+    private static let legacyStorageKey = "dynamic_prompt_preferences"
+
+    private static func storageKey(userID: String?) -> String? {
+        guard let userID = (userID).nilIfBlank else { return nil }
+        return "\(legacyStorageKey)_\(userID)"
+    }
 
     static func from(settings: DynamicPromptSettings?) -> DynamicPromptPreferences {
         DynamicPromptPreferences(
@@ -104,23 +113,43 @@ struct DynamicPromptPreferences: Codable, Equatable {
         )
     }
 
-    /// Keychain 에서 로드한다. API 시그니처는 유지(`loadFromDefaults`)하되 저장소는
-    /// Keychain. 과거 UserDefaults 에 남아 있을 수 있는 평문 잔재가 있으면 본 호출에서
-    /// 정리한다(민감 정보가 plist 에 남지 않도록).
-    static func loadFromDefaults() -> DynamicPromptPreferences {
+    /// Keychain 에서 로드한다. 운세용 성별·생년월일·태어난 시각은 민감 정보라
+    /// UserDefaults(plist, 평문) 대신 Keychain 에 보관한다.
+    ///
+    /// 로그인 전(`userID == nil`)에는 **빈 값**을 준다 — 누구의 것인지 모르는 사주를
+    /// 아무에게나 보여줄 수 없다.
+    static func load(userID: String?) -> DynamicPromptPreferences {
         // 평문 UserDefaults 잔재 제거(있다면). 신규 설치엔 없음.
-        UserDefaults.standard.removeObject(forKey: storageKey)
-        guard let data = KeychainStore.readData(account: storageKey),
-              let decoded = try? JSONDecoder().decode(DynamicPromptPreferences.self, from: data) else {
+        UserDefaults.standard.removeObject(forKey: legacyStorageKey)
+        guard let key = storageKey(userID: userID) else { return DynamicPromptPreferences() }
+        if let data = KeychainStore.readData(account: key),
+           let decoded = try? JSONDecoder().decode(DynamicPromptPreferences.self, from: data) {
+            return decoded.normalized()
+        }
+        // 기기 전역으로 저장하던 시절의 값은 **지금 로그인한 계정이 한 번만 물려받고**
+        // 전역 키를 지운다. 안 지우면 다음 계정이 또 물려받는다.
+        guard let legacy = KeychainStore.readData(account: legacyStorageKey),
+              let decoded = try? JSONDecoder().decode(DynamicPromptPreferences.self, from: legacy) else {
             return DynamicPromptPreferences()
         }
-        return decoded.normalized()
+        KeychainStore.deleteData(account: legacyStorageKey)
+        let claimed = decoded.normalized()
+        claimed.save(userID: userID)
+        return claimed
     }
 
-    /// Keychain 에 저장한다. API 시그니처는 유지(`saveToDefaults`).
-    func saveToDefaults() {
-        guard let data = try? JSONEncoder().encode(normalized()) else { return }
-        KeychainStore.saveData(data, account: Self.storageKey)
+    /// Keychain 에 계정별로 저장한다.
+    func save(userID: String?) {
+        guard let key = Self.storageKey(userID: userID),
+              let data = try? JSONEncoder().encode(normalized()) else { return }
+        KeychainStore.saveData(data, account: key)
+    }
+
+    /// 명시적 로그아웃·탈퇴에서만 부른다(자동 401 에서는 부르지 말 것 — 같은 사람이
+    /// 다시 로그인할 때 자기 사주를 다시 입력하게 된다).
+    static func clear(userID: String?) {
+        guard let key = storageKey(userID: userID) else { return }
+        KeychainStore.deleteData(account: key)
     }
 
     func toSettings() -> DynamicPromptSettings {

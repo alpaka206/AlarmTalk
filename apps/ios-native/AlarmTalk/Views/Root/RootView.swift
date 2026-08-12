@@ -55,7 +55,7 @@ struct RootView: View {
                 AccountPendingDeletionView(
                     busy: auth.isBusy,
                     onRecover: { Task { await auth.cancelAccountDeletion() } },
-                    onLogout: { auth.signOut() }
+                    onLogout: { auth.signOutExplicitly() }
                 )
             } else if !auth.consentStatusChecked && !consentCachedDone {
                 // 동의 확인 응답 전에는 온보딩·홈을 아예 그리지 않는다. 응답 전 기본값

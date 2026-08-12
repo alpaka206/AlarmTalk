@@ -235,6 +235,33 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 테마(버킷) id → 문구 종류. 안드로이드 `randomPromptContextForBucket` 대응이고,
+    /// 아래 `bucketCategory` 의 **역**이다 — **한쪽만 고치지 말 것.**
+    ///
+    /// 종류를 떨어뜨리던 시절에 저장된 테마 알람은 `voiceRandomContext` 가 nil 이라,
+    /// 열 때 이걸로 되짚지 않으면 '직접 입력' 으로 보인다.
+    static func forBucket(_ bucket: String?) -> RandomPromptContext? {
+        switch bucket?.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "greeting": return .preset
+        case "love": return .love
+        case "medication": return .medication
+        case "fortune": return .wakeFortune
+        case "weather": return .wakeWeather
+        default: return nil
+        }
+    }
+
+    /// 문구 종류 → 테마(버킷) id. 안드로이드 `clonePrerenderBucketCategoryFor` 대응.
+    var bucketCategory: String {
+        switch self {
+        case .preset: return "greeting"
+        case .love: return "love"
+        case .medication: return "medication"
+        case .wakeFortune: return "fortune"
+        case .wakeWeather: return "weather"
+        }
+    }
+
     /// 안드로이드 문자열과 같은 라벨(strings.xml 의 editor_msg_mode_preset·editor2_ctx_*).
     var label: String {
         switch self {

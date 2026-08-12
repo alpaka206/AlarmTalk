@@ -194,7 +194,6 @@ struct AlarmEditDraft: Equatable {
         randomPrompt: Bool,
         randomContext: String?,
         language: String,
-        translateText: Bool,
         fireAtMillis: Int64,
         listenerTitle: String?
     ) -> Bool {
@@ -210,7 +209,9 @@ struct AlarmEditDraft: Equatable {
 
         let promptContext = RandomPromptContext.normalized(randomContext)
         let activeCategory = randomPrompt ? promptContext.ttsCategory : "custom"
-        let activeLanguage = (randomPrompt || translateText)
+        // 번역이 없어진 뒤로 직접 입력은 언제나 원문(ko)으로 읽는다. 생성 문구만 기기
+        // 언어를 따른다 — 그건 번역이 아니라 **어느 언어의 문장을 만들지**다.
+        let activeLanguage = randomPrompt
             ? language.trimmingCharacters(in: .whitespacesAndNewlines)
             : "ko"
         guard activeCategory == ((record.voiceCategory).nilIfBlank ?? "custom"),

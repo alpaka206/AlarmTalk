@@ -854,9 +854,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 목소리(rememberVoiceUsed)와 한 쌍이라 기록 시점도 같다: **알람 저장 성공 시.**
      *
      * 편집기에서 문구를 눌러만 보고 취소한 것까지 기억하면, 만들지도 않은 알람의 선택이 다음
-     * 알람에 남는다. 직접 입력은 기억하지 않는다 — 그 문구는 그 알람의 것이고(사용자 확정),
-     * 빈 직접입력으로 시작하면 저장이 막힌다. 이어받는 것은 '종류' 하나뿐이고 회전 인덱스·
-     * 클립 키 같은 알람별 상태는 절대 따라가지 않는다.
+     * 알람에 남는다.
+     *
+     * **직접 입력은 문구까지 기억한다**(2026-08-06 변경. 그전에는 '빈 직접입력으로 열려 저장이
+     * 막힌다' 는 이유로 아예 기억하지 않았다). 문구를 함께 이어받으면 글자가 같아
+     * `AlarmAudioStore` 입력 캐시에 걸려 서버 호출도 월 한도 차감도 없이 저장되므로,
+     * 그 근거가 사라졌다.
+     *
+     * 이어받는 것은 '종류'(+직접 입력이면 그 문구)뿐이고 회전 인덱스·클립 키 같은 알람별
+     * 상태는 절대 따라가지 않는다.
      */
     internal fun rememberMessageChoiceUsed(draft: AlarmDraft) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return

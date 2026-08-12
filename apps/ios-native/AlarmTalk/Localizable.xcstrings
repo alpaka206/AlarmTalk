@@ -6649,40 +6649,6 @@
         }
       }
     },
-    "번역": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Translation"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "翻訳"
-          }
-        }
-      }
-    },
-    "번역 언어": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Translation language"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "翻訳言語"
-          }
-        }
-      }
-    },
     "변경된 내용을 확인하고 동의해 주세요. 이전에 동의하신 항목 중 바뀐 것만 다시 여쭤봐요.": {
       "extractionState": "manual",
       "localizations": {
@@ -10317,23 +10283,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "規約が改定されたため\n再度の同意が必要です"
-          }
-        }
-      }
-    },
-    "언어": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Language"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "言語"
           }
         }
       }

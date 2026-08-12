@@ -16,7 +16,9 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_localizedVoiceMessage_VOICE_FEATURE_REQUIRES_PAID_PLAN() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_FEATURE_REQUIRES_PAID_PLAN"),
-            "유료 이용권에서 사용할 수 있어요."
+            // 리터럴을 다시 박지 말 것 — 유료 게이트 문구는 `PaidGateCopy` 가 유일 출처다.
+            // 예전에는 여기 옛 문장이 박혀 있어, 문구를 통일한 뒤 테스트만 빨갛게 남았다.
+            PaidGateCopy.message
         )
     }
 
@@ -74,7 +76,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_mapVoiceError_picksUpServerErrorCode() {
         let vm = VoiceStudioViewModel()
         let err = APIError.server(status: 403, message: "Voice features require a paid plan.", errorCode: "VOICE_FEATURE_REQUIRES_PAID_PLAN")
-        XCTAssertEqual(vm.mapVoiceError(err), "유료 이용권에서 사용할 수 있어요.")
+        XCTAssertEqual(vm.mapVoiceError(err), PaidGateCopy.message)
     }
 
     func test_mapVoiceError_jsonInMessageFallback() {
@@ -115,6 +117,8 @@ final class VoiceStudioViewModelTests: XCTestCase {
 
     func test_mapVoiceError_koreanForbiddenServerMessageIsPreserved() {
         let vm = VoiceStudioViewModel()
+        // 여기는 **서버가 준 한국어를 그대로 보여준다**는 규칙을 지키는 테스트라
+        // `PaidGateCopy.message` 로 바꾸면 안 된다 — 넣은 문자열이 그대로 나와야 한다.
         let err = APIError.server(status: 403, message: "유료 이용권에서 사용할 수 있어요.", errorCode: nil)
         XCTAssertEqual(vm.mapVoiceError(err), "유료 이용권에서 사용할 수 있어요.")
     }

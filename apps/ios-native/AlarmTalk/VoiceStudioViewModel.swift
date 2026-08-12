@@ -64,7 +64,6 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var ttsText = "좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!"
     @Published var ttsCategory = "morning"
     @Published var ttsLanguage = "ko"
-    @Published var translateText = false
     @Published var randomPrompt = false
     /// 랜덤 프롬프트 컨텍스트. Android `TtsApi.kt` randomContext 와 동일.
     /// 허용 값: preset / wake_weather / wake_fortune / love / medication (`RandomPromptContext` 참조).
@@ -850,7 +849,11 @@ final class VoiceStudioViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
-            let shouldTranslate = !randomPrompt && translateText
+            // ⚠ **번역은 없앴다**(2026-08-12). 직접 입력한 문구는 **그대로** 읽는다 —
+            // 예전에는 앱 언어가 ko 가 아니면 서버가 옮겨 읽어서, 친 글자와 들리는 말이
+            // 갈라졌다. 안드로이드 `shouldTranslateVoiceText` 도 같이 껐다.
+            // (스톡 클립을 고르는 언어 축은 그대로다 — 그건 번역이 아니다.)
+            let shouldTranslate = false
             let activeLanguage = randomPrompt || shouldTranslate ? ttsLanguage : "ko"
             let activeCategory = randomPrompt ? promptContext.ttsCategory : "custom"
             // 고정 문구는 trim 한 채로 전송한다. canReuseExistingTtsAudio(AlarmEditDraft:214)
