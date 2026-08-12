@@ -45,11 +45,30 @@ final class StockClipPrefetcher: ObservableObject {
         self.api = api
     }
 
+    /// 실패 사이 대기(초). 안드로이드 WorkManager 의 `BackoffPolicy.LINEAR, 30초` 와 같은 뜻이다.
+    private static let retryDelaySeconds: UInt64 = 30
+    /// 한 번의 호출에서 최대 시도 횟수.
+    private static let maxAttempts = 3
+
     /// 이미 돌고 있으면 아무 일도 하지 않는다(중복 호출 안전).
+    ///
+    /// **여러 번 불러도 된다.** 이미 캐시된 클립은 건너뛰므로, 앱이 포그라운드로 돌아올
+    /// 때마다 불러 **빠진 것만 보충**하는 용도로 쓴다. 안드로이드는 앱 시작마다
+    /// `prefetchStockClips()` 로 같은 일을 한다.
     func start(session: AuthSession?, language: String = VoiceStudioViewModel.appVoiceLanguage()) {
         guard task == nil, let token = session?.token else { return }
         task = Task { [weak self] in
-            await self?.run(token: token, language: language)
+            // ⚠ **재시도가 없으면 한 번의 일시 실패가 영구가 된다.** 안드로이드는 WorkManager
+            // 가 30초 백오프로 다시 돌리는데, iOS 에는 그 장치가 없어 콜드 스타트에서 한 번
+            // 실패하면 그 실행 내내 테마 클립이 비어 있었다.
+            for attempt in 0..<Self.maxAttempts {
+                if Task.isCancelled { break }
+                await self?.run(token: token, language: language)
+                guard await self?.state == .failed else { break }
+                if attempt < Self.maxAttempts - 1 {
+                    try? await Task.sleep(nanoseconds: Self.retryDelaySeconds * 1_000_000_000)
+                }
+            }
             self?.task = nil
         }
     }

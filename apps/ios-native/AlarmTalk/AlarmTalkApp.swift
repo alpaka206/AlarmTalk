@@ -264,6 +264,14 @@ struct AlarmTalkApp: App {
                     guard alarmStore.hasLoadedFromDisk else { return }
                     await alarmKit.recoverScheduledAlarms(store: alarmStore)
                 }
+                // 빠진 테마 클립을 보충한다. 이미 캐시된 것은 건너뛰므로 값이 싸고,
+                // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
+                // 안드로이드는 앱 시작마다 `prefetchStockClips()` 로 같은 일을 한다.
+                Task {
+                    guard auth.session != nil else { return }
+                    await voiceStudio.loadStockClips(session: auth.session)
+                    stockClipPrefetcher.start(session: auth.session)
+                }
                 // Phase 4-D2: 포그라운드 진입 시 세션 정합성을 직렬로 점검.
                 //  1) Apple credentialState — revoke/notFound 이면 즉시 signOut
                 //  2) /auth/me 갱신 — 401 만 signOut, 5xx/네트워크 단절은 lastNetworkError 만 갱신
