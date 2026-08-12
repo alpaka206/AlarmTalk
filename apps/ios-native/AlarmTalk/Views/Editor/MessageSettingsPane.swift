@@ -108,23 +108,21 @@ struct MessageSettingsPane: View {
         .onAppear(perform: loadDraft)
         // ⚠ 확인해도 **이 목록은 닫지 않는다** — 도시 하나 바꾸려다 화면 밖으로 튕기면
         // 안 된다. 최종 반영은 이 화면의 저장 버튼 한 곳이다.
-        .sheet(isPresented: $weatherDialogOpen) {
-            NavigationStack {
-                ScrollView {
-                    WeatherLocationInputFields(country: $draftWeatherCountry, city: $draftWeatherCity)
-                        .padding(20)
+        //
+        // ⚠ **설정 화면과 같은 컴포넌트를 쓴다**(2026-08-12 지시). 예전에는 여기만
+        // `WeatherLocationInputFields`(국가·도시를 나란히 받는 폼 + '현재 위치 사용')를
+        // 썼고 설정은 `WeatherCityPickerSheet`(도시 목록 바텀시트)를 썼다 — **같은 값을
+        // 고르는 화면이 앱 안에서 두 가지**였고, 한쪽을 고쳐도 다른 쪽은 그대로였다.
+        // 2026-08-10 에 설정만 목록형으로 고치면서 이쪽이 남았다.
+        .bottomSheet(isPresented: $weatherDialogOpen, onDismiss: { weatherDialogOpen = false }) {
+            WeatherCityPickerSheet(
+                currentCity: draftWeatherCity,
+                onSelect: { country, city in
+                    draftWeatherCountry = country
+                    draftWeatherCity = city
+                    weatherDialogOpen = false
                 }
-                .homeGradientBackground()
-                .navigationTitle("날씨 지역")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("확인") { weatherDialogOpen = false }
-                            .disabled(draftWeatherCity.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                }
-            }
-            .presentationDetents([.medium, .large])
+            )
         }
         .sheet(isPresented: $fortuneDialogOpen) {
             NavigationStack {

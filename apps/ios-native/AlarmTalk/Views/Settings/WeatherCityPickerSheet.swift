@@ -3,6 +3,16 @@ import UIKit
 
 /// 날씨 지역 고르기 — **도시 목록 바텀시트**.
 ///
+/// ⚠ **지역을 고르는 UI 는 앱 전체에 이것 하나다**(2026-08-12 통일). 쓰는 곳:
+/// 설정 화면(`Views/Settings/SettingsView.swift`)과 알람 편집기의 문구 화면
+/// (`Views/Editor/MessageSettingsPane.swift`). 안드로이드도 마찬가지로
+/// `ui/editor/AlarmRandomPromptSettings.kt` 의 `WeatherLocationDialog` **하나**를
+/// 설정·유료 문구 pane·무료 pane 셋이 나눠 쓴다.
+///
+/// 새 화면이 지역을 받아야 하면 **이걸 가져다 쓴다.** 전용 입력 폼을 새로 만들지 말 것 —
+/// 2026-08-10 에 설정만 목록형으로 고치고 문구 화면에 폼이 남는 바람에, 같은 값을 고르는
+/// 화면이 앱 안에서 두 가지였고 한쪽을 고쳐도 다른 쪽은 그대로였다.
+///
 /// 안드로이드 `ui/editor/AlarmRandomPromptSettings.kt` 의 `WeatherLocationDialog` 와 같은
 /// 구조다: `WakerSelectionSheet` 안에 프리셋 도시 행들 + 마지막 '직접 입력' 행, 직접 입력을
 /// 고르면 그 아래로 입력칸과 저장 버튼이 열린다.

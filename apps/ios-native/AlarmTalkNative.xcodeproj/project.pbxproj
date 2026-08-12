@@ -115,7 +115,6 @@
 		69B6CB16823C9F11E37952FB /* AlarmEditorSheet+AlarmModeSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 583FF694DDB298FD88A6CD93 /* AlarmEditorSheet+AlarmModeSection.swift */; };
 		6A65D2105CD5F35BB89FA3E7 /* RemoteAlarmPullSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F6264B67DC977F47D0E3A9 /* RemoteAlarmPullSync.swift */; };
 		6B9AA51D2C1FC31ECED8952B /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = DAD47DD9BE2DBBFF3D0FEE46 /* InfoPlist.xcstrings */; };
-		6CEC9C2CFA66AF76BFC562F1 /* WeatherLocationInputFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48CF19CFBA073E3D7CC46441 /* WeatherLocationInputFields.swift */; };
 		6CFB12D255AB21B12F5175DF /* VoiceSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04D77313A4CF5DBFD7203E5 /* VoiceSelectionSheet.swift */; };
 		6D8D1F885562624A94A748BA /* VoiceSheetScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1C8164C5467E1065C0FFF7 /* VoiceSheetScreenshotUITests.swift */; };
 		6D9AC3EA23FDF9D9158057C4 /* BusyFlagSeparationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAA56E681611EE77E99D4BE4 /* BusyFlagSeparationTests.swift */; };
@@ -244,7 +243,6 @@
 		E9B7002071739EC7C12B0CFE /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 815C67F5CF2B0B4499090916 /* VoiceRecorder.swift */; };
 		E9D0A56D014F3AC328D685D6 /* MenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88E875D85BBF8CD8FDCC8D4B /* MenuView.swift */; };
 		E9DA4C9C3F2A27761DEA405C /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 993F13DD98269244F828B44E /* AppSettings.swift */; };
-		EAC2CDDCBCB7FA786965753C /* WeatherLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76438009279B4ED7982E6BE5 /* WeatherLocationProvider.swift */; };
 		ED9DF32A8A426E3CE9FBDD6E /* FamilyAlarmQuietTimeDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611C695982CD4E6257BAEAFB /* FamilyAlarmQuietTimeDialog.swift */; };
 		EED6514234BA89E426441512 /* HelperFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFDD372A3465266C2A553883 /* HelperFormatters.swift */; };
 		EF1570E28C4DC76A5B06923B /* RepeatWeekdayChips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956BC28B0AE290CC6A39878E /* RepeatWeekdayChips.swift */; };
@@ -376,7 +374,6 @@
 		4621CAE23798A7737B7DE436 /* FeatureLockBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureLockBadge.swift; sourceTree = "<group>"; };
 		463A1453ADEB2220E67E7F12 /* FortuneDialogScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FortuneDialogScreenshotUITests.swift; sourceTree = "<group>"; };
 		47D034E124A17E717E9835F2 /* AlarmSoundStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundStaging.swift; sourceTree = "<group>"; };
-		48CF19CFBA073E3D7CC46441 /* WeatherLocationInputFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherLocationInputFields.swift; sourceTree = "<group>"; };
 		49029209F735E8EAFC7C25AF /* PromoPromptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromoPromptStore.swift; sourceTree = "<group>"; };
 		49EFA49237024C6A06804BA5 /* FreePlanVoiceLockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreePlanVoiceLockTests.swift; sourceTree = "<group>"; };
 		4A16A1874C65D3C925FAE2EF /* BillingPanelComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingPanelComponents.swift; sourceTree = "<group>"; };
@@ -433,7 +430,6 @@
 		715631AD8DB550734A8E0C0E /* AlarmLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmLiveActivity.swift; sourceTree = "<group>"; };
 		74D34672FE277577EA788912 /* LocalAlarmRecordCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAlarmRecordCodableTests.swift; sourceTree = "<group>"; };
 		757B82D057BE9B65E819C252 /* PasswordResetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordResetView.swift; sourceTree = "<group>"; };
-		76438009279B4ED7982E6BE5 /* WeatherLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherLocationProvider.swift; sourceTree = "<group>"; };
 		783543645669523E589D0B1A /* RemoteAlarmMapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmMapperTests.swift; sourceTree = "<group>"; };
 		785541EABF51C626605C29DC /* VibrationPatternPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibrationPatternPicker.swift; sourceTree = "<group>"; };
 		7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPushNavigationUITests.swift; sourceTree = "<group>"; };
@@ -782,7 +778,6 @@
 				1D97B19A1D9E8E81B2EBCFA6 /* SelectionSheet.swift */,
 				08C420EC89C426D8BAE3E0D0 /* SheetContentHeight.swift */,
 				3F687F1C7FA0B73B24DA338D /* VoiceRelationshipInputField.swift */,
-				48CF19CFBA073E3D7CC46441 /* WeatherLocationInputFields.swift */,
 			);
 			path = Common;
 			sourceTree = "<group>";
@@ -1042,7 +1037,6 @@
 				7FAA3E0645594172886EF0BB /* VoiceShareAccess.swift */,
 				51BC54CB113C89792079DBAF /* VoiceStudioViewModel.swift */,
 				9641A64BF7F32B31E960BA67 /* VoiceStudioViewModel+ErrorMapping.swift */,
-				76438009279B4ED7982E6BE5 /* WeatherLocationProvider.swift */,
 				F2A71A66F1FAC416B56FAA2A /* Configuration */,
 				E0E0F3F178A8E20C54336C7C /* Fonts */,
 				FF8F65773E6CB9583D25E272 /* Generated */,
@@ -1425,8 +1419,6 @@
 				92AB37D1B9F9FC78EA7D2F62 /* VoicesPanelView.swift in Sources */,
 				AB1FC3889B08059140C23BBE /* WakeTargetSheet.swift in Sources */,
 				B4954AC283CF2071193F7968 /* WeatherCityPickerSheet.swift in Sources */,
-				6CEC9C2CFA66AF76BFC562F1 /* WeatherLocationInputFields.swift in Sources */,
-				EAC2CDDCBCB7FA786965753C /* WeatherLocationProvider.swift in Sources */,
 				A1B69BFC2424FE0015F308A7 /* WelcomePromoDialog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
