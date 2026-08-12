@@ -30,6 +30,11 @@ struct AlarmTalkApp: App {
     /// 받은 알람을 제때 예약하는 유일한 즉시 경로다(`PushNotificationCoordinator` 주석).
     @StateObject private var push = PushNotificationCoordinator()
 
+    /// 기본 목소리 테마 클립 선다운로드. **온보딩 화면의 것과 별개로 앱 전역에 하나 둔다** —
+    /// 온보딩을 지난 사용자가 시스템 언어를 바꾸면 새 언어분을 받을 길이 그것뿐이다.
+    /// 이미 캐시된 클립은 건너뛰므로 중복 실행은 무해하다.
+    @StateObject private var stockClipPrefetcher = StockClipPrefetcher()
+
     /// Phase 4-D1: Apple StoreKit2 IAP 관리자. 앱 lifetime 내내 떠 있어야
     /// `Transaction.updates` listener 가 가족 공유 / 자동 갱신 / 환불 등 외부
     /// 트랜잭션을 놓치지 않는다.
@@ -202,6 +207,21 @@ struct AlarmTalkApp: App {
                         await refreshDynamicVoicesIfNeeded()
                         BackgroundSyncTask.scheduleNext()
                     }
+                    // ⚠ **언어를 키에 넣는다.** 예전에는 선다운로드가 온보딩
+                    // (`VoiceSetupView`)에서만 돌아서, 시스템 언어를 바꾸면 새 언어의
+                    // 테마 클립을 **영영 받지 않았다** — 문구 행이 "불러오는 중이에요" 에
+                    // 머물거나, 받아 둔 적 없는 클립이 붙어 소리가 안 났다.
+                    // 안드로이드는 앱 시작마다 `prefetchStockClips()` 를 부른다.
+                    .task(id: stockClipLanguageKey) {
+                        guard auth.session != nil else { return }
+                        stockClipPrefetcher.start(session: auth.session)
+                        await voiceStudio.refresh(session: auth.session)
+                        await StockClipLanguageRebinder(store: alarmStore)
+                            .rebindIfLanguageChanged(
+                                session: auth.session,
+                                clips: voiceStudio.stockClips
+                            )
+                    }
                     .task(id: auth.session?.user.id) {
                         remoteSync.clearUserScopedRemoteState()
                         voiceStudio.clearUserScopedRemoteState()
@@ -325,6 +345,11 @@ struct AlarmTalkApp: App {
             guard store.hasLoadedFromDisk else { continue }
             await kit.recoverScheduledAlarms(store: store, forceHolidayOffRecompute: true)
         }
+    }
+
+    /// 선다운로드·재바인딩을 다시 돌려야 하는 시점. 계정과 **기기 언어**가 축이다.
+    private var stockClipLanguageKey: String {
+        "\(auth.session?.user.id ?? "anonymous")|\(VoiceStudioViewModel.appVoiceLanguage())"
     }
 
     private var freePlanVoiceLockKey: String {

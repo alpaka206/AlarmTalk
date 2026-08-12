@@ -1037,15 +1037,23 @@ struct AlarmEditorSheet: View {
 
     /// 이 목소리로 쓸 수 있는 무료 테마. 서버가 내려준 스톡 클립의 카테고리에서 뽑되,
     /// 순서는 안드로이드 `FreeBucketOrder` 를 따른다.
+    /// ⚠ **언어로 거른다.** 서버는 `ORDER BY … language ASC` 로 주므로 필터가 없으면
+    /// 한국어 기기에서도 영어 클립이 먼저 잡힌다. 선다운로드(`StockClipPrefetcher`)는
+    /// 기기 언어분만 받으므로, 그렇게 잡힌 클립은 **받아 둔 적도 없다.**
+    /// 안드로이드 `ui/editor/AlarmEditorControls.kt` 의 `freeBucketsFor` 와 같은 식이다.
+    ///
+    /// ⚠ **매니페스트가 아직 없으면 빈 목록을 준다.** 예전에는 `FreeBucket.order` 전체로
+    /// 폴백했는데, 그러면 클립이 하나도 없는 테마를 고를 수 있게 되고 고르는 순간 실패한다.
+    /// 안드로이드도 `emptyList()` 다.
     var availableFreeBuckets: [FreeBucket] {
+        guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return [] }
+        let language = VoiceStudioViewModel.appVoiceLanguage()
         let categories = Set(
             voiceStudio.stockClips
-                .filter { $0.voiceProfileId == voiceStudio.selectedProfileID }
+                .filter { $0.voiceProfileId == profileID && ($0.language ?? "ko") == language }
                 .compactMap(\.category)
         )
-        let resolved = FreeBucket.order.filter { categories.contains($0.rawValue) }
-        // 서버 응답이 아직 없으면 목록이 비는데, 그때도 고를 수는 있어야 한다.
-        return resolved.isEmpty ? FreeBucket.order : resolved
+        return FreeBucket.order.filter { categories.contains($0.rawValue) }
     }
 
     /// 지금 고른 테마.
@@ -1084,15 +1092,17 @@ struct AlarmEditorSheet: View {
             return
         }
         guard !voiceStudio.stockClips.isEmpty, voiceStudio.selectedProfileID != nil else { return }
-        pendingFreeBucket = nil
+        // ⚠ **성공했을 때만 지운다.** 예전에는 시도 전에 지워서, 클립을 못 집으면
+        // (언어가 안 맞아 캐시에 없거나 오프라인) 다시 시도할 길이 영영 없었다 —
+        // 문구 행이 **"불러오는 중이에요" 에 영구히 머물렀다.**
         await selectFreeBucket(bucket)
+        if selectedStockMessageID != nil { pendingFreeBucket = nil }
     }
 
     /// 테마를 고르면 그 안의 첫 클립을 준비한다(회전은 울릴 때마다 서버·로컬이 이어받는다).
     func selectFreeBucket(_ bucket: FreeBucket) async {
-        let clips = voiceStudio.stockClips.filter {
-            $0.voiceProfileId == voiceStudio.selectedProfileID && $0.category == bucket.rawValue
-        }
+        // 언어 필터 없이 고르면 한국어 기기에 영어 문구가 붙는다(`availableFreeBuckets` 주석).
+        let clips = stockClips(forCategory: bucket.rawValue)
         guard let clip = clips.first else {
             voiceStudio.statusMessage = "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요."
             return
@@ -1102,11 +1112,25 @@ struct AlarmEditorSheet: View {
         await selectStockClip(clip)
     }
 
+    /// 이 (목소리 · 테마 · **기기 언어**)의 클립. 고르는 자리와 묶는 자리가 같은 목록을
+    /// 봐야 회전이 어긋나지 않는다.
+    func stockClips(forCategory category: String) -> [StockClip] {
+        guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return [] }
+        let language = VoiceStudioViewModel.appVoiceLanguage()
+        return voiceStudio.stockClips.filter {
+            $0.voiceProfileId == profileID
+                && $0.category == category
+                && ($0.language ?? "ko") == language
+        }
+    }
+
     /// 이 테마에 묶을 클립 캐시 키 전부. 매니페스트 순서를 그대로 쓴다 —
     /// 순서가 흔들리면 회전이 같은 문구를 두 번 내거나 건너뛴다.
+    ///
+    /// ⚠ **언어를 안 거르면 회전이 en→ja→ko 를 돌아가며 울린다.** 한 알람이 매일 다른
+    /// 언어로 말하게 되고, 게다가 기기 언어가 아닌 클립은 받아 둔 적이 없어 소리도 안 난다.
     func bucketClipKeys(forCategory category: String) -> [String] {
-        voiceStudio.stockClips
-            .filter { $0.voiceProfileId == voiceStudio.selectedProfileID && $0.category == category }
+        stockClips(forCategory: category)
             .map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) }
     }
 

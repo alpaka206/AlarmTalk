@@ -52,13 +52,35 @@ class StockClipPrefetchWorker(
             val language = deviceVoiceLanguage()
             val audioStore = AlarmAudioStore(applicationContext)
 
-            val clips = withContext(Dispatchers.IO) { api.getStockClips(auth).clips }
-                .filter { it.targetsDefaultVoices(language) }
-            if (clips.isEmpty()) return@runCatching Result.success()
+            val allClips = withContext(Dispatchers.IO) { api.getStockClips(auth).clips }
+            val clips = allClips.filter { it.targetsDefaultVoices(language) }
+
+            // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
+            // ⚠ **성공 경로 전부에서 돌아야 한다** — 받을 게 없어 일찍 끝나는 회차(언어를
+            // 바꾼 다음 실행)에도 재바인딩은 남아 있을 수 있다.
+            suspend fun rebind() {
+                runCatching {
+                    StockClipLanguageRebinder.rebindIfLanguageChanged(
+                        context = applicationContext,
+                        api = api,
+                        auth = auth,
+                        clips = allClips,
+                        language = language,
+                    )
+                }.onFailure { AlarmTalkLog.reportError("Stock clip language rebind failed", it) }
+            }
+
+            if (clips.isEmpty()) {
+                rebind()
+                return@runCatching Result.success()
+            }
 
             val missing = clips.filter { audioStore.getCachedAudio(cacheKeyFor(it)) == null }
             setProgress(progressData(done = clips.size - missing.size, total = clips.size))
-            if (missing.isEmpty()) return@runCatching Result.success()
+            if (missing.isEmpty()) {
+                rebind()
+                return@runCatching Result.success()
+            }
 
             var done = clips.size - missing.size
             // 클립당 HTTP 왕복 1회다. 44개를 순차로 받으면 약전파에서 1분을 넘기므로 소량 병렬로
@@ -82,6 +104,7 @@ class StockClipPrefetchWorker(
                 done += batch.size
                 setProgress(progressData(done = done, total = clips.size))
             }
+            rebind()
             Result.success()
         }.getOrElse { error ->
             // 부분 성공은 그대로 남는다(이미 받은 파일은 캐시에 있다) — 재시도가 나머지만 받는다.
