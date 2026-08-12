@@ -633,10 +633,6 @@ struct VoiceCloneUploadFlow: View {
             voice.statusMessage = "유료 이용권에서 사용할 수 있어요."
             return
         }
-        guard !voice.isProfileLimitReached else {
-            voice.statusMessage = "목소리는 최대 \(VoiceProfileLimits.maxProfiles)개까지 만들 수 있어요."
-            return
-        }
         let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             voice.statusMessage = "목소리 이름을 입력해 주세요."
@@ -746,9 +742,11 @@ struct VoiceCloneUploadFlow: View {
         .meetsOrExceeds(.personal)
     }
 
-    private var canCreateVoice: Bool {
-        hasPaidVoiceAccess && !voice.isProfileLimitReached
-    }
+    /// ⚠ **슬롯 한도를 여기서 보지 말 것**(2026-08-12 확정). 이미 목소리가 있어도 등록을
+    /// 끝까지 진행시키고, 교체 여부는 마지막 확정 화면(`VoicePreviewConfirmView`)이 묻는다.
+    /// 여기서 막으면 그 화면에 도달할 수 없어 교체 기능이 죽는다.
+    /// 월 등록 한도는 입구(`VoiceProfileManagementPanel`)가 이미 걸렀다.
+    private var canCreateVoice: Bool { hasPaidVoiceAccess }
 
     private var shouldShareVoice: Bool {
         isShared && canShareVoice

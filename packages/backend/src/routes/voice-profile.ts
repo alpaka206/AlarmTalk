@@ -702,6 +702,36 @@ async function replaceVoiceInPlace(
       sql: `UPDATE voice_profiles SET deleted_at = datetime('now') WHERE id = ?`,
       args: [draftProfileId],
     });
+
+    // ⚠ **직접 입력 알람은 기본 알람으로 내린다.**
+    //
+    // 프리셋 문구는 아래 `voice_prerender_queue` 가 새 목소리로 **다시 만들어** 주지만,
+    // 직접 입력(`category = 'custom'`)은 사용자가 그때 친 문장을 **옛 목소리로** 합성해
+    // 둔 것이라 다시 만들 수 없다. 그대로 두면 교체한 뒤에도 **지운 목소리가 계속
+    // 울린다** — 화면이 "직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다" 라고
+    // 약속하고 동의까지 받은 것과 정반대다(2026-08-12 확인, 그 약속은 코드에 없었다).
+    //
+    // 목소리 **삭제** 경로(`DELETE /voice/:id`)가 하는 것과 같은 정리이고, 다른 점은
+    // 대상을 `category = 'custom'` 으로 좁힌다는 것뿐이다 — 교체에서는 프리셋 알람이
+    // 살아남아야 한다.
+    await tx.execute({
+      sql: `UPDATE alarms
+            SET mode = 'sound-only',
+                wake_mode = 'sound_then_voice',
+                message_id = NULL,
+                voice_profile_id = NULL
+            WHERE message_id IN (
+              SELECT id FROM messages WHERE voice_profile_id = ? AND category = 'custom'
+            )`,
+      args: [targetId],
+    });
+    // 못 쓰게 된 음원은 참조를 끊는다. 행 자체는 남겨 사용량 집계를 보존한다
+    // (삭제 경로와 같은 방식).
+    await tx.execute({
+      sql: `UPDATE messages SET audio_url = NULL
+            WHERE voice_profile_id = ? AND category = 'custom'`,
+      args: [targetId],
+    });
   });
 
   // 프리셋 클립 재렌더 예약. `refresh_existing = 1` 이라 `generateStockClip` 이 기존
@@ -1326,15 +1356,20 @@ voiceProfile.post('/clone', async (c) => {
       });
       const row = profileCount.rows[0]!;
       const draftCount = Number(row.draft_count ?? 0);
-      const officialCount = Number(row.official_count ?? 0);
       const draftLimitReached = isDraft && draftCount >= MAX_DRAFT_VOICE_PROFILES;
-      const officialLimitReached = officialCount >= MAX_VOICE_PROFILES;
-      if (draftLimitReached || officialLimitReached) {
+      // ⚠ **official 슬롯이 찼다고 초안 생성을 막지 않는다**(2026-08-12 확정).
+      // 그러면 사용자가 '교체' 를 고를 기회 자체가 없다 — 승격(PATCH)의 `replace_existing`
+      // 갈래가 **도달 불가능한 죽은 코드**가 된다. 교체 여부는 등록을 끝낸 **마지막 확정
+      // 화면**에서 묻는다(`VoicePreviewConfirmView` 의 교체 체크).
+      //
+      // 옛 주석은 "promote 가 한도로 거부되니 stranded draft 가 된다" 였는데, 그 전제는
+      // `replace_existing` 이 생기면서 사라졌다 — 승격은 이제 기존 행을 **재사용**한다.
+      // 월 등록 한도(`reserveMonthlyDraftAttempt`)는 그대로 남아 있어, 한 달에 한 번이라는
+      // 규칙은 여기서 풀리지 않는다.
+      if (draftLimitReached) {
         return c.json(
           {
-            error: draftLimitReached
-              ? `임시 보이스는 최대 ${MAX_DRAFT_VOICE_PROFILES}개까지 만들 수 있습니다`
-              : `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
+            error: `임시 보이스는 최대 ${MAX_DRAFT_VOICE_PROFILES}개까지 만들 수 있습니다`,
             error_code: 'VOICE_LIMIT_REACHED',
           },
           403,
@@ -1409,10 +1444,10 @@ voiceProfile.post('/clone', async (c) => {
     const insertResult = await withWriteTransaction(db, async (tx) => {
       const ids = ownerIds(c);
       // draft 슬롯과 official 슬롯을 한 스냅샷으로 함께 센다(둘 사이 TOCTOU 없음). 둘 중 하나라도 한도면 차단.
-      // official 이 이미 꽉 찼으면(=MAX_VOICE_PROFILES 개 등록) 새 draft 를 만들어도 promote 가
-      // activeOfficialVoiceProfileCount 한도로 거부돼(아래 PATCH), 월간 draft attempt 만 소모한 채 영영 keep 할 수
-      // 없는 stranded draft 가 된다. promote 와 동일 기준으로 여기서 조기 차단한다(새 목소리 등록은 기존 official
-      // 을 먼저 삭제). attempt 예약(reserveMonthlyDraftAttempt) 전에 두어 draft 쿼터도 소모하지 않는다.
+      // ⚠ **official 슬롯은 여기서 보지 않는다**(2026-08-12 확정 — 위 선검사와 같은 이유).
+      // 슬롯이 찼어도 초안을 만들 수 있어야 사용자가 마지막 확정 화면에서 '교체' 를 고를
+      // 수 있다. 승격이 `replace_existing` 로 기존 행을 재사용하므로 stranded draft 가
+      // 되지 않는다. draft 슬롯 한도는 그대로 본다 — 동시에 여러 초안을 두는 것은 별개다.
       const slotCounts = await tx.execute({
         sql: `SELECT
                 SUM(CASE WHEN COALESCE(is_draft, 0) = 1 THEN 1 ELSE 0 END) AS draft_count,
@@ -1423,10 +1458,7 @@ voiceProfile.post('/clone', async (c) => {
         args: ids,
       });
       const slotRow = slotCounts.rows[0];
-      if (
-        Number(slotRow?.draft_count ?? 0) >= MAX_DRAFT_VOICE_PROFILES ||
-        Number(slotRow?.official_count ?? 0) >= MAX_VOICE_PROFILES
-      ) {
+      if (Number(slotRow?.draft_count ?? 0) >= MAX_DRAFT_VOICE_PROFILES) {
         return { status: 'voice_limit' as const, ledgerId: null };
       }
       // F1(Codex #599 3차): 전역 슬롯이 꽉 찼는데 evict 후보가 전부 보호 대상(공유·draft)이면

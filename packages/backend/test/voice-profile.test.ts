@@ -538,15 +538,33 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(body.error).toContain('1');
   });
 
-  it('official 슬롯이 차 있으면 403 (stranded draft 방지, attempt 미소모)', async () => {
+  // ⚠ **official 슬롯이 차 있어도 초안은 만들 수 있다**(2026-08-12 확정).
+  //
+  // 예전에는 여기서 403 으로 막았고("stranded draft 방지"), 그래서 이미 목소리를 가진
+  // 사용자는 **교체를 고를 기회 자체가 없었다** — 승격의 `replace_existing` 갈래가
+  // 도달 불가능한 죽은 코드였다. 교체 여부는 등록을 끝낸 마지막 확정 화면에서 묻는다.
+  //
+  // 옛 근거("promote 가 한도로 거부돼 stranded 가 된다")는 `replace_existing` 이 생기면서
+  // 사라졌다 — 승격은 기존 행을 재사용한다.
+  it('official 슬롯이 차 있어도 초안을 만들 수 있다 (교체 흐름의 입구)', async () => {
     pushPaidPlan();
     mockDB.pushResult([{ draft_count: 0, official_count: 1 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-draft' });
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트2'));
+    expect(res.status).toBe(201);
+  });
+
+  // draft 슬롯 한도는 그대로 본다 — 동시에 여러 초안을 두는 것은 별개 축이다.
+  it('draft 슬롯이 차 있으면 여전히 403', async () => {
+    pushPaidPlan();
+    mockDB.pushResult([{ draft_count: 1, official_count: 0 }]);
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트3'));
     expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error_code).toBe('VOICE_LIMIT_REACHED');
-    // official 한도로 조기 차단하므로 월간 draft attempt 쿼터를 소모하지 않아야 한다.
-    expect(mockDB.calls.some((call) => call.sql.includes('voice_draft_attempt_usage'))).toBe(false);
+    expect((await res.json()).error_code).toBe('VOICE_LIMIT_REACHED');
   });
 
   it('초안은 월 시도 횟수로 막지 않는다 — 정식 등록 전까진 무제한 생성·삭제', async () => {
@@ -1085,6 +1103,47 @@ describe('GET / — pagination edge cases (voice-profile)', () => {
 /* ------------------------------------------------------------------ */
 /*  Edge cases — PATCH /:id name validation                            */
 /* ------------------------------------------------------------------ */
+describe('PATCH /:id — 교체(replace_existing) 시 알람 처리 (voice-profile)', () => {
+  // ⚠ **화면이 약속한 것을 서버가 실제로 해야 한다.**
+  //
+  // 등록 확정의 교체 체크는 이렇게 말한다:
+  //   "이전에 저장해둔 목소리는 삭제됩니다.
+  //    직접 입력으로 해둔 알람들도 기본 알람으로 설정됩니다."
+  //
+  // 2026-08-12 이전에는 `replaceVoiceInPlace` 가 `messages` 를 **한 줄도 건드리지 않아**,
+  // 교체한 뒤에도 직접 입력 알람이 **지운 목소리로 계속 울렸다.** 사용자는 그 문구를 읽고
+  // 동의했는데 정반대가 일어났다.
+  //
+  // 프리셋은 반대로 **살아남아야** 한다 — `voice_prerender_queue` 가 새 목소리로 다시 만든다.
+  it('직접 입력(custom) 알람만 기본 알람으로 내리고 프리셋은 남긴다', async () => {
+    // ① 존재/초안 확인(previewed_at 이 있어야 승격이 통과한다)
+    mockDB.pushResult([{ id: V2, is_draft: 1, previewed_at: '2026-08-12T00:00:00Z' }]);
+    // ② 현역 개수(한도 검사) — 1이면 교체 갈래로 간다
+    mockDB.pushResult([{ active_count: 1 }]);
+    // ③ replaceVoiceInPlace: draft 조회 → 교체 대상 조회 → 트랜잭션 → 최종 조회
+    mockDB.pushResult([{ id: V2, user_id: 'user-pk-1', name: '새 목소리', elevenlabs_voice_id: 'elv-new' }]);
+    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-old' }]);
+    for (let i = 0; i < 8; i += 1) mockDB.pushResult([], 1);
+    mockDB.pushResult([{ id: V1, name: '새 목소리', status: 'ready' }]);
+
+    await req(buildApp(), jsonReq('PATCH', `/vp/${V2}`, { is_draft: false, replace_existing: true }));
+
+    const alarmUpdate = mockDB.calls.find(
+      (call) => call.sql.includes('UPDATE alarms') && call.sql.includes("mode = 'sound-only'"),
+    );
+    expect(alarmUpdate, '직접 입력 알람을 기본 알람으로 내리는 UPDATE 가 없다').toBeDefined();
+    // ⚠ **대상을 custom 으로 좁혀야 한다.** 좁히지 않으면 프리셋 알람까지 기본 알람이 되어,
+    // 교체의 존재 이유(알람을 살린 채 목소리만 바꾼다)가 사라진다.
+    expect(alarmUpdate!.sql).toContain("category = 'custom'");
+
+    const audioClear = mockDB.calls.find(
+      (call) => call.sql.includes('UPDATE messages') && call.sql.includes('audio_url = NULL'),
+    );
+    expect(audioClear, '못 쓰게 된 음원 참조를 끊지 않는다').toBeDefined();
+    expect(audioClear!.sql).toContain("category = 'custom'");
+  });
+});
+
 describe('PATCH /:id — name edge cases (voice-profile)', () => {
   it('name 필드 자체 없으면 400', async () => {
     const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V1}`, {}));

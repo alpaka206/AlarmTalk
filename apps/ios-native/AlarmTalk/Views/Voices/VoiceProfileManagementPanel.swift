@@ -352,13 +352,20 @@ struct VoiceProfileManagementPanel: View {
                 //   canOpenCreateForm → 폼 / !canCreateVoice → 이용권 안내 / else → 한도 안내
                 if !hasPaidVoiceAccess {
                     planGateOpen = true
-                } else if !voice.isProfileLimitReached {
-                    route = .clone
-                } else {
-                    // ⚠ **여기서 이용권 안내를 띄우지 말 것.** 이미 유료인 사람에게
-                    // "이용권을 사세요" 라고 말하게 된다 — 슬롯이 찬 것과 이용권이 없는 것은
-                    // 다른 문제다. 안드로이드는 이 자리에서 한도 안내를 띄운다.
+                } else if monthlyExhausted {
+                    // ⚠ **이용권 안내를 띄우지 말 것.** 이미 유료인 사람에게 "이용권을
+                    // 사세요" 라고 말하게 된다 — 한도를 다 쓴 것과 이용권이 없는 것은 다르다.
                     monthlyLimitNoticeOpen = true
+                } else {
+                    // ⚠ **슬롯이 찼다고 막지 않는다**(2026-08-12 확정).
+                    // 이미 목소리가 있으면 등록을 끝까지 진행시키고, **마지막 확정 화면**
+                    // (`VoicePreviewConfirmView`)에서 "기존 목소리를 교체할까요" 를 묻는다.
+                    // 예전에는 여기서 막아 그 화면에 도달할 수 없었고, 승격의
+                    // `replace_existing` 갈래가 **죽은 코드**였다.
+                    //
+                    // 막는 기준은 **월 등록 한도 하나**다 — 그건 교체해도 풀리지 않으므로
+                    // 녹음을 다 시킨 뒤 거절하지 않도록 입구에서 알린다.
+                    route = .clone
                 }
             } label: {
                 // ⚠ **여백은 라벨에 준다 — 바깥 `.frame` 은 캡슐을 못 키운다.**

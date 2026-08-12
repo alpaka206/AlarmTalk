@@ -362,7 +362,16 @@ internal fun VoiceProfileManagementPanel(
         }
     }
     val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES || pendingVoiceDraft != null
-    val canOpenCreateForm = canCreateVoice && !isLimitReached
+    // ⚠ **슬롯이 찼다고 폼을 막지 않는다**(2026-08-12 확정).
+    // 이미 목소리가 있으면 등록을 끝까지 진행시키고, **마지막 확정 화면**에서
+    // "기존 목소리를 교체할까요"(`replaceExistingChecked`)를 묻는다. 예전에는 여기서
+    // 막아 그 체크에 도달할 수 없었고, 교체 갈래가 **죽은 코드**였다.
+    //
+    // 막는 기준은 **월 등록 한도 하나**다(아래 `monthlyExhausted`) — 그건 교체해도 풀리지
+    // 않으므로, 녹음을 다 시킨 뒤 거절하지 않도록 입구에서 알린다.
+    // 다만 **초안이 이미 떠 있으면**(pendingVoiceDraft) 새로 시작하지 않는다 — 그건 한도가
+    // 아니라 '결정을 안 끝낸 등록이 하나 있다' 는 뜻이라 그 결정부터 마쳐야 한다.
+    val canOpenCreateForm = canCreateVoice && pendingVoiceDraft == null
     // 생성~결정(만드는 중/미리듣기) 구간 — 이 동안은 다이얼로그를 닫거나 밖으로 나갈 수 없다
     // (유지/삭제를 골라야만 끝난다). draft 가 생겨 isLimitReached 가 돼도 다이얼로그를 유지한다.
     val inDraftDecisionFlow = currentStep == VoiceRegistrationStep.Creating ||
@@ -1309,8 +1318,8 @@ internal fun VoiceProfileManagementPanel(
             Button(
                 onClick = {
                     when {
-                        canOpenCreateForm -> showCreateForm = true
                         !canCreateVoice -> voicePlanGateOpen = true
+                        canOpenCreateForm -> showCreateForm = true
                         else -> voiceLimitNoticeOpen = true
                     }
                 },
