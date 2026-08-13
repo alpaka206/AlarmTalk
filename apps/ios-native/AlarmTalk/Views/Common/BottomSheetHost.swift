@@ -48,6 +48,7 @@ struct BottomSheetHost<Content: View>: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             AlarmTalkTheme.scrim
+                // 스크림은 키보드 영역까지 덮는다 — 여기는 인자 없는 쪽이 맞다.
                 .ignoresSafeArea()
                 .opacity(appeared ? 1 : 0)
                 .onTapGesture { close() }
@@ -87,7 +88,13 @@ struct BottomSheetHost<Content: View>: View {
         }
         // ⚠ **ZStack 이 안전영역을 무시해야** 아래 정렬된 시트가 화면 진짜 바닥에 닿는다.
         // 시트에만 `.ignoresSafeArea` 를 걸면 정렬 기준은 여전히 안전영역이라 뜬다.
-        .ignoresSafeArea()
+        //
+        // ⚠ **`.container` 로 한정한다 — 인자 없는 `.ignoresSafeArea()` 를 쓰지 말 것.**
+        // 인자를 안 주면 `.keyboard` 영역까지 무시해서 **키보드 자동 회피가 통째로 꺼진다.**
+        // 그러면 시트 안 입력칸(날씨 '직접 입력', 목소리 이름 등)이 **키보드에 가려진 채**
+        // 글자를 치게 된다 — 무엇을 쓰고 있는지 안 보인다(2026-08-13 지적).
+        // 화면 바닥에 닿는 것은 `.container` 만으로 충분하다.
+        .ignoresSafeArea(.container)
         .onAppear {
             if reduceMotion { appeared = true }
             else { withAnimation(.snappy(duration: 0.28)) { appeared = true } }

@@ -85,4 +85,45 @@ final class BottomSheetHeightUITests: XCTestCase {
             "행이 셋인 시트가 화면의 \(Int(sheetHeight / screenHeight * 100))% 를 차지한다"
         )
     }
+
+    /// **입력칸은 키보드 위에 있어야 한다.**
+    ///
+    /// 2026-08-13 지적: "날씨 지역 직접 입력할 때 입력창은 키보드 위로 올려줘야 하지 않나."
+    /// 원인은 `BottomSheetHost` 의 인자 없는 `.ignoresSafeArea()` — 인자를 안 주면
+    /// `.keyboard` 영역까지 무시해 **키보드 자동 회피가 통째로 꺼진다.** 무엇을 치고 있는지
+    /// 안 보이는 채로 입력하게 된다.
+    func test_지역_직접입력칸은_키보드에_가리지_않는다() throws {
+        let app = launch(tab: "menu")
+
+        let account = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "내 정보")).element(boundBy: 0)
+        XCTAssertTrue(account.waitForExistence(timeout: 10), "설정으로 들어갈 행이 없다")
+        account.tap()
+
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "날씨 지역")).element(boundBy: 0)
+        guard row.waitForExistence(timeout: 5) else {
+            throw XCTSkip("설정 화면에 '날씨 지역' 행이 보이지 않는다(레이아웃 변경)")
+        }
+        row.tap()
+
+        let custom = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "직접 입력")).element(boundBy: 0)
+        XCTAssertTrue(custom.waitForExistence(timeout: 5), "'직접 입력' 행이 없다")
+        custom.tap()
+
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "입력칸이 열리지 않았다")
+        field.tap()
+
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "키보드가 올라오지 않았다")
+
+        XCTAssertLessThan(
+            field.frame.maxY, keyboard.frame.minY,
+            """
+            입력칸 아래쪽(\(Int(field.frame.maxY)))이 키보드 위쪽(\(Int(keyboard.frame.minY)))보다             아래다 — 치는 글자가 안 보인다.
+            """
+        )
+    }
 }

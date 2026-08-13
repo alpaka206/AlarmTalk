@@ -36,6 +36,12 @@ import SwiftUI
 /// 안 들어가면 다음 후보로 넘어간다. 그래서 짧은 내용은 자연 높이로, 긴 내용은 스크롤로
 /// 알아서 갈린다 — 우리가 숫자를 다룰 일이 없다.
 struct SheetScrollingContent<Content: View>: View {
+    /// **항상 스크롤한다.** 입력칸이 있는 시트에 쓴다.
+    ///
+    /// ⚠ 입력칸이 있으면 스크롤 갈래를 고정해야 한다. 키보드가 올라오면 쓸 수 있는 높이가
+    /// 줄어드는데, 스크롤이 없는 갈래로 떨어져 있으면 내용이 **화면 밖으로 밀려날 뿐**
+    /// 따라 올라오지 못한다. `ScrollViewReader.scrollTo` 도 스크롤뷰가 있어야 듣는다.
+    var alwaysScrolls = false
     @ViewBuilder var content: () -> Content
 
     /// 내용 영역 높이 상한. 시트 전체가 아니라 **여기**에 건다 —
@@ -47,6 +53,16 @@ struct SheetScrollingContent<Content: View>: View {
     }
 
     var body: some View {
+        if alwaysScrolls {
+            ScrollView { content() }
+                .frame(maxHeight: maxContentHeight)
+        } else {
+            fitting
+        }
+    }
+
+    @ViewBuilder
+    private var fitting: some View {
         ViewThatFits(in: .vertical) {
             // ① 그대로 넣어 본다 — 화면에 들어가면 시트가 내용만큼만 올라온다.
             //    ⚠ **여기에 `frame(maxHeight:)` 를 걸지 말 것.** 상한을 걸면 그 값이 곧

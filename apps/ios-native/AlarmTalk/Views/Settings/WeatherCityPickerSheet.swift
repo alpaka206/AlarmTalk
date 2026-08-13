@@ -57,7 +57,8 @@ struct WeatherCityPickerSheet: View {
             // **누른 게 아무 일도 안 한 것처럼 보인다**(2026-08-11 지적 "지역에서 직접
             // 입력 눌렀을 때 아무 효과가 없다"). 열면서 거기로 스크롤해 줘야 한다.
             ScrollViewReader { proxy in
-                SheetScrollingContent {
+                // 직접 입력칸이 있어 **항상 스크롤**한다 — 위 `ScrollViewReader` 주석 참조.
+                SheetScrollingContent(alwaysScrolls: true) {
                     // ⚠ **`LazyVStack` 으로 되돌리지 말 것.** 게으른 스택은 제안된 높이를 그대로 먹어서
                     // `ViewThatFits` 가 "안 들어간다" 고 판단한다 — 짧은 목록도 늘 스크롤 갈래로 떨어진다.
                     // 이 목록들은 많아야 열 몇 행이라 게으를 이유도 없다.
