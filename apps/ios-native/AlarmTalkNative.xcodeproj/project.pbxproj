@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		00B56BDA058D957CBAA95386 /* VoiceStudioViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BB3292333BDA9F421AC0D0A /* VoiceStudioViewModelTests.swift */; };
 		00C83DCE53CD386936172FCB /* AlarmSettingsPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5EB62D321ED56F1E52993D /* AlarmSettingsPanes.swift */; };
+		0126E892C5E577371F872B08 /* CodeInputUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA03690DA383142AE06C1C09 /* CodeInputUITests.swift */; };
 		0244A8EBB6AE8ADBBF12F6AC /* FeatureLockBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4621CAE23798A7737B7DE436 /* FeatureLockBadge.swift */; };
 		025B6F51C2D5595312339A33 /* MessageSettingsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8196F91EF515F9CE279AF0F9 /* MessageSettingsPane.swift */; };
 		03A1BBF5895831F6960661FB /* AudioUserFacingErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549140C4B45ACA42A0427334 /* AudioUserFacingErrorTests.swift */; };
@@ -498,6 +499,7 @@
 		A70196163DEB277ED30F5976 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		A7577C539C3E926AE4FD3D1C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A9311A4ED6398F9049299873 /* AudioCacheStalenessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheStalenessTests.swift; sourceTree = "<group>"; };
+		AA03690DA383142AE06C1C09 /* CodeInputUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeInputUITests.swift; sourceTree = "<group>"; };
 		AAD5F56821B87C0A0466A321 /* AlarmTalkTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkTypography.swift; sourceTree = "<group>"; };
 		AC8E6B3DC78145608078758B /* LandingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LandingView.swift; sourceTree = "<group>"; };
 		ACD1A5C25E56DD57B17BE473 /* UpdateRequiredView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateRequiredView.swift; sourceTree = "<group>"; };
@@ -622,6 +624,7 @@
 				DD780D23F3A7112A5CEF50E1 /* AlarmRowHitAreaUITests.swift */,
 				9E3E636EE972FA7B3F1B794B /* BillingScreenshotUITests.swift */,
 				ED4C4A68F57E02511151B588 /* BottomSheetHeightUITests.swift */,
+				AA03690DA383142AE06C1C09 /* CodeInputUITests.swift */,
 				654A53A12F47130C19F6922C /* DeleteAccountAlertUITests.swift */,
 				7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */,
 				00884D032AF099AA772D95DF /* EditorStatePersistenceUITests.swift */,
@@ -1266,6 +1269,7 @@
 				134E48F30DFE50037507CC9E /* AlarmRowHitAreaUITests.swift in Sources */,
 				9D1D3F902DCE5965551B5BB6 /* BillingScreenshotUITests.swift in Sources */,
 				51D90581A1404D03E7C24D13 /* BottomSheetHeightUITests.swift in Sources */,
+				0126E892C5E577371F872B08 /* CodeInputUITests.swift in Sources */,
 				27D98E8D75785F7ECAAFD78E /* DeleteAccountAlertUITests.swift in Sources */,
 				2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */,
 				4B50813EDDAD7D092EF80DC7 /* EditorStatePersistenceUITests.swift in Sources */,

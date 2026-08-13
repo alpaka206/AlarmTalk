@@ -71,17 +71,25 @@ struct CodeRegisterRow: View {
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                 HStack(spacing: 8) {
-                    TextField("초대·선물·프로모션 코드", text: Binding(
-                        get: { codeDraft },
-                        set: {
-                            codeDraft = InputSanitizer.sanitizeRedeemCode($0)
-                            // 고치기 시작하면 지난 실패 문구를 지운다 — 남겨 두면 방금 고친
-                            // 값에 대고 틀렸다고 말하는 셈이다.
-                            codeError = nil
-                        }
-                    ))
+                    // ⚠ **커스텀 `Binding` 의 setter 에서 정리하지 말 것.**
+                    // 거기서 값을 바꿔도 `TextField` 가 제 내부 상태를 그대로 들고 있어
+                    // **화면에는 친 그대로 남는다** — 소문자도 한글도 그대로 보이다가
+                    // 제출할 때에야 바뀐다(2026-08-13 지적). `onChange` 로 고쳐야 반영된다.
+                    // 같은 이유로 `WeatherCityPickerSheet` 도 `onChange` 를 쓴다.
+                    TextField("초대·선물·프로모션 코드", text: $codeDraft)
+                    // ⚠ **ASCII 키보드를 요구한다.** 한글은 걸러 내기 **전에** 아예 못 치게
+                    // 하는 편이 낫다 — 걸러 내기만 하면 조합 중인 글자가 잠깐 보였다 사라져
+                    // 고장처럼 보인다.
+                    .keyboardType(.asciiCapable)
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
+                    .onChange(of: codeDraft) { _, new in
+                        let cleaned = InputSanitizer.sanitizeRedeemCode(new)
+                        if cleaned != new { codeDraft = cleaned }
+                        // 고치기 시작하면 지난 실패 문구를 지운다 — 남겨 두면 방금 고친
+                        // 값에 대고 틀렸다고 말하는 셈이다.
+                        codeError = nil
+                    }
                     .alarmTalkFieldStyle()
                     Button("등록") {
                         pendingCode = codeDraft
@@ -147,9 +155,15 @@ struct CodeRegisterRow: View {
                         await auth.refreshUser()
                         await MainActor.run { onCodeRegistered(destination) }
                     } else {
-                        // 실패 사유를 입력창 밑으로 옮긴다. 되돌려 넣어 주어야 다시 고칠 수 있다.
+                        // 실패 사유를 입력창 밑으로 **옮긴다.** 되돌려 넣어 주어야 다시
+                        // 고칠 수 있다.
+                        //
+                        // ⚠ **위 배너의 문구도 지운다.** 안 지우면 화면 위(공용 상태 배너)와
+                        // 입력창 밑에 **같은 말이 두 번** 뜬다(2026-08-13 지적).
+                        // 이 화면에서는 입력창 밑이 제자리다 — 틀린 값 바로 옆이라야 읽힌다.
                         await MainActor.run {
                             codeError = socialFeatures.statusMessage ?? "잘못된 코드입니다."
+                            socialFeatures.statusMessage = nil
                             codeDraft = code
                         }
                     }
