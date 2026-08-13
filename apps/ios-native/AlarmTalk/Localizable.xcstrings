@@ -10559,19 +10559,24 @@
         }
       }
     },
-    "예: 서울": {
-      "extractionState": "manual",
+    "예: 미국 뉴욕": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "e.g. Seoul"
+            "value": "e.g. Korea Seoul"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "例: 東京"
+            "value": "例: 韓国 ソウル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예: 미국 뉴욕"
           }
         }
       }

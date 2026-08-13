@@ -44,6 +44,8 @@ struct BottomSheetHost<Content: View>: View {
 
     @State private var dragOffset: CGFloat = 0
     @State private var appeared = false
+    /// 키보드가 떠 있는가. 홈 인디케이터 몫을 뺄지 정하는 데만 쓴다.
+    @State private var keyboardVisible = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -60,7 +62,12 @@ struct BottomSheetHost<Content: View>: View {
                 // 화면 맨 아래에서 34pt 위에 끊기고 그 아래로 앱 배경(거의 검정)이 비쳐
                 // **띠처럼 다른 색**이 보인다(2026-08-10 지적). 안드로이드도 시트가 끝까지
                 // 깔리고 내용만 `navigationBarsPadding` 으로 비켜선다.
-                Color.clear.frame(height: safeBottomInset)
+                //
+                // ⚠ **키보드가 올라와 있으면 빼야 한다.** 그때는 키보드가 홈 인디케이터를
+                // 이미 덮고 있어서, 이 자리가 시트와 키보드 사이의 **빈 띠**로 남는다
+                // (2026-08-13 지적 "키보드랑 위치 안 맞음").
+                // 기기마다 다른 값이므로 상수로 적지 않고 실제 인셋을 읽는다.
+                Color.clear.frame(height: keyboardVisible ? 0 : safeBottomInset)
             }
             .frame(maxWidth: .infinity)
             // ⚠ **여기에 `maxHeight` 상한을 걸지 말 것 — 그게 곧 시트 높이가 된다.**
@@ -95,6 +102,12 @@ struct BottomSheetHost<Content: View>: View {
         // 글자를 치게 된다 — 무엇을 쓰고 있는지 안 보인다(2026-08-13 지적).
         // 화면 바닥에 닿는 것은 `.container` 만으로 충분하다.
         .ignoresSafeArea(.container)
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
+        ) { _ in keyboardVisible = true }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+        ) { _ in keyboardVisible = false }
         .onAppear {
             if reduceMotion { appeared = true }
             else { withAnimation(.snappy(duration: 0.28)) { appeared = true } }
