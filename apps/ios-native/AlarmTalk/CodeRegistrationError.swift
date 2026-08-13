@@ -34,7 +34,7 @@ enum CodeRegistrationError {
         // 바우처(선물·초대) 갈래
         "CODE_REQUIRED": "코드를 입력해 주세요",
         "INVALID_FORMAT": "코드 형식을 확인해 주세요",
-        "CODE_NOT_FOUND": "등록할 수 없는 코드예요",
+        "CODE_NOT_FOUND": "잘못된 코드입니다.",
         "CODE_EXPIRED": "만료된 코드예요",
         "CODE_ALREADY_USED": "이미 사용된 코드예요",
         "CODE_ALREADY_REDEEMED_BY_YOU": "이미 등록한 코드예요",

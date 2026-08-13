@@ -19,6 +19,12 @@ struct CodeRegisterRow: View {
     @State private var leaveGroupId: String?
     /// 등록 확인 대상 코드. nil 이면 알럿을 띄우지 않는다.
     @State private var pendingCode: String?
+    /// 실패 사유. **입력창 바로 밑에** 빨간 글씨로 낸다.
+    ///
+    /// ⚠ **알럿으로 되돌리지 말 것**(2026-08-13 지시). 코드를 잘못 친 것은 그 자리에서
+    /// 고치면 되는 일이라, 알럿을 띄우면 닫고 → 다시 입력창을 찾는 걸음이 하나 더 는다.
+    /// 무엇이 틀렸는지도 입력한 값 옆에 있어야 읽힌다.
+    @State private var codeError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -67,7 +73,12 @@ struct CodeRegisterRow: View {
                 HStack(spacing: 8) {
                     TextField("초대·선물·프로모션 코드", text: Binding(
                         get: { codeDraft },
-                        set: { codeDraft = InputSanitizer.sanitizeRedeemCode($0) }
+                        set: {
+                            codeDraft = InputSanitizer.sanitizeRedeemCode($0)
+                            // 고치기 시작하면 지난 실패 문구를 지운다 — 남겨 두면 방금 고친
+                            // 값에 대고 틀렸다고 말하는 셈이다.
+                            codeError = nil
+                        }
                     ))
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
@@ -86,6 +97,13 @@ struct CodeRegisterRow: View {
                         codeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                             socialFeatures.isBusy
                     )
+                }
+
+                if let codeError {
+                    Text(codeError)
+                        .font(.footnote)
+                        .foregroundStyle(AlarmTalkTheme.error)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -125,8 +143,15 @@ struct CodeRegisterRow: View {
                 codeDraft = ""
                 Task {
                     if let destination = await socialFeatures.registerCode(code, session: auth.session) {
+                        await MainActor.run { codeError = nil }
                         await auth.refreshUser()
                         await MainActor.run { onCodeRegistered(destination) }
+                    } else {
+                        // 실패 사유를 입력창 밑으로 옮긴다. 되돌려 넣어 주어야 다시 고칠 수 있다.
+                        await MainActor.run {
+                            codeError = socialFeatures.statusMessage ?? "잘못된 코드입니다."
+                            codeDraft = code
+                        }
                     }
                 }
             }

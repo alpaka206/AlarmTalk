@@ -17,7 +17,7 @@ final class CodeRegistrationErrorTests: XCTestCase {
             ("CODE_ALREADY_REDEEMED_BY_YOU", "이미 등록한 코드예요"),
             ("GROUP_FULL", "이미 정원이 찬 코드예요"),
             ("INVALID_FORMAT", "코드 형식을 확인해 주세요"),
-            ("CODE_NOT_FOUND", "등록할 수 없는 코드예요"),
+            ("CODE_NOT_FOUND", "잘못된 코드입니다."),
             ("CODE_REVOKED", "취소된 코드예요"),
             ("ALREADY_MEMBER", "이미 함께 쓰고 있는 그룹이에요"),
             ("CODE_EXHAUSTED", "사용 가능 횟수가 모두 소진된 프로모 코드예요"),

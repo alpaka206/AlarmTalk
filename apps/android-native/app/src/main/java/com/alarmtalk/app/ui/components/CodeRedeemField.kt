@@ -103,9 +103,16 @@ internal fun sanitizeDisplayName(raw: String, maxLength: Int = Int.MAX_VALUE): S
         .trimStart()
         .takeWithoutSplittingPairs(maxLength)
 
+/**
+ * 이용권·초대·프로모션 코드. **영문 대문자·숫자·`-`·`_` 만 남긴다.**
+ *
+ * ⚠ **`isLetterOrDigit()` 하나로 거르지 말 것.** 한글도 letter 라서 그대로 통과한다 —
+ * 코드에는 한글이 쓰이지 않는데 입력은 되니, 사용자는 다 치고 나서야 "잘못된 코드" 를
+ * 본다(2026-08-13 지시). 아예 안 들어가게 막는다. iOS `sanitizeRedeemCode` 와 같은 규칙.
+ */
 internal fun sanitizeRedeemCode(raw: String): String = raw
     .uppercase()
-    .filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+    .filter { (it.code < 128 && it.isLetterOrDigit()) || it == '-' || it == '_' }
     // 프로모 코드 최대 64자(admin 발급 폼 maxlength=64)와 맞춘다 — 32자 잘림으로 긴 코드가 실패하던 문제.
     .take(64)
 

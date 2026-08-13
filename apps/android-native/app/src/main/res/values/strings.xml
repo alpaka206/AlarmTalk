@@ -724,7 +724,7 @@
     <string name="msg2_code_fail_code_revoked">취소된 코드예요</string>
     <string name="msg2_code_fail_already_member">이미 함께 쓰고 있는 그룹이에요</string>
     <string name="msg2_code_fail_invalid_format">코드 형식을 확인해 주세요</string>
-    <string name="msg2_code_fail_code_not_found">등록할 수 없는 코드예요</string>
+    <string name="msg2_code_fail_code_not_found">잘못된 코드입니다.</string>
     <string name="msg2_code_fail_code_expired">만료된 코드예요</string>
     <string name="msg2_code_fail_code_already_used">이미 사용된 코드예요</string>
     <string name="msg2_code_fail_code_already_redeemed_by_you">이미 등록한 코드예요</string>
