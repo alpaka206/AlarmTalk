@@ -77,7 +77,11 @@ struct CodeRegisterRow: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(AlarmTalkTheme.primary)
-                    .foregroundStyle(.white)
+                    // ⚠ **글자색을 흰색으로 못 박지 말 것.** 다크 테마의 `primary` 는 밝은
+                    // 하늘색이고 그 위 글자색(`onPrimary`)은 **진남색(#08243C)** 이다 —
+                    // 흰색으로 고정하면 밝은 배경에 흰 글자가 되어 **안 보인다**
+                    // (2026-08-13 지적). 편집기·목소리 화면의 다른 prominent 버튼들은
+                    // 전부 `.tint` 만 주고 글자색은 시스템에 맡긴다. 여기만 달랐다.
                     .disabled(
                         codeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                             socialFeatures.isBusy

@@ -42,22 +42,16 @@ struct PeoplePanel: View {
                     .background(AlarmTalkTheme.surfaceVariant)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-            } else {
-                EmptyStatePlaceholder(
-                    title: "가족 그룹이 없어요.",
-                    subtitle: "공유 코드를 등록하거나 가족 이용권 공유 코드를 만든 뒤 함께 쓰는 알람을 사용할 수 있어요.",
-                    icon: "person.2"
-                )
             }
+            // ⚠ **"…이 없어요" 빈 상태를 다시 넣지 말 것**(2026-08-13 지시).
+            // 이 화면이 하는 일은 **코드를 등록하는 것 하나**다. 없는 것을 두 줄에 걸쳐
+            // 설명하면 정작 해야 할 일(입력칸)이 아래로 밀리고, 처음 온 사람은 화면 대부분이
+            // '없다' 는 말인 화면을 본다. 그룹·공유 코드는 **있을 때만** 보여준다.
 
             CodeRegisterRow(onCodeRegistered: onCodeRegistered)
 
-            if socialFeatures.vouchers.isEmpty {
-                EmptyStatePlaceholder(title: "발급된 공유 코드가 없어요.")
-            } else {
-                ForEach(socialFeatures.vouchers.prefix(4)) { voucher in
-                    VoucherRow(voucher: voucher)
-                }
+            ForEach(socialFeatures.vouchers.prefix(4)) { voucher in
+                VoucherRow(voucher: voucher)
             }
         }
         .sectionSurface()
