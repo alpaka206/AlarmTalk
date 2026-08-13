@@ -77,10 +77,9 @@ struct CodeRegisterRow: View {
                     // 제출할 때에야 바뀐다(2026-08-13 지적). `onChange` 로 고쳐야 반영된다.
                     // 같은 이유로 `WeatherCityPickerSheet` 도 `onChange` 를 쓴다.
                     TextField("초대·선물·프로모션 코드", text: $codeDraft)
-                    // ⚠ **ASCII 키보드를 요구한다.** 한글은 걸러 내기 **전에** 아예 못 치게
-                    // 하는 편이 낫다 — 걸러 내기만 하면 조합 중인 글자가 잠깐 보였다 사라져
-                    // 고장처럼 보인다.
-                    .keyboardType(.asciiCapable)
+                    // ⚠ **`.keyboardType(.asciiCapable)` 로 키보드를 바꾸지 말 것**(2026-08-13 지시).
+                    // 쓰던 키보드가 갑자기 다른 언어로 바뀌면 당황스럽다 — 막을 것은 키보드가
+                    // 아니라 **들어가는 글자**다. 아래 `onChange` 가 친 즉시 걸러 낸다.
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
                     .onChange(of: codeDraft) { _, new in
@@ -148,23 +147,24 @@ struct CodeRegisterRow: View {
             Button("취소", role: .cancel) { pendingCode = nil }
             Button("등록") {
                 pendingCode = nil
-                codeDraft = ""
+                // ⚠ **여기서 입력을 비우지 말 것.** 실패하면 되돌려 넣어야 하는데, 그
+                // 되돌려 넣는 대입이 아래 `onChange(of: codeDraft)` 를 깨워 **방금 세운
+                // 오류 문구를 지운다** — 화면에는 "경고는 없고 본문만 튀는" 것으로 보였다
+                // (2026-08-13 지적). 성공했을 때만 비운다.
                 Task {
                     if let destination = await socialFeatures.registerCode(code, session: auth.session) {
-                        await MainActor.run { codeError = nil }
+                        await MainActor.run {
+                            codeError = nil
+                            codeDraft = ""
+                        }
                         await auth.refreshUser()
                         await MainActor.run { onCodeRegistered(destination) }
                     } else {
-                        // 실패 사유를 입력창 밑으로 **옮긴다.** 되돌려 넣어 주어야 다시
-                        // 고칠 수 있다.
-                        //
-                        // ⚠ **위 배너의 문구도 지운다.** 안 지우면 화면 위(공용 상태 배너)와
-                        // 입력창 밑에 **같은 말이 두 번** 뜬다(2026-08-13 지적).
-                        // 이 화면에서는 입력창 밑이 제자리다 — 틀린 값 바로 옆이라야 읽힌다.
+                        // 실패 사유는 **입력창 밑**에서 말한다 — 틀린 값 바로 옆이라야 읽힌다.
+                        // 입력은 그대로 두므로 `onChange` 가 깨지 않는다.
                         await MainActor.run {
                             codeError = socialFeatures.statusMessage ?? "잘못된 코드입니다."
                             socialFeatures.statusMessage = nil
-                            codeDraft = code
                         }
                     }
                 }

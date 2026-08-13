@@ -20,27 +20,16 @@ struct AuxiliarySheetHost: View {
         //
         // ⚠ **상단 X 도 두지 않는다** — 뒤로가기가 이미 같은 일을 한다.
         // `onClose` 는 코드 등록 성공 뒤 화면을 뜨는 데만 쓴다.
-        VStack(spacing: 0) {
-            if let message = auxiliaryStatusMessage {
-                AuxiliaryStatusBanner(message: message)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 4)
-            }
-            content
-        }
+        // ⚠ **상단 상태 배너를 되살리지 말 것**(2026-08-13 지시).
+        // 이 화면들의 오류는 **그 오류가 난 자리 옆**에서 말한다(코드 등록이면 입력창 밑).
+        // 위에 띄우면 (1) 같은 말이 두 번 나오고 (2) 배너가 생겼다 사라지며 본문이
+        // 아래로 밀렸다 올라와, 사용자에게는 "경고는 없고 화면만 튀는" 것으로 보인다.
+        content
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .homeGradientBackground()
         // 제목은 네비게이션 바가 그린다 — 본문 `ScreenHeader` 를 같이 두면 두 번 나온다.
         .navigationTitle(screen.title)
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private var auxiliaryStatusMessage: String? {
-        let message = socialFeatures.statusMessage?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !message.isEmpty else { return nil }
-        guard message != "소셜/이용권 정보를 불러왔어요." else { return nil }
-        return message
     }
 
     @ViewBuilder
