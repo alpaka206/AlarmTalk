@@ -34,15 +34,13 @@ struct FormSheet<Content: View>: View {
         VStack(spacing: 0) {
             header
 
-            ScrollView {
+            SheetScrollingContent {
                 content()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
                     .padding(.bottom, 20)
-                    .measuredSheetContent()
             }
-            .sheetScrollFit()
         }
         .frame(maxWidth: .infinity)
     }
@@ -93,7 +91,7 @@ extension View {
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         fullScreenCover(isPresented: isPresented) {
-            BottomSheetHost(onDismiss: onCancel, maxFraction: 0.9) {
+            BottomSheetHost(onDismiss: onCancel) {
                 FormSheet(
                     title: title,
                     saveTitle: saveTitle,

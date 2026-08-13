@@ -2,8 +2,8 @@ import SwiftUI
 
 /// 바텀시트 치수의 **단일 출처**.
 enum BottomSheetMetrics {
-    /// 높이 **상한**. 짧은 시트는 `sheetScrollFit()` 으로 자연 높이를 가지므로 여기 닿지도
-    /// 않고, 긴 목록만 걸려 스크롤한다. 화면을 거의 덮되 뒤가 남아 '시트' 로 읽히는 값이다.
+    /// 높이 **상한**. `SheetScrollingContent` 의 **스크롤 갈래에만** 걸린다 — 짧은 시트는
+    /// 자연 높이라 여기 닿지 않는다. 화면을 거의 덮되 뒤가 남아 '시트' 로 읽히는 값이다.
     ///
     /// ⚠ **시트마다 다른 값을 주지 말 것.** 2026-08-12 에 날씨 시트만 0.9 로 올렸다가
     /// 같은 종류의 시트끼리 높이가 달라졌다. 상한을 낮게 잡을 이유가 없다 —
@@ -36,11 +36,9 @@ struct BottomSheetHost<Content: View>: View {
     let onDismiss: () -> Void
     /// 화면의 몇 %까지 차지할 수 있는가. 넘으면 안에서 스크롤한다.
     ///
-    /// ⚠ **호출부마다 다른 값을 주지 말 것.** 시트 안 내용은 `sheetScrollFit()` 으로
-    /// **자기 자연 높이**를 갖는다 — 여기 값은 "그보다 커지지 마라" 는 **상한**일 뿐이고,
-    /// 내용이 짧으면 애초에 닿지도 않는다(공휴일·테마 시트는 행이 셋이라 늘 작다).
-    /// 그러니 상한을 낮게 잡을 이유가 없고, 낮추면 **긴 목록만 반쪽으로 잘린다.**
-    /// 2026-08-12 에 날씨 시트만 0.9 로 올렸다가 같은 종류의 시트끼리 높이가 달라졌다.
+    /// ⚠ **호출부마다 다른 값을 주지 말 것.** 2026-08-12 에 날씨 시트만 0.9 로 올렸다가
+    /// 같은 종류의 시트끼리 높이가 달라졌다. 상한을 낮게 잡을 이유도 없다 —
+    /// 짧은 시트는 어차피 자연 높이고, 낮추면 **긴 목록만 반쪽으로 잘린다.**
     var maxFraction: CGFloat = BottomSheetMetrics.maxFraction
     @ViewBuilder var content: () -> Content
 
@@ -64,12 +62,12 @@ struct BottomSheetHost<Content: View>: View {
                 Color.clear.frame(height: safeBottomInset)
             }
             .frame(maxWidth: .infinity)
-            // ⚠ **`height` 로 못 박지 말 것 — `maxHeight` 상한만 씌운다.**
-            // 안의 `ScrollView` 가 `sheetScrollFit()` 으로 제 내용에 묶여 있어서, 시트는
-            // 여백·간격까지 포함한 **자연 높이**를 스스로 갖는다. 여기서 할 일은 그게
-            // 화면 절반(=`maxFraction`)을 넘지 않게 막는 것뿐이다. 넘으면 그때
-            // `ScrollView` 가 눌리며 스크롤이 생긴다.
-            .frame(maxHeight: UIScreen.main.bounds.height * maxFraction)
+            // ⚠ **여기에 `maxHeight` 상한을 걸지 말 것 — 그게 곧 시트 높이가 된다.**
+            // `maxHeight` 는 자식에게 그 높이를 **제안**한다. 그런데 시트 안에는 `ScrollView`
+            // 가 있고 스크롤뷰는 세로로 탐욕스러워서 제안받은 만큼 **다 먹는다.** 그러면
+            // 프레임도 그 크기가 되어, 행이 셋뿐인 시트가 상한(90%)을 꽉 채운 채 위아래가
+            // 텅 빈다(2026-08-13 실측 — 상한을 지우니 곧바로 붙었다).
+            // 상한은 이제 `SheetScrollingContent` 안에서, **스크롤 갈래에만** 걸린다.
             .background(theme.palette.surface)
             // ⚠ **위 모서리만** 둥글다 — 아래까지 둥글리면 iOS 기본 시트처럼 떠 보인다.
             .clipShape(TopRoundedRectangle(radius: theme.shapes.extraLarge))
@@ -150,7 +148,7 @@ extension View {
     /// ⚠ `.sheet` 가 아니라 `.fullScreenCover` 위에 직접 그린다 — 시스템 시트의 들여쓴
     /// 표현을 피하고 배경·모서리를 우리가 정하기 위해서다.
     /// - Parameter maxFraction: 높이 **상한**. 기본값을 그대로 쓰는 것이 정상이다 —
-    ///   시트는 `sheetScrollFit()` 으로 자기 자연 높이를 가지므로, 짧으면 알아서 작게 뜬다.
+    ///   시트는 `SheetScrollingContent` 로 자기 자연 높이를 가지므로, 짧으면 알아서 작게 뜬다.
     ///   ⚠ **시트마다 다른 값을 주지 말 것**(`BottomSheetHost.maxFraction` 주석 참조).
     func bottomSheet<Content: View>(
         isPresented: Binding<Bool>,

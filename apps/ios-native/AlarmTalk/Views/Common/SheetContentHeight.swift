@@ -23,41 +23,39 @@ import SwiftUI
 /// - `BottomSheetHost` 는 거기에 **상한만** 씌운다(`maxHeight`). 내용이 짧으면 그대로 두고,
 ///   길면 그때 `ScrollView` 가 눌리며 스크롤이 생긴다.
 
-/// 스크롤 **안** 내용의 자연 높이.
-struct SheetContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+/// **짧으면 그대로, 길면 스크롤.** 바텀시트 안 목록은 이걸로 감싼다.
+///
+/// ⚠ **높이를 재서 묶는 방식으로 되돌리지 말 것.** 예전에는 스크롤 안 내용의 높이를
+/// `PreferenceKey` 로 위에 보고하고(`measuredSheetContent`) 그 값으로 `ScrollView` 를
+/// 묶었다(`sheetScrollFit`). 그런데 **그 보고가 실제로 도착하지 않아** 묶을 값이 0 이었고,
+/// `ScrollView` 는 세로로 탐욕스러워서 상한(90%)을 그대로 먹었다 — 행이 셋뿐인 시트가
+/// 화면을 꽉 채운 채 위아래가 텅 비었다(2026-08-13 실기기·시뮬레이터 실측 57%).
+/// 상한이 0.5 이던 시절에는 절반만 비어서 덜 눈에 띄었을 뿐 그때도 깨져 있었다.
+///
+/// `ViewThatFits` 는 **재지 않는다.** 제안된 높이에 첫 번째 후보가 들어가면 그걸 쓰고,
+/// 안 들어가면 다음 후보로 넘어간다. 그래서 짧은 내용은 자연 높이로, 긴 내용은 스크롤로
+/// 알아서 갈린다 — 우리가 숫자를 다룰 일이 없다.
+struct SheetScrollingContent<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    /// 내용 영역 높이 상한. 시트 전체가 아니라 **여기**에 건다 —
+    /// 시트 전체에 걸면 `ScrollView` 가 그 높이를 통째로 먹어 상한이 곧 시트 높이가 된다.
+    /// 핸들·홈인디케이터 몫을 빼고 잡아, 시트 전체가 `BottomSheetMetrics.maxFraction` 언저리에
+    /// 머물게 한다.
+    private var maxContentHeight: CGFloat {
+        UIScreen.main.bounds.height * BottomSheetMetrics.maxFraction - 80
     }
-}
 
-extension View {
-    /// **스크롤 내용**에 붙여 자연 높이를 위로 보고한다. 짝은 `sheetScrollFit()` 이다.
-    func measuredSheetContent() -> some View {
-        background(
-            GeometryReader { proxy in
-                Color.clear.preference(key: SheetContentHeightKey.self, value: proxy.size.height)
-            }
-        )
-    }
-
-    /// **`ScrollView` 자신**에 붙인다 — 안의 내용보다 커지지 않게 한다.
-    ///
-    /// `ScrollView` 는 세로로 탐욕스러워서 주는 만큼 다 먹는다. 그대로 두면 항목이 3개여도
-    /// 시트가 상한까지 늘어나 **아래가 텅 빈다.** 여기서 내용 높이로 묶어 두면 시트가
-    /// 자연 높이를 갖고, 내용이 상한을 넘길 때만 눌려서 스크롤된다.
-    func sheetScrollFit() -> some View {
-        modifier(SheetScrollFit())
-    }
-}
-
-private struct SheetScrollFit: ViewModifier {
-    @State private var contentHeight: CGFloat = 0
-
-    func body(content: Content) -> some View {
-        content
-            .onPreferenceChange(SheetContentHeightKey.self) { contentHeight = $0 }
-            // 아직 못 쟀으면(0) 묶지 않는다 — 0으로 묶으면 첫 프레임에 시트가 사라진다.
-            .frame(maxHeight: contentHeight > 0 ? contentHeight : nil)
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            // ① 그대로 넣어 본다 — 화면에 들어가면 시트가 내용만큼만 올라온다.
+            //    ⚠ **여기에 `frame(maxHeight:)` 를 걸지 말 것.** 상한을 걸면 그 값이 곧
+            //    높이가 되어(아래 ②와 같은 이유) 짧은 시트도 상한까지 늘어난다.
+            content()
+            // ② 안 들어가면 스크롤한다. 상한은 **이 갈래에만** 건다 — 스크롤뷰는 세로로
+            //    탐욕스러워서 제안받은 만큼 다 먹으므로, 여기서 상한이 곧 높이가 된다.
+            ScrollView { content() }
+                .frame(maxHeight: maxContentHeight)
+        }
     }
 }

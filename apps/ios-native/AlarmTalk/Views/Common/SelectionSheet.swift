@@ -32,8 +32,11 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
         VStack(alignment: .leading, spacing: BottomSheetTitle.titleToContentSpacing) {
             BottomSheetTitle(text: title)
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
+            SheetScrollingContent {
+                // ⚠ **`LazyVStack` 으로 되돌리지 말 것.** 게으른 스택은 제안된 높이를 그대로 먹어서
+                // `ViewThatFits` 가 "안 들어간다" 고 판단한다 — 짧은 목록도 늘 스크롤 갈래로 떨어진다.
+                // 이 목록들은 많아야 열 몇 행이라 게으를 이유도 없다.
+                VStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         if index > 0 { Divider() }
                         Button {
@@ -66,10 +69,7 @@ struct SelectionSheet<Item: Identifiable, Label: View>: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .measuredSheetContent()
             }
-            // 내용보다 커지지 않게 묶는다 — 항목이 적으면 스크롤이 아예 안 생긴다.
-            .sheetScrollFit()
         }
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
