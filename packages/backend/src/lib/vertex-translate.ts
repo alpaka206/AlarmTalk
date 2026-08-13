@@ -70,34 +70,65 @@ const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const DEFAULT_VERTEX_LOCATION = 'global';
 const DEFAULT_VERTEX_MODEL = 'gemini-2.5-flash';
-const TAG_RE = /\[[a-z][a-z -]{1,32}\]/i;
+/// 대괄호 태그의 **모양**. 이 한 벌이 유일 출처다 — 예전에는 같은 문자셋이 네 군데에
+/// 리터럴로 박혀 있어, 하나만 넓히면 "태그로 인식은 되는데 화면에서 안 벗겨지는" 상태가 됐다.
+///
+/// ⚠ **쉼표를 빼지 말 것.** ElevenLabs v3 태그는 고정 enum 이 아니라 자연어 지시라
+/// `[low, controlled]`·`[measured, deliberate]` 같은 두 마디 지시가 흔하다. 쉼표가 빠져
+/// 있던 동안 그 형태는 **태그로 인식조차 되지 않아** 그냥 글자로 낭독되거나 뒤 검사에서
+/// 통째로 폐기됐다(2026-08-13 실측).
+export const TAG_BODY_PATTERN = '[a-z][a-z ,-]{1,48}';
+const TAG_RE = new RegExp(`\\[${TAG_BODY_PATTERN}\\]`, 'i');
+const TAG_RE_GLOBAL = new RegExp(`\\[${TAG_BODY_PATTERN}\\]`, 'gi');
 // ElevenLabs v3 태그는 고정 enum이 아니라 대괄호 안 자연어 지시이며, 실제 효과는 보이스·문맥·
-// stability에 따라 달라진다(2026-06-28 사용자/공식문서 검증). 아래는 우리가 예측가능성·
-// 알람적합성·태그 낭독 방지를 위해 쓰는 큐레이트 세트(공식 문서/예시 실증분). 저각성 태그는
-// 사용자가 직접 쓴 문구(prepareAlarmTextWithVertex)의 밤/마무리 뉘앙스에만 남겨 둔다.
-const APPROVED_TAGS = [
-  'happy',
-  'cheerfully',
-  'excited',
-  'playfully',
-  'curious',
-  'lighthearted',
-  'calm',
-  'tired',
-  'whispers',
-  'quietly',
+// stability에 따라 달라진다(2026-06-28 사용자/공식문서 검증).
+//
+// ⚠ **닫힌 허용 목록으로 되돌리지 말 것**(2026-08-13 확정).
+// 예전에는 감정 형용사 10개짜리 allowlist 였고, 그 밖의 태그는 조용히 무태그로 강등됐다.
+// 그래서 [laughs]·[through gritted teeth]·[defiant] 같은 **비언어 소리·발성 방식·태도**
+// 지시를 아예 쓸 수 없었다 — 목록을 넓혀도 새 어휘가 나올 때마다 또 막힌다.
+// 이제 판정은 **모양(TAG_RE) + 아래 저각성 금지**뿐이다.
+//
+// 프롬프트에 예시로 보여줄 어휘. 목록에 없다고 막지는 않는다 — 모델에게 방향만 준다.
+const TAG_EXAMPLES = [
+  // 감정·태도
+  'happy', 'cheerfully', 'excited', 'playfully', 'curious', 'lighthearted',
+  'proud', 'defiant', 'flustered', 'fierce', 'embarrassed',
+  // 비언어 소리
+  'laughs', 'giggles', 'sighs', 'laughs nervously', 'giggling',
+  // 발성 방식
+  'shouting', 'low, controlled', 'through gritted teeth', 'measured, deliberate',
 ];
 // Bruck/McFarlane: 저각성 신호는 기상을 방해한다. 깨우는 경로(동적 생성·사전렌더)는 서버가
-// 이 태그들을 무조건 드롭하므로 프롬프트 allowlist 에도 노출하지 않는다.
-const LOW_AROUSAL_TAGS = ['calm', 'tired', 'whispers', 'quietly'];
-// 깨우는 경로 전용 allowlist. 드롭될 태그를 모델에게 제시해 무태그로 끝나는 낭비를 막는다.
-const WAKE_TAGS = APPROVED_TAGS.filter((tag) => !LOW_AROUSAL_TAGS.includes(tag));
+// 이 뜻을 가진 태그를 무조건 드롭한다.
+//
+// ⚠ **"천천히" 와 "졸리게" 를 섞지 말 것**(2026-08-13 확정 — C안).
+// 말 속도를 늦추는 지시(measured·deliberate·slow)는 **허용**한다. 사용자가 "말이 너무
+// 빠르다" 고 했고, 천천히 말하는 것은 각성을 낮추지 않는다. 막는 것은 **졸리고 작게**
+// 말하라는 쪽이다.
+const LOW_AROUSAL_WORDS = [
+  'tired', 'sleepy', 'drowsy', 'yawn',
+  'whisper', 'whispers', 'whispering',
+  'quiet', 'quietly', 'soft', 'softly', 'hushed',
+  'calm', 'calmly', 'soothing', 'gentle', 'gently',
+  'mumbl', 'murmur',
+];
 
-// 정규화 후 큐레이트 세트에 있으면 그대로, 아니면 무태그(''). 출시 전 단계라 옛 태그
-// back-compat 매핑은 두지 않는다 — 세트 밖 태그는 SOFT로 무태그 강등.
+/// 이 태그가 저각성(기상 방해) 뜻을 갖는가. 여러 마디 태그도 낱말 단위로 본다.
+function isLowArousalTag(tag: string): boolean {
+  const normalized = normalizeTag(tag);
+  if (!normalized) return false;
+  return LOW_AROUSAL_WORDS.some((word) => normalized.includes(word));
+}
+
+/// 태그로 받아들일 수 있는가 — **모양만** 본다(닫힌 목록 없음).
+///
+/// ⚠ 예전에는 여기서 큐레이트 세트 멤버십을 봤고, 밖의 태그는 조용히 무태그가 됐다.
+/// 그래서 프롬프트만 넓히면 **모델은 태그를 내는데 결과는 무태그**라 원인을 못 찾았다.
 function normalizeApprovedTag(tag: string): string {
   const normalized = normalizeTag(tag);
-  return normalized && APPROVED_TAGS.includes(normalized) ? normalized : '';
+  if (!normalized) return '';
+  return TAG_RE.test(`[${normalized}]`) ? normalized : '';
 }
 
 // 모드별 기본 delivery 태그(§4.4). 폴백/가이드에 쓰인다.
@@ -114,11 +145,24 @@ function modeDefaultTag(mode: DynamicAlarmTextMode): string {
 
 // 동적 생성의 tag 필드를 정제한다: 큐레이트 세트 검증 → 저각성 태그 차단(남은 모드는 전부
 // '깨우는' 알람이다). 부적합하면 빈 문자열(무태그)로 강등(reject 아님 = SOFT).
+/// 깨우는 경로용 — 모양이 맞고 **저각성이 아니면** 통과.
 function sanitizeDeliveryTag(tag: string): string {
   const approved = normalizeApprovedTag(tag);
   if (!approved) return '';
-  if (LOW_AROUSAL_TAGS.includes(approved)) return '';
+  if (isLowArousalTag(approved)) return '';
   return approved;
+}
+
+/// 텍스트 안의 태그들을 깨우는 경로 기준으로 거른다.
+/// 저각성 태그만 지우고 나머지는 **위치까지 그대로** 남긴다 — 여러 개·중간 태그가 요점이다.
+export function dropLowArousalTags(text: string): string {
+  return text
+    .replace(TAG_RE_GLOBAL, (match) => {
+      const body = match.slice(1, -1);
+      return isLowArousalTag(body) ? '' : match;
+    })
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -443,7 +487,7 @@ function alarmTextPrompt(args: {
     ? `Translate the user's alarm message from ${sourceName} to ${targetName}.`
     : `Keep the user's alarm message in ${sourceName}.`;
   const tagInstruction = args.shouldTag
-    ? `Add exactly one ElevenLabs v3 delivery tag from this allowlist: ${APPROVED_TAGS.map((tag) => `[${tag}]`).join(', ')}. Put the single tag at the very beginning of the text. Pick the tag that best matches the meaning and intended mood of the user text — use [cheerfully]/[happy] for warm or upbeat lines, [calm] for quiet, soothing, or night/wind-down lines, [excited]/[playfully]/[curious] for lively or light-hearted lines. Do not rewrite, add, remove, or reorder any words unless translation is requested.`
+    ? `Add ElevenLabs v3 delivery tags in square brackets so the line is performed, not just read. Use as many as the line needs — typically 1 to 3 — and put them where the delivery changes, including mid-sentence. Tags are free-form natural-language directions, not a fixed list; these are only examples: ${TAG_EXAMPLES.map((tag) => `[${tag}]`).join(', ')}. Mix kinds when it helps: feeling ([proud], [flustered]), non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled], [through gritted teeth]), and pacing ([measured, deliberate]). Prefer an unhurried pace — a rushed alarm is hard to follow. Do not rewrite, add, remove, or reorder any words unless translation is requested; tags are the only thing you may insert.`
     : 'Do not add or remove delivery tags.';
 
   return [
@@ -718,13 +762,20 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   })();
 
   const languageBlock = activeLanguageBlock(context.targetLanguage);
-  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${WAKE_TAGS.map(
-    (tag) => `[${tag}]`,
-  ).join(
-    ' ',
-  )}. Return it in the separate "tag" field WITHOUT brackets, or "" for none. A fitting default for this ${context.mode} mode is "${modeDefaultTag(
-    context.mode,
-  )}". One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
+  // ⚠ **태그를 "tag" 필드 하나로 받지 말 것**(2026-08-13 — C안).
+  // 예전에는 별도 필드에 한 개만 받아서, 여러 개도 중간 배치도 **구조적으로 불가능**했다.
+  // 이제 텍스트 안에 직접 쓰게 한다. `tag` 필드는 옛 클라이언트 호환으로만 남는다.
+  //
+  // ⚠ **저각성 금지를 여기에 명시해야 한다.** 예전에는 허용 목록에서 빼는 것으로만
+  // 막았는데, 자유형으로 바뀌면 그 장치가 사라진다 — 말로 적어 둔다.
+  const tagAllowlistInstruction = `DELIVERY TAGS: write them inline in "text", in square brackets, where the delivery changes — including mid-sentence. Use as many as the line needs (typically 1 to 3). Tags are free-form natural-language directions; these are only examples: ${TAG_EXAMPLES.filter(
+    (tag) => !isLowArousalTag(tag),
+  )
+    .map((tag) => `[${tag}]`)
+    .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
+PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
+NEVER use sleepy or hushed directions ([tired], [whispers], [quietly], [calm], [softly], [gently]): this line has to wake someone up, and a low-arousal delivery works against that.
+Leave the separate "tag" field as "" — it is legacy.`;
 
   return [
     `LANGUAGE: write the spoken line in ${targetName}.`,
@@ -785,11 +836,15 @@ function prerenderClipPrompt(params: {
     params.targetLanguage === 'ko' && isRomanticRelationship(params.relationshipLabel)
       ? '연인/배우자 톤: 실제 남자친구·여자친구·아내·남편이 사적으로 건네는 말투로. 친밀한 반말을 쓰고 해요체/합니다체를 쓰지 말 것(아내·남편도). 따뜻하고 살짝 설레게, 하지만 짧게. 새 인연·연애운·질투·다른 사람에게 끌림 언급 금지.'
       : '';
-  const tagAllowlistInstruction = `DELIVERY TAG: you may prepend AT MOST ONE tag, chosen ONLY from this allowlist: ${WAKE_TAGS.map(
-    (tag) => `[${tag}]`,
-  ).join(
-    ' ',
-  )}. Return it in the separate "tag" field WITHOUT brackets, or "" for none. A fitting default here is "${params.defaultTag ?? 'cheerfully'}". One tag or none; never combine or invent tags; never put any bracket or [tag] inside "text".`;
+  // 사전렌더도 동적 경로와 **같은 규칙**이다(위 `tagAllowlistInstruction` 주석 참조).
+  const tagAllowlistInstruction = `DELIVERY TAGS: write them inline in "text", in square brackets, where the delivery changes — including mid-sentence. Use as many as the line needs (typically 1 to 3). Tags are free-form natural-language directions; these are only examples: ${TAG_EXAMPLES.filter(
+    (tag) => !isLowArousalTag(tag),
+  )
+    .map((tag) => `[${tag}]`)
+    .join(' ')}. Mix kinds when it helps: feeling, non-verbal sounds ([laughs], [sighs]), voice quality ([low, controlled]), and pacing ([measured, deliberate]).
+PACING: prefer an unhurried delivery — a rushed alarm is hard to follow right after waking.
+NEVER use sleepy or hushed directions ([tired], [whispers], [quietly], [calm], [softly], [gently]): this line has to wake someone up.
+Leave the separate "tag" field as "" — it is legacy.`;
   const styleReference = params.styleReference?.trim();
   const styleReferenceInstruction = styleReference
     ? `STYLE REFERENCE (tone only): the user approved this exact line for this same voice: "${styleReference}". Match its register, warmth, sentence length and overall speaking style — but write NEW content for the current intent; never copy or lightly rephrase the reference line itself.`
@@ -883,7 +938,7 @@ export async function generatePrerenderClipText(
   // medication/love 등에 calm 을 붙였을 때 안 깨우는 알람 클립이 영구 저장된다.
   const sanitizePrerenderTag = (raw: string): string => {
     const approved = normalizeApprovedTag(raw);
-    return approved && !LOW_AROUSAL_TAGS.includes(approved) ? approved : '';
+    return approved && !isLowArousalTag(approved) ? approved : '';
   };
   const tag = sanitizePrerenderTag(parsed.tag) || sanitizePrerenderTag(params.defaultTag ?? '');
   return { text, tag };
@@ -1335,16 +1390,32 @@ function hasRelationshipLabelLeak(
   return directAddress.test(text) && !allowedAddress;
 }
 
+/// 모델 출력에 **낭독되면 안 되는 지문**이 섞였는가.
+///
+/// ⚠ **대괄호 태그 자체는 이제 정상이다**(2026-08-13 — C안). 예전에는 대괄호가 하나라도
+/// 있으면 HARD 실패로 보고 재롤/폴백했는데, 그러면 여러 개·중간 태그가 구조적으로 불가능했다.
+/// 지금 막는 것은 둘뿐이다:
+///  1. **전각/소괄호 지문** — `（다정하게）` `(웃으며)` 는 ElevenLabs 가 태그로 안 읽고
+///     **글자 그대로 낭독**한다. 대괄호만 태그다.
+///  2. **저각성 지시** — 대괄호든 아니든, 졸리게 말하라는 뜻이면 깨우는 알람에 맞지 않는다.
 function hasDeliveryTagOrStageDirection(text: string): boolean {
-  if (TAG_RE.test(text)) return true;
-  if (/^\s*[[（(]/.test(text)) return true;
+  // 소괄호·전각괄호로 시작하면 지문이다(대괄호는 태그라 통과).
+  if (/^\s*[（(]/.test(text)) return true;
 
-  const bracketedParts = text.match(/[[（(][^\])）\]]{1,50}[\])）\]]/g) ?? [];
-  return bracketedParts.some((part) =>
-    /(softly|warmly|gently|cheerfully|brightly|calmly|whisper|속삭|다정하게|밝게|차분하게|부드럽게|따뜻하게|상냥하게)/i.test(
-      part,
-    ),
-  );
+  const parenthesized = text.match(/[（(][^）)]{1,50}[）)]/g) ?? [];
+  if (
+    parenthesized.some((part) =>
+      /(softly|warmly|gently|cheerfully|brightly|calmly|whisper|속삭|다정하게|밝게|차분하게|부드럽게|따뜻하게|상냥하게)/i.test(
+        part,
+      ),
+    )
+  ) {
+    return true;
+  }
+
+  // 대괄호 태그 중 저각성이 있으면 실패로 본다 — 깨우는 경로 전용 판정이다.
+  const bracketed = text.match(TAG_RE_GLOBAL) ?? [];
+  return bracketed.some((part) => isLowArousalTag(part.slice(1, -1)));
 }
 
 function hasAlarmTimeEcho(text: string, alarmTimeLabel: string | null | undefined): boolean {
@@ -1564,7 +1635,8 @@ function isDynamicVertexTextEnabled(env: Env | undefined): boolean {
 }
 
 function extractTags(text: string): string[] {
-  const matches = text.match(/\[([a-z][a-z -]{1,32})\]/gi) ?? [];
+  // ⚠ 정규식을 여기 다시 쓰지 말 것 — `TAG_BODY_PATTERN` 한 곳에서 파생한다.
+  const matches = text.match(TAG_RE_GLOBAL) ?? [];
   return Array.from(new Set(matches.map((tag) => normalizeTag(tag))));
 }
 
@@ -1579,6 +1651,14 @@ function stripWrappingQuotes(text: string): string {
     .trim();
 }
 
+/// 사용자가 친 문구에 모델이 태그만 얹었는지 확인하고, **얹은 그대로** 돌려준다.
+///
+/// ⚠ **태그를 하나로 접어 원문에 다시 붙이지 말 것**(2026-08-13 — C안).
+/// 예전에는 `pickApprovedTag` 로 **첫 태그 하나만** 고른 뒤 `applyDeliveryTagPerSentence`
+/// 로 원문을 재조립했다. 그래서 모델이 어디에 몇 개를 넣었든 **결과는 언제나 '원문 앞에
+/// 태그 하나'** 였다 — 프롬프트를 아무리 고쳐도 이 경로에서는 변화가 관측되지 않았다.
+///
+/// 지금은 글자(태그를 뺀 본문)가 원문과 같은지만 확인하고 배치는 모델에 맡긴다.
 function normalizeSameLanguageTaggedText(
   preparedText: string,
   originalText: string,
@@ -1587,9 +1667,20 @@ function normalizeSameLanguageTaggedText(
   if (normalizeAlarmTextWithoutTags(preparedText) !== normalizeAlarmTextWithoutTags(originalText)) {
     return null;
   }
-  const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
-  if (!tag) return null;
-  return applyDeliveryTagPerSentence(tag, originalText, 200);
+  const tagsInText = preparedText.match(TAG_RE_GLOBAL) ?? [];
+
+  // ⚠ **선두 태그 하나뿐이면 문장마다 다시 앞세운다 — 이 장치를 없애지 말 것.**
+  // v3 태그는 뒤로 갈수록 효력이 약해져, 여러 문장을 선두 태그 하나로 합성하면 **끝
+  // 문장에서 톤이 풀리고 말이 빨라진다.** 사용자가 지적한 "말이 엄청 빠르다" 와 같은 축이다.
+  // 모델이 스스로 여러 개·중간에 배치했다면 그건 의도이므로 건드리지 않는다.
+  const onlyLeadingTag =
+    tagsInText.length === 1 && preparedText.trimStart().startsWith(tagsInText[0]!);
+  if (tagsInText.length === 0 || onlyLeadingTag) {
+    const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
+    if (!tag) return null;
+    return applyDeliveryTagPerSentence(tag, originalText, 200);
+  }
+  return preparedText.trim();
 }
 
 // ElevenLabs v3 delivery 태그는 뒤따르는 구간에서 갈수록 효력이 약해져, 여러 문장을
@@ -1613,9 +1704,9 @@ export function applyDeliveryTagPerSentence(tag: string, text: string, maxLength
   return single.length <= maxLength ? single : trimmed;
 }
 
-function normalizeAlarmTextWithoutTags(text: string): string {
+export function normalizeAlarmTextWithoutTags(text: string): string {
   return text
-    .replace(/\s*\[[a-z][a-z -]{1,32}\]\s*/gi, ' ')
+    .replace(new RegExp(`\\s*\\[${TAG_BODY_PATTERN}\\]\\s*`, 'gi'), ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

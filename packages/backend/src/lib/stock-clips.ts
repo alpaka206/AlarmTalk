@@ -3,7 +3,7 @@ import type { Env } from '../types';
 import { R2VoiceStorage } from './r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from './audio-cache';
 import { createSynthesisAttempts, normalizeSynthesisLanguage } from './voice-provider';
-import { applyDeliveryTagPerSentence, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, type SpeechStyle } from './vertex-translate';
+import { applyDeliveryTagPerSentence, parseSpeechStyle, prepareAlarmTextWithVertex, generatePrerenderClipText, TAG_BODY_PATTERN, type SpeechStyle } from './vertex-translate';
 import { withWriteTransaction, type DbExecutor } from './transactions';
 import { appendMp3TrailingSilence } from './mp3-silence';
 import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from './consent';
@@ -682,7 +682,9 @@ export async function deleteAllStockClips(db: Client, env: Env): Promise<number>
 /** 표시용 텍스트에서 [tag] 마커 제거 (앱에는 태그 없이 보여준다). */
 function stripDeliveryTags(text: string): string {
   return text
-    .replace(/\[[a-z][a-z -]{1,32}\]/gi, '')
+    // ⚠ 문자셋을 여기 다시 쓰지 말 것 — `TAG_BODY_PATTERN`(vertex-translate)에서 파생한다.
+    // 넷이 따로 놀던 시절에는 하나만 넓히면 "태그로 인식은 되는데 안 벗겨지는" 상태가 됐다.
+    .replace(new RegExp(`\\[${TAG_BODY_PATTERN}\\]`, 'gi'), '')
     .replace(/\s+/g, ' ')
     .trim();
 }

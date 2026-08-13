@@ -5,6 +5,7 @@ import {
   deriveAlarmDisplayText,
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
+  dropLowArousalTags,
   prepareAlarmTextWithVertex,
 } from '../src/lib/vertex-translate';
 
@@ -149,9 +150,62 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    // 승인 태그가 여러 개여도 첫 태그 하나만 채택하고, 문장마다 다시 앞세운다(텍스트 불변).
-    expect(prepared.text).toBe('[cheerfully] Today is your stage. [cheerfully] Wake up with confidence.');
-    expect(prepared.tags).toEqual(['cheerfully']);
+    // ⚠ **모델이 넣은 태그를 그대로 둔다**(2026-08-13 — C안).
+    // 예전에는 첫 태그 하나만 채택해 원문을 재조립했다 — 그래서 프롬프트를 아무리 고쳐도
+    // 결과는 언제나 '원문 앞에 태그 하나' 였다. 여러 개·중간 배치가 요점이다.
+    expect(prepared.text).toBe('[cheerfully] Today is your stage. [excited] Wake up with confidence.');
+    expect(prepared.tags).toEqual(['cheerfully', 'excited']);
+  });
+
+  // ⚠ **C안(2026-08-13) 회귀 방지.** 오디오 태그는 여러 개·문장 중간·자유 어휘를 쓴다.
+  // 예전에는 (1) 프롬프트가 "정확히 하나, 맨 앞에" 로 못 박고 (2) 허용 목록이 감정 형용사
+  // 10개뿐이라 목록 밖 태그가 조용히 무태그로 강등되고 (3) 최종 문자열이 '원문 + 태그 하나'
+  // 로 재조립돼, 셋 중 하나만 고쳐도 변화가 관측되지 않았다.
+  it('허용 목록에 없던 어휘(비언어 소리·발성 방식·태도)도 태그로 살아남는다', async () => {
+    const text = '일어나! 오늘도 힘내자.';
+    queueContent(
+      geminiText(
+        '{"text":"[shouting] 일어나! [laughs] 오늘도 힘내자.","tags":["shouting","laughs"]}',
+      ),
+    );
+
+    const prepared = await prepareAlarmTextWithVertex(ENV, text, {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+
+    expect(prepared.text).toBe('[shouting] 일어나! [laughs] 오늘도 힘내자.');
+    expect(prepared.tags).toEqual(['shouting', 'laughs']);
+  });
+
+  // 쉼표가 든 두 마디 지시는 정규식에서 **태그로 인식조차 되지 않아** 통째로 폐기됐다.
+  it('쉼표가 든 태그도 인식한다', async () => {
+    const text = 'I am ready.';
+    queueContent(
+      geminiText('{"text":"[measured, deliberate] I am ready.","tags":["measured, deliberate"]}'),
+    );
+
+    const prepared = await prepareAlarmTextWithVertex(ENV, text, {
+      targetLanguage: 'en',
+      sourceLanguage: 'en',
+      translate: false,
+      autoTag: true,
+    });
+
+    expect(prepared.text).toContain('[measured, deliberate]');
+  });
+
+  // ⚠ **저각성 차단은 유지한다**(C안의 단서). 천천히 말하는 것과 졸리게 말하는 것은 다르다.
+  it('속도 지시는 허용하고 저각성 지시는 깨우는 경로에서 막는다', async () => {
+    expect(dropLowArousalTags('[measured, deliberate] 일어나!')).toBe(
+      '[measured, deliberate] 일어나!',
+    );
+    expect(dropLowArousalTags('[quietly] 일어나!')).toBe('일어나!');
+    expect(dropLowArousalTags('[shouting] 일어나! [whispers] 지금.')).toBe(
+      '[shouting] 일어나! 지금.',
+    );
   });
 
   it('falls back to local tagging when same-language auto-tagging rewrites the text', async () => {
@@ -497,9 +551,11 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).not.toContain('엄마가');
   });
 
-  it('falls back when Gemini includes delivery tags or stage directions', async () => {
+  // ⚠ **대괄호 태그는 이제 정상이다**(2026-08-13 — C안). 막는 것은 소괄호·전각괄호 지문과
+  // 저각성 지시뿐이다. 여기서는 저각성(`[quietly]`)으로 실패를 확인한다.
+  it('falls back when Gemini includes stage directions or low-arousal tags', async () => {
     queueContent(
-      geminiText('{"text":"[warmly] 일어나실 시간이에요. 오늘도 화이팅!"}'),
+      geminiText('{"text":"[quietly] 일어나실 시간이에요. 오늘도 화이팅!"}'),
     );
 
     const generated = await generateDynamicAlarmTextWithVertex(ENV, {
@@ -672,8 +728,10 @@ describe('generatePrerenderClipText (사전렌더 톤 적응)', () => {
     expect(out.tag).toBe('cheerfully');
   });
 
-  it('문구 안에 대괄호/지문이 새면 throw 해서 나쁜 클립을 저장하지 않는다', async () => {
-    queueContent(geminiText(JSON.stringify({ text: '[shouting] 일어나!', tag: '' })));
+  // ⚠ 대괄호 태그는 이제 정상이다(C안). 막는 것은 **낭독돼 버리는 소괄호 지문**과
+  // 저각성 지시뿐이다 — `（다정하게）` 는 ElevenLabs 가 태그로 안 읽고 글자로 읽는다.
+  it('문구 안에 소괄호 지문이나 저각성 지시가 새면 throw 해서 나쁜 클립을 저장하지 않는다', async () => {
+    queueContent(geminiText(JSON.stringify({ text: '(다정하게) 일어나!', tag: '' })));
     await expect(
       generatePrerenderClipText(ENV, { seed: '깨운다', targetLanguage: 'ko' }),
     ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);

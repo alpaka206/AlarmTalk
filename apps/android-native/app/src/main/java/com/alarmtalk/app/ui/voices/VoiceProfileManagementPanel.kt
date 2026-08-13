@@ -1496,8 +1496,14 @@ internal fun VoiceProfileManagementPanel(
         if (systemVoices.isEmpty()) stopMediaPreview()
     }
 
-    // 만드는 중/미리듣기/사전렌더 스텝에선 draft·등록 완료로 isLimitReached 가 돼도 다이얼로그를 유지한다.
-    if (showCreateForm && (inDraftDecisionFlow || inPrerenderingFlow || (!isLimitReached && canCreateVoice))) {
+    // 만드는 중/미리듣기/사전렌더 스텝에선 draft·등록 완료로 상태가 바뀌어도 다이얼로그를 유지한다.
+    //
+    // ⚠ **여는 조건과 그리는 조건은 반드시 같은 값이어야 한다.**
+    // 2026-08-12 에 버튼 쪽(`canOpenCreateForm`)만 열어 두고 여기는 옛 `!isLimitReached` 를
+    // 그대로 두어서, 목소리가 이미 하나 있으면 **버튼을 눌러도 아무 일도 일어나지 않았다** —
+    // `showCreateForm` 은 true 가 되는데 그릴 조건이 false 라 화면이 그대로였다.
+    // 눌러도 아무 반응이 없는 것이 가장 나쁜 형태다(막혔다는 것조차 알 수 없다).
+    if (showCreateForm && (inDraftDecisionFlow || inPrerenderingFlow || canOpenCreateForm)) {
         val useManualSystemInsets = Build.VERSION.SDK_INT >= 35
         val actionBottomPadding = 10.dp + if (useManualSystemInsets) {
             androidNavigationBarHeightPadding() + AndroidEdgeToEdgeNavigationExtraPadding
@@ -1743,24 +1749,6 @@ internal fun VoiceProfileManagementPanel(
                                     selected = profileVoiceLanguage,
                                     onSelect = { profileVoiceLanguage = it },
                                 )
-                                // 공유 설정 — 토글 하나뿐이라 단독 단계를 없애고 세부 정보에 합쳤다.
-                                Text(
-                                    text = stringResource(R.string.voices_step_sharing),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
-                                ShareVoiceToggleCard(
-                                    enabled = canShareVoice,
-                                    checked = shareVoice && canShareVoice,
-                                    title = stringResource(R.string.voices_sharing_shared_title),
-                                    description = if (canShareVoice) {
-                                        stringResource(R.string.voices_sharing_shared_desc_enabled)
-                                    } else {
-                                        stringResource(R.string.voices_sharing_shared_desc_disabled)
-                                    },
-                                    onCheckedChange = { shareVoice = it },
-                                )
                                 // 등록 직전 확인 — 이 단계에 두는 이유는 다음 버튼('등록')이
                                 // draft 를 만들고, draft 생성이 곧 실제 ElevenLabs 클론 생성이기
                                 // 때문이다. 마지막 '저장하기'(승격) 앞에 두면 이미 목소리를
@@ -2001,6 +1989,29 @@ internal fun VoiceProfileManagementPanel(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
 
+                                    // ⚠ **공유 설정은 여기(확정 단계)에 둔다**(2026-08-13 지시).
+                                    // 앞 단계에서 물으면 아직 **초안**일 뿐인 것에 공유 여부를
+                                    // 정하게 된다 — '다시 만들기' 로 버리면 그 답도 함께 사라진다.
+                                    // 실제 등록은 이 화면의 '저장하기' 이므로, 남과 나눠 쓸지도
+                                    // 여기서 정하는 것이 맞다.
+                                    Text(
+                                        text = stringResource(R.string.voices_step_sharing),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                    ShareVoiceToggleCard(
+                                        enabled = canShareVoice,
+                                        checked = shareVoice && canShareVoice,
+                                        title = stringResource(R.string.voices_sharing_shared_title),
+                                        description = if (canShareVoice) {
+                                            stringResource(R.string.voices_sharing_shared_desc_enabled)
+                                        } else {
+                                            stringResource(R.string.voices_sharing_shared_desc_disabled)
+                                        },
+                                        onCheckedChange = { shareVoice = it },
+                                    )
+
                                     // 교체 안내 + 체크. **이미 등록된 목소리가 있을 때만** 낸다 —
                                     // 없으면 그냥 저장되므로 체크를 보여 줄 이유가 없다.
                                     //
@@ -2172,10 +2183,20 @@ internal fun VoiceProfileManagementPanel(
                                     onClick = { confirmNewVoice?.let { onDeleteVoiceDraft(it.id) } },
                                     enabled = !voiceProfileBusy && !confirmPreviewSaving,
                                 ) {
-                                    Text(
-                                        text = stringResource(R.string.voices_confirm_new_delete),
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
+                                    // 지우는 동안은 **이 버튼**이 진행을 말한다 — 옆의 저장 버튼이
+                                    // 아니라(위 주석 참조).
+                                    if (voiceProfileBusy && promotedForPrerenderId == null) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    } else {
+                                        Text(
+                                            text = stringResource(R.string.voices_confirm_new_delete),
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
                                 }
                                 Button(
                                     onClick = {
@@ -2193,10 +2214,16 @@ internal fun VoiceProfileManagementPanel(
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
-                                    // 승격 API 가 나가는 동안(voiceProfileBusy) 버튼에 진행 표시를 남겨
-                                    // "눌러도 아무 반응 없다"는 인상을 없앤다. 성공하면 다이얼로그가 닫히고
+                                    // 승격 API 가 나가는 동안 버튼에 진행 표시를 남겨 "눌러도 아무
+                                    // 반응 없다"는 인상을 없앤다. 성공하면 다이얼로그가 닫히고
                                     // 스낵바로 완료를 알린다.
-                                    if (voiceProfileBusy) {
+                                    //
+                                    // ⚠ **`voiceProfileBusy` 하나만 보지 말 것.** 그 플래그는 초안을
+                                    // **지울 때도** 켜진다 — 그래서 '다시 만들기' 를 눌렀는데 옆
+                                    // 버튼이 '저장 중…' 이라고 말했다(2026-08-13 지적 "저장한 거야?").
+                                    // 지우는 중인데 저장한다고 하면 되돌릴 수 없는 일을 한 줄 안다.
+                                    // 승격이 실제로 나갔을 때만(`promotedForPrerenderId`) 표시한다.
+                                    if (voiceProfileBusy && promotedForPrerenderId != null) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(18.dp),
                                             strokeWidth = 2.dp,

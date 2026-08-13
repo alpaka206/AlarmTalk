@@ -123,7 +123,15 @@ export class ElevenLabsClient {
       stability: options?.stability ?? 0.5,
       similarity_boost: options?.similarity_boost ?? 0.8,
       style: options?.style ?? 0.4,
-      speed: options?.speed ?? 1.0,
+      // ⚠ **1.0 으로 되돌리지 말 것**(2026-08-13 사용자 지적 "말이 엄청 빠르다").
+      // 알람은 **막 깬 사람**이 듣는다 — 평상시 대화 속도로 읽으면 따라가지 못한다.
+      // 태그(`[measured, deliberate]`)로도 늦출 수 있지만 태그는 보이스·문맥에 따라
+      // 실현이 들쭉날쭉하고, 이 파라미터는 확정적이다. 둘을 같이 쓴다.
+      //
+      // ⚠ 이 값을 바꾸면 **캐시가 안 깨진다** — `computeTtsCacheKey` 는 voice_settings 를
+      // 해시하지 않는다. 이미 만들어 둔 오디오는 옛 속도 그대로 서빙되므로, 값을 바꿀 때는
+      // 캐시 무효화를 함께 생각할 것(태그가 텍스트에 있으면 텍스트 변화로 자동 무효화된다).
+      speed: options?.speed ?? 0.9,
       use_speaker_boost: options?.use_speaker_boost ?? true,
     };
     body.voice_settings = voiceSettings;

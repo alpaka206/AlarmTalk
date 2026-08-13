@@ -23,6 +23,7 @@ import {
   generateDynamicAlarmTextWithVertex,
   generatePrerenderClipText,
   deriveAlarmDisplayText,
+  normalizeAlarmTextWithoutTags,
   parseSpeechStyle,
   prepareAlarmTextWithVertex,
   type WeatherSignal,
@@ -1154,7 +1155,11 @@ tts.post('/generate', async (c) => {
       synthesisLanguage = inferred === 'en' && latinOverride ? requestedLanguage : inferred;
     }
 
-    if (synthesisText.length > 200) {
+    // ⚠ **태그를 뺀 길이로 잰다**(2026-08-13 — C안).
+    // 200자는 **사용자에게 들리는 말**의 상한이다. 태그는 낭독되지 않는데 예전에는 그것까지
+    // 세어서, 태그가 여러 개 붙으면(`[through gritted teeth]` 하나만 24자) 규격대로 만든
+    // 문구가 뒤늦게 400 으로 거절됐다.
+    if (normalizeAlarmTextWithoutTags(synthesisText).length > 200) {
       return c.json(
         { error: 'Prepared text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
         400,

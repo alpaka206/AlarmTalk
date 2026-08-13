@@ -145,8 +145,16 @@ internal fun MainViewModel.createVoiceProfiles(
         return false
     }
     // 관계·호칭은 선택 입력 — 비어 있으면 파트를 보내지 않는다(백엔드 옵셔널).
-    // 시스템 스톡 보이스는 개수 제한에서 제외 — 내가 만든 목소리만 센다.
-    if (voiceProfiles.count { it.isSystem != true } >= MAX_VOICE_PROFILES || pendingVoiceDraft != null) {
+    //
+    // ⚠ **이미 목소리가 있다고 막지 않는다**(2026-08-12 확정).
+    // 슬롯이 찼으면 **교체**로 간다 — 초안을 만들어 들어보고, 마음에 들 때 등록 확정
+    // 화면에서 "기존 목소리를 교체할까요" 를 묻는다(`replaceExistingChecked`).
+    // 여기서 막으면 그 화면에 도달할 수 없어 교체가 죽은 코드가 된다.
+    //
+    // 다만 **초안이 이미 떠 있으면** 새로 만들지 않는다 — 그건 한도가 아니라 '결정을
+    // 안 끝낸 등록이 하나 있다' 는 뜻이라, 그 결정부터 마쳐야 한다. UI 쪽
+    // `canOpenCreateForm` 과 **같은 기준**이다.
+    if (pendingVoiceDraft != null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
         return false
     }

@@ -579,7 +579,12 @@ final class AlarmKitViewModel: ObservableObject {
             guard record.playModeEnum != .alarmOnly else { return nil }
             let trimmed = record.voiceText?.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let trimmed, !trimmed.isEmpty else { return nil }
-            return trimmed
+            // ⚠ **delivery 태그를 벗겨서 싣는다.** 이 문구는 잠금화면 alert 과 Live Activity
+            // 인용문으로 그대로 보인다 — 태그가 섞이면 대괄호가 화면에 뜬다.
+            // 판정은 **출처**다(안드로이드 `RingingActivity.toRingingUiState` 와 같은 축):
+            // 생성 문구·테마 클립은 우리가 만든 것이라 벗기고, 직접 입력은 손대지 않는다.
+            let generated = record.voiceRandomPrompt || (record.bucketId).nilIfBlank != nil
+            return DeliveryTags.strip(trimmed, generated: generated)
         }()
         let metadata = AlarmTalkMetadata(
             localAlarmID: record.id,
