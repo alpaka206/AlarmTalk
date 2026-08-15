@@ -521,7 +521,7 @@ struct AlarmEditorSheet: View {
                 AlarmSoundSettingsPane(
                     soundUri: $draft.alarmSoundUri,
                     soundLabel: $draft.alarmSoundLabel,
-                    onPreview: { url in previewAlarmSound(url) },
+                    onPreview: { url, restart in previewAlarmSound(url, restart: restart) },
                     previewingPath: previewingAlarmSoundPath
                 )
             case .voiceOutput:
@@ -827,9 +827,14 @@ struct AlarmEditorSheet: View {
 
     /// 알람음 미리듣기 — 편집기의 단일 플레이어로 튼다(목소리 미리듣기와 같은 자리).
     /// 같은 것을 다시 누르면 멈춘다.
-    func previewAlarmSound(_ url: URL?) {
-        guard let url else { return }
-        if previewingAlarmSoundPath == url.path {
+    func previewAlarmSound(_ url: URL?, restart: Bool = false) {
+        guard let url else {
+            editorPreviewPlayer.stop()
+            previewingAlarmSoundPath = nil
+            return
+        }
+        // 스피커 버튼은 토글(같은 것을 누르면 멈춤), 행을 골라서 오면 항상 다시 튼다.
+        if !restart, previewingAlarmSoundPath == url.path {
             editorPreviewPlayer.stop()
             previewingAlarmSoundPath = nil
             return

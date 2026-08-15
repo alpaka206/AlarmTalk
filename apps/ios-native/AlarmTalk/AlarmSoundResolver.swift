@@ -82,6 +82,23 @@ enum AlarmSoundResolver {
         return keys.first { audioCache.cachedURL(for: $0) != nil }
     }
 
+    /// 저장된 알람음 값을 파일 URL 로 읽는다.
+    ///
+    /// ⚠ **`URL(string:)` 하나로 판단하지 말 것**(2026-08-16 실기기에서 잡음). 알람음
+    /// 픽커는 `/Library/Ringtones/Alarm.m4r` 같은 **맨 경로**를 저장하는데,
+    /// `URL(string:)` 은 스킴이 없는 그 문자열로 상대 URL 을 만들어 `isFileURL` 이
+    /// **false** 가 된다 — 스테이징은 멀쩡히 되는데 판정만 `systemDefault` 로 떨어져
+    /// **고른 벨소리가 조용히 기본음으로 울렸다.**
+    ///
+    /// 안드로이드에서 동기화된 `content://` URI 는 파일이 아니므로 여기서 nil 이 되고,
+    /// 그대로 기본음으로 간다(그게 맞다 — 그 파일은 이 기기에 없다).
+    static func fileURL(forStoredURI uri: String?) -> URL? {
+        guard let uri, !uri.isEmpty else { return nil }
+        if uri.hasPrefix("/") { return URL(fileURLWithPath: uri) }
+        guard let url = URL(string: uri), url.isFileURL else { return nil }
+        return url
+    }
+
     static func resolve(
         for record: LocalAlarmRecord,
         audioCache: AudioCacheStore
@@ -121,10 +138,7 @@ enum AlarmSoundResolver {
         }
 
         // 2) 사용자가 선택한 시스템/번들 사운드 URI
-        if let uriString = record.alarmSoundUri,
-           !uriString.isEmpty,
-           let url = URL(string: uriString),
-           url.isFileURL,
+        if let url = fileURL(forStoredURI: record.alarmSoundUri),
            FileManager.default.fileExists(atPath: url.path),
            let bundled = try? AlarmSoundStaging.stage(url: url, key: "alarm-\(record.id)") {
             return .bundledNamed(bundled)

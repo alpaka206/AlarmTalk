@@ -188,7 +188,8 @@ struct AlarmSoundSettingsPane: View {
     @Binding var soundUri: String?
     @Binding var soundLabel: String?
     /// 미리듣기 — 화면이 소유한 플레이어로 이 파일을 튼다.
-    let onPreview: (URL?) -> Void
+    /// `restart` 가 참이면 같은 파일이어도 멈추지 않고 처음부터 다시 튼다(고를 때).
+    let onPreview: (URL?, Bool) -> Void
     let previewingPath: String?
 
     private var entries: [SystemRingtoneLibrary.Entry] { SystemRingtoneLibrary.entries }
@@ -203,6 +204,8 @@ struct AlarmSoundSettingsPane: View {
                 ) {
                     soundUri = nil
                     soundLabel = nil
+                    // 기본 알람음은 우리가 가진 파일이 없다 — 들려줄 게 없으니 재생만 멈춘다.
+                    onPreview(nil, true)
                 }
                 ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                     AlarmSettingDivider()
@@ -213,6 +216,10 @@ struct AlarmSoundSettingsPane: View {
                     ) {
                         soundUri = entry.url.path
                         soundLabel = entry.name
+                        // ⚠ **고르면 들린다**(2026-08-16 지시). 소리를 고르는 화면에서
+                        // 이름만 보고 정할 수는 없다 — 체크가 켜지는 순간 그 소리를 튼다.
+                        // 같은 것을 다시 골라도 처음부터 다시 튼다(`restart`).
+                        onPreview(entry.url, true)
                     }
                     .id(index)
                 }
@@ -259,7 +266,7 @@ struct AlarmSoundSettingsPane: View {
 
             if let previewURL {
                 Button {
-                    onPreview(previewURL)
+                    onPreview(previewURL, false)
                 } label: {
                     Image(systemName: previewingPath == previewURL.path ? "stop.fill" : "speaker.wave.2.fill")
                         .font(.system(size: 16, weight: .semibold))
