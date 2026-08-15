@@ -6,6 +6,9 @@ import SwiftUI
 /// X 닫기 버튼은 본 호스트가 표준화한다. 부모(MainTabsView)는 어떤 화면을 띄울지만
 /// `.sheet(item:)` 으로 결정하면 된다.
 struct AuxiliarySheetHost: View {
+    /// 맨 위로 올릴 때 쓰는 목적지 표식.
+    private static let topAnchorID = "auxiliary-screen-top"
+
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
     let screen: AuxiliaryScreen
@@ -37,19 +40,41 @@ struct AuxiliarySheetHost: View {
         if screen == .members {
             MemberManagementView()
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // 제목은 네비게이션 바에 있다 — 여기 `ScreenHeader` 를 되살리지 말 것.
-                    switch screen {
-                    case .people:
-                        PeoplePanel(onCodeRegistered: onCodeRegistered)
-                    case .billing:
-                        BillingPanel()
-                    case .members:
-                        EmptyView()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // 제목은 네비게이션 바에 있다 — 여기 `ScreenHeader` 를 되살리지 말 것.
+                        switch screen {
+                        case .people:
+                            PeoplePanel(onCodeRegistered: onCodeRegistered)
+                        case .billing:
+                            BillingPanel()
+                        case .members:
+                            EmptyView()
+                        }
+                    }
+                    .padding(20)
+                    .id(Self.topAnchorID)
+                }
+                // ⚠ **이용권에서 나가면 맨 위로 올린다**(2026-08-15 지시).
+                // 나가기 버튼은 화면 **아래쪽**에 있어서, 나간 뒤 그 자리에 그대로 있으면
+                // 바뀐 이용권 카드(맨 위)가 안 보인다 — 무엇이 달라졌는지 알 수 없다.
+                // 예전에는 토스트가 그 일을 대신했지만, 화면이 이미 말하는 것을 한 번 더
+                // 말하는 것이라 없앴다(같은 지시).
+                //
+                // 판정은 그룹이 **사라진 순간**이다(있다 → 없다). 처음부터 없던 사람은
+                // 화면을 건드리지 않는다.
+                //
+                // ⚠ **`.billing` 로 한정한다.** 나가기는 코드 등록 화면(`.people` 의
+                // `CodeRegisterRow` → '나가고 등록하기')에서도 일어나는데, 거기서는 나간
+                // **직후 입력창이 열린다** — 같이 맨 위로 올리면 방금 열린 그 입력창에서
+                // 사용자를 끌어내린다. 그쪽은 다음 할 일이 화면에 이미 있다.
+                .onChange(of: socialFeatures.familyGroup?.group?.id) { previous, current in
+                    guard screen == .billing, previous != nil, current == nil else { return }
+                    withAnimation(.snappy(duration: 0.25)) {
+                        proxy.scrollTo(Self.topAnchorID, anchor: .top)
                     }
                 }
-                .padding(20)
             }
             .homeGradientBackground()
         }

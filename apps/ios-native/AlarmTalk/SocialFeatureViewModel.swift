@@ -155,9 +155,12 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    private func refreshAllAfterMutation(session: AuthSession?, successMessage: String) async {
+    /// - Parameter successMessage: nil 이면 아무 말도 하지 않는다. 결과가 **화면에 이미
+    ///   드러나는** 변경(예: 이용권에서 나가면 카드가 '무료' 로 바뀐다)은 토스트로 한 번 더
+    ///   말할 이유가 없다 — 같은 말을 반복하면서 화면만 가린다.
+    private func refreshAllAfterMutation(session: AuthSession?, successMessage: String?) async {
         await refreshAll(session: session, force: true)
-        statusMessage = successMessage
+        if let successMessage { statusMessage = successMessage }
     }
 
     private func normalizedUserID(_ userID: String?) -> String? {
@@ -395,10 +398,10 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             _ = try await api.leaveFamilyGroup(groupId: groupId, token: token)
-            await refreshAllAfterMutation(
-                session: session,
-                successMessage: "이용권에서 나갔어요. 무료 이용권으로 전환됐어요."
-            )
+            // ⚠ **성공 문구를 다시 넣지 말 것**(2026-08-15 지시).
+            // 나가면 이용권 카드가 곧바로 '무료' 로 바뀐다 — 화면이 이미 그 사실을 말한다.
+            // 실패만 알린다(아래 catch) — 그건 화면에 안 나타나는 사실이다.
+            await refreshAllAfterMutation(session: session, successMessage: nil)
         } catch {
             statusMessage = userFacingErrorMessage(error, fallback: "이용권에서 나가지 못했어요")
         }

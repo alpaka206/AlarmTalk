@@ -144,6 +144,23 @@ internal fun AlarmListScreen(
     val hasAnyAlarm = sortedAlarms.isNotEmpty()
 
     val listState = rememberLazyListState()
+    // ⚠ **이용권에서 나가면 맨 위로 올린다**(2026-08-15 지시).
+    // 나가기 버튼은 화면 **아래쪽**에 있어서, 나간 뒤 그 자리에 그대로 있으면 바뀐 이용권
+    // 카드(맨 위)가 안 보인다 — 무엇이 달라졌는지 알 수 없다. 예전에는 토스트가 그 일을
+    // 대신했지만, 화면이 이미 말하는 것을 한 번 더 말하는 것이라 없앴다(같은 지시).
+    // 판정은 그룹이 **사라진 순간**이다(있다 → 없다). 처음부터 없던 사람은 건드리지 않는다.
+    //
+    // ⚠ **이용권 탭으로 한정한다.** 나가기는 코드 등록 탭(`FamilyConnectionPanel` 의
+    // '나가고 등록하기')에서도 일어나는데, 거기서는 나간 **직후 입력창이 열린다** —
+    // 같이 맨 위로 올리면 방금 열린 그 입력창에서 사용자를 끌어내린다.
+    val sharedGroupId = familyGroup?.group?.id
+    var hadSharedGroup by remember { mutableStateOf(sharedGroupId != null) }
+    LaunchedEffect(sharedGroupId) {
+        if (hadSharedGroup && sharedGroupId == null && selectedTab == NativeTab.Billing) {
+            listState.animateScrollToItem(0)
+        }
+        hadSharedGroup = sharedGroupId != null
+    }
 
     val homeGradient = homeGradientBrush()
     // 다중 선택 삭제 — 롱프레스로 들어가고, 하나도 안 남으면 자동으로 빠져나온다.
