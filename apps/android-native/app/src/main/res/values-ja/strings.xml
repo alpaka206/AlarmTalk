@@ -562,6 +562,9 @@
     <string name="voices_preview_edit_failed">フレーズを更新できませんでした。</string>
     <string name="voices_previous">戻る</string>
     <string name="voices_record_done_duration">録音完了 · %1$s</string>
+    <string name="voices_record_done">録音を保存しました</string>
+    <string name="common_voice_record_preview">録音を再生</string>
+    <string name="common_voice_record_again">録り直す</string>
     <string name="voices_record_video_tip">使いたい声の音源がなければ、動画を流して録音しても大丈夫です。</string>
     <string name="voices_record_script_title">例文</string>
     <string name="voices_record_too_short">12秒以上録音してください</string>

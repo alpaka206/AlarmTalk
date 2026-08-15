@@ -49,33 +49,6 @@ enum AlarmLocalAudioInputMode: String, CaseIterable, Hashable, Identifiable {
     var label: String { "녹음" }
 }
 
-/// 녹음 카드의 원형 버튼 — **크기를 여기서만 정한다.**
-///
-/// ⚠ **`.buttonStyle(.borderedProminent)` + `.frame(42)` 로 되돌리지 말 것**(2026-08-16
-/// 지적 "마이크 버튼이 불필요하게 크다"). 그 조합은 **라벨**이 42 이고 버튼 스타일이 그
-/// 바깥에 패딩을 더해 실제로는 60pt 를 넘었다. 안드로이드는 버튼 자체가 48dp·글리프 26dp 다
-/// (`VoiceInputControls`). 여기서는 44pt(아이폰 최소 터치 타깃) 원 + 20pt 글리프로 맞춘다.
-private struct RecordingCircleButton: View {
-    let systemName: String
-    let filled: Bool
-    let tint: Color
-    let onTint: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(filled ? onTint : tint)
-                .frame(width: 44, height: 44)
-                .background(
-                    Circle().fill(filled ? tint : tint.opacity(0.12))
-                )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 struct LocalAlarmAudioEditor: View {
     @Binding var mode: AlarmLocalAudioInputMode
     let isRecording: Bool
@@ -102,86 +75,32 @@ struct LocalAlarmAudioEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // ⚠ **알람 편집기에는 파일 업로드가 없다 — 녹음뿐이다**(2026-08-11 정리).
-            // 안드로이드 알람 편집기에는 처음부터 파일 선택 런처가 없고
-            // (`ui/editor/` 에 `OpenDocument`/`GetContent` 0건), iOS 에만 '녹음/파일'
-            // 세그먼트가 남아 있었다 — 같은 화면이 두 앱에서 다른 기능을 갖고 있었다.
+            // 안드로이드 알람 편집기에는 처음부터 파일 선택 런처가 없고, iOS 에만
+            // '녹음/파일' 세그먼트가 남아 있었다.
             //
-            // ⚠ **목소리를 만들 때의 파일 업로드는 그대로다**(`VoiceCloneUploadFlow`,
-            // 안드 `VoiceProfileManagementPanel` 의 `pickAudioLauncher`). 없앤 건
-            // **알람에 붙이는 오디오** 쪽뿐이다.
-            recordingCard
-
-            // ⚠ **카드가 이미 말하는 것을 한 번 더 쓰지 않는다**(2026-08-16 지시).
-            // 카드 제목이 상태를 그대로 말한다 — "녹음 중…" / "녹음을 저장했어요.".
-            // 남기는 건 **아직 아무것도 없고 녹음 중도 아닌** 상태뿐이다: 마이크 권한 거부처럼
-            // 화면에 달리 나타나지 않는 사실이 여기로 온다.
-            if let message, !isRecording, !sourceReady {
-                Text(message)
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(isRecording ? theme.palette.primary : theme.palette.onSurfaceVariant)
-            }
+            // ⚠ **녹음 카드를 여기서 다시 그리지 말 것** — `RecordingCard` 하나를
+            // 목소리 등록 화면과 함께 쓴다(2026-08-16 정리).
+            RecordingCard(
+                isRecording: isRecording,
+                elapsedMs: elapsedMs,
+                maxDurationMs: Int(AlarmAudioLimits.maxDurationMillis),
+                hasRecording: sourceReady,
+                isPreviewing: isPreviewing,
+                // 카드 제목이 이미 상태를 말한다 — 남기는 건 아직 아무것도 없고 녹음 중도
+                // 아닐 때뿐이다(마이크 권한 거부처럼 달리 나타나지 않는 사실).
+                note: (isRecording || sourceReady) ? existingNote : (message ?? existingNote),
+                onRecord: onRecord,
+                onPreview: onPreview,
+                onRedo: onClear
+            )
         }
     }
 
-    private var recordingCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(isRecording ? "녹음 중…" : (hasRecording ? "녹음을 저장했어요." : "녹음하기"))
-                        .font(theme.typography.labelLarge)
-                    Text("\(durationLabel) / \(HelperFormatters.audioTimeLabel(Int(AlarmAudioLimits.maxDurationMillis)))")
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .monospacedDigit()
-                }
-                Spacer()
-                // ⚠ **녹음물이 있으면 마이크 자리에 [재생][다시 녹음] 을 둔다**(2026-08-16 지시,
-                // 안드로이드 `RecordedPlaybackControls` 와 같은 구조). 예전에는 마이크 버튼을
-                // 그대로 두고 카드 **아래에** [미리듣기][지우기] 를 따로 깔아서, 같은 대상에
-                // 대한 조작이 두 층에 흩어져 있었다.
-                if sourceReady && !isRecording {
-                    HStack(spacing: 8) {
-                        RecordingCircleButton(
-                            systemName: isPreviewing ? "stop.fill" : "play.fill",
-                            filled: true,
-                            tint: theme.palette.primary,
-                            onTint: theme.palette.onPrimary,
-                            action: onPreview
-                        )
-                        .accessibilityLabel(Text(isPreviewing ? "정지" : "들어보기"))
-
-                        RecordingCircleButton(
-                            systemName: "arrow.counterclockwise",
-                            filled: false,
-                            tint: theme.palette.primary,
-                            onTint: theme.palette.onPrimary,
-                            action: onClear
-                        )
-                        .accessibilityLabel(Text("다시 녹음"))
-                    }
-                } else {
-                    RecordingCircleButton(
-                        systemName: isRecording ? "stop.fill" : "mic.fill",
-                        filled: true,
-                        tint: isRecording ? theme.palette.error : theme.palette.primary,
-                        onTint: theme.palette.onPrimary,
-                        action: onRecord
-                    )
-                    .accessibilityLabel(Text(isRecording ? "녹음 정지" : "녹음 시작"))
-                }
-            }
-            if let existingAudioLabel, !hasRecording {
-                Text(existingAudioLabel)
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-            }
-        }
-        .padding(12)
-        .background(theme.palette.surfaceVariant.opacity(0.36))
-        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.extraSmall, style: .continuous))
+    /// 알람에 이미 붙어 있는 오디오 이름 — 방금 녹음한 것이 없을 때만 알린다.
+    private var existingNote: String? {
+        guard !hasRecording, let existingAudioLabel else { return nil }
+        return existingAudioLabel
     }
-
-
 }
 
 // ⚠ **`FamilyAlarmTargetPicker` 를 되살리지 말 것**(2026-08-07 삭제).

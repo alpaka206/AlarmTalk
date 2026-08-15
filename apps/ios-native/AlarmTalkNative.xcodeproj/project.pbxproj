@@ -151,6 +151,7 @@
 		814E84365280A011DC135BC1 /* OssLicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3418B6C866BD7A4BAF69FB1 /* OssLicensesView.swift */; };
 		818CC0BF3E1B51CD300F3830 /* voice_greeting_hajun_ko.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 66FA500843DCB64B5B77DA13 /* voice_greeting_hajun_ko.mp3 */; };
 		822BF97D51FEB70BC1D925A2 /* AlarmSoundResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53BAD8F9B0E655C8E2254C40 /* AlarmSoundResolverTests.swift */; };
+		834400622874F237C2205FED /* RecordingCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA2EF92A73BBC33831C8537B /* RecordingCard.swift */; };
 		841A22ED805CADE2B01A83C7 /* BottomSheetTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DE2A85FEF42595620EE8493 /* BottomSheetTitle.swift */; };
 		8468AF1E6FF5099FA045B85D /* AudioCropper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3D0092573DFD5413095F8F /* AudioCropper.swift */; };
 		847E326E00C271050BE220FE /* CodeRegisterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5CCEC96A4778ED2DEC90A7C /* CodeRegisterRow.swift */; };
@@ -515,6 +516,7 @@
 		B7065575F6074636D0156AA8 /* RepeatCardSpacingUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepeatCardSpacingUITests.swift; sourceTree = "<group>"; };
 		B7C7DB895FE539AF37107B3E /* EditorKeyboardUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorKeyboardUITests.swift; sourceTree = "<group>"; };
 		BA09D222C2E3EABB05079D94 /* PaidGateCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaidGateCopy.swift; sourceTree = "<group>"; };
+		BA2EF92A73BBC33831C8537B /* RecordingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCard.swift; sourceTree = "<group>"; };
 		BADA528D38223487FC759B16 /* voice_greeting_mina_ja.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_mina_ja.mp3; sourceTree = "<group>"; };
 		BB22C58302991D362441AF21 /* PushNotificationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationCoordinator.swift; sourceTree = "<group>"; };
 		BC6803137321D0177FF40243 /* BackgroundSyncTaskTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncTaskTests.swift; sourceTree = "<group>"; };
@@ -802,6 +804,7 @@
 				28A5CC978F50C5EA5D29A99D /* PlanTier.swift */,
 				DB37514CB12D62CC34E1E0F3 /* PreviewSupport.swift */,
 				74945BF64F5846A12BDA23B6 /* PromptDetailCard.swift */,
+				BA2EF92A73BBC33831C8537B /* RecordingCard.swift */,
 				EC6B972EFA8543A20D363BEE /* SectionCard.swift */,
 				1D97B19A1D9E8E81B2EBCFA6 /* SelectionSheet.swift */,
 				08C420EC89C426D8BAE3E0D0 /* SheetContentHeight.swift */,
@@ -1411,6 +1414,7 @@
 				1DF582024EBC322A9E3996A5 /* PromptDetailCard.swift in Sources */,
 				3E0A8073240914691C18761C /* PushNotificationCoordinator.swift in Sources */,
 				B12C38F17D8F80C34124BD88 /* ReceivedAlarmBadgeStore.swift in Sources */,
+				834400622874F237C2205FED /* RecordingCard.swift in Sources */,
 				57ADA6ACCC85DFE6A0015F10 /* RemoteAlarmMapper.swift in Sources */,
 				6A65D2105CD5F35BB89FA3E7 /* RemoteAlarmPullSync.swift in Sources */,
 				9B207F7901C5B7F4124ABDCC /* RemoteAlarmPushSync.swift in Sources */,

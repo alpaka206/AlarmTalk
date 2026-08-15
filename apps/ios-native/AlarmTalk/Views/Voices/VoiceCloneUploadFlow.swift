@@ -291,10 +291,19 @@ struct VoiceCloneUploadFlow: View {
         .sectionSurface()
     }
 
+    /// ⚠ **녹음 UI 를 여기서 새로 그리지 말 것**(2026-08-16 정리).
+    /// 예전에는 지름 100pt 원형 버튼 + 18칸 파형이었고, 알람 편집기는 전혀 다른 카드였다 —
+    /// 같은 일(녹음)을 하는 화면이 앱마다·화면마다 다른 모양이었다. 이제 `RecordingCard`
+    /// 하나를 두 화면이 함께 쓴다(안드로이드도 `VoiceRecordControls` 하나로 합쳤다).
     private var recordingSection: some View {
-        VStack(alignment: .center, spacing: 14) {
-            // 큰 원형 녹음 버튼.
-            Button {
+        RecordingCard(
+            isRecording: voice.recorder.isRecording,
+            elapsedMs: Int(voice.recorder.elapsedSeconds * 1000),
+            maxDurationMs: VoiceProfileLimits.maxDurationMs,
+            hasRecording: voice.recorder.latestRecordingURL != nil,
+            isPreviewing: false,
+            note: nil,
+            onRecord: {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if voice.recorder.isRecording {
                     voice.stopRecording()
@@ -305,32 +314,10 @@ struct VoiceCloneUploadFlow: View {
                         startLevelAnimation()
                     }
                 }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(voice.recorder.isRecording ? AlarmTalkTheme.error : AlarmTalkTheme.primary)
-                        .frame(width: 100, height: 100)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white.opacity(0.5), lineWidth: 4)
-                                .scaleEffect(1.0 + animatedLevel * 0.2)
-                                .opacity(voice.recorder.isRecording ? 1 : 0)
-                        )
-                    Image(systemName: voice.recorder.isRecording ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 36, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-            }
-            .buttonStyle(.plain)
-
-            Text(voice.recorder.isRecording ? "녹음 중…" : (voice.recorder.latestRecordingURL == nil ? "녹음을 시작해 주세요" : "녹음을 저장했어요"))
-                .font(.subheadline.weight(.semibold))
-
-            // 단순 파형 시각화 — 18개 막대를 임의 높이로.
-            RecordingWaveform(active: voice.recorder.isRecording, level: animatedLevel)
-        }
-        .frame(maxWidth: .infinity)
-        .sectionSurface()
+            },
+            onPreview: nil,
+            onRedo: { voice.recorder.clearLatest() }
+        )
     }
 
     private var sourceModeSection: some View {
@@ -869,42 +856,3 @@ struct VoiceCloneUploadFlow: View {
 }
 
 // MARK: - Waveform
-
-/// 녹음 중 보여줄 단순 막대 파형. 실제 마이크 amplitude 미사용 시 fallback.
-private struct RecordingWaveform: View {
-    let active: Bool
-    let level: CGFloat
-
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<18) { idx in
-                Capsule()
-                    .fill(active ? AlarmTalkTheme.error : AlarmTalkTheme.outline)
-                    .frame(width: 4, height: barHeight(for: idx))
-            }
-        }
-        .frame(height: 44)
-    }
-
-    private func barHeight(for idx: Int) -> CGFloat {
-        if !active {
-            return 8 + CGFloat((idx % 4)) * 2.5
-        }
-        let phaseOffset = sin(Double(idx) * 0.6 + Double(level) * 4.0)
-        let amplitude = 12 + CGFloat(abs(phaseOffset)) * 28 * level
-        return max(8, amplitude)
-    }
-}
-
-#if DEBUG
-#Preview("VoiceCloneUploadFlow (light)") {
-    VoiceCloneUploadFlow(route: .constant(.clone))
-        .voiceAlarmPreviewEnvironment()
-}
-
-#Preview("VoiceCloneUploadFlow (dark)") {
-    VoiceCloneUploadFlow(route: .constant(.clone))
-        .preferredColorScheme(.dark)
-        .voiceAlarmPreviewEnvironment()
-}
-#endif

@@ -304,25 +304,28 @@ internal fun VoiceAudioCard(
                 // '목소리 만들기'(음성 클로닝)에만 있고, 그 경로는 그대로 유지된다.
                 // 녹음이 끝나면 마이크→재생 버튼, 우측 시간→'다시 녹음' 아이콘으로 바꾼다.
                 // 미리듣기·지우기 별도 버튼은 두지 않는다(재생/다시 녹음이 대신한다).
-                if (editor.localAudioUri != null && !isRecording) {
-                    RecordedPlaybackControls(
-                        isPreviewActive = isCachedAudioPreviewActive,
-                        isPreparing = isPreviewPreparing,
-                        onPlay = onPreviewAudio,
-                        // '다시 녹음'은 즉시 녹음을 시작하지 않고 재생 중인 미리듣기를 멈춘 뒤 기존 녹음을
-                        // 비워 대기(멈춘) 상태로 되돌린다 → VoiceRecordControls(마이크 대기)로 전환.
-                        onRedo = onDiscardRecording,
-                    )
-                } else {
-                    VoiceRecordControls(
-                        isRecording = isRecording,
-                        elapsedMillis = recordingElapsedMillis,
-                        maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
-                        level = recordingLevel,
-                        enabled = true,
-                        onRecordClick = onRecord,
-                    )
-                }
+                // ⚠ **녹음 UI 는 `VoiceRecordControls` 하나다**(2026-08-16 정리).
+                // 예전에는 녹음 전/후로 컴포넌트가 갈려(`RecordedPlaybackControls`) 같은
+                // 카드가 상태에 따라 다른 모양으로 바뀌었고, 목소리 등록 화면은 또 다른
+                // 조합을 쓰고 있었다. 이제 두 화면이 같은 카드를 쓴다.
+                VoiceRecordControls(
+                    isRecording = isRecording,
+                    elapsedMillis = recordingElapsedMillis,
+                    maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
+                    level = recordingLevel,
+                    enabled = true,
+                    onRecordClick = onRecord,
+                    // 녹음물이 있으면(그리고 녹음 중이 아니면) '저장됨' 상태로 그린다.
+                    // 값은 방금 녹음한 길이다 — 기존 알람을 열어 온 경우엔 0 이고,
+                    // 그때도 카드 제목이 "녹음을 저장했어요" 라고 상태를 말한다.
+                    recordedDurationMillis = recordingElapsedMillis
+                        .takeIf { editor.localAudioUri != null && !isRecording },
+                    isRecordedPreviewActive = isCachedAudioPreviewActive,
+                    isRecordedPreviewPreparing = isPreviewPreparing,
+                    onPreviewRecording = onPreviewAudio.takeIf { editor.localAudioUri != null },
+                    // '다시 녹음' 은 재생을 멈추고 녹음물을 비워 대기 상태로 되돌린다.
+                    onRedoRecording = onDiscardRecording.takeIf { editor.localAudioUri != null },
+                )
                 // 녹음 모드에도 목소리 크기를 녹음 박스 바로 아래에 둔다(세부설정엔 두지 않음).
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -796,71 +799,6 @@ internal fun MessageModeSummaryRow(
         }
     }
 }
-
-// 녹음 완료 상태 — 마이크 자리는 재생(▶/■), 우측 시간 자리는 '다시 녹음'(↻) 아이콘.
-// 미리듣기·지우기 별도 버튼을 없애고 이 카드가 재생·재녹음을 모두 담당한다.
-@Composable
-private fun RecordedPlaybackControls(
-    isPreviewActive: Boolean,
-    isPreparing: Boolean,
-    onPlay: () -> Unit,
-    onRedo: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerCardShape,
-        color = MaterialTheme.colorScheme.surface,
-        border = wakerCardBorder(),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Button(
-                onClick = onPlay,
-                // 캐시 오디오 준비 중엔 눌러도 소용없으므로 비활성으로 로딩을 알린다.
-                enabled = !isPreparing,
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape,
-                contentPadding = PaddingValues(0.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            ) {
-                Icon(
-                    imageVector = if (isPreviewActive) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
-                    contentDescription = stringResource(
-                        if (isPreviewActive) R.string.editor_audio_preview_stop else R.string.editor_audio_preview_play,
-                    ),
-                    modifier = Modifier.size(26.dp),
-                )
-            }
-            Text(
-                text = stringResource(R.string.editor_recorded_done),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            IconButton(
-                onClick = onRedo,
-                modifier = Modifier.size(44.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Refresh,
-                    contentDescription = stringResource(R.string.editor_record_again),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-// '목소리 크기' 요약 행 — 현재 볼륨(%)을 보여주고 누르면 목소리 출력 pane(볼륨·반복)을 연다.
-// 목소리 카드 안에 놓이므로 자체 박스를 그리지 않는다(투명). 볼륨을 세부설정에서 이 카드로 옮겼다.
 @Composable
 private fun VoiceVolumeSummaryRow(volumePercent: Int, onClick: () -> Unit) {
     Surface(

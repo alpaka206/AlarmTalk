@@ -587,6 +587,9 @@
     <string name="voices_preview_edit_failed">문구를 수정하지 못했어요.</string>
     <string name="voices_previous">이전</string>
     <string name="voices_record_done_duration">녹음 완료 · %1$s</string>
+    <string name="voices_record_done">녹음을 저장했어요</string>
+    <string name="common_voice_record_preview">녹음 들어보기</string>
+    <string name="common_voice_record_again">다시 녹음</string>
     <string name="voices_record_video_tip">원하는 목소리 파일이 없다면 영상을 틀고 녹음해도 돼요.</string>
     <string name="voices_record_script_title">예시 대본</string>
     <string name="voices_record_too_short">12초 이상 녹음해 주세요</string>

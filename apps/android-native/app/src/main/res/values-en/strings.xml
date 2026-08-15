@@ -554,6 +554,9 @@ We\'ll play it for you as soon as it\'s ready.</string>
     <string name="voices_preview_edit_failed">Couldn\'t update the line.</string>
     <string name="voices_previous">Back</string>
     <string name="voices_record_done_duration">Recorded · %1$s</string>
+    <string name="voices_record_done">Recording saved</string>
+    <string name="common_voice_record_preview">Play recording</string>
+    <string name="common_voice_record_again">Record again</string>
     <string name="voices_record_video_tip">No file of the voice you want? Play a video and record that.</string>
     <string name="voices_record_script_title">Example script</string>
     <string name="voices_record_too_short">Record at least 12 seconds</string>
