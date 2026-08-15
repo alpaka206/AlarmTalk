@@ -248,14 +248,12 @@ internal fun VoiceAudioCard(
                                     weatherCity = editor.voiceWeatherCity,
                                     manualSelected = !editor.voiceRandomPrompt &&
                                         !editor.isActiveBucketAlarm(),
-                                    manualText = editor.voiceText,
                                     onClick = onOpenFreeBucketSettings,
                                 )
                             } else {
                                 MessageModeSummaryRow(
                                     isManual = !editor.voiceRandomPrompt && !editor.isActiveBucketAlarm(),
                                     randomContext = editor.voiceRandomContext,
-                                    manualText = editor.voiceText,
                                     onClick = onOpenRandomPromptSettings,
                                 )
                             }
@@ -567,7 +565,6 @@ private fun FreeThemeSummaryRow(
      */
     manualSelected: Boolean,
     /** 직접 입력 문구. 선택됐으면 이 행에도 함께 보여준다. */
-    manualText: String,
     onClick: () -> Unit,
 ) {
     // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
@@ -578,7 +575,7 @@ private fun FreeThemeSummaryRow(
         // 이 null 이 되는데, 예전에는 버킷만 보고 판정해서 문구를 넣어 놨는데도 행이
         // "문구를 준비하고 있어요" 라고 **거짓말**했다. 유료 요약 행
         // (`MessageModeSummaryRow`)과 같은 모양으로 문구까지 보여준다.
-        manualSelected && manualText.isNotBlank() -> "$manualLabel · $manualText"
+        // 위 `MessageModeSummaryRow` 와 같은 규약 — 종류만 말하고 문장은 싣지 않는다.
         manualSelected -> manualLabel
         // 날씨 버킷은 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
         selectedBucket == "weather" && weatherCity.isNotBlank() ->
@@ -745,18 +742,15 @@ internal fun FreeBucketSettingsPane(
 internal fun MessageModeSummaryRow(
     isManual: Boolean,
     randomContext: String,
-    // 직접 입력일 때 이 알람이 실제로 읽어 줄 문구. 새 알람이 직전 문구를 이어받게 되면서
-    // **여기 보여 주지 않으면 안 된다** — 종류만 '직접 입력' 이라고 적혀 있으면, 어제 넣은
-    // 문구를 그대로 물고 온 새 알람을 사용자가 알아챌 방법이 없다(생성형은 내용이 매번 새로
-    // 만들어져 이 위험이 없다). 전문은 문구 화면의 상세 카드에서 본다.
-    manualText: String = "",
     onClick: () -> Unit,
 ) {
     val valueLabel = when {
-        isManual -> {
-            val label = stringResource(R.string.editor_msg_mode_manual)
-            manualText.trim().takeIf { it.isNotBlank() }?.let { "$label · $it" } ?: label
-        }
+        // ⚠ **문장을 여기 붙이지 말 것**(2026-08-15 지시 "요약 행이고, 가져오는 건
+        // 가져오는 거고, 왜 화면에 띄워야 하냐"). 편집기 본문은 **무엇을 골랐는지**만
+        // 말한다 — 알람이 읽어 줄 문장은 문구 화면에서 본다.
+        // 예전에는 `"직접 입력 문구 · <문장>"` 으로 붙였고, 재생 방식을 바꿀 때 이 줄이
+        // 사라지는 카드에 실려 잠깐 읽히는 것이 계속 지적됐다.
+        isManual -> stringResource(R.string.editor_msg_mode_manual)
         // preset 은 목록에 없는 보이지 않는 기본값 → '기본 인사말'로 표기.
         normalizedRandomPromptContext(randomContext) == DefaultRandomPromptContext ->
             stringResource(R.string.editor_msg_mode_preset)

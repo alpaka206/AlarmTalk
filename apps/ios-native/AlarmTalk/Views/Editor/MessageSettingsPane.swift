@@ -326,9 +326,14 @@ struct MessageSettingsResult {
 ///
 /// ⚠ **직접 입력일 때는 문구까지 보여준다.** 생성형은 내용이 매번 새로 만들어져 틀릴
 /// 일이 없지만 직접 입력은 글자가 그대로다.
+/// 편집기 본문의 '문구' 요약 행.
+///
+/// ⚠ **알람이 읽어 줄 문장을 여기 싣지 말 것**(2026-08-15 지시 "요약 행이고, 가져오는 건
+/// 가져오는 거고, 왜 화면에 띄워야 하냐"). 이 행은 **무엇을 골랐는지**만 말한다 —
+/// 문장은 문구 화면에서 본다. 예전에는 `"직접 입력 · <문장>"` 으로 붙였다.
+/// 안드로이드 `VoiceAudioCard.MessageModeSummaryRow` 와 같은 규약이다.
 struct MessageModeSummaryRow: View {
     let context: String
-    let manualText: String
     let onTap: () -> Void
 
     private var summary: String {
@@ -341,9 +346,7 @@ struct MessageModeSummaryRow: View {
         case MessageSettingsResult.manualContext: label = "직접 입력"
         default: label = "기본 인사말"
         }
-        guard context == MessageSettingsResult.manualContext else { return label }
-        let text = manualText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? label : "\(label) · \(text)"
+        return label
     }
 
     var body: some View {

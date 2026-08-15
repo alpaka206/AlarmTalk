@@ -96,7 +96,6 @@ extension AlarmEditorSheet {
                             } else {
                                 MessageModeSummaryRow(
                                     context: currentMessageContext,
-                                    manualText: voiceStudio.ttsText,
                                     onTap: { messagePaneOpen = true }
                                 )
                             }
