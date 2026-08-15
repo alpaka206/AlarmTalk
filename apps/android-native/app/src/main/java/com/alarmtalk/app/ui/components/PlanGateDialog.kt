@@ -103,13 +103,10 @@ internal fun PlanGateDialog(
         message = message,
         onDismiss = onDismiss,
         modifier = modifier,
+        // ⚠ **순서는 [쿠폰이 있어요][이용권 보기][닫기] 다**(2026-08-15 지시).
+        // 하려던 일부터 위에 오고 빠져나가는 길이 맨 아래다 — iOS 알럿도 `.cancel` 을
+        // 맨 아래로 내리므로 두 앱이 같은 순서로 보인다.
         actions = buildList {
-            add(
-                IosAlertAction(
-                    label = stringResource(R.string.r3dlg_modal_dialog_close),
-                    onClick = onDismiss,
-                ),
-            )
             if (onRedeemCode != null) {
                 add(
                     IosAlertAction(
@@ -123,6 +120,12 @@ internal fun PlanGateDialog(
                     label = confirmLabel,
                     emphasized = true,
                     onClick = onConfirm,
+                ),
+            )
+            add(
+                IosAlertAction(
+                    label = stringResource(R.string.r3dlg_modal_dialog_close),
+                    onClick = onDismiss,
                 ),
             )
         },

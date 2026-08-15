@@ -431,10 +431,10 @@ struct AlarmEditorSheet: View {
                     voiceStudio.preparedAlarm = nil
                     if (voiceStudio.ttsText).nilIfBlank == nil { freeManualAlertOpen = true }
                 },
-                onManualLocked: {
-                    freeBucketPaneOpen = false
-                    showVoicePlanLockedAlert()
-                },
+                // ⚠ **문구 화면을 닫지 말 것**(2026-08-15 지시). 예전에는 게이트를 띄우기 전에
+                // 이 화면을 먼저 닫아서, 잠긴 행을 눌렀을 뿐인데 **고르던 화면 밖으로 튕겼다.**
+                // 알럿은 편집기(스택 루트)에 붙어 있어 밀어 올린 이 화면 위에 그대로 뜬다.
+                onManualLocked: { showVoicePlanLockedAlert() },
                 onChangeWeather: { freeWeatherSheetOpen = true }
             )
             // ⚠ **설정 화면과 같은 컴포넌트**를 쓴다(`WeatherCityPickerSheet`).
@@ -569,6 +569,11 @@ struct AlarmEditorSheet: View {
                     voiceGateAlert = nil
                     onRequestBilling?()
                 }
+                // ⚠ **이 줄이 색을 만든다.** 시스템 알럿은 버튼 색을 직접 못 주고,
+                // '기본 액션' 으로 지정된 버튼만 굵게(강조 색으로) 그린다.
+                // 안드로이드 `PlanGateDialog` 의 `emphasized = true` 와 같은 자리다 —
+                // 두 앱에서 같은 버튼이 강조돼야 한다.
+                .keyboardShortcut(.defaultAction)
             }
             Button("닫기", role: .cancel) { voiceGateAlert = nil }
         } message: { content in

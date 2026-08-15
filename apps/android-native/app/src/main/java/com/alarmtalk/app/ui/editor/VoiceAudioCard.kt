@@ -666,25 +666,13 @@ internal fun FreeBucketSettingsPane(
         color = MaterialTheme.colorScheme.background,
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_chevron_back),
-                        contentDescription = stringResource(R.string.editor_back),
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_msg_section),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            // 상단바는 공용 `WakerTopBar` 하나다 — 화면마다 손으로 그리지 말 것
+            // (알람 목록·설정·법무 문서가 모두 이걸 쓴다).
+            WakerTopBar(
+                title = stringResource(R.string.editor_msg_section),
+                onBack = onDismiss,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
+            )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
