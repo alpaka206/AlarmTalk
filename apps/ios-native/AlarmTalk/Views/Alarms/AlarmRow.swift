@@ -1,5 +1,6 @@
 import SwiftUI
 
+
 /// 알람 리스트의 한 줄 — 독립 카드.
 ///
 /// Android `ui/components/ControlsAndPermissions.kt:215-386` 의 `AlarmRow` 미러.
@@ -40,26 +41,12 @@ struct AlarmRow: View {
         ZStack(alignment: .trailing) {
             swipeDeleteBackground
             rowContent
-                // deleteRevealed 동안엔 내부 Button(편집)/Toggle 로 탭이 새지 않도록
-                // 본문 히트테스트를 끄고, 같은 영역을 덮는 투명 탭-캐처(아래 overlay)가
-                // 탭을 받아 행을 닫게 한다. (열린 상태에서 본문 탭 = 닫기)
-                .allowsHitTesting(!deleteRevealed)
                 .background(theme.palette.surface)
                 .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
                         .stroke(theme.palette.outlineVariant, lineWidth: 1)
                 )
-                .overlay {
-                    if deleteRevealed {
-                        // 행이 열려 있을 때 본문 위를 덮어 탭을 가로채 행을 닫는다.
-                        Color.clear
-                            .contentShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
-                            .onTapGesture {
-                                withAnimation(.snappy(duration: 0.2)) { resetSwipe() }
-                            }
-                    }
-                }
                 .offset(x: dragOffset)
                 // ⚠ **탭은 행 전체가 받는다.** `contentShape` 로 빈 자리까지 히트영역에
                 // 넣는다. 토글 스위치는 자식이라 제 탭을 먼저 가져가므로, 스위치를 눌러
@@ -82,6 +69,29 @@ struct AlarmRow: View {
                     guard !selectionMode else { return }
                     onEnterSelection()
                 }
+                // ⚠ **히트테스트는 제스처 체인 *끝*에서 끈다**(2026-08-16).
+                // 예전에는 `rowContent` 안쪽에 걸어 뒀는데, 그러면 바깥쪽 `.contentShape` +
+                // `.onTapGesture` 는 살아 있다. 그 히트 영역은 `.offset` 뒤에 붙어 있어
+                // **밀리지 않고 삭제 버튼 자리까지 덮었고**, 그 핸들러는 `guard
+                // !deleteRevealed` 로 아무 일도 안 한다 — 그래서 삭제 버튼을 눌러도
+                // **아무 반응이 없었다**(실기기 로그: "행 본문 탭 revealed=true").
+                .allowsHitTesting(!deleteRevealed)
+
+            // 열린 동안 본문 자리만 덮어 '탭하면 닫힘' 을 준다.
+            // ⚠ **삭제 버튼 자리(88)는 비워 둔다** — 덮으면 원래 버그로 돌아간다.
+            if deleteRevealed {
+                HStack(spacing: 0) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.snappy(duration: 0.2)) { resetSwipe() }
+                        }
+                        .simultaneousGesture(swipeGesture)
+                    Color.clear
+                        .frame(width: deleteRevealWidth)
+                        .allowsHitTesting(false)
+                }
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
     }

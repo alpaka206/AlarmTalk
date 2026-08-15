@@ -99,6 +99,7 @@
 		516F57BD13DEACD0054A1F59 /* BackgroundSyncTaskTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC6803137321D0177FF40243 /* BackgroundSyncTaskTests.swift */; };
 		51D90581A1404D03E7C24D13 /* BottomSheetHeightUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED4C4A68F57E02511151B588 /* BottomSheetHeightUITests.swift */; };
 		51DCBDEB655B962E4CD8D4A3 /* voice_greeting_mina_ja.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = BADA528D38223487FC759B16 /* voice_greeting_mina_ja.mp3 */; };
+		5250E609D4BAC7AF74B9485C /* AlarmSwipeDeleteUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 820BEA3D852D2A9153C506A2 /* AlarmSwipeDeleteUITests.swift */; };
 		5492863435B4BD0E97A7F73B /* GradientCta.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4FA548127A2AE3F3ED3B6D3 /* GradientCta.swift */; };
 		575988ABEFC6557E72CB222B /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21CBB976863F3883B2FCE2A2 /* Theme.swift */; };
 		57ADA6ACCC85DFE6A0015F10 /* RemoteAlarmMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C33B74B73D468DD0A54CBA5 /* RemoteAlarmMapper.swift */; };
@@ -461,6 +462,7 @@
 		815C67F5CF2B0B4499090916 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
 		816ABFEBE1925D4C5C1609D8 /* MemberManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemberManagementView.swift; sourceTree = "<group>"; };
 		8196F91EF515F9CE279AF0F9 /* MessageSettingsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageSettingsPane.swift; sourceTree = "<group>"; };
+		820BEA3D852D2A9153C506A2 /* AlarmSwipeDeleteUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSwipeDeleteUITests.swift; sourceTree = "<group>"; };
 		82C467C2565ADFF3EE449881 /* SessionTokenRenewal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTokenRenewal.swift; sourceTree = "<group>"; };
 		8387E0DA3E616BE65DAD2CA6 /* ConsentHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsentHistoryView.swift; sourceTree = "<group>"; };
 		8398E207DA979219DF2C1311 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -636,6 +638,7 @@
 			isa = PBXGroup;
 			children = (
 				DD780D23F3A7112A5CEF50E1 /* AlarmRowHitAreaUITests.swift */,
+				820BEA3D852D2A9153C506A2 /* AlarmSwipeDeleteUITests.swift */,
 				9E3E636EE972FA7B3F1B794B /* BillingScreenshotUITests.swift */,
 				ED4C4A68F57E02511151B588 /* BottomSheetHeightUITests.swift */,
 				AA03690DA383142AE06C1C09 /* CodeInputUITests.swift */,
@@ -1288,6 +1291,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				134E48F30DFE50037507CC9E /* AlarmRowHitAreaUITests.swift in Sources */,
+				5250E609D4BAC7AF74B9485C /* AlarmSwipeDeleteUITests.swift in Sources */,
 				9D1D3F902DCE5965551B5BB6 /* BillingScreenshotUITests.swift in Sources */,
 				51D90581A1404D03E7C24D13 /* BottomSheetHeightUITests.swift in Sources */,
 				0126E892C5E577371F872B08 /* CodeInputUITests.swift in Sources */,
