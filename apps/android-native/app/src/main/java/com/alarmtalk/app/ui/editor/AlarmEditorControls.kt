@@ -311,14 +311,31 @@ private val WeekdayLabels: List<Int> = listOf(
  */
 internal const val PlayModeSwitchDurationMillis = 280
 
+/**
+ * ⚠ **페이드와 크기를 같은 길이로 두지 말 것**(2026-08-15 재지적 "아주 잠깐 접히면서 보인다").
+ * 같은 길이면 **접히는 카드가 그대로 보인다** — 내용이 위아래로 눌리며 잘리는 게 다 노출된다.
+ * iOS 는 접히지 않는다: 조건부 뷰의 기본 전환이 `.opacity` 라 **제자리에서 사라지고** 아래
+ * 것들이 올라올 뿐이다. 그래서 여기서도 **먼저 지우고 그 다음에 접는다** — 접히는 동안에는
+ * 이미 투명해서 눌리는 모습이 안 보인다.
+ */
+private const val PlayModeFadeOutMillis = 120
+
+/** 반대로 나타날 땐 **자리를 먼저 열고** 내용을 뒤늦게 띄운다(눌린 채 나타나지 않게). */
+private const val PlayModeFadeInDelayMillis = 80
+
 /** 재생 방식에 따라 나타났다 사라지는 블록의 등장 전환. */
 internal fun playModeEnter(): EnterTransition =
-    fadeIn(tween(PlayModeSwitchDurationMillis)) +
-        expandVertically(tween(PlayModeSwitchDurationMillis))
+    expandVertically(tween(PlayModeSwitchDurationMillis)) +
+        fadeIn(
+            tween(
+                durationMillis = PlayModeSwitchDurationMillis - PlayModeFadeInDelayMillis,
+                delayMillis = PlayModeFadeInDelayMillis,
+            ),
+        )
 
 /** 같은 블록의 퇴장 전환. */
 internal fun playModeExit(): ExitTransition =
-    fadeOut(tween(PlayModeSwitchDurationMillis)) +
+    fadeOut(tween(PlayModeFadeOutMillis)) +
         shrinkVertically(tween(PlayModeSwitchDurationMillis))
 
 @Composable
