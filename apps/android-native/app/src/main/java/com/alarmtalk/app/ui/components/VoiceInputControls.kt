@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -266,9 +267,15 @@ internal fun VoiceRecordControls(
                     ),
                 ) {
                     Icon(
-                        // 솔리드 primary 원형 CTA 안이라 채운 글리프(Filled) — 하단바의
-                        // Filled.Mic(선택 상태)와 같은 계열로, 앱의 Outlined+Filled 체계를 유지한다.
-                        imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                        // ⚠ **마이크는 하단바 '목소리' 탭과 같은 글리프다**(2026-08-16 지시).
+                        // 예전 주석은 "하단바의 `Filled.Mic` 와 같은 계열" 이라고 적고 있었지만
+                        // 하단바는 머티리얼 아이콘이 아니라 `ic_tab_mic_fill` 을 쓴다 —
+                        // 근거가 틀린 주석이었고, 실제로 두 글리프의 모양이 달랐다.
+                        painter = if (isRecording) {
+                            rememberVectorPainter(Icons.Filled.Stop)
+                        } else {
+                            painterResource(R.drawable.ic_tab_mic_fill)
+                        },
                         contentDescription = if (isRecording) {
                             stringResource(R.string.common_voice_record_stop)
                         } else {

@@ -54,6 +54,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
 import com.alarmtalk.app.WakerTileShape
@@ -158,7 +159,10 @@ internal fun PermissionPanel(
                 onAction = { onRequestPermission(PermissionTarget.FullScreenIntent) },
             )
             PermissionRow(
-                icon = Icons.Outlined.Mic,
+                // ⚠ **마이크는 하단바 '목소리' 탭과 **같은 글리프**를 쓴다(2026-08-16 지시).
+                // 머티리얼 기본 `Icons.Outlined.Mic` 는 모양이 달라, 같은 것을 가리키는
+                // 아이콘이 화면마다 둘로 보였다.
+                iconPainter = painterResource(R.drawable.ic_tab_mic),
                 label = stringResource(R.string.common_permission_mic_label),
                 granted = permissions.recordAudio,
                 actionLabel = stringResource(R.string.common_permission_allow_action),
@@ -212,7 +216,9 @@ internal fun AlarmPermissionWarningBanner(
 
 @Composable
 internal fun PermissionRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    /** 벡터 대신 그릴 리소스 아이콘. 마이크처럼 앱 전용 글리프가 있는 항목이 쓴다. */
+    iconPainter: androidx.compose.ui.graphics.painter.Painter? = null,
     label: String,
     granted: Boolean,
     actionLabel: String,
@@ -242,7 +248,14 @@ internal fun PermissionRow(
                 },
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                    when {
+                        iconPainter != null -> Icon(
+                            painter = iconPainter,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        icon != null -> Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                    }
                 }
             }
             Column {

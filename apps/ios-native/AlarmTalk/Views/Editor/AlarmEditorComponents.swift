@@ -49,6 +49,33 @@ enum AlarmLocalAudioInputMode: String, CaseIterable, Hashable, Identifiable {
     var label: String { "녹음" }
 }
 
+/// 녹음 카드의 원형 버튼 — **크기를 여기서만 정한다.**
+///
+/// ⚠ **`.buttonStyle(.borderedProminent)` + `.frame(42)` 로 되돌리지 말 것**(2026-08-16
+/// 지적 "마이크 버튼이 불필요하게 크다"). 그 조합은 **라벨**이 42 이고 버튼 스타일이 그
+/// 바깥에 패딩을 더해 실제로는 60pt 를 넘었다. 안드로이드는 버튼 자체가 48dp·글리프 26dp 다
+/// (`VoiceInputControls`). 여기서는 44pt(아이폰 최소 터치 타깃) 원 + 20pt 글리프로 맞춘다.
+private struct RecordingCircleButton: View {
+    let systemName: String
+    let filled: Bool
+    let tint: Color
+    let onTint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(filled ? onTint : tint)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle().fill(filled ? tint : tint.opacity(0.12))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct LocalAlarmAudioEditor: View {
     @Binding var mode: AlarmLocalAudioInputMode
     let isRecording: Bool
@@ -84,10 +111,11 @@ struct LocalAlarmAudioEditor: View {
             // **알람에 붙이는 오디오** 쪽뿐이다.
             recordingCard
 
-            // ⚠ **녹음물이 있을 때는 안내를 한 번 더 하지 않는다**(같은 지시). 카드가 이미
-            // "녹음을 저장했어요." 라고 말한다. 다만 **녹음 전·녹음 중**에는 남긴다 —
-            // 마이크 권한 거부처럼 화면에 달리 나타나지 않는 사실이 여기로 온다.
-            if let message, !(sourceReady && !isRecording) {
+            // ⚠ **카드가 이미 말하는 것을 한 번 더 쓰지 않는다**(2026-08-16 지시).
+            // 카드 제목이 상태를 그대로 말한다 — "녹음 중…" / "녹음을 저장했어요.".
+            // 남기는 건 **아직 아무것도 없고 녹음 중도 아닌** 상태뿐이다: 마이크 권한 거부처럼
+            // 화면에 달리 나타나지 않는 사실이 여기로 온다.
+            if let message, !isRecording, !sourceReady {
                 Text(message)
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(isRecording ? theme.palette.primary : theme.palette.onSurfaceVariant)
@@ -113,31 +141,33 @@ struct LocalAlarmAudioEditor: View {
                 // 대한 조작이 두 층에 흩어져 있었다.
                 if sourceReady && !isRecording {
                     HStack(spacing: 8) {
-                        Button(action: onPreview) {
-                            Image(systemName: isPreviewing ? "stop.fill" : "play.fill")
-                                .font(.headline)
-                                .frame(width: 42, height: 42)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(theme.palette.primary)
+                        RecordingCircleButton(
+                            systemName: isPreviewing ? "stop.fill" : "play.fill",
+                            filled: true,
+                            tint: theme.palette.primary,
+                            onTint: theme.palette.onPrimary,
+                            action: onPreview
+                        )
                         .accessibilityLabel(Text(isPreviewing ? "정지" : "들어보기"))
 
-                        Button(action: onClear) {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.headline)
-                                .frame(width: 42, height: 42)
-                        }
-                        .buttonStyle(.bordered)
+                        RecordingCircleButton(
+                            systemName: "arrow.counterclockwise",
+                            filled: false,
+                            tint: theme.palette.primary,
+                            onTint: theme.palette.onPrimary,
+                            action: onClear
+                        )
                         .accessibilityLabel(Text("다시 녹음"))
                     }
                 } else {
-                    Button(action: onRecord) {
-                        Image(systemName: isRecording ? "stop.fill" : "mic.fill")
-                            .font(.headline)
-                            .frame(width: 42, height: 42)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(isRecording ? theme.palette.error : theme.palette.primary)
+                    RecordingCircleButton(
+                        systemName: isRecording ? "stop.fill" : "mic.fill",
+                        filled: true,
+                        tint: isRecording ? theme.palette.error : theme.palette.primary,
+                        onTint: theme.palette.onPrimary,
+                        action: onRecord
+                    )
+                    .accessibilityLabel(Text(isRecording ? "녹음 정지" : "녹음 시작"))
                 }
             }
             if let existingAudioLabel, !hasRecording {
