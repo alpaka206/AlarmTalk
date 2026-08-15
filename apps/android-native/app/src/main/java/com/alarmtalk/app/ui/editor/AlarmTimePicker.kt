@@ -8,6 +8,9 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -50,6 +53,7 @@ import kotlin.math.roundToInt
 import com.alarmtalk.app.fitToWidthBoxScale
 import com.alarmtalk.app.fitToWidthScale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun AlarmTimePickerCard(
     hour: Int,
@@ -173,6 +177,27 @@ internal fun AlarmTimePickerCard(
         applyDraft(column, typeInDraft.toIntOrNull())
         typeInDraft = ""
         editingColumn = null
+    }
+
+    // ⚠ **키패드를 내리면 입력도 끝나야 한다**(2026-08-15 지적).
+    // IME 를 내려도(뒤로가기·키보드 숨김 버튼) **포커스는 그대로**라 `onFocusChanged` 가 오지
+    // 않는다 — 커서가 남고, 이웃 숫자가 숨은 채로, 휠도 못 돌리는 상태로 갇힌다
+    // (`draggable(enabled = !anyEditing)`).
+    //
+    // 한 번이라도 **올라온 뒤**부터 센다. 편집을 막 열었을 때는 아직 안 올라와 있어서,
+    // 그걸 '내려갔다' 로 읽으면 입력창이 뜨자마자 스스로 닫힌다(2026-08-11 에 `onFocusChanged`
+    // 로 같은 사고가 났다).
+    val imeVisible = WindowInsets.isImeVisible
+    var imeWasVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(imeVisible, editingColumn) {
+        val column = editingColumn
+        if (column == null) {
+            imeWasVisible = false
+        } else if (imeVisible) {
+            imeWasVisible = true
+        } else if (imeWasVisible) {
+            endEdit(column)
+        }
     }
 
     fun applyHourSteps(steps: Int) {
