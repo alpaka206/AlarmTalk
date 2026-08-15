@@ -29,6 +29,11 @@ struct AlarmEditDraft: Equatable {
 
     var vibrationPattern: VibrationPattern
     var alarmVolumePercent: Int      // 0..100
+    /// 고른 알람음 파일 경로. 비면 OS 기본 알람음이다.
+    /// (`SystemRingtoneLibrary` 가 준 `/Library/Ringtones/...` 경로가 들어온다.)
+    var alarmSoundUri: String?
+    /// 그 알람음의 표시 이름. 목록을 못 읽는 기기에서도 저장된 이름은 보여줄 수 있게 함께 둔다.
+    var alarmSoundLabel: String?
     var voiceRandomPrompt: Bool
     var voiceRandomContext: String?
     var voiceWeatherCountry: String
@@ -84,6 +89,8 @@ struct AlarmEditDraft: Equatable {
         self.snoozeRepeatLimit = SnoozeRepeatLimit(rawValue: record.snoozeRepeatLimit) ?? .three
         self.vibrationPattern = record.vibrationPatternEnum
         self.alarmVolumePercent = max(0, min(100, record.alarmVolumePercent))
+        self.alarmSoundUri = record.alarmSoundUri
+        self.alarmSoundLabel = record.alarmSoundLabel
         self.voiceRandomPrompt = record.voiceRandomPrompt
         self.voiceRandomContext = RandomPromptContext.normalized(record.voiceRandomContext).rawValue
         self.voiceWeatherCountry = record.voiceWeatherCountry ?? ""
@@ -107,6 +114,8 @@ struct AlarmEditDraft: Equatable {
         snoozeRepeatLimit: SnoozeRepeatLimit,
         vibrationPattern: VibrationPattern,
         alarmVolumePercent: Int,
+        alarmSoundUri: String? = nil,
+        alarmSoundLabel: String? = nil,
         voiceRandomPrompt: Bool = false,
         voiceRandomContext: String? = RandomPromptContext.defaultContext.rawValue,
         voiceWeatherCountry: String = "",
@@ -123,6 +132,8 @@ struct AlarmEditDraft: Equatable {
         self.repeatDaysMask = repeatDaysMask
         self.holidayOff = holidayOff
         self.playMode = playMode
+        self.alarmSoundUri = alarmSoundUri
+        self.alarmSoundLabel = alarmSoundLabel
         self.snoozeEnabled = snoozeEnabled
         self.snoozeMinutes = snoozeMinutes
         self.snoozeRepeatLimit = snoozeRepeatLimit
@@ -305,8 +316,8 @@ struct AlarmEditDraft: Equatable {
             // 그 값이 in-app 폴백 재생을 막아 '목소리 알람인데 목소리가 안 난다' 가 됐다.
             // 화면에 그 값을 되돌릴 컨트롤이 더는 없으므로 저장 시 정규화한다.
             alarmVolumePercent: alarmVolumePercent > 0 ? alarmVolumePercent : 100,
-            alarmSoundUri: existing?.alarmSoundUri,
-            alarmSoundLabel: existing?.alarmSoundLabel,
+            alarmSoundUri: alarmSoundUri,
+            alarmSoundLabel: alarmSoundLabel,
             enabled: true,
             state: AlarmRuntimeState.armed.rawValue,
             createdAtMillis: existing?.createdAtMillis ?? nowMillis,

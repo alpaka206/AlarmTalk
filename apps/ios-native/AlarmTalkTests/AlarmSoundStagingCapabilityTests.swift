@@ -73,6 +73,36 @@ final class AlarmSoundStagingCapabilityTests: XCTestCase {
         try? FileManager.default.removeItem(at: out)
     }
 
+    /// **기기 벨소리(`.m4r`)도 스테이징돼야 한다.**
+    ///
+    /// 알람음 픽커가 `/Library/Ringtones` 를 그대로 보여주는데, 그 파일은 전부 `.m4r` 이다.
+    /// 2026-08-16 실기기 실측에서 `unsupportedFormat("m4r")` 로 **전부 거부**됐다 —
+    /// 그러면 고른 벨소리가 조용히 기본 알람음으로 울린다(화면이 없는 기능을 광고하는 꼴).
+    /// `.m4r` 은 MPEG-4 컨테이너 안 AAC 라 `.m4a` 와 같은 것이고 `AVAssetReader` 가 읽는다.
+    func test_stage_m4r도_caf로_만든다() throws {
+        let m4a = try makeSilentM4A()
+        // 확장자만 벨소리와 같게 바꾼다 — 컨테이너는 동일하다.
+        let m4r = m4a.deletingPathExtension().appendingPathExtension("m4r")
+        try? FileManager.default.removeItem(at: m4r)
+        try FileManager.default.moveItem(at: m4a, to: m4r)
+        defer { try? FileManager.default.removeItem(at: m4r) }
+
+        let staged = try AlarmSoundStaging.stage(url: m4r, key: "ringtone-probe")
+        let dir = try XCTUnwrap(
+            FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
+        ).appendingPathComponent("Sounds", isDirectory: true)
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        let fileName = try XCTUnwrap(
+            contents.first { ($0 as NSString).deletingPathExtension == staged },
+            "staged 파일이 없다 (dir: \(contents))"
+        )
+        XCTAssertEqual((fileName as NSString).pathExtension, "caf")
+        let out = dir.appendingPathComponent(fileName)
+        let player = try AVAudioPlayer(contentsOf: out)
+        XCTAssertGreaterThan(player.duration, 0, "벨소리를 변환했는데 길이가 0 이다")
+        try? FileManager.default.removeItem(at: out)
+    }
+
     // MARK: - Helpers
 
     /// 1초짜리 무음 m4a 를 만든다(캐시된 TTS 클립과 같은 컨테이너).

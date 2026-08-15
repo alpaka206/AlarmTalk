@@ -146,6 +146,7 @@
 		7D72F169889A82309309A05F /* VoiceAddButtonUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE5D7E8DD641A9D8C4B32D01 /* VoiceAddButtonUITests.swift */; };
 		7ED631668055534947A7F836 /* voice_greeting_adam_ja.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 9E9B8DB91D8FBB1794BC2C1E /* voice_greeting_adam_ja.mp3 */; };
 		7FBA137EBE5195718A628111 /* HelperFormattersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6CD38FF3D3609DABDD69394 /* HelperFormattersTests.swift */; };
+		7FDC4E56D4957EC75DDB80DA /* SystemRingtoneLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A618C960A5C47C0E23AC73B /* SystemRingtoneLibrary.swift */; };
 		7FEA6BDB2C6E1D2BD6DD9716 /* TimeWheelSnapDirectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 320982177F200F5D3B23972B /* TimeWheelSnapDirectionTests.swift */; };
 		80DF2F14CA7B8F775875874E /* FortunePromptInputFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1348344040C8AFF0EECE3D69 /* FortunePromptInputFields.swift */; };
 		814E84365280A011DC135BC1 /* OssLicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3418B6C866BD7A4BAF69FB1 /* OssLicensesView.swift */; };
@@ -376,6 +377,7 @@
 		38D3E3B14EF8A55A1C28CE8D /* ThemeSheetHeightUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSheetHeightUITests.swift; sourceTree = "<group>"; };
 		39D0590DA9571CFBFE194ACF /* VoiceProfileManagementPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProfileManagementPanel.swift; sourceTree = "<group>"; };
 		3A42579D30336AD3260A1D09 /* FormSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormSheet.swift; sourceTree = "<group>"; };
+		3A618C960A5C47C0E23AC73B /* SystemRingtoneLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRingtoneLibrary.swift; sourceTree = "<group>"; };
 		3AECB7E9C88E521DB6347408 /* AuxiliarySheetHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuxiliarySheetHost.swift; sourceTree = "<group>"; };
 		3BFC93E56F33A4EC79AB6F5C /* StringExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringExtensions.swift; sourceTree = "<group>"; };
 		3C91668BFFA3C24F48F19CD2 /* FreeBucketSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeBucketSettings.swift; sourceTree = "<group>"; };
@@ -1064,6 +1066,7 @@
 				C2812B5566D2A2EED4169FC6 /* StockClipLanguageRebinder.swift */,
 				55E5623528256133099D7F48 /* StockClipPrefetcher.swift */,
 				3BFC93E56F33A4EC79AB6F5C /* StringExtensions.swift */,
+				3A618C960A5C47C0E23AC73B /* SystemRingtoneLibrary.swift */,
 				EFC34434C86CC3C2BB8B2F5A /* SystemVoices.swift */,
 				21CBB976863F3883B2FCE2A2 /* Theme.swift */,
 				529F45FCEA815E7AD154E399 /* UIPreviewSeed.swift */,
@@ -1434,6 +1437,7 @@
 				FE2B275819243CE8B5EE7AC1 /* StringExtensions.swift in Sources */,
 				68169BCE6066FE499AC4DC87 /* SubscriptionManager.swift in Sources */,
 				8A93BAF45DC126D967427410 /* SubscriptionProduct.swift in Sources */,
+				7FDC4E56D4957EC75DDB80DA /* SystemRingtoneLibrary.swift in Sources */,
 				9AC80FB57A9BDBC92C3C33F5 /* SystemVoices.swift in Sources */,
 				575988ABEFC6557E72CB222B /* Theme.swift in Sources */,
 				624594B6D1A9D657DF902C04 /* TimeWheelPicker.swift in Sources */,

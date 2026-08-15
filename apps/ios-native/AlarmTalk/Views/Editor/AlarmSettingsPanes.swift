@@ -184,32 +184,97 @@ struct VibrationSettingsPane: View {
 
 struct AlarmSoundSettingsPane: View {
     @Environment(\.voiceAlarmTheme) private var theme
-    let soundLabel: String
+    /// 고른 알람음 파일 경로(비면 기본 알람음).
+    @Binding var soundUri: String?
+    @Binding var soundLabel: String?
+    /// 미리듣기 — 화면이 소유한 플레이어로 이 파일을 튼다.
+    let onPreview: (URL?) -> Void
+    let previewingPath: String?
+
+    private var entries: [SystemRingtoneLibrary.Entry] { SystemRingtoneLibrary.entries }
 
     var body: some View {
         PaneScaffold(title: AlarmSettingsPane.alarmSound.title) {
-            EditorCard {
-                HStack {
-                    Text("알람음 종류")
-                        .font(theme.typography.bodyLarge)
-                        .fontWeight(.semibold)
-                    Spacer(minLength: 12)
-                    Text(soundLabel)
-                        .font(theme.typography.bodyMedium)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
+            EditorCard(verticalPadding: 0) {
+                soundRow(
+                    title: "기본 알람음",
+                    selected: soundUri.nilIfBlank == nil,
+                    previewURL: nil
+                ) {
+                    soundUri = nil
+                    soundLabel = nil
                 }
-                .padding(.vertical, 12)
+                ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                    AlarmSettingDivider()
+                    soundRow(
+                        title: entry.name,
+                        selected: soundUri == entry.url.path,
+                        previewURL: entry.url
+                    ) {
+                        soundUri = entry.url.path
+                        soundLabel = entry.name
+                    }
+                    .id(index)
+                }
             }
 
             // ⚠ **알람 음량 슬라이더를 두지 않는다.** AlarmKit 이 OS 알람 톤을 소유해
             // 알람별 음량 API 가 없다 — 못 움직이는 컨트롤을 두면 값을 바꿔 보고 저장하고
             // 확인하기를 반복하게 된다(CLAUDE.md 「음량 규약」). 안드로이드는 자체
             // 플레이어라 그 슬라이더가 실제로 동작하므로, 여기만 다른 것이 맞다.
-            Text("알람음과 음량은 iOS 시스템이 정해요. 기기의 알람 볼륨을 조절해 주세요.")
+            Text(entries.isEmpty
+                 ? "이 기기에서는 알람음을 고를 수 없어 기본 알람음으로 울려요. 음량은 기기의 알람 볼륨을 따라가요."
+                 : "음량은 iOS 시스템이 정해요. 기기의 알람 볼륨을 조절해 주세요.")
                 .font(theme.typography.bodySmall)
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// 행 = [이름] … [체크] [미리듣기]
+    /// ⚠ 목소리 선택 시트와 **같은 순서**다 — 체크가 먼저, 재생이 끝이다. 순서를 뒤집으면
+    /// 고를 때마다 체크가 끼어들며 재생 버튼이 손가락 밑에서 움직인다.
+    @ViewBuilder
+    private func soundRow(
+        title: String,
+        selected: Bool,
+        previewURL: URL?,
+        onSelect: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 10) {
+            Button(action: onSelect) {
+                Text(title)
+                    .font(theme.typography.bodyLarge)
+                    .foregroundStyle(theme.palette.onSurface)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if selected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(theme.palette.primary)
+            }
+
+            if let previewURL {
+                Button {
+                    onPreview(previewURL)
+                } label: {
+                    Image(systemName: previewingPath == previewURL.path ? "stop.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(theme.palette.primary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(previewingPath == previewURL.path ? "정지" : "들어보기"))
+            } else {
+                // 기본 알람음은 우리가 가진 파일이 없어 미리듣기가 불가능하다.
+                // 자리만 비워 이름 끝선을 맞춘다.
+                Color.clear.frame(width: 44, height: 44)
+            }
+        }
+        .frame(minHeight: 52)
     }
 }
 

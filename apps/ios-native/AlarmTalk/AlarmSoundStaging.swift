@@ -218,7 +218,12 @@ enum AlarmSoundStaging {
 
     private static func isTranscodableFormat(_ ext: String) -> Bool {
         switch ext {
-        case "m4a", "mp3", "aac", "mp4": return true
+        // ⚠ **`m4r` 을 빼지 말 것**(2026-08-16). 기기 벨소리(`/Library/Ringtones`)가
+        // 전부 이 확장자다 — MPEG-4 컨테이너 안 AAC 라 `m4a` 와 같은 것이고,
+        // `AVAssetReader` 가 그대로 디코드한다. 목록에 없던 시절 실기기 실측에서
+        // `unsupportedFormat("m4r")` 로 **전부 거부**됐고, 그러면 사용자가 고른 벨소리가
+        // 조용히 기본 알람음으로 울린다(화면이 없는 기능을 광고하는 꼴).
+        case "m4a", "m4r", "mp3", "aac", "mp4": return true
         default: return false
         }
     }

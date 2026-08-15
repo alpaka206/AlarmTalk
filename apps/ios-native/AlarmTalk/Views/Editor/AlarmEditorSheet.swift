@@ -30,6 +30,8 @@ struct AlarmEditorSheet: View {
     /// 를 이 하나 + previewTarget 으로 통합한다. voiceStudio.previewPlayer 는 에디터
     /// 밖(VoiceProfileManagementPanel 등) VM 소유 미리듣기 전용으로 그대로 남는다.
     @StateObject var editorPreviewPlayer = AudioPreviewPlayer()
+    /// 지금 미리듣는 알람음 파일 경로.
+    @State var previewingAlarmSoundPath: String?
 
     @Environment(\.voiceAlarmTheme) var theme
 
@@ -516,7 +518,12 @@ struct AlarmEditorSheet: View {
             case .vibration:
                 VibrationSettingsPane(pattern: $draft.vibrationPattern)
             case .alarmSound:
-                AlarmSoundSettingsPane(soundLabel: alarmSoundDisplayLabel)
+                AlarmSoundSettingsPane(
+                    soundUri: $draft.alarmSoundUri,
+                    soundLabel: $draft.alarmSoundLabel,
+                    onPreview: { url in previewAlarmSound(url) },
+                    previewingPath: previewingAlarmSoundPath
+                )
             case .voiceOutput:
                 VoiceOutputSettingsPane(
                     volumePercent: $draft.voiceVolumePercent,
@@ -812,11 +819,30 @@ struct AlarmEditorSheet: View {
         )
     }
 
-    /// 알람음 종류 라벨. iOS 는 커스텀 링톤 선택 API 가 없어 기존 레코드에 저장된
-    /// alarmSoundLabel 이 있으면 그대로, 없으면 '기본 알람음' 을 보여준다
-    /// (Android `editor2_default_alarm_sound` 미러).
+    /// 알람음 종류 라벨. 고른 것이 있으면 그 이름, 없으면 '기본 알람음'.
+    /// (Android `editor2_default_alarm_sound` 미러.)
     var alarmSoundDisplayLabel: String {
-        (editingAlarm?.alarmSoundLabel).nilIfBlank ?? "기본 알람음"
+        draft.alarmSoundLabel.nilIfBlank ?? "기본 알람음"
+    }
+
+    /// 알람음 미리듣기 — 편집기의 단일 플레이어로 튼다(목소리 미리듣기와 같은 자리).
+    /// 같은 것을 다시 누르면 멈춘다.
+    func previewAlarmSound(_ url: URL?) {
+        guard let url else { return }
+        if previewingAlarmSoundPath == url.path {
+            editorPreviewPlayer.stop()
+            previewingAlarmSoundPath = nil
+            return
+        }
+        stopAllEditorPreviews()
+        do {
+            try editorPreviewPlayer.play(url: url)
+            previewingAlarmSoundPath = url.path
+        } catch {
+            // 못 트는 형식이면 조용히 넘어간다 — 고르는 것 자체는 막지 않는다.
+            // (실제 울림은 `AlarmSoundStaging` 이 CAF 로 변환해 AlarmKit 에 넘긴다.)
+            previewingAlarmSoundPath = nil
+        }
     }
 
     /// 알람 음량 슬라이더를 Android 와 동일하게 10단위(0/10/…/100, 11개 stop)로 스냅시킨다.
