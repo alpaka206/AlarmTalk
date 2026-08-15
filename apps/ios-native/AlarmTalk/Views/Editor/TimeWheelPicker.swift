@@ -402,8 +402,12 @@ struct DraggableNumberColumn: View {
     ///
     /// - Parameter velocity: SwiftUI 는 px/s 가 아니라 `predictedEndTranslation - translation`
     ///   (남은 이동 거리)을 준다. UIKit 감속이 대략 0.15초이므로 `px/s ≈ 거리 / 0.15` 로 보고
-    ///   안드로이드 계수를 환산했다 — 최소 속도 `itemHeight*4.2/s` → 거리 `itemHeight*0.63`,
-    ///   칸수 `(|v|/h)*0.12` → `(|거리|/h)*0.8`.
+    ///   안드로이드 계수를 환산한 값이 출발점이었다 — 최소 속도 `itemHeight*4.2/s` →
+    ///   거리 `itemHeight*0.63`, 칸수 `(|v|/h)*0.12` → `(|거리|/h)*0.8`.
+    ///
+    /// ⚠ **이제 두 앱의 숫자는 각자 조율한다.** 2026-08-15 에 안드로이드만 0.12 → 0.09 로
+    /// 낮췄다("안드로이드 휠 돌릴 때 너무 많이 넘어가져" — iOS 는 그대로가 좋다고 확인됨).
+    /// 들어오는 양 자체가 다른 값(px/s vs 남은 거리)이라 한쪽 숫자를 그대로 옮기면 안 된다.
     static func snapStep(dragOffset: CGFloat, velocity: CGFloat, itemHeight: CGFloat) -> Int {
         let flingDistance = itemHeight * 0.63
         if abs(velocity) >= flingDistance {
