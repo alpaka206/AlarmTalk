@@ -224,10 +224,9 @@ struct AlarmEditorSheet: View {
             .scrollDismissesKeyboard(.interactively)
 
 
-            // ⚠ **키보드가 올라와도 이 바는 제자리다**(2026-08-11 요청).
-            // 기본 동작은 키보드를 피해 위로 밀리는 것인데, 숫자를 고쳐 쓰는 동안
-            // [취소][저장]이 화면 중간까지 따라 올라와 **누르려던 자리가 사라진다.**
-            // 시간 입력은 숫자만 치면 되므로 이 바가 가려도 잃는 게 없다.
+            // 키보드가 올라와도 이 바는 제자리다(2026-08-11 요청) — 아래 `VStack` 의
+            // `.ignoresSafeArea(.keyboard)` 가 그 일을 한다. 숫자를 고쳐 쓰는 동안
+            // [취소][저장]이 화면 중간까지 따라 올라오면 **누르려던 자리가 사라진다.**
             EditorActionBar(
                 saveTitle: saveButtonTitle,
                 saving: isWorking || voiceStudio.isBusy,
@@ -236,8 +235,14 @@ struct AlarmEditorSheet: View {
                 onCancel: onClose,
                 onSave: { Task { await saveFlow() } }
             )
-            .ignoresSafeArea(.keyboard, edges: .bottom)
         }
+        // ⚠ **바가 아니라 이 `VStack` 에 건다**(2026-08-15 재수정).
+        // 바에만 걸었더니 그대로 따라 올라왔다 — 키보드 안전영역은 **바깥에서** 화면을
+        // 줄이므로, 이미 줄어든 높이 안에 놓인 자식이 스스로 "난 무시한다" 고 해 봐야
+        // 올라갈 자리가 바뀌지 않는다. 줄어드는 그 컨테이너가 무시해야 한다.
+        // 스크롤 본문도 함께 안 밀리는데, 이 화면의 유일한 입력칸은 **맨 위 타임휠**이라
+        // 가릴 게 없다.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     // MARK: - Body sections
