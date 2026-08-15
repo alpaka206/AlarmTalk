@@ -2,13 +2,17 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -31,8 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -261,7 +267,9 @@ private fun FortuneUnitDropdown(
     onSelect: (Int) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val menuItemHeightPx = with(LocalDensity.current) { MenuItemHeight.roundToPx() }
+    // 메뉴가 항목들에게 **폭**을 묻는 것(`maxIntrinsicWidth`)을 막으려면 폭이 미리 정해져
+    // 있어야 한다. 앵커(입력칸)를 재서 같은 폭으로 못 박는다 — 원래 메뉴도 앵커 폭을 따른다.
+    var anchorWidthPx by remember { mutableIntStateOf(0) }
     ExposedDropdownMenuBox(
         expanded = expanded && enabled,
         onExpandedChange = { if (enabled) expanded = it },
@@ -279,43 +287,67 @@ private fun FortuneUnitDropdown(
             colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier
                 .fillMaxWidth()
+                .onGloballyPositioned { anchorWidthPx = it.size.width }
                 .menuAnchor(MenuAnchorType.PrimaryNotEditable),
         )
-        val scrollState = rememberScrollState()
+        val listState = rememberLazyListState()
         // 연도는 100개가 넘는다. 열 때마다 맨 위(올해)에서 시작하면 1990년생은 매번
         // 서른여섯 번을 긁어 내려야 한다 — 이미 고른 값이 보이는 위치에서 연다.
+        // ⚠ 게으른 목록이라 **픽셀이 아니라 인덱스**로 옮긴다(항목 높이를 상수로 곱하면
+        // 글꼴 크기에 따라 어긋난다).
         LaunchedEffect(expanded, selected) {
             if (!expanded) return@LaunchedEffect
             val index = options.indexOf(selected)
-            if (index >= 0) scrollState.scrollTo(index * menuItemHeightPx)
+            if (index >= 0) listState.scrollToItem(index)
         }
         ExposedDropdownMenu(
             expanded = expanded && enabled,
             onDismissRequest = { expanded = false },
-            scrollState = scrollState,
-            modifier = Modifier.heightIn(max = MenuMaxHeight),
         ) {
-            options.forEach { option ->
-                val isSelected = option == selected
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = "$option$suffix",
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        )
-                    },
-                    colors = MenuDefaults.itemColors(
-                        textColor = if (isSelected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
+            // ⚠ **`forEach` 로 되돌리지 말 것.** 연도 목록은 121개(올해부터 120년 전)라,
+            // 전부 그리면 메뉴를 여는 순간 121개를 컴포즈·측정·배치한 뒤에야 화면에 뜬다 —
+            // 사용자가 "년도 고를 때 엄청 늦게 뜬다" 고 지적한 그것이다(2026-08-13).
+            // `heightIn` 은 **보이는 높이**만 막을 뿐 화면 밖 100여 개도 그대로 만들어진다.
+            // 월(12)·일(31)은 문제가 없어 이 드롭다운만 게으르게 그린다.
+            //
+            // ⚠⚠ **높이를 `heightIn`(상한)이 아니라 `height`(고정)로 줘야 한다.**
+            // `ExposedDropdownMenu` 는 내용을 그리기 전에 "높이가 얼마냐"(intrinsic)를 묻는데
+            // 게으른 목록은 그 질문에 답할 수 없어 **앱이 죽는다**:
+            //   IllegalStateException: Asking for intrinsic measurements of SubcomposeLayout
+            //   layouts is not supported. This includes ... lazy lists
+            // (2026-08-13 실기기에서 '연도' 를 누르는 순간 재현). 고정 높이를 주면 그 질문에
+            // 바로 답할 수 있다 — 연도는 121개라 어차피 늘 상한까지 찬다.
+            // ⚠ **너비도 고정해야 한다.** 메뉴는 높이뿐 아니라 **폭**도 항목들에게 묻는다
+            // (`maxIntrinsicWidth`) — 높이만 고정했을 때 같은 예외가 폭 쪽에서 다시 났다.
+            // 앵커(입력칸)와 같은 폭으로 못 박아 두 질문 모두 바로 답한다.
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .width(with(LocalDensity.current) { anchorWidthPx.toDp() })
+                    .height(MenuMaxHeight),
+            ) {
+                items(options, key = { it }) { option ->
+                    val isSelected = option == selected
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "$option$suffix",
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
                         },
-                    ),
-                    onClick = {
-                        onSelect(option)
-                        expanded = false
-                    },
-                )
+                        colors = MenuDefaults.itemColors(
+                            textColor = if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        ),
+                        onClick = {
+                            onSelect(option)
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
     }
