@@ -164,7 +164,7 @@ private fun VoiceConsentCheck(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        AlarmTalkCheckbox(checked = checked, onCheckedChange = onCheckedChange)
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,

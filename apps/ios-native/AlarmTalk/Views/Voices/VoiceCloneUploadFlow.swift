@@ -500,6 +500,9 @@ struct VoiceCloneUploadFlow: View {
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
             }
+            // 공용 스위치 스타일 — 안 붙이면 시스템 기본(초록) 토글이 되어 앱 안에서
+            // 같은 컨트롤이 두 가지로 보인다.
+            .alarmTalkSwitch()
         }
         .sectionSurface()
     }

@@ -149,7 +149,9 @@ struct VibrationSettingsPane: View {
                         }
                     }
                 ))
-                .tint(theme.palette.primary)
+                // 공용 스위치 스타일. ⚠ `.tint` 로 색만 맞추면 **모양과 크기는 시스템
+                // 기본 그대로**라 다른 화면의 스위치와 달라 보인다 — 예전에는 그랬다.
+                .alarmTalkSwitch()
                 .padding(.vertical, 12)
             }
 

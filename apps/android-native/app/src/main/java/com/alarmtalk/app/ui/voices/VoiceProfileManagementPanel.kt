@@ -2034,7 +2034,7 @@ internal fun VoiceProfileManagementPanel(
                                                     .padding(14.dp),
                                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                             ) {
-                                                Checkbox(
+                                                AlarmTalkCheckbox(
                                                     checked = replaceExistingChecked,
                                                     onCheckedChange = { checked -> replaceExistingChecked = checked },
                                                     enabled = !voiceProfileBusy && !confirmPreviewSaving,

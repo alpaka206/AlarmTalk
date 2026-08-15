@@ -41,6 +41,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -100,6 +102,37 @@ internal fun AlarmTalkSwitch(
             uncheckedThumbColor = uncheckedThumbColor,
             uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
             uncheckedBorderColor = MaterialTheme.colorScheme.outline,
+        ),
+    )
+}
+
+/**
+ * 앱 공용 체크박스.
+ *
+ * ⚠ **머티리얼 기본 `Checkbox` 를 그대로 쓰지 말 것**(2026-08-16 정리). 스위치는
+ * `AlarmTalkSwitch` 하나로 모여 있었는데 체크박스만 **세 곳이 기본값**이라, 같은
+ * '켜고 끄는 자리'가 화면마다 다른 색으로 보였다. 색은 `AlarmTalkSwitch` 와 같은 축을 쓴다
+ * (켜짐=primary 바탕에 onPrimary 체크, 꺼짐=outline 테두리).
+ *
+ * 문서화된 예외: 로그인/동의 **브랜드 화면**(`ConsentScreen`)은 딥네이비 위 고정 팔레트라
+ * 그쪽 색을 그대로 둔다 — CLAUDE.md 「색」 절의 브랜드 비주얼 예외.
+ */
+@Composable
+internal fun AlarmTalkCheckbox(
+    checked: Boolean,
+    onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Checkbox(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = modifier,
+        colors = CheckboxDefaults.colors(
+            checkedColor = MaterialTheme.colorScheme.primary,
+            checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+            uncheckedColor = MaterialTheme.colorScheme.outline,
         ),
     )
 }

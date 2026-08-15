@@ -212,7 +212,7 @@ private fun VoiceRegistrationCheck(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        AlarmTalkCheckbox(checked = checked, onCheckedChange = onCheckedChange)
         Column(modifier = Modifier.padding(top = 12.dp)) {
             Text(
                 text = label,
