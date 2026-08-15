@@ -264,7 +264,7 @@
     <string name="editorp_fortune_required_suffix">%1$s · 필수 입력</string>
     <string name="editorp_fortune_save_button">저장</string>
     <string name="editorp_random_back">뒤로</string>
-    <string name="editorp_random_fortune_required">운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.</string>
+    <string name="editorp_random_fortune_required">아직 입력하지 않았어요</string>
     <string name="editorp_random_fortune_saved">상대가 저장한 운세 정보를 사용해요.</string>
     <string name="editorp_random_detail_change">변경하기</string>
     <string name="editorp_random_manual_title">직접 입력 문구</string>
@@ -272,10 +272,9 @@
     <string name="editorp_random_fortune_title">운세 정보</string>
     <string name="editorp_random_save_button">저장</string>
     <string name="editorp_random_title">문구</string>
-    <string name="editorp_random_weather_region_required">날씨가 들어간 문구를 쓰려면 도시가 필요해요.</string>
+    <string name="editorp_random_weather_region_required">아직 고르지 않았어요</string>
     <string name="editorp_random_weather_region_saved">상대가 저장한 날씨 지역을 사용해요.</string>
-    <string name="editorp_random_weather_region_title">원하는 지역</string>
-    <string name="editorp_random_weather_region_value">%1$s 날씨를 사용해요.</string>
+    <string name="editorp_random_weather_region_title">날씨 지역</string>
     <string name="editorp_weather_save_button">저장</string>
     <string name="alarms_target_sheet_title">누구를 깨울까요?</string>
     <string name="alarms_target_self_title">내 알람 맞추기</string>

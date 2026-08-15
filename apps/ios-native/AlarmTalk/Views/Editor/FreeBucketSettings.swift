@@ -145,23 +145,10 @@ struct FreeBucketSettingsPane: View {
 
                     detailCard
 
-                    Text("고른 테마의 문구가 알람마다 번갈아 나와요.")
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
             }
-
-            EditorActionBar(
-                saveTitle: "저장",
-                saving: false,
-                savingLabel: "",
-                saveEnabled: manualChosen || selection != nil,
-                onCancel: { dismiss() },
-                onSave: { dismiss() }
-            )
         }
         .homeGradientBackground()
         .navigationTitle("문구")
@@ -169,7 +156,6 @@ struct FreeBucketSettingsPane: View {
         // 번지면 뒤로갈 길이 사라진다(`AlarmSettingsPanes.PaneScaffold` 주석 참조).
         .toolbar(.visible, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
     }
 
     /// '직접 입력' 행. 잠겨 있으면 자물쇠 배지를, 아니면 라디오를 그린다.
@@ -185,7 +171,8 @@ struct FreeBucketSettingsPane: View {
                         .font(theme.typography.bodyLarge)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                     Spacer()
-                    FeatureLockBadge(size: 18, iconSize: 11)
+                    // ⚠ 라디오 점보다 크게 둔다(2026-08-15 지시). 안드로이드 `SnoozeLockedRow` 와 같은 값.
+                    FeatureLockBadge(size: 24, iconSize: 14)
                 }
                 .frame(minHeight: 52)
                 .contentShape(Rectangle())

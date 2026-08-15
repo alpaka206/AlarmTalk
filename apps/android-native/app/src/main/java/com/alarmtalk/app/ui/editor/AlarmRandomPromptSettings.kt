@@ -79,7 +79,6 @@ internal fun RandomPromptSettingsPane(
     fortuneGender: String,
     fortuneBirthDate: String,
     fortuneBirthTime: String,
-    onDismissWithoutSave: () -> Unit,
     onSaveSettings: (RandomPromptSettingsResult) -> Unit,
 ) {
     val context = LocalContext.current
@@ -141,17 +140,6 @@ internal fun RandomPromptSettingsPane(
         )
     }
 
-    fun requestRequiredInfoOrSave() {
-        when {
-            // 값이 아직 없으면 저장 대신 그 입력창을 연다. 여기서 못 채우면 저장이 막히는데,
-            // 이유를 안 알려 주면 사용자는 버튼이 고장 난 줄 안다.
-            isManual && draftManualText.isBlank() -> manualDialogOpen = true
-            randomContextUsesWeather(normalizedContext) && !hasWeatherInfo() -> weatherDialogOpen = true
-            normalizedContext == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
-            else -> saveResolvedSettings()
-        }
-    }
-
     fun selectContext(context: String) {
         draftContext = context
         // 상세 입력이 필요한 모드는 **아직 값이 없을 때만** 그 자리에서 다이얼로그를 띄운다.
@@ -165,7 +153,12 @@ internal fun RandomPromptSettingsPane(
         }
     }
 
-    BackHandler(onBack = onDismissWithoutSave)
+    // ⚠ **뒤로가기가 곧 반영이다**(2026-08-15 지시 "취소·저장 버튼 말고 위 뒤로가기가 자연스럽다").
+    // 다른 상세 화면(진동·스누즈·무료 테마)이 전부 그렇다 — 이 화면만 하단 버튼을 갖고 있었다.
+    // 필요한 정보(도시·사주)가 비어 있어도 그대로 반영한다: 상세 카드가 '아직 고르지 않았어요'
+    // 로 말하고, 알람 저장은 편집기가 막는다(`saveBlockedReason`). 여기서 다이얼로그를 강제로
+    // 띄우면 화면을 나가려는 동작이 모달로 붙잡히는 셈이라 더 나쁘다.
+    BackHandler(onBack = ::saveResolvedSettings)
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -178,7 +171,7 @@ internal fun RandomPromptSettingsPane(
                     .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onDismissWithoutSave) {
+                IconButton(onClick = ::saveResolvedSettings) {
                     Icon(
                         painter = painterResource(R.drawable.ic_chevron_back),
                         contentDescription = stringResource(R.string.editorp_random_back),
@@ -197,7 +190,8 @@ internal fun RandomPromptSettingsPane(
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
                     .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                // 무료 pane·iOS 와 같은 16dp(`MessageSettingsPane` 의 `VStack(spacing: 16)`).
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 SnoozeOptionSection {
                     EditorMessageContexts.forEachIndexed { index, (context, labelRes) ->
@@ -235,11 +229,15 @@ internal fun RandomPromptSettingsPane(
                         title = stringResource(R.string.editorp_random_weather_region_title),
                         onChange = { weatherDialogOpen = true },
                         value = when {
-                            draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank() ->
-                                stringResource(
-                                    R.string.editorp_random_weather_region_value,
-                                    weatherLocationSummary(context, draftWeatherCountry, draftWeatherCity),
-                                )
+                            // ⚠ **도시 하나로 판정한다**(2026-08-15). 나라는 국내면 비는 값이라
+                            // (`WeatherCityPickerSheet` 프리셋은 도시만 준다) 둘 다 요구하면
+                            // **저장돼 있는데도 "아직 고르지 않았어요"** 로 보인다 — 실기기에
+                            // `weather_city=인천, weather_country=""` 로 들어 있었다.
+                            // 모달을 띄울지 보는 `savedWeatherConfigured` 도 도시만 본다.
+                            draftWeatherCity.isNotBlank() ->
+                                // 값만 보여준다 — "…날씨를 사용해요." 로 감싸면 상세 카드가
+                                // 값이 아니라 문장이 된다(iOS 는 "서울" 하나만 보여준다).
+                                weatherLocationSummary(context, draftWeatherCountry, draftWeatherCity)
                             usingTargetDynamicPromptSettings && savedWeatherConfigured ->
                                 stringResource(R.string.editorp_random_weather_region_saved)
                             else -> stringResource(R.string.editorp_random_weather_region_required)
@@ -264,29 +262,13 @@ internal fun RandomPromptSettingsPane(
                 }
             }
 
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.background,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Button(
-                        onClick = ::requestRequiredInfoOrSave,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text(stringResource(R.string.editorp_random_save_button))
-                    }
-                }
-            }
         }
     }
 
     // 세 다이얼로그 모두 **자기만 닫는다.** 예전에는 확인하면 곧바로 onSaveSettings 로
     // 이어져 문구 목록까지 통째로 닫혔는데, 사용자는 '문구를 고르는 중' 이지 '고르기를
     // 끝낸' 게 아니다 — 도시 하나 바꾸려다 목록 밖으로 튕겨 나가면 다시 들어와야 한다.
-    // 취소(닫기)도 마찬가지로 이 화면을 닫지 않는다. 최종 반영은 아래 저장 버튼 한 곳.
+    // 취소(닫기)도 마찬가지로 이 화면을 닫지 않는다. 최종 반영은 이 화면을 나갈 때다.
     if (weatherDialogOpen) {
         WeatherLocationDialog(
             country = draftWeatherCountry,

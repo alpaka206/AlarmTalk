@@ -689,7 +689,9 @@ internal fun FreeBucketSettingsPane(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                // 선택 카드와 아래 상세 카드 사이 — iOS `FreeBucketSettingsPane` 의
+                // `VStack(spacing: 16)` 과 같은 값이다(2026-08-15 지적 "안드로이드가 너무 좁다").
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 SnoozeOptionSection {
                     buckets.forEach { bucket ->

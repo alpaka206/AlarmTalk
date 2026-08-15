@@ -34,6 +34,9 @@ struct MessageSettingsPane: View {
 
     let onSave: (MessageSettingsResult) -> Void
 
+    /// 화면에 들어온 순간의 값 — 나갈 때 바뀐 게 있는지 판단하는 기준.
+    @State private var openedWith: MessageSettingsResult?
+
     @State private var draftContext: String = "preset"
     @State private var draftManualText: String = ""
     /// 「직접 입력」 알럿 안에서만 쓰는 임시 값. '저장' 을 눌러야 `draftManualText` 로 간다.
@@ -86,19 +89,6 @@ struct MessageSettingsPane: View {
             // (2026-08-10 사용자 보고 — 편집기에는 이미 있었고 나머지 화면만 빠져 있었다).
             .scrollDismissesKeyboard(.interactively)
 
-            // 최종 반영은 여기 한 곳이다 — 라디오를 누르는 즉시 알람이 바뀌면
-            // 둘러보다가 실수로 바꾼 것도 저장된다.
-            EditorActionBar(
-                saveTitle: "저장",
-                saving: false,
-                savingLabel: "",
-                saveEnabled: saveEnabled,
-                onCancel: { dismiss() },
-                onSave: {
-                    onSave(result)
-                    dismiss()
-                }
-            )
         }
         .homeGradientBackground()
         .navigationTitle("문구")
@@ -106,8 +96,21 @@ struct MessageSettingsPane: View {
         // 번지면 뒤로갈 길이 사라진다(`AlarmSettingsPanes.PaneScaffold` 주석 참조).
         .toolbar(.visible, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .onAppear(perform: loadDraft)
+        .onAppear {
+            loadDraft()
+            // 들어온 순간의 값. 나갈 때 이것과 다를 때만 반영한다(아래 `onDisappear`).
+            openedWith = result
+        }
+        // ⚠ **[취소][저장] 바를 되살리지 말 것**(2026-08-15 지시 — 다른 상세 화면처럼
+        // 위 뒤로가기 하나로 나간다). 반영은 화면을 나갈 때 한 번 한다.
+        //
+        // ⚠ **바뀐 게 없으면 반영하지 않는다.** `applyMessageSettings` 는 테마 선택
+        // (`selectedBucketDraft`)과 준비된 음원을 함께 비우므로, 구경만 하고 나온 사람의
+        // 테마 알람이 조용히 생성형으로 바뀐다.
+        .onDisappear {
+            guard let openedWith, result != openedWith else { return }
+            onSave(result)
+        }
         // ⚠ 확인해도 **이 목록은 닫지 않는다** — 도시 하나 바꾸려다 화면 밖으로 튕기면
         // 안 된다. 최종 반영은 이 화면의 저장 버튼 한 곳이다.
         //
@@ -307,7 +310,7 @@ struct MessageSettingsPane: View {
 }
 
 /// 문구 화면이 돌려주는 값 묶음.
-struct MessageSettingsResult {
+struct MessageSettingsResult: Equatable {
     /// '직접 입력' 을 나타내는 컨텍스트 id. 안드로이드 `ManualMessageContext`.
     static let manualContext = "manual"
 

@@ -389,7 +389,9 @@ internal fun SnoozeLockedRow(
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FeatureLockBadge(size = 18.dp, iconSize = 11.dp)
+        // ⚠ **라디오 점(18dp)보다 크게 둔다**(2026-08-15 지시 "자물쇠 좀 더 크게").
+        // 같은 크기면 잠긴 행인지 안 잠긴 행인지 한눈에 안 갈린다.
+        FeatureLockBadge(size = 24.dp, iconSize = 14.dp)
         Spacer(Modifier.width(12.dp))
         Text(
             text = label,

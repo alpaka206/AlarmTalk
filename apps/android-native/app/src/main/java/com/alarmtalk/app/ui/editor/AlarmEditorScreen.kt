@@ -1083,7 +1083,6 @@ internal fun AlarmEditorScreen(
     // 마지막 카드가 하단 고정 CTA divider 에 붙지 않도록 여유를 준다(구 12dp → 24dp).
     val editorBottomPadding = 24.dp
     var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
-    var randomPromptWasEnabledWhenOpened by remember { mutableStateOf(false) }
     // 무료 날씨 버킷 선택 시 도시 입력/확인 다이얼로그.
     var freeWeatherDialogOpen by remember { mutableStateOf(false) }
     var freeManualDialogOpen by remember { mutableStateOf(false) }
@@ -1160,15 +1159,7 @@ internal fun AlarmEditorScreen(
     val editorCanSave = editorSaveBlockedReason == null && recordingReady
 
     fun openRandomPromptSettings() {
-        randomPromptWasEnabledWhenOpened = editor.voiceRandomPrompt
         settingsDetailPanel = "random_prompt"
-    }
-
-    fun dismissRandomPromptSettingsWithoutSave() {
-        if (!randomPromptWasEnabledWhenOpened) {
-            editor.voiceRandomPrompt = false
-        }
-        settingsDetailPanel = null
     }
 
     fun applyRandomPromptSettings(result: RandomPromptSettingsResult) {
@@ -1236,11 +1227,10 @@ internal fun AlarmEditorScreen(
         settingsDetailPanel = null
     }
 
+    // 문구 pane 은 **자기 BackHandler 로** 뒤로가기를 받아 값을 반영하고 닫는다
+    // (`AlarmRandomPromptSettings` — 안쪽에서 더 늦게 등록되므로 그쪽이 먼저 잡는다).
+    // 여기서 또 가로채 '반영 없이 닫기' 를 하면 순서가 뒤집히는 날 값이 조용히 사라진다.
     BackHandler(enabled = settingsDetailPanel != null) {
-        if (settingsDetailPanel == "random_prompt") {
-            dismissRandomPromptSettingsWithoutSave()
-            return@BackHandler
-        }
         settingsDetailPanel = null
     }
 
@@ -1603,7 +1593,6 @@ internal fun AlarmEditorScreen(
                 fortuneGender = editor.voiceFortuneGender,
                 fortuneBirthDate = editor.voiceFortuneBirthDate,
                 fortuneBirthTime = editor.voiceFortuneBirthTime,
-                onDismissWithoutSave = ::dismissRandomPromptSettingsWithoutSave,
                 onSaveSettings = ::applyRandomPromptSettings,
             )
 
@@ -1641,12 +1630,19 @@ internal fun AlarmEditorScreen(
                 },
                 manualText = editor.voiceText,
                 onChangeManual = { freeManualDialogOpen = true },
+                // ⚠ **계정에 저장된 지역을 이어받는다**(2026-08-15 지적 "설정에는 값이 있는데
+                // 둘이 공유가 안 된다"). 유료 pane 은 처음부터 `ifBlank { saved… }` 로 이어받고
+                // 있었는데 여기만 알람 자체 값만 봐서, **설정에 서울이 있는데도** "아직 고르지
+                // 않았어요" 로 보였다. 게다가 모달을 띄울지 판정하는 쪽(`savedWeatherConfigured`)은
+                // 저장값을 보고 있어서 — 안 골랐다고 써 놓고 고르라는 모달도 안 떴다.
                 weatherRegionSummary = if (editor.selectedBucket == "weather") {
-                    if (editor.voiceWeatherCountry.isNotBlank() && editor.voiceWeatherCity.isNotBlank()) {
-                        stringResource(
-                            R.string.editorp_random_weather_region_value,
-                            weatherLocationSummary(context, editor.voiceWeatherCountry, editor.voiceWeatherCity),
-                        )
+                    val country = editor.voiceWeatherCountry
+                        .ifBlank { activeDynamicPromptPreferences.weatherCountry }
+                    val city = editor.voiceWeatherCity
+                        .ifBlank { activeDynamicPromptPreferences.weatherCity }
+                    // 나라는 국내면 비는 값이다 — 도시 하나로 판정한다(위 유료 pane 과 같다).
+                    if (city.isNotBlank()) {
+                        weatherLocationSummary(context, country, city)
                     } else {
                         stringResource(R.string.editorp_random_weather_region_required)
                     }
@@ -1685,8 +1681,9 @@ internal fun AlarmEditorScreen(
 
     if (freeWeatherDialogOpen) {
         WeatherLocationDialog(
-            country = editor.voiceWeatherCountry,
-            city = editor.voiceWeatherCity,
+            // 저장된 지역이 있으면 그걸 채워서 연다 — 위 요약 행과 같은 값을 보여줘야 한다.
+            country = editor.voiceWeatherCountry.ifBlank { activeDynamicPromptPreferences.weatherCountry },
+            city = editor.voiceWeatherCity.ifBlank { activeDynamicPromptPreferences.weatherCity },
             onDismissWithoutSave = { freeWeatherDialogOpen = false },
             onConfirm = { country, city ->
                 editor.voiceWeatherCountry = country

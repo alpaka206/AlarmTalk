@@ -254,7 +254,7 @@
     <string name="editorp_fortune_required_suffix">%1$s · Required</string>
     <string name="editorp_fortune_save_button">Save</string>
     <string name="editorp_random_back">Back</string>
-    <string name="editorp_random_fortune_required">To use fortune-based messages, gender, date of birth, and time of birth are required.</string>
+    <string name="editorp_random_fortune_required">Not entered yet</string>
     <string name="editorp_random_fortune_saved">Using the fortune info your partner saved.</string>
     <string name="editorp_random_detail_change">Change</string>
     <string name="editorp_random_manual_title">Your message</string>
@@ -262,10 +262,9 @@
     <string name="editorp_random_fortune_title">Fortune info</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Message</string>
-    <string name="editorp_random_weather_region_required">To use weather-based messages, a city is required.</string>
+    <string name="editorp_random_weather_region_required">Not chosen yet</string>
     <string name="editorp_random_weather_region_saved">Using the weather region your partner saved.</string>
-    <string name="editorp_random_weather_region_title">Preferred region</string>
-    <string name="editorp_random_weather_region_value">Using the weather for %1$s.</string>
+    <string name="editorp_random_weather_region_title">Weather location</string>
     <string name="editorp_weather_save_button">Save</string>
     <string name="alarms_target_sheet_title">Who is this alarm for?</string>
     <string name="alarms_target_self_title">Set my alarm</string>
