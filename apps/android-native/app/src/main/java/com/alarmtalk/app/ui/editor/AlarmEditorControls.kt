@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
@@ -19,6 +20,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -312,31 +314,33 @@ private val WeekdayLabels: List<Int> = listOf(
 internal const val PlayModeSwitchDurationMillis = 280
 
 /**
- * ⚠ **페이드와 크기를 같은 길이로 두지 말 것**(2026-08-15 재지적 "아주 잠깐 접히면서 보인다").
- * 같은 길이면 **접히는 카드가 그대로 보인다** — 내용이 위아래로 눌리며 잘리는 게 다 노출된다.
- * iOS 는 접히지 않는다: 조건부 뷰의 기본 전환이 `.opacity` 라 **제자리에서 사라지고** 아래
- * 것들이 올라올 뿐이다. 그래서 여기서도 **먼저 지우고 그 다음에 접는다** — 접히는 동안에는
- * 이미 투명해서 눌리는 모습이 안 보인다.
+ * ⚠ **사라질 때 페이드를 '시간을 들여' 주지 말 것**(2026-08-15 세 번째 지적).
+ * 280ms 든 120ms 든, 시간을 주면 **접히는 카드가 그대로 읽힌다** — 특히 문구 요약 행은
+ * 알람이 실제로 말할 문장(직접 입력 문구)이라, 0.1초만 비쳐도 "왜 저게 보이지" 가 된다.
+ * 3초로 늘려 찍은 슬로모션에서 "문구 · 직접 입력 문구 · 약 먹을 시간이에요…" 가 또렷이 보였다.
+ *
+ * iOS 실측(같은 방법으로 0.28 → 3.0초로 늘려 접근성 트리를 0.25초 간격으로 조회):
+ * **0.25초 시점에 이미 문구 행이 트리에서 사라져 있었다.** 즉 아이폰은 내용을 곧바로 없애고
+ * **자리만** 접는다. 그래서 여기서도 페이드는 `snap()` — 첫 프레임에 사라진다.
  */
-private const val PlayModeFadeOutMillis = 120
+private val PlayModeFadeOutSpec = snap<Float>()
 
-/** 반대로 나타날 땐 **자리를 먼저 열고** 내용을 뒤늦게 띄운다(눌린 채 나타나지 않게). */
-private const val PlayModeFadeInDelayMillis = 80
+/** 나타날 땐 **자리를 다 연 뒤** 내용을 띄운다 — 눌린 채로 나타나지 않게. */
+private const val PlayModeFadeInDelayMillis = 200
+private const val PlayModeFadeInMillis = 120
 
 /** 재생 방식에 따라 나타났다 사라지는 블록의 등장 전환. */
 internal fun playModeEnter(): EnterTransition =
-    expandVertically(tween(PlayModeSwitchDurationMillis)) +
-        fadeIn(
-            tween(
-                durationMillis = PlayModeSwitchDurationMillis - PlayModeFadeInDelayMillis,
-                delayMillis = PlayModeFadeInDelayMillis,
-            ),
-        )
+    // ⚠ **`Alignment.Top` 이다.** 기본값(`Bottom`)이면 카드가 아래에서 위로 열려 **글자
+    // 윗부분이 잘린 채** 들어온다(슬로모션에서 '목소리 크기' 가 위가 잘린 채 보였다).
+    // 위에서 아래로 열려야 목소리 → 문구 → 크기 순서 그대로 자라난다.
+    expandVertically(tween(PlayModeSwitchDurationMillis), expandFrom = Alignment.Top) +
+        fadeIn(tween(PlayModeFadeInMillis, delayMillis = PlayModeFadeInDelayMillis))
 
 /** 같은 블록의 퇴장 전환. */
 internal fun playModeExit(): ExitTransition =
-    fadeOut(tween(PlayModeFadeOutMillis)) +
-        shrinkVertically(tween(PlayModeSwitchDurationMillis))
+    fadeOut(PlayModeFadeOutSpec) +
+        shrinkVertically(tween(PlayModeSwitchDurationMillis), shrinkTowards = Alignment.Top)
 
 @Composable
 internal fun PlayModeCard(
