@@ -13,6 +13,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.runtime.getValue
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -289,6 +296,30 @@ private val WeekdayLabels: List<Int> = listOf(
     R.string.editor2_weekday_fri,
     R.string.editor2_weekday_sat,
 )
+
+/**
+ * 재생 방식('목소리' ↔ '알람')을 바꿀 때 아래 요소가 나타나고 사라지는 전환.
+ *
+ * 2026-08-15 지적: "왔다갔다하면 아래 요소들이 탁탁 바뀐다." iOS 는 세그먼트를 누를 때
+ * `withAnimation(.snappy(duration: 0.28))` 으로 상태를 바꿔서, 그에 딸린 카드들이 함께
+ * 늘었다 줄었다 한다(`VoicePlayModePicker.commit`). 컴포즈는 조건부 컴포저블이
+ * 그냥 사라지므로 같은 시간값으로 맞춰 준다.
+ *
+ * 시스템에서 애니메이션을 꺼 둔 사용자에겐 자동으로 즉시 전환된다 — 컴포즈 기본
+ * `MotionDurationScale` 이 `Settings.Global.ANIMATOR_DURATION_SCALE` 을 읽는다.
+ * (iOS 는 `reduceMotion` 을 직접 본다 — 같은 뜻이다.)
+ */
+internal const val PlayModeSwitchDurationMillis = 280
+
+/** 재생 방식에 따라 나타났다 사라지는 블록의 등장 전환. */
+internal fun playModeEnter(): EnterTransition =
+    fadeIn(tween(PlayModeSwitchDurationMillis)) +
+        expandVertically(tween(PlayModeSwitchDurationMillis))
+
+/** 같은 블록의 퇴장 전환. */
+internal fun playModeExit(): ExitTransition =
+    fadeOut(tween(PlayModeSwitchDurationMillis)) +
+        shrinkVertically(tween(PlayModeSwitchDurationMillis))
 
 @Composable
 internal fun PlayModeCard(

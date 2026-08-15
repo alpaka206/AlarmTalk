@@ -1373,7 +1373,16 @@ internal fun AlarmEditorScreen(
                         // '목소리' 면 세부설정의 알람음 행이 없다(`showAlarmSound`). 둘 중
                         // 하나라고 해 놓고 안 고른 쪽 설정을 계속 보여 주면, 만질 수는 있는데
                         // 울릴 때 아무 영향이 없는 컨트롤이 남는다.
-                        if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+                        // 사라질 때도 0.28초 동안은 **아직 컴포즈에 남아 있다**(줄어드는 중).
+                        // 그 사이 이 카드 안의 `LaunchedEffect` 는 목소리 선택 상태에만
+                        // 묶여 있어 재생 방식이 바뀌어도 다시 돌지 않는다 — 새 효과를 넣을 땐
+                        // `playMode` 를 키로 삼지 말 것.
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            enter = playModeEnter(),
+                            exit = playModeExit(),
+                        ) {
+                        androidx.compose.foundation.layout.Column {
                         androidx.compose.foundation.layout.Spacer(
                             Modifier.androidxHeight(12.dp),
                         )
@@ -1425,6 +1434,7 @@ internal fun AlarmEditorScreen(
                                 onOpenFreeBucketSettings = { settingsDetailPanel = "free_bucket" },
                                 onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                             )
+                        }
                         }
                         }
                     }

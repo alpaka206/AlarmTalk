@@ -139,7 +139,13 @@ internal fun AlarmSettingsCard(
                         )
                     },
                 )
-                if (showAlarmSound) {
+                // 재생 방식을 바꿀 때 이 행도 함께 늘었다 줄었다 한다(위 목소리 카드와 같은 전환).
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showAlarmSound,
+                    enter = playModeEnter(),
+                    exit = playModeExit(),
+                ) {
+                androidx.compose.foundation.layout.Column {
                     AlarmSettingDivider()
                     // 알람음 on/off 토글을 이 행에 함께 둔다. 끄면 알람은 계속 울리되(화면·진동·음성)
                     // 톤만 재생하지 않는다. 켜졌을 때만 볼륨·벨소리(부제 요약, 탭 시 상세)를 노출.
@@ -162,6 +168,7 @@ internal fun AlarmSettingsCard(
                             )
                         },
                     )
+                }
                 }
                 // ⚠ **'목소리' 행을 여기에 다시 넣지 말 것.** 음량·반복은 목소리 카드 안의
                 // '목소리 크기' 행(`VoiceVolumeSummaryRow`)이 소유한다. 예전에는 이곳에도
