@@ -25,7 +25,7 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         }
 
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth])
+        try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
 
         let url = try nextRecordingURL()
@@ -109,12 +109,16 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     }
 
 
+    /// 마이크 권한.
+    ///
+    /// ⚠ **`AVAudioSession.requestRecordPermission` 로 되돌리지 말 것.** iOS 17 에서
+    /// 폐기됐고 이 앱의 최소 버전은 26 이다 — 대체는 `AVAudioApplication` 이다.
+    /// (2026-08-16 "허용했더니 앱이 꺼졌다" 를 조사하며 정리했다. 시뮬레이터에서는
+    /// 재현되지 않아 이것이 원인이라고 단정하지는 못한다 — 다만 크래시 경로에서 폐기된
+    /// API 를 걷어내고, 실패하면 조용히 죽지 않고 오류로 올라오게 두는 쪽이 맞다.)
     private func requestMicrophonePermission() async -> Bool {
-        await withCheckedContinuation { continuation in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                continuation.resume(returning: granted)
-            }
-        }
+        if AVAudioApplication.shared.recordPermission == .granted { return true }
+        return await AVAudioApplication.requestRecordPermission()
     }
 
     private func nextRecordingURL() throws -> URL {

@@ -84,25 +84,10 @@ struct LocalAlarmAudioEditor: View {
             // **알람에 붙이는 오디오** 쪽뿐이다.
             recordingCard
 
-            if sourceReady {
-                HStack(spacing: 8) {
-                    Button(action: onPreview) {
-                        Label(isPreviewing ? "정지" : "미리듣기", systemImage: isPreviewing ? "stop.fill" : "play.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isRecording)
-
-                    Button(role: .destructive, action: onClear) {
-                        Label("지우기", systemImage: "trash")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isRecording)
-                }
-            }
-
-            if let message {
+            // ⚠ **녹음물이 있을 때는 안내를 한 번 더 하지 않는다**(같은 지시). 카드가 이미
+            // "녹음을 저장했어요." 라고 말한다. 다만 **녹음 전·녹음 중**에는 남긴다 —
+            // 마이크 권한 거부처럼 화면에 달리 나타나지 않는 사실이 여기로 온다.
+            if let message, !(sourceReady && !isRecording) {
                 Text(message)
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(isRecording ? theme.palette.primary : theme.palette.onSurfaceVariant)
@@ -122,13 +107,38 @@ struct LocalAlarmAudioEditor: View {
                         .monospacedDigit()
                 }
                 Spacer()
-                Button(action: onRecord) {
-                    Image(systemName: isRecording ? "stop.fill" : "mic.fill")
-                        .font(.headline)
-                        .frame(width: 42, height: 42)
+                // ⚠ **녹음물이 있으면 마이크 자리에 [재생][다시 녹음] 을 둔다**(2026-08-16 지시,
+                // 안드로이드 `RecordedPlaybackControls` 와 같은 구조). 예전에는 마이크 버튼을
+                // 그대로 두고 카드 **아래에** [미리듣기][지우기] 를 따로 깔아서, 같은 대상에
+                // 대한 조작이 두 층에 흩어져 있었다.
+                if sourceReady && !isRecording {
+                    HStack(spacing: 8) {
+                        Button(action: onPreview) {
+                            Image(systemName: isPreviewing ? "stop.fill" : "play.fill")
+                                .font(.headline)
+                                .frame(width: 42, height: 42)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(theme.palette.primary)
+                        .accessibilityLabel(Text(isPreviewing ? "정지" : "들어보기"))
+
+                        Button(action: onClear) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.headline)
+                                .frame(width: 42, height: 42)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel(Text("다시 녹음"))
+                    }
+                } else {
+                    Button(action: onRecord) {
+                        Image(systemName: isRecording ? "stop.fill" : "mic.fill")
+                            .font(.headline)
+                            .frame(width: 42, height: 42)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(isRecording ? theme.palette.error : theme.palette.primary)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(isRecording ? theme.palette.error : theme.palette.primary)
             }
             if let existingAudioLabel, !hasRecording {
                 Text(existingAudioLabel)

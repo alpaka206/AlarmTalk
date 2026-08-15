@@ -336,10 +336,15 @@ internal fun WakerSheetOptionRow(
                     )
                 }
             }
-            trailing?.invoke()
             // 선택 표시는 '선택된 행에만' 체크(✓) — iOS 정석. 미선택 행의 빈 링은 라디오 문법의
             // 노이즈이고, 선택 상태가 없는 액션 시트(누구를 깨울까요)에선 표시 자체가 무의미하다
             // (그 시트는 selected=false 라 자연히 아무 표시 없음).
+            //
+            // ⚠ **체크가 `trailing`(미리듣기 버튼)보다 **먼저** 온다**(2026-08-15 지시
+            // "스피커가 체크 오른쪽에 계속 있도록"). 순서를 뒤집으면 행을 고를 때 체크가
+            // 끝에 끼어들며 **스피커가 왼쪽으로 밀린다** — 방금 누르려던 버튼이 손가락
+            // 밑에서 움직인다. 끝에 고정된 쪽이 안 움직인다(iOS `VoiceSelectionSheet` 가
+            // `[제목][체크][스피커]` 인 이유다 — 가운데 제목 열이 늘었다 줄며 흡수한다).
             if (selected) {
                 Icon(
                     imageVector = Icons.Filled.Check,
@@ -348,6 +353,7 @@ internal fun WakerSheetOptionRow(
                     modifier = Modifier.size(22.dp),
                 )
             }
+            trailing?.invoke()
         }
         if (divider) {
             // 아이콘 배지가 있으면 텍스트 시작선(40+12+20=72)까지 들여쓰고, 아니면

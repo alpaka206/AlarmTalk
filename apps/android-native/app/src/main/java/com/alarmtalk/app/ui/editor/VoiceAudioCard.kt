@@ -106,6 +106,15 @@ internal fun VoiceAudioCard(
         // 목소리를 고르면 꺼져 있던 목소리를 자동으로 켠다(잠금 시엔 게이트로 유도).
         if (!voiceEnabled) onVoiceEnabledChange(true)
         if (option.id == VoiceSources.LOCAL_AUDIO) {
+            // ⚠ **옮겨오기 전 오디오를 지운다**(2026-08-16 지적 "녹음 안 했는데 녹음 완료라고
+            // 뜨고 알람 문구 소리가 난다"). `localAudioUri` 는 **녹음 전용이 아니라** 캐시된
+            // 오디오 파일 일반이다 — `setGeneratedTtsAudio`·`setStockClipAudio` 도 여기에
+            // 담는다. 안 지우면 방금 만든 TTS 파일이 남아 녹음 UI 가 '녹음 완료' 로 읽고,
+            // 재생 버튼이 그 TTS 를 튼다.
+            //
+            // ⚠ **이미 녹음 상태였으면 지우지 않는다** — 같은 항목을 다시 골랐다고
+            // 녹음물이 사라지면 안 된다.
+            if (editor.voiceSource != VoiceSources.LOCAL_AUDIO) editor.clearAudio()
             editor.voiceSource = VoiceSources.LOCAL_AUDIO
             editor.clearTtsMeta()
         } else {
@@ -510,7 +519,10 @@ private fun VoiceProfileSelector(
     }
     if (sheetOpen) {
         WakerSelectionSheet(
-            title = stringResource(R.string.editor_voice_select),
+            // 시트 제목은 iOS `VoiceSelectionSheet` 와 같은 "목소리 고르기" 다.
+            // ⚠ 아래 요약 행의 자리표시자(`editor_voice_select`, "목소리 선택")와 **다른
+            // 문자열**이다 — 하나로 합치면 값 자리에 "고르기" 라는 동작이 들어간다.
+            title = stringResource(R.string.editor_voice_select_title),
             onDismiss = { sheetOpen = false },
         ) { dismiss ->
             options.forEachIndexed { index, option ->

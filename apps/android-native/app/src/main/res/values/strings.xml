@@ -244,6 +244,7 @@
     <string name="editor_voice_repeat_hint">반복을 끄면 목소리가 한 번만 나와요.</string>
     <string name="editor_voice_repeat_title">끌 때까지 반복</string>
     <string name="editor_voice_select">목소리 선택</string>
+    <string name="editor_voice_select_title">목소리 고르기</string>
     <string name="editor_voice_source_local">직접 녹음</string>
     <string name="editor_voice_local_detail">이 알람에만 쓸 소리를 직접 녹음하기</string>
     <string name="editor_voice_volume">목소리 크기</string>

@@ -234,6 +234,7 @@
     <string name="editor_voice_repeat_hint">繰り返しをオフにすると、声は1回だけ再生されます。</string>
     <string name="editor_voice_repeat_title">停止するまで繰り返す</string>
     <string name="editor_voice_select">声を選択</string>
+    <string name="editor_voice_select_title">声を選ぶ</string>
     <string name="editor_voice_source_local">自分で録音</string>
     <string name="editor_voice_local_detail">このアラームだけに使う音をその場で録音</string>
     <string name="editor_voice_volume">声の大きさ</string>
