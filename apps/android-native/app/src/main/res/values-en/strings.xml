@@ -213,9 +213,10 @@
     <string name="editor_snooze_custom">Custom</string>
     <string name="editor_snooze_custom_dialog_title">Set custom interval</string>
     <string name="editor_snooze_custom_range_error">Choose between 1 and 30 minutes.</string>
-    <string name="editor_snooze_custom_value">Custom · %1$d min</string>
+    <string name="editor_snooze_custom_value">Custom (%1$d min)</string>
     <string name="editor_snooze_interval">Interval</string>
-    <string name="editor_snooze_repeat">Repeat</string>
+    <string name="editor_snooze_repeat">Max repeats</string>
+    <string name="editor_snooze_use">Use snooze</string>
     <string name="editor_snooze_repeat_five">5 times</string>
     <string name="editor_snooze_repeat_forever">Keep repeating</string>
     <string name="editor_snooze_repeat_three">3 times</string>

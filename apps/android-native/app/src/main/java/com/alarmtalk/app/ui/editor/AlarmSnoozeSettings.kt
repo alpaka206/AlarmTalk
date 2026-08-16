@@ -160,31 +160,21 @@ internal fun SnoozeSettingsPane(
         Column(
             modifier = Modifier.fillMaxSize(),
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_chevron_back),
-                        contentDescription = stringResource(R.string.editor_back),
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.editor_snooze_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            // 상단바는 공용 `WakerTopBar` 하나다 — 화면마다 손으로 그리지 말 것
+            // (알람 목록·설정·문구 pane 이 모두 이걸 쓴다).
+            WakerTopBar(
+                title = stringResource(R.string.editor_snooze_title),
+                onBack = onDismiss,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
+            )
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    // 문구 pane·iOS `PaneScaffold` 와 같은 여백/간격
+                    // (`padding(.horizontal, 20).padding(.vertical, 16)` + `VStack(spacing: 16)`).
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Surface(
                     shape = WakerPanelShape,
@@ -198,15 +188,13 @@ internal fun SnoozeSettingsPane(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // ⚠ **상태말('사용 중'/'사용 안 함')로 되돌리지 말 것.** 스위치가 이미
+                        // 상태를 말한다 — 그 자리는 **무엇을 켜는지** 이름을 대야 한다
+                        // (iOS `Toggle("다시 알림 사용")` 과 같은 말·같은 무게).
                         Text(
-                            text = if (snoozeEnabled) stringResource(R.string.editor_in_use) else stringResource(R.string.editor_not_in_use),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (snoozeEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
+                            text = stringResource(R.string.editor_snooze_use),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         AlarmTalkSwitch(
                             checked = snoozeEnabled,
@@ -321,14 +309,17 @@ internal fun SnoozeOptionSection(
     title: String? = null,
     content: @Composable () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+    // 제목 ↔ 목록 간격은 iOS 와 같은 16 이다(거긴 `EditorSectionTitle` 과 카드가
+    // `VStack(spacing: 16)` 의 형제라 그 간격을 그대로 받는다). 예전에는 3 이라 제목이
+    // 목록에 붙어 있었다.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (title != null) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = 4.dp),
+                // iOS `EditorSectionTitle` = `titleSmall`(14) **bold**.
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
             )
         }
         Surface(
