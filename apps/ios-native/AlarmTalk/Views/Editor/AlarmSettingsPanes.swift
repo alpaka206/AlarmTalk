@@ -189,12 +189,16 @@ struct AlarmSoundSettingsPane: View {
             // 알람별 음량 API 가 없다 — 못 움직이는 컨트롤을 두면 값을 바꿔 보고 저장하고
             // 확인하기를 반복하게 된다(CLAUDE.md 「음량 규약」). 안드로이드는 자체
             // 플레이어라 그 슬라이더가 실제로 동작하므로, 여기만 다른 것이 맞다.
-            Text(entries.isEmpty
-                 ? "이 기기에서는 알람음을 고를 수 없어 기본 알람음으로 울려요. 음량은 기기의 알람 볼륨을 따라가요."
-                 : "음량은 iOS 시스템이 정해요. 기기의 알람 볼륨을 조절해 주세요.")
-                .font(theme.typography.bodySmall)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-                .fixedSize(horizontal: false, vertical: true)
+            // ⚠ **음량 안내 문구를 되살리지 말 것**(2026-08-17 지시). "음량은 iOS 시스템이
+            // 정해요. 기기의 알람 볼륨을 조절해 주세요." 는 사용자가 못 하는 일을 설명하느라
+            // 자리를 쓰는 문장이다 — 여기서 할 수 있는 일(알람음 고르기)과 상관이 없다.
+            // 목록을 못 읽는 기기에서만, **무엇이 울릴지**를 알려 준다.
+            if entries.isEmpty {
+                Text("이 기기에서는 알람음을 고를 수 없어 기본 알람음으로 울려요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

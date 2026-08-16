@@ -12,6 +12,19 @@ import Foundation
 /// 앱 컨테이너 Library/Sounds 로 복사   성공
 /// ```
 ///
+/// 2026-08-17 전수 확인(같은 기기) — 합쳐서 **102개**가 목록에 오른다:
+/// - `/Library/Ringtones`(85, `.m4r`) = **시스템 벨소리 그 자체**다. 시계·설정 앱이 내주는
+///   목록과 같은 파일이라 이름이 하나하나 대응한다 — 시계 앱 알람음의 Radar·Apex·Beacon·
+///   Bulletin·By The Seaside·Chimes·Circuit·Constellation·Cosmic·Crystals·Hillside·
+///   Illuminate·Night Owl·Opening·Playtime·Presto·Radiate·Reflection·Ripples·Sencha·
+///   Signal·Silk·Slow Rise·Stargaze·Summit·Twinkle·Uplift·Waves 가 전부 여기 있다.
+///   여기에 옛 벨소리(Marimba·Old Phone·Bark·Duck…)와 iOS 26 의 새 변주
+///   (`-EncoreInfinitum`/`-EncoreRemix`)가 함께 들어 있고, `Alarm.m4r` 도 있다.
+/// - `/System/Library/Audio/UISounds/New`(17, `.caf`) = **알림음**(Anticipate·Bloom·
+///   Calypso·Choo Choo·…). 벨소리보다 짧다.
+/// - `/System/Library/Audio/UISounds`(97) 는 **훑지 않는다.** 키보드 탭·잠금·결제음 같은
+///   UI 효과음이라 알람음으로 내놓을 것이 아니다(`directories` 에 넣지 말 것).
+///
 /// AlarmKit 은 `AlertConfiguration.AlertSound.named(_)` 로 **앱 번들 / 앱 컨테이너의
 /// `Library/Sounds`** 만 본다(SDK 인터페이스에 `.default` 와 `.named(_)` 둘뿐). 그래서
 /// 고른 파일을 `AlarmSoundStaging` 이 CAF 로 변환해 그 폴더에 넣고 이름으로 넘긴다.
