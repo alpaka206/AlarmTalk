@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
@@ -261,6 +262,9 @@ internal fun IosAlertField(
     enabled: Boolean = true,
     singleLine: Boolean = true,
     minHeight: Dp = 48.dp,
+    /// 모서리. 알럿 안에서는 캡슐이지만, **알럿 밖에서도 쓴다** — 코드 등록 행처럼
+    /// 옆에 버튼이 서는 자리는 M3 `OutlinedTextField`(최소 56)로는 높이를 맞출 수 없다.
+    shape: Shape = WakerPillShape,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -285,8 +289,8 @@ internal fun IosAlertField(
                     // 알럿 컨테이너는 r=34). 예전 주석은 "컨테이너(14)보다 작은 반경" 이라
                     // 적었는데 **컨테이너가 14였던 적이 없다** — 34다. 근거가 틀렸으니
                     // 거기서 나온 8도 틀렸다.
-                    .border(0.5.dp, scheme.onSurface.copy(alpha = 0.22f), WakerPillShape)
-                    .background(scheme.surface.copy(alpha = 0.5f), WakerPillShape)
+                    .border(0.5.dp, scheme.onSurface.copy(alpha = 0.22f), shape)
+                    .background(scheme.surface.copy(alpha = 0.5f), shape)
                     // 캡슐이라 좌우가 둥글게 파고들어, 10 이면 글자가 모서리에 닿는다.
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,

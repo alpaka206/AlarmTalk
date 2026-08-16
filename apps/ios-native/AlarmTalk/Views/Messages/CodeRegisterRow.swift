@@ -8,6 +8,7 @@ import SwiftUI
 ///
 /// ContentView 의 `codeRegisterRow` 를 옮긴 것. PeoplePanel 에서 사용한다.
 struct CodeRegisterRow: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
@@ -25,6 +26,11 @@ struct CodeRegisterRow: View {
     /// 고치면 되는 일이라, 알럿을 띄우면 닫고 → 다시 입력창을 찾는 걸음이 하나 더 는다.
     /// 무엇이 틀렸는지도 입력한 값 옆에 있어야 읽힌다.
     @State private var codeError: String?
+
+    /// 제출 불가 — 빈 코드이거나 처리 중.
+    private var isSubmitDisabled: Bool {
+        codeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || socialFeatures.isBusy
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -90,20 +96,32 @@ struct CodeRegisterRow: View {
                         codeError = nil
                     }
                     .alarmTalkFieldStyle()
-                    Button("등록") {
+                    // ⚠ **`.borderedProminent` + 바깥 `.frame` 조합으로 되돌리지 말 것**
+                    // (2026-08-17 실측). 그 프레임은 **버튼 배경이 아니라 자리만** 넓혀서,
+                    // 48pt 자리 안에 32pt 짜리 알약이 떠 있는 모양이 된다 — 옆 입력칸과
+                    // 높이가 안 맞는다. 배경을 라벨에 직접 그려야 크기가 그대로 나온다.
+                    Button {
                         pendingCode = codeDraft
+                    } label: {
+                        Text("등록")
+                            .font(theme.typography.labelLarge)
+                            // 입력칸과 **같은 높이·같은 최소 폭**이고, 그 값은 안드로이드
+                            // (`WakerControlHeight`/`WakerControlMinWidth`)와 같다.
+                            .frame(minWidth: AlarmTalkControl.minWidth, minHeight: AlarmTalkControl.height)
+                            .background(
+                                // 모서리도 안드로이드 버튼(`WakerButtonShape` = 18)과 같은 값이다 —
+                                // 기본 캡슐이면 같은 크기여도 다른 물건으로 보인다.
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(theme.palette.primary)
+                            )
+                            // ⚠ **글자색을 흰색으로 못 박지 말 것.** 다크 테마의 `primary` 는 밝은
+                            // 하늘색이고 그 위 글자색은 **진남색(`onPrimary`)** 이다 — 흰색으로
+                            // 고정하면 밝은 배경에 흰 글자가 되어 **안 보인다**(2026-08-13 지적).
+                            .foregroundStyle(theme.palette.onPrimary)
+                            .opacity(isSubmitDisabled ? 0.45 : 1)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AlarmTalkTheme.primary)
-                    // ⚠ **글자색을 흰색으로 못 박지 말 것.** 다크 테마의 `primary` 는 밝은
-                    // 하늘색이고 그 위 글자색(`onPrimary`)은 **진남색(#08243C)** 이다 —
-                    // 흰색으로 고정하면 밝은 배경에 흰 글자가 되어 **안 보인다**
-                    // (2026-08-13 지적). 편집기·목소리 화면의 다른 prominent 버튼들은
-                    // 전부 `.tint` 만 주고 글자색은 시스템에 맡긴다. 여기만 달랐다.
-                    .disabled(
-                        codeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                            socialFeatures.isBusy
-                    )
+                    .buttonStyle(.plain)
+                    .disabled(isSubmitDisabled)
                 }
 
                 if let codeError {

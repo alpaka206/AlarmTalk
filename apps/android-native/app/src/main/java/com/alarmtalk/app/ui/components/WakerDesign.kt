@@ -43,6 +43,24 @@ internal val WakerSheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.
 internal val WakerPillShape = RoundedCornerShape(999.dp)   // 완전 캡슐(pill) — 진행바·세그먼트·상태 배지
 
 /** 오버레이/코치마크 스크림 — 테마 무관 고정 농도 rgba(5,8,14,.74). */
+/**
+ * 한 줄에 나란히 놓이는 컨트롤의 **공통 치수** — 입력칸과 그 옆 버튼이 같이 쓴다.
+ *
+ * ⚠ **기본값끼리 두면 어긋난다.** M3 `OutlinedTextField` 는 56, `Button` 은 40 이라
+ * 그냥 나란히 두면 **버튼만 16dp 낮게** 앉는다(코드 등록 화면이 그랬다 — 2026-08-17).
+ *
+ * ⚠ **맞추는 방향은 '버튼을 키우기' 가 아니라 '입력칸을 줄이기' 다**(같은 날 지시).
+ * 56 짜리 버튼은 한 줄 액션치고 너무 크다. 그래서 **48**(안드로이드 최소 터치 타깃)로
+ * 내리고, 입력칸은 M3 기본형 대신 컴팩트 필드(`IosAlertField`)를 쓴다 —
+ * `OutlinedTextField` 는 최소 높이가 56이라 48로 내리면 글자가 잘린다.
+ *
+ * **iOS 도 같은 값을 쓴다**(`AlarmTalkControl`) — 두 앱의 버튼 크기를 맞춘 기준점이라
+ * 한쪽만 바꾸지 말 것. 폭도 마찬가지다: 라벨이 짧아도 이 최소 폭은 지킨다(번역이 길어지면
+ * 자연히 늘어난다).
+ */
+internal val WakerControlHeight = 48.dp
+internal val WakerControlMinWidth = 88.dp
+
 internal val WakerScrimColor = Color(0xBD05080E)
 
 // 탭·하위 전체화면이 공유하는 새벽 네이비 그라데이션 배경(로그인 딥네이비 감성)의 단일 출처.

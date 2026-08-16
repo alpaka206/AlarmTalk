@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -128,19 +130,16 @@ internal fun CodeRedeemField(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        OutlinedTextField(
+        // ⚠ **M3 `OutlinedTextField` 로 되돌리지 말 것.** 그건 최소 높이가 56이라 옆
+        // 버튼과 높이를 맞출 수 없다(2026-08-17: 버튼을 56으로 키우자 "버튼이 너무 크다,
+        // 입력칸을 줄여라"). 알럿에서 쓰던 컴팩트 필드를 모서리만 바꿔 재사용한다.
+        IosAlertField(
             value = code,
             onValueChange = { code = sanitizeRedeemCode(it) },
-            placeholder = {
-                Text(
-                    text = stringResource(R.string.code_redeem_placeholder),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            singleLine = true,
+            placeholder = stringResource(R.string.code_redeem_placeholder),
             enabled = !busy,
+            minHeight = WakerControlHeight,
             shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.weight(1f),
         )
         Button(
@@ -152,6 +151,11 @@ internal fun CodeRedeemField(
             },
             enabled = code.isNotBlank() && !busy,
             shape = WakerButtonShape,
+            // 입력칸과 **같은 높이·같은 최소 폭**이다(`WakerControlHeight`/`MinWidth`).
+            // iOS 도 같은 값을 쓴다 — 한쪽만 바꾸면 두 앱의 버튼 크기가 갈라진다.
+            modifier = Modifier
+                .height(WakerControlHeight)
+                .widthIn(min = WakerControlMinWidth),
         ) {
             if (busy) {
                 CircularProgressIndicator(
