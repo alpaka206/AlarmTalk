@@ -324,8 +324,11 @@ struct AlarmEditorSheet: View {
     private var detailSettingsSection: some View {
             EditorSectionTitle(text: "세부 설정")
             EditorCard(verticalPadding: 0) {
-                // 문구는 안드로이드 `editor_snooze_title` 과 같은 '다시 울림' 이다.
-                // ('다시 알림' 은 알림의 스누즈 버튼 문구 `rd_snooze_button_minutes` 쪽이다.)
+                // ⚠ **이 기능의 이름은 앱 전체에서 '다시 울림' 하나다**(2026-08-16 통일).
+                // 예전에는 여기만 '다시 울림' 이고 상세 화면·토글·오류 문구는 '다시 알림'
+                // 이었다. 이 앱에서 **알림은 notification** 이 굳은 뜻이라(알림 권한,
+                // "알람 알림이 뜨지 않아요") 스누즈에 쓰면 충돌한다 — 스누즈는 알림이 다시
+                // 뜨는 게 아니라 **알람이 다시 울린다.**
                 AlarmSettingRow(
                     title: "다시 울림",
                     subtitle: snoozeSummary,
@@ -1350,7 +1353,7 @@ struct AlarmEditorSheet: View {
         voiceStudio.fortuneBirthTime = result.fortuneBirthTime
     }
 
-    /// 세부 설정 카드의 '다시 알림' 요약.
+    /// 세부 설정 카드의 '다시 울림' 요약.
     private var snoozeSummary: String {
         guard draft.snoozeEnabled else { return "꺼짐" }
         let limit = SnoozeSettingsPane.repeatLabel(draft.snoozeRepeatLimit.rawValue)

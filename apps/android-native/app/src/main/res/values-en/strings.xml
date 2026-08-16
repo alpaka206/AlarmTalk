@@ -451,7 +451,7 @@
     <string name="rd_default_alarm_label">Alarm</string>
     <string name="rd_duplicate_alarm_time_message">You already have an alarm at this time. Please choose a different time.</string>
     <string name="rd_slide_to_dismiss">Slide to dismiss</string>
-    <string name="rd_snooze_button_minutes">Remind again in %1$d min</string>
+    <string name="rd_snooze_button_minutes">Ring again in %1$d min</string>
     <string name="rd_test_alarm_label">Test alarm</string>
     <string name="ringing_notification_text">Time to wake up</string>
     <string name="ringing_notification_title">Your alarm is going off</string>

@@ -4031,23 +4031,6 @@
         }
       }
     },
-    "다시 알림 사용": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Use snooze"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スヌーズを使う"
-          }
-        }
-      }
-    },
     "다시 울릴 시간": {
       "extractionState": "manual",
       "localizations": {
@@ -4061,6 +4044,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "スヌーズの間隔"
+          }
+        }
+      }
+    },
+    "다시 울림 사용": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use snooze"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スヌーズを使う"
           }
         }
       }

@@ -18,7 +18,11 @@ enum AlarmSettingsPane: String, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .snooze: return "다시 알림"
+        // ⚠ **'다시 알림' 으로 되돌리지 말 것**(2026-08-16 통일). 이 앱에서 **알림은
+        // notification** 이 굳은 뜻이다(알림 권한, "알람 알림이 뜨지 않아요") — 스누즈는
+        // 알림이 다시 뜨는 게 아니라 **알람이 다시 울리는** 것이다. 앱의 다른 어휘도
+        // 울림이다(울림 화면, `docs/spec/alarm-ringing.md`).
+        case .snooze: return "다시 울림"
         case .vibration: return "진동"
         case .alarmSound: return "알람음"
         case .voiceOutput: return "음성 출력"
@@ -53,7 +57,7 @@ private struct PaneScaffold<Content: View>: View {
     }
 }
 
-// MARK: - 다시 알림
+// MARK: - 다시 울림
 
 struct SnoozeSettingsPane: View {
     @Environment(\.voiceAlarmTheme) private var theme
@@ -70,7 +74,7 @@ struct SnoozeSettingsPane: View {
     var body: some View {
         PaneScaffold(title: AlarmSettingsPane.snooze.title) {
             EditorCard {
-                Toggle("다시 알림 사용", isOn: $enabled)
+                Toggle("다시 울림 사용", isOn: $enabled)
                     .alarmTalkSwitch()
                     .padding(.vertical, 12)
             }
