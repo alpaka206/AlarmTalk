@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// **DEBUG 전용** — 서버·로그인 없이 실제 화면을 띄우기 위한 시드.
 ///

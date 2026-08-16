@@ -152,7 +152,7 @@
     <string name="common_voice_capture_mode_record">녹음</string>
     <string name="common_voice_record_again_hint">마이크를 누르면 다시 녹음해요</string>
     <string name="common_voice_record_start">녹음</string>
-    <string name="common_voice_record_status_idle">눌러서 녹음 시작</string>
+    <string name="common_voice_record_status_idle">녹음하기</string>
     <string name="common_voice_record_status_recording">녹음 중</string>
     <string name="common_voice_record_stop">녹음 종료</string>
     <string name="editor_alarm_sound_title">알람음</string>

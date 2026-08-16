@@ -145,7 +145,7 @@
     <string name="common_voice_capture_mode_record">録音</string>
     <string name="common_voice_record_again_hint">マイクをタップすると録音し直せます</string>
     <string name="common_voice_record_start">録音</string>
-    <string name="common_voice_record_status_idle">タップして録音開始</string>
+    <string name="common_voice_record_status_idle">録音する</string>
     <string name="common_voice_record_status_recording">録音中</string>
     <string name="common_voice_record_stop">録音を終了</string>
     <string name="editor_alarm_sound_title">アラーム音</string>

@@ -145,7 +145,7 @@
     <string name="common_voice_capture_mode_record">Record</string>
     <string name="common_voice_record_again_hint">Tap the mic to record again</string>
     <string name="common_voice_record_start">Record</string>
-    <string name="common_voice_record_status_idle">Tap to start recording</string>
+    <string name="common_voice_record_status_idle">Record</string>
     <string name="common_voice_record_status_recording">Recording</string>
     <string name="common_voice_record_stop">Stop recording</string>
     <string name="editor_alarm_sound_title">Alarm sound</string>
