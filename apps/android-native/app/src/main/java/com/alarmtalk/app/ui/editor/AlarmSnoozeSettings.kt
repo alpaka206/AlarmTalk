@@ -101,7 +101,11 @@ internal fun AlarmSettingRow(
                 indication = LocalIndication.current,
                 onClick = onClick,
             )
-            .padding(vertical = 14.dp),
+            // ⚠ **치수는 iOS `AlarmSettingRow` 와 같은 값이다**(2026-08-16 지시
+            // "안드로이드가 살짝 커 보인다"). 거긴 `padding(.vertical, 12)` +
+            // `frame(minHeight: 56)` 이다 — 여기는 14 였고 최소 높이가 없어 더 두꺼웠다.
+            .heightIn(min = 56.dp)
+            .padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -113,7 +117,9 @@ internal fun AlarmSettingRow(
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
+                // iOS 는 `bodyLarge`(16) + semibold. M3 `titleMedium` 도 16 이지만
+                // 자간(0.15)이 더 벌어져 같은 글자가 더 넓게 퍼져 보였다.
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
             )
             MutedText(subtitle)
@@ -124,7 +130,9 @@ internal fun AlarmSettingRow(
             imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+            // iOS 셰브론은 SF Symbol 13pt 다. 머티리얼 글리프는 상자를 더 꽉 채우므로
+            // 같은 숫자를 쓰면 오히려 작아 보인다 — 16 이 눈으로 같은 크기다.
+            modifier = Modifier.size(16.dp),
         )
     }
 }
