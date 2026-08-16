@@ -167,21 +167,21 @@ struct AlarmSoundSettingsPane: View {
                     // 기본 알람음은 우리가 가진 파일이 없다 — 들려줄 게 없으니 재생만 멈춘다.
                     onPreview(nil, true)
                 }
-                ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                ForEach(Array(SystemRingtoneLibrary.modernEntries.enumerated()), id: \.element.id) { index, entry in
                     AlarmSettingDivider()
-                    soundRow(
-                        title: entry.name,
-                        selected: soundUri == entry.url.path,
-                        previewURL: entry.url
-                    ) {
-                        soundUri = entry.url.path
-                        soundLabel = entry.name
-                        // ⚠ **고르면 들린다**(2026-08-16 지시). 소리를 고르는 화면에서
-                        // 이름만 보고 정할 수는 없다 — 체크가 켜지는 순간 그 소리를 튼다.
-                        // 같은 것을 다시 골라도 처음부터 다시 튼다(`restart`).
-                        onPreview(entry.url, true)
+                    row(for: entry).id(index)
+                }
+            }
+
+            // 클래식은 시계 앱처럼 **따로 묶는다.** 거긴 별도 화면(`클래식` 행)이지만,
+            // 우리 pane 은 한 화면이라 구역 제목으로 나눈다 — 순서와 묶음은 같다.
+            if !SystemRingtoneLibrary.classicEntries.isEmpty {
+                EditorSectionTitle(text: "클래식")
+                EditorCard(verticalPadding: 0) {
+                    ForEach(Array(SystemRingtoneLibrary.classicEntries.enumerated()), id: \.element.id) { index, entry in
+                        if index > 0 { AlarmSettingDivider() }
+                        row(for: entry)
                     }
-                    .id(index)
                 }
             }
 
@@ -199,6 +199,22 @@ struct AlarmSoundSettingsPane: View {
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func row(for entry: SystemRingtoneLibrary.Entry) -> some View {
+        soundRow(
+            title: entry.name,
+            selected: soundUri == entry.url.path,
+            previewURL: entry.url
+        ) {
+            soundUri = entry.url.path
+            soundLabel = entry.name
+            // ⚠ **고르면 들린다**(2026-08-16 지시). 소리를 고르는 화면에서 이름만 보고
+            // 정할 수는 없다 — 체크가 켜지는 순간 그 소리를 튼다. 같은 것을 다시 골라도
+            // 처음부터 다시 튼다(`restart`).
+            onPreview(entry.url, true)
         }
     }
 

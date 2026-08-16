@@ -46,35 +46,69 @@ enum SystemRingtoneLibrary {
     struct Entry: Identifiable, Equatable {
         /// 파일 경로 전체. 그대로 `alarmSoundUri` 에 저장한다.
         let url: URL
-        /// 사람이 읽는 이름 — 확장자를 떼고 밑줄을 공백으로.
+        /// 사람이 읽는 이름 — 확장자와 `-Encore…` 꼬리표를 떼고 밑줄을 공백으로.
         let name: String
+        /// 시계 앱의 `클래식` 안에 있는 옛 벨소리인가.
+        let isClassic: Bool
 
         var id: String { url.path }
     }
 
-    /// 훑는 디렉터리. 앞쪽이 우선이다.
+    /// 훑는 디렉터리 — **벨소리 하나뿐**이다.
+    ///
+    /// ⚠ **알림음(`/System/Library/Audio/UISounds/New`)을 다시 넣지 말 것**(2026-08-17).
+    /// 시계 앱의 알람 사운드 목록에 **알림음 구역이 없다**(실기기에서 그 화면을 읽었다).
+    /// 설정 앱의 벨소리·문자음 목록에는 있으니 없어서 못 주는 게 아니라 **알람에만 안 주는**
+    /// 것이다. 길이도 다르다 — 알림음 중앙값 2.2초(최소 0.9초) vs 벨소리 10.6초.
     private static let directories = [
         "/Library/Ringtones",
-        "/System/Library/Audio/UISounds/New",
+    ]
+
+    /// 시계 앱 알람 목록에 **없는** 벨소리. 통화용 리믹스로 보인다.
+    ///
+    /// 실기기 대조(2026-08-17): 벨소리 85개 = 클래식 53 + `-EncoreInfinitum` 25 +
+    /// `-EncoreRemix` 7. 시계 앱 알람 목록은 **79개**(최신 26 + 클래식 53)였고, 리믹스
+    /// 7개 중 `Little Bird` 하나만 그 안에 있었다(`작은새`). 나머지 여섯이 이 목록이다.
+    /// ⚠ `-EncoreRemix` 를 통째로 거르면 `Little Bird` 까지 사라져 애플 목록과 어긋난다.
+    private static let excludedBaseNames: Set<String> = [
+        "Buoyant-EncoreRemix",
+        "Dreamer-EncoreRemix",
+        "Pond-EncoreRemix",
+        "Pop-EncoreRemix",
+        "Reflected-EncoreRemix",
+        "Surge-EncoreRemix",
     ]
 
     /// 알람음으로 쓸 만한 확장자. `.m4r` 은 벨소리, `.caf` 는 시스템 사운드다.
     private static let allowedExtensions: Set<String> = ["m4r", "caf", "aiff", "wav", "m4a"]
 
-    /// ⚠ **한 번만 훑고 캐시한다.** 화면을 열 때마다 100개 넘는 파일을 stat 하면
+    /// ⚠ **한 번만 훑고 캐시한다.** 화면을 열 때마다 80개 넘는 파일을 stat 하면
     /// 목록이 눈에 띄게 늦게 뜬다.
     private static var cached: [Entry]?
 
+    /// 최신 벨소리 먼저, 그 뒤에 클래식 — 시계 앱과 같은 순서다.
     static var entries: [Entry] {
         if let cached { return cached }
         let found = directories.flatMap { scan($0) }
-        // 같은 이름이 두 디렉터리에 있으면 앞쪽(벨소리)을 남긴다.
+        // ⚠ **보이는 이름으로 중복을 지우지 말 것**(2026-08-17). 디렉터리가 둘이던 시절의
+        // 코드인데, 꼬리표를 떼고 나니 `Reflection.m4r`(클래식)과
+        // `Reflection-EncoreInfinitum.m4r`(최신)이 같은 이름이 되어 **한 쪽이 조용히
+        // 사라졌다**(79개가 78개로). 애플도 둘 다 준다 — 구역이 다르니 헷갈리지 않는다.
         var seen = Set<String>()
-        let unique = found.filter { seen.insert($0.name).inserted }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        cached = unique
-        return unique
+        let unique = found.filter { seen.insert($0.url.path).inserted }
+        let byName: (Entry, Entry) -> Bool = {
+            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+        let ordered = unique.filter { !$0.isClassic }.sorted(by: byName)
+            + unique.filter(\.isClassic).sorted(by: byName)
+        cached = ordered
+        return ordered
     }
+
+    /// 시계 앱이 위쪽에 내주는 최신 벨소리.
+    static var modernEntries: [Entry] { entries.filter { !$0.isClassic } }
+    /// 시계 앱이 `클래식` 안에 넣어 둔 옛 벨소리.
+    static var classicEntries: [Entry] { entries.filter(\.isClassic) }
 
     static func entry(forPath path: String?) -> Entry? {
         guard let path, !path.isEmpty else { return nil }
@@ -83,13 +117,20 @@ enum SystemRingtoneLibrary {
 
     private static func scan(_ directory: String) -> [Entry] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
-        return names.compactMap { file in
+        return names.compactMap { file -> Entry? in
             let url = URL(fileURLWithPath: directory).appendingPathComponent(file)
             guard allowedExtensions.contains(url.pathExtension.lowercased()) else { return nil }
             // 이름이 비거나 점으로 시작하는 숨김 파일은 거른다.
             let base = url.deletingPathExtension().lastPathComponent
-            guard !base.isEmpty, !base.hasPrefix(".") else { return nil }
-            return Entry(url: url, name: base.replacingOccurrences(of: "_", with: " "))
+            guard !base.isEmpty, !base.hasPrefix("."), !excludedBaseNames.contains(base) else { return nil }
+            // ⚠ **`-Encore…` 꼬리표는 보여 주지 말 것.** 파일 이름일 뿐이고, 시계 앱은
+            // 그냥 '걸음'·'골짜기' 로 부른다. 떼지 않으면 목록이 "Steps-EncoreInfinitum"
+            // 처럼 읽힌다.
+            let display = base
+                .replacingOccurrences(of: "-EncoreInfinitum", with: "")
+                .replacingOccurrences(of: "-EncoreRemix", with: "")
+                .replacingOccurrences(of: "_", with: " ")
+            return Entry(url: url, name: display, isClassic: !base.contains("-Encore"))
         }
     }
 }
