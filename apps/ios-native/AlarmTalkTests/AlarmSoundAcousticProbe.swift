@@ -119,6 +119,59 @@ final class AlarmSoundAcousticProbe: XCTestCase {
         )
     }
 
+
+    /// **짧은 소리(1초)를 알람음으로 걸면 계속 울리는가, 한 번 나고 마는가.**
+    ///
+    /// 알림음(`/System/Library/Audio/UISounds/New`)은 중앙값 2.2초, 가장 짧은 것은 0.9초다.
+    /// 반복되지 않는다면 그건 알람이 아니라 '삑' 한 번이다 — 목록에 둘지 말지가 여기서 갈린다.
+    /// 여기서는 크기(AGC 때문에 못 믿는다)가 아니라 **시간에 걸쳐 소리가 있는가**만 본다.
+    func test_짧은_알람음이_반복되는지_본다() async throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["ALARMTALK_ACOUSTIC_PROBE"] == "1",
+            "손으로 돌리는 프로브다"
+        )
+        let state = try await AlarmManager.shared.requestAuthorization()
+        try XCTSkipUnless(state == .authorized, "알람 권한이 없다")
+
+        let source = try makeBeepWAV(seconds: 1)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let key = "loop-probe"
+        let name = try await MainActor.run {
+            AlarmSoundStaging.clearStagedSound(forKey: key)
+            return try AlarmSoundStaging.stage(url: source, key: key, volumePercent: 100)
+        }
+
+        let id = UUID()
+        let alert = AlarmPresentation.Alert(
+            title: "반복 확인",
+            stopButton: AlarmButton(text: "끄기", textColor: .white, systemImageName: "stop.fill")
+        )
+        _ = try await AlarmManager.shared.schedule(
+            id: id,
+            configuration: AlarmManager.AlarmConfiguration(
+                schedule: .fixed(Date().addingTimeInterval(leadSeconds)),
+                attributes: AlarmAttributes<AlarmTalkMetadata>(
+                    presentation: AlarmPresentation(alert: alert),
+                    metadata: AlarmTalkMetadata(localAlarmID: "loop-probe", label: "반복 확인"),
+                    tintColor: AlarmTalkTheme.primary
+                ),
+                sound: .named(name)
+            )
+        )
+        defer { try? AlarmManager.shared.cancel(id: id) }
+
+        try await Task.sleep(nanoseconds: UInt64((leadSeconds + 1) * 1_000_000_000))
+        var envelope: [Float] = []
+        for _ in 0..<10 { envelope.append(try recordRMS(seconds: 1, configureSession: envelope.isEmpty)) }
+        try? AlarmManager.shared.stop(id: id)
+
+        let printable = envelope.map { String(format: "%.4f", $0) }.joined(separator: " ")
+        print("[ACOUSTIC] 1초 소리, 초당 RMS: \(printable)")
+        let floor = envelope.min() ?? 0
+        let loud = envelope.filter { $0 > max(floor * 3, 0.01) }.count
+        print("[ACOUSTIC] 소리가 난 초: \(loud)/10")
+    }
+
     // MARK: -
 
     /// 주어진 게인으로 구운 파일을 알람음으로 걸어 실제로 울리고, 그동안의 마이크 RMS 를 돌려준다.
@@ -191,7 +244,7 @@ final class AlarmSoundAcousticProbe: XCTestCase {
     }
 
     /// 3초짜리 440Hz 비프(진폭 0.7) — 마이크로 잡히도록 충분히 크게.
-    private func makeBeepWAV() throws -> URL {
+    private func makeBeepWAV(seconds: Int = 3) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("probe-\(UUID().uuidString).wav")
         let format = AVAudioFormat(
@@ -207,7 +260,7 @@ final class AlarmSoundAcousticProbe: XCTestCase {
                 AVLinearPCMIsFloatKey: false,
             ]
         )
-        let frames = AVAudioFrameCount(44_100 * 3)
+        let frames = AVAudioFrameCount(44_100 * seconds)
         let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
         buffer.frameLength = frames
         let samples = buffer.floatChannelData![0]
