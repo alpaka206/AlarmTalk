@@ -5,7 +5,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
@@ -20,8 +22,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -315,13 +315,10 @@ internal const val PlayModeSwitchDurationMillis = 280
 
 /**
  * ⚠ **사라질 때 페이드를 '시간을 들여' 주지 말 것**(2026-08-15 세 번째 지적).
- * 280ms 든 120ms 든, 시간을 주면 **접히는 카드가 그대로 읽힌다** — 특히 문구 요약 행은
- * 알람이 실제로 말할 문장(직접 입력 문구)이라, 0.1초만 비쳐도 "왜 저게 보이지" 가 된다.
- * 3초로 늘려 찍은 슬로모션에서 "문구 · 직접 입력 문구 · 약 먹을 시간이에요…" 가 또렷이 보였다.
- *
- * iOS 실측(같은 방법으로 0.28 → 3.0초로 늘려 접근성 트리를 0.25초 간격으로 조회):
- * **0.25초 시점에 이미 문구 행이 트리에서 사라져 있었다.** 즉 아이폰은 내용을 곧바로 없애고
- * **자리만** 접는다. 그래서 여기서도 페이드는 `snap()` — 첫 프레임에 사라진다.
+ * 시간을 주면 **접히는 카드가 그대로 읽힌다** — 특히 문구 요약 행은 알람이 실제로 말할
+ * 문장이라, 0.1초만 비쳐도 "왜 저게 보이지" 가 된다. iOS 실측(0.28 → 3.0초로 늘려
+ * 접근성 트리를 0.25초 간격 조회)에서 **0.25초 시점에 이미 트리에서 사라져 있었다** —
+ * 아이폰은 내용을 곧바로 없애고 **자리만** 접는다.
  */
 private val PlayModeFadeOutSpec = snap<Float>()
 
@@ -329,18 +326,34 @@ private val PlayModeFadeOutSpec = snap<Float>()
 private const val PlayModeFadeInDelayMillis = 200
 private const val PlayModeFadeInMillis = 120
 
+/**
+ * 자리가 열리고 닫히는 움직임 — **iOS `withAnimation(.snappy(duration: 0.28))` 과 같은 물리다.**
+ *
+ * ⚠ **tween 으로 되돌리지 말 것**(2026-08-16 "사라지는 속도 아이폰이랑 완벽하게 동일하게").
+ * `.snappy` 는 이징 곡선이 아니라 **스프링**이고, `bounce: 0` = 임계감쇠다. 애플이 공개한
+ * 변환식(WWDC23 "Animate with springs")은 지속시간 D 에 대해
+ *   `stiffness = (2π / D)²`, `damping = 4π / D` (→ dampingRatio 1)
+ * 이고, 컴포즈 `spring()` 의 `stiffness` 도 같은 규약(고유진동수 = √stiffness)이라 그대로 옮긴다.
+ *   D = 0.28초 → 2π/0.28 = 22.44 rad/s → stiffness = 503.6
+ * 같은 0.28 이라도 tween 은 등속에 가깝게 끝나고 스프링은 끝에서 천천히 붙는다 — 그래서
+ * 숫자만 맞춰서는 두 앱이 다르게 보였다.
+ */
+private const val PlayModeSpringStiffness = 503.6f
+
+private fun <T> playModeSizeSpec(): androidx.compose.animation.core.FiniteAnimationSpec<T> =
+    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = PlayModeSpringStiffness)
+
 /** 재생 방식에 따라 나타났다 사라지는 블록의 등장 전환. */
 internal fun playModeEnter(): EnterTransition =
     // ⚠ **`Alignment.Top` 이다.** 기본값(`Bottom`)이면 카드가 아래에서 위로 열려 **글자
-    // 윗부분이 잘린 채** 들어온다(슬로모션에서 '목소리 크기' 가 위가 잘린 채 보였다).
-    // 위에서 아래로 열려야 목소리 → 문구 → 크기 순서 그대로 자라난다.
-    expandVertically(tween(PlayModeSwitchDurationMillis), expandFrom = Alignment.Top) +
+    // 윗부분이 잘린 채** 들어온다. 위에서 아래로 열려야 목소리 → 문구 → 크기 순서 그대로 자라난다.
+    expandVertically(playModeSizeSpec(), expandFrom = Alignment.Top) +
         fadeIn(tween(PlayModeFadeInMillis, delayMillis = PlayModeFadeInDelayMillis))
 
 /** 같은 블록의 퇴장 전환. */
 internal fun playModeExit(): ExitTransition =
     fadeOut(PlayModeFadeOutSpec) +
-        shrinkVertically(tween(PlayModeSwitchDurationMillis), shrinkTowards = Alignment.Top)
+        shrinkVertically(playModeSizeSpec(), shrinkTowards = Alignment.Top)
 
 @Composable
 internal fun PlayModeCard(

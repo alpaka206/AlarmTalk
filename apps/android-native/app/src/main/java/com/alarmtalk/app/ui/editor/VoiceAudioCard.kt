@@ -691,7 +691,8 @@ internal fun FreeBucketSettingsPane(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                    // 유료 pane·iOS `PaneScaffold` 와 같은 여백(위 주석 참조).
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
                 // 선택 카드와 아래 상세 카드 사이 — iOS `FreeBucketSettingsPane` 의
                 // `VStack(spacing: 16)` 과 같은 값이다(2026-08-15 지적 "안드로이드가 너무 좁다").
                 verticalArrangement = Arrangement.spacedBy(16.dp),

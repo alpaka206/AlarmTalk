@@ -15,21 +15,25 @@ struct PromptDetailCard: View {
 
     var body: some View {
         EditorCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                HStack(alignment: .top, spacing: 12) {
+            // ⚠ **'변경하기' 는 제목+값 블록의 세로 가운데다**(2026-08-16 지시).
+            // 예전에는 `HStack(alignment: .top)` 안에 값과 나란히 있어 **값의 첫 줄**에
+            // 붙었고, 제목이 위에 따로 있어서 카드 안에서 위로 치우쳐 보였다.
+            // 안드로이드 `RandomPromptDetailRow` 는 처음부터 블록 전체 기준 가운데다.
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
                     Text(value)
                         .font(theme.typography.bodyLarge)
                         .foregroundStyle(theme.palette.onSurface)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    // ⚠ 이 액션을 지우면 등록한 값을 영영 못 바꾼다.
-                    Button("변경하기", action: onChange)
-                        .font(theme.typography.bodyMedium.weight(.semibold))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(theme.palette.primary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // ⚠ 이 액션을 지우면 등록한 값을 영영 못 바꾼다.
+                Button("변경하기", action: onChange)
+                    .font(theme.typography.bodyMedium.weight(.semibold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.palette.primary)
             }
             .padding(.vertical, 12)
         }

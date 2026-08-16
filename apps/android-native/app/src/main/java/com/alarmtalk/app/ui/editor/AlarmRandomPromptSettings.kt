@@ -177,7 +177,11 @@ internal fun RandomPromptSettingsPane(
                 modifier = Modifier
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                    // ⚠ **iOS `PaneScaffold` 와 같은 여백이다**(2026-08-16 지시).
+                    // 거긴 `padding(.horizontal, 20).padding(.vertical, 16)` 이고, 여기는
+                    // 상단바가 자체 아래 여백 4 를 갖고 있어 12 를 더해 16 을 만든다.
+                    // 예전에는 위가 4 뿐이라 제목 바로 밑에 카드가 붙어 있었다.
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
                 // 무료 pane·iOS 와 같은 16dp(`MessageSettingsPane` 의 `VStack(spacing: 16)`).
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
