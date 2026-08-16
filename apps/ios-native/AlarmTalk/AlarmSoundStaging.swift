@@ -60,13 +60,43 @@ enum AlarmSoundStaging {
     /// 캐시된 오디오를 `Library/Sounds/<stagedNamePrefix><safeKey>.<ext>` 로 복사한다.
     /// 이미 존재하면 재사용. 트랜스코드가 필요한 포맷이면 `.caf` 로 변환을 시도한다.
     /// - Returns: AlarmKit `.named(_)` 에 넘길 base 이름 (확장자 제외).
+    /// - Parameter volumePercent: 이 파일에 **구워 넣을** 음량(0~100).
+    ///
+    ///   ⚠ **iOS 에서 음량을 실을 수 있는 자리는 여기뿐이다.** AlarmKit 은 파일 **이름**만
+    ///   받고(`AlertConfiguration.AlertSound.named(_)`), 설정 어디에도 음량 인자가 없다 —
+    ///   `AlarmKit.swiftinterface` 전체에서 알람이 받는 것은 `sound:` 하나다. 그래서 예전에는
+    ///   목소리 크기 슬라이더가 **잠금화면 알람에 아무 영향이 없었다**(스테이징이 원본을
+    ///   그대로 복사했다). in-app 폴백 플레이어에만 게인이 걸렸는데, 그 폴백은 스테이징이
+    ///   **실패했을 때만** 도는 경로라 정상 상황에서는 한 번도 쓰이지 않는다.
     @discardableResult
-    static func stage(url sourceURL: URL, key: String) throws -> String {
+    static func stage(url sourceURL: URL, key: String, volumePercent: Int = 100) throws -> String {
         let fm = FileManager.default
         let soundsDir = try ensureSoundsDirectory()
         let safeKey = AudioCacheStore.safeCacheKey(key)
-        let baseName = "\(stagedNamePrefix)\(safeKey)"
+        let gainPercent = max(0, min(100, volumePercent))
+        // ⚠ **음량을 이름에 넣는다.** 재사용 판정이 파일 존재 하나뿐이라, 이름이 같으면
+        // 슬라이더를 내려도 예전에 구워 둔 큰 소리 파일이 그대로 다시 쓰인다.
+        let baseName = gainPercent == 100
+            ? "\(stagedNamePrefix)\(safeKey)"
+            : "\(stagedNamePrefix)\(safeKey)-v\(gainPercent)"
         let sourceExt = sourceURL.pathExtension.lowercased()
+
+        // 음량이 100 이 아니면 **원본을 그대로 복사할 수 없다** — 샘플값을 줄여야 하므로
+        // 포맷과 무관하게 LPCM 으로 다시 쓴다.
+        if gainPercent != 100 {
+            #if canImport(AVFoundation)
+            let stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
+            if !isUsableStagedFile(stagedURL) {
+                try? fm.removeItem(at: stagedURL)
+                try writeAtomically(into: stagedURL) { tmp in
+                    try writeCAF(from: sourceURL, to: tmp, gain: Float(gainPercent) / 100)
+                }
+            }
+            return baseName
+            #else
+            throw AlarmSoundStagingError.avfoundationUnavailable
+            #endif
+        }
 
         // 30초 초과 클립은 passthrough 도 캡(.caf 30s)을 강제한다 — Apple 의 30초 커스텀
         // 사운드 한도를 넘긴 파일을 그대로 stage 하면 .named lookup 이 실패하므로,
@@ -360,6 +390,63 @@ enum AlarmSoundStaging {
                     : !appendedAny.get() ? "source produced no audio samples"
                     : "writer status=\(writer.status.rawValue) reader status=\(reader.status.rawValue)")
             throw AlarmSoundStagingError.writeFailed(reason)
+        }
+    }
+
+    /// 소스를 **게인을 곱해** CAF(16-bit LPCM)로 다시 쓴다. 30초로 자르는 것은 위와 같다.
+    ///
+    /// ⚠ **위 `transcodeToCAF` 파이프라인에 게인을 끼우지 않은 이유가 있다.** 거기서는
+    /// `CMSampleBuffer` 의 블록 버퍼를 직접 건드려야 하는데, 메모리가 연속이라는 보장이
+    /// 없어 세그먼트를 따라가야 하고 — **실패해도 파일은 멀쩡히 만들어진다.** 그러면
+    /// 알람이 사용자가 줄여 놓은 음량을 무시하고 원래 크기로 울리는데, 그 사실이 어디에도
+    /// 드러나지 않는다. `AVAudioFile` 은 디코드된 float 버퍼를 주므로 곱하기 한 번이면 되고,
+    /// 열지 못하면 throw 라 호출부가 in-app 폴백으로 내려간다.
+    private static func writeCAF(from src: URL, to dst: URL, gain: Float) throws {
+        let input: AVAudioFile
+        do {
+            input = try AVAudioFile(forReading: src)
+        } catch {
+            throw AlarmSoundStagingError.writeFailed("read: \(error.localizedDescription)")
+        }
+
+        let format = input.processingFormat
+        let limitFrames = AVAudioFramePosition(
+            format.sampleRate * Double(AlarmAudioLimits.maxDurationMillis) / 1000
+        )
+        let frames = AVAudioFrameCount(max(0, min(limitFrames, input.length)))
+        guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
+            throw AlarmSoundStagingError.writeFailed("source produced no audio samples")
+        }
+        do {
+            try input.read(into: buffer, frameCount: frames)
+        } catch {
+            throw AlarmSoundStagingError.writeFailed("decode: \(error.localizedDescription)")
+        }
+
+        // 게인은 여기 한 줄이다. 0 이면 무음 파일이 된다 — **파일을 안 만드는 것과 다르다.**
+        // 이름이 없으면 AlarmKit 은 `.default` 시스템 톤으로 되돌아가 오히려 소리가 난다.
+        if let channels = buffer.floatChannelData {
+            for channel in 0..<Int(format.channelCount) {
+                let samples = channels[channel]
+                for frame in 0..<Int(buffer.frameLength) {
+                    samples[frame] *= gain
+                }
+            }
+        }
+
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: format.sampleRate,
+            AVNumberOfChannelsKey: format.channelCount,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+        do {
+            let output = try AVAudioFile(forWriting: dst, settings: settings)
+            try output.write(from: buffer)
+        } catch {
+            throw AlarmSoundStagingError.writeFailed("write: \(error.localizedDescription)")
         }
     }
 

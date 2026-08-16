@@ -119,7 +119,9 @@ enum AlarmSoundResolver {
                 duration <= AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis
 
             if withinLimit {
-                if let bundled = try? AlarmSoundStaging.stage(url: url, key: key) {
+                if let bundled = try? AlarmSoundStaging.stage(
+                    url: url, key: key, volumePercent: record.voiceVolumePercent
+                ) {
                     return .bundledNamed(bundled)
                 }
                 // staging 실패 — in-app 폴백
@@ -131,7 +133,9 @@ enum AlarmSoundResolver {
             // 갱신되지 않은 경우를 대비해 staging 을 한 번 시도한다 — AlarmSoundStaging 이
             // 첫 30초로 캡하므로 성공하면 .bundledNamed(잠금 시에도 울림)로 승격된다(change 6).
             // 트림/transcode 가 진짜로 실패할 때만 .cachedAudio in-app 폴백으로 떨어진다.
-            if let bundled = try? AlarmSoundStaging.stage(url: url, key: key) {
+            if let bundled = try? AlarmSoundStaging.stage(
+                url: url, key: key, volumePercent: record.voiceVolumePercent
+            ) {
                 return .bundledNamed(bundled)
             }
             return .cachedAudio(url, duration)
@@ -140,7 +144,9 @@ enum AlarmSoundResolver {
         // 2) 사용자가 선택한 시스템/번들 사운드 URI
         if let url = fileURL(forStoredURI: record.alarmSoundUri),
            FileManager.default.fileExists(atPath: url.path),
-           let bundled = try? AlarmSoundStaging.stage(url: url, key: "alarm-\(record.id)") {
+           let bundled = try? AlarmSoundStaging.stage(
+               url: url, key: "alarm-\(record.id)", volumePercent: record.alarmVolumePercent
+           ) {
             return .bundledNamed(bundled)
         }
 
