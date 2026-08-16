@@ -232,7 +232,6 @@
     <string name="editor_voice_generation_canceled_time_changed">The alarm time changed, so voice generation was stopped.</string>
     <string name="editor_voice_loading">Loading voices.</string>
     <string name="editor_voice_output_title">Voice volume</string>
-    <string name="editor_voice_repeat_hint">Turn this off and the voice plays once.</string>
     <string name="editor_voice_repeat_title">Repeat until dismissed</string>
     <string name="editor_voice_select">Select voice</string>
     <string name="editor_voice_select_title">Choose a voice</string>

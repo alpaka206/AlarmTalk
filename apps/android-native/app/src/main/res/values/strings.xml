@@ -241,8 +241,7 @@
     <string name="editor_voice_deleted_title">삭제된 목소리</string>
     <string name="editor_voice_generation_canceled_time_changed">알람 시각이 바뀌어 음성 생성을 중단했어요.</string>
     <string name="editor_voice_loading">목소리를 불러오는 중이에요.</string>
-    <string name="editor_voice_output_title">목소리</string>
-    <string name="editor_voice_repeat_hint">반복을 끄면 목소리가 한 번만 나와요.</string>
+    <string name="editor_voice_output_title">목소리 크기</string>
     <string name="editor_voice_repeat_title">끌 때까지 반복</string>
     <string name="editor_voice_select">목소리 선택</string>
     <string name="editor_voice_select_title">목소리 고르기</string>

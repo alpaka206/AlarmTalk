@@ -404,18 +404,33 @@ internal fun VoiceOutputSettingsPane(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                    // 다른 pane·iOS `PaneScaffold` 와 같은 여백.
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                VoiceVolumeSelector(
-                    volumePercent = volumePercent,
-                    onVolumeChange = onVolumeChange,
-                )
-                if (showRepeat) {
-                    VoiceRepeatSelector(
-                        repeat = repeat,
-                        onRepeatChange = onRepeatChange,
-                    )
+                // ⚠ **카드 밖으로 다시 꺼내지 말 것**(2026-08-16 통일). 편집기의 모든 설정은
+                // 카드에 담긴다(세부 설정·다시 울림·진동·알람음·문구) — 여기만 맨몸으로
+                // 나와 있어 같은 층위의 컨트롤이 화면마다 다르게 보였다. iOS 도 한 카드에
+                // 담고 구분선으로 나눈다(`VoiceOutputSettingsPane`).
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerPanelShape,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = wakerCardBorder(),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        VoiceVolumeSelector(
+                            volumePercent = volumePercent,
+                            onVolumeChange = onVolumeChange,
+                        )
+                        if (showRepeat) {
+                            AlarmSettingDivider()
+                            VoiceRepeatSelector(
+                                repeat = repeat,
+                                onRepeatChange = onRepeatChange,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -832,7 +847,10 @@ private fun VoiceRepeatSelector(
     repeat: Boolean,
     onRepeatChange: (Boolean) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -850,7 +868,6 @@ private fun VoiceRepeatSelector(
             Spacer(Modifier.width(12.dp))
             AlarmTalkSwitch(checked = repeat, onCheckedChange = onRepeatChange)
         }
-        MutedText(stringResource(R.string.editor_voice_repeat_hint))
     }
 }
 
@@ -859,7 +876,11 @@ private fun VoiceVolumeSelector(
     volumePercent: Int,
     onVolumeChange: (Int) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // 카드 안 여백 — 다른 카드 행과 같은 값(가로 14 · 세로 12).
+    Column(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

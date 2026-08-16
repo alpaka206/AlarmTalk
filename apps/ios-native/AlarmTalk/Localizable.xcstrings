@@ -6377,23 +6377,6 @@
         }
       }
     },
-    "반복을 끄면 목소리가 한 번만 나와요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Turn repeat off and the voice plays just once."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "繰り返しをオフにすると、声は一度だけ再生されます。"
-          }
-        }
-      }
-    },
     "받는 사람": {
       "extractionState": "manual",
       "localizations": {

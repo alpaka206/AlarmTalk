@@ -25,7 +25,11 @@ enum AlarmSettingsPane: String, Identifiable, Hashable {
         case .snooze: return "다시 울림"
         case .vibration: return "진동"
         case .alarmSound: return "알람음"
-        case .voiceOutput: return "음성 출력"
+        // ⚠ **상세 화면 제목은 그 화면을 연 행과 같은 말이다**(2026-08-16 통일) —
+        // 다시 울림·진동·알람음·문구가 모두 그렇다. 여기만 행은 '목소리 크기' 인데
+        // 제목이 '음성 출력' 이었고(안드로이드는 '목소리'), 같은 화면에 이름이 셋이었다.
+        // '음성' 이 아니라 '목소리' 다 — 사용자에게 보이는 말은 앱 전체가 목소리다.
+        case .voiceOutput: return "목소리 크기"
         }
     }
 }
@@ -336,10 +340,6 @@ struct VoiceOutputSettingsPane: View {
                     .alarmTalkSwitch()
                     .padding(.vertical, 12)
             }
-
-            Text("반복을 끄면 목소리가 한 번만 나와요.")
-                .font(theme.typography.bodySmall)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
         }
     }
 }

@@ -231,8 +231,7 @@
     <string name="editor_voice_deleted_title">削除された声</string>
     <string name="editor_voice_generation_canceled_time_changed">アラームの時刻が変わったため、音声の生成を中止しました。</string>
     <string name="editor_voice_loading">声を読み込んでいます。</string>
-    <string name="editor_voice_output_title">声</string>
-    <string name="editor_voice_repeat_hint">繰り返しをオフにすると、声は1回だけ再生されます。</string>
+    <string name="editor_voice_output_title">声の大きさ</string>
     <string name="editor_voice_repeat_title">停止するまで繰り返す</string>
     <string name="editor_voice_select">声を選択</string>
     <string name="editor_voice_select_title">声を選ぶ</string>
