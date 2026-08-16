@@ -281,6 +281,14 @@
   (`clonePrerenderBucketCategoryFor`) 사실상 **모든 저장**이 이 경로다. 그래서 `!voiceRandomPrompt`
   하나만 보고 판단하면 결과가 "가끔 안 된다" 가 아니라 "라이브 생성 폴백일 때만 된다" 가 된다.
   - 버킷/직접입력 판정식은 언제나 **`!voiceRandomPrompt && !isActiveBucketAlarm()`** 이고, 이걸 쓰는
+  - ⚠ **표시와 저장은 판정식이 다르다**(2026-08-16 분리). `isActiveBucketAlarm()` 은 첫 줄에서
+    `playMode == ALARM_ONLY` 면 false 다 — "**울릴 때** 클립을 쓰는가" 로는 맞지만, 그걸
+    **문구 종류 표시**에 쓰면 재생 방식을 '알람' 으로 바꾸는 것만으로 요약 행이 `약` →
+    `직접 입력` 으로 뒤집힌다(실기기 확인: `bucket=medication` 은 그대로인데 `active` 만 false).
+    **표시**(요약 행·pane 프리셀렉트·직접입력 여부)는 `hasBucketMessageChoice()`(재생 방식 무관),
+    **저장·오디오 바인딩**(`toDraft`·버킷 필드·컨텍스트 플래그)은 `isActiveBucketAlarm()`.
+    각 갈래 안에서는 여전히 철자까지 같아야 한다. 회귀 테스트
+    `AlarmEditorStateTest.alarmModeDoesNotChangeChosenMessageKind`.
     자리는 **일곱**이다(2026-08-12 전수 확인): 저장(`AlarmEditorState.toDraft`), 문구 pane 프리셀렉트와
     `randomContext`·`manualText`(`AlarmEditorScreen` 의 `random_prompt`), `applyRandomPromptSettings`
     의 `unchanged`, 요약 행(`VoiceAudioCard` 의 `MessageModeSummaryRow`), 목소리 교체 시

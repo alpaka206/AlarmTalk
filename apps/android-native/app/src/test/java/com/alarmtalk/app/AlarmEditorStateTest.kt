@@ -49,6 +49,56 @@ class AlarmEditorStateTest {
         assertNull(randomPromptContextForBucket("unknown"))
     }
 
+    /**
+     * **재생 방식을 '알람' 으로 바꿔도 고른 문구 종류는 그대로여야 한다.**
+     *
+     * 2026-08-16 질문 "왜 알람으로 바꾸면 약이 직접 입력으로 바뀌냐". 원인은 표시 판정식이
+     * `isActiveBucketAlarm()` 을 쓰고 있던 것 — 그 함수는 첫 줄에서 `playMode == ALARM_ONLY`
+     * 면 false 를 돌려준다(그건 "울릴 때 클립을 쓰는가" 로는 맞다). 버킷이 붙으면
+     * `voiceRandomPrompt` 가 꺼지므로, 알람 모드가 되는 순간 `!false && !false` 가 되어
+     * 요약 행이 '직접 입력' 으로 뒤집혔다.
+     *
+     * 표시는 `hasBucketMessageChoice()`(재생 방식 무관), 저장·오디오는 `isActiveBucketAlarm()`.
+     * 둘을 다시 합치면 이 테스트가 깨진다.
+     */
+    @Test
+    fun alarmModeDoesNotChangeChosenMessageKind() {
+        val editor = AlarmEditorState.from(alarm = null, defaultPlayMode = AlarmPlayModes.VOICE_ONLY)
+        editor.voiceProfileId = "clone-profile"
+        editor.voiceRandomPrompt = true
+        editor.voiceRandomContext = "medication"
+        editor.setBucketAudio(
+            audio = CachedAlarmAudio(
+                localAudioUri = "file://clip0.mp3",
+                rawAudioUri = "r2://clip0.mp3",
+                displayName = "clip0",
+                durationMillis = null,
+                cacheKey = "stock_clip-0",
+                messageId = "clip-0",
+            ),
+            profileId = "clone-profile",
+            messageId = "clip-0",
+            text = "약 먹을 시간이에요",
+            bucket = "medication",
+            language = "ko",
+            clipKeys = listOf("stock_clip-0", "stock_clip-1"),
+        )
+
+        // 목소리 모드: 둘 다 '테마 알람' 이라고 답한다.
+        assertTrue(editor.isActiveBucketAlarm())
+        assertTrue(editor.hasBucketMessageChoice())
+        assertFalse(!editor.voiceRandomPrompt && !editor.hasBucketMessageChoice()) // = 직접 입력 아님
+
+        editor.playMode = AlarmPlayModes.ALARM_ONLY
+
+        // 울릴 때 클립을 쓰지 않는 건 맞다.
+        assertFalse(editor.isActiveBucketAlarm())
+        // ⚠ 그래도 **고른 문구는 그대로 '약'** 이다 — 여기서 true 가 되면 요약 행이
+        // '직접 입력' 으로 뒤집힌다(고친 버그).
+        assertTrue(editor.hasBucketMessageChoice())
+        assertFalse(!editor.voiceRandomPrompt && !editor.hasBucketMessageChoice())
+    }
+
     @Test
     fun bucketAlarmKeepsItsMessageContextOnSave() {
         // 버킷을 붙이면 voiceRandomPrompt 가 꺼진다. 그때 종류까지 떨어뜨리면 다음 새 알람이

@@ -1565,7 +1565,8 @@ internal fun AlarmEditorScreen(
                 // 버킷 여부를 함께 봐야 한다 — 버킷 알람도 voiceRandomPrompt=false 로 저장되므로
                 // (아래 manualText 와 같은 이유) 이것만으로 판별하면 '사랑'으로 저장한 알람을
                 // 다시 열었을 때 pane 이 '직접 입력'에 체크된 채 열린다.
-                randomContext = if (editor.voiceRandomPrompt || editor.isActiveBucketAlarm()) {
+                // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
+                randomContext = if (editor.voiceRandomPrompt || editor.hasBucketMessageChoice()) {
                     editor.voiceRandomContext
                 } else {
                     ManualMessageContext
@@ -1573,7 +1574,7 @@ internal fun AlarmEditorScreen(
                 // 직접 입력으로 저장된 알람만 기존 문구를 프리필한다. 버킷 알람도 저장 시
                 // voiceRandomPrompt=false + voiceText=클립문구가 되므로 버킷 여부를 함께 본다
                 // (안 그러면 사용자가 쓴 적 없는 클립 문구가 '내가 입력한 문구'처럼 나온다).
-                manualText = if (!editor.voiceRandomPrompt && !editor.isActiveBucketAlarm()) {
+                manualText = if (!editor.voiceRandomPrompt && !editor.hasBucketMessageChoice()) {
                     editor.voiceText
                 } else {
                     ""
@@ -1620,7 +1621,7 @@ internal fun AlarmEditorScreen(
                 // 예전에는 이 자리만 `selectedBucket == null` 을 직접 봐서, 버킷은 골라 뒀는데
                 // 오디오 바인딩이 풀린 상태(예: applyRandomPromptSettings 의 clearAudio 뒤)에서
                 // 나머지 여섯 자리와 **반대로 답했다** — 요약 행은 '날씨' 인데 pane 은 '직접 입력'.
-                manualSelected = !editor.voiceRandomPrompt && !editor.isActiveBucketAlarm(),
+                manualSelected = !editor.voiceRandomPrompt && !editor.hasBucketMessageChoice(),
                 onSelectManual = {
                     // 직접 입력을 고르면 랜덤·버킷을 함께 푼다 — 셋이 동시에 켜질 수 없다.
                     editor.voiceRandomPrompt = false

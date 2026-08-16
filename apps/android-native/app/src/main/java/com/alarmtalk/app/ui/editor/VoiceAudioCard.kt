@@ -255,13 +255,15 @@ internal fun VoiceAudioCard(
                                 FreeThemeSummaryRow(
                                     selectedBucket = editor.selectedBucket,
                                     weatherCity = editor.voiceWeatherCity,
+                                    // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
                                     manualSelected = !editor.voiceRandomPrompt &&
-                                        !editor.isActiveBucketAlarm(),
+                                        !editor.hasBucketMessageChoice(),
                                     onClick = onOpenFreeBucketSettings,
                                 )
                             } else {
                                 MessageModeSummaryRow(
-                                    isManual = !editor.voiceRandomPrompt && !editor.isActiveBucketAlarm(),
+                                    // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
+                                    isManual = !editor.voiceRandomPrompt && !editor.hasBucketMessageChoice(),
                                     randomContext = editor.voiceRandomContext,
                                     onClick = onOpenRandomPromptSettings,
                                 )

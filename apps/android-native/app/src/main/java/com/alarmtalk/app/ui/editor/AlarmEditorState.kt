@@ -267,13 +267,34 @@ internal class AlarmEditorState(
      * voiceText=클립문구가 되므로, `!voiceRandomPrompt` 만으로 판별하면 버킷 알람이 직접 입력으로
      * 오분류된다(그 오분류 때문에 2026-07-21 에 문구 프리필이 통째로 제거됐었다).
      *
-     * **판정식 `!voiceRandomPrompt && !isActiveBucketAlarm()` 을 쓰는 자리는 셋이고, 셋이 같아야
+     * **표시 판정식은 `!voiceRandomPrompt && !hasBucketMessageChoice()` 다**(2026-08-16 분리 —
+     * 위 `hasBucketMessageChoice` 주석 참조). 저장·오디오 판정식은 `!isActiveBucketAlarm()` 이고,
+     * 각 갈래 안에서는 여전히 **철자까지 같아야 한다.**
+     * 예전 주석: 판정식 `!voiceRandomPrompt && !isActiveBucketAlarm()` 을 쓰는 자리는 셋이고, 셋이 같아야
      * 한다**: 저장([toDraft] 의 voiceRandomContext), 문구 pane 프리셀렉트(`AlarmEditorScreen` 의
      * `random_prompt` → randomContext·manualText), 요약 행(`VoiceAudioCard` 의 isManual).
      * 2026-08-05 에 요약 행만 맞고 나머지가 틀려, 행은 '사랑'인데 눌러 열면 '직접 입력'이었다.
      */
     fun isActiveBucketAlarm(): Boolean {
         if (playMode == AlarmPlayModes.ALARM_ONLY || voiceSource == VoiceSources.LOCAL_AUDIO) return false
+        return hasBucketMessageChoice()
+    }
+
+    /**
+     * **사용자가 고른 문구가 테마(버킷)인가 — 재생 방식과 무관하다.**
+     *
+     * ⚠ **`isActiveBucketAlarm()` 과 용도가 다르다. 둘을 합치지 말 것**(2026-08-16 분리).
+     * 저쪽은 "**울릴 때** 버킷 클립을 쓰는가" 를 묻고, 그래서 알람 전용·직접 녹음이면
+     * false 다 — 그건 맞다. 그런데 그 함수를 **문구 종류 표시**에도 쓰고 있어서,
+     * 재생 방식을 '알람' 으로 바꾸는 것만으로 요약 행이 `약` → `직접 입력` 으로 뒤집혔다
+     * (실기기 확인: `bucket=medication` 은 그대로인데 `active` 만 true → false).
+     * 고른 문구는 그대로인데 재생 방식만 바뀐 것이므로 **표시가 틀린 것**이다.
+     *
+     * 나누는 기준:
+     *  - **표시**(요약 행·pane 프리셀렉트·직접입력 여부) → `hasBucketMessageChoice()`
+     *  - **저장·오디오 바인딩**(`toDraft`, 버킷 필드, 컨텍스트 플래그) → `isActiveBucketAlarm()`
+     */
+    fun hasBucketMessageChoice(): Boolean {
         if (selectedBucket == null) return false
         val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)
         return keys.isNotEmpty() && audioCacheKey != null && keys.contains(audioCacheKey)
