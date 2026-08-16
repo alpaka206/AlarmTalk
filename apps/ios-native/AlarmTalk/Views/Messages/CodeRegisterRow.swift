@@ -112,13 +112,18 @@ struct CodeRegisterRow: View {
                                 // 모서리도 안드로이드 버튼(`WakerButtonShape` = 18)과 같은 값이다 —
                                 // 기본 캡슐이면 같은 크기여도 다른 물건으로 보인다.
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .fill(theme.palette.primary)
+                                    // ⚠ **비활성을 `.opacity` 로 만들지 말 것**(2026-08-17
+                                    // "등록 버튼 글씨가 안 보인다"). 통째로 흐리게 하면 글자와
+                                    // 배경이 **같이** 옅어져 대비가 1.8:1 까지 떨어진다(실측).
+                                    // 비활성은 '못 누른다' 는 신호이지 글자를 지우라는 뜻이
+                                    // 아니다 — 무엇을 누르려 했는지는 계속 보여야 한다.
+                                    // 안드로이드 `wakerButtonColors()` 와 같은 색 쌍이다.
+                                    .fill(isSubmitDisabled ? theme.palette.surfaceVariant : theme.palette.primary)
                             )
                             // ⚠ **글자색을 흰색으로 못 박지 말 것.** 다크 테마의 `primary` 는 밝은
                             // 하늘색이고 그 위 글자색은 **진남색(`onPrimary`)** 이다 — 흰색으로
                             // 고정하면 밝은 배경에 흰 글자가 되어 **안 보인다**(2026-08-13 지적).
-                            .foregroundStyle(theme.palette.onPrimary)
-                            .opacity(isSubmitDisabled ? 0.45 : 1)
+                            .foregroundStyle(isSubmitDisabled ? theme.palette.onSurfaceVariant : theme.palette.onPrimary)
                     }
                     .buttonStyle(.plain)
                     .disabled(isSubmitDisabled)

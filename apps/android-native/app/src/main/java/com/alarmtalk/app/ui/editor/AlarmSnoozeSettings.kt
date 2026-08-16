@@ -493,6 +493,7 @@ internal fun EditorActionButtons(
         Button(
             onClick = onSave,
             enabled = canSave && !isSaving,
+            colors = wakerButtonColors(),
             modifier = Modifier.weight(1f),
             shape = WakerButtonShape,
         ) {

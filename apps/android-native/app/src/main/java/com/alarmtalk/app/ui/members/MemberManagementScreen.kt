@@ -218,6 +218,7 @@ internal fun MemberManagementScreen(
                                 Button(
                                     onClick = { shareCode(shareVoucher.code) },
                                     enabled = !billingBusy && !isFull,
+                                    colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {

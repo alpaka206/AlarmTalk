@@ -171,7 +171,9 @@ internal fun AuthFieldLabel(text: String) {
 @Composable
 internal fun authOutlinedButtonColors() = ButtonDefaults.outlinedButtonColors(
     contentColor = TextOnScene,
-    disabledContentColor = Color(0x59FFFFFF),
+    // ⚠ 35%(0x59)는 대비 3.15:1 로 읽기 어려웠다 — 55%(0x8C)로 올린다(2026-08-17).
+    // iOS `AuthOutlinedButton` 도 같은 값이다.
+    disabledContentColor = Color(0x8CFFFFFF),
 )
 
 internal fun authOutlinedButtonBorder(enabled: Boolean) =
@@ -180,7 +182,9 @@ internal fun authOutlinedButtonBorder(enabled: Boolean) =
 @Composable
 internal fun authTextButtonColors() = ButtonDefaults.textButtonColors(
     contentColor = BrandAccentOnScene,
-    disabledContentColor = Color(0x59FFFFFF),
+    // ⚠ 35%(0x59)는 대비 3.15:1 로 읽기 어려웠다 — 55%(0x8C)로 올린다(2026-08-17).
+    // iOS `AuthOutlinedButton` 도 같은 값이다.
+    disabledContentColor = Color(0x8CFFFFFF),
 )
 
 @Composable

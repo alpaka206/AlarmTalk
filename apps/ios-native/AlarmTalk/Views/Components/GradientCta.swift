@@ -46,8 +46,10 @@ struct GradientCta: View {
             )
         )
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-        // 안드로이드는 비활성일 때 버튼 전체 alpha 0.45 — 회색으로 바꾸지 않는다.
-        .opacity(enabled && !loading ? 1 : 0.45)
+        // 안드로이드와 같은 값으로 버튼 전체를 흐린다 — 회색으로 바꾸지 않는다.
+        // ⚠ 0.45 로 되돌리지 말 것(2026-08-17): 채움과 흰 글자가 **같이** 흐려져
+        // 대비가 3.4:1 까지 떨어졌다. 0.6 이면 비활성으로 읽히면서 글자는 남는다.
+        .opacity(enabled && !loading ? 1 : 0.6)
         .disabled(!enabled || loading)
     }
 }
@@ -67,7 +69,9 @@ struct AuthOutlinedButton: View {
             Text(title)
                 .font(theme.typography.labelLarge)
                 // 비활성일 때도 흰 계열을 유지한다 — 회색으로 떨어뜨리면 남색 배경에 묻힌다.
-                .foregroundStyle(enabled ? AuthSceneColors.text : Color.white.opacity(0x59 / 255.0))
+                // ⚠ 35%(0x59)는 대비 3.15:1 이라 읽기 어려웠다 — 55%(0x8C)로 올린다
+                // (2026-08-17). 안드로이드 `authOutlinedButtonColors` 도 같은 값이다.
+                .foregroundStyle(enabled ? AuthSceneColors.text : Color.white.opacity(0x8C / 255.0))
                 .frame(maxWidth: .infinity, minHeight: 54)
         }
         .buttonStyle(.plain)

@@ -574,7 +574,9 @@ internal fun GradientCta(text: String, onClick: () -> Unit, enabled: Boolean = t
         enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.45f),
+            // ⚠ 0.45 는 흰 글자까지 함께 흐려져 대비 3.4:1 이었다 — 0.6 으로 올린다
+            // (2026-08-17). iOS `GradientCta` 도 같은 값이다.
+            .alpha(if (enabled) 1f else 0.6f),
         shape = WakerButtonShape,
         color = Color.Transparent,
     ) {

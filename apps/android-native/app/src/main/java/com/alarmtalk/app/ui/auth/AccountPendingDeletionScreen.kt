@@ -80,6 +80,7 @@ internal fun AccountPendingDeletionScreen(
         Button(
             onClick = onRecover,
             enabled = !busy,
+            colors = wakerButtonColors(),
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 50.dp),

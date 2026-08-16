@@ -631,6 +631,7 @@ internal fun SubscriptionPlanCard(
                 Button(
                     onClick = onPurchase,
                     enabled = !busy,
+                    colors = wakerButtonColors(),
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {

@@ -108,10 +108,31 @@ internal fun wakerOutlinedTextFieldColors(): TextFieldColors =
     )
 
 @Composable
+/**
+ * 채움 버튼 색 — **비활성일 때 글자가 읽히도록** 한다.
+ *
+ * ⚠ **M3 기본값을 그대로 쓰지 말 것**(2026-08-17 "등록 버튼 글씨가 안 보인다").
+ * 기본 비활성은 컨테이너 `onSurface@12%` + 글자 `onSurface@38%` 인데, 우리 딥네이비
+ * 위에서는 그 둘이 **대비 2.8:1** 까지 떨어진다(코드 등록 버튼 실측). 비활성은 '못 누른다'
+ * 는 신호이지 **글자를 지우라는 뜻이 아니다** — 무엇을 누르려 했는지는 계속 보여야 한다.
+ *
+ * 값: 컨테이너 `surfaceVariant`(카드 위에서 버튼 모양이 남는 최소 밝기) + 글자
+ * `onSurfaceVariant`(대비 약 5:1). 활성 색은 기본값 그대로다.
+ */
+@Composable
+internal fun wakerButtonColors() =
+    ButtonDefaults.buttonColors(
+        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
 internal fun wakerOutlinedButtonColors() =
     ButtonDefaults.outlinedButtonColors(
         contentColor = MaterialTheme.colorScheme.onSurface,
-        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f),
+        // ⚠ **알파를 다시 깎지 말 것**(2026-08-17). 42% 는 딥네이비 위에서 대비 **2.34:1**
+        // 이라 글자가 지워진 것처럼 보였다. 비활성은 '못 누른다' 는 신호이지 무엇을 누르려
+        // 했는지까지 감추라는 뜻이 아니다 — 색을 한 단계 낮추는 것으로 충분하다(약 6:1).
+        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
 /**

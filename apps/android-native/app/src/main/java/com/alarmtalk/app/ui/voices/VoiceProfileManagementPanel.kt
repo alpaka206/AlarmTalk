@@ -1325,6 +1325,7 @@ internal fun VoiceProfileManagementPanel(
                     }
                 },
                 enabled = !voiceProfileBusy && !monthlyExhausted,
+                colors = wakerButtonColors(),
             ) {
                 Text(stringResource(R.string.voices_add))
             }
@@ -1906,6 +1907,7 @@ internal fun VoiceProfileManagementPanel(
                                                     Button(
                                                         onClick = { savePreviewTextEdit(previewVoice) },
                                                         enabled = !confirmPreviewSaving && confirmPreviewEditText.isNotBlank(),
+                                                        colors = wakerButtonColors(),
                                                         modifier = Modifier.weight(1f),
                                                         shape = WakerButtonShape,
                                                     ) {
@@ -2117,6 +2119,7 @@ internal fun VoiceProfileManagementPanel(
                                         currentStep = VoiceRegistrationStep.Details
                                     },
                                     enabled = canAdvanceFromSource,
+                                    colors = wakerButtonColors(),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {

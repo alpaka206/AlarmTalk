@@ -150,6 +150,7 @@ internal fun CodeRedeemField(
                 code.trim().takeIf { it.isNotBlank() }?.let(onSubmit)
             },
             enabled = code.isNotBlank() && !busy,
+            colors = wakerButtonColors(),
             shape = WakerButtonShape,
             // 입력칸과 **같은 높이·같은 최소 폭**이다(`WakerControlHeight`/`MinWidth`).
             // iOS 도 같은 값을 쓴다 — 한쪽만 바꾸면 두 앱의 버튼 크기가 갈라진다.

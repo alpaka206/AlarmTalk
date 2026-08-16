@@ -462,6 +462,7 @@ internal fun WeatherLocationDialog(
                 Button(
                     onClick = { onConfirm(country.trim(), draftCity.trim()) },
                     enabled = draftCity.isNotBlank(),
+                    colors = wakerButtonColors(),
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {
