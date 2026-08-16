@@ -11,7 +11,12 @@ struct AlarmTalkApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AlarmTalkThemeMode.storageKey) private var themeModeRaw = AlarmTalkThemeMode.system.rawValue
 
-    @StateObject private var alarmStore = LocalAlarmStore()
+    // 화면 확인 모드(-UIPreviewSeed)에서는 **임시 파일**을 쓴다 — 표본 알람이 진짜
+    // 저장소에 남으면 다음 실행에서 사용자 알람으로 취급돼 서버에 올라간다
+    // (`UIPreviewSeed.ephemeralAlarmStorageURL` 주석).
+    @StateObject private var alarmStore = LocalAlarmStore(
+        storageURL: UIPreviewSeed.ephemeralAlarmStorageURL
+    )
     @StateObject private var alarmKit = AlarmKitViewModel()
     /// PR3: AlarmAppContext.holidayPredicate 와 timezone 재무장이 서버 sync 공휴일까지
     /// 반영하도록 앱 lifetime 동안 살아있는 단일 HolidayStore. AlarmKitViewModel 에도

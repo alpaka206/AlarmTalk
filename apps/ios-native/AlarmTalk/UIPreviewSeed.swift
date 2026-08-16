@@ -20,6 +20,24 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 화면 확인 모드에서 알람 저장소가 쓸 **임시 파일**. 평소에는 nil(진짜 저장소).
+    ///
+    /// ⚠ **표본 알람을 진짜 저장소에 심지 말 것**(2026-08-17). 예전에는 `alarmStore.upsert`
+    /// 로 그냥 넣었는데, `LocalAlarmStore` 는 **디스크에 쓴다** — 위 주석의 "메모리에
+    /// 심는다" 가 사실이 아니었다. 그래서 표본이 기기에 남았고, 다음에 로그인한 채로 앱을
+    /// 켜면 sync 가 그것을 사용자 알람으로 보고 서버에 올렸다(dev 계정에 07:30 평일 알람이
+    /// 11개 쌓였고, 못 올리는 하나 때문에 "저장하지 못했어요" 안내가 매번 떴다).
+    /// 매 실행 새 파일이라 이전 실행의 표본도 따라오지 않는다.
+    static var ephemeralAlarmStorageURL: URL? {
+        #if DEBUG
+        guard isEnabled else { return nil }
+        return FileManager.default.temporaryDirectory
+            .appendingPathComponent("preview-alarms-\(UUID().uuidString).json")
+        #else
+        return nil
+        #endif
+    }
+
     /// 인증 화면을 바로 띄우는 실행 인자 — `-UIPreviewAuthScreen login|register|reset`.
     /// 시뮬레이터에는 스크립트로 탭할 방법이 없어, 화면 확인용 진입점을 인자로 연다.
     static var authScreen: String? {
@@ -132,7 +150,7 @@ enum UIPreviewSeed {
         calendar.timeZone = .current
         let parts = calendar.dateComponents([.hour, .minute], from: fireDate)
         var record = LocalAlarmRecord(
-            id: "preview-ring-soon",
+            id: LocalAlarmRecord.previewIDPrefix + "ring-soon",
             label: "울림 확인",
             hour: parts.hour ?? 0,
             minute: parts.minute ?? 0,
@@ -149,7 +167,7 @@ enum UIPreviewSeed {
     /// 알람 목록·헤드라인이 비어 보이지 않게 하는 표본 알람.
     static func makeAlarms(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) -> [LocalAlarmRecord] {
         var morning = LocalAlarmRecord(
-            id: "preview-morning",
+            id: LocalAlarmRecord.previewIDPrefix + "morning",
             label: "아침 알람",
             hour: 6,
             minute: 0,
@@ -163,7 +181,7 @@ enum UIPreviewSeed {
         morning.audioCacheKey = "preview-key"
 
         var weekday = LocalAlarmRecord(
-            id: "preview-weekday",
+            id: LocalAlarmRecord.previewIDPrefix + "weekday",
             label: "평일 기상",
             hour: 7,
             minute: 30,

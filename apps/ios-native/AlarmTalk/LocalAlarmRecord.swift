@@ -4,6 +4,13 @@ import Foundation
 // Android `AlarmEntity.kt:7-45` 의 알람 필드와 1:1 매칭.
 // 필드명만 Swift camelCase. epoch ms 는 `Int64` 로 직렬화.
 struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
+
+    /// 화면 확인용 표본 알람의 id 접두사(`-UIPreviewSeed`).
+    ///
+    /// 진짜 알람 id 는 UUID 라 이 접두사와 겹칠 수 없다 — 그래서 저장소에서 표본만
+    /// 골라낼 수 있다. `UIPreviewSeed` 가 만드는 id 는 전부 이걸로 시작해야 한다.
+    static let previewIDPrefix = "preview-"
+
     var id: String                  // UUID().uuidString
     var label: String
     var hour: Int                   // 0..23
@@ -593,7 +600,22 @@ actor LocalAlarmPersistence {
     func load() -> [LocalAlarmRecord] {
         guard let data = try? Data(contentsOf: storageURL) else { return [] }
         let decoder = JSONDecoder()
-        return (try? decoder.decode([LocalAlarmRecord].self, from: data)) ?? []
+        let loaded = (try? decoder.decode([LocalAlarmRecord].self, from: data)) ?? []
+        // ⚠ **화면 확인용 가짜 알람은 디스크에서 걷어낸다**(2026-08-17).
+        // `-UIPreviewSeed` 가 심은 표본이 실제 저장소에 눌러앉아 있었고, 다음에 **로그인한
+        // 채로** 앱을 켜면 sync 가 그걸 사용자 알람으로 보고 서버에 올렸다. 실제 피해:
+        //   · `preview-morning` 은 voiceProfileId 가 UUID 가 아니라 매 회차 400
+        //     (INVALID_VOICE_PROFILE_ID)으로 떨어져 "알람 변경사항 일부를 저장하지
+        //     못했어요" 가 영원히 반복됐다(실패한 건은 다음 회차에 또 걸린다).
+        //   · `preview-weekday` 는 **성공**해서, 실행할 때마다 07:30 평일 알람이 계정에
+        //     하나씩 새로 생겼다(dev 계정에 11개가 쌓여 있었다 — 전부 켜진 채로).
+        // 심는 쪽도 임시 파일을 쓰도록 고쳤지만(`LocalAlarmStore`), 이미 저장된 기기가
+        // 스스로 회복해야 하므로 읽는 자리에서도 거른다.
+        let cleaned = loaded.filter { !$0.id.hasPrefix(LocalAlarmRecord.previewIDPrefix) }
+        // 걸러낸 것이 있으면 **파일도 그 자리에서 고친다.** 메모리에서만 빼면 표본은
+        // 디스크에 남아, 이 걸름을 되돌리거나 다른 경로가 파일을 직접 읽는 순간 되살아난다.
+        if cleaned.count != loaded.count { save(cleaned) }
+        return cleaned
     }
 
     func save(_ alarms: [LocalAlarmRecord]) {
