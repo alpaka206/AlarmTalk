@@ -365,8 +365,9 @@ internal fun SnoozeRadioRow(
         Spacer(Modifier.width(12.dp))
         Text(
             text = label,
+            // iOS `RadioRow` 는 `bodyLarge`(16) **regular** 다 — 굵게 두면 목록이
+            // 전부 강조돼 지금 고른 항목이 안 도드라진다(체크로만 구분한다).
             style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
         )
     }
 }
@@ -395,8 +396,9 @@ internal fun SnoozeLockedRow(
         Spacer(Modifier.width(12.dp))
         Text(
             text = label,
+            // iOS `RadioRow` 는 `bodyLarge`(16) **regular** 다 — 굵게 두면 목록이
+            // 전부 강조돼 지금 고른 항목이 안 도드라진다(체크로만 구분한다).
             style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

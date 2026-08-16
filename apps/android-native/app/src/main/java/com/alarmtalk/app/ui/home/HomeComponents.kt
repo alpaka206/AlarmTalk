@@ -52,6 +52,7 @@ import com.alarmtalk.app.WakerPillShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -518,8 +519,11 @@ internal fun WakerTopBar(
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
+            // ⚠ **iOS 인라인 내비게이션 타이틀과 같은 크기다**(2026-08-16 지시).
+            // 거긴 `.navigationBarTitleDisplayMode(.inline)` 이라 시스템 규격 **17 SemiBold**
+            // 인데, 여기는 M3 `titleLarge`(22 Bold)라 같은 화면이 두 앱에서 다르게 보였다.
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = 17.sp),
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

@@ -367,20 +367,30 @@ internal fun RandomPromptDetailRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text(title, fontWeight = FontWeight.SemiBold)
+                // ⚠ **iOS `PromptDetailCard` 와 같은 위계다**(2026-08-16 지시).
+                // 거긴 제목이 작은 보조 글씨(bodySmall 12), 값이 본문(bodyLarge 16)이다 —
+                // 안드로이드는 정반대(제목 16 SemiBold / 값 12)라 같은 카드가 뒤집혀 보였다.
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 // **여기서는 자르지 않는다.** 직접 입력 문구는 길지만, 이 카드가 그 문구를
                 // 전부 확인하는 유일한 자리다(요약 행은 좁아서 말줄임한다). 목록이 세로
                 // 스크롤이라 길어져도 잘린 채 갇히지 않는다.
                 Text(
                     text = value,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
             if (onChange != null) {
                 TextButton(onClick = onChange) {
                     Text(
                         text = stringResource(R.string.editorp_random_detail_change),
+                        // iOS 는 `bodyMedium.weight(.semibold)` = 14 SemiBold.
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
