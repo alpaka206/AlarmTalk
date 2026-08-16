@@ -7,6 +7,8 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -179,6 +181,9 @@ internal fun SnoozeSettingsPane(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // 지금은 다 들어가지만 글꼴을 키우면 넘친다 — 진동 pane 과 같은 이유로 연다.
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
                     // 문구 pane·iOS `PaneScaffold` 와 같은 여백/간격
                     // (`padding(.horizontal, 20).padding(.vertical, 16)` + `VStack(spacing: 16)`).
                     .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),

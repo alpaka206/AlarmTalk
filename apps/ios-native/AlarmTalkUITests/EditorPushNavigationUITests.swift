@@ -46,9 +46,11 @@ final class EditorPushNavigationUITests: XCTestCase {
         // 목소리 고르기는 다른 선택 목록과 같은 바텀시트로 열린다(`VoiceSelectionSheet`).
         // push 되는 하위 화면은 '세부 설정' 의 pane 들이다(`AlarmSettingsPane`).
         // ('음성 출력' 행은 여기 없다 — 음량·반복은 목소리 카드가 여는 상세가 소유한다.)
-        let detailRow = app.buttons.containing(.staticText, identifier: "진동").firstMatch
+        // ('진동' 행으로 검사하던 자리다 — 2026-08-17 에 그 행을 없앴다. AlarmKit 이
+        // 알람 진동을 소유해 패턴을 고를 수 없기 때문이다.)
+        let detailRow = app.buttons.containing(.staticText, identifier: "다시 울림").firstMatch
         guard detailRow.waitForExistence(timeout: 5) else {
-            XCTFail("편집기 '세부 설정'에서 '진동' 행을 찾지 못했다")
+            XCTFail("편집기 '세부 설정'에서 '다시 울림' 행을 찾지 못했다")
             return
         }
         detailRow.tap()

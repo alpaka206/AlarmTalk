@@ -188,12 +188,10 @@
     <string name="editor_holiday_country_label">공휴일 달력: %1$s</string>
     <string name="editor_holiday_show_title">다가오는 공휴일</string>
     <string name="editor_holiday_cold_cache">불러오는 중…</string>
-    <string name="editor_in_use">사용 중</string>
     <string name="editor_manual_input_placeholder">알람에서 들려줄 문구를 입력해 주세요</string>
     <string name="editor_minute_label">분</string>
     <string name="editor_minutes">%1$d분</string>
     <string name="editor_no_voice_profile">아직 사용할 목소리가 없어요.</string>
-    <string name="editor_not_in_use">사용 안 함</string>
     <string name="editor_off">꺼짐</string>
     <string name="editor_plan_gate_login_title">로그인이 필요해요</string>
     <string name="editor_plan_gate_login_required">로그인하면 목소리 알람을 만들 수 있어요.</string>
@@ -237,6 +235,8 @@
     <string name="editor_save_blocked_free_clips_loading">알람 문구를 준비하고 있어요. 잠시만 기다려 주세요.</string>
     <string name="editor_free_bucket_offline">오프라인이라 문구를 불러오지 못했어요</string>
     <string name="editor_save_blocked_free_clips_offline">인터넷이 연결되어 있지 않아 알람 문구를 불러오지 못했어요. 연결되면 자동으로 다시 시도할게요.</string>
+    <string name="editor_vibration_pattern">패턴</string>
+    <string name="editor_vibration_use">진동 사용</string>
     <string name="editor_vibration_title">진동</string>
     <string name="editor_voice_deleted_desc">이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.</string>
     <string name="editor_voice_deleted_title">삭제된 목소리</string>

@@ -1,6 +1,8 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -352,8 +354,15 @@ internal fun VibrationSettingsPane(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    // ⚠ **스크롤을 빼지 말 것.** 패턴이 12줄이라 목록이 화면 아래로 넘치는데,
+                    // 스크롤이 없으면 마지막 몇 줄은 **닿을 방법이 아예 없다**(2026-08-17
+                    // 실기기 SM-A325N: Zigzag 가 화면 끝에 잘린 채로 멈춰 있었다).
+                    // 줄 수가 적은 화면도 글꼴을 키우면 같은 일이 나므로 스누즈 pane 도 같다.
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    // 여백·간격은 스누즈 pane 과 같은 값이다(= 문구 pane·iOS `PaneScaffold`).
+                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Surface(
                     shape = WakerPanelShape,
@@ -367,15 +376,13 @@ internal fun VibrationSettingsPane(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        // ⚠ **상태말('사용 중'/'사용 안 함')로 되돌리지 말 것** — 스누즈 pane 과
+                        // 같은 규약이다. 스위치가 이미 상태를 말하므로 그 자리는 **무엇을
+                        // 켜는지** 이름을 댄다. 굵게·강조색도 쓰지 않는다(스위치와 무게 경쟁).
                         Text(
-                            text = if (vibrationEnabled) stringResource(R.string.editor_in_use) else stringResource(R.string.editor_not_in_use),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (vibrationEnabled) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
+                            text = stringResource(R.string.editor_vibration_use),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
                         )
                         AlarmTalkSwitch(
                             checked = vibrationEnabled,
@@ -384,7 +391,7 @@ internal fun VibrationSettingsPane(
                     }
                 }
 
-                SnoozeOptionSection {
+                SnoozeOptionSection(title = stringResource(R.string.editor_vibration_pattern)) {
                     VibrationOptions.forEachIndexed { index, pattern ->
                         SnoozeRadioRow(
                             label = vibrationLabel(context, pattern),

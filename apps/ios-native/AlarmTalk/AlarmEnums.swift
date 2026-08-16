@@ -97,6 +97,15 @@ enum VoiceSource: String, Codable, CaseIterable, Hashable {
 // ⚠ **6종을 빠뜨리지 말 것.** iOS 에는 rise/pulse/bounce/drumroll/soft/sos 가 없어서,
 // 안드로이드에서 그 패턴으로 만든 알람을 iOS 로 동기화하면 값이 낯설어 기본으로
 // 떨어졌다 — 사용자가 고른 진동이 조용히 바뀐다. 순서도 안드로이드 목록 그대로 둔다.
+//
+// ⚠ **iOS 에는 이 값을 고르는 화면이 없다**(2026-08-17). 알람이 울릴 때의 진동은
+// AlarmKit 이 소유하고, 프레임워크가 받는 것은 `sound:` **하나뿐**이다 — SDK 인터페이스
+// (`AlarmKit.swiftinterface`)에 vibration·haptic 이라는 낱말이 **한 번도 나오지 않는다.**
+// 그래서 예전의 17종 목록은 고르든 말든 실제 알람이 그대로였고, 화면은 "실제 알람에서는
+// 이 패턴이 반복돼요" 라고 **없는 기능을 광고**했다. 알람 음량 슬라이더를 iOS 에 두지
+// 않는 것과 같은 이유다(CLAUDE.md).
+// 값 자체는 계속 왕복시킨다 — 안드로이드에서 고른 패턴이 iOS 에서 알람을 고쳤다는
+// 이유로 사라지면 안 된다. `.none` 은 여전히 뜻이 있다(포그라운드 울림 햅틱을 건너뛴다).
 enum VibrationPattern: String, Codable, CaseIterable {
     case `default`
     case strong

@@ -340,18 +340,10 @@ struct AlarmEditorSheet: View {
                     }
                 )
 
-                AlarmSettingDivider()
-
-                AlarmSettingRow(
-                    title: "진동",
-                    subtitle: draft.vibrationPattern == .none ? "꺼짐" : draft.vibrationPattern.displayName,
-                    onTap: { settingsPane = .vibration },
-                    trailing: {
-                        Toggle("", isOn: vibrationEnabledBinding)
-                            .labelsHidden()
-                            .alarmTalkSwitch()
-                    }
-                )
+                // ⚠ **'진동' 행을 되살리지 말 것**(2026-08-17). AlarmKit 이 알람 진동을
+                // 소유해서 우리가 고른 패턴이 실제 알람에 닿지 않는다 — 근거와 판단은
+                // `AlarmEnums.swift` 의 `VibrationPattern` 주석에 적어 뒀다.
+                // (안드로이드는 자체 울림을 소유하므로 그쪽에는 그대로 있다.)
 
                 if draft.showsAlarmSoundControls {
                     AlarmSettingDivider()
@@ -518,8 +510,6 @@ struct AlarmEditorSheet: View {
                         set: { draft.snoozeRepeatLimit = SnoozeRepeatLimit(rawValue: $0) ?? .three }
                     )
                 )
-            case .vibration:
-                VibrationSettingsPane(pattern: $draft.vibrationPattern)
             case .alarmSound:
                 AlarmSoundSettingsPane(
                     soundUri: $draft.alarmSoundUri,
@@ -810,15 +800,6 @@ struct AlarmEditorSheet: View {
         Binding(
             get: { draft.alarmVolumePercent > 0 },
             set: { draft.alarmVolumePercent = $0 ? 100 : 0 }
-        )
-    }
-
-    /// 진동 on/off 바인딩 (Android `AlarmEditorScreen.kt:1263-1265`). 켜면 default 패턴,
-    /// 끄면 none. '없음' 은 패턴 picker 목록에서 제외하고 이 토글로만 끈다.
-    var vibrationEnabledBinding: Binding<Bool> {
-        Binding(
-            get: { draft.vibrationPattern != .none },
-            set: { draft.vibrationPattern = $0 ? .default : .none }
         )
     }
 

@@ -221,7 +221,6 @@
 		BB470280C0AFF88637CA39EC /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8398E207DA979219DF2C1311 /* SettingsView.swift */; };
 		BBF0654D24C76A9D352ADD7F /* HolidayStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3FF06DF1E0FD50702B91F25 /* HolidayStore.swift */; };
 		BC5819D719B5CD821BE56BC4 /* CodeShareTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DA363023A1B8AF26EB147D6 /* CodeShareTextTests.swift */; };
-		BC5F3203F44ECB6076935D82 /* VibrationPatternPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 785541EABF51C626605C29DC /* VibrationPatternPicker.swift */; };
 		BC9BEFB1E97D786A9D365AFA /* RedeemCodeSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63ECE84B7EBA31BE96BF3065 /* RedeemCodeSanitizerTests.swift */; };
 		BDBE8EA312CEA8B4A9C42DEE /* voice_greeting_adam_en.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 5C9CC00560A81642ECFE44C4 /* voice_greeting_adam_en.mp3 */; };
 		BF63F06A6574FF0FBF9E4377 /* PromoPromptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49029209F735E8EAFC7C25AF /* PromoPromptStore.swift */; };
@@ -454,7 +453,6 @@
 		74D34672FE277577EA788912 /* LocalAlarmRecordCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAlarmRecordCodableTests.swift; sourceTree = "<group>"; };
 		757B82D057BE9B65E819C252 /* PasswordResetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasswordResetView.swift; sourceTree = "<group>"; };
 		783543645669523E589D0B1A /* RemoteAlarmMapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteAlarmMapperTests.swift; sourceTree = "<group>"; };
-		785541EABF51C626605C29DC /* VibrationPatternPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VibrationPatternPicker.swift; sourceTree = "<group>"; };
 		7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPushNavigationUITests.swift; sourceTree = "<group>"; };
 		7EA00DB3AD3CC0D979813908 /* voice_greeting_mina_en.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_mina_en.mp3; sourceTree = "<group>"; };
 		7FAA3E0645594172886EF0BB /* VoiceShareAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceShareAccess.swift; sourceTree = "<group>"; };
@@ -869,7 +867,6 @@
 				6D168075D98C6B47603E2133 /* SnoozeRepeatLimitPicker.swift */,
 				0E7477E7C446FAC757144181 /* TimeWheelPicker.swift */,
 				9D1EF46FAF8334E543D1A159 /* TimeWheelSettle.swift */,
-				785541EABF51C626605C29DC /* VibrationPatternPicker.swift */,
 				E077F439D01E160ED901D7FE /* VoicePlayModePicker.swift */,
 				A04D77313A4CF5DBFD7203E5 /* VoiceSelectionSheet.swift */,
 			);
@@ -1454,7 +1451,6 @@
 				703F018B82D32AB6B45C4DBA /* UsageGuideSheet.swift in Sources */,
 				7121504B116A33DBADD30E76 /* UsageGuideStore.swift in Sources */,
 				8FCE05C6FF63445465A31229 /* UserFacingError.swift in Sources */,
-				BC5F3203F44ECB6076935D82 /* VibrationPatternPicker.swift in Sources */,
 				8A730E049045318613356E6D /* VoiceCatalogRow.swift in Sources */,
 				923B167E7FF2406C9C789716 /* VoiceCloneUploadFlow.swift in Sources */,
 				A734B2129FFB376AD151FF94 /* VoiceConsentSheet.swift in Sources */,

@@ -181,12 +181,10 @@
     <string name="editor_holiday_country_label">祝日カレンダー: %1$s</string>
     <string name="editor_holiday_show_title">今後の祝日</string>
     <string name="editor_holiday_cold_cache">読み込み中…</string>
-    <string name="editor_in_use">使用中</string>
     <string name="editor_manual_input_placeholder">アラームで流す文を入力してください</string>
     <string name="editor_minute_label">分</string>
     <string name="editor_minutes">%1$d分</string>
     <string name="editor_no_voice_profile">まだ使用できる声がありません。</string>
-    <string name="editor_not_in_use">使わない</string>
     <string name="editor_off">オフ</string>
     <string name="editor_plan_gate_login_title">ログインが必要です</string>
     <string name="editor_plan_gate_login_required">ログインすると音声アラームを作成できます。</string>
@@ -227,6 +225,8 @@
     <string name="editor_save_blocked_free_clips_loading">アラームのメッセージを準備しています。しばらくお待ちください。</string>
     <string name="editor_free_bucket_offline">オフラインのためフレーズを読み込めませんでした</string>
     <string name="editor_save_blocked_free_clips_offline">オフラインのためアラームのフレーズを読み込めませんでした。接続が戻ると自動で再試行します。</string>
+    <string name="editor_vibration_pattern">パターン</string>
+    <string name="editor_vibration_use">バイブレーションを使う</string>
     <string name="editor_vibration_title">バイブレーション</string>
     <string name="editor_voice_deleted_desc">このアラームに保存された声はそのまま鳴りますが、文を変えるには別の声を選択してください。</string>
     <string name="editor_voice_deleted_title">削除された声</string>

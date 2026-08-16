@@ -181,12 +181,10 @@
     <string name="editor_holiday_country_label">Holiday calendar: %1$s</string>
     <string name="editor_holiday_show_title">Upcoming holidays</string>
     <string name="editor_holiday_cold_cache">Loading…</string>
-    <string name="editor_in_use">In use</string>
     <string name="editor_manual_input_placeholder">Enter the message to play in your alarm</string>
     <string name="editor_minute_label">min</string>
     <string name="editor_minutes">%1$d min</string>
     <string name="editor_no_voice_profile">You don\'t have any voices to use yet.</string>
-    <string name="editor_not_in_use">Off</string>
     <string name="editor_off">Off</string>
     <string name="editor_plan_gate_login_title">Sign in required</string>
     <string name="editor_plan_gate_login_required">Sign in to create voice alarms.</string>
@@ -227,6 +225,8 @@
     <string name="editor_save_blocked_free_clips_loading">Preparing your alarm messages. Please wait a moment.</string>
     <string name="editor_free_bucket_offline">Offline — couldn\'t load the lines</string>
     <string name="editor_save_blocked_free_clips_offline">You\'re offline, so the alarm lines couldn\'t be loaded. We\'ll retry automatically once you reconnect.</string>
+    <string name="editor_vibration_pattern">Pattern</string>
+    <string name="editor_vibration_use">Use vibration</string>
     <string name="editor_vibration_title">Vibration</string>
     <string name="editor_voice_deleted_desc">The voice saved to this alarm will still play, but to change the phrase, please choose another voice.</string>
     <string name="editor_voice_deleted_title">Deleted voice</string>

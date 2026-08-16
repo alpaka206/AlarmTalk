@@ -1,16 +1,19 @@
 import SwiftUI
 
-/// 편집기 '세부 설정' 카드가 여는 상세 화면 4종.
+/// 편집기 '세부 설정' 카드가 여는 상세 화면 3종.
 ///
 /// 안드로이드 `ui/editor/AlarmSettingsCard.kt` 의 `SnoozeSettingsPane` /
-/// `VibrationSettingsPane` / `AlarmSoundSettingsPane` / `VoiceOutputSettingsPane`.
+/// `AlarmSoundSettingsPane` / `VoiceOutputSettingsPane`.
 ///
-/// ⚠ **인라인 컨트롤로 되돌리지 말 것.** iOS 편집기는 스누즈 간격·반복 횟수·진동 패턴을
-/// 전부 본문에 펼쳐 두고 있었다. 그러면 한 번 정하고 다시 안 볼 값들이 시간 설정·목소리
-/// 선택과 같은 무게로 화면을 차지해, 정작 매번 바꾸는 것(시각·목소리)이 밀려난다.
+/// ⚠ **진동 pane 을 되살리지 말 것**(2026-08-17). 안드로이드에는 있지만 iOS 에는 없다 —
+/// AlarmKit 이 알람 진동을 소유하고 프레임워크가 받는 것은 `sound:` 하나뿐이라, 17종
+/// 목록은 무엇을 골라도 실제 알람이 같았다(근거는 `AlarmEnums.swift` 의 `VibrationPattern`).
+///
+/// ⚠ **인라인 컨트롤로 되돌리지 말 것.** iOS 편집기는 스누즈 간격·반복 횟수를 전부 본문에
+/// 펼쳐 두고 있었다. 그러면 한 번 정하고 다시 안 볼 값들이 시간 설정·목소리 선택과 같은
+/// 무게로 화면을 차지해, 정작 매번 바꾸는 것(시각·목소리)이 밀려난다.
 enum AlarmSettingsPane: String, Identifiable, Hashable {
     case snooze
-    case vibration
     case alarmSound
     case voiceOutput
 
@@ -23,7 +26,6 @@ enum AlarmSettingsPane: String, Identifiable, Hashable {
         // 알림이 다시 뜨는 게 아니라 **알람이 다시 울리는** 것이다. 앱의 다른 어휘도
         // 울림이다(울림 화면, `docs/spec/alarm-ringing.md`).
         case .snooze: return "다시 울림"
-        case .vibration: return "진동"
         case .alarmSound: return "알람음"
         // ⚠ **상세 화면 제목은 그 화면을 연 행과 같은 말이다**(2026-08-16 통일) —
         // 다시 울림·진동·알람음·문구가 모두 그렇다. 여기만 행은 '목소리 크기' 인데
@@ -135,62 +137,6 @@ struct SnoozeSettingsPane: View {
         // 번역된 문자열(진동 `displayName` 등)도 받으므로 라벨을 `LocalizedStringKey`
         // 로 받을 수 없다 — 그러면 번역 결과를 한 번 더 조회하게 된다.
         value == 0 ? String(localized: "무제한") : String(localized: "\(value)회")
-    }
-}
-
-// MARK: - 진동
-
-struct VibrationSettingsPane: View {
-    @Environment(\.voiceAlarmTheme) private var theme
-    @Binding var pattern: VibrationPattern
-
-    /// 마지막으로 고른 '켜짐' 패턴. 껐다 켤 때 기본으로 되돌아가지 않게 기억한다.
-    @State private var lastOnPattern: VibrationPattern = .default
-
-    var body: some View {
-        PaneScaffold(title: AlarmSettingsPane.vibration.title) {
-            EditorCard {
-                Toggle("진동 사용", isOn: Binding(
-                    get: { pattern != .none },
-                    set: { on in
-                        if on {
-                            pattern = lastOnPattern == .none ? .default : lastOnPattern
-                        } else {
-                            if pattern != .none { lastOnPattern = pattern }
-                            pattern = .none
-                        }
-                    }
-                ))
-                // 공용 스위치 스타일. ⚠ `.tint` 로 색만 맞추면 **모양과 크기는 시스템
-                // 기본 그대로**라 다른 화면의 스위치와 달라 보인다 — 예전에는 그랬다.
-                .alarmTalkSwitch()
-                .padding(.vertical, 12)
-            }
-
-            if pattern != .none {
-                EditorSectionTitle(text: "패턴")
-                // ⚠ 드롭다운 메뉴가 아니라 **전체 목록**이다. 17종을 메뉴에 넣으면 고르려고
-                // 매번 열어 스크롤해야 하고, 지금 무엇이 골라져 있는지도 한눈에 안 보인다.
-                EditorCard(verticalPadding: 0) {
-                    let options = VibrationPattern.allCases.filter { $0 != .none }
-                    ForEach(Array(options.enumerated()), id: \.element) { index, option in
-                        if index > 0 { AlarmSettingDivider() }
-                        RadioRow(label: option.displayName, selected: pattern == option) {
-                            pattern = option
-                            lastOnPattern = option
-                            // 고르는 즉시 한 번 울려 준다 — 이름만으로는 구분할 수 없다.
-                            VibrationHapticPreview.play(option)
-                        }
-                    }
-                }
-
-                Text("고르면 한 번 울려서 들려드려요. 실제 알람에서는 이 패턴이 반복돼요.")
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .onAppear { if pattern != .none { lastOnPattern = pattern } }
     }
 }
 
