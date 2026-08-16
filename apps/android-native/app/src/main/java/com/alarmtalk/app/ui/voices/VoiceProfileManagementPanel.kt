@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Close
@@ -2100,7 +2101,7 @@ internal fun VoiceProfileManagementPanel(
                                 colors = wakerOutlinedButtonColors(),
                             ) {
                                 Icon(
-                                    painter = painterResource(R.drawable.ic_chevron_back),
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp),
                                 )

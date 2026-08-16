@@ -263,7 +263,7 @@ struct DraggableNumberColumn: View {
                 // ⚠ 글꼴은 **Pretendard** 다. `design: .rounded`(SF Rounded)로 두면
                 // 이 화면만 다른 서체가 되어 앱에서 가장 큰 글자가 튄다.
                 Text(formatter(wrap(value + offset)))
-                    .font(.pretendard(.bold, size: (clamped < 0.5 ? 57 : 45) * scale))
+                    .font(.pretendardFixed(.bold, size: (clamped < 0.5 ? 57 : 45) * scale))
                     .monospacedDigit()
                     .foregroundStyle(theme.palette.onSurface.opacity(textAlpha(for: clamped)))
             }
@@ -289,7 +289,7 @@ struct DraggableNumberColumn: View {
         )
         .keyboardType(.numberPad)
         .multilineTextAlignment(.center)
-        .font(.pretendard(.bold, size: 57 * scale))
+        .font(.pretendardFixed(.bold, size: 57 * scale))
         .monospacedDigit()
         .foregroundStyle(theme.palette.onSurface)
         .tint(theme.palette.primary)
@@ -522,7 +522,7 @@ struct AmPmWheelColumn: View {
     @ViewBuilder
     private func label(title: String, selected: Bool) -> some View {
         Text(title)
-            .font(.pretendard(selected ? .bold : .semibold, size: (selected ? 38 : 32) * scale))
+            .font(.pretendardFixed(selected ? .bold : .semibold, size: (selected ? 38 : 32) * scale))
             // 좁은 폭에서 "오전"/"오후" 가 "…" 으로 사라지지 않게 줄어들어 맞춘다.
             .lineLimit(1)
             .minimumScaleFactor(0.7)
@@ -540,7 +540,7 @@ private struct ColonSeparator: View {
 
     var body: some View {
         Text(":")
-            .font(.pretendard(.bold, size: 57 * scale))
+            .font(.pretendardFixed(.bold, size: 57 * scale))
             .foregroundStyle(theme.palette.onSurface)
             // 안드로이드는 36dp 폭을 준다(`ui/editor/AlarmTimePicker.kt`). 18 이면 절반이라
             // 시:분 사이가 붙어 보인다.

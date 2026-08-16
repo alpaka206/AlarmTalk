@@ -14,8 +14,12 @@ struct AlarmTalkApp: App {
     // 화면 확인 모드(-UIPreviewSeed)에서는 **임시 파일**을 쓴다 — 표본 알람이 진짜
     // 저장소에 남으면 다음 실행에서 사용자 알람으로 취급돼 서버에 올라간다
     // (`UIPreviewSeed.ephemeralAlarmStorageURL` 주석).
+    // ⚠ 화면 확인 모드에서는 **디스크를 읽지 않는다.** 임시 파일은 매번 비어 있는데,
+    // 그 비동기 로드가 끝나면서 `alarms` 를 빈 배열로 덮어써 **방금 심은 표본을 지운다**
+    // (2026-08-17 스크린샷에서 목록이 비어 나와 발견). 읽을 것이 없으니 끄는 게 맞다.
     @StateObject private var alarmStore = LocalAlarmStore(
-        storageURL: UIPreviewSeed.ephemeralAlarmStorageURL
+        storageURL: UIPreviewSeed.ephemeralAlarmStorageURL,
+        loadFromDisk: !UIPreviewSeed.isEnabled
     )
     @StateObject private var alarmKit = AlarmKitViewModel()
     /// PR3: AlarmAppContext.holidayPredicate 와 timezone 재무장이 서버 sync 공휴일까지
@@ -57,6 +61,17 @@ struct AlarmTalkApp: App {
         WindowGroup {
             AlarmTalkThemeProvider {
                 ContentView()
+                    // ⚠ **상한을 두는 이유**(2026-08-17). 글자가 사용자 설정을 따라가게
+                    // 만들면(`Font.pretendard` 의 `relativeTo:`) 접근성 최대치에서 본문이
+                    // **3배**까지 커진다. 그 크기를 견디려면 화면마다 레이아웃을 다시
+                    // 짜야 하는데, 지금 못 견디는 곳이 남아 있는 채로 열어 두면 큰 설정을
+                    // 쓰는 사람에게 **잘린 화면**을 주게 된다 — 안 커지는 것보다 나쁘다.
+                    // 그래서 우선 `accessibility1`(본문 17→28, 약 165%)까지 연다.
+                    //
+                    // ⚠ 이 값을 올릴 때는 **레이아웃 훑기와 함께** 올릴 것. 애플의
+                    // 'Larger Text' 지원 표시 기준은 200%(≈`accessibility2`)라, 그걸
+                    // 선언하려면 그 훑기가 선행돼야 한다.
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                     .environmentObject(alarmStore)
                     .environmentObject(alarmKit)
                     .environmentObject(auth)

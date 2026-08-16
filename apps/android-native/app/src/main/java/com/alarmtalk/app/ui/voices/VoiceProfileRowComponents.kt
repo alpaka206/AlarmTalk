@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.CardDefaults
@@ -404,13 +406,10 @@ internal fun VoiceCatalogRow(
                 // 좌우로 어긋나 목록이 들쭉날쭉해 보인다.
                 Spacer(modifier = Modifier.width(VoiceCatalogRowContentHeight))
             }
-            // 듣기 ↔ 정지. 하단 탭과 같은 24dp 그리드·같은 선 굵기로 그린 전용 벡터라
-            // Material 기본 아이콘을 끌어다 쓴 티가 나지 않는다(ic_voice_listen/stop_24).
+            // 듣기 ↔ 정지 — 머티리얼 아이콘(2026-08-17 "글리프는 각 OS 것").
             IconButton(onClick = onPreview, enabled = enabled) {
                 Icon(
-                    painter = painterResource(
-                        if (isPlaying) R.drawable.ic_voice_stop_24 else R.drawable.ic_voice_listen_24,
-                    ),
+                    imageVector = if (isPlaying) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
                     contentDescription = stringResource(
                         if (isPlaying) R.string.voicesr_preview_stop else R.string.voicesr_preview_action,
                     ),

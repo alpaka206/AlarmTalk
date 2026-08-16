@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -192,10 +193,9 @@ internal fun PermissionPanel(
                 onAction = { onRequestPermission(PermissionTarget.FullScreenIntent) },
             )
             PermissionRow(
-                // ⚠ **마이크는 하단바 '목소리' 탭과 **같은 글리프**를 쓴다(2026-08-16 지시).
-                // 머티리얼 기본 `Icons.Outlined.Mic` 는 모양이 달라, 같은 것을 가리키는
-                // 아이콘이 화면마다 둘로 보였다.
-                iconPainter = painterResource(R.drawable.ic_tab_mic),
+                // 마이크는 하단바 '목소리' 탭과 같은 글리프다 — 이제 둘 다 머티리얼
+                // `Icons.Outlined.Mic` 이다(2026-08-17 "글리프는 각 OS 것").
+                iconPainter = rememberVectorPainter(Icons.Outlined.Mic),
                 label = stringResource(R.string.common_permission_mic_label),
                 granted = permissions.recordAudio,
                 actionLabel = stringResource(R.string.common_permission_allow_action),

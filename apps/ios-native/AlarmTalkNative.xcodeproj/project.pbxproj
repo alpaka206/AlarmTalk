@@ -51,7 +51,6 @@
 		2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */; };
 		305BF4D6DC819972454207B9 /* pretendard_semibold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 3EE89C0338FF0981C544A8AD /* pretendard_semibold.otf */; };
 		307C97195816A03C44D1D5B5 /* EmptyStatePlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A186A9ECD18C026BD44B42E0 /* EmptyStatePlaceholder.swift */; };
-		3235928A1767E7B03EAACCF4 /* MaterialAlarmShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D7E1ACB274DF5BB686B7256 /* MaterialAlarmShape.swift */; };
 		325F179DCA00F9EF7DBE04B6 /* AudioPreviewPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E9DC62B90B8D3C7D339AE8E /* AudioPreviewPlayer.swift */; };
 		33D415CA1BC2F1CF1500C39D /* PeoplePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60C9E3B75BCA36472CA4EFFB /* PeoplePanel.swift */; };
 		3634FE2ABCB1FA2CD1D056FF /* AlarmSoundUriParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDCF80B5CA97C17310DA02B5 /* AlarmSoundUriParsingTests.swift */; };
@@ -110,6 +109,7 @@
 		5A66F85A29014C9FF33D58C0 /* LocalAlarmStoreCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DEA7F0002B6032EA05DA9B /* LocalAlarmStoreCopyTests.swift */; };
 		5BE81A082D0C8EFE8CEBA510 /* RemoteAlarmSyncViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D7C1A5E08BE3BE17EC987E2 /* RemoteAlarmSyncViewModelTests.swift */; };
 		5D1519E70208996918C80652 /* PasswordResetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 757B82D057BE9B65E819C252 /* PasswordResetView.swift */; };
+		5D1542279101EFBE06D80C09 /* LargeTextScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70A73CA504BECFEF002F84C /* LargeTextScreenshotUITests.swift */; };
 		5E402F24A446E5C85E6494EC /* LoginViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52D0C80EB4D29B32CA50326B /* LoginViewModelTests.swift */; };
 		5E63D8C729064180BB3F2ABD /* AlarmSoundStagingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8FEE20605F1122A2E8963A /* AlarmSoundStagingCapabilityTests.swift */; };
 		5E6B21DDF250B3C5F29EB7FD /* AlarmAppContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D03ECCB0C7064914B464A555 /* AlarmAppContextTests.swift */; };
@@ -251,7 +251,6 @@
 		DF01070F5A7680AF08057F3C /* FortunePromptInputFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C56157192A2B5CBADB2977 /* FortunePromptInputFormatTests.swift */; };
 		DF782938329EEED696B72943 /* PretendardFontTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B04396E3B476332CDB49EE8 /* PretendardFontTests.swift */; };
 		DFF8884296CA033A9B8C6890 /* ScreenSweepUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF0160D993D91879DDDFF3A /* ScreenSweepUITests.swift */; };
-		E0150650D9944FB858557CED /* TextScaleProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2597C765FDCC14702FF89F71 /* TextScaleProbe.swift */; };
 		E280AE375CB9149F23F1BAA8 /* ReceivedAlarmBadgeStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3B1ECBB5616D418A9932BCA /* ReceivedAlarmBadgeStoreTests.swift */; };
 		E49463B02FB2F50F117AF44C /* VoiceProfileManagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D0590DA9571CFBFE194ACF /* VoiceProfileManagementPanel.swift */; };
 		E6A1A9B80790C9D77AF34DAD /* VoiceStudioViewModel+ErrorMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9641A64BF7F32B31E960BA67 /* VoiceStudioViewModel+ErrorMapping.swift */; };
@@ -364,7 +363,6 @@
 		234FC6F5E92A588195E95D45 /* AlarmEnums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEnums.swift; sourceTree = "<group>"; };
 		24A21A25176F8CB2F87741F6 /* voice_greeting_hajun_en.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_hajun_en.mp3; sourceTree = "<group>"; };
 		256A1A74503F37FA8770ADFD /* AudioUserFacingError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioUserFacingError.swift; sourceTree = "<group>"; };
-		2597C765FDCC14702FF89F71 /* TextScaleProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextScaleProbe.swift; sourceTree = "<group>"; };
 		26FEEB9D5F4B19556BAAD9C6 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		28A5CC978F50C5EA5D29A99D /* PlanTier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanTier.swift; sourceTree = "<group>"; };
 		291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManagerTests.swift; sourceTree = "<group>"; };
@@ -497,7 +495,6 @@
 		9A1C8164C5467E1065C0FFF7 /* VoiceSheetScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSheetScreenshotUITests.swift; sourceTree = "<group>"; };
 		9B04396E3B476332CDB49EE8 /* PretendardFontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PretendardFontTests.swift; sourceTree = "<group>"; };
 		9D1EF46FAF8334E543D1A159 /* TimeWheelSettle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelSettle.swift; sourceTree = "<group>"; };
-		9D7E1ACB274DF5BB686B7256 /* MaterialAlarmShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialAlarmShape.swift; sourceTree = "<group>"; };
 		9E3E636EE972FA7B3F1B794B /* BillingScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingScreenshotUITests.swift; sourceTree = "<group>"; };
 		9E9B8DB91D8FBB1794BC2C1E /* voice_greeting_adam_ja.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_adam_ja.mp3; sourceTree = "<group>"; };
 		9E9DC62B90B8D3C7D339AE8E /* AudioPreviewPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPreviewPlayer.swift; sourceTree = "<group>"; };
@@ -515,6 +512,7 @@
 		A537812556462EBCB324CD35 /* AlarmTalkTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkTheme.swift; sourceTree = "<group>"; };
 		A6060CBDBC2E6E31887ADA06 /* AlarmTalkSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkSwitch.swift; sourceTree = "<group>"; };
 		A70196163DEB277ED30F5976 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		A70A73CA504BECFEF002F84C /* LargeTextScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LargeTextScreenshotUITests.swift; sourceTree = "<group>"; };
 		A7577C539C3E926AE4FD3D1C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A9311A4ED6398F9049299873 /* AudioCacheStalenessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheStalenessTests.swift; sourceTree = "<group>"; };
 		AA03690DA383142AE06C1C09 /* CodeInputUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeInputUITests.swift; sourceTree = "<group>"; };
@@ -657,6 +655,7 @@
 				463A1453ADEB2220E67E7F12 /* FortuneDialogScreenshotUITests.swift */,
 				8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */,
 				ECE7B9F6578FB639A08A5C77 /* HolidaySheetScreenshotUITests.swift */,
+				A70A73CA504BECFEF002F84C /* LargeTextScreenshotUITests.swift */,
 				5E225F300F6C400D8EDBB183 /* PasswordResetE2EUITests.swift */,
 				B7065575F6074636D0156AA8 /* RepeatCardSpacingUITests.swift */,
 				5CF0160D993D91879DDDFF3A /* ScreenSweepUITests.swift */,
@@ -761,7 +760,6 @@
 			children = (
 				BD5149AC925F9E7568727C4B /* BottomNavBar.swift */,
 				008B17DEDC6678A7B2596974 /* MainTabsView.swift */,
-				9D7E1ACB274DF5BB686B7256 /* MaterialAlarmShape.swift */,
 				98CCA14FD6E4C634ECED32A9 /* RootView.swift */,
 			);
 			path = Root;
@@ -944,7 +942,6 @@
 				056DB53565C8BBE7AD69B128 /* SocialFeatureViewModelTests.swift */,
 				291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */,
 				481AE34FF594622D016836C7 /* SystemRingtoneLibraryTests.swift */,
-				2597C765FDCC14702FF89F71 /* TextScaleProbe.swift */,
 				5A12157E5D422109667286EC /* TimeWheelPickerLogicTests.swift */,
 				6DFEB7343510C3EED544917B /* TimeWheelSettleTests.swift */,
 				320982177F200F5D3B23972B /* TimeWheelSnapDirectionTests.swift */,
@@ -1314,6 +1311,7 @@
 				A32D9C97DB38741FFAE2C060 /* FortuneDialogScreenshotUITests.swift in Sources */,
 				F257AFC84C3E1A8F0AE60485 /* FunctionalE2EUITests.swift in Sources */,
 				9594E297F46C45099F4FC9D0 /* HolidaySheetScreenshotUITests.swift in Sources */,
+				5D1542279101EFBE06D80C09 /* LargeTextScreenshotUITests.swift in Sources */,
 				A26F3948811CBF00487223C0 /* PasswordResetE2EUITests.swift in Sources */,
 				E6B183AE33A777D1D25D8546 /* RepeatCardSpacingUITests.swift in Sources */,
 				DFF8884296CA033A9B8C6890 /* ScreenSweepUITests.swift in Sources */,
@@ -1418,7 +1416,6 @@
 				AA4726217F43F082D2ADD8E7 /* LoginPermissionGateView.swift in Sources */,
 				FFAF31FF0FA277F18B9E49B0 /* LoginView.swift in Sources */,
 				8794990DE399EA8A9361484B /* MainTabsView.swift in Sources */,
-				3235928A1767E7B03EAACCF4 /* MaterialAlarmShape.swift in Sources */,
 				8E2489F41D6DD0F0B2D6B35C /* MemberManagementView.swift in Sources */,
 				E9D0A56D014F3AC328D685D6 /* MenuView.swift in Sources */,
 				025B6F51C2D5595312339A33 /* MessageSettingsPane.swift in Sources */,
@@ -1551,7 +1548,6 @@
 				4351F743AA119C72711E26EA /* SocialFeatureViewModelTests.swift in Sources */,
 				C9AC298F3AC6D9B84D3F93D5 /* SubscriptionManagerTests.swift in Sources */,
 				A524D29E8CD5E3AB0277A61C /* SystemRingtoneLibraryTests.swift in Sources */,
-				E0150650D9944FB858557CED /* TextScaleProbe.swift in Sources */,
 				DA74241C9B726EF21F7111B0 /* TimeWheelPickerLogicTests.swift in Sources */,
 				17D3A1884C86F11C693AF962 /* TimeWheelSettleTests.swift in Sources */,
 				7FEA6BDB2C6E1D2BD6DD9716 /* TimeWheelSnapDirectionTests.swift in Sources */,

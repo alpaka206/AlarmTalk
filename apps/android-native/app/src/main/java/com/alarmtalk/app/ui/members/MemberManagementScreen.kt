@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material3.AssistChip
@@ -115,7 +116,7 @@ internal fun MemberManagementScreen(
             ) {
                 IconButton(onClick = onBack) {
                     Icon(
-                        painterResource(R.drawable.ic_chevron_back),
+                        Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.social_back_cd),
                     )
                 }

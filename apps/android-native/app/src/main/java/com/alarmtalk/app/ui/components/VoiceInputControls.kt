@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
@@ -140,13 +141,12 @@ internal fun VoicePreviewButtonIcon(
             strokeWidth = 2.dp,
         )
     } else {
-        // 목소리 탭 목록과 같은 전용 벡터(ic_voice_listen/stop_24) — 미리듣기 버튼이
-        // 화면마다 다른 아이콘을 쓰지 않게 한 벌로 통일한다. 이 토글은 실제로 '정지'다
+        // 미리듣기 아이콘은 앱 전체가 한 벌로 통일한다. 이 토글은 실제로 '정지'다
         // (다시 누르면 처음부터 재생) — 그래서 일시정지가 아니라 정지 모양을 쓴다.
+        // ⚠ **머티리얼 아이콘을 쓴다**(2026-08-17 "글리프는 각 OS 것"). 예전에는 SF 심볼
+        // (`speaker.wave.2.fill`·`stop.fill`) 모양을 베낀 자체 벡터였다.
         Icon(
-            painter = painterResource(
-                if (active) R.drawable.ic_voice_stop_24 else R.drawable.ic_voice_listen_24,
-            ),
+            imageVector = if (active) Icons.Filled.Stop else Icons.AutoMirrored.Filled.VolumeUp,
             contentDescription = voicePreviewContentDescription(context, active = active, preparing = false),
             modifier = modifier.size(22.dp),
         )
@@ -349,12 +349,8 @@ internal fun VoiceRecordControls(
                         },
                     ) {
                         Icon(
-                            // ⚠ 마이크는 하단바 '목소리' 탭과 같은 글리프다(`ic_tab_mic_fill`).
-                            painter = if (isRecording) {
-                                rememberVectorPainter(Icons.Filled.Stop)
-                            } else {
-                                painterResource(R.drawable.ic_tab_mic_fill)
-                            },
+                            // 마이크는 하단바 '목소리' 탭과 같은 글리프다(머티리얼 Mic).
+                            imageVector = if (isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
                             contentDescription = null,
                             modifier = Modifier.size(26.dp),
                         )
