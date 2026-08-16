@@ -75,12 +75,12 @@ internal fun SettingsScreen(
         WakerTopBar(
             title = stringResource(R.string.hs_settings_title),
             onBack = onBack,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
+            modifier = Modifier.padding(top = 12.dp),
         )
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         // 좌우 20dp·카드 간 16dp — 전 화면 공통 규격.
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {

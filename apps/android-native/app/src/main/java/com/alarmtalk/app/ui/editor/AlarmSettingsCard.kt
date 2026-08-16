@@ -263,7 +263,7 @@ internal fun AlarmSoundSettingsPane(
             WakerTopBar(
                 title = stringResource(R.string.editor_alarm_sound_title),
                 onBack = onDismiss,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
+                modifier = Modifier.padding(top = 24.dp),
             )
 
             // 켜고 끄는 사용/무음 토글은 두지 않는다 — 알람음 여부는 '재생 방식'이 정하고,
@@ -348,7 +348,7 @@ internal fun VibrationSettingsPane(
             WakerTopBar(
                 title = stringResource(R.string.editor_vibration_title),
                 onBack = onDismiss,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
+                modifier = Modifier.padding(top = 24.dp),
             )
 
             Column(
@@ -361,7 +361,7 @@ internal fun VibrationSettingsPane(
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
                     // 여백·간격은 스누즈 pane 과 같은 값이다(= 문구 pane·iOS `PaneScaffold`).
-                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
+                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Surface(

@@ -106,7 +106,10 @@
     <string name="billing_play_change_title">Switch to the %1$s pass?</string>
     <string name="code_redeem_placeholder">Invite, gift, or promo code</string>
     <string name="code_redeem_submit">Redeem</string>
-    <string name="billing_select_button">Start subscription</string>
+    <string name="billing_restore_purchases">Restore purchases</string>
+    <string name="billing_restore_none">No purchases to restore. Check your store account.</string>
+    <string name="billing_restore_checking">Checking your purchases…</string>
+    <string name="billing_select_button">Pay</string>
     <string name="billing_share_button">Share</string>
     <string name="billing_share_voucher_code">Share pass code</string>
     <string name="billing_share_voucher_select_description">Pick an unregistered code and share it right away.</string>

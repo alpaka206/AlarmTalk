@@ -87,11 +87,11 @@ internal fun ConsentHistoryScreen(
         WakerTopBar(
             title = stringResource(R.string.consent_screen_title),
             onBack = onBack,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
+            modifier = Modifier.padding(top = 12.dp),
         )
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (loadFailed) {

@@ -115,6 +115,7 @@ internal fun AlarmListScreen(
     onGiftPersonal: (android.app.Activity) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
+    onRestorePurchases: () -> Unit,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -235,7 +236,7 @@ internal fun AlarmListScreen(
                     else R.string.common_tab_code_register,
                 ),
                 onBack = onNavigateBack,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
+                modifier = Modifier.padding(top = 24.dp),
             )
         }
     LazyColumn(
@@ -409,6 +410,7 @@ internal fun AlarmListScreen(
                         onCancelSubscription = onCancelSubscription,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRefreshShareCodeData = onRefreshShareCodeData,
+                        onRestorePurchases = onRestorePurchases,
                     )
                 }
             }

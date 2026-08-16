@@ -113,7 +113,10 @@
     <string name="billing_play_change_seats_warning">함께 쓰는 인원이 줄어서, 정원을 넘는 멤버는 그룹에서 나가게 돼요.</string>
     <string name="code_redeem_placeholder">초대·선물·프로모션 코드</string>
     <string name="code_redeem_submit">등록</string>
-    <string name="billing_select_button">구독 시작하기</string>
+    <string name="billing_restore_purchases">이전 구매 복원</string>
+    <string name="billing_restore_none">복원할 구매가 없어요. 스토어 계정을 확인해 주세요.</string>
+    <string name="billing_restore_checking">구매를 확인하고 있어요…</string>
+    <string name="billing_select_button">결제하기</string>
     <string name="billing_share_button">공유</string>
     <string name="billing_share_voucher_code">이용권 코드 공유</string>
     <string name="billing_share_voucher_select_description">아직 등록되지 않은 코드를 골라 바로 공유할 수 있어요.</string>

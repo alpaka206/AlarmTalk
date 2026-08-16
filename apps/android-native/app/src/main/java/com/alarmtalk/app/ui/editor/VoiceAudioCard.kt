@@ -399,13 +399,13 @@ internal fun VoiceOutputSettingsPane(
             WakerTopBar(
                 title = stringResource(R.string.editor_voice_output_title),
                 onBack = onDismiss,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
+                modifier = Modifier.padding(top = 24.dp),
             )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     // 다른 pane·iOS `PaneScaffold` 와 같은 여백.
-                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
+                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 // ⚠ **카드 밖으로 다시 꺼내지 말 것**(2026-08-16 통일). 편집기의 모든 설정은
@@ -694,13 +694,13 @@ internal fun FreeBucketSettingsPane(
             WakerTopBar(
                 title = stringResource(R.string.editor_msg_section),
                 onBack = onDismiss,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
+                modifier = Modifier.padding(top = 24.dp),
             )
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     // 유료 pane·iOS `PaneScaffold` 와 같은 여백(위 주석 참조).
-                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
+                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
                 // 선택 카드와 아래 상세 카드 사이 — iOS `FreeBucketSettingsPane` 의
                 // `VStack(spacing: 16)` 과 같은 값이다(2026-08-15 지적 "안드로이드가 너무 좁다").
                 verticalArrangement = Arrangement.spacedBy(16.dp),

@@ -496,6 +496,13 @@ internal fun DeleteAccountConfirmDialog(
 }
 
 /**
+ * 상단바와 그 아래 본문 사이 간격 — **상단바가 스스로 갖는다.**
+ *
+ * 편집기 pane 이 쓰던 값(바 아래 4 + 본문 위 12 = 16)을 그대로 옮긴 것이다.
+ */
+internal val WakerTopBarBottomGap = 16.dp
+
+/**
  * 하위 화면의 **상단바** — 좌측 뒤로가기 + **가운데 제목**.
  *
  * ⚠ **왼쪽 정렬 큰 제목으로 되돌리지 말 것.** 이용권·코드 등록처럼 **더보기에서 들어가는 화면**은 아이폰에서 네비게이션 바(뒤로가기 +
@@ -514,7 +521,12 @@ internal fun WakerTopBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(bottom = 4.dp),
+            // ⚠ **좌우 여백과 아래 간격은 이 컴포넌트가 갖는다**(2026-08-17 지시).
+            // 예전에는 화면마다 `padding(start=20, end=20, top=…, bottom=4)` 을 손으로
+            // 적고 본문이 다시 `top=12` 로 간격을 만들었다 — 열 곳에 흩어져 있으니
+            // 새 화면을 만들 때마다 값이 조금씩 달라졌다(설정 화면은 아래가 12,
+            // 편집기 pane 은 16). 위 여백만 화면이 정한다(상태바 인셋 유무가 다르다).
+            .padding(start = 20.dp, end = 20.dp, bottom = WakerTopBarBottomGap),
         contentAlignment = Alignment.Center,
     ) {
         Text(

@@ -175,7 +175,7 @@ internal fun SnoozeSettingsPane(
             WakerTopBar(
                 title = stringResource(R.string.editor_snooze_title),
                 onBack = onDismiss,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp),
+                modifier = Modifier.padding(top = 24.dp),
             )
 
             Column(
@@ -186,7 +186,7 @@ internal fun SnoozeSettingsPane(
                     .verticalScroll(rememberScrollState())
                     // 문구 pane·iOS `PaneScaffold` 와 같은 여백/간격
                     // (`padding(.horizontal, 20).padding(.vertical, 16)` + `VStack(spacing: 16)`).
-                    .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 16.dp),
+                    .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Surface(

@@ -81,6 +81,7 @@ internal fun SubscriptionPanel(
     onCancelSubscription: (Boolean) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
+    onRestorePurchases: () -> Unit,
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -295,6 +296,22 @@ internal fun SubscriptionPanel(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+        }
+        // **이전 구매 복원 — 항상 보인다.** 이용권이 있든 없든 필요하다: 기기를 바꾸거나
+        // 다른 경로로 로그인해 서버에 결제 기록이 없을 때, 여기가 없으면 사용자가 할 수 있는
+        // 일이 '다시 결제' 뿐이라 **같은 구독을 두 번 사게 된다**(플레이스토어에도 같은 기능이
+        // 있고, 애플은 심사 지침 3.1.1 로 요구한다).
+        // ⚠ 폭은 다른 액션과 같은 `fillMaxWidth` 다 — 글자 폭에 맞춘 작은 버튼으로 두면
+        // 결제 버튼들 사이에서 눌러야 할 것으로 보이지 않는다(2026-08-17 지시).
+        OutlinedButton(
+            onClick = onRestorePurchases,
+            enabled = !billingBusy,
+            modifier = Modifier.fillMaxWidth(),
+            shape = WakerButtonShape,
+            border = wakerCardBorder(),
+            colors = wakerOutlinedButtonColors(),
+        ) {
+            Text(stringResource(R.string.billing_restore_purchases))
         }
         // 상시 'Google Play 구독 관리' 링크는 제거 — 쿠폰/서버 부여 이용권 사용자에겐 Play 구독이
         // 없어 빈 화면만 열리는 혼란이 있었다. 스토어 해지가 필요한 경우(PLAY_CANCEL_FAILED 등)는
@@ -548,24 +565,17 @@ internal fun SubscriptionPlanCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(
+                // ⚠ **이름과 요금을 한 덩어리로 묶지 말 것**(2026-08-17 지시 "아이폰처럼").
+                // 예전에는 둘을 간격 4의 안쪽 Column 에 넣어 거의 붙어 있었는데, iOS 는
+                // 요금이 카드 VStack 의 형제라 **다른 줄들과 같은 12** 를 받는다.
+                // 그래서 같은 카드가 안드로이드에서만 위쪽이 빽빽해 보였다.
+                Text(
+                    text = option.name,
+                    // iOS `.headline` = 17 semibold. `titleMedium`(16 Bold)이 아니다.
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text = option.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    if (option.price.isNotBlank()) {
-                        Text(
-                            text = option.price,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
+                )
                 if (isCurrent) {
                     Surface(
                         shape = WakerPillShape,
@@ -580,6 +590,15 @@ internal fun SubscriptionPlanCard(
                         )
                     }
                 }
+            }
+            if (option.price.isNotBlank()) {
+                Text(
+                    text = option.price,
+                    // iOS `.subheadline.weight(.semibold)` = 15 semibold.
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             if (isCurrent && currentStatusText != null) {
                 Text(

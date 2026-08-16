@@ -63,6 +63,36 @@ internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
     }
 }
 
+/**
+ * **이전 구매 복원.** 스토어에 남아 있는 활성 구독을 서버로 다시 보내 이용권을 되찾는다.
+ *
+ * 왜 버튼이 필요한가: 결제는 스토어가 권위인데(`docs/spec/billing-lifecycle.md`), 우리
+ * 서버에 그 기록이 없는 상태가 생길 수 있다 — 기기를 바꾸거나 다른 경로로 로그인한 경우다.
+ * 그때 사용자가 할 수 있는 일이 '다시 결제' 뿐이면 **같은 구독을 두 번 사게 된다.**
+ * 애플이 심사 지침(3.1.1)으로 이 버튼을 요구하는 이유이고, 플레이에도 같은 기능이 있다.
+ *
+ * 복원 결과는 [MainViewModel.confirmGooglePurchase] 가 처리한다(성공하면 이용권이 갱신되고
+ * 그쪽이 안내를 낸다). 여기서는 **보낼 것이 없었을 때만** 따로 알려 준다 — 아무 일도 일어나지
+ * 않는 것과 구분되지 않기 때문이다.
+ */
+internal fun MainViewModel.restorePurchases() {
+    val app = getApplication<android.app.Application>()
+    bearerOrMessage(app.getString(R.string.msg_gb_login_required_share_code_info)) ?: return
+    if (billingBusy) return
+    billingBusy = true
+    message = app.getString(R.string.billing_restore_checking)
+    viewModelScope.launch {
+        val restored = runCatching { playBilling.restorePurchases() }
+            .onFailure { error -> AlarmTalkLog.reportError("Failed to restore Play purchases", error) }
+            .getOrDefault(0)
+        if (restored == 0) {
+            // 보낸 것이 없으면 `confirmGooglePurchase` 가 돌지 않는다 — 여기서 풀어 준다.
+            billingBusy = false
+            message = app.getString(R.string.billing_restore_none)
+        }
+    }
+}
+
 internal fun MainViewModel.preloadBilling() {
     if (authSession == null || billingRefreshing || billingBusy) return
     refreshBillingData(showMessage = false)

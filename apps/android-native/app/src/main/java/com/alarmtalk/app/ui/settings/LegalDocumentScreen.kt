@@ -36,7 +36,7 @@ internal fun LegalDocumentScreen(
         WakerTopBar(
             title = title,
             onBack = onBack,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            modifier = Modifier.padding(top = 12.dp),
         )
         AndroidView(
             modifier = Modifier

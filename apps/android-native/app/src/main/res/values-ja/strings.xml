@@ -106,7 +106,10 @@
     <string name="billing_play_change_title">%1$s利用券に変えますか？</string>
     <string name="code_redeem_placeholder">招待・ギフト・プロモコード</string>
     <string name="code_redeem_submit">登録</string>
-    <string name="billing_select_button">購読を始める</string>
+    <string name="billing_restore_purchases">以前の購入を復元</string>
+    <string name="billing_restore_none">復元できる購入がありません。ストアのアカウントをご確認ください。</string>
+    <string name="billing_restore_checking">購入を確認しています…</string>
+    <string name="billing_select_button">決済する</string>
     <string name="billing_share_button">共有</string>
     <string name="billing_share_voucher_code">利用券コードを共有</string>
     <string name="billing_share_voucher_select_description">まだ登録されていないコードを選んですぐに共有できます。</string>

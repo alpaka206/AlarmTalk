@@ -90,7 +90,7 @@ internal fun OssLicensesScreen(
             // 본문을 열어 둔 상태면 뒤로가기가 목록으로 돌아간다(화면을 나가지 않는다).
             title = current?.name ?: stringResource(R.string.menu_open_source_licenses),
             onBack = { if (current != null) selected = null else onBack() },
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            modifier = Modifier.padding(top = 12.dp),
         )
 
         if (current == null) {

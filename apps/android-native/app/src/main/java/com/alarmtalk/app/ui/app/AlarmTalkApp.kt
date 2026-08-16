@@ -1190,6 +1190,7 @@ internal fun AlarmTalkApp(
                           onGiftPersonal = viewModel::startGiftPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,
+                          onRestorePurchases = viewModel::restorePurchases,
                           permissions = permissions,
                           onCreateAlarm = ::requestCreateAlarm,
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },

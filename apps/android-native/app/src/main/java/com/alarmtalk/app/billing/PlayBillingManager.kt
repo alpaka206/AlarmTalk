@@ -417,6 +417,42 @@ class PlayBillingManager(
         return resent
     }
 
+    /**
+     * **이전 구매 복원** — 스토어에 남아 있는 활성 구독을 서버로 다시 보낸다.
+     *
+     * [resendUnconfirmedPurchases] 와 딱 하나 다르다: **acknowledge 여부를 보지 않는다.**
+     * 그 함수는 '결제 직후 앱이 죽어 서버 검증을 못 한 건' 을 위한 것이라 미확인 건만
+     * 고르는데, 복원이 필요한 상황은 대개 반대다 — 스토어에는 정상 구독(acknowledge 됨)이
+     * 있는데 **우리 서버에 그 기록이 없는** 경우(계정 갈아타기·서버 쪽 유실·재설치 후 다른
+     * 경로로 로그인)라, 미확인만 보내면 복원 버튼이 늘 "복원할 구매가 없어요" 를 낸다.
+     *
+     * 서버가 같은 토큰을 여러 번 받아도 안전하다(멱등) — 검증 후 같은 구독으로 수렴한다.
+     *
+     * @return 서버로 보낸 구매 수. 0 이면 스토어에 활성 구독이 없다.
+     */
+    suspend fun restorePurchases(): Int {
+        if (!ensureConnected()) return 0
+        val result = billingClient.queryPurchasesAsync(
+            QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build(),
+        )
+        if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+            Log.w(TAG, "restorePurchases query failed code=${result.billingResult.responseCode}")
+            return 0
+        }
+        var sent = 0
+        result.purchasesList
+            .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+            .forEach { purchase ->
+                val productId = purchase.products.firstOrNull() ?: return@forEach
+                Log.i(TAG, "Restoring Play purchase productId=$productId")
+                listener.onPurchaseReady(purchase.purchaseToken, productId)
+                sent++
+            }
+        return sent
+    }
+
     override fun onPurchasesUpdated(billingResult: BillingResult, purchases: List<Purchase>?) {
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {

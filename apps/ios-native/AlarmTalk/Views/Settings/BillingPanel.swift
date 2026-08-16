@@ -315,6 +315,12 @@ struct BillingPanel: View {
                 }
                 Label("이전 구매 복원", systemImage: "arrow.clockwise.circle")
             }
+            // ⚠ **글자 폭에 맞춘 작은 버튼으로 되돌리지 말 것**(2026-08-17 지시).
+            // 위쪽 결제·선물 버튼이 전부 화면 폭인데 여기만 작으면 **눌러야 할 것으로
+            // 보이지 않는다.** 같은 폭·같은 세로 여백으로 둔다(안드로이드도 같다).
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
         }
         .buttonStyle(.bordered)
         .disabled(subscriptions.isPurchasing)
