@@ -115,12 +115,16 @@ struct SnoozeSettingsPane: View {
             TextField("분", text: $customDraft).keyboardType(.numberPad)
             Button("취소", role: .cancel) { }
             Button("확인") {
-                // 서버 계약이 1–30분이다(`snooze_minutes`). 범위를 벗어나면 잘라서 저장한다 —
-                // 여기서 거절하면 사용자는 왜 안 되는지 모른 채 같은 값을 다시 넣는다.
-                if let value = Int(customDraft.filter(\.isNumber)) {
-                    minutes = min(max(value, 1), 30)
+                if let value = Int(customDraft.filter(\.isNumber)), (1...30).contains(value) {
+                    minutes = value
                 }
             }
+            // ⚠ **범위를 벗어나면 잘라서 저장하지 말 것**(2026-08-17 안드로이드와 통일).
+            // 45 를 넣으면 30 이 저장되는데 화면은 그 사실을 말하지 않아, 사용자는 자기가
+            // 넣은 값이 들어간 줄 안다. 안드로이드는 처음부터 **버튼을 흐리게** 두고 아래에
+            // 이유를 적는다(Codex #671 P2 — '눌러도 아무 일이 없는 것' 은 고장과 구분되지
+            // 않는다). 서버 계약도 1–30 이다(`snooze_minutes`).
+            .disabled(!(1...30).contains(Int(customDraft.filter(\.isNumber)) ?? 0))
         } message: {
             Text("1분부터 30분까지 정할 수 있어요.")
         }

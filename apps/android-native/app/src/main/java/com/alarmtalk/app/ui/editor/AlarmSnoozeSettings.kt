@@ -259,15 +259,19 @@ internal fun SnoozeSettingsPane(
         // 앱 공용 알럿으로 통일한다 — 입력이 하나뿐인 모달이라 별도 껍데기가 필요 없다.
         IosAlertDialog(
             title = stringResource(R.string.editor_snooze_custom_dialog_title),
-            message = null,
+            // ⚠ **범위는 묻기 전에 말한다**(2026-08-17 iOS 와 통일). 예전에는 벗어났을 때만
+            // 오류로 알려서, 처음 여는 사람은 몇 분까지 되는지 모른 채 넣어 보고 막혔다.
+            message = stringResource(R.string.editor_snooze_custom_range_hint),
             onDismiss = { customIntervalDialogOpen = false },
             actions = listOf(
                 IosAlertAction(
-                    label = stringResource(R.string.r3dlg_modal_dialog_close),
+                    // 버튼 짝은 iOS 와 같은 [취소][확인] 이다 — 예전에는 [닫기][적용] 이라
+                    // 같은 모달이 두 앱에서 다른 말을 했다.
+                    label = stringResource(R.string.editor_cancel),
                     onClick = { customIntervalDialogOpen = false },
                 ),
                 IosAlertAction(
-                    label = stringResource(R.string.editor_apply),
+                    label = stringResource(R.string.auth_confirm),
                     emphasized = true,
                     // 범위 밖이면 **버튼을 흐리게** 둔다. 예전엔 '눌러도 닫히지 않는 것' 으로
                     // 알렸는데, 그건 고장과 구분되지 않는다(Codex #671 P2).

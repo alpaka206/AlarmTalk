@@ -223,6 +223,7 @@
     <string name="editor_snooze_custom">직접 입력</string>
     <string name="editor_snooze_custom_dialog_title">간격 직접 설정</string>
     <string name="editor_snooze_custom_range_error">1분에서 30분 사이로 정해 주세요.</string>
+    <string name="editor_snooze_custom_range_hint">1분부터 30분까지 정할 수 있어요.</string>
     <string name="editor_snooze_custom_value">직접 입력 (%1$d분)</string>
     <string name="editor_snooze_interval">간격</string>
     <string name="editor_snooze_repeat">최대 반복 횟수</string>

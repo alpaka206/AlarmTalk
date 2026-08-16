@@ -213,6 +213,7 @@
     <string name="editor_snooze_custom">手動入力</string>
     <string name="editor_snooze_custom_dialog_title">間隔をカスタム設定</string>
     <string name="editor_snooze_custom_range_error">1分から30分の間で指定してください。</string>
+    <string name="editor_snooze_custom_range_hint">1分から30分まで設定できます。</string>
     <string name="editor_snooze_custom_value">手動入力（%1$d分）</string>
     <string name="editor_snooze_interval">間隔</string>
     <string name="editor_snooze_repeat">最大リピート回数</string>
