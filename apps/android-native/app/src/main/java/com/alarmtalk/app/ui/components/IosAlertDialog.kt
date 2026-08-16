@@ -159,7 +159,13 @@ internal fun IosAlertDialog(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = ALERT_TEXT_INSET, end = ALERT_TEXT_INSET, top = 22.dp, bottom = 20.dp),
+                            .padding(
+                                start = ALERT_TEXT_INSET,
+                                end = ALERT_TEXT_INSET,
+                                top = 22.dp,
+                                // 입력이 있으면 아래 여백은 입력 블록이 갖는다.
+                                bottom = if (content == null) 20.dp else 0.dp,
+                            ),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         // ⚠ **여러 줄 본문은 가운데가 아니라 왼쪽 정렬이다.**
@@ -172,8 +178,13 @@ internal fun IosAlertDialog(
                         // 같은 문장이 아이폰에서 3줄, 갤럭시에서 2줄로 감긴다 — 3 으로 두면
                         // 같은 알럿이 한쪽만 가운데 정렬로 뜬다(실제로 그랬다).
                         // 판정은 **한 줄인가 아닌가**로만 한다.
+                        //
+                        // ⚠ **입력이 있는 알럿은 줄 수와 무관하게 왼쪽이다**(2026-08-17 지시).
+                        // 입력칸 안의 글자는 언제나 왼쪽에서 시작하는데 그 위의 제목·본문만
+                        // 가운데면, 한 모달 안에 시작점이 두 개가 된다. 알럿보다 **폼**에
+                        // 가까운 물건이라 폼처럼 왼쪽 한 줄로 세운다.
                         val longMessage = messageLineCount >= 2
-                        val blockAlign = if (longMessage) TextAlign.Start else TextAlign.Center
+                        val blockAlign = if (longMessage || content != null) TextAlign.Start else TextAlign.Center
                         if (!title.isNullOrBlank()) {
                             Text(
                                 text = title,
@@ -197,20 +208,30 @@ internal fun IosAlertDialog(
                                 onTextLayout = { messageLineCount = it.lineCount },
                             )
                         }
-                        if (content != null) {
-                            // 본문이 있으면 그 문단과 입력 사이 간격(14). 제목뿐이면 조금 더
-                            // 띄운다(10) — 4dp 로 두면 입력창이 제목에 달라붙어, 제목이
-                            // 입력창의 라벨처럼 읽힌다(폰에서 확인).
-                            Spacer(Modifier.height(if (message.isNullOrBlank()) 10.dp else 14.dp))
-                            content()
-                        }
                     }
-                } else if (content != null) {
-                    // 제목·본문 없이 입력만 있는 알럿도 같은 여백을 갖는다.
+                }
+                if (content != null) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = ALERT_TEXT_INSET, end = ALERT_TEXT_INSET, top = 22.dp, bottom = 20.dp),
+                            // ⚠ **글자 여백(30)이 아니라 버튼 여백(16)이다**(2026-08-17 지시).
+                            // 예전에는 입력칸이 글자 블록 **안에** 있어서 30 을 물려받았고,
+                            // 그래서 바로 아래 버튼보다 좌우로 14dp 씩 좁았다 — 세로로 맞닿은
+                            // 두 상자의 폭이 다르면 그 어긋남만 눈에 걸린다.
+                            .padding(
+                                start = ALERT_INSET,
+                                end = ALERT_INSET,
+                                // 본문이 있으면 그 문단과 입력 사이 간격(14). 제목뿐이면 조금 더
+                                // 띄운다(10) — 4dp 로 두면 입력창이 제목에 달라붙어, 제목이
+                                // 입력창의 라벨처럼 읽힌다(폰에서 확인).
+                                // 제목·본문이 아예 없는 알럿은 위 여백을 직접 갖는다(22).
+                                top = when {
+                                    !hasContent -> 22.dp
+                                    message.isNullOrBlank() -> 10.dp
+                                    else -> 14.dp
+                                },
+                                bottom = 20.dp,
+                            ),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         content = content,
                     )
