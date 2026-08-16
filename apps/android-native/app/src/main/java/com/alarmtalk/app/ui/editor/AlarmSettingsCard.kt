@@ -307,13 +307,14 @@ internal fun AlarmSoundSettingsPane(
                         // ⚠ **0 은 슬라이더로 만들 수 없다.** 0 은 '무음' 이라는 별개의 뜻이라
                         // 위 알람음 스위치로만 표현한다 — 끝값으로 두면 실수로 닿아 알람이
                         // 조용히 안 울리고, 무음으로 가는 길이 둘이 되어 상태를 읽기 어려워진다.
-                        Slider(
+                        // 공용 슬라이더 — 목소리 크기와 같은 물건이다(`WakerVolumeSlider`).
+                        WakerVolumeSlider(
                             value = alarmVolumePercent.coerceIn(MinAlarmVolumePercent, 100).toFloat(),
                             onValueChange = {
                                 onAlarmVolumeChange(it.toInt().coerceIn(MinAlarmVolumePercent, 100))
                             },
                             valueRange = MinAlarmVolumePercent.toFloat()..100f,
-                            steps = 8,
+                            stepSize = 10,
                         )
                     }
                 }

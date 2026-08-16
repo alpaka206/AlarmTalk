@@ -505,8 +505,11 @@ private fun VoiceProfileSelector(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 // 알람음 행과 대칭: 제목 '목소리' + 값(선택된 목소리 / 꺼짐).
+                // ⚠ **`editor_voice_output_title` 을 쓰지 말 것**(2026-08-16). 그건 '목소리 크기'
+                // 상세 화면의 제목이고, 하나로 묶어 뒀더니 그 화면 이름을 고치는 순간 이 행이
+                // "목소리 크기 · 미나" 가 됐다 — 두 자리는 서로 다른 것을 가리킨다.
                 Text(
-                    text = stringResource(R.string.editor_voice_output_title),
+                    text = stringResource(R.string.editor_voice_row_title),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -897,11 +900,12 @@ private fun VoiceVolumeSelector(
         // ⚠ **눈금은 10단위다**(10/20/…/100 = 10구간 → 중간 마크 9개).
         // `steps = 6` 이던 시절에는 구간이 (100-10)/7 = 12.857 이라 22%·48%·74% 같은
         // 값이 나왔다 — 알람음 볼륨은 10단위인데 목소리만 어중간한 숫자가 찍혔다.
-        Slider(
+        // 공용 슬라이더 — 알람음 볼륨과 같은 물건이다(`WakerVolumeSlider`).
+        WakerVolumeSlider(
             value = volumePercent.coerceIn(MinVoiceVolumePercent, 100).toFloat(),
             onValueChange = { onVolumeChange(it.toInt().coerceIn(MinVoiceVolumePercent, 100)) },
             valueRange = MinVoiceVolumePercent.toFloat()..100f,
-            steps = 9,
+            stepSize = 10,
         )
     }
 }
