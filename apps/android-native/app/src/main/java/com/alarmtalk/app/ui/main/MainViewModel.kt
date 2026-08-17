@@ -444,6 +444,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var stockClips by mutableStateOf<List<com.alarmtalk.app.network.StockClip>>(emptyList())
+
+    /**
+     * 카테고리별 **완전한 세트의 클립 수**(서버가 내려준다).
+     *
+     * ⚠ **앱에 개수를 박지 않는다.** 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 한다.
+     * 기본 목소리와 등록 목소리는 개수가 다르므로 목소리 종류로 갈라 본다.
+     */
+    var expectedVariants by mutableStateOf<com.alarmtalk.app.network.ExpectedVariantCounts?>(null)
         internal set
 
     var socialBusy by mutableStateOf(false)

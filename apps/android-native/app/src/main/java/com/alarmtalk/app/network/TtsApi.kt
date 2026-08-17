@@ -81,7 +81,25 @@ data class TtsMessageAudioResponse(
 
 data class StockClipListResponse(
     val clips: List<StockClip> = emptyList(),
+    /** 카테고리별 **완전한 세트의 클립 수**. 옛 서버면 null. */
+    @SerializedName("expected_variants") val expectedVariants: ExpectedVariantCounts? = null,
 )
+
+/**
+ * ⚠ **기본 목소리와 등록(클론) 목소리는 개수가 다르다**(지금도 `medication` 이 2 vs 3).
+ * 하나로 합치면 한쪽이 반드시 깨진다 — 기본 목소리의 완전한 세트가 '불완전' 으로 읽혀
+ * 오프라인 재생이 안 켜지거나, 클론이 부분 세트인데 완전하다고 읽혀 없는 자리를 튼다.
+ *
+ * 앱에 개수를 박지 않으려고 서버가 내려준다. 운영이 시드를 늘리면 앱 업데이트 없이 따라온다.
+ */
+data class ExpectedVariantCounts(
+    val system: Map<String, Int> = emptyMap(),
+    val clone: Map<String, Int> = emptyMap(),
+) {
+    /** 이 목소리 종류에서 해당 카테고리가 완전하려면 몇 개여야 하는가. 모르면 null. */
+    fun countFor(category: String, isSystemVoice: Boolean): Int? =
+        (if (isSystemVoice) system else clone)[category]
+}
 
 data class StockClip(
     @SerializedName("message_id") val messageId: String,

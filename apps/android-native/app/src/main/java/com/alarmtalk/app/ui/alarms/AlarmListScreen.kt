@@ -85,6 +85,8 @@ internal fun AlarmListScreen(
     sensitiveConsentMissing: List<String> = emptyList(),
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
+    /** 카테고리별 완전한 세트 크기(서버 제공). 앱에 개수를 박지 않는다. */
+    expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
     // 알람에 마지막으로 쓴 목소리 — 편집기의 초기 선택에 쓴다.
     lastUsedVoiceId: String? = null,
     // 기본 목소리 무료 버킷 프리페치 진행(다운로드 n to 전체). null = 진행 중 아님.
@@ -279,6 +281,7 @@ internal fun AlarmListScreen(
                         sensitiveConsentMissing = sensitiveConsentMissing,
                         onGenerateTts = onGenerateTts,
                         stockClips = stockClips,
+                        expectedVariants = expectedVariants,
                         onDownloadStockAudio = onDownloadStockAudio,
                         onRenameVoiceProfile = onRenameVoiceProfile,
                         onShareVoiceProfile = onShareVoiceProfile,

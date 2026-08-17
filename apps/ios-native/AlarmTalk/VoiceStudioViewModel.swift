@@ -56,6 +56,12 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 부를 수 없다. 그래서 신호만 세우고, 화면 계층이 `AlarmScheduleReconciler` 를 돌린다.
     /// 맞추기 전까지는 **지운 목소리가 예약에 남아 있다** — 늦추지 말 것.
     @Published var needsScheduleReconcile = false
+
+    /// 카테고리별 **완전한 세트의 클립 수**(서버가 내려준다).
+    ///
+    /// ⚠ **앱에 개수를 박지 않는다.** 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 한다.
+    /// 그리고 **기본 목소리와 등록 목소리는 개수가 다르다** — `ExpectedVariantCounts` 참조.
+    @Published var expectedVariants: ExpectedVariantCounts?
     @Published var selectedProfileID: String?
     /// 사용자가 고른 기본 목소리 id(시스템 스톡 보이스). 로그인 후 기기 설정에서 로드.
     /// 새 알람 에디터 미리선택 + 에디터 시스템음성 노출 제한 + 목소리 탭 표시에 사용.
@@ -484,7 +490,9 @@ final class VoiceStudioViewModel: ObservableObject {
         guard let token = session?.token else { return false }
         guard stockClips.isEmpty else { return true }
         do {
-            stockClips = try await api.getStockClips(token: token)
+            let manifest = try await api.getStockClipManifest(token: token)
+            stockClips = manifest.clips
+            expectedVariants = manifest.expectedVariants
             return true
         } catch {
             // 비차단 — 다음 호출이 다시 시도한다.

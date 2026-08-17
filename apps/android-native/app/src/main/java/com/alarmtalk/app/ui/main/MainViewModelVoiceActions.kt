@@ -736,8 +736,10 @@ internal suspend fun MainViewModel.downloadAllPresetClips(
 ) {
     val session = authSession ?: return
     withContext(Dispatchers.IO) {
-        val manifest = api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
+        val response = api.getStockClips(AlarmTalkApiClient.bearer(session.token))
+        val manifest = response.clips
         stockClips = manifest
+        response.expectedVariants?.let { expectedVariants = it }
         // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트 — 기기 언어로 거르지 않고 전부 받는다
         // (일본어로 만든 목소리를 한국어 기기에서 쓰는 경우에도 클립이 캐시되게).
         val clips = manifest.filter { it.voiceProfileId == voiceProfileId }
@@ -815,9 +817,11 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
     if (!forceReload && stockClips.isNotEmpty()) return
     viewModelScope.launch {
         runCatching {
-            api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
-        }.onSuccess { clips ->
+            api.getStockClips(AlarmTalkApiClient.bearer(session.token))
+        }.onSuccess { response ->
+            val clips = response.clips
             stockClips = clips
+            response.expectedVariants?.let { expectedVariants = it }
             // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
             // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
             pendingPrefetchVoiceId?.let { voiceId ->

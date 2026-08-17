@@ -87,18 +87,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal fun expectedCloneBucketVariantCount(category: String): Int? =
-    when (category) {
-        // 날씨 = 조건 8 + '인터넷 안 돼서 못 알아봤어요' 미해결 안내 1(마지막 클립이 안내). data 계층
-        // 상수를 참조해 발사 폴백(bucketVariantIndex)과 단일 출처로 유지.
-        "weather" -> com.alarmtalk.app.data.WEATHER_CLONE_CLIP_COUNT
-        "fortune" -> 5
-        "love" -> 3
-        "medication" -> 3
-        "greeting" -> 1
-        else -> null
-    }
-
 private enum class AudioPreviewTarget {
     CachedAudio,
     StockClip,
@@ -120,6 +108,8 @@ internal fun AlarmEditorScreen(
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     stockClips: List<StockClip>,
+    /** 카테고리별 완전한 세트 크기(서버 제공). null 이면 완전성을 판정할 수 없어 라이브로 간다. */
+    expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
     // 새 알람이 이어받을 '직전 선택' 세 축. 셋 다 계정별로 저장되고, 저장에 성공한 알람에서만
     // 기록된다(MainViewModel.rememberVoiceUsed / rememberMessageChoiceUsed).
     // 기존 알람을 열 때는 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
@@ -493,7 +483,15 @@ internal fun AlarmEditorScreen(
             .map { it.variant }
             .toSet()
         if (variants.isEmpty()) return false
-        val fullCount = expectedCloneBucketVariantCount(category) ?: return false
+        // ⚠ **개수를 앱에 박지 않는다.** 서버가 내려주는 값을 쓴다 — 운영이 시드를 늘리면
+        // 앱 업데이트 없이 따라와야 한다. 그리고 **기본 목소리와 등록 목소리는 개수가 다르다**
+        // (지금도 medication 이 2 vs 3) 이라 목소리 종류로 갈라 본다.
+        // 서버가 안 알려주면(옛 서버) 완전성을 단정할 수 없으므로 라이브 폴백으로 둔다.
+        val fullCount = expectedVariants?.countFor(
+            category = category,
+            isSystemVoice = isSystemVoiceId(profileId),
+        ) ?: return false
+        if (fullCount <= 0) return false
         return variants == (0 until fullCount).toSet()
     }
 

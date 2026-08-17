@@ -1860,8 +1860,41 @@ tts.get('/stock-clips', async (c) => {
       audio_url: row.audio_url,
       tags: parseDeliveryTags(row.delivery_tags_json),
     })),
+    // 카테고리별로 **몇 개가 있어야 완전한가**. 앱은 이 값과 자기 캐시를 비교해 부족분만 받고,
+    // 클론 버킷이 '완전한지'(variant 0..N-1 이 다 있는지) 판정한다.
+    //
+    // ⚠ **앱에 개수를 박아 두지 않으려고 서버가 내려준다.** 운영이 시드를 늘리면
+    // (예: 날씨 9 → 11) 앱 업데이트 없이 그 값이 따라와야 한다. 상수로 두면 늘어난 분을
+    // 영영 안 받고, 그 클립을 고른 알람이 무음이 된다.
+    // 날씨처럼 **절대 인덱스로 조건을 고르는** 버킷은 부분 세트면 엉뚱한 문구가 나가므로
+    // 이 판정이 특히 중요하다.
+    expected_variants: expectedVariantCounts(),
   });
 });
+
+/**
+ * 목소리 종류별 · 카테고리별로 **완전한 세트의 클립 수**.
+ *
+ * ⚠ **기본 목소리와 등록(클론) 목소리는 개수가 다르다.** 지금도 `medication` 이 시스템 2 /
+ * 클론 3 이다. 그래서 하나로 합치면 안 된다 — 큰 쪽으로 합치면 기본 목소리의 **완전한**
+ * 세트(2개)가 '불완전' 으로 읽혀 오프라인 재생이 영영 안 켜지고, 작은 쪽으로 합치면 클론이
+ * 부분 세트인데도 완전하다고 읽혀 **없는 클립 자리를 재생하려 든다.**
+ *
+ * 출처: 시스템은 `STOCK_CLIP_PRESETS`, 클론은 `CLONE_CLIP_SEEDS`. 앱은 고른 목소리가
+ * 시스템인지에 따라 둘 중 하나를 본다.
+ */
+function expectedVariantCounts(): { system: Record<string, number>; clone: Record<string, number> } {
+  const system: Record<string, number> = {};
+  for (const preset of STOCK_CLIP_PRESETS) {
+    // 언어별 문구 수는 같아야 하지만, 어긋나도 ko 를 기준으로 삼는다(시드 원본이 ko 다).
+    system[preset.category] = preset.texts.ko?.length ?? 0;
+  }
+  const clone: Record<string, number> = {};
+  for (const group of CLONE_CLIP_SEEDS) {
+    clone[group.category] = group.seeds.length;
+  }
+  return { system, clone };
+}
 
 // 사전렌더 클론 버킷(날씨/운세)의 '어느 variant 를 틀지' 인덱스만 서버가 resolve 한다. 클라는
 // 발사 전날 준비창(온라인)에서 이걸 호출해 알람에 인덱스를 스냅샷하고, 발사는 오프라인 lookup 만

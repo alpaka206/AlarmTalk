@@ -1244,15 +1244,56 @@ struct AlarmEditorSheet: View {
     ///
     /// ⚠ **실패하면 저장을 중단해야 한다.** 음원 없이 넘어가면 `LocalAlarmStore.validateDraft`
     /// 가 `voiceAudioRequired` 로 던져 "저장할 수 없어요" 만 뜨고 이유를 알 수 없다.
+    /// 저장할 때 붙일 **사전렌더 버킷 카테고리**. nil 이면 라이브 생성 경로로 간다.
+    ///
+    /// ⚠ **유료 클론도 사전렌더를 쓴다 — iOS 는 2026-08-18 까지 이 갈래가 없었다.**
+    /// `restrictToWeatherMedication`(무료이거나 기본 목소리) 하나로만 갈라서, 클론 목소리를
+    /// 고르면 **사전렌더가 100% 끝나 있어도 매번 라이브 합성**했다. 그래서 클론 알람은
+    /// 오프라인에서 만들 수 없었고, 매일 갱신 서비스가 그 알람들을 계속 다시 만들었다.
+    /// 안드로이드는 `clonePrerenderBucketCategoryFor` → `hasCompleteCloneBucket` →
+    /// `bindStockBucketClips` 를 먼저 시도하고 라이브는 **폴백**이다. 그 순서를 맞춘다.
+    func bucketCategoryForSave() -> String? {
+        guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return nil }
+        if restrictToWeatherMedication {
+            // 기본(시스템) 목소리 — 사용자가 고른 무료 테마.
+            return selectedFreeBucket?.rawValue
+        }
+        // 등록·공유받은 클론 — 고른 **문구 종류**를 사전렌더 버킷으로 매핑한다.
+        guard voiceStudio.randomPrompt,
+              let context = RandomPromptContext(rawValue: voiceStudio.randomContext) else { return nil }
+        let category = context.bucketCategory
+        // ⚠ **부분 세트면 쓰지 않는다.** 날씨·운세는 **절대 인덱스**로 조건을 고르므로
+        // (variant 3 = 미세먼지) 중간이 비면 엉뚱한 문구가 나간다. 그때는 라이브로 폴백한다.
+        guard hasCompleteBucket(category: category, profileID: profileID) else { return nil }
+        return category
+    }
+
+    /// 이 (목소리 · 카테고리) 세트가 **완전한가** — variant 0..N-1 이 다 있는가.
+    ///
+    /// ⚠ **N 을 앱에 박지 않는다.** 서버가 내려주는 `expected_variants` 를 쓴다
+    /// (운영이 시드를 늘리면 앱 업데이트 없이 따라와야 한다). 그리고 **기본 목소리와 등록
+    /// 목소리는 개수가 다르다** — `medication` 이 지금도 2 vs 3 이라 하나로 합치면 한쪽이 깨진다.
+    func hasCompleteBucket(category: String, profileID: String) -> Bool {
+        let variants = Set(stockClips(forCategory: category).compactMap { $0.variant })
+        guard !variants.isEmpty,
+              let expected = voiceStudio.expectedVariants?.count(
+                  category: category,
+                  isSystemVoice: voiceStudio.isSystemVoiceProfile(id: profileID)
+              ),
+              expected > 0
+        else { return false }
+        return variants == Set(0..<expected)
+    }
+
     func prepareSelectedBucketClipIfNeeded() async -> Bool {
-        guard restrictToWeatherMedication, let bucket = selectedFreeBucket else { return true }
+        guard let bucketCategory = bucketCategoryForSave() else { return true }
         // 이미 이 테마로 준비돼 있으면 다시 받지 않는다.
         if let prepared = voiceStudio.preparedAlarm,
            prepared.audioCacheKey.hasPrefix("stock_"),
-           stockClips(forCategory: bucket.rawValue).contains(where: { $0.messageId == prepared.messageID }) {
+           stockClips(forCategory: bucketCategory).contains(where: { $0.messageId == prepared.messageID }) {
             return true
         }
-        guard let clip = stockClips(forCategory: bucket.rawValue).first else {
+        guard let clip = stockClips(forCategory: bucketCategory).first else {
             voiceStudio.statusMessage = "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요."
             return false
         }
@@ -1269,12 +1310,28 @@ struct AlarmEditorSheet: View {
     /// 봐야 회전이 어긋나지 않는다.
     func stockClips(forCategory category: String) -> [StockClip] {
         guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return [] }
-        let language = VoiceStudioViewModel.appVoiceLanguage()
+        let language = bucketClipLanguage(forCategory: category, profileID: profileID)
         return voiceStudio.stockClips.filter {
             $0.voiceProfileId == profileID
                 && $0.category == category
                 && ($0.language ?? "ko") == language
         }
+    }
+
+    /// 이 (목소리 · 카테고리)의 클립이 실제로 존재하는 언어.
+    ///
+    /// 기기 언어가 있으면 그걸 쓰고, **없으면 있는 것 중 하나**로 떨어진다. 기기 언어만
+    /// 고집하면 일본어로 만든 클론을 한국어 기기에서 쓸 때 세트가 통째로 비어 보여
+    /// **오프라인 재생이 영영 안 켜진다**(안드로이드 `bucketClipLanguageFor` 와 같은 규칙).
+    func bucketClipLanguage(forCategory category: String, profileID: String) -> String {
+        let appLanguage = VoiceStudioViewModel.appVoiceLanguage()
+        let languages = Set(
+            voiceStudio.stockClips
+                .filter { $0.voiceProfileId == profileID && $0.category == category }
+                .map { $0.language ?? "ko" }
+        )
+        if languages.contains(appLanguage) { return appLanguage }
+        return languages.sorted().first ?? appLanguage
     }
 
     /// 이 테마에 묶을 클립 캐시 키 전부. 매니페스트 순서를 그대로 쓴다 —

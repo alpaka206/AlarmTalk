@@ -222,6 +222,8 @@ internal fun VoiceProfileManagementPanel(
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
+    /** 카테고리별 완전한 세트 크기(서버 제공). 앱에 개수를 박지 않는다. */
+    expectedVariants: com.alarmtalk.app.network.ExpectedVariantCounts? = null,
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
@@ -923,7 +925,10 @@ internal fun VoiceProfileManagementPanel(
     // 알람 버킷 4종이 매니페스트에 풀셋으로 존재하는지 — AlarmEditorScreen.hasCompleteCloneBucket
     // 과 동일한 variant 절대 인덱스 판정. greeting 은 미리듣기 전용이라 게이트에서 제외한다.
     fun cloneManifestComplete(profileId: String): Boolean = CloneAlarmBucketCategories.all { category ->
-        val fullCount = expectedCloneBucketVariantCount(category) ?: return@all false
+        // 서버가 내려준 값을 쓴다(앱 상수 금지). 클론 프로필이므로 clone 쪽을 본다.
+        val fullCount = expectedVariants?.countFor(category = category, isSystemVoice = false)
+            ?: return@all false
+        if (fullCount <= 0) return@all false
         val clipLanguage = cloneClipLanguageFor(profileId, category)
         val variants = stockClips
             .filter {

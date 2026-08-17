@@ -383,8 +383,13 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 필터·정렬은 클라이언트(StockClipPicker)가 담당한다. 미리듣기/선택 시 음원은
     /// 기존 `getTTSMessageAudio` 로 받는다(신규 오디오 엔드포인트 없음).
     func getStockClips(token: String) async throws -> [StockClip] {
-        let response: StockClipListResponse = try await request("tts/stock-clips", token: token)
-        return response.clips
+        try await getStockClipManifest(token: token).clips
+    }
+
+    /// 클립 목록 + **카테고리별 완전한 세트 크기**. 완전성 판정에 그 크기가 필요하다
+    /// (`ExpectedVariantCounts` 주석 참조 — 기본/등록 목소리의 개수가 다르다).
+    func getStockClipManifest(token: String) async throws -> StockClipListResponse {
+        try await request("tts/stock-clips", token: token)
     }
 
     func getTTSMessageAudio(id: String, token: String) async throws -> TtsMessageAudioResponse {

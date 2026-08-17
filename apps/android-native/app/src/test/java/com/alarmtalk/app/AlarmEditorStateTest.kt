@@ -26,12 +26,17 @@ import org.robolectric.annotation.Config
 class AlarmEditorStateTest {
     @Test
     fun cloneBucketsRequireEveryBackendVariant() {
-        assertEquals(9, expectedCloneBucketVariantCount("weather")) // 조건 8 + 미해결 안내 1
-        assertEquals(5, expectedCloneBucketVariantCount("fortune"))
-        assertEquals(3, expectedCloneBucketVariantCount("love"))
-        assertEquals(3, expectedCloneBucketVariantCount("medication"))
-        assertEquals(1, expectedCloneBucketVariantCount("greeting"))
-        assertNull(expectedCloneBucketVariantCount("unknown"))
+        // ⚠ 개수는 **서버가 내려준다**(`expected_variants`) — 앱 상수로 두지 않는다.
+        // 운영이 시드를 늘리면 앱 업데이트 없이 따라와야 하고, 기본 목소리와 등록 목소리는
+        // 개수가 다르다(medication 2 vs 3). 계약 검증은 백엔드
+        // `test/expected-variants.test.ts` 가 맡는다.
+        val counts = com.alarmtalk.app.network.ExpectedVariantCounts(
+            system = mapOf("weather" to 9, "medication" to 2, "greeting" to 1),
+            clone = mapOf("weather" to 9, "fortune" to 5, "love" to 3, "medication" to 3, "greeting" to 1),
+        )
+        assertEquals(2, counts.countFor("medication", isSystemVoice = true))
+        assertEquals(3, counts.countFor("medication", isSystemVoice = false))
+        assertNull(counts.countFor("unknown", isSystemVoice = false))
     }
 
     @Test
