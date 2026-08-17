@@ -208,6 +208,20 @@ enum AlarmSoundStaging {
         #endif
     }
 
+    /// `Library/Sounds` 에 실제로 놓인 **파일 이름(확장자 포함)** 을 돌려준다.
+    ///
+    /// [stage] 는 확장자 없는 base 이름을 돌려주는데, 알림 사운드 이름 규약은
+    /// `UNNotificationSound(named:)` 와 같은 **확장자 포함 파일명**이다
+    /// (Apple: "The name of the sound file to use for the alert. Choose a file that's in
+    /// your app's main bundle or the `Library/Sounds` folder of your app's data container.").
+    /// 확장자는 소스에 따라 `.caf`/`.aiff`/`.wav` 로 갈리므로 이름만으로는 못 만든다 —
+    /// 디렉터리에서 실제 파일을 찾아 돌려준다.
+    static func stagedFileName(forBaseName baseName: String) -> String? {
+        guard let soundsDir = try? ensureSoundsDirectory() else { return nil }
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: soundsDir.path)) ?? []
+        return entries.first { ($0 as NSString).deletingPathExtension == baseName }
+    }
+
     /// 외부 호출자가 cache invalidation 시 정리하기 위한 헬퍼.
     static func clearStagedSound(forKey key: String) {
         let fm = FileManager.default

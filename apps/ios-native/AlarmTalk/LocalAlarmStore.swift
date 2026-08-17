@@ -153,10 +153,19 @@ final class LocalAlarmStore: ObservableObject {
     }
 
     /// 동일 ID 가 있으면 갱신, 없으면 추가. updatedAtMillis 자동 갱신.
+    ///
+    /// `syncedNow: true` 는 **pull 이 서버본을 그대로 쓴 경우**다. `lastSyncedAtMillis` 를
+    /// 같은 값으로 맞춰 `updatedAtMillis == lastSyncedAtMillis` 불변식을 세운다 —
+    /// `RemoteAlarmPullSync.locallyEditedByRecipient` 가 이 등식으로 '수신자가 손댔는가' 를
+    /// 판정하므로, 두 값이 몇 ms 라도 어긋나면 갓 받은 알람이 편집된 것으로 읽힌다.
+    /// (Android `buildReceivedAlarmRow` 는 둘 다 같은 `now` 를 넣어 같은 불변식을 만든다.)
     @discardableResult
-    func upsert(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
+    func upsert(_ record: LocalAlarmRecord, syncedNow: Bool = false) -> LocalAlarmRecord {
         var copy = record
         copy.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        if syncedNow {
+            copy.lastSyncedAtMillis = copy.updatedAtMillis
+        }
         if let index = alarms.firstIndex(where: { $0.id == copy.id }) {
             alarms[index] = copy
         } else {

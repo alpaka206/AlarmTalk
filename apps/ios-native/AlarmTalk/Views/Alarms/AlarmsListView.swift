@@ -373,8 +373,7 @@ struct AlarmsListView: View {
                 actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
                 return
             }
-            if store.record(id: updated.id)?.remoteAlarmId != nil,
-               let synced = store.record(id: updated.id) {
+            if let synced = store.record(id: updated.id), shouldPushToServer(synced) {
                 await remoteSync.push(record: synced, store: store, session: auth.session)
             }
             actionMessage = nil
@@ -386,12 +385,27 @@ struct AlarmsListView: View {
                 return
             }
             store.setEnabled(id: alarm.id, enabled: false)
-            if store.record(id: alarm.id)?.remoteAlarmId != nil,
-               let updated = store.record(id: alarm.id) {
+            if let updated = store.record(id: alarm.id), shouldPushToServer(updated) {
                 await remoteSync.push(record: updated, store: store, session: auth.session)
             }
             actionMessage = nil
         }
+    }
+
+    /// 이 행의 변경을 서버에 올려도 되는가.
+    ///
+    /// ⚠ **`remoteAlarmId != nil` 만 보면 안 된다.** 받은 알람도 그 값을 갖는다(보낸 사람이
+    /// 만든 서버 행의 id). 그걸 push 하면 `PATCH /alarm/:id` 가 소유권 게이트
+    /// (`alarm-mutation.ts` 의 `WHERE a.id = ? AND a.user_id IN (...)`)에 걸려 **404** 로
+    /// 떨어지고, 수신자에게는 "알람 변경사항을 저장하지 못했어요" 만 뜬다 — 로컬 저장은
+    /// 멀쩡히 됐는데 실패한 것처럼 보인다(2026-08-18 실기기에서 반복 확인).
+    ///
+    /// 받은 알람은 **받은 뒤로 수신자 것이고 서버에 올릴 사본이 없다**
+    /// (docs/spec/family-alarm.md). 껐다 켜는 것도 로컬·AlarmKit 에서 끝난다.
+    /// 일괄 push 는 이미 같은 기준으로 거른다(`RemoteAlarmPushSync` 의
+    /// `originEnum == .localOwned`) — 여기만 빠져 있었다.
+    private func shouldPushToServer(_ record: LocalAlarmRecord) -> Bool {
+        record.originEnum == .localOwned && record.remoteAlarmId != nil
     }
 
     /// 알람 삭제 실행. 스와이프 삭제 버튼 또는 길게 누르기 메뉴에서 곧바로 호출된다

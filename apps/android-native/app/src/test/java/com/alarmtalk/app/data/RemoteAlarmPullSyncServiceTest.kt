@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.network.RemoteAlarm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -391,6 +392,76 @@ class RemoteAlarmPullSyncServiceTest {
         )
         assertTrue(hasSenderVoice(locked))
         assertNull(withVoiceRevoked(locked, context).audioCacheKey)
+    }
+
+    // ── 받은 뒤에는 받은 사람이 관리한다 (docs/spec/family-alarm.md 1절) ──────────────
+    // 예전에는 '지켜야 할 필드' 목록을 늘려 가며 막았고, 목록에 없는 값은 매 pull 마다
+    // 되돌아왔다. 이제는 **고쳐진 행 자체에 손대지 않는다** — 그 판정을 고정한다.
+
+    @Test
+    fun pullWrittenRowIsNotTreatedAsRecipientEdit() {
+        // pull 이 만든 행은 두 시각이 같다. 이걸 '편집됨' 으로 읽으면 갓 받은 알람이
+        // 곧바로 잠겨, 음성 다운로드가 실패했던 행의 **재시도**까지 죽는다.
+        val fresh = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+        assertFalse(locallyEditedByRecipient(fresh))
+    }
+
+    @Test
+    fun recipientEditMakesRowStickAgainstRemote() {
+        // 수신자가 저장하면 updateAlarm 이 lastSyncedAtMillis 를 보존한 채
+        // updatedAtMillis 만 올린다(upsertPreservingServerSyncFields).
+        val edited = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(updatedAtMillis = 2_000L)
+        assertTrue(locallyEditedByRecipient(edited))
+    }
+
+    @Test
+    fun legacyRowWithoutSyncStampIsTreatedAsEdited() {
+        // pull 이 만든 게 아닌 행은 근거가 없으니 보수적으로 지킨다.
+        val legacy = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
+            .copy(lastSyncedAtMillis = null)
+        assertTrue(locallyEditedByRecipient(legacy))
+    }
+
+    @Test
+    fun rebuiltReceivedRowKeepsTheUneditedInvariant() {
+        // ⚠ 이 불변식이 깨지면 위 판정이 통째로 뒤집힌다 — buildReceivedAlarmRow 가
+        // 두 시각을 **같은 now** 로 넣어야 '아직 안 고침' 이 표현된다.
+        val row = buildReceivedAlarmRow(
+            context = context,
+            remote = remote(),
+            existing = null,
+            cachedAudio = null,
+            currentUserId = "recipient",
+            now = 5_000L,
+        )
+        assertNotNull(row)
+        assertEquals(row!!.updatedAtMillis, row.lastSyncedAtMillis)
+        assertFalse(locallyEditedByRecipient(row))
+    }
+
+    @Test
+    fun recipientPlayModeChoiceSurvivesAPullThatCarriesNoVoice() {
+        // 실제 증상(2026-08-17): 가족 알람은 message_id 가 없어 remote 에 음성이 없다.
+        // 수신자가 자기 목소리로 바꿔 저장해도, 재구성이 돌면 ALARM_ONLY 로 되돌아갔다.
+        // 이제는 재구성 자체가 돌지 않아야 한다.
+        val edited = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE).copy(
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            audioCacheKey = "my-own-voice",
+            updatedAtMillis = 2_000L,
+        )
+        assertTrue(locallyEditedByRecipient(edited))
+        // 대조군 — 손대지 않은 행이라면 서버본으로 재구성된다(첫 수신·음성 재시도 경로).
+        val untouched = edited.copy(updatedAtMillis = edited.lastSyncedAtMillis!!)
+        assertFalse(locallyEditedByRecipient(untouched))
+        val rebuilt = buildReceivedAlarmRow(
+            context = context,
+            remote = remote(),
+            existing = untouched,
+            cachedAudio = null,
+            currentUserId = "recipient",
+        )
+        assertEquals(AlarmPlayModes.ALARM_ONLY, rebuilt!!.playMode)
     }
 
     private fun remote(): RemoteAlarm = RemoteAlarm(

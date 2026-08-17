@@ -122,7 +122,7 @@ enum AlarmSoundResolver {
                 if let bundled = try? AlarmSoundStaging.stage(
                     url: url, key: key, volumePercent: record.voiceVolumePercent
                 ) {
-                    return .bundledNamed(bundled)
+                    return .bundledNamed(stagedAlertName(bundled))
                 }
                 // staging 실패 — in-app 폴백
                 return .cachedAudio(url, duration)
@@ -136,7 +136,7 @@ enum AlarmSoundResolver {
             if let bundled = try? AlarmSoundStaging.stage(
                 url: url, key: key, volumePercent: record.voiceVolumePercent
             ) {
-                return .bundledNamed(bundled)
+                return .bundledNamed(stagedAlertName(bundled))
             }
             return .cachedAudio(url, duration)
         }
@@ -147,11 +147,21 @@ enum AlarmSoundResolver {
            let bundled = try? AlarmSoundStaging.stage(
                url: url, key: "alarm-\(record.id)", volumePercent: record.alarmVolumePercent
            ) {
-            return .bundledNamed(bundled)
+            return .bundledNamed(stagedAlertName(bundled))
         }
 
         // 3) Fallback
         return .systemDefault
+    }
+
+    /// `.named(_)` 에 넘길 이름을 **확장자 포함 파일명**으로 맞춘다.
+    ///
+    /// 알림 사운드 이름 규약은 `UNNotificationSound(named:)` 와 같은 파일명이다.
+    /// 확장자 없는 base 이름을 넘기면 lookup 이 빗나가 **기본 알람음으로 폴백**한다 —
+    /// 그러면 목소리로 맞춘 알람이 톤으로 울리고, 우리 코드는 성공한 줄 안다.
+    /// 파일을 못 찾으면 base 이름을 그대로 쓴다(지금까지의 동작).
+    private static func stagedAlertName(_ baseName: String) -> String {
+        AlarmSoundStaging.stagedFileName(forBaseName: baseName) ?? baseName
     }
 
     #if canImport(AlarmKit)

@@ -279,7 +279,7 @@
 | [`docs/spec/plan-gates.md`](docs/spec/plan-gates.md) | 로그인·이용권 게이트 **3상태**와 상태별 액션 |
 | [`docs/spec/session-and-auth.md`](docs/spec/session-and-auth.md) | 로그인 유지 — TTL 365일 + **백그라운드 갱신**, 끊는 경우 |
 | [`docs/spec/billing-lifecycle.md`](docs/spec/billing-lifecycle.md) | 구독 해지·만료 — **스토어가 권위**, 애플은 서버가 못 끊는다 |
-| [`docs/spec/family-alarm.md`](docs/spec/family-alarm.md) | 가족 알람 — **보내면 끝**, 설정 불가능 시간은 **자동 생성 금지** |
+| [`docs/spec/family-alarm.md`](docs/spec/family-alarm.md) | 가족 알람 — **보내면 끝**, 받은 뒤엔 **전부 받은 사람 것**, 설정 불가능 시간은 **자동 생성 금지** |
 | [`docs/spec/consent.md`](docs/spec/consent.md) | 동의 화면 — **미체크 ≠ 철회**, 재동의 레버 |
 | [`docs/spec/gates-and-overlays.md`](docs/spec/gates-and-overlays.md) | 게이트·1회성 오버레이의 **준비 신호** |
 

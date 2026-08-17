@@ -13,6 +13,10 @@ import os
 //
 // 충돌 정책:
 //   - 로컬이 dirty 면 서버 응답을 덮어쓰지 않는다 (다음 push 에서 로컬 변경을 반영).
+//   - **받은 알람을 수신자가 한 번이라도 고쳤으면 서버 응답을 다시 입히지 않는다**
+//     (`locallyEditedByRecipient`). 받은 뒤로는 그 알람이 수신자 것이고, 보낸 사람에게는
+//     고칠 수단이 없어 서버 값은 최초 씨앗일 뿐이다 → docs/spec/family-alarm.md 1-1절.
+//     받은 알람은 항상 `.synced` 로 파생되므로(`nextLocalSyncState`) dirty 로는 못 지킨다.
 //   - 그 외에는 last write wins: lastSyncedAtMillis 가 더 최신인 쪽을 채택한다.
 //
 // 호출 컨텍스트:
@@ -226,7 +230,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             guard Self.shouldApplyRemote(existing: current, mapped: mapped) else { return .unchanged }
 
             let merged = Self.merge(existing: current, mapped: mapped)
-            store.upsert(merged)
+            // `syncedNow` — 서버본을 그대로 쓴 행이므로 '수신자가 손대지 않았다' 로 남긴다.
+            // ([locallyEditedByRecipient] 가 두 시각의 등호로 판정한다.)
+            store.upsert(merged, syncedNow: true)
 
             // receivedRemote 라면 일정 변경이 있을 수 있으므로 다시 스케줄.
             if merged.originEnum == .receivedRemote && merged.enabled {
@@ -240,12 +246,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // `RemoteAlarmMapper` 가 매번 새 UUID 를 만들기 때문에 **행이 둘 생기고 둘 다 울린다.**
             if let raced = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
                 guard !Self.isInFlight(raced) else { return .unchanged }
-                store.upsert(Self.merge(existing: raced, mapped: mapped))
+                guard !Self.locallyEditedByRecipient(raced) else { return .unchanged }
+                store.upsert(Self.merge(existing: raced, mapped: mapped), syncedNow: true)
                 return .updated
             }
 
             // 신규 import.
-            store.upsert(mapped)
+            store.upsert(mapped, syncedNow: true)
 
             // receivedRemote 신규 알람이면 곧바로 AlarmKit 스케줄.
             if mapped.originEnum == .receivedRemote && mapped.enabled {
@@ -278,9 +285,16 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// 서버가 권위인 것은 '보낸 사람이 정한 내용' 뿐이다 — 라벨·음성/문구·진동 패턴.
     /// (보낸 알람은 한 번 보내면 발신자가 못 고치므로, 서버 값은 사실상 최초 씨앗이다.)
     ///
-    /// ⚠ `shouldApplyRemote` 의 dirty 가드는 받은 알람을 못 지킨다 —
-    /// `nextLocalSyncState` 가 받은 알람을 항상 `.synced` 로 되돌리고
-    /// `mapped.lastSyncedAtMillis` 는 매번 now 라 비교가 언제나 참이다.
+    /// ⚠ **그 '씨앗' 조차 수신자가 고친 뒤에는 다시 뿌리지 않는다**(2026-08-18).
+    /// 여기 남은 보존 목록은 **수신자가 아직 손대지 않은 행**에만 쓰인다 —
+    /// 고친 행은 [locallyEditedByRecipient] 가 `shouldApplyRemote` 에서 통째로 막는다.
+    /// 그전에는 이 목록에 없는 값(재생 방식·문구·목소리)이 매 pull 마다 되돌아왔다:
+    /// 받은 알람을 '목소리' 로 고쳐도 보낸 사람 행에 message 가 없으면 `mapped` 는
+    /// 음성 없는 행이라 **알람음으로 되돌아간다**(2026-08-17 실기기 재현).
+    ///
+    /// ⚠ `shouldApplyRemote` 의 **dirty 가드만으로는** 받은 알람을 못 지킨다 —
+    /// `nextLocalSyncState` 가 받은 알람을 항상 `.synced` 로 되돌리기 때문이다.
+    /// 그래서 판정을 시각(`updatedAtMillis` vs `lastSyncedAtMillis`)으로 따로 둔다.
     static func merge(existing: LocalAlarmRecord, mapped: LocalAlarmRecord) -> LocalAlarmRecord {
         var merged = mapped
         merged.id = existing.id                                  // 로컬 ID 유지
@@ -370,11 +384,30 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     /// "이번 사이클의 mapped 가 서버 권위 응답으로서 existing 을 덮어써도 되는가?" 결정.
     /// 정책:
     ///   - existing.syncState == .dirty 이면 false (로컬 변경 우선)
+    ///   - 받은 알람을 수신자가 고쳤으면 false ([locallyEditedByRecipient])
     ///   - mapped.lastSyncedAtMillis >= existing.lastSyncedAtMillis 이면 true
     ///   - 그 외 false
     static func shouldApplyRemote(existing: LocalAlarmRecord, mapped: LocalAlarmRecord) -> Bool {
         if existing.syncStateEnum == .dirty { return false }
+        if locallyEditedByRecipient(existing) { return false }
         return (mapped.lastSyncedAtMillis ?? 0) >= (existing.lastSyncedAtMillis ?? 0)
+    }
+
+    /// 받은 알람을 **수신자가 고쳤는가**. 고쳤으면 서버본을 다시 입히지 않는다
+    /// (docs/spec/family-alarm.md — 보낸 사람은 '만든 뒤 고치기: 못 한다',
+    /// 받은 사람은 '자기 기기에서 자유롭게').
+    ///
+    /// 받은 알람은 항상 `.synced` 라(`LocalAlarmStore.nextLocalSyncState`) dirty 플래그로는
+    /// 이걸 구분할 수 없다. 대신 시각을 본다 — pull 이 쓴 행은
+    /// `updatedAtMillis == lastSyncedAtMillis`(`upsert(_:syncedNow:)`)이고, 수신자가 저장하면
+    /// `upsertPreservingServerSyncFields` 가 `lastSyncedAtMillis` 를 보존한 채
+    /// `updatedAtMillis` 만 올린다.
+    ///
+    /// Android `RemoteAlarmPullSyncService.locallyEditedByRecipient` 와 같은 판정이다.
+    static func locallyEditedByRecipient(_ existing: LocalAlarmRecord) -> Bool {
+        guard existing.originEnum == .receivedRemote else { return false }
+        guard let lastSynced = existing.lastSyncedAtMillis else { return true }
+        return existing.updatedAtMillis > lastSynced
     }
 
     /// Android `RemoteAlarmPullSyncService.pullReceivedAlarms` 의 대상 필터와 같은 의도.

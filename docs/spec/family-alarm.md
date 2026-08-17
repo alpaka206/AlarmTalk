@@ -17,6 +17,47 @@
 **로컬 행을 만들지 않는다**(`createFamilyTargetAlarm`). 그래서 보낸 사람에게는 고칠 화면
 자체가 없다 — 이게 위 표를 지키는 방식이다.
 
+### 1-1. 받은 뒤에는 **전부** 받은 사람 것이다
+
+「자기 기기에서 자유롭게」는 시각만이 아니다. **시각·요일·스누즈·재생 방식·목소리·문구·
+볼륨·알람음 — 무엇이든** 받은 사람이 고칠 수 있고, 고친 값은 **영구히** 남는다.
+
+그러니 **서버 값은 처음 받을 때의 씨앗일 뿐이다.** 보낸 사람은 고칠 수단이 없으므로
+(위 표), 매 pull 이 서버 값을 다시 입힐 이유가 애초에 없다.
+
+⚠ **'무엇을 지킬지' 를 세지 말 것 — 이 규칙이 깨진 방식은 언제나 같았다.** 재구성이
+서버본으로 행을 다시 만들고, '지켜야 할 필드' 목록으로 수신자 값을 덮어썼다. 목록에서
+빠진 값이 **여섯 번** 되돌아왔다: 시각 → 끄기 → 스누즈 상태 → 볼륨·알람음(안드로이드,
+`2cafd54f`·`850b9032`) → 일정 전체(iOS, `1f195191`) → **재생 방식·문구·목소리**
+(양 앱, 2026-08-18).
+
+마지막 것이 가장 오래 숨어 있었다. 가족 알람은 `message_id` 가 **없어서**(보낸 사람은
+문구를 정하지 않는다) 서버본에 음성이 없다 → 재구성이 `playMode` 를 `ALARM_ONLY` 로
+계산한다 → **받은 사람이 목소리로 바꿔 저장해도 다음 pull 이 알람음으로 되돌린다.**
+저장은 됐는데 되돌아가므로 "저장이 안 된다" 가 아니라 "자꾸 알람음으로 바뀐다" 로 겪는다.
+
+**그래서 방향을 뒤집었다: 고쳐진 행에는 손대지 않는다.**
+
+| | 판정 | 그때 하는 일 |
+| --- | --- | --- |
+| 아직 안 고친 행 | `updatedAtMillis == lastSyncedAtMillis` | 서버본으로 재구성(첫 수신·음성 다운로드 실패분 재시도) |
+| 수신자가 고친 행 | `updatedAtMillis > lastSyncedAtMillis` | **아무것도 하지 않는다** |
+
+- 두 시각의 등호가 '아직 안 고침' 의 신호다. pull 이 쓸 때 **같은 값**을 넣고
+  (안드로이드 `buildReceivedAlarmRow` 의 `now`, iOS `upsert(_:syncedNow:)`),
+  수신자가 저장할 때는 `lastSyncedAtMillis` 를 보존한 채 `updatedAtMillis` 만 올린다
+  (`upsertPreservingServerSyncFields`). 이 불변식이 깨지면 판정이 통째로 뒤집힌다.
+- `syncState` 로는 못 한다 — 받은 알람은 항상 `synced` 로 파생된다(`nextLocalSyncState`).
+- **예외는 목소리 철회뿐이다.** 발신자가 탈퇴하면 고친 행에서도 목소리를 걷어낸다
+  (생체정보 파기). 그건 재구성이 아니라 별도 경로다(`withVoiceRevoked`).
+
+⚠ **수신자의 변경을 서버에 올리지 말 것.** 받은 알람에도 `remoteAlarmId` 가 있지만 그건
+**보낸 사람의 행**이다. `PATCH /alarm/:id` 는 소유권 게이트(`WHERE a.id = ? AND a.user_id
+IN (...)`)에 걸려 **404** 로 떨어지고, 로컬 저장은 멀쩡한데 화면에는 "알람 변경사항을
+저장하지 못했어요" 만 뜬다. 일괄 push 는 `origin == localOwned` 로 거르지만, **단건 push
+호출부가 `remoteAlarmId != nil` 만 보고 빠져나간 적이 있다**(iOS 목록의 켜기/끄기 토글,
+2026-08-18 수정). 새 push 호출부를 만들면 **origin 을 함께 볼 것.**
+
 ⚠ **편집기 안에 '받는 사람 바꾸기' 를 두지 말 것.** 받는 사람은 「누구를 깨울까요?」
 시트에서 정해져 편집기로 넘어오고, 그 뒤로 바뀌지 않는다. iOS 에 한때 그 카드가 있었으나
 안드로이드에는 없었고 2026-08-07 에 없앴다. 지금 누구에게 저장되는지는 **하단 저장
@@ -70,6 +111,12 @@
 | 방해금지 기본값 없음 | `MainViewModelAuthActions`(다 지우면 그대로) | `AuthViewModel.updateProfile`(같음) | `normalizeQuietWindows` 폴백 `[]` + 가입 응답 |
 | 기존 계정 정리 | — | — | 마이그레이션 98 |
 | 리드타임 | — | `FamilyAlarmScheduleRules` | `routes/alarm-helpers.ts` |
+| 받은 뒤 수정은 수신자 것 | `RemoteAlarmPullSyncService.locallyEditedByRecipient` | `RemoteAlarmPullSync.locallyEditedByRecipient` | — |
+| '안 고침' 불변식 세우기 | `buildReceivedAlarmRow`(같은 `now`) | `LocalAlarmStore.upsert(_:syncedNow:)` | — |
+| 수신자 편집을 서버에 안 올림 | `AlarmSyncService`(`origin == LOCAL_OWNED`) | `RemoteAlarmPushSync` + `AlarmsListView.shouldPushToServer` | `alarm-mutation.ts` PATCH 소유권 게이트 |
+| 그만받기(삭제) | `MainViewModelAlarmActions`(decline) | `RemoteAlarmSyncViewModel`(decline) | `POST /alarm/:id/decline`, `GET /alarm/declined` |
+| 발신자 탈퇴 → 목소리만 회수 | `withVoiceRevoked` | `RemoteAlarmPullSync.withVoiceRevoked` | `GET /alarm/declined` 의 `revokedAlarmIds` |
+| 회귀 테스트 | `RemoteAlarmPullSyncServiceTest` | `RemoteAlarmPullSyncTests` | — |
 
 ## 검증 방법
 

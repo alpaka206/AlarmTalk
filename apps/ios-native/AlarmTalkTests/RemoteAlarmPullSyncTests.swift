@@ -44,6 +44,76 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertFalse(RemoteAlarmPullSync.shouldApplyRemote(existing: existing, mapped: mapped))
     }
 
+    // MARK: - 받은 뒤에는 받은 사람이 관리한다 (docs/spec/family-alarm.md 1절)
+
+    func test_shouldApplyRemote_recipientEditedReceivedAlarm_returnsFalse() {
+        // 수신자가 저장하면 upsertPreservingServerSyncFields 가 lastSyncedAtMillis 를
+        // 보존한 채 updatedAtMillis 만 올린다. 그 뒤로는 서버본을 다시 입히지 않는다.
+        var existing = makeReceivedRemote(remoteID: "r1")
+        existing.lastSyncedAtMillis = 100
+        existing.updatedAtMillis = 200
+
+        var mapped = existing
+        mapped.lastSyncedAtMillis = 300  // 서버가 아무리 최신이어도
+
+        XCTAssertTrue(RemoteAlarmPullSync.locallyEditedByRecipient(existing))
+        XCTAssertFalse(RemoteAlarmPullSync.shouldApplyRemote(existing: existing, mapped: mapped))
+    }
+
+    func test_shouldApplyRemote_untouchedReceivedAlarm_stillApplies() {
+        // 아직 안 고친 행은 그대로 둔다 — 음성 다운로드가 실패했던 행의 재시도 경로다.
+        var existing = makeReceivedRemote(remoteID: "r1")
+        existing.lastSyncedAtMillis = 100
+        existing.updatedAtMillis = 100
+
+        var mapped = existing
+        mapped.lastSyncedAtMillis = 300
+
+        XCTAssertFalse(RemoteAlarmPullSync.locallyEditedByRecipient(existing))
+        XCTAssertTrue(RemoteAlarmPullSync.shouldApplyRemote(existing: existing, mapped: mapped))
+    }
+
+    func test_locallyEditedByRecipient_ignoresOwnAlarms() {
+        // 내가 만든 알람은 dirty 플래그가 정상 동작하므로 이 판정 대상이 아니다.
+        var owned = makeLocalOwned(remoteID: "r1")
+        owned.lastSyncedAtMillis = 100
+        owned.updatedAtMillis = 999
+
+        XCTAssertFalse(RemoteAlarmPullSync.locallyEditedByRecipient(owned))
+    }
+
+    func test_locallyEditedByRecipient_legacyRowWithoutStamp_isProtected() {
+        var legacy = makeReceivedRemote(remoteID: "r1")
+        legacy.lastSyncedAtMillis = nil
+
+        XCTAssertTrue(RemoteAlarmPullSync.locallyEditedByRecipient(legacy))
+    }
+
+    @MainActor
+    func test_upsertSyncedNow_marksRowAsUntouched() {
+        // ⚠ 불변식: pull 이 쓴 행은 updatedAtMillis == lastSyncedAtMillis 여야 한다.
+        // 그냥 upsert 하면 updatedAtMillis 만 now 로 올라가, 갓 받은 알람이 곧바로
+        // '수신자가 고친 행' 으로 읽힌다(=서버 내용이 영영 안 들어온다).
+        let store = LocalAlarmStore(loadFromDisk: false)
+        var record = makeReceivedRemote(remoteID: "r1")
+        record.lastSyncedAtMillis = 1
+        record.updatedAtMillis = 1
+
+        let saved = store.upsert(record, syncedNow: true)
+
+        XCTAssertEqual(saved.updatedAtMillis, saved.lastSyncedAtMillis)
+        XCTAssertFalse(RemoteAlarmPullSync.locallyEditedByRecipient(saved))
+
+        // 대조군 — 수신자 편집 경로(plain upsert)는 lastSyncedAtMillis 를 건드리지 않아
+        // 두 값이 갈라진다.
+        var reopened = saved
+        reopened.lastSyncedAtMillis = 1  // 오래전에 받은 행
+        let edited = store.upsert(reopened)
+        XCTAssertEqual(edited.lastSyncedAtMillis, 1)
+        XCTAssertGreaterThan(edited.updatedAtMillis, 1)
+        XCTAssertTrue(RemoteAlarmPullSync.locallyEditedByRecipient(edited))
+    }
+
     // MARK: - received remote filter
 
     func test_isReceivedRemoteCandidate_targetMeSenderOther_returnsTrue() {

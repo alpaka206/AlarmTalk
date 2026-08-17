@@ -130,6 +130,21 @@ internal class RemoteAlarmPullSyncService(
                     }
                     existingRows.firstOrNull()
                 }
+                // **받은 뒤로는 수신자 것이다**(docs/spec/family-alarm.md — 보낸 사람은 '만든 뒤
+                // 고치기: 못 한다'). 한 번 들어온 행을 수신자가 고쳤으면 서버본을 다시 입히지
+                // 않는다. 예전에는 '지켜야 할 필드' 목록을 늘려 가며 막았는데(시각 → 끄기 →
+                // 스누즈 → 볼륨·알람음) 목록에 없는 값은 계속 되돌아왔다 — 재생 방식·문구가
+                // 그랬다(2026-08-17 실기기: 목소리로 고쳐 저장해도 다음 pull 이 알람으로 되돌림).
+                // 무엇을 지킬지 세는 대신, **고쳐진 행에는 손대지 않는다**로 뒤집는다.
+                // 판정은 시각 비교다 — pull 이 쓴 행은 updatedAt == lastSyncedAt 이고,
+                // 수신자가 저장하면 updatedAt 만 커진다(updateAlarm 은
+                // upsertPreservingServerSyncFields 로 lastSyncedAt 을 보존).
+                // 아직 안 고친 행은 그대로 두어 **음성 다운로드 실패분의 재시도**를 살린다.
+                if (existing != null && locallyEditedByRecipient(existing)) {
+                    skipped += 1
+                    Log.i(TAG, "Kept recipient-edited alarm; skipped remote apply remoteId=${remote.id}")
+                    return@runCatching
+                }
                 // **락 밖에서 받는다** — 음성 다운로드는 오래 걸려서, 잡고 있으면 그동안
                 // 스누즈·해제가 막힌다. 행을 만드는 일은 여기서 하지 않는다(아래 참조).
                 val cachedAudio = fetchRemoteMessageAudio(
@@ -168,6 +183,14 @@ internal class RemoteAlarmPullSyncService(
                     // 재예약하면 즉시 다시 울린다.
                     if (current != null && isInFlight(current)) {
                         skipped += 1
+                        return@withLock
+                    }
+                    // 다운로드하는 사이에 수신자가 고쳤을 수도 있다 — 위 1차 거르기와 같은 판정을
+                    // 반영 직전에 한 번 더 한다. 받아 둔 음성은 주인이 없으니 미참조면 정리한다.
+                    if (current != null && locallyEditedByRecipient(current)) {
+                        skipped += 1
+                        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cachedAudio?.cacheKey)
+                        Log.i(TAG, "Kept recipient-edited alarm; skipped remote apply remoteId=${remote.id}")
                         return@withLock
                     }
 
@@ -424,6 +447,22 @@ internal class RemoteAlarmPullSyncService(
 }
 
 /**
+ * 받은 알람을 **수신자가 고쳤는가**. 고쳤으면 서버본을 다시 입히지 않는다
+ * (docs/spec/family-alarm.md — 받은 사람은 자기 기기에서 자유롭게 고친다).
+ *
+ * pull 이 쓴 행은 `updatedAtMillis == lastSyncedAtMillis` 다([buildReceivedAlarmRow] 가 둘 다
+ * 같은 `now` 로 넣는다). 수신자가 저장하면 `updatedAtMillis` 만 커진다 — `updateAlarm` 이
+ * `upsertPreservingServerSyncFields` 로 서버 발급 필드를 보존하기 때문이다. 그래서 이 비교
+ * 하나가 '수신자가 손댔다' 의 신호가 된다.
+ *
+ * `lastSyncedAtMillis` 가 null 인 행은 pull 이 만든 게 아니므로(수동 복구 등) 고쳐진 것으로 본다.
+ */
+internal fun locallyEditedByRecipient(existing: AlarmEntity): Boolean {
+    val lastSynced = existing.lastSyncedAtMillis ?: return true
+    return existing.updatedAtMillis > lastSynced
+}
+
+/**
  * 받은 알람의 소유자(무료 잠금 스코프용). 새 행(existing==null)은 현재 수신자(currentUserId)를 기록하고,
  * 기존 행은 이미 기록된 소유자를 보존한다 — 없으면(레거시 null) 현재 수신자로 자가 치유한다. 이렇게
  * 하면 같은 기기에 다른 계정이 로그인해도 남의 받은 목소리 알람을 복원·스케줄하지 못한다.
@@ -495,6 +534,12 @@ internal data class ReceivedSchedule(
  * 예전에는 매 pull 이 서버 값으로 덮어써서, 수신자가 시각을 고치면 로컬에 저장된 뒤 1초 만에
  * 조용히 되돌아갔다 — 사용자는 고쳐 뒀다고 믿고 그 시각에 못 일어난다. 켜짐/꺼짐은 이미
  * 로컬을 존중하고 있었다([resolveReceivedRemoteEnabled]) — 같은 규칙을 스케줄에도 넓힌다.
+ *
+ * ⚠ **이 함수(와 이웃한 보존 규칙들)는 이제 '아직 안 고친 행' 에만 쓰인다.**
+ * 수신자가 한 번이라도 저장한 행은 [locallyEditedByRecipient] 가 재구성 자체를 막는다.
+ * 필드를 하나씩 지키는 방식으로는 **여섯 번** 샜기 때문이다 — 마지막이 재생 방식·문구였다
+ * (가족 알람은 `message_id` 가 없어 재구성이 늘 `ALARM_ONLY` 로 계산했다).
+ * 새 보존 규칙을 여기 더하기 전에 docs/spec/family-alarm.md 1-1절을 먼저 읽을 것.
  */
 internal fun resolveReceivedSchedule(
     existing: AlarmEntity?,
@@ -603,6 +648,11 @@ internal fun withVoiceRevoked(alarm: AlarmEntity, context: Context): AlarmEntity
  *
  * 네트워크가 없어(음성은 [RemoteAlarmPullSyncService.fetchRemoteMessageAudio] 가 미리 받아
  * 둔다) 반영 락 안에서 불러도 짧다.
+ *
+ * ⚠ **`updatedAtMillis` 와 `lastSyncedAtMillis` 에 같은 `now` 를 넣는 것이 계약이다.**
+ * 그 등호가 '수신자가 아직 안 고쳤다' 를 뜻하고([locallyEditedByRecipient]), 이걸 깨면
+ * 갓 받은 알람이 곧바로 '고쳐진 행' 으로 읽혀 서버 내용(음성·문구)이 영영 안 들어온다.
+ * 회귀 테스트: `RemoteAlarmPullSyncServiceTest.rebuiltReceivedRowKeepsTheUneditedInvariant`.
  */
 internal fun buildReceivedAlarmRow(
     context: Context,
