@@ -55,15 +55,24 @@ final class StockClipPrefetcher: ObservableObject {
     /// **여러 번 불러도 된다.** 이미 캐시된 클립은 건너뛰므로, 앱이 포그라운드로 돌아올
     /// 때마다 불러 **빠진 것만 보충**하는 용도로 쓴다. 안드로이드는 앱 시작마다
     /// `prefetchStockClips()` 로 같은 일을 한다.
-    func start(session: AuthSession?, language: String = VoiceStudioViewModel.appVoiceLanguage()) {
+    /// - Parameter ownedVoiceProfileIDs: **내가 등록한** 목소리 id 들. 그 목소리의 사전렌더
+    ///   프리셋도 미리 받는다 — 등록은 서버 생성 + 다운로드가 끝나야 끝난 것이기 때문이다.
+    ///   ⚠ **공유받은 목소리는 넣지 않는다.** 그룹원 수만큼 곱해져 용량이 커지는데 실제로
+    ///   쓰는 것은 보통 하나다. 그건 알람에서 **고르는 순간** 받는다.
+    func start(
+        session: AuthSession?,
+        language: String = VoiceStudioViewModel.appVoiceLanguage(),
+        ownedVoiceProfileIDs: Set<String> = []
+    ) {
         guard task == nil, let token = session?.token else { return }
+        let owned = ownedVoiceProfileIDs
         task = Task { [weak self] in
             // ⚠ **재시도가 없으면 한 번의 일시 실패가 영구가 된다.** 안드로이드는 WorkManager
             // 가 30초 백오프로 다시 돌리는데, iOS 에는 그 장치가 없어 콜드 스타트에서 한 번
             // 실패하면 그 실행 내내 테마 클립이 비어 있었다.
             for attempt in 0..<Self.maxAttempts {
                 if Task.isCancelled { break }
-                await self?.run(token: token, language: language)
+                await self?.run(token: token, language: language, ownedVoiceProfileIDs: owned)
                 guard await self?.state == .failed else { break }
                 if attempt < Self.maxAttempts - 1 {
                     try? await Task.sleep(nanoseconds: Self.retryDelaySeconds * 1_000_000_000)
@@ -78,13 +87,20 @@ final class StockClipPrefetcher: ObservableObject {
         task = nil
     }
 
-    private func run(token: String, language: String) async {
+    private func run(token: String, language: String, ownedVoiceProfileIDs: Set<String> = []) async {
         state = .running(done: 0, total: 0)
         do {
-            let clips = try await api.getStockClips(token: token).filter {
-                isSystemVoiceId($0.voiceProfileId)
-                    && ($0.language ?? "ko") == language
-                    && Self.freeBucketCategories.contains($0.category ?? "")
+            let clips = try await api.getStockClips(token: token).filter { clip in
+                if isSystemVoiceId(clip.voiceProfileId) {
+                    // 기본 목소리 — 기기 언어 하나 × 무료 테마.
+                    return (clip.language ?? "ko") == language
+                        && Self.freeBucketCategories.contains(clip.category ?? "")
+                }
+                // 내가 등록한 클론 — **카테고리·언어를 거르지 않는다.**
+                // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르면
+                // 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다
+                // (안드로이드 `downloadAllPresetClips` 도 거르지 않는다).
+                return ownedVoiceProfileIDs.contains(clip.voiceProfileId)
             }
             guard !clips.isEmpty else { state = .finished; return }
 

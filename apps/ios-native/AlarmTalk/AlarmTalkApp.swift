@@ -236,7 +236,10 @@ struct AlarmTalkApp: App {
                     // 안드로이드는 앱 시작마다 `prefetchStockClips()` 를 부른다.
                     .task(id: stockClipLanguageKey) {
                         guard auth.session != nil else { return }
-                        stockClipPrefetcher.start(session: auth.session)
+                        stockClipPrefetcher.start(
+                            session: auth.session,
+                            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+                        )
                         // ⚠ **매니페스트를 여기서 채운다.** 예전에는 이 자리에서
                         // `loadStockClips` 를 부르지 않아, 아래 재바인딩이 **항상 빈 배열로
                         // 돌아 즉시 0건 반환**했다 — 언어를 바꿔도 아무 일도 일어나지 않았다.
@@ -304,7 +307,10 @@ struct AlarmTalkApp: App {
                 Task {
                     guard auth.session != nil else { return }
                     await voiceStudio.loadStockClips(session: auth.session)
-                    stockClipPrefetcher.start(session: auth.session)
+                    stockClipPrefetcher.start(
+                            session: auth.session,
+                            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+                        )
                 }
                 // Phase 4-D2: 포그라운드 진입 시 세션 정합성을 직렬로 점검.
                 //  1) Apple credentialState — revoke/notFound 이면 즉시 signOut

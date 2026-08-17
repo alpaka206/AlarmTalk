@@ -53,7 +53,23 @@ class StockClipPrefetchWorker(
             val audioStore = AlarmAudioStore(applicationContext)
 
             val allClips = withContext(Dispatchers.IO) { api.getStockClips(auth).clips }
-            val clips = allClips.filter { it.targetsDefaultVoices(language) }
+            // **내가 등록한 목소리의 사전렌더 프리셋도 미리 받는다.** 등록은 서버 생성 +
+            // 다운로드가 끝나야 끝난 것이고, 그래야 알람을 만들 때 라이브 생성이 필요 없다.
+            // 목록을 못 받으면(네트워크 실패) 기본 목소리분만 받고 다음 회차가 보충한다.
+            // ⚠ **공유받은 목소리는 넣지 않는다** — 그룹원 수만큼 곱해지는데 실제로 쓰는 것은
+            // 보통 하나다. 그건 알람에서 고르는 순간 받는다.
+            val ownedProfileIds = withContext(Dispatchers.IO) {
+                runCatching { api.listVoiceProfiles(auth).profiles }
+                    .getOrDefault(emptyList())
+                    .filterNot { isSystemVoiceId(it.id) }
+                    .map { it.id }
+                    .toSet()
+            }
+            val clips = allClips.filter {
+                // 클론 사전렌더는 '등록 때 고른 언어' 단일 세트라 기기 언어로 거르지 않는다 —
+                // 거르면 일본어로 만든 목소리가 한국어 기기에서 한 개도 안 받아진다.
+                it.targetsDefaultVoices(language) || it.voiceProfileId in ownedProfileIds
+            }
 
             // 이미 저장한 테마 알람이 옛 언어에 묶여 있으면 지금 언어로 다시 묶는다.
             // ⚠ **성공 경로 전부에서 돌아야 한다** — 받을 게 없어 일찍 끝나는 회차(언어를

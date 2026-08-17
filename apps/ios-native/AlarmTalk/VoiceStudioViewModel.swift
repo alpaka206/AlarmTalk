@@ -129,6 +129,14 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
+    /// **내가 등록한** 목소리 id 들(시스템·공유받은 것 제외).
+    ///
+    /// 선다운로드 대상을 정할 때 쓴다 — 내 클론의 사전렌더 프리셋은 미리 받고
+    /// (등록은 생성+다운로드가 끝나야 끝난 것이다), 공유받은 목소리는 고를 때 받는다.
+    var ownedVoiceProfileIDs: Set<String> {
+        Set(profiles.filter { !isSystemVoice($0) }.map { $0.id })
+    }
+
     var selectedProfile: VoiceProfile? {
         guard let selectedProfileID else { return nil }
         return profiles.first { $0.id == selectedProfileID }
