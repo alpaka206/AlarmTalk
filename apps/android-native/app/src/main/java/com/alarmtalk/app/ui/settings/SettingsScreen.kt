@@ -127,11 +127,15 @@ internal fun SettingsScreen(
                         onClick = onEditNickname,
                     )
                     HorizontalDivider()
+                    // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시 "굳이 밖에서부터
+                    // 강조를 해야 해?"). 이 행은 **문**이다 — 눌러도 아직 아무 일도
+                    // 일어나지 않고 확인 모달이 뜬다. 결정하는 자리(모달의 [로그아웃])만
+                    // 빨강이면 그 색이 "여기서 되돌릴 수 없다" 는 뜻으로 남는다.
+                    // 목록의 행마다 빨강을 뿌리면 색이 아무 말도 하지 않게 된다.
                     SettingsRow(
                         label = stringResource(R.string.hs_settings_logout),
                         value = null,
                         onClick = { showLogoutConfirm = true },
-                        destructive = true,
                     )
                 }
             }
@@ -173,9 +177,9 @@ internal fun SettingsScreen(
                 IosAlertAction(
                     label = stringResource(R.string.hs_settings_logout),
                     emphasized = true,
-                    // ⚠ **빨강이다**(2026-08-17 지적 "로그아웃도 빨간색이 좋지 않을까").
-                    // 행은 이미 `destructive = true` 로 빨간데 확인 모달의 액션만 파랑이라,
-                    // 같은 행동이 두 색으로 보였다. iOS 는 `role: .destructive` 로 빨강이다.
+                    // ⚠ **빨강은 여기뿐이다**(2026-08-17). 되돌리기 어려운 행동을 실제로
+                    // 실행하는 자리라서다 — 목록의 행은 기본색으로 둔다(위 주석).
+                    // iOS 도 알럿 액션만 `role: .destructive` 다.
                     destructive = true,
                     onClick = {
                         showLogoutConfirm = false

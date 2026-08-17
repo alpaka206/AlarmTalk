@@ -261,14 +261,12 @@ internal fun MenuTabPanel(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
+                    // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시). 탈퇴도 이 행에서는
+                    // 아무 일도 일어나지 않는다 — 확인 모달의 [탈퇴하기]가 빨강이고,
+                    // 거기서만 되돌릴 수 없는 일이 벌어진다.
                     MenuTabRow(
                         label = stringResource(R.string.hs_settings_delete_account),
                         onClick = onDeleteAccount,
-                        // ⚠ **로그아웃이 빨간데 탈퇴가 검정이면 위계가 거꾸로다**
-                        // (2026-08-17). 로그아웃은 다시 들어오면 그만이지만 탈퇴는
-                        // 되돌릴 수 없다 — 더 강한 신호를 받아야 할 쪽이 아무 표시도
-                        // 없었다.
-                        destructive = true,
                     )
                 }
             }
@@ -323,8 +321,6 @@ private fun MenuTabRow(
     label: String,
     onClick: () -> Unit,
     value: String? = null,
-    /// 되돌리기 어려운 행(회원 탈퇴)은 빨강. 설정 화면의 `SettingsRow(destructive)` 와 같다.
-    destructive: Boolean = false,
 ) {
     // 토스처럼 텍스트+값+셰브론만 — 행마다 아이콘을 붙이지 않는다.
     // ⚠ **높이는 최소치이고, 접히는 쪽은 값이다.** 설정 화면의 같은 모양 행
@@ -345,7 +341,7 @@ private fun MenuTabRow(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
-            color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         if (value != null) {
             Text(

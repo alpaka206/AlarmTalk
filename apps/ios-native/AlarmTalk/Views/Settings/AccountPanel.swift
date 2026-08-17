@@ -55,8 +55,11 @@ struct AccountPanel: View {
                 HStack {
                     Text("로그아웃")
                         .fontWeight(.medium)
-                        // 되돌리기 어려운 행은 빨강 — 확인 알럿의 destructive 액션과 같은 색이다.
-                        .foregroundStyle(AlarmTalkTheme.error)
+                        // ⚠ **행을 빨갛게 칠하지 말 것**(2026-08-17 지시 "굳이 밖에서부터
+                        // 강조를 해야 해?"). 이 행은 문일 뿐이고, 되돌릴 수 없는 일은
+                        // 아래 알럿의 `role: .destructive` 액션에서 벌어진다.
+                        // 안드로이드도 같다(`SettingsScreen.kt` 의 로그아웃 행).
+                        .foregroundStyle(AlarmTalkTheme.text)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
