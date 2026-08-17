@@ -50,6 +50,20 @@ enum UIPreviewSeed {
         #endif
     }
 
+    /// 화면 확인용 플랜 — `-UIPreviewPlan free|personal`. 기본은 personal(유료).
+    ///
+    /// 무료 상태에서만 보이는 화면(무료 테마 문구 목록·이용권 게이트)을 실기기 로그인
+    /// 없이 열기 위한 것이다.
+    static var previewPlan: String {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-UIPreviewPlan"), i + 1 < args.count else { return "personal" }
+        return args[i + 1]
+        #else
+        return "personal"
+        #endif
+    }
+
     /// 실행하자마자 알람 편집기를 연다 — `-UIPreviewEditor`. 화면 확인용.
     static var opensEditor: Bool {
         #if DEBUG
@@ -106,7 +120,7 @@ enum UIPreviewSeed {
                 id: "ui-preview-user",
                 email: "preview@alarm-talk.com",
                 name: "김규원",
-                plan: "personal"
+                plan: previewPlan
             )
         )
     }

@@ -66,6 +66,7 @@
 		3C086785B449BC520382D723 /* AlarmTalkWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DA991BC0E37E0A9D0C4A1487 /* AlarmTalkWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3E0A8073240914691C18761C /* PushNotificationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22C58302991D362441AF21 /* PushNotificationCoordinator.swift */; };
 		3F4F38A09B071018DD9EAF8D /* AudioPreviewTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C888F3A407F04A9A8E871EE /* AudioPreviewTarget.swift */; };
+		403DF5C3BFFFB7B40132EEBB /* FreeManualGateUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8710CD100D29FAD10DB97501 /* FreeManualGateUITests.swift */; };
 		4071709CE487DE4698DD3F00 /* SocialFeatureViewModelBillingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB34A0D05EB70E2E076F463A /* SocialFeatureViewModelBillingTests.swift */; };
 		4185273F1EDBB5EAE6D11EBD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0221058C929FB1DAA401AFD7 /* Assets.xcassets */; };
 		425C4E0947E9247D756A71E8 /* voice_greeting_mina_ko.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = FB7140D90A5272AD50F78449 /* voice_greeting_mina_ko.mp3 */; };
@@ -207,6 +208,7 @@
 		A6E4507993DE6307C2A87CE5 /* AuthBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E08EA39F68F4C059B5B58EC /* AuthBackdrop.swift */; };
 		A734B2129FFB376AD151FF94 /* VoiceConsentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FED5C5FC2F31030D968F1A3B /* VoiceConsentSheet.swift */; };
 		A7954BAC173CE395F24B39D9 /* RemoteAlarmPullSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16516A5700E953E5C1170E41 /* RemoteAlarmPullSyncTests.swift */; };
+		A8DA56D284DCBD52901B903C /* VoicePlanGateAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85400A4CF4E2B95059A0EE71 /* VoicePlanGateAlert.swift */; };
 		A98BAC75D5B210C60A0A5F69 /* DefaultVoicePreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA48A61569D68B063AF92B11 /* DefaultVoicePreferenceStore.swift */; };
 		AA4726217F43F082D2ADD8E7 /* LoginPermissionGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9FAAF577180183F039752F /* LoginPermissionGateView.swift */; };
 		AB049D79EABC198B5DE731CD /* SectionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC6B972EFA8543A20D363BEE /* SectionCard.swift */; };
@@ -471,6 +473,8 @@
 		8387E0DA3E616BE65DAD2CA6 /* ConsentHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsentHistoryView.swift; sourceTree = "<group>"; };
 		8398E207DA979219DF2C1311 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		84AC75AB7D2226A17D90E228 /* BackgroundSyncTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncTask.swift; sourceTree = "<group>"; };
+		85400A4CF4E2B95059A0EE71 /* VoicePlanGateAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlanGateAlert.swift; sourceTree = "<group>"; };
+		8710CD100D29FAD10DB97501 /* FreeManualGateUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeManualGateUITests.swift; sourceTree = "<group>"; };
 		88E875D85BBF8CD8FDCC8D4B /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		8A1415DAB86286CDD5AB4219 /* AuthUserDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthUserDecodingTests.swift; sourceTree = "<group>"; };
 		8A278280437D8CE9D87E6E41 /* AlarmEditorComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditorComponents.swift; sourceTree = "<group>"; };
@@ -653,6 +657,7 @@
 				7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */,
 				00884D032AF099AA772D95DF /* EditorStatePersistenceUITests.swift */,
 				463A1453ADEB2220E67E7F12 /* FortuneDialogScreenshotUITests.swift */,
+				8710CD100D29FAD10DB97501 /* FreeManualGateUITests.swift */,
 				8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */,
 				ECE7B9F6578FB639A08A5C77 /* HolidaySheetScreenshotUITests.swift */,
 				A70A73CA504BECFEF002F84C /* LargeTextScreenshotUITests.swift */,
@@ -875,6 +880,7 @@
 				6D168075D98C6B47603E2133 /* SnoozeRepeatLimitPicker.swift */,
 				0E7477E7C446FAC757144181 /* TimeWheelPicker.swift */,
 				9D1EF46FAF8334E543D1A159 /* TimeWheelSettle.swift */,
+				85400A4CF4E2B95059A0EE71 /* VoicePlanGateAlert.swift */,
 				E077F439D01E160ED901D7FE /* VoicePlayModePicker.swift */,
 				A04D77313A4CF5DBFD7203E5 /* VoiceSelectionSheet.swift */,
 			);
@@ -1309,6 +1315,7 @@
 				2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */,
 				4B50813EDDAD7D092EF80DC7 /* EditorStatePersistenceUITests.swift in Sources */,
 				A32D9C97DB38741FFAE2C060 /* FortuneDialogScreenshotUITests.swift in Sources */,
+				403DF5C3BFFFB7B40132EEBB /* FreeManualGateUITests.swift in Sources */,
 				F257AFC84C3E1A8F0AE60485 /* FunctionalE2EUITests.swift in Sources */,
 				9594E297F46C45099F4FC9D0 /* HolidaySheetScreenshotUITests.swift in Sources */,
 				5D1542279101EFBE06D80C09 /* LargeTextScreenshotUITests.swift in Sources */,
@@ -1467,6 +1474,7 @@
 				923B167E7FF2406C9C789716 /* VoiceCloneUploadFlow.swift in Sources */,
 				A734B2129FFB376AD151FF94 /* VoiceConsentSheet.swift in Sources */,
 				4E63E387440150425DC0B71C /* VoiceImportContentTypes.swift in Sources */,
+				A8DA56D284DCBD52901B903C /* VoicePlanGateAlert.swift in Sources */,
 				708D3503AD539D289233A772 /* VoicePlayModePicker.swift in Sources */,
 				FA829EC15BA5EEA61B8977DF /* VoicePreviewConfirmView.swift in Sources */,
 				899458BC01E2D85B412765FD /* VoiceProfileManagementComponents.swift in Sources */,

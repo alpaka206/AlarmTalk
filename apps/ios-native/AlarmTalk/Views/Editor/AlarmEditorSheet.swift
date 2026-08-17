@@ -434,6 +434,16 @@ struct AlarmEditorSheet: View {
                 onManualLocked: { showVoicePlanLockedAlert() },
                 onChangeWeather: { freeWeatherSheetOpen = true }
             )
+            // ⚠ **밀어 올린 화면에도 게이트를 붙인다**(2026-08-17 실측). SwiftUI 의
+            // `.alert` 는 **지금 보이는 뷰**에 붙어 있어야 뜬다 — 편집기(스택 루트)에만
+            // 달아 두면, 문구 화면을 push 한 상태에서 '직접 입력' 을 눌러도 **아무 일도
+            // 일어나지 않는다.** UI 테스트(`FreeManualGateUITests`)가 이걸 잡는다.
+            // 상태(`voiceGateAlert`)는 하나라 두 번 뜨지 않는다.
+            .voicePlanGateAlert(
+                content: $voiceGateAlert,
+                onRedeemCode: { redeemCodeAlertOpen = true },
+                onOpenBilling: { onRequestBilling?() }
+            )
             // ⚠ **설정 화면과 같은 컴포넌트**를 쓴다(`WeatherCityPickerSheet`).
             // 시트는 자기만 닫고 이 목록은 남는다.
             .bottomSheet(
@@ -549,36 +559,11 @@ struct AlarmEditorSheet: View {
                 dismissButton: .default(Text("확인"))
             )
         }
-        // ⚠ **게이트에는 상태에 맞는 액션이 붙어야 한다.** 예전에는 '확인' 하나뿐이라,
-        // 이용권이 없어서 막힌 사람에게 **살 길도 쿠폰 넣을 길도 주지 않았다**
-        // (안드로이드 `PlanGateDialog` 는 [닫기 / 쿠폰이 있어요 / 이용권 보기]).
-        .alert(
-            voiceGateAlert?.title ?? "",
-            isPresented: Binding(
-                get: { voiceGateAlert != nil },
-                set: { if !$0 { voiceGateAlert = nil } }
-            ),
-            presenting: voiceGateAlert
-        ) { content in
-            if content.offersPlanActions {
-                Button("쿠폰이 있어요") {
-                    voiceGateAlert = nil
-                    redeemCodeAlertOpen = true
-                }
-                Button("이용권 보기") {
-                    voiceGateAlert = nil
-                    onRequestBilling?()
-                }
-                // ⚠ **이 줄이 색을 만든다.** 시스템 알럿은 버튼 색을 직접 못 주고,
-                // '기본 액션' 으로 지정된 버튼만 굵게(강조 색으로) 그린다.
-                // 안드로이드 `PlanGateDialog` 의 `emphasized = true` 와 같은 자리다 —
-                // 두 앱에서 같은 버튼이 강조돼야 한다.
-                .keyboardShortcut(.defaultAction)
-            }
-            Button("닫기", role: .cancel) { voiceGateAlert = nil }
-        } message: { content in
-            Text(content.message)
-        }
+        .voicePlanGateAlert(
+            content: $voiceGateAlert,
+            onRedeemCode: { redeemCodeAlertOpen = true },
+            onOpenBilling: { onRequestBilling?() }
+        )
         .alert("쿠폰 입력", isPresented: $redeemCodeAlertOpen) {
             TextField("초대·선물·프로모션 코드", text: $redeemCodeDraft)
                 .textInputAutocapitalization(.characters)
