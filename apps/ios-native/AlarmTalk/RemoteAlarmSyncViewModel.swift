@@ -50,7 +50,8 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
 
     /// 서버에서 알람/음성 프로필 목록을 동기화한다.
     /// configure 가 호출되었다면 `RemoteAlarmPullSync.runOnce` 를 통해
-    /// 신규 receivedRemote 자동 스케줄링과 cascade 삭제까지 수행한다.
+    /// 신규 receivedRemote 자동 스케줄링과 **그만받기 정리**까지 수행한다
+    /// (서버 목록에서 사라졌다고 지우지는 않는다 — `RemoteAlarmPullSync` 헤더 참조).
     func refresh(session: AuthSession?, force: Bool = false) async {
         guard let token = session?.token else { return }
         guard force || !isBusy else { return }

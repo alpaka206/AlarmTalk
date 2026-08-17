@@ -570,6 +570,19 @@ internal fun resolveReceivedSchedule(
     )
 }
 
+/**
+ * 받은 알람의 켜짐 상태. **수신자가 끈 것은 서버가 켜도 켜지지 않는다**(AND 이유).
+ *
+ * ⚠ **`remoteEnabled` 를 죽은 값으로 보고 지우지 말 것.** "보낸 사람은 끄지 못한다"
+ * (docs/spec/family-alarm.md 1절)는 **앱에 그 화면이 없다**는 뜻이고, 서버가 그 행을
+ * 끄는 경로는 하나 남아 있다 — 같은 (수신자, 시각) 슬롯에 새 가족 알람이 오면
+ * 백엔드가 그 슬롯의 다른 활성 발신 알람을 `is_active = 0` 으로 내린다
+ * (`alarm-helpers.ts` 의 `claimTargetedAlarmSlot`). 이걸 안 따라가면 다른 사람이 보낸
+ * 옛 알람이 수신자 기기에 켜진 채 남아 같은 시각에 둘이 운다.
+ *
+ * 단, 수신자가 그 알람을 한 번이라도 고쳤으면 이 함수까지 오지 않는다
+ * ([locallyEditedByRecipient] 가 재구성 자체를 막는다).
+ */
 internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive: Boolean?): Boolean {
     val remoteEnabled = remoteIsActive != false
     return if (existing?.origin == AlarmOrigins.RECEIVED_REMOTE) {
