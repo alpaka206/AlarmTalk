@@ -88,14 +88,24 @@ struct WeatherCityPickerSheet: View {
                                         let cleaned = InputSanitizer.sanitizeDisplayName(new)
                                         if cleaned != new { draftCity = cleaned }
                                     }
-                                Button("저장") {
+                                // ⚠ **`.frame` 을 버튼 밖에 두지 말 것**(2026-08-17 지시
+                                // "안드로이드처럼 좌우로 펼쳐지게"). 밖에 두면 **자리만**
+                                // 넓어지고 버튼 배경은 글자 폭 그대로라, 가운데 작은 알약이
+                                // 뜬 모양이 된다. 라벨에 걸어야 배경이 함께 늘어난다.
+                                // (같은 실수가 코드 등록 행에도 있었다 — `CodeRegisterRow`.)
+                                Button {
                                     let parsed = Self.parseLocation(cleanedDraft)
                                     onSelect(parsed.country, parsed.city)
                                     dismiss()
+                                } label: {
+                                    Text("저장")
+                                        .font(theme.typography.labelLarge)
+                                        .frame(maxWidth: .infinity, minHeight: AlarmTalkControl.height)
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(theme.palette.primary)
-                                .frame(maxWidth: .infinity)
+                                // 모서리도 안드로이드 버튼(`WakerButtonShape` = 18)과 같은 값이다.
+                                .buttonBorderShape(.roundedRectangle(radius: 18))
                                 .disabled(cleanedDraft.isEmpty)
                             }
                             .padding(.horizontal, 20)
