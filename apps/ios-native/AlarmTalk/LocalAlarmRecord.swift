@@ -109,6 +109,14 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     /// AlarmKit `Alarm.id` (UUID). 직렬화는 String 으로.
     var alarmKitID: String?
 
+    /// **그 예약에 실어 보낸 소리의 지문**(`AlarmSoundPlan.fingerprint`).
+    ///
+    /// iOS 는 발사 시점에 우리 코드가 돌지 않아, 예약할 때 넘긴 사운드가 그대로 울린다.
+    /// 그래서 행만 고치고 재예약을 잊으면 **행과 실제 소리가 갈라진다.**
+    /// 이 값이 지금 행의 지문과 다르면 `AlarmScheduleReconciler` 가 다시 예약한다.
+    /// `nil` = 아직 예약한 적 없거나 옛 버전이 만든 행(그때는 예약 경로가 채운다).
+    var scheduledSoundFingerprint: String?
+
     // MARK: Convenience accessors (Phase 2-B2/B3 가 사용)
 
     var playModeEnum: AlarmPlayMode { AlarmPlayMode.decode(playMode) }
@@ -374,6 +382,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case createdAtMillis
         case updatedAtMillis
         case alarmKitID
+        case scheduledSoundFingerprint
         // ⚠ 아래 셋은 **한때 빠져 있었다**(2026-08-07 발견). CodingKeys 에 없으면
         // 디스크 왕복에서 조용히 사라진다 — 무료 전환 잠금이 원래 재생 방식을 잃어
         // 재결제해도 복원되지 않았고(preLockPlayMode), 잠금이 다른 계정 알람까지
@@ -474,6 +483,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
         // alarmKitID: String 직렬화. 없으면 nil.
         self.alarmKitID = try c.decodeIfPresent(String.self, forKey: .alarmKitID)
+        self.scheduledSoundFingerprint = try c.decodeIfPresent(String.self, forKey: .scheduledSoundFingerprint)
         self.preLockPlayMode = try c.decodeIfPresent(String.self, forKey: .preLockPlayMode)
         self.ownerUserId = try c.decodeIfPresent(String.self, forKey: .ownerUserId)
         self.bucketId = try c.decodeIfPresent(String.self, forKey: .bucketId)
@@ -544,6 +554,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encode(createdAtMillis, forKey: .createdAtMillis)
         try c.encode(updatedAtMillis, forKey: .updatedAtMillis)
         try c.encodeIfPresent(alarmKitID, forKey: .alarmKitID)
+        try c.encodeIfPresent(scheduledSoundFingerprint, forKey: .scheduledSoundFingerprint)
         try c.encodeIfPresent(preLockPlayMode, forKey: .preLockPlayMode)
         try c.encodeIfPresent(ownerUserId, forKey: .ownerUserId)
         try c.encodeIfPresent(bucketId, forKey: .bucketId)

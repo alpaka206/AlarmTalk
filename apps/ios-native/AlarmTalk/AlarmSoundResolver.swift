@@ -37,6 +37,29 @@ enum AlarmSoundResolution: Equatable {
     }
 }
 
+/// "이 알람은 무엇을 울리는가" 의 **정체**. 파일을 만들기 전 단계라 값 비교가 싸다.
+///
+/// ⚠ **이 값이 곧 예약의 지문이다.** 소리를 바꾸는 새 필드가 생기면 [AlarmSoundResolver.plan]
+/// 이 그 필드를 읽게 되고, 그러면 지문에 **저절로** 들어온다. 손으로 관리하는
+/// '소리에 영향 주는 필드 목록' 을 만들지 말 것 — 그 목록이 낡는 것이 2026-08-18 에
+/// 재예약 누락 다섯 건을 만든 원인이다(`fireAtMillis` 는 운세 클립을 고르는 씨앗인데
+/// 아무도 그걸 '소리 필드' 로 분류하지 않았다).
+enum AlarmSoundPlan: Equatable {
+    case voiceClip(cacheKey: String, url: URL, durationMs: Int64, volumePercent: Int)
+    case alarmSoundFile(url: URL, stagingKey: String, volumePercent: Int)
+    case systemDefault
+
+    /// 예약된 소리와 지금 울려야 할 소리가 같은지 비교하는 값.
+    /// 파일 경로·길이는 넣지 않는다 — 같은 클립을 다시 받아도 소리는 그대로다.
+    var fingerprint: String {
+        switch self {
+        case .voiceClip(let key, _, _, let volume): return "voice:\(key):v\(volume)"
+        case .alarmSoundFile(let url, _, let volume): return "sound:\(url.path):v\(volume)"
+        case .systemDefault: return "default"
+        }
+    }
+}
+
 // MARK: - AlarmSoundResolver
 //
 // 입력:
@@ -103,59 +126,58 @@ enum AlarmSoundResolver {
         return url
     }
 
-    static func resolve(
-        for record: LocalAlarmRecord,
-        audioCache: AudioCacheStore
-    ) -> AlarmSoundResolution {
-
+    /// **무엇을 울릴지** 만 정한다 — 파일을 만들지 않는다(순수 조회).
+    ///
+    /// [resolve] 는 이 결정에 스테이징(트랜스코드·복사)을 얹은 것이다. 둘을 나눠 둔 이유는
+    /// **예약이 낡았는지 싸게 판단하기 위해서**다 — `AlarmScheduleReconciler` 가 이 결과의
+    /// 지문(`fingerprint`)을 예약할 때 새겨 둔 값과 비교한다. 분기를 여기 한 곳에만 두어야
+    /// '판단은 새 소리, 실제 예약은 옛 소리' 로 갈라지지 않는다.
+    static func plan(for record: LocalAlarmRecord, audioCache: AudioCacheStore) -> AlarmSoundPlan {
         // 1) voice / sound_then_voice + 캐시 존재
         //
-        // ⚠ **무료 테마는 회전한 클립을 쓴다.** `audioCacheKey` 는 저장할 때 골랐던 그
-        // 클립이라, 그것만 보면 매일 같은 문구가 나온다(iOS 가 2026-08-08 전까지 그랬다).
-        // 캐시에 없으면 저장 시 키로 폴백한다 — 회전 때문에 소리가 사라지면 안 된다.
+        // ⚠ **무료 테마는 회전·조건으로 고른 클립을 쓴다.** `audioCacheKey` 는 저장할 때
+        // 골랐던 그 클립이라, 그것만 보면 매일 같은 문구가 나온다(iOS 가 2026-08-08 전까지
+        // 그랬다). 캐시에 없으면 저장 시 키로 폴백한다 — 소리가 사라지면 안 된다.
         if record.playModeEnum != .alarmOnly,
            let key = rotatedBucketClipKey(for: record, audioCache: audioCache) ?? record.audioCacheKey,
            let url = audioCache.cachedURL(for: key) {
-
-            let meta = audioCache.readMetadata(cacheKey: key)
-            let duration = meta?.durationMs ?? 0
-            let withinLimit = duration > 0 &&
-                duration <= AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis
-
-            if withinLimit {
-                if let bundled = try? AlarmSoundStaging.stage(
-                    url: url, key: key, volumePercent: record.voiceVolumePercent
-                ) {
-                    return .bundledNamed(stagedAlertName(bundled))
-                }
-                // staging 실패 — in-app 폴백
-                return .cachedAudio(url, duration)
-            }
-
-            // 길이 초과 또는 측정 불가. 보통은 cacheBytes 단계의 auto-trim 으로 메타가
-            // 이미 <=30s 라 이 분기에 오지 않지만, 트림이 발화하지 않았거나 메타가
-            // 갱신되지 않은 경우를 대비해 staging 을 한 번 시도한다 — AlarmSoundStaging 이
-            // 첫 30초로 캡하므로 성공하면 .bundledNamed(잠금 시에도 울림)로 승격된다(change 6).
-            // 트림/transcode 가 진짜로 실패할 때만 .cachedAudio in-app 폴백으로 떨어진다.
-            if let bundled = try? AlarmSoundStaging.stage(
-                url: url, key: key, volumePercent: record.voiceVolumePercent
-            ) {
-                return .bundledNamed(stagedAlertName(bundled))
-            }
-            return .cachedAudio(url, duration)
+            let duration = audioCache.readMetadata(cacheKey: key)?.durationMs ?? 0
+            return .voiceClip(cacheKey: key, url: url, durationMs: duration, volumePercent: record.voiceVolumePercent)
         }
 
         // 2) 사용자가 선택한 시스템/번들 사운드 URI
         if let url = fileURL(forStoredURI: record.alarmSoundUri),
-           FileManager.default.fileExists(atPath: url.path),
-           let bundled = try? AlarmSoundStaging.stage(
-               url: url, key: "alarm-\(record.id)", volumePercent: record.alarmVolumePercent
-           ) {
-            return .bundledNamed(stagedAlertName(bundled))
+           FileManager.default.fileExists(atPath: url.path) {
+            return .alarmSoundFile(url: url, stagingKey: "alarm-\(record.id)", volumePercent: record.alarmVolumePercent)
         }
 
         // 3) Fallback
         return .systemDefault
+    }
+
+    static func resolve(
+        for record: LocalAlarmRecord,
+        audioCache: AudioCacheStore
+    ) -> AlarmSoundResolution {
+        switch plan(for: record, audioCache: audioCache) {
+        case .voiceClip(let key, let url, let duration, let volumePercent):
+            // 길이 초과·측정 불가여도 staging 을 한 번 시도한다 — AlarmSoundStaging 이 첫
+            // 30초로 캡하므로 성공하면 `.bundledNamed`(잠금화면에서도 울림)로 승격된다.
+            // 트림/transcode 가 진짜로 실패할 때만 in-app 폴백으로 떨어진다.
+            if let bundled = try? AlarmSoundStaging.stage(url: url, key: key, volumePercent: volumePercent) {
+                return .bundledNamed(stagedAlertName(bundled))
+            }
+            return .cachedAudio(url, duration)
+
+        case .alarmSoundFile(let url, let stagingKey, let volumePercent):
+            if let bundled = try? AlarmSoundStaging.stage(url: url, key: stagingKey, volumePercent: volumePercent) {
+                return .bundledNamed(stagedAlertName(bundled))
+            }
+            return .systemDefault
+
+        case .systemDefault:
+            return .systemDefault
+        }
     }
 
     /// `.named(_)` 에 넘길 이름을 **확장자 포함 파일명**으로 맞춘다.

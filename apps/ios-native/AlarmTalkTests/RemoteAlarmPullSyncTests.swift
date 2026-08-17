@@ -114,6 +114,28 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertTrue(RemoteAlarmPullSync.locallyEditedByRecipient(edited))
     }
 
+    @MainActor
+    func test_markScheduled_doesNotMakeAFreshlyReceivedAlarmLookEdited() {
+        // ⚠ 받은 알람은 import 직후 곧바로 예약된다(`rescheduleReceivedRemote`).
+        // 그때 `updatedAtMillis` 가 올라가면 '수신자가 고친 행' 으로 읽혀 서버 내용이
+        // 영영 안 들어온다 — 첫 수신 때 음성을 못 받은 행의 재시도까지 죽는다.
+        let store = LocalAlarmStore(loadFromDisk: false)
+        var record = makeReceivedRemote(remoteID: "r1")
+        record.lastSyncedAtMillis = 1
+        record.updatedAtMillis = 1
+        let saved = store.upsert(record, syncedNow: true)
+        XCTAssertFalse(RemoteAlarmPullSync.locallyEditedByRecipient(saved))
+
+        store.markScheduled(localID: saved.id, alarmKitID: UUID().uuidString)
+
+        let afterScheduling = store.record(id: saved.id)!
+        XCTAssertNotNil(afterScheduling.alarmKitID)
+        XCTAssertFalse(
+            RemoteAlarmPullSync.locallyEditedByRecipient(afterScheduling),
+            "예약을 적는 것은 사용자 편집이 아니다 — updatedAtMillis 를 올리면 안 된다."
+        )
+    }
+
     // MARK: - received remote filter
 
     func test_isReceivedRemoteCandidate_targetMeSenderOther_returnsTrue() {

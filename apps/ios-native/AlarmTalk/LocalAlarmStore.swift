@@ -260,12 +260,24 @@ final class LocalAlarmStore: ObservableObject {
     // MARK: State transitions
     // Android `AlarmRepository` 의 markRinging / dismiss / snooze / setEnabled 흐름 이식.
 
-    func markScheduled(localID: String, alarmKitID: String) {
+    /// OS 예약 핸들을 기록한다.
+    ///
+    /// ⚠ **`updatedAtMillis` 를 올리지 않는다.** 이건 사용자가 고친 게 아니라 우리가 OS 에
+    /// 건 예약을 적어 두는 것이다. 올리면 `RemoteAlarmPullSync.locallyEditedByRecipient`
+    /// 가 **갓 받은 알람을 곧바로 '수신자가 고친 행' 으로** 읽는다 — pull 이
+    /// `upsert(_:syncedNow:)` 로 세워 둔 `updatedAt == lastSynced` 등식을 바로 뒤따르는
+    /// 예약이 깨기 때문이다. 그러면 서버 내용(음성·문구)이 영영 안 들어오고, 특히 첫
+    /// 수신 때 음성 다운로드가 실패한 행의 **재시도 경로가 죽는다.**
+    /// 같은 이유로 `applyWeatherVariant` 도 올리지 않는다.
+    /// - Parameter soundFingerprint: 이 예약에 실어 보낸 소리의 지문
+    ///   (`AlarmSoundPlan.fingerprint`). 나중에 행이 바뀌었는지 비교하는 기준이 된다.
+    ///   **예약과 지문은 여기서 한 번에 기록된다** — 따로 쓰면 어긋난다.
+    func markScheduled(localID: String, alarmKitID: String, soundFingerprint: String? = nil) {
         guard let index = alarms.firstIndex(where: { $0.id == localID }) else { return }
         alarms[index].alarmKitID = alarmKitID
+        alarms[index].scheduledSoundFingerprint = soundFingerprint
         alarms[index].enabled = true
         alarms[index].state = AlarmRuntimeState.armed.rawValue
-        alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
         persist()
     }
 

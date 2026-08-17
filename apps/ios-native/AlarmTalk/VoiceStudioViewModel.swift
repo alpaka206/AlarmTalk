@@ -49,6 +49,13 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 기본 제공(스톡) 알람 클립 카탈로그. 무료 등급 + 시스템 보이스 선택 시
     /// 에디터의 StockClipPicker 가 사용. 세션당 1회 로드한다.
     @Published var stockClips: [StockClip] = []
+
+    /// 목소리를 지워 알람을 톤으로 내렸다 — **예약을 맞춰야 한다**는 신호.
+    ///
+    /// 이 강등은 sync 경로(`cascadeAlarmsAfterVoiceDeletion`)라 여기서 `await schedule` 을
+    /// 부를 수 없다. 그래서 신호만 세우고, 화면 계층이 `AlarmScheduleReconciler` 를 돌린다.
+    /// 맞추기 전까지는 **지운 목소리가 예약에 남아 있다** — 늦추지 말 것.
+    @Published var needsScheduleReconcile = false
     @Published var selectedProfileID: String?
     /// 사용자가 고른 기본 목소리 id(시스템 스톡 보이스). 로그인 후 기기 설정에서 로드.
     /// 새 알람 에디터 미리선택 + 에디터 시스템음성 노출 제한 + 목소리 탭 표시에 사용.
@@ -1074,8 +1081,18 @@ final class VoiceStudioViewModel: ObservableObject {
             let toRemove = releasedKeys.subtracting(stillReferenced)
             for key in toRemove {
                 try? audioCache.deleteCachedAudio(cacheKey: key)
+                // ⚠ **구워 둔 알람 사운드도 함께 버린다.** `deleteCachedAudio` 는 오디오
+                // 캐시 디렉터리만 훑는다 — 예약에 실린 사본은 `Library/Sounds/voice-<키>.caf`
+                // 에 따로 있어서, 이걸 안 지우면 **지운 목소리가 다음 알람에 그대로 울린다.**
+                // 파기해야 할 생체정보가 디스크와 알람에 남는 셈이라 가장 무거운 누락이었다.
+                // (같은 규약이 `AudioCacheStore` 의 캐시 교체 경로에는 이미 있었다.)
+                AlarmSoundStaging.clearStagedSound(forKey: key)
             }
         }
+        // 행을 톤으로 내렸으니 예약도 따라가야 한다. 예약은 async 라 여기(sync)서 못 부르고,
+        // 리컨사일러가 지문 불일치를 보고 다음 관문에서 맞춘다 — 그때까지는 옛 소리가
+        // 예약돼 있으므로, **호출자는 되도록 곧바로 reconcile 을 돌린다.**
+        needsScheduleReconcile = true
     }
 
 

@@ -468,7 +468,16 @@ final class SocialFeatureViewModel: ObservableObject {
             if needsLock {
                 // 사운드온리로 **다시 예약한다.** 재예약을 빠뜨리면 잠근 게 아니라
                 // 조용히 안 울리는 알람이 된다.
-                _ = await alarmKit.schedule(record: updated, store: alarmStore)
+                //
+                // ⚠ **옛 핸들을 반드시 취소한다.** 예전에는 schedule 만 불러서, 유료
+                // 목소리로 걸어 둔 예약이 OS 에 그대로 남았다 — 무료로 떨어진 사용자가
+                // 계속 클론 목소리를 듣고 같은 시각에 알람이 둘 울렸다. 게이트가 막았다고
+                // 믿는 바로 그 자리에서 샌 것이다.
+                let previous = record
+                if await alarmKit.schedule(record: updated, store: alarmStore),
+                   previous.alarmKitID != nil {
+                    await alarmKit.cancelScheduledAlarm(record: previous)
+                }
                 locked += 1
             }
         }
@@ -503,7 +512,13 @@ final class SocialFeatureViewModel: ObservableObject {
             updated.playMode = updated.preLockPlayMode ?? updated.playMode
             updated.preLockPlayMode = nil
             _ = alarmStore.upsert(updated)
-            _ = await alarmKit.schedule(record: updated, store: alarmStore)
+            // 잠글 때 걸어 둔 톤 예약을 **취소하고** 목소리로 다시 건다. 안 그러면 둘 다
+            // 남아 한 알람이 두 번 운다(잠금 경로와 같은 이유).
+            let previous = record
+            if await alarmKit.schedule(record: updated, store: alarmStore),
+               previous.alarmKitID != nil {
+                await alarmKit.cancelScheduledAlarm(record: previous)
+            }
             restored += 1
         }
         if restored > 0 {

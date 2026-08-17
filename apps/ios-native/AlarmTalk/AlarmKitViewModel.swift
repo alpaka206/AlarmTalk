@@ -43,6 +43,14 @@ final class AlarmKitViewModel: ObservableObject {
     /// 두 경로 모두 @MainActor 격리라 추가 락 없이 안전하다.
     private var rearmInFlight: Set<String> = []
 
+    /// 지금 이 알람을 다른 경로가 재예약하는 중인가.
+    ///
+    /// ⚠ **예약 경로가 겹치면 취소 불가능한 유령 알람이 남는다.** `schedule` 은 매번 새 UUID를
+    /// 만들고 `markScheduled` 는 **마지막 것만** 행에 남기므로, 겹친 쪽의 핸들은 어느 행도
+    /// 가리키지 않게 되어 앱이 영영 취소하지 못한다(그 알람은 계속 울린다).
+    /// `AlarmScheduleReconciler` 가 이 값을 보고 겹침을 피한다.
+    func isRearmInFlight(_ recordID: String) -> Bool { rearmInFlight.contains(recordID) }
+
     /// AlarmSoundResolver / AlarmVoicePlayer 가 사용하는 캐시.
     /// `AudioCacheStore.shared` 를 의도적으로 instance 로 잡아 두어 테스트 가능성 유지.
     let audioCache: AudioCacheStore = .shared
@@ -435,10 +443,7 @@ final class AlarmKitViewModel: ObservableObject {
             // 우리 코드가 돌지 않으므로(AlarmKit 은 해제 시점의 stopIntent 뿐) 예약해 둔
             // 사운드가 그대로 울린다 — 그래서 같은 게이트를 여기로 옮겼다.
             // 강등되어도 **알람 자체는 그대로 울린다**(기본 톤으로). 자세한 근거는 PaidVoiceGate.
-            let snapshot = KeychainStore.readSession().map { accessSnapshotStore.read(userID: $0.user.id) } ?? .empty
-            let effectiveRecord = PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot)
-                ? PaidVoiceGate.downgraded(record)
-                : record
+            let effectiveRecord = effectiveRecordForScheduling(record)
             if effectiveRecord.playMode != record.playMode {
                 Self.paidGateLogger.info(
                     "Free plan at schedule time — downgrading paid voice to alarm tone (id: \(record.id, privacy: .public))"
@@ -453,7 +458,23 @@ final class AlarmKitViewModel: ObservableObject {
                 resolution: resolution
             )
             _ = try await AlarmManager.shared.schedule(id: id, configuration: configuration)
-            store.markScheduled(localID: record.id, alarmKitID: id.uuidString)
+            // **예약과 그 소리의 지문을 함께 적는다.** 나중에 행이 바뀌면
+            // `AlarmScheduleReconciler` 가 이 값과 비교해 다시 예약한다 — 그게 없으면
+            // 행에는 새 소리가 적혀 있는데 OS 는 옛 파일을 그대로 운다.
+            //
+            // ⚠ **지문은 '실제로 예약된 것' 이어야 한다.** `plan` 을 다시 계산해 새기면,
+            // 스테이징이 실패해 OS 에는 기본 톤이 실렸는데 행에는 목소리 지문이 적힌다 —
+            // 그 뒤로는 비교가 **영원히 일치**해서 리컨사일러가 눈이 먼다. 일시적 쓰기 실패
+            // 한 번으로 목소리 알람이 잠금화면에서 영구히 톤으로 울린다(자는 동안 인앱
+            // 폴백은 돌지 않는다). 그래서 손에 있는 `resolution` 으로 지문을 만든다.
+            store.markScheduled(
+                localID: record.id,
+                alarmKitID: id.uuidString,
+                soundFingerprint: AlarmScheduleReconciler.scheduledFingerprint(
+                    plan: AlarmSoundResolver.plan(for: effectiveRecord, audioCache: audioCache),
+                    resolution: resolution
+                )
+            )
             statusMessage = describeScheduleStatus(record: record, resolution: resolution)
             return true
         } catch {
@@ -464,6 +485,17 @@ final class AlarmKitViewModel: ObservableObject {
         statusMessage = Self.alarmUnavailableMessage
         return false
         #endif
+    }
+
+    /// 예약에 실제로 실릴 행 — 유료 목소리 권한을 **예약 시점에** 재확인해 강등한 결과.
+    ///
+    /// ⚠ **예약과 지문 계산이 같은 행을 봐야 한다.** 한쪽만 강등을 적용하면 지문이 매번
+    /// 어긋난 것으로 읽혀 `AlarmScheduleReconciler` 가 무한히 다시 예약한다.
+    func effectiveRecordForScheduling(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
+        let snapshot = KeychainStore.readSession().map { accessSnapshotStore.read(userID: $0.user.id) } ?? .empty
+        return PaidVoiceGate.shouldDowngrade(record: record, snapshot: snapshot)
+            ? PaidVoiceGate.downgraded(record)
+            : record
     }
 
     @discardableResult
