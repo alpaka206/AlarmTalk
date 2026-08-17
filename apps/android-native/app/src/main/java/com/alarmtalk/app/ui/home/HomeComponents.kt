@@ -78,12 +78,10 @@ internal fun HomeHeader(
     // 그래서 헤드라인은 **언제나 남은 시간**이고, 무엇이 모자란지는 아래 배너가 말한다.
     val statusText: String? = when {
         nextAlarm != null -> {
-            val remainingMillis = nextAlarm.fireAtMillis - now
-            if (remainingMillis < 60_000L) {
-                stringResource(R.string.hs_status_ring_soon)
-            } else {
-                stringResource(R.string.hs_status_ring_in, remainingDurationLabel(remainingMillis))
-            }
+            // ⚠ **'곧 울려요' 분기를 되살리지 말 것**(2026-08-18 지시). 1분 미만일 때만
+            // 다른 문장이 되면 같은 자리의 말이 갑자기 바뀐다. 올림이라 1분 미만도
+            // "1분 후에 울려요" 로 읽힌다.
+            stringResource(R.string.hs_status_ring_in, remainingDurationLabel(nextAlarm.fireAtMillis - now))
         }
         hasAnyAlarm -> stringResource(R.string.hs_status_inactive)
         else -> stringResource(R.string.hs_status_no_alarm)
@@ -106,7 +104,8 @@ internal fun HomeHeader(
 
 /** "13시간 40분"/"2일 5시간" — 다음 울림까지 남은 시간(분 단위 올림, 상위 두 단위만 노출). */
 private fun remainingDurationLabel(remainingMillis: Long): String {
-    val totalMinutes = ((remainingMillis + 59_999L) / 60_000L).toInt()
+    // 최소 1분 — 0분이라고 말하지 않는다(iOS `remainingLabel` 과 같은 규칙).
+    val totalMinutes = ((remainingMillis + 59_999L) / 60_000L).toInt().coerceAtLeast(1)
     val days = totalMinutes / (24 * 60)
     val hours = totalMinutes % (24 * 60) / 60
     val minutes = totalMinutes % 60

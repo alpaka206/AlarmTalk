@@ -325,7 +325,6 @@
     <string name="hs_empty_card_helper">듣고 싶은 목소리가 깨워줘요.</string>
     <string name="hs_status_inactive">모든 알람이 꺼진 상태입니다.</string>
     <string name="hs_status_no_alarm">알람이 없습니다.</string>
-    <string name="hs_status_ring_soon">곧 울려요.</string>
     <string name="hs_status_ring_in">%1$s 후에 울려요.</string>
     <string name="hs_perm_banner_notifications">알림 권한을 허용하지 않으면 알람 알림이 뜨지 않아요</string>
     <string name="hs_perm_banner_exact_alarm">정확한 알람 권한을 허용하지 않으면 제때 울리지 않을 수 있어요</string>

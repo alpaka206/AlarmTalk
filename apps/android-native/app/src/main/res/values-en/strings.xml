@@ -315,7 +315,6 @@
     <string name="hs_empty_card_helper">Wake up to a voice you love.</string>
     <string name="hs_status_inactive">All alarms are off.</string>
     <string name="hs_status_no_alarm">No alarms yet.</string>
-    <string name="hs_status_ring_soon">Ringing soon.</string>
     <string name="hs_status_ring_in">Rings in %1$s.</string>
     <string name="hs_perm_banner_notifications">Without notification permission, alarm notifications will not appear</string>
     <string name="hs_perm_banner_exact_alarm">Without exact alarm permission, alarms may not ring on time</string>

@@ -776,7 +776,10 @@ struct AlarmEditorSheet: View {
             // 받는 사람 이름은 사용자 데이터다 — 동사만 번역해서 붙인다.
             return "\(String(localized: "저장")) · \(name)"
         }
-        return target.editingAlarmID == nil ? String(localized: "저장") : String(localized: "수정 저장")
+        // ⚠ **'수정 저장' 으로 되돌리지 말 것**(2026-08-18 지시). 새 알람이든 편집이든
+        // 버튼이 하는 일은 같다 — 지금 화면의 값을 저장한다. 편집일 때만 말이 길어지면
+        // 같은 버튼이 두 이름을 갖는다(안드로이드는 처음부터 '저장' 하나다).
+        return String(localized: "저장")
     }
 
     /// 알람음 on/off 바인딩 (Android `AlarmSettingsCard.kt:162-165`). 켜면 100%, 끄면 0%

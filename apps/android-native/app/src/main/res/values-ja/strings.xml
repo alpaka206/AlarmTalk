@@ -315,7 +315,6 @@
     <string name="hs_empty_card_helper">聞きたい声が起こしてくれます。</string>
     <string name="hs_status_inactive">すべてのアラームがオフです。</string>
     <string name="hs_status_no_alarm">アラームがありません。</string>
-    <string name="hs_status_ring_soon">まもなく鳴ります。</string>
     <string name="hs_status_ring_in">%1$s後に鳴ります。</string>
     <string name="hs_perm_banner_notifications">通知の権限を許可しないと、アラームの通知が表示されません</string>
     <string name="hs_perm_banner_exact_alarm">正確なアラームの権限を許可しないと、時間どおりに鳴らないことがあります</string>

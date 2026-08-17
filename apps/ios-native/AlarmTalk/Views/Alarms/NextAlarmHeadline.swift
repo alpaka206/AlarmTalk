@@ -52,7 +52,9 @@ struct NextAlarmHeadline: View {
                 return "권한이 꺼져 있어 알람이 울리지 않아요."
             }
             let remaining = nextAlarm.nextFireDate.timeIntervalSince(now)
-            if remaining < 60 { return "곧 울려요." }
+            // ⚠ **'곧 울려요' 를 되살리지 말 것**(2026-08-18 지시). 남은 시간이 1분 미만일
+            // 때만 다른 문장이 되면, 같은 자리의 말이 갑자기 바뀌어 눈이 다시 읽어야 한다.
+            // 올림이라 1분 미만은 "1분 후에 울려요" 가 된다 — 틀린 말도 아니다.
             return "\(Self.remainingLabel(seconds: remaining)) 후에 울려요."
         }
         return hasAnyAlarm ? "모든 알람이 꺼진 상태입니다." : "알람이 없습니다."
@@ -63,7 +65,10 @@ struct NextAlarmHeadline: View {
     /// 여기서 `String(localized:)` 로 **미리** 번역해 둔다 — 위 `statusText` 의
     /// 보간 자리(`%@`)에 들어갈 값이라, 조각째로 넘기면 번역될 기회가 없다.
     static func remainingLabel(seconds: TimeInterval) -> String {
-        let totalMinutes = max(Int((seconds + 59) / 60), 0)
+        // ⚠ **안드로이드와 같은 식이어야 한다**(`HomeComponents.kt` 의 `remainingDurationLabel`).
+        // 거긴 밀리초에서 올림하고 여기는 초에서 올림한다 — `+59` 후 절삭은 소수 초에서
+        // 한 칸 어긋나므로 `ceil` 로 명시한다. 최소 1분(0분이라고 말하지 않는다).
+        let totalMinutes = max(Int(ceil(seconds / 60)), 1)
         let days = totalMinutes / (24 * 60)
         let hours = totalMinutes % (24 * 60) / 60
         let minutes = totalMinutes % 60
