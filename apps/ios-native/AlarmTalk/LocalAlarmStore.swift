@@ -296,6 +296,18 @@ final class LocalAlarmStore: ObservableObject {
         return ((record.bucketRotationIndex ?? 0) + 1) % keys.count
     }
 
+    /// 날씨 조건 스냅샷을 갱신한다(`WeatherVariantRefreshService` 전용).
+    ///
+    /// ⚠ **`updatedAtMillis` 를 올리지 않는다.** 사용자가 고친 게 아니라 우리가 예보를
+    /// 받아 적은 것이다. 여기서 올리면 받은 알람이 '수신자가 고친 행' 으로 읽혀
+    /// (`RemoteAlarmPullSync.locallyEditedByRecipient`) 서버 내용이 영영 안 들어온다.
+    func applyWeatherVariant(id: String, index: Int, resolvedAtMillis: Int64) {
+        guard let position = alarms.firstIndex(where: { $0.id == id }) else { return }
+        alarms[position].contextVariantIndex = index
+        alarms[position].contextResolvedAtMillis = resolvedAtMillis
+        persist()
+    }
+
     func markStopped(
         alarmKitID: String,
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }

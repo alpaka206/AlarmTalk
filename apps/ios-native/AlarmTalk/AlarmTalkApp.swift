@@ -327,6 +327,10 @@ struct AlarmTalkApp: App {
         guard let token = auth.session?.token else { return }
         let refresh = DynamicVoiceRefreshService(store: alarmStore)
         _ = await refresh.refreshDue(token: token)
+        // 곧 울릴 날씨 알람의 조건도 함께 받아 둔다. 반복 알람은 매일 다시 울리므로
+        // 저장할 때 받은 어제 조건으로는 오늘 날씨를 말할 수 없다.
+        let weather = WeatherVariantRefreshService(store: alarmStore, alarmKit: alarmKit)
+        _ = await weather.refreshDue(token: token)
     }
 
     /// PR3: timezone / 시간 변경 알림을 관찰해 `.fixed` 공휴일off one-shot 을 새 시각으로

@@ -74,8 +74,12 @@ enum AlarmSoundResolver {
         audioCache: AudioCacheStore
     ) -> String? {
         guard record.bucketId != nil,
-              let keys = record.bucketClipKeys, !keys.isEmpty else { return nil }
-        let index = (record.bucketRotationIndex ?? 0) % keys.count
+              let keys = record.bucketClipKeys, !keys.isEmpty,
+              // ⚠ **회전 인덱스를 직접 읽지 말 것.** 날씨는 실제 예보로 확정한 자리,
+              // 운세는 사주+날짜로 계산한 자리를 쓴다 — 그 둘은 회전하지 않는다.
+              // 예전에는 여기서 `bucketRotationIndex` 만 봐서, 날씨 알람이 저장할 때
+              // 미리듣던 클립 하나를 **매일 그대로** 재생했다(맑은 날 우산 얘기).
+              let index = BucketVariantResolver.variantIndex(for: record) else { return nil }
         // 고른 자리의 클립이 아직 안 받아졌으면, 받아진 것 중 아무거나로 대체한다.
         // 소리가 없는 것보다 순서가 어긋나는 편이 낫다(안드로이드도 같은 폴백이다).
         if audioCache.cachedURL(for: keys[index]) != nil { return keys[index] }

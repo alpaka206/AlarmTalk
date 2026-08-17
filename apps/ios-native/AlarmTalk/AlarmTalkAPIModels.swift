@@ -618,6 +618,13 @@ struct StockClipListResponse: Decodable {
     var clips: [StockClip]
 }
 
+/// `GET /tts/prerender-variant` 응답. `variant_index` 는 **못 받았으면 null** 이다
+/// (맑음=0 과 구분해야 한다 — `AlarmTalkAPI.getPrerenderVariant` 주석 참조).
+struct PrerenderVariantResponse: Decodable {
+    var context: String?
+    var variantIndex: Int?
+}
+
 /// 기본 제공(스톡) 알람 클립 한 건. preset 메시지 × 시스템 보이스 조합.
 /// 인라인 오디오는 없고, 미리듣기/선택 시 `GET /tts/messages/:id/audio` 로
 /// 음원을 받아 캐싱한다. Android `TtsApi.kt:74` `StockClip` 미러(`tags` 는 드롭).
@@ -633,6 +640,15 @@ struct StockClip: Decodable, Identifiable, Equatable {
     var language: String?
     var text: String
     var audioUrl: String?
+    /// 같은 (보이스·카테고리·언어) 안에서의 **자리 번호**(0-based).
+    ///
+    /// ⚠ **날씨 테마에서는 이게 곧 '어떤 날씨인가' 다.** 서버의
+    /// `CLONE_WEATHER_CONDITIONS` 순서(0 맑음 / 1 비 / 2 눈 / 3 미세먼지 / 4 흐림 /
+    /// 5 안개 / 6 더위 / 7 추위)이고, 마지막(8)은 '날씨를 못 받았어요' 안내다.
+    /// 그래서 클립 목록은 **variant 순으로 정렬·중복제거**해서 묶어야 한다
+    /// (`bucketClipKeys(forCategory:)`) — 순서가 흔들리면 맑은 날에 우산 얘기를 한다.
+    /// 안드로이드 `TtsApi.StockClip.variant` 미러.
+    var variant: Int?
 
     var id: String { messageId }
 }

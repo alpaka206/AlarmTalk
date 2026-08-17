@@ -110,6 +110,33 @@
 주석 두 곳은 "울릴 때마다 순차 회전한다" 고 적혀 있었다 — 코드가 아니라 주석이 기능을
 광고하고 있었다.
 
+### 5-1. 날씨·운세는 **실제 정보로** 고른다
+
+이 둘만 회전하지 않는다. "오늘 비가 온대요" 는 **진짜 비가 올 때만** 맞는 말이라,
+자리를 순서로 고르면 그 자리 문구가 거짓말이 된다.
+
+| | 무엇으로 고르나 | 언제 정하나 | 네트워크 |
+| --- | --- | --- | --- |
+| **날씨** | 그 도시·그 **발사 날짜**의 실제 예보(서버가 open-meteo 조회) | 저장할 때 + 준비창(48h) 갱신 | 저장 시 1회 |
+| **운세** | **사주 + 발사 날짜**로 기기에서 결정적 계산 | 읽을 때마다(계산이라 저장 불필요) | 없음 |
+
+- 자리 번호는 **서버 클립의 `variant` 와 같은 축**이다(0 맑음 / 1 비 / 2 눈 / 3 미세먼지 /
+  4 흐림 / 5 안개 / 6 더위 / 7 추위, 마지막 8 = '날씨를 못 봤어요' 안내).
+  그래서 클립 묶음은 **`variant` 순으로 정렬·중복제거**해야 한다 — 순서가 흔들리면 맑은 날에
+  우산 얘기를 한다.
+- **못 받았으면 `null` 이고, 그건 '맑음' 이 아니다.** 0 으로 때우지 말 것. 안내 클립(마지막)이
+  있는 묶음이면 그걸 틀고, 없는 옛 묶음이면 대표 클립으로 둔다.
+- **운세는 같은 사람·같은 날이면 두 기기가 같은 답을 내야 한다.** 네트워크 없이 각자
+  계산하므로 산식이 조금만 달라도 조용히 갈라진다. 그래서 기대값 표를 **양 앱 테스트에
+  똑같이 박아** 두었다(`FortuneThemeIndexTest` ↔ `BucketVariantResolverTests`).
+- ⚠ **iOS 는 조건이 바뀌면 다시 예약해야 한다.** 값만 고쳐 두면 행에는 비 문구가 적혀
+  있는데 **어제 스테이징한 맑음 파일**이 울린다(위 회전과 같은 이유).
+
+⚠ **iOS 는 2026-08-18 까지 이걸 아예 안 했다.** `prerender-variant` 호출이 없어서 날씨
+알람이 저장할 때 미리듣던 클립 하나를 **매일 그대로** 재생했고(회전 대상도 아니라 바뀌지도
+않았다), 운세도 마찬가지였다. 저장이 안드로이드보다 빨랐던 이유가 그것이다 — 빠른 게
+아니라 **안 하고 있었다.**
+
 ### 미리 받아 둔다
 
 울릴 시각에 네트워크가 없으면 그 회차가 조용히 비므로, **미리** 받아 둔다.
@@ -244,6 +271,13 @@ CAF 를 직접 쓰고 `AVChannelLayoutKey` 를 반드시 넣는다(없으면 파
 | 버킷 클립 선다운로드 | `sync/StockClipPrefetchWorker.kt` | `StockClipPrefetcher.swift` | `GET /tts/stock-clips`, `GET /tts/messages/:id/audio` |
 | 클립 회전 | `AlarmRepository.advancedBucketRotationIndex` / `resolveBucketClipSelection` | `LocalAlarmStore.advancedBucketRotationIndex` + `AlarmSoundResolver.rotatedBucketClipKey` + `AlarmAppContext.rescheduleForNextBucketClip` | — |
 | 회전 상태 영속 | `AlarmEntity.bucketClipKeysJson` / `bucketRotationIndex` | `LocalAlarmRecord.bucketClipKeys` / `bucketRotationIndex` | — |
+| 날씨·운세 자리 판정 | `AlarmEntity.bucketVariantIndex()` | `BucketVariantResolver.variantIndex(for:)` | — |
+| 운세 온디바이스 계산 | `fortuneThemeIndex` (`data/AlarmEntity.kt`) | `BucketVariantResolver.fortuneThemeIndex` | — |
+| 날씨 조건 조회 | `AlarmRepository.resolveWeatherVariantForDraft`(저장 시) | `AlarmEditorSheet.applyWeatherVariant`(저장 시) | `GET /tts/prerender-variant` (`resolvePrerenderWeatherIndex`) |
+| 날씨 준비창 갱신 | `AlarmRepository.resolveDueCloneBucketVariants` + `weatherVariantNeedsRefresh` | `WeatherVariantRefreshService` + `BucketVariantResolver.weatherVariantNeedsRefresh` | 같은 라우트 |
+| 조건 스냅샷 영속 | `AlarmEntity.contextVariantIndex` / `contextResolvedAtMillis` | `LocalAlarmRecord.contextVariantIndex` / `contextResolvedAtMillis` | — |
+| 클립 자리 = `variant` | `bindStockBucketClips`(sortedBy·distinctBy) | `AlarmEditorSheet.bucketClipKeys(forCategory:)`(같은 규칙) | `ORDER BY … variant ASC`, `StockClip.variant` |
+| 운세 양앱 일치 테스트 | `FortuneThemeIndexTest` | `BucketVariantResolverTests` | — |
 | 오디오 캐시 키 | `stock_<messageId>` | `AudioCacheStore.stockCacheKey` (같은 규칙) | — |
 | 무료 전환 잠금 | `AlarmRepository.lockPaidAlarmTalks` / `unlockPaidAlarmTalks` | `SocialFeatureViewModel.applyFreePlanVoiceLock` / `restorePaidVoiceAlarms` | `users.plan`, `resolvePlanAfterSuspend` |
 | 목소리 데이터 3일 유예 | `AlarmRepository.lockPaidAlarmTalks`(행만) | `SocialFeatureViewModel.applyFreePlanVoiceLock`(행만) | `PAID_VOICE_RETENTION_DAYS` · `schedulePaidVoiceRetention` · `clearPaidVoiceRetention` |

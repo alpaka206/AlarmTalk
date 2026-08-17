@@ -156,6 +156,12 @@ final class BackgroundSyncTask {
             let pullResult = try await pull.runOnce()
             if let session = KeychainStore.readSession() {
                 _ = await dynamicVoice.refreshDue(token: session.token)
+                // 곧 울릴 날씨 알람의 조건을 미리 받아 둔다. **발사 시점에는 못 받는다** —
+                // iOS 는 그때 우리 코드가 돌지 않고 예약해 둔 사운드가 그대로 울린다.
+                if let store {
+                    let weather = WeatherVariantRefreshService(store: store, alarmKit: alarmKit)
+                    _ = await weather.refreshDue(token: session.token)
+                }
             }
             // PR3: `.fixed` 공휴일off one-shot proactive 재무장 sweep. iOS 의 유일한 주기
             // wake 가 BGAppRefreshTask 이므로, kill 상태에서 발화 후 dismiss-재무장을 놓친

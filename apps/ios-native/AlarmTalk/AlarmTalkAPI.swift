@@ -391,6 +391,36 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("tts/messages/\(id)/audio", token: token)
     }
 
+    /// 사전렌더 테마(날씨)의 **어느 클립을 틀지**를 서버에 물어본다.
+    ///
+    /// 서버가 그 도시·그 날짜의 실제 예보(open-meteo)를 조회해 조건 인덱스를 돌려준다.
+    /// 클라는 이 값을 알람에 스냅샷해 두고, **울릴 때는 오프라인 조회만** 한다
+    /// (발사 순간 네트워크 0). 운세는 이 호출이 필요 없다 — 사주+날짜로 기기에서
+    /// 결정적으로 계산한다(`BucketVariantResolver.fortuneThemeIndex`).
+    ///
+    /// ⚠ **날씨 조회 실패는 `nil` 이다.** '맑음(0)' 과 구분되어야 한다 — 못 받았는데
+    /// 0 으로 저장하면 비 오는 날에 "하늘 한 번 올려다보세요" 가 나간다.
+    /// 안드로이드 `AlarmTalkApi.getPrerenderVariant` 미러.
+    func getPrerenderVariant(
+        context: String,
+        country: String?,
+        city: String?,
+        targetDate: String,
+        timezone: String,
+        token: String
+    ) async throws -> Int? {
+        var items = [URLQueryItem(name: "context", value: context)]
+        if let country = country?.nilIfBlank { items.append(URLQueryItem(name: "country", value: country)) }
+        if let city = city?.nilIfBlank { items.append(URLQueryItem(name: "city", value: city)) }
+        items.append(URLQueryItem(name: "target_date", value: targetDate))
+        items.append(URLQueryItem(name: "timezone", value: timezone))
+        var components = URLComponents()
+        components.queryItems = items
+        let query = components.percentEncodedQuery ?? ""
+        let response: PrerenderVariantResponse = try await request("tts/prerender-variant?\(query)", token: token)
+        return response.variantIndex
+    }
+
     // MARK: - Sync convenience
     // RemoteAlarmPullSync / RemoteAlarmPushSync 가 사용하는 헬퍼.
     // base64 payload 를 디코드해 `(bytes, mimeType, durationMs)` 로 노출한다.

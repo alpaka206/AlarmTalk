@@ -1282,9 +1282,54 @@ struct AlarmEditorSheet: View {
     ///
     /// ⚠ **언어를 안 거르면 회전이 en→ja→ko 를 돌아가며 울린다.** 한 알람이 매일 다른
     /// 언어로 말하게 되고, 게다가 기기 언어가 아닌 클립은 받아 둔 적이 없어 소리도 안 난다.
+    /// 날씨 테마 알람에 **그 날짜·그 도시의 실제 조건**을 붙인다.
+    ///
+    /// 실패(오프라인·위치 미상)하면 인덱스를 건드리지 않는다 — `nil` 은 '맑음' 이 아니라
+    /// '아직 모른다' 이고, 0 으로 때우면 비 오는 날에 "하늘 한 번 올려다보세요" 가 나간다.
+    /// 지역·발사날짜가 바뀌었으면 옛 값을 버린다(`shouldResetWeatherVariant`).
+    private func applyWeatherVariant(to record: inout LocalAlarmRecord, previous: LocalAlarmRecord?) async {
+        let reset = BucketVariantResolver.shouldResetWeatherVariant(
+            previous: previous,
+            nextBucketId: record.bucketId,
+            nextCountry: record.voiceWeatherCountry,
+            nextCity: record.voiceWeatherCity,
+            nextFireAtMillis: record.fireAtMillis
+        )
+        var freshIndex: Int?
+        if record.bucketId == "weather", let token = auth.session?.token {
+            freshIndex = try? await AlarmTalkAPI.shared.getPrerenderVariant(
+                context: "wake_weather",
+                country: record.voiceWeatherCountry,
+                city: record.voiceWeatherCity,
+                targetDate: BucketVariantResolver.localDateString(millis: record.fireAtMillis),
+                timezone: TimeZone.current.identifier,
+                token: token
+            )
+        }
+        let state = BucketVariantResolver.nextWeatherVariantState(
+            nextBucketId: record.bucketId,
+            resetVariant: reset,
+            currentIndex: previous?.contextVariantIndex,
+            currentResolvedAtMillis: previous?.contextResolvedAtMillis,
+            freshIndex: freshIndex
+        )
+        record.contextVariantIndex = state.index
+        record.contextResolvedAtMillis = state.resolvedAtMillis
+    }
+
+    /// ⚠ **`variant` 순으로 정렬하고 중복을 없앤다.** 날씨·운세 테마는 자리 번호가 곧
+    /// 조건이라(`keys[i]` = variant i) 순서가 흔들리면 **맑은 날에 우산 얘기**를 한다.
+    /// 서버가 `ORDER BY ... variant ASC` 로 주긴 하지만 그 순서에 기대지 않는다 —
+    /// 같은 variant 가 둘이면 뒤 인덱스가 통째로 밀린다.
+    /// 안드로이드 `bindStockBucketClips` 의 `sortedBy { it.variant }.distinctBy { it.variant }` 미러.
     func bucketClipKeys(forCategory category: String) -> [String] {
-        stockClips(forCategory: category)
-            .map { AudioCacheStore.stockCacheKey(messageId: $0.messageId) }
+        var seenVariants = Set<Int>()
+        return stockClips(forCategory: category)
+            .enumerated()
+            // variant 가 없는 옛 응답은 받은 순서를 유지하도록 큰 값으로 밀어 둔다.
+            .sorted { ($0.element.variant ?? Int.max, $0.offset) < ($1.element.variant ?? Int.max, $1.offset) }
+            .filter { seenVariants.insert($0.element.variant ?? -($0.offset + 1)).inserted }
+            .map { AudioCacheStore.stockCacheKey(messageId: $0.element.messageId) }
     }
 
     /// 지금 고른 문구 갈래 — 요약 행과 문구 화면이 함께 읽는다.
@@ -2144,6 +2189,15 @@ struct AlarmEditorSheet: View {
                 merged.bucketRotationIndex = nil
             }
         }
+
+        // ── 날씨 테마는 **저장하면서 실제 예보를 받아** 어느 클립을 틀지 확정한다.
+        //
+        // 여기서 받는 이유: iOS 는 발사 시점에 우리 코드가 돌지 않는다. 예약해 둔 사운드가
+        // 그대로 울리므로 조건은 **예약 전에** 정해져 있어야 한다. 저장 뒤 백그라운드로
+        // 미뤘다가 그 전에 울리면 '날씨를 못 봤어요' 안내가 나간다.
+        // 오프라인이면 조용히 미해결로 저장한다(알람 생성을 막지 않는다) — 준비창 갱신이 채운다.
+        // 안드로이드 `withResolvedWeatherVariant` 와 같은 자리다.
+        await applyWeatherVariant(to: &merged, previous: editingAlarm)
 
         do {
             try LocalAlarmStore.validateDraft(merged)
