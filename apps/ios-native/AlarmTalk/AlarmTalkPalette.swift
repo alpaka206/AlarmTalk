@@ -46,6 +46,10 @@ struct AlarmTalkPalette: Equatable {
 
     let outline: Color
     let outlineVariant: Color
+    /// 카드 테두리 — 다크에서 `outlineVariant` 보다 한 단계 밝다.
+    /// ⚠ 옅게 되돌리지 말 것: 알람 목록은 **카드와 배경의 대비가 1.0:1** 이라 테두리가
+    /// 유일한 구분선이다(2026-08-17 실측). 안드로이드 `WakerCardBorderDark` 와 같은 값.
+    let cardBorder: Color
 
     let error: Color
     let onError: Color
@@ -76,6 +80,7 @@ extension AlarmTalkPalette {
         onSurfaceVariant: .hex(0x5F6470),
         outline: .hex(0xCCCED8),
         outlineVariant: .hex(0xE0E2EA),
+        cardBorder: .hex(0xE0E2EA),
         error: .hex(0xC23E32),
         onError: .hex(0xFFFFFF),
         errorContainer: .hex(0xFFDDD6),
@@ -112,6 +117,7 @@ extension AlarmTalkPalette {
         onSurfaceVariant: .hex(0xA7AFC0),
         outline: .hex(0x4C587E),
         outlineVariant: .hex(0x3B4870),
+        cardBorder: .hex(0x5A6A9C),
         error: .hex(0xFF9A8A),
         onError: .hex(0x3D0703),
         errorContainer: .hex(0x5B211B),

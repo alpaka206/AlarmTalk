@@ -83,13 +83,23 @@ internal fun homeGradientBrush(): androidx.compose.ui.graphics.Brush =
     if (MaterialTheme.colorScheme.background.luminance() < 0.5f) HomeGradientDark else HomeGradientLight
 
 
+/**
+ * 다크에서 카드 테두리로 쓰는 색 — `outlineVariant`(#3B4870)보다 한 단계 밝다.
+ *
+ * ⚠ **다시 옅게 만들지 말 것**(2026-08-17 지적 "다크모드일 때 구분이 잘 안 간다").
+ * 근거는 실측이다: 알람 목록에서 **카드 표면과 배경의 대비가 1.0:1** 이다(그라데이션이
+ * 카드와 같은 밝기 구간을 지난다). 즉 **테두리가 유일한 구분선**인데, 그 테두리가
+ * `outlineVariant` × 0.62 라 배경 대비 1.7:1 도 안 됐다 — 눈에 카드가 없는 것과 같다.
+ * 지금 값은 배경 대비 약 **2.9:1** 로, 비텍스트 요소 기준(3:1)에 근접한다.
+ */
+private val WakerCardBorderDark = Color(0xFF5A6A9C)
+
 @Composable
 internal fun wakerCardBorder(alpha: Float = 1f): BorderStroke {
-    // 다크에서는 테두리를 옅게 깔아 '와이어프레임' 인상을 줄이고 표면 대비에 기댄다.
-    // 라이트는 흰 카드가 배경과 붙지 않도록 기존 농도를 유지한다.
     val darkScheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val base = if (darkScheme) 0.62f else 1f
-    return BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = base * alpha))
+    // 라이트는 흰 카드가 배경과 붙지 않을 정도면 되므로 기존 토큰 그대로다.
+    val color = if (darkScheme) WakerCardBorderDark else MaterialTheme.colorScheme.outlineVariant
+    return BorderStroke(1.dp, color.copy(alpha = alpha))
 }
 
 @Composable

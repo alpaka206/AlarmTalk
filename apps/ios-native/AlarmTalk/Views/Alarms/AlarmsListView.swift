@@ -286,6 +286,13 @@ struct AlarmsListView: View {
                 theme.palette.surface,
                 in: RoundedRectangle(cornerRadius: theme.shapes.large, style: .continuous)
             )
+            // ⚠ **테두리를 빼지 말 것**(2026-08-17 지적). 이 카드만 테두리가 없어서,
+            // 다크에서 배경과 표면의 대비가 1.0:1 인 구간에 놓이면 **카드가 통째로
+            // 사라져 보인다.** 알람 행과 같은 선이다.
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.large, style: .continuous)
+                    .stroke(theme.palette.cardBorder, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
         .accessibilityLabel("첫 알람 만들기")

@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -148,8 +149,11 @@ internal fun IosAlertDialog(
                 .fillMaxWidth(),
             // ⚠ 14 가 아니다 — 실측 반경은 **약 34**(iOS 26). 14 는 iOS 7~18 시절 값이다.
             shape = RoundedCornerShape(34.dp),
-            // iOS 알럿은 어두운 글래스 패널 느낌 — 배경보다 한 단계 밝은 surfaceVariant 로 분리감을 준다.
-            color = scheme.surfaceVariant,
+            // ⚠ **`surfaceVariant`(#29345A)로 되돌리지 말 것**(2026-08-17 지시
+            // "아이폰처럼 배경색이나 버튼색"). 실측하면 아이폰 알럿 컨테이너는 **#111623**
+            // 로 **화면보다 어둡고 채도가 낮다** — 우리 것은 한 단계 밝은 남색이라 같은
+            // 알럿이 두 앱에서 다른 물건처럼 보였다. 어두운 쪽이 뒤 화면과도 더 잘 갈린다.
+            color = WakerAlertContainer,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
             border = BorderStroke(0.5.dp, scheme.onSurface.copy(alpha = 0.12f)),
@@ -311,6 +315,15 @@ internal fun IosAlertField(
 }
 
 /**
+ * 알럿 컨테이너 색 — 아이폰 실측 #111623 에 맞춘 어두운 중성 남색.
+ * 라이트 테마에서도 알럿은 어두운 패널이라 테마와 무관하게 고정이다(아이폰도 그렇다).
+ */
+private val WakerAlertContainer = Color(0xFF141A2B)
+
+/** 알럿 버튼의 기본 채움 — 아이폰 실측 #2A2F39. */
+private val WakerAlertButtonFill = Color(0xFF2A2F3A)
+
+/**
  * 알럿 글자 블록의 좌우 여백 — **30dp**(2026-08-11 iOS 실측).
  *
  * ⚠ **20 으로 되돌리지 말 것.** 20 이면 같은 문장이 아이폰보다 넓게 퍼져 줄바꿈 위치가
@@ -392,19 +405,23 @@ private fun IosAlertButton(
     scheme: ColorScheme,
     modifier: Modifier = Modifier,
 ) {
-    // ⚠ **글자색만으로 구분한다 — 채움색은 모든 액션이 같다.** 실측에서 '취소'와
-    // 파괴적 '로그아웃' 이 **같은 회색 채움**이었고, 다른 건 글자색(흰색 vs 빨강)뿐이었다.
-    // 파괴적 액션을 빨간 채움으로 만들면 우리만 튄다.
+    // ⚠ **강조 액션은 '채워진' 버튼이다**(2026-08-17 실측). 아이폰 알럿에서 기본 액션은
+    // **파란 채움 + 흰 글자**(#089CFF)이고 나머지는 중성 회색 채움(#2A2F39)이다.
+    // 우리는 모든 버튼이 같은 채움이고 글자색만 달랐다 — 어느 것이 기본 액션인지
+    // 한눈에 안 보였다.
+    // ⚠ 파괴적 액션은 **채우지 않는다.** 아이폰도 회색 채움 + 빨간 글자다 — 빨간 채움은
+    // 우리만 튄다.
+    val filled = action.emphasized && !action.destructive
     val contentColor = when {
         action.destructive -> scheme.error
-        action.emphasized -> scheme.primary
+        filled -> scheme.onPrimary
         else -> scheme.onSurface
     }
     Box(
         modifier = modifier
             // 높이 48 의 캡슐(반경 24) — 실측값이다.
             .clip(WakerPillShape)
-            .background(scheme.onSurface.copy(alpha = 0.10f))
+            .background(if (filled) scheme.primary else WakerAlertButtonFill)
             .clickable(enabled = action.enabled, onClick = action.onClick),
         contentAlignment = Alignment.Center,
     ) {

@@ -45,7 +45,9 @@ struct AlarmRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
-                        .stroke(theme.palette.outlineVariant, lineWidth: 1)
+                        // ⚠ `outlineVariant` 로 되돌리지 말 것 — 다크에서 배경 대비
+                        // 1.7:1 이라 카드가 없는 것처럼 보였다(2026-08-17 실측).
+                        .stroke(theme.palette.cardBorder, lineWidth: 1)
                 )
                 .offset(x: dragOffset)
                 // ⚠ **탭은 행 전체가 받는다.** `contentShape` 로 빈 자리까지 히트영역에
