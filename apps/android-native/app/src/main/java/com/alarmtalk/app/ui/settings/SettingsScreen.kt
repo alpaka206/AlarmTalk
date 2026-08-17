@@ -173,6 +173,10 @@ internal fun SettingsScreen(
                 IosAlertAction(
                     label = stringResource(R.string.hs_settings_logout),
                     emphasized = true,
+                    // ⚠ **빨강이다**(2026-08-17 지적 "로그아웃도 빨간색이 좋지 않을까").
+                    // 행은 이미 `destructive = true` 로 빨간데 확인 모달의 액션만 파랑이라,
+                    // 같은 행동이 두 색으로 보였다. iOS 는 `role: .destructive` 로 빨강이다.
+                    destructive = true,
                     onClick = {
                         showLogoutConfirm = false
                         onLogout()
