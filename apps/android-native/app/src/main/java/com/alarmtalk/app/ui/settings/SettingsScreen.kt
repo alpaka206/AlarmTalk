@@ -112,7 +112,6 @@ internal fun SettingsScreen(
                         context,
                         promptPreferences.fortuneGender,
                         promptPreferences.fortuneBirthDate,
-                        promptPreferences.fortuneBirthTime,
                     ),
                     onClick = { showFortuneInfoDialog = true },
                 )

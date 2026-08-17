@@ -403,6 +403,27 @@ internal fun RandomPromptDetailRow(
 // 지역 선택 — 기본 목소리/테마와 같은 바텀시트 선택 패턴(WakerSelectionSheet). 도시 행을
 // 탭하면 그 자리에서 선택+저장+닫힘(별도 저장 버튼 없음). '직접 입력'을 고르면 시트 안에
 // 입력 필드가 열린다. 프리셋이 없는 로케일은 처음부터 입력 필드만 보여준다.
+
+/**
+ * 직접 입력한 지역 문자열을 **나라와 도시**로 가른다 — iOS `WeatherCityPickerSheet.parseLocation`
+ * 과 같은 규칙이다.
+ *
+ * ⚠ 나라를 안 가르면 "뉴욕" 이 **대한민국 뉴욕**으로 저장돼 서버가 엉뚱한 좌표를 잡는다.
+ */
+internal fun parseWeatherLocation(context: android.content.Context, raw: String): Pair<String, String> {
+    val trimmed = raw.trim()
+    val separator = trimmed.indexOf(' ')
+    if (separator < 0) return defaultWeatherCountry(context) to trimmed
+    val country = trimmed.substring(0, separator).trim()
+    val city = trimmed.substring(separator + 1).trim()
+    // 끝에 공백만 있던 경우 — 나라 이름만 남으므로 도시로 되돌린다.
+    return if (city.isBlank()) defaultWeatherCountry(context) to country else country to city
+}
+
+/** 프리셋·공백 없는 입력에 붙이는 기본 나라. iOS `defaultCountry` 와 같은 값이다. */
+internal fun defaultWeatherCountry(context: android.content.Context): String =
+    context.getString(R.string.hs_weather_default_country)
+
 @Composable
 internal fun WeatherLocationDialog(
     country: String,
@@ -411,6 +432,7 @@ internal fun WeatherLocationDialog(
     onConfirm: (String, String) -> Unit,
 ) {
     val presetCities = androidx.compose.ui.res.stringArrayResource(R.array.hs_weather_preset_cities).toList()
+    val context = androidx.compose.ui.platform.LocalContext.current
     // 직접 입력 필드는 항상 빈칸으로 시작 — 이전 도시명을 프리필하지 않는다(기본값 없음 규칙).
     // 현재 저장된 지역은 뒤 화면의 '원하는 지역' 행에 이미 보인다.
     var draftCity by remember(city) { mutableStateOf("") }
@@ -428,7 +450,14 @@ internal fun WeatherLocationDialog(
                     title = preset,
                     selected = !customMode && city == preset,
                     // 탭 = 선택+저장+닫힘(닫힘 전이는 onConfirm 쪽 상태가 담당).
-                    onClick = { onConfirm(country.trim(), preset) },
+                    // ⚠ **나라를 빈 채로 저장하지 말 것**(2026-08-17). 예전에는 저장된
+                    // `country` 를 그대로 흘려보내서, 한 번도 나라가 채워진 적 없는 계정은
+                    // 계속 빈 값이었다. 서버는 도시 이름으로 지오코딩한 뒤 **나라로 후보를
+                    // 고르므로**(`routes/tts.ts` 의 `resolveWeatherLocation`), 나라가 없으면
+                    // 동명 도시 중 첫 결과를 쓴다 — 표시가 아니라 **날씨가 틀릴 수 있다.**
+                    // 프리셋은 전부 국내 도시라 나라는 하나다(iOS `WeatherCityPickerSheet`
+                    // 의 `defaultCountry` 와 같은 값).
+                    onClick = { onConfirm(defaultWeatherCountry(context), preset) },
                     divider = true,
                 )
             }
@@ -460,7 +489,12 @@ internal fun WeatherLocationDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Button(
-                    onClick = { onConfirm(country.trim(), draftCity.trim()) },
+                    // 공백이 있으면 **첫 낱말이 나라, 나머지가 도시**다("미국 뉴욕").
+                    // 공백이 없으면 국내로 본다 — iOS `parseLocation` 과 같은 규칙이다.
+                    onClick = {
+                        val (parsedCountry, parsedCity) = parseWeatherLocation(context, draftCity)
+                        onConfirm(parsedCountry, parsedCity)
+                    },
                     enabled = draftCity.isNotBlank(),
                     colors = wakerButtonColors(),
                     modifier = Modifier.fillMaxWidth(),

@@ -323,6 +323,7 @@
     <string name="hs_alarm_row_date_voice">%1$s · %2$sの声</string>
     <string name="hs_weather_city_label">都市</string>
     <string name="hs_weather_city_placeholder">例：東京</string>
+    <string name="hs_weather_default_country">大韓民国</string>
     <string name="hs_weather_city_custom">直接入力</string>
     <string-array name="hs_weather_preset_cities">
         <item>東京</item>

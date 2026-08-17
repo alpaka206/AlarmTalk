@@ -464,39 +464,38 @@ internal fun quietScheduleLabel(context: Context, windows: List<FamilyAlarmQuiet
     return if (hidden > 0) context.getString(R.string.misc2_quiet_more, visible, hidden) else visible
 }
 
-internal fun weatherLocationSettingsLabel(context: Context, country: String, city: String): String {
-    val value = listOf(country, city)
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .joinToString(" ")
-    return value.ifBlank { context.getString(R.string.misc2_settings_not_set) }
-}
+/**
+ * 설정 행에 보이는 날씨 지역 — **도시만** 쓴다.
+ *
+ * ⚠ **나라를 붙이지 말 것**(2026-08-17 통일). 저장은 나라+도시 둘 다 한다(서버가 동명
+ * 도시를 가르는 유일한 단서다 — `routes/tts.ts` 의 `resolveWeatherLocation`). 하지만
+ * **보여줄 때는 도시뿐**이다: 앱의 다른 자리가 전부 도시로 말한다(문구 요약 행의
+ * `날씨 · 서울`, 알람이 읽는 문장). 설정에서만 "대한민국 인천" 이면 같은 값이 두 이름을
+ * 갖는다. iOS `weatherLocationLabel` 도 같다.
+ */
+internal fun weatherLocationSettingsLabel(context: Context, country: String, city: String): String =
+    city.trim().ifBlank { context.getString(R.string.misc2_settings_not_set) }
 
+/**
+ * 설정 행에 보이는 운세 정보 — **성별 · 생년월일**까지다.
+ *
+ * ⚠ **'설정됨' 으로 줄이지 말 것.** 이 행이 답해야 하는 질문은 둘이다: 넣었나, 그리고
+ * **제대로 넣었나**. 사주는 생년월일이 전부라 오타가 나면 알람 문구가 통째로 남의 것이
+ * 되는데, '설정됨' 은 그걸 영영 감춘다.
+ * ⚠ **태어난 시각까지 넣지도 말 것**(2026-08-17 정리). 셋을 다 넣으면 행이 넘쳐 잘리고,
+ * 잘리는 쪽은 값이다 — 훑어서 틀림을 알아채라고 둔 정보가 먼저 사라진다.
+ * 시각은 눌러서 여는 다이얼로그에 그대로 있다. iOS `fortuneInfoLabel` 도 같다.
+ */
 internal fun fortuneInfoSettingsLabel(
     context: Context,
     gender: String,
     birthDate: String,
-    birthTime: String,
 ): String {
-    val value = listOf(gender, compactBirthDate(birthDate), birthTime)
+    val value = listOf(gender, birthDate)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" · ")
     return value.ifBlank { context.getString(R.string.misc2_settings_not_set) }
-}
-
-/**
- * 설정 행에 쓰는 짧은 생년월일 — `2000-05-17` → `000517`.
- *
- * 행 하나에 성별·생년월일·태어난 시간이 다 들어가는데 `2000-05-17` 그대로면 폭을 다 먹는다.
- * 여섯 자리는 주민번호 앞자리와 같은 모양이라 한국어 사용자는 바로 읽고, 정확한 값은
- * 눌러서 여는 다이얼로그에 그대로 있다. **형식이 다르면 손대지 않는다.**
- */
-private fun compactBirthDate(raw: String): String {
-    val trimmed = raw.trim()
-    val looksLikeIsoDate = trimmed.length == 10 && trimmed[4] == '-' && trimmed[7] == '-' &&
-        trimmed.filter { it != '-' }.all { it.isDigit() }
-    return if (looksLikeIsoDate) trimmed.substring(2).replace("-", "") else trimmed
 }
 
 internal fun quietWindowLabel(context: Context, window: FamilyAlarmQuietWindow): String =

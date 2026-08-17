@@ -206,15 +206,20 @@ struct SettingsView: View {
         return "\(HolidayCountryFlag.emoji(for: code)) \(HolidayStore.localizedCountryName(code))"
     }
 
+    /// ⚠ **나라를 붙이지 말 것**(2026-08-17 통일). 저장은 나라+도시 둘 다 하지만(서버가
+    /// 동명 도시를 가르는 단서), 보여주는 것은 도시뿐이다 — 앱의 다른 자리가 전부 도시로
+    /// 말한다(`날씨 · 서울`). 안드로이드 `weatherLocationSettingsLabel` 과 같다.
     private var weatherLocationLabel: String {
-        promptPreferences.weatherReady
-            ? "\(promptPreferences.weatherCountry) \(promptPreferences.weatherCity)"
-            : "미설정"
+        promptPreferences.weatherReady ? promptPreferences.weatherCity : "미설정"
     }
 
+    /// ⚠ **'설정됨' 으로 줄이지도, 태어난 시각까지 넣지도 말 것**(2026-08-17 정리).
+    /// 이 행은 '넣었나' 와 '제대로 넣었나' 둘 다 답해야 하는데, 셋을 다 넣으면 행이 넘쳐
+    /// 값이 잘린다. 시각은 눌러서 여는 화면에 그대로 있다.
+    /// 안드로이드 `fortuneInfoSettingsLabel` 과 같은 구성이다.
     private var fortuneInfoLabel: String {
         promptPreferences.fortuneReady
-            ? [promptPreferences.fortuneGender, promptPreferences.fortuneBirthDate, promptPreferences.fortuneBirthTime].joined(separator: " · ")
+            ? [promptPreferences.fortuneGender, promptPreferences.fortuneBirthDate].joined(separator: " · ")
             : "미설정"
     }
 
