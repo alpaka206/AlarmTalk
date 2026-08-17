@@ -19,14 +19,6 @@ enum AlarmTalkThemeMode: String, CaseIterable, Identifiable {
         }
     }
 
-    var subtitle: String {
-        switch self {
-        case .system: return "휴대폰 설정을 따라가요."
-        case .light: return "낮에도 선명한 밝은 화면이에요."
-        case .dark: return "밤에 보기 편한 어두운 화면이에요."
-        }
-    }
-
     var pickerTitle: String {
         switch self {
         case .system: return "시스템"

@@ -287,19 +287,19 @@ internal fun MenuTabPanel(
             val modes = listOf(ThemeMode.System, ThemeMode.Light, ThemeMode.Dark)
             WakerSheetOptionGroup {
                 modes.forEachIndexed { index, mode ->
-                    // ⚠ **아이콘·설명을 빼지 말 것.** iOS 화면 테마 시트는 행마다
-                    // 아이콘 + 짧은 제목 + 설명 3요소다(`Views/Settings/SettingsView.swift`
-                    // 의 `ThemeModePickerSheet`). 안드로이드는 제목 한 줄뿐이라 같은 모달이
-                    // 두 앱에서 다르게 보였다(2026-08-10 요청으로 iOS 를 원본 삼아 맞춘다).
-                    // `WakerSheetOptionRow` 는 원래부터 icon·description 을 받는데
-                    // **넘기는 호출자가 하나도 없었다.**
+                    // 행은 **아이콘 + 제목** 둘이다.
+                    // ⚠ **설명을 되살리지 말 것**(2026-08-17 지시 "설명이 꼭 있어야 할까").
+                    // 세 줄 다 라벨과 아이콘이 이미 말한 것을 되풀이했다 — "시스템 설정과
+                    // 같이" 밑의 "휴대폰 설정을 따라가요." 는 같은 말이고, 해·달 아이콘
+                    // 옆의 "낮에도 선명한/밤에 보기 편한" 은 **사용자가 왜 그걸 고르는지를
+                    // 앱이 넘겨짚는 문장**이다(늘 어둡게 쓰는 사람이 많다).
+                    // 아이콘·제목 구성은 iOS 와 계속 같다 — 거기서도 함께 지웠다.
                     WakerSheetOptionRow(
                         icon = themeModeIcon(mode),
                         // iOS 와 같이 **맨몸 아이콘 + 끝까지 가는 구분선**이다(배지 없음).
                         iconBadged = false,
                         dividerInset = false,
                         title = themeModeShortLabel(context, mode),
-                        description = themeModeDescription(context, mode),
                         selected = themeMode == mode,
                         onClick = {
                             onChangeTheme(mode)
@@ -378,12 +378,6 @@ internal fun themeModeShortLabel(context: android.content.Context, mode: ThemeMo
     ThemeMode.System -> context.getString(R.string.misc2_theme_mode_system_short)
     ThemeMode.Light -> context.getString(R.string.misc2_theme_mode_light_short)
     ThemeMode.Dark -> context.getString(R.string.misc2_theme_mode_dark_short)
-}
-
-internal fun themeModeDescription(context: android.content.Context, mode: ThemeMode): String = when (mode) {
-    ThemeMode.System -> context.getString(R.string.misc2_theme_mode_system_desc)
-    ThemeMode.Light -> context.getString(R.string.misc2_theme_mode_light_desc)
-    ThemeMode.Dark -> context.getString(R.string.misc2_theme_mode_dark_desc)
 }
 
 /// iOS SF Symbol 대응 — `circle.lefthalf.filled` / `sun.max.fill` / `moon.fill`.

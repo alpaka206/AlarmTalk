@@ -107,7 +107,6 @@ internal fun wakerOutlinedTextFieldColors(): TextFieldColors =
         unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
-@Composable
 /**
  * 채움 버튼 색 — **비활성일 때 글자가 읽히도록** 한다.
  *
@@ -126,6 +125,7 @@ internal fun wakerButtonColors() =
         disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
+@Composable
 internal fun wakerOutlinedButtonColors() =
     ButtonDefaults.outlinedButtonColors(
         contentColor = MaterialTheme.colorScheme.onSurface,

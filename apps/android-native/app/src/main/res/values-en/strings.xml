@@ -876,9 +876,6 @@ Pass code: %1$s
     <string name="misc2_theme_mode_system_short">System</string>
     <string name="misc2_theme_mode_light_short">Light</string>
     <string name="misc2_theme_mode_dark_short">Dark</string>
-    <string name="misc2_theme_mode_system_desc">Follows your phone\'s setting.</string>
-    <string name="misc2_theme_mode_light_desc">A bright screen that stays crisp in daylight.</string>
-    <string name="misc2_theme_mode_dark_desc">A dark screen that\'s easy on the eyes at night.</string>
     <string name="common_back">Back</string>
     <string name="downgrade_notice_free_title">You\'re on the free pass now</string>
     <string name="downgrade_notice_free_message">%1$d voice alarm(s) now use the default sound. Subscribe again within 3 days to get the voices back — after that they are deleted permanently.</string>

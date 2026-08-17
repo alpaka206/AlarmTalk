@@ -341,14 +341,12 @@ struct ThemeModePickerSheet: View {
                     .font(.title3)
                     .foregroundStyle(AlarmTalkTheme.primary)
                     .frame(width: 32)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(mode.pickerTitle)
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(AlarmTalkTheme.text)
-                    Text(mode.subtitle)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
+                // ⚠ **설명 줄을 되살리지 말 것**(2026-08-17 지시). 아이콘·제목이 이미
+                // 말한 것을 되풀이했고, "밤에 보기 편한" 같은 문장은 사용자가 왜 그걸
+                // 고르는지를 앱이 넘겨짚는다. 안드로이드에서도 함께 지웠다.
+                Text(mode.pickerTitle)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(AlarmTalkTheme.text)
             }
         }
     }
