@@ -324,6 +324,19 @@ private val WakerAlertContainer = Color(0xFF141A2B)
 private val WakerAlertButtonFill = Color(0xFF2A2F3A)
 
 /**
+ * 기본 액션의 채움 — **아이폰과 같은 쨍한 파랑**(iOS 시스템 블루 #0A84FF)에 흰 글자.
+ *
+ * ⚠ **테마 `primary` 로 되돌리지 말 것**(2026-08-17 지시 "아이폰 쪽이 더 마음에 든다").
+ * 다크 테마의 `primary` 는 **하늘색(#A6D2FF)** 이고 그 위 글자는 진남색이라, 같은 알럿이
+ * 아이폰에서는 파란 버튼에 흰 글자인데 안드로이드에서는 하늘색 버튼에 검은 글자였다.
+ * 알럿은 **플랫폼 알럿을 흉내 내는 껍데기**라(이 파일의 존재 이유) 여기서는 브랜드
+ * 색보다 그 규격을 따른다 — 화면 본문의 채움 버튼은 계속 `primary` 다.
+ *
+ * 흰 글자 대비 3.65:1 — 알럿 액션은 17sp SemiBold(큰 글자)라 기준 3:1 을 넘는다.
+ */
+private val WakerAlertAccent = Color(0xFF0A84FF)
+
+/**
  * 알럿 글자 블록의 좌우 여백 — **30dp**(2026-08-11 iOS 실측).
  *
  * ⚠ **20 으로 되돌리지 말 것.** 20 이면 같은 문장이 아이폰보다 넓게 퍼져 줄바꿈 위치가
@@ -414,14 +427,14 @@ private fun IosAlertButton(
     val filled = action.emphasized && !action.destructive
     val contentColor = when {
         action.destructive -> scheme.error
-        filled -> scheme.onPrimary
+        filled -> Color.White
         else -> scheme.onSurface
     }
     Box(
         modifier = modifier
             // 높이 48 의 캡슐(반경 24) — 실측값이다.
             .clip(WakerPillShape)
-            .background(if (filled) scheme.primary else WakerAlertButtonFill)
+            .background(if (filled) WakerAlertAccent else WakerAlertButtonFill)
             .clickable(enabled = action.enabled, onClick = action.onClick),
         contentAlignment = Alignment.Center,
     ) {
