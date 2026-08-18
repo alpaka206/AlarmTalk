@@ -18,6 +18,10 @@ struct ClipPreparationView: View {
     /// 닫기(백그라운드에서 계속 받기). nil 이면 닫기 줄을 그리지 않는다.
     var onDismiss: (() -> Void)?
 
+    /// ⚠ **관문이 막은 그 목소리.** 넘기지 않으면 공유받은 목소리가 대상에서 빠져
+    /// "준비됐어요 100%" 만 보이고, 돌아가면 관문이 또 막는다(빠져나갈 수 없는 고리).
+    var targetVoiceID: String?
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
@@ -31,9 +35,12 @@ struct ClipPreparationView: View {
                     .contentTransition(.numericText())
                     .animation(.easeInOut(duration: 0.2), value: readiness.percent)
 
-                ProgressView(value: Double(readiness.percent), total: 100)
-                    .tint(theme.palette.primary)
-                    .frame(maxWidth: 280)
+                // 소유자를 기다리는 중에는 진행률 자체가 내 목소리들의 것이라 뜻이 없다.
+                if !awaitingOwner {
+                    ProgressView(value: Double(readiness.percent), total: 100)
+                        .tint(theme.palette.primary)
+                        .frame(maxWidth: 280)
+                }
 
                 Text(statusLine)
                     .font(theme.typography.bodyMedium)
@@ -46,7 +53,7 @@ struct ClipPreparationView: View {
             Spacer(minLength: 0)
 
             VStack(spacing: 12) {
-                if !readiness.failedVoiceIDs.isEmpty {
+                if !readiness.failedVoiceIDs.isEmpty, !awaitingOwner {
                     // 서버가 만들다 실패한 목소리 — 다시 큐에 올린다. 다운로드 실패는
                     // 선다운로드가 다음 회차에 부족분만 다시 받으므로 버튼이 필요 없다.
                     Button("다시 시도하기") {
@@ -87,12 +94,19 @@ struct ClipPreparationView: View {
     }
 
     private var headline: String {
-        readiness.isReady ? "준비됐어요" : "\(readiness.percent)%"
+        // ⚠ 소유자를 기다리는 중에 퍼센트를 보여 주지 말 것 — 그 값은 내 목소리들의
+        // 진행률이라 100% 가 되고, 사용자는 끝난 줄 알고 돌아갔다가 또 막힌다.
+        if awaitingOwner { return "준비 중이에요" }
+        return readiness.isReady ? "준비됐어요" : "\(readiness.percent)%"
     }
 
     /// ⚠ **무엇을 기다리는지 말한다.** 퍼센트만 있으면 멈춘 것처럼 보인다 —
     /// 특히 서버 렌더 구간은 다운로드와 달리 몇 분이 걸릴 수 있다.
     private var statusLine: String {
+        if awaitingOwner {
+            // 받는 사람이 할 수 있는 일이 없다 — '다시 시도' 도 소유자 큐라 못 누른다.
+            return "보낸 사람 쪽에서 이 목소리를 만들고 있어요. 다 되면 알람에서 고를 수 있어요."
+        }
         if readiness.isReady {
             return "이제 오프라인에서도 목소리로 울려요."
         }
@@ -108,8 +122,15 @@ struct ClipPreparationView: View {
     private func refresh() async {
         await readiness.refresh(
             session: auth.session,
-            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs
+            ownedVoiceProfileIDs: voiceStudio.ownedVoiceProfileIDs,
+            selectedVoiceProfileID: targetVoiceID
         )
+    }
+
+    /// 공유받은 목소리인데 소유자 쪽 생성이 아직인가.
+    private var awaitingOwner: Bool {
+        guard let targetVoiceID else { return false }
+        return readiness.awaitingOwnerVoiceIDs.contains(targetVoiceID)
     }
 }
 

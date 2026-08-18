@@ -457,6 +457,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var clipReadiness by mutableStateOf<List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress>>(emptyList())
         internal set
 
+    /**
+     * 공유받은 목소리인데 **소유자 쪽 생성이 아직 안 끝난** 것.
+     *
+     * 받는 사람이 할 수 있는 일이 없으므로 진행률에 넣지 않는다(넣으면 영원히 안 차는
+     * 몫이 되고, '다시 시도' 도 소유자 큐라 누를 수 없다). 준비 화면이 다른 문구로 말한다.
+     */
+    var clipReadinessAwaitingOwner by mutableStateOf<Set<String>>(emptySet())
+        internal set
+
     var socialBusy by mutableStateOf(false)
         internal set
 

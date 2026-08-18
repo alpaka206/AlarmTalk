@@ -21,7 +21,13 @@ import kotlinx.coroutines.withContext
  * (오프라인에서 내일 알람을 못 맞추면 안 된다 — docs/spec/voice-and-message.md).
  * 막는 것은 목소리 등록과, 아직 못 받은 **그 목소리를 고르는 것**뿐이다.
  */
-internal suspend fun MainViewModel.refreshClipReadiness() {
+/**
+ * @param selectedVoiceProfileId **관문이 막은 바로 그 목소리.** 공유받은 목소리는 선다운로드
+ *   대상이 아니라 고르는 순간 받으므로, 이걸 안 넣으면 준비 화면이 "준비됐어요 100%" 를
+ *   보여 주고 돌아가면 관문이 또 막는다 — **빠져나갈 수 없는 고리**가 된다(2026-08-18 확인).
+ *   iOS `ClipReadinessModel.refresh(session:ownedVoiceProfileIDs:selectedVoiceProfileID:)` 와 같다.
+ */
+internal suspend fun MainViewModel.refreshClipReadiness(selectedVoiceProfileId: String? = null) {
     val session = authSession ?: return
     val auth = AlarmTalkApiClient.bearer(session.token)
 
@@ -57,9 +63,26 @@ internal suspend fun MainViewModel.refreshClipReadiness() {
     val categoriesByVoice = clips.groupBy { it.voiceProfileId }
         .mapValues { (_, list) -> list.mapNotNull { it.category }.distinct().sorted() }
 
+    // 관문이 막은 목소리를 대상에 넣는다(위 selectedVoiceProfileId 주석의 고리).
+    val extraTargets = mutableListOf<String>()
+    val awaitingOwner = mutableSetOf<String>()
+    if (selectedVoiceProfileId != null &&
+        !isSystemVoiceId(selectedVoiceProfileId) &&
+        selectedVoiceProfileId !in owned
+    ) {
+        // 공유받은 목소리다. 소유자가 아직 안 만들었으면 매니페스트에 클립이 하나도 없고
+        // **받는 사람이 할 수 있는 일이 없다.**
+        if (clips.any { it.voiceProfileId == selectedVoiceProfileId }) {
+            extraTargets += selectedVoiceProfileId
+        } else {
+            awaitingOwner += selectedVoiceProfileId
+        }
+    }
+    clipReadinessAwaitingOwner = awaitingOwner
+
     clipReadiness = withContext(Dispatchers.IO) {
         ClipReadiness.evaluate(
-            voiceProfileIds = systemVoiceIds + owned.sorted(),
+            voiceProfileIds = systemVoiceIds + owned.sorted() + extraTargets,
             clips = clips,
             expectedVariants = expectedVariants,
             isSystemVoice = { isSystemVoiceId(it) },
@@ -98,6 +121,6 @@ internal fun MainViewModel.retryFailedClipRendersAsync() {
 }
 
 /** 화면에서 부르는 비-suspend 진입점. */
-internal fun MainViewModel.refreshClipReadinessAsync() {
-    viewModelScope.launch { refreshClipReadiness() }
+internal fun MainViewModel.refreshClipReadinessAsync(selectedVoiceProfileId: String? = null) {
+    viewModelScope.launch { refreshClipReadiness(selectedVoiceProfileId) }
 }

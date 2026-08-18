@@ -105,7 +105,9 @@ struct AlarmEditorSheet: View {
 
     @ViewBuilder
     private var preparationSheet: some View {
-        ClipPreparationView(onDismiss: { preparationVoiceID = nil })
+        // ⚠ `targetVoiceID` 를 반드시 넘긴다 — 안 넘기면 공유받은 목소리가 준비 대상에서
+        // 빠져 "준비됐어요 100%" 만 보이고, 돌아가면 관문이 또 막는다(2026-08-18).
+        ClipPreparationView(onDismiss: { preparationVoiceID = nil }, targetVoiceID: preparationVoiceID)
             .environmentObject(auth)
             .environmentObject(voiceStudio)
     }
@@ -1336,22 +1338,45 @@ struct AlarmEditorSheet: View {
 
     func prepareSelectedBucketClipIfNeeded() async -> Bool {
         guard let bucketCategory = bucketCategoryForSave() else { return true }
-        // 이미 이 테마로 준비돼 있으면 다시 받지 않는다.
-        if let prepared = voiceStudio.preparedAlarm,
-           prepared.audioCacheKey.hasPrefix("stock_"),
-           stockClips(forCategory: bucketCategory).contains(where: { $0.messageId == prepared.messageID }) {
-            return true
-        }
-        guard let clip = stockClips(forCategory: bucketCategory).first else {
+        let clips = stockClips(forCategory: bucketCategory)
+        guard let firstClip = clips.first else {
             voiceStudio.statusMessage = "이 테마의 문구를 아직 받지 못했어요. 잠시 뒤에 다시 시도해 주세요."
             return false
         }
-        // 편집기에서는 첫 클립을 쓴다. **회전은 저장된 뒤 울릴 때** 일어난다.
-        guard let prepared = await voiceStudio.prepareStockClip(clip, session: auth.session) else {
+
+        // ⚠ **세트를 통째로 받는다**(2026-08-18). 예전에는 `.first` **하나만** 받았는데,
+        // 저장은 `bucketClipKeys(forCategory:)` 로 **전체 키 목록**을 행에 박았다. 그래서
+        // 울릴 때 `AlarmSoundResolver.rotatedBucketClipKey` 가 고른 자리의 파일이 없어
+        // `keys.first { cached }` 로 떨어졌고 — **언제나 variant 0** 이 나갔다.
+        // 비 오는 날에 맑음 문구("하늘 한 번 올려다보세요")가 울린 원인이다.
+        // 안드로이드 `bindStockBucketClips` 는 처음부터 `clips.forEach` 로 전부 받는다.
+        //
+        // 부분 세트 금지 규약이 **저장 판정(`hasCompleteBucket`)에만 있고 다운로드에는
+        // 없었던 것**이 원인이라, 하나라도 못 받으면 저장을 막는다.
+        // 이미 받아 둔 것은 `prepareStockClip` 이 캐시 우선이라 값이 거의 들지 않는다.
+
+        // 이미 이 테마로 준비돼 있으면 그 클립을 그대로 쓴다(고른 것을 바꾸지 않는다).
+        // 없으면 첫 클립. **회전은 저장된 뒤 울릴 때** 일어난다.
+        let boundClip: StockClip = {
+            if let prepared = voiceStudio.preparedAlarm,
+               prepared.audioCacheKey.hasPrefix("stock_"),
+               let match = clips.first(where: { $0.messageId == prepared.messageID }) {
+                return match
+            }
+            return firstClip
+        }()
+
+        // ⚠ 묶을 클립을 **마지막에** 준비한다 — `prepareStockClip` 이 `preparedAlarm` 을
+        // 갈아 끼우므로 순서가 곧 결과다.
+        for clip in clips where clip.id != boundClip.id {
+            guard await voiceStudio.prepareStockClip(clip, session: auth.session) != nil else {
+                return false
+            }
+        }
+        guard await voiceStudio.prepareStockClip(boundClip, session: auth.session) != nil else {
             return false
         }
-        stockSelectedMessageID = clip.id
-        _ = prepared
+        stockSelectedMessageID = boundClip.id
         return true
     }
 

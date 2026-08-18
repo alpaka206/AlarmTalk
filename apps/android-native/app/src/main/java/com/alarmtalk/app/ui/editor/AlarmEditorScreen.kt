@@ -114,6 +114,10 @@ internal fun AlarmEditorScreen(
     clipReadiness: List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress> = emptyList(),
     /** 서버 생성이 실패한 목소리를 다시 큐에 올린다. */
     onRetryClipRenders: () -> Unit = {},
+    /** 공유받은 목소리인데 소유자 쪽 생성이 아직인 것(진행률에 넣지 않고 다른 문구로 말한다). */
+    clipReadinessAwaitingOwner: Set<String> = emptySet(),
+    /** 관문이 막은 목소리를 준비 대상에 넣어 다시 세라고 알린다. */
+    onPrepareClipsFor: (String) -> Unit = {},
     // 새 알람이 이어받을 '직전 선택' 세 축. 셋 다 계정별로 저장되고, 저장에 성공한 알람에서만
     // 기록된다(MainViewModel.rememberVoiceUsed / rememberMessageChoiceUsed).
     // 기존 알람을 열 때는 어느 것도 쓰지 않는다 — 열기만 해도 설정이 바뀌면 안 된다.
@@ -245,7 +249,10 @@ internal fun AlarmEditorScreen(
     var previewPreparing by remember { mutableStateOf(false) }
 
     /** 아직 못 받은 목소리를 골랐을 때 띄우는 준비 화면. */
-    var showClipPreparation by remember { mutableStateOf(false) }
+    // ⚠ **어느 목소리 때문에 열렸는지 기억한다.** 예전에는 Boolean 이라 관문이 넘긴 id 를
+    // 버렸고, 공유받은 목소리가 준비 대상에서 빠져 "준비됐어요 100%" 만 보였다 —
+    // 돌아가면 관문이 또 막아 **빠져나갈 수 없는 고리**였다(2026-08-18).
+    var preparationVoiceId by remember { mutableStateOf<String?>(null) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     // 목소리 선택 시트의 '들어보기' — 온보딩/목소리 탭과 같은 재생기를 그대로 쓴다
@@ -1402,7 +1409,11 @@ internal fun AlarmEditorScreen(
                                     }
                                 }
                             },
-                            onOpenClipPreparation = { showClipPreparation = true },
+                            onOpenClipPreparation = { profileId ->
+                                preparationVoiceId = profileId
+                                // 그 목소리를 대상에 넣어 다시 센다(위 주석의 고리).
+                                onPrepareClipsFor(profileId)
+                            },
                             voiceEnabled = true,
                             onVoiceEnabledChange = { on ->
                                 if (voicePlanLocked) showVoicePlanGate()
@@ -1796,16 +1807,17 @@ internal fun AlarmEditorScreen(
     // 아직 못 받은 목소리를 골랐을 때 — 준비 화면을 띄운다.
     // ⚠ 알람 만들기를 막지 않는다. 닫으면 그대로 편집을 이어갈 수 있고, 고른 목소리는
     // 적용되지 않은 채였으므로 예전 목소리가 유지된다.
-    if (showClipPreparation) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = { showClipPreparation = false }) {
+    preparationVoiceId?.let { targetVoiceId ->
+        androidx.compose.ui.window.Dialog(onDismissRequest = { preparationVoiceId = null }) {
             androidx.compose.material3.Surface(
                 shape = WakerDialogShape,
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 com.alarmtalk.app.ui.voices.ClipPreparationScreen(
                     voices = clipReadiness,
+                    awaitingOwner = targetVoiceId in clipReadinessAwaitingOwner,
                     onRetry = onRetryClipRenders,
-                    onDismiss = { showClipPreparation = false },
+                    onDismiss = { preparationVoiceId = null },
                     modifier = Modifier.padding(vertical = 32.dp),
                 )
             }

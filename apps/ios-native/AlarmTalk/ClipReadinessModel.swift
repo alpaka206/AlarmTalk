@@ -13,6 +13,9 @@ final class ClipReadinessModel: ObservableObject {
 
     @Published private(set) var voices: [ClipReadiness.VoiceProgress] = []
     @Published private(set) var isRefreshing = false
+    /// 공유받은 목소리인데 **소유자 쪽 생성이 아직 안 끝난** 것. 받는 사람이 할 수 있는
+    /// 일이 없으므로 진행률에 넣지 않고(영원히 안 차는 몫이 된다) 화면이 다른 문구로 말한다.
+    @Published private(set) var awaitingOwnerVoiceIDs: Set<String> = []
 
     var percent: Int { ClipReadiness.percent(voices) }
     var isReady: Bool { ClipReadiness.isReady(voices) }
@@ -29,9 +32,17 @@ final class ClipReadinessModel: ObservableObject {
 
     /// 매니페스트와 렌더 상태를 다시 읽어 준비도를 계산한다.
     ///
-    /// - Parameter ownedVoiceProfileIDs: 내가 등록한 목소리. **공유받은 목소리는 넣지 않는다** —
-    ///   선다운로드 대상이 아니고, 알람에서 고르는 순간 따로 받는다.
-    func refresh(session: AuthSession?, ownedVoiceProfileIDs: Set<String>) async {
+    /// - Parameters:
+    ///   - ownedVoiceProfileIDs: 내가 등록한 목소리. 선다운로드 대상이다.
+    ///   - selectedVoiceProfileID: **관문이 막은 바로 그 목소리.** 공유받은 목소리는
+    ///     선다운로드 대상이 아니라 고르는 순간 받으므로, 이걸 안 넣으면 준비 화면이
+    ///     "준비됐어요 100%" 를 보여 주고 돌아가면 관문이 또 막는다 — **빠져나갈 수 없는
+    ///     고리**가 된다(2026-08-18 확인). 넘기는 쪽은 `ClipPreparationView.targetVoiceID`.
+    func refresh(
+        session: AuthSession?,
+        ownedVoiceProfileIDs: Set<String>,
+        selectedVoiceProfileID: String? = nil
+    ) async {
         guard let token = session?.token, !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
@@ -58,7 +69,25 @@ final class ClipReadinessModel: ObservableObject {
         }
 
         let systemVoiceIDs = Set(manifest.clips.map { $0.voiceProfileId }.filter { isSystemVoiceId($0) })
-        let targets = systemVoiceIDs.sorted() + ownedVoiceProfileIDs.sorted()
+
+        // 관문이 막은 목소리를 대상에 넣는다(위 selectedVoiceProfileID 주석의 고리).
+        var extraTargets: [String] = []
+        var awaitingOwner: Set<String> = []
+        if let selected = selectedVoiceProfileID,
+           !isSystemVoiceId(selected),
+           !ownedVoiceProfileIDs.contains(selected) {
+            // 공유받은 목소리다. 소유자가 아직 안 만들었으면 매니페스트에 클립이 하나도
+            // 없고 **받는 사람이 할 수 있는 일이 없다** — 진행률에 넣으면 영원히 안 차는
+            // 몫이 되고, 재시도 버튼도 소유자 큐라 누를 수 없다.
+            if manifest.clips.contains(where: { $0.voiceProfileId == selected }) {
+                extraTargets.append(selected)
+            } else {
+                awaitingOwner.insert(selected)
+            }
+        }
+        awaitingOwnerVoiceIDs = awaitingOwner
+
+        let targets = systemVoiceIDs.sorted() + ownedVoiceProfileIDs.sorted() + extraTargets
         // 카테고리도 매니페스트에서 나온다 — 앱에 목록을 박아 두면 운영이 카테고리를
         // 추가했을 때 그 몫이 진행률에서 통째로 빠진다.
         let categoriesByVoice = Dictionary(grouping: manifest.clips, by: { $0.voiceProfileId })
