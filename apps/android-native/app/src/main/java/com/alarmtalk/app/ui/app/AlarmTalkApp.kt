@@ -530,6 +530,10 @@ internal fun AlarmTalkApp(
         viewModel.preloadVoiceProfiles()
         viewModel.loadStockClips()
         viewModel.prefetchStockClips()
+        // 준비도(생성+다운로드)를 함께 센다 — 편집기 관문과 준비 화면이 이 값을 본다.
+        // ⚠ **매번 다시 센다.** '한 번 받았다' 를 기록해 건너뛰면 캐시 삭제·기본 목소리
+        // 추가로 비어도 알아채지 못한다(docs/spec/voice-and-message.md).
+        viewModel.refreshClipReadinessAsync()
         viewModel.preloadSocial()
         viewModel.preloadBilling()
     }
@@ -1260,6 +1264,8 @@ internal fun AlarmTalkApp(
                       voiceProfileBusy = voiceProfileBusy,
                       stockClips = viewModel.stockClips,
                           expectedVariants = viewModel.expectedVariants,
+                          clipReadiness = viewModel.clipReadiness,
+                          onRetryClipRenders = viewModel::retryFailedClipRendersAsync,
                       lastUsedVoiceId = viewModel.lastUsedVoiceId,
                       lastMessageContext = lastMessageContext,
                       lastFreeBucket = lastFreeBucket,
@@ -1311,6 +1317,8 @@ internal fun AlarmTalkApp(
                           voiceProfileBusy = voiceProfileBusy,
                           stockClips = viewModel.stockClips,
                           expectedVariants = viewModel.expectedVariants,
+                          clipReadiness = viewModel.clipReadiness,
+                          onRetryClipRenders = viewModel::retryFailedClipRendersAsync,
                           lastUsedVoiceId = viewModel.lastUsedVoiceId,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },

@@ -6,7 +6,9 @@ import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.ClipReadiness
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -89,3 +91,13 @@ internal suspend fun MainViewModel.retryFailedClipRenders() {
 
 /** 기본 목소리가 알람에 쓰는 테마. `StockClipPrefetchWorker.FREE_BUCKET_CATEGORIES` 와 같아야 한다. */
 private val FREE_BUCKET_CATEGORIES = setOf("weather", "medication")
+
+/** 화면에서 부르는 비-suspend 진입점. */
+internal fun MainViewModel.retryFailedClipRendersAsync() {
+    viewModelScope.launch { retryFailedClipRenders() }
+}
+
+/** 화면에서 부르는 비-suspend 진입점. */
+internal fun MainViewModel.refreshClipReadinessAsync() {
+    viewModelScope.launch { refreshClipReadiness() }
+}
