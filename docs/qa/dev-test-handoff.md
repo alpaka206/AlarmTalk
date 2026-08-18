@@ -466,12 +466,13 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 1. ~~**P1 #2**~~ — **끝났다(2026-08-18).** 아래 「P1 #2 — 관문 세 자리」 참조.
 2. ~~iOS 편집기 하단 문구 정리~~ — **끝났다(2026-08-18).** 아래 「iOS 저장 사유 문구」 참조.
 3. ~~iOS `statusMessage` 유출 차단~~ — **끝났다(2026-08-18).** 같은 절.
-4. **5단계 앱 쪽 제거** ← **여기부터.** 위 5절의 결정(프리셋 + 직접 입력만)으로 미결은
-   닫혔지만 **파생 결정 하나가 남아 있다**: 가족 알람을 프리셋으로 보내려면
-   `toRemoteAlarmWriteRequest` 가 `bucketId` 를 실어야 하고, 날씨 variant 를 **보내는 사람
-   위치로 고를지 받는 사람 위치로 고를지** 정해야 한다. 그리고 옛 `voiceRandomPrompt = true`
-   행을 테마 클립으로 재바인딩하는 마이그레이션을 **같이** 내야 한다 — 안 내면 그 알람들이
-   매일 같은 문장이 되고, 시각만 바꾸려 열어도 영영 못 고친다.
+4. **5단계 앱 쪽 제거** ← **여기부터.** 파생 결정은 **닫혔다(2026-08-18 지시)**:
+   가족 알람의 날씨 variant 는 **받는 사람 위치**로 고른다 —
+   규칙 전문은 [`docs/spec/family-alarm.md`](../spec/family-alarm.md) 4절.
+   남은 일은 (a) `toRemoteAlarmWriteRequest` 에 `bucketId` 싣기, (b) 옛
+   `voiceRandomPrompt = true` 행을 테마 클립으로 재바인딩하는 마이그레이션 — 안 내면 그
+   알람들이 매일 같은 문장이 되고 시각만 바꾸려 열어도 영영 못 고친다, (c) 양 앱의 라이브
+   생성 경로 제거.
 5. 백엔드 정리 — 스토어 게재 후.
 
 조사 원문: `w1uv7w469.output`(5단계 전수 범위 + P1 8건), `w30oi7j1z.output`(편집기 문구·iOS 구조),
