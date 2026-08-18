@@ -1108,6 +1108,24 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 안드로이드도 같은 이유로 `familyVoicesLoadedFresh`·`voiceProfilesLoadedFresh` 를 본다.
     ///
     /// - Returns: 강등한 알람 수.
+#if DEBUG
+    /// **테스트 전용 seam** — "서버가 확정해 준 목록을 받은" 상태를 만든다.
+    ///
+    /// ⚠ 이게 없으면 범위 테스트(소유자·origin·기본목소리)가 전부 **첫 가드에서** 통과해
+    /// 아무것도 지키지 못한다 — 필터를 통째로 지워도 초록이다(2026-08-18 Codex #697 P2).
+    func __setAccessibleVoicesForTests(
+        profileIDs: [String] = [],
+        familyVoiceIDs: [String] = []
+    ) {
+        // 목록 자체는 id 만 쓰므로 여기서는 권위만 세우고, 접근 가능한 id 를 따로 둔다.
+        testAccessibleVoiceIDsOverride = Set(profileIDs + familyVoiceIDs)
+        accessibleVoicesAreAuthoritative = true
+    }
+
+    /// 위 seam 이 세운 접근 가능 id. 릴리스 빌드에는 존재하지 않는다.
+    private var testAccessibleVoiceIDsOverride: Set<String>?
+#endif
+
     /// - Parameter ownerUserId: **이 목록을 가져온 계정.** 반드시 넘긴다 —
     ///   한 기기에서 계정을 바꾸면 B 의 목록에는 A 의 목소리 id 가 당연히 없으므로,
     ///   소유자를 안 보면 **A 의 알람을 되돌릴 수 없게 부순다**(저장소의 다른 파괴 경로
@@ -1119,7 +1137,10 @@ final class VoiceStudioViewModel: ObservableObject {
         ownerUserId: String?
     ) -> Int {
         guard accessibleVoicesAreAuthoritative, let owner = ownerUserId?.nilIfBlank else { return 0 }
-        let accessible = Set(profiles.map(\.id) + familyVoices.map(\.id))
+        var accessible = Set(profiles.map(\.id) + familyVoices.map(\.id))
+        #if DEBUG
+        if let testAccessibleVoiceIDsOverride { accessible = testAccessibleVoiceIDsOverride }
+        #endif
         // ⚠ **id 가 아니라 '행' 을 고른다.** 예전에는 잃은 profileId 를 모아
         // `degradeAlarms(usingVoiceProfileIDs:)` 에 넘겼는데, 그 경로는 id 로 다시 훑어
         // **모든 origin·모든 소유자**를 잡는다 — 같은 공유 목소리를 쓰는 **받은 알람까지**

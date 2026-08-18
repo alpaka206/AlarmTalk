@@ -95,4 +95,100 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
             0
         )
     }
+
+    // MARK: - 권위가 선 상태에서의 **범위** 검증
+    //
+    // ⚠ 아래 테스트들이 `__setAccessibleVoicesForTests` 로 권위를 먼저 세우는 이유:
+    // 그러지 않으면 전부 첫 가드에서 통과해 **필터를 통째로 지워도 초록**이다
+    // (2026-08-18 Codex #697 P2 — 실제로 그런 테스트였다).
+
+    /// 기준선 — 접근권을 잃은 내 알람은 실제로 내려간다. 이게 참이어야 아래 '안 내린다'
+    /// 들이 의미를 갖는다.
+    func test_접근권을_잃은_내_알람은_내려간다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "mine", voiceProfileId: "clone-1"))
+        let voice = VoiceStudioViewModel()
+        voice.__setAccessibleVoicesForTests()   // 접근 가능한 목소리가 하나도 없다(확정)
+
+        let degraded = voice.reconcileInaccessibleVoiceAlarms(
+            alarmStore: store, audioCache: nil, ownerUserId: "owner-1"
+        )
+
+        XCTAssertEqual(degraded, 1)
+        XCTAssertEqual(store.record(id: "mine")?.playMode, AlarmPlayMode.alarmOnly.rawValue)
+        XCTAssertNil(store.record(id: "mine")?.voiceProfileId)
+    }
+
+    /// 아직 접근 가능한 목소리는 건드리지 않는다.
+    func test_접근_가능한_목소리는_그대로다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "keep", voiceProfileId: "clone-1"))
+        let voice = VoiceStudioViewModel()
+        voice.__setAccessibleVoicesForTests(profileIDs: ["clone-1"])
+
+        XCTAssertEqual(
+            voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"),
+            0
+        )
+        XCTAssertEqual(store.record(id: "keep")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
+    }
+
+    /// 받은 알람은 **보낸 사람의** 접근권으로 성립한다 — 같은 목소리를 내 알람도 쓰고
+    /// 있을 때 함께 벗겨지면 안 된다(그게 실제로 났던 사고다).
+    func test_같은_목소리를_쓰는_받은_알람은_남는다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "mine", voiceProfileId: "shared-1"))
+        store.upsert(alarm(id: "recv", voiceProfileId: "shared-1", origin: .receivedRemote, owner: nil))
+        let voice = VoiceStudioViewModel()
+        voice.__setAccessibleVoicesForTests()
+
+        XCTAssertEqual(
+            voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"),
+            1
+        )
+        XCTAssertEqual(store.record(id: "mine")?.playMode, AlarmPlayMode.alarmOnly.rawValue)
+        XCTAssertEqual(store.record(id: "recv")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
+        XCTAssertEqual(store.record(id: "recv")?.voiceProfileId, "shared-1")
+    }
+
+    /// 기본(시스템) 목소리는 목록에 없어도 언제나 쓸 수 있다.
+    func test_기본_목소리는_권위가_있어도_안_내린다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "sys", voiceProfileId: systemVoiceIDPrefix + "000000000101"))
+        let voice = VoiceStudioViewModel()
+        voice.__setAccessibleVoicesForTests()
+
+        XCTAssertEqual(
+            voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"),
+            0
+        )
+        XCTAssertEqual(store.record(id: "sys")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
+    }
+
+    /// 다른 계정 알람은 권위가 있어도 건드리지 않는다.
+    func test_다른_계정의_알람은_권위가_있어도_안_내린다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "other", voiceProfileId: "clone-1", owner: "owner-2"))
+        let voice = VoiceStudioViewModel()
+        voice.__setAccessibleVoicesForTests()
+
+        XCTAssertEqual(
+            voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"),
+            0
+        )
+        XCTAssertEqual(store.record(id: "other")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
+    }
+
+    /// 소유자 미기록(옛 행)은 이 계정 것으로 본다 — 잠금 경로와 같은 관용.
+    func test_소유자_미기록_옛_행은_이_계정_것으로_본다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "legacy", voiceProfileId: "clone-1", owner: nil))
+        let voice = VoiceStudioViewModel()
+        voice.__setAccessibleVoicesForTests()
+
+        XCTAssertEqual(
+            voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"),
+            1
+        )
+    }
 }

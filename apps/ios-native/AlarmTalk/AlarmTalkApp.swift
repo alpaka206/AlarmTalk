@@ -215,7 +215,12 @@ struct AlarmTalkApp: App {
                         PushAppDelegate.currentSession = { auth.session }
                         push.onFamilyAlarm = { await remoteSync.runFullSync() }
                         push.onVoiceChanged = {
-                            await voiceStudio.refresh(session: auth.session)
+                            await voiceStudio.refresh(session: auth.session,
+                                // ⚠ **`force` 없이 부르면 진행 중인 새로고침에 막혀 곧바로
+                                // 돌아온다** — 그러면 아래 강등 판단이 **철회 이전 목록**을
+                                // 근거로 돌아 아무것도 내리지 않고, 원래 새로고침에는
+                                // 강등 콜백이 없어 그대로 예약이 남는다(Codex #697 P1).
+                                force: true)
                             // ⚠ **목록만 갱신하면 알람은 그대로 그 목소리로 울린다.**
                             // 접근권을 잃은 목소리를 쓰는 내 알람을 알람음으로 내리고
                             // 예약을 다시 맞춘다(조회가 실패한 회차에는 스스로 물러선다).

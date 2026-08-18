@@ -210,7 +210,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // `voice_access_revoked` 가 기본 빈 핸들러로 떨어져 `.newData` 만 돌려주고
         // **아무것도 하지 않는다** — 접근권을 잃은 목소리가 계속 예약된 채 울린다.
         deps.push.onVoiceChanged = {
-            await deps.voiceStudio.refresh(session: deps.auth.session)
+            await deps.voiceStudio.refresh(session: deps.auth.session,
+                                // ⚠ **`force` 없이 부르면 진행 중인 새로고침에 막혀 곧바로
+                                // 돌아온다** — 그러면 아래 강등 판단이 **철회 이전 목록**을
+                                // 근거로 돌아 아무것도 내리지 않고, 원래 새로고침에는
+                                // 강등 콜백이 없어 그대로 예약이 남는다(Codex #697 P1).
+                                force: true)
             if deps.voiceStudio.reconcileInaccessibleVoiceAlarms(
                 alarmStore: deps.alarmStore,
                 audioCache: .shared,
