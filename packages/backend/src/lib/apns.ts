@@ -81,8 +81,13 @@ function pemToPkcs8(pem: string): Uint8Array {
  * APNs provider JWT(ES256).
  *
  * ⚠ **토큰을 매 요청 새로 만들지 말 것 — 애플이 429(TooManyProviderTokenUpdates)로 막는다.**
- * 유효기간은 최대 1시간이고 애플 권장은 20~60분 재사용이다. 호출부가 `nowMs` 를 20분
- * 단위로 내려 캐시 키로 쓴다.
+ * 유효기간은 최대 1시간이고 애플 권장은 20~60분 재사용이다.
+ *
+ * ⚠ 이 함수는 **캐시하지 않는다 — 언제나 새로 서명한다.** 재사용은 아래
+ * `getApnsProviderToken` 이 맡는다. 예전에는 이 주석이 "호출부가 `nowMs` 를 20분 단위로
+ * 내려 캐시 키로 쓴다" 고 적혀 있었지만 **그렇게 하는 호출부가 없었다**(2026-08-18
+ * Codex #697 P1). 세 곳 전부 기본값 `Date.now()` 로 불러, 배치마다 `iat` 가 다른 새
+ * 토큰이 나갔다. 규약을 주석에만 적어 두면 이렇게 조용히 깨진다.
  */
 export async function signApnsJwt(config: ApnsConfig, nowMs: number = Date.now()): Promise<string> {
   const now = Math.floor(nowMs / 1000);
@@ -106,6 +111,52 @@ export async function signApnsJwt(config: ApnsConfig, nowMs: number = Date.now()
   return `${data}.${b64url(sig)}`;
 }
 
+/** 애플 권장 재사용 창(20~60분)의 아래쪽. 짧게 잡아 만료 위험을 피한다. */
+const APNS_JWT_REUSE_MS = 20 * 60 * 1000;
+
+type CachedProviderToken = { jwt: string; issuedAtMs: number };
+
+/**
+ * provider 설정별 JWT 캐시. 워커 isolate 가 살아 있는 동안만 유지된다 —
+ * isolate 가 재활용되면 다시 서명하는데, 그건 "매 배치" 보다 훨씬 드물다.
+ *
+ * ⚠ 키에 **개인키 본문까지** 넣는다. `keyId` 만으로는 같은 id 로 키를 갈아 끼운 경우를
+ * 구분하지 못해 죽은 토큰을 계속 내주게 된다. 어차피 설정은 이미 메모리에 있다.
+ */
+const apnsProviderTokens = new Map<string, CachedProviderToken>();
+
+function apnsProviderCacheKey(config: ApnsConfig): string {
+  return [config.teamId, config.keyId, config.bundleId, config.privateKeyPem].join('\u0000');
+}
+
+/**
+ * 재사용 창 안이면 **같은 JWT 를 돌려준다.**
+ *
+ * 애플은 provider 토큰을 자주 바꾸면 `TooManyProviderTokenUpdates` 로 막는다 —
+ * 그러면 멀쩡한 가족 알람·플랜 변경 푸시가 통째로 실패한다.
+ *
+ * `nowMs` 가 캐시 시각보다 **이르면**(시계 역행·테스트가 과거를 넘김) 다시 서명한다 —
+ * 미래에 발급된 토큰을 지금 쓰면 애플이 거절한다.
+ */
+export async function getApnsProviderToken(
+  config: ApnsConfig,
+  nowMs: number = Date.now(),
+): Promise<string> {
+  const key = apnsProviderCacheKey(config);
+  const cached = apnsProviderTokens.get(key);
+  if (cached && nowMs >= cached.issuedAtMs && nowMs - cached.issuedAtMs < APNS_JWT_REUSE_MS) {
+    return cached.jwt;
+  }
+  const jwt = await signApnsJwt(config, nowMs);
+  apnsProviderTokens.set(key, { jwt, issuedAtMs: nowMs });
+  return jwt;
+}
+
+/** 테스트 전용 — isolate 를 새로 띄운 것처럼 만든다. */
+export function __resetApnsProviderTokenCacheForTests(): void {
+  apnsProviderTokens.clear();
+}
+
 /**
  * 알림을 보낸다. 실패해도 **던지지 않고** 결과 배열로 돌려준다 — 한 기기가 실패해도
  * 나머지는 가야 하고, 호출부의 결제·보류 처리가 깨지면 안 된다.
@@ -121,7 +172,8 @@ export async function sendApnsNotifications(
 
   let jwt: string;
   try {
-    jwt = await signApnsJwt(config, nowMs);
+    // ⚠ `signApnsJwt` 를 직접 부르지 말 것 — 배치마다 새 토큰이 나간다(위 주석).
+    jwt = await getApnsProviderToken(config, nowMs);
   } catch {
     // 키가 깨졌다 — 전부 실패로 보고하되 던지지 않는다.
     return messages.map((m) => ({ token: m.token, success: false, reason: 'InvalidProviderToken' }));

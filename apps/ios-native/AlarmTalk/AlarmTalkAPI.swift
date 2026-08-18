@@ -320,8 +320,14 @@ final class AlarmTalkAPI: @unchecked Sendable {
             let token: String
             let platform: String
         }
+        // ⚠ **경로는 `push/register` 다 — `push/token` 이 아니다**(2026-08-18 Codex #697 P1).
+        // 백엔드가 마운트한 것은 `POST /api/push/register` 하나뿐이라(`routes/push.ts`),
+        // 옛 경로는 **404** 였다. 그런데 `PushNotificationCoordinator.registerToken` 이
+        // 실패를 조용히 삼켜(다음 실행이 재시도한다는 설계) 아무 데도 티가 안 났다 —
+        // 그래서 iOS 는 APNs 토큰이 **한 번도 저장된 적이 없고**, 가족 알람·목소리 공유·
+        // 플랜 변경 푸시가 전부 안 갔다. 안드로이드(`PushApi.kt`)는 처음부터 `push/register` 다.
         let _: EmptyResponse = try await request(
-            "push/token",
+            "push/register",
             method: "POST",
             token: authToken,
             body: Body(token: token, platform: platform)

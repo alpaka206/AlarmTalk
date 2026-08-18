@@ -6,6 +6,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   signApnsJwt,
+  getApnsProviderToken,
+  __resetApnsProviderTokenCacheForTests,
   sendApnsNotifications,
   isDeadApnsToken,
   apnsConfigFromEnv,
@@ -220,5 +222,76 @@ describe('조용한 푸시(silent)', () => {
     expect(seen[0]!['apns-priority']).toBe('10');
     expect(seen[1]!['apns-push-type']).toBe('background');
     expect(seen[1]!['apns-priority']).toBe('5');
+  });
+});
+
+
+// ── provider 토큰 재사용 (2026-08-18 Codex #697 P1)
+//
+// 애플은 provider 토큰을 자주 갈면 `TooManyProviderTokenUpdates` 로 막는다. 예전에는
+// `sendApnsNotifications` 가 배치마다 `signApnsJwt` 를 새로 불러 `iat` 가 매번 달랐다 —
+// 재사용 규약이 **주석에만** 있고 그렇게 하는 호출부가 없었다.
+describe('getApnsProviderToken — 재사용 창', () => {
+  it('20분 안에는 같은 토큰을 돌려준다', async () => {
+    __resetApnsProviderTokenCacheForTests();
+    const config = await makeConfig();
+    const t0 = 1_700_000_000_000;
+
+    const first = await getApnsProviderToken(config, t0);
+    const soon = await getApnsProviderToken(config, t0 + 19 * 60 * 1000);
+
+    expect(soon).toBe(first);
+  });
+
+  it('20분이 지나면 새로 서명한다', async () => {
+    __resetApnsProviderTokenCacheForTests();
+    const config = await makeConfig();
+    const t0 = 1_700_000_000_000;
+
+    const first = await getApnsProviderToken(config, t0);
+    const later = await getApnsProviderToken(config, t0 + 21 * 60 * 1000);
+
+    expect(later).not.toBe(first);
+    // `iat` 가 실제로 전진했는지 — 같은 값 재서명이 아니다.
+    const iat = (jwt: string) => decodeSeg<{ iat: number }>(jwt.split('.')[1]!).iat;
+    expect(iat(later)).toBeGreaterThan(iat(first));
+  });
+
+  it('설정이 다르면 서로의 토큰을 쓰지 않는다', async () => {
+    __resetApnsProviderTokenCacheForTests();
+    const t0 = 1_700_000_000_000;
+    const a = await getApnsProviderToken(await makeConfig(), t0);
+    const b = await getApnsProviderToken(await makeConfig({ keyId: 'OTHERKEY99' }), t0);
+
+    expect(b).not.toBe(a);
+  });
+
+  it('시계가 뒤로 가면 다시 서명한다 — 미래 발급 토큰은 애플이 거절한다', async () => {
+    __resetApnsProviderTokenCacheForTests();
+    const config = await makeConfig();
+    const t0 = 1_700_000_000_000;
+
+    const first = await getApnsProviderToken(config, t0);
+    const backwards = await getApnsProviderToken(config, t0 - 60_000);
+
+    expect(backwards).not.toBe(first);
+  });
+
+  it('여러 배치가 같은 authorization 헤더를 쓴다', async () => {
+    __resetApnsProviderTokenCacheForTests();
+    const config = await makeConfig();
+    const seen: string[] = [];
+    const fetchMock = async (_url: string, init: RequestInit) => {
+      seen.push((init.headers as Record<string, string>).authorization!);
+      return new Response('', { status: 200, headers: { 'apns-id': 'x' } });
+    };
+    const msg = { token: 'a'.repeat(64), title: 't', body: 'b' };
+
+    const t0 = 1_700_000_000_000;
+    await sendApnsNotifications([msg], config, fetchMock as unknown as typeof fetch, t0);
+    await sendApnsNotifications([msg], config, fetchMock as unknown as typeof fetch, t0 + 60_000);
+
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toBe(seen[0]);
   });
 });
