@@ -128,14 +128,18 @@ billingApple.post('/apple/confirm', async (c) => {
       });
       if (seen.rows.length > 0) return null;
       await txDb.execute({
+        // ⚠ **`plan_key` 를 빠뜨리지 말 것.** 마이그레이션 42 가 `TEXT NOT NULL`(기본값
+        // 없음)로 만든 컬럼이라, 빠지면 INSERT 가 거절되고 **트랜잭션이 통째로 롤백**된다 —
+        // 스토어는 이미 결제를 받았는데 바우처가 안 나간다(2026-08-18 Codex #697 P1).
         sql: `INSERT INTO store_transactions
-              (id, user_id, provider, provider_transaction_id, product_id, subscription_id, raw_payload)
-              VALUES (?, ?, 'apple', ?, ?, NULL, ?)`,
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id, raw_payload)
+              VALUES (?, ?, 'apple', ?, ?, ?, NULL, ?)`,
         args: [
           crypto.randomUUID(),
           userPk,
           info.transactionId,
           info.productId,
+          planKey,
           JSON.stringify({ kind: 'gift', environment: info.environment ?? null }),
         ],
       });
@@ -149,11 +153,20 @@ billingApple.post('/apple/confirm', async (c) => {
         maxUses: 1,
       });
     });
+    // ⚠ **성공 필드는 `success` 다 — `ok` 가 아니다.** 아래 구독 갈래도, 클라의
+    // `ConfirmAppleSubscriptionResponse` 도 `success` 만 읽는다(없으면 `false` 로 떨어진다).
+    // 그래서 선물은 **발급에 성공해도 클라에서는 실패**로 보였다(2026-08-18 Codex #697 P1).
+    // 지금은 그게 곧바로 손해다: 클라가 확정 못 한 소모성 결제를 `finish` 하지 않으므로
+    // 정상 발급된 선물이 계속 미완료로 남고 구매 화면은 실패라고 말한다.
     if (!gift) {
       // 이미 처리한 결제다. 실패가 아니라 **같은 결과**를 돌려준다.
-      return c.json({ ok: true, gift: true, duplicate: true });
+      return c.json({ success: true, gift: true, duplicate: true });
     }
-    return c.json({ ok: true, gift: true, voucher: { code: gift.code, expires_at: gift.expires_at } });
+    return c.json({
+      success: true,
+      gift: true,
+      voucher: { code: gift.code, expires_at: gift.expires_at },
+    });
   }
 
   // 자동 갱신 구독은 expiresDate 가 반드시 있다. 없으면 우리가 파는 상품이 아니다

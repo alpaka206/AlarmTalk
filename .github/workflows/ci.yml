@@ -84,6 +84,12 @@ jobs:
       - name: Check input sanitizers
         run: python3 scripts/check-input-sanitizers.py
 
+      # INSERT 가 NOT NULL 컬럼을 빠뜨리는 것. 타입체커는 SQL 문자열 안을 못 보고,
+      # 실패하면 트랜잭션이 통째로 롤백된다 — 실제로 **선물 결제 두 갈래**가 이걸로
+      # 죽어 있었다(스토어는 결제를 받았는데 바우처가 안 나갔다).
+      - name: Check INSERT statements cover NOT NULL columns
+        run: python3 scripts/check-insert-not-null.py
+
   typecheck:
     runs-on: ubuntu-latest
     strategy:

@@ -239,14 +239,19 @@ billingGoogle.post('/google/confirm', async (c) => {
       });
       if (seen.rows.length > 0) return null;
       await txDb.execute({
+        // ⚠ **`plan_key` 를 빠뜨리지 말 것** — `TEXT NOT NULL`(기본값 없음)이라 빠지면
+        // INSERT 가 거절되고 트랜잭션이 통째로 롤백된다. 스토어는 이미 결제를 받았는데
+        // 바우처가 안 나간다. 애플 쪽(`billing-apple.ts`)이 같은 버그였다 — **두 갈래는
+        // 한 벌이다.** 회귀 방지는 `scripts/check-insert-not-null.py`.
         sql: `INSERT INTO store_transactions
-              (id, user_id, provider, provider_transaction_id, product_id, subscription_id, raw_payload)
-              VALUES (?, ?, 'google', ?, ?, NULL, ?)`,
+              (id, user_id, provider, provider_transaction_id, product_id, plan_key, subscription_id, raw_payload)
+              VALUES (?, ?, 'google', ?, ?, ?, NULL, ?)`,
         args: [
           crypto.randomUUID(),
           userPk,
           parsed.purchase_token,
           parsed.product_id,
+          planKey,
           JSON.stringify({ kind: 'gift', orderId: product.orderId ?? null }),
         ],
       });

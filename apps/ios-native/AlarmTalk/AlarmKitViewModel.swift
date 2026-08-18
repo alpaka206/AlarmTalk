@@ -458,6 +458,30 @@ final class AlarmKitViewModel: ObservableObject {
                 resolution: resolution
             )
             _ = try await AlarmManager.shared.schedule(id: id, configuration: configuration)
+
+            // ⚠ **await 사이에 행이 바뀌었을 수 있다**(2026-08-18 Codex #697 P1).
+            // 예약은 비동기라 그동안 사용자가 알람을 끄거나 지울 수 있고, 그대로
+            // `markScheduled` 하면 두 가지가 난다:
+            //   - **지운 알람**: `markScheduled` 는 행이 없으면 조용히 no-op 인데, OS 에는
+            //     방금 만든 알람이 남는다. 로컬에 핸들이 없어 **취소할 방법도 없는 고아**가
+            //     되어 지운 알람이 울린다.
+            //   - **끈 알람**: `markScheduled` 가 `enabled = true` 를 **무조건** 쓰므로
+            //     사용자가 방금 끈 알람이 도로 켜진다.
+            // 그래서 여기서 다시 읽고, 우리가 만든 OS 알람을 되돌린다.
+            //
+            // 판정은 **await 동안 바뀐 경우만** 본다 — 처음부터 꺼진 행을 예약하는 경로가
+            // 따로 있어(잠금 복원 등) `enabled` 를 무조건 요구하면 그쪽이 깨진다.
+            let afterAwait = store.record(id: record.id)
+            let vanished = afterAwait == nil
+            let disabledDuringAwait = record.enabled && afterAwait?.enabled == false
+            if vanished || disabledDuringAwait {
+                try? await AlarmManager.shared.cancel(id: id)
+                Self.paidGateLogger.info(
+                    "Alarm changed while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
+                )
+                return false
+            }
+
             // **예약과 그 소리의 지문을 함께 적는다.** 나중에 행이 바뀌면
             // `AlarmScheduleReconciler` 가 이 값과 비교해 다시 예약한다 — 그게 없으면
             // 행에는 새 소리가 적혀 있는데 OS 는 옛 파일을 그대로 운다.
