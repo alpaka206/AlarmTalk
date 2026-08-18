@@ -600,8 +600,11 @@ ElevenLabs 를 불러 실제 클립을 만들어야 한다. 그게 도착해야 
 iOS 로컬 스토어에는 **툼스톤이 없다**(`LocalAlarmStore.delete` 는 하드 삭제).
 받은 알람을 지울 때 `deleteRemote` 가 **decline 에 실패하면**(네트워크 등) 로컬에서만
 사라지고 **다음 pull 이 그대로 다시 가져온다** — 사용자 눈에는 "지워도 다시 생긴다" 다.
-증상이 이번 보고와 겹칠 수 있으니, 실기기에서 **지운 알람이 받은 알람이었는지** 먼저 볼 것.
-(조사 원문 `w0vkdrwrt.output` 의 `mergeRemote` 항목 — 검증자가 medium 으로 평가했다.)
+증상이 겹칠 수 있어 확인했는데, **2026-08-18 보고건은 이 갈래가 아니다** — 사용자가 직접
+만든 알람이었다(`local_owned` 는 `DELETE /alarm/:id` 로 서버에서도 지워지고,
+`isReceivedRemoteCandidate` 가 `target_user_id` 를 요구하므로 pull 이 되살릴 수 없다).
+그래도 **받은 알람에는 이 구멍이 그대로 남아 있다** — 별건으로 툼스톤을 넣어야 한다.
+(조사 원문 `w0vkdrwrt.output` 의 `mergeRemote` 항목 — 검증자 평가 medium.)
 
 ### QA 전용 dev 계정 3개 (2026-08-18 생성)
 
