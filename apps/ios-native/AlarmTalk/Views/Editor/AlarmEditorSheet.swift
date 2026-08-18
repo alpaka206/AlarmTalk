@@ -178,6 +178,23 @@ struct AlarmEditorSheet: View {
         let message: String
     }
 
+    /// 저장 중 음원 준비·생성이 실패했을 때. **조용히 `return` 하지 말 것** —
+    /// 저장 버튼을 눌렀는데 아무 일도 안 일어난 것처럼 보인다.
+    ///
+    /// ⚠ 사유는 `voiceStudio.statusMessage` 에만 남는다(`mapVoiceError` 가 채운다).
+    /// 예전에는 그걸 편집기 하단 `saveBlockedNotice` 가 주워 보여 줬는데, 그 자리는
+    /// **저장이 막힌 이유**를 말하는 곳이라 성격이 다른 두 문장이 같은 한 줄을 번갈아
+    /// 차지했다. 실패는 일어난 시점에 알럿으로 말하는 게 맞다 — 놓칠 수 없고,
+    /// 확인을 누르면 사라지므로 화면에 눌어붙지도 않는다.
+    @MainActor
+    func showSaveFailureAlert() {
+        validationAlert = ValidationAlertContent(
+            title: "저장할 수 없어요",
+            message: (voiceStudio.statusMessage).nilIfBlank
+                ?? "목소리를 준비하지 못했어요. 잠시 뒤에 다시 시도해 주세요."
+        )
+    }
+
     /// 목소리 게이트 전용 내용. **액션이 상태마다 다르므로** 일반 검증 알럿과 분리한다
     /// (`docs/spec/plan-gates.md` 「상태는 셋이다」).
     struct VoiceGateAlertContent: Identifiable {
@@ -2184,7 +2201,10 @@ struct AlarmEditorSheet: View {
         // 그대로 아래 `generateTTS` 로 흘러 **테마 클립 대신 라이브 생성 문장**이 저장된다
         // (서버는 시스템 보이스 라이브 생성을 허용한다).
         if draft.playMode != .alarmOnly, voiceSourceMode == .ttsProfile {
-            guard await prepareSelectedBucketClipIfNeeded() else { return }
+            guard await prepareSelectedBucketClipIfNeeded() else {
+                showSaveFailureAlert()
+                return
+            }
         }
 
         if draft.playMode != .alarmOnly,
@@ -2247,7 +2267,12 @@ struct AlarmEditorSheet: View {
             )
             // 실패 게이트: nil 이면 statusMessage 에 사유가 남고, 레코드를 만들거나
             // finishScheduling 하기 전에 중단한다. draft(시간/이름/반복)는 @State 라 그대로다.
-            guard let prepared else { return }
+            // ⚠ 사유를 **알럿으로 낸다** — 조용히 return 하면 저장을 눌렀는데 아무 일도
+            // 없는 것처럼 보인다(`showSaveFailureAlert` 주석).
+            guard let prepared else {
+                showSaveFailureAlert()
+                return
+            }
             rememberTtsInputAlias(for: prepared, listenerTitle: currentListenerTitle)
             }
         }
