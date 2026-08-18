@@ -187,18 +187,28 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     /// ⚠ **받은 알람은 지우는 게 아니라 '그만받기' 다.** `DELETE /alarm/:id` 는 서버가
     /// 소유자만 허용해서 받은 알람에는 404 가 나고, 그러면 그만받기가 기록되지 않아
     /// **다음 pull 이 그 알람을 다시 임포트한다** — 지웠는데 되살아난다.
-    func deleteRemote(record: LocalAlarmRecord, session: AuthSession?) async {
-        guard let token = session?.token, let remoteID = record.remoteAlarmId else { return }
+    /// 서버 쪽 삭제. **성공 여부를 돌려준다** — 호출자가 갈래를 나눠야 하기 때문이다
+    /// (받은 알람은 서버 기록이 없으면 로컬에서 지우면 안 된다. `AlarmsListView.deleteAlarm`).
+    ///
+    /// ⚠ **성공 뒤에 `refresh()` 를 부르지 말 것**(2026-08-18 제거). 알람 하나 지우자고
+    /// **목록 전체와 TTS 음원**을 다시 받고 있었다 — 삭제를 눌러도 한참 뒤에야 행이
+    /// 사라지던 체감 지연의 본체다. 지운 행은 호출자가 이미 로컬에서 없앴고, 서버 상태는
+    /// 다음 정기 동기화가 맞춘다.
+    @discardableResult
+    func deleteRemote(record: LocalAlarmRecord, session: AuthSession?) async -> Bool {
+        // 서버에 사본이 없는 알람(로컬 전용)은 지울 것이 없으므로 성공으로 본다.
+        guard let token = session?.token, let remoteID = record.remoteAlarmId else { return true }
         do {
             if record.originEnum == .receivedRemote {
                 try await api.declineAlarm(id: remoteID, token: token)
             } else {
                 try await api.deleteAlarm(id: remoteID, token: token)
             }
-            await refresh(session: session)
+            return true
         } catch {
-            guard !isCancellation(error) else { return }
+            guard !isCancellation(error) else { return false }
             statusMessage = userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요")
+            return false
         }
     }
 

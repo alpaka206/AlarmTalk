@@ -413,13 +413,34 @@ struct AlarmsListView: View {
     ///
     /// 의도적 누락: 서버에 소프트 삭제(휴지통)가 없어 양 플랫폼 모두 실행취소/스낵바를
     /// 제공하지 않는다. 서버 + AlarmKit + 음원 캐시가 즉시·비가역 삭제된다.
+    ///
+    /// ⚠ **내 알람은 서버를 기다리지 않는다**(2026-08-18 낙관적 삭제). 로컬을 먼저 지우고
+    /// 서버 삭제는 뒤에서 돈다 — 예전에는 서버 왕복(+성공 시 전체 pull)을 다 기다린 뒤에야
+    /// 행이 사라져서, 스와이프가 제자리로 돌아오고 아무 일도 안 일어난 것처럼 보였다.
+    /// 실패해도 **되살아나지 않는다**: pull 은 `target_user_id` 가 있는 행만 가져오므로
+    /// 서버에 고아 행이 남을 뿐 사용자에게는 보이지 않는다.
+    ///
+    /// ⚠ **받은 알람은 반대다 — 서버 기록이 먼저다.** 로컬 스토어에 툼스톤이 없어서,
+    /// decline 이 기록되지 않은 채 지우면 **다음 pull 이 그대로 되살린다.**
+    /// "조금 늦게 사라짐" 보다 "지웠는데 다시 생김" 이 훨씬 나쁘다. 안드로이드
+    /// `MainViewModelAlarmActions.deleteAlarm` 이 같은 이유로 같은 순서를 쓴다.
+    /// 툼스톤이 생기면 이 갈래도 위와 합칠 수 있다.
     @MainActor
     private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
-        await remoteSync.deleteRemote(record: alarm, session: auth.session)
+        if alarm.originEnum == .receivedRemote {
+            guard await remoteSync.deleteRemote(record: alarm, session: auth.session) else {
+                actionMessage = remoteSync.statusMessage ?? "알람 삭제에 실패했어요."
+                return
+            }
+        }
         let deleted = await alarmKit.cancel(record: alarm, store: store)
-        if deleted {
-        } else {
+        guard deleted else {
             actionMessage = alarmKit.statusMessage ?? "알람 삭제에 실패했어요."
+            return
+        }
+        if alarm.originEnum != .receivedRemote {
+            // 내 알람의 서버 삭제는 뒤에서. 화면은 이미 사라졌다.
+            Task { await remoteSync.deleteRemote(record: alarm, session: auth.session) }
         }
     }
 }

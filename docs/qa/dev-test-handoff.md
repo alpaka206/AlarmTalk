@@ -632,6 +632,17 @@ iOS 로컬 스토어에는 **툼스톤이 없다**(`LocalAlarmStore.delete` 는 
 안드로이드 `deleteAlarm` 이 decline 실패 시 로컬 삭제까지 보류하는 게 바로 그 이유이고,
 주석에 근거가 적혀 있다. "조금 늦게 사라짐" 보다 "지웠는데 다시 생김" 이 훨씬 나쁘다.
 
+**진행 상황(2026-08-18)**
+- ✅ **1·2번 완료.** iOS `deleteRemote` 가 성공 뒤 돌던 **전체 `refresh()` 를 걷어냈고**
+  (알람 하나 지우자고 목록 + TTS 음원을 다시 받고 있었다 — 체감 지연의 본체),
+  결과를 `Bool` 로 돌려주게 해 갈래를 나눌 수 있게 했다. **내 알람은 로컬을 먼저 지우고
+  서버 삭제를 뒤로** 보낸다.
+- ⚠ **안드로이드는 고칠 게 없었다(가설이 틀렸다).** 내 알람 경로는 이미 로컬 전용이고
+  (`repository.deleteAlarm` = 예약 취소 + Room 삭제 + 캐시 정리), 의심했던 `restoreMutex` 도
+  pull 이 **DB 작업 동안만 짧게** 잡는다 — `fetchRemoteMessageAudio` 는 락 **밖**이다
+  (`RemoteAlarmPullSyncService` 의 `alarmMutationLock.withLock` 블록 3개 모두 DB 전용).
+  안드로이드가 느리게 느껴졌다면 원인이 다른 데 있다 — **실기기 측정이 먼저**다.
+
 **할 일 (순서)**
 1. iOS `deleteRemote` 가 **성공/실패를 반환**하게 고친다(지금은 `async -> Void` 라
    statusMessage 로만 알린다 — 갈래를 나눌 수가 없다).
