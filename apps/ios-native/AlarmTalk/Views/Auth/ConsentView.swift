@@ -118,7 +118,9 @@ struct ConsentView: View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer().frame(height: 24)
 
-            Text(isReconsent ? "약관이 개정되어\n다시 동의가 필요해요" : "서비스 이용을 위해\n약관에 동의해 주세요")
+            // ⚠ `\n` 으로 줄을 **강제하지 않는다**(2026-08-18). 두 줄로 못 박으면 글자 크기
+            // 설정·기기 폭과 무관하게 항상 두 줄을 차지해 목록이 그만큼 밀린다.
+            Text(isReconsent ? "약관이 개정되어 다시 동의가 필요해요" : "서비스 이용을 위해 약관에 동의해 주세요")
                 .font(.title2.weight(.bold))
                 .foregroundStyle(AlarmTalkTheme.text)
 
@@ -137,7 +139,9 @@ struct ConsentView: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                // 항목 사이를 띄운다 — 붙어 있으면 어디까지가 한 항목인지 안 보이고,
+                // 설명을 펼쳤을 때 특히 아래 항목과 뒤섞인다.
+                VStack(alignment: .leading, spacing: 10) {
                     Spacer().frame(height: 24)
                     // 필수가 하나뿐이면 같은 말을 두 번 시키는 것이라 그리지 않는다.
                     // (선택 항목은 마스터가 다루지 않으므로 개수에 넣지 않는다.)
@@ -259,9 +263,11 @@ private struct ConsentRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        // ⚠ **위 정렬이다.** 가운데 정렬이면 설명을 펼쳤을 때 체크박스가 **설명 옆으로
+        // 내려가** 제목과 어긋난다 — 무엇을 체크하는 칸인지 한눈에 안 들어온다.
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Button(action: onToggle) {
-                HStack(spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: checked ? "checkmark.square.fill" : "square")
                         .font(.title3)
                         .foregroundStyle(checked ? AlarmTalkTheme.primary : AlarmTalkTheme.textSecondary)
