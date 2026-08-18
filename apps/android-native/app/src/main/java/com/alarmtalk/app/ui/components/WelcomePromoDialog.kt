@@ -152,7 +152,9 @@ private fun AlertBodyLine(text: AnnotatedString) {
     Text(
         text = text,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
+        // ⚠ **왼쪽 정렬이다**(2026-08-18 지시). 알럿이던 시절엔 가운데였는데, 시트에서는
+        // 입력창·버튼이 모두 왼쪽에서 시작해 설명만 가운데면 시작점이 둘이 된다.
+        textAlign = TextAlign.Start,
         style = IosAlertType.Message,
         modifier = Modifier.fillMaxWidth(),
     )

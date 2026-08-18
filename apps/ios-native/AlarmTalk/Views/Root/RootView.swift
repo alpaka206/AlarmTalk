@@ -161,10 +161,13 @@ struct RootView: View {
         // ⚠ **알럿형 카드로 되돌리지 말 것**(2026-08-18 지시로 시트가 됐다). 이유는
         // `WelcomePromoSheet` 주석에 있다 — 닫아도 되는 안내이고, 액션이 셋이라 알럿에서는
         // 주행동이 묻히고, 실패 사유를 넣을 자리가 없어 알럿을 흉내 낸 자체 카드였다.
-        .sheet(isPresented: Binding(
-            get: { showWelcomePromo && !blockingGateActive },
-            set: { if !$0 { showWelcomePromo = false } }
-        )) {
+        .bottomSheet(
+            isPresented: Binding(
+                get: { showWelcomePromo && !blockingGateActive },
+                set: { if !$0 { showWelcomePromo = false } }
+            ),
+            onDismiss: { showWelcomePromo = false }
+        ) {
                     WelcomePromoSheet(
                         busy: promoBusy,
                         errorText: promoError,
