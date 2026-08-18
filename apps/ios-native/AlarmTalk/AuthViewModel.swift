@@ -1082,11 +1082,24 @@ final class AuthViewModel: ObservableObject {
     /// 경로도 쓰는데, 거기서 지우면 **같은 사람이 다시 로그인할 때 취향을 잃는다**
     /// (Codex #646 회귀). 안드로이드가 `clearSignedInSession`(명시적)과
     /// `clearSessionKeepingAlarms`(자동)를 함수로 갈라 놓은 것과 같은 분리다.
+    /// 로그아웃·탈퇴 신청 때 이 기기의 푸시 토큰을 서버에서 지우는 훅.
+    /// `AlarmTalkApp` 이 `PushNotificationCoordinator` 를 꽂는다 — 여기서 코디네이터를
+    /// 직접 들면 순환 참조가 된다(코디네이터의 `onFamilyAlarm` 과 같은 방식).
+    var onSignOutUnregisterPush: (String) async -> Void = { _ in }
+
     func signOutExplicitly() {
         let userID = session?.user.id
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
+        // ⚠ **`signOut()` 보다 먼저** — 로그아웃이 `token_epoch` 를 올리면 이 토큰으로는
+        // 푸시 토큰을 지울 수 없다. 안 지우면 로그아웃한 기기가 그 계정의 알림을 계속
+        // 받는다(안드로이드 `MainViewModelAuthActions` 의 같은 순서).
+        // best-effort — 실패해도 로그아웃은 그대로 진행한다.
+        if let token = session?.token.nilIfBlank {
+            let unregister = onSignOutUnregisterPush
+            Task { await unregister(token) }
+        }
         signOut()
     }
 

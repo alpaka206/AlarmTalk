@@ -113,11 +113,20 @@ final class SubscriptionManager: ObservableObject {
             switch result {
             case .success(let verificationResult):
                 let transaction = try checkVerified(verificationResult)
-                await syncWithBackend(
-                    transaction: transaction
-                )
-                await transaction.finish()
+                let confirmed = await syncWithBackend(transaction: transaction)
+                // ⚠ 무조건 finish 하지 말 것 — `mayFinish` 주석 참조.
+                if Self.mayFinish(productID: transaction.productID, serverConfirmed: confirmed) {
+                    await transaction.finish()
+                }
                 await refreshPurchasedProducts()
+                guard plan.isSubscription || confirmed else {
+                    // 결제는 됐지만 발급을 확인하지 못했다. **성공이라고 말하지 않는다** —
+                    // 트랜잭션을 안 끝냈으므로 다음 실행에서 `Transaction.updates` 가
+                    // 다시 물어다 주고 리스너가 재시도한다.
+                    return .failure(
+                        reason: "결제는 완료됐지만 선물 코드 발급을 확인하지 못했어요. 앱을 다시 열면 자동으로 다시 시도해요."
+                    )
+                }
                 return .success(productID: plan.rawValue)
             case .userCancelled:
                 return .userCancelled
@@ -241,10 +250,15 @@ final class SubscriptionManager: ObservableObject {
                 guard let self else { return }
                 do {
                     let transaction = try await self.verifyInIsolated(result)
-                    await self.syncWithBackend(
-                        transaction: transaction
-                    )
-                    await transaction.finish()
+                    let confirmed = await self.syncWithBackend(transaction: transaction)
+                    // ⚠ 여기도 같은 규칙이다 — 확정 못 한 소모성 선물은 끝내지 않는다.
+                    // 그래야 다음 실행에서 `Transaction.updates` 가 다시 물어다 준다.
+                    if await SubscriptionManager.mayFinish(
+                        productID: transaction.productID,
+                        serverConfirmed: confirmed
+                    ) {
+                        await transaction.finish()
+                    }
                     await self.refreshPurchasedProducts()
                 } catch {
                     // 검증 실패 — Apple JWS 서명이 무효한 트랜잭션. 무시.
@@ -288,11 +302,16 @@ final class SubscriptionManager: ObservableObject {
     ///
     /// 클라가 보내는 것은 transaction id 하나뿐이다 —
     /// 상품·만료·환불은 서버가 애플에 직접 물어본 응답이 권위다.
-    private func syncWithBackend(transaction: Transaction) async {
+    /// 서버가 이 결제를 **확정했는가**(`success: true`).
+    ///
+    /// ⚠ 반환값을 무시하지 말 것 — 소모성 선물은 이 값이 false 면 `finish()` 하면 안 된다
+    /// (`mayFinish` 주석 참조).
+    @discardableResult
+    private func syncWithBackend(transaction: Transaction) async -> Bool {
         guard let session = authProvider() else {
             // 로그아웃 상태에서 가족공유 등으로 들어온 트랜잭션. 재로그인 후
             // resyncEntitlements 로 catch-up 한다.
-            return
+            return false
         }
         do {
             // 서버는 이 id 로 애플에 직접 물어본다 — 상품·만료·환불은 그 응답이 권위다.
@@ -306,14 +325,36 @@ final class SubscriptionManager: ObservableObject {
                 // 클라이언트 측 서버 구독 상태도 새로고침한다.
                 await onServerEntitlementUpdated?()
             }
+            return response.success
         } catch APIError.server(let status, _, _) where status == 503 {
             // 서버 구성값(APPLE_ISSUER_ID/KEY_ID/PRIVATE_KEY/BUNDLE_ID) 미설정 또는 일시
             // 점검 — 비파괴 처리. StoreKit 영수증이 권위이므로 로컬 entitlement 는 그대로
             // 두고, 다음 foreground 사이클의 resyncEntitlements 가 자동 catch-up 한다.
             // (501 은 라우트가 없던 시절의 잔재라 뺐다 — 지금은 라우트가 있다.)
+            return false
         } catch {
             self.lastError = "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다."
+            return false
         }
+    }
+
+    /// 이 트랜잭션을 **지금 `finish()` 해도 되는가.**
+    ///
+    /// ⚠ **소모성 선물은 서버가 확정하기 전에 finish 하면 영구히 잃는다**(2026-08-18
+    /// Codex #697 P1). 애플은 소모성 상품을 `Transaction.currentEntitlements` 에 남기지
+    /// 않으므로, finish 한 뒤에는 `resyncEntitlements`·`refreshPurchasedProducts` 가
+    /// **절대 찾지 못한다** — 돈은 나갔는데 바우처가 없고 되찾을 길이 없다.
+    /// 예전에는 `syncWithBackend` 가 실패를 삼키고 그대로 finish 해서, 일시적 네트워크
+    /// 오류 한 번이 그 결과를 만들었다(게다가 `purchase()` 는 성공을 돌려줬다).
+    ///
+    /// 자동갱신 구독은 **반대다.** `currentEntitlements` 에 남아 있으므로 finish 해도
+    /// 다음 동기화가 따라잡는다 — 오히려 안 끝내면 스토어가 계속 되돌려 준다.
+    ///
+    /// 모르는 productID 는 finish 한다. 끝내지 않으면 영영 다시 배달되는데, 우리가
+    /// 처리할 수 없는 상품이라 재시도해도 결과가 같다.
+    nonisolated static func mayFinish(productID: String, serverConfirmed: Bool) -> Bool {
+        guard let plan = SubscriptionProduct(rawValue: productID) else { return true }
+        return plan.isSubscription || serverConfirmed
     }
 
     private static func userFacingPurchaseError(_ error: Error, fallback: String) -> String {

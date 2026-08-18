@@ -73,6 +73,24 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         }
     }
 
+    /// 로그아웃·탈퇴 신청 때 **이 기기 토큰을 서버에서 지운다.**
+    ///
+    /// ⚠ 안 지우면 로그아웃한 기기가 그 계정의 푸시를 계속 받는다 — 결제 보류·목소리
+    /// 삭제 같은 **눈에 보이는 알림**까지 온다. 다른 계정이 같은 토큰을 가져갈 때까지
+    /// 계속된다(2026-08-18 Codex #697 P2). 안드로이드는 처음부터
+    /// `AlarmTalkMessagingService.unregisterCurrentToken` 으로 이 일을 했다.
+    ///
+    /// ⚠ **`/auth/logout` 보다 먼저** 불러야 한다(토큰이 아직 유효할 때).
+    /// 실패해도 로그아웃은 그대로 진행한다 — 막으면 로그아웃을 못 하게 된다.
+    func unregisterCurrentToken(authToken: String) async {
+        guard let deviceToken = lastRegisteredToken?.nilIfBlank else {
+            clearRegistrationCache()
+            return
+        }
+        try? await AlarmTalkAPI.shared.unregisterPushToken(token: deviceToken, authToken: authToken)
+        clearRegistrationCache()
+    }
+
     /// 로그아웃 시 다음 로그인에서 반드시 다시 올리도록 캐시를 비운다.
     func clearRegistrationCache() {
         lastRegisteredToken = nil

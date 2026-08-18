@@ -334,6 +334,21 @@ final class AlarmTalkAPI: @unchecked Sendable {
         )
     }
 
+    /// 이 기기 토큰을 서버에서 지운다. **로그아웃·탈퇴 신청 때 부른다.**
+    ///
+    /// ⚠ **`/auth/logout` 보다 먼저** 불러야 한다 — 로그아웃이 `token_epoch` 를 올리면
+    /// 이 토큰으로는 아무것도 못 부른다. 안드로이드
+    /// `AlarmTalkMessagingService.unregisterCurrentToken` 과 같은 순서다.
+    func unregisterPushToken(token: String, authToken: String) async throws {
+        struct Body: Encodable { let token: String }
+        let _: EmptyResponse = try await request(
+            "push/unregister",
+            method: "POST",
+            token: authToken,
+            body: Body(token: token)
+        )
+    }
+
     /// 말투 분석 재시도. 실패 502 `SPEECH_STYLE_ANALYSIS_FAILED`, 소스 없음 409.
     @discardableResult
     func retryVoiceSpeechStyle(id: String, token: String) async throws -> Bool {

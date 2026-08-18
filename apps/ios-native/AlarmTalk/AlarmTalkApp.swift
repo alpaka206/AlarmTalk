@@ -223,6 +223,11 @@ struct AlarmTalkApp: App {
                             await socialFeatures.refreshAll(session: auth.session, force: true)
                             await auth.refreshUser()
                         }
+                        // 로그아웃한 기기가 그 계정의 알림을 계속 받지 않게 한다
+                        // (`PushNotificationCoordinator.unregisterCurrentToken` 주석).
+                        auth.onSignOutUnregisterPush = { token in
+                            await push.unregisterCurrentToken(authToken: token)
+                        }
                         push.start()
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
