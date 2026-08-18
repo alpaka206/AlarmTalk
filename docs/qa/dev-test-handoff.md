@@ -416,3 +416,61 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 
 - **WSAEFAULT(10014)**: 소켓 bind/listen 간헐 실패로 Gradle 데몬·adb 기동 실패 → 성공까지 재시도. adb가 아예 죽으면 라온 보안 드라이버 정지(관리자): `Stop-Service AnySign4PC Launcher, MagicLine4NXSVC, 'RAON K', WizveraPMSvc` + `sc stop KingsNET` `sc stop TNXNET_SVR` → `adb start-server`. 상세=메모리 `reference_winsock_wsaefault_build_workaround`.
 - **K2 캐스케이드**: 같은 모듈 멀쩡한 심볼이 무더기 "Unresolved reference" → clean 재빌드로 해결.
+
+## 5. 알람 음성의 **최종 목적지** (2026-08-18 지시 — 5단계의 미결을 이걸로 닫는다)
+
+> **알람 음성파일은 프리셋 + 직접 입력으로 만드는 것만 남는다.**
+
+즉 알람에 실리는 오디오를 만드는 길은 **둘뿐**이다:
+
+| 남는 것 | 무엇 | 언제 만들어지나 |
+| --- | --- | --- |
+| **프리셋(사전렌더 클립)** | 기본 목소리 무료 테마 + 등록/공유 목소리의 프리셋 | 서버 cron 이 미리 만들고, 앱이 **선다운로드**로 받아 둔다 |
+| **직접 입력** | 사용자가 친 문구 | 저장할 때 그 자리에서 합성(월 한도 차감). 같은 글자면 캐시 재사용 |
+
+**없앤다: 라이브 랜덤 생성.** 날씨·운세·사랑 등을 알람 저장/갱신 시점에 서버가 새 문장으로
+합성하던 갈래다. 이게 5단계의 대상이고, 지금까지 **관문의 구멍을 전부 덮고 있던 폴백**이다.
+
+⚠ **이 결정이 닫는 미결 두 가지**(그전에는 "제품 판단이 필요하다" 로 남겨 뒀다):
+- **가족 알람**: 지금은 수신자의 날씨·사주로 서버가 라이브 문장을 만든다
+  (`generateTTS(targetUserId:targetDynamicPromptState:)`). 그 갈래도 없어진다 →
+  가족 알람도 **프리셋 아니면 직접 입력**이다. 프리셋으로 갈 경우
+  `toRemoteAlarmWriteRequest` 가 `bucketId` 를 싣지 않는 계약 변경이 선행이고,
+  날씨 variant 를 **누구 위치로** 고를지도 정해야 한다(보내는 사람 / 받는 사람).
+- **옛 라이브 알람**: `voiceRandomPrompt = true` 로 저장된 반복 알람은 갱신자가 사라지면
+  매일 같은 문장이 되고, 시각만 바꾸려 열어도 재사용 판정이 어긋나 **영영 못 고친다.**
+  → 문구 종류 ↔ 버킷 역매핑(`RandomPromptContext.forBucket` / `randomPromptContextForBucket`)으로
+  **테마 클립에 재바인딩하는 마이그레이션을 같이 낸다.**
+
+### 지우면 안 되는 것 (이름이 비슷해 헷갈린다)
+
+- `WeatherVariantRefreshService`(iOS) / `DynamicVoiceRefreshWorker`(안드) — **음성을 만들지 않는다.**
+  `GET /tts/prerender-variant` 로 *이미 받아 둔 클립 중 오늘 어느 것을 틀지* 인덱스만 받아 온다.
+  지우면 날씨 테마가 매일 같은 클립으로 굳는다.
+- `VoiceStudioViewModel.generateTTS` / 안드 `onGenerateTts` **함수 자체** — 직접 입력의
+  유일한 생성기다. 랜덤 갈래만 접고 껍데기는 남긴다.
+- `voiceRandomPrompt` **필드** — 무료 강등 판정 2곳과 잠금화면 태그 제거가 읽는다.
+- `randomPrompt`/`randomContext`(iOS) — 이름만 '랜덤' 이고 실제로는 **문구 종류 상태**다.
+  지우면 사전렌더 버킷을 고를 수단이 없어진다.
+
+### 배포 순서 (뒤집으면 사고)
+
+앱 먼저, 백엔드는 **두 스토어 게재 뒤**. 백엔드 400 을 먼저 넣으면 구버전 앱은
+"음성 생성에 실패했어요"(다시 시도해도 안 되는데 다시 시도하라는 문구)만 반복한다.
+거절은 반드시 `!draftPreviewRequested && body.random === true` **그 자리에서** 낸다 —
+앞당기면 iOS 목소리 등록 미리듣기(`playDraftPreview` 가 `random:true`+`draftPreview:true` 를
+함께 보낸다)가 400 이 되어 **새 목소리를 아예 등록할 수 없다.**
+
+### 남은 작업 순서
+
+1. **P1 #2** — 관문(`onNeedsClipPreparation` / `needsPreparation`)이 지금 **목소리 선택 한 곳**
+   에서만 돈다. **문구 종류 선택**과 **저장 직전**에도 같은 식으로 돌린다.
+   ⚠ 세 자리의 판정식은 **철자까지 같아야 한다**(CLAUDE.md 「일곱 자리」와 같은 종류의 규약).
+2. iOS 편집기 하단 문구 정리 — **운세 시트의 중간 draft 선행**(지금은 pane 의 draft 에
+   직접 바인딩돼 있어 취소해도 되돌릴 원본이 없다).
+3. iOS `voiceStudio.statusMessage` 가 편집기 하단으로 새는 것 차단 — **저장 실패 알럿 선행**
+   (생성 실패 사유가 지금 그 자리에만 남는다).
+4. 5단계 앱 쪽 제거(위 미결 둘을 먼저 정한 뒤).
+5. 백엔드 정리 — 스토어 게재 후.
+
+조사 원문: `w1uv7w469.output`(5단계 전수 범위 + P1 8건), `w30oi7j1z.output`(편집기 문구·iOS 구조).
