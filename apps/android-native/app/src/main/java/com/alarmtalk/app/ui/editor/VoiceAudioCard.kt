@@ -63,6 +63,10 @@ import androidx.compose.ui.text.style.TextOverflow
 @Composable
 internal fun VoiceAudioCard(
     editor: AlarmEditorState,
+    /** 이 목소리가 아직 준비 안 됐는가(사전렌더 클립 미수신). true 면 고르지 못하게 막는다. */
+    onNeedsClipPreparation: (String) -> Boolean = { false },
+    /** 준비 화면으로 보낸다. */
+    onOpenClipPreparation: (String) -> Unit = {},
     voiceEnabled: Boolean,
     onVoiceEnabledChange: (Boolean) -> Unit,
     voiceProfiles: List<VoiceProfile>,
@@ -103,6 +107,14 @@ internal fun VoiceAudioCard(
     // 기본 목소리로 바꾸면 직접 입력 문구를 잃는 경우, 확인받기 전까지 보류해 둔 선택.
     var pendingVoiceSwitch by remember { mutableStateOf<VoiceProfileOption?>(null) }
     val applyVoiceSelection: (VoiceProfileOption) -> Unit = { option ->
+        // ⚠ **아직 못 받은 목소리는 고를 수 없다.** 공유받은 목소리는 선다운로드 대상이
+        // 아니라 고르는 순간 클립이 없을 수 있고, 그대로 저장하면 라이브 생성으로 흘러가
+        // 오프라인에서 안 울린다. **그 목소리만** 막고 준비 화면으로 보낸다 —
+        // 알람 만들기 자체는 막지 않는다(다른 목소리로는 지금 만들 수 있어야 한다).
+        // iOS `AlarmEditorSheet.needsPreparation` 과 같은 판정이다.
+        if (option.id != VoiceSources.LOCAL_AUDIO && onNeedsClipPreparation(option.id)) {
+            onOpenClipPreparation(option.id)
+        } else {
         // 목소리를 고르면 꺼져 있던 목소리를 자동으로 켠다(잠금 시엔 게이트로 유도).
         if (!voiceEnabled) onVoiceEnabledChange(true)
         if (option.id == VoiceSources.LOCAL_AUDIO) {
@@ -122,6 +134,7 @@ internal fun VoiceAudioCard(
             editor.clearAudio()
             editor.clearTtsMeta()
             editor.selectVoiceProfile(option.id)
+        }
         }
     }
     val readyOwnProfiles = voiceProfiles.filter {
