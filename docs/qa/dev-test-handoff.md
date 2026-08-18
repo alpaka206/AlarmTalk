@@ -581,6 +581,32 @@ resolve 한다 — **합성하지 않는다.** 즉 제거 작업이 두 앱에�
 ElevenLabs 를 불러 실제 클립을 만들어야 한다. 그게 도착해야 **클론 + 테마 저장 경로**와
 **클론 옛 행 재바인딩**을 검증할 수 있다.
 
+### QA 전용 dev 계정 3개 (2026-08-18 생성)
+
+구글 로그인은 재설치 뒤 계정 선택을 자동화하기 어려워, **이메일·비밀번호 계정**을 만들어 뒀다.
+지우고 새로 깔아도 이걸로 다시 들어갈 수 있다.
+
+| 이메일 | user id | 플랜 |
+| --- | --- | --- |
+| `qa.tester1@alarmtalk.dev` | `66840fd2-51c4-475f-955c-9d8221f0ed6f` | free |
+| `qa.tester2@alarmtalk.dev` | `0a8db71e-076f-4de7-ab05-930de4be836f` | free |
+| `qa.tester3@alarmtalk.dev` | `e459c2a4-3f45-4c95-ba17-003550b28b7e` | free |
+
+비밀번호 셋 다 `QaTest!2026aa`.
+
+**어떻게 만들었나** — 메일을 받을 수 없으므로 `email_verification_codes` 의 `code_hash` 를
+내가 아는 코드(`424242`)의 해시로 바꾼 뒤 **진짜 `/auth/register` 를 태웠다.**
+해시는 `SHA-256(정규화이메일:코드:PASSWORD_PEPPER)`.
+스크립트: `<scratchpad>/mkacct.mjs`, 질의 헬퍼: `<scratchpad>/dq.mjs`
+(둘 다 `.dev.vars.dev` 의 `TURSO_*`·`PASSWORD_PEPPER` 를 env 로 받는다).
+
+⚠ **users 행을 손으로 INSERT 하지 말 것.** `family_alarm_quiet_windows` 컬럼 DEFAULT 가
+`평일 09:00–18:30` 이라, 명시하지 않으면 그 시간대에 가족 알람이 **조용히 막힌다**
+(docs/spec/family-alarm.md 2절). 위 셋은 진짜 가입 플로우를 타서 `[]` 로 들어갔다 — 확인함.
+
+⚠ `.dev.vars.dev` 는 **줄 단위로 못 읽는다**(PEM 등 여러 줄 값이 섞여 있어 `source` 가 깨진다).
+필요한 변수만 `grep -m1 '^NAME=' | cut -d= -f2-` 로 뽑아 쓸 것.
+
 ### 다음 세션 QA 계획 (2026-08-18 지시)
 
 **필요한 것은 다 있다** — 두 폰 연결됨(`R3CW300EZBA` S23 Ultra / `RF9R40323AP` A32),
