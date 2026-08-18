@@ -128,6 +128,19 @@ class StockClipPrefetchWorker(
                         language = language,
                     )
                 }.onFailure { AlarmTalkLog.reportError("Stock clip language rebind failed", it) }
+                // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
+                // ⚠ **위와 따로 잡는다** — 언어 재바인딩이 실패해도 이건 돌아야 한다.
+                // 둘 다 멱등이라 매 회차 돌아도 안전하고, 묶을 클립이 없으면 아무 일도
+                // 하지 않고 다음 회차에 다시 시도한다.
+                runCatching {
+                    StockClipLanguageRebinder.rebindLiveGenerationRows(
+                        context = applicationContext,
+                        api = api,
+                        auth = auth,
+                        clips = allClips,
+                        language = language,
+                    )
+                }.onFailure { AlarmTalkLog.reportError("Legacy live-generation rebind failed", it) }
             }
 
             if (clips.isEmpty()) {

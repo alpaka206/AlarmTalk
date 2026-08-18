@@ -246,11 +246,19 @@ struct AlarmTalkApp: App {
                         // 게다가 매니페스트를 채우는 곳이 알람 편집기 진입 한 곳뿐이라,
                         // 거기서 실패하면 테마 목록이 통째로 비었다.
                         await voiceStudio.loadStockClips(session: auth.session)
-                        await StockClipLanguageRebinder(store: alarmStore)
-                            .rebindIfLanguageChanged(
-                                session: auth.session,
-                                clips: voiceStudio.stockClips
-                            )
+                        let rebinder = StockClipLanguageRebinder(store: alarmStore)
+                        await rebinder.rebindIfLanguageChanged(
+                            session: auth.session,
+                            clips: voiceStudio.stockClips
+                        )
+                        // 라이브 랜덤 생성으로 저장된 옛 알람을 테마 클립으로 옮긴다.
+                        // 멱등이라 매 실행 돌아도 안전하고, 묶을 클립이 없으면 아무 일도
+                        // 하지 않고 다음 실행에 다시 시도한다. 아래 예약 재조정이 이어서
+                        // 도므로 바뀐 클립이 그 자리에서 예약에 반영된다.
+                        await rebinder.rebindLiveGenerationRows(
+                            session: auth.session,
+                            clips: voiceStudio.stockClips
+                        )
                         // ⚠ **행만 바꾸면 알람은 옛 언어로 운다.** 재바인딩은 클립 키를
                         // 새 언어로 갈아 끼우지만, 이미 예약된 알람은 예약 시점에 넘긴
                         // 옛 언어 파일을 그대로 재생한다 — 이 클래스가 고치려던 증상이
