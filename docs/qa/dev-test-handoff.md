@@ -17,7 +17,24 @@
 | 5. 라이브 생성 제거 | 남음(4 뒤에) | — |
 
 ### 3단계에서 남은 것 — **화면**
-계산은 `ClipReadiness`(iOS, 테스트 8건)에 있다. 남은 것은 그리는 쪽이다.
+
+계산은 끝났다(양 앱 `ClipReadiness`, 각 8건 테스트·같은 기대값 표). 남은 것은 그리는 쪽이다.
+
+**이미 있어서 새로 만들지 않아도 되는 것** (이 목록을 먼저 볼 것 — 중복 구현 방지):
+
+| 필요한 것 | 이미 있는 것 |
+| --- | --- |
+| 진행률 값 | `ClipReadiness.percent(...)` (양 앱) |
+| 목소리별 렌더 상태 | iOS `AlarmTalkAPI.voicePrerenderStatus(id:token:)` → `{status, total}`. 안드로이드도 같은 라우트를 이미 호출한다 |
+| 다운로드 진행 | iOS `StockClipPrefetcher.state` = `.running(done:total:)`. 안드로이드 `StockClipPrefetchWorker` 가 `setProgress(progressData(done, total))` 로 이미 낸다(WorkManager 로 관찰) |
+| 퍼센트를 그리는 예 | iOS `Views/Auth/VoiceSetupView.swift` 가 `.running(done,total)` 을 이미 표시한다 — 이 화면의 표현을 재사용 |
+| 재시도 | `POST /voice/:id/prerender-retry` — 양 앱의 목소리 관리 화면 버튼이 이미 호출한다 |
+| iOS 잠금화면 진행 | `AlarmTalkWidget/AlarmLiveActivity.swift`(알람용). **같은 위젯 확장에 Activity 를 하나 더** 추가하는 형태 |
+
+**연결 순서 제안**: (1) `ClipReadiness.evaluate` 에 넣을 입력을 모으는 얇은 뷰모델
+(대상 목소리 = 기본 전부 + `ownedVoiceProfileIDs`, 카테고리, 캐시 여부) →
+(2) 그 값을 그리는 페이지 → (3) 백그라운드 진행 표시(알림 / Live Activity) → (4) 재시도 버튼.
+(1)까지 하면 4단계 관문이 바로 붙는다.
 
 - **준비 페이지**: `ClipReadiness.percent` 하나를 크게. 목소리별 진행/실패도 함께.
 - **백그라운드 진행**: 페이지를 떠나도 계속 받고, 진행률이 폰에서 보여야 한다.
