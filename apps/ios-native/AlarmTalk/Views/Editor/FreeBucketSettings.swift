@@ -45,10 +45,17 @@ struct FreeThemeSummaryRow: View {
     let weatherCity: String
     let onTap: () -> Void
 
+    @ObservedObject private var network = NetworkMonitor.shared
+
     private var value: String {
         guard let selectedBucket else {
-            // 오프라인이면 '준비 중' 이라고 속이지 않는다 — 연결이 돌아오면 자동 재시도한다.
-            return "불러오는 중이에요"
+            // ⚠ **오프라인이면 '준비 중' 이라고 속이지 않는다.** 2026-08-18 전에는 이 주석만
+            // 있고 코드는 언제나 "불러오는 중이에요" 를 돌려줬다 — iOS 에 연결 상태를 보는
+            // 수단이 아예 없었다(`NetworkMonitor` 를 그래서 만들었다). 비행기모드에서는
+            // 영원히 오지 않을 것을 기다린다고 말하고 있었던 셈이다.
+            // 안드로이드는 처음부터 두 문구를 나눠 갖고 있었다
+            // (`editor_free_bucket_loading` / `editor_free_bucket_offline`).
+            return network.isOnline ? "문구를 준비하고 있어요" : "오프라인이라 문구를 불러오지 못했어요"
         }
         // 날씨 버킷은 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").
         let city = weatherCity.trimmingCharacters(in: .whitespaces)

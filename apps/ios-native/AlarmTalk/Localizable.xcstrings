@@ -6003,6 +6003,23 @@
         }
       }
     },
+    "문구를 준비하고 있어요": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing your messages"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージを準備しています"
+          }
+        }
+      }
+    },
     "미등록": {
       "extractionState": "manual",
       "localizations": {
@@ -10730,6 +10747,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "午前を選択中"
+          }
+        }
+      }
+    },
+    "오프라인이라 문구를 불러오지 못했어요": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline — couldn't load the lines"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフラインのためフレーズを読み込めませんでした"
           }
         }
       }
