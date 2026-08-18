@@ -52,9 +52,17 @@ struct MessageSettingsPane: View {
     @State private var draftFortuneBirthDate: String = ""
     @State private var draftFortuneBirthTime: String = ""
 
+    /// 「사주 정보」 시트 안에서만 쓰는 임시 값. '확인' 을 눌러야 `draftFortune*` 로 간다.
+    /// ⚠ 아래 「직접 입력」 알럿과 **같은 이유**로 있다 — 직접 바인딩하면 취소가 취소가 아니다.
+    @State private var fortuneSheetGender: String = ""
+    @State private var fortuneSheetBirthDate: String = ""
+    @State private var fortuneSheetBirthTime: String = ""
+
     @State private var weatherDialogOpen = false
     @State private var fortuneDialogOpen = false
     @State private var manualDialogOpen = false
+    /// 다이얼로그를 띄우기 **직전**의 문구 종류. 취소하면 여기로 되돌린다(`select(_:)` 주석).
+    @State private var contextBeforeDialog: String?
 
     /// 안드로이드 `EditorMessageContexts`(`AlarmEditorControls.kt:502-509`) 순서 그대로.
     private static let options: [(id: String, label: String)] = [
@@ -119,23 +127,36 @@ struct MessageSettingsPane: View {
         // 썼고 설정은 `WeatherCityPickerSheet`(도시 목록 바텀시트)를 썼다 — **같은 값을
         // 고르는 화면이 앱 안에서 두 가지**였고, 한쪽을 고쳐도 다른 쪽은 그대로였다.
         // 2026-08-10 에 설정만 목록형으로 고치면서 이쪽이 남았다.
-        .bottomSheet(isPresented: $weatherDialogOpen, onDismiss: { weatherDialogOpen = false }) {
+        // 도시는 목록에서 **고르는 순간 확정**이라 중간 draft 가 필요 없다(고르지 않고 닫으면
+        // 아무것도 쓰이지 않는다). 대신 고르지 않고 닫았으면 종류를 되돌린다.
+        .bottomSheet(
+            isPresented: $weatherDialogOpen,
+            onDismiss: {
+                weatherDialogOpen = false
+                cancelContextSelection()
+            }
+        ) {
             WeatherCityPickerSheet(
                 currentCity: draftWeatherCity,
                 onSelect: { country, city in
                     draftWeatherCountry = country
                     draftWeatherCity = city
+                    contextBeforeDialog = nil
                     weatherDialogOpen = false
                 }
             )
         }
-        .sheet(isPresented: $fortuneDialogOpen) {
+        // ⚠ **`$draftFortune*` 에 직접 바인딩하지 말 것.** 아래 「직접 입력」 알럿과 같은
+        // 이유다 — 직접 바인딩하면 타이핑이 곧바로 화면 draft 에 반영돼 **취소가 취소가
+        // 아니게 된다.** 시트 전용 상태에 받아 '확인' 에서만 대입한다.
+        // (2026-08-18 전에는 여기만 직접 바인딩이었다. 스와이프로 닫아도 값이 남았다.)
+        .sheet(isPresented: $fortuneDialogOpen, onDismiss: { cancelContextSelection() }) {
             NavigationStack {
                 ScrollView {
                     FortunePromptInputFields(
-                        gender: $draftFortuneGender,
-                        birthDate: $draftFortuneBirthDate,
-                        birthTime: $draftFortuneBirthTime
+                        gender: $fortuneSheetGender,
+                        birthDate: $fortuneSheetBirthDate,
+                        birthTime: $fortuneSheetBirthTime
                     )
                     .padding(20)
                 }
@@ -143,9 +164,27 @@ struct MessageSettingsPane: View {
                 .navigationTitle("사주 정보")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("취소") { fortuneDialogOpen = false }
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("확인") { fortuneDialogOpen = false }
-                            .disabled(draftFortuneBirthDate.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("확인") {
+                            draftFortuneGender = fortuneSheetGender
+                            draftFortuneBirthDate = fortuneSheetBirthDate
+                            draftFortuneBirthTime = fortuneSheetBirthTime
+                            contextBeforeDialog = nil
+                            fortuneDialogOpen = false
+                        }
+                        // ⚠ **셋을 다 본다** — 서버 `fortune_ready` 와 같은 선이다
+                        // (`needsInput(for:)` 주석). 생년월일만 보면 저장은 되는데
+                        // 울릴 때 운세 문구가 안 나온다.
+                        .disabled(
+                            !FortunePromptInputFormat.isComplete(
+                                gender: fortuneSheetGender,
+                                birthDate: fortuneSheetBirthDate,
+                                birthTime: fortuneSheetBirthTime
+                            )
+                        )
                     }
                 }
             }
@@ -156,7 +195,7 @@ struct MessageSettingsPane: View {
         // 있어도 이미 값이 바뀐 뒤다). 알럿 전용 상태에 받아 '저장' 에서만 대입한다.
         .alert("직접 입력", isPresented: $manualDialogOpen) {
             TextField("알람에서 읽어 줄 문구", text: $manualAlertDraft)
-            Button("취소", role: .cancel) { }
+            Button("취소", role: .cancel) { cancelContextSelection() }
             Button("저장") {
                 // 새니타이즈·길이 상한은 여기서 건다 — 서버도 막지만, 앱이 1차
                 // 방어선이라 제어문자·제로폭이 문구에 남으면 TTS 낭독이 망가진다.
@@ -164,6 +203,7 @@ struct MessageSettingsPane: View {
                     InputSanitizer.sanitizeUserText(manualAlertDraft),
                     max: Self.manualTextMaxLength
                 )
+                contextBeforeDialog = nil
             }
             .disabled(
                 InputSanitizer.sanitizeUserText(manualAlertDraft)
@@ -182,6 +222,9 @@ struct MessageSettingsPane: View {
 
     // MARK: - 상세 카드
 
+    // ⚠ **상세 카드에서 열 때는 되돌릴 것이 없다.** 이건 이미 고른 종류의 값을 **고치는**
+    // 길이지 종류를 새로 고르는 것이 아니다 — 취소했다고 종류까지 바꾸면 안 된다.
+    // 그래서 열기 전에 `contextBeforeDialog` 를 비운다(안드로이드 `onChange` 와 같은 규칙).
     @ViewBuilder
     private var detailCard: some View {
         switch draftContext {
@@ -189,13 +232,19 @@ struct MessageSettingsPane: View {
             PromptDetailCard(
                 title: "날씨 지역",
                 value: weatherSummary,
-                onChange: { weatherDialogOpen = true }
+                onChange: {
+                    contextBeforeDialog = nil
+                    weatherDialogOpen = true
+                }
             )
         case "wake_fortune":
             PromptDetailCard(
                 title: "사주 정보",
                 value: fortuneSummary,
-                onChange: { fortuneDialogOpen = true }
+                onChange: {
+                    contextBeforeDialog = nil
+                    openFortuneSheet()
+                }
             )
         case MessageSettingsResult.manualContext:
             // ⚠ **문구를 반드시 함께 보여준다.** 생성형은 내용이 매번 새로 만들어져 틀릴
@@ -204,7 +253,10 @@ struct MessageSettingsPane: View {
             PromptDetailCard(
                 title: "문구",
                 value: draftManualText.isEmpty ? "아직 입력하지 않았어요" : draftManualText,
-                onChange: { manualDialogOpen = true }
+                onChange: {
+                    contextBeforeDialog = nil
+                    manualDialogOpen = true
+                }
             )
         default:
             EmptyView()
@@ -223,20 +275,74 @@ struct MessageSettingsPane: View {
         draftFortuneBirthTime = savedFortuneBirthTime
     }
 
+    /// 필요한 값이 아직 없어 **고르는 순간 물어야 하는** 종류인가.
+    ///
+    /// ⚠ **운세는 셋을 다 본다.** 예전에는 **생년월일 하나만** 보고 통과시켰는데, 설정 화면과
+    /// 서버는 성별·생년월일·시간 셋을 다 본다(`FortunePromptInputFormat.isComplete` /
+    /// 서버 `lib/dynamic-prompt-settings.ts` 의 `fortune_ready`). 그래서 생년월일만 채운
+    /// 사람은 **저장은 되는데 울릴 때 운세 문구가 안 나왔다** — 사용자는 저장했다고 믿는다.
+    /// 규칙을 새로 쓰지 말고 `isComplete` 를 그대로 가져다 쓴다.
+    private func needsInput(for id: String) -> Bool {
+        switch id {
+        case "wake_weather":
+            return draftWeatherCity.trimmingCharacters(in: .whitespaces).isEmpty
+        case "wake_fortune":
+            return !FortunePromptInputFormat.isComplete(
+                gender: draftFortuneGender,
+                birthDate: draftFortuneBirthDate,
+                birthTime: draftFortuneBirthTime
+            )
+        case MessageSettingsResult.manualContext:
+            return draftManualText.trimmingCharacters(in: .whitespaces).isEmpty
+        default:
+            return false
+        }
+    }
+
+    /// ⚠ **미완성 종류는 선택되지 않는다**(2026-08-18. 안드로이드 `AlarmRandomPromptSettings`
+    /// 의 `contextBeforeDialog` 와 같은 규칙).
+    ///
+    /// 그전에는 **먼저 고르고 나중에 물어서**, 다이얼로그를 취소하면 **값 없는 종류**가 선택된
+    /// 채로 남았다. 이 화면은 나갈 때 자동 반영(`onDisappear`)이라 그대로 편집기에 실리고,
+    /// 사용자는 고른 적 없는 미완성 상태로 저장을 시도하게 된다.
+    ///
+    /// nil = 되돌릴 것이 없다(같은 종류를 다시 누른 경우, 또는 상세 카드 '변경하기').
+    private func rollbackTarget(from previous: String, to id: String) -> String? {
+        previous != id ? previous : nil
+    }
+
     private func select(_ id: String) {
+        let previous = draftContext
         draftContext = id
         // 값이 **없을 때만** 고르는 순간 입력창을 띄운다. 이미 있으면 선택만 된다 —
         // 매번 물으면 이미 등록한 사람에게 같은 걸 또 묻는 화면이 된다.
-        switch id {
-        case "wake_weather" where draftWeatherCity.trimmingCharacters(in: .whitespaces).isEmpty:
-            weatherDialogOpen = true
-        case "wake_fortune" where draftFortuneBirthDate.trimmingCharacters(in: .whitespaces).isEmpty:
-            fortuneDialogOpen = true
-        case MessageSettingsResult.manualContext where draftManualText.trimmingCharacters(in: .whitespaces).isEmpty:
-            manualDialogOpen = true
-        default:
-            break
+        guard needsInput(for: id) else {
+            contextBeforeDialog = nil
+            return
         }
+        contextBeforeDialog = rollbackTarget(from: previous, to: id)
+        switch id {
+        case "wake_weather": weatherDialogOpen = true
+        case "wake_fortune": openFortuneSheet()
+        case MessageSettingsResult.manualContext: manualDialogOpen = true
+        default: break
+        }
+    }
+
+    /// 다이얼로그를 확인 없이 닫았을 때 — 그 종류를 고르기 전으로 되돌린다.
+    private func cancelContextSelection() {
+        if let previous = contextBeforeDialog { draftContext = previous }
+        contextBeforeDialog = nil
+    }
+
+    /// 사주 시트를 연다. ⚠ **여는 자리는 전부 이걸 부른다** — 시드를 `.onChange(of:)` 에
+    /// 맡기면 시트 content 가 만들어지는 시점과의 순서에 기대게 된다(알럿과 달리 시트는
+    /// 표시 시점에 한 번 만들어진다). 여는 쪽에서 직접 채워 그 의존을 없앤다.
+    private func openFortuneSheet() {
+        fortuneSheetGender = draftFortuneGender
+        fortuneSheetBirthDate = draftFortuneBirthDate
+        fortuneSheetBirthTime = draftFortuneBirthTime
+        fortuneDialogOpen = true
     }
 
     private func rowLabel(_ option: (id: String, label: String)) -> String {
@@ -270,31 +376,12 @@ struct MessageSettingsPane: View {
         return parts.joined(separator: " · ")
     }
 
-    /// 필요한 값이 비어 있으면 저장을 막는다 — 저장한 뒤 울릴 때 실패하면 되돌릴 수 없다.
-    ///
-    /// ⚠ **판정은 설정 화면·서버와 같아야 한다.** 예전 편집기는 운세를 **생년월일 하나만**
-    /// 보고 통과시켰는데(설정 화면은 `FortunePromptInputFormat.isComplete` 로 성별·
-    /// 생년월일·시간 셋을 다 본다), 그래서 편집기로 넣은 값은 서버의
-    /// `fortune_ready`(`lib/dynamic-prompt-settings.ts` — 셋 다 있어야 true)를 만족하지
-    /// 못해 **어디에도 반영되지 않았다.** 사용자는 저장했다고 믿고 알람을 맞추는데
-    /// 울릴 때 운세 문구가 안 나온다.
-    /// 규칙을 새로 쓰지 말고 `isComplete` 를 그대로 가져다 쓴다.
-    private var saveEnabled: Bool {
-        switch draftContext {
-        case "wake_weather":
-            return !draftWeatherCity.trimmingCharacters(in: .whitespaces).isEmpty
-        case "wake_fortune":
-            return FortunePromptInputFormat.isComplete(
-                gender: draftFortuneGender,
-                birthDate: draftFortuneBirthDate,
-                birthTime: draftFortuneBirthTime
-            )
-        case MessageSettingsResult.manualContext:
-            return !draftManualText.trimmingCharacters(in: .whitespaces).isEmpty
-        default:
-            return true
-        }
-    }
+    // ⚠ **`saveEnabled` 를 되살리지 말 것**(2026-08-18 삭제). 이 화면에는 [취소][저장] 바가
+    // 없고 나갈 때 자동 반영이라(`onDisappear`) 막을 버튼 자체가 없었다 — 정의만 있고
+    // 아무도 읽지 않는 죽은 코드였고, 그 사이 판정이 `select(_:)` 와 갈라져 있었다.
+    // 미완성 상태를 막는 일은 이제 `needsInput(for:)` + `contextBeforeDialog` 롤백이 한다:
+    // **애초에 미완성 종류가 선택되지 않으므로** 나중에 저장을 막을 일이 없다.
+    // 완성도 판정이 필요하면 `needsInput(for:)` 를 쓸 것 — 두 벌로 만들지 말 것.
 
     private var result: MessageSettingsResult {
         MessageSettingsResult(
