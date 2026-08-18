@@ -258,6 +258,16 @@ final class AuthViewModel: ObservableObject {
         session != nil
     }
 
+    /// 키체인에 저장된 세션을 **네트워크 없이 즉시** 채택한다.
+    ///
+    /// ⚠ 백그라운드로 깨어난 실행(푸시·BGTask)에는 화면이 없어 `restoreSession()` 이 돌지
+    /// 않는다. 그때 세션이 nil 이면 받은 알람을 당겨올 토큰이 없어 **푸시가 와도 아무 일도
+    /// 안 일어난다**(2026-08-18 Codex #697 P1). 키체인 읽기는 동기라 launch 에서 부를 수 있다.
+    func adoptStoredSessionIfNeeded() {
+        guard session == nil, let saved = KeychainStore.readSession() else { return }
+        session = saved
+    }
+
     func restoreSession() async {
         guard let saved = KeychainStore.readSession() else { return }
         session = saved

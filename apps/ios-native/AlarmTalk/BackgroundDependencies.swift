@@ -21,6 +21,9 @@ final class BackgroundDependencies {
     let alarmKit: AlarmKitViewModel
     let auth: AuthViewModel
     let socialFeatures: SocialFeatureViewModel
+    /// 푸시 수신. **화면보다 먼저 살아 있어야 한다** — 백그라운드 푸시로 깨어난 콜드
+    /// 실행에는 scene 이 없어, 화면에서 꽂으면 그 payload 를 그대로 버린다.
+    let push: PushNotificationCoordinator
 
     private init() {
         // 화면 확인 모드에서는 표본이 진짜 저장소에 남지 않도록 임시 파일을 쓴다
@@ -32,5 +35,6 @@ final class BackgroundDependencies {
         alarmKit = AlarmKitViewModel()
         auth = AuthViewModel()
         socialFeatures = SocialFeatureViewModel()
+        push = PushNotificationCoordinator()
     }
 }

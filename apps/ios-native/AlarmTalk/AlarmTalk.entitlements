@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- ⚠ 이게 없으면 `registerForRemoteNotifications()` 가 **실패한다** — 기기 토큰을
+       아예 못 받아 가족 알람·목소리 공유·플랜 변경 푸시가 통째로 죽는다
+       (2026-08-18 Codex #697 P1). 등록 경로를 고쳐도 이것 없이는 소용없다.
+       배포 서명 시 Xcode 가 `production` 으로 바꿔 준다. -->
+  <key>aps-environment</key>
+  <string>development</string>
   <key>com.apple.developer.applesignin</key>
   <array>
     <string>Default</string>

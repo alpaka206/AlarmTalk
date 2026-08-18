@@ -38,7 +38,7 @@ struct AlarmTalkApp: App {
 
     /// iOS 푸시. **알림 권한과 별개** — background push 는 권한 없이도 오고, 그게
     /// 받은 알람을 제때 예약하는 유일한 즉시 경로다(`PushNotificationCoordinator` 주석).
-    @StateObject private var push = PushNotificationCoordinator()
+    @StateObject private var push = BackgroundDependencies.shared.push
 
     /// 기본 목소리 테마 클립 선다운로드. **온보딩 화면의 것과 별개로 앱 전역에 하나 둔다** —
     /// 온보딩을 지난 사용자가 시스템 언어를 바꾸면 새 언어분을 받을 길이 그것뿐이다.

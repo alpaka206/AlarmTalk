@@ -185,6 +185,31 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // **붙들린 채 완료조차 되지 않는다**(2026-08-18 Codex #697 P2).
         // 의존성은 화면과 같은 인스턴스다(`BackgroundDependencies`).
         let deps = BackgroundDependencies.shared
+        // ⚠ **세션을 여기서 채택한다.** 백그라운드로 깨어난 실행에는 화면이 없어
+        // `restoreSession()` 이 돌지 않는다 — 세션이 없으면 받은 알람을 당겨올 토큰이 없어
+        // 푸시가 와도 아무 일도 일어나지 않는다. 키체인 읽기는 동기라 여기서 해도 된다.
+        deps.auth.adoptStoredSessionIfNeeded()
+
+        // ⚠ **푸시 코디네이터도 launch 에서 꽂는다.** 백그라운드 푸시로 깨어난 콜드
+        // 실행에는 scene 이 보장되지 않아, 화면의 `.task` 에서 꽂으면 그 payload 를 그대로
+        // 버린다(`.noData`) — 방금 도착한 가족 알람이 다음 폴백까지 예약되지 않는다.
+        // 화면이 뜨면 같은 인스턴스에 더 풍부한 핸들러(목소리 스튜디오 등)를 덮어쓴다.
+        Self.coordinator = deps.push
+        Self.currentSession = { deps.auth.session }
+        let launchPull = RemoteAlarmPullSync(
+            store: deps.alarmStore,
+            alarmKit: deps.alarmKit,
+            audioCache: .shared,
+            auth: deps.auth
+        )
+        deps.push.onFamilyAlarm = {
+            // 실패는 삼킨다 — 다음 주기 동기화가 그물이다(백그라운드에서 던지면 잃는 게 더 크다).
+            _ = try? await launchPull.runOnce()
+        }
+        deps.push.onPlanChanged = {
+            await deps.socialFeatures.refreshAll(session: deps.auth.session, force: true)
+        }
+
         BackgroundSyncTask.register(
             pull: RemoteAlarmPullSync(
                 store: deps.alarmStore,
