@@ -416,13 +416,33 @@ final class AlarmKitViewModel: ObservableObject {
     /// 멀쩡한 예약을 헛되이 취소하게 된다. 실패로 처리되면 켜기 흐름이 알람을 도로 꺼
     /// 버리므로(`AlarmsListView`), 과잉 판정이 곧 피해다.
     struct SchedulingSnapshot: Equatable {
+        // `makeSchedule` 이 보는 값
         let enabled: Bool
         let hour: Int
         let minute: Int
         let fireAtMillis: Int64
         let repeatDaysMask: Int
         let holidayOff: Bool
+        // `makeConfiguration` 이 보는 값 — 라벨·스누즈 문구, 소리 선택, 목소리 문구까지
+        // 알림에 그대로 박힌다. 여기서 빠뜨리면 그 변경은 **아무도 고치지 않는다**
+        // (리컨사일러는 소리 지문만 본다).
         let playMode: String
+        let label: String
+        let snoozeEnabled: Bool
+        let snoozeMinutes: Int
+        let snoozeRepeatLimit: Int
+        let audioCacheKey: String?
+        let localAudioUri: String?
+        let voiceText: String?
+        let voiceProfileId: String?
+        let bucketId: String?
+        let bucketRotationIndex: Int?
+        let contextVariantIndex: Int?
+        let voiceRandomPrompt: Bool
+        let defaultAlarmSoundId: String
+        let alarmSoundUri: String?
+        let voiceVolumePercent: Int
+        let alarmVolumePercent: Int
 
         init(_ r: LocalAlarmRecord) {
             enabled = r.enabled
@@ -432,6 +452,22 @@ final class AlarmKitViewModel: ObservableObject {
             repeatDaysMask = r.repeatDaysMask
             holidayOff = r.holidayOff
             playMode = r.playMode
+            label = r.label
+            snoozeEnabled = r.snoozeEnabled
+            snoozeMinutes = r.snoozeMinutes
+            snoozeRepeatLimit = r.snoozeRepeatLimit
+            audioCacheKey = r.audioCacheKey
+            localAudioUri = r.localAudioUri
+            voiceText = r.voiceText
+            voiceProfileId = r.voiceProfileId
+            bucketId = r.bucketId
+            bucketRotationIndex = r.bucketRotationIndex
+            contextVariantIndex = r.contextVariantIndex
+            voiceRandomPrompt = r.voiceRandomPrompt
+            defaultAlarmSoundId = r.defaultAlarmSoundId
+            alarmSoundUri = r.alarmSoundUri
+            voiceVolumePercent = r.voiceVolumePercent
+            alarmVolumePercent = r.alarmVolumePercent
         }
     }
 

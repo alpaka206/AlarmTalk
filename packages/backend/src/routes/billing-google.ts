@@ -135,6 +135,58 @@ export async function acknowledgeGoogleSubscription(params: {
   return false;
 }
 
+/**
+ * Play **1회성 상품(선물)** 소비. `:consume` 은 acknowledge 도 겸한다.
+ *
+ * ⚠ **반드시 해야 한다 — 안 하면 두 가지가 난다**(2026-08-18 Codex #697 P1):
+ *  1. 미확인 구매는 **3일 뒤 Play 가 자동 환불**한다. 그런데 우리가 발급한 바우처는
+ *     그대로 쓸 수 있다 — 돈은 돌려주고 이용권은 나간 상태가 된다.
+ *  2. 소모성 상품이 소유된 채 남아 구매자가 **선물을 또 살 수 없다.**
+ * 클라(`PlayBillingManager`)는 소비를 하지 않는다(구독 acknowledge 와 같은 이유 — 서버가
+ * 권위다). 그래서 이 경로가 유일하다.
+ *
+ * 멱등하므로 **중복 confirm 에서도 다시 시도한다** — 첫 시도가 바우처 커밋 뒤에 실패했을
+ * 수 있고, 그때 재시도할 다른 경로가 없다(1회성 구매에는 RTDN 이 오지 않는다).
+ * 실패해도 흐름은 막지 않는다 — 바우처는 이미 나갔고, 여기서 500 을 내면 클라가 결제를
+ * 실패로 알고 재시도해 사용자만 혼란스러워진다.
+ */
+export async function consumeGoogleProduct(params: {
+  baseUrl: string;
+  productId: string;
+  purchaseToken: string;
+  accessToken: string;
+}): Promise<boolean> {
+  const { baseUrl, productId, purchaseToken, accessToken } = params;
+  const url = `${baseUrl}/purchases/products/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}:consume`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, ACK_BACKOFF_MS[attempt - 1]));
+    }
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      if (res.ok) return true;
+      logStructured('warn', {
+        at: 'billing.google.consume',
+        attempt,
+        status: res.status,
+        detail: (await res.text()).slice(0, 300),
+      });
+      // 4xx(이미 소비됨 등)는 재시도해도 같다.
+      if (res.status < 500) return false;
+    } catch (err) {
+      logStructured('error', { at: 'billing.google.consume', attempt, error: String(err) });
+    }
+  }
+  return false;
+}
+
 const billingGoogle = new Hono<AppEnv>();
 
 billingGoogle.post('/google/confirm', async (c) => {
@@ -312,9 +364,33 @@ billingGoogle.post('/google/confirm', async (c) => {
       });
     });
     if (!gift) {
-      return c.json({ ok: true, gift: true, duplicate: true });
+      // ⚠ 중복이어도 **소비는 다시 시도한다** — 첫 시도가 바우처 커밋 뒤에 실패했을 수
+      // 있고, 1회성 구매에는 RTDN 이 없어 재시도할 다른 경로가 없다.
+      await consumeGoogleProduct({
+        baseUrl,
+        productId: parsed.product_id,
+        purchaseToken: parsed.purchase_token,
+        accessToken,
+      });
+      // ⚠ **성공 필드는 `success` 다 — `ok` 가 아니다.** 안드로이드
+      // `GooglePlayConfirmResponse.success` 는 non-null 이라 필드가 없으면 Gson 이
+      // `false` 로 둔다. 그러면 정상 발급된 선물이 **실패로 보이고** 바우처 새로고침도
+      // 건너뛴다. 애플 갈래에서 같은 버그를 고쳤는데(2026-08-18) 이쪽을 놓쳤다 —
+      // **두 스토어의 선물 갈래는 한 벌이다.**
+      return c.json({ success: true, gift: true, duplicate: true });
     }
-    return c.json({ ok: true, gift: true, voucher: { code: gift.code, expires_at: gift.expires_at } });
+    // 바우처가 **커밋된 뒤에** 소비한다. 먼저 소비하면 발급이 실패했을 때 되돌릴 수 없다.
+    await consumeGoogleProduct({
+      baseUrl,
+      productId: parsed.product_id,
+      purchaseToken: parsed.purchase_token,
+      accessToken,
+    });
+    return c.json({
+      success: true,
+      gift: true,
+      voucher: { code: gift.code, expires_at: gift.expires_at },
+    });
   }
 
   const lookupRes = await fetch(

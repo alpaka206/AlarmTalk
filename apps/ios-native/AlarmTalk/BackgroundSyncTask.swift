@@ -73,16 +73,27 @@ final class BackgroundSyncTask {
 
     // MARK: Registration
 
-    /// 시스템에 task 핸들러를 등록한다. App init 시 한 번만 호출해야 한다.
-    /// register 자체는 BGAppRefreshTask 의 실제 실행 시점에 클로저를 호출한다.
-    static func register(
-        pull: RemoteAlarmPullSync,
-        push: RemoteAlarmPushSync,
-        socialFeatures: SocialFeatureViewModel,
-        store: LocalAlarmStore? = nil,
-        alarmKit: AlarmKitViewModel? = nil
-    ) {
+    /// 의존성이 준비되면 채워지는 **실행기**. 등록(아래 `registerLaunchHandler`)은 launch
+    /// 중에 끝나야 하는데, 의존성(뷰모델들)은 그때 아직 없다 — 그래서 둘을 나눈다.
+    @MainActor private static var runner: ((BGAppRefreshTask) -> Void)?
+
+    /// 실행기가 준비되기 **전에** 시스템이 깨운 task. 준비되는 즉시 넘긴다.
+    @MainActor private static var pendingTask: BGAppRefreshTask?
+
+    /// **launch 중에** 반드시 부른다(`didFinishLaunchingWithOptions`).
+    ///
+    /// ⚠ **뷰의 `.task` 에서 등록하지 말 것**(2026-08-18 Codex #697 P2). `BGTaskScheduler`
+    /// 는 launch 핸들러가 **launch 가 끝나기 전에** 등록돼 있기를 요구한다. 예전에는
+    /// SwiftUI `.task` 안에서 등록했는데, 그건 `didFinishLaunchingWithOptions` 가 반환한
+    /// **뒤에** 돈다. 특히 시스템이 **백그라운드 새로고침 때문에 앱을 깨운 경우**에는
+    /// scene 이 붙지 않아 그 `.task` 가 아예 안 돌 수 있다 — 그러면 핸들러가 없어
+    /// 백그라운드 사이클(푸시 유실 시의 그물)이 통째로 죽는다.
+    ///
+    /// 의존성은 아직 없으므로 **깨어난 task 를 붙들어 두고**, `register(...)` 가 실행기를
+    /// 채우는 순간 넘긴다.
+    static func registerLaunchHandler() {
         #if canImport(BackgroundTasks)
+        guard !didRegisterHandler else { return }
         didRegisterHandler = true
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: taskIdentifier,
@@ -92,6 +103,26 @@ final class BackgroundSyncTask {
                 task.setTaskCompleted(success: false)
                 return
             }
+            Task { @MainActor in
+                if let runner { runner(refresh) } else { pendingTask = refresh }
+            }
+        }
+        #endif
+    }
+
+    /// 실제 작업 실행기를 꽂는다. 의존성이 준비된 뒤(앱 화면 진입) 한 번 부른다.
+    /// 등록 자체는 `registerLaunchHandler` 가 launch 중에 이미 끝냈다.
+    static func register(
+        pull: RemoteAlarmPullSync,
+        push: RemoteAlarmPushSync,
+        socialFeatures: SocialFeatureViewModel,
+        store: LocalAlarmStore? = nil,
+        alarmKit: AlarmKitViewModel? = nil
+    ) {
+        #if canImport(BackgroundTasks)
+        // ⚠ 여기서 `BGTaskScheduler.register` 를 **다시 부르지 말 것** — 같은 식별자로 두 번
+        // 등록하면 크래시한다. 등록은 `registerLaunchHandler` 가 launch 중에 끝냈다.
+        let run: @MainActor (BGAppRefreshTask) -> Void = { refresh in
             // ⚠ Task 핸들을 잡아 둔다. 잡지 않으면 만료·타임아웃에서 `setTaskCompleted` 만
             // 부르고 **실행 중인 사이클은 그대로 살아 있다** — 앱이 서스펜드되면 await 가
             // 매달려 있다가 다음 포그라운드 복귀 때 재개돼, 그때 도는 foreground 사이클과
@@ -109,6 +140,14 @@ final class BackgroundSyncTask {
             }
             // 시스템이 예산을 회수하면 실행 중인 사이클도 함께 접는다.
             refresh.expirationHandler = { work.cancel() }
+        }
+        Task { @MainActor in
+            runner = run
+            // 실행기가 없던 사이에 시스템이 깨웠으면 지금 넘긴다.
+            if let waiting = pendingTask {
+                pendingTask = nil
+                run(waiting)
+            }
         }
         #endif
     }

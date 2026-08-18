@@ -175,6 +175,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         AlarmTalkLog.startCrashReporting()
+        // ⚠ **BGTask 핸들러는 launch 가 끝나기 전에 등록돼 있어야 한다.**
+        // 뷰의 `.task` 에서 하면 이 콜백이 반환한 뒤라 늦고, 시스템이 백그라운드
+        // 새로고침으로 앱을 깨운 경우에는 scene 이 안 붙어 아예 안 돌 수도 있다
+        // (`BackgroundSyncTask.registerLaunchHandler` 주석 참조).
+        BackgroundSyncTask.registerLaunchHandler()
         return true
     }
 
