@@ -40,6 +40,8 @@ internal fun String.stripDeliveryTags(generated: Boolean): String {
     val stripped = BRACKETED_RE.replace(this, " ")
     val cleaned = stripped.replace(WHITESPACE_RE, " ").trim()
     // 다 벗겨 아무것도 안 남으면 벗기지 않은 것으로 친다. 문구가 비면 편집기가 저장을 막아
-    // (`editor_save_blocked_enter_message_or_random`) 알람을 고칠 수도 지울 수도 없게 된다.
+    // (`AlarmEditorScreen` 의 `editorSaveBlocked` — 빈 문구 갈래) 알람을 고칠 수도 지울
+    // 수도 없게 된다. ⚠ 그 차단에는 **사유 문구가 없다**(2026-08-18) — 저장 버튼만 회색이
+    // 되므로, 여기서 빈 문자열을 흘리면 사용자는 이유도 모른 채 갇힌다.
     return cleaned.ifBlank { this }
 }

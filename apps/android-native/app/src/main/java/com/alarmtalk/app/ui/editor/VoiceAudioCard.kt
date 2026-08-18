@@ -271,6 +271,10 @@ internal fun VoiceAudioCard(
                                     // 표시 판정 — 재생 방식과 무관(`hasBucketMessageChoice` 주석).
                                     manualSelected = !editor.voiceRandomPrompt &&
                                         !editor.hasBucketMessageChoice(),
+                                    // 고른 것도 없고 문구도 없다 = 아직 아무것도 정해지지 않았다.
+                                    // 아래 행이 이걸 `manualSelected` 보다 먼저 본다.
+                                    nothingChosenYet = editor.voiceText.isBlank() &&
+                                        !editor.hasBucketMessageChoice(),
                                     onClick = onOpenFreeBucketSettings,
                                 )
                             } else {
@@ -600,17 +604,28 @@ private fun FreeThemeSummaryRow(
      * `!voiceRandomPrompt && !isActiveBucketAlarm()` 이다.
      */
     manualSelected: Boolean,
-    /** 직접 입력 문구. 선택됐으면 이 행에도 함께 보여준다. */
+    /**
+     * 아직 아무것도 정해지지 않았는가(`voiceText` 도 비고 버킷도 없음).
+     * ⚠ [manualSelected] 보다 **먼저** 본다 — 아래 주석 참조.
+     */
+    nothingChosenYet: Boolean,
     onClick: () -> Unit,
 ) {
     // 오프라인이면 '준비 중'이라고 속이지 않고 연결이 필요함을 알린다(복구 시 자동 재시도).
     val isOnline by rememberIsOnline()
     val manualLabel = stringResource(R.string.editorp_random_manual_title)
     val valueLabel = when {
+        // ⚠ **아직 정해진 게 없는 창을 '직접 입력' 이라고 말하지 말 것**(2026-08-18).
+        // `manualSelected` 는 `!voiceRandomPrompt && !hasBucketMessageChoice()` 라, 클립이
+        // 아직 안 붙은 이 창에서 **필연적으로 true** 가 된다. 그래서 예전에는 클립을 받는
+        // 중인데 행이 "직접 입력 문구" 라고 말했고 — 이 창의 사용자는 무료라 **직접 입력이
+        // 잠겨 있는 사람**이었다(`manualLocked = freeVoiceTier`). 아래 두 갈래가 이미
+        // 있었는데도 `manualSelected` 가 먼저 걸려 **닿지 못했다.**
+        nothingChosenYet && !isOnline -> stringResource(R.string.editor_free_bucket_offline)
+        nothingChosenYet -> stringResource(R.string.editor_free_bucket_loading)
         // ⚠ **직접 입력을 '준비 중' 으로 말하지 말 것.** 직접 입력을 고르면 selectedBucket
         // 이 null 이 되는데, 예전에는 버킷만 보고 판정해서 문구를 넣어 놨는데도 행이
-        // "문구를 준비하고 있어요" 라고 **거짓말**했다. 유료 요약 행
-        // (`MessageModeSummaryRow`)과 같은 모양으로 문구까지 보여준다.
+        // "문구를 준비하고 있어요" 라고 **거짓말**했다.
         // 위 `MessageModeSummaryRow` 와 같은 규약 — 종류만 말하고 문장은 싣지 않는다.
         manualSelected -> manualLabel
         // 날씨 버킷은 어느 도시 기준인지 함께 보여준다(예: "날씨 · 서울").

@@ -202,10 +202,6 @@
     <string name="editor_msg_mode_manual">Type it yourself</string>
     <string name="editor_msg_mode_preset">Default greeting</string>
     <string name="editor_ringtone_picker_title">Choose alarm sound</string>
-    <string name="editor_save_blocked_enter_message_or_random">Please enter a phrase to play or turn on random phrases.</string>
-    <string name="editor_save_blocked_random_prompt_incomplete">In random phrase settings, please fill in the weather location and fortune info.</string>
-    <string name="editor_save_blocked_select_voice">Please choose the voice to hear in the alarm.</string>
-    <string name="editor_save_blocked_voice_unusable">The selected voice can\'t be used. Please choose another voice.</string>
     <string name="editor_save">Save</string>
     <string name="editor_save_for">Save · %1$s</string>
     <string name="editor_cancel">Cancel</string>
@@ -225,9 +221,7 @@
     <string name="editor_snooze_summary">%1$d min · %2$s</string>
     <string name="editor_snooze_title">Snooze</string>
     <string name="editor_free_bucket_loading">Preparing your messages</string>
-    <string name="editor_save_blocked_free_clips_loading">Preparing your alarm messages. Please wait a moment.</string>
     <string name="editor_free_bucket_offline">Offline — couldn\'t load the lines</string>
-    <string name="editor_save_blocked_free_clips_offline">You\'re offline, so the alarm lines couldn\'t be loaded. We\'ll retry automatically once you reconnect.</string>
     <string name="editor_vibration_pattern">Pattern</string>
     <string name="editor_vibration_use">Use vibration</string>
     <string name="editor_vibration_title">Vibration</string>

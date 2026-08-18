@@ -115,6 +115,18 @@ internal fun RandomPromptSettingsPane(
     var weatherDialogOpen by remember { mutableStateOf(false) }
     var fortuneDialogOpen by remember { mutableStateOf(false) }
     var manualDialogOpen by remember { mutableStateOf(false) }
+    // ⚠ **미완성 종류는 선택되지 않는다**(2026-08-18 변경. 그전에는 반대였다).
+    // 예전에는 값 없이 고른 뒤 다이얼로그를 취소해도 그 종류가 그대로 선택됐고, 편집기가
+    // 하단 바에서 "랜덤 문구 설정에서 날씨 지역·운세 정보를 채워 주세요." 로 막았다 —
+    // **고를 수는 있는데 저장은 안 되는 상태**를 만들어 놓고 그 사실을 다른 화면에서
+    // 알리는 구조였다. 지금은 취소하면 **직전 선택으로 되돌린다**: 목소리 관문
+    // (`VoiceAudioCard` 의 `onNeedsClipPreparation`)과 같은 규칙이다 — 준비 안 된 것은
+    // 고를 수 없다. 뒤로가기를 모달로 붙잡는 게 아니라 선택만 되돌리는 것이라,
+    // 아래 `BackHandler` 규약(뒤로가기가 곧 반영)과 부딪히지 않는다.
+    //
+    // null = 되돌릴 것이 없다. 상세 카드 '변경하기' 로 연 경우가 그렇다(선택은 이미
+    // 완성돼 있고 값만 고치는 중이므로, 취소해도 종류는 그대로여야 한다).
+    var contextBeforeDialog by remember { mutableStateOf<String?>(null) }
     val isManual = draftContext == ManualMessageContext
     val normalizedContext = if (isManual) ManualMessageContext else normalizedRandomPromptContext(draftContext)
     fun hasWeatherInfo(): Boolean =
@@ -141,23 +153,46 @@ internal fun RandomPromptSettingsPane(
     }
 
     fun selectContext(context: String) {
+        val previous = draftContext
         draftContext = context
         // 상세 입력이 필요한 모드는 **아직 값이 없을 때만** 그 자리에서 다이얼로그를 띄운다.
         // 이미 등록한 값이 있으면 고르기만 하고 넘어간다 — 매번 같은 정보를 다시 확인시키면
         // 문구 하나 바꾸는 데 모달을 두 번 지나야 한다. 고치고 싶으면 아래 상세 카드의
         // '변경하기' 로 간다.
-        when {
-            context == ManualMessageContext && draftManualText.isBlank() -> manualDialogOpen = true
-            randomContextUsesWeather(context) && !hasWeatherInfo() -> weatherDialogOpen = true
-            context == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
+        val needsInput = when {
+            context == ManualMessageContext -> draftManualText.isBlank()
+            randomContextUsesWeather(context) -> !hasWeatherInfo()
+            context == "wake_fortune" -> !hasFortuneInfo()
+            else -> false
         }
+        if (!needsInput) {
+            contextBeforeDialog = null
+            return
+        }
+        // 취소하면 되돌아갈 자리. 같은 종류를 다시 누른 것이면 되돌릴 것이 없다.
+        contextBeforeDialog = previous.takeIf { it != context }
+        when {
+            context == ManualMessageContext -> manualDialogOpen = true
+            randomContextUsesWeather(context) -> weatherDialogOpen = true
+            context == "wake_fortune" -> fortuneDialogOpen = true
+        }
+    }
+
+    /** 다이얼로그를 확인 없이 닫았을 때 — 그 종류를 고르기 전으로 되돌린다. */
+    fun cancelContextSelection() {
+        contextBeforeDialog?.let { draftContext = it }
+        contextBeforeDialog = null
     }
 
     // ⚠ **뒤로가기가 곧 반영이다**(2026-08-15 지시 "취소·저장 버튼 말고 위 뒤로가기가 자연스럽다").
     // 다른 상세 화면(진동·스누즈·무료 테마)이 전부 그렇다 — 이 화면만 하단 버튼을 갖고 있었다.
-    // 필요한 정보(도시·사주)가 비어 있어도 그대로 반영한다: 상세 카드가 '아직 고르지 않았어요'
-    // 로 말하고, 알람 저장은 편집기가 막는다(`saveBlockedReason`). 여기서 다이얼로그를 강제로
-    // 띄우면 화면을 나가려는 동작이 모달로 붙잡히는 셈이라 더 나쁘다.
+    // 여기서 다이얼로그를 강제로 띄우지는 않는다 — 화면을 나가려는 동작이 모달로 붙잡히는
+    // 셈이라 더 나쁘다. 대신 **미완성 종류는 애초에 선택되지 않는다**(위 `selectContext` 의
+    // `contextBeforeDialog` 주석). 그래서 이 시점의 값은 언제나 완성돼 있고, 편집기가
+    // 하단 바에서 "…채워 주세요" 로 뒤늦게 막을 일도 없다.
+    //
+    // 예외는 **가족 알람**이다: 수신자가 제 설정을 갖고 있으면 내 칸이 비어 있어도 완성이라
+    // (`hasWeatherInfo`/`hasFortuneInfo` 의 `saved*Configured` 갈래) 그대로 반영한다.
     BackHandler(onBack = ::saveResolvedSettings)
 
     Surface(
@@ -212,14 +247,22 @@ internal fun RandomPromptSettingsPane(
                     RandomPromptDetailRow(
                         title = stringResource(R.string.editorp_random_manual_title),
                         value = draftManualText,
-                        onChange = { manualDialogOpen = true },
+                        // 값만 고치는 자리다 — 취소해도 종류 선택은 그대로여야 하므로
+                        // 되돌릴 자리를 비운다(위 `contextBeforeDialog` 주석).
+                        onChange = {
+                            contextBeforeDialog = null
+                            manualDialogOpen = true
+                        },
                     )
                 }
 
                 if (randomContextUsesWeather(normalizedContext)) {
                     RandomPromptDetailRow(
                         title = stringResource(R.string.editorp_random_weather_region_title),
-                        onChange = { weatherDialogOpen = true },
+                        onChange = {
+                            contextBeforeDialog = null
+                            weatherDialogOpen = true
+                        },
                         value = when {
                             // ⚠ **도시 하나로 판정한다**(2026-08-15). 나라는 국내면 비는 값이라
                             // (`WeatherCityPickerSheet` 프리셋은 도시만 준다) 둘 다 요구하면
@@ -240,7 +283,10 @@ internal fun RandomPromptSettingsPane(
                 if (normalizedContext == "wake_fortune") {
                     RandomPromptDetailRow(
                         title = stringResource(R.string.editorp_random_fortune_title),
-                        onChange = { fortuneDialogOpen = true },
+                        onChange = {
+                            contextBeforeDialog = null
+                            fortuneDialogOpen = true
+                        },
                         value = when {
                             draftFortuneGender.isNotBlank() &&
                                 draftFortuneBirthDate.isNotBlank() &&
@@ -265,11 +311,15 @@ internal fun RandomPromptSettingsPane(
         WeatherLocationDialog(
             country = draftWeatherCountry,
             city = draftWeatherCity,
-            onDismissWithoutSave = { weatherDialogOpen = false },
+            onDismissWithoutSave = {
+                weatherDialogOpen = false
+                cancelContextSelection()
+            },
             onConfirm = { country, city ->
                 draftWeatherCountry = country
                 draftWeatherCity = city
                 weatherDialogOpen = false
+                contextBeforeDialog = null
             },
         )
     }
@@ -279,12 +329,16 @@ internal fun RandomPromptSettingsPane(
             gender = draftFortuneGender,
             birthDate = draftFortuneBirthDate,
             birthTime = draftFortuneBirthTime,
-            onDismissWithoutSave = { fortuneDialogOpen = false },
+            onDismissWithoutSave = {
+                fortuneDialogOpen = false
+                cancelContextSelection()
+            },
             onConfirm = { gender, birthDate, birthTime ->
                 draftFortuneGender = gender
                 draftFortuneBirthDate = birthDate
                 draftFortuneBirthTime = birthTime
                 fortuneDialogOpen = false
+                contextBeforeDialog = null
             },
         )
     }
@@ -294,10 +348,14 @@ internal fun RandomPromptSettingsPane(
             // 지금까지 담긴 문구로 연다(기존 알람의 문구든, 방금 이 화면에서 친 것이든).
             // 확인 없이 닫으면 입력한 내용은 그대로 폐기된다.
             initialText = draftManualText,
-            onDismiss = { manualDialogOpen = false },
+            onDismiss = {
+                manualDialogOpen = false
+                cancelContextSelection()
+            },
             onConfirm = { text ->
                 draftManualText = text
                 manualDialogOpen = false
+                contextBeforeDialog = null
             },
         )
     }

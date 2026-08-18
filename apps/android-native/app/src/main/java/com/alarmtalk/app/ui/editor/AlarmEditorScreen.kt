@@ -1125,35 +1125,40 @@ internal fun AlarmEditorScreen(
         return true
     }
 
-    // 저장이 막힌 이유 — 비활성 버튼만으로는 무엇이 빠졌는지 알 수 없어
-    // 저장 버튼 위에 사유를 함께 보여준다. null 이면 저장 가능.
-    val editorSaveBlockedReason: String? = when {
-        editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
-        // 녹음 모드 안내 문구는 두지 않는다(녹음 버튼 자체가 CTA). 미녹음 시 저장은 아래 recordingReady 로 막는다.
-        editor.voiceSource == VoiceSources.LOCAL_AUDIO -> null
+    // 저장이 막혔는가. ⚠ **사유 문구는 두지 않는다**(2026-08-18 변경. 그전에는 하단 바에
+    // 한 줄씩 떴다). 이유를 말하는 자리는 **그 값이 사는 곳**이다:
+    //  - 목소리 → 목소리 카드의 `NoUsableVoiceProfileCallout`("아직 사용할 목소리가 없어요."
+    //    + [목소리 만들기])와 '삭제된 목소리' 배너. 둘 다 해결 액션까지 갖고 있다.
+    //  - 문구 → 문구 요약 행(`FreeThemeSummaryRow`)과 문구 화면의 상세 행.
+    //
+    // 바에 사유를 또 쓰면 같은 순간 **두 문장이 서로 다른 얘기를 했다** — 배너는 "저장된
+    // 목소리는 그대로 울리지만", 바는 "쓸 수 없어요" 였다. 그리고 목소리 자동선택·클립
+    // 캐시히트처럼 한두 프레임짜리 과도기에 문구가 연달아 갈아치워져, 재생 방식을 목소리로
+    // 바꾸는 순간 "없던 문구가 주루룩 뜬다" 로 읽혔다(2026-08-18 사용자 보고).
+    //
+    // 미완성 상태 자체도 이제 만들어지지 않는다 — 문구 화면이 값 없는 종류를 선택시키지
+    // 않는다(`AlarmRandomPromptSettings` 의 `contextBeforeDialog`, 무료 pane 의 '먼저 묻고
+    // 확인해야 선택'). 남은 갈래는 과도기뿐이고 그건 안내할 것이 없다.
+    //
+    // 형태는 바로 아래 `recordingReady` 와 같다 — 문구 없이 저장만 비활성화한다.
+    val editorSaveBlocked: Boolean = when {
+        editor.playMode == AlarmPlayModes.ALARM_ONLY -> false
+        // 녹음 모드도 같다(녹음 버튼 자체가 CTA). 미녹음 시 저장은 아래 recordingReady 로 막는다.
+        editor.voiceSource == VoiceSources.LOCAL_AUDIO -> false
         else -> {
             val profileId = editor.voiceProfileId?.takeIf { it.isNotBlank() }
             val text = editor.ttsTextForSave()
             when {
-                profileId == null -> stringResource(R.string.editor_save_blocked_select_voice)
-                profileId !in usableTtsProfileIds && !editor.hasFreshTtsAudio(profileId, text) ->
-                    stringResource(R.string.editor_save_blocked_voice_unusable)
-                editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
-                    stringResource(R.string.editor_save_blocked_random_prompt_incomplete)
-                // 무료 날씨 버킷은 도시가 있어야 조건 매칭이 된다 — 없으면 저장을 막고 안내.
+                profileId == null -> true
+                profileId !in usableTtsProfileIds && !editor.hasFreshTtsAudio(profileId, text) -> true
+                editor.voiceRandomPrompt && !randomPromptSettingsComplete() -> true
+                // 무료 날씨 버킷은 도시가 있어야 조건 매칭이 된다.
                 restrictToWeatherMedication && editor.selectedBucket == "weather" &&
-                    editor.voiceWeatherCity.isBlank() ->
-                    stringResource(R.string.editor_error_weather_location_required)
-                // 무료는 문구를 직접 입력하지 않는다(테마 클립 자동 회전) — 빈 문구는
-                // 클립이 아직 준비되지 않은 상태이므로 '입력하라'는 안내 대신 준비 중 안내.
-                // 오프라인이면 기다려도 안 되므로 연결 안내로 정직하게 분기한다.
-                !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
-                    when {
-                        !restrictToWeatherMedication -> stringResource(R.string.editor_save_blocked_enter_message_or_random)
-                        !isOnline -> stringResource(R.string.editor_save_blocked_free_clips_offline)
-                        else -> stringResource(R.string.editor_save_blocked_free_clips_loading)
-                    }
-                else -> null
+                    editor.voiceWeatherCity.isBlank() -> true
+                // 무료는 문구를 직접 입력하지 않는다(테마 클립) — 빈 문구는 클립이 아직
+                // 붙지 않은 상태다. 그 사실은 문구 요약 행이 '준비 중/오프라인' 으로 말한다.
+                !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() -> true
+                else -> false
             }
         }
     }
@@ -1161,7 +1166,7 @@ internal fun AlarmEditorScreen(
     val recordingReady = editor.playMode == AlarmPlayModes.ALARM_ONLY ||
         editor.voiceSource != VoiceSources.LOCAL_AUDIO ||
         !editor.localAudioUri.isNullOrBlank()
-    val editorCanSave = editorSaveBlockedReason == null && recordingReady
+    val editorCanSave = !editorSaveBlocked && recordingReady
 
     fun openRandomPromptSettings() {
         settingsDetailPanel = "random_prompt"
@@ -1491,16 +1496,9 @@ internal fun AlarmEditorScreen(
                     // 바 배경이 페이지 배경과 같아 경계가 없으면 스크롤 콘텐츠가 '잘린' 것처럼
                     // 보인다 — 다른 카드 구분선과 같은 풀 톤 헤어라인으로 바의 시작을 분명히 한다.
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    if (editorSaveBlockedReason != null) {
-                        Text(
-                            text = editorSaveBlockedReason,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    // ⚠ **여기에 상태 문구를 다시 넣지 말 것**(위 `editorSaveBlocked` 주석).
+                    // 이 슬롯은 사유 한 줄이 계속 갈아치워지는 자리였고, 그 사유들은 전부
+                    // 값이 사는 자리(목소리 카드·문구 행)가 더 정확히 말한다.
                     Box(
                         modifier = Modifier
                             .padding(
@@ -1622,16 +1620,21 @@ internal fun AlarmEditorScreen(
                 buckets = freeBucketsFor(stockClips, editor.voiceProfileId, appVoiceLanguage),
                 selectedBucket = editor.selectedBucket,
                 onSelectBucket = { bucket ->
-                    // ⚠ **고르는 것과 묻는 것을 분리한다.** 예전에는 날씨 갈래에
-                    // `selectBucket` 호출이 아예 없어서, 다이얼로그를 취소하면 **날씨가
-                    // 선택조차 되지 않았다**(라디오가 이전 버킷에 남았다).
-                    selectBucket(bucket)
                     // 값이 **없을 때만** 묻는다. 이미 있으면 선택만 되고, 고치는 길은
                     // 상세 행의 '변경하기' 하나다(「이미 등록한 정보는 다시 묻지 않는다」).
                     // 예전에는 저장 여부를 보지 않고 무조건 띄워, 이미 등록한 사람에게
                     // 같은 것을 매번 다시 물었다.
+                    //
+                    // ⚠ **미완성 종류는 선택되지 않는다**(2026-08-18 변경). 도시가 없으면
+                    // 먼저 묻고, **확인했을 때만** 고른다(다이얼로그 `onConfirm` 의
+                    // `selectBucket("weather")`). 취소하면 라디오는 이전 선택에 남는다 —
+                    // 목소리 관문(`onNeedsClipPreparation`)과 같은 규칙이다.
+                    // 그전에는 먼저 고르고 나중에 물어서, 취소하면 **도시 없는 날씨**가
+                    // 선택된 채로 남고 편집기 하단 바가 "…도시를 입력해 주세요" 로 막았다.
                     if (bucket == "weather" && editor.voiceWeatherCity.isBlank() && !savedWeatherConfigured) {
                         freeWeatherDialogOpen = true
+                    } else {
+                        selectBucket(bucket)
                     }
                 },
                 onDismiss = { settingsDetailPanel = null },
@@ -1644,11 +1647,18 @@ internal fun AlarmEditorScreen(
                 // 나머지 여섯 자리와 **반대로 답했다** — 요약 행은 '날씨' 인데 pane 은 '직접 입력'.
                 manualSelected = !editor.voiceRandomPrompt && !editor.hasBucketMessageChoice(),
                 onSelectManual = {
-                    // 직접 입력을 고르면 랜덤·버킷을 함께 푼다 — 셋이 동시에 켜질 수 없다.
-                    editor.voiceRandomPrompt = false
-                    editor.selectedBucket = null
                     // 문구가 **없을 때만** 입력창이 뜬다. 있으면 선택만 되고 '변경하기' 로 고친다.
-                    if (editor.voiceText.isBlank()) freeManualDialogOpen = true
+                    //
+                    // ⚠ 위 `onSelectBucket` 과 같은 규칙 — 문구가 없으면 **먼저 받고**,
+                    // 확인했을 때만 '직접 입력' 이 선택된다(다이얼로그 `onConfirm` 이
+                    // randomPrompt·selectedBucket 을 함께 푼다). 취소하면 이전 선택 그대로다.
+                    if (editor.voiceText.isBlank()) {
+                        freeManualDialogOpen = true
+                    } else {
+                        // 직접 입력을 고르면 랜덤·버킷을 함께 푼다 — 셋이 동시에 켜질 수 없다.
+                        editor.voiceRandomPrompt = false
+                        editor.selectedBucket = null
+                    }
                 },
                 manualText = editor.voiceText,
                 onChangeManual = { freeManualDialogOpen = true },

@@ -209,10 +209,6 @@
     <string name="editor_msg_mode_manual">직접 입력</string>
     <string name="editor_msg_mode_preset">기본 인사말</string>
     <string name="editor_ringtone_picker_title">알람음 선택</string>
-    <string name="editor_save_blocked_enter_message_or_random">들려줄 문구를 입력하거나 랜덤 문구를 켜 주세요.</string>
-    <string name="editor_save_blocked_random_prompt_incomplete">랜덤 문구 설정에서 날씨 지역·운세 정보를 채워 주세요.</string>
-    <string name="editor_save_blocked_select_voice">알람에서 들을 목소리를 선택해 주세요.</string>
-    <string name="editor_save_blocked_voice_unusable">선택한 목소리를 쓸 수 없어요. 다른 목소리를 선택해 주세요.</string>
     <string name="editor_save">저장</string>
     <!-- ⚠ **동사를 앞에 둔다.** 큰 글꼴에서 버튼 라벨이 maxLines=1 로 잘리는데,
          한국어 어순대로 "…에게 저장" 이면 잘려 나가는 게 하필 동사라 "rel dev에…" 가
@@ -235,9 +231,7 @@
     <string name="editor_snooze_summary">%1$d분 · %2$s</string>
     <string name="editor_snooze_title">다시 울림</string>
     <string name="editor_free_bucket_loading">문구를 준비하고 있어요</string>
-    <string name="editor_save_blocked_free_clips_loading">알람 문구를 준비하고 있어요. 잠시만 기다려 주세요.</string>
     <string name="editor_free_bucket_offline">오프라인이라 문구를 불러오지 못했어요</string>
-    <string name="editor_save_blocked_free_clips_offline">인터넷이 연결되어 있지 않아 알람 문구를 불러오지 못했어요. 연결되면 자동으로 다시 시도할게요.</string>
     <string name="editor_vibration_pattern">패턴</string>
     <string name="editor_vibration_use">진동 사용</string>
     <string name="editor_vibration_title">진동</string>
