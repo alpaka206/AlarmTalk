@@ -452,6 +452,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 기본 목소리와 등록 목소리는 개수가 다르므로 목소리 종류로 갈라 본다.
      */
     var expectedVariants by mutableStateOf<com.alarmtalk.app.network.ExpectedVariantCounts?>(null)
+
+    /** 목소리별 준비도(생성+다운로드). 준비 페이지와 편집기 관문이 함께 본다. */
+    var clipReadiness by mutableStateOf<List<com.alarmtalk.app.data.ClipReadiness.VoiceProgress>>(emptyList())
         internal set
 
     var socialBusy by mutableStateOf(false)
