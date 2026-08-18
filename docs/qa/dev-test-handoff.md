@@ -583,12 +583,22 @@ ElevenLabs 를 불러 실제 클립을 만들어야 한다. 그게 도착해야 
 
 ### iOS 알람 삭제 — 남은 갈래 (2026-08-18)
 
-⚠ **아직 실기기에서 확인 못 했다.** 아이폰(`이스트의 iPhone (3)`)은 연결돼 있지만
-**Xcode 에 로그인된 Apple ID 가 없고 프로비저닝 프로파일이 하나도 없어** 설치가 안 된다
-(`No Accounts` + `No profiles for 'com.alarmtalk.app'`). Xcode → Settings → Accounts 로
-로그인해야 이어서 설치·검증할 수 있다.
-⚠ 무료 Apple ID 면 App Group·키체인 그룹 entitlement 가 안 붙는다 — 커밋 `e2897e59` 가
-그걸 되돌린 이력이라, **임의로 다시 걷어내지 말 것.**
+**실기기 설치 완료(2026-08-18 17:58)** — `이스트의 iPhone (3)`(iPhone 14 Pro).
+유료 개발자 계정으로 서명이 통과했다. 사용자 확인 대기 중.
+
+⚠ **팀 ID 는 `29N7GX354N` 이다.** 인증서 CN 의 괄호값(`8B3CPZ9Q87`)은 **사용자 ID 지
+팀 ID 가 아니다** — 그걸로 `DEVELOPMENT_TEAM` 을 주면 `No Account for Team` 으로 죽는다.
+팀 ID 는 인증서 subject 의 `OU=` 이고, `defaults read com.apple.dt.Xcode` 의
+`IDEProvisioningTeamByIdentifier` 로도 확인된다(`isFreeProvisioningTeam = 0`).
+
+    xcodebuild -project AlarmTalkNative.xcodeproj -scheme AlarmTalk \
+      -destination 'id=<기기 UDID>' -allowProvisioningUpdates \
+      DEVELOPMENT_TEAM=29N7GX354N -derivedDataPath /tmp/att-dev build
+    xcrun devicectl device install app --device <기기 UDID> \
+      /tmp/att-dev/Build/Products/Debug-iphoneos/AlarmTalk.app
+
+⚠ 기기 바이너리에는 `nm` 으로 Swift 내부 심볼이 안 보인다 — 그걸로 "옛 빌드다" 라고
+판단하지 말 것. 빌드 시각과 워킹트리 상태로 확인한다.
 
 **고친 것**: `AlarmManager.cancel(id:)` 은 AlarmKit 이 그 id 를 **모를 때 throw** 한다.
 예전 코드는 그때 로컬 행을 남겨 **영영 지울 수 없는 알람**이 됐다(`8b4be497`).
