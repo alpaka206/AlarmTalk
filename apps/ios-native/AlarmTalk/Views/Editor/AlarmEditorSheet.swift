@@ -2241,6 +2241,23 @@ struct AlarmEditorSheet: View {
                 preparationVoiceID = profileID
                 return
             }
+            // ⚠ **라이브 랜덤 생성은 없앴다**(2026-08-18). 알람 음성은 **프리셋 + 직접 입력**
+            // 둘뿐이다(docs/qa/dev-test-handoff.md 5절). 랜덤 문구인 채로 여기 도달했다는 건
+            // 위 `prepareSelectedBucketClipIfNeeded` 가 클립을 못 묶었다는 뜻이므로,
+            // 서버에 문장을 지어 달라고 하는 대신 **막는다.**
+            //
+            // 폴백을 남겨 두면 그 경로로 저장된 알람이 **매일 같은 한 문장**을 반복한다 —
+            // 서버가 다시 지어 줄 주기적 경로가 없기 때문이다(그 일을 하던
+            // `DynamicVoiceRefreshService` 도 함께 걷어냈다).
+            // 안드로이드 `saveEditor` 의 같은 자리와 짝이다.
+            if voiceStudio.randomPrompt {
+                if let profileID = voiceStudio.selectedProfileID.nilIfBlank {
+                    preparationVoiceID = profileID
+                } else {
+                    showSaveFailureAlert()
+                }
+                return
+            }
             // 문구가 글자까지 똑같으면 **서버를 부르지 않고** 전에 만든 오디오를 그대로 쓴다
             // (대기 없음 + 직접 입력 월 한도 안 깎임 + 오프라인에서도 저장됨).
             // CLAUDE.md 가 '직접 입력 문구를 기억한다' 로 바꾼 근거가 바로 이 경로다 —
@@ -2350,11 +2367,11 @@ struct AlarmEditorSheet: View {
             merged.dynamicVoicePreparedForFireAtMillis = nil
             merged.ttsMessageId = nil
         } else if let prepared = voiceStudio.preparedAlarm, draft.playMode != .alarmOnly {
-            // 스톡 클립은 cacheKey 가 `stock_` prefix 다. 스톡 음성은 고정 음원이라
-            // 매일 다른 랜덤 TTS 로 갈아끼우면 안 된다 — Android `setStockClipAudio`
-            // 가 voiceRandomPrompt=false 로 두어 DynamicVoiceRefresh 대상에서 빼듯,
-            // 여기서도 voiceRandomPrompt=false + dynamicVoicePreparedForFireAtMillis=nil
-            // 로 강제해 REPEATING 스톡 알람이 refresh 윈도우에 덮어써지지 않게 한다.
+            // 스톡 클립은 cacheKey 가 `stock_` prefix 다. 안드로이드 `setBucketAudio` 와
+            // 같이 `voiceRandomPrompt = false` 로 두어, 이 행이 '생성형' 으로 읽히지 않게
+            // 한다 — 그 값이 참으로 남으면 편집기 판정과 옛 행 재바인딩
+            // (`StockClipLanguageRebinder.rebindLiveGenerationRows`)이 이 알람을 아직
+            // 안 옮긴 옛 행으로 오해한다.
             let isStockClip = prepared.audioCacheKey.hasPrefix("stock_")
             // ⚠ `server_tts` 로 쓰지 말 것. 안드로이드에서 그 값은 **'남에게서 받은 알람'**
             // 이라는 뜻이고, pull 경로(`RemoteAlarmMapper`)에서만 붙는다. 내가 편집기에서

@@ -51,7 +51,6 @@ final class BackgroundSyncTask {
 
     private let pull: RemoteAlarmPullSync
     private let push: RemoteAlarmPushSync
-    private let dynamicVoice: DynamicVoiceRefreshService
     private let socialFeatures: SocialFeatureViewModel
     /// PR3: 백그라운드 사이클에서 `.fixed` 공휴일off one-shot 을 proactive 재무장하기 위한
     /// 약참조. 앱 lifetime 동안 `@StateObject` 로 살아있으므로 정상 동작 중엔 nil 이 아니다.
@@ -61,14 +60,12 @@ final class BackgroundSyncTask {
     init(
         pull: RemoteAlarmPullSync,
         push: RemoteAlarmPushSync,
-        dynamicVoice: DynamicVoiceRefreshService,
         socialFeatures: SocialFeatureViewModel,
         store: LocalAlarmStore? = nil,
         alarmKit: AlarmKitViewModel? = nil
     ) {
         self.pull = pull
         self.push = push
-        self.dynamicVoice = dynamicVoice
         self.socialFeatures = socialFeatures
         self.store = store
         self.alarmKit = alarmKit
@@ -81,7 +78,6 @@ final class BackgroundSyncTask {
     static func register(
         pull: RemoteAlarmPullSync,
         push: RemoteAlarmPushSync,
-        dynamicVoice: DynamicVoiceRefreshService,
         socialFeatures: SocialFeatureViewModel,
         store: LocalAlarmStore? = nil,
         alarmKit: AlarmKitViewModel? = nil
@@ -105,7 +101,6 @@ final class BackgroundSyncTask {
                 let runner = BackgroundSyncTask(
                     pull: pull,
                     push: push,
-                    dynamicVoice: dynamicVoice,
                     socialFeatures: socialFeatures,
                     store: store,
                     alarmKit: alarmKit
@@ -155,7 +150,9 @@ final class BackgroundSyncTask {
             _ = try await push.runOnce()
             let pullResult = try await pull.runOnce()
             if let session = KeychainStore.readSession() {
-                _ = await dynamicVoice.refreshDue(token: session.token)
+                // ⚠ 여기서 랜덤 문구를 **다시 합성하던** 자리다(2026-08-18 제거).
+                // 알람 음성은 프리셋 + 직접 입력 둘뿐이라 매일 지어낼 문장이 없다.
+                // 아래 날씨 갱신은 **합성이 아니라 variant 재선택**이라 그대로 둔다.
                 // 곧 울릴 날씨 알람의 조건을 미리 받아 둔다. **발사 시점에는 못 받는다** —
                 // iOS 는 그때 우리 코드가 돌지 않고 예약해 둔 사운드가 그대로 울린다.
                 if let store {

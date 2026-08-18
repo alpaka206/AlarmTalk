@@ -847,33 +847,40 @@ internal fun AlarmEditorScreen(
         generationJob?.cancel()
         generationJob = scope.launch {
             generating = true
-            // 1) 유료 클론 오프라인 버킷 시도: 사전렌더 대상 컨텍스트(사랑/약/운세/날씨)이고 그 목소리의
-            //    '완전한' 클립 세트가 캐시돼 있으면 라이브 생성 대신 오프라인 버킷으로 바인딩한다.
-            //    날씨/운세는 서버 조건/테마 '절대 인덱스'로 고르므로 부분 세트면 인덱스가 엉킨다 →
-            //    hasCompleteCloneBucket 으로 풀셋일 때만 바인딩(부분/실패면 아래 라이브로 폴백).
-            // 가족 알람은 서버가 수신자별로 목소리를 생성(onGenerateTts targetUserId)해야 하고, 내 로컬
-            // 사전렌더 클립은 수신자가 소유·캐시하지 못하므로 오프라인 버킷을 쓰면 수신자에게 무음이 된다.
-            // → 가족 모드에서는 사전렌더 버킷을 쓰지 않고 아래 라이브 생성 경로로 간다.
+            // 1) **문구 종류를 골랐으면 반드시 사전렌더 클립으로 묶는다.**
+            //
+            // ⚠ **여기서 라이브 생성으로 폴백하지 말 것**(2026-08-18 변경). 예전에는 버킷이
+            // 미완성이거나 다운로드가 실패하면 아래 라이브 생성으로 떨어졌는데, 알람 음성은
+            // 이제 **프리셋 + 직접 입력 둘뿐**이다(docs/qa/dev-test-handoff.md 5절).
+            // 폴백을 남겨 두면 그 경로로 저장된 알람이 **매일 같은 한 문장**을 반복한다 —
+            // 서버가 다시 지어 줄 일이 없기 때문이다.
+            //
+            // 못 묶으면 **준비 페이지로 보낸다**(관문과 같은 처리). 저장이 늦어지는 대신
+            // 되돌릴 수 없는 잘못된 행이 남지 않는다.
+            //
+            // 예전 제외 갈래 둘을 **없앴다**:
+            //  - `!familyAlarmMode`: 가족 알람도 이제 `bucket_id` 를 실어 보낸다(`f7385200`).
+            //    받는 사람이 그 테마의 자기 클립을 묶으므로 수신자 무음 문제가 사라졌고,
+            //    날씨 조건도 **받는 사람 기준**으로 고른다(docs/spec/family-alarm.md 4절).
+            //  - `!isSystemVoiceId`: 기본 목소리도 같은 테마 클립을 갖는다. 제외해 둘 이유가
+            //    라이브 폴백뿐이었는데 그게 없어졌다.
             val cloneBucketCategory = clonePrerenderBucketCategoryFor(editor.voiceRandomContext)
-            val requiresCloneBucket = !familyAlarmMode && editor.voiceRandomPrompt && cloneBucketCategory != null &&
-                !isSystemVoiceId(profileId)
-            val tryCloneBucket = requiresCloneBucket && clipGate.hasCompleteCloneBucket(cloneBucketCategory, profileId)
-            if (
-                tryCloneBucket &&
+            if (editor.voiceRandomPrompt && cloneBucketCategory != null) {
                 // 이미 resolve 된 contextVariantIndex 를 넘겨 재저장 시 null 로 덮어써지지 않게 한다(넘기지
                 // 않으면 setBucketAudio 가 null 로 리셋 → 준비창 재해결 전까지 날씨 0=맑음 오재생).
-                runCatching {
-                    bindStockBucketClips(cloneBucketCategory!!, profileId, editor.contextVariantIndex)
+                val bound = runCatching {
+                    bindStockBucketClips(cloneBucketCategory, profileId, editor.contextVariantIndex)
                 }.getOrDefault(false)
-            ) {
                 generating = false
-                submitDraft(editor.toDraft())
+                if (bound) {
+                    submitDraft(editor.toDraft())
+                } else {
+                    openClipPreparation(profileId)
+                }
                 return@launch
             }
-            // 2) 버킷 미대상/캐시 실패(사전렌더 미완성·클립 다운로드 실패 포함) → 기존 라이브 생성으로 폴백.
-            //    이미 등록된 클론 목소리라도 준비창 cron 이 풀셋을 만들기 전이면 '준비 중'에서 멈추지 말고
-            //    여기서 라이브로 저장한다(알람이 여러 cron 틱 동안 아예 저장 안 되는 것 방지). 라이브 생성은
-            //    random 경로라 월간 등록·원장·수동 quota 를 건드리지 않으므로 등록 전 목소리 이슈 없음.
+            // 2) 여기까지 왔다 = **직접 입력**이다(랜덤이 아니거나 버킷으로 안 매핑되는 종류).
+            //    그 문구를 서버에 합성시킨다 — 이 갈래는 월 한도를 차감하는 유료 경로다.
             // 진행 안내는 저장 버튼의 스피너(EditorActionButtons)가 맡는다 — 방금 누른
             // 자리에서 도는 게 화면 위쪽 카드에 뜬 '준비하는 중이에요' 한 줄보다 직관적이고,
             // 이 자리에 안내를 넣으면 실패했을 때 그 자리에 들어올 에러 문구를 밀어낸다.
@@ -885,39 +892,17 @@ internal fun AlarmEditorScreen(
                         category = editor.activeVoiceCategory(),
                         language = editor.activeVoiceLanguage(),
                         translate = false,
-                        random = editor.voiceRandomPrompt,
-                        randomContext = if (editor.voiceRandomPrompt) {
-                            normalizedRandomPromptContext(editor.voiceRandomContext)
-                        } else {
-                            null
-                        },
-                        alarmHour = editor.hour,
-                        alarmMinute = editor.minute,
-                        weatherCountry = editor.voiceWeatherCountry.takeIf {
-                            editor.voiceRandomPrompt &&
-                                randomContextUsesWeather(editor.voiceRandomContext) &&
-                                editor.voiceWeatherCountry.isNotBlank()
-                        }?.trimmedOrNull(),
-                        weatherCity = editor.voiceWeatherCity.takeIf {
-                            editor.voiceRandomPrompt &&
-                                randomContextUsesWeather(editor.voiceRandomContext) &&
-                                editor.voiceWeatherCity.isNotBlank()
-                        }?.trimmedOrNull(),
-                        fortuneGender = editor.voiceFortuneGender.takeIf {
-                            editor.voiceRandomPrompt &&
-                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
-                                editor.voiceFortuneGender.isNotBlank()
-                        }?.trimmedOrNull(),
-                        fortuneBirthDate = editor.voiceFortuneBirthDate.takeIf {
-                            editor.voiceRandomPrompt &&
-                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
-                                editor.voiceFortuneBirthDate.isNotBlank()
-                        }?.trimmedOrNull(),
-                        fortuneBirthTime = editor.voiceFortuneBirthTime.takeIf {
-                            editor.voiceRandomPrompt &&
-                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
-                                editor.voiceFortuneBirthTime.isNotBlank()
-                        }?.trimmedOrNull(),
+                        // ⚠ **`random` 은 언제나 false 다**(2026-08-18). 이 자리에 도달하는 건
+                        // 직접 입력뿐이라, 서버가 문장을 '지어내는' 갈래는 앱에서 사라졌다.
+                        // 되살리지 말 것 — 되살리면 그 알람은 매일 같은 한 문장을 반복한다
+                        // (서버가 다시 지어 줄 주기적 경로가 없다).
+                        //
+                        // ⚠ 같이 사라진 것: `randomContext`·`alarmHour`/`alarmMinute`·
+                        // `weather*`·`fortune*`. 그 값들은 **행에는 그대로 남는다** — 사전렌더
+                        // variant 를 고르는 데(`/tts/prerender-variant`) 쓰이기 때문이다.
+                        // 다만 `/tts/generate` 로는 다시 보내지 말 것.
+                        random = false,
+                        randomContext = null,
                         targetUserId = selectedFamilyRecipientId.takeIf { familyAlarmMode }?.trimmedOrNull(),
                         listenerTitle = listenerTitleForSave,
                     ),

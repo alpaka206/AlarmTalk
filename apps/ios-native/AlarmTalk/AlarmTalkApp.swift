@@ -189,7 +189,7 @@ struct AlarmTalkApp: App {
                         // 로그인되어 있으면 즉시 한 사이클.
                         if auth.session != nil {
                             await remoteSync.runFullSync()
-                            await refreshDynamicVoicesIfNeeded()
+                            await refreshWeatherVariantsAndReconcile()
                         }
 
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
@@ -226,7 +226,7 @@ struct AlarmTalkApp: App {
                         push.start()
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
-                        await refreshDynamicVoicesIfNeeded()
+                        await refreshWeatherVariantsAndReconcile()
                         BackgroundSyncTask.scheduleNext()
                     }
                     // ⚠ **언어를 키에 넣는다.** 예전에는 선다운로드가 온보딩
@@ -330,7 +330,7 @@ struct AlarmTalkApp: App {
                     await auth.refreshUser()
                     guard auth.session != nil else { return }
                     await remoteSync.runFullSync()
-                    await refreshDynamicVoicesIfNeeded()
+                    await refreshWeatherVariantsAndReconcile()
                 }
                 // Phase 4-D1: 백엔드 entitlement 동기화가 직전에 실패했을 수 있다.
                 // foreground 진입 시 currentEntitlements 의 모든 verified 트랜잭션을
@@ -350,11 +350,16 @@ struct AlarmTalkApp: App {
         }
     }
 
+    /// 곧 울릴 날씨 알람의 조건을 받아 두고, 어긋난 예약을 맞춘다.
+    ///
+    /// ⚠ 예전 이름은 `refreshDynamicVoicesIfNeeded` 였다 — 랜덤 문구를 매일 **다시 합성**
+    /// 하던 시절의 이름이라, 그 갈래를 걷어낸 뒤에는 없는 기능을 광고하는 이름이었다.
     @MainActor
-    private func refreshDynamicVoicesIfNeeded() async {
+    private func refreshWeatherVariantsAndReconcile() async {
         guard let token = auth.session?.token else { return }
-        let refresh = DynamicVoiceRefreshService(store: alarmStore)
-        _ = await refresh.refreshDue(token: token)
+        // ⚠ 여기서 랜덤 문구를 **다시 합성하던** 자리다(2026-08-18 제거 —
+        // `DynamicVoiceRefreshService`). 알람 음성은 프리셋 + 직접 입력 둘뿐이라 매일
+        // 지어낼 문장이 없다. 되살리지 말 것.
         // 곧 울릴 날씨 알람의 조건도 함께 받아 둔다. 반복 알람은 매일 다시 울리므로
         // 저장할 때 받은 어제 조건으로는 오늘 날씨를 말할 수 없다.
         let weather = WeatherVariantRefreshService(store: alarmStore, alarmKit: alarmKit)
@@ -504,11 +509,9 @@ private final class Bootstrap {
             auth: auth
         )
         let push = RemoteAlarmPushSync(store: store, auth: auth)
-        let dynamicVoice = DynamicVoiceRefreshService(store: store)
         BackgroundSyncTask.register(
             pull: pull,
             push: push,
-            dynamicVoice: dynamicVoice,
             socialFeatures: socialFeatures,
             // PR3: 백그라운드 사이클의 `.fixed` one-shot proactive 재무장 sweep 용 약참조.
             store: store,

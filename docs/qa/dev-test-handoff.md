@@ -519,7 +519,7 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 넘어가 있을 것**(정의만 하고 안 넘기면 무효라 그것도 잡는다).
 ⚠ 4(b) 에서 `version = 24` 를 올릴 때 이 테스트가 곧바로 빨간불이 된다 — **그게 의도다.**
 
-**③ iOS 에는 안드로이드에 없는 두 번째 라이브 생성 경로가 있다.**
+**③ ~~iOS 의 두 번째 라이브 생성 경로~~ — 걷어냈다(2026-08-18, 아래 (c)).**
 `DynamicVoiceRefreshService` 가 반복 랜덤 알람을 **매일 밤 다시 합성**한다(포그라운드 진입 +
 `BGAppRefreshTask` 양쪽). 안드로이드의 `DynamicVoiceRefreshWorker` 는 날씨 variant 인덱스만
 resolve 한다 — **합성하지 않는다.** 즉 제거 작업이 두 앱에서 비대칭이다.
@@ -532,6 +532,43 @@ resolve 한다 — **합성하지 않는다.** 즉 제거 작업이 두 앱에�
 네트워크를 쓰고 멱등이며 매니페스트 수신 뒤 `StockClipPrefetchWorker` 의 **모든 성공 경로**
 에서 불린다. 술어만 넓히면 된다. 매핑은 `clonePrerenderBucketCategoryFor` 를 **그대로 재사용**
 할 것(다시 적지 말 것).
+→ **그대로 했다(2026-08-18, 아래 (b)).**
+
+### 5단계 (b)(c) 완료 (2026-08-18)
+
+**순서를 지켰다 — (b) 재바인딩이 (c) 제거보다 먼저 나가야 한다.** 뒤집으면 옛 알람이
+옮겨지기 전에 생성 경로가 사라져, 그 사이 **마지막에 만들어진 한 문장만 매일 반복**한다.
+
+**(b) 옛 행 재바인딩** — `voiceRandomPrompt = true` 이고 `bucketId` 가 빈 행을 문구 종류에
+맞는 테마 클립으로 옮긴다. 랜덤 플래그는 내리고 **종류는 남긴다**(편집기가 열 때 되짚는 값).
+묶을 클립이 없으면 **아무 일도 하지 않는다** — 지우면 소리가 사라지고, 옛 문장이라도 울리는
+편이 낫다. 멱등이라 매 회차 돌아도 안전하다.
+곁들여: 클립 바인딩 루프를 두 재바인더가 **공유**하도록 끌어냈고, iOS 루프에 없던
+**variant 정렬·중복 제거**를 넣었다(날씨·운세는 절대 인덱스라 순서가 곧 뜻이다).
+
+**(c) 라이브 랜덤 생성 제거**
+- 편집기(양 앱): 문구 종류를 골랐으면 **반드시** 사전렌더 클립으로 묶고, 못 묶으면
+  **준비 페이지로 보낸다.** 라이브 폴백은 없앴다.
+- 안드로이드 `/tts/generate` 요청은 이제 `random = false, randomContext = null` 고정이고
+  `alarmHour`·`weather*`·`fortune*` 를 **보내지 않는다.** ⚠ 그 값들은 **행에는 그대로 남는다**
+  — 사전렌더 variant 를 고르는 데 쓰인다.
+- 안드로이드 버킷 바인딩의 제외 갈래 둘(`!familyAlarmMode`, `!isSystemVoiceId`)을 없앴다.
+  가족 알람은 이제 `bucket_id` 를 실어 보내므로(위 ①) 수신자 무음 문제가 사라졌다.
+- iOS `DynamicVoiceRefreshService` **삭제**(+ `BackgroundSyncTask`·`AlarmTalkApp` 주입, 테스트).
+  `refreshDynamicVoicesIfNeeded` → `refreshWeatherVariantsAndReconcile` 로 이름을 고쳤다 —
+  없는 기능을 광고하는 이름이었다.
+- **남긴 것**: 직접 입력 합성(월 한도 차감), `WeatherVariantRefreshService`(합성이 아니라
+  variant 재선택), `AlarmScheduleReconciler`, `generateTTS` 함수 자체, `voiceRandomPrompt`
+  필드, iOS `playDraftPreview`(목소리 등록 미리듣기 — `random:true` + `draftPreview:true` 를
+  같이 보내므로 걷어내면 **새 목소리 등록이 통째로 막힌다**).
+
+⚠ **남은 검증은 실기기다.** 특히 (1) 가족 알람에 테마를 실어 보냈을 때 서버
+`messageBelongsToCaller` 3갈래를 통과하는지(스톡 messageId + 수신자), (2) 옛 랜덤 알람이
+실제로 재바인딩되는지, (3) 재바인딩 못 한 행이 옛 음원으로 계속 울리는지.
+
+⚠ **백엔드 정리(5번)는 여전히 스토어 게재 후다.** 거부 판정은 정확히
+`!draftPreviewRequested && body.random === true` 자리여야 한다 — 앞당기면 iOS 목소리 등록이
+깨진다.
 
 ### iOS 저장 사유 문구 — 값이 사는 자리로 옮겼다 (2026-08-18 완료)
 

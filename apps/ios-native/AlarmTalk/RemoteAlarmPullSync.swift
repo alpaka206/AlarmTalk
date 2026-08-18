@@ -342,10 +342,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         // 없을 때만 서버 값을 받는다.
         merged.bucketId = existing.bucketId ?? merged.bucketId
 
-        // 동적 문구(날씨·운세·랜덤) 설정 일체. 서버는 이 개념을 모른다 —
+        // 동적 문구(날씨·운세·종류) 설정 일체. 서버는 이 개념을 모른다 —
         // 매퍼가 `voiceRandomPrompt: false` 로 만들어 내므로 지키지 않으면 **pull 한 번에
-        // 날씨 알람이 고정 문구 알람으로 바뀐다**(DynamicVoiceRefreshService 의
-        // `isRepeatingDynamicAlarmTalk` 가 false 가 되어 갱신 대상에서 아예 빠진다).
+        // 날씨 알람이 고정 문구 알람으로 바뀐다.** 문구 종류를 잃으면 편집기가 열 때
+        // 무엇을 골랐었는지 되짚지 못하고, 날씨 지역을 잃으면 사전렌더 variant 를
+        // 고를 수 없다.
         merged.voiceRandomPrompt = existing.voiceRandomPrompt
         merged.voiceRandomContext = existing.voiceRandomContext
         merged.voiceWeatherCountry = existing.voiceWeatherCountry
