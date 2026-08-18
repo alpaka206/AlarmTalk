@@ -197,6 +197,19 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
+    /// 코드를 등록하고 **실패 사유를 돌려준다**(성공이면 `nil`).
+    ///
+    /// 유료 게이트의 쿠폰 시트(`RedeemCodeSheet`)가 오류를 **입력창 바로 밑**에 그리려면
+    /// 결과를 문자열로 받아야 한다. `registerCode` 는 실패를 `statusMessage` 로만 알리는데,
+    /// 그걸 그대로 읽으면 **직전 성공 문구**("코드를 등록했어요.")가 남아 있을 수 있어
+    /// 먼저 비운다 — `isBusy` 로 조용히 빠지는 갈래도 그때 폴백 문구를 받는다.
+    func registerCodeReportingFailure(_ code: String, session: AuthSession?) async -> String? {
+        statusMessage = nil
+        let destination = await registerCode(code, session: session)
+        guard destination == nil else { return nil }
+        return statusMessage ?? "코드 등록에 실패했어요."
+    }
+
     func ensureFamilyShareCode(session: AuthSession?) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -451,6 +464,29 @@ final class SocialFeatureViewModel: ObservableObject {
             // 소유자가 안 적힌 옛 행은 이 계정 것으로 본다(안드로이드와 같은 관용).
             guard let expectedOwnerUserId, let owner = record.ownerUserId else { return true }
             return owner == expectedOwnerUserId
+        }
+
+        // ⚠ **자격을 잃은 잠금은 여기서 되돌린다**(안드로이드 `lockPaidAlarmTalks` 에는
+        // 처음부터 있던 갈래인데 iOS 에만 없었다). 판정이 고쳐지면 예전 기준으로 잠긴 행이
+        // 남는데, 그 행은 더 이상 잠글 축이 없어 **풀어 줄 다른 경로가 없다** — 복원
+        // (`restorePaidVoiceAlarms`)은 유료가 됐을 때만 돌기 때문이다. 그대로 두면 무료
+        // 사용자의 목소리 알람이 영영 알람음으로 남는다(2026-08-18 판정 수정과 한 쌍).
+        let staleLocks = alarmStore.alarms.filter { record in
+            record.preLockPlayMode != nil
+                && record.originEnum == .localOwned
+                && !record.isPaidVoiceForDowngrade
+                && (expectedOwnerUserId == nil || record.ownerUserId == nil
+                    || record.ownerUserId == expectedOwnerUserId)
+        }
+        for record in staleLocks {
+            var restored = record
+            restored.playMode = record.preLockPlayMode ?? record.playMode
+            restored.preLockPlayMode = nil
+            _ = alarmStore.upsert(restored)
+            if await alarmKit.schedule(record: restored, store: alarmStore),
+               record.alarmKitID != nil {
+                await alarmKit.cancelScheduledAlarm(record: record)
+            }
         }
 
         var locked = 0

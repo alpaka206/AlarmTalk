@@ -40,7 +40,7 @@ struct VoicesPanelView: View {
                     onRequestBilling: onRequestBilling,
                     // 유료 게이트는 **항상** 쿠폰 갈래를 함께 낸다(`PaidGateCopy.redeemCode`).
                     onRedeemCode: { code in
-                        Task { _ = await socialFeatures.registerCode(code, session: auth.session) }
+                        await socialFeatures.registerCodeReportingFailure(code, session: auth.session)
                     }
                 )
             case .clone:

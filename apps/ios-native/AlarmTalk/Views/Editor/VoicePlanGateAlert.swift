@@ -25,11 +25,11 @@ struct VoicePlanGateAlert: ViewModifier {
             presenting: content
         ) { item in
             if item.offersPlanActions {
-                Button("쿠폰이 있어요") {
+                Button(PaidGateCopy.redeemCode) {
                     content = nil
                     onRedeemCode()
                 }
-                Button("이용권 보기") {
+                Button(PaidGateCopy.viewPlans) {
                     content = nil
                     onOpenBilling()
                 }

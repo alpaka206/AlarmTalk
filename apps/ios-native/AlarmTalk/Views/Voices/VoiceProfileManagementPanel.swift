@@ -22,7 +22,8 @@ struct VoiceProfileManagementPanel: View {
     /// 부모가 BillingPanel 시트를 띄우는 패턴을 사용한다.
     var onRequestBilling: (() -> Void)? = nil
     /// 쿠폰 코드 등록. 유료 게이트는 **항상** 이 갈래를 함께 낸다(`PaidGateCopy.redeemCode`).
-    var onRedeemCode: ((String) -> Void)? = nil
+    /// 코드를 등록하고 **실패 사유**를 돌려준다(성공이면 `nil`) — 시트가 입력창 밑에 그린다.
+    var onRedeemCode: ((String) async -> String?)? = nil
 
     /// 프로필 편집 다이얼로그 입력값.
     @State private var editTarget: VoiceProfile?
@@ -37,7 +38,6 @@ struct VoiceProfileManagementPanel: View {
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
     @State private var redeemCodeAlertOpen = false
-    @State private var redeemCodeDraft = ""
     /// 유료인데 **이번 달 등록 한도**를 다 쓴 경우. 이용권 안내와 **다른 모달**이다 —
     /// 이미 이용권이 있는 사람에게 이용권을 사라고 하면 안 된다.
     @State private var monthlyLimitNoticeOpen: Bool = false
@@ -214,19 +214,20 @@ struct VoiceProfileManagementPanel: View {
             Button("닫기", role: .cancel) {}
             Button(PaidGateCopy.redeemCode) { redeemCodeAlertOpen = true }
             Button(PaidGateCopy.viewPlans) { onRequestBilling?() }
+                // ⚠ **이 줄이 강조를 만든다 — 빼지 말 것.** 시스템 알럿은 버튼 색을 직접
+                // 주지 못하고, '기본 액션' 으로 지정된 하나만 채운 캡슐로 그린다. 없으면
+                // 세 버튼이 **똑같은 회색**이라 주행동이 사라진다(2026-08-18 실기기 확인).
+                // 편집기 쪽 짝은 `Views/Editor/VoicePlanGateAlert.swift` — 한쪽만 고치지 말 것.
+                .keyboardShortcut(.defaultAction)
         } message: {
             Text(PaidGateCopy.message)
         }
-        .modifier(
-            // ⚠ **본문에 알럿을 더 쌓지 말 것.** `ViewBuilder` 가 형제를 중첩 튜플로 쌓아
-            // 타입체크가 터진다(실제로 이 파일에서 "unable to type-check in reasonable time"
-            // 이 났다). 별도 모디파이어로 뺀다 — 이 파일 맨 위 주석과 같은 이유다.
-            RedeemCodeAlert(
-                isPresented: $redeemCodeAlertOpen,
-                draft: $redeemCodeDraft,
-                onSubmit: { onRedeemCode?($0) }
-            )
-        )
+        // ⚠ 껍데기는 `RedeemCodeSheet` 하나다 — 편집기 게이트도 같은 것을 쓴다.
+        // 여기에 알럿을 다시 만들면 실패 사유를 그릴 자리가 없어져, 코드를 잘못 친
+        // 사용자에게 모달이 그냥 닫힌다(2026-08-18 실기기 확인).
+        .redeemCodeSheet(isPresented: $redeemCodeAlertOpen) { code in
+            await onRedeemCode?(code)
+        }
         .sheet(item: $sharedViewerInfoTarget) { profile in
             SharedVoiceViewerInfoDialog(
                 profileName: profile.name,
@@ -550,25 +551,3 @@ struct VoiceProfileManagementPanel: View {
     }
 }
 
-
-/// 쿠폰 코드 입력 알럿 — 유료 게이트가 **항상** 함께 내는 갈래.
-///
-/// 별도 모디파이어인 이유는 순전히 컴파일 때문이다(위 주석 참조).
-private struct RedeemCodeAlert: ViewModifier {
-    @Binding var isPresented: Bool
-    @Binding var draft: String
-    let onSubmit: (String) -> Void
-
-    func body(content: Content) -> some View {
-        content.alert("쿠폰 입력", isPresented: $isPresented) {
-            TextField("초대·선물·프로모션 코드", text: $draft)
-                .textInputAutocapitalization(.characters)
-            Button("등록") {
-                let code = draft
-                draft = ""
-                onSubmit(code)
-            }
-            Button("닫기", role: .cancel) { draft = "" }
-        }
-    }
-}

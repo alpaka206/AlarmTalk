@@ -73,7 +73,6 @@ struct AlarmEditorSheet: View {
     @State var manualQuota: ManualQuotaResponse?
     @State var voiceGateAlert: VoiceGateAlertContent?
     @State var redeemCodeAlertOpen = false
-    @State var redeemCodeDraft = ""
     @State var sharedVoiceSetupTarget: FamilyVoiceProfile?
     /// 기본(시스템) 목소리로 바꾸면 직접 입력 문구를 쓸 수 없어 편집기가 문구를 비운다.
     /// 조용히 지우면 '문구가 사라졌다' 가 되므로 한 번 확인받는다
@@ -599,19 +598,10 @@ struct AlarmEditorSheet: View {
             onRedeemCode: { redeemCodeAlertOpen = true },
             onOpenBilling: { onRequestBilling?() }
         )
-        .alert("쿠폰 입력", isPresented: $redeemCodeAlertOpen) {
-            TextField("초대·선물·프로모션 코드", text: $redeemCodeDraft)
-                .textInputAutocapitalization(.characters)
-            Button("등록") {
-                let code = InputSanitizer.sanitizeRedeemCode(redeemCodeDraft)
-                redeemCodeDraft = ""
-                guard !code.isEmpty else { return }
-                Task { _ = await socialFeatures.registerCode(code, session: auth.session) }
-            }
-            .disabled(InputSanitizer.sanitizeRedeemCode(redeemCodeDraft).isEmpty)
-            Button("취소", role: .cancel) { redeemCodeDraft = "" }
-        } message: {
-            Text("받으신 프로모션·선물 코드를 넣어 주세요. 초대 코드도 여기에 넣을 수 있어요.")
+        // ⚠ 여기에 입력 알럿을 다시 만들지 말 것 — 껍데기는 `RedeemCodeSheet` 하나다
+        // (실패 사유를 그릴 자리가 있는 쪽). 목소리 탭 게이트도 같은 것을 쓴다.
+        .redeemCodeSheet(isPresented: $redeemCodeAlertOpen) { code in
+            await socialFeatures.registerCodeReportingFailure(code, session: auth.session)
         }
         // 검증/실패 알림이 뜰 때 한 번 error 햅틱을 울려 저장 실패를 촉각으로 알린다.
         .onChange(of: validationAlert?.id) { _, newID in
