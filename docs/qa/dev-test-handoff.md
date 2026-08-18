@@ -466,7 +466,8 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 1. ~~**P1 #2**~~ — **끝났다(2026-08-18).** 아래 「P1 #2 — 관문 세 자리」 참조.
 2. ~~iOS 편집기 하단 문구 정리~~ — **끝났다(2026-08-18).** 아래 「iOS 저장 사유 문구」 참조.
 3. ~~iOS `statusMessage` 유출 차단~~ — **끝났다(2026-08-18).** 같은 절.
-4. **5단계 앱 쪽 제거** ← **여기부터.** 파생 결정은 **닫혔다(2026-08-18 지시)**:
+4. **5단계 앱 쪽 제거** ← **여기부터.** 착수 전 아래 「5단계 착수 전 실측」을 반드시 읽을 것.
+   파생 결정은 **닫혔다(2026-08-18 지시)**:
    가족 알람의 날씨 variant 는 **받는 사람 위치**로 고른다 —
    규칙 전문은 [`docs/spec/family-alarm.md`](../spec/family-alarm.md) 4절.
    남은 일은 (a) `toRemoteAlarmWriteRequest` 에 `bucketId` 싣기, (b) 옛
@@ -478,6 +479,42 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 조사 원문: `w1uv7w469.output`(5단계 전수 범위 + P1 8건), `w30oi7j1z.output`(편집기 문구·iOS 구조),
 `wy88mi9ha.output`(관문이 돌아야 할 자리 전수 + 저장 경로 추적),
 `wnfzhawji.output`(사유 문구 7갈래의 안드로이드·iOS 대체 수단 대조).
+
+### 5단계 착수 전 실측 (2026-08-18, `w9noiym6f.output`)
+
+전수 조사에서 **착수 전에 알아야 계획이 바뀌는 것 넷**이 나왔다. 전부 직접 코드로 확인했다.
+
+**① 가족 알람은 지금 테마를 실을 수 **없다** — 다리가 세 군데 끊겨 있다.**
+`bucket_id` 는 와이어 타입에도(`RemoteAlarmWriteRequest` 양 앱), 백엔드 검증에도
+(`alarm-helpers.ts` 의 `INVALID_BUCKET_ID` 화이트리스트), 쓰기·읽기 SQL 에도(`SELECT a.*`)
+이미 있다. 그런데:
+- **보내는 쪽이 안 싣는다.** 안드로이드는 `AlarmDraft.toRemoteAlarmWriteRequest`
+  (`MainViewModelAlarmActions.kt`)가 11개 필드만 넣고 `bucketId` 를 뺀다. iOS
+  `createFamilyTargetAlarm` 도 같다. **와이어 타입의 기본값이 `null` 이라 컴파일 에러가 안 난다.**
+- ⚠ **빌더가 두 벌인 게 원인이다.** 자기 알람용 `RemoteAlarmMapper.toWriteRequest` 는
+  `bucketId = alarm.bucketId.trimmedOrNull()` 를 **보낸다.** 필드가 한쪽에만 추가되고 다른
+  쪽에 안 따라간 것 — CLAUDE.md 「한 곳에서만」이 말하는 그 사고다. 고칠 때 **둘을 합치거나
+  최소한 어긋나면 깨지는 테스트**를 같이 둘 것.
+- **받는 쪽이 안 옮긴다.** `buildReceivedAlarmRow`(`RemoteAlarmPullSyncService.kt`)가
+  `remote.bucketId` 를 행에 매핑하지 않는다. 보내는 쪽만 고치면 **반쪽 다리**다.
+
+**② ⚠ Room 에 `fallbackToDestructiveMigration()` 이 아직 켜져 있다**(`AlarmDatabase.kt`,
+현재 `version = 23`). 5단계는 스키마를 건드릴 가능성이 큰데, **버전만 올리고 마이그레이션을
+등록하지 않으면 기존 사용자의 알람이 조용히 전부 삭제된다.** 실패가 눈에 안 보이는 종류다.
+
+**③ iOS 에는 안드로이드에 없는 두 번째 라이브 생성 경로가 있다.**
+`DynamicVoiceRefreshService` 가 반복 랜덤 알람을 **매일 밤 다시 합성**한다(포그라운드 진입 +
+`BGAppRefreshTask` 양쪽). 안드로이드의 `DynamicVoiceRefreshWorker` 는 날씨 variant 인덱스만
+resolve 한다 — **합성하지 않는다.** 즉 제거 작업이 두 앱에서 비대칭이다.
+남길 것과 섞지 말 것: `WeatherVariantRefreshService`(variant 재선택, 합성 아님)와
+`AlarmScheduleReconciler`(행↔OS 예약 정합)는 프리셋 경로에서도 필요하다.
+
+**④ 옛 행 재바인딩은 Room 마이그레이션으로 못 한다.** 마이그레이션은 `bucketId` 를
+`voiceRandomContext` 에서 채우는 오프라인 절반만 할 수 있고, `bucketClipKeysJson` 이 가리키는
+클립 파일은 **받아야 생긴다.** 제자리는 `sync/StockClipLanguageRebinder.kt` 다 — 이미
+네트워크를 쓰고 멱등이며 매니페스트 수신 뒤 `StockClipPrefetchWorker` 의 **모든 성공 경로**
+에서 불린다. 술어만 넓히면 된다. 매핑은 `clonePrerenderBucketCategoryFor` 를 **그대로 재사용**
+할 것(다시 적지 말 것).
 
 ### iOS 저장 사유 문구 — 값이 사는 자리로 옮겼다 (2026-08-18 완료)
 
