@@ -25,8 +25,17 @@
      미수신은 통과, 그 외에는 `ClipReadiness` 로 그 목소리가 완전한지 본다.
    - 화면: `ClipPreparationScreen(voices = viewModel.clipReadiness, onRetry = …)`,
      상태 갱신은 `MainViewModel.refreshClipReadiness()`.
-2. **백그라운드 진행 표시** — 안드로이드는 진행률 알림(워커가 `setProgress` 로 이미 낸다),
-   iOS 는 Live Activity(기존 위젯 확장에 Activity 추가).
+2. **백그라운드 진행 표시**
+   - 안드로이드: **완료**(`23f6cac2`). 워커가 진행률 알림을 띄운다.
+   - iOS: **껍데기만 완료.** `Shared/ClipPrefetchActivityAttributes.swift` 와
+     `AlarmTalkWidget/ClipPrefetchLiveActivity.swift` 는 들어가 있고 번들에도 등록됐지만,
+     **아직 아무도 시작·갱신하지 않는다.**
+     ⚠ 막힌 지점: `StockClipPrefetcher` 에서 `Activity.update/end` 를 부르면 Swift 6
+     동시성 검사가 `sending 'activity' risks causing data races` 로 막는다(`Activity` 가
+     Sendable 이 아니다). `@MainActor` 로 감싸거나 `Task` 로 미뤄도 같은 에러다.
+     시도한 것: async 화, `Task { @MainActor in }`, 제네릭 명시 — 전부 같은 지점에서 막힘.
+     다음 시도 후보: Activity 조작만 하는 별도 `actor`/`@unchecked Sendable` 래퍼로 감싸기,
+     또는 `Activity.activities` 로 매번 찾아 쓰되 그 호출을 nonisolated 컨텍스트에 두기.
 3. **5단계: 라이브 생성 제거** — 위 둘이 끝나야 안전하다. 대상은 iOS
    `DynamicVoiceRefreshService` + 안드로이드 동적 갱신 워커 + 편집기 라이브 폴백 +
    서버 랜덤 생성 갈래. **한쪽만 지우면 두 앱이 갈라진다.**
