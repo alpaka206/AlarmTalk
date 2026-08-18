@@ -508,9 +508,16 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 (`isActive`·`targetUserId`)만 눌러 두고 비교하므로, 한쪽에만 필드를 넣으면 그 순간 깨진다.
 ⚠ **아직 실기기 2대 검증은 안 했다** — 스펙의 「검증 방법」대로 확인할 것.
 
-**② ⚠ Room 에 `fallbackToDestructiveMigration()` 이 아직 켜져 있다**(`AlarmDatabase.kt`,
-현재 `version = 23`). 5단계는 스키마를 건드릴 가능성이 큰데, **버전만 올리고 마이그레이션을
-등록하지 않으면 기존 사용자의 알람이 조용히 전부 삭제된다.** 실패가 눈에 안 보이는 종류다.
+**② ~~Room 의 `fallbackToDestructiveMigration()`~~ — 걷어냈다(2026-08-18).**
+붙어 있던 근거가 "개발 중이라 보존할 데이터 없음" 이었는데 그건 이제 사실이 아니다 — 앱은
+스토어에 있고 베타 테스터의 알람이 들어 있다. 켜져 있으면 마이그레이션을 빠뜨린 채
+`version` 만 올렸을 때 **알람이 조용히 전부 삭제**된다(예외도 로그도 없다). 지금은 없는 게
+안전하다: 1→23 이 빠짐없이 등록돼 있고, 앞으로 빠뜨리면 **앱이 켜자마자 죽는다** — 죽는 건
+즉시 눈에 띄어 고칠 수 있지만 지워진 알람은 되돌릴 수 없다.
+회귀 방지 `AlarmDatabaseMigrationSafetyTest` 가 **소스를 읽어** 둘을 지킨다: 플래그가 없을 것,
+그리고 `version = N` 이면 `MIGRATION_1_2`…`MIGRATION_(N-1)_N` 이 **전부 `addMigrations` 에
+넘어가 있을 것**(정의만 하고 안 넘기면 무효라 그것도 잡는다).
+⚠ 4(b) 에서 `version = 24` 를 올릴 때 이 테스트가 곧바로 빨간불이 된다 — **그게 의도다.**
 
 **③ iOS 에는 안드로이드에 없는 두 번째 라이브 생성 경로가 있다.**
 `DynamicVoiceRefreshService` 가 반복 랜덤 알람을 **매일 밤 다시 합성**한다(포그라운드 진입 +
