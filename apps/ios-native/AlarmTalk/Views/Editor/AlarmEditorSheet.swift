@@ -715,8 +715,21 @@ struct AlarmEditorSheet: View {
             // 아니라 고르는 순간 없을 수 있고, 그대로 저장하면 라이브 생성으로 흘러가
             // 오프라인에서 안 울린다. **그 목소리만** 막고 준비 페이지로 보낸다 —
             // 알람 만들기 자체는 막지 않는다(다른 목소리로는 지금 만들 수 있어야 한다).
+            // 관문 **1/3**. 판정은 `needsClipPreparation` 한 곳에만 있다(거기 주석 참조).
+            //
+            // ⚠ **이 핸들러가 끝난 뒤의 `randomPrompt` 로 판정해야 한다.** 아래 751 근처에서
+            // 테마 알람은 `randomPrompt` 를 **되켠다**(`wasThemeAlarm` 분기). 지금 값(false)으로
+            // 물어보면 관문은 "랜덤 문구가 아니니 클립이 필요 없다" 며 통과시키는데, 곧바로
+            // 랜덤이 켜져 **클립이 필요한 상태로 바뀐다** — 테마 알람의 목소리를 아직 못 받은
+            // 클론으로 바꾸는 흐름이 통째로 관문을 빠져나갔다. 그래서 `wasThemeAlarm` 을 먼저
+            // 구해 두고 **바뀔 값**을 넘긴다.
+            let wasThemeAlarm = isActiveStockClipAlarm || (editingAlarm?.bucketId).nilIfBlank != nil
             if let newProfileID = (newProfileID).nilIfBlank,
-               needsPreparation(voiceProfileID: newProfileID) {
+               needsClipPreparation(
+                   profileID: newProfileID,
+                   randomPrompt: voiceStudio.randomPrompt || wasThemeAlarm,
+                   randomContext: voiceStudio.randomContext
+               ) {
                 // ⚠ **되돌리는 동안 이 핸들러를 재진입시키지 않는다.** 그냥 되돌리면
                 // (거절한 목소리 → 원래 목소리)로 한 번 더 돌아서, 바꾼 적도 없는데
                 // `ttsProfileChangedDuringEdit` 이 켜지고 준비해 둔 음성·미리듣기가 지워진다.
@@ -730,7 +743,8 @@ struct AlarmEditorSheet: View {
                 ttsProfileChangedDuringEdit = true
             }
             stopAllEditorPreviews()
-            let wasThemeAlarm = isActiveStockClipAlarm || (editingAlarm?.bucketId).nilIfBlank != nil
+            // `wasThemeAlarm` 은 관문보다 위에서 구했다 — 이 두 줄이 스톡 선택을 지우기
+            // **전**의 값이어야 하고, 관문도 그 값으로 판정해야 하기 때문이다(위 주석).
             stockSelectedMessageID = nil
             voiceStudio.preparedAlarm = nil
             // ⚠ **테마 알람이 목소리 변경으로 '직접 입력' 으로 뒤집히지 않게 한다.**
@@ -1321,19 +1335,42 @@ struct AlarmEditorSheet: View {
         return variants == Set(0..<expected)
     }
 
-    /// 이 목소리를 **지금 고를 수 있는가** — 사전렌더 클립이 다 받아져 있는가.
+    /// **이 목소리로 이 문구 종류를 지금 고를 수 있는가** — 서버가 사전렌더 클립을 다 만들어 뒀는가.
     ///
-    /// 기본(시스템) 목소리는 선다운로드 대상이라 여기서 막지 않는다. 막는 대상은
-    /// **아직 못 받은 클론**(특히 공유받은 목소리)이다. 문구 종류가 버킷으로 매핑되지
-    /// 않는 경우(직접 입력)는 클립이 필요 없으므로 통과시킨다.
-    func needsPreparation(voiceProfileID: String) -> Bool {
-        guard !voiceStudio.isSystemVoiceProfile(id: voiceProfileID) else { return false }
-        guard voiceStudio.randomPrompt,
-              let context = RandomPromptContext(rawValue: voiceStudio.randomContext) else { return false }
+    /// ⚠ **이 판정식을 어디에도 베끼지 말 것. 부르는 자리가 셋이다:**
+    ///  1. 목소리 선택 — `selectedProfileID` 의 `onChange`
+    ///  2. **문구 종류 선택** — `applyMessageSettings`
+    ///  3. **저장 직전** — `saveFlow`
+    ///
+    /// 2026-08-18 전에는 **1번에만** 있었다. 그래서 목소리를 고를 때는 통과했는데 그 뒤
+    /// 문구 종류를 바꾸면 아무도 안 막았다 — 종류마다 버킷 category 가 다르고
+    /// (`RandomPromptContext.bucketCategory`), 서버 렌더는 category 단위로 끝나므로 **같은
+    /// 목소리가 종류에 따라 준비됐을 수도 아닐 수도 있다.** 특히 방금 공유받은 목소리가
+    /// 그렇다(소유자 쪽 렌더가 진행 중).
+    ///
+    /// 지금은 그 상태로 저장까지 가도 라이브 생성으로 폴백해서 티가 안 난다. 라이브 생성을
+    /// 걷어내면 그대로 **저장이 실패하는 막다른 길**이 된다. 그래서 세 자리 모두에서 막고,
+    /// 막을 때는 반드시 **준비 페이지로 보낸다**(막기만 하면 빠져나갈 길이 없다).
+    ///
+    /// 안드로이드 짝은 `AlarmEditorScreen.needsClipPreparation` 이고 같은 갈래·같은 순서다.
+    ///
+    /// 통과시키는 갈래:
+    ///  - 기본(시스템) 목소리 — 선다운로드 대상이라 여기서 막을 일이 아니다.
+    ///  - 랜덤 문구가 아님(직접 입력·녹음) — 클립이 필요 없다.
+    ///  - 매니페스트 미수신 — 못 물어본 것이 사용자를 막는 근거가 되면 안 된다.
+    ///  - 버킷으로 매핑되지 않는 종류.
+    func needsClipPreparation(
+        profileID: String,
+        randomPrompt: Bool,
+        randomContext: String
+    ) -> Bool {
+        guard !voiceStudio.isSystemVoiceProfile(id: profileID) else { return false }
+        guard randomPrompt,
+              let context = RandomPromptContext(rawValue: randomContext) else { return false }
         // 매니페스트를 아직 못 받았으면 판단할 수 없다 — 막지 않는다(못 물어본 것이
-        // 사용자를 막는 근거가 되면 안 된다). 그 경우 저장은 라이브로 폴백한다.
+        // 사용자를 막는 근거가 되면 안 된다).
         guard voiceStudio.expectedVariants != nil else { return false }
-        return !hasCompleteBucket(category: context.bucketCategory, profileID: voiceProfileID)
+        return !hasCompleteBucket(category: context.bucketCategory, profileID: profileID)
     }
 
     func prepareSelectedBucketClipIfNeeded() async -> Bool {
@@ -1479,6 +1516,26 @@ struct AlarmEditorSheet: View {
 
     /// 문구 화면의 저장 — 최종 반영은 여기 한 곳이다.
     func applyMessageSettings(_ result: MessageSettingsResult) {
+        // ⚠ **관문 2/3 — 문구 종류 선택.** 판정은 `needsClipPreparation` 한 곳에만 있다.
+        //
+        // 같은 목소리라도 **종류마다 버킷 category 가 다르다**(`RandomPromptContext.bucketCategory`).
+        // 서버 사전렌더는 category 단위로 끝나므로 '사랑' 은 준비됐는데 '약' 은 아직인 상태가
+        // 정상적으로 존재한다 — 특히 방금 공유받은 목소리가 그렇다. 목소리를 고를 때(관문 1)
+        // 통과한 것이 **그 뒤 고른 종류까지 보장하지는 않는다.**
+        //
+        // **아무것도 반영하지 않고** 준비 페이지로 보낸다 — 종류는 고르기 전 그대로 남는다
+        // (목소리 관문이 목소리를 되돌리는 것과 같은 규칙). 이 함수는 문구 화면의
+        // `onDisappear` 에서 불리므로 그 화면은 이미 닫혔고, 준비 페이지가 그 위에 뜬다.
+        if !result.isManual,
+           let profileID = voiceStudio.selectedProfileID.nilIfBlank,
+           needsClipPreparation(
+               profileID: profileID,
+               randomPrompt: true,
+               randomContext: result.context
+           ) {
+            preparationVoiceID = profileID
+            return
+        }
         voiceStudio.preparedAlarm = nil
         // ⚠ **테마를 비운다.** 문구 갈래와 테마는 동시에 켜질 수 없다. 안 비우면
         // `isActiveStockClipAlarm` 이 계속 참이라 '직접 입력' 을 골라도 입력창이 안 뜬다.
@@ -2144,6 +2201,29 @@ struct AlarmEditorSheet: View {
                 fireAtMillis: fireAt,
                 listenerTitle: currentListenerTitle
             ) {
+            // ⚠ **관문 3/3 — 저장 직전.** 판정은 `needsClipPreparation` 한 곳에만 있다.
+            //
+            // ⚠ **자리가 중요하다 — 이 블록 안이어야 한다.** 여기 도달했다는 것은 위
+            // `prepareSelectedBucketClipIfNeeded` 가 클립을 못 묶었고 기존 음원도 재사용할 수
+            // 없다는 뜻, 즉 **라이브 생성으로 떨어진다**는 뜻이다. 라이브 생성을 걷어내면
+            // (「알람 음성의 최종 목적지」) 그대로 울릴 오디오가 없는 알람이 된다.
+            //
+            // 이 블록 **밖**(예: `prepareSelectedBucketClipIfNeeded` 앞)에 두면 **이미 오디오가
+            // 붙어 있는 알람의 시각만 고치는 재저장**까지 준비 페이지로 튀긴다 — 생성할 것도
+            // 바인딩할 것도 없는데 클립을 기다리게 하는 셈이다. 안드로이드가 관문을
+            // `hasFreshTtsAudio` 조기 submit **뒤**에 두는 것과 같은 이유다.
+            //
+            // 막되 **저장 버튼을 죽이지 않는다**. 여기까지 온 사람은 저장하려던 사람이고,
+            // 말 없이 비활성화된 버튼보다 준비 페이지가 낫다.
+            if let profileID = voiceStudio.selectedProfileID.nilIfBlank,
+               needsClipPreparation(
+                   profileID: profileID,
+                   randomPrompt: voiceStudio.randomPrompt,
+                   randomContext: voiceStudio.randomContext
+               ) {
+                preparationVoiceID = profileID
+                return
+            }
             // 문구가 글자까지 똑같으면 **서버를 부르지 않고** 전에 만든 오디오를 그대로 쓴다
             // (대기 없음 + 직접 입력 월 한도 안 깎임 + 오프라인에서도 저장됨).
             // CLAUDE.md 가 '직접 입력 문구를 기억한다' 로 바꾼 근거가 바로 이 경로다 —

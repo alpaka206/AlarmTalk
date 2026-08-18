@@ -463,9 +463,7 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 
 ### 남은 작업 순서
 
-1. **P1 #2** — 관문(`onNeedsClipPreparation` / `needsPreparation`)이 지금 **목소리 선택 한 곳**
-   에서만 돈다. **문구 종류 선택**과 **저장 직전**에도 같은 식으로 돌린다.
-   ⚠ 세 자리의 판정식은 **철자까지 같아야 한다**(CLAUDE.md 「일곱 자리」와 같은 종류의 규약).
+1. ~~**P1 #2**~~ — **끝났다(2026-08-18).** 아래 「P1 #2 — 관문 세 자리」 참조.
 2. iOS 편집기 하단 문구 정리 — **운세 시트의 중간 draft 선행**(지금은 pane 의 draft 에
    직접 바인딩돼 있어 취소해도 되돌릴 원본이 없다).
 3. iOS `voiceStudio.statusMessage` 가 편집기 하단으로 새는 것 차단 — **저장 실패 알럿 선행**
@@ -473,4 +471,48 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
 4. 5단계 앱 쪽 제거(위 미결 둘을 먼저 정한 뒤).
 5. 백엔드 정리 — 스토어 게재 후.
 
-조사 원문: `w1uv7w469.output`(5단계 전수 범위 + P1 8건), `w30oi7j1z.output`(편집기 문구·iOS 구조).
+조사 원문: `w1uv7w469.output`(5단계 전수 범위 + P1 8건), `w30oi7j1z.output`(편집기 문구·iOS 구조),
+`wy88mi9ha.output`(관문이 돌아야 할 자리 전수 + 저장 경로 추적).
+
+### P1 #2 — 관문 세 자리 (2026-08-18 완료)
+
+**무엇이 문제였나.** 사전렌더 클립 관문이 **목소리를 고를 때 한 번만** 돌았다. 그런데
+문구 종류마다 버킷 category 가 다르고(`clonePrerenderBucketCategoryFor`) 서버 렌더는
+category 단위로 끝나므로, **같은 목소리가 종류에 따라 준비됐을 수도 아닐 수도 있다.**
+목소리를 통과시킨 것이 그 뒤 고른 종류까지 보장하지 못했다.
+
+지금은 라이브 랜덤 생성이 이 구멍을 덮고 있어 증상이 안 나온다. 그걸 걷어내면(위 5절)
+그대로 **저장이 조용히 막히는 막다른 길**이 된다 — 사유 문구를 없앴으므로 왜 안 되는지
+말해 줄 자리도 없다.
+
+**어떻게 고쳤나 — 판정 하나, 부르는 자리 셋.**
+
+| 자리 | Android | iOS |
+| --- | --- | --- |
+| 판정(유일 출처) | `ClipGate.needsClipPreparation`(`ui/editor/ClipPreparationGate.kt`) | `AlarmEditorSheet.needsClipPreparation` |
+| 1. 목소리 선택 | `VoiceAudioCard` 의 `onNeedsClipPreparation` | `selectedProfileID` 의 `onChange` |
+| 2. 문구 종류 선택 | `applyRandomPromptSettings` | `applyMessageSettings` |
+| 3. 저장 직전 | `saveEditor` | `saveFlow` |
+
+⚠ **판정식을 세 벌로 베끼지 않았다.** 안드로이드는 컴포저블 밖 `ClipPreparationGate.kt` 로
+빼서 파일 경계로 못 박았고(덤으로 테스트 가능해졌다), iOS 는 메서드 하나를 셋이 부른다.
+CLAUDE.md 「일곱 자리」가 네 번 깨진 이유가 '같은 판정식을 여러 벌 적어 둔 것' 이라,
+**같은 함수를 부르는 것**으로 바꿨다. 새 자리가 생기면 그 함수를 부를 것.
+
+**막을 때는 반드시 준비 페이지로 보낸다.** 막기만 하면 빠져나갈 길이 없다.
+
+⚠ **자리(3)의 위치가 중요하다.** 안드로이드는 `hasFreshTtsAudio` 조기 submit **뒤**,
+iOS 는 라이브 생성 블록 **안**이다. 그 앞에 두면 **이미 오디오가 붙어 있는 알람의 시각만
+고치는 재저장**까지 준비 페이지로 튀긴다 — 생성할 것도 바인딩할 것도 없는데 클립을
+기다리게 하는 셈이고, 매니페스트가 잠깐 비면 멀쩡한 알람을 고칠 길이 사라진다.
+
+**같이 잡은 것 — iOS 테마 알람의 관문 우회.** `selectedProfileID` 의 `onChange` 는 관문을
+지난 **뒤** 테마 알람의 `randomPrompt` 를 되켠다(`wasThemeAlarm` 분기). 관문은 그 전 값
+(false)으로 물어봐서 "랜덤이 아니니 클립이 필요 없다" 며 통과시켰고, 곧바로 랜덤이 켜져
+클립이 필요한 상태로 바뀌었다 — **테마 알람의 목소리를 아직 못 받은 클론으로 바꾸는
+흐름이 통째로 관문을 빠져나갔다.** 이제 `wasThemeAlarm` 을 먼저 구해 **바뀔 값**으로
+판정한다. 안드로이드에는 목소리 변경 시 `voiceRandomPrompt` 를 켜는 자리가 없어(grep 확인)
+같은 구멍이 없다.
+
+**회귀 테스트**: `ClipPreparationGateTest`(7개). 지키는 것은 **"한 목소리가 종류에 따라
+준비됐을 수도 아닐 수도 있다"** 는 사실 하나 — 그게 맞아야 자리(2)(3)이 필요하다.
