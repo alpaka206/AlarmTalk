@@ -17,6 +17,14 @@ object NotificationChannels {
     const val RINGING_FALLBACK_CHANNEL_ID = "voice_alarm_ringing_fallback_v1"
     const val SOCIAL_CHANNEL_ID = "voice_alarm_social_updates_v1"
 
+    /**
+     * 목소리 클립을 받는 동안의 **진행률 알림** 채널.
+     *
+     * ⚠ 소리·진동 없이 조용해야 한다(IMPORTANCE_LOW). 사용자가 요청한 알림이 아니라
+     * "지금 몇 %인지 폰에서 바로 보이게" 하는 표시일 뿐이라, 소리를 내면 방해가 된다.
+     */
+    const val CLIP_PREFETCH_CHANNEL_ID = "voice_alarm_clip_prefetch_v1"
+
     // 폴백 채널 진동 패턴(대기, 진동, 대기, 진동…). 정상 경로는 RingingService 가 per-alarm 패턴으로 직접 진동한다.
     private val FALLBACK_VIBRATION_PATTERN = longArrayOf(0L, 600L, 400L, 600L, 400L, 600L)
 
@@ -60,6 +68,17 @@ object NotificationChannels {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
 
+        val clipPrefetchChannel = NotificationChannel(
+            CLIP_PREFETCH_CHANNEL_ID,
+            "Voice download",
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = "Progress while alarm voices are downloading"
+            setShowBadge(false)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        }
+
+        notificationManager.createNotificationChannel(clipPrefetchChannel)
         notificationManager.createNotificationChannel(ringingChannel)
         notificationManager.createNotificationChannel(fallbackChannel)
         notificationManager.createNotificationChannel(socialChannel)

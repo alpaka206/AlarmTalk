@@ -885,4 +885,5 @@ Pass code: %1$s
     <string name="plan_gate_paid_message">This feature is available with a paid pass.</string>
     <string name="msg_voice_preset_only">Basic voices can only say prepared phrases. Choose your own voice to wake up with text you type.</string>
     <string name="msg_voice_locked_free_plan">Your pass ended, so this voice can\'t be used. Register a pass again to bring it back.</string>
+    <string name="clip_prefetch_notification_title">Downloading voices</string>
 </resources>

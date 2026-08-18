@@ -893,4 +893,5 @@
     <string name="plan_gate_paid_message">この機能は有料利用券でご利用いただけます。</string>
     <string name="msg_voice_preset_only">基本の声は用意された文だけを話せます。自由入力の文で起こすには、自分の声を選んでください。</string>
     <string name="msg_voice_locked_free_plan">無料利用券に変わり、この声は使えません。利用券を登録し直すと戻ります。</string>
+    <string name="clip_prefetch_notification_title">音声をダウンロードしています</string>
 </resources>

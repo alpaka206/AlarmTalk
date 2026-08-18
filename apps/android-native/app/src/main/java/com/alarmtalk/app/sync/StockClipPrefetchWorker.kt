@@ -44,6 +44,50 @@ class StockClipPrefetchWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
 
+    /**
+     * 받는 동안 **진행률을 폰에서 바로 보이게** 한다.
+     *
+     * ⚠ 소리 없는 낮은 중요도 채널이다 — 사용자가 요청한 알림이 아니라 표시일 뿐이라
+     * 소리를 내면 방해가 된다. iOS 는 갱신되는 진행률 알림이 없어 Live Activity 로 같은
+     * 일을 한다(docs/spec/voice-and-message.md).
+     */
+    private fun progressNotification(done: Int, total: Int): androidx.core.app.NotificationCompat.Builder {
+        val percent = if (total > 0) (done * 100 / total).coerceIn(0, 100) else 0
+        return androidx.core.app.NotificationCompat.Builder(
+            applicationContext,
+            com.alarmtalk.app.alarm.NotificationChannels.CLIP_PREFETCH_CHANNEL_ID,
+        )
+            .setSmallIcon(com.alarmtalk.app.R.drawable.ic_alarm_24)
+            .setContentTitle(applicationContext.getString(com.alarmtalk.app.R.string.clip_prefetch_notification_title))
+            .setContentText("$percent%")
+            .setProgress(100, percent, total <= 0)
+            .setOngoing(true)
+            .setSilent(true)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_LOW)
+    }
+
+    private fun foregroundInfo(done: Int, total: Int): androidx.work.ForegroundInfo =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            androidx.work.ForegroundInfo(
+                CLIP_PREFETCH_NOTIFICATION_ID,
+                progressNotification(done, total).build(),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            androidx.work.ForegroundInfo(CLIP_PREFETCH_NOTIFICATION_ID, progressNotification(done, total).build())
+        }
+
+    override suspend fun getForegroundInfo(): androidx.work.ForegroundInfo = foregroundInfo(0, 0)
+
+    /**
+     * 진행률을 알림에도 반영한다. 실패해도 다운로드는 계속한다 — 알림 권한이 없거나
+     * 포그라운드 승격이 막혀도(백그라운드 제한) **받는 일 자체를 멈추면 안 된다.**
+     */
+    private suspend fun publishProgress(done: Int, total: Int) {
+        setProgress(progressData(done = done, total = total))
+        runCatching { setForeground(foregroundInfo(done, total)) }
+    }
+
     override suspend fun doWork(): Result {
         val session = AuthSessionStore(applicationContext).read() ?: return Result.success()
         return runCatching {
@@ -92,7 +136,7 @@ class StockClipPrefetchWorker(
             }
 
             val missing = clips.filter { audioStore.getCachedAudio(cacheKeyFor(it)) == null }
-            setProgress(progressData(done = clips.size - missing.size, total = clips.size))
+            publishProgress(done = clips.size - missing.size, total = clips.size)
             if (missing.isEmpty()) {
                 rebind()
                 return@runCatching Result.success()
@@ -118,7 +162,7 @@ class StockClipPrefetchWorker(
                     }.awaitAll()
                 }
                 done += batch.size
-                setProgress(progressData(done = done, total = clips.size))
+                publishProgress(done = done, total = clips.size)
             }
             rebind()
             Result.success()
@@ -195,6 +239,9 @@ class StockClipPrefetchWorker(
             "${AlarmAudioStore.STOCK_CACHE_KEY_PREFIX}${clip.messageId}"
 
         private fun progressData(done: Int, total: Int) = workDataOf(KEY_DONE to done, KEY_TOTAL to total)
+
+        /** 진행률 알림 id. 알람 알림들과 겹치지 않는 고정값. */
+        private const val CLIP_PREFETCH_NOTIFICATION_ID = 7311
 
         private val networkConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
