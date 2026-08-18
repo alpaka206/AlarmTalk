@@ -38,10 +38,12 @@
 		1EC30FA50D0D15D62EF99A11 /* RemoteAlarmSyncViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D91CA086C7D4B708EBFB7D9 /* RemoteAlarmSyncViewModel.swift */; };
 		1F91FD72D98E3051B4FD6BD7 /* AlarmTimeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FFCC8AFC12D1CB8AD6A44F /* AlarmTimeCalculatorTests.swift */; };
 		211DD3BCAC0CE23AD3436301 /* AlarmTalkBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521C02BC3EAB475219595232 /* AlarmTalkBrand.swift */; };
+		21D7DDA9CD92D6DFE3F9431D /* HitAreaProbeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F488E5D7F55A7279468FA6E9 /* HitAreaProbeUITests.swift */; };
 		22DF2F7D22E677AE5857AA95 /* ConsentScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A35A337D287686CD7E5648 /* ConsentScreenshotUITests.swift */; };
 		23A18B7FED2AF1A1788EC37D /* AlarmSoundVolumeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D508DD8CC6CDA986BF91DBA0 /* AlarmSoundVolumeTests.swift */; };
 		23DD6CB6C45C98F8C67EC651 /* AppVersionGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6631E3233534A061DF16833B /* AppVersionGateTests.swift */; };
 		24532A821DBDA7E12D150865 /* InputSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */; };
+		254DC5E9869912CC8334F718 /* RedeemCodeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F60FB34BFE756CACC6149C2 /* RedeemCodeSheet.swift */; };
 		263DD7997155CB06A55FB379 /* ClipReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6591AF9B9A7B055141D618C9 /* ClipReadinessTests.swift */; };
 		264D6E637762E760BCB4CBC8 /* WeatherVariantRefreshService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2294522549805A842471167A /* WeatherVariantRefreshService.swift */; };
 		27CF6DF15148B755FC84D1B3 /* LocalAlarmRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02293324F4C4AB3487AF27E4 /* LocalAlarmRecord.swift */; };
@@ -509,6 +511,7 @@
 		8E3D0092573DFD5413095F8F /* AudioCropper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCropper.swift; sourceTree = "<group>"; };
 		8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunctionalE2EUITests.swift; sourceTree = "<group>"; };
 		8EC3F92F3D5BF3B4B8568196 /* AlarmEditDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditDraft.swift; sourceTree = "<group>"; };
+		8F60FB34BFE756CACC6149C2 /* RedeemCodeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RedeemCodeSheet.swift; sourceTree = "<group>"; };
 		903CF0F5BED76AD923151223 /* PromoKeyboardUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromoKeyboardUITests.swift; sourceTree = "<group>"; };
 		90F41853E4CF850DF4EB6F24 /* BucketClipRotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BucketClipRotationTests.swift; sourceTree = "<group>"; };
 		920F8A0EE7DA7744FBDA1206 /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
@@ -614,6 +617,7 @@
 		F346F83B654542F502B5CBE1 /* AudioCacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCacheStore.swift; sourceTree = "<group>"; };
 		F34DCC0A471726BA780305A8 /* VoicePreviewConfirmView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePreviewConfirmView.swift; sourceTree = "<group>"; };
 		F447DE78A51BEA7ED75F5DA3 /* voice_greeting_soeun_en.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = voice_greeting_soeun_en.mp3; sourceTree = "<group>"; };
+		F488E5D7F55A7279468FA6E9 /* HitAreaProbeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HitAreaProbeUITests.swift; sourceTree = "<group>"; };
 		F51D645677265F4903D07EFE /* LocalHolidayCalendarLunarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHolidayCalendarLunarTests.swift; sourceTree = "<group>"; };
 		F53865164F0DA5BE67D28848 /* ReceivedAlarmBadgeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceivedAlarmBadgeStore.swift; sourceTree = "<group>"; };
 		F5A537326D52C4948FC559A7 /* SystemAlertMetricsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAlertMetricsUITests.swift; sourceTree = "<group>"; };
@@ -689,6 +693,7 @@
 				463A1453ADEB2220E67E7F12 /* FortuneDialogScreenshotUITests.swift */,
 				8710CD100D29FAD10DB97501 /* FreeManualGateUITests.swift */,
 				8E66D780F5E84B596A90113B /* FunctionalE2EUITests.swift */,
+				F488E5D7F55A7279468FA6E9 /* HitAreaProbeUITests.swift */,
 				ECE7B9F6578FB639A08A5C77 /* HolidaySheetScreenshotUITests.swift */,
 				A70A73CA504BECFEF002F84C /* LargeTextScreenshotUITests.swift */,
 				5E225F300F6C400D8EDBB183 /* PasswordResetE2EUITests.swift */,
@@ -855,6 +860,7 @@
 				DB37514CB12D62CC34E1E0F3 /* PreviewSupport.swift */,
 				74945BF64F5846A12BDA23B6 /* PromptDetailCard.swift */,
 				BA2EF92A73BBC33831C8537B /* RecordingCard.swift */,
+				8F60FB34BFE756CACC6149C2 /* RedeemCodeSheet.swift */,
 				EC6B972EFA8543A20D363BEE /* SectionCard.swift */,
 				1D97B19A1D9E8E81B2EBCFA6 /* SelectionSheet.swift */,
 				08C420EC89C426D8BAE3E0D0 /* SheetContentHeight.swift */,
@@ -1361,6 +1367,7 @@
 				A32D9C97DB38741FFAE2C060 /* FortuneDialogScreenshotUITests.swift in Sources */,
 				403DF5C3BFFFB7B40132EEBB /* FreeManualGateUITests.swift in Sources */,
 				F257AFC84C3E1A8F0AE60485 /* FunctionalE2EUITests.swift in Sources */,
+				21D7DDA9CD92D6DFE3F9431D /* HitAreaProbeUITests.swift in Sources */,
 				9594E297F46C45099F4FC9D0 /* HolidaySheetScreenshotUITests.swift in Sources */,
 				5D1542279101EFBE06D80C09 /* LargeTextScreenshotUITests.swift in Sources */,
 				A26F3948811CBF00487223C0 /* PasswordResetE2EUITests.swift in Sources */,
@@ -1492,6 +1499,7 @@
 				3E0A8073240914691C18761C /* PushNotificationCoordinator.swift in Sources */,
 				B12C38F17D8F80C34124BD88 /* ReceivedAlarmBadgeStore.swift in Sources */,
 				834400622874F237C2205FED /* RecordingCard.swift in Sources */,
+				254DC5E9869912CC8334F718 /* RedeemCodeSheet.swift in Sources */,
 				57ADA6ACCC85DFE6A0015F10 /* RemoteAlarmMapper.swift in Sources */,
 				6A65D2105CD5F35BB89FA3E7 /* RemoteAlarmPullSync.swift in Sources */,
 				9B207F7901C5B7F4124ABDCC /* RemoteAlarmPushSync.swift in Sources */,

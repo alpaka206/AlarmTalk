@@ -213,6 +213,8 @@ struct AlarmRow: View {
                 .foregroundStyle(theme.palette.onError)
                 .frame(width: deleteRevealWidth)
                 .frame(maxHeight: .infinity)
+                // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("알람 삭제"))
@@ -368,6 +370,8 @@ struct AlarmSelectionBar: View {
                 .foregroundStyle(theme.palette.onSurfaceVariant)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
+                // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+                .contentShape(Rectangle())
 
             Button("삭제", action: onDelete)
                 .font(theme.typography.titleMedium.weight(.semibold))

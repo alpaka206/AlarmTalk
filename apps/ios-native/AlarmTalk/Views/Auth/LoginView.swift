@@ -289,6 +289,8 @@ struct LoginView: View {
                         .foregroundStyle(confirmCodeEnabled ? AuthSceneColors.text : Color.white.opacity(0x59 / 255.0))
                         .padding(.vertical, 16)
                         .padding(.horizontal, 18)
+                        // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .overlay(

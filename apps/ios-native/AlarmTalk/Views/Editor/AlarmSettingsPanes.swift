@@ -252,6 +252,8 @@ struct AlarmSoundSettingsPane: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(theme.palette.primary)
                         .frame(width: 44, height: 44)
+                        // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text(previewingPath == previewURL.path ? "정지" : "들어보기"))

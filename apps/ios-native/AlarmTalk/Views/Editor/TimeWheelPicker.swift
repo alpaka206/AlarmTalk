@@ -477,10 +477,13 @@ struct AmPmWheelColumn: View {
         VStack(spacing: 0) {
             label(title: "오전", selected: !isPM)
                 .frame(height: itemHeight)
+                // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+                .contentShape(Rectangle())
                 .onTapGesture { setIsPM(false) }
 
             label(title: "오후", selected: isPM)
                 .frame(height: itemHeight)
+                .contentShape(Rectangle())
                 .onTapGesture { setIsPM(true) }
         }
         .frame(height: itemHeight * 3)

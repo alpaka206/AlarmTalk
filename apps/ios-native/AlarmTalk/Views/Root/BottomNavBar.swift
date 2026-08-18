@@ -48,6 +48,12 @@ struct BottomNavBar: View {
                     // 아이콘 스왑)만으로 선택을 표시한다(`AlarmTalkBottomBar.kt:107` 주석
                     // "배경 인디케이터 없이 색으로만"). 알약을 다시 넣지 말 것.
                     .frame(maxWidth: .infinity, minHeight: 58)
+                    // ⚠ **없으면 셀이 아니라 글리프만 눌린다 — 빼지 말 것**(2026-08-18
+                    // 실기기 실측). `frame` 이 넓힌 자리는 SwiftUI 가 **투명한 레이아웃
+                    // 공간**으로 두어 히트테스트에서 건너뛴다. 실제로 탭 셀은 127pt 인데
+                    // 눌리는 폭이 **알람 21pt · 목소리 29pt · 더보기 29pt** 였다(셀의 77%가
+                    // 죽어 있었고, 애플 HIG 최소 44pt 에도 한참 못 미쳤다).
+                    .contentShape(Rectangle())
                     .foregroundStyle(selected == tab ? theme.palette.primary : theme.palette.onSurfaceVariant)
                 }
                 .buttonStyle(.plain)

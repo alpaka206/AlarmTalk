@@ -82,6 +82,9 @@ struct AlarmSettingRow<Trailing: View>: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .frame(width: 44, height: 44)
+                        // ⚠ 없으면 글리프만 눌린다 — `frame`/`padding` 이 넓힌 자리는 투명해 히트테스트를 건너뛴다.
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
