@@ -546,9 +546,23 @@ final class AlarmKitViewModel: ObservableObject {
             return true
         }
         // 취소가 실패했다 — OS 가 이 알람을 아직 들고 있는가?
+        //
+        // ⚠ **AlarmKit 에 직접 묻는다.** `AlarmManager.alarms` 가 권위 있는 값이다.
+        // 예전에는 `lastAlarmStateSnapshot`(마지막 `alarmUpdates` emit 의 캐시)으로 판단했는데,
+        // 그 캐시는 취소·예약 때 갱신되지 않고 emit 이 올 때만 바뀐다. 그래서 알람이 울리고
+        // 해제된 직후처럼 **emit 이 아직 안 온 창**에서는 "아직 예약돼 있다" 고 잘못 답하고,
+        // 사용자에게는 지워지지 않는 알람으로 보인다. 되돌릴 수 없게 느껴지는 판단을
+        // 신선도 보장이 없는 값으로 내리고 있었다.
+        // 못 물어보면(throws) 그때만 캐시로 폴백한다 — 아무 근거도 없이 막는 것보다 낫다.
+        let scheduledIDs: Set<String>
+        do {
+            scheduledIDs = Set(try AlarmManager.shared.alarms.map { $0.id.uuidString })
+        } catch {
+            scheduledIDs = Set(lastAlarmStateSnapshot.keys)
+        }
         if Self.mayDeleteAfterCancelFailure(
             alarmKitID: alarmKitUUID.uuidString,
-            scheduledIDs: Set(lastAlarmStateSnapshot.keys)
+            scheduledIDs: scheduledIDs
         ) {
             // 안 들고 있다. 취소할 게 없어서 난 실패이므로 삭제는 그대로 진행한다.
             // 사용자가 원한 결과(목록에서 사라진다)가 정확히 이뤄지므로 사유도 지운다.
