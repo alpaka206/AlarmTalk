@@ -126,9 +126,18 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var voiceSourceEnum: VoiceSource { VoiceSource(rawValue: voiceSource) ?? .ttsProfile }
     var vibrationPatternEnum: VibrationPattern { VibrationPattern(rawValue: vibrationPattern) ?? .default }
 
+    /// ⚠ **재생 방식만으로 '유료 목소리' 라고 하지 말 것**(2026-08-18, 실제 계정으로 확인).
+    /// 예전에는 `playMode != .alarmOnly` 하나만 참이어도 유료로 봤다. 그래서 **목소리 자원이
+    /// 하나도 없는 알람**(profileId·ttsMessageId·오디오 전부 없음)이 유료로 분류돼,
+    /// **한 번도 유료였던 적 없는 계정**의 알람이 잠기고 "무료 이용권으로 바뀌었어요" 가
+    /// 떴다(구독 이력 0건인 `ronald@estsoft.com` 의 07:30 알람이 `mode=sound-only` 로
+    /// 서버에 박혀 있었다). 말할 자원이 없는 알람은 유료 기능을 쓰는 게 아니다 —
+    /// 그런 알람은 `RemoteAlarmMapper` 가 이미 알람음으로 내려 둔다.
+    ///
+    /// 잠긴 뒤에도 참이어야 한다는 점은 그대로다: 잠금은 `playMode` 만 바꾸고
+    /// `voiceProfileId` 는 남기므로 자원 기준으로 봐도 계속 대상으로 잡힌다.
     var usesPaidVoiceFeatures: Bool {
-        playModeEnum != .alarmOnly ||
-            !(localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+        !(localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
             !(rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
             !(voiceProfileId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
             !(ttsMessageId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)

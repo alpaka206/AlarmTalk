@@ -181,3 +181,54 @@ final class PaidVoiceGateTests: XCTestCase {
         XCTAssertNil(PaidVoiceGate.parseTimestamp("아무거나"))
     }
 }
+
+// MARK: - 자원 없는 알람은 유료가 아니다 (2026-08-18 회귀)
+
+extension PaidVoiceGateTests {
+    /// ⚠ **한 번도 유료였던 적 없는 계정**이 "무료 이용권으로 바뀌었어요" 를 받은 원인.
+    /// 재생 방식만 목소리이고 말할 자원(profileId·ttsMessageId·오디오)이 하나도 없는
+    /// 알람이 유료로 분류돼 잠겼다. 실계정 `ronald@estsoft.com`(구독 이력 0건)의 07:30
+    /// 알람이 서버에 `mode=sound-only` 로 박혀 있었다.
+    func test_말할_자원이_없으면_유료_목소리가_아니다() {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var record = LocalAlarmRecord(
+            id: UUID().uuidString,
+            label: "아침",
+            hour: 7,
+            minute: 30,
+            fireAtMillis: now + 60_000,
+            origin: AlarmOrigin.localOwned.rawValue,
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+        record.playMode = AlarmPlayMode.voiceOnly.rawValue
+        record.voiceProfileId = nil
+        record.ttsMessageId = nil
+        record.localAudioUri = nil
+        record.rawAudioUri = nil
+
+        XCTAssertFalse(PaidVoiceGate.usesPaidVoice(record), "자원이 없는데 유료로 잡혔다")
+        XCTAssertFalse(record.isPaidVoiceForDowngrade, "자원이 없는데 강등 대상으로 잡혔다")
+    }
+
+    /// 반대 방향 — 자원이 있으면 그대로 대상이다(위 수정이 게이트를 뚫지 않았는지).
+    func test_클론_목소리_알람은_여전히_강등_대상이다() {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var record = LocalAlarmRecord(
+            id: UUID().uuidString,
+            label: "아침",
+            hour: 7,
+            minute: 30,
+            fireAtMillis: now + 60_000,
+            origin: AlarmOrigin.localOwned.rawValue,
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+        record.playMode = AlarmPlayMode.voiceOnly.rawValue
+        record.voiceProfileId = "clone-abc"
+        record.ttsMessageId = "msg-1"
+
+        XCTAssertTrue(PaidVoiceGate.usesPaidVoice(record))
+        XCTAssertTrue(record.isPaidVoiceForDowngrade)
+    }
+}

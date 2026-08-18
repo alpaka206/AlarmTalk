@@ -36,6 +36,12 @@ final class LocalAlarmStoreDeletionTests: XCTestCase {
         XCTAssertNil(store.record(id: alarm.id))
     }
 
+    /// ⚠ **재생 방식만으로는 잠금 대상이 아니다**(2026-08-18 계약 수정).
+    /// 예전에는 `voice-mode`(재생 방식만 목소리, 말할 자원은 전무)를 대상으로 기대했다 —
+    /// 이 테스트가 **버그를 고정하고 있었다.** 그 판정 때문에 구독 이력이 0건인 실계정
+    /// (`ronald@estsoft.com`)의 07:30 알람이 잠겨 서버에 `mode=sound-only` 로 박혔고,
+    /// "무료 이용권으로 바뀌었어요" 모달이 앱을 켤 때마다 떴다. 근거는 안드로이드
+    /// `AlarmRepository.lockPaidAlarmTalks` 의 `usesVoice` — **함께 고쳤다.**
     func test_paidAlarmTalksMirrorsAndroidFreePlanLockTargets() {
         let store = makeStore()
         let alarmOnly = makeAlarm(id: "alarm-only", audioCacheKey: nil)
@@ -49,7 +55,8 @@ final class LocalAlarmStoreDeletionTests: XCTestCase {
 
         XCTAssertEqual(
             Set(store.paidAlarmTalks().map(\.id)),
-            Set(["voice-mode", "local-audio", "raw-audio", "profile", "message"])
+            // `voice-mode` 는 빠진다 — 말할 자원이 없는 알람은 유료 기능을 쓰는 게 아니다.
+            Set(["local-audio", "raw-audio", "profile", "message"])
         )
     }
 

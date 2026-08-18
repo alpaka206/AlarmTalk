@@ -24,9 +24,12 @@ import Foundation
 enum PaidVoiceGate {
 
     /// 이 알람이 **유료 목소리**를 쓰는가. 안드로이드 `alarmUsesPaidVoice` 와 동일.
+    /// ⚠ **재생 방식만으로 판단하지 말 것.** `playModeEnum != .alarmOnly` 를 단독 조건으로
+    /// 두면 **말할 자원이 하나도 없는 알람**이 유료로 잡힌다 — 그러면 한 번도 유료였던 적
+    /// 없는 계정이 강등 대상이 된다(2026-08-18 실계정 확인). 짝인
+    /// `LocalAlarmRecord.usesPaidVoiceFeatures` 의 같은 주석 참조 — **항상 같이 고친다.**
     static func usesPaidVoice(_ record: LocalAlarmRecord) -> Bool {
-        record.playModeEnum != .alarmOnly
-            || record.localAudioUri?.nilIfBlank != nil
+        record.localAudioUri?.nilIfBlank != nil
             || record.rawAudioUri?.nilIfBlank != nil
             || record.voiceProfileId?.nilIfBlank != nil
             || record.ttsMessageId?.nilIfBlank != nil

@@ -817,8 +817,12 @@ class AlarmRepository(
         val now = System.currentTimeMillis()
         var lockedCount = 0
         alarmDao.getAllAlarms().forEach { alarm ->
-            val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
-                !alarm.localAudioUri.isNullOrBlank() ||
+    // ⚠ **재생 방식만으로 '유료 목소리' 라고 하지 말 것**(2026-08-18, 실계정 확인).
+    // `playMode != ALARM_ONLY` 를 단독 조건으로 두면 **말할 자원이 하나도 없는 알람**
+    // (profileId·ttsMessageId·오디오 전부 없음)이 유료로 잡혀, **한 번도 유료였던 적 없는
+    // 계정**의 알람이 잠기고 "무료 이용권으로 바뀌었어요" 가 뜬다. iOS 짝은
+    // `LocalAlarmRecord.usesPaidVoiceFeatures` · `PaidVoiceGate.usesPaidVoice` — 같이 고친다.
+            val usesVoice = !alarm.localAudioUri.isNullOrBlank() ||
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()

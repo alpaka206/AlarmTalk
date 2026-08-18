@@ -302,9 +302,9 @@ class RingingService : Service() {
     }
 
     /** 유료(무료 강등 대상) 목소리를 쓰는 알람인지 — lockPaidAlarmTalks 의 usesVoice 기준과 동일. */
+    // ⚠ 재생 방식은 조건이 아니다 — `AlarmRepository.lockPaidAlarmTalks` 의 usesVoice 주석 참조.
     private fun alarmUsesPaidVoice(alarm: AlarmEntity): Boolean =
-        alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
-            !alarm.localAudioUri.isNullOrBlank() ||
+        !alarm.localAudioUri.isNullOrBlank() ||
             !alarm.rawAudioUri.isNullOrBlank() ||
             !alarm.voiceProfileId.isNullOrBlank() ||
             !alarm.ttsMessageId.isNullOrBlank()
