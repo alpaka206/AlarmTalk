@@ -91,6 +91,24 @@ struct AlarmEditorSheet: View {
     @State var clearExistingLocalAudio = false
     /// 선택/미리듣기 중인 스톡 클립의 messageId. StockClipPicker 의 선택 표시에 사용.
     @State var stockSelectedMessageID: String?
+
+    /// 준비 페이지를 띄울 목소리. 아직 클립을 다 못 받은 목소리를 고르면 여기 담긴다.
+    @State var preparationVoiceID: String?
+
+    /// 타입 체커가 body 안에서 인라인 바인딩을 만나면 시간 초과가 나서 밖으로 뺐다.
+    private var preparationSheetPresented: Binding<Bool> {
+        Binding(
+            get: { preparationVoiceID != nil },
+            set: { if !$0 { preparationVoiceID = nil } }
+        )
+    }
+
+    @ViewBuilder
+    private var preparationSheet: some View {
+        ClipPreparationView(onDismiss: { preparationVoiceID = nil })
+            .environmentObject(auth)
+            .environmentObject(voiceStudio)
+    }
     /// 현재 활성 미리듣기 대상(단일 진실 공급원, change 4). 스톡 클립 미리듣기 id 는
     /// `.stockClip(id)` 의 연관 값이 들고 있어 previewingStockMessageID 를 대체한다.
     @State var previewTarget: AudioPreviewTarget?
@@ -688,8 +706,19 @@ struct AlarmEditorSheet: View {
         }
         // 선택 목소리가 바뀌면 직전 생성/스톡 선택을 비워, 다른 프로필의 오디오를
         // 저장하지 않게 한다. 미리듣기 중이면 함께 정지한다.
+        .sheet(isPresented: preparationSheetPresented) { preparationSheet }
         .onChange(of: voiceStudio.selectedProfileID) { oldProfileID, newProfileID in
             guard !suppressProfileChangeInvalidation else { return }
+            // ⚠ **아직 못 받은 목소리는 고를 수 없다.** 공유받은 목소리는 선다운로드 대상이
+            // 아니라 고르는 순간 없을 수 있고, 그대로 저장하면 라이브 생성으로 흘러가
+            // 오프라인에서 안 울린다. **그 목소리만** 막고 준비 페이지로 보낸다 —
+            // 알람 만들기 자체는 막지 않는다(다른 목소리로는 지금 만들 수 있어야 한다).
+            if let newProfileID = (newProfileID).nilIfBlank,
+               needsPreparation(voiceProfileID: newProfileID) {
+                voiceStudio.selectedProfileID = (oldProfileID).nilIfBlank
+                preparationVoiceID = newProfileID
+                return
+            }
             if (oldProfileID).nilIfBlank != (newProfileID).nilIfBlank {
                 ttsProfileChangedDuringEdit = true
             }
@@ -1283,6 +1312,21 @@ struct AlarmEditorSheet: View {
               expected > 0
         else { return false }
         return variants == Set(0..<expected)
+    }
+
+    /// 이 목소리를 **지금 고를 수 있는가** — 사전렌더 클립이 다 받아져 있는가.
+    ///
+    /// 기본(시스템) 목소리는 선다운로드 대상이라 여기서 막지 않는다. 막는 대상은
+    /// **아직 못 받은 클론**(특히 공유받은 목소리)이다. 문구 종류가 버킷으로 매핑되지
+    /// 않는 경우(직접 입력)는 클립이 필요 없으므로 통과시킨다.
+    func needsPreparation(voiceProfileID: String) -> Bool {
+        guard !voiceStudio.isSystemVoiceProfile(id: voiceProfileID) else { return false }
+        guard voiceStudio.randomPrompt,
+              let context = RandomPromptContext(rawValue: voiceStudio.randomContext) else { return false }
+        // 매니페스트를 아직 못 받았으면 판단할 수 없다 — 막지 않는다(못 물어본 것이
+        // 사용자를 막는 근거가 되면 안 된다). 그 경우 저장은 라이브로 폴백한다.
+        guard voiceStudio.expectedVariants != nil else { return false }
+        return !hasCompleteBucket(category: context.bucketCategory, profileID: voiceProfileID)
     }
 
     func prepareSelectedBucketClipIfNeeded() async -> Bool {

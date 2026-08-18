@@ -112,3 +112,8 @@ struct ClipPreparationView: View {
         )
     }
 }
+
+/// `sheet(item:)` 용 래퍼 — 목소리 id 하나를 `Identifiable` 로 감싼다.
+struct PreparationTarget: Identifiable {
+    var id: String
+}
