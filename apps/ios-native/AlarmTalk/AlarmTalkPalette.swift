@@ -123,6 +123,40 @@ extension AlarmTalkPalette {
         errorContainer: .hex(0x5B211B),
         onErrorContainer: .hex(0xFFDAD4)
     )
+
+    /// 프로바이더가 **없는** 계층용 팔레트 — 각 색이 그리는 시점의 trait 로 스스로 풀린다.
+    ///
+    /// ⚠ **여기를 `light` 로 되돌리지 말 것.** 환경 기본값이 라이트 고정이면, 프로바이더를
+    /// 거치지 않고 그려지는 자리(프리뷰, 일부 시트)가 **다크에서 라이트 색으로** 나온다.
+    /// 라이트가 폴백이라 라이트에서는 티가 안 나서 오래 숨는다.
+    /// 방식은 레거시 `AlarmTalkTheme.*` 정적들과 같다(`Color.dynamicScheme`).
+    static let dynamic = AlarmTalkPalette(
+        primary: .dynamicScheme(light: light.primary, dark: dark.primary),
+        onPrimary: .dynamicScheme(light: light.onPrimary, dark: dark.onPrimary),
+        primaryContainer: .dynamicScheme(light: light.primaryContainer, dark: dark.primaryContainer),
+        onPrimaryContainer: .dynamicScheme(light: light.onPrimaryContainer, dark: dark.onPrimaryContainer),
+        secondary: .dynamicScheme(light: light.secondary, dark: dark.secondary),
+        onSecondary: .dynamicScheme(light: light.onSecondary, dark: dark.onSecondary),
+        secondaryContainer: .dynamicScheme(light: light.secondaryContainer, dark: dark.secondaryContainer),
+        onSecondaryContainer: .dynamicScheme(light: light.onSecondaryContainer, dark: dark.onSecondaryContainer),
+        tertiary: .dynamicScheme(light: light.tertiary, dark: dark.tertiary),
+        onTertiary: .dynamicScheme(light: light.onTertiary, dark: dark.onTertiary),
+        tertiaryContainer: .dynamicScheme(light: light.tertiaryContainer, dark: dark.tertiaryContainer),
+        onTertiaryContainer: .dynamicScheme(light: light.onTertiaryContainer, dark: dark.onTertiaryContainer),
+        background: .dynamicScheme(light: light.background, dark: dark.background),
+        onBackground: .dynamicScheme(light: light.onBackground, dark: dark.onBackground),
+        surface: .dynamicScheme(light: light.surface, dark: dark.surface),
+        onSurface: .dynamicScheme(light: light.onSurface, dark: dark.onSurface),
+        surfaceVariant: .dynamicScheme(light: light.surfaceVariant, dark: dark.surfaceVariant),
+        onSurfaceVariant: .dynamicScheme(light: light.onSurfaceVariant, dark: dark.onSurfaceVariant),
+        outline: .dynamicScheme(light: light.outline, dark: dark.outline),
+        outlineVariant: .dynamicScheme(light: light.outlineVariant, dark: dark.outlineVariant),
+        cardBorder: .dynamicScheme(light: light.cardBorder, dark: dark.cardBorder),
+        error: .dynamicScheme(light: light.error, dark: dark.error),
+        onError: .dynamicScheme(light: light.onError, dark: dark.onError),
+        errorContainer: .dynamicScheme(light: light.errorContainer, dark: dark.errorContainer),
+        onErrorContainer: .dynamicScheme(light: light.onErrorContainer, dark: dark.onErrorContainer)
+    )
 }
 
 // `Color.hex(_:)` now lives in `Shared/AlarmTalkBrand.swift` so both the app and the
@@ -155,6 +189,18 @@ enum AlarmTalkGradient {
             .init(color: .hex(0xF4F7FD), location: 0),
             .init(color: .hex(0xDBE6F7), location: 0.5),
             .init(color: .hex(0xBED2EF), location: 1),
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+
+    /// 프로바이더가 **없는** 계층용 — 각 stop 색이 그리는 시점의 trait 로 스스로 풀린다.
+    /// (`LinearGradient` 자체는 trait 를 모르지만, 안에 든 `Color` 는 안다.)
+    static let dynamic = LinearGradient(
+        stops: [
+            .init(color: .dynamicScheme(light: .hex(0xF4F7FD), dark: .hex(0x1A2A52)), location: 0),
+            .init(color: .dynamicScheme(light: .hex(0xDBE6F7), dark: .hex(0x0E1938)), location: 0.55),
+            .init(color: .dynamicScheme(light: .hex(0xBED2EF), dark: .hex(0x070C1D)), location: 1),
         ],
         startPoint: .top,
         endPoint: .bottom

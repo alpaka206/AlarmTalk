@@ -300,7 +300,17 @@ struct AlarmTalkApp: App {
                         }
                     }
             }
-            .preferredColorScheme(AlarmTalkThemeMode.normalized(themeModeRaw).preferredColorScheme)
+            // ⚠ **`.system` 이면 modifier 를 아예 붙이지 않는다**(2026-08-18).
+            //
+            // `.preferredColorScheme(nil)` 은 "안 정한다" 가 아니라 **조상에서 자손의 설정을
+            // 덮어쓰는 명시적 쓰기**다. 그래서 `AuthBackdrop` 이 자기 서브트리에 걸어 둔
+            // `.dark` 가 무효가 됐고, 라이트 아이폰에서 랜딩·로그인·가입·비번재설정·**동의
+            // 화면**의 글자가 라이트 팔레트(거의 검정)로 그려졌다 — 배경은 고정 남색이라
+            // 안 보인다. 기본값이 `.system` 이라 **출고 상태가 그랬다.**
+            // (다크 아이폰에서는 우연히 멀쩡해서 캡처로도 안 잡혔다.)
+            .modifier(PreferredColorSchemeIfSet(
+                scheme: AlarmTalkThemeMode.normalized(themeModeRaw).preferredColorScheme
+            ))
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
@@ -517,5 +527,23 @@ private final class Bootstrap {
             store: store,
             alarmKit: alarmKit
         )
+    }
+}
+
+
+/// `nil` 이면 **아무것도 붙이지 않는** `preferredColorScheme`.
+///
+/// SwiftUI 의 `.preferredColorScheme(nil)` 은 자손의 설정을 지우는 쓰기라, "앱 설정이
+/// 시스템 따름" 을 그걸로 표현하면 화면별로 걸어 둔 고정 외관(`AuthBackdrop` 의 `.dark`)이
+/// 사라진다. 값이 있을 때만 붙여 그 차이를 없앤다.
+private struct PreferredColorSchemeIfSet: ViewModifier {
+    let scheme: ColorScheme?
+
+    func body(content: Content) -> some View {
+        if let scheme {
+            content.preferredColorScheme(scheme)
+        } else {
+            content
+        }
     }
 }

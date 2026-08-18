@@ -84,10 +84,21 @@ extension AlarmTalkThemeValues {
     }
 
     static let light = AlarmTalkThemeValues.resolve(for: .light)
+
+    /// 프로바이더가 없을 때 쓰는 값 — 색이 **그리는 시점의 trait** 로 풀린다.
+    static let dynamic = AlarmTalkThemeValues(
+        palette: .dynamic,
+        homeGradient: AlarmTalkGradient.dynamic,
+        typography: .default,
+        shapes: .default,
+        spacing: .default
+    )
 }
 
 private struct AlarmTalkThemeKey: EnvironmentKey {
-    static let defaultValue: AlarmTalkThemeValues = .light
+    /// ⚠ **`.light` 로 되돌리지 말 것.** 프로바이더를 안 거치는 계층이 다크에서 라이트 색으로
+    /// 나온다 — 라이트가 폴백이라 라이트에서는 티가 안 나서 오래 숨는다.
+    static let defaultValue: AlarmTalkThemeValues = .dynamic
 }
 
 extension EnvironmentValues {

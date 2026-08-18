@@ -385,7 +385,7 @@ struct BillingProductsErrorState: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(AlarmTalkTheme.primary)
-            .foregroundStyle(.white)
+            .foregroundStyle(AlarmTalkTheme.onPrimary)
             .disabled(isRetrying)
         }
         .padding(14)
@@ -464,7 +464,7 @@ struct PersonalGiftPassSheet: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(AlarmTalkTheme.primary)
-            .foregroundStyle(.white)
+            .foregroundStyle(AlarmTalkTheme.onPrimary)
         }
         .padding(20)
         .background(AlarmTalkTheme.background)
@@ -544,7 +544,7 @@ struct VoucherShareRow: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(AlarmTalkTheme.primary)
-            .foregroundStyle(.white)
+            .foregroundStyle(AlarmTalkTheme.onPrimary)
         }
         .padding(12)
         .background(AlarmTalkTheme.surfaceVariant)

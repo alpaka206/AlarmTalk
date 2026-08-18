@@ -13,6 +13,8 @@ struct RootView: View {
     @EnvironmentObject private var versionGate: AppVersionGate
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    /// 강등 안내가 **가리킬 알람이 아직 있는지** 확인하는 데만 쓴다(`evaluateDowngradeNotice`).
+    @EnvironmentObject private var alarmStore: LocalAlarmStore
     /// 온보딩 완료 후 기본 목소리를 한 번이라도 골랐는지. 안 골랐으면 `VoiceSetupView` 노출.
     /// Android `MainViewModel.showVoiceSetup`(= !hasChosen) 게이팅 미러.
     @State private var voiceSetupDone: Bool?
@@ -235,7 +237,23 @@ struct RootView: View {
     /// 대기표에 적힌 강등 안내가 있으면 모달을 연다. 조건은 웰컴 프로모와 같다.
     private func evaluateDowngradeNotice() {
         guard auth.consentStatusChecked, versionGate.checked, !blockingGateActive else { return }
-        downgradeNotice = DowngradeNoticeStore().read(userID: auth.session?.user.id)
+        let notice = DowngradeNoticeStore().read(userID: auth.session?.user.id)
+        // ⚠ **가리킬 알람이 없으면 안내도 없다**(2026-08-18 실기기 보고: 알람이 하나도 없는데
+        // "알람 N개가 기본 알람음으로 바뀌었어요" 가 떴다).
+        //
+        // 이 안내는 소진 플래그가 아니라 **대기표**라, 못 보고 지나가도 '확인' 을 누를 때까지
+        // 남는다 — 못 보고 잃는 것을 막으려는 의도다. 그런데 그 사이 대상 알람이 지워지면
+        // 대기표만 남아, 사용자는 **존재한 적 없는 알람**에 대한 안내를 받는다.
+        //
+        // 판정은 **알람이 하나도 없을 때**로 좁힌다. 강등은 알람을 지우지 않고 알람음으로
+        // 바꿔 두므로(`withVoiceRevoked` 등) 대상은 여전히 목록에 있다 — 하나라도 있으면
+        // 그중 하나가 그 알람일 수 있어 함부로 지우면 안 된다.
+        if notice != nil, alarmStore.alarms.isEmpty {
+            DowngradeNoticeStore().clear(userID: auth.session?.user.id)
+            downgradeNotice = nil
+            return
+        }
+        downgradeNotice = notice
     }
 
     private func evaluateWelcomePromo() {

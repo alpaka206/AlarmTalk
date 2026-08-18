@@ -52,6 +52,12 @@ enum AlarmTalkTheme {
 
     // Brand / primary — 다이내믹(밝게/어둡게).
     static let primary = Color.dynamicScheme(light: AlarmTalkPalette.light.primary, dark: AlarmTalkPalette.dark.primary)
+    /// `primary` 채움 **위에 얹는** 글자·아이콘 색.
+    ///
+    /// ⚠ **`.white` 로 고정하지 말 것.** 다크의 `primary` 는 연하늘(#A6D2FF)이라 흰 글자가
+    /// 묻힌다(라이트는 진파랑이라 우연히 멀쩡해서 눈에 안 띈다). 채움과 글자는 **같은 축에서**
+    /// 나와야 한쪽만 바뀌어도 대비가 유지된다.
+    static let onPrimary = Color.dynamicScheme(light: AlarmTalkPalette.light.onPrimary, dark: AlarmTalkPalette.dark.onPrimary)
     static let secondary = Color.dynamicScheme(light: AlarmTalkPalette.light.secondary, dark: AlarmTalkPalette.dark.secondary)
     static let accent = Color.dynamicScheme(light: AlarmTalkPalette.light.tertiary, dark: AlarmTalkPalette.dark.tertiary)
 
