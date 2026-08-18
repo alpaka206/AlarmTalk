@@ -715,7 +715,12 @@ struct AlarmEditorSheet: View {
             // 알람 만들기 자체는 막지 않는다(다른 목소리로는 지금 만들 수 있어야 한다).
             if let newProfileID = (newProfileID).nilIfBlank,
                needsPreparation(voiceProfileID: newProfileID) {
+                // ⚠ **되돌리는 동안 이 핸들러를 재진입시키지 않는다.** 그냥 되돌리면
+                // (거절한 목소리 → 원래 목소리)로 한 번 더 돌아서, 바꾼 적도 없는데
+                // `ttsProfileChangedDuringEdit` 이 켜지고 준비해 둔 음성·미리듣기가 지워진다.
+                suppressProfileChangeInvalidation = true
                 voiceStudio.selectedProfileID = (oldProfileID).nilIfBlank
+                suppressProfileChangeInvalidation = false
                 preparationVoiceID = newProfileID
                 return
             }
