@@ -272,6 +272,7 @@
 		DFF8884296CA033A9B8C6890 /* ScreenSweepUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF0160D993D91879DDDFF3A /* ScreenSweepUITests.swift */; };
 		E280AE375CB9149F23F1BAA8 /* ReceivedAlarmBadgeStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3B1ECBB5616D418A9932BCA /* ReceivedAlarmBadgeStoreTests.swift */; };
 		E49463B02FB2F50F117AF44C /* VoiceProfileManagementPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D0590DA9571CFBFE194ACF /* VoiceProfileManagementPanel.swift */; };
+		E508250C9F4AD74643AFEC41 /* BackgroundDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8771994CC79565B45D7B9A87 /* BackgroundDependencies.swift */; };
 		E6A1A9B80790C9D77AF34DAD /* VoiceStudioViewModel+ErrorMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9641A64BF7F32B31E960BA67 /* VoiceStudioViewModel+ErrorMapping.swift */; };
 		E6B183AE33A777D1D25D8546 /* RepeatCardSpacingUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7065575F6074636D0156AA8 /* RepeatCardSpacingUITests.swift */; };
 		E7FB88E991B46CC232EDB8ED /* voice_greeting_soeun_ja.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 708BA77A5FC721F1C50268EB /* voice_greeting_soeun_ja.mp3 */; };
@@ -504,6 +505,7 @@
 		84AC75AB7D2226A17D90E228 /* BackgroundSyncTask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncTask.swift; sourceTree = "<group>"; };
 		85400A4CF4E2B95059A0EE71 /* VoicePlanGateAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlanGateAlert.swift; sourceTree = "<group>"; };
 		8710CD100D29FAD10DB97501 /* FreeManualGateUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreeManualGateUITests.swift; sourceTree = "<group>"; };
+		8771994CC79565B45D7B9A87 /* BackgroundDependencies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundDependencies.swift; sourceTree = "<group>"; };
 		88E875D85BBF8CD8FDCC8D4B /* MenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuView.swift; sourceTree = "<group>"; };
 		8A1415DAB86286CDD5AB4219 /* AuthUserDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthUserDecodingTests.swift; sourceTree = "<group>"; };
 		8A278280437D8CE9D87E6E41 /* AlarmEditorComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmEditorComponents.swift; sourceTree = "<group>"; };
@@ -1100,6 +1102,7 @@
 				256A1A74503F37FA8770ADFD /* AudioUserFacingError.swift */,
 				BCE612B197E5B5761457E13E /* AuthGateView.swift */,
 				920F8A0EE7DA7744FBDA1206 /* AuthViewModel.swift */,
+				8771994CC79565B45D7B9A87 /* BackgroundDependencies.swift */,
 				84AC75AB7D2226A17D90E228 /* BackgroundSyncTask.swift */,
 				B2CCF512C575A060A0E72E6C /* BucketVariantResolver.swift */,
 				7A617D3C8750DA731625DF6E /* ClipReadiness.swift */,
@@ -1437,6 +1440,7 @@
 				4ADA36B2EB592A70D97F7BF3 /* AuthViewModel.swift in Sources */,
 				4CF35FECD70107F67DB3AEB0 /* AuxiliaryScreen.swift in Sources */,
 				918CB0198810A501FC415D2D /* AuxiliarySheetHost.swift in Sources */,
+				E508250C9F4AD74643AFEC41 /* BackgroundDependencies.swift in Sources */,
 				3AA7E7808270BF5559FDC4F6 /* BackgroundSyncTask.swift in Sources */,
 				BB1CAC0563FC0292925DC027 /* BillingPanel.swift in Sources */,
 				496C23BF2BF03B282CBF1E97 /* BillingPanelComponents.swift in Sources */,

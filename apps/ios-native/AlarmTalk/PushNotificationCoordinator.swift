@@ -180,6 +180,23 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 새로고침으로 앱을 깨운 경우에는 scene 이 안 붙어 아예 안 돌 수도 있다
         // (`BackgroundSyncTask.registerLaunchHandler` 주석 참조).
         BackgroundSyncTask.registerLaunchHandler()
+        // ⚠ **실행기도 여기서 꽂는다.** 등록만 launch 로 옮기고 실행기를 화면의 `.task` 에
+        // 두면, 백그라운드 새로고침만을 위해 깨어난(=scene 이 없는) 실행에서 task 가
+        // **붙들린 채 완료조차 되지 않는다**(2026-08-18 Codex #697 P2).
+        // 의존성은 화면과 같은 인스턴스다(`BackgroundDependencies`).
+        let deps = BackgroundDependencies.shared
+        BackgroundSyncTask.register(
+            pull: RemoteAlarmPullSync(
+                store: deps.alarmStore,
+                alarmKit: deps.alarmKit,
+                audioCache: .shared,
+                auth: deps.auth
+            ),
+            push: RemoteAlarmPushSync(store: deps.alarmStore, auth: deps.auth),
+            socialFeatures: deps.socialFeatures,
+            store: deps.alarmStore,
+            alarmKit: deps.alarmKit
+        )
         return true
     }
 

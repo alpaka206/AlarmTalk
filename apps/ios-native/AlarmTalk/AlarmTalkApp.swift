@@ -17,20 +17,21 @@ struct AlarmTalkApp: App {
     // ⚠ 화면 확인 모드에서는 **디스크를 읽지 않는다.** 임시 파일은 매번 비어 있는데,
     // 그 비동기 로드가 끝나면서 `alarms` 를 빈 배열로 덮어써 **방금 심은 표본을 지운다**
     // (2026-08-17 스크린샷에서 목록이 비어 나와 발견). 읽을 것이 없으니 끄는 게 맞다.
-    @StateObject private var alarmStore = LocalAlarmStore(
-        storageURL: UIPreviewSeed.ephemeralAlarmStorageURL,
-        loadFromDisk: !UIPreviewSeed.isEnabled
-    )
-    @StateObject private var alarmKit = AlarmKitViewModel()
+    // ⚠ **백그라운드 사이클이 쓰는 넷은 `BackgroundDependencies` 가 소유한다.**
+    // 시스템이 **백그라운드 새로고침만을 위해** 앱을 깨우면 scene 이 붙지 않아 화면의
+    // `.task` 가 돌지 않는다 — 여기서 새로 만들면 그 경로에서는 아무 의존성도 없다.
+    // 여기서는 같은 인스턴스를 `@StateObject` 로 감쌀 뿐이다(관찰만 한다).
+    @StateObject private var alarmStore = BackgroundDependencies.shared.alarmStore
+    @StateObject private var alarmKit = BackgroundDependencies.shared.alarmKit
     /// PR3: AlarmAppContext.holidayPredicate 와 timezone 재무장이 서버 sync 공휴일까지
     /// 반영하도록 앱 lifetime 동안 살아있는 단일 HolidayStore. AlarmKitViewModel 에도
     /// `configure(holidayStore:)` 로 이 동일 인스턴스를 주입해 공휴일 집합을 일원화한다
     /// (Android 단일 holidayCalendarStore parity).
     @StateObject private var holidayStore = HolidayStore()
-    @StateObject private var auth = AuthViewModel()
+    @StateObject private var auth = BackgroundDependencies.shared.auth
     @StateObject private var remoteSync = RemoteAlarmSyncViewModel()
     @StateObject private var voiceStudio = VoiceStudioViewModel()
-    @StateObject private var socialFeatures = SocialFeatureViewModel()
+    @StateObject private var socialFeatures = BackgroundDependencies.shared.socialFeatures
     /// 백엔드 최소지원버전 게이팅. 로그인 여부와 무관하게 앱 진입을 막을 수 있어
     /// 앱 lifetime 동안 떠 있어야 한다. Android `MainViewModel.checkAppVersion()`.
     @StateObject private var versionGate = AppVersionGate()
@@ -55,7 +56,6 @@ struct AlarmTalkApp: App {
     /// `BackgroundSyncTask.register` 는 앱 launch 단계에서 1 회만 호출해야 한다.
     /// SwiftUI App 의 view init 은 여러 번 호출될 수 있으므로 boostrap helper 가
     /// 단 한 번만 BGTaskScheduler 에 핸들러를 꽂는다.
-    @State private var bootstrap = Bootstrap()
 
     var body: some Scene {
         WindowGroup {
@@ -122,20 +122,16 @@ struct AlarmTalkApp: App {
                         await versionGate.checkAppVersion()
                     }
                     .task {
-                        // ⚠ **BGTask 핸들러 등록을 이 task 의 맨 앞에 둔다 — 어떤 await 보다도
-                        // 먼저.** 예전에는 `restoreSession()` 등 여러 await 뒤에 있었는데,
-                        // 세션이 복원되는 순간 아래 `.task(id: auth.session?.user.id)` 가 깨어나
-                        // **등록 전에** `scheduleNext()` 로 submit 해 버렸다. 그러면
-                        // `No launch handler registered for task with identifier ...` 로
-                        // **앱이 launch 중에 죽는다**(2026-08-06 실기기 재현 — 로그인 세션이
-                        // 있는 상태로 켤 때마다). 등록은 동기 호출이고 의존성도 전부 준비돼
-                        // 있으므로 앞으로 옮기는 데 대가가 없다.
-                        bootstrap.registerIfNeeded(
-                            store: alarmStore,
-                            alarmKit: alarmKit,
-                            auth: auth,
-                            socialFeatures: socialFeatures
-                        )
+                        // ⚠ **BGTask 등록·실행기 설치는 여기가 아니라 `didFinishLaunching`
+                        // 이다**(`PushAppDelegate`). 두 가지 이유가 겹친다:
+                        //  1. `BGTaskScheduler` 는 **launch 가 끝나기 전** 등록을 요구한다.
+                        //  2. 시스템이 백그라운드 새로고침만을 위해 깨우면 **scene 이 붙지
+                        //     않아 이 `.task` 가 아예 돌지 않는다** — 여기서 설치하면 그
+                        //     경로에서는 사이클이 통째로 죽는다(2026-08-18).
+                        // 예전에는 이 자리에서 했고, 그때는 "어떤 await 보다 먼저" 라는
+                        // 순서 규칙으로 버텼다(세션 복원이 등록 전에 `scheduleNext()` 를
+                        // 불러 `No launch handler registered ...` 로 죽던 일이 있었다).
+                        // 이제 등록이 launch 에서 끝나므로 그 창 자체가 없다.
 
                         // AlarmAppContext: LiveActivity Intent 가 perform() 시점에
                         // 정적으로 참조한다. Scene 초기화 직후 1회만 설정.
@@ -505,35 +501,6 @@ struct AlarmTalkApp: App {
 /// process 당 1 회만 허용된다. 두 번 호출하면 crash 한다. `@State` 박스로
 /// 인스턴스 수명을 view 와 동기화해 한 번만 등록한다.
 @MainActor
-private final class Bootstrap {
-    private var didRegister = false
-
-    func registerIfNeeded(
-        store: LocalAlarmStore,
-        alarmKit: AlarmKitViewModel,
-        auth: AuthViewModel,
-        socialFeatures: SocialFeatureViewModel
-    ) {
-        guard !didRegister else { return }
-        didRegister = true
-
-        let pull = RemoteAlarmPullSync(
-            store: store,
-            alarmKit: alarmKit,
-            audioCache: .shared,
-            auth: auth
-        )
-        let push = RemoteAlarmPushSync(store: store, auth: auth)
-        BackgroundSyncTask.register(
-            pull: pull,
-            push: push,
-            socialFeatures: socialFeatures,
-            // PR3: 백그라운드 사이클의 `.fixed` one-shot proactive 재무장 sweep 용 약참조.
-            store: store,
-            alarmKit: alarmKit
-        )
-    }
-}
 
 
 /// `nil` 이면 **아무것도 붙이지 않는** `preferredColorScheme`.

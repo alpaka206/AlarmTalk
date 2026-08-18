@@ -396,24 +396,30 @@ class PlayBillingManager(
      */
     suspend fun resendUnconfirmedPurchases(): Int {
         if (!ensureConnected()) return 0
-        val result = billingClient.queryPurchasesAsync(
-            QueryPurchasesParams.newBuilder()
-                .setProductType(BillingClient.ProductType.SUBS)
-                .build(),
-        )
-        if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-            Log.w(TAG, "queryPurchasesAsync failed code=${result.billingResult.responseCode}")
-            return 0
-        }
+        // ⚠ **구독(SUBS)만 보지 말 것**(2026-08-18 Codex #697 P1). 선물은 1회성 상품
+        // (INAPP)이라 여기에 안 잡히면 **재시도할 경로가 아예 없다** — 1회성 구매에는
+        // RTDN 도 오지 않는다. 서버가 바우처를 발급한 뒤 `:consume` 이 일시적으로 실패하면
+        // 그 구매는 미확인인 채 남고, Play 는 3일 뒤 자동 환불하는데 바우처는 그대로
+        // 쓸 수 있다(돈은 돌려주고 이용권은 나간 상태). 다시 보내면 서버의 중복 갈래가
+        // 소비를 재시도한다.
         var resent = 0
-        result.purchasesList
-            .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && !it.isAcknowledged }
-            .forEach { purchase ->
-                val productId = purchase.products.firstOrNull() ?: return@forEach
-                Log.i(TAG, "Resending unconfirmed Play purchase productId=$productId")
-                listener.onPurchaseReady(purchase.purchaseToken, productId)
-                resent++
+        for (type in listOf(BillingClient.ProductType.SUBS, BillingClient.ProductType.INAPP)) {
+            val result = billingClient.queryPurchasesAsync(
+                QueryPurchasesParams.newBuilder().setProductType(type).build(),
+            )
+            if (result.billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
+                Log.w(TAG, "queryPurchasesAsync($type) failed code=${result.billingResult.responseCode}")
+                continue
             }
+            result.purchasesList
+                .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && !it.isAcknowledged }
+                .forEach { purchase ->
+                    val productId = purchase.products.firstOrNull() ?: return@forEach
+                    Log.i(TAG, "Resending unconfirmed Play purchase type=$type productId=$productId")
+                    listener.onPurchaseReady(purchase.purchaseToken, productId)
+                    resent++
+                }
+        }
         return resent
     }
 
