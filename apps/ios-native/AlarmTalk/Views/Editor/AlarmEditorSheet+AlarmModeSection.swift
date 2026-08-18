@@ -2,6 +2,49 @@ import SwiftUI
 
 // AlarmEditorSheet 의 '재생 방식' 섹션 분리(파일 길이 축소).
 extension AlarmEditorSheet {
+    /// **지금 고른 목소리를 쓸 수 없는가** — 저장된 목소리가 목록에서 사라졌거나(삭제·공유
+    /// 해제·미준비) 플랜이 내려가 잠긴 경우.
+    ///
+    /// 안드로이드 `VoiceAudioCard` 의 `selectedProfileUnavailable` 짝이다. 판정이 한 갈래 더
+    /// 넓은 이유는 **iOS 가 잠긴 목소리를 목록에서 빼지 않기 때문**이다 — 안드로이드는
+    /// 무료 등급에서 `visibleVoiceProfiles` 가 클론을 통째로 걸러 내므로 "목록에 없다" 하나로
+    /// 두 경우가 다 잡힌다. iOS 는 잠금 배지만 달아 목록에 남기므로 `locked` 도 함께 본다.
+    var selectedVoiceUnavailable: Bool {
+        guard draft.playMode != .alarmOnly, voiceSourceMode == .ttsProfile else { return false }
+        guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return false }
+        guard let option = voiceProfileOptions.first(where: { $0.id == profileID }) else { return true }
+        return option.locked
+    }
+
+    /// ⚠ **"저장된 목소리는 그대로 울린다" 고 말한다.** 겁주지 않는 것이 핵심이다 — 이미
+    /// 저장된 알람은 음원을 갖고 있어 정상적으로 울리고, 막히는 것은 **문구를 바꾸는 것**뿐이다.
+    ///
+    /// 이 배너가 없던 시절에는 그 사실을 편집기 하단 한 줄("선택한 목소리를 쓸 수 없어요")이
+    /// 말했는데, 그건 **저장이 막힌 이유**를 말하는 자리라 성격이 달랐고 무엇보다
+    /// "쓸 수 없다" 로만 읽혀 **울리지도 않는 줄 알게** 했다. 안드로이드는 처음부터 값이 사는
+    /// 자리(목소리 카드) 아래 배너로 말한다 — 그쪽에 맞춘다.
+    @ViewBuilder
+    var unusableVoiceBanner: some View {
+        if selectedVoiceUnavailable {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("삭제된 목소리")
+                    .font(theme.typography.bodyMedium.weight(.semibold))
+                    .foregroundStyle(theme.palette.onErrorContainer)
+                Text("이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onErrorContainer.opacity(0.78))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                theme.palette.errorContainer.opacity(0.58),
+                in: RoundedRectangle(cornerRadius: AlarmTalkTheme.Shape.small, style: .continuous)
+            )
+        }
+    }
+
     @ViewBuilder
     var alarmModeSection: some View {
             // 제목은 **'재생 방식'** 이다 — 안드로이드 `editor_play_mode_title` 과 같은
@@ -43,6 +86,8 @@ extension AlarmEditorSheet {
                         // 화면 순회 캡처가 하단 탭바의 '목소리' 와 헷갈리지 않게 하는 식별자.
                         .accessibilityIdentifier("editor.voiceRow")
                     }
+
+                    unusableVoiceBanner
 
                     if voiceSourceMode == .ttsProfile {
                         // ⚠ **여기에 미리듣기 칩을 다시 넣지 말 것**(2026-08-12 지시로 제거).

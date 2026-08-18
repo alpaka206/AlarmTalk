@@ -254,7 +254,6 @@ struct AlarmEditorSheet: View {
                     repeatCard
                     alarmModeSection
                     detailSettingsSection
-                    saveBlockedNotice
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
@@ -270,7 +269,7 @@ struct AlarmEditorSheet: View {
                 saveTitle: saveButtonTitle,
                 saving: isWorking || voiceStudio.isBusy,
                 savingLabel: voiceStudio.isBusy ? "음성 만드는 중…" : "저장 중…",
-                saveEnabled: editorSaveBlockedReason == nil,
+                saveEnabled: !editorSaveBlocked,
                 onCancel: onClose,
                 onSave: { Task { await saveFlow() } }
             )
@@ -398,23 +397,10 @@ struct AlarmEditorSheet: View {
             }
     }
 
-    /// 저장이 막힌 이유 — 비활성 버튼만으로는 무엇이 빠졌는지 알 수 없다.
-    @ViewBuilder
-    private var saveBlockedNotice: some View {
-            if let reason = editorSaveBlockedReason {
-                Text(reason)
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if let status = voiceStudio.statusMessage, voiceStudio.preparedAlarm == nil, !voiceStudio.isBusy {
-                Text(status)
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-    }
+    // ⚠ **여기에 상태 문구를 다시 넣지 말 것**(위 `editorSaveBlocked` 주석).
+    // 이 슬롯(`saveBlockedNotice`)은 사유 한 줄이 계속 갈아치워지는 자리였고, 그 사유들은
+    // 전부 값이 사는 자리(목소리 배너·문구 행·녹음 카드)가 더 정확히 말한다.
+    // 생성 실패는 `showSaveFailureAlert` 로 간다.
 
     // MARK: - Chrome (sheets · panes · alerts)
 
@@ -946,16 +932,30 @@ struct AlarmEditorSheet: View {
         return formatter
     }()
 
-    /// 저장이 막힌 이유 — 비활성 버튼만으로는 무엇이 빠졌는지 알 수 없어 버튼 위에 사유를
-    /// 함께 보여준다. nil 이면 저장 가능. Android `editorSaveBlockedReason`
-    /// (AlarmEditorScreen.kt:918-940) 미러.
+    /// 저장이 막혔는가. ⚠ **사유 문구는 두지 않는다**(2026-08-18 변경. 그전에는 편집기
+    /// 본문 아래에 한 줄씩 떴다 — `saveBlockedNotice`). 안드로이드가 같은 날 같은 이유로
+    /// `editorSaveBlocked` 로 바꿨고, iOS 도 맞춘다.
+    ///
+    /// 이유를 말하는 자리는 **그 값이 사는 곳**이다. 갈래마다 짝이 있다:
+    ///  - 플랜 잠금·사용 불가 목소리 → 목소리 행 아래 `unusableVoiceBanner`("삭제된 목소리").
+    ///  - 목소리 미선택 → 목소리 행이 "고르기" 로 비어 있음을 말하고, 목록이 없으면
+    ///    '목소리 탭에서 만들기' 버튼이 해결 액션까지 갖고 있다.
+    ///  - 녹음 미완료 → `RecordingCard` 자체가 CTA 다.
+    ///  - 날씨 테마 지역 없음 / 랜덤 문구 정보 미완 / 빈 직접 입력 → 문구 행과 문구 화면의
+    ///    상세 카드(`PromptDetailCard`)가 "아직 정하지 않았어요" 로 말한다.
+    ///
+    /// 한 줄로 또 쓰면 같은 순간 **두 문장이 서로 다른 얘기를 한다.** 실제로 그랬다 —
+    /// 배너는 "저장된 목소리는 그대로 울리지만" 인데 아래 줄은 "쓸 수 없어요" 였다.
+    ///
+    /// ⚠ **생성 실패는 여기 갈래가 아니다.** 그건 일어난 시점에 알럿으로 낸다
+    /// (`showSaveFailureAlert`). 예전에는 `voiceStudio.statusMessage` 를 이 자리가 주워
+    /// 보여 줘서, 성격이 다른 두 문장이 같은 한 줄을 번갈아 차지했다.
     ///
     /// 중요: 단일 저장 버튼이 캐시 미스 시 직접 생성하므로(saveFlow), "아직 생성 안 됨" 은
-    /// 막을 사유가 아니다. 정말로 만족 불가능한 상태(목소리 미선택 / 사용 불가 목소리 /
-    /// 랜덤 문구 정보 미완 / 빈 직접 문구)만 막는다. 신규 랜덤 문구 한-탭 생성 경로
-    /// (randomPrompt=true, preset)는 nil 이어야 저장이 활성화돼 탭 시 생성이 돈다(RISK F).
-    var editorSaveBlockedReason: String? {
-        if draft.playMode == .alarmOnly { return nil }
+    /// 막을 사유가 아니다. 정말로 만족 불가능한 상태만 막는다. 신규 랜덤 문구 한-탭 생성
+    /// 경로(randomPrompt=true, preset)는 false 여야 저장이 활성화돼 탭 시 생성이 돈다.
+    var editorSaveBlocked: Bool {
+        if draft.playMode == .alarmOnly { return false }
 
         // ⚠ **무료 플랜의 유료 목소리 알람은 저장 전에 막는다.**
         // iOS 에는 이 게이트가 **아예 없어서**, 무료 사용자가 녹음 알람을 저장할 수 있었고
@@ -965,16 +965,13 @@ struct AlarmEditorSheet: View {
         // ⚠ **무료여도 기본(스톡) 프리셋 목소리 알람은 만들 수 있다** — 이건 유료 자산이
         // 아니다. 안드로이드 `MainViewModelAlarmActions.voiceAlarmAllowed` 와 같은 규칙이고,
         // 서버 `alarm-mutation.ts` 의 `usesOnlySystemStockVoice` 도 같은 선을 긋는다.
-        if planAccess != .paid, !usesFreeSystemVoiceSelection {
-            return "이용권을 등록하면 이 목소리로 알람을 만들 수 있어요."
-        }
+        // 말하는 자리: `unusableVoiceBanner`(목소리 행 아래).
+        if planAccess != .paid, !usesFreeSystemVoiceSelection { return true }
 
         if voiceSourceMode == .localAudio {
+            // 말하는 자리: `RecordingCard` 자체가 CTA 다.
             let hasNewSource = selectedLocalAudioURL != nil || localRecorder.latestRecordingURL != nil
-            if hasNewSource || existingLocalAudioLabel != nil {
-                return nil
-            }
-            return "들려줄 음성을 녹음하거나 파일로 선택해 주세요."
+            return !(hasNewSource || existingLocalAudioLabel != nil)
         }
 
         // tts_profile 분기. 테마를 골랐으면 곧바로 저장 가능 — 음원은 저장이 받는다
@@ -983,35 +980,23 @@ struct AlarmEditorSheet: View {
         if let bucket = selectedFreeBucket {
             // ⚠ **날씨 테마는 도시가 있어야 한다.** 없으면 서버가 조건을 못 맞춰 서울로
             // 폴백한다 — 사용자는 자기 지역 날씨를 들을 줄 알고 저장한다.
-            // 안드로이드 `editorSaveBlockedReason` 의 `editor_error_weather_location_required`
-            // 대응. iOS 에는 이 갈래가 없어서 도시 없이 그대로 저장됐다.
-            if bucket == .weather, (voiceStudio.weatherCity).nilIfBlank == nil {
-                return "날씨 문구에 사용할 지역을 골라 주세요."
-            }
-            return nil
+            // 말하는 자리: 무료 테마 pane 의 `PromptDetailCard`("아직 정하지 않았어요").
+            return bucket == .weather && (voiceStudio.weatherCity).nilIfBlank == nil
         }
 
-        guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else {
-            return "알람에서 들을 목소리를 선택해 주세요."
-        }
+        // 말하는 자리: 목소리 행("고르기") + 목록이 비면 '목소리 탭에서 만들기'.
+        guard let profileID = (voiceStudio.selectedProfileID).nilIfBlank else { return true }
         // 선택된 목소리가 더 이상 alarm 선택 대상이 아니면(삭제/미준비 등) 사용 불가.
         // 단, 기존 알람의 음원이 그대로 재사용 가능한 경우엔 막지 않는다(아래 생성 경로가 흡수).
+        // 말하는 자리: `unusableVoiceBanner`.
         let profileReady = voiceStudio.profiles.contains { $0.id == profileID && $0.isReadyForAlarmSelection } ||
             voiceStudio.familyVoices.contains { $0.id == profileID && $0.isReadyForAlarmSelection }
         let preparedForProfile = voiceStudio.preparedAlarm?.voiceProfileID == profileID
-        if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection {
-            return "선택한 목소리를 쓸 수 없어요. 다른 목소리를 선택해 주세요."
-        }
-        if voiceStudio.randomPrompt {
-            if !randomPromptSettingsComplete {
-                return "랜덤 문구 설정에서 날씨 지역·운세 정보를 채워 주세요."
-            }
-            return nil
-        }
-        if voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "들려줄 문구를 입력하거나 랜덤 문구를 켜 주세요."
-        }
-        return nil
+        if !profileReady, !preparedForProfile, !reuseExistingTtsForCurrentSelection { return true }
+        // 말하는 자리: 문구 화면의 `PromptDetailCard`("아직 정하지 않았어요").
+        if voiceStudio.randomPrompt { return !randomPromptSettingsComplete }
+        // 말하는 자리: 문구 화면의 '문구' 상세 카드("아직 입력하지 않았어요").
+        return voiceStudio.ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// 랜덤 문구가 켜졌을 때 컨텍스트별 필수 정보가 채워졌는지. 가족 알람은 상대의 준비
@@ -1041,7 +1026,7 @@ struct AlarmEditorSheet: View {
         return voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID)
     }
 
-    /// editorSaveBlockedReason 전용 — 현재 선택으로 기존 알람의 TTS 음원을 그대로 재사용할 수
+    /// editorSaveBlocked 전용 — 현재 선택으로 기존 알람의 TTS 음원을 그대로 재사용할 수
     /// 있는지. saveFlow 와 같은 방식으로 다음 발화 시각을 계산해 넘긴다(랜덤 문구일 때만 의미).
     private var reuseExistingTtsForCurrentSelection: Bool {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
@@ -1865,7 +1850,7 @@ struct AlarmEditorSheet: View {
     /// 스톡 알람을 식별하고, 스테이징됐던 캐시 파일이 디스크에 그대로 있을 때만
     /// `preparedAlarm` + `stockSelectedMessageID` 를 재구성한다. 이렇게 하면
     /// `selectedStockMessageID`(prepared.audioCacheKey 의 stock_ prefix 접근자)가
-    /// 선택을 보고해 editorSaveBlockedReason 이 nil 을 반환하고, saveFlow 가 스톡 분기
+    /// 선택을 보고해 editorSaveBlocked 가 false 를 반환하고, saveFlow 가 스톡 분기
     /// (1121-1143)로 동일 audioCacheKey 를 재사용한다. 캐시가 sweep 됐으면 복원하지
     /// 않아 saveFlow 가 정상 재생성 경로를 타게 둔다(dangling 파일 재사용 방지, risk 1).
     private func restoreStockClipSelectionIfNeeded(from alarm: LocalAlarmRecord?) {

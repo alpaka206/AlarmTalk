@@ -4422,40 +4422,6 @@
         }
       }
     },
-    "들려줄 문구를 입력하거나 랜덤 문구를 켜 주세요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please enter a phrase to play or turn on random phrases."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "流す文を入力するか、ランダム文をオンにしてください。"
-          }
-        }
-      }
-    },
-    "들려줄 음성을 녹음하거나 파일로 선택해 주세요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please record the voice to play or pick a file."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "流す音声を録音するか、ファイルで選択してください。"
-          }
-        }
-      }
-    },
     "들어보기": {
       "extractionState": "manual",
       "localizations": {
@@ -4588,23 +4554,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "ランダム文を使用"
-          }
-        }
-      }
-    },
-    "랜덤 문구 설정에서 날씨 지역·운세 정보를 채워 주세요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In random phrase settings, please fill in the weather location and fortune info."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ランダム文の設定で、天気の地域・占いの情報を入力してください。"
           }
         }
       }
@@ -5829,6 +5778,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "声を選んでください。"
+          }
+        }
+      }
+    },
+    "목소리를 준비하지 못했어요. 잠시 뒤에 다시 시도해 주세요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "We couldn't prepare the voice. Please try again in a moment."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "声を準備できませんでした。しばらくしてからもう一度お試しください。"
           }
         }
       }
@@ -8298,23 +8264,6 @@
         }
       }
     },
-    "선택한 목소리를 쓸 수 없어요. 다른 목소리를 선택해 주세요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The selected voice can't be used. Please choose another voice."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選択した声は使用できません。別の声を選択してください。"
-          }
-        }
-      }
-    },
     "선택한 시간대에는 다른 사람이 내게 알람을 만들 수 없어요.": {
       "extractionState": "manual",
       "localizations": {
@@ -9926,23 +9875,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "アラームで流したい音声メッセージを入力してください"
-          }
-        }
-      }
-    },
-    "알람에서 들을 목소리를 선택해 주세요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please choose the voice to hear in the alarm."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アラームで聞く声を選択してください。"
           }
         }
       }
@@ -12555,29 +12487,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "プランを一緒に使う人たちに声を共有します。"
-          }
-        }
-      }
-    },
-    "이용권을 등록하면 이 목소리로 알람을 만들 수 있어요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Register a pass to create an alarm with this voice."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "利用券を登録すると、この声でアラームを作成できます。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "이용권을 등록하면 이 목소리로 알람을 만들 수 있어요."
           }
         }
       }
