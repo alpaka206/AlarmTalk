@@ -157,6 +157,10 @@ final class VoiceStudioViewModel: ObservableObject {
         profiles = []
         familyVoices = []
         stockClips = []
+        // ⚠ **권위도 함께 내린다.** 안 내리면 로그아웃 뒤 밀려 들어온
+        // `voice_access_revoked` 가 **빈 목록을 근거로** 이 계정의 목소리 알람을 전부
+        // 강등한다 — 서버가 아무것도 확인해 주지 않았는데도(2026-08-18 Codex #697 P1).
+        accessibleVoicesAreAuthoritative = false
         // 디스크 사본도 같이 지운다 — 매니페스트에는 **그 계정의 클론 클립**이 들어 있어
         // 계정이 바뀌면 남의 목록을 시드하게 된다. 지워도 다음 조회가 다시 채우므로
         // 오프라인 판정은 그때부터 정상으로 돌아온다.
@@ -1104,24 +1108,34 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 안드로이드도 같은 이유로 `familyVoicesLoadedFresh`·`voiceProfilesLoadedFresh` 를 본다.
     ///
     /// - Returns: 강등한 알람 수.
+    /// - Parameter ownerUserId: **이 목록을 가져온 계정.** 반드시 넘긴다 —
+    ///   한 기기에서 계정을 바꾸면 B 의 목록에는 A 의 목소리 id 가 당연히 없으므로,
+    ///   소유자를 안 보면 **A 의 알람을 되돌릴 수 없게 부순다**(저장소의 다른 파괴 경로
+    ///   `applyFreePlanVoiceLock`·`restorePaidVoiceAlarms` 와 같은 규칙).
     @discardableResult
     func reconcileInaccessibleVoiceAlarms(
         alarmStore: LocalAlarmStore,
-        audioCache: AudioCacheStore?
+        audioCache: AudioCacheStore?,
+        ownerUserId: String?
     ) -> Int {
-        guard accessibleVoicesAreAuthoritative else { return 0 }
+        guard accessibleVoicesAreAuthoritative, let owner = ownerUserId?.nilIfBlank else { return 0 }
         let accessible = Set(profiles.map(\.id) + familyVoices.map(\.id))
-        let lost = Set(
-            alarmStore.alarms
-                // 받은 알람은 보낸 사람의 접근권으로 성립한다 — 내 목록으로 판단하지 않는다.
-                .filter { $0.originEnum == .localOwned }
-                .compactMap { $0.voiceProfileId?.nilIfBlank }
-                // 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다.
-                .filter { !isSystemVoiceId($0) && !accessible.contains($0) }
-        )
-        guard !lost.isEmpty else { return 0 }
-        degradeAlarms(usingVoiceProfileIDs: Array(lost), alarmStore: alarmStore, audioCache: audioCache)
-        return lost.count
+        // ⚠ **id 가 아니라 '행' 을 고른다.** 예전에는 잃은 profileId 를 모아
+        // `degradeAlarms(usingVoiceProfileIDs:)` 에 넘겼는데, 그 경로는 id 로 다시 훑어
+        // **모든 origin·모든 소유자**를 잡는다 — 같은 공유 목소리를 쓰는 **받은 알람까지**
+        // 벗겨 냈다. 여기서 좁힌 조건이 거기서 도로 넓어지는 셈이었다.
+        let targets = alarmStore.alarms.filter { record in
+            // 받은 알람은 보낸 사람의 접근권으로 성립한다 — 내 목록으로 판단하지 않는다.
+            guard record.originEnum == .localOwned else { return false }
+            // 소유자 미기록(옛 행)은 이 계정 것으로 본다(안드로이드·잠금 경로와 같은 관용).
+            guard record.ownerUserId == nil || record.ownerUserId == owner else { return false }
+            guard let voiceID = record.voiceProfileId?.nilIfBlank else { return false }
+            // 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다.
+            return !isSystemVoiceId(voiceID) && !accessible.contains(voiceID)
+        }
+        guard !targets.isEmpty else { return 0 }
+        degrade(records: targets, alarmStore: alarmStore, audioCache: audioCache)
+        return targets.count
     }
 
     func degradeAlarms(usingVoiceProfileIDs ids: [String], alarmStore: LocalAlarmStore, audioCache: AudioCacheStore?) {
@@ -1137,6 +1151,20 @@ final class VoiceStudioViewModel: ObservableObject {
         audioCache: AudioCacheStore?
     ) {
         let affected = alarmStore.alarms.filter { $0.voiceProfileId == profileID }
+        guard !affected.isEmpty else { return }
+        degrade(records: affected, alarmStore: alarmStore, audioCache: audioCache)
+    }
+
+    /// 주어진 **행들**을 알람음으로 내리고, 더 이상 참조되지 않는 캐시를 정리한다.
+    ///
+    /// ⚠ 대상 선정은 **호출자 책임**이다. 여기서 다시 넓히지 말 것 — 예전에는 이 일이
+    /// profileId 로 재조회하는 형태라, 좁혀서 부른 호출자의 조건이 무의미해졌다.
+    private func degrade(
+        records: [LocalAlarmRecord],
+        alarmStore: LocalAlarmStore,
+        audioCache: AudioCacheStore?
+    ) {
+        let affected = records
         guard !affected.isEmpty else { return }
 
         var releasedKeys: Set<String> = []

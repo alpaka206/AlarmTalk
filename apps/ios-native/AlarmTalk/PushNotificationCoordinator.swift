@@ -213,7 +213,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             await deps.voiceStudio.refresh(session: deps.auth.session)
             if deps.voiceStudio.reconcileInaccessibleVoiceAlarms(
                 alarmStore: deps.alarmStore,
-                audioCache: .shared
+                audioCache: .shared,
+                ownerUserId: deps.auth.session?.user.id
             ) > 0 {
                 _ = await AlarmScheduleReconciler.reconcile(
                     store: deps.alarmStore,
@@ -228,6 +229,11 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 대신 리컨사일러를 돌린다 — 그 판정은 `effectiveRecordForScheduling`(유료
             // 게이트)을 거친 지문이라, 방금 갱신된 스냅샷으로 강등이 곧바로 반영된다.
             // 플랜 판정을 여기에 복제하지 않는 이유이기도 하다(복제하면 갈라진다).
+            //
+            // ⚠ **스냅샷이 반쪽이면 돌리지 않는다.** `refreshAll` 은 갈래마다 따로 실패를
+            // 삼켜서, "그룹에서 빠졌다"(새 값) + "구독 없음"(옛 값)이 섞일 수 있다 —
+            // 그 상태로 돌리면 지금 유료인 사용자의 목소리 알람이 톤이 된다.
+            guard deps.socialFeatures.entitlementSnapshotComplete else { return }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
                 alarmKit: deps.alarmKit

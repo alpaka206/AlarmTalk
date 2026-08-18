@@ -17,7 +17,12 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
         )
     }
 
-    private func alarm(id: String, voiceProfileId: String?, origin: AlarmOrigin = .localOwned) -> LocalAlarmRecord {
+    private func alarm(
+        id: String,
+        voiceProfileId: String?,
+        origin: AlarmOrigin = .localOwned,
+        owner: String? = "owner-1"
+    ) -> LocalAlarmRecord {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         var record = LocalAlarmRecord(
             id: id,
@@ -31,6 +36,7 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
         )
         record.playMode = AlarmPlayMode.voiceOnly.rawValue
         record.voiceProfileId = voiceProfileId
+        record.ownerUserId = owner
         return record
     }
 
@@ -41,7 +47,7 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
         store.upsert(alarm(id: "a", voiceProfileId: "clone-1"))
         let voice = VoiceStudioViewModel()   // 새로고침 전 = 권위 없음
 
-        let degraded = voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil)
+        let degraded = voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1")
 
         XCTAssertEqual(degraded, 0)
         XCTAssertEqual(store.record(id: "a")?.playMode, AlarmPlayMode.voiceOnly.rawValue)
@@ -53,7 +59,7 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
         store.upsert(alarm(id: "recv", voiceProfileId: "clone-1", origin: .receivedRemote))
         let voice = VoiceStudioViewModel()
 
-        XCTAssertEqual(voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil), 0)
+        XCTAssertEqual(voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"), 0)
     }
 
     /// 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다.
@@ -62,6 +68,31 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
         store.upsert(alarm(id: "sys", voiceProfileId: systemVoiceIDPrefix + "000000000101"))
         let voice = VoiceStudioViewModel()
 
-        XCTAssertEqual(voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil), 0)
+        XCTAssertEqual(voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"), 0)
+    }
+
+    /// ⚠ **다른 계정 알람은 건드리지 않는다.** 한 기기에서 계정을 바꾸면 B 의 목록에는
+    /// A 의 목소리 id 가 당연히 없다 — 소유자를 안 보면 A 의 알람을 부순다.
+    func test_다른_계정의_알람은_건드리지_않는다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "a-of-other", voiceProfileId: "clone-1", owner: "owner-2"))
+        let voice = VoiceStudioViewModel()
+
+        XCTAssertEqual(
+            voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: "owner-1"),
+            0
+        )
+    }
+
+    /// 소유 계정을 모르면(로그아웃 직후 등) 아무것도 하지 않는다.
+    func test_소유자를_모르면_아무것도_하지_않는다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "a", voiceProfileId: "clone-1"))
+        let voice = VoiceStudioViewModel()
+
+        XCTAssertEqual(
+            voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: nil),
+            0
+        )
     }
 }

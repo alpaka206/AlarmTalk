@@ -29,6 +29,15 @@ final class SocialFeatureViewModel: ObservableObject {
 
     @Published var statusMessage: String?
 
+    /// 마지막 `refreshAll` 이 **권한 판단에 필요한 것을 모두** 받아왔는가
+    /// (가족 그룹 + 구독). 하나라도 실패하면 false.
+    ///
+    /// ⚠ 왜 필요한가 — `refreshAll` 은 갈래마다 따로 실패를 삼킨다. 그래서 "그룹에서
+    /// 빠졌다" 는 새 응답과 "구독 없음" 이라는 **옛 값**이 한 스냅샷에 섞일 수 있고,
+    /// 그 상태로 강등을 돌리면 **지금 유료인 사용자의 목소리 알람이 톤으로 바뀐다**
+    /// (2026-08-18 Codex #697 P1). 파괴적 판단은 이 값이 true 일 때만.
+    private(set) var entitlementSnapshotComplete = false
+
     /// 해지를 App Store 에서 해야 하는가 — 서버가 `STORE_CANCEL_UNSUPPORTED` 로 거절했을 때.
     /// 이용권 화면이 이걸 보고 StoreKit 구독 관리 시트를 연다.
     @Published var needsAppStoreSubscriptionManagement = false
@@ -62,6 +71,8 @@ final class SocialFeatureViewModel: ObservableObject {
     }
 
     func clearUserScopedRemoteState() {
+        // 권한 스냅샷의 완결성도 함께 내린다 — 빈 상태를 근거로 강등하면 안 된다.
+        entitlementSnapshotComplete = false
         activeUserID = nil
         familyGroup = nil
         familyVoices = []
@@ -88,11 +99,14 @@ final class SocialFeatureViewModel: ObservableObject {
 
         var messages: [String] = []
 
+        var familyGroupOK = false
+        var subscriptionOK = false
         do {
             let nextFamilyGroup = try await api.getFamilyGroup(token: token)
             guard activeUserID == userID else { return }
             familyGroup = nextFamilyGroup
             accessSnapshotStore.updateFamilyGroup(userID: userID, response: nextFamilyGroup)
+            familyGroupOK = true
         } catch {
             messages.append(Self.scopedRefreshErrorMessage(
                 label: "가족 그룹",
@@ -122,6 +136,7 @@ final class SocialFeatureViewModel: ObservableObject {
             subscription = resolvedSubscription
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             vouchers = resolvedVouchers
+            subscriptionOK = true
         } catch {
             messages.append(Self.scopedRefreshErrorMessage(
                 label: "이용권",
@@ -131,6 +146,7 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         guard activeUserID == userID else { return }
+        entitlementSnapshotComplete = familyGroupOK && subscriptionOK
         // Android 의 social refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
         statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
     }

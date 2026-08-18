@@ -221,7 +221,8 @@ struct AlarmTalkApp: App {
                             // 예약을 다시 맞춘다(조회가 실패한 회차에는 스스로 물러선다).
                             if voiceStudio.reconcileInaccessibleVoiceAlarms(
                                 alarmStore: alarmStore,
-                                audioCache: .shared
+                                audioCache: .shared,
+                                ownerUserId: auth.session?.user.id
                             ) > 0 {
                                 _ = await AlarmScheduleReconciler.reconcile(
                                     store: alarmStore,
