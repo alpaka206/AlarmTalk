@@ -178,6 +178,18 @@ struct AlarmEditorSheet: View {
         let message: String
     }
 
+    /// 준비된 음원이 스톡(테마) 클립이면 그 카테고리 = `bucket_id`.
+    ///
+    /// 자기 알람이 `saveFlow` 에서 `merged.bucketId` 를 정하는 식과 **같은 계산**이다.
+    /// 가족 알람은 로컬 행이 없어 그 경로를 타지 않으므로 여기서 한 번 더 구한다 —
+    /// ⚠ 식을 바꾸면 **양쪽을 같이** 바꿀 것(안드로이드는 `AlarmEntity.bucketId` 하나를
+    /// 두 빌더가 나눠 쓴다).
+    func bucketIdForSave(prepared: PreparedAlarmTalk?) -> String? {
+        guard let prepared else { return nil }
+        return voiceStudio.stockClips
+            .first { $0.messageId == prepared.messageID }?.category?.nilIfBlank
+    }
+
     /// 저장 중 음원 준비·생성이 실패했을 때. **조용히 `return` 하지 말 것** —
     /// 저장 버튼을 눌렀는데 아무 일도 안 일어난 것처럼 보인다.
     ///
@@ -2692,7 +2704,13 @@ struct AlarmEditorSheet: View {
                     isActive: true,
                     messageId: prepared?.messageID,
                     voiceProfileId: prepared?.voiceProfileID,
-                    targetUserId: recipient.userId
+                    targetUserId: recipient.userId,
+                    // ⚠ **테마 정체성은 이것 하나로만 건너간다.** 클립 키 목록은 보내는
+                    // 사람 기기의 캐시 파일을 가리켜 수신자에게 아무 뜻이 없다 — 받는 쪽이
+                    // `bucketId` 로 자기 클립을 다시 묶는다. 안 실으면 테마를 고른 가족
+                    // 알람이 **테마 없이** 도착한다(2026-08-18 확인. 안드로이드
+                    // `AlarmDraft.toRemoteAlarmWriteRequest` 도 같이 고쳤다).
+                    bucketId: bucketIdForSave(prepared: prepared)
                 )
                 _ = try await AlarmTalkAPI.shared.createAlarm(request, token: token)
             }

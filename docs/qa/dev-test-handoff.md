@@ -495,8 +495,18 @@ adb -s <serial> shell monkey -p com.alarmtalk.app.dev -c android.intent.category
   `bucketId = alarm.bucketId.trimmedOrNull()` 를 **보낸다.** 필드가 한쪽에만 추가되고 다른
   쪽에 안 따라간 것 — CLAUDE.md 「한 곳에서만」이 말하는 그 사고다. 고칠 때 **둘을 합치거나
   최소한 어긋나면 깨지는 테스트**를 같이 둘 것.
-- **받는 쪽이 안 옮긴다.** `buildReceivedAlarmRow`(`RemoteAlarmPullSyncService.kt`)가
-  `remote.bucketId` 를 행에 매핑하지 않는다. 보내는 쪽만 고치면 **반쪽 다리**다.
+- **받는 쪽은 플랫폼마다 달랐다.** 안드로이드 `buildReceivedAlarmRow` 는 **이미 옮기고
+  있었다**(`bucketId = remote.bucketId?.trim()?.takeIf { hasVoiceAudio && … }`). iOS 는
+  달랐다 — 읽기 모델 `RemoteAlarm` 에 `bucketId` **필드 자체가 없었고**,
+  `LocalAlarmRecord` 의 **명시적 init** 에도 없어서(멤버와이즈가 아니다) 생성 시 넣을 수가
+  없었다. 그래서 iOS 는 이 값을 '로컬 전용' 으로 다뤄 왔고, pull 병합이 무조건
+  `existing.bucketId` 로 덮었다 — **받은 알람은 로컬 값이 생길 일이 없으니 영원히 nil.**
+
+**→ 셋 다 고쳤다(2026-08-18).** 보내는 쪽 양 앱 + iOS 읽기 모델·매퍼·병합.
+회귀 테스트 `FamilyAlarmWriteRequestParityTest` 는 두 빌더의 결과를 **통째로 비교**한다
+(data class `equals` 라 **앞으로 생길 필드까지** 자동으로 대상이다). 의도된 차이 둘
+(`isActive`·`targetUserId`)만 눌러 두고 비교하므로, 한쪽에만 필드를 넣으면 그 순간 깨진다.
+⚠ **아직 실기기 2대 검증은 안 했다** — 스펙의 「검증 방법」대로 확인할 것.
 
 **② ⚠ Room 에 `fallbackToDestructiveMigration()` 이 아직 켜져 있다**(`AlarmDatabase.kt`,
 현재 `version = 23`). 5단계는 스키마를 건드릴 가능성이 큰데, **버전만 올리고 마이그레이션을

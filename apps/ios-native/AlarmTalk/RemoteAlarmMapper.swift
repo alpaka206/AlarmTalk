@@ -63,7 +63,7 @@ enum RemoteAlarmMapper {
             trimmedOrNil(remote.messageAudioUrl)
         )
 
-        return LocalAlarmRecord(
+        var record = LocalAlarmRecord(
             id: UUID().uuidString,
             label: label,
             hour: hour,
@@ -104,6 +104,12 @@ enum RemoteAlarmMapper {
             updatedAtMillis: nowMillis,
             alarmKitID: nil
         )
+        // 받은 알람의 테마 식별자. 회전 클립 키는 보낸 사람 기기의 캐시를 가리켜 뜻이
+        // 없으므로 **테마 id 만** 건너온다 — 받는 쪽이 이걸로 자기 클립을 묶는다.
+        // ⚠ `LocalAlarmRecord` 의 명시적 init 에 `bucketId` 가 **없어서** 생성 뒤에 대입한다.
+        // (그 init 이 빠뜨린 것이 iOS 가 이 값을 '로컬 전용' 으로 다뤄 온 실질적 이유다.)
+        record.bucketId = trimmedOrNil(remote.bucketId)
+        return record
     }
 
     // MARK: To remote

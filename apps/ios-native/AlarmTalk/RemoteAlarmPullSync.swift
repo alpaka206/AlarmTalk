@@ -333,10 +333,14 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         //  - `preLockPlayMode` — 무료 전환 잠금 전의 재생 방식. 잃으면 재결제해도 목소리
         //    알람이 안 돌아온다.
         //  - `ownerUserId` — 잠금이 다른 계정 알람을 건드리지 않게 막는 가드.
-        //  - `bucketId` — 고른 무료 테마.
         merged.preLockPlayMode = existing.preLockPlayMode
         merged.ownerUserId = existing.ownerUserId
-        merged.bucketId = existing.bucketId
+        // ⚠ `bucketId` 는 위 둘과 **다르다** — 서버에 사본이 있다(`alarms.bucket_id`).
+        // 예전 주석은 "서버에 사본이 없다" 고 적고 무조건 로컬 값으로 덮었는데, 그러면
+        // **받은 가족 알람의 테마가 영원히 nil** 이다(로컬에 값이 생길 일이 없다).
+        // 그래서 로컬 값이 있으면 그것을 지키고(내가 고친 테마가 pull 로 되돌아가면 안 된다),
+        // 없을 때만 서버 값을 받는다.
+        merged.bucketId = existing.bucketId ?? merged.bucketId
 
         // 동적 문구(날씨·운세·랜덤) 설정 일체. 서버는 이 개념을 모른다 —
         // 매퍼가 `voiceRandomPrompt: false` 로 만들어 내므로 지키지 않으면 **pull 한 번에
