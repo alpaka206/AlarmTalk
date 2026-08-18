@@ -518,9 +518,26 @@ final class AlarmKitViewModel: ObservableObject {
         #endif
     }
 
+    /// 알람을 지운다(사용자가 삭제·스와이프로 부른다).
+    ///
+    /// ⚠ **취소 실패가 삭제를 막지 않는다**(2026-08-18 수정. 그전에는 막았다).
+    ///
+    /// `AlarmManager.cancel(id:)` 은 그 id 를 AlarmKit 이 **모를 때 throw** 한다 — 이미
+    /// 울리고 끝난 알람, 이미 해제된 알람, 재설치·복구로 남은 낡은 UUID 가 전부 그렇다.
+    /// 예전에는 그때 `false` 를 돌려주고 로컬 행을 **남겼다.** 그래서:
+    ///
+    ///   삭제 → "알람 취소에 실패했어요" → 목록에 그대로 → 또 삭제 → 또 실패 …
+    ///
+    /// **영영 지울 수 없는 알람**이 된다(2026-08-18 실기기 보고). 게다가 그 실패는
+    /// 대개 "이미 예약돼 있지 않다" 는 뜻이라, 남길 이유가 없는데 남긴 셈이다.
+    ///
+    /// ⚠ 그렇다고 **무조건** 지우면 반대쪽 사고가 난다 — OS 에는 아직 예약이 살아 있는데
+    /// 행만 지우면, 끌 수도 지울 수도 없는 알람이 울린다(이 파일 위쪽 주석의 그 상황).
+    /// 그래서 **AlarmKit 이 정말 안 들고 있을 때만** 지운다. 판단은 마지막으로 받은
+    /// `alarmUpdates` 스냅샷(`lastAlarmStateSnapshot`)으로 한다.
     @discardableResult
     func cancel(record: LocalAlarmRecord, store: LocalAlarmStore) async -> Bool {
-        guard record.alarmKitUUID != nil else {
+        guard let alarmKitUUID = record.alarmKitUUID else {
             deleteLocalAlarm(record, store: store)
             return true
         }
@@ -528,7 +545,30 @@ final class AlarmKitViewModel: ObservableObject {
             deleteLocalAlarm(record, store: store)
             return true
         }
+        // 취소가 실패했다 — OS 가 이 알람을 아직 들고 있는가?
+        if Self.mayDeleteAfterCancelFailure(
+            alarmKitID: alarmKitUUID.uuidString,
+            scheduledIDs: Set(lastAlarmStateSnapshot.keys)
+        ) {
+            // 안 들고 있다. 취소할 게 없어서 난 실패이므로 삭제는 그대로 진행한다.
+            // 사용자가 원한 결과(목록에서 사라진다)가 정확히 이뤄지므로 사유도 지운다.
+            statusMessage = nil
+            deleteLocalAlarm(record, store: store)
+            return true
+        }
+        // 정말로 아직 예약돼 있다 — 행을 남기고 알린다. 지우면 못 끄는 알람이 된다.
         return false
+    }
+
+    /// 취소가 실패했을 때 **로컬 행을 지워도 되는가.**
+    ///
+    /// AlarmKit 이 그 id 를 안 들고 있으면(`scheduledIDs` 에 없으면) 취소할 것이 없어서 난
+    /// 실패이므로 지워도 된다. 들고 있으면 지우면 안 된다 — **끌 수도 지울 수도 없는 알람**이
+    /// 울린다. 순수 함수로 빼 둔 이유는 이 판단이 회귀했을 때 증상이
+    /// "영영 안 지워지는 알람" 또는 "안 꺼지는 유령 알람" 둘 다로 나올 수 있어서다.
+    /// 회귀 테스트: `AlarmCancelDeletionTests`.
+    nonisolated static func mayDeleteAfterCancelFailure(alarmKitID: String, scheduledIDs: Set<String>) -> Bool {
+        !scheduledIDs.contains(alarmKitID)
     }
 
     private func deleteLocalAlarm(_ record: LocalAlarmRecord, store: LocalAlarmStore) {
