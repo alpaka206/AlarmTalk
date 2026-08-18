@@ -120,6 +120,15 @@ struct RootView: View {
         // (CLAUDE.md 「1회성 오버레이는 확인이 끝난 뒤에만 판단한다」).
         // 그래서 판정 키에 준비 신호(`consentStatusChecked`)를 함께 넣는다.
         .task(id: promoGateKey) { evaluateWelcomePromo() }
+        #if DEBUG
+        // 화면 확인·회귀 테스트용 진입점 — `-UIPreviewAuthScreen promo`.
+        // 이 안내는 **계정당 1회**라 실제로 띄우려면 프로모 기록을 지워야 해서, 키보드
+        // 회귀 테스트(`PromoKeyboardUITests`)가 열 방법이 달리 없다. login/register/consent
+        // 와 같은 패턴이고 릴리스에는 안 들어간다.
+        .task {
+            if UIPreviewSeed.authScreen == "promo" { showWelcomePromo = true }
+        }
+        #endif
         // 강등 안내 — "목소리 알람이 기본 알람음으로 바뀌었어요" 를 **한 번만** 말한다.
         // 판정 조건은 위 프로모와 **같다**(차단 화면 위에 겹쳐 봐야 못 읽는다).
         // 다만 성질이 다르다: 이건 소진 플래그가 아니라 **대기표**라, 못 보고 지나가도
@@ -149,11 +158,14 @@ struct RootView: View {
                     : "공유받던 목소리가 끊겨서 알람 \(notice.count)개가 기본 알람음으로 바뀌었어요. 다시 쓰려면 이용권을 등록하거나 새 초대 코드를 받아야 해요."
             )
         }
-        .overlay {
-            if showWelcomePromo, !blockingGateActive {
-                ZStack {
-                    AlarmTalkTheme.scrim.ignoresSafeArea()
-                    WelcomePromoDialog(
+        // ⚠ **알럿형 카드로 되돌리지 말 것**(2026-08-18 지시로 시트가 됐다). 이유는
+        // `WelcomePromoSheet` 주석에 있다 — 닫아도 되는 안내이고, 액션이 셋이라 알럿에서는
+        // 주행동이 묻히고, 실패 사유를 넣을 자리가 없어 알럿을 흉내 낸 자체 카드였다.
+        .sheet(isPresented: Binding(
+            get: { showWelcomePromo && !blockingGateActive },
+            set: { if !$0 { showWelcomePromo = false } }
+        )) {
+                    WelcomePromoSheet(
                         busy: promoBusy,
                         errorText: promoError,
                         onSubmitCode: { code in
@@ -172,8 +184,6 @@ struct RootView: View {
                         onOpenInstagram: { openURL(URL(string: "https://instagram.com/alarmtalk.app")!) },
                         onDismiss: { showWelcomePromo = false }
                     )
-                }
-            }
         }
         .sheet(item: $legalDocument) { target in
             NavigationStack {

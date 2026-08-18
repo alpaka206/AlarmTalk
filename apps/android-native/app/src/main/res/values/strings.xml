@@ -900,6 +900,7 @@
     <string name="welcome_promo_highlight_free">무료</string>
     <string name="welcome_promo_highlight_where">더보기의 코드 등록</string>
     <string name="welcome_promo_where">코드 받으러 가기</string>
+    <string name="welcome_promo_where_short">코드 받기</string>
     <string name="welcome_promo_instagram_hint">인스타그램 @alarmtalk.app 으로 문의 주시면 안내해 드려요.</string>
     <string name="auth_consent_title_updated">약관이 업데이트되었어요</string>
     <string name="auth_consent_subtitle_updated">내용이 바뀐 항목만 아래에 모았어요. 이미 동의하신 나머지는 그대로 유지돼요.</string>

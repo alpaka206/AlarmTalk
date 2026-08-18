@@ -846,6 +846,7 @@ Pass code: %1$s
     <string name="welcome_promo_highlight_free">free</string>
     <string name="welcome_promo_highlight_where">Register code in More</string>
     <string name="welcome_promo_where">Get a code</string>
+    <string name="welcome_promo_where_short">Get a code</string>
     <string name="welcome_promo_instagram_hint">Message us on Instagram @alarmtalk.app and we will help.</string>
     <string name="auth_consent_title_updated">We have updated our terms</string>
     <string name="auth_consent_subtitle_updated">Only the items that changed are listed below. Everything you already agreed to stays as it is.</string>

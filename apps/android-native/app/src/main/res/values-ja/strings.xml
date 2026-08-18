@@ -854,6 +854,7 @@
     <string name="welcome_promo_highlight_free">無料</string>
     <string name="welcome_promo_highlight_where">「その他」の「コードを登録」</string>
     <string name="welcome_promo_where">コードをもらう</string>
+    <string name="welcome_promo_where_short">コードを取得</string>
     <string name="welcome_promo_instagram_hint">Instagram @alarmtalk.app までご連絡いただければご案内します。</string>
     <string name="auth_consent_title_updated">規約が更新されました</string>
     <string name="auth_consent_subtitle_updated">変更があった項目だけをまとめました。すでに同意済みの項目はそのまま維持されます。</string>
