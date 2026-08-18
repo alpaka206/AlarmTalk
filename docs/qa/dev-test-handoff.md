@@ -562,6 +562,49 @@ resolve 한다 — **합성하지 않는다.** 즉 제거 작업이 두 앱에�
   필드, iOS `playDraftPreview`(목소리 등록 미리듣기 — `random:true` + `draftPreview:true` 를
   같이 보내므로 걷어내면 **새 목소리 등록이 통째로 막힌다**).
 
+### dev 백엔드 배포 완료 (2026-08-18)
+
+`npm run deploy:dev` 로 `feat/ios-revive` 의 백엔드를 dev 에 올렸다(Version `d68337dd`).
+마이그레이션은 101개 전부 **이미 적용돼 있었다** — 스키마 변경 없이 워커 코드만 새로 올라갔다.
+
+⚠ **배포 범위가 `expected_variants` 만이 아니다.** 이 브랜치에는 애플 IAP 마이그레이션
+94~96(`users.apple_id`, `subscriptions.apple_*`, `push_tokens`/`store_transactions` 테이블
+재생성)도 들어 있다. 재생성은 `INSERT INTO … SELECT` 로 **데이터를 옮기는** 방식이라 행이
+사라지지 않는다. dev 에는 이미 적용돼 있었다.
+
+**확인**: 기기가 받은 매니페스트에 `expected_variants` 가 들어온다 —
+`clone {greeting:1, weather:9, fortune:5, love:3, medication:3}` /
+`system {weather:9, medication:2, greeting:1}`. 코드 주석이 말하던 "medication 은 시스템 2 /
+클론 3" 이 실제로 그렇다. **앞서 지목한 원인(`ae0e4e7a` 미배포)이 맞았다.**
+
+⚠ **클론 클립은 아직 0개다.** `expected_variants` 는 왔지만 사전렌더 cron(`*/5 * * * *`)이
+ElevenLabs 를 불러 실제 클립을 만들어야 한다. 그게 도착해야 **클론 + 테마 저장 경로**와
+**클론 옛 행 재바인딩**을 검증할 수 있다.
+
+### 다음 세션 QA 계획 (2026-08-18 지시)
+
+**필요한 것은 다 있다** — 두 폰 연결됨(`R3CW300EZBA` S23 Ultra / `RF9R40323AP` A32),
+`packages/backend/.dev.vars.dev` 에 `TURSO_DATABASE_URL`·`TURSO_AUTH_TOKEN`(dev DB 직접 수정
+가능)과 `INIT_DB_SECRET`, wrangler 인증됨.
+
+알려진 계정 id: S23 `3c059777-086f-4653-826e-bbbc92f85afd` /
+`9671a7ae-d272-4091-872c-b123754191e4`, A32 는 구글 id `101930194963020851904`
+(AlarmTalk user id 는 DB 에서 이메일로 찾을 것).
+
+**순서**
+1. **셋 다 무료로 내린다**(dev DB `users.plan` 수정) → 무료에서 되는 것/막히는 것 전수 점검:
+   설정·알람 수정·목소리 선택·문구(테마) 선택·이용권 게이트 3상태.
+2. **지우고 새로 깔아 본다**(사용자 승인함) — 목적은 **음성 다운로드 확인**(선다운로드가
+   처음부터 도는지, 오프라인 콜드스타트에서 매니페스트 디스크 캐시가 먹는지).
+   ⚠ **로그인 복구 경로를 먼저 확인할 것** — 구글 계정 선택이 자동화 가능한지 보고 지울 것.
+   못 돌아오면 그 폰으로 더는 테스트할 수 없다.
+3. **유료로 올려 초대·가족 알람**(dev DB 수정) — 서로 보내고 받기 양방향.
+   여기서 비로소 앞 세션에 막혔던 ① 가족 알람 테마(`bucket_id` 왕복 +
+   `messageBelongsToCaller` 3갈래)를 검증할 수 있다.
+
+⚠ **앞 세션에서 확인된 제약**: 편집기에 **수신자 행이 아예 안 뜬다** — 가족 알람은 커플/가족
+이용권이 있어야 열린다. 그래서 3번이 1·2번 뒤에 온다.
+
 ### 실기기 검증 결과 (2026-08-18, S23 Ultra `R3CW300EZBA` + A32 `RF9R40323AP`)
 
 **② 옛 행 재바인딩 — 통과.** 폰에 옛 행이 하나도 없어서(4행/2행 모두 `voiceRandomPrompt=0`)
