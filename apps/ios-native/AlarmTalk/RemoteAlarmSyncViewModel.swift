@@ -194,8 +194,15 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     /// **목록 전체와 TTS 음원**을 다시 받고 있었다 — 삭제를 눌러도 한참 뒤에야 행이
     /// 사라지던 체감 지연의 본체다. 지운 행은 호출자가 이미 로컬에서 없앴고, 서버 상태는
     /// 다음 정기 동기화가 맞춘다.
+    /// - Parameter announceFailure: 실패를 배너로 알릴지. **뒤에서 도는 삭제는 false** —
+    ///   행은 이미 사라졌는데 "삭제에 실패했어요" 만 뜨면 사용자는 무엇이 실패했는지 알 수 없다
+    ///   (`statusMessage` 는 `AlarmsListView` 가 `actionMessage` 와 **별개로** 배너에 띄운다).
     @discardableResult
-    func deleteRemote(record: LocalAlarmRecord, session: AuthSession?) async -> Bool {
+    func deleteRemote(
+        record: LocalAlarmRecord,
+        session: AuthSession?,
+        announceFailure: Bool = true
+    ) async -> Bool {
         // 서버에 사본이 없는 알람(로컬 전용)은 지울 것이 없으므로 성공으로 본다.
         guard let token = session?.token, let remoteID = record.remoteAlarmId else { return true }
         do {
@@ -207,7 +214,17 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             return true
         } catch {
             guard !isCancellation(error) else { return false }
-            statusMessage = userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요")
+            // ⚠ **서버에 이미 없으면 성공이다(멱등).** 발신자가 먼저 지웠거나 앞선 시도가
+            // 실제로는 통했는데 응답만 못 받은 경우다. 실패로 보면 지울 수 없는 알람이 되고,
+            // 낙관적 삭제에서는 **행은 사라졌는데 실패 배너만 뜬다.**
+            // 안드로이드 `MainViewModelAlarmActions.deleteAlarm` 이 decline 404 를 같은 규칙으로 다룬다.
+            if case let APIError.server(status, _, errorCode) = error,
+               status == 404 || errorCode == "ALARM_NOT_FOUND" {
+                return true
+            }
+            if announceFailure {
+                statusMessage = userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요")
+            }
             return false
         }
     }

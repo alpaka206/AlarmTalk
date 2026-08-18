@@ -153,7 +153,7 @@ internal fun IosAlertDialog(
             // "아이폰처럼 배경색이나 버튼색"). 실측하면 아이폰 알럿 컨테이너는 **#111623**
             // 로 **화면보다 어둡고 채도가 낮다** — 우리 것은 한 단계 밝은 남색이라 같은
             // 알럿이 두 앱에서 다른 물건처럼 보였다. 어두운 쪽이 뒤 화면과도 더 잘 갈린다.
-            color = WakerAlertContainer,
+            color = wakerAlertContainer(),
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
             border = BorderStroke(0.5.dp, scheme.onSurface.copy(alpha = 0.12f)),
@@ -318,10 +318,37 @@ internal fun IosAlertField(
  * 알럿 컨테이너 색 — 아이폰 실측 #111623 에 맞춘 어두운 중성 남색.
  * 라이트 테마에서도 알럿은 어두운 패널이라 테마와 무관하게 고정이다(아이폰도 그렇다).
  */
-private val WakerAlertContainer = Color(0xFF141A2B)
+private val WakerAlertContainerDark = Color(0xFF141A2B)
+
+/**
+ * 라이트 테마의 알럿 컨테이너 — iOS 라이트 알럿과 같은 밝은 회백(#F2F2F7).
+ *
+ * ⚠ **이게 없던 시절이 버그였다**(2026-08-18 실기기 확인). 컨테이너만 다크로 고정해 두고
+ * 글자·테두리는 `MaterialTheme.colorScheme` 에서 가져오는데, **라이트에서 `onSurface` 는
+ * 거의 검정**이라 어두운 패널 위에 검은 글자가 얹혀 **제목이 보이지 않았다.**
+ *
+ * ⚠ 그리고 "아이폰도 알럿은 항상 어둡다" 는 옛 주석의 근거는 **틀렸다.** 아이폰 알럿은
+ * 시스템 외관을 따르고(라이트면 밝은 알럿), **우리 iOS 앱은 시스템 `.alert` 를 쓴다.**
+ * 즉 고정 다크는 아이폰을 닮은 게 아니라 **라이트에서 아이폰과 어긋나게** 만들고 있었다.
+ * 실측 #111623 은 다크 모드 아이폰에서 잰 값으로 보인다.
+ */
+private val WakerAlertContainerLight = Color(0xFFF2F2F7)
+
+/** 지금 스킴에 맞는 알럿 컨테이너. 판정은 [LocalIsDarkTheme] — 앱 자체 테마 설정까지 반영한다. */
+@Composable
+private fun wakerAlertContainer(): Color =
+    if (LocalIsDarkTheme.current) WakerAlertContainerDark else WakerAlertContainerLight
 
 /** 알럿 버튼의 기본 채움 — 아이폰 실측 #2A2F39. */
-private val WakerAlertButtonFill = Color(0xFF2A2F3A)
+private val WakerAlertButtonFillDark = Color(0xFF2A2F3A)
+
+/** 라이트 알럿의 버튼 채움 — 위 컨테이너(#F2F2F7)보다 한 단계 진한 회색이라야 칸이 보인다. */
+private val WakerAlertButtonFillLight = Color(0xFFE4E5EB)
+
+/** 지금 스킴에 맞는 버튼 채움. 그 위 글자는 `scheme.onSurface` 라 저절로 짝이 맞는다. */
+@Composable
+private fun wakerAlertButtonFill(): Color =
+    if (LocalIsDarkTheme.current) WakerAlertButtonFillDark else WakerAlertButtonFillLight
 
 /**
  * 기본 액션의 채움 — **아이폰과 같은 쨍한 파랑**(iOS 시스템 블루 #0A84FF)에 흰 글자.
@@ -434,7 +461,7 @@ private fun IosAlertButton(
         modifier = modifier
             // 높이 48 의 캡슐(반경 24) — 실측값이다.
             .clip(WakerPillShape)
-            .background(if (filled) WakerAlertAccent else WakerAlertButtonFill)
+            .background(if (filled) WakerAlertAccent else wakerAlertButtonFill())
             .clickable(enabled = action.enabled, onClick = action.onClick),
         contentAlignment = Alignment.Center,
     ) {

@@ -440,7 +440,16 @@ struct AlarmsListView: View {
         }
         if alarm.originEnum != .receivedRemote {
             // 내 알람의 서버 삭제는 뒤에서. 화면은 이미 사라졌다.
-            Task { await remoteSync.deleteRemote(record: alarm, session: auth.session) }
+            // ⚠ **실패를 알리지 않는다**(`announceFailure: false`). 사용자가 원한 결과(목록에서
+            // 사라짐)는 이미 이뤄졌고, 서버에 고아 행이 남아도 pull 이 되살리지 못해 보이지
+            // 않는다. 여기서 배너를 띄우면 **지워진 알람 옆에 "삭제에 실패했어요"** 가 뜬다.
+            Task {
+                await remoteSync.deleteRemote(
+                    record: alarm,
+                    session: auth.session,
+                    announceFailure: false
+                )
+            }
         }
     }
 }
