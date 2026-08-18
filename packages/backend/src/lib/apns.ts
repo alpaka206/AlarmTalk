@@ -114,7 +114,16 @@ export async function signApnsJwt(config: ApnsConfig, nowMs: number = Date.now()
 /** 애플 권장 재사용 창(20~60분)의 아래쪽. 짧게 잡아 만료 위험을 피한다. */
 const APNS_JWT_REUSE_MS = 20 * 60 * 1000;
 
-type CachedProviderToken = { jwt: string; issuedAtMs: number };
+/**
+ * ⚠ **문자열이 아니라 서명 `Promise` 를 담는다.**
+ *
+ * 예전에는 `await signApnsJwt(...)` 를 **먼저 기다린 뒤** 캐시에 넣었다. 워커 isolate 는
+ * 한 이벤트 루프에서 여러 요청을 동시에 처리하므로, 그 await 창 동안 들어온 호출이 전부
+ * miss 로 읽고 **각자 서명한다** — ECDSA 서명은 매번 값이 달라(`iat` 가 같아도) 결국
+ * 토큰이 돌아가고 `TooManyProviderTokenUpdates` 를 맞는다(2026-08-18 Codex #697 P1).
+ * 진행 중인 서명을 캐시에 두면 뒤따르는 호출이 **같은 promise** 를 받는다.
+ */
+type CachedProviderToken = { jwt: Promise<string>; issuedAtMs: number };
 
 /**
  * provider 설정별 JWT 캐시. 워커 isolate 가 살아 있는 동안만 유지된다 —
@@ -147,9 +156,18 @@ export async function getApnsProviderToken(
   if (cached && nowMs >= cached.issuedAtMs && nowMs - cached.issuedAtMs < APNS_JWT_REUSE_MS) {
     return cached.jwt;
   }
-  const jwt = await signApnsJwt(config, nowMs);
-  apnsProviderTokens.set(key, { jwt, issuedAtMs: nowMs });
-  return jwt;
+  // ⚠ **await 하기 전에 넣는다.** 순서를 뒤집으면 동시 호출이 전부 miss 로 읽는다(위 주석).
+  const entry: CachedProviderToken = { jwt: signApnsJwt(config, nowMs), issuedAtMs: nowMs };
+  apnsProviderTokens.set(key, entry);
+  try {
+    return await entry.jwt;
+  } catch (error) {
+    // ⚠ **실패한 promise 를 캐시에 남기지 말 것.** 남기면 재사용 창 20분 내내 모든 푸시가
+    // 같은 오류로 죽는다 — 키가 잠깐 잘못 들어왔다 고쳐져도 회복되지 않는다.
+    // 그 사이 누군가 새 entry 로 갈아 끼웠으면 건드리지 않는다.
+    if (apnsProviderTokens.get(key) === entry) apnsProviderTokens.delete(key);
+    throw error;
+  }
 }
 
 /** 테스트 전용 — isolate 를 새로 띄운 것처럼 만든다. */

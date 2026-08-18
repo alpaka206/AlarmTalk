@@ -294,4 +294,32 @@ describe('getApnsProviderToken — 재사용 창', () => {
     expect(seen).toHaveLength(2);
     expect(seen[1]).toBe(seen[0]);
   });
+
+  it('동시에 밀려와도 하나만 서명한다 — await 이전에 캐시에 넣는다', async () => {
+    __resetApnsProviderTokenCacheForTests();
+    const config = await makeConfig();
+    const t0 = 1_700_000_000_000;
+
+    // 캐시가 비어 있는 상태에서 **동시에** 8개가 들어온다(워커 isolate 의 실제 모양).
+    const tokens = await Promise.all(
+      Array.from({ length: 8 }, () => getApnsProviderToken(config, t0)),
+    );
+
+    expect(new Set(tokens).size).toBe(1);
+  });
+
+  it('서명이 실패하면 캐시에 남기지 않는다 — 20분간 전부 죽으면 안 된다', async () => {
+    __resetApnsProviderTokenCacheForTests();
+    const broken = await makeConfig({ privateKeyPem: 'not-a-pem' });
+    const t0 = 1_700_000_000_000;
+
+    await expect(getApnsProviderToken(broken, t0)).rejects.toBeDefined();
+
+    // 같은 창 안이라도 다시 시도할 수 있어야 한다(캐시에 실패가 남았으면 즉시 같은 오류).
+    await expect(getApnsProviderToken(broken, t0 + 1000)).rejects.toBeDefined();
+
+    // 키가 고쳐지면 곧바로 회복된다.
+    const fixed = await getApnsProviderToken(await makeConfig(), t0 + 2000);
+    expect(typeof fixed).toBe('string');
+  });
 });
