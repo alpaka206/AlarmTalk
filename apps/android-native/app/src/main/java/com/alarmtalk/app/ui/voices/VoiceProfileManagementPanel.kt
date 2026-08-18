@@ -1634,10 +1634,12 @@ internal fun VoiceProfileManagementPanel(
                                         maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                         level = recordingLevel,
                                         enabled = !voiceProfileBusy && !createPreparing,
-                                        // 카드 안은 비워 둔다 — 옆에 `0:00 / 2:00` 이 이미 있어
-                                        // 문구까지 넣으면 두 줄로 접히고 시간이 밀린다.
-                                        // 길이 안내는 카드 아래 안내문으로 내렸다.
-                                        idleStatusText = "",
+                                        // ⚠ **`idleStatusText = ""` 로 비우지 말 것**(2026-08-18 되돌림).
+                                        // 빈 문자열은 `?:` 를 통과해 **빈 `Text` 가 한 줄을 차지**하므로,
+                                        // 카드에 이유 없는 빈 칸이 남는다("녹음하기 글자가 안 보인다"로
+                                        // 보고됨). 기본값 "녹음하기" 를 그대로 쓴다 — 알람 편집기의
+                                        // 직접 녹음도 같은 컴포넌트를 기본값으로 쓰고 문제가 없다.
+                                        // (두 줄로 접힌다던 옛 근거는 실기기에서 재현되지 않는다.)
                                         onRecordClick = {
                                             if (isRecording) {
                                                 stopRecording()
@@ -1683,7 +1685,14 @@ internal fun VoiceProfileManagementPanel(
                                             uploadLabel = stringResource(R.string.voices_upload_file_or_video),
                                             notice = stringResource(R.string.voices_crop_duration_notice),
                                             noticeAfterUpload = true,
-                                            uploadSubtitle = stringResource(R.string.voices_upload_zone_subtitle),
+                                            // ⚠ **길이 조건을 여기서 말하지 않는다**(2026-08-18 지시).
+                                            // 고른 파일은 길이로 막지 않는다 — `prepareSelectedFile` 이
+                                            // `cropEnd` 를 2분으로 잡아 **자르기 화면**으로 넘긴다(3분짜리
+                                            // 영상도 된다). "12초 이상 2분 이하 파일이면 돼요" 는 **없는
+                                            // 제약을 광고**하는 문구라, 쓸 수 있는 파일을 안 쓰게 만든다.
+                                            // 실제 조건은 **잘라낸 구간**에만 있고, 그건 자르기 화면이
+                                            // `voices_crop_duration_notice` 로 그 자리에서 말한다.
+                                            uploadSubtitle = null,
                                             isPreviewActive = filePreviewPlaying,
                                             isPreviewPreparing = filePreviewPreparing,
                                             onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },
