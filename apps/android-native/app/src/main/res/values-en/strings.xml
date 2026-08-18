@@ -6,7 +6,7 @@
     <string name="auth_confirm_password_hide">Hide confirm password</string>
     <string name="auth_confirm_password_show">Show confirm password</string>
     <string name="auth_consent_age14">[Required] I am 14 or older</string>
-    <string name="auth_consent_agree_all">Agree to all required terms</string>
+    <string name="auth_consent_agree_all">Agree to all</string>
     <string name="auth_consent_agree_and_start">Agree and start</string>
     <string name="auth_consent_marketing">[Optional] Agree to receive marketing messages</string>
     <string name="auth_consent_overseas_transfer">[Required] Agree to overseas transfer for voice AI processing</string>

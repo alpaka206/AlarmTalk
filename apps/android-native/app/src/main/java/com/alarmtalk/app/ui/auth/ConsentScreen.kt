@@ -128,9 +128,11 @@ internal fun ConsentScreen(
     // 막혀 CTA 가 켜지지 않아야 한다 — 목록을 좁히면 그 방어가 사라진다.
     val requiredShown = collect.filter { it !in optionalTypes }
     val shownRequired = requiredShown.isNotEmpty()
-    // '전체 동의' 가 실제로 다루는 집합 — **그릴 수 있는 필수**만. setAll 과 allChecked 도
-    // 같은 집합을 본다(iOS `ConsentView.masterTypes` 와 동일 정의).
-    val masterTypes = shownTypes.filter { it !in optionalTypes }
+    // '전체 동의' 가 실제로 다루는 집합 — **선택까지 포함**한다(2026-08-18 변경).
+    // 라벨이 '필수 약관 전체 동의' 라 '전체' 라고 써 놓고 일부만 켜는 화면이었다.
+    // 개별 체크박스와 [필수]/[선택] 표기는 그대로라 선택을 따로 끌 수 있다(제22조제5항).
+    // setAll 과 allChecked 도 같은 집합을 본다(iOS `ConsentView.masterTypes` 와 동일 정의).
+    val masterTypes = shownTypes
 
     // 그리지 않은 필수 항목은 이미 동의된 것이므로 통과 조건에서 뺀다.
     // 모르는 유형(서버가 새 유형을 먼저 추가한 구간)은 else -> false 로 통과를 막는다.
@@ -148,7 +150,7 @@ internal fun ConsentScreen(
             else -> false
         }
     }
-    // ⚠ **'전체 동의' 는 필수 유형만 다룬다.**
+    // ⚠ **'전체 동의' 는 선택까지 포함한다**(docs/spec/consent.md — 제품 결정이다).
     // 선택 동의까지 한 탭에 켜면, 명시적으로 거절했던 사람이 필수 재동의 화면에서 **한 번의
     // 탭으로 마케팅을 켜게 되는 화면**이 된다 — 개인정보보호법 제22조의 선택 동의 구분 수령
     // 취지에 어긋나는 다크패턴이다.
@@ -369,6 +371,9 @@ private fun ConsentRow(
                     )
                 }
             }
+            // ⚠ 민감 동의(생체정보·국외이전)의 긴 설명은 `description` 이 아니라 **`detail`**
+            // 로 넘긴다 — 그래야 이 화살표로 접힌다. iOS 는 같은 일을
+            // `ConsentRow.collapsibleDescription` 으로 한다(구조가 달라 이름이 다르다).
             if (detail != null) {
                 IconButton(onClick = { expanded = !expanded }) {
                     Icon(

@@ -8,7 +8,7 @@
     <string name="auth_confirm_password_hide">비밀번호 확인 숨기기</string>
     <string name="auth_confirm_password_show">비밀번호 확인 보기</string>
     <string name="auth_consent_age14">[필수] 만 14세 이상입니다</string>
-    <string name="auth_consent_agree_all">필수 약관 전체 동의</string>
+    <string name="auth_consent_agree_all">전체 동의</string>
     <string name="auth_consent_agree_and_start">동의하고 시작하기</string>
     <string name="auth_consent_marketing">[선택] 광고성 정보 수신 동의</string>
     <string name="auth_consent_overseas_transfer">[필수] 음성 AI 처리를 위한 국외 이전 동의</string>

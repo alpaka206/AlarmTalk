@@ -90,16 +90,17 @@ struct ConsentView: View {
         }
     }
 
-    /// ⚠ **'전체 동의' 는 필수 유형만 다룬다.**
-    /// 선택 동의(마케팅·생체정보)까지 한 탭에 켜면, 명시적으로 거절했던 사람이 필수 재동의
-    /// 화면에서 **한 번의 탭으로 마케팅을 켜게 되는 화면**이 된다 — 개인정보보호법 제22조의
-    /// 선택 동의 구분 수령 취지에 어긋나는 다크패턴이다.
-    /// `setAll` 과 `allChecked` 는 **반드시 같은 집합**을 봐야 한다(한쪽만 바꾸면 전체 동의
+    /// **'전체 동의' 는 선택까지 포함한다**(2026-08-18 변경. 그전에는 필수 전용이었다).
+    ///
+    /// 라벨이 `필수 약관 전체 동의` 라 **'전체' 라고 써 놓고 일부만 켜는** 화면이었고,
+    /// 눌러도 선택 항목이 남아 사용자가 목록을 다시 훑어야 했다. 법이 정해 주는 부분이
+    /// 아니라 **제품 결정**이다 — 전체 동의 버튼이 선택 항목까지 켜는 것을 금지하는 조문은
+    /// 없고(`docs/spec/consent.md`), 제22조제5항이 요구하는 것은 **선택을 따로 끌 수 있을 것**
+    /// 이다. 그래서 `[필수]`/`[선택]` 표기와 개별 체크박스는 그대로 둔다.
+    ///
+    /// ⚠ `setAll` 과 `allChecked` 는 **반드시 같은 집합**을 봐야 한다(한쪽만 바꾸면 전체 동의
     /// 표시가 영영 안 켜지거나, 켜져 있는데 아무것도 안 하는 행이 된다).
-    private var masterTypes: [String] {
-        let optionalTypes = optionalTypes
-        return shownTypes.filter { !optionalTypes.contains($0) }
-    }
+    private var masterTypes: [String] { shownTypes }
 
     private var allChecked: Bool {
         !masterTypes.isEmpty && masterTypes.allSatisfy { checked.contains($0) }
@@ -144,7 +145,7 @@ struct ConsentView: View {
                         ConsentRow(
                             checked: allChecked,
                             onToggle: { setAll(!allChecked) },
-                            label: "필수 약관 전체 동의",
+                            label: "전체 동의",
                             emphasized: true
                         )
                         Spacer().frame(height: 4)
@@ -209,14 +210,16 @@ struct ConsentView: View {
                 내 목소리를 알람에 쓰고 싶을 때만 필요해요.
                 녹음하거나 업로드한 목소리를 음성 프로필 생성·클론·TTS 생성에 사용하며, 개인을 식별·재현할 수 있는 생체정보로 처리합니다.
                 지금 동의하지 않아도 기본 목소리 알람은 그대로 쓸 수 있고, 나중에 목소리를 등록할 때 다시 여쭤봐요.
-                """
+                """,
+                collapsibleDescription: true
             )
         case "overseas_transfer":
             ConsentRow(
                 checked: checked.contains(type),
                 onToggle: toggle,
                 label: prefix + "음성 AI 처리를 위한 국외 이전 동의",
-                description: "음성 AI, 번역, 동적 문구 처리를 위해 음성·알람 문구·운세 입력값이 ElevenLabs, Google Vertex 등 국외 처리자에게 전송될 수 있습니다."
+                description: "음성 AI, 번역, 동적 문구 처리를 위해 음성·알람 문구·운세 입력값이 ElevenLabs, Google Vertex 등 국외 처리자에게 전송될 수 있습니다.",
+                collapsibleDescription: true
             )
         case "marketing":
             ConsentRow(checked: checked.contains(type), onToggle: toggle, label: prefix + "광고성 정보 수신 동의")
@@ -240,8 +243,20 @@ private struct ConsentRow: View {
     // 결합한 결과를 `LocalizedStringKey` 로 감싸면 그대로 조회된다.
     let label: String
     var description: LocalizedStringKey? = nil
+    /// 설명을 **접어 둘지**. 민감 동의(생체정보·국외이전)는 설명이 길어 펼쳐 두면 목록이
+    /// 설명으로 뒤덮여 **무엇을 고르는 화면인지** 가 묻힌다.
+    ///
+    /// ⚠ **접히는 것은 상세 설명뿐이다.** 제목과 `[선택]` 표기는 접어도 보인다 — 무엇에
+    /// 동의하는 항목인지와 필수/선택 여부는 고지의 핵심이라 접으면 안 된다.
+    var collapsibleDescription: Bool = false
     var emphasized: Bool = false
     var onOpenDetail: (() -> Void)? = nil
+
+    @State private var expanded = false
+
+    private var showsDescription: Bool {
+        description != nil && (!collapsibleDescription || expanded)
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -255,7 +270,7 @@ private struct ConsentRow: View {
                             .font(emphasized ? .body.weight(.bold) : .body)
                             .foregroundStyle(AlarmTalkTheme.text)
                             .multilineTextAlignment(.leading)
-                        if let description {
+                        if let description, showsDescription {
                             Text(description)
                                 .font(.footnote)
                                 .foregroundStyle(AlarmTalkTheme.textSecondary)
@@ -267,6 +282,22 @@ private struct ConsentRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+
+            // ⚠ **펼침은 체크 영역 밖이다.** 안에 두면 설명을 읽으려고 누른 것이 곧 동의가 된다.
+            if collapsibleDescription, description != nil {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(expanded ? "설명 접기" : "설명 펼치기"))
+            }
 
             if let onOpenDetail {
                 Button("보기", action: onOpenDetail)

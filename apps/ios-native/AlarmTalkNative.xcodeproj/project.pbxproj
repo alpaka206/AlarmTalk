@@ -38,6 +38,7 @@
 		1EC30FA50D0D15D62EF99A11 /* RemoteAlarmSyncViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D91CA086C7D4B708EBFB7D9 /* RemoteAlarmSyncViewModel.swift */; };
 		1F91FD72D98E3051B4FD6BD7 /* AlarmTimeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FFCC8AFC12D1CB8AD6A44F /* AlarmTimeCalculatorTests.swift */; };
 		211DD3BCAC0CE23AD3436301 /* AlarmTalkBrand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521C02BC3EAB475219595232 /* AlarmTalkBrand.swift */; };
+		22DF2F7D22E677AE5857AA95 /* ConsentScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A35A337D287686CD7E5648 /* ConsentScreenshotUITests.swift */; };
 		23A18B7FED2AF1A1788EC37D /* AlarmSoundVolumeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D508DD8CC6CDA986BF91DBA0 /* AlarmSoundVolumeTests.swift */; };
 		23DD6CB6C45C98F8C67EC651 /* AppVersionGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6631E3233534A061DF16833B /* AppVersionGateTests.swift */; };
 		24532A821DBDA7E12D150865 /* InputSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07C41F9BCE4652A92370E7F /* InputSanitizer.swift */; };
@@ -434,6 +435,7 @@
 		521C02BC3EAB475219595232 /* AlarmTalkBrand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkBrand.swift; sourceTree = "<group>"; };
 		529F45FCEA815E7AD154E399 /* UIPreviewSeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIPreviewSeed.swift; sourceTree = "<group>"; };
 		52A22132409AC4AE4AB65E3B /* AlarmTalkPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmTalkPalette.swift; sourceTree = "<group>"; };
+		52A35A337D287686CD7E5648 /* ConsentScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsentScreenshotUITests.swift; sourceTree = "<group>"; };
 		52D0C80EB4D29B32CA50326B /* LoginViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginViewModelTests.swift; sourceTree = "<group>"; };
 		53224031E3CB9F18979BB95B /* NonceGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NonceGenerator.swift; sourceTree = "<group>"; };
 		53BAD8F9B0E655C8E2254C40 /* AlarmSoundResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundResolverTests.swift; sourceTree = "<group>"; };
@@ -677,6 +679,7 @@
 				9E3E636EE972FA7B3F1B794B /* BillingScreenshotUITests.swift */,
 				ED4C4A68F57E02511151B588 /* BottomSheetHeightUITests.swift */,
 				AA03690DA383142AE06C1C09 /* CodeInputUITests.swift */,
+				52A35A337D287686CD7E5648 /* ConsentScreenshotUITests.swift */,
 				654A53A12F47130C19F6922C /* DeleteAccountAlertUITests.swift */,
 				B7C7DB895FE539AF37107B3E /* EditorKeyboardUITests.swift */,
 				7A18DA54939BEC7030D52E7C /* EditorPushNavigationUITests.swift */,
@@ -1347,6 +1350,7 @@
 				9D1D3F902DCE5965551B5BB6 /* BillingScreenshotUITests.swift in Sources */,
 				51D90581A1404D03E7C24D13 /* BottomSheetHeightUITests.swift in Sources */,
 				0126E892C5E577371F872B08 /* CodeInputUITests.swift in Sources */,
+				22DF2F7D22E677AE5857AA95 /* ConsentScreenshotUITests.swift in Sources */,
 				27D98E8D75785F7ECAAFD78E /* DeleteAccountAlertUITests.swift in Sources */,
 				3B4EC22D6EA7C6AE2866D9DC /* EditorKeyboardUITests.swift in Sources */,
 				2F976171BC5E1D3313A41E6A /* EditorPushNavigationUITests.swift in Sources */,

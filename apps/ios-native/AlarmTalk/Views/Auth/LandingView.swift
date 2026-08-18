@@ -17,6 +17,8 @@ struct LandingView: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     @State private var navigateToLogin: LoginMode?
+    /// DEBUG 화면 확인용 — `-UIPreviewAuthScreen consent`.
+    @State private var previewConsent = false
 
     var body: some View {
         SunriseBackdrop {
@@ -87,12 +89,28 @@ struct LandingView: View {
             switch UIPreviewSeed.authScreen {
             case "login": navigateToLogin = .login
             case "register": navigateToLogin = .register
+            // 동의 화면은 실제로는 가입/로그인 뒤에만 뜨는데, 그러려면 서버 왕복과
+            // '동의 기록이 없는 계정' 이 필요해 화면 확인이 번거로웠다. 여기서 바로 연다.
+            case "consent": previewConsent = true
             default: break
             }
         }
         .navigationDestination(item: $navigateToLogin) { mode in
             LoginView(initialMode: mode)
         }
+        #if DEBUG
+        .navigationDestination(isPresented: $previewConsent) {
+            ConsentView(
+                busy: false,
+                collect: ["age14", "terms", "privacy", "overseas_transfer", "voice_biometric", "marketing"],
+                optional: ["voice_biometric", "marketing"],
+                isReconsent: false,
+                onAgree: { _ in },
+                onOpenTerms: {},
+                onOpenPrivacy: {}
+            )
+        }
+        #endif
     }
 }
 

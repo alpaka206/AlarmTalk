@@ -6,7 +6,7 @@
     <string name="auth_confirm_password_hide">確認用パスワードを隠す</string>
     <string name="auth_confirm_password_show">確認用パスワードを表示</string>
     <string name="auth_consent_age14">［必須］満14歳以上です</string>
-    <string name="auth_consent_agree_all">必須の規約にすべて同意</string>
+    <string name="auth_consent_agree_all">すべて同意</string>
     <string name="auth_consent_agree_and_start">同意して始める</string>
     <string name="auth_consent_marketing">［任意］広告・宣伝情報の受信に同意</string>
     <string name="auth_consent_overseas_transfer">［必須］音声AI処理のための国外移転に同意</string>
