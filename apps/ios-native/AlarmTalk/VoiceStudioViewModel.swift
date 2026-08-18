@@ -436,10 +436,18 @@ final class VoiceStudioViewModel: ObservableObject {
             async let nextProfiles = api.listVoiceProfiles(token: token)
             // 가족 목소리는 plan 에 따라 403 이 날 수 있으므로 실패해도 무시.
             let familyResult: [FamilyVoiceProfile]
+            // ⚠ **실패와 '없음' 을 구분해 남긴다.** 403 은 "이 플랜엔 공유 목소리가 없다" 는
+            // **확정**이지만, 네트워크 오류는 "모른다" 다. 둘을 같이 `[]` 로 두면 아래
+            // `reconcileInaccessibleVoiceAlarms` 가 일시적 오류를 접근권 상실로 읽고
+            // **공유 목소리 알람을 되돌릴 수 없게 강등한다.**
+            var familyAuthoritative = true
             do {
                 familyResult = try await api.listFamilyVoiceProfiles(token: token)
+            } catch APIError.server(let status, _, _) where status == 403 {
+                familyResult = []
             } catch {
                 familyResult = []
+                familyAuthoritative = false
             }
             // 쿼터도 실패해도 무시한다 — 숫자를 못 보여줄 뿐 목소리 목록은 정상이어야 한다.
             let quotaResult = try? await api.voiceDraftQuota(token: token)
@@ -447,6 +455,8 @@ final class VoiceStudioViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             profiles = resolvedProfiles
             familyVoices = familyResult
+            // 프로필 조회는 여기까지 왔다는 것 자체가 성공이다(실패하면 throw).
+            accessibleVoicesAreAuthoritative = familyAuthoritative
             // ⚠ **조회 실패로 기존 한도를 지우지 말 것.** `try?` 라 실패하면 nil 이
             // 오는데, 그대로 대입하면 이미 이번 달을 다 쓴 사용자에게 '추가' 버튼이
             // 다시 켜진다(한도 표시도 사라진다). 실패는 "모른다" 이지 "0 이다" 가 아니다.
@@ -1079,6 +1089,41 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 자동 401 이 세션을 비웠을 수 있는데 그 경로는 로컬 알람 예약을 일부러 그대로
     /// 둔다(알람 전달이 인증 상태에 묶이면 안 되므로). 여기서 안 끊으면 서버에선 이미
     /// 지워진 목소리가 그 기기에서 계속 울린다.
+    /// 마지막 새로고침의 목소리 목록이 **믿을 수 있는가**(= 서버가 확정해 준 값인가).
+    /// 실패한 조회로 알람을 강등하지 않기 위한 게이트다.
+    private(set) var accessibleVoicesAreAuthoritative = false
+
+    /// **접근권을 잃은 목소리를 쓰는 내 알람을 기본 알람음으로 내린다.**
+    ///
+    /// 안드로이드 `MainViewModel.reconcileInaccessibleVoiceAlarms` 의 짝이다 — iOS 에는
+    /// 이 경로가 아예 없어서, `voice_access_revoked`·`voice_share_changed` 푸시를 받아도
+    /// **목록만 갱신하고 알람은 그대로 그 목소리로 울렸다**(2026-08-18 Codex #697 P1).
+    ///
+    /// ⚠ **`accessibleVoicesAreAuthoritative` 없이 부르지 말 것.** 조회가 실패한 회차의
+    /// 빈 목록으로 판단하면 멀쩡한 공유 목소리 알람을 **되돌릴 수 없게** 강등한다.
+    /// 안드로이드도 같은 이유로 `familyVoicesLoadedFresh`·`voiceProfilesLoadedFresh` 를 본다.
+    ///
+    /// - Returns: 강등한 알람 수.
+    @discardableResult
+    func reconcileInaccessibleVoiceAlarms(
+        alarmStore: LocalAlarmStore,
+        audioCache: AudioCacheStore?
+    ) -> Int {
+        guard accessibleVoicesAreAuthoritative else { return 0 }
+        let accessible = Set(profiles.map(\.id) + familyVoices.map(\.id))
+        let lost = Set(
+            alarmStore.alarms
+                // 받은 알람은 보낸 사람의 접근권으로 성립한다 — 내 목록으로 판단하지 않는다.
+                .filter { $0.originEnum == .localOwned }
+                .compactMap { $0.voiceProfileId?.nilIfBlank }
+                // 시스템(기본) 목소리는 목록에 없어도 언제나 쓸 수 있다.
+                .filter { !isSystemVoiceId($0) && !accessible.contains($0) }
+        )
+        guard !lost.isEmpty else { return 0 }
+        degradeAlarms(usingVoiceProfileIDs: Array(lost), alarmStore: alarmStore, audioCache: audioCache)
+        return lost.count
+    }
+
     func degradeAlarms(usingVoiceProfileIDs ids: [String], alarmStore: LocalAlarmStore, audioCache: AudioCacheStore?) {
         for id in ids where !id.isEmpty {
             cascadeAlarmsAfterVoiceDeletion(profileID: id, alarmStore: alarmStore, audioCache: audioCache)

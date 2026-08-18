@@ -24,6 +24,9 @@ final class BackgroundDependencies {
     /// 푸시 수신. **화면보다 먼저 살아 있어야 한다** — 백그라운드 푸시로 깨어난 콜드
     /// 실행에는 scene 이 없어, 화면에서 꽂으면 그 payload 를 그대로 버린다.
     let push: PushNotificationCoordinator
+    /// 목소리 목록. 접근권 상실 시 알람을 내리는 판단이 여기 있어(`reconcileInaccessible…`)
+    /// 백그라운드 푸시에서도 필요하다.
+    let voiceStudio: VoiceStudioViewModel
 
     private init() {
         // 화면 확인 모드에서는 표본이 진짜 저장소에 남지 않도록 임시 파일을 쓴다
@@ -36,5 +39,6 @@ final class BackgroundDependencies {
         auth = AuthViewModel()
         socialFeatures = SocialFeatureViewModel()
         push = PushNotificationCoordinator()
+        voiceStudio = VoiceStudioViewModel()
     }
 }

@@ -206,8 +206,32 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // 실패는 삼킨다 — 다음 주기 동기화가 그물이다(백그라운드에서 던지면 잃는 게 더 크다).
             _ = try? await launchPull.runOnce()
         }
+        // ⚠ **목소리 갈래도 여기서 꽂는다.** 안 꽂으면 `voice_share_changed`·
+        // `voice_access_revoked` 가 기본 빈 핸들러로 떨어져 `.newData` 만 돌려주고
+        // **아무것도 하지 않는다** — 접근권을 잃은 목소리가 계속 예약된 채 울린다.
+        deps.push.onVoiceChanged = {
+            await deps.voiceStudio.refresh(session: deps.auth.session)
+            if deps.voiceStudio.reconcileInaccessibleVoiceAlarms(
+                alarmStore: deps.alarmStore,
+                audioCache: .shared
+            ) > 0 {
+                _ = await AlarmScheduleReconciler.reconcile(
+                    store: deps.alarmStore,
+                    alarmKit: deps.alarmKit
+                )
+            }
+        }
         deps.push.onPlanChanged = {
             await deps.socialFeatures.refreshAll(session: deps.auth.session, force: true)
+            // ⚠ **스냅샷만 갱신하면 이미 걸린 예약은 그대로다.** 플랜 잠금을 적용하는
+            // `applyFreePlanVoiceLockIfNeeded` 는 화면의 `.task` 라 여기서는 돌지 않는다.
+            // 대신 리컨사일러를 돌린다 — 그 판정은 `effectiveRecordForScheduling`(유료
+            // 게이트)을 거친 지문이라, 방금 갱신된 스냅샷으로 강등이 곧바로 반영된다.
+            // 플랜 판정을 여기에 복제하지 않는 이유이기도 하다(복제하면 갈라진다).
+            _ = await AlarmScheduleReconciler.reconcile(
+                store: deps.alarmStore,
+                alarmKit: deps.alarmKit
+            )
         }
 
         BackgroundSyncTask.register(

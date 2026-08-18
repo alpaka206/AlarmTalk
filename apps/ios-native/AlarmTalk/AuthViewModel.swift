@@ -1102,22 +1102,32 @@ final class AuthViewModel: ObservableObject {
         DefaultVoicePreferenceStore().clear(userID: userID)
         DynamicPromptPreferenceStore().clear(userID: userID)
         DynamicPromptPreferences.clear(userID: userID)
-        // ⚠ **`signOut()` 보다 먼저** — 로그아웃이 `token_epoch` 를 올리면 이 토큰으로는
-        // 푸시 토큰을 지울 수 없다. 안 지우면 로그아웃한 기기가 그 계정의 알림을 계속
-        // 받는다(안드로이드 `MainViewModelAuthActions` 의 같은 순서).
-        // best-effort — 실패해도 로그아웃은 그대로 진행한다.
-        if let token = session?.token.nilIfBlank {
-            let unregister = onSignOutUnregisterPush
-            Task { await unregister(token) }
+        // ⚠ **순서가 중요하다 — 시작만 해 놓으면 소용없다**(2026-08-18 Codex #697 P2).
+        // 예전에는 `Task { }` 로 띄우기만 하고 곧바로 `signOut()` 을 불렀는데, 그 안의
+        // `/auth/logout` 이 먼저 `token_epoch` 를 올려 버리면 `/push/unregister` 가 401 로
+        // 죽고(그 실패는 삼켜진다) **기기가 그 계정에 묶인 채 남는다.**
+        // 그래서 해제 → 폐기를 **한 흐름에서 순서대로** 돌리고, 로컬 세션은 즉시 지운다
+        // (사용자를 네트워크 왕복만큼 기다리게 하지 않는다).
+        let revokeToken = session?.token.nilIfBlank
+        let unregister = onSignOutUnregisterPush
+        let api = self.api
+        signOut(revokeOnServer: false)
+        if let revokeToken {
+            Task {
+                await unregister(revokeToken)
+                try? await api.logout(token: revokeToken)
+            }
         }
-        signOut()
     }
 
-    func signOut(message: String? = nil) {
+    /// - Parameter revokeOnServer: 서버 토큰 폐기(`/auth/logout`)를 **여기서** 할지.
+    ///   명시적 로그아웃은 `false` 로 부른다 — 푸시 토큰 해제를 먼저 끝내야 하는데,
+    ///   여기서 폐기를 띄우면 그 둘이 경주해 해제가 401 로 죽는다(`signOutExplicitly` 주석).
+    func signOut(message: String? = nil, revokeOnServer: Bool = true) {
         // W2: 로컬 세션을 지우기 전에 서버 토큰을 폐기(token_epoch 상향)한다.
         // best-effort — 네트워크 실패/만료 토큰이어도 로그아웃은 그대로 진행한다.
         // 이미 폐기/만료된 토큰으로 호출되는 경로(401 핸들러 등)에서도 안전하다.
-        if let revokeToken = session?.token.nilIfBlank {
+        if revokeOnServer, let revokeToken = session?.token.nilIfBlank {
             let api = self.api
             Task.detached {
                 try? await api.logout(token: revokeToken)

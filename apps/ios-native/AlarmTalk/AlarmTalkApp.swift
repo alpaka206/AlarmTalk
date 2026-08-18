@@ -30,7 +30,7 @@ struct AlarmTalkApp: App {
     @StateObject private var holidayStore = HolidayStore()
     @StateObject private var auth = BackgroundDependencies.shared.auth
     @StateObject private var remoteSync = RemoteAlarmSyncViewModel()
-    @StateObject private var voiceStudio = VoiceStudioViewModel()
+    @StateObject private var voiceStudio = BackgroundDependencies.shared.voiceStudio
     @StateObject private var socialFeatures = BackgroundDependencies.shared.socialFeatures
     /// 백엔드 최소지원버전 게이팅. 로그인 여부와 무관하게 앱 진입을 막을 수 있어
     /// 앱 lifetime 동안 떠 있어야 한다. Android `MainViewModel.checkAppVersion()`.
@@ -214,7 +214,21 @@ struct AlarmTalkApp: App {
                         PushAppDelegate.coordinator = push
                         PushAppDelegate.currentSession = { auth.session }
                         push.onFamilyAlarm = { await remoteSync.runFullSync() }
-                        push.onVoiceChanged = { await voiceStudio.refresh(session: auth.session) }
+                        push.onVoiceChanged = {
+                            await voiceStudio.refresh(session: auth.session)
+                            // ⚠ **목록만 갱신하면 알람은 그대로 그 목소리로 울린다.**
+                            // 접근권을 잃은 목소리를 쓰는 내 알람을 알람음으로 내리고
+                            // 예약을 다시 맞춘다(조회가 실패한 회차에는 스스로 물러선다).
+                            if voiceStudio.reconcileInaccessibleVoiceAlarms(
+                                alarmStore: alarmStore,
+                                audioCache: .shared
+                            ) > 0 {
+                                _ = await AlarmScheduleReconciler.reconcile(
+                                    store: alarmStore,
+                                    alarmKit: alarmKit
+                                )
+                            }
+                        }
                         push.onPlanChanged = {
                             await socialFeatures.refreshAll(session: auth.session, force: true)
                             await auth.refreshUser()
