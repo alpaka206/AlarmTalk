@@ -614,7 +614,7 @@ struct TtsMessageAudioResponse: Decodable, Equatable {
 /// 음성 카탈로그. 서버는 모든 인증 사용자에게 동일한 전역 카탈로그를 준다
 /// (tts.ts:1287-1313). 쿼리 파라미터 없음 — 언어 필터는 클라이언트에서 처리한다.
 /// Android `TtsApi.kt:70` `StockClipListResponse` 미러.
-struct StockClipListResponse: Decodable {
+struct StockClipListResponse: Codable {
     var clips: [StockClip]
     /// 카테고리별 **완전한 세트의 클립 수**. 없으면(옛 서버) nil.
     var expectedVariants: ExpectedVariantCounts?
@@ -625,7 +625,7 @@ struct StockClipListResponse: Decodable {
 /// 오프라인 재생이 안 켜지거나, 클론이 부분 세트인데 완전하다고 읽혀 없는 자리를 튼다.
 ///
 /// 앱에 개수를 박지 않으려고 서버가 내려준다. 운영이 시드를 늘리면 앱 업데이트 없이 따라온다.
-struct ExpectedVariantCounts: Decodable, Equatable {
+struct ExpectedVariantCounts: Codable, Equatable {
     var system: [String: Int]
     var clone: [String: Int]
 
@@ -646,7 +646,7 @@ struct PrerenderVariantResponse: Decodable {
 /// 인라인 오디오는 없고, 미리듣기/선택 시 `GET /tts/messages/:id/audio` 로
 /// 음원을 받아 캐싱한다. Android `TtsApi.kt:74` `StockClip` 미러(`tags` 는 드롭).
 /// camelCase 필드는 convertFromSnakeCase 로 snake_case 에서 자동 디코드.
-struct StockClip: Decodable, Identifiable, Equatable {
+struct StockClip: Codable, Identifiable, Equatable {
     var messageId: String
     var voiceProfileId: String
     var voiceName: String?

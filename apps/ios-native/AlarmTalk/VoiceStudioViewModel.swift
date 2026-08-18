@@ -157,6 +157,11 @@ final class VoiceStudioViewModel: ObservableObject {
         profiles = []
         familyVoices = []
         stockClips = []
+        // 디스크 사본도 같이 지운다 — 매니페스트에는 **그 계정의 클론 클립**이 들어 있어
+        // 계정이 바뀌면 남의 목록을 시드하게 된다. 지워도 다음 조회가 다시 채우므로
+        // 오프라인 판정은 그때부터 정상으로 돌아온다.
+        StockClipManifestStore.clear()
+        manifestFetchedThisSession = false
         selectedProfileID = nil
         defaultVoiceId = nil
         defaultListenerTitle = nil
@@ -495,18 +500,34 @@ final class VoiceStudioViewModel: ObservableObject {
     /// "불러오는 중이에요" 에서 벗어나지 못한다.
     @discardableResult
     func loadStockClips(session: AuthSession?) async -> Bool {
-        guard let token = session?.token else { return false }
-        guard stockClips.isEmpty else { return true }
+        // ⚠ **디스크에서 먼저 채운다.** 매니페스트가 메모리에만 있으면 '모른다' 상태가
+        // 생기고, 관문(`needsPreparation`: nil → 막지 않음)과 저장(`hasCompleteBucket`:
+        // nil → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
+        // 비행기모드 콜드스타트에서는 클립을 전부 받아 둔 기기도 알람을 못 만든다.
+        // 자세한 것은 `StockClipManifestStore` 주석.
+        if stockClips.isEmpty, let cached = StockClipManifestStore.load() {
+            stockClips = cached.clips
+            expectedVariants = cached.expectedVariants
+        }
+        guard let token = session?.token else { return !stockClips.isEmpty }
+        // ⚠ 판정은 `stockClips.isEmpty` 가 아니라 **이번 세션에 받았는가**다. 디스크에서
+        // 채웠다는 이유로 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
+        guard !manifestFetchedThisSession else { return true }
         do {
             let manifest = try await api.getStockClipManifest(token: token)
             stockClips = manifest.clips
             expectedVariants = manifest.expectedVariants
+            manifestFetchedThisSession = true
+            StockClipManifestStore.save(manifest)
             return true
         } catch {
-            // 비차단 — 다음 호출이 다시 시도한다.
-            return false
+            // 비차단 — 다음 호출이 다시 시도한다. 디스크 값이 있으면 그걸로 계속 간다.
+            return !stockClips.isEmpty
         }
     }
+
+    /// 이번 실행에서 서버 매니페스트를 받았는가. 디스크 시드와 구분하기 위한 값이다.
+    private var manifestFetchedThisSession = false
 
     /// 선택한 스톡 클립의 음원을 받아 캐싱하고, 알람 저장 경로가 그대로 쓸 수 있는
     /// `PreparedAlarmTalk` 을 만든다. 생성 TTS 와 동일하게 `preparedAlarm` 에 실어

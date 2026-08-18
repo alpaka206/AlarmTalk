@@ -814,7 +814,19 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
     val session = authSession ?: return
     // stockClips 는 세션 전용 in-memory 캐시라 한번 채우면 재조회 안 함. 유료 클론 클립은 확정 후
     // cron 이 세션 중에 만들 수 있으므로, 클론 편집 진입 시 forceReload=true 로 매니페스트를 새로 받는다.
-    if (!forceReload && stockClips.isNotEmpty()) return
+    // ⚠ **디스크에서 먼저 채운다.** 매니페스트가 메모리에만 있으면 '모른다' 상태가 생기고,
+    // 관문(`onNeedsClipPreparation`: null → 막지 않음)과 저장(`hasCompleteCloneBucket`:
+    // null → 불완전)이 **정반대로 답한다** — 고를 수는 있는데 저장은 안 된다.
+    // 자세한 것은 `StockClipManifestStore` 주석.
+    if (stockClips.isEmpty()) {
+        com.alarmtalk.app.data.StockClipManifestStore.load(getApplication())?.let { cached ->
+            stockClips = cached.clips
+            cached.expectedVariants?.let { expectedVariants = it }
+        }
+    }
+    // ⚠ 판정은 비었는가가 아니라 **이번 세션에 받았는가**다. 디스크에서 채웠다는 이유로
+    // 건너뛰면 운영이 추가한 프리셋이 영영 안 들어온다.
+    if (!forceReload && stockClipManifestFetched) return
     viewModelScope.launch {
         runCatching {
             api.getStockClips(AlarmTalkApiClient.bearer(session.token))
@@ -822,6 +834,8 @@ internal fun MainViewModel.loadStockClips(forceReload: Boolean = false) {
             val clips = response.clips
             stockClips = clips
             response.expectedVariants?.let { expectedVariants = it }
+            stockClipManifestFetched = true
+            com.alarmtalk.app.data.StockClipManifestStore.save(getApplication(), response)
             // 매니페스트 도착 전 setDefaultVoice 로 프리페치가 빈손이었으면 여기서 1회 재시도한다.
             // 재시도 여부와 무관하게 pending 은 비워 무한 재시도를 막는다(비움 결과도 정상 종료).
             pendingPrefetchVoiceId?.let { voiceId ->

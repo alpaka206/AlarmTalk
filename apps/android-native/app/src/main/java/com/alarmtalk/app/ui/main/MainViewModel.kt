@@ -308,6 +308,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 편집기가 쓰던 목소리를 잊고 기본 목소리 다운로드 안내를 다시 밟게 한다.
         // (저장소가 계정별 키라 남겨 둬도 다음 계정에 새지 않는다.)
         clearCurrentDefaultVoicePreferences()
+        // 매니페스트 디스크 사본도 여기서만 지운다. 안에 **그 계정의 클론 클립**이 들어
+        // 있어 계정이 바뀌면 남의 목록을 시드하게 된다. 위와 같은 이유로 자동 401 에서는
+        // 지우지 않는다 — 같은 사람이 다시 로그인하는 경우가 대부분이고, 지우면 그 사람이
+        // 오프라인에서 알람을 못 만드는 상태로 되돌아간다.
+        com.alarmtalk.app.data.StockClipManifestStore.clear(getApplication())
+        stockClipManifestFetched = false
         // 저장소는 위 임계구역에서 이미 비웠다. 여기서 다시 불러도 무해하고(clear 는 멱등,
         // 임자 표시도 보존된다), 화면 상태(authSession·유저 스코프 캐시)를 마저 정리해야 한다.
         clearSessionKeepingAlarms()
@@ -465,6 +471,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     var clipReadinessAwaitingOwner by mutableStateOf<Set<String>>(emptySet())
         internal set
+
+    /**
+     * 이번 실행에서 서버 매니페스트를 받았는가. **디스크 시드와 구분하기 위한 값이다** —
+     * `stockClips.isEmpty()` 로 판정하면 디스크에서 채운 순간 재조회가 막혀, 운영이 추가한
+     * 프리셋이 영영 안 들어온다(`StockClipManifestStore` 주석).
+     */
+    internal var stockClipManifestFetched = false
 
     var socialBusy by mutableStateOf(false)
         internal set
