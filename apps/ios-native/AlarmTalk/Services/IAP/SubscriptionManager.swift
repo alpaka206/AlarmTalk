@@ -109,7 +109,16 @@ final class SubscriptionManager: ObservableObject {
         isPurchasing = true
         defer { isPurchasing = false }
         do {
-            let result = try await product.purchase()
+            // ⚠ **이 결제가 누구 것인지 스토어에 새긴다**(2026-08-18 Codex #697 P1).
+            // 애플은 끝내지 않은 트랜잭션을 재전달하므로, 서버 확정에 실패한 채 같은
+            // 기기에서 다른 계정으로 로그인하면 그 트랜잭션이 **새 세션의 토큰으로** 다시
+            // 올라간다 — 서버가 대조할 값이 없으면 나중 계정이 구독·선물을 가져간다.
+            // 안드로이드는 `setObfuscatedAccountId(sha256(userId))` 로 처음부터 했다.
+            // 애플은 해시가 아니라 **UUID 만** 받으므로 사용자 id 를 그대로 싣는다.
+            let accountToken = authProvider()?.user.id.nilIfBlank.flatMap(UUID.init(uuidString:))
+            let options: Set<Product.PurchaseOption> =
+                accountToken.map { [.appAccountToken($0)] } ?? []
+            let result = try await product.purchase(options: options)
             switch result {
             case .success(let verificationResult):
                 let transaction = try checkVerified(verificationResult)

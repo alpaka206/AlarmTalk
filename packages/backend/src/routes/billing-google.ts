@@ -210,6 +210,7 @@ billingGoogle.post('/google/confirm', async (c) => {
       purchaseState?: number;
       orderId?: string;
       purchaseTimeMillis?: string;
+      obfuscatedExternalAccountId?: string;
     };
     // purchaseState: 0=구매완료, 1=취소, 2=보류. 완료가 아니면 권한을 주지 않는다.
     if (product.purchaseState !== 0) {
@@ -219,6 +220,51 @@ billingGoogle.post('/google/confirm', async (c) => {
       );
     }
     const db = getDB(c.env);
+
+    // ⚠ **선물도 계정 바인딩을 검사한다**(2026-08-18 Codex #697 P1).
+    // 예전에는 이 갈래가 아래 구독 경로의 검사에 **닿기 전에** 바우처를 발급하고 끝냈다 —
+    // 남의 미소비 purchaseToken 을 손에 넣은 사람이 먼저 제출하면 **그 사람이 바우처를
+    // 가져갔다.** 안드로이드는 1회성 구매에도 `setObfuscatedAccountId` 를 실어 보내므로
+    // (`PlayBillingManager.launchOneTimePurchase`) 대조할 값은 이미 있었고, 서버가 안 볼
+    // 뿐이었다. 판정 규칙은 구독 갈래와 **같다** — 한쪽만 고치지 말 것.
+    const giftObfuscatedId = product.obfuscatedExternalAccountId?.trim();
+    if (giftObfuscatedId) {
+      const matches = await purchaseAccountMatches(giftObfuscatedId, [
+        c.get('userLoginId'),
+        c.get('userId'),
+        userPk,
+      ]);
+      if (!matches) {
+        logStructured('warn', {
+          at: 'billing.google.gift',
+          step: 'account_binding',
+          error: 'obfuscatedExternalAccountId mismatch',
+        });
+        return c.json(
+          { error: 'Purchase is bound to another account', error_code: 'TRANSACTION_ACCOUNT_MISMATCH' },
+          403,
+        );
+      }
+    } else {
+      // 식별자가 없는 최초 청구는 거절한다(구독 갈래와 같은 이유 — 유출 토큰
+      // first-claim 구멍). 이미 바인딩된 토큰의 재전송은 아래 멱등 검사가 받아 준다.
+      const boundRes = await db.execute({
+        sql: `SELECT user_id FROM store_transactions
+              WHERE provider = 'google' AND provider_transaction_id = ?`,
+        args: [parsed.purchase_token],
+      });
+      if (boundRes.rows.length === 0) {
+        logStructured('warn', {
+          at: 'billing.google.gift',
+          step: 'account_binding',
+          error: 'obfuscatedExternalAccountId missing on first claim',
+        });
+        return c.json(
+          { error: 'Purchase is missing the account identifier', error_code: 'TRANSACTION_ACCOUNT_UNVERIFIED' },
+          403,
+        );
+      }
+    }
     const giftPlan = await loadPlanByKey(db, planKey);
     if (!giftPlan) {
       return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);

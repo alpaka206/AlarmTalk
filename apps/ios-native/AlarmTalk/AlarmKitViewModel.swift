@@ -410,8 +410,41 @@ final class AlarmKitViewModel: ObservableObject {
         #endif
     }
 
+    /// 예약에 **실제로 실리는** 값들. `await` 앞뒤로 비교해 그사이 바뀐 것을 잡는다.
+    ///
+    /// ⚠ `updatedAtMillis` 를 쓰지 않는다 — 예약과 무관한 쓰기(동기화 시각 등)에도 올라가
+    /// 멀쩡한 예약을 헛되이 취소하게 된다. 실패로 처리되면 켜기 흐름이 알람을 도로 꺼
+    /// 버리므로(`AlarmsListView`), 과잉 판정이 곧 피해다.
+    struct SchedulingSnapshot: Equatable {
+        let enabled: Bool
+        let hour: Int
+        let minute: Int
+        let fireAtMillis: Int64
+        let repeatDaysMask: Int
+        let holidayOff: Bool
+        let playMode: String
+
+        init(_ r: LocalAlarmRecord) {
+            enabled = r.enabled
+            hour = r.hour
+            minute = r.minute
+            fireAtMillis = r.fireAtMillis
+            repeatDaysMask = r.repeatDaysMask
+            holidayOff = r.holidayOff
+            playMode = r.playMode
+        }
+    }
+
     @discardableResult
     func schedule(record: LocalAlarmRecord, store: LocalAlarmStore) async -> Bool {
+        await self.schedule(record: record, store: store, retriesLeft: 1)
+    }
+
+    private func schedule(
+        record: LocalAlarmRecord,
+        store: LocalAlarmStore,
+        retriesLeft: Int
+    ) async -> Bool {
         // UI 미리보기 모드에서는 실제 예약을 하지 않는다 — 화면을 보려는 것이지 알람을
         // 걸려는 게 아니다. 권한 프롬프트가 떠서 화면을 가리는 것도 막는다.
         //
@@ -471,15 +504,29 @@ final class AlarmKitViewModel: ObservableObject {
             //
             // 판정은 **await 동안 바뀐 경우만** 본다 — 처음부터 꺼진 행을 예약하는 경로가
             // 따로 있어(잠금 복원 등) `enabled` 를 무조건 요구하면 그쪽이 깨진다.
-            let afterAwait = store.record(id: record.id)
-            let vanished = afterAwait == nil
-            let disabledDuringAwait = record.enabled && afterAwait?.enabled == false
-            if vanished || disabledDuringAwait {
+            guard let afterAwait = store.record(id: record.id) else {
+                // **지워졌다.** `markScheduled` 는 행이 없으면 조용히 no-op 이라, 그냥 두면
+                // OS 에만 남아 **취소할 핸들이 없는 고아**가 된다 — 지운 알람이 운다.
                 try? await AlarmManager.shared.cancel(id: id)
                 Self.paidGateLogger.info(
-                    "Alarm changed while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
+                    "Alarm deleted while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
                 )
                 return false
+            }
+            if SchedulingSnapshot(afterAwait) != SchedulingSnapshot(record) {
+                // **예약에 실리는 값이 바뀌었다**(끄기·시각 변경·원격 pull 등).
+                // 방금 건 예약은 낡았으므로 되돌린다. `AlarmScheduleReconciler` 는
+                // **소리 지문만** 비교하므로 시각만 바뀐 경우는 아무도 고쳐 주지 않는다 —
+                // 여기서 처리하지 않으면 알람이 옛 시각에 운다.
+                try? await AlarmManager.shared.cancel(id: id)
+                Self.paidGateLogger.info(
+                    "Alarm changed while scheduling — rescheduling with the fresh row (id: \(record.id, privacy: .public))"
+                )
+                // 새 행으로 한 번 다시 건다. 껐으면 그 자체가 '예약하지 않는다' 이므로
+                // 재시도하지 않는다 — 켜기 흐름의 실패 처리(끄기)와 부딪히지 않게 false.
+                guard afterAwait.enabled, retriesLeft > 0 else { return false }
+                // `self.` 를 붙인다 — 이 함수 안의 지역변수 `schedule`(Alarm.Schedule)이 이름을 가린다.
+                return await self.schedule(record: afterAwait, store: store, retriesLeft: retriesLeft - 1)
             }
 
             // **예약과 그 소리의 지문을 함께 적는다.** 나중에 행이 바뀌면

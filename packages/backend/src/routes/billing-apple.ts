@@ -103,6 +103,52 @@ billingApple.post('/apple/confirm', async (c) => {
 
   const db0 = getDB(c.env);
 
+  // ⚠ **이 결제가 이 계정 것인지 확인한다**(2026-08-18 Codex #697 P1).
+  // 구글 갈래는 `obfuscatedExternalAccountId` 로 처음부터 이 검사를 했는데 애플에는
+  // 없었다. 애플은 소모성·구독 모두 **끝내지 않은 트랜잭션을 재전달**하므로, 서버 확정에
+  // 실패한 채 같은 기기에서 다른 AlarmTalk 계정으로 로그인하면 그 트랜잭션이 **새 세션의
+  // 토큰으로** 다시 올라온다 — 검사가 없으면 나중 계정이 구독·선물 바우처를 가져간다.
+  //
+  // 대조 값은 클라가 구매 시 `appAccountToken` 에 실은 우리 쪽 사용자 id(UUID)다.
+  // 구글이 해시를 쓰는 것과 달리 애플은 **UUID 만** 허용해 그대로 싣는다.
+  const appleAccountToken = info.appAccountToken?.trim().toLowerCase();
+  if (appleAccountToken) {
+    const candidates = [c.get('userLoginId'), c.get('userId'), userPk]
+      .map((v) => (typeof v === 'string' ? v.trim().toLowerCase() : ''))
+      .filter((v) => v.length > 0);
+    if (!candidates.includes(appleAccountToken)) {
+      logStructured('warn', {
+        at: 'billing.apple.confirm',
+        step: 'account_binding',
+        error: 'appAccountToken mismatch',
+      });
+      return c.json(
+        { error: 'Purchase is bound to another account', error_code: 'TRANSACTION_ACCOUNT_MISMATCH' },
+        403,
+      );
+    }
+  } else {
+    // 식별자가 없는 **최초 청구**는 거절한다(구글 갈래와 같은 규칙 — 유출 토큰
+    // first-claim 구멍을 막는다). 이미 바인딩된 트랜잭션의 재전송은 통과시킨다.
+    // iOS 는 아직 App Store 에 없어 옛 클라 구매가 존재하지 않으므로 엄격해도 안전하다.
+    const boundRes = await db0.execute({
+      sql: `SELECT user_id FROM store_transactions
+            WHERE provider = 'apple' AND provider_transaction_id = ?`,
+      args: [info.transactionId],
+    });
+    if (boundRes.rows.length === 0) {
+      logStructured('warn', {
+        at: 'billing.apple.confirm',
+        step: 'account_binding',
+        error: 'appAccountToken missing on first claim',
+      });
+      return c.json(
+        { error: 'Purchase is missing the account identifier', error_code: 'TRANSACTION_ACCOUNT_UNVERIFIED' },
+        403,
+      );
+    }
+  }
+
   // ⚠ **선물 상품은 여기서 갈라진다.** 자동 갱신 구독은 남에게 줄 수 없어(스토어가
   // 구매자 계정에 묶는다) 선물은 1회성 상품을 팔고 그 대금으로 **바우처 코드**를 만든다.
   // 이 갈래를 안 만들면 구매자 본인이 이용권을 받게 되고, 아래 `expiresDate` 검사에

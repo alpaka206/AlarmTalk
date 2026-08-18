@@ -39,6 +39,10 @@ export interface AppleTransactionInfo {
   type: string;
   revocationDate?: number;
   environment?: string;
+  /// 구매 시 클라가 실은 앱 계정 식별자(UUID). 구글의 `obfuscatedExternalAccountId` 짝이다.
+  /// ⚠ **이 필드를 읽지 않으면 결제를 계정에 묶을 수 없다** — 끝내지 않은 트랜잭션이
+  /// 다른 계정 세션에서 재전달되면 그 계정이 선점한다(2026-08-18 Codex #697 P1).
+  appAccountToken?: string;
 }
 
 function b64url(bytes: Uint8Array | ArrayBuffer): string {

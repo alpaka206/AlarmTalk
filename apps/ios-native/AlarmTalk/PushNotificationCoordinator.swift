@@ -40,8 +40,36 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     var onVoiceChanged: () async -> Void = {}
     var onPlanChanged: () async -> Void = {}
 
-    private var lastRegisteredToken: String?
-    private var lastRegisteredUserID: String?
+    /// 마지막으로 **서버에 올린** 기기 토큰.
+    ///
+    /// ⚠ **메모리에만 두지 말 것**(2026-08-18 Codex #697 P2). 서버의 `push_tokens` 행은
+    /// 앱을 껐다 켜도 남는데 이 값은 매 실행 nil 로 시작한다 — APNs 콜백이 오기 전에
+    /// (또는 등록이 실패한 기기에서) 로그아웃하면 지울 토큰을 몰라 **옛 계정에 묶인 채**
+    /// 남는다. 그러면 로그아웃한 기기가 그 계정의 알림을 계속 받는다.
+    private var lastRegisteredToken: String? {
+        get { UserDefaults.standard.string(forKey: Self.lastTokenKey) }
+        set {
+            if let newValue, !newValue.isEmpty {
+                UserDefaults.standard.set(newValue, forKey: Self.lastTokenKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.lastTokenKey)
+            }
+        }
+    }
+
+    private var lastRegisteredUserID: String? {
+        get { UserDefaults.standard.string(forKey: Self.lastUserKey) }
+        set {
+            if let newValue, !newValue.isEmpty {
+                UserDefaults.standard.set(newValue, forKey: Self.lastUserKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.lastUserKey)
+            }
+        }
+    }
+
+    private static let lastTokenKey = "push_last_registered_token"
+    private static let lastUserKey = "push_last_registered_user"
 
     /// 원격 알림 등록을 시작한다. **권한 팝업을 띄우지 않는다** — 토큰만 받는다.
     func start() {
