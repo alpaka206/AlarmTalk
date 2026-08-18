@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -44,6 +45,16 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AlarmTalk"
         android:usesCleartextTraffic="false">
+        <!-- ⚠ **이 선언이 없으면 앱이 죽는다.** WorkManager 의 SystemForegroundService 는
+             라이브러리 매니페스트에 `foregroundServiceType` 없이(0x0) 선언돼 있는데,
+             워커가 `dataSync` 타입으로 `setForeground` 를 부르면 프레임워크가
+             "not a subset of foregroundServiceType attribute" 로 **프로세스를 죽인다**
+             (2026-08-18 실기기: 앱이 아예 안 켜졌다). 타입을 여기서 합쳐 준다. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
 
         <meta-data
             android:name="io.sentry.auto-init"
