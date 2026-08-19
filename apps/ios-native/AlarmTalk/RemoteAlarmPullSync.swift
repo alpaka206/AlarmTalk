@@ -495,6 +495,10 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         // 서버는 철회 기록을 영구히 들고 있어서, 넓게 잡으면 수신자가 나중에 넣은 자기
         // 목소리까지 매번 걷어낸다.
         for staleRecord in received {
+            // ⚠ **회차마다 다시 본다.** 이 루프 안에는 서스펜션(재예약)이 있고,
+            // `alarmKit.schedule` 은 취소를 삼켜 `false` 만 돌려준다 — 그래서 루프 앞
+            // 확인 하나로는 뒤쪽 알람들이 계속 고쳐진다(2026-08-18 Codex #697 P2).
+            try Task.checkCancellation()
             guard let remoteID = staleRecord.remoteAlarmId,
                   state.revoked.contains(remoteID) else { continue }
             // ⚠ `received` 는 루프 **시작 전** 스냅샷이다. 아래에 await 가 있어 앞 회차가
@@ -548,6 +552,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         //  (c) 발신자가 삭제          → **남긴다.** 받은 뒤부터는 받는 사람 것이라,
         //      내가 기대고 자는 알람이 남의 조작으로 사라지면 안 된다.
         for staleRecord in store.recordsBy(origin: .receivedRemote) {
+            // ⚠ 위 루프와 같은 이유 — 이 루프의 `alarmKit.cancel` 도 서스펜션이다.
+            // 여기서 멈추지 않으면 **취소 뒤에도 받은 알람이 계속 지워진다.**
+            try Task.checkCancellation()
             guard let remoteID = staleRecord.remoteAlarmId,
                   !servedReceivedIDs.contains(remoteID),
                   state.declined.contains(remoteID) || allRemoteIDs.contains(remoteID)

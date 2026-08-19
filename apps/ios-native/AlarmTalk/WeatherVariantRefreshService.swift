@@ -85,6 +85,10 @@ final class WeatherVariantRefreshService {
             // 협력적이라 조회가 **성공한 직후**에 올 수 있고, 그러면 그대로 알람을 고친다.
             if Task.isCancelled { break }
             for alarm in alarms {
+                // ⚠ **알람마다 다시 본다.** 이 루프 안에는 재예약(서스펜션)이 있고
+                // `alarmKit.schedule` 은 취소를 삼켜 `false` 만 돌려준다 — 그룹 앞
+                // 확인 하나로는 뒤쪽 알람이 계속 고쳐진다(2026-08-18 Codex #697 P2).
+                if Task.isCancelled { return changed }
                 // 네트워크를 기다리는 사이 사용자가 시각·지역을 고쳤을 수 있다. 그러면 이 답은
                 // 다른 조건의 것이므로 버린다(안드로이드의 DAO 조건부 UPDATE 와 같은 가드).
                 guard let current = store.record(id: alarm.id),

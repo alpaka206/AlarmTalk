@@ -528,6 +528,15 @@ final class AlarmKitViewModel: ObservableObject {
             )
             _ = try await AlarmManager.shared.schedule(id: id, configuration: configuration)
 
+            // ⚠ **취소됐으면 방금 건 예약을 되돌린다.** 백그라운드 사이클이 접히는 중인데
+            // 여기서 그냥 돌아가면 OS 에는 알람이 남고 로컬에는 핸들이 없다 — 취소할 방법이
+            // 없는 고아다(아래 '지워졌다' 갈래와 같은 사고). `markScheduled` 로 나아가는
+            // 것도 안 된다: 그건 "끝났다" 고 통보한 사이클이 로컬을 더 만지는 것이다.
+            if Task.isCancelled {
+                try? await AlarmManager.shared.cancel(id: id)
+                return false
+            }
+
             // ⚠ **await 사이에 행이 바뀌었을 수 있다**(2026-08-18 Codex #697 P1).
             // 예약은 비동기라 그동안 사용자가 알람을 끄거나 지울 수 있고, 그대로
             // `markScheduled` 하면 두 가지가 난다:
