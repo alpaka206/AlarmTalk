@@ -277,6 +277,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 세션이 끝나기 직전에 소유자 미기록 알람에 그 계정을 새긴다 — 그 뒤로는
         // 누구 것이었는지 알 길이 없다(안드로이드 `claimUnownedAlarmsFor` 의 짝).
         deps.auth.onSessionEndClaimAlarms = { departingUserID in
+            // ⚠ **로드를 기다린다.** 콜드 스타트 중이면 `alarms` 가 아직 비어 있어
+            // 빈 배열을 새기고 끝난다(Codex #699 P1).
+            await deps.alarmStore.waitUntilLoadedFromDisk()
             deps.alarmStore.claimUnownedAlarms(for: departingUserID)
         }
         deps.auth.onLeaveAccountStopAlarms = { departingUserID in

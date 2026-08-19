@@ -313,6 +313,14 @@ struct AlarmTalkApp: App {
                         // 있어 아래 복구가 건너뛰고, 같은 계정으로 다시 로그인해도
                         // `cancelScheduledAlarmsNotOwnedBy` 가 건너뛴다.
                         await alarmKit.retryPendingCancellations(store: alarmStore)
+                        // ⚠ **로드가 끝난 뒤 소유자 새기기를 다시 시도한다**(Codex #699 P1).
+                        // 자동 401 이 콜드 스타트 중에 오면 그 시도가 **빈 배열**을 새기고
+                        // 끝난다 — 로드가 그 뒤에 옛 행들을 채우기 때문이다. 그러면 그
+                        // 행들은 `nil` 로 남아, 다음 계정이 로그아웃할 때 자기 것으로
+                        // 오인해 영구히 꺼 버린다. 근거는 `SessionExpiryStore` 뿐이다.
+                        if auth.session == nil, let expired = SessionExpiryStore.expiredOwnerUserId {
+                            alarmStore.claimUnownedAlarms(for: expired)
+                        }
                         await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                         // 앱 시작 후 1회: 30일 넘게 미참조 상태로 남은 캐시 음원과
                         // 고아 .meta.json 사이드카를 백그라운드에서 정리한다.

@@ -76,6 +76,15 @@ final class AlarmKitViewModel: ObservableObject {
     /// (앱을 켤 때마다 진행 중인 예약을 무의미하게 취소하지 않기 위해).
     private var lastObservedAccountID: String??
 
+    /// **진행 중인 예약을 그 자리에서 무효화한다.**
+    ///
+    /// ⚠ 계정이 실제로 바뀌기 **전에** 불러야 하는 경우가 있다(Codex #699 P1). 로그아웃은
+    /// 예약을 다 끊은 **뒤에야** 세션을 비우므로, 그 사이에 끝난 예약은 `noteActiveAccount`
+    /// 만으로는 못 막는다 — 그때는 아직 계정이 그대로다.
+    func invalidateInFlightSchedules() {
+        accountEpoch &+= 1
+    }
+
     /// 활성 계정을 알린다. 바뀌었으면 세대를 올린다.
     func noteActiveAccount(_ userID: String?) {
         let normalized = userID?.nilIfBlank
@@ -501,8 +510,17 @@ final class AlarmKitViewModel: ObservableObject {
     func stopAllScheduledAlarms(store: LocalAlarmStore, ownerUserId: String?) async -> Int {
         #if canImport(AlarmKit)
         let owner = ownerUserId?.nilIfBlank
+        // ⚠ **먼저 진행 중인 예약을 무효화한다**(Codex #699 P1). 세션은 이 함수가 끝난
+        // 뒤에야 비므로, 그 전에 끝나는 예약은 계정이 그대로라 스스로 물러서지 않는다.
+        // 아래 루프의 스냅샷은 그 새 UUID 를 못 보고 지나가는데, 이어지는 `setEnabled` 가
+        // **방금 저장된 손잡이를 지워** 아무도 모르는 예약이 남는다.
+        invalidateInFlightSchedules()
         var stopped = 0
-        for record in store.alarms {
+        for snapshot in store.alarms {
+            // ⚠ **행을 다시 읽는다.** 위 배열은 루프 시작 시점의 **복사본**이고, 아래
+            // `await` 사이에 다른 경로가 새 UUID 를 적을 수 있다. 낡은 값으로 판단하면
+            // 그 예약을 건너뛰고, 그러고도 손잡이를 지워 흔적을 없앤다.
+            guard let record = store.record(id: snapshot.id) else { continue }
             // ⚠ **취소가 실패했으면 핸들을 지우지 말 것**(Codex #699 P1).
             // `alarmKitID` 는 그 예약을 취소할 **유일한 손잡이**다. 실패했는데 지우면
             // OS 에는 예약이 남고 우리에겐 취소할 방법이 없는 **고아 예약**이 된다 —

@@ -1161,7 +1161,7 @@ final class AuthViewModel: ObservableObject {
     /// 누구 것이었는지 알 길이 없고, 그러면 다음 계정이 그것들을 자기 것으로 오인한다
     /// (`LocalAlarmStore.claimUnownedAlarms` 주석). 안드로이드도 로그아웃 경로에서
     /// `claimUnownedAlarmsFor` 로 같은 일을 한다.
-    var onSessionEndClaimAlarms: (String?) -> Void = { _ in }
+    var onSessionEndClaimAlarms: (String?) async -> Void = { _ in }
 
     func signOutExplicitly() {
         let userID = session?.user.id
@@ -1193,11 +1193,14 @@ final class AuthViewModel: ObservableObject {
         let departingUserID = userID
         // ⚠ **끄기 전에 소유자를 새긴다.** 아래 `stopAlarms` 가 소유자 미기록 행을
         // '떠나는 계정 것' 으로 보고 끄는데, 그 판단이 맞으려면 지금 확정해 둬야 한다.
-        onSessionEndClaimAlarms(departingUserID)
         // 사용자가 끝낸 것이다 — 다시 로그인하기 전까지 아무것도 되살리지 않는다.
         SessionExpiryStore.clear()
         isBusy = true
+        let claimAlarms = onSessionEndClaimAlarms
         Task {
+            // ⚠ **끄기 전에 소유자를 새긴다.** 아래 `stopAlarms` 가 소유자 미기록 행을
+            // '떠나는 계정 것' 으로 보고 끄는데, 그 판단이 맞으려면 지금 확정해 둬야 한다.
+            await claimAlarms(departingUserID)
             await stopAlarms(departingUserID)
             isBusy = false
             signOut(revokeOnServer: false)
@@ -1222,7 +1225,12 @@ final class AuthViewModel: ObservableObject {
             SessionExpiryStore.markSessionExpired(userId: session?.user.id)
         }
         // ⚠ **세션을 비우기 전에** 소유자를 새긴다 — 뒤에 하면 누구 것인지 알 수 없다.
-        onSessionEndClaimAlarms(session?.user.id)
+        //
+        // 여기(자동 401)는 동기 경로라 기다릴 수 없다. 콜드 스타트 중이면 저장소가 아직
+        // 로드 전이라 이 시도가 **빈 배열을 새기고 끝난다** — 그래서 위에서 남긴
+        // `SessionExpiryStore` 를 근거로 **로드가 끝난 뒤 다시 시도**한다(`AlarmTalkApp`).
+        let claimingUserID = session?.user.id
+        Task { await onSessionEndClaimAlarms(claimingUserID) }
         // W2: 로컬 세션을 지우기 전에 서버 토큰을 폐기(token_epoch 상향)한다.
         // best-effort — 네트워크 실패/만료 토큰이어도 로그아웃은 그대로 진행한다.
         // 이미 폐기/만료된 토큰으로 호출되는 경로(401 핸들러 등)에서도 안전하다.
