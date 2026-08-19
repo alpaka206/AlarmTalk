@@ -515,9 +515,25 @@ class AlarmOwnershipOnSessionExpiryTest {
             shadowAlarmManager.peekNextScheduledAlarm(),
         )
 
-        // 같은 계정이 다시 로그인하면 게이트를 내려 정상 복원된다 — 굳으면 영영 안 울린다.
+        // ⚠ **로그아웃은 행도 끈다**(2026-08-19 정책). 그래서 재로그인만으로는 되살아나지
+        // 않는다 — 예전 이 테스트는 "재로그인하면 되살아나야 한다" 를 고정하고 있었고,
+        // 그건 정책이 바뀌기 전의 기대다.
+        assertEquals("로그아웃했으면 행도 꺼져 있어야 한다", false, dao.getById("legacy-1")?.enabled)
+
+        // 게이트가 **굳지 않았는지**는 사용자가 다시 켰을 때로 확인한다. 이 테스트의 원래
+        // 목적이 그것이다 — 게이트가 영구히 남으면 그 계정은 무슨 짓을 해도 못 울린다.
         repository.clearSignOutWithoutSessionClearGate("account-A")
-        assertEquals("재로그인하면 되살아나야 한다", 1, repository.reschedulePendingAlarms())
+        dao.setState(
+            id = "legacy-1",
+            state = AlarmStates.SCHEDULED,
+            enabled = true,
+            updatedAtMillis = 2_000L,
+        )
+        assertEquals(
+            "재로그인 뒤 사용자가 켠 알람은 예약돼야 한다 — 게이트가 굳으면 영영 안 울린다",
+            1,
+            repository.reschedulePendingAlarms(),
+        )
     }
 
     /**
