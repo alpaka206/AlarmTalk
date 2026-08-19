@@ -55,7 +55,7 @@ final class AlarmKitViewModel: ObservableObject {
         do {
             try AlarmManager.shared.cancel(id: id)
         } catch {
-            PendingAlarmCancellationStore.add(id.uuidString, origin: pendingCancellationOrigin)
+            PendingAlarmCancellationStore.add(id.uuidString, origin: .foreignCleanup)
         }
         #endif
     }
@@ -92,11 +92,6 @@ final class AlarmKitViewModel: ObservableObject {
     var isLeavingAccount: Bool { leavingAccountDepth > 0 }
 
     private var leavingAccountDepth = 0
-
-    /// 지금 실패하는 취소가 **어느 맥락**인가. 회수가 행까지 끌지를 이 값이 가른다
-    /// (`PendingAlarmCancellationStore.Origin`). 기본은 남의 계정 정리 쪽 —
-    /// 못 가릴 때는 남의 알람을 끄는 것보다 켜 둔 채 두는 편이 되돌릴 수 있다.
-    private var pendingCancellationOrigin: PendingAlarmCancellationStore.Origin = .foreignCleanup
 
     #if DEBUG
     /// 테스트 전용 — 게이트의 **겹침 의미**를 직접 확인하기 위한 진입점.
@@ -618,10 +613,12 @@ final class AlarmKitViewModel: ObservableObject {
             // 로 두면, 자동 401 로 세션만 잃고 기다리던 **남의 행**의 취소 실패까지 그렇게
             // 기록돼 나중 회수가 그 행을 영구히 끈다.
             let departing = owner == nil || record.ownerUserId == nil || record.ownerUserId == owner
-            pendingCancellationOrigin = departing ? .accountLeave : .foreignCleanup
             var keepHandle = false
             if record.alarmKitID != nil {
-                if await cancelScheduledAlarm(record: record) {
+                if await cancelScheduledAlarm(
+                    record: record,
+                    cancellationOrigin: departing ? .accountLeave : .foreignCleanup
+                ) {
                     // 예약이 사라졌으니 핸들도 지운다 — 남겨 두면 다음에 켤 때 어긋난다.
                     store.clearScheduleHandle(id: record.id)
                 } else {
@@ -997,7 +994,15 @@ final class AlarmKitViewModel: ObservableObject {
     }
 
     @discardableResult
-    func cancelScheduledAlarm(record: LocalAlarmRecord) async -> Bool {
+    /// - Parameter cancellationOrigin: 실패했을 때 회수 목록에 **어떤 맥락**으로 적을지.
+    ///   ⚠ **앰비언트 상태로 두지 말 것**(Codex #699 P1). 예전에는 sweep 가 프로퍼티에
+    ///   세팅해 뒀는데, 그 값이 **sweep 이 끝난 뒤에도 남아** 뒤이은 남의 계정 정리의 실패가
+    ///   `.accountLeave` 를 물려받았다 — 그러면 회수가 그 사람의 알람을 영구히 끈다.
+    ///   기본값은 **행을 건드리지 않는 쪽**이다.
+    func cancelScheduledAlarm(
+        record: LocalAlarmRecord,
+        cancellationOrigin: PendingAlarmCancellationStore.Origin = .foreignCleanup
+    ) async -> Bool {
         #if canImport(AlarmKit)
         guard let alarmKitUUID = record.alarmKitUUID else { return true }
         do {
@@ -1011,7 +1016,7 @@ final class AlarmKitViewModel: ObservableObject {
             // 호출부마다 기억하게 하면 언젠가 빠뜨리고, 빠뜨린 그 예약은 **아무도 모르는
             // 고아**가 된다 — 행에도 없고 목록에도 없으니 다음 로그인도 회수 sweep 도
             // 찾지 못한다. 판정을 취소 지점 **한 곳**에 둔다.
-            PendingAlarmCancellationStore.add(alarmKitUUID.uuidString, origin: pendingCancellationOrigin)
+            PendingAlarmCancellationStore.add(alarmKitUUID.uuidString, origin: cancellationOrigin)
             statusMessage = "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요."
             return false
         }
