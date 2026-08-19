@@ -65,7 +65,18 @@ for (const row of rows.rows) {
     .replace(/^CREATE TABLE (?!IF NOT EXISTS)/i, 'CREATE TABLE IF NOT EXISTS ')
     .replace(/^CREATE (UNIQUE )?INDEX (?!IF NOT EXISTS)/i, 'CREATE $1INDEX IF NOT EXISTS ')
     .replace(/^CREATE VIEW (?!IF NOT EXISTS)/i, 'CREATE VIEW IF NOT EXISTS ');
-  statements.push(`      \`${sql.replace(/`/g, '\\`')}\`,  // ${type}`);
+  // ⚠ **템플릿 리터럴에 넣을 것은 세 가지를 순서대로 이스케이프한다**(CodeQL
+  // `js/incomplete-sanitization`, 2026-08-19). 예전에는 백틱만 처리했다:
+  //   · 역슬래시를 **먼저** — 나중에 하면 우리가 넣은 이스케이프까지 다시 건드린다.
+  //   · 백틱 — 리터럴이 여기서 끊긴다.
+  //   · `${` — 안 막으면 스키마 문자열이 **생성된 코드의 보간식**이 된다.
+  // 입력이 우리 DB 의 `sqlite_master` 라 공격자가 넣는 값은 아니지만, 결과물은
+  // `migrations.ts` 에 그대로 붙는 소스다 — 깨진 코드가 곧 깨진 마이그레이션이다.
+  const escaped = sql
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${');
+  statements.push(`      \`${escaped}\`,  // ${type}`);
 }
 
 const applied = await db.execute('SELECT MAX(id) AS max FROM _migrations');
