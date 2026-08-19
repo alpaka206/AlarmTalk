@@ -214,26 +214,13 @@ struct AlarmTalkApp: App {
                         PushAppDelegate.coordinator = push
                         PushAppDelegate.currentSession = { auth.session }
                         push.onFamilyAlarm = { await remoteSync.runFullSync() }
+                        // ⚠ 강등은 새로고침 자체(`onAuthoritativeRefresh`, launch 에서 꽂는다)가
+                        // 맡는다 — 여기서 또 부르지 말 것. 푸시를 놓쳐도(오프라인·스로틀링)
+                        // 다음 시작·탭 진입의 새로고침이 같은 일을 한다.
                         push.onVoiceChanged = {
-                            await voiceStudio.refresh(session: auth.session,
-                                // ⚠ **`force` 없이 부르면 진행 중인 새로고침에 막혀 곧바로
-                                // 돌아온다** — 그러면 아래 강등 판단이 **철회 이전 목록**을
-                                // 근거로 돌아 아무것도 내리지 않고, 원래 새로고침에는
-                                // 강등 콜백이 없어 그대로 예약이 남는다(Codex #697 P1).
-                                force: true)
-                            // ⚠ **목록만 갱신하면 알람은 그대로 그 목소리로 울린다.**
-                            // 접근권을 잃은 목소리를 쓰는 내 알람을 알람음으로 내리고
-                            // 예약을 다시 맞춘다(조회가 실패한 회차에는 스스로 물러선다).
-                            if voiceStudio.reconcileInaccessibleVoiceAlarms(
-                                alarmStore: alarmStore,
-                                audioCache: .shared,
-                                ownerUserId: auth.session?.user.id
-                            ) > 0 {
-                                _ = await AlarmScheduleReconciler.reconcile(
-                                    store: alarmStore,
-                                    alarmKit: alarmKit
-                                )
-                            }
+                            // `force` 가 없으면 진행 중인 새로고침에 막혀 철회 이전 목록으로
+                            // 판단하게 된다(Codex #697 P1).
+                            await voiceStudio.refresh(session: auth.session, force: true)
                         }
                         push.onPlanChanged = {
                             await socialFeatures.refreshAll(session: auth.session, force: true)

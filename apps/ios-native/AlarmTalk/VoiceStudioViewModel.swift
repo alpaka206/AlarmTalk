@@ -495,6 +495,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 guard activeUserID == userID else { return }
                 statusMessage = successMessage
             }
+            // 목록이 확정됐으니 접근권을 잃은 알람을 내린다(훅 주석 참조).
+            // 권위가 없는 회차에는 훅 안의 판정이 스스로 물러서므로 여기서 또 가르지 않는다.
+            await onAuthoritativeRefresh?()
         } catch {
             guard activeUserID == userID else { return }
             statusMessage = mapVoiceError(error)
@@ -1108,6 +1111,17 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 안드로이드도 같은 이유로 `familyVoicesLoadedFresh`·`voiceProfilesLoadedFresh` 를 본다.
     ///
     /// - Returns: 강등한 알람 수.
+    /// 서버가 확정해 준 목록을 받은 **직후** 부른다. 앱이 여기에 강등 + 재예약을 꽂는다.
+    ///
+    /// ⚠ **강등을 푸시 핸들러에만 달지 말 것**(2026-08-18 Codex #697 P1). 푸시는
+    /// best-effort 라 오프라인·스로틀링·강제종료에서 조용히 버려진다 — 그때 그물은
+    /// 시작·탭 진입·백그라운드 주기의 새로고침인데, 강등이 거기 없으면 **철회된 목소리가
+    /// 다음 푸시가 올 때까지 계속 예약된 채 울린다.** `refresh` 호출부는 9곳인데 강등은
+    /// 두 곳에만 있었다. 새로고침 자체에 매달아 호출부가 잊을 수 없게 한다.
+    /// (이 클래스가 알람 저장소를 직접 들면 순환 참조가 된다 — 푸시 코디네이터의
+    /// `onFamilyAlarm` 과 같은 방식으로 앱이 꽂는다.)
+    var onAuthoritativeRefresh: (() async -> Void)?
+
 #if DEBUG
     /// **테스트 전용 seam** — "서버가 확정해 준 목록을 받은" 상태를 만든다.
     ///
