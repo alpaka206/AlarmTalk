@@ -336,6 +336,36 @@ class AuthSessionStore(context: Context) {
         prefs.edit().remove(KEY_SESSION_EXPIRED_OWNER).apply()
     }
 
+    /**
+     * **끄기가 실패해 아직 켜진 채인 알람 id 들.**
+     *
+     * ⚠ 로그아웃은 예약을 취소하고 행도 끄는데, 그 쓰기가 Room/디스크 오류로 실패할 수 있다.
+     * 메모리 게이트로만 막으면 **프로세스가 죽는 순간 사라져**, 같은 계정으로 다시 로그인할 때
+     * [reschedulePendingAlarms] 가 **명시적으로 로그아웃한 알람을 자동으로 되살린다**
+     * (2026-08-19 Codex #699 P2). 그래서 세션과 무관하게 **prefs 에 남긴다** —
+     * [clear] 가 지우지 않는 값이다.
+     */
+    fun pendingDisableAlarmIds(): Set<String> =
+        prefs.getStringSet(KEY_PENDING_DISABLE_ALARM_IDS, emptySet())?.toSet() ?: emptySet()
+
+    /** 끄기에 실패한 알람을 적어 둔다. 다음 기회에 다시 끈다. */
+    fun addPendingDisableAlarmIds(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val next = pendingDisableAlarmIds() + ids
+        prefs.edit().putStringSet(KEY_PENDING_DISABLE_ALARM_IDS, next).apply()
+    }
+
+    /** 실제로 껐을 때만 지운다. */
+    fun clearPendingDisableAlarmIds(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val next = pendingDisableAlarmIds() - ids.toSet()
+        if (next.isEmpty()) {
+            prefs.edit().remove(KEY_PENDING_DISABLE_ALARM_IDS).apply()
+        } else {
+            prefs.edit().putStringSet(KEY_PENDING_DISABLE_ALARM_IDS, next).apply()
+        }
+    }
+
     /** 아직 소유자를 못 새긴 알람의 임자(없으면 null). 세션을 비워도 남는다. */
     fun pendingOwnerUserId(): String? =
         prefs.getString(KEY_PENDING_OWNER_USER_ID, null)?.takeIf { it.isNotBlank() }
@@ -627,6 +657,7 @@ class AuthSessionStore(context: Context) {
         // (저장 키 문자열은 옛 이름을 유지한다 — 이미 기록된 기기의 값을 잃지 않기 위해.)
         private const val KEY_PENDING_OWNER_USER_ID = "last_session_user_id"
         private const val KEY_SESSION_EXPIRED_OWNER = "session_expired_owner_user_id"
+        private const val KEY_PENDING_DISABLE_ALARM_IDS = "pending_disable_alarm_ids"
         private const val KEY_SESSION_GENERATION = "session_generation"
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"

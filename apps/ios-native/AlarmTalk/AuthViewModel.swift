@@ -431,7 +431,9 @@ final class AuthViewModel: ObservableObject {
                let hint = appleUserIdHint, !hint.isEmpty {
                 nextSession.user.appleUserId = hint
             }
-            persistSession(nextSession)
+            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
+            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
+            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
             // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
             // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
             // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
@@ -449,6 +451,8 @@ final class AuthViewModel: ObservableObject {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
                 SessionExpiryStore.clear()
             }
+            // 확정이 끝난 뒤에 세션을 공개한다.
+            persistSession(nextSession)
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -513,7 +517,9 @@ final class AuthViewModel: ObservableObject {
         loginError = nil
         do {
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
-            persistSession(nextSession)
+            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
+            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
+            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
             // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
             // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
             // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
@@ -531,6 +537,8 @@ final class AuthViewModel: ObservableObject {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
                 SessionExpiryStore.clear()
             }
+            // 확정이 끝난 뒤에 세션을 공개한다.
+            persistSession(nextSession)
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -558,7 +566,9 @@ final class AuthViewModel: ObservableObject {
                 name: name,
                 verificationCode: verificationCode
             )
-            persistSession(nextSession)
+            // ⚠ **세션을 공개하기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P2).
+            // `persistSession` 이 먼저 돌면 다른 화면 태스크(무료 플랜 목소리 잠금 등)가
+            // 곧바로 깨어나, A 의 **소유자 미기록** 행을 B 것으로 보고 강등·재예약한다.
             // ⚠ **내리기 전에 그 계정의 옛 행을 확정한다**(Codex #699 P1). 콜드 스타트에서
             // A 가 자동 401 로 끊긴 뒤 저장소가 로드되기 전에 B 가 로그인하면, 이 표시가
             // **A 의 소유자 미기록 행이 A 것이라는 유일한 증거**다. 그냥 지우면 로드 완료
@@ -576,6 +586,8 @@ final class AuthViewModel: ObservableObject {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
                 SessionExpiryStore.clear()
             }
+            // 확정이 끝난 뒤에 세션을 공개한다.
+            persistSession(nextSession)
             statusMessage = "환영해요! 계정이 만들어졌어요."
             lastNetworkError = nil
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.

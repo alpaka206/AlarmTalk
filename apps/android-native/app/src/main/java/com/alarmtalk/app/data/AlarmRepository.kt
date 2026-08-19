@@ -53,6 +53,11 @@ class AlarmRepository(
     // 명시적 로그아웃은 이 값을 지우므로 그 계정 알람은 되살아나지 않는다.
     // 자세한 이유는 AuthSessionStore.sessionExpiredOwnerUserId 주석 참고.
     private val sessionExpiredOwnerUserIdProvider: () -> String? = { null },
+    // 로그아웃 때 끄기가 실패해 아직 켜진 채인 알람. 메모리 게이트로만 막으면 프로세스가
+    // 죽는 순간 사라져, 재로그인이 명시적으로 로그아웃한 알람을 되살린다(Codex #699 P2).
+    private val pendingDisableAlarmIdsProvider: () -> Set<String> = { emptySet() },
+    private val onPendingDisableAdded: (Collection<String>) -> Unit = {},
+    private val onPendingDisableCleared: (Collection<String>) -> Unit = {},
     // 지금 실제로 울리는 중이거나 리시버→서비스 인계 중인 알람 id**들**(없으면 빈 집합).
     // 영속 상태(state=RINGING)가 아니라 이걸로 판정해야, 서비스가 죽어 굳어 버린 RINGING 행이
     // 복구에서 영구 배제되지 않는다. **하나가 아니라 집합인 이유**는
@@ -647,10 +652,12 @@ class AlarmRepository(
             val failed = targets.filterNot { alarm -> disableOnSignOut(alarm.id, now) }
             val stillFailed = failed.filterNot { alarm -> disableOnSignOut(alarm.id, now) }
             if (stillFailed.isNotEmpty()) {
-                Log.w(TAG, "Failed to disable ${stillFailed.size} alarms on sign-out — gating restore")
-                // 이 프로세스에서 락을 기다리던 복원이 그 행들을 되살리지 못하게 한다.
-                // (프로세스가 죽으면 남는다 — 그건 다음 로그인에서 사용자가 끄는 수밖에 없다.)
+                Log.w(TAG, "Failed to disable ${stillFailed.size} alarms on sign-out — persisting for retry")
+                // 이 프로세스에서 락을 기다리던 복원을 막고,
                 signOutWithoutSessionClearOwner = signedOutUserId
+                // **프로세스가 죽어도 남게** 적어 둔다 — 다음 기회에 마저 끈다.
+                runCatching { onPendingDisableAdded(stillFailed.map { it.id }) }
+                    .onFailure { error -> Log.w(TAG, "Failed to persist pending disables", error) }
             }
         }
         Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
@@ -1254,6 +1261,19 @@ class AlarmRepository(
             if (blockedOwner != null && (alarm.ownerUserId == null || alarm.ownerUserId == blockedOwner)) {
                 alarmScheduler.cancel(alarm.id)
                 return@forEach
+            }
+            // ⚠ **밀린 끄기를 먼저 마저 한다**(Codex #699 P2). 로그아웃 때 쓰기가 실패해 켜진
+            // 채 남은 행들이다 — 여기서 안 끄면 바로 아래 재예약이 **명시적으로 로그아웃한
+            // 알람을 되살린다.**
+            val pendingDisable = runCatching { pendingDisableAlarmIdsProvider() }.getOrDefault(emptySet())
+            if (pendingDisable.isNotEmpty()) {
+                val now = System.currentTimeMillis()
+                val done = pendingDisable.filter { id ->
+                    alarmScheduler.cancel(id)
+                    disableOnSignOut(id, now)
+                }
+                runCatching { onPendingDisableCleared(done) }
+                    .onFailure { error -> Log.w(TAG, "Failed to clear pending disables", error) }
             }
             val restorableOwner = currentUser ?: sessionExpiredOwnerUserIdProvider()
             if (alarm.ownerUserId != null && alarm.ownerUserId != restorableOwner) {
