@@ -665,6 +665,27 @@ final class PendingCancellationTests: XCTestCase {
         XCTAssertEqual(PendingAlarmCancellationStore.origin(of: "KIT-FOREIGN"), .foreignCleanup)
     }
 
+    /// ⚠ **더 강한 출처로 올라간다.** 남의 계정 정리에서 먼저 실패한 UUID 를, 그 주인이
+    /// 명시적으로 로그아웃하며 다시 실패하면 **그때는 행도 꺼야 한다.**
+    func test_출처는_계정이탈로_승격된다() {
+        PendingAlarmCancellationStore.add("KIT-X", origin: .foreignCleanup)
+        PendingAlarmCancellationStore.add("KIT-X", origin: .accountLeave)
+
+        XCTAssertEqual(
+            PendingAlarmCancellationStore.origin(of: "KIT-X"), .accountLeave,
+            "낡은 출처가 남으면 명시적으로 로그아웃한 알람이 다음 로그인에 되살아난다"
+        )
+        XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-X"], "목록이 불어났다")
+    }
+
+    /// 반대 방향으로는 내려가지 않는다 — 계정 이탈이 더 강한 뜻이다.
+    func test_출처는_약한_쪽으로_내려가지_않는다() {
+        PendingAlarmCancellationStore.add("KIT-Y", origin: .accountLeave)
+        PendingAlarmCancellationStore.add("KIT-Y", origin: .foreignCleanup)
+
+        XCTAssertEqual(PendingAlarmCancellationStore.origin(of: "KIT-Y"), .accountLeave)
+    }
+
     /// 기록이 없으면(이 빌드 이전에 적힌 값) **행을 건드리지 않는 쪽**으로 본다 —
     /// 못 가릴 때는 남의 알람을 끄는 것보다 켜 둔 채 두는 편이 되돌릴 수 있다.
     func test_출처_기록이_없으면_남의_것으로_본다() {

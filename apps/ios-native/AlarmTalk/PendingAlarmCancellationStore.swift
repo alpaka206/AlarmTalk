@@ -45,13 +45,20 @@ enum PendingAlarmCancellationStore {
     /// 취소에 실패했을 때 적는다. 이미 있으면 그대로 둔다.
     static func add(_ alarmKitID: String?, origin: Origin) {
         guard let id = alarmKitID?.nilIfBlank else { return }
+        // ⚠ **이미 있어도 출처는 더 강한 쪽으로 올린다**(Codex #699 P2).
+        // 남의 계정 정리에서 먼저 실패해 `.foreignCleanup` 으로 적힌 UUID 를, 뒤이어 **그
+        // 주인이 명시적으로 로그아웃**하며 다시 실패해도 그냥 돌아가면 출처가 낡은 채 남는다.
+        // 그 사이 고아가 울어 `markRinging` 이 행을 켜면, 회수는 낡은 출처를 보고 **행을 끄지
+        // 않는다** — 명시적으로 로그아웃한 알람이 다음 로그인에 되살아난다.
+        var origins = defaults.dictionary(forKey: originsKey) as? [String: String] ?? [:]
+        if origin == .accountLeave || origins[id] == nil {
+            origins[id] = origin.rawValue
+            defaults.set(origins, forKey: originsKey)
+        }
         var current = all
         guard !current.contains(id) else { return }
         current.append(id)
         defaults.set(current, forKey: key)
-        var origins = defaults.dictionary(forKey: originsKey) as? [String: String] ?? [:]
-        origins[id] = origin.rawValue
-        defaults.set(origins, forKey: originsKey)
     }
 
     /// 그 UUID 의 출처. 기록이 없으면(이 빌드 이전) **행을 건드리지 않는 쪽**으로 본다 —
