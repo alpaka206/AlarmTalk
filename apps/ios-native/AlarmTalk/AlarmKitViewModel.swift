@@ -357,9 +357,16 @@ final class AlarmKitViewModel: ObservableObject {
         var stopped = 0
         for record in store.alarms {
             if record.alarmKitID != nil {
-                _ = await cancelScheduledAlarm(record: record)
-                // 예약이 사라졌으니 핸들도 지운다 — 남겨 두면 다음에 켤 때 어긋난다.
-                store.clearScheduleHandle(id: record.id)
+                // ⚠ **취소가 실패했으면 핸들을 지우지 말 것**(Codex #699 P1).
+                // `alarmKitID` 는 그 예약을 취소할 **유일한 손잡이**다. 실패했는데 지우면
+                // OS 에는 예약이 남고 우리에겐 취소할 방법이 없는 **고아 예약**이 된다 —
+                // 로그아웃 뒤라 화면에 들어갈 수도 없으니 사용자는 울리는 걸 보고만 있게 된다.
+                // 남겨 두면 다음 기회(재로그인·복구 sweep)에 그 손잡이로 다시 시도한다.
+                let cancelled = await cancelScheduledAlarm(record: record)
+                if cancelled {
+                    // 예약이 사라졌으니 핸들도 지운다 — 남겨 두면 다음에 켤 때 어긋난다.
+                    store.clearScheduleHandle(id: record.id)
+                }
             }
             // 소유자 미기록(옛 행)은 현재 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용.
             let departing = owner == nil || record.ownerUserId == nil || record.ownerUserId == owner

@@ -407,3 +407,68 @@ final class LeaveAccountScopeTests: XCTestCase {
         XCTAssertEqual(store.record(id: "B-것")?.enabled, false)
     }
 }
+
+/// **중복 시각 판정도 소유자로 걸러야 한다** (Codex #699 P1).
+///
+/// 목록만 거르면 뚫린다 — 교체 모달은 이 결과로 **남의 알람 이름을 띄우고**, '교체' 를
+/// 누르면 **그 알람을 지운다.** 감춰 둔 알람이 이름을 드러내고 삭제까지 되는 셈이다.
+@MainActor
+final class ConflictScopeTests: XCTestCase {
+
+    private func makeStore() -> LocalAlarmStore {
+        LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("conflict-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+    }
+
+    private func alarm(id: String, owner: String?, hour: Int, minute: Int) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var r = LocalAlarmRecord(
+            id: id, label: "\(id) 라벨", hour: hour, minute: minute,
+            fireAtMillis: now + 60_000,
+            origin: AlarmOrigin.localOwned.rawValue,
+            createdAtMillis: now, updatedAtMillis: now
+        )
+        r.ownerUserId = owner
+        return r
+    }
+
+    func test_남의_알람은_충돌로_잡히지_않는다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "A-것", owner: "A", hour: 7, minute: 0))
+
+        let conflicts = store.conflictingAlarms(hour: 7, minute: 0, ownerUserId: "B")
+
+        XCTAssertTrue(
+            conflicts.isEmpty,
+            "감춰 둔 남의 알람이 교체 후보로 잡혔다 — 이름이 노출되고 '교체' 로 삭제된다"
+        )
+    }
+
+    func test_내_알람과_옛_행은_충돌로_잡힌다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "B-것", owner: "B", hour: 7, minute: 0))
+        store.upsert(alarm(id: "옛행", owner: nil, hour: 7, minute: 0))
+
+        let ids = store.conflictingAlarms(hour: 7, minute: 0, ownerUserId: "B").map(\.id).sorted()
+
+        XCTAssertEqual(ids, ["B-것", "옛행"], "중복 방지가 헐거워지면 같은 시각 알람이 둘 생긴다")
+    }
+
+    /// 저장 경로(`requireUniqueTime`)도 같은 기준이어야 한다 — 한쪽만 고치면
+    /// 화면에는 충돌이 없는데 저장이 거부되는(또는 그 반대) 상태가 된다.
+    func test_저장_판정도_남의_알람을_보지_않는다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "A-것", owner: "A", hour: 7, minute: 0))
+
+        XCTAssertNoThrow(
+            try store.requireUniqueTime(hour: 7, minute: 0, repeatDaysMask: 0, ownerUserId: "B"),
+            "보이지도 않는 알람 때문에 저장이 막히면 사용자는 이유를 알 길이 없다"
+        )
+        XCTAssertThrowsError(
+            try store.requireUniqueTime(hour: 7, minute: 0, repeatDaysMask: 0, ownerUserId: "A")
+        )
+    }
+}

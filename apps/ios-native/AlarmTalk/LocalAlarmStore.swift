@@ -124,13 +124,19 @@ final class LocalAlarmStore: ObservableObject {
 
     /// `AlarmRepository.requireUniqueTime` 와 동일 의미. mask 동일 + 동일 시각이면 중복.
     /// 단순화: hour+minute 만 일치해도 중복으로 본다 (Android 원본 의도와 동일).
+    ///
+    /// ⚠ **소유자를 반드시 넘긴다 — 목록만 거르면 뚫린다**(Codex #699 P1).
+    /// 목록에서 남의 알람을 감춰도 이 판정이 저장소 전체를 보면, B 가 A 의 **숨은** 알람과
+    /// 같은 시각을 고르는 순간 "중복" 으로 막힌다. 보이지도 않는 알람 때문에 막히니
+    /// 사용자는 이유를 알 길이 없다.
     func requireUniqueTime(
         hour: Int,
         minute: Int,
         repeatDaysMask: Int,
-        excludingID: String? = nil
+        excludingID: String? = nil,
+        ownerUserId: String?
     ) throws {
-        let collision = alarms.contains { record in
+        let collision = alarms(visibleTo: ownerUserId).contains { record in
             record.id != excludingID &&
                 record.hour == hour &&
                 record.minute == minute
@@ -140,8 +146,17 @@ final class LocalAlarmStore: ObservableObject {
 
     /// 같은 시각(hour+minute)의 기존 알람들. "한 시각에는 알람 하나" 교체 흐름에서
     /// 충돌 대상을 찾아 라벨 표시·삭제에 쓴다.
-    func conflictingAlarms(hour: Int, minute: Int, excludingID: String? = nil) -> [LocalAlarmRecord] {
-        alarms.filter { record in
+    /// ⚠ **소유자를 반드시 넘긴다**(Codex #699 P1). 이 결과는 화면에 **남의 알람 이름을
+    /// 그대로 띄우고**(교체 모달의 `existingLabel`), 사용자가 '교체' 를 누르면
+    /// `cancel(record:store:)` 로 **그 알람을 지운다.** 소유자를 안 거르면 B 가 A 의 숨은
+    /// 알람 이름을 보고, 그것을 **영구히 삭제**할 수 있다 — 목록에서 감춘 의미가 사라진다.
+    func conflictingAlarms(
+        hour: Int,
+        minute: Int,
+        excludingID: String? = nil,
+        ownerUserId: String?
+    ) -> [LocalAlarmRecord] {
+        alarms(visibleTo: ownerUserId).filter { record in
             record.id != excludingID && record.hour == hour && record.minute == minute
         }
     }
@@ -235,6 +250,7 @@ final class LocalAlarmStore: ObservableObject {
     @discardableResult
     func copyAlarm(
         id: String,
+        ownerUserId: String?,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) },
         idFactory: () -> String = { UUID().uuidString }
@@ -246,7 +262,8 @@ final class LocalAlarmStore: ObservableObject {
         try requireUniqueTime(
             hour: copiedTime.hour,
             minute: copiedTime.minute,
-            repeatDaysMask: current.repeatDaysMask
+            repeatDaysMask: current.repeatDaysMask,
+            ownerUserId: ownerUserId
         )
 
         var copied = current

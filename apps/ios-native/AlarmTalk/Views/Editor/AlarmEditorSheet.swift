@@ -2451,10 +2451,13 @@ struct AlarmEditorSheet: View {
 
         // "한 시각에는 알람 하나" — 같은 시각 알람이 있으면 바로 거부하지 않고
         // 교체 여부를 모달로 묻는다(자동 삭제하지 않음). 동의 시 confirmReplaceDuplicate.
+        // ⚠ 소유자를 넘긴다 — 안 넘기면 남의 계정 알람이 교체 후보로 잡혀 **이름이 노출되고
+        // 삭제까지 된다**(Codex #699 P1).
         let conflicts = store.conflictingAlarms(
             hour: merged.hour,
             minute: merged.minute,
-            excludingID: existing?.id
+            excludingID: existing?.id,
+            ownerUserId: auth.session?.user.id
         )
         if !conflicts.isEmpty {
             duplicateAlarmConfirm = DuplicateAlarmConfirmContent(
