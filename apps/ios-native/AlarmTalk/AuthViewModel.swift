@@ -370,6 +370,10 @@ final class AuthViewModel: ObservableObject {
             // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
             // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
             // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
+            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
+            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+            PendingSignOutStore.clear(nextSession.user.id)
             if await claimAlarmsForExpiredOwnerBeforeSignIn() {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
                 SessionExpiryStore.clear()
@@ -451,6 +455,10 @@ final class AuthViewModel: ObservableObject {
             // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
             // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
             // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
+            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
+            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+            PendingSignOutStore.clear(nextSession.user.id)
             if await claimAlarmsForExpiredOwnerBeforeSignIn() {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
                 SessionExpiryStore.clear()
@@ -495,6 +503,10 @@ final class AuthViewModel: ObservableObject {
             // 넘기면 위 호출은 아무것도 못 새기고 돌아오는데, 그때 표시까지 지우면 로드 완료
             // 후의 재시도는 "세션이 있으니 건너뛴다" 로 빠진다 — A 의 옛 행이 임자 없이 남아
             // B 것으로 노출되고, **B 가 나중에 로그아웃할 때 영구히 꺼진다.**
+            // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
+            // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
+            // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
+            PendingSignOutStore.clear(nextSession.user.id)
             if await claimAlarmsForExpiredOwnerBeforeSignIn() {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
                 SessionExpiryStore.clear()
@@ -860,7 +872,7 @@ final class AuthViewModel: ObservableObject {
             _ = try await api.requestAccountDeletion(token: token)
             // 표시는 요청이 성공한 뒤에 남긴다(즉시 탈퇴 주석과 같은 이유).
             PendingSignOutStore.mark(currentUserID)
-            let pushUnregistered = await onSignOutUnregisterPush(token, currentUserID)
+            let pushUnregistered = await onSignOutUnregisterPush(token, currentUserID, { true })
             if !pushUnregistered {
                 // 해제를 다시 시도할 수 있게 토큰을 남긴다. 30일 안에 복구하면 다음 로그인이
                 // 토큰을 다시 등록하므로, 그때는 이 표시가 정리된다.
@@ -1232,7 +1244,7 @@ final class AuthViewModel: ObservableObject {
     /// 로그아웃·탈퇴 신청 때 이 기기의 푸시 토큰을 서버에서 지우는 훅.
     /// `AlarmTalkApp` 이 `PushNotificationCoordinator` 를 꽂는다 — 여기서 코디네이터를
     /// 직접 들면 순환 참조가 된다(코디네이터의 `onFamilyAlarm` 과 같은 방식).
-    var onSignOutUnregisterPush: (String, String?) async -> Bool = { _, _ in true }
+    var onSignOutUnregisterPush: (String, String?, @escaping @Sendable () -> Bool) async -> Bool = { _, _, _ in true }
 
     /// 로그아웃·탈퇴 때 **이 기기의 OS 알람 예약을 끊는** 훅.
     ///
@@ -1336,13 +1348,13 @@ final class AuthViewModel: ObservableObject {
     static func runServerSignOutCleanup(
         token: String?,
         ownerUserId: String?,
-        unregister: (String, String?) async -> Bool,
+        unregister: (String, String?, @escaping @Sendable () -> Bool) async -> Bool,
         api: AuthAPIProviding,
-        stillNeeded: () -> Bool = { true }
+        stillNeeded: @escaping @Sendable () -> Bool = { true }
     ) async -> Bool {
         guard let token = token?.nilIfBlank else { return true }
         guard stillNeeded() else { return false }
-        let unregistered = await unregister(token, ownerUserId)
+        let unregistered = await unregister(token, ownerUserId, stillNeeded)
         // ⚠ **해제가 실패했으면 토큰을 폐기하지 말 것**(Codex #699 P2). 폐기는 `token_epoch`
         // 를 올려 그 토큰을 죽인다 — 다음 실행이 재시도하려 해도 **401 이 영원히** 돌아오고,
         // 떠난 계정의 푸시 바인딩은 그대로 남는다. 재시도할 수 있게 토큰을 살려 둔다.

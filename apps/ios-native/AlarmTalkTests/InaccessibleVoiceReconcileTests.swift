@@ -871,7 +871,7 @@ final class ServerSignOutCleanupTests: XCTestCase {
         _ = await AuthViewModel.runServerSignOutCleanup(
             token: "T",
             ownerUserId: "A",
-            unregister: { _, owner in seenOwner = .some(owner); return true },
+            unregister: { _, owner, _ in seenOwner = .some(owner); return true },
             api: api
         )
         XCTAssertEqual(seenOwner ?? nil, "A", "누구 몫인지 모르면 남의 푸시를 끊는다")
@@ -885,7 +885,7 @@ final class ServerSignOutCleanupTests: XCTestCase {
         let done = await AuthViewModel.runServerSignOutCleanup(
             token: "T",
             ownerUserId: "A",
-            unregister: { _, _ in unregisterCalls += 1; return true },
+            unregister: { _, _, _ in unregisterCalls += 1; return true },
             api: api,
             stillNeeded: { false }
         )
@@ -897,13 +897,15 @@ final class ServerSignOutCleanupTests: XCTestCase {
     /// 해제가 도는 사이에 철회되면 **폐기는 하지 않는다** — 폐기는 되돌릴 수 없다.
     func test_해제_뒤에_철회되면_폐기하지_않는다() async {
         let api = StubAPI()
-        var needed = true
+        // `stillNeeded` 는 여러 실행 맥락에서 불리므로 참조 타입에 담는다.
+        final class Flag: @unchecked Sendable { var value = true }
+        let needed = Flag()
         let done = await AuthViewModel.runServerSignOutCleanup(
             token: "T",
             ownerUserId: "A",
-            unregister: { _, _ in needed = false; return true },   // 해제 도중 철회된 상황
+            unregister: { _, _, _ in needed.value = false; return true },   // 해제 도중 철회된 상황
             api: api,
-            stillNeeded: { needed }
+            stillNeeded: { needed.value }
         )
         XCTAssertFalse(done)
         XCTAssertEqual(api.logoutCalls, 0)
@@ -911,20 +913,20 @@ final class ServerSignOutCleanupTests: XCTestCase {
 
     func test_토큰이_없으면_할_일이_없다() async {
         let api = StubAPI()
-        let done = await AuthViewModel.runServerSignOutCleanup(token: nil, ownerUserId: nil, unregister: { _, _ in true }, api: api)
+        let done = await AuthViewModel.runServerSignOutCleanup(token: nil, ownerUserId: nil, unregister: { _, _, _ in true }, api: api)
         XCTAssertTrue(done)
         XCTAssertEqual(api.logoutCalls, 0)
     }
 
     func test_둘_다_성공해야_끝난_것이다() async {
         let api = StubAPI()
-        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _ in true }, api: api)
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _, _ in true }, api: api)
         XCTAssertTrue(done)
     }
 
     func test_푸시_해제가_실패하면_안_끝난_것이다() async {
         let api = StubAPI()
-        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _ in false }, api: api)
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _, _ in false }, api: api)
         XCTAssertFalse(done, "표시를 지우면 기기가 떠난 계정에 묶인 채 남는다")
         XCTAssertEqual(api.logoutCalls, 0, "해제가 실패했는데 폐기하면 재시도할 토큰이 죽는다")
     }
@@ -932,7 +934,7 @@ final class ServerSignOutCleanupTests: XCTestCase {
     func test_폐기가_5xx_면_안_끝난_것이다() async {
         let api = StubAPI()
         api.logoutError = APIError.server(status: 500, message: "boom", errorCode: nil)
-        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _ in true }, api: api)
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _, _ in true }, api: api)
         XCTAssertFalse(done)
     }
 
@@ -944,7 +946,7 @@ final class ServerSignOutCleanupTests: XCTestCase {
         api.logoutError = APIError.server(
             status: 403, message: "Account is scheduled for deletion", errorCode: "ACCOUNT_PENDING_DELETION"
         )
-        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _ in true }, api: api)
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _, _ in true }, api: api)
         XCTAssertTrue(done, "폐기가 불가능한 상태를 실패로 치면 표시가 영원히 남는다")
     }
 
@@ -953,7 +955,7 @@ final class ServerSignOutCleanupTests: XCTestCase {
     func test_폐기가_401_이면_끝난_것으로_본다() async {
         let api = StubAPI()
         api.logoutError = APIError.server(status: 401, message: "unauthorized", errorCode: nil)
-        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _ in true }, api: api)
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", ownerUserId: "A", unregister: { _, _, _ in true }, api: api)
         XCTAssertTrue(done, "이미 폐기된 토큰을 영원히 재시도하게 된다")
     }
 }

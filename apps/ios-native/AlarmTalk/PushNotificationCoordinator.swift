@@ -144,7 +144,14 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     ///   뒷정리가 지금 B 에게 등록된 그 토큰을 지워 **B 가 가족 알람 푸시를 놓친다.**
     ///   A 의 바인딩은 B 가 등록할 때 서버가 이미 지웠다(`token = ? AND user_id != ?`).
     @discardableResult
-    func unregisterCurrentToken(authToken: String, expectedOwnerUserID: String? = nil) async -> Bool {
+    /// - Parameter stillNeeded: **줄을 선 뒤에** 다시 묻는다. 앞선 등록 뒤에 대기하는 사이
+    ///   사용자가 탈퇴를 철회하면, 그대로 요청하면 **되살아난 계정의 새 바인딩을 지운다**
+    ///   (Codex #699 P2).
+    func unregisterCurrentToken(
+        authToken: String,
+        expectedOwnerUserID: String? = nil,
+        stillNeeded: @escaping @Sendable () -> Bool = { true }
+    ) async -> Bool {
         // ⚠ **줄부터 선다 — 여기서 미리 판단하지 않는다**(Codex #699 P2). 앞선
         // `registerToken` 이 아직 줄에 있거나 날아가는 중이면 캐시는 **옛 주인**을 가리킨다.
         // 그걸 보고 "내 것이 아니다" 며 그냥 돌아가면, 뒤이어 끝난 그 등록이 **떠난 계정에
@@ -152,7 +159,9 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
         var result = false
         await serializePushMutation { [weak self] in
             guard let self else { return }
-            // ⚠ **줄을 선 뒤에 다시 본다.** 기다리는 동안 다른 계정이 등록을 마쳤을 수 있다.
+            // ⚠ **줄을 선 뒤에 다시 본다.** 기다리는 동안 철회되거나 다른 계정이 등록을
+            // 마쳤을 수 있다.
+            guard stillNeeded() else { result = false; return }
             if let expected = expectedOwnerUserID?.nilIfBlank,
                let current = self.lastRegisteredUserID?.nilIfBlank,
                current != expected {
@@ -257,9 +266,13 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // `.task(id: 세션)` 안에서 꽂았는데, 그 태스크는 **알림 권한 팝업을 먼저 기다린다.**
         // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이
         // 불려, `/auth/logout` 으로 토큰만 폐기되고 **기기는 그 계정에 묶인 채** 남는다.
-        deps.auth.onSignOutUnregisterPush = { [weak push = deps.push] token, expectedOwner in
+        deps.auth.onSignOutUnregisterPush = { [weak push = deps.push] token, expectedOwner, stillNeeded in
             guard let push else { return false }
-            return await push.unregisterCurrentToken(authToken: token, expectedOwnerUserID: expectedOwner)
+            return await push.unregisterCurrentToken(
+                authToken: token,
+                expectedOwnerUserID: expectedOwner,
+                stillNeeded: stillNeeded
+            )
         }
         let launchPull = RemoteAlarmPullSync(
             store: deps.alarmStore,

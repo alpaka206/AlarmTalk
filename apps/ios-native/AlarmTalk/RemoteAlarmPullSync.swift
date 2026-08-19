@@ -204,7 +204,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         try await applyRecipientState(
             servedReceivedIDs: Set(receivedRemoteAlarms.map(\.id)),
             allRemoteIDs: Set(remoteAlarms.map(\.id)),
-            token: token
+            token: token,
+            pullOwnerUserID: userID
         )
 
         return PullResult(imported: imported, updated: updated, skipped: skipped, failed: failed)
@@ -487,10 +488,14 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     ///
     /// - Parameter servedReceivedIDs: 이번 pull 에서 **받은 알람으로** 내려온 remote id 들.
     /// - Parameter allRemoteIDs: `GET /alarm` 이 내려준 **전체** remote id 들(내가 보낸 것 포함).
+    /// - Parameter pullOwnerUserID: 이 pull 이 첫 네트워크 호출 전에 잡아 둔 계정.
+    ///   이 단계도 서버를 한 번 더 다녀오므로, 그 사이에 계정이 떠났으면 **아무것도 반영하지
+    ///   않는다**(Codex #699 P1) — 반영하면 떠난 계정의 행이 지금 쓰는 사람 아래에 숨어 운다.
     private func applyRecipientState(
         servedReceivedIDs: Set<String>,
         allRemoteIDs: Set<String>,
-        token: String
+        token: String,
+        pullOwnerUserID: String
     ) async throws {
         guard let state = try await fetchRecipientState(token: token) else {
             // 못 물어봤다 — 아무것도 건드리지 않는다.
@@ -501,6 +506,10 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         // 위 `catch` 는 지나가고, 아래 loop 가 목소리를 벗기고 받은 알람을 지운다 —
         // BGTask 가 이미 실패로 완료를 통보한 뒤에(2026-08-18 Codex #697 P2).
         try Task.checkCancellation()
+        // ⚠ **계정이 떠났으면 여기서도 멈춘다**(Codex #699 P1). 위 `/alarm/declined` 왕복
+        // 사이에 로그아웃·계정 전환이 끝날 수 있는데, 그대로 반영하면 **떠난 계정의 행이
+        // 지금 쓰는 사람 아래에 숨어** 남는다(목록에는 안 보이는데 예약은 살아 있다).
+        guard auth.session?.user.id.nilIfBlank == pullOwnerUserID else { return }
 
         let received = store.recordsBy(origin: .receivedRemote)
 
