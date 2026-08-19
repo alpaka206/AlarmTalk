@@ -48,12 +48,21 @@
 - 소유자 미기록(옛 행)은 **현재 계정 것으로 본다** — 저장소의 다른 파괴적 경로
   (무료 잠금·복원·목소리 강등)와 같은 관용이다.
 - **로그아웃 상태(계정 없음)에서는 목록에 아무것도 보이지 않는다.**
-- ⚠ **그렇다고 재무장까지 통째로 건너뛰지는 않는다**(2026-08-19 Codex #699 P1에서 뒤집힘).
-  계정이 없으면 **켜진 행은 그대로 되살린다.** 명시적 로그아웃이 끊어 둔 것을 되살릴
-  걱정은 없다 — 그쪽은 `enabled = false` 까지 함께 두므로 **켜짐 조건에서 이미 걸러진다.**
-  그게 행과 예약을 두 겹으로 둔 이유다.
-  건너뛰면 **자동 401** 로 세션만 잃은 기기가 부팅·업데이트·타임존 변경으로 예약을 잃었을 때
-  **다시 로그인할 때까지 아무 알람도 안 울린다** — 자동 401 을 예외로 둔 뜻이 정반대로 뒤집힌다.
+- ⚠ **재무장 대상은 "자동으로 끊긴 그 계정" 이다** — 계정이 없다고 건너뛰지도, 아무나
+  되살리지도 않는다(2026-08-19 Codex #699 P1에서 양쪽 극단을 다 밟았다).
+  - **건너뛰면**: 자동 401 로 세션만 잃은 기기가 부팅·업데이트·타임존 변경으로 예약을
+    잃었을 때 **다시 로그인할 때까지 아무 알람도 안 울린다** — 자동 401 을 예외로 둔 뜻이
+    정반대로 뒤집힌다.
+  - **아무나 되살리면**: 한 기기에 계정이 여럿 오갔을 때(A 만료 → B 로그인 → B 도 만료)
+    **A 와 B 의 알람이 함께** 살아난다.
+  - 그래서 자동 401 에서 그 계정 id 를 남기고(**불리언이 아니다**) 그것만 되살린다.
+    표시가 없는 기기는 아무것도 되살리지 않는다 — 못 가릴 때는 되살려서 못 끄게 만드는
+    쪽보다 로그인 한 번 시키는 쪽이 안전하다.
+  - 명시적 로그아웃은 이 표시를 **지운다.** 그쪽은 `enabled = false` 까지 함께 두므로
+    켜짐 조건에서도 한 번 더 걸러진다 — 행과 예약을 두 겹으로 둔 이유다.
+- ⚠ **로그인 확정 직후 남의 계정 예약을 끊는다.** 목록·복구를 소유자로 거르는 것만으로는
+  **감추기만 할 뿐** 예약은 그대로다 — A 의 알람이 울리는데 B 는 볼 수도 끌 수도 없다.
+  행(`enabled`)은 건드리지 않는다: A 의 의도는 A 것이고, A 가 돌아오면 되살아나야 한다.
 
 ### 1-3. 삭제는 **예약을 먼저** 끊는다
 
@@ -131,7 +140,10 @@
 | 1-1 계정 떠날 때 끄기 | — | `data/AlarmRepository.detachAlarmsOnSignOut` | `AlarmKitViewModel.stopAllScheduledAlarms(store:ownerUserId:)` ← `AuthViewModel.onLeaveAccountStopAlarms` |
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
-| 1-2 재예약 소유자 필터 | — | `AlarmRepository.cancelAlarmsNotOwnedBy` · `reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` |
+| 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` |
+| 1-2 자동 만료 계정 기록 | — | `network/AuthSessionStore.kt` 의 `sessionExpiredOwnerUserId` | `SessionExpiryStore` |
+| 1-2 로그인 시 남의 예약 취소 | — | `AlarmRepository.cancelAlarmsNotOwnedBy` | `AlarmKitViewModel.cancelScheduledAlarmsNotOwnedBy` |
+| 1-1 중복 시각 판정도 소유자로 | — | (해당 없음 — DAO 가 이미 소유자 조건) | `LocalAlarmStore.conflictingAlarms` · `requireUniqueTime` |
 | 1-3 삭제는 취소 먼저 | — | `AlarmRepository.deleteAlarmLocked` | `AlarmKitViewModel.cancel(record:store:)` |
 | 1-4 `.failed` 낙인 규칙 | — | `AlarmRepository` 의 두 `AlarmStates.FAILED` 자리 | `LocalAlarmStore.markFailed` 의 `enabled` 가드 |
 | 1-4 행 경고 문구 | — | `ui/components/ControlsAndPermissions.alarmRowNotice` | `Views/Alarms/AlarmRow.rowNotice` |

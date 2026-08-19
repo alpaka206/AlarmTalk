@@ -515,9 +515,14 @@ final class LocalAlarmStore: ObservableObject {
         return alarms[index]
     }
 
+    /// - Parameter keepScheduleHandle: 끄면서도 `alarmKitID` 를 남길지.
+    ///   ⚠ **취소가 실패했을 때만 `true`** 다(Codex #699 P1). 그 값은 OS 예약을 취소할
+    ///   **유일한 손잡이**라, 취소에 실패했는데 지우면 예약은 남고 취소할 방법만 사라진다
+    ///   (고아 예약). 평소에는 `false` — 남겨 두면 다음에 켤 때 옛 핸들과 어긋난다.
     func setEnabled(
         id: String,
         enabled: Bool,
+        keepScheduleHandle: Bool = false,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
         isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
     ) {
@@ -543,7 +548,9 @@ final class LocalAlarmStore: ObservableObject {
         } else {
             alarms[index].enabled = false
             alarms[index].state = AlarmRuntimeState.disabled.rawValue
-            alarms[index].alarmKitID = nil
+            if !keepScheduleHandle {
+                alarms[index].alarmKitID = nil
+            }
         }
         alarms[index].syncState = nextLocalSyncState(for: alarms[index]).rawValue
         alarms[index].updatedAtMillis = nowMillis

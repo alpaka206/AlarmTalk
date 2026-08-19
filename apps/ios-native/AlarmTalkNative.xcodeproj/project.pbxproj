@@ -254,6 +254,7 @@
 		C41E6CE571C5663A87BF2C94 /* AlarmTalkMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC283DE15D2853C6F4669754 /* AlarmTalkMetadata.swift */; };
 		C50DEC1CB5458F453DC0E919 /* AudioCacheStalenessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9311A4ED6398F9049299873 /* AudioCacheStalenessTests.swift */; };
 		C5EC889738337D1C0FB7D53F /* CodeRegistrationError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AE98BCEE48F6854D6A02AA4 /* CodeRegistrationError.swift */; };
+		C6597340E9B6E8CA773345A5 /* SessionExpiryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A837BD3F8D319A53856D516 /* SessionExpiryStore.swift */; };
 		C6A181AE295935BA835954D4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7577C539C3E926AE4FD3D1C /* ContentView.swift */; };
 		C6D9D903A1464A0F1120DD84 /* pretendard_medium.otf in Resources */ = {isa = PBXBuildFile; fileRef = A1460F6B80519002D6B9F945 /* pretendard_medium.otf */; };
 		C9AC298F3AC6D9B84D3F93D5 /* SubscriptionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 291DBF70F5BA99D4BC3C3F25 /* SubscriptionManagerTests.swift */; };
@@ -538,6 +539,7 @@
 		993F13DD98269244F828B44E /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		99E9564C1E25D37106ECC398 /* AccountPendingDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountPendingDeletionView.swift; sourceTree = "<group>"; };
 		9A1C8164C5467E1065C0FFF7 /* VoiceSheetScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSheetScreenshotUITests.swift; sourceTree = "<group>"; };
+		9A837BD3F8D319A53856D516 /* SessionExpiryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionExpiryStore.swift; sourceTree = "<group>"; };
 		9B04396E3B476332CDB49EE8 /* PretendardFontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PretendardFontTests.swift; sourceTree = "<group>"; };
 		9D1EF46FAF8334E543D1A159 /* TimeWheelSettle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWheelSettle.swift; sourceTree = "<group>"; };
 		9E3E636EE972FA7B3F1B794B /* BillingScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingScreenshotUITests.swift; sourceTree = "<group>"; };
@@ -1148,6 +1150,7 @@
 				21F6264B67DC977F47D0E3A9 /* RemoteAlarmPullSync.swift */,
 				5CBFD31524C3C55B15E0967A /* RemoteAlarmPushSync.swift */,
 				2D91CA086C7D4B708EBFB7D9 /* RemoteAlarmSyncViewModel.swift */,
+				9A837BD3F8D319A53856D516 /* SessionExpiryStore.swift */,
 				82C467C2565ADFF3EE449881 /* SessionTokenRenewal.swift */,
 				0618736D787E420EF19C236B /* SocialFeatureViewModel.swift */,
 				D0A2D4893E2A513F69B59F66 /* SocialNotificationTracker.swift */,
@@ -1531,6 +1534,7 @@
 				F07FB40F608D6690144075E7 /* RootView.swift in Sources */,
 				AB049D79EABC198B5DE731CD /* SectionCard.swift in Sources */,
 				A4F77CBFD932FC212CA3F876 /* SelectionSheet.swift in Sources */,
+				C6597340E9B6E8CA773345A5 /* SessionExpiryStore.swift in Sources */,
 				CF47E876E2B1D1AF14960521 /* SessionTokenRenewal.swift in Sources */,
 				BB470280C0AFF88637CA39EC /* SettingsView.swift in Sources */,
 				B9B1EF2F50B9D315BC21BCC0 /* SheetContentHeight.swift in Sources */,

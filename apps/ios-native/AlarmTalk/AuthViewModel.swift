@@ -361,6 +361,8 @@ final class AuthViewModel: ObservableObject {
                 nextSession.user.appleUserId = hint
             }
             persistSession(nextSession)
+            // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
+            SessionExpiryStore.clear()
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -429,6 +431,8 @@ final class AuthViewModel: ObservableObject {
         do {
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
             persistSession(nextSession)
+            // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
+            SessionExpiryStore.clear()
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
@@ -460,6 +464,8 @@ final class AuthViewModel: ObservableObject {
                 verificationCode: verificationCode
             )
             persistSession(nextSession)
+            // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
+            SessionExpiryStore.clear()
             statusMessage = "환영해요! 계정이 만들어졌어요."
             lastNetworkError = nil
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
@@ -564,6 +570,9 @@ final class AuthViewModel: ObservableObject {
             let nextToken = rolledToken?.nilIfBlank ?? token
             let nextSession = AuthSession(token: nextToken, user: merged)
             persistSession(nextSession)
+            // ⚠ **여기서 `SessionExpiryStore.clear()` 를 하지 말 것.** 이건 rolling refresh 라
+            // 로그인 확정이 아니다 — 로그아웃 직후 늦게 도착한 응답 하나가 표시를 지워
+            // 떼어낸 알람이 되살아난다(안드로이드 `AuthSessionStore` 의 같은 경고).
             // 탈퇴 유예 상태 반영 — pending_deletion 이면 RootView 가 복구 화면으로 게이팅.
             // Android `MainViewModel.checkAccountStatus()` 와 동등.
             pendingDeletion = merged.isPendingDeletion
@@ -766,6 +775,8 @@ final class AuthViewModel: ObservableObject {
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             await onLeaveAccountStopAlarms(currentUserID)
             signOut(message: "회원 탈퇴가 완료됐어요.")
+            // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
+            SessionExpiryStore.clear()
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요"))
         }
@@ -795,6 +806,8 @@ final class AuthViewModel: ObservableObject {
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
             await onLeaveAccountStopAlarms(currentUserID)
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
+            // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
+            SessionExpiryStore.clear()
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요"))
         }
@@ -1170,6 +1183,8 @@ final class AuthViewModel: ObservableObject {
         // 네트워크 왕복(`unregister`/`logout`)은 여전히 기다리지 않는다 — 그건 서버 쪽
         // 정리라 로컬 상태를 붙잡아 둘 이유가 없다.
         let departingUserID = userID
+        // 사용자가 끝낸 것이다 — 다시 로그인하기 전까지 아무것도 되살리지 않는다.
+        SessionExpiryStore.clear()
         isBusy = true
         Task {
             await stopAlarms(departingUserID)
@@ -1188,6 +1203,13 @@ final class AuthViewModel: ObservableObject {
     ///   명시적 로그아웃은 `false` 로 부른다 — 푸시 토큰 해제를 먼저 끝내야 하는데,
     ///   여기서 폐기를 띄우면 그 둘이 경주해 해제가 401 로 죽는다(`signOutExplicitly` 주석).
     func signOut(message: String? = nil, revokeOnServer: Bool = true) {
+        // ⚠ **자동으로 끊긴 계정을 남긴다**(Codex #699 P1). 비로그인 상태에서 어떤 알람을
+        // 되살려도 되는지 가르는 유일한 근거다 — 자동 401 과 명시적 로그아웃은 둘 다
+        // 세션이 비지만 알람에 대한 기대가 정반대다(`SessionExpiryStore`).
+        // 명시적 로그아웃·탈퇴는 `revokeOnServer: false` 로 들어오거나 곧바로 `clear()` 한다.
+        if revokeOnServer {
+            SessionExpiryStore.markSessionExpired(userId: session?.user.id)
+        }
         // W2: 로컬 세션을 지우기 전에 서버 토큰을 폐기(token_epoch 상향)한다.
         // best-effort — 네트워크 실패/만료 토큰이어도 로그아웃은 그대로 진행한다.
         // 이미 폐기/만료된 토큰으로 호출되는 경로(401 핸들러 등)에서도 안전하다.

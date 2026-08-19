@@ -289,6 +289,15 @@ struct AlarmTalkApp: App {
                     .task(id: freePlanVoiceLockKey) {
                         await applyFreePlanVoiceLockIfNeeded()
                     }
+                    // ⚠ **로그인 확정 직후 남의 계정 예약을 끊는다**(Codex #699 P1).
+                    // A 의 세션이 자동 401 로 끊기면 예약은 일부러 살려 두는데, 그 상태에서
+                    // B 가 로그인하면 목록·복구는 소유자로 걸러 A 의 알람을 **감추기만 한다** —
+                    // 예약은 그대로라 **A 의 알람이 울리는데 B 는 볼 수도 끌 수도 없다.**
+                    // 안드로이드는 `onSignedIn` 에서 `cancelAlarmsNotOwnedBy` 로 같은 일을 한다.
+                    .task(id: auth.session?.user.id) {
+                        guard alarmStore.hasLoadedFromDisk, let signedIn = auth.session?.user.id else { return }
+                        await alarmKit.cancelScheduledAlarmsNotOwnedBy(signedIn, store: alarmStore)
+                    }
                     .task(id: alarmStore.hasLoadedFromDisk) {
                         guard alarmStore.hasLoadedFromDisk else { return }
                         await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
