@@ -304,6 +304,18 @@ final class LocalAlarmStore: ObservableObject {
     /// - Parameter soundFingerprint: 이 예약에 실어 보낸 소리의 지문
     ///   (`AlarmSoundPlan.fingerprint`). 나중에 행이 바뀌었는지 비교하는 기준이 된다.
     ///   **예약과 지문은 여기서 한 번에 기록된다** — 따로 쓰면 어긋난다.
+    /// OS 예약 핸들만 지운다. **`enabled` 과 상태는 건드리지 않는다.**
+    ///
+    /// 로그아웃·탈퇴에서 예약을 끊은 뒤 부른다 — 핸들이 남아 있으면
+    /// `recoverScheduledAlarms` 의 `alarmKitUUID == nil` 조건에 걸리지 않아
+    /// **재로그인해도 다시 걸리지 않는다.**
+    func clearScheduleHandle(id: String) {
+        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
+        alarms[index].alarmKitID = nil
+        alarms[index].scheduledSoundFingerprint = nil
+        persist()
+    }
+
     func markScheduled(localID: String, alarmKitID: String, soundFingerprint: String? = nil) {
         guard let index = alarms.firstIndex(where: { $0.id == localID }) else { return }
         alarms[index].alarmKitID = alarmKitID
@@ -404,6 +416,17 @@ final class LocalAlarmStore: ObservableObject {
 
     func markFailed(id: String) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
+        // ⚠ **꺼진 알람에는 실패를 새기지 않는다**(2026-08-19 실기기 확인).
+        // `.failed` 는 행에 빨간 "알람을 다시 예약하지 못했어요" 를 띄우는데, 꺼진 알람은
+        // 애초에 울릴 일이 없어 그 말이 거짓이다. 더 나쁜 건 **아무도 치워 주지 않는다**
+        // 는 것 — `recoverScheduledAlarms` 는 켜진 알람만 후보로 잡으므로, 한번 이 상태가
+        // 되면 사용자가 직접 열어 다시 저장할 때까지 경고가 영원히 붙는다.
+        //
+        // 실제 경로: 켜기 실패 시 `AlarmsListView` 가 **되돌려 끈 뒤** 이 함수를 부른다
+        // (`setEnabled(false)` → `markFailed`). 호출부 한 곳만 고치면 같은 실수가 또
+        // 나므로 여기서 불변식으로 막는다 — **`.failed` 는 켜진 알람에만 의미가 있다.**
+        // 사용자에게는 그 자리에서 `actionMessage` 로 이미 알린다.
+        guard alarms[index].enabled else { return }
         alarms[index].state = AlarmRuntimeState.failed.rawValue
         alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
         persist()

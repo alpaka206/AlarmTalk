@@ -243,3 +243,83 @@ final class LocalAlarmStoreLoadWaitTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
     }
 }
+
+/// **계정을 떠났는데 알람이 울리면 안 된다.** 다만 `enabled` 는 사용자 의도라
+/// 건드리지 않는다 — 끄면 재로그인 때 알람이 전부 꺼진 채로 보인다(2026-08-19 지시).
+@MainActor
+final class LeaveAccountAlarmTests: XCTestCase {
+
+    private func makeStore() -> LocalAlarmStore {
+        LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("leave-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+    }
+
+    private func alarm(id: String, enabled: Bool, kitID: String?) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var r = LocalAlarmRecord(
+            id: id, label: "아침", hour: 7, minute: 0,
+            fireAtMillis: now + 60_000,
+            origin: AlarmOrigin.localOwned.rawValue,
+            createdAtMillis: now, updatedAtMillis: now
+        )
+        r.enabled = enabled
+        r.alarmKitID = kitID
+        return r
+    }
+
+    /// 예약 핸들만 지우고 `enabled` 는 남는다 — 그래야 복구 후보(`enabled && kitID == nil`)가 된다.
+    func test_예약_핸들만_지우고_켜짐은_유지한다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "a", enabled: true, kitID: "KIT-1"))
+
+        store.clearScheduleHandle(id: "a")
+
+        let r = store.record(id: "a")
+        XCTAssertNil(r?.alarmKitID, "예약 핸들이 남으면 재로그인해도 다시 안 걸린다")
+        XCTAssertEqual(r?.enabled, true, "사용자 의도(켜짐)를 끄면 재로그인 때 전부 꺼져 보인다")
+    }
+
+    /// ⚠ **켜기 실패 경로가 실제로 이 순서다** — 되돌려 끈 뒤 실패를 새긴다.
+    /// 그 결과가 `enabled=false, state=failed` 이고, 복구 sweep 는 켜진 알람만 보므로
+    /// **아무도 치워 주지 않아** 빨간 경고가 영원히 남는다(실기기에서 그 상태를 확인했다).
+    func test_꺼진_알람에는_실패를_새기지_않는다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "b", enabled: true, kitID: nil))
+
+        // AlarmsListView 의 켜기 실패 경로와 같은 순서
+        store.setEnabled(id: "b", enabled: false)
+        store.markFailed(id: "b")
+
+        XCTAssertNotEqual(
+            store.record(id: "b")?.runtimeStateEnum, .failed,
+            "꺼진 알람에 '다시 예약하지 못했어요' 가 영원히 붙는다"
+        )
+    }
+
+    /// 끄기 전에 이미 `.failed` 였어도 끄는 순간 풀린다(반대 방향의 같은 불변식).
+    func test_알람을_끄면_기존_실패도_풀린다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "b2", enabled: true, kitID: nil))
+        store.markFailed(id: "b2")
+        XCTAssertEqual(store.record(id: "b2")?.runtimeStateEnum, .failed)
+
+        store.setEnabled(id: "b2", enabled: false)
+
+        XCTAssertNotEqual(store.record(id: "b2")?.runtimeStateEnum, .failed)
+    }
+
+    /// 켜진 알람의 `.failed` 는 그대로 둔다 — 그건 진짜로 안 울린다는 뜻이라 알려야 한다.
+    func test_켜진_알람의_실패는_유지된다() {
+        let store = makeStore()
+        store.upsert(alarm(id: "c", enabled: false, kitID: nil))
+        store.markFailed(id: "c")
+
+        store.setEnabled(id: "c", enabled: true)
+        store.markFailed(id: "c")
+
+        XCTAssertEqual(store.record(id: "c")?.runtimeStateEnum, .failed)
+    }
+}
