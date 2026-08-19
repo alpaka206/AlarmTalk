@@ -269,10 +269,14 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             )
         }
 
-        // 로그아웃·탈퇴 때 OS 예약을 끊는다(행과 `enabled` 는 그대로 — 재로그인 시
-        // `recoverScheduledAlarms` 가 자동으로 다시 건다).
-        deps.auth.onLeaveAccountStopAlarms = {
-            _ = await deps.alarmKit.stopAllScheduledAlarms(store: deps.alarmStore)
+        // 로그아웃·탈퇴 때 OS 예약을 끊고, **떠나는 계정의 행은 함께 끈다**(2026-08-19 지시).
+        // 예약 취소는 전부에 걸지만 `enabled = false` 는 떠나는 계정 것만이다 — 남의 계정
+        // 행까지 끄면 자동 401 로 세션만 잃은 사람의 알람이 영영 꺼진다(Codex #699 P1).
+        deps.auth.onLeaveAccountStopAlarms = { departingUserID in
+            _ = await deps.alarmKit.stopAllScheduledAlarms(
+                store: deps.alarmStore,
+                ownerUserId: departingUserID
+            )
         }
 
         BackgroundSyncTask.register(

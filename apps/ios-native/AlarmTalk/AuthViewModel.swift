@@ -764,7 +764,7 @@ final class AuthViewModel: ObservableObject {
                 DynamicPromptPreferences.clear(userID: currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
-            await onLeaveAccountStopAlarms()
+            await onLeaveAccountStopAlarms(currentUserID)
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요"))
@@ -793,7 +793,7 @@ final class AuthViewModel: ObservableObject {
                 DynamicPromptPreferences.clear(userID: currentUserID)
             }
             // ⚠ 탈퇴도 로그아웃과 같다 — 계정을 떠났는데 알람이 울리면 안 된다.
-            await onLeaveAccountStopAlarms()
+            await onLeaveAccountStopAlarms(currentUserID)
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요"))
@@ -1133,12 +1133,14 @@ final class AuthViewModel: ObservableObject {
     ///
     /// ⚠ 계정을 떠났는데 알람이 울리면 안 된다 — 특히 받은 알람은 보낸 사람의 복제
     /// 목소리를 담고 있어, 로그아웃한 기기가 남의 생체정보로 우는 셈이 된다.
-    /// `enabled`(사용자 의도)는 건드리지 않으므로 다시 로그인하면 자동으로 복구된다
-    /// (`AlarmKitViewModel.stopAllScheduledAlarms` 주석).
+    ///
+    /// 예약을 끊고 **떠나는 계정의 행은 `enabled = false` 로 둔다**(2026-08-19 지시).
+    /// 인자로 그 계정을 넘기는 이유가 여기 있다 — 남의 계정 행까지 끄면 자동 401 로
+    /// 세션만 잃은 사람의 알람이 영영 꺼진다(`stopAllScheduledAlarms` 주석).
     ///
     /// ⚠ **자동 401 에서는 부르지 않는다.** 토큰이 낡은 것뿐인데 내일 아침 알람을
     /// 조용히 없애면 안 된다 — `signOut(revokeOnServer:)` 이 아니라 명시적 경로에서만 건다.
-    var onLeaveAccountStopAlarms: () async -> Void = {}
+    var onLeaveAccountStopAlarms: (String?) async -> Void = { _ in }
 
     func signOutExplicitly() {
         let userID = session?.user.id
@@ -1155,14 +1157,29 @@ final class AuthViewModel: ObservableObject {
         let unregister = onSignOutUnregisterPush
         let stopAlarms = onLeaveAccountStopAlarms
         let api = self.api
-        // ⚠ **세션을 지우기 전에 예약을 끊는다.** 지운 뒤에 하면 그 사이에 알람이 울릴 수
-        // 있고, 무엇보다 이 기기가 더 이상 이 계정이 아니게 된 뒤의 울림이 된다.
-        Task { await stopAlarms() }
-        signOut(revokeOnServer: false)
-        if let revokeToken {
-            Task {
-                await unregister(revokeToken)
-                try? await api.logout(token: revokeToken)
+        // ⚠ **세션을 지우기 전에 예약 끊기가 끝나야 한다 — 띄우기만 하면 소용없다**
+        // (Codex #699 P1). 예전에는 `Task { await stopAlarms() }` 로 띄우고 곧바로
+        // `signOut()` 을 불렀다. 그 사이에 세션이 비므로:
+        //   * 취소 루프가 AlarmKit 을 기다리는 동안 앱이 백그라운드로 가거나 종료되면
+        //     **켜진 OS 예약이 그대로 남아** 로그인 게이트 뒤에서 운다. 화면에 들어갈 수
+        //     없으니 사용자가 끌 방법이 없다.
+        //   * 뒤늦게 도는 복구 sweep 는 이제 계정이 nil 이라 **아직 안 꺼진 행을 다시
+        //     건다**(`recoverScheduledAlarms` 의 nil 갈래).
+        // 두 사고가 같은 창에서 나므로 그 창을 없앤다.
+        //
+        // 네트워크 왕복(`unregister`/`logout`)은 여전히 기다리지 않는다 — 그건 서버 쪽
+        // 정리라 로컬 상태를 붙잡아 둘 이유가 없다.
+        let departingUserID = userID
+        isBusy = true
+        Task {
+            await stopAlarms(departingUserID)
+            isBusy = false
+            signOut(revokeOnServer: false)
+            if let revokeToken {
+                Task {
+                    await unregister(revokeToken)
+                    try? await api.logout(token: revokeToken)
+                }
             }
         }
     }

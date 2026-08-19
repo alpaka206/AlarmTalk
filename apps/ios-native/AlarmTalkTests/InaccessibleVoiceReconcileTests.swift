@@ -350,3 +350,60 @@ extension LeaveAccountAlarmTests {
         XCTAssertTrue(store.alarms(visibleTo: nil).isEmpty)
     }
 }
+
+/// **로그아웃이 끄는 범위 — 떠나는 계정 것만이다** (Codex #699 P1).
+///
+/// 예약 취소는 전부에 걸어도 되지만(되돌릴 수 있다) `enabled = false` 는 되돌릴 수 없다.
+/// 남의 계정 행까지 끄면 자동 401 로 세션만 잃은 사람의 알람이 **영영 꺼진다.**
+@MainActor
+final class LeaveAccountScopeTests: XCTestCase {
+
+    private func makeStore() -> LocalAlarmStore {
+        LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("scope-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+    }
+
+    private func alarm(id: String, owner: String?) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var r = LocalAlarmRecord(
+            id: id, label: "아침", hour: 7, minute: 0,
+            fireAtMillis: now + 60_000,
+            origin: AlarmOrigin.localOwned.rawValue,
+            createdAtMillis: now, updatedAtMillis: now
+        )
+        r.enabled = true
+        r.alarmKitID = nil          // AlarmKit 왕복 없이 끄는 범위만 본다
+        r.ownerUserId = owner
+        return r
+    }
+
+    /// A 가 자동 401 로 세션만 잃은 상태에서 B 가 로그인했다 로그아웃하는 경우.
+    func test_남의_계정_알람은_로그아웃해도_켜진_채로_남는다() async {
+        let store = makeStore()
+        [alarm(id: "A-것", owner: "A"),
+         alarm(id: "B-것", owner: "B"),
+         alarm(id: "옛행", owner: nil)].forEach { store.upsert($0) }
+
+        _ = await AlarmKitViewModel().stopAllScheduledAlarms(store: store, ownerUserId: "B")
+
+        XCTAssertEqual(store.record(id: "A-것")?.enabled, true,
+                       "자동 401 로 세션만 잃은 A 의 알람이 B 의 로그아웃에 꺼졌다 — A 는 영영 되찾지 못한다")
+        XCTAssertEqual(store.record(id: "B-것")?.enabled, false, "떠나는 계정 알람은 꺼져야 한다")
+        // 소유자 미기록(옛 행)은 현재 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용.
+        XCTAssertEqual(store.record(id: "옛행")?.enabled, false)
+    }
+
+    /// 누가 떠나는지 모를 때는 켜진 것을 전부 끈다 — 근거가 없으면 안 울리는 쪽이 안전하다.
+    func test_떠나는_계정을_모르면_전부_끈다() async {
+        let store = makeStore()
+        [alarm(id: "A-것", owner: "A"), alarm(id: "B-것", owner: "B")].forEach { store.upsert($0) }
+
+        _ = await AlarmKitViewModel().stopAllScheduledAlarms(store: store, ownerUserId: nil)
+
+        XCTAssertEqual(store.record(id: "A-것")?.enabled, false)
+        XCTAssertEqual(store.record(id: "B-것")?.enabled, false)
+    }
+}

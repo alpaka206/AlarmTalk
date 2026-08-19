@@ -18,6 +18,17 @@
 
 로그아웃·탈퇴 신청·계정 삭제에서 **예약을 취소하고 행도 `enabled = false`** 로 둔다.
 
+⚠ **두 조치의 범위가 다르다**(2026-08-19 Codex #699 P1).
+
+| 조치 | 범위 | 왜 |
+| --- | --- | --- |
+| 예약 취소 | **전부** | 로그아웃 상태에서는 누구의 알람도 울리면 안 된다. **되돌릴 수 있다** — 주인이 다시 로그인하면 복구 sweep 가 다시 건다 |
+| `enabled = false` | **떠나는 계정 것만** | **되돌릴 수 없다.** A 가 자동 401 로 세션만 잃고(행은 켜 둔다) → B 가 로그인했다 로그아웃 → **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다 |
+
+떠나는 계정이 누구인지 모르면(`nil`) 켜진 것을 전부 끈다 — 근거가 없을 때는 안 울리는 쪽이 안전하다. 소유자 미기록(옛 행)은 떠나는 계정 것으로 본다.
+
+⚠ **세션을 비우기 전에 예약 끊기가 끝나야 한다 — 띄우기만 하면 소용없다.** 그 사이에 앱이 백그라운드로 가거나 종료되면 켜진 예약이 그대로 남고, 뒤늦게 도는 복구 sweep 는 계정이 없는 상태(1-2)라 아직 안 꺼진 행을 **다시 건다.**
+
 - **왜 예약을 끊나** — 로그아웃 상태에서는 알람 화면에 **들어갈 수도 없다**(로그인 게이트).
   예약이 남으면 사용자가 **끌 방법이 없는 알람**이 운다. 받은 알람은 보낸 사람의 복제
   목소리를 담고 있어, 떠난 기기가 남의 생체정보로 우는 셈이 된다.
@@ -36,8 +47,13 @@
 
 - 소유자 미기록(옛 행)은 **현재 계정 것으로 본다** — 저장소의 다른 파괴적 경로
   (무료 잠금·복원·목소리 강등)와 같은 관용이다.
-- **로그아웃 상태(계정 없음)에서는 아무것도 보이지 않고 아무것도 재무장하지 않는다.**
-  안 그러면 1-1 로 끊어 둔 것을 복구 sweep 가 곧바로 되살려 그 조치가 무의미해진다.
+- **로그아웃 상태(계정 없음)에서는 목록에 아무것도 보이지 않는다.**
+- ⚠ **그렇다고 재무장까지 통째로 건너뛰지는 않는다**(2026-08-19 Codex #699 P1에서 뒤집힘).
+  계정이 없으면 **켜진 행은 그대로 되살린다.** 명시적 로그아웃이 끊어 둔 것을 되살릴
+  걱정은 없다 — 그쪽은 `enabled = false` 까지 함께 두므로 **켜짐 조건에서 이미 걸러진다.**
+  그게 행과 예약을 두 겹으로 둔 이유다.
+  건너뛰면 **자동 401** 로 세션만 잃은 기기가 부팅·업데이트·타임존 변경으로 예약을 잃었을 때
+  **다시 로그인할 때까지 아무 알람도 안 울린다** — 자동 401 을 예외로 둔 뜻이 정반대로 뒤집힌다.
 
 ### 1-3. 삭제는 **예약을 먼저** 끊는다
 
@@ -112,7 +128,7 @@
 
 | 규칙 | 백엔드 | 안드로이드 | iOS |
 | --- | --- | --- | --- |
-| 1-1 계정 떠날 때 끄기 | — | `data/AlarmRepository.detachAlarmsOnSignOut` | `AlarmKitViewModel.stopAllScheduledAlarms` ← `AuthViewModel.onLeaveAccountStopAlarms` |
+| 1-1 계정 떠날 때 끄기 | — | `data/AlarmRepository.detachAlarmsOnSignOut` | `AlarmKitViewModel.stopAllScheduledAlarms(store:ownerUserId:)` ← `AuthViewModel.onLeaveAccountStopAlarms` |
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.cancelAlarmsNotOwnedBy` · `reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` |

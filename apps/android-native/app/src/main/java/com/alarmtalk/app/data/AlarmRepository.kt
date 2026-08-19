@@ -575,17 +575,6 @@ class AlarmRepository(
         // 꺼 두는 것이 안전한 이유는 **돌아왔을 때** 화면이 그 사실을 말하기 때문이다 —
         // `hs_status_inactive`("모든 알람이 꺼진 상태입니다.")가 홈 headline 으로 뜬다.
         // iOS 짝은 `AlarmKitViewModel.stopAllScheduledAlarms` — **한쪽만 고치지 말 것.**
-        val now = System.currentTimeMillis()
-        all.filter { it.enabled }.forEach { alarm ->
-            runCatching {
-                alarmDao.setState(
-                    id = alarm.id,
-                    state = AlarmStates.DISABLED,
-                    enabled = false,
-                    updatedAtMillis = now,
-                )
-            }.onFailure { error -> Log.w(TAG, "Failed to disable alarm on sign-out", error) }
-        }
         // 앞 계정의 미해결 소유권을 먼저 확정한다. 그러지 않으면 아직 앞 계정(A) 것인 미기록
         // 행을 지금 떠나는 계정(B) 것으로 잘못 새겨 A 가 그 알람을 영영 잃는다. 확정에
         // 실패하면 미기록 행이 누구 것인지 여전히 모르므로 아무에게도 새기지 않고, 임자
@@ -594,6 +583,39 @@ class AlarmRepository(
             // 새기기가 실패해도 예약은 이미 내려갔다. 임자 표시가 남아 다음 기회에 다시 시도한다.
             runCatching { claimUnownedAlarmsFor(signedOutUserId) }
                 .onFailure { error -> Log.w(TAG, "Failed to stamp ownerless alarms on sign-out", error) }
+        }
+        // ⚠ **끄는 것은 떠나는 계정 것만이다 — 위 예약 취소와 범위가 다르다**(Codex #699 P1).
+        // 취소는 되돌릴 수 있지만(주인이 다시 로그인하면 reschedulePendingAlarms 가 다시 건다)
+        // `enabled = false` 는 되돌릴 수 없다. 남의 계정 행까지 끄면 이렇게 된다:
+        // A 가 자동 401 로 세션만 잃고(행은 일부러 켜 둔다) → B 가 로그인했다 로그아웃 →
+        // **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다. 자동 401 을 예외로 둔 뜻이 사라진다.
+        //
+        // 소유권 확정 **뒤에** 판단하고, ⚠ **행을 다시 읽는다.** 위 `settlePendingAlarmOwnership`
+        // 은 **앞 계정(A)** 의 미해결 행을 A 로 새긴다 — 확정 전 스냅샷(`all`)으로 판정하면
+        // 그 행이 아직 null 로 보여 **지금 떠나는 B 것으로 오인해 A 의 알람을 꺼 버린다.**
+        // (이 함수가 막으려는 바로 그 사고를, 스냅샷을 재사용하는 것만으로 다시 낸다.)
+        //
+        // 다시 읽으면 A 것은 A 로, B 의 옛 행은 방금 `claimUnownedAlarmsFor` 가 B 로 새겼다.
+        // 그래도 null 이 남았다면 확정이 실패한 것이라 임자를 알 수 없으므로 끄는 쪽에 넣는다
+        // (안 울리는 쪽이 안전하다). `signedOutUserId` 가 비어 누구인지 모를 때도 같다.
+        // iOS 짝은 `AlarmKitViewModel.stopAllScheduledAlarms`.
+        val now = System.currentTimeMillis()
+        val leaving = signedOutUserId?.takeIf { it.isNotBlank() }
+        val settled = runCatching { alarmDao.getAllAlarms() }.getOrElse { error ->
+            Log.w(TAG, "Failed to re-read alarms after ownership settle", error)
+            all
+        }
+        settled.filter { alarm ->
+            alarm.enabled && (leaving == null || alarm.ownerUserId == null || alarm.ownerUserId == leaving)
+        }.forEach { alarm ->
+            runCatching {
+                alarmDao.setState(
+                    id = alarm.id,
+                    state = AlarmStates.DISABLED,
+                    enabled = false,
+                    updatedAtMillis = now,
+                )
+            }.onFailure { error -> Log.w(TAG, "Failed to disable alarm on sign-out", error) }
         }
         Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
         return all.size

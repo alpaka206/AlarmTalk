@@ -340,10 +340,20 @@ final class AlarmKitViewModel: ObservableObject {
     /// 아니라 토큰이 낡은 것뿐이라, 내일 아침 알람을 조용히 없애면 안 된다.
     /// (저장소의 `clearSessionKeepingAlarms` 와 같은 판단이다.)
     ///
+    /// ⚠ **끄는 것은 떠나는 계정 것만이다 — 예약 취소와 범위가 다르다**(Codex #699 P1).
+    /// 예약 취소는 **전부**에 건다(로그아웃 상태에서는 누구의 알람도 울리면 안 되고, 그건
+    /// 되돌릴 수 있다 — 주인이 다시 로그인하면 `recoverScheduledAlarms` 가 다시 건다).
+    /// 반면 `enabled = false` 는 **되돌릴 수 없다.** 남의 계정 행까지 끄면 이렇게 된다:
+    /// A 가 자동 401 로 세션만 잃고(행은 일부러 켜 둔다) → B 가 로그인했다 로그아웃 →
+    /// **A 의 알람이 영영 꺼진 채**로 A 가 돌아온다. 자동 401 을 예외로 둔 뜻이 사라진다.
+    ///
+    /// - Parameter ownerUserId: 지금 떠나는 계정. `nil`(누구인지 모름)이면 켜진 행을 전부
+    ///   끈다 — 판단할 근거가 없을 때는 **안 울리는 쪽**이 안전하다.
     /// - Returns: 실제로 끈 알람 수.
     @discardableResult
-    func stopAllScheduledAlarms(store: LocalAlarmStore) async -> Int {
+    func stopAllScheduledAlarms(store: LocalAlarmStore, ownerUserId: String?) async -> Int {
         #if canImport(AlarmKit)
+        let owner = ownerUserId?.nilIfBlank
         var stopped = 0
         for record in store.alarms {
             if record.alarmKitID != nil {
@@ -351,7 +361,9 @@ final class AlarmKitViewModel: ObservableObject {
                 // 예약이 사라졌으니 핸들도 지운다 — 남겨 두면 다음에 켤 때 어긋난다.
                 store.clearScheduleHandle(id: record.id)
             }
-            if record.enabled {
+            // 소유자 미기록(옛 행)은 현재 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용.
+            let departing = owner == nil || record.ownerUserId == nil || record.ownerUserId == owner
+            if record.enabled && departing {
                 store.setEnabled(id: record.id, enabled: false)
                 stopped += 1
             }
@@ -378,11 +390,20 @@ final class AlarmKitViewModel: ObservableObject {
         #if canImport(AlarmKit)
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         let holidayPredicate = holidayStore.holidayPredicate()
-        // 로그아웃 상태에서는 아무것도 되살리지 않는다(위 파라미터 주석).
-        guard let owner = ownerUserId?.nilIfBlank else { return 0 }
+        // ⚠ **계정이 없다고 재무장을 통째로 건너뛰지 말 것**(Codex #699 P1).
+        // 예전에는 여기서 곧바로 `return 0` 이었다. 그러면 **자동 401** 로 세션만 잃은
+        // 기기가 부팅·업데이트·타임존 변경으로 예약을 잃었을 때 **다시 로그인할 때까지
+        // 아무 알람도 안 울린다** — 자동 401 을 예외로 둔 뜻(내일 아침 알람을 없애지
+        // 않는다)이 정반대로 뒤집힌다.
+        //
+        // 명시적 로그아웃이 끊어 둔 것을 되살릴 걱정은 없다. 그쪽은 `enabled = false` 까지
+        // 함께 두므로 **아래 `record.enabled` 에서 이미 걸러진다** — 그게 행과 예약을
+        // 두 겹으로 둔 이유다(`docs/spec/alarm-lifecycle.md`).
+        let owner = ownerUserId?.nilIfBlank
         let candidates = store.alarms.filter { record in
-            // 앞 계정 알람을 이 계정 로그인으로 되살리지 않는다.
-            (record.ownerUserId == nil || record.ownerUserId == owner) &&
+            // 앞 계정 알람을 **다른 계정의** 로그인으로 되살리지 않는다. 계정이 아예 없을
+            // 때(자동 401 직후)는 가릴 기준이 없으므로 켜진 것을 그대로 되살린다.
+            (owner == nil || record.ownerUserId == nil || record.ownerUserId == owner) &&
             record.enabled && (
                 record.alarmKitUUID == nil ||
                 record.runtimeStateEnum == .failed ||
