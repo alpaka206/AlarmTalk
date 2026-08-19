@@ -34,6 +34,7 @@
 		1BA058526C5FAF5721BA9F33 /* AlarmIntentsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F3CB496801850A36588DBD5 /* AlarmIntentsTests.swift */; };
 		1C64569E826B74E77092848C /* voice_greeting_mina_en.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 7EA00DB3AD3CC0D979813908 /* voice_greeting_mina_en.mp3 */; };
 		1C729B6572B45CC7957AE301 /* AlarmEditorComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A278280437D8CE9D87E6E41 /* AlarmEditorComponents.swift */; };
+		1CE6FA5913366B7357CD2C70 /* PendingSignOutStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 990682BABD1C4BBE186FC3D5 /* PendingSignOutStore.swift */; };
 		1DF582024EBC322A9E3996A5 /* PromptDetailCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74945BF64F5846A12BDA23B6 /* PromptDetailCard.swift */; };
 		1EC30FA50D0D15D62EF99A11 /* RemoteAlarmSyncViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D91CA086C7D4B708EBFB7D9 /* RemoteAlarmSyncViewModel.swift */; };
 		1F91FD72D98E3051B4FD6BD7 /* AlarmTimeCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59FFCC8AFC12D1CB8AD6A44F /* AlarmTimeCalculatorTests.swift */; };
@@ -537,6 +538,7 @@
 		9641A64BF7F32B31E960BA67 /* VoiceStudioViewModel+ErrorMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "VoiceStudioViewModel+ErrorMapping.swift"; sourceTree = "<group>"; };
 		98CCA14FD6E4C634ECED32A9 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		98DEA7F0002B6032EA05DA9B /* LocalAlarmStoreCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAlarmStoreCopyTests.swift; sourceTree = "<group>"; };
+		990682BABD1C4BBE186FC3D5 /* PendingSignOutStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSignOutStore.swift; sourceTree = "<group>"; };
 		993F13DD98269244F828B44E /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		99E9564C1E25D37106ECC398 /* AccountPendingDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountPendingDeletionView.swift; sourceTree = "<group>"; };
 		9A1C8164C5467E1065C0FFF7 /* VoiceSheetScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSheetScreenshotUITests.swift; sourceTree = "<group>"; };
@@ -1146,6 +1148,7 @@
 				53224031E3CB9F18979BB95B /* NonceGenerator.swift */,
 				ECF3BDC0CB41DDC6B8481013 /* PaidVoiceGate.swift */,
 				B4E97D92CF52F3E44F04E894 /* PendingAlarmCancellationStore.swift */,
+				990682BABD1C4BBE186FC3D5 /* PendingSignOutStore.swift */,
 				49029209F735E8EAFC7C25AF /* PromoPromptStore.swift */,
 				BB22C58302991D362441AF21 /* PushNotificationCoordinator.swift */,
 				F53865164F0DA5BE67D28848 /* ReceivedAlarmBadgeStore.swift */,
@@ -1521,6 +1524,7 @@
 				5D1519E70208996918C80652 /* PasswordResetView.swift in Sources */,
 				FED2B0B63F72394D0E380983 /* PendingAlarmCancellationStore.swift in Sources */,
 				86FBE60255EEA72E499A3DF8 /* PendingPlanPurchase.swift in Sources */,
+				1CE6FA5913366B7357CD2C70 /* PendingSignOutStore.swift in Sources */,
 				33D415CA1BC2F1CF1500C39D /* PeoplePanel.swift in Sources */,
 				A2CA2AEBEAE902FB976735CA /* PlanTier.swift in Sources */,
 				F4ADF93D76B2C3B51808668A /* PreviewSupport.swift in Sources */,

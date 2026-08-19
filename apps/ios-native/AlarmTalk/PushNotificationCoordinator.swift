@@ -280,13 +280,22 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // ⚠ **로드를 기다린다.** 콜드 스타트 중이면 `alarms` 가 아직 비어 있어
             // 빈 배열을 새기고 끝난다(Codex #699 P1).
             await deps.alarmStore.waitUntilLoadedFromDisk()
+            // ⚠ 그 기다림은 **상한이 있다**(BGTask 예산 때문에 3초). 못 기다렸으면
+            // 빈 목록을 새기지 말고 물러선다 — `PendingSignOutStore` 표시가 남아 다음
+            // 실행이 마저 한다. 자동 401 은 `SessionExpiryStore` 가 같은 근거가 된다.
+            guard deps.alarmStore.hasLoadedFromDisk else { return }
             deps.alarmStore.claimUnownedAlarms(for: departingUserID)
         }
         deps.auth.onLeaveAccountStopAlarms = { departingUserID in
+            await deps.alarmStore.waitUntilLoadedFromDisk()
+            // 못 기다렸으면 표시를 남긴 채 물러선다(위 주석과 같은 이유).
+            guard deps.alarmStore.hasLoadedFromDisk else { return }
             _ = await deps.alarmKit.stopAllScheduledAlarms(
                 store: deps.alarmStore,
                 ownerUserId: departingUserID
             )
+            // 여기까지 왔으면 뒷정리가 실제로 끝났다.
+            PendingSignOutStore.clear()
         }
 
         BackgroundSyncTask.register(

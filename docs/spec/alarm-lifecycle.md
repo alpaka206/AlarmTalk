@@ -35,6 +35,17 @@
 읽기가 실패했을 때는 **임자가 모호한 행을 아예 건드리지 않는다.** 그 행들의 예약은 이미
 취소됐으니 울지 않고, 켜짐은 주인이 돌아왔을 때 되살아난다 — 잃는 것이 없는 쪽이다.
 
+⚠ **종료 중에는 아무도 예약하지 못하게 막는다.** 진행 중인 것을 무효화하는 것만으로는
+부족하다 — 무효화 **뒤에** 시작한 예약은 새 세대를 들고 시작해 그대로 성공하고, 종료가
+끝난 뒤 **켜진 채 로그인 화면 뒤에 숨은 알람**이 된다(원격 pull 이 종료 도중에 받은 알람을
+들여오는 경우가 실제로 그렇다). 경로마다 쫓지 말고 **만드는 것 자체를 막는다.**
+같은 이유로 sweep 는 **한 번 훑고 끝내지 않는다** — 훑는 도중에 들어온 행은 스냅샷에 없다.
+
+⚠ **뒷정리는 저장소가 로드된 뒤에만 할 수 있고, 그 기다림에는 상한이 있다.** 콜드 스타트
+직후 로그아웃하면 빈 목록을 보고 아무것도 못 끄고 끝난다. 자동 401 은 만료 계정 표시로
+되짚을 수 있지만 명시적 로그아웃은 그 표시를 **지우므로** 근거가 없다 — **끝내지 못한
+로그아웃을 따로 남겨** 다음 실행이 마저 한다. 표시는 **실제로 끝났을 때만** 내린다.
+
 ⚠ **끊기를 시작하기 전에 진행 중인 예약을 무효화한다.** 로그아웃은 예약을 다 끊은 **뒤에야**
 세션을 비우므로, 그 사이에 끝나는 예약은 계정이 아직 그대로라 스스로 물러서지 않는다(1-4).
 그 예약의 새 UUID 는 sweep 의 스냅샷에 없어 건너뛰어지는데, 이어지는 끄기가 **방금 저장된
@@ -209,6 +220,7 @@
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` |
+| 1-1 미완 로그아웃 이어서 끝내기 | — | `AlarmRepository` 의 `signOutWithoutSessionClearOwner` 게이트 | `PendingSignOutStore` |
 | 1-2 떠날 때 소유자 새기기 | — | `AlarmRepository.claimUnownedAlarmsFor` | `LocalAlarmStore.claimUnownedAlarms` ← `AuthViewModel.onSessionEndClaimAlarms` |
 | 1-2 자동 만료 계정 기록 | — | `network/AuthSessionStore.kt` 의 `sessionExpiredOwnerUserId` | `SessionExpiryStore` |
 | 1-2 로그인 시 남의 예약 취소 | — | `AlarmRepository.cancelAlarmsNotOwnedBy` | `AlarmKitViewModel.cancelScheduledAlarmsNotOwnedBy` |

@@ -1196,6 +1196,10 @@ final class AuthViewModel: ObservableObject {
         // 사용자가 끝낸 것이다 — 다시 로그인하기 전까지 아무것도 되살리지 않는다.
         SessionExpiryStore.clear()
         isBusy = true
+        // ⚠ **뒷정리가 끝났다는 보장이 없다.** 저장소가 아직 로드 전이면 아래 두 훅이
+        // 빈 목록을 보고 아무것도 못 끈다 — 그 계정의 OS 예약은 살아 있는데 화면에는
+        // 못 들어간다. 표시를 남겨 다음 실행이 마저 하게 한다(`PendingSignOutStore`).
+        PendingSignOutStore.mark(departingUserID)
         let claimAlarms = onSessionEndClaimAlarms
         Task {
             // ⚠ **끄기 전에 소유자를 새긴다.** 아래 `stopAlarms` 가 소유자 미기록 행을

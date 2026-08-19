@@ -76,6 +76,16 @@ final class AlarmKitViewModel: ObservableObject {
     /// (앱을 켤 때마다 진행 중인 예약을 무의미하게 취소하지 않기 위해).
     private var lastObservedAccountID: String??
 
+    /// **지금 계정을 떠나는 중인가.** 참이면 새 예약을 만들지 않는다.
+    ///
+    /// ⚠ 진행 중인 예약을 무효화하는 것만으로는 부족하다(Codex #699 P1). 무효화 **뒤에**
+    /// 시작한 예약은 새 세대를 들고 시작하므로 그대로 성공하고, 종료가 끝난 뒤에 **켜진
+    /// 채 로그인 화면 뒤에 숨은 알람**이 된다. 원격 pull 이 종료 도중에 받은 알람을
+    /// 들여오는 경우가 실제로 그렇다.
+    ///
+    /// 경로마다 쫓는 대신 **만드는 것 자체를 막는다** — 종료 중에는 아무도 예약하지 못한다.
+    private(set) var isLeavingAccount = false
+
     /// **진행 중인 예약을 그 자리에서 무효화한다.**
     ///
     /// ⚠ 계정이 실제로 바뀌기 **전에** 불러야 하는 경우가 있다(Codex #699 P1). 로그아웃은
@@ -515,6 +525,26 @@ final class AlarmKitViewModel: ObservableObject {
         // 아래 루프의 스냅샷은 그 새 UUID 를 못 보고 지나가는데, 이어지는 `setEnabled` 가
         // **방금 저장된 손잡이를 지워** 아무도 모르는 예약이 남는다.
         invalidateInFlightSchedules()
+        isLeavingAccount = true
+        defer { isLeavingAccount = false }
+        var stopped = 0
+        // ⚠ **한 번 훑고 끝내지 않는다.** 훑는 도중에 원격 pull 이 받은 알람을 들여오면
+        // 그 행은 스냅샷에 없어 통째로 건너뛰어진다. 더 할 일이 없을 때까지 돈다
+        // (상한을 두는 것은 무한 루프 방지 — 그 사이에도 `isLeavingAccount` 가 새 예약을 막는다).
+        for _ in 0..<5 {
+            let handled = await stopOnePass(store: store, owner: owner)
+            stopped += handled
+            if handled == 0 { break }
+        }
+        return stopped
+        #else
+        return 0
+        #endif
+    }
+
+    /// `stopAllScheduledAlarms` 의 한 회차. 처리한 행 수를 돌려준다(0이면 더 할 일이 없다).
+    private func stopOnePass(store: LocalAlarmStore, owner: String?) async -> Int {
+        #if canImport(AlarmKit)
         var stopped = 0
         for snapshot in store.alarms {
             // ⚠ **행을 다시 읽는다.** 위 배열은 루프 시작 시점의 **복사본**이고, 아래
@@ -744,6 +774,10 @@ final class AlarmKitViewModel: ObservableObject {
         store: LocalAlarmStore,
         retriesLeft: Int
     ) async -> Bool {
+        // ⚠ **계정을 떠나는 중에는 새 예약을 만들지 않는다**(Codex #699 P1).
+        // 종료 sweep 가 도는 동안 만들어진 예약은 그 sweep 가 못 보고 지나가, 로그아웃이
+        // 끝난 뒤 **켜진 채 로그인 화면 뒤에 숨은 알람**으로 남는다.
+        guard !isLeavingAccount else { return false }
         // ⚠ **await 하기 전에** 적어 둔다 — 돌아와서 달라졌으면 계정이 바뀐 것이다.
         let epochAtStart = accountEpoch
         // UI 미리보기 모드에서는 실제 예약을 하지 않는다 — 화면을 보려는 것이지 알람을
@@ -805,7 +839,7 @@ final class AlarmKitViewModel: ObservableObject {
             // ⚠ **await 사이에 계정이 바뀌었을 수 있다**(Codex #699 P1). 그대로 나아가면
             // 지금 로그인한 사람에게는 **보이지도 끄지도 못하는 남의 예약**이 남는다.
             // 로그인 시점의 정리는 이 예약을 못 본다 — 그때는 아직 UUID 가 저장 전이다.
-            if accountEpoch != epochAtStart {
+            if accountEpoch != epochAtStart || isLeavingAccount {
                 await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Account changed while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"

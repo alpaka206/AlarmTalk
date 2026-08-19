@@ -321,6 +321,15 @@ struct AlarmTalkApp: App {
                         if auth.session == nil, let expired = SessionExpiryStore.expiredOwnerUserId {
                             alarmStore.claimUnownedAlarms(for: expired)
                         }
+                        // ⚠ **끝내지 못한 로그아웃을 마저 한다**(Codex #699 P1). 콜드 스타트
+                        // 직후 로그아웃하면 저장소 로드가 상한(3초) 안에 안 끝나 뒷정리가
+                        // 통째로 건너뛰어질 수 있다 — 그 계정의 예약은 살아 있는데 화면에는
+                        // 못 들어간다. 표시가 남아 있으면 여기서 끝낸다.
+                        if let pending = PendingSignOutStore.pendingUserId {
+                            alarmStore.claimUnownedAlarms(for: pending)
+                            await alarmKit.stopAllScheduledAlarms(store: alarmStore, ownerUserId: pending)
+                            PendingSignOutStore.clear()
+                        }
                         await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                         // 앱 시작 후 1회: 30일 넘게 미참조 상태로 남은 캐시 음원과
                         // 고아 .meta.json 사이드카를 백그라운드에서 정리한다.

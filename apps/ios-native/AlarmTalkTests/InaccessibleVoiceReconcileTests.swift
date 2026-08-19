@@ -743,3 +743,37 @@ final class ClaimUnownedAlarmsTests: XCTestCase {
         XCTAssertNil(store.record(id: "옛행")?.ownerUserId)
     }
 }
+
+/// **끝내지 못한 로그아웃은 표시를 남겨 다음 실행이 마저 한다** (Codex #699 P1).
+///
+/// 뒷정리는 저장소가 로드된 뒤에만 할 수 있는데, 그 기다림에는 상한이 있다(3초).
+/// 콜드 스타트 직후 로그아웃하면 그 창에 걸려 아무것도 못 끄고 끝난다 — 그 계정의
+/// OS 예약은 살아 있는데 로그인 화면 뒤라 끌 수도 없다.
+@MainActor
+final class PendingSignOutStoreTests: XCTestCase {
+
+    override func setUp() { PendingSignOutStore.clear() }
+    override func tearDown() { PendingSignOutStore.clear() }
+
+    func test_표시가_없으면_할_일이_없다() {
+        XCTAssertNil(PendingSignOutStore.pendingUserId)
+    }
+
+    func test_계정을_적으면_그대로_남는다() {
+        PendingSignOutStore.mark("A")
+        XCTAssertEqual(PendingSignOutStore.pendingUserId, .some("A"))
+    }
+
+    /// 세션이 이미 비어 계정을 모를 때도 **표시 자체는 남아야** 뒷정리가 돈다.
+    /// 그때는 '누구인지 모름' 으로 넘어가 안전한 쪽(켜진 것을 전부 끈다)으로 처리된다.
+    func test_계정을_몰라도_표시는_남는다() {
+        PendingSignOutStore.mark(nil)
+        XCTAssertEqual(PendingSignOutStore.pendingUserId, .some(nil))
+    }
+
+    func test_끝나면_지운다() {
+        PendingSignOutStore.mark("A")
+        PendingSignOutStore.clear()
+        XCTAssertNil(PendingSignOutStore.pendingUserId, "안 지우면 다음 실행이 멀쩡한 알람을 또 끈다")
+    }
+}
