@@ -180,15 +180,25 @@ final class BackgroundSyncTask {
         }
 
         let timeoutTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(Self.executionTimeout * 1_000_000_000))
-            // ⚠ **끝났다고 말하기 전에 실제로 멈춘다**(2026-08-18 Codex #697 P2).
+            // ⚠ **취소되면 여기서 끝난다 — `try?` 로 삼키지 말 것**(2026-08-18 Codex #697 P2).
+            // 사이클이 25초 전에 정상으로 끝나면 아래에서 `timeoutTask.cancel()` 을 부르는데,
+            // 그때 `Task.sleep` 은 **즉시 던진다**. 삼키면 그 경로가 그대로 흘러 내려가
+            // **정상 완료마다** `cancelWork()`(막 끝난 작업을 취소)와
+            // `setTaskCompleted(success: false)`(같은 task 를 두 번째로 완료)를 부른다.
+            // 예전에는 후자만 있어 "중복은 noop" 으로 넘겼지만, 취소까지 부르게 된 지금은
+            // 그냥 틀린 동작이다 — 실제로 만료됐을 때만 이 아래가 돌아야 한다.
+            do {
+                try await Task.sleep(nanoseconds: UInt64(Self.executionTimeout * 1_000_000_000))
+            } catch {
+                return
+            }
+            // ⚠ **끝났다고 말하기 전에 실제로 멈춘다.**
             // 예전에는 `setTaskCompleted(false)` 만 불렀다 — 시스템에는 끝났다고 해
             // 놓고 사이클은 계속 돌아, 네트워크 요청과 **알람 쓰기**가 그 뒤에도 이어졌다.
             // iOS 가 그 순간 프로세스를 재우면 **반쯤 적용된 사이클**이 남고, 그게 곧
             // 이어질 재시도 회차와 겹친다. 시스템 만료 경로(위 `expirationHandler`)는
             // 처음부터 취소하고 있었는데 우리 워치독만 안 했다.
             cancelWork?()
-            // 아래 setTaskCompleted 가 중복 호출되어도 시스템 noop.
             task.setTaskCompleted(success: false)
         }
 
