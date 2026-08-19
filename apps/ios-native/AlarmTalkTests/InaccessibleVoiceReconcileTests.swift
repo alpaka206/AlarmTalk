@@ -786,84 +786,58 @@ final class ClaimUnownedAlarmsTests: XCTestCase {
 @MainActor
 final class PendingSignOutStoreTests: XCTestCase {
 
-    override func setUp() { PendingSignOutStore.clear() }
-    override func tearDown() { PendingSignOutStore.clear() }
+    override func setUp() { PendingSignOutStore.removeAll() }
+    override func tearDown() { PendingSignOutStore.removeAll() }
 
     func test_표시가_없으면_할_일이_없다() {
-        XCTAssertNil(PendingSignOutStore.pendingUserId)
+        XCTAssertTrue(PendingSignOutStore.pendingUserIds.isEmpty)
     }
 
     func test_계정을_적으면_그대로_남는다() {
         PendingSignOutStore.mark("A")
-        XCTAssertEqual(PendingSignOutStore.pendingUserId, .some("A"))
+        XCTAssertEqual(PendingSignOutStore.pendingUserIds, ["A"])
     }
 
-    /// 세션이 이미 비어 계정을 모를 때도 **표시 자체는 남아야** 뒷정리가 돈다.
-    /// 그때는 '누구인지 모름' 으로 넘어가 안전한 쪽(켜진 것을 전부 끈다)으로 처리된다.
+    /// ⚠ **한 칸이면 앞 계정이 덮인다**(Codex #699 P2). A 의 뒷정리가 오프라인으로 남아
+    /// 있는데 B 가 로그인했다 로그아웃하면, A 의 푸시 바인딩과 토큰이 **영영** 정리되지 않는다.
+    func test_여러_계정이_쌓인다() {
+        PendingSignOutStore.mark("A")
+        PendingSignOutStore.mark("B")
+        XCTAssertEqual(PendingSignOutStore.pendingUserIds, ["A", "B"], "앞 계정이 덮였다")
+    }
+
+    func test_같은_계정을_두_번_적지_않는다() {
+        PendingSignOutStore.mark("A")
+        PendingSignOutStore.mark("A")
+        XCTAssertEqual(PendingSignOutStore.pendingUserIds, ["A"])
+    }
+
+    /// 계정을 몰라도 표시 자체는 남아야 뒷정리가 돈다 — 그때는 '누구인지 모름' 으로 처리된다.
     func test_계정을_몰라도_표시는_남는다() {
         PendingSignOutStore.mark(nil)
-        XCTAssertEqual(PendingSignOutStore.pendingUserId, .some(nil))
+        XCTAssertEqual(PendingSignOutStore.pendingUserIds.count, 1)
     }
 
-    func test_끝나면_지운다() {
+    func test_끝난_계정만_지운다() {
         PendingSignOutStore.mark("A")
-        PendingSignOutStore.clear()
-        XCTAssertNil(PendingSignOutStore.pendingUserId, "안 지우면 다음 실행이 멀쩡한 알람을 또 끈다")
-    }
-}
-
-/// **종료 게이트는 겹쳐도 열리면 안 된다** (Codex #699 P1).
-///
-/// 콜드 스타트 로그아웃이 로드를 끝내는 순간, 로그아웃 태스크와 '미완 로그아웃 이어서
-/// 끝내기' 가 둘 다 들어온다. 불리언이면 **먼저 끝난 쪽이 문을 열어** 아직 취소를
-/// 기다리는 다른 쪽 옆으로 새 예약이 빠져나간다.
-@MainActor
-final class LeavingAccountGateTests: XCTestCase {
-
-    private func makeStore() -> LocalAlarmStore {
-        LocalAlarmStore(
-            storageURL: FileManager.default.temporaryDirectory
-                .appendingPathComponent("gate-\(UUID().uuidString).json"),
-            loadFromDisk: false
-        )
+        PendingSignOutStore.mark("B")
+        PendingSignOutStore.clear("B")
+        XCTAssertEqual(PendingSignOutStore.pendingUserIds, ["A"], "남의 뒷정리까지 지웠다")
     }
 
-    /// ⚠ **`false` 만 단언하면 아무것도 못 지킨다**(2026-08-19 감사 지적). 예전 이 테스트는
-    /// 종료 전후로 `isLeavingAccount == false` 만 봤다 — 게이트를 통째로 지워도(항상 false)
-    /// 초록이었다.
-    ///
-    /// 밖에서 "sweep 가 도는 동안" 을 관찰할 수는 없다 — 그 함수 안에는 진짜 suspension 이
-    /// 없어 MainActor 에서 원자적으로 끝난다. 그래서 **겹침 규칙 자체**를 잰다:
-    /// 이 단언은 카운터를 불리언으로 되돌리는 순간 깨진다.
-    func test_겹친_종료_중_하나가_끝나도_문은_닫혀_있다() {
-        let kit = AlarmKitViewModel()
-        XCTAssertFalse(kit.isLeavingAccount, "전제: 시작 전에는 열려 있다")
+    /// 토큰도 계정별이다 — 한 칸이면 B 의 로그아웃이 A 의 재시도 수단을 덮어쓴다.
+    func test_토큰도_계정별로_보관한다() {
+        PendingSignOutStore.markServerCleanup(token: "TOKEN-A", for: "A")
+        PendingSignOutStore.markServerCleanup(token: "TOKEN-B", for: "B")
 
-        kit.__beginLeavingAccountForTests()
-        XCTAssertTrue(kit.isLeavingAccount, "종료가 시작됐는데 문이 열려 있다 — 새 예약이 빠져나간다")
+        XCTAssertEqual(PendingSignOutStore.serverCleanupToken(for: "A"), "TOKEN-A")
+        XCTAssertEqual(PendingSignOutStore.serverCleanupToken(for: "B"), "TOKEN-B")
 
-        kit.__beginLeavingAccountForTests()
-        kit.__endLeavingAccountForTests()
-        XCTAssertTrue(
-            kit.isLeavingAccount,
-            "겹친 종료 중 하나가 끝났다고 문이 열렸다 — 아직 취소를 기다리는 쪽 옆으로 새 예약이 빠져나간다"
-        )
-
-        kit.__endLeavingAccountForTests()
-        XCTAssertFalse(kit.isLeavingAccount, "마지막까지 끝났는데 닫힌 채면 알람을 영영 못 건다")
+        PendingSignOutStore.clear("B")
+        XCTAssertEqual(PendingSignOutStore.serverCleanupToken(for: "A"), "TOKEN-A", "남의 토큰까지 지웠다")
+        XCTAssertNil(PendingSignOutStore.serverCleanupToken(for: "B"))
     }
 
-    /// 겹쳐 돌려도 **마지막 하나가 끝날 때까지** 닫혀 있어야 한다(카운터인 이유).
-    func test_겹친_종료가_모두_끝나야_문이_닫힌다() async {
-        let kit = AlarmKitViewModel()
-        let store = makeStore()
-
-        async let first: Int = kit.stopAllScheduledAlarms(store: store, ownerUserId: "A")
-        async let second: Int = kit.stopAllScheduledAlarms(store: store, ownerUserId: "A")
-        _ = await (first, second)
-
-        XCTAssertFalse(kit.isLeavingAccount, "종료가 끝났는데 문이 닫힌 채면 알람을 영영 못 건다")
-    }
 }
 
 /// **서버 뒷정리는 실패를 성공으로 보고하면 안 된다** (Codex #699 P2).

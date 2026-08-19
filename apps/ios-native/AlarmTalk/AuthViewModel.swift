@@ -829,7 +829,7 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **뒷정리가 실제로 끝났을 때만** 표시를 내린다(Codex #699 P1). 콜드 스타트에서
             // 저장소 로드가 상한 안에 안 끝나면 위 훅은 아무것도 못 끄고 물러서는데, 그때
             // 표시까지 지우면 **탈퇴한 계정의 OS 예약이 그대로 울면서** 되짚을 길이 없다.
-            if cleaned { PendingSignOutStore.clear() }
+            if cleaned { PendingSignOutStore.clear(currentUserID) }
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요"))
         }
@@ -864,7 +864,7 @@ final class AuthViewModel: ObservableObject {
             if !pushUnregistered {
                 // 해제를 다시 시도할 수 있게 토큰을 남긴다. 30일 안에 복구하면 다음 로그인이
                 // 토큰을 다시 등록하므로, 그때는 이 표시가 정리된다.
-                PendingSignOutStore.markServerCleanup(token: token)
+                PendingSignOutStore.markServerCleanup(token: token, for: currentUserID)
             }
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
@@ -888,7 +888,7 @@ final class AuthViewModel: ObservableObject {
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
             // 로컬 뒷정리와 푸시 해제가 **둘 다** 끝났을 때만 표시를 내린다.
-            if cleaned && pushUnregistered { PendingSignOutStore.clear() }
+            if cleaned && pushUnregistered { PendingSignOutStore.clear(currentUserID) }
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요"))
         }
@@ -916,10 +916,8 @@ final class AuthViewModel: ObservableObject {
             // ⚠ 단, **내 것일 때만** 거둔다. 앞 계정(A)의 뒷정리가 오프라인으로 못 끝나
             // 표시가 남아 있는데 B 가 자기 탈퇴를 철회했다면, 그건 A 와 아무 상관이 없다 —
             // 그때 지우면 A 의 푸시 바인딩과 토큰이 영영 정리되지 않는다.
-            if let pending = PendingSignOutStore.pendingUserId,
-               let mine = session?.user.id.nilIfBlank,
-               pending == mine {
-                PendingSignOutStore.clear()
+            if let mine = session?.user.id.nilIfBlank {
+                PendingSignOutStore.clear(mine)
             }
             statusMessage = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
         } catch {
@@ -1284,25 +1282,25 @@ final class AuthViewModel: ObservableObject {
         return await onSessionEndClaimAlarms(expired)
     }
 
-    func finishInterruptedServerCleanupOnly() async {
+    func finishInterruptedServerCleanupOnly(for userId: String?) async {
         let cleaned = await Self.runServerSignOutCleanup(
-            token: PendingSignOutStore.serverCleanupToken,
+            token: PendingSignOutStore.serverCleanupToken(for: userId),
             unregister: onSignOutUnregisterPush,
             api: api
         )
-        if cleaned { PendingSignOutStore.clear() }
+        if cleaned { PendingSignOutStore.clear(userId) }
     }
 
-    func finishInterruptedSignOut() async {
+    func finishInterruptedSignOut(for userId: String?) async {
         // 세션이 이미 지워진 뒤에 죽었을 수 있다 — 그때는 따로 남겨 둔 토큰을 쓴다.
-        let revokeToken = session?.token.nilIfBlank ?? PendingSignOutStore.serverCleanupToken
+        let revokeToken = session?.token.nilIfBlank ?? PendingSignOutStore.serverCleanupToken(for: userId)
         let cleaned = await Self.runServerSignOutCleanup(
             token: revokeToken,
             unregister: onSignOutUnregisterPush,
             api: api
         )
         signOut(revokeOnServer: false)
-        if cleaned { PendingSignOutStore.clear() }
+        if cleaned { PendingSignOutStore.clear(userId) }
     }
 
     /// 서버 쪽 로그아웃 뒷정리 — **푸시 해제 → 토큰 폐기** 순서.
@@ -1378,7 +1376,7 @@ final class AuthViewModel: ObservableObject {
         PendingSignOutStore.mark(departingUserID)
         // ⚠ 서버 뒷정리에 쓸 토큰을 **로컬 세션을 지우기 전에** 따로 남긴다 — 지운 뒤에
         // 프로세스가 죽으면 다시 시도할 방법이 없다(`PendingSignOutStore` 주석).
-        PendingSignOutStore.markServerCleanup(token: session?.token)
+        PendingSignOutStore.markServerCleanup(token: session?.token, for: departingUserID)
         let claimAlarms = onSessionEndClaimAlarms
         Task {
             // ⚠ **끄기 전에 소유자를 새긴다.** 아래 `stopAlarms` 가 소유자 미기록 행을
@@ -1389,7 +1387,7 @@ final class AuthViewModel: ObservableObject {
             signOut(revokeOnServer: false)
             // 서버 쪽까지 끝났을 때만 표시를 내린다 — 실패하면 남겨서 다음 실행이 재시도한다.
             if await Self.runServerSignOutCleanup(token: revokeToken, unregister: unregister, api: api) {
-                PendingSignOutStore.clear()
+                PendingSignOutStore.clear(departingUserID)
             }
         }
     }
