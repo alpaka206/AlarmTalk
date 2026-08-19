@@ -558,6 +558,18 @@ class AlarmRepository(
         }
     }
 
+    /** 한 행을 끈다. 성공 여부를 돌려준다 — 호출부가 재시도·게이트를 판단한다. */
+    private suspend fun disableOnSignOut(id: String, nowMillis: Long): Boolean =
+        runCatching {
+            alarmDao.setState(
+                id = id,
+                state = AlarmStates.DISABLED,
+                enabled = false,
+                updatedAtMillis = nowMillis,
+            )
+        }.onFailure { error -> Log.w(TAG, "Failed to disable alarm on sign-out", error) }
+            .isSuccess
+
     private suspend fun detachAlarmsOnSignOutLocked(signedOutUserId: String?): Int {
         val all = alarmDao.getAllAlarms()
         if (all.isEmpty()) return 0
@@ -626,15 +638,20 @@ class AlarmRepository(
                 null -> ownershipIsCertain
                 else -> false
             }
-        }.forEach { alarm ->
-            runCatching {
-                alarmDao.setState(
-                    id = alarm.id,
-                    state = AlarmStates.DISABLED,
-                    enabled = false,
-                    updatedAtMillis = now,
-                )
-            }.onFailure { error -> Log.w(TAG, "Failed to disable alarm on sign-out", error) }
+        }.let { targets ->
+            // ⚠ **끄기 실패를 로그만 남기고 넘어가지 말 것**(2026-08-19 Codex #699 P2).
+            // 예약은 이미 취소됐지만 행이 켜진 채 남으면, 같은 계정으로 다시 로그인할 때
+            // `reschedulePendingAlarms` 가 **명시적으로 로그아웃한 알람을 자동으로 되살린다.**
+            // Room/디스크의 일시적 실패가 대부분이라 **한 번 더** 시도하고,
+            // 그래도 안 되면 이 프로세스의 재예약을 막는 게이트를 세운다.
+            val failed = targets.filterNot { alarm -> disableOnSignOut(alarm.id, now) }
+            val stillFailed = failed.filterNot { alarm -> disableOnSignOut(alarm.id, now) }
+            if (stillFailed.isNotEmpty()) {
+                Log.w(TAG, "Failed to disable ${stillFailed.size} alarms on sign-out — gating restore")
+                // 이 프로세스에서 락을 기다리던 복원이 그 행들을 되살리지 못하게 한다.
+                // (프로세스가 죽으면 남는다 — 그건 다음 로그인에서 사용자가 끄는 수밖에 없다.)
+                signOutWithoutSessionClearOwner = signedOutUserId
+            }
         }
         Log.i(TAG, "Detached ${all.size} device alarms on sign-out")
         return all.size

@@ -572,11 +572,7 @@ final class AlarmKitViewModel: ObservableObject {
         // **방금 저장된 손잡이를 지워** 아무도 모르는 예약이 남는다.
         invalidateInFlightSchedules()
         leavingAccountDepth += 1
-        pendingCancellationOrigin = .accountLeave
-        defer {
-            leavingAccountDepth -= 1
-            if leavingAccountDepth == 0 { pendingCancellationOrigin = .foreignCleanup }
-        }
+        defer { leavingAccountDepth -= 1 }
         var stopped = 0
         // ⚠ **한 번 훑고 끝내지 않는다.** 훑는 도중에 원격 pull 이 받은 알람을 들여오면
         // 그 행은 스냅샷에 없어 통째로 건너뛰어진다. 더 할 일이 없을 때까지 돈다
@@ -617,6 +613,12 @@ final class AlarmKitViewModel: ObservableObject {
             // OS 에는 예약이 남고 우리에겐 취소할 방법이 없는 **고아 예약**이 된다 —
             // 로그아웃 뒤라 화면에 들어갈 수도 없으니 사용자는 울리는 걸 보고만 있게 된다.
             // 남겨 두면 다음 기회(재로그인·복구 sweep)에 그 손잡이로 다시 시도한다.
+            // ⚠ **출처는 행마다 정한다**(Codex #699 P1). 이 sweep 는 **모든** 예약을 끊지만
+            // `enabled = false` 는 떠나는 계정 것만이다. 출처를 sweep 통째로 `.accountLeave`
+            // 로 두면, 자동 401 로 세션만 잃고 기다리던 **남의 행**의 취소 실패까지 그렇게
+            // 기록돼 나중 회수가 그 행을 영구히 끈다.
+            let departing = owner == nil || record.ownerUserId == nil || record.ownerUserId == owner
+            pendingCancellationOrigin = departing ? .accountLeave : .foreignCleanup
             var keepHandle = false
             if record.alarmKitID != nil {
                 if await cancelScheduledAlarm(record: record) {
@@ -628,8 +630,8 @@ final class AlarmKitViewModel: ObservableObject {
                     keepHandle = true
                 }
             }
-            // 소유자 미기록(옛 행)은 현재 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용.
-            let departing = owner == nil || record.ownerUserId == nil || record.ownerUserId == owner
+            // 소유자 미기록(옛 행)은 현재 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용
+            // (위 `departing` 이 그 판정이고, 출처도 같은 값으로 정해 둔다).
             if record.enabled && departing {
                 // ⚠ `setEnabled` 는 기본적으로 핸들을 함께 비운다 — 위에서 취소에 실패해
                 // 남겨 둔 손잡이를 **그 한 줄이 도로 버린다.** 그래서 여기까지 이어 준다.
