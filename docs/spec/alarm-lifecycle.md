@@ -35,6 +35,14 @@
 읽기가 실패했을 때는 **임자가 모호한 행을 아예 건드리지 않는다.** 그 행들의 예약은 이미
 취소됐으니 울지 않고, 켜짐은 주인이 돌아왔을 때 되살아난다 — 잃는 것이 없는 쪽이다.
 
+⚠ **떠난 뒤에 도착하는 것도 막는다.** 받은 알람 pull 은 목소리 파일을 내려받느라 몇 초
+기다렸다가 반영하는데, 그 사이에 로그아웃이 통째로 끝날 수 있다. 그때 그대로 심으면
+**그 행은 아직 없던 행**이라 '지워졌나·울리는 중인가·수신자가 고쳤나' 세 가드에 하나도
+안 걸리고 **켜진 채로 새로 생겨 예약까지 걸린다** — 로그아웃 상태에서 끌 방법이 없는
+알람이 우는, 이 규칙이 통째로 막으려던 그 상태다.
+그래서 pull 은 **시작할 때의 계정을 기억했다가 반영 직전에 대조**한다(안드로이드).
+iOS 는 `isLeavingAccount` 게이트가 같은 일을 한다.
+
 ⚠ **종료 중에는 아무도 예약하지 못하게 막는다.** 진행 중인 것을 무효화하는 것만으로는
 부족하다 — 무효화 **뒤에** 시작한 예약은 새 세대를 들고 시작해 그대로 성공하고, 종료가
 끝난 뒤 **켜진 채 로그인 화면 뒤에 숨은 알람**이 된다(원격 pull 이 종료 도중에 받은 알람을
@@ -229,6 +237,7 @@
 | 1-1 자동 401 은 제외 | — | `AuthSessionStore` 주석의 자동/명시 구분 | `signOut(revokeOnServer:)` 는 훅을 부르지 않음 |
 | 1-2 목록 소유자 필터 | — | `data/AlarmDao` 의 `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` | `LocalAlarmStore.alarms(visibleTo:)` |
 | 1-2 재예약 소유자 필터 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms(store:ownerUserId:)` |
+| 1-1 떠난 뒤 도착한 알람 막기 | — | `RemoteAlarmPullSyncService` 의 `pullOwnerUserId` 대조 | `AlarmKitViewModel.isLeavingAccount` |
 | 1-1 미완 로그아웃 이어서 끝내기 | — | `AlarmRepository` 의 `signOutWithoutSessionClearOwner` 게이트 | `PendingSignOutStore` |
 | 1-2 떠날 때 소유자 새기기 | — | `AlarmRepository.claimUnownedAlarmsFor` | `LocalAlarmStore.claimUnownedAlarms` ← `AuthViewModel.onSessionEndClaimAlarms` |
 | 1-2 자동 만료 계정 기록 | — | `network/AuthSessionStore.kt` 의 `sessionExpiredOwnerUserId` | `SessionExpiryStore` |

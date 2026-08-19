@@ -106,6 +106,13 @@ internal class RemoteAlarmPullSyncService(
         var skipped = 0
         var failed = 0
 
+        // ⚠ **이 pull 이 시작할 때의 계정을 기억한다**(2026-08-19 감사 P1). 아래 반영 구간은
+        // 음성 다운로드(네트워크, 수 초) 뒤에 락을 **되잡아** 돌므로, 그 사이에 로그아웃이
+        // 전부 끝나 있을 수 있다. 그때 그대로 반영하면 `existing == null` 이라 아래 세 가드
+        // (지워졌나·울리는 중인가·수신자가 고쳤나)에 하나도 안 걸리고 **새 행을 enabled=1 로
+        // 심고 예약까지 건다** — 로그아웃 상태에서 끌 방법이 없는 알람이 우는, 이 변경이
+        // 통째로 막으려던 그 상태다. iOS 는 `AlarmKitViewModel.isLeavingAccount` 게이트가 막는다.
+        val pullOwnerUserId = currentUserIdProvider()
         remoteAlarms.forEach { remote ->
             runCatching {
                 // 과거 동시 pull 레이스로 같은 서버 알람이 여러 로컬 행으로 임포트됐다면
@@ -167,6 +174,14 @@ internal class RemoteAlarmPullSyncService(
                     // 둘 다 사용자가 못 일어나거나 고친 게 없어지는 결과라, 반영 직전의 행을
                     // 기준으로 다시 판단한다(Codex #675 P1).
                     val current = alarmDao.getAllByRemoteAlarmId(remote.id).firstOrNull()
+
+                    // ⚠ **대기하는 사이에 계정이 떠났으면 반영하지 않는다**(위 pullOwnerUserId 주석).
+                    // 로그아웃·계정 전환 둘 다 여기서 걸린다. 서버 행은 그대로 남으므로
+                    // 그 계정이 다시 로그인하면 다음 pull 이 정상적으로 들여온다.
+                    if (currentUserIdProvider() != pullOwnerUserId) {
+                        skipped += 1
+                        return@withLock
+                    }
 
                     // 대기 중에 **지워졌으면 되살리지 않는다.** 그대로 upsert 하면 사용자가
                     // 지운 알람이 다시 생겨 울린다(Codex #675 P1).

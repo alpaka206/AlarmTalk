@@ -335,7 +335,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
             }
         }
         // 알람 분리·기본 목소리 초기화·세션 클리어는 모든 종료 경로 공용(clearSignedInSession).
-        clearSignedInSession()
+        clearSignedInSession(departingUserId = session?.user?.id)
         authBusy = false
     }
 }
@@ -363,7 +363,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             if (shouldSignOutGoogle) {
                 runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
             }
-            clearSignedInSession()
+            clearSignedInSession(departingUserId = session?.user?.id)
             pendingDeletion = false
             dismissDeleteAccount()
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
@@ -561,7 +561,7 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
                 Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
             }
             clearCurrentAccessSnapshot()
-            clearSignedInSession()
+            clearSignedInSession(departingUserId = session?.user?.id)
             dismissDeleteAccount()
             message = if (revokeError == null) {
                 getApplication<android.app.Application>().getString(R.string.msg_account_deleted)

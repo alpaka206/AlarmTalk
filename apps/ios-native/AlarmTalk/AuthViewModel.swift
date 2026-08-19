@@ -764,6 +764,16 @@ final class AuthViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
+        // ⚠ **탈퇴도 '계정을 떠나는' 것이다 — 로그아웃과 같은 뒷정리가 필요하다**
+        // (2026-08-19 감사 P2). 두 가지가 빠져 있었다:
+        //  1. 기기 푸시 토큰을 안 뗐다 → **탈퇴했는데 그 계정 알림이 계속 온다.**
+        //     계정이 사라지기 **전에** 떼야 한다(토큰이 아직 유효할 때).
+        //  2. 복구 표시가 없었다 → 아래 `onLeaveAccountStopAlarms` 는 저장소가 로드 전이면
+        //     조용히 물러서는데, 그때 되짚을 근거가 하나도 없어 **탈퇴한 계정의 알람이
+        //     그대로 예약된 채** 남는다.
+        await onSignOutUnregisterPush(token)
+        PendingSignOutStore.mark(currentUserID)
+
         do {
             _ = try await api.deleteAccount(token: token)
             if let currentUserID, !currentUserID.isEmpty {
@@ -777,6 +787,8 @@ final class AuthViewModel: ObservableObject {
             signOut(message: "회원 탈퇴가 완료됐어요.")
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
+            // 서버 쪽은 계정 삭제로 이미 끝났고 푸시도 위에서 뗐다 — 표시를 내린다.
+            PendingSignOutStore.clear()
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요"))
         }
@@ -795,6 +807,13 @@ final class AuthViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
+        // 즉시 탈퇴와 같은 이유로 푸시를 떼고 복구 표시를 남긴다(위 `deleteAccount` 주석).
+        // ⚠ 유예 탈퇴는 30일 안에 **복구할 수 있다** — 그때 다시 로그인하면 푸시가 다시
+        // 등록되고(`registerToken`) 알람도 사용자가 켠다. 지금 떼는 것이 맞다:
+        // 그 30일 동안 이 기기는 그 계정을 쓰지 않는데 알림만 받고 있을 이유가 없다.
+        await onSignOutUnregisterPush(token)
+        PendingSignOutStore.mark(currentUserID)
+
         do {
             _ = try await api.requestAccountDeletion(token: token)
             if let currentUserID, !currentUserID.isEmpty {
@@ -808,6 +827,7 @@ final class AuthViewModel: ObservableObject {
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
+            PendingSignOutStore.clear()
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요"))
         }

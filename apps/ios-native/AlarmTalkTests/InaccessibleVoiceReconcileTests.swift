@@ -85,15 +85,25 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
     }
 
     /// 소유 계정을 모르면(로그아웃 직후 등) 아무것도 하지 않는다.
+    /// ⚠ **두 겹으로 공허했다**(2026-08-19 감사 P3). (a) 권위를 세우지 않아 첫 가드에서
+    /// 되돌아갔고, (b) 픽스처 알람의 소유자가 `"owner-1"` 이라 설령 권위를 세워도
+    /// nil-owner 갈래가 아무것도 결정하지 않았다. 둘 다 고쳐 **소유자 미기록 행이
+    /// 로그아웃 상태에서 강등되지 않는지**를 실제로 잰다.
     func test_소유자를_모르면_아무것도_하지_않는다() {
         let store = makeStore()
-        store.upsert(alarm(id: "a", voiceProfileId: "clone-1"))
+        var record = alarm(id: "a", voiceProfileId: "clone-1")
+        record.ownerUserId = nil       // 옛 행 — 로그인 상태였다면 '현재 계정 것' 으로 봤을 값
+        store.upsert(record)
         let voice = VoiceStudioViewModel()
+        // 권위를 세우지 않으면 첫 가드에서 되돌아가 아래 단언이 아무것도 지키지 못한다.
+        voice.__setAccessibleVoicesForTests(profileIDs: [])
 
         XCTAssertEqual(
             voice.reconcileInaccessibleVoiceAlarms(alarmStore: store, audioCache: nil, ownerUserId: nil),
-            0
+            0,
+            "로그아웃 상태에서는 강등 대상을 가릴 기준이 없다 — 옛 행까지 건드리면 남의 알람을 깎는다"
         )
+        XCTAssertEqual(store.record(id: "a")?.voiceProfileId, "clone-1", "행이 강등됐다")
     }
 
     // MARK: - 권위가 선 상태에서의 **범위** 검증
@@ -244,8 +254,12 @@ final class LocalAlarmStoreLoadWaitTests: XCTestCase {
     }
 }
 
-/// **계정을 떠났는데 알람이 울리면 안 된다.** 다만 `enabled` 는 사용자 의도라
-/// 건드리지 않는다 — 끄면 재로그인 때 알람이 전부 꺼진 채로 보인다(2026-08-19 지시).
+/// **계정을 떠났는데 알람이 울리면 안 된다.** 예약을 끊고 **행도 끈다**(2026-08-19 지시).
+///
+/// ⚠ 이 주석은 한때 정확히 **반대**를 적고 있었다 — "`enabled` 는 사용자 의도라 건드리지
+/// 않는다" 는 이 브랜치 첫 커밋의 서술이고, **같은 날 지시로 뒤집혔다**(커밋 18cc45a3).
+/// 스펙이 규칙 1-1 의 회귀 테스트로 이 클래스를 지목하는데 그 문서가 옛 정책을 말하고
+/// 있었으니, 여기를 근거로 삼은 사람은 반대로 고쳤을 것이다.
 @MainActor
 final class LeaveAccountAlarmTests: XCTestCase {
 
@@ -573,8 +587,11 @@ final class ScheduleHandleRetentionTests: XCTestCase {
 @MainActor
 final class SchedulingSnapshotTests: XCTestCase {
 
+    /// ⚠ **시각을 고정한다.** 호출마다 `Date()` 를 읽으면 두 레코드의 `fireAtMillis` 가
+    /// 밀리초 단위로 갈려, "같은 행이면 스냅샷도 같다" 가 **간헐적으로** 깨진다
+    /// (2026-08-19 실제로 한 번 붉게 났다).
     private func record(enabled: Bool) -> LocalAlarmRecord {
-        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let now: Int64 = 1_700_000_000_000
         var r = LocalAlarmRecord(
             id: "a", label: "아침", hour: 7, minute: 0, fireAtMillis: now + 60_000,
             origin: AlarmOrigin.localOwned.rawValue, createdAtMillis: now, updatedAtMillis: now

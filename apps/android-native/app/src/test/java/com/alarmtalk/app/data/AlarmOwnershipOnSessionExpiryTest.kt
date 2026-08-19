@@ -135,6 +135,20 @@ class AlarmOwnershipOnSessionExpiryTest {
         assertEquals(false, dao.getById("legacy")?.enabled)
     }
 
+    /**
+     * **게이트만 남기고 '후보 없음' 지름길을 없앤다** (2026-08-19 감사 P2).
+     *
+     * 2026-08-19 정책 변경으로 [detachAlarmsOnSignOut] 이 행까지 끄면서,
+     * [reschedulePendingAlarms] 가 0 을 돌려주는 이유가 **게이트가 아니라 그냥 후보가
+     * 없어서**가 됐다. 그래서 아래 테스트들이 지키던 게이트·락·복원대상 판정을 통째로
+     * 지워도 전부 통과했다(공허한 초록).
+     *
+     * 그 판정을 계속 재려면 행을 도로 켜서 **후보로 만들어 놓고** 게이트가 막는지 봐야 한다.
+     */
+    private suspend fun makeCandidateAgain(id: String = "legacy-1") {
+        dao.setState(id = id, state = AlarmStates.SCHEDULED, enabled = true, updatedAtMillis = 3_000L)
+    }
+
     private suspend fun seedLegacyAlarm(
         id: String = "legacy-1",
         owner: String? = null,
@@ -401,6 +415,8 @@ class AlarmOwnershipOnSessionExpiryTest {
         repository.detachAlarmsOnSignOut("account-A")
 
         // 그 뒤에 워커가 돌아도 되살아나면 안 된다.
+        // 행이 꺼진 것만으로 0 이 되면 복원대상 판정을 못 재므로, 후보로 되돌려 놓고 본다.
+        makeCandidateAgain()
         val scheduled = repository.reschedulePendingAlarms()
 
         assertEquals("로그아웃 뒤 복원은 아무것도 예약하지 않는다", 0, scheduled)
@@ -603,6 +619,7 @@ class AlarmOwnershipOnSessionExpiryTest {
         }
         assertNull("전제: 소유자는 여전히 미기록이다", ownerOf("legacy-1"))
 
+        makeCandidateAgain()
         val scheduled = repo.reschedulePendingAlarms()
 
         assertEquals("주인 없는 행도 되살리면 안 된다", 0, scheduled)

@@ -452,6 +452,19 @@ final class AlarmKitViewModel: ObservableObject {
         // 행이라면 값이 달라 여기 걸리지 않는다.
         for record in store.alarms {
             guard let handle = record.alarmKitID, resolved.contains(handle) else { continue }
+            // ⚠ **울려서 되살아난 행을 다시 끈다**(2026-08-19 감사 P3). 회수가 늦어져 그 고아가
+            // 먼저 울면 `markRinging` 이(반복 알람은 해제 시 `markStopped` 도) 행을
+            // `enabled = true` 로 되돌린다. 손잡이만 지우고 끝내면 그 행은
+            // `enabled = true, alarmKitID = nil` 로 남아 **정확히 복구 후보 조건**이 되고,
+            // 그 계정이 다시 로그인하는 순간 자동으로 재무장된다 —
+            // "로그아웃하면 꺼 둔다 / 재로그인해도 저절로 울리지 않는다" 가 그 알람에 한해
+            // 조용히 무효가 된다.
+            //
+            // 손잡이가 **이 UUID 와 같을 때만** 여기 걸리므로, 그 사이 새 UUID 로 다시 예약된
+            // 행(사용자가 직접 켠 경우)은 건드리지 않는다.
+            if record.enabled {
+                store.setEnabled(id: record.id, enabled: false)
+            }
             store.clearScheduleHandle(id: record.id)
         }
         return cleared
