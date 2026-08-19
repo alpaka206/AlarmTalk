@@ -295,6 +295,10 @@ struct AlarmTalkApp: App {
                     // 예약은 그대로라 **A 의 알람이 울리는데 B 는 볼 수도 끌 수도 없다.**
                     // 안드로이드는 `onSignedIn` 에서 `cancelAlarmsNotOwnedBy` 로 같은 일을 한다.
                     .task(id: auth.session?.user.id) {
+                        // ⚠ **먼저 계정 세대를 올린다**(Codex #699 P1). 진행 중인 예약이
+                        // await 에서 돌아와 이 값을 보고 스스로 물러선다 — 아래 정리는
+                        // **아직 저장되지 않은 UUID** 를 못 보므로 그것만으로는 못 닫힌다.
+                        alarmKit.noteActiveAccount(auth.session?.user.id)
                         guard alarmStore.hasLoadedFromDisk, let signedIn = auth.session?.user.id else { return }
                         await alarmKit.cancelScheduledAlarmsNotOwnedBy(signedIn, store: alarmStore)
                     }

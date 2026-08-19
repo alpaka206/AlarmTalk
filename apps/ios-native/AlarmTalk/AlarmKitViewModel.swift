@@ -43,6 +43,32 @@ final class AlarmKitViewModel: ObservableObject {
     /// 두 경로 모두 @MainActor 격리라 추가 락 없이 안전하다.
     private var rearmInFlight: Set<String> = []
 
+    /// 활성 계정이 바뀐 횟수. **예약이 await 하는 동안 계정이 바뀌었는지** 가르는 값이다.
+    ///
+    /// ⚠ `SchedulingSnapshot` 으로는 이걸 못 잡는다(Codex #699 P1) — 그 스냅샷은 **행**이
+    /// 바뀌었는지만 보고, 활성 계정도 `ownerUserId` 도 담고 있지 않다. 그래서 이런 일이
+    /// 벌어졌다: A 의 복구가 `AlarmManager.schedule` 을 await 하는 사이 B 가 로그인하면,
+    /// 로그인 정리(`cancelScheduledAlarmsNotOwnedBy`)는 **아직 저장되지 않은 새 UUID** 를
+    /// 못 보고 지나가고, 뒤늦게 끝난 A 의 예약이 **B 의 앱에 보이지 않는 A 의 예약**으로
+    /// 남는다. 소유자 판정은 await **앞**에서만 이뤄지므로 순서를 어떻게 놓아도 닫히지 않는다.
+    ///
+    /// 그래서 값 하나로 잰다 — await 전에 적어 두고, 돌아와서 달라졌으면 방금 건 예약을 되돌린다.
+    private(set) var accountEpoch = 0
+
+    /// 마지막으로 본 활성 계정. `nil` 은 '아직 본 적 없음' 이라 첫 관찰은 세대를 올리지 않는다
+    /// (앱을 켤 때마다 진행 중인 예약을 무의미하게 취소하지 않기 위해).
+    private var lastObservedAccountID: String??
+
+    /// 활성 계정을 알린다. 바뀌었으면 세대를 올린다.
+    func noteActiveAccount(_ userID: String?) {
+        let normalized = userID?.nilIfBlank
+        defer { lastObservedAccountID = .some(normalized) }
+        guard let previous = lastObservedAccountID else { return }  // 첫 관찰
+        if previous != normalized {
+            accountEpoch &+= 1
+        }
+    }
+
     /// 지금 이 알람을 다른 경로가 재예약하는 중인가.
     ///
     /// ⚠ **예약 경로가 겹치면 취소 불가능한 유령 알람이 남는다.** `schedule` 은 매번 새 UUID를
@@ -376,21 +402,26 @@ final class AlarmKitViewModel: ObservableObject {
         guard let live = try? AlarmManager.shared.alarms else { return 0 }
         let liveIDs = Set(live.map(\.id))
         var cleared = 0
+        // 이번 회차에 **끝난** UUID 들(끊었거나, OS 에 이미 없다고 확인했거나).
+        var resolved: Set<String> = []
         for raw in pending {
             guard let uuid = UUID(uuidString: raw) else {
                 // UUID 로 읽히지 않으면 취소할 방법이 없다 — 붙들고 있을 이유도 없다.
                 PendingAlarmCancellationStore.remove(raw)
+                resolved.insert(raw)
                 continue
             }
             if !liveIDs.contains(uuid) {
                 // OS 에 이미 없다(사용자가 지웠거나 발화 후 사라졌다).
                 PendingAlarmCancellationStore.remove(raw)
+                resolved.insert(raw)
                 cleared += 1
                 continue
             }
             do {
                 try AlarmManager.shared.cancel(id: uuid)
                 PendingAlarmCancellationStore.remove(raw)
+                resolved.insert(raw)
                 cleared += 1
             } catch {
                 // ⚠ **여기서 `statusMessage` 를 세우지 않는다.** 이 sweep 는 앱을 열 때마다
@@ -398,11 +429,16 @@ final class AlarmKitViewModel: ObservableObject {
                 // 목록에 그대로 두어 다음 기회에 다시 시도한다.
             }
         }
-        // 목록에서 사라진 예약을 가리키던 손잡이는 함께 비운다 — 남겨 두면 다음에 켤 때
-        // 어긋난다. (행이 이미 새 UUID 로 다시 예약됐다면 그 값은 건드리지 않는다.)
-        let stillPending = Set(PendingAlarmCancellationStore.all)
+        // 끝난 UUID 를 가리키던 손잡이를 비운다.
+        //
+        // ⚠ **`enabled` 를 보지 말 것**(Codex #699 P1). 회수가 늦어져 그 고아가 울면
+        // `markRinging` 이 행을 켜는데, 그때 이 정리를 건너뛰면 행에 **이미 취소된 UUID** 가
+        // 남는다 — 복구 sweep 는 "핸들이 있으니 예약돼 있다" 고 보고 건너뛰어, 반복 알람의
+        // 다음 회차부터 **조용히 안 울린다.**
+        // 안전판은 `enabled` 가 아니라 **UUID 일치**다: 그 사이 새 UUID 로 다시 예약된
+        // 행이라면 값이 달라 여기 걸리지 않는다.
         for record in store.alarms {
-            guard let handle = record.alarmKitID, !record.enabled, !stillPending.contains(handle) else { continue }
+            guard let handle = record.alarmKitID, resolved.contains(handle) else { continue }
             store.clearScheduleHandle(id: record.id)
         }
         return cleared
@@ -676,6 +712,8 @@ final class AlarmKitViewModel: ObservableObject {
         store: LocalAlarmStore,
         retriesLeft: Int
     ) async -> Bool {
+        // ⚠ **await 하기 전에** 적어 둔다 — 돌아와서 달라졌으면 계정이 바뀐 것이다.
+        let epochAtStart = accountEpoch
         // UI 미리보기 모드에서는 실제 예약을 하지 않는다 — 화면을 보려는 것이지 알람을
         // 걸려는 게 아니다. 권한 프롬프트가 떠서 화면을 가리는 것도 막는다.
         //
@@ -729,6 +767,17 @@ final class AlarmKitViewModel: ObservableObject {
             // 것도 안 된다: 그건 "끝났다" 고 통보한 사이클이 로컬을 더 만지는 것이다.
             if Task.isCancelled {
                 try? await AlarmManager.shared.cancel(id: id)
+                return false
+            }
+
+            // ⚠ **await 사이에 계정이 바뀌었을 수 있다**(Codex #699 P1). 그대로 나아가면
+            // 지금 로그인한 사람에게는 **보이지도 끄지도 못하는 남의 예약**이 남는다.
+            // 로그인 시점의 정리는 이 예약을 못 본다 — 그때는 아직 UUID 가 저장 전이다.
+            if accountEpoch != epochAtStart {
+                try? await AlarmManager.shared.cancel(id: id)
+                Self.paidGateLogger.info(
+                    "Account changed while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
+                )
                 return false
             }
 

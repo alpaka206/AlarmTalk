@@ -643,3 +643,43 @@ final class PendingCancellationTests: XCTestCase {
         XCTAssertEqual(PendingAlarmCancellationStore.all, ["KIT-1"])
     }
 }
+
+/// **예약이 await 하는 동안 계정이 바뀌면 그 예약은 되돌려져야 한다** (Codex #699 P1).
+///
+/// `SchedulingSnapshot` 은 **행**이 바뀌었는지만 본다 — 활성 계정도 `ownerUserId` 도 담고
+/// 있지 않아 이 경합을 못 잡는다. 그래서 세대 값 하나로 잰다.
+@MainActor
+final class AccountEpochTests: XCTestCase {
+
+    func test_첫_관찰은_세대를_올리지_않는다() {
+        let kit = AlarmKitViewModel()
+        let before = kit.accountEpoch
+        kit.noteActiveAccount("A")
+        XCTAssertEqual(kit.accountEpoch, before, "앱을 켤 때마다 진행 중인 예약이 취소된다")
+    }
+
+    func test_같은_계정을_다시_봐도_그대로다() {
+        let kit = AlarmKitViewModel()
+        kit.noteActiveAccount("A")
+        let before = kit.accountEpoch
+        kit.noteActiveAccount("A")
+        XCTAssertEqual(kit.accountEpoch, before)
+    }
+
+    func test_계정이_바뀌면_올라간다() {
+        let kit = AlarmKitViewModel()
+        kit.noteActiveAccount("A")
+        let before = kit.accountEpoch
+        kit.noteActiveAccount("B")
+        XCTAssertEqual(kit.accountEpoch, before + 1, "A 의 진행 중 예약이 B 의 앱에 남는다")
+    }
+
+    /// 로그아웃(계정 없음)도 바뀐 것이다 — 그 사이 끝난 예약이 남으면 끌 수가 없다.
+    func test_로그아웃도_세대를_올린다() {
+        let kit = AlarmKitViewModel()
+        kit.noteActiveAccount("A")
+        let before = kit.accountEpoch
+        kit.noteActiveAccount(nil)
+        XCTAssertEqual(kit.accountEpoch, before + 1)
+    }
+}
