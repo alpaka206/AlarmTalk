@@ -103,6 +103,10 @@ final class AuthViewModel: ObservableObject {
 
     // MARK: - 로그인 (서버 뒷정리와 한 줄로)
 
+    /// ⚠ **줄에 서기 **전에** busy 를 세운다**(Codex #699 P2). 앞선 뒷정리가 느리면 줄에서
+    /// 기다리는 동안 화면이 열려 있어, 사용자가 더 누르는 만큼 로그인이 **쌓인다** —
+    /// 먼저 끝난 것이 세션을 심은 뒤 다음 것이 **다른 계정을 계정-이탈 뒷정리 없이** 심을 수 있다.
+    ///
     /// ⚠ **로그인 요청 자체를 줄에 태운다**(Codex #699 P1). "기다렸다가 보낸다" 로는 부족하다 —
     /// 그 기다림은 **그 시점의 줄**만 보므로, 요청이 날아가는 사이에 복구가 새로 넣은
     /// `/auth/logout` 이 그 뒤에 처리되면 `token_epoch` 가 올라가 **방금 받은 토큰이 무효**가 된다.
@@ -116,12 +120,18 @@ final class AuthViewModel: ObservableObject {
         authorizationCode: String? = nil,
         appleUserIdHint: String? = nil
     ) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
         await serializeAuthServerMutation { [weak self] in
             await self?.performLoginWithApple(idToken: idToken, name: name, email: email, rawNonce: rawNonce, authorizationCode: authorizationCode, appleUserIdHint: appleUserIdHint)
         }
     }
 
     func loginWithEmail(email: String, password: String) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
         await serializeAuthServerMutation { [weak self] in
             await self?.performLoginWithEmail(email: email, password: password)
         }
@@ -133,6 +143,9 @@ final class AuthViewModel: ObservableObject {
         name: String,
         verificationCode: String
     ) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
         await serializeAuthServerMutation { [weak self] in
             await self?.performRegisterWithEmail(email: email, password: password, name: name, verificationCode: verificationCode)
         }
@@ -403,9 +416,6 @@ final class AuthViewModel: ObservableObject {
         authorizationCode: String? = nil,
         appleUserIdHint: String? = nil
     ) async {
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
 
         do {
             var nextSession = try await AlarmTalkAPI.shared.loginWithApple(
@@ -499,9 +509,6 @@ final class AuthViewModel: ObservableObject {
 
     /// 이메일/비밀번호 로그인.
     private func performLoginWithEmail(email: String, password: String) async {
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
 
         loginError = nil
         do {
@@ -543,9 +550,6 @@ final class AuthViewModel: ObservableObject {
         name: String,
         verificationCode: String
     ) async {
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
 
         do {
             let nextSession = try await AlarmTalkAPI.shared.register(
