@@ -115,8 +115,19 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     ///   보고하면 로그아웃 복구 표시가 지워져 **기기가 떠난 계정에 묶인 채 영구히** 남는다.
     ///   같은 이유로 **실패 시 기기 토큰 캐시도 비우지 않는다** — 그 값이 없으면 다음
     ///   시도가 무엇을 지워야 할지 모른다.
+    /// - Parameter expectedOwnerUserID: 이 해제가 **어느 계정 몫**인가. 지금 캐시된 기기
+    ///   토큰의 주인이 다르면 **아무것도 하지 않는다**(Codex #699 P2).
+    ///   서버의 `/push/unregister` 는 **토큰만 보고 지우므로**(`routes/push.ts`), 떠난 계정 A 의
+    ///   뒷정리가 지금 B 에게 등록된 그 토큰을 지워 **B 가 가족 알람 푸시를 놓친다.**
+    ///   A 의 바인딩은 B 가 등록할 때 서버가 이미 지웠다(`token = ? AND user_id != ?`).
     @discardableResult
-    func unregisterCurrentToken(authToken: String) async -> Bool {
+    func unregisterCurrentToken(authToken: String, expectedOwnerUserID: String? = nil) async -> Bool {
+        if let expected = expectedOwnerUserID?.nilIfBlank,
+           let current = lastRegisteredUserID?.nilIfBlank,
+           current != expected {
+            // 이 기기 토큰은 이미 다른 계정 것이다 — 지울 것이 없다.
+            return true
+        }
         guard let deviceToken = lastRegisteredToken?.nilIfBlank else {
             // 올린 적이 없다 — 지울 것도 없으므로 끝난 것으로 본다.
             clearRegistrationCache()
@@ -212,9 +223,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // `.task(id: 세션)` 안에서 꽂았는데, 그 태스크는 **알림 권한 팝업을 먼저 기다린다.**
         // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이
         // 불려, `/auth/logout` 으로 토큰만 폐기되고 **기기는 그 계정에 묶인 채** 남는다.
-        deps.auth.onSignOutUnregisterPush = { [weak push = deps.push] token in
+        deps.auth.onSignOutUnregisterPush = { [weak push = deps.push] token, expectedOwner in
             guard let push else { return false }
-            return await push.unregisterCurrentToken(authToken: token)
+            return await push.unregisterCurrentToken(authToken: token, expectedOwnerUserID: expectedOwner)
         }
         let launchPull = RemoteAlarmPullSync(
             store: deps.alarmStore,

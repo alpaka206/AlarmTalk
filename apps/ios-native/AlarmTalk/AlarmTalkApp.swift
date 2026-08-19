@@ -351,6 +351,14 @@ struct AlarmTalkApp: App {
                                 // 지워진다. 그런데도 나아가면 **방금 계정을 되살린 사람을
                                 // 로그아웃시키고** 그 세션의 토큰까지 폐기한다.
                                 guard PendingSignOutStore.pendingUserIds.contains(pendingRaw) else { continue }
+                                // ⚠ **계정도 다시 본다.** 위 sweep 가 도는 사이에 로그인이
+                                // 끝났을 수 있다 — 그대로 나아가면 지금 쓰는 사람을 끊는다.
+                                let stillSafe = auth.session?.user.id.nilIfBlank == nil
+                                    || auth.session?.user.id.nilIfBlank == pending
+                                guard stillSafe else {
+                                    await auth.finishInterruptedServerCleanupOnly(for: pending)
+                                    continue
+                                }
                                 // 세션까지 끝내야 로그아웃이다. 서버 뒷정리(푸시 해제·토큰
                                 // 폐기)도 여기서 마친다. 표시는 그 결과가 참일 때만 내려간다.
                                 await auth.finishInterruptedSignOut(for: pending)
