@@ -192,19 +192,27 @@ final class BackgroundSyncTask {
             // **맨 앞**에서 한다.
             await Self.renewSessionTokenIfNeeded()
 
+            // ⚠ **목소리 접근권 재확인은 알람 동기화와 묶지 않는다.**
+            // 이 주기가 목소리 쪽의 **유일한** 그물인데, 아래 push/pull 뒤에 두면
+            // `/alarms` 만 일시적으로 실패해도(그건 throw 다) 여기까지 오지 못한다 —
+            // 목소리 엔드포인트는 멀쩡한데 철회된 오디오가 계속 예약된 채 남는다
+            // (2026-08-18 Codex #697 P1). 그래서 **먼저, 그리고 독립적으로** 돌린다.
+            //
+            // 푸시(`voice_access_revoked`)는 오프라인·스로틀링에서 조용히 버려지고, 앱을
+            // 안 열면 시작·탭 진입 새로고침도 없다. 안드로이드는 이 자리를 위해
+            // `VoiceAccessSyncWorker` 를 하루 주기로 돌린다 — 그 주석의 표현대로
+            // "정확성은 주기와 앱 시작이 보장하고, 푸시는 즉시성만 맡는다".
+            //
+            // 강등은 새로고침에 매달린 `onAuthoritativeRefresh` 훅이 한다. 조회가 실패한
+            // 회차에는 그 훅 안의 판정이 스스로 물러선다(오강등 > 미강등).
+            // `refresh` 는 던지지 않는다(내부에서 삼킨다) — try 밖에 둬도 안전하다.
+            if let voiceSession = KeychainStore.readSession() {
+                await voiceStudio?.refresh(session: voiceSession, force: true)
+            }
+
             _ = try await push.runOnce()
             let pullResult = try await pull.runOnce()
             if let session = KeychainStore.readSession() {
-                // ⚠ **목소리 접근권을 여기서 다시 받는다 — 이 주기가 그물이다.**
-                // 푸시(`voice_access_revoked`)는 오프라인·스로틀링에서 조용히 버려지고,
-                // 앱을 안 열면 시작·탭 진입 새로고침도 없다. 그러면 철회된 목소리가
-                // **영영 예약된 채 울린다.** 안드로이드는 이 자리를 위해 `VoiceAccessSyncWorker`
-                // 를 하루 주기로 돌린다 — 그 주석의 표현대로 "정확성은 주기와 앱 시작이
-                // 보장하고, 푸시는 즉시성만 맡는다". iOS 의 유일한 주기 wake 가 여기다.
-                //
-                // 강등은 새로고침에 매달린 `onAuthoritativeRefresh` 훅이 한다. 조회가
-                // 실패한 회차에는 그 훅 안의 판정이 스스로 물러선다(오강등 > 미강등).
-                await voiceStudio?.refresh(session: session, force: true)
                 // ⚠ 여기서 랜덤 문구를 **다시 합성하던** 자리다(2026-08-18 제거).
                 // 알람 음성은 프리셋 + 직접 입력 둘뿐이라 매일 지어낼 문장이 없다.
                 // 아래 날씨 갱신은 **합성이 아니라 variant 재선택**이라 그대로 둔다.
