@@ -43,6 +43,23 @@ final class AlarmKitViewModel: ObservableObject {
     /// 두 경로 모두 @MainActor 격리라 추가 락 없이 안전하다.
     private var rearmInFlight: Set<String> = []
 
+    /// **방금 만든 예약을 되돌린다.**
+    ///
+    /// ⚠ **`try?` 로 실패를 버리지 말 것**(Codex #699 P1). 되돌리기가 실패하면 OS 에는
+    /// 예약이 남는데 행에는 아직 그 UUID 가 적히기 전이라, **아무도 모르는 고아**가 된다 —
+    /// 행에도 없고 회수 목록에도 없으니 다음 로그인도, 회수 sweep 도 그 예약을 못 찾는다.
+    /// 그래서 실패는 반드시 회수 목록에 태운다. OS 에 이미 없는 경우는 회수 sweep 가
+    /// `AlarmManager.shared.alarms` 로 확인해 목록에서 조용히 빼 준다.
+    private func revertJustScheduled(_ id: UUID) async {
+        #if canImport(AlarmKit)
+        do {
+            try AlarmManager.shared.cancel(id: id)
+        } catch {
+            PendingAlarmCancellationStore.add(id.uuidString)
+        }
+        #endif
+    }
+
     /// 활성 계정이 바뀐 횟수. **예약이 await 하는 동안 계정이 바뀌었는지** 가르는 값이다.
     ///
     /// ⚠ `SchedulingSnapshot` 으로는 이걸 못 잡는다(Codex #699 P1) — 그 스냅샷은 **행**이
@@ -469,11 +486,10 @@ final class AlarmKitViewModel: ObservableObject {
             if await cancelScheduledAlarm(record: record) {
                 store.clearScheduleHandle(id: record.id)
                 cancelled += 1
-            } else {
-                // ⚠ 남의 계정 행은 **끄지 않는다**(그 의도는 그 사람 것이다). 그래서 행
-                // 상태로는 이 실패를 기억할 수 없다 — UUID 로 적어야 회수 대상이 된다.
-                PendingAlarmCancellationStore.add(record.alarmKitID)
             }
+            // 실패해도 여기서 따로 적지 않는다 — `cancelScheduledAlarm` 이 이미 회수
+            // 목록에 남긴다. 남의 계정 행은 **끄지 않으므로**(그 의도는 그 사람 것이다)
+            // 행 상태로는 이 실패를 기억할 수 없고, 그래서 UUID 목록이 필요하다.
         }
         return cancelled
         #else
@@ -498,10 +514,8 @@ final class AlarmKitViewModel: ObservableObject {
                     // 예약이 사라졌으니 핸들도 지운다 — 남겨 두면 다음에 켤 때 어긋난다.
                     store.clearScheduleHandle(id: record.id)
                 } else {
-                    // ⚠ **행이 아니라 UUID 로 적는다**(`PendingAlarmCancellationStore` 주석).
-                    // 행 상태로 기억하면 그 예약이 울리는 순간 `markRinging` 이 행을 도로 켜
-                    // 회수 대상에서 빠진다 — 회수하려던 고아를 회수 시도가 만들어 낸다.
-                    PendingAlarmCancellationStore.add(record.alarmKitID)
+                    // 실패는 `cancelScheduledAlarm` 이 회수 목록에 적어 둔다(단일 출처).
+                    // 여기서는 손잡이만 남긴다 — 다음에 켤 때 어긋나지 않도록.
                     keepHandle = true
                 }
             }
@@ -766,7 +780,7 @@ final class AlarmKitViewModel: ObservableObject {
             // 없는 고아다(아래 '지워졌다' 갈래와 같은 사고). `markScheduled` 로 나아가는
             // 것도 안 된다: 그건 "끝났다" 고 통보한 사이클이 로컬을 더 만지는 것이다.
             if Task.isCancelled {
-                try? await AlarmManager.shared.cancel(id: id)
+                await revertJustScheduled(id)
                 return false
             }
 
@@ -774,7 +788,7 @@ final class AlarmKitViewModel: ObservableObject {
             // 지금 로그인한 사람에게는 **보이지도 끄지도 못하는 남의 예약**이 남는다.
             // 로그인 시점의 정리는 이 예약을 못 본다 — 그때는 아직 UUID 가 저장 전이다.
             if accountEpoch != epochAtStart {
-                try? await AlarmManager.shared.cancel(id: id)
+                await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Account changed while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
                 )
@@ -796,7 +810,7 @@ final class AlarmKitViewModel: ObservableObject {
             guard let afterAwait = store.record(id: record.id) else {
                 // **지워졌다.** `markScheduled` 는 행이 없으면 조용히 no-op 이라, 그냥 두면
                 // OS 에만 남아 **취소할 핸들이 없는 고아**가 된다 — 지운 알람이 운다.
-                try? await AlarmManager.shared.cancel(id: id)
+                await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Alarm deleted while scheduling — cancelled the OS alarm (id: \(record.id, privacy: .public))"
                 )
@@ -807,7 +821,7 @@ final class AlarmKitViewModel: ObservableObject {
                 // 방금 건 예약은 낡았으므로 되돌린다. `AlarmScheduleReconciler` 는
                 // **소리 지문만** 비교하므로 시각만 바뀐 경우는 아무도 고쳐 주지 않는다 —
                 // 여기서 처리하지 않으면 알람이 옛 시각에 운다.
-                try? await AlarmManager.shared.cancel(id: id)
+                await revertJustScheduled(id)
                 Self.paidGateLogger.info(
                     "Alarm changed while scheduling — rescheduling with the fresh row (id: \(record.id, privacy: .public))"
                 )
@@ -869,6 +883,11 @@ final class AlarmKitViewModel: ObservableObject {
             // (실패는 결과가 달라지므로 아래 catch 에서 계속 알린다.)
             return true
         } catch {
+            // ⚠ **실패한 취소는 예외 없이 여기서 회수 목록에 남긴다**(Codex #699 P1).
+            // 호출부마다 기억하게 하면 언젠가 빠뜨리고, 빠뜨린 그 예약은 **아무도 모르는
+            // 고아**가 된다 — 행에도 없고 목록에도 없으니 다음 로그인도 회수 sweep 도
+            // 찾지 못한다. 판정을 취소 지점 **한 곳**에 둔다.
+            PendingAlarmCancellationStore.add(alarmKitUUID.uuidString)
             statusMessage = "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요."
             return false
         }
