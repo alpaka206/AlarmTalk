@@ -11,9 +11,11 @@ final class AlarmAppContextTests: XCTestCase {
     override func setUp() async throws {
         // 디스크 storage 정리: LocalAlarmStore 가 documentDirectory 에 쓰므로
         // 새 store 를 만들기 전에 파일을 미리 지운다.
-        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = dir.appendingPathComponent("voice-alarm-ios-alarms.json")
-        try? FileManager.default.removeItem(at: url)
+        //
+        // ⚠ **경로를 손으로 조립하지 말 것.** 2026-08-19 까지 여기서 파일명을 직접 적었고,
+        // 그래서 기기에서 테스트를 돌릴 때마다 **사용자의 진짜 알람 파일이 지워졌다.**
+        // `TestIsolation` 이 갈라 준 경로를 반드시 저장소에게 물어서 쓴다.
+        try? FileManager.default.removeItem(at: LocalAlarmStore.defaultStorageURL())
 
         store = LocalAlarmStore()
         // init 이 띄운 비동기 load Task 가 완료될 시간을 보장. 디스크 read 1회.

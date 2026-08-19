@@ -8,13 +8,23 @@ final class LocalAlarmStore: ObservableObject {
 
     private let persistence: LocalAlarmPersistence
 
+    /// 저장 위치를 지정하지 않았을 때 쓰는 기본 파일.
+    ///
+    /// ⚠ 기본 생성자를 쓰는 테스트가 사용자의 알람 파일을 그대로 잡지 않게 가른다
+    /// (`AlarmAppContextTests` 가 실제로 그랬다) — 근거는 `TestIsolation`.
+    nonisolated static func defaultStorageURL() -> URL {
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return directory.appendingPathComponent(
+            "voice-alarm-ios-alarms\(TestIsolation.storageSuffix).json"
+        )
+    }
+
     init(storageURL: URL? = nil, loadFromDisk: Bool = true) {
         let resolvedStorageURL: URL
         if let storageURL {
             resolvedStorageURL = storageURL
         } else {
-            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            resolvedStorageURL = directory.appendingPathComponent("voice-alarm-ios-alarms.json")
+            resolvedStorageURL = Self.defaultStorageURL()
         }
         self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL)
         guard loadFromDisk else {

@@ -14,53 +14,70 @@ import XCTest
 final class AudioCacheRoundTripTests: XCTestCase {
 
     func test_쓴_직후_같은_키로_찾을_수_있다() throws {
-        print("PROBE appGroup=\(AppGroup.containerURL?.path ?? "nil")")
-
-        let dir: URL
-        do {
-            dir = try AudioCacheStore.audioDirectory()
-            print("PROBE audioDirectory=\(dir.path)")
-        } catch {
-            print("PROBE audioDirectory THREW: \(error)")
-            throw error
-        }
-
-        let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-        print("PROBE audioDirectory 파일수=\(files.count)")
-        print("PROBE 앞 5개=\(files.prefix(5).joined(separator: ", "))")
-
-        // legacy 쪽도 같이 본다
-        if let legacy = try? AudioCacheStore.legacyAudioDirectory() {
-            let l = (try? FileManager.default.contentsOfDirectory(atPath: legacy.path)) ?? []
-            print("PROBE legacyDirectory=\(legacy.path) 파일수=\(l.count)")
-        }
-
-        // 실제 쓰기 → 조회 왕복. 이게 실패하면 프리페처가 매번 다시 받는다.
         let key = "stock_probe-\(UUID().uuidString)"
         let store = AudioCacheStore()
         let payload = Data(repeating: 0x41, count: 128)
-        do {
-            let url = try store.cacheBytes(
-                payload,
-                cacheKey: key,
-                mimeType: "audio/mpeg",
-                source: "tts",
-                messageId: "probe",
-                rawAudioUri: nil,
-                durationOverrideMs: 1000,
-                enforceMaxDuration: false
-            )
-            print("PROBE 썼다=\(url.lastPathComponent)")
-        } catch {
-            print("PROBE cacheBytes THREW: \(error)")
-            throw error
-        }
 
-        let found = store.cachedURL(for: key)
-        print("PROBE cachedURL=\(found?.lastPathComponent ?? "nil")")
-        XCTAssertNotNil(found, "쓴 직후에도 못 찾으면 프리페처가 영원히 다시 받는다")
+        _ = try store.cacheBytes(
+            payload,
+            cacheKey: key,
+            mimeType: "audio/mpeg",
+            source: "tts",
+            messageId: "probe",
+            rawAudioUri: nil,
+            durationOverrideMs: 1000,
+            enforceMaxDuration: false
+        )
 
-        // 뒷정리
+        XCTAssertNotNil(
+            store.cachedURL(for: key),
+            "쓴 직후에도 못 찾으면 프리페처가 영원히 다시 받는다"
+        )
+
         try? store.deleteCachedAudio(cacheKey: key)
+    }
+}
+
+/// **테스트가 기기의 진짜 사용자 상태를 건드리면 안 된다.**
+///
+/// 2026-08-19 에 실제로 건드리고 있었다 — 기기에서 테스트를 한 번 돌릴 때마다 **로그인이
+/// 풀리고, 받아 둔 스톡 클립이 사라지고, 알람 파일이 열렸다.** 유닛 테스트가 호스트 앱
+/// 프로세스에서 돌기 때문에 기본 저장 위치가 **사용자가 쓰는 바로 그 위치**였다.
+///
+/// 그 세 갈래를 `TestIsolation` 한 곳으로 갈랐고, 이 테스트가 그 갈림을 고정한다.
+/// 여기가 깨지면 **다음 테스트 실행이 개발자 기기의 로그인·목소리·알람을 지운다.**
+final class TestIsolationTests: XCTestCase {
+
+    func test_유닛테스트로_인식된다() {
+        XCTAssertTrue(
+            TestIsolation.isRunningUnitTests,
+            "XCTest 안인데 격리가 꺼져 있다 — 아래 단언들이 통째로 무의미해진다"
+        )
+        XCTAssertFalse(TestIsolation.storageSuffix.isEmpty)
+    }
+
+    func test_음원캐시는_사용자_디렉터리를_쓰지_않는다() throws {
+        let dir = try AudioCacheStore.audioDirectory()
+        XCTAssertTrue(
+            dir.lastPathComponent.hasSuffix(TestIsolation.storageSuffix),
+            "테스트가 사용자의 음원 캐시(\(dir.lastPathComponent))를 그대로 쓴다 — 스톡 클립이 지워진다"
+        )
+    }
+
+    func test_키체인은_사용자_세션을_쓰지_않는다() throws {
+        // 실제로 쓰고 지워 본다. 서비스 이름이 갈리지 않았다면 이 왕복이 **기기의 진짜
+        // 세션을 덮어쓰고 지운다** — 그래서 값 비교가 아니라 격리 자체를 단언한다.
+        XCTAssertTrue(
+            KeychainStore.isIsolatedForTests,
+            "키체인 서비스가 사용자와 같다 — 테스트가 끝나면 로그인이 풀린다"
+        )
+    }
+
+    func test_알람파일은_사용자_알람을_쓰지_않는다() {
+        let url = LocalAlarmStore.defaultStorageURL()
+        XCTAssertTrue(
+            url.lastPathComponent.contains(TestIsolation.storageSuffix),
+            "테스트가 사용자의 알람 파일(\(url.lastPathComponent))을 그대로 쓴다"
+        )
     }
 }

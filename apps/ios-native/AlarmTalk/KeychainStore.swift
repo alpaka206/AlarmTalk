@@ -2,7 +2,14 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    private static let service = "com.alarmtalk.app.auth"
+    // ⚠ 유닛 테스트는 호스트 앱 프로세스에서 돌아 **기기의 진짜 세션**을 지운다
+    // (`AuthViewModelTests` → `signOut()` → `deleteSession()`). 서비스 이름을 갈라
+    // 테스트가 사용자를 로그아웃시키지 못하게 한다 — 근거는 `TestIsolation`.
+    private static let service = "com.alarmtalk.app.auth\(TestIsolation.storageSuffix)"
+
+    /// 테스트용 서비스 이름을 쓰고 있는가. 값(서비스 문자열)을 밖으로 내보내지 않고
+    /// **갈렸다는 사실만** 알린다 — 회귀 테스트가 단언할 대상은 그것뿐이다.
+    static var isIsolatedForTests: Bool { service.hasSuffix(TestIsolation.storageSuffix) && TestIsolation.isRunningUnitTests }
     private static let sessionAccount = "session"
 
     static func saveSession(_ session: AuthSession) throws {

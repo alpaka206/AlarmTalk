@@ -630,7 +630,12 @@ final class AudioCacheStore {
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             base = support
         }
-        let directory = base.appendingPathComponent("audio-cache", isDirectory: true)
+        // ⚠ 테스트는 별도 디렉터리를 쓴다 — 안 그러면 기기에서 테스트를 돌릴 때마다
+        // 받아 둔 스톡 클립이 함께 지워져 다음 로그인이 전부 다시 받는다(`TestIsolation`).
+        let directory = base.appendingPathComponent(
+            "audio-cache\(TestIsolation.storageSuffix)",
+            isDirectory: true
+        )
         if !FileManager.default.fileExists(atPath: directory.path) {
             try FileManager.default.createDirectory(
                 at: directory,
