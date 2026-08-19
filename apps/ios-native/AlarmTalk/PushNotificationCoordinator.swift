@@ -303,8 +303,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             // ⚠ 그 기다림은 **상한이 있다**(BGTask 예산 때문에 3초). 못 기다렸으면
             // 빈 목록을 새기지 말고 물러선다 — `PendingSignOutStore` 표시가 남아 다음
             // 실행이 마저 한다. 자동 401 은 `SessionExpiryStore` 가 같은 근거가 된다.
-            guard deps.alarmStore.hasLoadedFromDisk else { return }
+            guard deps.alarmStore.hasLoadedFromDisk else { return false }
             deps.alarmStore.claimUnownedAlarms(for: departingUserID)
+            return true
         }
         deps.auth.onLeaveAccountStopAlarms = { departingUserID in
             await deps.alarmStore.waitUntilLoadedFromDisk()
