@@ -908,6 +908,11 @@ final class AuthViewModel: ObservableObject {
         do {
             _ = try await api.cancelAccountDeletion(token: token)
             pendingDeletion = false
+            // ⚠ **탈퇴 뒷정리 표시도 함께 거둔다**(Codex #699 P2). 유예 탈퇴에서 푸시 해제나
+            // 알람 정리가 실패하면 표시와 토큰이 남는데, 그 상태로 **탈퇴를 철회하면**
+            // 다음 실행의 복구가 "끝내지 못한 로그아웃" 으로 읽는다 — 계정이 방금 되살아난
+            // 사용자의 알람을 끄고 **다시 로그아웃시킨다.** 철회는 그 뒷정리를 무효로 만든다.
+            PendingSignOutStore.clear()
             statusMessage = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
         } catch {
             failStatus(userFacingErrorMessage(error, fallback: "탈퇴 취소에 실패했어요. 다시 시도해 주세요"))
