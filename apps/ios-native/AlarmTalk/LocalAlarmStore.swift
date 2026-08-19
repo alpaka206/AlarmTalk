@@ -91,6 +91,21 @@ final class LocalAlarmStore: ObservableObject {
         alarms.filter { $0.originEnum == .localOwned && $0.isPaidVoiceForDowngrade }
     }
 
+    /// **이 계정에게 보여도 되는 알람.** 안드로이드 `AlarmDao` 의
+    /// `(ownerUserId IS NULL OR ownerUserId = :callerUserId)` 와 같은 조건이다.
+    ///
+    /// ⚠ 없으면 로그아웃 뒤 다른 계정으로 들어왔을 때 **앞 계정 알람이 목록에 그대로
+    /// 보인다**(2026-08-19 지적). 예약은 `stopAllScheduledAlarms` 가 끊어 두지만 화면은
+    /// 그것과 별개다 — 남의 알람을 보고 끄거나 지울 수 있으면 안 된다.
+    ///
+    /// 로그아웃 상태(`nil`)에서는 **아무것도 보이지 않는다.** 그 화면은 로그인 게이트라
+    /// 목록 자체가 뜨지 않지만, 판정을 여기서 한 번에 끝내 둔다.
+    /// 소유자 미기록(옛 행)은 이 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용.
+    func alarms(visibleTo ownerUserId: String?) -> [LocalAlarmRecord] {
+        guard let owner = ownerUserId?.nilIfBlank else { return [] }
+        return alarms.filter { $0.ownerUserId == nil || $0.ownerUserId == owner }
+    }
+
     func countByAudioCacheKey(_ key: String) -> Int {
         alarms.reduce(0) { acc, record in
             (record.audioCacheKey == key) ? acc + 1 : acc

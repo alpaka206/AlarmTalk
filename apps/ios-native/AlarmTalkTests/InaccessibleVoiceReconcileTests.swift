@@ -323,3 +323,29 @@ final class LeaveAccountAlarmTests: XCTestCase {
         XCTAssertEqual(store.record(id: "c")?.runtimeStateEnum, .failed)
     }
 }
+
+extension LeaveAccountAlarmTests {
+    /// ⚠ 로그아웃 뒤 **다른 계정**으로 들어오면 앞 계정 알람이 보이면 안 된다.
+    /// 안드로이드 `AlarmDao` 는 처음부터 `(ownerUserId IS NULL OR = :caller)` 로 걸렀는데
+    /// iOS 는 `store.alarms` 를 통째로 그렸다(2026-08-19).
+    func test_다른_계정_알람은_목록에_안_보인다() {
+        let store = makeStore()
+        var mine = alarm(id: "mine", enabled: true, kitID: nil); mine.ownerUserId = "A"
+        var theirs = alarm(id: "theirs", enabled: true, kitID: nil); theirs.ownerUserId = "B"
+        var legacy = alarm(id: "legacy", enabled: true, kitID: nil); legacy.ownerUserId = nil
+        [mine, theirs, legacy].forEach { store.upsert($0) }
+
+        let visible = store.alarms(visibleTo: "A").map(\.id).sorted()
+
+        XCTAssertEqual(visible, ["legacy", "mine"], "남의 알람이 보이거나 옛 행이 사라졌다")
+    }
+
+    /// 로그아웃 상태에서는 아무것도 보이지 않는다.
+    func test_로그아웃_상태에서는_목록이_빈다() {
+        let store = makeStore()
+        var mine = alarm(id: "mine", enabled: true, kitID: nil); mine.ownerUserId = "A"
+        store.upsert(mine)
+
+        XCTAssertTrue(store.alarms(visibleTo: nil).isEmpty)
+    }
+}

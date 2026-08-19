@@ -255,7 +255,11 @@ final class BackgroundSyncTask {
             // dismiss 경로 + foreground recovery 가 1차. 25s executionTimeout 안에서 동작.
             #if canImport(AlarmKit)
             if let store, let alarmKit, store.hasLoadedFromDisk {
-                await alarmKit.recoverScheduledAlarms(store: store)
+                await alarmKit.recoverScheduledAlarms(
+                    store: store,
+                    // 백그라운드에도 세션이 있다(launch 에서 키체인으로 채택한다).
+                    ownerUserId: KeychainStore.readSession()?.user.id
+                )
             }
             #endif
             timeoutTask.cancel()

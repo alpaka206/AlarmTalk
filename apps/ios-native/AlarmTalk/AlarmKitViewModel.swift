@@ -347,14 +347,26 @@ final class AlarmKitViewModel: ObservableObject {
     }
 
     @discardableResult
+    /// - Parameter ownerUserId: **지금 로그인한 계정.** 반드시 넘긴다.
+    ///   - `nil`(로그아웃 상태) 이면 **아무것도 재무장하지 않는다.** 계정을 떠난 기기에서
+    ///     알람이 다시 살아나면 안 된다 — `stopAllScheduledAlarms` 로 끊어 둔 것을 이
+    ///     sweep 가 곧바로 되살리면 그 조치가 무의미해진다.
+    ///   - 다른 계정으로 로그인했으면 **앞 계정 알람은 건드리지 않는다.** 예전에는 소유자를
+    ///     보지 않아, B 로 로그인하면 A 의 알람이 그대로 다시 걸렸다(2026-08-19 지적).
+    ///   - 소유자 미기록(옛 행)은 이 계정 것으로 본다 — 저장소의 다른 경로와 같은 관용.
     func recoverScheduledAlarms(
         store: LocalAlarmStore,
+        ownerUserId: String?,
         forceHolidayOffRecompute: Bool = false
     ) async -> Int {
         #if canImport(AlarmKit)
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         let holidayPredicate = holidayStore.holidayPredicate()
+        // 로그아웃 상태에서는 아무것도 되살리지 않는다(위 파라미터 주석).
+        guard let owner = ownerUserId?.nilIfBlank else { return 0 }
         let candidates = store.alarms.filter { record in
+            // 앞 계정 알람을 이 계정 로그인으로 되살리지 않는다.
+            (record.ownerUserId == nil || record.ownerUserId == owner) &&
             record.enabled && (
                 record.alarmKitUUID == nil ||
                 record.runtimeStateEnum == .failed ||

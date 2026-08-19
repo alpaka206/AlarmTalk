@@ -170,6 +170,7 @@ struct AlarmTalkApp: App {
                                 guard alarmStore.hasLoadedFromDisk else { return }
                                 await alarmKit.recoverScheduledAlarms(
                                     store: alarmStore,
+                                    ownerUserId: BackgroundDependencies.shared.auth.session?.user.id,
                                     forceHolidayOffRecompute: true
                                 )
                             }
@@ -290,7 +291,7 @@ struct AlarmTalkApp: App {
                     }
                     .task(id: alarmStore.hasLoadedFromDisk) {
                         guard alarmStore.hasLoadedFromDisk else { return }
-                        await alarmKit.recoverScheduledAlarms(store: alarmStore)
+                        await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                         // 앱 시작 후 1회: 30일 넘게 미참조 상태로 남은 캐시 음원과
                         // 고아 .meta.json 사이드카를 백그라운드에서 정리한다.
                         // 현재 알람이 참조하는 cacheKey 는 나이와 무관하게 보존.
@@ -325,7 +326,7 @@ struct AlarmTalkApp: App {
             case .active:
                 Task {
                     guard alarmStore.hasLoadedFromDisk else { return }
-                    await alarmKit.recoverScheduledAlarms(store: alarmStore)
+                    await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                 }
                 // 빠진 테마 클립을 보충한다. 이미 캐시된 것은 건너뛰므로 값이 싸고,
                 // 콜드 스타트에서 실패했거나 캐시가 정리된 경우를 여기서 메운다.
@@ -436,7 +437,11 @@ struct AlarmTalkApp: App {
     ) async {
         for await _ in NotificationCenter.default.notifications(named: name) {
             guard store.hasLoadedFromDisk else { continue }
-            await kit.recoverScheduledAlarms(store: store, forceHolidayOffRecompute: true)
+            await kit.recoverScheduledAlarms(
+                store: store,
+                ownerUserId: BackgroundDependencies.shared.auth.session?.user.id,
+                forceHolidayOffRecompute: true
+            )
         }
     }
 

@@ -33,7 +33,7 @@ struct AlarmsListView: View {
                     // 권한 안내는 **이미 알람이 있을 때만** 한 줄 배너로. 알람이 하나도 없는
                     // 새 사용자에게는 빈 상태 카드가 할 말이 따로 있고, 그 위에 경고를 겹치면
                     // 첫 화면이 경고문부터 시작한다(안드로이드 `AlarmListScreen`).
-                    if !alarmKit.alarmAuthorized && !store.alarms.isEmpty {
+                    if !alarmKit.alarmAuthorized && !visibleAlarms.isEmpty {
                         alarmPermissionBanner
                     }
                     // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
@@ -125,7 +125,7 @@ struct AlarmsListView: View {
                     count: selectedAlarmIDs.count,
                     onCancel: { selectedAlarmIDs = [] },
                     onDelete: {
-                        let targets = store.alarms.filter { selectedAlarmIDs.contains($0.id) }
+                        let targets = visibleAlarms.filter { selectedAlarmIDs.contains($0.id) }
                         selectedAlarmIDs = []
                         Task { for alarm in targets { await deleteAlarm(alarm) } }
                     }
@@ -136,7 +136,7 @@ struct AlarmsListView: View {
                 // 뺏겨 짧게 잘린다. 안드로이드도 FAB 하나뿐이다.
                 NextAlarmHeadline(
                     nextAlarm: nextAlarmForHeadline,
-                    hasAnyAlarm: !store.alarms.isEmpty,
+                    hasAnyAlarm: !visibleAlarms.isEmpty,
                     alarmPermissionMissing: !alarmKit.alarmAuthorized
                 )
             }
@@ -149,7 +149,7 @@ struct AlarmsListView: View {
 
     @ViewBuilder
     private var localAlarmSection: some View {
-        if store.alarms.isEmpty {
+        if visibleAlarms.isEmpty {
             emptyAlarmCard
         } else {
             // 각 알람을 독립 카드로 그리고 16pt 간격으로 쌓는다(Android LazyColumn
@@ -187,7 +187,7 @@ struct AlarmsListView: View {
     /// 실제로는 2개만 지워진다. 안드로이드 `AlarmListScreen.kt:143-146`.
     private func pruneSelection() {
         guard selectionMode else { return }
-        let present = Set(store.alarms.map(\.id))
+        let present = Set(visibleAlarms.map(\.id))
         let pruned = selectedAlarmIDs.intersection(present)
         if pruned != selectedAlarmIDs { selectedAlarmIDs = pruned }
     }
@@ -300,11 +300,18 @@ struct AlarmsListView: View {
 
     /// 헤드라인이 셀 '다음 알람' — 켜져 있는 것 중 가장 먼저 울릴 것.
     private var nextAlarmForHeadline: LocalAlarmRecord? {
-        store.alarms.filter(\.enabled).min { $0.nextFireDate < $1.nextFireDate }
+        visibleAlarms.filter(\.enabled).min { $0.nextFireDate < $1.nextFireDate }
+    }
+
+    /// ⚠ **화면은 `store.alarms` 를 직접 보지 않는다.** 이 계정 것만 거른 목록을 쓴다
+    /// (안드로이드 `AlarmDao` 의 소유자 조건과 같다) — 로그아웃 뒤 다른 계정으로 들어오면
+    /// 앞 계정 알람이 그대로 보이던 자리다(2026-08-19).
+    private var visibleAlarms: [LocalAlarmRecord] {
+        store.alarms(visibleTo: auth.session?.user.id)
     }
 
     private var sortedAlarms: [LocalAlarmRecord] {
-        store.alarms.sorted { lhs, rhs in
+        visibleAlarms.sorted { lhs, rhs in
             if lhs.hour != rhs.hour { return lhs.hour < rhs.hour }
             if lhs.minute != rhs.minute { return lhs.minute < rhs.minute }
             return lhs.createdAtMillis < rhs.createdAtMillis
