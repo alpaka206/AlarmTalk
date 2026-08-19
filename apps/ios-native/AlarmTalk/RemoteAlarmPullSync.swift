@@ -526,9 +526,21 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // iOS 는 발사 시점에 우리 코드가 돌지 않는다 — 이미 AlarmKit 에 넘긴 사운드가
             // 그대로 울린다(PaidVoiceGate 주석과 같은 이유). 반복 알람은 재예약 계기도
             // 없어 사실상 무기한이다. 그래서 **다시 깔아 준다.**
-            await alarmKit.cancelScheduledAlarm(record: record)
+            // ⚠ **새로 걸고 나서 옛것을 지운다 — 순서를 뒤집지 말 것**(2026-08-18
+            // Codex #697 P1). 예전에는 옛 예약을 먼저 취소했는데, 그 사이에 사이클이
+            // 취소되면 새 예약도 서지 않아 **켜져 있는데 아무 예약도 없는 알람**이 남는다.
+            // 반복 알람은 재예약 계기도 없어 사실상 무기한이다 — 알람 앱에서 가장 나쁜
+            // 결말이다. 저장소의 다른 재예약 경로(`applyFreePlanVoiceLock`·
+            // `restorePaidVoiceAlarms`)가 쓰는 순서와 같게 맞춘다.
+            let previouslyScheduled = record
             if revoked.enabled {
-                _ = await alarmKit.schedule(record: revoked, store: store)
+                if await alarmKit.schedule(record: revoked, store: store),
+                   previouslyScheduled.alarmKitID != nil {
+                    await alarmKit.cancelScheduledAlarm(record: previouslyScheduled)
+                }
+            } else {
+                // 꺼진 알람은 새로 걸 것이 없으니 옛것만 지운다.
+                await alarmKit.cancelScheduledAlarm(record: previouslyScheduled)
             }
             Self.logger.info("Pull sync: revoked sender voice on received alarm (remoteId: \(remoteID, privacy: .public))")
             // ⚠ **여기는 백그라운드다.** 목소리만 걷어내고 말면 사용자는 왜 알람이
