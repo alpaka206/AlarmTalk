@@ -222,6 +222,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // ⚠ **여기 한 곳에서만 꽂는다.** 화면에서 꽂으면 백그라운드로 깨어난 실행에는
         // scene 이 없어 빠진다 — 등록·실행기와 같은 이유다.
         deps.voiceStudio.onAuthoritativeRefresh = {
+            // ⚠ **로드 전 저장소로 판단하지 않는다.** 빈 목록은 "강등할 게 없다" 가 아니라
+            // "아직 모른다" 다 — 그대로 넘기면 그 회차가 조용히 소진된다.
+            guard deps.alarmStore.hasLoadedFromDisk else { return }
             let ownerID = deps.auth.session?.user.id
             let degraded = deps.voiceStudio.reconcileInaccessibleVoiceAlarms(
                 alarmStore: deps.alarmStore,

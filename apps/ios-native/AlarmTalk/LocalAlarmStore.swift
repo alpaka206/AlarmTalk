@@ -30,6 +30,25 @@ final class LocalAlarmStore: ObservableObject {
         }
     }
 
+    /// 디스크 로드가 끝날 때까지 기다린다(최대 `timeout` 초).
+    ///
+    /// ⚠ **백그라운드로 깨어난 실행에는 "로드되면 다시 하기" 를 걸어 줄 화면이 없다.**
+    /// 로드는 `init` 안의 `Task` 라 비동기인데, 그 사이에 판단하면 `alarms` 가 비어 있어
+    /// 강등 대상이 **0건으로 보이고 그 회차가 조용히 지나간다** — 철회된 목소리가 다음
+    /// 깨어남까지 예약된 채 남는다(2026-08-18 Codex #697 P1).
+    /// 화면이 있는 경로는 `.task(id: alarmStore.hasLoadedFromDisk)` 로 다시 도는 반면,
+    /// 주기 사이클에는 그런 재시도가 없다.
+    ///
+    /// 상한을 두는 이유: BGTask 예산이 ~25초라 여기서 무한정 기다리면 사이클 전체를
+    /// 날린다. 못 기다렸으면 그 회차만 건너뛰고 다음 깨어남이 다시 한다.
+    func waitUntilLoadedFromDisk(timeout: TimeInterval = 3) async {
+        guard !hasLoadedFromDisk else { return }
+        let deadline = Date().addingTimeInterval(timeout)
+        while !hasLoadedFromDisk, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
     // MARK: Queries
 
     func record(id: String) -> LocalAlarmRecord? {

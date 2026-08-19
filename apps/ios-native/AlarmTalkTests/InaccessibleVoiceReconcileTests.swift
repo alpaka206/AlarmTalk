@@ -192,3 +192,54 @@ final class InaccessibleVoiceReconcileTests: XCTestCase {
         )
     }
 }
+
+/// **디스크 로드를 기다리지 않으면 강등 판정이 빈 목록을 본다.**
+///
+/// 화면이 있는 경로는 `.task(id: hasLoadedFromDisk)` 로 다시 돌지만, 백그라운드로
+/// 깨어난 주기 사이클에는 그런 재시도가 없다 — 그 회차가 조용히 지나간다
+/// (2026-08-18 Codex #697 P1).
+@MainActor
+final class LocalAlarmStoreLoadWaitTests: XCTestCase {
+
+    func test_로드를_기다리면_알람이_올라와_있다() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("load-wait-\(UUID().uuidString).json")
+        // ⚠ 저장소를 거쳐 쓰지 않는다 — `persist()` 가 비동기라 파일이 언제 내려갔는지
+        // 알 수 없어 테스트가 경주한다(처음에 그렇게 썼다가 실제로 깨졌다).
+        // 여기서 검증하려는 건 **읽는 쪽의 대기**이므로 파일은 직접 만든다.
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var record = LocalAlarmRecord(
+            id: "persisted",
+            label: "아침",
+            hour: 7,
+            minute: 0,
+            fireAtMillis: now + 60_000,
+            origin: AlarmOrigin.localOwned.rawValue,
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+        record.voiceProfileId = "clone-1"
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try Data(encoder.encode([record])).write(to: url, options: [.atomic])
+
+        // 새 저장소는 디스크에서 비동기로 읽는다.
+        let reader = LocalAlarmStore(storageURL: url, loadFromDisk: true)
+        await reader.waitUntilLoadedFromDisk()
+
+        XCTAssertTrue(reader.hasLoadedFromDisk)
+        XCTAssertEqual(reader.record(id: "persisted")?.voiceProfileId, "clone-1")
+    }
+
+    /// 이미 로드된 저장소에서는 곧바로 돌아온다(주기 예산을 낭비하지 않는다).
+    func test_이미_로드됐으면_즉시_돌아온다() async {
+        let store = LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("load-wait-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+        let started = Date()
+        await store.waitUntilLoadedFromDisk(timeout: 3)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
+    }
+}
