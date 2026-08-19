@@ -45,7 +45,20 @@ final class LocalAlarmStore: ObservableObject {
         guard !hasLoadedFromDisk else { return }
         let deadline = Date().addingTimeInterval(timeout)
         while !hasLoadedFromDisk, Date() < deadline {
-            try? await Task.sleep(nanoseconds: 20_000_000)
+            // ⚠ **취소를 삼키지 말 것**(2026-08-18 Codex #697 P2). `try?` 로 무시하면
+            // BGTask 가 만료돼 취소된 뒤에도 `Task.sleep` 이 즉시 던지며 돌아와,
+            // 마감까지 **MainActor 에서 계속 돈다** — 예산이 이미 회수된 바로 그 순간에
+            // launch·델리게이트 작업을 막는다. 던지면 그대로 물러선다.
+            //
+            // ⚠ 이 갈래에는 **회귀 테스트가 없다.** 붙여 봤지만 `persistence` 를 주입할 수
+            // 없어 "끝나지 않는 로드" 를 만들 수 없었고, 그렇게 쓴 테스트는 `try?` 로
+            // 되돌려도 그대로 통과했다(빈 파일이라 로드가 즉시 끝난다). 아무것도 지키지
+            // 못하는 초록은 없느니만 못해 지웠다 — 고칠 사람은 이 주석을 근거로 삼는다.
+            do {
+                try await Task.sleep(nanoseconds: 20_000_000)
+            } catch {
+                return
+            }
         }
     }
 

@@ -207,10 +207,9 @@ final class BackgroundSyncTask {
             // 회차에는 그 훅 안의 판정이 스스로 물러선다(오강등 > 미강등).
             // `refresh` 는 던지지 않는다(내부에서 삼킨다) — try 밖에 둬도 안전하다.
             if let voiceSession = KeychainStore.readSession() {
-                // ⚠ **알람이 디스크에서 올라오기를 기다린다.** 로드는 비동기라, 안 기다리면
-                // 강등 판정이 **빈 목록**을 보고 0건으로 끝난다 — 화면이 없어 다시 돌 일도
-                // 없다(`waitUntilLoadedFromDisk` 주석).
-                await store?.waitUntilLoadedFromDisk()
+                // 알람이 디스크에서 올라오기를 기다리는 일은 **강등 훅**
+                // (`onAuthoritativeRefresh`)이 한다 — 푸시로 온 회차도 같은 대기가 필요해
+                // 한 곳으로 모았다. 여기서 또 기다리지 말 것.
                 await voiceStudio?.refresh(session: voiceSession, force: true)
             }
 

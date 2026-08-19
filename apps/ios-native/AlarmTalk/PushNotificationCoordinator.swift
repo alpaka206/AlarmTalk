@@ -224,6 +224,12 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         deps.voiceStudio.onAuthoritativeRefresh = {
             // ⚠ **로드 전 저장소로 판단하지 않는다.** 빈 목록은 "강등할 게 없다" 가 아니라
             // "아직 모른다" 다 — 그대로 넘기면 그 회차가 조용히 소진된다.
+            //
+            // ⚠ **기다리는 자리는 여기 하나다.** 예전에는 주기 사이클에만 대기가 있어서,
+            // 콜드 백그라운드 실행에서 **푸시로 온 회차**는 여전히 조용히 삼켜졌다
+            // (2026-08-18 Codex #697 P1). 강등으로 가는 모든 경로가 이 훅을 지나므로
+            // 여기서 기다리면 호출부가 빠뜨릴 수 없다.
+            await deps.alarmStore.waitUntilLoadedFromDisk()
             guard deps.alarmStore.hasLoadedFromDisk else { return }
             let ownerID = deps.auth.session?.user.id
             let degraded = deps.voiceStudio.reconcileInaccessibleVoiceAlarms(
