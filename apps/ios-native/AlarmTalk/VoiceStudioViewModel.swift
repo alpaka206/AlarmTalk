@@ -457,6 +457,12 @@ final class VoiceStudioViewModel: ObservableObject {
             let quotaResult = try? await api.voiceDraftQuota(token: token)
             let resolvedProfiles = try await nextProfiles
             guard activeUserID == userID else { return }
+            // ⚠ **상태를 쓰기 전에 취소를 확인한다**(2026-08-18 Codex #697 P2).
+            // 위쪽 쿼터 조회는 `try?`, 가족 목소리는 자체 `catch` 라 **둘 다 취소를
+            // 삼킨다** — 그래서 아래 `catch is CancellationError` 에 걸리지 않고 여기까지
+            // 온다. 그대로 진행하면 BGTask 가 "끝났다" 고 통보한 뒤에 목록을 갈아 끼우고
+            // `onAuthoritativeRefresh` 가 알람을 강등·재예약한다.
+            if Task.isCancelled { return }
             profiles = resolvedProfiles
             familyVoices = familyResult
             // 프로필 조회는 여기까지 왔다는 것 자체가 성공이다(실패하면 throw).
