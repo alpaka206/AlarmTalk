@@ -84,7 +84,14 @@ final class AlarmKitViewModel: ObservableObject {
     /// 들여오는 경우가 실제로 그렇다.
     ///
     /// 경로마다 쫓는 대신 **만드는 것 자체를 막는다** — 종료 중에는 아무도 예약하지 못한다.
-    private(set) var isLeavingAccount = false
+    ///
+    /// ⚠ **불리언이 아니라 카운터다**(Codex #699 P1). 종료 sweep 는 겹칠 수 있다 —
+    /// 콜드 스타트 로그아웃이 로드를 끝내는 순간, 로그아웃 태스크와 '미완 로그아웃 이어서
+    /// 끝내기' 가 **둘 다** 들어온다. 불리언이면 **먼저 끝난 쪽이 문을 열어 버려**,
+    /// 아직 취소를 기다리는 다른 쪽 옆으로 새 예약이 빠져나간다.
+    var isLeavingAccount: Bool { leavingAccountDepth > 0 }
+
+    private var leavingAccountDepth = 0
 
     /// **진행 중인 예약을 그 자리에서 무효화한다.**
     ///
@@ -525,8 +532,8 @@ final class AlarmKitViewModel: ObservableObject {
         // 아래 루프의 스냅샷은 그 새 UUID 를 못 보고 지나가는데, 이어지는 `setEnabled` 가
         // **방금 저장된 손잡이를 지워** 아무도 모르는 예약이 남는다.
         invalidateInFlightSchedules()
-        isLeavingAccount = true
-        defer { isLeavingAccount = false }
+        leavingAccountDepth += 1
+        defer { leavingAccountDepth -= 1 }
         var stopped = 0
         // ⚠ **한 번 훑고 끝내지 않는다.** 훑는 도중에 원격 pull 이 받은 알람을 들여오면
         // 그 행은 스냅샷에 없어 통째로 건너뛰어진다. 더 할 일이 없을 때까지 돈다

@@ -328,6 +328,15 @@ struct AlarmTalkApp: App {
                         if let pending = PendingSignOutStore.pendingUserId {
                             alarmStore.claimUnownedAlarms(for: pending)
                             await alarmKit.stopAllScheduledAlarms(store: alarmStore, ownerUserId: pending)
+                            // ⚠ **세션까지 끝내야 로그아웃이다**(Codex #699 P1). 표시를 남긴
+                            // 직후 프로세스가 죽으면 키체인 세션이 그대로 남는다 — 알람만
+                            // 끄고 표시를 지우면 **직접 로그아웃한 사용자가 그 계정으로
+                            // 로그인된 채** 남고, 되짚을 근거도 함께 사라진다.
+                            // 계정이 일치할 때만 끊는다: 그 사이 다른 계정으로 로그인했다면
+                            // 그 사람을 로그아웃시킬 이유가 없다.
+                            if let pendingID = pending, auth.session?.user.id == pendingID {
+                                auth.signOut(revokeOnServer: false)
+                            }
                             PendingSignOutStore.clear()
                         }
                         await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)

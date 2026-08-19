@@ -777,3 +777,34 @@ final class PendingSignOutStoreTests: XCTestCase {
         XCTAssertNil(PendingSignOutStore.pendingUserId, "안 지우면 다음 실행이 멀쩡한 알람을 또 끈다")
     }
 }
+
+/// **종료 게이트는 겹쳐도 열리면 안 된다** (Codex #699 P1).
+///
+/// 콜드 스타트 로그아웃이 로드를 끝내는 순간, 로그아웃 태스크와 '미완 로그아웃 이어서
+/// 끝내기' 가 둘 다 들어온다. 불리언이면 **먼저 끝난 쪽이 문을 열어** 아직 취소를
+/// 기다리는 다른 쪽 옆으로 새 예약이 빠져나간다.
+@MainActor
+final class LeavingAccountGateTests: XCTestCase {
+
+    private func makeStore() -> LocalAlarmStore {
+        LocalAlarmStore(
+            storageURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("gate-\(UUID().uuidString).json"),
+            loadFromDisk: false
+        )
+    }
+
+    func test_겹친_종료가_모두_끝나야_문이_닫힌다() async {
+        let kit = AlarmKitViewModel()
+        let store = makeStore()
+        XCTAssertFalse(kit.isLeavingAccount)
+
+        // 두 종료를 겹쳐 돌린다. 하나가 끝나도 다른 하나가 도는 동안은 닫혀 있어야 한다.
+        async let first: Int = kit.stopAllScheduledAlarms(store: store, ownerUserId: "A")
+        async let second: Int = kit.stopAllScheduledAlarms(store: store, ownerUserId: "A")
+        _ = await (first, second)
+
+        // 둘 다 끝났으면 다시 예약할 수 있어야 한다 — 카운터가 새면 영영 못 건다.
+        XCTAssertFalse(kit.isLeavingAccount, "종료가 끝났는데 문이 닫힌 채면 알람을 영영 못 건다")
+    }
+}
