@@ -64,11 +64,24 @@
   **감추기만 할 뿐** 예약은 그대로다 — A 의 알람이 울리는데 B 는 볼 수도 끌 수도 없다.
   행(`enabled`)은 건드리지 않는다: A 의 의도는 A 것이고, A 가 돌아오면 되살아나야 한다.
 
-### 1-3. 삭제는 **예약을 먼저** 끊는다
+### 1-3. 취소에 실패하면 **손잡이를 남기고, 반드시 다시 시도한다** (iOS)
+
+예약을 취소할 수 있는 것은 우리가 든 핸들(`alarmKitID`)뿐이다. 취소가 실패했는데 그 값을
+지우면 OS 에는 예약이 남고 **취소할 방법만 사라진다**(고아 예약).
+
+⚠ **남기는 것만으로는 부족하다**(2026-08-19 Codex #699 P1). 남겨 둔 손잡이를 쓰는 경로가
+없으면 그 행은 영영 방치된다 — 꺼져 있어 재예약 sweep 가 건너뛰고, 같은 계정으로 다시
+로그인해도 '남의 것 취소' 가 건너뛴다. 그동안 예약은 살아 있어 **꺼 놓은 알람이 울리고**,
+울리는 순간 `markRinging` 이 그 행을 **도로 켠다.**
+
+회수 대상은 **꺼져 있는데 손잡이가 남은 행**이다. 평소에는 끄면서 손잡이를 함께 비우므로
+이 조합은 '취소 실패' 에서만 생긴다. 앱 시작·전경 복귀에서 재예약보다 **먼저** 돈다.
+
+### 1-4. 삭제는 **예약을 먼저** 끊는다
 
 행을 먼저 지우면 예약을 취소할 핸들을 잃어 **지운 알람이 계속 운다.** 취소 → 삭제 순서.
 
-### 1-4. `.failed` 는 "사용자가 할 일이 있을 때" 만 쓴다
+### 1-5. `.failed` 는 "사용자가 할 일이 있을 때" 만 쓴다
 
 이 상태는 행에 빨간 "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요."
 를 띄운다. 그러므로 **정말 사용자가 손대야 하는 경우에만** 쓴다.
@@ -90,7 +103,7 @@
 후보로 잡기 때문이다 — 사용자가 직접 열어 다시 저장할 때까지 빨간 경고가 붙어 있다
 (2026-08-19 iPhone 실기기에서 그 상태의 알람을 확인했다).
 
-### 1-5. 앱 업데이트는 알람을 지우지 않는다
+### 1-6. 앱 업데이트는 알람을 지우지 않는다
 
 행은 앱 데이터 컨테이너에 있어 업데이트를 넘어 살아남는다. **예약은 별개**이므로,
 시작·전경 복귀의 재예약 sweep 가 `enabled && 예약 없음` 을 보고 다시 건다.
@@ -122,7 +135,7 @@
 
 | 차이 | 지금 | 판단 |
 | --- | --- | --- |
-| 행 경고 판정 | 양쪽 다 `state == FAILED` 만 본다(`enabled` 를 안 본다) | 1-4 의 낙인 규칙을 지키면 잘못된 조합이 생기지 않는다. 방어로 둘 다 `enabled` 를 함께 보는 편이 낫다 |
+| 행 경고 판정 | 양쪽 다 `state == FAILED` 만 본다(`enabled` 를 안 본다) | 1-5 의 낙인 규칙을 지키면 잘못된 조합이 생기지 않는다. 방어로 둘 다 `enabled` 를 함께 보는 편이 낫다 |
 
 ⚠ **이 표에 "만료된 1회성 알람 처리가 갈린다" 고 적었다가 지웠다(2026-08-19).**
 `prepareForScheduleRecovery` 가 `nil` 을 돌려주는 것만 보고 "iOS 는 조용히 건너뛴다" 고
@@ -144,9 +157,10 @@
 | 1-2 자동 만료 계정 기록 | — | `network/AuthSessionStore.kt` 의 `sessionExpiredOwnerUserId` | `SessionExpiryStore` |
 | 1-2 로그인 시 남의 예약 취소 | — | `AlarmRepository.cancelAlarmsNotOwnedBy` | `AlarmKitViewModel.cancelScheduledAlarmsNotOwnedBy` |
 | 1-1 중복 시각 판정도 소유자로 | — | (해당 없음 — DAO 가 이미 소유자 조건) | `LocalAlarmStore.conflictingAlarms` · `requireUniqueTime` |
-| 1-3 삭제는 취소 먼저 | — | `AlarmRepository.deleteAlarmLocked` | `AlarmKitViewModel.cancel(record:store:)` |
-| 1-4 `.failed` 낙인 규칙 | — | `AlarmRepository` 의 두 `AlarmStates.FAILED` 자리 | `LocalAlarmStore.markFailed` 의 `enabled` 가드 |
-| 1-4 행 경고 문구 | — | `ui/components/ControlsAndPermissions.alarmRowNotice` | `Views/Alarms/AlarmRow.rowNotice` |
-| 1-5 업데이트 뒤 재예약 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms` |
+| 1-4 삭제는 취소 먼저 | — | `AlarmRepository.deleteAlarmLocked` | `AlarmKitViewModel.cancel(record:store:)` |
+| 1-5 `.failed` 낙인 규칙 | — | `AlarmRepository` 의 두 `AlarmStates.FAILED` 자리 | `LocalAlarmStore.markFailed` 의 `enabled` 가드 |
+| 1-5 행 경고 문구 | — | `ui/components/ControlsAndPermissions.alarmRowNotice` | `Views/Alarms/AlarmRow.rowNotice` |
+| 1-6 업데이트 뒤 재예약 | — | `AlarmRepository.reschedulePendingAlarms` | `AlarmKitViewModel.recoverScheduledAlarms` |
+| 1-3 못 끊은 예약 회수 | — | (해당 없음 — `AlarmManager.cancel` 은 실패를 알리지 않는다) | `AlarmKitViewModel.retryPendingCancellations` |
 | iOS 소리 지문 | — | (해당 없음) | `AlarmScheduleReconciler.scheduledFingerprint` |
 | 회귀 테스트 | — | — | `AlarmTalkTests/InaccessibleVoiceReconcileTests.swift`(`LeaveAccountAlarmTests`) |

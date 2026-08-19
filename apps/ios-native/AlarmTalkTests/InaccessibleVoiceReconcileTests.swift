@@ -598,3 +598,40 @@ final class SchedulingSnapshotTests: XCTestCase {
         )
     }
 }
+
+/// **취소에 실패해 남겨 둔 손잡이는 반드시 회수돼야 한다** (Codex #699 P1).
+///
+/// 남기기만 하고 쓰는 데가 없으면 남긴 의미가 없다 — 그 행은 꺼져 있어 복구가 건너뛰고,
+/// 같은 계정으로 다시 로그인해도 '남의 것 취소' 가 건너뛴다. 그동안 OS 예약은 살아 있어
+/// **꺼 놓은 알람이 울리고**, 울리면 `markRinging` 이 그 행을 도로 켠다.
+@MainActor
+final class PendingCancellationTests: XCTestCase {
+
+    private func alarm(id: String, enabled: Bool, kitID: String?) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var r = LocalAlarmRecord(
+            id: id, label: "아침", hour: 7, minute: 0, fireAtMillis: now + 60_000,
+            origin: AlarmOrigin.localOwned.rawValue, createdAtMillis: now, updatedAtMillis: now
+        )
+        r.enabled = enabled
+        r.alarmKitID = kitID
+        return r
+    }
+
+    func test_꺼졌는데_손잡이가_남은_행만_회수한다() {
+        let candidates = AlarmKitViewModel.pendingCancellationCandidates([
+            alarm(id: "못끔", enabled: false, kitID: "KIT-1"),   // 취소 실패로 남긴 것
+            alarm(id: "정상끔", enabled: false, kitID: nil),      // 평범하게 꺼진 행
+            alarm(id: "켜짐", enabled: true, kitID: "KIT-2"),     // 멀쩡히 예약된 알람
+        ])
+
+        XCTAssertEqual(candidates.map(\.id), ["못끔"], "켜진 알람을 끊으면 멀쩡한 알람이 죽는다")
+    }
+
+    func test_회수할_것이_없으면_빈_목록() {
+        let candidates = AlarmKitViewModel.pendingCancellationCandidates([
+            alarm(id: "켜짐", enabled: true, kitID: "KIT-1")
+        ])
+        XCTAssertTrue(candidates.isEmpty)
+    }
+}

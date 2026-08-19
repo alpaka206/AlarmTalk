@@ -352,6 +352,69 @@ final class AlarmKitViewModel: ObservableObject {
     /// - Returns: 실제로 끈 알람 수.
     ///
     /// 로그인 쪽 짝은 `cancelScheduledAlarmsNotOwnedBy` 다 — **한쪽만 고치지 말 것.**
+    /// **취소에 실패해 남겨 둔 손잡이를 다시 써 본다.**
+    ///
+    /// ⚠ 이게 없으면 손잡이를 남긴 의미가 없다(Codex #699 P1). `stopAllScheduledAlarms` 는
+    /// 취소가 실패하면 다시 시도하려고 `alarmKitID` 를 남기는데, **그 뒤로 아무도 그 값을
+    /// 쓰지 않았다**: 그 행은 이미 꺼져 있어 `recoverScheduledAlarms` 가 건너뛰고,
+    /// 같은 계정으로 다시 로그인하면 `cancelScheduledAlarmsNotOwnedBy` 도 건너뛴다.
+    /// 그동안 OS 예약은 살아 있어 **꺼 놓은 알람이 운다** — 게다가 울리면
+    /// `processAlarmUpdate` 가 `markRinging` 으로 그 행을 **도로 켠다.**
+    ///
+    /// 대상은 **꺼져 있는데 손잡이가 남은 행**이다. 평소에는 끄면서 손잡이를 함께 비우므로
+    /// (`setEnabled`), 이 조합은 위의 '취소 실패' 에서만 생긴다 — 정확한 신호다.
+    ///
+    /// 소유자·`enabled` 와 무관하게 돈다. 지우는 것은 **우리가 못 끈 예약**뿐이라 남의
+    /// 계정 것을 건드릴 위험이 없다.
+    /// 회수 대상: **꺼져 있는데 손잡이가 남은 행.**
+    ///
+    /// 평소에는 끄면서 손잡이를 함께 비우므로(`LocalAlarmStore.setEnabled`), 이 조합은
+    /// '취소에 실패해 일부러 남겼다' 는 뜻뿐이다. 켜진 행은 대상이 아니다 — 그건 정상적으로
+    /// 예약돼 있는 것이고, 여기서 끊으면 멀쩡한 알람을 죽인다.
+    nonisolated static func pendingCancellationCandidates(
+        _ alarms: [LocalAlarmRecord]
+    ) -> [LocalAlarmRecord] {
+        alarms.filter { !$0.enabled && $0.alarmKitID != nil }
+    }
+
+    @discardableResult
+    func retryPendingCancellations(store: LocalAlarmStore) async -> Int {
+        #if canImport(AlarmKit)
+        let pending = Self.pendingCancellationCandidates(store.alarms)
+        guard !pending.isEmpty else { return 0 }
+        // `AlarmManager.shared.alarms` 가 권위다 — 이미 사라진 예약을 취소하려 들지 않는다.
+        // 목록을 못 읽으면(권한 회수 등) 이번 회차는 건너뛴다. 손잡이는 그대로 남아 다음 기회에.
+        guard let live = try? AlarmManager.shared.alarms else { return 0 }
+        let liveIDs = Set(live.map(\.id))
+        var cleared = 0
+        for record in pending {
+            guard let uuid = record.alarmKitUUID else {
+                // 손잡이가 UUID 로 읽히지 않는다 — 취소할 방법이 없으니 붙들고 있을 이유도 없다.
+                store.clearScheduleHandle(id: record.id)
+                continue
+            }
+            if !liveIDs.contains(uuid) {
+                // OS 에 이미 없다. 손잡이만 남은 것이므로 비운다.
+                store.clearScheduleHandle(id: record.id)
+                cleared += 1
+                continue
+            }
+            do {
+                try AlarmManager.shared.cancel(id: uuid)
+                store.clearScheduleHandle(id: record.id)
+                cleared += 1
+            } catch {
+                // ⚠ **여기서 `statusMessage` 를 세우지 않는다.** 이 sweep 는 앱을 열 때마다
+                // 도는데, 사용자가 시킨 적 없는 실패를 매번 알리면 그 문구가 소음이 된다.
+                // 손잡이를 그대로 두어 다음 기회에 다시 시도한다.
+            }
+        }
+        return cleared
+        #else
+        return 0
+        #endif
+    }
+
     /// **다른 계정 소유의 OS 예약을 끊는다.** 로그인 확정 직후에 부른다.
     ///
     /// 안드로이드 `data/AlarmRepository.cancelAlarmsNotOwnedBy` 의 짝이다. 없으면 이런 일이

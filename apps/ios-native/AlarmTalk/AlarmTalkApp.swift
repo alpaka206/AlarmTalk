@@ -300,6 +300,11 @@ struct AlarmTalkApp: App {
                     }
                     .task(id: alarmStore.hasLoadedFromDisk) {
                         guard alarmStore.hasLoadedFromDisk else { return }
+                        // ⚠ **먼저** 못 끈 예약을 다시 끊는다(Codex #699 P1). 로그아웃 때
+                        // 취소가 실패해 남겨 둔 손잡이는 여기서만 소비된다 — 그 행은 꺼져
+                        // 있어 아래 복구가 건너뛰고, 같은 계정으로 다시 로그인해도
+                        // `cancelScheduledAlarmsNotOwnedBy` 가 건너뛴다.
+                        await alarmKit.retryPendingCancellations(store: alarmStore)
                         await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                         // 앱 시작 후 1회: 30일 넘게 미참조 상태로 남은 캐시 음원과
                         // 고아 .meta.json 사이드카를 백그라운드에서 정리한다.
@@ -335,6 +340,8 @@ struct AlarmTalkApp: App {
             case .active:
                 Task {
                     guard alarmStore.hasLoadedFromDisk else { return }
+                    // 전경 복귀에서도 한 번 — 로그아웃 직후 실패한 취소를 여기서 만회한다.
+                    await alarmKit.retryPendingCancellations(store: alarmStore)
                     await alarmKit.recoverScheduledAlarms(store: alarmStore, ownerUserId: auth.session?.user.id)
                 }
                 // 빠진 테마 클립을 보충한다. 이미 캐시된 것은 건너뛰므로 값이 싸고,
