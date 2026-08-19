@@ -56,19 +56,23 @@ final class BackgroundSyncTask {
     /// 약참조. 앱 lifetime 동안 `@StateObject` 로 살아있으므로 정상 동작 중엔 nil 이 아니다.
     private weak var store: LocalAlarmStore?
     private weak var alarmKit: AlarmKitViewModel?
+    /// 목소리 접근권 재확인용. 이 주기가 **푸시를 놓쳤을 때의 그물**이다(아래 주석 참조).
+    private weak var voiceStudio: VoiceStudioViewModel?
 
     init(
         pull: RemoteAlarmPullSync,
         push: RemoteAlarmPushSync,
         socialFeatures: SocialFeatureViewModel,
         store: LocalAlarmStore? = nil,
-        alarmKit: AlarmKitViewModel? = nil
+        alarmKit: AlarmKitViewModel? = nil,
+        voiceStudio: VoiceStudioViewModel? = nil
     ) {
         self.pull = pull
         self.push = push
         self.socialFeatures = socialFeatures
         self.store = store
         self.alarmKit = alarmKit
+        self.voiceStudio = voiceStudio
     }
 
     // MARK: Registration
@@ -117,7 +121,8 @@ final class BackgroundSyncTask {
         push: RemoteAlarmPushSync,
         socialFeatures: SocialFeatureViewModel,
         store: LocalAlarmStore? = nil,
-        alarmKit: AlarmKitViewModel? = nil
+        alarmKit: AlarmKitViewModel? = nil,
+        voiceStudio: VoiceStudioViewModel? = nil
     ) {
         #if canImport(BackgroundTasks)
         // ⚠ 여기서 `BGTaskScheduler.register` 를 **다시 부르지 말 것** — 같은 식별자로 두 번
@@ -134,7 +139,8 @@ final class BackgroundSyncTask {
                     push: push,
                     socialFeatures: socialFeatures,
                     store: store,
-                    alarmKit: alarmKit
+                    alarmKit: alarmKit,
+                    voiceStudio: voiceStudio
                 )
                 await runner.runAndSchedule(task: refresh)
             }
@@ -189,6 +195,16 @@ final class BackgroundSyncTask {
             _ = try await push.runOnce()
             let pullResult = try await pull.runOnce()
             if let session = KeychainStore.readSession() {
+                // ⚠ **목소리 접근권을 여기서 다시 받는다 — 이 주기가 그물이다.**
+                // 푸시(`voice_access_revoked`)는 오프라인·스로틀링에서 조용히 버려지고,
+                // 앱을 안 열면 시작·탭 진입 새로고침도 없다. 그러면 철회된 목소리가
+                // **영영 예약된 채 울린다.** 안드로이드는 이 자리를 위해 `VoiceAccessSyncWorker`
+                // 를 하루 주기로 돌린다 — 그 주석의 표현대로 "정확성은 주기와 앱 시작이
+                // 보장하고, 푸시는 즉시성만 맡는다". iOS 의 유일한 주기 wake 가 여기다.
+                //
+                // 강등은 새로고침에 매달린 `onAuthoritativeRefresh` 훅이 한다. 조회가
+                // 실패한 회차에는 그 훅 안의 판정이 스스로 물러선다(오강등 > 미강등).
+                await voiceStudio?.refresh(session: session, force: true)
                 // ⚠ 여기서 랜덤 문구를 **다시 합성하던** 자리다(2026-08-18 제거).
                 // 알람 음성은 프리셋 + 직접 입력 둘뿐이라 매일 지어낼 문장이 없다.
                 // 아래 날씨 갱신은 **합성이 아니라 variant 재선택**이라 그대로 둔다.

@@ -1118,6 +1118,12 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 시작·탭 진입·백그라운드 주기의 새로고침인데, 강등이 거기 없으면 **철회된 목소리가
     /// 다음 푸시가 올 때까지 계속 예약된 채 울린다.** `refresh` 호출부는 9곳인데 강등은
     /// 두 곳에만 있었다. 새로고침 자체에 매달아 호출부가 잊을 수 없게 한다.
+    ///
+    /// ⚠ 이 주석이 처음 쓰일 때 "백그라운드 주기" 를 근거로 들었지만 **그때 그 경로는
+    /// 목소리를 새로고침하지 않았다** — 확인하지 않고 적은 것이다(2026-08-18 Codex 지적).
+    /// 지금은 `BackgroundSyncTask.runAndSchedule` 이 실제로 부른다. 안드로이드의 짝은
+    /// 하루 주기 `VoiceAccessSyncWorker` 다 — 셋(푸시·주기·앱 시작)이 서로 폴백이고,
+    /// **정확성은 뒤 둘이 보장한다.**
     /// (이 클래스가 알람 저장소를 직접 들면 순환 참조가 된다 — 푸시 코디네이터의
     /// `onFamilyAlarm` 과 같은 방식으로 앱이 꽂는다.)
     var onAuthoritativeRefresh: (() async -> Void)?

@@ -260,7 +260,9 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             push: RemoteAlarmPushSync(store: deps.alarmStore, auth: deps.auth),
             socialFeatures: deps.socialFeatures,
             store: deps.alarmStore,
-            alarmKit: deps.alarmKit
+            alarmKit: deps.alarmKit,
+            // 주기 사이클이 목소리 접근권을 다시 받아야 한다(푸시를 놓쳤을 때의 그물).
+            voiceStudio: deps.voiceStudio
         )
         return true
     }
