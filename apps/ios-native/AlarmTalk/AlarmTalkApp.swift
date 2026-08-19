@@ -335,7 +335,9 @@ struct AlarmTalkApp: App {
                             // 계정이 일치할 때만 끊는다: 그 사이 다른 계정으로 로그인했다면
                             // 그 사람을 로그아웃시킬 이유가 없다.
                             if let pendingID = pending, auth.session?.user.id == pendingID {
-                                auth.signOut(revokeOnServer: false)
+                                // 서버 쪽 뒷정리(푸시 해제·토큰 폐기)까지 마저 한다 —
+                                // 안 하면 로그아웃한 기기로 그 계정의 알림이 계속 온다.
+                                await auth.finishInterruptedSignOut()
                             }
                             PendingSignOutStore.clear()
                         }

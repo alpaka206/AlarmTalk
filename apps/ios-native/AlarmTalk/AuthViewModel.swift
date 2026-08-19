@@ -1163,6 +1163,23 @@ final class AuthViewModel: ObservableObject {
     /// `claimUnownedAlarmsFor` 로 같은 일을 한다.
     var onSessionEndClaimAlarms: (String?) async -> Void = { _ in }
 
+    /// **끊긴 로그아웃을 이어서 끝낸다.** 다음 실행이 `PendingSignOutStore` 표시를 보고 부른다.
+    ///
+    /// ⚠ 로컬 세션만 지우면 부족하다(Codex #699 P2). 원래 태스크가 들고 있던 **서버 쪽
+    /// 뒷정리가 함께 사라졌기 때문이다** — 기기 토큰이 그 계정에 묶인 채라 **로그아웃한
+    /// 사용자에게 그 계정의 알림이 계속 오고**, 서버 토큰도 유효한 채 남는다.
+    /// 그래서 여기서 순서대로 마저 한다: 푸시 해제 → 토큰 폐기 → 로컬 세션 정리.
+    /// (순서가 뒤바뀌면 폐기가 먼저 `token_epoch` 를 올려 해제가 401 로 죽는다 —
+    /// `signOutExplicitly` 주석과 같은 이유다.)
+    func finishInterruptedSignOut() async {
+        let revokeToken = session?.token.nilIfBlank
+        if let revokeToken {
+            await onSignOutUnregisterPush(revokeToken)
+            try? await api.logout(token: revokeToken)
+        }
+        signOut(revokeOnServer: false)
+    }
+
     func signOutExplicitly() {
         let userID = session?.user.id
         DefaultVoicePreferenceStore().clear(userID: userID)

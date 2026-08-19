@@ -538,15 +538,26 @@ final class AlarmKitViewModel: ObservableObject {
         // ⚠ **한 번 훑고 끝내지 않는다.** 훑는 도중에 원격 pull 이 받은 알람을 들여오면
         // 그 행은 스냅샷에 없어 통째로 건너뛰어진다. 더 할 일이 없을 때까지 돈다
         // (상한을 두는 것은 무한 루프 방지 — 그 사이에도 `isLeavingAccount` 가 새 예약을 막는다).
+        // ⚠ **"끈 게 없다" 는 "할 일이 없다" 가 아니다**(Codex #699 P1). 남의 계정 예약만
+        // 취소하고 끝난 회차는 0을 돌려주는데, 그 취소가 만든 `await` 사이에 원격 pull 이
+        // **새 행을 들여올 수 있다.** 그래서 저장소가 그대로였는지도 함께 본다 —
+        // 아무것도 안 끄고 **아무것도 안 바뀐** 회차가 나와야 끝난다.
         for _ in 0..<5 {
+            let before = Self.storeSignature(store)
             let handled = await stopOnePass(store: store, owner: owner)
             stopped += handled
-            if handled == 0 { break }
+            if handled == 0 && Self.storeSignature(store) == before { break }
         }
         return stopped
         #else
         return 0
         #endif
+    }
+
+    /// 종료 sweep 가 "그 사이 아무 일도 없었다" 를 판정하는 지문.
+    /// 행이 추가·삭제되거나 켜짐·예약 핸들이 바뀌면 값이 달라진다.
+    private static func storeSignature(_ store: LocalAlarmStore) -> [String] {
+        store.alarms.map { "\($0.id)|\($0.enabled)|\($0.alarmKitID ?? "-")" }
     }
 
     /// `stopAllScheduledAlarms` 의 한 회차. 처리한 행 수를 돌려준다(0이면 더 할 일이 없다).
