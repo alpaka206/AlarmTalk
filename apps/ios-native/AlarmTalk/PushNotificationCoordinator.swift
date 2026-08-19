@@ -248,7 +248,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             guard degraded > 0 else { return }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
-                alarmKit: deps.alarmKit
+                alarmKit: deps.alarmKit,
+                ownerUserId: deps.auth.session?.user.id
             )
         }
         deps.push.onPlanChanged = {
@@ -265,7 +266,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
             guard deps.socialFeatures.entitlementSnapshotComplete else { return }
             _ = await AlarmScheduleReconciler.reconcile(
                 store: deps.alarmStore,
-                alarmKit: deps.alarmKit
+                alarmKit: deps.alarmKit,
+                ownerUserId: deps.auth.session?.user.id
             )
         }
 

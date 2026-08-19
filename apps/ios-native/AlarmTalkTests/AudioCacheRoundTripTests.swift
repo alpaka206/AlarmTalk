@@ -64,6 +64,15 @@ final class TestIsolationTests: XCTestCase {
         )
     }
 
+    func test_옛_음원_디렉터리도_갈린다() throws {
+        // `cache(tts:)` 가 쓰는 경로다 — 안 가르면 테스트가 사용자의 실제 음원을 덮어쓴다.
+        let legacy = try AudioCacheStore.legacyAudioDirectory()
+        XCTAssertTrue(
+            legacy.lastPathComponent.hasSuffix(TestIsolation.storageSuffix),
+            "테스트가 사용자의 옛 음원 디렉터리(\(legacy.lastPathComponent))를 그대로 쓴다"
+        )
+    }
+
     func test_키체인은_사용자_세션을_쓰지_않는다() throws {
         // 실제로 쓰고 지워 본다. 서비스 이름이 갈리지 않았다면 이 왕복이 **기기의 진짜
         // 세션을 덮어쓰고 지운다** — 그래서 값 비교가 아니라 격리 자체를 단언한다.

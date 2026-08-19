@@ -560,3 +560,41 @@ final class ScheduleHandleRetentionTests: XCTestCase {
         XCTAssertNil(store.record(id: "b")?.alarmKitID)
     }
 }
+
+/// **예약 중에 로그아웃이 끼어들면 그 예약은 되돌려져야 한다** (Codex #699 P1 검토).
+///
+/// `schedule` 은 `AlarmManager.shared.schedule` 을 `await` 하는 동안 다른 경로가 행을 바꿀 수
+/// 있다. 로그아웃(`stopAllScheduledAlarms`)이 그 사이에 행을 끄면, 돌아온 예약 코드가
+/// `markScheduled` 로 나아가면 안 된다 — 그 함수는 `enabled = true` 를 **무조건** 쓰므로
+/// **로그아웃한 계정의 알람이 새 예약과 함께 되살아난다.**
+///
+/// 그 판정은 `SchedulingSnapshot` 비교 하나에 걸려 있고, **`enabled` 가 그 스냅샷에 들어
+/// 있다는 사실**이 전부다. 여기가 빠지면 위 시나리오가 조용히 통과한다.
+@MainActor
+final class SchedulingSnapshotTests: XCTestCase {
+
+    private func record(enabled: Bool) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        var r = LocalAlarmRecord(
+            id: "a", label: "아침", hour: 7, minute: 0, fireAtMillis: now + 60_000,
+            origin: AlarmOrigin.localOwned.rawValue, createdAtMillis: now, updatedAtMillis: now
+        )
+        r.enabled = enabled
+        return r
+    }
+
+    func test_켜짐이_바뀌면_예약_스냅샷이_달라진다() {
+        XCTAssertNotEqual(
+            AlarmKitViewModel.SchedulingSnapshot(record(enabled: true)),
+            AlarmKitViewModel.SchedulingSnapshot(record(enabled: false)),
+            "await 중 꺼진 것을 못 알아채면 로그아웃한 계정의 알람이 새 예약과 함께 되살아난다"
+        )
+    }
+
+    func test_같은_행이면_스냅샷도_같다() {
+        XCTAssertEqual(
+            AlarmKitViewModel.SchedulingSnapshot(record(enabled: true)),
+            AlarmKitViewModel.SchedulingSnapshot(record(enabled: true))
+        )
+    }
+}
