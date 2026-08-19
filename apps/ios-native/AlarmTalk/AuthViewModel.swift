@@ -66,6 +66,31 @@ final class AuthViewModel: ObservableObject {
         statusMessage = message
         statusIsError = message != nil
     }
+
+    /// 로그인 실패를 **비밀번호 입력창 바로 아래**에 붙이기 위한 값.
+    ///
+    /// ⚠ **하단 `statusMessage` 로 보내지 말 것.** 그 자리는 제출 버튼·비밀번호 찾기·
+    /// 애플 로그인 행을 지나서야 나와, 비밀번호를 틀린 사람이 **틀린 줄도 모른다**
+    /// (2026-08-19 실기기 사용자 보고: "틀리고도 뭐지? 했다"). 게다가 그 자리에는
+    /// "인증 코드를 보냈어요" 같은 안내도 함께 오므로 눈에 걸리지도 않는다.
+    /// 안드로이드는 처음부터 `OutlinedTextField.supportingText` 로 붙이고 있었다
+    /// (`ui/auth/AuthScreen.kt` 의 `loginError`).
+    @Published var loginError: String?
+
+    /// 로그인 실패를 사용자 문구로 바꾼다.
+    ///
+    /// 서버는 **미가입과 비밀번호 불일치를 구분하지 않고** `AUTH_INVALID_CREDENTIALS` 401
+    /// 하나로 답한다(계정 존재 여부 노출 방지). 그래서 문구도 둘을 함께 확인하게 쓴다 —
+    /// 안드로이드 `ui/main/MainViewModelAuthActions.kt` 의 같은 갈래와 같은 말이다.
+    ///
+    /// `loginWithEmail` 이 주입된 `api` 가 아니라 `AlarmTalkAPI.shared` 를 직접 부르는 탓에
+    /// 로그인 경로 자체는 단위 테스트로 못 덮는다. 갈림만이라도 순수 함수로 빼서 고정한다.
+    nonisolated static func loginErrorMessage(for error: Error) -> String {
+        if (error as? APIError)?.serverErrorCode == "AUTH_INVALID_CREDENTIALS" {
+            return String(localized: "이메일 또는 비밀번호가 맞지 않아요. 다시 확인해 주세요.")
+        }
+        return userFacingErrorMessage(error, fallback: String(localized: "로그인에 실패했어요"))
+    }
     @Published var isBusy = false
     /// 401 외의 일시 오류(5xx, 4xx 기타, 네트워크 단절 등) 를 사용자에게 보여주되
     /// 세션은 유지한다. UI 가 빨간 띠/스낵바 등으로 노출하면 된다.
@@ -400,6 +425,7 @@ final class AuthViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
+        loginError = nil
         do {
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
             persistSession(nextSession)
@@ -409,7 +435,9 @@ final class AuthViewModel: ObservableObject {
             // 필수 약관 미동의면 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            failStatus(userFacingErrorMessage(error, fallback: "로그인에 실패했어요"))
+            // ⚠ **하단 `failStatus` 로 보내지 말 것** — 그 자리는 눈에 안 걸린다.
+            // 판정과 문구는 `loginErrorMessage(for:)` 에 있다.
+            loginError = Self.loginErrorMessage(for: error)
         }
     }
 
