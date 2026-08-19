@@ -369,6 +369,11 @@ final class AuthViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
+        // ⚠ **요청을 보내기 전에** 진행 중인 로그아웃 뒷정리를 기다린다(Codex #699 P1).
+        // `/auth/logout` 은 계정 전체의 `token_epoch` 를 올리므로, 그 요청이 **토큰이 발급된
+        // 뒤에** 처리되면 방금 받은 세션이 무효가 된다 — 발급 뒤에 기다려 봐야 되돌릴 수 없다.
+        await awaitPendingServerSignOut()
+
         do {
             var nextSession = try await AlarmTalkAPI.shared.loginWithApple(
                 idToken: idToken,
@@ -396,10 +401,6 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
             // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
             // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-            // ⚠ **진행 중인 로그아웃 뒷정리를 먼저 기다린다.** 표시를 지우는 것으로는
-            // 이미 날아간 `/auth/logout` 을 취소하지 못한다 — 그 요청이 처리되면
-            // `token_epoch` 가 올라가 방금 심은 세션이 무효가 된다.
-            await awaitPendingServerSignOut()
             PendingSignOutStore.clear(nextSession.user.id)
             if await claimAlarmsForExpiredOwnerBeforeSignIn() {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
@@ -469,6 +470,11 @@ final class AuthViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
+        // ⚠ **요청을 보내기 전에** 진행 중인 로그아웃 뒷정리를 기다린다(Codex #699 P1).
+        // `/auth/logout` 은 계정 전체의 `token_epoch` 를 올리므로, 그 요청이 **토큰이 발급된
+        // 뒤에** 처리되면 방금 받은 세션이 무효가 된다 — 발급 뒤에 기다려 봐야 되돌릴 수 없다.
+        await awaitPendingServerSignOut()
+
         loginError = nil
         do {
             let nextSession = try await AlarmTalkAPI.shared.loginWithEmail(email: email, password: password)
@@ -485,10 +491,6 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
             // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
             // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-            // ⚠ **진행 중인 로그아웃 뒷정리를 먼저 기다린다.** 표시를 지우는 것으로는
-            // 이미 날아간 `/auth/logout` 을 취소하지 못한다 — 그 요청이 처리되면
-            // `token_epoch` 가 올라가 방금 심은 세션이 무효가 된다.
-            await awaitPendingServerSignOut()
             PendingSignOutStore.clear(nextSession.user.id)
             if await claimAlarmsForExpiredOwnerBeforeSignIn() {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
@@ -517,6 +519,11 @@ final class AuthViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
+        // ⚠ **요청을 보내기 전에** 진행 중인 로그아웃 뒷정리를 기다린다(Codex #699 P1).
+        // `/auth/logout` 은 계정 전체의 `token_epoch` 를 올리므로, 그 요청이 **토큰이 발급된
+        // 뒤에** 처리되면 방금 받은 세션이 무효가 된다 — 발급 뒤에 기다려 봐야 되돌릴 수 없다.
+        await awaitPendingServerSignOut()
+
         do {
             let nextSession = try await AlarmTalkAPI.shared.register(
                 email: email,
@@ -537,10 +544,6 @@ final class AuthViewModel: ObservableObject {
             // ⚠ **다시 로그인했으면 그 계정의 미완 로그아웃은 무효다**(Codex #699 P1).
             // 남겨 두면 진행 중이던 뒷정리가 `/auth/logout` 으로 `token_epoch` 를 올려
             // **방금 발급받은 세션까지 죽인다**(그 엔드포인트는 계정 전체에 걸린다).
-            // ⚠ **진행 중인 로그아웃 뒷정리를 먼저 기다린다.** 표시를 지우는 것으로는
-            // 이미 날아간 `/auth/logout` 을 취소하지 못한다 — 그 요청이 처리되면
-            // `token_epoch` 가 올라가 방금 심은 세션이 무효가 된다.
-            await awaitPendingServerSignOut()
             PendingSignOutStore.clear(nextSession.user.id)
             if await claimAlarmsForExpiredOwnerBeforeSignIn() {
                 // 로그인 확정 — 자동 만료 표시를 내린다(`SessionExpiryStore` 주석).
