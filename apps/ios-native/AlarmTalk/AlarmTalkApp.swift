@@ -294,7 +294,11 @@ struct AlarmTalkApp: App {
                     // B 가 로그인하면 목록·복구는 소유자로 걸러 A 의 알람을 **감추기만 한다** —
                     // 예약은 그대로라 **A 의 알람이 울리는데 B 는 볼 수도 끌 수도 없다.**
                     // 안드로이드는 `onSignedIn` 에서 `cancelAlarmsNotOwnedBy` 로 같은 일을 한다.
-                    .task(id: auth.session?.user.id) {
+                    // ⚠ **판정에 로드 상태를 함께 넣는다**(Codex #699 P1). 계정 id 만 걸면
+                    // **콜드 스타트**에서 저장소가 아직 로드 중이라 여기서 그대로 돌아가고,
+                    // 그 뒤로 id 가 안 바뀌므로 **다시 돌지 않는다** — 앞 계정의 예약이
+                    // 새 계정 아래에 숨은 채 영원히 남는다.
+                    .task(id: "\(auth.session?.user.id ?? "-")|\(alarmStore.hasLoadedFromDisk)") {
                         // ⚠ **먼저 계정 세대를 올린다**(Codex #699 P1). 진행 중인 예약이
                         // await 에서 돌아와 이 값을 보고 스스로 물러선다 — 아래 정리는
                         // **아직 저장되지 않은 UUID** 를 못 보므로 그것만으로는 못 닫힌다.

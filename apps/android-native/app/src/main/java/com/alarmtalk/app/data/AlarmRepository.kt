@@ -596,17 +596,32 @@ class AlarmRepository(
         // (이 함수가 막으려는 바로 그 사고를, 스냅샷을 재사용하는 것만으로 다시 낸다.)
         //
         // 다시 읽으면 A 것은 A 로, B 의 옛 행은 방금 `claimUnownedAlarmsFor` 가 B 로 새겼다.
-        // 그래도 null 이 남았다면 확정이 실패한 것이라 임자를 알 수 없으므로 끄는 쪽에 넣는다
-        // (안 울리는 쪽이 안전하다). `signedOutUserId` 가 비어 누구인지 모를 때도 같다.
+        // **다시 읽는 데 성공했는데도** null 이 남았다면 새기기가 실패한 것이라 임자를 알 수
+        // 없으므로 끄는 쪽에 넣는다(안 울리는 쪽이 안전하다). `signedOutUserId` 가 비어
+        // 누구인지 모를 때도 같다. **다시 읽기 자체가 실패한 경우는 아래에서 따로 가른다.**
         // iOS 짝은 `AlarmKitViewModel.stopAllScheduledAlarms`.
         val now = System.currentTimeMillis()
         val leaving = signedOutUserId?.takeIf { it.isNotBlank() }
-        val settled = runCatching { alarmDao.getAllAlarms() }.getOrElse { error ->
-            Log.w(TAG, "Failed to re-read alarms after ownership settle", error)
-            all
-        }
+        val rereadOrNull = runCatching { alarmDao.getAllAlarms() }
+            .onFailure { error -> Log.w(TAG, "Failed to re-read alarms after ownership settle", error) }
+            .getOrNull()
+        // ⚠ **다시 읽기가 실패하면 옛 스냅샷으로 되돌아가지 말 것**(Codex #699 P1).
+        // 그 스냅샷에서는 방금 A 로 새겨진 행이 아직 `ownerUserId == null` 이라, 아래 판정이
+        // 그걸 **지금 떠나는 B 것으로 오인해 영구히 끈다** — 다시 읽기를 넣은 이유가 정확히
+        // 그 사고를 막는 것이었는데, 폴백이 그 구멍을 도로 뚫는다.
+        // 그래서 실패했을 때는 **임자가 모호한 행(owner == null)을 아예 건드리지 않는다.**
+        // 그 행들의 예약은 위에서 이미 취소했으므로 울지 않고, 켜짐은 주인이 돌아왔을 때
+        // 되살아난다 — 잃는 것이 없는 쪽이다.
+        val settled = rereadOrNull ?: all
+        val ownershipIsCertain = rereadOrNull != null
         settled.filter { alarm ->
-            alarm.enabled && (leaving == null || alarm.ownerUserId == null || alarm.ownerUserId == leaving)
+            if (!alarm.enabled) return@filter false
+            if (leaving == null) return@filter true
+            when (alarm.ownerUserId) {
+                leaving -> true
+                null -> ownershipIsCertain
+                else -> false
+            }
         }.forEach { alarm ->
             runCatching {
                 alarmDao.setState(
