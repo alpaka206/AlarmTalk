@@ -66,6 +66,11 @@ final class WeatherVariantRefreshService {
 
         var changed = 0
         for (key, alarms) in groups {
+            // ⚠ **취소되면 멈춘다.** 아래 `try?` 는 취소도 nil 로 삼키므로, 그것만 믿으면
+            // 워치독이 회차를 접은 뒤에도 남은 그룹을 돌며 **알람을 계속 고친다**
+            // (2026-08-18 Codex #697 이 push·pull·목소리에서 지적한 것과 같은 형태 —
+            // 지적을 기다리지 않고 같은 사이클의 나머지도 함께 맞춘다).
+            if Task.isCancelled { break }
             let index = try? await api.getPrerenderVariant(
                 context: "wake_weather",
                 country: key.country.nilIfBlank,

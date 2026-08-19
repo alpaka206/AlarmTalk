@@ -175,7 +175,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 case .updated: updated += 1
                 case .unchanged: break
                 }
+            } catch is CancellationError {
+                // ⚠ **취소는 실패가 아니다 — 회차를 멈춘다**(2026-08-18 Codex #697 P2).
+                // 워치독·BGTask 만료가 이 회차를 접는 신호인데 건별 실패로 삼키면,
+                // "끝났다" 고 통보한 뒤에도 남은 알람과 수신 상태를 계속 만진다.
+                throw CancellationError()
             } catch {
+                if Task.isCancelled { throw CancellationError() }
                 failed += 1
                 Self.logger.error(
                     "Pull sync: failed to merge remote alarm (id: \(remote.id, privacy: .public)): \(error.localizedDescription, privacy: .public)"
@@ -560,6 +566,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 // 어긋나지 않는다(한쪽 크기로 전진하면 같은 행을 다시 읽거나 건너뛴다).
                 offset += rows
             } catch {
+                // 취소든 오류든 **모른다**(nil)로 돌려준다 — 부분 결과로 판단하면
+                // 받은 알람을 잘못 지운다. 취소는 여기서 더 돌지 않는 것으로 충분하다.
                 return nil
             }
         }
@@ -638,6 +646,10 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 enforceMaxDuration: false
             )
         } catch {
+            // ⚠ 취소면 폴백을 타지 않는다 — 회차를 접으라는 신호인데 여기서 **또 다른
+            // 네트워크 요청**을 시작하는 셈이 된다. 캐시 키는 비어 있으므로 다음 sync 가
+            // 다시 시도한다(아래 폴백 실패 경로와 같은 결말).
+            if error is CancellationError || Task.isCancelled { return }
             // 캐싱 실패는 sync 전체를 실패시키지 않는다. 무음 알람을 막기 위해
             // 원본 오디오 URL 직다운로드 폴백을 먼저 시도한다.
             Self.logger.warning(
