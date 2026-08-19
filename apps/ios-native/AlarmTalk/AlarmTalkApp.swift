@@ -227,11 +227,9 @@ struct AlarmTalkApp: App {
                             await socialFeatures.refreshAll(session: auth.session, force: true)
                             await auth.refreshUser()
                         }
-                        // 로그아웃한 기기가 그 계정의 알림을 계속 받지 않게 한다
-                        // (`PushNotificationCoordinator.unregisterCurrentToken` 주석).
-                        auth.onSignOutUnregisterPush = { token in
-                            await push.unregisterCurrentToken(authToken: token)
-                        }
+                        // ⚠ 푸시 해제 훅은 **launch 에서** 꽂는다(`PushAppDelegate`) —
+                        // 여기서 꽂으면 알림 권한 팝업을 기다리는 동안 '끊긴 로그아웃
+                        // 이어서 끝내기' 가 기본값(아무것도 안 함)을 부를 수 있다.
                         push.start()
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
@@ -334,9 +332,11 @@ struct AlarmTalkApp: App {
                             // 로그인된 채** 남고, 되짚을 근거도 함께 사라진다.
                             // 계정이 일치할 때만 끊는다: 그 사이 다른 계정으로 로그인했다면
                             // 그 사람을 로그아웃시킬 이유가 없다.
-                            if let pendingID = pending, auth.session?.user.id == pendingID {
-                                // 서버 쪽 뒷정리(푸시 해제·토큰 폐기)까지 마저 한다 —
-                                // 안 하면 로그아웃한 기기로 그 계정의 알림이 계속 온다.
+                            // 서버 쪽 뒷정리(푸시 해제·토큰 폐기)까지 마저 한다 — 안 하면
+                            // 로그아웃한 기기로 그 계정의 알림이 계속 온다. 세션이 이미
+                            // 지워진 뒤에 죽었어도 따로 남겨 둔 토큰으로 시도한다.
+                            let sameAccount = pending.map { auth.session?.user.id == $0 } ?? false
+                            if sameAccount || auth.session == nil {
                                 await auth.finishInterruptedSignOut()
                             }
                             PendingSignOutStore.clear()

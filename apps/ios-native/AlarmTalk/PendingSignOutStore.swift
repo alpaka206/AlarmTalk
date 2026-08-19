@@ -35,8 +35,32 @@ enum PendingSignOutStore {
         return .some(raw.nilIfBlank)
     }
 
-    /// 뒷정리가 **실제로 끝났을 때만** 지운다.
+    /// 뒷정리가 **실제로 끝났을 때만** 지운다(서버 쪽까지 포함).
     static func clear() {
         defaults.removeObject(forKey: key)
+        KeychainStore.deleteData(account: tokenAccount)
+    }
+
+    // MARK: - 서버 뒷정리용 토큰
+
+    private static let tokenAccount = "pending_sign_out_token\(TestIsolation.storageSuffix)"
+
+    /// 푸시 해제·토큰 폐기에 쓸 토큰을 남긴다.
+    ///
+    /// ⚠ **로컬 세션은 곧 지워진다**(사용자를 네트워크 왕복만큼 기다리게 하지 않는다).
+    /// 그 뒤에 프로세스가 죽으면 토큰이 사라져 **다시 시도할 방법이 없다** — 기기는 떠난
+    /// 계정에 묶인 채 알림을 계속 받고 서버 토큰도 유효하게 남는다(Codex #699 P2).
+    /// 그래서 서버 쪽이 끝날 때까지만 따로 보관한다.
+    ///
+    /// 자격증명이므로 `UserDefaults` 가 아니라 **키체인**에 둔다.
+    static func markServerCleanup(token: String?) {
+        guard let token = token?.nilIfBlank, let data = token.data(using: .utf8) else { return }
+        _ = KeychainStore.saveData(data, account: tokenAccount)
+    }
+
+    /// 아직 서버 뒷정리가 안 끝난 토큰.
+    static var serverCleanupToken: String? {
+        guard let data = KeychainStore.readData(account: tokenAccount) else { return nil }
+        return String(data: data, encoding: .utf8)?.nilIfBlank
     }
 }

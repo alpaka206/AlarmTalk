@@ -1172,7 +1172,8 @@ final class AuthViewModel: ObservableObject {
     /// (순서가 뒤바뀌면 폐기가 먼저 `token_epoch` 를 올려 해제가 401 로 죽는다 —
     /// `signOutExplicitly` 주석과 같은 이유다.)
     func finishInterruptedSignOut() async {
-        let revokeToken = session?.token.nilIfBlank
+        // 세션이 이미 지워진 뒤에 죽었을 수 있다 — 그때는 따로 남겨 둔 토큰을 쓴다.
+        let revokeToken = session?.token.nilIfBlank ?? PendingSignOutStore.serverCleanupToken
         if let revokeToken {
             await onSignOutUnregisterPush(revokeToken)
             try? await api.logout(token: revokeToken)
@@ -1217,6 +1218,9 @@ final class AuthViewModel: ObservableObject {
         // 빈 목록을 보고 아무것도 못 끈다 — 그 계정의 OS 예약은 살아 있는데 화면에는
         // 못 들어간다. 표시를 남겨 다음 실행이 마저 하게 한다(`PendingSignOutStore`).
         PendingSignOutStore.mark(departingUserID)
+        // ⚠ 서버 뒷정리에 쓸 토큰을 **로컬 세션을 지우기 전에** 따로 남긴다 — 지운 뒤에
+        // 프로세스가 죽으면 다시 시도할 방법이 없다(`PendingSignOutStore` 주석).
+        PendingSignOutStore.markServerCleanup(token: session?.token)
         let claimAlarms = onSessionEndClaimAlarms
         Task {
             // ⚠ **끄기 전에 소유자를 새긴다.** 아래 `stopAlarms` 가 소유자 미기록 행을
@@ -1226,11 +1230,11 @@ final class AuthViewModel: ObservableObject {
             isBusy = false
             signOut(revokeOnServer: false)
             if let revokeToken {
-                Task {
-                    await unregister(revokeToken)
-                    try? await api.logout(token: revokeToken)
-                }
+                await unregister(revokeToken)
+                try? await api.logout(token: revokeToken)
             }
+            // 서버 쪽까지 끝났다 — 이제서야 표시를 내린다.
+            PendingSignOutStore.clear()
         }
     }
 

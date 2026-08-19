@@ -196,6 +196,13 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 화면이 뜨면 같은 인스턴스에 더 풍부한 핸들러(목소리 스튜디오 등)를 덮어쓴다.
         Self.coordinator = deps.push
         Self.currentSession = { deps.auth.session }
+        // ⚠ **푸시 해제 훅도 launch 에서 꽂는다**(Codex #699 P2). 예전에는 화면의
+        // `.task(id: 세션)` 안에서 꽂았는데, 그 태스크는 **알림 권한 팝업을 먼저 기다린다.**
+        // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이
+        // 불려, `/auth/logout` 으로 토큰만 폐기되고 **기기는 그 계정에 묶인 채** 남는다.
+        deps.auth.onSignOutUnregisterPush = { [weak push = deps.push] token in
+            await push?.unregisterCurrentToken(authToken: token)
+        }
         let launchPull = RemoteAlarmPullSync(
             store: deps.alarmStore,
             alarmKit: deps.alarmKit,
@@ -294,8 +301,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
                 store: deps.alarmStore,
                 ownerUserId: departingUserID
             )
-            // 여기까지 왔으면 뒷정리가 실제로 끝났다.
-            PendingSignOutStore.clear()
+            // ⚠ 여기서 표시를 내리지 않는다 — **서버 쪽 뒷정리가 아직 남았다**
+            // (푸시 해제·토큰 폐기). `signOutExplicitly` 가 그걸 마친 뒤 내린다.
         }
 
         BackgroundSyncTask.register(
