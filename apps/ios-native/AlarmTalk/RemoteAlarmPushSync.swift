@@ -131,6 +131,12 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
                     remote = try await api.createAlarm(body, token: token)
                     created += 1
                 }
+                // ⚠ **쓰기 직전에 취소를 다시 본다**(같은 사이클의 pull 과 같은 이유).
+                // 취소는 협력적이라 요청이 **성공한 직후**에 올 수 있고, 그러면 아래
+                // `catch` 에 걸리지 않는다. 여기서 멈추면 서버에는 이미 반영됐지만
+                // 로컬 표식만 안 찍힌 상태로 남는다 — 다음 회차가 같은 알람을 다시
+                // 밀어 넣되 `remoteAlarmId` 가 있으면 update 라 멱등이다.
+                try Task.checkCancellation()
                 store.markRemote(
                     localID: record.id,
                     remoteID: remote.id,

@@ -81,6 +81,9 @@ final class WeatherVariantRefreshService {
             )
             // 조회 실패(nil)면 **기존 인덱스를 유지한다.** 0(맑음)으로 덮어쓰지 않는다.
             guard let index else { continue }
+            // ⚠ **쓰기 직전에 다시 본다.** 위 루프 앞의 확인만으로는 부족하다 — 취소는
+            // 협력적이라 조회가 **성공한 직후**에 올 수 있고, 그러면 그대로 알람을 고친다.
+            if Task.isCancelled { break }
             for alarm in alarms {
                 // 네트워크를 기다리는 사이 사용자가 시각·지역을 고쳤을 수 있다. 그러면 이 답은
                 // 다른 조건의 것이므로 버린다(안드로이드의 DAO 조건부 UPDATE 와 같은 가드).

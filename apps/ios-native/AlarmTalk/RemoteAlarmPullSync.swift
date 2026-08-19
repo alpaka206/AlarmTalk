@@ -224,6 +224,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             // 여기가 유일한 서스펜션이다 — 음원을 통째로 내려받으므로 수 초가 걸린다.
             mapped = try await recordWithCachedTTSIfNeeded(mapped, token: token)
 
+            // ⚠ **쓰기 직전에 취소를 다시 본다**(2026-08-18 Codex #697 P2).
+            // 취소는 협력적이라 요청이 **성공한 직후**에 올 수 있다 — 그러면 `catch` 에
+            // 걸리지 않고 이 아래 반영 구간이 그대로 돈다. 즉 "끝났다" 고 통보한 뒤에
+            // 알람을 upsert 하고 재예약한다. 아래 반영 구간이 이 회차의 파괴적 쓰기다.
+            try Task.checkCancellation()
+
             // ── 반영 구간: 위 `existing` 은 **다운로드 전 값**이다. 그걸로 판단·머지하면
             // 그 사이에 사용자가 한 일이 조용히 뒤집힌다. 전부 최신 행에서 다시 가져온다.
             guard let current = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) else {
@@ -251,6 +257,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             return .updated
         } else {
             mapped = try await recordWithCachedTTSIfNeeded(mapped, token: token)
+
+            // 위와 같은 이유 — 성공 직후에 온 취소는 `catch` 에 안 걸린다.
+            try Task.checkCancellation()
 
             // 다운로드 사이에 다른 회차가 같은 remote 를 먼저 넣었을 수 있다. 그대로 upsert 하면
             // `RemoteAlarmMapper` 가 매번 새 UUID 를 만들기 때문에 **행이 둘 생기고 둘 다 울린다.**
@@ -470,6 +479,10 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             Self.logger.warning("Pull sync: /alarm/declined unavailable; skipping recipient-state pruning")
             return
         }
+        // ⚠ **쓰기 직전에 취소를 다시 본다.** 마지막 페이지가 **성공한 직후** 취소가 오면
+        // 위 `catch` 는 지나가고, 아래 loop 가 목소리를 벗기고 받은 알람을 지운다 —
+        // BGTask 가 이미 실패로 완료를 통보한 뒤에(2026-08-18 Codex #697 P2).
+        try Task.checkCancellation()
 
         let received = store.recordsBy(origin: .receivedRemote)
 
