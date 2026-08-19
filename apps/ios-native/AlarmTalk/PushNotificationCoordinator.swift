@@ -110,13 +110,25 @@ final class PushNotificationCoordinator: NSObject, ObservableObject {
     ///
     /// ⚠ **`/auth/logout` 보다 먼저** 불러야 한다(토큰이 아직 유효할 때).
     /// 실패해도 로그아웃은 그대로 진행한다 — 막으면 로그아웃을 못 하게 된다.
-    func unregisterCurrentToken(authToken: String) async {
+    /// - Returns: 실제로 해제됐는가. ⚠ **실패를 삼키지 말 것**(Codex #699 P2) —
+    ///   호출부가 이 값으로 "다시 시도해야 하는가" 를 판단한다. 실패했는데 성공으로
+    ///   보고하면 로그아웃 복구 표시가 지워져 **기기가 떠난 계정에 묶인 채 영구히** 남는다.
+    ///   같은 이유로 **실패 시 기기 토큰 캐시도 비우지 않는다** — 그 값이 없으면 다음
+    ///   시도가 무엇을 지워야 할지 모른다.
+    @discardableResult
+    func unregisterCurrentToken(authToken: String) async -> Bool {
         guard let deviceToken = lastRegisteredToken?.nilIfBlank else {
+            // 올린 적이 없다 — 지울 것도 없으므로 끝난 것으로 본다.
             clearRegistrationCache()
-            return
+            return true
         }
-        try? await AlarmTalkAPI.shared.unregisterPushToken(token: deviceToken, authToken: authToken)
-        clearRegistrationCache()
+        do {
+            try await AlarmTalkAPI.shared.unregisterPushToken(token: deviceToken, authToken: authToken)
+            clearRegistrationCache()
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// 로그아웃 시 다음 로그인에서 반드시 다시 올리도록 캐시를 비운다.
@@ -201,7 +213,8 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate {
         // 그 사이 '끊긴 로그아웃 이어서 끝내기' 가 먼저 도달하면 기본값(아무것도 안 함)이
         // 불려, `/auth/logout` 으로 토큰만 폐기되고 **기기는 그 계정에 묶인 채** 남는다.
         deps.auth.onSignOutUnregisterPush = { [weak push = deps.push] token in
-            await push?.unregisterCurrentToken(authToken: token)
+            guard let push else { return false }
+            return await push.unregisterCurrentToken(authToken: token)
         }
         let launchPull = RemoteAlarmPullSync(
             store: deps.alarmStore,

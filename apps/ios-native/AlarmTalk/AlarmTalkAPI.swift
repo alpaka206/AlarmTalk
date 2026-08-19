@@ -1020,6 +1020,12 @@ enum APIError: LocalizedError {
         }
     }
 
+    /// 인증 실패(401)인가. 로그아웃 뒷정리에서 **이미 폐기된 토큰**을 성공으로 보기 위해 쓴다.
+    var isUnauthorized: Bool {
+        if case .server(let status, _, _) = self { return status == 401 }
+        return false
+    }
+
     /// 매핑된 백엔드 error_code 가 있으면 노출. VoiceStudioViewModel.mapVoiceError 가 사용.
     var serverErrorCode: String? {
         if case .server(_, _, let code) = self { return code }

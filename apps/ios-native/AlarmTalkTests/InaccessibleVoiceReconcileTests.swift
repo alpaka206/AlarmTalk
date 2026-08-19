@@ -808,3 +808,62 @@ final class LeavingAccountGateTests: XCTestCase {
         XCTAssertFalse(kit.isLeavingAccount, "종료가 끝났는데 문이 닫힌 채면 알람을 영영 못 건다")
     }
 }
+
+/// **서버 뒷정리는 실패를 성공으로 보고하면 안 된다** (Codex #699 P2).
+///
+/// 이 값으로 로그아웃 복구 표시를 내릴지 정한다 — 오프라인이나 5xx 에서 표시를 지우면
+/// 다음 실행이 재시도할 근거를 잃고, 기기는 떠난 계정에 묶인 채 알림을 계속 받는다.
+@MainActor
+final class ServerSignOutCleanupTests: XCTestCase {
+
+    private final class StubAPI: AuthAPIProviding, @unchecked Sendable {
+        var logoutError: Error?
+        var logoutCalls = 0
+        func me(token: String) async throws -> (token: String?, user: AuthUser) { throw APIError.invalidResponse }
+        func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse { throw APIError.invalidResponse }
+        func deleteAccount(token: String) async throws -> DeleteAccountResponse { throw APIError.invalidResponse }
+        func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse { throw APIError.invalidResponse }
+        func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse { throw APIError.invalidResponse }
+        func consentStatus(token: String) async throws -> ConsentStatusResponse { throw APIError.invalidResponse }
+        func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse { throw APIError.invalidResponse }
+        func logout(token: String) async throws {
+            logoutCalls += 1
+            if let logoutError { throw logoutError }
+        }
+    }
+
+    func test_토큰이_없으면_할_일이_없다() async {
+        let api = StubAPI()
+        let done = await AuthViewModel.runServerSignOutCleanup(token: nil, unregister: { _ in true }, api: api)
+        XCTAssertTrue(done)
+        XCTAssertEqual(api.logoutCalls, 0)
+    }
+
+    func test_둘_다_성공해야_끝난_것이다() async {
+        let api = StubAPI()
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", unregister: { _ in true }, api: api)
+        XCTAssertTrue(done)
+    }
+
+    func test_푸시_해제가_실패하면_안_끝난_것이다() async {
+        let api = StubAPI()
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", unregister: { _ in false }, api: api)
+        XCTAssertFalse(done, "표시를 지우면 기기가 떠난 계정에 묶인 채 남는다")
+    }
+
+    func test_폐기가_5xx_면_안_끝난_것이다() async {
+        let api = StubAPI()
+        api.logoutError = APIError.server(status: 500, message: "boom", errorCode: nil)
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", unregister: { _ in true }, api: api)
+        XCTAssertFalse(done)
+    }
+
+    /// 401 은 **이미 폐기됐다**는 뜻이라 성공으로 본다 — 실패로 치면 지울 수도 없는 것을
+    /// 영원히 재시도하게 된다.
+    func test_폐기가_401_이면_끝난_것으로_본다() async {
+        let api = StubAPI()
+        api.logoutError = APIError.server(status: 401, message: "unauthorized", errorCode: nil)
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", unregister: { _ in true }, api: api)
+        XCTAssertTrue(done, "이미 폐기된 토큰을 영원히 재시도하게 된다")
+    }
+}

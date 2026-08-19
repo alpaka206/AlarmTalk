@@ -1140,7 +1140,7 @@ final class AuthViewModel: ObservableObject {
     /// 로그아웃·탈퇴 신청 때 이 기기의 푸시 토큰을 서버에서 지우는 훅.
     /// `AlarmTalkApp` 이 `PushNotificationCoordinator` 를 꽂는다 — 여기서 코디네이터를
     /// 직접 들면 순환 참조가 된다(코디네이터의 `onFamilyAlarm` 과 같은 방식).
-    var onSignOutUnregisterPush: (String) async -> Void = { _ in }
+    var onSignOutUnregisterPush: (String) async -> Bool = { _ in true }
 
     /// 로그아웃·탈퇴 때 **이 기기의 OS 알람 예약을 끊는** 훅.
     ///
@@ -1174,11 +1174,39 @@ final class AuthViewModel: ObservableObject {
     func finishInterruptedSignOut() async {
         // 세션이 이미 지워진 뒤에 죽었을 수 있다 — 그때는 따로 남겨 둔 토큰을 쓴다.
         let revokeToken = session?.token.nilIfBlank ?? PendingSignOutStore.serverCleanupToken
-        if let revokeToken {
-            await onSignOutUnregisterPush(revokeToken)
-            try? await api.logout(token: revokeToken)
-        }
+        let cleaned = await Self.runServerSignOutCleanup(
+            token: revokeToken,
+            unregister: onSignOutUnregisterPush,
+            api: api
+        )
         signOut(revokeOnServer: false)
+        if cleaned { PendingSignOutStore.clear() }
+    }
+
+    /// 서버 쪽 로그아웃 뒷정리 — **푸시 해제 → 토큰 폐기** 순서.
+    ///
+    /// - Returns: 둘 다 끝났는가. ⚠ **실패를 성공으로 보고하지 말 것**(Codex #699 P2).
+    ///   호출부는 이 값으로 복구 표시를 내릴지 정한다 — 오프라인이나 5xx 에서 표시를
+    ///   지우면 **다음 실행이 재시도할 근거를 잃고**, 기기는 떠난 계정에 묶인 채 알림을
+    ///   계속 받는다.
+    ///
+    /// 401 은 **성공으로 본다** — 그 토큰은 이미 폐기됐다는 뜻이라, 실패로 치면 지울 수도
+    /// 없는 것을 영원히 재시도하게 된다.
+    static func runServerSignOutCleanup(
+        token: String?,
+        unregister: (String) async -> Bool,
+        api: AuthAPIProviding
+    ) async -> Bool {
+        guard let token = token?.nilIfBlank else { return true }
+        let unregistered = await unregister(token)
+        var revoked = false
+        do {
+            try await api.logout(token: token)
+            revoked = true
+        } catch {
+            revoked = (error as? APIError)?.isUnauthorized == true
+        }
+        return unregistered && revoked
     }
 
     func signOutExplicitly() {
@@ -1229,12 +1257,10 @@ final class AuthViewModel: ObservableObject {
             await stopAlarms(departingUserID)
             isBusy = false
             signOut(revokeOnServer: false)
-            if let revokeToken {
-                await unregister(revokeToken)
-                try? await api.logout(token: revokeToken)
+            // 서버 쪽까지 끝났을 때만 표시를 내린다 — 실패하면 남겨서 다음 실행이 재시도한다.
+            if await Self.runServerSignOutCleanup(token: revokeToken, unregister: unregister, api: api) {
+                PendingSignOutStore.clear()
             }
-            // 서버 쪽까지 끝났다 — 이제서야 표시를 내린다.
-            PendingSignOutStore.clear()
         }
     }
 
