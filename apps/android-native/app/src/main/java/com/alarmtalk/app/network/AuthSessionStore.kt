@@ -258,6 +258,11 @@ class AuthSessionStore(context: Context) {
         // '자동 만료로 끊긴 계정' 도 같이 지켜야 한다. 이 값이 clear 에 쓸려 나가면 업데이트
         // 후 재예약이 복원 대상을 잃는다([sessionExpiredOwnerUserId]).
         val expiredOwner = prefs.getString(KEY_SESSION_EXPIRED_OWNER, null)
+        // ⚠ **끄기가 밀린 알람 목록도 살려야 한다**(Codex #699 P2). 이 clear 는
+        // `prefs.edit().clear()` 라 **명시적으로 되살리는 키만** 남는다. 로그아웃 흐름은
+        // 이 함수를 **두 번** 부르는데(떼어내기 안에서 한 번, 이어서 세션 정리에서 한 번),
+        // 두 번째가 방금 적어 둔 목록을 지우면 프로세스가 죽은 뒤 그 알람이 되살아난다.
+        val pendingDisables = prefs.getStringSet(KEY_PENDING_DISABLE_ALARM_IDS, null)?.toSet()
         // 세션 세대를 올린다 — 이 값이 바뀌면 "그 사이 세션이 끝났다" 는 뜻이다.
         // 자세한 계약은 [sessionGeneration] 주석 참고.
         val nextGeneration = prefs.getLong(KEY_SESSION_GENERATION, 0L) + 1L
@@ -266,6 +271,7 @@ class AuthSessionStore(context: Context) {
             .putString(KEY_PENDING_OWNER_USER_ID, pendingOwner)
             .putLong(KEY_SESSION_GENERATION, nextGeneration)
             .also { if (expiredOwner != null) it.putString(KEY_SESSION_EXPIRED_OWNER, expiredOwner) }
+            .also { if (!pendingDisables.isNullOrEmpty()) it.putStringSet(KEY_PENDING_DISABLE_ALARM_IDS, pendingDisables) }
             .apply()
     }
 
