@@ -137,7 +137,17 @@ final class RemoteAlarmPushSync: @unchecked Sendable {
                     lastSyncedAtMillis: nowMillis,
                     syncState: .synced
                 )
+            } catch is CancellationError {
+                // ⚠ **취소는 실패가 아니다 — 회차를 멈춘다**(2026-08-18 Codex #697 P2).
+                // 워치독·BGTask 만료가 이 회차를 접는 신호인데, 여기서 여느 실패처럼
+                // 삼키면 **끝났다고 통보한 뒤에도** 남은 후보를 계속 밀어 넣는다.
+                // 게다가 `markSyncFailed` 로 기록하면 멀쩡한 알람이 '동기화 실패' 로
+                // 남아 다음 회차에 불필요하게 다시 걸리고, 사용자에게는 "일부를 저장하지
+                // 못했어요" 가 뜬다 — 아무것도 실패하지 않았는데.
+                throw CancellationError()
             } catch {
+                // 취소가 다른 오류에 감싸여 올 수도 있다(URLSession 은 `NSURLErrorCancelled`).
+                if Task.isCancelled { throw CancellationError() }
                 failed += 1
                 store.markSyncFailed(id: record.id)
                 // ⚠ **삼키지 말 것.** 여기서 조용히 넘어가는 바람에 사용자에게는

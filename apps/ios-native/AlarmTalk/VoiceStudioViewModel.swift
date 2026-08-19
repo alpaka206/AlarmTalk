@@ -499,6 +499,11 @@ final class VoiceStudioViewModel: ObservableObject {
             // 권위가 없는 회차에는 훅 안의 판정이 스스로 물러서므로 여기서 또 가르지 않는다.
             await onAuthoritativeRefresh?()
         } catch {
+            // ⚠ **취소를 실패로 그리지 않는다**(2026-08-18 Codex #697 P2). 워치독이 회차를
+            // 접은 것뿐인데 "목소리를 불러오지 못했어요" 를 남기면 거짓말이고, 그 뒤로도
+            // 계속 진행하면 끝났다고 통보한 사이클이 상태를 더 만진다.
+            // ⚠ 권위 플래그는 이미 false 다(성공 경로에서만 세운다) — 강등은 스스로 물러선다.
+            if error is CancellationError || Task.isCancelled { return }
             guard activeUserID == userID else { return }
             statusMessage = mapVoiceError(error)
         }
