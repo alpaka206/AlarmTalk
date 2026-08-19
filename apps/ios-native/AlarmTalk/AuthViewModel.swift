@@ -100,6 +100,44 @@ final class AuthViewModel: ObservableObject {
         await authServerMutation?.value
     }
 
+
+    // MARK: - 로그인 (서버 뒷정리와 한 줄로)
+
+    /// ⚠ **로그인 요청 자체를 줄에 태운다**(Codex #699 P1). "기다렸다가 보낸다" 로는 부족하다 —
+    /// 그 기다림은 **그 시점의 줄**만 보므로, 요청이 날아가는 사이에 복구가 새로 넣은
+    /// `/auth/logout` 이 그 뒤에 처리되면 `token_epoch` 가 올라가 **방금 받은 토큰이 무효**가 된다.
+    /// 줄에 태우면 그 뒷정리는 로그인이 끝난 뒤로 밀리고, 그때는 이 계정의 표시가 지워져 있어
+    /// (`PendingSignOutStore.clear`) 서버 호출 자체가 멈춘다.
+    func loginWithApple(
+        idToken: String,
+        name: String?,
+        email: String?,
+        rawNonce: String?,
+        authorizationCode: String? = nil,
+        appleUserIdHint: String? = nil
+    ) async {
+        await serializeAuthServerMutation { [weak self] in
+            await self?.performLoginWithApple(idToken: idToken, name: name, email: email, rawNonce: rawNonce, authorizationCode: authorizationCode, appleUserIdHint: appleUserIdHint)
+        }
+    }
+
+    func loginWithEmail(email: String, password: String) async {
+        await serializeAuthServerMutation { [weak self] in
+            await self?.performLoginWithEmail(email: email, password: password)
+        }
+    }
+
+    func registerWithEmail(
+        email: String,
+        password: String,
+        name: String,
+        verificationCode: String
+    ) async {
+        await serializeAuthServerMutation { [weak self] in
+            await self?.performRegisterWithEmail(email: email, password: password, name: name, verificationCode: verificationCode)
+        }
+    }
+
     /// 로그인 실패를 사용자 문구로 바꾼다.
     ///
     /// 서버는 **미가입과 비밀번호 불일치를 구분하지 않고** `AUTH_INVALID_CREDENTIALS` 401
@@ -357,7 +395,7 @@ final class AuthViewModel: ObservableObject {
         failStatus(userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요."))
     }
 
-    func loginWithApple(
+    private func performLoginWithApple(
         idToken: String,
         name: String?,
         email: String?,
@@ -368,11 +406,6 @@ final class AuthViewModel: ObservableObject {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
-
-        // ⚠ **요청을 보내기 전에** 진행 중인 로그아웃 뒷정리를 기다린다(Codex #699 P1).
-        // `/auth/logout` 은 계정 전체의 `token_epoch` 를 올리므로, 그 요청이 **토큰이 발급된
-        // 뒤에** 처리되면 방금 받은 세션이 무효가 된다 — 발급 뒤에 기다려 봐야 되돌릴 수 없다.
-        await awaitPendingServerSignOut()
 
         do {
             var nextSession = try await AlarmTalkAPI.shared.loginWithApple(
@@ -465,15 +498,10 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 이메일/비밀번호 로그인.
-    func loginWithEmail(email: String, password: String) async {
+    private func performLoginWithEmail(email: String, password: String) async {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
-
-        // ⚠ **요청을 보내기 전에** 진행 중인 로그아웃 뒷정리를 기다린다(Codex #699 P1).
-        // `/auth/logout` 은 계정 전체의 `token_epoch` 를 올리므로, 그 요청이 **토큰이 발급된
-        // 뒤에** 처리되면 방금 받은 세션이 무효가 된다 — 발급 뒤에 기다려 봐야 되돌릴 수 없다.
-        await awaitPendingServerSignOut()
 
         loginError = nil
         do {
@@ -509,7 +537,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 이메일/비밀번호 회원가입. 인증코드 검증 직후 호출.
-    func registerWithEmail(
+    private func performRegisterWithEmail(
         email: String,
         password: String,
         name: String,
@@ -518,11 +546,6 @@ final class AuthViewModel: ObservableObject {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
-
-        // ⚠ **요청을 보내기 전에** 진행 중인 로그아웃 뒷정리를 기다린다(Codex #699 P1).
-        // `/auth/logout` 은 계정 전체의 `token_epoch` 를 올리므로, 그 요청이 **토큰이 발급된
-        // 뒤에** 처리되면 방금 받은 세션이 무효가 된다 — 발급 뒤에 기다려 봐야 되돌릴 수 없다.
-        await awaitPendingServerSignOut()
 
         do {
             let nextSession = try await AlarmTalkAPI.shared.register(
