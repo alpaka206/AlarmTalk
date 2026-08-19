@@ -181,7 +181,14 @@ final class BackgroundSyncTask {
 
         let timeoutTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(Self.executionTimeout * 1_000_000_000))
-            // 타임아웃 시 false. 아래 setTaskCompleted 가 중복 호출되어도 시스템 noop.
+            // ⚠ **끝났다고 말하기 전에 실제로 멈춘다**(2026-08-18 Codex #697 P2).
+            // 예전에는 `setTaskCompleted(false)` 만 불렀다 — 시스템에는 끝났다고 해
+            // 놓고 사이클은 계속 돌아, 네트워크 요청과 **알람 쓰기**가 그 뒤에도 이어졌다.
+            // iOS 가 그 순간 프로세스를 재우면 **반쯤 적용된 사이클**이 남고, 그게 곧
+            // 이어질 재시도 회차와 겹친다. 시스템 만료 경로(위 `expirationHandler`)는
+            // 처음부터 취소하고 있었는데 우리 워치독만 안 했다.
+            cancelWork?()
+            // 아래 setTaskCompleted 가 중복 호출되어도 시스템 noop.
             task.setTaskCompleted(success: false)
         }
 
