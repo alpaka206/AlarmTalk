@@ -906,6 +906,7 @@ final class ServerSignOutCleanupTests: XCTestCase {
         let api = StubAPI()
         let done = await AuthViewModel.runServerSignOutCleanup(token: "T", unregister: { _ in false }, api: api)
         XCTAssertFalse(done, "표시를 지우면 기기가 떠난 계정에 묶인 채 남는다")
+        XCTAssertEqual(api.logoutCalls, 0, "해제가 실패했는데 폐기하면 재시도할 토큰이 죽는다")
     }
 
     func test_폐기가_5xx_면_안_끝난_것이다() async {
@@ -913,6 +914,18 @@ final class ServerSignOutCleanupTests: XCTestCase {
         api.logoutError = APIError.server(status: 500, message: "boom", errorCode: nil)
         let done = await AuthViewModel.runServerSignOutCleanup(token: "T", unregister: { _ in true }, api: api)
         XCTAssertFalse(done)
+    }
+
+    /// 유예 탈퇴 계정은 백엔드가 폐기를 **허용하지 않는다**(403 `ACCOUNT_PENDING_DELETION`) —
+    /// 실패로 치면 뒷정리 재시도가 영원히 돈다. 그 토큰이 살아 있는 건 의도된 것이다
+    /// (탈퇴를 철회할 때 필요하다).
+    func test_유예탈퇴_403_은_끝난_것으로_본다() async {
+        let api = StubAPI()
+        api.logoutError = APIError.server(
+            status: 403, message: "Account is scheduled for deletion", errorCode: "ACCOUNT_PENDING_DELETION"
+        )
+        let done = await AuthViewModel.runServerSignOutCleanup(token: "T", unregister: { _ in true }, api: api)
+        XCTAssertTrue(done, "폐기가 불가능한 상태를 실패로 치면 표시가 영원히 남는다")
     }
 
     /// 401 은 **이미 폐기됐다**는 뜻이라 성공으로 본다 — 실패로 치면 지울 수도 없는 것을

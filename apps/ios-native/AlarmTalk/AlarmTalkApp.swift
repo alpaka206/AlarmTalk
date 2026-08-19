@@ -316,8 +316,18 @@ struct AlarmTalkApp: App {
                         // 끝난다 — 로드가 그 뒤에 옛 행들을 채우기 때문이다. 그러면 그
                         // 행들은 `nil` 로 남아, 다음 계정이 로그아웃할 때 자기 것으로
                         // 오인해 영구히 꺼 버린다. 근거는 `SessionExpiryStore` 뿐이다.
-                        if auth.session == nil, let expired = SessionExpiryStore.expiredOwnerUserId {
+                        // ⚠ **세션 가드보다 **먼저** 처리한다**(Codex #699 P1). 로그인 시점의
+                        // 새기기가 로드 상한에 걸려 실패하면 표시가 남는데, 그때는 이미 B 의
+                        // 세션이 저장된 뒤다 — `auth.session == nil` 을 요구하면 **유일한
+                        // 재시도가 건너뛰어져** A 의 옛 행이 임자 없이 남고, B 가 로그아웃할 때
+                        // 영구히 꺼진다.
+                        if let expired = SessionExpiryStore.expiredOwnerUserId {
                             alarmStore.claimUnownedAlarms(for: expired)
+                            // 다른 계정이 쓰는 중이면 이 표시의 목적(옛 행 확정)은 끝났다.
+                            // 아무도 없으면 남겨 둔다 — 복구 대상을 가리는 기준이기도 하다.
+                            if let signedIn = auth.session?.user.id.nilIfBlank, signedIn != expired {
+                                SessionExpiryStore.clear()
+                            }
                         }
                         // ⚠ **끝내지 못한 로그아웃을 마저 한다**(Codex #699 P1). 콜드 스타트
                         // 직후 로그아웃하면 저장소 로드가 상한(3초) 안에 안 끝나 뒷정리가

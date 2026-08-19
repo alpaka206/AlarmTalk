@@ -878,9 +878,12 @@ final class AuthViewModel: ObservableObject {
             // `signOut` 의 기본값은 `revokeOnServer: true` 라 `/auth/logout` 으로 그 토큰을
             // 죽인다 — 다음 실행의 `/push/unregister` 재시도가 **401 로 영원히** 실패하고
             // 바인딩과 표시만 남는다.
+            // ⚠ **폐기하지 않는다.** 유예 계정은 백엔드가 `/auth/logout` 을 403 으로 막는다
+            // (`middleware/auth.ts` — 탈퇴 철회와 푸시 해제만 허용). 부르면 실패할 뿐이고,
+            // 무엇보다 그 토큰은 **탈퇴를 철회할 때 필요하다.**
             signOut(
                 message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.",
-                revokeOnServer: pushUnregistered
+                revokeOnServer: false
             )
             // 탈퇴는 되살릴 계정 자체가 없다 — 자동 만료 표시를 남기지 않는다.
             SessionExpiryStore.clear()
@@ -1315,7 +1318,11 @@ final class AuthViewModel: ObservableObject {
         } catch {
             // 401 은 이미 폐기됐다는 뜻이라 성공으로 본다 — 아니면 지울 수도 없는 것을
             // 영원히 재시도하게 된다.
-            return (error as? APIError)?.isUnauthorized == true
+            // 403 `ACCOUNT_PENDING_DELETION` 도 같다: 유예 계정은 백엔드가 폐기를 **허용하지
+            // 않으므로**(탈퇴 철회·푸시 해제만 통과) 실패로 치면 재시도가 영원히 돈다.
+            // 그 상태에서 토큰이 살아 있는 것은 **의도된 것**이다 — 그래야 탈퇴를 철회한다.
+            let apiError = error as? APIError
+            return apiError?.isUnauthorized == true || apiError?.isAccountPendingDeletion == true
         }
     }
 
